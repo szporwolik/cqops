@@ -46,7 +46,6 @@ func renderWorldMap(ownLat, ownLon, partnerLat, partnerLon float64, width, heigh
 	if mapH == 0 || mapW == 0 {
 		return ""
 	}
-
 	if width < mapW || height < mapH {
 		return ""
 	}
@@ -57,12 +56,9 @@ func renderWorldMap(ownLat, ownLon, partnerLat, partnerLon float64, width, heigh
 	ownX, ownY := mercatorXY(ownLat, ownLon, outW, outH)
 	partnerX, partnerY := mercatorXY(partnerLat, partnerLon, outW, outH)
 
-	landSty := lipgloss.NewStyle().Foreground(lipgloss.Color("70"))
-	landFillSty := lipgloss.NewStyle().Foreground(lipgloss.Color("22"))
-	seaSty := lipgloss.NewStyle().Foreground(lipgloss.Color("19"))
-	iceSty := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	playerSty := lipgloss.NewStyle().Foreground(th.Accent).Bold(true)
-	partnerSty := lipgloss.NewStyle().Foreground(th.Accent).Bold(true)
+	ownSty := lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true)
+	partnerSty := lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Bold(true)
+	bothSty := lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true)
 
 	pad := (width - outW) / 2
 	if pad < 0 {
@@ -70,56 +66,40 @@ func renderWorldMap(ownLat, ownLon, partnerLat, partnerLon float64, width, heigh
 	}
 	padStr := strings.Repeat(" ", pad)
 
+	hasOwn := ownY >= 0 && ownY < outH && ownX >= 0 && ownX < outW
+	hasPartner := partnerY >= 0 && partnerY < outH && partnerX >= 0 && partnerX < outW
+	collide := hasOwn && hasPartner && ownX == partnerX && ownY == partnerY
+
 	var b strings.Builder
 	for y := 0; y < outH; y++ {
-		srcLine := mapLines[y]
-		isPolar := y <= 2 || y >= outH-2
-
-		leftEdge, rightEdge := -1, -1
-		for x := 0; x < outW; x++ {
-			if x < len(srcLine) && srcLine[x] != ' ' {
-				if leftEdge < 0 {
-					leftEdge = x
-				}
-				rightEdge = x
-			}
-		}
-
-		isPlayerRow := ownY >= 0 && y == ownY
-		isPartnerRow := partnerY >= 0 && y == partnerY
-
 		b.WriteString(padStr)
+		line := mapLines[y]
 		for x := 0; x < outW; x++ {
-			playerHere := isPlayerRow && x == ownX
-			partnerHere := isPartnerRow && x == partnerX
+			ownHere := hasOwn && y == ownY && x == ownX
+			partnerHere := hasPartner && y == partnerY && x == partnerX
 
-			if playerHere && partnerHere {
-				b.WriteString(playerSty.Render("*"))
-			} else if playerHere {
-				b.WriteString(playerSty.Render("*"))
+			if ownHere && partnerHere {
+				b.WriteString(bothSty.Render("@"))
+			} else if ownHere {
+				b.WriteString(ownSty.Render("*"))
 			} else if partnerHere {
 				b.WriteString(partnerSty.Render("P"))
-			} else if x < len(srcLine) && srcLine[x] != ' ' {
-				if isPolar {
-					b.WriteString(iceSty.Render(string(srcLine[x])))
-				} else {
-					b.WriteString(landSty.Render(string(srcLine[x])))
-				}
-			} else if x >= leftEdge && x <= rightEdge && leftEdge >= 0 {
-				if isPolar {
-					b.WriteString(iceSty.Render("·"))
-				} else {
-					b.WriteString(landFillSty.Render("·"))
-				}
+			} else if x < len(line) {
+				b.WriteByte(line[x])
 			} else {
-				b.WriteString(seaSty.Render("·"))
+				b.WriteByte(' ')
 			}
 		}
 		b.WriteByte('\n')
 	}
-	if (ownY >= 0 && ownY < outH) || (partnerY >= 0 && partnerY < outH) {
+	if hasOwn || hasPartner {
+		gray := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 		b.WriteString(padStr)
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render("  * you    P partner"))
+		if collide {
+			b.WriteString(bothSty.Render("@") + gray.Render("  you & partner"))
+		} else {
+			b.WriteString(ownSty.Render("*") + gray.Render("  you    ") + partnerSty.Render("P") + gray.Render("  partner"))
+		}
 	}
 	return b.String()
 }
@@ -158,6 +138,6 @@ func gridToLatLon(grid string) (float64, float64) {
 
 func parseCoord(s string) float64 {
 	var f float64
-	fmt.Sscanf(strings.TrimSpace(s), "%f", &f)
+	_, _ = fmt.Sscanf(strings.TrimSpace(s), "%f", &f)
 	return f
 }
