@@ -416,7 +416,9 @@ func (m *Model) View() string {
 	w := m.width; if w < 40 { w = 80 }
 	header := m.renderHeader(w)
 	var content string
-	if m.showChooser {
+	if m.confirmQuit {
+		content = titleStyle.Render("Quit CQOps? (y/N)")
+	} else if m.showChooser {
 		content = m.chooser.View()
 	} else if m.showRigEdit {
 		content = m.rigChooser.View()
@@ -430,8 +432,6 @@ func (m *Model) View() string {
 		content = m.logViewer.View()
 	} else if m.showPartner && m.partnerData != nil {
 		content = m.viewPartner()
-	} else if m.confirmQuit {
-		content = titleStyle.Render("Quit CQOps? (y/N)")
 	} else {
 		form := m.viewForm(w)
 		distLine := m.formDistanceLine(w)
@@ -847,7 +847,7 @@ func (m *Model) viewFooter(width int) string {
 	var text string
 	switch {
 	case m.showMainMenu:
-		text = m.mainMenu.FooterText()
+		text = "F1 QSO Form  F10 Quit"
 	case m.showConfig:
 		text = m.configMenu.FooterText()
 	case m.showCallbook:
@@ -857,14 +857,14 @@ func (m *Model) viewFooter(width int) string {
 	case m.showRigEdit:
 		text = m.rigChooser.FooterText()
 	case m.showLogView:
-		text = m.logViewer.FooterText()
+		text = "↑↓ to scroll  F1 QSO Form  F10 Quit"
 	case m.showPartner && m.partnerData != nil:
-			text = "F8 Config  F10 Quit"
+			text = "F1 QSO Form  F10 Quit"
 	default:
 		if width < 70 {
-			text = "Enter=Save | Del Clear | Ins/Ctrl+L Lookup | PgUp/Dn Cycle | F8 Config | F10 Quit"
+			text = "Enter=Save | Del Clear | Ins/Ctrl+L Lookup | PgUp/Dn Cycle | F10 Quit"
 		} else {
-			text = "Enter/Ctrl+S Save  Del Clear  Ins/Ctrl+L Lookup  PgUp/Dn Cycle  F8 Config  F10 Quit"
+			text = "Enter/Ctrl+S Save  Del Clear  Ins/Ctrl+L Lookup  PgUp/Dn Cycle  F10 Quit"
 		}
 	}
 	ver := ""
@@ -948,6 +948,75 @@ func (m *Model) viewForm(width int) string {
 	return b.String()
 }
 
+type qsoCol struct {
+	header   string
+	minWidth int
+	grow     bool
+	value    func(q *qso.QSO) string
+}
+
+var qsoAllCols = map[string]qsoCol{
+	"Date":    {"Date", 10, false, func(q *qso.QSO) string { return formatDate(q.QSODate) }},
+	"Time":    {"Time", 8, false, func(q *qso.QSO) string { return formatTime(q.TimeOn) }},
+	"Call":    {"Call", 7, true, func(q *qso.QSO) string { return q.Call }},
+	"Band":    {"Band", 5, false, func(q *qso.QSO) string { b := qso.NormalizeBand(q.Band); if b == "" && q.Freq > 0 { b = fmt.Sprintf("%.1f", q.Freq) }; return b }},
+	"Mode":    {"Mode", 5, false, func(q *qso.QSO) string { return q.Mode }},
+	"RSTs":    {"RSTs", 4, false, func(q *qso.QSO) string { return q.RSTSent }},
+	"RSTr":    {"RSTr", 4, false, func(q *qso.QSO) string { return q.RSTRcvd }},
+	"ID":      {"ID", 3, false, func(q *qso.QSO) string { return fmt.Sprintf("%d", q.ID) }},
+	"DXCC":    {"DXCC", 6, true, func(q *qso.QSO) string { return q.Country }},
+	"Sub":     {"Sub", 4, false, func(q *qso.QSO) string { return q.Submode }},
+	"Name":    {"Name", 7, true, func(q *qso.QSO) string { return q.Name }},
+	"Grid":    {"Grid", 6, false, func(q *qso.QSO) string { return q.GridSquare }},
+	"QTH":     {"QTH", 8, true, func(q *qso.QSO) string { return q.QTH }},
+	"Comment": {"Comment", 10, true, func(q *qso.QSO) string { return q.Comment }},
+	"Dist":    {"Dist", 6, false, func(q *qso.QSO) string { if q.Distance > 0 { return fmt.Sprintf("%.0f", q.Distance) }; return "" }},
+}
+
+var qsoColTiers = []struct {
+	minW  int
+	names []string
+}{
+	{0, []string{"Date", "Time", "Call", "Mode", "RSTs", "RSTr"}},
+	{52, []string{"Date", "Time", "Call", "Band", "Mode", "RSTs", "RSTr"}},
+	{65, []string{"Date", "Time", "Call", "Band", "Mode", "RSTs", "RSTr", "ID", "DXCC"}},
+	{85, []string{"Date", "Time", "Call", "Band", "Mode", "RSTs", "RSTr", "ID", "DXCC", "Sub", "Name"}},
+	{105, []string{"Date", "Time", "Call", "Band", "Mode", "RSTs", "RSTr", "ID", "DXCC", "Sub", "Name", "Grid", "QTH", "Comment", "Dist"}},
+}
+
+func selectQSOCols(width int) []qsoCol {
+	var names []string
+	for _, t := range qsoColTiers {
+		if width >= t.minW {
+			names = t.names
+		}
+	}
+	cols := make([]qsoCol, len(names))
+	for i, n := range names {
+		cols[i] = qsoAllCols[n]
+	}
+	if width >= 130 {
+		totalMin := 0
+		growCount := 0
+		for _, c := range cols {
+			totalMin += c.minWidth + 1
+			if c.grow {
+				growCount++
+			}
+		}
+		extra := width - totalMin
+		if extra > 0 && growCount > 0 {
+			perGrow := extra / growCount
+			for i := range cols {
+				if cols[i].grow {
+					cols[i].minWidth += perGrow
+				}
+			}
+		}
+	}
+	return cols
+}
+
 func (m *Model) viewQSOS(maxRows int) string {
 	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
 	bodyW := m.width - 2
@@ -965,14 +1034,27 @@ func (m *Model) viewQSOS(maxRows int) string {
 	}
 	b.WriteString("\n")
 
-	b.WriteString(headerStyle.Render(fmt.Sprintf("%-4s %-10s %-8s %-7s %-5s %-5s %-4s %-4s %-4s %-6s %s",
-		"ID", "Date", "Time", "Call", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Comment")))
+	cols := qsoCols(bodyW)
+
+	var headerParts []string
+	var fmtParts []string
+	for _, c := range cols {
+		headerParts = append(headerParts, c.header)
+		fmtParts = append(fmtParts, fmt.Sprintf("%%-%ds", c.width))
+	}
+
+	headerFmt := strings.Join(fmtParts, " ")
+	headerLine := headerStyle.Render(fmt.Sprintf(headerFmt, toAny(headerParts)...))
+	b.WriteString(headerLine)
 	b.WriteString("\n")
 
 	if len(m.qsos) == 0 {
 		for i := 0; i < maxRows; i++ {
-			b.WriteString(dim.Render(fmt.Sprintf("%-4s %-10s %-8s %-7s %-5s %-5s %-4s %-4s %-4s %-6s %s",
-				"—", "—", "—", "—", "—", "—", "—", "—", "—", "—", "—")))
+			emptyRow := make([]string, len(cols))
+			for j := range emptyRow {
+				emptyRow[j] = "—"
+			}
+			b.WriteString(dim.Render(fmt.Sprintf(headerFmt, toAny(emptyRow)...)))
 			b.WriteString("\n")
 		}
 	} else {
@@ -982,34 +1064,16 @@ func (m *Model) viewQSOS(maxRows int) string {
 		}
 		for i := 0; i < limit; i++ {
 			q := m.qsos[i]
-
-			id := trunc(fmt.Sprintf("%d", q.ID), 4)
-			date := formatDate(q.QSODate)
-			timeOn := formatTime(q.TimeOn)
-			call := trunc(q.Call, 7)
-			band := qso.NormalizeBand(q.Band)
-			if band == "" && q.Freq > 0 {
-				band = fmt.Sprintf("%.1f", q.Freq)
+			var vals []string
+			for _, c := range cols {
+				v := c.value(&q)
+				if v == "" {
+					v = "—"
+				}
+				v = trunc(v, c.width)
+				vals = append(vals, v)
 			}
-			band = trunc(band, 5)
-			mode := trunc(q.Mode, 5)
-			sub := trunc(q.Submode, 4)
-			rsts := trunc(q.RSTSent, 4)
-			rstr := trunc(q.RSTRcvd, 4)
-			country := trunc(q.Country, 6)
-			comment := trunc(q.Comment, 20)
-
-			if id == "" { id = "—" }
-			if band == "" { band = "—" }
-			if mode == "" { mode = "—" }
-			if sub == "" { sub = "—" }
-			if rsts == "" { rsts = "—" }
-			if rstr == "" { rstr = "—" }
-			if country == "" { country = "—" }
-			if comment == "" { comment = "—" }
-
-			r := fmt.Sprintf("%-4s %-10s %-8s %-7s %-5s %-5s %-4s %-4s %-4s %-6s %s",
-				id, date, timeOn, call, band, mode, sub, rsts, rstr, country, comment)
+			r := fmt.Sprintf(headerFmt, toAny(vals)...)
 			if i%2 == 0 {
 				r = inputStyle.Render(r)
 			}
@@ -1017,12 +1081,23 @@ func (m *Model) viewQSOS(maxRows int) string {
 			b.WriteString("\n")
 		}
 		for i := limit; i < maxRows; i++ {
-			b.WriteString(dim.Render(fmt.Sprintf("%-4s %-10s %-8s %-7s %-5s %-5s %-4s %-4s %-4s %-6s %s",
-				"—", "—", "—", "—", "—", "—", "—", "—", "—", "—", "—")))
+			emptyRow := make([]string, len(cols))
+			for j := range emptyRow {
+				emptyRow[j] = "—"
+			}
+			b.WriteString(dim.Render(fmt.Sprintf(headerFmt, toAny(emptyRow)...)))
 			b.WriteString("\n")
 		}
 	}
 	return b.String()
+}
+
+func toAny(ss []string) []any {
+	aa := make([]any, len(ss))
+	for i, s := range ss {
+		aa[i] = s
+	}
+	return aa
 }
 
 func trunc(s string, w int) string {

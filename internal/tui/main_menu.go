@@ -30,8 +30,6 @@ func (m *MainMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "esc":
-			m.done = true
 		case "enter":
 			switch m.cursor {
 			case 0: m.action = "general"
@@ -53,7 +51,7 @@ func (m *MainMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *MainMenu) FooterText() string {
-	return "Enter to select  Esc to go back"
+	return "Enter to select  F1 QSO Form  F10 Quit"
 }
 
 func (m *MainMenu) View() string {

@@ -25,7 +25,7 @@ func (lv *LogViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg: lv.width, lv.height = msg.Width, msg.Height
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "esc", "f9": lv.done = true
+		case "f9": lv.done = true
 		case "up", "k": if lv.offset > 0 { lv.offset-- }
 		case "down", "j": lv.offset++
 		}
