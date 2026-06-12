@@ -441,6 +441,10 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 func (m *Model) View() string {
 	if m.quitting { return "" }
 	if m.err != nil { return errorStyle.Render(fmt.Sprintf("Error: %v\nPress any key to exit.", m.err)) }
+	if m.width < 80 || m.height < 24 {
+		minMsg := fmt.Sprintf("CQOPS needs at least 80x24 terminal.\nCurrent: %dx%d", m.width, m.height)
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render(minMsg)
+	}
 	w := m.width; if w < 40 { w = 80 }
 	header := m.renderHeader(w)
 	var content string
