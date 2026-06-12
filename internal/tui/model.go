@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -62,9 +63,16 @@ type Model struct {
 	rigMode      string
 	rigPower     float64
 	rigBlink     bool
+	rigSkipTicks int
 	dateTimeAuto bool
 	tickCount    int
 	inetOnline   bool
+	wsjtxOnline  bool
+	wsjtxStatus  string
+	needRefresh  bool
+	pendingADIF  string
+	pendingStatus statusPending
+	adifMu       sync.Mutex
 	showChooser  bool
 	chooser      *LogbookChooser
 	showRigEdit  bool
@@ -96,6 +104,10 @@ type tickMsg time.Time
 type qrzResultMsg struct{ Call string; Data *qrz.CallData; Err error }
 type inetResultMsg bool
 type resizeSettledMsg struct{ Width, Height, Seq int }
+type statusPending struct {
+	call, grid, mode, submode, report string
+	freq                              uint64
+}
 
 func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	m := &Model{App: a, qsos: initialQSOS, toasts: NewToastQueue(), dateTimeAuto: true}
@@ -125,7 +137,23 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	return m
 }
 
-func (m *Model) Init() tea.Cmd { m.refreshFlrigClient(); return tea.Batch(tickCmd(), checkInetCmd()) }
+func (m *Model) Init() tea.Cmd {
+	m.refreshFlrigClient()
+	log.Info("WSJT-X: registering callbacks", "listenerActive", m.App.WSJTX.IsActive())
+	m.App.WSJTX.OnADIF = func(adif string) {
+		log.Debug("WSJT-X: OnADIF callback invoked", "len", len(adif))
+		m.adifMu.Lock()
+		m.pendingADIF = adif
+		m.adifMu.Unlock()
+	}
+	m.App.WSJTX.OnStatus = func(call, grid string, freq uint64, mode, submode, report string) {
+		log.Debug("WSJT-X: OnStatus callback invoked", "call", call)
+		m.adifMu.Lock()
+		m.pendingStatus = statusPending{call: call, grid: grid, freq: freq, mode: mode, submode: submode, report: report}
+		m.adifMu.Unlock()
+	}
+	return tea.Batch(tickCmd(), checkInetCmd())
+}
 func tickCmd() tea.Cmd { return tea.Tick(200*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) }) }
 func (m *Model) qrzLookupCmd(call string) tea.Cmd {
 	return func() tea.Msg {
@@ -177,33 +205,67 @@ func (m *Model) refreshFlrigClient() {
 		host, port := rp.FlrigHost, rp.FlrigPort
 		if host == "" { host = "localhost" }
 		if port == "" { port = "12345" }
-		m.flrigClient = flrig.New("http://"+host+":"+port, 1000)
-	} else { m.flrigClient = nil }
+		url := "http://" + host + ":" + port
+		log.InfoDetail("flrig: connecting", fmt.Sprintf("rig=%s host=%s port=%s url=%s", rigName, host, port, url))
+		m.flrigClient = flrig.New(url, 1000)
+	} else {
+		if !ok {
+			log.Debug("flrig: rig not found in config", "rigName", rigName)
+		} else {
+			log.Debug("flrig: disabled for rig", "rigName", rigName)
+		}
+		m.flrigClient = nil
+	}
+}
+
+type flrigResultMsg struct {
+	connected bool
+	freq      float64
+	mode      string
+	band      string
+	power     float64
+	err       string
+}
+
+func (m *Model) flrigStatusCmd() tea.Cmd {
+	if m.flrigClient == nil {
+		return nil
+	}
+	client := m.flrigClient
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+		defer cancel()
+		s, err := client.Status(ctx)
+		if err != nil {
+			return flrigResultMsg{err: err.Error()}
+		}
+		return flrigResultMsg{connected: s.Connected, freq: s.FrequencyMHz, mode: s.Mode, band: s.Band, power: s.Power}
+	}
 }
 
 func (m *Model) pollFlrig() {
 	m.rigBlink = !m.rigBlink
-	if m.flrigClient == nil { m.rigConnected = false; return }
-	ctx, cancel := context.WithTimeout(context.Background(), 800*time.Millisecond)
-	defer cancel()
-	status, err := m.flrigClient.Status(ctx)
-	if err != nil || !status.Connected { m.rigConnected = false; return }
-	m.rigConnected = true
-	m.rigFreq = status.FrequencyMHz
-	m.fields[fieldFreq].SetValue(fmt.Sprintf("%.6f", status.FrequencyMHz))
-	if status.Mode != "" { m.fields[fieldMode].SetValue(status.Mode) }
-	if status.Band != "" { m.fields[fieldBand].SetValue(status.Band) }
-	m.autoFillSSBSubmode()
-	if status.Power > 0 {
-		m.rigPower = status.Power
-		m.fields[fieldTXPower].SetValue(fmt.Sprintf("%.0f", status.Power))
-		rigName := m.App.Logbook.Station.RigName
-		if rigName == "" { rigName = "default" }
-		if rp, ok := m.App.Config.Rigs[rigName]; ok {
-			rp.Power = fmt.Sprintf("%.0f", status.Power)
-			m.App.Config.Rigs[rigName] = rp
-		}
+	m.rigSkipTicks++
+	if m.rigSkipTicks < 5 {
+		return
 	}
+	m.rigSkipTicks = 0
+	if m.flrigClient == nil {
+		m.rigConnected = false
+		return
+	}
+}
+
+func (m *Model) applyFlrigResult(r flrigResultMsg) {
+	if r.err != "" { m.rigConnected = false; return }
+	if !r.connected { m.rigConnected = false; return }
+	m.rigConnected = true
+	m.rigFreq = r.freq
+	if !m.wsjtxOnline { m.fields[fieldFreq].SetValue(fmt.Sprintf("%.6f", r.freq)) }
+	if r.mode != "" && !m.wsjtxOnline { m.fields[fieldMode].SetValue(r.mode) }
+	if r.band != "" { m.fields[fieldBand].SetValue(r.band) }
+	if !m.wsjtxOnline { m.autoFillSSBSubmode() }
+	if r.power > 0 { m.fields[fieldTXPower].SetValue(fmt.Sprintf("%.0f", r.power)) }
 }
 
 func (m *Model) autoUpdateDateTime() {
@@ -222,10 +284,166 @@ func (m *Model) maybeCheckInet() tea.Cmd {
 	return tickCmd()
 }
 
+func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode, report string) {
+	m.wsjtxOnline = true
+	if call != "" {
+		prevCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+		newCall := strings.ToUpper(call)
+		if prevCall != newCall {
+			m.fields[fieldCall].SetValue(call)
+			m.fields[fieldCountry].SetValue("")
+			m.fields[fieldName].SetValue("")
+			m.fields[fieldQTH].SetValue("")
+			m.fields[fieldGrid].SetValue("")
+			m.partnerData = nil
+			m.partnerASCII = ""
+			log.InfoDetail("WSJT-X: switching DX call", fmt.Sprintf("%s → %s", prevCall, newCall))
+			if m.App.Config.QRZEnabled && m.App.Config.QRZUser != "" {
+				m.toasts.Info("QRZ: looking up " + call + "…")
+				m.qrzNeed = true
+				m.qrzCall = newCall
+			}
+		}
+	}
+	if grid != "" {
+		m.fields[fieldGrid].SetValue(formatLocator(grid))
+	}
+	if freqHz > 0 {
+		m.fields[fieldFreq].SetValue(fmt.Sprintf("%.6f", float64(freqHz)/1_000_000.0))
+	}
+	if mode != "" {
+		mode, submode = qso.NormalizeMode(mode, submode)
+		m.fields[fieldMode].SetValue(mode)
+	}
+	if submode != "" {
+		m.fields[fieldSubmode].SetValue(submode)
+	}
+	if report != "" {
+		m.fields[fieldRSTSent].SetValue(report)
+		m.fields[fieldRSTRcvd].SetValue(report)
+	}
+	m.autoFillRST()
+	m.wsjtxStatus = mode
+	if submode != "" {
+		m.wsjtxStatus = submode
+	}
+}
+
+func (m *Model) logQSOFromADIF(adif string) {
+	qs := parseWSJTXADIF(adif)
+	if qs.Call == "" {
+		log.Warn("WSJT-X: logged ADIF has no call, skipping")
+		m.toasts.Warn("WSJT-X: ADIF has no call")
+		return
+	}
+	if err := qso.ValidateForSave(qs); err != nil {
+		log.Error("WSJT-X: ADIF validation failed", "error", err.Error())
+		m.toasts.Error("WSJT-X: " + err.Error())
+		return
+	}
+	id, err := store.InsertQSO(m.App.DB, qs)
+	if err != nil {
+		log.Error("WSJT-X: DB insert failed", "error", err.Error())
+		m.toasts.Error("WSJT-X: DB save failed")
+		return
+	}
+	log.InfoDetail("WSJT-X: auto-logged QSO", fmt.Sprintf("id=%d call=%s", id, qs.Call))
+	m.toasts.Success(fmt.Sprintf("WSJT-X: %s logged", qs.Call))
+	m.clearForm()
+	m.needRefresh = true
+}
+
+func parseWSJTXADIF(adif string) *qso.QSO {
+	qs := qso.NewQSO()
+	adif = strings.TrimSpace(adif)
+	fields := strings.Split(adif, "<")
+	for _, f := range fields {
+		if f == "" || strings.HasPrefix(f, "adif_ver:") || strings.HasPrefix(f, "programid:") ||
+			f == "EOH>" || f == "EOR>" {
+			continue
+		}
+		idx := strings.Index(f, ">")
+		if idx < 0 {
+			continue
+		}
+		header := f[:idx]
+		val := strings.TrimSpace(f[idx+1:])
+		colon := strings.LastIndex(header, ":")
+		if colon < 0 {
+			continue
+		}
+		name := strings.TrimSpace(header[:colon])
+
+		switch strings.ToLower(name) {
+		case "call":
+			qs.Call = strings.ToUpper(val)
+		case "gridsquare":
+			qs.GridSquare = formatLocator(val)
+		case "mode":
+			qs.Mode = strings.ToUpper(val)
+		case "submode":
+			qs.Submode = strings.ToUpper(val)
+		case "rst_sent":
+			qs.RSTSent = val
+		case "rst_rcvd":
+			qs.RSTRcvd = val
+		case "qso_date":
+			qs.QSODate = stripNonDigits(val)
+		case "time_on":
+			qs.TimeOn = stripNonDigits(val)
+		case "time_off":
+			qs.TimeOff = stripNonDigits(val)
+		case "band":
+			qs.Band = qso.NormalizeBand(val)
+		case "freq":
+			fmt.Sscanf(val, "%f", &qs.Freq)
+		case "station_callsign":
+			qs.StationCallsign = strings.ToUpper(val)
+		case "my_gridsquare":
+			qs.MyGridSquare = formatLocator(val)
+		case "operator":
+			qs.Operator = strings.ToUpper(val)
+		case "comment":
+			qs.Comment = val
+		case "name":
+			qs.Name = val
+		case "qth":
+			qs.QTH = val
+		case "country":
+			qs.Country = val
+		case "dxcc":
+			qs.Country = val
+		case "tx_pwr":
+			qs.TXPower = val
+		}
+	}
+	qs.Mode, qs.Submode = qso.NormalizeMode(qs.Mode, qs.Submode)
+	if qs.Band == "" && qs.Freq > 0 {
+		qs.Band = qso.DeriveBand(qs.Freq)
+	}
+	return qs
+}
+
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	if _, ok := msg.(tickMsg); ok {
+		m.adifMu.Lock()
+		adif := m.pendingADIF
+		m.pendingADIF = ""
+		m.adifMu.Unlock()
+		if adif != "" {
+			log.Info("WSJT-X: processing pending ADIF")
+			m.logQSOFromADIF(adif)
+		}
+		m.adifMu.Lock()
+		sp := m.pendingStatus
+		m.pendingStatus = statusPending{}
+		m.adifMu.Unlock()
+		if sp.call != "" {
+			m.applyWSJTXStatus(sp.call, sp.grid, sp.freq, sp.mode, sp.submode, sp.report)
+		}
 		m.pollFlrig()
+		cmd = tea.Batch(cmd, m.flrigStatusCmd())
 		m.toasts.Expire()
 		m.autoUpdateDateTime()
 		m.tickCount++
@@ -243,13 +461,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if ir, ok := msg.(inetResultMsg); ok {
 			m.inetOnline = bool(ir)
 		}
+		if fr, ok := msg.(flrigResultMsg); ok {
+			m.applyFlrigResult(fr)
+			return m, cmd
+		}
 		if key, ok := msg.(tea.KeyMsg); ok {
 		switch key.String() {
 		case "f10": m.confirmQuit = true
 		case "f1": m.showChooser = false; m.showRigEdit = false; m.showIntegration = false; m.showConfig = false; m.showMainMenu = false; m.showLogView = false; m.showPartner = false
 		case "f2": if m.showPartner { m.showPartner = false } else if m.partnerData != nil { m.showPartner = true }
-		case "f8": if m.showMainMenu { m.showMainMenu = false } else { m.mainMenu = NewMainMenu(); m.showMainMenu = true }
-		case "f9": m.logViewer = NewLogViewer(m.App.LogbookName); m.showLogView = true; return m, cmd
+		case "f8": if m.showMainMenu { m.showMainMenu = false } else { m.showChooser = false; m.showRigEdit = false; m.showIntegration = false; m.showConfig = false; m.showCallbook = false; m.showLogView = false; m.showPartner = false; m.mainMenu = NewMainMenu(); m.showMainMenu = true }
+		case "f9": m.showChooser = false; m.showRigEdit = false; m.showIntegration = false; m.showConfig = false; m.showCallbook = false; m.showMainMenu = false; m.showPartner = false; m.logViewer = NewLogViewer(m.App.LogbookName); m.showLogView = true; return m, cmd
 		}
 		if !m.showChooser && !m.showRigEdit && !m.showIntegration && !m.showConfig && !m.showCallbook && !m.showMainMenu && !m.showLogView && !m.showPartner {
 			if key.String() == "delete" || key.Type == tea.KeyDelete {
@@ -332,7 +554,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.toasts.Error("Settings save failed: " + err.Error())
 				} else {
 					m.toasts.Success("Settings saved")
-					log.Info("Settings saved")
+					log.Info("WSJT-X config saved, restarting listener")
+					m.App.MaybeRestartWSJTX()
 				}
 				m.showMainMenu = true
 			}
@@ -374,11 +597,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case inetResultMsg:
 			m.inetOnline = bool(msg)
 			return m, cmd
-		case resizeSettledMsg:
-			if msg.Seq == m.resizeSeq {
-				m.partnerDirty = true
-			}
-			return m, cmd
+	case resizeSettledMsg:
+		if msg.Seq == m.resizeSeq {
+			m.partnerDirty = true
+		}
+		return m, cmd
+	case flrigResultMsg:
+		m.applyFlrigResult(msg)
+		return m, cmd
 		case tea.KeyMsg:
 			switch {
 			case msg.String() == "f8": m.showPartner = false
@@ -437,6 +663,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default: m.updateFocused(msg)
 		}
 	}
+	if m.needRefresh {
+		m.needRefresh = false
+		return m, tea.Batch(cmd, m.refreshQSOS())
+	}
 	if m.qrzNeed {
 		m.qrzNeed = false
 		call := m.qrzCall
@@ -450,6 +680,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Model) fillQRZData(msg qrzResultMsg) {
 	if msg.Call == "" { return }
+	formCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+	if formCall != "" && formCall != strings.ToUpper(msg.Call) {
+		return
+	}
 	if !m.App.Config.QRZEnabled || m.App.Config.QRZUser == "" { m.toasts.Warn("QRZ not configured"); return }
 	if msg.Err != nil {
 		m.toasts.Error("QRZ error: "+msg.Err.Error())
@@ -467,6 +701,14 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 	if d.Country != "" && m.fields[fieldCountry].Value() == "" { m.fields[fieldCountry].SetValue(d.Country) }
 	m.autoFillRST()
 	m.toasts.Info("QRZ: "+d.Callsign+" "+d.Name)
+}
+
+func trimLines(s string, maxLines int) string {
+	lines := strings.Split(s, "\n")
+	if len(lines) <= maxLines {
+		return s
+	}
+	return strings.Join(lines[:maxLines], "\n")
 }
 
 func (m *Model) View() string {
@@ -506,19 +748,20 @@ func (m *Model) View() string {
 	body := lipgloss.NewStyle().Width(w).Padding(0, 1).Render(content)
 	toastBar := RenderToasts(m.toasts.Active(), w)
 	footer := m.viewFooter(w)
-	mainBlock := lipgloss.JoinVertical(lipgloss.Left, header, body)
-	mainLines := strings.Count(mainBlock, "\n") + 1
-	toastLines := strings.Count(toastBar, "\n")
-	if toastBar != "" {
-		toastLines++
-	}
+	headerLines := strings.Count(header, "\n") + 1
 	footerLines := strings.Count(footer, "\n") + 1
-	extraLines := toastLines + footerLines
+	toastLines := strings.Count(toastBar, "\n")
+	if toastBar != "" { toastLines++ }
+	extraLines := headerLines + toastLines + footerLines
+	if m.height > 0 && extraLines < m.height {
+		maxBodyH := m.height - extraLines
+		body = trimLines(body, maxBodyH)
+	}
+	mainBlock := lipgloss.JoinVertical(lipgloss.Left, header, body)
 	if m.height > 0 {
-		pad := m.height - mainLines - extraLines
-		if pad < 0 {
-			pad = 0
-		}
+		mainLines := strings.Count(mainBlock, "\n") + 1
+		pad := m.height - mainLines - toastLines - footerLines
+		if pad < 0 { pad = 0 }
 		mainBlock += strings.Repeat("\n", pad)
 	}
 	var all string
@@ -561,9 +804,9 @@ func (m *Model) renderHeader(width int) string {
 		locator = "----"
 	}
 
-	inetVal := ansiFg(th.Error, "No ")
+	inetVal := ansiFg(th.Error, "no ")
 	if m.inetOnline {
-		inetVal = ansiFg(th.Success, "Yes")
+		inetVal = ansiFg(th.Success, "yes")
 	}
 
 	left := ansiFg(th.Label, "Call: ") + ansiFg(th.Value, clamp(s.Callsign, 8)) +
@@ -576,8 +819,15 @@ func (m *Model) renderHeader(width int) string {
 		center += ansiFg(th.Subtle, " v"+v)
 	}
 
-	right := ansiFg(th.Label, "Inet: ") + inetVal +
-		ansiFg(th.Label, "  Rig: ") + ansiFg(th.Value, rigModel) + rigIndicator +
+	right := ansiFg(th.Label, "inet: ") + inetVal
+	if m.App.Config.WSJTX.Enabled {
+		wVal := ansiFg(th.Error, "off")
+		if m.wsjtxOnline {
+			wVal = ansiFg(th.Success, "on")
+		}
+		right += ansiFg(th.Label, "  wsjtx:") + wVal
+	}
+	right += ansiFg(th.Label, "  Rig: ") + ansiFg(th.Value, rigModel) + rigIndicator +
 		ansiFg(th.Label, "  LT: ") + ansiFg(th.Value, now.Format("15:04")) +
 		ansiFg(th.Label, "  UTC: ") + ansiFg(th.Value, utc.Format("15:04:05"))
 

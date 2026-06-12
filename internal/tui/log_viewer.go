@@ -59,10 +59,8 @@ func (lv *LogViewer) View() string {
 
 	h := lv.height
 	if h < 10 { h = 24 }
-	maxRows := h - 5
-	if maxRows < 3 {
-		maxRows = 10
-	}
+	maxRows := h - 10
+	if maxRows < 5 { maxRows = 5 }
 
 	if lv.offset > len(entries)-maxRows {
 		lv.offset = len(entries) - maxRows

@@ -51,7 +51,7 @@ func Init() error {
 }
 
 func openLogFile() (*os.File, error) {
-	name := "cqops-" + time.Now().Format("2006-01-02") + ".log"
+	name := "cqops-" + time.Now().Format("2006-01-02T15-04-05") + ".log"
 	return os.OpenFile(filepath.Join(logDir, name), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 }
 
@@ -62,14 +62,18 @@ func cleanupOldLogs() {
 	}
 	cutoff := time.Now().AddDate(0, 0, -retentionDays)
 	for _, e := range entries {
-		if !strings.HasPrefix(e.Name(), "cqops-") || !strings.HasSuffix(e.Name(), ".log") {
+		n := e.Name()
+		if !strings.HasPrefix(n, "cqops-") || !strings.HasSuffix(n, ".log") {
 			continue
 		}
-		dateStr := strings.TrimPrefix(e.Name(), "cqops-")
-		dateStr = strings.TrimSuffix(dateStr, ".log")
-		t, err := time.Parse("2006-01-02", dateStr)
+		stem := strings.TrimPrefix(n, "cqops-")
+		stem = strings.TrimSuffix(stem, ".log")
+		t, err := time.Parse("2006-01-02T15-04-05", stem)
 		if err != nil {
-			continue
+			t, err = time.Parse("2006-01-02", stem)
+			if err != nil {
+				continue
+			}
 		}
 		if t.Before(cutoff) {
 			os.Remove(filepath.Join(logDir, e.Name()))
