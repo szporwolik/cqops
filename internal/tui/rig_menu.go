@@ -131,9 +131,9 @@ func (rc *RigChooser) viewList() string {
 	title := "── Configuration — Rigs "
 	rem := bodyW - lipgloss.Width(title)
 	if rem > 0 {
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title + strings.Repeat("─", rem)))
+		b.WriteString(SectionStyle.Render(title + strings.Repeat("─", rem)))
 	} else {
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title))
+		b.WriteString(SectionStyle.Render(title))
 	}
 	b.WriteString("\n\n")
 

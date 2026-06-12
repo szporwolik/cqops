@@ -76,8 +76,8 @@ func (m *MainMenu) View() string {
 		bodyW = 30
 	}
 
-	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	cursor := lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
+	dim := SubtleStyle
+	cursor := CursorStyle
 
 	showDesc := bodyW >= 60
 
@@ -86,9 +86,9 @@ func (m *MainMenu) View() string {
 	title := "── Configuration "
 	rem := bodyW - lipgloss.Width(title)
 	if rem > 0 {
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title + strings.Repeat("─", rem)))
+		b.WriteString(SectionStyle.Render(title + strings.Repeat("─", rem)))
 	} else {
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title))
+		b.WriteString(SectionStyle.Render(title))
 	}
 	b.WriteString("\n\n")
 
@@ -97,7 +97,7 @@ func (m *MainMenu) View() string {
 		label := item.label
 		if i == m.cursor {
 			prefix = cursor.Render("> ")
-			label = inputStyle.Render(item.label)
+			label = InputStyle.Render(item.label)
 		}
 
 		line := prefix + label

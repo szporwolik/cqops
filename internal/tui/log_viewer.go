@@ -70,19 +70,19 @@ func (lv *LogViewer) View() string {
 		lv.offset = 0
 	}
 
-	infoColor := lipgloss.NewStyle().Foreground(lipgloss.Color("252"))
-	errColor := lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
-	warnColor := lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-	debugColor := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	infoColor := lipgloss.NewStyle().Foreground(th.Info)
+	errColor := lipgloss.NewStyle().Foreground(th.Error)
+	warnColor := lipgloss.NewStyle().Foreground(th.Warning)
+	debugColor := lipgloss.NewStyle().Foreground(th.Debug)
 
 	var b strings.Builder
 
 	title := "── Logs: " + lv.name + " "
 	rem := bodyW - lipgloss.Width(title)
 	if rem > 0 {
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title + strings.Repeat("─", rem)))
+		b.WriteString(SectionStyle.Render(title + strings.Repeat("─", rem)))
 	} else {
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title))
+		b.WriteString(SectionStyle.Render(title))
 	}
 	b.WriteString("\n\n")
 

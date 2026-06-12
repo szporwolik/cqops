@@ -1,46 +1,92 @@
 package tui
 
-import (
-	"github.com/charmbracelet/lipgloss"
-)
+import "github.com/charmbracelet/lipgloss"
+
+type Theme struct {
+	Accent      lipgloss.Color
+	Success     lipgloss.Color
+	Error       lipgloss.Color
+	Warning     lipgloss.Color
+	Value       lipgloss.Color
+	Background  lipgloss.Color
+	Muted       lipgloss.Color
+	Dim         lipgloss.Color
+	Label       lipgloss.Color
+	Section     lipgloss.Color
+	Subtle      lipgloss.Color
+	ActiveTab   lipgloss.Color
+	Info        lipgloss.Color
+	Debug       lipgloss.Color
+}
+
+var DefaultTheme = Theme{
+	Accent:     "86",
+	Success:    "46",
+	Error:      "196",
+	Warning:    "214",
+	Value:      "229",
+	Background: "236",
+	Muted:      "241",
+	Dim:        "238",
+	Label:      "243",
+	Section:    "244",
+	Subtle:     "245",
+	ActiveTab:  "62",
+	Info:       "252",
+	Debug:      "240",
+}
 
 var (
-	borderStyle = lipgloss.NewStyle().
-			BorderStyle(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("62"))
+	th = &DefaultTheme
 
-	titleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("86")).
-			Padding(0, 1)
+	TitleStyle = lipgloss.NewStyle().Bold(true).Foreground(th.Accent).Padding(0, 1)
 
-	headerStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("244")).
-			Padding(0, 1)
+	HeaderStyle = lipgloss.NewStyle().Foreground(th.Section).Padding(0, 1)
 
-	selectedStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("229")).
-			Bold(true)
+	ErrorStyle = lipgloss.NewStyle().Foreground(th.Error)
 
-	errorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("196"))
+	WarningStyle = lipgloss.NewStyle().Foreground(th.Warning)
 
-	warningStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("214"))
+	SuccessStyle = lipgloss.NewStyle().Foreground(th.Success)
 
-	successStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("46"))
+	HelpStyle = lipgloss.NewStyle().Foreground(th.Muted)
 
-	helpStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241"))
+	LabelStyle = lipgloss.NewStyle().Foreground(th.Label)
 
-	formLabelStyle = lipgloss.NewStyle().
-			Width(22).
-			Foreground(lipgloss.Color("245"))
+	ValueStyle = lipgloss.NewStyle().Foreground(th.Value)
 
-	inputStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("229"))
+	CursorStyle = lipgloss.NewStyle().Foreground(th.Accent)
 
-	cursorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("86"))
+	InputStyle = lipgloss.NewStyle().Foreground(th.Value)
+
+	SectionStyle = lipgloss.NewStyle().Foreground(th.Section)
+
+	DimStyle = lipgloss.NewStyle().Foreground(th.Dim)
+
+	SubtleStyle = lipgloss.NewStyle().Foreground(th.Subtle)
+
+	BarStyle = lipgloss.NewStyle().Background(th.Background)
+
+	ActiveTabStyle = lipgloss.NewStyle().Background(th.ActiveTab).Foreground(th.Value).Bold(true).Padding(0, 2)
+
+	InactiveTabStyle = lipgloss.NewStyle().Background(th.Background).Foreground(th.Muted).Padding(0, 2)
+
+	DisabledTabStyle = lipgloss.NewStyle().Background(th.Background).Foreground(th.Dim).Padding(0, 2)
 )
+
+var borderStyle = lipgloss.NewStyle().
+	BorderStyle(lipgloss.RoundedBorder()).
+	BorderForeground(th.Accent)
+
+var titleStyle = TitleStyle
+var headerStyle = HeaderStyle
+var errorStyle = ErrorStyle
+var warningStyle = WarningStyle
+var successStyle = SuccessStyle
+var helpStyle = HelpStyle
+var formLabelStyle = lipgloss.NewStyle().Width(22).Foreground(th.Label)
+var inputStyle = InputStyle
+var cursorStyle = CursorStyle
+var sectionStyle = SectionStyle
+var dimStyle = DimStyle
+var selectedStyle = lipgloss.NewStyle().Foreground(th.Value).Bold(true)

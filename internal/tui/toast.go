@@ -85,19 +85,19 @@ func (tq *ToastQueue) PopOutToast() *Toast {
 
 var (
 	toastInfoStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("86")).
+			Foreground(th.Accent).
 			Bold(true)
 
 	toastSuccessStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("46")).
+				Foreground(th.Success).
 				Bold(true)
 
 	toastWarningStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("214")).
+				Foreground(th.Warning).
 				Bold(true)
 
 	toastErrorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("196")).
+			Foreground(th.Error).
 			Bold(true)
 )
 

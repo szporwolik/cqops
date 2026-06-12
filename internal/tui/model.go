@@ -513,12 +513,12 @@ func (m *Model) renderHeader(width int) string {
 		if rp.FlrigEnabled {
 			if m.rigConnected {
 				if m.rigBlink {
-					rigIndicator = ansiFg("46", " on")
+					rigIndicator = ansiFg(th.Success, " on")
 				} else {
 					rigIndicator = "   "
 				}
 			} else {
-				rigIndicator = ansiFg("196", " err")
+				rigIndicator = ansiFg(th.Error, " err")
 			}
 		}
 	}
@@ -528,31 +528,31 @@ func (m *Model) renderHeader(width int) string {
 		locator = "----"
 	}
 
-	inetVal := ansiFg("196", "No ")
+	inetVal := ansiFg(th.Error, "No ")
 	if m.inetOnline {
-		inetVal = ansiFg("46", "Yes")
+		inetVal = ansiFg(th.Success, "Yes")
 	}
 
-	left := ansiFg("243", "Call: ") + ansiFg("229", clamp(s.Callsign, 8)) +
-		ansiFg("243", "  Op: ") + ansiFg("229", clamp(s.Operator, 8)) +
-		ansiFg("243", "  Log: ") + ansiFg("229", clamp(m.App.LogbookName, 8)) +
-		ansiFg("243", "  Loc: ") + ansiFg("229", clamp(locator, 6))
+	left := ansiFg(th.Label, "Call: ") + ansiFg(th.Value, clamp(s.Callsign, 8)) +
+		ansiFg(th.Label, "  Op: ") + ansiFg(th.Value, clamp(s.Operator, 8)) +
+		ansiFg(th.Label, "  Log: ") + ansiFg(th.Value, clamp(m.App.LogbookName, 8)) +
+		ansiFg(th.Label, "  Loc: ") + ansiFg(th.Value, clamp(locator, 6))
 
-	center := ansiBoldFg("86", "CQOPS")
+	center := ansiBoldFg(th.Accent, "CQOPS")
 	if v := version.Resolved(); v != "dev" {
-		center += ansiFg("245", " v"+v)
+		center += ansiFg(th.Subtle, " v"+v)
 	}
 
-	right := ansiFg("243", "Inet: ") + inetVal +
-		ansiFg("243", "  Rig: ") + ansiFg("229", rigModel) + rigIndicator +
-		ansiFg("243", "  LT: ") + ansiFg("229", now.Format("15:04")) +
-		ansiFg("243", "  UTC: ") + ansiFg("229", utc.Format("15:04:05"))
+	right := ansiFg(th.Label, "Inet: ") + inetVal +
+		ansiFg(th.Label, "  Rig: ") + ansiFg(th.Value, rigModel) + rigIndicator +
+		ansiFg(th.Label, "  LT: ") + ansiFg(th.Value, now.Format("15:04")) +
+		ansiFg(th.Label, "  UTC: ") + ansiFg(th.Value, utc.Format("15:04:05"))
 
 	leftW := lipgloss.Width(left)
 	rightW := lipgloss.Width(right)
 	totalW := leftW + rightW
 
-	bgStyle := lipgloss.NewStyle().Background(lipgloss.Color("236"))
+	bgStyle := BarStyle
 
 	if totalW+6 > width {
 		line1 := "  " + left
@@ -590,18 +590,18 @@ func (m *Model) renderHeader(width int) string {
 	return statusLine + "\n" + tabLine
 }
 
-func ansiFg(color, s string) string {
-	return "\x1b[38;5;" + color + "m" + s + "\x1b[39m"
+func ansiFg(color lipgloss.Color, s string) string {
+	return "\x1b[38;5;" + string(color) + "m" + s + "\x1b[39m"
 }
 
-func ansiBoldFg(color, s string) string {
-	return "\x1b[1m\x1b[38;5;" + color + "m" + s + "\x1b[22m\x1b[39m"
+func ansiBoldFg(color lipgloss.Color, s string) string {
+	return "\x1b[1m\x1b[38;5;" + string(color) + "m" + s + "\x1b[22m\x1b[39m"
 }
 
 func (m *Model) renderTabLine(width int) string {
-	active := lipgloss.NewStyle().Background(lipgloss.Color("62")).Foreground(lipgloss.Color("229")).Bold(true).Padding(0, 2)
-	inactive := lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("241")).Padding(0, 2)
-	disabled := lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("238")).Padding(0, 2)
+	active := ActiveTabStyle
+	inactive := InactiveTabStyle
+	disabled := DisabledTabStyle
 
 	qsoLabel := "F1 QSO Form"
 	partnerLabel := "F2 Partner Details"
@@ -641,7 +641,7 @@ func (m *Model) renderTabLine(width int) string {
 	for lipgloss.Width(line) < width {
 		line += " "
 	}
-	return lipgloss.NewStyle().Background(lipgloss.Color("236")).Render(line)
+	return BarStyle.Render(line)
 }
 
 func clamp(s string, w int) string {
@@ -712,9 +712,9 @@ func (m *Model) viewPartner() string {
 	title := "── Partner: " + d.Callsign + " "
 	rem := bodyW - lipgloss.Width(title)
 	if rem > 0 {
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title + strings.Repeat("─", rem)))
+		b.WriteString(SectionStyle.Render(title + strings.Repeat("─", rem)))
 	} else {
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title))
+		b.WriteString(SectionStyle.Render(title))
 	}
 	b.WriteString("\n\n")
 
@@ -747,7 +747,7 @@ func (m *Model) viewPartner() string {
 		leftBlock := lipgloss.NewStyle().Width(detailsW).Render(info)
 		rightContent := m.partnerASCII
 		if rightContent == "" {
-			rightContent = lipgloss.NewStyle().Foreground(lipgloss.Color("238")).Render("(no image)")
+			rightContent = DimStyle.Render("(no image)")
 		}
 		rightBlock := rightContent
 		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftBlock, strings.Repeat(" ", gap), rightBlock))
@@ -761,7 +761,7 @@ func (m *Model) viewPartner() string {
 		pathTitle := "── Path "
 		pathRem := bodyW - lipgloss.Width(pathTitle)
 		if pathRem > 0 {
-			b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(pathTitle + strings.Repeat("─", pathRem)))
+			b.WriteString(SectionStyle.Render(pathTitle + strings.Repeat("─", pathRem)))
 		}
 		b.WriteString("\n  ")
 		b.WriteString(inputStyle.Render(dl))
@@ -774,7 +774,7 @@ func (m *Model) viewPartner() string {
 		mapTitle := "── Map "
 		mapRem := bodyW - lipgloss.Width(mapTitle)
 		if mapRem > 0 {
-			b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(mapTitle + strings.Repeat("─", mapRem)))
+			b.WriteString(SectionStyle.Render(mapTitle + strings.Repeat("─", mapRem)))
 		}
 		b.WriteString("\n")
 		mapW := bodyW
@@ -800,7 +800,7 @@ func (m *Model) viewPartner() string {
 		}
 	} else {
 		b.WriteString("\n\n")
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("238")).Render("── Map hidden: terminal too small"))
+		b.WriteString(DimStyle.Render("── Map hidden: terminal too small"))
 	}
 
 	return b.String()
@@ -852,8 +852,8 @@ func (m *Model) renderPartnerInfo(d *qrz.CallData, maxW int) string {
 		valW = 8
 	}
 
-	lblStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
-	valStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("229"))
+	lblStyle := LabelStyle
+	valStyle := ValueStyle
 
 	var b strings.Builder
 	for _, r := range rows {
@@ -894,8 +894,8 @@ func (m *Model) viewFooter(width int) string {
 	if v := version.Resolved(); v != "dev" {
 		ver = "CQOPS v" + v
 	}
-	helpStr := ansiFg("241", text)
-	verStr := ansiFg("240", ver)
+	helpStr := ansiFg(th.Muted, text)
+	verStr := ansiFg(th.Debug, ver)
 	helpW := lipgloss.Width(helpStr)
 	verW := lipgloss.Width(verStr)
 	innerW := width - 4
@@ -904,14 +904,14 @@ func (m *Model) viewFooter(width int) string {
 		for lipgloss.Width(line) < width {
 			line += " "
 		}
-		return lipgloss.NewStyle().Background(lipgloss.Color("236")).Render(line)
+		return BarStyle.Render(line)
 	}
 	gap := innerW - helpW - verW
 	line := "  " + helpStr + strings.Repeat(" ", gap) + verStr + "  "
 	for lipgloss.Width(line) < width {
 		line += " "
 	}
-	return lipgloss.NewStyle().Background(lipgloss.Color("236")).Render(line)
+	return BarStyle.Render(line)
 }
 
 func truncate(s string, max int) string { if max < 3 { return s }; if lipgloss.Width(s) <= max { return s }; return s[:max-1] + "…" }
@@ -922,17 +922,17 @@ func (m *Model) viewForm(width int) string {
 		bodyW = 20
 	}
 	labelW := 12
-	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
-	hl := lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
+	dim := DimStyle
+	hl := CursorStyle
 
 	var b strings.Builder
 
 	title := "── QSO "
 	rem := bodyW - lipgloss.Width(title)
 	if rem > 0 {
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title + strings.Repeat("─", rem)))
+		b.WriteString(SectionStyle.Render(title + strings.Repeat("─", rem)))
 	} else {
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title))
+		b.WriteString(SectionStyle.Render(title))
 	}
 	b.WriteString("\n")
 
@@ -1041,7 +1041,7 @@ func selectQSOCols(width int) []qsoCol {
 }
 
 func (m *Model) viewQSOS(maxRows int) string {
-	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	dim := DimStyle
 	bodyW := m.width - 2
 	if bodyW < 20 {
 		bodyW = 20
@@ -1051,9 +1051,9 @@ func (m *Model) viewQSOS(maxRows int) string {
 	title := "── Recent QSOs "
 	rem := bodyW - lipgloss.Width(title)
 	if rem > 0 {
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title + strings.Repeat("─", rem)))
+		b.WriteString(SectionStyle.Render(title + strings.Repeat("─", rem)))
 	} else {
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title))
+		b.WriteString(SectionStyle.Render(title))
 	}
 	b.WriteString("\n")
 
@@ -1149,9 +1149,9 @@ func (m *Model) formDistanceLine(width int) string {
 	}
 	title := "── Path "
 	rem := bodyW - lipgloss.Width(title)
-	hdr := lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title)
+	hdr := SectionStyle.Render(title)
 	if rem > 0 {
-		hdr = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title + strings.Repeat("─", rem))
+		hdr = SectionStyle.Render(title + strings.Repeat("─", rem))
 	}
 	return hdr + "\n  " + inputStyle.Render(dl)
 }
