@@ -847,7 +847,7 @@ func (m *Model) viewFooter(width int) string {
 	var text string
 	switch {
 	case m.showMainMenu:
-		text = "F1 QSO Form  F10 Quit"
+		text = "F10 Quit"
 	case m.showConfig:
 		text = m.configMenu.FooterText()
 	case m.showCallbook:
@@ -857,9 +857,9 @@ func (m *Model) viewFooter(width int) string {
 	case m.showRigEdit:
 		text = m.rigChooser.FooterText()
 	case m.showLogView:
-		text = "↑↓ to scroll  F1 QSO Form  F10 Quit"
+		text = "↑↓ to scroll  F10 Quit"
 	case m.showPartner && m.partnerData != nil:
-			text = "F1 QSO Form  F10 Quit"
+			text = "F10 Quit"
 	default:
 		if width < 70 {
 			text = "Enter=Save | Del Clear | Ins/Ctrl+L Lookup | PgUp/Dn Cycle | F10 Quit"
@@ -1034,13 +1034,13 @@ func (m *Model) viewQSOS(maxRows int) string {
 	}
 	b.WriteString("\n")
 
-	cols := qsoCols(bodyW)
+	cols := selectQSOCols(bodyW)
 
 	var headerParts []string
 	var fmtParts []string
 	for _, c := range cols {
 		headerParts = append(headerParts, c.header)
-		fmtParts = append(fmtParts, fmt.Sprintf("%%-%ds", c.width))
+		fmtParts = append(fmtParts, fmt.Sprintf("%%-%ds", c.minWidth))
 	}
 
 	headerFmt := strings.Join(fmtParts, " ")
@@ -1070,7 +1070,7 @@ func (m *Model) viewQSOS(maxRows int) string {
 				if v == "" {
 					v = "—"
 				}
-				v = trunc(v, c.width)
+				v = trunc(v, c.minWidth)
 				vals = append(vals, v)
 			}
 			r := fmt.Sprintf(headerFmt, toAny(vals)...)
