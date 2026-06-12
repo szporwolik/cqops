@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/szporwolik/cqops/internal/qso"
@@ -16,8 +17,9 @@ import (
 )
 
 type Flrig struct {
-	url       string
-	timeout   time.Duration
+	url     string
+	timeout time.Duration
+	client  *http.Client
 }
 
 func New(url string, timeoutMS int) *Flrig {
@@ -28,6 +30,7 @@ func New(url string, timeoutMS int) *Flrig {
 	return &Flrig{
 		url:     strings.TrimSuffix(url, "/"),
 		timeout: d,
+		client:  &http.Client{Timeout: d},
 	}
 }
 
@@ -36,25 +39,59 @@ func (f *Flrig) Status(ctx context.Context) (rig.RigStatus, error) {
 		Provider: "flrig",
 	}
 
-	freqHz, err := f.getFrequency(ctx)
-	if err != nil {
+	var (
+		freqHz int64
+		mode   string
+		pwr    float64
+		wg     sync.WaitGroup
+	)
+
+	wg.Add(3)
+
+	go func() {
+		defer wg.Done()
+		v, err := f.getFrequency(ctx)
+		if err != nil {
+			return
+		}
+		freqHz = v
+	}()
+
+	go func() {
+		defer wg.Done()
+		v, err := f.getMode(ctx)
+		if err != nil {
+			return
+		}
+		mode = v
+	}()
+
+	go func() {
+		defer wg.Done()
+		v, err := f.getPower(ctx)
+		if err != nil {
+			return
+		}
+		pwr = v
+	}()
+
+	wg.Wait()
+
+	if freqHz == 0 {
 		rs.Connected = false
 		return rs, nil
 	}
+
 	rs.Connected = true
 	rs.FrequencyHz = freqHz
 	rs.FrequencyMHz = float64(freqHz) / 1_000_000.0
 
-	mode, err := f.getMode(ctx)
-	if err == nil {
+	if mode != "" {
 		rs.RawMode = mode
 		rs.Mode = qso.MapFlrigMode(mode)
 	}
 
-	pwr, err := f.getPower(ctx)
-	if err == nil {
-		rs.Power = pwr
-	}
+	rs.Power = pwr
 
 	if rs.FrequencyMHz > 0 {
 		rs.Band = qso.DeriveBand(rs.FrequencyMHz)
@@ -101,14 +138,19 @@ func (f *Flrig) xmlrpcCall(ctx context.Context, method string) (string, error) {
 		method,
 	)
 	req, err := http.NewRequestWithContext(ctx, "POST", f.url+"/RPC2", strings.NewReader(body))
-	if err != nil { return "", err }
+	if err != nil {
+		return "", err
+	}
 	req.Header.Set("Content-Type", "text/xml")
-	client := &http.Client{Timeout: f.timeout}
-	resp, err := client.Do(req)
-	if err != nil { return "", err }
+	resp, err := f.client.Do(req)
+	if err != nil {
+		return "", err
+	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(resp.Body)
-	if err != nil { return "", err }
+	if err != nil {
+		return "", err
+	}
 	result, err := parseXMLRPCResponse(data)
 	return result, err
 }

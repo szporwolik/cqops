@@ -64,6 +64,7 @@ type Model struct {
 	rigPower     float64
 	rigBlink     bool
 	rigSkipTicks int
+	rigPolling   bool
 	dateTimeAuto bool
 	tickCount    int
 	inetOnline   bool
@@ -245,9 +246,8 @@ func (m *Model) flrigStatusCmd() tea.Cmd {
 }
 
 func (m *Model) pollFlrig() tea.Cmd {
-	m.rigBlink = !m.rigBlink
 	m.rigSkipTicks++
-	if m.rigSkipTicks < 5 {
+	if m.rigSkipTicks < 15 {
 		return nil
 	}
 	m.rigSkipTicks = 0
@@ -255,10 +255,16 @@ func (m *Model) pollFlrig() tea.Cmd {
 		m.rigConnected = false
 		return nil
 	}
+	if m.rigPolling {
+		return nil
+	}
+	m.rigPolling = true
+	m.rigBlink = !m.rigBlink
 	return m.flrigStatusCmd()
 }
 
 func (m *Model) applyFlrigResult(r flrigResultMsg) {
+	m.rigPolling = false
 	if r.err != "" { log.Debug("flrig: result error", "err", r.err); m.rigConnected = false; return }
 	if !r.connected { log.Debug("flrig: result disconnected"); m.rigConnected = false; return }
 	log.Debug("flrig: result ok", "freq", r.freq, "mode", r.mode)
@@ -284,7 +290,7 @@ func (m *Model) maybeCheckInet() tea.Cmd {
 	if m.tickCount%300 == 0 {
 		return checkInetCmd()
 	}
-	return tickCmd()
+	return nil
 }
 
 func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode, report string) {
