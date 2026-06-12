@@ -76,7 +76,10 @@ func runTUI() error {
 		return nil
 	}
 
-	qsos, _ := store.ListQSOs(a.DB, 30)
+	qsos, err := store.ListQSOs(a.DB, 30)
+	if err != nil {
+		applog.Warn("Failed to load initial QSO list", "error", err.Error())
+	}
 
 	m := tui.New(a, qsos)
 	p := tea.NewProgram(m, tea.WithAltScreen())

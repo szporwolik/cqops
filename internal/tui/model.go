@@ -1763,12 +1763,7 @@ func (m *Model) saveQSO() tea.Cmd {
 	station := qso.StationInfo{StationCallsign: m.App.Logbook.Station.Callsign, Operator: m.App.Logbook.Station.Operator, MyGridSquare: m.App.Logbook.Station.Grid, MyRig: m.App.Logbook.Station.Rig, MyAntenna: m.App.Logbook.Station.Antenna, TXPower: m.App.Logbook.Station.Power}
 	if qs.GridSquare != "" && station.MyGridSquare != "" {
 		qs.Distance = gridDistanceKm(station.MyGridSquare, qs.GridSquare)
-		bearStr := gridBearing(station.MyGridSquare, qs.GridSquare)
-		if bearStr != "" {
-			if _, err := fmt.Sscanf(bearStr, "%f", &qs.Bearing); err != nil {
-				qs.Bearing = 0
-			}
-		}
+		qs.Bearing = gridBearingDeg(station.MyGridSquare, qs.GridSquare)
 	}
 	qso.ApplyStationDefaults(qs, station)
 	if err := qso.ValidateForSave(qs); err != nil {

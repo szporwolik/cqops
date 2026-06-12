@@ -26,15 +26,26 @@ func gridBearing(ownGrid, partnerGrid string) string {
 	if ownGrid == "" || partnerGrid == "" {
 		return ""
 	}
+	deg := gridBearingDeg(ownGrid, partnerGrid)
+	if deg < 0 {
+		return ""
+	}
+	return fmt.Sprintf("%.0f°", deg)
+}
+
+func gridBearingDeg(ownGrid, partnerGrid string) float64 {
+	if ownGrid == "" || partnerGrid == "" {
+		return -1
+	}
 	own, err := locator.Parse(ownGrid)
 	if err != nil {
-		return ""
+		return -1
 	}
 	partner, err := locator.Parse(partnerGrid)
 	if err != nil {
-		return ""
+		return -1
 	}
-	return fmt.Sprintf("%.0f°", float64(locator.Azimuth(own, partner)))
+	return float64(locator.Azimuth(own, partner))
 }
 
 func formatDistance(km float64, unit string) string {
