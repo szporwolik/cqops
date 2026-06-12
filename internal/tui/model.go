@@ -28,6 +28,8 @@ const (
 	fieldBand
 	fieldFreq
 	fieldMode
+	fieldDate
+	fieldTime
 	fieldGrid
 	fieldCountry
 	fieldName
@@ -38,6 +40,7 @@ const (
 
 var fieldNames = []string{
 	"Call:", "RST sent:", "RST rcvd:", "Band:", "Freq:", "Mode:",
+	"Date (UTC):", "Time (UTC):",
 	"Grid:", "Country:", "Name:", "City:", "Comment:",
 }
 
@@ -46,8 +49,7 @@ type Model struct {
 	fields       [fieldCount]textinput.Model
 	focus        field
 	qsos         []qso.QSO
-	statusMsg    string
-	statusType   string
+	toasts       *ToastQueue
 	err          error
 	width        int
 	height       int
@@ -57,6 +59,7 @@ type Model struct {
 	rigMode      string
 	rigPower     float64
 	rigBlink     bool
+	dateTimeAuto bool
 	showChooser  bool
 	chooser      *LogbookChooser
 	showRigEdit  bool
@@ -84,13 +87,16 @@ type tickMsg time.Time
 type qrzResultMsg struct{ Call string; Data *qrz.CallData; Err error }
 
 func New(a *app.App, initialQSOS []qso.QSO) *Model {
-	m := &Model{App: a, qsos: initialQSOS}
+	m := &Model{App: a, qsos: initialQSOS, toasts: NewToastQueue(), dateTimeAuto: true}
+	now := time.Now().UTC()
 	for i := field(0); i < fieldCount; i++ {
 		ti := textinput.New()
 		ti.CharLimit = 40
 		switch i {
 		case fieldCall: ti.Focus()
 		case fieldFreq: ti.CharLimit = 16
+		case fieldDate: ti.CharLimit = 8; ti.SetValue(now.Format("20060102"))
+		case fieldTime: ti.CharLimit = 6; ti.SetValue(now.Format("150405"))
 		}
 		m.fields[i] = ti
 	}
@@ -142,6 +148,15 @@ func (m *Model) pollFlrig() {
 	}
 }
 
+func (m *Model) autoUpdateDateTime() {
+	if !m.dateTimeAuto {
+		return
+	}
+	now := time.Now().UTC()
+	m.fields[fieldDate].SetValue(now.Format("20060102"))
+	m.fields[fieldTime].SetValue(now.Format("150405"))
+}
+
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.confirmQuit {
 			if key, ok := msg.(tea.KeyMsg); ok {
@@ -159,6 +174,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "f2": if m.showPartner { m.showPartner = false } else if m.partnerData != nil { m.showPartner = true }
 		case "f8": m.mainMenu = NewMainMenu(); m.showMainMenu = true
 		case "f9": m.logViewer = NewLogViewer(); m.showLogView = true
+		}
+		if !m.showChooser && !m.showRigEdit && !m.showConfig && !m.showCallbook && !m.showMainMenu && !m.showLogView && !m.showPartner {
+			if key.String() == "delete" || key.Type == tea.KeyDelete {
+				m.clearForm()
+				return m, nil
+			}
 		}
 	}
 	if m.showChooser {
@@ -186,8 +207,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.configMenu.goBack { m.showMainMenu = true }
 			if m.configMenu.saved {
 				m.App.Config.RenderImages = m.configMenu.renderImages
-				config.Save(m.App.ConfigPath, m.App.Config)
-				log.Info("Settings saved")
+				if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
+					m.toasts.Error("Settings save failed: " + err.Error())
+				} else {
+					m.toasts.Success("Settings saved")
+					log.Info("Settings saved")
+				}
 				m.showMainMenu = true
 			}
 		}
@@ -202,8 +227,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.App.Config.QRZUser = m.callbookMenu.user.Value()
 				m.App.Config.QRZPass = m.callbookMenu.pass.Value()
 				m.App.Config.QRZEnabled = m.callbookMenu.enabled
-				config.Save(m.App.ConfigPath, m.App.Config)
-				log.Info("Settings saved")
+				if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
+					m.toasts.Error("Settings save failed: " + err.Error())
+				} else {
+					m.toasts.Success("Settings saved")
+					log.Info("Settings saved")
+				}
 				m.showMainMenu = true
 			}
 		}
@@ -218,8 +247,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch action {
 			case "general": m.configMenu = NewGeneralMenu(m.App.Config); m.showConfig = true
 			case "callbook": m.callbookMenu = NewCallbookMenu(m.App.Config); m.showCallbook = true
-			case "logbook": m.chooser = NewLogbookChooser(m.App); m.showChooser = true
-			case "rig": m.rigChooser = NewRigChooser(m.App); m.showRigEdit = true
+			case "logbook": m.chooser = NewLogbookChooser(m.App, m.toasts); m.showChooser = true
+			case "rig": m.rigChooser = NewRigChooser(m.App, m.toasts); m.showRigEdit = true
 			}
 		}
 		if m.mainMenu.done {
@@ -235,6 +264,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.asciiH = 0
 		case tickMsg:
 			m.pollFlrig()
+			m.toasts.Expire()
+			m.autoUpdateDateTime()
 			return m, tickCmd()
 		case qrzResultMsg:
 			m.fillQRZData(msg)
@@ -248,7 +279,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg: m.width, m.height = msg.Width, msg.Height
-	case tickMsg: m.pollFlrig(); return m, tickCmd()
+	case tickMsg: m.pollFlrig(); m.toasts.Expire(); m.autoUpdateDateTime(); return m, tickCmd()
 	case qrzResultMsg: m.fillQRZData(msg); return m, nil
 	case tea.KeyMsg:
 		switch {
@@ -256,7 +287,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.Type == tea.KeyUp || msg.String() == "up": m.prevField()
 		case msg.Type == tea.KeyDown || msg.String() == "down": m.nextField()
 		case msg.String() == "ctrl+s": return m, m.saveQSO()
-		case msg.String() == "ctrl+backspace": m.clearForm()
+		case msg.String() == "delete" || msg.Type == tea.KeyDelete: m.clearForm()
 		case msg.String() == "ctrl+c": m.mainMenu = NewMainMenu(); m.showMainMenu = true
 		case msg.String() == "f1":
 		case msg.String() == "f2":
@@ -280,7 +311,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		call := m.qrzCall
 		if call == "" { return m, nil }
 		if !m.App.Config.QRZEnabled { return m, nil }
-		if m.App.Config.QRZUser == "" { m.setStatus("QRZ not configured — F8 Config → Callbook / QRZ.com to enable", "warning"); return m, nil }
+		if m.App.Config.QRZUser == "" { m.toasts.Warn("QRZ not configured — F8 Config → Callbook / QRZ.com to enable"); return m, nil }
 		return m, func() tea.Msg { data, err := qrz.Lookup(m.App.Config.QRZUser, m.App.Config.QRZPass, call); return qrzResultMsg{Call: call, Data: data, Err: err} }
 	}
 	return m, nil
@@ -288,13 +319,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Model) fillQRZData(msg qrzResultMsg) {
 	if msg.Call == "" { return }
-	if !m.App.Config.QRZEnabled || m.App.Config.QRZUser == "" { m.setStatus("QRZ not configured", "warning"); return }
+	if !m.App.Config.QRZEnabled || m.App.Config.QRZUser == "" { m.toasts.Warn("QRZ not configured"); return }
 	if msg.Err != nil {
-		m.setStatus("QRZ error: "+msg.Err.Error(), "error")
+		m.toasts.Error("QRZ error: "+msg.Err.Error())
 		return
 	}
 	d := msg.Data
-	if d == nil || d.Callsign == "" { m.setStatus("QRZ: no data for "+msg.Call, "warning"); return }
+	if d == nil || d.Callsign == "" { m.toasts.Warn("QRZ: no data for "+msg.Call); return }
 	m.partnerData = d
 	m.partnerASCII = ""
 	m.asciiW = 0
@@ -303,7 +334,7 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 	if d.Grid != "" && m.fields[fieldGrid].Value() == "" { m.fields[fieldGrid].SetValue(d.Grid) }
 	if d.QTH != "" { m.fields[fieldCity].SetValue(d.QTH) }
 	if d.Country != "" && m.fields[fieldCountry].Value() == "" { m.fields[fieldCountry].SetValue(d.Country) }
-	m.setStatus("QRZ: "+d.Callsign+" "+d.Name, "success")
+	m.toasts.Info("QRZ: "+d.Callsign+" "+d.Name)
 }
 
 func (m *Model) View() string {
@@ -331,23 +362,33 @@ func (m *Model) View() string {
 		content = titleStyle.Render("Quit CQOps? (y/N)")
 	} else {
 		form := m.viewForm(w)
-		status := m.viewStatus()
 		qsoList := m.viewQSOS(m.availableQSORows())
-		content = lipgloss.JoinVertical(lipgloss.Left, form, status, qsoList)
+		content = lipgloss.JoinVertical(lipgloss.Left, form, qsoList)
 	}
 	body := lipgloss.NewStyle().Width(w).Padding(0, 1).Render(content)
+	toastBar := RenderToasts(m.toasts.Active(), w)
 	footer := m.viewFooter(w)
 	mainBlock := lipgloss.JoinVertical(lipgloss.Left, topBar, tabBar, "", body)
 	mainLines := strings.Count(mainBlock, "\n") + 1
+	toastLines := strings.Count(toastBar, "\n")
+	if toastBar != "" {
+		toastLines++
+	}
 	footerLines := strings.Count(footer, "\n") + 1
+	extraLines := toastLines + footerLines
 	if m.height > 0 {
-		pad := m.height - mainLines - footerLines
+		pad := m.height - mainLines - extraLines
 		if pad < 0 {
 			pad = 0
 		}
 		mainBlock += strings.Repeat("\n", pad)
 	}
-	all := lipgloss.JoinVertical(lipgloss.Left, mainBlock, footer)
+	var all string
+	if toastBar != "" {
+		all = lipgloss.JoinVertical(lipgloss.Left, mainBlock, toastBar, footer)
+	} else {
+		all = lipgloss.JoinVertical(lipgloss.Left, mainBlock, footer)
+	}
 	return all
 }
 
@@ -637,9 +678,9 @@ func (m *Model) viewFooter(width int) string {
 			text = "F8 Config  F10 Quit"
 	default:
 		if width < 70 {
-			text = "Enter=Save | Ctrl+Bs Clear | F8 Config | F10 Quit"
+			text = "Enter=Save | Del Clear | F8 Config | F10 Quit"
 		} else {
-			text = "Enter/Ctrl+S Save  Ctrl+Bs Clear  F8 Config  F10 Quit"
+			text = "Enter/Ctrl+S Save  Del Clear  F8 Config  F10 Quit"
 		}
 	}
 	return lipgloss.NewStyle().Width(width).
@@ -667,14 +708,9 @@ func (m *Model) viewForm(width int) string {
 	return sep + "\n" + strings.Join(rows, "\n") + "\n" + sep
 }
 
-func (m *Model) viewStatus() string {
-	if m.statusMsg == "" { return "" }
-	switch m.statusType { case "error": return errorStyle.Render(m.statusMsg); case "warning": return warningStyle.Render(m.statusMsg); case "success": return successStyle.Render(m.statusMsg); default: return m.statusMsg }
-}
-
 func (m *Model) availableQSORows() int {
 	if m.height <= 0 { return 5 }
-	avail := m.height - 24
+	avail := m.height - 28
 	if avail < 1 { avail = 1 }
 	return avail
 }
@@ -723,7 +759,11 @@ func (m *Model) prevField() {
 }
 func (m *Model) updateFocused(msg tea.KeyMsg) {
 	prevCall := strings.TrimSpace(m.fields[fieldCall].Value())
+	prevVal := m.fields[m.focus].Value()
 	m.fields[m.focus], _ = m.fields[m.focus].Update(msg)
+	if (m.focus == fieldDate || m.focus == fieldTime) && m.fields[m.focus].Value() != prevVal {
+		m.dateTimeAuto = false
+	}
 	if m.focus == fieldCall || m.focus == fieldGrid { m.fields[m.focus].SetValue(strings.ToUpper(m.fields[m.focus].Value())) }
 	if m.focus == fieldCall {
 		cur := strings.TrimSpace(m.fields[fieldCall].Value())
@@ -737,8 +777,15 @@ func (m *Model) updateFocused(msg tea.KeyMsg) {
 	}
 }
 func (m *Model) clearForm() {
-	for i := field(0); i < fieldCount; i++ { m.fields[i].SetValue("") }
-	m.focus = fieldCall; m.fields[m.focus].Focus(); m.statusMsg = ""
+	for i := field(0); i < fieldCount; i++ {
+		m.fields[i].SetValue("")
+		m.fields[i].Blur()
+	}
+	now := time.Now().UTC()
+	m.fields[fieldDate].SetValue(now.Format("20060102"))
+	m.fields[fieldTime].SetValue(now.Format("150405"))
+	m.dateTimeAuto = true
+	m.focus = fieldCall; m.fields[m.focus].Focus()
 	m.partnerData = nil
 	m.partnerASCII = ""
 	m.asciiW = 0
@@ -751,17 +798,24 @@ func (m *Model) saveQSO() tea.Cmd {
 	fmt.Sscanf(m.fields[fieldFreq].Value(), "%f", &freq)
 	qs.Call, qs.Band, qs.Freq = strings.ToUpper(m.fields[fieldCall].Value()), strings.ToUpper(m.fields[fieldBand].Value()), freq
 	qs.Mode, qs.RSTSent, qs.RSTRcvd = strings.ToUpper(m.fields[fieldMode].Value()), m.fields[fieldRSTSent].Value(), m.fields[fieldRSTRcvd].Value()
+	qs.QSODate = strings.TrimSpace(m.fields[fieldDate].Value())
+	if qs.QSODate == "" {
+		qs.QSODate = time.Now().UTC().Format("20060102")
+	}
+	qs.TimeOn = strings.TrimSpace(m.fields[fieldTime].Value())
+	if qs.TimeOn == "" {
+		qs.TimeOn = time.Now().UTC().Format("150405")
+	}
 	qs.GridSquare, qs.Comment, qs.Name, qs.QTH, qs.Country = m.fields[fieldGrid].Value(), m.fields[fieldComment].Value(), m.fields[fieldName].Value(), m.fields[fieldCity].Value(), m.fields[fieldCountry].Value()
 	station := qso.StationInfo{StationCallsign: m.App.Logbook.Station.Callsign, Operator: m.App.Logbook.Station.Operator, MyGridSquare: m.App.Logbook.Station.Grid, MyRig: m.App.Logbook.Station.Rig, MyAntenna: m.App.Logbook.Station.Antenna}
 	qso.ApplyStationDefaults(qs, station)
-	if err := qso.ValidateForSave(qs); err != nil { m.setStatus(err.Error(), "error"); return nil }
-	if _, err := store.InsertQSO(m.App.DB, qs); err != nil { m.setStatus(fmt.Sprintf("Save failed: %v", err), "error"); return nil }
-	m.clearForm(); m.setStatus(fmt.Sprintf("QSO saved: %s", qs.Call), "success")
+	if err := qso.ValidateForSave(qs); err != nil { m.toasts.Error(err.Error()); return nil }
+	if _, err := store.InsertQSO(m.App.DB, qs); err != nil { m.toasts.Error(fmt.Sprintf("Save failed: %v", err)); return nil }
+	m.clearForm(); m.toasts.Success(fmt.Sprintf("QSO saved: %s", qs.Call))
 	return m.refreshQSOS()
 }
 func (m *Model) refreshQSOS() tea.Cmd {
 	qsos, err := store.ListQSOs(m.App.DB, 30)
-	if err != nil { m.setStatus(fmt.Sprintf("Refresh failed: %v", err), "error"); return nil }
+	if err != nil { m.toasts.Error(fmt.Sprintf("Refresh failed: %v", err)); return nil }
 	m.qsos = qsos; return nil
 }
-func (m *Model) setStatus(msg, typ string) { m.statusMsg, m.statusType = msg, typ }

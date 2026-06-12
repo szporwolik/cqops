@@ -20,15 +20,14 @@ const (
 )
 
 type Wizard struct {
-	App        *app.App
-	step       wizardStep
-	station    *StationForm
-	rigForm    *RigForm
-	tzIndex    int
-	statusMsg  string
-	statusType string
-	width      int
-	height     int
+	App     *app.App
+	step    wizardStep
+	station *StationForm
+	rigForm *RigForm
+	tzIndex int
+	toasts  *ToastQueue
+	width   int
+	height  int
 }
 
 func NewWizard(a *app.App) *Wizard {
@@ -39,6 +38,7 @@ func NewWizard(a *app.App) *Wizard {
 		station: NewStationForm("SP9MOA", "", "KO00ca"),
 		rigForm: NewRigForm("Xiegu G90", "EFHW 20.5m", "100"),
 		tzIndex: config.SystemTimezoneIndex(),
+		toasts:  NewToastQueue(),
 	}
 }
 
@@ -64,16 +64,15 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if cmd := w.station.HandleKey(msg); cmd != nil {
 					cs, _, gr := w.station.Values()
 					if cs == "" {
-						w.setStatus("Callsign is required", "error")
+						w.toasts.Error("Callsign is required")
 						log.Warn("Wizard validation: callsign missing")
 						return w, nil
 					}
 					if gr == "" {
-						w.setStatus("Grid locator is required", "error")
+						w.toasts.Error("Grid locator is required")
 						log.Warn("Wizard validation: grid locator missing")
 						return w, nil
 					}
-					w.statusMsg = ""
 					w.step = stepRig
 					log.InfoDetail("Wizard station step completed", fmt.Sprintf("callsign=%s grid=%s", cs, gr))
 					return w, nil
@@ -82,24 +81,23 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if cmd := w.rigForm.HandleKey(msg); cmd != nil {
 					rig, _, _ := w.rigForm.Values()
 					if rig == "" {
-						w.setStatus("Rig model is required", "error")
+						w.toasts.Error("Rig model is required")
 						log.Warn("Wizard validation: rig model missing")
 						return w, nil
 					}
 					if w.rigForm.FlrigEnabled {
 						_, host, port := w.rigForm.FlrigValues()
 						if strings.TrimSpace(host) == "" {
-							w.setStatus("Flrig host is required", "error")
+							w.toasts.Error("Flrig host is required")
 							log.Warn("Wizard validation: flrig host missing")
 							return w, nil
 						}
 						if strings.TrimSpace(port) == "" {
-							w.setStatus("Flrig port is required", "error")
+							w.toasts.Error("Flrig port is required")
 							log.Warn("Wizard validation: flrig port missing")
 							return w, nil
 						}
 					}
-					w.statusMsg = ""
 					w.step = stepTimezone
 					w.tzIndex = config.SystemTimezoneIndex()
 					flrigOn, _, _ := w.rigForm.FlrigValues()
@@ -168,8 +166,6 @@ func (w *Wizard) viewStation() string {
 	b.WriteString(w.station.View())
 
 	b.WriteString("\n\n")
-	w.writeStatus(&b)
-	b.WriteString("\n")
 	b.WriteString(helpStyle.Render("Ctrl+S to save  |  Enter/Tab/↓ to next  |  Shift+Tab/↑ to previous  |  Ctrl+Q to quit"))
 	return b.String()
 }
@@ -182,8 +178,6 @@ func (w *Wizard) viewRig() string {
 	b.WriteString(w.rigForm.View())
 
 	b.WriteString("\n\n")
-	w.writeStatus(&b)
-	b.WriteString("\n")
 	b.WriteString(helpStyle.Render("Ctrl+S to save  |  Space to toggle checkbox  |  Enter/Tab/↓ to next  |  Shift+Tab/↑ to previous  |  Ctrl+Q to quit"))
 	return b.String()
 }
@@ -281,23 +275,4 @@ func (w *Wizard) saveConfig() {
 	w.App.Logbook = &lb
 
 	log.InfoDetail("Wizard completed — config saved", fmt.Sprintf("callsign=%s rig=%s flrig=%v tz=%s", cs, rig, flrigEnabled, config.Timezones[w.tzIndex]))
-}
-
-func (w *Wizard) setStatus(msg, typ string) {
-	w.statusMsg = msg
-	w.statusType = typ
-}
-
-func (w *Wizard) writeStatus(b *strings.Builder) {
-	if w.statusMsg == "" {
-		return
-	}
-	switch w.statusType {
-	case "error":
-		b.WriteString(errorStyle.Render(w.statusMsg))
-	case "success":
-		b.WriteString(successStyle.Render(w.statusMsg))
-	default:
-		b.WriteString(w.statusMsg)
-	}
 }

@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/log"
 )
 
 type chooserMode int
@@ -18,20 +19,19 @@ const (
 )
 
 type LogbookChooser struct {
-	app        *app.App
-	mode       chooserMode
-	names      []string
-	cursor     int
-	station    *StationForm
-	editing    string
-	statusMsg  string
-	statusType string
-	width      int
-	height     int
-	done       bool
+	app     *app.App
+	mode    chooserMode
+	names   []string
+	cursor  int
+	station *StationForm
+	editing string
+	toasts  *ToastQueue
+	width   int
+	height  int
+	done    bool
 }
 
-func NewLogbookChooser(a *app.App) *LogbookChooser {
+func NewLogbookChooser(a *app.App, tq *ToastQueue) *LogbookChooser {
 	names := make([]string, 0, len(a.Config.Logbooks))
 	for name := range a.Config.Logbooks {
 		names = append(names, name)
@@ -42,6 +42,7 @@ func NewLogbookChooser(a *app.App) *LogbookChooser {
 		mode:    chooserList,
 		names:   names,
 		station: NewStationForm("CALLSIGN", "operator", "GRID"),
+		toasts:  tq,
 	}
 }
 
@@ -63,7 +64,6 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return c, nil
 			}
 			c.mode = chooserList
-			c.statusMsg = ""
 
 		case c.mode == chooserList && k.String() == "enter":
 			return c, c.handleEnter()
@@ -164,15 +164,6 @@ func (c *LogbookChooser) viewForm() string {
 
 	b.WriteString(c.station.View())
 
-	b.WriteString("\n\n")
-	if c.statusMsg != "" {
-		if c.statusType == "error" {
-			b.WriteString(errorStyle.Render(c.statusMsg))
-		} else {
-			b.WriteString(successStyle.Render(c.statusMsg))
-		}
-		b.WriteString("\n")
-	}
 	return b.String()
 }
 
@@ -184,8 +175,7 @@ func (c *LogbookChooser) handleEnter() tea.Cmd {
 			return nil
 		}
 		if err := c.app.SwitchLogbook(name); err != nil {
-			c.statusMsg = err.Error()
-			c.statusType = "error"
+			c.toasts.Error(err.Error())
 			return nil
 		}
 		c.done = true
@@ -197,7 +187,6 @@ func (c *LogbookChooser) startCreate() {
 	c.mode = chooserCreate
 	c.station.SetValues("", "", "")
 	c.station.Callsign.Focus()
-	c.statusMsg = ""
 	c.editing = ""
 }
 
@@ -207,23 +196,20 @@ func (c *LogbookChooser) startEdit(name string) {
 	c.editing = name
 	c.station.SetValues(lb.Station.Callsign, lb.Station.Operator, lb.Station.Grid)
 	c.station.Callsign.Focus()
-	c.statusMsg = ""
 }
 
 func (c *LogbookChooser) saveForm() tea.Cmd {
 	cs, op, gr := c.station.Values()
 
 	if err := c.station.Validate(); err != nil {
-		c.statusMsg = err.Error()
-		c.statusType = "error"
+		c.toasts.Error(err.Error())
 		return nil
 	}
 
 	if c.mode == chooserCreate {
 		name := cs
 		if _, ok := c.app.Config.Logbooks[name]; ok {
-			c.statusMsg = "Logbook already exists"
-			c.statusType = "error"
+			c.toasts.Error("Logbook already exists")
 			return nil
 		}
 		c.app.Config.Logbooks[name] = config.Logbook{
@@ -254,10 +240,11 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 	}
 
 	c.mode = chooserList
-	c.statusMsg = ""
 	if err := config.Save(c.app.ConfigPath, c.app.Config); err != nil {
-		c.statusMsg = "Config save failed: " + err.Error()
-		c.statusType = "error"
+		c.toasts.Error("Config save failed: " + err.Error())
+	} else {
+		c.toasts.Success("Logbook saved")
+		log.Info("Logbook config saved")
 	}
 	return nil
 }

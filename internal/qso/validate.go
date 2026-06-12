@@ -16,6 +16,14 @@ func Validate(q *QSO) []string {
 		errs = append(errs, "mode is required")
 	}
 
+	if strings.TrimSpace(q.RSTSent) == "" {
+		errs = append(errs, "rst_sent is required")
+	}
+
+	if strings.TrimSpace(q.RSTRcvd) == "" {
+		errs = append(errs, "rst_rcvd is required")
+	}
+
 	if strings.TrimSpace(q.QSODate) == "" {
 		errs = append(errs, "qso_date is required")
 	}

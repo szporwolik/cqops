@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/log"
 )
 
 type rigChooserMode int
@@ -18,20 +19,19 @@ const (
 )
 
 type RigChooser struct {
-	app        *app.App
-	mode       rigChooserMode
-	names      []string
-	cursor     int
-	form       *RigForm
-	editing    string
-	statusMsg  string
-	statusType string
-	width      int
-	height     int
-	done       bool
+	app     *app.App
+	mode    rigChooserMode
+	names   []string
+	cursor  int
+	form    *RigForm
+	editing string
+	toasts  *ToastQueue
+	width   int
+	height  int
+	done    bool
 }
 
-func NewRigChooser(a *app.App) *RigChooser {
+func NewRigChooser(a *app.App, tq *ToastQueue) *RigChooser {
 	names := make([]string, 0, len(a.Config.Rigs))
 	for name := range a.Config.Rigs {
 		names = append(names, name)
@@ -41,10 +41,11 @@ func NewRigChooser(a *app.App) *RigChooser {
 	rf.SetFlrig(false, "localhost", "12345")
 
 	return &RigChooser{
-		app:   a,
-		mode:  rigChooserList,
-		names: names,
-		form:  rf,
+		app:    a,
+		mode:   rigChooserList,
+		names:  names,
+		form:   rf,
+		toasts: tq,
 	}
 }
 
@@ -66,7 +67,6 @@ func (rc *RigChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return rc, nil
 			}
 			rc.mode = rigChooserList
-			rc.statusMsg = ""
 
 		case rc.mode == rigChooserList && k.String() == "enter":
 			return rc, rc.selectRig()
@@ -169,15 +169,6 @@ func (rc *RigChooser) viewForm() string {
 
 	b.WriteString(rc.form.View())
 
-	b.WriteString("\n\n")
-	if rc.statusMsg != "" {
-		if rc.statusType == "error" {
-			b.WriteString(errorStyle.Render(rc.statusMsg))
-		} else {
-			b.WriteString(successStyle.Render(rc.statusMsg))
-		}
-		b.WriteString("\n")
-	}
 	return b.String()
 }
 
@@ -196,7 +187,12 @@ func (rc *RigChooser) selectRig() tea.Cmd {
 	rc.app.Config.Logbooks[rc.app.LogbookName] = lb
 	rc.app.Logbook = &lb
 
-	config.Save(rc.app.ConfigPath, rc.app.Config)
+	if err := config.Save(rc.app.ConfigPath, rc.app.Config); err != nil {
+		rc.toasts.Error("Config save failed: " + err.Error())
+	} else {
+		rc.toasts.Success("Rig \"" + name + "\" selected")
+		log.Info("Rig selected", "name", name)
+	}
 	rc.done = true
 	return nil
 }
@@ -206,7 +202,6 @@ func (rc *RigChooser) startCreate() {
 	rc.form.SetValues("", "", "")
 	rc.form.SetFlrig(false, "localhost", "12345")
 	rc.form.Rig.Focus()
-	rc.statusMsg = ""
 	rc.editing = ""
 }
 
@@ -217,7 +212,6 @@ func (rc *RigChooser) startEdit(name string) {
 	rc.form.SetValues(rp.Model, rp.Antenna, rp.Power)
 	rc.form.SetFlrig(rp.FlrigEnabled, rp.FlrigHost, rp.FlrigPort)
 	rc.form.Rig.Focus()
-	rc.statusMsg = ""
 }
 
 func (rc *RigChooser) saveForm() tea.Cmd {
@@ -225,19 +219,16 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 	flrigEnabled, flrigHost, flrigPort := rc.form.FlrigValues()
 
 	if rig == "" {
-		rc.statusMsg = "Rig model is required"
-		rc.statusType = "error"
+		rc.toasts.Error("Rig model is required")
 		return nil
 	}
 	if flrigEnabled {
 		if flrigHost == "" {
-			rc.statusMsg = "Flrig host is required"
-			rc.statusType = "error"
+			rc.toasts.Error("Flrig host is required")
 			return nil
 		}
 		if flrigPort == "" {
-			rc.statusMsg = "Flrig port is required"
-			rc.statusType = "error"
+			rc.toasts.Error("Flrig port is required")
 			return nil
 		}
 	}
@@ -272,10 +263,11 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 	}
 
 	rc.mode = rigChooserList
-	rc.statusMsg = ""
 	if err := config.Save(rc.app.ConfigPath, rc.app.Config); err != nil {
-		rc.statusMsg = "Config save failed: " + err.Error()
-		rc.statusType = "error"
+		rc.toasts.Error("Config save failed: " + err.Error())
+	} else {
+		rc.toasts.Success("Rig saved")
+		log.Info("Rig config saved")
 	}
 	return nil
 }
