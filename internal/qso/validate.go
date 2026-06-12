@@ -12,8 +12,18 @@ func Validate(q *QSO) []string {
 		errs = append(errs, "call is required")
 	}
 
+	if strings.TrimSpace(q.Band) != "" && !IsValidBand(q.Band) {
+		errs = append(errs, "unknown band: "+q.Band)
+	}
+
 	if strings.TrimSpace(q.Mode) == "" {
 		errs = append(errs, "mode is required")
+	} else if !IsValidMode(q.Mode) {
+		errs = append(errs, "unknown mode: "+q.Mode)
+	}
+
+	if q.Submode != "" && !IsValidSubmode(q.Mode, q.Submode) {
+		errs = append(errs, "invalid submode "+q.Submode+" for mode "+q.Mode)
 	}
 
 	if strings.TrimSpace(q.RSTSent) == "" {

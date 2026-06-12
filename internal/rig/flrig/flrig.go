@@ -48,7 +48,7 @@ func (f *Flrig) Status(ctx context.Context) (rig.RigStatus, error) {
 	mode, err := f.getMode(ctx)
 	if err == nil {
 		rs.RawMode = mode
-		rs.Mode = mapFlrigMode(mode)
+		rs.Mode = qso.MapFlrigMode(mode)
 	}
 
 	pwr, err := f.getPower(ctx)
@@ -182,14 +182,4 @@ func parseXMLRPCResponse(data []byte) (string, error) {
 	}
 
 	return "", fmt.Errorf("unexpected response: %s", raw)
-}
-
-func mapFlrigMode(raw string) string {
-	m := strings.ToUpper(strings.TrimSpace(raw))
-	switch m {
-	case "USB", "LSB", "CW", "CWR", "RTTY", "RTTYR", "AM", "FM", "WFM", "PKT", "PKT-L", "PKT-U", "PKT-FM":
-		return m
-	default:
-		return m
-	}
 }

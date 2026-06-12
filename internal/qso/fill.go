@@ -32,4 +32,11 @@ func ApplyStationDefaults(q *QSO, s StationInfo) {
 	if q.Band == "" && q.Freq > 0 {
 		q.Band = DeriveBand(q.Freq)
 	}
+	if q.Band != "" {
+		q.Band = NormalizeBand(q.Band)
+	}
+
+	if q.Mode != "" {
+		q.Mode, q.Submode = NormalizeMode(q.Mode, q.Submode)
+	}
 }
