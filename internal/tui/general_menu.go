@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/szporwolik/cqops/internal/config"
 )
 
@@ -73,33 +74,43 @@ func (gm *GeneralMenu) View() string {
 	if gm.done {
 		return ""
 	}
+	bodyW := gm.width - 2
+	if bodyW < 30 {
+		bodyW = 30
+	}
+
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("General Options"))
+	title := "── General Options "
+	rem := bodyW - lipgloss.Width(title)
+	if rem > 0 {
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title + strings.Repeat("─", rem)))
+	} else {
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title))
+	}
 	b.WriteString("\n\n")
 
 	imgCheck := "[ ]"
-	imgLine := "[ ] Render maps and partner images"
 	if gm.renderImages {
 		imgCheck = "[x]"
-		imgLine = "[x] Render maps and partner images"
 	}
 	if gm.cursor == 0 {
-		imgLine = cursorStyle.Render(imgCheck) + imgLine[3:]
+		imgCheck = cursorStyle.Render(imgCheck)
 	}
-	b.WriteString(imgLine)
+	b.WriteString(formLabelStyle.Render("Render images:"))
+	b.WriteString(" " + imgCheck)
 	b.WriteString("\n\n")
 
 	unitVal := "Kilometers (km)"
 	if gm.distanceUnit == "mi" {
 		unitVal = "Miles (mi)"
 	}
-	opt := "Distance unit: " + unitVal
 	if gm.cursor == 1 {
-		opt = cursorStyle.Render("> ") + opt
+		b.WriteString(cursorStyle.Render("> "))
 	} else {
-		opt = "  " + opt
+		b.WriteString("  ")
 	}
-	b.WriteString(opt)
+	b.WriteString(formLabelStyle.Render("Distance unit:"))
+	b.WriteString(" " + inputStyle.Render(unitVal))
 
 	return b.String()
 }

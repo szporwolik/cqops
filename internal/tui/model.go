@@ -221,15 +221,23 @@ func (m *Model) maybeCheckInet() tea.Cmd {
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-		if m.confirmQuit {
-			if key, ok := msg.(tea.KeyMsg); ok {
-				switch key.String() {
-				case "y", "Y": return m, tea.Quit
-				default: m.confirmQuit = false
-				}
+	var cmd tea.Cmd
+	if _, ok := msg.(tickMsg); ok {
+		m.pollFlrig()
+		m.toasts.Expire()
+		m.autoUpdateDateTime()
+		m.tickCount++
+		cmd = m.maybeCheckInet()
+	}
+	if m.confirmQuit {
+		if key, ok := msg.(tea.KeyMsg); ok {
+			switch key.String() {
+			case "y", "Y": return m, tea.Quit
+			default: m.confirmQuit = false
 			}
-			return m, nil
 		}
+		return m, cmd
+	}
 		if ir, ok := msg.(inetResultMsg); ok {
 			m.inetOnline = bool(ir)
 		}
@@ -261,7 +269,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showMainMenu = true
 			m.qsos = nil
 		}
-		return m, nil
+		return m, cmd
 	}
 	if m.showRigEdit {
 		_, _ = m.rigChooser.Update(msg)
@@ -270,7 +278,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showMainMenu = true
 			m.refreshFlrigClient()
 		}
-		return m, nil
+		return m, cmd
 	}
 	if m.showConfig {
 		_, _ = m.configMenu.Update(msg)
@@ -289,7 +297,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showMainMenu = true
 			}
 		}
-		return m, nil
+		return m, cmd
 	}
 	if m.showCallbook {
 		_, _ = m.callbookMenu.Update(msg)
@@ -309,7 +317,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showMainMenu = true
 			}
 		}
-		return m, nil
+		return m, cmd
 	}
 	if m.showMainMenu {
 		_, _ = m.mainMenu.Update(msg)
@@ -327,7 +335,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mainMenu.done {
 			m.showMainMenu = false
 		}
-		return m, nil
+		return m, cmd
 	}
 	if m.showPartner {
 		switch msg := msg.(type) {
@@ -339,28 +347,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.resizeSeq++
 			seq := m.resizeSeq
 			return m, resizeDebounceCmd(msg.Width, msg.Height, seq)
-		case tickMsg:
-			m.pollFlrig()
-			m.toasts.Expire()
-			m.autoUpdateDateTime()
-			m.tickCount++
-			return m, m.maybeCheckInet()
 		case qrzResultMsg:
 			m.fillQRZData(msg)
-			return m, nil
+			return m, cmd
 		case inetResultMsg:
 			m.inetOnline = bool(msg)
-			return m, nil
+			return m, cmd
 		case resizeSettledMsg:
 			if msg.Seq == m.resizeSeq {
 				m.partnerDirty = true
 			}
-			return m, nil
+			return m, cmd
 		case tea.KeyMsg:
 			switch {
 			case msg.String() == "f8": m.showPartner = false
 		}
-		return m, nil
+		return m, cmd
 	}
 }
 	switch msg := msg.(type) {
@@ -369,8 +371,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.partnerDirty = false
 		m.resizeSeq++
 		return m, resizeDebounceCmd(msg.Width, msg.Height, m.resizeSeq)
-	case tickMsg: m.pollFlrig(); m.toasts.Expire(); m.autoUpdateDateTime(); m.tickCount++; return m, m.maybeCheckInet()
-	case qrzResultMsg: m.fillQRZData(msg); return m, nil
+	case qrzResultMsg: m.fillQRZData(msg); return m, cmd
 	case inetResultMsg: m.inetOnline = bool(msg); return m, nil
 	case resizeSettledMsg:
 		if msg.Seq == m.resizeSeq {
@@ -409,12 +410,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.qrzNeed {
 		m.qrzNeed = false
 		call := m.qrzCall
-		if call == "" { return m, nil }
-		if !m.App.Config.QRZEnabled { return m, nil }
-		if m.App.Config.QRZUser == "" { m.toasts.Warn("QRZ not configured — F8 Config → Callbook / QRZ.com to enable"); return m, nil }
-		return m, m.qrzLookup(call)
+		if call == "" { return m, cmd }
+		if !m.App.Config.QRZEnabled { return m, cmd }
+		if m.App.Config.QRZUser == "" { m.toasts.Warn("QRZ not configured — F8 Config → Callbook / QRZ.com to enable"); return m, cmd }
+		return m, tea.Batch(cmd, m.qrzLookup(call))
 	}
-	return m, nil
+	return m, cmd
 }
 
 func (m *Model) fillQRZData(msg qrzResultMsg) {

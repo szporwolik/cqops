@@ -5,6 +5,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/szporwolik/cqops/internal/config"
 )
 
@@ -63,18 +64,31 @@ func (cm *CallbookMenu) FooterText() string {
 
 func (cm *CallbookMenu) View() string {
 	if cm.done { return "" }
+	bodyW := cm.width - 2
+	if bodyW < 30 {
+		bodyW = 30
+	}
+
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Callbook — QRZ.com"))
+	title := "── Callbook / QRZ.com "
+	rem := bodyW - lipgloss.Width(title)
+	if rem > 0 {
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title + strings.Repeat("─", rem)))
+	} else {
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title))
+	}
 	b.WriteString("\n\n")
 	checkbox := "[ ]"
 	if cm.enabled { checkbox = "[x]" }
 	if cm.focus == 0 { checkbox = cursorStyle.Render(checkbox) }
-	b.WriteString("Use QRZ: " + checkbox)
+	b.WriteString(formLabelStyle.Render("Use QRZ:") + " " + checkbox)
 	if cm.enabled {
 		b.WriteString("\n\n")
+		if cm.focus == 1 { b.WriteString(cursorStyle.Render("> ")) } else { b.WriteString("  ") }
 		b.WriteString(formLabelStyle.Render("Username:"))
 		b.WriteString(inputStyle.Render(cm.user.View()))
 		b.WriteString("\n\n")
+		if cm.focus == 2 { b.WriteString(cursorStyle.Render("> ")) } else { b.WriteString("  ") }
 		b.WriteString(formLabelStyle.Render("Password:"))
 		b.WriteString(inputStyle.Render(cm.pass.View()))
 	}

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/log"
@@ -125,7 +126,15 @@ func (rc *RigChooser) View() string {
 
 func (rc *RigChooser) viewList() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Configuration — Rigs"))
+	bodyW := rc.width - 2
+	if bodyW < 30 { bodyW = 30 }
+	title := "── Configuration — Rigs "
+	rem := bodyW - lipgloss.Width(title)
+	if rem > 0 {
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title + strings.Repeat("─", rem)))
+	} else {
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title))
+	}
 	b.WriteString("\n\n")
 
 	if len(rc.names) == 0 {
@@ -160,10 +169,17 @@ func (rc *RigChooser) viewList() string {
 
 func (rc *RigChooser) viewForm() string {
 	var b strings.Builder
+	bodyW := rc.width - 2
+	if bodyW < 30 { bodyW = 30 }
+	t := "── Configuration — Create Rig "
 	if rc.mode == rigChooserEdit {
-		b.WriteString(titleStyle.Render("Configuration — Edit Rig " + rc.editing))
+		t = "── Configuration — Edit Rig " + rc.editing + " "
+	}
+	rem := bodyW - lipgloss.Width(t)
+	if rem > 0 {
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(t + strings.Repeat("─", rem)))
 	} else {
-		b.WriteString(titleStyle.Render("Configuration — Create Rig"))
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(t))
 	}
 	b.WriteString("\n\n")
 
