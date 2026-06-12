@@ -1,13 +1,20 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 )
 
+type menuItem struct {
+	label string
+	desc  string
+}
+
 type MainMenu struct {
-	items  []string
+	items  []menuItem
 	cursor int
 	done   bool
 	action string
@@ -17,7 +24,12 @@ type MainMenu struct {
 
 func NewMainMenu() *MainMenu {
 	return &MainMenu{
-		items: []string{"General Options", "Callbook / QRZ.com", "Logbook Configuration", "Rig Configuration"},
+		items: []menuItem{
+			{"General Options", "Callsign, operator, locator, defaults"},
+			{"Callbook / QRZ.com", "QRZ username, password, lookup behavior"},
+			{"Logbook Configuration", "Logs, paths, active log profile"},
+			{"Rig Configuration", "flrig / rigctld / manual radio data"},
+		},
 	}
 }
 
@@ -58,15 +70,50 @@ func (m *MainMenu) View() string {
 	if m.done {
 		return ""
 	}
+
+	bodyW := m.width - 2
+	if bodyW < 30 {
+		bodyW = 30
+	}
+
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	cursor := lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
+
+	showDesc := bodyW >= 60
+
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Configuration — Menu"))
+
+	title := "── Configuration "
+	rem := bodyW - lipgloss.Width(title)
+	if rem > 0 {
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title + strings.Repeat("─", rem)))
+	} else {
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title))
+	}
 	b.WriteString("\n\n")
+
 	for i, item := range m.items {
 		prefix := "  "
+		label := item.label
 		if i == m.cursor {
-			prefix = cursorStyle.Render("> ")
+			prefix = cursor.Render("> ")
+			label = inputStyle.Render(item.label)
 		}
-		b.WriteString(prefix + item + "\n")
+
+		line := prefix + label
+		if showDesc {
+			pad := 26 - lipgloss.Width(prefix) - lipgloss.Width(item.label)
+			if pad < 1 {
+				pad = 1
+			}
+			line += strings.Repeat(" ", pad) + dim.Render(item.desc)
+		}
+		b.WriteString(line + "\n")
 	}
+
+	if showDesc {
+		b.WriteString(fmt.Sprintf("\n  %s", dim.Render("↑↓ to navigate  Enter to select")))
+	}
+
 	return b.String()
 }
