@@ -8,6 +8,8 @@ import (
 
 var Version = "dev"
 
+const maxVersionSearchDepth = 5
+
 func Resolved() string {
 	if Version != "dev" {
 		return Version
@@ -25,7 +27,7 @@ func readVersionFile() (string, bool) {
 	}
 	dir := filepath.Dir(exe)
 
-	for range 4 {
+	for range maxVersionSearchDepth {
 		path := filepath.Join(dir, "VERSION")
 		if data, err := os.ReadFile(path); err == nil {
 			return strings.TrimSpace(string(data)), true

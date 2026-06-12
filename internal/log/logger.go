@@ -6,14 +6,19 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/szporwolik/cqops/internal/config"
 )
 
 var Logger *slog.Logger
-var entries []Entry
-var logDir string
+
+var (
+	mu      sync.Mutex
+	entries []Entry
+	logDir  string
+)
 
 const maxStored = 500
 const retentionDays = 7
@@ -74,15 +79,21 @@ func cleanupOldLogs() {
 
 func Append(level, msg, details string) {
 	e := Entry{Time: nowStamp(), Level: level, Message: msg, Details: details}
+	mu.Lock()
 	entries = append(entries, e)
 	if len(entries) > maxStored {
 		entries = entries[len(entries)-maxStored:]
 	}
+	mu.Unlock()
 }
 
 func Entries() []Entry {
+	mu.Lock()
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Time < entries[j].Time })
-	return entries
+	result := make([]Entry, len(entries))
+	copy(result, entries)
+	mu.Unlock()
+	return result
 }
 
 func Debug(msg string, args ...any) {

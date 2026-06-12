@@ -747,11 +747,13 @@ func (m *Model) clearForm() {
 }
 func (m *Model) saveQSO() tea.Cmd {
 	qs := qso.NewQSO()
-	qs.Call, qs.Band, qs.Freq = strings.ToUpper(m.fields[fieldCall].Value()), strings.ToUpper(m.fields[fieldBand].Value()), parseFloat(m.fields[fieldFreq].Value())
+	var freq float64
+	fmt.Sscanf(m.fields[fieldFreq].Value(), "%f", &freq)
+	qs.Call, qs.Band, qs.Freq = strings.ToUpper(m.fields[fieldCall].Value()), strings.ToUpper(m.fields[fieldBand].Value()), freq
 	qs.Mode, qs.RSTSent, qs.RSTRcvd = strings.ToUpper(m.fields[fieldMode].Value()), m.fields[fieldRSTSent].Value(), m.fields[fieldRSTRcvd].Value()
 	qs.GridSquare, qs.Comment, qs.Name, qs.QTH, qs.Country = m.fields[fieldGrid].Value(), m.fields[fieldComment].Value(), m.fields[fieldName].Value(), m.fields[fieldCity].Value(), m.fields[fieldCountry].Value()
-	station := qso.FillSource{StationCallsign: m.App.Logbook.Station.Callsign, Operator: m.App.Logbook.Station.Operator, MyGridSquare: m.App.Logbook.Station.Grid, MyRig: m.App.Logbook.Station.Rig, MyAntenna: m.App.Logbook.Station.Antenna}
-	qso.Fill(qs, nil, station)
+	station := qso.StationInfo{StationCallsign: m.App.Logbook.Station.Callsign, Operator: m.App.Logbook.Station.Operator, MyGridSquare: m.App.Logbook.Station.Grid, MyRig: m.App.Logbook.Station.Rig, MyAntenna: m.App.Logbook.Station.Antenna}
+	qso.ApplyStationDefaults(qs, station)
 	if err := qso.ValidateForSave(qs); err != nil { m.setStatus(err.Error(), "error"); return nil }
 	if _, err := store.InsertQSO(m.App.DB, qs); err != nil { m.setStatus(fmt.Sprintf("Save failed: %v", err), "error"); return nil }
 	m.clearForm(); m.setStatus(fmt.Sprintf("QSO saved: %s", qs.Call), "success")
@@ -763,4 +765,3 @@ func (m *Model) refreshQSOS() tea.Cmd {
 	m.qsos = qsos; return nil
 }
 func (m *Model) setStatus(msg, typ string) { m.statusMsg, m.statusType = msg, typ }
-func parseFloat(s string) float64 { var f float64; fmt.Sscanf(s, "%f", &f); return f }

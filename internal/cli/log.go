@@ -30,7 +30,6 @@ var (
 	logMyAntenna   string
 	logDate        string
 	logTime        string
-	logNoRig       bool
 	logLimit       int
 )
 
@@ -84,19 +83,13 @@ var logAddCmd = &cobra.Command{
 			qs.MyAntenna = logMyAntenna
 		}
 
-		station := qso.FillSource{
+		qso.ApplyStationDefaults(qs, qso.StationInfo{
 			StationCallsign: a.Logbook.Station.Callsign,
 			Operator:        a.Logbook.Station.Operator,
 			MyGridSquare:    a.Logbook.Station.Grid,
 			MyRig:           a.Logbook.Station.Rig,
 			MyAntenna:       a.Logbook.Station.Antenna,
-		}
-
-		var rigProvider qso.RigProvider
-		if !logNoRig && a.Config.Rig.AutoFill {
-			rigProvider = nil
-		}
-		qso.Fill(qs, rigProvider, station)
+		})
 
 		if err := qso.ValidateForSave(qs); err != nil {
 			return fmt.Errorf("validation: %w", err)
@@ -274,7 +267,6 @@ func init() {
 	logAddCmd.Flags().StringVar(&logMyAntenna, "my-antenna", "", "My antenna")
 	logAddCmd.Flags().StringVar(&logDate, "date", "", "QSO date YYYYMMDD (default: today UTC)")
 	logAddCmd.Flags().StringVar(&logTime, "time", "", "QSO time HHMMSS (default: now UTC)")
-	logAddCmd.Flags().BoolVar(&logNoRig, "no-rig", false, "Skip rig auto-fill")
 
 	logListCmd.Flags().IntVarP(&logLimit, "limit", "n", 50, "Number of QSOs to show")
 }

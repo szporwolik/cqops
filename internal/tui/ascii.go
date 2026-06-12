@@ -10,15 +10,23 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/eliukblau/pixterm/pkg/ansimage"
 )
+
+var httpClient = &http.Client{Timeout: 15 * time.Second}
 
 func downloadImage(url string) (image.Image, error) {
 	if url == "" {
 		return nil, nil
 	}
-	resp, err := http.Get(url)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", "CQOps/1.0")
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, err
 	}
