@@ -17,6 +17,7 @@ type QSO struct {
 	GridSquare      string
 	Name            string
 	QTH             string
+	Country         string
 	Comment         string
 	StationCallsign string
 	Operator        string

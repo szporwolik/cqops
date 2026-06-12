@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/log"
 	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/tui"
 )
@@ -34,6 +35,8 @@ func init() {
 }
 
 func Execute() error {
+	log.Init()
+	log.Info("CQOps started", "version", "0.0.1")
 	if len(os.Args) <= 1 {
 		return runTUI()
 	}

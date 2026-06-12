@@ -25,6 +25,7 @@ var migrations = []string{
 		gridsquare TEXT,
 		name TEXT,
 		qth TEXT,
+		country TEXT,
 		comment TEXT,
 
 		station_callsign TEXT,

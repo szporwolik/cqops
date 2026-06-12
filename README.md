@@ -9,22 +9,22 @@ Small, fast, offline-first, keyboard-friendly.
 ```bash
 git clone https://github.com/szporwolik/cqops.git
 cd cqops
-go build -o cqops ./cmd/cqops/
+go build -ldflags="-s -w" -o cqops ./cmd/cqops/
 ```
+
+For smaller binaries, install UPX and run `upx --best cqops`.
 
 ### Versioned build
 
-The version is read from the `VERSION` file at runtime. For release builds, inject it via ldflags:
-
 ```bash
-go build -ldflags "-X github.com/szporwolik/cqops/internal/cli.Version=$(cat VERSION)" -o cqops ./cmd/cqops/
+go build -ldflags "-s -w -X github.com/szporwolik/cqops/internal/version.Version=$(cat VERSION)" -o cqops ./cmd/cqops/
 ```
 
 On Windows PowerShell:
 
 ```powershell
 $ver = Get-Content VERSION
-go build -ldflags "-X github.com/szporwolik/cqops/internal/cli.Version=$ver" -o cqops.exe ./cmd/cqops/
+go build -ldflags "-s -w -X github.com/szporwolik/cqops/internal/version.Version=$ver" -o cqops.exe ./cmd/cqops/
 ```
 
 ## Usage

@@ -32,28 +32,30 @@ func ConfigDir() (string, error) {
 }
 
 func DataDir() (string, error) {
+	return appDir("cqops", "database")
+}
+
+func LogDir() (string, error) {
+	return appDir("cqops", "logs")
+}
+
+func appDir(base, sub string) (string, error) {
 	if runtime.GOOS == "windows" {
 		appData := os.Getenv("APPDATA")
 		if appData == "" {
 			home, err := os.UserHomeDir()
-			if err != nil {
-				return "", err
-			}
+			if err != nil { return "", err }
 			appData = filepath.Join(home, "AppData", "Roaming")
 		}
-		return filepath.Join(appData, "cqops", "logs"), nil
-	}
-
-	dataHome := os.Getenv("XDG_DATA_HOME")
-	if dataHome != "" {
-		return filepath.Join(dataHome, "cqops", "logs"), nil
+		return filepath.Join(appData, base, sub), nil
 	}
 
 	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
+	if err != nil { return "", err }
+	if runtime.GOOS == "darwin" {
+		return filepath.Join(home, "Library", "Application Support", base, sub), nil
 	}
-	return filepath.Join(home, ".local", "share", "cqops", "logs"), nil
+	return filepath.Join(home, ".local", "share", base, sub), nil
 }
 
 func ConfigPath() (string, error) {

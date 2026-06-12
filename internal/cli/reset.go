@@ -52,6 +52,11 @@ This action cannot be undone. Use --force to skip confirmation.`,
 			return fmt.Errorf("data dir: %w", err)
 		}
 
+		logDir, err := config.LogDir()
+		if err != nil {
+			return fmt.Errorf("log dir: %w", err)
+		}
+
 		configPath, err := config.ConfigPath()
 		if err != nil {
 			return fmt.Errorf("config path: %w", err)
@@ -60,6 +65,7 @@ This action cannot be undone. Use --force to skip confirmation.`,
 		var lastErr error
 		for attempt := 0; attempt < 3; attempt++ {
 			os.Remove(configPath)
+			os.RemoveAll(logDir)
 			if err := os.RemoveAll(dataDir); err == nil {
 				lastErr = nil
 				break
@@ -74,6 +80,7 @@ This action cannot be undone. Use --force to skip confirmation.`,
 
 		os.MkdirAll(configDir, 0755)
 		os.MkdirAll(dataDir, 0755)
+		os.MkdirAll(logDir, 0755)
 
 		cfg := config.DefaultConfig()
 		if err := config.Save(configPath, cfg); err != nil {
@@ -83,6 +90,7 @@ This action cannot be undone. Use --force to skip confirmation.`,
 		fmt.Printf("Reset complete.\n")
 		fmt.Printf("  Config:  %s\n", configPath)
 		fmt.Printf("  Data:    %s\n", dataDir)
+		fmt.Printf("  Logs:    %s\n", logDir)
 		return nil
 	},
 }

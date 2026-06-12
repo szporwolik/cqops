@@ -62,6 +62,8 @@ type Model struct {
 	showConfig   bool
 	configMenu   *ConfigMenu
 	showMainMenu bool
+	showLogView  bool
+	logViewer    *LogViewer
 	mainMenu     *MainMenu
 	showPartner  bool
 	partnerData  *qrz.CallData
@@ -136,6 +138,15 @@ func (m *Model) pollFlrig() {
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if key, ok := msg.(tea.KeyMsg); ok {
+		switch key.String() {
+		case "ctrl+q", "ctrl+c": m.quitting = true; return m, tea.Quit
+		case "f1": m.showChooser = false; m.showRigEdit = false; m.showConfig = false; m.showMainMenu = false; m.showLogView = false; m.showPartner = false
+		case "f2": if m.showPartner { m.showPartner = false } else if m.partnerData != nil { m.showPartner = true }
+		case "f8": m.mainMenu = NewMainMenu(); m.showMainMenu = true
+		case "f9": m.logViewer = NewLogViewer(); m.showLogView = true
+		}
+	}
 	if m.showChooser {
 		_, _ = m.chooser.Update(msg)
 		if m.chooser.done {
@@ -202,18 +213,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case tea.KeyMsg:
 			switch {
-			case msg.String() == "ctrl+q", msg.String() == "ctrl+c", msg.Type == tea.KeyCtrlC, msg.Type == tea.KeyCtrlQ:
-				m.quitting = true
-				return m, tea.Quit
-			case msg.String() == "f1":
-				m.showPartner = false
-			case msg.String() == "f3":
-				m.mainMenu = NewMainMenu()
-				m.showMainMenu = true
-			}
+			case msg.String() == "f8": m.showPartner = false
 		}
 		return m, nil
 	}
+}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg: m.width, m.height = msg.Width, msg.Height
 	case tickMsg: m.pollFlrig(); return m, tickCmd()
@@ -239,7 +243,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.partnerData != nil {
 				m.showPartner = true
 			}
-		case msg.String() == "f3": m.mainMenu = NewMainMenu(); m.showMainMenu = true
 		case msg.String() == "tab" || msg.String() == "\t" || msg.Type == tea.KeyTab: m.nextField()
 		case msg.String() == "enter": return m, m.saveQSO()
 		default: m.updateFocused(msg)
@@ -249,7 +252,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.qrzNeed = false
 		call := m.qrzCall
 		if call == "" { return m, nil }
-		if m.App.Config.QRZUser == "" { m.setStatus("QRZ not configured — use F3 Config → General Options to enable partner lookup", "warning"); return m, nil }
+		if m.App.Config.QRZUser == "" || !m.App.Config.QRZEnabled { m.setStatus("QRZ not configured — F8 Config → Callbook / QRZ.com to enable", "warning"); return m, nil }
 		return m, func() tea.Msg { data, err := qrz.Lookup(m.App.Config.QRZUser, m.App.Config.QRZPass, call); return qrzResultMsg{Call: call, Data: data, Err: err} }
 	}
 	return m, nil
@@ -257,7 +260,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Model) fillQRZData(msg qrzResultMsg) {
 	if msg.Call == "" { return }
-	if m.App.Config.QRZUser == "" { m.setStatus("QRZ not configured", "warning"); return }
+	if m.App.Config.QRZUser == "" || !m.App.Config.QRZEnabled { m.setStatus("QRZ not configured", "warning"); return }
 	if msg.Err != nil {
 		m.setStatus("QRZ error: "+msg.Err.Error(), "error")
 		return
@@ -292,6 +295,8 @@ func (m *Model) View() string {
 		content = m.configMenu.View()
 	} else if m.showMainMenu {
 		content = m.mainMenu.View()
+	} else if m.showLogView {
+		content = m.logViewer.View()
 	} else if m.showPartner && m.partnerData != nil {
 		content = m.viewPartner()
 	} else {
@@ -360,15 +365,21 @@ func (m *Model) viewTabBar(width int) string {
 		Padding(0, 2)
 	qsoTab := "QSO Form"
 	partnerTab := "Partner Details"
+	logsTab := "Logs"
+	logsStyle := disabled
+	if m.showLogView { logsStyle = active }
 	if m.showPartner && m.partnerData != nil {
 		qsoTab, partnerTab = inactive.Render(qsoTab), active.Render(partnerTab)
 	} else if m.partnerData != nil {
 		qsoTab, partnerTab = active.Render(qsoTab), inactive.Render(partnerTab)
-	} else {
+	} else if !m.showLogView {
 		partnerTab = disabled.Render(partnerTab)
 		qsoTab = active.Render(qsoTab)
+	} else {
+		qsoTab = inactive.Render(qsoTab)
+		partnerTab = disabled.Render(partnerTab)
 	}
-	bar := lipgloss.NewStyle().Width(width).Background(lipgloss.Color("236")).Render(" " + qsoTab + partnerTab)
+	bar := lipgloss.NewStyle().Width(width).Background(lipgloss.Color("236")).Render(" " + qsoTab + partnerTab + logsStyle.Render(logsTab))
 	return bar
 }
 
@@ -586,12 +597,12 @@ func (m *Model) viewFooter(width int) string {
 	case m.showRigEdit:
 		text = m.rigChooser.FooterText()
 	case m.showPartner && m.partnerData != nil:
-		text = "F1 QSO Form  F3 Config  Ctrl+Q Quit"
+			text = "F1 QSO Form  F2 Partner  F8 Config  F9 Logs  Ctrl+Q Quit"
 	default:
 		if width < 70 {
-			text = "Enter=Save | F2 Partner | F3 Config | Ctrl+Q Quit"
+			text = "F1 QSO Form  Enter=Save  F2 Partner  F8 Config  F9 Logs  Ctrl+Q Quit"
 		} else {
-			text = "Enter/Ctrl+S Save  Ctrl+U Clear  F2 Partner  F3 Config  Ctrl+Q Quit"
+			text = "F1 QSO Form  Enter/Ctrl+S Save  Ctrl+U Clear  F2 Partner  F8 Config  F9 Logs  Ctrl+Q Quit"
 		}
 	}
 	return lipgloss.NewStyle().Width(width).
