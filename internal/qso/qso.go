@@ -19,6 +19,8 @@ type QSO struct {
 	QTH             string
 	Country         string
 	Comment         string
+	Notes           string
+	TXPower         string
 	StationCallsign string
 	Operator        string
 	MyGridSquare    string

@@ -30,6 +30,8 @@ var (
 	logMyAntenna   string
 	logDate        string
 	logTime        string
+	logPower       string
+	logNotes       string
 	logLimit       int
 )
 
@@ -60,6 +62,10 @@ var logAddCmd = &cobra.Command{
 		qs.Name = logName
 		qs.QTH = logQTH
 		qs.Comment = logComment
+		qs.Notes = logNotes
+		if logPower != "" {
+			qs.TXPower = logPower
+		}
 
 		if logDate != "" {
 			qs.QSODate = logDate
@@ -89,6 +95,7 @@ var logAddCmd = &cobra.Command{
 			MyGridSquare:    a.Logbook.Station.Grid,
 			MyRig:           a.Logbook.Station.Rig,
 			MyAntenna:       a.Logbook.Station.Antenna,
+			TXPower:         a.Logbook.Station.Power,
 		})
 
 		if err := qso.ValidateForSave(qs); err != nil {
@@ -198,6 +205,12 @@ var logShowCmd = &cobra.Command{
 		if q.Comment != "" {
 			fmt.Printf("  Comment:      %s\n", q.Comment)
 		}
+		if q.Notes != "" {
+			fmt.Printf("  Notes:        %s\n", q.Notes)
+		}
+		if q.TXPower != "" {
+			fmt.Printf("  TX Power:     %s W\n", q.TXPower)
+		}
 		fmt.Printf("  My Callsign:  %s\n", q.StationCallsign)
 		if q.Operator != "" {
 			fmt.Printf("  Operator:     %s\n", q.Operator)
@@ -267,6 +280,8 @@ func init() {
 	logAddCmd.Flags().StringVar(&logMyAntenna, "my-antenna", "", "My antenna")
 	logAddCmd.Flags().StringVar(&logDate, "date", "", "QSO date YYYYMMDD (default: today UTC)")
 	logAddCmd.Flags().StringVar(&logTime, "time", "", "QSO time HHMMSS (default: now UTC)")
+	logAddCmd.Flags().StringVar(&logPower, "power", "", "TX power in watts")
+	logAddCmd.Flags().StringVar(&logNotes, "notes", "", "Private notes")
 
 	logListCmd.Flags().IntVarP(&logLimit, "limit", "n", 50, "Number of QSOs to show")
 }

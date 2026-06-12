@@ -6,6 +6,7 @@ type StationInfo struct {
 	MyGridSquare    string
 	MyRig           string
 	MyAntenna       string
+	TXPower         string
 }
 
 func ApplyStationDefaults(q *QSO, s StationInfo) {
@@ -23,6 +24,9 @@ func ApplyStationDefaults(q *QSO, s StationInfo) {
 	}
 	if q.MyAntenna == "" && s.MyAntenna != "" {
 		q.MyAntenna = s.MyAntenna
+	}
+	if q.TXPower == "" && s.TXPower != "" {
+		q.TXPower = s.TXPower
 	}
 
 	if q.Band == "" && q.Freq > 0 {

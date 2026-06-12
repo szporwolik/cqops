@@ -28,20 +28,23 @@ const (
 	fieldBand
 	fieldFreq
 	fieldMode
+	fieldSubmode
 	fieldDate
 	fieldTime
 	fieldGrid
 	fieldCountry
 	fieldName
-	fieldCity
+	fieldQTH
+	fieldTXPower
 	fieldComment
+	fieldNotes
 	fieldCount
 )
 
 var fieldNames = []string{
-	"Call:", "RST sent:", "RST rcvd:", "Band:", "Freq:", "Mode:",
+	"Call:", "RST sent:", "RST rcvd:", "Band:", "Freq:", "Mode:", "Sub:",
 	"Date (UTC):", "Time (UTC):",
-	"Grid:", "Country:", "Name:", "City:", "Comment:",
+	"Grid:", "Country:", "Name:", "QTH:", "Pwr (W):", "Comment:", "Notes:",
 }
 
 type Model struct {
@@ -332,7 +335,7 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 	m.asciiH = 0
 	if d.Name != "" { m.fields[fieldName].SetValue(d.Name) }
 	if d.Grid != "" && m.fields[fieldGrid].Value() == "" { m.fields[fieldGrid].SetValue(d.Grid) }
-	if d.QTH != "" { m.fields[fieldCity].SetValue(d.QTH) }
+	if d.QTH != "" { m.fields[fieldQTH].SetValue(d.QTH) }
 	if d.Country != "" && m.fields[fieldCountry].Value() == "" { m.fields[fieldCountry].SetValue(d.Country) }
 	m.toasts.Info("QRZ: "+d.Callsign+" "+d.Name)
 }
@@ -710,7 +713,7 @@ func (m *Model) viewForm(width int) string {
 
 func (m *Model) availableQSORows() int {
 	if m.height <= 0 { return 5 }
-	avail := m.height - 28
+	avail := m.height - 32
 	if avail < 1 { avail = 1 }
 	return avail
 }
@@ -733,7 +736,9 @@ func (m *Model) viewQSOS(maxRows int) string {
 		for i := 0; i < limit; i++ {
 			q := m.qsos[i]
 			band := q.Band; if band == "" { band = fmt.Sprintf("%.3f", q.Freq) }
-			r := fmt.Sprintf("%-5d %-8s %-6s %-7s %-5s %-6s %-4s %-4s %-7s %s", q.ID, q.QSODate, q.TimeOn, q.Call, band, q.Mode, q.RSTSent, q.RSTRcvd, q.Country, q.Comment)
+			mode := q.Mode
+			if q.Submode != "" { mode += "/" + q.Submode }
+			r := fmt.Sprintf("%-5d %-8s %-6s %-7s %-5s %-6s %-4s %-4s %-7s %s", q.ID, q.QSODate, q.TimeOn, q.Call, band, mode, q.RSTSent, q.RSTRcvd, q.Country, q.Comment)
 			if i%2 == 0 { r = inputStyle.Render(r) }
 			rows = append(rows, r)
 		}
@@ -784,6 +789,9 @@ func (m *Model) clearForm() {
 	now := time.Now().UTC()
 	m.fields[fieldDate].SetValue(now.Format("20060102"))
 	m.fields[fieldTime].SetValue(now.Format("150405"))
+	if m.App.Logbook.Station.Power != "" {
+		m.fields[fieldTXPower].SetValue(m.App.Logbook.Station.Power)
+	}
 	m.dateTimeAuto = true
 	m.focus = fieldCall; m.fields[m.focus].Focus()
 	m.partnerData = nil
@@ -798,6 +806,7 @@ func (m *Model) saveQSO() tea.Cmd {
 	fmt.Sscanf(m.fields[fieldFreq].Value(), "%f", &freq)
 	qs.Call, qs.Band, qs.Freq = strings.ToUpper(m.fields[fieldCall].Value()), strings.ToUpper(m.fields[fieldBand].Value()), freq
 	qs.Mode, qs.RSTSent, qs.RSTRcvd = strings.ToUpper(m.fields[fieldMode].Value()), m.fields[fieldRSTSent].Value(), m.fields[fieldRSTRcvd].Value()
+	qs.Submode = strings.ToUpper(m.fields[fieldSubmode].Value())
 	qs.QSODate = strings.TrimSpace(m.fields[fieldDate].Value())
 	if qs.QSODate == "" {
 		qs.QSODate = time.Now().UTC().Format("20060102")
@@ -806,8 +815,10 @@ func (m *Model) saveQSO() tea.Cmd {
 	if qs.TimeOn == "" {
 		qs.TimeOn = time.Now().UTC().Format("150405")
 	}
-	qs.GridSquare, qs.Comment, qs.Name, qs.QTH, qs.Country = m.fields[fieldGrid].Value(), m.fields[fieldComment].Value(), m.fields[fieldName].Value(), m.fields[fieldCity].Value(), m.fields[fieldCountry].Value()
-	station := qso.StationInfo{StationCallsign: m.App.Logbook.Station.Callsign, Operator: m.App.Logbook.Station.Operator, MyGridSquare: m.App.Logbook.Station.Grid, MyRig: m.App.Logbook.Station.Rig, MyAntenna: m.App.Logbook.Station.Antenna}
+	qs.GridSquare, qs.Comment, qs.Name, qs.QTH, qs.Country = m.fields[fieldGrid].Value(), m.fields[fieldComment].Value(), m.fields[fieldName].Value(), m.fields[fieldQTH].Value(), m.fields[fieldCountry].Value()
+	qs.Notes = m.fields[fieldNotes].Value()
+	qs.TXPower = strings.TrimSpace(m.fields[fieldTXPower].Value())
+	station := qso.StationInfo{StationCallsign: m.App.Logbook.Station.Callsign, Operator: m.App.Logbook.Station.Operator, MyGridSquare: m.App.Logbook.Station.Grid, MyRig: m.App.Logbook.Station.Rig, MyAntenna: m.App.Logbook.Station.Antenna, TXPower: m.App.Logbook.Station.Power}
 	qso.ApplyStationDefaults(qs, station)
 	if err := qso.ValidateForSave(qs); err != nil { m.toasts.Error(err.Error()); return nil }
 	if _, err := store.InsertQSO(m.App.DB, qs); err != nil { m.toasts.Error(fmt.Sprintf("Save failed: %v", err)); return nil }

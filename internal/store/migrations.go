@@ -27,6 +27,9 @@ var migrations = []string{
 		qth TEXT,
 		country TEXT,
 		comment TEXT,
+		notes TEXT,
+
+		tx_pwr TEXT,
 
 		station_callsign TEXT,
 		operator TEXT,
@@ -39,6 +42,8 @@ var migrations = []string{
 		created_at TEXT NOT NULL,
 		updated_at TEXT NOT NULL
 	)`,
+	`ALTER TABLE qsos ADD COLUMN notes TEXT DEFAULT ''`,
+	`ALTER TABLE qsos ADD COLUMN tx_pwr TEXT DEFAULT ''`,
 }
 
 func Migrate(db *sql.DB) error {
