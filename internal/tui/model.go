@@ -37,14 +37,13 @@ const (
 	fieldQTH
 	fieldTXPower
 	fieldComment
-	fieldNotes
 	fieldCount
 )
 
 var fieldNames = []string{
 	"Call:", "RST sent:", "RST rcvd:", "Band:", "Freq:", "Mode:", "Sub:",
 	"Date (UTC):", "Time (UTC):",
-	"Grid:", "Country:", "Name:", "QTH:", "Pwr (W):", "Comment:", "Notes:",
+	"Grid:", "Country:", "Name:", "QTH:", "Pwr (W):", "Comment:",
 }
 
 type Model struct {
@@ -142,6 +141,7 @@ func (m *Model) pollFlrig() {
 	if status.Band != "" { m.fields[fieldBand].SetValue(status.Band) }
 	if status.Power > 0 {
 		m.rigPower = status.Power
+		m.fields[fieldTXPower].SetValue(fmt.Sprintf("%.0f", status.Power))
 		rigName := m.App.Logbook.Station.RigName
 		if rigName == "" { rigName = "default" }
 		if rp, ok := m.App.Config.Rigs[rigName]; ok {
@@ -306,6 +306,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case msg.String() == "tab" || msg.String() == "\t" || msg.Type == tea.KeyTab: m.nextField()
 		case msg.String() == "enter": return m, m.saveQSO()
+		case msg.Type == tea.KeyPgUp || msg.String() == "pgup": m.cycleFieldUp()
+		case msg.Type == tea.KeyPgDown || msg.String() == "pgdown": m.cycleFieldDown()
 		default: m.updateFocused(msg)
 		}
 	}
@@ -681,9 +683,9 @@ func (m *Model) viewFooter(width int) string {
 			text = "F8 Config  F10 Quit"
 	default:
 		if width < 70 {
-			text = "Enter=Save | Del Clear | F8 Config | F10 Quit"
+			text = "Enter=Save | Del Clear | PgUp/Dn Cycle | F8 Config | F10 Quit"
 		} else {
-			text = "Enter/Ctrl+S Save  Del Clear  F8 Config  F10 Quit"
+			text = "Enter/Ctrl+S Save  Del Clear  PgUp/Dn Cycle  F8 Config  F10 Quit"
 		}
 	}
 	return lipgloss.NewStyle().Width(width).
@@ -713,7 +715,7 @@ func (m *Model) viewForm(width int) string {
 
 func (m *Model) availableQSORows() int {
 	if m.height <= 0 { return 5 }
-	avail := m.height - 32
+	avail := m.height - 31
 	if avail < 1 { avail = 1 }
 	return avail
 }
@@ -753,14 +755,35 @@ func (m *Model) nextField() {
 	wasCall := m.focus == fieldCall
 	m.fields[m.focus].Blur(); m.focus = (m.focus + 1) % fieldCount
 	m.fields[m.focus].Focus()
-	if wasCall { m.qrzNeed = true; m.qrzCall = strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value())) }
+	if wasCall {
+		m.qrzNeed = true
+		m.qrzCall = strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+		m.autoFillRST()
+	}
 }
 func (m *Model) prevField() {
 	wasCall := m.focus == fieldCall
 	m.fields[m.focus].Blur()
 	if m.focus == 0 { m.focus = fieldCount - 1 } else { m.focus-- }
 	m.fields[m.focus].Focus()
-	if wasCall { m.qrzNeed = true; m.qrzCall = strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value())) }
+	if wasCall {
+		m.qrzNeed = true
+		m.qrzCall = strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+		m.autoFillRST()
+	}
+}
+func (m *Model) autoFillRST() {
+	if m.fields[fieldRSTSent].Value() != "" || m.fields[fieldRSTRcvd].Value() != "" {
+		return
+	}
+	mode := strings.ToUpper(strings.TrimSpace(m.fields[fieldMode].Value()))
+	if mode == "CW" {
+		m.fields[fieldRSTSent].SetValue("599")
+		m.fields[fieldRSTRcvd].SetValue("599")
+	} else {
+		m.fields[fieldRSTSent].SetValue("59")
+		m.fields[fieldRSTRcvd].SetValue("59")
+	}
 }
 func (m *Model) updateFocused(msg tea.KeyMsg) {
 	prevCall := strings.TrimSpace(m.fields[fieldCall].Value())
@@ -782,6 +805,17 @@ func (m *Model) updateFocused(msg tea.KeyMsg) {
 	}
 }
 func (m *Model) clearForm() {
+	rig := [5]struct {
+		idx   field
+		value string
+	}{
+		{fieldBand, m.fields[fieldBand].Value()},
+		{fieldFreq, m.fields[fieldFreq].Value()},
+		{fieldMode, m.fields[fieldMode].Value()},
+		{fieldSubmode, m.fields[fieldSubmode].Value()},
+		{fieldTXPower, m.fields[fieldTXPower].Value()},
+	}
+
 	for i := field(0); i < fieldCount; i++ {
 		m.fields[i].SetValue("")
 		m.fields[i].Blur()
@@ -789,8 +823,11 @@ func (m *Model) clearForm() {
 	now := time.Now().UTC()
 	m.fields[fieldDate].SetValue(now.Format("20060102"))
 	m.fields[fieldTime].SetValue(now.Format("150405"))
-	if m.App.Logbook.Station.Power != "" {
-		m.fields[fieldTXPower].SetValue(m.App.Logbook.Station.Power)
+
+	for _, r := range rig {
+		if r.value != "" {
+			m.fields[r.idx].SetValue(r.value)
+		}
 	}
 	m.dateTimeAuto = true
 	m.focus = fieldCall; m.fields[m.focus].Focus()
@@ -800,7 +837,89 @@ func (m *Model) clearForm() {
 	m.asciiH = 0
 	m.showPartner = false
 }
+
+func (m *Model) cycleFieldUp() {
+	switch m.focus {
+	case fieldBand:
+		m.cycleBand(1)
+	case fieldMode:
+		m.cycleMode(1)
+	case fieldSubmode:
+		m.cycleSubmode(1)
+	}
+}
+
+func (m *Model) cycleFieldDown() {
+	switch m.focus {
+	case fieldBand:
+		m.cycleBand(-1)
+	case fieldMode:
+		m.cycleMode(-1)
+	case fieldSubmode:
+		m.cycleSubmode(-1)
+	}
+}
+
+func (m *Model) cycleBand(dir int) {
+	b := strings.ToUpper(strings.TrimSpace(m.fields[fieldBand].Value()))
+	b = qso.NormalizeBand(b)
+	list := qso.AllBands()
+	idx := indexOfStr(list, b)
+	idx += dir
+	if idx < 0 {
+		idx = len(list) - 1
+	} else if idx >= len(list) {
+		idx = 0
+	}
+	m.fields[fieldBand].SetValue(list[idx])
+}
+
+func (m *Model) cycleMode(dir int) {
+	mode := strings.ToUpper(strings.TrimSpace(m.fields[fieldMode].Value()))
+	mode, _ = qso.NormalizeMode(mode, "")
+	if !qso.IsValidMode(mode) {
+		mode = ""
+	}
+	list := qso.AllModes()
+	idx := indexOfStr(list, mode)
+	idx += dir
+	if idx < 0 {
+		idx = len(list) - 1
+	} else if idx >= len(list) {
+		idx = 0
+	}
+	m.fields[fieldMode].SetValue(list[idx])
+}
+
+func (m *Model) cycleSubmode(dir int) {
+	cur := strings.ToUpper(strings.TrimSpace(m.fields[fieldSubmode].Value()))
+	mode := strings.ToUpper(strings.TrimSpace(m.fields[fieldMode].Value()))
+	mode, _ = qso.NormalizeMode(mode, "")
+	list := qso.SubmodesFor(mode)
+	if len(list) == 0 {
+		m.fields[fieldSubmode].SetValue("")
+		return
+	}
+	idx := indexOfStr(list, cur)
+	idx += dir
+	if idx < 0 {
+		idx = len(list) - 1
+	} else if idx >= len(list) {
+		idx = 0
+	}
+	m.fields[fieldSubmode].SetValue(list[idx])
+}
+
+func indexOfStr(list []string, s string) int {
+	for i, v := range list {
+		if strings.EqualFold(v, s) {
+			return i
+		}
+	}
+	return -1
+}
 func (m *Model) saveQSO() tea.Cmd {
+	m.autoFillRST()
 	qs := qso.NewQSO()
 	var freq float64
 	fmt.Sscanf(m.fields[fieldFreq].Value(), "%f", &freq)
@@ -816,7 +935,6 @@ func (m *Model) saveQSO() tea.Cmd {
 		qs.TimeOn = time.Now().UTC().Format("150405")
 	}
 	qs.GridSquare, qs.Comment, qs.Name, qs.QTH, qs.Country = m.fields[fieldGrid].Value(), m.fields[fieldComment].Value(), m.fields[fieldName].Value(), m.fields[fieldQTH].Value(), m.fields[fieldCountry].Value()
-	qs.Notes = m.fields[fieldNotes].Value()
 	qs.TXPower = strings.TrimSpace(m.fields[fieldTXPower].Value())
 	station := qso.StationInfo{StationCallsign: m.App.Logbook.Station.Callsign, Operator: m.App.Logbook.Station.Operator, MyGridSquare: m.App.Logbook.Station.Grid, MyRig: m.App.Logbook.Station.Rig, MyAntenna: m.App.Logbook.Station.Antenna, TXPower: m.App.Logbook.Station.Power}
 	qso.ApplyStationDefaults(qs, station)

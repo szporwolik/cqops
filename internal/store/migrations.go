@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 )
 
 var migrations = []string{
@@ -49,6 +50,9 @@ var migrations = []string{
 func Migrate(db *sql.DB) error {
 	for i, m := range migrations {
 		if _, err := db.Exec(m); err != nil {
+			if strings.Contains(err.Error(), "duplicate column name") {
+				continue
+			}
 			return fmt.Errorf("migration %d: %w", i, err)
 		}
 	}
