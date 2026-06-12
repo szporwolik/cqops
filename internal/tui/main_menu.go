@@ -17,7 +17,7 @@ type MainMenu struct {
 
 func NewMainMenu() *MainMenu {
 	return &MainMenu{
-		items: []string{"General Options", "Logbook Configuration", "Rig Configuration"},
+		items: []string{"General Options", "Callbook / QRZ.com", "Logbook Configuration", "Rig Configuration"},
 	}
 }
 
@@ -34,12 +34,10 @@ func (m *MainMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.done = true
 		case "enter":
 			switch m.cursor {
-			case 0:
-				m.action = "general"
-			case 1:
-				m.action = "logbook"
-			case 2:
-				m.action = "rig"
+			case 0: m.action = "general"
+			case 1: m.action = "callbook"
+			case 2: m.action = "logbook"
+			case 3: m.action = "rig"
 			}
 		case "up", "k":
 			if m.cursor > 0 {

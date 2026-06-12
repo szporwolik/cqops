@@ -100,26 +100,17 @@ func (f *Flrig) xmlrpcCall(ctx context.Context, method string) (string, error) {
 		`<?xml version="1.0"?><methodCall><methodName>%s</methodName></methodCall>`,
 		method,
 	)
-
 	req, err := http.NewRequestWithContext(ctx, "POST", f.url+"/RPC2", strings.NewReader(body))
-	if err != nil {
-		return "", err
-	}
+	if err != nil { return "", err }
 	req.Header.Set("Content-Type", "text/xml")
-
 	client := &http.Client{Timeout: f.timeout}
 	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
+	if err != nil { return "", err }
 	defer resp.Body.Close()
-
 	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	return parseXMLRPCResponse(data)
+	if err != nil { return "", err }
+	result, err := parseXMLRPCResponse(data)
+	return result, err
 }
 
 type rpcResponse struct {

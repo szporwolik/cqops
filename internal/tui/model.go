@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/log"
 	"github.com/szporwolik/cqops/internal/qrz"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/rig/flrig"
@@ -22,21 +23,22 @@ type field int
 
 const (
 	fieldCall field = iota
+	fieldRSTSent
+	fieldRSTRcvd
 	fieldBand
 	fieldFreq
 	fieldMode
-	fieldRSTSent
-	fieldRSTRcvd
 	fieldGrid
-	fieldComment
+	fieldCountry
 	fieldName
-	fieldQTH
+	fieldCity
+	fieldComment
 	fieldCount
 )
 
 var fieldNames = []string{
-	"Call:", "Band:", "Freq:", "Mode:", "RST sent:", "RST rcvd:",
-	"Grid:", "Comment:", "Name:", "QTH:",
+	"Call:", "RST sent:", "RST rcvd:", "Band:", "Freq:", "Mode:",
+	"Grid:", "Country:", "Name:", "City:", "Comment:",
 }
 
 type Model struct {
@@ -60,11 +62,14 @@ type Model struct {
 	showRigEdit  bool
 	rigChooser   *RigChooser
 	showConfig   bool
-	configMenu   *ConfigMenu
+	configMenu   *GeneralMenu
+	showCallbook bool
+	callbookMenu *CallbookMenu
 	showMainMenu bool
 	showLogView  bool
 	logViewer    *LogViewer
 	mainMenu     *MainMenu
+	confirmQuit  bool
 	showPartner  bool
 	partnerData  *qrz.CallData
 	partnerASCII string
@@ -138,9 +143,18 @@ func (m *Model) pollFlrig() {
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if key, ok := msg.(tea.KeyMsg); ok {
+		if m.confirmQuit {
+			if key, ok := msg.(tea.KeyMsg); ok {
+				switch key.String() {
+				case "y", "Y": return m, tea.Quit
+				default: m.confirmQuit = false
+				}
+			}
+			return m, nil
+		}
+		if key, ok := msg.(tea.KeyMsg); ok {
 		switch key.String() {
-		case "ctrl+q", "ctrl+c": m.quitting = true; return m, tea.Quit
+		case "f10": m.confirmQuit = true
 		case "f1": m.showChooser = false; m.showRigEdit = false; m.showConfig = false; m.showMainMenu = false; m.showLogView = false; m.showPartner = false
 		case "f2": if m.showPartner { m.showPartner = false } else if m.partnerData != nil { m.showPartner = true }
 		case "f8": m.mainMenu = NewMainMenu(); m.showMainMenu = true
@@ -169,10 +183,29 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		_, _ = m.configMenu.Update(msg)
 		if m.configMenu.done {
 			m.showConfig = false
-			m.showMainMenu = true
-			m.App.Config.QRZUser = m.configMenu.user.Value()
-			m.App.Config.QRZPass = m.configMenu.pass.Value()
-			config.Save(m.App.ConfigPath, m.App.Config)
+			if m.configMenu.goBack { m.showMainMenu = true }
+			if m.configMenu.saved {
+				m.App.Config.RenderImages = m.configMenu.renderImages
+				config.Save(m.App.ConfigPath, m.App.Config)
+				log.Info("Settings saved")
+				m.showMainMenu = true
+			}
+		}
+		return m, nil
+	}
+	if m.showCallbook {
+		_, _ = m.callbookMenu.Update(msg)
+		if m.callbookMenu.done {
+			m.showCallbook = false
+			if m.callbookMenu.goBack { m.showMainMenu = true }
+			if m.callbookMenu.saved {
+				m.App.Config.QRZUser = m.callbookMenu.user.Value()
+				m.App.Config.QRZPass = m.callbookMenu.pass.Value()
+				m.App.Config.QRZEnabled = m.callbookMenu.enabled
+				config.Save(m.App.ConfigPath, m.App.Config)
+				log.Info("Settings saved")
+				m.showMainMenu = true
+			}
 		}
 		return m, nil
 	}
@@ -183,15 +216,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mainMenu.action = ""
 			m.showMainMenu = false
 			switch action {
-			case "general":
-				m.configMenu = NewConfigMenu(m.App.Config)
-				m.showConfig = true
-			case "logbook":
-				m.chooser = NewLogbookChooser(m.App)
-				m.showChooser = true
-			case "rig":
-				m.rigChooser = NewRigChooser(m.App)
-				m.showRigEdit = true
+			case "general": m.configMenu = NewGeneralMenu(m.App.Config); m.showConfig = true
+			case "callbook": m.callbookMenu = NewCallbookMenu(m.App.Config); m.showCallbook = true
+			case "logbook": m.chooser = NewLogbookChooser(m.App); m.showChooser = true
+			case "rig": m.rigChooser = NewRigChooser(m.App); m.showRigEdit = true
 			}
 		}
 		if m.mainMenu.done {
@@ -227,14 +255,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.String() == "shift+tab" || msg.Type == tea.KeyShiftTab: m.prevField()
 		case msg.Type == tea.KeyUp || msg.String() == "up": m.prevField()
 		case msg.Type == tea.KeyDown || msg.String() == "down": m.nextField()
-		case msg.String() == "ctrl+q": m.quitting = true; return m, tea.Quit
 		case msg.String() == "ctrl+s": return m, m.saveQSO()
-		case msg.String() == "ctrl+u": m.clearForm()
+		case msg.String() == "ctrl+backspace": m.clearForm()
 		case msg.String() == "ctrl+c": m.mainMenu = NewMainMenu(); m.showMainMenu = true
 		case msg.String() == "f1":
 		case msg.String() == "f2":
 			call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
-			if call != "" && m.App.Config.QRZUser != "" && m.partnerData == nil {
+			if call != "" && m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled && m.partnerData == nil {
 				return m, func() tea.Msg {
 					data, err := qrz.Lookup(m.App.Config.QRZUser, m.App.Config.QRZPass, call)
 					return qrzResultMsg{Call: call, Data: data, Err: err}
@@ -252,7 +279,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.qrzNeed = false
 		call := m.qrzCall
 		if call == "" { return m, nil }
-		if m.App.Config.QRZUser == "" || !m.App.Config.QRZEnabled { m.setStatus("QRZ not configured — F8 Config → Callbook / QRZ.com to enable", "warning"); return m, nil }
+		if !m.App.Config.QRZEnabled { return m, nil }
+		if m.App.Config.QRZUser == "" { m.setStatus("QRZ not configured — F8 Config → Callbook / QRZ.com to enable", "warning"); return m, nil }
 		return m, func() tea.Msg { data, err := qrz.Lookup(m.App.Config.QRZUser, m.App.Config.QRZPass, call); return qrzResultMsg{Call: call, Data: data, Err: err} }
 	}
 	return m, nil
@@ -260,7 +288,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Model) fillQRZData(msg qrzResultMsg) {
 	if msg.Call == "" { return }
-	if m.App.Config.QRZUser == "" || !m.App.Config.QRZEnabled { m.setStatus("QRZ not configured", "warning"); return }
+	if !m.App.Config.QRZEnabled || m.App.Config.QRZUser == "" { m.setStatus("QRZ not configured", "warning"); return }
 	if msg.Err != nil {
 		m.setStatus("QRZ error: "+msg.Err.Error(), "error")
 		return
@@ -273,15 +301,13 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 	m.asciiH = 0
 	if d.Name != "" { m.fields[fieldName].SetValue(d.Name) }
 	if d.Grid != "" && m.fields[fieldGrid].Value() == "" { m.fields[fieldGrid].SetValue(d.Grid) }
-	if d.QTH != "" { m.fields[fieldQTH].SetValue(d.QTH) }
-	if (d.Country != "" || d.State != "") && m.fields[fieldComment].Value() == "" {
-		m.fields[fieldComment].SetValue(strings.TrimSpace(d.Country + " " + d.State))
-	}
+	if d.QTH != "" { m.fields[fieldCity].SetValue(d.QTH) }
+	if d.Country != "" && m.fields[fieldCountry].Value() == "" { m.fields[fieldCountry].SetValue(d.Country) }
 	m.setStatus("QRZ: "+d.Callsign+" "+d.Name, "success")
 }
 
 func (m *Model) View() string {
-	if m.quitting { return "\n" }
+	if m.quitting { return "" }
 	if m.err != nil { return errorStyle.Render(fmt.Sprintf("Error: %v\nPress any key to exit.", m.err)) }
 	w := m.width; if w < 40 { w = 80 }
 	topBar := m.viewTopBar(w)
@@ -293,12 +319,16 @@ func (m *Model) View() string {
 		content = m.rigChooser.View()
 	} else if m.showConfig {
 		content = m.configMenu.View()
+	} else if m.showCallbook {
+		content = m.callbookMenu.View()
 	} else if m.showMainMenu {
 		content = m.mainMenu.View()
 	} else if m.showLogView {
 		content = m.logViewer.View()
 	} else if m.showPartner && m.partnerData != nil {
 		content = m.viewPartner()
+	} else if m.confirmQuit {
+		content = titleStyle.Render("Quit CQOps? (y/N)")
 	} else {
 		form := m.viewForm(w)
 		status := m.viewStatus()
@@ -323,32 +353,32 @@ func (m *Model) View() string {
 
 func (m *Model) viewTopBar(width int) string {
 	s := m.App.Logbook.Station
-	leftText := s.Callsign
-	if s.Operator != "" && s.Operator != s.Callsign { leftText += " — " + s.Operator }
-	if m.App.LogbookName != "" { leftText += " — [" + m.App.LogbookName + "]" }
-	if leftText == "" { leftText = "CQOPS" }
 	now := time.Now(); utc := now.UTC()
-	rightText := fmt.Sprintf("%s local  %s utc", now.Format("15:04:05"), utc.Format("15:04"))
+
+	rigDisplay := ""
 	rigName := s.RigName; if rigName == "" { rigName = "default" }
 	if rp, ok := m.App.Config.Rigs[rigName]; ok {
-		rigDisplay := rp.Model
+		rigDisplay = rp.Model
 		if rp.FlrigEnabled {
 			if m.rigConnected { if m.rigBlink { rigDisplay += " *" } else { rigDisplay += "  " } } else { rigDisplay += " !" }
 		}
-		if rigDisplay != "" { rightText = rigDisplay + "  " + rightText }
-	} else {
-		for name := range m.App.Config.Rigs { rigName = name; break }
-		if rigName != "" {
-			lb := m.App.Config.Logbooks[m.App.LogbookName]; lb.Station.RigName = rigName
-			lb.Station.Rig, lb.Station.Antenna, lb.Station.Power = m.App.Config.Rigs[rigName].Model, m.App.Config.Rigs[rigName].Antenna, m.App.Config.Rigs[rigName].Power
-			m.App.Config.Logbooks[m.App.LogbookName] = lb; m.App.Logbook = &lb
-		}
 	}
+
 	versionText := "CQOPS v" + version.Resolved(); if version.Resolved() == "dev" { versionText = "CQOPS" }
-	innerW, third, rightW := width-2, (width-2)/3, (width-2)-(width-2)/3-(width-2)/3
-	_ = innerW
-	left, center, right := padRight(leftText, third), padCenter(versionText, third), padLeft(rightText, rightW)
-	return lipgloss.NewStyle().Width(width).Background(lipgloss.Color("236")).Foreground(lipgloss.Color("229")).Render(" " + left + center + right + " ")
+
+	innerW := width - 4
+	third := innerW / 3
+	rightW := innerW - third - third
+
+	leftRaw := fmt.Sprintf("Call:%-7s Op:%-7s Log:%-8s", s.Callsign, s.Operator, m.App.LogbookName)
+	rightRaw := fmt.Sprintf("Rig:%-7s LT:%-6s UTC:%-9s", rigDisplay, now.Format("15:04"), utc.Format("15:04:05"))
+	leftRaw = truncate(leftRaw, third)
+	rightRaw = truncate(rightRaw, rightW)
+	for lipgloss.Width(leftRaw) < third { leftRaw += " " }
+	for lipgloss.Width(rightRaw) < rightW { rightRaw += " " }
+
+	line := leftRaw + padCenter(versionText, third) + rightRaw
+	return lipgloss.NewStyle().Width(width).Background(lipgloss.Color("236")).Foreground(lipgloss.Color("229")).Render("  " + line + "  ")
 }
 
 func (m *Model) viewTabBar(width int) string {
@@ -363,10 +393,10 @@ func (m *Model) viewTabBar(width int) string {
 	disabled := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("238")).
 		Padding(0, 2)
-	qsoTab := "QSO Form"
-	partnerTab := "Partner Details"
-	logsTab := "Logs"
-	logsStyle := disabled
+	qsoTab := "F1 QSO Form"
+	partnerTab := "F2 Partner Details"
+	logsTab := "F9 Logs"
+	logsStyle := inactive
 	if m.showLogView { logsStyle = active }
 	if m.showPartner && m.partnerData != nil {
 		qsoTab, partnerTab = inactive.Render(qsoTab), active.Render(partnerTab)
@@ -399,7 +429,7 @@ func (m *Model) viewPartner() string {
 	if availH < 6 {
 		availH = 6
 	}
-	if asciiW > 0 && d.ImageURL != "" && availH >= 8 {
+	if m.App.Config.RenderImages && asciiW > 0 && d.ImageURL != "" && availH >= 8 {
 		if m.partnerASCII == "" || m.asciiW != asciiW || m.asciiH != availH {
 			ascii, err := downloadAndRenderASCII(d.ImageURL, asciiW, availH)
 			if err == nil && ascii != "" {
@@ -437,7 +467,10 @@ func (m *Model) viewPartnerData(infoW int) string {
 		b.WriteString(lipgloss.NewStyle().Width(m.width - 2).Align(lipgloss.Center).Render(distanceLine))
 		b.WriteString("\n")
 	}
-	mapStr := m.renderWorldMap()
+	mapStr := ""
+	if m.App.Config.RenderImages {
+		mapStr = m.renderWorldMap()
+	}
 	if mapStr != "" {
 		b.WriteString("\n")
 		b.WriteString(mapStr)
@@ -592,17 +625,21 @@ func (m *Model) viewFooter(width int) string {
 		text = m.mainMenu.FooterText()
 	case m.showConfig:
 		text = m.configMenu.FooterText()
+	case m.showCallbook:
+		text = m.callbookMenu.FooterText()
 	case m.showChooser:
 		text = m.chooser.FooterText()
 	case m.showRigEdit:
 		text = m.rigChooser.FooterText()
+	case m.showLogView:
+		text = m.logViewer.FooterText()
 	case m.showPartner && m.partnerData != nil:
-			text = "F1 QSO Form  F2 Partner  F8 Config  F9 Logs  Ctrl+Q Quit"
+			text = "F8 Config  F10 Quit"
 	default:
 		if width < 70 {
-			text = "F1 QSO Form  Enter=Save  F2 Partner  F8 Config  F9 Logs  Ctrl+Q Quit"
+			text = "Enter=Save | Ctrl+Bs Clear | F8 Config | F10 Quit"
 		} else {
-			text = "F1 QSO Form  Enter/Ctrl+S Save  Ctrl+U Clear  F2 Partner  F8 Config  F9 Logs  Ctrl+Q Quit"
+			text = "Enter/Ctrl+S Save  Ctrl+Bs Clear  F8 Config  F10 Quit"
 		}
 	}
 	return lipgloss.NewStyle().Width(width).
@@ -620,17 +657,13 @@ func truncate(s string, max int) string { if max < 3 { return s }; if lipgloss.W
 
 func (m *Model) viewForm(width int) string {
 	var rows []string; labelW := 11
-	for i := field(0); i < fieldGrid; i++ {
+	for i := field(0); i < fieldCount; i++ {
 		label, value := fmt.Sprintf("%-*s", labelW, fieldNames[i]), m.fields[i].View()
 		if int(i) == int(m.focus) { value = cursorStyle.Render(value) }
 		rows = append(rows, label+" "+value)
 	}
-	for i := fieldGrid; i < fieldCount; i++ {
-		label, value := fmt.Sprintf("%-*s", labelW, fieldNames[i]), m.fields[i].View()
-		if int(i) == int(m.focus) { value = cursorStyle.Render(value) }
-		rows = append(rows, label+" "+value)
-	}
-	sep := strings.Repeat("─", width-2)
+	sepW := width - 2; if sepW > 100 { sepW = 100 }
+	sep := strings.Repeat("─", sepW)
 	return sep + "\n" + strings.Join(rows, "\n") + "\n" + sep
 }
 
@@ -640,25 +673,21 @@ func (m *Model) viewStatus() string {
 }
 
 func (m *Model) availableQSORows() int {
-	if m.height <= 0 {
-		return 10
-	}
-	avail := m.height - 20
-	if avail < 0 {
-		return 0
-	}
+	if m.height <= 0 { return 5 }
+	avail := m.height - 24
+	if avail < 1 { avail = 1 }
 	return avail
 }
 
 func (m *Model) viewQSOS(maxRows int) string {
 	var rows []string
-	row := fmt.Sprintf("%-5s %-8s %-6s %-7s %-5s %-6s %-4s %-4s %s", "ID", "Date", "Time", "Call", "Band", "Mode", "RSTs", "RSTr", "Comment")
+	row := fmt.Sprintf("%-5s %-8s %-6s %-7s %-5s %-6s %-4s %-4s %-7s %s", "ID", "Date", "Time", "Call", "Band", "Mode", "RSTs", "RSTr", "Country", "Comment")
 	rows = append(rows, headerStyle.Render(row))
-	w := m.width - 4; if w < 1 { w = 60 }
+	w := m.width - 4; if w < 1 { w = 60 }; if w > 100 { w = 100 }
 	rows = append(rows, "  "+strings.Repeat("─", w))
 	if len(m.qsos) == 0 {
 		for i := 0; i < maxRows; i++ {
-			rows = append(rows, "")
+			rows = append(rows, fmt.Sprintf(" ---   ----     ----   ---    ---   ---   ---  ---  -------  -------"))
 		}
 	} else {
 		limit := maxRows
@@ -668,9 +697,12 @@ func (m *Model) viewQSOS(maxRows int) string {
 		for i := 0; i < limit; i++ {
 			q := m.qsos[i]
 			band := q.Band; if band == "" { band = fmt.Sprintf("%.3f", q.Freq) }
-			r := fmt.Sprintf("%-5d %-8s %-6s %-7s %-5s %-6s %-4s %-4s %s", q.ID, q.QSODate, q.TimeOn, q.Call, band, q.Mode, q.RSTSent, q.RSTRcvd, q.Comment)
+			r := fmt.Sprintf("%-5d %-8s %-6s %-7s %-5s %-6s %-4s %-4s %-7s %s", q.ID, q.QSODate, q.TimeOn, q.Call, band, q.Mode, q.RSTSent, q.RSTRcvd, q.Country, q.Comment)
 			if i%2 == 0 { r = inputStyle.Render(r) }
 			rows = append(rows, r)
+		}
+		for i := limit; i < maxRows; i++ {
+			rows = append(rows, fmt.Sprintf(" ---   ----     ----   ---    ---   ---   ---  ---  -------  -------"))
 		}
 	}
 	return strings.Join(rows, "\n")
@@ -717,7 +749,7 @@ func (m *Model) saveQSO() tea.Cmd {
 	qs := qso.NewQSO()
 	qs.Call, qs.Band, qs.Freq = strings.ToUpper(m.fields[fieldCall].Value()), strings.ToUpper(m.fields[fieldBand].Value()), parseFloat(m.fields[fieldFreq].Value())
 	qs.Mode, qs.RSTSent, qs.RSTRcvd = strings.ToUpper(m.fields[fieldMode].Value()), m.fields[fieldRSTSent].Value(), m.fields[fieldRSTRcvd].Value()
-	qs.GridSquare, qs.Comment, qs.Name, qs.QTH = m.fields[fieldGrid].Value(), m.fields[fieldComment].Value(), m.fields[fieldName].Value(), m.fields[fieldQTH].Value()
+	qs.GridSquare, qs.Comment, qs.Name, qs.QTH, qs.Country = m.fields[fieldGrid].Value(), m.fields[fieldComment].Value(), m.fields[fieldName].Value(), m.fields[fieldCity].Value(), m.fields[fieldCountry].Value()
 	station := qso.FillSource{StationCallsign: m.App.Logbook.Station.Callsign, Operator: m.App.Logbook.Station.Operator, MyGridSquare: m.App.Logbook.Station.Grid, MyRig: m.App.Logbook.Station.Rig, MyAntenna: m.App.Logbook.Station.Antenna}
 	qso.Fill(qs, nil, station)
 	if err := qso.ValidateForSave(qs); err != nil { m.setStatus(err.Error(), "error"); return nil }

@@ -29,14 +29,14 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "esc": gm.done = true; gm.goBack = true; return gm, nil
 		case "ctrl+s", "\x13": gm.done = true; gm.saved = true; return gm, nil
-		case " ": gm.renderImages = !gm.renderImages
+		case " ", "enter": gm.renderImages = !gm.renderImages
 		}
 	}
 	return gm, nil
 }
 
 func (gm *GeneralMenu) FooterText() string {
-	return "Space/Enter to save  Esc to go back"
+	return "Space to toggle  Ctrl+S to save  Esc to go back"
 }
 
 func (gm *GeneralMenu) View() string {
@@ -46,12 +46,10 @@ func (gm *GeneralMenu) View() string {
 	b.WriteString("\n\n")
 	checkbox := "[ ]"
 	if gm.renderImages {
-		checkbox = "[x] Render images (partners, maps)"
+		checkbox = "[x] Render maps and partner images"
 	} else {
-		checkbox = "[ ] Render images (partners, maps)"
+		checkbox = "[ ] Render maps and partner images"
 	}
 	b.WriteString(checkbox)
-	b.WriteString("\n\n")
-	b.WriteString(helpStyle.Render("Space to toggle and save  Ctrl+S to save  Esc to go back"))
 	return b.String()
 }

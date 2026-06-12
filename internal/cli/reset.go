@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/log"
 	"golang.org/x/term"
 )
 
@@ -91,6 +92,7 @@ This action cannot be undone. Use --force to skip confirmation.`,
 		fmt.Printf("  Config:  %s\n", configPath)
 		fmt.Printf("  Data:    %s\n", dataDir)
 		fmt.Printf("  Logs:    %s\n", logDir)
+		log.Info("Settings reset to factory defaults")
 		return nil
 	},
 }

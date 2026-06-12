@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/szporwolik/cqops/internal/log"
 )
 
 type CallData struct {
@@ -71,25 +73,27 @@ func Lookup(qrzUser, qrzPass, callsign string) (*CallData, error) {
 }
 
 func qrzLoginLookup(user, pass, callsign string) (*CallData, error) {
+	log.Debug("QRZ lookup", "callsign", callsign)
 	u := "https://xmldata.qrz.com/xml/current/?username=" + url.QueryEscape(user) + ";password=" + url.QueryEscape(pass) + ";agent=CQOps"
 	data, err := httpGet(u)
-	if err != nil { return nil, err }
+	if err != nil { log.Error("QRZ auth failed", "error", err); return nil, err }
 
 	var authDB qrzDatabase
 	if err := xml.Unmarshal(data, &authDB); err != nil { return nil, err }
-	if authDB.Session.Error != "" { return nil, fmt.Errorf("QRZ: %s", authDB.Session.Error) }
+	if authDB.Session.Error != "" { log.Error("QRZ auth error", "msg", authDB.Session.Error); return nil, fmt.Errorf("QRZ: %s", authDB.Session.Error) }
 	if authDB.Session.Key == "" { return nil, fmt.Errorf("QRZ: no session key") }
 
 	u2 := "https://xmldata.qrz.com/xml/current/?s=" + url.QueryEscape(authDB.Session.Key) + ";callsign=" + url.QueryEscape(callsign)
 	data, err = httpGet(u2)
-	if err != nil { return nil, err }
+	if err != nil { log.Error("QRZ lookup failed", "error", err); return nil, err }
 
 	var db qrzDatabase
 	if err := xml.Unmarshal(data, &db); err != nil { return nil, fmt.Errorf("qrz xml: %w", err) }
 	if db.Session.Error != "" { return nil, fmt.Errorf("QRZ: %s", db.Session.Error) }
 
 	c := db.Callsign
-	if strings.TrimSpace(c.Call) == "" { return nil, nil }
+	if strings.TrimSpace(c.Call) == "" { log.Debug("QRZ no data", "callsign", callsign); return nil, nil }
+	log.InfoDetail("QRZ lookup ok", fmt.Sprintf("%s — %s", c.Call, coalesce(c.Fname, c.Name)))
 	return &CallData{
 		Callsign: strings.TrimSpace(c.Call),
 		Name:     strings.TrimSpace(coalesce(c.Fname, c.Name)),
