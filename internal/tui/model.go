@@ -378,8 +378,7 @@ func (m *Model) View() string {
 	if m.quitting { return "" }
 	if m.err != nil { return errorStyle.Render(fmt.Sprintf("Error: %v\nPress any key to exit.", m.err)) }
 	w := m.width; if w < 40 { w = 80 }
-	topBar := m.viewTopBar(w)
-	tabBar := m.viewTabBar(w)
+	header := m.renderHeader(w)
 	var content string
 	if m.showChooser {
 		content = m.chooser.View()
@@ -406,7 +405,7 @@ func (m *Model) View() string {
 	body := lipgloss.NewStyle().Width(w).Padding(0, 1).Render(content)
 	toastBar := RenderToasts(m.toasts.Active(), w)
 	footer := m.viewFooter(w)
-	mainBlock := lipgloss.JoinVertical(lipgloss.Left, topBar, tabBar, "", body)
+	mainBlock := lipgloss.JoinVertical(lipgloss.Left, header, body)
 	mainLines := strings.Count(mainBlock, "\n") + 1
 	toastLines := strings.Count(toastBar, "\n")
 	if toastBar != "" {
@@ -430,10 +429,7 @@ func (m *Model) View() string {
 	return all
 }
 
-func (m *Model) viewTopBar(width int) string {
-	if width < 40 {
-		return ""
-	}
+func (m *Model) renderHeader(width int) string {
 	s := m.App.Logbook.Station
 	now := time.Now()
 	utc := now.UTC()
@@ -449,57 +445,57 @@ func (m *Model) viewTopBar(width int) string {
 		if rp.FlrigEnabled {
 			if m.rigConnected {
 				if m.rigBlink {
-					rigIndicator = ansiFg("46", " \u25C9")
+					rigIndicator = ansiFg("46", " on")
 				} else {
-					rigIndicator = "  "
+					rigIndicator = "   "
 				}
 			} else {
-				rigIndicator = ansiFg("196", " \u2717")
+				rigIndicator = ansiFg("196", " err")
 			}
 		}
 	}
 
 	locator := formatLocator(s.Grid)
 	if locator == "" {
-		locator = "—"
+		locator = "----"
 	}
 
-	inetVal := ansiFg("196", "No")
+	inetVal := ansiFg("196", "No ")
 	if m.inetOnline {
 		inetVal = ansiFg("46", "Yes")
 	}
 
-	leftSection := ansiFg("243", "Call:") + ansiFg("229", truncPad(s.Callsign, 7)) + " " +
-		ansiFg("243", "Op:") + ansiFg("229", truncPad(s.Operator, 7)) + " " +
-		ansiFg("243", "Log:") + ansiFg("229", truncPad(m.App.LogbookName, 8)) + " " +
-		ansiFg("243", "Loc:") + ansiFg("229", truncPad(locator, 6))
+	left := ansiFg("243", "Call: ") + ansiFg("229", clamp(s.Callsign, 8)) +
+		ansiFg("243", "  Op: ") + ansiFg("229", clamp(s.Operator, 8)) +
+		ansiFg("243", "  Log: ") + ansiFg("229", clamp(m.App.LogbookName, 8)) +
+		ansiFg("243", "  Loc: ") + ansiFg("229", clamp(locator, 6))
 
-	rightSection := ansiFg("243", "Inet:") + inetVal + "  " +
-		ansiFg("243", "Rig:") + ansiFg("229", rigModel) + rigIndicator + "  " +
-		ansiFg("243", "LT:") + ansiFg("229", now.Format("15:04")) + " " +
-		ansiFg("243", "UTC:") + ansiFg("229", utc.Format("15:04:05"))
-
-	centerText := ansiBoldFg("86", "CQOPS")
-	ver := ""
+	center := ansiBoldFg("86", "CQOPS")
 	if v := version.Resolved(); v != "dev" {
-		ver = " v" + v
-	}
-	centerText += ansiFg("245", ver)
-
-	innerW := width - 4
-	leftW := lipgloss.Width(leftSection)
-	rightW := lipgloss.Width(rightSection)
-
-	gap := innerW - leftW - rightW
-	if gap < 0 {
-		gap = 0
+		center += ansiFg("245", " v"+v)
 	}
 
-	line := "  " + leftSection + padCenter(centerText, gap) + rightSection
-	for lipgloss.Width(line) < width {
-		line += " "
+	right := ansiFg("243", "Inet: ") + inetVal +
+		ansiFg("243", "  Rig: ") + ansiFg("229", clamp(rigModel, 6)) + rigIndicator +
+		ansiFg("243", "  LT: ") + ansiFg("229", now.Format("15:04")) +
+		ansiFg("243", "  UTC: ") + ansiFg("229", utc.Format("15:04:05"))
+
+	leftW := lipgloss.Width(left)
+	rightW := lipgloss.Width(right)
+	gap := width - 4 - leftW - rightW
+	if gap < 2 {
+		gap = 2
 	}
-	return lipgloss.NewStyle().Background(lipgloss.Color("236")).Render(line)
+
+	statusLine := "  " + left + strings.Repeat(" ", gap) + right
+	for lipgloss.Width(statusLine) < width {
+		statusLine += " "
+	}
+	statusLine = lipgloss.NewStyle().Background(lipgloss.Color("236")).Render(statusLine)
+
+	tabLine := m.renderTabLine(width)
+
+	return statusLine + "\n" + tabLine
 }
 
 func ansiFg(color, s string) string {
@@ -510,52 +506,50 @@ func ansiBoldFg(color, s string) string {
 	return "\x1b[1m\x1b[38;5;" + color + "m" + s + "\x1b[22m\x1b[39m"
 }
 
-func truncPad(s string, w int) string {
-	if s == "" {
-		s = "—"
+func (m *Model) renderTabLine(width int) string {
+	active := lipgloss.NewStyle().Background(lipgloss.Color("62")).Foreground(lipgloss.Color("229")).Bold(true).Padding(0, 2)
+	inactive := lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("241")).Padding(0, 2)
+	disabled := lipgloss.NewStyle().Background(lipgloss.Color("236")).Foreground(lipgloss.Color("238")).Padding(0, 2)
+
+	qsoLabel := "F1 QSO Form"
+	partnerLabel := "F2 Partner Details"
+	logsLabel := "F9 Logs"
+
+	var qsoTab, partnerTab, logsTabStr string
+
+	if m.showPartner && m.partnerData != nil {
+		qsoTab = inactive.Render(qsoLabel)
+		partnerTab = active.Render(partnerLabel)
+		logsTabStr = inactive.Render(logsLabel)
+	} else if m.partnerData != nil {
+		qsoTab = active.Render(qsoLabel)
+		partnerTab = inactive.Render(partnerLabel)
+		logsTabStr = inactive.Render(logsLabel)
+	} else if m.showLogView {
+		qsoTab = inactive.Render(qsoLabel)
+		partnerTab = disabled.Render(partnerLabel)
+		logsTabStr = active.Render(logsLabel)
+	} else {
+		qsoTab = active.Render(qsoLabel)
+		partnerTab = disabled.Render(partnerLabel)
+		logsTabStr = inactive.Render(logsLabel)
 	}
-	result := s
-	for lipgloss.Width(result) < w {
-		result += " "
+
+	line := " " + qsoTab + partnerTab + logsTabStr
+	for lipgloss.Width(line) < width {
+		line += " "
 	}
-	if lipgloss.Width(result) > w {
-		result = truncate(result, w)
-	}
-	return result
+	return lipgloss.NewStyle().Background(lipgloss.Color("236")).Render(line)
 }
 
-func (m *Model) viewTabBar(width int) string {
-	active := lipgloss.NewStyle().
-		Background(lipgloss.Color("62")).
-		Foreground(lipgloss.Color("229")).
-		Bold(true).
-		Padding(0, 2)
-	inactive := lipgloss.NewStyle().
-		Background(lipgloss.Color("236")).
-		Foreground(lipgloss.Color("241")).
-		Padding(0, 2)
-	disabled := lipgloss.NewStyle().
-		Background(lipgloss.Color("236")).
-		Foreground(lipgloss.Color("238")).
-		Padding(0, 2)
-	qsoTab := "F1 QSO Form"
-	partnerTab := "F2 Partner Details"
-	logsTab := "F9 Logs"
-	logsStyle := inactive
-	if m.showLogView { logsStyle = active }
-	if m.showPartner && m.partnerData != nil {
-		qsoTab, partnerTab = inactive.Render(qsoTab), active.Render(partnerTab)
-	} else if m.partnerData != nil {
-		qsoTab, partnerTab = active.Render(qsoTab), inactive.Render(partnerTab)
-	} else if !m.showLogView {
-		partnerTab = disabled.Render(partnerTab)
-		qsoTab = active.Render(qsoTab)
-	} else {
-		qsoTab = inactive.Render(qsoTab)
-		partnerTab = disabled.Render(partnerTab)
+func clamp(s string, w int) string {
+	if s == "" {
+		return strings.Repeat(" ", w)
 	}
-	bar := lipgloss.NewStyle().Width(width).Background(lipgloss.Color("236")).Render(" " + qsoTab + partnerTab + logsStyle.Render(logsTab))
-	return bar
+	if lipgloss.Width(s) > w {
+		return truncate(s, w)
+	}
+	return s + strings.Repeat(" ", w-lipgloss.Width(s))
 }
 
 func (m *Model) viewPartner() string {
@@ -800,9 +794,6 @@ func (m *Model) viewFooter(width int) string {
 		Render(text)
 }
 
-func padRight(s string, w int) string { s = truncate(s, w); for lipgloss.Width(s) < w { s += " " }; return s }
-func padCenter(s string, w int) string { s = truncate(s, w); pad := w - lipgloss.Width(s); l, r := pad/2, pad-pad/2; for i := 0; i < l; i++ { s = " " + s }; for i := 0; i < r; i++ { s += " " }; return s }
-func padLeft(s string, w int) string { s = truncate(s, w); for lipgloss.Width(s) < w { s = " " + s }; return s }
 func truncate(s string, max int) string { if max < 3 { return s }; if lipgloss.Width(s) <= max { return s }; return s[:max-1] + "…" }
 
 func (m *Model) viewForm(width int) string {
