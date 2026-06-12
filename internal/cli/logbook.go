@@ -171,7 +171,7 @@ var logbookPathCmd = &cobra.Command{
 	},
 }
 
-func init() {
+func registerLogbookCommands() {
 	rootCmd.AddCommand(logbookCmd)
 	logbookCmd.AddCommand(logbookListCmd)
 	logbookCmd.AddCommand(logbookShowCmd)
@@ -186,5 +186,3 @@ func init() {
 	logbookCreateCmd.Flags().StringVar(&lbRig, "rig", "", "Rig / transceiver")
 	logbookCreateCmd.Flags().StringVar(&lbAntenna, "antenna", "", "Antenna")
 }
-
-

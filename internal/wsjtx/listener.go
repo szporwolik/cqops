@@ -5,7 +5,7 @@ import (
 	"net"
 
 	wsjtx "github.com/k0swe/wsjtx-go/v4"
-	"github.com/szporwolik/cqops/internal/log"
+	"github.com/szporwolik/cqops/internal/applog"
 )
 
 type Event struct {
@@ -14,12 +14,12 @@ type Event struct {
 }
 
 type Listener struct {
-	server    *wsjtx.Server
-	active    bool
-	Events    chan Event
-	stop      chan struct{}
-	OnADIF    func(string)
-	OnStatus  func(string, string, uint64, string, string, string)
+	server   *wsjtx.Server
+	active   bool
+	Events   chan Event
+	stop     chan struct{}
+	OnADIF   func(string)
+	OnStatus func(string, string, uint64, string, string, string)
 }
 
 func NewListener() *Listener {
@@ -40,7 +40,7 @@ func (l *Listener) Start(host string, port int) error {
 
 	srv, err := wsjtx.MakeServerGiven(ip, uint(port))
 	if err != nil {
-		log.Error("WSJT-X: server create failed", "host", host, "port", port, "error", err.Error())
+		applog.Error("WSJT-X: server create failed", "host", host, "port", port, "error", err.Error())
 		return fmt.Errorf("server: %w", err)
 	}
 
@@ -53,7 +53,7 @@ func (l *Listener) Start(host string, port int) error {
 
 	go l.server.ListenToWsjtx(msgCh, errCh)
 
-	log.Info("WSJT-X listener started", "host", host, "port", port)
+	applog.Info("WSJT-X listener started", "host", host, "port", port)
 
 	go l.eventLoop(msgCh, errCh)
 	return nil
@@ -66,7 +66,7 @@ func (l *Listener) Stop() {
 	close(l.stop)
 	l.active = false
 	l.server = nil
-	log.Info("WSJT-X listener stopped")
+	applog.Info("WSJT-X listener stopped")
 }
 
 func (l *Listener) IsActive() bool {
@@ -84,31 +84,34 @@ func (l *Listener) eventLoop(msgCh chan interface{}, errCh chan error) {
 			}
 			switch m := msg.(type) {
 			case wsjtx.HeartbeatMessage:
-				log.Debug("WSJT-X: heartbeat", "id", m.Id, "version", m.Version)
+				applog.Debug("WSJT-X: heartbeat", "id", m.Id, "version", m.Version)
 			case wsjtx.StatusMessage:
-				log.InfoDetail("WSJT-X: status",
+				applog.InfoDetail("WSJT-X: status",
 					fmt.Sprintf("dx=%s dxGrid=%s freq=%d mode=%s subMode=%s report=%s",
 						m.DxCall, m.DxGrid, m.DialFrequency, m.Mode, m.SubMode, m.Report))
 				if l.OnStatus != nil {
 					go l.OnStatus(m.DxCall, m.DxGrid, m.DialFrequency, m.Mode, m.SubMode, m.Report)
 				}
 			case wsjtx.DecodeMessage:
-				continue
+				applog.Debug("WSJT-X: decode", "snr", m.Snr, "mode", m.Mode, "msg", m.Message)
+				if l.OnStatus != nil {
+					go l.OnStatus("", "", 0, "", "", "")
+				}
 			case wsjtx.LoggedAdifMessage:
-				log.InfoDetail("WSJT-X: logged ADIF", m.Adif)
+				applog.InfoDetail("WSJT-X: logged ADIF", m.Adif)
 				if l.OnADIF != nil {
-					log.Info("WSJT-X: calling OnADIF callback")
+					applog.Info("WSJT-X: calling OnADIF callback")
 					go l.OnADIF(m.Adif)
 				} else {
-					log.Warn("WSJT-X: OnADIF callback is nil, ADIF not auto-logged")
+					applog.Warn("WSJT-X: OnADIF callback is nil, ADIF not auto-logged")
 				}
 			case wsjtx.QsoLoggedMessage:
-				log.InfoDetail("WSJT-X: QSO logged",
+				applog.InfoDetail("WSJT-X: QSO logged",
 					fmt.Sprintf("dx=%s dxGrid=%s freq=%d mode=%s", m.DxCall, m.DxGrid, m.TxFrequency, m.Mode))
 			case wsjtx.CloseMessage:
-				log.Info("WSJT-X: close")
+				applog.Info("WSJT-X: close")
 			default:
-				log.Debug("WSJT-X: unknown msg", "type", fmt.Sprintf("%T", msg))
+				applog.Debug("WSJT-X: unknown msg", "type", fmt.Sprintf("%T", msg))
 			}
 			select {
 			case l.Events <- Event{Msg: msg}:
@@ -119,7 +122,7 @@ func (l *Listener) eventLoop(msgCh chan interface{}, errCh chan error) {
 				return
 			}
 			if e != nil {
-				log.Error("WSJT-X: error", "error", e.Error())
+				applog.Error("WSJT-X: error", "error", e.Error())
 			}
 		}
 	}

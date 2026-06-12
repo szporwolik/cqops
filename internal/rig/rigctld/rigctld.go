@@ -6,21 +6,21 @@ import (
 	"github.com/szporwolik/cqops/internal/rig"
 )
 
-type Rigctld struct {
+type Client struct {
 	Host      string
 	Port      int
 	TimeoutMS int
 }
 
-func New(host string, port int, timeoutMS int) *Rigctld {
-	return &Rigctld{
+func New(host string, port int, timeoutMS int) *Client {
+	return &Client{
 		Host:      host,
 		Port:      port,
 		TimeoutMS: timeoutMS,
 	}
 }
 
-func (r *Rigctld) Status(ctx context.Context) (rig.RigStatus, error) {
+func (r *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 	return rig.RigStatus{
 		Provider:  "rigctld",
 		Connected: false,

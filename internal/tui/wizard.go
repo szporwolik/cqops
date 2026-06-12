@@ -7,8 +7,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/szporwolik/cqops/internal/app"
+	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
-	"github.com/szporwolik/cqops/internal/log"
 )
 
 type wizardStep int
@@ -31,7 +31,7 @@ type Wizard struct {
 }
 
 func NewWizard(a *app.App) *Wizard {
-	log.Info("Wizard started — first-run setup")
+	applog.Info("Wizard started — first-run setup")
 	return &Wizard{
 		App:     a,
 		step:    stepStation,
@@ -65,16 +65,16 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					cs, _, gr := w.station.Values()
 					if cs == "" {
 						w.toasts.Error("Callsign is required")
-						log.Warn("Wizard validation: callsign missing")
+						applog.Warn("Wizard validation: callsign missing")
 						return w, nil
 					}
 					if gr == "" {
 						w.toasts.Error("Grid locator is required")
-						log.Warn("Wizard validation: grid locator missing")
+						applog.Warn("Wizard validation: grid locator missing")
 						return w, nil
 					}
 					w.step = stepRig
-					log.InfoDetail("Wizard station step completed", fmt.Sprintf("callsign=%s grid=%s", cs, gr))
+					applog.InfoDetail("Wizard station step completed", fmt.Sprintf("callsign=%s grid=%s", cs, gr))
 					return w, nil
 				}
 			case stepRig:
@@ -82,26 +82,26 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					rig, _, _ := w.rigForm.Values()
 					if rig == "" {
 						w.toasts.Error("Rig model is required")
-						log.Warn("Wizard validation: rig model missing")
+						applog.Warn("Wizard validation: rig model missing")
 						return w, nil
 					}
 					if w.rigForm.FlrigEnabled {
 						_, host, port := w.rigForm.FlrigValues()
 						if strings.TrimSpace(host) == "" {
 							w.toasts.Error("Flrig host is required")
-							log.Warn("Wizard validation: flrig host missing")
+							applog.Warn("Wizard validation: flrig host missing")
 							return w, nil
 						}
 						if strings.TrimSpace(port) == "" {
 							w.toasts.Error("Flrig port is required")
-							log.Warn("Wizard validation: flrig port missing")
+							applog.Warn("Wizard validation: flrig port missing")
 							return w, nil
 						}
 					}
 					w.step = stepTimezone
 					w.tzIndex = config.SystemTimezoneIndex()
 					flrigOn, _, _ := w.rigForm.FlrigValues()
-					log.InfoDetail("Wizard rig step completed", fmt.Sprintf("rig=%s flrig=%v", rig, flrigOn))
+					applog.InfoDetail("Wizard rig step completed", fmt.Sprintf("rig=%s flrig=%v", rig, flrigOn))
 					return w, nil
 				}
 			case stepTimezone:
@@ -233,7 +233,7 @@ func (w *Wizard) viewTimezone() string {
 
 func (w *Wizard) handleEnter() tea.Cmd {
 	w.App.Config.Timezone = config.Timezones[w.tzIndex]
-	log.Info("Wizard timezone selected", "timezone", config.Timezones[w.tzIndex])
+	applog.Info("Wizard timezone selected", "timezone", config.Timezones[w.tzIndex])
 	w.saveConfig()
 	return tea.Quit
 }
@@ -274,5 +274,5 @@ func (w *Wizard) saveConfig() {
 	lb := w.App.Config.Logbooks["default"]
 	w.App.Logbook = &lb
 
-	log.InfoDetail("Wizard completed — config saved", fmt.Sprintf("callsign=%s rig=%s flrig=%v tz=%s", cs, rig, flrigEnabled, config.Timezones[w.tzIndex]))
+	applog.InfoDetail("Wizard completed — config saved", fmt.Sprintf("callsign=%s rig=%s flrig=%v tz=%s", cs, rig, flrigEnabled, config.Timezones[w.tzIndex]))
 }

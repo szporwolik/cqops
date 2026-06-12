@@ -6,14 +6,14 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/szporwolik/cqops/internal/app"
+	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
-	"github.com/szporwolik/cqops/internal/log"
 )
 
 type chooserMode int
 
 const (
-	chooserList  chooserMode = iota
+	chooserList chooserMode = iota
 	chooserEdit
 	chooserCreate
 )
@@ -123,7 +123,9 @@ func (c *LogbookChooser) View() string {
 func (c *LogbookChooser) viewList() string {
 	var b strings.Builder
 	bodyW := c.width - 2
-	if bodyW < 30 { bodyW = 30 }
+	if bodyW < 30 {
+		bodyW = 30
+	}
 	title := "── Configuration — Logbooks "
 	b.WriteString(section(title, bodyW))
 	b.WriteString("\n\n")
@@ -159,7 +161,9 @@ func (c *LogbookChooser) viewList() string {
 func (c *LogbookChooser) viewForm() string {
 	var b strings.Builder
 	bodyW := c.width - 2
-	if bodyW < 30 { bodyW = 30 }
+	if bodyW < 30 {
+		bodyW = 30
+	}
 	t := "── Configuration — Create Logbook "
 	if c.mode == chooserEdit {
 		t = "── Configuration — Edit " + c.editing + " "
@@ -249,7 +253,7 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 		c.toasts.Error("Config save failed: " + err.Error())
 	} else {
 		c.toasts.Success("Logbook saved")
-		log.Info("Logbook config saved")
+		applog.Info("Logbook config saved")
 	}
 	return nil
 }

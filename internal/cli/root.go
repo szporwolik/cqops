@@ -7,8 +7,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 	"github.com/szporwolik/cqops/internal/app"
+	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
-	"github.com/szporwolik/cqops/internal/log"
 	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/tui"
 	"github.com/szporwolik/cqops/internal/version"
@@ -31,13 +31,21 @@ Run with commands for CLI-based logging and management.`,
 	},
 }
 
-func init() {
+func RegisterCommands() {
 	rootCmd.PersistentFlags().StringVarP(&logbookFlag, "logbook", "l", "", "Logbook name to use")
+
+	registerConfigCommands()
+	registerLogbookCommands()
+	registerLogCommands()
+	registerRigCommands()
+	registerResetCommands()
+	registerVersionCommands()
 }
 
 func Execute() error {
-	log.Init()
-	log.Info("══════════ CQOPS STARTED ══════════", "v", version.Resolved())
+	RegisterCommands()
+	applog.Init()
+	applog.Info("══════════ CQOPS STARTED ══════════", "v", version.Resolved())
 	if len(os.Args) <= 1 {
 		return runTUI()
 	}

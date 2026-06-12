@@ -8,18 +8,17 @@ import (
 )
 
 type Config struct {
-	ActiveLogbook string             `yaml:"active_logbook"`
-	Timezone      string             `yaml:"timezone"`
-	QRZUser       string             `yaml:"qrz_user,omitempty"`
-	QRZPass       string             `yaml:"qrz_pass,omitempty"`
-	QRZEnabled    bool               `yaml:"qrz_enabled,omitempty"`
-	RenderImages  bool               `yaml:"render_images,omitempty"`
-	DistanceUnit  string             `yaml:"distance_unit,omitempty"`
-	Logbooks      map[string]Logbook `yaml:"logbooks"`
+	ActiveLogbook string               `yaml:"active_logbook"`
+	Timezone      string               `yaml:"timezone"`
+	QRZUser       string               `yaml:"qrz_user,omitempty"`
+	QRZPass       string               `yaml:"qrz_pass,omitempty"`
+	QRZEnabled    bool                 `yaml:"qrz_enabled,omitempty"`
+	DistanceUnit  string               `yaml:"distance_unit,omitempty"`
+	Logbooks      map[string]Logbook   `yaml:"logbooks"`
 	Rigs          map[string]RigPreset `yaml:"rigs,omitempty"`
-	Rig           RigConfig          `yaml:"rig,omitempty"`
-	Wavelog       WavelogConfig      `yaml:"wavelog,omitempty"`
-	WSJTX         WSJTXConfig        `yaml:"wsjtx,omitempty"`
+	Rig           RigConfig            `yaml:"rig,omitempty"`
+	Wavelog       WavelogConfig        `yaml:"wavelog,omitempty"`
+	WSJTX         WSJTXConfig          `yaml:"wsjtx,omitempty"`
 }
 
 type Logbook struct {

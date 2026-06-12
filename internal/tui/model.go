@@ -12,8 +12,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/szporwolik/cqops/internal/app"
+	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
-	"github.com/szporwolik/cqops/internal/log"
 	"github.com/szporwolik/cqops/internal/qrz"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/rig/flrig"
@@ -39,7 +39,7 @@ const (
 	fieldQTH
 	fieldTXPower
 	fieldComment
-	fieldCount
+	fieldCount // sentinel: must be last; equals number of fields above
 )
 
 var fieldNames = []string{
@@ -49,62 +49,61 @@ var fieldNames = []string{
 }
 
 type Model struct {
-	App          *app.App
-	fields       [fieldCount]textinput.Model
-	focus        field
-	qsos         []qso.QSO
-	toasts       *ToastQueue
-	err          error
-	width        int
-	height       int
-	quitting     bool
-	rigConnected bool
-	rigFreq      float64
-	rigMode      string
-	rigPower     float64
-	rigBlink     bool
-	rigSkipTicks int
-	rigPolling   bool
-	dateTimeAuto bool
-	tickCount    int
-	inetOnline   bool
-	wsjtxOnline  bool
-	wsjtxStatus  string
-	needRefresh  bool
-	pendingADIF  string
-	pendingStatus statusPending
-	adifMu       sync.Mutex
-	showChooser  bool
-	chooser      *LogbookChooser
-	showRigEdit  bool
-	rigChooser   *RigChooser
-	showConfig   bool
-	configMenu   *GeneralMenu
-	showCallbook bool
-	callbookMenu  *CallbookMenu
+	App             *app.App
+	fields          [fieldCount]textinput.Model
+	focus           field
+	qsos            []qso.QSO
+	toasts          *ToastQueue
+	err             error
+	width           int
+	height          int
+	quitting        bool
+	rigConnected    bool
+	rigFreq         float64
+	rigMode         string
+	rigPower        float64
+	rigBlink        bool
+	rigSkipTicks    int
+	rigPolling      bool
+	dateTimeAuto    bool
+	tickCount       int
+	inetOnline      bool
+	wsjtxOnline     bool
+	wsjtxStatus     string
+	needRefresh     bool
+	pendingADIF     string
+	pendingStatus   statusPending
+	adifMu          sync.Mutex
+	showChooser     bool
+	chooser         *LogbookChooser
+	showRigEdit     bool
+	rigChooser      *RigChooser
+	showConfig      bool
+	configMenu      *GeneralMenu
+	showCallbook    bool
+	callbookMenu    *CallbookMenu
 	showIntegration bool
 	integrationMenu *IntegrationMenu
-	showMainMenu bool
-	showLogView  bool
-	logViewer    *LogViewer
-	mainMenu     *MainMenu
-	confirmQuit  bool
-	showPartner  bool
-	partnerData  *qrz.CallData
-	partnerASCII string
-	asciiW int
-	asciiH int
-	resizeSeq   int
-	partnerDirty bool
-	flrigClient  *flrig.Flrig
-	qrzNeed      bool
-	qrzCall      string
+	showMainMenu    bool
+	showLogView     bool
+	logViewer       *LogViewer
+	mainMenu        *MainMenu
+	confirmQuit     bool
+	showPartner     bool
+	partnerData     *qrz.CallData
+	flrigClient     *flrig.Client
+	qrzNeed         bool
+	qrzCall         string
+	qrzLastLook     time.Time
 }
 
 type tickMsg time.Time
-type qrzResultMsg struct{ Call string; Data *qrz.CallData; Err error }
+type qrzResultMsg struct {
+	Call string
+	Data *qrz.CallData
+	Err  error
+}
 type inetResultMsg bool
-type resizeSettledMsg struct{ Width, Height, Seq int }
 type statusPending struct {
 	call, grid, mode, submode, report string
 	freq                              uint64
@@ -118,19 +117,34 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 		ti.Prompt = ""
 		ti.CharLimit = 40
 		switch i {
-		case fieldCall: ti.Focus()
-		case fieldBand: ti.CharLimit = 8
-		case fieldFreq: ti.CharLimit = 16
-		case fieldMode: ti.CharLimit = 12
-		case fieldSubmode: ti.CharLimit = 16
-		case fieldDate: ti.CharLimit = 10; ti.SetValue(now.Format("2006-01-02"))
-		case fieldTime: ti.CharLimit = 8; ti.SetValue(now.Format("15:04:05"))
-		case fieldGrid: ti.CharLimit = 8
-		case fieldCountry: ti.CharLimit = 20
-		case fieldName: ti.CharLimit = 30
-		case fieldQTH: ti.CharLimit = 30
-		case fieldTXPower: ti.CharLimit = 8
-		case fieldComment: ti.CharLimit = 60
+		case fieldCall:
+			ti.Focus()
+		case fieldBand:
+			ti.CharLimit = 8
+		case fieldFreq:
+			ti.CharLimit = 16
+		case fieldMode:
+			ti.CharLimit = 12
+		case fieldSubmode:
+			ti.CharLimit = 16
+		case fieldDate:
+			ti.CharLimit = 10
+			ti.SetValue(now.Format("2006-01-02"))
+		case fieldTime:
+			ti.CharLimit = 8
+			ti.SetValue(now.Format("15:04:05"))
+		case fieldGrid:
+			ti.CharLimit = 8
+		case fieldCountry:
+			ti.CharLimit = 20
+		case fieldName:
+			ti.CharLimit = 30
+		case fieldQTH:
+			ti.CharLimit = 30
+		case fieldTXPower:
+			ti.CharLimit = 8
+		case fieldComment:
+			ti.CharLimit = 60
 		}
 		m.fields[i] = ti
 	}
@@ -140,22 +154,24 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 
 func (m *Model) Init() tea.Cmd {
 	m.refreshFlrigClient()
-	log.Info("WSJT-X: registering callbacks", "listenerActive", m.App.WSJTX.IsActive())
+	applog.Info("WSJT-X: registering callbacks", "listenerActive", m.App.WSJTX.IsActive())
 	m.App.WSJTX.OnADIF = func(adif string) {
-		log.Debug("WSJT-X: OnADIF callback invoked", "len", len(adif))
+		applog.Debug("WSJT-X: OnADIF callback invoked", "len", len(adif))
 		m.adifMu.Lock()
 		m.pendingADIF = adif
 		m.adifMu.Unlock()
 	}
 	m.App.WSJTX.OnStatus = func(call, grid string, freq uint64, mode, submode, report string) {
-		log.Debug("WSJT-X: OnStatus callback invoked", "call", call)
+		applog.Debug("WSJT-X: OnStatus callback invoked", "call", call)
 		m.adifMu.Lock()
 		m.pendingStatus = statusPending{call: call, grid: grid, freq: freq, mode: mode, submode: submode, report: report}
 		m.adifMu.Unlock()
 	}
 	return tea.Batch(tickCmd(), checkInetCmd())
 }
-func tickCmd() tea.Cmd { return tea.Tick(200*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) }) }
+func tickCmd() tea.Cmd {
+	return tea.Tick(200*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) })
+}
 func (m *Model) qrzLookupCmd(call string) tea.Cmd {
 	return func() tea.Msg {
 		data, err := qrz.Lookup(m.App.Config.QRZUser, m.App.Config.QRZPass, call)
@@ -186,12 +202,6 @@ func checkInetCmd() tea.Cmd {
 	}
 }
 
-func resizeDebounceCmd(w, h, seq int) tea.Cmd {
-	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
-		return resizeSettledMsg{Width: w, Height: h, Seq: seq}
-	})
-}
-
 func (m *Model) refreshFlrigClient() {
 	if len(m.App.Config.Rigs) == 0 {
 		s := m.App.Logbook.Station
@@ -201,19 +211,25 @@ func (m *Model) refreshFlrigClient() {
 		}}
 	}
 	rigName := m.App.Logbook.Station.RigName
-	if rigName == "" { rigName = "default" }
+	if rigName == "" {
+		rigName = "default"
+	}
 	if rp, ok := m.App.Config.Rigs[rigName]; ok && rp.FlrigEnabled {
 		host, port := rp.FlrigHost, rp.FlrigPort
-		if host == "" { host = "localhost" }
-		if port == "" { port = "12345" }
+		if host == "" {
+			host = "localhost"
+		}
+		if port == "" {
+			port = "12345"
+		}
 		url := "http://" + host + ":" + port
-		log.InfoDetail("flrig: connecting", fmt.Sprintf("rig=%s host=%s port=%s url=%s", rigName, host, port, url))
+		applog.InfoDetail("flrig: connecting", fmt.Sprintf("rig=%s host=%s port=%s url=%s", rigName, host, port, url))
 		m.flrigClient = flrig.New(url, 1000)
 	} else {
 		if !ok {
-			log.Debug("flrig: rig not found in config", "rigName", rigName)
+			applog.Debug("flrig: rig not found in config", "rigName", rigName)
 		} else {
-			log.Debug("flrig: disabled for rig", "rigName", rigName)
+			applog.Debug("flrig: disabled for rig", "rigName", rigName)
 		}
 		m.flrigClient = nil
 	}
@@ -233,7 +249,7 @@ func (m *Model) flrigStatusCmd() tea.Cmd {
 		return nil
 	}
 	client := m.flrigClient
-	log.Debug("flrig: dispatching status command")
+	applog.Debug("flrig: dispatching status command")
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 		defer cancel()
@@ -265,16 +281,34 @@ func (m *Model) pollFlrig() tea.Cmd {
 
 func (m *Model) applyFlrigResult(r flrigResultMsg) {
 	m.rigPolling = false
-	if r.err != "" { log.Debug("flrig: result error", "err", r.err); m.rigConnected = false; return }
-	if !r.connected { log.Debug("flrig: result disconnected"); m.rigConnected = false; return }
-	log.Debug("flrig: result ok", "freq", r.freq, "mode", r.mode)
+	if r.err != "" {
+		applog.Debug("flrig: result error", "err", r.err)
+		m.rigConnected = false
+		return
+	}
+	if !r.connected {
+		applog.Debug("flrig: result disconnected")
+		m.rigConnected = false
+		return
+	}
+	applog.Debug("flrig: result ok", "freq", r.freq, "mode", r.mode)
 	m.rigConnected = true
 	m.rigFreq = r.freq
-	if !m.wsjtxOnline { m.fields[fieldFreq].SetValue(fmt.Sprintf("%.6f", r.freq)) }
-	if r.mode != "" && !m.wsjtxOnline { m.fields[fieldMode].SetValue(r.mode) }
-	if r.band != "" { m.fields[fieldBand].SetValue(r.band) }
-	if !m.wsjtxOnline { m.autoFillSSBSubmode() }
-	if r.power > 0 { m.fields[fieldTXPower].SetValue(fmt.Sprintf("%.0f", r.power)) }
+	if !m.wsjtxOnline {
+		m.fields[fieldFreq].SetValue(fmt.Sprintf("%.6f", r.freq))
+	}
+	if r.mode != "" && !m.wsjtxOnline {
+		m.fields[fieldMode].SetValue(r.mode)
+	}
+	if r.band != "" {
+		m.fields[fieldBand].SetValue(r.band)
+	}
+	if !m.wsjtxOnline {
+		m.autoFillSSBSubmode()
+	}
+	if r.power > 0 {
+		m.fields[fieldTXPower].SetValue(fmt.Sprintf("%.0f", r.power))
+	}
 }
 
 func (m *Model) autoUpdateDateTime() {
@@ -305,8 +339,7 @@ func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode
 			m.fields[fieldQTH].SetValue("")
 			m.fields[fieldGrid].SetValue("")
 			m.partnerData = nil
-			m.partnerASCII = ""
-			log.InfoDetail("WSJT-X: switching DX call", fmt.Sprintf("%s → %s", prevCall, newCall))
+			applog.InfoDetail("WSJT-X: switching DX call", fmt.Sprintf("%s → %s", prevCall, newCall))
 			if m.App.Config.QRZEnabled && m.App.Config.QRZUser != "" {
 				m.toasts.Info("QRZ: looking up " + call + "…")
 				m.qrzNeed = true
@@ -341,22 +374,30 @@ func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode
 func (m *Model) logQSOFromADIF(adif string) {
 	qs := parseWSJTXADIF(adif)
 	if qs.Call == "" {
-		log.Warn("WSJT-X: logged ADIF has no call, skipping")
+		applog.Warn("WSJT-X: logged ADIF has no call, skipping")
 		m.toasts.Warn("WSJT-X: ADIF has no call")
 		return
 	}
+	qso.ApplyStationDefaults(qs, qso.StationInfo{
+		StationCallsign: m.App.Logbook.Station.Callsign,
+		Operator:        m.App.Logbook.Station.Operator,
+		MyGridSquare:    m.App.Logbook.Station.Grid,
+		MyRig:           m.App.Logbook.Station.Rig,
+		MyAntenna:       m.App.Logbook.Station.Antenna,
+		TXPower:         m.App.Logbook.Station.Power,
+	})
 	if err := qso.ValidateForSave(qs); err != nil {
-		log.Error("WSJT-X: ADIF validation failed", "error", err.Error())
+		applog.Error("WSJT-X: ADIF validation failed", "error", err.Error())
 		m.toasts.Error("WSJT-X: " + err.Error())
 		return
 	}
 	id, err := store.InsertQSO(m.App.DB, qs)
 	if err != nil {
-		log.Error("WSJT-X: DB insert failed", "error", err.Error())
+		applog.Error("WSJT-X: DB insert failed", "error", err.Error())
 		m.toasts.Error("WSJT-X: DB save failed")
 		return
 	}
-	log.InfoDetail("WSJT-X: auto-logged QSO", fmt.Sprintf("id=%d call=%s", id, qs.Call))
+	applog.InfoDetail("WSJT-X: auto-logged QSO", fmt.Sprintf("id=%d call=%s", id, qs.Call))
 	m.toasts.Success(fmt.Sprintf("WSJT-X: %s logged", qs.Call))
 	m.clearForm()
 	m.needRefresh = true
@@ -405,7 +446,9 @@ func parseWSJTXADIF(adif string) *qso.QSO {
 		case "band":
 			qs.Band = qso.NormalizeBand(val)
 		case "freq":
-			fmt.Sscanf(val, "%f", &qs.Freq)
+			if _, err := fmt.Sscanf(val, "%f", &qs.Freq); err != nil {
+				qs.Freq = 0
+			}
 		case "station_callsign":
 			qs.StationCallsign = strings.ToUpper(val)
 		case "my_gridsquare":
@@ -441,7 +484,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.pendingADIF = ""
 		m.adifMu.Unlock()
 		if adif != "" {
-			log.Info("WSJT-X: processing pending ADIF")
+			applog.Info("WSJT-X: processing pending ADIF")
 			m.logQSOFromADIF(adif)
 		}
 		m.adifMu.Lock()
@@ -459,26 +502,64 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.confirmQuit {
 		if key, ok := msg.(tea.KeyMsg); ok {
 			switch key.String() {
-			case "y", "Y": return m, tea.Quit
-			default: m.confirmQuit = false
+			case "y", "Y":
+				return m, tea.Quit
+			default:
+				m.confirmQuit = false
 			}
 		}
 		return m, cmd
 	}
-		if ir, ok := msg.(inetResultMsg); ok {
-			m.inetOnline = bool(ir)
-		}
-		if fr, ok := msg.(flrigResultMsg); ok {
-			m.applyFlrigResult(fr)
-			return m, cmd
-		}
-		if key, ok := msg.(tea.KeyMsg); ok {
+	if ir, ok := msg.(inetResultMsg); ok {
+		m.inetOnline = bool(ir)
+	}
+	if fr, ok := msg.(flrigResultMsg); ok {
+		m.applyFlrigResult(fr)
+		return m, cmd
+	}
+	if key, ok := msg.(tea.KeyMsg); ok {
 		switch key.String() {
-		case "f10": m.confirmQuit = true
-		case "f1": m.showChooser = false; m.showRigEdit = false; m.showIntegration = false; m.showConfig = false; m.showMainMenu = false; m.showLogView = false; m.showPartner = false
-		case "f2": if m.showPartner { m.showPartner = false } else if m.partnerData != nil { m.showPartner = true }
-		case "f8": if m.showMainMenu { m.showMainMenu = false } else { m.showChooser = false; m.showRigEdit = false; m.showIntegration = false; m.showConfig = false; m.showCallbook = false; m.showLogView = false; m.showPartner = false; m.mainMenu = NewMainMenu(); m.showMainMenu = true }
-		case "f9": m.showChooser = false; m.showRigEdit = false; m.showIntegration = false; m.showConfig = false; m.showCallbook = false; m.showMainMenu = false; m.showPartner = false; m.logViewer = NewLogViewer(m.App.LogbookName); m.showLogView = true; return m, cmd
+		case "f10":
+			m.confirmQuit = true
+		case "f1":
+			m.showChooser = false
+			m.showRigEdit = false
+			m.showIntegration = false
+			m.showConfig = false
+			m.showMainMenu = false
+			m.showLogView = false
+			m.showPartner = false
+		case "f2":
+			if m.showPartner {
+				m.showPartner = false
+			} else if m.partnerData != nil {
+				m.showPartner = true
+			}
+		case "f8":
+			if m.showMainMenu {
+				m.showMainMenu = false
+			} else {
+				m.showChooser = false
+				m.showRigEdit = false
+				m.showIntegration = false
+				m.showConfig = false
+				m.showCallbook = false
+				m.showLogView = false
+				m.showPartner = false
+				m.mainMenu = NewMainMenu()
+				m.showMainMenu = true
+			}
+		case "f9":
+			m.showChooser = false
+			m.showRigEdit = false
+			m.showIntegration = false
+			m.showConfig = false
+			m.showCallbook = false
+			m.showMainMenu = false
+			m.showPartner = false
+			m.logViewer = NewLogViewer(m.App.LogbookName)
+			m.showLogView = true
+			return m, cmd
 		}
 		if !m.showChooser && !m.showRigEdit && !m.showIntegration && !m.showConfig && !m.showCallbook && !m.showMainMenu && !m.showLogView && !m.showPartner {
 			if key.String() == "delete" || key.Type == tea.KeyDelete {
@@ -515,15 +596,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		_, _ = m.configMenu.Update(msg)
 		if m.configMenu.done {
 			m.showConfig = false
-			if m.configMenu.goBack { m.showMainMenu = true }
+			if m.configMenu.goBack {
+				m.showMainMenu = true
+			}
 			if m.configMenu.saved {
-				m.App.Config.RenderImages = m.configMenu.renderImages
 				m.App.Config.DistanceUnit = m.configMenu.distanceUnit
 				if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
 					m.toasts.Error("Settings save failed: " + err.Error())
 				} else {
 					m.toasts.Success("Settings saved")
-					log.Info("Settings saved")
+					applog.Info("Settings saved")
 				}
 				m.showMainMenu = true
 			}
@@ -534,7 +616,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		_, _ = m.callbookMenu.Update(msg)
 		if m.callbookMenu.done {
 			m.showCallbook = false
-			if m.callbookMenu.goBack { m.showMainMenu = true }
+			if m.callbookMenu.goBack {
+				m.showMainMenu = true
+			}
 			if m.callbookMenu.saved {
 				m.App.Config.QRZUser = m.callbookMenu.user.Value()
 				m.App.Config.QRZPass = m.callbookMenu.pass.Value()
@@ -543,7 +627,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.toasts.Error("Settings save failed: " + err.Error())
 				} else {
 					m.toasts.Success("Settings saved")
-					log.Info("Settings saved")
+					applog.Info("Settings saved")
 				}
 				m.showMainMenu = true
 			}
@@ -554,14 +638,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		_, _ = m.integrationMenu.Update(msg)
 		if m.integrationMenu.done {
 			m.showIntegration = false
-			if m.integrationMenu.goBack { m.showMainMenu = true }
+			if m.integrationMenu.goBack {
+				m.showMainMenu = true
+			}
 			if m.integrationMenu.saved {
 				m.App.Config.WSJTX.Enabled, m.App.Config.WSJTX.UDPHost, m.App.Config.WSJTX.UDPPort = m.integrationMenu.Values()
 				if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
 					m.toasts.Error("Settings save failed: " + err.Error())
 				} else {
 					m.toasts.Success("Settings saved")
-					log.Info("WSJT-X config saved, restarting listener")
+					applog.Info("WSJT-X config saved, restarting listener")
 					m.App.MaybeRestartWSJTX()
 				}
 				m.showMainMenu = true
@@ -576,11 +662,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mainMenu.action = ""
 			m.showMainMenu = false
 			switch action {
-			case "general": m.configMenu = NewGeneralMenu(m.App.Config); m.showConfig = true
-			case "callbook": m.callbookMenu = NewCallbookMenu(m.App.Config); m.showCallbook = true
-			case "logbook": m.chooser = NewLogbookChooser(m.App, m.toasts); m.showChooser = true
-			case "rig": m.rigChooser = NewRigChooser(m.App, m.toasts); m.showRigEdit = true
-			case "integration": m.integrationMenu = NewIntegrationMenu(m.App.Config); m.showIntegration = true
+			case "general":
+				m.configMenu = NewGeneralMenu(m.App.Config)
+				m.showConfig = true
+			case "callbook":
+				m.callbookMenu = NewCallbookMenu(m.App.Config)
+				m.showCallbook = true
+			case "logbook":
+				m.chooser = NewLogbookChooser(m.App, m.toasts)
+				m.showChooser = true
+			case "rig":
+				m.rigChooser = NewRigChooser(m.App, m.toasts)
+				m.showRigEdit = true
+			case "integration":
+				m.integrationMenu = NewIntegrationMenu(m.App.Config)
+				m.showIntegration = true
 			}
 		}
 		if m.mainMenu.done {
@@ -592,32 +688,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg := msg.(type) {
 		case tea.WindowSizeMsg:
 			m.width, m.height = msg.Width, msg.Height
-			m.asciiW = 0
-			m.asciiH = 0
-			m.partnerDirty = false
-			m.resizeSeq++
-			seq := m.resizeSeq
-			return m, resizeDebounceCmd(msg.Width, msg.Height, seq)
-		case qrzResultMsg:
-			m.fillQRZData(msg)
 			return m, cmd
-		case inetResultMsg:
-			m.inetOnline = bool(msg)
-			return m, cmd
-	case resizeSettledMsg:
-		if msg.Seq == m.resizeSeq {
-			m.partnerDirty = true
-		}
-		return m, cmd
-	case flrigResultMsg:
-		m.applyFlrigResult(msg)
-		return m, cmd
 		case tea.KeyMsg:
 			switch {
-			case msg.String() == "f8": m.showPartner = false
+			case msg.String() == "f8":
+				m.showPartner = false
+			}
+			return m, cmd
 		}
-		return m, cmd
-	}
 	}
 	if m.showLogView {
 		m.logViewer.width = m.width
@@ -631,25 +709,30 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
-		m.partnerDirty = false
-		m.resizeSeq++
-		return m, resizeDebounceCmd(msg.Width, msg.Height, m.resizeSeq)
-	case qrzResultMsg: m.fillQRZData(msg); return m, cmd
-	case inetResultMsg: m.inetOnline = bool(msg); return m, nil
-	case resizeSettledMsg:
-		if msg.Seq == m.resizeSeq {
-			m.partnerDirty = true
-		}
+		return m, nil
+	case qrzResultMsg:
+		m.fillQRZData(msg)
+		return m, cmd
+	case inetResultMsg:
+		m.inetOnline = bool(msg)
 		return m, nil
 	case tea.KeyMsg:
 		switch {
-		case msg.String() == "shift+tab" || msg.Type == tea.KeyShiftTab: m.prevField()
-		case msg.Type == tea.KeyUp || msg.String() == "up": m.prevField()
-		case msg.Type == tea.KeyDown || msg.String() == "down": m.nextField()
-		case msg.String() == "ctrl+s": return m, m.saveQSO()
-		case msg.String() == "delete" || msg.Type == tea.KeyDelete: m.clearForm()
-		case msg.String() == "ctrl+c": m.mainMenu = NewMainMenu(); m.showMainMenu = true
-		case msg.String() == "f1": m.focusField(fieldCall)
+		case msg.String() == "shift+tab" || msg.Type == tea.KeyShiftTab:
+			m.prevField()
+		case msg.Type == tea.KeyUp || msg.String() == "up":
+			m.prevField()
+		case msg.Type == tea.KeyDown || msg.String() == "down":
+			m.nextField()
+		case msg.String() == "ctrl+s":
+			return m, m.saveQSO()
+		case msg.String() == "delete" || msg.Type == tea.KeyDelete:
+			m.clearForm()
+		case msg.String() == "ctrl+c":
+			m.mainMenu = NewMainMenu()
+			m.showMainMenu = true
+		case msg.String() == "f1":
+			m.focusField(fieldCall)
 		case msg.String() == "f2":
 			call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
 			if call != "" && m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled && m.partnerData == nil {
@@ -663,11 +746,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if call != "" && m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled {
 				return m, m.qrzLookup(call)
 			}
-		case msg.String() == "tab" || msg.String() == "\t" || msg.Type == tea.KeyTab: m.nextField()
-		case msg.String() == "enter": return m, m.saveQSO()
-		case msg.Type == tea.KeyPgUp || msg.String() == "pgup": m.cycleFieldUp()
-		case msg.Type == tea.KeyPgDown || msg.String() == "pgdown": m.cycleFieldDown()
-		default: m.updateFocused(msg)
+		case msg.String() == "tab" || msg.String() == "\t" || msg.Type == tea.KeyTab:
+			m.nextField()
+		case msg.String() == "enter":
+			return m, m.saveQSO()
+		case msg.Type == tea.KeyPgUp || msg.String() == "pgup":
+			m.cycleFieldUp()
+		case msg.Type == tea.KeyPgDown || msg.String() == "pgdown":
+			m.cycleFieldDown()
+		default:
+			m.updateFocused(msg)
 		}
 	}
 	if m.needRefresh {
@@ -677,37 +765,61 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.qrzNeed {
 		m.qrzNeed = false
 		call := m.qrzCall
-		if call == "" { return m, cmd }
-		if !m.App.Config.QRZEnabled { return m, cmd }
-		if m.App.Config.QRZUser == "" { m.toasts.Warn("QRZ not configured — F8 Config → Callbook / QRZ.com to enable"); return m, cmd }
+		if call == "" {
+			return m, cmd
+		}
+		if !m.App.Config.QRZEnabled {
+			return m, cmd
+		}
+		if m.App.Config.QRZUser == "" {
+			m.toasts.Warn("QRZ not configured — F8 Config → Callbook / QRZ.com to enable")
+			return m, cmd
+		}
+		if time.Since(m.qrzLastLook) < 5*time.Second {
+			return m, cmd
+		}
+		m.qrzLastLook = time.Now()
 		return m, tea.Batch(cmd, m.qrzLookup(call))
 	}
 	return m, cmd
 }
 
 func (m *Model) fillQRZData(msg qrzResultMsg) {
-	if msg.Call == "" { return }
+	if msg.Call == "" {
+		return
+	}
 	formCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
 	if formCall != "" && formCall != strings.ToUpper(msg.Call) {
 		return
 	}
-	if !m.App.Config.QRZEnabled || m.App.Config.QRZUser == "" { m.toasts.Warn("QRZ not configured"); return }
+	if !m.App.Config.QRZEnabled || m.App.Config.QRZUser == "" {
+		m.toasts.Warn("QRZ not configured")
+		return
+	}
 	if msg.Err != nil {
-		m.toasts.Error("QRZ error: "+msg.Err.Error())
+		m.toasts.Error("QRZ error: " + msg.Err.Error())
 		return
 	}
 	d := msg.Data
-	if d == nil || d.Callsign == "" { m.toasts.Warn("QRZ: no data for "+msg.Call); return }
+	if d == nil || d.Callsign == "" {
+		m.toasts.Warn("QRZ: no data for " + msg.Call)
+		return
+	}
 	m.partnerData = d
-	m.partnerASCII = ""
-	m.asciiW = 0
-	m.asciiH = 0
-	if d.Name != "" { m.fields[fieldName].SetValue(d.Name) }
-	if d.Grid != "" && m.fields[fieldGrid].Value() == "" { m.fields[fieldGrid].SetValue(formatLocator(d.Grid)) }
-	if d.QTH != "" { m.fields[fieldQTH].SetValue(d.QTH) }
-	if d.Country != "" && m.fields[fieldCountry].Value() == "" { m.fields[fieldCountry].SetValue(d.Country) }
+	if d.Name != "" {
+		m.fields[fieldName].SetValue(d.Name)
+	}
+	if d.Grid != "" && m.fields[fieldGrid].Value() == "" {
+		m.fields[fieldGrid].SetValue(formatLocator(d.Grid))
+	}
+	if d.QTH != "" {
+		m.fields[fieldQTH].SetValue(d.QTH)
+	}
+	if d.Country != "" && m.fields[fieldCountry].Value() == "" {
+		m.fields[fieldCountry].SetValue(d.Country)
+	}
 	m.autoFillRST()
-	m.toasts.Info("QRZ: "+d.Callsign+" "+d.Name)
+	m.toasts.Info("QRZ: " + d.Callsign + " " + d.Name)
 }
 
 func trimLines(s string, maxLines int) string {
@@ -719,13 +831,20 @@ func trimLines(s string, maxLines int) string {
 }
 
 func (m *Model) View() string {
-	if m.quitting { return "" }
-	if m.err != nil { return errorStyle.Render(fmt.Sprintf("Error: %v\nPress any key to exit.", m.err)) }
+	if m.quitting {
+		return ""
+	}
+	if m.err != nil {
+		return errorStyle.Render(fmt.Sprintf("Error: %v\nPress any key to exit.", m.err))
+	}
 	if m.width < 80 || m.height < 24 {
 		minMsg := fmt.Sprintf("CQOPS needs at least 80x24 terminal.\nCurrent: %dx%d", m.width, m.height)
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render(minMsg)
 	}
-	w := m.width; if w < 40 { w = 80 }
+	w := m.width
+	if w < 40 {
+		w = 80
+	}
 	header := m.renderHeader(w)
 	var content string
 	if m.confirmQuit {
@@ -758,7 +877,9 @@ func (m *Model) View() string {
 	headerLines := strings.Count(header, "\n") + 1
 	footerLines := strings.Count(footer, "\n") + 1
 	toastLines := strings.Count(toastBar, "\n")
-	if toastBar != "" { toastLines++ }
+	if toastBar != "" {
+		toastLines++
+	}
 	extraLines := headerLines + toastLines + footerLines
 	if m.height > 0 && extraLines < m.height {
 		maxBodyH := m.height - extraLines
@@ -768,7 +889,9 @@ func (m *Model) View() string {
 	if m.height > 0 {
 		mainLines := strings.Count(mainBlock, "\n") + 1
 		pad := m.height - mainLines - toastLines - footerLines
-		if pad < 0 { pad = 0 }
+		if pad < 0 {
+			pad = 0
+		}
 		mainBlock += strings.Repeat("\n", pad)
 	}
 	var all string
@@ -796,12 +919,12 @@ func (m *Model) renderHeader(width int) string {
 		if rp.FlrigEnabled {
 			if m.rigConnected {
 				if m.rigBlink {
-					rigIndicator = ansiFg(th.Success, " on")
+					rigIndicator = SuccessStyle.Render(" on")
 				} else {
 					rigIndicator = "   "
 				}
 			} else {
-				rigIndicator = ansiFg(th.Error, " err")
+				rigIndicator = ErrorStyle.Render(" err")
 			}
 		}
 	}
@@ -811,47 +934,53 @@ func (m *Model) renderHeader(width int) string {
 		locator = "----"
 	}
 
-	inetVal := ansiFg(th.Error, "no ")
+	inetVal := ErrorStyle.Render("no ")
 	if m.inetOnline {
-		inetVal = ansiFg(th.Success, "yes")
+		inetVal = SuccessStyle.Render("yes")
 	}
 
-	left := ansiFg(th.Label, "Call: ") + ansiFg(th.Value, clamp(s.Callsign, 8)) +
-		ansiFg(th.Label, "  Op: ") + ansiFg(th.Value, clamp(s.Operator, 8)) +
-		ansiFg(th.Label, "  Log: ") + ansiFg(th.Value, clamp(m.App.LogbookName, 8)) +
-		ansiFg(th.Label, "  Loc: ") + ansiFg(th.Value, clamp(locator, 6))
+	left := LabelStyle.Render("Call: ") + ValueStyle.Render(clamp(s.Callsign, 8)) +
+		LabelStyle.Render("  Op: ") + ValueStyle.Render(clamp(s.Operator, 8)) +
+		LabelStyle.Render("  Log: ") + ValueStyle.Render(clamp(m.App.LogbookName, 8)) +
+		LabelStyle.Render("  Loc: ") + ValueStyle.Render(clamp(locator, 6))
 
-	center := ansiBoldFg(th.Accent, "CQOPS")
+	center := TitleStyle.UnsetPadding().Render("CQOPS")
 	if v := version.Resolved(); v != "dev" {
-		center += ansiFg(th.Subtle, " v"+v)
+		center += SubtleStyle.Render(" v" + v)
 	}
 
-	right := ansiFg(th.Label, "inet: ") + inetVal
+	right := LabelStyle.Render("inet: ") + inetVal
 	if m.App.Config.WSJTX.Enabled {
-		wVal := ansiFg(th.Error, "off")
+		wVal := ErrorStyle.Render("off")
 		if m.wsjtxOnline {
-			wVal = ansiFg(th.Success, "on")
+			wVal = SuccessStyle.Render("on")
 		}
-		right += ansiFg(th.Label, "  wsjtx:") + wVal
+		right += LabelStyle.Render("  wsjtx:") + wVal
 	}
-	right += ansiFg(th.Label, "  Rig: ") + ansiFg(th.Value, rigModel) + rigIndicator +
-		ansiFg(th.Label, "  LT: ") + ansiFg(th.Value, now.Format("15:04")) +
-		ansiFg(th.Label, "  UTC: ") + ansiFg(th.Value, utc.Format("15:04:05"))
+	right += LabelStyle.Render("  Rig: ") + ValueStyle.Render(rigModel) + rigIndicator
+	rightFully := right +
+		LabelStyle.Render("  LT: ") + ValueStyle.Render(now.Format("15:04")) +
+		LabelStyle.Render("  UTC: ") + ValueStyle.Render(utc.Format("15:04:05"))
+	rightCompact := right +
+		LabelStyle.Render("  UTC: ") + ValueStyle.Render(utc.Format("15:04:05"))
 
 	leftW := lipgloss.Width(left)
-	rightW := lipgloss.Width(right)
-	totalW := leftW + rightW
 
-	bgStyle := BarStyle
-
-	if totalW+6 > width {
+	// Try full right side first, then without local time, then two rows
+	rightStr := rightFully
+	rightW := lipgloss.Width(rightFully)
+	if leftW+rightW+6 > width {
+		rightStr = rightCompact
+		rightW = lipgloss.Width(rightCompact)
+	}
+	if leftW+rightW+6 > width {
+		// Two-row fallback (no background on header)
 		line1 := "  " + left
 		for lipgloss.Width(line1) < width {
 			line1 += " "
 		}
-		line1 = bgStyle.Render(line1)
 
-		line2 := right
+		line2 := rightFully
 		for lipgloss.Width(line2) < width-2 {
 			line2 = " " + line2
 		}
@@ -859,33 +988,23 @@ func (m *Model) renderHeader(width int) string {
 		for lipgloss.Width(line2) < width {
 			line2 += " "
 		}
-		line2 = bgStyle.Render(line2)
 
 		tabLine := m.renderTabLine(width)
 		return line1 + "\n" + line2 + "\n" + tabLine
 	}
 
-	gap := width - 4 - totalW
+	gap := width - 4 - leftW - rightW
 	if gap < 2 {
 		gap = 2
 	}
 
-	statusLine := "  " + left + strings.Repeat(" ", gap) + right
+	statusLine := "  " + left + strings.Repeat(" ", gap) + rightStr
 	for lipgloss.Width(statusLine) < width {
 		statusLine += " "
 	}
-	statusLine = bgStyle.Render(statusLine)
 
 	tabLine := m.renderTabLine(width)
 	return statusLine + "\n" + tabLine
-}
-
-func ansiFg(color lipgloss.Color, s string) string {
-	return "\x1b[38;5;" + string(color) + "m" + s + "\x1b[39m"
-}
-
-func ansiBoldFg(color lipgloss.Color, s string) string {
-	return "\x1b[1m\x1b[38;5;" + string(color) + "m" + s + "\x1b[22m\x1b[39m"
 }
 
 func (m *Model) renderTabLine(width int) string {
@@ -976,26 +1095,6 @@ func (m *Model) viewPartner() string {
 	if bodyW < 30 {
 		bodyW = 30
 	}
-	headerH := 3
-	footerH := 1
-
-	minDetailsW := 44
-	prefDetailsW := 60
-	minImageW := 22
-	gap := 3
-
-	detailsW := bodyW
-	imageW := 0
-
-	if bodyW >= prefDetailsW+minImageW+gap {
-		detailsW = prefDetailsW
-		imageW = bodyW - detailsW - gap
-	} else if bodyW >= minDetailsW+minImageW+gap {
-		detailsW = bodyW - minImageW - gap
-		imageW = minImageW
-	}
-
-	showImage := imageW >= minImageW && m.App.Config.RenderImages && d.ImageURL != ""
 
 	var b strings.Builder
 
@@ -1003,41 +1102,18 @@ func (m *Model) viewPartner() string {
 	b.WriteString(section(title, bodyW))
 	b.WriteString("\n\n")
 
-	info := m.renderPartnerInfo(d, detailsW)
+	info := m.renderPartnerInfo(d, bodyW)
+	b.WriteString(info)
 
-	if showImage {
-		infoLines := strings.Count(info, "\n") + 1
-		propH := imageW * 6 / 4
-		imgH := infoLines
-		if propH > imgH {
-			imgH = propH
+	if d.ImageURL != "" {
+		linkText := DimStyle.Render(d.ImageURL)
+		pad := (bodyW - lipgloss.Width(linkText)) / 2
+		if pad < 0 {
+			pad = 0
 		}
-		if imgH < 8 {
-			imgH = 8
-		}
-		maxAvailH := h - headerH - footerH - 10
-		if imgH > maxAvailH {
-			imgH = maxAvailH
-		}
-		if imgH > 22 {
-			imgH = 22
-		}
-		if m.partnerDirty || m.partnerASCII == "" || m.asciiW != imageW || m.asciiH != imgH {
-			ascii, _ := downloadAndRenderASCII(d.ImageURL, imageW, imgH)
-			m.partnerASCII = ascii
-			m.asciiW = imageW
-			m.asciiH = imgH
-			m.partnerDirty = false
-		}
-		leftBlock := lipgloss.NewStyle().Width(detailsW).Render(info)
-		rightContent := m.partnerASCII
-		if rightContent == "" {
-			rightContent = DimStyle.Render("(no image)")
-		}
-		rightBlock := rightContent
-		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftBlock, strings.Repeat(" ", gap), rightBlock))
-	} else {
-		b.WriteString(info)
+		b.WriteString("\n\n")
+		b.WriteString(strings.Repeat(" ", pad))
+		b.WriteString(linkText)
 	}
 
 	dl := m.partnerDistanceLine(bodyW)
@@ -1050,7 +1126,7 @@ func (m *Model) viewPartner() string {
 	}
 
 	usedLines := strings.Count(b.String(), "\n") + 1
-	availMapH := h - headerH - footerH - usedLines - 2
+	availMapH := h - 4 - usedLines - 2
 	mapRendered := false
 	if availMapH >= 6 {
 		b.WriteString("\n\n")
@@ -1116,6 +1192,7 @@ func (m *Model) renderPartnerInfo(d *qrz.CallData, maxW int) string {
 	add("QTH", d.QTH)
 	add("Country", d.Country)
 	add("State", d.State)
+	add("County", d.County)
 	add("Zip", d.Zip)
 	add("Class", d.Class)
 	add("Email", d.Email)
@@ -1171,7 +1248,7 @@ func (m *Model) viewFooter(width int) string {
 	case m.showLogView:
 		text = "↑↓ to scroll  F10 Quit"
 	case m.showPartner && m.partnerData != nil:
-			text = "F10 Quit"
+		text = "F10 Quit"
 	default:
 		if width < 70 {
 			text = "Enter=Save | Del Clear | Ins/Ctrl+L Lookup | PgUp/Dn Cycle | F10 Quit"
@@ -1183,8 +1260,8 @@ func (m *Model) viewFooter(width int) string {
 	if v := version.Resolved(); v != "dev" {
 		ver = "CQOPS v" + v
 	}
-	helpStr := ansiFg(th.Muted, text)
-	verStr := ansiFg(th.Debug, ver)
+	helpStr := HelpStyle.Render(text)
+	verStr := DimStyle.Render(ver)
 	helpW := lipgloss.Width(helpStr)
 	verW := lipgloss.Width(verStr)
 	innerW := width - 4
@@ -1203,7 +1280,15 @@ func (m *Model) viewFooter(width int) string {
 	return BarStyle.Render(line)
 }
 
-func truncate(s string, max int) string { if max < 3 { return s }; if lipgloss.Width(s) <= max { return s }; return s[:max-1] + "…" }
+func truncate(s string, max int) string {
+	if max < 3 {
+		return s
+	}
+	if lipgloss.Width(s) <= max {
+		return s
+	}
+	return s[:max-1] + "…"
+}
 
 func (m *Model) viewForm(width int) string {
 	bodyW := width - 2
@@ -1262,10 +1347,16 @@ type qsoCol struct {
 }
 
 var qsoAllCols = map[string]qsoCol{
-	"Date":    {"Date", 10, false, func(q *qso.QSO) string { return formatDate(q.QSODate) }},
-	"Time":    {"Time", 8, false, func(q *qso.QSO) string { return formatTime(q.TimeOn) }},
-	"Call":    {"Call", 7, true, func(q *qso.QSO) string { return q.Call }},
-	"Band":    {"Band", 5, false, func(q *qso.QSO) string { b := qso.NormalizeBand(q.Band); if b == "" && q.Freq > 0 { b = fmt.Sprintf("%.1f", q.Freq) }; return b }},
+	"Date": {"Date", 10, false, func(q *qso.QSO) string { return formatDate(q.QSODate) }},
+	"Time": {"Time", 8, false, func(q *qso.QSO) string { return formatTime(q.TimeOn) }},
+	"Call": {"Call", 7, true, func(q *qso.QSO) string { return q.Call }},
+	"Band": {"Band", 5, false, func(q *qso.QSO) string {
+		b := qso.NormalizeBand(q.Band)
+		if b == "" && q.Freq > 0 {
+			b = fmt.Sprintf("%.1f", q.Freq)
+		}
+		return b
+	}},
 	"Mode":    {"Mode", 5, false, func(q *qso.QSO) string { return q.Mode }},
 	"RSTs":    {"RSTs", 4, false, func(q *qso.QSO) string { return q.RSTSent }},
 	"RSTr":    {"RSTr", 4, false, func(q *qso.QSO) string { return q.RSTRcvd }},
@@ -1276,7 +1367,12 @@ var qsoAllCols = map[string]qsoCol{
 	"Grid":    {"Grid", 6, false, func(q *qso.QSO) string { return q.GridSquare }},
 	"QTH":     {"QTH", 8, true, func(q *qso.QSO) string { return q.QTH }},
 	"Comment": {"Comment", 10, true, func(q *qso.QSO) string { return q.Comment }},
-	"Dist":    {"Dist", 6, false, func(q *qso.QSO) string { if q.Distance > 0 { return fmt.Sprintf("%.0f", q.Distance) }; return "" }},
+	"Dist": {"Dist", 6, false, func(q *qso.QSO) string {
+		if q.Distance > 0 {
+			return fmt.Sprintf("%.0f", q.Distance)
+		}
+		return ""
+	}},
 }
 
 var qsoColTiers = []struct {
@@ -1429,9 +1525,13 @@ func (m *Model) formDistanceLine(width int) string {
 }
 
 func (m *Model) availableQSORows() int {
-	if m.height <= 0 { return 5 }
+	if m.height <= 0 {
+		return 5
+	}
 	avail := m.height - 32
-	if avail < 1 { avail = 1 }
+	if avail < 1 {
+		avail = 1
+	}
 	return avail
 }
 
@@ -1443,7 +1543,8 @@ func (m *Model) focusField(f field) {
 
 func (m *Model) nextField() {
 	wasCall := m.focus == fieldCall
-	m.fields[m.focus].Blur(); m.focus = (m.focus + 1) % fieldCount
+	m.fields[m.focus].Blur()
+	m.focus = (m.focus + 1) % fieldCount
 	m.fields[m.focus].Focus()
 	if wasCall {
 		m.qrzNeed = true
@@ -1455,7 +1556,11 @@ func (m *Model) nextField() {
 func (m *Model) prevField() {
 	wasCall := m.focus == fieldCall
 	m.fields[m.focus].Blur()
-	if m.focus == 0 { m.focus = fieldCount - 1 } else { m.focus-- }
+	if m.focus == 0 {
+		m.focus = fieldCount - 1
+	} else {
+		m.focus--
+	}
 	m.fields[m.focus].Focus()
 	if wasCall {
 		m.qrzNeed = true
@@ -1487,7 +1592,9 @@ func (m *Model) autoFillSSBSubmode() {
 		return
 	}
 	var freq float64
-	fmt.Sscanf(m.fields[fieldFreq].Value(), "%f", &freq)
+	if _, err := fmt.Sscanf(m.fields[fieldFreq].Value(), "%f", &freq); err != nil {
+		freq = 0
+	}
 	if freq <= 0 {
 		return
 	}
@@ -1505,7 +1612,9 @@ func (m *Model) updateFocused(msg tea.KeyMsg) {
 	if (m.focus == fieldDate || m.focus == fieldTime) && m.fields[m.focus].Value() != prevVal {
 		m.dateTimeAuto = false
 	}
-	if m.focus == fieldCall { m.fields[m.focus].SetValue(strings.ToUpper(m.fields[m.focus].Value())) }
+	if m.focus == fieldCall {
+		m.fields[m.focus].SetValue(strings.ToUpper(m.fields[m.focus].Value()))
+	}
 	if m.focus == fieldGrid {
 		m.fields[m.focus].SetValue(formatLocator(m.fields[m.focus].Value()))
 	}
@@ -1513,9 +1622,6 @@ func (m *Model) updateFocused(msg tea.KeyMsg) {
 		cur := strings.TrimSpace(m.fields[fieldCall].Value())
 		if cur != prevCall && m.partnerData != nil && !strings.EqualFold(m.partnerData.Callsign, cur) {
 			m.partnerData = nil
-			m.partnerASCII = ""
-			m.asciiW = 0
-			m.asciiH = 0
 			m.showPartner = false
 		}
 	}
@@ -1546,11 +1652,9 @@ func (m *Model) clearForm() {
 		}
 	}
 	m.dateTimeAuto = true
-	m.focus = fieldCall; m.fields[m.focus].Focus()
+	m.focus = fieldCall
+	m.fields[m.focus].Focus()
 	m.partnerData = nil
-	m.partnerASCII = ""
-	m.asciiW = 0
-	m.asciiH = 0
 	m.showPartner = false
 }
 
@@ -1639,7 +1743,9 @@ func (m *Model) saveQSO() tea.Cmd {
 	m.autoFillSSBSubmode()
 	qs := qso.NewQSO()
 	var freq float64
-	fmt.Sscanf(m.fields[fieldFreq].Value(), "%f", &freq)
+	if _, err := fmt.Sscanf(m.fields[fieldFreq].Value(), "%f", &freq); err != nil {
+		freq = 0
+	}
 	qs.Call, qs.Band, qs.Freq = strings.ToUpper(m.fields[fieldCall].Value()), strings.ToUpper(m.fields[fieldBand].Value()), freq
 	qs.Mode, qs.RSTSent, qs.RSTRcvd = strings.ToUpper(m.fields[fieldMode].Value()), m.fields[fieldRSTSent].Value(), m.fields[fieldRSTRcvd].Value()
 	qs.Submode = strings.ToUpper(m.fields[fieldSubmode].Value())
@@ -1659,17 +1765,30 @@ func (m *Model) saveQSO() tea.Cmd {
 		qs.Distance = gridDistanceKm(station.MyGridSquare, qs.GridSquare)
 		bearStr := gridBearing(station.MyGridSquare, qs.GridSquare)
 		if bearStr != "" {
-			fmt.Sscanf(bearStr, "%f", &qs.Bearing)
+			if _, err := fmt.Sscanf(bearStr, "%f", &qs.Bearing); err != nil {
+				qs.Bearing = 0
+			}
 		}
 	}
 	qso.ApplyStationDefaults(qs, station)
-	if err := qso.ValidateForSave(qs); err != nil { m.toasts.Error(err.Error()); return nil }
-	if _, err := store.InsertQSO(m.App.DB, qs); err != nil { m.toasts.Error(fmt.Sprintf("Save failed: %v", err)); return nil }
-	m.clearForm(); m.toasts.Success(fmt.Sprintf("QSO saved: %s", qs.Call))
+	if err := qso.ValidateForSave(qs); err != nil {
+		m.toasts.Error(err.Error())
+		return nil
+	}
+	if _, err := store.InsertQSO(m.App.DB, qs); err != nil {
+		m.toasts.Error(fmt.Sprintf("Save failed: %v", err))
+		return nil
+	}
+	m.clearForm()
+	m.toasts.Success(fmt.Sprintf("QSO saved: %s", qs.Call))
 	return m.refreshQSOS()
 }
 func (m *Model) refreshQSOS() tea.Cmd {
 	qsos, err := store.ListQSOs(m.App.DB, 30)
-	if err != nil { m.toasts.Error(fmt.Sprintf("Refresh failed: %v", err)); return nil }
-	m.qsos = qsos; return nil
+	if err != nil {
+		m.toasts.Error(fmt.Sprintf("Refresh failed: %v", err))
+		return nil
+	}
+	m.qsos = qsos
+	return nil
 }

@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/szporwolik/cqops/internal/log"
+	"github.com/szporwolik/cqops/internal/applog"
 )
 
 type LogViewer struct {
@@ -48,19 +48,25 @@ func (lv *LogViewer) View() string {
 	if lv.done {
 		return ""
 	}
-	entries := log.Entries()
+	entries := applog.Entries()
 	if len(entries) == 0 {
 		return "No log entries yet."
 	}
 
 	w := lv.width
-	if w < 40 { w = 80 }
+	if w < 40 {
+		w = 80
+	}
 	bodyW := w - 2
 
 	h := lv.height
-	if h < 10 { h = 24 }
+	if h < 10 {
+		h = 24
+	}
 	maxRows := h - 10
-	if maxRows < 5 { maxRows = 5 }
+	if maxRows < 5 {
+		maxRows = 5
+	}
 
 	if lv.offset > len(entries)-maxRows {
 		lv.offset = len(entries) - maxRows

@@ -6,14 +6,14 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/szporwolik/cqops/internal/app"
+	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
-	"github.com/szporwolik/cqops/internal/log"
 )
 
 type rigChooserMode int
 
 const (
-	rigChooserList   rigChooserMode = iota
+	rigChooserList rigChooserMode = iota
 	rigChooserEdit
 	rigChooserCreate
 )
@@ -126,7 +126,9 @@ func (rc *RigChooser) View() string {
 func (rc *RigChooser) viewList() string {
 	var b strings.Builder
 	bodyW := rc.width - 2
-	if bodyW < 30 { bodyW = 30 }
+	if bodyW < 30 {
+		bodyW = 30
+	}
 	title := "── Configuration — Rigs "
 	b.WriteString(section(title, bodyW))
 	b.WriteString("\n\n")
@@ -153,7 +155,7 @@ func (rc *RigChooser) viewList() string {
 		}
 		flrig := " "
 		if rp.FlrigEnabled {
-			flrig = "♜"
+			flrig = "flrig"
 		}
 		b.WriteString(fmt.Sprintf("%s%s %s %s  %s\n", marker, active, name, info, flrig))
 	}
@@ -164,7 +166,9 @@ func (rc *RigChooser) viewList() string {
 func (rc *RigChooser) viewForm() string {
 	var b strings.Builder
 	bodyW := rc.width - 2
-	if bodyW < 30 { bodyW = 30 }
+	if bodyW < 30 {
+		bodyW = 30
+	}
 	t := "── Configuration — Create Rig "
 	if rc.mode == rigChooserEdit {
 		t = "── Configuration — Edit Rig " + rc.editing + " "
@@ -196,7 +200,7 @@ func (rc *RigChooser) selectRig() tea.Cmd {
 		rc.toasts.Error("Config save failed: " + err.Error())
 	} else {
 		rc.toasts.Success("Rig \"" + name + "\" selected")
-		log.Info("Rig selected", "name", name)
+		applog.Info("Rig selected", "name", name)
 	}
 	rc.done = true
 	return nil
@@ -272,7 +276,7 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 		rc.toasts.Error("Config save failed: " + err.Error())
 	} else {
 		rc.toasts.Success("Rig saved")
-		log.Info("Rig config saved")
+		applog.Info("Rig config saved")
 	}
 	return nil
 }

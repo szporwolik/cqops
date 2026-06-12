@@ -8,7 +8,6 @@ import (
 )
 
 type GeneralMenu struct {
-	renderImages bool
 	distanceUnit string
 	cursor       int
 	done         bool
@@ -23,7 +22,7 @@ func NewGeneralMenu(cfg *config.Config) *GeneralMenu {
 	if du != "mi" {
 		du = "km"
 	}
-	return &GeneralMenu{renderImages: cfg.RenderImages, distanceUnit: du}
+	return &GeneralMenu{distanceUnit: du}
 }
 
 func (gm *GeneralMenu) Init() tea.Cmd { return nil }
@@ -52,8 +51,6 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case " ", "enter":
 			if gm.cursor == 0 {
-				gm.renderImages = !gm.renderImages
-			} else {
 				if gm.distanceUnit == "km" {
 					gm.distanceUnit = "mi"
 				} else {
@@ -83,22 +80,11 @@ func (gm *GeneralMenu) View() string {
 	b.WriteString(section(title, bodyW))
 	b.WriteString("\n\n")
 
-	imgCheck := "[ ]"
-	if gm.renderImages {
-		imgCheck = "[x]"
-	}
-	if gm.cursor == 0 {
-		imgCheck = cursorStyle.Render(imgCheck)
-	}
-	b.WriteString(formLabelStyle.Render("Render images:"))
-	b.WriteString(" " + imgCheck)
-	b.WriteString("\n\n")
-
 	unitVal := "Kilometers (km)"
 	if gm.distanceUnit == "mi" {
 		unitVal = "Miles (mi)"
 	}
-	if gm.cursor == 1 {
+	if gm.cursor == 0 {
 		b.WriteString(cursorStyle.Render("> "))
 	} else {
 		b.WriteString("  ")

@@ -16,25 +16,25 @@ import (
 	"github.com/szporwolik/cqops/internal/rig"
 )
 
-type Flrig struct {
+type Client struct {
 	url     string
 	timeout time.Duration
 	client  *http.Client
 }
 
-func New(url string, timeoutMS int) *Flrig {
+func New(url string, timeoutMS int) *Client {
 	d := time.Duration(timeoutMS) * time.Millisecond
 	if d <= 0 {
 		d = 2 * time.Second
 	}
-	return &Flrig{
+	return &Client{
 		url:     strings.TrimSuffix(url, "/"),
 		timeout: d,
 		client:  &http.Client{Timeout: d},
 	}
 }
 
-func (f *Flrig) Status(ctx context.Context) (rig.RigStatus, error) {
+func (f *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 	rs := rig.RigStatus{
 		Provider: "flrig",
 	}
@@ -100,7 +100,7 @@ func (f *Flrig) Status(ctx context.Context) (rig.RigStatus, error) {
 	return rs, nil
 }
 
-func (f *Flrig) getFrequency(ctx context.Context) (int64, error) {
+func (f *Client) getFrequency(ctx context.Context) (int64, error) {
 	v, err := f.xmlrpcCall(ctx, "rig.get_vfo")
 	if err != nil {
 		return 0, err
@@ -112,7 +112,7 @@ func (f *Flrig) getFrequency(ctx context.Context) (int64, error) {
 	return int64(math.Round(freq)), nil
 }
 
-func (f *Flrig) getMode(ctx context.Context) (string, error) {
+func (f *Client) getMode(ctx context.Context) (string, error) {
 	v, err := f.xmlrpcCall(ctx, "rig.get_mode")
 	if err != nil {
 		return "", err
@@ -120,7 +120,7 @@ func (f *Flrig) getMode(ctx context.Context) (string, error) {
 	return strings.TrimSpace(v), nil
 }
 
-func (f *Flrig) getPower(ctx context.Context) (float64, error) {
+func (f *Client) getPower(ctx context.Context) (float64, error) {
 	v, err := f.xmlrpcCall(ctx, "rig.get_power")
 	if err != nil {
 		return 0, err
@@ -132,7 +132,7 @@ func (f *Flrig) getPower(ctx context.Context) (float64, error) {
 	return pwr, nil
 }
 
-func (f *Flrig) xmlrpcCall(ctx context.Context, method string) (string, error) {
+func (f *Client) xmlrpcCall(ctx context.Context, method string) (string, error) {
 	body := fmt.Sprintf(
 		`<?xml version="1.0"?><methodCall><methodName>%s</methodName></methodCall>`,
 		method,

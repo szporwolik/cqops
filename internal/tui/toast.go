@@ -23,9 +23,8 @@ type Toast struct {
 }
 
 type ToastQueue struct {
-	mu       sync.Mutex
-	items    []Toast
-	OutToast *Toast
+	mu    sync.Mutex
+	items []Toast
 }
 
 const toastMaxAge = 3 * time.Second
@@ -74,15 +73,6 @@ func (tq *ToastQueue) Active() []Toast {
 	return result
 }
 
-func (tq *ToastQueue) PopOutToast() *Toast {
-	if tq.OutToast == nil {
-		return nil
-	}
-	t := tq.OutToast
-	tq.OutToast = nil
-	return t
-}
-
 var (
 	toastInfoStyle = lipgloss.NewStyle().
 			Foreground(th.Accent).
@@ -106,11 +96,11 @@ func toastPrefix(level ToastLevel) string {
 	case ToastInfo:
 		return toastInfoStyle.Render("i")
 	case ToastSuccess:
-		return toastSuccessStyle.Render("\u2713")
+		return toastSuccessStyle.Render("OK")
 	case ToastWarning:
 		return toastWarningStyle.Render("!")
 	case ToastError:
-		return toastErrorStyle.Render("\u2717")
+		return toastErrorStyle.Render("ERR")
 	}
 	return ""
 }

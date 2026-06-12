@@ -37,7 +37,7 @@ var rigStatusCmd = &cobra.Command{
 	},
 }
 
-func init() {
+func registerRigCommands() {
 	rootCmd.AddCommand(rigCmd)
 	rigCmd.AddCommand(rigStatusCmd)
 }

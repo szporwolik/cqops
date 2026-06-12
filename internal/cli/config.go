@@ -54,7 +54,7 @@ var configPathCmd = &cobra.Command{
 	},
 }
 
-func init() {
+func registerConfigCommands() {
 	rootCmd.AddCommand(configCmd)
 	configCmd.AddCommand(configShowCmd)
 	configCmd.AddCommand(configPathCmd)

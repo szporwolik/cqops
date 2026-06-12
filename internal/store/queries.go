@@ -79,8 +79,12 @@ func ListQSOs(db *sql.DB, limit int) ([]qso.QSO, error) {
 		if err != nil {
 			return nil, fmt.Errorf("scan qso: %w", err)
 		}
-		q.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-		q.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+		if t, err := time.Parse(time.RFC3339, createdAt); err == nil {
+			q.CreatedAt = t
+		}
+		if t, err := time.Parse(time.RFC3339, updatedAt); err == nil {
+			q.UpdatedAt = t
+		}
 		qsos = append(qsos, q)
 	}
 
@@ -110,8 +114,12 @@ func GetQSOByID(db *sql.DB, id int64) (*qso.QSO, error) {
 		return nil, fmt.Errorf("get qso by id: %w", err)
 	}
 
-	q.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
-	q.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+	if t, err := time.Parse(time.RFC3339, createdAt); err == nil {
+		q.CreatedAt = t
+	}
+	if t, err := time.Parse(time.RFC3339, updatedAt); err == nil {
+		q.UpdatedAt = t
+	}
 
 	return &q, nil
 }

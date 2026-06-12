@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/szporwolik/cqops/internal/log"
+	"github.com/szporwolik/cqops/internal/applog"
 )
 
 type CallData struct {
@@ -67,33 +67,55 @@ type qrzCall struct {
 var httpClient = &http.Client{Timeout: 10 * time.Second}
 
 func Lookup(qrzUser, qrzPass, callsign string) (*CallData, error) {
-	if callsign == "" || qrzUser == "" { return nil, nil }
+	if callsign == "" || qrzUser == "" {
+		return nil, nil
+	}
 
 	return qrzLoginLookup(qrzUser, qrzPass, callsign)
 }
 
 func qrzLoginLookup(user, pass, callsign string) (*CallData, error) {
-	log.Debug("QRZ lookup", "callsign", callsign)
+	applog.Debug("QRZ lookup", "callsign", callsign)
 	u := "https://xmldata.qrz.com/xml/current/?username=" + url.QueryEscape(user) + ";password=" + url.QueryEscape(pass) + ";agent=CQOps"
 	data, err := httpGet(u)
-	if err != nil { log.Error("QRZ auth failed", "error", err); return nil, err }
+	if err != nil {
+		applog.Error("QRZ auth failed", "error", err)
+		return nil, err
+	}
 
 	var authDB qrzDatabase
-	if err := xml.Unmarshal(data, &authDB); err != nil { return nil, err }
-	if authDB.Session.Error != "" { log.Error("QRZ auth error", "msg", authDB.Session.Error); return nil, fmt.Errorf("QRZ: %s", authDB.Session.Error) }
-	if authDB.Session.Key == "" { return nil, fmt.Errorf("QRZ: no session key") }
+	if err := xml.Unmarshal(data, &authDB); err != nil {
+		return nil, err
+	}
+	if authDB.Session.Error != "" {
+		applog.Error("QRZ auth error", "msg", authDB.Session.Error)
+		return nil, fmt.Errorf("QRZ: %s", authDB.Session.Error)
+	}
+	if authDB.Session.Key == "" {
+		return nil, fmt.Errorf("QRZ: no session key")
+	}
 
 	u2 := "https://xmldata.qrz.com/xml/current/?s=" + url.QueryEscape(authDB.Session.Key) + ";callsign=" + url.QueryEscape(callsign)
 	data, err = httpGet(u2)
-	if err != nil { log.Error("QRZ lookup failed", "error", err); return nil, err }
+	if err != nil {
+		applog.Error("QRZ lookup failed", "error", err)
+		return nil, err
+	}
 
 	var db qrzDatabase
-	if err := xml.Unmarshal(data, &db); err != nil { return nil, fmt.Errorf("qrz xml: %w", err) }
-	if db.Session.Error != "" { return nil, fmt.Errorf("QRZ: %s", db.Session.Error) }
+	if err := xml.Unmarshal(data, &db); err != nil {
+		return nil, fmt.Errorf("qrz xml: %w", err)
+	}
+	if db.Session.Error != "" {
+		return nil, fmt.Errorf("QRZ: %s", db.Session.Error)
+	}
 
 	c := db.Callsign
-	if strings.TrimSpace(c.Call) == "" { log.Debug("QRZ no data", "callsign", callsign); return nil, nil }
-	log.InfoDetail("QRZ lookup ok", fmt.Sprintf("%s — %s", c.Call, coalesce(c.Fname, c.Name)))
+	if strings.TrimSpace(c.Call) == "" {
+		applog.Debug("QRZ no data", "callsign", callsign)
+		return nil, nil
+	}
+	applog.InfoDetail("QRZ lookup ok", fmt.Sprintf("%s — %s", c.Call, coalesce(c.Fname, c.Name)))
 	return &CallData{
 		Callsign: strings.TrimSpace(c.Call),
 		Name:     strings.TrimSpace(coalesce(c.Fname, c.Name)),
@@ -107,7 +129,7 @@ func qrzLoginLookup(user, pass, callsign string) (*CallData, error) {
 		Email:    strings.TrimSpace(c.Email),
 		URL:      strings.TrimSpace(c.URL),
 		Lat:      strings.TrimSpace(c.Lat),
-		Lon:     strings.TrimSpace(c.Lon),
+		Lon:      strings.TrimSpace(c.Lon),
 		DXCC:     strings.TrimSpace(c.DXCC),
 		CQZone:   strings.TrimSpace(c.CQZone),
 		ITUZone:  strings.TrimSpace(c.ITUZone),
@@ -117,12 +139,21 @@ func qrzLoginLookup(user, pass, callsign string) (*CallData, error) {
 
 func httpGet(u string) ([]byte, error) {
 	req, err := http.NewRequest("GET", u, nil)
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	req.Header.Set("User-Agent", "CQOps/1.0")
 	resp, err := httpClient.Do(req)
-	if err != nil { return nil, fmt.Errorf("request: %w", err) }
+	if err != nil {
+		return nil, fmt.Errorf("request: %w", err)
+	}
 	defer resp.Body.Close()
 	return io.ReadAll(resp.Body)
 }
 
-func coalesce(a, b string) string { if a != "" { return a }; return b }
+func coalesce(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}
