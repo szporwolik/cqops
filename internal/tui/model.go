@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
@@ -43,7 +44,7 @@ const (
 var fieldNames = []string{
 	"Call:", "RST sent:", "RST rcvd:", "Band:", "Freq:", "Mode:", "Sub:",
 	"Date (UTC):", "Time (UTC):",
-	"Grid:", "Country:", "Name:", "QTH:", "Pwr (W):", "Comment:",
+	"Grid:", "DXCC:", "Name:", "QTH:", "Pwr (W):", "Comment:",
 }
 
 type Model struct {
@@ -62,6 +63,8 @@ type Model struct {
 	rigPower     float64
 	rigBlink     bool
 	dateTimeAuto bool
+	tickCount    int
+	inetOnline   bool
 	showChooser  bool
 	chooser      *LogbookChooser
 	showRigEdit  bool
@@ -87,6 +90,7 @@ type Model struct {
 
 type tickMsg time.Time
 type qrzResultMsg struct{ Call string; Data *qrz.CallData; Err error }
+type inetResultMsg bool
 
 func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	m := &Model{App: a, qsos: initialQSOS, toasts: NewToastQueue(), dateTimeAuto: true}
@@ -106,8 +110,19 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	return m
 }
 
-func (m *Model) Init() tea.Cmd { m.refreshFlrigClient(); return tickCmd() }
+func (m *Model) Init() tea.Cmd { m.refreshFlrigClient(); return tea.Batch(tickCmd(), checkInetCmd()) }
 func tickCmd() tea.Cmd { return tea.Tick(200*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) }) }
+func checkInetCmd() tea.Cmd {
+	return func() tea.Msg {
+		client := &http.Client{Timeout: 3 * time.Second}
+		resp, err := client.Get("https://clients3.google.com/generate_204")
+		if err != nil {
+			return inetResultMsg(false)
+		}
+		resp.Body.Close()
+		return inetResultMsg(true)
+	}
+}
 
 func (m *Model) refreshFlrigClient() {
 	if len(m.App.Config.Rigs) == 0 {
@@ -139,6 +154,7 @@ func (m *Model) pollFlrig() {
 	m.fields[fieldFreq].SetValue(fmt.Sprintf("%.6f", status.FrequencyMHz))
 	if status.Mode != "" { m.fields[fieldMode].SetValue(status.Mode) }
 	if status.Band != "" { m.fields[fieldBand].SetValue(status.Band) }
+	m.autoFillSSBSubmode()
 	if status.Power > 0 {
 		m.rigPower = status.Power
 		m.fields[fieldTXPower].SetValue(fmt.Sprintf("%.0f", status.Power))
@@ -160,6 +176,13 @@ func (m *Model) autoUpdateDateTime() {
 	m.fields[fieldTime].SetValue(now.Format("150405"))
 }
 
+func (m *Model) maybeCheckInet() tea.Cmd {
+	if m.tickCount%300 == 0 {
+		return checkInetCmd()
+	}
+	return tickCmd()
+}
+
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.confirmQuit {
 			if key, ok := msg.(tea.KeyMsg); ok {
@@ -169,6 +192,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			return m, nil
+		}
+		if ir, ok := msg.(inetResultMsg); ok {
+			m.inetOnline = bool(ir)
 		}
 		if key, ok := msg.(tea.KeyMsg); ok {
 		switch key.String() {
@@ -269,9 +295,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pollFlrig()
 			m.toasts.Expire()
 			m.autoUpdateDateTime()
-			return m, tickCmd()
+			m.tickCount++
+			return m, m.maybeCheckInet()
 		case qrzResultMsg:
 			m.fillQRZData(msg)
+			return m, nil
+		case inetResultMsg:
+			m.inetOnline = bool(msg)
 			return m, nil
 		case tea.KeyMsg:
 			switch {
@@ -282,8 +312,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg: m.width, m.height = msg.Width, msg.Height
-	case tickMsg: m.pollFlrig(); m.toasts.Expire(); m.autoUpdateDateTime(); return m, tickCmd()
+	case tickMsg: m.pollFlrig(); m.toasts.Expire(); m.autoUpdateDateTime(); m.tickCount++; return m, m.maybeCheckInet()
 	case qrzResultMsg: m.fillQRZData(msg); return m, nil
+	case inetResultMsg: m.inetOnline = bool(msg); return m, nil
 	case tea.KeyMsg:
 		switch {
 		case msg.String() == "shift+tab" || msg.Type == tea.KeyShiftTab: m.prevField()
@@ -398,33 +429,97 @@ func (m *Model) View() string {
 }
 
 func (m *Model) viewTopBar(width int) string {
+	if width < 40 {
+		return ""
+	}
 	s := m.App.Logbook.Station
-	now := time.Now(); utc := now.UTC()
+	now := time.Now()
+	utc := now.UTC()
 
-	rigDisplay := ""
-	rigName := s.RigName; if rigName == "" { rigName = "default" }
+	rigName := s.RigName
+	if rigName == "" {
+		rigName = "default"
+	}
+	rigModel := ""
+	rigIndicator := ""
 	if rp, ok := m.App.Config.Rigs[rigName]; ok {
-		rigDisplay = rp.Model
+		rigModel = rp.Model
 		if rp.FlrigEnabled {
-			if m.rigConnected { if m.rigBlink { rigDisplay += " *" } else { rigDisplay += "  " } } else { rigDisplay += " !" }
+			if m.rigConnected {
+				if m.rigBlink {
+					rigIndicator = ansiFg("46", " \u25C9")
+				} else {
+					rigIndicator = "  "
+				}
+			} else {
+				rigIndicator = ansiFg("196", " \u2717")
+			}
 		}
 	}
 
-	versionText := "CQOPS v" + version.Resolved(); if version.Resolved() == "dev" { versionText = "CQOPS" }
+	locator := s.Grid
+	if locator == "" {
+		locator = "—"
+	}
+
+	inetVal := ansiFg("196", "No")
+	if m.inetOnline {
+		inetVal = ansiFg("46", "Yes")
+	}
+
+	leftSection := ansiFg("243", "Call:") + ansiFg("229", truncPad(s.Callsign, 7)) + " " +
+		ansiFg("243", "Op:") + ansiFg("229", truncPad(s.Operator, 7)) + " " +
+		ansiFg("243", "Log:") + ansiFg("229", truncPad(m.App.LogbookName, 8)) + " " +
+		ansiFg("243", "Loc:") + ansiFg("229", truncPad(locator, 6))
+
+	rightSection := ansiFg("243", "Inet:") + inetVal + "  " +
+		ansiFg("243", "Rig:") + ansiFg("229", rigModel) + rigIndicator + "  " +
+		ansiFg("243", "LT:") + ansiFg("229", now.Format("15:04")) + " " +
+		ansiFg("243", "UTC:") + ansiFg("229", utc.Format("15:04:05"))
+
+	centerText := ansiBoldFg("86", "CQOPS")
+	ver := ""
+	if v := version.Resolved(); v != "dev" {
+		ver = " v" + v
+	}
+	centerText += ansiFg("245", ver)
 
 	innerW := width - 4
-	third := innerW / 3
-	rightW := innerW - third - third
+	leftW := lipgloss.Width(leftSection)
+	rightW := lipgloss.Width(rightSection)
 
-	leftRaw := fmt.Sprintf("Call:%-7s Op:%-7s Log:%-8s", s.Callsign, s.Operator, m.App.LogbookName)
-	rightRaw := fmt.Sprintf("Rig:%-7s LT:%-6s UTC:%-9s", rigDisplay, now.Format("15:04"), utc.Format("15:04:05"))
-	leftRaw = truncate(leftRaw, third)
-	rightRaw = truncate(rightRaw, rightW)
-	for lipgloss.Width(leftRaw) < third { leftRaw += " " }
-	for lipgloss.Width(rightRaw) < rightW { rightRaw += " " }
+	gap := innerW - leftW - rightW
+	if gap < 0 {
+		gap = 0
+	}
 
-	line := leftRaw + padCenter(versionText, third) + rightRaw
-	return lipgloss.NewStyle().Width(width).Background(lipgloss.Color("236")).Foreground(lipgloss.Color("229")).Render("  " + line + "  ")
+	line := "  " + leftSection + padCenter(centerText, gap) + rightSection
+	for lipgloss.Width(line) < width {
+		line += " "
+	}
+	return lipgloss.NewStyle().Background(lipgloss.Color("236")).Render(line)
+}
+
+func ansiFg(color, s string) string {
+	return "\x1b[38;5;" + color + "m" + s + "\x1b[39m"
+}
+
+func ansiBoldFg(color, s string) string {
+	return "\x1b[1m\x1b[38;5;" + color + "m" + s + "\x1b[22m\x1b[39m"
+}
+
+func truncPad(s string, w int) string {
+	if s == "" {
+		s = "—"
+	}
+	result := s
+	for lipgloss.Width(result) < w {
+		result += " "
+	}
+	if lipgloss.Width(result) > w {
+		result = truncate(result, w)
+	}
+	return result
 }
 
 func (m *Model) viewTabBar(width int) string {
@@ -434,9 +529,11 @@ func (m *Model) viewTabBar(width int) string {
 		Bold(true).
 		Padding(0, 2)
 	inactive := lipgloss.NewStyle().
+		Background(lipgloss.Color("236")).
 		Foreground(lipgloss.Color("241")).
 		Padding(0, 2)
 	disabled := lipgloss.NewStyle().
+		Background(lipgloss.Color("236")).
 		Foreground(lipgloss.Color("238")).
 		Padding(0, 2)
 	qsoTab := "F1 QSO Form"
@@ -759,6 +856,7 @@ func (m *Model) nextField() {
 		m.qrzNeed = true
 		m.qrzCall = strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
 		m.autoFillRST()
+		m.autoFillSSBSubmode()
 	}
 }
 func (m *Model) prevField() {
@@ -770,6 +868,7 @@ func (m *Model) prevField() {
 		m.qrzNeed = true
 		m.qrzCall = strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
 		m.autoFillRST()
+		m.autoFillSSBSubmode()
 	}
 }
 func (m *Model) autoFillRST() {
@@ -785,6 +884,27 @@ func (m *Model) autoFillRST() {
 		m.fields[fieldRSTRcvd].SetValue("59")
 	}
 }
+
+func (m *Model) autoFillSSBSubmode() {
+	mode := strings.ToUpper(strings.TrimSpace(m.fields[fieldMode].Value()))
+	if mode != "SSB" {
+		return
+	}
+	if strings.TrimSpace(m.fields[fieldSubmode].Value()) != "" {
+		return
+	}
+	var freq float64
+	fmt.Sscanf(m.fields[fieldFreq].Value(), "%f", &freq)
+	if freq <= 0 {
+		return
+	}
+	if freq < 10.0 {
+		m.fields[fieldSubmode].SetValue("LSB")
+	} else {
+		m.fields[fieldSubmode].SetValue("USB")
+	}
+}
+
 func (m *Model) updateFocused(msg tea.KeyMsg) {
 	prevCall := strings.TrimSpace(m.fields[fieldCall].Value())
 	prevVal := m.fields[m.focus].Value()
@@ -920,6 +1040,7 @@ func indexOfStr(list []string, s string) int {
 }
 func (m *Model) saveQSO() tea.Cmd {
 	m.autoFillRST()
+	m.autoFillSSBSubmode()
 	qs := qso.NewQSO()
 	var freq float64
 	fmt.Sscanf(m.fields[fieldFreq].Value(), "%f", &freq)
