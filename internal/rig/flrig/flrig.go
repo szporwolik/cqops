@@ -43,7 +43,7 @@ func (f *Flrig) Status(ctx context.Context) (rig.RigStatus, error) {
 	}
 	rs.Connected = true
 	rs.FrequencyHz = freqHz
-	rs.FrequencyMHz = math.Round(float64(freqHz)/1000) / 1000
+	rs.FrequencyMHz = float64(freqHz) / 1_000_000.0
 
 	mode, err := f.getMode(ctx)
 	if err == nil {
@@ -64,7 +64,7 @@ func (f *Flrig) Status(ctx context.Context) (rig.RigStatus, error) {
 }
 
 func (f *Flrig) getFrequency(ctx context.Context) (int64, error) {
-	v, err := f.xmlrpcCall(ctx, "rig.get_frequency")
+	v, err := f.xmlrpcCall(ctx, "rig.get_vfo")
 	if err != nil {
 		return 0, err
 	}
@@ -127,17 +127,24 @@ type rpcResponse struct {
 	Params  struct {
 		Param struct {
 			Value struct {
-				String string `xml:"string"`
-				Double float64 `xml:"double"`
-				Int    int64   `xml:"int"`
-				I4     int64   `xml:"i4"`
-				Boolean int64  `xml:"boolean"`
+				CharData string  `xml:",chardata"`
+				String   string  `xml:"string"`
+				Double   float64 `xml:"double"`
+				Int      int64   `xml:"int"`
+				I4       int64   `xml:"i4"`
+				Boolean  int64   `xml:"boolean"`
 			} `xml:"value"`
 		} `xml:"param"`
 	} `xml:"params"`
 }
 
 func parseXMLRPCResponse(data []byte) (string, error) {
+	raw := strings.TrimSpace(string(data))
+
+	if !strings.HasPrefix(raw, "<?xml") && !strings.HasPrefix(raw, "<methodResponse") {
+		return raw, nil
+	}
+
 	var r rpcResponse
 	decoder := xml.NewDecoder(bytes.NewReader(data))
 	if err := decoder.Decode(&r); err != nil {
@@ -146,10 +153,25 @@ func parseXMLRPCResponse(data []byte) (string, error) {
 
 	v := r.Params.Param.Value
 
-	if v.String != "" {
-		return v.String, nil
+	if v.CharData != "" {
+		return strings.TrimSpace(v.CharData), nil
 	}
+
 	if v.Double != 0 || strings.Contains(string(data), "<double>") {
+		if v.Double == 0 {
+			for _, line := range strings.Split(string(data), "\n") {
+				if strings.Contains(line, "<double>") {
+					start := strings.Index(line, "<double>") + 8
+					end := strings.Index(line, "</double>")
+					if start > 0 && end > start {
+						var f float64
+						if _, err := fmt.Sscanf(line[start:end], "%f", &f); err == nil {
+							return fmt.Sprintf("%f", f), nil
+						}
+					}
+				}
+			}
+		}
 		return fmt.Sprintf("%f", v.Double), nil
 	}
 	if v.Int != 0 || v.I4 != 0 || strings.Contains(string(data), "<int>") || strings.Contains(string(data), "<i4>") {
@@ -163,7 +185,7 @@ func parseXMLRPCResponse(data []byte) (string, error) {
 		return fmt.Sprintf("%d", v.Boolean), nil
 	}
 
-	raw := string(data)
+	raw = string(data)
 	if strings.Contains(raw, "<fault>") {
 		return "", fmt.Errorf("flrig fault: %s", raw)
 	}
