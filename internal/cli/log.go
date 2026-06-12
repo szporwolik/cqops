@@ -211,6 +211,12 @@ var logShowCmd = &cobra.Command{
 		if q.TXPower != "" {
 			fmt.Printf("  TX Power:     %s W\n", q.TXPower)
 		}
+		if q.Distance > 0 {
+			fmt.Printf("  Distance:     %.0f km\n", q.Distance)
+		}
+		if q.Bearing > 0 {
+			fmt.Printf("  Bearing:      %.0f°\n", q.Bearing)
+		}
 		fmt.Printf("  My Callsign:  %s\n", q.StationCallsign)
 		if q.Operator != "" {
 			fmt.Printf("  Operator:     %s\n", q.Operator)

@@ -6,6 +6,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		ActiveLogbook: "default",
 		Timezone:      tz,
+		DistanceUnit:  "km",
 		Logbooks: map[string]Logbook{
 			"default": {
 				Description: "Default station logbook",

@@ -236,6 +236,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.configMenu.goBack { m.showMainMenu = true }
 			if m.configMenu.saved {
 				m.App.Config.RenderImages = m.configMenu.renderImages
+				m.App.Config.DistanceUnit = m.configMenu.distanceUnit
 				if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
 					m.toasts.Error("Settings save failed: " + err.Error())
 				} else {
@@ -367,7 +368,7 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 	m.asciiW = 0
 	m.asciiH = 0
 	if d.Name != "" { m.fields[fieldName].SetValue(d.Name) }
-	if d.Grid != "" && m.fields[fieldGrid].Value() == "" { m.fields[fieldGrid].SetValue(d.Grid) }
+	if d.Grid != "" && m.fields[fieldGrid].Value() == "" { m.fields[fieldGrid].SetValue(formatLocator(d.Grid)) }
 	if d.QTH != "" { m.fields[fieldQTH].SetValue(d.QTH) }
 	if d.Country != "" && m.fields[fieldCountry].Value() == "" { m.fields[fieldCountry].SetValue(d.Country) }
 	m.toasts.Info("QRZ: "+d.Callsign+" "+d.Name)
@@ -398,8 +399,9 @@ func (m *Model) View() string {
 		content = titleStyle.Render("Quit CQOps? (y/N)")
 	} else {
 		form := m.viewForm(w)
+		distLine := m.formDistanceLine(w)
 		qsoList := m.viewQSOS(m.availableQSORows())
-		content = lipgloss.JoinVertical(lipgloss.Left, form, qsoList)
+		content = lipgloss.JoinVertical(lipgloss.Left, form, distLine, qsoList)
 	}
 	body := lipgloss.NewStyle().Width(w).Padding(0, 1).Render(content)
 	toastBar := RenderToasts(m.toasts.Active(), w)
@@ -457,7 +459,7 @@ func (m *Model) viewTopBar(width int) string {
 		}
 	}
 
-	locator := s.Grid
+	locator := formatLocator(s.Grid)
 	if locator == "" {
 		locator = "—"
 	}
@@ -675,17 +677,22 @@ func (m *Model) partnerDistanceLine(width int) string {
 	if m.partnerData == nil {
 		return ""
 	}
-	ownGrid := m.App.Logbook.Station.Grid
-	partnerGrid := m.partnerData.Grid
-	if ownGrid == "" || partnerGrid == "" {
+	own := formatLocator(m.App.Logbook.Station.Grid)
+	partner := formatLocator(m.partnerData.Grid)
+	return distanceLine(own, partner, m.App.Config.DistanceUnit)
+}
+
+func (m *Model) formDistanceLine(width int) string {
+	ownGrid := formatLocator(m.App.Logbook.Station.Grid)
+	partnerGrid := formatLocator(strings.TrimSpace(m.fields[fieldGrid].Value()))
+	if partnerGrid == "" {
 		return ""
 	}
-	dist := gridDistance(ownGrid, partnerGrid)
-	bear := gridBearing(ownGrid, partnerGrid)
-	if dist == "" || bear == "" {
+	dl := distanceLine(ownGrid, partnerGrid, m.App.Config.DistanceUnit)
+	if dl == "" {
 		return ""
 	}
-	return fmt.Sprintf("%s · %s  from %s to %s", dist, bear, ownGrid, partnerGrid)
+	return inputStyle.Render(dl)
 }
 
 func (m *Model) renderPartnerInfo(d *qrz.CallData, maxW int) string {
@@ -812,7 +819,7 @@ func (m *Model) viewForm(width int) string {
 
 func (m *Model) availableQSORows() int {
 	if m.height <= 0 { return 5 }
-	avail := m.height - 31
+	avail := m.height - 32
 	if avail < 1 { avail = 1 }
 	return avail
 }
@@ -912,7 +919,10 @@ func (m *Model) updateFocused(msg tea.KeyMsg) {
 	if (m.focus == fieldDate || m.focus == fieldTime) && m.fields[m.focus].Value() != prevVal {
 		m.dateTimeAuto = false
 	}
-	if m.focus == fieldCall || m.focus == fieldGrid { m.fields[m.focus].SetValue(strings.ToUpper(m.fields[m.focus].Value())) }
+	if m.focus == fieldCall { m.fields[m.focus].SetValue(strings.ToUpper(m.fields[m.focus].Value())) }
+	if m.focus == fieldGrid {
+		m.fields[m.focus].SetValue(formatLocator(m.fields[m.focus].Value()))
+	}
 	if m.focus == fieldCall {
 		cur := strings.TrimSpace(m.fields[fieldCall].Value())
 		if cur != prevCall && m.partnerData != nil && !strings.EqualFold(m.partnerData.Callsign, cur) {
@@ -1055,9 +1065,17 @@ func (m *Model) saveQSO() tea.Cmd {
 	if qs.TimeOn == "" {
 		qs.TimeOn = time.Now().UTC().Format("150405")
 	}
-	qs.GridSquare, qs.Comment, qs.Name, qs.QTH, qs.Country = m.fields[fieldGrid].Value(), m.fields[fieldComment].Value(), m.fields[fieldName].Value(), m.fields[fieldQTH].Value(), m.fields[fieldCountry].Value()
+	qs.GridSquare = formatLocator(m.fields[fieldGrid].Value())
+	qs.Comment, qs.Name, qs.QTH, qs.Country = m.fields[fieldComment].Value(), m.fields[fieldName].Value(), m.fields[fieldQTH].Value(), m.fields[fieldCountry].Value()
 	qs.TXPower = strings.TrimSpace(m.fields[fieldTXPower].Value())
 	station := qso.StationInfo{StationCallsign: m.App.Logbook.Station.Callsign, Operator: m.App.Logbook.Station.Operator, MyGridSquare: m.App.Logbook.Station.Grid, MyRig: m.App.Logbook.Station.Rig, MyAntenna: m.App.Logbook.Station.Antenna, TXPower: m.App.Logbook.Station.Power}
+	if qs.GridSquare != "" && station.MyGridSquare != "" {
+		qs.Distance = gridDistanceKm(station.MyGridSquare, qs.GridSquare)
+		bearStr := gridBearing(station.MyGridSquare, qs.GridSquare)
+		if bearStr != "" {
+			fmt.Sscanf(bearStr, "%f", &qs.Bearing)
+		}
+	}
 	qso.ApplyStationDefaults(qs, station)
 	if err := qso.ValidateForSave(qs); err != nil { m.toasts.Error(err.Error()); return nil }
 	if _, err := store.InsertQSO(m.App.DB, qs); err != nil { m.toasts.Error(fmt.Sprintf("Save failed: %v", err)); return nil }

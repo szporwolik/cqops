@@ -32,6 +32,9 @@ var migrations = []string{
 
 		tx_pwr TEXT,
 
+		distance REAL,
+		bearing REAL,
+
 		station_callsign TEXT,
 		operator TEXT,
 		my_gridsquare TEXT,
@@ -45,6 +48,8 @@ var migrations = []string{
 	)`,
 	`ALTER TABLE qsos ADD COLUMN notes TEXT DEFAULT ''`,
 	`ALTER TABLE qsos ADD COLUMN tx_pwr TEXT DEFAULT ''`,
+	`ALTER TABLE qsos ADD COLUMN distance REAL DEFAULT 0`,
+	`ALTER TABLE qsos ADD COLUMN bearing REAL DEFAULT 0`,
 }
 
 func Migrate(db *sql.DB) error {

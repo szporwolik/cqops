@@ -27,6 +27,8 @@ type QSO struct {
 	MyRig           string
 	MyAntenna       string
 	Source          string
+	Distance        float64
+	Bearing         float64
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
