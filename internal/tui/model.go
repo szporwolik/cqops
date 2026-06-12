@@ -83,6 +83,8 @@ type Model struct {
 	partnerASCII string
 	asciiW int
 	asciiH int
+	resizeSeq   int
+	partnerDirty bool
 	flrigClient  *flrig.Flrig
 	qrzNeed      bool
 	qrzCall      string
@@ -91,6 +93,7 @@ type Model struct {
 type tickMsg time.Time
 type qrzResultMsg struct{ Call string; Data *qrz.CallData; Err error }
 type inetResultMsg bool
+type resizeSettledMsg struct{ Width, Height, Seq int }
 
 func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	m := &Model{App: a, qsos: initialQSOS, toasts: NewToastQueue(), dateTimeAuto: true}
@@ -150,6 +153,12 @@ func checkInetCmd() tea.Cmd {
 		resp.Body.Close()
 		return inetResultMsg(true)
 	}
+}
+
+func resizeDebounceCmd(w, h, seq int) tea.Cmd {
+	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
+		return resizeSettledMsg{Width: w, Height: h, Seq: seq}
+	})
 }
 
 func (m *Model) refreshFlrigClient() {
@@ -326,6 +335,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.width, m.height = msg.Width, msg.Height
 			m.asciiW = 0
 			m.asciiH = 0
+			m.partnerDirty = false
+			m.resizeSeq++
+			seq := m.resizeSeq
+			return m, resizeDebounceCmd(msg.Width, msg.Height, seq)
 		case tickMsg:
 			m.pollFlrig()
 			m.toasts.Expire()
@@ -338,6 +351,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case inetResultMsg:
 			m.inetOnline = bool(msg)
 			return m, nil
+		case resizeSettledMsg:
+			if msg.Seq == m.resizeSeq {
+				m.partnerDirty = true
+			}
+			return m, nil
 		case tea.KeyMsg:
 			switch {
 			case msg.String() == "f8": m.showPartner = false
@@ -346,10 +364,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 }
 	switch msg := msg.(type) {
-	case tea.WindowSizeMsg: m.width, m.height = msg.Width, msg.Height
+	case tea.WindowSizeMsg:
+		m.width, m.height = msg.Width, msg.Height
+		m.partnerDirty = false
+		m.resizeSeq++
+		return m, resizeDebounceCmd(msg.Width, msg.Height, m.resizeSeq)
 	case tickMsg: m.pollFlrig(); m.toasts.Expire(); m.autoUpdateDateTime(); m.tickCount++; return m, m.maybeCheckInet()
 	case qrzResultMsg: m.fillQRZData(msg); return m, nil
 	case inetResultMsg: m.inetOnline = bool(msg); return m, nil
+	case resizeSettledMsg:
+		if msg.Seq == m.resizeSeq {
+			m.partnerDirty = true
+		}
+		return m, nil
 	case tea.KeyMsg:
 		switch {
 		case msg.String() == "shift+tab" || msg.Type == tea.KeyShiftTab: m.prevField()
@@ -648,117 +675,130 @@ func formatTime(adif string) string {
 
 func (m *Model) viewPartner() string {
 	d := m.partnerData
-	availW := m.width - 6
-	if availW < 50 {
-		availW = 50
+	w := m.width
+	h := m.height
+	bodyW := w - 2
+	if bodyW < 30 {
+		bodyW = 30
 	}
-	infoW := 34
-	asciiW := availW - infoW - 2
-	if asciiW < 20 {
-		asciiW = 0
-		infoW = availW
+	headerH := 3
+	footerH := 1
+
+	minDetailsW := 44
+	prefDetailsW := 60
+	minImageW := 22
+	gap := 3
+
+	detailsW := bodyW
+	imageW := 0
+
+	if bodyW >= prefDetailsW+minImageW+gap {
+		detailsW = prefDetailsW
+		imageW = bodyW - detailsW - gap
+	} else if bodyW >= minDetailsW+minImageW+gap {
+		detailsW = bodyW - minImageW - gap
+		imageW = minImageW
 	}
-	availH := m.height - 9
-	if availH < 6 {
-		availH = 6
+
+	showImage := imageW >= minImageW && m.App.Config.RenderImages && d.ImageURL != ""
+
+	var b strings.Builder
+
+	title := "── Partner: " + d.Callsign + " "
+	rem := bodyW - lipgloss.Width(title)
+	if rem > 0 {
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title + strings.Repeat("─", rem)))
+	} else {
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title))
 	}
-	if m.App.Config.RenderImages && asciiW > 0 && d.ImageURL != "" && availH >= 8 {
-		if m.partnerASCII == "" || m.asciiW != asciiW || m.asciiH != availH {
-			ascii, err := downloadAndRenderASCII(d.ImageURL, asciiW, availH)
-			if err == nil && ascii != "" {
-				m.partnerASCII = ascii
-				m.asciiW = asciiW
-				m.asciiH = availH
-			} else {
-				m.partnerASCII = ""
-				m.asciiW = 0
-				m.asciiH = 0
+	b.WriteString("\n\n")
+
+	info := m.renderPartnerInfo(d, detailsW)
+
+	if showImage {
+		infoLines := strings.Count(info, "\n") + 1
+		propH := imageW * 6 / 4
+		imgH := infoLines
+		if propH > imgH {
+			imgH = propH
+		}
+		if imgH < 8 {
+			imgH = 8
+		}
+		maxAvailH := h - headerH - footerH - 10
+		if imgH > maxAvailH {
+			imgH = maxAvailH
+		}
+		if imgH > 22 {
+			imgH = 22
+		}
+		if m.partnerDirty || m.partnerASCII == "" || m.asciiW != imageW || m.asciiH != imgH {
+			ascii, _ := downloadAndRenderASCII(d.ImageURL, imageW, imgH)
+			m.partnerASCII = ascii
+			m.asciiW = imageW
+			m.asciiH = imgH
+			m.partnerDirty = false
+		}
+		leftBlock := lipgloss.NewStyle().Width(detailsW).Render(info)
+		rightContent := m.partnerASCII
+		if rightContent == "" {
+			rightContent = lipgloss.NewStyle().Foreground(lipgloss.Color("238")).Render("(no image)")
+		}
+		rightBlock := rightContent
+		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftBlock, strings.Repeat(" ", gap), rightBlock))
+	} else {
+		b.WriteString(info)
+	}
+
+	dl := m.partnerDistanceLine(bodyW)
+	if dl != "" {
+		b.WriteString("\n\n")
+		pathTitle := "── Path "
+		pathRem := bodyW - lipgloss.Width(pathTitle)
+		if pathRem > 0 {
+			b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(pathTitle + strings.Repeat("─", pathRem)))
+		}
+		b.WriteString("\n  ")
+		b.WriteString(inputStyle.Render(dl))
+	}
+
+	usedLines := strings.Count(b.String(), "\n") + 1
+	availMapH := h - headerH - footerH - usedLines - 2
+	if availMapH >= 6 {
+		b.WriteString("\n\n")
+		mapTitle := "── Map "
+		mapRem := bodyW - lipgloss.Width(mapTitle)
+		if mapRem > 0 {
+			b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(mapTitle + strings.Repeat("─", mapRem)))
+		}
+		b.WriteString("\n")
+		mapW := bodyW
+		if mapW < 40 {
+			mapW = 40
+		}
+		mapH := availMapH - 1
+		if mapH < 4 {
+			mapH = 4
+		}
+		if mapH > 24 {
+			mapH = 24
+		}
+		ownGrid := m.App.Logbook.Station.Grid
+		partnerGrid := d.Grid
+		if ownGrid != "" && partnerGrid != "" {
+			ownLat, ownLon := gridToLatLon(ownGrid)
+			partnerLat, partnerLon := gridToLatLon(partnerGrid)
+			if ownLat != 0 || ownLon != 0 || partnerLat != 0 || partnerLon != 0 {
+				mapStr := renderWorldMap(ownLat, ownLon, partnerLat, partnerLon, mapW, mapH)
+				b.WriteString(mapStr)
 			}
 		}
 	} else {
-		m.partnerASCII = ""
-	}
-	return m.viewPartnerData(infoW)
-}
-
-func (m *Model) viewPartnerData(infoW int) string {
-	d := m.partnerData
-	var b strings.Builder
-	b.WriteString(titleStyle.Render("Partner Details — " + d.Callsign))
-	b.WriteString("\n\n")
-	info := m.renderPartnerInfo(d, infoW)
-	if m.partnerASCII == "" {
-		b.WriteString(info)
-	} else {
-		leftCol := lipgloss.NewStyle().Width(infoW).Render(info)
-		rightCol := lipgloss.NewStyle().Render(m.partnerASCII)
-		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftCol, lipgloss.NewStyle().Width(2).Render(""), rightCol))
-	}
-	distanceLine := m.partnerDistanceLine(m.width - 2)
-	if distanceLine != "" {
 		b.WriteString("\n\n")
-		b.WriteString(lipgloss.NewStyle().Width(m.width - 2).Align(lipgloss.Center).Render(distanceLine))
-		b.WriteString("\n")
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("238")).Render("── Map hidden: terminal too small"))
 	}
-	mapStr := ""
-	if m.App.Config.RenderImages {
-		mapStr = m.renderWorldMap()
-	}
-	if mapStr != "" {
-		b.WriteString("\n")
-		b.WriteString(mapStr)
-	}
+
 	return b.String()
-}
-
-func (m *Model) renderWorldMap() string {
-	ownGrid := m.App.Logbook.Station.Grid
-	if ownGrid == "" || m.partnerData == nil || m.partnerData.Grid == "" {
-		return ""
-	}
-	ownLat, ownLon := gridToLatLon(ownGrid)
-	if ownLat == 0 && ownLon == 0 {
-		return ""
-	}
-	partnerLat, partnerLon := gridToLatLon(m.partnerData.Grid)
-	if partnerLat == 0 && partnerLon == 0 {
-		return ""
-	}
-	mapW := m.width - 4
-	if mapW < 40 {
-		mapW = 40
-	}
-	infoLines := m.partnerInfoLineCount()
-	colH := infoLines
-	if m.partnerASCII != "" {
-		asciiH := strings.Count(m.partnerASCII, "\n")
-		if asciiH > colH {
-			colH = asciiH
-		}
-	}
-	used := colH + 12
-	mapH := m.height - used
-	if mapH < 6 {
-		mapH = 6
-	}
-	return renderWorldMap(ownLat, ownLon, partnerLat, partnerLon, mapW, mapH)
-}
-
-func (m *Model) partnerInfoLineCount() int {
-	if m.partnerData == nil {
-		return 0
-	}
-	d := m.partnerData
-	count := 0
-	for _, v := range []string{d.Name, d.Grid, d.QTH, d.Country, d.State, d.Zip, d.County, d.Class, d.Email, d.URL, d.DXCC, d.CQZone, d.ITUZone} {
-		if v != "" {
-			count++
-		}
-	}
-	if d.Lat != "" || d.Lon != "" {
-		count++
-	}
-	return count
 }
 
 func (m *Model) partnerDistanceLine(width int) string {
@@ -785,13 +825,11 @@ func (m *Model) renderPartnerInfo(d *qrz.CallData, maxW int) string {
 	add("Country", d.Country)
 	add("State", d.State)
 	add("Zip", d.Zip)
-	add("County", d.County)
 	add("Class", d.Class)
 	add("Email", d.Email)
 	add("URL", d.URL)
 	if d.Lat != "" || d.Lon != "" {
-		coord := strings.TrimSpace(d.Lat + " " + d.Lon)
-		add("Coordinates", coord)
+		add("Coordinates", strings.TrimSpace(d.Lat+" "+d.Lon))
 	}
 	add("DXCC", d.DXCC)
 	add("CQ Zone", d.CQZone)
@@ -800,47 +838,27 @@ func (m *Model) renderPartnerInfo(d *qrz.CallData, maxW int) string {
 	if len(rows) == 0 {
 		return ""
 	}
-	labelW := 12
-	valW := maxW - labelW
+
+	labelW := 13
+	indentW := 2
+	spaceW := 1
+	valW := maxW - indentW - labelW - spaceW
 	if valW < 8 {
 		valW = 8
 	}
-	labelSty := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	blankLabel := strings.Repeat(" ", labelW)
+
+	lblStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("243"))
+	valStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("229"))
+
 	var b strings.Builder
 	for _, r := range rows {
-		label := labelSty.Render(fmt.Sprintf("%-*s", labelW, r.label+":"))
-		lines := wrapString(r.value, valW)
-		for i, line := range lines {
-			if i == 0 {
-				b.WriteString(label)
-			} else {
-				b.WriteString(blankLabel)
-			}
-			b.WriteString(inputStyle.Render(line))
-			b.WriteByte('\n')
-		}
+		v := valStyle.Render(truncate(r.value, valW))
+		b.WriteString(lblStyle.Render(fmt.Sprintf("%s%-*s", strings.Repeat(" ", indentW), labelW, r.label)))
+		b.WriteString(strings.Repeat(" ", spaceW))
+		b.WriteString(v)
+		b.WriteString("\n")
 	}
 	return b.String()
-}
-
-func wrapString(s string, width int) []string {
-	if width <= 0 {
-		return []string{s}
-	}
-	var lines []string
-	runes := []rune(s)
-	for len(runes) > width {
-		lines = append(lines, string(runes[:width]))
-		runes = runes[width:]
-	}
-	if len(runes) > 0 {
-		lines = append(lines, string(runes))
-	}
-	if len(lines) == 0 {
-		lines = append(lines, "")
-	}
-	return lines
 }
 
 func (m *Model) viewFooter(width int) string {
