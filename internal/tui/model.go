@@ -771,6 +771,7 @@ func (m *Model) viewPartner() string {
 
 	usedLines := strings.Count(b.String(), "\n") + 1
 	availMapH := h - headerH - footerH - usedLines - 2
+	mapRendered := false
 	if availMapH >= 6 {
 		b.WriteString("\n\n")
 		b.WriteString(section("── Map ", bodyW))
@@ -788,16 +789,24 @@ func (m *Model) viewPartner() string {
 		}
 		ownGrid := m.App.Logbook.Station.Grid
 		partnerGrid := d.Grid
-		if ownGrid != "" && partnerGrid != "" {
+		if ownGrid != "" && (partnerGrid != "" || d.Lat != "") {
 			ownLat, ownLon := gridToLatLon(ownGrid)
-			partnerLat, partnerLon := gridToLatLon(partnerGrid)
+			var partnerLat, partnerLon float64
+			if partnerGrid != "" {
+				partnerLat, partnerLon = gridToLatLon(partnerGrid)
+			}
+			if (partnerLat == 0 && partnerLon == 0) && d.Lat != "" {
+				partnerLat = parseCoord(d.Lat)
+				partnerLon = parseCoord(d.Lon)
+			}
 			if ownLat != 0 || ownLon != 0 || partnerLat != 0 || partnerLon != 0 {
 				mapStr := renderWorldMap(ownLat, ownLon, partnerLat, partnerLon, mapW, mapH)
 				b.WriteString(mapStr)
+				mapRendered = mapStr != ""
 			}
 		}
-	} else {
-		b.WriteString("\n\n")
+	}
+	if !mapRendered && availMapH >= 6 {
 		b.WriteString(DimStyle.Render("── Map hidden: terminal too small"))
 	}
 
