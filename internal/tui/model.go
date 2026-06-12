@@ -247,7 +247,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "f1": m.showChooser = false; m.showRigEdit = false; m.showConfig = false; m.showMainMenu = false; m.showLogView = false; m.showPartner = false
 		case "f2": if m.showPartner { m.showPartner = false } else if m.partnerData != nil { m.showPartner = true }
 		case "f8": if m.showMainMenu { m.showMainMenu = false } else { m.mainMenu = NewMainMenu(); m.showMainMenu = true }
-		case "f9": m.logViewer = NewLogViewer(m.App.LogbookName); m.showLogView = true
+		case "f9": m.logViewer = NewLogViewer(m.App.LogbookName); m.showLogView = true; return m, cmd
 		}
 		if !m.showChooser && !m.showRigEdit && !m.showConfig && !m.showCallbook && !m.showMainMenu && !m.showLogView && !m.showPartner {
 			if key.String() == "delete" || key.Type == tea.KeyDelete {
@@ -364,7 +364,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, cmd
 	}
-}
+	}
+	if m.showLogView {
+		m.logViewer.width = m.width
+		m.logViewer.height = m.height
+		_, _ = m.logViewer.Update(msg)
+		if m.logViewer.done {
+			m.showLogView = false
+		}
+		return m, cmd
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -435,6 +444,7 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 	if d.Grid != "" && m.fields[fieldGrid].Value() == "" { m.fields[fieldGrid].SetValue(formatLocator(d.Grid)) }
 	if d.QTH != "" { m.fields[fieldQTH].SetValue(d.QTH) }
 	if d.Country != "" && m.fields[fieldCountry].Value() == "" { m.fields[fieldCountry].SetValue(d.Country) }
+	m.autoFillRST()
 	m.toasts.Info("QRZ: "+d.Callsign+" "+d.Name)
 }
 
@@ -710,12 +720,7 @@ func (m *Model) viewPartner() string {
 	var b strings.Builder
 
 	title := "── Partner: " + d.Callsign + " "
-	rem := bodyW - lipgloss.Width(title)
-	if rem > 0 {
-		b.WriteString(SectionStyle.Render(title + strings.Repeat("─", rem)))
-	} else {
-		b.WriteString(SectionStyle.Render(title))
-	}
+	b.WriteString(section(title, bodyW))
 	b.WriteString("\n\n")
 
 	info := m.renderPartnerInfo(d, detailsW)
@@ -759,10 +764,7 @@ func (m *Model) viewPartner() string {
 	if dl != "" {
 		b.WriteString("\n\n")
 		pathTitle := "── Path "
-		pathRem := bodyW - lipgloss.Width(pathTitle)
-		if pathRem > 0 {
-			b.WriteString(SectionStyle.Render(pathTitle + strings.Repeat("─", pathRem)))
-		}
+		b.WriteString(section(pathTitle, bodyW))
 		b.WriteString("\n  ")
 		b.WriteString(inputStyle.Render(dl))
 	}
@@ -771,11 +773,7 @@ func (m *Model) viewPartner() string {
 	availMapH := h - headerH - footerH - usedLines - 2
 	if availMapH >= 6 {
 		b.WriteString("\n\n")
-		mapTitle := "── Map "
-		mapRem := bodyW - lipgloss.Width(mapTitle)
-		if mapRem > 0 {
-			b.WriteString(SectionStyle.Render(mapTitle + strings.Repeat("─", mapRem)))
-		}
+		b.WriteString(section("── Map ", bodyW))
 		b.WriteString("\n")
 		mapW := bodyW
 		if mapW < 40 {
@@ -927,13 +925,7 @@ func (m *Model) viewForm(width int) string {
 
 	var b strings.Builder
 
-	title := "── QSO "
-	rem := bodyW - lipgloss.Width(title)
-	if rem > 0 {
-		b.WriteString(SectionStyle.Render(title + strings.Repeat("─", rem)))
-	} else {
-		b.WriteString(SectionStyle.Render(title))
-	}
+	b.WriteString(section("── QSO ", bodyW))
 	b.WriteString("\n")
 
 	choiceFields := map[field]bool{fieldBand: true, fieldMode: true, fieldSubmode: true}
@@ -1048,13 +1040,7 @@ func (m *Model) viewQSOS(maxRows int) string {
 	}
 
 	var b strings.Builder
-	title := "── Recent QSOs "
-	rem := bodyW - lipgloss.Width(title)
-	if rem > 0 {
-		b.WriteString(SectionStyle.Render(title + strings.Repeat("─", rem)))
-	} else {
-		b.WriteString(SectionStyle.Render(title))
-	}
+	b.WriteString(section("── Recent QSOs ", bodyW))
 	b.WriteString("\n")
 
 	cols := selectQSOCols(bodyW)
@@ -1147,12 +1133,7 @@ func (m *Model) formDistanceLine(width int) string {
 	if bodyW < 20 {
 		bodyW = 20
 	}
-	title := "── Path "
-	rem := bodyW - lipgloss.Width(title)
-	hdr := SectionStyle.Render(title)
-	if rem > 0 {
-		hdr = SectionStyle.Render(title + strings.Repeat("─", rem))
-	}
+	hdr := section("── Path ", bodyW)
 	return hdr + "\n  " + inputStyle.Render(dl)
 }
 

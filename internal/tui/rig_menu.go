@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/log"
@@ -129,12 +128,7 @@ func (rc *RigChooser) viewList() string {
 	bodyW := rc.width - 2
 	if bodyW < 30 { bodyW = 30 }
 	title := "── Configuration — Rigs "
-	rem := bodyW - lipgloss.Width(title)
-	if rem > 0 {
-		b.WriteString(SectionStyle.Render(title + strings.Repeat("─", rem)))
-	} else {
-		b.WriteString(SectionStyle.Render(title))
-	}
+	b.WriteString(section(title, bodyW))
 	b.WriteString("\n\n")
 
 	if len(rc.names) == 0 {
@@ -175,12 +169,7 @@ func (rc *RigChooser) viewForm() string {
 	if rc.mode == rigChooserEdit {
 		t = "── Configuration — Edit Rig " + rc.editing + " "
 	}
-	rem := bodyW - lipgloss.Width(t)
-	if rem > 0 {
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(t + strings.Repeat("─", rem)))
-	} else {
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(t))
-	}
+	b.WriteString(section(t, bodyW))
 	b.WriteString("\n\n")
 
 	b.WriteString(rc.form.View())

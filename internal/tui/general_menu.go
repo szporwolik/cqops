@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/szporwolik/cqops/internal/config"
 )
 
@@ -81,12 +80,7 @@ func (gm *GeneralMenu) View() string {
 
 	var b strings.Builder
 	title := "── General Options "
-	rem := bodyW - lipgloss.Width(title)
-	if rem > 0 {
-		b.WriteString(SectionStyle.Render(title + strings.Repeat("─", rem)))
-	} else {
-		b.WriteString(SectionStyle.Render(title))
-	}
+	b.WriteString(section(title, bodyW))
 	b.WriteString("\n\n")
 
 	imgCheck := "[ ]"

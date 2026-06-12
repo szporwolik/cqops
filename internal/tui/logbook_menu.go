@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/log"
@@ -126,12 +125,7 @@ func (c *LogbookChooser) viewList() string {
 	bodyW := c.width - 2
 	if bodyW < 30 { bodyW = 30 }
 	title := "── Configuration — Logbooks "
-	rem := bodyW - lipgloss.Width(title)
-	if rem > 0 {
-		b.WriteString(SectionStyle.Render(title + strings.Repeat("─", rem)))
-	} else {
-		b.WriteString(SectionStyle.Render(title))
-	}
+	b.WriteString(section(title, bodyW))
 	b.WriteString("\n\n")
 
 	if len(c.names) == 0 {
@@ -170,12 +164,7 @@ func (c *LogbookChooser) viewForm() string {
 	if c.mode == chooserEdit {
 		t = "── Configuration — Edit " + c.editing + " "
 	}
-	rem := bodyW - lipgloss.Width(t)
-	if rem > 0 {
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(t + strings.Repeat("─", rem)))
-	} else {
-		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(t))
-	}
+	b.WriteString(section(t, bodyW))
 	b.WriteString("\n\n")
 
 	b.WriteString(c.station.View())

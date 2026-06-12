@@ -53,12 +53,13 @@ func (lv *LogViewer) View() string {
 		return "No log entries yet."
 	}
 
-	bodyW := lv.width - 2
-	if bodyW < 30 {
-		bodyW = 30
-	}
+	w := lv.width
+	if w < 40 { w = 80 }
+	bodyW := w - 2
 
-	maxRows := lv.height - 5
+	h := lv.height
+	if h < 10 { h = 24 }
+	maxRows := h - 5
 	if maxRows < 3 {
 		maxRows = 10
 	}
@@ -78,12 +79,7 @@ func (lv *LogViewer) View() string {
 	var b strings.Builder
 
 	title := "── Logs: " + lv.name + " "
-	rem := bodyW - lipgloss.Width(title)
-	if rem > 0 {
-		b.WriteString(SectionStyle.Render(title + strings.Repeat("─", rem)))
-	} else {
-		b.WriteString(SectionStyle.Render(title))
-	}
+	b.WriteString(section(title, bodyW))
 	b.WriteString("\n\n")
 
 	b.WriteString(fmt.Sprintf("  %-8s %-6s %s", "Time", "Level", "Message"))
@@ -113,7 +109,7 @@ func (lv *LogViewer) View() string {
 		line := fmt.Sprintf("  %-8s %s %s",
 			e.Time,
 			levelStyle.Render(fmt.Sprintf("%-6s", e.Level)),
-			trunc(msg, bodyW-18),
+			truncate(msg, bodyW-18),
 		)
 		b.WriteString(line)
 		b.WriteString("\n")

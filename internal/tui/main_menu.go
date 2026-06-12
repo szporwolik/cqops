@@ -84,12 +84,7 @@ func (m *MainMenu) View() string {
 	var b strings.Builder
 
 	title := "── Configuration "
-	rem := bodyW - lipgloss.Width(title)
-	if rem > 0 {
-		b.WriteString(SectionStyle.Render(title + strings.Repeat("─", rem)))
-	} else {
-		b.WriteString(SectionStyle.Render(title))
-	}
+	b.WriteString(section(title, bodyW))
 	b.WriteString("\n\n")
 
 	for i, item := range m.items {
