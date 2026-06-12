@@ -1,0 +1,107 @@
+package config
+
+import (
+	"fmt"
+	"os"
+
+	"gopkg.in/yaml.v3"
+)
+
+type Config struct {
+	ActiveLogbook string             `yaml:"active_logbook"`
+	Timezone      string             `yaml:"timezone"`
+	Logbooks      map[string]Logbook `yaml:"logbooks"`
+	Rigs          map[string]RigPreset `yaml:"rigs,omitempty"`
+	Rig           RigConfig          `yaml:"rig,omitempty"`
+	Wavelog       WavelogConfig      `yaml:"wavelog,omitempty"`
+	WSJTX         WSJTXConfig        `yaml:"wsjtx,omitempty"`
+}
+
+type Logbook struct {
+	Description  string     `yaml:"description"`
+	DatabasePath string     `yaml:"database_path"`
+	Station      Station    `yaml:"station"`
+	ADIF         ADIFConfig `yaml:"adif"`
+}
+
+type Station struct {
+	Callsign string `yaml:"callsign"`
+	Operator string `yaml:"operator"`
+	Grid     string `yaml:"grid"`
+	Rig      string `yaml:"rig"`
+	Antenna  string `yaml:"antenna"`
+	Power    string `yaml:"power"`
+	RigName  string `yaml:"rig_name"`
+}
+
+type RigPreset struct {
+	Model        string `yaml:"model"`
+	Antenna      string `yaml:"antenna"`
+	Power        string `yaml:"power"`
+	FlrigEnabled bool   `yaml:"flrig_enabled"`
+	FlrigHost    string `yaml:"flrig_host"`
+	FlrigPort    string `yaml:"flrig_port"`
+}
+
+type ADIFConfig struct {
+	DefaultExportPath string `yaml:"default_export_path"`
+}
+
+type RigConfig struct {
+	Provider     string `yaml:"provider"`
+	AutoFill     bool   `yaml:"auto_fill"`
+	FailSilently bool   `yaml:"fail_silently"`
+
+	Flrig struct {
+		Enabled   bool   `yaml:"enabled"`
+		URL       string `yaml:"url"`
+		TimeoutMS int    `yaml:"timeout_ms"`
+	} `yaml:"flrig"`
+
+	Rigctld struct {
+		Enabled   bool   `yaml:"enabled"`
+		Host      string `yaml:"host"`
+		Port      int    `yaml:"port"`
+		TimeoutMS int    `yaml:"timeout_ms"`
+	} `yaml:"rigctld,omitempty"`
+}
+
+type WavelogConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	URL     string `yaml:"url"`
+	APIKey  string `yaml:"api_key"`
+}
+
+type WSJTXConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	UDPHost string `yaml:"udp_host"`
+	UDPPort int    `yaml:"udp_port"`
+}
+
+func Load(path string) (*Config, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("config not found at %s", path)
+		}
+		return nil, fmt.Errorf("read config: %w", err)
+	}
+
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
+
+	return &cfg, nil
+}
+
+func Save(path string, cfg *Config) error {
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("write config: %w", err)
+	}
+	return nil
+}
