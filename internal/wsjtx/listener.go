@@ -93,7 +93,7 @@ func (l *Listener) eventLoop(msgCh chan interface{}, errCh chan error) {
 					go l.OnStatus(m.DxCall, m.DxGrid, m.DialFrequency, m.Mode, m.SubMode, m.Report)
 				}
 			case wsjtx.DecodeMessage:
-				log.Debug("WSJT-X: decode", "call", m.Message, "snr", m.Snr)
+				continue
 			case wsjtx.LoggedAdifMessage:
 				log.InfoDetail("WSJT-X: logged ADIF", m.Adif)
 				if l.OnADIF != nil {

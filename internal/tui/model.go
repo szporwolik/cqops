@@ -232,6 +232,7 @@ func (m *Model) flrigStatusCmd() tea.Cmd {
 		return nil
 	}
 	client := m.flrigClient
+	log.Debug("flrig: dispatching status command")
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 		defer cancel()
@@ -243,22 +244,24 @@ func (m *Model) flrigStatusCmd() tea.Cmd {
 	}
 }
 
-func (m *Model) pollFlrig() {
+func (m *Model) pollFlrig() tea.Cmd {
 	m.rigBlink = !m.rigBlink
 	m.rigSkipTicks++
 	if m.rigSkipTicks < 5 {
-		return
+		return nil
 	}
 	m.rigSkipTicks = 0
 	if m.flrigClient == nil {
 		m.rigConnected = false
-		return
+		return nil
 	}
+	return m.flrigStatusCmd()
 }
 
 func (m *Model) applyFlrigResult(r flrigResultMsg) {
-	if r.err != "" { m.rigConnected = false; return }
-	if !r.connected { m.rigConnected = false; return }
+	if r.err != "" { log.Debug("flrig: result error", "err", r.err); m.rigConnected = false; return }
+	if !r.connected { log.Debug("flrig: result disconnected"); m.rigConnected = false; return }
+	log.Debug("flrig: result ok", "freq", r.freq, "mode", r.mode)
 	m.rigConnected = true
 	m.rigFreq = r.freq
 	if !m.wsjtxOnline { m.fields[fieldFreq].SetValue(fmt.Sprintf("%.6f", r.freq)) }
@@ -442,12 +445,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if sp.call != "" {
 			m.applyWSJTXStatus(sp.call, sp.grid, sp.freq, sp.mode, sp.submode, sp.report)
 		}
-		m.pollFlrig()
-		cmd = tea.Batch(cmd, m.flrigStatusCmd())
 		m.toasts.Expire()
 		m.autoUpdateDateTime()
 		m.tickCount++
-		cmd = m.maybeCheckInet()
+		cmd = tea.Batch(tickCmd(), m.maybeCheckInet(), m.pollFlrig())
 	}
 	if m.confirmQuit {
 		if key, ok := msg.(tea.KeyMsg); ok {
