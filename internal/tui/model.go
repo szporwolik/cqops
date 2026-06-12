@@ -42,9 +42,9 @@ const (
 )
 
 var fieldNames = []string{
-	"Call:", "RST sent:", "RST rcvd:", "Band:", "Freq:", "Mode:", "Sub:",
-	"Date (UTC):", "Time (UTC):",
-	"Grid:", "DXCC:", "Name:", "QTH:", "Pwr (W):", "Comment:",
+	"Call", "RST sent", "RST rcvd", "Band", "Frequency", "Mode", "Submode",
+	"Date UTC", "Time UTC",
+	"Grid", "DXCC", "Name", "QTH", "Power W", "Comment",
 }
 
 type Model struct {
@@ -97,12 +97,22 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	now := time.Now().UTC()
 	for i := field(0); i < fieldCount; i++ {
 		ti := textinput.New()
+		ti.Prompt = ""
 		ti.CharLimit = 40
 		switch i {
 		case fieldCall: ti.Focus()
+		case fieldBand: ti.CharLimit = 8
 		case fieldFreq: ti.CharLimit = 16
-		case fieldDate: ti.CharLimit = 8; ti.SetValue(now.Format("20060102"))
-		case fieldTime: ti.CharLimit = 6; ti.SetValue(now.Format("150405"))
+		case fieldMode: ti.CharLimit = 12
+		case fieldSubmode: ti.CharLimit = 16
+		case fieldDate: ti.CharLimit = 10; ti.SetValue(now.Format("2006-01-02"))
+		case fieldTime: ti.CharLimit = 8; ti.SetValue(now.Format("15:04:05"))
+		case fieldGrid: ti.CharLimit = 8
+		case fieldCountry: ti.CharLimit = 20
+		case fieldName: ti.CharLimit = 30
+		case fieldQTH: ti.CharLimit = 30
+		case fieldTXPower: ti.CharLimit = 8
+		case fieldComment: ti.CharLimit = 60
 		}
 		m.fields[i] = ti
 	}
@@ -112,6 +122,19 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 
 func (m *Model) Init() tea.Cmd { m.refreshFlrigClient(); return tea.Batch(tickCmd(), checkInetCmd()) }
 func tickCmd() tea.Cmd { return tea.Tick(200*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) }) }
+func (m *Model) qrzLookupCmd(call string) tea.Cmd {
+	return func() tea.Msg {
+		data, err := qrz.Lookup(m.App.Config.QRZUser, m.App.Config.QRZPass, call)
+		return qrzResultMsg{Call: call, Data: data, Err: err}
+	}
+}
+
+func isLookupKey(key tea.KeyMsg) bool {
+	s := key.String()
+	return s == "insert" || s == "\x1b[2~" || s == "ctrl+l" ||
+		key.Type == tea.KeyInsert
+}
+
 func checkInetCmd() tea.Cmd {
 	return func() tea.Msg {
 		client := &http.Client{Timeout: 3 * time.Second}
@@ -172,8 +195,8 @@ func (m *Model) autoUpdateDateTime() {
 		return
 	}
 	now := time.Now().UTC()
-	m.fields[fieldDate].SetValue(now.Format("20060102"))
-	m.fields[fieldTime].SetValue(now.Format("150405"))
+	m.fields[fieldDate].SetValue(now.Format("2006-01-02"))
+	m.fields[fieldTime].SetValue(now.Format("15:04:05"))
 }
 
 func (m *Model) maybeCheckInet() tea.Cmd {
@@ -201,13 +224,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "f10": m.confirmQuit = true
 		case "f1": m.showChooser = false; m.showRigEdit = false; m.showConfig = false; m.showMainMenu = false; m.showLogView = false; m.showPartner = false
 		case "f2": if m.showPartner { m.showPartner = false } else if m.partnerData != nil { m.showPartner = true }
-		case "f8": m.mainMenu = NewMainMenu(); m.showMainMenu = true
+		case "f8": if m.showMainMenu { m.showMainMenu = false } else { m.mainMenu = NewMainMenu(); m.showMainMenu = true }
 		case "f9": m.logViewer = NewLogViewer(); m.showLogView = true
 		}
 		if !m.showChooser && !m.showRigEdit && !m.showConfig && !m.showCallbook && !m.showMainMenu && !m.showLogView && !m.showPartner {
 			if key.String() == "delete" || key.Type == tea.KeyDelete {
 				m.clearForm()
 				return m, nil
+			}
+			if isLookupKey(key) {
+				call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+				if call != "" && m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled {
+					m.toasts.Info("QRZ: looking up " + call + "…")
+					return m, m.qrzLookupCmd(call)
+				}
 			}
 		}
 	}
@@ -324,17 +354,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.String() == "ctrl+s": return m, m.saveQSO()
 		case msg.String() == "delete" || msg.Type == tea.KeyDelete: m.clearForm()
 		case msg.String() == "ctrl+c": m.mainMenu = NewMainMenu(); m.showMainMenu = true
-		case msg.String() == "f1":
+		case msg.String() == "f1": m.focusField(fieldCall)
 		case msg.String() == "f2":
 			call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
 			if call != "" && m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled && m.partnerData == nil {
+				return m, m.qrzLookupCmd(call)
+			}
+			if m.partnerData != nil {
+				m.showPartner = true
+			}
+		case msg.String() == "insert" || msg.Type == tea.KeyInsert || msg.String() == "\x1b[2~":
+			call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+			if call != "" && m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled {
 				return m, func() tea.Msg {
 					data, err := qrz.Lookup(m.App.Config.QRZUser, m.App.Config.QRZPass, call)
 					return qrzResultMsg{Call: call, Data: data, Err: err}
 				}
-			}
-			if m.partnerData != nil {
-				m.showPartner = true
 			}
 		case msg.String() == "tab" || msg.String() == "\t" || msg.Type == tea.KeyTab: m.nextField()
 		case msg.String() == "enter": return m, m.saveQSO()
@@ -476,13 +511,38 @@ func (m *Model) renderHeader(width int) string {
 	}
 
 	right := ansiFg("243", "Inet: ") + inetVal +
-		ansiFg("243", "  Rig: ") + ansiFg("229", clamp(rigModel, 6)) + rigIndicator +
+		ansiFg("243", "  Rig: ") + ansiFg("229", rigModel) + rigIndicator +
 		ansiFg("243", "  LT: ") + ansiFg("229", now.Format("15:04")) +
 		ansiFg("243", "  UTC: ") + ansiFg("229", utc.Format("15:04:05"))
 
 	leftW := lipgloss.Width(left)
 	rightW := lipgloss.Width(right)
-	gap := width - 4 - leftW - rightW
+	totalW := leftW + rightW
+
+	bgStyle := lipgloss.NewStyle().Background(lipgloss.Color("236"))
+
+	if totalW+6 > width {
+		line1 := "  " + left
+		for lipgloss.Width(line1) < width {
+			line1 += " "
+		}
+		line1 = bgStyle.Render(line1)
+
+		line2 := right
+		for lipgloss.Width(line2) < width-2 {
+			line2 = " " + line2
+		}
+		line2 = "  " + line2
+		for lipgloss.Width(line2) < width {
+			line2 += " "
+		}
+		line2 = bgStyle.Render(line2)
+
+		tabLine := m.renderTabLine(width)
+		return line1 + "\n" + line2 + "\n" + tabLine
+	}
+
+	gap := width - 4 - totalW
 	if gap < 2 {
 		gap = 2
 	}
@@ -491,10 +551,9 @@ func (m *Model) renderHeader(width int) string {
 	for lipgloss.Width(statusLine) < width {
 		statusLine += " "
 	}
-	statusLine = lipgloss.NewStyle().Background(lipgloss.Color("236")).Render(statusLine)
+	statusLine = bgStyle.Render(statusLine)
 
 	tabLine := m.renderTabLine(width)
-
 	return statusLine + "\n" + tabLine
 }
 
@@ -513,29 +572,39 @@ func (m *Model) renderTabLine(width int) string {
 
 	qsoLabel := "F1 QSO Form"
 	partnerLabel := "F2 Partner Details"
+	configLabel := "F8 Config"
 	logsLabel := "F9 Logs"
 
-	var qsoTab, partnerTab, logsTabStr string
+	var qsoTab, partnerTab, configTab, logsTabStr string
 
 	if m.showPartner && m.partnerData != nil {
 		qsoTab = inactive.Render(qsoLabel)
 		partnerTab = active.Render(partnerLabel)
+		configTab = inactive.Render(configLabel)
 		logsTabStr = inactive.Render(logsLabel)
 	} else if m.partnerData != nil {
 		qsoTab = active.Render(qsoLabel)
 		partnerTab = inactive.Render(partnerLabel)
+		configTab = inactive.Render(configLabel)
+		logsTabStr = inactive.Render(logsLabel)
+	} else if m.showMainMenu {
+		qsoTab = inactive.Render(qsoLabel)
+		partnerTab = disabled.Render(partnerLabel)
+		configTab = active.Render(configLabel)
 		logsTabStr = inactive.Render(logsLabel)
 	} else if m.showLogView {
 		qsoTab = inactive.Render(qsoLabel)
 		partnerTab = disabled.Render(partnerLabel)
+		configTab = inactive.Render(configLabel)
 		logsTabStr = active.Render(logsLabel)
 	} else {
 		qsoTab = active.Render(qsoLabel)
 		partnerTab = disabled.Render(partnerLabel)
+		configTab = inactive.Render(configLabel)
 		logsTabStr = inactive.Render(logsLabel)
 	}
 
-	line := " " + qsoTab + partnerTab + logsTabStr
+	line := " " + qsoTab + partnerTab + configTab + logsTabStr
 	for lipgloss.Width(line) < width {
 		line += " "
 	}
@@ -550,6 +619,30 @@ func clamp(s string, w int) string {
 		return truncate(s, w)
 	}
 	return s + strings.Repeat(" ", w-lipgloss.Width(s))
+}
+
+func stripNonDigits(s string) string {
+	var b strings.Builder
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func formatDate(adif string) string {
+	if len(adif) < 8 {
+		return "—"
+	}
+	return adif[0:4] + "-" + adif[4:6] + "-" + adif[6:8]
+}
+
+func formatTime(adif string) string {
+	if len(adif) < 6 {
+		return "—"
+	}
+	return adif[0:2] + ":" + adif[2:4] + ":" + adif[4:6]
 }
 
 func (m *Model) viewPartner() string {
@@ -676,19 +769,6 @@ func (m *Model) partnerDistanceLine(width int) string {
 	return distanceLine(own, partner, m.App.Config.DistanceUnit)
 }
 
-func (m *Model) formDistanceLine(width int) string {
-	ownGrid := formatLocator(m.App.Logbook.Station.Grid)
-	partnerGrid := formatLocator(strings.TrimSpace(m.fields[fieldGrid].Value()))
-	if partnerGrid == "" {
-		return ""
-	}
-	dl := distanceLine(ownGrid, partnerGrid, m.App.Config.DistanceUnit)
-	if dl == "" {
-		return ""
-	}
-	return inputStyle.Render(dl)
-}
-
 func (m *Model) renderPartnerInfo(d *qrz.CallData, maxW int) string {
 	type row struct{ label, value string }
 	var rows []row
@@ -781,31 +861,200 @@ func (m *Model) viewFooter(width int) string {
 			text = "F8 Config  F10 Quit"
 	default:
 		if width < 70 {
-			text = "Enter=Save | Del Clear | PgUp/Dn Cycle | F8 Config | F10 Quit"
+			text = "Enter=Save | Del Clear | Ins/Ctrl+L Lookup | PgUp/Dn Cycle | F8 Config | F10 Quit"
 		} else {
-			text = "Enter/Ctrl+S Save  Del Clear  PgUp/Dn Cycle  F8 Config  F10 Quit"
+			text = "Enter/Ctrl+S Save  Del Clear  Ins/Ctrl+L Lookup  PgUp/Dn Cycle  F8 Config  F10 Quit"
 		}
 	}
-	return lipgloss.NewStyle().Width(width).
-		Background(lipgloss.Color("236")).
-		Foreground(lipgloss.Color("241")).
-		Padding(0, 1).
-		Align(lipgloss.Center).
-		Render(text)
+	ver := ""
+	if v := version.Resolved(); v != "dev" {
+		ver = "CQOPS v" + v
+	}
+	helpStr := ansiFg("241", text)
+	verStr := ansiFg("240", ver)
+	helpW := lipgloss.Width(helpStr)
+	verW := lipgloss.Width(verStr)
+	innerW := width - 4
+	if helpW+verW > innerW {
+		line := "  " + helpStr
+		for lipgloss.Width(line) < width {
+			line += " "
+		}
+		return lipgloss.NewStyle().Background(lipgloss.Color("236")).Render(line)
+	}
+	gap := innerW - helpW - verW
+	line := "  " + helpStr + strings.Repeat(" ", gap) + verStr + "  "
+	for lipgloss.Width(line) < width {
+		line += " "
+	}
+	return lipgloss.NewStyle().Background(lipgloss.Color("236")).Render(line)
 }
 
 func truncate(s string, max int) string { if max < 3 { return s }; if lipgloss.Width(s) <= max { return s }; return s[:max-1] + "…" }
 
 func (m *Model) viewForm(width int) string {
-	var rows []string; labelW := 11
-	for i := field(0); i < fieldCount; i++ {
-		label, value := fmt.Sprintf("%-*s", labelW, fieldNames[i]), m.fields[i].View()
-		if int(i) == int(m.focus) { value = cursorStyle.Render(value) }
-		rows = append(rows, label+" "+value)
+	bodyW := width - 2
+	if bodyW < 20 {
+		bodyW = 20
 	}
-	sepW := width - 2; if sepW > 100 { sepW = 100 }
-	sep := strings.Repeat("─", sepW)
-	return sep + "\n" + strings.Join(rows, "\n") + "\n" + sep
+	labelW := 12
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	hl := lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
+
+	var b strings.Builder
+
+	title := "── QSO "
+	rem := bodyW - lipgloss.Width(title)
+	if rem > 0 {
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title + strings.Repeat("─", rem)))
+	} else {
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title))
+	}
+	b.WriteString("\n")
+
+	choiceFields := map[field]bool{fieldBand: true, fieldMode: true, fieldSubmode: true}
+
+	for i := field(0); i < fieldCount; i++ {
+		label := fieldNames[i]
+		raw := strings.TrimSpace(m.fields[i].Value())
+		display := raw
+		if display == "" {
+			display = dim.Render("—")
+		}
+
+		hasChoices := choiceFields[i] && raw != ""
+		choiceIcon := ""
+		if hasChoices {
+			choiceIcon = dim.Render("▼ ")
+		}
+
+		if int(i) == int(m.focus) {
+			b.WriteString(hl.Render(fmt.Sprintf("  %-*s", labelW, label)))
+			b.WriteString(" ")
+			b.WriteString(inputStyle.Render(choiceIcon + m.fields[i].View()))
+		} else {
+			b.WriteString(fmt.Sprintf("  %-*s", labelW, label))
+			b.WriteString(" ")
+			if raw == "" {
+				b.WriteString(display)
+			} else {
+				b.WriteString(inputStyle.Render(choiceIcon + display))
+			}
+		}
+		b.WriteString("\n")
+	}
+
+	return b.String()
+}
+
+func (m *Model) viewQSOS(maxRows int) string {
+	dim := lipgloss.NewStyle().Foreground(lipgloss.Color("238"))
+	bodyW := m.width - 2
+	if bodyW < 20 {
+		bodyW = 20
+	}
+
+	var b strings.Builder
+	title := "── Recent QSOs "
+	rem := bodyW - lipgloss.Width(title)
+	if rem > 0 {
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title + strings.Repeat("─", rem)))
+	} else {
+		b.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title))
+	}
+	b.WriteString("\n")
+
+	b.WriteString(headerStyle.Render(fmt.Sprintf("%-4s %-10s %-8s %-7s %-5s %-5s %-4s %-4s %-4s %-6s %s",
+		"ID", "Date", "Time", "Call", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Comment")))
+	b.WriteString("\n")
+
+	if len(m.qsos) == 0 {
+		for i := 0; i < maxRows; i++ {
+			b.WriteString(dim.Render(fmt.Sprintf("%-4s %-10s %-8s %-7s %-5s %-5s %-4s %-4s %-4s %-6s %s",
+				"—", "—", "—", "—", "—", "—", "—", "—", "—", "—", "—")))
+			b.WriteString("\n")
+		}
+	} else {
+		limit := maxRows
+		if limit > len(m.qsos) {
+			limit = len(m.qsos)
+		}
+		for i := 0; i < limit; i++ {
+			q := m.qsos[i]
+
+			id := trunc(fmt.Sprintf("%d", q.ID), 4)
+			date := formatDate(q.QSODate)
+			timeOn := formatTime(q.TimeOn)
+			call := trunc(q.Call, 7)
+			band := qso.NormalizeBand(q.Band)
+			if band == "" && q.Freq > 0 {
+				band = fmt.Sprintf("%.1f", q.Freq)
+			}
+			band = trunc(band, 5)
+			mode := trunc(q.Mode, 5)
+			sub := trunc(q.Submode, 4)
+			rsts := trunc(q.RSTSent, 4)
+			rstr := trunc(q.RSTRcvd, 4)
+			country := trunc(q.Country, 6)
+			comment := trunc(q.Comment, 20)
+
+			if id == "" { id = "—" }
+			if band == "" { band = "—" }
+			if mode == "" { mode = "—" }
+			if sub == "" { sub = "—" }
+			if rsts == "" { rsts = "—" }
+			if rstr == "" { rstr = "—" }
+			if country == "" { country = "—" }
+			if comment == "" { comment = "—" }
+
+			r := fmt.Sprintf("%-4s %-10s %-8s %-7s %-5s %-5s %-4s %-4s %-4s %-6s %s",
+				id, date, timeOn, call, band, mode, sub, rsts, rstr, country, comment)
+			if i%2 == 0 {
+				r = inputStyle.Render(r)
+			}
+			b.WriteString(r)
+			b.WriteString("\n")
+		}
+		for i := limit; i < maxRows; i++ {
+			b.WriteString(dim.Render(fmt.Sprintf("%-4s %-10s %-8s %-7s %-5s %-5s %-4s %-4s %-4s %-6s %s",
+				"—", "—", "—", "—", "—", "—", "—", "—", "—", "—", "—")))
+			b.WriteString("\n")
+		}
+	}
+	return b.String()
+}
+
+func trunc(s string, w int) string {
+	if s == "" {
+		return ""
+	}
+	if len(s) > w {
+		return s[:w]
+	}
+	return s
+}
+
+func (m *Model) formDistanceLine(width int) string {
+	ownGrid := formatLocator(m.App.Logbook.Station.Grid)
+	partnerGrid := formatLocator(strings.TrimSpace(m.fields[fieldGrid].Value()))
+	if partnerGrid == "" {
+		return ""
+	}
+	dl := distanceLine(ownGrid, partnerGrid, m.App.Config.DistanceUnit)
+	if dl == "" {
+		return ""
+	}
+	bodyW := width - 2
+	if bodyW < 20 {
+		bodyW = 20
+	}
+	title := "── Path "
+	rem := bodyW - lipgloss.Width(title)
+	hdr := lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title)
+	if rem > 0 {
+		hdr = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(title + strings.Repeat("─", rem))
+	}
+	return hdr + "\n  " + inputStyle.Render(dl)
 }
 
 func (m *Model) availableQSORows() int {
@@ -815,35 +1064,10 @@ func (m *Model) availableQSORows() int {
 	return avail
 }
 
-func (m *Model) viewQSOS(maxRows int) string {
-	var rows []string
-	row := fmt.Sprintf("%-5s %-8s %-6s %-7s %-5s %-6s %-4s %-4s %-7s %s", "ID", "Date", "Time", "Call", "Band", "Mode", "RSTs", "RSTr", "Country", "Comment")
-	rows = append(rows, headerStyle.Render(row))
-	w := m.width - 4; if w < 1 { w = 60 }; if w > 100 { w = 100 }
-	rows = append(rows, "  "+strings.Repeat("─", w))
-	if len(m.qsos) == 0 {
-		for i := 0; i < maxRows; i++ {
-			rows = append(rows, fmt.Sprintf(" ---   ----     ----   ---    ---   ---   ---  ---  -------  -------"))
-		}
-	} else {
-		limit := maxRows
-		if limit > len(m.qsos) {
-			limit = len(m.qsos)
-		}
-		for i := 0; i < limit; i++ {
-			q := m.qsos[i]
-			band := q.Band; if band == "" { band = fmt.Sprintf("%.3f", q.Freq) }
-			mode := q.Mode
-			if q.Submode != "" { mode += "/" + q.Submode }
-			r := fmt.Sprintf("%-5d %-8s %-6s %-7s %-5s %-6s %-4s %-4s %-7s %s", q.ID, q.QSODate, q.TimeOn, q.Call, band, mode, q.RSTSent, q.RSTRcvd, q.Country, q.Comment)
-			if i%2 == 0 { r = inputStyle.Render(r) }
-			rows = append(rows, r)
-		}
-		for i := limit; i < maxRows; i++ {
-			rows = append(rows, fmt.Sprintf(" ---   ----     ----   ---    ---   ---   ---  ---  -------  -------"))
-		}
-	}
-	return strings.Join(rows, "\n")
+func (m *Model) focusField(f field) {
+	m.fields[m.focus].Blur()
+	m.focus = f
+	m.fields[m.focus].Focus()
 }
 
 func (m *Model) nextField() {
@@ -942,8 +1166,8 @@ func (m *Model) clearForm() {
 		m.fields[i].Blur()
 	}
 	now := time.Now().UTC()
-	m.fields[fieldDate].SetValue(now.Format("20060102"))
-	m.fields[fieldTime].SetValue(now.Format("150405"))
+	m.fields[fieldDate].SetValue(now.Format("2006-01-02"))
+	m.fields[fieldTime].SetValue(now.Format("15:04:05"))
 
 	for _, r := range rig {
 		if r.value != "" {
@@ -1048,11 +1272,11 @@ func (m *Model) saveQSO() tea.Cmd {
 	qs.Call, qs.Band, qs.Freq = strings.ToUpper(m.fields[fieldCall].Value()), strings.ToUpper(m.fields[fieldBand].Value()), freq
 	qs.Mode, qs.RSTSent, qs.RSTRcvd = strings.ToUpper(m.fields[fieldMode].Value()), m.fields[fieldRSTSent].Value(), m.fields[fieldRSTRcvd].Value()
 	qs.Submode = strings.ToUpper(m.fields[fieldSubmode].Value())
-	qs.QSODate = strings.TrimSpace(m.fields[fieldDate].Value())
+	qs.QSODate = stripNonDigits(m.fields[fieldDate].Value())
 	if qs.QSODate == "" {
 		qs.QSODate = time.Now().UTC().Format("20060102")
 	}
-	qs.TimeOn = strings.TrimSpace(m.fields[fieldTime].Value())
+	qs.TimeOn = stripNonDigits(m.fields[fieldTime].Value())
 	if qs.TimeOn == "" {
 		qs.TimeOn = time.Now().UTC().Format("150405")
 	}
