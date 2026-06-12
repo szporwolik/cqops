@@ -107,6 +107,7 @@ type inetResultMsg bool
 type statusPending struct {
 	call, grid, mode, submode, report string
 	freq                              uint64
+	hasData                           bool
 }
 
 func New(a *app.App, initialQSOS []qso.QSO) *Model {
@@ -154,19 +155,18 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 
 func (m *Model) Init() tea.Cmd {
 	m.refreshFlrigClient()
-	applog.Info("WSJT-X: registering callbacks", "listenerActive", m.App.WSJTX.IsActive())
 	m.App.WSJTX.OnADIF = func(adif string) {
-		applog.Debug("WSJT-X: OnADIF callback invoked", "len", len(adif))
 		m.adifMu.Lock()
 		m.pendingADIF = adif
 		m.adifMu.Unlock()
 	}
 	m.App.WSJTX.OnStatus = func(call, grid string, freq uint64, mode, submode, report string) {
-		applog.Debug("WSJT-X: OnStatus callback invoked", "call", call)
 		m.adifMu.Lock()
-		m.pendingStatus = statusPending{call: call, grid: grid, freq: freq, mode: mode, submode: submode, report: report}
+		m.pendingStatus = statusPending{call: call, grid: grid, freq: freq, mode: mode, submode: submode, report: report, hasData: true}
 		m.adifMu.Unlock()
 	}
+	applog.Info("WSJT-X: callbacks registered, restarting listener")
+	m.App.MaybeRestartWSJTX()
 	return tea.Batch(tickCmd(), checkInetCmd())
 }
 func tickCmd() tea.Cmd {
@@ -249,7 +249,6 @@ func (m *Model) flrigStatusCmd() tea.Cmd {
 		return nil
 	}
 	client := m.flrigClient
-	applog.Debug("flrig: dispatching status command")
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 		defer cancel()
@@ -282,16 +281,13 @@ func (m *Model) pollFlrig() tea.Cmd {
 func (m *Model) applyFlrigResult(r flrigResultMsg) {
 	m.rigPolling = false
 	if r.err != "" {
-		applog.Debug("flrig: result error", "err", r.err)
 		m.rigConnected = false
 		return
 	}
 	if !r.connected {
-		applog.Debug("flrig: result disconnected")
 		m.rigConnected = false
 		return
 	}
-	applog.Debug("flrig: result ok", "freq", r.freq, "mode", r.mode)
 	m.rigConnected = true
 	m.rigFreq = r.freq
 	if !m.wsjtxOnline {
@@ -491,7 +487,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		sp := m.pendingStatus
 		m.pendingStatus = statusPending{}
 		m.adifMu.Unlock()
-		if sp.call != "" {
+		if sp.hasData {
 			m.applyWSJTXStatus(sp.call, sp.grid, sp.freq, sp.mode, sp.submode, sp.report)
 		}
 		m.toasts.Expire()
@@ -866,40 +862,64 @@ func (m *Model) View() string {
 	} else if m.showPartner && m.partnerData != nil {
 		content = m.viewPartner()
 	} else {
+		// Compute available body height first
+		headerLines := strings.Count(header, "\n") + 1
+		footerLines := 1
+		const toastReserved = 2
+		const joins = 0
+		maxBodyH := m.height - headerLines - toastReserved - footerLines - joins
+		if maxBodyH < 8 {
+			maxBodyH = 8
+		}
+
+		// Build form and measure
 		form := m.viewForm(w)
 		distLine := m.formDistanceLine(w)
-		qsoList := m.viewQSOS(m.availableQSORows())
-		content = lipgloss.JoinVertical(lipgloss.Left, form, distLine, qsoList)
+		formBlock := form
+		if distLine != "" {
+			formBlock = lipgloss.JoinVertical(lipgloss.Left, form, distLine)
+		}
+		formRendered := lipgloss.NewStyle().Width(w).Padding(0, 1).Render(formBlock)
+		formLines := strings.Count(formRendered, "\n") + 1
+
+		// Remaining space for QSO list (minus section title + header = 2 lines)
+		qsoRows := maxBodyH - formLines - 2
+		if qsoRows < 0 {
+			qsoRows = 0
+		}
+		qsoList := m.viewQSOS(qsoRows)
+		qsoRendered := lipgloss.NewStyle().Width(w).Padding(0, 1).Render(qsoList)
+
+		body := formRendered + "\n" + qsoRendered
+		// Pad body to exactly maxBodyH lines
+		bodyLines := strings.Count(body, "\n") + 1
+		for bodyLines < maxBodyH {
+			body += "\n"
+			bodyLines++
+		}
+		body = trimLines(body, maxBodyH)
+		content = body
 	}
-	body := lipgloss.NewStyle().Width(w).Padding(0, 1).Render(content)
+
+	if content == "" {
+		return ""
+	}
+
 	toastBar := RenderToasts(m.toasts.Active(), w)
 	footer := m.viewFooter(w)
-	headerLines := strings.Count(header, "\n") + 1
-	footerLines := strings.Count(footer, "\n") + 1
-	toastLines := strings.Count(toastBar, "\n")
-	if toastBar != "" {
-		toastLines++
+
+	// Build exactly 2 toast rows
+	const toastReserved = 2
+	toastLines := strings.Split(toastBar, "\n")
+	if toastBar == "" {
+		toastLines = nil
 	}
-	extraLines := headerLines + toastLines + footerLines
-	if m.height > 0 && extraLines < m.height {
-		maxBodyH := m.height - extraLines
-		body = trimLines(body, maxBodyH)
+	for len(toastLines) < toastReserved {
+		toastLines = append(toastLines, "")
 	}
-	mainBlock := lipgloss.JoinVertical(lipgloss.Left, header, body)
-	if m.height > 0 {
-		mainLines := strings.Count(mainBlock, "\n") + 1
-		pad := m.height - mainLines - toastLines - footerLines
-		if pad < 0 {
-			pad = 0
-		}
-		mainBlock += strings.Repeat("\n", pad)
-	}
-	var all string
-	if toastBar != "" {
-		all = lipgloss.JoinVertical(lipgloss.Left, mainBlock, toastBar, footer)
-	} else {
-		all = lipgloss.JoinVertical(lipgloss.Left, mainBlock, footer)
-	}
+	toastBlock := strings.Join(toastLines, "\n")
+
+	all := lipgloss.JoinVertical(lipgloss.Left, header, content) + "\n" + toastBlock + "\n" + footer
 	return all
 }
 
@@ -1522,17 +1542,6 @@ func (m *Model) formDistanceLine(width int) string {
 	}
 	hdr := section("── Path ", bodyW)
 	return hdr + "\n  " + inputStyle.Render(dl)
-}
-
-func (m *Model) availableQSORows() int {
-	if m.height <= 0 {
-		return 5
-	}
-	avail := m.height - 32
-	if avail < 1 {
-		avail = 1
-	}
-	return avail
 }
 
 func (m *Model) focusField(f field) {

@@ -86,21 +86,16 @@ func (l *Listener) eventLoop(msgCh chan interface{}, errCh chan error) {
 			case wsjtx.HeartbeatMessage:
 				applog.Debug("WSJT-X: heartbeat", "id", m.Id, "version", m.Version)
 			case wsjtx.StatusMessage:
-				applog.InfoDetail("WSJT-X: status",
-					fmt.Sprintf("dx=%s dxGrid=%s freq=%d mode=%s subMode=%s report=%s",
-						m.DxCall, m.DxGrid, m.DialFrequency, m.Mode, m.SubMode, m.Report))
 				if l.OnStatus != nil {
 					go l.OnStatus(m.DxCall, m.DxGrid, m.DialFrequency, m.Mode, m.SubMode, m.Report)
 				}
 			case wsjtx.DecodeMessage:
-				applog.Debug("WSJT-X: decode", "snr", m.Snr, "mode", m.Mode, "msg", m.Message)
 				if l.OnStatus != nil {
 					go l.OnStatus("", "", 0, "", "", "")
 				}
 			case wsjtx.LoggedAdifMessage:
 				applog.InfoDetail("WSJT-X: logged ADIF", m.Adif)
 				if l.OnADIF != nil {
-					applog.Info("WSJT-X: calling OnADIF callback")
 					go l.OnADIF(m.Adif)
 				} else {
 					applog.Warn("WSJT-X: OnADIF callback is nil, ADIF not auto-logged")
