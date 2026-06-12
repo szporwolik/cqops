@@ -69,7 +69,7 @@ func (cm *CallbookMenu) View() string {
 	}
 
 	var b strings.Builder
-	title := "── Callbook / QRZ.com "
+	title := "── Callbook "
 	b.WriteString(section(title, bodyW))
 	b.WriteString("\n\n")
 	checkbox := "[ ]"

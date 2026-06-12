@@ -31,5 +31,10 @@ func DefaultConfig() *Config {
 				TimeoutMS: 1000,
 			},
 		},
+		WSJTX: WSJTXConfig{
+			Enabled: false,
+			UDPHost: "127.0.0.1",
+			UDPPort: 2233,
+		},
 	}
 }

@@ -72,7 +72,9 @@ type Model struct {
 	showConfig   bool
 	configMenu   *GeneralMenu
 	showCallbook bool
-	callbookMenu *CallbookMenu
+	callbookMenu  *CallbookMenu
+	showIntegration bool
+	integrationMenu *IntegrationMenu
 	showMainMenu bool
 	showLogView  bool
 	logViewer    *LogViewer
@@ -244,12 +246,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if key, ok := msg.(tea.KeyMsg); ok {
 		switch key.String() {
 		case "f10": m.confirmQuit = true
-		case "f1": m.showChooser = false; m.showRigEdit = false; m.showConfig = false; m.showMainMenu = false; m.showLogView = false; m.showPartner = false
+		case "f1": m.showChooser = false; m.showRigEdit = false; m.showIntegration = false; m.showConfig = false; m.showMainMenu = false; m.showLogView = false; m.showPartner = false
 		case "f2": if m.showPartner { m.showPartner = false } else if m.partnerData != nil { m.showPartner = true }
 		case "f8": if m.showMainMenu { m.showMainMenu = false } else { m.mainMenu = NewMainMenu(); m.showMainMenu = true }
 		case "f9": m.logViewer = NewLogViewer(m.App.LogbookName); m.showLogView = true; return m, cmd
 		}
-		if !m.showChooser && !m.showRigEdit && !m.showConfig && !m.showCallbook && !m.showMainMenu && !m.showLogView && !m.showPartner {
+		if !m.showChooser && !m.showRigEdit && !m.showIntegration && !m.showConfig && !m.showCallbook && !m.showMainMenu && !m.showLogView && !m.showPartner {
 			if key.String() == "delete" || key.Type == tea.KeyDelete {
 				m.clearForm()
 				return m, nil
@@ -319,6 +321,24 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, cmd
 	}
+	if m.showIntegration {
+		_, _ = m.integrationMenu.Update(msg)
+		if m.integrationMenu.done {
+			m.showIntegration = false
+			if m.integrationMenu.goBack { m.showMainMenu = true }
+			if m.integrationMenu.saved {
+				m.App.Config.WSJTX.Enabled, m.App.Config.WSJTX.UDPHost, m.App.Config.WSJTX.UDPPort = m.integrationMenu.Values()
+				if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
+					m.toasts.Error("Settings save failed: " + err.Error())
+				} else {
+					m.toasts.Success("Settings saved")
+					log.Info("Settings saved")
+				}
+				m.showMainMenu = true
+			}
+		}
+		return m, cmd
+	}
 	if m.showMainMenu {
 		_, _ = m.mainMenu.Update(msg)
 		if m.mainMenu.action != "" {
@@ -330,6 +350,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "callbook": m.callbookMenu = NewCallbookMenu(m.App.Config); m.showCallbook = true
 			case "logbook": m.chooser = NewLogbookChooser(m.App, m.toasts); m.showChooser = true
 			case "rig": m.rigChooser = NewRigChooser(m.App, m.toasts); m.showRigEdit = true
+			case "integration": m.integrationMenu = NewIntegrationMenu(m.App.Config); m.showIntegration = true
 			}
 		}
 		if m.mainMenu.done {
@@ -468,6 +489,8 @@ func (m *Model) View() string {
 		content = m.configMenu.View()
 	} else if m.showCallbook {
 		content = m.callbookMenu.View()
+	} else if m.showIntegration {
+		content = m.integrationMenu.View()
 	} else if m.showMainMenu {
 		content = m.mainMenu.View()
 	} else if m.showLogView {
@@ -882,6 +905,8 @@ func (m *Model) viewFooter(width int) string {
 		text = m.configMenu.FooterText()
 	case m.showCallbook:
 		text = m.callbookMenu.FooterText()
+	case m.showIntegration:
+		text = m.integrationMenu.FooterText()
 	case m.showChooser:
 		text = m.chooser.FooterText()
 	case m.showRigEdit:

@@ -26,9 +26,10 @@ func NewMainMenu() *MainMenu {
 	return &MainMenu{
 		items: []menuItem{
 			{"General Options", "Callsign, operator, locator, defaults"},
-			{"Callbook / QRZ.com", "QRZ username, password, lookup behavior"},
+			{"Callbook", "Lookup providers and credentials"},
 			{"Logbook Configuration", "Logs, paths, active log profile"},
 			{"Rig Configuration", "flrig / rigctld / manual radio data"},
+			{"Integration", "WSJT-X / external tools connectivity"},
 		},
 	}
 }
@@ -48,6 +49,7 @@ func (m *MainMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case 1: m.action = "callbook"
 			case 2: m.action = "logbook"
 			case 3: m.action = "rig"
+			case 4: m.action = "integration"
 			}
 		case "up", "k":
 			if m.cursor > 0 {
