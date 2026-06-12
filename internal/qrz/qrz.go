@@ -20,18 +20,14 @@ type CallData struct {
 }
 
 type qrzDatabase struct {
-	XMLName xml.Name   `xml:"QRZDatabase"`
-	Version string     `xml:"version"`
-	Session qrzKey     `xml:"Session"`
-	Callsign qrzCall   `xml:"Callsign"`
+	XMLName  xml.Name `xml:"QRZDatabase"`
+	Session  qrzKey   `xml:"Session"`
+	Callsign qrzCall  `xml:"Callsign"`
 }
 
 type qrzKey struct {
-	Key     string `xml:"Key"`
-	Count   string `xml:"Count"`
-	SubExp  string `xml:"SubExp"`
-	Message string `xml:"Message"`
-	Error   string `xml:"Error"`
+	Key   string `xml:"Key"`
+	Error string `xml:"Error"`
 }
 
 type qrzCall struct {
@@ -42,102 +38,54 @@ type qrzCall struct {
 	Country string `xml:"country"`
 	State   string `xml:"state"`
 	Addr2   string `xml:"addr2"`
-	Error   string `xml:"Error"`
 }
 
 var httpClient = &http.Client{Timeout: 10 * time.Second}
 
-func Lookup(apiKey, callsign string) (*CallData, error) {
-	if apiKey == "" || callsign == "" {
-		return nil, nil
-	}
+func Lookup(qrzUser, qrzPass, callsign string) (*CallData, error) {
+	if callsign == "" || qrzUser == "" { return nil, nil }
 
-	baseURL := "https://xmldata.qrz.com/xml/current/"
+	return qrzLoginLookup(qrzUser, qrzPass, callsign)
+}
 
-	sessionKey, err := getSession(baseURL, apiKey)
-	if err != nil {
-		return nil, fmt.Errorf("qrz session: %w", err)
-	}
+func qrzLoginLookup(user, pass, callsign string) (*CallData, error) {
+	u := "https://xmldata.qrz.com/xml/current/?username=" + url.QueryEscape(user) + ";password=" + url.QueryEscape(pass) + ";agent=CQOps"
+	data, err := httpGet(u)
+	if err != nil { return nil, err }
 
-	u := baseURL + "?s=" + url.QueryEscape(sessionKey+";callsign="+callsign)
-	req, err := http.NewRequest("GET", u, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("User-Agent", "CQOps/1.0")
+	var authDB qrzDatabase
+	if err := xml.Unmarshal(data, &authDB); err != nil { return nil, err }
+	if authDB.Session.Error != "" { return nil, fmt.Errorf("QRZ: %s", authDB.Session.Error) }
+	if authDB.Session.Key == "" { return nil, fmt.Errorf("QRZ: no session key") }
 
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("qrz request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
+	u2 := "https://xmldata.qrz.com/xml/current/?s=" + url.QueryEscape(authDB.Session.Key) + ";callsign=" + url.QueryEscape(callsign)
+	data, err = httpGet(u2)
+	if err != nil { return nil, err }
 
 	var db qrzDatabase
-	if err := xml.Unmarshal(data, &db); err != nil {
-		return nil, fmt.Errorf("qrz xml: %w", err)
-	}
+	if err := xml.Unmarshal(data, &db); err != nil { return nil, fmt.Errorf("qrz xml: %w", err) }
+	if db.Session.Error != "" { return nil, fmt.Errorf("QRZ: %s", db.Session.Error) }
 
-	if db.Callsign.Error != "" {
-		return nil, fmt.Errorf("qrz: %s", db.Callsign.Error)
-	}
-
-	cd := &CallData{
-		Callsign: strings.TrimSpace(db.Callsign.Call),
-		Name:     strings.TrimSpace(coalesce(db.Callsign.Fname, db.Callsign.Name)),
-		Grid:     strings.TrimSpace(db.Callsign.Grid),
-		Country:  strings.TrimSpace(db.Callsign.Country),
-		State:    strings.TrimSpace(db.Callsign.State),
-		QTH:      strings.TrimSpace(db.Callsign.Addr2),
-	}
-
-	if cd.Callsign == "" {
-		return nil, nil
-	}
-
-	return cd, nil
+	c := db.Callsign
+	if strings.TrimSpace(c.Call) == "" { return nil, nil }
+	return &CallData{
+		Callsign: strings.TrimSpace(c.Call),
+		Name:     strings.TrimSpace(coalesce(c.Fname, c.Name)),
+		Grid:     strings.TrimSpace(c.Grid),
+		Country:  strings.TrimSpace(c.Country),
+		State:    strings.TrimSpace(c.State),
+		QTH:      strings.TrimSpace(c.Addr2),
+	}, nil
 }
 
-func getSession(baseURL, apiKey string) (string, error) {
-	u := baseURL + "?s=" + url.QueryEscape(apiKey)
+func httpGet(u string) ([]byte, error) {
 	req, err := http.NewRequest("GET", u, nil)
-	if err != nil {
-		return "", err
-	}
+	if err != nil { return nil, err }
 	req.Header.Set("User-Agent", "CQOps/1.0")
-
 	resp, err := httpClient.Do(req)
-	if err != nil {
-		return "", err
-	}
+	if err != nil { return nil, fmt.Errorf("request: %w", err) }
 	defer resp.Body.Close()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-
-	var db qrzDatabase
-	if err := xml.Unmarshal(data, &db); err != nil {
-		return "", fmt.Errorf("qrz xml: %w", err)
-	}
-
-	if db.Session.Error != "" {
-		return "", fmt.Errorf("qrz auth: %s", db.Session.Error)
-	}
-
-	if db.Session.Key == "" {
-		return "", fmt.Errorf("qrz: no session key returned")
-	}
-
-	return db.Session.Key, nil
+	return io.ReadAll(resp.Body)
 }
 
-func coalesce(a, b string) string {
-	if a != "" { return a }
-	return b
-}
+func coalesce(a, b string) string { if a != "" { return a }; return b }

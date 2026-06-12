@@ -63,10 +63,12 @@ type Model struct {
 	configMenu   *ConfigMenu
 	flrigClient  *flrig.Flrig
 	showAdvanced bool
+	qrzNeed      bool
+	qrzCall      string
 }
 
 type tickMsg time.Time
-type qrzResultMsg struct{ Call string; Data *qrz.CallData }
+type qrzResultMsg struct{ Call string; Data *qrz.CallData; Err error }
 
 func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	m := &Model{App: a, qsos: initialQSOS}
@@ -132,7 +134,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.showRigEdit { _, _ = m.rigChooser.Update(msg); if m.rigChooser.done { m.showRigEdit = false; m.refreshFlrigClient() }; return m, nil }
 	if m.showConfig {
 		_, _ = m.configMenu.Update(msg)
-		if m.configMenu.done { m.showConfig = false; m.App.Config.QRZAPIKey = m.configMenu.apiKey.Value(); config.Save(m.App.ConfigPath, m.App.Config) }
+		if m.configMenu.done { m.showConfig = false; m.App.Config.QRZUser = m.configMenu.user.Value(); m.App.Config.QRZPass = m.configMenu.pass.Value(); config.Save(m.App.ConfigPath, m.App.Config) }
 		return m, nil
 	}
 	switch msg := msg.(type) {
@@ -141,9 +143,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case qrzResultMsg: m.fillQRZData(msg); return m, nil
 	case tea.KeyMsg:
 		switch {
-		case msg.String() == "shift+tab": wasCall := m.focus == fieldCall; m.prevField(); if wasCall { return m, qrzLookup(m) }
-		case msg.Type == tea.KeyUp || msg.String() == "up": wasCall := m.focus == fieldCall; m.prevField(); if wasCall { return m, qrzLookup(m) }
-		case msg.Type == tea.KeyDown || msg.String() == "down": wasCall := m.focus == fieldCall; m.nextField(); if wasCall { return m, qrzLookup(m) }
+		case msg.String() == "shift+tab" || msg.Type == tea.KeyShiftTab: m.prevField()
+		case msg.Type == tea.KeyUp || msg.String() == "up": m.prevField()
+		case msg.Type == tea.KeyDown || msg.String() == "down": m.nextField()
 		case msg.String() == "ctrl+q": m.quitting = true; return m, tea.Quit
 		case msg.String() == "ctrl+s": return m, m.saveQSO()
 		case msg.String() == "ctrl+u": m.clearForm()
@@ -151,26 +153,30 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.String() == "ctrl+c": m.configMenu = NewConfigMenu(m.App.Config); m.showConfig = true
 		case msg.String() == "ctrl+l": m.chooser = NewLogbookChooser(m.App); m.showChooser = true
 		case msg.String() == "ctrl+g": m.rigChooser = NewRigChooser(m.App); m.showRigEdit = true
-		case msg.String() == "tab": wasCall := m.focus == fieldCall; m.nextField(); if wasCall { return m, qrzLookup(m) }
+		case msg.String() == "tab" || msg.String() == "\t" || msg.Type == tea.KeyTab: m.nextField()
 		case msg.String() == "enter": return m, m.saveQSO()
 		default: m.updateFocused(msg)
 		}
 	}
+	if m.qrzNeed {
+		m.qrzNeed = false
+		call := m.qrzCall
+		if call == "" { return m, nil }
+		if m.App.Config.QRZUser == "" { m.setStatus("Set QRZ credentials in Ctrl+C Config", "warning"); return m, nil }
+		return m, func() tea.Msg { data, err := qrz.Lookup(m.App.Config.QRZUser, m.App.Config.QRZPass, call); return qrzResultMsg{Call: call, Data: data, Err: err} }
+	}
 	return m, nil
-}
-
-func qrzLookup(m *Model) tea.Cmd {
-	call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
-	key := m.App.Config.QRZAPIKey
-	if key == "" || call == "" { return nil }
-	return func() tea.Msg { data, _ := qrz.Lookup(key, call); return qrzResultMsg{Call: call, Data: data} }
 }
 
 func (m *Model) fillQRZData(msg qrzResultMsg) {
 	if msg.Call == "" { return }
-	if m.App.Config.QRZAPIKey == "" { m.setStatus("Set QRZ API key in Ctrl+C Settings", "warning"); return }
+	if m.App.Config.QRZUser == "" { m.setStatus("Set QRZ credentials in Ctrl+C Config", "warning"); return }
+	if msg.Err != nil {
+		m.setStatus("QRZ error: "+msg.Err.Error(), "error")
+		return
+	}
 	d := msg.Data
-	if d == nil || d.Callsign == "" { return }
+	if d == nil || d.Callsign == "" { m.setStatus("QRZ: no data for "+msg.Call, "warning"); return }
 	if d.Name != "" { m.fields[fieldName].SetValue(d.Name) }
 	if d.Grid != "" && m.fields[fieldGrid].Value() == "" { m.fields[fieldGrid].SetValue(d.Grid) }
 	if d.QTH != "" { m.fields[fieldQTH].SetValue(d.QTH) }
@@ -191,8 +197,8 @@ func (m *Model) View() string {
 	form := m.viewForm(w)
 	status := m.viewStatus()
 	qsoList := m.viewQSOS()
-	helpText := "Enter/Ctrl+S Save  Ctrl+U Clear  Ctrl+A Advanced  Ctrl+L Logbooks  Ctrl+G Rig  Ctrl+C Settings  Ctrl+Q Quit"
-	if w < 70 { helpText = "Enter=Save | Ctrl+A Adv | Ctrl+L Logs | Ctrl+G Rig | Ctrl+C Set | Ctrl+Q Quit" }
+	helpText := "Enter/Ctrl+S Save  Ctrl+U Clear  Ctrl+A Advanced  Ctrl+L Logbooks  Ctrl+G Rig  Ctrl+C Config  Ctrl+Q Quit"
+	if w < 70 { helpText = "Enter=Save | Ctrl+A Adv | Ctrl+L Logs | Ctrl+G Rig | Ctrl+C Config | Ctrl+Q Quit" }
 	help := helpStyle.Render(helpText)
 	content := lipgloss.JoinVertical(lipgloss.Left, form, status, qsoList)
 	body := lipgloss.NewStyle().Width(w).Padding(0, 1).Render(content)
@@ -277,15 +283,19 @@ func (m *Model) viewQSOS() string {
 }
 
 func (m *Model) nextField() {
+	wasCall := m.focus == fieldCall
 	m.fields[m.focus].Blur(); m.focus = (m.focus + 1) % fieldCount
 	if !m.showAdvanced && m.focus >= fieldGrid { m.focus = fieldCall }
 	m.fields[m.focus].Focus()
+	if wasCall { m.qrzNeed = true; m.qrzCall = strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value())) }
 }
 func (m *Model) prevField() {
+	wasCall := m.focus == fieldCall
 	m.fields[m.focus].Blur()
 	if m.focus == 0 { m.focus = fieldCount - 1 } else { m.focus-- }
 	if !m.showAdvanced && m.focus >= fieldGrid { m.focus = fieldComment - 1 }
 	m.fields[m.focus].Focus()
+	if wasCall { m.qrzNeed = true; m.qrzCall = strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value())) }
 }
 func (m *Model) updateFocused(msg tea.KeyMsg) {
 	m.fields[m.focus], _ = m.fields[m.focus].Update(msg)

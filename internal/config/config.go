@@ -10,7 +10,8 @@ import (
 type Config struct {
 	ActiveLogbook string             `yaml:"active_logbook"`
 	Timezone      string             `yaml:"timezone"`
-	QRZAPIKey     string             `yaml:"qrz_api_key,omitempty"`
+	QRZUser       string             `yaml:"qrz_user,omitempty"`
+	QRZPass       string             `yaml:"qrz_pass,omitempty"`
 	Logbooks      map[string]Logbook `yaml:"logbooks"`
 	Rigs          map[string]RigPreset `yaml:"rigs,omitempty"`
 	Rig           RigConfig          `yaml:"rig,omitempty"`
