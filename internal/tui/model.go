@@ -61,8 +61,14 @@ type Model struct {
 	rigChooser   *RigChooser
 	showConfig   bool
 	configMenu   *ConfigMenu
+	showMainMenu bool
+	mainMenu     *MainMenu
+	showPartner  bool
+	partnerData  *qrz.CallData
+	partnerASCII string
+	asciiW int
+	asciiH int
 	flrigClient  *flrig.Flrig
-	showAdvanced bool
 	qrzNeed      bool
 	qrzCall      string
 }
@@ -130,11 +136,82 @@ func (m *Model) pollFlrig() {
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if m.showChooser { _, _ = m.chooser.Update(msg); if m.chooser.done { m.showChooser = false; m.qsos = nil }; return m, nil }
-	if m.showRigEdit { _, _ = m.rigChooser.Update(msg); if m.rigChooser.done { m.showRigEdit = false; m.refreshFlrigClient() }; return m, nil }
+	if m.showChooser {
+		_, _ = m.chooser.Update(msg)
+		if m.chooser.done {
+			m.showChooser = false
+			m.showMainMenu = true
+			m.qsos = nil
+		}
+		return m, nil
+	}
+	if m.showRigEdit {
+		_, _ = m.rigChooser.Update(msg)
+		if m.rigChooser.done {
+			m.showRigEdit = false
+			m.showMainMenu = true
+			m.refreshFlrigClient()
+		}
+		return m, nil
+	}
 	if m.showConfig {
 		_, _ = m.configMenu.Update(msg)
-		if m.configMenu.done { m.showConfig = false; m.App.Config.QRZUser = m.configMenu.user.Value(); m.App.Config.QRZPass = m.configMenu.pass.Value(); config.Save(m.App.ConfigPath, m.App.Config) }
+		if m.configMenu.done {
+			m.showConfig = false
+			m.showMainMenu = true
+			m.App.Config.QRZUser = m.configMenu.user.Value()
+			m.App.Config.QRZPass = m.configMenu.pass.Value()
+			config.Save(m.App.ConfigPath, m.App.Config)
+		}
+		return m, nil
+	}
+	if m.showMainMenu {
+		_, _ = m.mainMenu.Update(msg)
+		if m.mainMenu.action != "" {
+			action := m.mainMenu.action
+			m.mainMenu.action = ""
+			m.showMainMenu = false
+			switch action {
+			case "general":
+				m.configMenu = NewConfigMenu(m.App.Config)
+				m.showConfig = true
+			case "logbook":
+				m.chooser = NewLogbookChooser(m.App)
+				m.showChooser = true
+			case "rig":
+				m.rigChooser = NewRigChooser(m.App)
+				m.showRigEdit = true
+			}
+		}
+		if m.mainMenu.done {
+			m.showMainMenu = false
+		}
+		return m, nil
+	}
+	if m.showPartner {
+		switch msg := msg.(type) {
+		case tea.WindowSizeMsg:
+			m.width, m.height = msg.Width, msg.Height
+			m.asciiW = 0
+			m.asciiH = 0
+		case tickMsg:
+			m.pollFlrig()
+			return m, tickCmd()
+		case qrzResultMsg:
+			m.fillQRZData(msg)
+			return m, nil
+		case tea.KeyMsg:
+			switch {
+			case msg.String() == "ctrl+q", msg.String() == "ctrl+c", msg.Type == tea.KeyCtrlC, msg.Type == tea.KeyCtrlQ:
+				m.quitting = true
+				return m, tea.Quit
+			case msg.String() == "f1":
+				m.showPartner = false
+			case msg.String() == "f3":
+				m.mainMenu = NewMainMenu()
+				m.showMainMenu = true
+			}
+		}
 		return m, nil
 	}
 	switch msg := msg.(type) {
@@ -149,10 +226,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.String() == "ctrl+q": m.quitting = true; return m, tea.Quit
 		case msg.String() == "ctrl+s": return m, m.saveQSO()
 		case msg.String() == "ctrl+u": m.clearForm()
-		case msg.String() == "ctrl+a": m.showAdvanced = !m.showAdvanced; if !m.showAdvanced && m.focus >= fieldGrid { m.focus = fieldCall; m.fields[m.focus].Focus() }
-		case msg.String() == "ctrl+c": m.configMenu = NewConfigMenu(m.App.Config); m.showConfig = true
-		case msg.String() == "ctrl+l": m.chooser = NewLogbookChooser(m.App); m.showChooser = true
-		case msg.String() == "ctrl+g": m.rigChooser = NewRigChooser(m.App); m.showRigEdit = true
+		case msg.String() == "ctrl+c": m.mainMenu = NewMainMenu(); m.showMainMenu = true
+		case msg.String() == "f1":
+		case msg.String() == "f2":
+			call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+			if call != "" && m.App.Config.QRZUser != "" && m.partnerData == nil {
+				return m, func() tea.Msg {
+					data, err := qrz.Lookup(m.App.Config.QRZUser, m.App.Config.QRZPass, call)
+					return qrzResultMsg{Call: call, Data: data, Err: err}
+				}
+			}
+			if m.partnerData != nil {
+				m.showPartner = true
+			}
+		case msg.String() == "f3": m.mainMenu = NewMainMenu(); m.showMainMenu = true
 		case msg.String() == "tab" || msg.String() == "\t" || msg.Type == tea.KeyTab: m.nextField()
 		case msg.String() == "enter": return m, m.saveQSO()
 		default: m.updateFocused(msg)
@@ -162,7 +249,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.qrzNeed = false
 		call := m.qrzCall
 		if call == "" { return m, nil }
-		if m.App.Config.QRZUser == "" { m.setStatus("Set QRZ credentials in Ctrl+C Config", "warning"); return m, nil }
+		if m.App.Config.QRZUser == "" { m.setStatus("QRZ not configured — use F3 Config → General Options to enable partner lookup", "warning"); return m, nil }
 		return m, func() tea.Msg { data, err := qrz.Lookup(m.App.Config.QRZUser, m.App.Config.QRZPass, call); return qrzResultMsg{Call: call, Data: data, Err: err} }
 	}
 	return m, nil
@@ -170,13 +257,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Model) fillQRZData(msg qrzResultMsg) {
 	if msg.Call == "" { return }
-	if m.App.Config.QRZUser == "" { m.setStatus("Set QRZ credentials in Ctrl+C Config", "warning"); return }
+	if m.App.Config.QRZUser == "" { m.setStatus("QRZ not configured", "warning"); return }
 	if msg.Err != nil {
 		m.setStatus("QRZ error: "+msg.Err.Error(), "error")
 		return
 	}
 	d := msg.Data
 	if d == nil || d.Callsign == "" { m.setStatus("QRZ: no data for "+msg.Call, "warning"); return }
+	m.partnerData = d
+	m.partnerASCII = ""
+	m.asciiW = 0
+	m.asciiH = 0
 	if d.Name != "" { m.fields[fieldName].SetValue(d.Name) }
 	if d.Grid != "" && m.fields[fieldGrid].Value() == "" { m.fields[fieldGrid].SetValue(d.Grid) }
 	if d.QTH != "" { m.fields[fieldQTH].SetValue(d.QTH) }
@@ -189,22 +280,39 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 func (m *Model) View() string {
 	if m.quitting { return "\n" }
 	if m.err != nil { return errorStyle.Render(fmt.Sprintf("Error: %v\nPress any key to exit.", m.err)) }
-	if m.showChooser { return m.chooser.View() }
-	if m.showRigEdit { return m.rigChooser.View() }
-	if m.showConfig { return m.configMenu.View() }
 	w := m.width; if w < 40 { w = 80 }
 	topBar := m.viewTopBar(w)
-	form := m.viewForm(w)
-	status := m.viewStatus()
-	qsoList := m.viewQSOS()
-	helpText := "Enter/Ctrl+S Save  Ctrl+U Clear  Ctrl+A Advanced  Ctrl+L Logbooks  Ctrl+G Rig  Ctrl+C Config  Ctrl+Q Quit"
-	if w < 70 { helpText = "Enter=Save | Ctrl+A Adv | Ctrl+L Logs | Ctrl+G Rig | Ctrl+C Config | Ctrl+Q Quit" }
-	help := helpStyle.Render(helpText)
-	content := lipgloss.JoinVertical(lipgloss.Left, form, status, qsoList)
+	tabBar := m.viewTabBar(w)
+	var content string
+	if m.showChooser {
+		content = m.chooser.View()
+	} else if m.showRigEdit {
+		content = m.rigChooser.View()
+	} else if m.showConfig {
+		content = m.configMenu.View()
+	} else if m.showMainMenu {
+		content = m.mainMenu.View()
+	} else if m.showPartner && m.partnerData != nil {
+		content = m.viewPartner()
+	} else {
+		form := m.viewForm(w)
+		status := m.viewStatus()
+		qsoList := m.viewQSOS(m.availableQSORows())
+		content = lipgloss.JoinVertical(lipgloss.Left, form, status, qsoList)
+	}
 	body := lipgloss.NewStyle().Width(w).Padding(0, 1).Render(content)
-	footer := lipgloss.NewStyle().Width(w).Background(lipgloss.Color("236")).Foreground(lipgloss.Color("241")).Padding(0, 1).Align(lipgloss.Center).Render(help)
-	all := lipgloss.JoinVertical(lipgloss.Left, topBar, body, footer)
-	if lines := strings.Count(all, "\n") + 1; m.height > 0 && lines < m.height { all += strings.Repeat("\n", m.height-lines) }
+	footer := m.viewFooter(w)
+	mainBlock := lipgloss.JoinVertical(lipgloss.Left, topBar, tabBar, "", body)
+	mainLines := strings.Count(mainBlock, "\n") + 1
+	footerLines := strings.Count(footer, "\n") + 1
+	if m.height > 0 {
+		pad := m.height - mainLines - footerLines
+		if pad < 0 {
+			pad = 0
+		}
+		mainBlock += strings.Repeat("\n", pad)
+	}
+	all := lipgloss.JoinVertical(lipgloss.Left, mainBlock, footer)
 	return all
 }
 
@@ -238,6 +346,262 @@ func (m *Model) viewTopBar(width int) string {
 	return lipgloss.NewStyle().Width(width).Background(lipgloss.Color("236")).Foreground(lipgloss.Color("229")).Render(" " + left + center + right + " ")
 }
 
+func (m *Model) viewTabBar(width int) string {
+	active := lipgloss.NewStyle().
+		Background(lipgloss.Color("62")).
+		Foreground(lipgloss.Color("229")).
+		Bold(true).
+		Padding(0, 2)
+	inactive := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("241")).
+		Padding(0, 2)
+	disabled := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("238")).
+		Padding(0, 2)
+	qsoTab := "QSO Form"
+	partnerTab := "Partner Details"
+	if m.showPartner && m.partnerData != nil {
+		qsoTab, partnerTab = inactive.Render(qsoTab), active.Render(partnerTab)
+	} else if m.partnerData != nil {
+		qsoTab, partnerTab = active.Render(qsoTab), inactive.Render(partnerTab)
+	} else {
+		partnerTab = disabled.Render(partnerTab)
+		qsoTab = active.Render(qsoTab)
+	}
+	bar := lipgloss.NewStyle().Width(width).Background(lipgloss.Color("236")).Render(" " + qsoTab + partnerTab)
+	return bar
+}
+
+func (m *Model) viewPartner() string {
+	d := m.partnerData
+	availW := m.width - 6
+	if availW < 50 {
+		availW = 50
+	}
+	infoW := 34
+	asciiW := availW - infoW - 2
+	if asciiW < 20 {
+		asciiW = 0
+		infoW = availW
+	}
+	availH := m.height - 9
+	if availH < 6 {
+		availH = 6
+	}
+	if asciiW > 0 && d.ImageURL != "" && availH >= 8 {
+		if m.partnerASCII == "" || m.asciiW != asciiW || m.asciiH != availH {
+			ascii, err := downloadAndRenderASCII(d.ImageURL, asciiW, availH)
+			if err == nil && ascii != "" {
+				m.partnerASCII = ascii
+				m.asciiW = asciiW
+				m.asciiH = availH
+			} else {
+				m.partnerASCII = ""
+				m.asciiW = 0
+				m.asciiH = 0
+			}
+		}
+	} else {
+		m.partnerASCII = ""
+	}
+	return m.viewPartnerData(infoW)
+}
+
+func (m *Model) viewPartnerData(infoW int) string {
+	d := m.partnerData
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Partner Details — " + d.Callsign))
+	b.WriteString("\n\n")
+	info := m.renderPartnerInfo(d, infoW)
+	if m.partnerASCII == "" {
+		b.WriteString(info)
+	} else {
+		leftCol := lipgloss.NewStyle().Width(infoW).Render(info)
+		rightCol := lipgloss.NewStyle().Render(m.partnerASCII)
+		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftCol, lipgloss.NewStyle().Width(2).Render(""), rightCol))
+	}
+	distanceLine := m.partnerDistanceLine(m.width - 2)
+	if distanceLine != "" {
+		b.WriteString("\n\n")
+		b.WriteString(lipgloss.NewStyle().Width(m.width - 2).Align(lipgloss.Center).Render(distanceLine))
+		b.WriteString("\n")
+	}
+	mapStr := m.renderWorldMap()
+	if mapStr != "" {
+		b.WriteString("\n")
+		b.WriteString(mapStr)
+	}
+	return b.String()
+}
+
+func (m *Model) renderWorldMap() string {
+	ownGrid := m.App.Logbook.Station.Grid
+	if ownGrid == "" || m.partnerData == nil || m.partnerData.Grid == "" {
+		return ""
+	}
+	ownLat, ownLon := gridToLatLon(ownGrid)
+	if ownLat == 0 && ownLon == 0 {
+		return ""
+	}
+	partnerLat, partnerLon := gridToLatLon(m.partnerData.Grid)
+	if partnerLat == 0 && partnerLon == 0 {
+		return ""
+	}
+	mapW := m.width - 4
+	if mapW < 40 {
+		mapW = 40
+	}
+	infoLines := m.partnerInfoLineCount()
+	colH := infoLines
+	if m.partnerASCII != "" {
+		asciiH := strings.Count(m.partnerASCII, "\n")
+		if asciiH > colH {
+			colH = asciiH
+		}
+	}
+	used := colH + 12
+	mapH := m.height - used
+	if mapH < 6 {
+		mapH = 6
+	}
+	return renderWorldMap(ownLat, ownLon, partnerLat, partnerLon, mapW, mapH)
+}
+
+func (m *Model) partnerInfoLineCount() int {
+	if m.partnerData == nil {
+		return 0
+	}
+	d := m.partnerData
+	count := 0
+	for _, v := range []string{d.Name, d.Grid, d.QTH, d.Country, d.State, d.Zip, d.County, d.Class, d.Email, d.URL, d.DXCC, d.CQZone, d.ITUZone} {
+		if v != "" {
+			count++
+		}
+	}
+	if d.Lat != "" || d.Lon != "" {
+		count++
+	}
+	return count
+}
+
+func (m *Model) partnerDistanceLine(width int) string {
+	if m.partnerData == nil {
+		return ""
+	}
+	ownGrid := m.App.Logbook.Station.Grid
+	partnerGrid := m.partnerData.Grid
+	if ownGrid == "" || partnerGrid == "" {
+		return ""
+	}
+	dist := gridDistance(ownGrid, partnerGrid)
+	bear := gridBearing(ownGrid, partnerGrid)
+	if dist == "" || bear == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s · %s  from %s to %s", dist, bear, ownGrid, partnerGrid)
+}
+
+func (m *Model) renderPartnerInfo(d *qrz.CallData, maxW int) string {
+	type row struct{ label, value string }
+	var rows []row
+	add := func(label, value string) {
+		if value != "" {
+			rows = append(rows, row{label, value})
+		}
+	}
+	add("Callsign", d.Callsign)
+	add("Name", d.Name)
+	add("Grid", d.Grid)
+	add("QTH", d.QTH)
+	add("Country", d.Country)
+	add("State", d.State)
+	add("Zip", d.Zip)
+	add("County", d.County)
+	add("Class", d.Class)
+	add("Email", d.Email)
+	add("URL", d.URL)
+	if d.Lat != "" || d.Lon != "" {
+		coord := strings.TrimSpace(d.Lat + " " + d.Lon)
+		add("Coordinates", coord)
+	}
+	add("DXCC", d.DXCC)
+	add("CQ Zone", d.CQZone)
+	add("ITU Zone", d.ITUZone)
+
+	if len(rows) == 0 {
+		return ""
+	}
+	labelW := 12
+	valW := maxW - labelW
+	if valW < 8 {
+		valW = 8
+	}
+	labelSty := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	blankLabel := strings.Repeat(" ", labelW)
+	var b strings.Builder
+	for _, r := range rows {
+		label := labelSty.Render(fmt.Sprintf("%-*s", labelW, r.label+":"))
+		lines := wrapString(r.value, valW)
+		for i, line := range lines {
+			if i == 0 {
+				b.WriteString(label)
+			} else {
+				b.WriteString(blankLabel)
+			}
+			b.WriteString(inputStyle.Render(line))
+			b.WriteByte('\n')
+		}
+	}
+	return b.String()
+}
+
+func wrapString(s string, width int) []string {
+	if width <= 0 {
+		return []string{s}
+	}
+	var lines []string
+	runes := []rune(s)
+	for len(runes) > width {
+		lines = append(lines, string(runes[:width]))
+		runes = runes[width:]
+	}
+	if len(runes) > 0 {
+		lines = append(lines, string(runes))
+	}
+	if len(lines) == 0 {
+		lines = append(lines, "")
+	}
+	return lines
+}
+
+func (m *Model) viewFooter(width int) string {
+	var text string
+	switch {
+	case m.showMainMenu:
+		text = m.mainMenu.FooterText()
+	case m.showConfig:
+		text = m.configMenu.FooterText()
+	case m.showChooser:
+		text = m.chooser.FooterText()
+	case m.showRigEdit:
+		text = m.rigChooser.FooterText()
+	case m.showPartner && m.partnerData != nil:
+		text = "F1 QSO Form  F3 Config  Ctrl+Q Quit"
+	default:
+		if width < 70 {
+			text = "Enter=Save | F2 Partner | F3 Config | Ctrl+Q Quit"
+		} else {
+			text = "Enter/Ctrl+S Save  Ctrl+U Clear  F2 Partner  F3 Config  Ctrl+Q Quit"
+		}
+	}
+	return lipgloss.NewStyle().Width(width).
+		Background(lipgloss.Color("236")).
+		Foreground(lipgloss.Color("241")).
+		Padding(0, 1).
+		Align(lipgloss.Center).
+		Render(text)
+}
+
 func padRight(s string, w int) string { s = truncate(s, w); for lipgloss.Width(s) < w { s += " " }; return s }
 func padCenter(s string, w int) string { s = truncate(s, w); pad := w - lipgloss.Width(s); l, r := pad/2, pad-pad/2; for i := 0; i < l; i++ { s = " " + s }; for i := 0; i < r; i++ { s += " " }; return s }
 func padLeft(s string, w int) string { s = truncate(s, w); for lipgloss.Width(s) < w { s = " " + s }; return s }
@@ -250,12 +614,10 @@ func (m *Model) viewForm(width int) string {
 		if int(i) == int(m.focus) { value = cursorStyle.Render(value) }
 		rows = append(rows, label+" "+value)
 	}
-	if m.showAdvanced {
-		for i := fieldGrid; i < fieldCount; i++ {
-			label, value := fmt.Sprintf("%-*s", labelW, fieldNames[i]), m.fields[i].View()
-			if int(i) == int(m.focus) { value = cursorStyle.Render(value) }
-			rows = append(rows, label+" "+value)
-		}
+	for i := fieldGrid; i < fieldCount; i++ {
+		label, value := fmt.Sprintf("%-*s", labelW, fieldNames[i]), m.fields[i].View()
+		if int(i) == int(m.focus) { value = cursorStyle.Render(value) }
+		rows = append(rows, label+" "+value)
 	}
 	sep := strings.Repeat("─", width-2)
 	return sep + "\n" + strings.Join(rows, "\n") + "\n" + sep
@@ -266,18 +628,39 @@ func (m *Model) viewStatus() string {
 	switch m.statusType { case "error": return errorStyle.Render(m.statusMsg); case "warning": return warningStyle.Render(m.statusMsg); case "success": return successStyle.Render(m.statusMsg); default: return m.statusMsg }
 }
 
-func (m *Model) viewQSOS() string {
-	if len(m.qsos) == 0 { return headerStyle.Render(fmt.Sprintf("No QSOs in [%s]", m.App.LogbookName)) }
+func (m *Model) availableQSORows() int {
+	if m.height <= 0 {
+		return 10
+	}
+	avail := m.height - 20
+	if avail < 0 {
+		return 0
+	}
+	return avail
+}
+
+func (m *Model) viewQSOS(maxRows int) string {
 	var rows []string
 	row := fmt.Sprintf("%-5s %-8s %-6s %-7s %-5s %-6s %-4s %-4s %s", "ID", "Date", "Time", "Call", "Band", "Mode", "RSTs", "RSTr", "Comment")
 	rows = append(rows, headerStyle.Render(row))
 	w := m.width - 4; if w < 1 { w = 60 }
 	rows = append(rows, "  "+strings.Repeat("─", w))
-	for i, q := range m.qsos {
-		band := q.Band; if band == "" { band = fmt.Sprintf("%.3f", q.Freq) }
-		r := fmt.Sprintf("%-5d %-8s %-6s %-7s %-5s %-6s %-4s %-4s %s", q.ID, q.QSODate, q.TimeOn, q.Call, band, q.Mode, q.RSTSent, q.RSTRcvd, q.Comment)
-		if i%2 == 0 { r = inputStyle.Render(r) }
-		rows = append(rows, r)
+	if len(m.qsos) == 0 {
+		for i := 0; i < maxRows; i++ {
+			rows = append(rows, "")
+		}
+	} else {
+		limit := maxRows
+		if limit > len(m.qsos) {
+			limit = len(m.qsos)
+		}
+		for i := 0; i < limit; i++ {
+			q := m.qsos[i]
+			band := q.Band; if band == "" { band = fmt.Sprintf("%.3f", q.Freq) }
+			r := fmt.Sprintf("%-5d %-8s %-6s %-7s %-5s %-6s %-4s %-4s %s", q.ID, q.QSODate, q.TimeOn, q.Call, band, q.Mode, q.RSTSent, q.RSTRcvd, q.Comment)
+			if i%2 == 0 { r = inputStyle.Render(r) }
+			rows = append(rows, r)
+		}
 	}
 	return strings.Join(rows, "\n")
 }
@@ -285,7 +668,6 @@ func (m *Model) viewQSOS() string {
 func (m *Model) nextField() {
 	wasCall := m.focus == fieldCall
 	m.fields[m.focus].Blur(); m.focus = (m.focus + 1) % fieldCount
-	if !m.showAdvanced && m.focus >= fieldGrid { m.focus = fieldCall }
 	m.fields[m.focus].Focus()
 	if wasCall { m.qrzNeed = true; m.qrzCall = strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value())) }
 }
@@ -293,17 +675,32 @@ func (m *Model) prevField() {
 	wasCall := m.focus == fieldCall
 	m.fields[m.focus].Blur()
 	if m.focus == 0 { m.focus = fieldCount - 1 } else { m.focus-- }
-	if !m.showAdvanced && m.focus >= fieldGrid { m.focus = fieldComment - 1 }
 	m.fields[m.focus].Focus()
 	if wasCall { m.qrzNeed = true; m.qrzCall = strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value())) }
 }
 func (m *Model) updateFocused(msg tea.KeyMsg) {
+	prevCall := strings.TrimSpace(m.fields[fieldCall].Value())
 	m.fields[m.focus], _ = m.fields[m.focus].Update(msg)
 	if m.focus == fieldCall || m.focus == fieldGrid { m.fields[m.focus].SetValue(strings.ToUpper(m.fields[m.focus].Value())) }
+	if m.focus == fieldCall {
+		cur := strings.TrimSpace(m.fields[fieldCall].Value())
+		if cur != prevCall && m.partnerData != nil && !strings.EqualFold(m.partnerData.Callsign, cur) {
+			m.partnerData = nil
+			m.partnerASCII = ""
+			m.asciiW = 0
+			m.asciiH = 0
+			m.showPartner = false
+		}
+	}
 }
 func (m *Model) clearForm() {
 	for i := field(0); i < fieldCount; i++ { m.fields[i].SetValue("") }
 	m.focus = fieldCall; m.fields[m.focus].Focus(); m.statusMsg = ""
+	m.partnerData = nil
+	m.partnerASCII = ""
+	m.asciiW = 0
+	m.asciiH = 0
+	m.showPartner = false
 }
 func (m *Model) saveQSO() tea.Cmd {
 	qs := qso.NewQSO()

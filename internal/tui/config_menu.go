@@ -31,7 +31,7 @@ func (cm *ConfigMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "esc": cm.done = true; return cm, nil
-		case "enter": if cm.focus == 1 { cm.done = true; return cm, nil }; cm.next()
+		case "ctrl+s", "\x13": cm.done = true; return cm, nil
 		case "tab", "down": cm.next()
 		case "shift+tab", "up": cm.prev()
 		default:
@@ -51,10 +51,14 @@ func (cm *ConfigMenu) focusField() {
 	switch cm.focus { case 0: cm.user.Focus(); case 1: cm.pass.Focus() }
 }
 
+func (cm *ConfigMenu) FooterText() string {
+	return "Ctrl+S to save  Tab/↓/↑ to navigate  Esc to go back"
+}
+
 func (cm *ConfigMenu) View() string {
 	if cm.done { return "" }
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Configuration"))
+	b.WriteString(titleStyle.Render("Configuration — General Options"))
 	b.WriteString("\n\n")
 	b.WriteString("QRZ.com callsign lookup credentials:")
 	b.WriteString("\n\n")
@@ -63,7 +67,5 @@ func (cm *ConfigMenu) View() string {
 	b.WriteString("\n\n")
 	b.WriteString(formLabelStyle.Render("Password:"))
 	b.WriteString(inputStyle.Render(cm.pass.View()))
-	b.WriteString("\n\n\n")
-	b.WriteString(helpStyle.Render("Enter/Tab to next  |  Enter on Password to save  |  Esc to cancel"))
 	return b.String()
 }

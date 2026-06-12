@@ -57,10 +57,6 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		k := msg
 
 		switch {
-		case k.String() == "ctrl+c" || k.String() == "ctrl+q":
-			c.done = true
-			return c, nil
-
 		case k.String() == "esc":
 			if c.mode == chooserList {
 				c.done = true
@@ -100,6 +96,16 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return c, nil
 }
 
+func (c *LogbookChooser) FooterText() string {
+	switch c.mode {
+	case chooserList:
+		return "Enter to switch  e to edit  c to create  Esc to go back"
+	case chooserEdit, chooserCreate:
+		return "Ctrl+S to save  Tab/↓/↑ to navigate  Esc to discard"
+	}
+	return ""
+}
+
 func (c *LogbookChooser) View() string {
 	if c.done {
 		return ""
@@ -116,12 +122,11 @@ func (c *LogbookChooser) View() string {
 
 func (c *LogbookChooser) viewList() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Logbooks"))
+	b.WriteString(titleStyle.Render("Configuration — Logbooks"))
 	b.WriteString("\n\n")
 
 	if len(c.names) == 0 {
 		b.WriteString("No logbooks configured.\n\n")
-		b.WriteString(helpStyle.Render("c to create  |  Esc to close"))
 		return b.String()
 	}
 
@@ -145,17 +150,15 @@ func (c *LogbookChooser) viewList() string {
 		b.WriteString(fmt.Sprintf("%s%s %s  %s\n", marker, active, name, info))
 	}
 
-	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("Enter to switch  |  e to edit  |  c to create  |  Esc to close"))
 	return b.String()
 }
 
 func (c *LogbookChooser) viewForm() string {
 	var b strings.Builder
 	if c.mode == chooserEdit {
-		b.WriteString(titleStyle.Render("Edit " + c.editing))
+		b.WriteString(titleStyle.Render("Configuration — Edit " + c.editing))
 	} else {
-		b.WriteString(titleStyle.Render("Create Logbook"))
+		b.WriteString(titleStyle.Render("Configuration — Create Logbook"))
 	}
 	b.WriteString("\n\n")
 
@@ -170,8 +173,6 @@ func (c *LogbookChooser) viewForm() string {
 		}
 		b.WriteString("\n")
 	}
-	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("Ctrl+S to save  |  Enter/Tab/↓ to next  |  Shift+Tab/↑ to previous  |  Esc to cancel"))
 	return b.String()
 }
 

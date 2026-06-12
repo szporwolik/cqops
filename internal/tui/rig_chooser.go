@@ -60,9 +60,13 @@ func (rc *RigChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		k := msg
 
 		switch {
-		case k.String() == "ctrl+c" || k.String() == "esc":
-			rc.done = true
-			return rc, nil
+		case k.String() == "esc":
+			if rc.mode == rigChooserList {
+				rc.done = true
+				return rc, nil
+			}
+			rc.mode = rigChooserList
+			rc.statusMsg = ""
 
 		case rc.mode == rigChooserList && k.String() == "enter":
 			return rc, rc.selectRig()
@@ -95,6 +99,16 @@ func (rc *RigChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return rc, nil
 }
 
+func (rc *RigChooser) FooterText() string {
+	switch rc.mode {
+	case rigChooserList:
+		return "Enter to select  e to edit  c to create  Esc to go back"
+	case rigChooserEdit, rigChooserCreate:
+		return "Ctrl+S to save  Tab/↓/↑ to navigate  Esc to discard"
+	}
+	return ""
+}
+
 func (rc *RigChooser) View() string {
 	if rc.done {
 		return ""
@@ -111,12 +125,11 @@ func (rc *RigChooser) View() string {
 
 func (rc *RigChooser) viewList() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Rigs"))
+	b.WriteString(titleStyle.Render("Configuration — Rigs"))
 	b.WriteString("\n\n")
 
 	if len(rc.names) == 0 {
 		b.WriteString("No rigs configured.\n\n")
-		b.WriteString(helpStyle.Render("c to create  |  Esc to close"))
 		return b.String()
 	}
 
@@ -142,17 +155,15 @@ func (rc *RigChooser) viewList() string {
 		b.WriteString(fmt.Sprintf("%s%s %s %s  %s\n", marker, active, name, info, flrig))
 	}
 
-	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("Enter to select  |  e to edit  |  c to create  |  Esc to close"))
 	return b.String()
 }
 
 func (rc *RigChooser) viewForm() string {
 	var b strings.Builder
 	if rc.mode == rigChooserEdit {
-		b.WriteString(titleStyle.Render("Edit Rig " + rc.editing))
+		b.WriteString(titleStyle.Render("Configuration — Edit Rig " + rc.editing))
 	} else {
-		b.WriteString(titleStyle.Render("Create Rig"))
+		b.WriteString(titleStyle.Render("Configuration — Create Rig"))
 	}
 	b.WriteString("\n\n")
 
@@ -167,8 +178,6 @@ func (rc *RigChooser) viewForm() string {
 		}
 		b.WriteString("\n")
 	}
-	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("Ctrl+S to save  |  Enter/Tab/↓ to next  |  Shift+Tab/↑ to previous  |  Esc to cancel"))
 	return b.String()
 }
 

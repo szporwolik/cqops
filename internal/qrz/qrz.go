@@ -17,6 +17,17 @@ type CallData struct {
 	Country  string
 	QTH      string
 	State    string
+	Zip      string
+	County   string
+	Class    string
+	Email    string
+	URL      string
+	Lat      string
+	Lon      string
+	DXCC     string
+	CQZone   string
+	ITUZone  string
+	ImageURL string
 }
 
 type qrzDatabase struct {
@@ -38,6 +49,17 @@ type qrzCall struct {
 	Country string `xml:"country"`
 	State   string `xml:"state"`
 	Addr2   string `xml:"addr2"`
+	Zip     string `xml:"zip"`
+	County  string `xml:"county"`
+	Class   string `xml:"class"`
+	Email   string `xml:"email"`
+	URL     string `xml:"url"`
+	Lat     string `xml:"lat"`
+	Lon     string `xml:"lon"`
+	DXCC    string `xml:"dxcc"`
+	CQZone  string `xml:"ccol"`
+	ITUZone string `xml:"wcol"`
+	Image   string `xml:"image"`
 }
 
 var httpClient = &http.Client{Timeout: 10 * time.Second}
@@ -75,6 +97,17 @@ func qrzLoginLookup(user, pass, callsign string) (*CallData, error) {
 		Country:  strings.TrimSpace(c.Country),
 		State:    strings.TrimSpace(c.State),
 		QTH:      strings.TrimSpace(c.Addr2),
+		Zip:      strings.TrimSpace(c.Zip),
+		County:   strings.TrimSpace(c.County),
+		Class:    strings.TrimSpace(c.Class),
+		Email:    strings.TrimSpace(c.Email),
+		URL:      strings.TrimSpace(c.URL),
+		Lat:      strings.TrimSpace(c.Lat),
+		Lon:     strings.TrimSpace(c.Lon),
+		DXCC:     strings.TrimSpace(c.DXCC),
+		CQZone:   strings.TrimSpace(c.CQZone),
+		ITUZone:  strings.TrimSpace(c.ITUZone),
+		ImageURL: strings.TrimSpace(c.Image),
 	}, nil
 }
 
