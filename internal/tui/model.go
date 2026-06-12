@@ -129,6 +129,11 @@ func (m *Model) qrzLookupCmd(call string) tea.Cmd {
 	}
 }
 
+func (m *Model) qrzLookup(call string) tea.Cmd {
+	m.toasts.Info("QRZ: looking up " + call + "…")
+	return m.qrzLookupCmd(call)
+}
+
 func isLookupKey(key tea.KeyMsg) bool {
 	s := key.String()
 	return s == "insert" || s == "\x1b[2~" || s == "ctrl+l" ||
@@ -235,8 +240,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if isLookupKey(key) {
 				call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
 				if call != "" && m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled {
-					m.toasts.Info("QRZ: looking up " + call + "…")
-					return m, m.qrzLookupCmd(call)
+					return m, m.qrzLookup(call)
 				}
 			}
 		}
@@ -358,7 +362,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.String() == "f2":
 			call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
 			if call != "" && m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled && m.partnerData == nil {
-				return m, m.qrzLookupCmd(call)
+				return m, m.qrzLookup(call)
 			}
 			if m.partnerData != nil {
 				m.showPartner = true
@@ -366,10 +370,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case msg.String() == "insert" || msg.Type == tea.KeyInsert || msg.String() == "\x1b[2~":
 			call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
 			if call != "" && m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled {
-				return m, func() tea.Msg {
-					data, err := qrz.Lookup(m.App.Config.QRZUser, m.App.Config.QRZPass, call)
-					return qrzResultMsg{Call: call, Data: data, Err: err}
-				}
+				return m, m.qrzLookup(call)
 			}
 		case msg.String() == "tab" || msg.String() == "\t" || msg.Type == tea.KeyTab: m.nextField()
 		case msg.String() == "enter": return m, m.saveQSO()
@@ -384,7 +385,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if call == "" { return m, nil }
 		if !m.App.Config.QRZEnabled { return m, nil }
 		if m.App.Config.QRZUser == "" { m.toasts.Warn("QRZ not configured — F8 Config → Callbook / QRZ.com to enable"); return m, nil }
-		return m, func() tea.Msg { data, err := qrz.Lookup(m.App.Config.QRZUser, m.App.Config.QRZPass, call); return qrzResultMsg{Call: call, Data: data, Err: err} }
+		return m, m.qrzLookup(call)
 	}
 	return m, nil
 }

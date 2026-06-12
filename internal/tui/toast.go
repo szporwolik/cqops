@@ -134,7 +134,7 @@ func RenderToasts(toasts []Toast, width int) string {
 		return ""
 	}
 	var lines []string
-	showCount := 3
+	showCount := 2
 	if len(toasts) < showCount {
 		showCount = len(toasts)
 	}
