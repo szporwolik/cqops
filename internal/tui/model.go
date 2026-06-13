@@ -11,6 +11,8 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	adif "github.com/farmergreg/adif/v5"
+	"github.com/farmergreg/spec/v6/adifield"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
@@ -20,8 +22,6 @@ import (
 	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/version"
 	"github.com/szporwolik/cqops/internal/wavelog"
-	adif "github.com/farmergreg/adif/v5"
-	"github.com/farmergreg/spec/v6/adifield"
 )
 
 type field int
