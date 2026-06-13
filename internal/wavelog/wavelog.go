@@ -16,11 +16,11 @@ var httpClient = &http.Client{Timeout: 10 * time.Second}
 
 // StationProfile represents a Wavelog station location.
 type StationProfile struct {
-	ID          string `json:"station_id"`
-	Name        string `json:"station_profile_name"`
-	Gridsquare  string `json:"station_gridsquare"`
-	Callsign    string `json:"station_callsign"`
-	Active      string `json:"station_active"`
+	ID         string `json:"station_id"`
+	Name       string `json:"station_profile_name"`
+	Gridsquare string `json:"station_gridsquare"`
+	Callsign   string `json:"station_callsign"`
+	Active     string `json:"station_active"`
 }
 
 // VersionResponse from api/version.
