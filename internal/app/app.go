@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/wsjtx"
@@ -59,10 +60,13 @@ func Init(logbookFlag string) (*App, error) {
 }
 
 func (a *App) Close() {
+	applog.Info("Shutting down — stopping WSJT-X listener")
 	a.WSJTX.Stop()
 	if a.DB != nil {
+		applog.Debug("Closing database")
 		a.DB.Close()
 	}
+	applog.Info("CQOPS shutdown complete")
 }
 
 func (a *App) MaybeRestartWSJTX() {

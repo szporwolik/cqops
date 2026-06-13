@@ -633,6 +633,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = wsm.Height
 	}
 
+	// Confirm-quit — checked first so no sub-model can consume the confirm key.
+	if m.confirmQuit {
+		if key, ok := msg.(tea.KeyMsg); ok {
+			k := key.String()
+			if key.Type == tea.KeyF10 || k == "f10" {
+				m.confirmQuit = false
+			} else if k == "y" || k == "Y" {
+				return m, tea.Quit
+			} else {
+				m.confirmQuit = false
+			}
+		}
+		return m, cmd
+	}
+
 	if _, ok := msg.(tickMsg); ok {
 		m.adifMu.Lock()
 		adif := m.pendingADIF
@@ -653,17 +668,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.autoUpdateDateTime()
 		m.tickCount++
 		cmd = tea.Batch(tickCmd(), m.maybeCheckInet(), m.pollFlrig(), m.maybeCheckWavelog())
-	}
-	if m.confirmQuit {
-		if key, ok := msg.(tea.KeyMsg); ok {
-			switch key.String() {
-			case "y", "Y":
-				return m, tea.Quit
-			default:
-				m.confirmQuit = false
-			}
-		}
-		return m, cmd
 	}
 	if ir, ok := msg.(inetResultMsg); ok {
 		m.inetOnline = bool(ir)
@@ -691,11 +695,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	if key, ok := msg.(tea.KeyMsg); ok {
-		switch key.String() {
-		case "f10":
+		switch {
+		case key.Type == tea.KeyF10 || key.String() == "f10":
 			applog.Debug("tab: F10 quit requested")
 			m.confirmQuit = true
-		case "f1":
+			m.showChooser = false
+			m.showRigEdit = false
+			m.showIntegration = false
+			m.showConfig = false
+			m.showCallbook = false
+			m.showMainMenu = false
+			m.showLogView = false
+			m.showLogbookEditor = false
+			m.showPartner = false
+			return m, cmd
+		case key.String() == "f1":
 			applog.Debug("tab: F1 QSO Form")
 			m.showChooser = false
 			m.showRigEdit = false
@@ -705,7 +719,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showLogView = false
 			m.showLogbookEditor = false
 			m.showPartner = false
-		case "f2":
+		case key.String() == "f2":
 			// F2 toggle: partner sub-model handles close, QSO form handler handles open+lookup
 			if !m.showPartner {
 				applog.Debug("tab: F2 Partner Details (clearing views)")
@@ -718,7 +732,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showLogView = false
 				m.showLogbookEditor = false
 			}
-		case "f8":
+		case key.String() == "f8":
 			if m.showMainMenu {
 				applog.Debug("tab: F8 close Config")
 				m.showMainMenu = false
@@ -735,7 +749,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.mainMenu = NewMainMenu()
 				m.showMainMenu = true
 			}
-		case "f5":
+		case key.String() == "f5":
 			applog.Debug("tab: F5 Log Editor")
 			m.showChooser = false
 			m.showRigEdit = false
@@ -750,7 +764,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			qsos, _ := store.ListAllQSOs(m.App.DB)
 			m.logbookEditor.SetQSOS(qsos)
 			return m, cmd
-		case "f9":
+		case key.String() == "f9":
 			applog.Debug("tab: F9 Log Viewer")
 			m.showChooser = false
 			m.showRigEdit = false
@@ -1612,30 +1626,34 @@ func (m *Model) renderPartnerInfo(d *qrz.CallData, maxW int) string {
 
 func (m *Model) viewFooter(width int) string {
 	var text string
-	switch {
-	case m.showMainMenu:
-		text = m.mainMenu.FooterText()
-	case m.showConfig:
-		text = m.configMenu.FooterText()
-	case m.showCallbook:
-		text = m.callbookMenu.FooterText()
-	case m.showIntegration:
-		text = m.integrationMenu.FooterText()
-	case m.showChooser:
-		text = m.chooser.FooterText()
-	case m.showRigEdit:
-		text = m.rigChooser.FooterText()
-	case m.showLogView:
-		text = "↑↓ to scroll  F10 Quit"
-	case m.showLogbookEditor:
-		text = m.logbookEditor.FooterText()
-	case m.showPartner && (m.partnerData != nil || strings.TrimSpace(m.fields[fieldCall].Value()) != ""):
-		text = "F10 Quit"
-	default:
-		if width < 70 {
-			text = "Enter=Save | Del Clear | Ins/Ctrl+L Lookup | PgUp/Dn Cycle | Space=Mark Retain | F10 Quit"
-		} else {
-			text = "Enter/Ctrl+S Save  Del Clear  Ins/Ctrl+L Lookup  PgUp/Dn Cycle  Space=Mark Retain  F10 Quit"
+	if m.confirmQuit {
+		text = "Press Y to quit, any other key to cancel"
+	} else {
+		switch {
+		case m.showMainMenu:
+			text = m.mainMenu.FooterText()
+		case m.showConfig:
+			text = m.configMenu.FooterText()
+		case m.showCallbook:
+			text = m.callbookMenu.FooterText()
+		case m.showIntegration:
+			text = m.integrationMenu.FooterText()
+		case m.showChooser:
+			text = m.chooser.FooterText()
+		case m.showRigEdit:
+			text = m.rigChooser.FooterText()
+		case m.showLogView:
+			text = "↑↓ to scroll  F10 Quit"
+		case m.showLogbookEditor:
+			text = m.logbookEditor.FooterText()
+		case m.showPartner && (m.partnerData != nil || strings.TrimSpace(m.fields[fieldCall].Value()) != ""):
+			text = "F10 Quit"
+		default:
+			if width < 70 {
+				text = "Enter=Save | Del Clear | Ins/Ctrl+L Lookup | PgUp/Dn Cycle | Space=Mark Retain | F10 Quit"
+			} else {
+				text = "Enter/Ctrl+S Save  Del Clear  Ins/Ctrl+L Lookup  PgUp/Dn Cycle  Space=Mark Retain  F10 Quit"
+			}
 		}
 	}
 	ver := ""

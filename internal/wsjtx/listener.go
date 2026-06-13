@@ -53,9 +53,10 @@ func (l *Listener) Start(host string, port int) error {
 	msgCh := make(chan interface{}, 128)
 	errCh := make(chan error, 16)
 
-	l.wg.Add(1)
+	// This goroutine blocks on UDP read and cannot be interrupted from
+	// outside (the library exposes no Shutdown/Close method).  It will be
+	// cleaned up when the process exits.
 	go func() {
-		defer l.wg.Done()
 		l.server.ListenToWsjtx(msgCh, errCh)
 	}()
 

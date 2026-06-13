@@ -88,5 +88,6 @@ func runTUI() error {
 		return fmt.Errorf("tui: %w", err)
 	}
 
+	applog.Info("TUI exited, cleaning up")
 	return nil
 }
