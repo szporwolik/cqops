@@ -1482,11 +1482,11 @@ func (m *Model) viewPartner() string {
 		if ownGrid == "" {
 			b.WriteString(section("── Map ", bodyW))
 			b.WriteString("\n  ")
-		b.WriteString(DimStyle.Render("Set your grid in station config to enable the map"))
+			b.WriteString(DimStyle.Render("Set your grid in station config to enable the map"))
 		} else if partnerGrid == "" && d.Lat == "" {
 			b.WriteString(section("── Map ", bodyW))
 			b.WriteString("\n  ")
-		b.WriteString(DimStyle.Render("No partner location — enter a grid or use QRZ lookup"))
+			b.WriteString(DimStyle.Render("No partner location — enter a grid or use QRZ lookup"))
 		} else {
 			ownLat, ownLon := gridToLatLon(ownGrid)
 			if partnerGrid != "" {
@@ -1517,12 +1517,12 @@ func (m *Model) viewPartner() string {
 					b.WriteString(mapStr)
 				} else {
 					b.WriteString("  ")
-			b.WriteString(DimStyle.Render("Map unavailable"))
+					b.WriteString(DimStyle.Render("Map unavailable"))
 				}
 			} else {
 				b.WriteString(section("── Map ", bodyW))
 				b.WriteString("\n  ")
-			b.WriteString(DimStyle.Render("Could not determine coordinates"))
+				b.WriteString(DimStyle.Render("Could not determine coordinates"))
 			}
 		}
 	}
@@ -1807,19 +1807,19 @@ func (m *Model) viewForm(width int) string {
 				parts = append(parts, right)
 			}
 			b.WriteString(strings.Join(parts, "  "))
-		b.WriteString("\n")
+			b.WriteString("\n")
 		} else {
 			if left != "" {
 				b.WriteString(left)
-			b.WriteString("\n")
+				b.WriteString("\n")
 			}
 			if middle != "" {
 				b.WriteString(middle)
-			b.WriteString("\n")
+				b.WriteString("\n")
 			}
 			if right != "" {
 				b.WriteString(right)
-			b.WriteString("\n")
+				b.WriteString("\n")
 			}
 		}
 	}

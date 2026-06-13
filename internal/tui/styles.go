@@ -3,20 +3,20 @@ package tui
 import "github.com/charmbracelet/lipgloss"
 
 type Theme struct {
-	Accent      lipgloss.Color
-	Success     lipgloss.Color
-	Error       lipgloss.Color
-	Warning     lipgloss.Color
-	Value       lipgloss.Color
-	Background  lipgloss.Color
-	Muted       lipgloss.Color
-	Dim         lipgloss.Color
-	Label       lipgloss.Color
-	Section     lipgloss.Color
-	Subtle      lipgloss.Color
-	ActiveTab   lipgloss.Color
-	Info        lipgloss.Color
-	Debug       lipgloss.Color
+	Accent     lipgloss.Color
+	Success    lipgloss.Color
+	Error      lipgloss.Color
+	Warning    lipgloss.Color
+	Value      lipgloss.Color
+	Background lipgloss.Color
+	Muted      lipgloss.Color
+	Dim        lipgloss.Color
+	Label      lipgloss.Color
+	Section    lipgloss.Color
+	Subtle     lipgloss.Color
+	ActiveTab  lipgloss.Color
+	Info       lipgloss.Color
+	Debug      lipgloss.Color
 }
 
 var DefaultTheme = Theme{

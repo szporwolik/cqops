@@ -424,7 +424,7 @@ func (le *LogbookEditor) View() string {
 
 func (le *LogbookEditor) viewConfirm(action string, bodyW int) string {
 	var b strings.Builder
-	b.WriteString(section("── " + action + " ", bodyW))
+	b.WriteString(section("── "+action+" ", bodyW))
 	b.WriteString("\n\n")
 	b.WriteString("  Are you sure? (y/N)")
 	return b.String()
@@ -655,12 +655,12 @@ func (le *LogbookEditor) viewEdit(bodyW int) string {
 		if rightIdx < qefCount {
 			right := le.renderEditField(rightIdx, colW)
 			b.WriteString(left)
-		b.WriteString("  ")
-		b.WriteString(right)
-		b.WriteString("\n")
+			b.WriteString("  ")
+			b.WriteString(right)
+			b.WriteString("\n")
 		} else {
 			b.WriteString(left)
-		b.WriteString("\n")
+			b.WriteString("\n")
 		}
 	}
 	return b.String()

@@ -114,7 +114,7 @@ func mercatorXY(lat, lon float64, w, h int) (int, int) {
 	}
 	x := int((lon+180.0)/360.0*float64(w) + 0.5)
 	rLat := lat * math.Pi / 180.0
-	yMerc := math.Log(math.Tan(math.Pi/4.0+rLat/2.0))
+	yMerc := math.Log(math.Tan(math.Pi/4.0 + rLat/2.0))
 	yMin, yMax := -0.6, 1.4
 	yRatio := (yMerc - yMin) / (yMax - yMin)
 	y := int((1.0-yRatio)*float64(h) + 0.5)

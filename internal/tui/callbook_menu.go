@@ -193,7 +193,7 @@ func (cm *CallbookMenu) View() string {
 		if !cm.inetOnline {
 			b.WriteString("  ")
 			b.WriteString(DimStyle.Render(btnText))
-		b.WriteString(DimStyle.Render(" (offline)"))
+			b.WriteString(DimStyle.Render(" (offline)"))
 		} else if cm.focus == 3 {
 			b.WriteString(cursorStyle.Render("> "))
 			b.WriteString(cursorStyle.Render(btnText))
