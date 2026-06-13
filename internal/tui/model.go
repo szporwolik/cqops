@@ -624,6 +624,40 @@ func parseWSJTXADIF(adifStr string) *qso.QSO {
 	return qs
 }
 
+// hideAllSubmodels resets every view flag so only the QSO form is active.
+func (m *Model) hideAllSubmodels() {
+	m.showChooser = false
+	m.showRigEdit = false
+	m.showIntegration = false
+	m.showConfig = false
+	m.showCallbook = false
+	m.showMainMenu = false
+	m.showLogView = false
+	m.showLogbookEditor = false
+	m.showPartner = false
+}
+
+// isSubmodelActive returns true when any sub-model is visible.
+func (m *Model) isSubmodelActive() bool {
+	return m.showChooser || m.showRigEdit || m.showIntegration ||
+		m.showConfig || m.showCallbook || m.showMainMenu ||
+		m.showLogView || m.showLogbookEditor || m.showPartner
+}
+
+// saveConfig persists the app configuration and shows a toast.
+func (m *Model) saveConfig(msg string) {
+	if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
+		m.toasts.Error("Settings save failed: " + err.Error())
+	} else {
+		if msg != "" {
+			m.toasts.Success(msg)
+		} else {
+			m.toasts.Success("Settings saved")
+		}
+		applog.Info("Settings saved")
+	}
+}
+
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
@@ -699,38 +733,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Type == tea.KeyF10 || key.String() == "f10":
 			applog.Debug("tab: F10 quit requested")
 			m.confirmQuit = true
-			m.showChooser = false
-			m.showRigEdit = false
-			m.showIntegration = false
-			m.showConfig = false
-			m.showCallbook = false
-			m.showMainMenu = false
-			m.showLogView = false
-			m.showLogbookEditor = false
-			m.showPartner = false
+			m.hideAllSubmodels()
 			return m, cmd
 		case key.String() == "f1":
 			applog.Debug("tab: F1 QSO Form")
-			m.showChooser = false
-			m.showRigEdit = false
-			m.showIntegration = false
-			m.showConfig = false
-			m.showMainMenu = false
-			m.showLogView = false
-			m.showLogbookEditor = false
-			m.showPartner = false
+			m.hideAllSubmodels()
 		case key.String() == "f2":
 			// F2 toggle: partner sub-model handles close, QSO form handler handles open+lookup
 			if !m.showPartner {
 				applog.Debug("tab: F2 Partner Details (clearing views)")
-				m.showChooser = false
-				m.showRigEdit = false
-				m.showIntegration = false
-				m.showConfig = false
-				m.showCallbook = false
-				m.showMainMenu = false
-				m.showLogView = false
-				m.showLogbookEditor = false
+				m.hideAllSubmodels()
 			}
 		case key.String() == "f8":
 			if m.showMainMenu {
@@ -738,27 +750,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showMainMenu = false
 			} else {
 				applog.Debug("tab: F8 Config")
-				m.showChooser = false
-				m.showRigEdit = false
-				m.showIntegration = false
-				m.showConfig = false
-				m.showCallbook = false
-				m.showLogView = false
-				m.showLogbookEditor = false
-				m.showPartner = false
+				m.hideAllSubmodels()
 				m.mainMenu = NewMainMenu()
 				m.showMainMenu = true
 			}
 		case key.String() == "f5":
 			applog.Debug("tab: F5 Log Editor")
-			m.showChooser = false
-			m.showRigEdit = false
-			m.showIntegration = false
-			m.showConfig = false
-			m.showCallbook = false
-			m.showMainMenu = false
-			m.showLogView = false
-			m.showPartner = false
+			m.hideAllSubmodels()
 			m.showLogbookEditor = true
 			m.logbookEditor = NewLogbookEditor(m.App.DB, m.App.Config.Wavelog.URL, m.App.Config.Wavelog.APIKey, m.App.Config.Wavelog.StationProfileID, m.App.Config.Wavelog.StationCallsign, m.App.Logbook.Station.Operator, m.App.Logbook.Station.Grid)
 			qsos, _ := store.ListAllQSOs(m.App.DB)
@@ -766,19 +764,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		case key.String() == "f9":
 			applog.Debug("tab: F9 Log Viewer")
-			m.showChooser = false
-			m.showRigEdit = false
-			m.showIntegration = false
-			m.showConfig = false
-			m.showCallbook = false
-			m.showMainMenu = false
-			m.showLogbookEditor = false
-			m.showPartner = false
+			m.hideAllSubmodels()
 			m.logViewer = NewLogViewer(m.App.LogbookName)
 			m.showLogView = true
 			return m, cmd
 		}
-		if !m.showChooser && !m.showRigEdit && !m.showIntegration && !m.showConfig && !m.showCallbook && !m.showMainMenu && !m.showLogView && !m.showLogbookEditor && !m.showPartner {
+		if !m.isSubmodelActive() {
 			if key.String() == "delete" || key.Type == tea.KeyDelete {
 				m.clearForm()
 				return m, nil
@@ -827,12 +818,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if m.configMenu.saved {
 				m.App.Config.DistanceUnit = m.configMenu.distanceUnit
-				if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
-					m.toasts.Error("Settings save failed: " + err.Error())
-				} else {
-					m.toasts.Success("Settings saved")
-					applog.Info("Settings saved")
-				}
+				m.saveConfig("Settings saved")
 				m.showMainMenu = true
 			}
 		}
@@ -852,12 +838,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.App.Config.QRZUser = m.callbookMenu.user.Value()
 				m.App.Config.QRZPass = m.callbookMenu.pass.Value()
 				m.App.Config.QRZEnabled = m.callbookMenu.enabled
-				if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
-					m.toasts.Error("Settings save failed: " + err.Error())
-				} else {
-					m.toasts.Success("Settings saved")
-					applog.Info("Settings saved")
-				}
+				m.saveConfig("Settings saved")
 				m.showMainMenu = true
 			}
 		}
@@ -882,14 +863,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.App.Config.Wavelog.APIKey = wlKey
 				m.App.Config.Wavelog.StationProfileID = wlSta
 				m.App.Config.Wavelog.StationCallsign = wlStaCall
-				if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
-					m.toasts.Error("Settings save failed: " + err.Error())
-				} else {
-					m.toasts.Success("Settings saved")
-					applog.Info("Integration config saved, restarting services")
-					m.App.MaybeRestartWSJTX()
-					cmd = tea.Batch(cmd, m.checkWavelogCmd())
-				}
+				m.saveConfig("Settings saved")
+				applog.Info("Integration config saved, restarting services")
+				m.App.MaybeRestartWSJTX()
+				cmd = tea.Batch(cmd, m.checkWavelogCmd())
 				m.showMainMenu = true
 			}
 		}
@@ -1410,40 +1387,6 @@ func (m *Model) renderTabLine(width int) string {
 	return BarStyle.Render(line)
 }
 
-func clamp(s string, w int) string {
-	if s == "" {
-		return strings.Repeat(" ", w)
-	}
-	if lipgloss.Width(s) > w {
-		return truncate(s, w)
-	}
-	return s + strings.Repeat(" ", w-lipgloss.Width(s))
-}
-
-func stripNonDigits(s string) string {
-	var b strings.Builder
-	for _, r := range s {
-		if r >= '0' && r <= '9' {
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
-
-func formatDate(adif string) string {
-	if len(adif) < 8 {
-		return "—"
-	}
-	return adif[0:4] + "-" + adif[4:6] + "-" + adif[6:8]
-}
-
-func formatTime(adif string) string {
-	if len(adif) < 6 {
-		return "—"
-	}
-	return adif[0:2] + ":" + adif[2:4] + ":" + adif[4:6]
-}
-
 func (m *Model) viewPartner() string {
 	d := m.partnerData
 	if d == nil {
@@ -1678,16 +1621,6 @@ func (m *Model) viewFooter(width int) string {
 		line += " "
 	}
 	return BarStyle.Render(line)
-}
-
-func truncate(s string, max int) string {
-	if max < 3 {
-		return s
-	}
-	if lipgloss.Width(s) <= max {
-		return s
-	}
-	return s[:max-1] + "…"
 }
 
 func (m *Model) viewForm(width int) string {
@@ -2086,24 +2019,6 @@ func (m *Model) viewQSOS(maxRows int) string {
 		}
 	}
 	return b.String()
-}
-
-func toAny(ss []string) []any {
-	aa := make([]any, len(ss))
-	for i, s := range ss {
-		aa[i] = s
-	}
-	return aa
-}
-
-func trunc(s string, w int) string {
-	if s == "" {
-		return ""
-	}
-	if len(s) > w {
-		return s[:w]
-	}
-	return s
 }
 
 func (m *Model) formDistanceLine(width int) string {
