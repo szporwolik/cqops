@@ -65,7 +65,7 @@ func DefaultKeyMap() KeyMap {
 		),
 		Lookup: key.NewBinding(
 			key.WithKeys("insert"),
-			key.WithHelp("Ins", "QRZ"),
+			key.WithHelp("Ins", "Callbook"),
 		),
 		Retain: key.NewBinding(
 			key.WithKeys("ctrl+r", "space"),

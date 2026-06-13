@@ -6,6 +6,7 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
+// section renders a titled horizontal rule: "── Title ──────────"
 func section(title string, width int) string {
 	rem := width - lipgloss.Width(title)
 	if rem > 0 {
@@ -14,27 +15,31 @@ func section(title string, width int) string {
 	return SectionStyle.Render(title)
 }
 
+// fit renders s padded to exactly w cells using lipgloss. An empty string
+// renders as a dim em-dash. Strings wider than w are truncated.
 func fit(s string, w int) string {
 	if s == "" {
-		return DimStyle.Render(strings.Repeat("—", 1))
+		return DimStyle.Width(w).Render("\u2014")
 	}
 	if lipgloss.Width(s) > w {
-		return truncate(s, w)
+		return lipgloss.NewStyle().Width(w).Render(truncate(s, w))
 	}
-	return s + strings.Repeat(" ", w-lipgloss.Width(s))
+	return lipgloss.NewStyle().Width(w).Render(s)
+}
+
+// clamp renders s padded/truncated to exactly w cells with spaces.
+// An empty string renders as w spaces.
+func clamp(s string, w int) string {
+	if s == "" {
+		return lipgloss.NewStyle().Width(w).Render("")
+	}
+	if lipgloss.Width(s) > w {
+		return lipgloss.NewStyle().Width(w).Render(truncate(s, w))
+	}
+	return lipgloss.NewStyle().Width(w).Render(s)
 }
 
 // --- standalone utilities (moved from model.go) ---
-
-func clamp(s string, w int) string {
-	if s == "" {
-		return strings.Repeat(" ", w)
-	}
-	if lipgloss.Width(s) > w {
-		return truncate(s, w)
-	}
-	return s + strings.Repeat(" ", w-lipgloss.Width(s))
-}
 
 func stripNonDigits(s string) string {
 	var b strings.Builder

@@ -11,7 +11,6 @@ import (
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textinput"
-	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	adif "github.com/farmergreg/adif/v5"
@@ -130,7 +129,6 @@ type Model struct {
 	wlStationLabel  string // e.g. "Debug location"
 	keys            KeyMap
 	help            help.Model
-	vp              viewport.Model
 	recentQSOs      *RecentQSOs // read-only Recent QSOs view
 }
 
@@ -191,7 +189,6 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	m.focus = fieldCall
 	m.keys = DefaultKeyMap()
 	m.help = help.New()
-	m.vp = viewport.New(viewport.WithWidth(80), viewport.WithHeight(10))
 	m.recentQSOs = NewRecentQSOs(initialQSOS)
 	return m
 }
@@ -668,13 +665,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if wsm, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width = wsm.Width
 		m.height = wsm.Height
-		// Viewport: available height = terminal - status(1) - tabs(1) - help(1) - toasts(2) - form(~18)
-		vpHeight := m.height - 1 - 1 - 1 - 2 - 18
-		if vpHeight < 3 {
-			vpHeight = 3
-		}
-		m.vp.SetWidth(wsm.Width - 2)
-		m.vp.SetHeight(vpHeight)
 	}
 
 	// Active confirmation dialog — checked first, routes all keys to dialog
@@ -1568,10 +1558,11 @@ func (m *Model) renderPartnerInfo(d *qrz.CallData, maxW int) string {
 	for _, r := range rows {
 		label := lblStyle.Render(r.label)
 		value := valStyle.Render(truncate(r.value, valW))
-		line := strings.Repeat(" ", indentW) + label + " " + value
-		lines = append(lines, line)
+		indent := lipgloss.NewStyle().Width(indentW).Render("")
+		gap := lipgloss.NewStyle().Width(1).Render("")
+		lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Center, indent, label, gap, value))
 	}
-	return strings.Join(lines, "\n")
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
 func (m *Model) viewForm(width int) string {
@@ -1616,12 +1607,17 @@ func (m *Model) viewForm(width int) string {
 			val += ValueStyle.Render(raw)
 		}
 
-		line := " " + lbl + " " + val
+		gap := lipgloss.NewStyle().Width(1).Render(" ")
+		lblPart := lbl
 		if isFocused {
-			line = hl.Render(" "+lbl) + " " + val
+			lblPart = hl.Render(" " + lbl)
 		}
-		// Pad to column width using lipgloss
-		return lipgloss.NewStyle().Width(w).Render(line)
+		if !isFocused {
+			lblPart = " " + lbl
+		}
+		return lipgloss.NewStyle().Width(w).Render(
+			lipgloss.JoinHorizontal(lipgloss.Center, lblPart, gap, val),
+		)
 	}
 
 	var b strings.Builder
@@ -1647,7 +1643,7 @@ func (m *Model) viewForm(width int) string {
 		if colW >= 20 {
 			b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, cols...))
 		} else {
-			b.WriteString(strings.Join(cols, "\n"))
+			b.WriteString(lipgloss.JoinVertical(lipgloss.Left, cols...))
 		}
 		b.WriteString("\n")
 	}
@@ -1663,9 +1659,7 @@ func (m *Model) viewForm(width int) string {
 	if colW >= 20 {
 		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, commentLine, retainBox))
 	} else {
-		b.WriteString(commentLine)
-		b.WriteString("\n")
-		b.WriteString(retainBox)
+		b.WriteString(lipgloss.JoinVertical(lipgloss.Left, commentLine, retainBox))
 	}
 	b.WriteString("\n")
 
@@ -1678,18 +1672,33 @@ func (m *Model) renderRetainCheckbox(colW int) string {
 	if m.retainComment {
 		mark = "[x]"
 	}
+	gap := lipgloss.NewStyle().Width(1).Render(" ")
 	if m.retainFocused {
 		return lipgloss.NewStyle().Width(colW).Render(
-			CursorStyle.Render(" "+mark) + " " + inputStyle.Render(label),
+			lipgloss.JoinHorizontal(lipgloss.Center,
+				CursorStyle.Render(" "+mark),
+				gap,
+				inputStyle.Render(label),
+			),
 		)
 	}
 	if m.retainComment {
 		return lipgloss.NewStyle().Width(colW).Render(
-			" " + inputStyle.Render(mark) + " " + DimStyle.Render(label),
+			lipgloss.JoinHorizontal(lipgloss.Center,
+				lipgloss.NewStyle().Width(1).Render(" "),
+				inputStyle.Render(mark),
+				gap,
+				DimStyle.Render(label),
+			),
 		)
 	}
 	return lipgloss.NewStyle().Width(colW).Render(
-		" " + DimStyle.Render(mark) + " " + DimStyle.Render(label),
+		lipgloss.JoinHorizontal(lipgloss.Center,
+			lipgloss.NewStyle().Width(1).Render(" "),
+			DimStyle.Render(mark),
+			gap,
+			DimStyle.Render(label),
+		),
 	)
 }
 
