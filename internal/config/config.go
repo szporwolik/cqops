@@ -87,6 +87,7 @@ type WSJTXConfig struct {
 	UDPPort int    `yaml:"udp_port"`
 }
 
+// Load reads and parses a YAML configuration file from path.
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -103,6 +104,8 @@ func Load(path string) (*Config, error) {
 
 	return &cfg, nil
 }
+
+// Save marshals cfg as YAML and writes it to path.
 
 func Save(path string, cfg *Config) error {
 	data, err := yaml.Marshal(cfg)

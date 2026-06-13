@@ -42,6 +42,8 @@ type QSO struct {
 	UpdatedAt       time.Time
 }
 
+// NewQSO returns a QSO pre-filled with the current UTC date/time and
+// source set to "manual".
 func NewQSO() *QSO {
 	now := time.Now().UTC()
 	return &QSO{

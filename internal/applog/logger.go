@@ -12,6 +12,7 @@ import (
 	"github.com/szporwolik/cqops/internal/config"
 )
 
+// Logger is the application-wide structured logger.
 var Logger *slog.Logger
 
 var (
@@ -23,6 +24,7 @@ var (
 const maxStored = 500
 const retentionDays = 7
 
+// Entry is a single in-memory log record exposed via the TUI log viewer.
 type Entry struct {
 	Time    string `json:"time"`
 	Level   string `json:"level"`
@@ -30,6 +32,8 @@ type Entry struct {
 	Details string `json:"details,omitempty"`
 }
 
+// Init initializes the structured logger, creates the log directory,
+// and starts a background goroutine that prunes old log files.
 func Init() error {
 	var err error
 	logDir, err = config.LogDir()
@@ -81,6 +85,7 @@ func cleanupOldLogs() {
 	}
 }
 
+// Append stores a log entry in the in-memory ring buffer (for TUI display).
 func Append(level, msg, details string) {
 	e := Entry{Time: nowStamp(), Level: level, Message: msg, Details: details}
 	mu.Lock()
@@ -91,6 +96,7 @@ func Append(level, msg, details string) {
 	mu.Unlock()
 }
 
+// Entries returns a sorted copy of all in-memory log entries.
 func Entries() []Entry {
 	mu.Lock()
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Time < entries[j].Time })
@@ -100,23 +106,32 @@ func Entries() []Entry {
 	return result
 }
 
+// Debug logs a message at DEBUG level.
 func Debug(msg string, args ...any) {
 	Append("DEBUG", msg, "")
 	Logger.Debug(msg, args...)
 }
+
+// Info logs a message at INFO level.
 func Info(msg string, args ...any) {
 	Append("INFO", msg, "")
 	Logger.Info(msg, args...)
 }
+
+// Warn logs a message at WARN level.
 func Warn(msg string, args ...any) {
 	Append("WARN", msg, "")
 	Logger.Warn(msg, args...)
 }
+
+// Error logs a message at ERROR level.
 func Error(msg string, args ...any) {
 	Append("ERROR", msg, "")
 	Logger.Error(msg, args...)
 }
 
+// InfoDetail logs an INFO message with an additional detail string shown
+// in the TUI log viewer.
 func InfoDetail(msg, details string) {
 	Append("INFO", msg, details)
 	Logger.Info(msg, "details", details)

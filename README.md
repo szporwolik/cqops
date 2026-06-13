@@ -29,27 +29,21 @@ Binaries are placed in the `build/` directory (git-ignored).
 
 For smaller binaries, install UPX and run `upx --best build/cqops`.
 
-### Manual build (without make)
+### Without make (Windows / manual)
 
+```powershell
+# Windows PowerShell
+.\scripts\build.ps1
+```
 ```bash
 # Linux / macOS
-go build -ldflags "-s -w -X github.com/szporwolik/cqops/internal/version.Version=$(cat VERSION)" -o build/cqops ./cmd/cqops/
+./scripts/build.sh
 ```
 
-On Windows PowerShell:
+Or a one-liner:
 
-```powershell
-$ver = Get-Content VERSION
-go build -ldflags "-s -w -X github.com/szporwolik/cqops/internal/version.Version=$ver" -o build/cqops.exe ./cmd/cqops/
-```
-
-Or use the platform scripts:
-
-```powershell
-.\scripts\build.ps1   # Windows
-```
 ```bash
-./scripts/build.sh      # Linux/macOS
+go build -ldflags "-s -w -X github.com/szporwolik/cqops/internal/version.Version=$(cat VERSION)" -o build/cqops ./cmd/cqops/
 ```
 
 ## Usage

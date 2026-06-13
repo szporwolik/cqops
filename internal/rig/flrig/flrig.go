@@ -22,6 +22,9 @@ type Client struct {
 	client  *http.Client
 }
 
+// New creates a new flrig HTTP client. url is the base URL of the flrig
+// XML-RPC endpoint (e.g. "http://localhost:12345"). timeoutMS is the
+// request timeout in milliseconds; values <= 0 default to 2 seconds.
 func New(url string, timeoutMS int) *Client {
 	d := time.Duration(timeoutMS) * time.Millisecond
 	if d <= 0 {
