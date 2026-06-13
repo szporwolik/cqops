@@ -27,10 +27,10 @@ import (
 type field int
 
 const (
-	rigPollInterval     = 15                       // ticks between flrig polls
-	healthCheckTicks    = 300                      // ticks between health checks
-	flrigStatusTimeout  = 1500 * time.Millisecond  // context timeout for flrig status
-	flrigDefaultTimeout = 1000                     // default flrig HTTP timeout (ms)
+	rigPollInterval     = 15                      // ticks between flrig polls
+	healthCheckTicks    = 300                     // ticks between health checks
+	flrigStatusTimeout  = 1500 * time.Millisecond // context timeout for flrig status
+	flrigDefaultTimeout = 1000                    // default flrig HTTP timeout (ms)
 )
 
 const (

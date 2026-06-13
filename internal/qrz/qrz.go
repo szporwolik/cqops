@@ -69,7 +69,7 @@ var httpClient = &http.Client{Timeout: 10 * time.Second}
 
 // Session cache to avoid re-authenticating on every lookup.
 var (
-	cacheMu          sync.Mutex
+	cacheMu           sync.Mutex
 	cachedSessionKey  string
 	cachedSessionUser string
 	cachedSessionPass string
