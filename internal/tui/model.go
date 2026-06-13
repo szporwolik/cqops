@@ -1363,19 +1363,12 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 	formBlock := strings.TrimRight(form, "\n")
 	formBox := S.QSOFormBox.Width(l.ContentW).Render(formBlock)
 
-	// Short path info (no border — just a clean dim line between form and table)
-	spacer := ""
-	pathBox := ""
+	// Short path info: always reserve one row to prevent layout shift.
 	distLine := m.formDistanceLine(innerW)
-	if distLine != "" {
-		spacer = "\n"
-		pathBox = DimStyle.Width(l.ContentW).Padding(0, 1).Render(distLine)
-	}
+	pathBox := lipgloss.NewStyle().Width(l.ContentW).Render(distLine)
 
 	formRenderedH := lipgloss.Height(formBox)
 	pathRenderedH := lipgloss.Height(pathBox)
-	// Give all remaining space to the table — the "\n" separators are
-	// included in the measured component heights.
 	recentH := l.ContentH - formRenderedH - pathRenderedH
 	if recentH < 3 {
 		recentH = 3
@@ -1383,7 +1376,7 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 
 	m.recentQSOs.SetSize(l.ContentW, recentH)
 
-	return formBox + spacer + pathBox + "\n" + m.recentQSOs.View()
+	return formBox + "\n" + pathBox + "\n" + m.recentQSOs.View()
 }
 
 func (m *Model) viewPartner() string {
@@ -1603,6 +1596,8 @@ func (m *Model) viewForm(width int) string {
 			val += tiView
 		} else if raw == "" {
 			val += SubtleStyle.Render("\u2014") // visible placeholder
+		} else if f == fieldCall {
+			val += S.Info.Render(raw) // callsign in path-colour
 		} else {
 			val += ValueStyle.Render(raw)
 		}
@@ -1709,6 +1704,16 @@ func (m *Model) formDistanceLine(width int) string {
 	line := ""
 	if ownGrid != "" && partnerGrid != "" {
 		line = distanceLine(ownGrid, partnerGrid, m.App.Config.DistanceUnit)
+	}
+
+	// Always return at least a space so the row is reserved in layout.
+	if line == "" {
+		return lipgloss.NewStyle().Width(width).Render(" ")
+	}
+
+	// Truncate if wider than available space — never wrap.
+	if lipgloss.Width(line) > width {
+		line = truncate(line, width)
 	}
 
 	return lipgloss.NewStyle().
@@ -1965,7 +1970,7 @@ func (m *Model) cycleMode(dir int) {
 	if !qso.IsValidMode(mode) {
 		mode = ""
 	}
-	list := qso.AllModes()
+	list := qso.CycleModes()
 	idx := indexOfStr(list, mode)
 	idx += dir
 	if idx < 0 {
@@ -1974,6 +1979,7 @@ func (m *Model) cycleMode(dir int) {
 		idx = 0
 	}
 	m.fields[fieldMode].SetValue(list[idx])
+	m.fields[fieldSubmode].SetValue("")
 }
 
 func (m *Model) cycleSubmode(dir int) {

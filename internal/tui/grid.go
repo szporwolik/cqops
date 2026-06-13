@@ -71,7 +71,7 @@ func distanceLine(ownGrid, partnerGrid, unit string) string {
 	if distStr == "" {
 		return ""
 	}
-	return fmt.Sprintf("%s · %s · %s → %s", distStr, bear, ownGrid, partnerGrid)
+	return fmt.Sprintf("%s  ·  %s", distStr, bear)
 }
 
 func formatLocator(s string) string {

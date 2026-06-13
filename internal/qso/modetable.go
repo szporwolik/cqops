@@ -217,6 +217,14 @@ func AllModes() []string {
 	return result
 }
 
+// CycleModes returns the short list of main modes for quick PgUp/PgDn cycling.
+// Users can still type any valid mode manually; external software can set any mode.
+var cycleModes = []string{"SSB", "CW", "AM", "FM", "RTTY", "DIGITALVOICE"}
+
+func CycleModes() []string {
+	return cycleModes
+}
+
 func MapFlrigMode(raw string) string {
 	if m, ok := flrigModeMap[strings.ToUpper(strings.TrimSpace(raw))]; ok {
 		return m
