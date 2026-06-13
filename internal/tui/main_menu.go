@@ -109,7 +109,8 @@ func (m *MainMenu) View() string {
 			}
 			line += strings.Repeat(" ", pad) + dim.Render(item.desc)
 		}
-		b.WriteString(line + "\n")
+		b.WriteString(line)
+		b.WriteString("\n")
 	}
 
 	return b.String()

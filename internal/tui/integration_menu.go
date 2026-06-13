@@ -304,7 +304,9 @@ func (im *IntegrationMenu) View() string {
 	if im.focus == 0 {
 		checkbox = cursorStyle.Render(checkbox)
 	}
-	b.WriteString(formLabelStyle.Render("WSJT-X:") + " " + checkbox)
+	b.WriteString(formLabelStyle.Render("WSJT-X:"))
+	b.WriteString(" ")
+	b.WriteString(checkbox)
 
 	if im.wsjtxEnabled {
 		b.WriteString("\n\n")
@@ -324,7 +326,9 @@ func (im *IntegrationMenu) View() string {
 	if im.focus == 3 {
 		wlCheckbox = cursorStyle.Render(wlCheckbox)
 	}
-	b.WriteString(formLabelStyle.Render("Wavelog:") + " " + wlCheckbox)
+	b.WriteString(formLabelStyle.Render("Wavelog:"))
+	b.WriteString(" ")
+	b.WriteString(wlCheckbox)
 
 	if im.wlEnabled {
 		b.WriteString("\n\n")
@@ -340,8 +344,10 @@ func (im *IntegrationMenu) View() string {
 		} else {
 			updLabel = SubtleStyle.Render("[ Update ]")
 		}
-		b.WriteString("  " + updLabel)
-		b.WriteString("  " + SubtleStyle.Render("fetch stations from Wavelog"))
+		b.WriteString("  ")
+		b.WriteString(updLabel)
+		b.WriteString("  ")
+		b.WriteString(SubtleStyle.Render("fetch stations from Wavelog"))
 
 		// Station selector
 		if len(im.wlStations) > 0 {
@@ -362,7 +368,8 @@ func (im *IntegrationMenu) View() string {
 			}
 		} else if im.savedStationID != "" {
 			b.WriteString("\n\n")
-			b.WriteString("  " + SubtleStyle.Render("Station: "+im.savedStationID+" (press Update to refresh)"))
+			b.WriteString("  ")
+		b.WriteString(SubtleStyle.Render("Station: " + im.savedStationID + " (press Update to refresh)"))
 		}
 
 		// Test button
@@ -373,8 +380,10 @@ func (im *IntegrationMenu) View() string {
 		} else {
 			testLabel = SubtleStyle.Render("[ Test ]")
 		}
-		b.WriteString("  " + testLabel)
-		b.WriteString("  " + SubtleStyle.Render("verify connection and station"))
+		b.WriteString("  ")
+		b.WriteString(testLabel)
+		b.WriteString("  ")
+		b.WriteString(SubtleStyle.Render("verify connection and station"))
 	}
 
 	// Status line

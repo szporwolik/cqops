@@ -1481,10 +1481,12 @@ func (m *Model) viewPartner() string {
 
 		if ownGrid == "" {
 			b.WriteString(section("── Map ", bodyW))
-			b.WriteString("\n  " + DimStyle.Render("Set your grid in station config to enable the map"))
+			b.WriteString("\n  ")
+		b.WriteString(DimStyle.Render("Set your grid in station config to enable the map"))
 		} else if partnerGrid == "" && d.Lat == "" {
 			b.WriteString(section("── Map ", bodyW))
-			b.WriteString("\n  " + DimStyle.Render("No partner location — enter a grid or use QRZ lookup"))
+			b.WriteString("\n  ")
+		b.WriteString(DimStyle.Render("No partner location — enter a grid or use QRZ lookup"))
 		} else {
 			ownLat, ownLon := gridToLatLon(ownGrid)
 			if partnerGrid != "" {
@@ -1514,25 +1516,18 @@ func (m *Model) viewPartner() string {
 				if mapStr != "" {
 					b.WriteString(mapStr)
 				} else {
-					b.WriteString("  " + DimStyle.Render("Map unavailable"))
+					b.WriteString("  ")
+			b.WriteString(DimStyle.Render("Map unavailable"))
 				}
 			} else {
 				b.WriteString(section("── Map ", bodyW))
-				b.WriteString("\n  " + DimStyle.Render("Could not determine coordinates"))
+				b.WriteString("\n  ")
+			b.WriteString(DimStyle.Render("Could not determine coordinates"))
 			}
 		}
 	}
 
 	return b.String()
-}
-
-func (m *Model) partnerDistanceLine(width int) string {
-	if m.partnerData == nil {
-		return ""
-	}
-	own := formatLocator(m.App.Logbook.Station.Grid)
-	partner := formatLocator(m.partnerData.Grid)
-	return distanceLine(own, partner, m.App.Config.DistanceUnit)
 }
 
 // partnerDistanceLineForm uses the form's grid field when QRZ data is unavailable.
@@ -1811,16 +1806,20 @@ func (m *Model) viewForm(width int) string {
 			if right != "" {
 				parts = append(parts, right)
 			}
-			b.WriteString(strings.Join(parts, "  ") + "\n")
+			b.WriteString(strings.Join(parts, "  "))
+		b.WriteString("\n")
 		} else {
 			if left != "" {
-				b.WriteString(left + "\n")
+				b.WriteString(left)
+			b.WriteString("\n")
 			}
 			if middle != "" {
-				b.WriteString(middle + "\n")
+				b.WriteString(middle)
+			b.WriteString("\n")
 			}
 			if right != "" {
-				b.WriteString(right + "\n")
+				b.WriteString(right)
+			b.WriteString("\n")
 			}
 		}
 	}
@@ -1844,10 +1843,16 @@ func (m *Model) viewForm(width int) string {
 			retainBox += " "
 		}
 		if colW >= 20 {
-			b.WriteString(commentLine + "  " + retainBox + "\n")
+			b.WriteString(commentLine)
+			b.WriteString("  ")
+			b.WriteString(retainBox)
+			b.WriteString("\n")
 		} else {
-			b.WriteString(commentLine + "\n")
-			b.WriteString("  " + retainBox + "\n")
+			b.WriteString(commentLine)
+			b.WriteString("\n")
+			b.WriteString("  ")
+			b.WriteString(retainBox)
+			b.WriteString("\n")
 		}
 	} else {
 		if m.retainComment {
@@ -1856,10 +1861,16 @@ func (m *Model) viewForm(width int) string {
 				retainBox += " "
 			}
 			if colW >= 20 {
-				b.WriteString(commentLine + "  " + retainBox + "\n")
+				b.WriteString(commentLine)
+				b.WriteString("  ")
+				b.WriteString(retainBox)
+				b.WriteString("\n")
 			} else {
-				b.WriteString(commentLine + "\n")
-				b.WriteString("  " + retainBox + "\n")
+				b.WriteString(commentLine)
+				b.WriteString("\n")
+				b.WriteString("  ")
+				b.WriteString(retainBox)
+				b.WriteString("\n")
 			}
 		} else {
 			retainBox := " " + dim.Render(retainMark) + " " + dim.Render(retainLabel)
@@ -1867,10 +1878,16 @@ func (m *Model) viewForm(width int) string {
 				retainBox += " "
 			}
 			if colW >= 20 {
-				b.WriteString(commentLine + "  " + retainBox + "\n")
+				b.WriteString(commentLine)
+				b.WriteString("  ")
+				b.WriteString(retainBox)
+				b.WriteString("\n")
 			} else {
-				b.WriteString(commentLine + "\n")
-				b.WriteString("  " + retainBox + "\n")
+				b.WriteString(commentLine)
+				b.WriteString("\n")
+				b.WriteString("  ")
+				b.WriteString(retainBox)
+				b.WriteString("\n")
 			}
 		}
 	}
@@ -2221,13 +2238,14 @@ func (m *Model) applyFreqDefaults() {
 
 	// Step 3: mode + freq → submode
 	mode := strings.ToUpper(strings.TrimSpace(m.fields[fieldMode].Value()))
-	if mode == "SSB" {
+	switch mode {
+	case "SSB":
 		if freq < 10.0 {
 			m.fields[fieldSubmode].SetValue("LSB")
 		} else {
 			m.fields[fieldSubmode].SetValue("USB")
 		}
-	} else if mode == "FM" {
+	case "FM":
 		m.fields[fieldSubmode].SetValue("")
 	}
 }

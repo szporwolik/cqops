@@ -90,7 +90,8 @@ func (gm *GeneralMenu) View() string {
 		b.WriteString("  ")
 	}
 	b.WriteString(formLabelStyle.Render("Distance unit:"))
-	b.WriteString(" " + inputStyle.Render(unitVal))
+	b.WriteString(" ")
+	b.WriteString(inputStyle.Render(unitVal))
 
 	return b.String()
 }

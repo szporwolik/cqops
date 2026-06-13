@@ -96,9 +96,13 @@ func renderWorldMap(ownLat, ownLon, partnerLat, partnerLon float64, width, heigh
 		gray := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 		b.WriteString(padStr)
 		if collide {
-			b.WriteString(bothSty.Render("@") + gray.Render("  you & partner"))
+			b.WriteString(bothSty.Render("@"))
+			b.WriteString(gray.Render("  you & partner"))
 		} else {
-			b.WriteString(ownSty.Render("*") + gray.Render("  you    ") + partnerSty.Render("P") + gray.Render("  partner"))
+			b.WriteString(ownSty.Render("*"))
+			b.WriteString(gray.Render("  you    "))
+			b.WriteString(partnerSty.Render("P"))
+			b.WriteString(gray.Render("  partner"))
 		}
 	}
 	return b.String()

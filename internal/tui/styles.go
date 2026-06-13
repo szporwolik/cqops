@@ -74,19 +74,10 @@ var (
 	DisabledTabStyle = lipgloss.NewStyle().Background(th.Background).Foreground(th.Dim).Padding(0, 2)
 )
 
-var borderStyle = lipgloss.NewStyle().
-	BorderStyle(lipgloss.RoundedBorder()).
-	BorderForeground(th.Accent)
-
 var titleStyle = TitleStyle
 var headerStyle = HeaderStyle
 var errorStyle = ErrorStyle
-var warningStyle = WarningStyle
-var successStyle = SuccessStyle
 var helpStyle = HelpStyle
 var formLabelStyle = lipgloss.NewStyle().Width(22).Foreground(th.Label)
 var inputStyle = InputStyle
 var cursorStyle = CursorStyle
-var sectionStyle = SectionStyle
-var dimStyle = DimStyle
-var selectedStyle = lipgloss.NewStyle().Foreground(th.Value).Bold(true)

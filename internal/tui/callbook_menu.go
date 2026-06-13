@@ -166,7 +166,9 @@ func (cm *CallbookMenu) View() string {
 	if cm.focus == 0 {
 		checkbox = cursorStyle.Render(checkbox)
 	}
-	b.WriteString(formLabelStyle.Render("Use QRZ:") + " " + checkbox)
+	b.WriteString(formLabelStyle.Render("Use QRZ:"))
+	b.WriteString(" ")
+	b.WriteString(checkbox)
 	if cm.enabled {
 		b.WriteString("\n\n")
 		if cm.focus == 1 {
@@ -190,7 +192,8 @@ func (cm *CallbookMenu) View() string {
 		btnText := "[ Test Connection ]"
 		if !cm.inetOnline {
 			b.WriteString("  ")
-			b.WriteString(DimStyle.Render(btnText + " (offline)"))
+			b.WriteString(DimStyle.Render(btnText))
+		b.WriteString(DimStyle.Render(" (offline)"))
 		} else if cm.focus == 3 {
 			b.WriteString(cursorStyle.Render("> "))
 			b.WriteString(cursorStyle.Render(btnText))

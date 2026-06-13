@@ -424,7 +424,7 @@ func (le *LogbookEditor) View() string {
 
 func (le *LogbookEditor) viewConfirm(action string, bodyW int) string {
 	var b strings.Builder
-	b.WriteString(section("── "+action+" ", bodyW))
+	b.WriteString(section("── " + action + " ", bodyW))
 	b.WriteString("\n\n")
 	b.WriteString("  Are you sure? (y/N)")
 	return b.String()
@@ -481,7 +481,9 @@ func (le *LogbookEditor) viewList(bodyW int) string {
 		headerParts = append(headerParts, fmt.Sprintf("%-*s", c.width, c.header))
 	}
 	headerLine := headerStyle.Render("  " + strings.Join(headerParts, " "))
-	b.WriteString("\n" + headerLine + "\n\n")
+	b.WriteString("\n")
+	b.WriteString(headerLine)
+	b.WriteString("\n\n")
 
 	// Build rows
 	for i := le.offset; i < le.offset+maxRows && i < len(le.qsos); i++ {
@@ -652,9 +654,13 @@ func (le *LogbookEditor) viewEdit(bodyW int) string {
 		rightIdx := i + half
 		if rightIdx < qefCount {
 			right := le.renderEditField(rightIdx, colW)
-			b.WriteString(left + "  " + right + "\n")
+			b.WriteString(left)
+		b.WriteString("  ")
+		b.WriteString(right)
+		b.WriteString("\n")
 		} else {
-			b.WriteString(left + "\n")
+			b.WriteString(left)
+		b.WriteString("\n")
 		}
 	}
 	return b.String()
