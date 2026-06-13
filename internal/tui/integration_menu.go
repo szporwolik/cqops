@@ -11,15 +11,15 @@ import (
 )
 
 type IntegrationMenu struct {
-	enabled   bool
-	host      textinput.Model
-	port      textinput.Model
-	focus     int
-	done      bool
-	saved     bool
-	goBack    bool
-	width     int
-	height    int
+	enabled bool
+	host    textinput.Model
+	port    textinput.Model
+	focus   int
+	done    bool
+	saved   bool
+	goBack  bool
+	width   int
+	height  int
 }
 
 func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
