@@ -16,6 +16,7 @@ const (
 	rigChooserList rigChooserMode = iota
 	rigChooserEdit
 	rigChooserCreate
+	rigChooserConfirmDelete
 )
 
 type RigChooser struct {
@@ -68,6 +69,15 @@ func (rc *RigChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			rc.mode = rigChooserList
 
+		case rc.mode == rigChooserConfirmDelete:
+			switch k.String() {
+			case "y", "Y":
+				return rc, rc.deleteRig()
+			default:
+				rc.mode = rigChooserList
+			}
+			return rc, nil
+
 		case rc.mode == rigChooserList && k.String() == "enter":
 			return rc, rc.selectRig()
 
@@ -77,6 +87,11 @@ func (rc *RigChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case rc.mode == rigChooserList && k.String() == "e":
 			if len(rc.names) > 0 {
 				rc.startEdit(rc.names[rc.cursor])
+			}
+
+		case rc.mode == rigChooserList && k.String() == "d":
+			if len(rc.names) > 0 {
+				rc.mode = rigChooserConfirmDelete
 			}
 
 		case rc.mode == rigChooserList && (msg.Type == tea.KeyUp || k.String() == "up" || k.String() == "k"):
@@ -102,9 +117,11 @@ func (rc *RigChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (rc *RigChooser) FooterText() string {
 	switch rc.mode {
 	case rigChooserList:
-		return "Enter to select  e to edit  c to create  Esc to go back"
+		return "Enter to select  e to edit  c to create  d to delete  Esc to go back"
 	case rigChooserEdit, rigChooserCreate:
 		return "Ctrl+S to save  Tab/↓/↑ to navigate  Esc to discard"
+	case rigChooserConfirmDelete:
+		return "Delete this rig? (y/N)"
 	}
 	return ""
 }
@@ -119,6 +136,8 @@ func (rc *RigChooser) View() string {
 		return rc.viewList()
 	case rigChooserEdit, rigChooserCreate:
 		return rc.viewForm()
+	case rigChooserConfirmDelete:
+		return rc.viewConfirmDelete()
 	}
 	return ""
 }
@@ -277,6 +296,60 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 	} else {
 		rc.toasts.Success("Rig saved")
 		applog.Info("Rig config saved")
+	}
+	return nil
+}
+
+func (rc *RigChooser) viewConfirmDelete() string {
+	name := rc.names[rc.cursor]
+	var b strings.Builder
+	bodyW := rc.width - 2
+	if bodyW < 30 {
+		bodyW = 30
+	}
+	b.WriteString(section("── Delete Rig ", bodyW))
+	b.WriteString("\n\n")
+	b.WriteString(fmt.Sprintf("  Delete rig %q?\n", name))
+	b.WriteString("  (y/N)")
+	return b.String()
+}
+
+func (rc *RigChooser) deleteRig() tea.Cmd {
+	if len(rc.names) == 0 {
+		return nil
+	}
+	name := rc.names[rc.cursor]
+
+	// Active rig protection
+	if name == rc.app.Logbook.Station.RigName || (name == "default" && rc.app.Logbook.Station.RigName == "") {
+		rc.toasts.Error("Cannot delete active rig. Select another first.")
+		rc.mode = rigChooserList
+		return nil
+	}
+
+	if len(rc.names) <= 1 {
+		rc.toasts.Error("Cannot delete the last rig. At least one must remain.")
+		rc.mode = rigChooserList
+		return nil
+	}
+
+	delete(rc.app.Config.Rigs, name)
+	for i, n := range rc.names {
+		if n == name {
+			rc.names = append(rc.names[:i], rc.names[i+1:]...)
+			break
+		}
+	}
+	if rc.cursor >= len(rc.names) {
+		rc.cursor = len(rc.names) - 1
+	}
+
+	rc.mode = rigChooserList
+	if err := config.Save(rc.app.ConfigPath, rc.app.Config); err != nil {
+		rc.toasts.Error("Config save failed: " + err.Error())
+	} else {
+		rc.toasts.Success("Rig " + name + " deleted")
+		applog.Info("Rig deleted", "name", name)
 	}
 	return nil
 }

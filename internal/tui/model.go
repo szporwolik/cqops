@@ -24,28 +24,27 @@ import (
 type field int
 
 const (
-	fieldCall field = iota
-	fieldRSTSent
-	fieldRSTRcvd
-	fieldBand
+	fieldDate field = iota
+	fieldTime
+	fieldCall
 	fieldFreq
+	fieldBand
 	fieldMode
 	fieldSubmode
-	fieldDate
-	fieldTime
-	fieldGrid
-	fieldCountry
+	fieldRSTSent
+	fieldRSTRcvd
 	fieldName
 	fieldQTH
+	fieldGrid
+	fieldCountry
 	fieldTXPower
 	fieldComment
 	fieldCount // sentinel: must be last; equals number of fields above
 )
 
 var fieldNames = []string{
-	"Call", "RST sent", "RST rcvd", "Band", "Frequency", "Mode", "Submode",
-	"Date UTC", "Time UTC",
-	"Grid", "DXCC", "Name", "QTH", "Power W", "Comment",
+	"Date UTC", "Time UTC", "Call", "Frequency", "Band", "Mode", "Submode",
+	"RST sent", "RST rcvd", "Name", "QTH", "Grid", "DXCC", "Power W", "Comment",
 }
 
 type Model struct {
@@ -892,9 +891,12 @@ func (m *Model) View() string {
 	if m.err != nil {
 		return errorStyle.Render(fmt.Sprintf("Error: %v\nPress any key to exit.", m.err))
 	}
-	if m.width < 80 || m.height < 24 {
-		minMsg := fmt.Sprintf("CQOPS needs at least 80x24 terminal.\nCurrent: %dx%d", m.width, m.height)
-		return lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render(minMsg)
+	if m.width < 75 || m.height < 24 {
+		msg := fmt.Sprintf("Terminal too small: %dx%d (min 75x24)\n\nPress F10 to quit", m.width, m.height)
+		if m.confirmQuit {
+			msg = "Quit CQOps? (y/N)"
+		}
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render(msg)
 	}
 	w := m.width
 	if w < 40 {
@@ -953,8 +955,13 @@ func (m *Model) buildQSOFormContent(w int, header string) string {
 		formBlock = lipgloss.JoinVertical(lipgloss.Left, form, distLine)
 	}
 	formRendered := lipgloss.NewStyle().Width(w).Padding(0, 1).Render(formBlock)
-	formLines := strings.Count(formRendered, "\n") + 1
 
+	// Hide QSO table on very small terminals
+	if m.height < 26 {
+		return formRendered
+	}
+
+	formLines := strings.Count(formRendered, "\n") + 1
 	qsoRows := maxBodyH - formLines - 2
 	if qsoRows < 0 {
 		qsoRows = 0
@@ -1419,7 +1426,7 @@ func (m *Model) viewForm(width int) string {
 			display = dim.Render("—")
 		}
 
-		hasChoices := choiceFields[i] && raw != ""
+		hasChoices := choiceFields[i]
 		choiceIcon := ""
 		if hasChoices {
 			choiceIcon = dim.Render("▼ ")
@@ -1677,32 +1684,66 @@ func (m *Model) autoFillRST() {
 	}
 }
 
-func (m *Model) autoFillSSBSubmode() {
-	mode := strings.ToUpper(strings.TrimSpace(m.fields[fieldMode].Value()))
-	if mode != "SSB" {
-		return
-	}
-	if strings.TrimSpace(m.fields[fieldSubmode].Value()) != "" {
+// applyFreqDefaults derives band → mode → submode from the frequency field.
+// Called whenever frequency or band changes.
+func (m *Model) applyFreqDefaults() {
+	freqStr := strings.TrimSpace(m.fields[fieldFreq].Value())
+	if freqStr == "" {
 		return
 	}
 	var freq float64
-	if _, err := fmt.Sscanf(m.fields[fieldFreq].Value(), "%f", &freq); err != nil {
-		freq = 0
-	}
+	fmt.Sscanf(freqStr, "%f", &freq)
 	if freq <= 0 {
 		return
 	}
-	if freq < 10.0 {
-		m.fields[fieldSubmode].SetValue("LSB")
-	} else {
-		m.fields[fieldSubmode].SetValue("USB")
+
+	// Step 1: freq → band
+	band := qso.DeriveBand(freq)
+	if band != "" {
+		m.fields[fieldBand].SetValue(band)
 	}
+
+	// Step 2: band → mode
+	low, _, _ := qso.BandRange(band)
+	if low >= 50 {
+		m.fields[fieldMode].SetValue("FM")
+	} else {
+		m.fields[fieldMode].SetValue("SSB")
+	}
+
+	// Step 3: mode + freq → submode
+	mode := strings.ToUpper(strings.TrimSpace(m.fields[fieldMode].Value()))
+	if mode == "SSB" {
+		if freq < 10.0 {
+			m.fields[fieldSubmode].SetValue("LSB")
+		} else {
+			m.fields[fieldSubmode].SetValue("USB")
+		}
+	} else if mode == "FM" {
+		m.fields[fieldSubmode].SetValue("")
+	}
+}
+
+func (m *Model) autoFillSSBSubmode() {
+	// Keep for backward compat — calls the new pipeline
+	m.applyFreqDefaults()
 }
 
 func (m *Model) updateFocused(msg tea.KeyMsg) {
 	prevCall := strings.TrimSpace(m.fields[fieldCall].Value())
 	prevVal := m.fields[m.focus].Value()
+	prevFreq := m.fields[fieldFreq].Value()
 	m.fields[m.focus], _ = m.fields[m.focus].Update(msg)
+
+	// Frequency changed: derive band → mode → submode
+	if m.focus == fieldFreq && m.fields[fieldFreq].Value() != prevFreq {
+		m.applyFreqDefaults()
+	}
+	// Band changed: derive mode → submode from the new band
+	if m.focus == fieldBand && m.fields[m.focus].Value() != prevVal {
+		m.applyFreqDefaults()
+	}
+	// Mode/submode changed manually: let user override, don't auto-set
 	if (m.focus == fieldDate || m.focus == fieldTime) && m.fields[m.focus].Value() != prevVal {
 		m.dateTimeAuto = false
 	}
@@ -1786,6 +1827,7 @@ func (m *Model) cycleBand(dir int) {
 		idx = 0
 	}
 	m.fields[fieldBand].SetValue(list[idx])
+	m.autoFillSSBSubmode()
 }
 
 func (m *Model) cycleMode(dir int) {

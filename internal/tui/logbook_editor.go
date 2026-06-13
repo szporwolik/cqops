@@ -358,8 +358,8 @@ func (le *LogbookEditor) viewList(bodyW int) string {
 		return b.String()
 	}
 
-	b.WriteString(fmt.Sprintf("  %-4s %-10s %-8s %-10s %-5s %-4s %-4s %-4s %-6s %s",
-		"ID", "Date", "Time", "Call", "Band", "Mode", "RSTs", "RSTr", "Grid", "Comment"))
+	b.WriteString(fmt.Sprintf("  %-4s %-10s %-8s %-10s %-5s %-4s %-4s %-4s %-6s %-8s %s",
+		"ID", "Date", "Time", "Call", "Band", "Mode", "RSTs", "RSTr", "Grid", "Rig", "Comment"))
 	b.WriteString("\n\n")
 
 	for i := le.offset; i < le.offset+maxRows && i < len(le.qsos); i++ {
@@ -372,11 +372,11 @@ func (le *LogbookEditor) viewList(bodyW int) string {
 		if band == "" && q.Freq > 0 {
 			band = fmt.Sprintf("%.0f", q.Freq)
 		}
-		line := fmt.Sprintf("%s%-4d %-10s %-8s %-10s %-5s %-4s %-4s %-4s %-6s %s",
+		line := fmt.Sprintf("%s%-4d %-10s %-8s %-10s %-5s %-4s %-4s %-4s %-6s %-8s %s",
 			prefix, q.ID, q.QSODate, q.TimeOn,
 			truncate(q.Call, 10), truncate(band, 5), truncate(q.Mode, 4),
 			truncate(q.RSTSent, 4), truncate(q.RSTRcvd, 4),
-			truncate(q.GridSquare, 6), truncate(q.Comment, 20))
+			truncate(q.GridSquare, 6), truncate(q.MyRig, 8), truncate(q.Comment, 20))
 		if i == le.cursor {
 			line = InputStyle.Render(line)
 		}

@@ -40,7 +40,10 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 
 func (cm *CallbookMenu) Init() tea.Cmd { return nil }
 
-type callbookTestMsg struct{ ok bool; err error }
+type callbookTestMsg struct {
+	ok  bool
+	err error
+}
 
 func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
