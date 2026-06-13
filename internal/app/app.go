@@ -86,10 +86,7 @@ func (a *App) SwitchLogbook(name string) error {
 		a.DB.Close()
 	}
 
-	lb, ok := a.Config.Logbooks[name]
-	if !ok {
-		return fmt.Errorf("logbook %q not found", name)
-	}
+	lb := a.Config.Logbooks[name]
 	dbPath, err := config.DBPath(name, &lb)
 	if err != nil {
 		return fmt.Errorf("db path: %w", err)

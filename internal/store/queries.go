@@ -3,10 +3,20 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/szporwolik/cqops/internal/qso"
 )
+
+// qsoCols is the shared list of QSO columns used across INSERT, SELECT, and UPDATE.
+const qsoCols = `call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,
+		rst_sent, rst_rcvd, gridsquare, name, qth, country, comment, notes, tx_pwr,
+		distance, bearing,
+		sota_ref, pota_ref, wwff_ref, iota,
+		my_sota_ref, my_pota_ref, my_wwff_ref,
+		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
+		wavelog_uploaded`
 
 func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 	now := time.Now().UTC()
@@ -18,15 +28,8 @@ func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 	}
 
 	res, err := db.Exec(
-		`INSERT INTO qsos (call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,
-		rst_sent, rst_rcvd, gridsquare, name, qth, country, comment, notes, tx_pwr,
-		distance, bearing,
-		sota_ref, pota_ref, wwff_ref, iota,
-		my_sota_ref, my_pota_ref, my_wwff_ref,
-		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
-		wavelog_uploaded,
-		created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO qsos (` + qsoCols + `, created_at, updated_at)
+		VALUES (` + placeholders(36) + `)`,
 		q.Call, q.QSODate, q.TimeOn, q.TimeOff,
 		q.Band, q.Freq, q.FreqRx, q.Mode, q.Submode,
 		q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
@@ -48,6 +51,15 @@ func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 
 	q.ID = id
 	return id, nil
+}
+
+// placeholders returns a string of n comma-separated "?" placeholders.
+func placeholders(n int) string {
+	parts := make([]string, n)
+	for i := range parts {
+		parts[i] = "?"
+	}
+	return strings.Join(parts, ", ")
 }
 
 func ListQSOs(db *sql.DB, limit int) ([]qso.QSO, error) {
