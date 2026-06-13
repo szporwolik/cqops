@@ -59,19 +59,19 @@ var logAddCmd = &cobra.Command{
 		qs.Mode = strings.ToUpper(logMode)
 		qs.Submode = strings.ToUpper(logSubmode)
 
-	// Auto-fill RST if not provided (same logic as TUI)
-	if logRSTSent != "" {
-		qs.RSTSent = logRSTSent
-	} else if qs.Mode == "CW" {
-		qs.RSTSent = "599"
-	} else if qs.Mode != "" {
-		qs.RSTSent = "59"
-	}
-	if logRSTRcvd != "" {
-		qs.RSTRcvd = logRSTRcvd
-	} else if qs.RSTSent != "" {
-		qs.RSTRcvd = qs.RSTSent
-	}
+		// Auto-fill RST if not provided (same logic as TUI)
+		if logRSTSent != "" {
+			qs.RSTSent = logRSTSent
+		} else if qs.Mode == "CW" {
+			qs.RSTSent = "599"
+		} else if qs.Mode != "" {
+			qs.RSTSent = "59"
+		}
+		if logRSTRcvd != "" {
+			qs.RSTRcvd = logRSTRcvd
+		} else if qs.RSTSent != "" {
+			qs.RSTRcvd = qs.RSTSent
+		}
 		qs.GridSquare = strings.ToUpper(logGrid)
 		qs.Name = logName
 		qs.QTH = logQTH
@@ -190,8 +190,8 @@ var logListCmd = &cobra.Command{
 			if band == "" {
 				band = fmt.Sprintf("%.3f", q.Freq)
 			}
-		fmt.Printf("%4d %s %s %-8s %-6s %-5s %-8s %s\n",
-			q.ID, formatCLIDate(q.QSODate), q.TimeOn, q.Call, band, q.Mode, q.RSTSent, q.Comment)
+			fmt.Printf("%4d %s %s %-8s %-6s %-5s %-8s %s\n",
+				q.ID, formatCLIDate(q.QSODate), q.TimeOn, q.Call, band, q.Mode, q.RSTSent, q.Comment)
 		}
 
 		return nil

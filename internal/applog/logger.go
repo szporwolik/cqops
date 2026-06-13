@@ -21,8 +21,9 @@ var (
 	logDir  string
 )
 
-const maxStored = 500
-const retentionDays = 7
+const maxStored = 500     // max in-memory log entries for TUI viewer
+const maxLogFiles = 20     // keep at most N rotated log files
+const retentionDays = 7    // delete log files older than this
 
 // Entry is a single in-memory log record exposed via the TUI log viewer.
 type Entry struct {
@@ -60,11 +61,33 @@ func openLogFile() (*os.File, error) {
 }
 
 func cleanupOldLogs() {
+	// Run once at startup, then periodically
+	rotateLogs()
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+	for range ticker.C {
+		rotateLogs()
+	}
+}
+
+// rotateLogs deletes log files older than retentionDays and keeps at most
+// maxLogFiles. Files are sorted by name (which includes timestamp), so the
+// oldest are deleted first.
+func rotateLogs() {
 	entries, err := os.ReadDir(logDir)
 	if err != nil {
 		return
 	}
+
 	cutoff := time.Now().AddDate(0, 0, -retentionDays)
+
+	// Collect log files with their timestamps
+	type logFile struct {
+		name string
+		t    time.Time
+	}
+	var files []logFile
+
 	for _, e := range entries {
 		n := e.Name()
 		if !strings.HasPrefix(n, "cqops-") || !strings.HasSuffix(n, ".log") {
@@ -74,13 +97,25 @@ func cleanupOldLogs() {
 		stem = strings.TrimSuffix(stem, ".log")
 		t, err := time.Parse("2006-01-02T15-04-05", stem)
 		if err != nil {
-			t, err = time.Parse("2006-01-02", stem)
-			if err != nil {
-				continue
-			}
+			continue
 		}
-		if t.Before(cutoff) {
-			os.Remove(filepath.Join(logDir, e.Name()))
+		files = append(files, logFile{name: n, t: t})
+	}
+
+	// Sort oldest first
+	sort.Slice(files, func(i, j int) bool { return files[i].t.Before(files[j].t) })
+
+	// Delete files older than retention period
+	keepStart := 0
+	for keepStart < len(files) && files[keepStart].t.Before(cutoff) {
+		os.Remove(filepath.Join(logDir, files[keepStart].name))
+		keepStart++
+	}
+
+	// If too many files remain, delete oldest beyond maxLogFiles
+	if len(files)-keepStart > maxLogFiles {
+		for i := keepStart; i < len(files)-maxLogFiles; i++ {
+			os.Remove(filepath.Join(logDir, files[i].name))
 		}
 	}
 }
