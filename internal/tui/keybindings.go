@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"strings"
-
 	"charm.land/bubbles/v2/key"
 )
 
@@ -118,22 +116,7 @@ func DefaultKeyMap() KeyMap {
 
 // ActiveBindings returns the currently visible key bindings based on app state.
 func (m *Model) ActiveBindings() []key.Binding {
-	hasPartner := m.partnerData != nil || strings.TrimSpace(m.fields[fieldCall].Value()) != ""
-	km := m.keys
-
-	bindings := []key.Binding{km.QSOForm}
-
-	if hasPartner {
-		bindings = append(bindings, km.Partner)
-	}
-	bindings = append(bindings, km.LogEditor, km.Config, km.Logs, km.Quit)
-
-	// QSO-form specific bindings only when no sub-model is active
-	if !m.isSubmodelActive() && !m.confirmQuit {
-		if hasPartner {
-			bindings = append(bindings, km.Lookup, km.Retain)
-		}
-	}
-
-	return bindings
+	// Only show F10 Quit in the footer help bar.
+	// F1/F2/F5/F8/F9 shortcuts are displayed in the tab labels.
+	return []key.Binding{m.keys.Quit}
 }

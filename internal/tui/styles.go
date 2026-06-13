@@ -7,34 +7,44 @@ import (
 )
 
 // Palette defines the semantic color tokens used throughout the TUI.
+// Colours are chosen for a modern, readable ham-radio portable-operations
+// console: dark field-radio background, muted grey labels, readable
+// white/soft foreground, cyan/blue for active fields, green for OK,
+// red for errors, amber for warnings.
 type Palette struct {
-	Background color.Color
-	Surface    color.Color
-	SurfaceAlt color.Color
-	Text       color.Color
-	TextMuted  color.Color
-	TextDim    color.Color
-	Primary    color.Color
-	PrimaryAlt color.Color
-	Success    color.Color
-	Warning    color.Color
-	Error      color.Color
-	Info       color.Color
+	Background  color.Color // terminal background (very dark grey)
+	Surface     color.Color // card/panel background
+	SurfaceAlt  color.Color // alternate surface for contrast
+	Text        color.Color // primary readable text
+	TextMuted   color.Color // subdued labels, secondary text
+	TextDim     color.Color // very dim, disabled text
+	Primary     color.Color // primary accent: active field, selection
+	PrimaryAlt  color.Color // softer primary variant
+	Success     color.Color // connected / OK / saved
+	Warning     color.Color // pending / warning
+	Error       color.Color // disconnected / error
+	Info        color.Color // informational / transient
+	Accent      color.Color // subtle purple accent for special elements
+	FieldBg     color.Color // form field background
+	ActiveField color.Color // focused/active field border or indicator
 }
 
 var P = Palette{
-	Background: lipgloss.Color("232"),
-	Surface:    lipgloss.Color("235"),
-	SurfaceAlt: lipgloss.Color("234"),
-	Text:       lipgloss.Color("252"),
-	TextMuted:  lipgloss.Color("246"),
-	TextDim:    lipgloss.Color("240"),
-	Primary:    lipgloss.Color("39"),
-	PrimaryAlt: lipgloss.Color("33"),
-	Success:    lipgloss.Color("46"),
-	Warning:    lipgloss.Color("214"),
-	Error:      lipgloss.Color("196"),
-	Info:       lipgloss.Color("51"),
+	Background:  lipgloss.Color("#1a1b1e"), // very dark field-radio grey
+	Surface:     lipgloss.Color("#25262a"), // dark panel
+	SurfaceAlt:  lipgloss.Color("#2d2e32"), // slightly lighter panel
+	Text:        lipgloss.Color("#e4e4e7"), // soft white foreground
+	TextMuted:   lipgloss.Color("#909098"), // muted grey labels
+	TextDim:     lipgloss.Color("#5c5c66"), // very dim/disabled
+	Primary:     lipgloss.Color("#3b9eff"), // active field cyan-blue
+	PrimaryAlt:  lipgloss.Color("#2d7dd2"), // darker primary
+	Success:     lipgloss.Color("#34d399"), // green OK/connected
+	Warning:     lipgloss.Color("#fbbf24"), // amber pending/warning
+	Error:       lipgloss.Color("#ef4444"), // red disconnected/error
+	Info:        lipgloss.Color("#67e8f9"), // cyan info
+	Accent:      lipgloss.Color("#a78bfa"), // subtle purple accent
+	FieldBg:     lipgloss.Color("#1e1f23"), // form field background
+	ActiveField: lipgloss.Color("#60a5fa"), // focused field indicator
 }
 
 // Styles collects all named semantic styles for the application.
@@ -105,23 +115,25 @@ type Styles struct {
 	InputStyle     lipgloss.Style
 	DimStyle       lipgloss.Style
 	SubtleStyle    lipgloss.Style
+	QSOFormBox     lipgloss.Style // bordered box around QSO entry form
+	RecentQSOsBox  lipgloss.Style // bordered box around recent QSOs table
 }
 
 var S = Styles{
-	StatusApp:      lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Background(P.Primary).Bold(true).Padding(0, 1),
+	StatusApp:      lipgloss.NewStyle().Foreground(lipgloss.Color("#1a1b1e")).Background(P.Primary).Bold(true).Padding(0, 1),
 	StatusLabel:    lipgloss.NewStyle().Foreground(P.TextMuted).Background(P.Surface),
 	StatusValue:    lipgloss.NewStyle().Foreground(P.Text).Background(P.Surface),
 	StatusFill:     lipgloss.NewStyle().Background(P.Surface),
-	StatusRight:    lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Background(lipgloss.Color("99")).Padding(0, 1),
-	StatusDotOn:    lipgloss.NewStyle().Foreground(P.Success).Background(lipgloss.Color("99")),
-	StatusDotOff:   lipgloss.NewStyle().Foreground(P.Error).Background(lipgloss.Color("99")),
-	StatusTime:     lipgloss.NewStyle().Foreground(lipgloss.Color("229")).Background(lipgloss.Color("99")).Padding(0, 1),
-	TabActive:      lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(P.Primary).Padding(0, 1),
+	StatusRight:    lipgloss.NewStyle().Foreground(P.Text).Background(P.Accent),
+	StatusDotOn:    lipgloss.NewStyle().Foreground(P.Success).Background(P.Accent),
+	StatusDotOff:   lipgloss.NewStyle().Foreground(P.Error).Background(P.Accent),
+	StatusTime:     lipgloss.NewStyle().Foreground(lipgloss.Color("#faf5ff")).Background(P.Accent).Padding(0, 1),
+	TabActive:      lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#1a1b1e")).Background(P.Primary).Padding(0, 1),
 	TabInactive:    lipgloss.NewStyle().Foreground(P.TextMuted).Background(P.SurfaceAlt).Padding(0, 1),
 	TabDisabled:    lipgloss.NewStyle().Foreground(P.TextDim).Background(P.Background).Padding(0, 1),
 	TabGap:         lipgloss.NewStyle().Background(P.Background),
 	TabBar:         lipgloss.NewStyle().Background(P.Background),
-	Section:        lipgloss.NewStyle().Foreground(lipgloss.Color("244")),
+	Section:        lipgloss.NewStyle().Foreground(P.TextDim),
 	Title:          lipgloss.NewStyle().Bold(true).Foreground(P.Primary).Padding(0, 1),
 	Label:          lipgloss.NewStyle().Foreground(P.TextMuted),
 	Value:          lipgloss.NewStyle().Foreground(P.Text),
@@ -132,7 +144,7 @@ var S = Styles{
 	Warning:        lipgloss.NewStyle().Foreground(P.Warning),
 	Info:           lipgloss.NewStyle().Foreground(P.Info),
 	Debug:          lipgloss.NewStyle().Foreground(P.TextDim),
-	FormLabel:      lipgloss.NewStyle().Width(22).Foreground(P.TextMuted),
+	FormLabel:      lipgloss.NewStyle().Width(13).Foreground(P.TextMuted),
 	Input:          lipgloss.NewStyle().Foreground(P.Text),
 	Cursor:         lipgloss.NewStyle().Foreground(P.Primary),
 	ToastInfo:      lipgloss.NewStyle().Foreground(P.Info),
@@ -141,19 +153,19 @@ var S = Styles{
 	ToastError:     lipgloss.NewStyle().Foreground(P.Error),
 	WizardActive:   lipgloss.NewStyle().Foreground(P.Primary),
 	WizardInactive: lipgloss.NewStyle().Foreground(P.TextDim),
-	WizardHeader:   lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("229")),
+	WizardHeader:   lipgloss.NewStyle().Bold(true).Foreground(P.Text),
 	WizardAccent:   lipgloss.NewStyle().Bold(true).Foreground(P.Primary),
 	WizardDim:      lipgloss.NewStyle().Foreground(P.TextMuted),
-	WizardTag:      lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("229")),
-	WizardSelected: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("229")),
+	WizardTag:      lipgloss.NewStyle().Italic(true).Foreground(P.Text),
+	WizardSelected: lipgloss.NewStyle().Bold(true).Foreground(P.Text),
 	LogInfo:        lipgloss.NewStyle().Foreground(P.Info),
 	LogWarn:        lipgloss.NewStyle().Foreground(P.Warning),
 	LogError:       lipgloss.NewStyle().Foreground(P.Error),
 	LogDebug:       lipgloss.NewStyle().Foreground(P.TextDim),
-	MapOwn:         lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true),
-	MapPartner:     lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Bold(true),
-	MapBoth:        lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true),
-	MapGrid:        lipgloss.NewStyle().Foreground(lipgloss.Color("245")),
+	MapOwn:         lipgloss.NewStyle().Foreground(P.Info).Bold(true),
+	MapPartner:     lipgloss.NewStyle().Foreground(P.Accent).Bold(true),
+	MapBoth:        lipgloss.NewStyle().Foreground(P.Info).Bold(true),
+	MapGrid:        lipgloss.NewStyle().Foreground(P.TextMuted),
 	ConfirmBox: lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(P.TextMuted).
@@ -161,13 +173,13 @@ var S = Styles{
 		Padding(1, 2),
 	ConfirmTitle:  lipgloss.NewStyle().Bold(true).Foreground(P.Primary),
 	ConfirmMsg:    lipgloss.NewStyle().Foreground(P.Text),
-	ConfirmBtn:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("0")).Background(P.Primary).Padding(0, 1),
+	ConfirmBtn:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#1a1b1e")).Background(P.Primary).Padding(0, 1),
 	ConfirmBtnDim: lipgloss.NewStyle().Foreground(P.TextMuted).Background(P.SurfaceAlt).Padding(0, 1),
-	ConfirmDanger: lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15")).Background(P.Error).Padding(0, 1),
+	ConfirmDanger: lipgloss.NewStyle().Bold(true).Foreground(P.Text).Background(P.Error).Padding(0, 1),
 	ConfirmHelp:   lipgloss.NewStyle().Foreground(P.TextDim),
 	BarStyle:      lipgloss.NewStyle().Background(P.Surface),
 	TitleStyle:    lipgloss.NewStyle().Bold(true).Foreground(P.Primary).Padding(0, 1),
-	HeaderStyle:   lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Padding(0, 1),
+	HeaderStyle:   lipgloss.NewStyle().Foreground(P.TextDim).Padding(0, 1),
 	ErrorStyle:    lipgloss.NewStyle().Foreground(P.Error),
 	WarningStyle:  lipgloss.NewStyle().Foreground(P.Warning),
 	SuccessStyle:  lipgloss.NewStyle().Foreground(P.Success),
@@ -177,7 +189,14 @@ var S = Styles{
 	CursorStyle:   lipgloss.NewStyle().Foreground(P.Primary),
 	InputStyle:    lipgloss.NewStyle().Foreground(P.Text),
 	DimStyle:      lipgloss.NewStyle().Foreground(P.TextDim),
-	SubtleStyle:   lipgloss.NewStyle().Foreground(lipgloss.Color("245")),
+	SubtleStyle:   lipgloss.NewStyle().Foreground(P.TextMuted),
+	QSOFormBox: lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(P.TextDim).
+		Padding(0, 1),
+	RecentQSOsBox: lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(P.TextDim),
 }
 
 // Legacy package-level aliases.

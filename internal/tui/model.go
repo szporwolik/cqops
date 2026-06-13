@@ -10,7 +10,6 @@ import (
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
-	"charm.land/bubbles/v2/table"
 	"charm.land/bubbles/v2/textinput"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -118,7 +117,7 @@ type Model struct {
 	logViewer       *LogViewer
 	logbookEditor   *LogbookEditor
 	confirmQuit     bool
-	confirm         *Confirm // active confirmation dialog (quit, etc.)
+	confirm         *DialogModel // active confirmation dialog (quit, etc.)
 	partnerData     *qrz.CallData
 	flrigClient     *flrig.Client
 	qrzNeed         bool
@@ -132,6 +131,7 @@ type Model struct {
 	keys            KeyMap
 	help            help.Model
 	vp              viewport.Model
+	recentQSOs      *RecentQSOs // read-only Recent QSOs view
 }
 
 type tickMsg time.Time
@@ -192,6 +192,7 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	m.keys = DefaultKeyMap()
 	m.help = help.New()
 	m.vp = viewport.New(viewport.WithWidth(80), viewport.WithHeight(10))
+	m.recentQSOs = NewRecentQSOs(initialQSOS)
 	return m
 }
 
@@ -676,20 +677,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.vp.SetHeight(vpHeight)
 	}
 
-	// Active confirmation dialog — checked first
+	// Active confirmation dialog — checked first, routes all keys to dialog
 	if m.confirm != nil {
-		if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
-			switch {
-			case key.Matches(keyMsg, m.keys.Confirm), keyMsg.String() == "enter":
-				if m.confirm.Selected() {
+		switch msg := msg.(type) {
+		case tea.KeyPressMsg:
+			updated, _ := m.confirm.Update(msg)
+			*m.confirm = updated.(DialogModel)
+			if m.confirm.Done() {
+				if m.confirm.Result.Confirmed && m.confirm.Result.Value == "quit" {
 					return m, tea.Quit
 				}
-				m.confirm = nil
-			case key.Matches(keyMsg, m.keys.Quit), keyMsg.String() == "esc":
-				m.confirm = nil
-			case keyMsg.String() == "left", keyMsg.String() == "right", keyMsg.String() == "tab":
-				m.confirm.Toggle()
-			default:
 				m.confirm = nil
 			}
 		}
@@ -746,8 +743,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch {
 		case key.Matches(keyMsg, m.keys.Quit):
 			applog.Debug("tab: F10 quit requested")
-			c := NewConfirm("Quit CQOPS", "Quit the application?", "Quit", "Cancel", ConfirmInfo)
-			m.confirm = &c
+			dlg := NewDialog("Quit CQOPS", "Exit the application?",
+				Option{Label: "Quit", Value: "quit"},
+				Option{Label: "Cancel", Value: "cancel"},
+			)
+			m.confirm = &dlg
 			m.screen = screenQSO
 			return m, cmd
 		case key.Matches(keyMsg, m.keys.QSOForm):
@@ -1124,29 +1124,33 @@ func (m *Model) View() tea.View {
 	// 1. Status bar
 	statusBar := m.renderStatusBar()
 
-	// 2. Tab bar
+	// 2. Profile/context line — right-aligned above tabs for readability
+	profileLine := m.renderProfileBar()
+
+	// 3. Tab bar
 	tabBar := m.renderTabBar()
 
 	var body string
 	body = m.buildBodyForScreen(layout)
-	if m.confirm != nil {
-		body = m.confirm.View(layout.TerminalW)
-	}
 	if body == "" {
 		body = DimStyle.Render("\u2014")
 	}
 
 	helpBar := m.renderHelpBar()
-	profileLine := m.renderProfileBar()
 
-	// Build the main view without toasts (toasts are composited on top)
+	// Build the main view without toasts or dialogs (those are composited on top)
 	mainView := lipgloss.JoinVertical(lipgloss.Left,
 		statusBar,
-		tabBar,
 		profileLine,
+		tabBar,
 		body,
 		helpBar,
 	)
+
+	// Composite confirm dialog as a centered overlay if active
+	if m.confirm != nil {
+		mainView = RenderDialogOverlay(mainView, *m.confirm, layout.TerminalW, layout.TerminalH)
+	}
 
 	// Composite toasts as a floating overlay in the bottom-right corner
 	finalView := RenderToastOverlay(mainView, m.toasts.Active(), layout.TerminalW, layout.TerminalH)
@@ -1155,17 +1159,6 @@ func (m *Model) View() tea.View {
 	v.AltScreen = true
 	v.WindowTitle = m.windowTitle()
 	return v
-}
-
-// viewportContent builds the QSO table and loads it into the viewport.
-func (m *Model) loadViewport() {
-	qsoRows := m.vp.Height() - 1 // -1 for header row
-	if qsoRows < 3 {
-		qsoRows = 3
-	}
-
-	tableContent := m.qsoTable(qsoRows)
-	m.vp.SetContent(tableContent)
 }
 
 func (m *Model) headerView() string {
@@ -1182,7 +1175,7 @@ func (m *Model) headerView() string {
 	}
 
 	left := lipgloss.JoinHorizontal(lipgloss.Top,
-		S.StatusApp.Render(" CQOPS "),
+		S.StatusApp.Render(" CQOPS v"+version.Resolved()+" "),
 		S.StatusLabel.Render(" Call "),
 		S.StatusValue.Render(clamp(callsign, 8)),
 		S.StatusLabel.Render(" Log "),
@@ -1190,15 +1183,11 @@ func (m *Model) headerView() string {
 	)
 
 	right := lipgloss.JoinHorizontal(lipgloss.Top,
-		S.StatusRight.Render(" Net "),
-		statusDotStyled(m.inetOnline),
-		S.StatusRight.Render(" WSJT "),
-		statusDotStyled(m.wsjtxOnline),
-		S.StatusRight.Render(" Rig "),
-		statusDotStyled(m.rigConnected),
-		S.StatusRight.Render(" WL "),
-		statusDotStyled(m.wlOnline),
-		S.StatusRight.Render(" UTC "),
+		statusDotStyled(m.inetOnline, "Net"),
+		statusDotStyled(m.wsjtxOnline, "WSJT"),
+		statusDotStyled(m.rigConnected, "Rig"),
+		statusDotStyled(m.wlOnline, "WL"),
+		S.StatusRight.Render(" "),
 		S.StatusTime.Render(utc.Format("15:04:05")),
 	)
 
@@ -1210,11 +1199,12 @@ func (m *Model) headerView() string {
 	return left + S.StatusFill.Render(strings.Repeat(" ", fillerW)) + right
 }
 
-func statusDotStyled(on bool) string {
+func statusDotStyled(on bool, label string) string {
+	dot := S.StatusDotOff.Render("●")
 	if on {
-		return S.StatusDotOn.Render(" ● ")
+		dot = S.StatusDotOn.Render("●")
 	}
-	return S.StatusDotOff.Render(" ● ")
+	return dot + S.StatusRight.Render(label) + S.StatusRight.Render(" ")
 }
 
 func (m *Model) tabView() string {
@@ -1226,11 +1216,11 @@ func (m *Model) tabView() string {
 		disabled bool
 	}
 	tabs := []tab{
-		{"QSO Form", m.screen == screenQSO && m.confirm == nil, false},
-		{"Partner", m.screen == screenPartner && hasPartner, !hasPartner},
-		{"Log Editor", m.screen == screenLogbookEditor, false},
-		{"Config", m.screen == screenMainMenu || m.screen == screenConfig || m.screen == screenCallbook || m.screen == screenIntegration || m.screen == screenChooser || m.screen == screenRigEdit, false},
-		{"Logs", m.screen == screenLogView, false},
+		{"F1 QSO Form", m.screen == screenQSO && m.confirm == nil, false},
+		{"F2 Partner", m.screen == screenPartner && hasPartner, !hasPartner},
+		{"F5 Log Editor", m.screen == screenLogbookEditor, false},
+		{"F8 Config", m.screen == screenMainMenu || m.screen == screenConfig || m.screen == screenCallbook || m.screen == screenIntegration || m.screen == screenChooser || m.screen == screenRigEdit, false},
+		{"F9 Logs", m.screen == screenLogView, false},
 	}
 
 	var parts []string
@@ -1274,12 +1264,12 @@ func (m *Model) renderProfileLine() string {
 }
 
 func (m *Model) helpView() string {
-	helpText := m.help.ShortHelpView(m.ActiveBindings())
-	ver := ""
-	if v := version.Resolved(); v != "dev" {
-		ver = "  CQOPS v" + v
+	if m.confirm != nil {
+		// Dialog active — show dialog keys in the footer
+		return HelpStyle.Render("←/→ choose  •  enter confirm  •  esc cancel")
 	}
-	return HelpStyle.Render(helpText) + DimStyle.Render(ver)
+	helpText := m.help.ShortHelpView(m.ActiveBindings())
+	return HelpStyle.Render(helpText)
 }
 
 // =============================================================================
@@ -1293,7 +1283,16 @@ func (m *Model) renderHelpBar() string   { return m.helpView() }
 
 func (m *Model) renderProfileBar() string {
 	if !m.isSubmodelActive() && m.confirm == nil {
-		return m.renderProfileLine()
+		line := m.renderProfileLine()
+		if line == "" {
+			return ""
+		}
+		// Right-align, single line — content beyond width is hidden, not wrapped
+		return lipgloss.NewStyle().
+			Width(m.width).
+			MaxHeight(1).
+			Align(lipgloss.Right).
+			Render(line)
 	}
 	return ""
 }
@@ -1349,23 +1348,36 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 	return ""
 }
 
-// buildQSOFormWithLayout renders the QSO form and viewport table using
-// layout-derived dimensions instead of hard-coded heights.
+// buildQSOFormWithLayout renders the QSO form and recent QSOs using
+// layout-derived dimensions. Recent QSOs are read-only; no keyboard events
+// are sent to the table. The table fills all remaining vertical space.
 func (m *Model) buildQSOFormWithLayout(l Layout) string {
-	formH := QSOFormHeight(m, l.ContentW)
-	vpH := ViewportHeight(l.ContentH, formH)
-
-	m.vp.SetWidth(l.ContentW)
-	m.vp.SetHeight(vpH)
-	m.loadViewport()
-
-	form := m.viewForm(l.ContentW)
-	distLine := m.formDistanceLine(l.ContentW)
+	// Render form content, then wrap in border.
+	// The border style (S.QSOFormBox) provides its own padding; render raw
+	// form at the internal width so borders align cleanly.
+	innerW := l.ContentW - 4 // 2 border + 2 padding (from S.QSOFormBox)
+	if innerW < 20 {
+		innerW = l.ContentW
+	}
+	form := m.viewForm(innerW)
+	distLine := m.formDistanceLine(innerW)
 	formBlock := strings.TrimRight(form, "\n")
 	if distLine != "" {
 		formBlock = formBlock + "\n" + distLine
 	}
-	return lipgloss.NewStyle().Width(l.ContentW).Padding(0, 1).Render(formBlock) + "\n" + m.vp.View()
+	formBox := S.QSOFormBox.Width(l.ContentW).Render(formBlock)
+
+	// Measure actual rendered form height (includes border) to give
+	// remaining space to the recent QSOs table
+	formRenderedH := lipgloss.Height(formBox)
+	recentH := l.ContentH - formRenderedH - 1 // 1 line gap
+	if recentH < 3 {
+		recentH = 3
+	}
+
+	m.recentQSOs.SetSize(l.ContentW, recentH)
+
+	return formBox + "\n" + m.recentQSOs.View()
 }
 
 func (m *Model) viewPartner() string {
@@ -1547,7 +1559,8 @@ func (m *Model) renderPartnerInfo(d *qrz.CallData, maxW int) string {
 }
 
 func (m *Model) viewForm(width int) string {
-	bodyW := width - 2
+	// width is the exact available space inside the border (already accounts for padding)
+	bodyW := width
 	if bodyW < 20 {
 		bodyW = 20
 	}
@@ -1666,118 +1679,6 @@ func (m *Model) renderRetainCheckbox(colW int) string {
 	return lipgloss.NewStyle().Width(colW).Render(
 		" " + DimStyle.Render(mark) + " " + DimStyle.Render(label),
 	)
-}
-
-var qsoColTiers = []struct {
-	minW  int
-	names []string
-}{
-	{0, []string{"Date", "Time", "Call", "Mode", "RSTs", "RSTr"}},
-	{52, []string{"Date", "Time", "Call", "Band", "Mode", "RSTs", "RSTr"}},
-	{65, []string{"Date", "Time", "Call", "Band", "Mode", "RSTs", "RSTr", "ID", "DXCC"}},
-	{85, []string{"Date", "Time", "Call", "Band", "Mode", "RSTs", "RSTr", "ID", "DXCC", "Sub", "Name"}},
-	{105, []string{"Date", "Time", "Call", "Band", "Mode", "RSTs", "RSTr", "ID", "DXCC", "Sub", "Name", "Grid", "QTH", "Comment", "Dist"}},
-}
-
-// qsoTable builds a bubbles/table for the recent QSO list.
-func (m *Model) qsoTable(maxRows int) string {
-	bodyW := m.vp.Width()
-	if bodyW < 20 {
-		bodyW = 20
-	}
-
-	// Column selection by width
-	var names []string
-	for _, t := range qsoColTiers {
-		if bodyW >= t.minW {
-			names = t.names
-		}
-	}
-
-	var cols []table.Column
-	for _, n := range names {
-		c := qsoAllCols[n]
-		cols = append(cols, table.Column{Title: c.header, Width: c.minWidth})
-	}
-
-	var rows []table.Row
-	limit := maxRows
-	if limit > len(m.qsos) {
-		limit = len(m.qsos)
-	}
-	for i := 0; i < limit; i++ {
-		q := m.qsos[i]
-		var row []string
-		for _, n := range names {
-			c := qsoAllCols[n]
-			v := c.value(&q)
-			if v == "" {
-				v = "—"
-			}
-			row = append(row, v)
-		}
-		rows = append(rows, row)
-	}
-
-	t := table.New(
-		table.WithColumns(cols),
-		table.WithRows(rows),
-		table.WithHeight(maxRows+1),
-		table.WithWidth(bodyW),
-	)
-	// Apply clean styles from official Bubble Tea table example
-	s := table.DefaultStyles()
-	s.Header = s.Header.BorderStyle(lipgloss.NormalBorder()).BorderBottom(true).Bold(false)
-	t.SetStyles(s)
-
-	// Clean section header with dim Wavelog info right-aligned
-	totalStr := DimStyle.Render(fmt.Sprintf("Total %d", len(m.qsos)))
-	title := "── Recent QSOs ──"
-	hdr := DimStyle.Render(title)
-	if m.App.Config.Wavelog.Enabled && m.wlStationName != "" {
-		wlInfo := DimStyle.Render("WL " + m.wlStationName)
-		gap := bodyW - lipgloss.Width(title) - lipgloss.Width(wlInfo) - lipgloss.Width(totalStr) - 4
-		if gap < 1 {
-			gap = 1
-		}
-		hdr = DimStyle.Render(title+strings.Repeat("─", gap)) + "  " + wlInfo
-	}
-	hdr += "  " + totalStr
-	return hdr + "\n" + t.View()
-}
-
-// qsoAllCols defines the available columns for the QSO table.
-var qsoAllCols = map[string]struct {
-	header   string
-	minWidth int
-	value    func(q *qso.QSO) string
-}{
-	"Date": {"Date", 10, func(q *qso.QSO) string { return formatDate(q.QSODate) }},
-	"Time": {"Time", 8, func(q *qso.QSO) string { return formatTime(q.TimeOn) }},
-	"Call": {"Call", 7, func(q *qso.QSO) string { return q.Call }},
-	"Band": {"Band", 5, func(q *qso.QSO) string {
-		b := qso.NormalizeBand(q.Band)
-		if b == "" && q.Freq > 0 {
-			b = fmt.Sprintf("%.1f", q.Freq)
-		}
-		return b
-	}},
-	"Mode":    {"Mode", 5, func(q *qso.QSO) string { return q.Mode }},
-	"RSTs":    {"RSTs", 4, func(q *qso.QSO) string { return q.RSTSent }},
-	"RSTr":    {"RSTr", 4, func(q *qso.QSO) string { return q.RSTRcvd }},
-	"ID":      {"ID", 3, func(q *qso.QSO) string { return fmt.Sprintf("%d", q.ID) }},
-	"DXCC":    {"DXCC", 6, func(q *qso.QSO) string { return q.Country }},
-	"Sub":     {"Sub", 4, func(q *qso.QSO) string { return q.Submode }},
-	"Name":    {"Name", 7, func(q *qso.QSO) string { return q.Name }},
-	"Grid":    {"Grid", 6, func(q *qso.QSO) string { return q.GridSquare }},
-	"QTH":     {"QTH", 8, func(q *qso.QSO) string { return q.QTH }},
-	"Comment": {"Comment", 10, func(q *qso.QSO) string { return q.Comment }},
-	"Dist": {"Dist", 6, func(q *qso.QSO) string {
-		if q.Distance > 0 {
-			return fmt.Sprintf("%.0f", q.Distance)
-		}
-		return ""
-	}},
 }
 
 func (m *Model) formDistanceLine(width int) string {

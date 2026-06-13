@@ -52,29 +52,13 @@ func (c Confirm) View(width int) string {
 	if width < 40 {
 		return c.viewCompact(width)
 	}
-	return c.viewBoxed(width)
+	return c.viewSheet(width)
 }
 
-// viewBoxed renders a bordered dialog centered in the available width.
-func (c Confirm) viewBoxed(width int) string {
-	const maxW = 56
-	const minW = 34
-	w := width - 8
-	if w > maxW {
-		w = maxW
-	}
-	if w < minW {
-		w = minW
-	}
-
-	// Title with separator line
-	title := S.ConfirmTitle.Render(" " + c.Title + " ")
-	titleLine := section(title, w)
-
-	// Message
+// viewSheet renders a full-width sheet-style dialog using the reusable Sheet helper.
+func (c Confirm) viewSheet(width int) string {
 	msg := S.ConfirmMsg.Render(c.Message)
 
-	// Buttons
 	yesStyle := S.ConfirmBtnDim
 	noStyle := S.ConfirmBtnDim
 	if c.ChooseYes {
@@ -90,28 +74,8 @@ func (c Confirm) viewBoxed(width int) string {
 	noBtn := noStyle.Render(" " + c.NoLabel + " ")
 	btns := lipgloss.JoinHorizontal(lipgloss.Center, yesBtn, noBtn)
 
-	// Hint
-	hint := S.ConfirmHelp.Render("←/→ choose  •  enter confirm  •  esc cancel")
-
-	// Assemble inner content with consistent width
-	padLine := func(line string) string {
-		return lipgloss.NewStyle().Width(w).Render(line)
-	}
-
-	inner := lipgloss.JoinVertical(lipgloss.Center,
-		padLine(""), padLine(msg), padLine(""), padLine(btns), padLine(""), padLine(hint),
-	)
-
-	plain := titleLine + "\n" + inner
-
-	// Wrap in bordered box
-	box := S.ConfirmBox.Width(w).Render(plain)
-
-	// Center horizontally with lipgloss
-	return lipgloss.PlaceHorizontal(width, lipgloss.Center, box,
-		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Background(P.Background)),
-	)
+	body := lipgloss.JoinVertical(lipgloss.Center, msg, "", btns)
+	return Sheet(width, c.Title, body)
 }
 
 // viewCompact renders an inline prompt for narrow terminals.
@@ -137,4 +101,53 @@ func (c Confirm) viewCompact(width int) string {
 		line = lipgloss.JoinHorizontal(lipgloss.Top, title, msg)
 	}
 	return line
+}
+
+// =============================================================================
+// Sheet — reusable full-width overlay panel (Bubble Tea / Lip Gloss native)
+// =============================================================================
+
+// Sheet renders a full-width overlay panel with a bold title, body content,
+// and page-matching background. Use this for any modal/dialog/prompt to keep
+// the look consistent without hand-crafting borders or separators.
+//
+//	body := lipgloss.JoinVertical(lipgloss.Center, "Are you sure?", "", btns)
+//	output := Sheet(width, "Confirm", body)
+func Sheet(width int, title, body string) string {
+	titleLine := S.ConfirmTitle.Render(title)
+
+	content := lipgloss.JoinVertical(lipgloss.Left,
+		titleLine,
+		"",
+		body,
+	)
+
+	return lipgloss.NewStyle().
+		Width(width).
+		Background(P.Background).
+		Padding(1, 2).
+		Render(content)
+}
+
+// RenderConfirmOverlay composites a confirm dialog as a full-width sheet
+// over the main view. The dialog has no border and matches the page background,
+// appearing as a natural overlay with key hints in the footer help bar.
+func RenderConfirmOverlay(mainView string, c Confirm, viewW, viewH int) string {
+	dialog := c.View(viewW)
+
+	dialogH := lipgloss.Height(dialog)
+
+	// Center vertically over the full view
+	y := (viewH - dialogH) / 2
+	if y < 0 {
+		y = 0
+	}
+
+	base := lipgloss.NewLayer(mainView)
+	dialogLayer := lipgloss.NewLayer(dialog).
+		X(0).
+		Y(y).
+		Z(1)
+
+	return lipgloss.NewCompositor(base, dialogLayer).Render()
 }
