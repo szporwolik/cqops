@@ -18,14 +18,14 @@ func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 	}
 
 	res, err := db.Exec(
-		`INSERT INTO qsos (call, qso_date, time_on, time_off, band, freq, mode, submode,
+		`INSERT INTO qsos (call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,
 		rst_sent, rst_rcvd, gridsquare, name, qth, country, comment, notes, tx_pwr,
 		distance, bearing,
 		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
 		created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		q.Call, q.QSODate, q.TimeOn, q.TimeOff,
-		q.Band, q.Freq, q.Mode, q.Submode,
+		q.Band, q.Freq, q.FreqRx, q.Mode, q.Submode,
 		q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
 		q.Distance, q.Bearing,
 		q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
@@ -50,7 +50,7 @@ func ListQSOs(db *sql.DB, limit int) ([]qso.QSO, error) {
 	}
 
 	rows, err := db.Query(
-		`SELECT id, call, qso_date, time_on, time_off, band, freq, mode, submode,
+		`SELECT id, call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,
 		rst_sent, rst_rcvd, gridsquare, name, qth, country, comment, notes, tx_pwr,
 		distance, bearing,
 		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
@@ -70,7 +70,7 @@ func ListQSOs(db *sql.DB, limit int) ([]qso.QSO, error) {
 		var createdAt, updatedAt string
 		err := rows.Scan(
 			&q.ID, &q.Call, &q.QSODate, &q.TimeOn, &q.TimeOff,
-			&q.Band, &q.Freq, &q.Mode, &q.Submode,
+			&q.Band, &q.Freq, &q.FreqRx, &q.Mode, &q.Submode,
 			&q.RSTSent, &q.RSTRcvd, &q.GridSquare, &q.Name, &q.QTH, &q.Country, &q.Comment, &q.Notes, &q.TXPower,
 			&q.Distance, &q.Bearing,
 			&q.StationCallsign, &q.Operator, &q.MyGridSquare, &q.MyRig, &q.MyAntenna, &q.Source,
@@ -96,7 +96,7 @@ func GetQSOByID(db *sql.DB, id int64) (*qso.QSO, error) {
 	var createdAt, updatedAt string
 
 	err := db.QueryRow(
-		`SELECT id, call, qso_date, time_on, time_off, band, freq, mode, submode,
+		`SELECT id, call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,
 		rst_sent, rst_rcvd, gridsquare, name, qth, country, comment, notes, tx_pwr,
 		distance, bearing,
 		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
@@ -104,7 +104,7 @@ func GetQSOByID(db *sql.DB, id int64) (*qso.QSO, error) {
 		FROM qsos WHERE id = ?`, id,
 	).Scan(
 		&q.ID, &q.Call, &q.QSODate, &q.TimeOn, &q.TimeOff,
-		&q.Band, &q.Freq, &q.Mode, &q.Submode,
+		&q.Band, &q.Freq, &q.FreqRx, &q.Mode, &q.Submode,
 		&q.RSTSent, &q.RSTRcvd, &q.GridSquare, &q.Name, &q.QTH, &q.Country, &q.Comment, &q.Notes, &q.TXPower,
 		&q.Distance, &q.Bearing,
 		&q.StationCallsign, &q.Operator, &q.MyGridSquare, &q.MyRig, &q.MyAntenna, &q.Source,
@@ -139,14 +139,14 @@ func ListAllQSOs(db *sql.DB) ([]qso.QSO, error) {
 func UpdateQSO(db *sql.DB, q *qso.QSO) error {
 	q.UpdatedAt = time.Now().UTC()
 	_, err := db.Exec(
-		`UPDATE qsos SET call=?, qso_date=?, time_on=?, time_off=?, band=?, freq=?, mode=?, submode=?,
+		`UPDATE qsos SET call=?, qso_date=?, time_on=?, time_off=?, band=?, freq=?, freq_rx=?, mode=?, submode=?,
 		rst_sent=?, rst_rcvd=?, gridsquare=?, name=?, qth=?, country=?, comment=?, notes=?, tx_pwr=?,
 		distance=?, bearing=?,
 		station_callsign=?, operator=?, my_gridsquare=?, my_rig=?, my_antenna=?, source=?,
 		updated_at=?
 		WHERE id=?`,
 		q.Call, q.QSODate, q.TimeOn, q.TimeOff,
-		q.Band, q.Freq, q.Mode, q.Submode,
+		q.Band, q.Freq, q.FreqRx, q.Mode, q.Submode,
 		q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
 		q.Distance, q.Bearing,
 		q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,

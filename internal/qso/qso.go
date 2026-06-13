@@ -10,6 +10,7 @@ type QSO struct {
 	TimeOff         string
 	Band            string
 	Freq            float64
+	FreqRx          float64
 	Mode            string
 	Submode         string
 	RSTSent         string

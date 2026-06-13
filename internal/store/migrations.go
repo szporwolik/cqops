@@ -55,6 +55,7 @@ var migrations = []string{
 	`CREATE INDEX IF NOT EXISTS idx_qsos_band ON qsos(band)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_mode ON qsos(mode)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_gridsquare ON qsos(gridsquare)`,
+	`ALTER TABLE qsos ADD COLUMN freq_rx REAL DEFAULT 0`,
 }
 
 func Migrate(db *sql.DB) error {

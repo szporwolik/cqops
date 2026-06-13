@@ -39,12 +39,13 @@ const (
 	fieldCountry
 	fieldTXPower
 	fieldComment
+	fieldFreqRx
 	fieldCount // sentinel: must be last; equals number of fields above
 )
 
 var fieldNames = []string{
 	"Date UTC", "Time UTC", "Call", "Frequency", "Band", "Mode", "Submode",
-	"RST sent", "RST rcvd", "Name", "QTH", "Grid", "DXCC", "Power W", "Comment",
+	"RST sent", "RST rcvd", "Name", "QTH", "Grid", "DXCC", "Power W", "Comment", "Freq RX",
 }
 
 type Model struct {
@@ -123,7 +124,7 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 			ti.Focus()
 		case fieldBand:
 			ti.CharLimit = 8
-		case fieldFreq:
+		case fieldFreq, fieldFreqRx:
 			ti.CharLimit = 16
 		case fieldMode:
 			ti.CharLimit = 12
@@ -446,6 +447,8 @@ func parseWSJTXADIF(adif string) *qso.QSO {
 			if _, err := fmt.Sscanf(val, "%f", &qs.Freq); err != nil {
 				qs.Freq = 0
 			}
+		case "freq_rx":
+			fmt.Sscanf(val, "%f", &qs.FreqRx)
 		case "station_callsign":
 			qs.StationCallsign = strings.ToUpper(val)
 		case "my_gridsquare":
@@ -1407,45 +1410,71 @@ func (m *Model) viewForm(width int) string {
 	if bodyW < 20 {
 		bodyW = 20
 	}
-	labelW := 12
 	dim := DimStyle
 	hl := CursorStyle
+	choiceFields := map[field]bool{fieldBand: true, fieldMode: true, fieldSubmode: true}
+
+	// Split fields: left 9, right 6
+	leftFields := []field{fieldDate, fieldTime, fieldCall, fieldFreq, fieldBand, fieldMode, fieldSubmode, fieldRSTSent, fieldRSTRcvd}
+	rightFields := []field{fieldName, fieldQTH, fieldGrid, fieldCountry, fieldTXPower, fieldFreqRx, fieldComment}
+
+	colW := (bodyW - 3) / 2 // 3 = gap between columns
+	if colW < 26 {
+		colW = bodyW // fallback to single column on very narrow terminals
+	}
+
+	renderField := func(f field, w int) string {
+		label := fieldNames[f]
+		raw := strings.TrimSpace(m.fields[f].Value())
+		choiceIcon := ""
+		if choiceFields[f] {
+			choiceIcon = dim.Render("▼ ")
+		}
+		val := choiceIcon
+		if raw == "" {
+			val += dim.Render("—")
+		} else {
+			val += raw
+		}
+		lbl := fmt.Sprintf("%-12s", label)
+		line := " " + lbl + " " + val
+		if int(f) == int(m.focus) {
+			line = hl.Render(" " + lbl) + " " + inputStyle.Render(val)
+			if raw == "" {
+				line = hl.Render(" " + lbl) + " " + dim.Render(val)
+			}
+		}
+		// Pad to column width
+		for lipgloss.Width(line) < w {
+			line += " "
+		}
+		return line
+	}
 
 	var b strings.Builder
-
 	b.WriteString(section("── QSO ", bodyW))
 	b.WriteString("\n")
 
-	choiceFields := map[field]bool{fieldBand: true, fieldMode: true, fieldSubmode: true}
-
-	for i := field(0); i < fieldCount; i++ {
-		label := fieldNames[i]
-		raw := strings.TrimSpace(m.fields[i].Value())
-		display := raw
-		if display == "" {
-			display = dim.Render("—")
+	rows := len(leftFields)
+	if len(rightFields) > rows {
+		rows = len(rightFields)
+	}
+	for i := 0; i < rows; i++ {
+		left := ""
+		if i < len(leftFields) {
+			left = renderField(leftFields[i], colW)
 		}
-
-		hasChoices := choiceFields[i]
-		choiceIcon := ""
-		if hasChoices {
-			choiceIcon = dim.Render("▼ ")
+		right := ""
+		if i < len(rightFields) {
+			right = renderField(rightFields[i], colW)
 		}
-
-		if int(i) == int(m.focus) {
-			b.WriteString(hl.Render(fmt.Sprintf("  %-*s", labelW, label)))
-			b.WriteString(" ")
-			b.WriteString(inputStyle.Render(choiceIcon + m.fields[i].View()))
-		} else {
-			b.WriteString(fmt.Sprintf("  %-*s", labelW, label))
-			b.WriteString(" ")
-			if raw == "" {
-				b.WriteString(display)
-			} else {
-				b.WriteString(inputStyle.Render(choiceIcon + display))
-			}
+		if left != "" && right != "" && colW >= 26 {
+			b.WriteString(left + " " + right + "\n")
+		} else if left != "" {
+			b.WriteString(left + "\n")
+		} else if right != "" {
+			b.WriteString(right + "\n")
 		}
-		b.WriteString("\n")
 	}
 
 	return b.String()
@@ -1883,6 +1912,9 @@ func (m *Model) saveQSO() tea.Cmd {
 		freq = 0
 	}
 	qs.Call, qs.Band, qs.Freq = strings.ToUpper(m.fields[fieldCall].Value()), strings.ToUpper(m.fields[fieldBand].Value()), freq
+	var freqRx float64
+	fmt.Sscanf(m.fields[fieldFreqRx].Value(), "%f", &freqRx)
+	qs.FreqRx = freqRx
 	qs.Mode, qs.RSTSent, qs.RSTRcvd = strings.ToUpper(m.fields[fieldMode].Value()), m.fields[fieldRSTSent].Value(), m.fields[fieldRSTRcvd].Value()
 	qs.Submode = strings.ToUpper(m.fields[fieldSubmode].Value())
 	qs.QSODate = stripNonDigits(m.fields[fieldDate].Value())
