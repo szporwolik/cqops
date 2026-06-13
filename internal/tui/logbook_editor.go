@@ -8,8 +8,10 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
+	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
 type editorMode int
@@ -85,10 +87,13 @@ type LogbookEditor struct {
 	needsReload bool
 	width       int
 	height      int
+	wlURL       string
+	wlKey       string
+	wlStationID string
 }
 
-func NewLogbookEditor(db *sql.DB) *LogbookEditor {
-	le := &LogbookEditor{db: db, mode: edModeList}
+func NewLogbookEditor(db *sql.DB, wlURL, wlKey, wlStationID string) *LogbookEditor {
+	le := &LogbookEditor{db: db, mode: edModeList, wlURL: wlURL, wlKey: wlKey, wlStationID: wlStationID}
 	for i := qsoEditField(0); i < qefCount; i++ {
 		ti := textinput.New()
 		ti.Prompt = ""
@@ -125,6 +130,14 @@ func NewLogbookEditor(db *sql.DB) *LogbookEditor {
 func (le *LogbookEditor) Init() tea.Cmd { return nil }
 
 func (le *LogbookEditor) SetQSOS(qsos []qso.QSO) { le.qsos = qsos }
+
+// UpdateWLStatus updates the WL status field in the currently editing form.
+func (le *LogbookEditor) UpdateWLStatus(qID int64, status string) {
+	if le.editing != nil && le.editing.ID == qID {
+		le.fields[qefWLStatus].SetValue(status)
+		le.editing.WavelogUploaded = status
+	}
+}
 
 func (le *LogbookEditor) fillEditForm(q *qso.QSO) {
 	s := func(f qsoEditField, v string) { le.fields[f].SetValue(v) }
@@ -213,10 +226,13 @@ func (le *LogbookEditor) prevField() {
 }
 
 type editorMsg struct {
-	deleted int64
-	saved   int64
-	purged  bool
-	err     error
+	deleted  int64
+	saved    int64
+	purged   bool
+	wlQSOID  int64
+	wlCall   string
+	wlOK     bool
+	err      error
 }
 
 func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -251,6 +267,8 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch k {
 			case "ctrl+s":
 				return le, le.doSave()
+			case "ctrl+w":
+				return le, le.doUploadToWavelog()
 			case "esc", "f5":
 				le.mode = edModeList
 			case "tab", "down":
@@ -317,6 +335,32 @@ func (le *LogbookEditor) doSave() tea.Cmd {
 	}
 }
 
+func (le *LogbookEditor) doUploadToWavelog() tea.Cmd {
+	if le.wlURL == "" || le.wlKey == "" || le.wlStationID == "" {
+		return func() tea.Msg {
+			return editorMsg{wlOK: false, err: fmt.Errorf("Wavelog not configured")}
+		}
+	}
+	q := le.readEditForm()
+	adifStr := q.ToADIF()
+	url, key, sid := le.wlURL, le.wlKey, le.wlStationID
+	qID := q.ID
+	call := q.Call
+
+	return func() tea.Msg {
+		applog.InfoDetail("Wavelog: uploading from editor", fmt.Sprintf("qso_id=%d call=%s", qID, call))
+		err := wavelog.PostQSO(url, key, sid, adifStr)
+		if err != nil {
+			applog.Error("Wavelog: editor upload failed", "qso_id", qID, "call", call, "error", err)
+			store.UpdateWavelogStatus(le.db, qID, "no")
+			return editorMsg{wlQSOID: qID, wlCall: call, wlOK: false, err: err}
+		}
+		store.UpdateWavelogStatus(le.db, qID, "yes")
+		applog.InfoDetail("Wavelog: editor upload OK", fmt.Sprintf("qso_id=%d call=%s", qID, call))
+		return editorMsg{wlQSOID: qID, wlCall: call, wlOK: true}
+	}
+}
+
 func (le *LogbookEditor) FooterText() string {
 	switch le.mode {
 	case edModeConfirmDelete:
@@ -324,7 +368,7 @@ func (le *LogbookEditor) FooterText() string {
 	case edModeConfirmPurge:
 		return "Purge ALL QSOs? This cannot be undone. (y/N)"
 	case edModeEdit:
-		return "Ctrl+S to save  Tab/Up/Dn to navigate  Esc to discard"
+		return "Ctrl+S to save  Ctrl+W Upload to Wavelog  Tab/Up/Dn to navigate  Esc to discard"
 	default:
 		return "Up/Dn scroll  Enter/e edit  Del delete  p purge  F5/Esc close"
 	}

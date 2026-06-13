@@ -731,7 +731,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showLogView = false
 			m.showPartner = false
 			m.showLogbookEditor = true
-			m.logbookEditor = NewLogbookEditor(m.App.DB)
+			m.logbookEditor = NewLogbookEditor(m.App.DB, m.App.Config.Wavelog.URL, m.App.Config.Wavelog.APIKey, m.App.Config.Wavelog.StationProfileID)
 			qsos, _ := store.ListAllQSOs(m.App.DB)
 			m.logbookEditor.SetQSOS(qsos)
 			return m, cmd
@@ -924,7 +924,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.logbookEditor.height = m.height
 		_, editorCmd := m.logbookEditor.Update(msg)
 		if em, ok := msg.(editorMsg); ok {
-			if em.err != nil {
+			if em.err != nil && em.wlQSOID == 0 {
 				m.toasts.Error(em.err.Error())
 			}
 			if em.deleted != 0 {
@@ -935,6 +935,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if em.purged {
 				m.toasts.Success("Logbook purged")
+			}
+			if em.wlQSOID != 0 {
+				if em.wlOK {
+					m.toasts.Success(fmt.Sprintf("Wavelog: %s sent", em.wlCall))
+					m.logbookEditor.UpdateWLStatus(em.wlQSOID, "yes")
+					m.logbookEditor.needsReload = true
+				} else {
+					m.toasts.Warn(fmt.Sprintf("Wavelog: %s failed", em.wlCall))
+					m.logbookEditor.UpdateWLStatus(em.wlQSOID, "no")
+				}
 			}
 		}
 		if m.logbookEditor.needsReload {
