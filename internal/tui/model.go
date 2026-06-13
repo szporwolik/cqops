@@ -1272,7 +1272,7 @@ func (m *Model) viewPartner() string {
 	dl := m.partnerDistanceLine(bodyW)
 	if dl != "" {
 		b.WriteString("\n\n")
-		pathTitle := "── Path "
+		pathTitle := "── Short Path "
 		b.WriteString(section(pathTitle, bodyW))
 		b.WriteString("\n  ")
 		b.WriteString(inputStyle.Render(dl))
@@ -1687,7 +1687,18 @@ func (m *Model) viewQSOS(maxRows int) string {
 	}
 
 	var b strings.Builder
-	b.WriteString(section("── Recent QSOs ", bodyW))
+	// Section header with total count right-aligned
+	totalStr := fmt.Sprintf("Total: %d", len(m.qsos))
+	title := "── Recent QSOs "
+	totalW := lipgloss.Width(totalStr)
+	titleW := lipgloss.Width(title)
+	gap := 2 // spaces between dashes and total
+	dashes := bodyW - titleW - totalW - gap
+	if dashes < 1 {
+		dashes = 1
+	}
+	hdr := SectionStyle.Render(title + strings.Repeat("─", dashes) + strings.Repeat(" ", gap) + DimStyle.Render(totalStr))
+	b.WriteString(hdr)
 	b.WriteString("\n")
 
 	cols := selectQSOCols(bodyW)
@@ -1785,7 +1796,34 @@ func (m *Model) formDistanceLine(width int) string {
 	if bodyW < 20 {
 		bodyW = 20
 	}
-	hdr := section("── Path ", bodyW)
+
+	// Build rig/antenna info for right side of header
+	s := m.App.Logbook.Station
+	rigInfo := ""
+	if s.Rig != "" {
+		rigInfo = "Rig: " + s.Rig
+	}
+	if s.Antenna != "" {
+		if rigInfo != "" {
+			rigInfo += "  "
+		}
+		rigInfo += "Ant: " + s.Antenna
+	}
+
+	title := "── Short Path "
+	titleW := lipgloss.Width(title)
+	if rigInfo != "" {
+		rigW := lipgloss.Width(rigInfo)
+		gap := 2
+		dashes := bodyW - titleW - rigW - gap
+		if dashes < 1 {
+			dashes = 1
+		}
+		hdr := SectionStyle.Render(title + strings.Repeat("─", dashes) + strings.Repeat(" ", gap) + DimStyle.Render(rigInfo))
+		return hdr + "\n  " + inputStyle.Render(dl)
+	}
+
+	hdr := section(title, bodyW)
 	return hdr + "\n  " + inputStyle.Render(dl)
 }
 
