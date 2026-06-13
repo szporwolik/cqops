@@ -1439,9 +1439,9 @@ func (m *Model) viewForm(width int) string {
 		lbl := fmt.Sprintf("%-12s", label)
 		line := " " + lbl + " " + val
 		if int(f) == int(m.focus) {
-			line = hl.Render(" " + lbl) + " " + inputStyle.Render(val)
+			line = hl.Render(" "+lbl) + " " + inputStyle.Render(val)
 			if raw == "" {
-				line = hl.Render(" " + lbl) + " " + dim.Render(val)
+				line = hl.Render(" "+lbl) + " " + dim.Render(val)
 			}
 		}
 		// Pad to column width
