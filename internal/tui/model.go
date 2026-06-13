@@ -191,7 +191,12 @@ func (m *Model) qrzLookupCmd(call string) tea.Cmd {
 }
 
 func (m *Model) qrzLookup(call string) tea.Cmd {
-	m.toasts.Info("QRZ: looking up " + call + "…")
+	if time.Since(m.qrzLastLook) < 3*time.Second {
+		applog.Debug("QRZ: debounced", "callsign", call)
+		return nil
+	}
+	m.qrzLastLook = time.Now()
+	applog.Info("QRZ: looking up " + call + "…")
 	return m.qrzLookupCmd(call)
 }
 
@@ -348,7 +353,7 @@ func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode
 			m.partnerData = nil
 			applog.InfoDetail("WSJT-X: switching DX call", fmt.Sprintf("%s → %s", prevCall, newCall))
 			if m.App.Config.QRZEnabled && m.App.Config.QRZUser != "" {
-				m.toasts.Info("QRZ: looking up " + call + "…")
+				applog.Info("QRZ: looking up " + call + "…")
 				m.qrzNeed = true
 				m.qrzCall = newCall
 			}
@@ -880,10 +885,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.toasts.Warn("QRZ not configured — F8 Config → Callbook / QRZ.com to enable")
 			return m, cmd
 		}
-		if time.Since(m.qrzLastLook) < 5*time.Second {
-			return m, cmd
-		}
-		m.qrzLastLook = time.Now()
 		return m, tea.Batch(cmd, m.qrzLookup(call))
 	}
 	return m, cmd
@@ -1098,11 +1099,7 @@ func (m *Model) renderHeader(width int) string {
 	}
 
 	left := LabelStyle.Render("call: ") + ValueStyle.Render(clamp(s.Callsign, 8))
-	if s.Operator != "" {
-		left += LabelStyle.Render("  op: ") + ValueStyle.Render(clamp(s.Operator, 8))
-	}
-	left += LabelStyle.Render("  log: ") + ValueStyle.Render(clamp(m.App.LogbookName, 8)) +
-		LabelStyle.Render("  loc: ") + ValueStyle.Render(clamp(locator, 6))
+	left += LabelStyle.Render("  log: ") + ValueStyle.Render(clamp(m.App.LogbookName, 8))
 
 	center := TitleStyle.UnsetPadding().Render("CQOPS")
 	if v := version.Resolved(); v != "dev" {
@@ -1498,7 +1495,54 @@ func (m *Model) viewForm(width int) string {
 	}
 
 	var b strings.Builder
-	b.WriteString(section("── QSO ", bodyW))
+
+	// Build right-side info for QSO section header (operator + my grid + my refs)
+	s := m.App.Logbook.Station
+	var infoParts []string
+	if s.Operator != "" {
+		infoParts = append(infoParts, "Operator: "+s.Operator)
+	}
+	if s.Grid != "" {
+		infoParts = append(infoParts, "My Grid: "+formatLocator(s.Grid))
+	}
+	if s.SOTARef != "" {
+		infoParts = append(infoParts, "My SOTA: "+s.SOTARef)
+	}
+	if s.POTARef != "" {
+		infoParts = append(infoParts, "My POTA: "+s.POTARef)
+	}
+	if s.WWFFRef != "" {
+		infoParts = append(infoParts, "My WWFF: "+s.WWFFRef)
+	}
+
+	// Build header: left title + dashes + right info, dynamically hide info when no space
+	title := "── QSO "
+	titleW := lipgloss.Width(title)
+	infoStr := ""
+	if len(infoParts) > 0 {
+		// Try fitting all parts, drop from the end if too wide
+		for try := len(infoParts); try >= 1; try-- {
+			candidate := strings.Join(infoParts[:try], "  ")
+			candW := lipgloss.Width(candidate)
+			gap := 2
+			if titleW+candW+gap <= bodyW || try == 1 {
+				infoStr = candidate
+				break
+			}
+		}
+	}
+
+	if infoStr != "" {
+		infoW := lipgloss.Width(infoStr)
+		gap := 2
+		dashes := bodyW - titleW - infoW - gap
+		if dashes < 1 {
+			dashes = 1
+		}
+		b.WriteString(SectionStyle.Render(title + strings.Repeat("─", dashes) + strings.Repeat(" ", gap) + DimStyle.Render(infoStr)))
+	} else {
+		b.WriteString(section(title, bodyW))
+	}
 	b.WriteString("\n")
 
 	rows := len(leftFields)
