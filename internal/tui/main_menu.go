@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -45,11 +44,16 @@ func (m *MainMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "enter":
 			switch m.cursor {
-			case 0: m.action = "general"
-			case 1: m.action = "callbook"
-			case 2: m.action = "logbook"
-			case 3: m.action = "rig"
-			case 4: m.action = "integration"
+			case 0:
+				m.action = "general"
+			case 1:
+				m.action = "callbook"
+			case 2:
+				m.action = "logbook"
+			case 3:
+				m.action = "rig"
+			case 4:
+				m.action = "integration"
 			}
 		case "up", "k":
 			if m.cursor > 0 {
@@ -65,7 +69,7 @@ func (m *MainMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *MainMenu) FooterText() string {
-	return "Enter to select  F1 QSO Form  F10 Quit"
+	return "↑↓ to navigate  Enter to select  F1 QSO Form  F10 Quit"
 }
 
 func (m *MainMenu) View() string {
@@ -106,10 +110,6 @@ func (m *MainMenu) View() string {
 			line += strings.Repeat(" ", pad) + dim.Render(item.desc)
 		}
 		b.WriteString(line + "\n")
-	}
-
-	if showDesc {
-		b.WriteString(fmt.Sprintf("\n  %s", dim.Render("↑↓ to navigate  Enter to select")))
 	}
 
 	return b.String()

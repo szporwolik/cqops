@@ -125,7 +125,7 @@ func (im *IntegrationMenu) View() string {
 	}
 
 	var b strings.Builder
-	title := "── Integration "
+	title := "── Configuration — Integration "
 	b.WriteString(section(title, bodyW))
 	b.WriteString("\n\n")
 

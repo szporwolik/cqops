@@ -76,7 +76,7 @@ func (gm *GeneralMenu) View() string {
 	}
 
 	var b strings.Builder
-	title := "── General Options "
+	title := "── Configuration — General "
 	b.WriteString(section(title, bodyW))
 	b.WriteString("\n\n")
 

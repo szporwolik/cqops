@@ -476,6 +476,13 @@ func parseWSJTXADIF(adif string) *qso.QSO {
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
+
+	// Handle WindowSizeMsg first — store dimensions, then let sub-models see it too
+	if wsm, ok := msg.(tea.WindowSizeMsg); ok {
+		m.width = wsm.Width
+		m.height = wsm.Height
+	}
+
 	if _, ok := msg.(tickMsg); ok {
 		m.adifMu.Lock()
 		adif := m.pendingADIF
@@ -590,6 +597,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	if m.showChooser {
+		m.chooser.width = m.width
+		m.chooser.height = m.height
 		_, _ = m.chooser.Update(msg)
 		if m.chooser.done {
 			m.showChooser = false
@@ -599,6 +608,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	if m.showRigEdit {
+		m.rigChooser.width = m.width
+		m.rigChooser.height = m.height
 		_, _ = m.rigChooser.Update(msg)
 		if m.rigChooser.done {
 			m.showRigEdit = false
@@ -608,6 +619,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	if m.showConfig {
+		m.configMenu.width = m.width
+		m.configMenu.height = m.height
 		_, _ = m.configMenu.Update(msg)
 		if m.configMenu.done {
 			m.showConfig = false
@@ -628,6 +641,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	if m.showCallbook {
+		m.callbookMenu.width = m.width
+		m.callbookMenu.height = m.height
 		_, _ = m.callbookMenu.Update(msg)
 		if m.callbookMenu.done {
 			m.showCallbook = false
@@ -650,6 +665,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	if m.showIntegration {
+		m.integrationMenu.width = m.width
+		m.integrationMenu.height = m.height
 		_, _ = m.integrationMenu.Update(msg)
 		if m.integrationMenu.done {
 			m.showIntegration = false
@@ -671,6 +688,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	if m.showMainMenu {
+		m.mainMenu.width = m.width
+		m.mainMenu.height = m.height
 		_, _ = m.mainMenu.Update(msg)
 		if m.mainMenu.action != "" {
 			action := m.mainMenu.action
@@ -700,6 +719,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	if m.showPartner {
+		// partner view uses m.width/m.height directly, no sub-model
 		switch msg := msg.(type) {
 		case tea.WindowSizeMsg:
 			m.width, m.height = msg.Width, msg.Height
@@ -752,9 +772,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.width, m.height = msg.Width, msg.Height
-		return m, nil
 	case qrzResultMsg:
 		m.fillQRZData(msg)
 		return m, cmd
@@ -867,14 +884,6 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 	m.toasts.Info("QRZ: " + d.Callsign + " " + d.Name)
 }
 
-func trimLines(s string, maxLines int) string {
-	lines := strings.Split(s, "\n")
-	if len(lines) <= maxLines {
-		return s
-	}
-	return strings.Join(lines[:maxLines], "\n")
-}
-
 func (m *Model) View() string {
 	if m.quitting {
 		return ""
@@ -891,6 +900,7 @@ func (m *Model) View() string {
 		w = 80
 	}
 	header := m.renderHeader(w)
+
 	var content string
 	if m.confirmQuit {
 		content = titleStyle.Render("Quit CQOps? (y/N)")
@@ -913,57 +923,55 @@ func (m *Model) View() string {
 	} else if m.showPartner && m.partnerData != nil {
 		content = m.viewPartner()
 	} else {
-		// QSO form: compute body height and build form + QSO list
-		headerLines := strings.Count(header, "\n") + 1
-		const toastReserved = 2
-		const footerLines = 1
-		const joins = 3
-		maxBodyH := m.height - headerLines - toastReserved - footerLines - joins
-		if maxBodyH < 8 {
-			maxBodyH = 8
-		}
-
-		form := m.viewForm(w)
-		distLine := m.formDistanceLine(w)
-		formBlock := form
-		if distLine != "" {
-			formBlock = lipgloss.JoinVertical(lipgloss.Left, form, distLine)
-		}
-		formRendered := lipgloss.NewStyle().Width(w).Padding(0, 1).Render(formBlock)
-		formLines := strings.Count(formRendered, "\n") + 1
-
-		qsoRows := maxBodyH - formLines - 2
-		if qsoRows < 0 {
-			qsoRows = 0
-		}
-		qsoList := m.viewQSOS(qsoRows)
-		qsoRendered := lipgloss.NewStyle().Width(w).Padding(0, 1).Render(qsoList)
-
-		body := formRendered + "\n" + qsoRendered
-		bodyLines := strings.Count(body, "\n") + 1
-		for bodyLines < maxBodyH {
-			body += "\n"
-			bodyLines++
-		}
-		content = trimLines(body, maxBodyH)
+		content = m.buildQSOFormContent(w, header)
 	}
 
-	// Trim all content to fit available body height
-	// Layout: header + "\n" + content + "\n" + toastBlock(2) + "\n" + footer(1)
-	headerLines := strings.Count(header, "\n") + 1
-	const toastReserved = 2
-	const footerLines = 1
-	const joins = 3 // \n after header, after content, after toastBlock
-	maxBodyH := m.height - headerLines - toastReserved - footerLines - joins
-	if maxBodyH < 4 {
-		maxBodyH = 4
+	if content == "" {
+		return ""
 	}
-	content = trimLines(content, maxBodyH)
 
 	toastBar := RenderToasts(m.toasts.Active(), w)
 	footer := m.viewFooter(w)
 
-	// Build exactly toastReserved rows
+	return m.layoutFrame(header, content, toastBar, footer)
+}
+
+func (m *Model) buildQSOFormContent(w int, header string) string {
+	headerLines := strings.Count(header, "\n") + 1
+	const toastReserved = 2
+	const footerLines = 1
+	maxBodyH := m.height - headerLines - toastReserved - footerLines
+	if maxBodyH < 8 {
+		maxBodyH = 8
+	}
+
+	form := m.viewForm(w)
+	distLine := m.formDistanceLine(w)
+	formBlock := form
+	if distLine != "" {
+		formBlock = lipgloss.JoinVertical(lipgloss.Left, form, distLine)
+	}
+	formRendered := lipgloss.NewStyle().Width(w).Padding(0, 1).Render(formBlock)
+	formLines := strings.Count(formRendered, "\n") + 1
+
+	qsoRows := maxBodyH - formLines - 2
+	if qsoRows < 0 {
+		qsoRows = 0
+	}
+	qsoList := m.viewQSOS(qsoRows)
+	qsoRendered := lipgloss.NewStyle().Width(w).Padding(0, 1).Render(qsoList)
+
+	return formRendered + "\n" + qsoRendered
+}
+
+// layoutFrame assembles header, content, toasts, footer into a fixed-height frame.
+// Header at top, toasts+footer pinned to bottom, content in between, filler if needed.
+func (m *Model) layoutFrame(header, content, toastBar, footer string) string {
+	headerLines := strings.Count(header, "\n") + 1
+	footerLines := strings.Count(footer, "\n") + 1
+
+	// Build toast block: exactly 2 rows
+	const toastReserved = 2
 	toastLines := strings.Split(toastBar, "\n")
 	if toastBar == "" {
 		toastLines = nil
@@ -973,8 +981,33 @@ func (m *Model) View() string {
 	}
 	toastBlock := strings.Join(toastLines, "\n")
 
-	all := lipgloss.JoinVertical(lipgloss.Left, header, content) + "\n" + toastBlock + "\n" + footer
-	return all
+	// Trim content: strip trailing newlines, cap line count
+	content = strings.TrimRight(content, "\n")
+	contentLines := strings.Split(content, "\n")
+	if len(contentLines) == 0 {
+		contentLines = []string{""}
+	}
+
+	// Maximum body space: terminal height minus everything else
+	maxBodyH := m.height - headerLines - toastReserved - footerLines
+	if maxBodyH < 1 {
+		maxBodyH = 1
+	}
+
+	// Cap content lines, then fill remaining with blank lines
+	if len(contentLines) > maxBodyH {
+		contentLines = contentLines[:maxBodyH]
+	}
+	filler := maxBodyH - len(contentLines)
+
+	var b strings.Builder
+	b.WriteString(strings.Join(contentLines, "\n"))
+	for i := 0; i < filler; i++ {
+		b.WriteString("\n")
+	}
+	body := b.String()
+
+	return lipgloss.JoinVertical(lipgloss.Left, header, body) + "\n" + toastBlock + "\n" + footer
 }
 
 func (m *Model) renderHeader(width int) string {
@@ -1088,53 +1121,34 @@ func (m *Model) renderTabLine(width int) string {
 	inactive := InactiveTabStyle
 	disabled := DisabledTabStyle
 
-	qsoLabel := "F1 QSO Form"
-	partnerLabel := "F2 Partner Details"
-	editorLabel := "F5 Log Editor"
-	configLabel := "F8 Config"
-	logsLabel := "F9 Logs"
-
-	var qsoTab, partnerTab, editorTab, configTab, logsTabStr string
-
-	if m.showPartner && m.partnerData != nil {
-		qsoTab = inactive.Render(qsoLabel)
-		partnerTab = active.Render(partnerLabel)
-		editorTab = inactive.Render(editorLabel)
-		configTab = inactive.Render(configLabel)
-		logsTabStr = inactive.Render(logsLabel)
-	} else if m.partnerData != nil {
-		qsoTab = active.Render(qsoLabel)
-		partnerTab = inactive.Render(partnerLabel)
-		editorTab = inactive.Render(editorLabel)
-		configTab = inactive.Render(configLabel)
-		logsTabStr = inactive.Render(logsLabel)
-	} else if m.showLogbookEditor {
-		qsoTab = inactive.Render(qsoLabel)
-		partnerTab = disabled.Render(partnerLabel)
-		editorTab = active.Render(editorLabel)
-		configTab = inactive.Render(configLabel)
-		logsTabStr = inactive.Render(logsLabel)
-	} else if m.showMainMenu {
-		qsoTab = inactive.Render(qsoLabel)
-		partnerTab = disabled.Render(partnerLabel)
-		editorTab = inactive.Render(editorLabel)
-		configTab = active.Render(configLabel)
-		logsTabStr = inactive.Render(logsLabel)
-	} else if m.showLogView {
-		qsoTab = inactive.Render(qsoLabel)
-		partnerTab = disabled.Render(partnerLabel)
-		editorTab = inactive.Render(editorLabel)
-		configTab = inactive.Render(configLabel)
-		logsTabStr = active.Render(logsLabel)
-	} else {
-		qsoTab = active.Render(qsoLabel)
-		partnerTab = disabled.Render(partnerLabel)
-		editorTab = inactive.Render(editorLabel)
-		configTab = inactive.Render(configLabel)
-		logsTabStr = inactive.Render(logsLabel)
+	labels := []struct {
+		label      string
+		show       bool
+		isActive   bool
+		canDisable bool
+	}{
+		{"F1 QSO Form", true, !m.showPartner && !m.showLogbookEditor && !m.showMainMenu && !m.showLogView, false},
+		{"F2 Partner Details", true, m.showPartner && m.partnerData != nil, m.partnerData == nil},
+		{"F5 Log Editor", true, m.showLogbookEditor, false},
+		{"F8 Config", true, m.showMainMenu, false},
+		{"F9 Logs", true, m.showLogView, false},
 	}
 
-	line := " " + qsoTab + partnerTab + editorTab + configTab + logsTabStr
+	var parts []string
+	for _, t := range labels {
+		if !t.show {
+			continue
+		}
+		if t.isActive {
+			parts = append(parts, active.Render(t.label))
+		} else if t.canDisable && !t.isActive {
+			parts = append(parts, disabled.Render(t.label))
+		} else {
+			parts = append(parts, inactive.Render(t.label))
+		}
+	}
+
+	line := " " + strings.Join(parts, "")
 	for lipgloss.Width(line) < width {
 		line += " "
 	}
@@ -1322,7 +1336,7 @@ func (m *Model) viewFooter(width int) string {
 	var text string
 	switch {
 	case m.showMainMenu:
-		text = "F10 Quit"
+		text = m.mainMenu.FooterText()
 	case m.showConfig:
 		text = m.configMenu.FooterText()
 	case m.showCallbook:
