@@ -184,7 +184,7 @@ func (m *Model) Init() tea.Cmd {
 	}
 	applog.Info("WSJT-X: callbacks registered, restarting listener")
 	m.App.MaybeRestartWSJTX()
-	return tea.Batch(tickCmd(), checkInetCmd(), m.maybeCheckWavelog())
+	return tea.Batch(tickCmd(), checkInetCmd())
 }
 func tickCmd() tea.Cmd {
 	return tea.Tick(200*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) })
@@ -387,6 +387,43 @@ type wlStatusMsg struct {
 	stationLabel string
 }
 
+// maybeUploadToWavelog returns a tea.Cmd that sends a QSO to Wavelog asynchronously.
+func (m *Model) maybeUploadToWavelog(qs *qso.QSO) tea.Cmd {
+	return m.uploadADIFToWavelog(qs.ToADIF(), qs.ID, qs.Call)
+}
+
+// maybeUploadRawADIFToWavelog returns a tea.Cmd that sends raw ADIF (from WSJT-X) to Wavelog.
+func (m *Model) maybeUploadRawADIFToWavelog(adifStr string, qID int64, call string) tea.Cmd {
+	return m.uploadADIFToWavelog(adifStr, qID, call)
+}
+
+func (m *Model) uploadADIFToWavelog(adifStr string, qID int64, call string) tea.Cmd {
+	if !m.App.Config.Wavelog.Enabled || !m.inetOnline || m.App.Config.Wavelog.StationProfileID == "" {
+		return nil
+	}
+	url := m.App.Config.Wavelog.URL
+	key := m.App.Config.Wavelog.APIKey
+	stationID := m.App.Config.Wavelog.StationProfileID
+
+	return func() tea.Msg {
+		applog.InfoDetail("Wavelog: uploading QSO", fmt.Sprintf("qso_id=%d call=%s", qID, call))
+		err := wavelog.PostQSO(url, key, stationID, adifStr)
+		if err != nil {
+			applog.Error("Wavelog: QSO upload failed", "qso_id", qID, "call", call, "error", err)
+			return wlUploadResultMsg{qID: qID, call: call, ok: false, err: err}
+		}
+		applog.InfoDetail("Wavelog: QSO uploaded OK", fmt.Sprintf("qso_id=%d call=%s", qID, call))
+		return wlUploadResultMsg{qID: qID, call: call, ok: true}
+	}
+}
+
+type wlUploadResultMsg struct {
+	qID  int64
+	call string
+	ok   bool
+	err  error
+}
+
 func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode, report string) {
 	m.wsjtxOnline = true
 	if call != "" {
@@ -431,12 +468,12 @@ func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode
 	}
 }
 
-func (m *Model) logQSOFromADIF(adif string) {
+func (m *Model) logQSOFromADIF(adif string) tea.Cmd {
 	qs := parseWSJTXADIF(adif)
 	if qs.Call == "" {
 		applog.Warn("WSJT-X: logged ADIF has no call, skipping")
 		m.toasts.Warn("WSJT-X: ADIF has no call")
-		return
+		return nil
 	}
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
@@ -452,18 +489,19 @@ func (m *Model) logQSOFromADIF(adif string) {
 	if err := qso.ValidateForSave(qs); err != nil {
 		applog.Error("WSJT-X: ADIF validation failed", "error", err.Error())
 		m.toasts.Error("WSJT-X: " + err.Error())
-		return
+		return nil
 	}
 	id, err := store.InsertQSO(m.App.DB, qs)
 	if err != nil {
 		applog.Error("WSJT-X: DB insert failed", "error", err.Error())
 		m.toasts.Error("WSJT-X: DB save failed")
-		return
+		return nil
 	}
 	applog.InfoDetail("WSJT-X: auto-logged QSO", fmt.Sprintf("id=%d call=%s", id, qs.Call))
 	m.toasts.Success(fmt.Sprintf("WSJT-X: %s logged", qs.Call))
 	m.clearForm()
 	m.needRefresh = true
+	return m.maybeUploadRawADIFToWavelog(adif, id, qs.Call)
 }
 
 func parseWSJTXADIF(adifStr string) *qso.QSO {
@@ -587,7 +625,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.adifMu.Unlock()
 		if adif != "" {
 			applog.Info("WSJT-X: processing pending ADIF")
-			m.logQSOFromADIF(adif)
+			cmd = tea.Batch(cmd, m.logQSOFromADIF(adif))
 		}
 		m.adifMu.Lock()
 		sp := m.pendingStatus
@@ -622,6 +660,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if wl.stationLabel != "" {
 			m.wlStationLabel = wl.stationLabel
+		}
+	}
+	if ur, ok := msg.(wlUploadResultMsg); ok {
+		if ur.ok {
+			store.UpdateWavelogStatus(m.App.DB, ur.qID, "yes")
+			m.toasts.Success(fmt.Sprintf("Wavelog: %s sent", ur.call))
+		} else {
+			store.UpdateWavelogStatus(m.App.DB, ur.qID, "no")
+			m.toasts.Warn(fmt.Sprintf("Wavelog: %s failed", ur.call))
 		}
 	}
 	if fr, ok := msg.(flrigResultMsg); ok {
@@ -2370,7 +2417,7 @@ func (m *Model) saveQSO() tea.Cmd {
 	}
 	m.clearForm()
 	m.toasts.Success(fmt.Sprintf("QSO saved: %s", qs.Call))
-	return m.refreshQSOS()
+	return tea.Batch(m.refreshQSOS(), m.maybeUploadToWavelog(qs))
 }
 func (m *Model) refreshQSOS() tea.Cmd {
 	qsos, err := store.ListQSOs(m.App.DB, 30)

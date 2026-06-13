@@ -151,3 +151,42 @@ func TestStation(baseURL, apiKey, stationID string) error {
 	applog.InfoDetail("Wavelog: station test OK", fmt.Sprintf("station_id=%s", stationID))
 	return nil
 }
+
+// PostQSO uploads a QSO in ADIF format to Wavelog.
+func PostQSO(baseURL, apiKey, stationID, adifStr string) error {
+	applog.Debug("Wavelog: posting QSO")
+	if baseURL == "" || apiKey == "" || stationID == "" || adifStr == "" {
+		return fmt.Errorf("missing required parameters")
+	}
+	baseURL = strings.TrimRight(baseURL, "/")
+	url := baseURL + "/index.php/api/qso"
+
+	payload := map[string]string{
+		"key":                apiKey,
+		"station_profile_id": stationID,
+		"type":               "adif",
+		"string":             adifStr,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		applog.Error("Wavelog: marshal QSO payload failed", "error", err)
+		return err
+	}
+
+	resp, err := httpClient.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		applog.Error("Wavelog: QSO upload failed", "error", err)
+		return fmt.Errorf("upload failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+
+	if resp.StatusCode >= 400 {
+		applog.Error("Wavelog: QSO upload server error", "status", resp.StatusCode, "body", strings.TrimSpace(string(respBody)))
+		return fmt.Errorf("server error: HTTP %d — %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+
+	applog.InfoDetail("Wavelog: QSO uploaded", fmt.Sprintf("status=%d", resp.StatusCode))
+	return nil
+}

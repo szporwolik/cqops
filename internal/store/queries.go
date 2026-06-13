@@ -24,8 +24,9 @@ func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 		sota_ref, pota_ref, wwff_ref, iota,
 		my_sota_ref, my_pota_ref, my_wwff_ref,
 		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
+		wavelog_uploaded,
 		created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		q.Call, q.QSODate, q.TimeOn, q.TimeOff,
 		q.Band, q.Freq, q.FreqRx, q.Mode, q.Submode,
 		q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
@@ -33,6 +34,7 @@ func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 		q.SOTARef, q.POTARef, q.WWFFRef, q.IOTA,
 		q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
 		q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
+		q.WavelogUploaded,
 		q.CreatedAt.Format(time.RFC3339), q.UpdatedAt.Format(time.RFC3339),
 	)
 	if err != nil {
@@ -60,6 +62,7 @@ func ListQSOs(db *sql.DB, limit int) ([]qso.QSO, error) {
 		sota_ref, pota_ref, wwff_ref, iota,
 		my_sota_ref, my_pota_ref, my_wwff_ref,
 		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
+		wavelog_uploaded,
 		created_at, updated_at
 		FROM qsos
 		ORDER BY id DESC
@@ -82,6 +85,7 @@ func ListQSOs(db *sql.DB, limit int) ([]qso.QSO, error) {
 			&q.SOTARef, &q.POTARef, &q.WWFFRef, &q.IOTA,
 			&q.MySOTARef, &q.MyPOTARef, &q.MyWWFFRef,
 			&q.StationCallsign, &q.Operator, &q.MyGridSquare, &q.MyRig, &q.MyAntenna, &q.Source,
+			&q.WavelogUploaded,
 			&createdAt, &updatedAt,
 		)
 		if err != nil {
@@ -110,6 +114,7 @@ func GetQSOByID(db *sql.DB, id int64) (*qso.QSO, error) {
 		sota_ref, pota_ref, wwff_ref, iota,
 		my_sota_ref, my_pota_ref, my_wwff_ref,
 		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
+		wavelog_uploaded,
 		created_at, updated_at
 		FROM qsos WHERE id = ?`, id,
 	).Scan(
@@ -120,6 +125,7 @@ func GetQSOByID(db *sql.DB, id int64) (*qso.QSO, error) {
 		&q.SOTARef, &q.POTARef, &q.WWFFRef, &q.IOTA,
 		&q.MySOTARef, &q.MyPOTARef, &q.MyWWFFRef,
 		&q.StationCallsign, &q.Operator, &q.MyGridSquare, &q.MyRig, &q.MyAntenna, &q.Source,
+		&q.WavelogUploaded,
 		&createdAt, &updatedAt,
 	)
 	if err != nil {
@@ -157,6 +163,7 @@ func UpdateQSO(db *sql.DB, q *qso.QSO) error {
 		sota_ref=?, pota_ref=?, wwff_ref=?, iota=?,
 		my_sota_ref=?, my_pota_ref=?, my_wwff_ref=?,
 		station_callsign=?, operator=?, my_gridsquare=?, my_rig=?, my_antenna=?, source=?,
+		wavelog_uploaded=?,
 		updated_at=?
 		WHERE id=?`,
 		q.Call, q.QSODate, q.TimeOn, q.TimeOff,
@@ -166,6 +173,7 @@ func UpdateQSO(db *sql.DB, q *qso.QSO) error {
 		q.SOTARef, q.POTARef, q.WWFFRef, q.IOTA,
 		q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
 		q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
+		q.WavelogUploaded,
 		q.UpdatedAt.Format(time.RFC3339),
 		q.ID,
 	)
@@ -179,6 +187,15 @@ func PurgeQSOs(db *sql.DB) error {
 	_, err := db.Exec(`DELETE FROM qsos`)
 	if err != nil {
 		return fmt.Errorf("purge qsos: %w", err)
+	}
+	return nil
+}
+
+// UpdateWavelogStatus sets the wavelog_uploaded status for a QSO.
+func UpdateWavelogStatus(db *sql.DB, id int64, status string) error {
+	_, err := db.Exec(`UPDATE qsos SET wavelog_uploaded=? WHERE id=?`, status, id)
+	if err != nil {
+		return fmt.Errorf("update wavelog status: %w", err)
 	}
 	return nil
 }

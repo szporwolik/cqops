@@ -63,6 +63,7 @@ var migrations = []string{
 	`ALTER TABLE qsos ADD COLUMN my_pota_ref TEXT DEFAULT ''`,
 	`ALTER TABLE qsos ADD COLUMN my_wwff_ref TEXT DEFAULT ''`,
 	`ALTER TABLE qsos ADD COLUMN iota TEXT DEFAULT ''`,
+	`ALTER TABLE qsos ADD COLUMN wavelog_uploaded TEXT DEFAULT ''`,
 }
 
 func Migrate(db *sql.DB) error {

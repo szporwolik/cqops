@@ -57,6 +57,7 @@ const (
 	qefMySOTA
 	qefMyPOTA
 	qefMyWWFF
+	qefWLStatus
 	qefCount
 )
 
@@ -68,6 +69,7 @@ var qefLabels = []string{
 	"Source", "Distance km", "Bearing",
 	"IOTA", "SOTA Ref", "POTA Ref", "WWFF Ref",
 	"My SOTA", "My POTA", "My WWFF",
+	"WL Status",
 }
 
 type LogbookEditor struct {
@@ -112,6 +114,8 @@ func NewLogbookEditor(db *sql.DB) *LogbookEditor {
 			ti.CharLimit = 10
 		case qefSOTA, qefPOTA, qefWWFF, qefIOTA, qefMySOTA, qefMyPOTA, qefMyWWFF:
 			ti.CharLimit = 20
+		case qefWLStatus:
+			ti.CharLimit = 8
 		}
 		le.fields[i] = ti
 	}
@@ -163,6 +167,8 @@ func (le *LogbookEditor) fillEditForm(q *qso.QSO) {
 	s(qefMySOTA, q.MySOTARef)
 	s(qefMyPOTA, q.MyPOTARef)
 	s(qefMyWWFF, q.MyWWFFRef)
+	// WL Status is read-only — set via async upload
+	le.fields[qefWLStatus].SetValue(q.WavelogUploaded)
 }
 
 func (le *LogbookEditor) readEditForm() *qso.QSO {
@@ -185,7 +191,8 @@ func (le *LogbookEditor) readEditForm() *qso.QSO {
 		Distance: gf(qefDistance), Bearing: gf(qefBearing),
 		IOTA: g(qefIOTA), SOTARef: g(qefSOTA), POTARef: g(qefPOTA), WWFFRef: g(qefWWFF),
 		MySOTARef: g(qefMySOTA), MyPOTARef: g(qefMyPOTA), MyWWFFRef: g(qefMyWWFF),
-		CreatedAt: le.editing.CreatedAt,
+		WavelogUploaded: g(qefWLStatus),
+		CreatedAt:       le.editing.CreatedAt,
 	}
 }
 
@@ -251,7 +258,9 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "shift+tab", "up":
 				le.prevField()
 			default:
-				le.fields[le.focus], _ = le.fields[le.focus].Update(msg)
+				if le.focus != qefWLStatus {
+					le.fields[le.focus], _ = le.fields[le.focus].Update(msg)
+				}
 			}
 			return le, nil
 		}
@@ -454,11 +463,15 @@ var editorAllCols = []editorCol{
 	{"POTA", 8, 0, false, 20, func(q *qso.QSO) string { return q.POTARef }},
 	{"IOTA", 7, 0, false, 15, func(q *qso.QSO) string { return q.IOTA }},
 	{"WWFF", 9, 0, false, 10, func(q *qso.QSO) string { return q.WWFFRef }},
-	{"Dist", 6, 0, false, 5, func(q *qso.QSO) string {
-		if q.Distance > 0 {
-			return fmt.Sprintf("%.0f", q.Distance)
+	{"WL", 8, 0, false, 30, func(q *qso.QSO) string {
+		switch q.WavelogUploaded {
+		case "yes":
+			return "yes"
+		case "no":
+			return "no"
+		default:
+			return ""
 		}
-		return ""
 	}},
 }
 
@@ -578,7 +591,11 @@ func (le *LogbookEditor) renderEditField(f qsoEditField, colW int) string {
 	} else {
 		lbl = LabelStyle.Render(lbl)
 	}
-	field := prefix + lbl + " " + InputStyle.Render(val)
+	valStyle := InputStyle
+	if f == qefWLStatus {
+		valStyle = DimStyle // read-only indicator
+	}
+	field := prefix + lbl + " " + valStyle.Render(val)
 	for lipgloss.Width(field) < colW {
 		field += " "
 	}

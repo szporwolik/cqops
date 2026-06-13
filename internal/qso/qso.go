@@ -37,6 +37,7 @@ type QSO struct {
 	MySOTARef       string
 	MyPOTARef       string
 	MyWWFFRef       string
+	WavelogUploaded string // "" = not attempted, "yes" = uploaded, "no" = failed
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
