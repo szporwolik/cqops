@@ -3,6 +3,7 @@ package wsjtx
 import (
 	"fmt"
 	"net"
+	"sync"
 
 	wsjtx "github.com/k0swe/wsjtx-go/v4"
 	"github.com/szporwolik/cqops/internal/applog"
@@ -18,6 +19,7 @@ type Listener struct {
 	active   bool
 	Events   chan Event
 	stop     chan struct{}
+	wg       sync.WaitGroup
 	OnADIF   func(string)
 	OnStatus func(string, string, uint64, string, string, string)
 }
@@ -51,11 +53,19 @@ func (l *Listener) Start(host string, port int) error {
 	msgCh := make(chan interface{}, 128)
 	errCh := make(chan error, 16)
 
-	go l.server.ListenToWsjtx(msgCh, errCh)
+	l.wg.Add(1)
+	go func() {
+		defer l.wg.Done()
+		l.server.ListenToWsjtx(msgCh, errCh)
+	}()
 
 	applog.Info("WSJT-X listener started", "host", host, "port", port)
 
-	go l.eventLoop(msgCh, errCh)
+	l.wg.Add(1)
+	go func() {
+		defer l.wg.Done()
+		l.eventLoop(msgCh, errCh)
+	}()
 	return nil
 }
 
@@ -64,6 +74,7 @@ func (l *Listener) Stop() {
 		return
 	}
 	close(l.stop)
+	l.wg.Wait()
 	l.active = false
 	l.server = nil
 	applog.Info("WSJT-X listener stopped")

@@ -52,7 +52,11 @@ func TestConnection(baseURL, apiKey string) error {
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		applog.Error("Wavelog: read response failed", "error", err)
+		return fmt.Errorf("read response: %w", err)
+	}
 
 	if resp.StatusCode >= 400 {
 		applog.Error("Wavelog: server error", "status", resp.StatusCode, "body", strings.TrimSpace(string(respBody)))
@@ -141,7 +145,11 @@ func TestStation(baseURL, apiKey, stationID string) error {
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		applog.Error("Wavelog: read station test response failed", "error", err)
+		return fmt.Errorf("read response: %w", err)
+	}
 
 	if resp.StatusCode >= 400 {
 		applog.Error("Wavelog: station test server error", "station_id", stationID, "status", resp.StatusCode)
@@ -197,7 +205,11 @@ func PostQSOWithResult(baseURL, apiKey, stationID, adifStr string) (*QSOUploadRe
 	}
 	defer resp.Body.Close()
 
-	respBody, _ := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		applog.Error("Wavelog: read QSO response failed", "error", err)
+		return nil, fmt.Errorf("read response: %w", err)
+	}
 	bodyStr := strings.TrimSpace(string(respBody))
 
 	// Try to parse structured response

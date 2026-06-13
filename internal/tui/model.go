@@ -27,6 +27,13 @@ import (
 type field int
 
 const (
+	rigPollInterval     = 15                       // ticks between flrig polls
+	healthCheckTicks    = 300                      // ticks between health checks
+	flrigStatusTimeout  = 1500 * time.Millisecond  // context timeout for flrig status
+	flrigDefaultTimeout = 1000                     // default flrig HTTP timeout (ms)
+)
+
+const (
 	fieldDate field = iota
 	fieldTime
 	fieldCall
@@ -202,7 +209,7 @@ func (m *Model) qrzLookup(call string) tea.Cmd {
 		return nil
 	}
 	m.qrzLastLook = time.Now()
-	applog.Info("QRZ: looking up " + call + "…")
+	applog.Info("QRZ: looking up", "call", call)
 	return m.qrzLookupCmd(call)
 }
 
@@ -225,6 +232,9 @@ func checkInetCmd() tea.Cmd {
 }
 
 func (m *Model) refreshFlrigClient() {
+	if m.App == nil || m.App.Logbook == nil {
+		return
+	}
 	if len(m.App.Config.Rigs) == 0 {
 		s := m.App.Logbook.Station
 		m.App.Config.Rigs = map[string]config.RigPreset{"default": {
@@ -246,7 +256,7 @@ func (m *Model) refreshFlrigClient() {
 		}
 		url := "http://" + host + ":" + port
 		applog.InfoDetail("flrig: connecting", fmt.Sprintf("rig=%s host=%s port=%s url=%s", rigName, host, port, url))
-		m.flrigClient = flrig.New(url, 1000)
+		m.flrigClient = flrig.New(url, flrigDefaultTimeout)
 	} else {
 		if !ok {
 			applog.Debug("flrig: rig not found in config", "rigName", rigName)
@@ -272,7 +282,7 @@ func (m *Model) flrigStatusCmd() tea.Cmd {
 	}
 	client := m.flrigClient
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), flrigStatusTimeout)
 		defer cancel()
 		s, err := client.Status(ctx)
 		if err != nil {
@@ -284,7 +294,7 @@ func (m *Model) flrigStatusCmd() tea.Cmd {
 
 func (m *Model) pollFlrig() tea.Cmd {
 	m.rigSkipTicks++
-	if m.rigSkipTicks < 15 {
+	if m.rigSkipTicks < rigPollInterval {
 		return nil
 	}
 	m.rigSkipTicks = 0
@@ -339,7 +349,7 @@ func (m *Model) autoUpdateDateTime() {
 }
 
 func (m *Model) maybeCheckInet() tea.Cmd {
-	if m.tickCount%300 == 0 {
+	if m.tickCount%healthCheckTicks == 0 {
 		return checkInetCmd()
 	}
 	return nil
@@ -350,8 +360,8 @@ func (m *Model) maybeCheckWavelog() tea.Cmd {
 		m.wlOnline = false
 		return nil
 	}
-	// Check on first tick and every 300 ticks thereafter
-	if m.tickCount != 1 && m.tickCount%300 != 0 {
+	// Check on first tick and every N ticks thereafter
+	if m.tickCount != 1 && m.tickCount%healthCheckTicks != 0 {
 		return nil
 	}
 	return m.checkWavelogCmd()
@@ -603,7 +613,9 @@ func parseWSJTXADIF(adifStr string) *qso.QSO {
 		}
 		break // only process first QSO record
 	}
-	_ = s.Err()
+	if err := s.Err(); err != nil {
+		applog.Warn("WSJT-X: ADIF scanner error", "error", err)
+	}
 
 	qs.Mode, qs.Submode = qso.NormalizeMode(qs.Mode, qs.Submode)
 	if qs.Band == "" && qs.Freq > 0 {
@@ -768,7 +780,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.showChooser {
 		m.chooser.width = m.width
 		m.chooser.height = m.height
-		_, _ = m.chooser.Update(msg)
+		_, chooserCmd := m.chooser.Update(msg)
+		cmd = tea.Batch(cmd, chooserCmd)
 		if m.chooser.done {
 			m.showChooser = false
 			m.showMainMenu = true
@@ -779,7 +792,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.showRigEdit {
 		m.rigChooser.width = m.width
 		m.rigChooser.height = m.height
-		_, _ = m.rigChooser.Update(msg)
+		_, rigCmd := m.rigChooser.Update(msg)
+		cmd = tea.Batch(cmd, rigCmd)
 		if m.rigChooser.done {
 			m.showRigEdit = false
 			m.showMainMenu = true
@@ -790,7 +804,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.showConfig {
 		m.configMenu.width = m.width
 		m.configMenu.height = m.height
-		_, _ = m.configMenu.Update(msg)
+		_, configCmd := m.configMenu.Update(msg)
+		cmd = tea.Batch(cmd, configCmd)
 		if m.configMenu.done {
 			m.showConfig = false
 			if m.configMenu.goBack {
@@ -869,7 +884,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.showMainMenu {
 		m.mainMenu.width = m.width
 		m.mainMenu.height = m.height
-		_, _ = m.mainMenu.Update(msg)
+		_, mainCmd := m.mainMenu.Update(msg)
+		cmd = tea.Batch(cmd, mainCmd)
 		if m.mainMenu.action != "" {
 			action := m.mainMenu.action
 			m.mainMenu.action = ""
@@ -966,7 +982,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.showLogView {
 		m.logViewer.width = m.width
 		m.logViewer.height = m.height
-		_, _ = m.logViewer.Update(msg)
+		_, logCmd := m.logViewer.Update(msg)
+		cmd = tea.Batch(cmd, logCmd)
 		if m.logViewer.done {
 			m.showLogView = false
 		}

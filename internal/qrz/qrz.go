@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/szporwolik/cqops/internal/applog"
@@ -68,6 +69,7 @@ var httpClient = &http.Client{Timeout: 10 * time.Second}
 
 // Session cache to avoid re-authenticating on every lookup.
 var (
+	cacheMu          sync.Mutex
 	cachedSessionKey  string
 	cachedSessionUser string
 	cachedSessionPass string
@@ -79,14 +81,22 @@ func Lookup(qrzUser, qrzPass, callsign string) (*CallData, error) {
 	}
 
 	// Reuse cached session key if credentials match
-	if cachedSessionKey != "" && cachedSessionUser == qrzUser && cachedSessionPass == qrzPass {
-		data, err := qrzLookup(cachedSessionKey, callsign)
+	cacheMu.Lock()
+	key := cachedSessionKey
+	user := cachedSessionUser
+	pass := cachedSessionPass
+	cacheMu.Unlock()
+
+	if key != "" && user == qrzUser && pass == qrzPass {
+		data, err := qrzLookup(key, callsign)
 		if err == nil {
 			return data, nil
 		}
 		// Session expired or failed — clear cache and fall through to re-auth
 		applog.Debug("QRZ cached session failed, re-authenticating")
+		cacheMu.Lock()
 		cachedSessionKey = ""
+		cacheMu.Unlock()
 	}
 
 	return qrzLoginLookup(qrzUser, qrzPass, callsign)
@@ -163,9 +173,11 @@ func qrzLoginLookup(user, pass, callsign string) (*CallData, error) {
 	}
 
 	// Cache the session key
+	cacheMu.Lock()
 	cachedSessionKey = authDB.Session.Key
 	cachedSessionUser = user
 	cachedSessionPass = pass
+	cacheMu.Unlock()
 
 	return qrzLookup(authDB.Session.Key, callsign)
 }
