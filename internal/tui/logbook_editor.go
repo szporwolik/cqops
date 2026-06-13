@@ -30,6 +30,7 @@ const (
 	qefTimeOff
 	qefBand
 	qefFreq
+	qefFreqRx
 	qefMode
 	qefSubmode
 	qefRSTSent
@@ -60,7 +61,7 @@ const (
 )
 
 var qefLabels = []string{
-	"Call", "Date", "Time On", "Time Off", "Band", "Frequency",
+	"Call", "Date", "Time On", "Time Off", "Band", "Frequency", "Freq RX",
 	"Mode", "Submode", "RST Sent", "RST Rcvd", "Grid", "Name",
 	"QTH", "Country", "Comment", "Notes", "TX Power",
 	"Station Call", "Operator", "My Grid", "My Rig", "My Antenna",
@@ -99,7 +100,7 @@ func NewLogbookEditor(db *sql.DB) *LogbookEditor {
 			ti.CharLimit = 8
 		case qefBand, qefGrid, qefMyGrid, qefTXPower, qefRSTSent, qefRSTRcvd:
 			ti.CharLimit = 8
-		case qefFreq:
+		case qefFreq, qefFreqRx:
 			ti.CharLimit = 16
 		case qefMode:
 			ti.CharLimit = 12
@@ -135,6 +136,7 @@ func (le *LogbookEditor) fillEditForm(q *qso.QSO) {
 	s(qefTimeOff, q.TimeOff)
 	s(qefBand, q.Band)
 	sf(qefFreq, q.Freq)
+	sf(qefFreqRx, q.FreqRx)
 	s(qefMode, q.Mode)
 	s(qefSubmode, q.Submode)
 	s(qefRSTSent, q.RSTSent)
@@ -173,7 +175,7 @@ func (le *LogbookEditor) readEditForm() *qso.QSO {
 	return &qso.QSO{
 		ID: le.editing.ID, Call: g(qefCall), QSODate: g(qefDate),
 		TimeOn: g(qefTimeOn), TimeOff: g(qefTimeOff), Band: g(qefBand),
-		Freq: gf(qefFreq), Mode: g(qefMode), Submode: g(qefSubmode),
+		Freq: gf(qefFreq), FreqRx: gf(qefFreqRx), Mode: g(qefMode), Submode: g(qefSubmode),
 		RSTSent: g(qefRSTSent), RSTRcvd: g(qefRSTRcvd),
 		GridSquare: g(qefGrid), Name: g(qefName), QTH: g(qefQTH),
 		Country: g(qefCountry), Comment: g(qefComment), Notes: g(qefNotes),
@@ -371,32 +373,43 @@ func (le *LogbookEditor) viewList(bodyW int) string {
 
 	var b strings.Builder
 	b.WriteString(section("── Logbook Editor ", bodyW))
-	b.WriteString("\n\n")
+	b.WriteString("\n")
 
 	if len(le.qsos) == 0 {
-		b.WriteString("  No QSOs in logbook.")
+		b.WriteString("\n  No QSOs in logbook.")
 		return b.String()
 	}
 
-	b.WriteString(fmt.Sprintf("  %-4s %-10s %-8s %-10s %-5s %-4s %-4s %-4s %-6s %-8s %s",
-		"ID", "Date", "Time", "Call", "Band", "Mode", "RSTs", "RSTr", "Grid", "Rig", "Comment"))
-	b.WriteString("\n\n")
+	cols := selectEditorCols(bodyW - 2) // -2 for the "  " prefix
+	if len(cols) == 0 {
+		return b.String()
+	}
 
+	// Build header
+	var headerParts []string
+	for _, c := range cols {
+		headerParts = append(headerParts, fmt.Sprintf("%-*s", c.width, c.header))
+	}
+	headerLine := headerStyle.Render("  " + strings.Join(headerParts, " "))
+	b.WriteString("\n" + headerLine + "\n\n")
+
+	// Build rows
 	for i := le.offset; i < le.offset+maxRows && i < len(le.qsos); i++ {
 		q := le.qsos[i]
 		prefix := "  "
 		if i == le.cursor {
 			prefix = CursorStyle.Render("> ")
 		}
-		band := q.Band
-		if band == "" && q.Freq > 0 {
-			band = fmt.Sprintf("%.0f", q.Freq)
+		var vals []string
+		for _, c := range cols {
+			v := c.value(&q)
+			if v == "" {
+				v = "—"
+			}
+			v = trunc(v, c.width)
+			vals = append(vals, fmt.Sprintf("%-*s", c.width, v))
 		}
-		line := fmt.Sprintf("%s%-4d %-10s %-8s %-10s %-5s %-4s %-4s %-4s %-6s %-8s %s",
-			prefix, q.ID, q.QSODate, q.TimeOn,
-			truncate(q.Call, 10), truncate(band, 5), truncate(q.Mode, 4),
-			truncate(q.RSTSent, 4), truncate(q.RSTRcvd, 4),
-			truncate(q.GridSquare, 6), truncate(q.MyRig, 8), truncate(q.Comment, 20))
+		line := prefix + strings.Join(vals, " ")
 		if i == le.cursor {
 			line = InputStyle.Render(line)
 		}
@@ -404,6 +417,129 @@ func (le *LogbookEditor) viewList(bodyW int) string {
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+type editorCol struct {
+	header   string
+	minWidth int
+	width    int // computed at selection time
+	grow     bool
+	priority int // higher = more important
+	value    func(q *qso.QSO) string
+}
+
+var editorAllCols = []editorCol{
+	{"ID", 3, 0, false, 100, func(q *qso.QSO) string { return fmt.Sprintf("%d", q.ID) }},
+	{"Date", 10, 0, false, 95, func(q *qso.QSO) string { return formatDate(q.QSODate) }},
+	{"Time", 8, 0, false, 90, func(q *qso.QSO) string { return formatTime(q.TimeOn) }},
+	{"Call", 7, 0, true, 85, func(q *qso.QSO) string { return q.Call }},
+	{"Band", 5, 0, false, 80, func(q *qso.QSO) string {
+		b := qso.NormalizeBand(q.Band)
+		if b == "" && q.Freq > 0 {
+			b = fmt.Sprintf("%.0f", q.Freq)
+		}
+		return b
+	}},
+	{"Mode", 5, 0, false, 75, func(q *qso.QSO) string { return q.Mode }},
+	{"RSTs", 4, 0, false, 70, func(q *qso.QSO) string { return q.RSTSent }},
+	{"RSTr", 4, 0, false, 65, func(q *qso.QSO) string { return q.RSTRcvd }},
+	{"Grid", 6, 0, false, 60, func(q *qso.QSO) string { return q.GridSquare }},
+	{"DXCC", 6, 0, true, 55, func(q *qso.QSO) string { return q.Country }},
+	{"Name", 7, 0, true, 50, func(q *qso.QSO) string { return q.Name }},
+	{"QTH", 8, 0, true, 45, func(q *qso.QSO) string { return q.QTH }},
+	{"Comment", 10, 0, true, 40, func(q *qso.QSO) string { return q.Comment }},
+	{"Rig", 8, 0, true, 35, func(q *qso.QSO) string { return q.MyRig }},
+	{"Sub", 4, 0, false, 30, func(q *qso.QSO) string { return q.Submode }},
+	{"SOTA", 8, 0, false, 25, func(q *qso.QSO) string { return q.SOTARef }},
+	{"POTA", 8, 0, false, 20, func(q *qso.QSO) string { return q.POTARef }},
+	{"IOTA", 7, 0, false, 15, func(q *qso.QSO) string { return q.IOTA }},
+	{"WWFF", 9, 0, false, 10, func(q *qso.QSO) string { return q.WWFFRef }},
+	{"Dist", 6, 0, false, 5, func(q *qso.QSO) string {
+		if q.Distance > 0 {
+			return fmt.Sprintf("%.0f", q.Distance)
+		}
+		return ""
+	}},
+}
+
+func selectEditorCols(availW int) []editorCol {
+	// Sort by priority descending
+	sorted := make([]editorCol, len(editorAllCols))
+	copy(sorted, editorAllCols)
+	// Bubble sort by priority (stable, small N)
+	for i := 0; i < len(sorted)-1; i++ {
+		for j := i + 1; j < len(sorted); j++ {
+			if sorted[j].priority > sorted[i].priority {
+				sorted[i], sorted[j] = sorted[j], sorted[i]
+			}
+		}
+	}
+
+	// Greedy: pick columns by priority until we run out of width
+	var cols []editorCol
+	usedW := 0
+	for _, c := range sorted {
+		needed := c.minWidth
+		if len(cols) > 0 {
+			needed++ // space between columns
+		}
+		if usedW+needed <= availW {
+			cols = append(cols, c)
+			usedW += needed
+		}
+	}
+
+	if len(cols) == 0 {
+		return nil
+	}
+
+	// Distribute remaining width to growable columns
+	extra := availW - usedW
+	if extra > 0 {
+		growCount := 0
+		for _, c := range cols {
+			if c.grow {
+				growCount++
+			}
+		}
+		if growCount > 0 {
+			perGrow := extra / growCount
+			for i := range cols {
+				if cols[i].grow {
+					cols[i].width = cols[i].minWidth + perGrow
+					extra -= perGrow
+				} else {
+					cols[i].width = cols[i].minWidth
+				}
+			}
+			// Give leftover to first grow column
+			for i := range cols {
+				if cols[i].grow && extra > 0 {
+					cols[i].width += extra
+					break
+				}
+			}
+		} else {
+			for i := range cols {
+				cols[i].width = cols[i].minWidth
+			}
+		}
+	} else {
+		for i := range cols {
+			cols[i].width = cols[i].minWidth
+		}
+	}
+
+	// Sort back by priority descending for display order
+	for i := 0; i < len(cols)-1; i++ {
+		for j := i + 1; j < len(cols); j++ {
+			if cols[j].priority > cols[i].priority {
+				cols[i], cols[j] = cols[j], cols[i]
+			}
+		}
+	}
+
+	return cols
 }
 
 func (le *LogbookEditor) viewEdit(bodyW int) string {
