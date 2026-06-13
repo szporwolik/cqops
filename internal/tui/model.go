@@ -1473,15 +1473,7 @@ func (m *Model) viewPartner() string {
 
 	mapBox := S.MapBox.Width(bodyW).Render(mapInner)
 
-	// Filler absorbs whatever the map didn't use from the allocated space.
-	mapBoxH := lipgloss.Height(mapBox)
-	fillerH := mapAvailH - mapBoxH
-	if fillerH < 0 {
-		fillerH = 0
-	}
-	filler := lipgloss.NewStyle().Height(fillerH).Render("")
-
-	return lipgloss.JoinVertical(lipgloss.Left, topRow, filler, mapBox)
+	return lipgloss.JoinVertical(lipgloss.Left, topRow, mapBox)
 }
 
 // formPartnerData builds a CallData from the current QSO form fields.

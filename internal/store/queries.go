@@ -239,9 +239,9 @@ func NormalizeStationFields(db *sql.DB, ids []int64, stationCall, operator, grid
 
 // QSOCounts holds aggregate QSO statistics.
 type QSOCounts struct {
-	Total       int
-	FromWSJTX   int
-	ToWavelog   int
+	Total     int
+	FromWSJTX int
+	ToWavelog int
 }
 
 // CountQSOs returns aggregate statistics for the current logbook.
