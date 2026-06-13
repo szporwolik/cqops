@@ -54,8 +54,6 @@ type Styles struct {
 	StatusValue    lipgloss.Style
 	StatusFill     lipgloss.Style
 	StatusRight    lipgloss.Style
-	StatusDotOn    lipgloss.Style
-	StatusDotOff   lipgloss.Style
 	StatusTime     lipgloss.Style
 	TabActive      lipgloss.Style
 	TabInactive    lipgloss.Style
@@ -125,10 +123,8 @@ var S = Styles{
 	StatusLabel:    lipgloss.NewStyle().Foreground(P.TextMuted).Background(P.Surface),
 	StatusValue:    lipgloss.NewStyle().Foreground(P.Text).Background(P.Surface),
 	StatusFill:     lipgloss.NewStyle().Background(P.Surface),
-	StatusRight:    lipgloss.NewStyle().Foreground(P.Text).Background(P.Accent),
-	StatusDotOn:    lipgloss.NewStyle().Foreground(P.Success).Background(P.Accent),
-	StatusDotOff:   lipgloss.NewStyle().Foreground(P.Error).Background(P.Accent),
-	StatusTime:     lipgloss.NewStyle().Foreground(lipgloss.Color("#faf5ff")).Background(P.Accent).Padding(0, 1),
+	StatusRight:    lipgloss.NewStyle().Foreground(P.TextDim).Background(P.Background),
+	StatusTime:     lipgloss.NewStyle().Foreground(P.Text).Background(P.Background).Padding(0, 1),
 	TabActive:      lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#1a1b1e")).Background(P.Primary).Padding(0, 1),
 	TabInactive:    lipgloss.NewStyle().Foreground(P.TextMuted).Background(P.SurfaceAlt).Padding(0, 1),
 	TabDisabled:    lipgloss.NewStyle().Foreground(P.TextDim).Background(P.Background).Padding(0, 1),

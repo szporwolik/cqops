@@ -118,10 +118,18 @@ type Model struct {
 	confirmQuit     bool
 	confirm         *DialogModel // active confirmation dialog (quit, etc.)
 	partnerData     *qrz.CallData
+	wlPrivateData   *wavelog.PrivateLookupResult // Wavelog callsign lookup
+	wlLastBand      string                       // band used in last WL query
+	wlLastMode      string                       // mode used in last WL query
 	flrigClient     *flrig.Client
 	qrzNeed         bool
 	qrzCall         string
 	qrzLastLook     time.Time
+	qrzLastCall     string // last looked-up callsign
+	wlNeed          bool   // re-trigger WL lookup after band/mode change
+	wlCall          string // callsign for pending WL lookup
+	wlLastLook      time.Time
+	wlLastCall      string // last looked-up callsign
 	retainComment   bool
 	retainFocused   bool // true when the Retain checkbox has focus (instead of a text field)
 	wlOnline        bool
@@ -136,6 +144,11 @@ type tickMsg time.Time
 type qrzResultMsg struct {
 	Call string
 	Data *qrz.CallData
+	Err  error
+}
+type wlResultMsg struct {
+	Call string
+	Data *wavelog.PrivateLookupResult
 	Err  error
 }
 type inetResultMsg bool
@@ -220,13 +233,54 @@ func (m *Model) qrzLookupCmd(call string) tea.Cmd {
 }
 
 func (m *Model) qrzLookup(call string) tea.Cmd {
-	if time.Since(m.qrzLastLook) < 3*time.Second {
-		applog.Debug("QRZ: debounced", "callsign", call)
+	if call == "" {
+		return nil
+	}
+	// Skip if same callsign was already looked up recently.
+	if time.Since(m.qrzLastLook) < 3*time.Second && strings.EqualFold(call, m.qrzLastCall) {
 		return nil
 	}
 	m.qrzLastLook = time.Now()
+	m.qrzLastCall = call
 	applog.Info("QRZ: looking up", "call", call)
 	return m.qrzLookupCmd(call)
+}
+
+func (m *Model) wlLookupCmd(call, band, mode string) tea.Cmd {
+	return func() tea.Msg {
+		data, err := wavelog.PrivateLookup(
+			m.App.Config.Wavelog.URL,
+			m.App.Config.Wavelog.APIKey,
+			call, band, mode,
+		)
+		return wlResultMsg{Call: call, Data: data, Err: err}
+	}
+}
+
+func (m *Model) wlLookup(call string) tea.Cmd {
+	if call == "" {
+		return nil
+	}
+	if !m.App.Config.Wavelog.Enabled || m.App.Config.Wavelog.URL == "" || m.App.Config.Wavelog.APIKey == "" {
+		return nil
+	}
+	if !m.inetOnline {
+		return nil
+	}
+	band := strings.TrimSpace(m.fields[fieldBand].Value())
+	mode := strings.TrimSpace(m.fields[fieldMode].Value())
+	// Skip if same call+band+mode was already queried recently.
+	if time.Since(m.wlLastLook) < 5*time.Second &&
+		strings.EqualFold(call, m.wlLastCall) &&
+		band == m.wlLastBand && mode == m.wlLastMode {
+		return nil
+	}
+	m.wlLastLook = time.Now()
+	m.wlLastCall = call
+	m.wlLastBand = band
+	m.wlLastMode = mode
+	applog.Info("Wavelog: looking up", "call", call)
+	return m.wlLookupCmd(call, band, mode)
 }
 
 func checkInetCmd() tea.Cmd {
@@ -459,6 +513,7 @@ func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode
 			m.fields[fieldQTH].SetValue("")
 			m.fields[fieldGrid].SetValue("")
 			m.partnerData = nil
+			m.wlPrivateData = nil
 			applog.InfoDetail("WSJT-X: switching DX call", fmt.Sprintf("%s → %s", prevCall, newCall))
 			if m.App.Config.QRZEnabled && m.App.Config.QRZUser != "" {
 				applog.Info("QRZ: looking up " + call + "…")
@@ -744,7 +799,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			applog.Debug("tab: F1 QSO Form")
 			m.screen = screenQSO
 		case key.Matches(keyMsg, m.keys.Partner):
-			if m.screen != screenPartner {
+			call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+			if call == "" {
+				m.toasts.Warn("No callsign entered")
+				applog.Debug("F2 Partner: no callsign")
+			} else if m.screen != screenPartner {
 				applog.Debug("tab: F2 Partner Details")
 				m.screen = screenPartner
 			}
@@ -971,6 +1030,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case qrzResultMsg:
 		m.fillQRZData(msg)
 		return m, cmd
+	case wlResultMsg:
+		m.fillWLData(msg)
+		return m, cmd
 	case inetResultMsg:
 		m.inetOnline = bool(msg)
 		return m, nil
@@ -1005,16 +1067,23 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.focusField(fieldCall)
 		case key.Matches(msg, m.keys.Partner):
 			call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
-			if call != "" {
-				m.screen = screenPartner
-			}
+			var cmds []tea.Cmd
 			if call != "" && m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled && m.partnerData == nil {
-				return m, m.qrzLookup(call)
+				cmds = append(cmds, m.qrzLookup(call))
+			}
+			cmds = append(cmds, m.wlLookup(call)) // WL is independent
+			if len(cmds) > 0 {
+				return m, tea.Batch(cmds...)
 			}
 		case key.Matches(msg, m.keys.Lookup):
 			call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+			var cmds []tea.Cmd
 			if call != "" && m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled {
-				return m, m.qrzLookup(call)
+				cmds = append(cmds, m.qrzLookup(call))
+			}
+			cmds = append(cmds, m.wlLookup(call)) // WL is independent, always retries
+			if len(cmds) > 0 {
+				return m, tea.Batch(cmds...)
 			}
 		case key.Matches(msg, m.keys.Enter):
 			return m, m.saveQSO()
@@ -1043,7 +1112,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.toasts.Warn("QRZ not configured — F8 Config → Callbook / QRZ.com to enable")
 			return m, cmd
 		}
-		return m, tea.Batch(cmd, m.qrzLookup(call))
+		return m, tea.Batch(cmd, m.qrzLookup(call), m.wlLookup(call))
 	}
 	return m, cmd
 }
@@ -1075,6 +1144,7 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 	}
 	if d.Grid != "" && m.fields[fieldGrid].Value() == "" {
 		m.fields[fieldGrid].SetValue(formatLocator(d.Grid))
+		applog.Debug("QRZ: filled partner grid", "grid", d.Grid)
 	}
 	if d.QTH != "" {
 		m.fields[fieldQTH].SetValue(d.QTH)
@@ -1084,6 +1154,31 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 	}
 	m.autoFillRST()
 	m.toasts.Info("QRZ: " + d.Callsign + " " + d.Name)
+}
+
+func (m *Model) fillWLData(msg wlResultMsg) {
+	if msg.Call == "" {
+		return
+	}
+	formCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+	if formCall != "" && formCall != strings.ToUpper(msg.Call) {
+		return
+	}
+	if msg.Err != nil {
+		applog.Warn("Wavelog: lookup error", "call", msg.Call, "error", msg.Err)
+		m.toasts.Warn("Wavelog: " + msg.Err.Error())
+		return
+	}
+	if msg.Data == nil {
+		return
+	}
+	applog.InfoDetail("Wavelog: lookup OK", fmt.Sprintf("call=%s worked=%v confirmed=%v", msg.Call, msg.Data.Worked(), msg.Data.DXCCConfirmed()))
+	m.wlPrivateData = msg.Data
+	name := ""
+	if msg.Data.Name() != "" {
+		name = " " + msg.Data.Name()
+	}
+	m.toasts.Info("Wavelog: " + msg.Call + name)
 }
 
 func (m *Model) View() tea.View {
@@ -1189,11 +1284,14 @@ func (m *Model) headerView() string {
 }
 
 func statusDotStyled(on bool, label string) string {
-	dot := S.StatusDotOff.Render("●")
+	fg := P.Error
 	if on {
-		dot = S.StatusDotOn.Render("●")
+		fg = P.Success
 	}
-	return dot + S.StatusRight.Render(label) + S.StatusRight.Render(" ")
+	return lipgloss.NewStyle().
+		Foreground(fg).
+		Background(P.Background).
+		Render(label) + S.StatusRight.Render(" ")
 }
 
 func (m *Model) tabView() string {
@@ -1408,20 +1506,17 @@ func (m *Model) viewPartner() string {
 	infoBox := S.QSOFormBox.Width(halfW).Render(info)
 	infoH := lipgloss.Height(infoBox)
 
-	// TODO placeholder — same height as info box for alignment
-	todoContent := lipgloss.NewStyle().
-		Width(halfW - 4).
-		Align(lipgloss.Center).
-		Render("TODO")
-	todoBox := S.QSOFormBox.Width(halfW).Height(infoH).Render(todoContent)
+	// Wavelog info (right column) — same label/value style as partner info.
+	wlContent := m.renderWLInfo(halfW)
+	wlBox := S.QSOFormBox.Width(halfW).Height(infoH).Render(wlContent)
 
 	// Side-by-side columns
 	gap := lipgloss.NewStyle().Width(1).Render("")
 	var topRow string
 	if halfW >= 20 {
-		topRow = lipgloss.JoinHorizontal(lipgloss.Top, infoBox, gap, todoBox)
+		topRow = lipgloss.JoinHorizontal(lipgloss.Top, infoBox, gap, wlBox)
 	} else {
-		topRow = lipgloss.JoinVertical(lipgloss.Left, infoBox, todoBox)
+		topRow = lipgloss.JoinVertical(lipgloss.Left, infoBox, wlBox)
 	}
 
 	// Map section — full width below the columns. The box is always shown.
@@ -1473,7 +1568,16 @@ func (m *Model) viewPartner() string {
 
 	mapBox := S.MapBox.Width(bodyW).Render(mapInner)
 
-	return lipgloss.JoinVertical(lipgloss.Left, topRow, mapBox)
+	// Filler pushes the map to the bottom of the content area so the
+	// help bar (handled by View) sits flush at the screen bottom.
+	mapBoxH := lipgloss.Height(mapBox)
+	fillerH := mapAvailH - mapBoxH
+	if fillerH < 0 {
+		fillerH = 0
+	}
+	filler := lipgloss.NewStyle().Height(fillerH).Render("")
+
+	return lipgloss.JoinVertical(lipgloss.Left, topRow, filler, mapBox)
 }
 
 // formPartnerData builds a CallData from the current QSO form fields.
@@ -1548,6 +1652,74 @@ func (m *Model) renderPartnerInfo(d *qrz.CallData, maxW int) string {
 		indent := lipgloss.NewStyle().Width(indentW).Render("")
 		gap := lipgloss.NewStyle().Width(1).Render("")
 		lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Center, indent, label, gap, value))
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+}
+
+func (m *Model) renderWLInfo(maxW int) string {
+	d := m.wlPrivateData
+	if d == nil {
+		return lipgloss.NewStyle().
+			Width(maxW - 4).
+			Align(lipgloss.Center).
+			Foreground(P.TextMuted).
+			Render("WL lookup pending…")
+	}
+
+	type row struct{ label, value string }
+	var rows []row
+	add := func(label string, value bool, yes, no string) {
+		if yes == "" {
+			yes = "yes"
+		}
+		if no == "" {
+			no = "—"
+		}
+		v := no
+		if value {
+			v = yes
+		}
+		rows = append(rows, row{label, v})
+	}
+
+	hasBand := m.wlLastBand != ""
+	hasMode := m.wlLastMode != ""
+
+	add("Call worked", d.Worked(), "Y", "N")
+	add("Call on band", hasBand && d.WorkedBand(), "Y", tern(hasBand, "N", "?"))
+	add("Call on mode", hasBand && hasMode && d.WorkedBandMode(), "Y", tern(hasBand && hasMode, "N", "?"))
+	add("LoTW member", d.LoTW(), "Y", "N")
+	add("DXCC confirmed", d.DXCCConfirmed(), "Y", "N")
+	add("DXCC on band", hasBand && d.ConfirmedBand(), "Y", tern(hasBand, "N", "?"))
+	add("DXCC on mode", hasBand && hasMode && d.ConfirmedBandMode(), "Y", tern(hasBand && hasMode, "N", "?"))
+
+	labelW := 15
+	indentW := 1
+	valW := maxW - indentW - labelW - 1
+	if valW < 3 {
+		valW = 3
+	}
+
+	lblStyle := LabelStyle.Width(labelW).Align(lipgloss.Right)
+	yesStyle := S.Success.Width(valW)
+	noStyle := S.Error.Width(valW)
+	qStyle := S.Warning.Width(valW)
+
+	var lines []string
+	for _, r := range rows {
+		label := lblStyle.Render(r.label)
+		indent := lipgloss.NewStyle().Width(indentW).Render("")
+		gap := lipgloss.NewStyle().Width(1).Render("")
+		val := r.value
+		switch val {
+		case "Y":
+			val = yesStyle.Render(val)
+		case "?":
+			val = qStyle.Render(val)
+		case "N":
+			val = noStyle.Render(val)
+		}
+		lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Center, indent, label, gap, val))
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
@@ -1700,6 +1872,15 @@ func (m *Model) formPathRow(width int) string {
 		line := distanceLine(ownGrid, partnerGrid, m.App.Config.DistanceUnit)
 		if line != "" {
 			line = "Path  " + line
+			// Append new call / new DXCC indicators from WL data
+			if m.wlPrivateData != nil {
+				if !m.wlPrivateData.Worked() {
+					line += "  ·  " + S.Warning.Render("New Call!")
+				}
+				if !m.wlPrivateData.DXCCConfirmed() {
+					line += "  ·  " + S.Warning.Render("New DXCC!")
+				}
+			}
 			if lipgloss.Width(line) > width {
 				line = truncate(line, width)
 			}
@@ -1711,17 +1892,37 @@ func (m *Model) formPathRow(width int) string {
 		}
 	}
 
-	// No distance data — show aggregate QSO stats.
+	// If partner grid is present but own grid is missing, prompt the user.
+	if partnerGrid != "" && ownGrid == "" {
+		return lipgloss.NewStyle().
+			Width(width).
+			Align(lipgloss.Center).
+			Foreground(P.TextMuted).
+			Render("Set your grid in station config to enable path")
+	}
+
+	// No distance data — show aggregate QSO stats + new call/DXCC indicators.
 	counts, err := store.CountQSOs(m.App.DB)
 	if err != nil {
 		counts = store.QSOCounts{}
 	}
-	parts := []string{fmt.Sprintf("Log %d QSOs", counts.Total)}
+	var parts []string
+	if counts.Total > 0 {
+		parts = append(parts, fmt.Sprintf("Log %d QSOs", counts.Total))
+	}
 	if counts.FromWSJTX > 0 {
 		parts = append(parts, fmt.Sprintf("FTx %d", counts.FromWSJTX))
 	}
 	if counts.ToWavelog > 0 {
 		parts = append(parts, fmt.Sprintf("WL %d", counts.ToWavelog))
+	}
+	if m.wlPrivateData != nil {
+		if !m.wlPrivateData.Worked() {
+			parts = append(parts, S.Warning.Render("New Call!"))
+		}
+		if !m.wlPrivateData.DXCCConfirmed() {
+			parts = append(parts, S.Warning.Render("New DXCC!"))
+		}
 	}
 	line := strings.Join(parts, " · ")
 	if lipgloss.Width(line) > width {
@@ -1883,15 +2084,15 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 	if m.focus == fieldCall {
 		cur := strings.TrimSpace(m.fields[fieldCall].Value())
 		if cur != prevCall {
-			// Callsign changed — clear stale QRZ data and related form fields
+			// Callsign changed — clear stale QRZ/WL data; preserve manually entered fields.
 			if m.partnerData != nil && !strings.EqualFold(m.partnerData.Callsign, cur) {
 				m.partnerData = nil
+				m.wlPrivateData = nil
 				m.screen = screenQSO
+				m.fields[fieldGrid].SetValue("")
+				m.fields[fieldQTH].SetValue("")
+				m.fields[fieldCountry].SetValue("")
 			}
-			m.fields[fieldName].SetValue("")
-			m.fields[fieldGrid].SetValue("")
-			m.fields[fieldQTH].SetValue("")
-			m.fields[fieldCountry].SetValue("")
 		}
 	}
 }
@@ -1935,6 +2136,7 @@ func (m *Model) clearForm() {
 	m.focus = fieldCall
 	m.fields[m.focus].Focus()
 	m.partnerData = nil
+	m.wlPrivateData = nil
 	m.screen = screenQSO
 }
 

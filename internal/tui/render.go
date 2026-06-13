@@ -14,6 +14,14 @@ func osc8Link(url, text string) string {
 	return fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\", url, text)
 }
 
+// tern is a simple ternary for strings.
+func tern(cond bool, t, f string) string {
+	if cond {
+		return t
+	}
+	return f
+}
+
 // section renders a titled horizontal rule: "── Title ──────────"
 func section(title string, width int) string {
 	rem := width - lipgloss.Width(title)

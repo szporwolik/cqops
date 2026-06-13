@@ -60,16 +60,13 @@ func formatDistance(km float64, unit string) string {
 
 func distanceLine(ownGrid, partnerGrid, unit string) string {
 	km := gridDistanceKm(ownGrid, partnerGrid)
-	if km <= 0 {
-		return ""
-	}
 	bear := gridBearing(ownGrid, partnerGrid)
 	if bear == "" {
-		return ""
+		bear = "0°"
 	}
 	distStr := formatDistance(km, unit)
 	if distStr == "" {
-		return ""
+		distStr = "0 km"
 	}
 	return fmt.Sprintf("%s  ·  %s", distStr, bear)
 }

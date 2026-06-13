@@ -119,6 +119,128 @@ func FetchStations(baseURL, apiKey string) ([]StationProfile, error) {
 	return stations, nil
 }
 
+// PrivateLookupResult holds the callsign information returned by api/private_lookup.
+// Uses a generic map internally because Wavelog instances vary in how they
+// serialise booleans (true/false vs "true"/"false"/1/0) and numbers.
+type PrivateLookupResult struct {
+	raw map[string]interface{}
+}
+
+// str returns the string value for key, or "" if missing/wrong type/nil.
+func (r *PrivateLookupResult) str(key string) string {
+	v, ok := r.raw[key]
+	if !ok || v == nil {
+		return ""
+	}
+	s, ok := v.(string)
+	if !ok {
+		return fmt.Sprint(v)
+	}
+	return s
+}
+
+// IsTrue returns true if the field value indicates a positive result.
+// Handles bool true, string "true"/"1"/"yes", float64 non-zero, and any
+// non-empty string that isn't explicitly falsy.
+func (r *PrivateLookupResult) IsTrue(key string) bool {
+	v, ok := r.raw[key]
+	if !ok {
+		return false
+	}
+	switch t := v.(type) {
+	case bool:
+		return t
+	case string:
+		switch strings.ToLower(t) {
+		case "true", "1", "yes", "y":
+			return true
+		case "false", "0", "no", "n", "":
+			return false
+		default:
+			return true // assume truthy for unexpected values
+		}
+	case float64:
+		return t != 0
+	}
+	return false
+}
+
+// Callsign returns the looked-up callsign.
+func (r *PrivateLookupResult) Callsign() string { return r.str("callsign") }
+
+// Name returns the operator name.
+func (r *PrivateLookupResult) Name() string { return r.str("name") }
+
+// Worked returns call_worked.
+func (r *PrivateLookupResult) Worked() bool { return r.IsTrue("call_worked") }
+
+// WorkedBand returns call_worked_band.
+func (r *PrivateLookupResult) WorkedBand() bool { return r.IsTrue("call_worked_band") }
+
+// WorkedBandMode returns call_worked_band_mode.
+func (r *PrivateLookupResult) WorkedBandMode() bool { return r.IsTrue("call_worked_band_mode") }
+
+// LoTW returns lotw_member.
+func (r *PrivateLookupResult) LoTW() bool { return r.IsTrue("lotw_member") }
+
+// DXCCConfirmed returns dxcc_confirmed.
+func (r *PrivateLookupResult) DXCCConfirmed() bool { return r.IsTrue("dxcc_confirmed") }
+
+// ConfirmedBand returns call_confirmed_band.
+func (r *PrivateLookupResult) ConfirmedBand() bool { return r.IsTrue("call_confirmed_band") }
+
+// ConfirmedBandMode returns call_confirmed_band_mode.
+func (r *PrivateLookupResult) ConfirmedBandMode() bool { return r.IsTrue("call_confirmed_band_mode") }
+
+// PrivateLookup queries the Wavelog API for callsign confirmation/worked data.
+func PrivateLookup(baseURL, apiKey, callsign, band, mode string) (*PrivateLookupResult, error) {
+	if baseURL == "" || apiKey == "" || callsign == "" {
+		return nil, nil
+	}
+	baseURL = strings.TrimRight(baseURL, "/")
+	url := baseURL + "/api/private_lookup"
+
+	payload := map[string]string{
+		"key":      apiKey,
+		"callsign": callsign,
+	}
+	if band != "" {
+		payload["band"] = band
+	}
+	if mode != "" {
+		payload["mode"] = mode
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal payload: %w", err)
+	}
+
+	resp, err := httpClient.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return nil, fmt.Errorf("private_lookup: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("server error: HTTP %d — %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+
+	applog.Debug("Wavelog: private_lookup raw response", "body", strings.TrimSpace(string(respBody)))
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal(respBody, &raw); err != nil {
+		return nil, fmt.Errorf("parse response: %w", err)
+	}
+
+	return &PrivateLookupResult{raw: raw}, nil
+}
+
 // TestStation validates that a specific station profile is reachable.
 func TestStation(baseURL, apiKey, stationID string) error {
 	applog.Debug("Wavelog: testing station", "station_id", stationID)
