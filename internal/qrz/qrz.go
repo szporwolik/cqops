@@ -105,6 +105,12 @@ func qrzLookup(sessionKey, callsign string) (*CallData, error) {
 		return nil, fmt.Errorf("qrz xml: %w", err)
 	}
 	if db.Session.Error != "" {
+		// "Not found" is a normal result, not an error
+		if strings.Contains(db.Session.Error, "Not found") {
+			applog.Info("QRZ: not found", "callsign", callsign)
+			return nil, nil
+		}
+		applog.Error("QRZ lookup error", "msg", db.Session.Error)
 		return nil, fmt.Errorf("QRZ: %s", db.Session.Error)
 	}
 

@@ -558,8 +558,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if key, ok := msg.(tea.KeyMsg); ok {
 		switch key.String() {
 		case "f10":
+			applog.Debug("tab: F10 quit requested")
 			m.confirmQuit = true
 		case "f1":
+			applog.Debug("tab: F1 QSO Form")
 			m.showChooser = false
 			m.showRigEdit = false
 			m.showIntegration = false
@@ -569,15 +571,24 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showLogbookEditor = false
 			m.showPartner = false
 		case "f2":
-			if m.showPartner {
-				m.showPartner = false
-			} else if m.partnerData != nil {
-				m.showPartner = true
+			// F2 toggle: partner sub-model handles close, QSO form handler handles open+lookup
+			if !m.showPartner {
+				applog.Debug("tab: F2 Partner Details (clearing views)")
+				m.showChooser = false
+				m.showRigEdit = false
+				m.showIntegration = false
+				m.showConfig = false
+				m.showCallbook = false
+				m.showMainMenu = false
+				m.showLogView = false
+				m.showLogbookEditor = false
 			}
 		case "f8":
 			if m.showMainMenu {
+				applog.Debug("tab: F8 close Config")
 				m.showMainMenu = false
 			} else {
+				applog.Debug("tab: F8 Config")
 				m.showChooser = false
 				m.showRigEdit = false
 				m.showIntegration = false
@@ -590,6 +601,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showMainMenu = true
 			}
 		case "f5":
+			applog.Debug("tab: F5 Log Editor")
 			m.showChooser = false
 			m.showRigEdit = false
 			m.showIntegration = false
@@ -604,6 +616,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.logbookEditor.SetQSOS(qsos)
 			return m, cmd
 		case "f9":
+			applog.Debug("tab: F9 Log Viewer")
 			m.showChooser = false
 			m.showRigEdit = false
 			m.showIntegration = false
@@ -759,11 +772,23 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.width, m.height = msg.Width, msg.Height
 			return m, cmd
 		case tea.KeyMsg:
-			switch {
-			case msg.String() == "f8":
+			switch msg.String() {
+			case "f2":
+				// Close partner view and fall through — QSO form handler won't re-open
+				// because partnerData is already set, so it just toggles back to form
 				m.showPartner = false
+				return m, cmd
+			case "f1":
+				m.showPartner = false
+				return m, cmd
+			case "f8":
+				m.showPartner = false
+				m.mainMenu = NewMainMenu()
+				m.showMainMenu = true
+				return m, cmd
+			default:
+				return m, cmd
 			}
-			return m, cmd
 		}
 	}
 	if m.showLogbookEditor {
@@ -845,11 +870,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.focusField(fieldCall)
 		case msg.String() == "f2":
 			call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+			if call != "" {
+				m.showPartner = true
+			}
 			if call != "" && m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled && m.partnerData == nil {
 				return m, m.qrzLookup(call)
-			}
-			if m.partnerData != nil {
-				m.showPartner = true
 			}
 		case msg.String() == "insert" || msg.Type == tea.KeyInsert || msg.String() == "\x1b[2~":
 			call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
@@ -967,7 +992,7 @@ func (m *Model) View() string {
 		content = m.logViewer.View()
 	} else if m.showLogbookEditor {
 		content = m.logbookEditor.View()
-	} else if m.showPartner && m.partnerData != nil {
+	} else if m.showPartner && (m.partnerData != nil || strings.TrimSpace(m.fields[fieldCall].Value()) != "") {
 		content = m.viewPartner()
 	} else {
 		content = m.buildQSOFormContent(w, header)
@@ -1169,6 +1194,8 @@ func (m *Model) renderTabLine(width int) string {
 	inactive := InactiveTabStyle
 	disabled := DisabledTabStyle
 
+	hasPartner := m.partnerData != nil || strings.TrimSpace(m.fields[fieldCall].Value()) != ""
+
 	labels := []struct {
 		label      string
 		show       bool
@@ -1176,7 +1203,7 @@ func (m *Model) renderTabLine(width int) string {
 		canDisable bool
 	}{
 		{"F1 QSO Form", true, !m.showPartner && !m.showLogbookEditor && !m.showMainMenu && !m.showLogView, false},
-		{"F2 Partner Details", true, m.showPartner && m.partnerData != nil, m.partnerData == nil},
+		{"F2 Partner Details", true, m.showPartner && hasPartner, !hasPartner},
 		{"F5 Log Editor", true, m.showLogbookEditor, false},
 		{"F8 Config", true, m.showMainMenu, false},
 		{"F9 Logs", true, m.showLogView, false},
@@ -1239,6 +1266,12 @@ func formatTime(adif string) string {
 
 func (m *Model) viewPartner() string {
 	d := m.partnerData
+	if d == nil {
+		d = m.formPartnerData()
+		if d.Callsign == "" {
+			return ""
+		}
+	}
 	w := m.width
 	h := m.height
 	bodyW := w - 2
@@ -1255,18 +1288,14 @@ func (m *Model) viewPartner() string {
 	info := m.renderPartnerInfo(d, bodyW)
 	b.WriteString(info)
 
+	// Photo: left-aligned, one empty row above, matching colors
 	if d.ImageURL != "" {
-		linkText := DimStyle.Render(d.ImageURL)
-		pad := (bodyW - lipgloss.Width(linkText)) / 2
-		if pad < 0 {
-			pad = 0
-		}
-		b.WriteString("\n\n")
-		b.WriteString(strings.Repeat(" ", pad))
-		b.WriteString(linkText)
+		b.WriteString("\n")
+		b.WriteString(LabelStyle.Render("  Photo "))
+		b.WriteString(DimStyle.Render(d.ImageURL))
 	}
 
-	dl := m.partnerDistanceLine(bodyW)
+	dl := m.partnerDistanceLineForm(d)
 	if dl != "" {
 		b.WriteString("\n\n")
 		pathTitle := "── Short Path "
@@ -1277,43 +1306,55 @@ func (m *Model) viewPartner() string {
 
 	usedLines := strings.Count(b.String(), "\n") + 1
 	availMapH := h - 4 - usedLines - 2
-	mapRendered := false
 	if availMapH >= 6 {
 		b.WriteString("\n\n")
-		b.WriteString(section("── Map ", bodyW))
-		b.WriteString("\n")
-		mapW := bodyW
-		if mapW < 40 {
-			mapW = 40
-		}
-		mapH := availMapH - 1
-		if mapH < 4 {
-			mapH = 4
-		}
-		if mapH > 24 {
-			mapH = 24
-		}
 		ownGrid := m.App.Logbook.Station.Grid
 		partnerGrid := d.Grid
-		if ownGrid != "" && (partnerGrid != "" || d.Lat != "") {
+		partnerLat, partnerLon := 0.0, 0.0
+		hasPartnerLoc := false
+
+		if ownGrid == "" {
+			b.WriteString(section("── Map ", bodyW))
+			b.WriteString("\n  " + DimStyle.Render("Set your grid in station config to enable the map"))
+		} else if partnerGrid == "" && d.Lat == "" {
+			b.WriteString(section("── Map ", bodyW))
+			b.WriteString("\n  " + DimStyle.Render("No partner location — enter a grid or use QRZ lookup"))
+		} else {
 			ownLat, ownLon := gridToLatLon(ownGrid)
-			var partnerLat, partnerLon float64
 			if partnerGrid != "" {
 				partnerLat, partnerLon = gridToLatLon(partnerGrid)
+				hasPartnerLoc = partnerLat != 0 || partnerLon != 0
 			}
-			if (partnerLat == 0 && partnerLon == 0) && d.Lat != "" {
+			if !hasPartnerLoc && d.Lat != "" {
 				partnerLat = parseCoord(d.Lat)
 				partnerLon = parseCoord(d.Lon)
+				hasPartnerLoc = partnerLat != 0 || partnerLon != 0
 			}
-			if ownLat != 0 || ownLon != 0 || partnerLat != 0 || partnerLon != 0 {
+			if hasPartnerLoc || ownLat != 0 || ownLon != 0 {
+				mapW := bodyW
+				if mapW < 40 {
+					mapW = 40
+				}
+				mapH := availMapH - 1
+				if mapH < 4 {
+					mapH = 4
+				}
+				if mapH > 24 {
+					mapH = 24
+				}
+				b.WriteString(section("── Map ", bodyW))
+				b.WriteString("\n")
 				mapStr := renderWorldMap(ownLat, ownLon, partnerLat, partnerLon, mapW, mapH)
-				b.WriteString(mapStr)
-				mapRendered = mapStr != ""
+				if mapStr != "" {
+					b.WriteString(mapStr)
+				} else {
+					b.WriteString("  " + DimStyle.Render("Map unavailable"))
+				}
+			} else {
+				b.WriteString(section("── Map ", bodyW))
+				b.WriteString("\n  " + DimStyle.Render("Could not determine coordinates"))
 			}
 		}
-	}
-	if !mapRendered && availMapH >= 6 {
-		b.WriteString(DimStyle.Render("── Map hidden: terminal too small"))
 	}
 
 	return b.String()
@@ -1326,6 +1367,34 @@ func (m *Model) partnerDistanceLine(width int) string {
 	own := formatLocator(m.App.Logbook.Station.Grid)
 	partner := formatLocator(m.partnerData.Grid)
 	return distanceLine(own, partner, m.App.Config.DistanceUnit)
+}
+
+// partnerDistanceLineForm uses the form's grid field when QRZ data is unavailable.
+func (m *Model) partnerDistanceLineForm(d *qrz.CallData) string {
+	own := formatLocator(m.App.Logbook.Station.Grid)
+	partner := ""
+	if d != nil && d.Grid != "" {
+		partner = formatLocator(d.Grid)
+	}
+	if partner == "" {
+		partner = formatLocator(strings.TrimSpace(m.fields[fieldGrid].Value()))
+	}
+	return distanceLine(own, partner, m.App.Config.DistanceUnit)
+}
+
+// formPartnerData builds a CallData from the current QSO form fields.
+func (m *Model) formPartnerData() *qrz.CallData {
+	call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+	if call == "" {
+		return nil
+	}
+	return &qrz.CallData{
+		Callsign: call,
+		Name:     strings.TrimSpace(m.fields[fieldName].Value()),
+		Grid:     strings.TrimSpace(m.fields[fieldGrid].Value()),
+		QTH:      strings.TrimSpace(m.fields[fieldQTH].Value()),
+		Country:  strings.TrimSpace(m.fields[fieldCountry].Value()),
+	}
 }
 
 func (m *Model) renderPartnerInfo(d *qrz.CallData, maxW int) string {
@@ -1399,7 +1468,7 @@ func (m *Model) viewFooter(width int) string {
 		text = "↑↓ to scroll  F10 Quit"
 	case m.showLogbookEditor:
 		text = m.logbookEditor.FooterText()
-	case m.showPartner && m.partnerData != nil:
+	case m.showPartner && (m.partnerData != nil || strings.TrimSpace(m.fields[fieldCall].Value()) != ""):
 		text = "F10 Quit"
 	default:
 		if width < 70 {
@@ -1825,7 +1894,6 @@ func (m *Model) formDistanceLine(width int) string {
 	ownGrid := formatLocator(m.App.Logbook.Station.Grid)
 	partnerGrid := formatLocator(strings.TrimSpace(m.fields[fieldGrid].Value()))
 	if ownGrid == "" {
-		applog.Debug("path: own grid not set — set your locator in station config")
 		return ""
 	}
 	if partnerGrid == "" {
@@ -1833,7 +1901,6 @@ func (m *Model) formDistanceLine(width int) string {
 	}
 	dl := distanceLine(ownGrid, partnerGrid, m.App.Config.DistanceUnit)
 	if dl == "" {
-		applog.Debug("path: distance calculation failed", "own", ownGrid, "partner", partnerGrid)
 		return ""
 	}
 	bodyW := width - 2
@@ -2018,9 +2085,16 @@ func (m *Model) updateFocused(msg tea.KeyMsg) {
 	}
 	if m.focus == fieldCall {
 		cur := strings.TrimSpace(m.fields[fieldCall].Value())
-		if cur != prevCall && m.partnerData != nil && !strings.EqualFold(m.partnerData.Callsign, cur) {
-			m.partnerData = nil
-			m.showPartner = false
+		if cur != prevCall {
+			// Callsign changed — clear stale QRZ data and related form fields
+			if m.partnerData != nil && !strings.EqualFold(m.partnerData.Callsign, cur) {
+				m.partnerData = nil
+				m.showPartner = false
+			}
+			m.fields[fieldName].SetValue("")
+			m.fields[fieldGrid].SetValue("")
+			m.fields[fieldQTH].SetValue("")
+			m.fields[fieldCountry].SetValue("")
 		}
 	}
 }
