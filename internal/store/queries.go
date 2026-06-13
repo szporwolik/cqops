@@ -30,7 +30,7 @@ func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 		q.Band, q.Freq, q.FreqRx, q.Mode, q.Submode,
 		q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
 		q.Distance, q.Bearing,
-		q.SOTARef, q.POTARef, q.WWFFRef,
+		q.SOTARef, q.POTARef, q.WWFFRef, q.IOTA,
 		q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
 		q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
 		q.CreatedAt.Format(time.RFC3339), q.UpdatedAt.Format(time.RFC3339),
