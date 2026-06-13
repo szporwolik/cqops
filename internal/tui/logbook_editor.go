@@ -226,13 +226,13 @@ func (le *LogbookEditor) prevField() {
 }
 
 type editorMsg struct {
-	deleted  int64
-	saved    int64
-	purged   bool
-	wlQSOID  int64
-	wlCall   string
-	wlOK     bool
-	err      error
+	deleted int64
+	saved   int64
+	purged  bool
+	wlQSOID int64
+	wlCall  string
+	wlOK    bool
+	err     error
 }
 
 func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
