@@ -1363,20 +1363,26 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 	formBlock := strings.TrimRight(form, "\n")
 	formBox := S.QSOFormBox.Width(l.ContentW).Render(formBlock)
 
-	// Short path info: always reserve one row to prevent layout shift.
-	distLine := m.formDistanceLine(innerW)
-	pathBox := lipgloss.NewStyle().Width(l.ContentW).Render(distLine)
+	// Path row in a clean bordered box (always one row — no layout shift).
+	pathContent := m.formPathRow(innerW)
+	pathBox := S.MapBox.Width(l.ContentW).Render(pathContent)
 
 	formRenderedH := lipgloss.Height(formBox)
 	pathRenderedH := lipgloss.Height(pathBox)
 	recentH := l.ContentH - formRenderedH - pathRenderedH
-	if recentH < 3 {
-		recentH = 3
+	if recentH < 5 {
+		recentH = 5
 	}
 
-	m.recentQSOs.SetSize(l.ContentW, recentH)
+	// Table fits inside a bordered box — account for 2 rows (top/bottom border).
+	tableW := l.ContentW - 2
+	tableH := recentH - 2
+	if tableH < 3 {
+		tableH = 3
+	}
+	m.recentQSOs.SetSize(tableW, tableH)
 
-	return formBox + "\n" + pathBox + "\n" + m.recentQSOs.View()
+	return formBox + "\n" + pathBox + "\n" + S.RecentQSOsBox.Width(l.ContentW).Render(m.recentQSOs.View())
 }
 
 func (m *Model) viewPartner() string {
@@ -1693,29 +1699,46 @@ func (m *Model) renderRetainCheckbox(colW int) string {
 	)
 }
 
-func (m *Model) formDistanceLine(width int) string {
+func (m *Model) formPathRow(width int) string {
 	ownGrid := formatLocator(m.App.Logbook.Station.Grid)
 	partnerGrid := formatLocator(strings.TrimSpace(m.fields[fieldGrid].Value()))
 
-	line := ""
+	// When both grids are available, show distance + bearing.
 	if ownGrid != "" && partnerGrid != "" {
-		line = distanceLine(ownGrid, partnerGrid, m.App.Config.DistanceUnit)
+		line := distanceLine(ownGrid, partnerGrid, m.App.Config.DistanceUnit)
+		if line != "" {
+			line = "Path  " + line
+			if lipgloss.Width(line) > width {
+				line = truncate(line, width)
+			}
+			return lipgloss.NewStyle().
+				Width(width).
+				Align(lipgloss.Center).
+				Foreground(P.Info).
+				Render(line)
+		}
 	}
 
-	// Always return at least a space so the row is reserved in layout.
-	if line == "" {
-		return lipgloss.NewStyle().Width(width).Render(" ")
+	// No distance data — show aggregate QSO stats.
+	counts, err := store.CountQSOs(m.App.DB)
+	if err != nil {
+		counts = store.QSOCounts{}
 	}
-
-	// Truncate if wider than available space — never wrap.
+	parts := []string{fmt.Sprintf("Log %d QSOs", counts.Total)}
+	if counts.FromWSJTX > 0 {
+		parts = append(parts, fmt.Sprintf("FTx %d", counts.FromWSJTX))
+	}
+	if counts.ToWavelog > 0 {
+		parts = append(parts, fmt.Sprintf("WL %d", counts.ToWavelog))
+	}
+	line := strings.Join(parts, " · ")
 	if lipgloss.Width(line) > width {
 		line = truncate(line, width)
 	}
-
 	return lipgloss.NewStyle().
 		Width(width).
 		Align(lipgloss.Center).
-		Foreground(P.Info).
+		Foreground(P.TextMuted).
 		Render(line)
 }
 

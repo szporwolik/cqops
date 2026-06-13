@@ -236,3 +236,21 @@ func NormalizeStationFields(db *sql.DB, ids []int64, stationCall, operator, grid
 	}
 	return tx.Commit()
 }
+
+// QSOCounts holds aggregate QSO statistics.
+type QSOCounts struct {
+	Total       int
+	FromWSJTX   int
+	ToWavelog   int
+}
+
+// CountQSOs returns aggregate statistics for the current logbook.
+func CountQSOs(db *sql.DB) (QSOCounts, error) {
+	var c QSOCounts
+	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos`).Scan(&c.Total); err != nil {
+		return c, fmt.Errorf("count qsos: %w", err)
+	}
+	db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE source='wsjtx'`).Scan(&c.FromWSJTX)
+	db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE wavelog_uploaded='yes'`).Scan(&c.ToWavelog)
+	return c, nil
+}

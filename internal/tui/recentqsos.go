@@ -43,45 +43,65 @@ func (r *RecentQSOs) View() string {
 	if bodyW < 20 {
 		bodyW = 20
 	}
-	// Table header uses 1 line; remaining space is data rows.
-	// Always use full available height — the table pads empty rows gracefully.
 	maxRows := r.height - 1 // header only
 	if maxRows < 3 {
 		maxRows = 3
 	}
 
-	// Select columns based on available width
+	// Pick the widest tier that fits at minimum width; if none fit even
+	// at minimum, drop trailing columns until they do.
 	var names []string
 	for _, t := range qsoColTiers {
-		if bodyW >= t.minW {
-			names = t.names
+		names = t.names
+	}
+	for len(names) > 0 {
+		total := 0
+		for _, n := range names {
+			total += qsoAllCols[n].minWidth
 		}
+		total += len(names) - 1 // inter-column gaps
+		if total <= bodyW {
+			break
+		}
+		names = names[:len(names)-1]
 	}
 
+	// Build columns. Extra space is distributed proportionally to spacious
+	// columns; any remainder goes to the last column.
 	var cols []table.Column
-	// Sum minimum widths, then expand proportionally to fill available space
 	minTotal := 0
 	for _, n := range names {
-		c := qsoAllCols[n]
-		minTotal += c.minWidth
-		cols = append(cols, table.Column{Title: c.header, Width: c.minWidth})
+		minTotal += qsoAllCols[n].minWidth
+		cols = append(cols, table.Column{
+			Title: qsoAllCols[n].header,
+			Width: qsoAllCols[n].minWidth,
+		})
 	}
-	if minTotal < bodyW && len(cols) > 0 {
-		extra := bodyW - minTotal
-		// Distribute extra space: 50% Comment, 20% Name, 10% QTH, 10% Call, 10% Notes
+	gaps := len(names) - 1
+	extra := bodyW - gaps - minTotal
+	if extra > 0 && len(cols) > 0 {
+		// Give extra space to wide columns; track how much was given.
+		distributed := 0
 		for i := range cols {
+			var share int
 			switch cols[i].Title {
 			case "Comment":
-				cols[i].Width += extra * 5 / 10
+				share = extra * 5 / 10
 			case "Name":
-				cols[i].Width += extra * 2 / 10
+				share = extra * 2 / 10
 			case "QTH":
-				cols[i].Width += extra / 10
+				share = extra / 10
 			case "Call":
-				cols[i].Width += extra / 10
+				share = extra / 10
 			case "Notes":
-				cols[i].Width += extra / 10
+				share = extra / 10
 			}
+			cols[i].Width += share
+			distributed += share
+		}
+		// Last column gets any leftover so total width = bodyW exactly.
+		if leftover := extra - distributed; leftover > 0 {
+			cols[len(cols)-1].Width += leftover
 		}
 	}
 
@@ -109,7 +129,7 @@ func (r *RecentQSOs) View() string {
 		table.WithRows(rows),
 		table.WithHeight(maxRows+1),
 		table.WithWidth(bodyW),
-		table.WithFocused(false), // read-only: no cursor, no selection
+		table.WithFocused(false),
 	)
 
 	s := table.DefaultStyles()
@@ -122,7 +142,11 @@ func (r *RecentQSOs) View() string {
 	s.Cell = s.Cell.Foreground(P.TextDim)
 	t.SetStyles(s)
 
-	return t.View()
+	// Clip to exact dimensions — never wrap, never overflow the border.
+	return lipgloss.NewStyle().
+		MaxWidth(bodyW).
+		MaxHeight(maxRows + 1).
+		Render(t.View())
 }
 
 // Height returns the rendered height of the component.
@@ -143,8 +167,8 @@ var qsoColTiers = []struct {
 	{90, []string{"Date", "Time", "Call", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name"}},
 	{115, []string{"Date", "Time", "Call", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist"}},
 	{150, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power"}},
-	{190, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Notes", "Source"}},
-	{240, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Notes", "Source", "SOTA", "POTA", "IOTA"}},
+	{190, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Notes", "Source", "WL"}},
+	{240, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Notes", "Source", "WL", "SOTA", "POTA", "IOTA"}},
 }
 
 // qsoAllCols defines all available columns for the QSO table.
@@ -179,6 +203,15 @@ var qsoAllCols = map[string]struct {
 		default:
 			return q.Source
 		}
+	}},
+	"WL": {"WL", 3, func(q *qso.QSO) string {
+		if q.WavelogUploaded == "yes" {
+			return "Y"
+		}
+		if q.WavelogUploaded == "no" {
+			return "N"
+		}
+		return "\u2014"
 	}},
 	"SOTA": {"SOTA", 8, func(q *qso.QSO) string { return q.SOTARef }},
 	"POTA": {"POTA", 8, func(q *qso.QSO) string { return q.POTARef }},

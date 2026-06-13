@@ -82,9 +82,9 @@ func MeasureLayout(m *Model) Layout {
 // This is measured rather than hard-coded, so if fields change the layout adapts.
 func QSOFormHeight(m *Model, contentW int) int {
 	form := m.viewForm(contentW)
-	distLine := m.formDistanceLine(contentW)
-	if distLine != "" {
-		form += "\n" + distLine
+	pathLine := m.formPathRow(contentW)
+	if pathLine != "" {
+		form += "\n" + pathLine
 	}
 	return lipgloss.Height(form)
 }
