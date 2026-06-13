@@ -61,18 +61,18 @@ var qefLabels = []string{
 }
 
 type LogbookEditor struct {
-	db      *sql.DB
-	qsos    []qso.QSO
-	cursor  int
-	offset  int
-	mode    editorMode
-	editing *qso.QSO
-	fields  [qefCount]textinput.Model
-	focus   qsoEditField
-	done    bool
+	db          *sql.DB
+	qsos        []qso.QSO
+	cursor      int
+	offset      int
+	mode        editorMode
+	editing     *qso.QSO
+	fields      [qefCount]textinput.Model
+	focus       qsoEditField
+	done        bool
 	needsReload bool
-	width   int
-	height  int
+	width       int
+	height      int
 }
 
 func NewLogbookEditor(db *sql.DB) *LogbookEditor {
