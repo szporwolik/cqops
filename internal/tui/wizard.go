@@ -16,29 +16,37 @@ type wizardStep int
 const (
 	stepStation wizardStep = iota
 	stepRig
+	stepWSJTX
 	stepTimezone
+	stepCount // sentinel
 )
 
 type Wizard struct {
-	App     *app.App
-	step    wizardStep
-	station *StationForm
-	rigForm *RigForm
-	tzIndex int
-	toasts  *ToastQueue
-	width   int
-	height  int
+	App         *app.App
+	step        wizardStep
+	station     *StationForm
+	rigForm     *RigForm
+	wsjtxEnable bool
+	wsjtxHost   string
+	wsjtxPort   string
+	tzIndex     int
+	toasts      *ToastQueue
+	width       int
+	height      int
 }
 
 func NewWizard(a *app.App) *Wizard {
 	applog.Info("Wizard started — first-run setup")
 	return &Wizard{
-		App:     a,
-		step:    stepStation,
-		station: NewStationForm("SP9MOA", "", "KO00ca"),
-		rigForm: NewRigForm("Xiegu G90", "EFHW 20.5m", "100"),
-		tzIndex: config.SystemTimezoneIndex(),
-		toasts:  NewToastQueue(),
+		App:         a,
+		step:        stepStation,
+		station:     NewStationForm("", "", ""),
+		rigForm:     NewRigForm("", "", ""),
+		wsjtxEnable: true,
+		wsjtxHost:   "127.0.0.1",
+		wsjtxPort:   "2233",
+		tzIndex:     config.SystemTimezoneIndex(),
+		toasts:      NewToastQueue(),
 	}
 }
 
@@ -58,6 +66,12 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case k.String() == "ctrl+c" || k.String() == "ctrl+q":
 			return w, tea.Quit
 
+		case k.String() == "esc":
+			if w.step > stepStation {
+				w.step--
+				return w, nil
+			}
+
 		default:
 			switch w.step {
 			case stepStation:
@@ -65,44 +79,43 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					cs, _, gr, _, _, _ := w.station.Values()
 					if cs == "" {
 						w.toasts.Error("Callsign is required")
-						applog.Warn("Wizard validation: callsign missing")
 						return w, nil
 					}
 					if gr == "" {
 						w.toasts.Error("Grid locator is required")
-						applog.Warn("Wizard validation: grid locator missing")
 						return w, nil
 					}
 					w.step = stepRig
-					applog.InfoDetail("Wizard station step completed", fmt.Sprintf("callsign=%s grid=%s", cs, gr))
+					applog.InfoDetail("Wizard: station step done", fmt.Sprintf("call=%s grid=%s", cs, gr))
 					return w, nil
 				}
 			case stepRig:
 				if cmd := w.rigForm.HandleKey(msg); cmd != nil {
 					rig, _, _ := w.rigForm.Values()
 					if rig == "" {
-						w.toasts.Error("Rig model is required")
-						applog.Warn("Wizard validation: rig model missing")
-						return w, nil
+						// Rig is optional — allow skipping
 					}
-					if w.rigForm.FlrigEnabled {
-						_, host, port := w.rigForm.FlrigValues()
-						if strings.TrimSpace(host) == "" {
-							w.toasts.Error("Flrig host is required")
-							applog.Warn("Wizard validation: flrig host missing")
-							return w, nil
-						}
-						if strings.TrimSpace(port) == "" {
-							w.toasts.Error("Flrig port is required")
-							applog.Warn("Wizard validation: flrig port missing")
-							return w, nil
-						}
-					}
-					w.step = stepTimezone
-					w.tzIndex = config.SystemTimezoneIndex()
+					w.step = stepWSJTX
 					flrigOn, _, _ := w.rigForm.FlrigValues()
-					applog.InfoDetail("Wizard rig step completed", fmt.Sprintf("rig=%s flrig=%v", rig, flrigOn))
+					applog.InfoDetail("Wizard: rig step done", fmt.Sprintf("rig=%s flrig=%v", rig, flrigOn))
 					return w, nil
+				}
+			case stepWSJTX:
+				switch k.String() {
+				case " ", "enter":
+					w.wsjtxEnable = !w.wsjtxEnable
+				case "y", "Y":
+					w.step = stepTimezone
+					w.wsjtxEnable = true
+					return w, nil
+				case "n", "N":
+					w.step = stepTimezone
+					w.wsjtxEnable = false
+					return w, nil
+				case "tab", "down":
+					if w.wsjtxEnable {
+						// Would toggle to host/port fields
+					}
 				}
 			case stepTimezone:
 				if k.String() == "enter" {
@@ -131,69 +144,75 @@ func (w *Wizard) View() string {
 		return w.viewStation()
 	case stepRig:
 		return w.viewRig()
+	case stepWSJTX:
+		return w.viewWSJTX()
 	case stepTimezone:
 		return w.viewTimezone()
 	}
 	return ""
 }
 
-func (w *Wizard) logoHeader() string {
-	box := lipgloss.NewStyle().
-		BorderStyle(lipgloss.DoubleBorder()).
-		BorderForeground(lipgloss.Color("86")).
-		Padding(0, 2).
-		Align(lipgloss.Center)
-
-	title := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86")).Render("CQOPS")
-	motto := lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("229")).Render("Less clicking. More radio.")
-	url := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render(
-		"\x1b]8;;https://app.cqops.com\x1b\\https://app.cqops.com\x1b]8;;\x1b\\",
-	)
-
-	inner := lipgloss.JoinVertical(lipgloss.Center,
-		title+"  —  "+motto,
-		url,
-	)
-
-	return box.Render(inner)
-}
-
 func (w *Wizard) viewStation() string {
 	var b strings.Builder
-	b.WriteString(w.logoHeader())
+	b.WriteString(w.banner())
+	b.WriteString("\n")
+	b.WriteString(w.stepIndicator("Station Setup", "Enter your callsign, grid locator, and optional park references."))
 	b.WriteString("\n\n")
-
 	b.WriteString(w.station.View())
-
 	b.WriteString("\n\n")
-	b.WriteString(helpStyle.Render("Ctrl+S to save  |  Enter/Tab/↓ to next  |  Shift+Tab/↑ to previous  |  Ctrl+Q to quit"))
+	b.WriteString(w.helpLine("Ctrl+S save & next  |  Tab/↓ next field  |  Shift+Tab/↑ previous  |  Ctrl+Q quit"))
 	return b.String()
 }
 
 func (w *Wizard) viewRig() string {
 	var b strings.Builder
-	b.WriteString(w.logoHeader())
+	b.WriteString(w.banner())
+	b.WriteString("\n")
+	b.WriteString(w.stepIndicator("Rig & Antenna", "Configure your radio and optionally enable flrig for automatic frequency/mode reading."))
 	b.WriteString("\n\n")
-
 	b.WriteString(w.rigForm.View())
-
 	b.WriteString("\n\n")
-	b.WriteString(helpStyle.Render("Ctrl+S to save  |  Space to toggle checkbox  |  Enter/Tab/↓ to next  |  Shift+Tab/↑ to previous  |  Ctrl+Q to quit"))
+	b.WriteString(w.helpLine("Ctrl+S save & next  |  Space toggle flrig  |  Tab/↓ next  |  Esc back  |  Ctrl+Q quit"))
+	return b.String()
+}
+
+func (w *Wizard) viewWSJTX() string {
+	var b strings.Builder
+	b.WriteString(w.banner())
+	b.WriteString("\n")
+	b.WriteString(w.stepIndicator("WSJT-X Integration", "Automatically log QSOs from FT8, FT4, and other digital modes."))
+	b.WriteString("\n\n")
+
+	status := "[x]"
+	label := lipgloss.NewStyle().Foreground(lipgloss.Color("229")).Render("Enabled")
+	if !w.wsjtxEnable {
+		status = "[ ]"
+		label = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render("Disabled")
+	}
+	b.WriteString(fmt.Sprintf("  WSJT-X: %s %s\n", status, label))
+	b.WriteString(fmt.Sprintf("  UDP:    %s:%s\n", w.wsjtxHost, w.wsjtxPort))
+	b.WriteString("\n")
+	b.WriteString(DimStyle.Render("  Press Space to toggle, Y/N to confirm and continue"))
+	b.WriteString("\n")
+	b.WriteString(DimStyle.Render("  WSJT-X must be configured to send UDP to this address in its Settings → Reporting tab"))
+	b.WriteString("\n\n")
+	b.WriteString(w.helpLine("Y accept  |  N skip  |  Space toggle  |  Esc back  |  Ctrl+Q quit"))
 	return b.String()
 }
 
 func (w *Wizard) viewTimezone() string {
 	var b strings.Builder
-	b.WriteString(w.logoHeader())
+	b.WriteString(w.banner())
+	b.WriteString("\n")
+	b.WriteString(w.stepIndicator("Timezone", "Select your local timezone. All QSO times are stored in UTC — this setting controls how dates and times are displayed."))
 	b.WriteString("\n\n")
 
-	b.WriteString("Select your timezone:")
-	b.WriteString("\n\n")
+	selectedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("229")).Bold(true)
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 
 	detectedIdx := config.SystemTimezoneIndex()
-	detectedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
-	selectedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("229")).Bold(true)
 
+	// Show 9 entries centered around current selection
 	start := w.tzIndex - 4
 	if start < 0 {
 		start = 0
@@ -208,32 +227,77 @@ func (w *Wizard) viewTimezone() string {
 	}
 
 	for i := start; i < end; i++ {
-		marker := "   "
+		tz := config.Timezones[i]
 		if i == w.tzIndex {
-			marker = " > "
-		}
-
-		line := fmt.Sprintf("%s%s", marker, config.Timezones[i])
-		if i == detectedIdx {
-			line += " " + detectedStyle.Render("← detected")
-		}
-
-		if i == w.tzIndex {
-			b.WriteString(selectedStyle.Render(line))
+			b.WriteString("  ")
+			b.WriteString(selectedStyle.Render("> " + tz))
 		} else {
-			b.WriteString(line)
+			b.WriteString("    ")
+			b.WriteString(tz)
+		}
+		if i == detectedIdx {
+			b.WriteString(dimStyle.Render("  (detected)"))
 		}
 		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")
-	b.WriteString(helpStyle.Render("↑↓ to choose  |  Enter to save & finish  |  Ctrl+Q to quit"))
+	b.WriteString(w.helpLine("↑↓ choose  |  Enter save & finish  |  Esc back  |  Ctrl+Q quit"))
 	return b.String()
+}
+
+// banner returns the wizard header with project name and tagline.
+func (w *Wizard) banner() string {
+	border := lipgloss.NewStyle().
+		BorderStyle(lipgloss.DoubleBorder()).
+		BorderForeground(lipgloss.Color("86")).
+		Padding(0, 3).
+		Align(lipgloss.Center)
+
+	name := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86")).Render("CQOps")
+	tag := lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("229")).Render("Portable Ham Radio Logger")
+	gh := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render("github.com/szporwolik/cqops")
+
+	inner := lipgloss.JoinVertical(lipgloss.Center,
+		name+"  —  "+tag,
+		gh,
+	)
+
+	return border.Render(inner)
+}
+
+// stepIndicator renders a progress indicator and section description.
+func (w *Wizard) stepIndicator(title, desc string) string {
+	total := int(stepCount)
+	current := int(w.step) + 1
+
+	dots := make([]string, total)
+	for i := 0; i < total; i++ {
+		if i < current {
+			dots[i] = "●"
+		} else {
+			dots[i] = "○"
+		}
+	}
+
+	active := lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
+	inactive := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+
+	progress := active.Render(strings.Join(dots[:current], "")) + inactive.Render(strings.Join(dots[current:], ""))
+
+	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("229")).Render(title)
+	subtitle := DimStyle.Render(desc)
+
+	return fmt.Sprintf("  %s  %s  Step %d/%d\n  %s", progress, header, current, total, subtitle)
+}
+
+func (w *Wizard) helpLine(text string) string {
+	return HelpStyle.Render(text)
 }
 
 func (w *Wizard) handleEnter() tea.Cmd {
 	w.App.Config.Timezone = config.Timezones[w.tzIndex]
-	applog.Info("Wizard timezone selected", "timezone", config.Timezones[w.tzIndex])
+	applog.Info("Wizard: timezone selected", "timezone", config.Timezones[w.tzIndex])
 	w.saveConfig()
 	return tea.Quit
 }
@@ -258,6 +322,12 @@ func (w *Wizard) saveConfig() {
 		},
 	}
 
+	w.App.Config.WSJTX.Enabled = w.wsjtxEnable
+	if w.wsjtxEnable {
+		w.App.Config.WSJTX.UDPHost = w.wsjtxHost
+		w.App.Config.WSJTX.UDPPort = 2233
+	}
+
 	w.App.Config.Logbooks["default"] = config.Logbook{
 		Description: "Default station logbook",
 		Station: config.Station{
@@ -277,5 +347,6 @@ func (w *Wizard) saveConfig() {
 	lb := w.App.Config.Logbooks["default"]
 	w.App.Logbook = &lb
 
-	applog.InfoDetail("Wizard completed — config saved", fmt.Sprintf("callsign=%s rig=%s flrig=%v tz=%s", cs, rig, flrigEnabled, config.Timezones[w.tzIndex]))
+	applog.InfoDetail("Wizard completed", fmt.Sprintf("call=%s rig=%s flrig=%v wsjtx=%v tz=%s",
+		cs, rig, flrigEnabled, w.wsjtxEnable, config.Timezones[w.tzIndex]))
 }
