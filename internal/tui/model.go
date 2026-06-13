@@ -862,17 +862,16 @@ func (m *Model) View() string {
 	} else if m.showPartner && m.partnerData != nil {
 		content = m.viewPartner()
 	} else {
-		// Compute available body height first
+		// QSO form: compute body height and build form + QSO list
 		headerLines := strings.Count(header, "\n") + 1
-		footerLines := 1
 		const toastReserved = 2
-		const joins = 0
+		const footerLines = 1
+		const joins = 3
 		maxBodyH := m.height - headerLines - toastReserved - footerLines - joins
 		if maxBodyH < 8 {
 			maxBodyH = 8
 		}
 
-		// Build form and measure
 		form := m.viewForm(w)
 		distLine := m.formDistanceLine(w)
 		formBlock := form
@@ -882,7 +881,6 @@ func (m *Model) View() string {
 		formRendered := lipgloss.NewStyle().Width(w).Padding(0, 1).Render(formBlock)
 		formLines := strings.Count(formRendered, "\n") + 1
 
-		// Remaining space for QSO list (minus section title + header = 2 lines)
 		qsoRows := maxBodyH - formLines - 2
 		if qsoRows < 0 {
 			qsoRows = 0
@@ -891,25 +889,30 @@ func (m *Model) View() string {
 		qsoRendered := lipgloss.NewStyle().Width(w).Padding(0, 1).Render(qsoList)
 
 		body := formRendered + "\n" + qsoRendered
-		// Pad body to exactly maxBodyH lines
 		bodyLines := strings.Count(body, "\n") + 1
 		for bodyLines < maxBodyH {
 			body += "\n"
 			bodyLines++
 		}
-		body = trimLines(body, maxBodyH)
-		content = body
+		content = trimLines(body, maxBodyH)
 	}
 
-	if content == "" {
-		return ""
+	// Trim all content to fit available body height
+	// Layout: header + "\n" + content + "\n" + toastBlock(2) + "\n" + footer(1)
+	headerLines := strings.Count(header, "\n") + 1
+	const toastReserved = 2
+	const footerLines = 1
+	const joins = 3 // \n after header, after content, after toastBlock
+	maxBodyH := m.height - headerLines - toastReserved - footerLines - joins
+	if maxBodyH < 4 {
+		maxBodyH = 4
 	}
+	content = trimLines(content, maxBodyH)
 
 	toastBar := RenderToasts(m.toasts.Active(), w)
 	footer := m.viewFooter(w)
 
-	// Build exactly 2 toast rows
-	const toastReserved = 2
+	// Build exactly toastReserved rows
 	toastLines := strings.Split(toastBar, "\n")
 	if toastBar == "" {
 		toastLines = nil
