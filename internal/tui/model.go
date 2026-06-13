@@ -407,10 +407,13 @@ func (m *Model) uploadADIFToWavelog(adifStr string, qID int64, call string) tea.
 
 	return func() tea.Msg {
 		applog.InfoDetail("Wavelog: uploading QSO", fmt.Sprintf("qso_id=%d call=%s", qID, call))
-		err := wavelog.PostQSO(url, key, stationID, adifStr)
+		result, err := wavelog.PostQSOWithResult(url, key, stationID, adifStr)
 		if err != nil {
 			applog.Error("Wavelog: QSO upload failed", "qso_id", qID, "call", call, "error", err)
 			return wlUploadResultMsg{qID: qID, call: call, ok: false, err: err}
+		}
+		if result != nil && result.AllDuplicates {
+			applog.InfoDetail("Wavelog: QSO already present (duplicate)", fmt.Sprintf("qso_id=%d call=%s", qID, call))
 		}
 		applog.InfoDetail("Wavelog: QSO uploaded OK", fmt.Sprintf("qso_id=%d call=%s", qID, call))
 		return wlUploadResultMsg{qID: qID, call: call, ok: true}
@@ -731,7 +734,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showLogView = false
 			m.showPartner = false
 			m.showLogbookEditor = true
-			m.logbookEditor = NewLogbookEditor(m.App.DB, m.App.Config.Wavelog.URL, m.App.Config.Wavelog.APIKey, m.App.Config.Wavelog.StationProfileID)
+			m.logbookEditor = NewLogbookEditor(m.App.DB, m.App.Config.Wavelog.URL, m.App.Config.Wavelog.APIKey, m.App.Config.Wavelog.StationProfileID, m.App.Config.Wavelog.StationCallsign, m.App.Logbook.Station.Operator, m.App.Logbook.Station.Grid)
 			qsos, _ := store.ListAllQSOs(m.App.DB)
 			m.logbookEditor.SetQSOS(qsos)
 			return m, cmd
@@ -841,7 +844,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showMainMenu = true
 			}
 			if m.integrationMenu.saved {
-				wsjtxE, wsjtxH, wsjtxP, wlE, wlURL, wlKey, wlSta, _ := m.integrationMenu.Values()
+				wsjtxE, wsjtxH, wsjtxP, wlE, wlURL, wlKey, wlSta, wlStaCall, _ := m.integrationMenu.Values()
 				m.App.Config.WSJTX.Enabled = wsjtxE
 				m.App.Config.WSJTX.UDPHost = wsjtxH
 				m.App.Config.WSJTX.UDPPort = wsjtxP
@@ -849,6 +852,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.App.Config.Wavelog.URL = wlURL
 				m.App.Config.Wavelog.APIKey = wlKey
 				m.App.Config.Wavelog.StationProfileID = wlSta
+				m.App.Config.Wavelog.StationCallsign = wlStaCall
 				if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
 					m.toasts.Error("Settings save failed: " + err.Error())
 				} else {

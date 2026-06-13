@@ -78,6 +78,7 @@ type WavelogConfig struct {
 	URL              string `yaml:"url"`
 	APIKey           string `yaml:"api_key"`
 	StationProfileID string `yaml:"station_profile_id"`
+	StationCallsign  string `yaml:"station_callsign"`
 }
 
 type WSJTXConfig struct {

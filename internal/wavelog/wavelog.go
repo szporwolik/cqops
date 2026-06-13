@@ -154,9 +154,26 @@ func TestStation(baseURL, apiKey, stationID string) error {
 
 // PostQSO uploads a QSO in ADIF format to Wavelog.
 func PostQSO(baseURL, apiKey, stationID, adifStr string) error {
+	_, err := PostQSOWithResult(baseURL, apiKey, stationID, adifStr)
+	return err
+}
+
+// QSOUploadResult carries structured info about a Wavelog upload response.
+type QSOUploadResult struct {
+	Status        string   `json:"status"`
+	ADIFCount     int      `json:"adif_count"`
+	ADIFErrors    int      `json:"adif_errors"`
+	Messages      []string `json:"messages"`
+	AllDuplicates bool
+}
+
+// PostQSOWithResult uploads a QSO in ADIF format to Wavelog and returns
+// structured result info. When all rejected QSOs are duplicates, the
+// returned error is nil and AllDuplicates is set to true.
+func PostQSOWithResult(baseURL, apiKey, stationID, adifStr string) (*QSOUploadResult, error) {
 	applog.Debug("Wavelog: posting QSO")
 	if baseURL == "" || apiKey == "" || stationID == "" || adifStr == "" {
-		return fmt.Errorf("missing required parameters")
+		return nil, fmt.Errorf("missing required parameters")
 	}
 	baseURL = strings.TrimRight(baseURL, "/")
 	url := baseURL + "/index.php/api/qso"
@@ -170,23 +187,44 @@ func PostQSO(baseURL, apiKey, stationID, adifStr string) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
 		applog.Error("Wavelog: marshal QSO payload failed", "error", err)
-		return err
+		return nil, err
 	}
 
 	resp, err := httpClient.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
 		applog.Error("Wavelog: QSO upload failed", "error", err)
-		return fmt.Errorf("upload failed: %w", err)
+		return nil, fmt.Errorf("upload failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, _ := io.ReadAll(resp.Body)
+	bodyStr := strings.TrimSpace(string(respBody))
+
+	// Try to parse structured response
+	var result QSOUploadResult
+	if jsonErr := json.Unmarshal(respBody, &result); jsonErr == nil {
+		// Check if all errors are duplicates
+		if result.Status == "abort" && result.ADIFErrors > 0 && len(result.Messages) > 1 {
+			allDup := true
+			for _, m := range result.Messages[1:] { // messages[0] is usually empty
+				if m != "" && !strings.Contains(m, "Duplicate for") {
+					allDup = false
+					break
+				}
+			}
+			if allDup && result.ADIFErrors > 0 {
+				result.AllDuplicates = true
+				applog.InfoDetail("Wavelog: all QSOs already present (duplicates)", fmt.Sprintf("count=%d", result.ADIFCount))
+				return &result, nil
+			}
+		}
+	}
 
 	if resp.StatusCode >= 400 {
-		applog.Error("Wavelog: QSO upload server error", "status", resp.StatusCode, "body", strings.TrimSpace(string(respBody)))
-		return fmt.Errorf("server error: HTTP %d — %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		applog.Error("Wavelog: QSO upload server error", "status", resp.StatusCode, "body", bodyStr)
+		return &result, fmt.Errorf("server error: HTTP %d — %s", resp.StatusCode, bodyStr)
 	}
 
 	applog.InfoDetail("Wavelog: QSO uploaded", fmt.Sprintf("status=%d", resp.StatusCode))
-	return nil
+	return &result, nil
 }

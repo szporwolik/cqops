@@ -21,6 +21,7 @@ const (
 	edModeConfirmDelete
 	edModeConfirmPurge
 	edModeConfirmWLSend
+	edModeConfirmNormalize
 	edModeEdit
 )
 
@@ -48,6 +49,7 @@ const (
 	qefStationCall
 	qefOperator
 	qefMyGrid
+	qefWLStatus
 	qefMyRig
 	qefMyAntenna
 	qefSource
@@ -60,7 +62,6 @@ const (
 	qefMySOTA
 	qefMyPOTA
 	qefMyWWFF
-	qefWLStatus
 	qefCount
 )
 
@@ -68,33 +69,37 @@ var qefLabels = []string{
 	"Call", "Date", "Time On", "Time Off", "Band", "Frequency", "Freq RX",
 	"Mode", "Submode", "RST Sent", "RST Rcvd", "Grid", "Name",
 	"QTH", "Country", "Comment", "Notes", "TX Power",
-	"Station Call", "Operator", "My Grid", "My Rig", "My Antenna",
+	"Station Call", "Operator", "My Grid", "WL Status", "My Rig", "My Antenna",
 	"Source", "Distance km", "Bearing",
 	"IOTA", "SOTA Ref", "POTA Ref", "WWFF Ref",
 	"My SOTA", "My POTA", "My WWFF",
-	"WL Status",
 }
 
 type LogbookEditor struct {
-	db          *sql.DB
-	qsos        []qso.QSO
-	cursor      int
-	offset      int
-	mode        editorMode
-	editing     *qso.QSO
-	fields      [qefCount]textinput.Model
-	focus       qsoEditField
-	done        bool
-	needsReload bool
-	width       int
-	height      int
-	wlURL       string
-	wlKey       string
-	wlStationID string
+	db             *sql.DB
+	qsos           []qso.QSO
+	cursor         int
+	offset         int
+	mode           editorMode
+	editing        *qso.QSO
+	fields         [qefCount]textinput.Model
+	focus          qsoEditField
+	done           bool
+	needsReload    bool
+	width          int
+	height         int
+	wlURL          string
+	wlKey          string
+	wlStationID    string
+	wlStationCall  string
+	logStationOp   string
+	logStationGrid string
+	mismatchQSOs   []qso.QSO
+	mismatchFields []string
 }
 
-func NewLogbookEditor(db *sql.DB, wlURL, wlKey, wlStationID string) *LogbookEditor {
-	le := &LogbookEditor{db: db, mode: edModeList, wlURL: wlURL, wlKey: wlKey, wlStationID: wlStationID}
+func NewLogbookEditor(db *sql.DB, wlURL, wlKey, wlStationID, wlStationCall, logStationOp, logStationGrid string) *LogbookEditor {
+	le := &LogbookEditor{db: db, mode: edModeList, wlURL: wlURL, wlKey: wlKey, wlStationID: wlStationID, wlStationCall: wlStationCall, logStationOp: logStationOp, logStationGrid: logStationGrid}
 	for i := qsoEditField(0); i < qefCount; i++ {
 		ti := textinput.New()
 		ti.Prompt = ""
@@ -118,6 +123,10 @@ func NewLogbookEditor(db *sql.DB, wlURL, wlKey, wlStationID string) *LogbookEdit
 			ti.CharLimit = 10
 		case qefDistance, qefBearing:
 			ti.CharLimit = 10
+		case qefComment:
+			ti.CharLimit = 80
+		case qefNotes:
+			ti.CharLimit = 200
 		case qefSOTA, qefPOTA, qefWWFF, qefIOTA, qefMySOTA, qefMyPOTA, qefMyWWFF:
 			ti.CharLimit = 20
 		case qefWLStatus:
@@ -227,13 +236,14 @@ func (le *LogbookEditor) prevField() {
 }
 
 type editorMsg struct {
-	deleted int64
-	saved   int64
-	purged  bool
-	wlQSOID int64
-	wlCall  string
-	wlOK    bool
-	err     error
+	deleted    int64
+	saved      int64
+	purged     bool
+	wlQSOID    int64
+	wlCall     string
+	wlOK       bool
+	normalized int
+	err        error
 }
 
 func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -246,15 +256,25 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			// error handled by caller via toast
 		}
-		if msg.deleted != 0 || msg.saved != 0 || msg.purged {
+		if msg.deleted != 0 || msg.saved != 0 || msg.purged || msg.wlCall != "" {
 			le.mode = edModeList
 			le.needsReload = true
+		}
+		if msg.normalized > 0 {
+			// Normalization done, now upload all unsent QSOs
+			var unsent []qso.QSO
+			for _, q := range le.qsos {
+				if q.WavelogUploaded != "yes" {
+					unsent = append(unsent, q)
+				}
+			}
+			return le, le.uploadBatch(unsent)
 		}
 
 	case tea.KeyMsg:
 		k := msg.String()
 
-if le.mode == edModeConfirmDelete || le.mode == edModeConfirmPurge || le.mode == edModeConfirmWLSend {
+		if le.mode == edModeConfirmDelete || le.mode == edModeConfirmPurge || le.mode == edModeConfirmWLSend || le.mode == edModeConfirmNormalize {
 			switch k {
 			case "y", "Y":
 				return le, le.doConfirm()
@@ -300,6 +320,10 @@ if le.mode == edModeConfirmDelete || le.mode == edModeConfirmPurge || le.mode ==
 			if len(le.qsos) > 0 {
 				le.mode = edModeConfirmDelete
 			}
+		case "ctrl+w":
+			if le.wlURL != "" && le.wlKey != "" && le.wlStationID != "" && len(le.qsos) > 0 {
+				le.mode = edModeConfirmWLSend
+			}
 		case "e", "enter":
 			if len(le.qsos) > 0 {
 				q := le.qsos[le.cursor]
@@ -321,6 +345,9 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 	if le.mode == edModeConfirmWLSend {
 		return le.doBatchUpload()
 	}
+	if le.mode == edModeConfirmNormalize {
+		return le.doNormalizeAndUpload()
+	}
 	if le.mode == edModeConfirmDelete {
 		id := le.qsos[le.cursor].ID
 		return func() tea.Msg {
@@ -340,8 +367,9 @@ func (le *LogbookEditor) doSave() tea.Cmd {
 }
 
 func (le *LogbookEditor) doBatchUpload() tea.Cmd {
-	url, key, sid := le.wlURL, le.wlKey, le.wlStationID
-	db := le.db
+	wlCall := le.wlStationCall
+	logOp := le.logStationOp
+	logGrid := le.logStationGrid
 
 	// Collect unsent QSOs
 	var unsent []qso.QSO
@@ -356,25 +384,180 @@ func (le *LogbookEditor) doBatchUpload() tea.Cmd {
 		}
 	}
 
-	// Build batch ADIF
+	// Detect mismatches against Wavelog station / logbook station defaults
+	var mismatch []qso.QSO
+	var fields []string
+	hasCallMismatch := false
+	hasOpMismatch := false
+	hasGridMismatch := false
+	for _, q := range unsent {
+		callDiff := wlCall != "" && q.StationCallsign != "" && !strings.EqualFold(q.StationCallsign, wlCall)
+		opDiff := logOp != "" && q.Operator != "" && !strings.EqualFold(q.Operator, logOp)
+		gridDiff := logGrid != "" && q.MyGridSquare != "" && !strings.EqualFold(q.MyGridSquare, logGrid)
+		if callDiff || opDiff || gridDiff {
+			mismatch = append(mismatch, q)
+			if callDiff {
+				hasCallMismatch = true
+			}
+			if opDiff {
+				hasOpMismatch = true
+			}
+			if gridDiff {
+				hasGridMismatch = true
+			}
+		}
+	}
+	if hasCallMismatch {
+		fields = append(fields, "callsign")
+	}
+	if hasOpMismatch {
+		fields = append(fields, "operator")
+	}
+	if hasGridMismatch {
+		fields = append(fields, "grid")
+	}
+
+	if len(mismatch) > 0 {
+		le.mismatchQSOs = mismatch
+		le.mismatchFields = fields
+		le.mode = edModeConfirmNormalize
+		return nil
+	}
+
+	return le.uploadBatch(unsent)
+}
+
+func (le *LogbookEditor) doNormalizeAndUpload() tea.Cmd {
+	db := le.db
+	mismatch := le.mismatchQSOs
+	wlCall := le.wlStationCall
+	logOp := le.logStationOp
+	logGrid := le.logStationGrid
+
+	// Collect all unsent QSOs (some may not be mismatched but still unsent)
+	var unsent []qso.QSO
+	for _, q := range le.qsos {
+		if q.WavelogUploaded != "yes" {
+			unsent = append(unsent, q)
+		}
+	}
+
+	// Build list of IDs to normalize
+	var normIDs []int64
+	for _, q := range mismatch {
+		normIDs = append(normIDs, q.ID)
+	}
+
+	applog.InfoDetail("Wavelog: normalizing station fields", fmt.Sprintf("count=%d call=%s op=%s grid=%s", len(normIDs), wlCall, logOp, logGrid))
+
+	return func() tea.Msg {
+		if err := store.NormalizeStationFields(db, normIDs, wlCall, logOp, logGrid); err != nil {
+			applog.Error("Wavelog: normalization failed", "error", err)
+			return editorMsg{wlOK: false, err: fmt.Errorf("normalize: %w", err)}
+		}
+		// Also update in-memory QSO list so the list view reflects changes
+		for i := range le.qsos {
+			for _, mid := range normIDs {
+				if le.qsos[i].ID == mid {
+					le.qsos[i].StationCallsign = wlCall
+					le.qsos[i].Operator = logOp
+					le.qsos[i].MyGridSquare = logGrid
+					break
+				}
+			}
+		}
+		return editorMsg{normalized: len(normIDs)}
+	}
+}
+
+func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
+	url, key, sid := le.wlURL, le.wlKey, le.wlStationID
+	db := le.db
+	wlCall := le.wlStationCall
+
+	// Build batch ADIF (override station callsign to match Wavelog station)
 	var adifStr string
 	for _, q := range unsent {
-		adifStr += q.ToADIF()
+		adifStr += q.ToADIFWithStation(wlCall)
 	}
 
 	applog.InfoDetail("Wavelog: batch upload", fmt.Sprintf("count=%d", len(unsent)))
 
 	return func() tea.Msg {
-		err := wavelog.PostQSO(url, key, sid, adifStr)
+		result, err := wavelog.PostQSOWithResult(url, key, sid, adifStr)
 		if err != nil {
+			// If the error contains duplicates, fall back to individual uploads
+			// so that duplicates don't block new QSOs.
+			errStr := err.Error()
+			if strings.Contains(errStr, "Duplicate for") {
+				applog.Warn("Wavelog: batch had duplicates, falling back to individual uploads", "count", len(unsent))
+				return le.uploadIndividual(unsent)()
+			}
 			applog.Error("Wavelog: batch upload failed", "count", len(unsent), "error", err)
 			return editorMsg{wlOK: false, err: err, wlCall: fmt.Sprintf("%d QSOs", len(unsent))}
+		}
+		if result != nil && result.AllDuplicates {
+			for _, q := range unsent {
+				store.UpdateWavelogStatus(db, q.ID, "yes")
+			}
+			applog.InfoDetail("Wavelog: batch already present (duplicates)", fmt.Sprintf("count=%d", len(unsent)))
+			return editorMsg{wlQSOID: unsent[0].ID, wlOK: true, wlCall: fmt.Sprintf("%d QSOs (already on Wavelog)", len(unsent))}
 		}
 		for _, q := range unsent {
 			store.UpdateWavelogStatus(db, q.ID, "yes")
 		}
 		applog.InfoDetail("Wavelog: batch upload OK", fmt.Sprintf("count=%d", len(unsent)))
 		return editorMsg{wlQSOID: unsent[0].ID, wlOK: true, wlCall: fmt.Sprintf("%d QSOs", len(unsent))}
+	}
+}
+
+// uploadIndividual sends each unsent QSO one at a time, silently handling
+// duplicates. Used as fallback when a batch upload encounters mixed results.
+func (le *LogbookEditor) uploadIndividual(unsent []qso.QSO) tea.Cmd {
+	url, key, sid := le.wlURL, le.wlKey, le.wlStationID
+	db := le.db
+	wlCall := le.wlStationCall
+
+	return func() tea.Msg {
+		okCount := 0
+		dupCount := 0
+		failCount := 0
+		var lastErr error
+
+		for _, q := range unsent {
+			adifStr := q.ToADIFWithStation(wlCall)
+			result, err := wavelog.PostQSOWithResult(url, key, sid, adifStr)
+			if err != nil {
+				applog.Warn("Wavelog: individual upload failed", "qso_id", q.ID, "call", q.Call, "error", err)
+				store.UpdateWavelogStatus(db, q.ID, "no")
+				failCount++
+				lastErr = err
+				continue
+			}
+			if result != nil && result.AllDuplicates {
+				applog.Debug("Wavelog: duplicate (silent)", "qso_id", q.ID, "call", q.Call)
+				store.UpdateWavelogStatus(db, q.ID, "yes")
+				dupCount++
+				continue
+			}
+			store.UpdateWavelogStatus(db, q.ID, "yes")
+			okCount++
+		}
+
+		applog.InfoDetail("Wavelog: individual upload complete",
+			fmt.Sprintf("ok=%d dup=%d fail=%d", okCount, dupCount, failCount))
+
+		if failCount > 0 && okCount == 0 && dupCount == 0 {
+			return editorMsg{wlOK: false, err: lastErr, wlCall: fmt.Sprintf("%d failed", failCount)}
+		}
+		msg := fmt.Sprintf("%d ok", okCount)
+		if dupCount > 0 {
+			msg += fmt.Sprintf(", %d already present", dupCount)
+		}
+		if failCount > 0 {
+			msg += fmt.Sprintf(", %d failed", failCount)
+		}
+		return editorMsg{wlQSOID: unsent[0].ID, wlOK: true, wlCall: msg}
 	}
 }
 
@@ -385,18 +568,23 @@ func (le *LogbookEditor) doUploadToWavelog() tea.Cmd {
 		}
 	}
 	q := le.readEditForm()
-	adifStr := q.ToADIF()
+	adifStr := q.ToADIFWithStation(le.wlStationCall)
 	url, key, sid := le.wlURL, le.wlKey, le.wlStationID
 	qID := q.ID
 	call := q.Call
 
 	return func() tea.Msg {
 		applog.InfoDetail("Wavelog: uploading from editor", fmt.Sprintf("qso_id=%d call=%s", qID, call))
-		err := wavelog.PostQSO(url, key, sid, adifStr)
+		result, err := wavelog.PostQSOWithResult(url, key, sid, adifStr)
 		if err != nil {
 			applog.Error("Wavelog: editor upload failed", "qso_id", qID, "call", call, "error", err)
 			store.UpdateWavelogStatus(le.db, qID, "no")
 			return editorMsg{wlQSOID: qID, wlCall: call, wlOK: false, err: err}
+		}
+		if result != nil && result.AllDuplicates {
+			store.UpdateWavelogStatus(le.db, qID, "yes")
+			applog.InfoDetail("Wavelog: editor QSO already present (duplicate)", fmt.Sprintf("qso_id=%d call=%s", qID, call))
+			return editorMsg{wlQSOID: qID, wlCall: call, wlOK: true}
 		}
 		store.UpdateWavelogStatus(le.db, qID, "yes")
 		applog.InfoDetail("Wavelog: editor upload OK", fmt.Sprintf("qso_id=%d call=%s", qID, call))
@@ -413,14 +601,16 @@ func (le *LogbookEditor) FooterText() string {
 		return "Purge ALL QSOs? This cannot be undone. (y/N)"
 	case edModeConfirmWLSend:
 		return "Send all unsent QSOs to Wavelog? (y/N)"
+	case edModeConfirmNormalize:
+		return fmt.Sprintf("Normalize %d QSOs (station %s) then upload? (y/N)", len(le.mismatchQSOs), strings.Join(le.mismatchFields, "/"))
 	case edModeEdit:
 		if hasWL {
-			return "Ctrl+S to save  Ctrl+W Upload to Wavelog  Tab/Up/Dn to navigate  Esc to discard"
+			return "ctrl+s to save  ctrl+w Upload to Wavelog  Tab/Up/Dn to navigate  Esc to discard"
 		}
-		return "Ctrl+S to save  Tab/Up/Dn to navigate  Esc to discard"
+		return "ctrl+s to save  Tab/Up/Dn to navigate  Esc to discard"
 	default:
 		if hasWL {
-			return "Up/Dn scroll  Enter/e edit  Del delete  Ctrl+W send all to Wavelog  p purge  F5/Esc close"
+			return "Up/Dn scroll  Enter/e edit  Del delete  ctrl+w send all to Wavelog  p purge  F5/Esc close"
 		}
 		return "Up/Dn scroll  Enter/e edit  Del delete  p purge  F5/Esc close"
 	}
@@ -449,6 +639,8 @@ func (le *LogbookEditor) View() string {
 			}
 		}
 		return le.viewConfirm(fmt.Sprintf("Send %d unsent QSOs to Wavelog", unsent), bodyW)
+	case edModeConfirmNormalize:
+		return le.viewNormalizeConfirm(bodyW)
 	case edModeEdit:
 		return le.viewEdit(bodyW)
 	default:
@@ -461,6 +653,17 @@ func (le *LogbookEditor) viewConfirm(action string, bodyW int) string {
 	b.WriteString(section("── "+action+" ", bodyW))
 	b.WriteString("\n\n")
 	b.WriteString("  Are you sure? (y/N)")
+	return b.String()
+}
+
+func (le *LogbookEditor) viewNormalizeConfirm(bodyW int) string {
+	var b strings.Builder
+	fields := strings.Join(le.mismatchFields, ", ")
+	b.WriteString(section(fmt.Sprintf("── Normalize %d QSOs ", len(le.mismatchQSOs)), bodyW))
+	b.WriteString(fmt.Sprintf("\n\n  %d unsent QSOs have mismatched station %s.", len(le.mismatchQSOs), fields))
+	b.WriteString("\n  Normalize them to match the Wavelog station profile,")
+	b.WriteString("\n  update the local database, then upload?")
+	b.WriteString("\n\n  Are you sure? (y/N)")
 	return b.String()
 }
 
@@ -560,14 +763,7 @@ var editorAllCols = []editorCol{
 	{"DXCC", 6, 0, true, 55, func(q *qso.QSO) string { return q.Country }},
 	{"Name", 7, 0, true, 50, func(q *qso.QSO) string { return q.Name }},
 	{"QTH", 8, 0, true, 45, func(q *qso.QSO) string { return q.QTH }},
-	{"Comment", 10, 0, true, 40, func(q *qso.QSO) string { return q.Comment }},
-	{"Rig", 8, 0, true, 35, func(q *qso.QSO) string { return q.MyRig }},
-	{"Sub", 4, 0, false, 30, func(q *qso.QSO) string { return q.Submode }},
-	{"SOTA", 8, 0, false, 25, func(q *qso.QSO) string { return q.SOTARef }},
-	{"POTA", 8, 0, false, 20, func(q *qso.QSO) string { return q.POTARef }},
-	{"IOTA", 7, 0, false, 15, func(q *qso.QSO) string { return q.IOTA }},
-	{"WWFF", 9, 0, false, 10, func(q *qso.QSO) string { return q.WWFFRef }},
-	{"WL", 8, 0, false, 30, func(q *qso.QSO) string {
+	{"WL", 8, 0, false, 42, func(q *qso.QSO) string {
 		switch q.WavelogUploaded {
 		case "yes":
 			return "yes"
@@ -577,6 +773,13 @@ var editorAllCols = []editorCol{
 			return ""
 		}
 	}},
+	{"Comment", 10, 0, true, 40, func(q *qso.QSO) string { return q.Comment }},
+	{"Rig", 8, 0, true, 5, func(q *qso.QSO) string { return q.MyRig }},
+	{"Sub", 4, 0, false, 25, func(q *qso.QSO) string { return q.Submode }},
+	{"SOTA", 8, 0, false, 25, func(q *qso.QSO) string { return q.SOTARef }},
+	{"POTA", 8, 0, false, 20, func(q *qso.QSO) string { return q.POTARef }},
+	{"IOTA", 7, 0, false, 15, func(q *qso.QSO) string { return q.IOTA }},
+	{"WWFF", 9, 0, false, 10, func(q *qso.QSO) string { return q.WWFFRef }},
 }
 
 func selectEditorCols(availW int) []editorCol {

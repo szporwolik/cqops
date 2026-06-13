@@ -403,20 +403,22 @@ func (im *IntegrationMenu) renderField(focusIdx int, label, value string) string
 }
 
 // Values returns all integration config values.
-func (im *IntegrationMenu) Values() (wsjtxEnabled bool, wsjtxHost string, wsjtxPort int, wlEnabled bool, wlURL string, wlAPIKey string, wlStationID string, wlStationName string) {
+func (im *IntegrationMenu) Values() (wsjtxEnabled bool, wsjtxHost string, wsjtxPort int, wlEnabled bool, wlURL string, wlAPIKey string, wlStationID string, wlStationCall string, wlStationName string) {
 	p := 2233
 	if v, err := strconv.Atoi(strings.TrimSpace(im.port.Value())); err == nil && v > 0 {
 		p = v
 	}
 	sid := ""
+	scall := ""
 	sname := ""
 	if im.wlStation >= 0 && im.wlStation < len(im.wlStations) {
 		s := im.wlStations[im.wlStation]
 		sid = s.ID
+		scall = s.Callsign
 		sname = fmt.Sprintf("%s / %s", s.Gridsquare, s.Callsign)
 	} else if im.savedStationID != "" {
 		sid = im.savedStationID
 	}
 	return im.wsjtxEnabled, strings.TrimSpace(im.host.Value()), p,
-		im.wlEnabled, strings.TrimSpace(im.wlURL.Value()), strings.TrimSpace(im.wlAPIKey.Value()), sid, sname
+		im.wlEnabled, strings.TrimSpace(im.wlURL.Value()), strings.TrimSpace(im.wlAPIKey.Value()), sid, scall, sname
 }

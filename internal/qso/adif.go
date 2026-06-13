@@ -10,6 +10,17 @@ import (
 
 // ToADIF returns the QSO as an ADIF string suitable for Wavelog upload.
 func (q *QSO) ToADIF() string {
+	return q.toADIFWithStation(q.StationCallsign)
+}
+
+// ToADIFWithStation returns the QSO as an ADIF string, overriding the
+// station callsign (needed when uploading to a Wavelog station whose
+// callsign differs from the operator's callsign recorded in the QSO).
+func (q *QSO) ToADIFWithStation(stationCall string) string {
+	return q.toADIFWithStation(stationCall)
+}
+
+func (q *QSO) toADIFWithStation(stationCall string) string {
 	r := adif.NewRecord()
 
 	set := func(f adifield.Field, v string) {
@@ -39,8 +50,9 @@ func (q *QSO) ToADIF() string {
 	set(adifield.QTH, q.QTH)
 	set(adifield.COUNTRY, q.Country)
 	set(adifield.COMMENT, q.Comment)
+	set(adifield.NOTES, q.Notes)
 	set(adifield.TX_PWR, q.TXPower)
-	set(adifield.STATION_CALLSIGN, q.StationCallsign)
+	set(adifield.STATION_CALLSIGN, stationCall)
 	set(adifield.OPERATOR, q.Operator)
 	set(adifield.MY_GRIDSQUARE, q.MyGridSquare)
 	set(adifield.MY_RIG, q.MyRig)
