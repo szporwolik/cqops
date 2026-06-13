@@ -7,8 +7,10 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/szporwolik/cqops/internal/app"
+	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
+	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
 var (
@@ -56,8 +58,20 @@ var logAddCmd = &cobra.Command{
 		qs.Freq = logFreq
 		qs.Mode = strings.ToUpper(logMode)
 		qs.Submode = strings.ToUpper(logSubmode)
+
+	// Auto-fill RST if not provided (same logic as TUI)
+	if logRSTSent != "" {
 		qs.RSTSent = logRSTSent
+	} else if qs.Mode == "CW" {
+		qs.RSTSent = "599"
+	} else if qs.Mode != "" {
+		qs.RSTSent = "59"
+	}
+	if logRSTRcvd != "" {
 		qs.RSTRcvd = logRSTRcvd
+	} else if qs.RSTSent != "" {
+		qs.RSTRcvd = qs.RSTSent
+	}
 		qs.GridSquare = strings.ToUpper(logGrid)
 		qs.Name = logName
 		qs.QTH = logQTH
@@ -96,6 +110,9 @@ var logAddCmd = &cobra.Command{
 			MyRig:           a.Logbook.Station.Rig,
 			MyAntenna:       a.Logbook.Station.Antenna,
 			TXPower:         a.Logbook.Station.Power,
+			MySOTARef:       a.Logbook.Station.SOTARef,
+			MyPOTARef:       a.Logbook.Station.POTARef,
+			MyWWFFRef:       a.Logbook.Station.WWFFRef,
 		})
 
 		if err := qso.ValidateForSave(qs); err != nil {
@@ -114,6 +131,32 @@ var logAddCmd = &cobra.Command{
 
 		fmt.Printf("QSO saved [%s]: %s %s %s %s UTC (id: %d)\n",
 			a.LogbookName, qs.Call, bandStr, qs.Mode, qs.QSODate, id)
+
+		// Upload to Wavelog if configured
+		if a.Config.Wavelog.Enabled && a.Config.Wavelog.StationProfileID != "" {
+			wlCall := a.Config.Wavelog.StationCallsign
+			if wlCall == "" {
+				wlCall = a.Logbook.Station.Callsign
+			}
+			adifStr := qs.ToADIFWithStation(wlCall)
+			result, wlErr := wavelog.PostQSOWithResult(
+				a.Config.Wavelog.URL,
+				a.Config.Wavelog.APIKey,
+				a.Config.Wavelog.StationProfileID,
+				adifStr,
+			)
+			if wlErr != nil {
+				store.UpdateWavelogStatus(a.DB, id, "no")
+				applog.Warn("Wavelog: CLI upload failed", "qso_id", id, "call", qs.Call, "error", wlErr)
+				fmt.Printf("Wavelog upload failed: %v\n", wlErr)
+			} else if result != nil && result.AllDuplicates {
+				store.UpdateWavelogStatus(a.DB, id, "yes")
+				fmt.Println("Wavelog: QSO already present (duplicate)")
+			} else {
+				store.UpdateWavelogStatus(a.DB, id, "yes")
+				fmt.Println("Wavelog: QSO uploaded")
+			}
+		}
 
 		return nil
 	},
@@ -140,15 +183,15 @@ var logListCmd = &cobra.Command{
 		}
 
 		fmt.Printf("Logbook: %s  (%d QSOs)\n", a.LogbookName, len(qsos))
-		fmt.Println(strings.Repeat("-", 80))
+		fmt.Println(strings.Repeat("-", 90))
 
 		for _, q := range qsos {
 			band := q.Band
 			if band == "" {
 				band = fmt.Sprintf("%.3f", q.Freq)
 			}
-			fmt.Printf("%4d %s %s %s %-8s %-6s %s\n",
-				q.ID, q.TimeOn, q.Call, band, q.Mode, q.RSTSent, q.Comment)
+		fmt.Printf("%4d %s %s %-8s %-6s %-5s %-8s %s\n",
+			q.ID, formatCLIDate(q.QSODate), q.TimeOn, q.Call, band, q.Mode, q.RSTSent, q.Comment)
 		}
 
 		return nil
@@ -289,5 +332,14 @@ func registerLogCommands() {
 	logAddCmd.Flags().StringVar(&logPower, "power", "", "TX power in watts")
 	logAddCmd.Flags().StringVar(&logNotes, "notes", "", "Private notes")
 
+	logAddCmd.MarkFlagRequired("call")
+
 	logListCmd.Flags().IntVarP(&logLimit, "limit", "n", 50, "Number of QSOs to show")
+}
+
+func formatCLIDate(adif string) string {
+	if len(adif) < 8 {
+		return "--------"
+	}
+	return adif[0:4] + "-" + adif[4:6] + "-" + adif[6:8]
 }
