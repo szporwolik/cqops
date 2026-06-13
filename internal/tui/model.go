@@ -715,7 +715,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.showLogbookEditor {
 		m.logbookEditor.width = m.width
 		m.logbookEditor.height = m.height
-		_, _ = m.logbookEditor.Update(msg)
+		_, editorCmd := m.logbookEditor.Update(msg)
 		if em, ok := msg.(editorMsg); ok {
 			if em.err != nil {
 				m.toasts.Error(em.err.Error())
@@ -730,11 +730,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.toasts.Success("Logbook purged")
 			}
 		}
+		if m.logbookEditor.needsReload {
+			m.logbookEditor.needsReload = false
+			qsos, _ := store.ListAllQSOs(m.App.DB)
+			m.logbookEditor.SetQSOS(qsos)
+			m.needRefresh = true
+		}
 		if m.logbookEditor.done {
 			m.showLogbookEditor = false
 			m.needRefresh = true
 		}
-		return m, cmd
+		return m, tea.Batch(cmd, editorCmd)
 	}
 	if m.showLogView {
 		m.logViewer.width = m.width

@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 )
@@ -69,6 +70,7 @@ type LogbookEditor struct {
 	fields  [qefCount]textinput.Model
 	focus   qsoEditField
 	done    bool
+	needsReload bool
 	width   int
 	height  int
 }
@@ -199,7 +201,8 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// error handled by caller via toast
 		}
 		if msg.deleted != 0 || msg.saved != 0 || msg.purged {
-			le.done = true // signal caller to refresh
+			le.mode = edModeList
+			le.needsReload = true
 		}
 
 	case tea.KeyMsg:
@@ -219,7 +222,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch k {
 			case "ctrl+s":
 				return le, le.doSave()
-			case "esc":
+			case "esc", "f5":
 				le.mode = edModeList
 			case "tab", "down":
 				le.nextField()
@@ -388,19 +391,40 @@ func (le *LogbookEditor) viewEdit(bodyW int) string {
 	b.WriteString(section("── Edit QSO ", bodyW))
 	b.WriteString("\n\n")
 
-	for i := qsoEditField(0); i < qefCount; i++ {
-		label := qefLabels[i]
-		val := le.fields[i].View()
-		focused := i == le.focus
-		prefix := "  "
-		lbl := fit(label, 14)
-		if focused {
-			prefix = CursorStyle.Render("> ")
-			lbl = CursorStyle.Render(lbl)
+	colW := (bodyW - 4) / 2
+	if colW < 28 {
+		colW = bodyW - 2
+	}
+	half := (qefCount + 1) / 2
+
+	for i := qsoEditField(0); i < half; i++ {
+		left := le.renderEditField(i, colW)
+		rightIdx := i + half
+		if rightIdx < qefCount {
+			right := le.renderEditField(rightIdx, colW)
+			b.WriteString(left + "  " + right + "\n")
 		} else {
-			lbl = LabelStyle.Render(lbl)
+			b.WriteString(left + "\n")
 		}
-		b.WriteString(prefix + lbl + " " + InputStyle.Render(val) + "\n")
 	}
 	return b.String()
+}
+
+func (le *LogbookEditor) renderEditField(f qsoEditField, colW int) string {
+	label := qefLabels[f]
+	val := le.fields[f].View()
+	focused := f == le.focus
+	prefix := " "
+	lbl := fit(label, 13)
+	if focused {
+		prefix = CursorStyle.Render(">")
+		lbl = CursorStyle.Render(lbl)
+	} else {
+		lbl = LabelStyle.Render(lbl)
+	}
+	field := prefix + lbl + " " + InputStyle.Render(val)
+	for lipgloss.Width(field) < colW {
+		field += " "
+	}
+	return field
 }
