@@ -1,4 +1,29 @@
+# Build output
+build/
+*.exe
+*.exe~
+*.test
+
+# Debug binaries (VS Code Go / Delve)
+__debug_bin*
+*.debug
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Coverage
+coverage.out
+coverage.html
+
+# Project-specific
 ai/assumptions.md
 cqops.exe~
 cqops.exe
-build/

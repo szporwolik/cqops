@@ -6,25 +6,50 @@ Small, fast, offline-first, keyboard-friendly.
 
 ## Build
 
+The version from the `VERSION` file is always embedded in the binary.
+
 ```bash
 git clone https://github.com/szporwolik/cqops.git
 cd cqops
-go build -ldflags="-s -w" -o cqops ./cmd/cqops/
+
+# Build for current platform (output in build/)
+make build
+
+# Or cross-compile for all platforms
+make build-all
+
+# Run tests
+make test
+
+# Lint (requires golangci-lint)
+make lint
 ```
 
-For smaller binaries, install UPX and run `upx --best cqops`.
+Binaries are placed in the `build/` directory (git-ignored).
 
-### Versioned build
+For smaller binaries, install UPX and run `upx --best build/cqops`.
+
+### Manual build (without make)
 
 ```bash
-go build -ldflags "-s -w -X github.com/szporwolik/cqops/internal/version.Version=$(cat VERSION)" -o cqops ./cmd/cqops/
+# Linux / macOS
+go build -ldflags "-s -w -X github.com/szporwolik/cqops/internal/version.Version=$(cat VERSION)" -o build/cqops ./cmd/cqops/
 ```
 
 On Windows PowerShell:
 
 ```powershell
 $ver = Get-Content VERSION
-go build -ldflags "-s -w -X github.com/szporwolik/cqops/internal/version.Version=$ver" -o cqops.exe ./cmd/cqops/
+go build -ldflags "-s -w -X github.com/szporwolik/cqops/internal/version.Version=$ver" -o build/cqops.exe ./cmd/cqops/
+```
+
+Or use the platform scripts:
+
+```powershell
+.\scripts\build.ps1   # Windows
+```
+```bash
+./scripts/build.sh      # Linux/macOS
 ```
 
 ## Usage
