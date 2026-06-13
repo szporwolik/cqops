@@ -20,6 +20,8 @@ import (
 	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/version"
 	"github.com/szporwolik/cqops/internal/wavelog"
+	adif "github.com/farmergreg/adif/v5"
+	"github.com/farmergreg/spec/v6/adifield"
 )
 
 type field int
@@ -464,88 +466,104 @@ func (m *Model) logQSOFromADIF(adif string) {
 	m.needRefresh = true
 }
 
-func parseWSJTXADIF(adif string) *qso.QSO {
+func parseWSJTXADIF(adifStr string) *qso.QSO {
 	qs := qso.NewQSO()
-	adif = strings.TrimSpace(adif)
-	fields := strings.Split(adif, "<")
-	for _, f := range fields {
-		if f == "" || strings.HasPrefix(f, "adif_ver:") || strings.HasPrefix(f, "programid:") ||
-			f == "EOH>" || f == "EOR>" {
-			continue
-		}
-		idx := strings.Index(f, ">")
-		if idx < 0 {
-			continue
-		}
-		header := f[:idx]
-		val := strings.TrimSpace(f[idx+1:])
-		colon := strings.LastIndex(header, ":")
-		if colon < 0 {
-			continue
-		}
-		name := strings.TrimSpace(header[:colon])
+	adifStr = strings.TrimSpace(adifStr)
 
-		switch strings.ToLower(name) {
-		case "call":
-			qs.Call = strings.ToUpper(val)
-		case "gridsquare":
-			qs.GridSquare = formatLocator(val)
-		case "mode":
-			qs.Mode = strings.ToUpper(val)
-		case "submode":
-			qs.Submode = strings.ToUpper(val)
-		case "rst_sent":
-			qs.RSTSent = val
-		case "rst_rcvd":
-			qs.RSTRcvd = val
-		case "qso_date":
-			qs.QSODate = stripNonDigits(val)
-		case "time_on":
-			qs.TimeOn = stripNonDigits(val)
-		case "time_off":
-			qs.TimeOff = stripNonDigits(val)
-		case "band":
-			qs.Band = qso.NormalizeBand(val)
-		case "freq":
-			if _, err := fmt.Sscanf(val, "%f", &qs.Freq); err != nil {
-				qs.Freq = 0
-			}
-		case "freq_rx":
-			fmt.Sscanf(val, "%f", &qs.FreqRx)
-		case "station_callsign":
-			qs.StationCallsign = strings.ToUpper(val)
-		case "my_gridsquare":
-			qs.MyGridSquare = formatLocator(val)
-		case "operator":
-			qs.Operator = strings.ToUpper(val)
-		case "comment":
-			qs.Comment = val
-		case "name":
-			qs.Name = val
-		case "qth":
-			qs.QTH = val
-		case "country":
-			qs.Country = val
-		case "dxcc":
-			qs.Country = val
-		case "tx_pwr":
-			qs.TXPower = val
-		case "sota_ref":
-			qs.SOTARef = val
-		case "pota_ref":
-			qs.POTARef = val
-		case "wwff_ref":
-			qs.WWFFRef = val
-		case "iota":
-			qs.IOTA = val
-		case "my_sota_ref":
-			qs.MySOTARef = val
-		case "my_pota_ref":
-			qs.MyPOTARef = val
-		case "my_wwff_ref":
-			qs.MyWWFFRef = val
+	s := adif.NewScanner(strings.NewReader(adifStr))
+	for s.Scan() {
+		if s.IsHeader() {
+			continue
 		}
+		r := s.Record()
+		if v := r[adifield.CALL]; v != "" {
+			qs.Call = strings.ToUpper(v)
+		}
+		if v := r[adifield.GRIDSQUARE]; v != "" {
+			qs.GridSquare = formatLocator(v)
+		}
+		if v := r[adifield.MODE]; v != "" {
+			qs.Mode = strings.ToUpper(v)
+		}
+		if v := r[adifield.SUBMODE]; v != "" {
+			qs.Submode = strings.ToUpper(v)
+		}
+		if v := r[adifield.RST_SENT]; v != "" {
+			qs.RSTSent = v
+		}
+		if v := r[adifield.RST_RCVD]; v != "" {
+			qs.RSTRcvd = v
+		}
+		if v := r[adifield.QSO_DATE]; v != "" {
+			qs.QSODate = stripNonDigits(v)
+		}
+		if v := r[adifield.TIME_ON]; v != "" {
+			qs.TimeOn = stripNonDigits(v)
+		}
+		if v := r[adifield.TIME_OFF]; v != "" {
+			qs.TimeOff = stripNonDigits(v)
+		}
+		if v := r[adifield.BAND]; v != "" {
+			qs.Band = qso.NormalizeBand(v)
+		}
+		if v := r[adifield.FREQ]; v != "" {
+			fmt.Sscanf(v, "%f", &qs.Freq)
+		}
+		if v := r[adifield.FREQ_RX]; v != "" {
+			fmt.Sscanf(v, "%f", &qs.FreqRx)
+		}
+		if v := r[adifield.STATION_CALLSIGN]; v != "" {
+			qs.StationCallsign = strings.ToUpper(v)
+		}
+		if v := r[adifield.MY_GRIDSQUARE]; v != "" {
+			qs.MyGridSquare = formatLocator(v)
+		}
+		if v := r[adifield.OPERATOR]; v != "" {
+			qs.Operator = strings.ToUpper(v)
+		}
+		if v := r[adifield.COMMENT]; v != "" {
+			qs.Comment = v
+		}
+		if v := r[adifield.NAME]; v != "" {
+			qs.Name = v
+		}
+		if v := r[adifield.QTH]; v != "" {
+			qs.QTH = v
+		}
+		if v := r[adifield.COUNTRY]; v != "" {
+			qs.Country = v
+		}
+		if v := r[adifield.DXCC]; v != "" && qs.Country == "" {
+			qs.Country = v
+		}
+		if v := r[adifield.TX_PWR]; v != "" {
+			qs.TXPower = v
+		}
+		if v := r[adifield.SOTA_REF]; v != "" {
+			qs.SOTARef = v
+		}
+		if v := r[adifield.POTA_REF]; v != "" {
+			qs.POTARef = v
+		}
+		if v := r[adifield.WWFF_REF]; v != "" {
+			qs.WWFFRef = v
+		}
+		if v := r[adifield.IOTA]; v != "" {
+			qs.IOTA = v
+		}
+		if v := r[adifield.MY_SOTA_REF]; v != "" {
+			qs.MySOTARef = v
+		}
+		if v := r[adifield.MY_POTA_REF]; v != "" {
+			qs.MyPOTARef = v
+		}
+		if v := r[adifield.MY_WWFF_REF]; v != "" {
+			qs.MyWWFFRef = v
+		}
+		break // only process first QSO record
 	}
+	_ = s.Err()
+
 	qs.Mode, qs.Submode = qso.NormalizeMode(qs.Mode, qs.Submode)
 	if qs.Band == "" && qs.Freq > 0 {
 		qs.Band = qso.DeriveBand(qs.Freq)

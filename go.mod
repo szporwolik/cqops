@@ -26,6 +26,8 @@ require (
 	github.com/clipperhouse/uax29/v2 v2.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/erikgeiser/coninput v0.0.0-20211004153227-1c3628e74d0f // indirect
+	github.com/farmergreg/adif/v5 v5.0.0-beta.26 // indirect
+	github.com/farmergreg/spec/v6 v6.0.0-beta.33 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/leemcloughlin/jdn v0.0.0-20201102080031-6f88db6a6bf2 // indirect
