@@ -74,6 +74,13 @@ Or a one-liner:
 go build -ldflags "-s -w -X github.com/szporwolik/cqops/internal/version.Version=$(cat VERSION)" -o build/cqops ./cmd/cqops/
 ```
 
+## Releases
+
+A GitHub Actions workflow (`.github/workflows/release.yml`) automates the release process. Before triggering it:
+
+1. Update the version in **`VERSION`** (plain version number, e.g. `0.1.1`).
+2. Run the **Create Release** workflow from the [Actions tab](https://github.com/szporwolik/cqops/actions) — it builds binaries for all 6 platforms (Windows, Linux, macOS; amd64 + arm64) and creates a tagged GitHub release with auto-generated notes from merged pull requests.
+
 ## Usage
 
 ```bash
