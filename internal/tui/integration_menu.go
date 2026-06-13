@@ -26,19 +26,21 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 	host := textinput.New()
 	host.CharLimit = 40
 	host.Placeholder = "127.0.0.1"
+	host.SetValue("127.0.0.1")
 	if cfg.WSJTX.Enabled && cfg.WSJTX.UDPHost != "" {
 		host.SetValue(cfg.WSJTX.UDPHost)
 	}
-	host.Focus()
 
 	port := textinput.New()
 	port.CharLimit = 6
 	port.Placeholder = "2233"
+	port.SetValue("2233")
 	if cfg.WSJTX.UDPPort > 0 {
 		port.SetValue(strconv.Itoa(cfg.WSJTX.UDPPort))
 	}
+	host.Focus()
 
-	return &IntegrationMenu{enabled: cfg.WSJTX.Enabled, host: host, port: port}
+	return &IntegrationMenu{enabled: cfg.WSJTX.Enabled, host: host, port: port, focus: 1}
 }
 
 func (im *IntegrationMenu) Init() tea.Cmd { return nil }

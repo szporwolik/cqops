@@ -594,7 +594,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.chooser.done {
 			m.showChooser = false
 			m.showMainMenu = true
-			m.qsos = nil
+			m.needRefresh = true
 		}
 		return m, cmd
 	}
@@ -1013,9 +1013,11 @@ func (m *Model) renderHeader(width int) string {
 		inetVal = SuccessStyle.Render("yes")
 	}
 
-	left := LabelStyle.Render("Call: ") + ValueStyle.Render(clamp(s.Callsign, 8)) +
-		LabelStyle.Render("  Op: ") + ValueStyle.Render(clamp(s.Operator, 8)) +
-		LabelStyle.Render("  Log: ") + ValueStyle.Render(clamp(m.App.LogbookName, 8)) +
+	left := LabelStyle.Render("Call: ") + ValueStyle.Render(clamp(s.Callsign, 8))
+	if s.Operator != "" {
+		left += LabelStyle.Render("  Op: ") + ValueStyle.Render(clamp(s.Operator, 8))
+	}
+	left += LabelStyle.Render("  Log: ") + ValueStyle.Render(clamp(m.App.LogbookName, 8)) +
 		LabelStyle.Render("  Loc: ") + ValueStyle.Render(clamp(locator, 6))
 
 	center := TitleStyle.UnsetPadding().Render("CQOPS")

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -16,6 +17,7 @@ const (
 	chooserList chooserMode = iota
 	chooserEdit
 	chooserCreate
+	chooserConfirmDelete
 )
 
 type LogbookChooser struct {
@@ -65,6 +67,15 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			c.mode = chooserList
 
+		case c.mode == chooserConfirmDelete:
+			switch k.String() {
+			case "y", "Y":
+				return c, c.deleteLogbook()
+			default:
+				c.mode = chooserList
+			}
+			return c, nil
+
 		case c.mode == chooserList && k.String() == "enter":
 			return c, c.handleEnter()
 
@@ -74,6 +85,11 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case c.mode == chooserList && k.String() == "e":
 			if len(c.names) > 0 {
 				c.startEdit(c.names[c.cursor])
+			}
+
+		case c.mode == chooserList && k.String() == "d":
+			if len(c.names) > 0 {
+				c.mode = chooserConfirmDelete
 			}
 
 		case c.mode == chooserList && (msg.Type == tea.KeyUp || k.String() == "up" || k.String() == "k"):
@@ -99,9 +115,11 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (c *LogbookChooser) FooterText() string {
 	switch c.mode {
 	case chooserList:
-		return "Enter to switch  e to edit  c to create  Esc to go back"
+		return "Enter to switch  e to edit  c to create  d to delete  Esc to go back"
 	case chooserEdit, chooserCreate:
 		return "Ctrl+S to save  Tab/↓/↑ to navigate  Esc to discard"
+	case chooserConfirmDelete:
+		return "Delete this logbook and all its QSOs? (y/N)"
 	}
 	return ""
 }
@@ -116,6 +134,8 @@ func (c *LogbookChooser) View() string {
 		return c.viewList()
 	case chooserEdit, chooserCreate:
 		return c.viewForm()
+	case chooserConfirmDelete:
+		return c.viewConfirmDelete()
 	}
 	return ""
 }
@@ -254,6 +274,64 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 	} else {
 		c.toasts.Success("Logbook saved")
 		applog.Info("Logbook config saved")
+	}
+	return nil
+}
+
+func (c *LogbookChooser) viewConfirmDelete() string {
+	name := c.names[c.cursor]
+	var b strings.Builder
+	bodyW := c.width - 2
+	if bodyW < 30 {
+		bodyW = 30
+	}
+	b.WriteString(section("── Delete Logbook ", bodyW))
+	b.WriteString("\n\n")
+	b.WriteString(fmt.Sprintf("  Delete logbook %q and ALL its QSOs?\n", name))
+	b.WriteString("  This cannot be undone. (y/N)")
+	return b.String()
+}
+
+func (c *LogbookChooser) deleteLogbook() tea.Cmd {
+	if len(c.names) == 0 {
+		return nil
+	}
+	name := c.names[c.cursor]
+
+	if name == c.app.Config.ActiveLogbook {
+		c.toasts.Error("Cannot delete active logbook. Switch to another first.")
+		c.mode = chooserList
+		return nil
+	}
+
+	if len(c.names) <= 1 {
+		c.toasts.Error("Cannot delete the last logbook. At least one must remain.")
+		c.mode = chooserList
+		return nil
+	}
+
+	lb := c.app.Config.Logbooks[name]
+	dbPath, _ := config.DBPath(name, &lb)
+
+	delete(c.app.Config.Logbooks, name)
+
+	for i, n := range c.names {
+		if n == name {
+			c.names = append(c.names[:i], c.names[i+1:]...)
+			break
+		}
+	}
+	if c.cursor >= len(c.names) {
+		c.cursor = len(c.names) - 1
+	}
+
+	c.mode = chooserList
+	if err := config.Save(c.app.ConfigPath, c.app.Config); err != nil {
+		c.toasts.Error("Config save failed: " + err.Error())
+	} else {
+		go func() { os.Remove(dbPath) }()
+		c.toasts.Success("Logbook " + name + " deleted")
+		applog.Info("Logbook deleted", "name", name)
 	}
 	return nil
 }
