@@ -49,52 +49,54 @@ var fieldNames = []string{
 }
 
 type Model struct {
-	App             *app.App
-	fields          [fieldCount]textinput.Model
-	focus           field
-	qsos            []qso.QSO
-	toasts          *ToastQueue
-	err             error
-	width           int
-	height          int
-	quitting        bool
-	rigConnected    bool
-	rigFreq         float64
-	rigMode         string
-	rigPower        float64
-	rigBlink        bool
-	rigSkipTicks    int
-	rigPolling      bool
-	dateTimeAuto    bool
-	tickCount       int
-	inetOnline      bool
-	wsjtxOnline     bool
-	wsjtxStatus     string
-	needRefresh     bool
-	pendingADIF     string
-	pendingStatus   statusPending
-	adifMu          sync.Mutex
-	showChooser     bool
-	chooser         *LogbookChooser
-	showRigEdit     bool
-	rigChooser      *RigChooser
-	showConfig      bool
-	configMenu      *GeneralMenu
-	showCallbook    bool
-	callbookMenu    *CallbookMenu
-	showIntegration bool
-	integrationMenu *IntegrationMenu
-	showMainMenu    bool
-	showLogView     bool
-	logViewer       *LogViewer
-	mainMenu        *MainMenu
-	confirmQuit     bool
-	showPartner     bool
-	partnerData     *qrz.CallData
-	flrigClient     *flrig.Client
-	qrzNeed         bool
-	qrzCall         string
-	qrzLastLook     time.Time
+	App               *app.App
+	fields            [fieldCount]textinput.Model
+	focus             field
+	qsos              []qso.QSO
+	toasts            *ToastQueue
+	err               error
+	width             int
+	height            int
+	quitting          bool
+	rigConnected      bool
+	rigFreq           float64
+	rigMode           string
+	rigPower          float64
+	rigBlink          bool
+	rigSkipTicks      int
+	rigPolling        bool
+	dateTimeAuto      bool
+	tickCount         int
+	inetOnline        bool
+	wsjtxOnline       bool
+	wsjtxStatus       string
+	needRefresh       bool
+	pendingADIF       string
+	pendingStatus     statusPending
+	adifMu            sync.Mutex
+	showChooser       bool
+	chooser           *LogbookChooser
+	showRigEdit       bool
+	rigChooser        *RigChooser
+	showConfig        bool
+	configMenu        *GeneralMenu
+	showCallbook      bool
+	callbookMenu      *CallbookMenu
+	showIntegration   bool
+	integrationMenu   *IntegrationMenu
+	showMainMenu      bool
+	showLogView       bool
+	logViewer         *LogViewer
+	showLogbookEditor bool
+	logbookEditor     *LogbookEditor
+	mainMenu          *MainMenu
+	confirmQuit       bool
+	showPartner       bool
+	partnerData       *qrz.CallData
+	flrigClient       *flrig.Client
+	qrzNeed           bool
+	qrzCall           string
+	qrzLastLook       time.Time
 }
 
 type tickMsg time.Time
@@ -524,6 +526,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showConfig = false
 			m.showMainMenu = false
 			m.showLogView = false
+			m.showLogbookEditor = false
 			m.showPartner = false
 		case "f2":
 			if m.showPartner {
@@ -541,10 +544,25 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showConfig = false
 				m.showCallbook = false
 				m.showLogView = false
+				m.showLogbookEditor = false
 				m.showPartner = false
 				m.mainMenu = NewMainMenu()
 				m.showMainMenu = true
 			}
+		case "f5":
+			m.showChooser = false
+			m.showRigEdit = false
+			m.showIntegration = false
+			m.showConfig = false
+			m.showCallbook = false
+			m.showMainMenu = false
+			m.showLogView = false
+			m.showPartner = false
+			m.showLogbookEditor = true
+			m.logbookEditor = NewLogbookEditor(m.App.DB)
+			qsos, _ := store.ListAllQSOs(m.App.DB)
+			m.logbookEditor.SetQSOS(qsos)
+			return m, cmd
 		case "f9":
 			m.showChooser = false
 			m.showRigEdit = false
@@ -552,12 +570,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.showConfig = false
 			m.showCallbook = false
 			m.showMainMenu = false
+			m.showLogbookEditor = false
 			m.showPartner = false
 			m.logViewer = NewLogViewer(m.App.LogbookName)
 			m.showLogView = true
 			return m, cmd
 		}
-		if !m.showChooser && !m.showRigEdit && !m.showIntegration && !m.showConfig && !m.showCallbook && !m.showMainMenu && !m.showLogView && !m.showPartner {
+		if !m.showChooser && !m.showRigEdit && !m.showIntegration && !m.showConfig && !m.showCallbook && !m.showMainMenu && !m.showLogView && !m.showLogbookEditor && !m.showPartner {
 			if key.String() == "delete" || key.Type == tea.KeyDelete {
 				m.clearForm()
 				return m, nil
@@ -692,6 +711,30 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, cmd
 		}
+	}
+	if m.showLogbookEditor {
+		m.logbookEditor.width = m.width
+		m.logbookEditor.height = m.height
+		_, _ = m.logbookEditor.Update(msg)
+		if em, ok := msg.(editorMsg); ok {
+			if em.err != nil {
+				m.toasts.Error(em.err.Error())
+			}
+			if em.deleted != 0 {
+				m.toasts.Success(fmt.Sprintf("QSO %d deleted", em.deleted))
+			}
+			if em.saved != 0 {
+				m.toasts.Success(fmt.Sprintf("QSO %d saved", em.saved))
+			}
+			if em.purged {
+				m.toasts.Success("Logbook purged")
+			}
+		}
+		if m.logbookEditor.done {
+			m.showLogbookEditor = false
+			m.needRefresh = true
+		}
+		return m, cmd
 	}
 	if m.showLogView {
 		m.logViewer.width = m.width
@@ -859,6 +902,8 @@ func (m *Model) View() string {
 		content = m.mainMenu.View()
 	} else if m.showLogView {
 		content = m.logViewer.View()
+	} else if m.showLogbookEditor {
+		content = m.logbookEditor.View()
 	} else if m.showPartner && m.partnerData != nil {
 		content = m.viewPartner()
 	} else {
@@ -1037,39 +1082,51 @@ func (m *Model) renderTabLine(width int) string {
 
 	qsoLabel := "F1 QSO Form"
 	partnerLabel := "F2 Partner Details"
+	editorLabel := "F5 Log Editor"
 	configLabel := "F8 Config"
 	logsLabel := "F9 Logs"
 
-	var qsoTab, partnerTab, configTab, logsTabStr string
+	var qsoTab, partnerTab, editorTab, configTab, logsTabStr string
 
 	if m.showPartner && m.partnerData != nil {
 		qsoTab = inactive.Render(qsoLabel)
 		partnerTab = active.Render(partnerLabel)
+		editorTab = inactive.Render(editorLabel)
 		configTab = inactive.Render(configLabel)
 		logsTabStr = inactive.Render(logsLabel)
 	} else if m.partnerData != nil {
 		qsoTab = active.Render(qsoLabel)
 		partnerTab = inactive.Render(partnerLabel)
+		editorTab = inactive.Render(editorLabel)
+		configTab = inactive.Render(configLabel)
+		logsTabStr = inactive.Render(logsLabel)
+	} else if m.showLogbookEditor {
+		qsoTab = inactive.Render(qsoLabel)
+		partnerTab = disabled.Render(partnerLabel)
+		editorTab = active.Render(editorLabel)
 		configTab = inactive.Render(configLabel)
 		logsTabStr = inactive.Render(logsLabel)
 	} else if m.showMainMenu {
 		qsoTab = inactive.Render(qsoLabel)
 		partnerTab = disabled.Render(partnerLabel)
+		editorTab = inactive.Render(editorLabel)
 		configTab = active.Render(configLabel)
 		logsTabStr = inactive.Render(logsLabel)
 	} else if m.showLogView {
 		qsoTab = inactive.Render(qsoLabel)
 		partnerTab = disabled.Render(partnerLabel)
+		editorTab = inactive.Render(editorLabel)
 		configTab = inactive.Render(configLabel)
 		logsTabStr = active.Render(logsLabel)
 	} else {
 		qsoTab = active.Render(qsoLabel)
 		partnerTab = disabled.Render(partnerLabel)
+		editorTab = inactive.Render(editorLabel)
 		configTab = inactive.Render(configLabel)
 		logsTabStr = inactive.Render(logsLabel)
 	}
 
-	line := " " + qsoTab + partnerTab + configTab + logsTabStr
+	line := " " + qsoTab + partnerTab + editorTab + configTab + logsTabStr
 	for lipgloss.Width(line) < width {
 		line += " "
 	}
@@ -1270,6 +1327,8 @@ func (m *Model) viewFooter(width int) string {
 		text = m.rigChooser.FooterText()
 	case m.showLogView:
 		text = "↑↓ to scroll  F10 Quit"
+	case m.showLogbookEditor:
+		text = m.logbookEditor.FooterText()
 	case m.showPartner && m.partnerData != nil:
 		text = "F10 Quit"
 	default:

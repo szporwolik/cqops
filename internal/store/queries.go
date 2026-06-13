@@ -131,3 +131,38 @@ func DeleteQSO(db *sql.DB, id int64) error {
 	}
 	return nil
 }
+
+func ListAllQSOs(db *sql.DB) ([]qso.QSO, error) {
+	return ListQSOs(db, 0)
+}
+
+func UpdateQSO(db *sql.DB, q *qso.QSO) error {
+	q.UpdatedAt = time.Now().UTC()
+	_, err := db.Exec(
+		`UPDATE qsos SET call=?, qso_date=?, time_on=?, time_off=?, band=?, freq=?, mode=?, submode=?,
+		rst_sent=?, rst_rcvd=?, gridsquare=?, name=?, qth=?, country=?, comment=?, notes=?, tx_pwr=?,
+		distance=?, bearing=?,
+		station_callsign=?, operator=?, my_gridsquare=?, my_rig=?, my_antenna=?, source=?,
+		updated_at=?
+		WHERE id=?`,
+		q.Call, q.QSODate, q.TimeOn, q.TimeOff,
+		q.Band, q.Freq, q.Mode, q.Submode,
+		q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
+		q.Distance, q.Bearing,
+		q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
+		q.UpdatedAt.Format(time.RFC3339),
+		q.ID,
+	)
+	if err != nil {
+		return fmt.Errorf("update qso: %w", err)
+	}
+	return nil
+}
+
+func PurgeQSOs(db *sql.DB) error {
+	_, err := db.Exec(`DELETE FROM qsos`)
+	if err != nil {
+		return fmt.Errorf("purge qsos: %w", err)
+	}
+	return nil
+}
