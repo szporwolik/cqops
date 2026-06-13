@@ -1186,33 +1186,33 @@ func (m *Model) renderHeader(width int) string {
 		inetVal = SuccessStyle.Render("yes")
 	}
 
-	left := LabelStyle.Render("call: ") + ValueStyle.Render(clamp(s.Callsign, 8))
-	left += LabelStyle.Render("  log: ") + ValueStyle.Render(clamp(m.App.LogbookName, 8))
+	left := LabelStyle.Render("My Call ") + ValueStyle.Render(clamp(s.Callsign, 8))
+	left += LabelStyle.Render("  Logbook ") + ValueStyle.Render(clamp(m.App.LogbookName, 8))
 
 	center := TitleStyle.UnsetPadding().Render("CQOPS")
 	if v := version.Resolved(); v != "dev" {
 		center += SubtleStyle.Render(" v" + v)
 	}
 
-	right := LabelStyle.Render("inet: ") + inetVal
+	right := LabelStyle.Render("Internet ") + inetVal
 	if m.App.Config.WSJTX.Enabled {
 		wVal := ErrorStyle.Render("err")
 		if m.wsjtxOnline {
 			wVal = SuccessStyle.Render("on")
 		}
-		right += LabelStyle.Render("  wsjtx:") + wVal
+		right += LabelStyle.Render("  WSJT-X ") + wVal
 	}
-	right += LabelStyle.Render("  rig: ") + ValueStyle.Render(rigModel) + rigIndicator
+	right += LabelStyle.Render("  Rig ") + ValueStyle.Render(rigModel) + rigIndicator
 	if m.App.Config.Wavelog.Enabled {
 		wlVal := ErrorStyle.Render("err")
 		if m.wlOnline {
 			wlVal = SuccessStyle.Render("on")
 		}
-		right += LabelStyle.Render("  wl:") + wlVal
+		right += LabelStyle.Render("  Wavelog ") + wlVal
 	}
 	rightFully := right +
-		LabelStyle.Render("  lt: ") + ValueStyle.Render(now.Format("15:04")) +
-		LabelStyle.Render("  utc: ") + ValueStyle.Render(utc.Format("15:04:05"))
+		LabelStyle.Render("  LT ") + ValueStyle.Render(now.Format("15:04")) +
+		LabelStyle.Render("  UTC ") + ValueStyle.Render(utc.Format("15:04:05"))
 	rightCompact := right +
 		LabelStyle.Render("  utc: ") + ValueStyle.Render(utc.Format("15:04:05"))
 
