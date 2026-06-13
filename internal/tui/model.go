@@ -1387,109 +1387,95 @@ func (m *Model) viewPartner() string {
 			return ""
 		}
 	}
-	w := m.width
-	h := m.height
-	bodyW := w - 2
+	bodyW := m.width - 2
 	if bodyW < 30 {
 		bodyW = 30
 	}
 
-	var b strings.Builder
-
-	title := "── Partner: " + d.Callsign + " "
-	b.WriteString(section(title, bodyW))
-	b.WriteString("\n\n")
-
-	info := m.renderPartnerInfo(d, bodyW)
-	b.WriteString(info)
-
-	// Photo: left-aligned, one empty row above, matching colors
-	if d.ImageURL != "" {
-		b.WriteString("\n")
-		b.WriteString(LabelStyle.Render("  Photo "))
-		b.WriteString(DimStyle.Render(d.ImageURL))
+	// Two-column layout: info box (left half) + placeholder (right half)
+	halfW := (bodyW - 1) / 2 // 1-cell gap between columns
+	if halfW < 20 {
+		halfW = bodyW // fallback to single column on narrow terminals
 	}
 
-	dl := m.partnerDistanceLineForm(d)
-	if dl != "" {
-		b.WriteString("\n\n")
-		pathTitle := "── Short Path "
-		b.WriteString(section(pathTitle, bodyW))
-		b.WriteString("\n  ")
-		b.WriteString(inputStyle.Render(dl))
+	info := m.renderPartnerInfo(d, halfW)
+	infoBox := S.QSOFormBox.Width(halfW).Render(info)
+	infoH := lipgloss.Height(infoBox)
+
+	// TODO placeholder — same height as info box for alignment
+	todoContent := lipgloss.NewStyle().
+		Width(halfW - 4).
+		Align(lipgloss.Center).
+		Render("TODO")
+	todoBox := S.QSOFormBox.Width(halfW).Height(infoH).Render(todoContent)
+
+	// Side-by-side columns
+	gap := lipgloss.NewStyle().Width(1).Render("")
+	var topRow string
+	if halfW >= 20 {
+		topRow = lipgloss.JoinHorizontal(lipgloss.Top, infoBox, gap, todoBox)
+	} else {
+		topRow = lipgloss.JoinVertical(lipgloss.Left, infoBox, todoBox)
 	}
 
-	usedLines := lipgloss.Height(b.String())
-	availMapH := h - 4 - usedLines - 2
-	if availMapH >= 6 {
-		b.WriteString("\n\n")
-		ownGrid := m.App.Logbook.Station.Grid
-		partnerGrid := d.Grid
-		partnerLat, partnerLon := 0.0, 0.0
-		hasPartnerLoc := false
+	// Map section — full width below the columns. The box is always shown.
+	// Allocate all remaining space to the map first; filler gets what's left.
+	contentH := m.height - 5 // ≈ terminal - status/tabs/help - padding
+	if contentH < 3 {
+		contentH = 3
+	}
+	topH := lipgloss.Height(topRow)
+	mapAvailH := contentH - topH
+	if mapAvailH < 3 {
+		mapAvailH = 3
+	}
 
-		if ownGrid == "" {
-			b.WriteString(section("── Map ", bodyW))
-			b.WriteString("\n  ")
-			b.WriteString(DimStyle.Render("Set your grid in station config to enable the map"))
-		} else if partnerGrid == "" && d.Lat == "" {
-			b.WriteString(section("── Map ", bodyW))
-			b.WriteString("\n  ")
-			b.WriteString(DimStyle.Render("No partner location — enter a grid or use QRZ lookup"))
-		} else {
+	mapW := bodyW - 2 // inside border (MapBox has no h-padding, just borders)
+
+	var mapInner string
+	ownGrid := m.App.Logbook.Station.Grid
+	partnerGrid := d.Grid
+
+	switch {
+	case ownGrid == "":
+		mapInner = DimStyle.Render("Set your grid in station config to enable the map")
+	case partnerGrid == "" && d.Lat == "":
+		mapInner = DimStyle.Render("No partner location — enter a grid or use QRZ lookup")
+	default:
+		// Only attempt full map when enough space exists for native dimensions.
+		if mapAvailH >= NativeMapHeight+2 && mapW >= NativeMapWidth {
 			ownLat, ownLon := gridToLatLon(ownGrid)
+			partnerLat, partnerLon := 0.0, 0.0
+
 			if partnerGrid != "" {
 				partnerLat, partnerLon = gridToLatLon(partnerGrid)
-				hasPartnerLoc = partnerLat != 0 || partnerLon != 0
-			}
-			if !hasPartnerLoc && d.Lat != "" {
+			} else if d.Lat != "" {
 				partnerLat = parseCoord(d.Lat)
 				partnerLon = parseCoord(d.Lon)
-				hasPartnerLoc = partnerLat != 0 || partnerLon != 0
 			}
-			if hasPartnerLoc || ownLat != 0 || ownLon != 0 {
-				mapW := bodyW
-				if mapW < 40 {
-					mapW = 40
-				}
-				mapH := availMapH - 1
-				if mapH < 4 {
-					mapH = 4
-				}
-				if mapH > 24 {
-					mapH = 24
-				}
-				b.WriteString(section("── Map ", bodyW))
-				b.WriteString("\n")
-				mapStr := renderWorldMap(ownLat, ownLon, partnerLat, partnerLon, mapW, mapH)
-				if mapStr != "" {
-					b.WriteString(mapStr)
-				} else {
-					b.WriteString("  ")
-					b.WriteString(DimStyle.Render("Map unavailable"))
-				}
+
+			mapStr := renderWorldMap(ownLat, ownLon, partnerLat, partnerLon, mapW, NativeMapHeight)
+			if mapStr != "" {
+				mapInner = mapStr
 			} else {
-				b.WriteString(section("── Map ", bodyW))
-				b.WriteString("\n  ")
-				b.WriteString(DimStyle.Render("Could not determine coordinates"))
+				mapInner = DimStyle.Render("Terminal too small for map")
 			}
+		} else {
+			mapInner = DimStyle.Render("Terminal too small for map")
 		}
 	}
 
-	return b.String()
-}
+	mapBox := S.MapBox.Width(bodyW).Render(mapInner)
 
-// partnerDistanceLineForm uses the form's grid field when QRZ data is unavailable.
-func (m *Model) partnerDistanceLineForm(d *qrz.CallData) string {
-	own := formatLocator(m.App.Logbook.Station.Grid)
-	partner := ""
-	if d != nil && d.Grid != "" {
-		partner = formatLocator(d.Grid)
+	// Filler absorbs whatever the map didn't use from the allocated space.
+	mapBoxH := lipgloss.Height(mapBox)
+	fillerH := mapAvailH - mapBoxH
+	if fillerH < 0 {
+		fillerH = 0
 	}
-	if partner == "" {
-		partner = formatLocator(strings.TrimSpace(m.fields[fieldGrid].Value()))
-	}
-	return distanceLine(own, partner, m.App.Config.DistanceUnit)
+	filler := lipgloss.NewStyle().Height(fillerH).Render("")
+
+	return lipgloss.JoinVertical(lipgloss.Left, topRow, filler, mapBox)
 }
 
 // formPartnerData builds a CallData from the current QSO form fields.
@@ -1532,6 +1518,10 @@ func (m *Model) renderPartnerInfo(d *qrz.CallData, maxW int) string {
 	add("DXCC", d.DXCC)
 	add("CQ Zone", d.CQZone)
 	add("ITU Zone", d.ITUZone)
+	// Photo as an OSC-8 hyperlink — Ctrl+click opens the image in the browser.
+	if d.ImageURL != "" {
+		add("Photo", osc8Link(d.ImageURL, "CLICK"))
+	}
 
 	if len(rows) == 0 {
 		return ""
@@ -1550,7 +1540,13 @@ func (m *Model) renderPartnerInfo(d *qrz.CallData, maxW int) string {
 	var lines []string
 	for _, r := range rows {
 		label := lblStyle.Render(r.label)
-		value := valStyle.Render(truncate(r.value, valW))
+		value := r.value
+		// Don't truncate or restyle OSC-8 links — they embed ANSI sequences.
+		if r.label == "Photo" {
+			value = S.Info.Width(valW).Align(lipgloss.Left).Render(value)
+		} else {
+			value = valStyle.Render(truncate(r.value, valW))
+		}
 		indent := lipgloss.NewStyle().Width(indentW).Render("")
 		gap := lipgloss.NewStyle().Width(1).Render("")
 		lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Center, indent, label, gap, value))

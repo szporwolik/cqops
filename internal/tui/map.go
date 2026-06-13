@@ -33,6 +33,20 @@ const worldMap = "" +
 	"__,-----\"-..?----_/ )\\    . ,-'\"             \"                  (__--/\n" +
 	"                      /__/\\/                                        \n"
 
+// NativeMapHeight is the full height of the ASCII world map in rows.
+// NativeMapWidth is its full width in columns.
+var NativeMapHeight, NativeMapWidth int
+
+func init() {
+	lines := strings.Split(strings.TrimRight(worldMap, "\n"), "\n")
+	NativeMapHeight = len(lines)
+	for _, l := range lines {
+		if len(l) > NativeMapWidth {
+			NativeMapWidth = len(l)
+		}
+	}
+}
+
 func renderWorldMap(ownLat, ownLon, partnerLat, partnerLon float64, width, height int) string {
 	mapLines := strings.Split(strings.TrimRight(worldMap, "\n"), "\n")
 	mapH := len(mapLines)
@@ -45,12 +59,12 @@ func renderWorldMap(ownLat, ownLon, partnerLat, partnerLon float64, width, heigh
 	if mapH == 0 || mapW == 0 {
 		return ""
 	}
-	if width < mapW || height < mapH {
-		return ""
-	}
 
 	outW := mapW
 	outH := mapH
+	if height < outH {
+		return "" // height is non-negotiable — the art can't be cropped vertically
+	}
 
 	ownX, ownY := mercatorXY(ownLat, ownLon, outW, outH)
 	partnerX, partnerY := mercatorXY(partnerLat, partnerLon, outW, outH)

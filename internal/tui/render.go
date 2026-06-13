@@ -1,10 +1,18 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"charm.land/lipgloss/v2"
 )
+
+// osc8Link returns an OSC-8 hyperlink sequence. Most modern terminals
+// (Windows Terminal, iTerm2, Kitty, etc.) render these as clickable links.
+// Ctrl+click opens the URL in the system browser.
+func osc8Link(url, text string) string {
+	return fmt.Sprintf("\x1b]8;;%s\x1b\\%s\x1b]8;;\x1b\\", url, text)
+}
 
 // section renders a titled horizontal rule: "── Title ──────────"
 func section(title string, width int) string {

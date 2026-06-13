@@ -117,6 +117,7 @@ type Styles struct {
 	SubtleStyle    lipgloss.Style
 	QSOFormBox     lipgloss.Style // bordered box around QSO entry form
 	RecentQSOsBox  lipgloss.Style // bordered box around recent QSOs table
+	MapBox         lipgloss.Style // bordered box around map (no extra h-padding)
 }
 
 var S = Styles{
@@ -197,6 +198,10 @@ var S = Styles{
 	RecentQSOsBox: lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(P.TextDim),
+	MapBox: lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(P.TextDim).
+		Padding(0, 0), // no extra padding — map needs every cell
 }
 
 // Legacy package-level aliases.
