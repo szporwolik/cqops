@@ -6,7 +6,7 @@
 
 A small, fast, offline-first amateur radio logger for the terminal. Built for portable and field operations where every watt and every CPU cycle counts.
 
-CQOps is a personal project written primarily for my own use and my local club. It is not intended to replace full-featured desktop loggers — if you need a complete shack management solution, check out [Ham Radio Deluxe](https://www.hamradiodeluxe.com/) (Windows), [CQRlog](https://www.cqrlog.com/) (Linux), or [Wavelog](https://www.wavelog.com/) (self-hosted web). CQOps fills a different niche: a lightweight, dependency-minimal CLI tool that runs happily on a Raspberry Pi, an old laptop, or any "potato PC" without a GUI. Perfect for off-grid portable ops, SOTA/POTA activations, and situations where you want fast keystroke-driven logging without the overhead of a desktop environment.
+CQOps is a personal project written primarily for my own use and my local club. It is not intended to replace full-featured desktop loggers — if you need a complete shack management solution, check out [Log4OM](https://www.log4om.com/) (Windows), [QLog](https://github.com/foldynl/QLog) (Linux), or [Wavelog](https://www.wavelog.com/) (self-hosted web). CQOps fills a different niche: a lightweight, dependency-minimal CLI tool that runs happily on a Raspberry Pi, an old laptop, or any "potato PC" without a GUI. Perfect for off-grid portable ops, SOTA/POTA activations, and situations where you want fast keystroke-driven logging without the overhead of a desktop environment.
 
 Repo: https://github.com/szporwolik/cqops
 
