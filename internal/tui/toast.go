@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/szporwolik/cqops/internal/applog"
 )
 
 type ToastLevel int
@@ -44,6 +45,16 @@ func (tq *ToastQueue) Push(level ToastLevel, msg string) {
 		Created: time.Now(),
 	})
 	tq.mu.Unlock()
+
+	// Also log every toast
+	switch level {
+	case ToastInfo, ToastSuccess:
+		applog.Info("toast: " + msg)
+	case ToastWarning:
+		applog.Warn("toast: " + msg)
+	case ToastError:
+		applog.Error("toast: " + msg)
+	}
 }
 
 func (tq *ToastQueue) Info(msg string)    { tq.Push(ToastInfo, msg) }

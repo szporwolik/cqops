@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/ftl/hamradio/locator"
+	"github.com/szporwolik/cqops/internal/applog"
 )
 
 func gridDistanceKm(ownGrid, partnerGrid string) float64 {
@@ -13,10 +14,12 @@ func gridDistanceKm(ownGrid, partnerGrid string) float64 {
 	}
 	own, err := locator.Parse(ownGrid)
 	if err != nil {
+		applog.Debug("grid: cannot parse own grid", "grid", ownGrid, "error", err.Error())
 		return 0
 	}
 	partner, err := locator.Parse(partnerGrid)
 	if err != nil {
+		applog.Debug("grid: cannot parse partner grid", "grid", partnerGrid, "error", err.Error())
 		return 0
 	}
 	return float64(locator.Distance(own, partner))
@@ -39,10 +42,12 @@ func gridBearingDeg(ownGrid, partnerGrid string) float64 {
 	}
 	own, err := locator.Parse(ownGrid)
 	if err != nil {
+		applog.Debug("grid: cannot parse own grid for bearing", "grid", ownGrid, "error", err.Error())
 		return -1
 	}
 	partner, err := locator.Parse(partnerGrid)
 	if err != nil {
+		applog.Debug("grid: cannot parse partner grid for bearing", "grid", partnerGrid, "error", err.Error())
 		return -1
 	}
 	return float64(locator.Azimuth(own, partner))

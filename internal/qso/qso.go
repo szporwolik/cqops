@@ -30,6 +30,13 @@ type QSO struct {
 	Source          string
 	Distance        float64
 	Bearing         float64
+	SOTARef         string
+	POTARef         string
+	WWFFRef         string
+	IOTA            string
+	MySOTARef       string
+	MyPOTARef       string
+	MyWWFFRef       string
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }

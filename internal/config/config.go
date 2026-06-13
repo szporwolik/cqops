@@ -36,6 +36,9 @@ type Station struct {
 	Antenna  string `yaml:"antenna"`
 	Power    string `yaml:"power"`
 	RigName  string `yaml:"rig_name"`
+	SOTARef  string `yaml:"sota_ref,omitempty"`
+	POTARef  string `yaml:"pota_ref,omitempty"`
+	WWFFRef  string `yaml:"wwff_ref,omitempty"`
 }
 
 type RigPreset struct {

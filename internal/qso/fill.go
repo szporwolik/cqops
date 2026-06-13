@@ -7,6 +7,9 @@ type StationInfo struct {
 	MyRig           string
 	MyAntenna       string
 	TXPower         string
+	MySOTARef       string
+	MyPOTARef       string
+	MyWWFFRef       string
 }
 
 func ApplyStationDefaults(q *QSO, s StationInfo) {
@@ -27,6 +30,15 @@ func ApplyStationDefaults(q *QSO, s StationInfo) {
 	}
 	if q.TXPower == "" && s.TXPower != "" {
 		q.TXPower = s.TXPower
+	}
+	if q.MySOTARef == "" && s.MySOTARef != "" {
+		q.MySOTARef = s.MySOTARef
+	}
+	if q.MyPOTARef == "" && s.MyPOTARef != "" {
+		q.MyPOTARef = s.MyPOTARef
+	}
+	if q.MyWWFFRef == "" && s.MyWWFFRef != "" {
+		q.MyWWFFRef = s.MyWWFFRef
 	}
 
 	if q.Band == "" && q.Freq > 0 {

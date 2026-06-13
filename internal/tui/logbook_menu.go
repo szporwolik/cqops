@@ -214,7 +214,7 @@ func (c *LogbookChooser) handleEnter() tea.Cmd {
 
 func (c *LogbookChooser) startCreate() {
 	c.mode = chooserCreate
-	c.station.SetValues("", "", "")
+	c.station.SetValues("", "", "", "", "", "")
 	c.station.Callsign.Focus()
 	c.editing = ""
 }
@@ -223,12 +223,12 @@ func (c *LogbookChooser) startEdit(name string) {
 	lb := c.app.Config.Logbooks[name]
 	c.mode = chooserEdit
 	c.editing = name
-	c.station.SetValues(lb.Station.Callsign, lb.Station.Operator, lb.Station.Grid)
+	c.station.SetValues(lb.Station.Callsign, lb.Station.Operator, lb.Station.Grid, lb.Station.SOTARef, lb.Station.POTARef, lb.Station.WWFFRef)
 	c.station.Callsign.Focus()
 }
 
 func (c *LogbookChooser) saveForm() tea.Cmd {
-	cs, op, gr := c.station.Values()
+	cs, op, gr, sotaRef, potaRef, wwffRef := c.station.Values()
 
 	if err := c.station.Validate(); err != nil {
 		c.toasts.Error(err.Error())
@@ -247,6 +247,9 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 				Callsign: cs,
 				Operator: op,
 				Grid:     gr,
+				SOTARef:  sotaRef,
+				POTARef:  potaRef,
+				WWFFRef:  wwffRef,
 			},
 		}
 		c.app.Config.ActiveLogbook = name
@@ -261,6 +264,9 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 		lb.Station.Callsign = cs
 		lb.Station.Operator = op
 		lb.Station.Grid = gr
+		lb.Station.SOTARef = sotaRef
+		lb.Station.POTARef = potaRef
+		lb.Station.WWFFRef = wwffRef
 		c.app.Config.Logbooks[name] = lb
 
 		if name == c.app.LogbookName {

@@ -21,13 +21,17 @@ func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 		`INSERT INTO qsos (call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,
 		rst_sent, rst_rcvd, gridsquare, name, qth, country, comment, notes, tx_pwr,
 		distance, bearing,
+		sota_ref, pota_ref, wwff_ref, iota,
+		my_sota_ref, my_pota_ref, my_wwff_ref,
 		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
 		created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		q.Call, q.QSODate, q.TimeOn, q.TimeOff,
 		q.Band, q.Freq, q.FreqRx, q.Mode, q.Submode,
 		q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
 		q.Distance, q.Bearing,
+		q.SOTARef, q.POTARef, q.WWFFRef,
+		q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
 		q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
 		q.CreatedAt.Format(time.RFC3339), q.UpdatedAt.Format(time.RFC3339),
 	)
@@ -53,6 +57,8 @@ func ListQSOs(db *sql.DB, limit int) ([]qso.QSO, error) {
 		`SELECT id, call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,
 		rst_sent, rst_rcvd, gridsquare, name, qth, country, comment, notes, tx_pwr,
 		distance, bearing,
+		sota_ref, pota_ref, wwff_ref, iota,
+		my_sota_ref, my_pota_ref, my_wwff_ref,
 		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
 		created_at, updated_at
 		FROM qsos
@@ -73,6 +79,8 @@ func ListQSOs(db *sql.DB, limit int) ([]qso.QSO, error) {
 			&q.Band, &q.Freq, &q.FreqRx, &q.Mode, &q.Submode,
 			&q.RSTSent, &q.RSTRcvd, &q.GridSquare, &q.Name, &q.QTH, &q.Country, &q.Comment, &q.Notes, &q.TXPower,
 			&q.Distance, &q.Bearing,
+			&q.SOTARef, &q.POTARef, &q.WWFFRef, &q.IOTA,
+			&q.MySOTARef, &q.MyPOTARef, &q.MyWWFFRef,
 			&q.StationCallsign, &q.Operator, &q.MyGridSquare, &q.MyRig, &q.MyAntenna, &q.Source,
 			&createdAt, &updatedAt,
 		)
@@ -99,6 +107,8 @@ func GetQSOByID(db *sql.DB, id int64) (*qso.QSO, error) {
 		`SELECT id, call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,
 		rst_sent, rst_rcvd, gridsquare, name, qth, country, comment, notes, tx_pwr,
 		distance, bearing,
+		sota_ref, pota_ref, wwff_ref, iota,
+		my_sota_ref, my_pota_ref, my_wwff_ref,
 		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
 		created_at, updated_at
 		FROM qsos WHERE id = ?`, id,
@@ -107,6 +117,8 @@ func GetQSOByID(db *sql.DB, id int64) (*qso.QSO, error) {
 		&q.Band, &q.Freq, &q.FreqRx, &q.Mode, &q.Submode,
 		&q.RSTSent, &q.RSTRcvd, &q.GridSquare, &q.Name, &q.QTH, &q.Country, &q.Comment, &q.Notes, &q.TXPower,
 		&q.Distance, &q.Bearing,
+		&q.SOTARef, &q.POTARef, &q.WWFFRef, &q.IOTA,
+		&q.MySOTARef, &q.MyPOTARef, &q.MyWWFFRef,
 		&q.StationCallsign, &q.Operator, &q.MyGridSquare, &q.MyRig, &q.MyAntenna, &q.Source,
 		&createdAt, &updatedAt,
 	)
@@ -142,6 +154,8 @@ func UpdateQSO(db *sql.DB, q *qso.QSO) error {
 		`UPDATE qsos SET call=?, qso_date=?, time_on=?, time_off=?, band=?, freq=?, freq_rx=?, mode=?, submode=?,
 		rst_sent=?, rst_rcvd=?, gridsquare=?, name=?, qth=?, country=?, comment=?, notes=?, tx_pwr=?,
 		distance=?, bearing=?,
+		sota_ref=?, pota_ref=?, wwff_ref=?, iota=?,
+		my_sota_ref=?, my_pota_ref=?, my_wwff_ref=?,
 		station_callsign=?, operator=?, my_gridsquare=?, my_rig=?, my_antenna=?, source=?,
 		updated_at=?
 		WHERE id=?`,
@@ -149,6 +163,8 @@ func UpdateQSO(db *sql.DB, q *qso.QSO) error {
 		q.Band, q.Freq, q.FreqRx, q.Mode, q.Submode,
 		q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
 		q.Distance, q.Bearing,
+		q.SOTARef, q.POTARef, q.WWFFRef, q.IOTA,
+		q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
 		q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
 		q.UpdatedAt.Format(time.RFC3339),
 		q.ID,

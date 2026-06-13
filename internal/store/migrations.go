@@ -56,6 +56,13 @@ var migrations = []string{
 	`CREATE INDEX IF NOT EXISTS idx_qsos_mode ON qsos(mode)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_gridsquare ON qsos(gridsquare)`,
 	`ALTER TABLE qsos ADD COLUMN freq_rx REAL DEFAULT 0`,
+	`ALTER TABLE qsos ADD COLUMN sota_ref TEXT DEFAULT ''`,
+	`ALTER TABLE qsos ADD COLUMN pota_ref TEXT DEFAULT ''`,
+	`ALTER TABLE qsos ADD COLUMN wwff_ref TEXT DEFAULT ''`,
+	`ALTER TABLE qsos ADD COLUMN my_sota_ref TEXT DEFAULT ''`,
+	`ALTER TABLE qsos ADD COLUMN my_pota_ref TEXT DEFAULT ''`,
+	`ALTER TABLE qsos ADD COLUMN my_wwff_ref TEXT DEFAULT ''`,
+	`ALTER TABLE qsos ADD COLUMN iota TEXT DEFAULT ''`,
 }
 
 func Migrate(db *sql.DB) error {

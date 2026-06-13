@@ -38,14 +38,19 @@ const (
 	fieldGrid
 	fieldCountry
 	fieldTXPower
-	fieldComment
 	fieldFreqRx
+	fieldSOTA
+	fieldPOTA
+	fieldWWFF
+	fieldIOTA
+	fieldComment
 	fieldCount // sentinel: must be last; equals number of fields above
 )
 
 var fieldNames = []string{
 	"Date UTC", "Time UTC", "Call", "Frequency", "Band", "Mode", "Submode",
-	"RST sent", "RST rcvd", "Name", "QTH", "Grid", "DXCC", "Power W", "Comment", "Freq RX",
+	"RST sent", "RST rcvd", "Name", "QTH", "Grid", "DXCC", "Power W", "Freq RX",
+	"SOTA Ref", "POTA Ref", "WWFF Ref", "IOTA", "Comment",
 }
 
 type Model struct {
@@ -97,6 +102,8 @@ type Model struct {
 	qrzNeed           bool
 	qrzCall           string
 	qrzLastLook       time.Time
+	retainComment     bool
+	retainFocused     bool // true when the Retain checkbox has focus (instead of a text field)
 }
 
 type tickMsg time.Time
@@ -148,6 +155,8 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 			ti.CharLimit = 8
 		case fieldComment:
 			ti.CharLimit = 60
+		case fieldSOTA, fieldPOTA, fieldWWFF, fieldIOTA:
+			ti.CharLimit = 20
 		}
 		m.fields[i] = ti
 	}
@@ -383,6 +392,9 @@ func (m *Model) logQSOFromADIF(adif string) {
 		MyRig:           m.App.Logbook.Station.Rig,
 		MyAntenna:       m.App.Logbook.Station.Antenna,
 		TXPower:         m.App.Logbook.Station.Power,
+		MySOTARef:       m.App.Logbook.Station.SOTARef,
+		MyPOTARef:       m.App.Logbook.Station.POTARef,
+		MyWWFFRef:       m.App.Logbook.Station.WWFFRef,
 	})
 	if err := qso.ValidateForSave(qs); err != nil {
 		applog.Error("WSJT-X: ADIF validation failed", "error", err.Error())
@@ -467,6 +479,20 @@ func parseWSJTXADIF(adif string) *qso.QSO {
 			qs.Country = val
 		case "tx_pwr":
 			qs.TXPower = val
+		case "sota_ref":
+			qs.SOTARef = val
+		case "pota_ref":
+			qs.POTARef = val
+		case "wwff_ref":
+			qs.WWFFRef = val
+		case "iota":
+			qs.IOTA = val
+		case "my_sota_ref":
+			qs.MySOTARef = val
+		case "my_pota_ref":
+			qs.MyPOTARef = val
+		case "my_wwff_ref":
+			qs.MyWWFFRef = val
 		}
 	}
 	qs.Mode, qs.Submode = qso.NormalizeMode(qs.Mode, qs.Submode)
@@ -783,6 +809,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyMsg:
 		switch {
+		case m.retainFocused:
+			switch msg.String() {
+			case " ", "enter":
+				m.retainComment = !m.retainComment
+			case "tab", "down":
+				m.nextField()
+			case "shift+tab", "up":
+				m.prevField()
+			case "ctrl+r":
+				m.retainComment = !m.retainComment
+			}
+			return m, cmd
 		case msg.String() == "shift+tab" || msg.Type == tea.KeyShiftTab:
 			m.prevField()
 		case msg.Type == tea.KeyUp || msg.String() == "up":
@@ -793,6 +831,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.saveQSO()
 		case msg.String() == "delete" || msg.Type == tea.KeyDelete:
 			m.clearForm()
+		case msg.String() == "ctrl+r":
+			m.retainComment = !m.retainComment
 		case msg.String() == "ctrl+c":
 			m.mainMenu = NewMainMenu()
 			m.showMainMenu = true
@@ -953,9 +993,9 @@ func (m *Model) buildQSOFormContent(w int, header string) string {
 
 	form := m.viewForm(w)
 	distLine := m.formDistanceLine(w)
-	formBlock := form
+	formBlock := strings.TrimRight(form, "\n")
 	if distLine != "" {
-		formBlock = lipgloss.JoinVertical(lipgloss.Left, form, distLine)
+		formBlock = formBlock + "\n" + distLine
 	}
 	formRendered := lipgloss.NewStyle().Width(w).Padding(0, 1).Render(formBlock)
 
@@ -1366,9 +1406,9 @@ func (m *Model) viewFooter(width int) string {
 		text = "F10 Quit"
 	default:
 		if width < 70 {
-			text = "Enter=Save | Del Clear | Ins/Ctrl+L Lookup | PgUp/Dn Cycle | F10 Quit"
+			text = "Enter=Save | Del Clear | Ins/Ctrl+L Lookup | PgUp/Dn Cycle | Space=Mark Retain | F10 Quit"
 		} else {
-			text = "Enter/Ctrl+S Save  Del Clear  Ins/Ctrl+L Lookup  PgUp/Dn Cycle  F10 Quit"
+			text = "Enter/Ctrl+S Save  Del Clear  Ins/Ctrl+L Lookup  PgUp/Dn Cycle  Space=Mark Retain  F10 Quit"
 		}
 	}
 	ver := ""
@@ -1414,35 +1454,41 @@ func (m *Model) viewForm(width int) string {
 	hl := CursorStyle
 	choiceFields := map[field]bool{fieldBand: true, fieldMode: true, fieldSubmode: true}
 
-	// Split fields: left 9, right 6
-	leftFields := []field{fieldDate, fieldTime, fieldCall, fieldFreq, fieldBand, fieldMode, fieldSubmode, fieldRSTSent, fieldRSTRcvd}
-	rightFields := []field{fieldName, fieldQTH, fieldGrid, fieldCountry, fieldTXPower, fieldFreqRx, fieldComment}
+	// Three columns with equal space: left 7, middle 6, right 5 (comment is special, spans cols 1+2)
+	leftFields := []field{fieldDate, fieldTime, fieldCall, fieldFreq, fieldBand, fieldMode, fieldSubmode}
+	middleFields := []field{fieldRSTSent, fieldRSTRcvd, fieldName, fieldQTH, fieldGrid, fieldCountry}
+	rightFields := []field{fieldTXPower, fieldFreqRx, fieldSOTA, fieldPOTA, fieldWWFF, fieldIOTA}
 
-	colW := (bodyW - 3) / 2 // 3 = gap between columns
-	if colW < 26 {
+	colW := (bodyW - 4) / 3 // 4 = two 2-char gaps between three columns
+	if colW < 20 {
 		colW = bodyW // fallback to single column on very narrow terminals
 	}
 
 	renderField := func(f field, w int) string {
 		label := fieldNames[f]
 		raw := strings.TrimSpace(m.fields[f].Value())
+		lbl := fmt.Sprintf("%-12s", label)
+
 		choiceIcon := ""
 		if choiceFields[f] {
 			choiceIcon = dim.Render("▼ ")
 		}
+
+		isFocused := int(f) == int(m.focus) && !m.retainFocused
+		// Use textinput.View() so the cursor appears on focused fields
+		tiView := m.fields[f].View()
 		val := choiceIcon
-		if raw == "" {
+		if isFocused {
+			val += tiView
+		} else if raw == "" {
 			val += dim.Render("—")
 		} else {
-			val += raw
+			val += ValueStyle.Render(raw)
 		}
-		lbl := fmt.Sprintf("%-12s", label)
+
 		line := " " + lbl + " " + val
-		if int(f) == int(m.focus) {
-			line = hl.Render(" "+lbl) + " " + inputStyle.Render(val)
-			if raw == "" {
-				line = hl.Render(" "+lbl) + " " + dim.Render(val)
-			}
+		if isFocused {
+			line = hl.Render(" "+lbl) + " " + val
 		}
 		// Pad to column width
 		for lipgloss.Width(line) < w {
@@ -1456,6 +1502,9 @@ func (m *Model) viewForm(width int) string {
 	b.WriteString("\n")
 
 	rows := len(leftFields)
+	if len(middleFields) > rows {
+		rows = len(middleFields)
+	}
 	if len(rightFields) > rows {
 		rows = len(rightFields)
 	}
@@ -1464,16 +1513,86 @@ func (m *Model) viewForm(width int) string {
 		if i < len(leftFields) {
 			left = renderField(leftFields[i], colW)
 		}
+		middle := ""
+		if i < len(middleFields) {
+			middle = renderField(middleFields[i], colW)
+		}
 		right := ""
 		if i < len(rightFields) {
 			right = renderField(rightFields[i], colW)
 		}
-		if left != "" && right != "" && colW >= 26 {
-			b.WriteString(left + " " + right + "\n")
-		} else if left != "" {
-			b.WriteString(left + "\n")
-		} else if right != "" {
-			b.WriteString(right + "\n")
+		if colW >= 20 {
+			parts := []string{}
+			if left != "" {
+				parts = append(parts, left)
+			}
+			if middle != "" {
+				parts = append(parts, middle)
+			}
+			if right != "" {
+				parts = append(parts, right)
+			}
+			b.WriteString(strings.Join(parts, "  ") + "\n")
+		} else {
+			if left != "" {
+				b.WriteString(left + "\n")
+			}
+			if middle != "" {
+				b.WriteString(middle + "\n")
+			}
+			if right != "" {
+				b.WriteString(right + "\n")
+			}
+		}
+	}
+
+	// Comment row: spans columns 1+2, with Retain checkbox in column 3
+	commentW := colW*2 + 2 // two columns + gap
+	if commentW < 20 {
+		commentW = bodyW
+	}
+	commentLine := renderField(fieldComment, commentW)
+
+	// Retain checkbox
+	retainMark := "[ ]"
+	retainLabel := "Retain"
+	if m.retainComment {
+		retainMark = "[x]"
+	}
+	if m.retainFocused {
+		retainBox := hl.Render(" "+retainMark) + " " + inputStyle.Render(retainLabel)
+		for lipgloss.Width(retainBox) < colW {
+			retainBox += " "
+		}
+		if colW >= 20 {
+			b.WriteString(commentLine + "  " + retainBox + "\n")
+		} else {
+			b.WriteString(commentLine + "\n")
+			b.WriteString("  " + retainBox + "\n")
+		}
+	} else {
+		if m.retainComment {
+			retainBox := " " + inputStyle.Render(retainMark) + " " + dim.Render(retainLabel)
+			for lipgloss.Width(retainBox) < colW {
+				retainBox += " "
+			}
+			if colW >= 20 {
+				b.WriteString(commentLine + "  " + retainBox + "\n")
+			} else {
+				b.WriteString(commentLine + "\n")
+				b.WriteString("  " + retainBox + "\n")
+			}
+		} else {
+			retainBox := " " + dim.Render(retainMark) + " " + dim.Render(retainLabel)
+			for lipgloss.Width(retainBox) < colW {
+				retainBox += " "
+			}
+			if colW >= 20 {
+				b.WriteString(commentLine + "  " + retainBox + "\n")
+			} else {
+				b.WriteString(commentLine + "\n")
+				b.WriteString("  " + retainBox + "\n")
+			}
 		}
 	}
 
@@ -1650,11 +1769,16 @@ func trunc(s string, w int) string {
 func (m *Model) formDistanceLine(width int) string {
 	ownGrid := formatLocator(m.App.Logbook.Station.Grid)
 	partnerGrid := formatLocator(strings.TrimSpace(m.fields[fieldGrid].Value()))
+	if ownGrid == "" {
+		applog.Debug("path: own grid not set — set your locator in station config")
+		return ""
+	}
 	if partnerGrid == "" {
 		return ""
 	}
 	dl := distanceLine(ownGrid, partnerGrid, m.App.Config.DistanceUnit)
 	if dl == "" {
+		applog.Debug("path: distance calculation failed", "own", ownGrid, "partner", partnerGrid)
 		return ""
 	}
 	bodyW := width - 2
@@ -1666,6 +1790,7 @@ func (m *Model) formDistanceLine(width int) string {
 }
 
 func (m *Model) focusField(f field) {
+	m.retainFocused = false
 	m.fields[m.focus].Blur()
 	m.focus = f
 	m.fields[m.focus].Focus()
@@ -1673,9 +1798,23 @@ func (m *Model) focusField(f field) {
 
 func (m *Model) nextField() {
 	wasCall := m.focus == fieldCall
+
+	if m.retainFocused {
+		// Retain checkbox → first field
+		m.retainFocused = false
+		m.focus = 0
+		m.fields[m.focus].Focus()
+		return
+	}
+
 	m.fields[m.focus].Blur()
-	m.focus = (m.focus + 1) % fieldCount
-	m.fields[m.focus].Focus()
+	if m.focus == fieldComment {
+		// Comment is last text field — Tab goes to Retain checkbox
+		m.retainFocused = true
+	} else {
+		m.focus = (m.focus + 1) % fieldCount
+		m.fields[m.focus].Focus()
+	}
 	if wasCall {
 		m.qrzNeed = true
 		m.qrzCall = strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
@@ -1685,13 +1824,23 @@ func (m *Model) nextField() {
 }
 func (m *Model) prevField() {
 	wasCall := m.focus == fieldCall
+
+	if m.retainFocused {
+		// Retain checkbox → go back to Comment field
+		m.retainFocused = false
+		m.focus = fieldComment
+		m.fields[m.focus].Focus()
+		return
+	}
+
 	m.fields[m.focus].Blur()
 	if m.focus == 0 {
-		m.focus = fieldCount - 1
+		// First field → go to Retain checkbox (not wrapping to Comment)
+		m.retainFocused = true
 	} else {
 		m.focus--
+		m.fields[m.focus].Focus()
 	}
-	m.fields[m.focus].Focus()
 	if wasCall {
 		m.qrzNeed = true
 		m.qrzCall = strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
@@ -1759,6 +1908,9 @@ func (m *Model) autoFillSSBSubmode() {
 }
 
 func (m *Model) updateFocused(msg tea.KeyMsg) {
+	if m.retainFocused {
+		return
+	}
 	prevCall := strings.TrimSpace(m.fields[fieldCall].Value())
 	prevVal := m.fields[m.focus].Value()
 	prevFreq := m.fields[fieldFreq].Value()
@@ -1791,6 +1943,12 @@ func (m *Model) updateFocused(msg tea.KeyMsg) {
 	}
 }
 func (m *Model) clearForm() {
+	// Preserve comment if retain is on
+	retainedComment := ""
+	if m.retainComment {
+		retainedComment = m.fields[fieldComment].Value()
+	}
+
 	rig := [5]struct {
 		idx   field
 		value string
@@ -1815,7 +1973,12 @@ func (m *Model) clearForm() {
 			m.fields[r.idx].SetValue(r.value)
 		}
 	}
+	// Restore retained comment
+	if retainedComment != "" {
+		m.fields[fieldComment].SetValue(retainedComment)
+	}
 	m.dateTimeAuto = true
+	m.retainFocused = false
 	m.focus = fieldCall
 	m.fields[m.focus].Focus()
 	m.partnerData = nil
@@ -1928,7 +2091,11 @@ func (m *Model) saveQSO() tea.Cmd {
 	qs.GridSquare = formatLocator(m.fields[fieldGrid].Value())
 	qs.Comment, qs.Name, qs.QTH, qs.Country = m.fields[fieldComment].Value(), m.fields[fieldName].Value(), m.fields[fieldQTH].Value(), m.fields[fieldCountry].Value()
 	qs.TXPower = strings.TrimSpace(m.fields[fieldTXPower].Value())
-	station := qso.StationInfo{StationCallsign: m.App.Logbook.Station.Callsign, Operator: m.App.Logbook.Station.Operator, MyGridSquare: m.App.Logbook.Station.Grid, MyRig: m.App.Logbook.Station.Rig, MyAntenna: m.App.Logbook.Station.Antenna, TXPower: m.App.Logbook.Station.Power}
+	qs.SOTARef = strings.TrimSpace(m.fields[fieldSOTA].Value())
+	qs.POTARef = strings.TrimSpace(m.fields[fieldPOTA].Value())
+	qs.WWFFRef = strings.TrimSpace(m.fields[fieldWWFF].Value())
+	qs.IOTA = strings.TrimSpace(m.fields[fieldIOTA].Value())
+	station := qso.StationInfo{StationCallsign: m.App.Logbook.Station.Callsign, Operator: m.App.Logbook.Station.Operator, MyGridSquare: m.App.Logbook.Station.Grid, MyRig: m.App.Logbook.Station.Rig, MyAntenna: m.App.Logbook.Station.Antenna, TXPower: m.App.Logbook.Station.Power, MySOTARef: m.App.Logbook.Station.SOTARef, MyPOTARef: m.App.Logbook.Station.POTARef, MyWWFFRef: m.App.Logbook.Station.WWFFRef}
 	if qs.GridSquare != "" && station.MyGridSquare != "" {
 		qs.Distance = gridDistanceKm(station.MyGridSquare, qs.GridSquare)
 		qs.Bearing = gridBearingDeg(station.MyGridSquare, qs.GridSquare)

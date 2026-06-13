@@ -49,6 +49,13 @@ const (
 	qefSource
 	qefDistance
 	qefBearing
+	qefIOTA
+	qefSOTA
+	qefPOTA
+	qefWWFF
+	qefMySOTA
+	qefMyPOTA
+	qefMyWWFF
 	qefCount
 )
 
@@ -58,6 +65,8 @@ var qefLabels = []string{
 	"QTH", "Country", "Comment", "Notes", "TX Power",
 	"Station Call", "Operator", "My Grid", "My Rig", "My Antenna",
 	"Source", "Distance km", "Bearing",
+	"IOTA", "SOTA Ref", "POTA Ref", "WWFF Ref",
+	"My SOTA", "My POTA", "My WWFF",
 }
 
 type LogbookEditor struct {
@@ -100,6 +109,8 @@ func NewLogbookEditor(db *sql.DB) *LogbookEditor {
 			ti.CharLimit = 10
 		case qefDistance, qefBearing:
 			ti.CharLimit = 10
+		case qefSOTA, qefPOTA, qefWWFF, qefIOTA, qefMySOTA, qefMyPOTA, qefMyWWFF:
+			ti.CharLimit = 20
 		}
 		le.fields[i] = ti
 	}
@@ -143,6 +154,13 @@ func (le *LogbookEditor) fillEditForm(q *qso.QSO) {
 	s(qefSource, q.Source)
 	sf(qefDistance, q.Distance)
 	sf(qefBearing, q.Bearing)
+	s(qefIOTA, q.IOTA)
+	s(qefSOTA, q.SOTARef)
+	s(qefPOTA, q.POTARef)
+	s(qefWWFF, q.WWFFRef)
+	s(qefMySOTA, q.MySOTARef)
+	s(qefMyPOTA, q.MyPOTARef)
+	s(qefMyWWFF, q.MyWWFFRef)
 }
 
 func (le *LogbookEditor) readEditForm() *qso.QSO {
@@ -163,6 +181,8 @@ func (le *LogbookEditor) readEditForm() *qso.QSO {
 		Operator: g(qefOperator), MyGridSquare: g(qefMyGrid),
 		MyRig: g(qefMyRig), MyAntenna: g(qefMyAntenna), Source: g(qefSource),
 		Distance: gf(qefDistance), Bearing: gf(qefBearing),
+		IOTA: g(qefIOTA), SOTARef: g(qefSOTA), POTARef: g(qefPOTA), WWFFRef: g(qefWWFF),
+		MySOTARef: g(qefMySOTA), MyPOTARef: g(qefMyPOTA), MyWWFFRef: g(qefMyWWFF),
 		CreatedAt: le.editing.CreatedAt,
 	}
 }
