@@ -5,7 +5,6 @@ import (
 	"math"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/ftl/hamradio/locator"
 )
 
@@ -56,9 +55,9 @@ func renderWorldMap(ownLat, ownLon, partnerLat, partnerLon float64, width, heigh
 	ownX, ownY := mercatorXY(ownLat, ownLon, outW, outH)
 	partnerX, partnerY := mercatorXY(partnerLat, partnerLon, outW, outH)
 
-	ownSty := lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true)
-	partnerSty := lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Bold(true)
-	bothSty := lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true)
+	ownSty := S.MapOwn
+	partnerSty := S.MapPartner
+	bothSty := S.MapBoth
 
 	pad := (width - outW) / 2
 	if pad < 0 {
@@ -93,16 +92,15 @@ func renderWorldMap(ownLat, ownLon, partnerLat, partnerLon float64, width, heigh
 		b.WriteByte('\n')
 	}
 	if hasOwn || hasPartner {
-		gray := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
 		b.WriteString(padStr)
 		if collide {
 			b.WriteString(bothSty.Render("@"))
-			b.WriteString(gray.Render("  you & partner"))
+			b.WriteString(S.MapGrid.Render("  you & partner"))
 		} else {
 			b.WriteString(ownSty.Render("*"))
-			b.WriteString(gray.Render("  you    "))
+			b.WriteString(S.MapGrid.Render("  you    "))
 			b.WriteString(partnerSty.Render("P"))
-			b.WriteString(gray.Render("  partner"))
+			b.WriteString(S.MapGrid.Render("  partner"))
 		}
 	}
 	return b.String()

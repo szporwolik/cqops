@@ -3,8 +3,8 @@ package tui
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 type menuItem struct {
@@ -40,7 +40,7 @@ func (m *MainMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "enter":
 			switch m.cursor {
@@ -72,15 +72,12 @@ func (m *MainMenu) FooterText() string {
 	return "↑↓ to navigate  Enter to select  F1 QSO Form  F10 Quit"
 }
 
-func (m *MainMenu) View() string {
+func (m *MainMenu) View() tea.View {
 	if m.done {
-		return ""
+		return tea.NewView("")
 	}
 
-	bodyW := m.width - 2
-	if bodyW < 30 {
-		bodyW = 30
-	}
+	bodyW := ContentWidth(m.width)
 
 	dim := SubtleStyle
 	cursor := CursorStyle
@@ -113,5 +110,5 @@ func (m *MainMenu) View() string {
 		b.WriteString("\n")
 	}
 
-	return b.String()
+	return tea.NewView(b.String())
 }

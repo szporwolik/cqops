@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 )
 
 type StationForm struct {
@@ -59,7 +59,7 @@ func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder strin
 	}
 }
 
-func (f *StationForm) Update(msg tea.KeyMsg) {
+func (f *StationForm) Update(msg tea.KeyPressMsg) {
 	switch {
 	case f.Callsign.Focused():
 		f.Callsign, _ = f.Callsign.Update(msg)
@@ -150,7 +150,7 @@ func (f *StationForm) SetValues(callsign, operator, locator, sotaRef, potaRef, w
 	f.WWFFRef.SetValue(wwffRef)
 }
 
-func (f *StationForm) View() string {
+func (f *StationForm) View() tea.View {
 	var b strings.Builder
 	b.WriteString(formLabelStyle.Render("Callsign:"))
 	b.WriteString(inputStyle.Render(f.Callsign.View()))
@@ -174,19 +174,19 @@ func (f *StationForm) View() string {
 
 	b.WriteString(formLabelStyle.Render("WWFF Ref (optional):"))
 	b.WriteString(inputStyle.Render(f.WWFFRef.View()))
-	return b.String()
+	return tea.NewView(b.String())
 }
 
-func (f *StationForm) HandleKey(msg tea.KeyMsg) tea.Cmd {
+func (f *StationForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 	k := msg
 	if k.String() == "ctrl+s" || k.String() == "\x13" {
 		return func() tea.Msg { return enterOnLastFieldMsg{} }
 	}
-	if k.String() == "tab" || msg.Type == tea.KeyDown || k.String() == "enter" {
+	if k.String() == "tab" || msg.Code == tea.KeyDown || k.String() == "enter" {
 		f.NextInput()
 		return nil
 	}
-	if k.String() == "shift+tab" || msg.Type == tea.KeyUp {
+	if k.String() == "shift+tab" || msg.Code == tea.KeyUp {
 		f.PrevInput()
 		return nil
 	}

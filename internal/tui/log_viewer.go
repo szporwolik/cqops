@@ -4,53 +4,58 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
 )
 
 type LogViewer struct {
-	name   string
-	offset int
-	done   bool
-	width  int
-	height int
+	name     string
+	viewport viewport.Model
+	done     bool
+	width    int
+	height   int
 }
 
-func NewLogViewer(name string) *LogViewer { return &LogViewer{name: name} }
+func NewLogViewer(name string) *LogViewer {
+	lv := &LogViewer{name: name}
+	lv.viewport = viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
+	return lv
+}
 
 func (lv *LogViewer) Init() tea.Cmd { return nil }
 
 func (lv *LogViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		lv.width, lv.height = msg.Width, msg.Height
-	case tea.KeyMsg:
+		lv.width = msg.Width
+		lv.height = msg.Height
+		lv.viewport.SetWidth(msg.Width - 2)
+		lv.viewport.SetHeight(msg.Height - 10)
+	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "f9":
 			lv.done = true
-		case "up", "k":
-			if lv.offset > 0 {
-				lv.offset--
-			}
-		case "down", "j":
-			lv.offset++
+		default:
+			var cmd tea.Cmd
+			lv.viewport, cmd = lv.viewport.Update(msg)
+			return lv, cmd
 		}
 	}
 	return lv, nil
 }
 
 func (lv *LogViewer) FooterText() string {
-	return "↑↓ to scroll  F1 QSO form  F9 to close"
+	return "↑↓/j,k scroll  PgUp/PgDn page  F9 close"
 }
 
-func (lv *LogViewer) View() string {
+func (lv *LogViewer) View() tea.View {
 	if lv.done {
-		return ""
+		return tea.NewView("")
 	}
 	entries := applog.Entries()
 	if len(entries) == 0 {
-		return "No log entries yet."
+		return tea.NewView("No log entries yet.")
 	}
 
 	w := lv.width
@@ -59,40 +64,13 @@ func (lv *LogViewer) View() string {
 	}
 	bodyW := w - 2
 
-	h := lv.height
-	if h < 10 {
-		h = 24
-	}
-	maxRows := h - 10
-	if maxRows < 5 {
-		maxRows = 5
-	}
-
-	if lv.offset > len(entries)-maxRows {
-		lv.offset = len(entries) - maxRows
-	}
-	if lv.offset < 0 {
-		lv.offset = 0
-	}
-
-	infoColor := lipgloss.NewStyle().Foreground(th.Info)
-	errColor := lipgloss.NewStyle().Foreground(th.Error)
-	warnColor := lipgloss.NewStyle().Foreground(th.Warning)
-	debugColor := lipgloss.NewStyle().Foreground(th.Debug)
+	infoColor := S.LogInfo
+	errColor := S.LogError
+	warnColor := S.LogWarn
+	debugColor := S.LogDebug
 
 	var b strings.Builder
-
-	title := "── Logs: " + lv.name + " "
-	b.WriteString(section(title, bodyW))
-	b.WriteString("\n\n")
-
-	b.WriteString(fmt.Sprintf("  %-8s %-6s %s", "Time", "Level", "Message"))
-	b.WriteString("\n\n")
-
-	for i := len(entries) - 1 - lv.offset; i >= 0 && len(entries)-1-i-lv.offset < maxRows; i-- {
-		if i < 0 || i >= len(entries) {
-			continue
-		}
+	for i := len(entries) - 1; i >= 0; i-- {
 		e := entries[i]
 
 		levelStyle := debugColor
@@ -110,7 +88,7 @@ func (lv *LogViewer) View() string {
 			msg += " — " + e.Details
 		}
 
-		line := fmt.Sprintf("  %-8s %s %s",
+		line := fmt.Sprintf("%-8s %s %s",
 			e.Time,
 			levelStyle.Render(fmt.Sprintf("%-6s", e.Level)),
 			truncate(msg, bodyW-18),
@@ -118,5 +96,11 @@ func (lv *LogViewer) View() string {
 		b.WriteString(line)
 		b.WriteString("\n")
 	}
-	return b.String()
+
+	lv.viewport.SetContent(b.String())
+
+	title := "── Logs: " + lv.name + " "
+	header := section(title, bodyW)
+
+	return tea.NewView(header + "\n\n" + lv.viewport.View())
 }

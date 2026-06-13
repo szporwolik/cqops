@@ -44,14 +44,18 @@ func appDir(base, sub string) (string, error) {
 		appData := os.Getenv("APPDATA")
 		if appData == "" {
 			home, err := os.UserHomeDir()
-			if err != nil { return "", err }
+			if err != nil {
+				return "", err
+			}
 			appData = filepath.Join(home, "AppData", "Roaming")
 		}
 		return filepath.Join(appData, base, sub), nil
 	}
 
 	home, err := os.UserHomeDir()
-	if err != nil { return "", err }
+	if err != nil {
+		return "", err
+	}
 	if runtime.GOOS == "darwin" {
 		return filepath.Join(home, "Library", "Application Support", base, sub), nil
 	}

@@ -79,22 +79,22 @@ var Timezones = []string{
 }
 
 var normalizeTZ = map[string]string{
-	"UTC":   "UTC",
-	"GMT":   "UTC",
-	"CET":   "Europe/Berlin",
-	"CEST":  "Europe/Berlin",
-	"EET":   "Europe/Helsinki",
-	"EEST":  "Europe/Helsinki",
-	"WET":   "Europe/London",
-	"WEST":  "Europe/London",
-	"EST":   "America/New_York",
-	"EDT":   "America/New_York",
-	"CST":   "America/Chicago",
-	"CDT":   "America/Chicago",
-	"MST":   "America/Denver",
-	"MDT":   "America/Denver",
-	"PST":   "America/Los_Angeles",
-	"PDT":   "America/Los_Angeles",
+	"UTC":  "UTC",
+	"GMT":  "UTC",
+	"CET":  "Europe/Berlin",
+	"CEST": "Europe/Berlin",
+	"EET":  "Europe/Helsinki",
+	"EEST": "Europe/Helsinki",
+	"WET":  "Europe/London",
+	"WEST": "Europe/London",
+	"EST":  "America/New_York",
+	"EDT":  "America/New_York",
+	"CST":  "America/Chicago",
+	"CDT":  "America/Chicago",
+	"MST":  "America/Denver",
+	"MDT":  "America/Denver",
+	"PST":  "America/Los_Angeles",
+	"PDT":  "America/Los_Angeles",
 }
 
 func SystemTimezone() string {
@@ -127,4 +127,3 @@ func SystemTimezoneIndex() int {
 	}
 	return 0
 }
-

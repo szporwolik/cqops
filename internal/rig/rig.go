@@ -11,8 +11,8 @@ type RigStatus struct {
 	Connected    bool
 	FrequencyHz  int64
 	FrequencyMHz float64
-	Band          string
-	Mode          string
-	RawMode       string
-	Power         float64
+	Band         string
+	Mode         string
+	RawMode      string
+	Power        float64
 }

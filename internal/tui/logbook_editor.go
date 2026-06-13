@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/table"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 )
@@ -76,9 +77,9 @@ var qefLabels = []string{
 type LogbookEditor struct {
 	db             *sql.DB
 	qsos           []qso.QSO
-	cursor         int
-	offset         int
+	table          table.Model
 	mode           editorMode
+	confirm        *Confirm
 	editing        *qso.QSO
 	fields         [qefCount]textinput.Model
 	focus          qsoEditField
@@ -94,6 +95,48 @@ type LogbookEditor struct {
 	logStationGrid string
 	mismatchQSOs   []qso.QSO
 	mismatchFields []string
+}
+
+var editorCols = []table.Column{
+	{Title: "ID", Width: 3}, {Title: "Date", Width: 10}, {Title: "Time", Width: 8},
+	{Title: "Call", Width: 7}, {Title: "Band", Width: 5}, {Title: "Mode", Width: 5},
+	{Title: "RSTs", Width: 4}, {Title: "RSTr", Width: 4}, {Title: "Grid", Width: 6},
+	{Title: "DXCC", Width: 6}, {Title: "Name", Width: 7}, {Title: "QTH", Width: 8},
+	{Title: "WL", Width: 8}, {Title: "Comment", Width: 10},
+}
+
+func editorRow(q *qso.QSO) table.Row {
+	b := qso.NormalizeBand(q.Band)
+	if b == "" && q.Freq > 0 {
+		b = fmt.Sprintf("%.0f", q.Freq)
+	}
+	wl := q.WavelogUploaded
+	if wl != "yes" && wl != "no" {
+		wl = ""
+	}
+	return table.Row{
+		fmt.Sprintf("%d", q.ID), formatDate(q.QSODate), formatTime(q.TimeOn),
+		q.Call, b, q.Mode, q.RSTSent, q.RSTRcvd, q.GridSquare,
+		q.Country, q.Name, q.QTH, wl, q.Comment,
+	}
+}
+
+func (le *LogbookEditor) buildTable() {
+	var rows []table.Row
+	for _, q := range le.qsos {
+		rows = append(rows, editorRow(&q))
+	}
+	t := table.New(
+		table.WithColumns(editorCols),
+		table.WithRows(rows),
+		table.WithFocused(true),
+		table.WithHeight(le.height-8),
+	)
+	s := table.DefaultStyles()
+	s.Header = s.Header.BorderStyle(lipgloss.NormalBorder()).BorderBottom(true).Bold(false)
+	s.Selected = s.Selected.Foreground(lipgloss.Color("229")).Background(lipgloss.Color("57")).Bold(false)
+	t.SetStyles(s)
+	le.table = t
 }
 
 func NewLogbookEditor(db *sql.DB, wlURL, wlKey, wlStationID, wlStationCall, logStationOp, logStationGrid string) *LogbookEditor {
@@ -269,7 +312,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return le, le.uploadBatch(unsent)
 		}
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		k := msg.String()
 
 		if le.mode == edModeConfirmDelete || le.mode == edModeConfirmPurge || le.mode == edModeConfirmWLSend || le.mode == edModeConfirmNormalize {
@@ -302,18 +345,14 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return le, nil
 		}
 
-		// modeList
+		// modeList — table handles navigation
 		switch k {
 		case "f5", "esc":
 			le.done = true
-		case "up", "k":
-			if le.cursor > 0 {
-				le.cursor--
-			}
-		case "down", "j":
-			if le.cursor < len(le.qsos)-1 {
-				le.cursor++
-			}
+		case "up", "k", "down", "j", "pgup", "pgdown", "home", "end":
+			var cmd tea.Cmd
+			le.table, cmd = le.table.Update(msg)
+			return le, cmd
 		case "delete":
 			if len(le.qsos) > 0 {
 				le.mode = edModeConfirmDelete
@@ -324,7 +363,11 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "e", "enter":
 			if len(le.qsos) > 0 {
-				q := le.qsos[le.cursor]
+				idx := le.table.Cursor()
+				if idx >= len(le.qsos) {
+					idx = 0
+				}
+				q := le.qsos[idx]
 				le.editing = &q
 				le.fillEditForm(&q)
 				le.focus = qefCall
@@ -347,7 +390,7 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 		return le.doNormalizeAndUpload()
 	}
 	if le.mode == edModeConfirmDelete {
-		id := le.qsos[le.cursor].ID
+		id := le.qsos[le.table.Cursor()].ID
 		return func() tea.Msg {
 			return editorMsg{deleted: id, err: store.DeleteQSO(le.db, id)}
 		}
@@ -390,21 +433,17 @@ func (le *LogbookEditor) FooterText() string {
 	}
 }
 
-func (le *LogbookEditor) View() string {
+func (le *LogbookEditor) View() tea.View {
 	if le.done {
-		return ""
+		return tea.NewView("")
 	}
-	w := le.width
-	if w < 40 {
-		w = 80
-	}
-	bodyW := w - 2
+	bodyW := ContentWidth(le.width)
 
 	switch le.mode {
 	case edModeConfirmDelete:
-		return le.viewConfirm("Delete QSO", bodyW)
+		return tea.NewView(le.viewConfirm("Delete QSO", bodyW))
 	case edModeConfirmPurge:
-		return le.viewConfirm("Purge Logbook", bodyW)
+		return tea.NewView(le.viewConfirm("Purge Logbook", bodyW))
 	case edModeConfirmWLSend:
 		unsent := 0
 		for _, q := range le.qsos {
@@ -412,13 +451,14 @@ func (le *LogbookEditor) View() string {
 				unsent++
 			}
 		}
-		return le.viewConfirm(fmt.Sprintf("Send %d unsent QSOs to Wavelog", unsent), bodyW)
+		return tea.NewView(le.viewConfirm(fmt.Sprintf("Send %d unsent QSOs to Wavelog", unsent), bodyW))
 	case edModeConfirmNormalize:
-		return le.viewNormalizeConfirm(bodyW)
+		return tea.NewView(le.viewNormalizeConfirm(bodyW))
 	case edModeEdit:
-		return le.viewEdit(bodyW)
+		return tea.NewView(le.viewEdit(bodyW))
 	default:
-		return le.viewList(bodyW)
+		le.buildTable()
+		return tea.NewView(section("── Logbook Editor ", bodyW) + "\n" + le.table.View())
 	}
 }
 
@@ -439,203 +479,6 @@ func (le *LogbookEditor) viewNormalizeConfirm(bodyW int) string {
 	b.WriteString("\n  update the local database, then upload?")
 	b.WriteString("\n\n  Are you sure? (y/N)")
 	return b.String()
-}
-
-func (le *LogbookEditor) viewList(bodyW int) string {
-	h := le.height
-	if h < 10 {
-		h = 24
-	}
-	maxRows := h - 8
-	if maxRows < 3 {
-		maxRows = 3
-	}
-
-	if le.cursor < le.offset {
-		le.offset = le.cursor
-	}
-	if le.cursor >= le.offset+maxRows {
-		le.offset = le.cursor - maxRows + 1
-	}
-	if le.offset < 0 {
-		le.offset = 0
-	}
-
-	var b strings.Builder
-	b.WriteString(section("── Logbook Editor ", bodyW))
-	b.WriteString("\n")
-
-	if len(le.qsos) == 0 {
-		b.WriteString("\n  No QSOs in logbook.")
-		return b.String()
-	}
-
-	cols := selectEditorCols(bodyW - 2) // -2 for the "  " prefix
-	if len(cols) == 0 {
-		return b.String()
-	}
-
-	// Build header
-	var headerParts []string
-	for _, c := range cols {
-		headerParts = append(headerParts, fmt.Sprintf("%-*s", c.width, c.header))
-	}
-	headerLine := headerStyle.Render("  " + strings.Join(headerParts, " "))
-	b.WriteString("\n")
-	b.WriteString(headerLine)
-	b.WriteString("\n\n")
-
-	// Build rows
-	for i := le.offset; i < le.offset+maxRows && i < len(le.qsos); i++ {
-		q := le.qsos[i]
-		prefix := "  "
-		if i == le.cursor {
-			prefix = CursorStyle.Render("> ")
-		}
-		var vals []string
-		for _, c := range cols {
-			v := c.value(&q)
-			if v == "" {
-				v = "—"
-			}
-			v = trunc(v, c.width)
-			vals = append(vals, fmt.Sprintf("%-*s", c.width, v))
-		}
-		line := prefix + strings.Join(vals, " ")
-		if i == le.cursor {
-			line = InputStyle.Render(line)
-		}
-		b.WriteString(line)
-		b.WriteString("\n")
-	}
-	return b.String()
-}
-
-type editorCol struct {
-	header   string
-	minWidth int
-	width    int // computed at selection time
-	grow     bool
-	priority int // higher = more important
-	value    func(q *qso.QSO) string
-}
-
-var editorAllCols = []editorCol{
-	{"ID", 3, 0, false, 100, func(q *qso.QSO) string { return fmt.Sprintf("%d", q.ID) }},
-	{"Date", 10, 0, false, 95, func(q *qso.QSO) string { return formatDate(q.QSODate) }},
-	{"Time", 8, 0, false, 90, func(q *qso.QSO) string { return formatTime(q.TimeOn) }},
-	{"Call", 7, 0, true, 85, func(q *qso.QSO) string { return q.Call }},
-	{"Band", 5, 0, false, 80, func(q *qso.QSO) string {
-		b := qso.NormalizeBand(q.Band)
-		if b == "" && q.Freq > 0 {
-			b = fmt.Sprintf("%.0f", q.Freq)
-		}
-		return b
-	}},
-	{"Mode", 5, 0, false, 75, func(q *qso.QSO) string { return q.Mode }},
-	{"RSTs", 4, 0, false, 70, func(q *qso.QSO) string { return q.RSTSent }},
-	{"RSTr", 4, 0, false, 65, func(q *qso.QSO) string { return q.RSTRcvd }},
-	{"Grid", 6, 0, false, 60, func(q *qso.QSO) string { return q.GridSquare }},
-	{"DXCC", 6, 0, true, 55, func(q *qso.QSO) string { return q.Country }},
-	{"Name", 7, 0, true, 50, func(q *qso.QSO) string { return q.Name }},
-	{"QTH", 8, 0, true, 45, func(q *qso.QSO) string { return q.QTH }},
-	{"WL", 8, 0, false, 42, func(q *qso.QSO) string {
-		switch q.WavelogUploaded {
-		case "yes":
-			return "yes"
-		case "no":
-			return "no"
-		default:
-			return ""
-		}
-	}},
-	{"Comment", 10, 0, true, 40, func(q *qso.QSO) string { return q.Comment }},
-	{"Rig", 8, 0, true, 5, func(q *qso.QSO) string { return q.MyRig }},
-	{"Sub", 4, 0, false, 25, func(q *qso.QSO) string { return q.Submode }},
-	{"SOTA", 8, 0, false, 25, func(q *qso.QSO) string { return q.SOTARef }},
-	{"POTA", 8, 0, false, 20, func(q *qso.QSO) string { return q.POTARef }},
-	{"IOTA", 7, 0, false, 15, func(q *qso.QSO) string { return q.IOTA }},
-	{"WWFF", 9, 0, false, 10, func(q *qso.QSO) string { return q.WWFFRef }},
-}
-
-func selectEditorCols(availW int) []editorCol {
-	// Sort by priority descending
-	sorted := make([]editorCol, len(editorAllCols))
-	copy(sorted, editorAllCols)
-	// Bubble sort by priority (stable, small N)
-	for i := 0; i < len(sorted)-1; i++ {
-		for j := i + 1; j < len(sorted); j++ {
-			if sorted[j].priority > sorted[i].priority {
-				sorted[i], sorted[j] = sorted[j], sorted[i]
-			}
-		}
-	}
-
-	// Greedy: pick columns by priority until we run out of width
-	var cols []editorCol
-	usedW := 0
-	for _, c := range sorted {
-		needed := c.minWidth
-		if len(cols) > 0 {
-			needed++ // space between columns
-		}
-		if usedW+needed <= availW {
-			cols = append(cols, c)
-			usedW += needed
-		}
-	}
-
-	if len(cols) == 0 {
-		return nil
-	}
-
-	// Distribute remaining width to growable columns
-	extra := availW - usedW
-	if extra > 0 {
-		growCount := 0
-		for _, c := range cols {
-			if c.grow {
-				growCount++
-			}
-		}
-		if growCount > 0 {
-			perGrow := extra / growCount
-			for i := range cols {
-				if cols[i].grow {
-					cols[i].width = cols[i].minWidth + perGrow
-					extra -= perGrow
-				} else {
-					cols[i].width = cols[i].minWidth
-				}
-			}
-			// Give leftover to first grow column
-			for i := range cols {
-				if cols[i].grow && extra > 0 {
-					cols[i].width += extra
-					break
-				}
-			}
-		} else {
-			for i := range cols {
-				cols[i].width = cols[i].minWidth
-			}
-		}
-	} else {
-		for i := range cols {
-			cols[i].width = cols[i].minWidth
-		}
-	}
-
-	// Sort back by priority descending for display order
-	for i := 0; i < len(cols)-1; i++ {
-		for j := i + 1; j < len(cols); j++ {
-			if cols[j].priority > cols[i].priority {
-				cols[i], cols[j] = cols[j], cols[i]
-			}
-		}
-	}
-
-	return cols
 }
 
 func (le *LogbookEditor) viewEdit(bodyW int) string {

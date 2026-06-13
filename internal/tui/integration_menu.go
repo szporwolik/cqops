@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/wavelog"
@@ -127,7 +127,7 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			applog.Info("Wavelog test OK")
 		}
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		k := msg.String()
 		if im.wlUpdating || im.wlTesting {
 			return im, nil
@@ -282,14 +282,11 @@ func (im *IntegrationMenu) FooterText() string {
 	return "Ctrl+S to save  Space/Enter to toggle/act  Tab/↓/↑ to navigate  Esc to go back"
 }
 
-func (im *IntegrationMenu) View() string {
+func (im *IntegrationMenu) View() tea.View {
 	if im.done {
-		return ""
+		return tea.NewView("")
 	}
-	bodyW := im.width - 2
-	if bodyW < 30 {
-		bodyW = 30
-	}
+	bodyW := ContentWidth(im.width)
 
 	var b strings.Builder
 	title := "── Configuration — Integration "
@@ -398,7 +395,7 @@ func (im *IntegrationMenu) View() string {
 		}
 	}
 
-	return b.String()
+	return tea.NewView(b.String())
 }
 
 func (im *IntegrationMenu) renderField(focusIdx int, label, value string) string {

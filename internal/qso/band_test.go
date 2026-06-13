@@ -19,12 +19,12 @@ func TestIsValidBand(t *testing.T) {
 
 func TestNormalizeBand(t *testing.T) {
 	tests := map[string]string{
-		"20m":  "20m",
-		"20M":  "20m",
-		"2M":   "2m",
-		"70CM": "70cm",
-		"6mm":  "6mm",
-		"6MM":  "6mm",
+		"20m":   "20m",
+		"20M":   "20m",
+		"2M":    "2m",
+		"70CM":  "70cm",
+		"6mm":   "6mm",
+		"6MM":   "6mm",
 		"BOGUS": "BOGUS",
 		"":      "",
 	}

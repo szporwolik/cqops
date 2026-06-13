@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 )
 
 type rigFormField int
@@ -67,7 +67,7 @@ func NewRigForm(rigPlaceholder, antennaPlaceholder, powerPlaceholder string) *Ri
 	}
 }
 
-func (f *RigForm) Update(msg tea.KeyMsg) {
+func (f *RigForm) Update(msg tea.KeyPressMsg) {
 	switch f.focus {
 	case rigFieldRig:
 		f.Rig, _ = f.Rig.Update(msg)
@@ -184,7 +184,7 @@ func (f *RigForm) SetFlrig(enabled bool, host, port string) {
 	}
 }
 
-func (f *RigForm) View() string {
+func (f *RigForm) View() tea.View {
 	var b strings.Builder
 	b.WriteString(formLabelStyle.Render("Rig (radio):"))
 	b.WriteString(inputStyle.Render(f.Rig.View()))
@@ -217,10 +217,10 @@ func (f *RigForm) View() string {
 		b.WriteString(inputStyle.Render(f.FlrigPort.View()))
 	}
 
-	return b.String()
+	return tea.NewView(b.String())
 }
 
-func (f *RigForm) HandleKey(msg tea.KeyMsg) tea.Cmd {
+func (f *RigForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 	k := msg
 
 	if k.String() == "ctrl+s" || k.String() == "\x13" {
@@ -240,11 +240,11 @@ func (f *RigForm) HandleKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 
-	if k.String() == "tab" || msg.Type == tea.KeyDown || k.String() == "enter" {
+	if k.String() == "tab" || msg.Code == tea.KeyDown || k.String() == "enter" {
 		f.NextInput()
 		return nil
 	}
-	if k.String() == "shift+tab" || msg.Type == tea.KeyUp {
+	if k.String() == "shift+tab" || msg.Code == tea.KeyUp {
 		f.PrevInput()
 		return nil
 	}

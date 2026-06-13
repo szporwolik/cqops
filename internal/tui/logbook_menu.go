@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
@@ -56,7 +56,7 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		c.width = msg.Width
 		c.height = msg.Height
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		k := msg
 
 		switch {
@@ -92,12 +92,12 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				c.mode = chooserConfirmDelete
 			}
 
-		case c.mode == chooserList && (msg.Type == tea.KeyUp || k.String() == "up" || k.String() == "k"):
+		case c.mode == chooserList && (msg.Code == tea.KeyUp || k.String() == "up" || k.String() == "k"):
 			if c.cursor > 0 {
 				c.cursor--
 			}
 
-		case c.mode == chooserList && (msg.Type == tea.KeyDown || k.String() == "down" || k.String() == "j"):
+		case c.mode == chooserList && (msg.Code == tea.KeyDown || k.String() == "down" || k.String() == "j"):
 			if c.cursor < len(c.names)-1 {
 				c.cursor++
 			}
@@ -124,28 +124,25 @@ func (c *LogbookChooser) FooterText() string {
 	return ""
 }
 
-func (c *LogbookChooser) View() string {
+func (c *LogbookChooser) View() tea.View {
 	if c.done {
-		return ""
+		return tea.NewView("")
 	}
 
 	switch c.mode {
 	case chooserList:
-		return c.viewList()
+		return tea.NewView(c.viewList())
 	case chooserEdit, chooserCreate:
-		return c.viewForm()
+		return tea.NewView(c.viewForm())
 	case chooserConfirmDelete:
-		return c.viewConfirmDelete()
+		return tea.NewView(c.viewConfirmDelete())
 	}
-	return ""
+	return tea.NewView("")
 }
 
 func (c *LogbookChooser) viewList() string {
 	var b strings.Builder
-	bodyW := c.width - 2
-	if bodyW < 30 {
-		bodyW = 30
-	}
+	bodyW := ContentWidth(c.width)
 	title := "── Configuration — Logbooks "
 	b.WriteString(section(title, bodyW))
 	b.WriteString("\n\n")
@@ -180,10 +177,7 @@ func (c *LogbookChooser) viewList() string {
 
 func (c *LogbookChooser) viewForm() string {
 	var b strings.Builder
-	bodyW := c.width - 2
-	if bodyW < 30 {
-		bodyW = 30
-	}
+	bodyW := ContentWidth(c.width)
 	t := "── Configuration — Create Logbook "
 	if c.mode == chooserEdit {
 		t = "── Configuration — Edit " + c.editing + " "
@@ -191,7 +185,7 @@ func (c *LogbookChooser) viewForm() string {
 	b.WriteString(section(t, bodyW))
 	b.WriteString("\n\n")
 
-	b.WriteString(c.station.View())
+	b.WriteString(c.station.View().Content)
 
 	return b.String()
 }
@@ -287,10 +281,7 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 func (c *LogbookChooser) viewConfirmDelete() string {
 	name := c.names[c.cursor]
 	var b strings.Builder
-	bodyW := c.width - 2
-	if bodyW < 30 {
-		bodyW = 30
-	}
+	bodyW := ContentWidth(c.width)
 	b.WriteString(section("── Delete Logbook ", bodyW))
 	b.WriteString("\n\n")
 	b.WriteString(fmt.Sprintf("  Delete logbook %q and ALL its QSOs?\n", name))

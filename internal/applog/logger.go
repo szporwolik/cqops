@@ -21,9 +21,9 @@ var (
 	logDir  string
 )
 
-const maxStored = 500     // max in-memory log entries for TUI viewer
-const maxLogFiles = 20     // keep at most N rotated log files
-const retentionDays = 7    // delete log files older than this
+const maxStored = 500   // max in-memory log entries for TUI viewer
+const maxLogFiles = 20  // keep at most N rotated log files
+const retentionDays = 7 // delete log files older than this
 
 // Entry is a single in-memory log record exposed via the TUI log viewer.
 type Entry struct {

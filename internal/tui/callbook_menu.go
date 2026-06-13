@@ -3,8 +3,8 @@ package tui
 import (
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/qrz"
@@ -63,7 +63,7 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			applog.Warn("QRZ test: no data returned")
 		}
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		k := msg.String()
 		if cm.testing {
 			return cm, nil
@@ -146,14 +146,11 @@ func (cm *CallbookMenu) FooterText() string {
 	return "Ctrl+S to save  Space/Enter to toggle/select  Tab/↓/↑ to navigate  Esc to go back"
 }
 
-func (cm *CallbookMenu) View() string {
+func (cm *CallbookMenu) View() tea.View {
 	if cm.done {
-		return ""
+		return tea.NewView("")
 	}
-	bodyW := cm.width - 2
-	if bodyW < 30 {
-		bodyW = 30
-	}
+	bodyW := ContentWidth(cm.width)
 
 	var b strings.Builder
 	title := "── Configuration — Callbook "
@@ -214,5 +211,5 @@ func (cm *CallbookMenu) View() string {
 		}
 	}
 
-	return b.String()
+	return tea.NewView(b.String())
 }

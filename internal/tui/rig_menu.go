@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
@@ -58,7 +58,7 @@ func (rc *RigChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		rc.width = msg.Width
 		rc.height = msg.Height
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		k := msg
 
 		switch {
@@ -94,12 +94,12 @@ func (rc *RigChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				rc.mode = rigChooserConfirmDelete
 			}
 
-		case rc.mode == rigChooserList && (msg.Type == tea.KeyUp || k.String() == "up" || k.String() == "k"):
+		case rc.mode == rigChooserList && (msg.Code == tea.KeyUp || k.String() == "up" || k.String() == "k"):
 			if rc.cursor > 0 {
 				rc.cursor--
 			}
 
-		case rc.mode == rigChooserList && (msg.Type == tea.KeyDown || k.String() == "down" || k.String() == "j"):
+		case rc.mode == rigChooserList && (msg.Code == tea.KeyDown || k.String() == "down" || k.String() == "j"):
 			if rc.cursor < len(rc.names)-1 {
 				rc.cursor++
 			}
@@ -126,28 +126,25 @@ func (rc *RigChooser) FooterText() string {
 	return ""
 }
 
-func (rc *RigChooser) View() string {
+func (rc *RigChooser) View() tea.View {
 	if rc.done {
-		return ""
+		return tea.NewView("")
 	}
 
 	switch rc.mode {
 	case rigChooserList:
-		return rc.viewList()
+		return tea.NewView(rc.viewList())
 	case rigChooserEdit, rigChooserCreate:
-		return rc.viewForm()
+		return tea.NewView(rc.viewForm())
 	case rigChooserConfirmDelete:
-		return rc.viewConfirmDelete()
+		return tea.NewView(rc.viewConfirmDelete())
 	}
-	return ""
+	return tea.NewView("")
 }
 
 func (rc *RigChooser) viewList() string {
 	var b strings.Builder
-	bodyW := rc.width - 2
-	if bodyW < 30 {
-		bodyW = 30
-	}
+	bodyW := ContentWidth(rc.width)
 	title := "── Configuration — Rigs "
 	b.WriteString(section(title, bodyW))
 	b.WriteString("\n\n")
@@ -184,10 +181,7 @@ func (rc *RigChooser) viewList() string {
 
 func (rc *RigChooser) viewForm() string {
 	var b strings.Builder
-	bodyW := rc.width - 2
-	if bodyW < 30 {
-		bodyW = 30
-	}
+	bodyW := ContentWidth(rc.width)
 	t := "── Configuration — Create Rig "
 	if rc.mode == rigChooserEdit {
 		t = "── Configuration — Edit Rig " + rc.editing + " "
@@ -195,7 +189,7 @@ func (rc *RigChooser) viewForm() string {
 	b.WriteString(section(t, bodyW))
 	b.WriteString("\n\n")
 
-	b.WriteString(rc.form.View())
+	b.WriteString(rc.form.View().Content)
 
 	return b.String()
 }
@@ -303,10 +297,7 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 func (rc *RigChooser) viewConfirmDelete() string {
 	name := rc.names[rc.cursor]
 	var b strings.Builder
-	bodyW := rc.width - 2
-	if bodyW < 30 {
-		bodyW = 30
-	}
+	bodyW := ContentWidth(rc.width)
 	b.WriteString(section("── Delete Rig ", bodyW))
 	b.WriteString("\n\n")
 	b.WriteString(fmt.Sprintf("  Delete rig %q?\n", name))

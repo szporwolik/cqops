@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
@@ -60,7 +60,7 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		w.width = msg.Width
 		w.height = msg.Height
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		k := msg
 		switch {
 		case k.String() == "ctrl+c" || k.String() == "ctrl+q":
@@ -121,12 +121,12 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if k.String() == "enter" {
 					return w, w.handleEnter()
 				}
-				if msg.Type == tea.KeyUp || k.String() == "up" || k.String() == "k" {
+				if msg.Code == tea.KeyUp || k.String() == "up" || k.String() == "k" {
 					if w.tzIndex > 0 {
 						w.tzIndex--
 					}
 				}
-				if msg.Type == tea.KeyDown || k.String() == "down" || k.String() == "j" {
+				if msg.Code == tea.KeyDown || k.String() == "down" || k.String() == "j" {
 					if w.tzIndex < len(config.Timezones)-1 {
 						w.tzIndex++
 					}
@@ -138,18 +138,21 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return w, nil
 }
 
-func (w *Wizard) View() string {
+func (w *Wizard) View() tea.View {
+	v := tea.NewView("")
 	switch w.step {
 	case stepStation:
-		return w.viewStation()
+		v = tea.NewView(w.viewStation())
 	case stepRig:
-		return w.viewRig()
+		v = tea.NewView(w.viewRig())
 	case stepWSJTX:
-		return w.viewWSJTX()
+		v = tea.NewView(w.viewWSJTX())
 	case stepTimezone:
-		return w.viewTimezone()
+		v = tea.NewView(w.viewTimezone())
 	}
-	return ""
+	v.AltScreen = true
+	v.WindowTitle = "CQOPS — Setup Wizard"
+	return v
 }
 
 func (w *Wizard) viewStation() string {
@@ -158,7 +161,7 @@ func (w *Wizard) viewStation() string {
 	b.WriteString("\n")
 	b.WriteString(w.stepIndicator("Station Setup", "Enter your callsign, grid locator, and optional park references."))
 	b.WriteString("\n\n")
-	b.WriteString(w.station.View())
+	b.WriteString(w.station.View().Content)
 	b.WriteString("\n\n")
 	b.WriteString(w.helpLine("Ctrl+S save & next  |  Tab/↓ next field  |  Shift+Tab/↑ previous  |  Ctrl+Q quit"))
 	return b.String()
@@ -170,7 +173,7 @@ func (w *Wizard) viewRig() string {
 	b.WriteString("\n")
 	b.WriteString(w.stepIndicator("Rig & Antenna", "Configure your radio and optionally enable flrig for automatic frequency/mode reading."))
 	b.WriteString("\n\n")
-	b.WriteString(w.rigForm.View())
+	b.WriteString(w.rigForm.View().Content)
 	b.WriteString("\n\n")
 	b.WriteString(w.helpLine("Ctrl+S save & next  |  Space toggle flrig  |  Tab/↓ next  |  Esc back  |  Ctrl+Q quit"))
 	return b.String()
@@ -184,10 +187,10 @@ func (w *Wizard) viewWSJTX() string {
 	b.WriteString("\n\n")
 
 	status := "[x]"
-	label := lipgloss.NewStyle().Foreground(lipgloss.Color("229")).Render("Enabled")
+	label := S.WizardSelected.Render("Enabled")
 	if !w.wsjtxEnable {
 		status = "[ ]"
-		label = lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render("Disabled")
+		label = S.WizardDim.Render("Disabled")
 	}
 	b.WriteString(fmt.Sprintf("  WSJT-X: %s %s\n", status, label))
 	b.WriteString(fmt.Sprintf("  UDP:    %s:%s\n", w.wsjtxHost, w.wsjtxPort))
@@ -207,8 +210,8 @@ func (w *Wizard) viewTimezone() string {
 	b.WriteString(w.stepIndicator("Timezone", "Select your local timezone. All QSO times are stored in UTC — this setting controls how dates and times are displayed."))
 	b.WriteString("\n\n")
 
-	selectedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("229")).Bold(true)
-	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("245"))
+	selectedStyle := S.WizardSelected
+	dimStyle := S.WizardDim
 
 	detectedIdx := config.SystemTimezoneIndex()
 
@@ -250,13 +253,13 @@ func (w *Wizard) viewTimezone() string {
 func (w *Wizard) banner() string {
 	border := lipgloss.NewStyle().
 		BorderStyle(lipgloss.DoubleBorder()).
-		BorderForeground(lipgloss.Color("86")).
+		BorderForeground(P.Primary).
 		Padding(0, 3).
 		Align(lipgloss.Center)
 
-	name := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("86")).Render("CQOps")
-	tag := lipgloss.NewStyle().Italic(true).Foreground(lipgloss.Color("229")).Render("Portable Ham Radio Logger")
-	gh := lipgloss.NewStyle().Foreground(lipgloss.Color("245")).Render("github.com/szporwolik/cqops")
+	name := S.WizardAccent.Render("CQOps")
+	tag := S.WizardTag.Render("Portable Ham Radio Logger")
+	gh := S.WizardDim.Render("github.com/szporwolik/cqops")
 
 	inner := lipgloss.JoinVertical(lipgloss.Center,
 		name+"  —  "+tag,
@@ -280,12 +283,12 @@ func (w *Wizard) stepIndicator(title, desc string) string {
 		}
 	}
 
-	active := lipgloss.NewStyle().Foreground(lipgloss.Color("86"))
-	inactive := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	active := S.WizardActive
+	inactive := S.WizardInactive
 
 	progress := active.Render(strings.Join(dots[:current], "")) + inactive.Render(strings.Join(dots[current:], ""))
 
-	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("229")).Render(title)
+	header := S.WizardHeader.Render(title)
 	subtitle := DimStyle.Render(desc)
 
 	return fmt.Sprintf("  %s  %s  Step %d/%d\n  %s", progress, header, current, total, subtitle)

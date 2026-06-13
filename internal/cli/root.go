@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
@@ -61,7 +61,7 @@ func runTUI() error {
 
 	if config.IsFirstRun(a.Config) {
 		w := tui.NewWizard(a)
-		p := tea.NewProgram(w, tea.WithAltScreen())
+		p := tea.NewProgram(w)
 		if _, err := p.Run(); err != nil {
 			return fmt.Errorf("wizard: %w", err)
 		}
@@ -82,7 +82,7 @@ func runTUI() error {
 	}
 
 	m := tui.New(a, qsos)
-	p := tea.NewProgram(m, tea.WithAltScreen())
+	p := tea.NewProgram(m)
 
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("tui: %w", err)

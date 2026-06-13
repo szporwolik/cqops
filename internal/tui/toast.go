@@ -4,7 +4,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/applog"
 )
 
@@ -84,34 +84,16 @@ func (tq *ToastQueue) Active() []Toast {
 	return result
 }
 
-var (
-	toastInfoStyle = lipgloss.NewStyle().
-			Foreground(th.Accent).
-			Bold(true)
-
-	toastSuccessStyle = lipgloss.NewStyle().
-				Foreground(th.Success).
-				Bold(true)
-
-	toastWarningStyle = lipgloss.NewStyle().
-				Foreground(th.Warning).
-				Bold(true)
-
-	toastErrorStyle = lipgloss.NewStyle().
-			Foreground(th.Error).
-			Bold(true)
-)
-
 func toastPrefix(level ToastLevel) string {
 	switch level {
 	case ToastInfo:
-		return toastInfoStyle.Render("i")
+		return S.ToastInfo.Render("i")
 	case ToastSuccess:
-		return toastSuccessStyle.Render("OK")
+		return S.ToastSuccess.Render("OK")
 	case ToastWarning:
-		return toastWarningStyle.Render("!")
+		return S.ToastWarning.Render("!")
 	case ToastError:
-		return toastErrorStyle.Render("ERR")
+		return S.ToastError.Render("ERR")
 	}
 	return ""
 }
@@ -119,15 +101,15 @@ func toastPrefix(level ToastLevel) string {
 func toastLevelStyle(level ToastLevel) lipgloss.Style {
 	switch level {
 	case ToastInfo:
-		return toastInfoStyle
+		return S.ToastInfo
 	case ToastSuccess:
-		return toastSuccessStyle
+		return S.ToastSuccess
 	case ToastWarning:
-		return toastWarningStyle
+		return S.ToastWarning
 	case ToastError:
-		return toastErrorStyle
+		return S.ToastError
 	}
-	return toastInfoStyle
+	return S.ToastInfo
 }
 
 func RenderToasts(toasts []Toast, width int) string {
@@ -146,4 +128,49 @@ func RenderToasts(toasts []Toast, width int) string {
 		lines = append(lines, lipgloss.NewStyle().Padding(0, 1).Render(prefix+" "+msg))
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+}
+
+// RenderToastOverlay returns the full view with toasts composited as a
+// floating overlay in the bottom-right corner, per lipgloss compositing.
+// If there are no active toasts, mainView is returned unchanged.
+func RenderToastOverlay(mainView string, toasts []Toast, viewW, viewH int) string {
+	if len(toasts) == 0 {
+		return mainView
+	}
+
+	// Build the toast content
+	var lines []string
+	showCount := 2
+	if len(toasts) < showCount {
+		showCount = len(toasts)
+	}
+	for i := showCount - 1; i >= 0; i-- {
+		t := toasts[len(toasts)-1-i]
+		prefix := toastPrefix(t.Level)
+		msg := toastLevelStyle(t.Level).Render(t.Message)
+		lines = append(lines, prefix+" "+msg)
+	}
+	toastContent := lipgloss.JoinVertical(lipgloss.Right, lines...)
+
+	toastW := lipgloss.Width(toastContent)
+	toastH := lipgloss.Height(toastContent)
+
+	// Position: bottom-right corner with 2-cell margin from edges
+	x := viewW - toastW - 2
+	if x < 0 {
+		x = 0
+	}
+	y := viewH - toastH - 1
+	if y < 0 {
+		y = 0
+	}
+
+	// Composite: main content as base layer, toasts floating on top
+	base := lipgloss.NewLayer(mainView)
+	toastLayer := lipgloss.NewLayer(toastContent).
+		X(x).
+		Y(y).
+		Z(1) // above base
+
+	return lipgloss.NewCompositor(base, toastLayer).Render()
 }

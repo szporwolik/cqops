@@ -28,8 +28,8 @@ func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 	}
 
 	res, err := db.Exec(
-		`INSERT INTO qsos (` + qsoCols + `, created_at, updated_at)
-		VALUES (` + placeholders(36) + `)`,
+		`INSERT INTO qsos (`+qsoCols+`, created_at, updated_at)
+		VALUES (`+placeholders(36)+`)`,
 		q.Call, q.QSODate, q.TimeOn, q.TimeOff,
 		q.Band, q.Freq, q.FreqRx, q.Mode, q.Submode,
 		q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
