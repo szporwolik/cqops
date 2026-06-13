@@ -526,8 +526,5 @@ func (le *LogbookEditor) renderEditField(f qsoEditField, colW int) string {
 		valStyle = DimStyle // read-only indicator
 	}
 	field := prefix + lbl + " " + valStyle.Render(val)
-	for lipgloss.Width(field) < colW {
-		field += " "
-	}
-	return field
+	return lipgloss.NewStyle().Width(colW).Render(field)
 }

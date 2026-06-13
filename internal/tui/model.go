@@ -1408,7 +1408,7 @@ func (m *Model) viewPartner() string {
 		b.WriteString(inputStyle.Render(dl))
 	}
 
-	usedLines := strings.Count(b.String(), "\n") + 1
+	usedLines := lipgloss.Height(b.String())
 	availMapH := h - 4 - usedLines - 2
 	if availMapH >= 6 {
 		b.WriteString("\n\n")
@@ -1528,24 +1528,22 @@ func (m *Model) renderPartnerInfo(d *qrz.CallData, maxW int) string {
 
 	labelW := 13
 	indentW := 2
-	spaceW := 1
-	valW := maxW - indentW - labelW - spaceW
+	valW := maxW - indentW - labelW - 1 // 1 for gap
 	if valW < 8 {
 		valW = 8
 	}
 
-	lblStyle := LabelStyle
-	valStyle := ValueStyle
+	lblStyle := LabelStyle.Width(labelW).Align(lipgloss.Right)
+	valStyle := ValueStyle.Width(valW)
 
-	var b strings.Builder
+	var lines []string
 	for _, r := range rows {
-		v := valStyle.Render(truncate(r.value, valW))
-		b.WriteString(lblStyle.Render(fmt.Sprintf("%s%-*s", strings.Repeat(" ", indentW), labelW, r.label)))
-		b.WriteString(strings.Repeat(" ", spaceW))
-		b.WriteString(v)
-		b.WriteString("\n")
+		label := lblStyle.Render(r.label)
+		value := valStyle.Render(truncate(r.value, valW))
+		line := strings.Repeat(" ", indentW) + label + " " + value
+		lines = append(lines, line)
 	}
-	return b.String()
+	return strings.Join(lines, "\n")
 }
 
 func (m *Model) viewForm(width int) string {
@@ -1570,7 +1568,7 @@ func (m *Model) viewForm(width int) string {
 	renderField := func(f field, w int) string {
 		label := fieldNames[f]
 		raw := strings.TrimSpace(m.fields[f].Value())
-		lbl := fmt.Sprintf("%-12s", label)
+		lbl := lipgloss.NewStyle().Width(12).Align(lipgloss.Left).Render(label)
 
 		choiceIcon := ""
 		if choiceFields[f] {
@@ -1593,11 +1591,8 @@ func (m *Model) viewForm(width int) string {
 		if isFocused {
 			line = hl.Render(" "+lbl) + " " + val
 		}
-		// Pad to column width
-		for lipgloss.Width(line) < w {
-			line += " "
-		}
-		return line
+		// Pad to column width using lipgloss
+		return lipgloss.NewStyle().Width(w).Render(line)
 	}
 
 	var b strings.Builder
@@ -1614,116 +1609,63 @@ func (m *Model) viewForm(width int) string {
 		rows = len(rightFields)
 	}
 	for i := 0; i < rows; i++ {
-		left := ""
+		var cols []string
 		if i < len(leftFields) {
-			left = renderField(leftFields[i], colW)
+			cols = append(cols, renderField(leftFields[i], colW))
 		}
-		middle := ""
 		if i < len(middleFields) {
-			middle = renderField(middleFields[i], colW)
+			cols = append(cols, renderField(middleFields[i], colW))
 		}
-		right := ""
 		if i < len(rightFields) {
-			right = renderField(rightFields[i], colW)
+			cols = append(cols, renderField(rightFields[i], colW))
 		}
 		if colW >= 20 {
-			parts := []string{}
-			if left != "" {
-				parts = append(parts, left)
-			}
-			if middle != "" {
-				parts = append(parts, middle)
-			}
-			if right != "" {
-				parts = append(parts, right)
-			}
-			b.WriteString(strings.Join(parts, "  "))
-			b.WriteString("\n")
+			b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, cols...))
 		} else {
-			if left != "" {
-				b.WriteString(left)
-				b.WriteString("\n")
-			}
-			if middle != "" {
-				b.WriteString(middle)
-				b.WriteString("\n")
-			}
-			if right != "" {
-				b.WriteString(right)
-				b.WriteString("\n")
-			}
+			b.WriteString(strings.Join(cols, "\n"))
 		}
+		b.WriteString("\n")
 	}
 
-	// Comment row: spans columns 1+2, with Retain checkbox in column 3
-	commentW := colW*2 + 2 // two columns + gap
+	// Comment row spans columns 1+2; Retain checkbox in column 3
+	commentW := colW*2 + 2
 	if commentW < 20 {
 		commentW = bodyW
 	}
 	commentLine := renderField(fieldComment, commentW)
 
-	// Retain checkbox
-	retainMark := "[ ]"
-	retainLabel := "Retain"
-	if m.retainComment {
-		retainMark = "[x]"
-	}
-	if m.retainFocused {
-		retainBox := hl.Render(" "+retainMark) + " " + inputStyle.Render(retainLabel)
-		for lipgloss.Width(retainBox) < colW {
-			retainBox += " "
-		}
-		if colW >= 20 {
-			b.WriteString(commentLine)
-			b.WriteString("  ")
-			b.WriteString(retainBox)
-			b.WriteString("\n")
-		} else {
-			b.WriteString(commentLine)
-			b.WriteString("\n")
-			b.WriteString("  ")
-			b.WriteString(retainBox)
-			b.WriteString("\n")
-		}
+	retainBox := m.renderRetainCheckbox(colW)
+	if colW >= 20 {
+		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, commentLine, retainBox))
 	} else {
-		if m.retainComment {
-			retainBox := " " + inputStyle.Render(retainMark) + " " + dim.Render(retainLabel)
-			for lipgloss.Width(retainBox) < colW {
-				retainBox += " "
-			}
-			if colW >= 20 {
-				b.WriteString(commentLine)
-				b.WriteString("  ")
-				b.WriteString(retainBox)
-				b.WriteString("\n")
-			} else {
-				b.WriteString(commentLine)
-				b.WriteString("\n")
-				b.WriteString("  ")
-				b.WriteString(retainBox)
-				b.WriteString("\n")
-			}
-		} else {
-			retainBox := " " + dim.Render(retainMark) + " " + dim.Render(retainLabel)
-			for lipgloss.Width(retainBox) < colW {
-				retainBox += " "
-			}
-			if colW >= 20 {
-				b.WriteString(commentLine)
-				b.WriteString("  ")
-				b.WriteString(retainBox)
-				b.WriteString("\n")
-			} else {
-				b.WriteString(commentLine)
-				b.WriteString("\n")
-				b.WriteString("  ")
-				b.WriteString(retainBox)
-				b.WriteString("\n")
-			}
-		}
+		b.WriteString(commentLine)
+		b.WriteString("\n")
+		b.WriteString(retainBox)
 	}
+	b.WriteString("\n")
 
 	return b.String()
+}
+
+func (m *Model) renderRetainCheckbox(colW int) string {
+	mark := "[ ]"
+	label := "Retain"
+	if m.retainComment {
+		mark = "[x]"
+	}
+	if m.retainFocused {
+		return lipgloss.NewStyle().Width(colW).Render(
+			CursorStyle.Render(" "+mark) + " " + inputStyle.Render(label),
+		)
+	}
+	if m.retainComment {
+		return lipgloss.NewStyle().Width(colW).Render(
+			" " + inputStyle.Render(mark) + " " + DimStyle.Render(label),
+		)
+	}
+	return lipgloss.NewStyle().Width(colW).Render(
+		" " + DimStyle.Render(mark) + " " + DimStyle.Render(label),
+	)
 }
 
 var qsoColTiers = []struct {
@@ -1841,48 +1783,34 @@ var qsoAllCols = map[string]struct {
 func (m *Model) formDistanceLine(width int) string {
 	ownGrid := formatLocator(m.App.Logbook.Station.Grid)
 	partnerGrid := formatLocator(strings.TrimSpace(m.fields[fieldGrid].Value()))
-	if ownGrid == "" {
-		return ""
-	}
-	if partnerGrid == "" {
+	if ownGrid == "" || partnerGrid == "" {
 		return ""
 	}
 	dl := distanceLine(ownGrid, partnerGrid, m.App.Config.DistanceUnit)
 	if dl == "" {
 		return ""
 	}
-	bodyW := width - 2
-	if bodyW < 20 {
-		bodyW = 20
-	}
+	bodyW := ContentWidth(width)
 
-	// Build rig/antenna info for right side of header
+	// Build rig/antenna info for the right side
 	s := m.App.Logbook.Station
-	rigInfo := ""
+	var rigParts []string
 	if s.Rig != "" {
-		rigInfo = "Rig: " + s.Rig
+		rigParts = append(rigParts, "Rig: "+s.Rig)
 	}
 	if s.Antenna != "" {
-		if rigInfo != "" {
-			rigInfo += "  "
-		}
-		rigInfo += "Ant: " + s.Antenna
+		rigParts = append(rigParts, "Ant: "+s.Antenna)
 	}
+	rigInfo := strings.Join(rigParts, "  ")
 
-	title := "── Short Path "
-	titleW := lipgloss.Width(title)
+	hdr := section("── Short Path ", bodyW)
 	if rigInfo != "" {
-		rigW := lipgloss.Width(rigInfo)
-		gap := 2
-		dashes := bodyW - titleW - rigW - gap
-		if dashes < 1 {
-			dashes = 1
-		}
-		hdr := SectionStyle.Render(title + strings.Repeat("─", dashes) + strings.Repeat(" ", gap) + DimStyle.Render(rigInfo))
-		return hdr + "\n  " + inputStyle.Render(dl)
+		// Place section header left, rig info right
+		hdr = lipgloss.JoinHorizontal(lipgloss.Top,
+			hdr,
+			DimStyle.Render(rigInfo),
+		)
 	}
-
-	hdr := section(title, bodyW)
 	return hdr + "\n  " + inputStyle.Render(dl)
 }
 

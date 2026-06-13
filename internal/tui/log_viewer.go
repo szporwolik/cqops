@@ -1,11 +1,11 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/applog"
 )
 
@@ -69,18 +69,21 @@ func (lv *LogViewer) View() tea.View {
 	warnColor := S.LogWarn
 	debugColor := S.LogDebug
 
-	var b strings.Builder
+	timeStyle := lipgloss.NewStyle().Width(8).Foreground(P.TextDim)
+	levelStyleW := lipgloss.NewStyle().Width(6)
+
+	var lines []string
 	for i := len(entries) - 1; i >= 0; i-- {
 		e := entries[i]
 
-		levelStyle := debugColor
+		ls := debugColor
 		switch e.Level {
 		case "ERROR":
-			levelStyle = errColor
+			ls = errColor
 		case "WARN":
-			levelStyle = warnColor
+			ls = warnColor
 		case "INFO":
-			levelStyle = infoColor
+			ls = infoColor
 		}
 
 		msg := e.Message
@@ -88,16 +91,15 @@ func (lv *LogViewer) View() tea.View {
 			msg += " — " + e.Details
 		}
 
-		line := fmt.Sprintf("%-8s %s %s",
-			e.Time,
-			levelStyle.Render(fmt.Sprintf("%-6s", e.Level)),
-			truncate(msg, bodyW-18),
+		line := lipgloss.JoinHorizontal(lipgloss.Top,
+			timeStyle.Render(e.Time),
+			levelStyleW.Render(ls.Render(e.Level)),
+			ValueStyle.Render(truncate(msg, bodyW-16)),
 		)
-		b.WriteString(line)
-		b.WriteString("\n")
+		lines = append(lines, line)
 	}
 
-	lv.viewport.SetContent(b.String())
+	lv.viewport.SetContent(strings.Join(lines, "\n"))
 
 	title := "── Logs: " + lv.name + " "
 	header := section(title, bodyW)

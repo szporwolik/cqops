@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"strings"
-
 	"charm.land/lipgloss/v2"
 )
 
@@ -71,12 +69,7 @@ func (c Confirm) viewBoxed(width int) string {
 
 	// Title with separator line
 	title := S.ConfirmTitle.Render(" " + c.Title + " ")
-	titleW := lipgloss.Width(title)
-	dashW := w - titleW - 4 // 4 for "── " prefix and " " suffix
-	if dashW < 1 {
-		dashW = 1
-	}
-	titleLine := "── " + title + " " + strings.Repeat("─", dashW)
+	titleLine := section(title, w)
 
 	// Message
 	msg := S.ConfirmMsg.Render(c.Message)
@@ -100,20 +93,16 @@ func (c Confirm) viewBoxed(width int) string {
 	// Hint
 	hint := S.ConfirmHelp.Render("←/→ choose  •  enter confirm  •  esc cancel")
 
-	// Assemble inner content
+	// Assemble inner content with consistent width
+	padLine := func(line string) string {
+		return lipgloss.NewStyle().Width(w).Render(line)
+	}
+
 	inner := lipgloss.JoinVertical(lipgloss.Center,
-		"", msg, "", btns, "", hint,
+		padLine(""), padLine(msg), padLine(""), padLine(btns), padLine(""), padLine(hint),
 	)
 
-	// Ensure each line is exactly w chars wide
-	bodyLines := strings.Split(titleLine+"\n"+inner, "\n")
-	for i, line := range bodyLines {
-		lw := lipgloss.Width(line)
-		if lw < w {
-			bodyLines[i] = line + strings.Repeat(" ", w-lw)
-		}
-	}
-	plain := strings.Join(bodyLines, "\n")
+	plain := titleLine + "\n" + inner
 
 	// Wrap in bordered box
 	box := S.ConfirmBox.Width(w).Render(plain)
@@ -142,9 +131,10 @@ func (c Confirm) viewCompact(width int) string {
 	}
 	yesBtn := yesStyle.Render(" " + c.YesLabel + " ")
 	noBtn := noStyle.Render(" " + c.NoLabel + " ")
-	line := title + msg + yesBtn + "  " + noBtn
+	btns := lipgloss.JoinHorizontal(lipgloss.Top, yesBtn, noBtn)
+	line := lipgloss.JoinHorizontal(lipgloss.Top, title, msg, btns)
 	if lipgloss.Width(line) > width {
-		line = title + msg
+		line = lipgloss.JoinHorizontal(lipgloss.Top, title, msg)
 	}
 	return line
 }
