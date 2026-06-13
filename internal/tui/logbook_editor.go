@@ -20,6 +20,7 @@ const (
 	edModeList editorMode = iota
 	edModeConfirmDelete
 	edModeConfirmPurge
+	edModeConfirmWLSend
 	edModeEdit
 )
 
@@ -253,7 +254,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		k := msg.String()
 
-		if le.mode == edModeConfirmDelete || le.mode == edModeConfirmPurge {
+if le.mode == edModeConfirmDelete || le.mode == edModeConfirmPurge || le.mode == edModeConfirmWLSend {
 			switch k {
 			case "y", "Y":
 				return le, le.doConfirm()
@@ -317,6 +318,9 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (le *LogbookEditor) doConfirm() tea.Cmd {
+	if le.mode == edModeConfirmWLSend {
+		return le.doBatchUpload()
+	}
 	if le.mode == edModeConfirmDelete {
 		id := le.qsos[le.cursor].ID
 		return func() tea.Msg {
@@ -332,6 +336,45 @@ func (le *LogbookEditor) doSave() tea.Cmd {
 	q := le.readEditForm()
 	return func() tea.Msg {
 		return editorMsg{saved: q.ID, err: store.UpdateQSO(le.db, q)}
+	}
+}
+
+func (le *LogbookEditor) doBatchUpload() tea.Cmd {
+	url, key, sid := le.wlURL, le.wlKey, le.wlStationID
+	db := le.db
+
+	// Collect unsent QSOs
+	var unsent []qso.QSO
+	for _, q := range le.qsos {
+		if q.WavelogUploaded != "yes" {
+			unsent = append(unsent, q)
+		}
+	}
+	if len(unsent) == 0 {
+		return func() tea.Msg {
+			return editorMsg{wlOK: true, wlCall: "all sent", err: nil}
+		}
+	}
+
+	// Build batch ADIF
+	var adifStr string
+	for _, q := range unsent {
+		adifStr += q.ToADIF()
+	}
+
+	applog.InfoDetail("Wavelog: batch upload", fmt.Sprintf("count=%d", len(unsent)))
+
+	return func() tea.Msg {
+		err := wavelog.PostQSO(url, key, sid, adifStr)
+		if err != nil {
+			applog.Error("Wavelog: batch upload failed", "count", len(unsent), "error", err)
+			return editorMsg{wlOK: false, err: err, wlCall: fmt.Sprintf("%d QSOs", len(unsent))}
+		}
+		for _, q := range unsent {
+			store.UpdateWavelogStatus(db, q.ID, "yes")
+		}
+		applog.InfoDetail("Wavelog: batch upload OK", fmt.Sprintf("count=%d", len(unsent)))
+		return editorMsg{wlQSOID: unsent[0].ID, wlOK: true, wlCall: fmt.Sprintf("%d QSOs", len(unsent))}
 	}
 }
 
@@ -362,14 +405,23 @@ func (le *LogbookEditor) doUploadToWavelog() tea.Cmd {
 }
 
 func (le *LogbookEditor) FooterText() string {
+	hasWL := le.wlURL != "" && le.wlKey != "" && le.wlStationID != ""
 	switch le.mode {
 	case edModeConfirmDelete:
 		return "Delete this QSO? (y/N)"
 	case edModeConfirmPurge:
 		return "Purge ALL QSOs? This cannot be undone. (y/N)"
+	case edModeConfirmWLSend:
+		return "Send all unsent QSOs to Wavelog? (y/N)"
 	case edModeEdit:
-		return "Ctrl+S to save  Ctrl+W Upload to Wavelog  Tab/Up/Dn to navigate  Esc to discard"
+		if hasWL {
+			return "Ctrl+S to save  Ctrl+W Upload to Wavelog  Tab/Up/Dn to navigate  Esc to discard"
+		}
+		return "Ctrl+S to save  Tab/Up/Dn to navigate  Esc to discard"
 	default:
+		if hasWL {
+			return "Up/Dn scroll  Enter/e edit  Del delete  Ctrl+W send all to Wavelog  p purge  F5/Esc close"
+		}
 		return "Up/Dn scroll  Enter/e edit  Del delete  p purge  F5/Esc close"
 	}
 }
@@ -389,6 +441,14 @@ func (le *LogbookEditor) View() string {
 		return le.viewConfirm("Delete QSO", bodyW)
 	case edModeConfirmPurge:
 		return le.viewConfirm("Purge Logbook", bodyW)
+	case edModeConfirmWLSend:
+		unsent := 0
+		for _, q := range le.qsos {
+			if q.WavelogUploaded != "yes" {
+				unsent++
+			}
+		}
+		return le.viewConfirm(fmt.Sprintf("Send %d unsent QSOs to Wavelog", unsent), bodyW)
 	case edModeEdit:
 		return le.viewEdit(bodyW)
 	default:
