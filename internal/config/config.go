@@ -74,9 +74,10 @@ type RigConfig struct {
 }
 
 type WavelogConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	URL     string `yaml:"url"`
-	APIKey  string `yaml:"api_key"`
+	Enabled          bool   `yaml:"enabled"`
+	URL              string `yaml:"url"`
+	APIKey           string `yaml:"api_key"`
+	StationProfileID string `yaml:"station_profile_id"`
 }
 
 type WSJTXConfig struct {

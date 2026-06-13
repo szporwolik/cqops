@@ -19,6 +19,7 @@ import (
 	"github.com/szporwolik/cqops/internal/rig/flrig"
 	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/version"
+	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
 type field int
@@ -104,6 +105,9 @@ type Model struct {
 	qrzLastLook       time.Time
 	retainComment     bool
 	retainFocused     bool // true when the Retain checkbox has focus (instead of a text field)
+	wlOnline          bool
+	wlStationName     string // e.g. "JO30oo / DJ7NT"
+	wlStationLabel    string // e.g. "Debug location"
 }
 
 type tickMsg time.Time
@@ -178,7 +182,7 @@ func (m *Model) Init() tea.Cmd {
 	}
 	applog.Info("WSJT-X: callbacks registered, restarting listener")
 	m.App.MaybeRestartWSJTX()
-	return tea.Batch(tickCmd(), checkInetCmd())
+	return tea.Batch(tickCmd(), checkInetCmd(), m.maybeCheckWavelog())
 }
 func tickCmd() tea.Cmd {
 	return tea.Tick(200*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) })
@@ -337,6 +341,48 @@ func (m *Model) maybeCheckInet() tea.Cmd {
 		return checkInetCmd()
 	}
 	return nil
+}
+
+func (m *Model) maybeCheckWavelog() tea.Cmd {
+	if !m.App.Config.Wavelog.Enabled {
+		m.wlOnline = false
+		return nil
+	}
+	// Check on first tick and every 300 ticks thereafter
+	if m.tickCount != 1 && m.tickCount%300 != 0 {
+		return nil
+	}
+	return m.checkWavelogCmd()
+}
+
+func (m *Model) checkWavelogCmd() tea.Cmd {
+	url := m.App.Config.Wavelog.URL
+	key := m.App.Config.Wavelog.APIKey
+	stationID := m.App.Config.Wavelog.StationProfileID
+	return func() tea.Msg {
+		err := wavelog.TestConnection(url, key)
+		online := err == nil
+		if online && stationID != "" {
+			stations, ferr := wavelog.FetchStations(url, key)
+			if ferr == nil {
+				for _, s := range stations {
+					if s.ID == stationID {
+						name := fmt.Sprintf("%s / %s", s.Gridsquare, s.Callsign)
+						label := s.Name
+						applog.InfoDetail("Wavelog: station info updated", fmt.Sprintf("id=%s grid=%s call=%s label=%s", s.ID, s.Gridsquare, s.Callsign, s.Name))
+						return wlStatusMsg{online: online, stationName: name, stationLabel: label}
+					}
+				}
+			}
+		}
+		return wlStatusMsg{online: online}
+	}
+}
+
+type wlStatusMsg struct {
+	online       bool
+	stationName  string
+	stationLabel string
 }
 
 func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode, report string) {
@@ -535,7 +581,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.toasts.Expire()
 		m.autoUpdateDateTime()
 		m.tickCount++
-		cmd = tea.Batch(tickCmd(), m.maybeCheckInet(), m.pollFlrig())
+		cmd = tea.Batch(tickCmd(), m.maybeCheckInet(), m.pollFlrig(), m.maybeCheckWavelog())
 	}
 	if m.confirmQuit {
 		if key, ok := msg.(tea.KeyMsg); ok {
@@ -550,6 +596,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	if ir, ok := msg.(inetResultMsg); ok {
 		m.inetOnline = bool(ir)
+	}
+	if wl, ok := msg.(wlStatusMsg); ok {
+		m.wlOnline = wl.online
+		if wl.stationName != "" {
+			m.wlStationName = wl.stationName
+		}
+		if wl.stationLabel != "" {
+			m.wlStationLabel = wl.stationLabel
+		}
 	}
 	if fr, ok := msg.(flrigResultMsg); ok {
 		m.applyFlrigResult(fr)
@@ -721,13 +776,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showMainMenu = true
 			}
 			if m.integrationMenu.saved {
-				m.App.Config.WSJTX.Enabled, m.App.Config.WSJTX.UDPHost, m.App.Config.WSJTX.UDPPort = m.integrationMenu.Values()
+				wsjtxE, wsjtxH, wsjtxP, wlE, wlURL, wlKey, wlSta, _ := m.integrationMenu.Values()
+				m.App.Config.WSJTX.Enabled = wsjtxE
+				m.App.Config.WSJTX.UDPHost = wsjtxH
+				m.App.Config.WSJTX.UDPPort = wsjtxP
+				m.App.Config.Wavelog.Enabled = wlE
+				m.App.Config.Wavelog.URL = wlURL
+				m.App.Config.Wavelog.APIKey = wlKey
+				m.App.Config.Wavelog.StationProfileID = wlSta
 				if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
 					m.toasts.Error("Settings save failed: " + err.Error())
 				} else {
 					m.toasts.Success("Settings saved")
-					applog.Info("WSJT-X config saved, restarting listener")
+					applog.Info("Integration config saved, restarting services")
 					m.App.MaybeRestartWSJTX()
+					cmd = tea.Batch(cmd, m.checkWavelogCmd())
 				}
 				m.showMainMenu = true
 			}
@@ -1140,6 +1203,13 @@ func (m *Model) renderHeader(width int) string {
 		right += LabelStyle.Render("  wsjtx:") + wVal
 	}
 	right += LabelStyle.Render("  rig: ") + ValueStyle.Render(rigModel) + rigIndicator
+	if m.App.Config.Wavelog.Enabled {
+		wlVal := ErrorStyle.Render("err")
+		if m.wlOnline {
+			wlVal = SuccessStyle.Render("on")
+		}
+		right += LabelStyle.Render("  wl:") + wlVal
+	}
 	rightFully := right +
 		LabelStyle.Render("  lt: ") + ValueStyle.Render(now.Format("15:04")) +
 		LabelStyle.Render("  utc: ") + ValueStyle.Render(utc.Format("15:04:05"))
@@ -1800,17 +1870,32 @@ func (m *Model) viewQSOS(maxRows int) string {
 	}
 
 	var b strings.Builder
-	// Section header with total count right-aligned
+	// Section header with Wavelog station (left) and total count (right)
+	var leftInfo string
+	if m.App.Config.Wavelog.Enabled && m.wlStationName != "" {
+		leftInfo = "Wavelog: " + m.wlStationName
+		if m.wlStationLabel != "" {
+			leftInfo += " (" + m.wlStationLabel + ")"
+		}
+	}
 	totalStr := fmt.Sprintf("Total: %d", len(m.qsos))
 	title := "── Recent QSOs "
 	totalW := lipgloss.Width(totalStr)
 	titleW := lipgloss.Width(title)
-	gap := 2 // spaces between dashes and total
-	dashes := bodyW - titleW - totalW - gap
+	leftW := 0
+	if leftInfo != "" {
+		leftW = lipgloss.Width(leftInfo) + 2 // 2 spaces before it
+	}
+	gap := 2
+	dashes := bodyW - titleW - leftW - totalW - gap
 	if dashes < 1 {
 		dashes = 1
 	}
-	hdr := SectionStyle.Render(title + strings.Repeat("─", dashes) + strings.Repeat(" ", gap) + DimStyle.Render(totalStr))
+	hdr := SectionStyle.Render(title + strings.Repeat("─", dashes))
+	if leftInfo != "" {
+		hdr += "  " + DimStyle.Render(leftInfo)
+	}
+	hdr += strings.Repeat(" ", gap) + DimStyle.Render(totalStr)
 	b.WriteString(hdr)
 	b.WriteString("\n")
 
