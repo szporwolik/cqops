@@ -643,7 +643,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.showCallbook {
 		m.callbookMenu.width = m.width
 		m.callbookMenu.height = m.height
-		_, _ = m.callbookMenu.Update(msg)
+		m.callbookMenu.inetOnline = m.inetOnline
+		_, callbookCmd := m.callbookMenu.Update(msg)
 		if m.callbookMenu.done {
 			m.showCallbook = false
 			if m.callbookMenu.goBack {
@@ -662,12 +663,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showMainMenu = true
 			}
 		}
-		return m, cmd
+		return m, tea.Batch(cmd, callbookCmd)
 	}
 	if m.showIntegration {
 		m.integrationMenu.width = m.width
 		m.integrationMenu.height = m.height
-		_, _ = m.integrationMenu.Update(msg)
+		_, integrationCmd := m.integrationMenu.Update(msg)
 		if m.integrationMenu.done {
 			m.showIntegration = false
 			if m.integrationMenu.goBack {
@@ -685,7 +686,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showMainMenu = true
 			}
 		}
-		return m, cmd
+		return m, tea.Batch(cmd, integrationCmd)
 	}
 	if m.showMainMenu {
 		m.mainMenu.width = m.width
@@ -1046,12 +1047,12 @@ func (m *Model) renderHeader(width int) string {
 		inetVal = SuccessStyle.Render("yes")
 	}
 
-	left := LabelStyle.Render("Call: ") + ValueStyle.Render(clamp(s.Callsign, 8))
+	left := LabelStyle.Render("call: ") + ValueStyle.Render(clamp(s.Callsign, 8))
 	if s.Operator != "" {
-		left += LabelStyle.Render("  Op: ") + ValueStyle.Render(clamp(s.Operator, 8))
+		left += LabelStyle.Render("  op: ") + ValueStyle.Render(clamp(s.Operator, 8))
 	}
-	left += LabelStyle.Render("  Log: ") + ValueStyle.Render(clamp(m.App.LogbookName, 8)) +
-		LabelStyle.Render("  Loc: ") + ValueStyle.Render(clamp(locator, 6))
+	left += LabelStyle.Render("  log: ") + ValueStyle.Render(clamp(m.App.LogbookName, 8)) +
+		LabelStyle.Render("  loc: ") + ValueStyle.Render(clamp(locator, 6))
 
 	center := TitleStyle.UnsetPadding().Render("CQOPS")
 	if v := version.Resolved(); v != "dev" {
@@ -1060,18 +1061,18 @@ func (m *Model) renderHeader(width int) string {
 
 	right := LabelStyle.Render("inet: ") + inetVal
 	if m.App.Config.WSJTX.Enabled {
-		wVal := ErrorStyle.Render("off")
+		wVal := ErrorStyle.Render("err")
 		if m.wsjtxOnline {
 			wVal = SuccessStyle.Render("on")
 		}
 		right += LabelStyle.Render("  wsjtx:") + wVal
 	}
-	right += LabelStyle.Render("  Rig: ") + ValueStyle.Render(rigModel) + rigIndicator
+	right += LabelStyle.Render("  rig: ") + ValueStyle.Render(rigModel) + rigIndicator
 	rightFully := right +
-		LabelStyle.Render("  LT: ") + ValueStyle.Render(now.Format("15:04")) +
-		LabelStyle.Render("  UTC: ") + ValueStyle.Render(utc.Format("15:04:05"))
+		LabelStyle.Render("  lt: ") + ValueStyle.Render(now.Format("15:04")) +
+		LabelStyle.Render("  utc: ") + ValueStyle.Render(utc.Format("15:04:05"))
 	rightCompact := right +
-		LabelStyle.Render("  UTC: ") + ValueStyle.Render(utc.Format("15:04:05"))
+		LabelStyle.Render("  utc: ") + ValueStyle.Render(utc.Format("15:04:05"))
 
 	leftW := lipgloss.Width(left)
 
