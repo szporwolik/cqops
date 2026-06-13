@@ -28,7 +28,7 @@ type ToastQueue struct {
 	items []Toast
 }
 
-const toastMaxAge = 3 * time.Second
+const toastMaxAge = 5 * time.Second
 
 func NewToastQueue() *ToastQueue {
 	return &ToastQueue{}
@@ -117,7 +117,7 @@ func RenderToasts(toasts []Toast, width int) string {
 		return ""
 	}
 	var lines []string
-	showCount := 2
+	showCount := 5
 	if len(toasts) < showCount {
 		showCount = len(toasts)
 	}
@@ -140,7 +140,7 @@ func RenderToastOverlay(mainView string, toasts []Toast, viewW, viewH int) strin
 
 	// Build the toast content
 	var lines []string
-	showCount := 2
+	showCount := 5
 	if len(toasts) < showCount {
 		showCount = len(toasts)
 	}

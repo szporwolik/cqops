@@ -915,7 +915,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		case tea.KeyPressMsg:
 			switch msg.String() {
-			case "f2", "f1":
+			case "f1", "esc":
 				m.screen = screenQSO
 				return m, cmd
 			case "f8":
@@ -985,18 +985,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.inetOnline = bool(msg)
 		return m, nil
 	case tea.KeyPressMsg:
-		// Route scrolling keys to viewport when QSO form is active
-		if !m.retainFocused && !m.isSubmodelActive() {
-			if key.Matches(msg, m.keys.Up) || key.Matches(msg, m.keys.Down) {
-				var vpCmd tea.Cmd
-				m.vp, vpCmd = m.vp.Update(msg)
-				return m, vpCmd
-			}
-		}
 		switch {
 		case m.retainFocused:
 			switch msg.String() {
-			case " ", "enter":
+			case "space", "enter":
 				m.retainComment = !m.retainComment
 			case "tab", "down":
 				m.nextField()
@@ -1138,6 +1130,10 @@ func (m *Model) View() tea.View {
 
 	helpBar := m.renderHelpBar()
 
+	// Clip body to ContentH so it never pushes the help bar off-screen.
+	// No .Height() — we don't pad; the table fills exact remaining space.
+	body = lipgloss.NewStyle().MaxHeight(layout.ContentH).Render(body)
+
 	// Build the main view without toasts or dialogs (those are composited on top)
 	mainView := lipgloss.JoinVertical(lipgloss.Left,
 		statusBar,
@@ -1152,7 +1148,10 @@ func (m *Model) View() tea.View {
 		mainView = RenderDialogOverlay(mainView, *m.confirm, layout.TerminalW, layout.TerminalH)
 	}
 
-	// Composite toasts as a floating overlay in the bottom-right corner
+	// Composite toasts as a floating overlay in the bottom-right corner.
+	// Clip mainView to terminal height first so the compositor canvas
+	// matches the visible terminal exactly.
+	mainView = lipgloss.NewStyle().MaxHeight(layout.TerminalH).Render(mainView)
 	finalView := RenderToastOverlay(mainView, m.toasts.Active(), layout.TerminalW, layout.TerminalH)
 
 	v := tea.NewView(finalView)
@@ -1243,7 +1242,13 @@ func (m *Model) renderProfileLine() string {
 	s := m.App.Logbook.Station
 	var parts []string
 	if s.Operator != "" {
-		parts = append(parts, "Operator "+s.Operator)
+		parts = append(parts, "Op "+s.Operator)
+	}
+	if s.Rig != "" {
+		parts = append(parts, "Rig "+s.Rig)
+	}
+	if s.Antenna != "" {
+		parts = append(parts, "Ant "+s.Antenna)
 	}
 	if s.Grid != "" {
 		parts = append(parts, "Grid "+formatLocator(s.Grid))
@@ -1265,10 +1270,16 @@ func (m *Model) renderProfileLine() string {
 
 func (m *Model) helpView() string {
 	if m.confirm != nil {
-		// Dialog active — show dialog keys in the footer
 		return HelpStyle.Render("←/→ choose  •  enter confirm  •  esc cancel")
 	}
-	helpText := m.help.ShortHelpView(m.ActiveBindings())
+	bindings := m.ActiveBindings()
+	if len(bindings) == 0 {
+		bindings = []key.Binding{m.keys.Quit}
+	}
+	helpText := m.help.ShortHelpView(bindings)
+	if helpText == "" {
+		helpText = m.help.ShortHelpView([]key.Binding{m.keys.Quit})
+	}
 	return HelpStyle.Render(helpText)
 }
 
@@ -1348,36 +1359,41 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 	return ""
 }
 
-// buildQSOFormWithLayout renders the QSO form and recent QSOs using
-// layout-derived dimensions. Recent QSOs are read-only; no keyboard events
-// are sent to the table. The table fills all remaining vertical space.
+// buildQSOFormWithLayout renders the QSO form, short path info, and recent
+// QSOs using layout-derived dimensions. The short path gets its own bordered
+// box between the form and the table for visual separation.
 func (m *Model) buildQSOFormWithLayout(l Layout) string {
-	// Render form content, then wrap in border.
-	// The border style (S.QSOFormBox) provides its own padding; render raw
-	// form at the internal width so borders align cleanly.
 	innerW := l.ContentW - 4 // 2 border + 2 padding (from S.QSOFormBox)
 	if innerW < 20 {
 		innerW = l.ContentW
 	}
+
+	// QSO form in its bordered box
 	form := m.viewForm(innerW)
-	distLine := m.formDistanceLine(innerW)
 	formBlock := strings.TrimRight(form, "\n")
-	if distLine != "" {
-		formBlock = formBlock + "\n" + distLine
-	}
 	formBox := S.QSOFormBox.Width(l.ContentW).Render(formBlock)
 
-	// Measure actual rendered form height (includes border) to give
-	// remaining space to the recent QSOs table
+	// Short path info (no border — just a clean dim line between form and table)
+	spacer := ""
+	pathBox := ""
+	distLine := m.formDistanceLine(innerW)
+	if distLine != "" {
+		spacer = "\n"
+		pathBox = DimStyle.Width(l.ContentW).Padding(0, 1).Render(distLine)
+	}
+
 	formRenderedH := lipgloss.Height(formBox)
-	recentH := l.ContentH - formRenderedH - 1 // 1 line gap
+	pathRenderedH := lipgloss.Height(pathBox)
+	// Give all remaining space to the table — the "\n" separators are
+	// included in the measured component heights.
+	recentH := l.ContentH - formRenderedH - pathRenderedH
 	if recentH < 3 {
 		recentH = 3
 	}
 
 	m.recentQSOs.SetSize(l.ContentW, recentH)
 
-	return formBox + "\n" + m.recentQSOs.View()
+	return formBox + spacer + pathBox + "\n" + m.recentQSOs.View()
 }
 
 func (m *Model) viewPartner() string {
@@ -1581,7 +1597,7 @@ func (m *Model) viewForm(width int) string {
 	renderField := func(f field, w int) string {
 		label := fieldNames[f]
 		raw := strings.TrimSpace(m.fields[f].Value())
-		lbl := lipgloss.NewStyle().Width(12).Align(lipgloss.Left).Render(label)
+		lbl := S.FormLabel.Align(lipgloss.Left).Render(label)
 
 		choiceIcon := ""
 		if choiceFields[f] {
@@ -1595,7 +1611,7 @@ func (m *Model) viewForm(width int) string {
 		if isFocused {
 			val += tiView
 		} else if raw == "" {
-			val += dim.Render("—")
+			val += SubtleStyle.Render("\u2014") // visible placeholder
 		} else {
 			val += ValueStyle.Render(raw)
 		}
@@ -1609,10 +1625,6 @@ func (m *Model) viewForm(width int) string {
 	}
 
 	var b strings.Builder
-
-	// Simple QSO section header
-	b.WriteString(section("── QSO ", bodyW))
-	b.WriteString("\n")
 
 	rows := len(leftFields)
 	if len(middleFields) > rows {
@@ -1684,35 +1696,17 @@ func (m *Model) renderRetainCheckbox(colW int) string {
 func (m *Model) formDistanceLine(width int) string {
 	ownGrid := formatLocator(m.App.Logbook.Station.Grid)
 	partnerGrid := formatLocator(strings.TrimSpace(m.fields[fieldGrid].Value()))
-	if ownGrid == "" || partnerGrid == "" {
-		return ""
-	}
-	dl := distanceLine(ownGrid, partnerGrid, m.App.Config.DistanceUnit)
-	if dl == "" {
-		return ""
-	}
-	bodyW := ContentWidth(width)
 
-	// Build rig/antenna info for the right side
-	s := m.App.Logbook.Station
-	var rigParts []string
-	if s.Rig != "" {
-		rigParts = append(rigParts, "Rig: "+s.Rig)
+	line := ""
+	if ownGrid != "" && partnerGrid != "" {
+		line = distanceLine(ownGrid, partnerGrid, m.App.Config.DistanceUnit)
 	}
-	if s.Antenna != "" {
-		rigParts = append(rigParts, "Ant: "+s.Antenna)
-	}
-	rigInfo := strings.Join(rigParts, "  ")
 
-	hdr := section("── Short Path ", bodyW)
-	if rigInfo != "" {
-		// Place section header left, rig info right
-		hdr = lipgloss.JoinHorizontal(lipgloss.Top,
-			hdr,
-			DimStyle.Render(rigInfo),
-		)
-	}
-	return hdr + "\n  " + inputStyle.Render(dl)
+	return lipgloss.NewStyle().
+		Width(width).
+		Align(lipgloss.Center).
+		Foreground(P.Info).
+		Render(line)
 }
 
 func (m *Model) focusField(f field) {
@@ -2048,11 +2042,14 @@ func (m *Model) saveQSO() tea.Cmd {
 	return tea.Batch(m.refreshQSOS(), m.maybeUploadToWavelog(qs))
 }
 func (m *Model) refreshQSOS() tea.Cmd {
-	qsos, err := store.ListQSOs(m.App.DB, 30)
-	if err != nil {
-		m.toasts.Error(fmt.Sprintf("Refresh failed: %v", err))
+	return func() tea.Msg {
+		qsos, err := store.ListQSOs(m.App.DB, 500)
+		if err != nil {
+			m.toasts.Error(fmt.Sprintf("Refresh failed: %v", err))
+			return nil
+		}
+		m.qsos = qsos
+		m.recentQSOs.SetQSOS(qsos)
 		return nil
 	}
-	m.qsos = qsos
-	return nil
 }

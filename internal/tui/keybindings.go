@@ -64,24 +64,24 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("Del", "Clear"),
 		),
 		Lookup: key.NewBinding(
-			key.WithKeys("insert", "ctrl+l"),
-			key.WithHelp("Ins", "QRZ Lookup"),
+			key.WithKeys("insert"),
+			key.WithHelp("Ins", "QRZ"),
 		),
 		Retain: key.NewBinding(
 			key.WithKeys("ctrl+r", "space"),
-			key.WithHelp("Space", "Retain"),
+			key.WithHelp("Space", "Toggle retain"),
 		),
 		FocusCall: key.NewBinding(
 			key.WithKeys("f1"),
 			key.WithHelp("", ""),
 		),
 		NextField: key.NewBinding(
-			key.WithKeys("tab"),
-			key.WithHelp("Tab", "Next"),
+			key.WithKeys("tab", "down"),
+			key.WithHelp("↓/Tab", "Next"),
 		),
 		PrevField: key.NewBinding(
-			key.WithKeys("shift+tab"),
-			key.WithHelp("Shift+Tab", "Prev"),
+			key.WithKeys("shift+tab", "up"),
+			key.WithHelp("↑/S-Tab", "Prev"),
 		),
 		CycleUp: key.NewBinding(
 			key.WithKeys("pgup"),
@@ -101,7 +101,7 @@ func DefaultKeyMap() KeyMap {
 		),
 		Enter: key.NewBinding(
 			key.WithKeys("enter"),
-			key.WithHelp("Enter", "Save QSO"),
+			key.WithHelp("Enter", "Log QSO"),
 		),
 		Confirm: key.NewBinding(
 			key.WithKeys("y"),
@@ -116,7 +116,21 @@ func DefaultKeyMap() KeyMap {
 
 // ActiveBindings returns the currently visible key bindings based on app state.
 func (m *Model) ActiveBindings() []key.Binding {
-	// Only show F10 Quit in the footer help bar.
-	// F1/F2/F5/F8/F9 shortcuts are displayed in the tab labels.
-	return []key.Binding{m.keys.Quit}
+	var bindings []key.Binding
+
+	// QSO form — show editing shortcuts when no sub-model is active
+	if !m.isSubmodelActive() {
+		bindings = append(bindings,
+			m.keys.Enter,
+			m.keys.NextField,
+			m.keys.PrevField,
+			m.keys.Lookup,
+			m.keys.Delete,
+		)
+	}
+
+	// F10 Quit always visible, always last
+	bindings = append(bindings, m.keys.Quit)
+
+	return bindings
 }
