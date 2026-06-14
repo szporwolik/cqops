@@ -1497,19 +1497,20 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 // QSOs using layout-derived dimensions. The short path gets its own bordered
 // box between the form and the table for visual separation.
 func (m *Model) buildQSOFormWithLayout(l Layout) string {
-	innerW := l.ContentW - 4 // 2 border + 2 padding (from S.QSOFormBox)
+	w := l.TerminalW // full width, matching the status bar
+	innerW := w - 4 // 2 border + 2 padding (from S.QSOFormBox)
 	if innerW < 20 {
-		innerW = l.ContentW
+		innerW = w
 	}
 
 	// QSO form in its bordered box
 	form := m.viewForm(innerW)
 	formBlock := strings.TrimRight(form, "\n")
-	formBox := S.QSOFormBox.Width(l.ContentW).Render(formBlock)
+	formBox := S.QSOFormBox.Width(w).Render(formBlock)
 
 	// Path row in a clean bordered box (always one row — no layout shift).
 	pathContent := m.formPathRow(innerW)
-	pathBox := S.MapBox.Width(l.ContentW).Render(pathContent)
+	pathBox := S.MapBox.Width(w).Render(pathContent)
 
 	formRenderedH := lipgloss.Height(formBox)
 	pathRenderedH := lipgloss.Height(pathBox)
@@ -1519,14 +1520,14 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 	}
 
 	// Table fits inside a bordered box — account for 2 rows (top/bottom border).
-	tableW := l.ContentW - 2
+	tableW := w - 2
 	tableH := recentH - 2
 	if tableH < 3 {
 		tableH = 3
 	}
 	m.recentQSOs.SetSize(tableW, tableH)
 
-	return formBox + "\n" + pathBox + "\n" + S.RecentQSOsBox.Width(l.ContentW).Render(m.recentQSOs.View())
+	return formBox + "\n" + pathBox + "\n" + S.RecentQSOsBox.Width(w).Render(m.recentQSOs.View())
 }
 
 func (m *Model) viewPartner() string {
@@ -1537,7 +1538,7 @@ func (m *Model) viewPartner() string {
 			return ""
 		}
 	}
-	bodyW := m.width - 2
+	bodyW := m.width // full terminal width
 	if bodyW < 30 {
 		bodyW = 30
 	}

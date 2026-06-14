@@ -559,7 +559,10 @@ func (le *LogbookEditor) View() tea.View {
 	if le.done {
 		return tea.NewView("")
 	}
-	bodyW := ContentWidth(le.width)
+	bodyW := le.width // full terminal width for wider table
+	if bodyW < 30 {
+		bodyW = 30
+	}
 
 	switch le.mode {
 	case edModeConfirmDelete:
@@ -608,7 +611,6 @@ func (le *LogbookEditor) View() tea.View {
 		if !le.built && len(le.qsos) > 0 {
 			le.buildTable()
 		}
-		bodyW := ContentWidth(le.width)
 		// Reserve 1 row for filler between the table box and the help bar;
 		// on this screen ProfileH=0 so ContentH = TerminalH - 3.
 		contentH := le.height - 4
