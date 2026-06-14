@@ -194,24 +194,45 @@ func (m *Model) ActiveBindings() []key.Binding {
 		)
 	}
 	if m.screen == screenChooser {
-		bindings = append(bindings,
-			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
-			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Activate")),
-			key.NewBinding(key.WithKeys("e"), key.WithHelp("E", "Edit")),
-			key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Create")),
-			key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
-			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
-		)
+		if m.chooser != nil && (m.chooser.mode == chooserEdit || m.chooser.mode == chooserCreate) {
+			bindings = append(bindings,
+				key.NewBinding(key.WithKeys("tab", "down"), key.WithHelp("↓/Tab", "Next")),
+				key.NewBinding(key.WithKeys("shift+tab", "up"), key.WithHelp("↑/S-Tab", "Prev")),
+				key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle/Cycle")),
+				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "WL button")),
+				key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
+				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
+			)
+		} else {
+			bindings = append(bindings,
+				key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
+				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Activate")),
+				key.NewBinding(key.WithKeys("e"), key.WithHelp("E", "Edit")),
+				key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Create")),
+				key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
+				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
+			)
+		}
 	}
 	if m.screen == screenRigEdit {
-		bindings = append(bindings,
-			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
-			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Select")),
-			key.NewBinding(key.WithKeys("e"), key.WithHelp("E", "Edit")),
-			key.NewBinding(key.WithKeys("c"), key.WithHelp("C", "Create")),
-			key.NewBinding(key.WithKeys("d"), key.WithHelp("D", "Delete")),
-			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
-		)
+		if m.rigChooser != nil && (m.rigChooser.mode == rigChooserEdit || m.rigChooser.mode == rigChooserCreate) {
+			bindings = append(bindings,
+				key.NewBinding(key.WithKeys("tab", "down"), key.WithHelp("↓/Tab", "Next")),
+				key.NewBinding(key.WithKeys("shift+tab", "up"), key.WithHelp("↑/S-Tab", "Prev")),
+				key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle flrig")),
+				key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
+				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
+			)
+		} else {
+			bindings = append(bindings,
+				key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
+				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Select")),
+				key.NewBinding(key.WithKeys("e"), key.WithHelp("E", "Edit")),
+				key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Create")),
+				key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
+				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
+			)
+		}
 	}
 	// Image screen — simple navigation.
 	if m.screen == screenImage {

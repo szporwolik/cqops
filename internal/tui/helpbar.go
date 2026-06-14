@@ -10,7 +10,34 @@ import (
 
 // helpView renders the bottom help/footer bar with context-sensitive key bindings.
 func (m *Model) helpView() string {
+	// Global confirm dialog (quit, etc.)
 	if m.confirm != nil {
+		bindings := []key.Binding{
+			key.NewBinding(key.WithKeys("←/→"), key.WithHelp("←/→", "choose")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm")),
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
+		}
+		return HelpStyle.Render(m.help.ShortHelpView(bindings))
+	}
+
+	// Internal confirm dialogs: rig/chooser delete confirmations.
+	if m.rigChooser != nil && m.rigChooser.mode == rigChooserConfirmDelete && m.rigChooser.dialog != nil {
+		bindings := []key.Binding{
+			key.NewBinding(key.WithKeys("←/→"), key.WithHelp("←/→", "choose")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm")),
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
+		}
+		return HelpStyle.Render(m.help.ShortHelpView(bindings))
+	}
+	if m.chooser != nil && m.chooser.mode == chooserConfirmDelete && m.chooser.dialog != nil {
+		bindings := []key.Binding{
+			key.NewBinding(key.WithKeys("←/→"), key.WithHelp("←/→", "choose")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm")),
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
+		}
+		return HelpStyle.Render(m.help.ShortHelpView(bindings))
+	}
+	if m.logbookEditor != nil && m.logbookEditor.isConfirmMode() && m.logbookEditor.dialog != nil {
 		bindings := []key.Binding{
 			key.NewBinding(key.WithKeys("←/→"), key.WithHelp("←/→", "choose")),
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm")),
