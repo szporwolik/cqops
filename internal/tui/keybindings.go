@@ -6,26 +6,28 @@ import (
 
 // KeyMap holds all key bindings for the application.
 type KeyMap struct {
-	Quit      key.Binding
-	QSOForm   key.Binding
-	Partner   key.Binding
-	LogEditor key.Binding
-	Config    key.Binding
-	Logs      key.Binding
-	Save      key.Binding
-	Delete    key.Binding
-	Lookup    key.Binding
-	Retain    key.Binding
-	FocusCall key.Binding
-	NextField key.Binding
-	PrevField key.Binding
-	CycleUp   key.Binding
-	CycleDown key.Binding
-	Up        key.Binding
-	Down      key.Binding
-	Enter     key.Binding
-	Confirm   key.Binding
-	Cancel    key.Binding
+	Quit         key.Binding
+	QSOForm      key.Binding
+	Partner      key.Binding
+	LogEditor    key.Binding
+	Config       key.Binding
+	Logs         key.Binding
+	Save         key.Binding
+	Delete       key.Binding
+	Lookup       key.Binding
+	Retain       key.Binding
+	FocusCall    key.Binding
+	NextField    key.Binding
+	PrevField    key.Binding
+	CycleUp      key.Binding
+	CycleDown    key.Binding
+	Up           key.Binding
+	Down         key.Binding
+	Enter        key.Binding
+	Confirm      key.Binding
+	Cancel       key.Binding
+	CycleLogbook key.Binding
+	CycleRig     key.Binding
 }
 
 // DefaultKeyMap returns the default key bindings.
@@ -65,7 +67,7 @@ func DefaultKeyMap() KeyMap {
 		),
 		Lookup: key.NewBinding(
 			key.WithKeys("insert"),
-			key.WithHelp("Ins", "Callbook"),
+			key.WithHelp("Ins", "Check Call"),
 		),
 		Retain: key.NewBinding(
 			key.WithKeys("ctrl+r", "space"),
@@ -77,11 +79,11 @@ func DefaultKeyMap() KeyMap {
 		),
 		NextField: key.NewBinding(
 			key.WithKeys("tab", "down"),
-			key.WithHelp("↓/Tab", "Next"),
+			key.WithHelp("↑↓", "Navigate"),
 		),
 		PrevField: key.NewBinding(
 			key.WithKeys("shift+tab", "up"),
-			key.WithHelp("↑/S-Tab", "Prev"),
+			key.WithHelp("", ""),
 		),
 		CycleUp: key.NewBinding(
 			key.WithKeys("pgup"),
@@ -111,6 +113,14 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("n", "esc"),
 			key.WithHelp("N", "Cancel"),
 		),
+		CycleLogbook: key.NewBinding(
+			key.WithKeys("ctrl+home"),
+			key.WithHelp("C-Home", "Logbook"),
+		),
+		CycleRig: key.NewBinding(
+			key.WithKeys("ctrl+end"),
+			key.WithHelp("C-End", "Rig"),
+		),
 	}
 }
 
@@ -123,9 +133,10 @@ func (m *Model) ActiveBindings() []key.Binding {
 		bindings = append(bindings,
 			m.keys.Enter,
 			m.keys.NextField,
-			m.keys.PrevField,
 			m.keys.Lookup,
 			m.keys.Delete,
+			m.keys.CycleLogbook,
+			m.keys.CycleRig,
 		)
 	}
 

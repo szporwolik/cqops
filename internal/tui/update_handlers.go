@@ -2,11 +2,13 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
+	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/store"
 )
 
@@ -175,6 +177,12 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 				if len(cmds) > 0 {
 					return tea.Batch(cmds...), true
 				}
+			}
+			if key.Matches(msg, m.keys.CycleLogbook) {
+				return m.cycleLogbook(), true
+			}
+			if key.Matches(msg, m.keys.CycleRig) {
+				return m.cycleRig(), true
 			}
 		}
 	}
@@ -506,4 +514,82 @@ func (m *Model) handleLogViewUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 		m.screen = screenQSO
 	}
 	return m, cmd
+}
+
+// cycleLogbook switches to the next logbook in alphabetical order.
+func (m *Model) cycleLogbook() tea.Cmd {
+	names := make([]string, 0, len(m.App.Config.Logbooks))
+	for n := range m.App.Config.Logbooks {
+		names = append(names, n)
+	}
+	slices.Sort(names)
+	if len(names) <= 1 {
+		m.toasts.Info("Only one logbook configured")
+		return nil
+	}
+
+	// Find current and move to next.
+	idx := 0
+	for i, n := range names {
+		if n == m.App.Config.ActiveLogbook {
+			idx = (i + 1) % len(names)
+			break
+		}
+	}
+	next := names[idx]
+
+	if err := m.App.SwitchLogbook(next); err != nil {
+		m.toasts.Error("Switch to " + next + " failed: " + err.Error())
+		return nil
+	}
+	m.toasts.Success("Logbook: " + next)
+	applog.Info("Logbook cycled", "name", next)
+	m.needRefresh = true
+	return nil
+}
+
+// cycleRig cycles to the next rig preset in alphabetical order.
+func (m *Model) cycleRig() tea.Cmd {
+	names := make([]string, 0, len(m.App.Config.Rigs))
+	for n := range m.App.Config.Rigs {
+		names = append(names, n)
+	}
+	slices.Sort(names)
+	if len(names) == 0 {
+		m.toasts.Info("No rigs configured")
+		return nil
+	}
+	if len(names) == 1 {
+		m.toasts.Info("Only one rig: " + names[0])
+		return nil
+	}
+
+	// Find current and move to next.
+	current := m.App.Logbook.Station.RigName
+	idx := 0
+	for i, n := range names {
+		if n == current {
+			idx = (i + 1) % len(names)
+			break
+		}
+	}
+	next := names[idx]
+	rp := m.App.Config.Rigs[next]
+
+	m.App.Logbook.Station.Rig = rp.Model
+	m.App.Logbook.Station.Antenna = rp.Antenna
+	m.App.Logbook.Station.Power = rp.Power
+	m.App.Logbook.Station.RigName = next
+
+	lb := m.App.Config.Logbooks[m.App.LogbookName]
+	lb.Station = m.App.Logbook.Station
+	m.App.Config.Logbooks[m.App.LogbookName] = lb
+
+	if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
+		m.toasts.Error("Save rig failed: " + err.Error())
+		return nil
+	}
+	m.toasts.Success("Rig: " + next + " (" + rp.Model + ")")
+	applog.Info("Rig cycled", "name", next, "model", rp.Model)
+	return nil
 }
