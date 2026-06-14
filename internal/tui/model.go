@@ -805,15 +805,34 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				applog.Debug("F2 Partner: no callsign")
 			} else {
 				applog.Debug("tab: F2 Partner Details")
-				m.partnerData = nil     // force fresh lookup
-				m.wlPrivateData = nil   // force fresh Wavelog lookup
-				m.screen = screenPartner
-				// Trigger QRZ + Wavelog lookups.
-				if m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled {
-					cmd = tea.Batch(cmd, m.qrzLookup(call))
+				band := strings.TrimSpace(m.fields[fieldBand].Value())
+				mode := strings.TrimSpace(m.fields[fieldMode].Value())
+
+				// Only clear cache & re-lookup if callsign/band/mode changed
+				// or if no cached data exists yet.
+				callChanged := m.partnerData == nil || !strings.EqualFold(m.partnerData.Callsign, call)
+				bandChanged := band != m.wlLastBand
+				modeChanged := mode != m.wlLastMode
+
+				if callChanged {
+					m.partnerData = nil
 				}
-				if m.App.Config.Wavelog.Enabled && m.App.Config.Wavelog.APIKey != "" {
-					cmd = tea.Batch(cmd, m.wlLookup(call))
+				if callChanged || bandChanged || modeChanged {
+					m.wlPrivateData = nil
+				}
+
+				m.screen = screenPartner
+
+				// Trigger lookups only when data is stale or missing.
+				if callChanged {
+					if m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled {
+						cmd = tea.Batch(cmd, m.qrzLookup(call))
+					}
+				}
+				if callChanged || bandChanged || modeChanged {
+					if m.App.Config.Wavelog.Enabled && m.App.Config.Wavelog.APIKey != "" {
+						cmd = tea.Batch(cmd, m.wlLookup(call))
+					}
 				}
 			}
 		case key.Matches(keyMsg, m.keys.Config):
@@ -837,6 +856,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case key.Matches(keyMsg, m.keys.Logs):
 			applog.Debug("tab: F9 Log Viewer")
 			m.logViewer = NewLogViewer(m.App.LogbookName)
+			m.logViewer.width = m.width
+			m.logViewer.height = m.height
 			m.screen = screenLogView
 			return m, cmd
 		}
@@ -1251,14 +1272,20 @@ func (m *Model) View() tea.View {
 	// No .Height() — we don't pad; the table fills exact remaining space.
 	body = lipgloss.NewStyle().MaxHeight(layout.ContentH).Render(body)
 
-	// Build the main view without toasts or dialogs (those are composited on top)
-	mainView := lipgloss.JoinVertical(lipgloss.Left,
-		statusBar,
-		profileLine,
-		tabBar,
-		body,
-		helpBar,
-	)
+	// Build the main view without toasts or dialogs (those are composited on top).
+	// Only include non-empty rows to avoid blank lines from empty zones.
+	var mainParts []string
+	addRow := func(s string) {
+		if s != "" {
+			mainParts = append(mainParts, s)
+		}
+	}
+	addRow(statusBar)
+	addRow(profileLine)
+	addRow(tabBar)
+	addRow(body)
+	addRow(helpBar)
+	mainView := lipgloss.JoinVertical(lipgloss.Left, mainParts...)
 
 	// Composite confirm dialog as a centered overlay if active
 	if m.confirm != nil {
@@ -1414,6 +1441,18 @@ func (m *Model) helpView() string {
 			return HelpStyle.Render(helpText + strings.Repeat(" ", spacerW) + counter)
 		}
 	}
+	// Scroll position on log viewer screen.
+	if m.screen == screenLogView && m.logViewer != nil {
+		info := m.logViewer.ScrollInfo()
+		if info != "" {
+			infoW := lipgloss.Width(info)
+			spacerW := m.width - lipgloss.Width(helpText) - infoW - 2
+			if spacerW < 1 {
+				spacerW = 1
+			}
+			return HelpStyle.Render(helpText + strings.Repeat(" ", spacerW) + info)
+		}
+	}
 	return HelpStyle.Render(helpText)
 }
 
@@ -1498,7 +1537,7 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 // box between the form and the table for visual separation.
 func (m *Model) buildQSOFormWithLayout(l Layout) string {
 	w := l.TerminalW // full width, matching the status bar
-	innerW := w - 4 // 2 border + 2 padding (from S.QSOFormBox)
+	innerW := w - 4  // 2 border + 2 padding (from S.QSOFormBox)
 	if innerW < 20 {
 		innerW = w
 	}

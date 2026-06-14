@@ -149,6 +149,16 @@ func (m *Model) ActiveBindings() []key.Binding {
 		}
 	}
 
+	// Log viewer — scroll keybindings
+	if m.screen == screenLogView {
+		bindings = append(bindings,
+			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Scroll")),
+			key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("PgUp/Dn", "Page")),
+			key.NewBinding(key.WithKeys("home", "end"), key.WithHelp("Home/End", "Top/Bottom")),
+			key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Refresh")),
+		)
+	}
+
 	// F10 Quit always visible, always last
 	bindings = append(bindings, m.keys.Quit)
 

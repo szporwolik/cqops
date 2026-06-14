@@ -46,6 +46,7 @@ func Execute() error {
 	RegisterCommands()
 	applog.Init()
 	applog.Info("══════════ CQOPS STARTED ══════════", "v", version.Resolved())
+
 	if len(os.Args) <= 1 {
 		return runTUI()
 	}
