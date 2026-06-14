@@ -219,7 +219,12 @@ func NewLogbookEditor(db *sql.DB, wlURL, wlKey, wlStationID, wlStationCall, logS
 	return le
 }
 
-func (le *LogbookEditor) Init() tea.Cmd { return nil }
+func (le *LogbookEditor) Init() tea.Cmd {
+	if !le.built && len(le.qsos) > 0 {
+		le.buildTable()
+	}
+	return nil
+}
 
 func (le *LogbookEditor) SetQSOS(qsos []qso.QSO) { le.qsos = qsos; le.buildTable() }
 
@@ -576,11 +581,14 @@ func (le *LogbookEditor) View() tea.View {
 			le.buildTable()
 		}
 		contentH := contentHeight(le.height)
-		return tea.NewView(lipgloss.NewStyle().MaxWidth(bodyW).MaxHeight(contentH).Render(
-			S.RecentQSOsBox.Width(bodyW).Render(
-				lipgloss.NewStyle().MaxWidth(bodyW - 2).MaxHeight(contentH - 2).Render(le.table.View()),
-			),
-		))
+		// Use drawBorderedBox so every border character has explicit
+		// Background(P.Surface) — prevents the right │ leak.
+		inner := lipgloss.NewStyle().
+			MaxWidth(bodyW - 2).
+			Height(contentH - 2).
+			Background(P.Surface).
+			Render(le.table.View())
+		return tea.NewView(drawBorderedBox(inner, bodyW-2, bodyW))
 	}
 }
 
@@ -594,10 +602,13 @@ func (le *LogbookEditor) viewWithDialog(bodyW int) string {
 	if contentH < 5 {
 		contentH = 5
 	}
-	body := lipgloss.NewStyle().MaxWidth(bodyW).MaxHeight(contentH).Render(
-		S.RecentQSOsBox.Width(bodyW).Render(
-			lipgloss.NewStyle().MaxWidth(bodyW - 2).MaxHeight(contentH - 2).Render(le.table.View()),
-		),
+	body := drawBorderedBox(
+		lipgloss.NewStyle().
+			MaxWidth(bodyW-2).
+			Height(contentH-2).
+			Background(P.Surface).
+			Render(le.table.View()),
+		bodyW-2, bodyW,
 	)
 	if le.dialog != nil {
 		return RenderDialogOverlay(body, *le.dialog, bodyW, le.height)
@@ -686,10 +697,17 @@ func (le *LogbookEditor) buildTable() {
 		table.WithWidth(bodyW),
 	)
 	s := table.DefaultStyles()
-	s.Header = s.Header.BorderStyle(lipgloss.NormalBorder()).BorderBottom(true).Bold(false).Foreground(P.Text).Background(P.Surface)
-	s.Cell = s.Cell.Background(P.Surface)
-	s.Selected = s.Selected.Foreground(P.SelectedFg).Background(P.SelectedBg).Bold(false)
+	s.Header = s.Header.
+		BorderForeground(P.TextDim).
+		BorderBottom(true).
+		Bold(false).
+		Foreground(P.Text).
+		Background(P.Surface)
+	// Cell: no Foreground, no Background — let the drawBorderedBox
+	// wrapper supply Surface background, and let the default Selected
+	// style (bold + pink foreground from bubbles) highlight the cursor row.
 	t.SetStyles(s)
+	t.Focus()
 	le.table = t
 	le.built = true
 }
