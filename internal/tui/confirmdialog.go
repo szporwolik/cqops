@@ -102,7 +102,7 @@ func (m DialogModel) View() tea.View {
 	return tea.NewView(m.render())
 }
 
-// render returns the dialog content string — a centered, bordered modal.
+// Render returns the dialog content string — a centered, bordered modal.
 func (m DialogModel) render() string {
 	w := m.width
 	if w < 40 {
@@ -119,13 +119,13 @@ func (m DialogModel) render() string {
 	}
 
 	// Title — centered inside the modal
-	title := dialogTitleStyle.
+	title := S.ConfirmTitle.
 		Width(modalW - 4). // inside border + padding
 		Align(lipgloss.Center).
 		Render(m.Title)
 
 	// Message
-	msg := dialogMsgStyle.
+	msg := S.ConfirmMsg.
 		Width(modalW - 4).
 		Align(lipgloss.Center).
 		Render(m.Message)
@@ -133,21 +133,21 @@ func (m DialogModel) render() string {
 	// Buttons — size only to label + padding, centered as a group
 	var btnParts []string
 	for i, opt := range m.Options {
-		s := dialogBtnDimStyle
+		s := S.ConfirmBtnDim
 		if i == m.selected {
 			if opt.Danger {
-				s = dialogBtnDangerStyle
+				s = S.ConfirmDanger
 			} else {
-				s = dialogBtnActiveStyle
+				s = S.ConfirmBtn
 			}
 		}
 		btnParts = append(btnParts, s.Render(" "+opt.Label+" "))
 	}
 	btns := lipgloss.JoinHorizontal(lipgloss.Center, btnParts...)
-	btns = dialogSurfaceStyle.Width(modalW - 4).Align(lipgloss.Center).Render(btns)
+	btns = lipgloss.NewStyle().Background(P.Surface).Width(modalW - 4).Align(lipgloss.Center).Render(btns)
 
 	// Hint
-	hint := dialogHintStyle.
+	hint := S.ConfirmHint.
 		Width(modalW - 4).
 		Align(lipgloss.Center).
 		Render("←/→ select  •  enter confirm  •  esc cancel")
@@ -164,50 +164,8 @@ func (m DialogModel) render() string {
 	)
 
 	// Wrap in bordered box matching the theme surface
-	return dialogBoxStyle.Width(modalW).Render(modal)
+	return S.ConfirmBox.Width(modalW).Render(modal)
 }
-
-// ── Styles ──
-
-var (
-	dialogBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(P.TextMuted).
-			Background(P.Surface).
-			Padding(1, 2)
-
-	dialogSurfaceStyle = lipgloss.NewStyle().Background(P.Surface)
-
-	dialogTitleStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(P.Primary).
-				Background(P.Surface)
-
-	dialogMsgStyle = lipgloss.NewStyle().
-			Foreground(P.Text).
-			Background(P.Surface)
-
-	dialogBtnActiveStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("#1a1b1e")).
-				Background(P.Primary).
-				Padding(0, 2)
-
-	dialogBtnDimStyle = lipgloss.NewStyle().
-				Foreground(P.TextMuted).
-				Background(P.SurfaceAlt).
-				Padding(0, 2)
-
-	dialogBtnDangerStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(P.Text).
-				Background(P.Error).
-				Padding(0, 2)
-
-	dialogHintStyle = lipgloss.NewStyle().
-			Foreground(P.TextDim).
-			Background(P.Surface)
-)
 
 // ── Helpers ──
 

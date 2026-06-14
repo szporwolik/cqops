@@ -115,7 +115,6 @@ type Model struct {
 	mainMenu        *MainMenu
 	logViewer       *LogViewer
 	logbookEditor   *LogbookEditor
-	confirmQuit     bool
 	confirm         *DialogModel // active confirmation dialog (quit, etc.)
 	partnerData     *qrz.CallData
 	wlPrivateData   *wavelog.PrivateLookupResult // Wavelog callsign lookup

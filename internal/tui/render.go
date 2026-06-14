@@ -104,21 +104,3 @@ func truncate(s string, max int) string {
 	}
 	return s[:max-1] + "…"
 }
-
-func trunc(s string, w int) string {
-	if s == "" {
-		return ""
-	}
-	if len(s) > w {
-		return s[:w]
-	}
-	return s
-}
-
-func toAny(ss []string) []any {
-	aa := make([]any, len(ss))
-	for i, s := range ss {
-		aa[i] = s
-	}
-	return aa
-}

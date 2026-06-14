@@ -180,42 +180,6 @@ func editorColValue(col string, q *qso.QSO) string {
 	return ""
 }
 
-func editorRow(q *qso.QSO) table.Row {
-	b := qso.NormalizeBand(q.Band)
-	if b == "" && q.Freq > 0 {
-		b = fmt.Sprintf("%.1f", q.Freq)
-	}
-	freq := ""
-	if q.Freq > 0 {
-		freq = formatFreqShort(q.Freq)
-	}
-	dist := ""
-	if q.Distance > 0 {
-		dist = fmt.Sprintf("%.0f", q.Distance)
-	}
-	pwr := q.TXPower
-	src := q.Source
-	switch src {
-	case "wsjtx":
-		src = "FTx"
-	case "manual":
-		src = "Man"
-	}
-	wl := ""
-	if q.WavelogUploaded == "yes" {
-		wl = "Y"
-	} else if q.WavelogUploaded == "no" {
-		wl = "N"
-	}
-	return table.Row{
-		formatDate(q.QSODate), formatTime(q.TimeOn),
-		q.Call, b, freq, q.Mode, q.Submode,
-		q.RSTSent, q.RSTRcvd, q.GridSquare,
-		q.Country, q.Name, q.QTH, q.Comment,
-		dist, pwr, src, wl,
-	}
-}
-
 func NewLogbookEditor(db *sql.DB, wlURL, wlKey, wlStationID, wlStationCall, logStationOp, logStationGrid string) *LogbookEditor {
 	le := &LogbookEditor{db: db, mode: edModeList, wlURL: wlURL, wlKey: wlKey, wlStationID: wlStationID, wlStationCall: wlStationCall, logStationOp: logStationOp, logStationGrid: logStationGrid}
 	for i := qsoEditField(0); i < qefCount; i++ {

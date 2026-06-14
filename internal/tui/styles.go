@@ -99,6 +99,7 @@ type Styles struct {
 	ConfirmBtn     lipgloss.Style
 	ConfirmBtnDim  lipgloss.Style
 	ConfirmDanger  lipgloss.Style
+	ConfirmHint    lipgloss.Style
 	ConfirmHelp    lipgloss.Style
 	BarStyle       lipgloss.Style
 	TitleStyle     lipgloss.Style
@@ -168,11 +169,12 @@ var S = Styles{
 		BorderForeground(P.TextMuted).
 		Background(P.Surface).
 		Padding(1, 2),
-	ConfirmTitle:  lipgloss.NewStyle().Bold(true).Foreground(P.Primary),
-	ConfirmMsg:    lipgloss.NewStyle().Foreground(P.Text),
-	ConfirmBtn:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#1a1b1e")).Background(P.Primary).Padding(0, 1),
-	ConfirmBtnDim: lipgloss.NewStyle().Foreground(P.TextMuted).Background(P.SurfaceAlt).Padding(0, 1),
-	ConfirmDanger: lipgloss.NewStyle().Bold(true).Foreground(P.Text).Background(P.Error).Padding(0, 1),
+	ConfirmTitle:  lipgloss.NewStyle().Bold(true).Foreground(P.Primary).Background(P.Surface),
+	ConfirmMsg:    lipgloss.NewStyle().Foreground(P.Text).Background(P.Surface),
+	ConfirmBtn:    lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#1a1b1e")).Background(P.Primary).Padding(0, 2),
+	ConfirmBtnDim: lipgloss.NewStyle().Foreground(P.TextMuted).Background(P.SurfaceAlt).Padding(0, 2),
+	ConfirmDanger: lipgloss.NewStyle().Bold(true).Foreground(P.Text).Background(P.Error).Padding(0, 2),
+	ConfirmHint:   lipgloss.NewStyle().Foreground(P.TextDim).Background(P.Surface),
 	ConfirmHelp:   lipgloss.NewStyle().Foreground(P.TextDim),
 	BarStyle:      lipgloss.NewStyle().Background(P.Surface),
 	TitleStyle:    lipgloss.NewStyle().Bold(true).Foreground(P.Primary).Padding(0, 1),
@@ -202,7 +204,6 @@ var S = Styles{
 
 // Legacy package-level aliases.
 var (
-	th               = P
 	TitleStyle       = S.TitleStyle
 	HeaderStyle      = S.HeaderStyle
 	ErrorStyle       = S.ErrorStyle
