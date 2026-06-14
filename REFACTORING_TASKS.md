@@ -311,3 +311,53 @@
 | `go test ./...` | ✅ ALL 22 tui tests + qso tests PASSED |
 | `go build -ldflags "-s -w"` | ✅ SUCCESS |
 
+---
+
+## Phase 4 — QSO form helpers, form tests, and table render stability
+
+### Planned Work
+- [ ] Extract QSO form helper methods from model.go
+- [ ] Add QSO form rendering/helper tests
+- [ ] Review RecentQSOs caching
+- [ ] Dialog cleanup verification
+- [ ] Dead code pass
+
+### QSO Form Helper Extraction
+- [ ] `focusField()`, `nextField()`, `prevField()` → qso_form_update.go
+- [ ] `cycleFieldUp()`, `cycleFieldDown()`, `cycleBand()`, `cycleMode()`, `cycleSubmode()`, `indexOfStr()` → qso_form_update.go
+- [ ] `autoFillRST()`, `applyFreqDefaults()`, `autoFillSSBSubmode()` → qso_form_update.go
+- [ ] `clearForm()` → qso_form_update.go
+- [ ] `updateFocused()` → qso_form_update.go
+- [ ] `saveQSO()` — KEPT in model.go (touches DB, Wavelog, validation, grid distance, station)
+- [ ] `refreshQSOS()` — KEPT in model.go (DB operation)
+
+### QSO Form Tests
+- [x] `qso_form_test.go` — 18 rendering and navigation tests, all passing
+
+### Progress
+
+### Phase 4 Results ✅ COMPLETED
+
+#### QSO Form Helper Extraction
+- [x] Created `qso_form_update.go` — 348 lines extracted from model.go
+- [x] Moved 14 methods: focusField, nextField, prevField, cycleFieldUp, cycleFieldDown, cycleBand, cycleMode, cycleSubmode, indexOfStr, autoFillRST, applyFreqDefaults, autoFillSSBSubmode, updateFocused, clearForm
+- [x] saveQSO — KEPT in model.go (touches DB, Wavelog, validation, grid distance, station)
+- [x] refreshQSOS — KEPT in model.go (DB operation, updates recentQSOs)
+
+#### QSO Form Tests
+- [x] 18 tests added, all passing
+
+#### RecentQSOs Caching Decision
+- [x] DO NOT CACHE — O(10k ops) = microseconds, caching adds complexity without benefit
+
+#### Dialog Cleanup Verified
+- [x] No old Confirm struct, NewConfirm, RenderConfirmOverlay, dialog*Style variables
+- [x] All dialog styles use S.Confirm*
+
+#### Final Verification
+| Check | Result |
+|-------|--------|
+| `go fmt` | ✅ 3 files |
+| `go vet` | ✅ PASSED |
+| `go test ./...` | ✅ 40 tests PASSED |
+| `go build` | ✅ SUCCESS |

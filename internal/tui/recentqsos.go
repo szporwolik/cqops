@@ -10,6 +10,12 @@ import (
 
 // RecentQSOs is a read-only view of recent QSOs. It renders a bubbles/table
 // that receives no keyboard events — all input stays with the QSO form.
+//
+// Column width calculations are performed on every View() call. This is
+// intentional: the cost is O(tiers × cols + qsos × cols) ≈ 10k operations,
+// which completes in microseconds. Caching would add complexity (invalidation,
+// key computation) without meaningful performance benefit on any target device,
+// including Raspberry Pi-class systems.
 type RecentQSOs struct {
 	qsos   []qso.QSO
 	width  int
