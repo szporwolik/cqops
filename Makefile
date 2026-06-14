@@ -1,54 +1,53 @@
 .PHONY: build test lint clean run version install uninstall
 
-VERSION := dev
-LDFLAGS := -s -w -X github.com/szporwolik/cqops/internal/version.Version=
+VERSION := $(shell cat VERSION 2>/dev/null || echo "dev")
+LDFLAGS := -s -w -X github.com/szporwolik/cqops/internal/version.Version=$(VERSION)
 BUILD_DIR := build
-BIN := /cqops
+BIN := $(BUILD_DIR)/cqops
 
 all: build
 
 build:
-	@mkdir -p 
-	go build -ldflags "" -o  ./cmd/cqops/
-	@echo "Built  "
+	@mkdir -p $(BUILD_DIR)
+	go build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/cqops/
+	@echo "Built $(BIN) $(VERSION)"
 
 build-all:
-	@mkdir -p 
-	@echo "Building  for windows/amd64..."
-	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "" -o /cqops-windows-amd64.exe ./cmd/cqops/
-	@echo "Building  for windows/arm64..."
-	GOOS=windows GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "" -o /cqops-windows-arm64.exe ./cmd/cqops/
-	@echo "Building  for linux/amd64..."
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "" -o /cqops-linux-amd64 ./cmd/cqops/
-	@echo "Building  for linux/arm64..."
-	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "" -o /cqops-linux-arm64 ./cmd/cqops/
-	@echo "Building  for darwin/amd64..."
-	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "" -o /cqops-darwin-amd64 ./cmd/cqops/
-	@echo "Building  for darwin/arm64..."
-	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "" -o /cqops-darwin-arm64 ./cmd/cqops/
-	@echo "Done. Binaries in /"
+	@mkdir -p $(BUILD_DIR)
+	@echo "Building $(VERSION) for windows/amd64..."
+	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/cqops-windows-amd64.exe ./cmd/cqops/
+	@echo "Building $(VERSION) for windows/arm64..."
+	GOOS=windows GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/cqops-windows-arm64.exe ./cmd/cqops/
+	@echo "Building $(VERSION) for linux/amd64..."
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/cqops-linux-amd64 ./cmd/cqops/
+	@echo "Building $(VERSION) for linux/arm64..."
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/cqops-linux-arm64 ./cmd/cqops/
+	@echo "Building $(VERSION) for darwin/amd64..."
+	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/cqops-darwin-amd64 ./cmd/cqops/
+	@echo "Building $(VERSION) for darwin/arm64..."
+	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/cqops-darwin-arm64 ./cmd/cqops/
+	@echo "Done. Binaries in $(BUILD_DIR)/"
 
-# Detect OS for install/uninstall
 ifeq ($(OS),Windows_NT)
-  INSTALL_CMD = @powershell -File scripts/install.ps1
-  UNINSTALL_CMD = @powershell -File scripts/uninstall.ps1
+INSTALL = @powershell -File scripts/install.ps1
+UNINSTALL = @powershell -File scripts/uninstall.ps1
 else
-  INSTALL_CMD = @bash scripts/install.sh
-  UNINSTALL_CMD = @bash scripts/uninstall.sh
+INSTALL = @bash scripts/install.sh
+UNINSTALL = @bash scripts/uninstall.sh
 endif
 
 install: build-all
-	$(INSTALL_CMD)
+	$(INSTALL)
 
 uninstall:
-	$(UNINSTALL_CMD)
+	$(UNINSTALL)
 
 install-cli: build
 	go install -ldflags "$(LDFLAGS)" ./cmd/cqops/
 	@echo "Installed cqops $(VERSION) to GOPATH/bin"
 
 run: build
-	./
+	./$(BIN)
 
 test:
 	go test -race -count=1 ./...
@@ -67,5 +66,5 @@ vet:
 	go vet ./...
 
 clean:
-	rm -rf 
+	rm -rf $(BUILD_DIR)
 	go clean -cache -testcache
