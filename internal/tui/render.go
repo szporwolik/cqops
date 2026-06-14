@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/bubbles/v2/textinput"
 	"charm.land/lipgloss/v2"
 )
 
@@ -195,4 +196,31 @@ func renderSectionTitle(title string, width int) string {
 // truncWithEllipsis truncates a string to max cells with ellipsis if needed.
 func truncWithEllipsis(s string, max int) string {
 	return truncate(s, max)
+}
+
+// =============================================================================
+// Textinput helpers
+// =============================================================================
+
+// applyTextinputSurfaceStyle sets Surface background on all style states
+// of a textinput to prevent background leaks from ANSI reset codes.
+func applyTextinputSurfaceStyle(ti *textinput.Model) {
+	s := ti.Styles()
+	s.Focused.Text = s.Focused.Text.Background(P.Surface)
+	s.Focused.Placeholder = s.Focused.Placeholder.Background(P.Surface)
+	s.Focused.Prompt = s.Focused.Prompt.Background(P.Surface)
+	s.Focused.Suggestion = s.Focused.Suggestion.Background(P.Surface)
+	s.Blurred.Text = s.Blurred.Text.Background(P.Surface)
+	s.Blurred.Placeholder = s.Blurred.Placeholder.Background(P.Surface)
+	s.Blurred.Prompt = s.Blurred.Prompt.Background(P.Surface)
+	s.Blurred.Suggestion = s.Blurred.Suggestion.Background(P.Surface)
+	ti.SetStyles(s)
+}
+
+// newTextinput creates a textinput with Prompt already cleared (the default
+// "> " prompt is not useful in our forms). All other fields are at defaults.
+func newTextinput() textinput.Model {
+	ti := textinput.New()
+	ti.Prompt = ""
+	return ti
 }

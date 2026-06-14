@@ -42,17 +42,15 @@ type Wizard struct {
 }
 
 func NewWizard(a *app.App) *Wizard {
-	host := textinput.New()
+	host := newTextinput()
 	host.CharLimit = 40
 	host.SetWidth(22)
 	host.SetValue("127.0.0.1")
-	host.Prompt = ""
 
-	port := textinput.New()
+	port := newTextinput()
 	port.CharLimit = 6
 	port.SetWidth(22)
 	port.SetValue("2233")
-	port.Prompt = ""
 
 	applog.Info("Wizard started — first-run setup")
 	return &Wizard{
@@ -306,8 +304,7 @@ func (w *Wizard) stepIndicator() string {
 }
 
 func (w *Wizard) updateWSJTXFocus() {
-	w.wsjtxHost.Blur()
-	w.wsjtxPort.Blur()
+	blurTextinputs(&w.wsjtxHost, &w.wsjtxPort)
 	switch w.wsjtxFocus {
 	case 1:
 		w.wsjtxHost.Focus()

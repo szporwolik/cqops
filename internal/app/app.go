@@ -20,6 +20,15 @@ type App struct {
 	DBPath       string
 	WSJTX        *wsjtx.Listener
 	WSJTXUpdated chan struct{}
+
+	// lastWSJTX tracks the effective WSJT-X config last applied to the
+	// listener. Used to avoid unnecessary Stop/Start cycles when config
+	// is saved but the WSJT-X settings haven't changed.
+	lastWSJTX struct {
+		enabled bool
+		host    string
+		port    int
+	}
 }
 
 func Init(logbookFlag string) (*App, error) {
@@ -75,12 +84,33 @@ func (a *App) Close() {
 	applog.Info("CQOPS shutdown complete")
 }
 
+// MaybeRestartWSJTX restarts the WSJT-X listener only when the effective
+// configuration (enabled, host, port) has changed since the last apply.
+// This avoids leaking UDP goroutines/sockets from unnecessary restarts.
 func (a *App) MaybeRestartWSJTX() {
-	if a.Config.WSJTX.Enabled {
-		a.WSJTX.Start(a.Config.WSJTX.UDPHost, a.Config.WSJTX.UDPPort)
-	} else {
-		a.WSJTX.Stop()
+	cur := a.Config.WSJTX
+
+	// If nothing changed, skip the restart entirely.
+	if cur.Enabled == a.lastWSJTX.enabled &&
+		cur.UDPHost == a.lastWSJTX.host &&
+		cur.UDPPort == a.lastWSJTX.port {
+		return
 	}
+
+	a.WSJTX.Stop()
+	if cur.Enabled {
+		if err := a.WSJTX.Start(cur.UDPHost, cur.UDPPort); err != nil {
+			applog.Error("WSJT-X restart failed", "error", err.Error())
+			// Don't update last-applied on failure — next call will retry.
+			return
+		}
+	}
+
+	// Record as applied only after successful start or stop.
+	a.lastWSJTX.enabled = cur.Enabled
+	a.lastWSJTX.host = cur.UDPHost
+	a.lastWSJTX.port = cur.UDPPort
+
 	select {
 	case a.WSJTXUpdated <- struct{}{}:
 	default:

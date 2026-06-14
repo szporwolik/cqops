@@ -27,40 +27,19 @@ type CallbookMenu struct {
 }
 
 func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
-	un := textinput.New()
+	un := newTextinput()
 	un.CharLimit = 30
-	un.Prompt = ""
 	un.Placeholder = "QRZ.com username"
 	un.SetValue(cfg.QRZ.User)
 
-	pw := textinput.New()
+	pw := newTextinput()
 	pw.CharLimit = 40
-	pw.Prompt = ""
 	pw.Placeholder = "QRZ.com password"
 	pw.SetValue(cfg.QRZ.Pass)
 
-	// Apply surface background to textinput styles (same pattern as QSO form)
-	us := un.Styles()
-	us.Focused.Text = us.Focused.Text.Background(P.Surface)
-	us.Focused.Placeholder = us.Focused.Placeholder.Background(P.Surface)
-	us.Focused.Prompt = us.Focused.Prompt.Background(P.Surface)
-	us.Focused.Suggestion = us.Focused.Suggestion.Background(P.Surface)
-	us.Blurred.Text = us.Blurred.Text.Background(P.Surface)
-	us.Blurred.Placeholder = us.Blurred.Placeholder.Background(P.Surface)
-	us.Blurred.Prompt = us.Blurred.Prompt.Background(P.Surface)
-	us.Blurred.Suggestion = us.Blurred.Suggestion.Background(P.Surface)
-	un.SetStyles(us)
-
-	ps := pw.Styles()
-	ps.Focused.Text = ps.Focused.Text.Background(P.Surface)
-	ps.Focused.Placeholder = ps.Focused.Placeholder.Background(P.Surface)
-	ps.Focused.Prompt = ps.Focused.Prompt.Background(P.Surface)
-	ps.Focused.Suggestion = ps.Focused.Suggestion.Background(P.Surface)
-	ps.Blurred.Text = ps.Blurred.Text.Background(P.Surface)
-	ps.Blurred.Placeholder = ps.Blurred.Placeholder.Background(P.Surface)
-	ps.Blurred.Prompt = ps.Blurred.Prompt.Background(P.Surface)
-	ps.Blurred.Suggestion = ps.Blurred.Suggestion.Background(P.Surface)
-	pw.SetStyles(ps)
+	// Apply surface background to textinput styles
+	applyTextinputSurfaceStyle(&un)
+	applyTextinputSurfaceStyle(&pw)
 
 	un.Focus()
 	return &CallbookMenu{user: un, pass: pw, enabled: cfg.QRZ.Enabled}
@@ -155,17 +134,9 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return cm, nil
 }
 
-func (cm *CallbookMenu) next() { cm.focus = (cm.focus + 1) % 4; cm.blurAll(); cm.focusField() }
-func (cm *CallbookMenu) prev() {
-	if cm.focus == 0 {
-		cm.focus = 3
-	} else {
-		cm.focus--
-	}
-	cm.blurAll()
-	cm.focusField()
-}
-func (cm *CallbookMenu) blurAll() { cm.user.Blur(); cm.pass.Blur() }
+func (cm *CallbookMenu) next() { cm.focus = wrapNext(cm.focus, 4); cm.blurAll(); cm.focusField() }
+func (cm *CallbookMenu) prev()  { cm.focus = wrapPrev(cm.focus, 4); cm.blurAll(); cm.focusField() }
+func (cm *CallbookMenu) blurAll()  { blurTextinputs(&cm.user, &cm.pass) }
 func (cm *CallbookMenu) focusField() {
 	switch cm.focus {
 	case 0: /* checkbox */

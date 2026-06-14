@@ -32,11 +32,10 @@ type wlCycleStation struct{}
 
 func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder string) *StationForm {
 	mkTI := func(limit int, width int, placeholder string) textinput.Model {
-		ti := textinput.New()
+		ti := newTextinput()
 		ti.CharLimit = limit
 		ti.SetWidth(width)
 		ti.Placeholder = placeholder
-		ti.Prompt = ""
 		return ti
 	}
 
@@ -53,14 +52,7 @@ func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder strin
 	ws := mkTI(80, 60, "press Update to fetch")
 
 	for _, ti := range []*textinput.Model{&cs, &op, &lc, &sr, &pr, &wr, &wu, &wk, &ws} {
-		s := ti.Styles()
-		s.Focused.Text = s.Focused.Text.Background(P.Surface)
-		s.Focused.Placeholder = s.Focused.Placeholder.Background(P.Surface)
-		s.Focused.Prompt = s.Focused.Prompt.Background(P.Surface)
-		s.Blurred.Text = s.Blurred.Text.Background(P.Surface)
-		s.Blurred.Placeholder = s.Blurred.Placeholder.Background(P.Surface)
-		s.Blurred.Prompt = s.Blurred.Prompt.Background(P.Surface)
-		ti.SetStyles(s)
+		applyTextinputSurfaceStyle(ti)
 	}
 
 	return &StationForm{
@@ -190,17 +182,10 @@ func (f *StationForm) OnLastField() bool {
 }
 
 func (f *StationForm) BlurAll() {
-	f.Callsign.Blur()
-	f.Operator.Blur()
-	f.Locator.Blur()
-	f.SOTARef.Blur()
-	f.POTARef.Blur()
-	f.WWFFRef.Blur()
+	blurTextinputs(&f.Callsign, &f.Operator, &f.Locator, &f.SOTARef, &f.POTARef, &f.WWFFRef,
+		&f.WlURL, &f.WlKey, &f.WlStationID)
 	f.wlCbFocus = false
 	f.wlBtnFocus = 0
-	f.WlURL.Blur()
-	f.WlKey.Blur()
-	f.WlStationID.Blur()
 }
 
 func (f *StationForm) Values() (callsign, operator, locator, sotaRef, potaRef, wwffRef string,

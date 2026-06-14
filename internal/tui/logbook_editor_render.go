@@ -1,0 +1,115 @@
+package tui
+
+import (
+	"fmt"
+
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+)
+
+// =============================================================================
+// LogbookEditor view rendering
+// =============================================================================
+
+func (le *LogbookEditor) View() tea.View {
+	if le.done {
+		return tea.NewView("")
+	}
+	bodyW := le.width // full terminal width for wider table
+	if bodyW < 30 {
+		bodyW = 30
+	}
+
+	switch le.mode {
+	case edModeConfirmDelete:
+		if le.dialog == nil {
+			q := le.qsos[le.table.Cursor()]
+			d := NewDialog("Delete QSO", q.Call+" from "+formatDate(q.QSODate),
+				DangerOption("Delete", "delete"),
+				Option{Label: "Cancel", Value: "cancel"},
+			)
+			le.dialog = &d
+		}
+		return tea.NewView(le.viewWithDialog(bodyW))
+	case edModeConfirmPurge:
+		if le.dialog == nil {
+			d := NewDialog("Purge Logbook", "All QSOs will be permanently deleted.",
+				DangerOption("Purge", "purge"),
+				Option{Label: "Cancel", Value: "cancel"},
+			)
+			le.dialog = &d
+		}
+		return tea.NewView(le.viewWithDialog(bodyW))
+	case edModeConfirmWLSend:
+		if le.dialog == nil {
+			unsent := 0
+			for _, q := range le.qsos {
+				if q.WavelogUploaded != "yes" {
+					unsent++
+				}
+			}
+			d := NewDialog("Send to Wavelog", fmt.Sprintf("%d unsent QSOs", unsent),
+				Option{Label: "Send", Value: "wlsend"},
+				Option{Label: "Cancel", Value: "cancel"},
+			)
+			le.dialog = &d
+		}
+		return tea.NewView(le.viewWithDialog(bodyW))
+	case edModeConfirmNormalize:
+		return tea.NewView(le.viewNormalizeConfirm(bodyW))
+	case edModeEdit:
+		contentH := contentHeight(le.height)
+		if contentH < 10 {
+			contentH = 10
+		}
+		return tea.NewView(le.viewEdit(bodyW, contentH))
+	default:
+		if !le.built && len(le.qsos) > 0 {
+			le.buildTable()
+		}
+		contentH := contentHeight(le.height)
+		// Use drawBorderedBox so every border character has explicit
+		// Background(P.Surface) — prevents the right │ leak.
+		inner := lipgloss.NewStyle().
+			MaxWidth(bodyW - 2).
+			Height(contentH - 2).
+			Background(P.Surface).
+			Render(le.table.View())
+		return tea.NewView(drawBorderedBox(inner, bodyW-2, bodyW))
+	}
+}
+
+// viewWithDialog renders the list view with the confirm dialog composited on top.
+func (le *LogbookEditor) viewWithDialog(bodyW int) string {
+	// Build the base list view
+	if !le.built && len(le.qsos) > 0 {
+		le.buildTable()
+	}
+	contentH := contentHeight(le.height)
+	if contentH < 5 {
+		contentH = 5
+	}
+	body := drawBorderedBox(
+		lipgloss.NewStyle().
+			MaxWidth(bodyW-2).
+			Height(contentH-2).
+			Background(P.Surface).
+			Render(le.table.View()),
+		bodyW-2, bodyW,
+	)
+	if le.dialog != nil {
+		return RenderDialogOverlay(body, *le.dialog, bodyW, le.height)
+	}
+	return body
+}
+
+func (le *LogbookEditor) viewNormalizeConfirm(bodyW int) string {
+	return S.ConfirmBox.Width(bodyW).Render(
+		lipgloss.JoinVertical(lipgloss.Left,
+			S.ConfirmTitle.Render(fmt.Sprintf("Normalize %d QSOs", len(le.mismatchQSOs))),
+			"",
+			S.ConfirmMsg.Render(fmt.Sprintf("%d unsent QSOs will be normalised.", len(le.mismatchQSOs))),
+			S.ConfirmHelp.Render("y = yes  ·  any other key = cancel"),
+		),
+	)
+}

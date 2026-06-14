@@ -25,20 +25,18 @@ type IntegrationMenu struct {
 }
 
 func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
-	host := textinput.New()
+	host := newTextinput()
 	host.CharLimit = 40
 	host.SetWidth(28)
-	host.Prompt = ""
 	host.Placeholder = "127.0.0.1"
 	host.SetValue("127.0.0.1")
 	if cfg.WSJTX.Enabled && cfg.WSJTX.UDPHost != "" {
 		host.SetValue(cfg.WSJTX.UDPHost)
 	}
 
-	port := textinput.New()
+	port := newTextinput()
 	port.CharLimit = 6
 	port.SetWidth(28)
-	port.Prompt = ""
 	port.Placeholder = "2233"
 	port.SetValue("2233")
 	if cfg.WSJTX.UDPPort > 0 {
@@ -47,14 +45,7 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 
 	// Apply surface background to textinput styles
 	for _, ti := range []*textinput.Model{&host, &port} {
-		s := ti.Styles()
-		s.Focused.Text = s.Focused.Text.Background(P.Surface)
-		s.Focused.Placeholder = s.Focused.Placeholder.Background(P.Surface)
-		s.Focused.Prompt = s.Focused.Prompt.Background(P.Surface)
-		s.Blurred.Text = s.Blurred.Text.Background(P.Surface)
-		s.Blurred.Placeholder = s.Blurred.Placeholder.Background(P.Surface)
-		s.Blurred.Prompt = s.Blurred.Prompt.Background(P.Surface)
-		ti.SetStyles(s)
+		applyTextinputSurfaceStyle(ti)
 	}
 
 	return &IntegrationMenu{
@@ -118,7 +109,7 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (im *IntegrationMenu) next() {
 	for {
-		im.focus = (im.focus + 1) % 3
+		im.focus = wrapNext(im.focus, 3)
 		if im.isPositionVisible(im.focus) {
 			break
 		}
@@ -129,11 +120,7 @@ func (im *IntegrationMenu) next() {
 
 func (im *IntegrationMenu) prev() {
 	for {
-		if im.focus == 0 {
-			im.focus = 2
-		} else {
-			im.focus--
-		}
+		im.focus = wrapPrev(im.focus, 3)
 		if im.isPositionVisible(im.focus) {
 			break
 		}
@@ -160,8 +147,7 @@ func (im *IntegrationMenu) fixFocus() {
 }
 
 func (im *IntegrationMenu) blurAll() {
-	im.host.Blur()
-	im.port.Blur()
+	blurTextinputs(&im.host, &im.port)
 }
 func (im *IntegrationMenu) focusField() {
 	switch im.focus {

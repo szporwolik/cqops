@@ -32,48 +32,36 @@ type RigForm struct {
 }
 
 func NewRigForm(rigPlaceholder, antennaPlaceholder, powerPlaceholder string) *RigForm {
-	ri := textinput.New()
+	ri := newTextinput()
 	ri.CharLimit = 30
 	ri.SetWidth(28)
 	ri.Placeholder = rigPlaceholder
 	ri.Focus()
-	ri.Prompt = ""
 
-	an := textinput.New()
+	an := newTextinput()
 	an.CharLimit = 30
 	an.SetWidth(28)
 	an.Placeholder = antennaPlaceholder
-	an.Prompt = ""
 
-	pw := textinput.New()
+	pw := newTextinput()
 	pw.CharLimit = 10
 	pw.SetWidth(28)
 	pw.Placeholder = powerPlaceholder
-	pw.Prompt = ""
 
-	fh := textinput.New()
+	fh := newTextinput()
 	fh.CharLimit = 40
 	fh.SetWidth(28)
 	fh.Placeholder = "localhost"
-	fh.Prompt = ""
 
-	fp := textinput.New()
+	fp := newTextinput()
 	fp.CharLimit = 6
 	fp.SetWidth(28)
 	fp.Placeholder = "12345"
-	fp.Prompt = ""
 
 	// Apply Surface background BEFORE storing in struct (textinput.Model
 	// is a value type — copies made after SetStyles are stale).
 	for _, ti := range []*textinput.Model{&ri, &an, &pw, &fh, &fp} {
-		s := ti.Styles()
-		s.Focused.Text = s.Focused.Text.Background(P.Surface)
-		s.Focused.Placeholder = s.Focused.Placeholder.Background(P.Surface)
-		s.Focused.Prompt = s.Focused.Prompt.Background(P.Surface)
-		s.Blurred.Text = s.Blurred.Text.Background(P.Surface)
-		s.Blurred.Placeholder = s.Blurred.Placeholder.Background(P.Surface)
-		s.Blurred.Prompt = s.Blurred.Prompt.Background(P.Surface)
-		ti.SetStyles(s)
+		applyTextinputSurfaceStyle(ti)
 	}
 
 	rf := &RigForm{
@@ -104,12 +92,9 @@ func (f *RigForm) Update(msg tea.KeyPressMsg) {
 
 func (f *RigForm) NextInput() {
 	f.blurAll()
-	next := f.focus + 1
+	next := rigFormField(wrapNext(int(f.focus), int(rigFieldEnd)))
 	if !f.FlrigEnabled && next == rigFieldFlrigHost {
 		next = rigFieldRig // skip host/port, wrap to start
-	}
-	if next >= rigFieldEnd {
-		next = rigFieldRig
 	}
 	f.focus = next
 	f.focusField()
@@ -117,24 +102,16 @@ func (f *RigForm) NextInput() {
 
 func (f *RigForm) PrevInput() {
 	f.blurAll()
-	prev := f.focus
-	if prev == rigFieldRig {
-		prev = rigFieldEnd
-	}
-	prev--
+	prev := rigFormField(wrapPrev(int(f.focus), int(rigFieldEnd)))
 	if !f.FlrigEnabled && (prev == rigFieldFlrigPort || prev == rigFieldFlrigHost) {
 		prev = rigFieldFlrig // skip host/port, land on checkbox
 	}
-	f.focus = rigFormField(prev)
+	f.focus = prev
 	f.focusField()
 }
 
 func (f *RigForm) blurAll() {
-	f.Rig.Blur()
-	f.Antenna.Blur()
-	f.Power.Blur()
-	f.FlrigHost.Blur()
-	f.FlrigPort.Blur()
+	blurTextinputs(&f.Rig, &f.Antenna, &f.Power, &f.FlrigHost, &f.FlrigPort)
 }
 
 func (f *RigForm) focusField() {

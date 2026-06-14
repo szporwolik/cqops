@@ -141,35 +141,45 @@ func Entries() []Entry {
 	return result
 }
 
-// Debug logs a message at DEBUG level.
+// Debug logs a message at DEBUG level. Safe when Logger is nil (tests).
 func Debug(msg string, args ...any) {
 	Append("DEBUG", msg, "")
-	Logger.Debug(msg, args...)
+	if Logger != nil {
+		Logger.Debug(msg, args...)
+	}
 }
 
-// Info logs a message at INFO level.
+// Info logs a message at INFO level. Safe when Logger is nil (tests).
 func Info(msg string, args ...any) {
 	Append("INFO", msg, "")
-	Logger.Info(msg, args...)
+	if Logger != nil {
+		Logger.Info(msg, args...)
+	}
 }
 
-// Warn logs a message at WARN level.
+// Warn logs a message at WARN level. Safe when Logger is nil (tests).
 func Warn(msg string, args ...any) {
 	Append("WARN", msg, "")
-	Logger.Warn(msg, args...)
+	if Logger != nil {
+		Logger.Warn(msg, args...)
+	}
 }
 
-// Error logs a message at ERROR level.
+// Error logs a message at ERROR level. Safe when Logger is nil (tests).
 func Error(msg string, args ...any) {
 	Append("ERROR", msg, "")
-	Logger.Error(msg, args...)
+	if Logger != nil {
+		Logger.Error(msg, args...)
+	}
 }
 
 // InfoDetail logs an INFO message with an additional detail string shown
-// in the TUI log viewer.
+// in the TUI log viewer. Safe when Logger is nil (tests).
 func InfoDetail(msg, details string) {
 	Append("INFO", msg, details)
-	Logger.Info(msg, "details", details)
+	if Logger != nil {
+		Logger.Info(msg, "details", details)
+	}
 }
 
 func nowStamp() string {

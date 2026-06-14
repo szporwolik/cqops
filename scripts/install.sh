@@ -52,11 +52,19 @@ if command -v gtk-update-icon-cache &>/dev/null; then
     echo "  Cache  : hicolor icon cache updated"
 fi
 
-BIN="$BUILD_DIR/cqops-linux-amd64"
+BIN="$BUILD_DIR/cqops"
+if [[ ! -f "$BIN" ]]; then
+	# Fall back to platform-specific binary from build-all
+	BIN="$BUILD_DIR/cqops-linux-amd64"
+fi
 if [[ ! -f "$BIN" ]]; then
     echo "Building cqops..."
     "$SCRIPT_DIR/build.sh"
+    BIN="$BUILD_DIR/cqops-linux-amd64"
 fi
+# Remove old binary first (ok on Linux even if running — the inode stays alive
+# for the running process, but the directory entry is freed for the new copy).
+rm -f "$INSTALL_DIR/cqops"
 cp "$BIN" "$INSTALL_DIR/cqops"
 chmod +x "$INSTALL_DIR/cqops"
 echo "  Binary : $INSTALL_DIR/cqops"

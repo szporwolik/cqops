@@ -165,8 +165,7 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	m := &Model{App: a, qsos: initialQSOS, toasts: NewToastQueue(), dateTimeAuto: true, width: 80, height: 24}
 	now := time.Now().UTC()
 	for i := field(0); i < fieldCount; i++ {
-		ti := textinput.New()
-		ti.Prompt = ""
+		ti := newTextinput()
 		ti.CharLimit = 40
 		switch i {
 		case fieldCall:
@@ -211,14 +210,7 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 
 	// Ensure textinput fields use Surface background (panel color, not app bg)
 	for i := field(0); i < fieldCount; i++ {
-		s := m.fields[i].Styles()
-		s.Focused.Text = s.Focused.Text.Background(P.Surface)
-		s.Focused.Placeholder = s.Focused.Placeholder.Background(P.Surface)
-		s.Focused.Prompt = s.Focused.Prompt.Background(P.Surface)
-		s.Blurred.Text = s.Blurred.Text.Background(P.Surface)
-		s.Blurred.Placeholder = s.Blurred.Placeholder.Background(P.Surface)
-		s.Blurred.Prompt = s.Blurred.Prompt.Background(P.Surface)
-		m.fields[i].SetStyles(s)
+		applyTextinputSurfaceStyle(&m.fields[i])
 	}
 	m.recentQSOs = NewRecentQSOs(initialQSOS)
 	return m
@@ -271,12 +263,6 @@ func (m *Model) saveConfig(msg string) {
 		applog.Info("Settings saved")
 	}
 }
-
-// partnerMapCacheKey computes a cache key from all inputs that affect
-// the partner/map rendered output. When this key matches, the cached
-// map output can be reused without expensive ASCII generation.
-
-// invalidatePartnerMapCache clears the partner map cache.
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
