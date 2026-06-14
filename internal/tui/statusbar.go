@@ -31,33 +31,24 @@ func (m *Model) headerView() string {
 		S.StatusValue.Render(clamp(logName, 10)),
 	)
 
-	right := lipgloss.JoinHorizontal(lipgloss.Top,
-		statusDotStyled(m.inetOnline, "Net"),
-	)
+	var rightParts []string
+
+	rightParts = append(rightParts, statusDotStyled(m.inetOnline, "Net"))
 	if m.App.Config.WSJTX.Enabled {
-		right = lipgloss.JoinHorizontal(lipgloss.Top,
-			right,
-			statusDotStyled(m.wsjtxOnline, "WSJT"),
-		)
+		rightParts = append(rightParts, statusDotStyled(m.wsjtxOnline, "WSJT"))
 	}
 	if cfgRig, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok && cfgRig.FlrigEnabled {
-		right = lipgloss.JoinHorizontal(lipgloss.Top,
-			right,
-			statusDotStyled(m.rigConnected, "Rig"),
-		)
+		rightParts = append(rightParts, statusDotStyled(m.rigConnected, "Rig"))
 	}
 	if m.App.Config.Wavelog.Enabled {
-		right = lipgloss.JoinHorizontal(lipgloss.Top,
-			right,
-			statusDotStyled(m.wlOnline, "WL"),
-		)
+		rightParts = append(rightParts, statusDotStyled(m.wlOnline, "WL"))
 	}
-	right = lipgloss.JoinHorizontal(lipgloss.Top,
-		right,
-		S.StatusRight.Render(" "),
-		S.StatusLabel.Render("UTC "),
-		S.StatusTime.Render(utc.Format("15:04:05")),
+	rightParts = append(rightParts,
+		lipgloss.NewStyle().Foreground(P.TextMuted).Render("UTC "),
+		lipgloss.NewStyle().Foreground(P.Text).Padding(0, 1).Render(utc.Format("15:04:05")),
 	)
+
+	right := lipgloss.JoinHorizontal(lipgloss.Top, rightParts...)
 
 	fillerW := m.width - lipgloss.Width(left) - lipgloss.Width(right)
 	if fillerW < 1 {
@@ -75,8 +66,7 @@ func statusDotStyled(on bool, label string) string {
 	}
 	return lipgloss.NewStyle().
 		Foreground(fg).
-		Background(P.Background).
-		Render(label) + S.StatusRight.Render(" ")
+		Render(label) + lipgloss.NewStyle().Foreground(P.TextDim).Render(" ")
 }
 
 // renderStatusBar is the canonical entry point for status bar rendering.

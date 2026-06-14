@@ -195,9 +195,24 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 		}
 		m.fields[i] = ti
 	}
+
+
+
 	m.focus = fieldCall
 	m.keys = DefaultKeyMap()
 	m.help = help.New()
+
+	// Ensure textinput fields use transparent background (inherit parent)
+	for i := field(0); i < fieldCount; i++ {
+		s := m.fields[i].Styles()
+		s.Focused.Text = s.Focused.Text.UnsetBackground()
+		s.Focused.Placeholder = s.Focused.Placeholder.UnsetBackground()
+		s.Focused.Prompt = s.Focused.Prompt.UnsetBackground()
+		s.Blurred.Text = s.Blurred.Text.UnsetBackground()
+		s.Blurred.Placeholder = s.Blurred.Placeholder.UnsetBackground()
+		s.Blurred.Prompt = s.Blurred.Prompt.UnsetBackground()
+		m.fields[i].SetStyles(s)
+	}
 	m.recentQSOs = NewRecentQSOs(initialQSOS)
 	return m
 }
@@ -383,9 +398,11 @@ func (m *Model) View() tea.View {
 
 	helpBar := m.renderHelpBar()
 
-	// Clip body to ContentH so it never pushes the help bar off-screen.
-	// No .Height() — we don't pad; the table fills exact remaining space.
-	body = lipgloss.NewStyle().MaxHeight(layout.ContentH).Render(body)
+	// Fill body area with surface background to content height
+	body = S.ContentBase.
+		Height(layout.ContentH).
+		Width(layout.TerminalW).
+		Render(body)
 
 	// Build the main view without toasts or dialogs (those are composited on top).
 	// Only include non-empty rows to avoid blank lines from empty zones.
@@ -416,6 +433,7 @@ func (m *Model) View() tea.View {
 	v := tea.NewView(finalView)
 	v.AltScreen = true
 	v.WindowTitle = m.windowTitle()
+	v.BackgroundColor = P.Background
 	return v
 }
 

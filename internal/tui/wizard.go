@@ -222,6 +222,7 @@ func (w *Wizard) View() tea.View {
 	v := tea.NewView(finalView)
 	v.AltScreen = true
 	v.WindowTitle = "CQOps — Setup Wizard"
+	v.BackgroundColor = P.Background
 	return v
 }
 

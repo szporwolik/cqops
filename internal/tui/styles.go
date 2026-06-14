@@ -30,8 +30,8 @@ type Palette struct {
 }
 
 var P = Palette{
-	Background:  lipgloss.Color("#1a1b1e"), // very dark field-radio grey
-	Surface:     lipgloss.Color("#25262a"), // dark panel
+	Background:  lipgloss.Color("#25262a"), // app background (dark grey panel)
+	Surface:     lipgloss.Color("#25262a"), // card/panel background
 	SurfaceAlt:  lipgloss.Color("#2d2e32"), // slightly lighter panel
 	Text:        lipgloss.Color("#e4e4e7"), // soft white foreground
 	TextMuted:   lipgloss.Color("#909098"), // muted grey labels
@@ -114,23 +114,24 @@ type Styles struct {
 	InputStyle     lipgloss.Style
 	DimStyle       lipgloss.Style
 	SubtleStyle    lipgloss.Style
+	ContentBase    lipgloss.Style // base for all content-area elements (Surface bg)
 	QSOFormBox     lipgloss.Style // bordered box around QSO entry form
 	RecentQSOsBox  lipgloss.Style // bordered box around recent QSOs table
 	MapBox         lipgloss.Style // bordered box around map (no extra h-padding)
 }
 
 var S = Styles{
-	StatusApp:      lipgloss.NewStyle().Foreground(lipgloss.Color("#1a1b1e")).Background(P.Primary).Bold(true).Padding(0, 1),
-	StatusLabel:    lipgloss.NewStyle().Foreground(P.TextMuted).Background(P.Surface),
-	StatusValue:    lipgloss.NewStyle().Foreground(P.Text).Background(P.Surface),
+	StatusApp:      lipgloss.NewStyle().Foreground(P.Primary).Bold(true).Padding(0, 1),
+	StatusLabel:    lipgloss.NewStyle().Foreground(P.TextMuted),
+	StatusValue:    lipgloss.NewStyle().Foreground(P.Text),
 	StatusFill:     lipgloss.NewStyle().Background(P.Surface),
-	StatusRight:    lipgloss.NewStyle().Foreground(P.TextDim).Background(P.Background),
-	StatusTime:     lipgloss.NewStyle().Foreground(P.Text).Background(P.Background).Padding(0, 1),
-	TabActive:      lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#1a1b1e")).Background(P.Primary).Padding(0, 1),
-	TabInactive:    lipgloss.NewStyle().Foreground(P.TextMuted).Background(P.SurfaceAlt).Padding(0, 1),
-	TabDisabled:    lipgloss.NewStyle().Foreground(P.TextDim).Background(P.Background).Padding(0, 1),
-	TabGap:         lipgloss.NewStyle().Background(P.Background),
-	TabBar:         lipgloss.NewStyle().Background(P.Background),
+	StatusRight:    lipgloss.NewStyle().Foreground(P.TextDim),
+	StatusTime:     lipgloss.NewStyle().Foreground(P.Text).Padding(0, 1),
+	TabActive:      lipgloss.NewStyle().Bold(true).Foreground(P.Primary).Padding(0, 1),
+	TabInactive:    lipgloss.NewStyle().Foreground(P.TextMuted).Padding(0, 1),
+	TabDisabled:    lipgloss.NewStyle().Foreground(P.TextDim).Padding(0, 1),
+	TabGap:         lipgloss.NewStyle(),
+	TabBar:         lipgloss.NewStyle(),
 	Section:        lipgloss.NewStyle().Foreground(P.TextDim),
 	Title:          lipgloss.NewStyle().Bold(true).Foreground(P.Primary).Padding(0, 1),
 	Label:          lipgloss.NewStyle().Foreground(P.TextMuted),
@@ -192,14 +193,18 @@ var S = Styles{
 	QSOFormBox: lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(P.TextDim).
+		Background(P.Surface).
 		Padding(0, 1),
 	RecentQSOsBox: lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
-		BorderForeground(P.TextDim),
+		BorderForeground(P.TextDim).
+		Background(P.Surface),
 	MapBox: lipgloss.NewStyle().
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(P.TextDim).
+		Background(P.Surface).
 		Padding(0, 0), // no extra padding — map needs every cell
+	ContentBase: lipgloss.NewStyle().Background(P.Surface),
 }
 
 // Package-level style aliases — the canonical short form used throughout the codebase.

@@ -140,7 +140,6 @@ func (r *RecentQSOs) View() string {
 
 	s := table.DefaultStyles()
 	s.Header = s.Header.
-		BorderStyle(lipgloss.NormalBorder()).
 		BorderForeground(P.TextDim).
 		BorderBottom(true).
 		Bold(false).
@@ -149,9 +148,10 @@ func (r *RecentQSOs) View() string {
 	t.SetStyles(s)
 
 	// Clip to exact dimensions — never wrap, never overflow the border.
+	// Height fills the remaining space with Surface background.
 	return lipgloss.NewStyle().
 		MaxWidth(bodyW).
-		MaxHeight(maxRows + 1).
+		Height(maxRows + 1).
 		Render(t.View())
 }
 
