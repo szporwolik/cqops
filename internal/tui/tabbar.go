@@ -68,6 +68,10 @@ func (m *Model) renderProfileLine() string {
 	if rigAnt != "" {
 		parts = append(parts, "Ant "+rigAnt)
 	}
+	wl := m.App.Logbook.Wavelog
+	if wl != nil && wl.Enabled && m.wlOnline {
+		parts = append(parts, "WL "+m.App.LogbookName)
+	}
 	if s.Grid != "" {
 		parts = append(parts, "Grid "+formatLocator(s.Grid))
 	}
