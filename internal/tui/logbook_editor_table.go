@@ -53,7 +53,7 @@ func editorColValue(col string, q *qso.QSO) string {
 	case "How":
 		switch q.Source {
 		case "wsjtx":
-			return "FTx"
+			return "WSJT"
 		case "manual":
 			return "Man"
 		default:

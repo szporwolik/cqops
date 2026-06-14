@@ -205,7 +205,7 @@ var qsoAllCols = map[string]struct {
 	"Source": {"Src", 4, func(q *qso.QSO) string {
 		switch q.Source {
 		case "wsjtx":
-			return "FTx"
+			return "WSJT"
 		case "manual":
 			return "Man"
 		default:

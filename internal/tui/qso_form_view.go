@@ -188,11 +188,12 @@ func (m *Model) formPathRow(width int) string {
 		if line != "" {
 			line = "Path  " + line
 			if m.wlPrivateData != nil {
+				sep := lipgloss.NewStyle().Foreground(P.TextDim).Background(P.Surface).Render("  \u00b7  ")
 				if !m.wlPrivateData.Worked() {
-					line += "  \u00b7  " + S.Warning.Render("New Call!")
+					line += sep + S.Warning.Render("New Call!")
 				}
 				if !m.wlPrivateData.DXCCConfirmed() {
-					line += "  \u00b7  " + S.Warning.Render("New DXCC!")
+					line += sep + S.Warning.Render("New DXCC!")
 				}
 			}
 			if lipgloss.Width(line) > width {

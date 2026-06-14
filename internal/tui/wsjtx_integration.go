@@ -71,6 +71,7 @@ func (m *Model) logQSOFromADIF(adif string) tea.Cmd {
 		m.toasts.Warn("WSJT-X: ADIF has no call")
 		return nil
 	}
+	qs.Source = "wsjtx"
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
 		Operator:        m.App.Logbook.Station.Operator,
