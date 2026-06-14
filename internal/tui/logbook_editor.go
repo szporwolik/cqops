@@ -49,7 +49,6 @@ const (
 	qefStationCall
 	qefOperator
 	qefMyGrid
-	qefWLStatus
 	qefMyRig
 	qefMyAntenna
 	qefSource
@@ -62,6 +61,7 @@ const (
 	qefMySOTA
 	qefMyPOTA
 	qefMyWWFF
+	qefWLStatus // last field, non-focusable read-only
 	qefCount
 )
 
@@ -69,10 +69,10 @@ var qefLabels = []string{
 	"Call", "Date", "Time On", "Time Off", "Band", "Frequency", "Freq RX",
 	"Mode", "Submode", "RST Sent", "RST Rcvd", "Grid", "Name",
 	"QTH", "Country", "Comment", "Notes", "TX Power",
-	"Station Call", "Operator", "My Grid", "WL Status", "My Rig", "My Antenna",
+	"Station Call", "Operator", "My Grid", "My Rig", "My Antenna",
 	"Source", "Distance km", "Bearing",
 	"IOTA", "SOTA Ref", "POTA Ref", "WWFF Ref",
-	"My SOTA", "My POTA", "My WWFF",
+	"My SOTA", "My POTA", "My WWFF", "WL Upload (RO)",
 }
 
 type LogbookEditor struct {
@@ -216,6 +216,18 @@ func NewLogbookEditor(db *sql.DB, wlURL, wlKey, wlStationID, wlStationCall, logS
 		}
 		le.fields[i] = ti
 	}
+	// Apply Surface background to all textinput style states
+	// (same pattern as the main QSO form — prevents bg leaks).
+	for i := qsoEditField(0); i < qefCount; i++ {
+		s := le.fields[i].Styles()
+		s.Focused.Text = s.Focused.Text.Background(P.Surface)
+		s.Focused.Placeholder = s.Focused.Placeholder.Background(P.Surface)
+		s.Focused.Prompt = s.Focused.Prompt.Background(P.Surface)
+		s.Blurred.Text = s.Blurred.Text.Background(P.Surface)
+		s.Blurred.Placeholder = s.Blurred.Placeholder.Background(P.Surface)
+		s.Blurred.Prompt = s.Blurred.Prompt.Background(P.Surface)
+		le.fields[i].SetStyles(s)
+	}
 	return le
 }
 
@@ -327,16 +339,26 @@ func (le *LogbookEditor) readEditForm() *qso.QSO {
 
 func (le *LogbookEditor) nextField() {
 	le.fields[le.focus].Blur()
-	le.focus = (le.focus + 1) % qefCount
+	for {
+		le.focus = (le.focus + 1) % qefCount
+		if le.focus != qefWLStatus {
+			break
+		}
+	}
 	le.fields[le.focus].Focus()
 }
 
 func (le *LogbookEditor) prevField() {
 	le.fields[le.focus].Blur()
-	if le.focus == 0 {
-		le.focus = qefCount - 1
-	} else {
-		le.focus--
+	for {
+		if le.focus == 0 {
+			le.focus = qefCount - 1
+		} else {
+			le.focus--
+		}
+		if le.focus != qefWLStatus {
+			break
+		}
 	}
 	le.fields[le.focus].Focus()
 }
@@ -759,10 +781,13 @@ func (le *LogbookEditor) viewNormalizeConfirm(bodyW int) string {
 }
 
 func (le *LogbookEditor) viewEdit(bodyW int, contentH int) string {
-	header := S.Title.Render("Edit QSO")
+	bg := lipgloss.NewStyle().Background(P.Surface)
+	header := bg.Width(bodyW).Render(
+		S.Title.Copy().Background(P.Surface).Render("Edit QSO"),
+	)
 
-	// Form fields in a bordered box.
-	innerW := bodyW - 4
+	// Two-column form layout with Surface background on every element.
+	innerW := bodyW - 2 // drawBorderedBox borders consume 2 chars
 	if innerW < 20 {
 		innerW = 20
 	}
@@ -772,47 +797,64 @@ func (le *LogbookEditor) viewEdit(bodyW int, contentH int) string {
 	}
 	half := (qefCount + 1) / 2
 
+	gap := bg.Render("  ")
 	var lines []string
 	for i := qsoEditField(0); i < half; i++ {
 		left := le.renderEditField(i, colW)
 		rightIdx := i + half
 		if rightIdx < qefCount {
 			right := le.renderEditField(rightIdx, colW)
-			lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right))
+			lines = append(lines, bg.Width(innerW).Render(
+				lipgloss.JoinHorizontal(lipgloss.Top, left, gap, right),
+			))
 		} else {
-			lines = append(lines, left)
+			lines = append(lines, bg.Width(innerW).Render(left))
 		}
 	}
-	formBox := S.QSOFormBox.Width(bodyW).Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
+	formContent := lipgloss.JoinVertical(lipgloss.Left, lines...)
+	formBox := drawBorderedBox(formContent, innerW, bodyW)
 
-	editH := lipgloss.Height(header) + lipgloss.Height(formBox)
-	fillerH := contentH - editH
-	if fillerH < 0 {
-		fillerH = 0
-	}
-	filler := lipgloss.NewStyle().Height(fillerH).Render("")
-
-	return lipgloss.JoinVertical(lipgloss.Left, header, formBox, filler)
+	// Fill remaining height with Surface background so there is no black
+	// gap below the form.
+	body := lipgloss.JoinVertical(lipgloss.Left, header, formBox)
+	return fillBody(body, contentH)
 }
 
 func (le *LogbookEditor) renderEditField(f qsoEditField, colW int) string {
 	label := qefLabels[f]
-	val := le.fields[f].View()
 	focused := f == le.focus
+	raw := strings.TrimSpace(le.fields[f].Value())
 
-	lbl := LabelStyle.Render(fit(label, 13))
+	// Build label part. Focused fields get CursorStyle colouring
+	// (no "> " prefix — just the colour change, matching the QSO form).
+	lbl := LabelStyle.Render(fit(label, 14))
 	if focused {
-		lbl = CursorStyle.Render("> " + fit(label, 13))
+		lbl = CursorStyle.Render(fit(label, 14))
 	}
-	valStyle := InputStyle
-	if f == qefWLStatus {
-		valStyle = DimStyle
+
+	// Value part: textinput view only when focused (shows cursor);
+	// otherwise render the raw value with ValueStyle, matching the
+	// QSO form pattern. WLStatus is always read-only DimStyle.
+	var val string
+	switch {
+	case f == qefWLStatus:
+		if raw == "" {
+			raw = "No"
+		}
+		val = DimStyle.Render(raw)
+	case focused:
+		val = le.fields[f].View()
+	case raw == "":
+		val = SubtleStyle.Render("\u2014")
+	default:
+		val = ValueStyle.Render(raw)
 	}
-	return lipgloss.NewStyle().Width(colW).Render(
-		lipgloss.JoinHorizontal(lipgloss.Center,
-			lbl,
-			lipgloss.NewStyle().Width(1).Render(" "),
-			valStyle.Render(val),
-		),
+
+	// One-char Surface-background gap — prevents bg leaks between label and value.
+	gap := lipgloss.NewStyle().Width(1).Background(P.Surface).Render(" ")
+
+	// Wrap the whole row with Surface background to fill column width.
+	return lipgloss.NewStyle().Width(colW).Background(P.Surface).Render(
+		lipgloss.JoinHorizontal(lipgloss.Center, lbl, gap, val),
 	)
 }

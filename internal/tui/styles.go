@@ -149,7 +149,7 @@ var S = Styles{
 
 	FormLabel: lipgloss.NewStyle().Width(13).Foreground(P.TextMuted).Background(P.Surface),
 	Input:     lipgloss.NewStyle().Foreground(P.Text).Background(P.Surface),
-	Cursor:    lipgloss.NewStyle().Foreground(P.Primary).Background(P.Surface),
+	Cursor:    lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Background(P.Surface),
 
 	ToastInfo:    lipgloss.NewStyle().Foreground(P.Info),
 	ToastSuccess: lipgloss.NewStyle().Foreground(P.Success),
@@ -196,7 +196,7 @@ var S = Styles{
 	HelpStyle:   lipgloss.NewStyle().Foreground(P.TextMuted).Background(P.Surface),
 	LabelStyle:  lipgloss.NewStyle().Foreground(P.TextMuted).Background(P.Surface),
 	ValueStyle:  lipgloss.NewStyle().Foreground(P.Text).Background(P.Surface),
-	CursorStyle: lipgloss.NewStyle().Foreground(P.Primary).Background(P.Surface),
+	CursorStyle: lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Background(P.Surface),
 	InputStyle:  lipgloss.NewStyle().Foreground(P.Text).Background(P.Surface),
 	DimStyle:    lipgloss.NewStyle().Foreground(P.TextDim).Background(P.Surface),
 	SubtleStyle: lipgloss.NewStyle().Foreground(P.TextMuted).Background(P.Surface),

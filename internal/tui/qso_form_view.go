@@ -16,7 +16,6 @@ func (m *Model) viewForm(width int) string {
 		bodyW = 20
 	}
 	dim := DimStyle
-	hl := CursorStyle
 	choiceFields := map[field]bool{fieldBand: true, fieldMode: true, fieldSubmode: true}
 
 	leftFields := []field{fieldDate, fieldTime, fieldCall, fieldFreq, fieldBand, fieldMode, fieldSubmode}
@@ -54,7 +53,11 @@ func (m *Model) viewForm(width int) string {
 		gap := lipgloss.NewStyle().Width(1).Background(P.Surface).Render(" ")
 		lblPart := lbl
 		if isFocused {
-			lblPart = hl.Render(" " + lbl)
+			lbl = S.FormLabel.Copy().
+				Foreground(lipgloss.Color("212")).
+				Align(lipgloss.Left).
+				Render(label)
+			lblPart = lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Background(P.Surface).Render(" ") + lbl
 		}
 		if !isFocused {
 			lblPart = lipgloss.NewStyle().Foreground(P.TextMuted).Background(P.Surface).Render(" ") + lbl
