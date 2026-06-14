@@ -636,7 +636,7 @@ func (le *LogbookEditor) viewWithDialog(bodyW int) string {
 	}
 	body := lipgloss.NewStyle().MaxWidth(bodyW).MaxHeight(contentH).Render(
 		S.RecentQSOsBox.Width(bodyW).Render(
-			lipgloss.NewStyle().MaxWidth(bodyW-2).MaxHeight(contentH-2).Render(le.table.View()),
+			lipgloss.NewStyle().MaxWidth(bodyW - 2).MaxHeight(contentH - 2).Render(le.table.View()),
 		),
 	)
 	if le.dialog != nil {
