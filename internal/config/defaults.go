@@ -2,6 +2,8 @@ package config
 
 func DefaultConfig() *Config {
 	tz := SystemTimezone()
+	defaultRigID := NewID("default-rig")
+	defaultLogbookID := NewID("default-logbook")
 
 	return &Config{
 		General: GeneralConfig{
@@ -9,17 +11,20 @@ func DefaultConfig() *Config {
 			DistanceUnit: "km",
 		},
 		State: StateConfig{
-			ActiveLogbook: "default",
+			ActiveLogbook: defaultLogbookID,
 		},
 		Logbooks: map[string]Logbook{
-			"default": {
+			defaultLogbookID: {
+				ID:          defaultLogbookID,
 				Description: "Default station logbook",
 				Station:     Station{},
 				ADIF:        ADIFConfig{},
 			},
 		},
 		Rigs: map[string]RigPreset{
-			"default": {},
+			defaultRigID: {
+				ID: defaultRigID,
+			},
 		},
 		WSJTX: WSJTXConfig{
 			Enabled: false,

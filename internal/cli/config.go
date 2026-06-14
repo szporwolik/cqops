@@ -5,6 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/szporwolik/cqops/internal/app"
+	"github.com/szporwolik/cqops/internal/config"
 )
 
 var configCmd = &cobra.Command{
@@ -22,17 +23,23 @@ var configShowCmd = &cobra.Command{
 		}
 		defer a.Close()
 
+		activeDisplay := a.Config.State.ActiveLogbook
+		if lb, ok := a.Config.Logbooks[activeDisplay]; ok {
+			activeDisplay = config.LogbookDisplayName(&lb)
+		}
+
 		fmt.Printf("Config path:    %s\n", a.ConfigPath)
-		fmt.Printf("Active logbook: %s\n", a.Config.State.ActiveLogbook)
+		fmt.Printf("Active logbook: %s\n", activeDisplay)
 		fmt.Println()
 
 		fmt.Println("Logbooks:")
-		for name, lb := range a.Config.Logbooks {
+		for _, id := range config.SortedLogbookIDs(a.Config) {
+			lb := a.Config.Logbooks[id]
 			marker := " "
-			if name == a.Config.State.ActiveLogbook {
+			if id == a.Config.State.ActiveLogbook {
 				marker = "*"
 			}
-			fmt.Printf("  %s %-12s %s\n", marker, name, lb.Description)
+			fmt.Printf("  %s %-12s %s\n", marker, config.LogbookDisplayName(&lb), lb.Description)
 		}
 
 		return nil

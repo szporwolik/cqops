@@ -118,7 +118,7 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		w.wlUpdating = false
 		if msg.err != nil {
 			w.wlStatus = msg.err.Error()
-			w.toasts.Error("Wavelog: " + msg.err.Error())
+			w.toasts.Error(w.wlStatus)
 		} else {
 			w.wlStations = msg.stations
 			w.wlStationIdx = 0
@@ -134,7 +134,7 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		w.wlTesting = false
 		if msg.err != nil {
 			w.wlStatus = msg.err.Error()
-			w.toasts.Error("Wavelog: " + msg.err.Error())
+			w.toasts.Error(w.wlStatus)
 		} else {
 			w.wlStatus = "OK — Wavelog reachable"
 			w.toasts.Success("Wavelog connection OK")
@@ -151,7 +151,7 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		w.qrzTesting = false
 		if msg.err != nil {
 			w.qrzTestResult = msg.err.Error()
-			w.toasts.Error("QRZ: " + msg.err.Error())
+			w.toasts.Error(msg.err.Error())
 		} else if msg.ok {
 			w.qrzTestResult = "OK — QRZ.com connected"
 			w.toasts.Success("QRZ connection OK")
@@ -729,8 +729,12 @@ func (w *Wizard) saveConfig() {
 		op = cs
 	}
 
+	rigID := config.NewID("default-rig")
+	lbID := config.NewID("default-logbook")
+
 	w.App.Config.Rigs = map[string]config.RigPreset{
-		"default": {
+		rigID: {
+			ID:           rigID,
 			Model:        rig,
 			Antenna:      ant,
 			Power:        pwr,
@@ -772,22 +776,27 @@ func (w *Wizard) saveConfig() {
 		}
 	}
 
-	w.App.Config.Logbooks["default"] = config.Logbook{
-		Description: "Default station logbook",
-		Station: config.Station{
-			Callsign: cs,
-			Operator: op,
-			Grid:     gr,
-			RigName:  "default",
-			SOTARef:  sotaRef,
-			POTARef:  potaRef,
-			WWFFRef:  wwffRef,
+	w.App.Config.State.ActiveLogbook = lbID
+	w.App.Config.Logbooks = map[string]config.Logbook{
+		lbID: {
+			ID:          lbID,
+			Description: "Default station logbook",
+			Station: config.Station{
+				Callsign: cs,
+				Operator: op,
+				Grid:     gr,
+				RigName:  rigID,
+				SOTARef:  sotaRef,
+				POTARef:  potaRef,
+				WWFFRef:  wwffRef,
+			},
+			Wavelog: wl,
 		},
-		Wavelog: wl,
 	}
 
-	lb := w.App.Config.Logbooks["default"]
+	lb := w.App.Config.Logbooks[lbID]
 	w.App.Logbook = &lb
+	w.App.LogbookName = lbID
 
 	applog.InfoDetail("Wizard completed", fmt.Sprintf("call=%s rig=%s flrig=%v wsjtx=%v wavelog=%v tz=%s",
 		cs, rig, flrigEnabled, w.wsjtxEnable, wlEnabled, config.Timezones[w.tzIndex]))

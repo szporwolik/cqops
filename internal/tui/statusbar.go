@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"charm.land/lipgloss/v2"
+	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/version"
 )
 
@@ -18,7 +19,7 @@ func (m *Model) headerView() string {
 	if callsign == "" {
 		callsign = "\u2014"
 	}
-	logName := m.App.LogbookName
+	logName := config.LogbookDisplayName(m.App.Logbook)
 	if logName == "" {
 		logName = "\u2014"
 	}
@@ -82,7 +83,7 @@ func (m *Model) renderToastBar() string {
 func (m *Model) windowTitle() string {
 	s := m.App.Logbook.Station
 	callsign := s.Callsign
-	logbook := m.App.LogbookName
+	logbook := config.LogbookDisplayName(m.App.Logbook)
 	if callsign == "" && logbook == "" {
 		return "CQOps"
 	}

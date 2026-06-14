@@ -28,7 +28,8 @@ func EnsureConfig() (*Config, string, error) {
 			return nil, "", fmt.Errorf("save default config: %w", saveErr)
 		}
 	}
-
+	// Populate in-memory ID fields from map keys (id is not serialized).
+	PopulateIDs(cfg)
 	if cfg.Logbooks == nil {
 		cfg.Logbooks = make(map[string]Logbook)
 	}
@@ -42,24 +43,40 @@ func EnsureConfig() (*Config, string, error) {
 }
 
 func ResolveLogbook(cfg *Config, cliFlag string) (string, *Logbook, error) {
-	name := cfg.State.ActiveLogbook
+	id := cfg.State.ActiveLogbook
 	if cliFlag != "" {
-		name = cliFlag
+		// cliFlag could be an ID or a callsign — try ID first, then search by callsign.
+		if lb, ok := cfg.Logbooks[cliFlag]; ok {
+			return cliFlag, &lb, nil
+		}
+		if foundID, foundLB, ok := FindLogbookByCallsign(cfg, cliFlag); ok {
+			return foundID, foundLB, nil
+		}
+		return "", nil, fmt.Errorf("logbook %q not found", cliFlag)
 	}
 	if env := os.Getenv("CQOPS_LOGBOOK"); env != "" && cliFlag == "" {
-		name = env
+		if lb, ok := cfg.Logbooks[env]; ok {
+			return env, &lb, nil
+		}
+		if foundID, foundLB, ok := FindLogbookByCallsign(cfg, env); ok {
+			return foundID, foundLB, nil
+		}
 	}
-	if name == "" {
-		name = "default"
+	if id == "" {
+		return "", nil, fmt.Errorf("no active logbook set")
 	}
 
-	lb, ok := cfg.Logbooks[name]
+	lb, ok := cfg.Logbooks[id]
 	if !ok {
-		lb = Logbook{}
-		cfg.Logbooks[name] = lb
+		// Active logbook ID not found — try to find any logbook.
+		for firstID, firstLB := range cfg.Logbooks {
+			cfg.State.ActiveLogbook = firstID
+			return firstID, &firstLB, nil
+		}
+		return "", nil, fmt.Errorf("active logbook %q not found and no logbooks configured", id)
 	}
 
-	return name, &lb, nil
+	return id, &lb, nil
 }
 
 func DBPath(logbookName string, lb *Logbook) (string, error) {
@@ -80,12 +97,12 @@ func DBPath(logbookName string, lb *Logbook) (string, error) {
 }
 
 func IsFirstRun(cfg *Config) bool {
-	if cfg.State.ActiveLogbook != "default" {
+	// First run: exactly one logbook with no callsign set.
+	if len(cfg.Logbooks) != 1 {
 		return false
 	}
-	lb, ok := cfg.Logbooks["default"]
-	if !ok {
-		return true
+	for _, lb := range cfg.Logbooks {
+		return lb.Station.Callsign == "" && lb.Station.Operator == "" && lb.Station.Grid == ""
 	}
-	return lb.Station.Callsign == "" && lb.Station.Operator == "" && lb.Station.Grid == ""
+	return false
 }

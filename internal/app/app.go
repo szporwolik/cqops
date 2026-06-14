@@ -161,3 +161,8 @@ func (a *App) StationSummary() string {
 	}
 	return strings.Join(parts, " ")
 }
+
+// LogbookDisplayName returns the human-readable name for the active logbook.
+func (a *App) LogbookDisplayName() string {
+	return config.LogbookDisplayName(a.Logbook)
+}

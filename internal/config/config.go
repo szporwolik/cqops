@@ -32,6 +32,7 @@ type QRZConfig struct {
 }
 
 type Logbook struct {
+	ID           string          `yaml:"-"`
 	Description  string          `yaml:"description"`
 	DatabasePath string          `yaml:"database_path,omitempty"`
 	Station      Station         `yaml:"station"`
@@ -96,6 +97,7 @@ func (s Station) RigFlrig(rgs map[string]RigPreset) (enabled bool, host, port st
 }
 
 type RigPreset struct {
+	ID           string `yaml:"-"`
 	Model        string `yaml:"model"`
 	Antenna      string `yaml:"antenna"`
 	Power        string `yaml:"power"`

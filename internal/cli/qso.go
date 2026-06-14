@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
+	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/wavelog"
@@ -130,7 +131,7 @@ var logAddCmd = &cobra.Command{
 		}
 
 		fmt.Printf("QSO saved [%s]: %s %s %s %s UTC (id: %d)\n",
-			a.LogbookName, qs.Call, bandStr, qs.Mode, qs.QSODate, id)
+			config.LogbookDisplayName(a.Logbook), qs.Call, bandStr, qs.Mode, qs.QSODate, id)
 
 		// Upload to Wavelog if configured on this logbook
 		wl := a.Logbook.Wavelog
@@ -175,11 +176,11 @@ var logListCmd = &cobra.Command{
 		}
 
 		if len(qsos) == 0 {
-			fmt.Printf("No QSOs in logbook [%s].\n", a.LogbookName)
+			fmt.Printf("No QSOs in logbook [%s].\n", config.LogbookDisplayName(a.Logbook))
 			return nil
 		}
 
-		fmt.Printf("Logbook: %s  (%d QSOs)\n", a.LogbookName, len(qsos))
+		fmt.Printf("Logbook: %s  (%d QSOs)\n", config.LogbookDisplayName(a.Logbook), len(qsos))
 		fmt.Println(strings.Repeat("-", 90))
 
 		for _, q := range qsos {
@@ -296,7 +297,7 @@ var logDeleteCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Printf("QSO %d deleted from [%s].\n", id, a.LogbookName)
+		fmt.Printf("QSO %d deleted from [%s].\n", id, config.LogbookDisplayName(a.Logbook))
 		return nil
 	},
 }

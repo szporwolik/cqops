@@ -3,7 +3,6 @@ package tui
 import (
 	"fmt"
 	"os"
-	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -54,16 +53,12 @@ type wlTestMsg struct {
 }
 
 func NewLogbookChooser(a *app.App, tq *ToastQueue) *LogbookChooser {
-	names := make([]string, 0, len(a.Config.Logbooks))
-	for name := range a.Config.Logbooks {
-		names = append(names, name)
-	}
-	slices.Sort(names)
+	names := config.SortedLogbookIDs(a.Config)
 
 	// Start cursor on the active logbook.
 	cursor := 0
-	for i, n := range names {
-		if n == a.Config.State.ActiveLogbook {
+	for i, id := range names {
+		if id == a.Config.State.ActiveLogbook {
 			cursor = i
 			break
 		}
@@ -159,8 +154,10 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case c.mode == chooserList && (k.String() == "delete" || msg.Code == tea.KeyDelete):
 			if len(c.names) > 0 {
 				c.mode = chooserConfirmDelete
-				name := c.names[c.cursor]
-				d := NewDialog("Delete Logbook", "Delete \""+name+"\" and all its QSOs?",
+				id := c.names[c.cursor]
+				lb := c.app.Config.Logbooks[id]
+				displayName := config.LogbookDisplayName(&lb)
+				d := NewDialog("Delete Logbook", "Delete \""+displayName+"\" and all its QSOs?",
 					DangerOption("Delete", "delete"),
 					Option{Label: "Cancel", Value: "cancel"},
 				)
@@ -260,14 +257,15 @@ func (c *LogbookChooser) viewList() string {
 		return fillBody(b.String(), contentH)
 	}
 
-	for i, name := range c.names {
-		lb := c.app.Config.Logbooks[name]
+	for i, id := range c.names {
+		lb := c.app.Config.Logbooks[id]
+		displayName := config.LogbookDisplayName(&lb)
 		marker := "  "
 		if i == c.cursor {
 			marker = CursorStyle.Render("> ")
 		}
 		active := "        "
-		if name == c.app.Config.State.ActiveLogbook {
+		if id == c.app.Config.State.ActiveLogbook {
 			active = "[Active]"
 		}
 		info := lb.Station.Callsign
@@ -277,11 +275,11 @@ func (c *LogbookChooser) viewList() string {
 		if info == "" {
 			info = lb.Description
 		}
-		line := fmt.Sprintf("%s%s %s  %s", marker, active, name, info)
-		// Selected row: wrap name in pink, rest in ValueStyle to keep
+		line := fmt.Sprintf("%s%s %s  %s", marker, active, displayName, info)
+		// Selected row: wrap in pink, rest in ValueStyle to keep
 		// Surface background after CursorStyle's \x1b[0m reset.
 		if i == c.cursor {
-			line = CursorStyle.Render("> ") + CursorStyle.Render(fmt.Sprintf("%s %s  %s", active, name, info))
+			line = CursorStyle.Render("> ") + CursorStyle.Render(fmt.Sprintf("%s %s  %s", active, displayName, info))
 		}
 		b.WriteString(menuLine(line, w))
 		b.WriteString("\n")
@@ -332,17 +330,19 @@ type logbookSwitchedMsg struct{}
 
 func (c *LogbookChooser) handleEnter() tea.Cmd {
 	if len(c.names) > 0 {
-		name := c.names[c.cursor]
-		if name == c.app.Config.State.ActiveLogbook {
-			c.toasts.Info("Logbook \"" + name + "\" is already active")
+		id := c.names[c.cursor]
+		lb := c.app.Config.Logbooks[id]
+		displayName := config.LogbookDisplayName(&lb)
+		if id == c.app.Config.State.ActiveLogbook {
+			c.toasts.Info("Logbook \"" + displayName + "\" is already active")
 			return nil
 		}
-		if err := c.app.SwitchLogbook(name); err != nil {
-			c.toasts.Error("Switch to " + name + " failed: " + err.Error())
+		if err := c.app.SwitchLogbook(id); err != nil {
+			c.toasts.Error("Switch to " + displayName + " failed: " + err.Error())
 			return nil
 		}
-		c.toasts.Success("Switched to logbook \"" + name + "\"")
-		applog.Info("Logbook switched", "name", name)
+		c.toasts.Success("Switched to logbook \"" + displayName + "\"")
+		applog.Info("Logbook switched", "name", displayName)
 		c.refreshNames()
 		return func() tea.Msg { return logbookSwitchedMsg{} }
 	}
@@ -350,15 +350,10 @@ func (c *LogbookChooser) handleEnter() tea.Cmd {
 }
 
 func (c *LogbookChooser) refreshNames() {
-	names := make([]string, 0, len(c.app.Config.Logbooks))
-	for n := range c.app.Config.Logbooks {
-		names = append(names, n)
-	}
-	slices.Sort(names)
-	c.names = names
+	c.names = config.SortedLogbookIDs(c.app.Config)
 	// Keep cursor on the active logbook after refresh.
-	for i, n := range names {
-		if n == c.app.Config.State.ActiveLogbook {
+	for i, id := range c.names {
+		if id == c.app.Config.State.ActiveLogbook {
 			c.cursor = i
 			return
 		}
@@ -376,10 +371,10 @@ func (c *LogbookChooser) startCreate() {
 	c.editing = ""
 }
 
-func (c *LogbookChooser) startEdit(name string) {
-	lb := c.app.Config.Logbooks[name]
+func (c *LogbookChooser) startEdit(id string) {
+	lb := c.app.Config.Logbooks[id]
 	c.mode = chooserEdit
-	c.editing = name
+	c.editing = id
 	c.station.SetValues(lb.Station.Callsign, lb.Station.Operator, lb.Station.Grid, lb.Station.SOTARef, lb.Station.POTARef, lb.Station.WWFFRef)
 	c.station.SetWavelogValues(lb.Wavelog)
 	c.wlStatus = ""
@@ -419,13 +414,15 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 
 	var savedName string
 	if c.mode == chooserCreate {
-		name := cs
-		if _, ok := c.app.Config.Logbooks[name]; ok {
-			c.toasts.Error("Logbook " + name + " already exists")
+		// Check for duplicate by callsign.
+		if _, _, found := config.FindLogbookByCallsign(c.app.Config, cs); found {
+			c.toasts.Error("Logbook with callsign " + cs + " already exists")
 			return nil
 		}
+		id := config.NewID(cs)
 		prevRigName := c.app.Logbook.Station.RigName
-		c.app.Config.Logbooks[name] = config.Logbook{
+		c.app.Config.Logbooks[id] = config.Logbook{
+			ID:          id,
 			Description: "Created from TUI",
 			Station: config.Station{
 				Callsign: cs,
@@ -438,16 +435,16 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 			},
 			Wavelog: wl,
 		}
-		c.app.Config.State.ActiveLogbook = name
-		c.app.LogbookName = name
-		lb := c.app.Config.Logbooks[name]
+		c.app.Config.State.ActiveLogbook = id
+		c.app.LogbookName = id
+		lb := c.app.Config.Logbooks[id]
 		c.app.Logbook = &lb
 
-		c.names = append(c.names, name)
-		savedName = name
+		c.names = append(c.names, id)
+		savedName = cs
 	} else {
-		name := c.editing
-		lb := c.app.Config.Logbooks[name]
+		id := c.editing
+		lb := c.app.Config.Logbooks[id]
 		lb.Station.Callsign = cs
 		lb.Station.Operator = op
 		lb.Station.Grid = gr
@@ -455,12 +452,12 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 		lb.Station.POTARef = potaRef
 		lb.Station.WWFFRef = wwffRef
 		lb.Wavelog = wl
-		c.app.Config.Logbooks[name] = lb
+		c.app.Config.Logbooks[id] = lb
 
-		if name == c.app.LogbookName {
+		if id == c.app.LogbookName {
 			c.app.Logbook = &lb
 		}
-		savedName = name
+		savedName = cs
 	}
 
 	c.mode = chooserList
@@ -485,7 +482,9 @@ func (c *LogbookChooser) updateStationIDField() {
 }
 
 func (c *LogbookChooser) viewConfirmDelete() string {
-	name := c.names[c.cursor]
+	id := c.names[c.cursor]
+	lb := c.app.Config.Logbooks[id]
+	displayName := config.LogbookDisplayName(&lb)
 	var b strings.Builder
 	w := c.width
 	if w < 40 {
@@ -500,7 +499,7 @@ func (c *LogbookChooser) viewConfirmDelete() string {
 		contentH = 3
 	}
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("  Delete logbook %q and ALL its QSOs?\n", name))
+	b.WriteString(fmt.Sprintf("  Delete logbook %q and ALL its QSOs?\n", displayName))
 	b.WriteString("  This cannot be undone. (y/N)")
 	return fillBody(b.String(), contentH)
 }
@@ -509,27 +508,28 @@ func (c *LogbookChooser) deleteLogbook() tea.Cmd {
 	if len(c.names) == 0 {
 		return nil
 	}
-	name := c.names[c.cursor]
+	id := c.names[c.cursor]
+	lb := c.app.Config.Logbooks[id]
+	displayName := config.LogbookDisplayName(&lb)
 
-	if name == c.app.Config.State.ActiveLogbook {
-		c.toasts.Error("Cannot delete " + name + " — it is the active logbook. Switch to another first.")
+	if id == c.app.Config.State.ActiveLogbook {
+		c.toasts.Error("Cannot delete " + displayName + " — it is the active logbook. Switch to another first.")
 		c.mode = chooserList
 		return nil
 	}
 
 	if len(c.names) <= 1 {
-		c.toasts.Error("Cannot delete " + name + " — at least one logbook must remain.")
+		c.toasts.Error("Cannot delete " + displayName + " — at least one logbook must remain.")
 		c.mode = chooserList
 		return nil
 	}
 
-	lb := c.app.Config.Logbooks[name]
-	dbPath, _ := config.DBPath(name, &lb)
+	dbPath, _ := config.DBPath(id, &lb)
 
-	delete(c.app.Config.Logbooks, name)
+	delete(c.app.Config.Logbooks, id)
 
 	for i, n := range c.names {
-		if n == name {
+		if n == id {
 			c.names = append(c.names[:i], c.names[i+1:]...)
 			break
 		}
@@ -540,11 +540,11 @@ func (c *LogbookChooser) deleteLogbook() tea.Cmd {
 
 	c.mode = chooserList
 	if err := config.Save(c.app.ConfigPath, c.app.Config); err != nil {
-		c.toasts.Error("Delete " + name + " failed: " + err.Error())
+		c.toasts.Error("Delete " + displayName + " failed: " + err.Error())
 	} else {
 		go func() { os.Remove(dbPath) }()
-		c.toasts.Success("Logbook " + name + " deleted")
-		applog.Info("Logbook deleted", "name", name)
+		c.toasts.Success("Logbook " + displayName + " deleted")
+		applog.Info("Logbook deleted", "name", displayName)
 	}
 	return nil
 }

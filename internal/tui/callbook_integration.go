@@ -119,7 +119,7 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 		return
 	}
 	if msg.Err != nil {
-		m.toasts.Error("QRZ error: " + msg.Err.Error())
+		m.toasts.Error(msg.Err.Error())
 		return
 	}
 	d := msg.Data
@@ -158,7 +158,7 @@ func (m *Model) fillWLData(msg wlResultMsg) {
 	if msg.Err != nil {
 		m.wlLookupDone = true
 		applog.Warn("Wavelog: lookup error", "call", msg.Call, "error", msg.Err)
-		m.toasts.Warn("Wavelog: " + msg.Err.Error())
+		m.toasts.Warn(msg.Err.Error())
 		return
 	}
 	m.wlLookupDone = true

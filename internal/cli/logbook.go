@@ -24,9 +24,10 @@ var logbookListCmd = &cobra.Command{
 		defer a.Close()
 
 		fmt.Println("Logbooks:")
-		for name, lb := range a.Config.Logbooks {
+		for _, id := range config.SortedLogbookIDs(a.Config) {
+			lb := a.Config.Logbooks[id]
 			marker := " "
-			if name == a.Config.State.ActiveLogbook {
+			if id == a.Config.State.ActiveLogbook {
 				marker = "*"
 			}
 			info := lb.Station.Callsign
@@ -39,7 +40,7 @@ var logbookListCmd = &cobra.Command{
 			if info == "" {
 				info = lb.Description
 			}
-			fmt.Printf("%s %-12s %s\n", marker, name, info)
+			fmt.Printf("%s %-12s %s\n", marker, config.LogbookDisplayName(&lb), info)
 		}
 		return nil
 	},
@@ -56,15 +57,15 @@ var logbookShowCmd = &cobra.Command{
 		}
 		defer a.Close()
 
-		name := args[0]
-		lb, ok := a.Config.Logbooks[name]
+		arg := args[0]
+		id, lb, ok := resolveLogbookArg(a.Config, arg)
 		if !ok {
-			return fmt.Errorf("logbook %q not found", name)
+			return fmt.Errorf("logbook %q not found", arg)
 		}
 
-		dbPath, _ := config.DBPath(name, &lb)
+		dbPath, _ := config.DBPath(id, lb)
 
-		fmt.Printf("Name:        %s\n", name)
+		fmt.Printf("Name:        %s\n", config.LogbookDisplayName(lb))
 		fmt.Printf("Description: %s\n", lb.Description)
 		fmt.Printf("Database:    %s\n", dbPath)
 		fmt.Printf("Callsign:    %s\n", lb.Station.Callsign)
@@ -88,17 +89,18 @@ var logbookUseCmd = &cobra.Command{
 		}
 		defer a.Close()
 
-		name := args[0]
-		if _, ok := a.Config.Logbooks[name]; !ok {
-			return fmt.Errorf("logbook %q does not exist", name)
+		arg := args[0]
+		id, _, ok := resolveLogbookArg(a.Config, arg)
+		if !ok {
+			return fmt.Errorf("logbook %q does not exist", arg)
 		}
 
-		a.Config.State.ActiveLogbook = name
+		a.Config.State.ActiveLogbook = id
 		if err := config.Save(a.ConfigPath, a.Config); err != nil {
 			return fmt.Errorf("save config: %w", err)
 		}
 
-		fmt.Printf("Active logbook set to %q.\n", name)
+		fmt.Printf("Active logbook set to %q.\n", arg)
 		return nil
 	},
 }
@@ -124,21 +126,25 @@ var logbookCreateCmd = &cobra.Command{
 		defer a.Close()
 
 		name := args[0]
-		if _, ok := a.Config.Logbooks[name]; ok {
-			return fmt.Errorf("logbook %q already exists", name)
+		if _, _, found := config.FindLogbookByCallsign(a.Config, name); found {
+			return fmt.Errorf("logbook with callsign %q already exists", name)
 		}
 
-		a.Config.Logbooks[name] = config.Logbook{
+		lbID := config.NewID(name)
+		rigID := config.NewID("default-rig")
+		a.Config.Logbooks[lbID] = config.Logbook{
+			ID:          lbID,
 			Description: lbDescription,
 			Station: config.Station{
 				Callsign: lbCallsign,
 				Operator: lbOperator,
 				Grid:     lbGrid,
-				RigName:  "default",
+				RigName:  rigID,
 			},
 		}
 		if lbRig != "" || lbAntenna != "" {
-			a.Config.Rigs["default"] = config.RigPreset{
+			a.Config.Rigs[rigID] = config.RigPreset{
+				ID:      rigID,
 				Model:   lbRig,
 				Antenna: lbAntenna,
 			}
@@ -164,13 +170,13 @@ var logbookPathCmd = &cobra.Command{
 		}
 		defer a.Close()
 
-		name := args[0]
-		lb, ok := a.Config.Logbooks[name]
+		arg := args[0]
+		id, lb, ok := resolveLogbookArg(a.Config, arg)
 		if !ok {
-			return fmt.Errorf("logbook %q not found", name)
+			return fmt.Errorf("logbook %q not found", arg)
 		}
 
-		dbPath, _ := config.DBPath(name, &lb)
+		dbPath, _ := config.DBPath(id, lb)
 		fmt.Println(dbPath)
 		return nil
 	},
@@ -190,4 +196,12 @@ func registerLogbookCommands() {
 	logbookCreateCmd.Flags().StringVar(&lbGrid, "grid", "", "Grid square / locator")
 	logbookCreateCmd.Flags().StringVar(&lbRig, "rig", "", "Rig / transceiver")
 	logbookCreateCmd.Flags().StringVar(&lbAntenna, "antenna", "", "Antenna")
+}
+
+// resolveLogbookArg tries to find a logbook by ID first, then by callsign.
+func resolveLogbookArg(cfg *config.Config, arg string) (string, *config.Logbook, bool) {
+	if lb, ok := cfg.Logbooks[arg]; ok {
+		return arg, &lb, true
+	}
+	return config.FindLogbookByCallsign(cfg, arg)
 }

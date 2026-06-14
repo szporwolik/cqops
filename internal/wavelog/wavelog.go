@@ -48,19 +48,19 @@ func TestConnection(baseURL, apiKey string) error {
 	resp, err := httpClient.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
 		applog.Error("Wavelog: connection failed", "url", baseURL, "error", err)
-		return fmt.Errorf("connection failed: %w", err)
+		return FriendlyError(err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		applog.Error("Wavelog: read response failed", "error", err)
-		return fmt.Errorf("read response: %w", err)
+		return FriendlyError(err)
 	}
 
 	if resp.StatusCode >= 400 {
 		applog.Error("Wavelog: server error", "status", resp.StatusCode, "body", strings.TrimSpace(string(respBody)))
-		return fmt.Errorf("server error: HTTP %d — %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		return FriendlyError(fmt.Errorf("HTTP %d", resp.StatusCode))
 	}
 
 	var vr VersionResponse
@@ -89,19 +89,19 @@ func FetchStations(baseURL, apiKey string) ([]StationProfile, error) {
 	resp, err := httpClient.Get(url)
 	if err != nil {
 		applog.Error("Wavelog: fetch stations failed", "url", baseURL, "error", err)
-		return nil, fmt.Errorf("fetch stations: %w", err)
+		return nil, FriendlyError(err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		applog.Error("Wavelog: read stations response failed", "error", err)
-		return nil, fmt.Errorf("read response: %w", err)
+		return nil, FriendlyError(err)
 	}
 
 	if resp.StatusCode >= 400 {
 		applog.Error("Wavelog: stations server error", "status", resp.StatusCode, "body", strings.TrimSpace(string(respBody)))
-		return nil, fmt.Errorf("server error: HTTP %d — %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		return nil, FriendlyError(fmt.Errorf("HTTP %d", resp.StatusCode))
 	}
 
 	var stations []StationProfile
@@ -218,17 +218,17 @@ func PrivateLookup(baseURL, apiKey, callsign, band, mode string) (*PrivateLookup
 
 	resp, err := httpClient.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
-		return nil, fmt.Errorf("private_lookup: %w", err)
+		return nil, FriendlyError(fmt.Errorf("private_lookup: %w", err))
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("read response: %w", err)
+		return nil, FriendlyError(fmt.Errorf("read response: %w", err))
 	}
 
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("server error: HTTP %d — %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		return nil, FriendlyError(fmt.Errorf("HTTP %d", resp.StatusCode))
 	}
 
 	applog.Debug("Wavelog: private_lookup raw response", "body", strings.TrimSpace(string(respBody)))
@@ -263,19 +263,16 @@ func TestStation(baseURL, apiKey, stationID string) error {
 	resp, err := httpClient.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
 		applog.Error("Wavelog: station test failed", "station_id", stationID, "error", err)
-		return fmt.Errorf("station test failed: %w", err)
+		return FriendlyError(err)
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		applog.Error("Wavelog: read station test response failed", "error", err)
-		return fmt.Errorf("read response: %w", err)
-	}
+	// Drain body for connection reuse; we only care about the status code.
+	io.Copy(io.Discard, resp.Body)
 
 	if resp.StatusCode >= 400 {
 		applog.Error("Wavelog: station test server error", "station_id", stationID, "status", resp.StatusCode)
-		return fmt.Errorf("station error: HTTP %d — %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+		return FriendlyError(fmt.Errorf("HTTP %d", resp.StatusCode))
 	}
 
 	applog.InfoDetail("Wavelog: station test OK", fmt.Sprintf("station_id=%s", stationID))
@@ -323,14 +320,14 @@ func PostQSOWithResult(baseURL, apiKey, stationID, adifStr string) (*QSOUploadRe
 	resp, err := httpClient.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
 		applog.Error("Wavelog: QSO upload failed", "error", err)
-		return nil, fmt.Errorf("upload failed: %w", err)
+		return nil, FriendlyError(fmt.Errorf("upload failed: %w", err))
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		applog.Error("Wavelog: read QSO response failed", "error", err)
-		return nil, fmt.Errorf("read response: %w", err)
+		return nil, FriendlyError(fmt.Errorf("read response: %w", err))
 	}
 	bodyStr := strings.TrimSpace(string(respBody))
 

@@ -86,18 +86,25 @@ func TestDefaultConfig_HasDefaults(t *testing.T) {
 		t.Errorf("DefaultConfig: distance_unit = %q; want km", cfg.General.DistanceUnit)
 	}
 
-	// State
-	if cfg.State.ActiveLogbook != "default" {
-		t.Errorf("DefaultConfig: active_logbook = %q; want default", cfg.State.ActiveLogbook)
+	// State — ActiveLogbook should be a non-empty hash ID.
+	if cfg.State.ActiveLogbook == "" {
+		t.Error("DefaultConfig: active_logbook should not be empty")
 	}
 
-	// Logbooks
+	// Logbooks — should have exactly one entry with hash ID key.
 	if len(cfg.Logbooks) == 0 {
 		t.Fatal("DefaultConfig: no logbooks")
 	}
-	defLB, ok := cfg.Logbooks["default"]
-	if !ok {
-		t.Fatal("DefaultConfig: 'default' logbook missing")
+	if len(cfg.Logbooks) != 1 {
+		t.Fatalf("DefaultConfig: expected 1 logbook, got %d", len(cfg.Logbooks))
+	}
+	var defLB Logbook
+	for _, lb := range cfg.Logbooks {
+		defLB = lb
+		break
+	}
+	if defLB.ID == "" {
+		t.Error("DefaultConfig: logbook ID should not be empty")
 	}
 	if defLB.Description == "" {
 		t.Error("DefaultConfig: default logbook description is empty")
@@ -114,12 +121,18 @@ func TestDefaultConfig_HasDefaults(t *testing.T) {
 		t.Error("DefaultConfig: station grid should be empty")
 	}
 
-	// Rigs
+	// Rigs — should have exactly one entry with hash ID key.
 	if len(cfg.Rigs) == 0 {
 		t.Fatal("DefaultConfig: no rigs")
 	}
-	if _, ok := cfg.Rigs["default"]; !ok {
-		t.Error("DefaultConfig: 'default' rig preset missing")
+	if len(cfg.Rigs) != 1 {
+		t.Fatalf("DefaultConfig: expected 1 rig, got %d", len(cfg.Rigs))
+	}
+	for _, rp := range cfg.Rigs {
+		if rp.ID == "" {
+			t.Error("DefaultConfig: rig ID should not be empty")
+		}
+		break
 	}
 
 	// WSJT-X
@@ -497,36 +510,44 @@ func TestResolveLogbook_CLIFlagWinsOverEnv(t *testing.T) {
 }
 
 func TestResolveLogbook_FallsBackToDefault(t *testing.T) {
+	// Empty state with no logbooks should return an error.
 	cfg := &Config{
 		State:    StateConfig{ActiveLogbook: ""},
 		Logbooks: map[string]Logbook{},
 	}
-	name, _, err := ResolveLogbook(cfg, "")
-	if err != nil {
-		t.Fatalf("ResolveLogbook: %v", err)
-	}
-	if name != "default" {
-		t.Errorf("name = %q; want default", name)
+	_, _, err := ResolveLogbook(cfg, "")
+	if err == nil {
+		t.Error("ResolveLogbook should return error when no active logbook and no logbooks")
 	}
 }
 
-func TestResolveLogbook_CreatesMissingLogbook(t *testing.T) {
+func TestResolveLogbook_FindsFirstWhenActiveMissing(t *testing.T) {
+	cfg := &Config{
+		State: StateConfig{ActiveLogbook: "nonexistent"},
+		Logbooks: map[string]Logbook{
+			"abc123": {ID: "abc123", Station: Station{Callsign: "SP9MOA"}},
+		},
+	}
+	id, lb, err := ResolveLogbook(cfg, "")
+	if err != nil {
+		t.Fatalf("ResolveLogbook: %v", err)
+	}
+	if id != "abc123" {
+		t.Errorf("id = %q; want abc123", id)
+	}
+	if lb.Station.Callsign != "SP9MOA" {
+		t.Errorf("callsign = %q", lb.Station.Callsign)
+	}
+}
+
+func TestResolveLogbook_ErrorOnMissingWithEmptyLogbooks(t *testing.T) {
 	cfg := &Config{
 		State:    StateConfig{ActiveLogbook: "newone"},
 		Logbooks: map[string]Logbook{},
 	}
-	name, lb, err := ResolveLogbook(cfg, "")
-	if err != nil {
-		t.Fatalf("ResolveLogbook: %v", err)
-	}
-	if name != "newone" {
-		t.Errorf("name = %q", name)
-	}
-	if lb == nil {
-		t.Fatal("Logbook should not be nil")
-	}
-	if _, ok := cfg.Logbooks["newone"]; !ok {
-		t.Error("ResolveLogbook should create missing logbook entry")
+	_, _, err := ResolveLogbook(cfg, "")
+	if err == nil {
+		t.Error("ResolveLogbook should return error when active logbook not found and no logbooks")
 	}
 }
 
@@ -534,21 +555,21 @@ func TestResolveLogbook_CreatesMissingLogbook(t *testing.T) {
 // IsFirstRun tests
 // =============================================================================
 
-func TestIsFirstRun_TrueForEmptyDefault(t *testing.T) {
+func TestIsFirstRun_TrueForEmptySingleLogbook(t *testing.T) {
 	cfg := &Config{
-		State:    StateConfig{ActiveLogbook: "default"},
-		Logbooks: map[string]Logbook{"default": {}},
+		State:    StateConfig{ActiveLogbook: "abc123"},
+		Logbooks: map[string]Logbook{"abc123": {ID: "abc123"}},
 	}
 	if !IsFirstRun(cfg) {
-		t.Error("IsFirstRun should be true for empty default logbook")
+		t.Error("IsFirstRun should be true for exactly one logbook with empty callsign/operator/grid")
 	}
 }
 
 func TestIsFirstRun_FalseWhenCallsignSet(t *testing.T) {
 	cfg := &Config{
-		State: StateConfig{ActiveLogbook: "default"},
+		State: StateConfig{ActiveLogbook: "abc123"},
 		Logbooks: map[string]Logbook{
-			"default": {Station: Station{Callsign: "SP9MOA"}},
+			"abc123": {ID: "abc123", Station: Station{Callsign: "SP9MOA"}},
 		},
 	}
 	if IsFirstRun(cfg) {
@@ -556,21 +577,24 @@ func TestIsFirstRun_FalseWhenCallsignSet(t *testing.T) {
 	}
 }
 
-func TestIsFirstRun_FalseWhenNonDefaultActive(t *testing.T) {
+func TestIsFirstRun_FalseWhenMultipleLogbooks(t *testing.T) {
 	cfg := &Config{
-		State:    StateConfig{ActiveLogbook: "home"},
-		Logbooks: map[string]Logbook{"home": {}},
+		State: StateConfig{ActiveLogbook: "abc123"},
+		Logbooks: map[string]Logbook{
+			"abc123": {ID: "abc123"},
+			"def456": {ID: "def456"},
+		},
 	}
 	if IsFirstRun(cfg) {
-		t.Error("IsFirstRun should be false when active logbook is not 'default'")
+		t.Error("IsFirstRun should be false when more than one logbook")
 	}
 }
 
 func TestIsFirstRun_FalseWhenOperatorSet(t *testing.T) {
 	cfg := &Config{
-		State: StateConfig{ActiveLogbook: "default"},
+		State: StateConfig{ActiveLogbook: "abc123"},
 		Logbooks: map[string]Logbook{
-			"default": {Station: Station{Operator: "Szymon"}},
+			"abc123": {ID: "abc123", Station: Station{Operator: "Szymon"}},
 		},
 	}
 	if IsFirstRun(cfg) {
@@ -735,8 +759,8 @@ func TestEnsureConfig_FirstRunCreatesDefault(t *testing.T) {
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("default config should validate: %v", err)
 	}
-	if cfg.State.ActiveLogbook != "default" {
-		t.Errorf("active logbook = %q; want default", cfg.State.ActiveLogbook)
+	if cfg.State.ActiveLogbook == "" {
+		t.Error("active logbook should not be empty")
 	}
 
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {

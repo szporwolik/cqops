@@ -19,14 +19,13 @@ func (m *Model) refreshFlrigClient() {
 	if m.App == nil || m.App.Logbook == nil {
 		return
 	}
-	if len(m.App.Config.Rigs) == 0 {
-		m.App.Config.Rigs = map[string]config.RigPreset{"default": {
-			FlrigEnabled: false, FlrigHost: "localhost", FlrigPort: "12345",
-		}}
-	}
 	rigName := m.App.Logbook.Station.RigName
+	// If no rig is active, pick the first available rig.
 	if rigName == "" {
-		rigName = "default"
+		for _, id := range config.SortedRigIDs(m.App.Config) {
+			rigName = id
+			break
+		}
 	}
 	if rp, ok := m.App.Config.Rigs[rigName]; ok && rp.FlrigEnabled {
 		host, port := rp.FlrigHost, rp.FlrigPort

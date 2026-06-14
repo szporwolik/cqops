@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -35,18 +34,14 @@ type RigChooser struct {
 }
 
 func NewRigChooser(a *app.App, tq *ToastQueue) *RigChooser {
-	names := make([]string, 0, len(a.Config.Rigs))
-	for name := range a.Config.Rigs {
-		names = append(names, name)
-	}
-	slices.Sort(names)
+	names := config.SortedRigIDs(a.Config)
 
 	// If no rig is active but rigs are configured, auto-select the first one.
 	if a.Logbook.Station.RigName == "" && len(names) > 0 {
-		name := names[0]
-		a.Logbook.Station.RigName = name
+		id := names[0]
+		a.Logbook.Station.RigName = id
 		lb := a.Config.Logbooks[a.LogbookName]
-		lb.Station.RigName = name
+		lb.Station.RigName = id
 		a.Config.Logbooks[a.LogbookName] = lb
 	}
 
@@ -113,8 +108,10 @@ func (rc *RigChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case rc.mode == rigChooserList && (k.String() == "delete" || msg.Code == tea.KeyDelete):
 			if len(rc.names) > 0 {
 				rc.mode = rigChooserConfirmDelete
-				name := rc.names[rc.cursor]
-				d := NewDialog("Delete Rig", "Delete \""+name+"\" configuration?",
+				id := rc.names[rc.cursor]
+				rp := rc.app.Config.Rigs[id]
+				displayName := config.RigDisplayName(&rp)
+				d := NewDialog("Delete Rig", "Delete \""+displayName+"\" configuration?",
 					DangerOption("Delete", "delete"),
 					Option{Label: "Cancel", Value: "cancel"},
 				)
@@ -198,14 +195,15 @@ func (rc *RigChooser) viewList() string {
 	}
 
 	activeRig := rc.app.Logbook.Station.RigName
-	for i, name := range rc.names {
-		rp := rc.app.Config.Rigs[name]
+	for i, id := range rc.names {
+		rp := rc.app.Config.Rigs[id]
+		displayName := config.RigDisplayName(&rp)
 		marker := "  "
 		if i == rc.cursor {
 			marker = CursorStyle.Render("> ")
 		}
 		active := "        "
-		if name == activeRig {
+		if id == activeRig {
 			active = "[Active]"
 		}
 		info := rp.Model
@@ -218,9 +216,9 @@ func (rc *RigChooser) viewList() string {
 		}
 		// Selected row: wrap in pink+Surface to prevent bg leak after
 		// CursorStyle's \x1b[0m reset.
-		line := fmt.Sprintf("%s%s %s %s  %s", marker, active, name, info, flrig)
+		line := fmt.Sprintf("%s%s %s %s  %s", marker, active, displayName, info, flrig)
 		if i == rc.cursor {
-			line = CursorStyle.Render("> ") + CursorStyle.Render(fmt.Sprintf("%s %s %s  %s", active, name, info, flrig))
+			line = CursorStyle.Render("> ") + CursorStyle.Render(fmt.Sprintf("%s %s %s  %s", active, displayName, info, flrig))
 		}
 		b.WriteString(menuLine(line, w))
 		b.WriteString("\n")
@@ -255,20 +253,22 @@ func (rc *RigChooser) selectRig() tea.Cmd {
 	if len(rc.names) == 0 {
 		return nil
 	}
-	name := rc.names[rc.cursor]
+	id := rc.names[rc.cursor]
+	rp := rc.app.Config.Rigs[id]
+	displayName := config.RigDisplayName(&rp)
 
 	// Update the in-memory logbook — only store the RigName reference.
-	rc.app.Logbook.Station.RigName = name
+	rc.app.Logbook.Station.RigName = id
 	// Persist to config map.
 	lb := rc.app.Config.Logbooks[rc.app.LogbookName]
-	lb.Station.RigName = name
+	lb.Station.RigName = id
 	rc.app.Config.Logbooks[rc.app.LogbookName] = lb
 
 	if err := config.Save(rc.app.ConfigPath, rc.app.Config); err != nil {
-		rc.toasts.Error("Select " + name + " failed: " + err.Error())
+		rc.toasts.Error("Select " + displayName + " failed: " + err.Error())
 	} else {
-		rc.toasts.Success("Rig \"" + name + "\" selected")
-		applog.Info("Rig selected", "name", name)
+		rc.toasts.Success("Rig \"" + displayName + "\" selected")
+		applog.Info("Rig selected", "name", displayName)
 		// Refresh names and stay in the menu.
 		rc.refreshNames()
 	}
@@ -276,12 +276,7 @@ func (rc *RigChooser) selectRig() tea.Cmd {
 }
 
 func (rc *RigChooser) refreshNames() {
-	names := make([]string, 0, len(rc.app.Config.Rigs))
-	for n := range rc.app.Config.Rigs {
-		names = append(names, n)
-	}
-	slices.Sort(names)
-	rc.names = names
+	rc.names = config.SortedRigIDs(rc.app.Config)
 	if rc.cursor >= len(rc.names) {
 		rc.cursor = len(rc.names) - 1
 	}
@@ -296,10 +291,10 @@ func (rc *RigChooser) startCreate() {
 	rc.editing = ""
 }
 
-func (rc *RigChooser) startEdit(name string) {
-	rp := rc.app.Config.Rigs[name]
+func (rc *RigChooser) startEdit(id string) {
+	rp := rc.app.Config.Rigs[id]
 	rc.mode = rigChooserEdit
-	rc.editing = name
+	rc.editing = id
 	rc.form.SetValues(rp.Model, rp.Antenna, rp.Power)
 	rc.form.SetFlrig(rp.FlrigEnabled, rp.FlrigHost, rp.FlrigPort)
 	rc.form.blurAll()
@@ -325,15 +320,19 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 		}
 	}
 
+	var savedName string
 	if rc.mode == rigChooserCreate {
-		name := rig
-		for i := 1; rc.app.Config.Rigs[name].Model != ""; i++ {
-			name = fmt.Sprintf("%s-%d", rig, i)
+		// Check for duplicate by model name.
+		if _, _, found := config.FindRigByModel(rc.app.Config, rig); found {
+			rc.toasts.Error("Rig with model " + rig + " already exists")
+			return nil
 		}
+		id := config.NewID(rig)
 		if rc.app.Config.Rigs == nil {
 			rc.app.Config.Rigs = make(map[string]config.RigPreset)
 		}
-		rc.app.Config.Rigs[name] = config.RigPreset{
+		rc.app.Config.Rigs[id] = config.RigPreset{
+			ID:           id,
 			Model:        rig,
 			Antenna:      ant,
 			Power:        pwr,
@@ -341,24 +340,19 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 			FlrigHost:    flrigHost,
 			FlrigPort:    flrigPort,
 		}
-		rc.names = append(rc.names, name)
+		rc.names = append(rc.names, id)
+		savedName = rig
 	} else {
-		name := rc.editing
-		rp := rc.app.Config.Rigs[name]
+		id := rc.editing
+		rp := rc.app.Config.Rigs[id]
 		rp.Model = rig
 		rp.Antenna = ant
 		rp.Power = pwr
 		rp.FlrigEnabled = flrigEnabled
 		rp.FlrigHost = flrigHost
 		rp.FlrigPort = flrigPort
-		rc.app.Config.Rigs[name] = rp
-	}
-
-	var savedName string
-	if rc.mode == rigChooserCreate {
+		rc.app.Config.Rigs[id] = rp
 		savedName = rig
-	} else {
-		savedName = rc.editing
 	}
 
 	rc.mode = rigChooserList
@@ -373,7 +367,9 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 }
 
 func (rc *RigChooser) viewConfirmDelete() string {
-	name := rc.names[rc.cursor]
+	id := rc.names[rc.cursor]
+	rp := rc.app.Config.Rigs[id]
+	displayName := config.RigDisplayName(&rp)
 	var b strings.Builder
 	w := rc.width
 	if w < 40 {
@@ -388,7 +384,7 @@ func (rc *RigChooser) viewConfirmDelete() string {
 		contentH = 3
 	}
 	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("  Delete rig %q?\n", name))
+	b.WriteString(fmt.Sprintf("  Delete rig %q?\n", displayName))
 	b.WriteString("  (y/N)")
 	return fillBody(b.String(), contentH)
 }
@@ -397,24 +393,26 @@ func (rc *RigChooser) deleteRig() tea.Cmd {
 	if len(rc.names) == 0 {
 		return nil
 	}
-	name := rc.names[rc.cursor]
+	id := rc.names[rc.cursor]
+	rp := rc.app.Config.Rigs[id]
+	displayName := config.RigDisplayName(&rp)
 
 	// Active rig protection
-	if name == rc.app.Logbook.Station.RigName || (name == "default" && rc.app.Logbook.Station.RigName == "") {
-		rc.toasts.Error("Cannot delete " + name + " — it is the active rig. Select another first.")
+	if id == rc.app.Logbook.Station.RigName {
+		rc.toasts.Error("Cannot delete " + displayName + " — it is the active rig. Select another first.")
 		rc.mode = rigChooserList
 		return nil
 	}
 
 	if len(rc.names) <= 1 {
-		rc.toasts.Error("Cannot delete " + name + " — at least one rig must remain.")
+		rc.toasts.Error("Cannot delete " + displayName + " — at least one rig must remain.")
 		rc.mode = rigChooserList
 		return nil
 	}
 
-	delete(rc.app.Config.Rigs, name)
+	delete(rc.app.Config.Rigs, id)
 	for i, n := range rc.names {
-		if n == name {
+		if n == id {
 			rc.names = append(rc.names[:i], rc.names[i+1:]...)
 			break
 		}
@@ -425,10 +423,10 @@ func (rc *RigChooser) deleteRig() tea.Cmd {
 
 	rc.mode = rigChooserList
 	if err := config.Save(rc.app.ConfigPath, rc.app.Config); err != nil {
-		rc.toasts.Error("Delete " + name + " failed: " + err.Error())
+		rc.toasts.Error("Delete " + displayName + " failed: " + err.Error())
 	} else {
-		rc.toasts.Success("Rig " + name + " deleted")
-		applog.Info("Rig deleted", "name", name)
+		rc.toasts.Success("Rig " + displayName + " deleted")
+		applog.Info("Rig deleted", "name", displayName)
 	}
 	return nil
 }

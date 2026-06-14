@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/szporwolik/cqops/internal/config"
 )
 
 // tabView renders the function-key tab bar below the status bar.
@@ -70,7 +71,7 @@ func (m *Model) renderProfileLine() string {
 	}
 	wl := m.App.Logbook.Wavelog
 	if wl != nil && wl.Enabled && m.wlOnline {
-		parts = append(parts, "WL "+m.App.LogbookName)
+		parts = append(parts, "WL "+config.LogbookDisplayName(m.App.Logbook))
 	}
 	if s.Grid != "" {
 		parts = append(parts, "Grid "+formatLocator(s.Grid))
@@ -87,7 +88,7 @@ func (m *Model) renderProfileLine() string {
 	if len(parts) == 0 {
 		return ""
 	}
-	return lipgloss.NewStyle().Foreground(P.TextDim).Background(P.Background).Render("  " + strings.Join(parts, " \u00b7 "))
+	return lipgloss.NewStyle().Foreground(P.TextDim).Render("  " + strings.Join(parts, " \u00b7 "))
 }
 
 // renderProfileBar returns the right-aligned profile line.

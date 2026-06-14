@@ -6,6 +6,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
+	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/store"
 )
 
@@ -98,7 +99,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 
 	case key.Matches(msg, m.keys.Logs):
 		applog.Debug("tab: F8 Log Viewer")
-		m.logViewer = NewLogViewer(m.App.LogbookName)
+		m.logViewer = NewLogViewer(config.LogbookDisplayName(m.App.Logbook))
 		m.logViewer.width = m.width
 		m.logViewer.height = m.height
 		m.screen = screenLogView
