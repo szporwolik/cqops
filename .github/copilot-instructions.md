@@ -3,6 +3,17 @@ CQOPS is a fast, minimal Go TUI ham radio logger built with Bubble Tea v2, Bubbl
 
 The application targets normal desktops but must also stay usable on low-end machines, Raspberry Pi-class devices, small portable screens, and field/portable ham radio setups. Prefer simple, fast, maintainable code over clever abstractions.
 
+## Module and Dependencies (read first)
+
+- Go module path: `github.com/szporwolik/cqops`. Use this exact path for `-ldflags -X` and imports — do **not** invent variants (e.g. `sq8r`).
+- The Charm v2 stack is imported from the **`charm.land`** namespace, NOT `github.com/charmbracelet`:
+  - `charm.land/bubbletea/v2` (aliased `tea`)
+  - `charm.land/bubbles/v2/...` (e.g. `charm.land/bubbles/v2/textinput`, `/table`, `/viewport`, `/help`, `/key`)
+  - `charm.land/lipgloss/v2`
+  - When adding a Charm component, match the existing `charm.land/.../v2` imports. Never `go get github.com/charmbracelet/bubbles` (that is the wrong/older module and will break the build).
+- Other key deps already vendored in `go.mod`: `farmergreg/adif` + `spec` (ADIF), `ftl/hamradio` (grid/locator/distance), `k0swe/wsjtx-go` (WSJT-X UDP), `spf13/cobra` (CLI), `modernc.org/sqlite` (pure-Go SQLite, no cgo).
+- Do not add new dependencies unless they clearly remove complexity or improve correctness. Prefer the Charm ecosystem and the standard library.
+
 ## Core Principles
 
 - Keep the app fast, small, and reliable.
@@ -93,7 +104,19 @@ The app should remain comfortable on:
 ## Project Structure Expectations
 Keep code grouped by concern.
 
-Expected organization:
+### Package boundaries (keep domain logic out of the UI)
+
+- `internal/qso` — domain: `QSO` struct, ADIF encode, band/frequency mapping, mode/submode tables, validation, station defaults. New domain rules belong here, not in `internal/tui`.
+- `internal/store` — SQLite: open, migrate, queries. All DB access goes through this package.
+- `internal/config` — YAML config, logbooks, paths, timezone, defaults.
+- `internal/app` — aggregate that wires config + DB + WSJT-X lifecycle. Owns startup/shutdown.
+- `internal/{qrz,wavelog,wsjtx,rig}` — integrations (network/UDP/HTTP). Must fail safely and stay independent of the UI.
+- `internal/cli` — Cobra commands (including non-interactive `qso`/`log` mode).
+- `internal/tui` — presentation only. It orchestrates and renders; it should not own ADIF formatting, band math, or schema details.
+
+Dependency direction is one-way: `tui`/`cli` → `app` → `{config, store, qso, integrations}`. Domain packages (`qso`, `store`) must not import `tui`. Do not create circular dependencies.
+
+### `internal/tui` file organization
 
 - `model.go` — root model, `Init`, `Update`, `View`, high-level orchestration.
 - `update_handlers.go` — focused update routing/handlers.
@@ -145,7 +168,7 @@ Current test coverage includes:
 - Wavelog upload/status/private lookup using `httptest.Server`
 - QRZ lookup behavior via function seam
 
-Test files (12 total, 104 tests):
+Test files (run `go test ./...` for the authoritative current count; the list below may drift):
 
 `internal/tui/`:
 - `render_test.go` — layout helpers
@@ -294,6 +317,27 @@ Avoid:
 - adding dependencies for simple tasks.
 - changing behavior without tests.
 - weakening production code only to make tests easier.
+
+## Versioning and Release Builds
+The version is single-sourced from the `VERSION` file and embedded at build time.
+
+- To bump the version: edit `VERSION` only. Do not hardcode version strings elsewhere.
+- The binary resolves its version via `internal/version`: the `-X` ldflags value wins, otherwise it falls back to reading the `VERSION` file next to the executable.
+- When embedding via ldflags, the variable path must be exactly:
+  `github.com/szporwolik/cqops/internal/version.Version` — using any other module path (e.g. `sq8r`) silently fails to embed and leaves the version as `dev`.
+
+Correct release build (reads `VERSION`):
+
+```
+# Unix
+go build -ldflags "-s -w -X github.com/szporwolik/cqops/internal/version.Version=$(cat VERSION)" -o build/cqops ./cmd/cqops/
+```
+```powershell
+# Windows PowerShell
+go build -ldflags "-s -w -X github.com/szporwolik/cqops/internal/version.Version=$(Get-Content VERSION)" -o build\cqops.exe ./cmd/cqops/
+```
+
+Prefer the helper scripts (`scripts/build.sh`, `scripts/build.ps1`) or `make build`, which already wire the correct module path. Do not bump the version unless explicitly asked.
 
 ## Completion Checklist
 Before finishing any substantial change:
