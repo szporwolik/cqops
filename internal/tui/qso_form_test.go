@@ -22,16 +22,18 @@ func newTestModel() *Model {
 					Callsign: "SP9MOA",
 					Grid:     "JO90",
 					Operator: "OP",
-					Rig:      "FT-891",
-					Antenna:  "Dipole",
+					RigName:  "default",
 				},
 			},
+		},
+		Rigs: map[string]config.RigPreset{
+			"default": {Model: "FT-891", Antenna: "Dipole"},
 		},
 	}
 	a := &app.App{
 		Config:      cfg,
 		LogbookName: "test",
-		Logbook:     &config.Logbook{Station: config.Station{Callsign: "SP9MOA", Grid: "JO90", Operator: "OP", Rig: "FT-891", Antenna: "Dipole"}},
+		Logbook:     &config.Logbook{Station: config.Station{Callsign: "SP9MOA", Grid: "JO90", Operator: "OP", RigName: "default"}},
 	}
 	m := New(a, nil)
 	return m

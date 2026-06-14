@@ -107,9 +107,9 @@ var logAddCmd = &cobra.Command{
 			StationCallsign: a.Logbook.Station.Callsign,
 			Operator:        a.Logbook.Station.Operator,
 			MyGridSquare:    a.Logbook.Station.Grid,
-			MyRig:           a.Logbook.Station.Rig,
-			MyAntenna:       a.Logbook.Station.Antenna,
-			TXPower:         a.Logbook.Station.Power,
+			MyRig:           a.Logbook.Station.RigModel(a.Config.Rigs),
+			MyAntenna:       a.Logbook.Station.RigAntenna(a.Config.Rigs),
+			TXPower:         a.Logbook.Station.RigPower(a.Config.Rigs),
 			MySOTARef:       a.Logbook.Station.SOTARef,
 			MyPOTARef:       a.Logbook.Station.POTARef,
 			MyWWFFRef:       a.Logbook.Station.WWFFRef,
@@ -132,17 +132,14 @@ var logAddCmd = &cobra.Command{
 		fmt.Printf("QSO saved [%s]: %s %s %s %s UTC (id: %d)\n",
 			a.LogbookName, qs.Call, bandStr, qs.Mode, qs.QSODate, id)
 
-		// Upload to Wavelog if configured
-		if a.Config.Wavelog.Enabled && a.Config.Wavelog.StationProfileID != "" {
-			wlCall := a.Config.Wavelog.StationCallsign
-			if wlCall == "" {
-				wlCall = a.Logbook.Station.Callsign
-			}
-			adifStr := qs.ToADIFWithStation(wlCall)
+		// Upload to Wavelog if configured on this logbook
+		wl := a.Logbook.Wavelog
+		if wl != nil && wl.Enabled && wl.StationProfileID != "" {
+			adifStr := qs.ToADIFWithStation(a.Logbook.Station.Callsign)
 			result, wlErr := wavelog.PostQSOWithResult(
-				a.Config.Wavelog.URL,
-				a.Config.Wavelog.APIKey,
-				a.Config.Wavelog.StationProfileID,
+				wl.URL,
+				wl.APIKey,
+				wl.StationProfileID,
 				adifStr,
 			)
 			if wlErr != nil {

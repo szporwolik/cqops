@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/qso"
 )
 
@@ -85,7 +86,7 @@ func wavelogPrivateLookupHandler(data map[string]interface{}) http.HandlerFunc {
 
 func TestWavelogUploadDisabled(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.Wavelog.Enabled = false
+	m.App.Logbook.Wavelog = &config.WavelogConfig{Enabled: false}
 
 	qs := qso.NewQSO()
 	qs.Call = "SP9MOA"
@@ -99,10 +100,7 @@ func TestWavelogUploadDisabled(t *testing.T) {
 
 func TestWavelogUploadEnabledNoInternet(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.Wavelog.Enabled = true
-	m.App.Config.Wavelog.URL = "http://127.0.0.1:1" // invalid port
-	m.App.Config.Wavelog.APIKey = "test-key"
-	m.App.Config.Wavelog.StationProfileID = "1"
+	m.App.Logbook.Wavelog = &config.WavelogConfig{Enabled: true, URL: "http://127.0.0.1:1", APIKey: "test-key", StationProfileID: "1"}
 	m.inetOnline = false
 
 	qs := qso.NewQSO()
@@ -120,10 +118,10 @@ func TestWavelogUploadMockSuccess(t *testing.T) {
 	defer srv.Close()
 
 	m := newLifecycleTestModel(t)
-	m.App.Config.Wavelog.Enabled = true
-	m.App.Config.Wavelog.URL = srv.URL
-	m.App.Config.Wavelog.APIKey = "test-key"
-	m.App.Config.Wavelog.StationProfileID = "1"
+	m.App.Logbook.Wavelog.Enabled = true
+	m.App.Logbook.Wavelog.URL = srv.URL
+	m.App.Logbook.Wavelog.APIKey = "test-key"
+	m.App.Logbook.Wavelog.StationProfileID = "1"
 	m.inetOnline = true
 
 	qs := qso.NewQSO()
@@ -151,10 +149,10 @@ func TestWavelogUploadMockDuplicate(t *testing.T) {
 	defer srv.Close()
 
 	m := newLifecycleTestModel(t)
-	m.App.Config.Wavelog.Enabled = true
-	m.App.Config.Wavelog.URL = srv.URL
-	m.App.Config.Wavelog.APIKey = "test-key"
-	m.App.Config.Wavelog.StationProfileID = "1"
+	m.App.Logbook.Wavelog.Enabled = true
+	m.App.Logbook.Wavelog.URL = srv.URL
+	m.App.Logbook.Wavelog.APIKey = "test-key"
+	m.App.Logbook.Wavelog.StationProfileID = "1"
 	m.inetOnline = true
 
 	qs := qso.NewQSO()
@@ -184,10 +182,10 @@ func TestWavelogUploadMockServerError(t *testing.T) {
 	defer srv.Close()
 
 	m := newLifecycleTestModel(t)
-	m.App.Config.Wavelog.Enabled = true
-	m.App.Config.Wavelog.URL = srv.URL
-	m.App.Config.Wavelog.APIKey = "test-key"
-	m.App.Config.Wavelog.StationProfileID = "1"
+	m.App.Logbook.Wavelog.Enabled = true
+	m.App.Logbook.Wavelog.URL = srv.URL
+	m.App.Logbook.Wavelog.APIKey = "test-key"
+	m.App.Logbook.Wavelog.StationProfileID = "1"
 	m.inetOnline = true
 
 	qs := qso.NewQSO()
@@ -214,9 +212,9 @@ func TestWavelogStatusCheckSuccess(t *testing.T) {
 	defer srv.Close()
 
 	m := newLifecycleTestModel(t)
-	m.App.Config.Wavelog.Enabled = true
-	m.App.Config.Wavelog.URL = srv.URL
-	m.App.Config.Wavelog.APIKey = "test-key"
+	m.App.Logbook.Wavelog.Enabled = true
+	m.App.Logbook.Wavelog.URL = srv.URL
+	m.App.Logbook.Wavelog.APIKey = "test-key"
 	m.wlOnline = false
 
 	cmd := m.checkWavelogCmd()
@@ -241,9 +239,9 @@ func TestWavelogStatusCheckFailure(t *testing.T) {
 	defer srv.Close()
 
 	m := newLifecycleTestModel(t)
-	m.App.Config.Wavelog.Enabled = true
-	m.App.Config.Wavelog.URL = srv.URL
-	m.App.Config.Wavelog.APIKey = "test-key"
+	m.App.Logbook.Wavelog.Enabled = true
+	m.App.Logbook.Wavelog.URL = srv.URL
+	m.App.Logbook.Wavelog.APIKey = "test-key"
 	m.wlOnline = true
 
 	cmd := m.checkWavelogCmd()
@@ -275,9 +273,9 @@ func TestWavelogPrivateLookupSuccess(t *testing.T) {
 	defer srv.Close()
 
 	m := newLifecycleTestModel(t)
-	m.App.Config.Wavelog.Enabled = true
-	m.App.Config.Wavelog.URL = srv.URL
-	m.App.Config.Wavelog.APIKey = "test-key"
+	m.App.Logbook.Wavelog.Enabled = true
+	m.App.Logbook.Wavelog.URL = srv.URL
+	m.App.Logbook.Wavelog.APIKey = "test-key"
 	m.inetOnline = true
 	m.fields[fieldBand].SetValue("20m")
 	m.fields[fieldMode].SetValue("SSB")
@@ -314,9 +312,9 @@ func TestWavelogPrivateLookupNotFound(t *testing.T) {
 	defer srv.Close()
 
 	m := newLifecycleTestModel(t)
-	m.App.Config.Wavelog.Enabled = true
-	m.App.Config.Wavelog.URL = srv.URL
-	m.App.Config.Wavelog.APIKey = "test-key"
+	m.App.Logbook.Wavelog.Enabled = true
+	m.App.Logbook.Wavelog.URL = srv.URL
+	m.App.Logbook.Wavelog.APIKey = "test-key"
 	m.inetOnline = true
 	m.fields[fieldBand].SetValue("20m")
 	m.fields[fieldMode].SetValue("SSB")
@@ -339,7 +337,7 @@ func TestWavelogPrivateLookupNotFound(t *testing.T) {
 
 func TestWavelogMaybeCheckWavelogDisabled(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.Wavelog.Enabled = false
+	m.App.Logbook.Wavelog.Enabled = false
 
 	cmd := m.maybeCheckWavelog()
 	if cmd != nil {
@@ -349,10 +347,10 @@ func TestWavelogMaybeCheckWavelogDisabled(t *testing.T) {
 
 func TestWavelogUploadADIFNoStationProfile(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.Wavelog.Enabled = true
-	m.App.Config.Wavelog.URL = "http://example.com"
-	m.App.Config.Wavelog.APIKey = "test-key"
-	m.App.Config.Wavelog.StationProfileID = "" // no station
+	m.App.Logbook.Wavelog.Enabled = true
+	m.App.Logbook.Wavelog.URL = "http://example.com"
+	m.App.Logbook.Wavelog.APIKey = "test-key"
+	m.App.Logbook.Wavelog.StationProfileID = "" // no station
 	m.inetOnline = true
 
 	cmd := m.uploadADIFToWavelog("<CALL:6>SP9MOA<EOR>", 1, "SP9MOA")
@@ -390,10 +388,10 @@ func TestWavelogStatusCheckWithStations(t *testing.T) {
 	defer srv.Close()
 
 	m := newLifecycleTestModel(t)
-	m.App.Config.Wavelog.Enabled = true
-	m.App.Config.Wavelog.URL = srv.URL
-	m.App.Config.Wavelog.APIKey = "test-key"
-	m.App.Config.Wavelog.StationProfileID = "1"
+	m.App.Logbook.Wavelog.Enabled = true
+	m.App.Logbook.Wavelog.URL = srv.URL
+	m.App.Logbook.Wavelog.APIKey = "test-key"
+	m.App.Logbook.Wavelog.StationProfileID = "1"
 	m.wlOnline = false
 
 	cmd := m.checkWavelogCmd()
@@ -432,10 +430,10 @@ func TestWavelogStatusCheckNoStations(t *testing.T) {
 	defer srv.Close()
 
 	m := newLifecycleTestModel(t)
-	m.App.Config.Wavelog.Enabled = true
-	m.App.Config.Wavelog.URL = srv.URL
-	m.App.Config.Wavelog.APIKey = "test-key"
-	m.App.Config.Wavelog.StationProfileID = "1"
+	m.App.Logbook.Wavelog.Enabled = true
+	m.App.Logbook.Wavelog.URL = srv.URL
+	m.App.Logbook.Wavelog.APIKey = "test-key"
+	m.App.Logbook.Wavelog.StationProfileID = "1"
 	m.wlOnline = false
 
 	cmd := m.checkWavelogCmd()
@@ -470,10 +468,10 @@ func TestWavelogStatusCheckMalformedStations(t *testing.T) {
 	defer srv.Close()
 
 	m := newLifecycleTestModel(t)
-	m.App.Config.Wavelog.Enabled = true
-	m.App.Config.Wavelog.URL = srv.URL
-	m.App.Config.Wavelog.APIKey = "test-key"
-	m.App.Config.Wavelog.StationProfileID = "1"
+	m.App.Logbook.Wavelog.Enabled = true
+	m.App.Logbook.Wavelog.URL = srv.URL
+	m.App.Logbook.Wavelog.APIKey = "test-key"
+	m.App.Logbook.Wavelog.StationProfileID = "1"
 	m.wlOnline = false
 
 	cmd := m.checkWavelogCmd()

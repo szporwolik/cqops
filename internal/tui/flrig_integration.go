@@ -20,9 +20,7 @@ func (m *Model) refreshFlrigClient() {
 		return
 	}
 	if len(m.App.Config.Rigs) == 0 {
-		s := m.App.Logbook.Station
 		m.App.Config.Rigs = map[string]config.RigPreset{"default": {
-			Model: s.Rig, Antenna: s.Antenna, Power: s.Power,
 			FlrigEnabled: m.App.Config.Rig.Flrig.Enabled, FlrigHost: "localhost", FlrigPort: "12345",
 		}}
 	}

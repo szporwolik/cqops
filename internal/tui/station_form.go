@@ -7,58 +7,52 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/szporwolik/cqops/internal/config"
 )
 
 type StationForm struct {
-	Callsign textinput.Model
-	Operator textinput.Model
-	Locator  textinput.Model
-	SOTARef  textinput.Model
-	POTARef  textinput.Model
-	WWFFRef  textinput.Model
+	Callsign    textinput.Model
+	Operator    textinput.Model
+	Locator     textinput.Model
+	SOTARef     textinput.Model
+	POTARef     textinput.Model
+	WWFFRef     textinput.Model
+	WlEnabled   bool
+	wlCbFocus   bool // true when the WL checkbox has focus
+	wlBtnFocus  int  // 0=none, 1=Update, 2=Test
+	WlURL       textinput.Model
+	WlKey       textinput.Model
+	WlStationID textinput.Model
 }
 
+// Wavelog button action messages sent when a button is activated via Enter.
+type wlUpdateAction struct{}
+type wlTestAction struct{}
+type wlCycleStation struct{}
+
 func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder string) *StationForm {
-	cs := textinput.New()
-	cs.CharLimit = 20
-	cs.SetWidth(28)
-	cs.Placeholder = callsignPlaceholder
+	mkTI := func(limit int, width int, placeholder string) textinput.Model {
+		ti := textinput.New()
+		ti.CharLimit = limit
+		ti.SetWidth(width)
+		ti.Placeholder = placeholder
+		ti.Prompt = ""
+		return ti
+	}
+
+	cs := mkTI(20, 28, callsignPlaceholder)
 	cs.Focus()
-	cs.Prompt = ""
+	op := mkTI(20, 28, opPlaceholder)
+	lc := mkTI(8, 28, locatorPlaceholder)
+	sr := mkTI(20, 28, "e.g. SP/TA-001")
+	pr := mkTI(20, 28, "e.g. SP-0001")
+	wr := mkTI(20, 28, "e.g. SPFF-0001")
 
-	op := textinput.New()
-	op.CharLimit = 20
-	op.SetWidth(28)
-	op.Placeholder = opPlaceholder
-	op.Prompt = ""
+	wu := mkTI(80, 28, "https://log.example.com")
+	wk := mkTI(64, 28, "Wavelog API key")
+	ws := mkTI(80, 60, "press Update to fetch")
 
-	lc := textinput.New()
-	lc.CharLimit = 8
-	lc.SetWidth(28)
-	lc.Placeholder = locatorPlaceholder
-	lc.Prompt = ""
-
-	sr := textinput.New()
-	sr.CharLimit = 20
-	sr.SetWidth(28)
-	sr.Placeholder = "e.g. SP/TA-001"
-	sr.Prompt = ""
-
-	pr := textinput.New()
-	pr.CharLimit = 20
-	pr.SetWidth(28)
-	pr.Placeholder = "e.g. SP-0001"
-	pr.Prompt = ""
-
-	wr := textinput.New()
-	wr.CharLimit = 20
-	wr.SetWidth(28)
-	wr.Placeholder = "e.g. SPFF-0001"
-	wr.Prompt = ""
-
-	// Apply Surface background to textinput styles BEFORE storing in struct
-	// (textinput.Model is a value type — copies made after SetStyles are stale).
-	for _, ti := range []*textinput.Model{&cs, &op, &lc, &sr, &pr, &wr} {
+	for _, ti := range []*textinput.Model{&cs, &op, &lc, &sr, &pr, &wr, &wu, &wk, &ws} {
 		s := ti.Styles()
 		s.Focused.Text = s.Focused.Text.Background(P.Surface)
 		s.Focused.Placeholder = s.Focused.Placeholder.Background(P.Surface)
@@ -69,15 +63,17 @@ func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder strin
 		ti.SetStyles(s)
 	}
 
-	sf := &StationForm{
-		Callsign: cs,
-		Operator: op,
-		Locator:  lc,
-		SOTARef:  sr,
-		POTARef:  pr,
-		WWFFRef:  wr,
+	return &StationForm{
+		Callsign:    cs,
+		Operator:    op,
+		Locator:     lc,
+		SOTARef:     sr,
+		POTARef:     pr,
+		WWFFRef:     wr,
+		WlURL:       wu,
+		WlKey:       wk,
+		WlStationID: ws,
 	}
-	return sf
 }
 
 func (f *StationForm) Update(msg tea.KeyPressMsg) {
@@ -100,6 +96,12 @@ func (f *StationForm) Update(msg tea.KeyPressMsg) {
 	case f.WWFFRef.Focused():
 		f.WWFFRef, _ = f.WWFFRef.Update(msg)
 		f.WWFFRef.SetValue(strings.ToUpper(f.WWFFRef.Value()))
+	case f.WlURL.Focused():
+		f.WlURL, _ = f.WlURL.Update(msg)
+	case f.WlKey.Focused():
+		f.WlKey, _ = f.WlKey.Update(msg)
+	case f.WlStationID.Focused():
+		// Station ID is read-only — updated via Update button or Space cycle.
 	}
 }
 
@@ -122,6 +124,23 @@ func (f *StationForm) NextInput() {
 		f.WWFFRef.Focus()
 	case f.WWFFRef.Focused():
 		f.WWFFRef.Blur()
+		f.wlCbFocus = true
+	case f.wlCbFocus:
+		f.wlCbFocus = false
+		f.WlURL.Focus()
+	case f.WlURL.Focused():
+		f.WlURL.Blur()
+		f.WlKey.Focus()
+	case f.WlKey.Focused():
+		f.WlKey.Blur()
+		f.WlStationID.Focus()
+	case f.WlStationID.Focused():
+		f.WlStationID.Blur()
+		f.wlBtnFocus = 1
+	case f.wlBtnFocus == 1:
+		f.wlBtnFocus = 2
+	case f.wlBtnFocus == 2:
+		f.wlBtnFocus = 0
 		f.Callsign.Focus()
 	}
 }
@@ -130,7 +149,12 @@ func (f *StationForm) PrevInput() {
 	switch {
 	case f.Callsign.Focused():
 		f.Callsign.Blur()
-		f.WWFFRef.Focus()
+		f.wlBtnFocus = 2
+	case f.wlBtnFocus == 2:
+		f.wlBtnFocus = 1
+	case f.wlBtnFocus == 1:
+		f.wlBtnFocus = 0
+		f.WlStationID.Focus()
 	case f.Operator.Focused():
 		f.Operator.Blur()
 		f.Locator.Focus()
@@ -139,21 +163,32 @@ func (f *StationForm) PrevInput() {
 		f.Callsign.Focus()
 	case f.SOTARef.Focused():
 		f.SOTARef.Blur()
-		f.Locator.Focus()
+		f.Operator.Focus()
 	case f.POTARef.Focused():
 		f.POTARef.Blur()
 		f.SOTARef.Focus()
 	case f.WWFFRef.Focused():
 		f.WWFFRef.Blur()
 		f.POTARef.Focus()
+	case f.wlCbFocus:
+		f.wlCbFocus = false
+		f.WWFFRef.Focus()
+	case f.WlURL.Focused():
+		f.WlURL.Blur()
+		f.wlCbFocus = true
+	case f.WlKey.Focused():
+		f.WlKey.Blur()
+		f.WlURL.Focus()
+	case f.WlStationID.Focused():
+		f.WlStationID.Blur()
+		f.WlKey.Focus()
 	}
 }
 
 func (f *StationForm) OnLastField() bool {
-	return f.WWFFRef.Focused()
+	return f.wlBtnFocus == 2
 }
 
-// BlurAll blurs all textinput fields.
 func (f *StationForm) BlurAll() {
 	f.Callsign.Blur()
 	f.Operator.Blur()
@@ -161,15 +196,25 @@ func (f *StationForm) BlurAll() {
 	f.SOTARef.Blur()
 	f.POTARef.Blur()
 	f.WWFFRef.Blur()
+	f.wlCbFocus = false
+	f.wlBtnFocus = 0
+	f.WlURL.Blur()
+	f.WlKey.Blur()
+	f.WlStationID.Blur()
 }
 
-func (f *StationForm) Values() (callsign, operator, locator, sotaRef, potaRef, wwffRef string) {
+func (f *StationForm) Values() (callsign, operator, locator, sotaRef, potaRef, wwffRef string,
+	wlEnabled bool, wlURL, wlKey, wlStationID string) {
 	return strings.ToUpper(strings.TrimSpace(f.Callsign.Value())),
 		strings.ToUpper(strings.TrimSpace(f.Operator.Value())),
 		formatLocator(f.Locator.Value()),
 		strings.TrimSpace(f.SOTARef.Value()),
 		strings.TrimSpace(f.POTARef.Value()),
-		strings.TrimSpace(f.WWFFRef.Value())
+		strings.TrimSpace(f.WWFFRef.Value()),
+		f.WlEnabled,
+		strings.TrimSpace(f.WlURL.Value()),
+		strings.TrimSpace(f.WlKey.Value()),
+		strings.TrimSpace(f.WlStationID.Value())
 }
 
 func (f *StationForm) SetValues(callsign, operator, locator, sotaRef, potaRef, wwffRef string) {
@@ -181,55 +226,137 @@ func (f *StationForm) SetValues(callsign, operator, locator, sotaRef, potaRef, w
 	f.WWFFRef.SetValue(wwffRef)
 }
 
+func (f *StationForm) SetWavelogValues(wl *config.WavelogConfig) {
+	if wl != nil {
+		f.WlEnabled = wl.Enabled
+		f.WlURL.SetValue(wl.URL)
+		f.WlKey.SetValue(wl.APIKey)
+		f.WlStationID.SetValue(wl.StationProfileID)
+	} else {
+		f.WlEnabled = false
+		f.WlURL.SetValue("")
+		f.WlKey.SetValue("")
+		f.WlStationID.SetValue("")
+	}
+}
+
 func (f *StationForm) View() tea.View {
 	bg := lipgloss.NewStyle().Background(P.Surface)
-	fields := []struct {
+
+	type fieldDef struct {
 		label string
 		ti    *textinput.Model
-	}{
-		{"Callsign:", &f.Callsign},
-		{"Grid locator:", &f.Locator},
-		{"Operator (optional):", &f.Operator},
-		{"SOTA Ref (optional):", &f.SOTARef},
-		{"POTA Ref (optional):", &f.POTARef},
-		{"WWFF Ref (optional):", &f.WWFFRef},
 	}
+	var fields []fieldDef
+	fields = append(fields,
+		fieldDef{"Callsign:", &f.Callsign},
+		fieldDef{"Grid locator:", &f.Locator},
+		fieldDef{"Operator (optional):", &f.Operator},
+		fieldDef{"SOTA Ref (optional):", &f.SOTARef},
+		fieldDef{"POTA Ref (optional):", &f.POTARef},
+		fieldDef{"WWFF Ref (optional):", &f.WWFFRef},
+	)
 
 	var b strings.Builder
 	for _, field := range fields {
-		focused := field.ti.Focused()
-		raw := strings.TrimSpace(field.ti.Value())
-		label := LabelStyle.Render(fit(field.label, 22))
-		if focused {
-			label = CursorStyle.Render(fit(field.label, 22))
-		}
-		// Render value: textinput view when focused, ValueStyle when not
-		// (matching the edit QSO form pattern).
-		// Wrap focused view with InputStyle to catch any ANSI resets from
-		// placeholder rendering.
-		var val string
-		if focused {
-			val = field.ti.View()
-		} else if raw == "" {
-			val = SubtleStyle.Render("\u2014")
-		} else {
-			val = ValueStyle.Render(raw)
-		}
-		prefix := "  "
-		if focused {
-			prefix = CursorStyle.Render("> ")
-		}
-		line := prefix + label + bg.Render(" ") + val
-		b.WriteString(menuLine(line, 80))
-		b.WriteString("\n")
+		b.WriteString(f.renderFieldLine(field.label, field.ti))
 	}
+
+	// Wavelog checkbox — focusable via Tab, Space to toggle.
+	wlCheckbox := "[ ]"
+	if f.WlEnabled {
+		wlCheckbox = "[x]"
+	}
+	wlCbPrefix := "  "
+	wlCbLabel := LabelStyle.Render(fit("Wavelog:", 22))
+	if f.wlCbFocus {
+		wlCbPrefix = CursorStyle.Render("> ")
+		wlCbLabel = CursorStyle.Render(fit("Wavelog:", 22))
+		wlCheckbox = CursorStyle.Render(wlCheckbox)
+	} else {
+		wlCheckbox = bg.Render(wlCheckbox)
+	}
+	b.WriteString(menuLine(wlCbPrefix+wlCbLabel+bg.Render(" ")+wlCheckbox, 80))
+	b.WriteString("\n")
+
+	if f.WlEnabled {
+		wlFields := []fieldDef{
+			{"  API URL:", &f.WlURL},
+			{"  API Key:", &f.WlKey},
+			{"  Station ID:", &f.WlStationID},
+		}
+		for _, field := range wlFields {
+			b.WriteString(f.renderFieldLine(field.label, field.ti))
+		}
+
+		updateBtn := "[ Update ]"
+		updateHint := "fetch stations from Wavelog"
+		if f.wlBtnFocus == 1 {
+			b.WriteString(menuLine("  "+CursorStyle.Render("> ")+CursorStyle.Render(updateBtn)+bg.Render(" ")+SubtleStyle.Render(updateHint), 80))
+		} else {
+			b.WriteString(menuLine("    "+InputStyle.Render(updateBtn)+bg.Render(" ")+SubtleStyle.Render(updateHint), 80))
+		}
+		b.WriteString("\n")
+
+		testBtn := "[ Test ]"
+		testHint := "verify connection and station"
+		if f.wlBtnFocus == 2 {
+			b.WriteString(menuLine("  "+CursorStyle.Render("> ")+CursorStyle.Render(testBtn)+bg.Render(" ")+SubtleStyle.Render(testHint), 80))
+		} else {
+			b.WriteString(menuLine("    "+InputStyle.Render(testBtn)+bg.Render(" ")+SubtleStyle.Render(testHint), 80))
+		}
+	}
+
 	return tea.NewView(b.String())
+}
+
+func (f *StationForm) renderFieldLine(label string, ti *textinput.Model) string {
+	bg := lipgloss.NewStyle().Background(P.Surface)
+	focused := ti.Focused()
+	raw := strings.TrimSpace(ti.Value())
+
+	lbl := LabelStyle.Render(fit(label, 22))
+	if focused {
+		lbl = CursorStyle.Render(fit(label, 22))
+	}
+
+	var val string
+	if focused {
+		val = ti.View()
+	} else if raw == "" {
+		val = SubtleStyle.Render("\u2014")
+	} else {
+		val = ValueStyle.Render(raw)
+	}
+	prefix := "  "
+	if focused {
+		prefix = CursorStyle.Render("> ")
+	}
+	return menuLine(prefix+lbl+bg.Render(" ")+val, 80) + "\n"
 }
 
 func (f *StationForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 	k := msg
 	if k.String() == "ctrl+s" || k.String() == "\x13" {
 		return func() tea.Msg { return enterOnLastFieldMsg{} }
+	}
+	if k.String() == " " || k.String() == "space" {
+		if f.wlCbFocus {
+			f.WlEnabled = !f.WlEnabled
+			return nil
+		}
+	}
+	// Space on Station ID field cycles through fetched stations.
+	if (k.String() == " " || k.String() == "space") && f.WlStationID.Focused() {
+		return func() tea.Msg { return wlCycleStation{} }
+	}
+	if k.String() == "enter" {
+		switch f.wlBtnFocus {
+		case 1:
+			return func() tea.Msg { return wlUpdateAction{} }
+		case 2:
+			return func() tea.Msg { return wlTestAction{} }
+		}
 	}
 	if k.String() == "tab" || msg.Code == tea.KeyDown || k.String() == "enter" {
 		f.NextInput()
@@ -246,7 +373,7 @@ func (f *StationForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 type enterOnLastFieldMsg struct{}
 
 func (f *StationForm) Validate() error {
-	cs, _, gr, _, _, _ := f.Values()
+	cs, _, gr, _, _, _, _, _, _, _ := f.Values()
 	if cs == "" {
 		return fmt.Errorf("callsign is required")
 	}

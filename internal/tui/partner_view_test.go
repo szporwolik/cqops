@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/qrz"
 )
 
@@ -177,9 +178,7 @@ func TestPartnerViewRenderWLInfo(t *testing.T) {
 
 	// WL enabled, lookup not yet done — should show "pending"
 	m2 := newTestModel()
-	m2.App.Config.Wavelog.Enabled = true
-	m2.App.Config.Wavelog.URL = "https://example.com"
-	m2.App.Config.Wavelog.APIKey = "test-key"
+	m2.App.Logbook.Wavelog = &config.WavelogConfig{Enabled: true, URL: "https://example.com", APIKey: "test-key"}
 	m2.wlLookupDone = false
 	info2 := m2.renderWLInfo(40)
 	if !strings.Contains(info2, "pending") {
@@ -188,9 +187,7 @@ func TestPartnerViewRenderWLInfo(t *testing.T) {
 
 	// WL enabled, lookup completed with no data — should show "No WL data"
 	m3 := newTestModel()
-	m3.App.Config.Wavelog.Enabled = true
-	m3.App.Config.Wavelog.URL = "https://example.com"
-	m3.App.Config.Wavelog.APIKey = "test-key"
+	m3.App.Logbook.Wavelog = &config.WavelogConfig{Enabled: true, URL: "https://example.com", APIKey: "test-key"}
 	m3.wlLookupDone = true
 	info3 := m3.renderWLInfo(40)
 	if !strings.Contains(info3, "No WL data") {

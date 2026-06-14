@@ -44,13 +44,9 @@ func NewRigChooser(a *app.App, tq *ToastQueue) *RigChooser {
 	// If no rig is active but rigs are configured, auto-select the first one.
 	if a.Logbook.Station.RigName == "" && len(names) > 0 {
 		name := names[0]
-		rp := a.Config.Rigs[name]
-		a.Logbook.Station.Rig = rp.Model
-		a.Logbook.Station.Antenna = rp.Antenna
-		a.Logbook.Station.Power = rp.Power
 		a.Logbook.Station.RigName = name
 		lb := a.Config.Logbooks[a.LogbookName]
-		lb.Station = a.Logbook.Station
+		lb.Station.RigName = name
 		a.Config.Logbooks[a.LogbookName] = lb
 	}
 
@@ -260,16 +256,12 @@ func (rc *RigChooser) selectRig() tea.Cmd {
 		return nil
 	}
 	name := rc.names[rc.cursor]
-	rp := rc.app.Config.Rigs[name]
 
-	// Update the in-memory logbook directly.
-	rc.app.Logbook.Station.Rig = rp.Model
-	rc.app.Logbook.Station.Antenna = rp.Antenna
-	rc.app.Logbook.Station.Power = rp.Power
+	// Update the in-memory logbook — only store the RigName reference.
 	rc.app.Logbook.Station.RigName = name
 	// Persist to config map.
 	lb := rc.app.Config.Logbooks[rc.app.LogbookName]
-	lb.Station = rc.app.Logbook.Station
+	lb.Station.RigName = name
 	rc.app.Config.Logbooks[rc.app.LogbookName] = lb
 
 	if err := config.Save(rc.app.ConfigPath, rc.app.Config); err != nil {

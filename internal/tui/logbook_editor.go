@@ -94,7 +94,6 @@ type LogbookEditor struct {
 	wlURL          string
 	wlKey          string
 	wlStationID    string
-	wlStationCall  string
 	logStationOp   string
 	logStationGrid string
 	mismatchQSOs   []qso.QSO
@@ -180,8 +179,8 @@ func editorColValue(col string, q *qso.QSO) string {
 	return ""
 }
 
-func NewLogbookEditor(db *sql.DB, wlURL, wlKey, wlStationID, wlStationCall, logStationOp, logStationGrid string) *LogbookEditor {
-	le := &LogbookEditor{db: db, mode: edModeList, wlURL: wlURL, wlKey: wlKey, wlStationID: wlStationID, wlStationCall: wlStationCall, logStationOp: logStationOp, logStationGrid: logStationGrid}
+func NewLogbookEditor(db *sql.DB, wlURL, wlKey, wlStationID, logStationOp, logStationGrid string) *LogbookEditor {
+	le := &LogbookEditor{db: db, mode: edModeList, wlURL: wlURL, wlKey: wlKey, wlStationID: wlStationID, logStationOp: logStationOp, logStationGrid: logStationGrid}
 	for i := qsoEditField(0); i < qefCount; i++ {
 		ti := textinput.New()
 		ti.Prompt = ""

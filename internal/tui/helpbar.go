@@ -13,6 +13,18 @@ func (m *Model) helpView() string {
 	if m.confirm != nil {
 		return HelpStyle.Render("\u2190/\u2192 choose  \u2022  enter confirm  \u2022  esc cancel")
 	}
+
+	// Sub-components with their own footer text take priority over screen-level bindings.
+	if m.screen == screenCallbook && m.callbookMenu != nil {
+		return HelpStyle.Render(m.callbookMenu.FooterText())
+	}
+	if m.screen == screenRigEdit && m.rigChooser != nil {
+		return HelpStyle.Render(m.rigChooser.FooterText())
+	}
+	if m.screen == screenChooser && m.chooser != nil {
+		return HelpStyle.Render(m.chooser.FooterText())
+	}
+
 	bindings := m.ActiveBindings()
 	if len(bindings) == 0 {
 		bindings = []key.Binding{m.keys.Quit}

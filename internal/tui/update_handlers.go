@@ -119,7 +119,8 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		if callChanged && m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled {
 			cmds = append(cmds, m.qrzLookup(call))
 		}
-		if (callChanged || bandChanged || modeChanged) && m.App.Config.Wavelog.Enabled && m.App.Config.Wavelog.APIKey != "" {
+		wl := m.App.Logbook.Wavelog
+		if (callChanged || bandChanged || modeChanged) && wl != nil && wl.Enabled && wl.APIKey != "" {
 			cmds = append(cmds, m.wlLookup(call))
 		}
 		if len(cmds) > 0 {
@@ -140,7 +141,12 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 
 	case key.Matches(msg, m.keys.LogEditor):
 		applog.Debug("tab: F6 Log Editor")
-		m.logbookEditor = NewLogbookEditor(m.App.DB, m.App.Config.Wavelog.URL, m.App.Config.Wavelog.APIKey, m.App.Config.Wavelog.StationProfileID, m.App.Config.Wavelog.StationCallsign, m.App.Logbook.Station.Operator, m.App.Logbook.Station.Grid)
+		wl := m.App.Logbook.Wavelog
+		wlURL, wlKey, wlStationID := "", "", ""
+		if wl != nil {
+			wlURL, wlKey, wlStationID = wl.URL, wl.APIKey, wl.StationProfileID
+		}
+		m.logbookEditor = NewLogbookEditor(m.App.DB, wlURL, wlKey, wlStationID, m.App.Logbook.Station.Operator, m.App.Logbook.Station.Grid)
 		m.logbookEditor.width = m.width
 		m.logbookEditor.height = m.height
 		qsos, _ := store.ListAllQSOs(m.App.DB)
@@ -171,7 +177,8 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 				if m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled {
 					cmds = append(cmds, m.qrzLookup(call))
 				}
-				if m.App.Config.Wavelog.Enabled && m.App.Config.Wavelog.APIKey != "" {
+				wl := m.App.Logbook.Wavelog
+			if wl != nil && wl.Enabled && wl.APIKey != "" {
 					cmds = append(cmds, m.wlLookup(call))
 				}
 				if len(cmds) > 0 {
@@ -322,6 +329,12 @@ func (m *Model) handleChooserUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 	cmd = tea.Batch(cmd, chooserCmd)
 	if m.chooser.done {
 		m.screen = screenMainMenu
+		m.wlForceCheck = true
+		m.needRefresh = true
+	}
+	// Logbook was switched via Enter in the chooser — force WL check.
+	if _, ok := msg.(logbookSwitchedMsg); ok {
+		m.wlForceCheck = true
 		m.needRefresh = true
 	}
 	return m, cmd
@@ -389,19 +402,13 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			m.screen = screenMainMenu
 		}
 		if m.integrationMenu.saved {
-			wsjtxE, wsjtxH, wsjtxP, wlE, wlURL, wlKey, wlSta, wlStaCall, _ := m.integrationMenu.Values()
+			wsjtxE, wsjtxH, wsjtxP := m.integrationMenu.Values()
 			m.App.Config.WSJTX.Enabled = wsjtxE
 			m.App.Config.WSJTX.UDPHost = wsjtxH
 			m.App.Config.WSJTX.UDPPort = wsjtxP
-			m.App.Config.Wavelog.Enabled = wlE
-			m.App.Config.Wavelog.URL = wlURL
-			m.App.Config.Wavelog.APIKey = wlKey
-			m.App.Config.Wavelog.StationProfileID = wlSta
-			m.App.Config.Wavelog.StationCallsign = wlStaCall
 			m.saveConfig("Settings saved")
 			applog.Info("Integration config saved, restarting services")
 			m.App.MaybeRestartWSJTX()
-			cmd = tea.Batch(cmd, m.checkWavelogCmd())
 			m.screen = screenMainMenu
 		}
 	}
@@ -544,6 +551,7 @@ func (m *Model) cycleLogbook() tea.Cmd {
 	}
 	m.toasts.Success("Logbook: " + next)
 	applog.Info("Logbook cycled", "name", next)
+	m.wlForceCheck = true
 	m.needRefresh = true
 	return nil
 }
@@ -576,13 +584,9 @@ func (m *Model) cycleRig() tea.Cmd {
 	next := names[idx]
 	rp := m.App.Config.Rigs[next]
 
-	m.App.Logbook.Station.Rig = rp.Model
-	m.App.Logbook.Station.Antenna = rp.Antenna
-	m.App.Logbook.Station.Power = rp.Power
 	m.App.Logbook.Station.RigName = next
-
 	lb := m.App.Config.Logbooks[m.App.LogbookName]
-	lb.Station = m.App.Logbook.Station
+	lb.Station.RigName = next
 	m.App.Config.Logbooks[m.App.LogbookName] = lb
 
 	if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {

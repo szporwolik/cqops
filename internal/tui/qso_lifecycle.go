@@ -42,7 +42,17 @@ func (m *Model) saveQSO() tea.Cmd {
 	qs.POTARef = strings.TrimSpace(m.fields[fieldPOTA].Value())
 	qs.WWFFRef = strings.TrimSpace(m.fields[fieldWWFF].Value())
 	qs.IOTA = strings.TrimSpace(m.fields[fieldIOTA].Value())
-	station := qso.StationInfo{StationCallsign: m.App.Logbook.Station.Callsign, Operator: m.App.Logbook.Station.Operator, MyGridSquare: m.App.Logbook.Station.Grid, MyRig: m.App.Logbook.Station.Rig, MyAntenna: m.App.Logbook.Station.Antenna, TXPower: m.App.Logbook.Station.Power, MySOTARef: m.App.Logbook.Station.SOTARef, MyPOTARef: m.App.Logbook.Station.POTARef, MyWWFFRef: m.App.Logbook.Station.WWFFRef}
+	station := qso.StationInfo{
+		StationCallsign: m.App.Logbook.Station.Callsign,
+		Operator:        m.App.Logbook.Station.Operator,
+		MyGridSquare:    m.App.Logbook.Station.Grid,
+		MyRig:           m.App.Logbook.Station.RigModel(m.App.Config.Rigs),
+		MyAntenna:       m.App.Logbook.Station.RigAntenna(m.App.Config.Rigs),
+		TXPower:         m.App.Logbook.Station.RigPower(m.App.Config.Rigs),
+		MySOTARef:       m.App.Logbook.Station.SOTARef,
+		MyPOTARef:       m.App.Logbook.Station.POTARef,
+		MyWWFFRef:       m.App.Logbook.Station.WWFFRef,
+	}
 	if qs.GridSquare != "" && station.MyGridSquare != "" {
 		qs.Distance = gridDistanceKm(station.MyGridSquare, qs.GridSquare)
 		qs.Bearing = gridBearingDeg(station.MyGridSquare, qs.GridSquare)

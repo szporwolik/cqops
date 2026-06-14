@@ -238,25 +238,25 @@ func (cm *CallbookMenu) View() tea.View {
 	b.WriteString(menuLine(qrPrefix+LabelStyle.Render(fit("Use QRZ:", 14))+bg.Render(" ")+checkbox, w))
 	if cm.enabled {
 		b.WriteString("\n")
-		b.WriteString(menuLine(cm.renderField(1, "Username:", &cm.user), w))
+		b.WriteString(menuLine(cm.renderField(1, "  Username:", &cm.user), w))
 		b.WriteString("\n")
-		b.WriteString(menuLine(cm.renderField(2, "Password:", &cm.pass), w))
+		b.WriteString(menuLine(cm.renderField(2, "  Password:", &cm.pass), w))
 
-		// Test button
+		// Test button — indented under QRZ.
 		b.WriteString("\n")
 		btnText := "[ Test Connection ]"
 		var btnLine string
 		if !cm.inetOnline {
-			btnLine = "  " + DimStyle.Render(btnText) + bg.Render(" ") + DimStyle.Render("(offline)")
+			btnLine = "    " + DimStyle.Render(btnText) + bg.Render(" ") + DimStyle.Render("(offline)")
 		} else if cm.focus == 3 {
-			btnLine = CursorStyle.Render("> ") + CursorStyle.Render(btnText)
+			btnLine = CursorStyle.Render("> ") + CursorStyle.Render("  "+btnText)
 		} else {
-			btnLine = "  " + InputStyle.Render(btnText)
+			btnLine = "    " + InputStyle.Render(btnText)
 		}
 		b.WriteString(menuLine(btnLine, w))
 
 		if cm.testResult != "" {
-			b.WriteString("\n  ")
+			b.WriteString("\n    ")
 			if cm.testing {
 				b.WriteString(SubtleStyle.Render(cm.testResult))
 			} else if strings.HasPrefix(cm.testResult, "OK") {

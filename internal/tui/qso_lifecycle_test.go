@@ -43,22 +43,22 @@ func newLifecycleTestModel(t *testing.T) *Model {
 					Callsign: "SP9MOA",
 					Grid:     "JO90",
 					Operator: "OP",
-					Rig:      "FT-891",
-					Antenna:  "Dipole",
-					Power:    "100",
+					RigName:  "default",
 				},
 			},
 		},
+		Rigs: map[string]config.RigPreset{
+			"default": {Model: "FT-891", Antenna: "Dipole", Power: "100"},
+		},
 	}
 	// Disable all integrations for tests
-	cfg.Wavelog.Enabled = false
 	cfg.WSJTX.Enabled = false
 
 	a := &app.App{
 		Config:      cfg,
 		ConfigPath:  "", // no config file
 		LogbookName: "test",
-		Logbook:     &config.Logbook{Station: config.Station{Callsign: "SP9MOA", Grid: "JO90", Operator: "OP", Rig: "FT-891", Antenna: "Dipole", Power: "100"}},
+		Logbook:     &config.Logbook{Station: config.Station{Callsign: "SP9MOA", Grid: "JO90", Operator: "OP", RigName: "default"}, Wavelog: &config.WavelogConfig{}},
 		DB:          db,
 		DBPath:      dbPath,
 	}
@@ -378,7 +378,7 @@ func TestSaveQSOSuccessToast(t *testing.T) {
 
 func TestLogQSOFromADIFValid(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.Wavelog.Enabled = false
+	m.App.Logbook.Wavelog.Enabled = false
 
 	adif := "<CALL:6>SP9MOA <BAND:3>20m <MODE:3>SSB <FREQ:7>14.2500 " +
 		"<QSO_DATE:8>20260614 <TIME_ON:6>120000 " +
@@ -446,7 +446,7 @@ func TestLogQSOFromADIFUpdatesRecentQSOs(t *testing.T) {
 
 func TestLogQSOFromADIFWavelogDisabled(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.Wavelog.Enabled = false
+	m.App.Logbook.Wavelog.Enabled = false
 
 	adif := "<CALL:6>SP9MOA <BAND:3>20m <MODE:3>SSB " +
 		"<QSO_DATE:8>20260614 <TIME_ON:6>120000 " +

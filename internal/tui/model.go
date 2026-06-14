@@ -125,6 +125,7 @@ type Model struct {
 	retainComment   bool
 	retainFocused   bool // true when the Retain checkbox has focus (instead of a text field)
 	wlOnline        bool
+	wlForceCheck    bool // force Wavelog check on next tick
 	wlStationName   string // e.g. "JO30oo / DJ7NT"
 	wlStationLabel  string // e.g. "Debug location"
 

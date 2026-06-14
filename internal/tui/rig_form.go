@@ -252,9 +252,9 @@ func (f *RigForm) View() tea.View {
 
 	if f.FlrigEnabled {
 		b.WriteString("\n")
-		b.WriteString(menuLine(renderField("Flrig host:", &f.FlrigHost, f.focus == rigFieldFlrigHost, 80), 80))
+		b.WriteString(menuLine(renderField("  Flrig host:", &f.FlrigHost, f.focus == rigFieldFlrigHost, 80), 80))
 		b.WriteString("\n")
-		b.WriteString(menuLine(renderField("Flrig port:", &f.FlrigPort, f.focus == rigFieldFlrigPort, 80), 80))
+		b.WriteString(menuLine(renderField("  Flrig port:", &f.FlrigPort, f.focus == rigFieldFlrigPort, 80), 80))
 	}
 
 	return tea.NewView(b.String())

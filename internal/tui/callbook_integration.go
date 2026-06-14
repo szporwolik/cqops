@@ -67,10 +67,11 @@ func (m *Model) qrzLookup(call string) tea.Cmd {
 
 // wlLookupCmd returns a tea.Cmd that performs a Wavelog private lookup.
 func (m *Model) wlLookupCmd(call, band, mode string) tea.Cmd {
+	wl := m.App.Logbook.Wavelog
 	return func() tea.Msg {
 		data, err := wavelog.PrivateLookup(
-			m.App.Config.Wavelog.URL,
-			m.App.Config.Wavelog.APIKey,
+			wl.URL,
+			wl.APIKey,
 			call, band, mode,
 		)
 		return wlResultMsg{Call: call, Data: data, Err: err}
@@ -82,7 +83,8 @@ func (m *Model) wlLookup(call string) tea.Cmd {
 	if call == "" {
 		return nil
 	}
-	if !m.App.Config.Wavelog.Enabled || m.App.Config.Wavelog.URL == "" || m.App.Config.Wavelog.APIKey == "" {
+	wl := m.App.Logbook.Wavelog
+	if wl == nil || !wl.Enabled || wl.URL == "" || wl.APIKey == "" {
 		return nil
 	}
 	if !m.inetOnline {

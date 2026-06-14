@@ -103,7 +103,7 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch w.step {
 			case stepStation:
 				if cmd := w.station.HandleKey(msg); cmd != nil {
-					cs, _, gr, _, _, _ := w.station.Values()
+					cs, _, gr, _, _, _, _, _, _, _ := w.station.Values()
 					if cs == "" {
 						w.toasts.Error("Callsign is required")
 						return w, nil
@@ -439,7 +439,7 @@ func (w *Wizard) handleEnter() tea.Cmd {
 }
 
 func (w *Wizard) saveConfig() {
-	cs, op, gr, sotaRef, potaRef, wwffRef := w.station.Values()
+	cs, op, gr, sotaRef, potaRef, wwffRef, _, _, _, _ := w.station.Values()
 	rig, ant, pwr := w.rigForm.Values()
 	flrigEnabled, flrigHost, flrigPort := w.rigForm.FlrigValues()
 
@@ -470,9 +470,6 @@ func (w *Wizard) saveConfig() {
 			Callsign: cs,
 			Operator: op,
 			Grid:     gr,
-			Rig:      rig,
-			Antenna:  ant,
-			Power:    pwr,
 			RigName:  "default",
 			SOTARef:  sotaRef,
 			POTARef:  potaRef,

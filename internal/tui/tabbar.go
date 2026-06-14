@@ -60,11 +60,13 @@ func (m *Model) renderProfileLine() string {
 	if s.Operator != "" {
 		parts = append(parts, "Op "+s.Operator)
 	}
-	if s.Rig != "" {
-		parts = append(parts, "Rig "+s.Rig)
+	rigModel := s.RigModel(m.App.Config.Rigs)
+	rigAnt := s.RigAntenna(m.App.Config.Rigs)
+	if rigModel != "" {
+		parts = append(parts, "Rig "+rigModel)
 	}
-	if s.Antenna != "" {
-		parts = append(parts, "Ant "+s.Antenna)
+	if rigAnt != "" {
+		parts = append(parts, "Ant "+rigAnt)
 	}
 	if s.Grid != "" {
 		parts = append(parts, "Grid "+formatLocator(s.Grid))

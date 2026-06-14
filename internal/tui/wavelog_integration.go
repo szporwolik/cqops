@@ -16,29 +16,35 @@ import (
 // =============================================================================
 
 // maybeCheckWavelog returns a tea.Cmd to check Wavelog connectivity
-// once at startup (first tick). Periodic re-checking is unnecessary —
-// the internet health check already monitors connectivity.
+// at startup (tick 1), when the logbook is switched, and periodically.
 func (m *Model) maybeCheckWavelog() tea.Cmd {
-	if !m.App.Config.Wavelog.Enabled {
+	wl := m.App.Logbook.Wavelog
+	if wl == nil || !wl.Enabled {
 		m.wlOnline = false
 		return nil
 	}
-	if m.tickCount != 1 {
+	if wl.StationProfileID == "" {
+		m.wlOnline = false
+	}
+	// Check on startup or when forced (logbook switch).
+	if m.tickCount != 1 && !m.wlForceCheck {
 		return nil
 	}
+	m.wlForceCheck = false
 	return m.checkWavelogCmd()
 }
 
 // checkWavelogCmd returns a tea.Cmd that tests Wavelog server connectivity
 // and fetches station profile info.
 func (m *Model) checkWavelogCmd() tea.Cmd {
-	url := m.App.Config.Wavelog.URL
-	key := m.App.Config.Wavelog.APIKey
-	stationID := m.App.Config.Wavelog.StationProfileID
+	wl := m.App.Logbook.Wavelog
+	url := wl.URL
+	key := wl.APIKey
+	stationID := wl.StationProfileID
 	return func() tea.Msg {
 		err := wavelog.TestConnection(url, key)
-		online := err == nil
-		if online && stationID != "" {
+		online := err == nil && stationID != ""
+		if err == nil && stationID != "" {
 			stations, ferr := wavelog.FetchStations(url, key)
 			if ferr == nil {
 				for _, s := range stations {
@@ -46,7 +52,7 @@ func (m *Model) checkWavelogCmd() tea.Cmd {
 						name := fmt.Sprintf("%s / %s", s.Gridsquare, s.Callsign)
 						label := s.Name
 						applog.InfoDetail("Wavelog: station info updated", fmt.Sprintf("id=%s grid=%s call=%s label=%s", s.ID, s.Gridsquare, s.Callsign, s.Name))
-						return wlStatusMsg{online: online, stationName: name, stationLabel: label}
+						return wlStatusMsg{online: true, stationName: name, stationLabel: label}
 					}
 				}
 			}
@@ -73,12 +79,13 @@ func (m *Model) maybeUploadRawADIFToWavelog(adifStr string, qID int64, call stri
 
 // uploadADIFToWavelog returns a tea.Cmd that uploads an ADIF record to Wavelog.
 func (m *Model) uploadADIFToWavelog(adifStr string, qID int64, call string) tea.Cmd {
-	if !m.App.Config.Wavelog.Enabled || !m.inetOnline || m.App.Config.Wavelog.StationProfileID == "" {
+	wl := m.App.Logbook.Wavelog
+	if wl == nil || !wl.Enabled || !m.inetOnline || wl.StationProfileID == "" {
 		return nil
 	}
-	url := m.App.Config.Wavelog.URL
-	key := m.App.Config.Wavelog.APIKey
-	stationID := m.App.Config.Wavelog.StationProfileID
+	url := wl.URL
+	key := wl.APIKey
+	stationID := wl.StationProfileID
 
 	return func() tea.Msg {
 		applog.InfoDetail("Wavelog: uploading QSO", fmt.Sprintf("qso_id=%d call=%s", qID, call))

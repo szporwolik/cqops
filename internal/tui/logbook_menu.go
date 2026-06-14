@@ -10,6 +10,7 @@ import (
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
 type chooserMode int
@@ -33,6 +34,23 @@ type LogbookChooser struct {
 	width   int
 	height  int
 	done    bool
+
+	// Wavelog async state
+	wlUpdating   bool
+	wlTesting    bool
+	wlStatus     string
+	wlStations   []wavelog.StationProfile
+	wlStationIdx int // index into wlStations, -1 if none
+	wlStationID  string
+}
+
+// Wavelog async message types
+type wlUpdateMsg struct {
+	stations []wavelog.StationProfile
+	err      error
+}
+type wlTestMsg struct {
+	err error
 }
 
 func NewLogbookChooser(a *app.App, tq *ToastQueue) *LogbookChooser {
@@ -68,6 +86,35 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		c.width = msg.Width
 		c.height = msg.Height
+
+	case wlUpdateMsg:
+		c.wlUpdating = false
+		if msg.err != nil {
+			c.wlStatus = msg.err.Error()
+			c.wlStations = nil
+			c.wlStationIdx = -1
+		} else {
+			c.wlStations = msg.stations
+			c.wlStationIdx = 0
+			if c.wlStationID != "" {
+				for i, s := range c.wlStations {
+					if s.ID == c.wlStationID {
+						c.wlStationIdx = i
+						break
+					}
+				}
+			}
+			c.updateStationIDField()
+			c.wlStatus = fmt.Sprintf("OK — %d stations loaded — Space over Station ID to cycle", len(msg.stations))
+		}
+
+	case wlTestMsg:
+		c.wlTesting = false
+		if msg.err != nil {
+			c.wlStatus = msg.err.Error()
+		} else {
+			c.wlStatus = "OK — Wavelog reachable"
+		}
 
 	case tea.KeyPressMsg:
 		k := msg
@@ -136,7 +183,24 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case c.mode == chooserEdit || c.mode == chooserCreate:
 			if cmd := c.station.HandleKey(msg); cmd != nil {
-				return c, c.saveForm()
+				// Execute the command to inspect the message. Save (enterOnLastFieldMsg)
+				// triggers saveForm; WL button actions are handled below.
+				msg := cmd()
+				switch msg.(type) {
+				case enterOnLastFieldMsg:
+					return c, c.saveForm()
+				case wlUpdateAction:
+					return c, c.fetchWavelogStations()
+				case wlTestAction:
+					return c, c.testWavelogConnection()
+				case wlCycleStation:
+					if len(c.wlStations) > 0 {
+						c.wlStationIdx = (c.wlStationIdx + 1) % len(c.wlStations)
+						c.updateStationIDField()
+					}
+					return c, c.testWavelogConnection()
+				}
+				return c, nil
 			}
 		}
 	}
@@ -149,7 +213,7 @@ func (c *LogbookChooser) FooterText() string {
 	case chooserList:
 		return "Enter to activate  e to edit  Ins to create  Del to delete  Esc to go back"
 	case chooserEdit, chooserCreate:
-		return "Ctrl+S to save  ↑↓/Tab to navigate  Esc to discard"
+		return "Ctrl+S to save  ↑↓/Tab to navigate  Space cycle station  Esc to discard"
 	case chooserConfirmDelete:
 		return "←/→ choose  Enter confirm  Esc cancel"
 	}
@@ -245,8 +309,26 @@ func (c *LogbookChooser) viewForm() string {
 
 	b.WriteString(c.station.View().Content)
 
+	// Wavelog status and station info (below the form buttons).
+	if c.station.WlEnabled {
+		// Status line
+		if c.wlStatus != "" {
+			b.WriteString("\n    ")
+			if strings.HasPrefix(c.wlStatus, "OK") {
+				b.WriteString(SuccessStyle.Render(c.wlStatus))
+			} else if c.wlUpdating || c.wlTesting {
+				b.WriteString(SubtleStyle.Render(c.wlStatus))
+			} else {
+				b.WriteString(ErrorStyle.Render(c.wlStatus))
+			}
+		}
+	}
+
 	return fillBody(b.String(), contentH)
 }
+
+// logbookSwitchedMsg is sent when the user switches active logbook via Enter.
+type logbookSwitchedMsg struct{}
 
 func (c *LogbookChooser) handleEnter() tea.Cmd {
 	if len(c.names) > 0 {
@@ -261,8 +343,8 @@ func (c *LogbookChooser) handleEnter() tea.Cmd {
 		}
 		c.toasts.Success("Switched to logbook \"" + name + "\"")
 		applog.Info("Logbook switched", "name", name)
-		// Refresh names and [Active] indicator — stay in the menu.
 		c.refreshNames()
+		return func() tea.Msg { return logbookSwitchedMsg{} }
 	}
 	return nil
 }
@@ -299,16 +381,34 @@ func (c *LogbookChooser) startEdit(name string) {
 	c.mode = chooserEdit
 	c.editing = name
 	c.station.SetValues(lb.Station.Callsign, lb.Station.Operator, lb.Station.Grid, lb.Station.SOTARef, lb.Station.POTARef, lb.Station.WWFFRef)
+	c.station.SetWavelogValues(lb.Wavelog)
+	c.wlStatus = ""
+	c.wlStations = nil
+	c.wlStationIdx = -1
+	if lb.Wavelog != nil {
+		c.wlStationID = lb.Wavelog.StationProfileID
+	}
 	c.station.BlurAll()
 	c.station.Callsign.Focus()
 }
 
 func (c *LogbookChooser) saveForm() tea.Cmd {
-	cs, op, gr, sotaRef, potaRef, wwffRef := c.station.Values()
+	cs, op, gr, sotaRef, potaRef, wwffRef, wlEnabled, wlURL, wlKey, wlStationID := c.station.Values()
 
 	if err := c.station.Validate(); err != nil {
 		c.toasts.Error(err.Error())
 		return nil
+	}
+
+	// Build Wavelog config from form.
+	var wl *config.WavelogConfig
+	if wlEnabled && wlURL != "" && wlKey != "" {
+		wl = &config.WavelogConfig{
+			Enabled:          wlEnabled,
+			URL:              wlURL,
+			APIKey:           wlKey,
+			StationProfileID: wlStationID,
+		}
 	}
 
 	var savedName string
@@ -318,9 +418,7 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 			c.toasts.Error("Logbook " + name + " already exists")
 			return nil
 		}
-		// Inherit rig from the currently active logbook so the new logbook
-		// always has a rig selected.
-		prevStation := c.app.Logbook.Station
+		prevRigName := c.app.Logbook.Station.RigName
 		c.app.Config.Logbooks[name] = config.Logbook{
 			Description: "Created from TUI",
 			Station: config.Station{
@@ -330,11 +428,9 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 				SOTARef:  sotaRef,
 				POTARef:  potaRef,
 				WWFFRef:  wwffRef,
-				Rig:      prevStation.Rig,
-				Antenna:  prevStation.Antenna,
-				Power:    prevStation.Power,
-				RigName:  prevStation.RigName,
+				RigName:  prevRigName,
 			},
+			Wavelog: wl,
 		}
 		c.app.Config.ActiveLogbook = name
 		c.app.LogbookName = name
@@ -352,6 +448,7 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 		lb.Station.SOTARef = sotaRef
 		lb.Station.POTARef = potaRef
 		lb.Station.WWFFRef = wwffRef
+		lb.Wavelog = wl
 		c.app.Config.Logbooks[name] = lb
 
 		if name == c.app.LogbookName {
@@ -364,11 +461,21 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 	c.station.BlurAll()
 	if err := config.Save(c.app.ConfigPath, c.app.Config); err != nil {
 		c.toasts.Error("Save " + savedName + " failed: " + err.Error())
-	} else {
-		c.toasts.Success("Logbook " + savedName + " saved")
-		applog.Info("Logbook saved", "name", savedName)
+		return nil
 	}
+	c.toasts.Success("Logbook " + savedName + " saved")
+	applog.Info("Logbook saved", "name", savedName)
 	return nil
+}
+
+// updateStationIDField sets the Station ID text field to show the currently
+// selected station's ID, callsign, name, and locator.
+func (c *LogbookChooser) updateStationIDField() {
+	if c.wlStationIdx >= 0 && c.wlStationIdx < len(c.wlStations) {
+		s := c.wlStations[c.wlStationIdx]
+		c.station.WlStationID.SetValue(fmt.Sprintf("%s — %s (%s) %s", s.ID, s.Callsign, s.Name, s.Gridsquare))
+		c.wlStationID = s.ID
+	}
 }
 
 func (c *LogbookChooser) viewConfirmDelete() string {
@@ -434,4 +541,39 @@ func (c *LogbookChooser) deleteLogbook() tea.Cmd {
 		applog.Info("Logbook deleted", "name", name)
 	}
 	return nil
+}
+
+// fetchWavelogStations fetches station profiles from the Wavelog API.
+func (c *LogbookChooser) fetchWavelogStations() tea.Cmd {
+	c.wlUpdating = true
+	c.wlStatus = "Fetching stations…"
+	u := strings.TrimRight(strings.TrimSpace(c.station.WlURL.Value()), "/")
+	k := strings.TrimSpace(c.station.WlKey.Value())
+	return func() tea.Msg {
+		stations, err := wavelog.FetchStations(u, k)
+		return wlUpdateMsg{stations: stations, err: err}
+	}
+}
+
+// testWavelogConnection tests Wavelog connectivity and station validity.
+func (c *LogbookChooser) testWavelogConnection() tea.Cmd {
+	c.wlTesting = true
+	c.wlStatus = "Testing…"
+	u := strings.TrimRight(strings.TrimSpace(c.station.WlURL.Value()), "/")
+	k := strings.TrimSpace(c.station.WlKey.Value())
+	var sid string
+	if c.wlStationIdx >= 0 && c.wlStationIdx < len(c.wlStations) {
+		sid = c.wlStations[c.wlStationIdx].ID
+	}
+	return func() tea.Msg {
+		if err := wavelog.TestConnection(u, k); err != nil {
+			return wlTestMsg{err: err}
+		}
+		if sid != "" {
+			if err := wavelog.TestStation(u, k, sid); err != nil {
+				return wlTestMsg{err: err}
+			}
+		}
+		return wlTestMsg{}
+	}
 }

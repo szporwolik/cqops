@@ -12,7 +12,7 @@ import (
 )
 
 func (le *LogbookEditor) doBatchUpload() tea.Cmd {
-	wlCall := le.wlStationCall
+	wlCall := ""
 	logOp := le.logStationOp
 	logGrid := le.logStationGrid
 
@@ -96,7 +96,7 @@ func (le *LogbookEditor) doBatchUpload() tea.Cmd {
 func (le *LogbookEditor) doNormalizeAndUpload() tea.Cmd {
 	db := le.db
 	mismatch := le.mismatchQSOs
-	wlCall := le.wlStationCall
+	wlCall := ""
 	logOp := le.logStationOp
 	logGrid := le.logStationGrid
 
@@ -158,7 +158,7 @@ func (le *LogbookEditor) doNormalizeAndUpload() tea.Cmd {
 func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 	url, key, sid := le.wlURL, le.wlKey, le.wlStationID
 	db := le.db
-	wlCall := le.wlStationCall
+	wlCall := ""
 
 	// Build batch ADIF (override station callsign to match Wavelog station)
 	var adifStr string
@@ -201,7 +201,7 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 func (le *LogbookEditor) uploadIndividual(unsent []qso.QSO) tea.Cmd {
 	url, key, sid := le.wlURL, le.wlKey, le.wlStationID
 	db := le.db
-	wlCall := le.wlStationCall
+	wlCall := ""
 
 	return func() tea.Msg {
 		okCount := 0
@@ -261,7 +261,7 @@ func (le *LogbookEditor) doUploadToWavelog() tea.Cmd {
 				err: fmt.Errorf("missing required field: band/mode/date")}
 		}
 	}
-	adifStr := q.ToADIFWithStation(le.wlStationCall)
+	adifStr := q.ToADIFWithStation("")
 	url, key, sid := le.wlURL, le.wlKey, le.wlStationID
 	qID := q.ID
 	call := q.Call

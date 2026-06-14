@@ -70,8 +70,8 @@ var logbookShowCmd = &cobra.Command{
 		fmt.Printf("Callsign:    %s\n", lb.Station.Callsign)
 		fmt.Printf("Operator:    %s\n", lb.Station.Operator)
 		fmt.Printf("Grid:        %s\n", lb.Station.Grid)
-		fmt.Printf("Rig:         %s\n", lb.Station.Rig)
-		fmt.Printf("Antenna:     %s\n", lb.Station.Antenna)
+		fmt.Printf("Rig:         %s\n", lb.Station.RigModel(a.Config.Rigs))
+		fmt.Printf("Antenna:     %s\n", lb.Station.RigAntenna(a.Config.Rigs))
 		fmt.Printf("ADIF export: %s\n", lb.ADIF.DefaultExportPath)
 		return nil
 	},
@@ -134,9 +134,14 @@ var logbookCreateCmd = &cobra.Command{
 				Callsign: lbCallsign,
 				Operator: lbOperator,
 				Grid:     lbGrid,
-				Rig:      lbRig,
-				Antenna:  lbAntenna,
+				RigName:  "default",
 			},
+		}
+		if lbRig != "" || lbAntenna != "" {
+			a.Config.Rigs["default"] = config.RigPreset{
+				Model:   lbRig,
+				Antenna: lbAntenna,
+			}
 		}
 
 		if err := config.Save(a.ConfigPath, a.Config); err != nil {

@@ -40,7 +40,8 @@ func (m *Model) headerView() string {
 	if cfgRig, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok && cfgRig.FlrigEnabled {
 		rightParts = append(rightParts, statusDotStyled(m.rigConnected, "Rig"))
 	}
-	if m.App.Config.Wavelog.Enabled {
+	wl := m.App.Logbook.Wavelog
+	if wl != nil && wl.Enabled {
 		rightParts = append(rightParts, statusDotStyled(m.wlOnline, "WL"))
 	}
 	rightParts = append(rightParts,

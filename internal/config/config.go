@@ -17,28 +17,71 @@ type Config struct {
 	Logbooks      map[string]Logbook   `yaml:"logbooks"`
 	Rigs          map[string]RigPreset `yaml:"rigs,omitempty"`
 	Rig           RigConfig            `yaml:"rig,omitempty"`
-	Wavelog       WavelogConfig        `yaml:"wavelog,omitempty"`
 	WSJTX         WSJTXConfig          `yaml:"wsjtx,omitempty"`
 }
 
 type Logbook struct {
-	Description  string     `yaml:"description"`
-	DatabasePath string     `yaml:"database_path"`
-	Station      Station    `yaml:"station"`
-	ADIF         ADIFConfig `yaml:"adif"`
+	Description  string          `yaml:"description"`
+	DatabasePath string          `yaml:"database_path,omitempty"`
+	Station      Station         `yaml:"station"`
+	ADIF         ADIFConfig      `yaml:"adif,omitempty"`
+	Wavelog      *WavelogConfig  `yaml:"wavelog,omitempty"`
 }
 
 type Station struct {
 	Callsign string `yaml:"callsign"`
 	Operator string `yaml:"operator"`
 	Grid     string `yaml:"grid"`
-	Rig      string `yaml:"rig"`
-	Antenna  string `yaml:"antenna"`
-	Power    string `yaml:"power"`
-	RigName  string `yaml:"rig_name"`
+	RigName  string `yaml:"rig_name,omitempty"`
 	SOTARef  string `yaml:"sota_ref,omitempty"`
 	POTARef  string `yaml:"pota_ref,omitempty"`
 	WWFFRef  string `yaml:"wwff_ref,omitempty"`
+}
+
+// Rig resolves the RigPreset referenced by RigName. Returns the preset and
+// true if found, or zero value and false.
+func (s Station) Rig(rgs map[string]RigPreset) (RigPreset, bool) {
+	if s.RigName == "" {
+		return RigPreset{}, false
+	}
+	rp, ok := rgs[s.RigName]
+	return rp, ok
+}
+
+// RigModel returns the rig model from the referenced preset, or "".
+func (s Station) RigModel(rgs map[string]RigPreset) string {
+	rp, ok := s.Rig(rgs)
+	if !ok {
+		return ""
+	}
+	return rp.Model
+}
+
+// RigAntenna returns the antenna from the referenced preset, or "".
+func (s Station) RigAntenna(rgs map[string]RigPreset) string {
+	rp, ok := s.Rig(rgs)
+	if !ok {
+		return ""
+	}
+	return rp.Antenna
+}
+
+// RigPower returns the power from the referenced preset, or "".
+func (s Station) RigPower(rgs map[string]RigPreset) string {
+	rp, ok := s.Rig(rgs)
+	if !ok {
+		return ""
+	}
+	return rp.Power
+}
+
+// RigFlrig returns the flrig settings from the referenced preset.
+func (s Station) RigFlrig(rgs map[string]RigPreset) (enabled bool, host, port string) {
+	rp, ok := s.Rig(rgs)
+	if !ok {
+		return false, "localhost", "12345"
+	}
+	return rp.FlrigEnabled, rp.FlrigHost, rp.FlrigPort
 }
 
 type RigPreset struct {
@@ -78,7 +121,6 @@ type WavelogConfig struct {
 	URL              string `yaml:"url"`
 	APIKey           string `yaml:"api_key"`
 	StationProfileID string `yaml:"station_profile_id"`
-	StationCallsign  string `yaml:"station_callsign"`
 }
 
 type WSJTXConfig struct {
