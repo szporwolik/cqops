@@ -16,13 +16,14 @@ import (
 // =============================================================================
 
 // maybeCheckWavelog returns a tea.Cmd to check Wavelog connectivity
-// on the first tick and periodically thereafter.
+// once at startup (first tick). Periodic re-checking is unnecessary —
+// the internet health check already monitors connectivity.
 func (m *Model) maybeCheckWavelog() tea.Cmd {
 	if !m.App.Config.Wavelog.Enabled {
 		m.wlOnline = false
 		return nil
 	}
-	if m.tickCount != 1 && m.tickCount%healthCheckTicks != 0 {
+	if m.tickCount != 1 {
 		return nil
 	}
 	return m.checkWavelogCmd()

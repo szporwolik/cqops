@@ -162,8 +162,18 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			}
 			if key.Matches(msg, m.keys.Lookup) {
 				call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
-				if call != "" && m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled {
-					return m.qrzLookup(call), true
+				if call == "" {
+					return nil, true
+				}
+				var cmds []tea.Cmd
+				if m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled {
+					cmds = append(cmds, m.qrzLookup(call))
+				}
+				if m.App.Config.Wavelog.Enabled && m.App.Config.Wavelog.APIKey != "" {
+					cmds = append(cmds, m.wlLookup(call))
+				}
+				if len(cmds) > 0 {
+					return tea.Batch(cmds...), true
 				}
 			}
 		}

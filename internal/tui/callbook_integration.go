@@ -19,14 +19,15 @@ import (
 // qrz.Lookup but can be replaced in tests for mock-based verification.
 var qrzLookupFunc = qrz.Lookup
 
-// maybeCheckQRZ returns a tea.Cmd to check QRZ connectivity on the first
-// tick and periodically thereafter.
+// maybeCheckQRZ returns a tea.Cmd to check QRZ connectivity once at
+// startup (first tick). Periodic re-checking is unnecessary — the
+// internet health check already monitors connectivity.
 func (m *Model) maybeCheckQRZ() tea.Cmd {
 	if !m.App.Config.QRZEnabled {
 		m.qrzOnline = false
 		return nil
 	}
-	if m.tickCount != 1 && m.tickCount%healthCheckTicks != 0 {
+	if m.tickCount != 1 {
 		return nil
 	}
 	return m.checkQRZCmd()

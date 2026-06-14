@@ -324,6 +324,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Lookup result messages (QRZ, Wavelog) — must be processed before
+	// screen-specific routing so they work regardless of which screen is
+	// active (e.g. partner screen). Each screen's handler returns early
+	// for unrecognised messages, which would silently drop these.
+	switch r := msg.(type) {
+	case qrzResultMsg:
+		m.fillQRZData(r)
+		return m, cmd
+	case wlResultMsg:
+		m.fillWLData(r)
+		return m, cmd
+	}
+
 	// Screen-specific routing
 	switch m.screen {
 	case screenChooser:
@@ -344,16 +357,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleLogbookEditorUpdate(msg, cmd)
 	case screenLogView:
 		return m.handleLogViewUpdate(msg, cmd)
-	}
-
-	// QSO form result messages (QRZ, Wavelog lookups)
-	switch r := msg.(type) {
-	case qrzResultMsg:
-		m.fillQRZData(r)
-		return m, cmd
-	case wlResultMsg:
-		m.fillWLData(r)
-		return m, cmd
 	}
 
 	// QSO form key handling
