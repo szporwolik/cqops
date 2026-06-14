@@ -17,8 +17,16 @@ type Config struct {
 }
 
 type GeneralConfig struct {
-	Timezone     string `yaml:"timezone"`
-	DistanceUnit string `yaml:"distance_unit,omitempty"`
+	Timezone      string              `yaml:"timezone"`
+	DistanceUnit  string              `yaml:"distance_unit,omitempty"`
+	Notifications NotificationsConfig `yaml:"notifications"`
+}
+
+type NotificationsConfig struct {
+	Enabled       bool `yaml:"enabled"`
+	QSO           bool `yaml:"qso_logged"`
+	Wavelog       bool `yaml:"wavelog_sent"`
+	WavelogErrors bool `yaml:"wavelog_errors"`
 }
 
 type StateConfig struct {

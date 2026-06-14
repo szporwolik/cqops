@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 
+	"github.com/gen2brain/beeep"
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/store"
@@ -63,12 +64,29 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) bool {
 		}
 		return true
 	case wlUploadResultMsg:
+		n := m.App.Config.General.Notifications
 		if r.ok {
 			store.UpdateWavelogStatus(m.App.DB, r.qID, "yes")
 			m.toasts.Success(fmt.Sprintf("Wavelog: %s sent", r.call))
+			if n.Enabled && n.Wavelog {
+				applog.Info("Sending Wavelog success notification", "call", r.call)
+				if err := beeep.Notify("CQOPS — Wavelog", fmt.Sprintf("QSO %s sent to Wavelog", r.call), ""); err != nil {
+					applog.Info("Wavelog notification failed", "error", err.Error())
+				}
+			}
 		} else {
 			store.UpdateWavelogStatus(m.App.DB, r.qID, "no")
 			m.toasts.Warn(fmt.Sprintf("Wavelog: %s failed", r.call))
+			if n.Enabled && n.WavelogErrors {
+				msg := fmt.Sprintf("QSO %s upload failed", r.call)
+				if r.err != nil {
+					msg = fmt.Sprintf("QSO %s: %s", r.call, r.err.Error())
+				}
+				applog.Info("Sending Wavelog error notification", "call", r.call)
+				if err := beeep.Notify("CQOPS — Wavelog Error", msg, ""); err != nil {
+					applog.Info("Wavelog error notification failed", "error", err.Error())
+				}
+			}
 		}
 		return true
 	case qrzStatusMsg:

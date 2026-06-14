@@ -10,6 +10,8 @@ import (
 
 type GeneralMenu struct {
 	distanceUnit string
+	timezone     string
+	tzIndex      int
 	cursor       int
 	done         bool
 	saved        bool
@@ -23,7 +25,18 @@ func NewGeneralMenu(cfg *config.Config) *GeneralMenu {
 	if du != "mi" {
 		du = "km"
 	}
-	return &GeneralMenu{distanceUnit: du}
+	tz := cfg.General.Timezone
+	tzIdx := 0
+	for i, candidate := range config.Timezones {
+		if candidate == tz {
+			tzIdx = i
+			break
+		}
+	}
+	if tz == "" {
+		tz = "UTC"
+	}
+	return &GeneralMenu{distanceUnit: du, timezone: tz, tzIndex: tzIdx}
 }
 
 func (gm *GeneralMenu) Init() tea.Cmd { return nil }
@@ -43,11 +56,17 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			gm.saved = true
 			return gm, nil
 		case "up", "k":
-			if gm.cursor > 0 {
-				gm.cursor--
+			if gm.cursor == 0 {
+				gm.cursor = 1
+			} else {
+				gm.cursor = 0
 			}
 		case "down", "j":
-			// Only one config option — cursor stays at 0
+			if gm.cursor == 0 {
+				gm.cursor = 1
+			} else {
+				gm.cursor = 0
+			}
 		case " ", "space":
 			if gm.cursor == 0 {
 				if gm.distanceUnit == "km" {
@@ -55,6 +74,12 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				} else {
 					gm.distanceUnit = "km"
 				}
+			} else if gm.cursor == 1 {
+				gm.tzIndex++
+				if gm.tzIndex >= len(config.Timezones) {
+					gm.tzIndex = 0
+				}
+				gm.timezone = config.Timezones[gm.tzIndex]
 			}
 		case "enter":
 			// no-op: Enter does not save
@@ -81,25 +106,34 @@ func (gm *GeneralMenu) View() tea.View {
 	}
 
 	var b strings.Builder
-	b.WriteString(menuTitle("Configuration — General", w))
+	b.WriteString(menuTitle("Settings — General", w))
 	b.WriteString("\n\n")
+
+	gap := lipgloss.NewStyle().Background(P.Surface).Render(" ")
 
 	unitVal := "Kilometers (km)"
 	if gm.distanceUnit == "mi" {
 		unitVal = "Miles (mi)"
 	}
-	prefix := "  "
-	unitLabel := LabelStyle.Render("Distance unit:")
+	// Distance unit row
+	unitLabel := fit("Distance unit", 14)
 	unitDisplay := ValueStyle.Render(unitVal)
 	if gm.cursor == 0 {
-		prefix = CursorStyle.Render("> ")
-		unitLabel = CursorStyle.Render("Distance unit:")
-		unitDisplay = CursorStyle.Render(unitVal)
+		b.WriteString(menuLine(CursorStyle.Render("> ")+CursorStyle.Render(unitLabel)+gap+CursorStyle.Render(unitVal), w))
+	} else {
+		b.WriteString(menuLine("  "+LabelStyle.Render(unitLabel)+gap+unitDisplay, w))
 	}
-	line := prefix + unitLabel +
-		lipgloss.NewStyle().Background(P.Surface).Render(" ") +
-		unitDisplay
-	b.WriteString(menuLine(line, w))
+	b.WriteString("\n")
+
+	// Timezone row
+	tzVal := gm.timezone
+	tzLabel := fit("Timezone", 14)
+	tzDisplay := ValueStyle.Render(tzVal)
+	if gm.cursor == 1 {
+		b.WriteString(menuLine(CursorStyle.Render("> ")+CursorStyle.Render(tzLabel)+gap+CursorStyle.Render(tzVal), w))
+	} else {
+		b.WriteString(menuLine("  "+LabelStyle.Render(tzLabel)+gap+tzDisplay, w))
+	}
 	b.WriteString("\n")
 
 	return tea.NewView(fillBody(b.String(), contentH))

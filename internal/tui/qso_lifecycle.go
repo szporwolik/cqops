@@ -5,7 +5,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gen2brain/beeep"
 	tea "charm.land/bubbletea/v2"
+	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 )
@@ -66,6 +68,16 @@ func (m *Model) saveQSO() tea.Cmd {
 		m.toasts.Error(fmt.Sprintf("Save failed: %v", err))
 		return nil
 	}
+
+	// System notification on QSO saved.
+	n := m.App.Config.General.Notifications
+	if n.Enabled && n.QSO {
+		applog.Info("Sending QSO notification", "call", qs.Call, "band", qs.Band, "mode", qs.Mode)
+		if err := beeep.Notify("CQOPS — QSO Logged", fmt.Sprintf("%s on %s %s", qs.Call, qs.Band, qs.Mode), ""); err != nil {
+			applog.Info("QSO notification failed", "error", err.Error())
+		}
+	}
+
 	m.clearForm()
 	m.toasts.Success(fmt.Sprintf("QSO saved: %s", qs.Call))
 	return tea.Batch(m.refreshQSOS(), m.maybeUploadToWavelog(qs))

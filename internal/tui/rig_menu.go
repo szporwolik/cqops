@@ -173,7 +173,7 @@ func (rc *RigChooser) viewList() string {
 		h = 24
 	}
 	contentH := contentHeight(h)
-	b.WriteString(menuTitle("Configuration — Rigs", w))
+	b.WriteString(menuTitle("Settings — Rigs", w))
 	b.WriteString("\n\n")
 
 	if len(rc.names) == 0 {
@@ -229,7 +229,7 @@ func (rc *RigChooser) viewForm() string {
 	if contentH < 3 {
 		contentH = 3
 	}
-	b.WriteString(menuTitle("Configuration — Edit Rig", w))
+	b.WriteString(menuTitle("Settings — Edit Rig", w))
 	b.WriteString("\n\n")
 
 	b.WriteString(rc.form.View().Content)

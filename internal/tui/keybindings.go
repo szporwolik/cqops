@@ -254,6 +254,15 @@ func (m *Model) ActiveBindings() []key.Binding {
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 		)
 	}
+	if m.screen == screenNotifications {
+		bindings = append(bindings,
+			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
+			key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Test")),
+			key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
+		)
+	}
 
 	// F10 Quit always visible, always last
 	bindings = append(bindings, m.keys.Quit)

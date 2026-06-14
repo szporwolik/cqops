@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/gen2brain/beeep"
 	tea "charm.land/bubbletea/v2"
 	adif "github.com/farmergreg/adif/v5"
 	"github.com/farmergreg/spec/v6/adifield"
@@ -96,6 +97,16 @@ func (m *Model) logQSOFromADIF(adif string) tea.Cmd {
 	}
 	applog.InfoDetail("WSJT-X: auto-logged QSO", fmt.Sprintf("id=%d call=%s", id, qs.Call))
 	m.toasts.Success(fmt.Sprintf("WSJT-X: %s logged", qs.Call))
+
+	// System notification on WSJT-X auto-logged QSO.
+	n := m.App.Config.General.Notifications
+	if n.Enabled && n.QSO {
+		applog.Info("Sending WSJT-X QSO notification", "call", qs.Call, "band", qs.Band, "mode", qs.Mode)
+		if err := beeep.Notify("CQOPS — QSO Logged", fmt.Sprintf("%s on %s %s", qs.Call, qs.Band, qs.Mode), ""); err != nil {
+			applog.Info("QSO notification failed", "error", err.Error())
+		}
+	}
+
 	m.clearForm()
 	m.needRefresh = true
 	return tea.Batch(m.refreshQSOS(), m.maybeUploadRawADIFToWavelog(adif, id, qs.Call))

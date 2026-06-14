@@ -236,7 +236,7 @@ func (c *LogbookChooser) viewList() string {
 		h = 24
 	}
 	contentH := contentHeight(h)
-	b.WriteString(menuTitle("Configuration — Logbooks", w))
+	b.WriteString(menuTitle("Settings — Logbooks", w))
 	b.WriteString("\n\n")
 
 	if len(c.names) == 0 {
@@ -290,7 +290,7 @@ func (c *LogbookChooser) viewForm() string {
 	if contentH < 3 {
 		contentH = 3
 	}
-	b.WriteString(menuTitle("Configuration — Edit Logbook", w))
+	b.WriteString(menuTitle("Settings — Edit Logbook", w))
 	b.WriteString("\n\n")
 
 	b.WriteString(c.station.View().Content)

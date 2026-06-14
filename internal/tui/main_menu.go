@@ -24,11 +24,12 @@ type MainMenu struct {
 func NewMainMenu() *MainMenu {
 	return &MainMenu{
 		items: []menuItem{
-			{"General Options", "Callsign, operator, locator, defaults"},
-			{"Callbook", "Lookup providers and credentials"},
-			{"Logbook Configuration", "Logs, paths, active log profile"},
-			{"Rig Configuration", "flrig / rigctld / manual radio data"},
-			{"Integration", "WSJT-X / external tools connectivity"},
+			{"General", "Timezone, distance units"},
+			{"Notifications", "Desktop alert preferences"},
+			{"Callbook", "QRZ.com lookup credentials"},
+			{"Logbooks", "Station profiles, Wavelog, paths"},
+			{"Rigs", "Radio models, antennas, flrig"},
+			{"Integration", "WSJT-X UDP listener"},
 		},
 	}
 }
@@ -47,12 +48,14 @@ func (m *MainMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case 0:
 				m.action = "general"
 			case 1:
-				m.action = "callbook"
+				m.action = "notifications"
 			case 2:
-				m.action = "logbook"
+				m.action = "callbook"
 			case 3:
-				m.action = "rig"
+				m.action = "logbook"
 			case 4:
+				m.action = "rig"
+			case 5:
 				m.action = "integration"
 			}
 		case "up", "k":
@@ -99,7 +102,7 @@ func (m *MainMenu) View() tea.View {
 
 	// Title header — Surface background fills the full width so no leaking
 	// character after the text.
-	b.WriteString(menuTitle("Configuration", w))
+	b.WriteString(menuTitle("Settings", w))
 	b.WriteString("\n\n")
 
 	for i, item := range m.items {

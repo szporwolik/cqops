@@ -191,7 +191,7 @@ func (cm *CallbookMenu) View() tea.View {
 	}
 
 	var b strings.Builder
-	b.WriteString(menuTitle("Configuration — Callbook", w))
+	b.WriteString(menuTitle("Settings — Callbook", w))
 	b.WriteString("\n\n")
 
 	bg := lipgloss.NewStyle().Background(P.Surface)

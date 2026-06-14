@@ -57,6 +57,29 @@ func (m *Model) handleConfigUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd
 		}
 		if m.configMenu.saved {
 			m.App.Config.General.DistanceUnit = m.configMenu.distanceUnit
+			m.App.Config.General.Timezone = m.configMenu.timezone
+			m.saveConfig("Settings saved")
+			m.screen = screenMainMenu
+		}
+	}
+	return m, cmd
+}
+
+func (m *Model) handleNotificationsUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	m.notifMenu.width = m.width
+	m.notifMenu.height = m.height
+	_, notifCmd := m.notifMenu.Update(msg)
+	cmd = tea.Batch(cmd, notifCmd)
+	if m.notifMenu.done {
+		m.screen = screenQSO
+		if m.notifMenu.goBack {
+			m.screen = screenMainMenu
+		}
+		if m.notifMenu.saved {
+			m.App.Config.General.Notifications.Enabled = m.notifMenu.enabled
+			m.App.Config.General.Notifications.QSO = m.notifMenu.qso
+			m.App.Config.General.Notifications.Wavelog = m.notifMenu.wavelog
+			m.App.Config.General.Notifications.WavelogErrors = m.notifMenu.wavelogErrors
 			m.saveConfig("Settings saved")
 			m.screen = screenMainMenu
 		}
@@ -120,6 +143,9 @@ func (m *Model) handleMainMenuUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.C
 		case "general":
 			m.configMenu = NewGeneralMenu(m.App.Config)
 			m.screen = screenConfig
+		case "notifications":
+			m.notifMenu = NewNotificationsMenu(m.App.Config)
+			m.screen = screenNotifications
 		case "callbook":
 			m.callbookMenu = NewCallbookMenu(m.App.Config)
 			m.screen = screenCallbook

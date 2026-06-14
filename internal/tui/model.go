@@ -72,6 +72,7 @@ const (
 	screenRigEdit
 	screenLogView
 	screenLogbookEditor
+	screenNotifications
 )
 
 type Model struct {
@@ -106,6 +107,7 @@ type Model struct {
 	configMenu      *GeneralMenu
 	callbookMenu    *CallbookMenu
 	integrationMenu *IntegrationMenu
+	notifMenu       *NotificationsMenu
 	mainMenu        *MainMenu
 	logViewer       *LogViewer
 	logbookEditor   *LogbookEditor
@@ -397,6 +399,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleLogbookEditorUpdate(msg, cmd)
 	case screenLogView:
 		return m.handleLogViewUpdate(msg, cmd)
+	case screenNotifications:
+		return m.handleNotificationsUpdate(msg, cmd)
 	}
 
 	// QSO form key handling
@@ -548,6 +552,8 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 		return m.logViewer.View().Content
 	case screenLogbookEditor:
 		return m.logbookEditor.View().Content
+	case screenNotifications:
+		return m.notifMenu.View().Content
 	}
 	return ""
 }

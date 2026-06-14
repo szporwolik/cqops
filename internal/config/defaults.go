@@ -9,6 +9,12 @@ func DefaultConfig() *Config {
 		General: GeneralConfig{
 			Timezone:     tz,
 			DistanceUnit: "km",
+			Notifications: NotificationsConfig{
+				Enabled:       true,
+				QSO:           false,
+				Wavelog:       false,
+				WavelogErrors: true,
+			},
 		},
 		State: StateConfig{
 			ActiveLogbook: defaultLogbookID,

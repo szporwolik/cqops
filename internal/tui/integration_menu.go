@@ -176,7 +176,7 @@ func (im *IntegrationMenu) View() tea.View {
 	}
 
 	var b strings.Builder
-	b.WriteString(menuTitle("Configuration — Integration", w))
+	b.WriteString(menuTitle("Settings — Integration", w))
 	b.WriteString("\n\n")
 
 	bg := lipgloss.NewStyle().Background(P.Surface)

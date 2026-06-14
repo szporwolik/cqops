@@ -24,7 +24,7 @@ func (m *Model) tabView() string {
 	}
 	rightTabs := []tab{
 		{"F6 Log Editor", m.screen == screenLogbookEditor, false},
-		{"F7 Config", m.screen == screenMainMenu || m.screen == screenConfig || m.screen == screenCallbook || m.screen == screenIntegration || m.screen == screenChooser || m.screen == screenRigEdit, false},
+		{"F7 Config", m.screen == screenMainMenu || m.screen == screenConfig || m.screen == screenCallbook || m.screen == screenIntegration || m.screen == screenChooser || m.screen == screenRigEdit || m.screen == screenNotifications, false},
 		{"F8 Logs", m.screen == screenLogView, false},
 	}
 
