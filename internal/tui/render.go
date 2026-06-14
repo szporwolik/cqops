@@ -27,7 +27,7 @@ func drawBorderedBox(content string, innerW, boxW int) string {
 	lines := strings.Split(content, "\n")
 	for _, line := range lines {
 		b.WriteString(left)
-		b.WriteString(bg.Width(innerW).Render(line))
+		b.WriteString(bg.Width(innerW).MaxWidth(innerW).Render(line))
 		b.WriteString(right)
 		b.WriteString("\n")
 	}
@@ -223,4 +223,24 @@ func newTextinput() textinput.Model {
 	ti := textinput.New()
 	ti.Prompt = ""
 	return ti
+}
+
+// truncateText truncates s to maxW visual cells, appending "…" if needed.
+func truncateText(s string, maxW int) string {
+	if maxW <= 1 {
+		return ""
+	}
+	w := 0
+	runes := []rune(s)
+	for i, r := range runes {
+		rw := 1
+		if r > 0xffff {
+			rw = 2
+		}
+		if w+rw >= maxW {
+			return string(runes[:i]) + "\u2026"
+		}
+		w += rw
+	}
+	return s
 }

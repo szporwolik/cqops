@@ -22,7 +22,11 @@ func (m *Model) focusField(f field) {
 	m.fields[m.focus].Blur()
 	m.focus = f
 	m.fields[m.focus].Focus()
+	m.scrollFocusedToEnd()
 }
+
+// scrollFocusedToEnd is reserved for future scroll-on-focus behavior.
+func (m *Model) scrollFocusedToEnd() {}
 
 // nextField moves focus to the next QSO form field in sequence.
 func (m *Model) nextField() {
@@ -35,6 +39,7 @@ func (m *Model) nextField() {
 		m.retainFocused = false
 		m.focus = 0
 		m.fields[m.focus].Focus()
+		m.scrollFocusedToEnd()
 		return
 	}
 
@@ -44,6 +49,7 @@ func (m *Model) nextField() {
 	} else {
 		m.focus = (m.focus + 1) % fieldCount
 		m.fields[m.focus].Focus()
+		m.scrollFocusedToEnd()
 	}
 	if wasCall {
 		cur := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
@@ -67,6 +73,7 @@ func (m *Model) prevField() {
 		m.retainFocused = false
 		m.focus = fieldComment
 		m.fields[m.focus].Focus()
+		m.scrollFocusedToEnd()
 		return
 	}
 
@@ -76,6 +83,7 @@ func (m *Model) prevField() {
 	} else {
 		m.focus--
 		m.fields[m.focus].Focus()
+		m.scrollFocusedToEnd()
 	}
 	if wasCall {
 		cur := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))

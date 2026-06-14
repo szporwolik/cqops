@@ -272,6 +272,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = wsm.Width
 		m.height = wsm.Height
 		m.invalidatePartnerMapCache()
+		// Update focused textinput width so scrolling stays correct.
+		if m.screen == screenQSO && !m.retainFocused {
+			if m.width > 60 {
+				m.fields[m.focus].SetWidth(m.width/3 - 16)
+			} else if m.width > 20 {
+				m.fields[m.focus].SetWidth(m.width - 16)
+			}
+		}
 	}
 
 	// Active confirmation dialog — highest priority, blocks everything else

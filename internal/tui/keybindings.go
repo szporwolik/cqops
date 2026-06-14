@@ -70,8 +70,8 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("Ins", "Check Call"),
 		),
 		Retain: key.NewBinding(
-			key.WithKeys("ctrl+r", "space"),
-			key.WithHelp("Space", "Toggle retain"),
+			key.WithKeys("ctrl+r"),
+			key.WithHelp("Ctrl+R", "Toggle retain"),
 		),
 		FocusCall: key.NewBinding(
 			key.WithKeys("f1"),

@@ -30,39 +30,63 @@ func (m *Model) viewForm(width int) string {
 	renderField := func(f field, w int) string {
 		label := fieldNames[f]
 		raw := strings.TrimSpace(m.fields[f].Value())
-		lbl := S.FormLabel.Align(lipgloss.Left).Render(label)
+		isFocused := int(f) == int(m.focus) && !m.retainFocused
+		ti := m.fields[f]
 
 		choiceIcon := ""
 		if choiceFields[f] {
 			choiceIcon = dim.Render("\u25bc ")
 		}
 
-		isFocused := int(f) == int(m.focus) && !m.retainFocused
-		tiView := m.fields[f].View()
-		val := choiceIcon
+		// Width available for the textinput value.
+		prefixW := 2  // "> " or "  "
+		lblW := 13    // FormLabel.Width(13)
+		choiceW := lipgloss.Width(choiceIcon)
+		gapW := 1
+		valW := w - prefixW - lblW - choiceW - gapW
+		if valW > 12 {
+			valW -= 3 // safety margin; more aggressive for narrow columns
+		}
+		if valW < 4 {
+			valW = 4
+		}
+		ti.SetWidth(valW)
 		if isFocused {
-			val += tiView
-		} else if raw == "" {
-			val += SubtleStyle.Render("\u2014") // visible placeholder
-		} else if f == fieldCall {
-			val += S.Info.Render(raw) // callsign in path-colour
-		} else {
-			val += ValueStyle.Render(raw)
+			ti.SetCursor(ti.Position()) // recalculate overflow for editing
+			m.fields[f] = ti
 		}
 
-		gap := lipgloss.NewStyle().Width(1).Background(P.Surface).Render(" ")
-		lblPart := lbl
+		// Focused: Bubbles handles width/scrolling natively.
+		// Unfocused: truncate raw text — Bubbles' offsetRight isn't reliable
+		// when cursor is at 0 and text exceeds width.
+		var v string
+		if raw == "" && !isFocused {
+			v = SubtleStyle.Render("\u2014")
+		} else if isFocused {
+			v = ti.View()
+		} else if f == fieldCall {
+			v = S.Info.Render(truncateText(raw, valW))
+		} else {
+			v = ValueStyle.Render(truncateText(raw, valW))
+		}
+		val := choiceIcon + v
+
+		// Label with focus indicator.
+		prefix := "  "
+		lblStyled := S.FormLabel.Align(lipgloss.Left).Render(label)
 		if isFocused {
-			lbl = S.FormLabel.Copy().
+			prefix = CursorStyle.Render("> ")
+			lblStyled = S.FormLabel.Copy().
 				Foreground(lipgloss.Color("212")).
 				Align(lipgloss.Left).
 				Render(label)
-			lblPart = lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Background(P.Surface).Render(" ") + lbl
 		}
-		if !isFocused {
-			lblPart = lipgloss.NewStyle().Foreground(P.TextMuted).Background(P.Surface).Render(" ") + lbl
+		lblPart := lipgloss.NewStyle().Foreground(P.TextMuted).Background(P.Surface).Render(prefix) + lblStyled
+		if isFocused {
+			lblPart = lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Background(P.Surface).Render(prefix) + lblStyled
 		}
-		return lipgloss.NewStyle().Width(w).Background(P.Surface).Render(
+		gap := lipgloss.NewStyle().Width(gapW).Background(P.Surface).Render(" ")
+		return lipgloss.NewStyle().Width(w).MaxWidth(w).Background(P.Surface).Render(
 			lipgloss.JoinHorizontal(lipgloss.Center, lblPart, gap, val),
 		)
 	}
