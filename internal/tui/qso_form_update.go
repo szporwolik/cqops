@@ -283,6 +283,7 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 			if m.partnerData != nil && !strings.EqualFold(m.partnerData.Callsign, cur) {
 				m.partnerData = nil
 				m.wlPrivateData = nil
+				m.wlLookupDone = false
 				m.screen = screenQSO
 				m.fields[fieldGrid].SetValue("")
 				m.fields[fieldQTH].SetValue("")
@@ -333,5 +334,6 @@ func (m *Model) clearForm() {
 	m.fields[m.focus].Focus()
 	m.partnerData = nil
 	m.wlPrivateData = nil
+	m.wlLookupDone = false
 	m.screen = screenQSO
 }

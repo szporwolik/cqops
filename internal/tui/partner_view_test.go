@@ -165,15 +165,36 @@ func TestPartnerViewRenderPartnerInfo(t *testing.T) {
 }
 
 func TestPartnerViewRenderWLInfo(t *testing.T) {
+	// WL disabled (no config) — should show "WL disabled"
 	m := newTestModel()
-
-	// With nil data — should show pending
 	info := m.renderWLInfo(40)
 	if info == "" {
 		t.Error("renderWLInfo returned empty with nil data")
 	}
-	if !strings.Contains(info, "pending") {
-		t.Error("renderWLInfo should show pending with nil data")
+	if !strings.Contains(info, "WL disabled") {
+		t.Error("renderWLInfo should show 'WL disabled' when Wavelog not configured")
+	}
+
+	// WL enabled, lookup not yet done — should show "pending"
+	m2 := newTestModel()
+	m2.App.Config.Wavelog.Enabled = true
+	m2.App.Config.Wavelog.URL = "https://example.com"
+	m2.App.Config.Wavelog.APIKey = "test-key"
+	m2.wlLookupDone = false
+	info2 := m2.renderWLInfo(40)
+	if !strings.Contains(info2, "pending") {
+		t.Error("renderWLInfo should show 'pending' when WL enabled but lookup not yet done")
+	}
+
+	// WL enabled, lookup completed with no data — should show "No WL data"
+	m3 := newTestModel()
+	m3.App.Config.Wavelog.Enabled = true
+	m3.App.Config.Wavelog.URL = "https://example.com"
+	m3.App.Config.Wavelog.APIKey = "test-key"
+	m3.wlLookupDone = true
+	info3 := m3.renderWLInfo(40)
+	if !strings.Contains(info3, "No WL data") {
+		t.Error("renderWLInfo should show 'No WL data' when lookup completed with no results")
 	}
 }
 

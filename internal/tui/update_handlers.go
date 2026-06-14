@@ -105,6 +105,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		}
 		if callChanged || bandChanged || modeChanged {
 			m.wlPrivateData = nil
+			m.wlLookupDone = false
 		}
 		m.screen = screenPartner
 		m.invalidatePartnerMapCache()

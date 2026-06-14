@@ -184,11 +184,17 @@ func (m *Model) renderPartnerInfo(d *qrz.CallData, maxW int) string {
 func (m *Model) renderWLInfo(maxW int) string {
 	d := m.wlPrivateData
 	if d == nil {
+		msg := "WL lookup pending\u2026"
+		if !m.App.Config.Wavelog.Enabled || m.App.Config.Wavelog.URL == "" || m.App.Config.Wavelog.APIKey == "" {
+			msg = "WL disabled"
+		} else if m.wlLookupDone {
+			msg = "No WL data"
+		}
 		return lipgloss.NewStyle().
 			Width(maxW - 4).
 			Align(lipgloss.Center).
 			Foreground(P.TextMuted).
-			Render("WL lookup pending\u2026")
+			Render(msg)
 	}
 
 	type row struct{ label, value string }

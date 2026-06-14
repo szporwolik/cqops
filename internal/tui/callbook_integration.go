@@ -130,10 +130,12 @@ func (m *Model) fillWLData(msg wlResultMsg) {
 		return
 	}
 	if msg.Err != nil {
+		m.wlLookupDone = true
 		applog.Warn("Wavelog: lookup error", "call", msg.Call, "error", msg.Err)
 		m.toasts.Warn("Wavelog: " + msg.Err.Error())
 		return
 	}
+	m.wlLookupDone = true
 	if msg.Data == nil {
 		return
 	}

@@ -110,6 +110,7 @@ type Model struct {
 	confirm         *DialogModel // active confirmation dialog (quit, etc.)
 	partnerData     *qrz.CallData
 	wlPrivateData   *wavelog.PrivateLookupResult // Wavelog callsign lookup
+	wlLookupDone    bool                         // true when any WL lookup result received
 	wlLastBand      string                       // band used in last WL query
 	wlLastMode      string                       // mode used in last WL query
 	flrigClient     FlrigClient
