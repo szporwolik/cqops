@@ -150,10 +150,7 @@ func (c *LogbookChooser) viewList() string {
 	if h < 10 {
 		h = 24
 	}
-	contentH := h - 4
-	if contentH < 3 {
-		contentH = 3
-	}
+	contentH := contentHeight(h)
 	// Empty row at top.
 	b.WriteString(S.Title.Render("Configuration — Logbooks"))
 	b.WriteString("\n\n")

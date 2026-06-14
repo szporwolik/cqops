@@ -156,7 +156,71 @@
 
 ---
 
-## Risky Areas (Extra Care Required)
+## Phase 2 — Component extraction and Update/View simplification
+
+### Method Extraction ✅ COMPLETED
+- [x] Extract `headerView` + `statusDotStyled` + `renderStatusBar` + `renderToastBar` + `windowTitle` → `statusbar.go`
+- [x] Extract `tabView` + `renderTabBar` + `renderProfileLine` + `renderProfileBar` → `tabbar.go`
+- [x] Extract `helpView` + `renderHelpBar` → `helpbar.go`
+- [x] 181 lines removed from model.go into 3 focused component files
+- [x] Build verified ✅
+
+### Update() Split ✅ COMPLETED
+- [x] `handleTick()` — tick processing, ADIF ingestion, health checks
+- [x] `handleAsyncMessages()` — inetResultMsg, wlStatusMsg, wlUploadResultMsg, flrigResultMsg
+- [x] `handleGlobalKeys()` — F1-F10 function keys, Delete, Lookup
+- [x] `handleFormKey()` — QSO form key bindings (retain, save, cycle, etc.)
+- [x] `handlePendingRequests()` — needRefresh, qrzNeed, wlNeed
+- [x] `handleChooserUpdate()` through `handleLogViewUpdate()` — 9 screen-specific handlers
+- [x] Update() reduced from ~220 lines to ~70 lines
+- [x] Build verified ✅
+
+### Layout Helpers ✅ COMPLETED
+- [x] Added `FixedZoneHeight = 4` constant (replaces magic number everywhere)
+- [x] Added `contentHeight()` helper
+- [x] Added `safeWidth()`, `safeHeight()` helpers
+- [x] Added `emptyState()`, `renderSectionTitle()`, `truncWithEllipsis()` wrappers
+- [x] Replaced all 17+ instances of `h - 4` pattern across 7 files
+- [x] Build verified ✅
+
+### Second Dead Code Pass ✅ COMPLETED
+- [x] Removed unused `key` import from model.go after extraction
+- [x] Removed unused `version` import from model.go after extraction
+- [x] No new dead code found
+
+### Files Changed This Phase
+| File | Change |
+|------|--------|
+| `model.go` | Removed ~230 lines of rendering + key handling code; simplified Update() |
+| `statusbar.go` | NEW — status bar rendering (headerView, statusDotStyled, renderStatusBar, renderToastBar, windowTitle) |
+| `tabbar.go` | NEW — tab bar rendering (tabView, renderProfileLine, renderProfileBar, renderTabBar) |
+| `helpbar.go` | NEW — help bar rendering (helpView, renderHelpBar) |
+| `update_handlers.go` | NEW — Update() sub-handlers and screen routing methods |
+| `render.go` | Added layout helpers (FixedZoneHeight, contentHeight, safeWidth, safeHeight, etc.) |
+| `main_menu.go` | Replaced `h - 4` with `contentHeight(h)` |
+| `general_menu.go` | Replaced `h - 4` with `contentHeight(h)` |
+| `callbook_menu.go` | Replaced `h - 4` with `contentHeight(h)` |
+| `integration_menu.go` | Replaced `h - 4` with `contentHeight(h)` |
+| `log_viewer.go` | Replaced `height - 4` with `contentHeight()` |
+| `logbook_menu.go` | Replaced `h - 4` with `contentHeight(h)` |
+| `logbook_editor.go` | Replaced `height - 4` with `contentHeight()` |
+| `rig_menu.go` | Replaced `h - 4` with `contentHeight(h)` |
+
+### Build/Test Results
+| Check | Result |
+|-------|--------|
+| `go fmt` | render.go, update_handlers.go formatted |
+| `go vet` | ✅ PASSED |
+| `go test ./...` | ✅ ALL PASSED |
+| `go build` | ✅ SUCCESS |
+
+### Remaining Risks / Future TODOs
+- **RecentQSOs table**: Uses `bubbles/table` correctly, but column width calculations are recalculated on every `View()`. Could cache when width is unchanged (minor perf improvement).
+- **Map rendering**: ASCII map content is regenerated in `viewPartner()` during `View()`. Could be cached for responsiveness on RPi devices.
+- **Screen routing switch**: Still in `Update()` but delegated to named handlers — still ~30 lines, acceptable.
+- **Sub-model width/height**: Each handler manually sets `m.subModel.width = m.width`. Could use a `setWidgetSize()` helper pattern.
+- **No tui package tests**: Adding component-level Bubble Tea tests would improve safety for future refactoring.
+
 - WSJT-X integration callbacks (thread-safe with mutex)
 - SQLite database operations
 - Wavelog upload pipeline

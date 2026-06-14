@@ -566,7 +566,7 @@ func (le *LogbookEditor) View() tea.View {
 	case edModeConfirmNormalize:
 		return tea.NewView(le.viewNormalizeConfirm(bodyW))
 	case edModeEdit:
-		contentH := le.height - 4 // status+profile+tab+help
+		contentH := contentHeight(le.height)
 		if contentH < 10 {
 			contentH = 10
 		}
@@ -575,11 +575,7 @@ func (le *LogbookEditor) View() tea.View {
 		if !le.built && len(le.qsos) > 0 {
 			le.buildTable()
 		}
-		// status+profile+tab+help = 4 fixed rows; table fills rest exactly.
-		contentH := le.height - 4
-		if contentH < 5 {
-			contentH = 5
-		}
+		contentH := contentHeight(le.height)
 		return tea.NewView(lipgloss.NewStyle().MaxWidth(bodyW).MaxHeight(contentH).Render(
 			S.RecentQSOsBox.Width(bodyW).Render(
 				lipgloss.NewStyle().MaxWidth(bodyW - 2).MaxHeight(contentH - 2).Render(le.table.View()),
@@ -594,7 +590,7 @@ func (le *LogbookEditor) viewWithDialog(bodyW int) string {
 	if !le.built && len(le.qsos) > 0 {
 		le.buildTable()
 	}
-	contentH := le.height - 4
+	contentH := contentHeight(le.height)
 	if contentH < 5 {
 		contentH = 5
 	}

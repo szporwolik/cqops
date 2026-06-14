@@ -52,7 +52,7 @@ func (lv *LogViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		lv.width = msg.Width
 		lv.height = msg.Height
 		// Viewport fills ContentH exactly: status+profile+tab+help = 4 fixed rows.
-		vh := msg.Height - 4
+		vh := contentHeight(msg.Height)
 		if vh < 5 {
 			vh = 5
 		}
@@ -83,7 +83,7 @@ func (lv *LogViewer) View() tea.View {
 	// Sync viewport dimensions from stored width/height (covers first render
 	// before any WindowSizeMsg arrives).
 	if lv.width > 0 && lv.height > 0 {
-		vh := lv.height - 4
+		vh := contentHeight(lv.height)
 		if vh < 5 {
 			vh = 5
 		}

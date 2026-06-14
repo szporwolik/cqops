@@ -87,7 +87,7 @@ func (m *MainMenu) View() tea.View {
 	}
 
 	// Available content height: status+profile+tab+help = 4 fixed rows.
-	contentH := h - 4
+	contentH := contentHeight(h)
 	if contentH < 3 {
 		contentH = 3
 	}

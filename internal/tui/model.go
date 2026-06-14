@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/help"
-	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -22,7 +21,6 @@ import (
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/rig/flrig"
 	"github.com/szporwolik/cqops/internal/store"
-	"github.com/szporwolik/cqops/internal/version"
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
@@ -715,16 +713,15 @@ func (m *Model) saveConfig(msg string) {
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
-	// Handle WindowSizeMsg first — store dimensions, then let sub-models see it too
+	// WindowSizeMsg — store dimensions first
 	if wsm, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width = wsm.Width
 		m.height = wsm.Height
 	}
 
-	// Active confirmation dialog — checked first, routes all keys to dialog
+	// Active confirmation dialog — highest priority, blocks everything else
 	if m.confirm != nil {
-		switch msg := msg.(type) {
-		case tea.KeyPressMsg:
+		if _, ok := msg.(tea.KeyPressMsg); ok {
 			updated, _ := m.confirm.Update(msg)
 			*m.confirm = updated.(DialogModel)
 			if m.confirm.Done() {
@@ -737,435 +734,75 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 
+	// Tick processing
 	if _, ok := msg.(tickMsg); ok {
-		m.adifMu.Lock()
-		adif := m.pendingADIF
-		m.pendingADIF = ""
-		m.adifMu.Unlock()
-		if adif != "" {
-			applog.Info("WSJT-X: processing pending ADIF")
-			cmd = tea.Batch(cmd, m.logQSOFromADIF(adif))
-		}
-		m.adifMu.Lock()
-		sp := m.pendingStatus
-		m.pendingStatus = statusPending{}
-		m.adifMu.Unlock()
-		if sp.hasData {
-			m.applyWSJTXStatus(sp.call, sp.grid, sp.freq, sp.mode, sp.submode, sp.report)
-		}
-		m.toasts.Expire()
-		m.autoUpdateDateTime()
-		m.tickCount++
-		cmd = tea.Batch(tickCmd(), m.maybeCheckInet(), m.pollFlrig(), m.maybeCheckWavelog())
+		cmd = m.handleTick(cmd)
 	}
-	if ir, ok := msg.(inetResultMsg); ok {
-		m.inetOnline = bool(ir)
-	}
-	if wl, ok := msg.(wlStatusMsg); ok {
-		m.wlOnline = wl.online
-		if wl.stationName != "" {
-			m.wlStationName = wl.stationName
-		}
-		if wl.stationLabel != "" {
-			m.wlStationLabel = wl.stationLabel
+
+	// Async result messages (internet, Wavelog, flrig)
+	if m.handleAsyncMessages(msg) {
+		if _, ok := msg.(flrigResultMsg); ok {
+			return m, cmd
 		}
 	}
-	if ur, ok := msg.(wlUploadResultMsg); ok {
-		if ur.ok {
-			store.UpdateWavelogStatus(m.App.DB, ur.qID, "yes")
-			m.toasts.Success(fmt.Sprintf("Wavelog: %s sent", ur.call))
-		} else {
-			store.UpdateWavelogStatus(m.App.DB, ur.qID, "no")
-			m.toasts.Warn(fmt.Sprintf("Wavelog: %s failed", ur.call))
-		}
-	}
-	if fr, ok := msg.(flrigResultMsg); ok {
-		m.applyFlrigResult(fr)
-		return m, cmd
-	}
+
+	// Global function keys (F1-F10, etc.)
 	if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
-		switch {
-		case key.Matches(keyMsg, m.keys.Quit):
-			applog.Debug("tab: F10 quit requested")
-			dlg := NewDialog("Quit CQOPS", "Exit the application?",
-				Option{Label: "Quit", Value: "quit"},
-				Option{Label: "Cancel", Value: "cancel"},
-			)
-			m.confirm = &dlg
-			m.screen = screenQSO
+		if handledCmd, handled := m.handleGlobalKeys(keyMsg); handled {
+			if handledCmd != nil {
+				cmd = tea.Batch(cmd, handledCmd)
+			}
 			return m, cmd
-		case key.Matches(keyMsg, m.keys.QSOForm):
-			applog.Debug("tab: F1 QSO Form")
-			m.screen = screenQSO
-		case key.Matches(keyMsg, m.keys.Partner):
-			call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
-			if call == "" {
-				m.toasts.Warn("No callsign entered")
-				applog.Debug("F2 Partner: no callsign")
-			} else {
-				applog.Debug("tab: F2 Partner Details")
-				band := strings.TrimSpace(m.fields[fieldBand].Value())
-				mode := strings.TrimSpace(m.fields[fieldMode].Value())
-
-				// Only clear cache & re-lookup if callsign/band/mode changed
-				// or if no cached data exists yet.
-				callChanged := m.partnerData == nil || !strings.EqualFold(m.partnerData.Callsign, call)
-				bandChanged := band != m.wlLastBand
-				modeChanged := mode != m.wlLastMode
-
-				if callChanged {
-					m.partnerData = nil
-				}
-				if callChanged || bandChanged || modeChanged {
-					m.wlPrivateData = nil
-				}
-
-				m.screen = screenPartner
-
-				// Trigger lookups only when data is stale or missing.
-				if callChanged {
-					if m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled {
-						cmd = tea.Batch(cmd, m.qrzLookup(call))
-					}
-				}
-				if callChanged || bandChanged || modeChanged {
-					if m.App.Config.Wavelog.Enabled && m.App.Config.Wavelog.APIKey != "" {
-						cmd = tea.Batch(cmd, m.wlLookup(call))
-					}
-				}
-			}
-		case key.Matches(keyMsg, m.keys.Config):
-			if m.screen == screenMainMenu {
-				applog.Debug("tab: F8 close Config")
-				m.screen = screenQSO
-			} else {
-				applog.Debug("tab: F8 Config")
-				m.mainMenu = NewMainMenu()
-				m.screen = screenMainMenu
-			}
-		case key.Matches(keyMsg, m.keys.LogEditor):
-			applog.Debug("tab: F7 Log Editor")
-			m.logbookEditor = NewLogbookEditor(m.App.DB, m.App.Config.Wavelog.URL, m.App.Config.Wavelog.APIKey, m.App.Config.Wavelog.StationProfileID, m.App.Config.Wavelog.StationCallsign, m.App.Logbook.Station.Operator, m.App.Logbook.Station.Grid)
-			m.logbookEditor.width = m.width
-			m.logbookEditor.height = m.height
-			qsos, _ := store.ListAllQSOs(m.App.DB)
-			m.logbookEditor.SetQSOS(qsos)
-			m.screen = screenLogbookEditor
-			return m, cmd
-		case key.Matches(keyMsg, m.keys.Logs):
-			applog.Debug("tab: F9 Log Viewer")
-			m.logViewer = NewLogViewer(m.App.LogbookName)
-			m.logViewer.width = m.width
-			m.logViewer.height = m.height
-			m.screen = screenLogView
-			return m, cmd
-		}
-		if !m.isSubmodelActive() {
-			if key.Matches(keyMsg, m.keys.Delete) {
-				m.clearForm()
-				return m, nil
-			}
-			if key.Matches(keyMsg, m.keys.Lookup) {
-				call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
-				if call != "" && m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled {
-					return m, m.qrzLookup(call)
-				}
-			}
 		}
 	}
+
+	// Screen-specific routing
 	switch m.screen {
 	case screenChooser:
-		m.chooser.width = m.width
-		m.chooser.height = m.height
-		_, chooserCmd := m.chooser.Update(msg)
-		cmd = tea.Batch(cmd, chooserCmd)
-		if m.chooser.done {
-			m.screen = screenMainMenu
-			m.needRefresh = true
-		}
-		return m, cmd
+		return m.handleChooserUpdate(msg, cmd)
 	case screenRigEdit:
-		m.rigChooser.width = m.width
-		m.rigChooser.height = m.height
-		_, rigCmd := m.rigChooser.Update(msg)
-		cmd = tea.Batch(cmd, rigCmd)
-		if m.rigChooser.done {
-			m.screen = screenMainMenu
-			m.refreshFlrigClient()
-		}
-		return m, cmd
+		return m.handleRigEditUpdate(msg, cmd)
 	case screenConfig:
-		m.configMenu.width = m.width
-		m.configMenu.height = m.height
-		_, configCmd := m.configMenu.Update(msg)
-		cmd = tea.Batch(cmd, configCmd)
-		if m.configMenu.done {
-			m.screen = screenQSO
-			if m.configMenu.goBack {
-				m.screen = screenMainMenu
-			}
-			if m.configMenu.saved {
-				m.App.Config.DistanceUnit = m.configMenu.distanceUnit
-				m.saveConfig("Settings saved")
-				m.screen = screenMainMenu
-			}
-		}
-		return m, cmd
+		return m.handleConfigUpdate(msg, cmd)
 	case screenCallbook:
-		m.callbookMenu.width = m.width
-		m.callbookMenu.height = m.height
-		m.callbookMenu.inetOnline = m.inetOnline
-		_, callbookCmd := m.callbookMenu.Update(msg)
-		if m.callbookMenu.done {
-			m.screen = screenQSO
-			if m.callbookMenu.goBack {
-				m.screen = screenMainMenu
-			}
-			if m.callbookMenu.saved {
-				m.App.Config.QRZUser = m.callbookMenu.user.Value()
-				m.App.Config.QRZPass = m.callbookMenu.pass.Value()
-				m.App.Config.QRZEnabled = m.callbookMenu.enabled
-				m.saveConfig("Settings saved")
-				m.screen = screenMainMenu
-			}
-		}
-		return m, tea.Batch(cmd, callbookCmd)
+		return m.handleCallbookUpdate(msg, cmd)
 	case screenIntegration:
-		m.integrationMenu.width = m.width
-		m.integrationMenu.height = m.height
-		_, integrationCmd := m.integrationMenu.Update(msg)
-		if m.integrationMenu.done {
-			m.screen = screenQSO
-			if m.integrationMenu.goBack {
-				m.screen = screenMainMenu
-			}
-			if m.integrationMenu.saved {
-				wsjtxE, wsjtxH, wsjtxP, wlE, wlURL, wlKey, wlSta, wlStaCall, _ := m.integrationMenu.Values()
-				m.App.Config.WSJTX.Enabled = wsjtxE
-				m.App.Config.WSJTX.UDPHost = wsjtxH
-				m.App.Config.WSJTX.UDPPort = wsjtxP
-				m.App.Config.Wavelog.Enabled = wlE
-				m.App.Config.Wavelog.URL = wlURL
-				m.App.Config.Wavelog.APIKey = wlKey
-				m.App.Config.Wavelog.StationProfileID = wlSta
-				m.App.Config.Wavelog.StationCallsign = wlStaCall
-				m.saveConfig("Settings saved")
-				applog.Info("Integration config saved, restarting services")
-				m.App.MaybeRestartWSJTX()
-				cmd = tea.Batch(cmd, m.checkWavelogCmd())
-				m.screen = screenMainMenu
-			}
-		}
-		return m, tea.Batch(cmd, integrationCmd)
+		return m.handleIntegrationUpdate(msg, cmd)
 	case screenMainMenu:
-		m.mainMenu.width = m.width
-		m.mainMenu.height = m.height
-		_, mainCmd := m.mainMenu.Update(msg)
-		cmd = tea.Batch(cmd, mainCmd)
-		if m.mainMenu.action != "" {
-			action := m.mainMenu.action
-			m.mainMenu.action = ""
-			m.screen = screenQSO
-			switch action {
-			case "general":
-				m.configMenu = NewGeneralMenu(m.App.Config)
-				m.screen = screenConfig
-			case "callbook":
-				m.callbookMenu = NewCallbookMenu(m.App.Config)
-				m.screen = screenCallbook
-			case "logbook":
-				m.chooser = NewLogbookChooser(m.App, m.toasts)
-				m.screen = screenChooser
-			case "rig":
-				m.rigChooser = NewRigChooser(m.App, m.toasts)
-				m.screen = screenRigEdit
-			case "integration":
-				m.integrationMenu = NewIntegrationMenu(m.App.Config)
-				m.screen = screenIntegration
-			}
-		}
-		if m.mainMenu.done {
-			m.screen = screenQSO
-		}
-		return m, cmd
+		return m.handleMainMenuUpdate(msg, cmd)
 	case screenPartner:
-		switch msg := msg.(type) {
-		case tea.WindowSizeMsg:
-			m.width, m.height = msg.Width, msg.Height
-			return m, cmd
-		case tea.KeyPressMsg:
-			switch msg.String() {
-			case "f1", "esc":
-				m.screen = screenQSO
-				return m, cmd
-			case "f8":
-				m.screen = screenQSO
-				m.mainMenu = NewMainMenu()
-				m.screen = screenMainMenu
-				return m, cmd
-			default:
-				return m, cmd
-			}
-		}
+		return m.handlePartnerUpdate(msg, cmd)
 	case screenLogbookEditor:
-		m.logbookEditor.width = m.width
-		m.logbookEditor.height = m.height
-		_, editorCmd := m.logbookEditor.Update(msg)
-		if em, ok := msg.(editorMsg); ok {
-			if em.err != nil && em.wlQSOID == 0 {
-				m.toasts.Error(em.err.Error())
-			}
-			if em.deleted != 0 {
-				m.toasts.Success(fmt.Sprintf("QSO %s from %s deleted", em.delCall, em.delDate))
-			}
-			if em.saved != 0 {
-				m.toasts.Success(fmt.Sprintf("QSO %s from %s saved", em.saveCall, em.saveDate))
-			}
-			if em.purged {
-				m.toasts.Success("Logbook purged")
-			}
-			if em.wlQSOID != 0 {
-				if em.wlOK {
-					m.toasts.Success(fmt.Sprintf("Wavelog: %s sent", em.wlCall))
-					m.logbookEditor.UpdateWLStatus(em.wlQSOID, "yes")
-					m.logbookEditor.needsReload = true
-				} else {
-					m.toasts.Warn(fmt.Sprintf("Wavelog: %s failed", em.wlCall))
-					m.logbookEditor.UpdateWLStatus(em.wlQSOID, "no")
-				}
-			}
-			// Show warning for skipped QSOs (missing band/mode/date).
-			if m.logbookEditor.wlSkipped > 0 {
-				m.toasts.Warn(fmt.Sprintf("Wavelog: %s", m.logbookEditor.wlSkipDetail))
-				m.logbookEditor.wlSkipped = 0
-				m.logbookEditor.wlSkipDetail = ""
-			}
-		}
-		if m.logbookEditor.needsReload {
-			m.logbookEditor.needsReload = false
-			qsos, _ := store.ListAllQSOs(m.App.DB)
-			m.logbookEditor.SetQSOS(qsos)
-			m.needRefresh = true
-		}
-		if m.logbookEditor.done {
-			m.screen = screenQSO
-			m.needRefresh = true
-		}
-		return m, tea.Batch(cmd, editorCmd)
+		return m.handleLogbookEditorUpdate(msg, cmd)
 	case screenLogView:
-		m.logViewer.width = m.width
-		m.logViewer.height = m.height
-		_, logCmd := m.logViewer.Update(msg)
-		cmd = tea.Batch(cmd, logCmd)
-		if m.logViewer.done {
-			m.screen = screenQSO
-		}
+		return m.handleLogViewUpdate(msg, cmd)
+	}
+
+	// QSO form result messages (QRZ, Wavelog lookups)
+	switch r := msg.(type) {
+	case qrzResultMsg:
+		m.fillQRZData(r)
+		return m, cmd
+	case wlResultMsg:
+		m.fillWLData(r)
 		return m, cmd
 	}
 
-	switch msg := msg.(type) {
-	case qrzResultMsg:
-		m.fillQRZData(msg)
-		return m, cmd
-	case wlResultMsg:
-		m.fillWLData(msg)
-		return m, cmd
-	case inetResultMsg:
-		m.inetOnline = bool(msg)
-		return m, nil
-	case tea.KeyPressMsg:
-		switch {
-		case m.retainFocused:
-			switch msg.String() {
-			case "space", "enter":
-				m.retainComment = !m.retainComment
-			case "tab", "down":
-				m.nextField()
-			case "shift+tab", "up":
-				m.prevField()
-			case "ctrl+r":
-				m.retainComment = !m.retainComment
+	// QSO form key handling
+	if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
+		if formCmd, handled := m.handleFormKey(keyMsg); handled {
+			if formCmd != nil {
+				cmd = tea.Batch(cmd, formCmd)
 			}
 			return m, cmd
-		case key.Matches(msg, m.keys.PrevField):
-			m.prevField()
-		case key.Matches(msg, m.keys.NextField):
-			m.nextField()
-		case key.Matches(msg, m.keys.Save):
-			return m, m.saveQSO()
-		case key.Matches(msg, m.keys.Delete):
-			m.clearForm()
-		case key.Matches(msg, m.keys.Retain):
-			m.retainComment = !m.retainComment
-		case msg.String() == "ctrl+c":
-			m.mainMenu = NewMainMenu()
-			m.screen = screenMainMenu
-		case key.Matches(msg, m.keys.FocusCall):
-			m.focusField(fieldCall)
-		case key.Matches(msg, m.keys.Partner):
-			call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
-			var cmds []tea.Cmd
-			if call != "" && m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled && m.partnerData == nil {
-				cmds = append(cmds, m.qrzLookup(call))
-			}
-			cmds = append(cmds, m.wlLookup(call)) // WL is independent
-			if len(cmds) > 0 {
-				return m, tea.Batch(cmds...)
-			}
-		case key.Matches(msg, m.keys.Lookup):
-			call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
-			var cmds []tea.Cmd
-			if call != "" && m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled {
-				cmds = append(cmds, m.qrzLookup(call))
-			}
-			cmds = append(cmds, m.wlLookup(call)) // WL is independent, always retries
-			if len(cmds) > 0 {
-				return m, tea.Batch(cmds...)
-			}
-		case key.Matches(msg, m.keys.Enter):
-			return m, m.saveQSO()
-		case key.Matches(msg, m.keys.CycleUp):
-			m.cycleFieldUp()
-		case key.Matches(msg, m.keys.CycleDown):
-			m.cycleFieldDown()
-		default:
-			m.updateFocused(msg)
-		}
-		// Re-trigger WL lookup when band or mode changes.
-		curBand := strings.TrimSpace(m.fields[fieldBand].Value())
-		curMode := strings.TrimSpace(m.fields[fieldMode].Value())
-		call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
-		if call != "" && (curBand != m.wlLastBand || curMode != m.wlLastMode) && m.wlPrivateData != nil {
-			m.wlNeed = true
-			m.wlCall = call
 		}
 	}
-	if m.needRefresh {
-		m.needRefresh = false
-		return m, tea.Batch(cmd, m.refreshQSOS())
+
+	// Deferred pending requests
+	if pendingCmd, handled := m.handlePendingRequests(cmd); handled {
+		return m, pendingCmd
 	}
-	if m.qrzNeed {
-		m.qrzNeed = false
-		call := m.qrzCall
-		if call == "" {
-			return m, cmd
-		}
-		if !m.App.Config.QRZEnabled {
-			return m, cmd
-		}
-		if m.App.Config.QRZUser == "" {
-			m.toasts.Warn("QRZ not configured — F8 Config → Callbook / QRZ.com to enable")
-			return m, cmd
-		}
-		return m, tea.Batch(cmd, m.qrzLookup(call), m.wlLookup(call))
-	}
-	if m.wlNeed {
-		m.wlNeed = false
-		call := m.wlCall
-		if call != "" {
-			return m, tea.Batch(cmd, m.wlLookup(call))
-		}
-	}
+
 	return m, cmd
 }
 
@@ -1303,204 +940,6 @@ func (m *Model) View() tea.View {
 	return v
 }
 
-func (m *Model) headerView() string {
-	s := m.App.Logbook.Station
-	utc := time.Now().UTC()
-
-	callsign := s.Callsign
-	if callsign == "" {
-		callsign = "—"
-	}
-	logName := m.App.LogbookName
-	if logName == "" {
-		logName = "—"
-	}
-
-	left := lipgloss.JoinHorizontal(lipgloss.Top,
-		S.StatusApp.Render(" CQOPS v"+version.Resolved()+" "),
-		S.StatusLabel.Render(" Call "),
-		S.StatusValue.Render(clamp(callsign, 8)),
-		S.StatusLabel.Render(" Log "),
-		S.StatusValue.Render(clamp(logName, 10)),
-	)
-
-	right := lipgloss.JoinHorizontal(lipgloss.Top,
-		statusDotStyled(m.inetOnline, "Net"),
-		statusDotStyled(m.wsjtxOnline, "WSJT"),
-		statusDotStyled(m.rigConnected, "Rig"),
-		statusDotStyled(m.wlOnline, "WL"),
-		S.StatusRight.Render(" "),
-		S.StatusTime.Render(utc.Format("15:04:05")),
-	)
-
-	fillerW := m.width - lipgloss.Width(left) - lipgloss.Width(right)
-	if fillerW < 1 {
-		fillerW = 1
-	}
-
-	return left + S.StatusFill.Render(strings.Repeat(" ", fillerW)) + right
-}
-
-func statusDotStyled(on bool, label string) string {
-	fg := P.Error
-	if on {
-		fg = P.Success
-	}
-	return lipgloss.NewStyle().
-		Foreground(fg).
-		Background(P.Background).
-		Render(label) + S.StatusRight.Render(" ")
-}
-
-func (m *Model) tabView() string {
-	hasPartner := m.partnerData != nil || strings.TrimSpace(m.fields[fieldCall].Value()) != ""
-
-	type tab struct {
-		label    string
-		active   bool
-		disabled bool
-	}
-	tabs := []tab{
-		{"F1 QSO Form", m.screen == screenQSO && m.confirm == nil, false},
-		{"F2 Partner", m.screen == screenPartner && hasPartner, !hasPartner},
-		{"F7 Log Editor", m.screen == screenLogbookEditor, false},
-		{"F8 Config", m.screen == screenMainMenu || m.screen == screenConfig || m.screen == screenCallbook || m.screen == screenIntegration || m.screen == screenChooser || m.screen == screenRigEdit, false},
-		{"F9 Logs", m.screen == screenLogView, false},
-	}
-
-	var parts []string
-	for _, t := range tabs {
-		s := S.TabInactive
-		if t.active {
-			s = S.TabActive
-		}
-		if t.disabled {
-			s = S.TabDisabled
-		}
-		parts = append(parts, s.Render(" "+t.label+" "))
-	}
-
-	row := strings.Join(parts, S.TabGap.Render(" "))
-	return S.TabBar.Width(m.width).Render(row)
-}
-
-func (m *Model) renderProfileLine() string {
-	s := m.App.Logbook.Station
-	var parts []string
-	if s.Operator != "" {
-		parts = append(parts, "Op "+s.Operator)
-	}
-	if s.Rig != "" {
-		parts = append(parts, "Rig "+s.Rig)
-	}
-	if s.Antenna != "" {
-		parts = append(parts, "Ant "+s.Antenna)
-	}
-	if s.Grid != "" {
-		parts = append(parts, "Grid "+formatLocator(s.Grid))
-	}
-	if s.SOTARef != "" {
-		parts = append(parts, "SOTA "+s.SOTARef)
-	}
-	if s.POTARef != "" {
-		parts = append(parts, "POTA "+s.POTARef)
-	}
-	if s.WWFFRef != "" {
-		parts = append(parts, "WWFF "+s.WWFFRef)
-	}
-	if len(parts) == 0 {
-		return ""
-	}
-	return DimStyle.Render("  " + strings.Join(parts, " · "))
-}
-
-func (m *Model) helpView() string {
-	if m.confirm != nil {
-		return HelpStyle.Render("←/→ choose  •  enter confirm  •  esc cancel")
-	}
-	bindings := m.ActiveBindings()
-	if len(bindings) == 0 {
-		bindings = []key.Binding{m.keys.Quit}
-	}
-	helpText := m.help.ShortHelpView(bindings)
-	if helpText == "" {
-		helpText = m.help.ShortHelpView([]key.Binding{m.keys.Quit})
-	}
-	// QSO counter on log editor screen.
-	if m.screen == screenLogbookEditor && m.logbookEditor != nil {
-		cursor := m.logbookEditor.CursorPos()
-		total := m.logbookEditor.QSOCount()
-		if total > 0 {
-			counter := fmt.Sprintf("QSO %d/%d", cursor+1, total)
-			counterW := lipgloss.Width(counter)
-			spacerW := m.width - lipgloss.Width(helpText) - counterW - 2
-			if spacerW < 1 {
-				spacerW = 1
-			}
-			return HelpStyle.Render(helpText + strings.Repeat(" ", spacerW) + counter)
-		}
-	}
-	// Scroll position on log viewer screen.
-	if m.screen == screenLogView && m.logViewer != nil {
-		info := m.logViewer.ScrollInfo()
-		if info != "" {
-			infoW := lipgloss.Width(info)
-			spacerW := m.width - lipgloss.Width(helpText) - infoW - 2
-			if spacerW < 1 {
-				spacerW = 1
-			}
-			return HelpStyle.Render(helpText + strings.Repeat(" ", spacerW) + info)
-		}
-	}
-	return HelpStyle.Render(helpText)
-}
-
-// =============================================================================
-// Layout wrapper methods — called by layout.MeasureLayout and View().
-// These are the canonical entry points for rendering each fixed zone.
-// =============================================================================
-
-func (m *Model) renderStatusBar() string { return m.headerView() }
-func (m *Model) renderTabBar() string    { return m.tabView() }
-func (m *Model) renderHelpBar() string   { return m.helpView() }
-
-func (m *Model) renderProfileBar() string {
-	if m.confirm == nil {
-		line := m.renderProfileLine()
-		if line == "" {
-			return ""
-		}
-		// Right-align, single line — content beyond width is hidden, not wrapped
-		return lipgloss.NewStyle().
-			Width(m.width).
-			MaxHeight(1).
-			Align(lipgloss.Right).
-			Render(line)
-	}
-	return ""
-}
-
-func (m *Model) renderToastBar() string {
-	return RenderToasts(m.toasts.Active(), m.width)
-}
-
-// windowTitle returns the terminal window title for the main TUI.
-func (m *Model) windowTitle() string {
-	s := m.App.Logbook.Station
-	callsign := s.Callsign
-	logbook := m.App.LogbookName
-	if callsign == "" && logbook == "" {
-		return "CQOPS"
-	}
-	if callsign == "" {
-		return "CQOPS — " + logbook
-	}
-	if logbook == "" {
-		return "CQOPS — " + callsign
-	}
-	return "CQOPS — " + callsign + " @ " + logbook
-}
-
 // buildBodyForScreen returns the content string for the active screen,
 // using Layout dimensions for proper sizing.
 func (m *Model) buildBodyForScreen(l Layout) string {
@@ -1609,7 +1048,7 @@ func (m *Model) viewPartner() string {
 
 	// Available height for the map: terminal minus fixed rows minus top info.
 	topH := lipgloss.Height(topRow)
-	mapAvailH := m.height - 4 - topH // status+profile+tab+help
+	mapAvailH := contentHeight(m.height) - topH
 	if mapAvailH < 3 {
 		mapAvailH = 3
 	}
@@ -1650,9 +1089,8 @@ func (m *Model) viewPartner() string {
 	mapBox := S.MapBox.Width(bodyW).Render(mapInner)
 
 	// Filler pushes the help bar toward the bottom without overshooting.
-	// Use m.height-4 as a safe base (1-row margin) so the help bar is never lost.
 	mapBoxH := lipgloss.Height(mapBox)
-	fillerH := m.height - 4 - topH - mapBoxH
+	fillerH := contentHeight(m.height) - topH - mapBoxH
 	if fillerH < 0 {
 		fillerH = 0
 	}

@@ -294,7 +294,7 @@ func (im *IntegrationMenu) View() tea.View {
 	if h < 10 {
 		h = 24
 	}
-	contentH := h - 4
+	contentH := contentHeight(h)
 	if contentH < 3 {
 		contentH = 3
 	}

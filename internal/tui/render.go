@@ -104,3 +104,54 @@ func truncate(s string, max int) string {
 	}
 	return s[:max-1] + "…"
 }
+
+// =============================================================================
+// Layout helpers
+// =============================================================================
+
+// FixedZoneHeight is the number of rows consumed by the fixed UI zones:
+// status bar (1) + profile line (0-1) + tab bar (1) + help bar (1).
+// Use this instead of magic number 4 throughout the codebase.
+const FixedZoneHeight = 4
+
+// contentHeight returns the available content height for a given terminal height
+// after accounting for fixed UI zones.
+func contentHeight(terminalH int) int {
+	h := terminalH - FixedZoneHeight
+	if h < 3 {
+		h = 3
+	}
+	return h
+}
+
+// safeWidth returns a clamped width suitable for content rendering.
+// Ensures a minimum of 30 columns.
+func safeWidth(w int) int {
+	if w < 30 {
+		return 30
+	}
+	return w
+}
+
+// safeHeight returns a clamped height with the given minimum.
+func safeHeight(h, min int) int {
+	if h < min {
+		return min
+	}
+	return h
+}
+
+// emptyState returns a dimmed placeholder string for empty content areas.
+func emptyState() string {
+	return DimStyle.Render("\u2014")
+}
+
+// renderSectionTitle renders a titled horizontal rule separator.
+func renderSectionTitle(title string, width int) string {
+	return section(title, width)
+}
+
+// truncWithEllipsis truncates a string to max cells with ellipsis if needed.
+func truncWithEllipsis(s string, max int) string {
+	return truncate(s, max)
+}
