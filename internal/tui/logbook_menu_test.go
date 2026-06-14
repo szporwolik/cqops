@@ -29,8 +29,8 @@ func newChooserTestApp(t *testing.T) *app.App {
 	t.Cleanup(func() { db.Close() })
 
 	cfg := &config.Config{
-		ActiveLogbook: "home",
-		DistanceUnit:  "km",
+		State:   config.StateConfig{ActiveLogbook: "home"},
+		General: config.GeneralConfig{DistanceUnit: "km"},
 		Logbooks: map[string]config.Logbook{
 			"home": {
 				Description: "Home QTH",
@@ -89,8 +89,8 @@ func TestLogbookChooserDeleteConfirmation(t *testing.T) {
 	if len(c.names) != 2 {
 		t.Fatalf("expected 2 logbooks, got %d", len(c.names))
 	}
-	if c.names[c.cursor] != a.Config.ActiveLogbook {
-		t.Fatalf("cursor should be on active logbook %q, got %q", a.Config.ActiveLogbook, c.names[c.cursor])
+	if c.names[c.cursor] != a.Config.State.ActiveLogbook {
+		t.Fatalf("cursor should be on active logbook %q, got %q", a.Config.State.ActiveLogbook, c.names[c.cursor])
 	}
 
 	// Move cursor to "portable" logbook (press down arrow)

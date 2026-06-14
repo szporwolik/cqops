@@ -26,7 +26,7 @@ var logbookListCmd = &cobra.Command{
 		fmt.Println("Logbooks:")
 		for name, lb := range a.Config.Logbooks {
 			marker := " "
-			if name == a.Config.ActiveLogbook {
+			if name == a.Config.State.ActiveLogbook {
 				marker = "*"
 			}
 			info := lb.Station.Callsign
@@ -93,7 +93,7 @@ var logbookUseCmd = &cobra.Command{
 			return fmt.Errorf("logbook %q does not exist", name)
 		}
 
-		a.Config.ActiveLogbook = name
+		a.Config.State.ActiveLogbook = name
 		if err := config.Save(a.ConfigPath, a.Config); err != nil {
 			return fmt.Errorf("save config: %w", err)
 		}

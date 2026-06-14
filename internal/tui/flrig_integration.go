@@ -21,7 +21,7 @@ func (m *Model) refreshFlrigClient() {
 	}
 	if len(m.App.Config.Rigs) == 0 {
 		m.App.Config.Rigs = map[string]config.RigPreset{"default": {
-			FlrigEnabled: m.App.Config.Rig.Flrig.Enabled, FlrigHost: "localhost", FlrigPort: "12345",
+			FlrigEnabled: false, FlrigHost: "localhost", FlrigPort: "12345",
 		}}
 	}
 	rigName := m.App.Logbook.Station.RigName

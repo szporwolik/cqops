@@ -56,7 +56,7 @@ func Execute() error {
 func runTUI() error {
 	a, err := app.Init(logbookFlag)
 	if err != nil {
-		return fmt.Errorf("init: %w", err)
+		return err
 	}
 	defer a.Close()
 

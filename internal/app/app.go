@@ -25,23 +25,29 @@ type App struct {
 func Init(logbookFlag string) (*App, error) {
 	cfg, configPath, err := config.EnsureConfig()
 	if err != nil {
-		return nil, fmt.Errorf("ensure config: %w", err)
+		applog.Error("Config is corrupted or missing — cannot start", "error", err.Error())
+		return nil, fmt.Errorf("config: %w", err)
 	}
+	applog.Info("Config OK", "path", configPath)
 
 	name, lb, err := config.ResolveLogbook(cfg, logbookFlag)
 	if err != nil {
-		return nil, fmt.Errorf("resolve logbook: %w", err)
+		applog.Error("Cannot resolve logbook", "name", logbookFlag, "error", err.Error())
+		return nil, fmt.Errorf("logbook: %w", err)
 	}
 
 	dbPath, err := config.DBPath(name, lb)
 	if err != nil {
+		applog.Error("Cannot determine database path", "logbook", name, "error", err.Error())
 		return nil, fmt.Errorf("db path: %w", err)
 	}
 
 	db, err := store.InitDB(dbPath)
 	if err != nil {
-		return nil, fmt.Errorf("init db: %w", err)
+		applog.Error("Database is corrupted or cannot be opened — cannot start", "path", dbPath, "error", err.Error())
+		return nil, fmt.Errorf("database: %w", err)
 	}
+	applog.Info("Database OK", "path", dbPath)
 
 	app := &App{
 		Config:       cfg,
@@ -100,8 +106,9 @@ func (a *App) SwitchLogbook(name string) error {
 	if err != nil {
 		return fmt.Errorf("init db: %w", err)
 	}
+	applog.Info("Database OK", "path", dbPath)
 
-	a.Config.ActiveLogbook = name
+	a.Config.State.ActiveLogbook = name
 	a.LogbookName = name
 	a.Logbook = &lb
 	a.DB = db

@@ -215,6 +215,7 @@ func TestWavelogStatusCheckSuccess(t *testing.T) {
 	m.App.Logbook.Wavelog.Enabled = true
 	m.App.Logbook.Wavelog.URL = srv.URL
 	m.App.Logbook.Wavelog.APIKey = "test-key"
+	m.App.Logbook.Wavelog.StationProfileID = "1"
 	m.wlOnline = false
 
 	cmd := m.checkWavelogCmd()

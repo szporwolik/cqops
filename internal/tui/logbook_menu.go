@@ -63,7 +63,7 @@ func NewLogbookChooser(a *app.App, tq *ToastQueue) *LogbookChooser {
 	// Start cursor on the active logbook.
 	cursor := 0
 	for i, n := range names {
-		if n == a.Config.ActiveLogbook {
+		if n == a.Config.State.ActiveLogbook {
 			cursor = i
 			break
 		}
@@ -267,7 +267,7 @@ func (c *LogbookChooser) viewList() string {
 			marker = CursorStyle.Render("> ")
 		}
 		active := "        "
-		if name == c.app.Config.ActiveLogbook {
+		if name == c.app.Config.State.ActiveLogbook {
 			active = "[Active]"
 		}
 		info := lb.Station.Callsign
@@ -333,7 +333,7 @@ type logbookSwitchedMsg struct{}
 func (c *LogbookChooser) handleEnter() tea.Cmd {
 	if len(c.names) > 0 {
 		name := c.names[c.cursor]
-		if name == c.app.Config.ActiveLogbook {
+		if name == c.app.Config.State.ActiveLogbook {
 			c.toasts.Info("Logbook \"" + name + "\" is already active")
 			return nil
 		}
@@ -358,7 +358,7 @@ func (c *LogbookChooser) refreshNames() {
 	c.names = names
 	// Keep cursor on the active logbook after refresh.
 	for i, n := range names {
-		if n == c.app.Config.ActiveLogbook {
+		if n == c.app.Config.State.ActiveLogbook {
 			c.cursor = i
 			return
 		}
@@ -432,7 +432,7 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 			},
 			Wavelog: wl,
 		}
-		c.app.Config.ActiveLogbook = name
+		c.app.Config.State.ActiveLogbook = name
 		c.app.LogbookName = name
 		lb := c.app.Config.Logbooks[name]
 		c.app.Logbook = &lb
@@ -505,7 +505,7 @@ func (c *LogbookChooser) deleteLogbook() tea.Cmd {
 	}
 	name := c.names[c.cursor]
 
-	if name == c.app.Config.ActiveLogbook {
+	if name == c.app.Config.State.ActiveLogbook {
 		c.toasts.Error("Cannot delete " + name + " — it is the active logbook. Switch to another first.")
 		c.mode = chooserList
 		return nil

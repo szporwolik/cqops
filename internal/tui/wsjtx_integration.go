@@ -32,7 +32,7 @@ func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode
 			m.wlPrivateData = nil
 			m.wlLookupDone = false
 			applog.InfoDetail("WSJT-X: switching DX call", fmt.Sprintf("%s \u2192 %s", prevCall, newCall))
-			if m.App.Config.QRZEnabled && m.App.Config.QRZUser != "" {
+			if m.App.Config.QRZ.Enabled && m.App.Config.QRZ.User != "" {
 				applog.Info("QRZ: looking up " + call + "\u2026")
 				m.qrzNeed = true
 				m.qrzCall = newCall

@@ -15,7 +15,7 @@ import (
 // It initializes only the fields required by QSO form methods.
 func newTestModel() *Model {
 	cfg := &config.Config{
-		DistanceUnit: "km",
+		General: config.GeneralConfig{DistanceUnit: "km"},
 		Logbooks: map[string]config.Logbook{
 			"test": {
 				Station: config.Station{

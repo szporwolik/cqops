@@ -19,7 +19,7 @@ type GeneralMenu struct {
 }
 
 func NewGeneralMenu(cfg *config.Config) *GeneralMenu {
-	du := cfg.DistanceUnit
+	du := cfg.General.DistanceUnit
 	if du != "mi" {
 		du = "km"
 	}

@@ -23,13 +23,13 @@ var configShowCmd = &cobra.Command{
 		defer a.Close()
 
 		fmt.Printf("Config path:    %s\n", a.ConfigPath)
-		fmt.Printf("Active logbook: %s\n", a.Config.ActiveLogbook)
+		fmt.Printf("Active logbook: %s\n", a.Config.State.ActiveLogbook)
 		fmt.Println()
 
 		fmt.Println("Logbooks:")
 		for name, lb := range a.Config.Logbooks {
 			marker := " "
-			if name == a.Config.ActiveLogbook {
+			if name == a.Config.State.ActiveLogbook {
 				marker = "*"
 			}
 			fmt.Printf("  %s %-12s %s\n", marker, name, lb.Description)

@@ -431,7 +431,7 @@ func (w *Wizard) viewSummary() string {
 // ── Helpers ──────────────────────────────────────────────────────
 
 func (w *Wizard) handleEnter() tea.Cmd {
-	w.App.Config.Timezone = config.Timezones[w.tzIndex]
+	w.App.Config.General.Timezone = config.Timezones[w.tzIndex]
 	applog.Info("Wizard: timezone selected", "timezone", config.Timezones[w.tzIndex])
 	w.saveConfig()
 	w.Completed = true

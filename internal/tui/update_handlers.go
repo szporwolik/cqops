@@ -116,7 +116,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.invalidatePartnerMapCache()
 
 		var cmds []tea.Cmd
-		if callChanged && m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled {
+		if callChanged && m.App.Config.QRZ.User != "" && m.App.Config.QRZ.Enabled {
 			cmds = append(cmds, m.qrzLookup(call))
 		}
 		wl := m.App.Logbook.Wavelog
@@ -174,7 +174,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 					return nil, true
 				}
 				var cmds []tea.Cmd
-				if m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled {
+				if m.App.Config.QRZ.User != "" && m.App.Config.QRZ.Enabled {
 					cmds = append(cmds, m.qrzLookup(call))
 				}
 				wl := m.App.Logbook.Wavelog
@@ -244,7 +244,7 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	case key.Matches(msg, m.keys.Partner):
 		call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
 		var cmds []tea.Cmd
-		if call != "" && m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled && m.partnerData == nil {
+		if call != "" && m.App.Config.QRZ.User != "" && m.App.Config.QRZ.Enabled && m.partnerData == nil {
 			cmds = append(cmds, m.qrzLookup(call))
 		}
 		cmds = append(cmds, m.wlLookup(call))
@@ -256,7 +256,7 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	case key.Matches(msg, m.keys.Lookup):
 		call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
 		var cmds []tea.Cmd
-		if call != "" && m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled {
+		if call != "" && m.App.Config.QRZ.User != "" && m.App.Config.QRZ.Enabled {
 			cmds = append(cmds, m.qrzLookup(call))
 		}
 		cmds = append(cmds, m.wlLookup(call))
@@ -301,10 +301,10 @@ func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
 	if m.qrzNeed {
 		m.qrzNeed = false
 		call := m.qrzCall
-		if call == "" || !m.App.Config.QRZEnabled {
+		if call == "" || !m.App.Config.QRZ.Enabled {
 			return cmd, false
 		}
-		if m.App.Config.QRZUser == "" {
+		if m.App.Config.QRZ.User == "" {
 			m.toasts.Warn("QRZ not configured")
 			return cmd, false
 		}
@@ -363,7 +363,7 @@ func (m *Model) handleConfigUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd
 			m.screen = screenMainMenu
 		}
 		if m.configMenu.saved {
-			m.App.Config.DistanceUnit = m.configMenu.distanceUnit
+			m.App.Config.General.DistanceUnit = m.configMenu.distanceUnit
 			m.saveConfig("Settings saved")
 			m.screen = screenMainMenu
 		}
@@ -382,9 +382,9 @@ func (m *Model) handleCallbookUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.C
 			m.screen = screenMainMenu
 		}
 		if m.callbookMenu.saved {
-			m.App.Config.QRZUser = m.callbookMenu.user.Value()
-			m.App.Config.QRZPass = m.callbookMenu.pass.Value()
-			m.App.Config.QRZEnabled = m.callbookMenu.enabled
+			m.App.Config.QRZ.User = m.callbookMenu.user.Value()
+			m.App.Config.QRZ.Pass = m.callbookMenu.pass.Value()
+			m.App.Config.QRZ.Enabled = m.callbookMenu.enabled
 			m.saveConfig("Settings saved")
 			m.screen = screenMainMenu
 		}
@@ -538,7 +538,7 @@ func (m *Model) cycleLogbook() tea.Cmd {
 	// Find current and move to next.
 	idx := 0
 	for i, n := range names {
-		if n == m.App.Config.ActiveLogbook {
+		if n == m.App.Config.State.ActiveLogbook {
 			idx = (i + 1) % len(names)
 			break
 		}

@@ -33,11 +33,16 @@ func EnsureConfig() (*Config, string, error) {
 		cfg.Logbooks = make(map[string]Logbook)
 	}
 
+	// Validate structural integrity.
+	if err := cfg.Validate(); err != nil {
+		return nil, "", fmt.Errorf("config is corrupted: %w", err)
+	}
+
 	return cfg, configPath, nil
 }
 
 func ResolveLogbook(cfg *Config, cliFlag string) (string, *Logbook, error) {
-	name := cfg.ActiveLogbook
+	name := cfg.State.ActiveLogbook
 	if cliFlag != "" {
 		name = cliFlag
 	}
@@ -75,7 +80,7 @@ func DBPath(logbookName string, lb *Logbook) (string, error) {
 }
 
 func IsFirstRun(cfg *Config) bool {
-	if cfg.ActiveLogbook != "default" {
+	if cfg.State.ActiveLogbook != "default" {
 		return false
 	}
 	lb, ok := cfg.Logbooks["default"]

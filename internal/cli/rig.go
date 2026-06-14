@@ -22,11 +22,8 @@ var rigStatusCmd = &cobra.Command{
 		}
 		defer a.Close()
 
-		fmt.Printf("Provider: %s\n", a.Config.Rig.Provider)
-		if a.Config.Rig.Provider == "" {
-			fmt.Println("Status:   not configured")
-			return nil
-		}
+		fmt.Println("Rig control is configured per rig preset (F7 → Rig).")
+		fmt.Println("Use cqops logbook show <name> to see station details.")
 
 		fmt.Println("Status:   unavailable")
 		fmt.Println("")

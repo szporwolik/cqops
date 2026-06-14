@@ -157,7 +157,7 @@ func (m *Model) formPathRow(width int) string {
 	partnerGrid := formatLocator(strings.TrimSpace(m.fields[fieldGrid].Value()))
 
 	if ownGrid != "" && partnerGrid != "" {
-		line := distanceLine(ownGrid, partnerGrid, m.App.Config.DistanceUnit)
+		line := distanceLine(ownGrid, partnerGrid, m.App.Config.General.DistanceUnit)
 		if line != "" {
 			line = "Path  " + line
 			if m.wlPrivateData != nil {

@@ -30,9 +30,9 @@ func TestQRZLookupSuccess(t *testing.T) {
 	}
 
 	m := newLifecycleTestModel(t)
-	m.App.Config.QRZEnabled = true
-	m.App.Config.QRZUser = "testuser"
-	m.App.Config.QRZPass = "testpass"
+	m.App.Config.QRZ.Enabled = true
+	m.App.Config.QRZ.User = "testuser"
+	m.App.Config.QRZ.Pass = "testpass"
 	m.fields[fieldCall].SetValue("SP9MOA")
 
 	// Trigger QRZ fill
@@ -74,8 +74,8 @@ func TestQRZLookupError(t *testing.T) {
 	}
 
 	m := newLifecycleTestModel(t)
-	m.App.Config.QRZEnabled = true
-	m.App.Config.QRZUser = "testuser"
+	m.App.Config.QRZ.Enabled = true
+	m.App.Config.QRZ.User = "testuser"
 	m.fields[fieldCall].SetValue("SP9MOA")
 
 	// fillQRZData with error should not panic
@@ -92,8 +92,8 @@ func TestQRZLookupError(t *testing.T) {
 
 func TestQRZLookupEmptyCall(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.QRZEnabled = true
-	m.App.Config.QRZUser = "testuser"
+	m.App.Config.QRZ.Enabled = true
+	m.App.Config.QRZ.User = "testuser"
 
 	cmd := m.qrzLookup("")
 	if cmd != nil {
@@ -103,8 +103,8 @@ func TestQRZLookupEmptyCall(t *testing.T) {
 
 func TestQRZLookupDisabled(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.QRZEnabled = false
-	m.App.Config.QRZUser = "testuser"
+	m.App.Config.QRZ.Enabled = false
+	m.App.Config.QRZ.User = "testuser"
 	m.fields[fieldCall].SetValue("SP9MOA")
 
 	// fillQRZData with QRZ disabled should warn and not fill
@@ -121,8 +121,8 @@ func TestQRZLookupDisabled(t *testing.T) {
 
 func TestQRZLookupNoCredentials(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.QRZEnabled = true
-	m.App.Config.QRZUser = "" // no credentials
+	m.App.Config.QRZ.Enabled = true
+	m.App.Config.QRZ.User = "" // no credentials
 	m.fields[fieldCall].SetValue("SP9MOA")
 
 	m.fillQRZData(qrzResultMsg{
@@ -137,8 +137,8 @@ func TestQRZLookupNoCredentials(t *testing.T) {
 
 func TestQRZLookupNoOverwriteExistingGrid(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.QRZEnabled = true
-	m.App.Config.QRZUser = "testuser"
+	m.App.Config.QRZ.Enabled = true
+	m.App.Config.QRZ.User = "testuser"
 	m.fields[fieldCall].SetValue("SP9MOA")
 	m.fields[fieldGrid].SetValue("JN18") // already has a grid
 
@@ -159,8 +159,8 @@ func TestQRZLookupNoOverwriteExistingGrid(t *testing.T) {
 
 func TestQRZLookupNoDataResult(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.QRZEnabled = true
-	m.App.Config.QRZUser = "testuser"
+	m.App.Config.QRZ.Enabled = true
+	m.App.Config.QRZ.User = "testuser"
 	m.fields[fieldCall].SetValue("SP9MOA")
 
 	// nil data should show warning toast, not panic
@@ -172,8 +172,8 @@ func TestQRZLookupNoDataResult(t *testing.T) {
 
 func TestQRZLookupCacheInvalidation(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.QRZEnabled = true
-	m.App.Config.QRZUser = "testuser"
+	m.App.Config.QRZ.Enabled = true
+	m.App.Config.QRZ.User = "testuser"
 	m.fields[fieldCall].SetValue("SP9MOA")
 
 	// Fill with partner data

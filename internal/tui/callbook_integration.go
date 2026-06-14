@@ -23,7 +23,7 @@ var qrzLookupFunc = qrz.Lookup
 // startup (first tick). Periodic re-checking is unnecessary — the
 // internet health check already monitors connectivity.
 func (m *Model) maybeCheckQRZ() tea.Cmd {
-	if !m.App.Config.QRZEnabled {
+	if !m.App.Config.QRZ.Enabled {
 		m.qrzOnline = false
 		return nil
 	}
@@ -35,8 +35,8 @@ func (m *Model) maybeCheckQRZ() tea.Cmd {
 
 // checkQRZCmd returns a tea.Cmd that tests QRZ.com connectivity.
 func (m *Model) checkQRZCmd() tea.Cmd {
-	user := m.App.Config.QRZUser
-	pass := m.App.Config.QRZPass
+	user := m.App.Config.QRZ.User
+	pass := m.App.Config.QRZ.Pass
 	return func() tea.Msg {
 		err := qrz.TestConnection(user, pass)
 		return qrzStatusMsg{online: err == nil}
@@ -46,7 +46,7 @@ func (m *Model) checkQRZCmd() tea.Cmd {
 // qrzLookupCmd returns a tea.Cmd that performs a QRZ lookup.
 func (m *Model) qrzLookupCmd(call string) tea.Cmd {
 	return func() tea.Msg {
-		data, err := qrzLookupFunc(m.App.Config.QRZUser, m.App.Config.QRZPass, call)
+		data, err := qrzLookupFunc(m.App.Config.QRZ.User, m.App.Config.QRZ.Pass, call)
 		return qrzResultMsg{Call: call, Data: data, Err: err}
 	}
 }
@@ -114,7 +114,7 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 	if formCall != "" && formCall != strings.ToUpper(msg.Call) {
 		return
 	}
-	if !m.App.Config.QRZEnabled || m.App.Config.QRZUser == "" {
+	if !m.App.Config.QRZ.Enabled || m.App.Config.QRZ.User == "" {
 		m.toasts.Warn("QRZ not configured")
 		return
 	}

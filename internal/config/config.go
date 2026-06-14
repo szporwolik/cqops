@@ -8,16 +8,27 @@ import (
 )
 
 type Config struct {
-	ActiveLogbook string               `yaml:"active_logbook"`
-	Timezone      string               `yaml:"timezone"`
-	QRZUser       string               `yaml:"qrz_user,omitempty"`
-	QRZPass       string               `yaml:"qrz_pass,omitempty"`
-	QRZEnabled    bool                 `yaml:"qrz_enabled,omitempty"`
-	DistanceUnit  string               `yaml:"distance_unit,omitempty"`
-	Logbooks      map[string]Logbook   `yaml:"logbooks"`
-	Rigs          map[string]RigPreset `yaml:"rigs,omitempty"`
-	Rig           RigConfig            `yaml:"rig,omitempty"`
-	WSJTX         WSJTXConfig          `yaml:"wsjtx,omitempty"`
+	General  GeneralConfig          `yaml:"general"`
+	State    StateConfig            `yaml:"state"`
+	QRZ      QRZConfig              `yaml:"qrz,omitempty"`
+	Logbooks map[string]Logbook     `yaml:"logbooks"`
+	Rigs     map[string]RigPreset   `yaml:"rigs,omitempty"`
+	WSJTX    WSJTXConfig            `yaml:"wsjtx,omitempty"`
+}
+
+type GeneralConfig struct {
+	Timezone     string `yaml:"timezone"`
+	DistanceUnit string `yaml:"distance_unit,omitempty"`
+}
+
+type StateConfig struct {
+	ActiveLogbook string `yaml:"active_logbook"`
+}
+
+type QRZConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	User    string `yaml:"user,omitempty"`
+	Pass    string `yaml:"pass,omitempty"`
 }
 
 type Logbook struct {
@@ -156,6 +167,21 @@ func Save(path string, cfg *Config) error {
 	}
 	if err := os.WriteFile(path, data, 0644); err != nil {
 		return fmt.Errorf("write config: %w", err)
+	}
+	return nil
+}
+
+// Validate checks the config for structural integrity. Returns an error
+// describing the first problem found, or nil if the config is valid.
+func (c *Config) Validate() error {
+	if len(c.Logbooks) == 0 {
+		return fmt.Errorf("no logbooks configured")
+	}
+	if c.State.ActiveLogbook == "" {
+		return fmt.Errorf("no active logbook set")
+	}
+	if _, ok := c.Logbooks[c.State.ActiveLogbook]; !ok {
+		return fmt.Errorf("active logbook %q not found in logbooks", c.State.ActiveLogbook)
 	}
 	return nil
 }

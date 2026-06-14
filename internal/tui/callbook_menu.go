@@ -31,13 +31,13 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 	un.CharLimit = 30
 	un.Prompt = ""
 	un.Placeholder = "QRZ.com username"
-	un.SetValue(cfg.QRZUser)
+	un.SetValue(cfg.QRZ.User)
 
 	pw := textinput.New()
 	pw.CharLimit = 40
 	pw.Prompt = ""
 	pw.Placeholder = "QRZ.com password"
-	pw.SetValue(cfg.QRZPass)
+	pw.SetValue(cfg.QRZ.Pass)
 
 	// Apply surface background to textinput styles (same pattern as QSO form)
 	us := un.Styles()
@@ -63,7 +63,7 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 	pw.SetStyles(ps)
 
 	un.Focus()
-	return &CallbookMenu{user: un, pass: pw, enabled: cfg.QRZEnabled}
+	return &CallbookMenu{user: un, pass: pw, enabled: cfg.QRZ.Enabled}
 }
 
 func (cm *CallbookMenu) Init() tea.Cmd { return nil }
