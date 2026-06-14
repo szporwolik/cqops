@@ -376,7 +376,7 @@ func (im *IntegrationMenu) View() tea.View {
 		} else if im.savedStationID != "" {
 			b.WriteString("\n\n")
 			b.WriteString("  ")
-		b.WriteString(SubtleStyle.Render("Station: " + im.savedStationID + " (press Update to refresh)"))
+			b.WriteString(SubtleStyle.Render("Station: " + im.savedStationID + " (press Update to refresh)"))
 		}
 
 		// Test button
