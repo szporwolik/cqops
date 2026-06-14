@@ -36,7 +36,7 @@ INSTALL = @bash scripts/install.sh
 UNINSTALL = @bash scripts/uninstall.sh
 endif
 
-install: build-all
+install: build
 	$(INSTALL)
 
 uninstall:
