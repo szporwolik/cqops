@@ -43,16 +43,19 @@ func (m *Model) viewForm(width int) string {
 		lblW := 13    // FormLabel.Width(13)
 		choiceW := lipgloss.Width(choiceIcon)
 		gapW := 1
-		valW := w - prefixW - lblW - choiceW - gapW
-		if valW > 12 {
-			valW -= 3 // safety margin; more aggressive for narrow columns
+		valW := w - prefixW - lblW - choiceW - gapW - 2
+		if valW > 20 {
+			valW -= 1 // extra margin for wider columns
 		}
-		if valW < 4 {
-			valW = 4
+		if valW < 3 {
+			valW = 3
 		}
 		ti.SetWidth(valW)
 		if isFocused {
-			ti.SetCursor(ti.Position()) // recalculate overflow for editing
+			if lipgloss.Width(raw) > valW {
+				ti.SetWidth(valW - 1) // one less so caret stays visible
+			}
+			ti.SetCursor(ti.Position())
 			m.fields[f] = ti
 		}
 
