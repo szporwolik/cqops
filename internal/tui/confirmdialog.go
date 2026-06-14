@@ -169,16 +169,6 @@ func (m DialogModel) render() string {
 
 // ── Helpers ──
 
-// Options builds []Option from simple label/value pairs.
-// Example: Options("Quit", "quit", "Cancel", "cancel")
-func DialogOptions(pairs ...string) []Option {
-	opts := make([]Option, len(pairs)/2)
-	for i := 0; i < len(pairs)-1; i += 2 {
-		opts[i/2] = Option{Label: pairs[i], Value: pairs[i+1]}
-	}
-	return opts
-}
-
 // DangerOption creates an Option that renders with danger styling when focused.
 func DangerOption(label, value string) Option {
 	return Option{Label: label, Value: value, Danger: true}

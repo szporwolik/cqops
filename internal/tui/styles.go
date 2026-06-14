@@ -205,28 +205,19 @@ var S = Styles{
 // Package-level style aliases — the canonical short form used throughout the codebase.
 // All are backed by S.* which is the single source of truth.
 var (
-	TitleStyle       = S.TitleStyle
-	HeaderStyle      = S.HeaderStyle
-	ErrorStyle       = S.ErrorStyle
-	WarningStyle     = S.WarningStyle
-	SuccessStyle     = S.SuccessStyle
-	HelpStyle        = S.HelpStyle
-	LabelStyle       = S.LabelStyle
-	ValueStyle       = S.ValueStyle
-	CursorStyle      = S.CursorStyle
-	InputStyle       = S.InputStyle
-	DimStyle         = S.DimStyle
-	SubtleStyle      = S.SubtleStyle
-	BarStyle         = S.BarStyle
-	titleStyle       = S.TitleStyle
-	headerStyle      = S.HeaderStyle
-	errorStyle       = S.ErrorStyle
-	helpStyle        = S.HelpStyle
-	formLabelStyle   = S.FormLabel
-	inputStyle       = S.InputStyle
-	cursorStyle      = S.CursorStyle
-	SectionStyle     = S.Section
-	ActiveTabStyle   = S.TabActive
-	InactiveTabStyle = S.TabInactive
-	DisabledTabStyle = S.TabDisabled
+	ErrorStyle     = S.ErrorStyle
+	SuccessStyle   = S.SuccessStyle
+	HelpStyle      = S.HelpStyle
+	LabelStyle     = S.LabelStyle
+	ValueStyle     = S.ValueStyle
+	CursorStyle    = S.CursorStyle
+	InputStyle     = S.InputStyle
+	DimStyle       = S.DimStyle
+	SubtleStyle    = S.SubtleStyle
+	errorStyle     = S.ErrorStyle
+	helpStyle      = S.HelpStyle
+	formLabelStyle = S.FormLabel
+	inputStyle     = S.InputStyle
+	cursorStyle    = S.CursorStyle
+	SectionStyle   = S.Section
 )
