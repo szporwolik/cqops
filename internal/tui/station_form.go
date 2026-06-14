@@ -153,6 +153,16 @@ func (f *StationForm) OnLastField() bool {
 	return f.WWFFRef.Focused()
 }
 
+// BlurAll blurs all textinput fields.
+func (f *StationForm) BlurAll() {
+	f.Callsign.Blur()
+	f.Operator.Blur()
+	f.Locator.Blur()
+	f.SOTARef.Blur()
+	f.POTARef.Blur()
+	f.WWFFRef.Blur()
+}
+
 func (f *StationForm) Values() (callsign, operator, locator, sotaRef, potaRef, wwffRef string) {
 	return strings.ToUpper(strings.TrimSpace(f.Callsign.Value())),
 		strings.ToUpper(strings.TrimSpace(f.Operator.Value())),

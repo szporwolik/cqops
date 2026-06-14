@@ -78,6 +78,7 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				c.done = true
 				return c, nil
 			}
+			c.station.BlurAll()
 			c.mode = chooserList
 
 		case c.mode == chooserConfirmDelete:
@@ -255,7 +256,7 @@ func (c *LogbookChooser) handleEnter() tea.Cmd {
 			return nil
 		}
 		if err := c.app.SwitchLogbook(name); err != nil {
-			c.toasts.Error(err.Error())
+			c.toasts.Error("Switch to " + name + " failed: " + err.Error())
 			return nil
 		}
 		c.toasts.Success("Switched to logbook \"" + name + "\"")
@@ -288,6 +289,7 @@ func (c *LogbookChooser) refreshNames() {
 func (c *LogbookChooser) startCreate() {
 	c.mode = chooserCreate
 	c.station.SetValues("", "", "", "", "", "")
+	c.station.BlurAll()
 	c.station.Callsign.Focus()
 	c.editing = ""
 }
@@ -297,6 +299,7 @@ func (c *LogbookChooser) startEdit(name string) {
 	c.mode = chooserEdit
 	c.editing = name
 	c.station.SetValues(lb.Station.Callsign, lb.Station.Operator, lb.Station.Grid, lb.Station.SOTARef, lb.Station.POTARef, lb.Station.WWFFRef)
+	c.station.BlurAll()
 	c.station.Callsign.Focus()
 }
 
@@ -308,12 +311,16 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 		return nil
 	}
 
+	var savedName string
 	if c.mode == chooserCreate {
 		name := cs
 		if _, ok := c.app.Config.Logbooks[name]; ok {
-			c.toasts.Error("Logbook already exists")
+			c.toasts.Error("Logbook " + name + " already exists")
 			return nil
 		}
+		// Inherit rig from the currently active logbook so the new logbook
+		// always has a rig selected.
+		prevStation := c.app.Logbook.Station
 		c.app.Config.Logbooks[name] = config.Logbook{
 			Description: "Created from TUI",
 			Station: config.Station{
@@ -323,6 +330,10 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 				SOTARef:  sotaRef,
 				POTARef:  potaRef,
 				WWFFRef:  wwffRef,
+				Rig:      prevStation.Rig,
+				Antenna:  prevStation.Antenna,
+				Power:    prevStation.Power,
+				RigName:  prevStation.RigName,
 			},
 		}
 		c.app.Config.ActiveLogbook = name
@@ -331,6 +342,7 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 		c.app.Logbook = &lb
 
 		c.names = append(c.names, name)
+		savedName = name
 	} else {
 		name := c.editing
 		lb := c.app.Config.Logbooks[name]
@@ -345,14 +357,16 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 		if name == c.app.LogbookName {
 			c.app.Logbook = &lb
 		}
+		savedName = name
 	}
 
 	c.mode = chooserList
+	c.station.BlurAll()
 	if err := config.Save(c.app.ConfigPath, c.app.Config); err != nil {
-		c.toasts.Error("Config save failed: " + err.Error())
+		c.toasts.Error("Save " + savedName + " failed: " + err.Error())
 	} else {
-		c.toasts.Success("Logbook saved")
-		applog.Info("Logbook config saved")
+		c.toasts.Success("Logbook " + savedName + " saved")
+		applog.Info("Logbook saved", "name", savedName)
 	}
 	return nil
 }
@@ -385,13 +399,13 @@ func (c *LogbookChooser) deleteLogbook() tea.Cmd {
 	name := c.names[c.cursor]
 
 	if name == c.app.Config.ActiveLogbook {
-		c.toasts.Error("Cannot delete active logbook. Switch to another first.")
+		c.toasts.Error("Cannot delete " + name + " — it is the active logbook. Switch to another first.")
 		c.mode = chooserList
 		return nil
 	}
 
 	if len(c.names) <= 1 {
-		c.toasts.Error("Cannot delete the last logbook. At least one must remain.")
+		c.toasts.Error("Cannot delete " + name + " — at least one logbook must remain.")
 		c.mode = chooserList
 		return nil
 	}
@@ -413,7 +427,7 @@ func (c *LogbookChooser) deleteLogbook() tea.Cmd {
 
 	c.mode = chooserList
 	if err := config.Save(c.app.ConfigPath, c.app.Config); err != nil {
-		c.toasts.Error("Config save failed: " + err.Error())
+		c.toasts.Error("Delete " + name + " failed: " + err.Error())
 	} else {
 		go func() { os.Remove(dbPath) }()
 		c.toasts.Success("Logbook " + name + " deleted")

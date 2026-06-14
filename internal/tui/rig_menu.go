@@ -41,6 +41,19 @@ func NewRigChooser(a *app.App, tq *ToastQueue) *RigChooser {
 	}
 	slices.Sort(names)
 
+	// If no rig is active but rigs are configured, auto-select the first one.
+	if a.Logbook.Station.RigName == "" && len(names) > 0 {
+		name := names[0]
+		rp := a.Config.Rigs[name]
+		a.Logbook.Station.Rig = rp.Model
+		a.Logbook.Station.Antenna = rp.Antenna
+		a.Logbook.Station.Power = rp.Power
+		a.Logbook.Station.RigName = name
+		lb := a.Config.Logbooks[a.LogbookName]
+		lb.Station = a.Logbook.Station
+		a.Config.Logbooks[a.LogbookName] = lb
+	}
+
 	rf := NewRigForm("", "", "")
 	rf.SetFlrig(false, "localhost", "12345")
 
@@ -70,6 +83,7 @@ func (rc *RigChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				rc.done = true
 				return rc, nil
 			}
+			rc.form.blurAll()
 			rc.mode = rigChooserList
 
 		case rc.mode == rigChooserConfirmDelete:
@@ -259,7 +273,7 @@ func (rc *RigChooser) selectRig() tea.Cmd {
 	rc.app.Config.Logbooks[rc.app.LogbookName] = lb
 
 	if err := config.Save(rc.app.ConfigPath, rc.app.Config); err != nil {
-		rc.toasts.Error("Config save failed: " + err.Error())
+		rc.toasts.Error("Select " + name + " failed: " + err.Error())
 	} else {
 		rc.toasts.Success("Rig \"" + name + "\" selected")
 		applog.Info("Rig selected", "name", name)
@@ -285,6 +299,7 @@ func (rc *RigChooser) startCreate() {
 	rc.mode = rigChooserCreate
 	rc.form.SetValues("", "", "")
 	rc.form.SetFlrig(false, "localhost", "12345")
+	rc.form.blurAll()
 	rc.form.Rig.Focus()
 	rc.editing = ""
 }
@@ -295,6 +310,7 @@ func (rc *RigChooser) startEdit(name string) {
 	rc.editing = name
 	rc.form.SetValues(rp.Model, rp.Antenna, rp.Power)
 	rc.form.SetFlrig(rp.FlrigEnabled, rp.FlrigHost, rp.FlrigPort)
+	rc.form.blurAll()
 	rc.form.Rig.Focus()
 }
 
@@ -346,12 +362,20 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 		rc.app.Config.Rigs[name] = rp
 	}
 
-	rc.mode = rigChooserList
-	if err := config.Save(rc.app.ConfigPath, rc.app.Config); err != nil {
-		rc.toasts.Error("Config save failed: " + err.Error())
+	var savedName string
+	if rc.mode == rigChooserCreate {
+		savedName = rig
 	} else {
-		rc.toasts.Success("Rig saved")
-		applog.Info("Rig config saved")
+		savedName = rc.editing
+	}
+
+	rc.mode = rigChooserList
+	rc.form.blurAll()
+	if err := config.Save(rc.app.ConfigPath, rc.app.Config); err != nil {
+		rc.toasts.Error("Save " + savedName + " failed: " + err.Error())
+	} else {
+		rc.toasts.Success("Rig " + savedName + " saved")
+		applog.Info("Rig saved", "name", savedName)
 	}
 	return nil
 }
@@ -385,13 +409,13 @@ func (rc *RigChooser) deleteRig() tea.Cmd {
 
 	// Active rig protection
 	if name == rc.app.Logbook.Station.RigName || (name == "default" && rc.app.Logbook.Station.RigName == "") {
-		rc.toasts.Error("Cannot delete active rig. Select another first.")
+		rc.toasts.Error("Cannot delete " + name + " — it is the active rig. Select another first.")
 		rc.mode = rigChooserList
 		return nil
 	}
 
 	if len(rc.names) <= 1 {
-		rc.toasts.Error("Cannot delete the last rig. At least one must remain.")
+		rc.toasts.Error("Cannot delete " + name + " — at least one rig must remain.")
 		rc.mode = rigChooserList
 		return nil
 	}
@@ -409,7 +433,7 @@ func (rc *RigChooser) deleteRig() tea.Cmd {
 
 	rc.mode = rigChooserList
 	if err := config.Save(rc.app.ConfigPath, rc.app.Config); err != nil {
-		rc.toasts.Error("Config save failed: " + err.Error())
+		rc.toasts.Error("Delete " + name + " failed: " + err.Error())
 	} else {
 		rc.toasts.Success("Rig " + name + " deleted")
 		applog.Info("Rig deleted", "name", name)

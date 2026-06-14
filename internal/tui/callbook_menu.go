@@ -29,14 +29,12 @@ type CallbookMenu struct {
 func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 	un := textinput.New()
 	un.CharLimit = 30
-	un.SetWidth(28)
 	un.Prompt = ""
 	un.Placeholder = "QRZ.com username"
 	un.SetValue(cfg.QRZUser)
 
 	pw := textinput.New()
 	pw.CharLimit = 40
-	pw.SetWidth(28)
 	pw.Prompt = ""
 	pw.Placeholder = "QRZ.com password"
 	pw.SetValue(cfg.QRZPass)
@@ -187,13 +185,13 @@ func (cm *CallbookMenu) FooterText() string {
 }
 
 // renderField renders a labelled textinput line with cursor indicator.
-// Labels are padded to a fixed width so all values start at the same column.
+// renderField renders a labelled textinput line. Values always use
+// InputStyle (plain styled text) — never ti.View() — so focused and
+// blurred fields are pixel-identical. Focus is shown by the "> " prefix
+// and pink label colour.
 func (cm *CallbookMenu) renderField(focusIdx int, label string, ti *textinput.Model) string {
 	gap := lipgloss.NewStyle().Background(P.Surface).Render(" ")
 	val := InputStyle.Render(strings.TrimSpace(ti.Value()))
-	if cm.focus == focusIdx {
-		val = ti.View()
-	}
 	padded := fit(label, 14)
 	if cm.focus == focusIdx {
 		return CursorStyle.Render("> ") + CursorStyle.Render(padded) + gap + val
