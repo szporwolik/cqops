@@ -183,6 +183,13 @@ func (m *Model) renderPartnerInfo(d *qrz.CallData, maxW int) string {
 // renderWLInfo renders the Wavelog lookup info column.
 func (m *Model) renderWLInfo(maxW int) string {
 	d := m.wlPrivateData
+	if !m.App.Config.Wavelog.Enabled {
+		return lipgloss.NewStyle().
+			Width(maxW - 4).
+			Align(lipgloss.Center).
+			Foreground(P.TextMuted).
+			Render("Wavelog not configured")
+	}
 	if d == nil {
 		return lipgloss.NewStyle().
 			Width(maxW - 4).

@@ -123,17 +123,17 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 
 	case key.Matches(msg, m.keys.Config):
 		if m.screen == screenMainMenu {
-			applog.Debug("tab: F8 close Config")
+			applog.Debug("tab: F7 close Config")
 			m.screen = screenQSO
 		} else {
-			applog.Debug("tab: F8 Config")
+			applog.Debug("tab: F7 Config")
 			m.mainMenu = NewMainMenu()
 			m.screen = screenMainMenu
 		}
 		return nil, true
 
 	case key.Matches(msg, m.keys.LogEditor):
-		applog.Debug("tab: F7 Log Editor")
+		applog.Debug("tab: F6 Log Editor")
 		m.logbookEditor = NewLogbookEditor(m.App.DB, m.App.Config.Wavelog.URL, m.App.Config.Wavelog.APIKey, m.App.Config.Wavelog.StationProfileID, m.App.Config.Wavelog.StationCallsign, m.App.Logbook.Station.Operator, m.App.Logbook.Station.Grid)
 		m.logbookEditor.width = m.width
 		m.logbookEditor.height = m.height
@@ -143,7 +143,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, true
 
 	case key.Matches(msg, m.keys.Logs):
-		applog.Debug("tab: F9 Log Viewer")
+		applog.Debug("tab: F8 Log Viewer")
 		m.logViewer = NewLogViewer(m.App.LogbookName)
 		m.logViewer.width = m.width
 		m.logViewer.height = m.height
@@ -428,7 +428,7 @@ func (m *Model) handlePartnerUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 		case "f1", "esc":
 			m.screen = screenQSO
 			return m, cmd
-		case "f8":
+		case "f7":
 			m.mainMenu = NewMainMenu()
 			m.screen = screenMainMenu
 			return m, cmd

@@ -406,7 +406,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return le, le.doSave()
 			case "ctrl+w":
 				return le, le.doUploadToWavelog()
-			case "esc", "f7":
+			case "esc", "f6":
 				le.mode = edModeList
 			case "tab", "down":
 				le.nextField()
@@ -422,7 +422,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// modeList — table handles all navigation
 		switch k {
-		case "f7", "esc":
+		case "f6", "esc":
 			le.done = true
 		case "up", "down", "left", "right", "pgup", "pgdown", "home", "end", "k", "j", "h", "l":
 			var cmd tea.Cmd
