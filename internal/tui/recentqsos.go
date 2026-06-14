@@ -143,8 +143,9 @@ func (r *RecentQSOs) View() string {
 		BorderForeground(P.TextDim).
 		BorderBottom(true).
 		Bold(false).
-		Foreground(P.TextMuted)
-	s.Cell = s.Cell.Foreground(P.TextDim)
+		Foreground(P.Text).
+		Background(P.Surface)
+	s.Cell = s.Cell.Foreground(P.TextMuted).Background(P.Surface)
 	t.SetStyles(s)
 
 	// Clip to exact dimensions — never wrap, never overflow the border.
@@ -152,6 +153,7 @@ func (r *RecentQSOs) View() string {
 	return lipgloss.NewStyle().
 		MaxWidth(bodyW).
 		Height(maxRows + 1).
+		Background(P.Surface).
 		Render(t.View())
 }
 

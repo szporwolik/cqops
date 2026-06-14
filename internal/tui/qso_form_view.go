@@ -51,15 +51,15 @@ func (m *Model) viewForm(width int) string {
 			val += ValueStyle.Render(raw)
 		}
 
-		gap := lipgloss.NewStyle().Width(1).Render(" ")
+		gap := lipgloss.NewStyle().Width(1).Background(P.Surface).Render(" ")
 		lblPart := lbl
 		if isFocused {
 			lblPart = hl.Render(" " + lbl)
 		}
 		if !isFocused {
-			lblPart = " " + lbl
+			lblPart = lipgloss.NewStyle().Foreground(P.TextMuted).Background(P.Surface).Render(" ") + lbl
 		}
-		return lipgloss.NewStyle().Width(w).Render(
+		return lipgloss.NewStyle().Width(w).Background(P.Surface).Render(
 			lipgloss.JoinHorizontal(lipgloss.Center, lblPart, gap, val),
 		)
 	}
@@ -117,9 +117,10 @@ func (m *Model) renderRetainCheckbox(colW int) string {
 	if m.retainComment {
 		mark = "[x]"
 	}
-	gap := lipgloss.NewStyle().Width(1).Render(" ")
+	gap := lipgloss.NewStyle().Width(1).Background(P.Surface).Render(" ")
+	space := lipgloss.NewStyle().Width(1).Background(P.Surface).Render(" ")
 	if m.retainFocused {
-		return lipgloss.NewStyle().Width(colW).Render(
+		return lipgloss.NewStyle().Width(colW).Background(P.Surface).Render(
 			lipgloss.JoinHorizontal(lipgloss.Center,
 				CursorStyle.Render(" "+mark),
 				gap,
@@ -128,18 +129,18 @@ func (m *Model) renderRetainCheckbox(colW int) string {
 		)
 	}
 	if m.retainComment {
-		return lipgloss.NewStyle().Width(colW).Render(
+		return lipgloss.NewStyle().Width(colW).Background(P.Surface).Render(
 			lipgloss.JoinHorizontal(lipgloss.Center,
-				lipgloss.NewStyle().Width(1).Render(" "),
+				space,
 				inputStyle.Render(mark),
 				gap,
 				DimStyle.Render(label),
 			),
 		)
 	}
-	return lipgloss.NewStyle().Width(colW).Render(
+	return lipgloss.NewStyle().Width(colW).Background(P.Surface).Render(
 		lipgloss.JoinHorizontal(lipgloss.Center,
-			lipgloss.NewStyle().Width(1).Render(" "),
+			space,
 			DimStyle.Render(mark),
 			gap,
 			DimStyle.Render(label),
@@ -171,6 +172,7 @@ func (m *Model) formPathRow(width int) string {
 				Width(width).
 				Align(lipgloss.Center).
 				Foreground(P.Info).
+				Background(P.Surface).
 				Render(line)
 		}
 	}
@@ -180,6 +182,7 @@ func (m *Model) formPathRow(width int) string {
 			Width(width).
 			Align(lipgloss.Center).
 			Foreground(P.TextMuted).
+			Background(P.Surface).
 			Render("Set your grid in station config to enable path")
 	}
 
@@ -213,5 +216,6 @@ func (m *Model) formPathRow(width int) string {
 		Width(width).
 		Align(lipgloss.Center).
 		Foreground(P.TextMuted).
+		Background(P.Surface).
 		Render(line)
 }

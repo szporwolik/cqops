@@ -686,8 +686,9 @@ func (le *LogbookEditor) buildTable() {
 		table.WithWidth(bodyW),
 	)
 	s := table.DefaultStyles()
-	s.Header = s.Header.BorderStyle(lipgloss.NormalBorder()).BorderBottom(true).Bold(false).Foreground(P.TextMuted)
-	s.Selected = s.Selected.Foreground(lipgloss.Color("#1a1b1e")).Background(P.Primary).Bold(false)
+	s.Header = s.Header.BorderStyle(lipgloss.NormalBorder()).BorderBottom(true).Bold(false).Foreground(P.Text).Background(P.Surface)
+	s.Cell = s.Cell.Background(P.Surface)
+	s.Selected = s.Selected.Foreground(P.SelectedFg).Background(P.SelectedBg).Bold(false)
 	t.SetStyles(s)
 	le.table = t
 	le.built = true

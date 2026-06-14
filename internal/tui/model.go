@@ -202,15 +202,15 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	m.keys = DefaultKeyMap()
 	m.help = help.New()
 
-	// Ensure textinput fields use transparent background (inherit parent)
+	// Ensure textinput fields use Surface background (panel color, not app bg)
 	for i := field(0); i < fieldCount; i++ {
 		s := m.fields[i].Styles()
-		s.Focused.Text = s.Focused.Text.UnsetBackground()
-		s.Focused.Placeholder = s.Focused.Placeholder.UnsetBackground()
-		s.Focused.Prompt = s.Focused.Prompt.UnsetBackground()
-		s.Blurred.Text = s.Blurred.Text.UnsetBackground()
-		s.Blurred.Placeholder = s.Blurred.Placeholder.UnsetBackground()
-		s.Blurred.Prompt = s.Blurred.Prompt.UnsetBackground()
+		s.Focused.Text = s.Focused.Text.Background(P.Surface)
+		s.Focused.Placeholder = s.Focused.Placeholder.Background(P.Surface)
+		s.Focused.Prompt = s.Focused.Prompt.Background(P.Surface)
+		s.Blurred.Text = s.Blurred.Text.Background(P.Surface)
+		s.Blurred.Placeholder = s.Blurred.Placeholder.Background(P.Surface)
+		s.Blurred.Prompt = s.Blurred.Prompt.Background(P.Surface)
 		m.fields[i].SetStyles(s)
 	}
 	m.recentQSOs = NewRecentQSOs(initialQSOS)
@@ -477,9 +477,9 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 		innerW = w
 	}
 
-	// QSO form in its bordered box
+	// QSO form in its bordered box — wrap raw form in Surface to prevent leaks
 	form := m.viewForm(innerW)
-	formBlock := strings.TrimRight(form, "\n")
+	formBlock := lipgloss.NewStyle().Background(P.Surface).Width(innerW).Render(strings.TrimRight(form, "\n"))
 	formBox := S.QSOFormBox.Width(w).Render(formBlock)
 
 	// Path row in a clean bordered box (always one row — no layout shift).

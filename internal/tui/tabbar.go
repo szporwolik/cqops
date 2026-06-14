@@ -81,7 +81,7 @@ func (m *Model) renderProfileLine() string {
 	if len(parts) == 0 {
 		return ""
 	}
-	return DimStyle.Render("  " + strings.Join(parts, " \u00b7 "))
+	return lipgloss.NewStyle().Foreground(P.TextDim).Background(P.Background).Render("  " + strings.Join(parts, " \u00b7 "))
 }
 
 // renderProfileBar returns the right-aligned profile line.
