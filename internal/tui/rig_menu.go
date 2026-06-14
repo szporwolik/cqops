@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -27,6 +28,7 @@ type RigChooser struct {
 	form    *RigForm
 	editing string
 	toasts  *ToastQueue
+	dialog  *DialogModel
 	width   int
 	height  int
 	done    bool
@@ -37,6 +39,7 @@ func NewRigChooser(a *app.App, tq *ToastQueue) *RigChooser {
 	for name := range a.Config.Rigs {
 		names = append(names, name)
 	}
+	slices.Sort(names)
 
 	rf := NewRigForm("", "", "")
 	rf.SetFlrig(false, "localhost", "12345")
@@ -70,37 +73,55 @@ func (rc *RigChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			rc.mode = rigChooserList
 
 		case rc.mode == rigChooserConfirmDelete:
-			switch k.String() {
-			case "y", "Y":
-				return rc, rc.deleteRig()
-			default:
+		if rc.dialog == nil {
+			// Skip - dialog not yet created
+		} else {
+			updated, _ := rc.dialog.Update(msg)
+			d := updated.(DialogModel)
+			*rc.dialog = d
+			if d.Done() {
+				if d.Result.Value == "delete" {
+					return rc, rc.deleteRig()
+				}
+				rc.dialog = nil
 				rc.mode = rigChooserList
 			}
 			return rc, nil
+		}
 
 		case rc.mode == rigChooserList && k.String() == "enter":
 			return rc, rc.selectRig()
-
-		case rc.mode == rigChooserList && k.String() == "c":
-			rc.startCreate()
 
 		case rc.mode == rigChooserList && k.String() == "e":
 			if len(rc.names) > 0 {
 				rc.startEdit(rc.names[rc.cursor])
 			}
 
-		case rc.mode == rigChooserList && k.String() == "d":
+		case rc.mode == rigChooserList && k.String() == "insert":
+			rc.startCreate()
+
+		case rc.mode == rigChooserList && (k.String() == "delete" || msg.Code == tea.KeyDelete):
 			if len(rc.names) > 0 {
 				rc.mode = rigChooserConfirmDelete
+				name := rc.names[rc.cursor]
+				d := NewDialog("Delete Rig", "Delete \""+name+"\" configuration?",
+					DangerOption("Delete", "delete"),
+					Option{Label: "Cancel", Value: "cancel"},
+				)
+				rc.dialog = &d
 			}
 
 		case rc.mode == rigChooserList && (msg.Code == tea.KeyUp || k.String() == "up" || k.String() == "k"):
-			if rc.cursor > 0 {
+			if rc.cursor == 0 {
+				rc.cursor = len(rc.names) - 1
+			} else {
 				rc.cursor--
 			}
 
 		case rc.mode == rigChooserList && (msg.Code == tea.KeyDown || k.String() == "down" || k.String() == "j"):
-			if rc.cursor < len(rc.names)-1 {
+			if rc.cursor == len(rc.names)-1 {
+				rc.cursor = 0
+			} else {
 				rc.cursor++
 			}
 
@@ -117,7 +138,7 @@ func (rc *RigChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (rc *RigChooser) FooterText() string {
 	switch rc.mode {
 	case rigChooserList:
-		return "Enter to select  e to edit  c to create  d to delete  Esc to go back"
+		return "Enter to activate  e to edit  Ins to create  Del to delete  Esc to go back"
 	case rigChooserEdit, rigChooserCreate:
 		return "Ctrl+S to save  ↑↓/Tab to navigate  Esc to discard"
 	case rigChooserConfirmDelete:
@@ -137,7 +158,11 @@ func (rc *RigChooser) View() tea.View {
 	case rigChooserEdit, rigChooserCreate:
 		return tea.NewView(rc.viewForm())
 	case rigChooserConfirmDelete:
-		return tea.NewView(rc.viewConfirmDelete())
+		body := rc.viewList()
+		if rc.dialog != nil {
+			body = RenderDialogOverlay(body, *rc.dialog, rc.width, rc.height)
+		}
+		return tea.NewView(body)
 	}
 	return tea.NewView("")
 }
@@ -153,12 +178,13 @@ func (rc *RigChooser) viewList() string {
 		h = 24
 	}
 	contentH := contentHeight(h)
-	b.WriteString(S.Title.Render("Configuration — Rigs"))
+	b.WriteString(menuTitle("Configuration — Rigs", w))
 	b.WriteString("\n\n")
 
 	if len(rc.names) == 0 {
-		b.WriteString("No rigs configured.\n\n")
-		return b.String()
+		b.WriteString(menuLine("No rigs configured.", w))
+		b.WriteString("\n")
+		return fillBody(b.String(), contentH)
 	}
 
 	activeRig := rc.app.Logbook.Station.RigName
@@ -166,11 +192,11 @@ func (rc *RigChooser) viewList() string {
 		rp := rc.app.Config.Rigs[name]
 		marker := "  "
 		if i == rc.cursor {
-			marker = cursorStyle.Render("> ")
+			marker = CursorStyle.Render("> ")
 		}
-		active := " "
+		active := "        "
 		if name == activeRig {
-			active = "*"
+			active = "[Active]"
 		}
 		info := rp.Model
 		if rp.Antenna != "" {
@@ -180,7 +206,14 @@ func (rc *RigChooser) viewList() string {
 		if rp.FlrigEnabled {
 			flrig = "flrig"
 		}
-		b.WriteString(fmt.Sprintf("%s%s %s %s  %s\n", marker, active, name, info, flrig))
+		// Selected row: wrap in pink+Surface to prevent bg leak after
+		// CursorStyle's \x1b[0m reset.
+		line := fmt.Sprintf("%s%s %s %s  %s", marker, active, name, info, flrig)
+		if i == rc.cursor {
+			line = CursorStyle.Render("> ") + CursorStyle.Render(fmt.Sprintf("%s %s %s  %s", active, name, info, flrig))
+		}
+		b.WriteString(menuLine(line, w))
+		b.WriteString("\n")
 	}
 
 	return fillBody(b.String(), contentH)
@@ -200,7 +233,7 @@ func (rc *RigChooser) viewForm() string {
 	if contentH < 3 {
 		contentH = 3
 	}
-	b.WriteString(S.Title.Render("Configuration — Edit Rig"))
+	b.WriteString(menuTitle("Configuration — Edit Rig", w))
 	b.WriteString("\n\n")
 
 	b.WriteString(rc.form.View().Content)
@@ -215,22 +248,37 @@ func (rc *RigChooser) selectRig() tea.Cmd {
 	name := rc.names[rc.cursor]
 	rp := rc.app.Config.Rigs[name]
 
+	// Update the in-memory logbook directly.
+	rc.app.Logbook.Station.Rig = rp.Model
+	rc.app.Logbook.Station.Antenna = rp.Antenna
+	rc.app.Logbook.Station.Power = rp.Power
+	rc.app.Logbook.Station.RigName = name
+	// Persist to config map.
 	lb := rc.app.Config.Logbooks[rc.app.LogbookName]
-	lb.Station.Rig = rp.Model
-	lb.Station.Antenna = rp.Antenna
-	lb.Station.Power = rp.Power
-	lb.Station.RigName = name
+	lb.Station = rc.app.Logbook.Station
 	rc.app.Config.Logbooks[rc.app.LogbookName] = lb
-	rc.app.Logbook = &lb
 
 	if err := config.Save(rc.app.ConfigPath, rc.app.Config); err != nil {
 		rc.toasts.Error("Config save failed: " + err.Error())
 	} else {
 		rc.toasts.Success("Rig \"" + name + "\" selected")
 		applog.Info("Rig selected", "name", name)
+		// Refresh names and stay in the menu.
+		rc.refreshNames()
 	}
-	rc.done = true
 	return nil
+}
+
+func (rc *RigChooser) refreshNames() {
+	names := make([]string, 0, len(rc.app.Config.Rigs))
+	for n := range rc.app.Config.Rigs {
+		names = append(names, n)
+	}
+	slices.Sort(names)
+	rc.names = names
+	if rc.cursor >= len(rc.names) {
+		rc.cursor = len(rc.names) - 1
+	}
 }
 
 func (rc *RigChooser) startCreate() {

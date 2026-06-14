@@ -5,6 +5,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/qrz"
@@ -45,18 +46,22 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 	us.Focused.Text = us.Focused.Text.Background(P.Surface)
 	us.Focused.Placeholder = us.Focused.Placeholder.Background(P.Surface)
 	us.Focused.Prompt = us.Focused.Prompt.Background(P.Surface)
+	us.Focused.Suggestion = us.Focused.Suggestion.Background(P.Surface)
 	us.Blurred.Text = us.Blurred.Text.Background(P.Surface)
 	us.Blurred.Placeholder = us.Blurred.Placeholder.Background(P.Surface)
 	us.Blurred.Prompt = us.Blurred.Prompt.Background(P.Surface)
+	us.Blurred.Suggestion = us.Blurred.Suggestion.Background(P.Surface)
 	un.SetStyles(us)
 
 	ps := pw.Styles()
 	ps.Focused.Text = ps.Focused.Text.Background(P.Surface)
 	ps.Focused.Placeholder = ps.Focused.Placeholder.Background(P.Surface)
 	ps.Focused.Prompt = ps.Focused.Prompt.Background(P.Surface)
+	ps.Focused.Suggestion = ps.Focused.Suggestion.Background(P.Surface)
 	ps.Blurred.Text = ps.Blurred.Text.Background(P.Surface)
 	ps.Blurred.Placeholder = ps.Blurred.Placeholder.Background(P.Surface)
 	ps.Blurred.Prompt = ps.Blurred.Prompt.Background(P.Surface)
+	ps.Blurred.Suggestion = ps.Blurred.Suggestion.Background(P.Surface)
 	pw.SetStyles(ps)
 
 	un.Focus()
@@ -102,7 +107,7 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cm.done = true
 			cm.saved = true
 			return cm, nil
-		case " ":
+		case " ", "space":
 			if cm.focus == 0 {
 				cm.enabled = !cm.enabled
 				return cm, nil
@@ -116,8 +121,6 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "enter":
 			switch cm.focus {
-			case 0:
-				cm.enabled = !cm.enabled
 			case 3:
 				if !cm.inetOnline {
 					cm.testResult = "No internet connection"
@@ -180,7 +183,22 @@ func (cm *CallbookMenu) FooterText() string {
 	if cm.testing {
 		return "Testing QRZ.com connection…"
 	}
-	return "Ctrl+S to save  Space/Enter to toggle/select  ↑↓/Tab to navigate  Esc to go back"
+	return "Ctrl+S to save  Space to toggle  ↑↓/Tab to navigate  Esc to go back"
+}
+
+// renderField renders a labelled textinput line with cursor indicator.
+// Labels are padded to a fixed width so all values start at the same column.
+func (cm *CallbookMenu) renderField(focusIdx int, label string, ti *textinput.Model) string {
+	gap := lipgloss.NewStyle().Background(P.Surface).Render(" ")
+	val := InputStyle.Render(strings.TrimSpace(ti.Value()))
+	if cm.focus == focusIdx {
+		val = ti.View()
+	}
+	padded := fit(label, 14)
+	if cm.focus == focusIdx {
+		return CursorStyle.Render("> ") + CursorStyle.Render(padded) + gap + val
+	}
+	return "  " + LabelStyle.Render(padded) + gap + val
 }
 
 func (cm *CallbookMenu) View() tea.View {
@@ -201,51 +219,43 @@ func (cm *CallbookMenu) View() tea.View {
 	}
 
 	var b strings.Builder
-	b.WriteString(S.Title.Render("Configuration — Callbook"))
+	b.WriteString(menuTitle("Configuration — Callbook", w))
 	b.WriteString("\n\n")
 
+	bg := lipgloss.NewStyle().Background(P.Surface)
 	checkbox := "[ ]"
 	if cm.enabled {
 		checkbox = "[x]"
 	}
 	if cm.focus == 0 {
-		checkbox = cursorStyle.Render(checkbox)
+		checkbox = CursorStyle.Render(checkbox)
+	} else {
+		checkbox = bg.Render(checkbox)
 	}
-	b.WriteString(formLabelStyle.Render("Use QRZ:"))
-	b.WriteString(" ")
-	b.WriteString(checkbox)
+	// QRZ checkbox — show "> " marker when focused.
+	qrPrefix := "  "
+	if cm.focus == 0 {
+		qrPrefix = CursorStyle.Render("> ")
+	}
+	b.WriteString(menuLine(qrPrefix+LabelStyle.Render(fit("Use QRZ:", 14))+bg.Render(" ")+checkbox, w))
 	if cm.enabled {
-		b.WriteString("\n\n")
-		if cm.focus == 1 {
-			b.WriteString(cursorStyle.Render("> "))
-		} else {
-			b.WriteString("  ")
-		}
-		b.WriteString(formLabelStyle.Render("Username:"))
-		b.WriteString(inputStyle.Render(cm.user.View()))
-		b.WriteString("\n\n")
-		if cm.focus == 2 {
-			b.WriteString(cursorStyle.Render("> "))
-		} else {
-			b.WriteString("  ")
-		}
-		b.WriteString(formLabelStyle.Render("Password:"))
-		b.WriteString(inputStyle.Render(cm.pass.View()))
+		b.WriteString("\n")
+		b.WriteString(menuLine(cm.renderField(1, "Username:", &cm.user), w))
+		b.WriteString("\n")
+		b.WriteString(menuLine(cm.renderField(2, "Password:", &cm.pass), w))
 
 		// Test button
-		b.WriteString("\n\n")
+		b.WriteString("\n")
 		btnText := "[ Test Connection ]"
+		var btnLine string
 		if !cm.inetOnline {
-			b.WriteString("  ")
-			b.WriteString(DimStyle.Render(btnText))
-			b.WriteString(DimStyle.Render(" (offline)"))
+			btnLine = "  " + DimStyle.Render(btnText) + bg.Render(" ") + DimStyle.Render("(offline)")
 		} else if cm.focus == 3 {
-			b.WriteString(cursorStyle.Render("> "))
-			b.WriteString(cursorStyle.Render(btnText))
+			btnLine = CursorStyle.Render("> ") + CursorStyle.Render(btnText)
 		} else {
-			b.WriteString("  ")
-			b.WriteString(InputStyle.Render(btnText))
+			btnLine = "  " + InputStyle.Render(btnText)
 		}
+		b.WriteString(menuLine(btnLine, w))
 
 		if cm.testResult != "" {
 			b.WriteString("\n  ")

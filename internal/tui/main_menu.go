@@ -56,11 +56,15 @@ func (m *MainMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.action = "integration"
 			}
 		case "up", "k":
-			if m.cursor > 0 {
+			if m.cursor == 0 {
+				m.cursor = len(m.items) - 1
+			} else {
 				m.cursor--
 			}
 		case "down", "j":
-			if m.cursor < len(m.items)-1 {
+			if m.cursor == len(m.items)-1 {
+				m.cursor = 0
+			} else {
 				m.cursor++
 			}
 		}
@@ -93,21 +97,22 @@ func (m *MainMenu) View() tea.View {
 	}
 
 	dim := SubtleStyle
-	cursor := CursorStyle
 	showDesc := w >= 60
 
 	var b strings.Builder
 
-	// Title header
-	b.WriteString(S.Title.Render("Configuration"))
+	// Title header — Surface background fills the full width so no leaking
+	// character after the text.
+	b.WriteString(menuTitle("Configuration", w))
 	b.WriteString("\n\n")
 
 	for i, item := range m.items {
 		prefix := "  "
 		label := item.label
 		if i == m.cursor {
-			prefix = cursor.Render("> ")
-			label = InputStyle.Render(item.label)
+			// Selected row: pink "> " marker and pink option name.
+			prefix = CursorStyle.Render("> ")
+			label = CursorStyle.Render(item.label)
 		}
 
 		line := prefix + label
@@ -116,9 +121,9 @@ func (m *MainMenu) View() tea.View {
 			if pad < 1 {
 				pad = 1
 			}
-			line += strings.Repeat(" ", pad) + dim.Render(item.desc)
+			line += lipgloss.NewStyle().Background(P.Surface).Render(strings.Repeat(" ", pad)) + dim.Render(item.desc)
 		}
-		b.WriteString(line)
+		b.WriteString(menuLine(line, w))
 		b.WriteString("\n")
 	}
 

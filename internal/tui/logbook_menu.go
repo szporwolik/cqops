@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -28,6 +29,7 @@ type LogbookChooser struct {
 	station *StationForm
 	editing string
 	toasts  *ToastQueue
+	dialog  *DialogModel
 	width   int
 	height  int
 	done    bool
@@ -38,11 +40,22 @@ func NewLogbookChooser(a *app.App, tq *ToastQueue) *LogbookChooser {
 	for name := range a.Config.Logbooks {
 		names = append(names, name)
 	}
+	slices.Sort(names)
+
+	// Start cursor on the active logbook.
+	cursor := 0
+	for i, n := range names {
+		if n == a.Config.ActiveLogbook {
+			cursor = i
+			break
+		}
+	}
 
 	return &LogbookChooser{
 		app:     a,
 		mode:    chooserList,
 		names:   names,
+		cursor:  cursor,
 		station: NewStationForm("CALLSIGN", "operator", "GRID"),
 		toasts:  tq,
 	}
@@ -68,37 +81,55 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			c.mode = chooserList
 
 		case c.mode == chooserConfirmDelete:
-			switch k.String() {
-			case "y", "Y":
-				return c, c.deleteLogbook()
-			default:
+		if c.dialog == nil {
+			// Skip - dialog not yet created
+		} else {
+			updated, _ := c.dialog.Update(msg)
+			d := updated.(DialogModel)
+			*c.dialog = d
+			if d.Done() {
+				if d.Result.Value == "delete" {
+					return c, c.deleteLogbook()
+				}
+				c.dialog = nil
 				c.mode = chooserList
 			}
 			return c, nil
+		}
 
 		case c.mode == chooserList && k.String() == "enter":
 			return c, c.handleEnter()
-
-		case c.mode == chooserList && k.String() == "c":
-			c.startCreate()
 
 		case c.mode == chooserList && k.String() == "e":
 			if len(c.names) > 0 {
 				c.startEdit(c.names[c.cursor])
 			}
 
-		case c.mode == chooserList && k.String() == "d":
+		case c.mode == chooserList && k.String() == "insert":
+			c.startCreate()
+
+		case c.mode == chooserList && (k.String() == "delete" || msg.Code == tea.KeyDelete):
 			if len(c.names) > 0 {
 				c.mode = chooserConfirmDelete
+				name := c.names[c.cursor]
+				d := NewDialog("Delete Logbook", "Delete \""+name+"\" and all its QSOs?",
+					DangerOption("Delete", "delete"),
+					Option{Label: "Cancel", Value: "cancel"},
+				)
+				c.dialog = &d
 			}
 
 		case c.mode == chooserList && (msg.Code == tea.KeyUp || k.String() == "up" || k.String() == "k"):
-			if c.cursor > 0 {
+			if c.cursor == 0 {
+				c.cursor = len(c.names) - 1
+			} else {
 				c.cursor--
 			}
 
 		case c.mode == chooserList && (msg.Code == tea.KeyDown || k.String() == "down" || k.String() == "j"):
-			if c.cursor < len(c.names)-1 {
+			if c.cursor == len(c.names)-1 {
+				c.cursor = 0
+			} else {
 				c.cursor++
 			}
 
@@ -115,11 +146,11 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (c *LogbookChooser) FooterText() string {
 	switch c.mode {
 	case chooserList:
-		return "Enter to switch  e to edit  c to create  d to delete  Esc to go back"
+		return "Enter to activate  e to edit  Ins to create  Del to delete  Esc to go back"
 	case chooserEdit, chooserCreate:
 		return "Ctrl+S to save  ↑↓/Tab to navigate  Esc to discard"
 	case chooserConfirmDelete:
-		return "Delete this logbook and all its QSOs? (y/N)"
+		return "←/→ choose  Enter confirm  Esc cancel"
 	}
 	return ""
 }
@@ -135,7 +166,11 @@ func (c *LogbookChooser) View() tea.View {
 	case chooserEdit, chooserCreate:
 		return tea.NewView(c.viewForm())
 	case chooserConfirmDelete:
-		return tea.NewView(c.viewConfirmDelete())
+		body := c.viewList()
+		if c.dialog != nil {
+			body = RenderDialogOverlay(body, *c.dialog, c.width, c.height)
+		}
+		return tea.NewView(body)
 	}
 	return tea.NewView("")
 }
@@ -151,24 +186,24 @@ func (c *LogbookChooser) viewList() string {
 		h = 24
 	}
 	contentH := contentHeight(h)
-	// Empty row at top.
-	b.WriteString(S.Title.Render("Configuration — Logbooks"))
+	b.WriteString(menuTitle("Configuration — Logbooks", w))
 	b.WriteString("\n\n")
 
 	if len(c.names) == 0 {
-		b.WriteString("No logbooks configured.\n\n")
-		return b.String()
+		b.WriteString(menuLine("No logbooks configured.", w))
+		b.WriteString("\n")
+		return fillBody(b.String(), contentH)
 	}
 
 	for i, name := range c.names {
 		lb := c.app.Config.Logbooks[name]
 		marker := "  "
 		if i == c.cursor {
-			marker = cursorStyle.Render("> ")
+			marker = CursorStyle.Render("> ")
 		}
-		active := " "
+		active := "        "
 		if name == c.app.Config.ActiveLogbook {
-			active = "*"
+			active = "[Active]"
 		}
 		info := lb.Station.Callsign
 		if lb.Station.Grid != "" {
@@ -177,7 +212,14 @@ func (c *LogbookChooser) viewList() string {
 		if info == "" {
 			info = lb.Description
 		}
-		b.WriteString(fmt.Sprintf("%s%s %s  %s\n", marker, active, name, info))
+		line := fmt.Sprintf("%s%s %s  %s", marker, active, name, info)
+		// Selected row: wrap name in pink, rest in ValueStyle to keep
+		// Surface background after CursorStyle's \x1b[0m reset.
+		if i == c.cursor {
+			line = CursorStyle.Render("> ") + CursorStyle.Render(fmt.Sprintf("%s %s  %s", active, name, info))
+		}
+		b.WriteString(menuLine(line, w))
+		b.WriteString("\n")
 	}
 
 	return fillBody(b.String(), contentH)
@@ -197,8 +239,7 @@ func (c *LogbookChooser) viewForm() string {
 	if contentH < 3 {
 		contentH = 3
 	}
-	// Empty row at top.
-	b.WriteString(S.Title.Render("Configuration — Edit Logbook"))
+	b.WriteString(menuTitle("Configuration — Edit Logbook", w))
 	b.WriteString("\n\n")
 
 	b.WriteString(c.station.View().Content)
@@ -210,16 +251,38 @@ func (c *LogbookChooser) handleEnter() tea.Cmd {
 	if len(c.names) > 0 {
 		name := c.names[c.cursor]
 		if name == c.app.Config.ActiveLogbook {
-			c.done = true
+			c.toasts.Info("Logbook \"" + name + "\" is already active")
 			return nil
 		}
 		if err := c.app.SwitchLogbook(name); err != nil {
 			c.toasts.Error(err.Error())
 			return nil
 		}
-		c.done = true
+		c.toasts.Success("Switched to logbook \"" + name + "\"")
+		applog.Info("Logbook switched", "name", name)
+		// Refresh names and [Active] indicator — stay in the menu.
+		c.refreshNames()
 	}
 	return nil
+}
+
+func (c *LogbookChooser) refreshNames() {
+	names := make([]string, 0, len(c.app.Config.Logbooks))
+	for n := range c.app.Config.Logbooks {
+		names = append(names, n)
+	}
+	slices.Sort(names)
+	c.names = names
+	// Keep cursor on the active logbook after refresh.
+	for i, n := range names {
+		if n == c.app.Config.ActiveLogbook {
+			c.cursor = i
+			return
+		}
+	}
+	if c.cursor >= len(c.names) {
+		c.cursor = len(c.names) - 1
+	}
 }
 
 func (c *LogbookChooser) startCreate() {

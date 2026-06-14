@@ -47,10 +47,8 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				gm.cursor--
 			}
 		case "down", "j":
-			if gm.cursor < 1 {
-				gm.cursor++
-			}
-		case " ", "enter":
+			// Only one config option — cursor stays at 0
+		case " ", "space":
 			if gm.cursor == 0 {
 				if gm.distanceUnit == "km" {
 					gm.distanceUnit = "mi"
@@ -58,6 +56,8 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					gm.distanceUnit = "km"
 				}
 			}
+		case "enter":
+			// no-op: Enter does not save
 		}
 	}
 	return gm, nil
@@ -85,32 +85,26 @@ func (gm *GeneralMenu) View() tea.View {
 	}
 
 	var b strings.Builder
-	b.WriteString(S.Title.Render("Configuration — General"))
+	b.WriteString(menuTitle("Configuration — General", w))
 	b.WriteString("\n\n")
 
 	unitVal := "Kilometers (km)"
 	if gm.distanceUnit == "mi" {
 		unitVal = "Miles (mi)"
 	}
+	prefix := "  "
+	unitLabel := LabelStyle.Render("Distance unit:")
+	unitDisplay := ValueStyle.Render(unitVal)
 	if gm.cursor == 0 {
-		b.WriteString(cursorStyle.Render("> "))
-	} else {
-		b.WriteString("  ")
+		prefix = CursorStyle.Render("> ")
+		unitLabel = CursorStyle.Render("Distance unit:")
+		unitDisplay = CursorStyle.Render(unitVal)
 	}
-	b.WriteString(formLabelStyle.Render("Distance unit:"))
-	b.WriteString(" ")
-	b.WriteString(inputStyle.Render(unitVal))
+	line := prefix + unitLabel +
+		lipgloss.NewStyle().Background(P.Surface).Render(" ") +
+		unitDisplay
+	b.WriteString(menuLine(line, w))
 	b.WriteString("\n")
 
-	// Filler to push help bar to bottom.
-	menuH := lipgloss.Height(b.String())
-	fillerH := contentH - menuH
-	if fillerH < 0 {
-		fillerH = 0
-	}
-	if fillerH > 0 {
-		b.WriteString(strings.Repeat("\n", fillerH))
-	}
-
-	return tea.NewView(b.String())
+	return tea.NewView(fillBody(b.String(), contentH))
 }

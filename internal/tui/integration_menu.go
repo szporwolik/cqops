@@ -7,6 +7,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/wavelog"
@@ -162,7 +163,7 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			im.done = true
 			im.saved = true
 			return im, nil
-		case " ":
+		case " ", "space":
 			switch im.focus {
 			case 0: // WSJTX checkbox
 				im.wsjtxEnabled = !im.wsjtxEnabled
@@ -190,18 +191,6 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "enter":
 			switch im.focus {
-			case 0: // WSJTX checkbox
-				im.wsjtxEnabled = !im.wsjtxEnabled
-				if !im.isPositionVisible(im.focus) {
-					im.fixFocus()
-				}
-				return im, nil
-			case 3: // Wavelog checkbox
-				im.wlEnabled = !im.wlEnabled
-				if !im.isPositionVisible(im.focus) {
-					im.fixFocus()
-				}
-				return im, nil
 			case 6: // Update button
 				im.wlUpdating = true
 				im.wlStatus = "Fetching stations…"
@@ -326,7 +315,7 @@ func (im *IntegrationMenu) focusField() {
 }
 
 func (im *IntegrationMenu) FooterText() string {
-	return "Ctrl+S to save  Space/Enter to toggle/act  ↑↓/Tab to navigate  Esc to go back"
+	return "Ctrl+S to save  Space to toggle  ↑↓/Tab to navigate  Esc to go back"
 }
 
 func (im *IntegrationMenu) View() tea.View {
@@ -347,102 +336,105 @@ func (im *IntegrationMenu) View() tea.View {
 	}
 
 	var b strings.Builder
-	b.WriteString(S.Title.Render("Configuration — Integration"))
+	b.WriteString(menuTitle("Configuration — Integration", w))
 	b.WriteString("\n\n")
+
+	bg := lipgloss.NewStyle().Background(P.Surface)
 
 	// ── WSJT-X section ──
 	checkbox := "[ ]"
 	if im.wsjtxEnabled {
 		checkbox = "[x]"
 	}
+	wsjtxPrefix := "  "
 	if im.focus == 0 {
-		checkbox = cursorStyle.Render(checkbox)
+		wsjtxPrefix = CursorStyle.Render("> ")
+		checkbox = CursorStyle.Render(checkbox)
+	} else {
+		checkbox = bg.Render(checkbox)
 	}
-	b.WriteString(formLabelStyle.Render("WSJT-X:"))
-	b.WriteString(" ")
-	b.WriteString(checkbox)
+	b.WriteString(menuLine(wsjtxPrefix+LabelStyle.Render("WSJT-X:")+bg.Render(" ")+checkbox, w))
 
 	if im.wsjtxEnabled {
-		b.WriteString("\n\n")
-		b.WriteString(im.renderField(1, "UDP Host:", im.host.View()))
-		b.WriteString("\n\n")
-		b.WriteString(im.renderField(2, "UDP Port:", im.port.View()))
+		b.WriteString("\n")
+		b.WriteString(menuLine(im.renderField(1, "UDP Host:", &im.host), w))
+		b.WriteString("\n")
+		b.WriteString(menuLine(im.renderField(2, "UDP Port:", &im.port), w))
 	}
 
-	b.WriteString(fmt.Sprintf("\n\n  %s", SubtleStyle.Render("default: 127.0.0.1:2233")))
-	b.WriteString("\n\n")
+	b.WriteString("\n")
+	b.WriteString(menuLine("  "+SubtleStyle.Render("default: 127.0.0.1:2233"), w))
+	b.WriteString("\n")
 
 	// ── Wavelog section ──
 	wlCheckbox := "[ ]"
 	if im.wlEnabled {
 		wlCheckbox = "[x]"
 	}
+	wlPrefix := "  "
 	if im.focus == 3 {
-		wlCheckbox = cursorStyle.Render(wlCheckbox)
+		wlPrefix = CursorStyle.Render("> ")
+		wlCheckbox = CursorStyle.Render(wlCheckbox)
+	} else {
+		wlCheckbox = bg.Render(wlCheckbox)
 	}
-	b.WriteString(formLabelStyle.Render("Wavelog:"))
-	b.WriteString(" ")
-	b.WriteString(wlCheckbox)
+	b.WriteString(menuLine(wlPrefix+LabelStyle.Render("Wavelog:")+bg.Render(" ")+wlCheckbox, w))
 
 	if im.wlEnabled {
-		b.WriteString("\n\n")
-		b.WriteString(im.renderField(4, "API URL:", im.wlURL.View()))
-		b.WriteString("\n\n")
-		b.WriteString(im.renderField(5, "API Key:", im.wlAPIKey.View()))
+		b.WriteString("\n")
+		b.WriteString(menuLine(im.renderField(4, "API URL:", &im.wlURL), w))
+		b.WriteString("\n")
+		b.WriteString(menuLine(im.renderField(5, "API Key:", &im.wlAPIKey), w))
 
 		// Update button
-		b.WriteString("\n\n")
+		b.WriteString("\n")
+		updPrefix := "  "
 		updLabel := "[ Update ]"
 		if im.focus == 6 {
-			updLabel = cursorStyle.Render("[ Update ]")
+			updPrefix = CursorStyle.Render("> ")
+			updLabel = CursorStyle.Render("[ Update ]")
 		} else {
 			updLabel = SubtleStyle.Render("[ Update ]")
 		}
-		b.WriteString("  ")
-		b.WriteString(updLabel)
-		b.WriteString("  ")
-		b.WriteString(SubtleStyle.Render("fetch stations from Wavelog"))
+		b.WriteString(menuLine(updPrefix+updLabel+bg.Render(" ")+SubtleStyle.Render("fetch stations from Wavelog"), w))
 
 		// Station selector
 		if len(im.wlStations) > 0 {
-			b.WriteString("\n\n")
-			stationLabel := "Station:"
-			if im.focus == 7 {
-				stationLabel = cursorStyle.Render("Station:")
-				b.WriteString("> ")
-			} else {
-				b.WriteString("  ")
-			}
+			b.WriteString("\n")
+			var stLine string
 			s := im.wlStations[im.wlStation]
-			b.WriteString(formLabelStyle.Render(stationLabel))
-			b.WriteString(" ")
-			b.WriteString(inputStyle.Render(fmt.Sprintf("%s — %s (%s)", s.ID, s.Callsign, s.Name)))
+			stPrefix := "  "
+			stLabel := LabelStyle.Render("Station:")
 			if im.focus == 7 {
-				b.WriteString(SubtleStyle.Render(" ← Enter to cycle"))
+				stPrefix = CursorStyle.Render("> ")
+				stLabel = CursorStyle.Render("Station:")
 			}
+			stLine = stPrefix + stLabel + bg.Render(" ") + InputStyle.Render(fmt.Sprintf("%s — %s (%s)", s.ID, s.Callsign, s.Name))
+			if im.focus == 7 {
+				stLine += bg.Render(" ") + SubtleStyle.Render("← Enter to cycle")
+			}
+			b.WriteString(menuLine(stLine, w))
 		} else if im.savedStationID != "" {
-			b.WriteString("\n\n")
-			b.WriteString("  ")
-			b.WriteString(SubtleStyle.Render("Station: " + im.savedStationID + " (press Update to refresh)"))
+			b.WriteString("\n")
+			b.WriteString(menuLine("  "+SubtleStyle.Render("Station: "+im.savedStationID+" (press Update to refresh)"), w))
 		}
 
 		// Test button
-		b.WriteString("\n\n")
+		b.WriteString("\n")
+		testPrefix := "  "
 		testLabel := "[ Test ]"
 		if im.focus == 8 {
-			testLabel = cursorStyle.Render("[ Test ]")
+			testPrefix = CursorStyle.Render("> ")
+			testLabel = CursorStyle.Render("[ Test ]")
 		} else {
 			testLabel = SubtleStyle.Render("[ Test ]")
 		}
-		b.WriteString("  ")
-		b.WriteString(testLabel)
-		b.WriteString("  ")
-		b.WriteString(SubtleStyle.Render("verify connection and station"))
+		b.WriteString(menuLine(testPrefix+testLabel+bg.Render(" ")+SubtleStyle.Render("verify connection and station"), w))
 	}
 
 	// Status line
 	if im.wlStatus != "" {
-		b.WriteString("\n\n  ")
+		b.WriteString("\n  ")
 		if strings.HasPrefix(im.wlStatus, "OK") {
 			b.WriteString(SuccessStyle.Render(im.wlStatus))
 		} else if im.wlUpdating || im.wlTesting {
@@ -455,14 +447,16 @@ func (im *IntegrationMenu) View() tea.View {
 	return tea.NewView(fillBody(b.String(), contentH))
 }
 
-func (im *IntegrationMenu) renderField(focusIdx int, label, value string) string {
-	var line string
+func (im *IntegrationMenu) renderField(focusIdx int, label string, ti *textinput.Model) string {
+	gap := lipgloss.NewStyle().Background(P.Surface).Render(" ")
+	val := InputStyle.Render(strings.TrimSpace(ti.Value()))
 	if im.focus == focusIdx {
-		line = cursorStyle.Render("> ") + cursorStyle.Render(label) + " " + inputStyle.Render(value)
-	} else {
-		line = "  " + formLabelStyle.Render(label) + " " + inputStyle.Render(value)
+		val = ti.View()
 	}
-	return line
+	if im.focus == focusIdx {
+		return CursorStyle.Render("> ") + CursorStyle.Render(label) + gap + val
+	}
+	return "  " + LabelStyle.Render(label) + gap + val
 }
 
 // Values returns all integration config values.

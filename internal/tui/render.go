@@ -53,15 +53,28 @@ func tern(cond bool, t, f string) string {
 // fillBody returns the content with trailing newlines so the total height
 // equals contentH. Use this in configuration menus to push the help bar down.
 func fillBody(content string, contentH int) string {
-	h := lipgloss.Height(content)
-	fillerH := contentH - h
-	if fillerH < 0 {
-		fillerH = 0
+	if contentH <= 0 {
+		return content
 	}
-	if fillerH > 0 {
-		return content + strings.Repeat("\n", fillerH)
+	current := lipgloss.Height(content)
+	if current >= contentH {
+		return content
 	}
-	return content
+	return content + strings.Repeat("\n", contentH-current)
+}
+
+// menuTitle renders a configuration-menu title bar that fills the full
+// terminal width with Surface background — no leaking character at the end.
+func menuTitle(title string, width int) string {
+	bg := lipgloss.NewStyle().Background(P.Surface)
+	ts := S.Title.Copy().Background(P.Surface)
+	return bg.Width(width).Render(ts.Render(title))
+}
+
+// menuLine wraps a single menu row in Surface background and fills to the
+// given width, preventing bg leaks from inner ANSI resets.
+func menuLine(content string, width int) string {
+	return lipgloss.NewStyle().Background(P.Surface).Width(width).Render(content)
 }
 
 // section renders a titled horizontal rule: "── Title ──────────"

@@ -56,7 +56,20 @@ func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder strin
 	wr.Placeholder = "e.g. SPFF-0001"
 	wr.Prompt = ""
 
-	return &StationForm{
+	// Apply Surface background to textinput styles BEFORE storing in struct
+	// (textinput.Model is a value type — copies made after SetStyles are stale).
+	for _, ti := range []*textinput.Model{&cs, &op, &lc, &sr, &pr, &wr} {
+		s := ti.Styles()
+		s.Focused.Text = s.Focused.Text.Background(P.Surface)
+		s.Focused.Placeholder = s.Focused.Placeholder.Background(P.Surface)
+		s.Focused.Prompt = s.Focused.Prompt.Background(P.Surface)
+		s.Blurred.Text = s.Blurred.Text.Background(P.Surface)
+		s.Blurred.Placeholder = s.Blurred.Placeholder.Background(P.Surface)
+		s.Blurred.Prompt = s.Blurred.Prompt.Background(P.Surface)
+		ti.SetStyles(s)
+	}
+
+	sf := &StationForm{
 		Callsign: cs,
 		Operator: op,
 		Locator:  lc,
@@ -64,6 +77,7 @@ func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder strin
 		POTARef:  pr,
 		WWFFRef:  wr,
 	}
+	return sf
 }
 
 func (f *StationForm) Update(msg tea.KeyPressMsg) {
@@ -158,31 +172,47 @@ func (f *StationForm) SetValues(callsign, operator, locator, sotaRef, potaRef, w
 }
 
 func (f *StationForm) View() tea.View {
-	labelW := lipgloss.NewStyle().Width(22).Foreground(P.TextMuted)
+	bg := lipgloss.NewStyle().Background(P.Surface)
+	fields := []struct {
+		label string
+		ti    *textinput.Model
+	}{
+		{"Callsign:", &f.Callsign},
+		{"Grid locator:", &f.Locator},
+		{"Operator (optional):", &f.Operator},
+		{"SOTA Ref (optional):", &f.SOTARef},
+		{"POTA Ref (optional):", &f.POTARef},
+		{"WWFF Ref (optional):", &f.WWFFRef},
+	}
 
 	var b strings.Builder
-	b.WriteString(labelW.Render("Callsign:"))
-	b.WriteString(inputStyle.Render(f.Callsign.View()))
-	b.WriteString("\n\n")
-
-	b.WriteString(labelW.Render("Grid locator:"))
-	b.WriteString(inputStyle.Render(f.Locator.View()))
-	b.WriteString("\n\n")
-
-	b.WriteString(labelW.Render("Operator (optional):"))
-	b.WriteString(inputStyle.Render(f.Operator.View()))
-	b.WriteString("\n\n")
-
-	b.WriteString(labelW.Render("SOTA Ref (optional):"))
-	b.WriteString(inputStyle.Render(f.SOTARef.View()))
-	b.WriteString("\n\n")
-
-	b.WriteString(labelW.Render("POTA Ref (optional):"))
-	b.WriteString(inputStyle.Render(f.POTARef.View()))
-	b.WriteString("\n\n")
-
-	b.WriteString(labelW.Render("WWFF Ref (optional):"))
-	b.WriteString(inputStyle.Render(f.WWFFRef.View()))
+	for _, field := range fields {
+		focused := field.ti.Focused()
+		raw := strings.TrimSpace(field.ti.Value())
+		label := LabelStyle.Render(fit(field.label, 22))
+		if focused {
+			label = CursorStyle.Render(fit(field.label, 22))
+		}
+		// Render value: textinput view when focused, ValueStyle when not
+		// (matching the edit QSO form pattern).
+		// Wrap focused view with InputStyle to catch any ANSI resets from
+		// placeholder rendering.
+		var val string
+		if focused {
+			val = field.ti.View()
+		} else if raw == "" {
+			val = SubtleStyle.Render("\u2014")
+		} else {
+			val = ValueStyle.Render(raw)
+		}
+		prefix := "  "
+		if focused {
+			prefix = CursorStyle.Render("> ")
+		}
+		line := prefix + label + bg.Render(" ") + val
+		b.WriteString(menuLine(line, 80))
+		b.WriteString("\n")
+	}
 	return tea.NewView(b.String())
 }
 

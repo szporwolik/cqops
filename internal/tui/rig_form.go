@@ -63,7 +63,20 @@ func NewRigForm(rigPlaceholder, antennaPlaceholder, powerPlaceholder string) *Ri
 	fp.Placeholder = "12345"
 	fp.Prompt = ""
 
-	return &RigForm{
+	// Apply Surface background BEFORE storing in struct (textinput.Model
+	// is a value type — copies made after SetStyles are stale).
+	for _, ti := range []*textinput.Model{&ri, &an, &pw, &fh, &fp} {
+		s := ti.Styles()
+		s.Focused.Text = s.Focused.Text.Background(P.Surface)
+		s.Focused.Placeholder = s.Focused.Placeholder.Background(P.Surface)
+		s.Focused.Prompt = s.Focused.Prompt.Background(P.Surface)
+		s.Blurred.Text = s.Blurred.Text.Background(P.Surface)
+		s.Blurred.Placeholder = s.Blurred.Placeholder.Background(P.Surface)
+		s.Blurred.Prompt = s.Blurred.Prompt.Background(P.Surface)
+		ti.SetStyles(s)
+	}
+
+	rf := &RigForm{
 		Rig:       ri,
 		Antenna:   an,
 		Power:     pw,
@@ -71,6 +84,7 @@ func NewRigForm(rigPlaceholder, antennaPlaceholder, powerPlaceholder string) *Ri
 		FlrigPort: fp,
 		focus:     rigFieldRig,
 	}
+	return rf
 }
 
 func (f *RigForm) Update(msg tea.KeyPressMsg) {
@@ -189,38 +203,58 @@ func (f *RigForm) SetFlrig(enabled bool, host, port string) {
 }
 
 func (f *RigForm) View() tea.View {
-	labelW := lipgloss.NewStyle().Width(22).Foreground(P.TextMuted)
+	bg := lipgloss.NewStyle().Background(P.Surface)
+	renderField := func(label string, ti *textinput.Model, focused bool, w int) string {
+		prefix := "  "
+		l := LabelStyle.Render(fit(label, 22))
+		if focused {
+			prefix = CursorStyle.Render("> ")
+			l = CursorStyle.Render(fit(label, 22))
+		}
+		val := ValueStyle.Render(strings.TrimSpace(ti.Value()))
+		if focused {
+			val = ti.View()
+		}
+		return prefix + l + bg.Render(" ") + val
+	}
 
 	var b strings.Builder
-	b.WriteString(labelW.Render("Rig (radio):"))
-	b.WriteString(inputStyle.Render(f.Rig.View()))
-	b.WriteString("\n\n")
 
-	b.WriteString(labelW.Render("Antenna (optional):"))
-	b.WriteString(inputStyle.Render(f.Antenna.View()))
-	b.WriteString("\n\n")
+	// Rig
+	b.WriteString(menuLine(renderField("Rig (radio):", &f.Rig, f.focus == rigFieldRig, 80), 80))
+	b.WriteString("\n")
 
-	b.WriteString(labelW.Render("Power (W) (optional):"))
-	b.WriteString(inputStyle.Render(f.Power.View()))
-	b.WriteString("\n\n")
+	// Antenna
+	b.WriteString(menuLine(renderField("Antenna (optional):", &f.Antenna, f.focus == rigFieldAntenna, 80), 80))
+	b.WriteString("\n")
 
+	// Power
+	b.WriteString(menuLine(renderField("Power (W) (optional):", &f.Power, f.focus == rigFieldPower, 80), 80))
+	b.WriteString("\n")
+
+	// flrig checkbox
 	checkbox := "[ ]"
 	if f.FlrigEnabled {
 		checkbox = "[x]"
 	}
+	flPrefix := "  "
 	if f.focus == rigFieldFlrig {
-		checkbox = cursorStyle.Render(checkbox)
+		flPrefix = CursorStyle.Render("> ")
+		checkbox = CursorStyle.Render(checkbox)
+	} else {
+		checkbox = bg.Render(checkbox)
 	}
-	b.WriteString(labelW.Render("Use flrig:"))
-	b.WriteString(checkbox)
+	flLabel := LabelStyle.Render(fit("Use flrig:", 22))
+	if f.focus == rigFieldFlrig {
+		flLabel = CursorStyle.Render(fit("Use flrig:", 22))
+	}
+	b.WriteString(menuLine(flPrefix+flLabel+bg.Render(" ")+checkbox, 80))
 
 	if f.FlrigEnabled {
-		b.WriteString("\n\n")
-		b.WriteString(labelW.Render("Flrig host:"))
-		b.WriteString(inputStyle.Render(f.FlrigHost.View()))
-		b.WriteString("\n\n")
-		b.WriteString(labelW.Render("Flrig port:"))
-		b.WriteString(inputStyle.Render(f.FlrigPort.View()))
+		b.WriteString("\n")
+		b.WriteString(menuLine(renderField("Flrig host:", &f.FlrigHost, f.focus == rigFieldFlrigHost, 80), 80))
+		b.WriteString("\n")
+		b.WriteString(menuLine(renderField("Flrig port:", &f.FlrigPort, f.focus == rigFieldFlrigPort, 80), 80))
 	}
 
 	return tea.NewView(b.String())
