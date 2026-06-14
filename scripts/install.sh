@@ -6,22 +6,50 @@ VERSION=$(cat "$SCRIPT_DIR/../VERSION")
 BUILD_DIR="$SCRIPT_DIR/../build"
 INSTALL_DIR="${HOME}/.local/bin"
 DESKTOP_DIR="${HOME}/.local/share/applications"
-ICON_DIR="${HOME}/.local/share/icons/hicolor/256x256/apps"
+ICON_BASE="${HOME}/.local/share/icons/hicolor"
+PIXMAPS_DIR="${HOME}/.local/share/pixmaps"
 ICON_SRC="$SCRIPT_DIR/../assets/cqops-icon.svg"
 
 echo "=== CQOPS v${VERSION} Installer (Linux) ==="
 
-mkdir -p "$INSTALL_DIR" "$DESKTOP_DIR" "$ICON_DIR"
+mkdir -p "$INSTALL_DIR" "$DESKTOP_DIR" "$PIXMAPS_DIR"
 
-# Generate icon
+# Generate icons in multiple sizes (IceWM menus use small icons)
+SIZES="16 24 32 48 64 128 256"
 if command -v rsvg-convert &>/dev/null; then
-    rsvg-convert -w 256 -h 256 "$ICON_SRC" -o "$ICON_DIR/cqops.png"
-    echo "  Icon   : $ICON_DIR/cqops.png"
+    for sz in $SIZES; do
+        ICON_DIR="${ICON_BASE}/${sz}x${sz}/apps"
+        mkdir -p "$ICON_DIR"
+        rsvg-convert -w $sz -h $sz "$ICON_SRC" -o "$ICON_DIR/cqops.png"
+    done
+    echo "  Icons  : ${ICON_BASE}/{16..256}x{16..256}/apps/cqops.png"
 elif command -v magick &>/dev/null; then
-    magick "$ICON_SRC" -resize 256x256 "$ICON_DIR/cqops.png"
-    echo "  Icon   : $ICON_DIR/cqops.png"
+    for sz in $SIZES; do
+        ICON_DIR="${ICON_BASE}/${sz}x${sz}/apps"
+        mkdir -p "$ICON_DIR"
+        magick "$ICON_SRC" -resize ${sz}x${sz} "$ICON_DIR/cqops.png"
+    done
+    echo "  Icons  : ${ICON_BASE}/{16..256}x{16..256}/apps/cqops.png"
 else
-    echo "  Icon   : skipping (rsvg-convert or imagemagick not found)"
+    echo "  Icons  : skipping (rsvg-convert or imagemagick not found)"
+fi
+
+# Also place a copy in pixmaps (IceWM fallback path)
+cp "${ICON_BASE}/48x48/apps/cqops.png" "$PIXMAPS_DIR/cqops.png" 2>/dev/null || true
+
+# Generate XPM icon for IceWM (which traditionally prefers XPM)
+if command -v magick &>/dev/null; then
+    magick "${ICON_BASE}/48x48/apps/cqops.png" "$PIXMAPS_DIR/cqops.xpm" 2>/dev/null || true
+    echo "  XPM    : $PIXMAPS_DIR/cqops.xpm (IceWM)"
+elif command -v convert &>/dev/null; then
+    convert "${ICON_BASE}/48x48/apps/cqops.png" "$PIXMAPS_DIR/cqops.xpm" 2>/dev/null || true
+    echo "  XPM    : $PIXMAPS_DIR/cqops.xpm (IceWM)"
+fi
+
+# Rebuild icon cache
+if command -v gtk-update-icon-cache &>/dev/null; then
+    gtk-update-icon-cache -f -t "$ICON_BASE" 2>/dev/null || true
+    echo "  Cache  : hicolor icon cache updated"
 fi
 
 BIN="$BUILD_DIR/cqops-linux-amd64"
@@ -44,6 +72,12 @@ Type=Application
 Categories=HamRadio;Utility;
 EOF
 echo "  Menu   : Applications � Ham Radio � CQOPS"
+
+# Refresh desktop menu database
+if command -v update-desktop-database &>/dev/null; then
+    update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
+    echo "  Menu DB: refreshed"
+fi
 
 if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
     echo "export PATH=\"$INSTALL_DIR:\$PATH\"" >> "${HOME}/.bashrc"
