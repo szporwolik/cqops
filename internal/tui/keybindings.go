@@ -44,8 +44,8 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("F2", "Partner"),
 		),
 		LogEditor: key.NewBinding(
-			key.WithKeys("f5"),
-			key.WithHelp("F5", "Log Editor"),
+			key.WithKeys("f7"),
+			key.WithHelp("F7", "Log Editor"),
 		),
 		Config: key.NewBinding(
 			key.WithKeys("f8"),
@@ -127,6 +127,26 @@ func (m *Model) ActiveBindings() []key.Binding {
 			m.keys.Lookup,
 			m.keys.Delete,
 		)
+	}
+
+	// Log editor — table navigation shortcuts
+	if m.screen == screenLogbookEditor {
+		if m.logbookEditor != nil && m.logbookEditor.IsEditing() {
+			bindings = append(bindings,
+				key.NewBinding(key.WithKeys("tab", "down"), key.WithHelp("↓/Tab", "Next")),
+				key.NewBinding(key.WithKeys("shift+tab", "up"), key.WithHelp("↑/S-Tab", "Prev")),
+				key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
+				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
+			)
+		} else {
+			bindings = append(bindings,
+				key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Scroll")),
+				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit QSO")),
+				key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
+				key.NewBinding(key.WithKeys("p"), key.WithHelp("P", "Purge")),
+				key.NewBinding(key.WithKeys("ctrl+w"), key.WithHelp("Ctrl+W", "Wavelog")),
+			)
+		}
 	}
 
 	// F10 Quit always visible, always last

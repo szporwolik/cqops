@@ -803,9 +803,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if call == "" {
 				m.toasts.Warn("No callsign entered")
 				applog.Debug("F2 Partner: no callsign")
-			} else if m.screen != screenPartner {
+			} else {
 				applog.Debug("tab: F2 Partner Details")
+				m.partnerData = nil     // force fresh lookup
+				m.wlPrivateData = nil   // force fresh Wavelog lookup
 				m.screen = screenPartner
+				// Trigger QRZ + Wavelog lookups.
+				if m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled {
+					cmd = tea.Batch(cmd, m.qrzLookup(call))
+				}
+				if m.App.Config.Wavelog.Enabled && m.App.Config.Wavelog.APIKey != "" {
+					cmd = tea.Batch(cmd, m.wlLookup(call))
+				}
 			}
 		case key.Matches(keyMsg, m.keys.Config):
 			if m.screen == screenMainMenu {
@@ -817,8 +826,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.screen = screenMainMenu
 			}
 		case key.Matches(keyMsg, m.keys.LogEditor):
-			applog.Debug("tab: F5 Log Editor")
+			applog.Debug("tab: F7 Log Editor")
 			m.logbookEditor = NewLogbookEditor(m.App.DB, m.App.Config.Wavelog.URL, m.App.Config.Wavelog.APIKey, m.App.Config.Wavelog.StationProfileID, m.App.Config.Wavelog.StationCallsign, m.App.Logbook.Station.Operator, m.App.Logbook.Station.Grid)
+			m.logbookEditor.width = m.width
+			m.logbookEditor.height = m.height
 			qsos, _ := store.ListAllQSOs(m.App.DB)
 			m.logbookEditor.SetQSOS(qsos)
 			m.screen = screenLogbookEditor
@@ -985,10 +996,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.toasts.Error(em.err.Error())
 			}
 			if em.deleted != 0 {
-				m.toasts.Success(fmt.Sprintf("QSO %d deleted", em.deleted))
+				m.toasts.Success(fmt.Sprintf("QSO %s from %s deleted", em.delCall, em.delDate))
 			}
 			if em.saved != 0 {
-				m.toasts.Success(fmt.Sprintf("QSO %d saved", em.saved))
+				m.toasts.Success(fmt.Sprintf("QSO %s from %s saved", em.saveCall, em.saveDate))
 			}
 			if em.purged {
 				m.toasts.Success("Logbook purged")
@@ -1002,6 +1013,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.toasts.Warn(fmt.Sprintf("Wavelog: %s failed", em.wlCall))
 					m.logbookEditor.UpdateWLStatus(em.wlQSOID, "no")
 				}
+			}
+			// Show warning for skipped QSOs (missing band/mode/date).
+			if m.logbookEditor.wlSkipped > 0 {
+				m.toasts.Warn(fmt.Sprintf("Wavelog: %s", m.logbookEditor.wlSkipDetail))
+				m.logbookEditor.wlSkipped = 0
+				m.logbookEditor.wlSkipDetail = ""
 			}
 		}
 		if m.logbookEditor.needsReload {
@@ -1094,6 +1111,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 			m.updateFocused(msg)
 		}
+		// Re-trigger WL lookup when band or mode changes.
+		curBand := strings.TrimSpace(m.fields[fieldBand].Value())
+		curMode := strings.TrimSpace(m.fields[fieldMode].Value())
+		call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+		if call != "" && (curBand != m.wlLastBand || curMode != m.wlLastMode) && m.wlPrivateData != nil {
+			m.wlNeed = true
+			m.wlCall = call
+		}
 	}
 	if m.needRefresh {
 		m.needRefresh = false
@@ -1113,6 +1138,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		return m, tea.Batch(cmd, m.qrzLookup(call), m.wlLookup(call))
+	}
+	if m.wlNeed {
+		m.wlNeed = false
+		call := m.wlCall
+		if call != "" {
+			return m, tea.Batch(cmd, m.wlLookup(call))
+		}
 	}
 	return m, cmd
 }
@@ -1305,7 +1337,7 @@ func (m *Model) tabView() string {
 	tabs := []tab{
 		{"F1 QSO Form", m.screen == screenQSO && m.confirm == nil, false},
 		{"F2 Partner", m.screen == screenPartner && hasPartner, !hasPartner},
-		{"F5 Log Editor", m.screen == screenLogbookEditor, false},
+		{"F7 Log Editor", m.screen == screenLogbookEditor, false},
 		{"F8 Config", m.screen == screenMainMenu || m.screen == screenConfig || m.screen == screenCallbook || m.screen == screenIntegration || m.screen == screenChooser || m.screen == screenRigEdit, false},
 		{"F9 Logs", m.screen == screenLogView, false},
 	}
@@ -1367,6 +1399,20 @@ func (m *Model) helpView() string {
 	helpText := m.help.ShortHelpView(bindings)
 	if helpText == "" {
 		helpText = m.help.ShortHelpView([]key.Binding{m.keys.Quit})
+	}
+	// QSO counter on log editor screen.
+	if m.screen == screenLogbookEditor && m.logbookEditor != nil {
+		cursor := m.logbookEditor.CursorPos()
+		total := m.logbookEditor.QSOCount()
+		if total > 0 {
+			counter := fmt.Sprintf("QSO %d/%d", cursor+1, total)
+			counterW := lipgloss.Width(counter)
+			spacerW := m.width - lipgloss.Width(helpText) - counterW - 2
+			if spacerW < 1 {
+				spacerW = 1
+			}
+			return HelpStyle.Render(helpText + strings.Repeat(" ", spacerW) + counter)
+		}
 	}
 	return HelpStyle.Render(helpText)
 }
@@ -1520,18 +1566,14 @@ func (m *Model) viewPartner() string {
 	}
 
 	// Map section — full width below the columns. The box is always shown.
-	// Allocate all remaining space to the map first; filler gets what's left.
-	contentH := m.height - 5 // ≈ terminal - status/tabs/help - padding
-	if contentH < 3 {
-		contentH = 3
-	}
+	mapW := bodyW - 2 // inside border (MapBox has no h-padding, just borders)
+
+	// Available height for the map: terminal minus fixed rows minus top info.
 	topH := lipgloss.Height(topRow)
-	mapAvailH := contentH - topH
+	mapAvailH := m.height - 3 - topH // status+tab+help = 3, no profile on partner
 	if mapAvailH < 3 {
 		mapAvailH = 3
 	}
-
-	mapW := bodyW - 2 // inside border (MapBox has no h-padding, just borders)
 
 	var mapInner string
 	ownGrid := m.App.Logbook.Station.Grid
@@ -1543,8 +1585,8 @@ func (m *Model) viewPartner() string {
 	case partnerGrid == "" && d.Lat == "":
 		mapInner = DimStyle.Render("No partner location — enter a grid or use QRZ lookup")
 	default:
-		// Only attempt full map when enough space exists for native dimensions.
-		if mapAvailH >= NativeMapHeight+2 && mapW >= NativeMapWidth {
+		// Only attempt full map when enough vertical space exists.
+		if mapAvailH >= NativeMapHeight+5 && mapW >= NativeMapWidth {
 			ownLat, ownLon := gridToLatLon(ownGrid)
 			partnerLat, partnerLon := 0.0, 0.0
 
@@ -1568,16 +1610,15 @@ func (m *Model) viewPartner() string {
 
 	mapBox := S.MapBox.Width(bodyW).Render(mapInner)
 
-	// Filler pushes the map to the bottom of the content area so the
-	// help bar (handled by View) sits flush at the screen bottom.
+	// Filler pushes the help bar toward the bottom without overshooting.
+	// Use m.height-4 as a safe base (1-row margin) so the help bar is never lost.
 	mapBoxH := lipgloss.Height(mapBox)
-	fillerH := mapAvailH - mapBoxH
+	fillerH := m.height - 4 - topH - mapBoxH
 	if fillerH < 0 {
 		fillerH = 0
 	}
 	filler := lipgloss.NewStyle().Height(fillerH).Render("")
-
-	return lipgloss.JoinVertical(lipgloss.Left, topRow, filler, mapBox)
+	return lipgloss.JoinVertical(lipgloss.Left, topRow, mapBox, filler)
 }
 
 // formPartnerData builds a CallData from the current QSO form fields.
@@ -1937,12 +1978,18 @@ func (m *Model) formPathRow(width int) string {
 
 func (m *Model) focusField(f field) {
 	m.retainFocused = false
+	if m.focus == fieldFreq {
+		m.applyFreqDefaults()
+	}
 	m.fields[m.focus].Blur()
 	m.focus = f
 	m.fields[m.focus].Focus()
 }
 
 func (m *Model) nextField() {
+	if m.focus == fieldFreq {
+		m.applyFreqDefaults()
+	}
 	wasCall := m.focus == fieldCall
 
 	if m.retainFocused {
@@ -1969,6 +2016,9 @@ func (m *Model) nextField() {
 	}
 }
 func (m *Model) prevField() {
+	if m.focus == fieldFreq {
+		m.applyFreqDefaults()
+	}
 	wasCall := m.focus == fieldCall
 
 	if m.retainFocused {
@@ -2063,9 +2113,9 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 	prevFreq := m.fields[fieldFreq].Value()
 	m.fields[m.focus], _ = m.fields[m.focus].Update(msg)
 
-	// Frequency changed: derive band → mode → submode
+	// Frequency changed: derive band → mode → submode on field exit only.
 	if m.focus == fieldFreq && m.fields[fieldFreq].Value() != prevFreq {
-		m.applyFreqDefaults()
+		// Deferred to focus change.
 	}
 	// Band changed: derive mode → submode from the new band
 	if m.focus == fieldBand && m.fields[m.focus].Value() != prevVal {

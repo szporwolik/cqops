@@ -16,11 +16,32 @@ func (le *LogbookEditor) doBatchUpload() tea.Cmd {
 	logOp := le.logStationOp
 	logGrid := le.logStationGrid
 
-	// Collect unsent QSOs
+	// Collect unsent QSOs, skip those with missing required fields.
 	var unsent []qso.QSO
+	var skipped int
+	var firstSkipCall, firstSkipDate string
 	for _, q := range le.qsos {
 		if q.WavelogUploaded != "yes" {
+			if q.Band == "" || q.Mode == "" || q.QSODate == "" {
+				applog.Warn("Wavelog: skipping QSO with missing required field",
+					"id", q.ID, "call", q.Call, "band", q.Band, "mode", q.Mode, "date", q.QSODate)
+				if skipped == 0 {
+					firstSkipCall = q.Call
+					firstSkipDate = q.QSODate
+				}
+				skipped++
+				continue
+			}
 			unsent = append(unsent, q)
+		}
+	}
+	if skipped > 0 {
+		applog.Warn("Wavelog: skipped QSOs with missing fields", "count", skipped)
+		le.wlSkipped = skipped
+		if skipped == 1 {
+			le.wlSkipDetail = fmt.Sprintf("%s %s — missing band", firstSkipCall, firstSkipDate)
+		} else {
+			le.wlSkipDetail = fmt.Sprintf("%d QSOs skipped (e.g. %s %s — missing band)", skipped, firstSkipCall, firstSkipDate)
 		}
 	}
 	if len(unsent) == 0 {
@@ -79,11 +100,30 @@ func (le *LogbookEditor) doNormalizeAndUpload() tea.Cmd {
 	logOp := le.logStationOp
 	logGrid := le.logStationGrid
 
-	// Collect all unsent QSOs (some may not be mismatched but still unsent)
+	// Collect all unsent QSOs (some may not be mismatched but still unsent),
+	// skip those with missing required fields.
 	var unsent []qso.QSO
+	var skipped int
+	var firstSkipCall, firstSkipDate string
 	for _, q := range le.qsos {
 		if q.WavelogUploaded != "yes" {
+			if q.Band == "" || q.Mode == "" || q.QSODate == "" {
+				if skipped == 0 {
+					firstSkipCall = q.Call
+					firstSkipDate = q.QSODate
+				}
+				skipped++
+				continue
+			}
 			unsent = append(unsent, q)
+		}
+	}
+	if skipped > 0 {
+		le.wlSkipped = skipped
+		if skipped == 1 {
+			le.wlSkipDetail = fmt.Sprintf("%s %s — missing band", firstSkipCall, firstSkipDate)
+		} else {
+			le.wlSkipDetail = fmt.Sprintf("%d QSOs skipped (e.g. %s %s — missing band)", skipped, firstSkipCall, firstSkipDate)
 		}
 	}
 
@@ -213,6 +253,14 @@ func (le *LogbookEditor) doUploadToWavelog() tea.Cmd {
 		}
 	}
 	q := le.readEditForm()
+	if q.Band == "" || q.Mode == "" || q.QSODate == "" {
+		applog.Warn("Wavelog: editor upload skipped — missing required field",
+			"id", q.ID, "call", q.Call, "band", q.Band, "mode", q.Mode)
+		return func() tea.Msg {
+			return editorMsg{wlQSOID: q.ID, wlCall: q.Call, wlOK: false,
+				err: fmt.Errorf("missing required field: band/mode/date")}
+		}
+	}
 	adifStr := q.ToADIFWithStation(le.wlStationCall)
 	url, key, sid := le.wlURL, le.wlKey, le.wlStationID
 	qID := q.ID
