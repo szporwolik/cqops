@@ -35,6 +35,8 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 	pw := newTextinput()
 	pw.CharLimit = 40
 	pw.Placeholder = "QRZ.com password"
+	pw.EchoMode = textinput.EchoPassword
+	pw.EchoCharacter = '*'
 	pw.SetValue(cfg.QRZ.Pass)
 
 	// Apply surface background to textinput styles
@@ -60,7 +62,7 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case callbookTestMsg:
 		cm.testing = false
 		if msg.err != nil {
-			cm.testResult = msg.err.Error()
+			cm.testResult = friendlyQRZError(msg.err)
 			applog.Error("QRZ test failed", "error", msg.err.Error())
 		} else if msg.ok {
 			cm.testResult = "OK — QRZ.com connected"
@@ -156,13 +158,21 @@ func (cm *CallbookMenu) FooterText() string {
 }
 
 // renderField renders a labelled textinput line with cursor indicator.
-// renderField renders a labelled textinput line. Values always use
-// InputStyle (plain styled text) — never ti.View() — so focused and
-// blurred fields are pixel-identical. Focus is shown by the "> " prefix
-// and pink label colour.
-func (cm *CallbookMenu) renderField(focusIdx int, label string, ti *textinput.Model) string {
+// renderField renders a labelled textinput line with cursor indicator.
+// When masked is true, the value is shown as asterisks when not focused.
+func (cm *CallbookMenu) renderField(focusIdx int, label string, ti *textinput.Model, masked bool) string {
 	gap := lipgloss.NewStyle().Background(P.Surface).Render(" ")
-	val := InputStyle.Render(strings.TrimSpace(ti.Value()))
+	raw := strings.TrimSpace(ti.Value())
+	var val string
+	if cm.focus == focusIdx {
+		val = ti.View() // respects EchoMode/EchoCharacter when focused
+	} else if raw == "" {
+		val = SubtleStyle.Render("\u2014")
+	} else if masked {
+		val = ValueStyle.Render(strings.Repeat("*", len(raw)))
+	} else {
+		val = ValueStyle.Render(raw)
+	}
 	padded := fit(label, 14)
 	if cm.focus == focusIdx {
 		return CursorStyle.Render("> ") + CursorStyle.Render(padded) + gap + val
@@ -209,9 +219,9 @@ func (cm *CallbookMenu) View() tea.View {
 	b.WriteString(menuLine(qrPrefix+LabelStyle.Render(fit("Use QRZ:", 14))+bg.Render(" ")+checkbox, w))
 	if cm.enabled {
 		b.WriteString("\n")
-		b.WriteString(menuLine(cm.renderField(1, "  Username:", &cm.user), w))
+		b.WriteString(menuLine(cm.renderField(1, "  Username:", &cm.user, false), w))
 		b.WriteString("\n")
-		b.WriteString(menuLine(cm.renderField(2, "  Password:", &cm.pass), w))
+		b.WriteString(menuLine(cm.renderField(2, "  Password:", &cm.pass, true), w))
 
 		// Test button — indented under QRZ.
 		b.WriteString("\n")
@@ -239,4 +249,29 @@ func (cm *CallbookMenu) View() tea.View {
 	}
 
 	return tea.NewView(fillBody(b.String(), contentH))
+}
+
+// friendlyQRZError wraps raw network errors from QRZ lookups into
+// user-readable messages. QRZ API errors (already prefixed "QRZ: …")
+// pass through unchanged.
+func friendlyQRZError(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	// QRZ API errors are already user-friendly.
+	if strings.Contains(msg, "QRZ:") {
+		return msg
+	}
+	// Network-level errors — borrow wavelog's friendly patterns.
+	if strings.Contains(msg, "no such host") {
+		return "Cannot reach QRZ.com — check your internet connection"
+	}
+	if strings.Contains(msg, "timeout") || strings.Contains(msg, "Timeout") {
+		return "QRZ.com timed out — try again later"
+	}
+	if strings.Contains(msg, "connection refused") {
+		return "Cannot connect to QRZ.com — try again later"
+	}
+	return "QRZ lookup failed — " + msg
 }
