@@ -127,7 +127,7 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			applog.Info("Wavelog test OK")
 		}
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		k := msg.String()
 		if im.wlUpdating || im.wlTesting {
 			return im, nil

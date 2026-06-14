@@ -63,7 +63,7 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			applog.Warn("QRZ test: no data returned")
 		}
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		k := msg.String()
 		if cm.testing {
 			return cm, nil

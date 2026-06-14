@@ -202,7 +202,8 @@ var S = Styles{
 		Padding(0, 0), // no extra padding — map needs every cell
 }
 
-// Legacy package-level aliases.
+// Package-level style aliases — the canonical short form used throughout the codebase.
+// All are backed by S.* which is the single source of truth.
 var (
 	TitleStyle       = S.TitleStyle
 	HeaderStyle      = S.HeaderStyle
