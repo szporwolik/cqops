@@ -611,8 +611,7 @@ func (le *LogbookEditor) View() tea.View {
 		if !le.built && len(le.qsos) > 0 {
 			le.buildTable()
 		}
-		// Reserve 1 row for filler between the table box and the help bar;
-		// on this screen ProfileH=0 so ContentH = TerminalH - 3.
+		// status+profile+tab+help = 4 fixed rows; table fills rest exactly.
 		contentH := le.height - 4
 		if contentH < 5 {
 			contentH = 5

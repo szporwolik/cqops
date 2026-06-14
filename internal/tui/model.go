@@ -1466,7 +1466,7 @@ func (m *Model) renderTabBar() string    { return m.tabView() }
 func (m *Model) renderHelpBar() string   { return m.helpView() }
 
 func (m *Model) renderProfileBar() string {
-	if !m.isSubmodelActive() && m.confirm == nil {
+	if m.confirm == nil {
 		line := m.renderProfileLine()
 		if line == "" {
 			return ""
@@ -1610,7 +1610,7 @@ func (m *Model) viewPartner() string {
 
 	// Available height for the map: terminal minus fixed rows minus top info.
 	topH := lipgloss.Height(topRow)
-	mapAvailH := m.height - 3 - topH // status+tab+help = 3, no profile on partner
+	mapAvailH := m.height - 4 - topH // status+profile+tab+help
 	if mapAvailH < 3 {
 		mapAvailH = 3
 	}

@@ -45,8 +45,8 @@ func MeasureLayout(m *Model) Layout {
 	tabBar := m.renderTabBar()
 	l.TabH = lipgloss.Height(tabBar)
 
-	// Profile line: only shown on QSO form when no sub-model is active
-	if !m.isSubmodelActive() && m.confirm == nil {
+	// Profile line: always measured (0 height when empty).
+	if m.confirm == nil {
 		profileLine := m.renderProfileLine()
 		if profileLine != "" {
 			l.ProfileH = lipgloss.Height(profileLine)
