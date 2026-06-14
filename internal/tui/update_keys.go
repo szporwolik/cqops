@@ -39,13 +39,14 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		// Cycle: Partner → Image → Partner (when photo available).
 		if m.screen == screenImage {
 			m.screen = screenPartner
+			m.lastImageErr = nil
 			return nil, true
 		}
 		if m.screen == screenPartner && m.partnerData != nil && m.partnerData.ImageURL != "" {
 			applog.Debug("F2: opening image view", "url", m.partnerData.ImageURL)
 			m.screen = screenImage
 			w := m.width
-			h := m.height - 5 // header + footer overhead
+			h := m.height - 4 // header/tab/help overhead
 			if w < 20 {
 				w = 80
 			}

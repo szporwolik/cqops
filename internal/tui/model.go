@@ -110,6 +110,7 @@ type Model struct {
 	logViewer       *LogViewer
 	logbookEditor   *LogbookEditor
 	imageViewer     pictureurl.Model // terminal image viewer for partner photos
+	lastImageErr    error            // dedup image error logging
 	confirm         *DialogModel     // active confirmation dialog (quit, etc.)
 	partnerData     *qrz.CallData
 	wlPrivateData   *wavelog.PrivateLookupResult // Wavelog callsign lookup
@@ -216,7 +217,10 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 		applyTextinputSurfaceStyle(&m.fields[i])
 	}
 	m.recentQSOs = NewRecentQSOs(initialQSOS)
-	m.imageViewer = pictureurl.NewWithConfig(pictureurl.Config{CacheLimit: 4})
+	m.imageViewer = pictureurl.NewWithConfig(pictureurl.Config{
+		CacheLimit: 4,
+		Background: P.Surface,
+	})
 	return m
 }
 
@@ -361,6 +365,29 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.screen = screenPartner
 			return m, cmd
 		}
+		// Log image errors once and show toast.
+		if err := m.imageViewer.Err(); err != nil && m.lastImageErr != err {
+			m.lastImageErr = err
+			applog.Warn("Image load failed", "error", err.Error())
+			m.toasts.Warn("Photo unavailable — unsupported format")
+		}
+		if m.imageViewer.Err() == nil {
+			m.lastImageErr = nil
+		}
+		// Reapply size on resize while viewing image.
+		if _, ok := msg.(tea.WindowSizeMsg); ok {
+			w := m.width
+			h := m.height - 4
+			if w < 20 {
+				w = 80
+			}
+			if h < 10 {
+				h = 10
+			}
+			if c := m.imageViewer.SetSize(w, h); c != nil {
+				cmd = tea.Batch(cmd, c)
+			}
+		}
 		c := m.imageViewer.Update(msg)
 		if c != nil {
 			cmd = tea.Batch(cmd, c)
@@ -465,7 +492,32 @@ func (m *Model) View() tea.View {
 
 // viewImage renders the partner photo full-screen.
 func (m *Model) viewImage(l Layout) string {
-	return m.imageViewer.View().Content
+	content := m.imageViewer.View().Content
+	if m.imageViewer.Err() != nil {
+		err := m.imageViewer.Err()
+		msg := err.Error()
+		if strings.Contains(msg, "unexpected Content-Type") {
+			msg = "QRZ photo not available — unsupported format"
+		} else if strings.Contains(msg, "no such host") {
+			msg = "Cannot reach image server"
+		} else if strings.Contains(msg, "timeout") {
+			msg = "Image download timed out"
+		}
+		content = lipgloss.NewStyle().
+			Width(l.TerminalW).
+			Height(l.ContentH).
+			Align(lipgloss.Center, lipgloss.Center).
+			Foreground(P.TextMuted).
+			Background(P.Surface).
+			Render(msg)
+	} else {
+		content = lipgloss.NewStyle().
+			Width(l.TerminalW).
+			Height(l.ContentH).
+			Background(P.Surface).
+			Render(content)
+	}
+	return content
 }
 
 // buildBodyForScreen returns the content string for the active screen,

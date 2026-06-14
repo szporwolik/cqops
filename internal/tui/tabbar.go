@@ -20,7 +20,7 @@ func (m *Model) tabView() string {
 
 	leftTabs := []tab{
 		{"F1 QSO Form", m.screen == screenQSO && m.confirm == nil, false},
-		{"F2 Partner", m.screen == screenPartner && hasPartner, !hasPartner},
+		{"F2 Partner", (m.screen == screenPartner || m.screen == screenImage) && hasPartner, !hasPartner},
 	}
 	rightTabs := []tab{
 		{"F6 Log Editor", m.screen == screenLogbookEditor, false},

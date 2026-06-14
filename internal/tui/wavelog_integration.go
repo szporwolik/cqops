@@ -19,12 +19,9 @@ import (
 // at startup (tick 1), when the logbook is switched, and periodically.
 func (m *Model) maybeCheckWavelog() tea.Cmd {
 	wl := m.App.Logbook.Wavelog
-	if wl == nil || !wl.Enabled {
+	if wl == nil || !wl.Enabled || wl.StationProfileID == "" {
 		m.wlOnline = false
 		return nil
-	}
-	if wl.StationProfileID == "" {
-		m.wlOnline = false
 	}
 	// Check on startup or when forced (logbook switch).
 	if m.tickCount != 1 && !m.wlForceCheck {
