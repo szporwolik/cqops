@@ -165,14 +165,14 @@ func TestPartnerViewRenderPartnerInfo(t *testing.T) {
 }
 
 func TestPartnerViewRenderWLInfo(t *testing.T) {
-	// WL disabled (no config) — should show "WL disabled"
+	// WL not configured — should show "Wavelog not configured"
 	m := newTestModel()
 	info := m.renderWLInfo(40)
 	if info == "" {
 		t.Error("renderWLInfo returned empty with nil data")
 	}
-	if !strings.Contains(info, "WL disabled") {
-		t.Error("renderWLInfo should show 'WL disabled' when Wavelog not configured")
+	if !strings.Contains(info, "not configured") {
+		t.Error("renderWLInfo should show 'Wavelog not configured' when Wavelog not configured")
 	}
 
 	// WL enabled, lookup not yet done — should show "pending"
