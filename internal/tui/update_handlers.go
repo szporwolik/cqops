@@ -107,6 +107,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			m.wlPrivateData = nil
 		}
 		m.screen = screenPartner
+		m.invalidatePartnerMapCache()
 
 		var cmds []tea.Cmd
 		if callChanged && m.App.Config.QRZUser != "" && m.App.Config.QRZEnabled {

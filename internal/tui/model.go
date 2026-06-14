@@ -135,6 +135,10 @@ type Model struct {
 	keys            KeyMap
 	help            help.Model
 	recentQSOs      *RecentQSOs // read-only Recent QSOs view
+
+	// Partner/map rendering cache — avoids expensive ASCII map generation on every View().
+	partnerMapCache    string
+	partnerMapCacheSig string
 }
 
 type tickMsg time.Time
@@ -710,13 +714,37 @@ func (m *Model) saveConfig(msg string) {
 	}
 }
 
+// partnerMapCacheKey computes a cache key from all inputs that affect
+// the partner/map rendered output. When this key matches, the cached
+// map output can be reused without expensive ASCII generation.
+func (m *Model) partnerMapCacheKey() string {
+	var b strings.Builder
+	b.WriteString(fmt.Sprintf("w%d|h%d|", m.width, m.height))
+	b.WriteString(fmt.Sprintf("own:%s|", m.App.Logbook.Station.Grid))
+	if m.partnerData != nil {
+		b.WriteString(fmt.Sprintf("p:%s|g:%s|lat:%s|lon:%s|",
+			m.partnerData.Callsign,
+			m.partnerData.Grid,
+			m.partnerData.Lat,
+			m.partnerData.Lon))
+	}
+	return b.String()
+}
+
+// invalidatePartnerMapCache clears the partner map cache.
+func (m *Model) invalidatePartnerMapCache() {
+	m.partnerMapCache = ""
+	m.partnerMapCacheSig = ""
+}
+
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
-	// WindowSizeMsg — store dimensions first
+	// WindowSizeMsg — store dimensions first; invalidate map cache on resize
 	if wsm, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width = wsm.Width
 		m.height = wsm.Height
+		m.invalidatePartnerMapCache()
 	}
 
 	// Active confirmation dialog — highest priority, blocks everything else
@@ -828,6 +856,7 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 		return
 	}
 	m.partnerData = d
+	m.invalidatePartnerMapCache() // new partner data means map must re-render
 	if d.Name != "" {
 		m.fields[fieldName].SetValue(d.Name)
 	}
@@ -1053,37 +1082,44 @@ func (m *Model) viewPartner() string {
 		mapAvailH = 3
 	}
 
+	// Use cached map content when the cache signature matches.
+	cacheKey := m.partnerMapCacheKey()
 	var mapInner string
-	ownGrid := m.App.Logbook.Station.Grid
-	partnerGrid := d.Grid
+	if m.partnerMapCacheSig == cacheKey && m.partnerMapCache != "" {
+		mapInner = m.partnerMapCache
+	} else {
+		ownGrid := m.App.Logbook.Station.Grid
+		partnerGrid := d.Grid
 
-	switch {
-	case ownGrid == "":
-		mapInner = DimStyle.Render("Set your grid in station config to enable the map")
-	case partnerGrid == "" && d.Lat == "":
-		mapInner = DimStyle.Render("No partner location — enter a grid or use QRZ lookup")
-	default:
-		// Only attempt full map when enough vertical space exists.
-		if mapAvailH >= NativeMapHeight+5 && mapW >= NativeMapWidth {
-			ownLat, ownLon := gridToLatLon(ownGrid)
-			partnerLat, partnerLon := 0.0, 0.0
+		switch {
+		case ownGrid == "":
+			mapInner = DimStyle.Render("Set your grid in station config to enable the map")
+		case partnerGrid == "" && d.Lat == "":
+			mapInner = DimStyle.Render("No partner location — enter a grid or use QRZ lookup")
+		default:
+			if mapAvailH >= NativeMapHeight+5 && mapW >= NativeMapWidth {
+				ownLat, ownLon := gridToLatLon(ownGrid)
+				partnerLat, partnerLon := 0.0, 0.0
 
-			if partnerGrid != "" {
-				partnerLat, partnerLon = gridToLatLon(partnerGrid)
-			} else if d.Lat != "" {
-				partnerLat = parseCoord(d.Lat)
-				partnerLon = parseCoord(d.Lon)
-			}
+				if partnerGrid != "" {
+					partnerLat, partnerLon = gridToLatLon(partnerGrid)
+				} else if d.Lat != "" {
+					partnerLat = parseCoord(d.Lat)
+					partnerLon = parseCoord(d.Lon)
+				}
 
-			mapStr := renderWorldMap(ownLat, ownLon, partnerLat, partnerLon, mapW, NativeMapHeight)
-			if mapStr != "" {
-				mapInner = mapStr
+				mapStr := renderWorldMap(ownLat, ownLon, partnerLat, partnerLon, mapW, NativeMapHeight)
+				if mapStr != "" {
+					mapInner = mapStr
+				} else {
+					mapInner = DimStyle.Render("Terminal too small for map")
+				}
 			} else {
 				mapInner = DimStyle.Render("Terminal too small for map")
 			}
-		} else {
-			mapInner = DimStyle.Render("Terminal too small for map")
 		}
+		m.partnerMapCacheSig = cacheKey
+		m.partnerMapCache = mapInner
 	}
 
 	mapBox := S.MapBox.Width(bodyW).Render(mapInner)
@@ -1240,217 +1276,6 @@ func (m *Model) renderWLInfo(maxW int) string {
 		lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Center, indent, label, gap, val))
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
-}
-
-func (m *Model) viewForm(width int) string {
-	// width is the exact available space inside the border (already accounts for padding)
-	bodyW := width
-	if bodyW < 20 {
-		bodyW = 20
-	}
-	dim := DimStyle
-	hl := CursorStyle
-	choiceFields := map[field]bool{fieldBand: true, fieldMode: true, fieldSubmode: true}
-
-	// Three columns with equal space: left 7, middle 6, right 5 (comment is special, spans cols 1+2)
-	leftFields := []field{fieldDate, fieldTime, fieldCall, fieldFreq, fieldBand, fieldMode, fieldSubmode}
-	middleFields := []field{fieldRSTSent, fieldRSTRcvd, fieldName, fieldQTH, fieldGrid, fieldCountry}
-	rightFields := []field{fieldTXPower, fieldFreqRx, fieldSOTA, fieldPOTA, fieldWWFF, fieldIOTA}
-
-	colW := (bodyW - 4) / 3 // 4 = two 2-char gaps between three columns
-	if colW < 20 {
-		colW = bodyW // fallback to single column on very narrow terminals
-	}
-
-	renderField := func(f field, w int) string {
-		label := fieldNames[f]
-		raw := strings.TrimSpace(m.fields[f].Value())
-		lbl := S.FormLabel.Align(lipgloss.Left).Render(label)
-
-		choiceIcon := ""
-		if choiceFields[f] {
-			choiceIcon = dim.Render("▼ ")
-		}
-
-		isFocused := int(f) == int(m.focus) && !m.retainFocused
-		// Use textinput.View() so the cursor appears on focused fields
-		tiView := m.fields[f].View()
-		val := choiceIcon
-		if isFocused {
-			val += tiView
-		} else if raw == "" {
-			val += SubtleStyle.Render("\u2014") // visible placeholder
-		} else if f == fieldCall {
-			val += S.Info.Render(raw) // callsign in path-colour
-		} else {
-			val += ValueStyle.Render(raw)
-		}
-
-		gap := lipgloss.NewStyle().Width(1).Render(" ")
-		lblPart := lbl
-		if isFocused {
-			lblPart = hl.Render(" " + lbl)
-		}
-		if !isFocused {
-			lblPart = " " + lbl
-		}
-		return lipgloss.NewStyle().Width(w).Render(
-			lipgloss.JoinHorizontal(lipgloss.Center, lblPart, gap, val),
-		)
-	}
-
-	var b strings.Builder
-
-	rows := len(leftFields)
-	if len(middleFields) > rows {
-		rows = len(middleFields)
-	}
-	if len(rightFields) > rows {
-		rows = len(rightFields)
-	}
-	for i := 0; i < rows; i++ {
-		var cols []string
-		if i < len(leftFields) {
-			cols = append(cols, renderField(leftFields[i], colW))
-		}
-		if i < len(middleFields) {
-			cols = append(cols, renderField(middleFields[i], colW))
-		}
-		if i < len(rightFields) {
-			cols = append(cols, renderField(rightFields[i], colW))
-		}
-		if colW >= 20 {
-			b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, cols...))
-		} else {
-			b.WriteString(lipgloss.JoinVertical(lipgloss.Left, cols...))
-		}
-		b.WriteString("\n")
-	}
-
-	// Comment row spans columns 1+2; Retain checkbox in column 3
-	commentW := colW*2 + 2
-	if commentW < 20 {
-		commentW = bodyW
-	}
-	commentLine := renderField(fieldComment, commentW)
-
-	retainBox := m.renderRetainCheckbox(colW)
-	if colW >= 20 {
-		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, commentLine, retainBox))
-	} else {
-		b.WriteString(lipgloss.JoinVertical(lipgloss.Left, commentLine, retainBox))
-	}
-	b.WriteString("\n")
-
-	return b.String()
-}
-
-func (m *Model) renderRetainCheckbox(colW int) string {
-	mark := "[ ]"
-	label := "Retain"
-	if m.retainComment {
-		mark = "[x]"
-	}
-	gap := lipgloss.NewStyle().Width(1).Render(" ")
-	if m.retainFocused {
-		return lipgloss.NewStyle().Width(colW).Render(
-			lipgloss.JoinHorizontal(lipgloss.Center,
-				CursorStyle.Render(" "+mark),
-				gap,
-				inputStyle.Render(label),
-			),
-		)
-	}
-	if m.retainComment {
-		return lipgloss.NewStyle().Width(colW).Render(
-			lipgloss.JoinHorizontal(lipgloss.Center,
-				lipgloss.NewStyle().Width(1).Render(" "),
-				inputStyle.Render(mark),
-				gap,
-				DimStyle.Render(label),
-			),
-		)
-	}
-	return lipgloss.NewStyle().Width(colW).Render(
-		lipgloss.JoinHorizontal(lipgloss.Center,
-			lipgloss.NewStyle().Width(1).Render(" "),
-			DimStyle.Render(mark),
-			gap,
-			DimStyle.Render(label),
-		),
-	)
-}
-
-func (m *Model) formPathRow(width int) string {
-	ownGrid := formatLocator(m.App.Logbook.Station.Grid)
-	partnerGrid := formatLocator(strings.TrimSpace(m.fields[fieldGrid].Value()))
-
-	// When both grids are available, show distance + bearing.
-	if ownGrid != "" && partnerGrid != "" {
-		line := distanceLine(ownGrid, partnerGrid, m.App.Config.DistanceUnit)
-		if line != "" {
-			line = "Path  " + line
-			// Append new call / new DXCC indicators from WL data
-			if m.wlPrivateData != nil {
-				if !m.wlPrivateData.Worked() {
-					line += "  ·  " + S.Warning.Render("New Call!")
-				}
-				if !m.wlPrivateData.DXCCConfirmed() {
-					line += "  ·  " + S.Warning.Render("New DXCC!")
-				}
-			}
-			if lipgloss.Width(line) > width {
-				line = truncate(line, width)
-			}
-			return lipgloss.NewStyle().
-				Width(width).
-				Align(lipgloss.Center).
-				Foreground(P.Info).
-				Render(line)
-		}
-	}
-
-	// If partner grid is present but own grid is missing, prompt the user.
-	if partnerGrid != "" && ownGrid == "" {
-		return lipgloss.NewStyle().
-			Width(width).
-			Align(lipgloss.Center).
-			Foreground(P.TextMuted).
-			Render("Set your grid in station config to enable path")
-	}
-
-	// No distance data — show aggregate QSO stats + new call/DXCC indicators.
-	counts, err := store.CountQSOs(m.App.DB)
-	if err != nil {
-		counts = store.QSOCounts{}
-	}
-	var parts []string
-	if counts.Total > 0 {
-		parts = append(parts, fmt.Sprintf("Log %d QSOs", counts.Total))
-	}
-	if counts.FromWSJTX > 0 {
-		parts = append(parts, fmt.Sprintf("FTx %d", counts.FromWSJTX))
-	}
-	if counts.ToWavelog > 0 {
-		parts = append(parts, fmt.Sprintf("WL %d", counts.ToWavelog))
-	}
-	if m.wlPrivateData != nil {
-		if !m.wlPrivateData.Worked() {
-			parts = append(parts, S.Warning.Render("New Call!"))
-		}
-		if !m.wlPrivateData.DXCCConfirmed() {
-			parts = append(parts, S.Warning.Render("New DXCC!"))
-		}
-	}
-	line := strings.Join(parts, " · ")
-	if lipgloss.Width(line) > width {
-		line = truncate(line, width)
-	}
-	return lipgloss.NewStyle().
-		Width(width).
-		Align(lipgloss.Center).
-		Foreground(P.TextMuted).
-		Render(line)
 }
 
 func (m *Model) focusField(f field) {
