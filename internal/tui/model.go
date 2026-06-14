@@ -2049,8 +2049,11 @@ func (m *Model) nextField() {
 		m.fields[m.focus].Focus()
 	}
 	if wasCall {
-		m.qrzNeed = true
-		m.qrzCall = strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+		cur := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+		if cur != "" && !strings.EqualFold(cur, m.qrzLastCall) {
+			m.qrzNeed = true
+			m.qrzCall = cur
+		}
 		m.autoFillRST()
 		m.autoFillSSBSubmode()
 	}
@@ -2078,8 +2081,11 @@ func (m *Model) prevField() {
 		m.fields[m.focus].Focus()
 	}
 	if wasCall {
-		m.qrzNeed = true
-		m.qrzCall = strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+		cur := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+		if cur != "" && !strings.EqualFold(cur, m.qrzLastCall) {
+			m.qrzNeed = true
+			m.qrzCall = cur
+		}
 		m.autoFillRST()
 		m.autoFillSSBSubmode()
 	}
