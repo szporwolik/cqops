@@ -6,6 +6,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 type StationForm struct {
@@ -20,32 +21,38 @@ type StationForm struct {
 func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder string) *StationForm {
 	cs := textinput.New()
 	cs.CharLimit = 20
+	cs.SetWidth(28)
 	cs.Placeholder = callsignPlaceholder
 	cs.Focus()
 	cs.Prompt = ""
 
 	op := textinput.New()
 	op.CharLimit = 20
+	op.SetWidth(28)
 	op.Placeholder = opPlaceholder
 	op.Prompt = ""
 
 	lc := textinput.New()
 	lc.CharLimit = 8
+	lc.SetWidth(28)
 	lc.Placeholder = locatorPlaceholder
 	lc.Prompt = ""
 
 	sr := textinput.New()
 	sr.CharLimit = 20
+	sr.SetWidth(28)
 	sr.Placeholder = "e.g. SP/TA-001"
 	sr.Prompt = ""
 
 	pr := textinput.New()
 	pr.CharLimit = 20
+	pr.SetWidth(28)
 	pr.Placeholder = "e.g. SP-0001"
 	pr.Prompt = ""
 
 	wr := textinput.New()
 	wr.CharLimit = 20
+	wr.SetWidth(28)
 	wr.Placeholder = "e.g. SPFF-0001"
 	wr.Prompt = ""
 
@@ -69,7 +76,7 @@ func (f *StationForm) Update(msg tea.KeyPressMsg) {
 		f.Operator.SetValue(strings.ToUpper(f.Operator.Value()))
 	case f.Locator.Focused():
 		f.Locator, _ = f.Locator.Update(msg)
-		f.Locator.SetValue(strings.ToUpper(f.Locator.Value()))
+		f.Locator.SetValue(formatLocator(f.Locator.Value()))
 	case f.SOTARef.Focused():
 		f.SOTARef, _ = f.SOTARef.Update(msg)
 		f.SOTARef.SetValue(strings.ToUpper(f.SOTARef.Value()))
@@ -86,13 +93,13 @@ func (f *StationForm) NextInput() {
 	switch {
 	case f.Callsign.Focused():
 		f.Callsign.Blur()
-		f.Operator.Focus()
+		f.Locator.Focus()
 	case f.Operator.Focused():
 		f.Operator.Blur()
-		f.Locator.Focus()
+		f.SOTARef.Focus()
 	case f.Locator.Focused():
 		f.Locator.Blur()
-		f.SOTARef.Focus()
+		f.Operator.Focus()
 	case f.SOTARef.Focused():
 		f.SOTARef.Blur()
 		f.POTARef.Focus()
@@ -112,10 +119,10 @@ func (f *StationForm) PrevInput() {
 		f.WWFFRef.Focus()
 	case f.Operator.Focused():
 		f.Operator.Blur()
-		f.Callsign.Focus()
+		f.Locator.Focus()
 	case f.Locator.Focused():
 		f.Locator.Blur()
-		f.Operator.Focus()
+		f.Callsign.Focus()
 	case f.SOTARef.Focused():
 		f.SOTARef.Blur()
 		f.Locator.Focus()
@@ -135,7 +142,7 @@ func (f *StationForm) OnLastField() bool {
 func (f *StationForm) Values() (callsign, operator, locator, sotaRef, potaRef, wwffRef string) {
 	return strings.ToUpper(strings.TrimSpace(f.Callsign.Value())),
 		strings.ToUpper(strings.TrimSpace(f.Operator.Value())),
-		strings.ToUpper(strings.TrimSpace(f.Locator.Value())),
+		formatLocator(f.Locator.Value()),
 		strings.TrimSpace(f.SOTARef.Value()),
 		strings.TrimSpace(f.POTARef.Value()),
 		strings.TrimSpace(f.WWFFRef.Value())
@@ -151,28 +158,30 @@ func (f *StationForm) SetValues(callsign, operator, locator, sotaRef, potaRef, w
 }
 
 func (f *StationForm) View() tea.View {
+	labelW := lipgloss.NewStyle().Width(22).Foreground(P.TextMuted)
+
 	var b strings.Builder
-	b.WriteString(formLabelStyle.Render("Callsign:"))
+	b.WriteString(labelW.Render("Callsign:"))
 	b.WriteString(inputStyle.Render(f.Callsign.View()))
 	b.WriteString("\n\n")
 
-	b.WriteString(formLabelStyle.Render("Operator (optional):"))
-	b.WriteString(inputStyle.Render(f.Operator.View()))
-	b.WriteString("\n\n")
-
-	b.WriteString(formLabelStyle.Render("Grid (locator):"))
+	b.WriteString(labelW.Render("Grid locator:"))
 	b.WriteString(inputStyle.Render(f.Locator.View()))
 	b.WriteString("\n\n")
 
-	b.WriteString(formLabelStyle.Render("SOTA Ref (optional):"))
+	b.WriteString(labelW.Render("Operator (optional):"))
+	b.WriteString(inputStyle.Render(f.Operator.View()))
+	b.WriteString("\n\n")
+
+	b.WriteString(labelW.Render("SOTA Ref (optional):"))
 	b.WriteString(inputStyle.Render(f.SOTARef.View()))
 	b.WriteString("\n\n")
 
-	b.WriteString(formLabelStyle.Render("POTA Ref (optional):"))
+	b.WriteString(labelW.Render("POTA Ref (optional):"))
 	b.WriteString(inputStyle.Render(f.POTARef.View()))
 	b.WriteString("\n\n")
 
-	b.WriteString(formLabelStyle.Render("WWFF Ref (optional):"))
+	b.WriteString(labelW.Render("WWFF Ref (optional):"))
 	b.WriteString(inputStyle.Render(f.WWFFRef.View()))
 	return tea.NewView(b.String())
 }

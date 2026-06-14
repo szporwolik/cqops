@@ -74,13 +74,13 @@ func (m *Model) windowTitle() string {
 	callsign := s.Callsign
 	logbook := m.App.LogbookName
 	if callsign == "" && logbook == "" {
-		return "CQOPS"
+		return "CQOps"
 	}
 	if callsign == "" {
-		return "CQOPS \u2014 " + logbook
+		return "CQOps \u2014 " + logbook
 	}
 	if logbook == "" {
-		return "CQOPS \u2014 " + callsign
+		return "CQOps \u2014 " + callsign
 	}
-	return "CQOPS \u2014 " + callsign + " @ " + logbook
+	return "CQOps \u2014 " + callsign + " @ " + logbook
 }

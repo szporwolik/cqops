@@ -6,6 +6,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 type rigFormField int
@@ -33,27 +34,32 @@ type RigForm struct {
 func NewRigForm(rigPlaceholder, antennaPlaceholder, powerPlaceholder string) *RigForm {
 	ri := textinput.New()
 	ri.CharLimit = 30
+	ri.SetWidth(28)
 	ri.Placeholder = rigPlaceholder
 	ri.Focus()
 	ri.Prompt = ""
 
 	an := textinput.New()
 	an.CharLimit = 30
+	an.SetWidth(28)
 	an.Placeholder = antennaPlaceholder
 	an.Prompt = ""
 
 	pw := textinput.New()
 	pw.CharLimit = 10
+	pw.SetWidth(28)
 	pw.Placeholder = powerPlaceholder
 	pw.Prompt = ""
 
 	fh := textinput.New()
 	fh.CharLimit = 40
+	fh.SetWidth(28)
 	fh.Placeholder = "localhost"
 	fh.Prompt = ""
 
 	fp := textinput.New()
 	fp.CharLimit = 6
+	fp.SetWidth(28)
 	fp.Placeholder = "12345"
 	fp.Prompt = ""
 
@@ -84,9 +90,12 @@ func (f *RigForm) Update(msg tea.KeyPressMsg) {
 
 func (f *RigForm) NextInput() {
 	f.blurAll()
-	next := (f.focus + 1) % rigFieldEnd
-	if !f.FlrigEnabled && (next == rigFieldFlrigHost || next == rigFieldFlrigPort) {
-		next = (next + 2) % rigFieldEnd
+	next := f.focus + 1
+	if !f.FlrigEnabled && next == rigFieldFlrigHost {
+		next = rigFieldRig // skip host/port, wrap to start
+	}
+	if next >= rigFieldEnd {
+		next = rigFieldRig
 	}
 	f.focus = next
 	f.focusField()
@@ -95,17 +104,12 @@ func (f *RigForm) NextInput() {
 func (f *RigForm) PrevInput() {
 	f.blurAll()
 	prev := f.focus
-	if prev == 0 {
+	if prev == rigFieldRig {
 		prev = rigFieldEnd
 	}
 	prev--
 	if !f.FlrigEnabled && (prev == rigFieldFlrigPort || prev == rigFieldFlrigHost) {
-		if prev == rigFieldFlrigPort {
-			prev = rigFieldFlrig - 1
-		}
-		if prev == rigFieldFlrigHost {
-			prev = rigFieldFlrig - 1
-		}
+		prev = rigFieldFlrig // skip host/port, land on checkbox
 	}
 	f.focus = rigFormField(prev)
 	f.focusField()
@@ -185,16 +189,18 @@ func (f *RigForm) SetFlrig(enabled bool, host, port string) {
 }
 
 func (f *RigForm) View() tea.View {
+	labelW := lipgloss.NewStyle().Width(22).Foreground(P.TextMuted)
+
 	var b strings.Builder
-	b.WriteString(formLabelStyle.Render("Rig (radio):"))
+	b.WriteString(labelW.Render("Rig (radio):"))
 	b.WriteString(inputStyle.Render(f.Rig.View()))
 	b.WriteString("\n\n")
 
-	b.WriteString(formLabelStyle.Render("Antenna:"))
+	b.WriteString(labelW.Render("Antenna (optional):"))
 	b.WriteString(inputStyle.Render(f.Antenna.View()))
 	b.WriteString("\n\n")
 
-	b.WriteString(formLabelStyle.Render("Power (W):"))
+	b.WriteString(labelW.Render("Power (W) (optional):"))
 	b.WriteString(inputStyle.Render(f.Power.View()))
 	b.WriteString("\n\n")
 
@@ -205,15 +211,15 @@ func (f *RigForm) View() tea.View {
 	if f.focus == rigFieldFlrig {
 		checkbox = cursorStyle.Render(checkbox)
 	}
-	b.WriteString(formLabelStyle.Render("Use flrig:"))
+	b.WriteString(labelW.Render("Use flrig:"))
 	b.WriteString(checkbox)
 
 	if f.FlrigEnabled {
 		b.WriteString("\n\n")
-		b.WriteString(formLabelStyle.Render("Flrig host:"))
+		b.WriteString(labelW.Render("Flrig host:"))
 		b.WriteString(inputStyle.Render(f.FlrigHost.View()))
 		b.WriteString("\n\n")
-		b.WriteString(formLabelStyle.Render("Flrig port:"))
+		b.WriteString(labelW.Render("Flrig port:"))
 		b.WriteString(inputStyle.Render(f.FlrigPort.View()))
 	}
 
@@ -227,7 +233,7 @@ func (f *RigForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 		return func() tea.Msg { return enterOnLastFieldMsg{} }
 	}
 
-	if f.focus == rigFieldFlrig && (k.String() == " " || (k.String() == "enter" && !f.FlrigEnabled)) {
+	if f.focus == rigFieldFlrig && (k.String() == " " || msg.Code == tea.KeySpace) {
 		f.FlrigEnabled = !f.FlrigEnabled
 		if f.FlrigEnabled {
 			if f.FlrigHost.Value() == "" {
