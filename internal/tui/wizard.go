@@ -163,7 +163,7 @@ func (w *Wizard) viewStation() string {
 	b.WriteString("\n\n")
 	b.WriteString(w.station.View().Content)
 	b.WriteString("\n\n")
-	b.WriteString(w.helpLine("Ctrl+S save & next  |  Tab/↓ next field  |  Shift+Tab/↑ previous  |  Ctrl+Q quit"))
+	b.WriteString(w.helpLine("Ctrl+S save & next  |  ↑↓/Tab navigate fields  |  Ctrl+Q quit"))
 	return b.String()
 }
 
@@ -175,7 +175,7 @@ func (w *Wizard) viewRig() string {
 	b.WriteString("\n\n")
 	b.WriteString(w.rigForm.View().Content)
 	b.WriteString("\n\n")
-	b.WriteString(w.helpLine("Ctrl+S save & next  |  Space toggle flrig  |  Tab/↓ next  |  Esc back  |  Ctrl+Q quit"))
+	b.WriteString(w.helpLine("Ctrl+S save & next  |  Space toggle flrig  |  ↑↓/Tab navigate  |  Esc back  |  Ctrl+Q quit"))
 	return b.String()
 }
 

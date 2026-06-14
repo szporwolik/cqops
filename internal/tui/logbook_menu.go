@@ -117,7 +117,7 @@ func (c *LogbookChooser) FooterText() string {
 	case chooserList:
 		return "Enter to switch  e to edit  c to create  d to delete  Esc to go back"
 	case chooserEdit, chooserCreate:
-		return "Ctrl+S to save  Tab/↓/↑ to navigate  Esc to discard"
+		return "Ctrl+S to save  ↑↓/Tab to navigate  Esc to discard"
 	case chooserConfirmDelete:
 		return "Delete this logbook and all its QSOs? (y/N)"
 	}

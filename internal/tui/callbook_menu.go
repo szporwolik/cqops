@@ -143,7 +143,7 @@ func (cm *CallbookMenu) FooterText() string {
 	if cm.testing {
 		return "Testing QRZ.com connection…"
 	}
-	return "Ctrl+S to save  Space/Enter to toggle/select  Tab/↓/↑ to navigate  Esc to go back"
+	return "Ctrl+S to save  Space/Enter to toggle/select  ↑↓/Tab to navigate  Esc to go back"
 }
 
 func (cm *CallbookMenu) View() tea.View {

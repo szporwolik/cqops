@@ -144,7 +144,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit QSO")),
 				key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
 				key.NewBinding(key.WithKeys("p"), key.WithHelp("P", "Purge")),
-				key.NewBinding(key.WithKeys("ctrl+w"), key.WithHelp("Ctrl+W", "Wavelog")),
+				key.NewBinding(key.WithKeys("w"), key.WithHelp("W", "Wavelog")),
 			)
 		}
 	}

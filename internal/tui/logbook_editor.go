@@ -404,7 +404,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch k {
 			case "ctrl+s":
 				return le, le.doSave()
-			case "ctrl+w":
+			case "w":
 				return le, le.doUploadToWavelog()
 			case "esc", "f7":
 				le.mode = edModeList
@@ -432,7 +432,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(le.qsos) > 0 {
 				le.mode = edModeConfirmDelete
 			}
-		case "ctrl+w":
+		case "w":
 			if le.wlURL != "" && le.wlKey != "" && le.wlStationID != "" && len(le.qsos) > 0 {
 				le.mode = edModeConfirmWLSend
 			}

@@ -119,7 +119,7 @@ func (rc *RigChooser) FooterText() string {
 	case rigChooserList:
 		return "Enter to select  e to edit  c to create  d to delete  Esc to go back"
 	case rigChooserEdit, rigChooserCreate:
-		return "Ctrl+S to save  Tab/↓/↑ to navigate  Esc to discard"
+		return "Ctrl+S to save  ↑↓/Tab to navigate  Esc to discard"
 	case rigChooserConfirmDelete:
 		return "Delete this rig? (y/N)"
 	}
