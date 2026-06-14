@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -11,7 +12,9 @@ import (
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/qrz"
 	"github.com/szporwolik/cqops/internal/version"
+	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
 type wizardStep int
@@ -33,12 +36,24 @@ type Wizard struct {
 	wsjtxEnable bool
 	wsjtxHost   textinput.Model
 	wsjtxPort   textinput.Model
-	wsjtxFocus  int // 0=toggle, 1=host, 2=port
+	qrzEnable   bool
+	qrzUser     textinput.Model
+	qrzPass     textinput.Model
+	qrzTesting  bool
+	qrzTestResult string
+	integFocus  int // 0=wsjtx cb, 1=wsjtx host, 2=wsjtx port, 3=qrz cb, 4=qrz user, 5=qrz pass, 6=qrz test
 	tzIndex     int
 	toasts      *ToastQueue
 	width       int
 	height      int
 	Completed   bool // true only when full wizard finished
+
+	// Wavelog async state (for wizard step 1 buttons)
+	wlUpdating   bool
+	wlTesting    bool
+	wlStatus     string
+	wlStations   []wavelog.StationProfile
+	wlStationIdx int
 }
 
 func NewWizard(a *app.App) *Wizard {
@@ -52,15 +67,29 @@ func NewWizard(a *app.App) *Wizard {
 	port.SetWidth(22)
 	port.SetValue("2233")
 
+	qrzUser := newTextinput()
+	qrzUser.CharLimit = 30
+	qrzUser.SetWidth(22)
+	qrzUser.Placeholder = "QRZ.com username"
+
+	qrzPass := newTextinput()
+	qrzPass.CharLimit = 40
+	qrzPass.SetWidth(22)
+	qrzPass.Placeholder = "QRZ.com password"
+	qrzPass.EchoMode = textinput.EchoPassword
+	qrzPass.EchoCharacter = '*'
+
 	applog.Info("Wizard started — first-run setup")
 	return &Wizard{
 		App:         a,
 		step:        stepStation,
 		station:     NewStationForm("", "", ""),
 		rigForm:     NewRigForm("Xiegu G90", "HWEF 20.5", "20"),
-		wsjtxEnable: true,
+		wsjtxEnable: false,
 		wsjtxHost:   host,
 		wsjtxPort:   port,
+		qrzUser:     qrzUser,
+		qrzPass:     qrzPass,
 		tzIndex:     config.SystemTimezoneIndex(),
 		toasts:      NewToastQueue(),
 	}
@@ -85,6 +114,51 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		w.width = msg.Width
 		w.height = msg.Height
 
+	case wlUpdateMsg:
+		w.wlUpdating = false
+		if msg.err != nil {
+			w.wlStatus = msg.err.Error()
+			w.toasts.Error("Wavelog: " + msg.err.Error())
+		} else {
+			w.wlStations = msg.stations
+			w.wlStationIdx = 0
+			if len(msg.stations) > 0 {
+				s := msg.stations[0]
+				w.station.WlStationID.SetValue(fmt.Sprintf("%s — %s (%s) %s", s.ID, s.Callsign, s.Name, s.Gridsquare))
+			}
+			w.wlStatus = fmt.Sprintf("%d stations loaded — Space to cycle", len(msg.stations))
+			w.toasts.Success(fmt.Sprintf("%d stations loaded, use Space to toggle", len(msg.stations)))
+		}
+
+	case wlTestMsg:
+		w.wlTesting = false
+		if msg.err != nil {
+			w.wlStatus = msg.err.Error()
+			w.toasts.Error("Wavelog: " + msg.err.Error())
+		} else {
+			w.wlStatus = "OK — Wavelog reachable"
+			w.toasts.Success("Wavelog connection OK")
+		}
+
+	case wlCycleStation:
+		if len(w.wlStations) > 0 {
+			w.wlStationIdx = (w.wlStationIdx + 1) % len(w.wlStations)
+			s := w.wlStations[w.wlStationIdx]
+			w.station.WlStationID.SetValue(fmt.Sprintf("%s — %s (%s) %s", s.ID, s.Callsign, s.Name, s.Gridsquare))
+		}
+
+	case callbookTestMsg:
+		w.qrzTesting = false
+		if msg.err != nil {
+			w.qrzTestResult = msg.err.Error()
+			w.toasts.Error("QRZ: " + msg.err.Error())
+		} else if msg.ok {
+			w.qrzTestResult = "OK — QRZ.com connected"
+			w.toasts.Success("QRZ connection OK")
+		} else {
+			w.qrzTestResult = "QRZ test failed"
+		}
+
 	case tea.KeyPressMsg:
 		k := msg
 		switch {
@@ -94,6 +168,7 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case k.String() == "esc":
 			if w.step > stepStation {
 				w.step--
+				applog.Debug("Wizard: step back", "step", int(w.step)+1, "total", stepCount)
 				return w, nil
 			}
 
@@ -101,74 +176,209 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch w.step {
 			case stepStation:
 				if cmd := w.station.HandleKey(msg); cmd != nil {
-					cs, _, gr, _, _, _, _, _, _, _ := w.station.Values()
-					if cs == "" {
-						w.toasts.Error("Callsign is required")
-						return w, nil
+					switch cmd().(type) {
+					case enterOnLastFieldMsg:
+						cs, _, gr, _, _, _, wlEnabled, _, _, wlStationID := w.station.Values()
+						if cs == "" {
+							w.toasts.Error("Callsign is required")
+							return w, nil
+						}
+						if gr == "" {
+							w.toasts.Error("Grid locator is required")
+							return w, nil
+						}
+						if wlEnabled {
+							if wlStationID == "" {
+								w.toasts.Error("Wavelog: no Station ID — press Update then Space")
+								return w, nil
+							}
+							if len(w.wlStations) == 0 {
+								w.toasts.Error("No stations loaded — press Update to fetch from Wavelog")
+								return w, nil
+							}
+						}
+						w.step = stepRig
+						applog.InfoDetail("Wizard: station step done", fmt.Sprintf("call=%s grid=%s", cs, gr))
+					case wlCycleStation:
+						if len(w.wlStations) > 0 {
+							w.wlStationIdx = (w.wlStationIdx + 1) % len(w.wlStations)
+							s := w.wlStations[w.wlStationIdx]
+							w.station.WlStationID.SetValue(fmt.Sprintf("%s — %s (%s) %s", s.ID, s.Callsign, s.Name, s.Gridsquare))
+						}
+					case wlUpdateAction:
+						_, _, _, _, _, _, _, wlURL, wlKey, _ := w.station.Values()
+						if wlURL == "" || wlKey == "" {
+							w.toasts.Error("Wavelog URL and API Key are required")
+							return w, nil
+						}
+						w.wlUpdating = true
+						w.wlStatus = "Fetching stations…"
+						return w, func() tea.Msg {
+							stations, err := wavelog.FetchStations(wlURL, wlKey)
+							return wlUpdateMsg{stations: stations, err: err}
+						}
+					case wlTestAction:
+						_, _, _, _, _, _, _, wlURL, wlKey, _ := w.station.Values()
+						if wlURL == "" || wlKey == "" {
+							w.toasts.Error("Wavelog URL and API Key are required")
+							return w, nil
+						}
+						w.wlTesting = true
+						w.wlStatus = "Testing…"
+						return w, func() tea.Msg {
+							if err := wavelog.TestConnection(wlURL, wlKey); err != nil {
+								return wlTestMsg{err: err}
+							}
+							return wlTestMsg{}
+						}
 					}
-					if gr == "" {
-						w.toasts.Error("Grid locator is required")
-						return w, nil
-					}
-					w.step = stepRig
-					applog.InfoDetail("Wizard: station step done", fmt.Sprintf("call=%s grid=%s", cs, gr))
 					return w, nil
 				}
 			case stepRig:
 				if cmd := w.rigForm.HandleKey(msg); cmd != nil {
-					rig, _, _ := w.rigForm.Values()
-					if rig == "" {
-						w.toasts.Error("Rig model is required")
-						return w, nil
+					switch cmd().(type) {
+					case enterOnLastFieldMsg:
+						rig, _, _ := w.rigForm.Values()
+						if rig == "" {
+							w.toasts.Error("Rig model is required")
+							return w, nil
+						}
+						flrigOn, _, _ := w.rigForm.FlrigValues()
+						// Check raw field values (FlrigValues fills defaults, so check directly).
+						rawHost := strings.TrimSpace(w.rigForm.FlrigHost.Value())
+						rawPort := strings.TrimSpace(w.rigForm.FlrigPort.Value())
+						if flrigOn {
+							if rawHost == "" {
+								w.toasts.Error("Flrig host is required when flrig is enabled")
+								return w, nil
+							}
+							if rawPort == "" {
+								w.toasts.Error("Flrig port is required when flrig is enabled")
+								return w, nil
+							}
+						}
+						w.step = stepWSJTX
+						applog.InfoDetail("Wizard: rig step done", fmt.Sprintf("rig=%s flrig=%v", rig, flrigOn))
 					}
-					w.step = stepWSJTX
-					flrigOn, _, _ := w.rigForm.FlrigValues()
-					applog.InfoDetail("Wizard: rig step done", fmt.Sprintf("rig=%s flrig=%v", rig, flrigOn))
 					return w, nil
 				}
 			case stepWSJTX:
-				// Space always toggles WSJT-X at this step
+				// Space toggles checkboxes
 				if k.String() == " " || msg.Code == tea.KeySpace {
-					w.wsjtxEnable = !w.wsjtxEnable
-					return w, nil
-				}
-				// Ctrl+S advances to next step (same as steps 1-2)
-				if k.String() == "ctrl+s" || k.String() == "\x13" {
-					w.step = stepTimezone
-					return w, nil
-				}
-				if k.String() == "tab" || k.String() == "enter" || msg.Code == tea.KeyDown || k.String() == "down" {
-					w.wsjtxFocus++
-					if !w.wsjtxEnable && w.wsjtxFocus > 0 {
-						w.wsjtxFocus = 0
-					}
-					if w.wsjtxFocus > 2 {
-						w.wsjtxFocus = 0
-					}
-					w.updateWSJTXFocus()
-					return w, nil
-				}
-				if msg.Code == tea.KeyUp || k.String() == "shift+tab" || k.String() == "up" {
-					w.wsjtxFocus--
-					if w.wsjtxFocus < 0 {
+					switch w.integFocus {
+					case 0:
+						w.wsjtxEnable = !w.wsjtxEnable
 						if w.wsjtxEnable {
-							w.wsjtxFocus = 2
-						} else {
-							w.wsjtxFocus = 0
+							if w.wsjtxHost.Value() == "" {
+								w.wsjtxHost.SetValue("127.0.0.1")
+							}
+							if w.wsjtxPort.Value() == "" {
+								w.wsjtxPort.SetValue("2233")
+							}
+						}
+					case 3:
+						w.qrzEnable = !w.qrzEnable
+					}
+					return w, nil
+				}
+				// Enter triggers Test button
+				if k.String() == "enter" && w.integFocus == 6 {
+					user := strings.TrimSpace(w.qrzUser.Value())
+					pass := w.qrzPass.Value()
+					if user == "" || pass == "" {
+						w.toasts.Error("QRZ username and password required")
+						return w, nil
+					}
+					w.qrzTesting = true
+					w.qrzTestResult = "Testing…"
+					return w, func() tea.Msg {
+						_, err := qrz.Lookup(user, pass, "SP9MOA")
+						if err != nil {
+							return callbookTestMsg{ok: false, err: err}
+						}
+						return callbookTestMsg{ok: true}
+					}
+				}
+				// Ctrl+S advances
+				if k.String() == "ctrl+s" || k.String() == "\x13" {
+					if w.wsjtxEnable {
+						if strings.TrimSpace(w.wsjtxHost.Value()) == "" {
+							w.toasts.Error("UDP Host is required when WSJT-X is enabled")
+							return w, nil
+						}
+						if strings.TrimSpace(w.wsjtxPort.Value()) == "" {
+							w.toasts.Error("UDP Port is required when WSJT-X is enabled")
+							return w, nil
 						}
 					}
-					w.updateWSJTXFocus()
+					if w.qrzEnable {
+						if strings.TrimSpace(w.qrzUser.Value()) == "" {
+							w.toasts.Error("QRZ username is required when QRZ is enabled")
+							return w, nil
+						}
+						if w.qrzPass.Value() == "" {
+							w.toasts.Error("QRZ password is required when QRZ is enabled")
+							return w, nil
+						}
+					}
+					w.step = stepTimezone
+				_, _, _, _, _, _, wlOn, _, _, _ := w.station.Values()
+				applog.InfoDetail("Wizard: integrations step done", fmt.Sprintf("wsjtx=%v qrz=%v wavelog=%v", w.wsjtxEnable, w.qrzEnable, wlOn))
 					return w, nil
 				}
-				switch w.wsjtxFocus {
+				// Tab / Down navigation
+				if k.String() == "tab" || msg.Code == tea.KeyDown || k.String() == "down" {
+					w.integFocus++
+					// Skip hidden WSJT-X sub-fields: jump to QRZ checkbox
+					if !w.wsjtxEnable && w.integFocus >= 1 && w.integFocus <= 2 {
+						w.integFocus = 3
+					}
+					// Skip hidden QRZ sub-fields: wrap to WSJT-X checkbox
+					if !w.qrzEnable && w.integFocus >= 4 && w.integFocus <= 6 {
+						w.integFocus = 0
+					}
+					if w.integFocus > 6 {
+						w.integFocus = 0
+					}
+					w.updateIntegFocus()
+					return w, nil
+				}
+				// Shift+Tab / Up navigation
+				if msg.Code == tea.KeyUp || k.String() == "shift+tab" || k.String() == "up" {
+					w.integFocus--
+					// Skip hidden QRZ sub-fields going up: jump to QRZ checkbox
+					if !w.qrzEnable && w.integFocus >= 4 && w.integFocus <= 6 {
+						w.integFocus = 3
+					}
+					// Skip hidden WSJT-X sub-fields going up: jump to WSJT-X checkbox
+					if !w.wsjtxEnable && w.integFocus >= 1 && w.integFocus <= 2 {
+						w.integFocus = 0
+					}
+					if w.integFocus < 0 {
+						if w.qrzEnable {
+							w.integFocus = 6
+						} else {
+							w.integFocus = 3
+						}
+					}
+					w.updateIntegFocus()
+					return w, nil
+				}
+				// Text input for focused fields
+				switch w.integFocus {
 				case 1:
 					w.wsjtxHost, _ = w.wsjtxHost.Update(msg)
 				case 2:
 					w.wsjtxPort, _ = w.wsjtxPort.Update(msg)
+				case 4:
+					w.qrzUser, _ = w.qrzUser.Update(msg)
+				case 5:
+					w.qrzPass, _ = w.qrzPass.Update(msg)
 				}
 			case stepTimezone:
 				if k.String() == "ctrl+s" || k.String() == "\x13" {
 					w.step = stepSummary
+					applog.InfoDetail("Wizard: timezone step done", fmt.Sprintf("tz=%s", config.Timezones[w.tzIndex]))
 					return w, nil
 				}
 				if msg.Code == tea.KeyUp || k.String() == "up" || k.String() == "k" {
@@ -220,7 +430,7 @@ func (w *Wizard) View() tea.View {
 	v := tea.NewView(finalView)
 	v.AltScreen = true
 	v.WindowTitle = "CQOps — Setup Wizard"
-	v.BackgroundColor = P.Background
+	v.BackgroundColor = P.Surface
 	return v
 }
 
@@ -252,6 +462,7 @@ func (w *Wizard) wizardFormBox() lipgloss.Style {
 		Width(formW).
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(P.TextDim).
+		Background(P.Surface).
 		Padding(1, 2)
 }
 
@@ -259,7 +470,7 @@ func (w *Wizard) wizardFormBox() lipgloss.Style {
 // and help bar using Bubble Tea ecosystem functions (lipgloss.JoinVertical,
 // MaxHeight clipping — same pattern as model.go).
 func (w *Wizard) wizardLayout(body string, help string) string {
-	h, tw := w.clampedDims()
+	_, tw := w.clampedDims()
 	center := lipgloss.NewStyle().Width(tw).Align(lipgloss.Center)
 
 	// Compose top section: banner + gap + indicator + body
@@ -270,11 +481,14 @@ func (w *Wizard) wizardLayout(body string, help string) string {
 		center.Render(body),
 	)
 
-	// Pad to leave exactly one row for the help bar at the bottom
+	// Fill to terminal height with Surface background so there are
+	// no color gaps between the banner, form box, and help bar.
+	bg := lipgloss.NewStyle().Background(P.Surface)
+	h, tw := w.clampedDims()
 	contentH := h - lipgloss.Height(help)
-	top = fillBody(top, contentH)
+	top = bg.Height(contentH).MaxHeight(contentH).Render(top)
 
-	return lipgloss.JoinVertical(lipgloss.Left, top, help)
+	return bg.Width(tw).Render(lipgloss.JoinVertical(lipgloss.Left, top, help))
 }
 
 // ── Banner ───────────────────────────────────────────────────────
@@ -300,16 +514,33 @@ func (w *Wizard) banner() string {
 func (w *Wizard) stepIndicator() string {
 	current := int(w.step) + 1
 	total := int(stepCount)
-	return S.Title.Render(fmt.Sprintf("First time wizard — Step %d/%d", current, total))
+	name := ""
+	switch w.step {
+	case stepStation:
+		name = "Station & Logbook"
+	case stepRig:
+		name = "Rig"
+	case stepWSJTX:
+		name = "Integrations"
+	case stepTimezone:
+		name = "General"
+	case stepSummary:
+		name = "Summary"
+	}
+	return S.Title.Render(fmt.Sprintf("First time wizard — Step %d/%d — %s", current, total, name))
 }
 
-func (w *Wizard) updateWSJTXFocus() {
-	blurTextinputs(&w.wsjtxHost, &w.wsjtxPort)
-	switch w.wsjtxFocus {
+func (w *Wizard) updateIntegFocus() {
+	blurTextinputs(&w.wsjtxHost, &w.wsjtxPort, &w.qrzUser, &w.qrzPass)
+	switch w.integFocus {
 	case 1:
 		w.wsjtxHost.Focus()
 	case 2:
 		w.wsjtxPort.Focus()
+	case 4:
+		w.qrzUser.Focus()
+	case 5:
+		w.qrzPass.Focus()
 	}
 }
 
@@ -317,7 +548,7 @@ func (w *Wizard) updateWSJTXFocus() {
 
 func (w *Wizard) viewStation() string {
 	body := w.wizardFormBox().Render(w.station.View().Content)
-	help := HelpStyle.Render("Ctrl+S save & next  |  ↑↓/Tab navigate fields  |  F10 quit")
+	help := HelpStyle.Render("Ctrl+S Save & Next  |  Tab Navigate  |  Space Toggle  |  F10 Quit")
 	return w.wizardLayout(body, help)
 }
 
@@ -328,42 +559,101 @@ func (w *Wizard) viewRig() string {
 }
 
 func (w *Wizard) viewWSJTX() string {
-	labelW := lipgloss.NewStyle().Width(22).Foreground(P.TextMuted)
-
-	checkbox := "[ ]"
-	cbStyle := DimStyle
-	if w.wsjtxEnable {
-		checkbox = "[x]"
-		cbStyle = S.WizardSelected
-	}
-	if w.wsjtxFocus == 0 {
-		checkbox = cursorStyle.Render(checkbox)
-	}
+	bg := lipgloss.NewStyle().Background(P.Surface)
 
 	var inner strings.Builder
-	inner.WriteString(labelW.Render("WSJT-X:"))
-	inner.WriteString(cbStyle.Render(checkbox))
+
+	// ── WSJT-X section ──
+	wsjtxCb := "[ ]"
+	if w.wsjtxEnable {
+		wsjtxCb = "[x]"
+	}
+	wsjtxPrefix := "  "
+	wsjtxLabel := LabelStyle.Render(fit("WSJT-X:", 14))
+	if w.integFocus == 0 {
+		wsjtxPrefix = CursorStyle.Render("> ")
+		wsjtxLabel = CursorStyle.Render(fit("WSJT-X:", 14))
+		wsjtxCb = CursorStyle.Render(wsjtxCb)
+	} else {
+		wsjtxCb = bg.Render(wsjtxCb)
+	}
+	inner.WriteString(menuLine(wsjtxPrefix+wsjtxLabel+bg.Render(" ")+wsjtxCb, 80))
 	inner.WriteString("\n")
 
 	if w.wsjtxEnable {
+		inner.WriteString(renderIntegField("  UDP Host:", &w.wsjtxHost, w.integFocus == 1, false, 80))
+		inner.WriteString(renderIntegField("  UDP Port:", &w.wsjtxPort, w.integFocus == 2, false, 80))
+	}
+
+	// ── QRZ section ──
+	qrzCb := "[ ]"
+	if w.qrzEnable {
+		qrzCb = "[x]"
+	}
+	qrzPrefix := "  "
+	qrzLabel := LabelStyle.Render(fit("QRZ.com:", 14))
+	if w.integFocus == 3 {
+		qrzPrefix = CursorStyle.Render("> ")
+		qrzLabel = CursorStyle.Render(fit("QRZ.com:", 14))
+		qrzCb = CursorStyle.Render(qrzCb)
+	} else {
+		qrzCb = bg.Render(qrzCb)
+	}
+	inner.WriteString(menuLine(qrzPrefix+qrzLabel+bg.Render(" ")+qrzCb, 80))
+	inner.WriteString("\n")
+
+	if w.qrzEnable {
+		inner.WriteString(renderIntegField("  Username:", &w.qrzUser, w.integFocus == 4, false, 80))
+		inner.WriteString(renderIntegField("  Password:", &w.qrzPass, w.integFocus == 5, true, 80))
+
+		// Test button inline with fields
+		testBtn := "[ Test ]"
+		testPrefix := "    " // align with field values (prefix + label indent)
+		if w.integFocus == 6 {
+			testPrefix = CursorStyle.Render("  > ")
+			testBtn = CursorStyle.Render(testBtn)
+		}
+		status := ""
+		if w.qrzTesting {
+			status = SubtleStyle.Render("Testing…")
+		} else if w.qrzTestResult != "" {
+			if strings.Contains(w.qrzTestResult, "OK") {
+				status = SuccessStyle.Render(w.qrzTestResult)
+			} else {
+				status = ErrorStyle.Render(w.qrzTestResult)
+			}
+		}
+		inner.WriteString(menuLine(testPrefix+testBtn+bg.Render("  ")+status, 80))
 		inner.WriteString("\n")
-		inner.WriteString(labelW.Render("UDP Host:"))
-		inner.WriteString(inputStyle.Render(w.wsjtxHost.View()))
-		inner.WriteString("\n\n")
-		inner.WriteString(labelW.Render("UDP Port:"))
-		inner.WriteString(inputStyle.Render(w.wsjtxPort.View()))
-		inner.WriteString("\n\n")
-		inner.WriteString(DimStyle.Render("WSJT-X → Settings → Reporting → UDP Server"))
 	}
 
 	body := w.wizardFormBox().Render(inner.String())
-	help := HelpStyle.Render("Ctrl+S save & next  |  Space toggle  |  ↑↓/Tab navigate  |  Esc back  |  F10 quit")
+	help := HelpStyle.Render("Ctrl+S Save & Next  |  Space Toggle  |  Enter Test  |  Tab Navigate  |  Esc Back  |  F10 Quit")
 	return w.wizardLayout(body, help)
 }
 
+// renderIntegField renders a labelled textinput line for the integrations step.
+func renderIntegField(label string, ti *textinput.Model, focused bool, masked bool, maxW int) string {
+	bg := lipgloss.NewStyle().Background(P.Surface)
+	prefix := "  "
+	lbl := LabelStyle.Render(fit(label, 14))
+	raw := strings.TrimSpace(ti.Value())
+	var val string
+	if focused {
+		prefix = CursorStyle.Render("> ")
+		lbl = CursorStyle.Render(fit(label, 14))
+		val = ti.View()
+	} else if raw == "" {
+		val = SubtleStyle.Render("\u2014")
+	} else if masked {
+		val = ValueStyle.Render(strings.Repeat("*", len(raw)))
+	} else {
+		val = ValueStyle.Render(raw)
+	}
+	return menuLine(prefix+lbl+bg.Render(" ")+val, maxW) + "\n"
+}
+
 func (w *Wizard) viewTimezone() string {
-	selectedStyle := S.WizardSelected
-	dimStyle := S.WizardDim
 	detectedIdx := config.SystemTimezoneIndex()
 
 	start := w.tzIndex - 4
@@ -379,28 +669,24 @@ func (w *Wizard) viewTimezone() string {
 		}
 	}
 
-	var lines []string
+	var inner strings.Builder
 	for i := start; i < end; i++ {
 		tz := config.Timezones[i]
+		prefix := "  "
+		label := LabelStyle.Render(fit(tz, 30))
 		if i == w.tzIndex {
-			lines = append(lines, selectedStyle.Render("> "+tz))
-		} else {
-			lines = append(lines, "  "+tz)
+			prefix = CursorStyle.Render("> ")
+			label = CursorStyle.Render(fit(tz, 30))
 		}
+		inner.WriteString(menuLine(prefix+label, 80))
+		inner.WriteString("\n")
 	}
 
-	// Detected timezone info below the list
 	detected := config.Timezones[detectedIdx]
-	info := dimStyle.Render("System detected: " + detected)
+	inner.WriteString(menuLine(DimStyle.Render("  System: "+detected), 80))
 
-	inner := lipgloss.JoinVertical(lipgloss.Left,
-		lipgloss.JoinVertical(lipgloss.Left, lines...),
-		"",
-		info,
-	)
-
-	body := w.wizardFormBox().Render(inner)
-	help := HelpStyle.Render("Ctrl+S next  |  ↑↓ choose  |  Esc back  |  F10 quit")
+	body := w.wizardFormBox().Render(inner.String())
+	help := HelpStyle.Render("Ctrl+S Save & Next  |  ↑↓ Choose  |  Esc Back  |  F10 Quit")
 	return w.wizardLayout(body, help)
 }
 
@@ -411,10 +697,8 @@ func (w *Wizard) viewSummary() string {
 		S.WizardDim.Render("Your configuration file is almost complete."),
 		"",
 		S.WizardDim.Render("We recommend visiting the Configuration menu after"),
-		S.WizardDim.Render("starting the program to enter:"),
-		"",
-		DimStyle.Render("  • QRZ.com credentials (Callbook)"),
-		DimStyle.Render("  • Wavelog integration settings"),
+		S.WizardDim.Render("starting the program to set additional options and"),
+		S.WizardDim.Render("enable new features."),
 		"",
 		S.WizardAccent.Render("Press Ctrl+S to generate the configuration"),
 		S.WizardAccent.Render("file and start the program."),
@@ -429,14 +713,15 @@ func (w *Wizard) viewSummary() string {
 
 func (w *Wizard) handleEnter() tea.Cmd {
 	w.App.Config.General.Timezone = config.Timezones[w.tzIndex]
-	applog.Info("Wizard: timezone selected", "timezone", config.Timezones[w.tzIndex])
+	applog.InfoDetail("Wizard: summary step done — saving config", fmt.Sprintf("tz=%s", config.Timezones[w.tzIndex]))
 	w.saveConfig()
 	w.Completed = true
+	applog.Info("Wizard completed — launching CQOPS")
 	return tea.Quit
 }
 
 func (w *Wizard) saveConfig() {
-	cs, op, gr, sotaRef, potaRef, wwffRef, _, _, _, _ := w.station.Values()
+	cs, op, gr, sotaRef, potaRef, wwffRef, wlEnabled, wlURL, wlKey, wlStationID := w.station.Values()
 	rig, ant, pwr := w.rigForm.Values()
 	flrigEnabled, flrigHost, flrigPort := w.rigForm.FlrigValues()
 
@@ -458,7 +743,33 @@ func (w *Wizard) saveConfig() {
 	w.App.Config.WSJTX.Enabled = w.wsjtxEnable
 	if w.wsjtxEnable {
 		w.App.Config.WSJTX.UDPHost = strings.TrimSpace(w.wsjtxHost.Value())
-		w.App.Config.WSJTX.UDPPort = 2233
+		port, _ := strconv.Atoi(strings.TrimSpace(w.wsjtxPort.Value()))
+		if port > 0 {
+			w.App.Config.WSJTX.UDPPort = port
+		} else {
+			w.App.Config.WSJTX.UDPPort = 2233
+		}
+	}
+
+	w.App.Config.QRZ.Enabled = w.qrzEnable
+	if w.qrzEnable {
+		w.App.Config.QRZ.User = strings.TrimSpace(w.qrzUser.Value())
+		w.App.Config.QRZ.Pass = w.qrzPass.Value()
+	}
+
+	var wl *config.WavelogConfig
+	if wlEnabled && wlURL != "" && wlKey != "" {
+		sid := wlStationID
+		// Extract actual station ID from the selected station if available
+		if w.wlStationIdx >= 0 && w.wlStationIdx < len(w.wlStations) {
+			sid = w.wlStations[w.wlStationIdx].ID
+		}
+		wl = &config.WavelogConfig{
+			Enabled:          wlEnabled,
+			URL:              wlURL,
+			APIKey:           wlKey,
+			StationProfileID: sid,
+		}
 	}
 
 	w.App.Config.Logbooks["default"] = config.Logbook{
@@ -472,11 +783,12 @@ func (w *Wizard) saveConfig() {
 			POTARef:  potaRef,
 			WWFFRef:  wwffRef,
 		},
+		Wavelog: wl,
 	}
 
 	lb := w.App.Config.Logbooks["default"]
 	w.App.Logbook = &lb
 
-	applog.InfoDetail("Wizard completed", fmt.Sprintf("call=%s rig=%s flrig=%v wsjtx=%v tz=%s",
-		cs, rig, flrigEnabled, w.wsjtxEnable, config.Timezones[w.tzIndex]))
+	applog.InfoDetail("Wizard completed", fmt.Sprintf("call=%s rig=%s flrig=%v wsjtx=%v wavelog=%v tz=%s",
+		cs, rig, flrigEnabled, w.wsjtxEnable, wlEnabled, config.Timezones[w.tzIndex]))
 }

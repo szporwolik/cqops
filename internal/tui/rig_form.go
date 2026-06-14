@@ -198,7 +198,7 @@ func (f *RigForm) View() tea.View {
 	var b strings.Builder
 
 	// Rig
-	b.WriteString(menuLine(renderField("Rig (radio):", &f.Rig, f.focus == rigFieldRig, 80), 80))
+	b.WriteString(menuLine(renderField("Rig model:", &f.Rig, f.focus == rigFieldRig, 80), 80))
 	b.WriteString("\n")
 
 	// Antenna
@@ -257,7 +257,7 @@ func (f *RigForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 	}
 
-	if k.String() == "tab" || msg.Code == tea.KeyDown || k.String() == "enter" {
+	if k.String() == "tab" || msg.Code == tea.KeyDown {
 		f.NextInput()
 		return nil
 	}

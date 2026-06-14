@@ -402,12 +402,18 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 
 	// Build Wavelog config from form.
 	var wl *config.WavelogConfig
-	if wlEnabled && wlURL != "" && wlKey != "" {
-		wl = &config.WavelogConfig{
-			Enabled:          wlEnabled,
-			URL:              wlURL,
-			APIKey:           wlKey,
-			StationProfileID: wlStationID,
+	if wlEnabled {
+		if wlStationID == "" {
+			c.toasts.Error("Wavelog enabled but Station ID not set — press Update to fetch")
+			return nil
+		}
+		if wlURL != "" && wlKey != "" {
+			wl = &config.WavelogConfig{
+				Enabled:          wlEnabled,
+				URL:              wlURL,
+				APIKey:           wlKey,
+				StationProfileID: wlStationID,
+			}
 		}
 	}
 

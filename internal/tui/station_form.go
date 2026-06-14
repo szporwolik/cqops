@@ -119,7 +119,11 @@ func (f *StationForm) NextInput() {
 		f.wlCbFocus = true
 	case f.wlCbFocus:
 		f.wlCbFocus = false
-		f.WlURL.Focus()
+		if f.WlEnabled {
+			f.WlURL.Focus()
+		} else {
+			f.Callsign.Focus()
+		}
 	case f.WlURL.Focused():
 		f.WlURL.Blur()
 		f.WlKey.Focus()
@@ -141,7 +145,11 @@ func (f *StationForm) PrevInput() {
 	switch {
 	case f.Callsign.Focused():
 		f.Callsign.Blur()
-		f.wlBtnFocus = 2
+		if f.WlEnabled {
+			f.wlBtnFocus = 2
+		} else {
+			f.wlCbFocus = true
+		}
 	case f.wlBtnFocus == 2:
 		f.wlBtnFocus = 1
 	case f.wlBtnFocus == 1:
@@ -343,7 +351,7 @@ func (f *StationForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 			return func() tea.Msg { return wlTestAction{} }
 		}
 	}
-	if k.String() == "tab" || msg.Code == tea.KeyDown || k.String() == "enter" {
+	if k.String() == "tab" || msg.Code == tea.KeyDown {
 		f.NextInput()
 		return nil
 	}
