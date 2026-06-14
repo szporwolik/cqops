@@ -49,4 +49,7 @@ func (m *Model) helpView() string {
 }
 
 // renderHelpBar is the canonical entry point for help bar rendering.
-func (m *Model) renderHelpBar() string { return m.helpView() }
+// The \x1b[0m reset clears any background colour that may have leaked
+// from the body content above (e.g. trailing ANSI sequences from table
+// cells, form fields, or border characters).
+func (m *Model) renderHelpBar() string { return "\x1b[0m" + m.helpView() }

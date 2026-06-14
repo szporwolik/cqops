@@ -193,7 +193,7 @@ var S = Styles{
 	ErrorStyle:  lipgloss.NewStyle().Foreground(P.Error),
 	WarningStyle: lipgloss.NewStyle().Foreground(P.Warning),
 	SuccessStyle: lipgloss.NewStyle().Foreground(P.Success),
-	HelpStyle:   lipgloss.NewStyle().Foreground(P.TextMuted).Background(P.Surface),
+	HelpStyle:   lipgloss.NewStyle().Foreground(P.TextMuted),
 	LabelStyle:  lipgloss.NewStyle().Foreground(P.TextMuted).Background(P.Surface),
 	ValueStyle:  lipgloss.NewStyle().Foreground(P.Text).Background(P.Surface),
 	CursorStyle: lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Background(P.Surface),
