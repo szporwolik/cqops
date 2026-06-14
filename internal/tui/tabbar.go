@@ -7,6 +7,7 @@ import (
 )
 
 // tabView renders the function-key tab bar below the status bar.
+// F1-F2 tabs are left-aligned; F6-F8 tabs are right-aligned.
 func (m *Model) tabView() string {
 	hasPartner := m.partnerData != nil || strings.TrimSpace(m.fields[fieldCall].Value()) != ""
 
@@ -15,28 +16,40 @@ func (m *Model) tabView() string {
 		active   bool
 		disabled bool
 	}
-	tabs := []tab{
+
+	leftTabs := []tab{
 		{"F1 QSO Form", m.screen == screenQSO && m.confirm == nil, false},
 		{"F2 Partner", m.screen == screenPartner && hasPartner, !hasPartner},
-		{"F7 Log Editor", m.screen == screenLogbookEditor, false},
-		{"F8 Config", m.screen == screenMainMenu || m.screen == screenConfig || m.screen == screenCallbook || m.screen == screenIntegration || m.screen == screenChooser || m.screen == screenRigEdit, false},
-		{"F9 Logs", m.screen == screenLogView, false},
+	}
+	rightTabs := []tab{
+		{"F6 Log Editor", m.screen == screenLogbookEditor, false},
+		{"F7 Config", m.screen == screenMainMenu || m.screen == screenConfig || m.screen == screenCallbook || m.screen == screenIntegration || m.screen == screenChooser || m.screen == screenRigEdit, false},
+		{"F8 Logs", m.screen == screenLogView, false},
 	}
 
-	var parts []string
-	for _, t := range tabs {
-		s := S.TabInactive
-		if t.active {
-			s = S.TabActive
+	renderGroup := func(tabs []tab) string {
+		var parts []string
+		for _, t := range tabs {
+			s := S.TabInactive
+			if t.active {
+				s = S.TabActive
+			}
+			if t.disabled {
+				s = S.TabDisabled
+			}
+			parts = append(parts, s.Render(" "+t.label+" "))
 		}
-		if t.disabled {
-			s = S.TabDisabled
-		}
-		parts = append(parts, s.Render(" "+t.label+" "))
+		return strings.Join(parts, S.TabGap.Render(" "))
 	}
 
-	row := strings.Join(parts, S.TabGap.Render(" "))
-	return S.TabBar.Width(m.width).Render(row)
+	left := renderGroup(leftTabs)
+	right := renderGroup(rightTabs)
+
+	fillerW := m.width - lipgloss.Width(left) - lipgloss.Width(right)
+	if fillerW < 1 {
+		fillerW = 1
+	}
+	return left + strings.Repeat(" ", fillerW) + right
 }
 
 // renderProfileLine returns station details (operator, rig, antenna, etc.).

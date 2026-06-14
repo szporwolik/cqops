@@ -33,10 +33,29 @@ func (m *Model) headerView() string {
 
 	right := lipgloss.JoinHorizontal(lipgloss.Top,
 		statusDotStyled(m.inetOnline, "Net"),
-		statusDotStyled(m.wsjtxOnline, "WSJT"),
-		statusDotStyled(m.rigConnected, "Rig"),
-		statusDotStyled(m.wlOnline, "WL"),
+	)
+	if m.App.Config.WSJTX.Enabled {
+		right = lipgloss.JoinHorizontal(lipgloss.Top,
+			right,
+			statusDotStyled(m.wsjtxOnline, "WSJT"),
+		)
+	}
+	if cfgRig, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok && cfgRig.FlrigEnabled {
+		right = lipgloss.JoinHorizontal(lipgloss.Top,
+			right,
+			statusDotStyled(m.rigConnected, "Rig"),
+		)
+	}
+	if m.App.Config.Wavelog.Enabled {
+		right = lipgloss.JoinHorizontal(lipgloss.Top,
+			right,
+			statusDotStyled(m.wlOnline, "WL"),
+		)
+	}
+	right = lipgloss.JoinHorizontal(lipgloss.Top,
+		right,
 		S.StatusRight.Render(" "),
+		S.StatusLabel.Render("UTC "),
 		S.StatusTime.Render(utc.Format("15:04:05")),
 	)
 
@@ -45,7 +64,7 @@ func (m *Model) headerView() string {
 		fillerW = 1
 	}
 
-	return left + S.StatusFill.Render(strings.Repeat(" ", fillerW)) + right
+	return left + strings.Repeat(" ", fillerW) + right
 }
 
 // statusDotStyled renders an integration indicator dot with label.
