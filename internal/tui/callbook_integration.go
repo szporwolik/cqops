@@ -15,10 +15,14 @@ import (
 // QRZ and Wavelog callbook lookup integration.
 // =============================================================================
 
+// qrzLookupFunc is the function used for QRZ lookups. It defaults to
+// qrz.Lookup but can be replaced in tests for mock-based verification.
+var qrzLookupFunc = qrz.Lookup
+
 // qrzLookupCmd returns a tea.Cmd that performs a QRZ lookup.
 func (m *Model) qrzLookupCmd(call string) tea.Cmd {
 	return func() tea.Msg {
-		data, err := qrz.Lookup(m.App.Config.QRZUser, m.App.Config.QRZPass, call)
+		data, err := qrzLookupFunc(m.App.Config.QRZUser, m.App.Config.QRZPass, call)
 		return qrzResultMsg{Call: call, Data: data, Err: err}
 	}
 }

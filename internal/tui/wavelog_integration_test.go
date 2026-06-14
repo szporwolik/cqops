@@ -360,3 +360,134 @@ func TestWavelogUploadADIFNoStationProfile(t *testing.T) {
 		t.Error("uploadADIFToWavelog should return nil when station profile is empty")
 	}
 }
+
+// =============================================================================
+// Wavelog station-info / FetchStations mock tests
+// =============================================================================
+
+func TestWavelogStatusCheckWithStations(t *testing.T) {
+	// Mock version handler first, but we need to also mock station_info
+	// The checkWavelogCmd calls TestConnection first, then FetchStations
+	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/version":
+			json.NewEncoder(w).Encode(map[string]string{"status": "ok", "version": "1.0"})
+		case "/api/station_info/test-key":
+			json.NewEncoder(w).Encode([]map[string]string{
+				{
+					"station_id":           "1",
+					"station_profile_name": "Home QTH",
+					"station_gridsquare":   "JO90",
+					"station_callsign":     "SP9MOA",
+					"station_active":       "1",
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	m.App.Config.Wavelog.Enabled = true
+	m.App.Config.Wavelog.URL = srv.URL
+	m.App.Config.Wavelog.APIKey = "test-key"
+	m.App.Config.Wavelog.StationProfileID = "1"
+	m.wlOnline = false
+
+	cmd := m.checkWavelogCmd()
+	if cmd == nil {
+		t.Fatal("checkWavelogCmd should return a command")
+	}
+
+	msg := cmd()
+	status, ok := msg.(wlStatusMsg)
+	if !ok {
+		t.Fatalf("Expected wlStatusMsg, got %T", msg)
+	}
+	if !status.online {
+		t.Error("Status should report online with mock server + stations")
+	}
+	if status.stationName != "JO90 / SP9MOA" {
+		t.Errorf("stationName = %q; want JO90 / SP9MOA", status.stationName)
+	}
+	if status.stationLabel != "Home QTH" {
+		t.Errorf("stationLabel = %q; want Home QTH", status.stationLabel)
+	}
+}
+
+func TestWavelogStatusCheckNoStations(t *testing.T) {
+	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/version":
+			json.NewEncoder(w).Encode(map[string]string{"status": "ok", "version": "1.0"})
+		case "/api/station_info/test-key":
+			json.NewEncoder(w).Encode([]map[string]string{}) // empty
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	m.App.Config.Wavelog.Enabled = true
+	m.App.Config.Wavelog.URL = srv.URL
+	m.App.Config.Wavelog.APIKey = "test-key"
+	m.App.Config.Wavelog.StationProfileID = "1"
+	m.wlOnline = false
+
+	cmd := m.checkWavelogCmd()
+	if cmd == nil {
+		t.Fatal("checkWavelogCmd should return a command")
+	}
+
+	msg := cmd()
+	status, ok := msg.(wlStatusMsg)
+	if !ok {
+		t.Fatalf("Expected wlStatusMsg, got %T", msg)
+	}
+	// Should still report online even with no stations
+	if !status.online {
+		t.Error("Status should report online even with empty stations list")
+	}
+}
+
+func TestWavelogStatusCheckMalformedStations(t *testing.T) {
+	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/version":
+			json.NewEncoder(w).Encode(map[string]string{"status": "ok", "version": "1.0"})
+		case "/api/station_info/test-key":
+			// Return malformed JSON
+			w.Write([]byte("not json"))
+		default:
+			http.NotFound(w, r)
+		}
+	})
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	m.App.Config.Wavelog.Enabled = true
+	m.App.Config.Wavelog.URL = srv.URL
+	m.App.Config.Wavelog.APIKey = "test-key"
+	m.App.Config.Wavelog.StationProfileID = "1"
+	m.wlOnline = false
+
+	cmd := m.checkWavelogCmd()
+	if cmd == nil {
+		t.Fatal("checkWavelogCmd should return a command")
+	}
+
+	msg := cmd()
+	status, ok := msg.(wlStatusMsg)
+	if !ok {
+		t.Fatalf("Expected wlStatusMsg, got %T", msg)
+	}
+	// Should still report online — stations fetch failing is not fatal
+	if !status.online {
+		t.Error("Status should report online even when stations fetch fails")
+	}
+}
