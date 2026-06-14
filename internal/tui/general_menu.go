@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/config"
 )
 
@@ -70,11 +71,21 @@ func (gm *GeneralMenu) View() tea.View {
 	if gm.done {
 		return tea.NewView("")
 	}
-	bodyW := ContentWidth(gm.width)
+	w := gm.width
+	if w < 40 {
+		w = 80
+	}
+	h := gm.height
+	if h < 10 {
+		h = 24
+	}
+	contentH := h - 4
+	if contentH < 3 {
+		contentH = 3
+	}
 
 	var b strings.Builder
-	title := "── Configuration — General "
-	b.WriteString(section(title, bodyW))
+	b.WriteString(S.Title.Render("Configuration — General"))
 	b.WriteString("\n\n")
 
 	unitVal := "Kilometers (km)"
@@ -89,6 +100,17 @@ func (gm *GeneralMenu) View() tea.View {
 	b.WriteString(formLabelStyle.Render("Distance unit:"))
 	b.WriteString(" ")
 	b.WriteString(inputStyle.Render(unitVal))
+	b.WriteString("\n")
+
+	// Filler to push help bar to bottom.
+	menuH := lipgloss.Height(b.String())
+	fillerH := contentH - menuH
+	if fillerH < 0 {
+		fillerH = 0
+	}
+	if fillerH > 0 {
+		b.WriteString(strings.Repeat("\n", fillerH))
+	}
 
 	return tea.NewView(b.String())
 }

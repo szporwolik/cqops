@@ -63,7 +63,7 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			applog.Warn("QRZ test: no data returned")
 		}
 
-	case tea.KeyPressMsg:
+	case tea.KeyMsg:
 		k := msg.String()
 		if cm.testing {
 			return cm, nil
@@ -150,12 +150,23 @@ func (cm *CallbookMenu) View() tea.View {
 	if cm.done {
 		return tea.NewView("")
 	}
-	bodyW := ContentWidth(cm.width)
+	w := cm.width
+	if w < 40 {
+		w = 80
+	}
+	h := cm.height
+	if h < 10 {
+		h = 24
+	}
+	contentH := h - 4
+	if contentH < 3 {
+		contentH = 3
+	}
 
 	var b strings.Builder
-	title := "── Configuration — Callbook "
-	b.WriteString(section(title, bodyW))
+	b.WriteString(S.Title.Render("Configuration — Callbook"))
 	b.WriteString("\n\n")
+
 	checkbox := "[ ]"
 	if cm.enabled {
 		checkbox = "[x]"
@@ -190,7 +201,7 @@ func (cm *CallbookMenu) View() tea.View {
 		if !cm.inetOnline {
 			b.WriteString("  ")
 			b.WriteString(DimStyle.Render(btnText))
-			b.WriteString(DimStyle.Render(" (offline)"))
+		b.WriteString(DimStyle.Render(" (offline)"))
 		} else if cm.focus == 3 {
 			b.WriteString(cursorStyle.Render("> "))
 			b.WriteString(cursorStyle.Render(btnText))
@@ -211,5 +222,5 @@ func (cm *CallbookMenu) View() tea.View {
 		}
 	}
 
-	return tea.NewView(b.String())
+	return tea.NewView(fillBody(b.String(), contentH))
 }

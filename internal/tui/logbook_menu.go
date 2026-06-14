@@ -142,9 +142,20 @@ func (c *LogbookChooser) View() tea.View {
 
 func (c *LogbookChooser) viewList() string {
 	var b strings.Builder
-	bodyW := ContentWidth(c.width)
-	title := "── Configuration — Logbooks "
-	b.WriteString(section(title, bodyW))
+	w := c.width
+	if w < 40 {
+		w = 80
+	}
+	h := c.height
+	if h < 10 {
+		h = 24
+	}
+	contentH := h - 4
+	if contentH < 3 {
+		contentH = 3
+	}
+	// Empty row at top.
+	b.WriteString(S.Title.Render("Configuration — Logbooks"))
 	b.WriteString("\n\n")
 
 	if len(c.names) == 0 {
@@ -172,22 +183,30 @@ func (c *LogbookChooser) viewList() string {
 		b.WriteString(fmt.Sprintf("%s%s %s  %s\n", marker, active, name, info))
 	}
 
-	return b.String()
+	return fillBody(b.String(), contentH)
 }
 
 func (c *LogbookChooser) viewForm() string {
 	var b strings.Builder
-	bodyW := ContentWidth(c.width)
-	t := "── Configuration — Create Logbook "
-	if c.mode == chooserEdit {
-		t = "── Configuration — Edit " + c.editing + " "
+	w := c.width
+	if w < 40 {
+		w = 80
 	}
-	b.WriteString(section(t, bodyW))
+	h := c.height
+	if h < 10 {
+		h = 24
+	}
+	contentH := h - 4
+	if contentH < 3 {
+		contentH = 3
+	}
+	// Empty row at top.
+	b.WriteString(S.Title.Render("Configuration — Edit Logbook"))
 	b.WriteString("\n\n")
 
 	b.WriteString(c.station.View().Content)
 
-	return b.String()
+	return fillBody(b.String(), contentH)
 }
 
 func (c *LogbookChooser) handleEnter() tea.Cmd {
@@ -281,12 +300,22 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 func (c *LogbookChooser) viewConfirmDelete() string {
 	name := c.names[c.cursor]
 	var b strings.Builder
-	bodyW := ContentWidth(c.width)
-	b.WriteString(section("── Delete Logbook ", bodyW))
-	b.WriteString("\n\n")
+	w := c.width
+	if w < 40 {
+		w = 80
+	}
+	h := c.height
+	if h < 10 {
+		h = 24
+	}
+	contentH := h - 4
+	if contentH < 3 {
+		contentH = 3
+	}
+	b.WriteString("\n")
 	b.WriteString(fmt.Sprintf("  Delete logbook %q and ALL its QSOs?\n", name))
 	b.WriteString("  This cannot be undone. (y/N)")
-	return b.String()
+	return fillBody(b.String(), contentH)
 }
 
 func (c *LogbookChooser) deleteLogbook() tea.Cmd {

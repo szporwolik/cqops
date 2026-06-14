@@ -144,9 +144,19 @@ func (rc *RigChooser) View() tea.View {
 
 func (rc *RigChooser) viewList() string {
 	var b strings.Builder
-	bodyW := ContentWidth(rc.width)
-	title := "── Configuration — Rigs "
-	b.WriteString(section(title, bodyW))
+	w := rc.width
+	if w < 40 {
+		w = 80
+	}
+	h := rc.height
+	if h < 10 {
+		h = 24
+	}
+	contentH := h - 4
+	if contentH < 3 {
+		contentH = 3
+	}
+	b.WriteString(S.Title.Render("Configuration — Rigs"))
 	b.WriteString("\n\n")
 
 	if len(rc.names) == 0 {
@@ -176,22 +186,29 @@ func (rc *RigChooser) viewList() string {
 		b.WriteString(fmt.Sprintf("%s%s %s %s  %s\n", marker, active, name, info, flrig))
 	}
 
-	return b.String()
+	return fillBody(b.String(), contentH)
 }
 
 func (rc *RigChooser) viewForm() string {
 	var b strings.Builder
-	bodyW := ContentWidth(rc.width)
-	t := "── Configuration — Create Rig "
-	if rc.mode == rigChooserEdit {
-		t = "── Configuration — Edit Rig " + rc.editing + " "
+	w := rc.width
+	if w < 40 {
+		w = 80
 	}
-	b.WriteString(section(t, bodyW))
+	h := rc.height
+	if h < 10 {
+		h = 24
+	}
+	contentH := h - 4
+	if contentH < 3 {
+		contentH = 3
+	}
+	b.WriteString(S.Title.Render("Configuration — Edit Rig"))
 	b.WriteString("\n\n")
 
 	b.WriteString(rc.form.View().Content)
 
-	return b.String()
+	return fillBody(b.String(), contentH)
 }
 
 func (rc *RigChooser) selectRig() tea.Cmd {
@@ -297,12 +314,22 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 func (rc *RigChooser) viewConfirmDelete() string {
 	name := rc.names[rc.cursor]
 	var b strings.Builder
-	bodyW := ContentWidth(rc.width)
-	b.WriteString(section("── Delete Rig ", bodyW))
-	b.WriteString("\n\n")
+	w := rc.width
+	if w < 40 {
+		w = 80
+	}
+	h := rc.height
+	if h < 10 {
+		h = 24
+	}
+	contentH := h - 4
+	if contentH < 3 {
+		contentH = 3
+	}
+	b.WriteString("\n")
 	b.WriteString(fmt.Sprintf("  Delete rig %q?\n", name))
 	b.WriteString("  (y/N)")
-	return b.String()
+	return fillBody(b.String(), contentH)
 }
 
 func (rc *RigChooser) deleteRig() tea.Cmd {

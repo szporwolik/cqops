@@ -159,6 +159,58 @@ func (m *Model) ActiveBindings() []key.Binding {
 		)
 	}
 
+	// Configuration / menu screens — screen-specific keybindings
+	if m.screen == screenMainMenu {
+		bindings = append(bindings,
+			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Select")),
+		)
+	}
+	if m.screen == screenConfig {
+		bindings = append(bindings,
+			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
+			key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle")),
+			key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
+		)
+	}
+	if m.screen == screenCallbook {
+		bindings = append(bindings,
+			key.NewBinding(key.WithKeys("up", "down", "tab"), key.WithHelp("↑↓/Tab", "Navigate")),
+			key.NewBinding(key.WithKeys(" ", "enter"), key.WithHelp("Space/Enter", "Toggle")),
+			key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
+		)
+	}
+	if m.screen == screenChooser {
+		bindings = append(bindings,
+			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Select")),
+			key.NewBinding(key.WithKeys("e"), key.WithHelp("E", "Edit")),
+			key.NewBinding(key.WithKeys("c"), key.WithHelp("C", "Create")),
+			key.NewBinding(key.WithKeys("d"), key.WithHelp("D", "Delete")),
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
+		)
+	}
+	if m.screen == screenRigEdit {
+		bindings = append(bindings,
+			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Select")),
+			key.NewBinding(key.WithKeys("e"), key.WithHelp("E", "Edit")),
+			key.NewBinding(key.WithKeys("c"), key.WithHelp("C", "Create")),
+			key.NewBinding(key.WithKeys("d"), key.WithHelp("D", "Delete")),
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
+		)
+	}
+	if m.screen == screenIntegration {
+		bindings = append(bindings,
+			key.NewBinding(key.WithKeys("up", "down", "tab"), key.WithHelp("↑↓/Tab", "Navigate")),
+			key.NewBinding(key.WithKeys(" ", "enter"), key.WithHelp("Space/Enter", "Toggle")),
+			key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
+		)
+	}
+
 	// F10 Quit always visible, always last
 	bindings = append(bindings, m.keys.Quit)
 

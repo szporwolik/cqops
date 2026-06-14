@@ -22,6 +22,20 @@ func tern(cond bool, t, f string) string {
 	return f
 }
 
+// fillBody returns the content with trailing newlines so the total height
+// equals contentH. Use this in configuration menus to push the help bar down.
+func fillBody(content string, contentH int) string {
+	h := lipgloss.Height(content)
+	fillerH := contentH - h
+	if fillerH < 0 {
+		fillerH = 0
+	}
+	if fillerH > 0 {
+		return content + strings.Repeat("\n", fillerH)
+	}
+	return content
+}
+
 // section renders a titled horizontal rule: "── Title ──────────"
 func section(title string, width int) string {
 	rem := width - lipgloss.Width(title)

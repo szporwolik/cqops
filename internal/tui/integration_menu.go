@@ -127,7 +127,7 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			applog.Info("Wavelog test OK")
 		}
 
-	case tea.KeyPressMsg:
+	case tea.KeyMsg:
 		k := msg.String()
 		if im.wlUpdating || im.wlTesting {
 			return im, nil
@@ -286,11 +286,21 @@ func (im *IntegrationMenu) View() tea.View {
 	if im.done {
 		return tea.NewView("")
 	}
-	bodyW := ContentWidth(im.width)
+	w := im.width
+	if w < 40 {
+		w = 80
+	}
+	h := im.height
+	if h < 10 {
+		h = 24
+	}
+	contentH := h - 4
+	if contentH < 3 {
+		contentH = 3
+	}
 
 	var b strings.Builder
-	title := "── Configuration — Integration "
-	b.WriteString(section(title, bodyW))
+	b.WriteString(S.Title.Render("Configuration — Integration"))
 	b.WriteString("\n\n")
 
 	// ── WSJT-X section ──
@@ -366,7 +376,7 @@ func (im *IntegrationMenu) View() tea.View {
 		} else if im.savedStationID != "" {
 			b.WriteString("\n\n")
 			b.WriteString("  ")
-			b.WriteString(SubtleStyle.Render("Station: " + im.savedStationID + " (press Update to refresh)"))
+		b.WriteString(SubtleStyle.Render("Station: " + im.savedStationID + " (press Update to refresh)"))
 		}
 
 		// Test button
@@ -395,7 +405,7 @@ func (im *IntegrationMenu) View() tea.View {
 		}
 	}
 
-	return tea.NewView(b.String())
+	return tea.NewView(fillBody(b.String(), contentH))
 }
 
 func (im *IntegrationMenu) renderField(focusIdx int, label, value string) string {

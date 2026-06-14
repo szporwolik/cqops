@@ -77,17 +77,29 @@ func (m *MainMenu) View() tea.View {
 		return tea.NewView("")
 	}
 
-	bodyW := ContentWidth(m.width)
+	w := m.width
+	if w < 40 {
+		w = 80
+	}
+	h := m.height
+	if h < 10 {
+		h = 24
+	}
+
+	// Available content height: status+profile+tab+help = 4 fixed rows.
+	contentH := h - 4
+	if contentH < 3 {
+		contentH = 3
+	}
 
 	dim := SubtleStyle
 	cursor := CursorStyle
-
-	showDesc := bodyW >= 60
+	showDesc := w >= 60
 
 	var b strings.Builder
 
-	title := "── Configuration "
-	b.WriteString(section(title, bodyW))
+	// Title header
+	b.WriteString(S.Title.Render("Configuration"))
 	b.WriteString("\n\n")
 
 	for i, item := range m.items {
@@ -108,6 +120,15 @@ func (m *MainMenu) View() tea.View {
 		}
 		b.WriteString(line)
 		b.WriteString("\n")
+	}
+
+	menuH := lipgloss.Height(b.String())
+	fillerH := contentH - menuH
+	if fillerH < 0 {
+		fillerH = 0
+	}
+	if fillerH > 0 {
+		b.WriteString(strings.Repeat("\n", fillerH))
 	}
 
 	return tea.NewView(b.String())
