@@ -141,9 +141,9 @@ var S = Styles{
 	Value:   lipgloss.NewStyle().Foreground(P.Text).Background(P.Surface),
 	Dim:     lipgloss.NewStyle().Foreground(P.TextDim).Background(P.Surface),
 	Help:    lipgloss.NewStyle().Foreground(P.TextMuted).Background(P.Surface),
-	Error:   lipgloss.NewStyle().Foreground(P.Error),
-	Success: lipgloss.NewStyle().Foreground(P.Success),
+	Success: lipgloss.NewStyle().Foreground(P.Success).Background(P.Surface),
 	Warning: lipgloss.NewStyle().Foreground(P.Warning).Background(P.Surface),
+	Error:   lipgloss.NewStyle().Foreground(P.Error).Background(P.Surface),
 	Info:    lipgloss.NewStyle().Foreground(P.Info).Background(P.Surface),
 	Debug:   lipgloss.NewStyle().Foreground(P.TextDim).Background(P.Surface),
 
@@ -169,10 +169,10 @@ var S = Styles{
 	LogError: lipgloss.NewStyle().Foreground(P.Error),
 	LogDebug: lipgloss.NewStyle().Foreground(P.TextDim),
 
-	MapOwn:     lipgloss.NewStyle().Foreground(P.Info).Bold(true),
-	MapPartner: lipgloss.NewStyle().Foreground(P.Accent).Bold(true),
-	MapBoth:    lipgloss.NewStyle().Foreground(P.Info).Bold(true),
-	MapGrid:    lipgloss.NewStyle().Foreground(P.TextMuted),
+	MapOwn:     lipgloss.NewStyle().Foreground(P.Info).Bold(true).Background(P.Surface),
+	MapPartner: lipgloss.NewStyle().Foreground(P.Accent).Bold(true).Background(P.Surface),
+	MapBoth:    lipgloss.NewStyle().Foreground(P.Info).Bold(true).Background(P.Surface),
+	MapGrid:    lipgloss.NewStyle().Foreground(P.TextMuted).Background(P.Surface),
 
 	ConfirmBox: lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).

@@ -40,6 +40,8 @@ type IntegrationMenu struct {
 func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 	host := textinput.New()
 	host.CharLimit = 40
+	host.SetWidth(28)
+	host.Prompt = ""
 	host.Placeholder = "127.0.0.1"
 	host.SetValue("127.0.0.1")
 	if cfg.WSJTX.Enabled && cfg.WSJTX.UDPHost != "" {
@@ -48,22 +50,41 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 
 	port := textinput.New()
 	port.CharLimit = 6
+	port.SetWidth(28)
+	port.Prompt = ""
 	port.Placeholder = "2233"
 	port.SetValue("2233")
 	if cfg.WSJTX.UDPPort > 0 {
 		port.SetValue(strconv.Itoa(cfg.WSJTX.UDPPort))
 	}
-	host.Focus()
 
 	wu := textinput.New()
 	wu.CharLimit = 80
+	wu.SetWidth(28)
+	wu.Prompt = ""
 	wu.Placeholder = "https://log.example.com"
 	wu.SetValue(cfg.Wavelog.URL)
 
 	wk := textinput.New()
 	wk.CharLimit = 64
+	wk.SetWidth(28)
+	wk.Prompt = ""
 	wk.Placeholder = "Wavelog API key"
 	wk.SetValue(cfg.Wavelog.APIKey)
+
+	// Apply surface background to textinput styles (same pattern as QSO form)
+	for _, ti := range []*textinput.Model{&host, &port, &wu, &wk} {
+		s := ti.Styles()
+		s.Focused.Text = s.Focused.Text.Background(P.Surface)
+		s.Focused.Placeholder = s.Focused.Placeholder.Background(P.Surface)
+		s.Focused.Prompt = s.Focused.Prompt.Background(P.Surface)
+		s.Blurred.Text = s.Blurred.Text.Background(P.Surface)
+		s.Blurred.Placeholder = s.Blurred.Placeholder.Background(P.Surface)
+		s.Blurred.Prompt = s.Blurred.Prompt.Background(P.Surface)
+		ti.SetStyles(s)
+	}
+
+	host.Focus()
 
 	return &IntegrationMenu{
 		wsjtxEnabled:   cfg.WSJTX.Enabled,
@@ -141,7 +162,33 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			im.done = true
 			im.saved = true
 			return im, nil
-		case " ", "enter":
+		case " ":
+			switch im.focus {
+			case 0: // WSJTX checkbox
+				im.wsjtxEnabled = !im.wsjtxEnabled
+				if !im.isPositionVisible(im.focus) {
+					im.fixFocus()
+				}
+				return im, nil
+			case 3: // Wavelog checkbox
+				im.wlEnabled = !im.wlEnabled
+				if !im.isPositionVisible(im.focus) {
+					im.fixFocus()
+				}
+				return im, nil
+			}
+			// fall through for text input focus
+			switch im.focus {
+			case 1:
+				im.host, _ = im.host.Update(msg)
+			case 2:
+				im.port, _ = im.port.Update(msg)
+			case 4:
+				im.wlURL, _ = im.wlURL.Update(msg)
+			case 5:
+				im.wlAPIKey, _ = im.wlAPIKey.Update(msg)
+			}
+		case "enter":
 			switch im.focus {
 			case 0: // WSJTX checkbox
 				im.wsjtxEnabled = !im.wsjtxEnabled

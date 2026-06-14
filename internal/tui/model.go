@@ -127,6 +127,8 @@ type Model struct {
 	wlOnline        bool
 	wlStationName   string // e.g. "JO30oo / DJ7NT"
 	wlStationLabel  string // e.g. "Debug location"
+
+	qrzOnline bool
 	keys            KeyMap
 	help            help.Model
 	recentQSOs      *RecentQSOs // read-only Recent QSOs view
@@ -141,6 +143,10 @@ type qrzResultMsg struct {
 	Call string
 	Data *qrz.CallData
 	Err  error
+}
+
+type qrzStatusMsg struct {
+	online bool
 }
 type wlResultMsg struct {
 	Call string
@@ -229,8 +235,12 @@ func (m *Model) Init() tea.Cmd {
 		m.pendingStatus = statusPending{call: call, grid: grid, freq: freq, mode: mode, submode: submode, report: report, hasData: true}
 		m.adifMu.Unlock()
 	}
-	applog.Info("WSJT-X: callbacks registered, restarting listener")
-	m.App.MaybeRestartWSJTX()
+	if m.App.Config.WSJTX.Enabled {
+		applog.Info("WSJT-X: callbacks registered, restarting listener")
+		m.App.MaybeRestartWSJTX()
+	} else {
+		applog.Debug("wsjt-x: disabled")
+	}
 	return tea.Batch(tickCmd(), checkInetCmd())
 }
 func tickCmd() tea.Cmd {
@@ -376,9 +386,9 @@ func (m *Model) View() tea.View {
 	layout := MeasureLayout(m)
 
 	if layout.TerminalW < 75 || layout.TerminalH < 24 {
-		msg := fmt.Sprintf("Terminal too small: %dx%d (min 75x24)\n\nPress F10 to quit",
+		msg := fmt.Sprintf("\n  CQOps — Terminal too small: %dx%d (min 75x24)\n\n  Press F10 and then Enter to quit",
 			layout.TerminalW, layout.TerminalH)
-		return tea.NewView(lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render(msg))
+		return tea.NewView(lipgloss.NewStyle().Foreground(P.Error).Render(msg))
 	}
 
 	// 1. Status bar
@@ -471,20 +481,20 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 // QSOs using layout-derived dimensions. The short path gets its own bordered
 // box between the form and the table for visual separation.
 func (m *Model) buildQSOFormWithLayout(l Layout) string {
-	w := l.TerminalW // full width, matching the status bar
-	innerW := w - 4  // 2 border + 2 padding (from S.QSOFormBox)
-	if innerW < 20 {
-		innerW = w
+	w := l.TerminalW // full width
+	borderW := w - 2 // content width inside borders
+	formW := borderW - 2 // 1-char padding each side
+	if formW < 20 {
+		formW = borderW
 	}
 
-	// QSO form in its bordered box — wrap raw form in Surface to prevent leaks
-	form := m.viewForm(innerW)
-	formBlock := lipgloss.NewStyle().Background(P.Surface).Width(innerW).Render(strings.TrimRight(form, "\n"))
-	formBox := S.QSOFormBox.Width(w).Render(formBlock)
+	// QSO form with manual border — no │ leak
+	form := m.viewForm(formW)
+	formBox := drawBorderedBox(strings.TrimRight(form, "\n"), borderW, w)
 
-	// Path row in a clean bordered box (always one row — no layout shift).
-	pathContent := m.formPathRow(innerW)
-	pathBox := S.MapBox.Width(w).Render(pathContent)
+	// Path row with manual border
+	pathContent := m.formPathRow(formW)
+	pathBox := drawBorderedBox(pathContent, borderW, w)
 
 	formRenderedH := lipgloss.Height(formBox)
 	pathRenderedH := lipgloss.Height(pathBox)
@@ -493,7 +503,6 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 		recentH = 5
 	}
 
-	// Table fits inside a bordered box — account for 2 rows (top/bottom border).
 	tableW := w - 2
 	tableH := recentH - 2
 	if tableH < 3 {
@@ -501,7 +510,9 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 	}
 	m.recentQSOs.SetSize(tableW, tableH)
 
-	return formBox + "\n" + pathBox + "\n" + S.RecentQSOsBox.Width(w).Render(m.recentQSOs.View())
+	recentBox := drawBorderedBox(m.recentQSOs.View(), borderW, w)
+
+	return formBox + "\n" + pathBox + "\n" + recentBox
 }
 
 // formPartnerData builds a CallData from the current QSO form fields.

@@ -31,21 +31,30 @@ func (m *Model) viewPartner() string {
 	if halfW < 20 {
 		halfW = bodyW
 	}
+	infoInnerW := halfW - 2 // inside border
 
-	info := m.renderPartnerInfo(d, halfW)
-	infoBox := S.QSOFormBox.Width(halfW).Render(info)
-	infoH := lipgloss.Height(infoBox)
+	info := m.renderPartnerInfo(d, infoInnerW)
+	infoBox := drawBorderedBox(info, infoInnerW, halfW)
 
-	wlContent := m.renderWLInfo(halfW)
-	wlBox := S.QSOFormBox.Width(halfW).Height(infoH).Render(wlContent)
+	wlContent := m.renderWLInfo(infoInnerW)
+	wlBox := drawBorderedBox(wlContent, infoInnerW, halfW)
 
-	gap := lipgloss.NewStyle().Width(1).Render("")
-	var topRow string
-	if halfW >= 20 {
-		topRow = lipgloss.JoinHorizontal(lipgloss.Top, infoBox, gap, wlBox)
-	} else {
-		topRow = lipgloss.JoinVertical(lipgloss.Left, infoBox, wlBox)
+	// Match heights and join with Surface-backed gap
+	infoLines := strings.Split(infoBox, "\n")
+	wlLines := strings.Split(wlBox, "\n")
+	// Pad shorter to match
+	for len(wlLines) < len(infoLines) {
+		wlLines = append(wlLines, lipgloss.NewStyle().Background(P.Surface).Width(halfW).Render(""))
 	}
+	for len(infoLines) < len(wlLines) {
+		infoLines = append(infoLines, lipgloss.NewStyle().Background(P.Surface).Width(halfW).Render(""))
+	}
+	gap := lipgloss.NewStyle().Width(1).Background(P.Surface).Render(" ")
+	var topLines []string
+	for i := range infoLines {
+		topLines = append(topLines, infoLines[i]+gap+wlLines[i])
+	}
+	topRow := strings.Join(topLines, "\n")
 
 	// Map section
 	mapW := bodyW - 2
@@ -94,7 +103,21 @@ func (m *Model) viewPartner() string {
 		m.partnerMapCache = mapInner
 	}
 
-	mapBox := S.MapBox.Width(bodyW).Render(mapInner)
+	// Replace SGR reset with foreground-only reset (preserve Surface bg)
+	mapInner = strings.NewReplacer(
+		"\x1b[0m", "\x1b[39m\x1b[22m",
+		"\x1b[m", "\x1b[39m\x1b[22m",
+	).Replace(mapInner)
+
+	// Wrap per-line with Surface bg
+	lines := strings.Split(mapInner, "\n")
+	for i, line := range lines {
+		if line != "" {
+			lines[i] = lipgloss.NewStyle().Background(P.Surface).Width(bodyW - 2).Render(line)
+		}
+	}
+	mapInner = strings.Join(lines, "\n")
+	mapBox := drawBorderedBox(mapInner, bodyW-2, bodyW)
 
 	mapBoxH := lipgloss.Height(mapBox)
 	fillerH := contentHeight(m.height) - topH - mapBoxH
@@ -173,8 +196,8 @@ func (m *Model) renderPartnerInfo(d *qrz.CallData, maxW int) string {
 		} else {
 			value = valStyle.Render(truncate(r.value, valW))
 		}
-		indent := lipgloss.NewStyle().Width(indentW).Render("")
-		gap := lipgloss.NewStyle().Width(1).Render("")
+		indent := lipgloss.NewStyle().Width(indentW).Background(P.Surface).Render(" ")
+		gap := lipgloss.NewStyle().Width(1).Background(P.Surface).Render(" ")
 		lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Center, indent, label, gap, value))
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
@@ -188,6 +211,7 @@ func (m *Model) renderWLInfo(maxW int) string {
 			Width(maxW - 4).
 			Align(lipgloss.Center).
 			Foreground(P.TextMuted).
+			Background(P.Surface).
 			Render("Wavelog not configured")
 	}
 	if d == nil {
@@ -199,6 +223,7 @@ func (m *Model) renderWLInfo(maxW int) string {
 			Width(maxW - 4).
 			Align(lipgloss.Center).
 			Foreground(P.TextMuted).
+			Background(P.Surface).
 			Render(msg)
 	}
 
@@ -244,8 +269,8 @@ func (m *Model) renderWLInfo(maxW int) string {
 	var lines []string
 	for _, r := range rows {
 		label := lblStyle.Render(r.label)
-		indent := lipgloss.NewStyle().Width(indentW).Render("")
-		gap := lipgloss.NewStyle().Width(1).Render("")
+		indent := lipgloss.NewStyle().Width(indentW).Background(P.Surface).Render(" ")
+		gap := lipgloss.NewStyle().Width(1).Background(P.Surface).Render(" ")
 		val := r.value
 		switch val {
 		case "Y":

@@ -98,9 +98,12 @@ func (lv *LogViewer) View() tea.View {
 		return tea.NewView(DimStyle.Render("  No log entries yet."))
 	}
 
-	// Build colored log lines (newest first).
-	timeStyle := lipgloss.NewStyle().Width(9).Foreground(P.TextDim).PaddingRight(0)
-	levelStyleW := lipgloss.NewStyle().Width(6)
+	// Build colored log lines (newest first). Every segment needs explicit
+	// Background(P.Surface) — the ContentBase wrapper's background is reset
+	// by the \x1b[0m at the end of each inner style.Render() call.
+	logBg := lipgloss.NewStyle().Background(P.Surface)
+	timeStyle := logBg.Copy().Width(9).Foreground(P.TextDim).PaddingRight(0)
+	levelStyleW := logBg.Copy().Width(6)
 	bodyW := lv.width
 	if bodyW < 40 {
 		bodyW = 80
@@ -129,13 +132,14 @@ func (lv *LogViewer) View() tea.View {
 			msg += "  " + e.Details
 		}
 
-		lines = append(lines,
-			lipgloss.JoinHorizontal(lipgloss.Top,
-				timeStyle.Render(e.Time),
-				levelStyleW.Render(ls.Render(e.Level)),
-				S.ValueStyle.Render(truncate(msg, msgW)),
-			),
+		line := lipgloss.JoinHorizontal(lipgloss.Top,
+			timeStyle.Render(e.Time),
+			levelStyleW.Render(ls.Copy().Background(P.Surface).Render(e.Level)),
+			S.ValueStyle.Render(truncate(msg, msgW)),
 		)
+		// Fill remaining row width with Surface background so there is no
+		// horizontal colour leak to the right of the message text.
+		lines = append(lines, logBg.Copy().Width(bodyW).Render(line))
 	}
 
 	lv.viewport.SetContent(strings.Join(lines, "\n"))

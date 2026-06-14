@@ -31,7 +31,7 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 	m.toasts.Expire()
 	m.autoUpdateDateTime()
 	m.tickCount++
-	return tea.Batch(tickCmd(), m.maybeCheckInet(), m.pollFlrig(), m.maybeCheckWavelog(), cmd)
+	return tea.Batch(tickCmd(), m.maybeCheckInet(), m.pollFlrig(), m.maybeCheckWavelog(), m.maybeCheckQRZ(), cmd)
 }
 
 // handleAsyncMessages processes async result messages (internet check, Wavelog status,
@@ -58,6 +58,9 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) bool {
 			store.UpdateWavelogStatus(m.App.DB, r.qID, "no")
 			m.toasts.Warn(fmt.Sprintf("Wavelog: %s failed", r.call))
 		}
+		return true
+	case qrzStatusMsg:
+		m.qrzOnline = r.online
 		return true
 	case flrigResultMsg:
 		m.applyFlrigResult(r)

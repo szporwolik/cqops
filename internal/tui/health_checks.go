@@ -5,6 +5,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/szporwolik/cqops/internal/applog"
 )
 
 // =============================================================================
@@ -33,12 +34,15 @@ func (m *Model) maybeCheckInet() tea.Cmd {
 // by attempting to reach Google's generate_204 endpoint.
 func checkInetCmd() tea.Cmd {
 	return func() tea.Msg {
+		applog.Debug("Internet: testing connectivity")
 		client := &http.Client{Timeout: 3 * time.Second}
 		resp, err := client.Get("https://clients3.google.com/generate_204")
 		if err != nil {
+			applog.Warn("Internet: unreachable", "error", err)
 			return inetResultMsg(false)
 		}
 		resp.Body.Close()
+		applog.Info("Internet: reachable")
 		return inetResultMsg(true)
 	}
 }

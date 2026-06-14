@@ -7,6 +7,34 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
+// drawBorderedBox draws a NormalBorder box where every character (including
+// borders) has explicit Surface background. This prevents the right │ leak
+// that occurs with lipgloss's built-in Border when content has SGR resets.
+func drawBorderedBox(content string, innerW, boxW int) string {
+	bg := lipgloss.NewStyle().Background(P.Surface)
+	fg := lipgloss.NewStyle().Foreground(P.Border).Background(P.Surface)
+
+	top := fg.Render("┌" + strings.Repeat("─", innerW) + "┐")
+	bot := fg.Render("└" + strings.Repeat("─", innerW) + "┘")
+	left := fg.Render("│")
+	right := fg.Render("│")
+
+	var b strings.Builder
+	b.WriteString(top)
+	b.WriteString("\n")
+
+	lines := strings.Split(content, "\n")
+	for _, line := range lines {
+		b.WriteString(left)
+		b.WriteString(bg.Width(innerW).Render(line))
+		b.WriteString(right)
+		b.WriteString("\n")
+	}
+	b.WriteString(bot)
+
+	return lipgloss.NewStyle().Width(boxW).Background(P.Surface).Render(b.String())
+}
+
 // osc8Link returns an OSC-8 hyperlink sequence. Most modern terminals
 // (Windows Terminal, iTerm2, Kitty, etc.) render these as clickable links.
 // Ctrl+click opens the URL in the system browser.

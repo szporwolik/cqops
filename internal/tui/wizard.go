@@ -197,9 +197,9 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (w *Wizard) View() tea.View {
 	// Minimum terminal size check — same as the main app.
 	if w.width > 0 && w.height > 0 && (w.width < 75 || w.height < 24) {
-		msg := fmt.Sprintf("Terminal too small: %dx%d (min 75x24)\n\nPress F10 to quit",
+		msg := fmt.Sprintf("\n  CQOps — Terminal too small: %dx%d (min 75x24)\n\n  Press F10 and then Enter to quit",
 			w.width, w.height)
-		return tea.NewView(lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Render(msg))
+		return tea.NewView(lipgloss.NewStyle().Foreground(P.Error).Render(msg))
 	}
 
 	var content string

@@ -28,13 +28,38 @@ type CallbookMenu struct {
 func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 	un := textinput.New()
 	un.CharLimit = 30
+	un.SetWidth(28)
+	un.Prompt = ""
 	un.Placeholder = "QRZ.com username"
 	un.SetValue(cfg.QRZUser)
-	un.Focus()
+
 	pw := textinput.New()
 	pw.CharLimit = 40
+	pw.SetWidth(28)
+	pw.Prompt = ""
 	pw.Placeholder = "QRZ.com password"
 	pw.SetValue(cfg.QRZPass)
+
+	// Apply surface background to textinput styles (same pattern as QSO form)
+	us := un.Styles()
+	us.Focused.Text = us.Focused.Text.Background(P.Surface)
+	us.Focused.Placeholder = us.Focused.Placeholder.Background(P.Surface)
+	us.Focused.Prompt = us.Focused.Prompt.Background(P.Surface)
+	us.Blurred.Text = us.Blurred.Text.Background(P.Surface)
+	us.Blurred.Placeholder = us.Blurred.Placeholder.Background(P.Surface)
+	us.Blurred.Prompt = us.Blurred.Prompt.Background(P.Surface)
+	un.SetStyles(us)
+
+	ps := pw.Styles()
+	ps.Focused.Text = ps.Focused.Text.Background(P.Surface)
+	ps.Focused.Placeholder = ps.Focused.Placeholder.Background(P.Surface)
+	ps.Focused.Prompt = ps.Focused.Prompt.Background(P.Surface)
+	ps.Blurred.Text = ps.Blurred.Text.Background(P.Surface)
+	ps.Blurred.Placeholder = ps.Blurred.Placeholder.Background(P.Surface)
+	ps.Blurred.Prompt = ps.Blurred.Prompt.Background(P.Surface)
+	pw.SetStyles(ps)
+
+	un.Focus()
 	return &CallbookMenu{user: un, pass: pw, enabled: cfg.QRZEnabled}
 }
 
@@ -77,7 +102,19 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cm.done = true
 			cm.saved = true
 			return cm, nil
-		case " ", "enter":
+		case " ":
+			if cm.focus == 0 {
+				cm.enabled = !cm.enabled
+				return cm, nil
+			}
+			// fall through to default for text input focus
+			switch cm.focus {
+			case 1:
+				cm.user, _ = cm.user.Update(msg)
+			case 2:
+				cm.pass, _ = cm.pass.Update(msg)
+			}
+		case "enter":
 			switch cm.focus {
 			case 0:
 				cm.enabled = !cm.enabled

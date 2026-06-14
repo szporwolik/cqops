@@ -202,3 +202,40 @@ func coalesce(a, b string) string {
 	}
 	return b
 }
+
+// TestConnection validates that QRZ.com credentials are valid and the API is reachable.
+func TestConnection(user, pass string) error {
+	applog.Debug("QRZ: testing connection")
+	if user == "" || pass == "" {
+		return fmt.Errorf("QRZ username and password required")
+	}
+	u := "https://xmldata.qrz.com/xml/current/?username=" + url.QueryEscape(user) + ";password=" + url.QueryEscape(pass) + ";agent=CQOps"
+	data, err := httpGet(u)
+	if err != nil {
+		applog.Error("QRZ: connection failed", "error", err)
+		return fmt.Errorf("connection failed: %w", err)
+	}
+
+	var authDB qrzDatabase
+	if err := xml.Unmarshal(data, &authDB); err != nil {
+		applog.Error("QRZ: invalid xml response", "error", err)
+		return fmt.Errorf("invalid response: %w", err)
+	}
+	if authDB.Session.Error != "" {
+		applog.Error("QRZ: auth error", "msg", authDB.Session.Error)
+		return fmt.Errorf("QRZ: %s", authDB.Session.Error)
+	}
+	if authDB.Session.Key == "" {
+		return fmt.Errorf("QRZ: no session key")
+	}
+
+	// Cache the session key so subsequent lookups don't re-auth.
+	cacheMu.Lock()
+	cachedSessionKey = authDB.Session.Key
+	cachedSessionUser = user
+	cachedSessionPass = pass
+	cacheMu.Unlock()
+
+	applog.InfoDetail("QRZ: connected", fmt.Sprintf("user=%s url=xmldata.qrz.com", user))
+	return nil
+}
