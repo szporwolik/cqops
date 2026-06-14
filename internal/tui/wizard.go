@@ -285,10 +285,10 @@ func (w *Wizard) banner() string {
 	name := S.WizardAccent.Render("CQOps v" + ver)
 	tag := S.WizardDim.Render("Portable Ham Radio Logger")
 
-	// OSC-8 wraps styled text — more compatible with some terminals.
-	// The style is rendered first so ANSI codes are inside the OSC-8 wrapper.
+	// Plain OSC-8 hyperlink — no lipgloss styling to avoid mangling escape sequences.
+	// The link is rendered as the raw ANSI hyperlink and then centered by wizardLayout.
 	gh := osc8Link("https://github.com/szporwolik/cqops",
-		S.WizardDim.Render("github.com/szporwolik/cqops"))
+		"github.com/szporwolik/cqops")
 
 	return lipgloss.JoinVertical(lipgloss.Center,
 		name+"  —  "+tag,
@@ -402,7 +402,7 @@ func (w *Wizard) viewTimezone() string {
 	)
 
 	body := w.wizardFormBox().Render(inner)
-	help := HelpStyle.Render("↑↓ choose  |  Ctrl+S next  |  Esc back  |  F10 quit")
+	help := HelpStyle.Render("Ctrl+S next  |  ↑↓ choose  |  Esc back  |  F10 quit")
 	return w.wizardLayout(body, help)
 }
 
@@ -410,10 +410,10 @@ func (w *Wizard) viewSummary() string {
 	inner := lipgloss.JoinVertical(lipgloss.Left,
 		S.WizardHeader.Render("Configuration ready"),
 		"",
-		DimStyle.Render("Your configuration file is almost complete."),
+		S.WizardDim.Render("Your configuration file is almost complete."),
 		"",
-		DimStyle.Render("We recommend visiting the Configuration menu after"),
-		DimStyle.Render("starting the program to enter:"),
+		S.WizardDim.Render("We recommend visiting the Configuration menu after"),
+		S.WizardDim.Render("starting the program to enter:"),
 		"",
 		DimStyle.Render("  • QRZ.com credentials (Callbook)"),
 		DimStyle.Render("  • Wavelog integration settings"),
