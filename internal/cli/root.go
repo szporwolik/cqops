@@ -67,8 +67,13 @@ func runTUI() error {
 			return fmt.Errorf("wizard: %w", err)
 		}
 
-		if err := config.Save(a.ConfigPath, a.Config); err != nil {
-			return fmt.Errorf("save after wizard: %w", err)
+		if w.Completed {
+			if err := config.Save(a.ConfigPath, a.Config); err != nil {
+				return fmt.Errorf("save after wizard: %w", err)
+			}
+		} else {
+			applog.Info("Wizard not completed — config not saved")
+			return nil
 		}
 	}
 
