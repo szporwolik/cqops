@@ -96,7 +96,7 @@ func (m *Model) logQSOFromADIF(adif string) tea.Cmd {
 	m.toasts.Success(fmt.Sprintf("WSJT-X: %s logged", qs.Call))
 	m.clearForm()
 	m.needRefresh = true
-	return m.maybeUploadRawADIFToWavelog(adif, id, qs.Call)
+	return tea.Batch(m.refreshQSOS(), m.maybeUploadRawADIFToWavelog(adif, id, qs.Call))
 }
 
 // parseWSJTXADIF parses a single QSO record from an ADIF string.

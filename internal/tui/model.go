@@ -15,7 +15,6 @@ import (
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/qrz"
 	"github.com/szporwolik/cqops/internal/qso"
-	"github.com/szporwolik/cqops/internal/rig/flrig"
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
@@ -113,7 +112,7 @@ type Model struct {
 	wlPrivateData   *wavelog.PrivateLookupResult // Wavelog callsign lookup
 	wlLastBand      string                       // band used in last WL query
 	wlLastMode      string                       // mode used in last WL query
-	flrigClient     *flrig.Client
+	flrigClient     FlrigClient
 	qrzNeed         bool
 	qrzCall         string
 	qrzLastLook     time.Time
