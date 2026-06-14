@@ -142,18 +142,6 @@ func (rc *RigChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return rc, nil
 }
 
-func (rc *RigChooser) FooterText() string {
-	switch rc.mode {
-	case rigChooserList:
-		return "Enter to activate  e to edit  Ins to create  Del to delete  Esc to go back"
-	case rigChooserEdit, rigChooserCreate:
-		return "Ctrl+S to save  ↑↓/Tab to navigate  Esc to discard"
-	case rigChooserConfirmDelete:
-		return "Delete this rig? (y/N)"
-	}
-	return ""
-}
-
 func (rc *RigChooser) View() tea.View {
 	if rc.done {
 		return tea.NewView("")

@@ -72,10 +72,6 @@ func (m *MainMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *MainMenu) FooterText() string {
-	return "↑↓ to navigate  Enter to select  F1 QSO Form  F10 Quit"
-}
-
 func (m *MainMenu) View() tea.View {
 	if m.done {
 		return tea.NewView("")

@@ -158,10 +158,6 @@ func (im *IntegrationMenu) focusField() {
 	}
 }
 
-func (im *IntegrationMenu) FooterText() string {
-	return "Ctrl+S to save  Space to toggle  ↑↓/Tab to navigate  Esc to go back"
-}
-
 func (im *IntegrationMenu) View() tea.View {
 	if im.done {
 		return tea.NewView("")

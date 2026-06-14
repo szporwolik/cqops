@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -546,15 +548,31 @@ func (w *Wizard) updateIntegFocus() {
 
 // ── Step views ───────────────────────────────────────────────────
 
+func wizHelp(bindings ...key.Binding) string {
+	h := help.New()
+	return HelpStyle.Render(h.ShortHelpView(bindings))
+}
+
 func (w *Wizard) viewStation() string {
 	body := w.wizardFormBox().Render(w.station.View().Content)
-	help := HelpStyle.Render("Ctrl+S Save & Next  |  Tab Navigate  |  Space Toggle  |  F10 Quit")
+	help := wizHelp(
+		key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save & Next")),
+		key.NewBinding(key.WithKeys("tab"), key.WithHelp("Tab", "Navigate")),
+		key.NewBinding(key.WithKeys("space"), key.WithHelp("Space", "Toggle")),
+		key.NewBinding(key.WithKeys("f10"), key.WithHelp("F10", "Quit")),
+	)
 	return w.wizardLayout(body, help)
 }
 
 func (w *Wizard) viewRig() string {
 	body := w.wizardFormBox().Render(w.rigForm.View().Content)
-	help := HelpStyle.Render("Ctrl+S save & next  |  Space toggle flrig  |  ↑↓/Tab navigate  |  Esc back  |  F10 quit")
+	help := wizHelp(
+		key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save & Next")),
+		key.NewBinding(key.WithKeys("space"), key.WithHelp("Space", "Toggle flrig")),
+		key.NewBinding(key.WithKeys("↑/↓", "tab"), key.WithHelp("↑↓/Tab", "Navigate")),
+		key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
+		key.NewBinding(key.WithKeys("f10"), key.WithHelp("F10", "Quit")),
+	)
 	return w.wizardLayout(body, help)
 }
 
@@ -628,7 +646,14 @@ func (w *Wizard) viewWSJTX() string {
 	}
 
 	body := w.wizardFormBox().Render(inner.String())
-	help := HelpStyle.Render("Ctrl+S Save & Next  |  Space Toggle  |  Enter Test  |  Tab Navigate  |  Esc Back  |  F10 Quit")
+	help := wizHelp(
+		key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save & Next")),
+		key.NewBinding(key.WithKeys("space"), key.WithHelp("Space", "Toggle")),
+		key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Test")),
+		key.NewBinding(key.WithKeys("tab"), key.WithHelp("Tab", "Navigate")),
+		key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
+		key.NewBinding(key.WithKeys("f10"), key.WithHelp("F10", "Quit")),
+	)
 	return w.wizardLayout(body, help)
 }
 
@@ -686,7 +711,12 @@ func (w *Wizard) viewTimezone() string {
 	inner.WriteString(menuLine(DimStyle.Render("  System: "+detected), 80))
 
 	body := w.wizardFormBox().Render(inner.String())
-	help := HelpStyle.Render("Ctrl+S Save & Next  |  ↑↓ Choose  |  Esc Back  |  F10 Quit")
+	help := wizHelp(
+		key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save & Next")),
+		key.NewBinding(key.WithKeys("↑↓"), key.WithHelp("↑↓", "Choose")),
+		key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
+		key.NewBinding(key.WithKeys("f10"), key.WithHelp("F10", "Quit")),
+	)
 	return w.wizardLayout(body, help)
 }
 
@@ -705,7 +735,11 @@ func (w *Wizard) viewSummary() string {
 	)
 
 	body := w.wizardFormBox().Render(inner)
-	help := HelpStyle.Render("Ctrl+S save & start  |  Esc back  |  F10 quit")
+	help := wizHelp(
+		key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save & Start")),
+		key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
+		key.NewBinding(key.WithKeys("f10"), key.WithHelp("F10", "Quit")),
+	)
 	return w.wizardLayout(body, help)
 }
 

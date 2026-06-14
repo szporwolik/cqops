@@ -150,13 +150,6 @@ func (cm *CallbookMenu) focusField() {
 	}
 }
 
-func (cm *CallbookMenu) FooterText() string {
-	if cm.testing {
-		return "Testing QRZ.com connection…"
-	}
-	return "Ctrl+S to save  Space to toggle  ↑↓/Tab to navigate  Esc to go back"
-}
-
 // renderField renders a labelled textinput line with cursor indicator.
 // renderField renders a labelled textinput line with cursor indicator.
 // When masked is true, the value is shown as asterisks when not focused.

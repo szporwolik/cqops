@@ -11,21 +11,12 @@ import (
 // helpView renders the bottom help/footer bar with context-sensitive key bindings.
 func (m *Model) helpView() string {
 	if m.confirm != nil {
-		return HelpStyle.Render("\u2190/\u2192 choose  \u2022  enter confirm  \u2022  esc cancel")
-	}
-
-	// Sub-components with their own footer text take priority over screen-level bindings.
-	if m.screen == screenCallbook && m.callbookMenu != nil {
-		return HelpStyle.Render(m.callbookMenu.FooterText())
-	}
-	if m.screen == screenRigEdit && m.rigChooser != nil {
-		return HelpStyle.Render(m.rigChooser.FooterText())
-	}
-	if m.screen == screenChooser && m.chooser != nil {
-		return HelpStyle.Render(m.chooser.FooterText())
-	}
-	if m.screen == screenImage {
-		return HelpStyle.Render("F2 / Esc to return to partner details")
+		bindings := []key.Binding{
+			key.NewBinding(key.WithKeys("←/→"), key.WithHelp("←/→", "choose")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm")),
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
+		}
+		return HelpStyle.Render(m.help.ShortHelpView(bindings))
 	}
 
 	bindings := m.ActiveBindings()
@@ -36,6 +27,8 @@ func (m *Model) helpView() string {
 	if helpText == "" {
 		helpText = m.help.ShortHelpView([]key.Binding{m.keys.Quit})
 	}
+
+	// Log editor: append QSO counter.
 	if m.screen == screenLogbookEditor && m.logbookEditor != nil {
 		cursor := m.logbookEditor.CursorPos()
 		total := m.logbookEditor.QSOCount()
@@ -49,6 +42,7 @@ func (m *Model) helpView() string {
 			return HelpStyle.Render(helpText + strings.Repeat(" ", spacerW) + counter)
 		}
 	}
+	// Log viewer: append scroll info.
 	if m.screen == screenLogView && m.logViewer != nil {
 		info := m.logViewer.ScrollInfo()
 		if info != "" {

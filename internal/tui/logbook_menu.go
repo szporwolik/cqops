@@ -205,18 +205,6 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return c, nil
 }
 
-func (c *LogbookChooser) FooterText() string {
-	switch c.mode {
-	case chooserList:
-		return "Enter to activate  e to edit  Ins to create  Del to delete  Esc to go back"
-	case chooserEdit, chooserCreate:
-		return "Ctrl+S to save  ↑↓/Tab to navigate  Space cycle station  Esc to discard"
-	case chooserConfirmDelete:
-		return "←/→ choose  Enter confirm  Esc cancel"
-	}
-	return ""
-}
-
 func (c *LogbookChooser) View() tea.View {
 	if c.done {
 		return tea.NewView("")

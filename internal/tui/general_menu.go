@@ -63,10 +63,6 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return gm, nil
 }
 
-func (gm *GeneralMenu) FooterText() string {
-	return "Space to toggle  ↑↓ to navigate  Ctrl+S to save  Esc to go back"
-}
-
 func (gm *GeneralMenu) View() tea.View {
 	if gm.done {
 		return tea.NewView("")
