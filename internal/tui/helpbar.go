@@ -24,6 +24,9 @@ func (m *Model) helpView() string {
 	if m.screen == screenChooser && m.chooser != nil {
 		return HelpStyle.Render(m.chooser.FooterText())
 	}
+	if m.screen == screenImage {
+		return HelpStyle.Render("F2 / Esc to return to partner details")
+	}
 
 	bindings := m.ActiveBindings()
 	if len(bindings) == 0 {

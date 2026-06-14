@@ -35,6 +35,30 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 
 	case key.Matches(msg, m.keys.Partner):
 		call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+
+		// Cycle: Partner → Image → Partner (when photo available).
+		if m.screen == screenImage {
+			m.screen = screenPartner
+			return nil, true
+		}
+		if m.screen == screenPartner && m.partnerData != nil && m.partnerData.ImageURL != "" {
+			applog.Debug("F2: opening image view", "url", m.partnerData.ImageURL)
+			m.screen = screenImage
+			w := m.width
+			h := m.height - 5 // header + footer overhead
+			if w < 20 {
+				w = 80
+			}
+			if h < 10 {
+				h = 10
+			}
+			h-- // bottom hint row
+			return tea.Batch(
+				m.imageViewer.SetSize(w, h),
+				m.imageViewer.SetURL(m.partnerData.ImageURL),
+			), true
+		}
+
 		if call == "" {
 			m.toasts.Warn("No callsign entered")
 			applog.Debug("F2 Partner: no callsign")

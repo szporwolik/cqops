@@ -43,7 +43,7 @@ func DefaultKeyMap() KeyMap {
 		),
 		Partner: key.NewBinding(
 			key.WithKeys("f2"),
-			key.WithHelp("F2", "Partner"),
+			key.WithHelp("F2", "Partner/Photo"),
 		),
 		LogEditor: key.NewBinding(
 		key.WithKeys("f6"),
@@ -211,6 +211,18 @@ func (m *Model) ActiveBindings() []key.Binding {
 			key.NewBinding(key.WithKeys("c"), key.WithHelp("C", "Create")),
 			key.NewBinding(key.WithKeys("d"), key.WithHelp("D", "Delete")),
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
+		)
+	}
+	// Image screen — simple navigation.
+	if m.screen == screenImage {
+		bindings = append(bindings,
+			key.NewBinding(key.WithKeys("f2", "esc"), key.WithHelp("F2/Esc", "Back to Partner")),
+		)
+	}
+	// Partner screen — show F2 Photo when image available.
+	if m.screen == screenPartner && m.partnerData != nil && m.partnerData.ImageURL != "" {
+		bindings = append(bindings,
+			key.NewBinding(key.WithKeys("f2"), key.WithHelp("F2", "Photo")),
 		)
 	}
 	if m.screen == screenIntegration {

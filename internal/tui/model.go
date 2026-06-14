@@ -10,6 +10,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/NimbleMarkets/ntcharts/v2/picture/pictureurl"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
@@ -62,6 +63,7 @@ type screenKind int
 const (
 	screenQSO screenKind = iota
 	screenPartner
+	screenImage
 	screenMainMenu
 	screenConfig
 	screenCallbook
@@ -107,7 +109,8 @@ type Model struct {
 	mainMenu        *MainMenu
 	logViewer       *LogViewer
 	logbookEditor   *LogbookEditor
-	confirm         *DialogModel // active confirmation dialog (quit, etc.)
+	imageViewer     pictureurl.Model // terminal image viewer for partner photos
+	confirm         *DialogModel     // active confirmation dialog (quit, etc.)
 	partnerData     *qrz.CallData
 	wlPrivateData   *wavelog.PrivateLookupResult // Wavelog callsign lookup
 	wlLookupDone    bool                         // true when any WL lookup result received
@@ -213,6 +216,7 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 		applyTextinputSurfaceStyle(&m.fields[i])
 	}
 	m.recentQSOs = NewRecentQSOs(initialQSOS)
+	m.imageViewer = pictureurl.NewWithConfig(pictureurl.Config{CacheLimit: 4})
 	return m
 }
 
@@ -234,7 +238,7 @@ func (m *Model) Init() tea.Cmd {
 	} else {
 		applog.Debug("wsjt-x: disabled")
 	}
-	return tea.Batch(tickCmd(), checkInetCmd())
+	return tea.Batch(tickCmd(), checkInetCmd(), m.imageViewer.Init())
 }
 func tickCmd() tea.Cmd {
 	return tea.Tick(200*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) })
@@ -272,6 +276,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = wsm.Width
 		m.height = wsm.Height
 		m.invalidatePartnerMapCache()
+		// Forward size to image viewer.
+		if c := m.imageViewer.Update(msg); c != nil {
+			cmd = tea.Batch(cmd, c)
+		}
 		// Update focused textinput width so scrolling stays correct.
 		if m.screen == screenQSO && !m.retainFocused {
 			if m.width > 60 {
@@ -348,6 +356,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleMainMenuUpdate(msg, cmd)
 	case screenPartner:
 		return m.handlePartnerUpdate(msg, cmd)
+	case screenImage:
+		if keyMsg, ok := msg.(tea.KeyPressMsg); ok && keyMsg.String() == "esc" {
+			m.screen = screenPartner
+			return m, cmd
+		}
+		c := m.imageViewer.Update(msg)
+		if c != nil {
+			cmd = tea.Batch(cmd, c)
+		}
+		return m, cmd
 	case screenLogbookEditor:
 		return m.handleLogbookEditorUpdate(msg, cmd)
 	case screenLogView:
@@ -445,6 +463,11 @@ func (m *Model) View() tea.View {
 	return v
 }
 
+// viewImage renders the partner photo full-screen.
+func (m *Model) viewImage(l Layout) string {
+	return m.imageViewer.View().Content
+}
+
 // buildBodyForScreen returns the content string for the active screen,
 // using Layout dimensions for proper sizing.
 func (m *Model) buildBodyForScreen(l Layout) string {
@@ -455,6 +478,8 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 		if m.partnerData != nil || strings.TrimSpace(m.fields[fieldCall].Value()) != "" {
 			return m.viewPartner()
 		}
+	case screenImage:
+		return m.viewImage(l)
 	case screenMainMenu:
 		return m.mainMenu.View().Content
 	case screenConfig:
