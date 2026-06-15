@@ -12,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/NimbleMarkets/ntcharts/v2/picture/pictureurl"
+	"github.com/gen2brain/beeep"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
@@ -264,7 +265,18 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 		HTTPClient: &http.Client{Transport: transport, Timeout: 15 * time.Second},
 	})
 	m.mapView = newMapRenderer()
+	m.applyBeepOnError()
 	return m
+}
+
+// applyBeepOnError wires the system beep to all ERROR-level log calls
+// when BeepOnError is enabled in the notifications config.
+func (m *Model) applyBeepOnError() {
+	if m.App.Config.General.Notifications.BeepOnError {
+		applog.SetBeepFunc(func() { beeep.Beep(beeep.DefaultFreq, beeep.DefaultDuration) })
+	} else {
+		applog.SetBeepFunc(nil)
+	}
 }
 
 func (m *Model) Init() tea.Cmd {

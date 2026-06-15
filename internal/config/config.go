@@ -29,6 +29,7 @@ type NotificationsConfig struct {
 	QSO           bool `yaml:"qso_logged"`
 	Wavelog       bool `yaml:"wavelog_sent"`
 	WavelogErrors bool `yaml:"wavelog_errors"`
+	BeepOnError   bool `yaml:"beep_on_error"`
 }
 
 type StateConfig struct {

@@ -82,6 +82,8 @@ func (m *Model) handleNotificationsUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 			m.App.Config.General.Notifications.QSO = m.notifMenu.qso
 			m.App.Config.General.Notifications.Wavelog = m.notifMenu.wavelog
 			m.App.Config.General.Notifications.WavelogErrors = m.notifMenu.wavelogErrors
+			m.App.Config.General.Notifications.BeepOnError = m.notifMenu.beepOnError
+			m.applyBeepOnError()
 			m.saveConfig("Settings saved")
 			m.screen = screenMainMenu
 		}

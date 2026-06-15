@@ -19,6 +19,7 @@ var (
 	mu      sync.Mutex
 	entries []Entry
 	logDir  string
+	beepFn  func() // called on errors when set (see SetBeepFunc)
 )
 
 const maxStored = 100   // max in-memory log entries for TUI viewer
@@ -166,10 +167,14 @@ func Warn(msg string, args ...any) {
 }
 
 // Error logs a message at ERROR level. Safe when Logger is nil (tests).
+// If SetBeepFunc has been configured, also triggers a system beep.
 func Error(msg string, args ...any) {
 	Append("ERROR", msg, "")
 	if Logger != nil {
 		Logger.Error(msg, args...)
+	}
+	if beepFn != nil {
+		beepFn()
 	}
 }
 
@@ -184,10 +189,14 @@ func InfoDetail(msg, details string) {
 
 // ErrorDetail logs an ERROR message with an additional detail string shown
 // in the TUI log viewer. Safe when Logger is nil (tests).
+// If SetBeepFunc has been configured, also triggers a system beep.
 func ErrorDetail(msg, details string) {
 	Append("ERROR", msg, details)
 	if Logger != nil {
 		Logger.Error(msg, "details", details)
+	}
+	if beepFn != nil {
+		beepFn()
 	}
 }
 
@@ -202,4 +211,10 @@ func DebugDetail(msg, details string) {
 
 func nowStamp() string {
 	return time.Now().Format("15:04:05")
+}
+
+// SetBeepFunc registers a callback that is invoked on every ERROR-level log.
+// Pass nil to disable. Callers should use this to trigger a system beep.
+func SetBeepFunc(fn func()) {
+	beepFn = fn
 }

@@ -15,6 +15,7 @@ type NotificationsMenu struct {
 	qso           bool
 	wavelog       bool
 	wavelogErrors bool
+	beepOnError   bool
 	cursor        int
 	done          bool
 	saved         bool
@@ -23,7 +24,7 @@ type NotificationsMenu struct {
 	height        int
 }
 
-const notifItemCount = 5 // 4 checkboxes + 1 button
+const notifItemCount = 7 // 5 checkboxes + 2 buttons
 
 func NewNotificationsMenu(cfg *config.Config) *NotificationsMenu {
 	n := cfg.General.Notifications
@@ -32,6 +33,7 @@ func NewNotificationsMenu(cfg *config.Config) *NotificationsMenu {
 		qso:           n.QSO,
 		wavelog:       n.Wavelog,
 		wavelogErrors: n.WavelogErrors,
+		beepOnError:   n.BeepOnError,
 	}
 }
 
@@ -79,10 +81,14 @@ func (nm *NotificationsMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if nm.enabled {
 					nm.wavelogErrors = !nm.wavelogErrors
 				}
+			case 4:
+				nm.beepOnError = !nm.beepOnError
 			}
 		case "enter":
-			if nm.cursor == 4 {
+			if nm.cursor == 5 {
 				nm.sendTestNotification()
+			} else if nm.cursor == 6 {
+				nm.sendTestBeep()
 			}
 		}
 	}
@@ -95,6 +101,13 @@ func (nm *NotificationsMenu) sendTestNotification() {
 	applog.Info("Test notification sent")
 	if err := beeep.Notify(title, body, ""); err != nil {
 		applog.Info("Test notification failed", "error", err.Error())
+	}
+}
+
+func (nm *NotificationsMenu) sendTestBeep() {
+	applog.Info("Test beep triggered")
+	if err := beeep.Beep(beeep.DefaultFreq, beeep.DefaultDuration); err != nil {
+		applog.Info("Test beep failed", "error", err.Error())
 	}
 }
 
@@ -130,9 +143,12 @@ func (nm *NotificationsMenu) View() tea.View {
 	nm.renderCheckbox(&b, boxW, 2, "  Notify when sent to Wavelog", nm.wavelog && nm.enabled, !nm.enabled)
 	nm.renderCheckbox(&b, boxW, 3, "  Notify on Wavelog errors", nm.wavelogErrors && nm.enabled, !nm.enabled)
 
-	// Row 4: Test notification button
+	// Row 4: Beep on errors (independent of master notifications toggle).
+	nm.renderCheckbox(&b, boxW, 4, "Beep on errors", nm.beepOnError, false)
+
+	// Row 5: Test notification button
 	btn := "[ Test notification ]"
-	if nm.cursor == 4 {
+	if nm.cursor == 5 {
 		b.WriteString(padOrTrunc(
 			lipgloss.JoinHorizontal(lipgloss.Center,
 				S.FormPrefixOn.Render("> "),
@@ -140,6 +156,19 @@ func (nm *NotificationsMenu) View() tea.View {
 			boxW))
 	} else {
 		b.WriteString(padOrTrunc("    "+InputStyle.Render(btn), boxW))
+	}
+	b.WriteString("\n")
+
+	// Row 6: Test beep button
+	btn2 := "[ Test beep ]"
+	if nm.cursor == 6 {
+		b.WriteString(padOrTrunc(
+			lipgloss.JoinHorizontal(lipgloss.Center,
+				S.FormPrefixOn.Render("> "),
+				CursorStyle.Render(btn2)),
+			boxW))
+	} else {
+		b.WriteString(padOrTrunc("    "+InputStyle.Render(btn2), boxW))
 	}
 	b.WriteString("\n")
 
