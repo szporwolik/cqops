@@ -19,6 +19,7 @@ type Config struct {
 type GeneralConfig struct {
 	Timezone      string              `yaml:"timezone"`
 	DistanceUnit  string              `yaml:"distance_unit,omitempty"`
+	RenderMap     bool                `yaml:"render_map,omitempty"`
 	Notifications NotificationsConfig `yaml:"notifications"`
 }
 

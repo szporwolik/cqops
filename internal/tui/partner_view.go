@@ -75,11 +75,12 @@ func (m *Model) viewPartner() string {
 	} else {
 		sigB.WriteString("wl:nil|")
 	}
-	fmt.Fprintf(&sigB, "wldone=%v|wlband=%s|wlmode=%s|qrz=%v|wlcfg=%v|map=%s",
+	fmt.Fprintf(&sigB, "wldone=%v|wlband=%s|wlmode=%s|qrz=%v|wlcfg=%v|map=%s|rmap=%v",
 		m.wlLookupDone, m.wlLastBand, m.wlLastMode,
 		m.App.Config.QRZ.Enabled,
 		m.App.Logbook.Wavelog != nil && m.App.Logbook.Wavelog.Enabled,
-		m.partnerMapCacheSig)
+		m.partnerMapCacheSig,
+		m.App.Config.General.RenderMap)
 
 	sig := sigB.String()
 	if m.partnerViewCacheSig == sig && m.partnerViewCache != "" {
@@ -148,15 +149,19 @@ func (m *Model) viewPartner() string {
 		topRow = lipgloss.JoinHorizontal(lipgloss.Top, cbBox, lbBox)
 	}
 
-	mapW := totalW
-	topH := lipgloss.Height(topRow)
-	mapAvailH := contentHeight(m.height) - topH
-	if mapAvailH < 3 {
-		mapAvailH = 3
+	var block string
+	if m.App.Config.General.RenderMap {
+		mapW := totalW
+		topH := lipgloss.Height(topRow)
+		mapAvailH := contentHeight(m.height) - topH
+		if mapAvailH < 3 {
+			mapAvailH = 3
+		}
+		mapBox := drawBorderedBox(m.getOrBuildMap(d, mapW, mapAvailH), mapW)
+		block = lipgloss.JoinVertical(lipgloss.Left, topRow, mapBox)
+	} else {
+		block = topRow
 	}
-	mapBox := drawBorderedBox(m.getOrBuildMap(d, mapW, mapAvailH), mapW)
-
-	block := lipgloss.JoinVertical(lipgloss.Left, topRow, mapBox)
 	if w > totalW+2 {
 		block = PartnerBlock.Width(w).Render(block)
 	}

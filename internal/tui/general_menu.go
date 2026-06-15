@@ -12,6 +12,7 @@ type GeneralMenu struct {
 	distanceUnit string
 	timezone     string
 	tzIndex      int
+	renderMap    bool
 	cursor       int
 	done         bool
 	saved        bool
@@ -36,7 +37,12 @@ func NewGeneralMenu(cfg *config.Config) *GeneralMenu {
 	if tz == "" {
 		tz = "UTC"
 	}
-	return &GeneralMenu{distanceUnit: du, timezone: tz, tzIndex: tzIdx}
+	return &GeneralMenu{
+		distanceUnit: du,
+		timezone:     tz,
+		tzIndex:      tzIdx,
+		renderMap:    cfg.General.RenderMap,
+	}
 }
 
 func (gm *GeneralMenu) Init() tea.Cmd { return nil }
@@ -56,30 +62,29 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			gm.saved = true
 			return gm, nil
 		case "up", "k":
-			if gm.cursor == 0 {
-				gm.cursor = 1
-			} else {
-				gm.cursor = 0
+			if gm.cursor > 0 {
+				gm.cursor--
 			}
 		case "down", "j":
-			if gm.cursor == 0 {
-				gm.cursor = 1
-			} else {
-				gm.cursor = 0
+			if gm.cursor < 2 {
+				gm.cursor++
 			}
 		case " ", "space":
-			if gm.cursor == 0 {
+			switch gm.cursor {
+			case 0:
 				if gm.distanceUnit == "km" {
 					gm.distanceUnit = "mi"
 				} else {
 					gm.distanceUnit = "km"
 				}
-			} else if gm.cursor == 1 {
+			case 1:
 				gm.tzIndex++
 				if gm.tzIndex >= len(config.Timezones) {
 					gm.tzIndex = 0
 				}
 				gm.timezone = config.Timezones[gm.tzIndex]
+			case 2:
+				gm.renderMap = !gm.renderMap
 			}
 		case "enter":
 			// no-op: Enter does not save
@@ -122,6 +127,21 @@ func (gm *GeneralMenu) View() tea.View {
 
 	// Timezone row
 	b.WriteString(formCheckbox("Timezone", gm.timezone, gm.cursor == 1, boxW))
+	b.WriteString("\n")
+
+	// Render map row — checkbox style.
+	checkbox := "[ ]"
+	if gm.renderMap {
+		checkbox = "[x]"
+	}
+	prefix := "  "
+	lbl := S.FormLabelWide.Align(lipgloss.Left).Render("Render map")
+	if gm.cursor == 2 {
+		prefix = S.FormPrefixOn.Render("> ")
+		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render("Render map")
+		checkbox = CursorStyle.Render(checkbox)
+	}
+	b.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", checkbox), boxW))
 	b.WriteString("\n")
 
 	body := drawMenuBox(b.String(), w)
