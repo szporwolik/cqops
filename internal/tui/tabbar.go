@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -47,8 +48,20 @@ var (
 )
 
 // tabView renders the function-key tab bar using lipgloss's tab border pattern.
+// Cached — only rebuilds when screen, partner presence, or confirm state change.
 func (m *Model) tabView() string {
 	hasPartner := m.partnerData != nil || strings.TrimSpace(m.fields[fieldCall].Value()) != ""
+
+	// Cache key: screen + partner presence + confirm state.
+	conf := 0
+	if m.confirm != nil {
+		conf = 1
+	}
+	sig := fmt.Sprintf("%d|%v|%d", m.screen, hasPartner, conf)
+	if m.cachedTabSig == sig && m.cachedTabView != "" {
+		return m.cachedTabView
+	}
+
 	w := m.width
 	if w < 20 {
 		w = 80
@@ -88,7 +101,10 @@ func (m *Model) tabView() string {
 	}
 	gap := tabGapStyle.Render(strings.Repeat(" ", gapW))
 
-	return lipgloss.JoinHorizontal(lipgloss.Bottom, row, gap)
+	result := lipgloss.JoinHorizontal(lipgloss.Bottom, row, gap)
+	m.cachedTabSig = sig
+	m.cachedTabView = result
+	return result
 }
 
 // renderTabBar is the canonical entry point for tab bar rendering.

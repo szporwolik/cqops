@@ -16,21 +16,47 @@ var confirmBindings = []key.Binding{
 }
 
 // helpView renders the bottom help/footer bar with context-sensitive key bindings.
+// Cached — only rebuilds when screen, confirm state, or dynamic suffix change.
 func (m *Model) helpView() string {
+	// Build a compact cache key.
+	suffix := m.helpSuffix()
+	conf := 0
+	if m.confirm != nil {
+		conf = 1
+	}
+	sig := fmt.Sprintf("%d|%d|%s", m.screen, conf, suffix)
+	if m.cachedHelpSig == sig && m.cachedHelpView != "" {
+		return m.cachedHelpView
+	}
+
+	var result string
+
 	// Global confirm dialog (quit, etc.)
 	if m.confirm != nil {
-		return HelpStyle.Render(m.help.ShortHelpView(confirmBindings))
+		result = HelpStyle.Render(m.help.ShortHelpView(confirmBindings))
+		m.cachedHelpSig = sig
+		m.cachedHelpView = result
+		return result
 	}
 
 	// Internal confirm dialogs: rig/chooser delete confirmations.
 	if m.rigChooser != nil && m.rigChooser.mode == rigChooserConfirmDelete && m.rigChooser.dialog != nil {
-		return HelpStyle.Render(m.help.ShortHelpView(confirmBindings))
+		result = HelpStyle.Render(m.help.ShortHelpView(confirmBindings))
+		m.cachedHelpSig = sig
+		m.cachedHelpView = result
+		return result
 	}
 	if m.chooser != nil && m.chooser.mode == chooserConfirmDelete && m.chooser.dialog != nil {
-		return HelpStyle.Render(m.help.ShortHelpView(confirmBindings))
+		result = HelpStyle.Render(m.help.ShortHelpView(confirmBindings))
+		m.cachedHelpSig = sig
+		m.cachedHelpView = result
+		return result
 	}
 	if m.logbookEditor != nil && m.logbookEditor.isConfirmMode() && m.logbookEditor.dialog != nil {
-		return HelpStyle.Render(m.help.ShortHelpView(confirmBindings))
+		result = HelpStyle.Render(m.help.ShortHelpView(confirmBindings))
+		m.cachedHelpSig = sig
+		m.cachedHelpView = result
+		return result
 	}
 
 	bindings := m.ActiveBindings()
@@ -43,17 +69,19 @@ func (m *Model) helpView() string {
 	}
 
 	// Dynamic suffix (counter / scroll info) — always computed, never cached.
-	suffix := m.helpSuffix()
 	if suffix != "" {
 		suffixW := lipgloss.Width(suffix)
 		spacerW := m.width - lipgloss.Width(helpText) - suffixW - 2
 		if spacerW < 1 {
 			spacerW = 1
 		}
-		return HelpStyle.Render(helpText + strings.Repeat(" ", spacerW) + suffix)
+		result = HelpStyle.Render(helpText + strings.Repeat(" ", spacerW) + suffix)
+	} else {
+		result = HelpStyle.Render(helpText)
 	}
-
-	return HelpStyle.Render(helpText)
+	m.cachedHelpSig = sig
+	m.cachedHelpView = result
+	return result
 }
 
 // helpSuffix returns the dynamic right-aligned suffix for the help bar

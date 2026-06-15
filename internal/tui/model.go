@@ -178,6 +178,14 @@ type Model struct {
 	// Partner logbook stats cache — recomputed on call/band/mode change or QSO save.
 	cachedLogStats    store.LogbookStats
 	cachedLogStatsSig string
+
+	// Per-frame view caches — avoids rebuilding lipgloss output when inputs unchanged.
+	cachedFormView string
+	cachedFormSig  string
+	cachedTabView  string
+	cachedTabSig   string
+	cachedHelpView string
+	cachedHelpSig  string
 }
 
 type tickMsg time.Time

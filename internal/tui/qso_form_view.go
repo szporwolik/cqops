@@ -15,9 +15,18 @@ var (
 	formLeft      = []field{fieldDate, fieldTime, fieldCall, fieldFreq, fieldBand, fieldMode, fieldSubmode}
 	formMiddle    = []field{fieldRSTSent, fieldRSTRcvd, fieldName, fieldQTH, fieldGrid, fieldCountry}
 	formRight     = []field{fieldTXPower, fieldFreqRx, fieldSOTA, fieldPOTA, fieldWWFF, fieldIOTA}
+	allFields     = buildAllFields()
 	choiceIconStr = DimStyle.Render("\u25bc ")
 	choiceIconW   = lipgloss.Width(choiceIconStr)
 )
+
+func buildAllFields() []field {
+	fs := make([]field, 0, fieldCount)
+	for f := field(0); f < fieldCount; f++ {
+		fs = append(fs, f)
+	}
+	return fs
+}
 
 // isChoiceField returns true for fields that have a cycle ▼ icon.
 func isChoiceField(f field) bool { return f == fieldBand || f == fieldMode || f == fieldSubmode }
@@ -29,6 +38,28 @@ func (m *Model) viewForm(width int) string {
 	bodyW := width
 	if bodyW < 20 {
 		bodyW = 20
+	}
+
+	// Build a cache signature from all inputs that affect form output.
+	// The date/time fields change every second, so this invalidates at 1 Hz.
+	var sigB strings.Builder
+	fmt.Fprintf(&sigB, "%d|%d|", width, m.focus)
+	if m.retainFocused {
+		sigB.WriteString("rf|")
+	}
+	if m.retainComment {
+		sigB.WriteString("rc|")
+	}
+	if m.dateTimeAuto {
+		sigB.WriteString("dta|")
+	}
+	for _, f := range allFields {
+		sigB.WriteString(m.fields[f].Value())
+		sigB.WriteByte('|')
+	}
+	sig := sigB.String()
+	if m.cachedFormSig == sig && m.cachedFormView != "" {
+		return m.cachedFormView
 	}
 
 	const maxColW = 41
@@ -154,7 +185,10 @@ func (m *Model) viewForm(width int) string {
 	retainBox := colStyle.Render(m.renderRetainCheckbox(colW))
 	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, commentLine, retainBox))
 
-	return b.String()
+	result := b.String()
+	m.cachedFormSig = sig
+	m.cachedFormView = result
+	return result
 }
 
 // renderRetainCheckbox renders the "Retain" checkbox next to the Comment field.
