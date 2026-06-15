@@ -177,42 +177,33 @@ func (mr *mapRenderer) drawMarkers(rendered string, ownLat, ownLon, partnerLat, 
 	ownX, ownY := srcToCell(ownLat, ownLon)
 	partnerX, partnerY := srcToCell(partnerLat, partnerLon)
 
-	// When both stations land on the same cell, nudge partner to the nearest
-	// free adjacent cell so both markers remain visible.
-	if ownX == partnerX && ownY == partnerY {
-		// Try 4-neighbour cells in order: right, left, down, up.
-		candidates := [][2]int{
-			{partnerX + 1, partnerY},
-			{partnerX - 1, partnerY},
-			{partnerX, partnerY + 1},
-			{partnerX, partnerY - 1},
-		}
-		for _, c := range candidates {
-			cx, cy := c[0], c[1]
-			if cx >= 0 && cx < mapW && cy >= 0 && cy < mapH {
-				partnerX, partnerY = cx, cy
-				break
-			}
-		}
-	}
+	// When both stations land on the same cell, render a merged marker.
+	sameCell := ownX == partnerX && ownY == partnerY
 
 	ownMark := S.MapOwn.Render("\u25c6")
 	partMark := S.MapPartner.Render("\u00d7")
+	bothMark := S.MapBoth.Render("\u25ce")
 
 	lines := strings.Split(rendered, "\n")
 	for i := range lines {
-		if i == ownY {
-			lines[i] = replaceANSICell(lines[i], ownX, ownMark)
-		}
-		if i == partnerY {
-			lines[i] = replaceANSICell(lines[i], partnerX, partMark)
+		if sameCell && i == ownY {
+			lines[i] = replaceANSICell(lines[i], ownX, bothMark)
+		} else {
+			if i == ownY {
+				lines[i] = replaceANSICell(lines[i], ownX, ownMark)
+			}
+			if i == partnerY {
+				lines[i] = replaceANSICell(lines[i], partnerX, partMark)
+			}
 		}
 	}
 
 	legend := DimStyle.Render(" ") +
 		S.MapOwn.Render("\u25c6") + DimStyle.Render(" My station") +
 		DimStyle.Render("  ") +
-		S.MapPartner.Render("\u00d7") + DimStyle.Render(" Partner")
+		S.MapPartner.Render("\u00d7") + DimStyle.Render(" Partner") +
+		DimStyle.Render("  ") +
+		S.MapBoth.Render("\u25ce") + DimStyle.Render(" Merged")
 	lines = append(lines, legend)
 
 	return strings.Join(lines, "\n")
