@@ -114,6 +114,14 @@ type Model struct {
 	imageViewer     pictureurl.Model // terminal image viewer for partner photos
 	lastImageErr    error            // dedup image error logging
 	confirm         *DialogModel     // active confirmation dialog (quit, etc.)
+
+	// Layout cache — avoids redundant MeasureLayout() calls when terminal size
+	// and screen haven't changed between frames.
+	lastLayout   Layout
+	lastLayoutW  int
+	lastLayoutH  int
+	lastLayoutSc screenKind
+
 	partnerData     *qrz.CallData
 	wlPrivateData   *wavelog.PrivateLookupResult // Wavelog callsign lookup
 	wlLookupDone    bool                         // true when any WL lookup result received
@@ -429,8 +437,18 @@ func (m *Model) View() tea.View {
 		return tea.NewView(errorStyle.Render(fmt.Sprintf("Error: %v\nPress any key to exit.", m.err)))
 	}
 
-	// Measure all fixed zones and calculate content area dimensions
-	layout := MeasureLayout(m)
+	// Measure all fixed zones and calculate content area dimensions.
+	// Cache the layout when terminal size and screen haven't changed.
+	var layout Layout
+	if m.lastLayoutW == m.width && m.lastLayoutH == m.height && m.lastLayoutSc == m.screen {
+		layout = m.lastLayout
+	} else {
+		layout = MeasureLayout(m)
+		m.lastLayout = layout
+		m.lastLayoutW = m.width
+		m.lastLayoutH = m.height
+		m.lastLayoutSc = m.screen
+	}
 
 	if layout.TerminalW < 75 || layout.TerminalH < 24 {
 		msg := fmt.Sprintf("\n  CQOps — Terminal too small: %dx%d (min 75x24)\n\n  Press F10 and then Enter to quit",

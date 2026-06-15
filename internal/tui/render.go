@@ -8,17 +8,22 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
+// Pre-allocated border styles — reused across all drawBorderedBox calls.
+var (
+	borderFg    = lipgloss.NewStyle().Foreground(P.Border).Background(P.Surface)
+	borderBg    = lipgloss.NewStyle().Background(P.Surface)
+	menuLineBg  = lipgloss.NewStyle().Background(P.Surface)
+	menuTitleBg = lipgloss.NewStyle().Background(P.Surface)
+)
+
 // drawBorderedBox draws a NormalBorder box where every character (including
 // borders) has explicit Surface background. This prevents the right │ leak
 // that occurs with lipgloss's built-in Border when content has SGR resets.
 func drawBorderedBox(content string, innerW, boxW int) string {
-	bg := lipgloss.NewStyle().Background(P.Surface)
-	fg := lipgloss.NewStyle().Foreground(P.Border).Background(P.Surface)
-
-	top := fg.Render("┌" + strings.Repeat("─", innerW) + "┐")
-	bot := fg.Render("└" + strings.Repeat("─", innerW) + "┘")
-	left := fg.Render("│")
-	right := fg.Render("│")
+	top := borderFg.Render("┌" + strings.Repeat("─", innerW) + "┐")
+	bot := borderFg.Render("└" + strings.Repeat("─", innerW) + "┘")
+	left := borderFg.Render("│")
+	right := borderFg.Render("│")
 
 	var b strings.Builder
 	b.WriteString(top)
@@ -27,13 +32,13 @@ func drawBorderedBox(content string, innerW, boxW int) string {
 	lines := strings.Split(content, "\n")
 	for _, line := range lines {
 		b.WriteString(left)
-		b.WriteString(bg.Width(innerW).MaxWidth(innerW).Render(line))
+		b.WriteString(borderBg.Width(innerW).MaxWidth(innerW).Render(line))
 		b.WriteString(right)
 		b.WriteString("\n")
 	}
 	b.WriteString(bot)
 
-	return lipgloss.NewStyle().Width(boxW).Background(P.Surface).Render(b.String())
+	return borderBg.Width(boxW).Render(b.String())
 }
 
 // osc8Link returns an OSC-8 hyperlink sequence. Most modern terminals
@@ -67,15 +72,14 @@ func fillBody(content string, contentH int) string {
 // menuTitle renders a configuration-menu title bar that fills the full
 // terminal width with Surface background — no leaking character at the end.
 func menuTitle(title string, width int) string {
-	bg := lipgloss.NewStyle().Background(P.Surface)
 	ts := S.Title.Copy().Background(P.Surface)
-	return bg.Width(width).Render(ts.Render(title))
+	return menuTitleBg.Width(width).Render(ts.Render(title))
 }
 
 // menuLine wraps a single menu row in Surface background and fills to the
 // given width, preventing bg leaks from inner ANSI resets.
 func menuLine(content string, width int) string {
-	return lipgloss.NewStyle().Background(P.Surface).Width(width).Render(content)
+	return menuLineBg.Width(width).Render(content)
 }
 
 // section renders a titled horizontal rule: "── Title ──────────"

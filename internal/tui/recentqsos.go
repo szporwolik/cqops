@@ -24,6 +24,12 @@ type RecentQSOs struct {
 	// table is rebuilt on every View() from current data; it never receives
 	// Update calls so it's always read-only.
 	table table.Model
+
+	// View cache — avoids rebuilding the table on every frame when nothing changed.
+	cachedView     string
+	cachedW        int
+	cachedH        int
+	cachedQSOLen   int
 }
 
 // NewRecentQSOs creates a read-only recent QSOs view.
@@ -43,7 +49,8 @@ func (r *RecentQSOs) SetSize(w, h int) {
 }
 
 // View renders the read-only recent QSOs table. It never calls table.Update,
-// so the table cannot consume keyboard events.
+// so the table cannot consume keyboard events. The output is cached and
+// only rebuilt when QSO data or dimensions change.
 func (r *RecentQSOs) View() string {
 	bodyW := r.width
 	if bodyW < 20 {
@@ -52,6 +59,11 @@ func (r *RecentQSOs) View() string {
 	maxRows := r.height - 1 // header only
 	if maxRows < 3 {
 		maxRows = 3
+	}
+
+	// Return cached view if nothing changed.
+	if r.cachedW == bodyW && r.cachedH == maxRows && r.cachedQSOLen == len(r.qsos) && r.cachedView != "" {
+		return r.cachedView
 	}
 
 	// Pick the widest tier that fits at minimum width; if none fit even
@@ -150,11 +162,18 @@ func (r *RecentQSOs) View() string {
 
 	// Clip to exact dimensions — never wrap, never overflow the border.
 	// Height fills the remaining space with Surface background.
-	return lipgloss.NewStyle().
+	view := lipgloss.NewStyle().
 		MaxWidth(bodyW).
 		Height(maxRows + 1).
 		Background(P.Surface).
 		Render(t.View())
+
+	r.cachedView = view
+	r.cachedW = bodyW
+	r.cachedH = maxRows
+	r.cachedQSOLen = len(r.qsos)
+
+	return view
 }
 
 // Height returns the rendered height of the component.

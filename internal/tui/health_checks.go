@@ -35,7 +35,7 @@ func (m *Model) maybeCheckInet() tea.Cmd {
 func checkInetCmd() tea.Cmd {
 	return func() tea.Msg {
 		applog.Debug("Internet: testing connectivity")
-		client := &http.Client{Timeout: 3 * time.Second}
+		client := &http.Client{Timeout: 1 * time.Second}
 		resp, err := client.Get("https://clients3.google.com/generate_204")
 		if err != nil {
 			applog.Warn("Internet: unreachable", "error", err)
