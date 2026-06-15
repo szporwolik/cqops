@@ -259,19 +259,22 @@ func replaceANSICell(line string, col int, marker string) string {
 
 // --- Day/night terminator (grayline) ---------------------------------------
 
-// solarElevation returns the sun's elevation in degrees at a given lat/lon
-// and UTC time.  Positive = sun above horizon, negative = below.
-// Uses standard solar declination + hour-angle formula.
-func solarElevation(lat, lon float64, t time.Time) float64 {
-	t = t.UTC()
-	doy := float64(t.YearDay())
-	// Solar declination (approx, ±0.5° accuracy).
-	decl := 23.44 * math.Sin(2*math.Pi*(doy-80)/365.25) * math.Pi / 180
+// equationOfTime returns the correction in minutes to convert clock time to
+// solar time.  Range ±16 min.  Accuracy ~±30 s.
+func equationOfTime(doy float64) float64 {
+	b := 2 * math.Pi * (doy - 81) / 365.0
+	return 9.87*math.Sin(2*b) - 7.53*math.Cos(b) - 1.5*math.Sin(b)
+}
 
-	utcHours := float64(t.Hour()) + float64(t.Minute())/60.0 + float64(t.Second())/3600.0
-	// Hour angle: how far the sun is from the local meridian.
-	ha := (lon/15.0 - utcHours) * 15.0 * math.Pi / 180
-
+// solarElevationFast returns the sun's elevation in degrees at a given
+// lat/lon, given pre-computed solar declination (radians) and effective
+// UTC hours (already corrected for the equation of time).
+func solarElevationFast(lat, lon, decl, effUTCHours float64) float64 {
+	// Subsolar longitude: at effUTCHours, the sun is overhead at
+	// lon = (12 − effUTCHours) × 15°.  Hour angle is the difference
+	// between the point's longitude and the subsolar longitude.
+	subsolarLon := (12.0 - effUTCHours) * 15.0
+	ha := (lon - subsolarLon) * math.Pi / 180
 	latRad := lat * math.Pi / 180
 	sinAlt := math.Sin(latRad)*math.Sin(decl) + math.Cos(latRad)*math.Cos(decl)*math.Cos(ha)
 	return math.Asin(sinAlt) * 180 / math.Pi
@@ -279,11 +282,25 @@ func solarElevation(lat, lon float64, t time.Time) float64 {
 
 // blendGrayline darkens the night side of the map and adds a twilight
 // transition band.  Day side (elevation > 6°) is unchanged.
+//
+// Solar declination and equation-of-time are computed once (not per-pixel).
+// The equation of time corrects for Earth's elliptical orbit, improving
+// grayline position accuracy from ~±4° to ~±0.5° longitude.
 func blendGrayline(img *image.RGBA, w, h int, t time.Time) {
-	// srcW/srcH are the source map pixel dimensions.
 	if mapSrcW == 0 || mapSrcH == 0 {
 		return
 	}
+	t = t.UTC()
+	doy := float64(t.YearDay())
+
+	// Solar declination for this day (±23.44° over the year).
+	decl := 23.44 * math.Sin(2*math.Pi*(doy-80)/365.25) * math.Pi / 180
+
+	// Equation of time: corrects clock-UTC to solar-UTC.
+	eotMin := equationOfTime(doy)
+	utcHours := float64(t.Hour()) + float64(t.Minute())/60.0 + float64(t.Second())/3600.0
+	effHours := utcHours + eotMin/60.0
+
 	const (
 		nightAlpha = 0.65 // how much to darken night side
 		twilightLo = -6.0 // civil twilight start (degrees)
@@ -300,7 +317,7 @@ func blendGrayline(img *image.RGBA, w, h int, t time.Time) {
 			if w == 1 {
 				lon = 0
 			}
-			elev := solarElevation(lat, lon, t)
+			elev := solarElevationFast(lat, lon, decl, effHours)
 			var factor float64
 			switch {
 			case elev > twilightHi:
