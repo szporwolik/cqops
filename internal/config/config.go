@@ -20,6 +20,7 @@ type GeneralConfig struct {
 	Timezone      string              `yaml:"timezone"`
 	DistanceUnit  string              `yaml:"distance_unit,omitempty"`
 	RenderMap     bool                `yaml:"render_map,omitempty"`
+	DrawGrayline  bool                `yaml:"draw_grayline,omitempty"`
 	Notifications NotificationsConfig `yaml:"notifications"`
 }
 

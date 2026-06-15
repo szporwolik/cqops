@@ -13,6 +13,7 @@ type GeneralMenu struct {
 	timezone     string
 	tzIndex      int
 	renderMap    bool
+	drawGrayline bool
 	cursor       int
 	done         bool
 	saved        bool
@@ -42,6 +43,7 @@ func NewGeneralMenu(cfg *config.Config) *GeneralMenu {
 		timezone:     tz,
 		tzIndex:      tzIdx,
 		renderMap:    cfg.General.RenderMap,
+		drawGrayline: cfg.General.DrawGrayline,
 	}
 }
 
@@ -66,7 +68,7 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				gm.cursor--
 			}
 		case "down", "j":
-			if gm.cursor < 2 {
+			if gm.cursor < 3 {
 				gm.cursor++
 			}
 		case " ", "space":
@@ -85,6 +87,8 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				gm.timezone = config.Timezones[gm.tzIndex]
 			case 2:
 				gm.renderMap = !gm.renderMap
+			case 3:
+				gm.drawGrayline = !gm.drawGrayline
 			}
 		case "enter":
 			// no-op: Enter does not save
@@ -139,6 +143,21 @@ func (gm *GeneralMenu) View() tea.View {
 	if gm.cursor == 2 {
 		prefix = S.FormPrefixOn.Render("> ")
 		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render("Render map")
+		checkbox = CursorStyle.Render(checkbox)
+	}
+	b.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", checkbox), boxW))
+	b.WriteString("\n")
+
+	// Draw grayline row
+	checkbox = "[ ]"
+	if gm.drawGrayline {
+		checkbox = "[x]"
+	}
+	prefix = "  "
+	lbl = S.FormLabelWide.Align(lipgloss.Left).Render("Draw grayline")
+	if gm.cursor == 3 {
+		prefix = S.FormPrefixOn.Render("> ")
+		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render("Draw grayline")
 		checkbox = CursorStyle.Render(checkbox)
 	}
 	b.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", checkbox), boxW))

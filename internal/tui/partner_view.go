@@ -75,11 +75,12 @@ func (m *Model) viewPartner() string {
 	} else {
 		sigB.WriteString("wl:nil|")
 	}
-	fmt.Fprintf(&sigB, "wldone=%v|wlband=%s|wlmode=%s|qrz=%v|wlcfg=%v|rmap=%v",
+	fmt.Fprintf(&sigB, "wldone=%v|wlband=%s|wlmode=%s|qrz=%v|wlcfg=%v|rmap=%v|gray=%v",
 		m.wlLookupDone, m.wlLastBand, m.wlLastMode,
 		m.App.Config.QRZ.Enabled,
 		m.App.Logbook.Wavelog != nil && m.App.Logbook.Wavelog.Enabled,
-		m.App.Config.General.RenderMap)
+		m.App.Config.General.RenderMap,
+		m.App.Config.General.DrawGrayline)
 
 	sig := sigB.String()
 	if m.partnerViewCacheSig == sig && m.partnerViewCache != "" {
@@ -495,7 +496,7 @@ func (m *Model) getOrBuildMap(d *qrz.CallData, mapW, mapAvailH int) string {
 
 	// Use embedded image map renderer.
 	if m.mapView != nil {
-		return m.mapView.View(ownLat, ownLon, pl, plon, mapW, mapAvailH)
+		return m.mapView.View(ownLat, ownLon, pl, plon, mapW, mapAvailH, m.App.Config.General.DrawGrayline)
 	}
 	// Fallback: ASCII map.
 	return renderWorldMap(ownLat, ownLon, pl, plon, mapW, mapAvailH)

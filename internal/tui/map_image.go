@@ -12,9 +12,11 @@ import (
 	"bytes"
 	"fmt"
 	"image"
+	"image/color"
 	"image/jpeg"
 	"math"
 	"strings"
+	"time"
 
 	"github.com/szporwolik/cqops/assets"
 )
@@ -40,15 +42,19 @@ func init() {
 // --- Map renderer -----------------------------------------------------------
 
 type mapRenderer struct {
-	cacheW int
-	cacheH int
-	cached string
+	cacheW       int
+	cacheH       int
+	cached       string
+	graylineOn   bool
+	graylineSlot int // UTC minute-of-day (0–1439)
 }
 
 func newMapRenderer() *mapRenderer { return &mapRenderer{} }
 
 // View renders the map at the given terminal dimensions.
-func (mr *mapRenderer) View(ownLat, ownLon, partnerLat, partnerLon float64, mapW, mapAvailH int) string {
+// drawGrayline enables the day/night terminator overlay (CPU-friendly —
+// computed only on cache miss, i.e. dimension change or UTC-minute tick).
+func (mr *mapRenderer) View(ownLat, ownLon, partnerLat, partnerLon float64, mapW, mapAvailH int, drawGrayline bool) string {
 	if mapImg == nil || mapW < 20 || mapAvailH < 2 {
 		return renderWorldMap(ownLat, ownLon, partnerLat, partnerLon, mapW, mapAvailH)
 	}
@@ -78,7 +84,12 @@ func (mr *mapRenderer) View(ownLat, ownLon, partnerLat, partnerLon float64, mapW
 		mapW = 20
 	}
 
-	if mr.cacheW == mapW && mr.cacheH == mapH && mr.cached != "" {
+	// Grayline slot: UTC minute-of-day, changes every 60 s.
+	now := time.Now().UTC()
+	graySlot := now.Hour()*60 + now.Minute()
+
+	if mr.cacheW == mapW && mr.cacheH == mapH && mr.graylineOn == drawGrayline &&
+		(!drawGrayline || mr.graylineSlot == graySlot) && mr.cached != "" {
 		return mr.drawMarkers(mr.cached, ownLat, ownLon, partnerLat, partnerLon, mapW, mapH)
 	}
 
@@ -92,6 +103,12 @@ func (mr *mapRenderer) View(ownLat, ownLon, partnerLat, partnerLon float64, mapW
 			sx := x * sb.Dx() / pixW
 			resized.Set(x, y, mapImg.At(sx+sb.Min.X, sy+sb.Min.Y))
 		}
+	}
+
+	// Blend day/night terminator (grayline) into the resized image before
+	// ANSI conversion — cheap because it only runs on cache miss.
+	if drawGrayline {
+		blendGrayline(resized, pixW, pixH, now)
 	}
 
 	// Convert to half-block ANSI.
@@ -117,6 +134,8 @@ func (mr *mapRenderer) View(ownLat, ownLon, partnerLat, partnerLon float64, mapW
 	mr.cached = base
 	mr.cacheW = mapW
 	mr.cacheH = mapH
+	mr.graylineOn = drawGrayline
+	mr.graylineSlot = graySlot
 	return mr.drawMarkers(base, ownLat, ownLon, partnerLat, partnerLon, mapW, mapH)
 }
 
@@ -236,4 +255,69 @@ func replaceANSICell(line string, col int, marker string) string {
 		pos++
 	}
 	return b.String()
+}
+
+// --- Day/night terminator (grayline) ---------------------------------------
+
+// solarElevation returns the sun's elevation in degrees at a given lat/lon
+// and UTC time.  Positive = sun above horizon, negative = below.
+// Uses standard solar declination + hour-angle formula.
+func solarElevation(lat, lon float64, t time.Time) float64 {
+	t = t.UTC()
+	doy := float64(t.YearDay())
+	// Solar declination (approx, ±0.5° accuracy).
+	decl := 23.44 * math.Sin(2*math.Pi*(doy-80)/365.25) * math.Pi / 180
+
+	utcHours := float64(t.Hour()) + float64(t.Minute())/60.0 + float64(t.Second())/3600.0
+	// Hour angle: how far the sun is from the local meridian.
+	ha := (lon/15.0 - utcHours) * 15.0 * math.Pi / 180
+
+	latRad := lat * math.Pi / 180
+	sinAlt := math.Sin(latRad)*math.Sin(decl) + math.Cos(latRad)*math.Cos(decl)*math.Cos(ha)
+	return math.Asin(sinAlt) * 180 / math.Pi
+}
+
+// blendGrayline darkens the night side of the map and adds a twilight
+// transition band.  Day side (elevation > 6°) is unchanged.
+func blendGrayline(img *image.RGBA, w, h int, t time.Time) {
+	// srcW/srcH are the source map pixel dimensions.
+	if mapSrcW == 0 || mapSrcH == 0 {
+		return
+	}
+	const (
+		nightAlpha = 0.65 // how much to darken night side
+		twilightLo = -6.0 // civil twilight start (degrees)
+		twilightHi = 6.0  // civil twilight end
+	)
+	for py := 0; py < h; py++ {
+		// py → latitude: equirectangular, y=0 is top (90°N).
+		lat := 90.0 - float64(py)*180.0/float64(h-1)
+		if h == 1 {
+			lat = 0
+		}
+		for px := 0; px < w; px++ {
+			lon := float64(px)*360.0/float64(w-1) - 180.0
+			if w == 1 {
+				lon = 0
+			}
+			elev := solarElevation(lat, lon, t)
+			var factor float64
+			switch {
+			case elev > twilightHi:
+				continue // full day — unchanged
+			case elev < twilightLo:
+				factor = nightAlpha // full night
+			default:
+				// Linear blend across the twilight band.
+				t := (twilightHi - elev) / (twilightHi - twilightLo)
+				factor = t * nightAlpha
+			}
+			r, g, b, a := img.At(px, py).RGBA()
+			f := 1.0 - factor
+			nr := uint8(float64(r>>8)*f + 0.5)
+			ng := uint8(float64(g>>8)*f + 0.5)
+			nb := uint8(float64(b>>8)*f + 0.5)
+			img.Set(px, py, color.RGBA{R: nr, G: ng, B: nb, A: uint8(a >> 8)})
+		}
+	}
 }

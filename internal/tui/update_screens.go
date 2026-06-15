@@ -60,6 +60,7 @@ func (m *Model) handleConfigUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd
 			m.App.Config.General.DistanceUnit = m.configMenu.distanceUnit
 			m.App.Config.General.Timezone = m.configMenu.timezone
 			m.App.Config.General.RenderMap = m.configMenu.renderMap
+			m.App.Config.General.DrawGrayline = m.configMenu.drawGrayline
 			m.saveConfig("Settings saved")
 			m.screen = screenMainMenu
 		}
