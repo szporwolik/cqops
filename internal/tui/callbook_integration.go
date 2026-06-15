@@ -115,7 +115,8 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 		return
 	}
 	if !m.App.Config.QRZ.Enabled || m.App.Config.QRZ.User == "" {
-		m.toasts.Warn("QRZ not configured")
+		// QRZ not configured — silently skip. All callers guard before firing,
+		// this is a belt-and-suspenders check.
 		return
 	}
 	if msg.Err != nil {

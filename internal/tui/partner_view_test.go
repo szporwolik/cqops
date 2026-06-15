@@ -4,8 +4,10 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/qrz"
+	"github.com/szporwolik/cqops/internal/store"
 )
 
 func TestPartnerViewRender(t *testing.T) {
@@ -204,5 +206,128 @@ func TestPartnerViewNarrowWidth(t *testing.T) {
 	view := m.viewPartner()
 	if view == "" {
 		t.Error("viewPartner on narrow width returned empty")
+	}
+}
+
+func TestFormatRowPairs(t *testing.T) {
+	rows := []row{
+		{"Name", "John"},
+		{"QTH", "Krakow"},
+	}
+
+	result := formatRowPairs(rows, S.FormLabel)
+	if result == "" {
+		t.Error("formatRowPairs returned empty")
+	}
+	if !strings.Contains(result, "Name") {
+		t.Error("formatRowPairs missing label 'Name'")
+	}
+	if !strings.Contains(result, "Krakow") {
+		t.Error("formatRowPairs missing value 'Krakow'")
+	}
+}
+
+func TestFormatRowPairsEmpty(t *testing.T) {
+	result := formatRowPairs(nil, S.FormLabel)
+	if result != "" {
+		t.Errorf("formatRowPairs with nil rows should return empty, got %q", result)
+	}
+
+	result = formatRowPairs([]row{}, S.FormLabel)
+	if result != "" {
+		t.Errorf("formatRowPairs with empty rows should return empty, got %q", result)
+	}
+}
+
+func TestRenderLoTW(t *testing.T) {
+	dimStyle := lipgloss.NewStyle()
+	badStyle := lipgloss.NewStyle()
+
+	// Member → Y with dim style.
+	result := renderLoTW(true, dimStyle, badStyle)
+	if result == "" {
+		t.Error("renderLoTW true returned empty")
+	}
+
+	// Not a member → N with bad style.
+	result = renderLoTW(false, dimStyle, badStyle)
+	if result == "" {
+		t.Error("renderLoTW false returned empty")
+	}
+}
+
+func TestRenderLogbookRowsWLFirst(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	d := &qrz.CallData{Callsign: "SP9MOA"}
+
+	// No WL data — should fall back to local (all default false = new).
+	rows := m.renderLogbookRows(d, 40)
+	if rows == "" {
+		t.Error("renderLogbookRows returned empty")
+	}
+	// With no WL data and no local stats, all should show Y (new).
+	if !strings.Contains(rows, "New call") {
+		t.Error("renderLogbookRows missing 'New call' row")
+	}
+
+	// Set local stats: call already worked.
+	m.cachedLogStats = store.LogbookStats{CallWorked: true, QSOCount: 3}
+	m.cachedLogStatsSig = "SP9MOA||"
+	rows = m.renderLogbookRows(d, 40)
+	// Without WL data, should use local: call worked → N.
+	// We can verify the rows still contain the label.
+	if !strings.Contains(rows, "New call") {
+		t.Error("renderLogbookRows should always show 'New call' label")
+	}
+}
+
+func TestRenderLogbookRowsNewDXCC(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	d := &qrz.CallData{Callsign: "VK3A"}
+
+	rows := m.renderLogbookRows(d, 55)
+
+	// DXCC rows should always be present. With FormLabelWide(17) labels fit fully.
+	if !strings.Contains(rows, "New DXCC") {
+		t.Error("renderLogbookRows missing 'New DXCC' row")
+	}
+	if !strings.Contains(rows, "DXCC band") {
+		t.Error("renderLogbookRows missing 'DXCC band' row")
+	}
+	if !strings.Contains(rows, "DXCC mode") {
+		t.Error("renderLogbookRows missing 'DXCC mode' row")
+	}
+}
+
+func TestPartnerViewCache(t *testing.T) {
+	m := newTestModel()
+	m.width = 100
+	m.height = 30
+	m.App.Logbook.Station.Grid = "JO90"
+	m.partnerData = &qrz.CallData{Callsign: "SP9MOA", Grid: "JO90"}
+
+	// First render — builds and caches.
+	v1 := m.viewPartner()
+	if v1 == "" {
+		t.Fatal("viewPartner returned empty")
+	}
+	if m.partnerViewCacheSig == "" {
+		t.Error("partnerViewCacheSig should be set after first render")
+	}
+
+	// Second render — should hit cache.
+	v2 := m.viewPartner()
+	if v2 != v1 {
+		t.Error("cached view should be identical to first render")
+	}
+
+	// Invalidate and re-render — cache should rebuild.
+	m.invalidatePartnerMapCache()
+	if m.partnerViewCacheSig != "" {
+		t.Error("partnerViewCacheSig should be empty after invalidation")
+	}
+	v3 := m.viewPartner()
+	if v3 == "" {
+		t.Error("viewPartner returned empty after cache invalidation")
 	}
 }

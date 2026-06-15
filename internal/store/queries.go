@@ -116,7 +116,7 @@ func ListQSOs(db *sql.DB, limit int) ([]qso.QSO, error) {
 }
 
 // SearchQSOsByCall returns QSOs matching a callsign by exact or prefix match.
-// "SP9SPM" matches "SP9SPM", "SP9SPM/P", "SP9SPM/QRP", etc.
+// "SP9SPM" matches "SP9SPM", "SP9SPM/P", "9A/SP9SPM", "9A/SP9SPM/P", etc.
 func SearchQSOsByCall(db *sql.DB, call string, limit int) ([]qso.QSO, error) {
 	query := `SELECT id, call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,
 		rst_sent, rst_rcvd, gridsquare, name, qth, country, comment, notes, tx_pwr,
@@ -127,11 +127,11 @@ func SearchQSOsByCall(db *sql.DB, call string, limit int) ([]qso.QSO, error) {
 		wavelog_uploaded,
 		created_at, updated_at
 		FROM qsos
-		WHERE call = ? OR call LIKE ?
+		WHERE call = ? OR call LIKE ? OR call LIKE ? OR call LIKE ?
 		ORDER BY id DESC
 		LIMIT ?`
 
-	rows, err := db.Query(query, call, call+"/%", limit)
+	rows, err := db.Query(query, call, call+"/%", "%/"+call, "%/"+call+"/%", limit)
 	if err != nil {
 		return nil, fmt.Errorf("search qsos by call: %w", err)
 	}
@@ -335,10 +335,10 @@ type LogbookStats struct {
 func GetLogbookStats(db *sql.DB, call, band, mode string) (LogbookStats, error) {
 	var s LogbookStats
 
-	// Total QSOs with this call (exact + prefix match).
+	// Match: exact, suffix (/P etc.), prefix (DL/ etc.), both (DL/.../P).
 	if err := db.QueryRow(
-		`SELECT COUNT(*) FROM qsos WHERE call = ? OR call LIKE ?`,
-		call, call+"/%",
+		`SELECT COUNT(*) FROM qsos WHERE call = ? OR call LIKE ? OR call LIKE ? OR call LIKE ?`,
+		call, call+"/%", "%/"+call, "%/"+call+"/%",
 	).Scan(&s.QSOCount); err != nil {
 		return s, fmt.Errorf("count call qsos: %w", err)
 	}
@@ -348,8 +348,8 @@ func GetLogbookStats(db *sql.DB, call, band, mode string) (LogbookStats, error) 
 	if band != "" {
 		var n int
 		db.QueryRow(
-			`SELECT COUNT(*) FROM qsos WHERE (call = ? OR call LIKE ?) AND band = ?`,
-			call, call+"/%", band,
+			`SELECT COUNT(*) FROM qsos WHERE (call = ? OR call LIKE ? OR call LIKE ? OR call LIKE ?) AND band = ?`,
+			call, call+"/%", "%/"+call, "%/"+call+"/%", band,
 		).Scan(&n)
 		s.CallOnBand = n > 0
 	}
@@ -358,8 +358,8 @@ func GetLogbookStats(db *sql.DB, call, band, mode string) (LogbookStats, error) 
 	if mode != "" {
 		var n int
 		db.QueryRow(
-			`SELECT COUNT(*) FROM qsos WHERE (call = ? OR call LIKE ?) AND mode = ?`,
-			call, call+"/%", mode,
+			`SELECT COUNT(*) FROM qsos WHERE (call = ? OR call LIKE ? OR call LIKE ? OR call LIKE ?) AND mode = ?`,
+			call, call+"/%", "%/"+call, "%/"+call+"/%", mode,
 		).Scan(&n)
 		s.CallOnMode = n > 0
 	}
@@ -367,8 +367,8 @@ func GetLogbookStats(db *sql.DB, call, band, mode string) (LogbookStats, error) 
 	// Last QSO date.
 	var lastDate string
 	db.QueryRow(
-		`SELECT qso_date FROM qsos WHERE call = ? OR call LIKE ? ORDER BY id DESC LIMIT 1`,
-		call, call+"/%",
+		`SELECT qso_date FROM qsos WHERE call = ? OR call LIKE ? OR call LIKE ? OR call LIKE ? ORDER BY id DESC LIMIT 1`,
+		call, call+"/%", "%/"+call, "%/"+call+"/%",
 	).Scan(&lastDate)
 	if lastDate != "" && len(lastDate) == 8 {
 		s.LastQSODate = lastDate[0:4] + "-" + lastDate[4:6] + "-" + lastDate[6:8]

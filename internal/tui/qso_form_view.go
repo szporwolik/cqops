@@ -6,6 +6,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 )
 
@@ -30,7 +31,7 @@ func (m *Model) viewForm(width int) string {
 		bodyW = 20
 	}
 
-	const maxColW = 33
+	const maxColW = 41
 	colW := bodyW / 3
 	if colW > maxColW {
 		colW = maxColW
@@ -235,13 +236,21 @@ func (m *Model) formPathRow(width int) string {
 	}
 
 	// ── No callsign: station profile ──
-	if m.pathCall == "" {
+	// Check both the committed pathCall and the current form field —
+	// the user may have backspaced the call without leaving the field.
+	if m.pathCall == "" || strings.TrimSpace(m.fields[fieldCall].Value()) == "" {
+		m.pathCall = ""
+		m.cachedPathSig = ""
 		return renderProfile(lipgloss.Right)
 	}
 
 	// ── Callsign entered: try path, fall back to profile ──
 	ownGrid := formatLocator(s.Grid)
-	partnerGrid := formatLocator(m.fields[fieldGrid].Value())
+	rawGrid := strings.TrimSpace(m.fields[fieldGrid].Value())
+	partnerGrid := ""
+	if rawGrid != "" && qso.IsValidLocator(rawGrid) {
+		partnerGrid = formatLocator(rawGrid)
+	}
 
 	if ownGrid != "" && partnerGrid != "" {
 		// Load logbook stats if needed — used for "New Call!" indicator.

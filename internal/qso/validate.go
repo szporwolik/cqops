@@ -10,6 +10,13 @@ func Validate(q *QSO) []string {
 
 	if strings.TrimSpace(q.Call) == "" {
 		errs = append(errs, "call is required")
+	} else if !IsValidCall(q.Call) {
+		errs = append(errs, "Not a valid callsign")
+	}
+
+	// Locator is optional, but if provided it must be valid.
+	if g := NormalizeLocator(q.GridSquare); g != "" && !IsValidLocator(g) {
+		errs = append(errs, "Not a valid locator")
 	}
 
 	// Band or frequency is required. If band is empty, try to derive from freq.

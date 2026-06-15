@@ -9,14 +9,39 @@ import (
 	"github.com/szporwolik/cqops/internal/store"
 )
 
-const partnerColMaxW = 35
-const partnerMapMaxW = 100
+const partnerMapMaxW = 128 // also used as max page width for QSO form consistency
+
+// row is a label+value pair used by all three partner info boxes.
+type row struct{ label, value string }
+
+// formatRowPairs joins rows into left-aligned label+value lines.
+func formatRowPairs(rows []row, labelStyle lipgloss.Style) string {
+	var lines []string
+	for _, r := range rows {
+		lbl := labelStyle.Align(lipgloss.Right).Render(r.label)
+		lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Center, lbl, " ", r.value))
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+}
+
+// renderFlagStatus returns styled "Y" (yes/new, green), "N" (no/worked, dim),
+// or "?" (unknown, dim) based on the isNew and known flags.
+func renderFlagStatus(isNew, known bool, newStyle, oldStyle lipgloss.Style) string {
+	if !known {
+		return DimStyle.Render("?")
+	}
+	if isNew {
+		return newStyle.Render("Y")
+	}
+	return oldStyle.Render("N")
+}
 
 func (m *Model) viewPartner() string {
 	d := m.partnerData
 	if d == nil {
 		d = m.formPartnerData()
 		if d == nil || d.Callsign == "" {
+			m.partnerViewCacheSig = ""
 			return ""
 		}
 	}
@@ -24,6 +49,41 @@ func (m *Model) viewPartner() string {
 	w := m.width
 	if w < 30 {
 		w = 80
+	}
+
+	// Build cache signature — includes all inputs that affect output.
+	var sigB strings.Builder
+	fmt.Fprintf(&sigB, "%d|%d|", m.width, m.height)
+	if m.partnerData != nil {
+		fmt.Fprintf(&sigB, "pd:%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s|",
+			m.partnerData.Callsign, m.partnerData.Name, m.partnerData.Grid,
+			m.partnerData.QTH, m.partnerData.Country, m.partnerData.State,
+			m.partnerData.County, m.partnerData.Zip, m.partnerData.Class,
+			m.partnerData.Email, m.partnerData.URL, m.partnerData.Lat,
+			m.partnerData.Lon, m.partnerData.DXCC, m.partnerData.CQZone, m.partnerData.ITUZone)
+	} else {
+		sigB.WriteString("pd:nil|")
+	}
+	sigB.WriteString(m.cachedLogStatsSig)
+	sigB.WriteByte('|')
+	if m.wlPrivateData != nil {
+		fmt.Fprintf(&sigB, "wl:wk=%v,dxcc=%v,band=%v,bm=%v,cband=%v,cbm=%v,lotw=%v|",
+			m.wlPrivateData.Worked(), m.wlPrivateData.DXCCConfirmed(),
+			m.wlPrivateData.WorkedBand(), m.wlPrivateData.WorkedBandMode(),
+			m.wlPrivateData.ConfirmedBand(), m.wlPrivateData.ConfirmedBandMode(),
+			m.wlPrivateData.LoTW())
+	} else {
+		sigB.WriteString("wl:nil|")
+	}
+	fmt.Fprintf(&sigB, "wldone=%v|wlband=%s|wlmode=%s|qrz=%v|wlcfg=%v|map=%s",
+		m.wlLookupDone, m.wlLastBand, m.wlLastMode,
+		m.App.Config.QRZ.Enabled,
+		m.App.Logbook.Wavelog != nil && m.App.Logbook.Wavelog.Enabled,
+		m.partnerMapCacheSig)
+
+	sig := sigB.String()
+	if m.partnerViewCacheSig == sig && m.partnerViewCache != "" {
+		return m.partnerViewCache
 	}
 
 	totalW := w - 2
@@ -34,39 +94,59 @@ func (m *Model) viewPartner() string {
 		totalW = w - 2
 	}
 
-	cbW := totalW * 40 / 100
-	lbW := totalW * 30 / 100
-	wlW := totalW - cbW - lbW
+	// Detect Wavelog availability — when not configured, hide the box and split 50:50.
+	wlEnabled := m.App.Logbook.Wavelog != nil && m.App.Logbook.Wavelog.Enabled &&
+		m.App.Logbook.Wavelog.URL != "" && m.App.Logbook.Wavelog.APIKey != ""
+
+	var cbW, lbW, wlW int
+	if wlEnabled {
+		cbW = totalW * 40 / 100
+		lbW = totalW * 33 / 100
+		wlW = totalW - cbW - lbW
+	} else {
+		cbW = totalW * 50 / 100
+		lbW = totalW - cbW
+		wlW = 0
+	}
 	if cbW < 20 {
 		cbW = totalW
 	}
 	if lbW < 15 {
 		lbW = 20
 	}
-	if wlW < 12 {
+	if wlW > 0 && wlW < 12 {
 		wlW = 20
 	}
 
 	cbContent := m.renderCallbookRows(d, cbW-4)
 	lbContent := m.renderLogbookRows(d, lbW-4)
-	wlContent := m.renderWLInfo(wlW - 4)
 
 	// Compute max inner height (header + content lines), then pad all.
 	cbInner := lipgloss.Height(cbContent) + 1
 	lbInner := lipgloss.Height(lbContent) + 1
-	wlInner := lipgloss.Height(wlContent) + 1
 	maxInner := cbInner
 	if lbInner > maxInner {
 		maxInner = lbInner
 	}
-	if wlInner > maxInner {
-		maxInner = wlInner
-	}
 
 	cbBox := m.renderPartnerBox("Callbook information"+m.qrzSuffix(), cbContent, cbW, maxInner)
 	lbBox := m.renderPartnerBox("Logbook", lbContent, lbW, maxInner)
-	wlBox := m.renderPartnerBox("Wavelog", wlContent, wlW, maxInner)
-	topRow := lipgloss.JoinHorizontal(lipgloss.Top, cbBox, lbBox, wlBox)
+
+	var topRow string
+	if wlEnabled {
+		wlContent := m.renderWLInfo(wlW - 4)
+		wlInner := lipgloss.Height(wlContent) + 1
+		if wlInner > maxInner {
+			maxInner = wlInner
+		}
+		// Re-render callbook/logbook boxes with updated maxInner.
+		cbBox = m.renderPartnerBox("Callbook information"+m.qrzSuffix(), cbContent, cbW, maxInner)
+		lbBox = m.renderPartnerBox("Logbook", lbContent, lbW, maxInner)
+		wlBox := m.renderPartnerBox("Wavelog", wlContent, wlW, maxInner)
+		topRow = lipgloss.JoinHorizontal(lipgloss.Top, cbBox, lbBox, wlBox)
+	} else {
+		topRow = lipgloss.JoinHorizontal(lipgloss.Top, cbBox, lbBox)
+	}
 
 	mapW := totalW
 	topH := lipgloss.Height(topRow)
@@ -78,9 +158,12 @@ func (m *Model) viewPartner() string {
 
 	block := lipgloss.JoinVertical(lipgloss.Left, topRow, mapBox)
 	if w > totalW+2 {
-		block = lipgloss.NewStyle().Width(w).Align(lipgloss.Left).Render(block)
+		block = PartnerBlock.Width(w).Render(block)
 	}
-	return fillBody(block, contentHeight(m.height))
+	result := fillBody(block, contentHeight(m.height))
+	m.partnerViewCacheSig = sig
+	m.partnerViewCache = result
+	return result
 }
 
 // --- Box helpers ---
@@ -117,7 +200,6 @@ func infoRow(label, value string, maxW int) string {
 // --- Callbook rows ---
 
 func (m *Model) renderCallbookRows(d *qrz.CallData, maxW int) string {
-	type row struct{ label, value string }
 	var rows []row
 	add := func(label, value string) {
 		if value != "" {
@@ -154,8 +236,6 @@ func (m *Model) renderCallbookRows(d *qrz.CallData, maxW int) string {
 }
 
 // --- Logbook rows ---
-// Wavelog-first precedence: if WL has data it wins; otherwise fall back to local.
-// Y = green (yes it IS new), N = dim (already worked), ? = dim (unknown).
 
 func (m *Model) renderLogbookRows(d *qrz.CallData, maxW int) string {
 	call := d.Callsign
@@ -175,8 +255,8 @@ func (m *Model) renderLogbookRows(d *qrz.CallData, maxW int) string {
 	newStyle := S.Success // green — yes, it IS new
 	oldStyle := DimStyle  // dim — no, already worked
 
-	// Compute value column width. Label width 11 + space 1 = 12.
-	valW := maxW - 12
+	// Compute value column width. Label width 17 + space 1 = 18.
+	valW := maxW - 18
 	if valW < 3 {
 		valW = 3
 	}
@@ -198,27 +278,20 @@ func (m *Model) renderLogbookRows(d *qrz.CallData, maxW int) string {
 	}
 
 	// Render Y/N/? with appropriate style.
-	renderFlag := func(isNew, known bool) string {
-		if !known {
-			return DimStyle.Render("?")
-		}
-		if isNew {
-			return newStyle.Render("Y")
-		}
-		return oldStyle.Render("N")
+	flag := func(isNew, known bool) string {
+		return renderFlagStatus(isNew, known, newStyle, oldStyle)
 	}
 
-	type row struct{ label, value string }
 	var rows []row
 
 	// New call
 	isNew, _ := wlFirst(wl != nil && wl.Worked(), s.CallWorked)
-	rows = append(rows, row{"New call", renderFlag(isNew, true)})
+	rows = append(rows, row{"New call", flag(isNew, true)})
 
 	// New on band
 	if band != "" {
 		isNew, _ := wlFirst(wl != nil && wl.WorkedBand(), s.CallOnBand)
-		rows = append(rows, row{"New on band", renderFlag(isNew, true)})
+		rows = append(rows, row{"New on band", flag(isNew, true)})
 	} else {
 		rows = append(rows, row{"New on band", DimStyle.Render("?")})
 	}
@@ -226,29 +299,29 @@ func (m *Model) renderLogbookRows(d *qrz.CallData, maxW int) string {
 	// New on mode
 	if mode != "" {
 		isNew, _ := wlFirst(wl != nil && wl.WorkedBandMode(), s.CallOnMode)
-		rows = append(rows, row{"New on mode", renderFlag(isNew, true)})
+		rows = append(rows, row{"New on mode", flag(isNew, true)})
 	} else {
 		rows = append(rows, row{"New on mode", DimStyle.Render("?")})
 	}
 
 	// New DXCC (WL only — local doesn't track DXCC)
 	isNew, known := wlOnly(wl != nil && wl.DXCCConfirmed())
-	rows = append(rows, row{"New DXCC", renderFlag(isNew, known)})
+	rows = append(rows, row{"New DXCC", flag(isNew, known)})
 
 	// New DXCC on band
 	if band != "" {
 		isNew, known = wlOnly(wl != nil && wl.ConfirmedBand())
-		rows = append(rows, row{"New DXCC on band", renderFlag(isNew, known)})
+		rows = append(rows, row{"DXCC band", flag(isNew, known)})
 	} else {
-		rows = append(rows, row{"New DXCC on band", DimStyle.Render("?")})
+		rows = append(rows, row{"DXCC band", DimStyle.Render("?")})
 	}
 
 	// New DXCC on mode
 	if mode != "" {
 		isNew, known = wlOnly(wl != nil && wl.ConfirmedBandMode())
-		rows = append(rows, row{"New DXCC on mode", renderFlag(isNew, known)})
+		rows = append(rows, row{"DXCC mode", flag(isNew, known)})
 	} else {
-		rows = append(rows, row{"New DXCC on mode", DimStyle.Render("?")})
+		rows = append(rows, row{"DXCC mode", DimStyle.Render("?")})
 	}
 
 	// QSO count
@@ -265,16 +338,12 @@ func (m *Model) renderLogbookRows(d *qrz.CallData, maxW int) string {
 	}
 	rows = append(rows, row{"Last QSO", ValueStyle.Width(valW).MaxWidth(valW).Inline(true).Render(truncate(last, valW))})
 
-	var lines []string
-	for _, r := range rows {
-		lbl := S.FormLabel.Align(lipgloss.Right).Render(r.label)
-		lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Center, lbl, " ", r.value))
-	}
-	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+	return formatRowPairs(rows, S.FormLabelWide)
 }
 
 // --- WL Info ---
-// Airbus approach: N = green (new), Y = dim (normal). LoTW: N = red (problem), last on list.
+// Y = green (yes it IS new), N = dim (already worked), ? = dim (unknown).
+// LoTW: N = red (not a member), last on list.
 
 func (m *Model) renderWLInfo(maxW int) string {
 	d := m.wlPrivateData
@@ -294,97 +363,61 @@ func (m *Model) renderWLInfo(maxW int) string {
 	oldStyle := DimStyle  // dim — no, already there
 	badStyle := S.Error   // red — LoTW: not a member
 
-	type row struct{ label, value string }
+	flag := func(isNew, known bool) string {
+		return renderFlagStatus(isNew, known, newStyle, oldStyle)
+	}
+
 	var rows []row
 
 	hasBand := m.wlLastBand != ""
 	hasMode := m.wlLastMode != ""
 
-	// New call: Y = yes new (green), N = not new (dim)
-	v := "Y"
-	sty := newStyle
-	if d.Worked() {
-		v = "N"
-		sty = oldStyle
-	}
-	rows = append(rows, row{"New call", sty.Render(v)})
+	// New call
+	rows = append(rows, row{"New call", flag(!d.Worked(), true)})
 
 	// New on band
-	v = "?"
-	sty = DimStyle
+	isNew, known := false, hasBand
 	if hasBand {
-		v = "Y"
-		sty = newStyle
-		if d.WorkedBand() {
-			v = "N"
-			sty = oldStyle
-		}
+		isNew = !d.WorkedBand()
 	}
-	rows = append(rows, row{"New on band", sty.Render(v)})
+	rows = append(rows, row{"New on band", flag(isNew, known)})
 
 	// New on mode
-	v = "?"
-	sty = DimStyle
+	isNew, known = false, hasBand && hasMode
 	if hasBand && hasMode {
-		v = "Y"
-		sty = newStyle
-		if d.WorkedBandMode() {
-			v = "N"
-			sty = oldStyle
-		}
+		isNew = !d.WorkedBandMode()
 	}
-	rows = append(rows, row{"New on mode", sty.Render(v)})
+	rows = append(rows, row{"New on mode", flag(isNew, known)})
 
 	// New DXCC
-	v = "Y"
-	sty = newStyle
-	if d.DXCCConfirmed() {
-		v = "N"
-		sty = oldStyle
-	}
-	rows = append(rows, row{"New DXCC", sty.Render(v)})
+	rows = append(rows, row{"New DXCC", flag(!d.DXCCConfirmed(), true)})
 
 	// New DXCC on band
-	v = "?"
-	sty = DimStyle
+	isNew, known = false, hasBand
 	if hasBand {
-		v = "Y"
-		sty = newStyle
-		if d.ConfirmedBand() {
-			v = "N"
-			sty = oldStyle
-		}
+		isNew = !d.ConfirmedBand()
 	}
-	rows = append(rows, row{"New DXCC on band", sty.Render(v)})
+	rows = append(rows, row{"New DXCC on band", flag(isNew, known)})
 
 	// New DXCC on mode
-	v = "?"
-	sty = DimStyle
+	isNew, known = false, hasBand && hasMode
 	if hasBand && hasMode {
-		v = "Y"
-		sty = newStyle
-		if d.ConfirmedBandMode() {
-			v = "N"
-			sty = oldStyle
-		}
+		isNew = !d.ConfirmedBandMode()
 	}
-	rows = append(rows, row{"New DXCC on mode", sty.Render(v)})
+	rows = append(rows, row{"New DXCC on mode", flag(isNew, known)})
 
-	// LoTW member — last, separate logic: N = red.
-	v = "N"
-	sty = badStyle
-	if d.LoTW() {
-		v = "Y"
-		sty = oldStyle
-	}
-	rows = append(rows, row{"LoTW member", sty.Render(v)})
+	// LoTW member — last, separate logic: N = red (not a member).
+	rows = append(rows, row{"LoTW member", renderLoTW(d.LoTW(), oldStyle, badStyle)})
 
-	var lines []string
-	for _, r := range rows {
-		lbl := S.FormLabelWide.Align(lipgloss.Right).Render(r.label)
-		lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Center, lbl, " ", r.value))
+	return formatRowPairs(rows, S.FormLabelWide)
+}
+
+// renderLoTW returns styled "Y" (dim, member) or "N" (red, not a member).
+func renderLoTW(isMember bool, dimStyle, badStyle lipgloss.Style) string {
+	if isMember {
+		return dimStyle.Render("Y")
 	}
-	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+	return badStyle.Render("N")
 }
 
 // --- Form partner data ---
@@ -454,4 +487,6 @@ func (m *Model) partnerMapCacheKey() string {
 func (m *Model) invalidatePartnerMapCache() {
 	m.partnerMapCache = ""
 	m.partnerMapCacheSig = ""
+	m.partnerViewCache = ""
+	m.partnerViewCacheSig = ""
 }

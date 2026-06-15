@@ -180,10 +180,6 @@ func contentHeight(terminalH int) int {
 // Textinput helpers
 // =============================================================================
 
-// applyTextinputSurfaceStyle is a no-op. Background styling has been removed
-// for performance; textinputs inherit terminal default background.
-func applyTextinputSurfaceStyle(ti *textinput.Model) {}
-
 // newTextinput creates a textinput with Prompt already cleared (the default
 // "> " prompt is not useful in our forms). All other fields are at defaults.
 func newTextinput() textinput.Model {

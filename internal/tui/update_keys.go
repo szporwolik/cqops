@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 )
 
@@ -63,6 +64,11 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		if call == "" {
 			m.toasts.Warn("No callsign entered")
 			applog.Debug("F2 Partner: no callsign")
+			return nil, true
+		}
+		// Validate before committing.
+		if !qso.IsValidCall(call) {
+			m.toasts.Warn("Not a valid callsign")
 			return nil, true
 		}
 		applog.Debug("tab: F2 Partner Details")
@@ -131,21 +137,15 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 				return nil, true
 			}
 			if key.Matches(msg, m.keys.Lookup) {
-				call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+				call := m.commitCall()
 				if call == "" {
+					raw := strings.TrimSpace(m.fields[fieldCall].Value())
+					if raw != "" {
+						m.toasts.Warn("Not a valid callsign")
+					}
 					return nil, true
 				}
-				var cmds []tea.Cmd
-				if m.App.Config.QRZ.User != "" && m.App.Config.QRZ.Enabled {
-					cmds = append(cmds, m.qrzLookup(call))
-				}
-				wl := m.App.Logbook.Wavelog
-				if wl != nil && wl.Enabled && wl.APIKey != "" {
-					cmds = append(cmds, m.wlLookup(call))
-				}
-				if len(cmds) > 0 {
-					return tea.Batch(cmds...), true
-				}
+				return m.lookupCallCmd(call), true
 			}
 			if key.Matches(msg, m.keys.CycleLogbook) {
 				return m.cycleLogbook(), true
@@ -208,15 +208,28 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, true
 
 	case key.Matches(msg, m.keys.Partner):
-		m.commitCall()
-		call := m.pathCall
+		call := m.commitCall()
+		if call == "" {
+			raw := strings.TrimSpace(m.fields[fieldCall].Value())
+			if raw != "" {
+				m.toasts.Warn("Not a valid callsign")
+			}
+			return nil, true
+		}
 		m.screen = screenPartner
 		m.invalidatePartnerMapCache()
 		return m.lookupCallCmd(call), true
 
 	case key.Matches(msg, m.keys.Lookup):
-		m.commitCall()
-		return m.lookupCallCmd(m.pathCall), true
+		call := m.commitCall()
+		if call == "" {
+			raw := strings.TrimSpace(m.fields[fieldCall].Value())
+			if raw != "" {
+				m.toasts.Warn("Not a valid callsign")
+			}
+			return nil, true
+		}
+		return m.lookupCallCmd(call), true
 
 	case key.Matches(msg, m.keys.Enter):
 		return m.saveQSO(), true

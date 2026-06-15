@@ -23,7 +23,7 @@ func (m *Model) saveQSO() tea.Cmd {
 	if _, err := fmt.Sscanf(m.fields[fieldFreq].Value(), "%f", &freq); err != nil {
 		freq = 0
 	}
-	qs.Call, qs.Band, qs.Freq = strings.ToUpper(m.fields[fieldCall].Value()), strings.ToUpper(m.fields[fieldBand].Value()), freq
+	qs.Call, qs.Band, qs.Freq = qso.NormalizeCall(m.fields[fieldCall].Value()), strings.ToUpper(m.fields[fieldBand].Value()), freq
 	var freqRx float64
 	fmt.Sscanf(m.fields[fieldFreqRx].Value(), "%f", &freqRx)
 	qs.FreqRx = freqRx

@@ -23,8 +23,8 @@ import (
 type field int
 
 const (
-	rigPollInterval     = 15                      // ticks between flrig polls
-	healthCheckTicks    = 300                     // ticks between health checks
+	rigPollInterval     = 30                      // seconds between flrig polls
+	healthCheckTicks    = 600                     // ticks between health checks (10 min)
 	flrigStatusTimeout  = 1500 * time.Millisecond // context timeout for flrig status
 	flrigDefaultTimeout = 1000                    // default flrig HTTP timeout (ms)
 )
@@ -162,6 +162,10 @@ type Model struct {
 	partnerMapCache    string
 	partnerMapCacheSig string
 
+	// Partner view cache — avoids rebuilding the entire partner page on every render.
+	partnerViewCache    string
+	partnerViewCacheSig string
+
 	// Path line cache — avoids locator parsing every View().
 	// pathCall/pathGrid are the committed values, updated only on field exit.
 	cachedPathLine string
@@ -274,7 +278,7 @@ func (m *Model) Init() tea.Cmd {
 	return tea.Batch(tickCmd(), checkInetCmd(), m.imageViewer.Init())
 }
 func tickCmd() tea.Cmd {
-	return tea.Tick(2000*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) })
+	return tea.Tick(1000*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
 // hideAllSubmodels returns to the QSO form screen.
@@ -598,10 +602,20 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 	if formW < 20 {
 		formW = w - 2
 	}
+	// Cap form width to match partner page max (partnerMapMaxW).
+	// Keeps F1/F2 cycling visually consistent on large monitors.
+	if formW > partnerMapMaxW-4 {
+		formW = partnerMapMaxW - 4
+	}
 
 	formContent := m.viewForm(formW)
-	// Border wraps content tightly — no filling to terminal width.
-	formBox := drawBorderedBox(formContent, lipgloss.Width(formContent)+4)
+	// Border uses the same max width as partner page for visual consistency
+	// when cycling F1/F2 on large monitors.
+	boxW := lipgloss.Width(formContent) + 4
+	if boxW < partnerMapMaxW && formW >= partnerMapMaxW-4 {
+		boxW = partnerMapMaxW
+	}
+	formBox := drawBorderedBox(formContent, boxW)
 
 	profileLine := m.formPathRow(w - 2)
 	profileH := 0

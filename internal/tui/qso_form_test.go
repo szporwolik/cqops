@@ -9,6 +9,8 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/store"
+	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
 // newTestModel creates a minimal Model for form rendering and navigation tests.
@@ -297,3 +299,147 @@ var _ = lipgloss.NewStyle
 
 // Verify tea import
 var _ = tea.Quit
+
+func TestCommitCall(t *testing.T) {
+	m := newTestModel()
+	m.fields[fieldCall].SetValue("  sp9moa  ")
+
+	cur := m.commitCall()
+
+	if cur != "SP9MOA" {
+		t.Errorf("commitCall: return = %q, want %q", cur, "SP9MOA")
+	}
+	if m.pathCall != "SP9MOA" {
+		t.Errorf("commitCall: pathCall = %q, want %q", m.pathCall, "SP9MOA")
+	}
+	if m.cachedPathSig != "" {
+		t.Errorf("commitCall: cachedPathSig should be empty after commit, got %q", m.cachedPathSig)
+	}
+}
+
+func TestCommitCallInvalid(t *testing.T) {
+	m := newTestModel()
+	m.pathCall = "OLD"
+	m.cachedPathSig = "something"
+
+	// No letters — invalid callsign.
+	m.fields[fieldCall].SetValue("12345")
+	cur := m.commitCall()
+
+	if cur != "" {
+		t.Errorf("commitCall with invalid call: return = %q, want empty", cur)
+	}
+	if m.pathCall != "" {
+		t.Errorf("commitCall with invalid call: pathCall should be cleared, got %q", m.pathCall)
+	}
+	if m.cachedPathSig != "" {
+		t.Errorf("commitCall with invalid call: cachedPathSig should be cleared, got %q", m.cachedPathSig)
+	}
+}
+
+func TestCommitCallEmptyCall(t *testing.T) {
+	m := newTestModel()
+	m.pathCall = "OLD"
+	m.cachedPathSig = "something"
+
+	m.commitCall() // field is empty
+
+	if m.pathCall != "" {
+		t.Errorf("commitCall with empty field: pathCall = %q, want empty", m.pathCall)
+	}
+	if m.cachedPathSig != "" {
+		t.Errorf("commitCall with empty field: cachedPathSig should be cleared, got %q", m.cachedPathSig)
+	}
+}
+
+func TestFormPathRowNewCallBannerWLFirst(t *testing.T) {
+	// WL data present: WL says NOT worked → banner shows.
+	m := newTestModel()
+	m.width = 100
+	m.fields[fieldCall].SetValue("VK3A")
+	m.fields[fieldBand].SetValue("20m")
+	m.fields[fieldMode].SetValue("SSB")
+	m.fields[fieldGrid].SetValue("PG66pa")
+	m.pathCall = "VK3A"
+
+	// WL says NOT worked (new call).
+	m.wlPrivateData = &wavelog.PrivateLookupResult{}
+	// No WL data means it defaults to false for Worked(), which means NOT worked → new.
+	// We can't easily set WL raw data, but nil WL acts as "no data".
+
+	row := m.formPathRow(100)
+	if !strings.Contains(row, "New Call!") {
+		t.Error("formPathRow should show 'New Call!' when local says new (no WL data)")
+	}
+
+	// Clear WL — banner should still show based on local.
+	m.wlPrivateData = nil
+	row = m.formPathRow(100)
+	if !strings.Contains(row, "New Call!") {
+		t.Error("formPathRow should show 'New Call!' based on local when WL absent")
+	}
+}
+
+func TestFormPathRowNewCallBannerNotShownWhenWorked(t *testing.T) {
+	m := newTestModel()
+	m.width = 100
+	m.fields[fieldCall].SetValue("SP9MOA")
+	m.fields[fieldGrid].SetValue("JN18")
+	m.pathCall = "SP9MOA"
+
+	// Local stats: call already worked.
+	m.cachedLogStats = store.LogbookStats{CallWorked: true, QSOCount: 5}
+	m.cachedLogStatsSig = "SP9MOA||"
+
+	row := m.formPathRow(100)
+	if strings.Contains(row, "New Call!") {
+		t.Error("formPathRow should NOT show 'New Call!' when local says call already worked")
+	}
+}
+
+func TestFormPathRowNewDXCCBanner(t *testing.T) {
+	m := newTestModel()
+	m.width = 100
+	m.fields[fieldCall].SetValue("VK3A")
+	m.fields[fieldGrid].SetValue("PG66pa")
+	m.pathCall = "VK3A"
+	m.cachedLogStats = store.LogbookStats{CallWorked: false}
+
+	// No WL data → no DXCC banner.
+	row := m.formPathRow(100)
+	if strings.Contains(row, "New DXCC!") {
+		t.Error("formPathRow should NOT show 'New DXCC!' when WL data absent")
+	}
+}
+
+func TestFormPathRowCacheInvalidation(t *testing.T) {
+	m := newTestModel()
+	m.width = 100
+	m.fields[fieldCall].SetValue("VK3A")
+	m.fields[fieldGrid].SetValue("PG66pa")
+	m.pathCall = "VK3A"
+
+	// First render — builds and caches.
+	r1 := m.formPathRow(100)
+	if r1 == "" {
+		t.Fatal("formPathRow returned empty")
+	}
+
+	// Second render with same inputs — should return cached.
+	// cachedPathSig should be non-empty after first render.
+	if m.cachedPathSig == "" {
+		t.Error("cachedPathSig should be set after first render")
+	}
+
+	// Call commitCall — cache should be invalidated.
+	m.commitCall()
+	if m.cachedPathSig != "" {
+		t.Error("cachedPathSig should be empty after commitCall()")
+	}
+
+	// Third render — should rebuild (cache was cleared).
+	r3 := m.formPathRow(100)
+	if r3 == "" {
+		t.Error("formPathRow returned empty after cache invalidation")
+	}
+}

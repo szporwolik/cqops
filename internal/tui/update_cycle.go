@@ -35,6 +35,10 @@ func (m *Model) cycleLogbook() tea.Cmd {
 	displayName := config.LogbookDisplayName(m.App.Logbook)
 	m.toasts.Success("Logbook: " + displayName)
 	applog.Info("Logbook cycled", "name", displayName)
+	m.cachedStatus = ""
+	m.invalidatePartnerMapCache()
+	m.cachedLogStatsSig = ""
+	m.cachedPathSig = ""
 	m.wlForceCheck = true
 	m.needRefresh = true
 	return nil
@@ -76,5 +80,8 @@ func (m *Model) cycleRig() tea.Cmd {
 	}
 	m.toasts.Success("Rig: " + rp.Model + " (" + rp.Antenna + ")")
 	applog.Info("Rig cycled", "name", rp.Model)
+	m.cachedStatus = ""
+	m.invalidatePartnerMapCache()
+	m.cachedPathSig = ""
 	return nil
 }

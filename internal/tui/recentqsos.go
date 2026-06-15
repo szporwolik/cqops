@@ -93,7 +93,6 @@ func (r *RecentQSOs) View() string {
 	qsos := r.ActiveQSOs()
 	filtered := r.filterCall != ""
 
-	cacheSig := fmt.Sprintf("%d|%d|%d|%s|%d", bodyW, maxRows, len(qsos), r.filterCall, r.filterCacheID)
 	if r.cachedW == bodyW && r.cachedH == maxRows && r.cachedQSOLen == len(qsos) &&
 		r.cachedView != "" && !filtered {
 		return r.cachedView
@@ -204,7 +203,6 @@ func (r *RecentQSOs) View() string {
 	t.SetStyles(s)
 
 	view := t.View()
-	_ = cacheSig
 
 	if !filtered {
 		r.cachedView = view

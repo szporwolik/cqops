@@ -144,6 +144,11 @@ func (a *App) SwitchLogbook(name string) error {
 	a.DB = db
 	a.DBPath = dbPath
 
+	// Persist the active logbook choice so it survives restarts.
+	if err := config.Save(a.ConfigPath, a.Config); err != nil {
+		applog.Warn("Failed to save active logbook", "error", err)
+	}
+
 	return nil
 }
 

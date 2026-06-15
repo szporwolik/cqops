@@ -162,6 +162,8 @@ var (
 	CursorStyle  = S.Cursor
 	InputStyle   = S.Input
 	DimStyle     = S.Dim
+	// PartnerBlock is a pre-built style for wrapping the partner view to terminal width.
+	PartnerBlock = lipgloss.NewStyle().Align(lipgloss.Left)
 )
 
 var (

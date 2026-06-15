@@ -67,7 +67,7 @@ func TestFlrigPollDisabled(t *testing.T) {
 	m.flrigClient = nil // disabled
 
 	cmd := m.pollFlrig()
-	// First call sets skipTicks to 1, which is < rigPollInterval (15)
+	// First call sets skipTicks to 1, which is < rigPollInterval (30)
 	// So it returns nil regardless
 	if cmd != nil {
 		t.Log("pollFlrig returned non-nil when disabled (may be OK for first tick)")

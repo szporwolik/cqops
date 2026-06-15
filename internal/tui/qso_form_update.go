@@ -14,17 +14,24 @@ import (
 // =============================================================================
 
 // commitCall commits the current callsign field value for path calculation
-// and invalidates the path cache. Safe to call from any context.
-func (m *Model) commitCall() {
-	cur := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+// and invalidates the path cache. Returns the normalized call, or empty string
+// if the callsign is invalid (clears pathCall in that case).
+func (m *Model) commitCall() string {
+	cur := qso.NormalizeCall(m.fields[fieldCall].Value())
+	if cur != "" && !qso.IsValidCall(cur) {
+		m.pathCall = ""
+		m.cachedPathSig = ""
+		return ""
+	}
 	m.pathCall = cur
 	m.cachedPathSig = ""
+	return cur
 }
 
 // lookupCallCmd returns a batch of lookup commands (QRZ + WL + filtered table)
-// for the given callsign. Returns nil if no lookups are configured.
+// for the given callsign. Returns nil if the call is empty or invalid.
 func (m *Model) lookupCallCmd(call string) tea.Cmd {
-	if call == "" {
+	if call == "" || !qso.IsValidCall(call) {
 		return nil
 	}
 	var cmds []tea.Cmd
@@ -46,11 +53,7 @@ func (m *Model) focusField(f field) {
 	m.fields[m.focus].Blur()
 	m.focus = f
 	m.fields[m.focus].Focus()
-	m.scrollFocusedToEnd()
 }
-
-// scrollFocusedToEnd is reserved for future scroll-on-focus behavior.
-func (m *Model) scrollFocusedToEnd() {}
 
 // nextField moves focus to the next QSO form field in sequence.
 func (m *Model) nextField() {
@@ -60,7 +63,6 @@ func (m *Model) nextField() {
 		m.retainFocused = false
 		m.focus = 0
 		m.fields[m.focus].Focus()
-		m.scrollFocusedToEnd()
 		return
 	}
 
@@ -70,7 +72,6 @@ func (m *Model) nextField() {
 	} else {
 		m.focus = (m.focus + 1) % fieldCount
 		m.fields[m.focus].Focus()
-		m.scrollFocusedToEnd()
 	}
 }
 
@@ -82,7 +83,6 @@ func (m *Model) prevField() {
 		m.retainFocused = false
 		m.focus = fieldComment
 		m.fields[m.focus].Focus()
-		m.scrollFocusedToEnd()
 		return
 	}
 
@@ -92,7 +92,6 @@ func (m *Model) prevField() {
 	} else {
 		m.focus--
 		m.fields[m.focus].Focus()
-		m.scrollFocusedToEnd()
 	}
 }
 
@@ -267,18 +266,20 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 
 	switch f {
 	case fieldCall:
-		// Uppercase. If call changed: clear lookup data + filtered table,
-		// but keep grid/QTH/country — user may just be adding /P suffix.
+		// Uppercase. If call changed: invalidate all call-dependent state —
+		// partner data, lookups, filtered table, path, and stats.
 		m.fields[f].SetValue(strings.ToUpper(m.fields[f].Value()))
 		if cur := strings.TrimSpace(m.fields[f].Value()); cur != strings.TrimSpace(prevVal) {
-			if m.partnerData != nil && !strings.EqualFold(m.partnerData.Callsign, cur) {
-				m.partnerData = nil
-				m.wlPrivateData = nil
-				m.wlLookupDone = false
-				m.screen = screenQSO
-			}
+			m.partnerData = nil
+			m.wlPrivateData = nil
+			m.wlLookupDone = false
+			m.screen = screenQSO
 			m.clearFilteredTable()
 			m.invalidatePartnerMapCache()
+			m.pathCall = ""
+			m.pathGrid = ""
+			m.cachedPathSig = ""
+			m.cachedLogStatsSig = ""
 		}
 
 	case fieldBand:
@@ -309,11 +310,17 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 func (m *Model) onFieldExit() {
 	switch m.focus {
 	case fieldCall:
-		m.commitCall()
+		cur := m.commitCall()
 		m.autoFillRST()
 		m.autoFillSSBSubmode()
+		if cur == "" {
+			raw := strings.TrimSpace(m.fields[fieldCall].Value())
+			if raw != "" {
+				m.toasts.Warn("Not a valid callsign")
+			}
+			break
+		}
 		// Defer lookup via flag — onFieldExit can't return commands.
-		cur := m.pathCall
 		if cur != "" && !strings.EqualFold(cur, m.qrzLastCall) {
 			m.qrzNeed = true
 			m.qrzCall = cur
@@ -351,8 +358,9 @@ func (m *Model) clearForm() {
 		m.fields[i].Blur()
 	}
 	now := time.Now().UTC()
-	m.fields[fieldDate].SetValue(now.Format("2006-01-02"))
-	m.fields[fieldTime].SetValue(now.Format("15:04:05"))
+	dateFmt, timeFmt := dateTimeFormats(m.width)
+	m.fields[fieldDate].SetValue(now.Format(dateFmt))
+	m.fields[fieldTime].SetValue(now.Format(timeFmt))
 
 	for _, r := range rig {
 		if r.value != "" {
