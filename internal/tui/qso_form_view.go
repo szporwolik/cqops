@@ -1,10 +1,12 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/store"
 )
 
 // Pre-allocated QSO form layout data — avoids per-frame allocations.
@@ -239,16 +241,49 @@ func (m *Model) formPathRow(width int) string {
 
 	// ── Callsign entered: try path, fall back to profile ──
 	ownGrid := formatLocator(s.Grid)
-	partnerGrid := formatLocator(m.pathGrid)
+	partnerGrid := formatLocator(m.fields[fieldGrid].Value())
 
 	if ownGrid != "" && partnerGrid != "" {
-		sig := ownGrid + "|" + partnerGrid + "|" + m.App.Config.General.DistanceUnit
+		// Load logbook stats if needed — used for "New Call!" indicator.
+		call := strings.TrimSpace(m.fields[fieldCall].Value())
+		band := strings.TrimSpace(m.fields[fieldBand].Value())
+		mode := strings.TrimSpace(m.fields[fieldMode].Value())
+		statsSig := call + "|" + band + "|" + mode
+		if m.cachedLogStatsSig != statsSig && m.App.DB != nil {
+			stats, err := store.GetLogbookStats(m.App.DB, call, band, mode)
+			if err == nil {
+				m.cachedLogStats = stats
+				m.cachedLogStatsSig = statsSig
+			}
+		}
+
+		// Build cache key: grids + distance + log stats + WL state.
+		wlSig := "WL:"
+		if m.wlPrivateData != nil {
+			wlSig += fmt.Sprintf("wk=%v,dxcc=%v", m.wlPrivateData.Worked(), m.wlPrivateData.DXCCConfirmed())
+		}
+		sig := ownGrid + "|" + partnerGrid + "|" + m.App.Config.General.DistanceUnit + "|" + statsSig + "|" + wlSig
 		if m.cachedPathSig == sig && m.cachedPathLine != "" {
 			return m.cachedPathLine
 		}
 		line := distanceLine(ownGrid, partnerGrid, m.App.Config.General.DistanceUnit)
 		if line != "" {
 			line = " Path  " + line
+			// Show New Call / New DXCC indicators.
+			// WL-first: if WL has data it wins; otherwise fall back to local.
+			var showNewCall bool
+			if m.wlPrivateData != nil {
+				showNewCall = !m.wlPrivateData.Worked()
+			} else {
+				showNewCall = !m.cachedLogStats.CallWorked
+			}
+			wlNewDXCC := m.wlPrivateData != nil && !m.wlPrivateData.DXCCConfirmed()
+			if showNewCall {
+				line += "  " + S.Success.Render("New Call!")
+			}
+			if wlNewDXCC {
+				line += "  " + S.Success.Render("New DXCC!")
+			}
 			if lipgloss.Width(line) > width {
 				line = truncate(line, width)
 			}

@@ -66,6 +66,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			return nil, true
 		}
 		applog.Debug("tab: F2 Partner Details")
+		m.commitCall()
 		band := strings.TrimSpace(m.fields[fieldBand].Value())
 		mode := strings.TrimSpace(m.fields[fieldMode].Value())
 
@@ -83,18 +84,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.screen = screenPartner
 		m.invalidatePartnerMapCache()
 
-		var cmds []tea.Cmd
-		if callChanged && m.App.Config.QRZ.User != "" && m.App.Config.QRZ.Enabled {
-			cmds = append(cmds, m.qrzLookup(call))
-		}
-		wl := m.App.Logbook.Wavelog
-		if (callChanged || bandChanged || modeChanged) && wl != nil && wl.Enabled && wl.APIKey != "" {
-			cmds = append(cmds, m.wlLookup(call))
-		}
-		if len(cmds) > 0 {
-			return tea.Batch(cmds...), true
-		}
-		return nil, true
+		return m.lookupCallCmd(call), true
 
 	case key.Matches(msg, m.keys.Config):
 		if m.screen == screenMainMenu {
@@ -218,30 +208,15 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, true
 
 	case key.Matches(msg, m.keys.Partner):
-		call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
-		var cmds []tea.Cmd
-		if call != "" && m.App.Config.QRZ.User != "" && m.App.Config.QRZ.Enabled && m.partnerData == nil {
-			cmds = append(cmds, m.qrzLookup(call))
-		}
-		cmds = append(cmds, m.wlLookup(call))
-		cmds = append(cmds, m.updateFilteredTable())
-		if len(cmds) > 0 {
-			return tea.Batch(cmds...), true
-		}
-		return nil, true
+		m.commitCall()
+		call := m.pathCall
+		m.screen = screenPartner
+		m.invalidatePartnerMapCache()
+		return m.lookupCallCmd(call), true
 
 	case key.Matches(msg, m.keys.Lookup):
-		call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
-		var cmds []tea.Cmd
-		if call != "" && m.App.Config.QRZ.User != "" && m.App.Config.QRZ.Enabled {
-			cmds = append(cmds, m.qrzLookup(call))
-		}
-		cmds = append(cmds, m.wlLookup(call))
-		cmds = append(cmds, m.updateFilteredTable())
-		if len(cmds) > 0 {
-			return tea.Batch(cmds...), true
-		}
-		return nil, true
+		m.commitCall()
+		return m.lookupCallCmd(m.pathCall), true
 
 	case key.Matches(msg, m.keys.Enter):
 		return m.saveQSO(), true

@@ -12,7 +12,18 @@ func Validate(q *QSO) []string {
 		errs = append(errs, "call is required")
 	}
 
-	if strings.TrimSpace(q.Band) != "" && !IsValidBand(q.Band) {
+	// Band or frequency is required. If band is empty, try to derive from freq.
+	band := strings.TrimSpace(q.Band)
+	if band == "" {
+		if q.Freq > 0 {
+			band = DeriveBand(q.Freq)
+			if band == "" {
+				errs = append(errs, "frequency does not match any band — set band manually")
+			}
+		} else {
+			errs = append(errs, "band is required (enter frequency or set band)")
+		}
+	} else if !IsValidBand(band) {
 		errs = append(errs, "unknown band: "+q.Band)
 	}
 

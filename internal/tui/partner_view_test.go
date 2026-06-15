@@ -153,15 +153,15 @@ func TestPartnerViewRenderPartnerInfo(t *testing.T) {
 		Country:  "Poland",
 	}
 
-	info := m.renderPartnerInfo(d, 40)
+	info := m.renderCallbookRows(d, 40)
 	if info == "" {
-		t.Error("renderPartnerInfo returned empty")
+		t.Error("renderCallbookRows returned empty")
 	}
 	if !strings.Contains(info, "SP9MOA") {
-		t.Error("renderPartnerInfo missing callsign")
+		t.Error("renderCallbookRows missing callsign")
 	}
 	if !strings.Contains(info, "John") {
-		t.Error("renderPartnerInfo missing name")
+		t.Error("renderCallbookRows missing name")
 	}
 }
 

@@ -42,6 +42,7 @@ func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode
 	}
 	if grid != "" {
 		m.fields[fieldGrid].SetValue(formatLocator(grid))
+		m.pathGrid = strings.ToUpper(formatLocator(grid))
 	}
 	if freqHz > 0 {
 		m.fields[fieldFreq].SetValue(fmt.Sprintf("%.6f", float64(freqHz)/1_000_000.0))

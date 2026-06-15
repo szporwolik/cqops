@@ -61,6 +61,7 @@ func (m *Model) saveQSO() tea.Cmd {
 	}
 	qso.ApplyStationDefaults(qs, station)
 	if err := qso.ValidateForSave(qs); err != nil {
+		applog.Warn("QSO validation failed", "error", err.Error())
 		m.toasts.Error(err.Error())
 		return nil
 	}
@@ -95,6 +96,7 @@ func (m *Model) refreshQSOS() tea.Cmd {
 		m.qsos = qsos
 		m.recentQSOs.SetQSOS(qsos)
 		m.cachedPathSig = ""
+		m.cachedLogStatsSig = ""
 
 		// Re-apply filter if active — new QSO might match.
 		if m.recentQSOs.IsFiltered() {

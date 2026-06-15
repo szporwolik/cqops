@@ -13,6 +13,32 @@ import (
 // QSO form field navigation
 // =============================================================================
 
+// commitCall commits the current callsign field value for path calculation
+// and invalidates the path cache. Safe to call from any context.
+func (m *Model) commitCall() {
+	cur := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+	m.pathCall = cur
+	m.cachedPathSig = ""
+}
+
+// lookupCallCmd returns a batch of lookup commands (QRZ + WL + filtered table)
+// for the given callsign. Returns nil if no lookups are configured.
+func (m *Model) lookupCallCmd(call string) tea.Cmd {
+	if call == "" {
+		return nil
+	}
+	var cmds []tea.Cmd
+	if m.App.Config.QRZ.Enabled && m.App.Config.QRZ.User != "" {
+		cmds = append(cmds, m.qrzLookup(call))
+	}
+	wl := m.App.Logbook.Wavelog
+	if wl != nil && wl.Enabled && wl.APIKey != "" {
+		cmds = append(cmds, m.wlLookup(call))
+	}
+	cmds = append(cmds, m.updateFilteredTable())
+	return tea.Batch(cmds...)
+}
+
 // focusField sets focus to the specified QSO form field.
 func (m *Model) focusField(f field) {
 	m.retainFocused = false
@@ -241,7 +267,8 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 
 	switch f {
 	case fieldCall:
-		// Uppercase + clear stale lookup data if call changed.
+		// Uppercase. If call changed: clear lookup data + filtered table,
+		// but keep grid/QTH/country — user may just be adding /P suffix.
 		m.fields[f].SetValue(strings.ToUpper(m.fields[f].Value()))
 		if cur := strings.TrimSpace(m.fields[f].Value()); cur != strings.TrimSpace(prevVal) {
 			if m.partnerData != nil && !strings.EqualFold(m.partnerData.Callsign, cur) {
@@ -249,10 +276,9 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 				m.wlPrivateData = nil
 				m.wlLookupDone = false
 				m.screen = screenQSO
-				m.fields[fieldGrid].SetValue("")
-				m.fields[fieldQTH].SetValue("")
-				m.fields[fieldCountry].SetValue("")
 			}
+			m.clearFilteredTable()
+			m.invalidatePartnerMapCache()
 		}
 
 	case fieldBand:
@@ -283,11 +309,11 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 func (m *Model) onFieldExit() {
 	switch m.focus {
 	case fieldCall:
-		cur := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
-		m.pathCall = cur
+		m.commitCall()
 		m.autoFillRST()
 		m.autoFillSSBSubmode()
-		// Trigger QRZ+WL lookup if call changed from last lookup.
+		// Defer lookup via flag — onFieldExit can't return commands.
+		cur := m.pathCall
 		if cur != "" && !strings.EqualFold(cur, m.qrzLastCall) {
 			m.qrzNeed = true
 			m.qrzCall = cur

@@ -117,7 +117,7 @@ var S = Styles{
 	Info:    lipgloss.NewStyle().Foreground(P.Info),
 
 	FormLabel:       lipgloss.NewStyle().Width(11).Foreground(P.TextMuted),
-	FormLabelWide:   lipgloss.NewStyle().Width(14).Foreground(P.TextMuted),
+	FormLabelWide:   lipgloss.NewStyle().Width(17).Foreground(P.TextMuted),
 	FormFocused:     lipgloss.NewStyle().Width(11).Foreground(P.Cursor),
 	FormFocusedWide: lipgloss.NewStyle().Width(14).Foreground(P.Cursor),
 	FormPrefixOn:    lipgloss.NewStyle().Foreground(P.Cursor),

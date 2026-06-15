@@ -16,6 +16,7 @@ import (
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/qrz"
 	"github.com/szporwolik/cqops/internal/qso"
+	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
@@ -54,7 +55,7 @@ const (
 
 var fieldNames = []string{
 	"Date UTC", "Time UTC", "Call", "Frequency", "Band", "Mode", "Submode",
-	"RST sent", "RST rcvd", "Name", "QTH", "Grid", "DXCC", "Power W", "Freq RX",
+	"RST sent", "RST rcvd", "Name", "QTH", "Grid", "Country", "Power W", "Freq RX",
 	"SOTA Ref", "POTA Ref", "WWFF Ref", "IOTA", "Comment",
 }
 
@@ -172,6 +173,10 @@ type Model struct {
 	cachedFormColW         int
 	cachedFormColStyle     lipgloss.Style
 	cachedFormCommentStyle lipgloss.Style
+
+	// Partner logbook stats cache — recomputed on call/band/mode change or QSO save.
+	cachedLogStats    store.LogbookStats
+	cachedLogStatsSig string
 }
 
 type tickMsg time.Time
@@ -402,7 +407,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Reapply size on resize while viewing image.
 		if _, ok := msg.(tea.WindowSizeMsg); ok {
 			w := m.width
-			h := m.height - 4
+			h := contentHeight(m.height)
 			if w < 20 {
 				w = 80
 			}
