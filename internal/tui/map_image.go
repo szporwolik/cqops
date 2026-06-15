@@ -177,31 +177,34 @@ func (mr *mapRenderer) drawMarkers(rendered string, ownLat, ownLon, partnerLat, 
 	ownX, ownY := srcToCell(ownLat, ownLon)
 	partnerX, partnerY := srcToCell(partnerLat, partnerLon)
 
-	dx := ownX - partnerX
-	dy := ownY - partnerY
-	if dx < 0 {
-		dx = -dx
+	// When both stations land on the same cell, nudge partner to the nearest
+	// free adjacent cell so both markers remain visible.
+	if ownX == partnerX && ownY == partnerY {
+		// Try 4-neighbour cells in order: right, left, down, up.
+		candidates := [][2]int{
+			{partnerX + 1, partnerY},
+			{partnerX - 1, partnerY},
+			{partnerX, partnerY + 1},
+			{partnerX, partnerY - 1},
+		}
+		for _, c := range candidates {
+			cx, cy := c[0], c[1]
+			if cx >= 0 && cx < mapW && cy >= 0 && cy < mapH {
+				partnerX, partnerY = cx, cy
+				break
+			}
+		}
 	}
-	if dy < 0 {
-		dy = -dy
-	}
-	merged := dx <= 2 && dy <= 2
 
 	ownMark := S.MapOwn.Render("\u25c6")
 	partMark := S.MapPartner.Render("\u00d7")
-	bothMark := S.MapBoth.Render("\u25ce")
 
 	lines := strings.Split(rendered, "\n")
 	for i := range lines {
-		switch {
-		case merged && i == ownY:
-			mx := (ownX + partnerX) / 2
-			lines[i] = replaceANSICell(lines[i], mx, bothMark)
-		case i == ownY && i == partnerY && ownX == partnerX:
-			lines[i] = replaceANSICell(lines[i], ownX, bothMark)
-		case i == ownY:
+		if i == ownY {
 			lines[i] = replaceANSICell(lines[i], ownX, ownMark)
-		case i == partnerY:
+		}
+		if i == partnerY {
 			lines[i] = replaceANSICell(lines[i], partnerX, partMark)
 		}
 	}
@@ -209,9 +212,7 @@ func (mr *mapRenderer) drawMarkers(rendered string, ownLat, ownLon, partnerLat, 
 	legend := DimStyle.Render(" ") +
 		S.MapOwn.Render("\u25c6") + DimStyle.Render(" My station") +
 		DimStyle.Render("  ") +
-		S.MapPartner.Render("\u00d7") + DimStyle.Render(" Partner") +
-		DimStyle.Render("  ") +
-		S.MapBoth.Render("\u25ce") + DimStyle.Render(" Merged")
+		S.MapPartner.Render("\u00d7") + DimStyle.Render(" Partner")
 	lines = append(lines, legend)
 
 	return strings.Join(lines, "\n")

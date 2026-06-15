@@ -164,14 +164,16 @@ func (m *Model) viewPartner() string {
 		}
 		mapBox := m.getOrBuildMap(d, contentW, mapAvailH)
 		if mapBox != "" {
-			// Force every line to exactly contentW columns — no narrower, no wider.
+			// Force every line to exactly contentW columns — centered if narrower.
 			lines := strings.Split(mapBox, "\n")
 			for i, l := range lines {
 				lw := lipgloss.Width(l)
 				if lw > contentW {
 					lines[i] = truncateText(l, contentW)
 				} else if lw < contentW {
-					lines[i] = l + strings.Repeat(" ", contentW-lw)
+					left := (contentW - lw) / 2
+					right := contentW - lw - left
+					lines[i] = strings.Repeat(" ", left) + l + strings.Repeat(" ", right)
 				}
 			}
 			mapBox = strings.Join(lines, "\n")
