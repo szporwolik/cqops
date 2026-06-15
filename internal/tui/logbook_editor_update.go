@@ -54,7 +54,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case editorMsg:
 		// Batch download progress — update counter and request next message.
-		if !msg.dlDone && (msg.dlProgress > 0 || msg.dlTotal > 0) {
+		if !msg.dlDone && msg.dlErr == "" {
 			le.dlProgress = msg.dlProgress
 			le.dlTotal = msg.dlTotal
 			if le.mode != edModeWLDownloading {
@@ -228,7 +228,9 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 		le.mode = edModeList
 		return le.doBatchUpload()
 	case "wldownload":
-		le.mode = edModeList
+		le.mode = edModeWLDownloading
+		le.dlProgress = 0
+		le.dlTotal = 0
 		return le.doWavelogDownload()
 	case "purge":
 		le.mode = edModeList
@@ -321,6 +323,9 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 	const batchSize = 50
 	const maxPerDownload = 50
 	db := le.db
+
+	// Send initial message so the dialog appears immediately.
+	le.dlMsgCh <- editorMsg{dlProgress: 0, dlTotal: 0}
 
 	result, err := wavelog.FetchContacts(url, key, sid, fetchFromID)
 	if err != nil {
@@ -479,12 +484,10 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 		}
 
 		if existingID := store.FindQSOByKey(db, qs.Call, qs.Band, qs.Mode, qs.QSODate, qs.TimeOn); existingID != 0 {
-			applog.Info("Wavelog: replacing local duplicate",
+			applog.Info("Wavelog: skipping local duplicate",
 				"local_id", existingID, "call", qs.Call, "band", qs.Band, "date", qs.QSODate)
-			if err := store.DeleteQSO(db, existingID); err != nil {
-				applog.Error("Wavelog: failed to delete local duplicate", "id", existingID, "error", err)
-			}
 			dupes++
+			continue // already have it — don't count toward the limit
 		}
 
 		if _, err := store.InsertQSO(db, qs); err != nil {

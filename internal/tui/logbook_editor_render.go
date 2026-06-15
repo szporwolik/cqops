@@ -68,10 +68,12 @@ func (le *LogbookEditor) View() tea.View {
 		return tea.NewView(le.viewWithDialog(bodyW))
 	case edModeWLDownloading:
 		if le.dialog == nil {
-			d := NewDialog("Wavelog Download", "Downloading…",
+			d := NewDialog("Wavelog Download", "Downloading ADIF from Wavelog…\nThis may take a while for large logbooks.",
 				Option{Label: "Abort", Value: "abort"},
 			)
 			le.dialog = &d
+		} else if le.dlProgress == 0 {
+			le.dialog.Message = "Downloading ADIF from Wavelog…\nThis may take a while for large logbooks."
 		} else {
 			le.dialog.Message = fmt.Sprintf("Downloaded %d QSOs (%d%% of file)",
 				le.dlProgress, le.dlTotal)
@@ -139,7 +141,7 @@ func (le *LogbookEditor) viewNormalizeConfirm(bodyW int) string {
 func (le *LogbookEditor) viewDownloadResult(bodyW int) string {
 	msg := fmt.Sprintf("Downloaded %d QSOs.", le.wlDownloadCount)
 	if le.wlDownloadDupes > 0 {
-		msg += fmt.Sprintf("\n%d local duplicates replaced.", le.wlDownloadDupes)
+		msg += fmt.Sprintf("\n%d already in logbook, skipped.", le.wlDownloadDupes)
 	}
 	if le.wlDownloadErr != "" {
 		msg = "Download failed: " + le.wlDownloadErr
