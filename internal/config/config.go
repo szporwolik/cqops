@@ -142,6 +142,7 @@ type WavelogConfig struct {
 	URL              string `yaml:"url"`
 	APIKey           string `yaml:"api_key"`
 	StationProfileID string `yaml:"station_profile_id"`
+	LastFetchedID    int64  `yaml:"last_fetched_id,omitempty"`
 }
 
 type WSJTXConfig struct {

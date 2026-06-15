@@ -162,6 +162,20 @@ func DeleteQSO(db *sql.DB, id int64) error {
 	return nil
 }
 
+// FindQSOByKey returns the ID of a QSO matching call, band, mode, date and time_on.
+// Returns 0 if no match is found.
+func FindQSOByKey(db *sql.DB, call, band, mode, qsoDate, timeOn string) int64 {
+	var id int64
+	err := db.QueryRow(
+		`SELECT id FROM qsos WHERE call = ? AND band = ? AND mode = ? AND qso_date = ? AND time_on = ? LIMIT 1`,
+		call, band, mode, qsoDate, timeOn,
+	).Scan(&id)
+	if err != nil {
+		return 0
+	}
+	return id
+}
+
 func ListAllQSOs(db *sql.DB) ([]qso.QSO, error) {
 	return ListQSOs(db, 0)
 }

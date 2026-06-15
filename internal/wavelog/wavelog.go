@@ -359,3 +359,95 @@ func PostQSOWithResult(baseURL, apiKey, stationID, adifStr string) (*QSOUploadRe
 	applog.InfoDetail("Wavelog: QSO uploaded", fmt.Sprintf("status=%d", resp.StatusCode))
 	return &result, nil
 }
+
+// ContactsResponse from api/get_contacts_adif.
+// LastFetchedIDRaw uses json.Number because Wavelog may return it as a
+// string or integer depending on server version/PHP configuration.
+type ContactsResponse struct {
+	ExportedQSOs     int         `json:"exported_qsos"`
+	LastFetchedIDRaw json.Number `json:"lastfetchedid"`
+	Message          string      `json:"message"`
+	ADIF             string      `json:"adif"`
+}
+
+// LastFetchedID returns the last fetched ID as int64, defaulting to 0 on parse failure.
+func (r *ContactsResponse) LastFetchedID() int64 {
+	v, err := r.LastFetchedIDRaw.Int64()
+	if err != nil {
+		return 0
+	}
+	return v
+}
+
+// FetchContacts pulls QSOs from Wavelog as ADIF since the given fetchFromID.
+func FetchContacts(baseURL, apiKey, stationID string, fetchFromID int64) (*ContactsResponse, error) {
+	applog.DebugDetail("Wavelog: fetching contacts",
+		fmt.Sprintf("url=%s station_id=%s from_id=%d", baseURL, stationID, fetchFromID))
+	if baseURL == "" || apiKey == "" || stationID == "" {
+		return nil, fmt.Errorf("missing required parameters")
+	}
+	baseURL = strings.TrimRight(baseURL, "/")
+	url := baseURL + "/index.php/api/get_contacts_adif"
+
+	// station_id must be an integer in JSON — the API rejects a string.
+	var stationIDInt int
+	if _, err := fmt.Sscanf(stationID, "%d", &stationIDInt); err != nil {
+		return nil, fmt.Errorf("invalid station_id %q: %w", stationID, err)
+	}
+
+	payload := map[string]interface{}{
+		"key":         apiKey,
+		"station_id":  stationIDInt,
+		"fetchfromid": fetchFromID,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		applog.ErrorDetail("Wavelog: marshal fetch payload failed",
+			fmt.Sprintf("error=%v", err))
+		return nil, err
+	}
+
+	resp, err := httpClient.Post(url, "application/json", bytes.NewReader(body))
+	if err != nil {
+		applog.ErrorDetail("Wavelog: fetch contacts HTTP error",
+			fmt.Sprintf("url=%s station_id=%s error=%v", url, stationID, err))
+		return nil, FriendlyError(fmt.Errorf("fetch failed: %w", err))
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		applog.ErrorDetail("Wavelog: read fetch response failed",
+			fmt.Sprintf("url=%s error=%v", url, err))
+		return nil, FriendlyError(fmt.Errorf("read response: %w", err))
+	}
+
+	if resp.StatusCode >= 400 {
+		bodyStr := strings.TrimSpace(string(respBody))
+		reason := extractAPIReason(bodyStr)
+		if reason == "" {
+			reason = bodyStr
+		}
+		applog.ErrorDetail("Wavelog: fetch contacts server error",
+			fmt.Sprintf("url=%s station_id=%s status=%d reason=%s", url, stationID, resp.StatusCode, reason))
+		return nil, fmt.Errorf("server error: HTTP %d — %s", resp.StatusCode, reason)
+	}
+
+	var result ContactsResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		applog.ErrorDetail("Wavelog: unmarshal fetch response failed",
+			fmt.Sprintf("url=%s error=%v body=%s", url, err, string(respBody)[:min(200, len(respBody))]))
+		return nil, fmt.Errorf("parse response: %w", err)
+	}
+
+	applog.InfoDetail("Wavelog: contacts fetched",
+		fmt.Sprintf("url=%s station_id=%s exported=%d last_id=%d", url, stationID, result.ExportedQSOs, result.LastFetchedID()))
+	return &result, nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}

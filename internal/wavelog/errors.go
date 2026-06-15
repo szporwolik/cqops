@@ -1,9 +1,25 @@
 package wavelog
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
+
+// apiError is a generic Wavelog API error response.
+type apiError struct {
+	Status string `json:"status"`
+	Reason string `json:"reason"`
+}
+
+// extractAPIReason tries to pull the "reason" field from a JSON error body.
+func extractAPIReason(bodyStr string) string {
+	var ae apiError
+	if err := json.Unmarshal([]byte(bodyStr), &ae); err == nil && ae.Reason != "" {
+		return ae.Reason
+	}
+	return ""
+}
 
 // FriendlyError translates technical Go/HTTP errors into messages suitable
 // for display in toasts and status lines. Use this when returning errors
@@ -37,8 +53,11 @@ func FriendlyError(err error) error {
 		return fmt.Errorf("Connection timed out — check the URL and try again")
 	}
 
-	// HTTP 401 Unauthorized
+	// HTTP 401 — differentiate between invalid key and station access.
 	if strings.Contains(msg, "HTTP 401") {
+		if strings.Contains(msg, "Station ID not accessible") {
+			return fmt.Errorf("Station profile not accessible — check your Wavelog Station Profile ID")
+		}
 		return fmt.Errorf("Invalid API key — check your Wavelog API key")
 	}
 

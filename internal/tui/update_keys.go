@@ -114,7 +114,11 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		if wl != nil {
 			wlURL, wlKey, wlStationID = wl.URL, wl.APIKey, wl.StationProfileID
 		}
-		m.logbookEditor = NewLogbookEditor(m.App.DB, wlURL, wlKey, wlStationID, m.App.Logbook.Station.Operator, m.App.Logbook.Station.Grid)
+		wlLastID := int64(0)
+		if m.App.Logbook.Wavelog != nil {
+			wlLastID = m.App.Logbook.Wavelog.LastFetchedID
+		}
+		m.logbookEditor = NewLogbookEditor(m.App.DB, wlURL, wlKey, wlStationID, wlLastID, m.App.Logbook.Station.Operator, m.App.Logbook.Station.Grid)
 		m.logbookEditor.width = m.width
 		m.logbookEditor.height = m.height
 		qsos, _ := store.ListAllQSOs(m.App.DB)

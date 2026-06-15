@@ -182,6 +182,24 @@ func InfoDetail(msg, details string) {
 	}
 }
 
+// ErrorDetail logs an ERROR message with an additional detail string shown
+// in the TUI log viewer. Safe when Logger is nil (tests).
+func ErrorDetail(msg, details string) {
+	Append("ERROR", msg, details)
+	if Logger != nil {
+		Logger.Error(msg, "details", details)
+	}
+}
+
+// DebugDetail logs a DEBUG message with an additional detail string shown
+// in the TUI log viewer. Safe when Logger is nil (tests).
+func DebugDetail(msg, details string) {
+	Append("DEBUG", msg, details)
+	if Logger != nil {
+		Logger.Debug(msg, "details", details)
+	}
+}
+
 func nowStamp() string {
 	return time.Now().Format("15:04:05")
 }

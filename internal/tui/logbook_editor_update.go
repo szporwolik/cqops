@@ -1,10 +1,16 @@
 package tui
 
 import (
+	"fmt"
+	"strings"
+
+	adif "github.com/farmergreg/adif/v5"
+	"github.com/farmergreg/spec/v6/adifield"
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
+	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
 // =============================================================================
@@ -12,20 +18,24 @@ import (
 // =============================================================================
 
 type editorMsg struct {
-	deleted    int64
-	delCall    string
-	delDate    string
-	saved      int64
-	saveCall   string
-	saveDate   string
-	purged     bool
-	wlQSOID    int64
-	wlCall     string
-	wlOK       bool
-	normalized int
-	skipped    int
-	skipReason string
-	err        error
+	deleted       int64
+	delCall       string
+	delDate       string
+	saved         int64
+	saveCall      string
+	saveDate      string
+	purged        bool
+	wlQSOID       int64
+	wlCall        string
+	wlOK          bool
+	normalized    int
+	skipped       int
+	skipReason    string
+	err           error
+	dlCount       int
+	dlDupes       int
+	dlLastID      int64
+	dlErr         string
 }
 
 func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -59,6 +69,22 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyPressMsg:
 		k := msg.String()
+
+		// Download result — any key dismisses.
+		if le.mode == edModeWLDownloadResult {
+			le.mode = edModeList
+			le.needsReload = true
+			return le, nil
+		}
+
+		// Normalize confirm — y=yes, anything else=cancel.
+		if le.mode == edModeConfirmNormalize {
+			if k == "y" {
+				return le, le.doNormalizeAndUpload()
+			}
+			le.mode = edModeList
+			return le, nil
+		}
 
 		// Confirm modes — route keys to the dialog with left/right navigation.
 		if le.isConfirmMode() && le.dialog != nil {
@@ -111,6 +137,10 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if le.wlURL != "" && le.wlKey != "" && le.wlStationID != "" && len(le.qsos) > 0 {
 				le.mode = edModeConfirmWLSend
 			}
+		case "ctrl+w":
+			if le.wlURL != "" && le.wlKey != "" && le.wlStationID != "" {
+				le.mode = edModeConfirmWLDownload
+			}
 		case "e", "enter":
 			if len(le.qsos) > 0 {
 				idx := le.table.Cursor()
@@ -142,8 +172,12 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 	case "wlsend":
 		le.mode = edModeList
 		return le.doBatchUpload()
+	case "wldownload":
+		le.mode = edModeList
+		return le.doWavelogDownload()
 	case "purge":
 		le.mode = edModeList
+		le.wlLastFetchedID = 0
 		applog.Warn("LogbookEditor: purging all QSOs")
 		return func() tea.Msg {
 			err := store.PurgeQSOs(le.db)
@@ -189,5 +223,165 @@ func (le *LogbookEditor) doSave() tea.Cmd {
 			applog.Info("LogbookEditor: QSO saved", "id", id, "call", call)
 		}
 		return editorMsg{saved: id, saveCall: call, saveDate: date, err: err}
+	}
+}
+
+// doWavelogDownload fetches contacts from Wavelog, deduplicates against local DB,
+// and inserts new QSOs. Local duplicates are replaced with the Wavelog version.
+func (le *LogbookEditor) doWavelogDownload() tea.Cmd {
+	url, key, sid := le.wlURL, le.wlKey, le.wlStationID
+	fetchFromID := le.wlLastFetchedID
+	db := le.db
+
+	applog.InfoDetail("Wavelog: starting contacts download",
+		fmt.Sprintf("url=%s station_id=%s from_id=%d", url, sid, fetchFromID))
+
+	return func() tea.Msg {
+		result, err := wavelog.FetchContacts(url, key, sid, fetchFromID)
+		if err != nil {
+			applog.ErrorDetail("Wavelog: contacts download failed",
+				fmt.Sprintf("url=%s station_id=%s from_id=%d error=%v", url, sid, fetchFromID, err))
+			return editorMsg{dlErr: err.Error()}
+		}
+
+		if result.ADIF == "" || result.ExportedQSOs == 0 {
+			applog.Info("Wavelog: no new contacts to download")
+			return editorMsg{dlCount: 0, dlLastID: result.LastFetchedID()}
+		}
+
+		// Parse ADIF records — same pattern as parseWSJTXADIF.
+		var inserted, dupes int
+		s := adif.NewScanner(strings.NewReader(result.ADIF))
+		for s.Scan() {
+			if s.IsHeader() {
+				continue
+			}
+			r := s.Record()
+			qs := qso.NewQSO()
+			if v := r[adifield.CALL]; v != "" {
+				qs.Call = strings.ToUpper(v)
+			}
+			if v := r[adifield.BAND]; v != "" {
+				qs.Band = qso.NormalizeBand(v)
+			}
+			if v := r[adifield.MODE]; v != "" {
+				qs.Mode = strings.ToUpper(v)
+			}
+			if v := r[adifield.SUBMODE]; v != "" {
+				qs.Submode = strings.ToUpper(v)
+			}
+			if v := r[adifield.QSO_DATE]; v != "" {
+				qs.QSODate = v
+			}
+			if v := r[adifield.TIME_ON]; v != "" {
+				qs.TimeOn = v
+			}
+			if v := r[adifield.TIME_OFF]; v != "" {
+				qs.TimeOff = v
+			}
+			if v := r[adifield.FREQ]; v != "" {
+				fmt.Sscanf(v, "%f", &qs.Freq)
+			}
+			if v := r[adifield.FREQ_RX]; v != "" {
+				fmt.Sscanf(v, "%f", &qs.FreqRx)
+			}
+			if v := r[adifield.RST_SENT]; v != "" {
+				qs.RSTSent = v
+			}
+			if v := r[adifield.RST_RCVD]; v != "" {
+				qs.RSTRcvd = v
+			}
+			if v := r[adifield.GRIDSQUARE]; v != "" {
+				qs.GridSquare = v
+			}
+			if v := r[adifield.NAME]; v != "" {
+				qs.Name = v
+			}
+			if v := r[adifield.QTH]; v != "" {
+				qs.QTH = v
+			}
+			if v := r[adifield.COUNTRY]; v != "" {
+				qs.Country = v
+			}
+			if v := r[adifield.COMMENT]; v != "" {
+				qs.Comment = v
+			}
+			if v := r[adifield.NOTES]; v != "" {
+				qs.Notes = v
+			}
+			if v := r[adifield.TX_PWR]; v != "" {
+				qs.TXPower = v
+			}
+			if v := r[adifield.SOTA_REF]; v != "" {
+				qs.SOTARef = v
+			}
+			if v := r[adifield.POTA_REF]; v != "" {
+				qs.POTARef = v
+			}
+			if v := r[adifield.WWFF_REF]; v != "" {
+				qs.WWFFRef = v
+			}
+			if v := r[adifield.IOTA]; v != "" {
+				qs.IOTA = v
+			}
+			if v := r[adifield.MY_SOTA_REF]; v != "" {
+				qs.MySOTARef = v
+			}
+			if v := r[adifield.MY_POTA_REF]; v != "" {
+				qs.MyPOTARef = v
+			}
+			if v := r[adifield.MY_WWFF_REF]; v != "" {
+				qs.MyWWFFRef = v
+			}
+			if v := r[adifield.STATION_CALLSIGN]; v != "" {
+				qs.StationCallsign = strings.ToUpper(v)
+			}
+			if v := r[adifield.OPERATOR]; v != "" {
+				qs.Operator = strings.ToUpper(v)
+			}
+			if v := r[adifield.MY_GRIDSQUARE]; v != "" {
+				qs.MyGridSquare = v
+			}
+			if v := r[adifield.MY_RIG]; v != "" {
+				qs.MyRig = v
+			}
+			if v := r[adifield.MY_ANTENNA]; v != "" {
+				qs.MyAntenna = v
+			}
+			if v := r[adifield.DISTANCE]; v != "" {
+				fmt.Sscanf(v, "%f", &qs.Distance)
+			}
+			qs.Source = "wavelog"
+			qs.WavelogUploaded = "yes"
+
+			if qs.Call == "" {
+				continue
+			}
+
+			// Check for duplicate in local DB
+			if existingID := store.FindQSOByKey(db, qs.Call, qs.Band, qs.Mode, qs.QSODate, qs.TimeOn); existingID != 0 {
+				applog.Info("Wavelog: replacing local duplicate",
+					"local_id", existingID, "call", qs.Call, "band", qs.Band, "date", qs.QSODate)
+				if err := store.DeleteQSO(db, existingID); err != nil {
+					applog.Error("Wavelog: failed to delete local duplicate", "id", existingID, "error", err)
+				}
+				dupes++
+			}
+
+			if _, err := store.InsertQSO(db, qs); err != nil {
+				applog.Error("Wavelog: failed to insert downloaded QSO", "call", qs.Call, "error", err)
+				continue
+			}
+			inserted++
+		}
+
+		applog.Info("Wavelog: contacts download complete",
+			"inserted", inserted, "dupes_replaced", dupes, "last_id", result.LastFetchedID())
+
+		return editorMsg{
+			dlCount:  inserted,
+			dlDupes:  dupes,
+			dlLastID: result.LastFetchedID(),
+		}
 	}
 }

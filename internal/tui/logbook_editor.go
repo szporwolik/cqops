@@ -17,6 +17,8 @@ const (
 	edModeConfirmPurge
 	edModeConfirmWLSend
 	edModeConfirmNormalize
+	edModeConfirmWLDownload
+	edModeWLDownloadResult
 	edModeEdit
 )
 
@@ -71,36 +73,40 @@ var qefLabels = []string{
 }
 
 type LogbookEditor struct {
-	db             *sql.DB
-	qsos           []qso.QSO
-	table          table.Model
-	mode           editorMode
-	dialog         *DialogModel // confirm dialog with left/right navigation
-	editing        *qso.QSO
-	fields         [qefCount]textinput.Model
-	focus          qsoEditField
-	done           bool
-	needsReload    bool
-	built          bool
-	wlSkipped      int
-	wlSkipDetail   string
-	width          int
-	height         int
-	wlURL          string
-	wlKey          string
-	wlStationID    string
-	logStationOp   string
-	logStationGrid string
-	mismatchQSOs   []qso.QSO
-	mismatchFields []string
+	db                *sql.DB
+	qsos              []qso.QSO
+	table             table.Model
+	mode              editorMode
+	dialog            *DialogModel // confirm dialog with left/right navigation
+	editing           *qso.QSO
+	fields            [qefCount]textinput.Model
+	focus             qsoEditField
+	done              bool
+	needsReload       bool
+	built             bool
+	wlSkipped         int
+	wlSkipDetail      string
+	width             int
+	height            int
+	wlURL             string
+	wlKey             string
+	wlStationID       string
+	wlLastFetchedID   int64
+	logStationOp      string
+	logStationGrid    string
+	mismatchQSOs      []qso.QSO
+	mismatchFields    []string
+	wlDownloadCount   int
+	wlDownloadDupes   int
+	wlDownloadErr     string
 }
 
 // =============================================================================
 // Constructor
 // =============================================================================
 
-func NewLogbookEditor(db *sql.DB, wlURL, wlKey, wlStationID, logStationOp, logStationGrid string) *LogbookEditor {
-	le := &LogbookEditor{db: db, mode: edModeList, wlURL: wlURL, wlKey: wlKey, wlStationID: wlStationID, logStationOp: logStationOp, logStationGrid: logStationGrid}
+func NewLogbookEditor(db *sql.DB, wlURL, wlKey, wlStationID string, wlLastFetchedID int64, logStationOp, logStationGrid string) *LogbookEditor {
+	le := &LogbookEditor{db: db, mode: edModeList, wlURL: wlURL, wlKey: wlKey, wlStationID: wlStationID, wlLastFetchedID: wlLastFetchedID, logStationOp: logStationOp, logStationGrid: logStationGrid}
 	for i := qsoEditField(0); i < qefCount; i++ {
 		ti := newTextinput()
 		ti.CharLimit = 40
@@ -163,7 +169,7 @@ func (le *LogbookEditor) IsEditing() bool { return le.mode == edModeEdit }
 
 func (le *LogbookEditor) isConfirmMode() bool {
 	switch le.mode {
-	case edModeConfirmDelete, edModeConfirmPurge, edModeConfirmWLSend, edModeConfirmNormalize:
+	case edModeConfirmDelete, edModeConfirmPurge, edModeConfirmWLSend, edModeConfirmWLDownload:
 		return true
 	}
 	return false

@@ -5,6 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
+	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/store"
 )
 
@@ -201,6 +202,14 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 		}
 		if em.purged {
 			m.toasts.Success("Logbook purged")
+			// Reset Wavelog download index so next download fetches everything.
+			m.logbookEditor.wlLastFetchedID = 0
+			if m.App.Logbook.Wavelog != nil {
+				m.App.Logbook.Wavelog.LastFetchedID = 0
+				if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
+					applog.Warn("Failed to reset Wavelog last_fetched_id after purge", "error", err)
+				}
+			}
 		}
 		if em.wlQSOID != 0 {
 			if em.wlOK {
@@ -216,6 +225,25 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 			m.toasts.Warn(fmt.Sprintf("Wavelog: %s", m.logbookEditor.wlSkipDetail))
 			m.logbookEditor.wlSkipped = 0
 			m.logbookEditor.wlSkipDetail = ""
+		}
+		if em.dlLastID != 0 {
+			m.logbookEditor.wlLastFetchedID = em.dlLastID
+			if m.App.Logbook.Wavelog != nil {
+				m.App.Logbook.Wavelog.LastFetchedID = em.dlLastID
+				if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
+					applog.Warn("Failed to persist Wavelog last_fetched_id", "error", err)
+				}
+			}
+		}
+		if em.dlErr != "" {
+			m.logbookEditor.wlDownloadErr = em.dlErr
+			m.logbookEditor.mode = edModeWLDownloadResult
+		} else if em.dlCount > 0 || em.dlLastID != 0 {
+			m.logbookEditor.wlDownloadCount = em.dlCount
+			m.logbookEditor.wlDownloadDupes = em.dlDupes
+			m.logbookEditor.wlDownloadErr = ""
+			m.logbookEditor.mode = edModeWLDownloadResult
+			m.needRefresh = true
 		}
 	}
 	if m.logbookEditor.needsReload {
