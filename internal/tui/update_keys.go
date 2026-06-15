@@ -224,6 +224,7 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			cmds = append(cmds, m.qrzLookup(call))
 		}
 		cmds = append(cmds, m.wlLookup(call))
+		cmds = append(cmds, m.updateFilteredTable())
 		if len(cmds) > 0 {
 			return tea.Batch(cmds...), true
 		}
@@ -236,6 +237,7 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			cmds = append(cmds, m.qrzLookup(call))
 		}
 		cmds = append(cmds, m.wlLookup(call))
+		cmds = append(cmds, m.updateFilteredTable())
 		if len(cmds) > 0 {
 			return tea.Batch(cmds...), true
 		}

@@ -134,6 +134,7 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 	}
 	if d.Grid != "" && m.fields[fieldGrid].Value() == "" {
 		m.fields[fieldGrid].SetValue(formatLocator(d.Grid))
+		m.pathGrid = strings.ToUpper(formatLocator(d.Grid))
 		applog.Debug("QRZ: filled partner grid", "grid", d.Grid)
 	}
 	if d.QTH != "" {

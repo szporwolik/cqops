@@ -119,7 +119,7 @@ func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
 			m.toasts.Warn("QRZ not configured")
 			return cmd, false
 		}
-		return tea.Batch(cmd, m.qrzLookup(call), m.wlLookup(call)), true
+		return tea.Batch(cmd, m.qrzLookup(call), m.wlLookup(call), m.updateFilteredTable()), true
 	}
 	if m.wlNeed {
 		m.wlNeed = false

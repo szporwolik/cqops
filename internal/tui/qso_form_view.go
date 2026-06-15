@@ -9,7 +9,6 @@ import (
 
 // Pre-allocated QSO form layout data — avoids per-frame allocations.
 var (
-	choiceFields  = map[field]bool{fieldBand: true, fieldMode: true, fieldSubmode: true}
 	formLeft      = []field{fieldDate, fieldTime, fieldCall, fieldFreq, fieldBand, fieldMode, fieldSubmode}
 	formMiddle    = []field{fieldRSTSent, fieldRSTRcvd, fieldName, fieldQTH, fieldGrid, fieldCountry}
 	formRight     = []field{fieldTXPower, fieldFreqRx, fieldSOTA, fieldPOTA, fieldWWFF, fieldIOTA}
@@ -17,45 +16,50 @@ var (
 	choiceIconW   = lipgloss.Width(choiceIconStr)
 )
 
+// isChoiceField returns true for fields that have a cycle ▼ icon.
+func isChoiceField(f field) bool { return f == fieldBand || f == fieldMode || f == fieldSubmode }
+
 // viewForm renders the QSO entry form in a three-column layout.
 // Columns are capped at maxColW so they don't spread absurdly on wide screens;
-// the three-column block is centered within the available width.
-// width is the exact available space inside the border.
+// the three-column block is left-aligned with a tight border.
 func (m *Model) viewForm(width int) string {
 	bodyW := width
 	if bodyW < 20 {
 		bodyW = 20
 	}
 
-	// Cap column width so fields don't stretch on huge screens.
 	const maxColW = 33
 	colW := bodyW / 3
 	if colW > maxColW {
 		colW = maxColW
 	}
 	if colW < 20 {
-		colW = bodyW // fallback to single column on very narrow terminals
+		colW = bodyW
 	}
 
-	// Cache column styles per width — avoids per-frame allocations.
-	var colStyle lipgloss.Style
+	// Cache column & comment styles per width.
+	var colStyle, commentStyle lipgloss.Style
 	if m.cachedFormColW == colW {
 		colStyle = m.cachedFormColStyle
+		commentStyle = m.cachedFormCommentStyle
 	} else {
 		colStyle = lipgloss.NewStyle().Width(colW).MaxWidth(colW).Align(lipgloss.Left)
+		commentW := colW * 2
+		if commentW < 20 {
+			commentW = bodyW
+		}
+		commentStyle = lipgloss.NewStyle().Width(commentW).MaxWidth(commentW).Align(lipgloss.Left)
 		m.cachedFormColW = colW
 		m.cachedFormColStyle = colStyle
+		m.cachedFormCommentStyle = commentStyle
 	}
 
-	// No centering — form is left-aligned, border wraps content tightly.
-	padStr := ""
-
-	// labelW is the fixed space for the label part: 2-char prefix + 11-char label
-	// (matches S.FormLabel / S.FormFocused Width(11)).
-	labelW := 2 + 11
+	// labelW is the fixed space: 2-char prefix + 11-char label.
+	const labelW = 2 + 11
 
 	// renderLine returns the raw field line (label + value) without column-width
-	// wrapping. Callers apply the appropriate width style.
+	// wrapping. Textinput width is set here because bubbles/textinput requires
+	// width to be known at render time for cursor positioning.
 	renderLine := func(f field, availW int) string {
 		label := fieldNames[f]
 		raw := strings.TrimSpace(m.fields[f].Value())
@@ -63,11 +67,10 @@ func (m *Model) viewForm(width int) string {
 		ti := m.fields[f]
 
 		choiceIcon := ""
-		if choiceFields[f] {
+		if isChoiceField(f) {
 			choiceIcon = choiceIconStr
 		}
 
-		// Value width: whatever remains after label, spacer, and choice icon.
 		vw := availW - labelW - 1 - choiceIconW
 		if vw < 3 {
 			vw = 3
@@ -139,26 +142,14 @@ func (m *Model) viewForm(width int) string {
 		if colW < 20 {
 			row = lipgloss.JoinVertical(lipgloss.Left, cols...)
 		}
-		b.WriteString(padStr)
 		b.WriteString(row)
 		b.WriteString("\n")
 	}
 
-	// Comment row spans first two columns; Retain checkbox in third column.
-	commentW := colW * 2
-	if commentW < 20 {
-		commentW = bodyW
-	}
-	commentStyle := lipgloss.NewStyle().Width(commentW).MaxWidth(commentW).Align(lipgloss.Left)
-	commentLine := commentStyle.Render(renderLine(fieldComment, commentW))
-
+	// Comment row spans first two columns; Retain checkbox in third.
+	commentLine := commentStyle.Render(renderLine(fieldComment, colW*2))
 	retainBox := colStyle.Render(m.renderRetainCheckbox(colW))
-	b.WriteString(padStr)
-	if colW >= 20 {
-		b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, commentLine, retainBox))
-	} else {
-		b.WriteString(lipgloss.JoinVertical(lipgloss.Left, commentLine, retainBox))
-	}
+	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, commentLine, retainBox))
 
 	return b.String()
 }
@@ -224,13 +215,13 @@ func (m *Model) stationProfile() []string {
 }
 
 // formPathRow renders the info line between the QSO form and recent QSOs table.
-// When no callsign is entered, it shows station profile info (right-aligned).
-// When a callsign is entered, it shows path distance and lookup results (left-aligned).
+// Two states: no call → station profile (right-aligned); call entered → path (left-aligned)
+// or fall back to station profile if no grids.
 func (m *Model) formPathRow(width int) string {
 	s := m.App.Logbook.Station
-	partnerCall := strings.TrimSpace(m.fields[fieldCall].Value())
 
-	renderParts := func(parts []string, style lipgloss.Style, align lipgloss.Position) string {
+	renderProfile := func(align lipgloss.Position) string {
+		parts := m.stationProfile()
 		if len(parts) == 0 {
 			return ""
 		}
@@ -238,17 +229,17 @@ func (m *Model) formPathRow(width int) string {
 		if lipgloss.Width(line) > width {
 			line = truncate(line, width)
 		}
-		return style.Width(width).Align(align).Render(line)
+		return pathMutedStyle.Width(width).Align(align).Render(line)
 	}
 
-	// ── No callsign: station profile, right-aligned ──
-	if partnerCall == "" {
-		return renderParts(m.stationProfile(), pathMutedStyle, lipgloss.Right)
+	// ── No callsign: station profile ──
+	if m.pathCall == "" {
+		return renderProfile(lipgloss.Right)
 	}
 
-	// ── Callsign entered: path & lookup info ──
+	// ── Callsign entered: try path, fall back to profile ──
 	ownGrid := formatLocator(s.Grid)
-	partnerGrid := formatLocator(strings.TrimSpace(m.fields[fieldGrid].Value()))
+	partnerGrid := formatLocator(m.pathGrid)
 
 	if ownGrid != "" && partnerGrid != "" {
 		sig := ownGrid + "|" + partnerGrid + "|" + m.App.Config.General.DistanceUnit
@@ -257,16 +248,7 @@ func (m *Model) formPathRow(width int) string {
 		}
 		line := distanceLine(ownGrid, partnerGrid, m.App.Config.General.DistanceUnit)
 		if line != "" {
-			line = "Path  " + line
-			if m.wlPrivateData != nil {
-				sep := DimStyle.Render("  \u00b7  ")
-				if !m.wlPrivateData.Worked() {
-					line += sep + S.Warning.Render("New Call!")
-				}
-				if !m.wlPrivateData.DXCCConfirmed() {
-					line += sep + S.Warning.Render("New DXCC!")
-				}
-			}
+			line = " Path  " + line
 			if lipgloss.Width(line) > width {
 				line = truncate(line, width)
 			}
@@ -277,26 +259,7 @@ func (m *Model) formPathRow(width int) string {
 		}
 		m.cachedPathSig = ""
 		m.cachedPathLine = ""
-		return ""
 	}
 
-	if partnerGrid != "" && ownGrid == "" {
-		return pathMutedStyle.Width(width).Align(lipgloss.Left).
-			Render("Set your grid in station config to enable path")
-	}
-
-	// Call entered but no path: WL info or fall back to station profile.
-	var parts []string
-	if m.wlPrivateData != nil {
-		if !m.wlPrivateData.Worked() {
-			parts = append(parts, S.Warning.Render("New Call!"))
-		}
-		if !m.wlPrivateData.DXCCConfirmed() {
-			parts = append(parts, S.Warning.Render("New DXCC!"))
-		}
-	}
-	if len(parts) == 0 {
-		return renderParts(m.stationProfile(), pathMutedStyle, lipgloss.Left)
-	}
-	return renderParts(parts, pathInfoStyle, lipgloss.Left)
+	return renderProfile(lipgloss.Right)
 }

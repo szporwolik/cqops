@@ -83,7 +83,8 @@ func (m *Model) saveQSO() tea.Cmd {
 	return tea.Batch(m.refreshQSOS(), m.maybeUploadToWavelog(qs))
 }
 
-// refreshQSOS reloads the QSO list from the store and updates the RecentQSOs component.
+// refreshQSOS reloads the QSO list from the store, updates the RecentQSOs component,
+// and re-applies any active filter.
 func (m *Model) refreshQSOS() tea.Cmd {
 	return func() tea.Msg {
 		qsos, err := store.ListQSOs(m.App.DB, 500)
@@ -94,6 +95,42 @@ func (m *Model) refreshQSOS() tea.Cmd {
 		m.qsos = qsos
 		m.recentQSOs.SetQSOS(qsos)
 		m.cachedPathSig = ""
+
+		// Re-apply filter if active — new QSO might match.
+		if m.recentQSOs.IsFiltered() {
+			filtered, err := store.SearchQSOsByCall(m.App.DB, m.recentQSOs.filterCall, 200)
+			if err == nil {
+				m.recentQSOs.SetFilterCall(m.recentQSOs.filterCall, filtered)
+			}
+		}
 		return nil
 	}
+}
+
+// updateFilteredTable searches the DB for QSOs matching the current callsign
+// and applies the filter to the RecentQSOs table. When no call is entered,
+// the filter is cleared and the table returns to normal mode.
+func (m *Model) updateFilteredTable() tea.Cmd {
+	call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+	if call == "" {
+		m.recentQSOs.ClearFilter()
+		return nil
+	}
+	// Don't re-query if already filtered for the same call and cache is valid.
+	if m.recentQSOs.IsFiltered() && m.recentQSOs.filterCall == call && m.recentQSOs.filterCacheID != 0 {
+		return nil
+	}
+	return func() tea.Msg {
+		qsos, err := store.SearchQSOsByCall(m.App.DB, call, 200)
+		if err != nil {
+			return nil
+		}
+		m.recentQSOs.SetFilterCall(call, qsos)
+		return nil
+	}
+}
+
+// clearFilteredTable clears the RecentQSOs filter, returning to normal mode.
+func (m *Model) clearFilteredTable() {
+	m.recentQSOs.ClearFilter()
 }

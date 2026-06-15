@@ -16,9 +16,7 @@ import (
 // focusField sets focus to the specified QSO form field.
 func (m *Model) focusField(f field) {
 	m.retainFocused = false
-	if m.focus == fieldFreq {
-		m.applyFreqDefaults()
-	}
+	m.onFieldExit()
 	m.fields[m.focus].Blur()
 	m.focus = f
 	m.fields[m.focus].Focus()
@@ -30,10 +28,7 @@ func (m *Model) scrollFocusedToEnd() {}
 
 // nextField moves focus to the next QSO form field in sequence.
 func (m *Model) nextField() {
-	if m.focus == fieldFreq {
-		m.applyFreqDefaults()
-	}
-	wasCall := m.focus == fieldCall
+	m.onFieldExit()
 
 	if m.retainFocused {
 		m.retainFocused = false
@@ -51,23 +46,11 @@ func (m *Model) nextField() {
 		m.fields[m.focus].Focus()
 		m.scrollFocusedToEnd()
 	}
-	if wasCall {
-		cur := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
-		if cur != "" && !strings.EqualFold(cur, m.qrzLastCall) {
-			m.qrzNeed = true
-			m.qrzCall = cur
-		}
-		m.autoFillRST()
-		m.autoFillSSBSubmode()
-	}
 }
 
 // prevField moves focus to the previous QSO form field in sequence.
 func (m *Model) prevField() {
-	if m.focus == fieldFreq {
-		m.applyFreqDefaults()
-	}
-	wasCall := m.focus == fieldCall
+	m.onFieldExit()
 
 	if m.retainFocused {
 		m.retainFocused = false
@@ -84,15 +67,6 @@ func (m *Model) prevField() {
 		m.focus--
 		m.fields[m.focus].Focus()
 		m.scrollFocusedToEnd()
-	}
-	if wasCall {
-		cur := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
-		if cur != "" && !strings.EqualFold(cur, m.qrzLastCall) {
-			m.qrzNeed = true
-			m.qrzCall = cur
-		}
-		m.autoFillRST()
-		m.autoFillSSBSubmode()
 	}
 }
 
@@ -251,43 +225,25 @@ func (m *Model) autoFillSSBSubmode() {
 }
 
 // =============================================================================
-// QSO form field update and clear
+// QSO form field update on typing
 // =============================================================================
 
 // updateFocused handles generic keypress input for the focused QSO form field.
+// Each field has specific side effects documented inline.
 func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 	if m.retainFocused {
 		return
 	}
-	prevCall := strings.TrimSpace(m.fields[fieldCall].Value())
-	prevVal := m.fields[m.focus].Value()
-	prevFreq := m.fields[fieldFreq].Value()
-	m.fields[m.focus], _ = m.fields[m.focus].Update(msg)
 
-	// Frequency changed: derive band/mode/submode on field exit (deferred to focus change).
-	if m.focus == fieldFreq && m.fields[fieldFreq].Value() != prevFreq {
-		// Deferred.
-	}
-	// Band changed: derive mode/submode from the new band.
-	if m.focus == fieldBand && m.fields[m.focus].Value() != prevVal {
-		m.applyFreqDefaults()
-	}
-	// Date/time manually changed: disable auto-update.
-	if (m.focus == fieldDate || m.focus == fieldTime) && m.fields[m.focus].Value() != prevVal {
-		m.dateTimeAuto = false
-	}
-	// Call: auto-uppercase.
-	if m.focus == fieldCall {
-		m.fields[m.focus].SetValue(strings.ToUpper(m.fields[m.focus].Value()))
-	}
-	// Grid: auto-format.
-	if m.focus == fieldGrid {
-		m.fields[m.focus].SetValue(formatLocator(m.fields[m.focus].Value()))
-	}
-	// Call changed: clear stale QRZ/WL data.
-	if m.focus == fieldCall {
-		cur := strings.TrimSpace(m.fields[fieldCall].Value())
-		if cur != prevCall {
+	f := m.focus
+	prevVal := m.fields[f].Value()
+	m.fields[f], _ = m.fields[f].Update(msg)
+
+	switch f {
+	case fieldCall:
+		// Uppercase + clear stale lookup data if call changed.
+		m.fields[f].SetValue(strings.ToUpper(m.fields[f].Value()))
+		if cur := strings.TrimSpace(m.fields[f].Value()); cur != strings.TrimSpace(prevVal) {
 			if m.partnerData != nil && !strings.EqualFold(m.partnerData.Callsign, cur) {
 				m.partnerData = nil
 				m.wlPrivateData = nil
@@ -298,6 +254,50 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 				m.fields[fieldCountry].SetValue("")
 			}
 		}
+
+	case fieldBand:
+		// Changing band manually: derive default mode/submode.
+		if m.fields[f].Value() != prevVal {
+			m.applyFreqDefaults()
+		}
+
+	case fieldGrid:
+		// Auto-format grid locator.
+		m.fields[f].SetValue(formatLocator(m.fields[f].Value()))
+
+	case fieldDate, fieldTime:
+		// Manual edit: stop auto-updating date/time.
+		if m.fields[f].Value() != prevVal {
+			m.dateTimeAuto = false
+		}
+	}
+	// fieldFreq: band/mode derivation deferred to focus exit (see onFieldExit).
+}
+
+// =============================================================================
+// QSO form field exit — committed values & autofill
+// =============================================================================
+
+// onFieldExit is called when leaving a field (via nextField/prevField/focusField).
+// It commits values for path calculation and triggers autofill / lookups.
+func (m *Model) onFieldExit() {
+	switch m.focus {
+	case fieldCall:
+		cur := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+		m.pathCall = cur
+		m.autoFillRST()
+		m.autoFillSSBSubmode()
+		// Trigger QRZ+WL lookup if call changed from last lookup.
+		if cur != "" && !strings.EqualFold(cur, m.qrzLastCall) {
+			m.qrzNeed = true
+			m.qrzCall = cur
+		}
+
+	case fieldGrid:
+		m.pathGrid = strings.ToUpper(strings.TrimSpace(m.fields[fieldGrid].Value()))
+
+	case fieldFreq:
+		m.applyFreqDefaults()
 	}
 }
 
@@ -344,4 +344,7 @@ func (m *Model) clearForm() {
 	m.wlPrivateData = nil
 	m.wlLookupDone = false
 	m.screen = screenQSO
+	m.clearFilteredTable()
+	m.pathCall = ""
+	m.pathGrid = ""
 }

@@ -2,20 +2,16 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 
 	"charm.land/bubbles/v2/table"
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/qso"
 )
 
-// RecentQSOs is a read-only view of recent QSOs. It renders a bubbles/table
-// that receives no keyboard events — all input stays with the QSO form.
-//
-// Column width calculations are performed on every View() call. This is
-// intentional: the cost is O(tiers × cols + qsos × cols) ≈ 10k operations,
-// which completes in microseconds. Caching would add complexity (invalidation,
-// key computation) without meaningful performance benefit on any target device,
-// including Raspberry Pi-class systems.
+// RecentQSOs is a read-only view of recent QSOs. In normal mode it shows the
+// most recent QSOs. When a filter call is set, it queries the full DB for
+// matching QSOs and highlights the call column.
 type RecentQSOs struct {
 	qsos   []qso.QSO
 	width  int
@@ -30,6 +26,11 @@ type RecentQSOs struct {
 	cachedW      int
 	cachedH      int
 	cachedQSOLen int
+
+	// Filtered mode: when filterCall is non-empty, only matching QSOs are shown.
+	filterCall    string
+	filteredQSOs  []qso.QSO
+	filterCacheID int64 // last QSO ID in filtered set — invalidated on new QSO
 }
 
 // NewRecentQSOs creates a read-only recent QSOs view.
@@ -37,9 +38,37 @@ func NewRecentQSOs(qsos []qso.QSO) *RecentQSOs {
 	return &RecentQSOs{qsos: qsos, width: 80, height: 10}
 }
 
-// SetQSOS updates the QSO data. Called when new QSOs are available.
+// SetQSOS updates the QSO data and invalidates the filter cache.
 func (r *RecentQSOs) SetQSOS(qsos []qso.QSO) {
 	r.qsos = qsos
+	r.filterCacheID = 0 // invalidate filter cache
+}
+
+// SetFilterCall switches to filtered mode. Pass qsos from store.SearchQSOsByCall.
+func (r *RecentQSOs) SetFilterCall(call string, qsos []qso.QSO) {
+	r.filterCall = strings.ToUpper(call)
+	r.filteredQSOs = qsos
+	if len(qsos) > 0 {
+		r.filterCacheID = qsos[0].ID // newest matching QSO ID
+	}
+}
+
+// ClearFilter returns to normal (unfiltered) mode.
+func (r *RecentQSOs) ClearFilter() {
+	r.filterCall = ""
+	r.filteredQSOs = nil
+	r.filterCacheID = 0
+}
+
+// IsFiltered returns true when the table is in filtered mode.
+func (r *RecentQSOs) IsFiltered() bool { return r.filterCall != "" }
+
+// ActiveQSOs returns the currently active QSO set (filtered or normal).
+func (r *RecentQSOs) ActiveQSOs() []qso.QSO {
+	if r.filterCall != "" {
+		return r.filteredQSOs
+	}
+	return r.qsos
 }
 
 // SetSize sets the available dimensions.
@@ -48,26 +77,29 @@ func (r *RecentQSOs) SetSize(w, h int) {
 	r.height = h
 }
 
-// View renders the read-only recent QSOs table. It never calls table.Update,
-// so the table cannot consume keyboard events. The output is cached and
-// only rebuilt when QSO data or dimensions change.
+// View renders the read-only recent QSOs table. In normal mode it shows
+// recent QSOs; in filtered mode it shows QSOs matching the partner call
+// with the call column highlighted.
 func (r *RecentQSOs) View() string {
 	bodyW := r.width
 	if bodyW < 20 {
 		bodyW = 20
 	}
-	maxRows := r.height - 1 // header only
+	maxRows := r.height - 1
 	if maxRows < 3 {
 		maxRows = 3
 	}
 
-	// Return cached view if nothing changed.
-	if r.cachedW == bodyW && r.cachedH == maxRows && r.cachedQSOLen == len(r.qsos) && r.cachedView != "" {
+	qsos := r.ActiveQSOs()
+	filtered := r.filterCall != ""
+
+	cacheSig := fmt.Sprintf("%d|%d|%d|%s|%d", bodyW, maxRows, len(qsos), r.filterCall, r.filterCacheID)
+	if r.cachedW == bodyW && r.cachedH == maxRows && r.cachedQSOLen == len(qsos) &&
+		r.cachedView != "" && !filtered {
 		return r.cachedView
 	}
+	// Always rebuild in filtered mode — callsign highlights are cheap.
 
-	// Pick the widest tier that fits at minimum width; if none fit even
-	// at minimum, drop trailing columns until they do.
 	var names []string
 	for _, t := range qsoColTiers {
 		names = t.names
@@ -77,15 +109,13 @@ func (r *RecentQSOs) View() string {
 		for _, n := range names {
 			total += qsoAllCols[n].minWidth
 		}
-		total += len(names) - 1 // inter-column gaps
+		total += len(names) - 1
 		if total <= bodyW {
 			break
 		}
 		names = names[:len(names)-1]
 	}
 
-	// Build columns. Extra space is distributed proportionally to spacious
-	// columns; any remainder goes to the last column.
 	var cols []table.Column
 	minTotal := 0
 	for _, n := range names {
@@ -98,7 +128,6 @@ func (r *RecentQSOs) View() string {
 	gaps := len(names) - 1
 	extra := bodyW - gaps - minTotal
 	if extra > 0 && len(cols) > 0 {
-		// Give extra space to wide columns; track how much was given.
 		distributed := 0
 		for i := range cols {
 			var share int
@@ -117,25 +146,32 @@ func (r *RecentQSOs) View() string {
 			cols[i].Width += share
 			distributed += share
 		}
-		// Last column gets any leftover so total width = bodyW exactly.
 		if leftover := extra - distributed; leftover > 0 {
 			cols[len(cols)-1].Width += leftover
 		}
 	}
 
-	var rows []table.Row
 	rowCount := maxRows
-	if rowCount > len(r.qsos) {
-		rowCount = len(r.qsos)
+	if rowCount > len(qsos) {
+		rowCount = len(qsos)
 	}
+
+	// Pre-allocate call highlight style for filtered mode.
+	callHighlight := S.Info
+
+	var rows []table.Row
 	for i := 0; i < rowCount; i++ {
-		q := r.qsos[i]
+		q := qsos[i]
 		var row []string
 		for _, n := range names {
 			c := qsoAllCols[n]
 			v := c.value(&q)
 			if v == "" {
 				v = "\u2014"
+			}
+			// Highlight call column when filtered.
+			if filtered && n == "Call" && v != "\u2014" {
+				v = callHighlight.Render(v)
 			}
 			row = append(row, v)
 		}
@@ -151,21 +187,31 @@ func (r *RecentQSOs) View() string {
 	)
 
 	s := table.DefaultStyles()
-	s.Header = s.Header.
+	headerStyle := s.Header.
 		BorderForeground(P.TextDim).
 		BorderBottom(true).
 		Bold(false).
 		Foreground(P.Text)
+	// Highlight Call header when filtered.
+	if filtered {
+		// We can't easily style individual headers in bubbles/table v2,
+		// so we use a distinct header foreground for visual cue.
+		headerStyle = headerStyle.Foreground(P.Cursor)
+	}
+	s.Header = headerStyle
 	s.Cell = s.Cell.Foreground(P.TextMuted)
-	s.Selected = lipgloss.NewStyle() // no padding, no bold — read-only table
+	s.Selected = lipgloss.NewStyle()
 	t.SetStyles(s)
 
 	view := t.View()
+	_ = cacheSig
 
-	r.cachedView = view
-	r.cachedW = bodyW
-	r.cachedH = maxRows
-	r.cachedQSOLen = len(r.qsos)
+	if !filtered {
+		r.cachedView = view
+		r.cachedW = bodyW
+		r.cachedH = maxRows
+		r.cachedQSOLen = len(qsos)
+	}
 
 	return view
 }

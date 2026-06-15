@@ -276,15 +276,16 @@ func TestQSOFormPathRow(t *testing.T) {
 func TestQSOFormPathRowNoOwnGrid(t *testing.T) {
 	m := newTestModel()
 	m.App.Logbook.Station.Grid = ""        // no own grid
-	m.fields[fieldCall].SetValue("SP9MOA") // callsign triggers path info
+	m.fields[fieldCall].SetValue("SP9MOA") // callsign entered
 	m.fields[fieldGrid].SetValue("JN18")
 
 	row := m.formPathRow(90)
 	if row == "" {
-		t.Error("formPathRow returned empty")
+		t.Error("formPathRow returned empty — should fall back to station profile")
 	}
-	if !strings.Contains(row, "station config") {
-		t.Error("formPathRow should prompt user to set own grid")
+	// Falls back to station profile when no own grid.
+	if !strings.Contains(row, "Op") {
+		t.Error("formPathRow should show station profile when no own grid")
 	}
 }
 

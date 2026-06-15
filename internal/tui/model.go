@@ -162,12 +162,16 @@ type Model struct {
 	partnerMapCacheSig string
 
 	// Path line cache — avoids locator parsing every View().
+	// pathCall/pathGrid are the committed values, updated only on field exit.
 	cachedPathLine string
 	cachedPathSig  string
+	pathCall       string
+	pathGrid       string
 
 	// Form column style cache — avoids re-creating lipgloss styles every frame.
-	cachedFormColW     int
-	cachedFormColStyle lipgloss.Style
+	cachedFormColW         int
+	cachedFormColStyle     lipgloss.Style
+	cachedFormCommentStyle lipgloss.Style
 }
 
 type tickMsg time.Time
@@ -358,6 +362,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch r := msg.(type) {
 	case qrzResultMsg:
 		m.fillQRZData(r)
+		cmd = tea.Batch(cmd, m.updateFilteredTable())
 		return m, cmd
 	case wlResultMsg:
 		m.fillWLData(r)
@@ -476,9 +481,8 @@ func (m *Model) View() tea.View {
 		m.cachedStatus = m.renderStatusBar()
 		m.cachedStatusSec = time.Now().UTC().Second()
 	}
-	if m.cachedTabs == "" || !cacheBars {
-		m.cachedTabs = m.renderTabBar()
-	}
+	// Tab bar depends on partner data / call field — always fresh.
+	m.cachedTabs = m.renderTabBar()
 	// Help bar has dynamic suffix (QSO counter, scroll info) — always fresh.
 	m.cachedHelp = m.renderHelpBar()
 	m.cachedBarW = m.width
@@ -593,14 +597,15 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 	formContent := m.viewForm(formW)
 	// Border wraps content tightly — no filling to terminal width.
 	formBox := drawBorderedBox(formContent, lipgloss.Width(formContent)+4)
-	pathLine := m.formPathRow(w - 2) // path fills width matching table
+
+	profileLine := m.formPathRow(w - 2)
+	profileH := 0
+	if profileLine != "" {
+		profileH = 1
+	}
 
 	formH := lipgloss.Height(formBox)
-	pathH := 0
-	if pathLine != "" {
-		pathH = 1
-	}
-	tableH := l.ContentH - formH - pathH
+	tableH := l.ContentH - profileH - formH
 	if tableH < 5 {
 		tableH = 5
 	}
@@ -612,10 +617,10 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 	m.recentQSOs.SetSize(tableW, tableH)
 
 	var parts []string
-	parts = append(parts, formBox)
-	if pathLine != "" {
-		parts = append(parts, pathLine)
+	if profileLine != "" {
+		parts = append(parts, profileLine)
 	}
+	parts = append(parts, formBox)
 	parts = append(parts, m.recentQSOs.View())
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
