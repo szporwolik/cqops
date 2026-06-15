@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -52,7 +54,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case editorMsg:
 		// Batch download progress — update counter and request next message.
-		if msg.dlTotal > 0 && !msg.dlDone {
+		if !msg.dlDone && (msg.dlProgress > 0 || msg.dlTotal > 0) {
 			le.dlProgress = msg.dlProgress
 			le.dlTotal = msg.dlTotal
 			if le.mode != edModeWLDownloading {
@@ -108,11 +110,17 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		k := msg.String()
 
-		// Download progress — any key aborts.
-		if le.mode == edModeWLDownloading {
-			if le.dlCancel != nil {
-				close(le.dlCancel)
-				le.dlCancel = nil
+		// Download progress — route keys to the dialog (Abort button).
+		if le.mode == edModeWLDownloading && le.dialog != nil {
+			updated, _ := le.dialog.Update(msg)
+			d := updated.(DialogModel)
+			*le.dialog = d
+			if d.Done() {
+				le.dialog = nil
+				if le.dlCancel != nil {
+					close(le.dlCancel)
+					le.dlCancel = nil
+				}
 			}
 			return le, nil
 		}
@@ -304,9 +312,9 @@ func (le *LogbookEditor) readDownloadMsg() tea.Msg {
 	return msg
 }
 
-// runDownload performs the actual HTTP fetch, ADIF parse, and batched insert.
-// Progress messages are sent on le.dlMsgCh. The goroutine checks le.dlCancel
-// between batches to support user abort.
+// runDownload performs the actual HTTP fetch, saves ADIF to a temp file,
+// then processes it line-by-line in batches. Progress is reported as file
+// position / total size. The goroutine checks le.dlCancel between batches.
 func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 	defer close(le.dlMsgCh)
 
@@ -322,20 +330,48 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 		return
 	}
 
-	if result.ADIF == "" || result.ExportedQSOs == 0 {
+	// Clean up temp file when done.
+	defer os.Remove(result.ADIFPath)
+
+	if result.ADIFPath == "" || result.ExportedQSOs == 0 {
 		applog.Info("Wavelog: no new contacts to download")
 		le.dlMsgCh <- editorMsg{dlCount: 0, dlLastID: result.LastFetchedID(), dlDone: true}
 		return
 	}
 
-	// Parse all QSOs from ADIF first (fast, in-memory).
-	var allQSOS []*qso.QSO
-	s := adif.NewScanner(strings.NewReader(result.ADIF))
-	for s.Scan() {
-		if s.IsHeader() {
+	// Open the temp ADIF file for line-by-line scanning.
+	f, err := os.Open(result.ADIFPath)
+	if err != nil {
+		applog.Error("Wavelog: failed to open temp ADIF file", "error", err)
+		le.dlMsgCh <- editorMsg{dlErr: "failed to read downloaded data"}
+		return
+	}
+	defer f.Close()
+
+	fileSize := result.ADIFSize
+	if fileSize <= 0 {
+		fileSize = 1 // avoid division by zero
+	}
+
+	var inserted, dupes int
+	hitLimit := false
+
+	// Stream-parse ADIF records one at a time — never loads all QSOs into memory.
+	scanner := adif.NewScanner(f)
+	for scanner.Scan() {
+		// Check for abort between records.
+		select {
+		case <-le.dlCancel:
+			le.dlMsgCh <- editorMsg{dlCount: inserted, dlDupes: dupes, dlAborted: true, dlDone: true}
+			return
+		default:
+		}
+
+		if scanner.IsHeader() {
 			continue
 		}
-		r := s.Record()
+		r := scanner.Record()
+
 		qs := qso.NewQSO()
 		if v := r[adifield.CALL]; v != "" {
 			qs.Call = strings.ToUpper(v)
@@ -436,75 +472,39 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 		if qs.Call == "" {
 			continue
 		}
-		allQSOS = append(allQSOS, qs)
-	}
 
-	total := len(allQSOS)
-	if total == 0 {
-		le.dlMsgCh <- editorMsg{dlCount: 0, dlLastID: result.LastFetchedID(), dlDone: true}
-		return
-	}
-
-	// Process in batches, stopping at maxPerDownload QSOs per session.
-	// lastfetchedid is NOT advanced when the limit is hit — the next
-	// download re-fetches from the same point and skips already-inserted
-	// QSOs as duplicates.
-	var inserted, dupes int
-	hitLimit := false
-	for i := 0; i < total && inserted < maxPerDownload; i += batchSize {
-		// Check for user abort between batches.
-		select {
-		case <-le.dlCancel:
-			le.dlMsgCh <- editorMsg{dlCount: inserted, dlDupes: dupes, dlAborted: true, dlDone: true}
-			return
-		default:
-		}
-
-		end := i + batchSize
-		if end > total {
-			end = total
-		}
-		batch := allQSOS[i:end]
-
-		for _, qs := range batch {
-			if inserted >= maxPerDownload {
-				hitLimit = true
-				break
-			}
-
-			if existingID := store.FindQSOByKey(db, qs.Call, qs.Band, qs.Mode, qs.QSODate, qs.TimeOn); existingID != 0 {
-				applog.Info("Wavelog: replacing local duplicate",
-					"local_id", existingID, "call", qs.Call, "band", qs.Band, "date", qs.QSODate)
-				if err := store.DeleteQSO(db, existingID); err != nil {
-					applog.Error("Wavelog: failed to delete local duplicate", "id", existingID, "error", err)
-				}
-				dupes++
-			}
-
-			if _, err := store.InsertQSO(db, qs); err != nil {
-				applog.Error("Wavelog: failed to insert downloaded QSO", "call", qs.Call, "error", err)
-				continue
-			}
-			inserted++
-		}
-
-		if hitLimit {
+		if inserted >= maxPerDownload {
+			hitLimit = true
 			break
 		}
 
-		// Send progress.
-		le.dlMsgCh <- editorMsg{dlProgress: inserted + dupes, dlTotal: total}
+		if existingID := store.FindQSOByKey(db, qs.Call, qs.Band, qs.Mode, qs.QSODate, qs.TimeOn); existingID != 0 {
+			applog.Info("Wavelog: replacing local duplicate",
+				"local_id", existingID, "call", qs.Call, "band", qs.Band, "date", qs.QSODate)
+			if err := store.DeleteQSO(db, existingID); err != nil {
+				applog.Error("Wavelog: failed to delete local duplicate", "id", existingID, "error", err)
+			}
+			dupes++
+		}
+
+		if _, err := store.InsertQSO(db, qs); err != nil {
+			applog.Error("Wavelog: failed to insert downloaded QSO", "call", qs.Call, "error", err)
+			continue
+		}
+		inserted++
+
+		// Report progress every batchSize QSOs based on file position.
+		if inserted%batchSize == 0 {
+			pos, _ := f.Seek(0, io.SeekCurrent)
+			pct := int(pos * 100 / fileSize)
+			le.dlMsgCh <- editorMsg{dlProgress: inserted, dlTotal: pct}
+		}
 	}
 
 	if hitLimit {
-		// Don't advance lastfetchedid — more QSOs remain on the server.
 		applog.Info("Wavelog: download limit reached",
 			"inserted", inserted, "dupes_replaced", dupes, "limit", maxPerDownload)
-		le.dlMsgCh <- editorMsg{
-			dlCount: inserted,
-			dlDupes: dupes,
-			dlDone:  true,
-		}
+		le.dlMsgCh <- editorMsg{dlCount: inserted, dlDupes: dupes, dlDone: true}
 		return
 	}
 

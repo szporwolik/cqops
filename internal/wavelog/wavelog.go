@@ -6,13 +6,19 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/szporwolik/cqops/internal/applog"
 )
 
+// httpClient is shared across all Wavelog API calls.
 var httpClient = &http.Client{Timeout: 10 * time.Second}
+
+// downloadClient has a very long timeout — used only for get_contacts_adif
+// which streams large ADIF responses (9342 QSOs ≈ 20-60s).
+var downloadClient = &http.Client{Timeout: 5 * time.Minute}
 
 // StationProfile represents a Wavelog station location.
 type StationProfile struct {
@@ -361,13 +367,14 @@ func PostQSOWithResult(baseURL, apiKey, stationID, adifStr string) (*QSOUploadRe
 }
 
 // ContactsResponse from api/get_contacts_adif.
-// LastFetchedIDRaw uses json.Number because Wavelog may return it as a
-// string or integer depending on server version/PHP configuration.
+// ADIFPath contains the path to a temporary file with the raw ADIF data.
+// The caller is responsible for removing the file when done.
 type ContactsResponse struct {
 	ExportedQSOs     int         `json:"exported_qsos"`
 	LastFetchedIDRaw json.Number `json:"lastfetchedid"`
 	Message          string      `json:"message"`
-	ADIF             string      `json:"adif"`
+	ADIFPath         string      `json:"-"` // temp file path
+	ADIFSize         int64       `json:"-"` // file size in bytes for progress
 }
 
 // LastFetchedID returns the last fetched ID as int64, defaulting to 0 on parse failure.
@@ -380,6 +387,7 @@ func (r *ContactsResponse) LastFetchedID() int64 {
 }
 
 // FetchContacts pulls QSOs from Wavelog as ADIF since the given fetchFromID.
+// The ADIF is saved to a temporary file; the caller must remove it.
 func FetchContacts(baseURL, apiKey, stationID string, fetchFromID int64) (*ContactsResponse, error) {
 	applog.DebugDetail("Wavelog: fetching contacts",
 		fmt.Sprintf("url=%s station_id=%s from_id=%d", baseURL, stationID, fetchFromID))
@@ -389,7 +397,6 @@ func FetchContacts(baseURL, apiKey, stationID string, fetchFromID int64) (*Conta
 	baseURL = strings.TrimRight(baseURL, "/")
 	url := baseURL + "/index.php/api/get_contacts_adif"
 
-	// station_id must be an integer in JSON — the API rejects a string.
 	var stationIDInt int
 	if _, err := fmt.Sscanf(stationID, "%d", &stationIDInt); err != nil {
 		return nil, fmt.Errorf("invalid station_id %q: %w", stationID, err)
@@ -407,7 +414,8 @@ func FetchContacts(baseURL, apiKey, stationID string, fetchFromID int64) (*Conta
 		return nil, err
 	}
 
-	resp, err := httpClient.Post(url, "application/json", bytes.NewReader(body))
+	// Use the long-timeout client for this heavy endpoint.
+	resp, err := downloadClient.Post(url, "application/json", bytes.NewReader(body))
 	if err != nil {
 		applog.ErrorDetail("Wavelog: fetch contacts HTTP error",
 			fmt.Sprintf("url=%s station_id=%s error=%v", url, stationID, err))
@@ -433,16 +441,54 @@ func FetchContacts(baseURL, apiKey, stationID string, fetchFromID int64) (*Conta
 		return nil, fmt.Errorf("server error: HTTP %d — %s", resp.StatusCode, reason)
 	}
 
-	var result ContactsResponse
-	if err := json.Unmarshal(respBody, &result); err != nil {
+	// Parse just the metadata fields; extract the ADIF string.
+	var raw struct {
+		ExportedQSOs     int         `json:"exported_qsos"`
+		LastFetchedIDRaw json.Number `json:"lastfetchedid"`
+		Message          string      `json:"message"`
+		ADIF             string      `json:"adif"`
+	}
+	if err := json.Unmarshal(respBody, &raw); err != nil {
 		applog.ErrorDetail("Wavelog: unmarshal fetch response failed",
-			fmt.Sprintf("url=%s error=%v body=%s", url, err, string(respBody)[:min(200, len(respBody))]))
+			fmt.Sprintf("url=%s error=%v", url, err))
 		return nil, fmt.Errorf("parse response: %w", err)
 	}
 
-	applog.InfoDetail("Wavelog: contacts fetched",
-		fmt.Sprintf("url=%s station_id=%s exported=%d last_id=%d", url, stationID, result.ExportedQSOs, result.LastFetchedID()))
-	return &result, nil
+	// Write ADIF to temp file for line-by-line processing.
+	f, err := os.CreateTemp("", "cqops-wl-download-*.adif")
+	if err != nil {
+		applog.Error("Wavelog: failed to create temp file", "error", err)
+		return nil, fmt.Errorf("temp file: %w", err)
+	}
+	if _, err := f.WriteString(raw.ADIF); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return nil, fmt.Errorf("write temp file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(f.Name())
+		return nil, fmt.Errorf("close temp file: %w", err)
+	}
+
+	// Get file size for progress tracking.
+	fi, err := os.Stat(f.Name())
+	fileSize := int64(0)
+	if err == nil {
+		fileSize = fi.Size()
+	}
+
+	result := &ContactsResponse{
+		ExportedQSOs:     raw.ExportedQSOs,
+		LastFetchedIDRaw: raw.LastFetchedIDRaw,
+		Message:          raw.Message,
+		ADIFPath:         f.Name(),
+		ADIFSize:         fileSize,
+	}
+
+	applog.InfoDetail("Wavelog: contacts fetched to file",
+		fmt.Sprintf("path=%s size=%d exported=%d last_id=%d",
+			result.ADIFPath, result.ADIFSize, result.ExportedQSOs, result.LastFetchedID()))
+	return result, nil
 }
 
 func min(a, b int) int {
