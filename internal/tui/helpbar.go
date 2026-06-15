@@ -55,33 +55,35 @@ func (m *Model) helpView() string {
 		helpText = m.help.ShortHelpView([]key.Binding{m.keys.Quit})
 	}
 
-	// Log editor: append QSO counter.
+	// Dynamic suffix (counter / scroll info) — always computed, never cached.
+	suffix := m.helpSuffix()
+	if suffix != "" {
+		suffixW := lipgloss.Width(suffix)
+		spacerW := m.width - lipgloss.Width(helpText) - suffixW - 2
+		if spacerW < 1 {
+			spacerW = 1
+		}
+		return HelpStyle.Render(helpText + strings.Repeat(" ", spacerW) + suffix)
+	}
+
+	return HelpStyle.Render(helpText)
+}
+
+// helpSuffix returns the dynamic right-aligned suffix for the help bar
+// (QSO counter in log editor, scroll info in log viewer). This is
+// computed every frame and not cached.
+func (m *Model) helpSuffix() string {
 	if m.screen == screenLogbookEditor && m.logbookEditor != nil {
 		cursor := m.logbookEditor.CursorPos()
 		total := m.logbookEditor.QSOCount()
 		if total > 0 {
-			counter := fmt.Sprintf("QSO %d/%d", cursor+1, total)
-			counterW := lipgloss.Width(counter)
-			spacerW := m.width - lipgloss.Width(helpText) - counterW - 2
-			if spacerW < 1 {
-				spacerW = 1
-			}
-			return HelpStyle.Render(helpText + strings.Repeat(" ", spacerW) + counter)
+			return fmt.Sprintf("QSO %d/%d", cursor+1, total)
 		}
 	}
-	// Log viewer: append scroll info.
 	if m.screen == screenLogView && m.logViewer != nil {
-		info := m.logViewer.ScrollInfo()
-		if info != "" {
-			infoW := lipgloss.Width(info)
-			spacerW := m.width - lipgloss.Width(helpText) - infoW - 2
-			if spacerW < 1 {
-				spacerW = 1
-			}
-			return HelpStyle.Render(helpText + strings.Repeat(" ", spacerW) + info)
-		}
+		return m.logViewer.ScrollInfo()
 	}
-	return HelpStyle.Render(helpText)
+	return ""
 }
 
 // renderHelpBar is the canonical entry point for help bar rendering.

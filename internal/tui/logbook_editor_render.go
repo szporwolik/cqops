@@ -84,7 +84,20 @@ func (le *LogbookEditor) View() tea.View {
 		}
 		return tea.NewView(le.viewWithDialog(bodyW))
 	case edModeWLDownloadResult:
-		return tea.NewView(le.viewDownloadResult(bodyW))
+		if le.dialog == nil {
+			msg := fmt.Sprintf("Downloaded %d QSOs.", le.wlDownloadCount)
+			if le.wlDownloadDupes > 0 {
+				msg += fmt.Sprintf("\n%d already in logbook, skipped.", le.wlDownloadDupes)
+			}
+			if le.wlDownloadErr != "" {
+				msg = "Download failed: " + le.wlDownloadErr
+			}
+			d := NewDialog("Wavelog Download", msg,
+				Option{Label: "OK", Value: "ok"},
+			)
+			le.dialog = &d
+		}
+		return tea.NewView(le.viewWithDialog(bodyW))
 	case edModeEdit:
 		contentH := contentHeight(le.height)
 		if contentH < 10 {
@@ -138,24 +151,6 @@ func (le *LogbookEditor) viewNormalizeConfirm(bodyW int) string {
 			"",
 			S.ConfirmMsg.Render(fmt.Sprintf("%d unsent QSOs will be normalised.", len(le.mismatchQSOs))),
 			S.ConfirmHelp.Render("y = yes  ·  any other key = cancel"),
-		),
-	)
-}
-
-func (le *LogbookEditor) viewDownloadResult(bodyW int) string {
-	msg := fmt.Sprintf("Downloaded %d QSOs.", le.wlDownloadCount)
-	if le.wlDownloadDupes > 0 {
-		msg += fmt.Sprintf("\n%d already in logbook, skipped.", le.wlDownloadDupes)
-	}
-	if le.wlDownloadErr != "" {
-		msg = "Download failed: " + le.wlDownloadErr
-	}
-	return S.ConfirmBox.Width(bodyW).Render(
-		lipgloss.JoinVertical(lipgloss.Left,
-			S.ConfirmTitle.Render("Wavelog Download"),
-			"",
-			S.ConfirmMsg.Render(msg),
-			S.ConfirmHelp.Render("any key = back"),
 		),
 	)
 }

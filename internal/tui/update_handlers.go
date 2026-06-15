@@ -3,8 +3,8 @@ package tui
 import (
 	"fmt"
 
-	"github.com/gen2brain/beeep"
 	tea "charm.land/bubbletea/v2"
+	"github.com/gen2brain/beeep"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/store"
 )
@@ -42,7 +42,10 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 		m.applyWSJTXStatus(sp.call, sp.grid, sp.freq, sp.mode, sp.submode, sp.report)
 	}
 	m.toasts.Expire()
-	m.autoUpdateDateTime()
+	// Only update the QSO form clock when the form is visible.
+	if m.screen == screenQSO {
+		m.autoUpdateDateTime()
+	}
 	m.tickCount++
 	return tea.Batch(tickCmd(), m.maybeCheckInet(), m.pollFlrig(), m.maybeCheckWavelog(), m.maybeCheckQRZ(), cmd)
 }

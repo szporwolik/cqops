@@ -105,8 +105,10 @@ func (lv *LogViewer) View() tea.View {
 		return tea.NewView(DimStyle.Render("  No log entries yet."))
 	}
 
-	// Return cached content if nothing changed.
+	// Return cached view if nothing changed — but always sync content
+	// to the viewport so ScrollInfo() works correctly.
 	if lv.cachedW == lv.width && lv.cachedEntries == entryCount && lv.cachedContent != "" {
+		lv.viewport.SetContent(lv.cachedContent)
 		return tea.NewView(lv.viewport.View())
 	}
 

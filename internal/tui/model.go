@@ -122,31 +122,41 @@ type Model struct {
 	lastLayoutH  int
 	lastLayoutSc screenKind
 
-	partnerData     *qrz.CallData
-	wlPrivateData   *wavelog.PrivateLookupResult // Wavelog callsign lookup
-	wlLookupDone    bool                         // true when any WL lookup result received
-	wlLastBand      string                       // band used in last WL query
-	wlLastMode      string                       // mode used in last WL query
-	flrigClient     FlrigClient
-	qrzNeed         bool
-	qrzCall         string
-	qrzLastLook     time.Time
-	qrzLastCall     string // last looked-up callsign
-	wlNeed          bool   // re-trigger WL lookup after band/mode change
-	wlCall          string // callsign for pending WL lookup
-	wlLastLook      time.Time
-	wlLastCall      string // last looked-up callsign
-	retainComment   bool
-	retainFocused   bool // true when the Retain checkbox has focus (instead of a text field)
-	wlOnline        bool
-	wlForceCheck    bool // force Wavelog check on next tick
-	wlStationName   string // e.g. "JO30oo / DJ7NT"
-	wlStationLabel  string // e.g. "Debug location"
+	// Bar caches — avoids rebuilding status/profile/tabs/help on every frame.
+	// Status bar has a 1-second TTL because it contains the UTC clock.
+	cachedStatus    string
+	cachedStatusSec int
+	cachedProfile   string
+	cachedTabs      string
+	cachedHelp      string
+	cachedBarSc     screenKind
+	cachedBarW      int
 
-	qrzOnline bool
-	keys            KeyMap
-	help            help.Model
-	recentQSOs      *RecentQSOs // read-only Recent QSOs view
+	partnerData    *qrz.CallData
+	wlPrivateData  *wavelog.PrivateLookupResult // Wavelog callsign lookup
+	wlLookupDone   bool                         // true when any WL lookup result received
+	wlLastBand     string                       // band used in last WL query
+	wlLastMode     string                       // mode used in last WL query
+	flrigClient    FlrigClient
+	qrzNeed        bool
+	qrzCall        string
+	qrzLastLook    time.Time
+	qrzLastCall    string // last looked-up callsign
+	wlNeed         bool   // re-trigger WL lookup after band/mode change
+	wlCall         string // callsign for pending WL lookup
+	wlLastLook     time.Time
+	wlLastCall     string // last looked-up callsign
+	retainComment  bool
+	retainFocused  bool // true when the Retain checkbox has focus (instead of a text field)
+	wlOnline       bool
+	wlForceCheck   bool   // force Wavelog check on next tick
+	wlStationName  string // e.g. "JO30oo / DJ7NT"
+	wlStationLabel string // e.g. "Debug location"
+
+	qrzOnline  bool
+	keys       KeyMap
+	help       help.Model
+	recentQSOs *RecentQSOs // read-only Recent QSOs view
 
 	// Partner/map rendering cache — avoids expensive ASCII map generation on every View().
 	partnerMapCache    string
@@ -216,8 +226,6 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 		m.fields[i] = ti
 	}
 
-
-
 	m.focus = fieldCall
 	m.keys = DefaultKeyMap()
 	m.help = help.New()
@@ -255,7 +263,7 @@ func (m *Model) Init() tea.Cmd {
 	return tea.Batch(tickCmd(), checkInetCmd(), m.imageViewer.Init())
 }
 func tickCmd() tea.Cmd {
-	return tea.Tick(200*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) })
+	return tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
 // hideAllSubmodels returns to the QSO form screen.
@@ -456,42 +464,49 @@ func (m *Model) View() tea.View {
 		return tea.NewView(lipgloss.NewStyle().Foreground(P.Error).Render(msg))
 	}
 
-	// 1. Status bar
-	statusBar := m.renderStatusBar()
-
-	// 2. Profile/context line — right-aligned above tabs for readability
-	profileLine := m.renderProfileBar()
-
-	// 3. Tab bar
-	tabBar := m.renderTabBar()
-
-	var body string
-	body = m.buildBodyForScreen(layout)
-	if body == "" {
-		body = DimStyle.Render("\u2014")
+	// Render fixed bars — cache when screen and width haven't changed.
+	// Status bar has a 1-second TTL because it contains the UTC clock.
+	cacheBars := m.cachedBarW == m.width && m.cachedBarSc == m.screen
+	if !cacheBars {
+		m.cachedStatus = ""
 	}
+	if m.cachedStatus == "" || m.cachedStatusSec != time.Now().UTC().Second() {
+		m.cachedStatus = m.renderStatusBar()
+		m.cachedStatusSec = time.Now().UTC().Second()
+	}
+	if m.cachedProfile == "" || !cacheBars {
+		m.cachedProfile = m.renderProfileBar()
+	}
+	if m.cachedTabs == "" || !cacheBars {
+		m.cachedTabs = m.renderTabBar()
+	}
+	// Help bar has dynamic suffix (QSO counter, scroll info) — always fresh.
+	m.cachedHelp = m.renderHelpBar()
+	m.cachedBarW = m.width
+	m.cachedBarSc = m.screen
 
-	helpBar := m.renderHelpBar()
-
-	// Fill body area with surface background to content height
-	body = S.ContentBase.
-		Height(layout.ContentH).
-		Width(layout.TerminalW).
-		Render(body)
-
-	// Build the main view without toasts or dialogs (those are composited on top).
-	// Only include non-empty rows to avoid blank lines from empty zones.
 	var mainParts []string
 	addRow := func(s string) {
 		if s != "" {
 			mainParts = append(mainParts, s)
 		}
 	}
-	addRow(statusBar)
-	addRow(profileLine)
-	addRow(tabBar)
+	addRow(m.cachedStatus)
+	if m.cachedProfile != "" {
+		addRow(m.cachedProfile)
+	}
+	addRow(m.cachedTabs)
+
+	body := m.buildBodyForScreen(layout)
+	if body == "" {
+		body = DimStyle.Render("\u2014")
+	}
+	body = S.ContentBase.
+		Height(layout.ContentH).
+		Width(layout.TerminalW).
+		Render(body)
 	addRow(body)
-	addRow(helpBar)
+	addRow(m.cachedHelp)
 	mainView := lipgloss.JoinVertical(lipgloss.Left, mainParts...)
 
 	// Composite confirm dialog as a centered overlay if active
@@ -580,8 +595,8 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 // QSOs using layout-derived dimensions. The short path gets its own bordered
 // box between the form and the table for visual separation.
 func (m *Model) buildQSOFormWithLayout(l Layout) string {
-	w := l.TerminalW // full width
-	borderW := w - 2 // content width inside borders
+	w := l.TerminalW     // full width
+	borderW := w - 2     // content width inside borders
 	formW := borderW - 2 // 1-char padding each side
 	if formW < 20 {
 		formW = borderW

@@ -127,10 +127,16 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return le, nil
 		}
 
-		// Download result — any key dismisses.
-		if le.mode == edModeWLDownloadResult {
-			le.mode = edModeList
-			le.needsReload = true
+		// Download result — route keys to the dialog (OK button).
+		if le.mode == edModeWLDownloadResult && le.dialog != nil {
+			updated, _ := le.dialog.Update(msg)
+			d := updated.(DialogModel)
+			*le.dialog = d
+			if d.Done() {
+				le.dialog = nil
+				le.mode = edModeList
+				le.needsReload = true
+			}
 			return le, nil
 		}
 
