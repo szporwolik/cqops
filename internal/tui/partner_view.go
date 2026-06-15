@@ -75,11 +75,10 @@ func (m *Model) viewPartner() string {
 	} else {
 		sigB.WriteString("wl:nil|")
 	}
-	fmt.Fprintf(&sigB, "wldone=%v|wlband=%s|wlmode=%s|qrz=%v|wlcfg=%v|map=%s|rmap=%v",
+	fmt.Fprintf(&sigB, "wldone=%v|wlband=%s|wlmode=%s|qrz=%v|wlcfg=%v|rmap=%v",
 		m.wlLookupDone, m.wlLastBand, m.wlLastMode,
 		m.App.Config.QRZ.Enabled,
 		m.App.Logbook.Wavelog != nil && m.App.Logbook.Wavelog.Enabled,
-		m.partnerMapCacheSig,
 		m.App.Config.General.RenderMap)
 
 	sig := sigB.String()
@@ -153,12 +152,32 @@ func (m *Model) viewPartner() string {
 	if m.App.Config.General.RenderMap {
 		mapW := totalW
 		topH := lipgloss.Height(topRow)
-		mapAvailH := contentHeight(m.height) - topH
+		// Reserve space for legend (1) + border top/bottom (2).
+		mapAvailH := contentHeight(m.height) - topH - 3
 		if mapAvailH < 3 {
 			mapAvailH = 3
 		}
-		mapBox := drawBorderedBox(m.getOrBuildMap(d, mapW, mapAvailH), mapW)
-		block = lipgloss.JoinVertical(lipgloss.Left, topRow, mapBox)
+		// Content is 2 cells narrower than the border to fit Padding(0,1).
+		contentW := mapW - 2
+		if contentW < 20 {
+			contentW = mapW
+		}
+		mapBox := m.getOrBuildMap(d, contentW, mapAvailH)
+		if mapBox != "" {
+			// Ensure each line is exactly contentW wide so the border fits.
+			lines := strings.Split(mapBox, "\n")
+			for i, l := range lines {
+				lw := lipgloss.Width(l)
+				if lw < contentW {
+					lines[i] = l + strings.Repeat(" ", contentW-lw)
+				}
+			}
+			mapBox = strings.Join(lines, "\n")
+			mapBox = drawBorderedBox(mapBox, mapW)
+			block = lipgloss.JoinVertical(lipgloss.Left, topRow, mapBox)
+		} else {
+			block = topRow
+		}
 	} else {
 		block = topRow
 	}
@@ -444,54 +463,41 @@ func (m *Model) formPartnerData() *qrz.CallData {
 // --- Map cache ---
 
 func (m *Model) getOrBuildMap(d *qrz.CallData, mapW, mapAvailH int) string {
-	cacheKey := m.partnerMapCacheKey()
-	if m.partnerMapCacheSig == cacheKey && m.partnerMapCache != "" {
-		return m.partnerMapCache
+	// RenderMap config toggle — if off, don't show map.
+	if !m.App.Config.General.RenderMap {
+		return ""
 	}
+
 	ownGrid := m.App.Logbook.Station.Grid
 	partnerGrid := d.Grid
-	switch {
-	case ownGrid == "":
-		m.partnerMapCache = DimStyle.Render("Set your grid in station config to enable the map")
-	case partnerGrid == "" && d.Lat == "":
-		m.partnerMapCache = DimStyle.Render("No partner location — enter a grid or use QRZ lookup")
-	default:
-		if mapAvailH >= NativeMapHeight+5 && mapW >= NativeMapWidth {
-			ownLat, ownLon := gridToLatLon(ownGrid)
-			pl, plon := 0.0, 0.0
-			if partnerGrid != "" {
-				pl, plon = gridToLatLon(partnerGrid)
-			}
-			if d.Lat != "" {
-				pl = parseCoord(d.Lat)
-				plon = parseCoord(d.Lon)
-			}
-			if s := renderWorldMap(ownLat, ownLon, pl, plon, mapW, NativeMapHeight); s != "" {
-				m.partnerMapCache = s
-			} else {
-				m.partnerMapCache = DimStyle.Render("Terminal too small for map")
-			}
-		} else {
-			m.partnerMapCache = DimStyle.Render("Terminal too small for map")
-		}
-	}
-	m.partnerMapCacheSig = cacheKey
-	return m.partnerMapCache
-}
 
-func (m *Model) partnerMapCacheKey() string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "w%d|h%d|own:%s|", m.width, m.height, m.App.Logbook.Station.Grid)
-	if m.partnerData != nil {
-		fmt.Fprintf(&b, "p:%s|g:%s|lat:%s|lon:%s|",
-			m.partnerData.Callsign, m.partnerData.Grid, m.partnerData.Lat, m.partnerData.Lon)
+	// No location data — show hint instead of map.
+	if ownGrid == "" {
+		return DimStyle.Render("Set your grid in station config to enable the map")
 	}
-	return b.String()
+	if partnerGrid == "" && d.Lat == "" {
+		return DimStyle.Render("No partner location — enter a grid or use QRZ lookup")
+	}
+
+	ownLat, ownLon := gridToLatLon(ownGrid)
+	pl, plon := 0.0, 0.0
+	if partnerGrid != "" {
+		pl, plon = gridToLatLon(partnerGrid)
+	}
+	if d.Lat != "" {
+		pl = parseCoord(d.Lat)
+		plon = parseCoord(d.Lon)
+	}
+
+	// Use embedded image map renderer.
+	if m.mapView != nil {
+		return m.mapView.View(ownLat, ownLon, pl, plon, mapW, mapAvailH)
+	}
+	// Fallback: ASCII map.
+	return renderWorldMap(ownLat, ownLon, pl, plon, mapW, mapAvailH)
 }
 
 func (m *Model) invalidatePartnerMapCache() {
-	m.partnerMapCache = ""
-	m.partnerMapCacheSig = ""
 	m.partnerViewCache = ""
 	m.partnerViewCacheSig = ""
 }

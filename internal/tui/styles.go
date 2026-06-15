@@ -138,9 +138,10 @@ var S = Styles{
 	LogError: lipgloss.NewStyle().Foreground(P.Error),
 	LogDebug: lipgloss.NewStyle().Foreground(P.TextDim),
 
-	MapOwn:     lipgloss.NewStyle().Foreground(P.Info).Bold(true),
-	MapPartner: lipgloss.NewStyle().Foreground(P.Accent).Bold(true),
-	MapBoth:    lipgloss.NewStyle().Foreground(P.Info).Bold(true),
+	// Map markers — bold on black background for maximum contrast over the map.
+	MapOwn:     lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Background(lipgloss.Color("0")).Bold(true),
+	MapPartner: lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Background(lipgloss.Color("0")).Bold(true),
+	MapBoth:    lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Background(lipgloss.Color("0")).Bold(true),
 	MapGrid:    lipgloss.NewStyle().Foreground(P.TextMuted),
 
 	ConfirmTitle:  lipgloss.NewStyle().Bold(true).Foreground(P.Primary),

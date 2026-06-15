@@ -135,7 +135,8 @@ func TestQRZLookupNoCredentials(t *testing.T) {
 	}
 }
 
-func TestQRZLookupNoOverwriteExistingGrid(t *testing.T) {
+// TestQRZLookupOverwritesExistingGrid verifies QRZ grid always updates the field.
+func TestQRZLookupOverwritesExistingGrid(t *testing.T) {
 	m := newLifecycleTestModel(t)
 	m.App.Config.QRZ.Enabled = true
 	m.App.Config.QRZ.User = "testuser"
@@ -151,9 +152,12 @@ func TestQRZLookupNoOverwriteExistingGrid(t *testing.T) {
 		},
 	})
 
-	// Existing grid should NOT be overwritten
-	if m.fields[fieldGrid].Value() != "JN18" {
-		t.Errorf("Grid should not be overwritten when already set, got %q", m.fields[fieldGrid].Value())
+	// Grid from QRZ should overwrite existing value — the new lookup is authoritative.
+	if m.fields[fieldGrid].Value() != "JO90" {
+		t.Errorf("Grid should be overwritten by QRZ result, got %q", m.fields[fieldGrid].Value())
+	}
+	if m.pathGrid != "JO90" {
+		t.Errorf("pathGrid should be updated by QRZ result, got %q", m.pathGrid)
 	}
 }
 
@@ -186,10 +190,10 @@ func TestQRZLookupCacheInvalidation(t *testing.T) {
 		},
 	})
 
-	// Partner map cache should have been invalidated
-	if m.partnerMapCache != "" {
-		t.Log("Partner map cache was populated during fill — this is expected for new data")
+	// Partner view cache should have been invalidated
+	if m.partnerViewCache != "" {
+		t.Log("Partner view cache was populated during fill — this is expected for new data")
 	}
 	// Cache signature should exist
-	_ = m.partnerMapCacheSig
+	_ = m.partnerViewCacheSig
 }

@@ -72,29 +72,29 @@ func TestPartnerViewMapCache(t *testing.T) {
 	m.width = 100
 	m.height = 30
 	m.App.Logbook.Station.Grid = "JO90"
+	m.App.Config.General.RenderMap = true
 
 	m.partnerData = &qrz.CallData{
 		Callsign: "SP9MOA",
 		Grid:     "JN18",
 	}
 
-	// First render — should populate cache
+	// First render — should populate view cache.
 	view1 := m.viewPartner()
 	if view1 == "" {
 		t.Fatal("viewPartner returned empty")
 	}
-	cached := m.partnerMapCache
-	sig1 := m.partnerMapCacheSig
-	if cached == "" {
-		t.Error("Map cache should be populated after first render")
+	sig1 := m.partnerViewCacheSig
+	if sig1 == "" {
+		t.Error("partnerViewCacheSig should be set after first render")
 	}
 
-	// Second render — should use cache (output identical)
+	// Second render — should use cache (output identical).
 	view2 := m.viewPartner()
 	if view2 != view1 {
 		t.Error("Cached view should be identical to first render")
 	}
-	sig2 := m.partnerMapCacheSig
+	sig2 := m.partnerViewCacheSig
 	if sig1 != sig2 {
 		t.Error("Cache signature should not change between renders with same state")
 	}
@@ -105,20 +105,21 @@ func TestPartnerViewMapCacheInvalidateOnResize(t *testing.T) {
 	m.width = 100
 	m.height = 30
 	m.App.Logbook.Station.Grid = "JO90"
+	m.App.Config.General.RenderMap = true
 	m.partnerData = &qrz.CallData{Callsign: "SP9MOA", Grid: "JN18"}
 
 	m.viewPartner()
-	sig1 := m.partnerMapCacheSig
+	sig1 := m.partnerViewCacheSig
 
 	// Simulate resize
 	m.width = 80
 	m.invalidatePartnerMapCache()
-	if m.partnerMapCache != "" {
-		t.Error("Cache should be empty after invalidation")
+	if m.partnerViewCacheSig != "" {
+		t.Error("View cache sig should be empty after invalidation")
 	}
 
 	m.viewPartner()
-	sig2 := m.partnerMapCacheSig
+	sig2 := m.partnerViewCacheSig
 	if sig1 == sig2 {
 		t.Error("Cache signature should change after resize")
 	}
@@ -129,17 +130,18 @@ func TestPartnerViewMapCacheInvalidateOnPartnerChange(t *testing.T) {
 	m.width = 100
 	m.height = 30
 	m.App.Logbook.Station.Grid = "JO90"
+	m.App.Config.General.RenderMap = true
 	m.partnerData = &qrz.CallData{Callsign: "SP9MOA", Grid: "JN18"}
 
 	m.viewPartner()
-	sig1 := m.partnerMapCacheSig
+	sig1 := m.partnerViewCacheSig
 
 	// Change partner
 	m.partnerData = &qrz.CallData{Callsign: "DJ7NT", Grid: "JO30"}
 	m.invalidatePartnerMapCache()
 
 	m.viewPartner()
-	sig2 := m.partnerMapCacheSig
+	sig2 := m.partnerViewCacheSig
 	if sig1 == sig2 {
 		t.Error("Cache signature should change when partner changes")
 	}

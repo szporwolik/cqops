@@ -31,7 +31,11 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 
 	case key.Matches(msg, m.keys.QSOForm):
 		applog.Debug("tab: F1 QSO Form")
-		m.screen = screenQSO
+		if m.screen == screenQSO {
+			m.focusField(fieldCall)
+		} else {
+			m.screen = screenQSO
+		}
 		return nil, true
 
 	case key.Matches(msg, m.keys.Partner):
@@ -201,10 +205,6 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	case msg.String() == "ctrl+c":
 		m.mainMenu = NewMainMenu()
 		m.screen = screenMainMenu
-		return nil, true
-
-	case key.Matches(msg, m.keys.FocusCall):
-		m.focusField(fieldCall)
 		return nil, true
 
 	case key.Matches(msg, m.keys.Partner):

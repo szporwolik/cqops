@@ -114,6 +114,7 @@ type Model struct {
 	logbookEditor   *LogbookEditor
 	imageViewer     pictureurl.Model // terminal image viewer for partner photos
 	lastImageErr    error            // dedup image error logging
+	mapView         *mapRenderer     // embedded world map renderer
 	confirm         *DialogModel     // active confirmation dialog (quit, etc.)
 
 	// Layout cache — avoids redundant MeasureLayout() calls when terminal size
@@ -157,10 +158,6 @@ type Model struct {
 	keys       KeyMap
 	help       help.Model
 	recentQSOs *RecentQSOs // read-only Recent QSOs view
-
-	// Partner/map rendering cache — avoids expensive ASCII map generation on every View().
-	partnerMapCache    string
-	partnerMapCacheSig string
 
 	// Partner view cache — avoids rebuilding the entire partner page on every render.
 	partnerViewCache    string
@@ -254,6 +251,7 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	m.imageViewer = pictureurl.NewWithConfig(pictureurl.Config{
 		CacheLimit: 4,
 	})
+	m.mapView = newMapRenderer()
 	return m
 }
 
