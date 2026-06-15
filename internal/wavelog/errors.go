@@ -98,3 +98,64 @@ func FriendlyError(err error) error {
 
 	return err
 }
+
+// uploadErrorDetail extracts a user-friendly message from a Wavelog upload
+// error response. It parses the structured JSON when available and strips
+// HTML tags from the server messages.
+func uploadErrorDetail(result *QSOUploadResult, bodyStr string) string {
+	// Prefer structured messages from the parsed response.
+	if result != nil && len(result.Messages) > 0 {
+		var parts []string
+		for _, m := range result.Messages {
+			m = strings.TrimSpace(m)
+			if m == "" {
+				continue
+			}
+			// Strip HTML tags.
+			m = stripHTML(m)
+			m = strings.TrimSpace(m)
+			if m == "" {
+				continue
+			}
+			parts = append(parts, m)
+		}
+		if len(parts) > 0 {
+			msg := strings.Join(parts, "; ")
+			// Translate known Wavelog error patterns.
+			if strings.Contains(msg, "Differing station callsign") {
+				return "Station callsign mismatch — check your station profile settings"
+			}
+			return msg
+		}
+	}
+
+	// Fallback: try to extract reason from the raw body.
+	if reason := extractAPIReason(bodyStr); reason != "" {
+		return reason
+	}
+
+	// Last resort: return the raw body (truncated).
+	if len(bodyStr) > 200 {
+		bodyStr = bodyStr[:200] + "…"
+	}
+	return bodyStr
+}
+
+// stripHTML removes simple HTML tags from a string.
+func stripHTML(s string) string {
+	var b strings.Builder
+	inTag := false
+	for _, r := range s {
+		switch r {
+		case '<':
+			inTag = true
+		case '>':
+			inTag = false
+		default:
+			if !inTag {
+				b.WriteRune(r)
+			}
+		}
+	}
+	return b.String()
+}

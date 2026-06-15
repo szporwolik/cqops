@@ -359,7 +359,7 @@ func PostQSOWithResult(baseURL, apiKey, stationID, adifStr string) (*QSOUploadRe
 
 	if resp.StatusCode >= 400 {
 		applog.Error("Wavelog: QSO upload server error", "status", resp.StatusCode, "body", bodyStr)
-		return &result, fmt.Errorf("server error: HTTP %d — %s", resp.StatusCode, bodyStr)
+		return &result, fmt.Errorf("%s", uploadErrorDetail(&result, bodyStr))
 	}
 
 	applog.InfoDetail("Wavelog: QSO uploaded", fmt.Sprintf("status=%d", resp.StatusCode))

@@ -21,8 +21,6 @@ func (le *LogbookEditor) View() tea.View {
 		bodyW = 30
 	}
 
-	applog.Debug("LogEditor: View called", "mode", le.mode, "dlActive", le.dlActive)
-
 	switch le.mode {
 	case edModeConfirmDelete:
 		le.ensureDialog(
@@ -88,7 +86,6 @@ func (le *LogbookEditor) View() tea.View {
 				msg = fmt.Sprintf("Processing QSO %d / %d (%d%%)",
 					le.dlCurrent, le.dlTotal, pct)
 			}
-			applog.Debug("LogEditor: download dialog update", "dlCurrent", le.dlCurrent, "dlTotal", le.dlTotal)
 			// Update message every frame so it reflects latest progress.
 			if le.dialog == nil {
 				d := NewDialog("Wavelog Download", msg,

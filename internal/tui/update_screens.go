@@ -203,9 +203,7 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 	if m.width != oldW || m.height != oldH {
 		m.logbookEditor.needsReload = true
 	}
-	applog.Debug("LogEditor: handleUpdate BEFORE", "mode", m.logbookEditor.mode, "dlActive", m.logbookEditor.isDownloadActive())
 	_, editorCmd := m.logbookEditor.Update(msg)
-	applog.Debug("LogEditor: handleUpdate AFTER", "mode", m.logbookEditor.mode, "dlActive", m.logbookEditor.isDownloadActive())
 	if em, ok := msg.(editorMsg); ok {
 		if em.toastWarn != "" {
 			m.toasts.Warn(em.toastWarn)
@@ -237,7 +235,11 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 				m.logbookEditor.UpdateWLStatus(em.wlQSOID, "yes")
 				m.logbookEditor.needsReload = true
 			} else {
-				m.toasts.Warn(fmt.Sprintf("Wavelog: %s failed", em.wlCall))
+				if em.err != nil {
+					m.toasts.Error(fmt.Sprintf("Wavelog: %s — %s", em.wlCall, em.err.Error()))
+				} else {
+					m.toasts.Error(fmt.Sprintf("Wavelog: %s failed", em.wlCall))
+				}
 				m.logbookEditor.UpdateWLStatus(em.wlQSOID, "no")
 			}
 		}

@@ -163,12 +163,11 @@ func (le *LogbookEditor) doNormalizeAndUpload() tea.Cmd {
 func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 	url, key, sid := le.wlURL, le.wlKey, le.wlStationID
 	db := le.db
-	wlCall := ""
 
-	// Build batch ADIF (override station callsign to match Wavelog station)
+	// Build batch ADIF.
 	var adifStr string
 	for _, q := range unsent {
-		adifStr += q.ToADIFWithStation(wlCall)
+		adifStr += q.ToADIF()
 	}
 
 	applog.InfoDetail("Wavelog: batch upload", fmt.Sprintf("count=%d", len(unsent)))
@@ -206,7 +205,6 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 func (le *LogbookEditor) uploadIndividual(unsent []qso.QSO) tea.Cmd {
 	url, key, sid := le.wlURL, le.wlKey, le.wlStationID
 	db := le.db
-	wlCall := ""
 
 	return func() tea.Msg {
 		okCount := 0
@@ -215,23 +213,19 @@ func (le *LogbookEditor) uploadIndividual(unsent []qso.QSO) tea.Cmd {
 		var lastErr error
 
 		for _, q := range unsent {
-			adifStr := q.ToADIFWithStation(wlCall)
-			result, err := wavelog.PostQSOWithResult(url, key, sid, adifStr)
-			if err != nil {
+			adifStr := q.ToADIF()
+			ok, isDup, err := postQSO(url, key, sid, adifStr, q.ID, q.Call, db)
+			if !ok {
 				applog.Warn("Wavelog: individual upload failed", "qso_id", q.ID, "call", q.Call, "error", err)
-				store.UpdateWavelogStatus(db, q.ID, "no")
 				failCount++
 				lastErr = err
 				continue
 			}
-			if result != nil && result.AllDuplicates {
-				applog.Debug("Wavelog: duplicate (silent)", "qso_id", q.ID, "call", q.Call)
-				store.UpdateWavelogStatus(db, q.ID, "yes")
+			if isDup {
 				dupCount++
-				continue
+			} else {
+				okCount++
 			}
-			store.UpdateWavelogStatus(db, q.ID, "yes")
-			okCount++
 		}
 
 		applog.InfoDetail("Wavelog: individual upload complete",
@@ -266,26 +260,13 @@ func (le *LogbookEditor) doUploadToWavelog() tea.Cmd {
 				err: fmt.Errorf("missing required field: band/mode/date")}
 		}
 	}
-	adifStr := q.ToADIFWithStation("")
+	adifStr := q.ToADIF()
 	url, key, sid := le.wlURL, le.wlKey, le.wlStationID
 	qID := q.ID
 	call := q.Call
 
 	return func() tea.Msg {
-		applog.InfoDetail("Wavelog: uploading from editor", fmt.Sprintf("qso_id=%d call=%s", qID, call))
-		result, err := wavelog.PostQSOWithResult(url, key, sid, adifStr)
-		if err != nil {
-			applog.Error("Wavelog: editor upload failed", "qso_id", qID, "call", call, "error", err)
-			store.UpdateWavelogStatus(le.db, qID, "no")
-			return editorMsg{wlQSOID: qID, wlCall: call, wlOK: false, err: err}
-		}
-		if result != nil && result.AllDuplicates {
-			store.UpdateWavelogStatus(le.db, qID, "yes")
-			applog.InfoDetail("Wavelog: editor QSO already present (duplicate)", fmt.Sprintf("qso_id=%d call=%s", qID, call))
-			return editorMsg{wlQSOID: qID, wlCall: call, wlOK: true}
-		}
-		store.UpdateWavelogStatus(le.db, qID, "yes")
-		applog.InfoDetail("Wavelog: editor upload OK", fmt.Sprintf("qso_id=%d call=%s", qID, call))
-		return editorMsg{wlQSOID: qID, wlCall: call, wlOK: true}
+		ok, _, err := postQSO(url, key, sid, adifStr, qID, call, le.db)
+		return editorMsg{wlQSOID: qID, wlCall: call, wlOK: ok, err: err}
 	}
 }

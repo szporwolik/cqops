@@ -6,7 +6,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/gen2brain/beeep"
 	"github.com/szporwolik/cqops/internal/applog"
-	"github.com/szporwolik/cqops/internal/store"
 )
 
 // =============================================================================
@@ -69,7 +68,6 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) bool {
 	case wlUploadResultMsg:
 		n := m.App.Config.General.Notifications
 		if r.ok {
-			store.UpdateWavelogStatus(m.App.DB, r.qID, "yes")
 			m.toasts.Success(fmt.Sprintf("Wavelog: %s sent", r.call))
 			if n.Enabled && n.Wavelog {
 				applog.Info("Sending Wavelog success notification", "call", r.call)
@@ -78,8 +76,11 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) bool {
 				}
 			}
 		} else {
-			store.UpdateWavelogStatus(m.App.DB, r.qID, "no")
-			m.toasts.Warn(fmt.Sprintf("Wavelog: %s failed", r.call))
+			if r.err != nil {
+				m.toasts.Error(fmt.Sprintf("Wavelog: %s — %s", r.call, r.err.Error()))
+			} else {
+				m.toasts.Error(fmt.Sprintf("Wavelog: %s failed", r.call))
+			}
 			if n.Enabled && n.WavelogErrors {
 				msg := fmt.Sprintf("QSO %s upload failed", r.call)
 				if r.err != nil {
