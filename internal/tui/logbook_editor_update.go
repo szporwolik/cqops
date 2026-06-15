@@ -149,7 +149,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			d := updated.(DialogModel)
 			*le.dialog = d
 			if d.Done() {
-				if d.Result.Confirmed {
+				if d.Result.Confirmed && d.Result.Value != "cancel" {
 					return le, le.doConfirm()
 				}
 				le.dialog = nil

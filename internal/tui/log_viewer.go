@@ -16,6 +16,11 @@ type LogViewer struct {
 	done     bool
 	width    int
 	height   int
+
+	// Content cache — avoids rebuilding all 500 log lines on every frame.
+	cachedContent string
+	cachedW       int
+	cachedEntries int
 }
 
 func NewLogViewer(name string) *LogViewer {
@@ -66,6 +71,7 @@ func (lv *LogViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "insert":
 			// Scroll to top and refresh content.
 			lv.viewport.SetYOffset(0)
+			lv.cachedContent = "" // force rebuild
 		default:
 			var cmd tea.Cmd
 			lv.viewport, cmd = lv.viewport.Update(msg)
@@ -94,8 +100,14 @@ func (lv *LogViewer) View() tea.View {
 	}
 
 	entries := applog.Entries()
-	if len(entries) == 0 {
+	entryCount := len(entries)
+	if entryCount == 0 {
 		return tea.NewView(DimStyle.Render("  No log entries yet."))
+	}
+
+	// Return cached content if nothing changed.
+	if lv.cachedW == lv.width && lv.cachedEntries == entryCount && lv.cachedContent != "" {
+		return tea.NewView(lv.viewport.View())
 	}
 
 	// Build colored log lines (newest first). Every segment needs explicit
@@ -143,6 +155,10 @@ func (lv *LogViewer) View() tea.View {
 	}
 
 	lv.viewport.SetContent(strings.Join(lines, "\n"))
+
+	lv.cachedContent = strings.Join(lines, "\n")
+	lv.cachedW = lv.width
+	lv.cachedEntries = entryCount
 
 	// Viewport fills all rows; main View's MaxHeight + JoinVertical places
 	// the help bar at the bottom with any extra space as gap.
