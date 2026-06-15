@@ -63,12 +63,7 @@ func placeholders(n int) string {
 }
 
 func ListQSOs(db *sql.DB, limit int) ([]qso.QSO, error) {
-	if limit <= 0 {
-		limit = 50
-	}
-
-	rows, err := db.Query(
-		`SELECT id, call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,
+	query := `SELECT id, call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,
 		rst_sent, rst_rcvd, gridsquare, name, qth, country, comment, notes, tx_pwr,
 		distance, bearing,
 		sota_ref, pota_ref, wwff_ref, iota,
@@ -77,9 +72,14 @@ func ListQSOs(db *sql.DB, limit int) ([]qso.QSO, error) {
 		wavelog_uploaded,
 		created_at, updated_at
 		FROM qsos
-		ORDER BY id DESC
-		LIMIT ?`, limit,
-	)
+		ORDER BY id DESC`
+	var rows *sql.Rows
+	var err error
+	if limit > 0 {
+		rows, err = db.Query(query+" LIMIT ?", limit)
+	} else {
+		rows, err = db.Query(query)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("list qsos: %w", err)
 	}

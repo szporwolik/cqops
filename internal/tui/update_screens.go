@@ -191,6 +191,9 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 	m.logbookEditor.height = m.height
 	_, editorCmd := m.logbookEditor.Update(msg)
 	if em, ok := msg.(editorMsg); ok {
+		if em.toastWarn != "" {
+			m.toasts.Warn(em.toastWarn)
+		}
 		if em.err != nil && em.wlQSOID == 0 {
 			m.toasts.Error(em.err.Error())
 		}
@@ -202,7 +205,6 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 		}
 		if em.purged {
 			m.toasts.Success("Logbook purged")
-			// Reset Wavelog download index so next download fetches everything.
 			m.logbookEditor.wlLastFetchedID = 0
 			if m.App.Logbook.Wavelog != nil {
 				m.App.Logbook.Wavelog.LastFetchedID = 0
@@ -210,6 +212,7 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 					applog.Warn("Failed to reset Wavelog last_fetched_id after purge", "error", err)
 				}
 			}
+			m.needRefresh = true
 		}
 		if em.wlQSOID != 0 {
 			if em.wlOK {
@@ -236,7 +239,7 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 			}
 		}
 		if em.dlDone {
-			// Download finished — handled by editor's Update; just refresh.
+			// Download finished — handled by editor's Update; refresh and save cursor.
 			if !em.dlAborted && em.dlCount > 0 {
 				m.needRefresh = true
 			}

@@ -67,7 +67,11 @@ func (le *LogbookEditor) View() tea.View {
 		}
 		return tea.NewView(le.viewWithDialog(bodyW))
 	case edModeWLDownloading:
-		if le.dialog == nil {
+		if le.dlMsgCh == nil {
+			// Stale mode — no download in progress, fall back to list.
+			le.mode = edModeList
+			le.dialog = nil
+		} else if le.dialog == nil {
 			d := NewDialog("Wavelog Download", "Downloading ADIF from Wavelog…\nThis may take a while for large logbooks.",
 				Option{Label: "Abort", Value: "abort"},
 			)

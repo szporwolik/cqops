@@ -43,6 +43,8 @@ type editorMsg struct {
 	dlTotal    int
 	dlDone     bool
 	dlAborted  bool
+	// Simple toast from the editor.
+	toastWarn string
 }
 
 func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -186,14 +188,20 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return le, cmd
 		case "delete":
 			if len(le.qsos) > 0 {
+				le.dialog = nil
 				le.mode = edModeConfirmDelete
 			}
 		case "w":
-			if le.wlURL != "" && le.wlKey != "" && le.wlStationID != "" && len(le.qsos) > 0 {
+			if le.wlURL != "" && le.wlKey != "" && le.wlStationID != "" {
+				if len(le.qsos) == 0 {
+					return le, func() tea.Msg { return editorMsg{toastWarn: "Logbook is empty — nothing to upload"} }
+				}
+				le.dialog = nil
 				le.mode = edModeConfirmWLSend
 			}
 		case "ctrl+w":
 			if le.wlURL != "" && le.wlKey != "" && le.wlStationID != "" {
+				le.dialog = nil
 				le.mode = edModeConfirmWLDownload
 			}
 		case "e", "enter":
@@ -210,6 +218,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				le.mode = edModeEdit
 			}
 		case "p":
+			le.dialog = nil
 			le.mode = edModeConfirmPurge
 		}
 	}
@@ -221,20 +230,28 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 	if le.dialog == nil {
 		return nil
 	}
-	val := le.dialog.Result.Value
+	mode := le.mode // capture before clearing
 	le.dialog = nil
-	switch val {
-	case "wlsend":
+	switch mode {
+	case edModeConfirmWLSend:
 		le.mode = edModeList
 		return le.doBatchUpload()
-	case "wldownload":
+	case edModeConfirmWLDownload:
 		le.mode = edModeWLDownloading
 		le.dlProgress = 0
 		le.dlTotal = 0
 		return le.doWavelogDownload()
-	case "purge":
+	case edModeConfirmPurge:
 		le.mode = edModeList
 		le.wlLastFetchedID = 0
+		// Clear any lingering download state.
+		le.dlProgress = 0
+		le.dlTotal = 0
+		le.dlMsgCh = nil
+		if le.dlCancel != nil {
+			close(le.dlCancel)
+			le.dlCancel = nil
+		}
 		applog.Warn("LogbookEditor: purging all QSOs")
 		return func() tea.Msg {
 			err := store.PurgeQSOs(le.db)
@@ -245,7 +262,7 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 			}
 			return editorMsg{purged: true, err: err}
 		}
-	case "delete":
+	case edModeConfirmDelete:
 		q := le.qsos[le.table.Cursor()]
 		call := q.Call
 		date := formatDate(q.QSODate)
@@ -321,7 +338,6 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 	defer close(le.dlMsgCh)
 
 	const batchSize = 50
-	const maxPerDownload = 50
 	db := le.db
 
 	// Send initial message so the dialog appears immediately.
@@ -359,7 +375,6 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 	}
 
 	var inserted, dupes int
-	hitLimit := false
 
 	// Stream-parse ADIF records one at a time — never loads all QSOs into memory.
 	scanner := adif.NewScanner(f)
@@ -478,11 +493,6 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 			continue
 		}
 
-		if inserted >= maxPerDownload {
-			hitLimit = true
-			break
-		}
-
 		if existingID := store.FindQSOByKey(db, qs.Call, qs.Band, qs.Mode, qs.QSODate, qs.TimeOn); existingID != 0 {
 			applog.Info("Wavelog: skipping local duplicate",
 				"local_id", existingID, "call", qs.Call, "band", qs.Band, "date", qs.QSODate)
@@ -502,13 +512,6 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 			pct := int(pos * 100 / fileSize)
 			le.dlMsgCh <- editorMsg{dlProgress: inserted, dlTotal: pct}
 		}
-	}
-
-	if hitLimit {
-		applog.Info("Wavelog: download limit reached",
-			"inserted", inserted, "dupes_replaced", dupes, "limit", maxPerDownload)
-		le.dlMsgCh <- editorMsg{dlCount: inserted, dlDupes: dupes, dlDone: true}
-		return
 	}
 
 	applog.Info("Wavelog: contacts download complete",
