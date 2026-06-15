@@ -38,9 +38,10 @@ func NewRecentQSOs(qsos []qso.QSO) *RecentQSOs {
 	return &RecentQSOs{qsos: qsos, width: 80, height: 10}
 }
 
-// SetQSOS updates the QSO data and invalidates the filter cache.
+// SetQSOS updates the QSO data and invalidates the view and filter caches.
 func (r *RecentQSOs) SetQSOS(qsos []qso.QSO) {
 	r.qsos = qsos
+	r.cachedView = ""   // force rebuild on next View()
 	r.filterCacheID = 0 // invalidate filter cache
 }
 

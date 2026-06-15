@@ -18,10 +18,19 @@ var confirmBindings = []key.Binding{
 // helpView renders the bottom help/footer bar with context-sensitive key bindings.
 // Cached — only rebuilds when screen, confirm state, or dynamic suffix change.
 func (m *Model) helpView() string {
-	// Build a compact cache key.
+	// Build a compact cache key covering all confirm-dialog sources.
 	suffix := m.helpSuffix()
 	conf := 0
 	if m.confirm != nil {
+		conf = 1
+	}
+	if m.logbookEditor != nil && m.logbookEditor.isConfirmMode() {
+		conf = 1
+	}
+	if m.rigChooser != nil && m.rigChooser.dialog != nil {
+		conf = 1
+	}
+	if m.chooser != nil && m.chooser.dialog != nil {
 		conf = 1
 	}
 	sig := fmt.Sprintf("%d|%d|%s", m.screen, conf, suffix)
@@ -89,10 +98,13 @@ func (m *Model) helpView() string {
 // computed every frame and not cached.
 func (m *Model) helpSuffix() string {
 	if m.screen == screenLogbookEditor && m.logbookEditor != nil {
-		cursor := m.logbookEditor.CursorPos()
-		total := m.logbookEditor.QSOCount()
+		le := m.logbookEditor
+		cursor := le.table.Cursor()
+		total := le.totalCount
 		if total > 0 {
-			return fmt.Sprintf("QSO %d/%d", cursor+1, total)
+			globalPos := (le.currentPage-1)*le.pageSize + cursor + 1
+			pageInfo := fmt.Sprintf("Page %d/%d", le.currentPage, le.totalPages())
+			return fmt.Sprintf("QSO %d/%d  %s", globalPos, total, pageInfo)
 		}
 	}
 	if m.screen == screenLogView && m.logViewer != nil {

@@ -6,7 +6,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
-	"github.com/szporwolik/cqops/internal/store"
 )
 
 // =============================================================================
@@ -189,8 +188,13 @@ func (m *Model) handlePartnerUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 }
 
 func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	// Detect resize — pageSize depends on terminal height, so reload.
+	oldW, oldH := m.logbookEditor.width, m.logbookEditor.height
 	m.logbookEditor.width = m.width
 	m.logbookEditor.height = m.height
+	if m.width != oldW || m.height != oldH {
+		m.logbookEditor.needsReload = true
+	}
 	_, editorCmd := m.logbookEditor.Update(msg)
 	if em, ok := msg.(editorMsg); ok {
 		if em.toastWarn != "" {
@@ -208,6 +212,7 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 		if em.purged {
 			m.toasts.Success("Logbook purged")
 			m.logbookEditor.wlLastFetchedID = 0
+			m.logbookEditor.needsReload = true
 			if m.App.Logbook.Wavelog != nil {
 				m.App.Logbook.Wavelog.LastFetchedID = 0
 				if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
@@ -258,8 +263,7 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 	}
 	if m.logbookEditor.needsReload {
 		m.logbookEditor.needsReload = false
-		qsos, _ := store.ListAllQSOs(m.App.DB)
-		m.logbookEditor.SetQSOS(qsos)
+		m.logbookEditor.loadPage()
 		m.needRefresh = true
 	}
 	if m.logbookEditor.done {

@@ -115,6 +115,55 @@ func ListQSOs(db *sql.DB, limit int) ([]qso.QSO, error) {
 	return qsos, rows.Err()
 }
 
+// ListQSOsPage returns a page of QSOs ordered by id DESC.
+func ListQSOsPage(db *sql.DB, limit, offset int) ([]qso.QSO, error) {
+	query := `SELECT id, call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,
+		rst_sent, rst_rcvd, gridsquare, name, qth, country, comment, notes, tx_pwr,
+		distance, bearing,
+		sota_ref, pota_ref, wwff_ref, iota,
+		my_sota_ref, my_pota_ref, my_wwff_ref,
+		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
+		wavelog_uploaded,
+		created_at, updated_at
+		FROM qsos
+		ORDER BY id DESC
+		LIMIT ? OFFSET ?`
+	rows, err := db.Query(query, limit, offset)
+	if err != nil {
+		return nil, fmt.Errorf("list qsos page: %w", err)
+	}
+	defer rows.Close()
+
+	var qsos []qso.QSO
+	for rows.Next() {
+		var q qso.QSO
+		var createdAt, updatedAt string
+		err := rows.Scan(
+			&q.ID, &q.Call, &q.QSODate, &q.TimeOn, &q.TimeOff,
+			&q.Band, &q.Freq, &q.FreqRx, &q.Mode, &q.Submode,
+			&q.RSTSent, &q.RSTRcvd, &q.GridSquare, &q.Name, &q.QTH, &q.Country, &q.Comment, &q.Notes, &q.TXPower,
+			&q.Distance, &q.Bearing,
+			&q.SOTARef, &q.POTARef, &q.WWFFRef, &q.IOTA,
+			&q.MySOTARef, &q.MyPOTARef, &q.MyWWFFRef,
+			&q.StationCallsign, &q.Operator, &q.MyGridSquare, &q.MyRig, &q.MyAntenna, &q.Source,
+			&q.WavelogUploaded,
+			&createdAt, &updatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan qso: %w", err)
+		}
+		if t, err := time.Parse(time.RFC3339, createdAt); err == nil {
+			q.CreatedAt = t
+		}
+		if t, err := time.Parse(time.RFC3339, updatedAt); err == nil {
+			q.UpdatedAt = t
+		}
+		qsos = append(qsos, q)
+	}
+
+	return qsos, rows.Err()
+}
+
 // SearchQSOsByCall returns QSOs matching a callsign by exact or prefix match.
 // "SP9SPM" matches "SP9SPM", "SP9SPM/P", "9A/SP9SPM", "9A/SP9SPM/P", etc.
 func SearchQSOsByCall(db *sql.DB, call string, limit int) ([]qso.QSO, error) {

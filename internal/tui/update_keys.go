@@ -8,7 +8,6 @@ import (
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/qso"
-	"github.com/szporwolik/cqops/internal/store"
 )
 
 // =============================================================================
@@ -121,8 +120,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.logbookEditor = NewLogbookEditor(m.App.DB, wlURL, wlKey, wlStationID, wlLastID, m.App.Logbook.Station.Operator, m.App.Logbook.Station.Grid)
 		m.logbookEditor.width = m.width
 		m.logbookEditor.height = m.height
-		qsos, _ := store.ListAllQSOs(m.App.DB)
-		m.logbookEditor.SetQSOS(qsos)
+		m.logbookEditor.loadPage()
 		m.screen = screenLogbookEditor
 		return nil, true
 

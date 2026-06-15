@@ -7,6 +7,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/qso"
+	"github.com/szporwolik/cqops/internal/store"
 )
 
 type editorMode int
@@ -101,11 +102,22 @@ type LogbookEditor struct {
 	wlDownloadDupes int
 	wlDownloadErr   string
 
+	// Pagination — only the current page is loaded from DB.
+	currentPage int
+	totalCount  int
+	pageSize    int
+
 	// Batch download progress
 	dlProgress int
 	dlTotal    int
 	dlCancel   chan struct{}
 	dlMsgCh    chan editorMsg
+
+	// View cache — avoids rebuilding the table on every frame with large QSO sets.
+	cachedView string
+	cachedSig  string
+	builtW     int // width at last buildTable call
+	builtH     int // height at last buildTable call
 }
 
 // =============================================================================
@@ -157,7 +169,85 @@ func (le *LogbookEditor) Init() tea.Cmd {
 	return nil
 }
 
-func (le *LogbookEditor) SetQSOS(qsos []qso.QSO) { le.qsos = qsos; le.buildTable() }
+func (le *LogbookEditor) SetQSOS(qsos []qso.QSO) {
+	le.qsos = qsos
+	le.cachedSig = "" // invalidate view cache
+	le.buildTable()
+}
+
+// loadPage fetches the current page of QSOs from the database.
+func (le *LogbookEditor) loadPage() {
+	if le.db == nil {
+		return
+	}
+	// Determine page size from current terminal height.
+	h := le.height
+	if h < 10 {
+		h = 24
+	}
+	// pageSize = data rows visible = tableH - 1 header row.
+	le.pageSize = h - 7
+	if le.pageSize < 5 {
+		le.pageSize = 5
+	}
+
+	// Refresh total count.
+	counts, err := store.CountQSOs(le.db)
+	if err == nil {
+		le.totalCount = counts.Total
+	}
+
+	totalPages := le.totalPages()
+	if totalPages < 1 {
+		totalPages = 1
+	}
+	if le.currentPage < 1 {
+		le.currentPage = 1
+	}
+	if le.currentPage > totalPages {
+		le.currentPage = totalPages
+	}
+
+	offset := (le.currentPage - 1) * le.pageSize
+	qsos, err := store.ListQSOsPage(le.db, le.pageSize, offset)
+	if err != nil {
+		le.qsos = nil
+	} else {
+		le.qsos = qsos
+	}
+	le.cachedSig = ""
+	le.buildTable()
+}
+
+// totalPages returns the total number of pages.
+func (le *LogbookEditor) totalPages() int {
+	if le.pageSize < 1 || le.totalCount < 1 {
+		return 1
+	}
+	p := le.totalCount / le.pageSize
+	if le.totalCount%le.pageSize != 0 {
+		p++
+	}
+	return p
+}
+
+// goToPage navigates to the given page (1-indexed) and reloads data.
+func (le *LogbookEditor) goToPage(p int) {
+	tp := le.totalPages()
+	if p < 1 {
+		p = 1
+	}
+	if p > tp {
+		p = tp
+	}
+	if p == le.currentPage && len(le.qsos) > 0 {
+		return
+	}
+	le.currentPage = p
+	le.loadPage()
+	// Reset cursor to top of the new page.
+	le.table.SetCursor(0)
+}
 
 func (le *LogbookEditor) CursorPos() int {
 	if le.built {
@@ -172,7 +262,8 @@ func (le *LogbookEditor) IsEditing() bool { return le.mode == edModeEdit }
 
 func (le *LogbookEditor) isConfirmMode() bool {
 	switch le.mode {
-	case edModeConfirmDelete, edModeConfirmPurge, edModeConfirmWLSend, edModeConfirmWLDownload:
+	case edModeConfirmDelete, edModeConfirmPurge, edModeConfirmWLSend, edModeConfirmWLDownload,
+		edModeConfirmNormalize:
 		return true
 	}
 	return false

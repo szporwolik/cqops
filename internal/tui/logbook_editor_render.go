@@ -22,81 +22,83 @@ func (le *LogbookEditor) View() tea.View {
 
 	switch le.mode {
 	case edModeConfirmDelete:
-		if le.dialog == nil {
-			q := le.qsos[le.table.Cursor()]
-			d := NewDialog("Delete QSO", q.Call+" from "+formatDate(q.QSODate),
-				DangerOption("Delete", "delete"),
-				Option{Label: "Cancel", Value: "cancel"},
-			)
-			le.dialog = &d
-		}
+		le.ensureDialog(
+			"Delete QSO",
+			func() string {
+				q := le.qsos[le.table.Cursor()]
+				return q.Call + " from " + formatDate(q.QSODate)
+			}(),
+			DangerOption("Delete", "delete"),
+			Option{Label: "Cancel", Value: "cancel"},
+		)
 		return tea.NewView(le.viewWithDialog(bodyW))
+
 	case edModeConfirmPurge:
-		if le.dialog == nil {
-			d := NewDialog("Purge Logbook", "All QSOs will be permanently deleted.",
-				DangerOption("Purge", "purge"),
-				Option{Label: "Cancel", Value: "cancel"},
-			)
-			le.dialog = &d
-		}
+		le.ensureDialog("Purge Logbook", "All QSOs will be permanently deleted.",
+			DangerOption("Purge", "purge"),
+			Option{Label: "Cancel", Value: "cancel"},
+		)
 		return tea.NewView(le.viewWithDialog(bodyW))
+
 	case edModeConfirmWLSend:
-		if le.dialog == nil {
-			unsent := 0
-			for _, q := range le.qsos {
-				if q.WavelogUploaded != "yes" {
-					unsent++
+		le.ensureDialog("Send to Wavelog",
+			func() string {
+				unsent := 0
+				for _, q := range le.qsos {
+					if q.WavelogUploaded != "yes" {
+						unsent++
+					}
 				}
-			}
-			d := NewDialog("Send to Wavelog", fmt.Sprintf("%d unsent QSOs", unsent),
-				Option{Label: "Send", Value: "wlsend"},
-				Option{Label: "Cancel", Value: "cancel"},
-			)
-			le.dialog = &d
-		}
+				return fmt.Sprintf("%d unsent QSOs", unsent)
+			}(),
+			Option{Label: "Send", Value: "wlsend"},
+			Option{Label: "Cancel", Value: "cancel"},
+		)
 		return tea.NewView(le.viewWithDialog(bodyW))
+
 	case edModeConfirmNormalize:
-		return tea.NewView(le.viewNormalizeConfirm(bodyW))
-	case edModeConfirmWLDownload:
-		if le.dialog == nil {
-			d := NewDialog("Download from Wavelog", "Pull QSOs from Wavelog into local logbook.\nDuplicates will be replaced with Wavelog versions.",
-				Option{Label: "Download", Value: "wldownload"},
-				Option{Label: "Cancel", Value: "cancel"},
-			)
-			le.dialog = &d
-		}
+		le.ensureDialog(
+			fmt.Sprintf("Normalize %d QSOs", len(le.mismatchQSOs)),
+			fmt.Sprintf("%d unsent QSOs will be normalised.", len(le.mismatchQSOs)),
+			Option{Label: "Normalize", Value: "normalize"},
+			Option{Label: "Cancel", Value: "cancel"},
+		)
 		return tea.NewView(le.viewWithDialog(bodyW))
+
+	case edModeConfirmWLDownload:
+		le.ensureDialog("Download from Wavelog",
+			"Pull QSOs from Wavelog into local logbook.\nDuplicates will be replaced with Wavelog versions.",
+			Option{Label: "Download", Value: "wldownload"},
+			Option{Label: "Cancel", Value: "cancel"},
+		)
+		return tea.NewView(le.viewWithDialog(bodyW))
+
 	case edModeWLDownloading:
 		if le.dlMsgCh == nil {
-			// Stale mode — no download in progress, fall back to list.
 			le.mode = edModeList
 			le.dialog = nil
-		} else if le.dialog == nil {
-			d := NewDialog("Wavelog Download", "Downloading ADIF from Wavelog…\nThis may take a while for large logbooks.",
+		} else {
+			msg := "Downloading ADIF from Wavelog…\nThis may take a while for large logbooks."
+			if le.dlProgress > 0 {
+				msg = fmt.Sprintf("Downloaded %d QSOs (%d%% of file)", le.dlProgress, le.dlTotal)
+			}
+			le.ensureDialog("Wavelog Download", msg,
 				Option{Label: "Abort", Value: "abort"},
 			)
-			le.dialog = &d
-		} else if le.dlProgress == 0 {
-			le.dialog.Message = "Downloading ADIF from Wavelog…\nThis may take a while for large logbooks."
-		} else {
-			le.dialog.Message = fmt.Sprintf("Downloaded %d QSOs (%d%% of file)",
-				le.dlProgress, le.dlTotal)
 		}
 		return tea.NewView(le.viewWithDialog(bodyW))
+
 	case edModeWLDownloadResult:
-		if le.dialog == nil {
-			msg := fmt.Sprintf("Downloaded %d QSOs.", le.wlDownloadCount)
-			if le.wlDownloadDupes > 0 {
-				msg += fmt.Sprintf("\n%d already in logbook, skipped.", le.wlDownloadDupes)
-			}
-			if le.wlDownloadErr != "" {
-				msg = "Download failed: " + le.wlDownloadErr
-			}
-			d := NewDialog("Wavelog Download", msg,
-				Option{Label: "OK", Value: "ok"},
-			)
-			le.dialog = &d
+		msg := fmt.Sprintf("Downloaded %d QSOs.", le.wlDownloadCount)
+		if le.wlDownloadDupes > 0 {
+			msg += fmt.Sprintf("\n%d already in logbook, skipped.", le.wlDownloadDupes)
 		}
+		if le.wlDownloadErr != "" {
+			msg = "Download failed: " + le.wlDownloadErr
+		}
+		le.ensureDialog("Wavelog Download", msg,
+			Option{Label: "OK", Value: "ok"},
+		)
 		return tea.NewView(le.viewWithDialog(bodyW))
 	case edModeEdit:
 		contentH := contentHeight(le.height)
@@ -105,21 +107,38 @@ func (le *LogbookEditor) View() tea.View {
 		}
 		return tea.NewView(le.viewEdit(bodyW, contentH))
 	default:
+		// Rebuild the table when dimensions change (resize).
+		if le.built && (le.width != le.builtW || le.height != le.builtH) {
+			le.built = false
+		}
 		if !le.built && len(le.qsos) > 0 {
 			le.buildTable()
 		}
+		// Cache the rendered table — large QSO sets are paginated.
+		// Invalidate when QSO data, page, dimensions, or cursor change.
+		sig := fmt.Sprintf("%d|%d|%d|%d|%d", le.width, le.height, len(le.qsos), le.currentPage, le.table.Cursor())
+		if le.cachedSig == sig && le.cachedView != "" {
+			return tea.NewView(le.cachedView)
+		}
 		contentH := contentHeight(le.height)
-		inner := lipgloss.NewStyle().
-			MaxWidth(bodyW - 2).
-			Height(contentH - 2).
+		// Spacer row (reserved for future use) + table.
+		spacer := lipgloss.NewStyle().Width(bodyW).Render("")
+		tablePart := lipgloss.NewStyle().
+			MaxWidth(bodyW).
+			Height(contentH - 1).
 			Render(le.table.View())
-		return tea.NewView(drawBorderedBox(inner, bodyW))
+		le.cachedView = lipgloss.JoinVertical(lipgloss.Left, spacer, tablePart)
+		le.cachedSig = sig
+		return tea.NewView(le.cachedView)
 	}
 }
 
 // viewWithDialog renders the list view with the confirm dialog composited on top.
 func (le *LogbookEditor) viewWithDialog(bodyW int) string {
-	// Build the base list view
+	// Rebuild the table when dimensions change (resize).
+	if le.built && (le.width != le.builtW || le.height != le.builtH) {
+		le.built = false
+	}
 	if !le.built && len(le.qsos) > 0 {
 		le.buildTable()
 	}
@@ -127,26 +146,21 @@ func (le *LogbookEditor) viewWithDialog(bodyW int) string {
 	if contentH < 5 {
 		contentH = 5
 	}
-	body := drawBorderedBox(
-		lipgloss.NewStyle().
-			MaxWidth(bodyW-2).
-			Height(contentH-2).
-			Render(le.table.View()),
-		bodyW,
-	)
+	// Plain table (no border — the dialog provides its own).
+	body := lipgloss.NewStyle().
+		MaxWidth(bodyW).
+		Height(contentH).
+		Render(le.table.View())
 	if le.dialog != nil {
-		return RenderDialogOverlay(body, *le.dialog, bodyW, le.height)
+		return RenderDialogOverlay(body, *le.dialog, bodyW, contentH)
 	}
 	return body
 }
 
-func (le *LogbookEditor) viewNormalizeConfirm(bodyW int) string {
-	return confirmBoxStyle.Width(bodyW).Render(
-		lipgloss.JoinVertical(lipgloss.Left,
-			S.ConfirmTitle.Render(fmt.Sprintf("Normalize %d QSOs", len(le.mismatchQSOs))),
-			"",
-			S.ConfirmMsg.Render(fmt.Sprintf("%d unsent QSOs will be normalised.", len(le.mismatchQSOs))),
-			S.ConfirmHelp.Render("y = yes  ·  any other key = cancel"),
-		),
-	)
+// ensureDialog creates the dialog if it doesn't exist yet (idempotent).
+func (le *LogbookEditor) ensureDialog(title, message string, options ...Option) {
+	if le.dialog == nil {
+		d := NewDialog(title, message, options...)
+		le.dialog = &d
+	}
 }

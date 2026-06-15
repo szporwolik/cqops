@@ -140,15 +140,6 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return le, nil
 		}
 
-		// Normalize confirm — y=yes, anything else=cancel.
-		if le.mode == edModeConfirmNormalize {
-			if k == "y" {
-				return le, le.doNormalizeAndUpload()
-			}
-			le.mode = edModeList
-			return le, nil
-		}
-
 		// Confirm modes — route keys to the dialog with left/right navigation.
 		if le.isConfirmMode() && le.dialog != nil {
 			updated, _ := le.dialog.Update(msg)
@@ -184,11 +175,33 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return le, nil
 		}
 
-		// modeList — table handles all navigation
+		// modeList — table handles navigation; we intercept page transitions.
 		switch k {
 		case "f6", "esc":
 			le.done = true
-		case "up", "down", "left", "right", "pgup", "pgdown", "home", "end", "k", "j", "h", "l":
+		case "pgup":
+			le.goToPage(le.currentPage - 1)
+		case "pgdown":
+			le.goToPage(le.currentPage + 1)
+		case "up", "down", "left", "right", "home", "end", "k", "j", "h", "l":
+			// Before passing to table, check for page boundary overflow.
+			cursor := le.table.Cursor()
+			if k == "down" || k == "j" {
+				if cursor >= len(le.qsos)-1 && le.currentPage < le.totalPages() {
+					le.goToPage(le.currentPage + 1)
+					return le, nil
+				}
+			}
+			if k == "up" || k == "k" {
+				if cursor <= 0 && le.currentPage > 1 {
+					le.goToPage(le.currentPage - 1)
+					// Set cursor to last row of the new page.
+					if len(le.qsos) > 0 {
+						le.table.SetCursor(len(le.qsos) - 1)
+					}
+					return le, nil
+				}
+			}
 			var cmd tea.Cmd
 			le.table, cmd = le.table.Update(msg)
 			return le, cmd
@@ -239,6 +252,8 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 	mode := le.mode // capture before clearing
 	le.dialog = nil
 	switch mode {
+	case edModeConfirmNormalize:
+		return le.doNormalizeAndUpload()
 	case edModeConfirmWLSend:
 		le.mode = edModeList
 		return le.doBatchUpload()

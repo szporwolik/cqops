@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strings"
+
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
@@ -118,17 +120,24 @@ func (m DialogModel) render() string {
 		modalW = 30
 	}
 
+	// Content width inside the box: modalW minus border (2) minus padding (4) = 6.
+	contentW := modalW - 6
+
 	// Title — centered inside the modal
 	title := S.ConfirmTitle.
-		Width(modalW - 4). // inside border + padding
+		Width(contentW).
 		Align(lipgloss.Center).
 		Render(m.Title)
 
-	// Message
-	msg := S.ConfirmMsg.
-		Width(modalW - 4).
-		Align(lipgloss.Center).
-		Render(m.Message)
+	// Message — center each line individually so multi-line text aligns properly.
+	msgLines := strings.Split(m.Message, "\n")
+	for i, line := range msgLines {
+		msgLines[i] = S.ConfirmMsg.
+			Width(contentW).
+			Align(lipgloss.Center).
+			Render(line)
+	}
+	msg := lipgloss.JoinVertical(lipgloss.Left, msgLines...)
 
 	// Buttons — size only to label + padding, centered as a group
 	var btnParts []string
@@ -144,23 +153,15 @@ func (m DialogModel) render() string {
 		btnParts = append(btnParts, s.Render(" "+opt.Label+" "))
 	}
 	btns := lipgloss.JoinHorizontal(lipgloss.Center, btnParts...)
-	btns = lipgloss.NewStyle().Width(modalW - 4).Align(lipgloss.Center).Render(btns)
+	btns = lipgloss.NewStyle().Width(contentW).Align(lipgloss.Center).Render(btns)
 
-	// Hint
-	hint := S.ConfirmHint.
-		Width(modalW - 4).
-		Align(lipgloss.Center).
-		Render("←/→ select  •  enter confirm  •  esc cancel")
-
-	// Assemble modal body vertically
+	// Assemble modal body vertically (hint goes to the bottom help bar).
 	modal := lipgloss.JoinVertical(lipgloss.Top,
 		title,
 		"",
 		msg,
 		"",
 		btns,
-		"",
-		hint,
 	)
 
 	// Wrap in bordered box

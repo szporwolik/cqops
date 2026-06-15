@@ -16,18 +16,18 @@ var editorColTiers = []struct {
 	names []string
 }{
 	{[]string{"Date", "Time", "Call", "WL", "How", "Band", "Mode", "RSTs", "RSTr"}},
-	{[]string{"Date", "Time", "Call", "WL", "How", "Band", "Mode", "RSTs", "RSTr", "DXCC"}},
-	{[]string{"Date", "Time", "Call", "WL", "How", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name"}},
-	{[]string{"Date", "Time", "Call", "WL", "How", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment"}},
-	{[]string{"Date", "Time", "Call", "WL", "How", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Pwr"}},
+	{[]string{"Date", "Time", "Call", "WL", "Src", "Band", "Mode", "RSTs", "RSTr", "DXCC"}},
+	{[]string{"Date", "Time", "Call", "WL", "Src", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name"}},
+	{[]string{"Date", "Time", "Call", "WL", "Src", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment"}},
+	{[]string{"Date", "Time", "Call", "WL", "Src", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Pwr"}},
 }
 
 // editorColWidths maps column titles to minimum widths.
 var editorColWidths = map[string]int{
-	"Date": 10, "Time": 8, "Call": 10, "WL": 3, "How": 4,
+	"Date": 10, "Time": 8, "Call": 10, "WL": 3, "Src": 3,
 	"Band": 5, "Mode": 5, "Sub": 4, "RSTs": 4, "RSTr": 4,
 	"DXCC": 6, "Name": 8, "Grid": 6, "QTH": 8,
-	"Comment": 12, "Dist": 5, "Pwr": 4,
+	"Comment": 8, "Dist": 5, "Pwr": 4,
 }
 
 // =============================================================================
@@ -50,13 +50,18 @@ func editorColValue(col string, q *qso.QSO) string {
 			return "N"
 		}
 		return ""
-	case "How":
+	case "Src":
 		switch q.Source {
 		case "wsjtx":
-			return "WSJT"
+			return "WS"
 		case "manual":
-			return "Man"
+			return "M"
+		case "wavelog":
+			return "WL"
 		default:
+			if len(q.Source) > 3 {
+				return q.Source[:3]
+			}
 			return q.Source
 		}
 	case "Band":
@@ -108,8 +113,8 @@ func (le *LogbookEditor) buildTable() {
 		h = 24
 	}
 	// Dynamic viewport: fill available vertical space. Terminal height minus
-	// status(1), tabs(1), help(1), border(2), spacer(1) = h-6.
-	tableH := h - 7
+	// status(1) + tabs(3) + help(1) = 5 fixed rows, plus 1 spacer row above table.
+	tableH := h - 6
 	if tableH < 5 {
 		tableH = 5
 	}
@@ -129,6 +134,10 @@ func (le *LogbookEditor) buildTable() {
 			names = t.names
 		}
 	}
+	// Fall back to the narrowest tier when nothing fits (small terminal).
+	if len(names) == 0 && len(editorColTiers) > 0 {
+		names = editorColTiers[0].names
+	}
 
 	// Build columns from selected tier.
 	var cols []table.Column
@@ -146,11 +155,11 @@ func (le *LogbookEditor) buildTable() {
 			var share int
 			switch cols[i].Title {
 			case "Comment":
-				share = extra * 5 / 10
+				share = extra * 2 / 10
 			case "Name":
 				share = extra * 2 / 10
 			case "QTH":
-				share = extra / 10
+				share = extra * 2 / 10
 			case "Call":
 				share = extra / 10
 			}
@@ -188,4 +197,7 @@ func (le *LogbookEditor) buildTable() {
 	t.Focus()
 	le.table = t
 	le.built = true
+	le.builtW = w
+	le.builtH = h
+	le.cachedSig = "" // invalidate view cache — table was rebuilt
 }
