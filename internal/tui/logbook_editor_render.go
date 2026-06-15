@@ -66,6 +66,8 @@ func (le *LogbookEditor) View() tea.View {
 			le.dialog = &d
 		}
 		return tea.NewView(le.viewWithDialog(bodyW))
+	case edModeWLDownloading:
+		return tea.NewView(le.viewDownloadProgress(bodyW))
 	case edModeWLDownloadResult:
 		return tea.NewView(le.viewDownloadResult(bodyW))
 	case edModeEdit:
@@ -139,6 +141,24 @@ func (le *LogbookEditor) viewDownloadResult(bodyW int) string {
 			"",
 			S.ConfirmMsg.Render(msg),
 			S.ConfirmHelp.Render("any key = back"),
+		),
+	)
+}
+
+func (le *LogbookEditor) viewDownloadProgress(bodyW int) string {
+	total := le.dlTotal
+	current := le.dlProgress
+	pct := 0
+	if total > 0 {
+		pct = current * 100 / total
+	}
+	msg := fmt.Sprintf("Downloading… %d / %d QSOs (%d%%)", current, total, pct)
+	return S.ConfirmBox.Width(bodyW).Render(
+		lipgloss.JoinVertical(lipgloss.Left,
+			S.ConfirmTitle.Render("Wavelog Download"),
+			"",
+			S.ConfirmMsg.Render(msg),
+			S.ConfirmHelp.Render("any key = abort"),
 		),
 	)
 }

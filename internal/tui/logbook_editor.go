@@ -18,6 +18,7 @@ const (
 	edModeConfirmWLSend
 	edModeConfirmNormalize
 	edModeConfirmWLDownload
+	edModeWLDownloading
 	edModeWLDownloadResult
 	edModeEdit
 )
@@ -99,6 +100,12 @@ type LogbookEditor struct {
 	wlDownloadCount   int
 	wlDownloadDupes   int
 	wlDownloadErr     string
+
+	// Batch download progress
+	dlProgress int
+	dlTotal    int
+	dlCancel   chan struct{}
+	dlMsgCh    chan editorMsg
 }
 
 // =============================================================================

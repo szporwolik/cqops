@@ -235,7 +235,12 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 				}
 			}
 		}
-		if em.dlErr != "" {
+		if em.dlDone {
+			// Download finished — handled by editor's Update; just refresh.
+			if !em.dlAborted && em.dlCount > 0 {
+				m.needRefresh = true
+			}
+		} else if em.dlErr != "" {
 			m.logbookEditor.wlDownloadErr = em.dlErr
 			m.logbookEditor.mode = edModeWLDownloadResult
 		} else if em.dlCount > 0 || em.dlLastID != 0 {

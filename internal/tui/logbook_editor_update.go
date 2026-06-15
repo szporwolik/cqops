@@ -36,6 +36,11 @@ type editorMsg struct {
 	dlDupes       int
 	dlLastID      int64
 	dlErr         string
+	// Batch download progress
+	dlProgress int
+	dlTotal    int
+	dlDone     bool
+	dlAborted  bool
 }
 
 func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -46,6 +51,39 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		le.buildTable()
 
 	case editorMsg:
+		// Batch download progress — update counter and request next message.
+		if msg.dlTotal > 0 && !msg.dlDone {
+			le.dlProgress = msg.dlProgress
+			le.dlTotal = msg.dlTotal
+			if le.mode != edModeWLDownloading {
+				le.mode = edModeWLDownloading
+			}
+			return le, le.readDownloadMsg
+		}
+
+		// Download complete (or aborted).
+		if msg.dlDone {
+			le.dlCancel = nil
+			le.dlMsgCh = nil
+			if msg.dlAborted {
+				le.wlDownloadCount = msg.dlCount
+				le.wlDownloadDupes = msg.dlDupes
+				le.wlDownloadErr = ""
+				le.mode = edModeWLDownloadResult
+				le.needsReload = true
+			} else if msg.dlErr != "" {
+				le.wlDownloadErr = msg.dlErr
+				le.mode = edModeWLDownloadResult
+			} else {
+				le.wlDownloadCount = msg.dlCount
+				le.wlDownloadDupes = msg.dlDupes
+				le.wlDownloadErr = ""
+				le.mode = edModeWLDownloadResult
+				le.needsReload = true
+			}
+			return le, nil
+		}
+
 		if msg.err != nil {
 			// error handled by caller via toast
 		}
@@ -69,6 +107,15 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyPressMsg:
 		k := msg.String()
+
+		// Download progress — any key aborts.
+		if le.mode == edModeWLDownloading {
+			if le.dlCancel != nil {
+				close(le.dlCancel)
+				le.dlCancel = nil
+			}
+			return le, nil
+		}
 
 		// Download result — any key dismisses.
 		if le.mode == edModeWLDownloadResult {
@@ -227,138 +274,204 @@ func (le *LogbookEditor) doSave() tea.Cmd {
 }
 
 // doWavelogDownload fetches contacts from Wavelog, deduplicates against local DB,
-// and inserts new QSOs. Local duplicates are replaced with the Wavelog version.
+// and inserts new QSOs in batches. Progress is reported via editorMsg so the UI
+// can show a live counter. The user can abort by pressing any key.
 func (le *LogbookEditor) doWavelogDownload() tea.Cmd {
 	url, key, sid := le.wlURL, le.wlKey, le.wlStationID
 	fetchFromID := le.wlLastFetchedID
-	db := le.db
+
+	// Channels for progress and cancellation.
+	le.dlMsgCh = make(chan editorMsg, 4)
+	le.dlCancel = make(chan struct{})
 
 	applog.InfoDetail("Wavelog: starting contacts download",
 		fmt.Sprintf("url=%s station_id=%s from_id=%d", url, sid, fetchFromID))
 
-	return func() tea.Msg {
-		result, err := wavelog.FetchContacts(url, key, sid, fetchFromID)
-		if err != nil {
-			applog.ErrorDetail("Wavelog: contacts download failed",
-				fmt.Sprintf("url=%s station_id=%s from_id=%d error=%v", url, sid, fetchFromID, err))
-			return editorMsg{dlErr: err.Error()}
+	// Start the download goroutine.
+	go le.runDownload(url, key, sid, fetchFromID)
+
+	// Return a Cmd that reads the first progress message.
+	return le.readDownloadMsg
+}
+
+// readDownloadMsg reads the next message from the download channel.
+// Returns the message to the Bubble Tea runtime for processing.
+func (le *LogbookEditor) readDownloadMsg() tea.Msg {
+	msg, ok := <-le.dlMsgCh
+	if !ok {
+		return editorMsg{dlDone: true}
+	}
+	return msg
+}
+
+// runDownload performs the actual HTTP fetch, ADIF parse, and batched insert.
+// Progress messages are sent on le.dlMsgCh. The goroutine checks le.dlCancel
+// between batches to support user abort.
+func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
+	defer close(le.dlMsgCh)
+
+	const batchSize = 50
+	const maxPerDownload = 50
+	db := le.db
+
+	result, err := wavelog.FetchContacts(url, key, sid, fetchFromID)
+	if err != nil {
+		applog.ErrorDetail("Wavelog: contacts download failed",
+			fmt.Sprintf("url=%s station_id=%s from_id=%d error=%v", url, sid, fetchFromID, err))
+		le.dlMsgCh <- editorMsg{dlErr: err.Error()}
+		return
+	}
+
+	if result.ADIF == "" || result.ExportedQSOs == 0 {
+		applog.Info("Wavelog: no new contacts to download")
+		le.dlMsgCh <- editorMsg{dlCount: 0, dlLastID: result.LastFetchedID(), dlDone: true}
+		return
+	}
+
+	// Parse all QSOs from ADIF first (fast, in-memory).
+	var allQSOS []*qso.QSO
+	s := adif.NewScanner(strings.NewReader(result.ADIF))
+	for s.Scan() {
+		if s.IsHeader() {
+			continue
+		}
+		r := s.Record()
+		qs := qso.NewQSO()
+		if v := r[adifield.CALL]; v != "" {
+			qs.Call = strings.ToUpper(v)
+		}
+		if v := r[adifield.BAND]; v != "" {
+			qs.Band = qso.NormalizeBand(v)
+		}
+		if v := r[adifield.MODE]; v != "" {
+			qs.Mode = strings.ToUpper(v)
+		}
+		if v := r[adifield.SUBMODE]; v != "" {
+			qs.Submode = strings.ToUpper(v)
+		}
+		if v := r[adifield.QSO_DATE]; v != "" {
+			qs.QSODate = v
+		}
+		if v := r[adifield.TIME_ON]; v != "" {
+			qs.TimeOn = v
+		}
+		if v := r[adifield.TIME_OFF]; v != "" {
+			qs.TimeOff = v
+		}
+		if v := r[adifield.FREQ]; v != "" {
+			fmt.Sscanf(v, "%f", &qs.Freq)
+		}
+		if v := r[adifield.FREQ_RX]; v != "" {
+			fmt.Sscanf(v, "%f", &qs.FreqRx)
+		}
+		if v := r[adifield.RST_SENT]; v != "" {
+			qs.RSTSent = v
+		}
+		if v := r[adifield.RST_RCVD]; v != "" {
+			qs.RSTRcvd = v
+		}
+		if v := r[adifield.GRIDSQUARE]; v != "" {
+			qs.GridSquare = v
+		}
+		if v := r[adifield.NAME]; v != "" {
+			qs.Name = v
+		}
+		if v := r[adifield.QTH]; v != "" {
+			qs.QTH = v
+		}
+		if v := r[adifield.COUNTRY]; v != "" {
+			qs.Country = v
+		}
+		if v := r[adifield.COMMENT]; v != "" {
+			qs.Comment = v
+		}
+		if v := r[adifield.NOTES]; v != "" {
+			qs.Notes = v
+		}
+		if v := r[adifield.TX_PWR]; v != "" {
+			qs.TXPower = v
+		}
+		if v := r[adifield.SOTA_REF]; v != "" {
+			qs.SOTARef = v
+		}
+		if v := r[adifield.POTA_REF]; v != "" {
+			qs.POTARef = v
+		}
+		if v := r[adifield.WWFF_REF]; v != "" {
+			qs.WWFFRef = v
+		}
+		if v := r[adifield.IOTA]; v != "" {
+			qs.IOTA = v
+		}
+		if v := r[adifield.MY_SOTA_REF]; v != "" {
+			qs.MySOTARef = v
+		}
+		if v := r[adifield.MY_POTA_REF]; v != "" {
+			qs.MyPOTARef = v
+		}
+		if v := r[adifield.MY_WWFF_REF]; v != "" {
+			qs.MyWWFFRef = v
+		}
+		if v := r[adifield.STATION_CALLSIGN]; v != "" {
+			qs.StationCallsign = strings.ToUpper(v)
+		}
+		if v := r[adifield.OPERATOR]; v != "" {
+			qs.Operator = strings.ToUpper(v)
+		}
+		if v := r[adifield.MY_GRIDSQUARE]; v != "" {
+			qs.MyGridSquare = v
+		}
+		if v := r[adifield.MY_RIG]; v != "" {
+			qs.MyRig = v
+		}
+		if v := r[adifield.MY_ANTENNA]; v != "" {
+			qs.MyAntenna = v
+		}
+		if v := r[adifield.DISTANCE]; v != "" {
+			fmt.Sscanf(v, "%f", &qs.Distance)
+		}
+		qs.Source = "wavelog"
+		qs.WavelogUploaded = "yes"
+
+		if qs.Call == "" {
+			continue
+		}
+		allQSOS = append(allQSOS, qs)
+	}
+
+	total := len(allQSOS)
+	if total == 0 {
+		le.dlMsgCh <- editorMsg{dlCount: 0, dlLastID: result.LastFetchedID(), dlDone: true}
+		return
+	}
+
+	// Process in batches, stopping at maxPerDownload QSOs per session.
+	// lastfetchedid is NOT advanced when the limit is hit — the next
+	// download re-fetches from the same point and skips already-inserted
+	// QSOs as duplicates.
+	var inserted, dupes int
+	hitLimit := false
+	for i := 0; i < total && inserted < maxPerDownload; i += batchSize {
+		// Check for user abort between batches.
+		select {
+		case <-le.dlCancel:
+			le.dlMsgCh <- editorMsg{dlCount: inserted, dlDupes: dupes, dlAborted: true, dlDone: true}
+			return
+		default:
 		}
 
-		if result.ADIF == "" || result.ExportedQSOs == 0 {
-			applog.Info("Wavelog: no new contacts to download")
-			return editorMsg{dlCount: 0, dlLastID: result.LastFetchedID()}
+		end := i + batchSize
+		if end > total {
+			end = total
 		}
+		batch := allQSOS[i:end]
 
-		// Parse ADIF records — same pattern as parseWSJTXADIF.
-		var inserted, dupes int
-		s := adif.NewScanner(strings.NewReader(result.ADIF))
-		for s.Scan() {
-			if s.IsHeader() {
-				continue
-			}
-			r := s.Record()
-			qs := qso.NewQSO()
-			if v := r[adifield.CALL]; v != "" {
-				qs.Call = strings.ToUpper(v)
-			}
-			if v := r[adifield.BAND]; v != "" {
-				qs.Band = qso.NormalizeBand(v)
-			}
-			if v := r[adifield.MODE]; v != "" {
-				qs.Mode = strings.ToUpper(v)
-			}
-			if v := r[adifield.SUBMODE]; v != "" {
-				qs.Submode = strings.ToUpper(v)
-			}
-			if v := r[adifield.QSO_DATE]; v != "" {
-				qs.QSODate = v
-			}
-			if v := r[adifield.TIME_ON]; v != "" {
-				qs.TimeOn = v
-			}
-			if v := r[adifield.TIME_OFF]; v != "" {
-				qs.TimeOff = v
-			}
-			if v := r[adifield.FREQ]; v != "" {
-				fmt.Sscanf(v, "%f", &qs.Freq)
-			}
-			if v := r[adifield.FREQ_RX]; v != "" {
-				fmt.Sscanf(v, "%f", &qs.FreqRx)
-			}
-			if v := r[adifield.RST_SENT]; v != "" {
-				qs.RSTSent = v
-			}
-			if v := r[adifield.RST_RCVD]; v != "" {
-				qs.RSTRcvd = v
-			}
-			if v := r[adifield.GRIDSQUARE]; v != "" {
-				qs.GridSquare = v
-			}
-			if v := r[adifield.NAME]; v != "" {
-				qs.Name = v
-			}
-			if v := r[adifield.QTH]; v != "" {
-				qs.QTH = v
-			}
-			if v := r[adifield.COUNTRY]; v != "" {
-				qs.Country = v
-			}
-			if v := r[adifield.COMMENT]; v != "" {
-				qs.Comment = v
-			}
-			if v := r[adifield.NOTES]; v != "" {
-				qs.Notes = v
-			}
-			if v := r[adifield.TX_PWR]; v != "" {
-				qs.TXPower = v
-			}
-			if v := r[adifield.SOTA_REF]; v != "" {
-				qs.SOTARef = v
-			}
-			if v := r[adifield.POTA_REF]; v != "" {
-				qs.POTARef = v
-			}
-			if v := r[adifield.WWFF_REF]; v != "" {
-				qs.WWFFRef = v
-			}
-			if v := r[adifield.IOTA]; v != "" {
-				qs.IOTA = v
-			}
-			if v := r[adifield.MY_SOTA_REF]; v != "" {
-				qs.MySOTARef = v
-			}
-			if v := r[adifield.MY_POTA_REF]; v != "" {
-				qs.MyPOTARef = v
-			}
-			if v := r[adifield.MY_WWFF_REF]; v != "" {
-				qs.MyWWFFRef = v
-			}
-			if v := r[adifield.STATION_CALLSIGN]; v != "" {
-				qs.StationCallsign = strings.ToUpper(v)
-			}
-			if v := r[adifield.OPERATOR]; v != "" {
-				qs.Operator = strings.ToUpper(v)
-			}
-			if v := r[adifield.MY_GRIDSQUARE]; v != "" {
-				qs.MyGridSquare = v
-			}
-			if v := r[adifield.MY_RIG]; v != "" {
-				qs.MyRig = v
-			}
-			if v := r[adifield.MY_ANTENNA]; v != "" {
-				qs.MyAntenna = v
-			}
-			if v := r[adifield.DISTANCE]; v != "" {
-				fmt.Sscanf(v, "%f", &qs.Distance)
-			}
-			qs.Source = "wavelog"
-			qs.WavelogUploaded = "yes"
-
-			if qs.Call == "" {
-				continue
+		for _, qs := range batch {
+			if inserted >= maxPerDownload {
+				hitLimit = true
+				break
 			}
 
-			// Check for duplicate in local DB
 			if existingID := store.FindQSOByKey(db, qs.Call, qs.Band, qs.Mode, qs.QSODate, qs.TimeOn); existingID != 0 {
 				applog.Info("Wavelog: replacing local duplicate",
 					"local_id", existingID, "call", qs.Call, "band", qs.Band, "date", qs.QSODate)
@@ -375,13 +488,33 @@ func (le *LogbookEditor) doWavelogDownload() tea.Cmd {
 			inserted++
 		}
 
-		applog.Info("Wavelog: contacts download complete",
-			"inserted", inserted, "dupes_replaced", dupes, "last_id", result.LastFetchedID())
-
-		return editorMsg{
-			dlCount:  inserted,
-			dlDupes:  dupes,
-			dlLastID: result.LastFetchedID(),
+		if hitLimit {
+			break
 		}
+
+		// Send progress.
+		le.dlMsgCh <- editorMsg{dlProgress: inserted + dupes, dlTotal: total}
+	}
+
+	if hitLimit {
+		// Don't advance lastfetchedid — more QSOs remain on the server.
+		applog.Info("Wavelog: download limit reached",
+			"inserted", inserted, "dupes_replaced", dupes, "limit", maxPerDownload)
+		le.dlMsgCh <- editorMsg{
+			dlCount: inserted,
+			dlDupes: dupes,
+			dlDone:  true,
+		}
+		return
+	}
+
+	applog.Info("Wavelog: contacts download complete",
+		"inserted", inserted, "dupes_replaced", dupes, "last_id", result.LastFetchedID())
+
+	le.dlMsgCh <- editorMsg{
+		dlCount:  inserted,
+		dlDupes:  dupes,
+		dlLastID: result.LastFetchedID(),
+		dlDone:   true,
 	}
 }
