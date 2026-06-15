@@ -122,6 +122,10 @@ func (l *Listener) IsActive() bool {
 // callbacks. The gen parameter is the listener generation captured at Start
 // time — callbacks are only invoked if the generation is still current and
 // the listener is active.
+//
+// Callbacks run inline (not in separate goroutines) because they are trivial
+// field assignments under a lock — spawning a goroutine per message would
+// create massive scheduler overhead at typical FT8 message rates (50+/cycle).
 func (l *Listener) eventLoop(gen uint64, msgCh chan interface{}, errCh chan error) {
 	for {
 		select {
@@ -133,32 +137,24 @@ func (l *Listener) eventLoop(gen uint64, msgCh chan interface{}, errCh chan erro
 			}
 			switch m := msg.(type) {
 			case wsjtx.HeartbeatMessage:
-				applog.Debug("WSJT-X: heartbeat", "id", m.Id, "version", m.Version)
+				// No callback needed — heartbeat is informational.
 			case wsjtx.StatusMessage:
-				onStatus := l.snapshotOnStatus(gen)
-				if onStatus != nil {
-					go onStatus(m.DxCall, m.DxGrid, m.DialFrequency, m.Mode, m.SubMode, m.Report)
+				if onStatus := l.snapshotOnStatus(gen); onStatus != nil {
+					onStatus(m.DxCall, m.DxGrid, m.DialFrequency, m.Mode, m.SubMode, m.Report)
 				}
 			case wsjtx.DecodeMessage:
-				onStatus := l.snapshotOnStatus(gen)
-				if onStatus != nil {
-					go onStatus("", "", 0, "", "", "")
-				}
+				// Decode messages carry no callsign/freq data — just mark activity.
+				// No callback needed; the status message handles field updates.
 			case wsjtx.LoggedAdifMessage:
 				applog.InfoDetail("WSJT-X: logged ADIF", m.Adif)
-				onADIF := l.snapshotOnADIF(gen)
-				if onADIF != nil {
-					go onADIF(m.Adif)
-				} else {
-					applog.Warn("WSJT-X: OnADIF callback is nil, ADIF not auto-logged")
+				if onADIF := l.snapshotOnADIF(gen); onADIF != nil {
+					onADIF(m.Adif)
 				}
 			case wsjtx.QsoLoggedMessage:
 				applog.InfoDetail("WSJT-X: QSO logged",
 					fmt.Sprintf("dx=%s dxGrid=%s freq=%d mode=%s", m.DxCall, m.DxGrid, m.TxFrequency, m.Mode))
 			case wsjtx.CloseMessage:
 				applog.Info("WSJT-X: close")
-			default:
-				applog.Debug("WSJT-X: unknown msg", "type", fmt.Sprintf("%T", msg))
 			}
 			select {
 			case l.Events <- Event{Msg: msg}:
