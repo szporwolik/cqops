@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -256,8 +257,11 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	m.help = help.New()
 
 	m.recentQSOs = NewRecentQSOs(initialQSOS)
+	transport := &imageTransport{base: http.DefaultTransport}
 	m.imageViewer = pictureurl.NewWithConfig(pictureurl.Config{
 		CacheLimit: 4,
+		UserAgent:  "CQOPS/1.0 (ham-radio-logger)",
+		HTTPClient: &http.Client{Transport: transport, Timeout: 15 * time.Second},
 	})
 	m.mapView = newMapRenderer()
 	return m
@@ -651,3 +655,23 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 }
 
 // formPartnerData builds a CallData from the current QSO form fields.
+
+// imageTransport wraps an http.RoundTripper and strips non-image Content-Type
+// headers from responses. Some image hosts (e.g. older QRZ CDN) serve PNG files
+// as application/octet-stream, which pictureurl rejects. Stripping the header
+// lets Go's image decoder identify the format from magic bytes instead.
+type imageTransport struct {
+	base http.RoundTripper
+}
+
+func (t *imageTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.base.RoundTrip(req)
+	if err != nil {
+		return resp, err
+	}
+	ct := resp.Header.Get("Content-Type")
+	if ct != "" && !strings.HasPrefix(ct, "image/") {
+		resp.Header.Del("Content-Type")
+	}
+	return resp, nil
+}

@@ -5,6 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/szporwolik/cqops/internal/applog"
 )
 
 // ── Option ──
@@ -79,9 +80,11 @@ func (m DialogModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				Confirmed: true,
 				Value:     m.Options[m.selected].Value,
 			}
+			applog.Debug("Dialog: confirmed", "value", m.Result.Value)
 		case "esc":
 			m.done = true
 			m.Result = Result{Cancelled: true}
+			applog.Debug("Dialog: cancelled via esc")
 		case "q":
 			// Only quit on 'q' if no danger option is focused
 			if !m.Options[m.selected].Danger {

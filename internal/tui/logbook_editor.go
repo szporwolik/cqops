@@ -3,7 +3,6 @@ package tui
 import (
 	"database/sql"
 
-	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/table"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -76,32 +75,33 @@ var qefLabels = []string{
 }
 
 type LogbookEditor struct {
-	db              *sql.DB
-	qsos            []qso.QSO
-	table           table.Model
-	mode            editorMode
-	dialog          *DialogModel // confirm dialog with left/right navigation
-	editing         *qso.QSO
-	fields          [qefCount]textinput.Model
-	focus           qsoEditField
-	done            bool
-	needsReload     bool
-	built           bool
-	wlSkipped       int
-	wlSkipDetail    string
-	width           int
-	height          int
-	wlURL           string
-	wlKey           string
-	wlStationID     string
-	wlLastFetchedID int64
-	logStationOp    string
-	logStationGrid  string
-	mismatchQSOs    []qso.QSO
-	mismatchFields  []string
-	wlDownloadCount int
-	wlDownloadDupes int
-	wlDownloadErr   string
+	db               *sql.DB
+	qsos             []qso.QSO
+	table            table.Model
+	mode             editorMode
+	dialog           *DialogModel // confirm dialog with left/right navigation
+	editing          *qso.QSO
+	fields           [qefCount]textinput.Model
+	focus            qsoEditField
+	done             bool
+	needsReload      bool
+	built            bool
+	wlSkipped        int
+	wlSkipDetail     string
+	width            int
+	height           int
+	wlURL            string
+	wlKey            string
+	wlStationID      string
+	wlLastFetchedID  int64
+	logStationOp     string
+	logStationGrid   string
+	mismatchQSOs     []qso.QSO
+	mismatchFields   []string
+	wlDownloadCount  int
+	wlDownloadDupes  int
+	wlDownloadFailed int
+	wlDownloadErr    string
 
 	// Pagination — only the current page is loaded from DB.
 	currentPage int
@@ -109,13 +109,12 @@ type LogbookEditor struct {
 	pageSize    int
 
 	// Batch download progress
-	dlProgress  int
-	dlTotal     int
-	dlCurrent   int // QSOs processed so far
-	dlCancel    chan struct{}
-	dlMsgCh     chan editorMsg
-	dlSpinner   spinner.Model
-	dlSpinnerOn bool // true when spinner is active (download in progress)
+	dlActive   bool // true while download goroutine is running
+	dlProgress int
+	dlTotal    int
+	dlCurrent  int // QSOs processed so far
+	dlCancel   chan struct{}
+	dlMsgCh    chan editorMsg
 
 	// View cache — avoids rebuilding the table on every frame with large QSO sets.
 	cachedView string
@@ -130,7 +129,6 @@ type LogbookEditor struct {
 
 func NewLogbookEditor(db *sql.DB, wlURL, wlKey, wlStationID string, wlLastFetchedID int64, logStationOp, logStationGrid string) *LogbookEditor {
 	le := &LogbookEditor{db: db, mode: edModeList, wlURL: wlURL, wlKey: wlKey, wlStationID: wlStationID, wlLastFetchedID: wlLastFetchedID, logStationOp: logStationOp, logStationGrid: logStationGrid}
-	le.dlSpinner = spinner.New(spinner.WithSpinner(spinner.Dot))
 	for i := qsoEditField(0); i < qefCount; i++ {
 		ti := newTextinput()
 		ti.CharLimit = 40
@@ -226,15 +224,7 @@ func (le *LogbookEditor) loadPage() {
 
 // isDownloadActive returns true when a Wavelog download is in progress.
 func (le *LogbookEditor) isDownloadActive() bool {
-	return le.mode == edModeWLDownloading
-}
-
-// spinCmd returns a spinner.Tick command when a download is active.
-func (le *LogbookEditor) spinCmd() tea.Cmd {
-	if le.mode == edModeWLDownloading {
-		return le.dlSpinner.Tick
-	}
-	return nil
+	return le.dlActive
 }
 func (le *LogbookEditor) totalPages() int {
 	if le.pageSize < 1 || le.totalCount < 1 {

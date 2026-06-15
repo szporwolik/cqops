@@ -240,17 +240,27 @@ func (m *Model) renderCallbookRows(d *qrz.CallData, maxW int) string {
 		add("Callsign", link)
 	}
 	add("Name", d.Name)
-	add("Grid", d.Grid)
+	if d.Grid != "" {
+		add("Grid", osc8Link("http://www.levinecentral.com/ham/grid_square.php?Grid="+d.Grid, d.Grid))
+	} else {
+		add("Grid", "")
+	}
 	add("QTH", d.QTH)
 	add("Country", d.Country)
 	add("State", d.State)
 	add("County", d.County)
 	add("Zip", d.Zip)
 	add("Class", d.Class)
-	add("Email", d.Email)
+	if d.Email != "" {
+		add("Email", osc8Link("mailto:"+d.Email, d.Email))
+	} else {
+		add("Email", "")
+	}
 	add("URL", d.URL)
 	if d.Lat != "" || d.Lon != "" {
-		add("Coordinates", strings.TrimSpace(d.Lat+" "+d.Lon))
+		coordText := strings.TrimSpace(d.Lat + " " + d.Lon)
+		coordURL := fmt.Sprintf("https://geohack.toolforge.org/geohack.php?params=%s_N_%s_E_type:town", d.Lat, d.Lon)
+		add("Coordinates", osc8Link(coordURL, coordText))
 	}
 	add("DXCC", d.DXCC)
 	add("CQ Zone", d.CQZone)

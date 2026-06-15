@@ -16,6 +16,8 @@ func (le *LogbookEditor) doBatchUpload() tea.Cmd {
 	logOp := le.logStationOp
 	logGrid := le.logStationGrid
 
+	applog.Info("Wavelog: batch upload starting", "total_qsos", len(le.qsos))
+
 	// Collect unsent QSOs, skip those with missing required fields.
 	var unsent []qso.QSO
 	var skipped int
@@ -45,10 +47,13 @@ func (le *LogbookEditor) doBatchUpload() tea.Cmd {
 		}
 	}
 	if len(unsent) == 0 {
+		applog.Info("Wavelog: batch upload — all already sent")
 		return func() tea.Msg {
 			return editorMsg{wlOK: true, wlCall: "all sent", err: nil}
 		}
 	}
+
+	applog.Info("Wavelog: batch upload — unsent QSOs", "unsent", len(unsent), "skipped", skipped)
 
 	// Detect mismatches against Wavelog station / logbook station defaults
 	var mismatch []qso.QSO

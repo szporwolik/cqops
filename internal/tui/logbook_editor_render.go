@@ -5,6 +5,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/szporwolik/cqops/internal/applog"
 )
 
 // =============================================================================
@@ -19,6 +20,8 @@ func (le *LogbookEditor) View() tea.View {
 	if bodyW < 30 {
 		bodyW = 30
 	}
+
+	applog.Debug("LogEditor: View called", "mode", le.mode, "dlActive", le.dlActive)
 
 	switch le.mode {
 	case edModeConfirmDelete:
@@ -74,25 +77,37 @@ func (le *LogbookEditor) View() tea.View {
 		return tea.NewView(le.viewWithDialog(bodyW))
 
 	case edModeWLDownloading:
-		if le.dlMsgCh == nil {
+		if !le.dlActive {
+			// Download already completed but mode not yet advanced — show results.
 			le.mode = edModeList
 			le.dialog = nil
 		} else {
-			spin := le.dlSpinner.View()
-			msg := spin + " Downloading from Wavelog…"
-			if le.dlCurrent > 0 {
-				msg = fmt.Sprintf("%s Processing QSO %d", spin, le.dlCurrent)
+			msg := "Downloading from Wavelog…"
+			if le.dlCurrent > 0 && le.dlTotal > 0 {
+				pct := le.dlCurrent * 100 / le.dlTotal
+				msg = fmt.Sprintf("Processing QSO %d / %d (%d%%)",
+					le.dlCurrent, le.dlTotal, pct)
 			}
-			le.ensureDialog("Wavelog Download", msg,
-				Option{Label: "Abort", Value: "abort"},
-			)
+			applog.Debug("LogEditor: download dialog update", "dlCurrent", le.dlCurrent, "dlTotal", le.dlTotal)
+			// Update message every frame so it reflects latest progress.
+			if le.dialog == nil {
+				d := NewDialog("Wavelog Download", msg,
+					Option{Label: "Abort", Value: "abort"},
+				)
+				le.dialog = &d
+			} else {
+				le.dialog.Message = msg
+			}
 		}
 		return tea.NewView(le.viewWithDialog(bodyW))
 
 	case edModeWLDownloadResult:
 		msg := fmt.Sprintf("Downloaded %d QSOs.", le.wlDownloadCount)
 		if le.wlDownloadDupes > 0 {
-			msg += fmt.Sprintf("\n%d already in logbook, skipped.", le.wlDownloadDupes)
+			msg += fmt.Sprintf("\n%d duplicates skipped.", le.wlDownloadDupes)
+		}
+		if le.wlDownloadFailed > 0 {
+			msg += fmt.Sprintf("\n%d failed (DB locked — try again).", le.wlDownloadFailed)
 		}
 		if le.wlDownloadErr != "" {
 			msg = "Download failed: " + le.wlDownloadErr
@@ -101,6 +116,7 @@ func (le *LogbookEditor) View() tea.View {
 			Option{Label: "OK", Value: "ok"},
 		)
 		return tea.NewView(le.viewWithDialog(bodyW))
+
 	case edModeEdit:
 		contentH := contentHeight(le.height)
 		if contentH < 10 {
@@ -147,11 +163,13 @@ func (le *LogbookEditor) viewWithDialog(bodyW int) string {
 	if contentH < 5 {
 		contentH = 5
 	}
-	// Plain table (no border — the dialog provides its own).
-	body := lipgloss.NewStyle().
+	// Spacer row + table (no border — the dialog provides its own).
+	spacer := lipgloss.NewStyle().Width(bodyW).Render("")
+	tablePart := lipgloss.NewStyle().
 		MaxWidth(bodyW).
-		Height(contentH).
+		Height(contentH - 1).
 		Render(le.table.View())
+	body := lipgloss.JoinVertical(lipgloss.Left, spacer, tablePart)
 	if le.dialog != nil {
 		return RenderDialogOverlay(body, *le.dialog, bodyW, contentH)
 	}
@@ -163,5 +181,6 @@ func (le *LogbookEditor) ensureDialog(title, message string, options ...Option) 
 	if le.dialog == nil {
 		d := NewDialog(title, message, options...)
 		le.dialog = &d
+		applog.Debug("LogEditor: dialog shown", "title", title, "options", len(options))
 	}
 }

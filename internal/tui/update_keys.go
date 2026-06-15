@@ -32,6 +32,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			Option{Label: "Quit", Value: "quit"},
 			Option{Label: "Cancel", Value: "cancel"},
 		)
+		applog.Debug("App: quit dialog shown")
 		m.confirm = &dlg
 		m.screen = screenQSO
 		return nil, true

@@ -188,6 +188,14 @@ func (m *Model) handlePartnerUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 }
 
 func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	// Block all non-editor keys during full-screen operations (download).
+	if m.logbookEditor.isDownloadActive() {
+		if _, ok := msg.(tea.KeyPressMsg); ok {
+			_, editorCmd := m.logbookEditor.Update(msg)
+			cmd = tea.Batch(cmd, editorCmd)
+			return m, cmd
+		}
+	}
 	// Detect resize — pageSize depends on terminal height, so reload.
 	oldW, oldH := m.logbookEditor.width, m.logbookEditor.height
 	m.logbookEditor.width = m.width
@@ -195,7 +203,9 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 	if m.width != oldW || m.height != oldH {
 		m.logbookEditor.needsReload = true
 	}
+	applog.Debug("LogEditor: handleUpdate BEFORE", "mode", m.logbookEditor.mode, "dlActive", m.logbookEditor.isDownloadActive())
 	_, editorCmd := m.logbookEditor.Update(msg)
+	applog.Debug("LogEditor: handleUpdate AFTER", "mode", m.logbookEditor.mode, "dlActive", m.logbookEditor.isDownloadActive())
 	if em, ok := msg.(editorMsg); ok {
 		if em.toastWarn != "" {
 			m.toasts.Warn(em.toastWarn)
@@ -246,19 +256,13 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 			}
 		}
 		if em.dlDone {
-			// Download finished — handled by editor's Update; refresh and save cursor.
+			// Download finished — editor's Update already set wlDownloadCount/Dupes.
 			if !em.dlAborted && em.dlCount > 0 {
 				m.needRefresh = true
 			}
 		} else if em.dlErr != "" {
 			m.logbookEditor.wlDownloadErr = em.dlErr
 			m.logbookEditor.mode = edModeWLDownloadResult
-		} else if em.dlCount > 0 || em.dlLastID != 0 {
-			m.logbookEditor.wlDownloadCount = em.dlCount
-			m.logbookEditor.wlDownloadDupes = em.dlDupes
-			m.logbookEditor.wlDownloadErr = ""
-			m.logbookEditor.mode = edModeWLDownloadResult
-			m.needRefresh = true
 		}
 	}
 	if m.logbookEditor.needsReload {

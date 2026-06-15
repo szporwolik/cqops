@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	adif "github.com/farmergreg/adif/v5"
@@ -35,6 +36,7 @@ type editorMsg struct {
 	err        error
 	dlCount    int
 	dlDupes    int
+	dlFailed   int
 	dlLastID   int64
 	dlErr      string
 	// Batch download progress
@@ -47,12 +49,6 @@ type editorMsg struct {
 }
 
 func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	// Spinner tick — always process when download is active.
-	var spinCmd tea.Cmd
-	if le.mode == edModeWLDownloading {
-		le.dlSpinner, spinCmd = le.dlSpinner.Update(msg)
-	}
-
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		le.width = msg.Width
@@ -60,22 +56,22 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		le.buildTable()
 
 	case editorMsg:
-		// Batch download progress — update counter and request next message.
-		if !msg.dlDone && msg.dlErr == "" {
+		// Batch download progress — only when a download is actually active.
+		if le.dlActive && !msg.dlDone && msg.dlErr == "" {
 			le.dlProgress = msg.dlProgress
 			le.dlTotal = msg.dlTotal
 			le.dlCurrent = msg.dlCount
 			if le.mode != edModeWLDownloading {
 				le.mode = edModeWLDownloading
 			}
-			return le, tea.Batch(le.readDownloadMsg, le.spinCmd())
+			return le, le.readDownloadMsg
 		}
 
 		// Download complete (or aborted).
-		if msg.dlDone {
+		if le.dlActive && msg.dlDone {
+			le.dlActive = false
 			le.dlCancel = nil
-			le.dlMsgCh = nil
-			le.dialog = nil // clear stale "Abort" dialog so results can render
+			le.dialog = nil // clear stale dialog so results can render
 			if msg.dlAborted {
 				le.wlDownloadCount = msg.dlCount
 				le.wlDownloadDupes = msg.dlDupes
@@ -88,6 +84,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				le.wlDownloadCount = msg.dlCount
 				le.wlDownloadDupes = msg.dlDupes
+				le.wlDownloadFailed = msg.dlFailed
 				le.wlDownloadErr = ""
 				le.mode = edModeWLDownloadResult
 				le.needsReload = true
@@ -120,7 +117,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		k := msg.String()
 
 		// Download progress — route keys to the dialog (Abort button).
-		if le.mode == edModeWLDownloading && le.dialog != nil {
+		if le.dlActive && le.dialog != nil {
 			updated, _ := le.dialog.Update(msg)
 			d := updated.(DialogModel)
 			*le.dialog = d
@@ -130,9 +127,10 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					close(le.dlCancel)
 					le.dlCancel = nil
 				}
-				le.dlMsgCh = nil
+				// Don't touch dlMsgCh — the goroutine needs it to send the
+				// final dlDone message.  The editorMsg handler will clean up.
 			}
-			return le, le.spinCmd()
+			return le, le.readDownloadMsg
 		}
 
 		// Download result — route keys to the dialog (OK button).
@@ -250,7 +248,12 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	return le, spinCmd
+	// During download, always keep the channel reader alive.  Other messages
+	// (ticks, flrig polls, etc.) would otherwise replace readDownloadMsg.
+	if le.dlActive {
+		return le, le.readDownloadMsg
+	}
+	return le, nil
 }
 
 func (le *LogbookEditor) doConfirm() tea.Cmd {
@@ -258,6 +261,7 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 		return nil
 	}
 	mode := le.mode // capture before clearing
+	applog.Debug("LogEditor: dialog response", "mode", mode, "value", le.dialog.Result.Value)
 	le.dialog = nil
 	switch mode {
 	case edModeConfirmNormalize:
@@ -339,6 +343,7 @@ func (le *LogbookEditor) doWavelogDownload() tea.Cmd {
 	// Channels for progress and cancellation.
 	le.dlMsgCh = make(chan editorMsg, 4)
 	le.dlCancel = make(chan struct{})
+	le.dlActive = true
 
 	applog.InfoDetail("Wavelog: starting contacts download",
 		fmt.Sprintf("url=%s station_id=%s from_id=%d", url, sid, fetchFromID))
@@ -361,22 +366,26 @@ func (le *LogbookEditor) readDownloadMsg() tea.Msg {
 }
 
 // runDownload performs the actual HTTP fetch, saves ADIF to a temp file,
-// then processes it line-by-line. Progress is reported per QSO. The goroutine
-// checks le.dlCancel between records; on abort processing stops immediately.
-// Downloads are idempotent — duplicates are detected and skipped.
+// then processes it line-by-line. Progress is reported per batch (every 50 QSOs
+// or when done). The goroutine checks le.dlCancel between records; on abort
+// processing stops immediately. Downloads are idempotent — duplicates are
+// detected and skipped.
 func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
-	defer close(le.dlMsgCh)
+	// Capture the channel locally so the UI handler can't nil it out from
+	// under us (setting le.dlMsgCh = nil would break sends and close).
+	msgCh := le.dlMsgCh
+	defer close(msgCh)
 
 	db := le.db
 
 	// Send initial message so the dialog appears immediately.
-	le.dlMsgCh <- editorMsg{dlProgress: 0, dlTotal: 0}
+	msgCh <- editorMsg{dlProgress: 0, dlTotal: 0}
 
 	result, err := wavelog.FetchContacts(url, key, sid, fetchFromID)
 	if err != nil {
 		applog.ErrorDetail("Wavelog: contacts download failed",
 			fmt.Sprintf("url=%s station_id=%s from_id=%d error=%v", url, sid, fetchFromID, err))
-		le.dlMsgCh <- editorMsg{dlErr: err.Error()}
+		msgCh <- editorMsg{dlErr: err.Error()}
 		return
 	}
 
@@ -385,7 +394,7 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 
 	if result.ADIFPath == "" || result.ExportedQSOs == 0 {
 		applog.Info("Wavelog: no new contacts to download")
-		le.dlMsgCh <- editorMsg{dlCount: 0, dlLastID: result.LastFetchedID(), dlDone: true}
+		msgCh <- editorMsg{dlCount: 0, dlLastID: result.LastFetchedID(), dlDone: true}
 		return
 	}
 
@@ -393,21 +402,25 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 	f, err := os.Open(result.ADIFPath)
 	if err != nil {
 		applog.Error("Wavelog: failed to open temp ADIF file", "error", err)
-		le.dlMsgCh <- editorMsg{dlErr: "failed to read downloaded data"}
+		msgCh <- editorMsg{dlErr: "failed to read downloaded data"}
 		return
 	}
 	defer f.Close()
 
-	var inserted, dupes int
+	var inserted, dupes, failed int
 	totalExported := result.ExportedQSOs
+	const batchInterval = 1 // report progress every QSO for smooth updates
+
+	applog.Info("Wavelog: scanning ADIF", "exported", totalExported, "size_bytes", result.ADIFSize)
 
 	// Stream-parse ADIF records one at a time — never loads all QSOs into memory.
 	scanner := adif.NewScanner(f)
+	processed := 0 // total records seen (including skipped/dupes)
 	for scanner.Scan() {
 		// Check for abort between records.
 		select {
 		case <-le.dlCancel:
-			le.dlMsgCh <- editorMsg{dlCount: inserted, dlDupes: dupes, dlAborted: true, dlDone: true}
+			msgCh <- editorMsg{dlCount: inserted, dlDupes: dupes, dlAborted: true, dlDone: true}
 			return
 		default:
 		}
@@ -416,6 +429,7 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 			continue
 		}
 		r := scanner.Record()
+		processed++
 
 		qs := qso.NewQSO()
 		if v := r[adifield.CALL]; v != "" {
@@ -519,28 +533,63 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 		}
 
 		if existingID := store.FindQSOByKey(db, qs.Call, qs.Band, qs.Mode, qs.QSODate, qs.TimeOn); existingID != 0 {
-			applog.Info("Wavelog: skipping local duplicate",
+			applog.Warn("Wavelog: duplicate QSO in ADIF — already imported this session",
 				"local_id", existingID, "call", qs.Call, "band", qs.Band, "date", qs.QSODate)
 			dupes++
 			continue
 		}
 
-		if _, err := store.InsertQSO(db, qs); err != nil {
-			applog.Error("Wavelog: failed to insert downloaded QSO", "call", qs.Call, "error", err)
+		// Retry on SQLITE_BUSY — the main thread may briefly hold a write lock
+		// (e.g. during loadPage after purge).  A short sleep + retry resolves
+		// nearly all transient lock conflicts.
+		var insertErr error
+		for attempt := 0; attempt < 3; attempt++ {
+			_, insertErr = store.InsertQSO(db, qs)
+			if insertErr == nil {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		if insertErr != nil {
+			applog.Error("Wavelog: failed to insert downloaded QSO", "call", qs.Call, "error", insertErr)
+			failed++
 			continue
 		}
 		inserted++
 
-		// Report progress per QSO so the UI spinner + counter stays live.
-		le.dlMsgCh <- editorMsg{dlProgress: totalExported, dlTotal: totalExported, dlCount: inserted}
+		// Report progress every batchInterval QSOs, and always for the first
+		// one (so the UI transitions from "Downloading…" to "Processing QSO 1").
+		if inserted == 1 || inserted%batchInterval == 0 {
+			msgCh <- editorMsg{dlProgress: totalExported, dlTotal: totalExported, dlCount: inserted}
+		}
+
+		// Log milestone every 500 QSOs so we can trace progress in logs.
+		if inserted%500 == 0 && inserted > 0 {
+			applog.Info("Wavelog: download progress", "inserted", inserted, "dupes", dupes, "processed", processed)
+		}
+	}
+
+	// Send final progress (catch remainder if last batch was partial).
+	if inserted%batchInterval != 0 {
+		msgCh <- editorMsg{dlProgress: totalExported, dlTotal: totalExported, dlCount: inserted}
+	}
+
+	if err := scanner.Err(); err != nil {
+		applog.Error("Wavelog: ADIF scanner error", "error", err, "inserted", inserted, "dupes", dupes)
 	}
 
 	applog.Info("Wavelog: contacts download complete",
-		"inserted", inserted, "dupes", dupes, "last_id", result.LastFetchedID())
+		"inserted", inserted, "dupes", dupes, "failed", failed, "processed", processed, "last_id", result.LastFetchedID())
+	if dupes > 0 {
+		applog.Warn("Wavelog: ADIF export contains duplicate QSO records — skipped during import",
+			"dupe_count", dupes,
+			"note", "These QSOs exist more than once in the Wavelog database and should be cleaned up at the source.")
+	}
 
-	le.dlMsgCh <- editorMsg{
+	msgCh <- editorMsg{
 		dlCount:  inserted,
 		dlDupes:  dupes,
+		dlFailed: failed,
 		dlLastID: result.LastFetchedID(),
 		dlDone:   true,
 	}
