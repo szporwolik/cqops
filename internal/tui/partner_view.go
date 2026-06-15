@@ -236,7 +236,8 @@ func (m *Model) renderCallbookRows(d *qrz.CallData, maxW int) string {
 		}
 	}
 	if d.Callsign != "" {
-		add("Callsign", S.Info.Render(d.Callsign))
+		link := osc8Link("https://www.qrz.com/db/"+d.Callsign, S.Info.Render(d.Callsign))
+		add("Callsign", link)
 	}
 	add("Name", d.Name)
 	add("Grid", d.Grid)
