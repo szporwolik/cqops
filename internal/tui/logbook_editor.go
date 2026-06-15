@@ -74,32 +74,32 @@ var qefLabels = []string{
 }
 
 type LogbookEditor struct {
-	db                *sql.DB
-	qsos              []qso.QSO
-	table             table.Model
-	mode              editorMode
-	dialog            *DialogModel // confirm dialog with left/right navigation
-	editing           *qso.QSO
-	fields            [qefCount]textinput.Model
-	focus             qsoEditField
-	done              bool
-	needsReload       bool
-	built             bool
-	wlSkipped         int
-	wlSkipDetail      string
-	width             int
-	height            int
-	wlURL             string
-	wlKey             string
-	wlStationID       string
-	wlLastFetchedID   int64
-	logStationOp      string
-	logStationGrid    string
-	mismatchQSOs      []qso.QSO
-	mismatchFields    []string
-	wlDownloadCount   int
-	wlDownloadDupes   int
-	wlDownloadErr     string
+	db              *sql.DB
+	qsos            []qso.QSO
+	table           table.Model
+	mode            editorMode
+	dialog          *DialogModel // confirm dialog with left/right navigation
+	editing         *qso.QSO
+	fields          [qefCount]textinput.Model
+	focus           qsoEditField
+	done            bool
+	needsReload     bool
+	built           bool
+	wlSkipped       int
+	wlSkipDetail    string
+	width           int
+	height          int
+	wlURL           string
+	wlKey           string
+	wlStationID     string
+	wlLastFetchedID int64
+	logStationOp    string
+	logStationGrid  string
+	mismatchQSOs    []qso.QSO
+	mismatchFields  []string
+	wlDownloadCount int
+	wlDownloadDupes int
+	wlDownloadErr   string
 
 	// Batch download progress
 	dlProgress int

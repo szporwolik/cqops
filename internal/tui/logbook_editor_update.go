@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
 	adif "github.com/farmergreg/adif/v5"
 	"github.com/farmergreg/spec/v6/adifield"
-	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
@@ -18,24 +18,24 @@ import (
 // =============================================================================
 
 type editorMsg struct {
-	deleted       int64
-	delCall       string
-	delDate       string
-	saved         int64
-	saveCall      string
-	saveDate      string
-	purged        bool
-	wlQSOID       int64
-	wlCall        string
-	wlOK          bool
-	normalized    int
-	skipped       int
-	skipReason    string
-	err           error
-	dlCount       int
-	dlDupes       int
-	dlLastID      int64
-	dlErr         string
+	deleted    int64
+	delCall    string
+	delDate    string
+	saved      int64
+	saveCall   string
+	saveDate   string
+	purged     bool
+	wlQSOID    int64
+	wlCall     string
+	wlOK       bool
+	normalized int
+	skipped    int
+	skipReason string
+	err        error
+	dlCount    int
+	dlDupes    int
+	dlLastID   int64
+	dlErr      string
 	// Batch download progress
 	dlProgress int
 	dlTotal    int
