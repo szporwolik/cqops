@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"strings"
 
@@ -48,6 +47,12 @@ type editorMsg struct {
 }
 
 func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	// Spinner tick — always process when download is active.
+	var spinCmd tea.Cmd
+	if le.mode == edModeWLDownloading {
+		le.dlSpinner, spinCmd = le.dlSpinner.Update(msg)
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		le.width = msg.Width
@@ -59,16 +64,18 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !msg.dlDone && msg.dlErr == "" {
 			le.dlProgress = msg.dlProgress
 			le.dlTotal = msg.dlTotal
+			le.dlCurrent = msg.dlCount
 			if le.mode != edModeWLDownloading {
 				le.mode = edModeWLDownloading
 			}
-			return le, le.readDownloadMsg
+			return le, tea.Batch(le.readDownloadMsg, le.spinCmd())
 		}
 
 		// Download complete (or aborted).
 		if msg.dlDone {
 			le.dlCancel = nil
 			le.dlMsgCh = nil
+			le.dialog = nil // clear stale "Abort" dialog so results can render
 			if msg.dlAborted {
 				le.wlDownloadCount = msg.dlCount
 				le.wlDownloadDupes = msg.dlDupes
@@ -123,8 +130,9 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					close(le.dlCancel)
 					le.dlCancel = nil
 				}
+				le.dlMsgCh = nil
 			}
-			return le, nil
+			return le, le.spinCmd()
 		}
 
 		// Download result — route keys to the dialog (OK button).
@@ -242,7 +250,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	return le, nil
+	return le, spinCmd
 }
 
 func (le *LogbookEditor) doConfirm() tea.Cmd {
@@ -353,12 +361,12 @@ func (le *LogbookEditor) readDownloadMsg() tea.Msg {
 }
 
 // runDownload performs the actual HTTP fetch, saves ADIF to a temp file,
-// then processes it line-by-line in batches. Progress is reported as file
-// position / total size. The goroutine checks le.dlCancel between batches.
+// then processes it line-by-line. Progress is reported per QSO. The goroutine
+// checks le.dlCancel between records; on abort processing stops immediately.
+// Downloads are idempotent — duplicates are detected and skipped.
 func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 	defer close(le.dlMsgCh)
 
-	const batchSize = 50
 	db := le.db
 
 	// Send initial message so the dialog appears immediately.
@@ -390,12 +398,8 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 	}
 	defer f.Close()
 
-	fileSize := result.ADIFSize
-	if fileSize <= 0 {
-		fileSize = 1 // avoid division by zero
-	}
-
 	var inserted, dupes int
+	totalExported := result.ExportedQSOs
 
 	// Stream-parse ADIF records one at a time — never loads all QSOs into memory.
 	scanner := adif.NewScanner(f)
@@ -518,7 +522,7 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 			applog.Info("Wavelog: skipping local duplicate",
 				"local_id", existingID, "call", qs.Call, "band", qs.Band, "date", qs.QSODate)
 			dupes++
-			continue // already have it — don't count toward the limit
+			continue
 		}
 
 		if _, err := store.InsertQSO(db, qs); err != nil {
@@ -527,16 +531,12 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 		}
 		inserted++
 
-		// Report progress every batchSize QSOs based on file position.
-		if inserted%batchSize == 0 {
-			pos, _ := f.Seek(0, io.SeekCurrent)
-			pct := int(pos * 100 / fileSize)
-			le.dlMsgCh <- editorMsg{dlProgress: inserted, dlTotal: pct}
-		}
+		// Report progress per QSO so the UI spinner + counter stays live.
+		le.dlMsgCh <- editorMsg{dlProgress: totalExported, dlTotal: totalExported, dlCount: inserted}
 	}
 
 	applog.Info("Wavelog: contacts download complete",
-		"inserted", inserted, "dupes_replaced", dupes, "last_id", result.LastFetchedID())
+		"inserted", inserted, "dupes", dupes, "last_id", result.LastFetchedID())
 
 	le.dlMsgCh <- editorMsg{
 		dlCount:  inserted,

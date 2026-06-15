@@ -397,3 +397,176 @@ func TestDoNormalizeAndUpload_PartialMismatch(t *testing.T) {
 		t.Errorf("q2 Operator = %q; want Old2 (unchanged)", le.qsos[1].Operator)
 	}
 }
+
+// =============================================================================
+// Download-then-upload safety
+// =============================================================================
+
+func TestUploadSkipsDownloadedQSOs(t *testing.T) {
+	// QSOs downloaded from Wavelog are marked "yes".  The batch upload
+	// must skip them — only locally-created QSOs (marked "" or "no") are sent.
+	// Use empty URL so the test never touches the network.
+	le := newTestEditor("", "", "", "Op", "KO00")
+	le.qsos = []qso.QSO{
+		{ID: 1, Call: "SP9AAA", Band: "20m", Mode: "SSB", QSODate: "20240501", WavelogUploaded: "yes"},
+		{ID: 2, Call: "SP9BBB", Band: "40m", Mode: "CW", QSODate: "20240502", WavelogUploaded: ""},
+		{ID: 3, Call: "SP9CCC", Band: "15m", Mode: "FT8", QSODate: "20240503", WavelogUploaded: "no"},
+		{ID: 4, Call: "SP9DDD", Band: "10m", Mode: "SSB", QSODate: "20240504", WavelogUploaded: "yes"},
+	}
+
+	cmd := le.doBatchUpload()
+	msg := execCmd(cmd)
+	em, ok := msg.(editorMsg)
+	if !ok {
+		t.Fatalf("expected editorMsg, got %T", msg)
+	}
+	// Empty URL → upload should fail, but NOT with "all sent".
+	// The filtering found unsent QSOs (2 and 3) and tried to send them.
+	if em.wlCall == "all sent" {
+		t.Error("should not report 'all sent' when unsent QSOs exist")
+	}
+	// Verify it's an upload error (empty URL), not a filtering error.
+	if em.wlOK {
+		t.Error("wlOK should be false — upload to empty URL must fail")
+	}
+}
+
+func TestDownloadMarksAllQSOsAsUploaded(t *testing.T) {
+	// After a Wavelog download, every inserted QSO must have
+	// WavelogUploaded = "yes" so a subsequent upload won't re-send them.
+	le := newTestEditorWithDB(t, "", "", "", "", "")
+
+	// Simulate what the download loop does: insert QSOs with "yes".
+	q1 := &qso.QSO{Call: "SP9AAA", Band: "20m", Mode: "SSB", QSODate: "20240501", TimeOn: "120000",
+		WavelogUploaded: "yes", Source: "wavelog"}
+	q2 := &qso.QSO{Call: "SP9BBB", Band: "40m", Mode: "CW", QSODate: "20240502", TimeOn: "130000",
+		WavelogUploaded: "yes", Source: "wavelog"}
+
+	id1 := insertTestQSO(t, le.db, q1)
+	id2 := insertTestQSO(t, le.db, q2)
+	q1.ID = id1
+	q2.ID = id2
+
+	// Load them as if just downloaded.
+	le.qsos = []qso.QSO{*q1, *q2}
+
+	// Batch upload should see both as already sent.
+	le.mode = edModeList
+	cmd := le.doBatchUpload()
+	msg := execCmd(cmd)
+	em := msg.(editorMsg)
+	if em.wlCall != "all sent" {
+		t.Errorf("wlCall = %q; want 'all sent' (both QSOs already marked yes)", em.wlCall)
+	}
+}
+
+// =============================================================================
+// Purge tests
+// =============================================================================
+
+func TestPurge_ClearsQSOs(t *testing.T) {
+	le := newTestEditorWithDB(t, "", "", "", "", "")
+
+	// Insert some QSOs.
+	q1 := &qso.QSO{Call: "SP9AAA", Band: "20m", Mode: "SSB", QSODate: "20240501", TimeOn: "120000"}
+	q2 := &qso.QSO{Call: "SP9BBB", Band: "40m", Mode: "CW", QSODate: "20240502", TimeOn: "130000"}
+	insertTestQSO(t, le.db, q1)
+	insertTestQSO(t, le.db, q2)
+
+	// Verify QSOs exist.
+	qsos, err := store.ListQSOs(le.db, 10)
+	if err != nil {
+		t.Fatalf("ListQSOs: %v", err)
+	}
+	if len(qsos) != 2 {
+		t.Fatalf("expected 2 QSOs before purge, got %d", len(qsos))
+	}
+
+	// Purge — must set dialog so doConfirm() proceeds.
+	le.mode = edModeConfirmPurge
+	d := NewDialog("Purge", "test")
+	le.dialog = &d
+	cmd := le.doConfirm()
+	msg := execCmd(cmd)
+	em, ok := msg.(editorMsg)
+	if !ok {
+		t.Fatalf("expected editorMsg, got %T", msg)
+	}
+	if !em.purged {
+		t.Error("purged should be true")
+	}
+	if em.err != nil {
+		t.Errorf("unexpected error: %v", em.err)
+	}
+
+	// Verify QSOs are gone.
+	qsos, err = store.ListQSOs(le.db, 10)
+	if err != nil {
+		t.Fatalf("ListQSOs after purge: %v", err)
+	}
+	if len(qsos) != 0 {
+		t.Errorf("expected 0 QSOs after purge, got %d", len(qsos))
+	}
+}
+
+func TestPurge_EmptyLogbookIsSafe(t *testing.T) {
+	le := newTestEditorWithDB(t, "", "", "", "", "")
+
+	// Purge an empty logbook — should succeed without error.
+	le.mode = edModeConfirmPurge
+	d := NewDialog("Purge", "test")
+	le.dialog = &d
+	cmd := le.doConfirm()
+	msg := execCmd(cmd)
+	em, ok := msg.(editorMsg)
+	if !ok {
+		t.Fatalf("expected editorMsg, got %T", msg)
+	}
+	if !em.purged {
+		t.Error("purged should be true even for empty logbook")
+	}
+	if em.err != nil {
+		t.Errorf("unexpected error on empty purge: %v", em.err)
+	}
+}
+
+func TestUploadBatch_FiltersUnsentQSOs(t *testing.T) {
+	// Verify that doBatchUpload only selects QSOs with WavelogUploaded != "yes".
+	// Use empty URL to avoid real HTTP calls.
+	le := newTestEditor("", "", "", "Op", "KO00")
+	le.qsos = []qso.QSO{
+		{ID: 1, Call: "A", Band: "20m", Mode: "SSB", QSODate: "20240501", WavelogUploaded: "yes"},
+		{ID: 2, Call: "B", Band: "20m", Mode: "SSB", QSODate: "20240502", WavelogUploaded: "no"},
+		{ID: 3, Call: "C", Band: "20m", Mode: "SSB", QSODate: "20240503", WavelogUploaded: ""},
+		{ID: 4, Call: "D", Band: "20m", Mode: "SSB", QSODate: "20240504", WavelogUploaded: "yes"},
+	}
+
+	cmd := le.doBatchUpload()
+	msg := execCmd(cmd)
+	em := msg.(editorMsg)
+	if em.wlCall == "all sent" {
+		t.Error("should not report 'all sent' — QSOs 2 and 3 are unsent")
+	}
+}
+
+func TestPurgeResetsWavelogLastID(t *testing.T) {
+	le := newTestEditorWithDB(t, "", "", "", "", "")
+	le.wlLastFetchedID = 12345
+	le.mode = edModeConfirmPurge
+	d := NewDialog("Purge", "test")
+	le.dialog = &d
+
+	cmd := le.doConfirm()
+	msg := execCmd(cmd)
+	em, ok := msg.(editorMsg)
+	if !ok {
+		t.Fatalf("expected editorMsg, got %T", msg)
+	}
+
+	if !em.purged {
+		t.Error("purged should be true")
+	}
+	if le.wlLastFetchedID != 0 {
+		t.Errorf("wlLastFetchedID = %d; want 0 after purge", le.wlLastFetchedID)
+	}
+}

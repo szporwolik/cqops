@@ -17,6 +17,14 @@ import (
 // handleGlobalKeys processes top-level function key bindings (F1-F10, etc.)
 // that are independent of the current screen. Returns true if the key was handled.
 func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
+	// Block tab switching during Wavelog download (full-screen operation).
+	if m.logbookEditor != nil && m.logbookEditor.isDownloadActive() {
+		// Only allow F10 (quit) to pass through.
+		if !key.Matches(msg, m.keys.Quit) {
+			return nil, true
+		}
+	}
+
 	switch {
 	case key.Matches(msg, m.keys.Quit):
 		applog.Debug("tab: F10 quit requested")

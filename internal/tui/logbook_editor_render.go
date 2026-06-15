@@ -78,9 +78,10 @@ func (le *LogbookEditor) View() tea.View {
 			le.mode = edModeList
 			le.dialog = nil
 		} else {
-			msg := "Downloading ADIF from Wavelog…\nThis may take a while for large logbooks."
-			if le.dlProgress > 0 {
-				msg = fmt.Sprintf("Downloaded %d QSOs (%d%% of file)", le.dlProgress, le.dlTotal)
+			spin := le.dlSpinner.View()
+			msg := spin + " Downloading from Wavelog…"
+			if le.dlCurrent > 0 {
+				msg = fmt.Sprintf("%s Processing QSO %d", spin, le.dlCurrent)
 			}
 			le.ensureDialog("Wavelog Download", msg,
 				Option{Label: "Abort", Value: "abort"},

@@ -3,6 +3,7 @@ package tui
 import (
 	"database/sql"
 
+	"charm.land/bubbles/v2/spinner"
 	"charm.land/bubbles/v2/table"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -108,10 +109,13 @@ type LogbookEditor struct {
 	pageSize    int
 
 	// Batch download progress
-	dlProgress int
-	dlTotal    int
-	dlCancel   chan struct{}
-	dlMsgCh    chan editorMsg
+	dlProgress  int
+	dlTotal     int
+	dlCurrent   int // QSOs processed so far
+	dlCancel    chan struct{}
+	dlMsgCh     chan editorMsg
+	dlSpinner   spinner.Model
+	dlSpinnerOn bool // true when spinner is active (download in progress)
 
 	// View cache — avoids rebuilding the table on every frame with large QSO sets.
 	cachedView string
@@ -126,6 +130,7 @@ type LogbookEditor struct {
 
 func NewLogbookEditor(db *sql.DB, wlURL, wlKey, wlStationID string, wlLastFetchedID int64, logStationOp, logStationGrid string) *LogbookEditor {
 	le := &LogbookEditor{db: db, mode: edModeList, wlURL: wlURL, wlKey: wlKey, wlStationID: wlStationID, wlLastFetchedID: wlLastFetchedID, logStationOp: logStationOp, logStationGrid: logStationGrid}
+	le.dlSpinner = spinner.New(spinner.WithSpinner(spinner.Dot))
 	for i := qsoEditField(0); i < qefCount; i++ {
 		ti := newTextinput()
 		ti.CharLimit = 40
@@ -219,7 +224,18 @@ func (le *LogbookEditor) loadPage() {
 	le.buildTable()
 }
 
-// totalPages returns the total number of pages.
+// isDownloadActive returns true when a Wavelog download is in progress.
+func (le *LogbookEditor) isDownloadActive() bool {
+	return le.mode == edModeWLDownloading
+}
+
+// spinCmd returns a spinner.Tick command when a download is active.
+func (le *LogbookEditor) spinCmd() tea.Cmd {
+	if le.mode == edModeWLDownloading {
+		return le.dlSpinner.Tick
+	}
+	return nil
+}
 func (le *LogbookEditor) totalPages() int {
 	if le.pageSize < 1 || le.totalCount < 1 {
 		return 1
@@ -263,7 +279,7 @@ func (le *LogbookEditor) IsEditing() bool { return le.mode == edModeEdit }
 func (le *LogbookEditor) isConfirmMode() bool {
 	switch le.mode {
 	case edModeConfirmDelete, edModeConfirmPurge, edModeConfirmWLSend, edModeConfirmWLDownload,
-		edModeConfirmNormalize:
+		edModeConfirmNormalize, edModeWLDownloading, edModeWLDownloadResult:
 		return true
 	}
 	return false
