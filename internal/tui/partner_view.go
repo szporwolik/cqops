@@ -101,7 +101,7 @@ func (m *Model) viewPartner() string {
 	var cbW, lbW, wlW int
 	if wlEnabled {
 		cbW = totalW * 40 / 100
-		lbW = totalW * 33 / 100
+		lbW = totalW * 28 / 100
 		wlW = totalW - cbW - lbW
 	} else {
 		cbW = totalW * 50 / 100
@@ -129,7 +129,7 @@ func (m *Model) viewPartner() string {
 		maxInner = lbInner
 	}
 
-	cbBox := m.renderPartnerBox("Callbook information"+m.qrzSuffix(), cbContent, cbW, maxInner)
+	cbBox := m.renderPartnerBox("Callbook"+m.qrzSuffix(), cbContent, cbW, maxInner)
 	lbBox := m.renderPartnerBox("Logbook", lbContent, lbW, maxInner)
 
 	var topRow string
@@ -140,7 +140,7 @@ func (m *Model) viewPartner() string {
 			maxInner = wlInner
 		}
 		// Re-render callbook/logbook boxes with updated maxInner.
-		cbBox = m.renderPartnerBox("Callbook information"+m.qrzSuffix(), cbContent, cbW, maxInner)
+		cbBox = m.renderPartnerBox("Callbook"+m.qrzSuffix(), cbContent, cbW, maxInner)
 		lbBox = m.renderPartnerBox("Logbook", lbContent, lbW, maxInner)
 		wlBox := m.renderPartnerBox("Wavelog", wlContent, wlW, maxInner)
 		topRow = lipgloss.JoinHorizontal(lipgloss.Top, cbBox, lbBox, wlBox)
@@ -157,18 +157,20 @@ func (m *Model) viewPartner() string {
 		if mapAvailH < 3 {
 			mapAvailH = 3
 		}
-		// Content is 2 cells narrower than the border to fit Padding(0,1).
-		contentW := mapW - 2
+		// Content is 4 cells narrower than the border: 2 for border chars + 2 for Padding(0,1).
+		contentW := mapW - 4
 		if contentW < 20 {
 			contentW = mapW
 		}
 		mapBox := m.getOrBuildMap(d, contentW, mapAvailH)
 		if mapBox != "" {
-			// Ensure each line is exactly contentW wide so the border fits.
+			// Force every line to exactly contentW columns — no narrower, no wider.
 			lines := strings.Split(mapBox, "\n")
 			for i, l := range lines {
 				lw := lipgloss.Width(l)
-				if lw < contentW {
+				if lw > contentW {
+					lines[i] = truncateText(l, contentW)
+				} else if lw < contentW {
 					lines[i] = l + strings.Repeat(" ", contentW-lw)
 				}
 			}
@@ -202,7 +204,7 @@ func (m *Model) qrzSuffix() string {
 // renderPartnerBox wraps header+content in a bordered box. Content is padded
 // to maxInner lines so all boxes in a row have equal height.
 func (m *Model) renderPartnerBox(title, content string, boxW, maxInner int) string {
-	header := S.Label.Width(boxW - 4).MaxWidth(boxW - 4).Render(title)
+	header := S.Label.Width(boxW - 4).MaxWidth(boxW - 4).Inline(true).Render(title)
 	inner := lipgloss.JoinVertical(lipgloss.Left, header, content)
 	curH := lipgloss.Height(inner)
 	if curH < maxInner {
@@ -279,8 +281,8 @@ func (m *Model) renderLogbookRows(d *qrz.CallData, maxW int) string {
 	newStyle := S.Success // green — yes, it IS new
 	oldStyle := DimStyle  // dim — no, already worked
 
-	// Compute value column width. Label width 17 + space 1 = 18.
-	valW := maxW - 18
+	// Compute value column width. Label width 11 + space 1 = 12.
+	valW := maxW - 12
 	if valW < 3 {
 		valW = 3
 	}
@@ -362,7 +364,7 @@ func (m *Model) renderLogbookRows(d *qrz.CallData, maxW int) string {
 	}
 	rows = append(rows, row{"Last QSO", ValueStyle.Width(valW).MaxWidth(valW).Inline(true).Render(truncate(last, valW))})
 
-	return formatRowPairs(rows, S.FormLabelWide)
+	return formatRowPairs(rows, S.FormLabel)
 }
 
 // --- WL Info ---
