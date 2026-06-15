@@ -46,7 +46,7 @@ type mapRenderer struct {
 	cacheH       int
 	cached       string
 	graylineOn   bool
-	graylineSlot int // UTC minute-of-day (0–1439)
+	graylineSlot int // UTC 5-minute slot (0–287); changes every 300 s
 }
 
 func newMapRenderer() *mapRenderer { return &mapRenderer{} }
@@ -84,9 +84,11 @@ func (mr *mapRenderer) View(ownLat, ownLon, partnerLat, partnerLon float64, mapW
 		mapW = 20
 	}
 
-	// Grayline slot: UTC minute-of-day, changes every 60 s.
+	// Grayline slot: 5-minute bucket (288 slots/day).  The terminator
+	// moves ~1.25° per slot — below one map column at typical widths,
+	// so the visual jump is imperceptible while saving 5× CPU vs 1-min.
 	now := time.Now().UTC()
-	graySlot := now.Hour()*60 + now.Minute()
+	graySlot := now.Hour()*12 + now.Minute()/5
 
 	if mr.cacheW == mapW && mr.cacheH == mapH && mr.graylineOn == drawGrayline &&
 		(!drawGrayline || mr.graylineSlot == graySlot) && mr.cached != "" {
