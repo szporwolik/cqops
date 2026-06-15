@@ -21,7 +21,7 @@ var (
 	logDir  string
 )
 
-const maxStored = 100  // max in-memory log entries for TUI viewer
+const maxStored = 100   // max in-memory log entries for TUI viewer
 const maxLogFiles = 20  // keep at most N rotated log files
 const retentionDays = 7 // delete log files older than this
 
