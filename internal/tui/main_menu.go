@@ -95,13 +95,12 @@ func (m *MainMenu) View() tea.View {
 		contentH = 3
 	}
 
-	dim := SubtleStyle
+	dim := DimStyle
 	showDesc := w >= 60
 
 	var b strings.Builder
 
-	// Title header — Surface background fills the full width so no leaking
-	// character after the text.
+	// Title header — fills the full width.
 	b.WriteString(menuTitle("Settings", w))
 	b.WriteString("\n\n")
 
@@ -120,7 +119,7 @@ func (m *MainMenu) View() tea.View {
 			if pad < 1 {
 				pad = 1
 			}
-			line += lipgloss.NewStyle().Background(P.Surface).Render(strings.Repeat(" ", pad)) + dim.Render(item.desc)
+			line += strings.Repeat(" ", pad) + dim.Render(item.desc)
 		}
 		b.WriteString(menuLine(line, w))
 		b.WriteString("\n")

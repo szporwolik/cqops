@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gen2brain/beeep"
 	tea "charm.land/bubbletea/v2"
 	adif "github.com/farmergreg/adif/v5"
 	"github.com/farmergreg/spec/v6/adifield"
+	"github.com/gen2brain/beeep"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"

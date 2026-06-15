@@ -183,11 +183,7 @@ func (le *LogbookEditor) buildTable() {
 		BorderForeground(P.TextDim).
 		BorderBottom(true).
 		Bold(false).
-		Foreground(P.Text).
-		Background(P.Surface)
-	// Cell: no Foreground, no Background — let the drawBorderedBox
-	// wrapper supply Surface background, and let the default Selected
-	// style (bold + pink foreground from bubbles) highlight the cursor row.
+		Foreground(P.Text)
 	t.SetStyles(s)
 	t.Focus()
 	le.table = t

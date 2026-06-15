@@ -109,13 +109,10 @@ func (le *LogbookEditor) prevField() {
 // =============================================================================
 
 func (le *LogbookEditor) viewEdit(bodyW int, contentH int) string {
-	bg := lipgloss.NewStyle().Background(P.Surface)
-	header := bg.Width(bodyW).Render(
-		S.Title.Copy().Background(P.Surface).Render("Edit QSO"),
-	)
+	header := S.Title.Width(bodyW).Render("Edit QSO")
 
-	// Two-column form layout with Surface background on every element.
-	innerW := bodyW - 2 // drawBorderedBox borders consume 2 chars
+	// Two-column form layout.
+	innerW := bodyW - 2
 	if innerW < 20 {
 		innerW = 20
 	}
@@ -125,25 +122,21 @@ func (le *LogbookEditor) viewEdit(bodyW int, contentH int) string {
 	}
 	half := (qefCount + 1) / 2
 
-	gap := bg.Render("  ")
+	sep := "  "
 	var lines []string
 	for i := qsoEditField(0); i < half; i++ {
 		left := le.renderEditField(i, colW)
 		rightIdx := i + half
 		if rightIdx < qefCount {
 			right := le.renderEditField(rightIdx, colW)
-			lines = append(lines, bg.Width(innerW).Render(
-				lipgloss.JoinHorizontal(lipgloss.Top, left, gap, right),
-			))
+			lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Top, left, sep, right))
 		} else {
-			lines = append(lines, bg.Width(innerW).Render(left))
+			lines = append(lines, left)
 		}
 	}
 	formContent := lipgloss.JoinVertical(lipgloss.Left, lines...)
-	formBox := drawBorderedBox(formContent, innerW, bodyW)
+	formBox := drawBorderedBox(formContent, bodyW)
 
-	// Fill remaining height with Surface background so there is no black
-	// gap below the form.
 	body := lipgloss.JoinVertical(lipgloss.Left, header, formBox)
 	return fillBody(body, contentH)
 }
@@ -173,16 +166,13 @@ func (le *LogbookEditor) renderEditField(f qsoEditField, colW int) string {
 	case focused:
 		val = le.fields[f].View()
 	case raw == "":
-		val = SubtleStyle.Render("\u2014")
+		val = DimStyle.Render("\u2014")
 	default:
 		val = ValueStyle.Render(raw)
 	}
 
-	// One-char Surface-background gap — prevents bg leaks between label and value.
-	gap := lipgloss.NewStyle().Width(1).Background(P.Surface).Render(" ")
+	// One-char gap between label and value.
 
-	// Wrap the whole row with Surface background to fill column width.
-	return lipgloss.NewStyle().Width(colW).Background(P.Surface).Render(
-		lipgloss.JoinHorizontal(lipgloss.Center, lbl, gap, val),
-	)
+	// Wrap the whole row.
+	return lipgloss.JoinHorizontal(lipgloss.Center, lbl, " ", val)
 }

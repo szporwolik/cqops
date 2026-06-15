@@ -46,8 +46,8 @@ func (m *Model) headerView() string {
 		rightParts = append(rightParts, statusDotStyled(m.wlOnline, "WL"))
 	}
 	rightParts = append(rightParts,
-		lipgloss.NewStyle().Foreground(P.TextMuted).Render("UTC "),
-		lipgloss.NewStyle().Foreground(P.Text).Padding(0, 1).Render(utc.Format("15:04:05")),
+		utcLabelStyle.Render("UTC "),
+		S.StatusTime.Render(utc.Format("15:04:05")),
 	)
 
 	right := lipgloss.JoinHorizontal(lipgloss.Top, rightParts...)
@@ -62,13 +62,11 @@ func (m *Model) headerView() string {
 
 // statusDotStyled renders an integration indicator dot with label.
 func statusDotStyled(on bool, label string) string {
-	fg := P.Error
+	s := statusDotOffStyle
 	if on {
-		fg = P.Success
+		s = statusDotOnStyle
 	}
-	return lipgloss.NewStyle().
-		Foreground(fg).
-		Render(label) + lipgloss.NewStyle().Foreground(P.TextDim).Render(" ")
+	return s.Render(label) + " "
 }
 
 // renderStatusBar is the canonical entry point for status bar rendering.

@@ -16,6 +16,7 @@ import (
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/qrz"
 	"github.com/szporwolik/cqops/internal/qso"
+	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
@@ -161,6 +162,14 @@ type Model struct {
 	// Partner/map rendering cache — avoids expensive ASCII map generation on every View().
 	partnerMapCache    string
 	partnerMapCacheSig string
+
+	// QSO count cache — avoids SQL queries during View().
+	qsoCounts      store.QSOCounts
+	qsoCountsValid bool
+
+	// Path line cache — avoids locator parsing every View().
+	cachedPathLine string
+	cachedPathSig  string
 }
 
 type tickMsg time.Time
@@ -230,14 +239,9 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	m.keys = DefaultKeyMap()
 	m.help = help.New()
 
-	// Ensure textinput fields use Surface background (panel color, not app bg)
-	for i := field(0); i < fieldCount; i++ {
-		applyTextinputSurfaceStyle(&m.fields[i])
-	}
 	m.recentQSOs = NewRecentQSOs(initialQSOS)
 	m.imageViewer = pictureurl.NewWithConfig(pictureurl.Config{
 		CacheLimit: 4,
-		Background: P.Surface,
 	})
 	return m
 }
@@ -263,7 +267,7 @@ func (m *Model) Init() tea.Cmd {
 	return tea.Batch(tickCmd(), checkInetCmd(), m.imageViewer.Init())
 }
 func tickCmd() tea.Cmd {
-	return tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) })
+	return tea.Tick(2000*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
 // hideAllSubmodels returns to the QSO form screen.
@@ -442,7 +446,7 @@ func (m *Model) View() tea.View {
 		return tea.NewView("")
 	}
 	if m.err != nil {
-		return tea.NewView(errorStyle.Render(fmt.Sprintf("Error: %v\nPress any key to exit.", m.err)))
+		return tea.NewView(ErrorStyle.Render(fmt.Sprintf("Error: %v\nPress any key to exit.", m.err)))
 	}
 
 	// Measure all fixed zones and calculate content area dimensions.
@@ -461,7 +465,7 @@ func (m *Model) View() tea.View {
 	if layout.TerminalW < 75 || layout.TerminalH < 24 {
 		msg := fmt.Sprintf("\n  CQOps — Terminal too small: %dx%d (min 75x24)\n\n  Press F10 and then Enter to quit",
 			layout.TerminalW, layout.TerminalH)
-		return tea.NewView(lipgloss.NewStyle().Foreground(P.Error).Render(msg))
+		return tea.NewView(ErrorStyle.Render(msg))
 	}
 
 	// Render fixed bars — cache when screen and width haven't changed.
@@ -501,10 +505,6 @@ func (m *Model) View() tea.View {
 	if body == "" {
 		body = DimStyle.Render("\u2014")
 	}
-	body = S.ContentBase.
-		Height(layout.ContentH).
-		Width(layout.TerminalW).
-		Render(body)
 	addRow(body)
 	addRow(m.cachedHelp)
 	mainView := lipgloss.JoinVertical(lipgloss.Left, mainParts...)
@@ -523,7 +523,6 @@ func (m *Model) View() tea.View {
 	v := tea.NewView(finalView)
 	v.AltScreen = true
 	v.WindowTitle = m.windowTitle()
-	v.BackgroundColor = P.Background
 	return v
 }
 
@@ -545,13 +544,11 @@ func (m *Model) viewImage(l Layout) string {
 			Height(l.ContentH).
 			Align(lipgloss.Center, lipgloss.Center).
 			Foreground(P.TextMuted).
-			Background(P.Surface).
 			Render(msg)
 	} else {
 		content = lipgloss.NewStyle().
 			Width(l.TerminalW).
 			Height(l.ContentH).
-			Background(P.Surface).
 			Render(content)
 	}
 	return content
@@ -592,23 +589,17 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 }
 
 // buildQSOFormWithLayout renders the QSO form, short path info, and recent
-// QSOs using layout-derived dimensions. The short path gets its own bordered
-// box between the form and the table for visual separation.
+// QSOs using layout-derived dimensions.
 func (m *Model) buildQSOFormWithLayout(l Layout) string {
-	w := l.TerminalW     // full width
-	borderW := w - 2     // content width inside borders
-	formW := borderW - 2 // 1-char padding each side
+	w := l.TerminalW
+	borderW := w - 2
+	formW := borderW - 2
 	if formW < 20 {
 		formW = borderW
 	}
 
-	// QSO form with manual border — no │ leak
-	form := m.viewForm(formW)
-	formBox := drawBorderedBox(strings.TrimRight(form, "\n"), borderW, w)
-
-	// Path row with manual border
-	pathContent := m.formPathRow(formW)
-	pathBox := drawBorderedBox(pathContent, borderW, w)
+	formBox := drawBorderedBox(m.viewForm(formW), w)
+	pathBox := drawBorderedBox(m.formPathRow(formW), w)
 
 	formRenderedH := lipgloss.Height(formBox)
 	pathRenderedH := lipgloss.Height(pathBox)
@@ -623,10 +614,9 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 		tableH = 3
 	}
 	m.recentQSOs.SetSize(tableW, tableH)
+	recentBox := drawBorderedBox(m.recentQSOs.View(), w)
 
-	recentBox := drawBorderedBox(m.recentQSOs.View(), borderW, w)
-
-	return formBox + "\n" + pathBox + "\n" + recentBox
+	return lipgloss.JoinVertical(lipgloss.Left, formBox, pathBox, recentBox)
 }
 
 // formPartnerData builds a CallData from the current QSO form fields.

@@ -8,37 +8,10 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-// Pre-allocated border styles — reused across all drawBorderedBox calls.
-var (
-	borderFg    = lipgloss.NewStyle().Foreground(P.Border).Background(P.Surface)
-	borderBg    = lipgloss.NewStyle().Background(P.Surface)
-	menuLineBg  = lipgloss.NewStyle().Background(P.Surface)
-	menuTitleBg = lipgloss.NewStyle().Background(P.Surface)
-)
-
-// drawBorderedBox draws a NormalBorder box where every character (including
-// borders) has explicit Surface background. This prevents the right │ leak
-// that occurs with lipgloss's built-in Border when content has SGR resets.
-func drawBorderedBox(content string, innerW, boxW int) string {
-	top := borderFg.Render("┌" + strings.Repeat("─", innerW) + "┐")
-	bot := borderFg.Render("└" + strings.Repeat("─", innerW) + "┘")
-	left := borderFg.Render("│")
-	right := borderFg.Render("│")
-
-	var b strings.Builder
-	b.WriteString(top)
-	b.WriteString("\n")
-
-	lines := strings.Split(content, "\n")
-	for _, line := range lines {
-		b.WriteString(left)
-		b.WriteString(borderBg.Width(innerW).MaxWidth(innerW).Render(line))
-		b.WriteString(right)
-		b.WriteString("\n")
-	}
-	b.WriteString(bot)
-
-	return borderBg.Width(boxW).Render(b.String())
+// drawBorderedBox draws a NormalBorder box around content using lipgloss's
+// built-in Border.
+func drawBorderedBox(content string, boxW int) string {
+	return borderBoxStyle.Width(boxW).Render(content)
 }
 
 // osc8Link returns an OSC-8 hyperlink sequence. Most modern terminals
@@ -70,49 +43,48 @@ func fillBody(content string, contentH int) string {
 }
 
 // menuTitle renders a configuration-menu title bar that fills the full
-// terminal width with Surface background — no leaking character at the end.
+// terminal width.
 func menuTitle(title string, width int) string {
-	ts := S.Title.Copy().Background(P.Surface)
-	return menuTitleBg.Width(width).Render(ts.Render(title))
+	return S.Title.Width(width).Render(title)
 }
 
-// menuLine wraps a single menu row in Surface background and fills to the
-// given width, preventing bg leaks from inner ANSI resets.
+// menuLine wraps a single menu row, filling to the given width.
 func menuLine(content string, width int) string {
-	return menuLineBg.Width(width).Render(content)
-}
-
-// section renders a titled horizontal rule: "── Title ──────────"
-func section(title string, width int) string {
-	rem := width - lipgloss.Width(title)
-	if rem > 0 {
-		return SectionStyle.Render(title + strings.Repeat("─", rem))
+	if lipgloss.Width(content) >= width {
+		return content
 	}
-	return SectionStyle.Render(title)
+	return content + strings.Repeat(" ", width-lipgloss.Width(content))
 }
 
-// fit renders s padded to exactly w cells using lipgloss. An empty string
-// renders as a dim em-dash. Strings wider than w are truncated.
+// fit renders s padded to exactly w cells. An empty string renders as a dim
+// em-dash. Strings wider than w are truncated. Uses plain string ops — no
+// lipgloss allocation.
 func fit(s string, w int) string {
 	if s == "" {
-		return DimStyle.Width(w).Render("\u2014")
+		return DimStyle.Render(padOrTrunc("\u2014", w))
 	}
-	if lipgloss.Width(s) > w {
-		return lipgloss.NewStyle().Width(w).Render(truncate(s, w))
-	}
-	return lipgloss.NewStyle().Width(w).Render(s)
+	return padOrTrunc(s, w)
 }
 
 // clamp renders s padded/truncated to exactly w cells with spaces.
 // An empty string renders as w spaces.
 func clamp(s string, w int) string {
 	if s == "" {
-		return lipgloss.NewStyle().Width(w).Render("")
+		return strings.Repeat(" ", w)
 	}
-	if lipgloss.Width(s) > w {
-		return lipgloss.NewStyle().Width(w).Render(truncate(s, w))
+	return padOrTrunc(s, w)
+}
+
+// padOrTrunc returns s truncated or padded with spaces to exactly w cells.
+func padOrTrunc(s string, w int) string {
+	sw := lipgloss.Width(s)
+	if sw > w {
+		return truncate(s, w)
 	}
-	return lipgloss.NewStyle().Width(w).Render(s)
+	if sw < w {
+		return s + strings.Repeat(" ", w-sw)
+	}
+	return s
 }
 
 // --- standalone utilities (moved from model.go) ---
@@ -157,7 +129,6 @@ func truncate(s string, max int) string {
 
 // FixedZoneHeight is the number of rows consumed by the fixed UI zones:
 // status bar (1) + profile line (0-1) + tab bar (1) + help bar (1).
-// Use this instead of magic number 4 throughout the codebase.
 const FixedZoneHeight = 4
 
 // contentHeight returns the available content height for a given terminal height
@@ -170,56 +141,13 @@ func contentHeight(terminalH int) int {
 	return h
 }
 
-// safeWidth returns a clamped width suitable for content rendering.
-// Ensures a minimum of 30 columns.
-func safeWidth(w int) int {
-	if w < 30 {
-		return 30
-	}
-	return w
-}
-
-// safeHeight returns a clamped height with the given minimum.
-func safeHeight(h, min int) int {
-	if h < min {
-		return min
-	}
-	return h
-}
-
-// emptyState returns a dimmed placeholder string for empty content areas.
-func emptyState() string {
-	return DimStyle.Render("\u2014")
-}
-
-// renderSectionTitle renders a titled horizontal rule separator.
-func renderSectionTitle(title string, width int) string {
-	return section(title, width)
-}
-
-// truncWithEllipsis truncates a string to max cells with ellipsis if needed.
-func truncWithEllipsis(s string, max int) string {
-	return truncate(s, max)
-}
-
 // =============================================================================
 // Textinput helpers
 // =============================================================================
 
-// applyTextinputSurfaceStyle sets Surface background on all style states
-// of a textinput to prevent background leaks from ANSI reset codes.
-func applyTextinputSurfaceStyle(ti *textinput.Model) {
-	s := ti.Styles()
-	s.Focused.Text = s.Focused.Text.Background(P.Surface)
-	s.Focused.Placeholder = s.Focused.Placeholder.Background(P.Surface)
-	s.Focused.Prompt = s.Focused.Prompt.Background(P.Surface)
-	s.Focused.Suggestion = s.Focused.Suggestion.Background(P.Surface)
-	s.Blurred.Text = s.Blurred.Text.Background(P.Surface)
-	s.Blurred.Placeholder = s.Blurred.Placeholder.Background(P.Surface)
-	s.Blurred.Prompt = s.Blurred.Prompt.Background(P.Surface)
-	s.Blurred.Suggestion = s.Blurred.Suggestion.Background(P.Surface)
-	ti.SetStyles(s)
-}
+// applyTextinputSurfaceStyle is a no-op. Background styling has been removed
+// for performance; textinputs inherit terminal default background.
+func applyTextinputSurfaceStyle(ti *textinput.Model) {}
 
 // newTextinput creates a textinput with Prompt already cleared (the default
 // "> " prompt is not useful in our forms). All other fields are at defaults.

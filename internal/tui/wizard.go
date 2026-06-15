@@ -31,24 +31,24 @@ const (
 )
 
 type Wizard struct {
-	App         *app.App
-	step        wizardStep
-	station     *StationForm
-	rigForm     *RigForm
-	wsjtxEnable bool
-	wsjtxHost   textinput.Model
-	wsjtxPort   textinput.Model
-	qrzEnable   bool
-	qrzUser     textinput.Model
-	qrzPass     textinput.Model
-	qrzTesting  bool
+	App           *app.App
+	step          wizardStep
+	station       *StationForm
+	rigForm       *RigForm
+	wsjtxEnable   bool
+	wsjtxHost     textinput.Model
+	wsjtxPort     textinput.Model
+	qrzEnable     bool
+	qrzUser       textinput.Model
+	qrzPass       textinput.Model
+	qrzTesting    bool
 	qrzTestResult string
-	integFocus  int // 0=wsjtx cb, 1=wsjtx host, 2=wsjtx port, 3=qrz cb, 4=qrz user, 5=qrz pass, 6=qrz test
-	tzIndex     int
-	toasts      *ToastQueue
-	width       int
-	height      int
-	Completed   bool // true only when full wizard finished
+	integFocus    int // 0=wsjtx cb, 1=wsjtx host, 2=wsjtx port, 3=qrz cb, 4=qrz user, 5=qrz pass, 6=qrz test
+	tzIndex       int
+	toasts        *ToastQueue
+	width         int
+	height        int
+	Completed     bool // true only when full wizard finished
 
 	// Wavelog async state (for wizard step 1 buttons)
 	wlUpdating   bool
@@ -324,8 +324,8 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 					}
 					w.step = stepTimezone
-				_, _, _, _, _, _, wlOn, _, _, _ := w.station.Values()
-				applog.InfoDetail("Wizard: integrations step done", fmt.Sprintf("wsjtx=%v qrz=%v wavelog=%v", w.wsjtxEnable, w.qrzEnable, wlOn))
+					_, _, _, _, _, _, wlOn, _, _, _ := w.station.Values()
+					applog.InfoDetail("Wizard: integrations step done", fmt.Sprintf("wsjtx=%v qrz=%v wavelog=%v", w.wsjtxEnable, w.qrzEnable, wlOn))
 					return w, nil
 				}
 				// Tab / Down navigation
@@ -409,7 +409,7 @@ func (w *Wizard) View() tea.View {
 	if w.width > 0 && w.height > 0 && (w.width < 75 || w.height < 24) {
 		msg := fmt.Sprintf("\n  CQOps — Terminal too small: %dx%d (min 75x24)\n\n  Press F10 and then Enter to quit",
 			w.width, w.height)
-		return tea.NewView(lipgloss.NewStyle().Foreground(P.Error).Render(msg))
+		return tea.NewView(ErrorStyle.Render(msg))
 	}
 
 	var content string
@@ -432,7 +432,6 @@ func (w *Wizard) View() tea.View {
 	v := tea.NewView(finalView)
 	v.AltScreen = true
 	v.WindowTitle = "CQOps — Setup Wizard"
-	v.BackgroundColor = P.Surface
 	return v
 }
 
@@ -464,7 +463,6 @@ func (w *Wizard) wizardFormBox() lipgloss.Style {
 		Width(formW).
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(P.TextDim).
-		Background(P.Surface).
 		Padding(1, 2)
 }
 
@@ -473,9 +471,8 @@ func (w *Wizard) wizardFormBox() lipgloss.Style {
 // MaxHeight clipping — same pattern as model.go).
 func (w *Wizard) wizardLayout(body string, help string) string {
 	_, tw := w.clampedDims()
-	center := lipgloss.NewStyle().Width(tw).Align(lipgloss.Center)
+	center := wizardCenterBase.Width(tw)
 
-	// Compose top section: banner + gap + indicator + body
 	top := lipgloss.JoinVertical(lipgloss.Center,
 		center.Render(w.banner()),
 		"",
@@ -483,14 +480,11 @@ func (w *Wizard) wizardLayout(body string, help string) string {
 		center.Render(body),
 	)
 
-	// Fill to terminal height with Surface background so there are
-	// no color gaps between the banner, form box, and help bar.
-	bg := lipgloss.NewStyle().Background(P.Surface)
 	h, tw := w.clampedDims()
 	contentH := h - lipgloss.Height(help)
-	top = bg.Height(contentH).MaxHeight(contentH).Render(top)
+	top = lipgloss.NewStyle().Height(contentH).MaxHeight(contentH).Render(top)
 
-	return bg.Width(tw).Render(lipgloss.JoinVertical(lipgloss.Left, top, help))
+	return lipgloss.JoinVertical(lipgloss.Left, top, help)
 }
 
 // ── Banner ───────────────────────────────────────────────────────
@@ -498,7 +492,7 @@ func (w *Wizard) wizardLayout(body string, help string) string {
 func (w *Wizard) banner() string {
 	ver := version.Resolved()
 	name := S.WizardAccent.Render("CQOps v" + ver)
-	tag := S.WizardDim.Render("Portable Ham Radio Logger")
+	tag := LabelStyle.Render("Portable Ham Radio Logger")
 
 	// Plain OSC-8 hyperlink — no lipgloss styling to avoid mangling escape sequences.
 	// The link is rendered as the raw ANSI hyperlink and then centered by wizardLayout.
@@ -577,8 +571,6 @@ func (w *Wizard) viewRig() string {
 }
 
 func (w *Wizard) viewWSJTX() string {
-	bg := lipgloss.NewStyle().Background(P.Surface)
-
 	var inner strings.Builder
 
 	// ── WSJT-X section ──
@@ -592,10 +584,8 @@ func (w *Wizard) viewWSJTX() string {
 		wsjtxPrefix = CursorStyle.Render("> ")
 		wsjtxLabel = CursorStyle.Render(fit("WSJT-X:", 14))
 		wsjtxCb = CursorStyle.Render(wsjtxCb)
-	} else {
-		wsjtxCb = bg.Render(wsjtxCb)
 	}
-	inner.WriteString(menuLine(wsjtxPrefix+wsjtxLabel+bg.Render(" ")+wsjtxCb, 80))
+	inner.WriteString(menuLine(wsjtxPrefix+wsjtxLabel+" "+wsjtxCb, 80))
 	inner.WriteString("\n")
 
 	if w.wsjtxEnable {
@@ -614,10 +604,8 @@ func (w *Wizard) viewWSJTX() string {
 		qrzPrefix = CursorStyle.Render("> ")
 		qrzLabel = CursorStyle.Render(fit("QRZ.com:", 14))
 		qrzCb = CursorStyle.Render(qrzCb)
-	} else {
-		qrzCb = bg.Render(qrzCb)
 	}
-	inner.WriteString(menuLine(qrzPrefix+qrzLabel+bg.Render(" ")+qrzCb, 80))
+	inner.WriteString(menuLine(qrzPrefix+qrzLabel+" "+qrzCb, 80))
 	inner.WriteString("\n")
 
 	if w.qrzEnable {
@@ -633,7 +621,7 @@ func (w *Wizard) viewWSJTX() string {
 		}
 		status := ""
 		if w.qrzTesting {
-			status = SubtleStyle.Render("Testing…")
+			status = DimStyle.Render("Testing…")
 		} else if w.qrzTestResult != "" {
 			if strings.Contains(w.qrzTestResult, "OK") {
 				status = SuccessStyle.Render(w.qrzTestResult)
@@ -641,7 +629,7 @@ func (w *Wizard) viewWSJTX() string {
 				status = ErrorStyle.Render(w.qrzTestResult)
 			}
 		}
-		inner.WriteString(menuLine(testPrefix+testBtn+bg.Render("  ")+status, 80))
+		inner.WriteString(menuLine(testPrefix+testBtn+"  "+status, 80))
 		inner.WriteString("\n")
 	}
 
@@ -659,7 +647,6 @@ func (w *Wizard) viewWSJTX() string {
 
 // renderIntegField renders a labelled textinput line for the integrations step.
 func renderIntegField(label string, ti *textinput.Model, focused bool, masked bool, maxW int) string {
-	bg := lipgloss.NewStyle().Background(P.Surface)
 	prefix := "  "
 	lbl := LabelStyle.Render(fit(label, 14))
 	raw := strings.TrimSpace(ti.Value())
@@ -669,13 +656,13 @@ func renderIntegField(label string, ti *textinput.Model, focused bool, masked bo
 		lbl = CursorStyle.Render(fit(label, 14))
 		val = ti.View()
 	} else if raw == "" {
-		val = SubtleStyle.Render("\u2014")
+		val = DimStyle.Render("\u2014")
 	} else if masked {
 		val = ValueStyle.Render(strings.Repeat("*", len(raw)))
 	} else {
 		val = ValueStyle.Render(raw)
 	}
-	return menuLine(prefix+lbl+bg.Render(" ")+val, maxW) + "\n"
+	return menuLine(prefix+lbl+" "+val, maxW) + "\n"
 }
 
 func (w *Wizard) viewTimezone() string {
@@ -724,11 +711,11 @@ func (w *Wizard) viewSummary() string {
 	inner := lipgloss.JoinVertical(lipgloss.Left,
 		S.WizardHeader.Render("Configuration ready"),
 		"",
-		S.WizardDim.Render("Your configuration file is almost complete."),
+		LabelStyle.Render("Your configuration file is almost complete."),
 		"",
-		S.WizardDim.Render("We recommend visiting the Configuration menu after"),
-		S.WizardDim.Render("starting the program to set additional options and"),
-		S.WizardDim.Render("enable new features."),
+		LabelStyle.Render("We recommend visiting the Configuration menu after"),
+		LabelStyle.Render("starting the program to set additional options and"),
+		LabelStyle.Render("enable new features."),
 		"",
 		S.WizardAccent.Render("Press Ctrl+S to generate the configuration"),
 		S.WizardAccent.Render("file and start the program."),

@@ -37,8 +37,8 @@ func TestMercatorXY(t *testing.T) {
 		wantInBounds bool // expecting coords to be within [0,w) × [0,h)
 	}{
 		// Valid coordinates — should return in-bounds pixel coords.
-		{lat: 52.0, lon: 21.0, w: 80, h: 24, wantInBounds: true},  // Warsaw area
-		{lat: 50.0, lon: 20.0, w: 80, h: 24, wantInBounds: true},  // Poland
+		{lat: 52.0, lon: 21.0, w: 80, h: 24, wantInBounds: true},   // Warsaw area
+		{lat: 50.0, lon: 20.0, w: 80, h: 24, wantInBounds: true},   // Poland
 		{lat: -34.0, lon: -58.0, w: 80, h: 24, wantInBounds: true}, // Buenos Aires
 		// (0, 0) is the sentinel for "no location" — returns (-1, -1).
 		{lat: 0, lon: 0, w: 80, h: 24, wantSentinel: true},

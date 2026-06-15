@@ -46,16 +46,16 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("F2", "Partner/Photo"),
 		),
 		LogEditor: key.NewBinding(
-		key.WithKeys("f6"),
-		key.WithHelp("F6", "Log Editor"),
+			key.WithKeys("f6"),
+			key.WithHelp("F6", "Log Editor"),
 		),
 		Config: key.NewBinding(
-		key.WithKeys("f7"),
-		key.WithHelp("F7", "Config"),
+			key.WithKeys("f7"),
+			key.WithHelp("F7", "Config"),
 		),
 		Logs: key.NewBinding(
-		key.WithKeys("f8"),
-		key.WithHelp("F8", "Logs"),
+			key.WithKeys("f8"),
+			key.WithHelp("F8", "Logs"),
 		),
 		Save: key.NewBinding(
 			key.WithKeys("ctrl+s"),

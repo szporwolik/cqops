@@ -8,6 +8,16 @@ import (
 	"github.com/szporwolik/cqops/internal/store"
 )
 
+// Pre-allocated QSO form layout data — avoids per-frame allocations.
+var (
+	choiceFields  = map[field]bool{fieldBand: true, fieldMode: true, fieldSubmode: true}
+	formLeft      = []field{fieldDate, fieldTime, fieldCall, fieldFreq, fieldBand, fieldMode, fieldSubmode}
+	formMiddle    = []field{fieldRSTSent, fieldRSTRcvd, fieldName, fieldQTH, fieldGrid, fieldCountry}
+	formRight     = []field{fieldTXPower, fieldFreqRx, fieldSOTA, fieldPOTA, fieldWWFF, fieldIOTA}
+	choiceIconStr = DimStyle.Render("\u25bc ")
+	choiceIconW   = lipgloss.Width(choiceIconStr)
+)
+
 // viewForm renders the QSO entry form in a three-column layout.
 // width is the exact available space inside the border.
 func (m *Model) viewForm(width int) string {
@@ -15,12 +25,6 @@ func (m *Model) viewForm(width int) string {
 	if bodyW < 20 {
 		bodyW = 20
 	}
-	dim := DimStyle
-	choiceFields := map[field]bool{fieldBand: true, fieldMode: true, fieldSubmode: true}
-
-	leftFields := []field{fieldDate, fieldTime, fieldCall, fieldFreq, fieldBand, fieldMode, fieldSubmode}
-	middleFields := []field{fieldRSTSent, fieldRSTRcvd, fieldName, fieldQTH, fieldGrid, fieldCountry}
-	rightFields := []field{fieldTXPower, fieldFreqRx, fieldSOTA, fieldPOTA, fieldWWFF, fieldIOTA}
 
 	colW := (bodyW - 4) / 3 // 4 = two 2-char gaps between three columns
 	if colW < 20 {
@@ -35,17 +39,13 @@ func (m *Model) viewForm(width int) string {
 
 		choiceIcon := ""
 		if choiceFields[f] {
-			choiceIcon = dim.Render("\u25bc ")
+			choiceIcon = choiceIconStr
 		}
 
 		// Width available for the textinput value.
-		prefixW := 2  // "> " or "  "
-		lblW := 13    // FormLabel.Width(13)
-		choiceW := lipgloss.Width(choiceIcon)
-		gapW := 1
-		valW := w - prefixW - lblW - choiceW - gapW - 2
+		valW := w - 2 - 13 - choiceIconW - 1 - 2
 		if valW > 20 {
-			valW -= 1 // extra margin for wider columns
+			valW -= 1
 		}
 		if valW < 3 {
 			valW = 3
@@ -53,18 +53,15 @@ func (m *Model) viewForm(width int) string {
 		ti.SetWidth(valW)
 		if isFocused {
 			if lipgloss.Width(raw) > valW {
-				ti.SetWidth(valW - 1) // one less so caret stays visible
+				ti.SetWidth(valW - 1)
 			}
 			ti.SetCursor(ti.Position())
 			m.fields[f] = ti
 		}
 
-		// Focused: Bubbles handles width/scrolling natively.
-		// Unfocused: truncate raw text — Bubbles' offsetRight isn't reliable
-		// when cursor is at 0 and text exceeds width.
 		var v string
 		if raw == "" && !isFocused {
-			v = SubtleStyle.Render("\u2014")
+			v = DimStyle.Render("\u2014")
 		} else if isFocused {
 			v = ti.View()
 		} else if f == fieldCall {
@@ -77,42 +74,36 @@ func (m *Model) viewForm(width int) string {
 		// Label with focus indicator.
 		prefix := "  "
 		lblStyled := S.FormLabel.Align(lipgloss.Left).Render(label)
+		var lblPart string
 		if isFocused {
 			prefix = CursorStyle.Render("> ")
-			lblStyled = S.FormLabel.Copy().
-				Foreground(lipgloss.Color("212")).
-				Align(lipgloss.Left).
-				Render(label)
+			lblStyled = fieldFocusedLabel.Align(lipgloss.Left).Render(label)
+			lblPart = fieldFocusedPrefix.Render(prefix) + lblStyled
+		} else {
+			lblPart = fieldUnfocusedPrefix.Render(prefix) + lblStyled
 		}
-		lblPart := lipgloss.NewStyle().Foreground(P.TextMuted).Background(P.Surface).Render(prefix) + lblStyled
-		if isFocused {
-			lblPart = lipgloss.NewStyle().Foreground(lipgloss.Color("212")).Background(P.Surface).Render(prefix) + lblStyled
-		}
-		gap := lipgloss.NewStyle().Width(gapW).Background(P.Surface).Render(" ")
-		return lipgloss.NewStyle().Width(w).MaxWidth(w).Background(P.Surface).Render(
-			lipgloss.JoinHorizontal(lipgloss.Center, lblPart, gap, val),
-		)
+		return lipgloss.JoinHorizontal(lipgloss.Center, lblPart, " ", val)
 	}
 
 	var b strings.Builder
 
-	rows := len(leftFields)
-	if len(middleFields) > rows {
-		rows = len(middleFields)
+	rows := len(formLeft)
+	if len(formMiddle) > rows {
+		rows = len(formMiddle)
 	}
-	if len(rightFields) > rows {
-		rows = len(rightFields)
+	if len(formRight) > rows {
+		rows = len(formRight)
 	}
 	for i := 0; i < rows; i++ {
 		var cols []string
-		if i < len(leftFields) {
-			cols = append(cols, renderField(leftFields[i], colW))
+		if i < len(formLeft) {
+			cols = append(cols, renderField(formLeft[i], colW))
 		}
-		if i < len(middleFields) {
-			cols = append(cols, renderField(middleFields[i], colW))
+		if i < len(formMiddle) {
+			cols = append(cols, renderField(formMiddle[i], colW))
 		}
-		if i < len(rightFields) {
-			cols = append(cols, renderField(rightFields[i], colW))
+		if i < len(formRight) {
+			cols = append(cols, renderField(formRight[i], colW))
 		}
 		if colW >= 20 {
 			b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, cols...))
@@ -147,48 +138,46 @@ func (m *Model) renderRetainCheckbox(colW int) string {
 	if m.retainComment {
 		mark = "[x]"
 	}
-	gap := lipgloss.NewStyle().Width(1).Background(P.Surface).Render(" ")
-	space := lipgloss.NewStyle().Width(1).Background(P.Surface).Render(" ")
+	space := " "
 	if m.retainFocused {
-		return lipgloss.NewStyle().Width(colW).Background(P.Surface).Render(
-			lipgloss.JoinHorizontal(lipgloss.Center,
-				CursorStyle.Render(" "+mark),
-				gap,
-				inputStyle.Render(label),
-			),
+		return lipgloss.JoinHorizontal(lipgloss.Center,
+			CursorStyle.Render(" "+mark),
+			space,
+			InputStyle.Render(label),
 		)
 	}
 	if m.retainComment {
-		return lipgloss.NewStyle().Width(colW).Background(P.Surface).Render(
-			lipgloss.JoinHorizontal(lipgloss.Center,
-				space,
-				inputStyle.Render(mark),
-				gap,
-				DimStyle.Render(label),
-			),
+		return lipgloss.JoinHorizontal(lipgloss.Center,
+			space,
+			InputStyle.Render(mark),
+			space,
+			DimStyle.Render(label),
 		)
 	}
-	return lipgloss.NewStyle().Width(colW).Background(P.Surface).Render(
-		lipgloss.JoinHorizontal(lipgloss.Center,
-			space,
-			DimStyle.Render(mark),
-			gap,
-			DimStyle.Render(label),
-		),
+	return lipgloss.JoinHorizontal(lipgloss.Center,
+		space,
+		DimStyle.Render(mark),
+		space,
+		DimStyle.Render(label),
 	)
 }
 
 // formPathRow renders the short-path info line between the QSO form and recent QSOs table.
+// Results are cached — only recomputed when grids or counts change.
 func (m *Model) formPathRow(width int) string {
 	ownGrid := formatLocator(m.App.Logbook.Station.Grid)
 	partnerGrid := formatLocator(strings.TrimSpace(m.fields[fieldGrid].Value()))
 
 	if ownGrid != "" && partnerGrid != "" {
+		sig := ownGrid + "|" + partnerGrid + "|" + m.App.Config.General.DistanceUnit
+		if m.cachedPathSig == sig && m.cachedPathLine != "" {
+			return m.cachedPathLine
+		}
 		line := distanceLine(ownGrid, partnerGrid, m.App.Config.General.DistanceUnit)
 		if line != "" {
 			line = "Path  " + line
 			if m.wlPrivateData != nil {
-				sep := lipgloss.NewStyle().Foreground(P.TextDim).Background(P.Surface).Render("  \u00b7  ")
+				sep := DimStyle.Render("  \u00b7  ")
 				if !m.wlPrivateData.Worked() {
 					line += sep + S.Warning.Render("New Call!")
 				}
@@ -199,28 +188,30 @@ func (m *Model) formPathRow(width int) string {
 			if lipgloss.Width(line) > width {
 				line = truncate(line, width)
 			}
-			return lipgloss.NewStyle().
-				Width(width).
-				Align(lipgloss.Center).
-				Foreground(P.Info).
-				Background(P.Surface).
-				Render(line)
+			result := pathInfoStyle.Width(width).Align(lipgloss.Center).Render(line)
+			m.cachedPathSig = sig
+			m.cachedPathLine = result
+			return result
 		}
 	}
+	m.cachedPathSig = ""
+	m.cachedPathLine = ""
 
 	if partnerGrid != "" && ownGrid == "" {
-		return lipgloss.NewStyle().
-			Width(width).
-			Align(lipgloss.Center).
-			Foreground(P.TextMuted).
-			Background(P.Surface).
+		return pathMutedStyle.Width(width).Align(lipgloss.Center).
 			Render("Set your grid in station config to enable path")
 	}
 
-	counts, err := store.CountQSOs(m.App.DB)
-	if err != nil {
-		counts = store.QSOCounts{}
+	// Use cached counts — refreshed on QSO save/delete.
+	if !m.qsoCountsValid {
+		counts, err := store.CountQSOs(m.App.DB)
+		if err != nil {
+			counts = store.QSOCounts{}
+		}
+		m.qsoCounts = counts
+		m.qsoCountsValid = true
 	}
+	counts := m.qsoCounts
 	var parts []string
 	if counts.Total > 0 {
 		parts = append(parts, fmt.Sprintf("Log %d QSOs", counts.Total))
@@ -243,10 +234,5 @@ func (m *Model) formPathRow(width int) string {
 	if lipgloss.Width(line) > width {
 		line = truncate(line, width)
 	}
-	return lipgloss.NewStyle().
-		Width(width).
-		Align(lipgloss.Center).
-		Foreground(P.TextMuted).
-		Background(P.Surface).
-		Render(line)
+	return pathMutedStyle.Width(width).Align(lipgloss.Center).Render(line)
 }

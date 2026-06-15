@@ -147,10 +147,6 @@ func NewLogbookEditor(db *sql.DB, wlURL, wlKey, wlStationID string, wlLastFetche
 		}
 		le.fields[i] = ti
 	}
-	// Apply Surface background to all textinput style states.
-	for i := qsoEditField(0); i < qefCount; i++ {
-		applyTextinputSurfaceStyle(&le.fields[i])
-	}
 	return le
 }
 

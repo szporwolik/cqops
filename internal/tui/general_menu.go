@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/config"
 )
 
@@ -109,8 +108,6 @@ func (gm *GeneralMenu) View() tea.View {
 	b.WriteString(menuTitle("Settings — General", w))
 	b.WriteString("\n\n")
 
-	gap := lipgloss.NewStyle().Background(P.Surface).Render(" ")
-
 	unitVal := "Kilometers (km)"
 	if gm.distanceUnit == "mi" {
 		unitVal = "Miles (mi)"
@@ -119,9 +116,9 @@ func (gm *GeneralMenu) View() tea.View {
 	unitLabel := fit("Distance unit", 14)
 	unitDisplay := ValueStyle.Render(unitVal)
 	if gm.cursor == 0 {
-		b.WriteString(menuLine(CursorStyle.Render("> ")+CursorStyle.Render(unitLabel)+gap+CursorStyle.Render(unitVal), w))
+		b.WriteString(menuLine(CursorStyle.Render("> ")+CursorStyle.Render(unitLabel)+" "+CursorStyle.Render(unitVal), w))
 	} else {
-		b.WriteString(menuLine("  "+LabelStyle.Render(unitLabel)+gap+unitDisplay, w))
+		b.WriteString(menuLine("  "+LabelStyle.Render(unitLabel)+" "+unitDisplay, w))
 	}
 	b.WriteString("\n")
 
@@ -130,9 +127,9 @@ func (gm *GeneralMenu) View() tea.View {
 	tzLabel := fit("Timezone", 14)
 	tzDisplay := ValueStyle.Render(tzVal)
 	if gm.cursor == 1 {
-		b.WriteString(menuLine(CursorStyle.Render("> ")+CursorStyle.Render(tzLabel)+gap+CursorStyle.Render(tzVal), w))
+		b.WriteString(menuLine(CursorStyle.Render("> ")+CursorStyle.Render(tzLabel)+" "+CursorStyle.Render(tzVal), w))
 	} else {
-		b.WriteString(menuLine("  "+LabelStyle.Render(tzLabel)+gap+tzDisplay, w))
+		b.WriteString(menuLine("  "+LabelStyle.Render(tzLabel)+" "+tzDisplay, w))
 	}
 	b.WriteString("\n")
 

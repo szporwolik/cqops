@@ -6,7 +6,6 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/config"
 )
 
@@ -41,11 +40,6 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 	port.SetValue("2233")
 	if cfg.WSJTX.UDPPort > 0 {
 		port.SetValue(strconv.Itoa(cfg.WSJTX.UDPPort))
-	}
-
-	// Apply surface background to textinput styles
-	for _, ti := range []*textinput.Model{&host, &port} {
-		applyTextinputSurfaceStyle(ti)
 	}
 
 	return &IntegrationMenu{
@@ -179,8 +173,6 @@ func (im *IntegrationMenu) View() tea.View {
 	b.WriteString(menuTitle("Settings — Integration", w))
 	b.WriteString("\n\n")
 
-	bg := lipgloss.NewStyle().Background(P.Surface)
-
 	// ── WSJT-X section ──
 	checkbox := "[ ]"
 	if im.wsjtxEnabled {
@@ -190,10 +182,8 @@ func (im *IntegrationMenu) View() tea.View {
 	if im.focus == 0 {
 		wsjtxPrefix = CursorStyle.Render("> ")
 		checkbox = CursorStyle.Render(checkbox)
-	} else {
-		checkbox = bg.Render(checkbox)
 	}
-	b.WriteString(menuLine(wsjtxPrefix+LabelStyle.Render(fit("WSJT-X:", 14))+bg.Render(" ")+checkbox, w))
+	b.WriteString(menuLine(wsjtxPrefix+LabelStyle.Render(fit("WSJT-X:", 14))+" "+checkbox, w))
 
 	if im.wsjtxEnabled {
 		b.WriteString("\n")
@@ -207,16 +197,15 @@ func (im *IntegrationMenu) View() tea.View {
 
 // renderField renders a labelled textinput line — consistent with callbook menu.
 func (im *IntegrationMenu) renderField(focusIdx int, label string, ti *textinput.Model) string {
-	gap := lipgloss.NewStyle().Background(P.Surface).Render(" ")
 	val := InputStyle.Render(strings.TrimSpace(ti.Value()))
 	if im.focus == focusIdx {
 		val = ti.View()
 	}
 	padded := fit(label, 14)
 	if im.focus == focusIdx {
-		return CursorStyle.Render("> ") + CursorStyle.Render(padded) + gap + val
+		return CursorStyle.Render("> ") + CursorStyle.Render(padded) + " " + val
 	}
-	return "  " + LabelStyle.Render(padded) + gap + val
+	return "  " + LabelStyle.Render(padded) + " " + val
 }
 
 // Values returns WSJT-X config values.

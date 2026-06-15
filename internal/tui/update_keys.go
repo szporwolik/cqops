@@ -150,7 +150,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 					cmds = append(cmds, m.qrzLookup(call))
 				}
 				wl := m.App.Logbook.Wavelog
-			if wl != nil && wl.Enabled && wl.APIKey != "" {
+				if wl != nil && wl.Enabled && wl.APIKey != "" {
 					cmds = append(cmds, m.wlLookup(call))
 				}
 				if len(cmds) > 0 {

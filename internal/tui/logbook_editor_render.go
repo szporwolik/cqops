@@ -109,14 +109,12 @@ func (le *LogbookEditor) View() tea.View {
 			le.buildTable()
 		}
 		contentH := contentHeight(le.height)
-		// Use drawBorderedBox so every border character has explicit
-		// Background(P.Surface) — prevents the right │ leak.
+		// Simple bordered box without background fill.
 		inner := lipgloss.NewStyle().
 			MaxWidth(bodyW - 2).
 			Height(contentH - 2).
-			Background(P.Surface).
 			Render(le.table.View())
-		return tea.NewView(drawBorderedBox(inner, bodyW-2, bodyW))
+		return tea.NewView(drawBorderedBox(inner, bodyW))
 	}
 }
 
@@ -134,9 +132,8 @@ func (le *LogbookEditor) viewWithDialog(bodyW int) string {
 		lipgloss.NewStyle().
 			MaxWidth(bodyW-2).
 			Height(contentH-2).
-			Background(P.Surface).
 			Render(le.table.View()),
-		bodyW-2, bodyW,
+		bodyW,
 	)
 	if le.dialog != nil {
 		return RenderDialogOverlay(body, *le.dialog, bodyW, le.height)
@@ -145,7 +142,7 @@ func (le *LogbookEditor) viewWithDialog(bodyW int) string {
 }
 
 func (le *LogbookEditor) viewNormalizeConfirm(bodyW int) string {
-	return S.ConfirmBox.Width(bodyW).Render(
+	return confirmBoxStyle.Width(bodyW).Render(
 		lipgloss.JoinVertical(lipgloss.Left,
 			S.ConfirmTitle.Render(fmt.Sprintf("Normalize %d QSOs", len(le.mismatchQSOs))),
 			"",

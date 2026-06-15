@@ -1,9 +1,5 @@
 package tui
 
-import (
-	"charm.land/lipgloss/v2"
-)
-
 // Layout holds pre-computed dimensions for all visual zones of the TUI.
 // All values are measured from actual rendered content, not hard-coded.
 type Layout struct {
@@ -22,15 +18,14 @@ type Layout struct {
 	ContentH int // remaining height after fixed zones
 }
 
-// MeasureLayout renders each fixed zone and returns a Layout with measured
-// dimensions. This is the single source of truth for all sizing — no magic numbers.
+// MeasureLayout returns a Layout with measured dimensions.
+// Bar heights are known constants (1 row each); profile line is 0 or 1.
+// This avoids rendering bars twice — once here, once in View().
 func MeasureLayout(m *Model) Layout {
 	var l Layout
 	l.TerminalW = m.width
 	l.TerminalH = m.height
 
-	// Clamp terminal to sane minimums (Bubble Tea itself doesn't do this;
-	// we provide a reasonable floor for the UI to not break)
 	if l.TerminalW < 40 {
 		l.TerminalW = 80
 	}
@@ -38,28 +33,15 @@ func MeasureLayout(m *Model) Layout {
 		l.TerminalH = 24
 	}
 
-	// Render each fixed zone and measure its height
-	statusBar := m.renderStatusBar()
-	l.StatusH = lipgloss.Height(statusBar)
+	l.StatusH = 1
+	l.TabH = 1
+	l.HelpH = 1
 
-	tabBar := m.renderTabBar()
-	l.TabH = lipgloss.Height(tabBar)
-
-	// Profile line: always measured (0 height when empty).
-	if m.confirm == nil {
-		profileLine := m.renderProfileLine()
-		if profileLine != "" {
-			l.ProfileH = lipgloss.Height(profileLine)
-		}
+	// Profile line: 1 row when station details are configured and no confirm dialog.
+	if m.confirm == nil && m.hasProfileLine() {
+		l.ProfileH = 1
 	}
 
-	helpBar := m.renderHelpBar()
-	l.HelpH = lipgloss.Height(helpBar)
-
-	// Toasts overlay the content area — they do not consume vertical space.
-	// Their height is tracked only for positioning calculations.
-
-	// Content area fills remaining vertical space
 	l.ContentW = l.TerminalW - 2
 	if l.ContentW < 20 {
 		l.ContentW = 20
@@ -74,30 +56,17 @@ func MeasureLayout(m *Model) Layout {
 	return l
 }
 
-// =============================================================================
-// Content area height breakdown for QSO form + table
-// =============================================================================
-
-// QSOFormHeight returns the height of the QSO entry form.
-// This is measured rather than hard-coded, so if fields change the layout adapts.
-func QSOFormHeight(m *Model, contentW int) int {
-	form := m.viewForm(contentW)
-	pathLine := m.formPathRow(contentW)
-	if pathLine != "" {
-		form += "\n" + pathLine
-	}
-	return lipgloss.Height(form)
-}
-
-// ViewportHeight returns the height available for the QSO table viewport,
-// given the content area height and the measured form height.
-func ViewportHeight(contentH, formH int) int {
-	// Reserve 1 line for spacing between form and table
-	vpH := contentH - formH - 1
-	if vpH < 3 {
-		vpH = 3
-	}
-	return vpH
+// hasProfileLine returns true when the profile line will render non-empty.
+func (m *Model) hasProfileLine() bool {
+	s := m.App.Logbook.Station
+	return s.Operator != "" ||
+		s.RigModel(m.App.Config.Rigs) != "" ||
+		s.RigAntenna(m.App.Config.Rigs) != "" ||
+		(m.App.Logbook.Wavelog != nil && m.App.Logbook.Wavelog.Enabled && m.wlOnline) ||
+		s.Grid != "" ||
+		s.SOTARef != "" ||
+		s.POTARef != "" ||
+		s.WWFFRef != ""
 }
 
 // ContentWidth returns a content-area width suitable for sub-views.

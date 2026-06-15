@@ -8,12 +8,12 @@ import (
 )
 
 type Config struct {
-	General  GeneralConfig          `yaml:"general"`
-	State    StateConfig            `yaml:"state"`
-	QRZ      QRZConfig              `yaml:"qrz,omitempty"`
-	Logbooks map[string]Logbook     `yaml:"logbooks"`
-	Rigs     map[string]RigPreset   `yaml:"rigs,omitempty"`
-	WSJTX    WSJTXConfig            `yaml:"wsjtx,omitempty"`
+	General  GeneralConfig        `yaml:"general"`
+	State    StateConfig          `yaml:"state"`
+	QRZ      QRZConfig            `yaml:"qrz,omitempty"`
+	Logbooks map[string]Logbook   `yaml:"logbooks"`
+	Rigs     map[string]RigPreset `yaml:"rigs,omitempty"`
+	WSJTX    WSJTXConfig          `yaml:"wsjtx,omitempty"`
 }
 
 type GeneralConfig struct {
@@ -40,12 +40,12 @@ type QRZConfig struct {
 }
 
 type Logbook struct {
-	ID           string          `yaml:"-"`
-	Description  string          `yaml:"description"`
-	DatabasePath string          `yaml:"database_path,omitempty"`
-	Station      Station         `yaml:"station"`
-	ADIF         ADIFConfig      `yaml:"adif,omitempty"`
-	Wavelog      *WavelogConfig  `yaml:"wavelog,omitempty"`
+	ID           string         `yaml:"-"`
+	Description  string         `yaml:"description"`
+	DatabasePath string         `yaml:"database_path,omitempty"`
+	Station      Station        `yaml:"station"`
+	ADIF         ADIFConfig     `yaml:"adif,omitempty"`
+	Wavelog      *WavelogConfig `yaml:"wavelog,omitempty"`
 }
 
 type Station struct {

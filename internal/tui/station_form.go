@@ -6,7 +6,6 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/config"
 )
 
@@ -50,10 +49,6 @@ func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder strin
 	wu := mkTI(80, 28, "https://log.example.com")
 	wk := mkTI(64, 28, "Wavelog API key")
 	ws := mkTI(80, 60, "press Update to fetch")
-
-	for _, ti := range []*textinput.Model{&cs, &op, &lc, &sr, &pr, &wr, &wu, &wk, &ws} {
-		applyTextinputSurfaceStyle(ti)
-	}
 
 	return &StationForm{
 		Callsign:    cs,
@@ -234,8 +229,6 @@ func (f *StationForm) SetWavelogValues(wl *config.WavelogConfig) {
 }
 
 func (f *StationForm) View() tea.View {
-	bg := lipgloss.NewStyle().Background(P.Surface)
-
 	type fieldDef struct {
 		label string
 		ti    *textinput.Model
@@ -266,10 +259,8 @@ func (f *StationForm) View() tea.View {
 		wlCbPrefix = CursorStyle.Render("> ")
 		wlCbLabel = CursorStyle.Render(fit("Wavelog:", 22))
 		wlCheckbox = CursorStyle.Render(wlCheckbox)
-	} else {
-		wlCheckbox = bg.Render(wlCheckbox)
 	}
-	b.WriteString(menuLine(wlCbPrefix+wlCbLabel+bg.Render(" ")+wlCheckbox, 80))
+	b.WriteString(menuLine(wlCbPrefix+wlCbLabel+" "+wlCheckbox, 80))
 	b.WriteString("\n")
 
 	if f.WlEnabled {
@@ -285,18 +276,18 @@ func (f *StationForm) View() tea.View {
 		updateBtn := "[ Update ]"
 		updateHint := "fetch stations from Wavelog"
 		if f.wlBtnFocus == 1 {
-			b.WriteString(menuLine("  "+CursorStyle.Render("> ")+CursorStyle.Render(updateBtn)+bg.Render(" ")+SubtleStyle.Render(updateHint), 80))
+			b.WriteString(menuLine("  "+CursorStyle.Render("> ")+CursorStyle.Render(updateBtn)+" "+DimStyle.Render(updateHint), 80))
 		} else {
-			b.WriteString(menuLine("    "+InputStyle.Render(updateBtn)+bg.Render(" ")+SubtleStyle.Render(updateHint), 80))
+			b.WriteString(menuLine("    "+InputStyle.Render(updateBtn)+" "+DimStyle.Render(updateHint), 80))
 		}
 		b.WriteString("\n")
 
 		testBtn := "[ Test ]"
 		testHint := "verify connection and station"
 		if f.wlBtnFocus == 2 {
-			b.WriteString(menuLine("  "+CursorStyle.Render("> ")+CursorStyle.Render(testBtn)+bg.Render(" ")+SubtleStyle.Render(testHint), 80))
+			b.WriteString(menuLine("  "+CursorStyle.Render("> ")+CursorStyle.Render(testBtn)+" "+DimStyle.Render(testHint), 80))
 		} else {
-			b.WriteString(menuLine("    "+InputStyle.Render(testBtn)+bg.Render(" ")+SubtleStyle.Render(testHint), 80))
+			b.WriteString(menuLine("    "+InputStyle.Render(testBtn)+" "+DimStyle.Render(testHint), 80))
 		}
 	}
 
@@ -304,7 +295,6 @@ func (f *StationForm) View() tea.View {
 }
 
 func (f *StationForm) renderFieldLine(label string, ti *textinput.Model) string {
-	bg := lipgloss.NewStyle().Background(P.Surface)
 	focused := ti.Focused()
 	raw := strings.TrimSpace(ti.Value())
 
@@ -317,7 +307,7 @@ func (f *StationForm) renderFieldLine(label string, ti *textinput.Model) string 
 	if focused {
 		val = ti.View()
 	} else if raw == "" {
-		val = SubtleStyle.Render("\u2014")
+		val = DimStyle.Render("\u2014")
 	} else {
 		val = ValueStyle.Render(raw)
 	}
@@ -325,7 +315,7 @@ func (f *StationForm) renderFieldLine(label string, ti *textinput.Model) string 
 	if focused {
 		prefix = CursorStyle.Render("> ")
 	}
-	return menuLine(prefix+lbl+bg.Render(" ")+val, 80) + "\n"
+	return menuLine(prefix+lbl+" "+val, 80) + "\n"
 }
 
 func (f *StationForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {

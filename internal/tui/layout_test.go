@@ -5,35 +5,6 @@ import (
 )
 
 // =============================================================================
-// ViewportHeight
-// =============================================================================
-
-func TestViewportHeight(t *testing.T) {
-	tests := []struct {
-		contentH, formH int
-		want            int
-	}{
-		// Normal case: 20 content, 7 form → 20 - 7 - 1 = 12
-		{contentH: 20, formH: 7, want: 12},
-		// Small terminal: 10 content, 5 form → 10 - 5 - 1 = 4
-		{contentH: 10, formH: 5, want: 4},
-		// Clamped to minimum 3
-		{contentH: 5, formH: 5, want: 3},
-		{contentH: 5, formH: 10, want: 3},
-		{contentH: 3, formH: 0, want: 3},
-		{contentH: 0, formH: 0, want: 3},
-		// Wide terminal
-		{contentH: 50, formH: 10, want: 39},
-	}
-	for _, tt := range tests {
-		got := ViewportHeight(tt.contentH, tt.formH)
-		if got != tt.want {
-			t.Errorf("ViewportHeight(%d, %d) = %d; want %d", tt.contentH, tt.formH, got, tt.want)
-		}
-	}
-}
-
-// =============================================================================
 // stripNonDigits
 // =============================================================================
 
@@ -68,7 +39,7 @@ func TestFormatDate(t *testing.T) {
 		{"20240501", "2024-05-01"},
 		{"20240101", "2024-01-01"},
 		{"20241231", "2024-12-31"},
-		{"2024050", "—"},  // too short
+		{"2024050", "—"}, // too short
 		{"", "—"},
 		{"abcd", "—"},
 	}

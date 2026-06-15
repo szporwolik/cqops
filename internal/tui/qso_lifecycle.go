@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gen2brain/beeep"
 	tea "charm.land/bubbletea/v2"
+	"github.com/gen2brain/beeep"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
@@ -93,6 +93,8 @@ func (m *Model) refreshQSOS() tea.Cmd {
 		}
 		m.qsos = qsos
 		m.recentQSOs.SetQSOS(qsos)
+		m.qsoCountsValid = false
+		m.cachedPathSig = ""
 		return nil
 	}
 }

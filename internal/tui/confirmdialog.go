@@ -144,7 +144,7 @@ func (m DialogModel) render() string {
 		btnParts = append(btnParts, s.Render(" "+opt.Label+" "))
 	}
 	btns := lipgloss.JoinHorizontal(lipgloss.Center, btnParts...)
-	btns = lipgloss.NewStyle().Background(P.Surface).Width(modalW - 4).Align(lipgloss.Center).Render(btns)
+	btns = lipgloss.NewStyle().Width(modalW - 4).Align(lipgloss.Center).Render(btns)
 
 	// Hint
 	hint := S.ConfirmHint.
@@ -163,8 +163,8 @@ func (m DialogModel) render() string {
 		hint,
 	)
 
-	// Wrap in bordered box matching the theme surface
-	return S.ConfirmBox.Width(modalW).Render(modal)
+	// Wrap in bordered box
+	return confirmBoxStyle.Width(modalW).Render(modal)
 }
 
 // ── Helpers ──
@@ -185,7 +185,6 @@ func RenderDialogOverlay(mainView string, dlg DialogModel, viewW, viewH int) str
 	// Use lipgloss.Place to center the dialog in the terminal space
 	placed := lipgloss.Place(viewW, viewH, lipgloss.Center, lipgloss.Center, dialog,
 		lipgloss.WithWhitespaceChars(" "),
-		lipgloss.WithWhitespaceStyle(lipgloss.NewStyle().Background(P.Background)),
 	)
 
 	base := lipgloss.NewLayer(mainView)

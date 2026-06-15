@@ -6,7 +6,6 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 )
 
 type rigFormField int
@@ -57,12 +56,6 @@ func NewRigForm(rigPlaceholder, antennaPlaceholder, powerPlaceholder string) *Ri
 	fp.CharLimit = 6
 	fp.SetWidth(28)
 	fp.Placeholder = "12345"
-
-	// Apply Surface background BEFORE storing in struct (textinput.Model
-	// is a value type — copies made after SetStyles are stale).
-	for _, ti := range []*textinput.Model{&ri, &an, &pw, &fh, &fp} {
-		applyTextinputSurfaceStyle(ti)
-	}
 
 	rf := &RigForm{
 		Rig:       ri,
@@ -180,7 +173,6 @@ func (f *RigForm) SetFlrig(enabled bool, host, port string) {
 }
 
 func (f *RigForm) View() tea.View {
-	bg := lipgloss.NewStyle().Background(P.Surface)
 	renderField := func(label string, ti *textinput.Model, focused bool, w int) string {
 		prefix := "  "
 		l := LabelStyle.Render(fit(label, 22))
@@ -192,7 +184,7 @@ func (f *RigForm) View() tea.View {
 		if focused {
 			val = ti.View()
 		}
-		return prefix + l + bg.Render(" ") + val
+		return prefix + l + " " + val
 	}
 
 	var b strings.Builder
@@ -218,14 +210,12 @@ func (f *RigForm) View() tea.View {
 	if f.focus == rigFieldFlrig {
 		flPrefix = CursorStyle.Render("> ")
 		checkbox = CursorStyle.Render(checkbox)
-	} else {
-		checkbox = bg.Render(checkbox)
 	}
 	flLabel := LabelStyle.Render(fit("Use flrig:", 22))
 	if f.focus == rigFieldFlrig {
 		flLabel = CursorStyle.Render(fit("Use flrig:", 22))
 	}
-	b.WriteString(menuLine(flPrefix+flLabel+bg.Render(" ")+checkbox, 80))
+	b.WriteString(menuLine(flPrefix+flLabel+" "+checkbox, 80))
 
 	if f.FlrigEnabled {
 		b.WriteString("\n")

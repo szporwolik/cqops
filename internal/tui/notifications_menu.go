@@ -3,9 +3,8 @@ package tui
 import (
 	"strings"
 
-	"github.com/gen2brain/beeep"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
+	"github.com/gen2brain/beeep"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
 )
@@ -145,7 +144,6 @@ func (nm *NotificationsMenu) View() tea.View {
 }
 
 func (nm *NotificationsMenu) renderCheckbox(b *strings.Builder, w, cursor int, label string, checked, disabled bool) {
-	gap := lipgloss.NewStyle().Background(P.Surface).Render(" ")
 	checkbox := "[ ]"
 	if checked {
 		checkbox = "[x]"
@@ -153,18 +151,16 @@ func (nm *NotificationsMenu) renderCheckbox(b *strings.Builder, w, cursor int, l
 	labelFit := fit(label, 38)
 
 	if disabled {
-		checkbox = lipgloss.NewStyle().Background(P.Surface).Render(checkbox)
 		if nm.cursor == cursor {
-			b.WriteString(menuLine(CursorStyle.Render("> ")+SubtleStyle.Render(labelFit)+gap+checkbox, w))
+			b.WriteString(menuLine(CursorStyle.Render("> ")+DimStyle.Render(labelFit)+" "+checkbox, w))
 		} else {
-			b.WriteString(menuLine("  "+SubtleStyle.Render(labelFit)+gap+checkbox, w))
+			b.WriteString(menuLine("  "+DimStyle.Render(labelFit)+" "+checkbox, w))
 		}
 	} else if nm.cursor == cursor {
 		checkbox = CursorStyle.Render(checkbox)
-		b.WriteString(menuLine(CursorStyle.Render("> ")+CursorStyle.Render(labelFit)+gap+checkbox, w))
+		b.WriteString(menuLine(CursorStyle.Render("> ")+CursorStyle.Render(labelFit)+" "+checkbox, w))
 	} else {
-		checkbox = lipgloss.NewStyle().Background(P.Surface).Render(checkbox)
-		b.WriteString(menuLine("  "+LabelStyle.Render(labelFit)+gap+checkbox, w))
+		b.WriteString(menuLine("  "+LabelStyle.Render(labelFit)+" "+checkbox, w))
 	}
 	b.WriteString("\n")
 }

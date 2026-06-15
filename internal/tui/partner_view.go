@@ -12,6 +12,9 @@ import (
 // Partner view rendering (F2 screen)
 // =============================================================================
 
+// wlCenteredMuted — pre-allocated centered muted style for WL status lines.
+var wlCenteredMuted = lipgloss.NewStyle().Align(lipgloss.Center).Foreground(P.TextMuted)
+
 // viewPartner renders the full partner details screen including QRZ info,
 // Wavelog info, and the ASCII world map.
 func (m *Model) viewPartner() string {
@@ -34,22 +37,22 @@ func (m *Model) viewPartner() string {
 	infoInnerW := halfW - 2 // inside border
 
 	info := m.renderPartnerInfo(d, infoInnerW)
-	infoBox := drawBorderedBox(info, infoInnerW, halfW)
+	infoBox := drawBorderedBox(info, halfW)
 
 	wlContent := m.renderWLInfo(infoInnerW)
-	wlBox := drawBorderedBox(wlContent, infoInnerW, halfW)
+	wlBox := drawBorderedBox(wlContent, halfW)
 
-	// Match heights and join with Surface-backed gap
+	// Match heights and join
 	infoLines := strings.Split(infoBox, "\n")
 	wlLines := strings.Split(wlBox, "\n")
 	// Pad shorter to match
 	for len(wlLines) < len(infoLines) {
-		wlLines = append(wlLines, lipgloss.NewStyle().Background(P.Surface).Width(halfW).Render(""))
+		wlLines = append(wlLines, "")
 	}
 	for len(infoLines) < len(wlLines) {
-		infoLines = append(infoLines, lipgloss.NewStyle().Background(P.Surface).Width(halfW).Render(""))
+		infoLines = append(infoLines, "")
 	}
-	gap := lipgloss.NewStyle().Width(1).Background(P.Surface).Render(" ")
+	gap := " "
 	var topLines []string
 	for i := range infoLines {
 		topLines = append(topLines, infoLines[i]+gap+wlLines[i])
@@ -103,28 +106,15 @@ func (m *Model) viewPartner() string {
 		m.partnerMapCache = mapInner
 	}
 
-	// Replace SGR reset with foreground-only reset (preserve Surface bg)
-	mapInner = strings.NewReplacer(
-		"\x1b[0m", "\x1b[39m\x1b[22m",
-		"\x1b[m", "\x1b[39m\x1b[22m",
-	).Replace(mapInner)
-
-	// Wrap per-line with Surface bg
-	lines := strings.Split(mapInner, "\n")
-	for i, line := range lines {
-		if line != "" {
-			lines[i] = lipgloss.NewStyle().Background(P.Surface).Width(bodyW - 2).Render(line)
-		}
-	}
-	mapInner = strings.Join(lines, "\n")
-	mapBox := drawBorderedBox(mapInner, bodyW-2, bodyW)
+	mapBox := drawBorderedBox(mapInner, bodyW)
 
 	mapBoxH := lipgloss.Height(mapBox)
 	fillerH := contentHeight(m.height) - topH - mapBoxH
 	if fillerH < 0 {
 		fillerH = 0
 	}
-	filler := lipgloss.NewStyle().Height(fillerH).Render("")
+	_ = fillerH
+	filler := ""
 	return lipgloss.JoinVertical(lipgloss.Left, topRow, mapBox, filler)
 }
 
@@ -196,8 +186,8 @@ func (m *Model) renderPartnerInfo(d *qrz.CallData, maxW int) string {
 		} else {
 			value = valStyle.Render(truncate(r.value, valW))
 		}
-		indent := lipgloss.NewStyle().Width(indentW).Background(P.Surface).Render(" ")
-		gap := lipgloss.NewStyle().Width(1).Background(P.Surface).Render(" ")
+		indent := " "
+		gap := " "
 		lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Center, indent, label, gap, value))
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
@@ -208,24 +198,14 @@ func (m *Model) renderWLInfo(maxW int) string {
 	d := m.wlPrivateData
 	wl := m.App.Logbook.Wavelog
 	if wl == nil || !wl.Enabled || wl.URL == "" || wl.APIKey == "" {
-		return lipgloss.NewStyle().
-			Width(maxW - 4).
-			Align(lipgloss.Center).
-			Foreground(P.TextMuted).
-			Background(P.Surface).
-			Render("Wavelog not configured")
+		return wlCenteredMuted.Width(maxW - 4).Render("Wavelog not configured")
 	}
 	if d == nil {
 		msg := "WL lookup pending\u2026"
 		if m.wlLookupDone {
 			msg = "No WL data"
 		}
-		return lipgloss.NewStyle().
-			Width(maxW - 4).
-			Align(lipgloss.Center).
-			Foreground(P.TextMuted).
-			Background(P.Surface).
-			Render(msg)
+		return wlCenteredMuted.Width(maxW - 4).Render(msg)
 	}
 
 	type row struct{ label, value string }
@@ -270,8 +250,8 @@ func (m *Model) renderWLInfo(maxW int) string {
 	var lines []string
 	for _, r := range rows {
 		label := lblStyle.Render(r.label)
-		indent := lipgloss.NewStyle().Width(indentW).Background(P.Surface).Render(" ")
-		gap := lipgloss.NewStyle().Width(1).Background(P.Surface).Render(" ")
+		indent := " "
+		gap := " "
 		val := r.value
 		switch val {
 		case "Y":

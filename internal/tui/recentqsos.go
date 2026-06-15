@@ -26,10 +26,10 @@ type RecentQSOs struct {
 	table table.Model
 
 	// View cache — avoids rebuilding the table on every frame when nothing changed.
-	cachedView     string
-	cachedW        int
-	cachedH        int
-	cachedQSOLen   int
+	cachedView   string
+	cachedW      int
+	cachedH      int
+	cachedQSOLen int
 }
 
 // NewRecentQSOs creates a read-only recent QSOs view.
@@ -155,17 +155,14 @@ func (r *RecentQSOs) View() string {
 		BorderForeground(P.TextDim).
 		BorderBottom(true).
 		Bold(false).
-		Foreground(P.Text).
-		Background(P.Surface)
-	s.Cell = s.Cell.Foreground(P.TextMuted).Background(P.Surface)
+		Foreground(P.Text)
+	s.Cell = s.Cell.Foreground(P.TextMuted)
 	t.SetStyles(s)
 
 	// Clip to exact dimensions — never wrap, never overflow the border.
-	// Height fills the remaining space with Surface background.
 	view := lipgloss.NewStyle().
 		MaxWidth(bodyW).
 		Height(maxRows + 1).
-		Background(P.Surface).
 		Render(t.View())
 
 	r.cachedView = view

@@ -125,7 +125,7 @@ func RenderToasts(toasts []Toast, width int) string {
 		t := toasts[len(toasts)-1-i]
 		prefix := toastPrefix(t.Level)
 		msg := toastLevelStyle(t.Level).Render(t.Message)
-		lines = append(lines, lipgloss.NewStyle().Padding(0, 1).Render(prefix+" "+msg))
+		lines = append(lines, prefix+" "+msg)
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }

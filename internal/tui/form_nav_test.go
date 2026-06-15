@@ -96,8 +96,8 @@ func TestBlurTextinputs(t *testing.T) {
 	// Create two textinputs, focus one, call blurTextinputs, verify both blurred.
 	a := textinput.New()
 	b := textinput.New()
-	a.Focus()       // a is focused
-	b.Blur()        // b is not focused (just to be explicit)
+	a.Focus() // a is focused
+	b.Blur()  // b is not focused (just to be explicit)
 
 	if !a.Focused() {
 		t.Fatal("expected a to be focused before blurTextinputs")

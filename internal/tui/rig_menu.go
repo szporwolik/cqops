@@ -78,21 +78,21 @@ func (rc *RigChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			rc.mode = rigChooserList
 
 		case rc.mode == rigChooserConfirmDelete:
-		if rc.dialog == nil {
-			// Skip - dialog not yet created
-		} else {
-			updated, _ := rc.dialog.Update(msg)
-			d := updated.(DialogModel)
-			*rc.dialog = d
-			if d.Done() {
-				if d.Result.Value == "delete" {
-					return rc, rc.deleteRig()
+			if rc.dialog == nil {
+				// Skip - dialog not yet created
+			} else {
+				updated, _ := rc.dialog.Update(msg)
+				d := updated.(DialogModel)
+				*rc.dialog = d
+				if d.Done() {
+					if d.Result.Value == "delete" {
+						return rc, rc.deleteRig()
+					}
+					rc.dialog = nil
+					rc.mode = rigChooserList
 				}
-				rc.dialog = nil
-				rc.mode = rigChooserList
+				return rc, nil
 			}
-			return rc, nil
-		}
 
 		case rc.mode == rigChooserList && k.String() == "enter":
 			return rc, rc.selectRig()
@@ -202,8 +202,6 @@ func (rc *RigChooser) viewList() string {
 		if rp.FlrigEnabled {
 			flrig = "flrig"
 		}
-		// Selected row: wrap in pink+Surface to prevent bg leak after
-		// CursorStyle's \x1b[0m reset.
 		line := fmt.Sprintf("%s%s %s %s  %s", marker, active, displayName, info, flrig)
 		if i == rc.cursor {
 			line = CursorStyle.Render("> ") + CursorStyle.Render(fmt.Sprintf("%s %s %s  %s", active, displayName, info, flrig))

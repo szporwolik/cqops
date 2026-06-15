@@ -124,21 +124,21 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			c.mode = chooserList
 
 		case c.mode == chooserConfirmDelete:
-		if c.dialog == nil {
-			// Skip - dialog not yet created
-		} else {
-			updated, _ := c.dialog.Update(msg)
-			d := updated.(DialogModel)
-			*c.dialog = d
-			if d.Done() {
-				if d.Result.Value == "delete" {
-					return c, c.deleteLogbook()
+			if c.dialog == nil {
+				// Skip - dialog not yet created
+			} else {
+				updated, _ := c.dialog.Update(msg)
+				d := updated.(DialogModel)
+				*c.dialog = d
+				if d.Done() {
+					if d.Result.Value == "delete" {
+						return c, c.deleteLogbook()
+					}
+					c.dialog = nil
+					c.mode = chooserList
 				}
-				c.dialog = nil
-				c.mode = chooserList
+				return c, nil
 			}
-			return c, nil
-		}
 
 		case c.mode == chooserList && k.String() == "enter":
 			return c, c.handleEnter()
@@ -264,8 +264,6 @@ func (c *LogbookChooser) viewList() string {
 			info = lb.Description
 		}
 		line := fmt.Sprintf("%s%s %s  %s", marker, active, displayName, info)
-		// Selected row: wrap in pink, rest in ValueStyle to keep
-		// Surface background after CursorStyle's \x1b[0m reset.
 		if i == c.cursor {
 			line = CursorStyle.Render("> ") + CursorStyle.Render(fmt.Sprintf("%s %s  %s", active, displayName, info))
 		}
@@ -303,7 +301,7 @@ func (c *LogbookChooser) viewForm() string {
 			if strings.HasPrefix(c.wlStatus, "OK") {
 				b.WriteString(SuccessStyle.Render(c.wlStatus))
 			} else if c.wlUpdating || c.wlTesting {
-				b.WriteString(SubtleStyle.Render(c.wlStatus))
+				b.WriteString(DimStyle.Render(c.wlStatus))
 			} else {
 				b.WriteString(ErrorStyle.Render(c.wlStatus))
 			}

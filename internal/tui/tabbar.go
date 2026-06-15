@@ -40,7 +40,7 @@ func (m *Model) tabView() string {
 			}
 			parts = append(parts, s.Render(" "+t.label+" "))
 		}
-		return strings.Join(parts, S.TabGap.Render(" "))
+		return strings.Join(parts, "  ")
 	}
 
 	left := renderGroup(leftTabs)
@@ -88,7 +88,7 @@ func (m *Model) renderProfileLine() string {
 	if len(parts) == 0 {
 		return ""
 	}
-	return lipgloss.NewStyle().Foreground(P.TextDim).Render("  " + strings.Join(parts, " \u00b7 "))
+	return DimStyle.Render("  " + strings.Join(parts, " \u00b7 "))
 }
 
 // renderProfileBar returns the right-aligned profile line.
@@ -98,10 +98,9 @@ func (m *Model) renderProfileBar() string {
 		if line == "" {
 			return ""
 		}
-		return lipgloss.NewStyle().
+		return profileBarBase.
 			Width(m.width).
 			MaxHeight(1).
-			Align(lipgloss.Right).
 			Render(line)
 	}
 	return ""

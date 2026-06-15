@@ -194,9 +194,9 @@ func TestGridToLatLon(t *testing.T) {
 		wantLatMin float64 // latitude should be >= wantLatMin
 	}{
 		// Valid grids should produce non-zero coordinates.
-		{grid: "KO00ca", wantLatMin: 50},  // Poland area, lat ~52
-		{grid: "KO02lg", wantLatMin: 50},  // ~52
-		{grid: "JO90", wantLatMin: 49},    // ~50
+		{grid: "KO00ca", wantLatMin: 50}, // Poland area, lat ~52
+		{grid: "KO02lg", wantLatMin: 50}, // ~52
+		{grid: "JO90", wantLatMin: 49},   // ~50
 		// Invalid grid → (0,0).
 		{grid: "INVALID", wantZero: true},
 		{grid: "", wantZero: true},

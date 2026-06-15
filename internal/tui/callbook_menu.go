@@ -5,7 +5,6 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/qrz"
@@ -38,10 +37,6 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 	pw.EchoMode = textinput.EchoPassword
 	pw.EchoCharacter = '*'
 	pw.SetValue(cfg.QRZ.Pass)
-
-	// Apply surface background to textinput styles
-	applyTextinputSurfaceStyle(&un)
-	applyTextinputSurfaceStyle(&pw)
 
 	un.Focus()
 	return &CallbookMenu{user: un, pass: pw, enabled: cfg.QRZ.Enabled}
@@ -136,9 +131,9 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return cm, nil
 }
 
-func (cm *CallbookMenu) next() { cm.focus = wrapNext(cm.focus, 4); cm.blurAll(); cm.focusField() }
-func (cm *CallbookMenu) prev()  { cm.focus = wrapPrev(cm.focus, 4); cm.blurAll(); cm.focusField() }
-func (cm *CallbookMenu) blurAll()  { blurTextinputs(&cm.user, &cm.pass) }
+func (cm *CallbookMenu) next()    { cm.focus = wrapNext(cm.focus, 4); cm.blurAll(); cm.focusField() }
+func (cm *CallbookMenu) prev()    { cm.focus = wrapPrev(cm.focus, 4); cm.blurAll(); cm.focusField() }
+func (cm *CallbookMenu) blurAll() { blurTextinputs(&cm.user, &cm.pass) }
 func (cm *CallbookMenu) focusField() {
 	switch cm.focus {
 	case 0: /* checkbox */
@@ -154,13 +149,12 @@ func (cm *CallbookMenu) focusField() {
 // renderField renders a labelled textinput line with cursor indicator.
 // When masked is true, the value is shown as asterisks when not focused.
 func (cm *CallbookMenu) renderField(focusIdx int, label string, ti *textinput.Model, masked bool) string {
-	gap := lipgloss.NewStyle().Background(P.Surface).Render(" ")
 	raw := strings.TrimSpace(ti.Value())
 	var val string
 	if cm.focus == focusIdx {
 		val = ti.View() // respects EchoMode/EchoCharacter when focused
 	} else if raw == "" {
-		val = SubtleStyle.Render("\u2014")
+		val = DimStyle.Render("\u2014")
 	} else if masked {
 		val = ValueStyle.Render(strings.Repeat("*", len(raw)))
 	} else {
@@ -168,9 +162,9 @@ func (cm *CallbookMenu) renderField(focusIdx int, label string, ti *textinput.Mo
 	}
 	padded := fit(label, 14)
 	if cm.focus == focusIdx {
-		return CursorStyle.Render("> ") + CursorStyle.Render(padded) + gap + val
+		return CursorStyle.Render("> ") + CursorStyle.Render(padded) + " " + val
 	}
-	return "  " + LabelStyle.Render(padded) + gap + val
+	return "  " + LabelStyle.Render(padded) + " " + val
 }
 
 func (cm *CallbookMenu) View() tea.View {
@@ -194,22 +188,19 @@ func (cm *CallbookMenu) View() tea.View {
 	b.WriteString(menuTitle("Settings — Callbook", w))
 	b.WriteString("\n\n")
 
-	bg := lipgloss.NewStyle().Background(P.Surface)
 	checkbox := "[ ]"
 	if cm.enabled {
 		checkbox = "[x]"
 	}
 	if cm.focus == 0 {
 		checkbox = CursorStyle.Render(checkbox)
-	} else {
-		checkbox = bg.Render(checkbox)
 	}
 	// QRZ checkbox — show "> " marker when focused.
 	qrPrefix := "  "
 	if cm.focus == 0 {
 		qrPrefix = CursorStyle.Render("> ")
 	}
-	b.WriteString(menuLine(qrPrefix+LabelStyle.Render(fit("Use QRZ:", 14))+bg.Render(" ")+checkbox, w))
+	b.WriteString(menuLine(qrPrefix+LabelStyle.Render(fit("Use QRZ:", 14))+" "+checkbox, w))
 	if cm.enabled {
 		b.WriteString("\n")
 		b.WriteString(menuLine(cm.renderField(1, "  Username:", &cm.user, false), w))
@@ -221,7 +212,7 @@ func (cm *CallbookMenu) View() tea.View {
 		btnText := "[ Test Connection ]"
 		var btnLine string
 		if !cm.inetOnline {
-			btnLine = "    " + DimStyle.Render(btnText) + bg.Render(" ") + DimStyle.Render("(offline)")
+			btnLine = "    " + DimStyle.Render(btnText) + " " + DimStyle.Render("(offline)")
 		} else if cm.focus == 3 {
 			btnLine = CursorStyle.Render("> ") + CursorStyle.Render("  "+btnText)
 		} else {
@@ -232,7 +223,7 @@ func (cm *CallbookMenu) View() tea.View {
 		if cm.testResult != "" {
 			b.WriteString("\n    ")
 			if cm.testing {
-				b.WriteString(SubtleStyle.Render(cm.testResult))
+				b.WriteString(DimStyle.Render(cm.testResult))
 			} else if strings.HasPrefix(cm.testResult, "OK") {
 				b.WriteString(SuccessStyle.Render(cm.testResult))
 			} else {

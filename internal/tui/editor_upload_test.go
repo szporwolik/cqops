@@ -170,8 +170,8 @@ func TestDoBatchUpload_DetectsMismatch(t *testing.T) {
 			Mode:            "SSB",
 			QSODate:         "20240501",
 			StationCallsign: "SP9MOA",
-			Operator:        "WrongOp",   // mismatch
-			MyGridSquare:    "XX00xx",    // mismatch
+			Operator:        "WrongOp", // mismatch
+			MyGridSquare:    "XX00xx",  // mismatch
 			WavelogUploaded: "no",
 		},
 	}

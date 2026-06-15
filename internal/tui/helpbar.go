@@ -8,42 +8,29 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
+// Pre-allocated confirm dialog key bindings — reused across all confirm screens.
+var confirmBindings = []key.Binding{
+	key.NewBinding(key.WithKeys("←/→"), key.WithHelp("←/→", "choose")),
+	key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm")),
+	key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
+}
+
 // helpView renders the bottom help/footer bar with context-sensitive key bindings.
 func (m *Model) helpView() string {
 	// Global confirm dialog (quit, etc.)
 	if m.confirm != nil {
-		bindings := []key.Binding{
-			key.NewBinding(key.WithKeys("←/→"), key.WithHelp("←/→", "choose")),
-			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm")),
-			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
-		}
-		return HelpStyle.Render(m.help.ShortHelpView(bindings))
+		return HelpStyle.Render(m.help.ShortHelpView(confirmBindings))
 	}
 
 	// Internal confirm dialogs: rig/chooser delete confirmations.
 	if m.rigChooser != nil && m.rigChooser.mode == rigChooserConfirmDelete && m.rigChooser.dialog != nil {
-		bindings := []key.Binding{
-			key.NewBinding(key.WithKeys("←/→"), key.WithHelp("←/→", "choose")),
-			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm")),
-			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
-		}
-		return HelpStyle.Render(m.help.ShortHelpView(bindings))
+		return HelpStyle.Render(m.help.ShortHelpView(confirmBindings))
 	}
 	if m.chooser != nil && m.chooser.mode == chooserConfirmDelete && m.chooser.dialog != nil {
-		bindings := []key.Binding{
-			key.NewBinding(key.WithKeys("←/→"), key.WithHelp("←/→", "choose")),
-			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm")),
-			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
-		}
-		return HelpStyle.Render(m.help.ShortHelpView(bindings))
+		return HelpStyle.Render(m.help.ShortHelpView(confirmBindings))
 	}
 	if m.logbookEditor != nil && m.logbookEditor.isConfirmMode() && m.logbookEditor.dialog != nil {
-		bindings := []key.Binding{
-			key.NewBinding(key.WithKeys("←/→"), key.WithHelp("←/→", "choose")),
-			key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm")),
-			key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
-		}
-		return HelpStyle.Render(m.help.ShortHelpView(bindings))
+		return HelpStyle.Render(m.help.ShortHelpView(confirmBindings))
 	}
 
 	bindings := m.ActiveBindings()
@@ -87,7 +74,4 @@ func (m *Model) helpSuffix() string {
 }
 
 // renderHelpBar is the canonical entry point for help bar rendering.
-// The \x1b[0m reset clears any background colour that may have leaked
-// from the body content above (e.g. trailing ANSI sequences from table
-// cells, form fields, or border characters).
-func (m *Model) renderHelpBar() string { return "\x1b[0m" + m.helpView() }
+func (m *Model) renderHelpBar() string { return m.helpView() }

@@ -52,8 +52,8 @@ func newChooserTestApp(t *testing.T) *app.App {
 	}
 
 	return &app.App{
-		Config:     cfg,
-		ConfigPath: filepath.Join(t.TempDir(), "config.yaml"),
+		Config:      cfg,
+		ConfigPath:  filepath.Join(t.TempDir(), "config.yaml"),
 		LogbookName: "home",
 		Logbook:     nil,
 		DB:          db,
