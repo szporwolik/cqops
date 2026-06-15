@@ -155,7 +155,21 @@ func truncate(s string, max int) string {
 	if lipgloss.Width(s) <= max {
 		return s
 	}
-	return s[:max-1] + "…"
+	// Count visual cells (runes) up to max-1, then append ellipsis.
+	// This is rune-safe and handles multi-byte UTF-8 correctly.
+	w := 0
+	runes := []rune(s)
+	for i, r := range runes {
+		rw := 1
+		if r > 0xffff {
+			rw = 2
+		}
+		if w+rw >= max {
+			return string(runes[:i]) + "\u2026"
+		}
+		w += rw
+	}
+	return s
 }
 
 // =============================================================================

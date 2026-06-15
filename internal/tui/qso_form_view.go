@@ -262,11 +262,11 @@ func (m *Model) formPathRow(width int) string {
 		if len(parts) == 0 {
 			return ""
 		}
-		line := strings.Join(parts, "  \u00b7  ")
-		if lipgloss.Width(line) > width {
-			line = truncate(line, width)
+		profileLine := strings.Join(parts, "  \u00b7  ")
+		if lipgloss.Width(profileLine) > width {
+			profileLine = truncateText(profileLine, width)
 		}
-		return pathMutedStyle.Width(width).Align(align).Render(line)
+		return pathMutedStyle.Width(width).Align(align).Render(profileLine)
 	}
 
 	// ── No callsign: station profile ──
@@ -321,16 +321,41 @@ func (m *Model) formPathRow(width int) string {
 				showNewCall = !m.cachedLogStats.CallWorked
 			}
 			wlNewDXCC := m.wlPrivateData != nil && !m.wlPrivateData.DXCCConfirmed()
+
+			// Build banners as plain text so truncation is ANSI-safe.
+			const bannerNewCall = "New Call!"
+			const bannerNewDXCC = "New DXCC!"
+			var bannerPlain string
 			if showNewCall {
-				line += "  " + S.Success.Render("New Call!")
+				bannerPlain += "  " + bannerNewCall
 			}
 			if wlNewDXCC {
-				line += "  " + S.Success.Render("New DXCC!")
+				bannerPlain += "  " + bannerNewDXCC
 			}
-			if lipgloss.Width(line) > width {
-				line = truncate(line, width)
+
+			// Determine final display text: path line + optional banners.
+			// Build plain text first, truncate if needed, then style banners.
+			displayText := line
+			if bannerPlain != "" {
+				candidate := line + bannerPlain
+				if lipgloss.Width(candidate) <= width {
+					displayText = candidate
+				}
+				// else: banners dropped, displayText stays as line alone.
 			}
-			result := pathInfoStyle.Width(width).Align(lipgloss.Left).Render(line)
+			// If line alone is too wide, truncate it.
+			if lipgloss.Width(displayText) > width {
+				displayText = truncateText(displayText, width)
+			}
+
+			result := pathInfoStyle.Width(width).Align(lipgloss.Left).Render(displayText)
+			// Re-apply banner styling after Lip Gloss width clamping.
+			if showNewCall && strings.Contains(result, bannerNewCall) {
+				result = strings.Replace(result, bannerNewCall, S.Success.Render(bannerNewCall), 1)
+			}
+			if wlNewDXCC && strings.Contains(result, bannerNewDXCC) {
+				result = strings.Replace(result, bannerNewDXCC, S.Success.Render(bannerNewDXCC), 1)
+			}
 			m.cachedPathSig = sig
 			m.cachedPathLine = result
 			return result

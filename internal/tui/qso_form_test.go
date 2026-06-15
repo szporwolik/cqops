@@ -9,6 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
@@ -441,5 +442,318 @@ func TestFormPathRowCacheInvalidation(t *testing.T) {
 	r3 := m.formPathRow(100)
 	if r3 == "" {
 		t.Error("formPathRow returned empty after cache invalidation")
+	}
+}
+
+// =============================================================================
+// Band / Mode / Submode cycling tests
+// =============================================================================
+
+func TestCycleBandUp(t *testing.T) {
+	m := newTestModel()
+	m.focus = fieldBand
+	m.fields[fieldBand].SetValue("20m")
+
+	m.cycleFieldUp()
+	if got := m.fields[fieldBand].Value(); got == "" {
+		t.Error("cycleFieldUp on band should change value")
+	}
+	// 20m → 17m (next band up)
+	if got := m.fields[fieldBand].Value(); got != "17m" {
+		t.Errorf("cycleBand up from 20m = %q, want 17m", got)
+	}
+}
+
+func TestCycleBandDown(t *testing.T) {
+	m := newTestModel()
+	m.focus = fieldBand
+	m.fields[fieldBand].SetValue("20m")
+
+	m.cycleFieldDown()
+	// 20m → 30m (next band down)
+	if got := m.fields[fieldBand].Value(); got != "30m" {
+		t.Errorf("cycleBand down from 20m = %q, want 30m", got)
+	}
+}
+
+func TestCycleBandWrapsAround(t *testing.T) {
+	m := newTestModel()
+	m.focus = fieldBand
+	bands := qso.AllBands()
+	last := bands[len(bands)-1]
+
+	m.fields[fieldBand].SetValue(last)
+	m.cycleFieldUp()
+	// Should wrap to first band
+	if got := m.fields[fieldBand].Value(); got != bands[0] {
+		t.Errorf("cycleBand up from last (%q) = %q, want %q", last, got, bands[0])
+	}
+
+	m.fields[fieldBand].SetValue(bands[0])
+	m.cycleFieldDown()
+	// Should wrap to last band
+	if got := m.fields[fieldBand].Value(); got != last {
+		t.Errorf("cycleBand down from first (%q) = %q, want %q", bands[0], got, last)
+	}
+}
+
+func TestCycleBandEmptyField(t *testing.T) {
+	m := newTestModel()
+	m.focus = fieldBand
+	m.fields[fieldBand].SetValue("")
+
+	m.cycleFieldUp()
+	// Should pick first band
+	if got := m.fields[fieldBand].Value(); got == "" {
+		t.Error("cycleBand up from empty should pick a band")
+	}
+}
+
+func TestCycleModeUp(t *testing.T) {
+	m := newTestModel()
+	m.focus = fieldMode
+	m.fields[fieldMode].SetValue("SSB")
+
+	m.cycleFieldUp()
+	if got := m.fields[fieldMode].Value(); got == "" {
+		t.Error("cycleFieldUp on mode should change value")
+	}
+	// Mode should change, submode should be cleared
+	if got := m.fields[fieldSubmode].Value(); got != "" {
+		t.Errorf("cycleMode should clear submode, got %q", got)
+	}
+}
+
+func TestCycleModeDown(t *testing.T) {
+	m := newTestModel()
+	m.focus = fieldMode
+	m.fields[fieldMode].SetValue("SSB")
+
+	m.cycleFieldDown()
+	if got := m.fields[fieldMode].Value(); got == "" {
+		t.Error("cycleFieldDown on mode should change value")
+	}
+}
+
+func TestCycleModeEmptyField(t *testing.T) {
+	m := newTestModel()
+	m.focus = fieldMode
+	m.fields[fieldMode].SetValue("")
+
+	m.cycleFieldUp()
+	if got := m.fields[fieldMode].Value(); got == "" {
+		t.Error("cycleMode up from empty should pick a mode")
+	}
+}
+
+func TestCycleSubmodeUp(t *testing.T) {
+	m := newTestModel()
+	m.focus = fieldSubmode
+	m.fields[fieldMode].SetValue("SSB")
+	m.fields[fieldSubmode].SetValue("USB")
+
+	m.cycleFieldUp()
+	// USB → LSB
+	if got := m.fields[fieldSubmode].Value(); got != "LSB" {
+		t.Errorf("cycleSubmode up from USB = %q, want LSB", got)
+	}
+}
+
+func TestCycleSubmodeDown(t *testing.T) {
+	m := newTestModel()
+	m.focus = fieldSubmode
+	m.fields[fieldMode].SetValue("SSB")
+	m.fields[fieldSubmode].SetValue("USB")
+
+	m.cycleFieldDown()
+	// USB → LSB (only 2 submodes for SSB, so up and down both go to LSB)
+	if got := m.fields[fieldSubmode].Value(); got != "LSB" {
+		t.Errorf("cycleSubmode down from USB = %q, want LSB", got)
+	}
+}
+
+func TestCycleSubmodeNoSubmodes(t *testing.T) {
+	m := newTestModel()
+	m.focus = fieldSubmode
+	m.fields[fieldMode].SetValue("FM")
+	m.fields[fieldSubmode].SetValue("")
+
+	m.cycleFieldUp()
+	// FM has no submodes — should stay empty
+	if got := m.fields[fieldSubmode].Value(); got != "" {
+		t.Errorf("cycleSubmode on FM should stay empty, got %q", got)
+	}
+}
+
+// =============================================================================
+// applyFreqDefaults tests
+// =============================================================================
+
+func TestApplyFreqDefaultsHF(t *testing.T) {
+	m := newTestModel()
+	m.fields[fieldFreq].SetValue("14.250")
+	m.applyFreqDefaults()
+
+	// 14.250 MHz → 20m band, SSB mode, USB submode (>10 MHz)
+	if got := m.fields[fieldBand].Value(); got != "20m" {
+		t.Errorf("applyFreqDefaults 14.250 band = %q, want 20m", got)
+	}
+	if got := m.fields[fieldMode].Value(); got != "SSB" {
+		t.Errorf("applyFreqDefaults 14.250 mode = %q, want SSB", got)
+	}
+	if got := m.fields[fieldSubmode].Value(); got != "USB" {
+		t.Errorf("applyFreqDefaults 14.250 submode = %q, want USB", got)
+	}
+}
+
+func TestApplyFreqDefaultsBelow10MHz(t *testing.T) {
+	m := newTestModel()
+	m.fields[fieldFreq].SetValue("7.100")
+	m.applyFreqDefaults()
+
+	if got := m.fields[fieldBand].Value(); got != "40m" {
+		t.Errorf("applyFreqDefaults 7.100 band = %q, want 40m", got)
+	}
+	if got := m.fields[fieldSubmode].Value(); got != "LSB" {
+		t.Errorf("applyFreqDefaults 7.100 submode = %q, want LSB", got)
+	}
+}
+
+func TestApplyFreqDefaultsVHF(t *testing.T) {
+	m := newTestModel()
+	m.fields[fieldFreq].SetValue("145.500")
+	m.applyFreqDefaults()
+
+	if got := m.fields[fieldMode].Value(); got != "FM" {
+		t.Errorf("applyFreqDefaults 145.500 mode = %q, want FM", got)
+	}
+	if got := m.fields[fieldSubmode].Value(); got != "" {
+		t.Errorf("applyFreqDefaults 145.500 submode = %q, want empty", got)
+	}
+}
+
+func TestApplyFreqDefaultsEmpty(t *testing.T) {
+	m := newTestModel()
+	m.fields[fieldFreq].SetValue("")
+	m.fields[fieldBand].SetValue("20m") // pre-existing
+
+	m.applyFreqDefaults()
+	// Should not change anything when freq is empty
+	if got := m.fields[fieldBand].Value(); got != "20m" {
+		t.Errorf("applyFreqDefaults with empty freq should not change band, got %q", got)
+	}
+}
+
+func TestApplyFreqDefaultsInvalid(t *testing.T) {
+	m := newTestModel()
+	m.fields[fieldFreq].SetValue("not-a-number")
+
+	m.applyFreqDefaults()
+	// Should not crash and should not set band from invalid input
+	// (fmt.Sscanf returns 0, so freq stays 0, which is <= 0 → return early)
+}
+
+// =============================================================================
+// onFieldExit tests
+// =============================================================================
+
+func TestOnFieldExitCall(t *testing.T) {
+	m := newTestModel()
+	m.focus = fieldCall
+	m.fields[fieldCall].SetValue("dj7nt")
+	m.fields[fieldMode].SetValue("SSB")
+
+	m.onFieldExit()
+
+	// Call should be committed (normalized)
+	if m.pathCall != "DJ7NT" {
+		t.Errorf("onFieldExit call: pathCall = %q, want DJ7NT", m.pathCall)
+	}
+	// RST should be auto-filled
+	if m.fields[fieldRSTSent].Value() != "59" {
+		t.Errorf("onFieldExit call: RST sent should be auto-filled, got %q", m.fields[fieldRSTSent].Value())
+	}
+	// QRZ lookup should be flagged
+	if !m.qrzNeed {
+		t.Error("onFieldExit call: qrzNeed should be true for new call")
+	}
+}
+
+func TestOnFieldExitCallInvalid(t *testing.T) {
+	m := newTestModel()
+	m.focus = fieldCall
+	m.fields[fieldCall].SetValue("12345") // invalid
+
+	m.onFieldExit()
+
+	// Invalid call should not set pathCall
+	if m.pathCall != "" {
+		t.Errorf("onFieldExit invalid call: pathCall = %q, want empty", m.pathCall)
+	}
+}
+
+func TestOnFieldExitGrid(t *testing.T) {
+	m := newTestModel()
+	m.focus = fieldGrid
+	m.fields[fieldGrid].SetValue("jn18")
+
+	m.onFieldExit()
+
+	if m.pathGrid != "JN18" {
+		t.Errorf("onFieldExit grid: pathGrid = %q, want JN18", m.pathGrid)
+	}
+}
+
+func TestOnFieldExitFreq(t *testing.T) {
+	m := newTestModel()
+	m.focus = fieldFreq
+	m.fields[fieldFreq].SetValue("14.250")
+
+	m.onFieldExit()
+
+	// applyFreqDefaults should have been called
+	if m.fields[fieldBand].Value() != "20m" {
+		t.Errorf("onFieldExit freq: band should be derived, got %q", m.fields[fieldBand].Value())
+	}
+}
+
+// =============================================================================
+// truncate safety test (multi-byte UTF-8 characters)
+// =============================================================================
+
+func TestTruncateMultiByte(t *testing.T) {
+	// String with a multi-byte middle dot (2 bytes in UTF-8).
+	s := "Path  893 km  45\u00b0  New Call!"
+	w := lipgloss.Width(s) // should be ~27
+	if w < 10 {
+		t.Fatal("unexpected width")
+	}
+	// Truncate to a width that falls on the degree symbol (multi-byte).
+	result := truncate(s, w-2)
+	// Result should not contain garbled bytes — must be valid.
+	if lipgloss.Width(result) > w-2 {
+		t.Errorf("truncate width %d > max %d", lipgloss.Width(result), w-2)
+	}
+	// Should end with ellipsis.
+	if !strings.HasSuffix(result, "\u2026") {
+		t.Error("truncate should end with ellipsis")
+	}
+}
+
+func TestTruncateAscii(t *testing.T) {
+	result := truncate("Hello World", 8)
+	if lipgloss.Width(result) > 8 {
+		t.Errorf("truncate width %d > 8", lipgloss.Width(result))
+	}
+	if !strings.HasSuffix(result, "\u2026") {
+		t.Error("truncate should end with ellipsis")
+	}
+}
+
+func TestTruncateShort(t *testing.T) {
+	result := truncate("Hi", 2)
+	// max < 3 → returned unchanged
+	if result != "Hi" {
+		t.Errorf("truncate short string = %q, want Hi", result)
 	}
 }
