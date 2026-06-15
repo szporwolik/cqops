@@ -6,6 +6,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/config"
 )
 
@@ -169,43 +170,58 @@ func (im *IntegrationMenu) View() tea.View {
 		contentH = 3
 	}
 
-	var b strings.Builder
-	b.WriteString(menuTitle("Settings — Integration", w))
-	b.WriteString("\n\n")
+	boxW := w - 2
+	if boxW < 40 {
+		boxW = 40
+	}
 
-	// ── WSJT-X section ──
+	var b strings.Builder
+
+	// WSJT-X checkbox
 	checkbox := "[ ]"
 	if im.wsjtxEnabled {
 		checkbox = "[x]"
 	}
 	wsjtxPrefix := "  "
+	wsjtxLabel := S.FormLabelWide.Align(lipgloss.Left).Render("WSJT-X:")
 	if im.focus == 0 {
-		wsjtxPrefix = CursorStyle.Render("> ")
+		wsjtxPrefix = S.FormPrefixOn.Render("> ")
+		wsjtxLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("WSJT-X:")
 		checkbox = CursorStyle.Render(checkbox)
 	}
-	b.WriteString(menuLine(wsjtxPrefix+LabelStyle.Render(fit("WSJT-X:", 14))+" "+checkbox, w))
+	b.WriteString(padOrTrunc(
+		lipgloss.JoinHorizontal(lipgloss.Center, wsjtxPrefix, wsjtxLabel, " ", checkbox),
+		boxW))
 
 	if im.wsjtxEnabled {
 		b.WriteString("\n")
-		b.WriteString(menuLine(im.renderField(1, "  UDP Host:", &im.host), w))
+		b.WriteString(padOrTrunc(im.renderField(1, "  UDP Host:", &im.host), boxW))
 		b.WriteString("\n")
-		b.WriteString(menuLine(im.renderField(2, "  UDP Port:", &im.port), w))
+		b.WriteString(padOrTrunc(im.renderField(2, "  UDP Port:", &im.port), boxW))
 	}
 
-	return tea.NewView(fillBody(b.String(), contentH))
+	body := drawMenuBox(b.String(), w)
+	return tea.NewView(fillBody(body, contentH))
 }
 
 // renderField renders a labelled textinput line — consistent with callbook menu.
 func (im *IntegrationMenu) renderField(focusIdx int, label string, ti *textinput.Model) string {
-	val := InputStyle.Render(strings.TrimSpace(ti.Value()))
+	raw := strings.TrimSpace(ti.Value())
+	var val string
 	if im.focus == focusIdx {
 		val = ti.View()
+	} else if raw == "" {
+		val = DimStyle.Render("\u2014")
+	} else {
+		val = ValueStyle.Render(raw)
 	}
-	padded := fit(label, 14)
+	prefix := "  "
+	lbl := S.FormLabelWide.Align(lipgloss.Left).Render(label)
 	if im.focus == focusIdx {
-		return CursorStyle.Render("> ") + CursorStyle.Render(padded) + " " + val
+		prefix = S.FormPrefixOn.Render("> ")
+		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(label)
 	}
-	return "  " + LabelStyle.Render(padded) + " " + val
+	return lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)
 }
 
 // Values returns WSJT-X config values.

@@ -264,7 +264,8 @@ func TestQSOFormUpdateFocused(t *testing.T) {
 func TestQSOFormPathRow(t *testing.T) {
 	m := newTestModel()
 	m.width = 100
-	m.fields[fieldGrid].SetValue("JN18") // partner grid
+	m.fields[fieldCall].SetValue("SP9MOA") // callsign triggers path info
+	m.fields[fieldGrid].SetValue("JN18")   // partner grid
 
 	row := m.formPathRow(90)
 	if row == "" {
@@ -274,7 +275,8 @@ func TestQSOFormPathRow(t *testing.T) {
 
 func TestQSOFormPathRowNoOwnGrid(t *testing.T) {
 	m := newTestModel()
-	m.App.Logbook.Station.Grid = "" // no own grid
+	m.App.Logbook.Station.Grid = ""        // no own grid
+	m.fields[fieldCall].SetValue("SP9MOA") // callsign triggers path info
 	m.fields[fieldGrid].SetValue("JN18")
 
 	row := m.formPathRow(90)

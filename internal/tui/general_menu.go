@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/config"
 )
 
@@ -104,34 +105,40 @@ func (gm *GeneralMenu) View() tea.View {
 		contentH = 3
 	}
 
-	var b strings.Builder
-	b.WriteString(menuTitle("Settings — General", w))
-	b.WriteString("\n\n")
+	boxW := w - 2
+	if boxW < 40 {
+		boxW = 40
+	}
 
+	var b strings.Builder
+
+	// Distance unit row
 	unitVal := "Kilometers (km)"
 	if gm.distanceUnit == "mi" {
 		unitVal = "Miles (mi)"
 	}
-	// Distance unit row
-	unitLabel := fit("Distance unit", 14)
-	unitDisplay := ValueStyle.Render(unitVal)
-	if gm.cursor == 0 {
-		b.WriteString(menuLine(CursorStyle.Render("> ")+CursorStyle.Render(unitLabel)+" "+CursorStyle.Render(unitVal), w))
-	} else {
-		b.WriteString(menuLine("  "+LabelStyle.Render(unitLabel)+" "+unitDisplay, w))
-	}
+	b.WriteString(formCheckbox("Distance unit", unitVal, gm.cursor == 0, boxW))
 	b.WriteString("\n")
 
 	// Timezone row
-	tzVal := gm.timezone
-	tzLabel := fit("Timezone", 14)
-	tzDisplay := ValueStyle.Render(tzVal)
-	if gm.cursor == 1 {
-		b.WriteString(menuLine(CursorStyle.Render("> ")+CursorStyle.Render(tzLabel)+" "+CursorStyle.Render(tzVal), w))
-	} else {
-		b.WriteString(menuLine("  "+LabelStyle.Render(tzLabel)+" "+tzDisplay, w))
-	}
+	b.WriteString(formCheckbox("Timezone", gm.timezone, gm.cursor == 1, boxW))
 	b.WriteString("\n")
 
-	return tea.NewView(fillBody(b.String(), contentH))
+	body := drawMenuBox(b.String(), w)
+	return tea.NewView(fillBody(body, contentH))
+}
+
+// formCheckbox renders a label + value row for toggle-style menu items.
+// When focused, the "> " cursor prefix appears.
+func formCheckbox(label, value string, focused bool, width int) string {
+	prefix := "  "
+	lbl := S.FormLabelWide.Align(lipgloss.Left).Render(label)
+	val := ValueStyle.Render(value)
+	if focused {
+		prefix = S.FormPrefixOn.Render("> ")
+		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(label)
+		val = CursorStyle.Render(value)
+	}
+	line := lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)
+	return padOrTrunc(line, width)
 }

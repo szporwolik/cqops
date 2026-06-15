@@ -46,7 +46,7 @@ func (m *Model) headerView() string {
 		rightParts = append(rightParts, statusDotStyled(m.wlOnline, "WL"))
 	}
 	rightParts = append(rightParts,
-		utcLabelStyle.Render("UTC "),
+		utcLabelStyle.Render("UTC"),
 		S.StatusTime.Render(utc.Format("15:04:05")),
 	)
 

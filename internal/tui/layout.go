@@ -34,39 +34,21 @@ func MeasureLayout(m *Model) Layout {
 	}
 
 	l.StatusH = 1
-	l.TabH = 1
+	l.TabH = 3 // top border + content + bottom border (lipgloss tab pattern)
 	l.HelpH = 1
-
-	// Profile line: 1 row when station details are configured and no confirm dialog.
-	if m.confirm == nil && m.hasProfileLine() {
-		l.ProfileH = 1
-	}
 
 	l.ContentW = l.TerminalW - 2
 	if l.ContentW < 20 {
 		l.ContentW = 20
 	}
 
-	usedH := l.StatusH + l.TabH + l.ProfileH + l.HelpH
+	usedH := l.StatusH + l.TabH + l.HelpH
 	l.ContentH = l.TerminalH - usedH
 	if l.ContentH < 3 {
 		l.ContentH = 3
 	}
 
 	return l
-}
-
-// hasProfileLine returns true when the profile line will render non-empty.
-func (m *Model) hasProfileLine() bool {
-	s := m.App.Logbook.Station
-	return s.Operator != "" ||
-		s.RigModel(m.App.Config.Rigs) != "" ||
-		s.RigAntenna(m.App.Config.Rigs) != "" ||
-		(m.App.Logbook.Wavelog != nil && m.App.Logbook.Wavelog.Enabled && m.wlOnline) ||
-		s.Grid != "" ||
-		s.SOTARef != "" ||
-		s.POTARef != "" ||
-		s.WWFFRef != ""
 }
 
 // ContentWidth returns a content-area width suitable for sub-views.

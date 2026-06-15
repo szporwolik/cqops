@@ -111,7 +111,7 @@ func (le *LogbookEditor) prevField() {
 func (le *LogbookEditor) viewEdit(bodyW int, contentH int) string {
 	header := S.Title.Width(bodyW).Render("Edit QSO")
 
-	// Two-column form layout.
+	// Two-column form layout — matches QSO form pattern.
 	innerW := bodyW - 2
 	if innerW < 20 {
 		innerW = 20
@@ -120,16 +120,17 @@ func (le *LogbookEditor) viewEdit(bodyW int, contentH int) string {
 	if colW < 28 {
 		colW = innerW
 	}
+	colStyle := lipgloss.NewStyle().Width(colW).MaxWidth(colW).Align(lipgloss.Left)
+
 	half := (qefCount + 1) / 2
 
-	sep := "  "
 	var lines []string
 	for i := qsoEditField(0); i < half; i++ {
-		left := le.renderEditField(i, colW)
+		left := colStyle.Render(le.renderEditField(i, colW))
 		rightIdx := i + half
 		if rightIdx < qefCount {
-			right := le.renderEditField(rightIdx, colW)
-			lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Top, left, sep, right))
+			right := colStyle.Render(le.renderEditField(rightIdx, colW))
+			lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Top, left, right))
 		} else {
 			lines = append(lines, left)
 		}
@@ -146,16 +147,15 @@ func (le *LogbookEditor) renderEditField(f qsoEditField, colW int) string {
 	focused := f == le.focus
 	raw := strings.TrimSpace(le.fields[f].Value())
 
-	// Build label part. Focused fields get CursorStyle colouring
-	// (no "> " prefix — just the colour change, matching the QSO form).
-	lbl := LabelStyle.Render(fit(label, 14))
+	// Label part — matches QSO form pattern: "> " prefix when focused.
+	prefix := "  "
+	lbl := S.FormLabelWide.Align(lipgloss.Left).Render(label)
 	if focused {
-		lbl = CursorStyle.Render(fit(label, 14))
+		prefix = S.FormPrefixOn.Render("> ")
+		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(label)
 	}
 
-	// Value part: textinput view only when focused (shows cursor);
-	// otherwise render the raw value with ValueStyle, matching the
-	// QSO form pattern. WLStatus is always read-only DimStyle.
+	// Value part — WLStatus is always read-only DimStyle.
 	var val string
 	switch {
 	case f == qefWLStatus:
@@ -171,8 +171,5 @@ func (le *LogbookEditor) renderEditField(f qsoEditField, colW int) string {
 		val = ValueStyle.Render(raw)
 	}
 
-	// One-char gap between label and value.
-
-	// Wrap the whole row.
-	return lipgloss.JoinHorizontal(lipgloss.Center, lbl, " ", val)
+	return lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)
 }

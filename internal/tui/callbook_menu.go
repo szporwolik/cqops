@@ -5,6 +5,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/qrz"
@@ -146,13 +147,12 @@ func (cm *CallbookMenu) focusField() {
 }
 
 // renderField renders a labelled textinput line with cursor indicator.
-// renderField renders a labelled textinput line with cursor indicator.
 // When masked is true, the value is shown as asterisks when not focused.
 func (cm *CallbookMenu) renderField(focusIdx int, label string, ti *textinput.Model, masked bool) string {
 	raw := strings.TrimSpace(ti.Value())
 	var val string
 	if cm.focus == focusIdx {
-		val = ti.View() // respects EchoMode/EchoCharacter when focused
+		val = ti.View()
 	} else if raw == "" {
 		val = DimStyle.Render("\u2014")
 	} else if masked {
@@ -160,11 +160,13 @@ func (cm *CallbookMenu) renderField(focusIdx int, label string, ti *textinput.Mo
 	} else {
 		val = ValueStyle.Render(raw)
 	}
-	padded := fit(label, 14)
+	prefix := "  "
+	lbl := S.FormLabelWide.Align(lipgloss.Left).Render(label)
 	if cm.focus == focusIdx {
-		return CursorStyle.Render("> ") + CursorStyle.Render(padded) + " " + val
+		prefix = S.FormPrefixOn.Render("> ")
+		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(label)
 	}
-	return "  " + LabelStyle.Render(padded) + " " + val
+	return lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)
 }
 
 func (cm *CallbookMenu) View() tea.View {
@@ -184,41 +186,46 @@ func (cm *CallbookMenu) View() tea.View {
 		contentH = 3
 	}
 
-	var b strings.Builder
-	b.WriteString(menuTitle("Settings — Callbook", w))
-	b.WriteString("\n\n")
+	boxW := w - 2
+	if boxW < 40 {
+		boxW = 40
+	}
 
+	var b strings.Builder
+
+	// QRZ checkbox
 	checkbox := "[ ]"
 	if cm.enabled {
 		checkbox = "[x]"
 	}
+	qrPrefix := "  "
+	qrLabel := S.FormLabelWide.Align(lipgloss.Left).Render("Use QRZ:")
 	if cm.focus == 0 {
+		qrPrefix = S.FormPrefixOn.Render("> ")
+		qrLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("Use QRZ:")
 		checkbox = CursorStyle.Render(checkbox)
 	}
-	// QRZ checkbox — show "> " marker when focused.
-	qrPrefix := "  "
-	if cm.focus == 0 {
-		qrPrefix = CursorStyle.Render("> ")
-	}
-	b.WriteString(menuLine(qrPrefix+LabelStyle.Render(fit("Use QRZ:", 14))+" "+checkbox, w))
+	b.WriteString(padOrTrunc(
+		lipgloss.JoinHorizontal(lipgloss.Center, qrPrefix, qrLabel, " ", checkbox),
+		boxW))
 	if cm.enabled {
 		b.WriteString("\n")
-		b.WriteString(menuLine(cm.renderField(1, "  Username:", &cm.user, false), w))
+		b.WriteString(padOrTrunc(cm.renderField(1, "  Username:", &cm.user, false), boxW))
 		b.WriteString("\n")
-		b.WriteString(menuLine(cm.renderField(2, "  Password:", &cm.pass, true), w))
+		b.WriteString(padOrTrunc(cm.renderField(2, "  Password:", &cm.pass, true), boxW))
 
-		// Test button — indented under QRZ.
+		// Test button
 		b.WriteString("\n")
 		btnText := "[ Test Connection ]"
 		var btnLine string
 		if !cm.inetOnline {
 			btnLine = "    " + DimStyle.Render(btnText) + " " + DimStyle.Render("(offline)")
 		} else if cm.focus == 3 {
-			btnLine = CursorStyle.Render("> ") + CursorStyle.Render("  "+btnText)
+			btnLine = S.FormPrefixOn.Render("> ") + CursorStyle.Render("  "+btnText)
 		} else {
 			btnLine = "    " + InputStyle.Render(btnText)
 		}
-		b.WriteString(menuLine(btnLine, w))
+		b.WriteString(padOrTrunc(btnLine, boxW))
 
 		if cm.testResult != "" {
 			b.WriteString("\n    ")
@@ -232,7 +239,8 @@ func (cm *CallbookMenu) View() tea.View {
 		}
 	}
 
-	return tea.NewView(fillBody(b.String(), contentH))
+	body := drawMenuBox(b.String(), w)
+	return tea.NewView(fillBody(body, contentH))
 }
 
 // friendlyQRZError wraps raw network errors from QRZ lookups into

@@ -89,50 +89,39 @@ func (m *MainMenu) View() tea.View {
 		h = 24
 	}
 
-	// Available content height: status+profile+tab+help = 4 fixed rows.
 	contentH := contentHeight(h)
 	if contentH < 3 {
 		contentH = 3
 	}
 
-	dim := DimStyle
+	boxW := w - 2
+	if boxW < 40 {
+		boxW = 40
+	}
+
 	showDesc := w >= 60
 
 	var b strings.Builder
-
-	// Title header — fills the full width.
-	b.WriteString(menuTitle("Settings", w))
-	b.WriteString("\n\n")
-
 	for i, item := range m.items {
 		prefix := "  "
 		label := item.label
+		desc := ""
 		if i == m.cursor {
-			// Selected row: pink "> " marker and pink option name.
-			prefix = CursorStyle.Render("> ")
+			prefix = S.FormPrefixOn.Render("> ")
 			label = CursorStyle.Render(item.label)
-		}
-
-		line := prefix + label
-		if showDesc {
-			pad := 26 - lipgloss.Width(prefix) - lipgloss.Width(item.label)
-			if pad < 1 {
-				pad = 1
+			if showDesc {
+				desc = DimStyle.Render("  " + item.desc)
 			}
-			line += strings.Repeat(" ", pad) + dim.Render(item.desc)
+		} else {
+			if showDesc {
+				desc = DimStyle.Render("  " + item.desc)
+			}
 		}
-		b.WriteString(menuLine(line, w))
+		line := lipgloss.JoinHorizontal(lipgloss.Center, prefix, label, desc)
+		b.WriteString(padOrTrunc(line, boxW))
 		b.WriteString("\n")
 	}
 
-	menuH := lipgloss.Height(b.String())
-	fillerH := contentH - menuH
-	if fillerH < 0 {
-		fillerH = 0
-	}
-	if fillerH > 0 {
-		b.WriteString(strings.Repeat("\n", fillerH))
-	}
-
-	return tea.NewView(b.String())
+	body := drawMenuBox(b.String(), w)
+	return tea.NewView(fillBody(body, contentH))
 }

@@ -14,6 +14,17 @@ func drawBorderedBox(content string, boxW int) string {
 	return borderBoxStyle.Width(boxW).Render(content)
 }
 
+// drawBorderedBoxPad is like drawBorderedBox but with Padding(1,2) for
+// content-heavy forms like config menus.
+var menuBoxStyle = lipgloss.NewStyle().
+	Border(lipgloss.NormalBorder()).
+	BorderForeground(P.Border).
+	Padding(1, 2)
+
+func drawMenuBox(content string, boxW int) string {
+	return menuBoxStyle.Width(boxW).Render(content)
+}
+
 // osc8Link returns an OSC-8 hyperlink sequence. Most modern terminals
 // (Windows Terminal, iTerm2, Kitty, etc.) render these as clickable links.
 // Ctrl+click opens the URL in the system browser.
@@ -29,8 +40,56 @@ func tern(cond bool, t, f string) string {
 	return f
 }
 
+// =============================================================================
+// Shared form-field rendering — used by QSO form and all config menus.
+// =============================================================================
+
+// fromField renders a label+value line for a textinput.Model in a form.
+// When focused, the "> " cursor prefix is shown and the textinput View() is
+// used so the cursor blinks. When unfocused, empty values show an em-dash.
+// labelWide: use wider label (14 cells) for menus; use narrow (11) for QSO form.
+func formField(label string, ti *textinput.Model, focused bool, labelWide bool) string {
+	raw := strings.TrimSpace(ti.Value())
+
+	var labelStyle lipgloss.Style
+	if labelWide {
+		labelStyle = S.FormLabelWide
+	} else {
+		labelStyle = S.FormLabel
+	}
+
+	var prefix, lbl, val string
+	if focused {
+		prefix = S.FormPrefixOn.Render("> ")
+		if labelWide {
+			lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(label)
+		} else {
+			lbl = S.FormFocused.Align(lipgloss.Left).Render(label)
+		}
+		val = ti.View()
+	} else {
+		prefix = S.FormPrefixOff.Render("  ")
+		lbl = labelStyle.Align(lipgloss.Left).Render(label)
+		if raw == "" {
+			val = DimStyle.Render("\u2014")
+		} else {
+			val = ValueStyle.Render(raw)
+		}
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)
+}
+
+// formFieldLine returns formField result padded to exactly the given width.
+func formFieldLine(label string, ti *textinput.Model, focused bool, labelWide bool, width int) string {
+	return padOrTrunc(formField(label, ti, focused, labelWide), width)
+}
+
+// =============================================================================
+// Legacy helpers — kept for backward compat; prefer formField above.
+// =============================================================================
+
 // fillBody returns the content with trailing newlines so the total height
-// equals contentH. Use this in configuration menus to push the help bar down.
+// equals contentH.
 func fillBody(content string, contentH int) string {
 	if contentH <= 0 {
 		return content
@@ -40,30 +99,6 @@ func fillBody(content string, contentH int) string {
 		return content
 	}
 	return content + strings.Repeat("\n", contentH-current)
-}
-
-// menuTitle renders a configuration-menu title bar that fills the full
-// terminal width.
-func menuTitle(title string, width int) string {
-	return S.Title.Width(width).Render(title)
-}
-
-// menuLine wraps a single menu row, filling to the given width.
-func menuLine(content string, width int) string {
-	if lipgloss.Width(content) >= width {
-		return content
-	}
-	return content + strings.Repeat(" ", width-lipgloss.Width(content))
-}
-
-// fit renders s padded to exactly w cells. An empty string renders as a dim
-// em-dash. Strings wider than w are truncated. Uses plain string ops — no
-// lipgloss allocation.
-func fit(s string, w int) string {
-	if s == "" {
-		return DimStyle.Render(padOrTrunc("\u2014", w))
-	}
-	return padOrTrunc(s, w)
 }
 
 // clamp renders s padded/truncated to exactly w cells with spaces.
@@ -87,7 +122,7 @@ func padOrTrunc(s string, w int) string {
 	return s
 }
 
-// --- standalone utilities (moved from model.go) ---
+// --- standalone utilities ---
 
 func stripNonDigits(s string) string {
 	var b strings.Builder
@@ -128,8 +163,8 @@ func truncate(s string, max int) string {
 // =============================================================================
 
 // FixedZoneHeight is the number of rows consumed by the fixed UI zones:
-// status bar (1) + profile line (0-1) + tab bar (1) + help bar (1).
-const FixedZoneHeight = 4
+// status bar (1) + tab bar (3 with borders) + help bar (1).
+const FixedZoneHeight = 5
 
 // contentHeight returns the available content height for a given terminal height
 // after accounting for fixed UI zones.

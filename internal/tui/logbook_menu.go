@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
@@ -236,42 +237,45 @@ func (c *LogbookChooser) viewList() string {
 		h = 24
 	}
 	contentH := contentHeight(h)
-	b.WriteString(menuTitle("Settings — Logbooks", w))
-	b.WriteString("\n\n")
+	if contentH < 3 {
+		contentH = 3
+	}
 
 	if len(c.names) == 0 {
-		b.WriteString(menuLine("No logbooks configured.", w))
-		b.WriteString("\n")
-		return fillBody(b.String(), contentH)
+		b.WriteString("No logbooks configured.\n")
+	} else {
+		for i, id := range c.names {
+			lb := c.app.Config.Logbooks[id]
+			displayName := config.LogbookDisplayName(&lb)
+			prefix := "  "
+			active := ""
+			if id == c.app.Config.State.ActiveLogbook {
+				active = "[Active]"
+			}
+			info := lb.Station.Callsign
+			if lb.Station.Grid != "" {
+				info += "  " + lb.Station.Grid
+			}
+			if info == "" {
+				info = lb.Description
+			}
+			if i == c.cursor {
+				prefix = S.FormPrefixOn.Render("> ")
+			}
+			lbl := S.FormLabelWide.Align(lipgloss.Left).Render(active)
+			val := fmt.Sprintf("%s  %s", displayName, info)
+			if i == c.cursor {
+				lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(active)
+				val = CursorStyle.Render(val)
+			}
+			line := lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)
+			b.WriteString(padOrTrunc(line, w-4)) // inside menu box padding
+			b.WriteString("\n")
+		}
 	}
 
-	for i, id := range c.names {
-		lb := c.app.Config.Logbooks[id]
-		displayName := config.LogbookDisplayName(&lb)
-		marker := "  "
-		if i == c.cursor {
-			marker = CursorStyle.Render("> ")
-		}
-		active := "        "
-		if id == c.app.Config.State.ActiveLogbook {
-			active = "[Active]"
-		}
-		info := lb.Station.Callsign
-		if lb.Station.Grid != "" {
-			info += "  " + lb.Station.Grid
-		}
-		if info == "" {
-			info = lb.Description
-		}
-		line := fmt.Sprintf("%s%s %s  %s", marker, active, displayName, info)
-		if i == c.cursor {
-			line = CursorStyle.Render("> ") + CursorStyle.Render(fmt.Sprintf("%s %s  %s", active, displayName, info))
-		}
-		b.WriteString(menuLine(line, w))
-		b.WriteString("\n")
-	}
-
-	return fillBody(b.String(), contentH)
+	body := drawMenuBox(b.String(), w)
+	return fillBody(body, contentH)
 }
 
 func (c *LogbookChooser) viewForm() string {
@@ -284,31 +288,27 @@ func (c *LogbookChooser) viewForm() string {
 	if h < 10 {
 		h = 24
 	}
-	contentH := h - 4
+	contentH := contentHeight(h)
 	if contentH < 3 {
 		contentH = 3
 	}
-	b.WriteString(menuTitle("Settings — Edit Logbook", w))
-	b.WriteString("\n\n")
 
 	b.WriteString(c.station.View().Content)
 
-	// Wavelog status and station info (below the form buttons).
-	if c.station.WlEnabled {
-		// Status line
-		if c.wlStatus != "" {
-			b.WriteString("\n    ")
-			if strings.HasPrefix(c.wlStatus, "OK") {
-				b.WriteString(SuccessStyle.Render(c.wlStatus))
-			} else if c.wlUpdating || c.wlTesting {
-				b.WriteString(DimStyle.Render(c.wlStatus))
-			} else {
-				b.WriteString(ErrorStyle.Render(c.wlStatus))
-			}
+	// Wavelog status line below the form.
+	if c.station.WlEnabled && c.wlStatus != "" {
+		b.WriteString("\n    ")
+		if strings.HasPrefix(c.wlStatus, "OK") {
+			b.WriteString(SuccessStyle.Render(c.wlStatus))
+		} else if c.wlUpdating || c.wlTesting {
+			b.WriteString(DimStyle.Render(c.wlStatus))
+		} else {
+			b.WriteString(ErrorStyle.Render(c.wlStatus))
 		}
 	}
 
-	return fillBody(b.String(), contentH)
+	body := drawMenuBox(b.String(), w)
+	return fillBody(body, contentH)
 }
 
 // logbookSwitchedMsg is sent when the user switches active logbook via Enter.

@@ -10,12 +10,12 @@ func TestContentHeight(t *testing.T) {
 		terminalH int
 		wantMin   int
 	}{
-		{24, 20},  // 24 - 4 = 20
-		{10, 6},   // 10 - 4 = 6
+		{24, 19},  // 24 - 5 = 19
+		{10, 5},   // 10 - 5 = 5
 		{5, 3},    // clamped to min 3
 		{0, 3},    // clamped to min 3
 		{-1, 3},   // clamped to min 3
-		{100, 96}, // large terminal
+		{100, 95}, // large terminal
 	}
 	for _, tt := range tests {
 		got := contentHeight(tt.terminalH)

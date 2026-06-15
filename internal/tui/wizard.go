@@ -579,13 +579,15 @@ func (w *Wizard) viewWSJTX() string {
 		wsjtxCb = "[x]"
 	}
 	wsjtxPrefix := "  "
-	wsjtxLabel := LabelStyle.Render(fit("WSJT-X:", 14))
+	wsjtxLabel := S.FormLabelWide.Align(lipgloss.Left).Render("WSJT-X:")
 	if w.integFocus == 0 {
-		wsjtxPrefix = CursorStyle.Render("> ")
-		wsjtxLabel = CursorStyle.Render(fit("WSJT-X:", 14))
+		wsjtxPrefix = S.FormPrefixOn.Render("> ")
+		wsjtxLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("WSJT-X:")
 		wsjtxCb = CursorStyle.Render(wsjtxCb)
 	}
-	inner.WriteString(menuLine(wsjtxPrefix+wsjtxLabel+" "+wsjtxCb, 80))
+	inner.WriteString(padOrTrunc(
+		lipgloss.JoinHorizontal(lipgloss.Center, wsjtxPrefix, wsjtxLabel, " ", wsjtxCb),
+		80))
 	inner.WriteString("\n")
 
 	if w.wsjtxEnable {
@@ -599,13 +601,15 @@ func (w *Wizard) viewWSJTX() string {
 		qrzCb = "[x]"
 	}
 	qrzPrefix := "  "
-	qrzLabel := LabelStyle.Render(fit("QRZ.com:", 14))
+	qrzLabel := S.FormLabelWide.Align(lipgloss.Left).Render("QRZ.com:")
 	if w.integFocus == 3 {
-		qrzPrefix = CursorStyle.Render("> ")
-		qrzLabel = CursorStyle.Render(fit("QRZ.com:", 14))
+		qrzPrefix = S.FormPrefixOn.Render("> ")
+		qrzLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("QRZ.com:")
 		qrzCb = CursorStyle.Render(qrzCb)
 	}
-	inner.WriteString(menuLine(qrzPrefix+qrzLabel+" "+qrzCb, 80))
+	inner.WriteString(padOrTrunc(
+		lipgloss.JoinHorizontal(lipgloss.Center, qrzPrefix, qrzLabel, " ", qrzCb),
+		80))
 	inner.WriteString("\n")
 
 	if w.qrzEnable {
@@ -629,7 +633,7 @@ func (w *Wizard) viewWSJTX() string {
 				status = ErrorStyle.Render(w.qrzTestResult)
 			}
 		}
-		inner.WriteString(menuLine(testPrefix+testBtn+"  "+status, 80))
+		inner.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, testPrefix, testBtn, "  ", status), 80))
 		inner.WriteString("\n")
 	}
 
@@ -648,12 +652,12 @@ func (w *Wizard) viewWSJTX() string {
 // renderIntegField renders a labelled textinput line for the integrations step.
 func renderIntegField(label string, ti *textinput.Model, focused bool, masked bool, maxW int) string {
 	prefix := "  "
-	lbl := LabelStyle.Render(fit(label, 14))
+	lbl := S.FormLabelWide.Align(lipgloss.Left).Render(label)
 	raw := strings.TrimSpace(ti.Value())
 	var val string
 	if focused {
-		prefix = CursorStyle.Render("> ")
-		lbl = CursorStyle.Render(fit(label, 14))
+		prefix = S.FormPrefixOn.Render("> ")
+		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(label)
 		val = ti.View()
 	} else if raw == "" {
 		val = DimStyle.Render("\u2014")
@@ -662,7 +666,7 @@ func renderIntegField(label string, ti *textinput.Model, focused bool, masked bo
 	} else {
 		val = ValueStyle.Render(raw)
 	}
-	return menuLine(prefix+lbl+" "+val, maxW) + "\n"
+	return padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val), maxW) + "\n"
 }
 
 func (w *Wizard) viewTimezone() string {
@@ -685,17 +689,17 @@ func (w *Wizard) viewTimezone() string {
 	for i := start; i < end; i++ {
 		tz := config.Timezones[i]
 		prefix := "  "
-		label := LabelStyle.Render(fit(tz, 30))
+		lbl := S.FormLabelWide.Align(lipgloss.Left).Render(tz)
 		if i == w.tzIndex {
-			prefix = CursorStyle.Render("> ")
-			label = CursorStyle.Render(fit(tz, 30))
+			prefix = S.FormPrefixOn.Render("> ")
+			lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(tz)
 		}
-		inner.WriteString(menuLine(prefix+label, 80))
+		inner.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl), 80))
 		inner.WriteString("\n")
 	}
 
 	detected := config.Timezones[detectedIdx]
-	inner.WriteString(menuLine(DimStyle.Render("  System: "+detected), 80))
+	inner.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, "  ", DimStyle.Render("System: "+detected)), 80))
 
 	body := w.wizardFormBox().Render(inner.String())
 	help := wizHelp(

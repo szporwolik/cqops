@@ -10,6 +10,12 @@ import (
 	"github.com/szporwolik/cqops/internal/applog"
 )
 
+// Pre-allocated log viewer styles — avoids per-frame allocations.
+var (
+	logTimeStyle  = lipgloss.NewStyle().Width(9).Foreground(P.TextDim).PaddingRight(0)
+	logLevelStyle = lipgloss.NewStyle().Width(6)
+)
+
 type LogViewer struct {
 	name     string
 	viewport viewport.Model
@@ -113,8 +119,6 @@ func (lv *LogViewer) View() tea.View {
 	}
 
 	// Build colored log lines (newest first). No explicit backgrounds.
-	timeStyle := lipgloss.NewStyle().Width(9).Foreground(P.TextDim).PaddingRight(0)
-	levelStyleW := lipgloss.NewStyle().Width(6)
 	bodyW := lv.width
 	if bodyW < 40 {
 		bodyW = 80
@@ -144,8 +148,8 @@ func (lv *LogViewer) View() tea.View {
 		}
 
 		line := lipgloss.JoinHorizontal(lipgloss.Top,
-			timeStyle.Render(e.Time),
-			levelStyleW.Render(ls.Render(e.Level)),
+			logTimeStyle.Render(e.Time),
+			logLevelStyle.Render(ls.Render(e.Level)),
 			ValueStyle.Render(truncate(msg, msgW)),
 		)
 		lines = append(lines, line)

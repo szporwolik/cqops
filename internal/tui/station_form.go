@@ -6,6 +6,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/config"
 )
 
@@ -237,30 +238,32 @@ func (f *StationForm) View() tea.View {
 	fields = append(fields,
 		fieldDef{"Callsign:", &f.Callsign},
 		fieldDef{"Grid locator:", &f.Locator},
-		fieldDef{"Operator (optional):", &f.Operator},
-		fieldDef{"SOTA Ref (optional):", &f.SOTARef},
-		fieldDef{"POTA Ref (optional):", &f.POTARef},
-		fieldDef{"WWFF Ref (optional):", &f.WWFFRef},
+		fieldDef{"Operator (opt):", &f.Operator},
+		fieldDef{"SOTA Ref (opt):", &f.SOTARef},
+		fieldDef{"POTA Ref (opt):", &f.POTARef},
+		fieldDef{"WWFF Ref (opt):", &f.WWFFRef},
 	)
 
 	var b strings.Builder
 	for _, field := range fields {
-		b.WriteString(f.renderFieldLine(field.label, field.ti))
+		b.WriteString(padOrTrunc(f.renderFieldLine(field.label, field.ti), 80))
 	}
 
-	// Wavelog checkbox — focusable via Tab, Space to toggle.
+	// Wavelog checkbox
 	wlCheckbox := "[ ]"
 	if f.WlEnabled {
 		wlCheckbox = "[x]"
 	}
 	wlCbPrefix := "  "
-	wlCbLabel := LabelStyle.Render(fit("Wavelog:", 22))
+	wlCbLabel := S.FormLabelWide.Align(lipgloss.Left).Render("Wavelog:")
 	if f.wlCbFocus {
-		wlCbPrefix = CursorStyle.Render("> ")
-		wlCbLabel = CursorStyle.Render(fit("Wavelog:", 22))
+		wlCbPrefix = S.FormPrefixOn.Render("> ")
+		wlCbLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("Wavelog:")
 		wlCheckbox = CursorStyle.Render(wlCheckbox)
 	}
-	b.WriteString(menuLine(wlCbPrefix+wlCbLabel+" "+wlCheckbox, 80))
+	b.WriteString(padOrTrunc(
+		lipgloss.JoinHorizontal(lipgloss.Center, wlCbPrefix, wlCbLabel, " ", wlCheckbox),
+		80))
 	b.WriteString("\n")
 
 	if f.WlEnabled {
@@ -270,24 +273,36 @@ func (f *StationForm) View() tea.View {
 			{"  Station ID:", &f.WlStationID},
 		}
 		for _, field := range wlFields {
-			b.WriteString(f.renderFieldLine(field.label, field.ti))
+			b.WriteString(padOrTrunc(f.renderFieldLine(field.label, field.ti), 80))
 		}
 
 		updateBtn := "[ Update ]"
 		updateHint := "fetch stations from Wavelog"
 		if f.wlBtnFocus == 1 {
-			b.WriteString(menuLine("  "+CursorStyle.Render("> ")+CursorStyle.Render(updateBtn)+" "+DimStyle.Render(updateHint), 80))
+			b.WriteString(padOrTrunc(
+				lipgloss.JoinHorizontal(lipgloss.Center,
+					S.FormPrefixOn.Render("> "),
+					CursorStyle.Render(updateBtn),
+					" ",
+					DimStyle.Render(updateHint)),
+				80))
 		} else {
-			b.WriteString(menuLine("    "+InputStyle.Render(updateBtn)+" "+DimStyle.Render(updateHint), 80))
+			b.WriteString(padOrTrunc("    "+InputStyle.Render(updateBtn)+" "+DimStyle.Render(updateHint), 80))
 		}
 		b.WriteString("\n")
 
 		testBtn := "[ Test ]"
 		testHint := "verify connection and station"
 		if f.wlBtnFocus == 2 {
-			b.WriteString(menuLine("  "+CursorStyle.Render("> ")+CursorStyle.Render(testBtn)+" "+DimStyle.Render(testHint), 80))
+			b.WriteString(padOrTrunc(
+				lipgloss.JoinHorizontal(lipgloss.Center,
+					S.FormPrefixOn.Render("> "),
+					CursorStyle.Render(testBtn),
+					" ",
+					DimStyle.Render(testHint)),
+				80))
 		} else {
-			b.WriteString(menuLine("    "+InputStyle.Render(testBtn)+" "+DimStyle.Render(testHint), 80))
+			b.WriteString(padOrTrunc("    "+InputStyle.Render(testBtn)+" "+DimStyle.Render(testHint), 80))
 		}
 	}
 
@@ -298,24 +313,19 @@ func (f *StationForm) renderFieldLine(label string, ti *textinput.Model) string 
 	focused := ti.Focused()
 	raw := strings.TrimSpace(ti.Value())
 
-	lbl := LabelStyle.Render(fit(label, 22))
-	if focused {
-		lbl = CursorStyle.Render(fit(label, 22))
-	}
-
+	prefix := "  "
+	lbl := S.FormLabelWide.Align(lipgloss.Left).Render(label)
 	var val string
 	if focused {
+		prefix = S.FormPrefixOn.Render("> ")
+		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(label)
 		val = ti.View()
 	} else if raw == "" {
 		val = DimStyle.Render("\u2014")
 	} else {
 		val = ValueStyle.Render(raw)
 	}
-	prefix := "  "
-	if focused {
-		prefix = CursorStyle.Render("> ")
-	}
-	return menuLine(prefix+lbl+" "+val, 80) + "\n"
+	return lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val) + "\n"
 }
 
 func (f *StationForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {

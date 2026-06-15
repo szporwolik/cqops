@@ -16,7 +16,6 @@ import (
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/qrz"
 	"github.com/szporwolik/cqops/internal/qso"
-	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
@@ -127,7 +126,6 @@ type Model struct {
 	// Status bar has a 1-second TTL because it contains the UTC clock.
 	cachedStatus    string
 	cachedStatusSec int
-	cachedProfile   string
 	cachedTabs      string
 	cachedHelp      string
 	cachedBarSc     screenKind
@@ -163,13 +161,13 @@ type Model struct {
 	partnerMapCache    string
 	partnerMapCacheSig string
 
-	// QSO count cache — avoids SQL queries during View().
-	qsoCounts      store.QSOCounts
-	qsoCountsValid bool
-
 	// Path line cache — avoids locator parsing every View().
 	cachedPathLine string
 	cachedPathSig  string
+
+	// Form column style cache — avoids re-creating lipgloss styles every frame.
+	cachedFormColW     int
+	cachedFormColStyle lipgloss.Style
 }
 
 type tickMsg time.Time
@@ -478,9 +476,6 @@ func (m *Model) View() tea.View {
 		m.cachedStatus = m.renderStatusBar()
 		m.cachedStatusSec = time.Now().UTC().Second()
 	}
-	if m.cachedProfile == "" || !cacheBars {
-		m.cachedProfile = m.renderProfileBar()
-	}
 	if m.cachedTabs == "" || !cacheBars {
 		m.cachedTabs = m.renderTabBar()
 	}
@@ -496,9 +491,6 @@ func (m *Model) View() tea.View {
 		}
 	}
 	addRow(m.cachedStatus)
-	if m.cachedProfile != "" {
-		addRow(m.cachedProfile)
-	}
 	addRow(m.cachedTabs)
 
 	body := m.buildBodyForScreen(layout)
@@ -589,34 +581,43 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 }
 
 // buildQSOFormWithLayout renders the QSO form, short path info, and recent
-// QSOs using layout-derived dimensions.
+// QSOs using layout-derived dimensions. The form border matches content width
+// and is left-aligned; path row and table fill the full width.
 func (m *Model) buildQSOFormWithLayout(l Layout) string {
 	w := l.TerminalW
-	borderW := w - 2
-	formW := borderW - 2
+	formW := w - 4 // max available content width inside border
 	if formW < 20 {
-		formW = borderW
+		formW = w - 2
 	}
 
-	formBox := drawBorderedBox(m.viewForm(formW), w)
-	pathBox := drawBorderedBox(m.formPathRow(formW), w)
+	formContent := m.viewForm(formW)
+	// Border wraps content tightly — no filling to terminal width.
+	formBox := drawBorderedBox(formContent, lipgloss.Width(formContent)+4)
+	pathLine := m.formPathRow(w - 2) // path fills width matching table
 
-	formRenderedH := lipgloss.Height(formBox)
-	pathRenderedH := lipgloss.Height(pathBox)
-	recentH := l.ContentH - formRenderedH - pathRenderedH
-	if recentH < 5 {
-		recentH = 5
+	formH := lipgloss.Height(formBox)
+	pathH := 0
+	if pathLine != "" {
+		pathH = 1
+	}
+	tableH := l.ContentH - formH - pathH
+	if tableH < 5 {
+		tableH = 5
 	}
 
 	tableW := w - 2
-	tableH := recentH - 2
 	if tableH < 3 {
 		tableH = 3
 	}
 	m.recentQSOs.SetSize(tableW, tableH)
-	recentBox := drawBorderedBox(m.recentQSOs.View(), w)
 
-	return lipgloss.JoinVertical(lipgloss.Left, formBox, pathBox, recentBox)
+	var parts []string
+	parts = append(parts, formBox)
+	if pathLine != "" {
+		parts = append(parts, pathLine)
+	}
+	parts = append(parts, m.recentQSOs.View())
+	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }
 
 // formPartnerData builds a CallData from the current QSO form fields.

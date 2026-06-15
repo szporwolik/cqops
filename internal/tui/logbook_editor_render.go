@@ -109,7 +109,6 @@ func (le *LogbookEditor) View() tea.View {
 			le.buildTable()
 		}
 		contentH := contentHeight(le.height)
-		// Simple bordered box without background fill.
 		inner := lipgloss.NewStyle().
 			MaxWidth(bodyW - 2).
 			Height(contentH - 2).

@@ -44,10 +44,8 @@ type Styles struct {
 	StatusValue lipgloss.Style
 	StatusTime  lipgloss.Style
 
-	// Tabs
-	TabActive   lipgloss.Style
-	TabInactive lipgloss.Style
-	TabDisabled lipgloss.Style
+	// Tabs — now rendered via lipgloss tab border pattern in tabbar.go.
+	// No longer using S.Tab* styles.
 
 	// Typography
 	Title   lipgloss.Style
@@ -61,9 +59,14 @@ type Styles struct {
 	Info    lipgloss.Style
 
 	// Form
-	FormLabel lipgloss.Style
-	Input     lipgloss.Style
-	Cursor    lipgloss.Style
+	FormLabel       lipgloss.Style
+	FormLabelWide   lipgloss.Style // wider label for menus (14 cells)
+	FormFocused     lipgloss.Style
+	FormFocusedWide lipgloss.Style // wider focused label for menus (14 cells)
+	FormPrefixOn    lipgloss.Style
+	FormPrefixOff   lipgloss.Style
+	Input           lipgloss.Style
+	Cursor          lipgloss.Style
 
 	// Toasts
 	ToastInfo    lipgloss.Style
@@ -98,14 +101,10 @@ type Styles struct {
 }
 
 var S = Styles{
-	StatusApp:   lipgloss.NewStyle().Foreground(P.Primary).Bold(true).Padding(0, 1),
+	StatusApp:   lipgloss.NewStyle().Foreground(P.Text).Bold(true).Padding(0, 1),
 	StatusLabel: lipgloss.NewStyle().Foreground(P.TextMuted),
 	StatusValue: lipgloss.NewStyle().Foreground(P.Text),
 	StatusTime:  lipgloss.NewStyle().Foreground(P.Text).Padding(0, 1),
-
-	TabActive:   lipgloss.NewStyle().Bold(true).Foreground(P.Text).Padding(0, 1),
-	TabInactive: lipgloss.NewStyle().Foreground(P.TextMuted).Padding(0, 1),
-	TabDisabled: lipgloss.NewStyle().Foreground(P.TextDim).Padding(0, 1),
 
 	Title:   lipgloss.NewStyle().Bold(true).Foreground(P.Primary).Padding(0, 1),
 	Label:   lipgloss.NewStyle().Foreground(P.TextMuted),
@@ -117,9 +116,14 @@ var S = Styles{
 	Error:   lipgloss.NewStyle().Foreground(P.Error),
 	Info:    lipgloss.NewStyle().Foreground(P.Info),
 
-	FormLabel: lipgloss.NewStyle().Width(13).Foreground(P.TextMuted),
-	Input:     lipgloss.NewStyle().Foreground(P.Text),
-	Cursor:    lipgloss.NewStyle().Foreground(P.Cursor),
+	FormLabel:       lipgloss.NewStyle().Width(11).Foreground(P.TextMuted),
+	FormLabelWide:   lipgloss.NewStyle().Width(14).Foreground(P.TextMuted),
+	FormFocused:     lipgloss.NewStyle().Width(11).Foreground(P.Cursor),
+	FormFocusedWide: lipgloss.NewStyle().Width(14).Foreground(P.Cursor),
+	FormPrefixOn:    lipgloss.NewStyle().Foreground(P.Cursor),
+	FormPrefixOff:   lipgloss.NewStyle().Foreground(P.TextMuted),
+	Input:           lipgloss.NewStyle().Foreground(P.Text),
+	Cursor:          lipgloss.NewStyle().Foreground(P.Cursor),
 
 	ToastInfo:    lipgloss.NewStyle().Foreground(P.Info),
 	ToastSuccess: lipgloss.NewStyle().Foreground(P.Success),
@@ -127,7 +131,7 @@ var S = Styles{
 	ToastError:   lipgloss.NewStyle().Foreground(P.Error),
 
 	WizardHeader: lipgloss.NewStyle().Bold(true).Foreground(P.Text),
-	WizardAccent: lipgloss.NewStyle().Bold(true).Foreground(P.Primary),
+	WizardAccent: lipgloss.NewStyle().Bold(true).Foreground(P.Text),
 
 	LogInfo:  lipgloss.NewStyle().Foreground(P.Info),
 	LogWarn:  lipgloss.NewStyle().Foreground(P.Warning),
@@ -162,11 +166,10 @@ var (
 
 var (
 	// fieldFocusedLabel is the label style for active form fields (pink).
-	fieldFocusedLabel = lipgloss.NewStyle().Width(13).Foreground(P.Cursor)
-	// fieldFocusedPrefix is the "> " marker for active form fields.
-	fieldFocusedPrefix = lipgloss.NewStyle().Foreground(P.Cursor)
-	// fieldUnfocusedPrefix is the "  " marker for inactive form fields.
-	fieldUnfocusedPrefix = lipgloss.NewStyle().Foreground(P.TextMuted)
+	// These are thin aliases to S.Form* — kept for backward compat with QSO form.
+	fieldFocusedLabel    = S.FormFocused
+	fieldFocusedPrefix   = S.FormPrefixOn
+	fieldUnfocusedPrefix = S.FormPrefixOff
 
 	// pathInfoStyle is used for the short-path info line when grids are set.
 	pathInfoStyle = lipgloss.NewStyle().Foreground(P.Info)
@@ -186,14 +189,12 @@ var (
 			Padding(1, 2)
 
 	// statusDotOn / statusDotOff — pre-allocated integration indicator styles.
-	statusDotOnStyle  = lipgloss.NewStyle().Foreground(P.Success)
+	// Airbus philosophy: default (white) when online, red when offline.
+	statusDotOnStyle  = lipgloss.NewStyle().Foreground(P.Text)
 	statusDotOffStyle = lipgloss.NewStyle().Foreground(P.Error)
 
 	// utcLabelStyle — "UTC " prefix in status bar.
 	utcLabelStyle = lipgloss.NewStyle().Foreground(P.TextMuted)
-
-	// profileBarBase — right-aligned dim profile line.
-	profileBarBase = lipgloss.NewStyle().Align(lipgloss.Right).Foreground(P.TextDim)
 
 	// wizardCenterBase — centered layout helper for wizard.
 	wizardCenterBase = lipgloss.NewStyle().Align(lipgloss.Center)

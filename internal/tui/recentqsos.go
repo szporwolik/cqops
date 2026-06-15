@@ -157,13 +157,10 @@ func (r *RecentQSOs) View() string {
 		Bold(false).
 		Foreground(P.Text)
 	s.Cell = s.Cell.Foreground(P.TextMuted)
+	s.Selected = lipgloss.NewStyle() // no padding, no bold — read-only table
 	t.SetStyles(s)
 
-	// Clip to exact dimensions — never wrap, never overflow the border.
-	view := lipgloss.NewStyle().
-		MaxWidth(bodyW).
-		Height(maxRows + 1).
-		Render(t.View())
+	view := t.View()
 
 	r.cachedView = view
 	r.cachedW = bodyW

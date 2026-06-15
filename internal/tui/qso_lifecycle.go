@@ -93,7 +93,6 @@ func (m *Model) refreshQSOS() tea.Cmd {
 		}
 		m.qsos = qsos
 		m.recentQSOs.SetQSOS(qsos)
-		m.qsoCountsValid = false
 		m.cachedPathSig = ""
 		return nil
 	}

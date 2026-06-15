@@ -6,6 +6,7 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 type rigFormField int
@@ -173,32 +174,28 @@ func (f *RigForm) SetFlrig(enabled bool, host, port string) {
 }
 
 func (f *RigForm) View() tea.View {
-	renderField := func(label string, ti *textinput.Model, focused bool, w int) string {
+	renderField := func(label string, ti *textinput.Model, focused bool) string {
 		prefix := "  "
-		l := LabelStyle.Render(fit(label, 22))
-		if focused {
-			prefix = CursorStyle.Render("> ")
-			l = CursorStyle.Render(fit(label, 22))
-		}
+		lbl := S.FormLabelWide.Align(lipgloss.Left).Render(label)
 		val := ValueStyle.Render(strings.TrimSpace(ti.Value()))
 		if focused {
+			prefix = S.FormPrefixOn.Render("> ")
+			lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(label)
 			val = ti.View()
 		}
-		return prefix + l + " " + val
+		if strings.TrimSpace(ti.Value()) == "" && !focused {
+			val = DimStyle.Render("\u2014")
+		}
+		return lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)
 	}
 
 	var b strings.Builder
 
-	// Rig
-	b.WriteString(menuLine(renderField("Rig model:", &f.Rig, f.focus == rigFieldRig, 80), 80))
+	b.WriteString(padOrTrunc(renderField("Rig model:", &f.Rig, f.focus == rigFieldRig), 80))
 	b.WriteString("\n")
-
-	// Antenna
-	b.WriteString(menuLine(renderField("Antenna (optional):", &f.Antenna, f.focus == rigFieldAntenna, 80), 80))
+	b.WriteString(padOrTrunc(renderField("Antenna (opt):", &f.Antenna, f.focus == rigFieldAntenna), 80))
 	b.WriteString("\n")
-
-	// Power
-	b.WriteString(menuLine(renderField("Power (W) (optional):", &f.Power, f.focus == rigFieldPower, 80), 80))
+	b.WriteString(padOrTrunc(renderField("Power W (opt):", &f.Power, f.focus == rigFieldPower), 80))
 	b.WriteString("\n")
 
 	// flrig checkbox
@@ -207,21 +204,21 @@ func (f *RigForm) View() tea.View {
 		checkbox = "[x]"
 	}
 	flPrefix := "  "
+	flLabel := S.FormLabelWide.Align(lipgloss.Left).Render("Use flrig:")
 	if f.focus == rigFieldFlrig {
-		flPrefix = CursorStyle.Render("> ")
+		flPrefix = S.FormPrefixOn.Render("> ")
+		flLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("Use flrig:")
 		checkbox = CursorStyle.Render(checkbox)
 	}
-	flLabel := LabelStyle.Render(fit("Use flrig:", 22))
-	if f.focus == rigFieldFlrig {
-		flLabel = CursorStyle.Render(fit("Use flrig:", 22))
-	}
-	b.WriteString(menuLine(flPrefix+flLabel+" "+checkbox, 80))
+	b.WriteString(padOrTrunc(
+		lipgloss.JoinHorizontal(lipgloss.Center, flPrefix, flLabel, " ", checkbox),
+		80))
 
 	if f.FlrigEnabled {
 		b.WriteString("\n")
-		b.WriteString(menuLine(renderField("  Flrig host:", &f.FlrigHost, f.focus == rigFieldFlrigHost, 80), 80))
+		b.WriteString(padOrTrunc(renderField("  Flrig host:", &f.FlrigHost, f.focus == rigFieldFlrigHost), 80))
 		b.WriteString("\n")
-		b.WriteString(menuLine(renderField("  Flrig port:", &f.FlrigPort, f.focus == rigFieldFlrigPort, 80), 80))
+		b.WriteString(padOrTrunc(renderField("  Flrig port:", &f.FlrigPort, f.focus == rigFieldFlrigPort), 80))
 	}
 
 	return tea.NewView(b.String())

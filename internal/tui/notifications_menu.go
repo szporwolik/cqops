@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/gen2brain/beeep"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
@@ -114,53 +115,56 @@ func (nm *NotificationsMenu) View() tea.View {
 		contentH = 3
 	}
 
+	boxW := w - 2
+	if boxW < 40 {
+		boxW = 40
+	}
+
 	var b strings.Builder
-	b.WriteString(menuTitle("Settings — Notifications", w))
-	b.WriteString("\n\n")
 
 	// Row 0: master toggle
-	nm.renderCheckbox(&b, w, 0, "System notifications", nm.enabled, false)
+	nm.renderCheckbox(&b, boxW, 0, "System notifications", nm.enabled, false)
 
 	// Sub-options — dimmed when master is off, indented.
-	// Row 1: QSO logged
-	nm.renderCheckbox(&b, w, 1, "  Notify when QSO is logged", nm.qso && nm.enabled, !nm.enabled)
-
-	// Row 2: Wavelog sent
-	nm.renderCheckbox(&b, w, 2, "  Notify when QSO is sent to Wavelog", nm.wavelog && nm.enabled, !nm.enabled)
-
-	// Row 3: Wavelog errors
-	nm.renderCheckbox(&b, w, 3, "  Notify on Wavelog errors", nm.wavelogErrors && nm.enabled, !nm.enabled)
+	nm.renderCheckbox(&b, boxW, 1, "  Notify when QSO logged", nm.qso && nm.enabled, !nm.enabled)
+	nm.renderCheckbox(&b, boxW, 2, "  Notify when sent to Wavelog", nm.wavelog && nm.enabled, !nm.enabled)
+	nm.renderCheckbox(&b, boxW, 3, "  Notify on Wavelog errors", nm.wavelogErrors && nm.enabled, !nm.enabled)
 
 	// Row 4: Test notification button
 	btn := "[ Test notification ]"
 	if nm.cursor == 4 {
-		b.WriteString(menuLine("  "+CursorStyle.Render("> ")+CursorStyle.Render(btn), w))
+		b.WriteString(padOrTrunc(
+			lipgloss.JoinHorizontal(lipgloss.Center,
+				S.FormPrefixOn.Render("> "),
+				CursorStyle.Render(btn)),
+			boxW))
 	} else {
-		b.WriteString(menuLine("    "+InputStyle.Render(btn), w))
+		b.WriteString(padOrTrunc("    "+InputStyle.Render(btn), boxW))
 	}
 	b.WriteString("\n")
 
-	return tea.NewView(fillBody(b.String(), contentH))
+	body := drawMenuBox(b.String(), w)
+	return tea.NewView(fillBody(body, contentH))
 }
 
-func (nm *NotificationsMenu) renderCheckbox(b *strings.Builder, w, cursor int, label string, checked, disabled bool) {
+func (nm *NotificationsMenu) renderCheckbox(b *strings.Builder, boxW, cursor int, label string, checked, disabled bool) {
 	checkbox := "[ ]"
 	if checked {
 		checkbox = "[x]"
 	}
-	labelFit := fit(label, 38)
 
-	if disabled {
-		if nm.cursor == cursor {
-			b.WriteString(menuLine(CursorStyle.Render("> ")+DimStyle.Render(labelFit)+" "+checkbox, w))
-		} else {
-			b.WriteString(menuLine("  "+DimStyle.Render(labelFit)+" "+checkbox, w))
-		}
-	} else if nm.cursor == cursor {
+	prefix := "  "
+	lbl := S.FormLabelWide.Align(lipgloss.Left).Render(label)
+	if nm.cursor == cursor {
+		prefix = S.FormPrefixOn.Render("> ")
+		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(label)
 		checkbox = CursorStyle.Render(checkbox)
-		b.WriteString(menuLine(CursorStyle.Render("> ")+CursorStyle.Render(labelFit)+" "+checkbox, w))
-	} else {
-		b.WriteString(menuLine("  "+LabelStyle.Render(labelFit)+" "+checkbox, w))
 	}
+	if disabled {
+		lbl = DimStyle.Render(S.FormLabelWide.Align(lipgloss.Left).Render(label))
+	}
+
+	line := lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", checkbox)
+	b.WriteString(padOrTrunc(line, boxW))
 	b.WriteString("\n")
 }

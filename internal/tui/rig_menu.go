@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
@@ -173,44 +174,47 @@ func (rc *RigChooser) viewList() string {
 		h = 24
 	}
 	contentH := contentHeight(h)
-	b.WriteString(menuTitle("Settings — Rigs", w))
-	b.WriteString("\n\n")
+	if contentH < 3 {
+		contentH = 3
+	}
 
 	if len(rc.names) == 0 {
-		b.WriteString(menuLine("No rigs configured.", w))
-		b.WriteString("\n")
-		return fillBody(b.String(), contentH)
+		b.WriteString("No rigs configured.\n")
+	} else {
+		activeRig := rc.app.Logbook.Station.RigName
+		for i, id := range rc.names {
+			rp := rc.app.Config.Rigs[id]
+			displayName := config.RigDisplayName(&rp)
+			prefix := "  "
+			active := ""
+			if id == activeRig {
+				active = "[Active]"
+			}
+			info := rp.Model
+			if rp.Antenna != "" {
+				info += "  /  " + rp.Antenna
+			}
+			flrig := ""
+			if rp.FlrigEnabled {
+				flrig = "flrig"
+			}
+			if i == rc.cursor {
+				prefix = S.FormPrefixOn.Render("> ")
+			}
+			lbl := S.FormLabelWide.Align(lipgloss.Left).Render(active)
+			val := fmt.Sprintf("%s  %s  %s", displayName, info, flrig)
+			if i == rc.cursor {
+				lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(active)
+				val = CursorStyle.Render(val)
+			}
+			line := lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)
+			b.WriteString(padOrTrunc(line, w-4))
+			b.WriteString("\n")
+		}
 	}
 
-	activeRig := rc.app.Logbook.Station.RigName
-	for i, id := range rc.names {
-		rp := rc.app.Config.Rigs[id]
-		displayName := config.RigDisplayName(&rp)
-		marker := "  "
-		if i == rc.cursor {
-			marker = CursorStyle.Render("> ")
-		}
-		active := "        "
-		if id == activeRig {
-			active = "[Active]"
-		}
-		info := rp.Model
-		if rp.Antenna != "" {
-			info += "  /  " + rp.Antenna
-		}
-		flrig := " "
-		if rp.FlrigEnabled {
-			flrig = "flrig"
-		}
-		line := fmt.Sprintf("%s%s %s %s  %s", marker, active, displayName, info, flrig)
-		if i == rc.cursor {
-			line = CursorStyle.Render("> ") + CursorStyle.Render(fmt.Sprintf("%s %s %s  %s", active, displayName, info, flrig))
-		}
-		b.WriteString(menuLine(line, w))
-		b.WriteString("\n")
-	}
-
-	return fillBody(b.String(), contentH)
+	body := drawMenuBox(b.String(), w)
+	return fillBody(body, contentH)
 }
 
 func (rc *RigChooser) viewForm() string {
@@ -223,16 +227,15 @@ func (rc *RigChooser) viewForm() string {
 	if h < 10 {
 		h = 24
 	}
-	contentH := h - 4
+	contentH := contentHeight(h)
 	if contentH < 3 {
 		contentH = 3
 	}
-	b.WriteString(menuTitle("Settings — Edit Rig", w))
-	b.WriteString("\n\n")
 
 	b.WriteString(rc.form.View().Content)
 
-	return fillBody(b.String(), contentH)
+	body := drawMenuBox(b.String(), w)
+	return fillBody(body, contentH)
 }
 
 func (rc *RigChooser) selectRig() tea.Cmd {
