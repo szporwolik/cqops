@@ -50,7 +50,6 @@ const (
 	qefMyGrid
 	qefMyRig
 	qefMyAntenna
-	qefSource
 	qefDistance
 	qefBearing
 	qefIOTA
@@ -60,7 +59,8 @@ const (
 	qefMySOTA
 	qefMyPOTA
 	qefMyWWFF
-	qefWLStatus // last field, non-focusable read-only
+	qefWLStatus // non-focusable read-only
+	qefSource   // non-focusable read-only — last real field
 	qefCount
 )
 
@@ -69,9 +69,10 @@ var qefLabels = []string{
 	"Mode", "Submode", "RST Sent", "RST Rcvd", "Grid", "Name",
 	"QTH", "Country", "Comment", "Notes", "TX Power",
 	"Station Call", "Operator", "My Grid", "My Rig", "My Antenna",
-	"Source", "Distance km", "Bearing",
+	"Distance km", "Bearing",
 	"IOTA", "SOTA Ref", "POTA Ref", "WWFF Ref",
 	"My SOTA", "My POTA", "My WWFF", "WL Upload (RO)",
+	"Source (RO)",
 }
 
 type LogbookEditor struct {

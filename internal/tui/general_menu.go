@@ -66,10 +66,14 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "up", "k":
 			if gm.cursor > 0 {
 				gm.cursor--
+			} else {
+				gm.cursor = 3
 			}
 		case "down", "j":
 			if gm.cursor < 3 {
 				gm.cursor++
+			} else {
+				gm.cursor = 0
 			}
 		case " ", "space":
 			switch gm.cursor {
@@ -146,9 +150,9 @@ func (gm *GeneralMenu) View() tea.View {
 		checkbox = CursorStyle.Render(checkbox)
 	}
 	b.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", checkbox), boxW))
-	b.WriteString("\n")
 
-	// Draw grayline row
+	// Draw grayline row — no trailing newline on last item.
+	b.WriteString("\n")
 	checkbox = "[ ]"
 	if gm.drawGrayline {
 		checkbox = "[x]"
@@ -161,9 +165,8 @@ func (gm *GeneralMenu) View() tea.View {
 		checkbox = CursorStyle.Render(checkbox)
 	}
 	b.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", checkbox), boxW))
-	b.WriteString("\n")
 
-	body := drawMenuBox(b.String(), w)
+	body := drawMenuWithHeader("Configuration \u2014 General Settings", b.String(), w)
 	return tea.NewView(fillBody(body, contentH))
 }
 

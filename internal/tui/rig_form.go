@@ -29,6 +29,7 @@ type RigForm struct {
 	FlrigHost    textinput.Model
 	FlrigPort    textinput.Model
 	focus        rigFormField
+	width        int // terminal width for responsive layout
 }
 
 func NewRigForm(rigPlaceholder, antennaPlaceholder, powerPlaceholder string) *RigForm {
@@ -174,28 +175,55 @@ func (f *RigForm) SetFlrig(enabled bool, host, port string) {
 }
 
 func (f *RigForm) View() tea.View {
+	// Calculate available value width — same pattern as QSO form.
+	// labelW: 2-char prefix + 17-char label (FormLabelWide/FormFocusedWide).
+	const labelW = 2 + 17
+	const maxVW = 40
+	availW := f.width
+	if availW < 40 {
+		availW = 80
+	}
 	renderField := func(label string, ti *textinput.Model, focused bool) string {
+		raw := strings.TrimSpace(ti.Value())
+
 		prefix := "  "
 		lbl := S.FormLabelWide.Align(lipgloss.Left).Render(label)
-		val := ValueStyle.Render(strings.TrimSpace(ti.Value()))
+		vw := availW - labelW - 1 // -1 for separator space
+		if vw < 3 {
+			vw = 3
+		}
+		if vw > maxVW {
+			vw = maxVW
+		}
+
 		if focused {
 			prefix = S.FormPrefixOn.Render("> ")
 			lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(label)
-			val = ti.View()
+			ti.SetWidth(vw)
+			if lipgloss.Width(raw) > vw {
+				ti.SetWidth(vw - 1)
+			}
+			ti.SetCursor(ti.Position())
 		}
-		if strings.TrimSpace(ti.Value()) == "" && !focused {
+
+		var val string
+		if focused {
+			val = ti.View()
+		} else if raw == "" {
 			val = DimStyle.Render("\u2014")
+		} else {
+			val = ValueStyle.Render(truncateText(raw, vw))
 		}
 		return lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)
 	}
 
 	var b strings.Builder
 
-	b.WriteString(padOrTrunc(renderField("Rig model:", &f.Rig, f.focus == rigFieldRig), 80))
+	b.WriteString(padOrTrunc(renderField("Rig model:", &f.Rig, f.focus == rigFieldRig), availW))
 	b.WriteString("\n")
-	b.WriteString(padOrTrunc(renderField("Antenna (opt):", &f.Antenna, f.focus == rigFieldAntenna), 80))
+	b.WriteString(padOrTrunc(renderField("Antenna (opt):", &f.Antenna, f.focus == rigFieldAntenna), availW))
 	b.WriteString("\n")
-	b.WriteString(padOrTrunc(renderField("Power W (opt):", &f.Power, f.focus == rigFieldPower), 80))
+	b.WriteString(padOrTrunc(renderField("Power W (opt):", &f.Power, f.focus == rigFieldPower), availW))
 	b.WriteString("\n")
 
 	// flrig checkbox
@@ -212,13 +240,13 @@ func (f *RigForm) View() tea.View {
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, flPrefix, flLabel, " ", checkbox),
-		80))
+		availW))
 
 	if f.FlrigEnabled {
 		b.WriteString("\n")
-		b.WriteString(padOrTrunc(renderField("  Flrig host:", &f.FlrigHost, f.focus == rigFieldFlrigHost), 80))
+		b.WriteString(padOrTrunc(renderField("  Flrig host:", &f.FlrigHost, f.focus == rigFieldFlrigHost), availW))
 		b.WriteString("\n")
-		b.WriteString(padOrTrunc(renderField("  Flrig port:", &f.FlrigPort, f.focus == rigFieldFlrigPort), 80))
+		b.WriteString(padOrTrunc(renderField("  Flrig port:", &f.FlrigPort, f.focus == rigFieldFlrigPort), availW))
 	}
 
 	return tea.NewView(b.String())

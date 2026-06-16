@@ -132,8 +132,26 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return cm, nil
 }
 
-func (cm *CallbookMenu) next()    { cm.focus = wrapNext(cm.focus, 4); cm.blurAll(); cm.focusField() }
-func (cm *CallbookMenu) prev()    { cm.focus = wrapPrev(cm.focus, 4); cm.blurAll(); cm.focusField() }
+func (cm *CallbookMenu) visibleItems() int {
+	if cm.enabled {
+		return 4 // checkbox, user, pass, test button
+	}
+	return 1 // checkbox only
+}
+
+func (cm *CallbookMenu) next() {
+	n := cm.visibleItems()
+	cm.focus = wrapNext(cm.focus, n)
+	cm.blurAll()
+	cm.focusField()
+}
+
+func (cm *CallbookMenu) prev() {
+	n := cm.visibleItems()
+	cm.focus = wrapPrev(cm.focus, n)
+	cm.blurAll()
+	cm.focusField()
+}
 func (cm *CallbookMenu) blurAll() { blurTextinputs(&cm.user, &cm.pass) }
 func (cm *CallbookMenu) focusField() {
 	switch cm.focus {
@@ -239,7 +257,7 @@ func (cm *CallbookMenu) View() tea.View {
 		}
 	}
 
-	body := drawMenuBox(b.String(), w)
+	body := drawMenuWithHeader("Configuration \u2014 Callbook", b.String(), w)
 	return tea.NewView(fillBody(body, contentH))
 }
 

@@ -111,6 +111,8 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		} else {
 			applog.Debug("tab: F7 Config")
 			m.mainMenu = NewMainMenu()
+			m.mainMenu.width = m.width
+			m.mainMenu.height = m.height
 			m.screen = screenMainMenu
 		}
 		return nil, true
@@ -211,6 +213,8 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 
 	case msg.String() == "ctrl+c":
 		m.mainMenu = NewMainMenu()
+		m.mainMenu.width = m.width
+		m.mainMenu.height = m.height
 		m.screen = screenMainMenu
 		return nil, true
 

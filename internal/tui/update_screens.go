@@ -146,21 +146,33 @@ func (m *Model) handleMainMenuUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.C
 		switch action {
 		case "general":
 			m.configMenu = NewGeneralMenu(m.App.Config)
+			m.configMenu.width = m.width
+			m.configMenu.height = m.height
 			m.screen = screenConfig
 		case "notifications":
 			m.notifMenu = NewNotificationsMenu(m.App.Config)
+			m.notifMenu.width = m.width
+			m.notifMenu.height = m.height
 			m.screen = screenNotifications
 		case "callbook":
 			m.callbookMenu = NewCallbookMenu(m.App.Config)
+			m.callbookMenu.width = m.width
+			m.callbookMenu.height = m.height
 			m.screen = screenCallbook
 		case "logbook":
 			m.chooser = NewLogbookChooser(m.App, m.toasts)
+			m.chooser.width = m.width
+			m.chooser.height = m.height
 			m.screen = screenChooser
 		case "rig":
 			m.rigChooser = NewRigChooser(m.App, m.toasts)
+			m.rigChooser.width = m.width
+			m.rigChooser.height = m.height
 			m.screen = screenRigEdit
 		case "integration":
 			m.integrationMenu = NewIntegrationMenu(m.App.Config)
+			m.integrationMenu.width = m.width
+			m.integrationMenu.height = m.height
 			m.screen = screenIntegration
 		}
 	}
@@ -182,6 +194,8 @@ func (m *Model) handlePartnerUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 			return m, cmd
 		case "f7":
 			m.mainMenu = NewMainMenu()
+			m.mainMenu.width = m.width
+			m.mainMenu.height = m.height
 			m.screen = screenMainMenu
 			return m, cmd
 		}

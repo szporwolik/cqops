@@ -86,7 +86,7 @@ func (le *LogbookEditor) nextField() {
 	le.fields[le.focus].Blur()
 	for {
 		le.focus = qsoEditField(wrapNext(int(le.focus), int(qefCount)))
-		if le.focus != qefWLStatus {
+		if le.focus != qefWLStatus && le.focus != qefSource {
 			break
 		}
 	}
@@ -97,7 +97,7 @@ func (le *LogbookEditor) prevField() {
 	le.fields[le.focus].Blur()
 	for {
 		le.focus = qsoEditField(wrapPrev(int(le.focus), int(qefCount)))
-		if le.focus != qefWLStatus {
+		if le.focus != qefWLStatus && le.focus != qefSource {
 			break
 		}
 	}
@@ -155,20 +155,42 @@ func (le *LogbookEditor) renderEditField(f qsoEditField, colW int) string {
 		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(label)
 	}
 
-	// Value part — WLStatus is always read-only DimStyle.
+	// Calculate available value width — same pattern as QSO form.
+	// labelW accounts for: 2-char prefix + width of rendered label.
+	labelW := 2 + lipgloss.Width(lbl)
+	vw := colW - labelW - 1 // -1 for the space separator
+	if vw < 3 {
+		vw = 3
+	}
+	if vw > 40 {
+		vw = 40
+	}
+
+	// Set textinput width so bubbles knows the bounds — prevents wrapping.
+	if focused {
+		ti := le.fields[f]
+		ti.SetWidth(vw)
+		if lipgloss.Width(raw) > vw {
+			ti.SetWidth(vw - 1)
+		}
+		ti.SetCursor(ti.Position())
+		le.fields[f] = ti
+	}
+
+	// Value part — WLStatus and Source are always read-only DimStyle.
 	var val string
 	switch {
-	case f == qefWLStatus:
+	case f == qefWLStatus || f == qefSource:
 		if raw == "" {
 			raw = "No"
 		}
-		val = DimStyle.Render(raw)
+		val = DimStyle.Render(truncateText(raw, vw))
 	case focused:
 		val = le.fields[f].View()
 	case raw == "":
 		val = DimStyle.Render("\u2014")
 	default:
-		val = ValueStyle.Render(raw)
+		val = ValueStyle.Render(truncateText(raw, vw))
 	}
 
 	return lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)

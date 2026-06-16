@@ -582,37 +582,43 @@ func (m *Model) viewImage(l Layout) string {
 }
 
 // buildBodyForScreen returns the content string for the active screen,
-// using Layout dimensions for proper sizing.
+// using Layout dimensions for proper sizing. Height is clamped to contentH
+// so the bottom bars never shift when content changes (e.g. toggle in menus).
 func (m *Model) buildBodyForScreen(l Layout) string {
+	var body string
 	switch m.screen {
 	case screenQSO:
-		return m.buildQSOFormWithLayout(l)
+		body = m.buildQSOFormWithLayout(l)
 	case screenPartner:
 		if m.partnerData != nil || strings.TrimSpace(m.fields[fieldCall].Value()) != "" {
-			return m.viewPartner()
+			body = m.viewPartner()
 		}
 	case screenImage:
-		return m.viewImage(l)
+		body = m.viewImage(l)
 	case screenMainMenu:
-		return m.mainMenu.View().Content
+		body = m.mainMenu.View().Content
 	case screenConfig:
-		return m.configMenu.View().Content
+		body = m.configMenu.View().Content
 	case screenCallbook:
-		return m.callbookMenu.View().Content
+		body = m.callbookMenu.View().Content
 	case screenIntegration:
-		return m.integrationMenu.View().Content
+		body = m.integrationMenu.View().Content
 	case screenChooser:
-		return m.chooser.View().Content
+		body = m.chooser.View().Content
 	case screenRigEdit:
-		return m.rigChooser.View().Content
+		body = m.rigChooser.View().Content
 	case screenLogView:
-		return m.logViewer.View().Content
+		body = m.logViewer.View().Content
 	case screenLogbookEditor:
-		return m.logbookEditor.View().Content
+		body = m.logbookEditor.View().Content
 	case screenNotifications:
-		return m.notifMenu.View().Content
+		body = m.notifMenu.View().Content
 	}
-	return ""
+	if body == "" {
+		return ""
+	}
+	// Clamp to contentH so toggling a menu item never shifts the bottom bars.
+	return lipgloss.NewStyle().MaxHeight(l.ContentH).Render(body)
 }
 
 // buildQSOFormWithLayout renders the QSO form, short path info, and recent

@@ -200,7 +200,7 @@ func (im *IntegrationMenu) View() tea.View {
 		b.WriteString(padOrTrunc(im.renderField(2, "  UDP Port:", &im.port), boxW))
 	}
 
-	body := drawMenuBox(b.String(), w)
+	body := drawMenuWithHeader("Configuration \u2014 Integrations", b.String(), w)
 	return tea.NewView(fillBody(body, contentH))
 }
 

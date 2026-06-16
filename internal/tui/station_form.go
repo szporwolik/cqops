@@ -23,6 +23,7 @@ type StationForm struct {
 	WlURL       textinput.Model
 	WlKey       textinput.Model
 	WlStationID textinput.Model
+	width       int // terminal width for responsive layout
 }
 
 // Wavelog button action messages sent when a button is activated via Enter.
@@ -230,6 +231,11 @@ func (f *StationForm) SetWavelogValues(wl *config.WavelogConfig) {
 }
 
 func (f *StationForm) View() tea.View {
+	availW := f.width
+	if availW < 40 {
+		availW = 80
+	}
+
 	type fieldDef struct {
 		label string
 		ti    *textinput.Model
@@ -246,7 +252,7 @@ func (f *StationForm) View() tea.View {
 
 	var b strings.Builder
 	for _, field := range fields {
-		b.WriteString(padOrTrunc(f.renderFieldLine(field.label, field.ti), 80))
+		b.WriteString(f.renderFieldLine(field.label, field.ti, availW))
 	}
 
 	// Wavelog checkbox
@@ -263,7 +269,7 @@ func (f *StationForm) View() tea.View {
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, wlCbPrefix, wlCbLabel, " ", wlCheckbox),
-		80))
+		availW))
 	b.WriteString("\n")
 
 	if f.WlEnabled {
@@ -273,59 +279,62 @@ func (f *StationForm) View() tea.View {
 			{"  Station ID:", &f.WlStationID},
 		}
 		for _, field := range wlFields {
-			b.WriteString(padOrTrunc(f.renderFieldLine(field.label, field.ti), 80))
+			b.WriteString(f.renderFieldLine(field.label, field.ti, availW))
 		}
 
-		updateBtn := "[ Update ]"
-		updateHint := "fetch stations from Wavelog"
-		if f.wlBtnFocus == 1 {
-			b.WriteString(padOrTrunc(
-				lipgloss.JoinHorizontal(lipgloss.Center,
-					S.FormPrefixOn.Render("> "),
-					CursorStyle.Render(updateBtn),
-					" ",
-					DimStyle.Render(updateHint)),
-				80))
-		} else {
-			b.WriteString(padOrTrunc("    "+InputStyle.Render(updateBtn)+" "+DimStyle.Render(updateHint), 80))
+		// Button helper — fixed padding so buttons never shift on focus.
+		renderBtn := func(focusVal int, text, hint string) {
+			prefix := "    "
+			styled := InputStyle.Render(text)
+			if f.wlBtnFocus == focusVal {
+				prefix = S.FormPrefixOn.Render("> ") + "  "
+				styled = CursorStyle.Render(text)
+			}
+			line := prefix + styled + " " + DimStyle.Render(hint)
+			b.WriteString(padOrTrunc(line, availW))
+			b.WriteString("\n")
 		}
-		b.WriteString("\n")
-
-		testBtn := "[ Test ]"
-		testHint := "verify connection and station"
-		if f.wlBtnFocus == 2 {
-			b.WriteString(padOrTrunc(
-				lipgloss.JoinHorizontal(lipgloss.Center,
-					S.FormPrefixOn.Render("> "),
-					CursorStyle.Render(testBtn),
-					" ",
-					DimStyle.Render(testHint)),
-				80))
-		} else {
-			b.WriteString(padOrTrunc("    "+InputStyle.Render(testBtn)+" "+DimStyle.Render(testHint), 80))
-		}
+		renderBtn(1, "[ Update ]", "fetch stations from Wavelog")
+		renderBtn(2, "[ Test ]", "verify connection and station")
 	}
 
 	return tea.NewView(b.String())
 }
 
-func (f *StationForm) renderFieldLine(label string, ti *textinput.Model) string {
+func (f *StationForm) renderFieldLine(label string, ti *textinput.Model, availW int) string {
 	focused := ti.Focused()
 	raw := strings.TrimSpace(ti.Value())
 
+	// labelW: 2-char prefix + 17-char label (FormLabelWide/FormFocusedWide).
+	const labelW = 2 + 17
+	const maxVW = 40 // max value width, matches QSO form
+
 	prefix := "  "
 	lbl := S.FormLabelWide.Align(lipgloss.Left).Render(label)
+	vw := availW - labelW - 1
+	if vw < 3 {
+		vw = 3
+	}
+	if vw > maxVW {
+		vw = maxVW
+	}
+
 	var val string
 	if focused {
 		prefix = S.FormPrefixOn.Render("> ")
 		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(label)
+		ti.SetWidth(vw)
+		if lipgloss.Width(raw) > vw {
+			ti.SetWidth(vw - 1)
+		}
+		ti.SetCursor(ti.Position())
 		val = ti.View()
 	} else if raw == "" {
 		val = DimStyle.Render("\u2014")
 	} else {
-		val = ValueStyle.Render(raw)
+		val = ValueStyle.Render(truncateText(raw, vw))
 	}
-	return lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val) + "\n"
+	return padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val), availW) + "\n"
 }
 
 func (f *StationForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {

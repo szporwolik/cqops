@@ -144,8 +144,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 	if m.screen == screenLogbookEditor {
 		if m.logbookEditor != nil && m.logbookEditor.IsEditing() {
 			bindings = append(bindings,
-				key.NewBinding(key.WithKeys("tab", "down"), key.WithHelp("↓/Tab", "Next")),
-				key.NewBinding(key.WithKeys("shift+tab", "up"), key.WithHelp("↑/S-Tab", "Prev")),
+				key.NewBinding(key.WithKeys("tab", "down", "shift+tab", "up"), key.WithHelp("↑↓", "Navigate")),
 				key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 			)
@@ -175,7 +174,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 	if m.screen == screenMainMenu {
 		bindings = append(bindings,
 			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
-			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Select")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Accept")),
 		)
 	}
 	if m.screen == screenConfig {
@@ -188,7 +187,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 	}
 	if m.screen == screenCallbook {
 		bindings = append(bindings,
-			key.NewBinding(key.WithKeys("up", "down", "tab"), key.WithHelp("↑↓/Tab", "Navigate")),
+			key.NewBinding(key.WithKeys("up", "down", "tab"), key.WithHelp("↑↓", "Navigate")),
 			key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle")),
 			key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
@@ -197,10 +196,9 @@ func (m *Model) ActiveBindings() []key.Binding {
 	if m.screen == screenChooser {
 		if m.chooser != nil && (m.chooser.mode == chooserEdit || m.chooser.mode == chooserCreate) {
 			bindings = append(bindings,
-				key.NewBinding(key.WithKeys("tab", "down"), key.WithHelp("↓/Tab", "Next")),
-				key.NewBinding(key.WithKeys("shift+tab", "up"), key.WithHelp("↑/S-Tab", "Prev")),
-				key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle/Cycle")),
-				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "WL button")),
+				key.NewBinding(key.WithKeys("tab", "down", "shift+tab", "up"), key.WithHelp("↑↓", "Navigate")),
+				key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle")),
+				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Accept")),
 				key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 			)
@@ -218,16 +216,15 @@ func (m *Model) ActiveBindings() []key.Binding {
 	if m.screen == screenRigEdit {
 		if m.rigChooser != nil && (m.rigChooser.mode == rigChooserEdit || m.rigChooser.mode == rigChooserCreate) {
 			bindings = append(bindings,
-				key.NewBinding(key.WithKeys("tab", "down"), key.WithHelp("↓/Tab", "Next")),
-				key.NewBinding(key.WithKeys("shift+tab", "up"), key.WithHelp("↑/S-Tab", "Prev")),
-				key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle flrig")),
+				key.NewBinding(key.WithKeys("tab", "down", "shift+tab", "up"), key.WithHelp("↑↓", "Navigate")),
+				key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle")),
 				key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 			)
 		} else {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
-				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Select")),
+				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Activate")),
 				key.NewBinding(key.WithKeys("e"), key.WithHelp("E", "Edit")),
 				key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Create")),
 				key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
@@ -249,7 +246,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 	}
 	if m.screen == screenIntegration {
 		bindings = append(bindings,
-			key.NewBinding(key.WithKeys("up", "down", "tab"), key.WithHelp("↑↓/Tab", "Navigate")),
+			key.NewBinding(key.WithKeys("up", "down", "tab"), key.WithHelp("↑↓", "Navigate")),
 			key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle")),
 			key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
@@ -259,7 +256,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 		bindings = append(bindings,
 			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
 			key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle")),
-			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Test")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Accept")),
 			key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 		)

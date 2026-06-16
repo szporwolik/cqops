@@ -119,9 +119,11 @@ func (m *MainMenu) View() tea.View {
 		}
 		line := lipgloss.JoinHorizontal(lipgloss.Center, prefix, label, desc)
 		b.WriteString(padOrTrunc(line, boxW))
-		b.WriteString("\n")
+		if i < len(m.items)-1 {
+			b.WriteString("\n")
+		}
 	}
 
-	body := drawMenuBox(b.String(), w)
+	body := drawMenuWithHeader("Configuration", b.String(), w)
 	return tea.NewView(fillBody(body, contentH))
 }

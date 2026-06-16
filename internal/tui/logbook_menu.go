@@ -270,11 +270,13 @@ func (c *LogbookChooser) viewList() string {
 			}
 			line := lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)
 			b.WriteString(padOrTrunc(line, w-4)) // inside menu box padding
-			b.WriteString("\n")
+			if i < len(c.names)-1 {
+				b.WriteString("\n")
+			}
 		}
 	}
 
-	body := drawMenuBox(b.String(), w)
+	body := drawMenuWithHeader("Configuration \u2014 Logbooks", b.String(), w)
 	return fillBody(body, contentH)
 }
 
@@ -293,6 +295,7 @@ func (c *LogbookChooser) viewForm() string {
 		contentH = 3
 	}
 
+	c.station.width = w - 6 // account for menu box border + padding
 	b.WriteString(c.station.View().Content)
 
 	// Wavelog status line below the form.
@@ -307,7 +310,7 @@ func (c *LogbookChooser) viewForm() string {
 		}
 	}
 
-	body := drawMenuBox(b.String(), w)
+	body := drawMenuWithHeader("Configuration \u2014 Logbooks \u2014 Edit Logbook", b.String(), w)
 	return fillBody(body, contentH)
 }
 

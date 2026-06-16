@@ -18,14 +18,27 @@ var confirmBindings = []key.Binding{
 // helpView renders the bottom help/footer bar with context-sensitive key bindings.
 // Cached — only rebuilds when screen, confirm state, or dynamic suffix change.
 func (m *Model) helpView() string {
-	// Build a compact cache key covering all confirm-dialog sources.
+	// Build a compact cache key covering all confirm-dialog sources
+	// and form modes (logbook editor, chooser, rig chooser).
 	suffix := m.helpSuffix()
 	conf := 0
+	editing := 0
+	chooserForm := 0
+	rigForm := 0
 	if m.confirm != nil {
 		conf = 1
 	}
 	if m.logbookEditor != nil && m.logbookEditor.isConfirmMode() {
 		conf = 1
+	}
+	if m.logbookEditor != nil && m.logbookEditor.IsEditing() {
+		editing = 1
+	}
+	if m.chooser != nil && (m.chooser.mode == chooserEdit || m.chooser.mode == chooserCreate) {
+		chooserForm = 1
+	}
+	if m.rigChooser != nil && (m.rigChooser.mode == rigChooserEdit || m.rigChooser.mode == rigChooserCreate) {
+		rigForm = 1
 	}
 	if m.rigChooser != nil && m.rigChooser.dialog != nil {
 		conf = 1
@@ -33,7 +46,7 @@ func (m *Model) helpView() string {
 	if m.chooser != nil && m.chooser.dialog != nil {
 		conf = 1
 	}
-	sig := fmt.Sprintf("%d|%d|%s", m.screen, conf, suffix)
+	sig := fmt.Sprintf("%d|%d|%d|%d|%d|%s", m.screen, conf, editing, chooserForm, rigForm, suffix)
 	if m.cachedHelpSig == sig && m.cachedHelpView != "" {
 		return m.cachedHelpView
 	}

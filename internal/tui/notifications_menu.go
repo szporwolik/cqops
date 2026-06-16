@@ -129,8 +129,8 @@ func (nm *NotificationsMenu) View() tea.View {
 	}
 
 	boxW := w - 2
-	if boxW < 40 {
-		boxW = 40
+	if boxW < 56 {
+		boxW = 56
 	}
 
 	var b strings.Builder
@@ -143,37 +143,30 @@ func (nm *NotificationsMenu) View() tea.View {
 	nm.renderCheckbox(&b, boxW, 2, "  Notify when sent to Wavelog", nm.wavelog && nm.enabled, !nm.enabled)
 	nm.renderCheckbox(&b, boxW, 3, "  Notify on Wavelog errors", nm.wavelogErrors && nm.enabled, !nm.enabled)
 
-	// Row 4: Beep on errors (independent of master notifications toggle).
-	nm.renderCheckbox(&b, boxW, 4, "Beep on errors", nm.beepOnError, false)
+	// Row 4: Beep on errors — same indent as sub-options.
+	nm.renderCheckbox(&b, boxW, 4, "  Beep on all errors", nm.beepOnError, false)
+
+	// Button helper — keeps fixed padding so buttons never shift on focus.
+	renderBtn := func(idx int, text string) {
+		focused := nm.cursor == idx
+		prefix := "    "
+		styled := InputStyle.Render(text)
+		if focused {
+			prefix = S.FormPrefixOn.Render("> ") + "  "
+			styled = CursorStyle.Render(text)
+		}
+		b.WriteString(padOrTrunc(prefix+styled, boxW))
+		b.WriteString("\n")
+	}
 
 	// Row 5: Test notification button
-	btn := "[ Test notification ]"
-	if nm.cursor == 5 {
-		b.WriteString(padOrTrunc(
-			lipgloss.JoinHorizontal(lipgloss.Center,
-				S.FormPrefixOn.Render("> "),
-				CursorStyle.Render(btn)),
-			boxW))
-	} else {
-		b.WriteString(padOrTrunc("    "+InputStyle.Render(btn), boxW))
-	}
-	b.WriteString("\n")
+	renderBtn(5, "[ Test notification ]")
 
 	// Row 6: Test beep button
-	btn2 := "[ Test beep ]"
-	if nm.cursor == 6 {
-		b.WriteString(padOrTrunc(
-			lipgloss.JoinHorizontal(lipgloss.Center,
-				S.FormPrefixOn.Render("> "),
-				CursorStyle.Render(btn2)),
-			boxW))
-	} else {
-		b.WriteString(padOrTrunc("    "+InputStyle.Render(btn2), boxW))
-	}
-	b.WriteString("\n")
+	renderBtn(6, "[ Test beep ]")
 
-	body := drawMenuBox(b.String(), w)
-	return tea.NewView(fillBody(body, contentH))
+	body := drawMenuWithHeader("Configuration \u2014 Notifications", b.String(), w)
+	return tea.NewView(lipgloss.NewStyle().MaxHeight(contentH).Render(fillBody(body, contentH)))
 }
 
 func (nm *NotificationsMenu) renderCheckbox(b *strings.Builder, boxW, cursor int, label string, checked, disabled bool) {
@@ -183,14 +176,14 @@ func (nm *NotificationsMenu) renderCheckbox(b *strings.Builder, boxW, cursor int
 	}
 
 	prefix := "  "
-	lbl := S.FormLabelWide.Align(lipgloss.Left).Render(label)
+	lbl := S.FormLabelXL.Align(lipgloss.Left).Render(label)
 	if nm.cursor == cursor {
 		prefix = S.FormPrefixOn.Render("> ")
-		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(label)
+		lbl = S.FormFocusedXL.Align(lipgloss.Left).Render(label)
 		checkbox = CursorStyle.Render(checkbox)
 	}
 	if disabled {
-		lbl = DimStyle.Render(S.FormLabelWide.Align(lipgloss.Left).Render(label))
+		lbl = DimStyle.Render(S.FormLabelXL.Align(lipgloss.Left).Render(label))
 	}
 
 	line := lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", checkbox)

@@ -209,11 +209,13 @@ func (rc *RigChooser) viewList() string {
 			}
 			line := lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)
 			b.WriteString(padOrTrunc(line, w-4))
-			b.WriteString("\n")
+			if i < len(rc.names)-1 {
+				b.WriteString("\n")
+			}
 		}
 	}
 
-	body := drawMenuBox(b.String(), w)
+	body := drawMenuWithHeader("Configuration \u2014 Rig Profiles", b.String(), w)
 	return fillBody(body, contentH)
 }
 
@@ -232,9 +234,10 @@ func (rc *RigChooser) viewForm() string {
 		contentH = 3
 	}
 
+	rc.form.width = w - 6 // account for menu box border + padding
 	b.WriteString(rc.form.View().Content)
 
-	body := drawMenuBox(b.String(), w)
+	body := drawMenuWithHeader("Configuration \u2014 Rig Profiles \u2014 Edit Rig", b.String(), w)
 	return fillBody(body, contentH)
 }
 

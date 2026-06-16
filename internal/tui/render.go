@@ -25,6 +25,15 @@ func drawMenuBox(content string, boxW int) string {
 	return menuBoxStyle.Width(boxW).Render(content)
 }
 
+// drawMenuWithHeader renders a title header above a bordered menu box.
+// Trailing newlines in the content are trimmed to avoid a blank row
+// between the last item and the bottom border.
+func drawMenuWithHeader(title, content string, boxW int) string {
+	header := S.Title.Width(boxW).Render(title)
+	box := menuBoxStyle.Width(boxW).Render(strings.TrimRight(content, "\n"))
+	return lipgloss.JoinVertical(lipgloss.Left, header, box)
+}
+
 // osc8Link returns an OSC-8 hyperlink sequence. Most modern terminals
 // (Windows Terminal, iTerm2, Kitty, etc.) render these as clickable links.
 // Ctrl+click opens the URL in the system browser.

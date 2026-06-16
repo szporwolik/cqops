@@ -165,8 +165,6 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch k {
 			case "ctrl+s":
 				return le, le.doSave()
-			case "w":
-				return le, le.doUploadToWavelog()
 			case "esc", "f6":
 				le.mode = edModeList
 			case "tab", "down":
@@ -174,7 +172,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "shift+tab", "up":
 				le.prevField()
 			default:
-				if le.focus != qefWLStatus {
+				if le.focus != qefWLStatus && le.focus != qefSource {
 					le.fields[le.focus], _ = le.fields[le.focus].Update(msg)
 				}
 			}

@@ -548,6 +548,7 @@ func wizHelp(bindings ...key.Binding) string {
 }
 
 func (w *Wizard) viewStation() string {
+	w.station.width = w.width
 	body := w.wizardFormBox().Render(w.station.View().Content)
 	help := wizHelp(
 		key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save & Next")),
@@ -559,6 +560,7 @@ func (w *Wizard) viewStation() string {
 }
 
 func (w *Wizard) viewRig() string {
+	w.rigForm.width = w.width
 	body := w.wizardFormBox().Render(w.rigForm.View().Content)
 	help := wizHelp(
 		key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save & Next")),
@@ -572,6 +574,10 @@ func (w *Wizard) viewRig() string {
 
 func (w *Wizard) viewWSJTX() string {
 	var inner strings.Builder
+	availW := w.width
+	if availW < 40 {
+		availW = 80
+	}
 
 	// ── WSJT-X section ──
 	wsjtxCb := "[ ]"
@@ -587,12 +593,12 @@ func (w *Wizard) viewWSJTX() string {
 	}
 	inner.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, wsjtxPrefix, wsjtxLabel, " ", wsjtxCb),
-		80))
+		availW))
 	inner.WriteString("\n")
 
 	if w.wsjtxEnable {
-		inner.WriteString(renderIntegField("  UDP Host:", &w.wsjtxHost, w.integFocus == 1, false, 80))
-		inner.WriteString(renderIntegField("  UDP Port:", &w.wsjtxPort, w.integFocus == 2, false, 80))
+		inner.WriteString(renderIntegField("  UDP Host:", &w.wsjtxHost, w.integFocus == 1, false, availW))
+		inner.WriteString(renderIntegField("  UDP Port:", &w.wsjtxPort, w.integFocus == 2, false, availW))
 	}
 
 	// ── QRZ section ──
@@ -609,19 +615,20 @@ func (w *Wizard) viewWSJTX() string {
 	}
 	inner.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, qrzPrefix, qrzLabel, " ", qrzCb),
-		80))
+		availW))
 	inner.WriteString("\n")
 
 	if w.qrzEnable {
-		inner.WriteString(renderIntegField("  Username:", &w.qrzUser, w.integFocus == 4, false, 80))
-		inner.WriteString(renderIntegField("  Password:", &w.qrzPass, w.integFocus == 5, true, 80))
+		inner.WriteString(renderIntegField("  Username:", &w.qrzUser, w.integFocus == 4, false, availW))
+		inner.WriteString(renderIntegField("  Password:", &w.qrzPass, w.integFocus == 5, true, availW))
 
-		// Test button inline with fields
+		// Test button — fixed padding so it never shifts on focus.
 		testBtn := "[ Test ]"
-		testPrefix := "    " // align with field values (prefix + label indent)
+		testPrefix := "    "
+		styledBtn := InputStyle.Render(testBtn)
 		if w.integFocus == 6 {
-			testPrefix = CursorStyle.Render("  > ")
-			testBtn = CursorStyle.Render(testBtn)
+			testPrefix = S.FormPrefixOn.Render("> ") + "  "
+			styledBtn = CursorStyle.Render(testBtn)
 		}
 		status := ""
 		if w.qrzTesting {
@@ -633,7 +640,7 @@ func (w *Wizard) viewWSJTX() string {
 				status = ErrorStyle.Render(w.qrzTestResult)
 			}
 		}
-		inner.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, testPrefix, testBtn, "  ", status), 80))
+		inner.WriteString(padOrTrunc(testPrefix+styledBtn+"  "+status, availW))
 		inner.WriteString("\n")
 	}
 
@@ -650,27 +657,49 @@ func (w *Wizard) viewWSJTX() string {
 }
 
 // renderIntegField renders a labelled textinput line for the integrations step.
+// Matches the pattern used by other forms: dynamic textinput width, truncation.
 func renderIntegField(label string, ti *textinput.Model, focused bool, masked bool, maxW int) string {
+	raw := strings.TrimSpace(ti.Value())
+
+	const labelW = 2 + 17 // prefix + FormLabelWide width
+	const maxVW = 40
+
 	prefix := "  "
 	lbl := S.FormLabelWide.Align(lipgloss.Left).Render(label)
-	raw := strings.TrimSpace(ti.Value())
+	vw := maxW - labelW - 1
+	if vw < 3 {
+		vw = 3
+	}
+	if vw > maxVW {
+		vw = maxVW
+	}
+
 	var val string
 	if focused {
 		prefix = S.FormPrefixOn.Render("> ")
 		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(label)
+		ti.SetWidth(vw)
+		if lipgloss.Width(raw) > vw {
+			ti.SetWidth(vw - 1)
+		}
+		ti.SetCursor(ti.Position())
 		val = ti.View()
 	} else if raw == "" {
 		val = DimStyle.Render("\u2014")
 	} else if masked {
-		val = ValueStyle.Render(strings.Repeat("*", len(raw)))
+		val = ValueStyle.Render(truncateText(strings.Repeat("*", len(raw)), vw))
 	} else {
-		val = ValueStyle.Render(raw)
+		val = ValueStyle.Render(truncateText(raw, vw))
 	}
 	return padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val), maxW) + "\n"
 }
 
 func (w *Wizard) viewTimezone() string {
 	detectedIdx := config.SystemTimezoneIndex()
+	availW := w.width
+	if availW < 40 {
+		availW = 80
+	}
 
 	start := w.tzIndex - 4
 	if start < 0 {
@@ -694,12 +723,12 @@ func (w *Wizard) viewTimezone() string {
 			prefix = S.FormPrefixOn.Render("> ")
 			lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(tz)
 		}
-		inner.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl), 80))
+		inner.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl), availW))
 		inner.WriteString("\n")
 	}
 
 	detected := config.Timezones[detectedIdx]
-	inner.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, "  ", DimStyle.Render("System: "+detected)), 80))
+	inner.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, "  ", DimStyle.Render("System: "+detected)), availW))
 
 	body := w.wizardFormBox().Render(inner.String())
 	help := wizHelp(
