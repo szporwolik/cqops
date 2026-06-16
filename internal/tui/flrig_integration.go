@@ -98,13 +98,17 @@ func (m *Model) pollFlrig() tea.Cmd {
 func (m *Model) applyFlrigResult(r flrigResultMsg) {
 	m.rigPolling = false
 	if r.err != "" || !r.connected {
+		if m.rigConnected {
+			m.cachedStatus = ""
+		}
 		m.rigConnected = false
-		m.cachedStatus = ""
 		return
+	}
+	if !m.rigConnected {
+		m.cachedStatus = ""
 	}
 	m.rigConnected = true
 	m.rigFreq = r.freq
-	m.cachedStatus = ""
 	if !m.wsjtxOnline {
 		m.fields[fieldFreq].SetValue(fmt.Sprintf("%.6f", r.freq))
 	}
