@@ -30,6 +30,7 @@ type editorMsg struct {
 	wlQSOID    int64
 	wlCall     string
 	wlOK       bool
+	wlDup      bool
 	normalized int
 	skipped    int
 	skipReason string
@@ -544,6 +545,9 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 		for attempt := 0; attempt < 3; attempt++ {
 			_, insertErr = store.InsertQSO(db, qs)
 			if insertErr == nil {
+				break
+			}
+			if !strings.Contains(insertErr.Error(), "database is locked") {
 				break
 			}
 			time.Sleep(100 * time.Millisecond)

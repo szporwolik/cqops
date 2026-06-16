@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -488,5 +489,318 @@ func TestWavelogStatusCheckMalformedStations(t *testing.T) {
 	// Should still report online — stations fetch failing is not fatal
 	if !status.online {
 		t.Error("Status should report online even when stations fetch fails")
+	}
+}
+
+// =============================================================================
+// postQSO unit tests — direct testing of the canonical upload path
+// =============================================================================
+
+// makeTestQSO creates a minimal QSO for insertTestQSO.
+func makeTestQSO(call string) *qso.QSO {
+	q := qso.NewQSO()
+	q.Call = call
+	q.Band = "20m"
+	q.Mode = "SSB"
+	q.QSODate = "20260614"
+	q.TimeOn = "120000"
+	q.RSTSent = "59"
+	q.RSTRcvd = "59"
+	q.WavelogUploaded = "no"
+	q.Source = "manual"
+	q.StationCallsign = "SP9MOA"
+	return q
+}
+
+// getWavelogStatus reads the wavelog_uploaded status for a QSO ID.
+func getWavelogStatus(t *testing.T, db *sql.DB, id int64) string {
+	t.Helper()
+	var status string
+	err := db.QueryRow(`SELECT wavelog_uploaded FROM qsos WHERE id=?`, id).Scan(&status)
+	if err != nil {
+		t.Fatalf("query wavelog status: %v", err)
+	}
+	return status
+}
+
+func TestPostQSO_Success(t *testing.T) {
+	srv := newWavelogTestServer(t, wavelogQSOHandler("ok", []string{""}, 0))
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	qID := insertTestQSO(t, m.App.DB, makeTestQSO("SP9MOA"))
+
+	adifStr := "<CALL:6>SP9MOA<BAND:3>20m<MODE:3>SSB<QSO_DATE:8>20260614<TIME_ON:6>120000<EOR>"
+	ok, isDup, err := postQSO(srv.URL, "test-key", "1", adifStr, qID, "SP9MOA", m.App.DB)
+	if err != nil {
+		t.Errorf("postQSO returned error: %v", err)
+	}
+	if !ok {
+		t.Error("postQSO should return ok=true for success")
+	}
+	if isDup {
+		t.Error("postQSO should return isDup=false for new QSO")
+	}
+	if status := getWavelogStatus(t, m.App.DB, qID); status != "yes" {
+		t.Errorf("DB wavelog_uploaded = %q; want yes", status)
+	}
+}
+
+func TestPostQSO_DuplicateViaAllDuplicates(t *testing.T) {
+	srv := newWavelogTestServer(t, wavelogQSOHandler("abort",
+		[]string{"", "Duplicate for SP9MOA"}, 1))
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	qID := insertTestQSO(t, m.App.DB, makeTestQSO("SP9MOA"))
+
+	adifStr := "<CALL:6>SP9MOA<BAND:3>20m<MODE:3>SSB<QSO_DATE:8>20260614<TIME_ON:6>120000<EOR>"
+	ok, isDup, err := postQSO(srv.URL, "test-key", "1", adifStr, qID, "SP9MOA", m.App.DB)
+	if err != nil {
+		t.Errorf("postQSO returned unexpected error: %v", err)
+	}
+	if !ok {
+		t.Error("postQSO should return ok=true for duplicate (AllDuplicates path)")
+	}
+	if !isDup {
+		t.Error("postQSO should return isDup=true for duplicate")
+	}
+	if status := getWavelogStatus(t, m.App.DB, qID); status != "yes" {
+		t.Errorf("DB wavelog_uploaded = %q; want yes (duplicate still counts as uploaded)", status)
+	}
+}
+
+func TestPostQSO_DuplicateViaError(t *testing.T) {
+	// Simulate Wavelog returning HTTP 400 with a body that PostQSOWithResult
+	// can't parse as structured JSON, causing it to return an error whose
+	// message contains "duplicate".
+	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": "Duplicate QSO detected",
+		})
+	})
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	qID := insertTestQSO(t, m.App.DB, makeTestQSO("SP9MOA"))
+
+	adifStr := "<CALL:6>SP9MOA<BAND:3>20m<MODE:3>SSB<QSO_DATE:8>20260614<TIME_ON:6>120000<EOR>"
+	ok, isDup, err := postQSO(srv.URL, "test-key", "1", adifStr, qID, "SP9MOA", m.App.DB)
+	if err != nil {
+		t.Errorf("postQSO returned unexpected error: %v", err)
+	}
+	if !ok {
+		t.Error("postQSO should return ok=true for duplicate (error-text path)")
+	}
+	if !isDup {
+		t.Error("postQSO should return isDup=true for duplicate (error-text path)")
+	}
+	if status := getWavelogStatus(t, m.App.DB, qID); status != "yes" {
+		t.Errorf("DB wavelog_uploaded = %q; want yes", status)
+	}
+}
+
+func TestPostQSO_ServerError(t *testing.T) {
+	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "internal server error", 500)
+	})
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	qID := insertTestQSO(t, m.App.DB, makeTestQSO("SP9MOA"))
+
+	adifStr := "<CALL:6>SP9MOA<BAND:3>20m<MODE:3>SSB<QSO_DATE:8>20260614<TIME_ON:6>120000<EOR>"
+	ok, isDup, err := postQSO(srv.URL, "test-key", "1", adifStr, qID, "SP9MOA", m.App.DB)
+	if err == nil {
+		t.Error("postQSO should return an error for HTTP 500")
+	}
+	if ok {
+		t.Error("postQSO should return ok=false for server error")
+	}
+	if isDup {
+		t.Error("postQSO should return isDup=false for server error")
+	}
+	if status := getWavelogStatus(t, m.App.DB, qID); status != "no" {
+		t.Errorf("DB wavelog_uploaded = %q; want no (upload failed)", status)
+	}
+}
+
+func TestPostQSO_ConnectionError(t *testing.T) {
+	// Use a non-routable address that will cause a connection error.
+	m := newLifecycleTestModel(t)
+	qID := insertTestQSO(t, m.App.DB, makeTestQSO("SP9MOA"))
+
+	adifStr := "<CALL:6>SP9MOA<BAND:3>20m<MODE:3>SSB<QSO_DATE:8>20260614<TIME_ON:6>120000<EOR>"
+	ok, isDup, err := postQSO("http://127.0.0.1:1", "test-key", "1", adifStr, qID, "SP9MOA", m.App.DB)
+	if err == nil {
+		t.Error("postQSO should return an error for connection failure")
+	}
+	if ok {
+		t.Error("postQSO should return ok=false for connection failure")
+	}
+	if isDup {
+		t.Error("postQSO should return isDup=false for connection failure")
+	}
+	if status := getWavelogStatus(t, m.App.DB, qID); status != "no" {
+		t.Errorf("DB wavelog_uploaded = %q; want no (upload failed)", status)
+	}
+}
+
+func TestPostQSO_DuplicateNoDupeInError(t *testing.T) {
+	// HTTP 400 with a non-duplicate error — should NOT be treated as duplicate.
+	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(400)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": "Invalid station callsign",
+		})
+	})
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	qID := insertTestQSO(t, m.App.DB, makeTestQSO("SP9MOA"))
+
+	adifStr := "<CALL:6>SP9MOA<BAND:3>20m<MODE:3>SSB<QSO_DATE:8>20260614<TIME_ON:6>120000<EOR>"
+	ok, isDup, err := postQSO(srv.URL, "test-key", "1", adifStr, qID, "SP9MOA", m.App.DB)
+	if err == nil {
+		t.Error("postQSO should return an error for non-duplicate 400")
+	}
+	if ok {
+		t.Error("postQSO should return ok=false for non-duplicate error")
+	}
+	if isDup {
+		t.Error("postQSO should return isDup=false when error is not about duplicates")
+	}
+	if status := getWavelogStatus(t, m.App.DB, qID); status != "no" {
+		t.Errorf("DB wavelog_uploaded = %q; want no (upload failed)", status)
+	}
+}
+
+func TestPostQSO_EmptyParameters(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	qID := insertTestQSO(t, m.App.DB, makeTestQSO("SP9MOA"))
+
+	tests := []struct {
+		name string
+		url  string
+		key  string
+		sid  string
+		adif string
+	}{
+		{"empty url", "", "key", "1", "<CALL:6>SP9MOA<EOR>"},
+		{"empty key", "http://example.com", "", "1", "<CALL:6>SP9MOA<EOR>"},
+		{"empty station id", "http://example.com", "key", "", "<CALL:6>SP9MOA<EOR>"},
+		{"empty adif", "http://example.com", "key", "1", ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ok, isDup, err := postQSO(tt.url, tt.key, tt.sid, tt.adif, qID, "SP9MOA", m.App.DB)
+			if err == nil {
+				t.Error("postQSO should return an error for empty parameters")
+			}
+			if ok {
+				t.Error("postQSO should return ok=false for empty parameters")
+			}
+			if isDup {
+				t.Error("postQSO should return isDup=false for empty parameters")
+			}
+			if status := getWavelogStatus(t, m.App.DB, qID); status != "no" {
+				t.Errorf("DB wavelog_uploaded = %q; want no", status)
+			}
+		})
+	}
+}
+
+func TestPostQSO_HTTP200MalformedBody(t *testing.T) {
+	// HTTP 200 but body is not valid JSON — PostQSOWithResult returns nil error.
+	// postQSO should treat this as success (200 = accepted by server).
+	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(200)
+		w.Write([]byte("<html>OK</html>"))
+	})
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	qID := insertTestQSO(t, m.App.DB, makeTestQSO("SP9MOA"))
+
+	adifStr := "<CALL:6>SP9MOA<BAND:3>20m<MODE:3>SSB<QSO_DATE:8>20260614<TIME_ON:6>120000<EOR>"
+	ok, isDup, err := postQSO(srv.URL, "test-key", "1", adifStr, qID, "SP9MOA", m.App.DB)
+	if err != nil {
+		t.Errorf("postQSO returned unexpected error for HTTP 200: %v", err)
+	}
+	if !ok {
+		t.Error("postQSO should return ok=true for HTTP 200 (even with malformed body)")
+	}
+	if isDup {
+		t.Error("postQSO should return isDup=false for HTTP 200 success")
+	}
+	if status := getWavelogStatus(t, m.App.DB, qID); status != "yes" {
+		t.Errorf("DB wavelog_uploaded = %q; want yes (HTTP 200 = accepted)", status)
+	}
+}
+
+func TestPostQSO_RateLimitNotDuplicate(t *testing.T) {
+	// HTTP 429 with a message that does NOT contain "duplicate".
+	// postQSO must NOT falsely treat this as a duplicate.
+	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(429)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": "Rate limit exceeded — try again in 60 seconds",
+		})
+	})
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	qID := insertTestQSO(t, m.App.DB, makeTestQSO("SP9MOA"))
+
+	adifStr := "<CALL:6>SP9MOA<BAND:3>20m<MODE:3>SSB<QSO_DATE:8>20260614<TIME_ON:6>120000<EOR>"
+	ok, isDup, err := postQSO(srv.URL, "test-key", "1", adifStr, qID, "SP9MOA", m.App.DB)
+	if err == nil {
+		t.Error("postQSO should return an error for HTTP 429")
+	}
+	if ok {
+		t.Error("postQSO should return ok=false for rate limit")
+	}
+	if isDup {
+		t.Error("postQSO should NOT report isDup=true for rate limit (not a duplicate)")
+	}
+	if status := getWavelogStatus(t, m.App.DB, qID); status != "no" {
+		t.Errorf("DB wavelog_uploaded = %q; want no (rate limited, not on Wavelog)", status)
+	}
+}
+
+func TestPostQSO_HTMLMaintenancePage(t *testing.T) {
+	// HTTP 503 with an HTML maintenance page — must NOT falsely match "duplicate".
+	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(503)
+		w.Write([]byte(`<html><body><h1>503 Maintenance</h1><p>Service temporarily unavailable</p></body></html>`))
+	})
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	qID := insertTestQSO(t, m.App.DB, makeTestQSO("SP9MOA"))
+
+	adifStr := "<CALL:6>SP9MOA<BAND:3>20m<MODE:3>SSB<QSO_DATE:8>20260614<TIME_ON:6>120000<EOR>"
+	ok, isDup, err := postQSO(srv.URL, "test-key", "1", adifStr, qID, "SP9MOA", m.App.DB)
+	if err == nil {
+		t.Error("postQSO should return an error for HTTP 503")
+	}
+	if ok {
+		t.Error("postQSO should return ok=false for maintenance page")
+	}
+	if isDup {
+		t.Error("postQSO should NOT report isDup=true for maintenance page")
+	}
+	if status := getWavelogStatus(t, m.App.DB, qID); status != "no" {
+		t.Errorf("DB wavelog_uploaded = %q; want no (server down, not on Wavelog)", status)
 	}
 }

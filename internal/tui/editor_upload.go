@@ -177,8 +177,8 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 		if err != nil {
 			// If the error contains duplicates, fall back to individual uploads
 			// so that duplicates don't block new QSOs.
-			errStr := err.Error()
-			if strings.Contains(errStr, "Duplicate for") {
+			errStr := strings.ToLower(err.Error())
+			if strings.Contains(errStr, "duplicate") {
 				applog.Warn("Wavelog: batch had duplicates, falling back to individual uploads", "count", len(unsent))
 				return le.uploadIndividual(unsent)()
 			}
@@ -187,13 +187,17 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 		}
 		if result != nil && result.AllDuplicates {
 			for _, q := range unsent {
-				store.UpdateWavelogStatus(db, q.ID, "yes")
+				if dbErr := store.UpdateWavelogStatus(db, q.ID, "yes"); dbErr != nil {
+					applog.Error("Wavelog: batch upload — failed to update status", "qso_id", q.ID, "error", dbErr)
+				}
 			}
 			applog.InfoDetail("Wavelog: batch already present (duplicates)", fmt.Sprintf("count=%d", len(unsent)))
 			return editorMsg{wlQSOID: unsent[0].ID, wlOK: true, wlCall: fmt.Sprintf("%d QSOs (already on Wavelog)", len(unsent))}
 		}
 		for _, q := range unsent {
-			store.UpdateWavelogStatus(db, q.ID, "yes")
+			if dbErr := store.UpdateWavelogStatus(db, q.ID, "yes"); dbErr != nil {
+				applog.Error("Wavelog: batch upload — failed to update status", "qso_id", q.ID, "error", dbErr)
+			}
 		}
 		applog.InfoDetail("Wavelog: batch upload OK", fmt.Sprintf("count=%d", len(unsent)))
 		return editorMsg{wlQSOID: unsent[0].ID, wlOK: true, wlCall: fmt.Sprintf("%d QSOs", len(unsent))}
@@ -266,7 +270,7 @@ func (le *LogbookEditor) doUploadToWavelog() tea.Cmd {
 	call := q.Call
 
 	return func() tea.Msg {
-		ok, _, err := postQSO(url, key, sid, adifStr, qID, call, le.db)
-		return editorMsg{wlQSOID: qID, wlCall: call, wlOK: ok, err: err}
+		ok, isDup, err := postQSO(url, key, sid, adifStr, qID, call, le.db)
+		return editorMsg{wlQSOID: qID, wlCall: call, wlOK: ok, wlDup: isDup, err: err}
 	}
 }

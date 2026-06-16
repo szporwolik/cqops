@@ -319,11 +319,20 @@ func PurgeQSOs(db *sql.DB) error {
 
 // UpdateWavelogStatus sets the wavelog_uploaded status for a QSO.
 func UpdateWavelogStatus(db *sql.DB, id int64, status string) error {
-	_, err := db.Exec(`UPDATE qsos SET wavelog_uploaded=? WHERE id=?`, status, id)
-	if err != nil {
-		return fmt.Errorf("update wavelog status: %w", err)
+	// Retry on SQLITE_BUSY — the main thread may briefly hold a write lock
+	// during concurrent operations (e.g. WSJT-X insert + immediate upload).
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		_, err = db.Exec(`UPDATE qsos SET wavelog_uploaded=? WHERE id=?`, status, id)
+		if err == nil {
+			return nil
+		}
+		if !strings.Contains(err.Error(), "database is locked") {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
-	return nil
+	return fmt.Errorf("update wavelog status: %w", err)
 }
 
 // NormalizeStationFields updates station_callsign, operator and my_gridsquare

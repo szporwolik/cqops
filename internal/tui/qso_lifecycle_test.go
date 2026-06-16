@@ -384,7 +384,7 @@ func TestLogQSOFromADIFValid(t *testing.T) {
 		"<QSO_DATE:8>20260614 <TIME_ON:6>120000 " +
 		"<RST_SENT:2>59 <RST_RCVD:2>59 <GRIDSQUARE:4>JO90 <EOR>"
 
-	cmd := m.logQSOFromADIF(adif)
+	cmd, _ := m.logQSOFromADIF(adif)
 	// cmd now always includes refreshQSOS via tea.Batch
 	if cmd != nil {
 		cmd()
@@ -403,7 +403,7 @@ func TestLogQSOFromADIFNoCall(t *testing.T) {
 	m := newLifecycleTestModel(t)
 
 	adif := "<BAND:3>20m <MODE:3>SSB <EOR>"
-	cmd := m.logQSOFromADIF(adif)
+	cmd, _ := m.logQSOFromADIF(adif)
 	if cmd != nil {
 		cmd()
 	}
@@ -416,7 +416,7 @@ func TestLogQSOFromADIFInvalidMode(t *testing.T) {
 	m := newLifecycleTestModel(t)
 
 	adif := "<CALL:6>SP9MOA <MODE:10>INVALIDMOD <EOR>"
-	cmd := m.logQSOFromADIF(adif)
+	cmd, _ := m.logQSOFromADIF(adif)
 	if cmd != nil {
 		cmd()
 	}
@@ -433,7 +433,7 @@ func TestLogQSOFromADIFUpdatesRecentQSOs(t *testing.T) {
 		"<QSO_DATE:8>20260614 <TIME_ON:6>120000 " +
 		"<RST_SENT:2>59 <RST_RCVD:2>59 <EOR>"
 
-	cmd := m.logQSOFromADIF(adif)
+	cmd, _ := m.logQSOFromADIF(adif)
 	// cmd always includes refreshQSOS via tea.Batch
 	if cmd != nil {
 		cmd()
@@ -452,7 +452,7 @@ func TestLogQSOFromADIFWavelogDisabled(t *testing.T) {
 		"<QSO_DATE:8>20260614 <TIME_ON:6>120000 " +
 		"<RST_SENT:2>59 <RST_RCVD:2>59 <EOR>"
 
-	cmd := m.logQSOFromADIF(adif)
+	cmd, _ := m.logQSOFromADIF(adif)
 	// cmd includes refreshQSOS via tea.Batch even when Wavelog is disabled
 	if cmd == nil {
 		t.Fatal("logQSOFromADIF should return cmd even when Wavelog disabled (refreshQSOS)")

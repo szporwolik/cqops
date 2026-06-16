@@ -20,23 +20,41 @@ import (
 // handleTick processes periodic tick messages: ADIF ingestion, WSJT-X status,
 // toast expiry, date/time auto-update, and scheduled health checks.
 //
-// Concurrency: pendingADIF and pendingStatus are written by WSJT-X UDP callbacks
+// Concurrency: pendingADIFs and pendingStatus are written by WSJT-X UDP callbacks
 // from a background goroutine. We snapshot both fields under a single adifMu lock
 // so the read-and-clear is atomic, then release the lock before doing any
 // downstream work (logging, tea.Batch, form updates) to keep the critical
 // section minimal.
 func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 	m.adifMu.Lock()
-	adif := m.pendingADIF
-	m.pendingADIF = ""
+	adifs := m.pendingADIFs
+	m.pendingADIFs = nil
 	sp := m.pendingStatus
 	m.pendingStatus = statusPending{}
 	m.adifMu.Unlock()
 
-	if adif != "" {
+	for _, adif := range adifs {
+		if adif == "" {
+			continue
+		}
 		applog.Info("WSJT-X: processing pending ADIF")
-		cmd = tea.Batch(cmd, m.logQSOFromADIF(adif))
+		subCmd, retry := m.logQSOFromADIF(adif)
+		if subCmd != nil {
+			cmd = tea.Batch(cmd, subCmd)
+		}
+		if retry {
+			// DB insert failed — re-queue for next tick.
+			m.adifMu.Lock()
+			m.pendingADIFs = append(m.pendingADIFs, adif)
+			m.adifMu.Unlock()
+		}
 	}
+
+	// Persist any remaining (unprocessed or retry) ADIFs.
+	m.adifMu.Lock()
+	m.savePendingADIFsLocked()
+	m.adifMu.Unlock()
+
 	if sp.hasData {
 		m.applyWSJTXStatus(sp.call, sp.grid, sp.freq, sp.mode, sp.submode, sp.report)
 	}
@@ -68,11 +86,15 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) bool {
 	case wlUploadResultMsg:
 		n := m.App.Config.General.Notifications
 		if r.ok {
-			m.toasts.Success(fmt.Sprintf("Wavelog: %s sent", r.call))
-			if n.Enabled && n.Wavelog {
-				applog.Info("Sending Wavelog success notification", "call", r.call)
-				if err := beeep.Notify("CQOPS — Wavelog", fmt.Sprintf("QSO %s sent to Wavelog", r.call), ""); err != nil {
-					applog.Info("Wavelog notification failed", "error", err.Error())
+			if r.isDup {
+				m.toasts.Success(fmt.Sprintf("Wavelog: %s already present", r.call))
+			} else {
+				m.toasts.Success(fmt.Sprintf("Wavelog: %s sent", r.call))
+				if n.Enabled && n.Wavelog {
+					applog.Info("Sending Wavelog success notification", "call", r.call)
+					if err := beeep.Notify("CQOPS — Wavelog", fmt.Sprintf("QSO %s sent to Wavelog", r.call), ""); err != nil {
+						applog.Info("Wavelog notification failed", "error", err.Error())
+					}
 				}
 			}
 		} else {

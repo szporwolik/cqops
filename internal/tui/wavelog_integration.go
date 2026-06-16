@@ -3,6 +3,7 @@ package tui
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
@@ -87,8 +88,8 @@ func (m *Model) uploadADIFToWavelog(adifStr string, qID int64, call string) tea.
 	stationID := wl.StationProfileID
 
 	return func() tea.Msg {
-		ok, _, err := postQSO(url, key, stationID, adifStr, qID, call, m.App.DB)
-		return wlUploadResultMsg{qID: qID, call: call, ok: ok, err: err}
+		ok, isDup, err := postQSO(url, key, stationID, adifStr, qID, call, m.App.DB)
+		return wlUploadResultMsg{qID: qID, call: call, ok: ok, isDup: isDup, err: err}
 	}
 }
 
@@ -101,11 +102,25 @@ func postQSO(url, key, sid, adifStr string, qID int64, call string, db *sql.DB) 
 	applog.InfoDetail("Wavelog: uploading QSO", fmt.Sprintf("qso_id=%d call=%s", qID, call))
 	result, err := wavelog.PostQSOWithResult(url, key, sid, adifStr)
 	if err != nil {
+		// If Wavelog rejected the QSO but the error indicates it's a duplicate
+		// (e.g. another app pushed the same QSO), treat it as success.
+		errStr := strings.ToLower(err.Error())
+		if strings.Contains(errStr, "duplicate") {
+			applog.InfoDetail("Wavelog: QSO already present (duplicate via error)", fmt.Sprintf("qso_id=%d call=%s", qID, call))
+			if dbErr := store.UpdateWavelogStatus(db, qID, "yes"); dbErr != nil {
+				applog.Error("Wavelog: failed to update local status", "qso_id", qID, "error", dbErr)
+			}
+			return true, true, nil
+		}
 		applog.Error("Wavelog: QSO upload failed", "qso_id", qID, "call", call, "error", err)
-		store.UpdateWavelogStatus(db, qID, "no")
+		if dbErr := store.UpdateWavelogStatus(db, qID, "no"); dbErr != nil {
+			applog.Error("Wavelog: failed to update local status", "qso_id", qID, "error", dbErr)
+		}
 		return false, false, err
 	}
-	store.UpdateWavelogStatus(db, qID, "yes")
+	if dbErr := store.UpdateWavelogStatus(db, qID, "yes"); dbErr != nil {
+		applog.Error("Wavelog: failed to update local status", "qso_id", qID, "error", dbErr)
+	}
 	if result != nil && result.AllDuplicates {
 		applog.InfoDetail("Wavelog: QSO already present (duplicate)", fmt.Sprintf("qso_id=%d call=%s", qID, call))
 		return true, true, nil
@@ -115,8 +130,9 @@ func postQSO(url, key, sid, adifStr string, qID int64, call string, db *sql.DB) 
 }
 
 type wlUploadResultMsg struct {
-	qID  int64
-	call string
-	ok   bool
-	err  error
+	qID   int64
+	call  string
+	ok    bool
+	isDup bool
+	err   error
 }

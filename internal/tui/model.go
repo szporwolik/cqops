@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -102,7 +103,7 @@ type Model struct {
 	wsjtxOnline     bool
 	wsjtxStatus     string
 	needRefresh     bool
-	pendingADIF     string
+	pendingADIFs    []string // queued WSJT-X ADIF records — processed on tick
 	pendingStatus   statusPending
 	adifMu          sync.Mutex
 	chooser         *LogbookChooser
@@ -283,8 +284,16 @@ func (m *Model) Init() tea.Cmd {
 	m.refreshFlrigClient()
 	m.App.WSJTX.OnADIF = func(adif string) {
 		m.adifMu.Lock()
-		m.pendingADIF = adif
+		m.pendingADIFs = append(m.pendingADIFs, adif)
+		// Persist to disk immediately so QSOs survive crashes.
+		// Failures are silent — the in-memory queue is authoritative.
+		m.savePendingADIFsLocked()
 		m.adifMu.Unlock()
+	}
+	// Recover any ADIF records left on disk from a previous crash.
+	if saved := loadPendingADIFs(); len(saved) > 0 {
+		m.pendingADIFs = append(m.pendingADIFs, saved...)
+		applog.Info("WSJT-X: recovered pending ADIF records from disk", "count", len(saved))
 	}
 	m.App.WSJTX.OnStatus = func(call, grid string, freq uint64, mode, submode, report string) {
 		m.adifMu.Lock()
@@ -692,4 +701,59 @@ func (t *imageTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		resp.Header.Del("Content-Type")
 	}
 	return resp, nil
+}
+
+// pendingADIFPath returns the path to the pending ADIF backup file.
+func pendingADIFPath() string {
+	dir, err := config.DataDir()
+	if err != nil {
+		return ""
+	}
+	return dir + "/pending_adifs.jsonl"
+}
+
+// savePendingADIFsLocked writes the current ADIF queue to a backup file.
+// Must be called with adifMu held.
+func (m *Model) savePendingADIFsLocked() {
+	path := pendingADIFPath()
+	if path == "" {
+		return
+	}
+	if len(m.pendingADIFs) == 0 {
+		os.Remove(path)
+		return
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	for _, adif := range m.pendingADIFs {
+		// Escape newlines so each ADIF is exactly one line.
+		line := strings.ReplaceAll(adif, "\n", "\\n")
+		fmt.Fprintln(f, line)
+	}
+}
+
+// loadPendingADIFs reads the backup file and returns any saved ADIF records.
+func loadPendingADIFs() []string {
+	path := pendingADIFPath()
+	if path == "" {
+		return nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	os.Remove(path) // consumed
+	var adifs []string
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		// Unescape newlines.
+		adifs = append(adifs, strings.ReplaceAll(line, "\\n", "\n"))
+	}
+	return adifs
 }

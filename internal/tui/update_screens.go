@@ -247,7 +247,11 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 		}
 		if em.wlQSOID != 0 {
 			if em.wlOK {
-				m.toasts.Success(fmt.Sprintf("Wavelog: %s sent", em.wlCall))
+				if em.wlDup {
+					m.toasts.Success(fmt.Sprintf("Wavelog: %s already present", em.wlCall))
+				} else {
+					m.toasts.Success(fmt.Sprintf("Wavelog: %s sent", em.wlCall))
+				}
 				m.logbookEditor.UpdateWLStatus(em.wlQSOID, "yes")
 				m.logbookEditor.needsReload = true
 			} else {

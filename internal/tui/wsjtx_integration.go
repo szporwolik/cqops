@@ -66,14 +66,19 @@ func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode
 }
 
 // logQSOFromADIF validates, persists, and uploads a QSO from raw WSJT-X ADIF data.
-func (m *Model) logQSOFromADIF(adif string) tea.Cmd {
+// logQSOFromADIF parses a WSJT-X ADIF record, inserts it into the database,
+// and returns a command to upload it to Wavelog. Returns (cmd, true) on success,
+// (nil, false) if the ADIF should be skipped permanently (invalid/duplicate),
+// or (nil, true) if the insert failed and should be retried.
+func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 	qs := parseWSJTXADIF(adif)
 	if qs.Call == "" {
 		applog.Warn("WSJT-X: logged ADIF has no call, skipping")
 		m.toasts.Warn("WSJT-X: ADIF has no call")
-		return nil
+		return nil, false // skip permanently
 	}
 	qs.Source = "wsjtx"
+	qs.WavelogUploaded = "no"
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
 		Operator:        m.App.Logbook.Station.Operator,
@@ -88,18 +93,24 @@ func (m *Model) logQSOFromADIF(adif string) tea.Cmd {
 	if err := qso.ValidateForSave(qs); err != nil {
 		applog.Error("WSJT-X: ADIF validation failed", "error", err.Error())
 		m.toasts.Error("WSJT-X: " + err.Error())
-		return nil
+		return nil, false // skip permanently
 	}
+
+	// Duplicate detection — WSJT-X may re-send the same QSO ADIF.
+	if existingID := store.FindQSOByKey(m.App.DB, qs.Call, qs.Band, qs.Mode, qs.QSODate, qs.TimeOn); existingID != 0 {
+		applog.Info("WSJT-X: duplicate ADIF skipped", "call", qs.Call, "band", qs.Band, "existing_id", existingID)
+		return nil, false // skip permanently
+	}
+
 	id, err := store.InsertQSO(m.App.DB, qs)
 	if err != nil {
-		applog.Error("WSJT-X: DB insert failed", "error", err.Error())
-		m.toasts.Error("WSJT-X: DB save failed")
-		return nil
+		applog.Error("WSJT-X: DB insert failed — will retry", "error", err.Error(), "call", qs.Call)
+		m.toasts.Error("WSJT-X: DB save failed — retrying")
+		return nil, true // retry on next tick
 	}
 	applog.InfoDetail("WSJT-X: auto-logged QSO", fmt.Sprintf("id=%d call=%s", id, qs.Call))
 	m.toasts.Success(fmt.Sprintf("WSJT-X: %s logged", qs.Call))
 
-	// System notification on WSJT-X auto-logged QSO.
 	n := m.App.Config.General.Notifications
 	if n.Enabled && n.QSO {
 		applog.Info("Sending WSJT-X QSO notification", "call", qs.Call, "band", qs.Band, "mode", qs.Mode)
@@ -110,7 +121,7 @@ func (m *Model) logQSOFromADIF(adif string) tea.Cmd {
 
 	m.clearForm()
 	m.needRefresh = true
-	return tea.Batch(m.refreshQSOS(), m.maybeUploadRawADIFToWavelog(adif, id, qs.Call))
+	return tea.Batch(m.refreshQSOS(), m.maybeUploadRawADIFToWavelog(adif, id, qs.Call)), false
 }
 
 // parseWSJTXADIF parses a single QSO record from an ADIF string.
