@@ -52,12 +52,12 @@ var (
 func (m *Model) tabView() string {
 	hasPartner := m.partnerData != nil || strings.TrimSpace(m.fields[fieldCall].Value()) != ""
 
-	// Cache key: screen + partner presence + confirm state.
+	// Cache key: screen + partner presence + confirm state + width.
 	conf := 0
 	if m.confirm != nil {
 		conf = 1
 	}
-	sig := fmt.Sprintf("%d|%v|%d", m.screen, hasPartner, conf)
+	sig := fmt.Sprintf("%d|%v|%d|%d", m.screen, hasPartner, conf, m.width)
 	if m.cachedTabSig == sig && m.cachedTabView != "" {
 		return m.cachedTabView
 	}

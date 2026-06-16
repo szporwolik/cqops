@@ -12,27 +12,28 @@ import (
 
 // Pre-allocated log viewer styles — avoids per-frame allocations.
 var (
-	logTimeStyle  = lipgloss.NewStyle().Width(9).Foreground(P.TextDim).PaddingRight(0)
+	logTimeStyle  = lipgloss.NewStyle().Width(9).Foreground(P.TextDim)
 	logLevelStyle = lipgloss.NewStyle().Width(6)
 )
 
 type LogViewer struct {
-	name     string
 	viewport viewport.Model
 	done     bool
 	width    int
 	height   int
+	logName  string // active logbook name for display
 
-	// Content cache — avoids rebuilding all 500 log lines on every frame.
+	// Content cache — avoids rebuilding all log lines on every frame.
 	cachedContent string
 	cachedW       int
+	cachedH       int
 	cachedEntries int
 }
 
-func NewLogViewer(name string) *LogViewer {
-	lv := &LogViewer{name: name}
+func NewLogViewer(logName string) *LogViewer {
+	lv := &LogViewer{logName: logName}
 	vp := viewport.New(viewport.WithWidth(80), viewport.WithHeight(20))
-	vp.FillHeight = true // always fill allocated height to push help bar down
+	vp.FillHeight = true
 	lv.viewport = vp
 	return lv
 }
@@ -62,7 +63,6 @@ func (lv *LogViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		lv.width = msg.Width
 		lv.height = msg.Height
-		// Viewport fills ContentH exactly: status+profile+tab+help = 4 fixed rows.
 		vh := contentHeight(msg.Height)
 		if vh < 5 {
 			vh = 5
@@ -75,9 +75,8 @@ func (lv *LogViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "f8":
 			lv.done = true
 		case "insert":
-			// Scroll to top and refresh content.
 			lv.viewport.SetYOffset(0)
-			lv.cachedContent = "" // force rebuild
+			lv.cachedContent = ""
 		default:
 			var cmd tea.Cmd
 			lv.viewport, cmd = lv.viewport.Update(msg)
@@ -92,17 +91,16 @@ func (lv *LogViewer) View() tea.View {
 		return tea.NewView("")
 	}
 
-	// Sync viewport dimensions from stored width/height (covers first render
-	// before any WindowSizeMsg arrives).
-	if lv.width > 0 && lv.height > 0 {
-		vh := contentHeight(lv.height)
-		if vh < 5 {
-			vh = 5
-		}
-		if lv.viewport.Width() != lv.width || lv.viewport.Height() != vh {
-			lv.viewport.SetWidth(lv.width)
-			lv.viewport.SetHeight(vh)
-		}
+	// Viewport height — consistent between dimension sync and cache key.
+	vh := contentHeight(lv.height)
+	if vh < 5 {
+		vh = 5
+	}
+
+	// Sync viewport dimensions on first render / before first WindowSizeMsg.
+	if lv.width > 0 && (lv.viewport.Width() != lv.width || lv.viewport.Height() != vh) {
+		lv.viewport.SetWidth(lv.width)
+		lv.viewport.SetHeight(vh)
 	}
 
 	entries := applog.Entries()
@@ -111,25 +109,24 @@ func (lv *LogViewer) View() tea.View {
 		return tea.NewView(DimStyle.Render("  No log entries yet."))
 	}
 
-	// Return cached view if nothing changed — but always sync content
-	// to the viewport so ScrollInfo() works correctly.
-	if lv.cachedW == lv.width && lv.cachedEntries == entryCount && lv.cachedContent != "" {
+	// Return cached view if nothing changed.
+	if lv.cachedW == lv.width && lv.cachedH == vh && lv.cachedEntries == entryCount && lv.cachedContent != "" {
 		lv.viewport.SetContent(lv.cachedContent)
 		return tea.NewView(lv.viewport.View())
 	}
 
-	// Build colored log lines (newest first). No explicit backgrounds.
+	// Build colored log lines (newest first).
 	bodyW := lv.width
 	if bodyW < 40 {
 		bodyW = 80
 	}
-	msgW := bodyW - 16
+	msgW := bodyW - 15 // 9 (time) + 6 (level)
 	if msgW < 10 {
 		msgW = 10
 	}
 
-	var lines []string
-	for i := len(entries) - 1; i >= 0; i-- {
+	var b strings.Builder
+	for i := entryCount - 1; i >= 0; i-- {
 		e := entries[i]
 
 		ls := S.LogDebug
@@ -147,21 +144,21 @@ func (lv *LogViewer) View() tea.View {
 			msg += "  " + e.Details
 		}
 
-		line := lipgloss.JoinHorizontal(lipgloss.Top,
-			logTimeStyle.Render(e.Time),
-			logLevelStyle.Render(ls.Render(e.Level)),
-			ValueStyle.Render(truncate(msg, msgW)),
-		)
-		lines = append(lines, line)
+		b.WriteString(logTimeStyle.Render(e.Time))
+		b.WriteString(logLevelStyle.Render(ls.Render(e.Level)))
+		b.WriteString(ValueStyle.Render(truncate(msg, msgW)))
+		if i > 0 {
+			b.WriteByte('\n')
+		}
 	}
 
-	lv.viewport.SetContent(strings.Join(lines, "\n"))
+	content := b.String()
+	lv.viewport.SetContent(content)
 
-	lv.cachedContent = strings.Join(lines, "\n")
+	lv.cachedContent = content
 	lv.cachedW = lv.width
+	lv.cachedH = vh
 	lv.cachedEntries = entryCount
 
-	// Viewport fills all rows; main View's MaxHeight + JoinVertical places
-	// the help bar at the bottom with any extra space as gap.
 	return tea.NewView(lv.viewport.View())
 }

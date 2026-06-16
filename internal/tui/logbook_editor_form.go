@@ -109,6 +109,10 @@ func (le *LogbookEditor) prevField() {
 // =============================================================================
 
 func (le *LogbookEditor) viewEdit(bodyW int, contentH int) string {
+	// Cap width to match QSO form — prevents absurdly wide form on large monitors.
+	if bodyW > partnerMapMaxW {
+		bodyW = partnerMapMaxW
+	}
 	header := S.Title.Width(bodyW).Render("Edit QSO")
 
 	// Two-column form layout — matches QSO form pattern.

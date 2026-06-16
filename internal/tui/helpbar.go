@@ -46,7 +46,7 @@ func (m *Model) helpView() string {
 	if m.chooser != nil && m.chooser.dialog != nil {
 		conf = 1
 	}
-	sig := fmt.Sprintf("%d|%d|%d|%d|%d|%s", m.screen, conf, editing, chooserForm, rigForm, suffix)
+	sig := fmt.Sprintf("%d|%d|%d|%d|%d|%d|%s", m.screen, m.width, conf, editing, chooserForm, rigForm, suffix)
 	if m.cachedHelpSig == sig && m.cachedHelpView != "" {
 		return m.cachedHelpView
 	}

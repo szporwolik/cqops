@@ -14,21 +14,20 @@ func drawBorderedBox(content string, boxW int) string {
 	return borderBoxStyle.Width(boxW).Render(content)
 }
 
-// drawBorderedBoxPad is like drawBorderedBox but with Padding(1,2) for
-// content-heavy forms like config menus.
+// menuBoxStyle is the bordered box used by config menus.
 var menuBoxStyle = lipgloss.NewStyle().
 	Border(lipgloss.NormalBorder()).
 	BorderForeground(P.Border).
 	Padding(1, 2)
 
-func drawMenuBox(content string, boxW int) string {
-	return menuBoxStyle.Width(boxW).Render(content)
-}
-
 // drawMenuWithHeader renders a title header above a bordered menu box.
 // Trailing newlines in the content are trimmed to avoid a blank row
 // between the last item and the bottom border.
+// Box width is capped at partnerMapMaxW for consistency with the QSO form.
 func drawMenuWithHeader(title, content string, boxW int) string {
+	if boxW > partnerMapMaxW {
+		boxW = partnerMapMaxW
+	}
 	header := S.Title.Width(boxW).Render(title)
 	box := menuBoxStyle.Width(boxW).Render(strings.TrimRight(content, "\n"))
 	return lipgloss.JoinVertical(lipgloss.Left, header, box)
@@ -53,48 +52,8 @@ func tern(cond bool, t, f string) string {
 // Shared form-field rendering — used by QSO form and all config menus.
 // =============================================================================
 
-// fromField renders a label+value line for a textinput.Model in a form.
-// When focused, the "> " cursor prefix is shown and the textinput View() is
-// used so the cursor blinks. When unfocused, empty values show an em-dash.
-// labelWide: use wider label (14 cells) for menus; use narrow (11) for QSO form.
-func formField(label string, ti *textinput.Model, focused bool, labelWide bool) string {
-	raw := strings.TrimSpace(ti.Value())
-
-	var labelStyle lipgloss.Style
-	if labelWide {
-		labelStyle = S.FormLabelWide
-	} else {
-		labelStyle = S.FormLabel
-	}
-
-	var prefix, lbl, val string
-	if focused {
-		prefix = S.FormPrefixOn.Render("> ")
-		if labelWide {
-			lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(label)
-		} else {
-			lbl = S.FormFocused.Align(lipgloss.Left).Render(label)
-		}
-		val = ti.View()
-	} else {
-		prefix = S.FormPrefixOff.Render("  ")
-		lbl = labelStyle.Align(lipgloss.Left).Render(label)
-		if raw == "" {
-			val = DimStyle.Render("\u2014")
-		} else {
-			val = ValueStyle.Render(raw)
-		}
-	}
-	return lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)
-}
-
-// formFieldLine returns formField result padded to exactly the given width.
-func formFieldLine(label string, ti *textinput.Model, focused bool, labelWide bool, width int) string {
-	return padOrTrunc(formField(label, ti, focused, labelWide), width)
-}
-
 // =============================================================================
-// Legacy helpers — kept for backward compat; prefer formField above.
+// Content helpers
 // =============================================================================
 
 // fillBody returns the content with trailing newlines so the total height
