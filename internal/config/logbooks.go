@@ -97,12 +97,16 @@ func DBPath(logbookName string, lb *Logbook) (string, error) {
 }
 
 func IsFirstRun(cfg *Config) bool {
-	// First run: exactly one logbook with no callsign set.
+	// First run: exactly one logbook with no callsign, operator, or grid set.
+	// Handles edge cases: nil/empty logbook map, missing station data.
+	if cfg == nil || len(cfg.Logbooks) == 0 {
+		return true
+	}
 	if len(cfg.Logbooks) != 1 {
 		return false
 	}
 	for _, lb := range cfg.Logbooks {
 		return lb.Station.Callsign == "" && lb.Station.Operator == "" && lb.Station.Grid == ""
 	}
-	return false
+	return true
 }

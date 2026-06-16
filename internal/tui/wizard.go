@@ -15,6 +15,7 @@ import (
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/qrz"
+	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/version"
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
@@ -185,8 +186,16 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							w.toasts.Error("Callsign is required")
 							return w, nil
 						}
+						if !qso.IsValidCall(cs) {
+							w.toasts.Error("Not a valid callsign")
+							return w, nil
+						}
 						if gr == "" {
 							w.toasts.Error("Grid locator is required")
+							return w, nil
+						}
+						if !qso.IsValidLocator(gr) {
+							w.toasts.Error("Not a valid grid locator")
 							return w, nil
 						}
 						if wlEnabled {
@@ -201,12 +210,6 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 						w.step = stepRig
 						applog.InfoDetail("Wizard: station step done", fmt.Sprintf("call=%s grid=%s", cs, gr))
-					case wlCycleStation:
-						if len(w.wlStations) > 0 {
-							w.wlStationIdx = (w.wlStationIdx + 1) % len(w.wlStations)
-							s := w.wlStations[w.wlStationIdx]
-							w.station.WlStationID.SetValue(fmt.Sprintf("%s — %s (%s) %s", s.ID, s.Callsign, s.Name, s.Gridsquare))
-						}
 					case wlUpdateAction:
 						_, _, _, _, _, _, _, wlURL, wlKey, _ := w.station.Values()
 						if wlURL == "" || wlKey == "" {
