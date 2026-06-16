@@ -65,6 +65,8 @@ type Styles struct {
 	FormFocusedWide lipgloss.Style // wider focused label for menus (17 cells)
 	FormLabelXL     lipgloss.Style // extra-wide for notifications (36 cells)
 	FormFocusedXL   lipgloss.Style // extra-wide focused for notifications (36 cells)
+	FormLabelGen    lipgloss.Style // medium for General settings (22 cells)
+	FormFocusedGen  lipgloss.Style // medium focused for General settings (22 cells)
 	FormPrefixOn    lipgloss.Style
 	FormPrefixOff   lipgloss.Style
 	Input           lipgloss.Style
@@ -130,6 +132,10 @@ var S = Styles{
 	// Extra-wide variants for menus with long labels (Notifications).
 	FormLabelXL:   lipgloss.NewStyle().Width(36).Foreground(P.TextMuted),
 	FormFocusedXL: lipgloss.NewStyle().Width(36).Foreground(P.Cursor),
+
+	// Medium variants for General settings — wider than Wide, narrower than XL.
+	FormLabelGen:   lipgloss.NewStyle().Width(22).Foreground(P.TextMuted),
+	FormFocusedGen: lipgloss.NewStyle().Width(22).Foreground(P.Cursor),
 
 	ToastInfo:    lipgloss.NewStyle().Foreground(P.Info),
 	ToastSuccess: lipgloss.NewStyle().Foreground(P.Success),

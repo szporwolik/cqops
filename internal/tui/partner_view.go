@@ -81,6 +81,15 @@ func (m *Model) viewPartner() string {
 		m.App.Logbook.Wavelog != nil && m.App.Logbook.Wavelog.Enabled,
 		m.App.Config.General.RenderMap,
 		m.App.Config.General.DrawGrayline)
+	// Inline photo state — invalidate cache when photo loads.
+	if d != nil && d.ImageURL != "" {
+		picContent := m.partnerPicViewer.View().Content
+		hash := len(picContent)
+		if hash > 0 {
+			hash = int(picContent[0]) + len(picContent)
+		}
+		fmt.Fprintf(&sigB, "|pic=%s,%d", d.ImageURL, hash)
+	}
 
 	sig := sigB.String()
 	if m.partnerViewCacheSig == sig && m.partnerViewCache != "" {
@@ -99,18 +108,36 @@ func (m *Model) viewPartner() string {
 	wlEnabled := m.App.Logbook.Wavelog != nil && m.App.Logbook.Wavelog.Enabled &&
 		m.App.Logbook.Wavelog.URL != "" && m.App.Logbook.Wavelog.APIKey != ""
 
+	// Inline partner photo — right-side column on wide screens (≥180 cols).
+	showPhoto := m.width >= 180 && m.App.Config.General.PictureAtQRZPane &&
+		d != nil && d.ImageURL != ""
+	if showPhoto && d.ImageURL != m.lastPartnerPicURL {
+		m.lastPartnerPicURL = d.ImageURL
+		m.partnerPicNeedLoad = true
+	}
+
+	// Left column stays at the standard max-width cap. Photo fills remaining space.
+	leftW := totalW
+	photoW := 0
+	if showPhoto {
+		photoW = (w - 2) - totalW
+		if photoW < 25 {
+			photoW = 25
+		}
+	}
+
 	var cbW, lbW, wlW int
 	if wlEnabled {
-		cbW = totalW * 40 / 100
-		lbW = totalW * 28 / 100
-		wlW = totalW - cbW - lbW
+		cbW = leftW * 40 / 100
+		lbW = leftW * 28 / 100
+		wlW = leftW - cbW - lbW
 	} else {
-		cbW = totalW * 50 / 100
-		lbW = totalW - cbW
+		cbW = leftW * 50 / 100
+		lbW = leftW - cbW
 		wlW = 0
 	}
 	if cbW < 20 {
-		cbW = totalW
+		cbW = leftW
 	}
 	if lbW < 15 {
 		lbW = 20
@@ -140,7 +167,6 @@ func (m *Model) viewPartner() string {
 		if wlInner > maxInner {
 			maxInner = wlInner
 		}
-		// Re-render callbook/logbook boxes with updated maxInner.
 		cbBox = m.renderPartnerBox("Callbook"+m.qrzSuffix(), cbContent, cbW, maxInner)
 		lbBox = m.renderPartnerBox("Logbook", lbContent, lbW, maxInner)
 		wlBox := m.renderPartnerBox("Wavelog", wlContent, wlW, maxInner)
@@ -149,30 +175,68 @@ func (m *Model) viewPartner() string {
 		topRow = lipgloss.JoinHorizontal(lipgloss.Top, cbBox, lbBox)
 	}
 
-	var block string
+	// Build left column: topRow + map (if enabled).
+	var leftCol string
 	if m.App.Config.General.RenderMap {
-		mapW := totalW
 		topH := lipgloss.Height(topRow)
-		// Reserve space for legend (1) + border top/bottom (2).
 		mapAvailH := contentHeight(m.height) - topH - 3
 		if mapAvailH < 3 {
 			mapAvailH = 3
 		}
-		// Content is 4 cells narrower than the border: 2 for border chars + 2 for Padding(0,1).
-		contentW := mapW - 4
+		contentW := leftW - 4
 		if contentW < 20 {
-			contentW = mapW
+			contentW = leftW
 		}
 		mapBox := m.getOrBuildMap(d, contentW, mapAvailH)
 		if mapBox != "" {
-			mapBox = centerAndBorderMap(mapBox, contentW, mapW)
-			block = lipgloss.JoinVertical(lipgloss.Left, topRow, mapBox)
+			mapBox = centerAndBorderMap(mapBox, contentW, leftW)
+			leftCol = lipgloss.JoinVertical(lipgloss.Left, topRow, mapBox)
 		} else {
-			block = topRow
+			leftCol = topRow
 		}
 	} else {
-		block = topRow
+		leftCol = topRow
 	}
+
+	// Right column: photo (if enabled). Force height to match leftCol exactly.
+	var block string
+	if showPhoto {
+		leftH := lipgloss.Height(leftCol)
+		picRaw := m.partnerPicViewer.View().Content
+		// Show "Loading…" when no image content yet (first load or in-flight).
+		if picRaw == "" {
+			picRaw = DimStyle.Render("Loading\u2026")
+		}
+		picContentH := leftH - 3 // header + border
+		if picContentH < 1 {
+			picContentH = 1
+		}
+		picLines := strings.Split(picRaw, "\n")
+		if len(picLines) > picContentH {
+			picLines = picLines[:picContentH]
+		}
+		for len(picLines) < picContentH {
+			picLines = append(picLines, "")
+		}
+		header := S.Label.Width(photoW - 4).MaxWidth(photoW - 4).Inline(true).Render("Photo")
+		inner := lipgloss.JoinVertical(lipgloss.Left, header, strings.Join(picLines, "\n"))
+		picBox := drawBorderedBox(inner, photoW+1)
+		// Force photo box height to exactly leftH using Place.
+		picBox = lipgloss.Place(photoW+1, leftH, lipgloss.Top, lipgloss.Left, picBox)
+		m.partnerPicW = photoW - 3
+		m.partnerPicH = picContentH
+		if m.partnerPicW < 25 {
+			m.partnerPicW = 25
+		}
+		if m.partnerPicH < 4 {
+			m.partnerPicH = 4
+		}
+		// Trigger resize if terminal dimensions changed (handled in handlePartnerUpdate).
+		block = lipgloss.JoinHorizontal(lipgloss.Top, leftCol, picBox)
+	} else {
+		block = leftCol
+	}
+
 	if w > totalW+2 {
 		block = PartnerBlock.Width(w).Render(block)
 	}

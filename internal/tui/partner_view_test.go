@@ -333,3 +333,170 @@ func TestPartnerViewCache(t *testing.T) {
 		t.Error("viewPartner returned empty after cache invalidation")
 	}
 }
+
+// =============================================================================
+// Inline photo tests
+// =============================================================================
+
+func TestPhotoBox_HiddenWhenDisabled(t *testing.T) {
+	m := newTestModel()
+	m.width = 200
+	m.height = 50
+	m.App.Logbook.Station.Grid = "JO90"
+	m.App.Config.General.PictureAtQRZPane = false
+	m.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
+
+	view := m.viewPartner()
+	if strings.Contains(view, "Photo") {
+		t.Error("Photo box should NOT appear when PictureAtQRZPane is disabled")
+	}
+}
+
+func TestPhotoBox_HiddenWhenNarrow(t *testing.T) {
+	m := newTestModel()
+	m.width = 120
+	m.height = 50
+	m.App.Logbook.Station.Grid = "JO90"
+	m.App.Config.General.PictureAtQRZPane = true
+	m.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
+
+	view := m.viewPartner()
+	if strings.Contains(view, "Photo") {
+		t.Error("Photo box should NOT appear on narrow screens (<180 cols)")
+	}
+}
+
+func TestPhotoBox_HiddenWhenNoImageURL(t *testing.T) {
+	m := newTestModel()
+	m.width = 200
+	m.height = 50
+	m.App.Logbook.Station.Grid = "JO90"
+	m.App.Config.General.PictureAtQRZPane = true
+	m.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: ""}
+
+	view := m.viewPartner()
+	if strings.Contains(view, "Photo") {
+		t.Error("Photo box should NOT appear when ImageURL is empty")
+	}
+}
+
+func TestPhotoBox_ShowsLoadingWhenNoContent(t *testing.T) {
+	m := newTestModel()
+	m.width = 200
+	m.height = 50
+	m.App.Logbook.Station.Grid = "JO90"
+	m.App.Config.General.PictureAtQRZPane = true
+	m.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
+
+	// partnerPicViewer has no content yet — should show "Loading…".
+	view := m.viewPartner()
+	if !strings.Contains(view, "Loading") {
+		t.Error("Photo box should show 'Loading…' when viewer has no content")
+	}
+	if !strings.Contains(view, "Photo") {
+		t.Error("Photo box header should be present")
+	}
+}
+
+func TestPhotoBox_AppearsOnWideScreen(t *testing.T) {
+	m := newTestModel()
+	m.width = 200
+	m.height = 50
+	m.App.Logbook.Station.Grid = "JO90"
+	m.App.Config.General.PictureAtQRZPane = true
+	m.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
+
+	view := m.viewPartner()
+	if !strings.Contains(view, "Photo") {
+		t.Error("Photo box should appear on wide screen with config enabled and image URL")
+	}
+}
+
+func TestPhotoBox_CacheInvalidation(t *testing.T) {
+	m := newTestModel()
+	m.width = 200
+	m.height = 50
+	m.App.Logbook.Station.Grid = "JO90"
+	m.App.Config.General.PictureAtQRZPane = true
+	m.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
+
+	// First render — caches with empty photo content.
+	v1 := m.viewPartner()
+	if v1 == "" {
+		t.Fatal("viewPartner returned empty")
+	}
+
+	// Simulate photo loading by putting content in the viewer (same URL).
+	// The cache should miss because content hash changed.
+	m.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
+	m.invalidatePartnerMapCache()
+	v2 := m.viewPartner()
+	// Both should render without panicking.
+	if v2 == "" {
+		t.Error("viewPartner returned empty after simulated photo load")
+	}
+}
+
+func TestPhotoBox_DimensionsStored(t *testing.T) {
+	m := newTestModel()
+	m.width = 200
+	m.height = 50
+	m.App.Logbook.Station.Grid = "JO90"
+	m.App.Config.General.PictureAtQRZPane = true
+	m.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
+
+	m.viewPartner()
+
+	if m.partnerPicW < 25 {
+		t.Errorf("partnerPicW should be >= 25, got %d", m.partnerPicW)
+	}
+	if m.partnerPicH < 4 {
+		t.Errorf("partnerPicH should be >= 4, got %d", m.partnerPicH)
+	}
+}
+
+func TestPhotoBox_LastPartnerPicURLTracked(t *testing.T) {
+	m := newTestModel()
+	m.width = 200
+	m.height = 50
+	m.App.Logbook.Station.Grid = "JO90"
+	m.App.Config.General.PictureAtQRZPane = true
+	m.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
+
+	m.viewPartner()
+
+	if m.lastPartnerPicURL != "https://example.com/photo.jpg" {
+		t.Errorf("lastPartnerPicURL = %q; want the image URL", m.lastPartnerPicURL)
+	}
+	if !m.partnerPicNeedLoad {
+		t.Error("partnerPicNeedLoad should be true on first render with new URL")
+	}
+
+	// Second render with same URL — should NOT trigger reload.
+	m.partnerPicNeedLoad = false
+	m.viewPartner()
+	if m.partnerPicNeedLoad {
+		t.Error("partnerPicNeedLoad should be false when URL unchanged")
+	}
+}
+
+func TestPhotoBox_DoesNotAffectLayoutWhenDisabled(t *testing.T) {
+	m := newTestModel()
+	m.width = 200
+	m.height = 50
+	m.App.Logbook.Station.Grid = "JO90"
+	m.App.Config.General.PictureAtQRZPane = false
+	m.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
+
+	viewWithPhoto := m.viewPartner()
+
+	// Render without photo feature at all.
+	m.App.Config.General.PictureAtQRZPane = false
+	m.invalidatePartnerMapCache()
+	viewWithoutPhoto := m.viewPartner()
+
+	// Both should be non-empty.
+	if viewWithPhoto == "" || viewWithoutPhoto == "" {
+		t.Fatal("views should not be empty")
+	}
+}

@@ -81,48 +81,56 @@ const (
 )
 
 type Model struct {
-	App             *app.App
-	screen          screenKind
-	fields          [fieldCount]textinput.Model
-	focus           field
-	qsos            []qso.QSO
-	toasts          *ToastQueue
-	err             error
-	width           int
-	height          int
-	quitting        bool
-	rigConnected    bool
-	rigFreq         float64
-	rigMode         string
-	rigPower        float64
-	rigBlink        bool
-	rigSkipTicks    int
-	rigPolling      bool
-	dateTimeAuto    bool
-	tickCount       int
-	inetOnline      bool
-	wsjtxOnline     bool
-	wsjtxTx         bool   // true when WSJT-X is transmitting (from StatusMessage)
-	wsjtxTxMsg      string // last TX message from WSJT-X (e.g. "CQ SP9XXX JO90")
-	wsjtxLastSeen   time.Time
-	wsjtxStatus     string
-	needRefresh     bool
-	pendingADIFs    []string // queued WSJT-X ADIF records — processed on tick
-	pendingStatus   statusPending
-	adifMu          sync.Mutex
-	chooser         *LogbookChooser
-	rigChooser      *RigChooser
-	configMenu      *GeneralMenu
-	callbookMenu    *CallbookMenu
-	integrationMenu *IntegrationMenu
-	notifMenu       *NotificationsMenu
-	mainMenu        *MainMenu
-	logViewer       *LogViewer
-	logbookEditor   *LogbookEditor
-	imageViewer     pictureurl.Model // terminal image viewer for partner photos
-	lastImageErr    error            // dedup image error logging
-	mapView         *mapRenderer     // embedded world map renderer
-	confirm         *DialogModel     // active confirmation dialog (quit, etc.)
+	App                *app.App
+	screen             screenKind
+	fields             [fieldCount]textinput.Model
+	focus              field
+	qsos               []qso.QSO
+	toasts             *ToastQueue
+	err                error
+	width              int
+	height             int
+	quitting           bool
+	rigConnected       bool
+	rigFreq            float64
+	rigMode            string
+	rigPower           float64
+	rigBlink           bool
+	rigSkipTicks       int
+	rigPolling         bool
+	dateTimeAuto       bool
+	tickCount          int
+	inetOnline         bool
+	wsjtxOnline        bool
+	wsjtxTx            bool   // true when WSJT-X is transmitting (from StatusMessage)
+	wsjtxTxMsg         string // last TX message from WSJT-X (e.g. "CQ SP9XXX JO90")
+	wsjtxLastSeen      time.Time
+	wsjtxStatus        string
+	needRefresh        bool
+	pendingADIFs       []string // queued WSJT-X ADIF records — processed on tick
+	pendingStatus      statusPending
+	adifMu             sync.Mutex
+	chooser            *LogbookChooser
+	rigChooser         *RigChooser
+	configMenu         *GeneralMenu
+	callbookMenu       *CallbookMenu
+	integrationMenu    *IntegrationMenu
+	notifMenu          *NotificationsMenu
+	mainMenu           *MainMenu
+	logViewer          *LogViewer
+	logbookEditor      *LogbookEditor
+	imageViewer        pictureurl.Model // terminal image viewer for partner photos
+	lastImageErr       error            // dedup image error logging
+	lastImageURL       string           // track photo URL to detect partner changes
+	lastPartnerPicURL  string           // track inline photo URL on Partner page
+	partnerPicViewer   pictureurl.Model // inline photo viewer for Partner page (wide screens)
+	partnerPicNeedLoad bool             // set when photo URL changes; consumed by Update
+	partnerPicW        int              // photo box content width (computed in View, used in Update)
+	partnerPicH        int              // photo box content height
+	partnerPicLastW    int              // last SetSize width sent to viewer
+	partnerPicLastH    int              // last SetSize height sent to viewer
+	mapView            *mapRenderer     // embedded world map renderer
+	confirm            *DialogModel     // active confirmation dialog (quit, etc.)
 
 	// PSK Reporter.
 
@@ -288,6 +296,11 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 		UserAgent:  "CQOps/1.0 (ham-radio-logger)",
 		HTTPClient: &http.Client{Transport: transport, Timeout: 15 * time.Second},
 	})
+	m.partnerPicViewer = pictureurl.NewWithConfig(pictureurl.Config{
+		CacheLimit: 4,
+		UserAgent:  "CQOps/1.0 (ham-radio-logger)",
+		HTTPClient: &http.Client{Transport: transport, Timeout: 15 * time.Second},
+	})
 	m.mapView = newMapRenderer()
 	m.pskFilterMins = pskFilterSteps[0] // default 5 min
 	if dir, err := config.CacheDir(); err == nil {
@@ -405,6 +418,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = m.handleTick(cmd)
 	}
 
+	// Inline partner photo viewer — process its messages globally so
+	// loads complete regardless of which screen is active.
+	if c := m.partnerPicViewer.Update(msg); c != nil {
+		cmd = tea.Batch(cmd, c)
+	}
+
 	// Async result messages (internet, Wavelog, flrig)
 	if m.handleAsyncMessages(msg) {
 		if _, ok := msg.(flrigResultMsg); ok {
@@ -430,10 +449,30 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case qrzResultMsg:
 		m.fillQRZData(r)
 		cmd = tea.Batch(cmd, m.updateFilteredTable())
+		if m.partnerPicNeedLoad {
+			m.partnerPicNeedLoad = false
+			w := m.partnerPicW
+			h := m.partnerPicH
+			if w < 25 {
+				w = 40
+			}
+			if h < 4 {
+				h = 15
+			}
+			cmd = tea.Batch(cmd, m.partnerPicViewer.SetSize(w, h),
+				m.partnerPicViewer.SetURL(m.lastPartnerPicURL))
+		}
 		return m, cmd
 	case wlResultMsg:
 		m.fillWLData(r)
 		return m, cmd
+	}
+
+	// Deferred pending requests (QRZ lookup, WL lookup, QSO refresh) —
+	// must run before screen-specific routing so they work regardless of
+	// which screen is active.
+	if pendingCmd, handled := m.handlePendingRequests(cmd); handled {
+		return m, pendingCmd
 	}
 
 	// Screen-specific routing
@@ -458,6 +497,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if keyMsg, ok := msg.(tea.KeyPressMsg); ok && keyMsg.String() == "esc" {
 			m.screen = screenPartner
 			return m, cmd
+		}
+		// Detect new partner photo URL while viewing image.
+		if m.partnerData != nil && m.partnerData.ImageURL != "" &&
+			m.partnerData.ImageURL != m.lastImageURL {
+			m.lastImageURL = m.partnerData.ImageURL
+			w := m.width
+			h := contentHeight(m.height)
+			if w < 20 {
+				w = 80
+			}
+			if h < 10 {
+				h = 10
+			}
+			cmd = tea.Batch(cmd, m.imageViewer.SetSize(w, h-1), m.imageViewer.SetURL(m.partnerData.ImageURL))
 		}
 		// Log image errors once and show toast.
 		if err := m.imageViewer.Err(); err != nil && m.lastImageErr != err {
@@ -503,11 +556,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, cmd
 		}
-	}
-
-	// Deferred pending requests
-	if pendingCmd, handled := m.handlePendingRequests(cmd); handled {
-		return m, pendingCmd
 	}
 
 	return m, cmd
@@ -594,15 +642,24 @@ func (m *Model) View() tea.View {
 // viewImage renders the partner photo full-screen.
 func (m *Model) viewImage(l Layout) string {
 	content := m.imageViewer.View().Content
-	if m.imageViewer.Err() != nil {
-		err := m.imageViewer.Err()
-		msg := err.Error()
-		if strings.Contains(msg, "unexpected Content-Type") {
-			msg = "QRZ photo not available — unsupported format"
-		} else if strings.Contains(msg, "no such host") {
-			msg = "Cannot reach image server"
-		} else if strings.Contains(msg, "timeout") {
-			msg = "Image download timed out"
+	if m.imageViewer.Err() != nil || content == "" {
+		msg := ""
+		if m.imageViewer.Err() != nil {
+			err := m.imageViewer.Err()
+			msg = err.Error()
+			if strings.Contains(msg, "unexpected Content-Type") {
+				msg = "QRZ photo not available — unsupported format"
+			} else if strings.Contains(msg, "no such host") {
+				msg = "Cannot reach image server"
+			} else if strings.Contains(msg, "timeout") {
+				msg = "Image download timed out"
+			}
+		}
+		if msg == "" && m.partnerData != nil {
+			msg = "No photo for " + m.partnerData.Callsign
+		}
+		if msg == "" {
+			msg = "No image"
 		}
 		content = lipgloss.NewStyle().
 			Width(l.TerminalW).

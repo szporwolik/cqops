@@ -14,6 +14,7 @@ type GeneralMenu struct {
 	tzIndex      int
 	renderMap    bool
 	drawGrayline bool
+	pictureAtQRZ bool
 	cursor       int
 	done         bool
 	saved        bool
@@ -44,6 +45,7 @@ func NewGeneralMenu(cfg *config.Config) *GeneralMenu {
 		tzIndex:      tzIdx,
 		renderMap:    cfg.General.RenderMap,
 		drawGrayline: cfg.General.DrawGrayline,
+		pictureAtQRZ: cfg.General.PictureAtQRZPane,
 	}
 }
 
@@ -67,10 +69,10 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if gm.cursor > 0 {
 				gm.cursor--
 			} else {
-				gm.cursor = 3
+				gm.cursor = 4
 			}
 		case "down", "j":
-			if gm.cursor < 3 {
+			if gm.cursor < 4 {
 				gm.cursor++
 			} else {
 				gm.cursor = 0
@@ -93,6 +95,8 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				gm.renderMap = !gm.renderMap
 			case 3:
 				gm.drawGrayline = !gm.drawGrayline
+			case 4:
+				gm.pictureAtQRZ = !gm.pictureAtQRZ
 			}
 		case "enter":
 			// no-op: Enter does not save
@@ -125,62 +129,55 @@ func (gm *GeneralMenu) View() tea.View {
 
 	var b strings.Builder
 
-	// Distance unit row
+	// Row 0: Distance unit — shows current value, toggles on space.
 	unitVal := "Kilometers (km)"
 	if gm.distanceUnit == "mi" {
 		unitVal = "Miles (mi)"
 	}
-	b.WriteString(formCheckbox("Distance unit", unitVal, gm.cursor == 0, boxW))
-	b.WriteString("\n")
+	gm.renderSettingRow(&b, boxW, 0, "Distance unit", unitVal)
 
-	// Timezone row
-	b.WriteString(formCheckbox("Timezone", gm.timezone, gm.cursor == 1, boxW))
-	b.WriteString("\n")
+	// Row 1: Timezone — shows current value, cycles on space.
+	gm.renderSettingRow(&b, boxW, 1, "Timezone", gm.timezone)
 
-	// Render map row — checkbox style.
-	checkbox := "[ ]"
-	if gm.renderMap {
-		checkbox = "[x]"
-	}
-	prefix := "  "
-	lbl := S.FormLabelWide.Align(lipgloss.Left).Render("Render map")
-	if gm.cursor == 2 {
-		prefix = S.FormPrefixOn.Render("> ")
-		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render("Render map")
-		checkbox = CursorStyle.Render(checkbox)
-	}
-	b.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", checkbox), boxW))
-
-	// Draw grayline row — no trailing newline on last item.
-	b.WriteString("\n")
-	checkbox = "[ ]"
-	if gm.drawGrayline {
-		checkbox = "[x]"
-	}
-	prefix = "  "
-	lbl = S.FormLabelWide.Align(lipgloss.Left).Render("Draw grayline")
-	if gm.cursor == 3 {
-		prefix = S.FormPrefixOn.Render("> ")
-		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render("Draw grayline")
-		checkbox = CursorStyle.Render(checkbox)
-	}
-	b.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", checkbox), boxW))
+	// Row 2-4: Checkbox options.
+	gm.renderCheckbox(&b, boxW, 2, "Render map", gm.renderMap)
+	gm.renderCheckbox(&b, boxW, 3, "Draw grayline", gm.drawGrayline)
+	gm.renderCheckbox(&b, boxW, 4, "Picture at QRZ pane", gm.pictureAtQRZ)
 
 	body := drawMenuWithHeader("Configuration \u2014 General Settings", b.String(), w)
 	return tea.NewView(fillBody(body, contentH))
 }
 
-// formCheckbox renders a label + value row for toggle-style menu items.
-// When focused, the "> " cursor prefix appears.
-func formCheckbox(label, value string, focused bool, width int) string {
-	prefix := "  "
-	lbl := S.FormLabelWide.Align(lipgloss.Left).Render(label)
-	val := ValueStyle.Render(value)
-	if focused {
-		prefix = S.FormPrefixOn.Render("> ")
-		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(label)
-		val = CursorStyle.Render(value)
+func (gm *GeneralMenu) renderCheckbox(b *strings.Builder, boxW, cursor int, label string, checked bool) {
+	checkbox := "[ ]"
+	if checked {
+		checkbox = "[x]"
 	}
-	line := lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)
-	return padOrTrunc(line, width)
+	prefix := "  "
+	lbl := S.FormLabelGen.Align(lipgloss.Left).Render(label)
+	if gm.cursor == cursor {
+		prefix = S.FormPrefixOn.Render("> ")
+		lbl = S.FormFocusedGen.Align(lipgloss.Left).Render(label)
+		checkbox = CursorStyle.Render(checkbox)
+	}
+	b.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", checkbox), boxW))
+	b.WriteString("\n")
+}
+
+func (gm *GeneralMenu) renderSettingRow(b *strings.Builder, boxW, cursor int, label, value string) {
+	prefix := "  "
+	lbl := S.FormLabelGen.Align(lipgloss.Left).Render(label)
+	// Values get remaining space: boxW minus 2 (prefix) minus 22 (label) minus 1 (space) minus 6 (border+padding).
+	valW := boxW - 2 - 22 - 1 - 6
+	if valW < 8 {
+		valW = 8
+	}
+	val := ValueStyle.Width(valW).MaxWidth(valW).Inline(true).Render(value)
+	if gm.cursor == cursor {
+		prefix = S.FormPrefixOn.Render("> ")
+		lbl = S.FormFocusedGen.Align(lipgloss.Left).Render(label)
+		val = CursorStyle.Width(valW).MaxWidth(valW).Inline(true).Render(value)
+	}
+	b.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val), boxW))
+	b.WriteString("\n")
 }

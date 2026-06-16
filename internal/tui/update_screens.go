@@ -63,6 +63,7 @@ func (m *Model) handleConfigUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd
 			m.App.Config.General.Timezone = m.configMenu.timezone
 			m.App.Config.General.RenderMap = m.configMenu.renderMap
 			m.App.Config.General.DrawGrayline = m.configMenu.drawGrayline
+			m.App.Config.General.PictureAtQRZPane = m.configMenu.pictureAtQRZ
 			m.saveConfig("Settings saved")
 			m.screen = screenMainMenu
 		}
@@ -186,6 +187,28 @@ func (m *Model) handleMainMenuUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.C
 }
 
 func (m *Model) handlePartnerUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	// Resize inline photo viewer when dimensions change (terminal resize etc).
+	w := m.partnerPicW
+	h := m.partnerPicH
+	if w >= 25 && h >= 4 && (w != m.partnerPicLastW || h != m.partnerPicLastH) {
+		m.partnerPicLastW = w
+		m.partnerPicLastH = h
+		cmd = tea.Batch(cmd, m.partnerPicViewer.SetSize(w, h))
+	}
+	// Dispatch inline photo load when partner/URL changes.
+	if m.partnerPicNeedLoad {
+		m.partnerPicNeedLoad = false
+		if w < 25 {
+			w = 25
+		}
+		if h < 4 {
+			h = 4
+		}
+		cmd = tea.Batch(cmd,
+			m.partnerPicViewer.SetSize(w, h),
+			m.partnerPicViewer.SetURL(m.lastPartnerPicURL),
+		)
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height

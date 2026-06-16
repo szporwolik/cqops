@@ -17,11 +17,12 @@ type Config struct {
 }
 
 type GeneralConfig struct {
-	Timezone      string              `yaml:"timezone"`
-	DistanceUnit  string              `yaml:"distance_unit,omitempty"`
-	RenderMap     bool                `yaml:"render_map,omitempty"`
-	DrawGrayline  bool                `yaml:"draw_grayline,omitempty"`
-	Notifications NotificationsConfig `yaml:"notifications"`
+	Timezone         string              `yaml:"timezone"`
+	DistanceUnit     string              `yaml:"distance_unit,omitempty"`
+	RenderMap        bool                `yaml:"render_map,omitempty"`
+	DrawGrayline     bool                `yaml:"draw_grayline,omitempty"`
+	PictureAtQRZPane bool                `yaml:"picture_at_qrz_pane,omitempty"`
+	Notifications    NotificationsConfig `yaml:"notifications"`
 }
 
 type NotificationsConfig struct {

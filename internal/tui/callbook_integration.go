@@ -130,6 +130,9 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 	}
 	m.partnerData = d
 	m.invalidatePartnerMapCache()
+	if d.ImageURL != "" && d.ImageURL != m.lastPartnerPicURL {
+		m.partnerPicNeedLoad = true
+	}
 	if d.Name != "" {
 		m.fields[fieldName].SetValue(d.Name)
 	}
