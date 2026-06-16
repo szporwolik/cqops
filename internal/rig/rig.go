@@ -15,4 +15,5 @@ type RigStatus struct {
 	Mode         string
 	RawMode      string
 	Power        float64
+	PTT          bool // true when rig is transmitting
 }

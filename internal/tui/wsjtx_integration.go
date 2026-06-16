@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	adif "github.com/farmergreg/adif/v5"
@@ -18,8 +19,11 @@ import (
 // =============================================================================
 
 // applyWSJTXStatus applies a WSJT-X status update to the QSO form fields.
-func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode, report string) {
+func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode, report, txMessage string) {
 	m.wsjtxOnline = true
+	m.wsjtxTxMsg = txMessage
+	m.wsjtxLastSeen = time.Now()
+	m.cachedStatus = ""
 	if call != "" {
 		prevCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
 		newCall := strings.ToUpper(call)

@@ -46,10 +46,11 @@ func (f *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 		freqHz int64
 		mode   string
 		pwr    float64
+		ptt    bool
 		wg     sync.WaitGroup
 	)
 
-	wg.Add(3)
+	wg.Add(4)
 
 	go func() {
 		defer wg.Done()
@@ -78,6 +79,15 @@ func (f *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 		pwr = v
 	}()
 
+	go func() {
+		defer wg.Done()
+		v, err := f.getPTT(ctx)
+		if err != nil {
+			return
+		}
+		ptt = v
+	}()
+
 	wg.Wait()
 
 	if freqHz == 0 {
@@ -95,6 +105,7 @@ func (f *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 	}
 
 	rs.Power = pwr
+	rs.PTT = ptt
 
 	if rs.FrequencyMHz > 0 {
 		rs.Band = qso.DeriveBand(rs.FrequencyMHz)
@@ -133,6 +144,15 @@ func (f *Client) getPower(ctx context.Context) (float64, error) {
 		return 0, fmt.Errorf("parse power %q: %w", v, scanErr)
 	}
 	return pwr, nil
+}
+
+func (f *Client) getPTT(ctx context.Context) (bool, error) {
+	v, err := f.xmlrpcCall(ctx, "rig.get_ptt")
+	if err != nil {
+		return false, err
+	}
+	v = strings.TrimSpace(v)
+	return v == "1" || strings.EqualFold(v, "true"), nil
 }
 
 func (f *Client) xmlrpcCall(ctx context.Context, method string) (string, error) {

@@ -23,7 +23,7 @@ type Listener struct {
 	stop       chan struct{}
 	wg         sync.WaitGroup
 	OnADIF     func(string)
-	OnStatus   func(string, string, uint64, string, string, string)
+	OnStatus   func(string, string, uint64, string, string, string, string) // call, grid, freqHz, mode, submode, report, txMessage
 }
 
 func NewListener() *Listener {
@@ -140,7 +140,7 @@ func (l *Listener) eventLoop(gen uint64, msgCh chan interface{}, errCh chan erro
 				// No callback needed — heartbeat is informational.
 			case wsjtx.StatusMessage:
 				if onStatus := l.snapshotOnStatus(gen); onStatus != nil {
-					onStatus(m.DxCall, m.DxGrid, m.DialFrequency, m.Mode, m.SubMode, m.Report)
+					onStatus(m.DxCall, m.DxGrid, m.DialFrequency, m.Mode, m.SubMode, m.Report, m.TxMessage)
 				}
 			case wsjtx.DecodeMessage:
 				// Decode messages carry no callsign/freq data — just mark activity.
@@ -184,7 +184,7 @@ func (l *Listener) snapshotOnADIF(gen uint64) func(string) {
 }
 
 // snapshotOnStatus returns the OnStatus callback under the same generation guard.
-func (l *Listener) snapshotOnStatus(gen uint64) func(string, string, uint64, string, string, string) {
+func (l *Listener) snapshotOnStatus(gen uint64) func(string, string, uint64, string, string, string, string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if !l.active || l.generation != gen {

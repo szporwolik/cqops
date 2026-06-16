@@ -3,7 +3,11 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 
+	"charm.land/bubbles/v2/textinput"
+	"github.com/szporwolik/cqops/internal/app"
+	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/qso"
 )
 
@@ -203,3 +207,113 @@ func TestParseWSJTXADIFSource(t *testing.T) {
 
 // Verify qso types import
 var _ = qso.NewQSO
+
+// =============================================================================
+// WSJT-X TX message handling tests
+// =============================================================================
+
+func TestApplyWSJTXStatus_StoresTxMessage(t *testing.T) {
+	m := &Model{}
+	m.App = &app.App{Config: &config.Config{}, Logbook: &config.Logbook{}}
+	m.fields = [fieldCount]textinput.Model{}
+	for i := range m.fields {
+		m.fields[i] = newTextinput()
+	}
+
+	m.applyWSJTXStatus("SP9ABC", "JO90", 14074000, "FT8", "", "-12", "CQ SP9XXX JO90")
+
+	if !m.wsjtxOnline {
+		t.Error("wsjtxOnline should be true after status")
+	}
+	if m.wsjtxTxMsg != "CQ SP9XXX JO90" {
+		t.Errorf("wsjtxTxMsg = %q; want 'CQ SP9XXX JO90'", m.wsjtxTxMsg)
+	}
+	if m.wsjtxLastSeen.IsZero() {
+		t.Error("wsjtxLastSeen should be set")
+	}
+	if m.cachedStatus != "" {
+		t.Error("cachedStatus should be invalidated (empty)")
+	}
+}
+
+func TestApplyWSJTXStatus_EmptyTxMessage(t *testing.T) {
+	m := &Model{}
+	m.App = &app.App{Config: &config.Config{}, Logbook: &config.Logbook{}}
+	m.fields = [fieldCount]textinput.Model{}
+	for i := range m.fields {
+		m.fields[i] = newTextinput()
+	}
+
+	m.wsjtxOnline = true
+	m.wsjtxTxMsg = "CQ SP9XXX JO90"
+	m.applyWSJTXStatus("", "", 0, "", "", "", "")
+
+	if m.wsjtxTxMsg != "" {
+		t.Errorf("wsjtxTxMsg should be cleared to empty, got %q", m.wsjtxTxMsg)
+	}
+	if !m.wsjtxOnline {
+		t.Error("wsjtxOnline should remain true even with empty message")
+	}
+}
+
+func TestWSJTXWatchdog_Expires(t *testing.T) {
+	m := &Model{}
+	m.wsjtxOnline = true
+	m.wsjtxTxMsg = "CQ SP9XXX JO90"
+	m.wsjtxLastSeen = time.Now().Add(-20 * time.Second)
+
+	// Simulate watchdog check.
+	if m.wsjtxOnline && time.Since(m.wsjtxLastSeen) > 15*time.Second {
+		m.wsjtxOnline = false
+		m.wsjtxTxMsg = ""
+		m.cachedStatus = ""
+	}
+
+	if m.wsjtxOnline {
+		t.Error("watchdog should set wsjtxOnline to false after 15s of inactivity")
+	}
+	if m.wsjtxTxMsg != "" {
+		t.Error("watchdog should clear wsjtxTxMsg")
+	}
+	if m.cachedStatus != "" {
+		t.Error("watchdog should invalidate cachedStatus")
+	}
+}
+
+func TestWSJTXWatchdog_NotExpired(t *testing.T) {
+	m := &Model{}
+	m.wsjtxOnline = true
+	m.wsjtxTxMsg = "CQ SP9XXX JO90"
+	m.wsjtxLastSeen = time.Now()
+
+	if m.wsjtxOnline && time.Since(m.wsjtxLastSeen) > 15*time.Second {
+		m.wsjtxOnline = false
+	}
+
+	if !m.wsjtxOnline {
+		t.Error("watchdog should NOT expire when last seen is recent")
+	}
+	if m.wsjtxTxMsg != "CQ SP9XXX JO90" {
+		t.Error("tx message should be preserved when watchdog does not expire")
+	}
+}
+
+func TestApplyWSJTXStatus_DirectedCall(t *testing.T) {
+	m := &Model{}
+	m.App = &app.App{Config: &config.Config{}, Logbook: &config.Logbook{}}
+	m.fields = [fieldCount]textinput.Model{}
+	for i := range m.fields {
+		m.fields[i] = newTextinput()
+	}
+
+	m.applyWSJTXStatus("K1ABC", "FN42", 21074000, "FT8", "", "-05", "K1ABC SP9XXX -05")
+
+	if m.wsjtxTxMsg != "K1ABC SP9XXX -05" {
+		t.Errorf("wsjtxTxMsg = %q; want directed call message", m.wsjtxTxMsg)
+	}
+	// Verify the call field was updated.
+	call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+	if call != "K1ABC" {
+		t.Errorf("call field = %q; want K1ABC", call)
+	}
+}

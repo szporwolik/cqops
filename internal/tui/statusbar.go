@@ -45,7 +45,11 @@ func (m *Model) headerView() string {
 		rightParts = append(rightParts, statusDotStyled(m.wsjtxOnline, "WSJT"))
 	}
 	if cfgRig, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok && cfgRig.FlrigEnabled {
-		rightParts = append(rightParts, statusDotStyled(m.rigConnected, "Rig"))
+		if m.rigPTT {
+			rightParts = append(rightParts, txDotStyle.Render("TX")+" ")
+		} else {
+			rightParts = append(rightParts, statusDotStyled(m.rigConnected, "Rig"))
+		}
 	}
 	wl := m.App.Logbook.Wavelog
 	if wl != nil && wl.Enabled {
@@ -57,6 +61,17 @@ func (m *Model) headerView() string {
 	)
 
 	right := lipgloss.JoinHorizontal(lipgloss.Top, rightParts...)
+
+	// Build WSJT-X TX message segment, if applicable.
+	var txMsg string
+	if m.wsjtxTxMsg != "" && m.App.Config.WSJTX.Enabled && m.wsjtxOnline {
+		style := S.StatusValue
+		if m.rigPTT {
+			style = txDotStyle
+		}
+		txMsg = style.Render(m.wsjtxTxMsg)
+	}
+	txW := lipgloss.Width(txMsg)
 
 	// Show local time only when there is room to spare.
 	leftW := lipgloss.Width(left)
@@ -70,8 +85,7 @@ func (m *Model) headerView() string {
 	)
 	ltW := lipgloss.Width(ltSegment)
 	if fillerW >= ltW+6 {
-		// Enough room — rebuild right side with LT before UTC.
-		rightParts = rightParts[:len(rightParts)-2] // drop UTC label + time
+		rightParts = rightParts[:len(rightParts)-2]
 		rightParts = append(rightParts,
 			utcLabelStyle.Render("LT"),
 			S.StatusTime.Render(localTime)+" ",
@@ -82,12 +96,26 @@ func (m *Model) headerView() string {
 		rightW = lipgloss.Width(right)
 	}
 	fillerW = m.width - leftW - rightW
-	if fillerW < 1 {
-		fillerW = 1
+
+	// Show WSJT-X TX message in the filler space when there is room.
+	var filler string
+	if txMsg != "" && fillerW >= txW+4 {
+		pad := (fillerW - txW) / 2
+		padR := fillerW - txW - pad
+		filler = strings.Repeat(" ", pad) + txMsg + strings.Repeat(" ", padR)
+	} else {
+		if fillerW < 1 {
+			fillerW = 1
+		}
+		filler = strings.Repeat(" ", fillerW)
 	}
 
-	return left + strings.Repeat(" ", fillerW) + right
+	return left + filler + right
 }
+
+// txDotStyle — transmit indicator, uses accent color to avoid confusion with
+// the red "disconnected" convention used by statusDotOffStyle.
+var txDotStyle = lipgloss.NewStyle().Foreground(P.Accent).Bold(true)
 
 // statusDotStyled renders an integration indicator dot with label.
 func statusDotStyled(on bool, label string) string {

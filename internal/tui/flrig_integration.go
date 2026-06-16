@@ -54,6 +54,7 @@ type flrigResultMsg struct {
 	mode      string
 	band      string
 	power     float64
+	ptt       bool
 	err       string
 }
 
@@ -70,7 +71,7 @@ func (m *Model) flrigStatusCmd() tea.Cmd {
 		if err != nil {
 			return flrigResultMsg{err: err.Error()}
 		}
-		return flrigResultMsg{connected: s.Connected, freq: s.FrequencyMHz, mode: s.Mode, band: s.Band, power: s.Power}
+		return flrigResultMsg{connected: s.Connected, freq: s.FrequencyMHz, mode: s.Mode, band: s.Band, power: s.Power, ptt: s.PTT}
 	}
 }
 
@@ -96,16 +97,25 @@ func (m *Model) pollFlrig() tea.Cmd {
 // applyFlrigResult applies a flrig status result to the model state and QSO form.
 func (m *Model) applyFlrigResult(r flrigResultMsg) {
 	m.rigPolling = false
-	if r.err != "" {
+	if r.err != "" || !r.connected {
+		if m.rigPTT {
+			applog.Info("flrig: PTT OFF (disconnected)")
+		}
 		m.rigConnected = false
-		return
-	}
-	if !r.connected {
-		m.rigConnected = false
+		m.rigPTT = false
+		m.cachedStatus = ""
 		return
 	}
 	m.rigConnected = true
+	prevPTT := m.rigPTT
+	m.rigPTT = r.ptt
+	if r.ptt && !prevPTT {
+		applog.Info("flrig: PTT ON (transmitting)")
+	} else if !r.ptt && prevPTT {
+		applog.Info("flrig: PTT OFF")
+	}
 	m.rigFreq = r.freq
+	m.cachedStatus = ""
 	if !m.wsjtxOnline {
 		m.fields[fieldFreq].SetValue(fmt.Sprintf("%.6f", r.freq))
 	}

@@ -93,6 +93,7 @@ type Model struct {
 	height          int
 	quitting        bool
 	rigConnected    bool
+	rigPTT          bool // true when rig is transmitting
 	rigFreq         float64
 	rigMode         string
 	rigPower        float64
@@ -103,6 +104,8 @@ type Model struct {
 	tickCount       int
 	inetOnline      bool
 	wsjtxOnline     bool
+	wsjtxTxMsg      string // last TX message from WSJT-X (e.g. "CQ SP9XXX JO90")
+	wsjtxLastSeen   time.Time
 	wsjtxStatus     string
 	needRefresh     bool
 	pendingADIFs    []string // queued WSJT-X ADIF records — processed on tick
@@ -228,9 +231,9 @@ type wlResultMsg struct {
 }
 type inetResultMsg bool
 type statusPending struct {
-	call, grid, mode, submode, report string
-	freq                              uint64
-	hasData                           bool
+	call, grid, mode, submode, report, txMessage string
+	freq                                         uint64
+	hasData                                      bool
 }
 
 func New(a *app.App, initialQSOS []qso.QSO) *Model {
@@ -319,9 +322,9 @@ func (m *Model) Init() tea.Cmd {
 		m.pendingADIFs = append(m.pendingADIFs, saved...)
 		applog.Info("WSJT-X: recovered pending ADIF records from disk", "count", len(saved))
 	}
-	m.App.WSJTX.OnStatus = func(call, grid string, freq uint64, mode, submode, report string) {
+	m.App.WSJTX.OnStatus = func(call, grid string, freq uint64, mode, submode, report, txMessage string) {
 		m.adifMu.Lock()
-		m.pendingStatus = statusPending{call: call, grid: grid, freq: freq, mode: mode, submode: submode, report: report, hasData: true}
+		m.pendingStatus = statusPending{call: call, grid: grid, freq: freq, mode: mode, submode: submode, report: report, txMessage: txMessage, hasData: true}
 		m.adifMu.Unlock()
 	}
 	if m.App.Config.WSJTX.Enabled {
