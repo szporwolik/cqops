@@ -257,7 +257,7 @@ func (cm *CallbookMenu) View() tea.View {
 		}
 	}
 
-	body := drawMenuWithHeader("Configuration \u2014 Callbook", b.String(), w)
+	body := drawMenuWithHeader("Configuration \u2014 QRZ.com", b.String(), w)
 	return tea.NewView(fillBody(body, contentH))
 }
 

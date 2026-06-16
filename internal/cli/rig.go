@@ -22,7 +22,7 @@ var rigStatusCmd = &cobra.Command{
 		}
 		defer a.Close()
 
-		fmt.Println("Rig control is configured per rig preset (F7 → Rig).")
+		fmt.Println("Rig control is configured per rig preset (C-End → Rig).")
 		fmt.Println("Use cqops logbook show <name> to see station details.")
 
 		fmt.Println("Status:   unavailable")

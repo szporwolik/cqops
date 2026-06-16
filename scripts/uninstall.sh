@@ -31,8 +31,11 @@ if command -v update-desktop-database &>/dev/null; then
     update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
 fi
 
-sed -i '/cqops/d' "${HOME}/.bashrc" 2>/dev/null || true
-echo "  Removed from ~/.bashrc"
+# Remove from shell profiles
+for rc in "${HOME}/.profile" "${HOME}/.bashrc" "${HOME}/.zshrc"; do
+    sed -i '/cqops/d' "$rc" 2>/dev/null || true
+done
+echo "  Removed from shell profiles"
 
 echo ""
 echo "CQOPS uninstalled."

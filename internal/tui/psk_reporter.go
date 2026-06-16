@@ -6,11 +6,28 @@ import (
 	"strings"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/psk"
 	"github.com/szporwolik/cqops/internal/store"
 )
+
+// pskFetchMsg is sent when an async PSK Reporter fetch completes.
+type pskFetchMsg struct {
+	reports   []psk.Report
+	fetchTime time.Time
+	err       error
+}
+
+// pskFetchCmd returns a tea.Cmd that fetches PSK data asynchronously.
+func (m *Model) pskFetchCmd() tea.Cmd {
+	call := strings.ToUpper(strings.TrimSpace(m.App.Logbook.Station.Callsign))
+	cacheDir := m.pskCacheDir
+	return func() tea.Msg {
+		reports, ft, err := psk.FetchReports(call, cacheDir)
+		return pskFetchMsg{reports: reports, fetchTime: ft, err: err}
+	}
+}
 
 // PSK Reporter time filter steps (minutes).
 var pskFilterSteps = []int{5, 15, 30, 60, 120, 360}
@@ -25,19 +42,18 @@ var pskMark10 = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)
 var pskMarkOther = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)
 
 func pskBandStyle(freqHz float64) lipgloss.Style {
-	freqkHz := freqHz / 1000
-	switch {
-	case freqkHz >= 1800 && freqkHz < 2000:
+	switch freqToBandName(freqHz) {
+	case "160m":
 		return pskMark160
-	case freqkHz >= 3500 && freqkHz < 4000:
+	case "80m":
 		return pskMark80
-	case freqkHz >= 7000 && freqkHz < 7300:
+	case "40m":
 		return pskMark40
-	case freqkHz >= 14000 && freqkHz < 14350:
+	case "20m":
 		return pskMark20
-	case freqkHz >= 21000 && freqkHz < 21450:
+	case "15m":
 		return pskMark15
-	case freqkHz >= 28000 && freqkHz < 29700:
+	case "10m":
 		return pskMark10
 	default:
 		return pskMarkOther
@@ -90,86 +106,75 @@ func (m *Model) viewPSKReporter() string {
 		return fillBody(DimStyle.Render("PSK Reporter unavailable — no internet connection"), contentHeight(m.height))
 	}
 
-	// Auto-refresh when 5 minutes have elapsed since last fetch.
-	if !m.pskLastFetch.IsZero() && time.Since(m.pskLastFetch) >= 5*time.Minute {
-		m.pskFetched = false
+	// --- Output cache: skip ALL expensive work when inputs unchanged. ---
+	// Include the grayline 5-min slot so the terminator updates without a
+	// data fetch — same logic as mapRenderer.renderBase().
+	var graySlot int
+	if m.App.Config.General.DrawGrayline {
+		now := time.Now().UTC()
+		graySlot = now.Hour()*12 + now.Minute()/5
+	}
+	sig := fmt.Sprintf("%d|%d|%s|%d|%s|%s|%d|%d|%d|%v",
+		w, m.height, call, m.pskFilterMins, m.pskBandFilter, m.pskModeFilter,
+		m.pskSelected, int(m.pskLastFetch.Unix()), graySlot, m.pskFetching)
+	if m.pskViewKey == sig && m.pskView != "" {
+		return m.pskView
 	}
 
-	// Fetch from API (disk cache guards rate limit).
-	if !m.pskFetched || m.pskLastCall != call {
-		reports, fetchTime, err := psk.FetchReports(call, m.pskCacheDir)
+	// --- Spot cache: skip SQL when filters unchanged. ---
+	spotKey := fmt.Sprintf("%s|%d|%s|%s", call, m.pskFilterMins, m.pskBandFilter, m.pskModeFilter)
+	var filtered []psk.Report
+	if m.pskSpotKey == spotKey && len(m.pskSpots) > 0 {
+		filtered = m.pskSpots
+	} else {
+		// Query SQLite for the current time window.  Never call the API from View() —
+		// fetching is always done asynchronously via pskFetchCmd / pskFetchMsg.
+		cutoff := time.Now().UTC().Add(-time.Duration(m.pskFilterMins) * time.Minute).Unix()
+		spots, err := store.QueryPSKSpots(m.App.DB, call, cutoff)
 		if err != nil {
 			return fillBody(DimStyle.Render("PSK Reporter error: "+err.Error()), contentHeight(m.height))
 		}
-		// Persist to SQLite for fast filtering across sessions.
-		var spots []store.PSKSpot
-		now := time.Now().UTC().Unix()
-		for _, r := range reports {
-			spots = append(spots, store.PSKSpot{
-				ReceiverCall: r.ReceiverCallsign,
-				ReceiverLoc:  r.ReceiverLocator,
-				Frequency:    r.Frequency,
-				SNR:          r.SNR,
-				Mode:         r.Mode,
-				FlowStart:    r.FlowStartSeconds,
-				FetchTime:    now,
-				StationCall:  call,
-			})
-		}
-		if _, err := store.InsertPSKSpots(m.App.DB, spots); err != nil {
-			// Non-fatal — data just won't persist across restarts.
-			applog.Warn("PSK Reporter: failed to store spots in DB", "error", err)
-		}
-		_ = store.PurgeOldPSKSpots(m.App.DB) // best-effort cleanup
-		m.pskLastFetch = fetchTime
-		m.pskLastCall = call
-		m.pskSelected = 0
-		m.pskFetched = true
-	}
 
-	// Query SQLite for current time window.
-	cutoff := time.Now().UTC().Add(-time.Duration(m.pskFilterMins) * time.Minute).Unix()
-	spots, err := store.QueryPSKSpots(m.App.DB, call, cutoff)
-	if err != nil {
-		return fillBody(DimStyle.Render("PSK Reporter error: "+err.Error()), contentHeight(m.height))
-	}
-
-	// Convert to psk.Report for the table/map rendering.
-	filtered := make([]psk.Report, len(spots))
-	for i, s := range spots {
-		filtered[i] = psk.Report{
-			ReceiverCallsign: s.ReceiverCall,
-			ReceiverLocator:  s.ReceiverLoc,
-			Frequency:        s.Frequency,
-			SNR:              s.SNR,
-			Mode:             s.Mode,
-			FlowStartSeconds: s.FlowStart,
-		}
-	}
-	// Sort by time descending.
-	sort.Slice(filtered, func(i, j int) bool {
-		return filtered[i].FlowStartSeconds > filtered[j].FlowStartSeconds
-	})
-
-	// Apply band filter if set.
-	if m.pskBandFilter != "" {
-		var bandFiltered []psk.Report
-		for _, r := range filtered {
-			if freqToBandName(r.Frequency) == m.pskBandFilter {
-				bandFiltered = append(bandFiltered, r)
+		// Convert to psk.Report for the table/map rendering.
+		filtered = make([]psk.Report, len(spots))
+		for i, s := range spots {
+			filtered[i] = psk.Report{
+				ReceiverCallsign: s.ReceiverCall,
+				ReceiverLocator:  s.ReceiverLoc,
+				Frequency:        s.Frequency,
+				SNR:              s.SNR,
+				Mode:             s.Mode,
+				FlowStartSeconds: s.FlowStart,
 			}
 		}
-		filtered = bandFiltered
-	}
-	// Apply mode filter if set.
-	if m.pskModeFilter != "" {
-		var modeFiltered []psk.Report
-		for _, r := range filtered {
-			if strings.EqualFold(r.Mode, m.pskModeFilter) {
-				modeFiltered = append(modeFiltered, r)
+		// Sort by time descending.
+		sort.Slice(filtered, func(i, j int) bool {
+			return filtered[i].FlowStartSeconds > filtered[j].FlowStartSeconds
+		})
+
+		// Apply band filter if set.
+		if m.pskBandFilter != "" {
+			var bandFiltered []psk.Report
+			for _, r := range filtered {
+				if freqToBandName(r.Frequency) == m.pskBandFilter {
+					bandFiltered = append(bandFiltered, r)
+				}
 			}
+			filtered = bandFiltered
 		}
-		filtered = modeFiltered
+		// Apply mode filter if set.
+		if m.pskModeFilter != "" {
+			var modeFiltered []psk.Report
+			for _, r := range filtered {
+				if strings.EqualFold(r.Mode, m.pskModeFilter) {
+					modeFiltered = append(modeFiltered, r)
+				}
+			}
+			filtered = modeFiltered
+		}
+
+		m.pskSpots = filtered
+		m.pskSpotKey = spotKey
 	}
 
 	// Clamp cursor only when there are reports.
@@ -202,7 +207,16 @@ func (m *Model) viewPSKReporter() string {
 	const fixedRows = 5
 	var tableContent string
 	if len(filtered) == 0 {
-		tableContent = DimStyle.Render(fmt.Sprintf("Nobody heard %s in the last %d minutes", call, m.pskFilterMins))
+		// Show status inside the table box to avoid layout shift.
+		var msg string
+		if m.pskFetching {
+			msg = fmt.Sprintf("Fetching PSK Reporter data for %s\u2026", call)
+		} else if !m.pskFetched {
+			msg = fmt.Sprintf("Press F5 to fetch PSK Reporter data for %s", call)
+		} else {
+			msg = fmt.Sprintf("Nobody heard %s in the last %d minutes", call, m.pskFilterMins)
+		}
+		tableContent = DimStyle.Render(msg)
 		for i := 1; i < 7; i++ {
 			tableContent += "\n"
 		}
@@ -252,19 +266,7 @@ func (m *Model) viewPSKReporter() string {
 			mapBox = m.buildPSKMap(nil, contentW, mapAvailH)
 		}
 		if mapBox != "" {
-			lines := strings.Split(mapBox, "\n")
-			for i, l := range lines {
-				lw := lipgloss.Width(l)
-				if lw > contentW {
-					lines[i] = truncateText(l, contentW)
-				} else if lw < contentW {
-					left := (contentW - lw) / 2
-					right := contentW - lw - left
-					lines[i] = strings.Repeat(" ", left) + l + strings.Repeat(" ", right)
-				}
-			}
-			mapBox = strings.Join(lines, "\n")
-			mapBox = drawBorderedBox(mapBox, mapW)
+			mapBox = centerAndBorderMap(mapBox, contentW, mapW)
 			block = lipgloss.JoinVertical(lipgloss.Left, topRow, mapBox)
 		} else {
 			block = topRow
@@ -286,7 +288,10 @@ func (m *Model) viewPSKReporter() string {
 			block = strings.Join(lines[:ch], "\n")
 		}
 	}
-	return fillBody(block, ch)
+	result := fillBody(block, ch)
+	m.pskView = result
+	m.pskViewKey = sig
+	return result
 }
 
 func (m *Model) buildPSKTable(reports []psk.Report, maxW, visibleRows int) string {
@@ -417,6 +422,10 @@ func (m *Model) buildPSKMap(reports []psk.Report, mapW, mapAvailH int) string {
 		return ""
 	}
 	ownLat, ownLon := gridToLatLon(ownGrid)
+
+	if m.mapView == nil {
+		return ""
+	}
 
 	// Get raw map image — no markers, no legend.
 	baseMap := m.mapView.BaseImage(mapW, mapAvailH, m.App.Config.General.DrawGrayline)

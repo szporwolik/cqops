@@ -9,7 +9,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
-	"github.com/szporwolik/cqops/internal/store"
 )
 
 // =============================================================================
@@ -208,6 +207,21 @@ func (m *Model) handlePartnerUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 }
 
 func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	// Trigger initial fetch when first entering the tab (not yet fetched, not already fetching).
+	if !m.pskFetched && !m.pskFetching && m.inetOnline {
+		call := strings.ToUpper(strings.TrimSpace(m.App.Logbook.Station.Callsign))
+		if call != "" {
+			m.pskFetching = true
+			return m, tea.Batch(cmd, m.pskFetchCmd())
+		}
+	}
+	// Auto-refresh: if data is older than 5 minutes, trigger a background refresh.
+	if m.pskFetched && !m.pskFetching && m.inetOnline &&
+		!m.pskLastFetch.IsZero() && time.Since(m.pskLastFetch) >= 5*time.Minute {
+		m.pskFetching = true
+		return m, tea.Batch(cmd, m.pskFetchCmd())
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -219,13 +233,11 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			m.screen = screenQSO
 			return m, cmd
 		case "f5":
-			// Refresh PSK data.
-			m.pskFetched = false
-			m.pskLastCall = ""
-			if !m.inetOnline {
-				m.toasts.Warn("PSK Reporter: no internet connection")
-			} else {
-				m.toasts.Success("PSK Reporter: refreshing\u2026")
+			// Refresh PSK data via async command — never block UI.
+			if !m.pskFetching && m.inetOnline {
+				m.pskFetching = true
+				m.toasts.Success("PSK Reporter: fetching\u2026")
+				return m, m.pskFetchCmd()
 			}
 			return m, cmd
 		case "home", "end":
@@ -305,21 +317,15 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 	return m, cmd
 }
 
-// pskAvailableBands returns the band filter options: "all" plus each band
-// that has at least one spot in the current time window.
+// pskAvailableBands returns the band filter options: "" (all) plus each band
+// that has at least one spot in the cached result set.
 func (m *Model) pskAvailableBands() []string {
-	call := strings.ToUpper(strings.TrimSpace(m.App.Logbook.Station.Callsign))
-	if call == "" {
-		return nil
-	}
-	cutoff := time.Now().UTC().Add(-time.Duration(m.pskFilterMins) * time.Minute).Unix()
-	spots, err := store.QueryPSKSpots(m.App.DB, call, cutoff)
-	if err != nil || len(spots) == 0 {
+	if len(m.pskSpots) == 0 {
 		return nil
 	}
 	seen := map[string]bool{"": true} // "all" is always first
-	for _, s := range spots {
-		band := freqToBandName(s.Frequency)
+	for _, r := range m.pskSpots {
+		band := freqToBandName(r.Frequency)
 		if band != "" {
 			seen[band] = true
 		}
@@ -329,7 +335,6 @@ func (m *Model) pskAvailableBands() []string {
 		bands = append(bands, b)
 	}
 	sort.Strings(bands)
-	// Ensure "" (all) is first.
 	return bands
 }
 
@@ -354,27 +359,20 @@ func freqToBandName(freqHz float64) string {
 }
 
 func (m *Model) pskCycleMode(dir int) {
-	call := strings.ToUpper(strings.TrimSpace(m.App.Logbook.Station.Callsign))
-	if call == "" {
-		return
-	}
-	cutoff := time.Now().UTC().Add(-time.Duration(m.pskFilterMins) * time.Minute).Unix()
-	spots, err := store.QueryPSKSpots(m.App.DB, call, cutoff)
-	if err != nil || len(spots) == 0 {
+	if len(m.pskSpots) == 0 {
 		return
 	}
 	seen := map[string]bool{"": true}
-	for _, s := range spots {
-		if s.Mode != "" {
-			seen[strings.ToUpper(s.Mode)] = true
+	for _, r := range m.pskSpots {
+		if r.Mode != "" {
+			seen[strings.ToUpper(r.Mode)] = true
 		}
 	}
 	var modes []string
-	for m := range seen {
-		modes = append(modes, m)
+	for mode := range seen {
+		modes = append(modes, mode)
 	}
 	sort.Strings(modes)
-	// Ensure "" (all) is first.
 	cur := -1
 	for i, mode := range modes {
 		if mode == m.pskModeFilter {

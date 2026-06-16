@@ -2,10 +2,13 @@ package tui
 
 import (
 	"fmt"
+	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/gen2brain/beeep"
 	"github.com/szporwolik/cqops/internal/applog"
+	"github.com/szporwolik/cqops/internal/store"
 )
 
 // =============================================================================
@@ -120,6 +123,39 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) bool {
 		return true
 	case flrigResultMsg:
 		m.applyFlrigResult(r)
+		return true
+	case pskFetchMsg:
+		m.pskFetching = false
+		if r.err != nil {
+			applog.Error("PSK Reporter: fetch failed", "error", r.err)
+			m.toasts.Error("PSK Reporter: " + r.err.Error())
+		} else {
+			// Store in SQLite.
+			call := strings.ToUpper(strings.TrimSpace(m.App.Logbook.Station.Callsign))
+			var spots []store.PSKSpot
+			now := time.Now().UTC().Unix()
+			for _, rpt := range r.reports {
+				spots = append(spots, store.PSKSpot{
+					ReceiverCall: rpt.ReceiverCallsign, ReceiverLoc: rpt.ReceiverLocator,
+					Frequency: rpt.Frequency, SNR: rpt.SNR,
+					Mode: rpt.Mode, FlowStart: rpt.FlowStartSeconds,
+					FetchTime: now, StationCall: call,
+				})
+			}
+			if n, err := store.InsertPSKSpots(m.App.DB, spots); err != nil {
+				applog.Warn("PSK Reporter: DB insert failed", "error", err)
+			} else if n > 0 {
+				applog.Info("PSK Reporter: new spots stored", "count", n)
+			}
+			_ = store.PurgeOldPSKSpots(m.App.DB)
+			m.pskLastFetch = r.fetchTime
+			m.pskLastCall = call
+			m.pskFetched = true
+			m.pskSpotKey = ""
+			m.pskViewKey = ""
+			m.pskSpots = nil
+			m.toasts.Success(fmt.Sprintf("PSK Reporter: %d spots updated", len(r.reports)))
+		}
 		return true
 	}
 	return false

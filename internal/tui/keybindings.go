@@ -40,27 +40,27 @@ func DefaultKeyMap() KeyMap {
 		),
 		QSOForm: key.NewBinding(
 			key.WithKeys("f1"),
-			key.WithHelp("F1", "QSO Form"),
+			key.WithHelp("F1", "QSO"),
 		),
 		Partner: key.NewBinding(
 			key.WithKeys("f2"),
-			key.WithHelp("F2", "Partner/Photo"),
+			key.WithHelp("F2", "QRZ"),
 		),
 		PSKReporter: key.NewBinding(
 			key.WithKeys("f5"),
 			key.WithHelp("F5", "PSK Reporter"),
 		),
 		LogEditor: key.NewBinding(
-			key.WithKeys("f6"),
-			key.WithHelp("F6", "Log Editor"),
+			key.WithKeys("f7"),
+			key.WithHelp("F7", "Editor"),
 		),
 		Config: key.NewBinding(
-			key.WithKeys("f7"),
-			key.WithHelp("F7", "Config"),
+			key.WithKeys("f8"),
+			key.WithHelp("F8", "Config"),
 		),
 		Logs: key.NewBinding(
-			key.WithKeys("f8"),
-			key.WithHelp("F8", "Logs"),
+			key.WithKeys("f9"),
+			key.WithHelp("F9", "Logs"),
 		),
 		Save: key.NewBinding(
 			key.WithKeys("ctrl+s"),
@@ -72,7 +72,7 @@ func DefaultKeyMap() KeyMap {
 		),
 		Lookup: key.NewBinding(
 			key.WithKeys("insert"),
-			key.WithHelp("Ins", "Check Call"),
+			key.WithHelp("Ins", "QRZ"),
 		),
 		Retain: key.NewBinding(
 			key.WithKeys("ctrl+r"),
@@ -108,7 +108,7 @@ func DefaultKeyMap() KeyMap {
 		),
 		Enter: key.NewBinding(
 			key.WithKeys("enter"),
-			key.WithHelp("Enter", "Log QSO"),
+			key.WithHelp("Enter", "Save"),
 		),
 		Confirm: key.NewBinding(
 			key.WithKeys("y"),

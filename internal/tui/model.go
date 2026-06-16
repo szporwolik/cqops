@@ -17,6 +17,7 @@ import (
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/psk"
 	"github.com/szporwolik/cqops/internal/qrz"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
@@ -130,7 +131,14 @@ type Model struct {
 	pskModeFilter string // "" = all modes, or mode name like "FT8"
 	pskSelected   int
 	pskFetched    bool
+	pskFetching   bool // true while async HTTP fetch is in flight
 	pskCacheDir   string
+
+	// PSK caches — avoids SQL + Lip Gloss work on every frame.
+	pskSpots   []psk.Report
+	pskSpotKey string
+	pskView    string
+	pskViewKey string
 
 	// Layout cache — avoids redundant MeasureLayout() calls when terminal size
 	// and screen haven't changed between frames.
@@ -278,7 +286,7 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 		HTTPClient: &http.Client{Transport: transport, Timeout: 15 * time.Second},
 	})
 	m.mapView = newMapRenderer()
-	m.pskFilterMins = pskFilterSteps[0] // default 15 min
+	m.pskFilterMins = pskFilterSteps[0] // default 5 min
 	if dir, err := config.CacheDir(); err == nil {
 		m.pskCacheDir = dir
 	}

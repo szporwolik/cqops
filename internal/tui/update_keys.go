@@ -38,7 +38,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, true
 
 	case key.Matches(msg, m.keys.QSOForm):
-		applog.Debug("tab: F1 QSO Form")
+		applog.Debug("tab: F1 QSO")
 		if m.screen == screenQSO {
 			m.focusField(fieldCall)
 		} else {
@@ -106,9 +106,6 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 
 	case key.Matches(msg, m.keys.PSKReporter):
 		applog.Debug("tab: F5 PSK Reporter")
-		m.pskFetched = false
-		m.pskLastCall = ""
-		m.pskSelected = 0
 		m.screen = screenPSKReporter
 		return nil, true
 
@@ -117,7 +114,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			applog.Debug("tab: F7 close Config")
 			m.screen = screenQSO
 		} else {
-			applog.Debug("tab: F7 Config")
+			applog.Debug("tab: F8 Config")
 			m.mainMenu = NewMainMenu()
 			m.mainMenu.width = m.width
 			m.mainMenu.height = m.height
@@ -126,7 +123,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, true
 
 	case key.Matches(msg, m.keys.LogEditor):
-		applog.Debug("tab: F6 Log Editor")
+		applog.Debug("tab: F7 Editor")
 		wl := m.App.Logbook.Wavelog
 		wlURL, wlKey, wlStationID := "", "", ""
 		if wl != nil {
@@ -144,7 +141,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, true
 
 	case key.Matches(msg, m.keys.Logs):
-		applog.Debug("tab: F8 Log Viewer")
+		applog.Debug("tab: F9 Log Viewer")
 		m.logViewer = NewLogViewer(config.LogbookDisplayName(m.App.Logbook))
 		m.logViewer.width = m.width
 		m.logViewer.height = m.height
@@ -241,9 +238,6 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 
 	case key.Matches(msg, m.keys.PSKReporter):
 		applog.Debug("tab: F5 PSK Reporter")
-		m.pskFetched = false
-		m.pskLastCall = ""
-		m.pskSelected = 0
 		m.screen = screenPSKReporter
 		return nil, true
 

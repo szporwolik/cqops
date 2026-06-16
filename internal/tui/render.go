@@ -14,6 +14,23 @@ func drawBorderedBox(content string, boxW int) string {
 	return borderBoxStyle.Width(boxW).Render(content)
 }
 
+// centerAndBorderMap centers each line of a map to the given content width,
+// then wraps the result in a bordered box. Used by Partner and PSK Reporter views.
+func centerAndBorderMap(mapBox string, contentW, boxW int) string {
+	lines := strings.Split(mapBox, "\n")
+	for i, l := range lines {
+		lw := lipgloss.Width(l)
+		if lw > contentW {
+			lines[i] = truncateText(l, contentW)
+		} else if lw < contentW {
+			left := (contentW - lw) / 2
+			right := contentW - lw - left
+			lines[i] = strings.Repeat(" ", left) + l + strings.Repeat(" ", right)
+		}
+	}
+	return drawBorderedBox(strings.Join(lines, "\n"), boxW)
+}
+
 // menuBoxStyle is the bordered box used by config menus.
 var menuBoxStyle = lipgloss.NewStyle().
 	Border(lipgloss.NormalBorder()).
