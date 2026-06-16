@@ -217,10 +217,10 @@ func (cm *CallbookMenu) View() tea.View {
 		checkbox = "[x]"
 	}
 	qrPrefix := "  "
-	qrLabel := S.FormLabelWide.Align(lipgloss.Left).Render("Use QRZ:")
+	qrLabel := S.FormLabelWide.Align(lipgloss.Left).Render("Use QRZ.com:")
 	if cm.focus == 0 {
 		qrPrefix = S.FormPrefixOn.Render("> ")
-		qrLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("Use QRZ:")
+		qrLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("Use QRZ.com:")
 		checkbox = CursorStyle.Render(checkbox)
 	}
 	b.WriteString(padOrTrunc(

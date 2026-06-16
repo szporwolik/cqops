@@ -209,7 +209,9 @@ func infoRow(label, value string, maxW int) string {
 	if valW < 3 {
 		valW = 3
 	}
-	val := ValueStyle.Width(valW).MaxWidth(valW).Inline(true).Render(truncate(value, valW))
+	// Let Lip Gloss handle clipping via MaxWidth+Inline — never manually
+	// truncate a value that may contain OSC-8 hyperlink ANSI sequences.
+	val := ValueStyle.Width(valW).MaxWidth(valW).Inline(true).Render(value)
 	return lipgloss.JoinHorizontal(lipgloss.Center, lbl, " ", val)
 }
 

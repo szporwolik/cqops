@@ -1,4 +1,4 @@
-// Package assets holds resources embedded into the CQOPS binary.
+// Package assets holds resources embedded into the CQOps binary.
 package assets
 
 import _ "embed"

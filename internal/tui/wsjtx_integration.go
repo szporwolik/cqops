@@ -114,7 +114,7 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 	n := m.App.Config.General.Notifications
 	if n.Enabled && n.QSO {
 		applog.Info("Sending WSJT-X QSO notification", "call", qs.Call, "band", qs.Band, "mode", qs.Mode)
-		if err := beeep.Notify("CQOPS — QSO Logged", fmt.Sprintf("%s on %s %s", qs.Call, qs.Band, qs.Mode), ""); err != nil {
+		if err := beeep.Notify("CQOps — QSO Logged", fmt.Sprintf("%s on %s %s", qs.Call, qs.Band, qs.Mode), ""); err != nil {
 			applog.Info("QSO notification failed", "error", err.Error())
 		}
 	}

@@ -23,13 +23,19 @@ func (m *Model) headerView() string {
 	if logName == "" {
 		logName = "\u2014"
 	}
+	op := s.Operator
+	if op == "" {
+		op = "\u2014"
+	}
 
 	left := lipgloss.JoinHorizontal(lipgloss.Top,
-		S.StatusApp.Render(" CQOPS v"+version.Resolved()+" "),
-		S.StatusLabel.Render(" Call "),
-		S.StatusValue.Render(clamp(callsign, 8)),
-		S.StatusLabel.Render(" Log "),
-		S.StatusValue.Render(clamp(logName, 10)),
+		S.StatusApp.Render(" CQOps v"+version.Resolved()+" "),
+		S.StatusLabel.Render("Call"),
+		" "+S.StatusValue.Render(clamp(callsign, 10)),
+		" "+S.StatusLabel.Render("Log"),
+		" "+S.StatusValue.Render(clamp(logName, 12)),
+		" "+S.StatusLabel.Render("Op"),
+		" "+S.StatusValue.Render(clamp(op, 10)),
 	)
 
 	var rightParts []string
@@ -52,7 +58,30 @@ func (m *Model) headerView() string {
 
 	right := lipgloss.JoinHorizontal(lipgloss.Top, rightParts...)
 
-	fillerW := m.width - lipgloss.Width(left) - lipgloss.Width(right)
+	// Show local time only when there is room to spare.
+	leftW := lipgloss.Width(left)
+	rightW := lipgloss.Width(right)
+	fillerW := m.width - leftW - rightW
+
+	localTime := time.Now().Format("15:04")
+	ltSegment := lipgloss.JoinHorizontal(lipgloss.Top,
+		utcLabelStyle.Render("LT"),
+		S.StatusTime.Render(localTime)+" ",
+	)
+	ltW := lipgloss.Width(ltSegment)
+	if fillerW >= ltW+6 {
+		// Enough room — rebuild right side with LT before UTC.
+		rightParts = rightParts[:len(rightParts)-2] // drop UTC label + time
+		rightParts = append(rightParts,
+			utcLabelStyle.Render("LT"),
+			S.StatusTime.Render(localTime)+" ",
+			utcLabelStyle.Render("UTC"),
+			S.StatusTime.Render(utc.Format("15:04:05")),
+		)
+		right = lipgloss.JoinHorizontal(lipgloss.Top, rightParts...)
+		rightW = lipgloss.Width(right)
+	}
+	fillerW = m.width - leftW - rightW
 	if fillerW < 1 {
 		fillerW = 1
 	}

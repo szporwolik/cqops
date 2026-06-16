@@ -56,7 +56,7 @@ func DefaultKeyMap() KeyMap {
 		),
 		Config: key.NewBinding(
 			key.WithKeys("f8"),
-			key.WithHelp("F8", "Config"),
+			key.WithHelp("F8", "CFG"),
 		),
 		Logs: key.NewBinding(
 			key.WithKeys("f9"),

@@ -773,7 +773,7 @@ func (w *Wizard) handleEnter() tea.Cmd {
 	applog.InfoDetail("Wizard: summary step done — saving config", fmt.Sprintf("tz=%s", config.Timezones[w.tzIndex]))
 	w.saveConfig()
 	w.Completed = true
-	applog.Info("Wizard completed — launching CQOPS")
+	applog.Info("Wizard completed — launching CQOps")
 	return tea.Quit
 }
 

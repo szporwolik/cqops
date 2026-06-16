@@ -282,7 +282,7 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	transport := &imageTransport{base: http.DefaultTransport}
 	m.imageViewer = pictureurl.NewWithConfig(pictureurl.Config{
 		CacheLimit: 4,
-		UserAgent:  "CQOPS/1.0 (ham-radio-logger)",
+		UserAgent:  "CQOps/1.0 (ham-radio-logger)",
 		HTTPClient: &http.Client{Transport: transport, Timeout: 15 * time.Second},
 	})
 	m.mapView = newMapRenderer()

@@ -28,7 +28,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	switch {
 	case key.Matches(msg, m.keys.Quit):
 		applog.Debug("tab: F10 quit requested")
-		dlg := NewDialog("Quit CQOPS", "Exit the application?",
+		dlg := NewDialog("Quit CQOps", "Exit the application?",
 			Option{Label: "Quit", Value: "quit"},
 			Option{Label: "Cancel", Value: "cancel"},
 		)

@@ -6,7 +6,7 @@ DESKTOP_DIR="${HOME}/.local/share/applications"
 ICON_BASE="${HOME}/.local/share/icons/hicolor"
 PIXMAPS_DIR="${HOME}/.local/share/pixmaps"
 
-echo "=== CQOPS Uninstaller (Linux) ==="
+echo "=== CQOps Uninstaller (Linux) ==="
 
 rm -f "$INSTALL_DIR/cqops"
 echo "  Removed binary"
@@ -38,4 +38,4 @@ done
 echo "  Removed from shell profiles"
 
 echo ""
-echo "CQOPS uninstalled."
+echo "CQOps uninstalled."

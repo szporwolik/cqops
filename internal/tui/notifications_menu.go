@@ -96,8 +96,8 @@ func (nm *NotificationsMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (nm *NotificationsMenu) sendTestNotification() {
-	title := "CQOPS — Test Notification"
-	body := "This is a test notification from CQOPS."
+	title := "CQOps — Test Notification"
+	body := "This is a test notification from CQOps."
 	applog.Info("Test notification sent")
 	if err := beeep.Notify(title, body, ""); err != nil {
 		applog.Info("Test notification failed", "error", err.Error())

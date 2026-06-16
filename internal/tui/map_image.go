@@ -59,8 +59,8 @@ func (mr *mapRenderer) View(ownLat, ownLon, partnerLat, partnerLon float64, mapW
 	if base == "" {
 		return renderWorldMap(ownLat, ownLon, partnerLat, partnerLon, mapW, mapAvailH)
 	}
-	mapH := mr.cacheH
-	return mr.drawMarkers(base, ownLat, ownLon, partnerLat, partnerLon, mapW, mapH)
+	// Use the cached (possibly adjusted) dimensions — not the requested ones.
+	return mr.drawMarkers(base, ownLat, ownLon, partnerLat, partnerLon, mr.cacheW, mr.cacheH)
 }
 
 // BaseImage returns the raw ANSI map image without any markers or legend.

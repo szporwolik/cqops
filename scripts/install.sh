@@ -11,7 +11,7 @@ ICON_BASE="${HOME}/.local/share/icons/hicolor"
 PIXMAPS_DIR="${HOME}/.local/share/pixmaps"
 ICON_SRC="$ASSETS_DIR/cqops-icon.svg"
 
-echo "=== CQOPS v${VERSION} Installer (Linux) ==="
+echo "=== CQOps v${VERSION} Installer (Linux) ==="
 
 mkdir -p "$INSTALL_DIR" "$DESKTOP_DIR" "$PIXMAPS_DIR"
 
@@ -100,7 +100,7 @@ echo "  Binary : $INSTALL_DIR/cqops"
 
 cat > "$DESKTOP_DIR/cqops.desktop" << EOF
 [Desktop Entry]
-Name=CQOPS
+Name=CQOps
 Comment=Amateur Radio Logging
 Exec=$INSTALL_DIR/cqops
 Icon=cqops
@@ -109,7 +109,7 @@ Type=Application
 Categories=Network;HamRadio;
 StartupWMClass=cqops
 EOF
-echo "  Menu   : Applications → Ham Radio → CQOPS"
+echo "  Menu   : Applications → Ham Radio → CQOps"
 
 # Refresh desktop menu database
 if command -v update-desktop-database &>/dev/null; then
@@ -133,5 +133,5 @@ if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
 fi
 
 echo ""
-echo "CQOPS v${VERSION} installed. Run 'cqops' or use the app menu."
+echo "CQOps v${VERSION} installed. Run 'cqops' or use the app menu."
 echo "Uninstall: ./scripts/uninstall.sh"

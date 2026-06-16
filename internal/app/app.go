@@ -81,7 +81,7 @@ func (a *App) Close() {
 		applog.Debug("Closing database")
 		a.DB.Close()
 	}
-	applog.Info("CQOPS shutdown complete")
+	applog.Info("CQOps shutdown complete")
 }
 
 // MaybeRestartWSJTX restarts the WSJT-X listener only when the effective

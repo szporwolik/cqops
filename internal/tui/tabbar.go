@@ -76,10 +76,9 @@ func (m *Model) tabView() string {
 	allTabs := []tab{
 		{"F1 QSO", m.screen == screenQSO && m.confirm == nil, false},
 		{"F2 QRZ", (m.screen == screenPartner || m.screen == screenImage) && hasPartner, !hasPartner},
-		{"F5 PSK Rep", m.screen == screenPSKReporter, !m.inetOnline},
-		{"F7 Editor", m.screen == screenLogbookEditor, false},
-		{"F8 Config", m.screen == screenMainMenu || m.screen == screenConfig || m.screen == screenCallbook || m.screen == screenIntegration || m.screen == screenChooser || m.screen == screenRigEdit || m.screen == screenNotifications, false},
-		{"F9 Logs", m.screen == screenLogView, false},
+		{"F5 HRD", m.screen == screenPSKReporter, !m.inetOnline},
+		{"F7 LOG", m.screen == screenLogbookEditor, false},
+		{"F8 CFG", m.screen == screenMainMenu || m.screen == screenConfig || m.screen == screenCallbook || m.screen == screenIntegration || m.screen == screenChooser || m.screen == screenRigEdit || m.screen == screenNotifications, false},
 	}
 
 	var parts []string

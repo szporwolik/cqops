@@ -435,6 +435,15 @@ func (m *Model) buildPSKMap(reports []psk.Report, mapW, mapAvailH int) string {
 
 	lines := strings.Split(baseMap, "\n")
 	mapH := len(lines)
+	// Use the actual rendered width — BaseImage may return a narrower map
+	// than requested when height is constrained (small terminal).
+	actualW := 0
+	if mapH > 0 {
+		actualW = lipgloss.Width(lines[0])
+	}
+	if actualW < 20 {
+		actualW = mapW
+	}
 
 	// Draw band-colored markers for each receiver — oldest first, newest last
 	// so the newest spot's color wins when multiple spots share a cell.
@@ -444,16 +453,16 @@ func (m *Model) buildPSKMap(reports []psk.Report, mapW, mapAvailH int) string {
 			continue
 		}
 		rlat, rlon := gridToLatLon(r.ReceiverLocator)
-		cx, cy := pskCellCoords(rlat, rlon, mapW, mapH)
-		if cy >= 0 && cy < mapH && cx >= 0 && cx < mapW {
+		cx, cy := pskCellCoords(rlat, rlon, actualW, mapH)
+		if cy >= 0 && cy < mapH && cx >= 0 && cx < actualW {
 			mark := pskBandStyle(r.Frequency).Render("\u25cf")
 			lines[cy] = replaceANSICell(lines[cy], cx, mark)
 		}
 	}
 
 	// Draw own station LAST — so it's always visible on top of any receiver.
-	ownX, ownY := pskCellCoords(ownLat, ownLon, mapW, mapH)
-	if ownY >= 0 && ownY < mapH && ownX >= 0 && ownX < mapW {
+	ownX, ownY := pskCellCoords(ownLat, ownLon, actualW, mapH)
+	if ownY >= 0 && ownY < mapH && ownX >= 0 && ownX < actualW {
 		lines[ownY] = replaceANSICell(lines[ownY], ownX, S.MapOwn.Render("\u25c6"))
 	}
 
