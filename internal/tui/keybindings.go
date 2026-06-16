@@ -9,6 +9,7 @@ type KeyMap struct {
 	Quit         key.Binding
 	QSOForm      key.Binding
 	Partner      key.Binding
+	PSKReporter  key.Binding
 	LogEditor    key.Binding
 	Config       key.Binding
 	Logs         key.Binding
@@ -44,6 +45,10 @@ func DefaultKeyMap() KeyMap {
 		Partner: key.NewBinding(
 			key.WithKeys("f2"),
 			key.WithHelp("F2", "Partner/Photo"),
+		),
+		PSKReporter: key.NewBinding(
+			key.WithKeys("f5"),
+			key.WithHelp("F5", "PSK Reporter"),
 		),
 		LogEditor: key.NewBinding(
 			key.WithKeys("f6"),
@@ -242,6 +247,15 @@ func (m *Model) ActiveBindings() []key.Binding {
 	if m.screen == screenPartner && m.partnerData != nil && m.partnerData.ImageURL != "" {
 		bindings = append(bindings,
 			key.NewBinding(key.WithKeys("f2"), key.WithHelp("F2", "Photo")),
+		)
+	}
+	// PSK Reporter screen.
+	if m.screen == screenPSKReporter {
+		bindings = append(bindings,
+			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
+			key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("PgUp/Dn", "Time")),
+			key.NewBinding(key.WithKeys("home", "end"), key.WithHelp("Home/End", "Band")),
+			key.NewBinding(key.WithKeys("insert", "delete"), key.WithHelp("Ins/Del", "Mode")),
 		)
 	}
 	if m.screen == screenIntegration {

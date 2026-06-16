@@ -57,7 +57,7 @@ func (m *Model) tabView() string {
 	if m.confirm != nil {
 		conf = 1
 	}
-	sig := fmt.Sprintf("%d|%v|%d|%d", m.screen, hasPartner, conf, m.width)
+	sig := fmt.Sprintf("%d|%v|%d|%d|%v", m.screen, hasPartner, conf, m.width, m.inetOnline)
 	if m.cachedTabSig == sig && m.cachedTabView != "" {
 		return m.cachedTabView
 	}
@@ -76,6 +76,7 @@ func (m *Model) tabView() string {
 	allTabs := []tab{
 		{"F1 QSO Form", m.screen == screenQSO && m.confirm == nil, false},
 		{"F2 Partner", (m.screen == screenPartner || m.screen == screenImage) && hasPartner, !hasPartner},
+		{"F5 PSK Rep", m.screen == screenPSKReporter, !m.inetOnline},
 		{"F6 Log Editor", m.screen == screenLogbookEditor, false},
 		{"F7 Config", m.screen == screenMainMenu || m.screen == screenConfig || m.screen == screenCallbook || m.screen == screenIntegration || m.screen == screenChooser || m.screen == screenRigEdit || m.screen == screenNotifications, false},
 		{"F8 Logs", m.screen == screenLogView, false},

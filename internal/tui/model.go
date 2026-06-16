@@ -68,6 +68,7 @@ const (
 	screenQSO screenKind = iota
 	screenPartner
 	screenImage
+	screenPSKReporter
 	screenMainMenu
 	screenConfig
 	screenCallbook
@@ -119,6 +120,17 @@ type Model struct {
 	lastImageErr    error            // dedup image error logging
 	mapView         *mapRenderer     // embedded world map renderer
 	confirm         *DialogModel     // active confirmation dialog (quit, etc.)
+
+	// PSK Reporter.
+
+	pskLastFetch  time.Time
+	pskLastCall   string
+	pskFilterMins int
+	pskBandFilter string // "" = all bands, or band name like "20m"
+	pskModeFilter string // "" = all modes, or mode name like "FT8"
+	pskSelected   int
+	pskFetched    bool
+	pskCacheDir   string
 
 	// Layout cache — avoids redundant MeasureLayout() calls when terminal size
 	// and screen haven't changed between frames.
@@ -266,6 +278,10 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 		HTTPClient: &http.Client{Transport: transport, Timeout: 15 * time.Second},
 	})
 	m.mapView = newMapRenderer()
+	m.pskFilterMins = pskFilterSteps[0] // default 15 min
+	if dir, err := config.CacheDir(); err == nil {
+		m.pskCacheDir = dir
+	}
 	m.applyBeepOnError()
 	return m
 }
@@ -425,6 +441,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleMainMenuUpdate(msg, cmd)
 	case screenPartner:
 		return m.handlePartnerUpdate(msg, cmd)
+	case screenPSKReporter:
+		return m.handlePSKReporterUpdate(msg, cmd)
 	case screenImage:
 		if keyMsg, ok := msg.(tea.KeyPressMsg); ok && keyMsg.String() == "esc" {
 			m.screen = screenPartner
@@ -604,6 +622,8 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 		}
 	case screenImage:
 		body = m.viewImage(l)
+	case screenPSKReporter:
+		body = m.viewPSKReporter()
 	case screenMainMenu:
 		body = m.mainMenu.View().Content
 	case screenConfig:

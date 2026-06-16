@@ -2,10 +2,14 @@ package tui
 
 import (
 	"fmt"
+	"sort"
+	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/store"
 )
 
 // =============================================================================
@@ -201,6 +205,197 @@ func (m *Model) handlePartnerUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 		}
 	}
 	return m, cmd
+}
+
+func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width, m.height = msg.Width, msg.Height
+		m.invalidatePartnerMapCache()
+		return m, cmd
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "f1", "esc":
+			m.screen = screenQSO
+			return m, cmd
+		case "f5":
+			// Refresh PSK data.
+			m.pskFetched = false
+			m.pskLastCall = ""
+			if !m.inetOnline {
+				m.toasts.Warn("PSK Reporter: no internet connection")
+			} else {
+				m.toasts.Success("PSK Reporter: refreshing\u2026")
+			}
+			return m, cmd
+		case "home", "end":
+			// Cycle through band filters — only bands with spots.
+			bands := m.pskAvailableBands()
+			if len(bands) == 0 {
+				return m, cmd
+			}
+			dir := 1
+			if msg.String() == "end" {
+				dir = -1
+			}
+			cur := -1
+			for i, b := range bands {
+				if b == m.pskBandFilter {
+					cur = i
+					break
+				}
+			}
+			next := cur + dir
+			if next >= len(bands) {
+				next = 0
+			}
+			if next < 0 {
+				next = len(bands) - 1
+			}
+			m.pskBandFilter = bands[next]
+			m.pskSelected = 0
+			label := m.pskBandFilter
+			if label == "" {
+				label = "all bands"
+			}
+			m.toasts.Info(fmt.Sprintf("PSK Reporter: %s", label))
+			return m, cmd
+		case "pgup", "pgdown":
+			// Cycle time filter.
+			dir := 1
+			if msg.String() == "pgup" {
+				dir = -1
+			}
+			cur := -1
+			for i, s := range pskFilterSteps {
+				if s == m.pskFilterMins {
+					cur = i
+					break
+				}
+			}
+			if cur >= 0 {
+				next := cur + dir
+				if next >= len(pskFilterSteps) {
+					next = 0
+				}
+				if next < 0 {
+					next = len(pskFilterSteps) - 1
+				}
+				m.pskFilterMins = pskFilterSteps[next]
+			}
+			m.pskSelected = 0
+			m.toasts.Info(fmt.Sprintf("PSK Reporter: last %d min", m.pskFilterMins))
+			return m, cmd
+		case "up", "k":
+			if m.pskSelected > 0 {
+				m.pskSelected--
+			}
+			return m, cmd
+		case "down", "j":
+			m.pskSelected++
+			return m, cmd
+		case "insert":
+			m.pskCycleMode(1)
+			return m, cmd
+		case "delete":
+			m.pskCycleMode(-1)
+			return m, cmd
+		}
+	}
+	return m, cmd
+}
+
+// pskAvailableBands returns the band filter options: "all" plus each band
+// that has at least one spot in the current time window.
+func (m *Model) pskAvailableBands() []string {
+	call := strings.ToUpper(strings.TrimSpace(m.App.Logbook.Station.Callsign))
+	if call == "" {
+		return nil
+	}
+	cutoff := time.Now().UTC().Add(-time.Duration(m.pskFilterMins) * time.Minute).Unix()
+	spots, err := store.QueryPSKSpots(m.App.DB, call, cutoff)
+	if err != nil || len(spots) == 0 {
+		return nil
+	}
+	seen := map[string]bool{"": true} // "all" is always first
+	for _, s := range spots {
+		band := freqToBandName(s.Frequency)
+		if band != "" {
+			seen[band] = true
+		}
+	}
+	var bands []string
+	for b := range seen {
+		bands = append(bands, b)
+	}
+	sort.Strings(bands)
+	// Ensure "" (all) is first.
+	return bands
+}
+
+func freqToBandName(freqHz float64) string {
+	freqkHz := freqHz / 1000
+	switch {
+	case freqkHz >= 1800 && freqkHz < 2000:
+		return "160m"
+	case freqkHz >= 3500 && freqkHz < 4000:
+		return "80m"
+	case freqkHz >= 7000 && freqkHz < 7300:
+		return "40m"
+	case freqkHz >= 14000 && freqkHz < 14350:
+		return "20m"
+	case freqkHz >= 21000 && freqkHz < 21450:
+		return "15m"
+	case freqkHz >= 28000 && freqkHz < 29700:
+		return "10m"
+	default:
+		return "other"
+	}
+}
+
+func (m *Model) pskCycleMode(dir int) {
+	call := strings.ToUpper(strings.TrimSpace(m.App.Logbook.Station.Callsign))
+	if call == "" {
+		return
+	}
+	cutoff := time.Now().UTC().Add(-time.Duration(m.pskFilterMins) * time.Minute).Unix()
+	spots, err := store.QueryPSKSpots(m.App.DB, call, cutoff)
+	if err != nil || len(spots) == 0 {
+		return
+	}
+	seen := map[string]bool{"": true}
+	for _, s := range spots {
+		if s.Mode != "" {
+			seen[strings.ToUpper(s.Mode)] = true
+		}
+	}
+	var modes []string
+	for m := range seen {
+		modes = append(modes, m)
+	}
+	sort.Strings(modes)
+	// Ensure "" (all) is first.
+	cur := -1
+	for i, mode := range modes {
+		if mode == m.pskModeFilter {
+			cur = i
+			break
+		}
+	}
+	next := cur + dir
+	if next >= len(modes) {
+		next = 0
+	}
+	if next < 0 {
+		next = len(modes) - 1
+	}
+	m.pskModeFilter = modes[next]
+	m.pskSelected = 0
+	label := m.pskModeFilter
+	if label == "" {
+		label = "all modes"
+	}
+	m.toasts.Info(fmt.Sprintf("PSK Reporter: %s", label))
 }
 
 func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {

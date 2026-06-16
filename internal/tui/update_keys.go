@@ -104,6 +104,14 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 
 		return m.lookupCallCmd(call), true
 
+	case key.Matches(msg, m.keys.PSKReporter):
+		applog.Debug("tab: F5 PSK Reporter")
+		m.pskFetched = false
+		m.pskLastCall = ""
+		m.pskSelected = 0
+		m.screen = screenPSKReporter
+		return nil, true
+
 	case key.Matches(msg, m.keys.Config):
 		if m.screen == screenMainMenu {
 			applog.Debug("tab: F7 close Config")
@@ -230,6 +238,14 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.screen = screenPartner
 		m.invalidatePartnerMapCache()
 		return m.lookupCallCmd(call), true
+
+	case key.Matches(msg, m.keys.PSKReporter):
+		applog.Debug("tab: F5 PSK Reporter")
+		m.pskFetched = false
+		m.pskLastCall = ""
+		m.pskSelected = 0
+		m.screen = screenPSKReporter
+		return nil, true
 
 	case key.Matches(msg, m.keys.Lookup):
 		call := m.commitCall()

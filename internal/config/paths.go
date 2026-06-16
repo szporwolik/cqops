@@ -35,6 +35,11 @@ func DataDir() (string, error) {
 	return appDir("cqops", "database")
 }
 
+// CacheDir returns the path to the cache directory.
+func CacheDir() (string, error) {
+	return appDir("cqops", "cache")
+}
+
 func LogDir() (string, error) {
 	return appDir("cqops", "logs")
 }

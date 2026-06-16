@@ -55,8 +55,24 @@ func newMapRenderer() *mapRenderer { return &mapRenderer{} }
 // drawGrayline enables the day/night terminator overlay (CPU-friendly —
 // computed only on cache miss, i.e. dimension change or UTC-minute tick).
 func (mr *mapRenderer) View(ownLat, ownLon, partnerLat, partnerLon float64, mapW, mapAvailH int, drawGrayline bool) string {
-	if mapImg == nil || mapW < 20 || mapAvailH < 2 {
+	base := mr.renderBase(mapW, mapAvailH, drawGrayline)
+	if base == "" {
 		return renderWorldMap(ownLat, ownLon, partnerLat, partnerLon, mapW, mapAvailH)
+	}
+	mapH := mr.cacheH
+	return mr.drawMarkers(base, ownLat, ownLon, partnerLat, partnerLon, mapW, mapH)
+}
+
+// BaseImage returns the raw ANSI map image without any markers or legend.
+func (mr *mapRenderer) BaseImage(mapW, mapAvailH int, drawGrayline bool) string {
+	return mr.renderBase(mapW, mapAvailH, drawGrayline)
+}
+
+// renderBase computes dimensions, resizes the source image, and caches the
+// ANSI output. Returns the cached base image (no markers, no legend).
+func (mr *mapRenderer) renderBase(mapW, mapAvailH int, drawGrayline bool) string {
+	if mapImg == nil || mapW < 20 || mapAvailH < 2 {
+		return ""
 	}
 	if mapW > partnerMapMaxW {
 		mapW = partnerMapMaxW
@@ -84,15 +100,13 @@ func (mr *mapRenderer) View(ownLat, ownLon, partnerLat, partnerLon float64, mapW
 		mapW = 20
 	}
 
-	// Grayline slot: 5-minute bucket (288 slots/day).  The terminator
-	// moves ~1.25° per slot — below one map column at typical widths,
-	// so the visual jump is imperceptible while saving 5× CPU vs 1-min.
+	// Grayline slot: 5-minute bucket.
 	now := time.Now().UTC()
 	graySlot := now.Hour()*12 + now.Minute()/5
 
 	if mr.cacheW == mapW && mr.cacheH == mapH && mr.graylineOn == drawGrayline &&
 		(!drawGrayline || mr.graylineSlot == graySlot) && mr.cached != "" {
-		return mr.drawMarkers(mr.cached, ownLat, ownLon, partnerLat, partnerLon, mapW, mapH)
+		return mr.cached
 	}
 
 	// Resize source to (mapW × (mapH*2)) pixels.
@@ -107,8 +121,6 @@ func (mr *mapRenderer) View(ownLat, ownLon, partnerLat, partnerLon float64, mapW
 		}
 	}
 
-	// Blend day/night terminator (grayline) into the resized image before
-	// ANSI conversion — cheap because it only runs on cache miss.
 	if drawGrayline {
 		blendGrayline(resized, pixW, pixH, now)
 	}
@@ -122,7 +134,6 @@ func (mr *mapRenderer) View(ownLat, ownLon, partnerLat, partnerLon float64, mapW
 			if y+1 < pixH {
 				r2, g2, b2, _ = resized.At(x, y+1).RGBA()
 			}
-			// RGBA() returns 16-bit values; convert to 8-bit.
 			fmt.Fprintf(&b, "\x1b[38;2;%d;%d;%dm\x1b[48;2;%d;%d;%dm▀",
 				r1>>8, g1>>8, b1>>8, r2>>8, g2>>8, b2>>8)
 		}
@@ -138,7 +149,7 @@ func (mr *mapRenderer) View(ownLat, ownLon, partnerLat, partnerLon float64, mapW
 	mr.cacheH = mapH
 	mr.graylineOn = drawGrayline
 	mr.graylineSlot = graySlot
-	return mr.drawMarkers(base, ownLat, ownLon, partnerLat, partnerLon, mapW, mapH)
+	return base
 }
 
 // --- Markers & coordinate mapping -------------------------------------------

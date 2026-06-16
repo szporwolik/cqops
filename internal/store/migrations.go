@@ -64,6 +64,20 @@ var migrations = []string{
 	`ALTER TABLE qsos ADD COLUMN my_wwff_ref TEXT DEFAULT ''`,
 	`ALTER TABLE qsos ADD COLUMN iota TEXT DEFAULT ''`,
 	`ALTER TABLE qsos ADD COLUMN wavelog_uploaded TEXT DEFAULT ''`,
+	`CREATE TABLE IF NOT EXISTS psk_spots (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		receiver_call TEXT NOT NULL,
+		receiver_loc TEXT NOT NULL DEFAULT '',
+		frequency REAL NOT NULL,
+		snr INTEGER DEFAULT 0,
+		mode TEXT NOT NULL DEFAULT '',
+		flow_start INTEGER NOT NULL,
+		fetch_time INTEGER NOT NULL,
+		station_call TEXT NOT NULL DEFAULT ''
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_psk_spots_station ON psk_spots(station_call)`,
+	`CREATE INDEX IF NOT EXISTS idx_psk_spots_flow_start ON psk_spots(flow_start)`,
+	`CREATE UNIQUE INDEX IF NOT EXISTS idx_psk_spots_uniq ON psk_spots(receiver_call, frequency, mode, flow_start)`,
 }
 
 func Migrate(db *sql.DB) error {
