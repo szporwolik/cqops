@@ -51,22 +51,6 @@ func connectedFakeFlrig(freq float64, mode, band string) *fakeFlrigClient {
 			Mode:         mode,
 			Band:         band,
 			Power:        50,
-			PTT:          false,
-		},
-	}
-}
-
-// transmittingFakeFlrig returns a fake client with PTT active.
-func transmittingFakeFlrig(freq float64, mode, band string) *fakeFlrigClient {
-	return &fakeFlrigClient{
-		status: rig.RigStatus{
-			Provider:     "flrig",
-			Connected:    true,
-			FrequencyMHz: freq,
-			Mode:         mode,
-			Band:         band,
-			Power:        50,
-			PTT:          true,
 		},
 	}
 }

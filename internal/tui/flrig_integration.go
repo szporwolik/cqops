@@ -54,7 +54,6 @@ type flrigResultMsg struct {
 	mode      string
 	band      string
 	power     float64
-	ptt       bool
 	err       string
 }
 
@@ -71,20 +70,15 @@ func (m *Model) flrigStatusCmd() tea.Cmd {
 		if err != nil {
 			return flrigResultMsg{err: err.Error()}
 		}
-		return flrigResultMsg{connected: s.Connected, freq: s.FrequencyMHz, mode: s.Mode, band: s.Band, power: s.Power, ptt: s.PTT}
+		return flrigResultMsg{connected: s.Connected, freq: s.FrequencyMHz, mode: s.Mode, band: s.Band, power: s.Power}
 	}
 }
 
-// pollFlrig periodically polls flrig for rig status, respecting poll interval.
-// Uses 1-second polling when WSJT-X is not online (SSB/CW needs fast PTT detection);
-// 30-second polling when WSJT-X provides sub-second TX status via StatusMessage.
+// pollFlrig periodically polls flrig for rig status every 5 seconds.
 func (m *Model) pollFlrig() tea.Cmd {
-	interval := rigPollSlow
-	if !m.wsjtxOnline {
-		interval = rigPollFast
-	}
+	const pollInterval = 5
 	m.rigSkipTicks++
-	if m.rigSkipTicks < interval {
+	if m.rigSkipTicks < pollInterval {
 		return nil
 	}
 	m.rigSkipTicks = 0
@@ -104,22 +98,11 @@ func (m *Model) pollFlrig() tea.Cmd {
 func (m *Model) applyFlrigResult(r flrigResultMsg) {
 	m.rigPolling = false
 	if r.err != "" || !r.connected {
-		if m.rigPTT {
-			applog.Info("flrig: PTT OFF (disconnected)")
-		}
 		m.rigConnected = false
-		m.rigPTT = false
 		m.cachedStatus = ""
 		return
 	}
 	m.rigConnected = true
-	prevPTT := m.rigPTT
-	m.rigPTT = r.ptt
-	if r.ptt && !prevPTT {
-		applog.Info("flrig: PTT ON (transmitting)")
-	} else if !r.ptt && prevPTT {
-		applog.Info("flrig: PTT OFF")
-	}
 	m.rigFreq = r.freq
 	m.cachedStatus = ""
 	if !m.wsjtxOnline {

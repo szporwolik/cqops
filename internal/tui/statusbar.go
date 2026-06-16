@@ -10,7 +10,7 @@ import (
 )
 
 // headerView renders the top status bar with callsign, logbook name,
-// integration status dots, and UTC clock.
+// operator, WSJT-X TX message, integration status dots, and UTC clock.
 func (m *Model) headerView() string {
 	s := m.App.Logbook.Station
 	utc := time.Now().UTC()
@@ -28,15 +28,29 @@ func (m *Model) headerView() string {
 		op = "\u2014"
 	}
 
-	left := lipgloss.JoinHorizontal(lipgloss.Top,
-		S.StatusApp.Render(" CQOps v"+version.Resolved()+" "),
+	leftParts := []string{
+		S.StatusApp.Render(" CQOps v" + version.Resolved() + " "),
 		S.StatusLabel.Render("Call"),
-		" "+S.StatusValue.Render(clamp(callsign, 10)),
-		" "+S.StatusLabel.Render("Log"),
-		" "+S.StatusValue.Render(clamp(logName, 12)),
-		" "+S.StatusLabel.Render("Op"),
-		" "+S.StatusValue.Render(clamp(op, 10)),
-	)
+		" " + S.StatusValue.Render(clamp(callsign, 10)),
+		" " + S.StatusLabel.Render("Log"),
+		" " + S.StatusValue.Render(clamp(logName, 12)),
+		" " + S.StatusLabel.Render("Op"),
+		" " + S.StatusValue.Render(clamp(op, 10)),
+	}
+
+	// WSJT-X TX message — shown as MSG label when WSJT-X is online.
+	if m.wsjtxTxMsg != "" && m.App.Config.WSJTX.Enabled && m.wsjtxOnline {
+		style := S.StatusValue
+		if m.wsjtxTx {
+			style = txDotStyle
+		}
+		leftParts = append(leftParts,
+			" "+S.StatusLabel.Render("MSG"),
+			" "+style.Render(clamp(m.wsjtxTxMsg, 24)),
+		)
+	}
+
+	left := lipgloss.JoinHorizontal(lipgloss.Top, leftParts...)
 
 	var rightParts []string
 
@@ -45,8 +59,8 @@ func (m *Model) headerView() string {
 		rightParts = append(rightParts, statusDotStyled(m.wsjtxOnline, "WSJT"))
 	}
 	if cfgRig, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok && cfgRig.FlrigEnabled {
-		if m.rigPTT || m.wsjtxTx {
-			rightParts = append(rightParts, txDotStyle.Render("TX")+" ")
+		if m.wsjtxTx {
+			rightParts = append(rightParts, txDotStyle.Render("Rig")+" ")
 		} else {
 			rightParts = append(rightParts, statusDotStyled(m.rigConnected, "Rig"))
 		}
@@ -61,19 +75,6 @@ func (m *Model) headerView() string {
 	)
 
 	right := lipgloss.JoinHorizontal(lipgloss.Top, rightParts...)
-
-	// Build WSJT-X TX message segment, if applicable.
-	// Use WSJT-X Transmitting for sub-second TX detection; fall back to flrig PTT.
-	var txMsg string
-	txActive := m.wsjtxTx || (m.rigPTT && !m.wsjtxOnline)
-	if m.wsjtxTxMsg != "" && m.App.Config.WSJTX.Enabled && m.wsjtxOnline {
-		style := S.StatusValue
-		if txActive {
-			style = txDotStyle
-		}
-		txMsg = style.Render(m.wsjtxTxMsg)
-	}
-	txW := lipgloss.Width(txMsg)
 
 	// Show local time only when there is room to spare.
 	leftW := lipgloss.Width(left)
@@ -98,21 +99,11 @@ func (m *Model) headerView() string {
 		rightW = lipgloss.Width(right)
 	}
 	fillerW = m.width - leftW - rightW
-
-	// Show WSJT-X TX message in the filler space when there is room.
-	var filler string
-	if txMsg != "" && fillerW >= txW+4 {
-		pad := (fillerW - txW) / 2
-		padR := fillerW - txW - pad
-		filler = strings.Repeat(" ", pad) + txMsg + strings.Repeat(" ", padR)
-	} else {
-		if fillerW < 1 {
-			fillerW = 1
-		}
-		filler = strings.Repeat(" ", fillerW)
+	if fillerW < 1 {
+		fillerW = 1
 	}
 
-	return left + filler + right
+	return left + strings.Repeat(" ", fillerW) + right
 }
 
 // txDotStyle — transmit indicator, uses accent color to avoid confusion with

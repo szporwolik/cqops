@@ -27,8 +27,6 @@ import (
 type field int
 
 const (
-	rigPollSlow         = 30                      // seconds between flrig polls (normal)
-	rigPollFast         = 1                       // seconds between flrig polls (need fast PTT)
 	healthCheckTicks    = 600                     // ticks between health checks (10 min)
 	flrigStatusTimeout  = 1500 * time.Millisecond // context timeout for flrig status
 	flrigDefaultTimeout = 1000                    // default flrig HTTP timeout (ms)
@@ -94,7 +92,6 @@ type Model struct {
 	height          int
 	quitting        bool
 	rigConnected    bool
-	rigPTT          bool // true when rig is transmitting
 	rigFreq         float64
 	rigMode         string
 	rigPower        float64
