@@ -220,13 +220,16 @@ func TestApplyWSJTXStatus_StoresTxMessage(t *testing.T) {
 		m.fields[i] = newTextinput()
 	}
 
-	m.applyWSJTXStatus("SP9ABC", "JO90", 14074000, "FT8", "", "-12", "CQ SP9XXX JO90")
+	m.applyWSJTXStatus("SP9ABC", "JO90", 14074000, "FT8", "", "-12", "CQ SP9XXX JO90", true)
 
 	if !m.wsjtxOnline {
 		t.Error("wsjtxOnline should be true after status")
 	}
 	if m.wsjtxTxMsg != "CQ SP9XXX JO90" {
 		t.Errorf("wsjtxTxMsg = %q; want 'CQ SP9XXX JO90'", m.wsjtxTxMsg)
+	}
+	if !m.wsjtxTx {
+		t.Error("wsjtxTx should be true when transmitting=true")
 	}
 	if m.wsjtxLastSeen.IsZero() {
 		t.Error("wsjtxLastSeen should be set")
@@ -246,7 +249,7 @@ func TestApplyWSJTXStatus_EmptyTxMessage(t *testing.T) {
 
 	m.wsjtxOnline = true
 	m.wsjtxTxMsg = "CQ SP9XXX JO90"
-	m.applyWSJTXStatus("", "", 0, "", "", "", "")
+	m.applyWSJTXStatus("", "", 0, "", "", "", "", false)
 
 	if m.wsjtxTxMsg != "" {
 		t.Errorf("wsjtxTxMsg should be cleared to empty, got %q", m.wsjtxTxMsg)
@@ -306,7 +309,7 @@ func TestApplyWSJTXStatus_DirectedCall(t *testing.T) {
 		m.fields[i] = newTextinput()
 	}
 
-	m.applyWSJTXStatus("K1ABC", "FN42", 21074000, "FT8", "", "-05", "K1ABC SP9XXX -05")
+	m.applyWSJTXStatus("K1ABC", "FN42", 21074000, "FT8", "", "-05", "K1ABC SP9XXX -05", true)
 
 	if m.wsjtxTxMsg != "K1ABC SP9XXX -05" {
 		t.Errorf("wsjtxTxMsg = %q; want directed call message", m.wsjtxTxMsg)

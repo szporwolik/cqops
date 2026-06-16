@@ -59,11 +59,12 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 	m.adifMu.Unlock()
 
 	if sp.hasData {
-		m.applyWSJTXStatus(sp.call, sp.grid, sp.freq, sp.mode, sp.submode, sp.report, sp.txMessage)
+		m.applyWSJTXStatus(sp.call, sp.grid, sp.freq, sp.mode, sp.submode, sp.report, sp.txMessage, sp.transmitting)
 	}
 	// WSJT-X watchdog: if no status received in 15 seconds, mark offline.
 	if m.wsjtxOnline && time.Since(m.wsjtxLastSeen) > 15*time.Second {
 		m.wsjtxOnline = false
+		m.wsjtxTx = false
 		m.wsjtxTxMsg = ""
 		m.cachedStatus = ""
 	}

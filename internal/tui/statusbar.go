@@ -45,7 +45,7 @@ func (m *Model) headerView() string {
 		rightParts = append(rightParts, statusDotStyled(m.wsjtxOnline, "WSJT"))
 	}
 	if cfgRig, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok && cfgRig.FlrigEnabled {
-		if m.rigPTT {
+		if m.rigPTT || m.wsjtxTx {
 			rightParts = append(rightParts, txDotStyle.Render("TX")+" ")
 		} else {
 			rightParts = append(rightParts, statusDotStyled(m.rigConnected, "Rig"))
@@ -63,10 +63,12 @@ func (m *Model) headerView() string {
 	right := lipgloss.JoinHorizontal(lipgloss.Top, rightParts...)
 
 	// Build WSJT-X TX message segment, if applicable.
+	// Use WSJT-X Transmitting for sub-second TX detection; fall back to flrig PTT.
 	var txMsg string
+	txActive := m.wsjtxTx || (m.rigPTT && !m.wsjtxOnline)
 	if m.wsjtxTxMsg != "" && m.App.Config.WSJTX.Enabled && m.wsjtxOnline {
 		style := S.StatusValue
-		if m.rigPTT {
+		if txActive {
 			style = txDotStyle
 		}
 		txMsg = style.Render(m.wsjtxTxMsg)

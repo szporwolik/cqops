@@ -76,9 +76,15 @@ func (m *Model) flrigStatusCmd() tea.Cmd {
 }
 
 // pollFlrig periodically polls flrig for rig status, respecting poll interval.
+// Uses 1-second polling when WSJT-X is not online (SSB/CW needs fast PTT detection);
+// 30-second polling when WSJT-X provides sub-second TX status via StatusMessage.
 func (m *Model) pollFlrig() tea.Cmd {
+	interval := rigPollSlow
+	if !m.wsjtxOnline {
+		interval = rigPollFast
+	}
 	m.rigSkipTicks++
-	if m.rigSkipTicks < rigPollInterval {
+	if m.rigSkipTicks < interval {
 		return nil
 	}
 	m.rigSkipTicks = 0

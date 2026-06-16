@@ -119,7 +119,7 @@ func TestSnapshotOnADIF_RejectsStaleGeneration(t *testing.T) {
 
 func TestSnapshotOnStatus_RejectsStaleGeneration(t *testing.T) {
 	l := NewListener()
-	l.OnStatus = func(call, grid string, freq uint64, mode, submode, report, txMessage string) {}
+	l.OnStatus = func(call, grid string, freq uint64, mode, submode, report, txMessage string, transmitting bool) {}
 
 	l.mu.Lock()
 	l.stopLocked()

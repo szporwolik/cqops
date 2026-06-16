@@ -27,7 +27,8 @@ import (
 type field int
 
 const (
-	rigPollInterval     = 30                      // seconds between flrig polls
+	rigPollSlow         = 30                      // seconds between flrig polls (normal)
+	rigPollFast         = 1                       // seconds between flrig polls (need fast PTT)
 	healthCheckTicks    = 600                     // ticks between health checks (10 min)
 	flrigStatusTimeout  = 1500 * time.Millisecond // context timeout for flrig status
 	flrigDefaultTimeout = 1000                    // default flrig HTTP timeout (ms)
@@ -104,6 +105,7 @@ type Model struct {
 	tickCount       int
 	inetOnline      bool
 	wsjtxOnline     bool
+	wsjtxTx         bool   // true when WSJT-X is transmitting (from StatusMessage)
 	wsjtxTxMsg      string // last TX message from WSJT-X (e.g. "CQ SP9XXX JO90")
 	wsjtxLastSeen   time.Time
 	wsjtxStatus     string
@@ -233,6 +235,7 @@ type inetResultMsg bool
 type statusPending struct {
 	call, grid, mode, submode, report, txMessage string
 	freq                                         uint64
+	transmitting                                 bool
 	hasData                                      bool
 }
 
@@ -322,9 +325,9 @@ func (m *Model) Init() tea.Cmd {
 		m.pendingADIFs = append(m.pendingADIFs, saved...)
 		applog.Info("WSJT-X: recovered pending ADIF records from disk", "count", len(saved))
 	}
-	m.App.WSJTX.OnStatus = func(call, grid string, freq uint64, mode, submode, report, txMessage string) {
+	m.App.WSJTX.OnStatus = func(call, grid string, freq uint64, mode, submode, report, txMessage string, transmitting bool) {
 		m.adifMu.Lock()
-		m.pendingStatus = statusPending{call: call, grid: grid, freq: freq, mode: mode, submode: submode, report: report, txMessage: txMessage, hasData: true}
+		m.pendingStatus = statusPending{call: call, grid: grid, freq: freq, mode: mode, submode: submode, report: report, txMessage: txMessage, transmitting: transmitting, hasData: true}
 		m.adifMu.Unlock()
 	}
 	if m.App.Config.WSJTX.Enabled {

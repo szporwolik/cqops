@@ -19,10 +19,11 @@ import (
 // =============================================================================
 
 // applyWSJTXStatus applies a WSJT-X status update to the QSO form fields.
-func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode, report, txMessage string) {
+func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode, report, txMessage string, transmitting bool) {
 	m.wsjtxOnline = true
 	m.wsjtxTxMsg = txMessage
 	m.wsjtxLastSeen = time.Now()
+	m.wsjtxTx = transmitting
 	m.cachedStatus = ""
 	if call != "" {
 		prevCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
