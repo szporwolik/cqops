@@ -85,10 +85,22 @@ func (m *Model) saveQSO() tea.Cmd {
 }
 
 // refreshQSOS reloads the QSO list from the store, updates the RecentQSOs component,
-// and re-applies any active filter.
+// and re-applies any active filter. Retries on SQLITE_BUSY so a concurrent
+// download or batch insert doesn't cause a transient toast error.
 func (m *Model) refreshQSOS() tea.Cmd {
 	return func() tea.Msg {
-		qsos, err := store.ListQSOs(m.App.DB, 500)
+		var qsos []qso.QSO
+		var err error
+		for attempt := 0; attempt < 3; attempt++ {
+			qsos, err = store.ListQSOs(m.App.DB, 500)
+			if err == nil {
+				break
+			}
+			if !strings.Contains(err.Error(), "database is locked") {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
 		if err != nil {
 			m.toasts.Error(fmt.Sprintf("Refresh failed: %v", err))
 			return nil

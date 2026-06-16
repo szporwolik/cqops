@@ -121,7 +121,15 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 
 	m.clearForm()
 	m.needRefresh = true
-	return tea.Batch(m.refreshQSOS(), m.maybeUploadRawADIFToWavelog(adif, id, qs.Call)), false
+
+	// Only refresh the QSO table immediately if the user is on the QSO form.
+	// On other screens the refresh is deferred via needRefresh → handlePendingRequests.
+	var cmds []tea.Cmd
+	if m.screen == screenQSO {
+		cmds = append(cmds, m.refreshQSOS())
+	}
+	cmds = append(cmds, m.maybeUploadRawADIFToWavelog(adif, id, qs.Call))
+	return tea.Batch(cmds...), false
 }
 
 // parseWSJTXADIF parses a single QSO record from an ADIF string.
