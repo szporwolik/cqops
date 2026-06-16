@@ -292,8 +292,8 @@ func (m *Model) viewPSKReporter() string {
 func (m *Model) buildPSKTable(reports []psk.Report, maxW, visibleRows int) string {
 	// Dynamically size columns to fill available width without wrapping.
 	// Fixed column widths — never shrink, extra space goes to right padding.
-	callW := 12
-	gridW := 8
+	callW := 14
+	gridW := 10
 	freqW := 8
 	snrW := 4
 	modeW := 6
