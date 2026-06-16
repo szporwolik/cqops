@@ -38,20 +38,7 @@ func (m *Model) headerView() string {
 		" " + S.StatusValue.Render(clamp(op, 10)),
 	}
 
-	// WSJT-X TX message — shown as MSG label when WSJT-X is online.
-	if m.wsjtxTxMsg != "" && m.App.Config.WSJTX.Enabled && m.wsjtxOnline {
-		style := S.StatusValue
-		if m.wsjtxTx {
-			style = txDotStyle
-		}
-		leftParts = append(leftParts,
-			" "+S.StatusLabel.Render("MSG"),
-			" "+style.Render(clamp(m.wsjtxTxMsg, 24)),
-		)
-	}
-
-	left := lipgloss.JoinHorizontal(lipgloss.Top, leftParts...)
-
+	// Build right side first so we know how much width remains for MSG.
 	var rightParts []string
 
 	rightParts = append(rightParts, statusDotStyled(m.inetOnline, "Net"))
@@ -77,6 +64,7 @@ func (m *Model) headerView() string {
 	right := lipgloss.JoinHorizontal(lipgloss.Top, rightParts...)
 
 	// Show local time only when there is room to spare.
+	left := lipgloss.JoinHorizontal(lipgloss.Top, leftParts...)
 	leftW := lipgloss.Width(left)
 	rightW := lipgloss.Width(right)
 	fillerW := m.width - leftW - rightW
@@ -98,6 +86,23 @@ func (m *Model) headerView() string {
 		right = lipgloss.JoinHorizontal(lipgloss.Top, rightParts...)
 		rightW = lipgloss.Width(right)
 	}
+
+	// WSJT-X TX message — only when at least 20 cells of free space remain.
+	if m.wsjtxTxMsg != "" && m.App.Config.WSJTX.Enabled && m.wsjtxOnline {
+		style := S.StatusValue
+		if m.wsjtxTx {
+			style = txDotStyle
+		}
+		msgSeg := " " + S.StatusLabel.Render("MSG") + " " + style.Render(clamp(m.wsjtxTxMsg, 24))
+		msgW := lipgloss.Width(msgSeg)
+		avail := m.width - leftW - rightW
+		if avail >= msgW+4 {
+			leftParts = append(leftParts, msgSeg)
+			left = lipgloss.JoinHorizontal(lipgloss.Top, leftParts...)
+			leftW = lipgloss.Width(left)
+		}
+	}
+
 	fillerW = m.width - leftW - rightW
 	if fillerW < 1 {
 		fillerW = 1
