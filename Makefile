@@ -1,7 +1,8 @@
 .PHONY: build test lint clean run version install uninstall
 
 VERSION := $(shell cat VERSION 2>/dev/null || echo "dev")
-LDFLAGS := -s -w -X github.com/szporwolik/cqops/internal/version.Version=$(VERSION)
+BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS := -s -w -X github.com/szporwolik/cqops/internal/version.Version=$(VERSION) -X github.com/szporwolik/cqops/internal/version.BuildDate=$(BUILD_DATE)
 BUILD_DIR := build
 BIN := $(BUILD_DIR)/cqops
 

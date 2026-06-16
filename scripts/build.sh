@@ -2,10 +2,11 @@
 set -euo pipefail
 
 VERSION=$(cat VERSION)
+BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 BUILD_DIR="build"
 mkdir -p "$BUILD_DIR"
 
-LDFLAGS="-s -w -X github.com/szporwolik/cqops/internal/version.Version=${VERSION}"
+LDFLAGS="-s -w -X github.com/szporwolik/cqops/internal/version.Version=${VERSION} -X github.com/szporwolik/cqops/internal/version.BuildDate=${BUILD_DATE}"
 
 targets=(
   "windows amd64 .exe"

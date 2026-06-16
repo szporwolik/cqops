@@ -124,7 +124,7 @@ func (le *LogbookEditor) viewEdit(bodyW int, contentH int) string {
 	if colW < 28 {
 		colW = innerW
 	}
-	colStyle := lipgloss.NewStyle().Width(colW).MaxWidth(colW).Align(lipgloss.Left)
+	colStyle := lipgloss.NewStyle().Width(colW).MaxWidth(colW).Align(lipgloss.Left).Inline(true)
 
 	half := (qefCount + 1) / 2
 

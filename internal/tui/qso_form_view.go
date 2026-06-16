@@ -77,12 +77,12 @@ func (m *Model) viewForm(width int) string {
 		colStyle = m.cachedFormColStyle
 		commentStyle = m.cachedFormCommentStyle
 	} else {
-		colStyle = lipgloss.NewStyle().Width(colW).MaxWidth(colW).Align(lipgloss.Left)
+		colStyle = lipgloss.NewStyle().Width(colW).MaxWidth(colW).Align(lipgloss.Left).Inline(true)
 		commentW := colW * 2
 		if commentW < 20 {
 			commentW = bodyW
 		}
-		commentStyle = lipgloss.NewStyle().Width(commentW).MaxWidth(commentW).Align(lipgloss.Left)
+		commentStyle = lipgloss.NewStyle().Width(commentW).MaxWidth(commentW).Align(lipgloss.Left).Inline(true)
 		m.cachedFormColW = colW
 		m.cachedFormColStyle = colStyle
 		m.cachedFormCommentStyle = commentStyle
@@ -137,7 +137,7 @@ func (m *Model) viewForm(width int) string {
 		lblStyled := S.FormLabel.Align(lipgloss.Left).Render(label)
 		var lblPart string
 		if isFocused {
-			prefix = CursorStyle.Render("> ")
+			prefix = "> "
 			lblStyled = fieldFocusedLabel.Align(lipgloss.Left).Render(label)
 			lblPart = fieldFocusedPrefix.Render(prefix) + lblStyled
 		} else {

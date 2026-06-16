@@ -45,7 +45,7 @@ func RegisterCommands() {
 func Execute() error {
 	RegisterCommands()
 	applog.Init()
-	applog.Info("══════════ CQOPS STARTED ══════════", "v", version.Resolved())
+	applog.Info("══════════ CQOPS STARTED ══════════", "v", version.Resolved(), "built", version.ResolvedDate())
 
 	if len(os.Args) <= 1 {
 		return runTUI()
