@@ -377,7 +377,6 @@ func (m *Model) clearForm() {
 	m.partnerData = nil
 	m.wlPrivateData = nil
 	m.wlLookupDone = false
-	m.screen = screenQSO
 	m.clearFilteredTable()
 	m.pathCall = ""
 	m.pathGrid = ""
