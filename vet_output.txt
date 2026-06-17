@@ -1,0 +1,1 @@
+internal\tui\qso_form_view.go:340:6: self-assignment of line

@@ -1,0 +1,38 @@
+# golangci-lint configuration for CQOps
+# See: https://golangci-lint.run/usage/configuration/
+
+run:
+  timeout: 3m
+  tests: true
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    - errcheck      # check for unchecked errors
+    - gosimple      # simplify code
+    - govet         # go vet
+    - ineffassign   # detect ineffectual assignments
+    - staticcheck   # static analysis
+    - unused        # check for unused code
+    - gofmt         # check formatting
+    - goimports     # check imports
+    - misspell      # spelling mistakes
+    - unconvert     # unnecessary type conversions
+    - unparam       # unused function parameters
+
+linters-settings:
+  gofmt:
+    simplify: true
+  goimports:
+    local-prefixes: github.com/szporwolik/cqops
+  misspell:
+    locale: US
+  staticcheck:
+    checks: ["all"]
+
+issues:
+  exclude-dirs:
+    - vendor
+    - build
+  max-issues-per-linter: 0
+  max-same-issues: 0
