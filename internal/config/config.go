@@ -22,6 +22,7 @@ type GeneralConfig struct {
 	RenderMap        bool                `yaml:"render_map,omitempty"`
 	DrawGrayline     bool                `yaml:"draw_grayline,omitempty"`
 	PictureAtQRZPane bool                `yaml:"picture_at_qrz_pane,omitempty"`
+	SolarAtQSOPane   bool                `yaml:"solar_at_qso_pane,omitempty"`
 	Notifications    NotificationsConfig `yaml:"notifications"`
 }
 

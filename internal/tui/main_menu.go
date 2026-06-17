@@ -100,24 +100,22 @@ func (m *MainMenu) View() tea.View {
 	}
 
 	showDesc := w >= 60
+	// Fixed label column so descriptions align vertically.
+	const labelW = 13
 
 	var b strings.Builder
 	for i, item := range m.items {
 		prefix := "  "
 		label := item.label
-		desc := ""
 		if i == m.cursor {
 			prefix = S.FormPrefixOn.Render("> ")
 			label = CursorStyle.Render(item.label)
-			if showDesc {
-				desc = DimStyle.Render("  " + item.desc)
-			}
-		} else {
-			if showDesc {
-				desc = DimStyle.Render("  " + item.desc)
-			}
 		}
-		line := lipgloss.JoinHorizontal(lipgloss.Center, prefix, label, desc)
+		labelCell := lipgloss.NewStyle().Width(labelW).Align(lipgloss.Left).Render(label)
+		line := prefix + labelCell
+		if showDesc {
+			line += "  " + DimStyle.Render(item.desc)
+		}
 		b.WriteString(padOrTrunc(line, boxW))
 		if i < len(m.items)-1 {
 			b.WriteString("\n")

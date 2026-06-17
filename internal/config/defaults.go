@@ -7,8 +7,10 @@ func DefaultConfig() *Config {
 
 	return &Config{
 		General: GeneralConfig{
-			Timezone:     tz,
-			DistanceUnit: "km",
+			Timezone:         tz,
+			DistanceUnit:     "km",
+			PictureAtQRZPane: false,
+			SolarAtQSOPane:   true,
 			Notifications: NotificationsConfig{
 				Enabled:       true,
 				QSO:           false,

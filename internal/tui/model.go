@@ -20,6 +20,7 @@ import (
 	"github.com/szporwolik/cqops/internal/psk"
 	"github.com/szporwolik/cqops/internal/qrz"
 	"github.com/szporwolik/cqops/internal/qso"
+	"github.com/szporwolik/cqops/internal/solar"
 	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
@@ -149,6 +150,15 @@ type Model struct {
 	pskSpotKey string
 	pskView    string
 	pskViewKey string
+
+	// Solar data — hourly fetch from hamqsl.com.
+	solarData       *solar.Data
+	solarLastFetch  time.Time
+	solarFetching   bool
+	solarFailed     bool // true after all retries exhausted
+	solarCacheDir   string
+	cachedSolarView string
+	cachedSolarSig  string
 
 	// Layout cache — avoids redundant MeasureLayout() calls when terminal size
 	// and screen haven't changed between frames.
@@ -305,6 +315,7 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	m.pskFilterMins = pskFilterSteps[0] // default 5 min
 	if dir, err := config.CacheDir(); err == nil {
 		m.pskCacheDir = dir
+		m.solarCacheDir = dir
 	}
 	m.applyBeepOnError()
 	return m
@@ -742,13 +753,37 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 	}
 	formBox := drawBorderedBox(formContent, boxW)
 
+	// Solar panel — right-side column on wide screens (≥166 cols),
+	// gated by the General → Solar at QSO pane config option.
+	var formRow string
+	if w >= 166 && m.App.Config.General.SolarAtQSOPane {
+		solarW := w - 2 - boxW - 0 + 2 // no gap, 2px wider panel
+		if solarW < 32 {
+			solarW = 32
+		}
+		solarPanel := m.renderSolarPanel(solarW)
+		if solarPanel != "" {
+			leftH := lipgloss.Height(formBox)
+			solarPanel = lipgloss.Place(
+				lipgloss.Width(solarPanel),
+				leftH,
+				lipgloss.Top, lipgloss.Left,
+				solarPanel,
+			)
+			formRow = lipgloss.JoinHorizontal(lipgloss.Top, formBox, solarPanel)
+		}
+	}
+	if formRow == "" {
+		formRow = formBox
+	}
+
 	profileLine := m.formPathRow(w - 2)
 	profileH := 0
 	if profileLine != "" {
 		profileH = 1
 	}
 
-	formH := lipgloss.Height(formBox)
+	formH := lipgloss.Height(formRow)
 	tableH := l.ContentH - profileH - formH
 	if tableH < 5 {
 		tableH = 5
@@ -764,7 +799,7 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 	if profileLine != "" {
 		parts = append(parts, profileLine)
 	}
-	parts = append(parts, formBox)
+	parts = append(parts, formRow)
 	parts = append(parts, m.recentQSOs.View())
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }

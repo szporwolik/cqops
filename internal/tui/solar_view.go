@@ -1,0 +1,223 @@
+package tui
+
+import (
+	"fmt"
+	"strings"
+
+	"charm.land/lipgloss/v2"
+	"github.com/szporwolik/cqops/internal/solar"
+)
+
+// renderSolarPanel builds a compact bordered solar conditions panel for the
+// right side of the QSO form on wide screens. Returns empty string when
+// no solar data is available and we're not in a loading state.
+//
+// Cached — only rebuilds when solar data content or loading state changes.
+// Box width is fixed so borders never resize when transitioning from
+// placeholder to real data.
+func (m *Model) renderSolarPanel(availW int) string {
+	if availW < 30 {
+		return ""
+	}
+
+	// Fixed box width: 5 columns × 6 cells + 2 borders + 4 padding = 36.
+	const solarBoxW = 36
+
+	d := m.solarData
+
+	// Loading / offline / failed placeholder — cached separately.
+	if d == nil {
+		if m.solarFailed {
+			return ""
+		}
+		placeholderSig := fmt.Sprintf("ld:%d|%v", availW, m.inetOnline)
+		if m.cachedSolarSig == placeholderSig && m.cachedSolarView != "" {
+			return m.cachedSolarView
+		}
+		var result string
+		if m.inetOnline {
+			result = m.renderSolarPlaceholder(solarBoxW, "Loading hamqsl.com\u2026")
+		}
+		m.cachedSolarSig = placeholderSig
+		m.cachedSolarView = result
+		return result
+	}
+
+	// Build cache signature.
+	var sigB strings.Builder
+	fmt.Fprintf(&sigB, "%d|%d|%d|%.1f|%d|%s|%s|%s|%s|%.0f|%.0f|%.0f|",
+		availW, d.SolarFlux, d.AIndex, d.KIndex, d.Sunspots,
+		d.GeomagField, d.SignalNoise, d.XRay, d.Updated,
+		d.SolarWind, d.ProtonFlux, d.Aurora)
+	for _, b := range solar.BandOrder {
+		fmt.Fprintf(&sigB, "%s:%s|", b+"_day", d.Bands[b+"_day"])
+		fmt.Fprintf(&sigB, "%s:%s|", b+"_night", d.Bands[b+"_night"])
+	}
+	sig := sigB.String()
+	if m.cachedSolarSig == sig && m.cachedSolarView != "" {
+		return m.cachedSolarView
+	}
+
+	lbl := lipgloss.NewStyle().Foreground(P.TextMuted) // muted, no fixed width
+	err := S.Error                                     // red for problematic values.
+
+	// --- Thresholds: red when passing ham-unfriendly limits ---
+	sfiStyle, aStyle, kStyle, ssnStyle := lbl, lbl, lbl, lbl
+	if d.SolarFlux < 70 {
+		sfiStyle = err
+	}
+	if d.AIndex >= 15 {
+		aStyle = err
+	}
+	if d.KIndex >= 4 {
+		kStyle = err
+	}
+	if d.Sunspots < 20 {
+		ssnStyle = err
+	}
+
+	// Compact summary — single space between label:value groups.
+	summary := lbl.Render("SFI") + " " + sfiStyle.Render(fmt.Sprintf("%d", d.SolarFlux)) +
+		" " + lbl.Render("A") + " " + aStyle.Render(fmt.Sprintf("%d", d.AIndex)) +
+		" " + lbl.Render("K") + " " + kStyle.Render(fmt.Sprintf("%.1f", d.KIndex)) +
+		" " + lbl.Render("SSN") + " " + ssnStyle.Render(fmt.Sprintf("%d", d.Sunspots))
+
+	// --- Band condition table ---
+	const colW = 6 // 1-char gap between columns (band names are 5 chars)
+	bands := solar.BandOrder
+	times := []string{"Day", "Night"}
+
+	renderCell := func(s string, w int) string {
+		return lipgloss.NewStyle().Width(w).Align(lipgloss.Right).Render(s)
+	}
+
+	// Header row — first column same width as data cols.
+	header := renderCell("", colW)
+	for _, b := range bands {
+		header += renderCell(solar.BandShort[b], colW)
+	}
+
+	// Data rows.
+	var tbl []string
+	tbl = append(tbl, DimStyle.Render(header))
+	for _, tm := range times {
+		row := lbl.Render(renderCell(tm, colW))
+		for _, b := range bands {
+			key := b + "_" + strings.ToLower(tm)
+			cond := strings.TrimSpace(d.Bands[key])
+			style := lbl
+			if strings.EqualFold(cond, "good") {
+				style = S.Success
+			}
+			row += style.Render(renderCell(cond, colW))
+		}
+		tbl = append(tbl, row)
+	}
+	table := lipgloss.JoinVertical(lipgloss.Left, tbl...)
+
+	// --- Extra row 1: Geomag + Signal noise ---
+	var extra1B strings.Builder
+	if d.GeomagField != "" {
+		gfStyle := lbl
+		upper := strings.ToUpper(d.GeomagField)
+		if strings.Contains(upper, "STORM") || strings.Contains(upper, "ACTIVE") {
+			gfStyle = err
+		}
+		extra1B.WriteString(lbl.Render("Geomag"))
+		extra1B.WriteByte(' ')
+		extra1B.WriteString(gfStyle.Render(d.GeomagField))
+	}
+	if d.SignalNoise != "" {
+		if extra1B.Len() > 0 {
+			extra1B.WriteByte(' ')
+		}
+		sigStyle := lbl
+		us := strings.ToUpper(d.SignalNoise)
+		if strings.Contains(us, "S4") || strings.Contains(us, "S5") ||
+			strings.Contains(us, "S6") || strings.Contains(us, "S7") ||
+			strings.Contains(us, "S8") || strings.Contains(us, "S9") {
+			sigStyle = err
+		}
+		extra1B.WriteString(lbl.Render("Sig"))
+		extra1B.WriteByte(' ')
+		extra1B.WriteString(sigStyle.Render(d.SignalNoise))
+	}
+	extra1 := extra1B.String()
+
+	// --- Extra row 2: SW, PF, Aur, XRY ---
+	swStyle, pfStyle, aurStyle, xrStyle := lbl, lbl, lbl, lbl
+	if d.SolarWind > 500 {
+		swStyle = err
+	}
+	if d.ProtonFlux > 10 {
+		pfStyle = err
+	}
+	if d.Aurora > 5 {
+		aurStyle = err
+	}
+	if strings.HasPrefix(strings.ToUpper(d.XRay), "M") ||
+		strings.HasPrefix(strings.ToUpper(d.XRay), "X") {
+		xrStyle = err
+	}
+	var extra2B strings.Builder
+	extra2B.WriteString(lbl.Render("SW"))
+	extra2B.WriteByte(' ')
+	extra2B.WriteString(swStyle.Render(fmt.Sprintf("%.0f", d.SolarWind)))
+	extra2B.WriteByte(' ')
+	extra2B.WriteString(lbl.Render("PF"))
+	extra2B.WriteByte(' ')
+	extra2B.WriteString(pfStyle.Render(fmt.Sprintf("%.0f", d.ProtonFlux)))
+	extra2B.WriteByte(' ')
+	extra2B.WriteString(lbl.Render("Aur"))
+	extra2B.WriteByte(' ')
+	extra2B.WriteString(aurStyle.Render(fmt.Sprintf("%.0f", d.Aurora)))
+	extra2B.WriteByte(' ')
+	extra2B.WriteString(lbl.Render("XRY"))
+	extra2B.WriteByte(' ')
+	extra2B.WriteString(xrStyle.Render(d.XRay))
+	extra2 := extra2B.String()
+
+	// --- Assemble: left-aligned, no stretching ---
+	// Build content first to measure natural width.
+	var contentParts []string
+	contentParts = append(contentParts, summary)
+	if extra2 != "" {
+		contentParts = append(contentParts, extra2)
+	}
+	contentParts = append(contentParts, "")
+	contentParts = append(contentParts, table)
+	if extra1 != "" {
+		contentParts = append(contentParts, "")
+		contentParts = append(contentParts, extra1)
+	}
+	content := lipgloss.JoinVertical(lipgloss.Left, contentParts...)
+
+	// Fixed-width box — borders never change size.
+	result := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(P.Border).
+		Padding(0, 2).
+		Width(solarBoxW).
+		Align(lipgloss.Right, lipgloss.Top).
+		Render(content)
+
+	m.cachedSolarSig = sig
+	m.cachedSolarView = result
+	return result
+}
+
+// renderSolarPlaceholder returns a bordered box with a centered message.
+// Used while waiting for the first solar data fetch.
+func (m *Model) renderSolarPlaceholder(availW int, msg string) string {
+	if availW < 32 {
+		availW = 32
+	}
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(P.Border).
+		Padding(0, 2).
+		Width(availW).
+		Height(10).
+		Align(lipgloss.Center, lipgloss.Top).
+		Render(DimStyle.Render(msg))
+}

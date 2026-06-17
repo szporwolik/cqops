@@ -15,6 +15,7 @@ type GeneralMenu struct {
 	renderMap    bool
 	drawGrayline bool
 	pictureAtQRZ bool
+	solarAtQSO   bool
 	cursor       int
 	done         bool
 	saved        bool
@@ -46,6 +47,7 @@ func NewGeneralMenu(cfg *config.Config) *GeneralMenu {
 		renderMap:    cfg.General.RenderMap,
 		drawGrayline: cfg.General.DrawGrayline,
 		pictureAtQRZ: cfg.General.PictureAtQRZPane,
+		solarAtQSO:   cfg.General.SolarAtQSOPane,
 	}
 }
 
@@ -69,10 +71,10 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if gm.cursor > 0 {
 				gm.cursor--
 			} else {
-				gm.cursor = 4
+				gm.cursor = 5
 			}
 		case "down", "j":
-			if gm.cursor < 4 {
+			if gm.cursor < 5 {
 				gm.cursor++
 			} else {
 				gm.cursor = 0
@@ -97,6 +99,8 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				gm.drawGrayline = !gm.drawGrayline
 			case 4:
 				gm.pictureAtQRZ = !gm.pictureAtQRZ
+			case 5:
+				gm.solarAtQSO = !gm.solarAtQSO
 			}
 		case "enter":
 			// no-op: Enter does not save
@@ -143,6 +147,7 @@ func (gm *GeneralMenu) View() tea.View {
 	gm.renderCheckbox(&b, boxW, 2, "Render map", gm.renderMap)
 	gm.renderCheckbox(&b, boxW, 3, "Draw grayline", gm.drawGrayline)
 	gm.renderCheckbox(&b, boxW, 4, "Picture at QRZ pane", gm.pictureAtQRZ)
+	gm.renderCheckbox(&b, boxW, 5, "Solar at QSO pane", gm.solarAtQSO)
 
 	body := drawMenuWithHeader("Configuration \u2014 General Settings", b.String(), w)
 	return tea.NewView(fillBody(body, contentH))

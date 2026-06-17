@@ -74,7 +74,7 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 		m.autoUpdateDateTime()
 	}
 	m.tickCount++
-	return tea.Batch(tickCmd(), m.maybeCheckInet(), m.pollFlrig(), m.maybeCheckWavelog(), m.maybeCheckQRZ(), cmd)
+	return tea.Batch(tickCmd(), m.maybeCheckInet(), m.pollFlrig(), m.maybeCheckWavelog(), m.maybeCheckQRZ(), m.maybeFetchSolar(), cmd)
 }
 
 // handleAsyncMessages processes async result messages (internet check, Wavelog status,
@@ -163,6 +163,9 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) bool {
 			m.pskSpots = nil
 			m.toasts.Info(fmt.Sprintf("PSK Reporter: %d spots updated", len(r.reports)))
 		}
+		return true
+	case solarFetchMsg:
+		m.handleSolarResult(r)
 		return true
 	}
 	return false
