@@ -131,7 +131,7 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 	if n.Enabled && n.QSO {
 		applog.Info("Sending WSJT-X QSO notification", "call", qs.Call, "band", qs.Band, "mode", qs.Mode)
 		if err := beeep.Notify("CQOps — QSO Logged", fmt.Sprintf("%s on %s %s", qs.Call, qs.Band, qs.Mode), ""); err != nil {
-			applog.Info("QSO notification failed", "error", err.Error())
+			applog.Warn("QSO notification failed", "error", err.Error())
 		}
 	}
 
@@ -190,10 +190,14 @@ func parseWSJTXADIF(adifStr string) *qso.QSO {
 			qs.Band = qso.NormalizeBand(v)
 		}
 		if v := r[adifield.FREQ]; v != "" {
-			fmt.Sscanf(v, "%f", &qs.Freq)
+			if _, err := fmt.Sscanf(v, "%f", &qs.Freq); err != nil {
+				applog.Warn("WSJT-X: bad ADIF frequency", "freq", v, "error", err)
+			}
 		}
 		if v := r[adifield.FREQ_RX]; v != "" {
-			fmt.Sscanf(v, "%f", &qs.FreqRx)
+			if _, err := fmt.Sscanf(v, "%f", &qs.FreqRx); err != nil {
+				applog.Warn("WSJT-X: bad ADIF frequency_rx", "freq", v, "error", err)
+			}
 		}
 		if v := r[adifield.STATION_CALLSIGN]; v != "" {
 			qs.StationCallsign = strings.ToUpper(v)

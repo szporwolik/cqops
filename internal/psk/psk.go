@@ -124,9 +124,18 @@ func parseReports(data []byte) ([]Report, error) {
 
 	var reports []Report
 	for _, r := range rr.Reports {
-		freq, _ := strconv.ParseFloat(r.Frequency, 64)
-		snr, _ := strconv.Atoi(r.SNR)
-		ts, _ := strconv.ParseInt(r.FlowStartSeconds, 10, 64)
+		freq, err := strconv.ParseFloat(r.Frequency, 64)
+		if err != nil && r.Frequency != "" {
+			applog.Warn("PSK Reporter: bad frequency in report", "freq", r.Frequency, "error", err)
+		}
+		snr, err := strconv.Atoi(r.SNR)
+		if err != nil && r.SNR != "" {
+			applog.Warn("PSK Reporter: bad SNR in report", "snr", r.SNR, "error", err)
+		}
+		ts, err := strconv.ParseInt(r.FlowStartSeconds, 10, 64)
+		if err != nil && r.FlowStartSeconds != "" {
+			applog.Warn("PSK Reporter: bad timestamp in report", "ts", r.FlowStartSeconds, "error", err)
+		}
 		reports = append(reports, Report{
 			ReceiverCallsign: strings.ToUpper(r.ReceiverCallsign),
 			ReceiverLocator:  strings.ToUpper(r.ReceiverLocator),

@@ -75,7 +75,7 @@ func (m *Model) saveQSO() tea.Cmd {
 	if n.Enabled && n.QSO {
 		applog.Info("Sending QSO notification", "call", qs.Call, "band", qs.Band, "mode", qs.Mode)
 		if err := beeep.Notify("CQOps — QSO Logged", fmt.Sprintf("%s on %s %s", qs.Call, qs.Band, qs.Mode), ""); err != nil {
-			applog.Info("QSO notification failed", "error", err.Error())
+			applog.Warn("QSO notification failed", "error", err.Error())
 		}
 	}
 

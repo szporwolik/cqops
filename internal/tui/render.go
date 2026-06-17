@@ -99,7 +99,7 @@ func clamp(s string, w int) string {
 func padOrTrunc(s string, w int) string {
 	sw := lipgloss.Width(s)
 	if sw > w {
-		return truncate(s, w)
+		return truncateText(s, w)
 	}
 	if sw < w {
 		return s + strings.Repeat(" ", w-sw)
@@ -131,30 +131,6 @@ func formatTime(adif string) string {
 		return "—"
 	}
 	return adif[0:2] + ":" + adif[2:4] + ":" + adif[4:6]
-}
-
-func truncate(s string, max int) string {
-	if max < 3 {
-		return s
-	}
-	if lipgloss.Width(s) <= max {
-		return s
-	}
-	// Count visual cells (runes) up to max-1, then append ellipsis.
-	// This is rune-safe and handles multi-byte UTF-8 correctly.
-	w := 0
-	runes := []rune(s)
-	for i, r := range runes {
-		rw := 1
-		if r > 0xffff {
-			rw = 2
-		}
-		if w+rw >= max {
-			return string(runes[:i]) + "\u2026"
-		}
-		w += rw
-	}
-	return s
 }
 
 // =============================================================================

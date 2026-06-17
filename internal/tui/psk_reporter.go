@@ -375,7 +375,7 @@ func (m *Model) buildPSKFilters(maxW int) string {
 		if valW < 3 {
 			valW = 3
 		}
-		val := ValueStyle.Width(valW).MaxWidth(valW).Inline(true).Render(truncate(value, valW))
+		val := ValueStyle.Width(valW).MaxWidth(valW).Inline(true).Render(truncateText(value, valW))
 		lines = append(lines, indent+lipgloss.JoinHorizontal(lipgloss.Center, lbl, " ", val))
 	}
 

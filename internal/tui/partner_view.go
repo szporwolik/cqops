@@ -429,7 +429,7 @@ func (m *Model) renderLogbookRows(d *qrz.CallData, maxW int) string {
 	if s.LastQSODate != "" {
 		last = s.LastQSODate
 	}
-	rows = append(rows, row{"Last QSO", ValueStyle.Width(valW).MaxWidth(valW).Inline(true).Render(truncate(last, valW))})
+	rows = append(rows, row{"Last QSO", ValueStyle.Width(valW).MaxWidth(valW).Inline(true).Render(truncateText(last, valW))})
 
 	return formatRowPairs(rows, S.FormLabel)
 }

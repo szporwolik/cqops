@@ -52,7 +52,7 @@ func checkInetCmd() tea.Cmd {
 			applog.Warn("Internet: unreachable", "error", err)
 			return inetResultMsg(false)
 		}
-		resp.Body.Close()
+		defer resp.Body.Close()
 		applog.Info("Internet: reachable")
 		return inetResultMsg(true)
 	}

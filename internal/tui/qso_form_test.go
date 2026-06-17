@@ -729,31 +729,31 @@ func TestTruncateMultiByte(t *testing.T) {
 		t.Fatal("unexpected width")
 	}
 	// Truncate to a width that falls on the degree symbol (multi-byte).
-	result := truncate(s, w-2)
+	result := truncateText(s, w-2)
 	// Result should not contain garbled bytes — must be valid.
 	if lipgloss.Width(result) > w-2 {
-		t.Errorf("truncate width %d > max %d", lipgloss.Width(result), w-2)
+		t.Errorf("truncateText width %d > max %d", lipgloss.Width(result), w-2)
 	}
 	// Should end with ellipsis.
 	if !strings.HasSuffix(result, "\u2026") {
-		t.Error("truncate should end with ellipsis")
+		t.Error("truncateText should end with ellipsis")
 	}
 }
 
 func TestTruncateAscii(t *testing.T) {
-	result := truncate("Hello World", 8)
+	result := truncateText("Hello World", 8)
 	if lipgloss.Width(result) > 8 {
-		t.Errorf("truncate width %d > 8", lipgloss.Width(result))
+		t.Errorf("truncateText width %d > 8", lipgloss.Width(result))
 	}
 	if !strings.HasSuffix(result, "\u2026") {
-		t.Error("truncate should end with ellipsis")
+		t.Error("truncateText should end with ellipsis")
 	}
 }
 
 func TestTruncateShort(t *testing.T) {
-	result := truncate("Hi", 2)
-	// max < 3 → returned unchanged
+	result := truncateText("Hi", 3)
+	// With width 3, "Hi" (2 cells) fits without truncation.
 	if result != "Hi" {
-		t.Errorf("truncate short string = %q, want Hi", result)
+		t.Errorf("truncateText(%q, 3) = %q, want %q", "Hi", result, "Hi")
 	}
 }

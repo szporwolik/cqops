@@ -531,7 +531,11 @@ func (c *LogbookChooser) deleteLogbook() tea.Cmd {
 	if err := config.Save(c.app.ConfigPath, c.app.Config); err != nil {
 		c.toasts.Error("Delete " + displayName + " failed: " + err.Error())
 	} else {
-		go func() { os.Remove(dbPath) }()
+		go func() {
+			if err := os.Remove(dbPath); err != nil && !os.IsNotExist(err) {
+				applog.Warn("Failed to remove logbook database", "path", dbPath, "error", err)
+			}
+		}()
 		c.toasts.Success("Logbook " + displayName + " deleted")
 		applog.Info("Logbook deleted", "name", displayName)
 	}

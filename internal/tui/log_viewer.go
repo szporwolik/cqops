@@ -146,7 +146,7 @@ func (lv *LogViewer) View() tea.View {
 
 		b.WriteString(logTimeStyle.Render(e.Time))
 		b.WriteString(logLevelStyle.Render(ls.Render(e.Level)))
-		b.WriteString(ValueStyle.Render(truncate(msg, msgW)))
+		b.WriteString(ValueStyle.Render(truncateText(msg, msgW)))
 		if i > 0 {
 			b.WriteByte('\n')
 		}

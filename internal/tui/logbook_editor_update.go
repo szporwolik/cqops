@@ -453,10 +453,14 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 			qs.TimeOff = v
 		}
 		if v := r[adifield.FREQ]; v != "" {
-			fmt.Sscanf(v, "%f", &qs.Freq)
+			if _, err := fmt.Sscanf(v, "%f", &qs.Freq); err != nil {
+				applog.Warn("Wavelog download: bad ADIF frequency", "freq", v, "error", err)
+			}
 		}
 		if v := r[adifield.FREQ_RX]; v != "" {
-			fmt.Sscanf(v, "%f", &qs.FreqRx)
+			if _, err := fmt.Sscanf(v, "%f", &qs.FreqRx); err != nil {
+				applog.Warn("Wavelog download: bad ADIF frequency_rx", "freq", v, "error", err)
+			}
 		}
 		if v := r[adifield.RST_SENT]; v != "" {
 			qs.RSTSent = v
@@ -522,7 +526,9 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 			qs.MyAntenna = v
 		}
 		if v := r[adifield.DISTANCE]; v != "" {
-			fmt.Sscanf(v, "%f", &qs.Distance)
+			if _, err := fmt.Sscanf(v, "%f", &qs.Distance); err != nil {
+				applog.Warn("Wavelog download: bad ADIF distance", "dist", v, "error", err)
+			}
 		}
 		qs.Source = "wavelog"
 		qs.WavelogUploaded = "yes"
