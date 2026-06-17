@@ -79,7 +79,6 @@ func (m *Model) maybeFetchSolar() tea.Cmd {
 
 	m.solarFetching = true
 	m.solarLastFetch = time.Now()
-	applog.Info("Solar: fetching hamqsl.com")
 	m.toasts.Info("Solar: fetching hamqsl.com\u2026")
 	return solarFetchCmd(m.solarCacheDir)
 }
@@ -105,11 +104,7 @@ func (m *Model) handleSolarResult(msg solarFetchMsg) {
 	m.solarData = msg.data
 	m.solarFailed = false
 	m.cachedSolarSig = ""
-	applog.Info("Solar: fetched OK",
-		"solarflux", msg.data.SolarFlux,
-		"aindex", msg.data.AIndex,
-		"kindex", fmt.Sprintf("%.1f", msg.data.KIndex),
-		"sunspots", msg.data.Sunspots,
+	applog.Info("Solar: hamqsl.com data updated",
 		"attempts", msg.attempts,
 	)
 	m.toasts.Info("Solar: hamqsl.com data updated")

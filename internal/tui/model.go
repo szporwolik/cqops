@@ -666,7 +666,9 @@ func (m *Model) viewImage(l Layout) string {
 				msg = "Image download timed out"
 			}
 		}
-		if msg == "" && m.partnerData != nil {
+		if msg == "" && m.lastImageURL != "" {
+			msg = "Loading photo\u2026"
+		} else if msg == "" && m.partnerData != nil {
 			msg = "No photo for " + m.partnerData.Callsign
 		}
 		if msg == "" {
