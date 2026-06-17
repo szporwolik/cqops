@@ -84,6 +84,12 @@ func (m *Model) pollFlrig() tea.Cmd {
 	m.rigSkipTicks = 0
 	if m.flrigClient == nil {
 		m.rigConnected = false
+		// Auto-reconnect: if flrig is enabled in config but the client
+		// was never created (e.g. flrig started after CQOps), try now.
+		// Limit to once every 30 ticks (30 seconds) to avoid log spam.
+		if m.tickCount%30 == 0 {
+			m.refreshFlrigClient()
+		}
 		return nil
 	}
 	if m.rigPolling {

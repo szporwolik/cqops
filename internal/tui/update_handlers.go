@@ -68,6 +68,12 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 		m.wsjtxTxMsg = ""
 		m.cachedStatus = ""
 	}
+	// WSJT-X auto-reconnect: if enabled but never online, retry start every 30s.
+	// MaybeRestartWSJTX is a no-op when the listener is already running; it only
+	// acts when the previous start failed (lastWSJTX wasn't updated on error).
+	if m.App.Config.WSJTX.Enabled && !m.wsjtxOnline && m.tickCount%30 == 0 {
+		m.App.MaybeRestartWSJTX()
+	}
 	m.toasts.Expire()
 	// Only update the QSO form clock when the form is visible.
 	if m.screen == screenQSO {
