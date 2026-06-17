@@ -104,7 +104,12 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.screen = screenPartner
 		m.invalidatePartnerMapCache()
 
-		return m.lookupCallCmd(call), true
+		// Only trigger lookups when the call actually changed — avoid
+		// redundant network calls on every tab switch.
+		if callChanged || m.partnerData == nil {
+			return m.lookupCallCmd(call), true
+		}
+		return nil, true
 
 	case key.Matches(msg, m.keys.PSKReporter):
 		applog.Debug("tab: F5 PSK Reporter")
@@ -236,7 +241,11 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		}
 		m.screen = screenPartner
 		m.invalidatePartnerMapCache()
-		return m.lookupCallCmd(call), true
+		// Only trigger lookups when the call changed.
+		if m.partnerData == nil || !strings.EqualFold(m.partnerData.Callsign, call) {
+			return m.lookupCallCmd(call), true
+		}
+		return nil, true
 
 	case key.Matches(msg, m.keys.PSKReporter):
 		applog.Debug("tab: F5 PSK Reporter")

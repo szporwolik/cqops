@@ -259,7 +259,7 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			// Refresh PSK data via async command — never block UI.
 			if !m.pskFetching && m.inetOnline {
 				m.pskFetching = true
-				m.toasts.Success("PSK Reporter: fetching\u2026")
+				m.toasts.Info("PSK Reporter: fetching\u2026")
 				return m, m.pskFetchCmd()
 			}
 			return m, cmd

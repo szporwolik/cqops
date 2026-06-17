@@ -161,7 +161,7 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) bool {
 			m.pskSpotKey = ""
 			m.pskViewKey = ""
 			m.pskSpots = nil
-			m.toasts.Success(fmt.Sprintf("PSK Reporter: %d spots updated", len(r.reports)))
+			m.toasts.Info(fmt.Sprintf("PSK Reporter: %d spots updated", len(r.reports)))
 		}
 		return true
 	}

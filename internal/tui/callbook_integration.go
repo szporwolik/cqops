@@ -125,7 +125,7 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 	}
 	d := msg.Data
 	if d == nil || d.Callsign == "" {
-		m.toasts.Warn("QRZ: no data for " + msg.Call)
+		m.toasts.Warn("QRZ.com: no data for " + msg.Call)
 		return
 	}
 	m.partnerData = d
@@ -148,7 +148,7 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 		m.fields[fieldCountry].SetValue(d.Country)
 	}
 	m.autoFillRST()
-	m.toasts.Info("QRZ: " + d.Callsign + " " + d.Name)
+	m.toasts.Info("QRZ.com: " + d.Callsign + " " + d.Name)
 }
 
 // fillWLData stores Wavelog private lookup result data.
