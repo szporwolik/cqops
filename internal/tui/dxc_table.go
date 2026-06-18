@@ -81,11 +81,11 @@ func (m *Model) dxcFilteredSpots() []store.DXCSpot {
 		spots = filtered
 	}
 
-	// Mode filter — groups individual modes into CW/DIGI/PHONE categories.
+	// Mode filter — uses pre-computed mode_cat column.
 	if m.dxcModeFilter != "" {
 		var filtered []store.DXCSpot
 		for _, s := range spots {
-			if spotModeCategory(s.Mode) == m.dxcModeFilter {
+			if s.ModeCat == m.dxcModeFilter {
 				filtered = append(filtered, s)
 			}
 		}

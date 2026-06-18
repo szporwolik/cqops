@@ -93,6 +93,11 @@ var migrations = []string{
 	`DELETE FROM dxc_spots WHERE id NOT IN (SELECT id FROM (SELECT MAX(id) AS id FROM dxc_spots GROUP BY dx_call))`,
 	`DROP INDEX IF EXISTS idx_dxc_spots_uniq`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS idx_dxc_spots_call ON dxc_spots(dx_call)`,
+	`ALTER TABLE dxc_spots ADD COLUMN mode_cat TEXT NOT NULL DEFAULT ''`,
+	`CREATE INDEX IF NOT EXISTS idx_qsos_source ON qsos(source)`,
+	`CREATE INDEX IF NOT EXISTS idx_qsos_wavelog_uploaded ON qsos(wavelog_uploaded)`,
+	`DROP INDEX IF EXISTS idx_psk_spots_station`,
+	`CREATE INDEX IF NOT EXISTS idx_psk_spots_station_flow ON psk_spots(station_call, flow_start)`,
 }
 
 func Migrate(db *sql.DB) error {

@@ -156,11 +156,13 @@ func (m *Model) storeDXCSpotsCmd(spots []dxc.Spot) tea.Cmd {
 		var dbSpots []store.DXCSpot
 		now := time.Now().UTC().Unix()
 		for _, s := range spots {
+			mode := deriveSpotMode(s.Comment, s.Frequency/1000)
 			dbSpots = append(dbSpots, store.DXCSpot{
 				DXCall:     s.DXCall,
 				Frequency:  s.Frequency,
-				Band:       qso.DeriveBand(s.Frequency / 1000), // convert kHz to MHz
-				Mode:       deriveSpotMode(s.Comment, s.Frequency/1000),
+				Band:       qso.DeriveBand(s.Frequency / 1000),
+				Mode:       mode,
+				ModeCat:    spotModeCategory(mode),
 				Comment:    s.Comment,
 				Spotter:    s.Spotter,
 				ReceivedAt: now,

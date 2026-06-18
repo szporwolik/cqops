@@ -27,30 +27,36 @@ func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 		q.Source = "manual"
 	}
 
-	res, err := db.Exec(
-		`INSERT INTO qsos (`+qsoCols+`, created_at, updated_at)
-		VALUES (`+placeholders(36)+`)`,
-		q.Call, q.QSODate, q.TimeOn, q.TimeOff,
-		q.Band, q.Freq, q.FreqRx, q.Mode, q.Submode,
-		q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
-		q.Distance, q.Bearing,
-		q.SOTARef, q.POTARef, q.WWFFRef, q.IOTA,
-		q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
-		q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
-		q.WavelogUploaded,
-		q.CreatedAt.Format(time.RFC3339), q.UpdatedAt.Format(time.RFC3339),
-	)
-	if err != nil {
-		return 0, fmt.Errorf("insert qso: %w", err)
+	var id int64
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		res, err := db.Exec(
+			`INSERT INTO qsos (`+qsoCols+`, created_at, updated_at)
+			VALUES (`+placeholders(36)+`)`,
+			q.Call, q.QSODate, q.TimeOn, q.TimeOff,
+			q.Band, q.Freq, q.FreqRx, q.Mode, q.Submode,
+			q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
+			q.Distance, q.Bearing,
+			q.SOTARef, q.POTARef, q.WWFFRef, q.IOTA,
+			q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
+			q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
+			q.WavelogUploaded,
+			q.CreatedAt.Format(time.RFC3339), q.UpdatedAt.Format(time.RFC3339),
+		)
+		if err == nil {
+			id, err = res.LastInsertId()
+			if err == nil {
+				q.ID = id
+				return id, nil
+			}
+			return 0, fmt.Errorf("last insert id: %w", err)
+		}
+		if !strings.Contains(err.Error(), "database is locked") {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
-
-	id, err := res.LastInsertId()
-	if err != nil {
-		return 0, fmt.Errorf("last insert id: %w", err)
-	}
-
-	q.ID = id
-	return id, nil
+	return 0, fmt.Errorf("insert qso: %w", err)
 }
 
 // placeholders returns a string of n comma-separated "?" placeholders.
@@ -282,31 +288,38 @@ func ListAllQSOs(db *sql.DB) ([]qso.QSO, error) {
 
 func UpdateQSO(db *sql.DB, q *qso.QSO) error {
 	q.UpdatedAt = time.Now().UTC()
-	_, err := db.Exec(
-		`UPDATE qsos SET call=?, qso_date=?, time_on=?, time_off=?, band=?, freq=?, freq_rx=?, mode=?, submode=?,
-		rst_sent=?, rst_rcvd=?, gridsquare=?, name=?, qth=?, country=?, comment=?, notes=?, tx_pwr=?,
-		distance=?, bearing=?,
-		sota_ref=?, pota_ref=?, wwff_ref=?, iota=?,
-		my_sota_ref=?, my_pota_ref=?, my_wwff_ref=?,
-		station_callsign=?, operator=?, my_gridsquare=?, my_rig=?, my_antenna=?, source=?,
-		wavelog_uploaded=?,
-		updated_at=?
-		WHERE id=?`,
-		q.Call, q.QSODate, q.TimeOn, q.TimeOff,
-		q.Band, q.Freq, q.FreqRx, q.Mode, q.Submode,
-		q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
-		q.Distance, q.Bearing,
-		q.SOTARef, q.POTARef, q.WWFFRef, q.IOTA,
-		q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
-		q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
-		q.WavelogUploaded,
-		q.UpdatedAt.Format(time.RFC3339),
-		q.ID,
-	)
-	if err != nil {
-		return fmt.Errorf("update qso: %w", err)
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		_, err = db.Exec(
+			`UPDATE qsos SET call=?, qso_date=?, time_on=?, time_off=?, band=?, freq=?, freq_rx=?, mode=?, submode=?,
+			rst_sent=?, rst_rcvd=?, gridsquare=?, name=?, qth=?, country=?, comment=?, notes=?, tx_pwr=?,
+			distance=?, bearing=?,
+			sota_ref=?, pota_ref=?, wwff_ref=?, iota=?,
+			my_sota_ref=?, my_pota_ref=?, my_wwff_ref=?,
+			station_callsign=?, operator=?, my_gridsquare=?, my_rig=?, my_antenna=?, source=?,
+			wavelog_uploaded=?,
+			updated_at=?
+			WHERE id=?`,
+			q.Call, q.QSODate, q.TimeOn, q.TimeOff,
+			q.Band, q.Freq, q.FreqRx, q.Mode, q.Submode,
+			q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
+			q.Distance, q.Bearing,
+			q.SOTARef, q.POTARef, q.WWFFRef, q.IOTA,
+			q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
+			q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
+			q.WavelogUploaded,
+			q.UpdatedAt.Format(time.RFC3339),
+			q.ID,
+		)
+		if err == nil {
+			return nil
+		}
+		if !strings.Contains(err.Error(), "database is locked") {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
-	return nil
+	return fmt.Errorf("update qso: %w", err)
 }
 
 func PurgeQSOs(db *sql.DB) error {
@@ -373,8 +386,12 @@ func CountQSOs(db *sql.DB) (QSOCounts, error) {
 	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos`).Scan(&c.Total); err != nil {
 		return c, fmt.Errorf("count qsos: %w", err)
 	}
-	db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE source='wsjtx'`).Scan(&c.FromWSJTX)
-	db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE wavelog_uploaded='yes'`).Scan(&c.ToWavelog)
+	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE source='wsjtx'`).Scan(&c.FromWSJTX); err != nil {
+		return c, fmt.Errorf("count wsjtx qsos: %w", err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE wavelog_uploaded='yes'`).Scan(&c.ToWavelog); err != nil {
+		return c, fmt.Errorf("count wavelog qsos: %w", err)
+	}
 	return c, nil
 }
 
@@ -518,6 +535,7 @@ type DXCSpot struct {
 	Frequency  float64
 	Band       string
 	Mode       string
+	ModeCat    string
 	Comment    string
 	Spotter    string
 	ReceivedAt int64
@@ -532,8 +550,8 @@ func InsertDXCSpots(db *sql.DB, spots []DXCSpot) (int, error) {
 	defer tx.Rollback()
 
 	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO dxc_spots
-		(dx_call, frequency, band, mode, comment, spotter, received_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)`)
+		(dx_call, frequency, band, mode, mode_cat, comment, spotter, received_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return 0, fmt.Errorf("prepare: %w", err)
 	}
@@ -541,7 +559,7 @@ func InsertDXCSpots(db *sql.DB, spots []DXCSpot) (int, error) {
 
 	inserted := 0
 	for _, s := range spots {
-		res, err := stmt.Exec(s.DXCall, s.Frequency, s.Band, s.Mode, s.Comment, s.Spotter, s.ReceivedAt)
+		res, err := stmt.Exec(s.DXCall, s.Frequency, s.Band, s.Mode, s.ModeCat, s.Comment, s.Spotter, s.ReceivedAt)
 		if err != nil {
 			return inserted, fmt.Errorf("insert dxc_spot: %w", err)
 		}
@@ -568,7 +586,7 @@ func PurgeOldDXCSpots(db *sql.DB) error {
 
 // QueryDXCSpots returns recent DXC spots ordered by time (newest first).
 func QueryDXCSpots(db *sql.DB) ([]DXCSpot, error) {
-	rows, err := db.Query(`SELECT id, dx_call, frequency, band, mode, comment, spotter, received_at
+	rows, err := db.Query(`SELECT id, dx_call, frequency, band, mode, mode_cat, comment, spotter, received_at
 		FROM dxc_spots ORDER BY received_at DESC LIMIT 500`)
 	if err != nil {
 		return nil, fmt.Errorf("query dxc_spots: %w", err)
@@ -577,7 +595,7 @@ func QueryDXCSpots(db *sql.DB) ([]DXCSpot, error) {
 	var spots []DXCSpot
 	for rows.Next() {
 		var s DXCSpot
-		if err := rows.Scan(&s.ID, &s.DXCall, &s.Frequency, &s.Band, &s.Mode, &s.Comment, &s.Spotter, &s.ReceivedAt); err != nil {
+		if err := rows.Scan(&s.ID, &s.DXCall, &s.Frequency, &s.Band, &s.Mode, &s.ModeCat, &s.Comment, &s.Spotter, &s.ReceivedAt); err != nil {
 			return spots, fmt.Errorf("scan dxc_spot: %w", err)
 		}
 		spots = append(spots, s)
@@ -588,9 +606,9 @@ func QueryDXCSpots(db *sql.DB) ([]DXCSpot, error) {
 // QueryDXCSpotByCall returns the most recent DXC spot for a given callsign, if any.
 func QueryDXCSpotByCall(db *sql.DB, call string) (*DXCSpot, error) {
 	var s DXCSpot
-	err := db.QueryRow(`SELECT id, dx_call, frequency, band, mode, comment, spotter, received_at
+	err := db.QueryRow(`SELECT id, dx_call, frequency, band, mode, mode_cat, comment, spotter, received_at
 		FROM dxc_spots WHERE dx_call = ? ORDER BY received_at DESC LIMIT 1`, call).Scan(
-		&s.ID, &s.DXCall, &s.Frequency, &s.Band, &s.Mode, &s.Comment, &s.Spotter, &s.ReceivedAt)
+		&s.ID, &s.DXCall, &s.Frequency, &s.Band, &s.Mode, &s.ModeCat, &s.Comment, &s.Spotter, &s.ReceivedAt)
 	if err != nil {
 		return nil, err // sql.ErrNoRows if not found
 	}
