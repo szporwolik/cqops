@@ -173,6 +173,7 @@ func (m *Model) storeDXCSpotsCmd(spots []dxc.Spot) tea.Cmd {
 			if prefixes != nil {
 				if m, ok := prefixes.Find(s.DXCall); ok && len(m) > 0 {
 					spot.DXCont = m[0].Continent
+					spot.DXCC = m[0].Name
 				}
 				if m, ok := prefixes.Find(s.Spotter); ok && len(m) > 0 {
 					spot.SpotCont = m[0].Continent

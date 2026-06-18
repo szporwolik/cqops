@@ -14,7 +14,7 @@ var dxcTimeWindows = []int{0, 60, 30, 15, 10, 5}
 
 // dxcColWidths maps DXC column keys to minimum widths.
 var dxcColWidths = map[string]int{
-	"Time": 8, "Freq": 8, "Band": 5, "Mode": 4, "DX Cont": 5, "DX Call": 10, "Spot Cont": 5, "Spotter": 10, "Comment": 8,
+	"Time": 8, "Freq": 8, "Band": 5, "Mode": 4, "DX Cont": 3, "DXCC": 10, "DX Call": 8, "Spot Cont": 3, "Spotter": 7, "Comment": 8,
 }
 
 // dxcColOrder is the fixed display order (keys, not titles).
@@ -47,6 +47,11 @@ func dxcColValue(col string, s *store.DXCSpot) string {
 			return "\u2014"
 		}
 		return s.DXCont
+	case "DXCC":
+		if s.DXCC == "" {
+			return "\u2014"
+		}
+		return s.DXCC
 	case "Spotter":
 		return s.Spotter
 	case "Spot Cont":
@@ -82,7 +87,25 @@ func (m *Model) buildDXCTable() {
 		bodyW = partnerMapMaxW
 	}
 
-	names := dxcColOrder
+	names := make([]string, len(dxcColOrder))
+	copy(names, dxcColOrder)
+
+	// On wide screens (≥120 cols), insert DXCC column between DX Cont and DX Call.
+	showDXCC := w >= 120
+	if showDXCC {
+		insertAt := -1
+		for i, n := range names {
+			if n == "DX Call" {
+				insertAt = i
+				break
+			}
+		}
+		if insertAt >= 0 {
+			names = append(names, "")
+			copy(names[insertAt+1:], names[insertAt:])
+			names[insertAt] = "DXCC"
+		}
+	}
 
 	var cols []table.Column
 	minTotal := 0
@@ -94,22 +117,38 @@ func (m *Model) buildDXCTable() {
 	gaps := len(cols) - 1
 	extra := bodyW - gaps - minTotal
 	if extra > 0 {
-		dist := 0
-		for i := range cols {
-			var share int
-			switch cols[i].Title {
-			case "Comment":
-				share = extra * 4 / 10
-			case "Spotter":
-				share = extra * 3 / 10
-			case "DX Call":
-				share = extra * 2 / 10
-			}
-			cols[i].Width += share
-			dist += share
+		// Compute per-column max caps. DXCC gets double width on very wide screens.
+		maxWidths := map[string]int{
+			"DX Call": 11,
+			"Spotter": 9,
+			"DXCC":    12,
 		}
-		if leftover := extra - dist; leftover > 0 {
-			cols[len(cols)-1].Width += leftover
+		if w >= 125 {
+			maxWidths["DXCC"] = 24
+		}
+
+		// Give non-Comment columns a chance to grow to their max caps.
+		for i := range cols {
+			if cols[i].Title == "Comment" {
+				continue
+			}
+			if maxW, ok := maxWidths[cols[i].Title]; ok && cols[i].Width < maxW {
+				need := maxW - cols[i].Width
+				if need > extra {
+					need = extra
+				}
+				cols[i].Width += need
+				extra -= need
+			}
+		}
+		// All remaining extra space goes to Comment.
+		if extra > 0 {
+			for i := range cols {
+				if cols[i].Title == "Comment" {
+					cols[i].Width += extra
+					break
+				}
+			}
 		}
 	}
 
