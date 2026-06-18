@@ -335,9 +335,21 @@ func (m *Model) onFieldExit() {
 	}
 }
 
-// clearForm resets all QSO form fields to defaults, preserving retained comment
-// and rig-related field values.
+// clearForm resets the entire QSO form for a new QSO: clears fields (with
+// retention of rig values and comment), partner lookup data, navigation state,
+// and the recent-QSO filter table.  Partner data is preserved when the user is
+// actively viewing the Partner/Image screen.
 func (m *Model) clearForm() {
+	m.resetQSOFields()
+	m.resetPartnerLookup()
+	m.resetNavigation()
+	m.clearFilteredTable()
+}
+
+// resetQSOFields blanks every field, restores date/time to UTC now, and
+// re-applies retained rig values (band, freq, mode, submode, power) and
+// the retain-comment setting.  Focus moves to the Call field.
+func (m *Model) resetQSOFields() {
 	retainedComment := ""
 	if m.retainComment {
 		retainedComment = m.fields[fieldComment].Value()
@@ -375,14 +387,24 @@ func (m *Model) clearForm() {
 	m.retainFocused = false
 	m.focus = fieldCall
 	m.fields[m.focus].Focus()
-	// Preserve partner data when the user is actively viewing the QRZ page
-	// (Partner or Image screen), e.g. after WSJT-X auto-clears the form.
+}
+
+// resetPartnerLookup clears QRZ and Wavelog lookup data so the next
+// lookup request starts from a clean state.  Skipped when the user is
+// actively viewing the Partner or Image screen.
+func (m *Model) resetPartnerLookup() {
 	if m.screen != screenPartner && m.screen != screenImage {
 		m.partnerData = nil
 		m.wlPrivateData = nil
 		m.wlLookupDone = false
 	}
-	m.clearFilteredTable()
+}
+
+// resetNavigation clears the cached path line and the committed call/grid
+// values so the next path calculation starts fresh.
+func (m *Model) resetNavigation() {
 	m.pathCall = ""
 	m.pathGrid = ""
+	m.cachedPathLine = ""
+	m.cachedPathSig = ""
 }

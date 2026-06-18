@@ -2,9 +2,14 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
+	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/szporwolik/cqops/internal/qso"
 )
 
 type Config struct {
@@ -189,7 +194,7 @@ func Save(path string, cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
+	if err := os.WriteFile(path, data, 0600); err != nil {
 		return fmt.Errorf("write config: %w", err)
 	}
 	return nil
@@ -197,6 +202,8 @@ func Save(path string, cfg *Config) error {
 
 // Validate checks the config for structural integrity. Returns an error
 // describing the first problem found, or nil if the config is valid.
+// Validate checks the config for structural integrity and safe values.
+// Returns an error describing the first problem found, or nil if valid.
 func (c *Config) Validate() error {
 	if len(c.Logbooks) == 0 {
 		return fmt.Errorf("no logbooks configured")
@@ -204,8 +211,98 @@ func (c *Config) Validate() error {
 	if c.State.ActiveLogbook == "" {
 		return fmt.Errorf("no active logbook set")
 	}
-	if _, ok := c.Logbooks[c.State.ActiveLogbook]; !ok {
+	lb, ok := c.Logbooks[c.State.ActiveLogbook]
+	if !ok {
 		return fmt.Errorf("active logbook %q not found in logbooks", c.State.ActiveLogbook)
 	}
+
+	// --- General settings ---
+	tz := strings.TrimSpace(c.General.Timezone)
+	if tz == "" {
+		return fmt.Errorf("general.timezone is required")
+	}
+	switch c.General.DistanceUnit {
+	case "", "km", "mi":
+	default:
+		return fmt.Errorf("general.distance_unit must be 'km' or 'mi', got %q", c.General.DistanceUnit)
+	}
+
+	// --- Active logbook station ---
+	call := strings.TrimSpace(lb.Station.Callsign)
+	if call != "" && !qso.IsValidCall(call) {
+		return fmt.Errorf("station callsign %q is not a valid callsign", call)
+	}
+	grid := strings.TrimSpace(lb.Station.Grid)
+	if grid != "" && !qso.IsValidLocator(grid) {
+		return fmt.Errorf("station grid %q is not a valid Maidenhead locator", grid)
+	}
+
+	// --- QRZ ---
+	if c.QRZ.Enabled {
+		if strings.TrimSpace(c.QRZ.User) == "" {
+			return fmt.Errorf("qrz.user is required when qrz.enabled is true")
+		}
+		if strings.TrimSpace(c.QRZ.Pass) == "" {
+			return fmt.Errorf("qrz.pass is required when qrz.enabled is true")
+		}
+	}
+
+	// --- Wavelog ---
+	if lb.Wavelog != nil && lb.Wavelog.Enabled {
+		wl := lb.Wavelog
+		if strings.TrimSpace(wl.URL) == "" {
+			return fmt.Errorf("wavelog.url is required when enabled")
+		}
+		u, err := url.Parse(wl.URL)
+		if err != nil {
+			return fmt.Errorf("wavelog.url %q is not a valid URL: %w", wl.URL, err)
+		}
+		if u.Scheme != "https" {
+			return fmt.Errorf("wavelog.url must use HTTPS, got %q", wl.URL)
+		}
+		if strings.TrimSpace(wl.APIKey) == "" {
+			return fmt.Errorf("wavelog.api_key is required when enabled")
+		}
+	}
+
+	// --- WSJT-X ---
+	if c.WSJTX.Enabled {
+		if strings.TrimSpace(c.WSJTX.UDPHost) == "" {
+			return fmt.Errorf("wsjtx.udp_host is required when enabled")
+		}
+		if c.WSJTX.UDPPort < 1 || c.WSJTX.UDPPort > 65535 {
+			return fmt.Errorf("wsjtx.udp_port must be 1-65535, got %d", c.WSJTX.UDPPort)
+		}
+	}
+
+	// --- DXC ---
+	if c.DXC.Enabled {
+		if strings.TrimSpace(c.DXC.Host) == "" {
+			return fmt.Errorf("dxc.host is required when enabled")
+		}
+		if c.DXC.Port != "" {
+			if p, err := strconv.Atoi(c.DXC.Port); err != nil || p < 1 || p > 65535 {
+				return fmt.Errorf("dxc.port must be 1-65535, got %q", c.DXC.Port)
+			}
+		}
+	}
+
+	// --- Rigs ---
+	for id, rig := range c.Rigs {
+		if strings.TrimSpace(id) == "" {
+			return fmt.Errorf("rig entry with empty id")
+		}
+		if rig.FlrigEnabled {
+			if strings.TrimSpace(rig.FlrigHost) == "" {
+				return fmt.Errorf("rig %q: flrig_host is required when flrig_enabled", id)
+			}
+			if rig.FlrigPort != "" {
+				if p, err := strconv.Atoi(rig.FlrigPort); err != nil || p < 1 || p > 65535 {
+					return fmt.Errorf("rig %q: flrig_port must be 1-65535, got %q", id, rig.FlrigPort)
+				}
+			}
+		}
+	}
+
 	return nil
 }
