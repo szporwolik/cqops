@@ -121,11 +121,25 @@ func (f *Client) SetFrequency(ctx context.Context, freqHz int64) error {
 	return err
 }
 
-// SetMode sets the rig operating mode via flrig XML-RPC.
-func (f *Client) SetMode(ctx context.Context, mode string) error {
+// GetModes returns the list of available mode names from flrig.
+// The returned slice is ordered by flrig's mode table index.
+func (f *Client) GetModes(ctx context.Context) ([]string, error) {
+	v, err := f.xmlrpcCall(ctx, "rig.get_modes")
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(v) == "" {
+		return nil, nil
+	}
+	return strings.Split(strings.TrimSpace(v), "\n"), nil
+}
+
+// SetMode sets the rig operating mode by index into flrig's mode table.
+// Use GetModes to obtain the mode table first.
+func (f *Client) SetMode(ctx context.Context, modeIdx int) error {
 	body := fmt.Sprintf(
-		`<?xml version="1.0"?><methodCall><methodName>rig.set_mode</methodName><params><param><value><string>%s</string></value></param></params></methodCall>`,
-		mode,
+		`<?xml version="1.0"?><methodCall><methodName>rig.set_mode</methodName><params><param><value><i4>%d</i4></value></param></params></methodCall>`,
+		modeIdx,
 	)
 	req, err := http.NewRequestWithContext(ctx, "POST", f.url+"/RPC2", strings.NewReader(body))
 	if err != nil {
@@ -137,7 +151,7 @@ func (f *Client) SetMode(ctx context.Context, mode string) error {
 		return err
 	}
 	defer resp.Body.Close()
-	return nil // ignore response body for set_mode — success is implied
+	return nil
 }
 
 func (f *Client) getMode(ctx context.Context) (string, error) {

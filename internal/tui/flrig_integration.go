@@ -3,6 +3,8 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
@@ -38,6 +40,8 @@ func (m *Model) refreshFlrigClient() {
 		url := "http://" + host + ":" + port
 		applog.InfoDetail("flrig: connecting", fmt.Sprintf("rig=%s host=%s port=%s url=%s", rigName, host, port, url))
 		m.flrigClient = flrig.New(url, flrigDefaultTimeout)
+		// Fetch mode table in background.
+		go m.fetchFlrigModes()
 	} else {
 		if !ok {
 			applog.Debug("flrig: rig not found in config", "rigName", rigName)
@@ -130,4 +134,37 @@ func (m *Model) applyFlrigResult(r flrigResultMsg) {
 	if r.power > 0 {
 		m.fields[fieldTXPower].SetValue(fmt.Sprintf("%.0f", r.power))
 	}
+}
+
+// fetchFlrigModes queries flrig for the available mode table and stores it.
+func (m *Model) fetchFlrigModes() {
+	if m.flrigClient == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	modes, err := m.flrigClient.GetModes(ctx)
+	if err != nil {
+		applog.Warn("flrig: get_modes failed", "error", err)
+		return
+	}
+	m.flrigModes = modes
+	applog.Info("flrig: modes fetched", "count", len(modes), "modes", modes)
+}
+
+// flrigModeIndex returns the index of the desired mode in flrig's mode table.
+// Uses case-insensitive prefix matching for robustness.
+func flrigModeIndex(flrigModes []string, want string) int {
+	want = strings.ToUpper(want)
+	for i, m := range flrigModes {
+		if strings.EqualFold(m, want) {
+			return i
+		}
+	}
+	for i, m := range flrigModes {
+		if strings.HasPrefix(strings.ToUpper(m), want) {
+			return i
+		}
+	}
+	return -1
 }

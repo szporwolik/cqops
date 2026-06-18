@@ -16,7 +16,8 @@ import (
 type FlrigClient interface {
 	Status(ctx context.Context) (rig.RigStatus, error)
 	SetFrequency(ctx context.Context, freqHz int64) error
-	SetMode(ctx context.Context, mode string) error
+	GetModes(ctx context.Context) ([]string, error)
+	SetMode(ctx context.Context, modeIdx int) error
 }
 
 // =============================================================================
@@ -43,8 +44,12 @@ func (f *fakeFlrigClient) SetFrequency(ctx context.Context, freqHz int64) error 
 	return f.setFreqErr
 }
 
-func (f *fakeFlrigClient) SetMode(ctx context.Context, mode string) error {
+func (f *fakeFlrigClient) SetMode(ctx context.Context, modeIdx int) error {
 	return nil
+}
+
+func (f *fakeFlrigClient) GetModes(ctx context.Context) ([]string, error) {
+	return []string{"USB", "LSB", "CW-L", "CW-U", "RTTY", "AM", "FM", "DATA-U", "DATA-L"}, nil
 }
 
 // disconnectedFakeFlrig returns a fake client that reports not connected.

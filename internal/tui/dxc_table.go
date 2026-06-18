@@ -485,10 +485,12 @@ func (m *Model) dxcFillFromSelected() {
 // consistent regardless of table rebuilds.
 func (m *Model) dxcSpotAtCursor() (store.DXCSpot, bool) {
 	if m.dxcSelectedCall == "" || !m.dxcTableReady {
+		applog.Debug("DXC: dxcSpotAtCursor — no selected call")
 		return store.DXCSpot{}, false
 	}
 	spot, err := store.QueryDXCSpotByCall(m.App.DB, m.dxcSelectedCall)
 	if err != nil || spot == nil {
+		applog.Debug("DXC: dxcSpotAtCursor — not found in DB", "call", m.dxcSelectedCall, "err", err)
 		return store.DXCSpot{}, false
 	}
 	return *spot, true
@@ -503,10 +505,18 @@ func (m *Model) updateDXCSelectedCall() {
 	}
 	cursor := m.dxcTable.Cursor()
 	spots := m.dxcFilteredSpots()
+	prev := m.dxcSelectedCall
 	if cursor >= 0 && cursor < len(spots) {
 		m.dxcSelectedCall = spots[cursor].DXCall
 	} else {
 		m.dxcSelectedCall = ""
+	}
+	if m.dxcSelectedCall != prev {
+		applog.Debug("DXC: selected call changed",
+			"cursor", cursor,
+			"prev", prev,
+			"new", m.dxcSelectedCall,
+		)
 	}
 }
 
@@ -529,11 +539,12 @@ func (m *Model) dxcTuneCmd() tea.Cmd {
 	freqHz := int64(spot.Frequency * 1000)
 	freqMHz := float64(freqHz) / 1_000_000
 	call := spot.DXCall
-	flrigMode := spotModeToFlrigMode(spot.Mode)
+	flrigModeIdx := flrigModeIndex(m.flrigModes, spotModeToFlrigMode(spot.Mode))
+	flrigModeName := spot.Mode
 	client := m.flrigClient
 
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
 		defer cancel()
 
 		if err := client.SetFrequency(ctx, freqHz); err != nil {
@@ -543,33 +554,30 @@ func (m *Model) dxcTuneCmd() tea.Cmd {
 			return dxcTuneResultMsg{call: call, freqMHz: freqMHz, err: fmt.Errorf("freq: %w", err)}
 		}
 
-		// Verify the rig actually tuned to the requested frequency.
+		// Wait for rig to settle, then verify the actual VFO frequency.
+		time.Sleep(400 * time.Millisecond)
 		status, err := client.Status(ctx)
+		var verifyMsg string
 		if err == nil && status.Connected {
 			actualMHz := status.FrequencyMHz
 			diff := actualMHz - freqMHz
 			if diff < 0 {
 				diff = -diff
 			}
-			// Allow 1 kHz tolerance (0.001 MHz) for rounding.
 			if diff > 0.001 {
+				verifyMsg = fmt.Sprintf(" (rig at %.5f MHz)", actualMHz)
 				applog.Warn("DXC: tune freq mismatch",
 					"call", call,
 					"requested_mhz", fmt.Sprintf("%.5f", freqMHz),
 					"actual_mhz", fmt.Sprintf("%.5f", actualMHz),
 				)
-				return dxcTuneResultMsg{
-					call:    call,
-					freqMHz: freqMHz,
-					err:     fmt.Errorf("rig reports %.5f MHz (requested %.5f MHz — out of band?)", actualMHz, freqMHz),
-				}
 			}
 		}
 
-		if flrigMode != "" {
-			if err := client.SetMode(ctx, flrigMode); err != nil {
+		if flrigModeIdx >= 0 {
+			if err := client.SetMode(ctx, flrigModeIdx); err != nil {
 				applog.Warn("DXC: tune rig mode failed",
-					"call", call, "mode", flrigMode, "error", err,
+					"call", call, "mode", flrigModeName, "idx", flrigModeIdx, "error", err,
 				)
 				return dxcTuneResultMsg{call: call, freqMHz: freqMHz, err: fmt.Errorf("mode: %w", err)}
 			}
@@ -577,13 +585,15 @@ func (m *Model) dxcTuneCmd() tea.Cmd {
 		applog.Info("DXC: rig tuned OK",
 			"call", call,
 			"freq_mhz", fmt.Sprintf("%.5f", freqMHz),
-			"mode", flrigMode,
+			"mode", flrigModeName,
+			"verify", verifyMsg,
 		)
-		return dxcTuneResultMsg{call: call, freqMHz: freqMHz, mode: flrigMode}
+		return dxcTuneResultMsg{call: call, freqMHz: freqMHz, mode: flrigModeName, verify: verifyMsg}
 	}
 }
 
 // spotModeToFlrigMode maps a DXC spot mode string to a flrig-compatible mode.
+// CW maps to CW-L (lower sideband) which is the standard for HF CW operation.
 func spotModeToFlrigMode(spotMode string) string {
 	switch strings.ToUpper(spotMode) {
 	case "USB":
@@ -591,7 +601,7 @@ func spotModeToFlrigMode(spotMode string) string {
 	case "LSB":
 		return "LSB"
 	case "CW":
-		return "CW"
+		return "CW-L"
 	case "FM":
 		return "FM"
 	case "AM":

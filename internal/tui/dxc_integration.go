@@ -341,11 +341,40 @@ func deriveSpotMode(comment string, freqMHz float64) string {
 	if wordContains(c, "AM") {
 		return "AM"
 	}
+	// Detect CW from frequency: lower edge of each HF band.
+	if isCWFrequency(freqMHz) {
+		return "CW"
+	}
 	// Default: SSB with sideband based on frequency.
 	if freqMHz < 10 {
 		return "LSB"
 	}
 	return "USB"
+}
+
+// isCWFrequency returns true if the frequency (MHz) falls in the typical
+// CW sub-band of any amateur band.
+func isCWFrequency(freqMHz float64) bool {
+	// CW sub-band edges (lower portion of each band).
+	cwRanges := [][2]float64{
+		{1.800, 1.840},
+		{3.500, 3.580},
+		{5.060, 5.080},
+		{7.000, 7.050},
+		{10.100, 10.130},
+		{14.000, 14.070},
+		{18.068, 18.100},
+		{21.000, 21.080},
+		{24.890, 24.930},
+		{28.000, 28.150},
+		{50.000, 50.100},
+	}
+	for _, r := range cwRanges {
+		if freqMHz >= r[0] && freqMHz <= r[1] {
+			return true
+		}
+	}
+	return false
 }
 
 // wordContains checks if substr appears as a whole word in s.

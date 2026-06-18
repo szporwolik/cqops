@@ -205,6 +205,7 @@ type Model struct {
 	wlLastBand     string                       // band used in last WL query
 	wlLastMode     string                       // mode used in last WL query
 	flrigClient    FlrigClient
+	flrigModes     []string // mode table from flrig (indexed)
 	qrzNeed        bool
 	qrzCall        string
 	qrzLastLook    time.Time
@@ -280,6 +281,7 @@ type dxcTuneResultMsg struct {
 	call    string
 	freqMHz float64
 	mode    string
+	verify  string // non-empty when actual frequency differs from requested
 	err     error
 }
 type inetResultMsg bool
@@ -526,6 +528,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			msg := fmt.Sprintf("Rig tuned to %.5f MHz", r.freqMHz)
 			if r.mode != "" {
 				msg += " " + r.mode
+			}
+			if r.verify != "" {
+				msg += r.verify
 			}
 			m.toasts.Success(msg)
 		}
