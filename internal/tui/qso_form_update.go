@@ -375,9 +375,13 @@ func (m *Model) clearForm() {
 	m.retainFocused = false
 	m.focus = fieldCall
 	m.fields[m.focus].Focus()
-	m.partnerData = nil
-	m.wlPrivateData = nil
-	m.wlLookupDone = false
+	// Preserve partner data when the user is actively viewing the QRZ page
+	// (Partner or Image screen), e.g. after WSJT-X auto-clears the form.
+	if m.screen != screenPartner && m.screen != screenImage {
+		m.partnerData = nil
+		m.wlPrivateData = nil
+		m.wlLookupDone = false
+	}
 	m.clearFilteredTable()
 	m.pathCall = ""
 	m.pathGrid = ""
