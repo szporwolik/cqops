@@ -12,13 +12,22 @@ import (
 // dxcTimeWindows is the list of time filter options in minutes (0 = all).
 var dxcTimeWindows = []int{0, 60, 30, 15, 10, 5}
 
-// dxcColWidths maps DXC column titles to minimum widths (matching editorColWidths).
+// dxcColWidths maps DXC column keys to minimum widths.
 var dxcColWidths = map[string]int{
-	"Time": 8, "Freq": 8, "Band": 5, "Mode": 4, "DX Call": 10, "Spotter": 10, "Comment": 8,
+	"Time": 8, "Freq": 8, "Band": 5, "Mode": 4, "DX Cont": 5, "DX Call": 10, "Spot Cont": 5, "Spotter": 10, "Comment": 8,
 }
 
-// dxcColOrder is the fixed display order: Time, Freq, Band, Mode, DX Call, Spotter, Comment.
-var dxcColOrder = []string{"Time", "Freq", "Band", "Mode", "DX Call", "Spotter", "Comment"}
+// dxcColOrder is the fixed display order (keys, not titles).
+var dxcColOrder = []string{"Time", "Freq", "Band", "Mode", "DX Cont", "DX Call", "Spot Cont", "Spotter", "Comment"}
+
+// dxcColTitle returns the header title for a column, or "" for no header.
+func dxcColTitle(key string) string {
+	switch key {
+	case "DX Cont", "Spot Cont":
+		return ""
+	}
+	return key
+}
 
 // dxcColValue returns the display value for a DXC column and spot.
 func dxcColValue(col string, s *store.DXCSpot) string {
@@ -33,8 +42,18 @@ func dxcColValue(col string, s *store.DXCSpot) string {
 		return s.Mode
 	case "DX Call":
 		return s.DXCall
+	case "DX Cont":
+		if s.DXCont == "" {
+			return "\u2014"
+		}
+		return s.DXCont
 	case "Spotter":
 		return s.Spotter
+	case "Spot Cont":
+		if s.SpotCont == "" {
+			return "\u2014"
+		}
+		return s.SpotCont
 	case "Comment":
 		return s.Comment
 	}
@@ -70,7 +89,7 @@ func (m *Model) buildDXCTable() {
 	for _, n := range names {
 		cw := dxcColWidths[n]
 		minTotal += cw
-		cols = append(cols, table.Column{Title: n, Width: cw})
+		cols = append(cols, table.Column{Title: dxcColTitle(n), Width: cw})
 	}
 	gaps := len(cols) - 1
 	extra := bodyW - gaps - minTotal

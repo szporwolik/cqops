@@ -153,12 +153,13 @@ done:
 
 func (m *Model) storeDXCSpotsCmd(spots []dxc.Spot) tea.Cmd {
 	db := m.App.DB
+	prefixes := m.App.DXCC // may be nil if DXCC failed to load
 	return func() tea.Msg {
 		var dbSpots []store.DXCSpot
 		now := time.Now().UTC().Unix()
 		for _, s := range spots {
 			mode := deriveSpotMode(s.Comment, s.Frequency/1000)
-			dbSpots = append(dbSpots, store.DXCSpot{
+			spot := store.DXCSpot{
 				DXCall:     s.DXCall,
 				Frequency:  s.Frequency,
 				Band:       qso.DeriveBand(s.Frequency / 1000),
@@ -167,7 +168,17 @@ func (m *Model) storeDXCSpotsCmd(spots []dxc.Spot) tea.Cmd {
 				Comment:    s.Comment,
 				Spotter:    s.Spotter,
 				ReceivedAt: now,
-			})
+			}
+			// Compute continents from DXCC prefix lookup.
+			if prefixes != nil {
+				if m, ok := prefixes.Find(s.DXCall); ok && len(m) > 0 {
+					spot.DXCont = m[0].Continent
+				}
+				if m, ok := prefixes.Find(s.Spotter); ok && len(m) > 0 {
+					spot.SpotCont = m[0].Continent
+				}
+			}
+			dbSpots = append(dbSpots, spot)
 		}
 
 		// Retry on SQLITE_BUSY — other operations (Wavelog download, QSO save)

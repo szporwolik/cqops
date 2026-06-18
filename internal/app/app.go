@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/ftl/hamradio/dxcc"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/store"
@@ -20,6 +21,7 @@ type App struct {
 	DBPath       string
 	WSJTX        *wsjtx.Listener
 	WSJTXUpdated chan struct{}
+	DXCC         *dxcc.Prefixes // in-memory DXCC prefix→country lookup, loaded once at startup
 
 	// lastWSJTX tracks the effective WSJT-X config last applied to the
 	// listener. Used to avoid unnecessary Stop/Start cycles when config
@@ -70,6 +72,20 @@ func Init(logbookFlag string) (*App, error) {
 	}
 
 	app.MaybeRestartWSJTX()
+
+	// Load DXCC prefix data (CTY.DAT). DefaultPrefixes handles caching,
+	// conditional update (If-Modified-Since), and offline fallback.
+	prefixes, updated, err := dxcc.DefaultPrefixes(true)
+	if err != nil {
+		applog.Warn("DXCC: cannot load prefix data — country/continent lookup disabled", "error", err.Error())
+	} else {
+		app.DXCC = prefixes
+		if updated {
+			applog.Info("DXCC: prefix data updated from country-files.com")
+		} else {
+			applog.Info("DXCC: prefix data loaded from cache")
+		}
+	}
 
 	return app, nil
 }

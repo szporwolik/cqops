@@ -10,6 +10,7 @@ require (
 	github.com/farmergreg/adif/v5 v5.0.0-beta.26
 	github.com/farmergreg/spec/v6 v6.0.0-beta.33
 	github.com/ftl/hamradio v0.3.0
+	github.com/gen2brain/beeep v0.11.2
 	github.com/k0swe/wsjtx-go/v4 v4.2.1
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/term v0.44.0
@@ -32,7 +33,7 @@ require (
 	github.com/disintegration/imaging v1.6.2 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/esiqveland/notify v0.13.3 // indirect
-	github.com/gen2brain/beeep v0.11.2 // indirect
+	github.com/ftl/localcopy v0.0.0-20190616142648-8915fb81f0d9 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect

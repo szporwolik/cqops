@@ -94,6 +94,8 @@ var migrations = []string{
 	`DROP INDEX IF EXISTS idx_dxc_spots_uniq`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS idx_dxc_spots_call ON dxc_spots(dx_call)`,
 	`ALTER TABLE dxc_spots ADD COLUMN mode_cat TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE dxc_spots ADD COLUMN dx_cont TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE dxc_spots ADD COLUMN spot_cont TEXT NOT NULL DEFAULT ''`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_source ON qsos(source)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_wavelog_uploaded ON qsos(wavelog_uploaded)`,
 	`DROP INDEX IF EXISTS idx_psk_spots_station`,

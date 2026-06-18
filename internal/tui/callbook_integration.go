@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/ftl/hamradio/dxcc"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/qrz"
 	"github.com/szporwolik/cqops/internal/wavelog"
@@ -149,6 +150,37 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 	}
 	m.autoFillRST()
 	m.toasts.Info("QRZ.com: " + d.Callsign + " " + d.Name)
+
+	// After QRZ filled what it could, fill remaining empty country/continent
+	// from DXCC prefix lookup if available.
+	m.dxccAutoFill()
+}
+
+// dxccLookup returns the DXCC prefix entry for a callsign, or nil if not found.
+func (m *Model) dxccLookup(call string) *dxcc.Prefix {
+	if m.App == nil || m.App.DXCC == nil || call == "" {
+		return nil
+	}
+	matches, ok := m.App.DXCC.Find(call)
+	if !ok || len(matches) == 0 {
+		return nil
+	}
+	return &matches[0]
+}
+
+// dxccAutoFill fills empty QSO form country/continent fields from DXCC.
+func (m *Model) dxccAutoFill() {
+	call := strings.TrimSpace(m.fields[fieldCall].Value())
+	if call == "" {
+		return
+	}
+	p := m.dxccLookup(call)
+	if p == nil {
+		return
+	}
+	if p.Name != "" && strings.TrimSpace(m.fields[fieldCountry].Value()) == "" {
+		m.fields[fieldCountry].SetValue(p.Name)
+	}
 }
 
 // fillWLData stores Wavelog private lookup result data.

@@ -11,6 +11,28 @@ import (
 
 const partnerMapMaxW = 128 // also used as max page width for QSO form consistency
 
+// continentName maps 2-letter CTY.DAT continent codes to full names.
+func continentName(code string) string {
+	switch strings.ToUpper(code) {
+	case "EU":
+		return "Europe"
+	case "NA":
+		return "North America"
+	case "SA":
+		return "South America"
+	case "AF":
+		return "Africa"
+	case "AS":
+		return "Asia"
+	case "OC":
+		return "Oceania"
+	case "AA":
+		return "Antarctica"
+	default:
+		return code
+	}
+}
+
 // row is a label+value pair used by all three partner info boxes.
 type row struct{ label, value string }
 
@@ -291,6 +313,12 @@ func (m *Model) renderCallbookRows(d *qrz.CallData, maxW int) string {
 	if d.Callsign != "" {
 		link := osc8Link("https://www.qrz.com/db/"+d.Callsign, S.Info.Render(d.Callsign))
 		add("Callsign", link)
+	}
+	// Continent from DXCC prefix lookup (not from QRZ — QRZ doesn't provide it).
+	if d.Callsign != "" {
+		if p := m.dxccLookup(d.Callsign); p != nil && p.Continent != "" {
+			add("Continent", continentName(p.Continent))
+		}
 	}
 	add("Name", d.Name)
 	if d.Grid != "" {

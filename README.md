@@ -29,6 +29,7 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 - **Multi-logbook** — switch between station logs with per-logbook station profiles
 - **Partner details view** — grid-to-grid distance, bearing, and world map
 - **Cross-platform** — Windows, Linux, macOS — including ARM builds for Raspberry Pi and Apple Silicon
+- **DXCC country/continent lookup** — automatic callsign→country resolution using CTY.DAT prefix data, continent detection for DX Cluster spots
 - **Potato PC ready** — runs comfortably on Raspberry Pi-class hardware, old laptops, and portable monitors
 
 ## Requirements
@@ -124,8 +125,13 @@ cqops --help           # Show all commands
 **Integrations:**
 - [wsjtx-go](https://github.com/k0swe/wsjtx-go) — WSJT-X UDP protocol
 - [farmergreg/adif](https://github.com/farmergreg/adif) — ADIF parsing/writing
-- [ftl/hamradio](https://github.com/ftl/hamradio) — Grid locator and distance math
+- [ftl/hamradio](https://github.com/ftl/hamradio) — Grid locator, distance math, and DXCC prefix lookup (CTY.DAT)
 - [gen2brain/beeep](https://github.com/gen2brain/beeep) — Desktop notifications
+
+**Data:**
+- [country-files.com](https://www.country-files.com/) — CTY.DAT DXCC prefix database (public domain factual data, loaded and cached locally)
+- [hamqsl.com](https://www.hamqsl.com/) — Solar conditions data (SFI, SSN, A/K indices) via N0NBH
+- [PSK Reporter](https://pskreporter.info/) — Real-time propagation spot data
 
 All licenses are permissive (MIT, Apache 2.0, BSD-3). See `licenses/` directory.
 
