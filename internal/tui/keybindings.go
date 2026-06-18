@@ -257,7 +257,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 		)
 		if m.rigConnected && !m.wsjtxOnline {
 			bindings = append(bindings,
-				key.NewBinding(key.WithKeys("ctrl+enter"), key.WithHelp("C-Enter", "Tune")),
+				key.NewBinding(key.WithKeys("tab"), key.WithHelp("Tab", "Tune")),
 			)
 		}
 	}

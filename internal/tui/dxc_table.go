@@ -348,7 +348,7 @@ func (m *Model) handleDXCUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			m.screen = screenQSO
 			return m, cmd
 
-		case "ctrl+enter", "ctrl+m":
+		case "tab":
 			// Fill QSO form with highlighted spot and tune rig.
 			m.dxcFillFromSelected()
 			m.dxcTuneRig()
@@ -407,7 +407,7 @@ func (m *Model) dxcFillFromSelected() {
 // Only acts when flrig is connected and WSJT-X is offline/disabled.
 func (m *Model) dxcTuneRig() {
 	if !m.rigConnected || m.wsjtxOnline || m.flrigClient == nil {
-		applog.Debug("DXC: tune skipped",
+		applog.Info("DXC: tune skipped",
 			"rigConnected", m.rigConnected,
 			"wsjtxOnline", m.wsjtxOnline,
 			"hasClient", m.flrigClient != nil,
