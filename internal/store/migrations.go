@@ -90,6 +90,7 @@ var migrations = []string{
 	`CREATE UNIQUE INDEX IF NOT EXISTS idx_dxc_spots_uniq ON dxc_spots(dx_call, frequency, received_at)`,
 	`ALTER TABLE dxc_spots ADD COLUMN band TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE dxc_spots ADD COLUMN mode TEXT NOT NULL DEFAULT ''`,
+	`DELETE FROM dxc_spots WHERE id NOT IN (SELECT id FROM (SELECT MAX(id) AS id FROM dxc_spots GROUP BY dx_call))`,
 	`DROP INDEX IF EXISTS idx_dxc_spots_uniq`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS idx_dxc_spots_call ON dxc_spots(dx_call)`,
 }
