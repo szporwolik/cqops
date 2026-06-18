@@ -450,15 +450,10 @@ func (m *Model) handleDXCUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 
 // dxcFillFromSelected fills the QSO form with the currently highlighted DXC spot.
 func (m *Model) dxcFillFromSelected() {
-	if !m.dxcTableReady {
+	spot, ok := m.dxcSpotAtCursor()
+	if !ok {
 		return
 	}
-	cursor := m.dxcTable.Cursor()
-	spots := m.dxcFilteredSpots()
-	if cursor < 0 || cursor >= len(spots) {
-		return
-	}
-	spot := spots[cursor]
 
 	// Fill callsign.
 	m.fields[fieldCall].SetValue(spot.DXCall)
@@ -468,7 +463,6 @@ func (m *Model) dxcFillFromSelected() {
 	m.invalidatePartnerMapCache()
 
 	// Fill frequency: when WSJT-X is offline, use DXC spot frequency.
-	// flrig being connected is fine — the spot frequency overrides the rig's.
 	if !m.wsjtxOnline {
 		freqMHz := spot.Frequency / 1000
 		m.fields[fieldFreq].SetValue(fmt.Sprintf("%.5f", freqMHz))
@@ -484,8 +478,22 @@ func (m *Model) dxcFillFromSelected() {
 	}
 }
 
+// dxcSpotAtCursor returns the DXC spot at the current table cursor position.
+func (m *Model) dxcSpotAtCursor() (store.DXCSpot, bool) {
+	if !m.dxcTableReady {
+		return store.DXCSpot{}, false
+	}
+	cursor := m.dxcTable.Cursor()
+	spots := m.dxcFilteredSpots()
+	if cursor < 0 || cursor >= len(spots) {
+		return store.DXCSpot{}, false
+	}
+	return spots[cursor], true
+}
+
 // dxcTuneCmd returns a tea.Cmd that tunes flrig to the highlighted spot's
 // frequency and mode. Returns the result as a dxcTuneResultMsg for toasts.
+// Captures spot data at call time so it reflects exactly what the user selected.
 func (m *Model) dxcTuneCmd() tea.Cmd {
 	if !m.rigConnected || m.wsjtxOnline || m.flrigClient == nil {
 		applog.Info("DXC: tune skipped",
@@ -495,20 +503,18 @@ func (m *Model) dxcTuneCmd() tea.Cmd {
 		)
 		return nil
 	}
-	cursor := m.dxcTable.Cursor()
-	spots := m.dxcFilteredSpots()
-	if cursor < 0 || cursor >= len(spots) {
+	spot, ok := m.dxcSpotAtCursor()
+	if !ok {
 		return nil
 	}
-	spot := spots[cursor]
-	freqHz := int64(spot.Frequency * 1000) // kHz → Hz
+	freqHz := int64(spot.Frequency * 1000)
 	freqMHz := float64(freqHz) / 1_000_000
 	call := spot.DXCall
 	flrigMode := spotModeToFlrigMode(spot.Mode)
 	client := m.flrigClient
 
 	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		if err := client.SetFrequency(ctx, freqHz); err != nil {
@@ -517,12 +523,35 @@ func (m *Model) dxcTuneCmd() tea.Cmd {
 			)
 			return dxcTuneResultMsg{call: call, freqMHz: freqMHz, err: fmt.Errorf("freq: %w", err)}
 		}
+
+		// Verify the rig actually tuned to the requested frequency.
+		status, err := client.Status(ctx)
+		if err == nil && status.Connected {
+			actualMHz := status.FrequencyMHz
+			diff := actualMHz - freqMHz
+			if diff < 0 {
+				diff = -diff
+			}
+			// Allow 1 kHz tolerance (0.001 MHz) for rounding.
+			if diff > 0.001 {
+				applog.Warn("DXC: tune freq mismatch",
+					"call", call,
+					"requested_mhz", fmt.Sprintf("%.5f", freqMHz),
+					"actual_mhz", fmt.Sprintf("%.5f", actualMHz),
+				)
+				return dxcTuneResultMsg{
+					call:    call,
+					freqMHz: freqMHz,
+					err:     fmt.Errorf("rig reports %.5f MHz (requested %.5f MHz — out of band?)", actualMHz, freqMHz),
+				}
+			}
+		}
+
 		if flrigMode != "" {
 			if err := client.SetMode(ctx, flrigMode); err != nil {
 				applog.Warn("DXC: tune rig mode failed",
 					"call", call, "mode", flrigMode, "error", err,
 				)
-				// Non-fatal: frequency was set, mode failed.
 				return dxcTuneResultMsg{call: call, freqMHz: freqMHz, err: fmt.Errorf("mode: %w", err)}
 			}
 		}

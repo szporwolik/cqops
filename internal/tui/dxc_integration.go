@@ -325,19 +325,37 @@ func (m *Model) handleDXCSpotsStored(msg dxcSpotsStoredMsg) {
 }
 
 // deriveSpotMode determines the operating mode from spot comment and frequency.
-// Looks for known mode keywords in the comment (case-insensitive). Falls back
-// to USB (>10MHz) or LSB (<10MHz) when no mode is found in the comment.
+// Looks for known mode keywords as whole words in the comment (case-insensitive).
+// Falls back to USB (>10MHz) or LSB (<10MHz) when no mode is found.
 func deriveSpotMode(comment string, freqMHz float64) string {
 	c := strings.ToUpper(comment)
-	// Check for explicit mode keywords in the comment.
-	for _, kw := range []string{"FT8", "FT4", "CW", "RTTY", "FM", "AM", "PSK", "JT65", "JT9", "MSK144", "FSK"} {
-		if strings.Contains(c, kw) {
+	// Check for mode keywords using word-boundary matching to avoid false
+	// positives like "AM" inside "I AM QRV" or callsign fragments.
+	for _, kw := range []string{"FT8", "FT4", "CW", "RTTY", "FM", "PSK", "JT65", "JT9", "MSK144", "FSK", "DATA"} {
+		if wordContains(c, kw) {
 			return kw
 		}
+	}
+	// "AM" is checked separately only at word boundaries to avoid matching
+	// the common word "am" in comments.
+	if wordContains(c, "AM") {
+		return "AM"
 	}
 	// Default: SSB with sideband based on frequency.
 	if freqMHz < 10 {
 		return "LSB"
 	}
 	return "USB"
+}
+
+// wordContains checks if substr appears as a whole word in s.
+// A word boundary is defined as start-of-string, end-of-string, or a space.
+func wordContains(s, substr string) bool {
+	idx := strings.Index(s, substr)
+	if idx < 0 {
+		return false
+	}
+	before := idx == 0 || s[idx-1] == ' '
+	after := idx+len(substr) == len(s) || s[idx+len(substr)] == ' '
+	return before && after
 }
