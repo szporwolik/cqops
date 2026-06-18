@@ -40,8 +40,6 @@ func (m *Model) refreshFlrigClient() {
 		url := "http://" + host + ":" + port
 		applog.InfoDetail("flrig: connecting", fmt.Sprintf("rig=%s host=%s port=%s url=%s", rigName, host, port, url))
 		m.flrigClient = flrig.New(url, flrigDefaultTimeout)
-		// Fetch mode table in background.
-		go m.fetchFlrigModes()
 	} else {
 		if !ok {
 			applog.Debug("flrig: rig not found in config", "rigName", rigName)
@@ -118,6 +116,10 @@ func (m *Model) applyFlrigResult(r flrigResultMsg) {
 		m.cachedStatus = ""
 	}
 	m.rigConnected = true
+	// Fetch mode table on first successful connection.
+	if len(m.flrigModes) == 0 {
+		go m.fetchFlrigModes()
+	}
 	m.rigFreq = r.freq
 	if !m.wsjtxOnline {
 		m.fields[fieldFreq].SetValue(fmt.Sprintf("%.6f", r.freq))
