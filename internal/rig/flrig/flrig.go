@@ -121,6 +121,25 @@ func (f *Client) SetFrequency(ctx context.Context, freqHz int64) error {
 	return err
 }
 
+// SetMode sets the rig operating mode via flrig XML-RPC.
+func (f *Client) SetMode(ctx context.Context, mode string) error {
+	body := fmt.Sprintf(
+		`<?xml version="1.0"?><methodCall><methodName>rig.set_mode</methodName><params><param><value><string>%s</string></value></param></params></methodCall>`,
+		mode,
+	)
+	req, err := http.NewRequestWithContext(ctx, "POST", f.url+"/RPC2", strings.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "text/xml")
+	resp, err := f.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil // ignore response body for set_mode — success is implied
+}
+
 func (f *Client) getMode(ctx context.Context) (string, error) {
 	v, err := f.xmlrpcCall(ctx, "rig.get_mode")
 	if err != nil {

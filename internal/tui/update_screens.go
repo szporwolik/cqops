@@ -348,6 +348,16 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 		case "delete":
 			m.pskCycleMode(-1)
 			return m, cmd
+		case "backspace":
+			// Clear all filters.
+			m.pskFilterMins = pskFilterSteps[0]
+			m.pskBandFilter = ""
+			m.pskModeFilter = ""
+			m.pskSelected = 0
+			m.pskSpotKey = ""
+			m.pskViewKey = ""
+			m.pskView = ""
+			return m, cmd
 		}
 	}
 	return m, cmd

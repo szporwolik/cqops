@@ -89,6 +89,9 @@ var migrations = []string{
 	`CREATE INDEX IF NOT EXISTS idx_dxc_spots_received ON dxc_spots(received_at)`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS idx_dxc_spots_uniq ON dxc_spots(dx_call, frequency, received_at)`,
 	`ALTER TABLE dxc_spots ADD COLUMN band TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE dxc_spots ADD COLUMN mode TEXT NOT NULL DEFAULT ''`,
+	`DROP INDEX IF EXISTS idx_dxc_spots_uniq`,
+	`CREATE UNIQUE INDEX IF NOT EXISTS idx_dxc_spots_call ON dxc_spots(dx_call)`,
 }
 
 func Migrate(db *sql.DB) error {

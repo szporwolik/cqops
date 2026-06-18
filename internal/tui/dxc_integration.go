@@ -160,6 +160,7 @@ func (m *Model) storeDXCSpotsCmd(spots []dxc.Spot) tea.Cmd {
 				DXCall:     s.DXCall,
 				Frequency:  s.Frequency,
 				Band:       qso.DeriveBand(s.Frequency / 1000), // convert kHz to MHz
+				Mode:       deriveSpotMode(s.Comment, s.Frequency/1000),
 				Comment:    s.Comment,
 				Spotter:    s.Spotter,
 				ReceivedAt: now,
@@ -321,4 +322,22 @@ func (m *Model) handleDXCSpotsStored(msg dxcSpotsStoredMsg) {
 			return
 		}
 	}
+}
+
+// deriveSpotMode determines the operating mode from spot comment and frequency.
+// Looks for known mode keywords in the comment (case-insensitive). Falls back
+// to USB (>10MHz) or LSB (<10MHz) when no mode is found in the comment.
+func deriveSpotMode(comment string, freqMHz float64) string {
+	c := strings.ToUpper(comment)
+	// Check for explicit mode keywords in the comment.
+	for _, kw := range []string{"FT8", "FT4", "CW", "RTTY", "FM", "AM", "PSK", "JT65", "JT9", "MSK144", "FSK"} {
+		if strings.Contains(c, kw) {
+			return kw
+		}
+	}
+	// Default: SSB with sideband based on frequency.
+	if freqMHz < 10 {
+		return "LSB"
+	}
+	return "USB"
 }

@@ -179,6 +179,8 @@ type Model struct {
 	dxcTimeFilter   int    // minutes, 0 = all
 	dxcTimeIdx      int    // index into dxcTimeWindows
 	dxcBandIdx      int    // index into dxcBandChoices
+	dxcModeFilter   string // "" = all, mode name = filter
+	dxcModeIdx      int    // index into mode choices
 
 	// Layout cache — avoids redundant MeasureLayout() calls when terminal size
 	// and screen haven't changed between frames.
@@ -271,6 +273,13 @@ type wlResultMsg struct {
 type dxcSpotLookupMsg struct {
 	call string
 	freq float64 // 0 if not found
+}
+
+type dxcTuneResultMsg struct {
+	call    string
+	freqMHz float64
+	mode    string
+	err     error
 }
 type inetResultMsg bool
 type statusPending struct {
@@ -508,6 +517,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case dxcSpotsStoredMsg:
 		m.handleDXCSpotsStored(r)
+		return m, cmd
+	case dxcTuneResultMsg:
+		if r.err != nil {
+			m.toasts.Error(fmt.Sprintf("Tune failed: %v", r.err))
+		} else {
+			msg := fmt.Sprintf("Rig tuned to %.5f MHz", r.freqMHz)
+			if r.mode != "" {
+				msg += " " + r.mode
+			}
+			m.toasts.Success(msg)
+		}
 		return m, cmd
 	}
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/table"
@@ -18,11 +19,11 @@ var dxcTimeWindows = []int{0, 60, 30, 15, 10, 5}
 
 // dxcColWidths maps DXC column titles to minimum widths (matching editorColWidths).
 var dxcColWidths = map[string]int{
-	"Time": 8, "Freq": 8, "Band": 5, "DX Call": 10, "Spotter": 10, "Comment": 8,
+	"Time": 8, "Freq": 8, "Band": 5, "Mode": 4, "DX Call": 10, "Spotter": 10, "Comment": 8,
 }
 
-// dxcColOrder is the fixed display order: Time, Freq, Band, DX Call, Spotter, Comment.
-var dxcColOrder = []string{"Time", "Freq", "Band", "DX Call", "Spotter", "Comment"}
+// dxcColOrder is the fixed display order: Time, Freq, Band, Mode, DX Call, Spotter, Comment.
+var dxcColOrder = []string{"Time", "Freq", "Band", "Mode", "DX Call", "Spotter", "Comment"}
 
 // dxcColValue returns the display value for a DXC column and spot.
 func dxcColValue(col string, s *store.DXCSpot) string {
@@ -33,6 +34,8 @@ func dxcColValue(col string, s *store.DXCSpot) string {
 		return fmt.Sprintf("%.1f", s.Frequency)
 	case "Band":
 		return s.Band
+	case "Mode":
+		return s.Mode
 	case "DX Call":
 		return s.DXCall
 	case "Spotter":
@@ -77,6 +80,17 @@ func (m *Model) dxcFilteredSpots() []store.DXCSpot {
 		spots = filtered
 	}
 
+	// Mode filter.
+	if m.dxcModeFilter != "" {
+		var filtered []store.DXCSpot
+		for _, s := range spots {
+			if s.Mode == m.dxcModeFilter {
+				filtered = append(filtered, s)
+			}
+		}
+		spots = filtered
+	}
+
 	// When a specific band is selected, sort by frequency descending
 	// so the highest frequency in the band appears at the top.
 	if m.dxcBandFilter != "" {
@@ -113,6 +127,26 @@ func (m *Model) dxcAvailableBands() []string {
 		bands = append(bands, "other")
 	}
 	return bands
+}
+
+// dxcAvailableModes returns a sorted list of unique modes present in the spots.
+func (m *Model) dxcAvailableModes() []string {
+	spots, err := store.QueryDXCSpots(m.App.DB)
+	if err != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	for _, s := range spots {
+		if s.Mode != "" {
+			seen[s.Mode] = true
+		}
+	}
+	var modes []string
+	for mo := range seen {
+		modes = append(modes, mo)
+	}
+	sort.Strings(modes)
+	return modes
 }
 
 // buildDXCTable constructs the bubbles/table for DXC spots.
@@ -174,7 +208,7 @@ func (m *Model) buildDXCTable() {
 	spots := m.dxcFilteredSpots()
 	m.dxcSpotCount = len(spots)
 
-	filtered := m.dxcBandFilter != ""
+	filtered := m.dxcBandFilter != "" || m.dxcModeFilter != ""
 	bandHighlight := S.Info
 
 	var rows []table.Row
@@ -186,7 +220,10 @@ func (m *Model) buildDXCTable() {
 			if v == "" {
 				v = "\u2014"
 			}
-			if filtered && n == "Band" && v != "\u2014" {
+			if filtered && n == "Band" && v != "\u2014" && m.dxcBandFilter != "" {
+				v = bandHighlight.Render(v)
+			}
+			if filtered && n == "Mode" && v != "\u2014" && m.dxcModeFilter != "" {
 				v = bandHighlight.Render(v)
 			}
 			row = append(row, v)
@@ -207,7 +244,7 @@ func (m *Model) buildDXCTable() {
 		BorderBottom(true).
 		Bold(false).
 		Foreground(P.Text)
-	// Highlight Band header when band filter is active.
+	// Highlight Band/Mode header when filter is active.
 	if filtered {
 		sty.Header = sty.Header.Foreground(P.Cursor)
 	}
@@ -258,10 +295,16 @@ func (m *Model) dxcView() string {
 	if m.dxcBandFilter != "" {
 		bandVal = m.dxcBandFilter
 	}
+	modeVal := "all"
+	if m.dxcModeFilter != "" {
+		modeVal = m.dxcModeFilter
+	}
 	filterInfo := " " + DimStyle.Render("Filters:") + " " +
 		DimStyle.Render("Time") + " " + ValueStyle.Render(timeVal) +
 		" " + DimStyle.Render("|") + " " +
 		DimStyle.Render("Band") + " " + ValueStyle.Render(bandVal) +
+		" " + DimStyle.Render("|") + " " +
+		DimStyle.Render("Mode") + " " + ValueStyle.Render(modeVal) +
 		" " + DimStyle.Render("|") + " " +
 		DimStyle.Render("Spots") + " " + ValueStyle.Render(fmt.Sprintf("%d", m.dxcSpotCount))
 	spacer := lipgloss.NewStyle().Width(bodyW).Render(filterInfo)
@@ -351,7 +394,45 @@ func (m *Model) handleDXCUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 		case "tab":
 			// Fill QSO form with highlighted spot and tune rig.
 			m.dxcFillFromSelected()
-			m.dxcTuneRig()
+			cmd = tea.Batch(cmd, m.dxcTuneCmd())
+			return m, cmd
+
+		case "insert":
+			// Cycle mode filter forward.
+			modes := m.dxcAvailableModes()
+			choices := []string{""} // "" means all
+			choices = append(choices, modes...)
+			if len(choices) > 0 {
+				m.dxcModeIdx = (m.dxcModeIdx + 1) % len(choices)
+				m.dxcModeFilter = choices[m.dxcModeIdx]
+			}
+			m.dxcTableReady = false
+			return m, cmd
+
+		case "delete":
+			// Cycle mode filter backward.
+			modes := m.dxcAvailableModes()
+			choices := []string{""}
+			choices = append(choices, modes...)
+			if len(choices) > 0 {
+				m.dxcModeIdx--
+				if m.dxcModeIdx < 0 {
+					m.dxcModeIdx = len(choices) - 1
+				}
+				m.dxcModeFilter = choices[m.dxcModeIdx]
+			}
+			m.dxcTableReady = false
+			return m, cmd
+
+		case "backspace":
+			// Clear all filters.
+			m.dxcTimeFilter = 0
+			m.dxcTimeIdx = 0
+			m.dxcBandFilter = ""
+			m.dxcBandIdx = 0
+			m.dxcModeFilter = ""
+			m.dxcModeIdx = 0
+			m.dxcTableReady = false
 			return m, cmd
 		}
 	}
@@ -403,36 +484,75 @@ func (m *Model) dxcFillFromSelected() {
 	}
 }
 
-// dxcTuneRig sends the highlighted spot's frequency to flrig.
-// Only acts when flrig is connected and WSJT-X is offline/disabled.
-func (m *Model) dxcTuneRig() {
+// dxcTuneCmd returns a tea.Cmd that tunes flrig to the highlighted spot's
+// frequency and mode. Returns the result as a dxcTuneResultMsg for toasts.
+func (m *Model) dxcTuneCmd() tea.Cmd {
 	if !m.rigConnected || m.wsjtxOnline || m.flrigClient == nil {
 		applog.Info("DXC: tune skipped",
 			"rigConnected", m.rigConnected,
 			"wsjtxOnline", m.wsjtxOnline,
 			"hasClient", m.flrigClient != nil,
 		)
-		return
+		return nil
 	}
 	cursor := m.dxcTable.Cursor()
 	spots := m.dxcFilteredSpots()
 	if cursor < 0 || cursor >= len(spots) {
-		return
+		return nil
 	}
-	freqHz := int64(spots[cursor].Frequency * 1000) // kHz → Hz
+	spot := spots[cursor]
+	freqHz := int64(spot.Frequency * 1000) // kHz → Hz
 	freqMHz := float64(freqHz) / 1_000_000
-	applog.Info("DXC: tuning rig to spot",
-		"call", spots[cursor].DXCall,
-		"freq_mhz", fmt.Sprintf("%.5f", freqMHz),
-		"freq_hz", freqHz,
-	)
-	go func() {
+	call := spot.DXCall
+	flrigMode := spotModeToFlrigMode(spot.Mode)
+	client := m.flrigClient
+
+	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		if err := m.flrigClient.SetFrequency(ctx, freqHz); err != nil {
-			applog.Warn("DXC: tune rig failed", "freq_hz", freqHz, "error", err)
-		} else {
-			applog.Info("DXC: rig tuned OK", "freq_hz", freqHz)
+
+		if err := client.SetFrequency(ctx, freqHz); err != nil {
+			applog.Warn("DXC: tune rig freq failed",
+				"call", call, "freq_mhz", fmt.Sprintf("%.5f", freqMHz), "error", err,
+			)
+			return dxcTuneResultMsg{call: call, freqMHz: freqMHz, err: fmt.Errorf("freq: %w", err)}
 		}
-	}()
+		if flrigMode != "" {
+			if err := client.SetMode(ctx, flrigMode); err != nil {
+				applog.Warn("DXC: tune rig mode failed",
+					"call", call, "mode", flrigMode, "error", err,
+				)
+				// Non-fatal: frequency was set, mode failed.
+				return dxcTuneResultMsg{call: call, freqMHz: freqMHz, err: fmt.Errorf("mode: %w", err)}
+			}
+		}
+		applog.Info("DXC: rig tuned OK",
+			"call", call,
+			"freq_mhz", fmt.Sprintf("%.5f", freqMHz),
+			"mode", flrigMode,
+		)
+		return dxcTuneResultMsg{call: call, freqMHz: freqMHz, mode: flrigMode}
+	}
+}
+
+// spotModeToFlrigMode maps a DXC spot mode string to a flrig-compatible mode.
+func spotModeToFlrigMode(spotMode string) string {
+	switch strings.ToUpper(spotMode) {
+	case "USB":
+		return "USB"
+	case "LSB":
+		return "LSB"
+	case "CW":
+		return "CW"
+	case "FM":
+		return "FM"
+	case "AM":
+		return "AM"
+	case "RTTY", "FSK":
+		return "RTTY"
+	case "FT8", "FT4", "JT65", "JT9", "MSK144", "PSK", "DATA":
+		return "DATA-U"
+	default:
+		return ""
+	}
 }
