@@ -224,6 +224,17 @@ func parseXMLRPCResponse(data []byte) (string, error) {
 
 	v := r.Params.Param.Value
 
+	// Empty <value></value> is a valid success response for setter calls
+	// (e.g. rig.set_vfo, rig.set_mode). All fields are zero/empty.
+	if v.CharData == "" && v.String == "" && v.Double == 0 && v.Int == 0 && v.I4 == 0 && v.Boolean == 0 &&
+		!strings.Contains(string(data), "<string>") &&
+		!strings.Contains(string(data), "<double>") &&
+		!strings.Contains(string(data), "<int>") &&
+		!strings.Contains(string(data), "<i4>") &&
+		!strings.Contains(string(data), "<boolean>") {
+		return "", nil
+	}
+
 	if v.CharData != "" {
 		return strings.TrimSpace(v.CharData), nil
 	}
