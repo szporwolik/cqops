@@ -251,9 +251,10 @@ func (m *Model) ActiveBindings() []key.Binding {
 	if m.screen == screenDXC {
 		bindings = append(bindings,
 			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
-			key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("PgUp/Dn", "Time")),
-			key.NewBinding(key.WithKeys("home", "end"), key.WithHelp("Home/End", "Band")),
+			key.NewBinding(key.WithKeys(`\`), key.WithHelp("\\", "De Cont")),
 			key.NewBinding(key.WithKeys("insert", "delete"), key.WithHelp("Ins/Del", "Mode")),
+			key.NewBinding(key.WithKeys("home", "end"), key.WithHelp("Home/End", "Band")),
+			key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("PgUp/Dn", "Time")),
 			key.NewBinding(key.WithKeys("backspace"), key.WithHelp("Bksp", "Clear")),
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "QSO")),
 		)

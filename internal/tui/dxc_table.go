@@ -262,11 +262,13 @@ func (m *Model) dxcView() string {
 		modeVal = m.dxc.modeFilter
 	}
 	filterInfo := " " + DimStyle.Render("Filters:") + " " +
-		DimStyle.Render("Mode") + " " + ValueStyle.Render(modeVal) +
-		" " + DimStyle.Render("|") + " " +
 		DimStyle.Render("Cont") + " " + ValueStyle.Render(contVal) +
 		" " + DimStyle.Render("|") + " " +
+		DimStyle.Render("Mode") + " " + ValueStyle.Render(modeVal) +
+		" " + DimStyle.Render("|") + " " +
 		DimStyle.Render("Band") + " " + ValueStyle.Render(bandVal) +
+		" " + DimStyle.Render("|") + " " +
+		DimStyle.Render("Time") + " " + ValueStyle.Render(timeVal) +
 		" " + DimStyle.Render("|") + " " +
 		DimStyle.Render("Time") + " " + ValueStyle.Render(timeVal) +
 		" " + DimStyle.Render("|") + " " +
