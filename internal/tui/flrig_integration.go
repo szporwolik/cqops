@@ -155,9 +155,42 @@ func (m *Model) fetchFlrigModes() {
 }
 
 // flrigModeIndex returns the index of the desired mode in flrig's mode table.
-// Uses case-insensitive prefix matching for robustness.
+// For CW, prefers CW-L/CWL (lower sideband, standard for HF) over CW-U/CWU.
 func flrigModeIndex(flrigModes []string, want string) int {
 	want = strings.ToUpper(want)
+
+	// For CW: prefer lower-sideband CW, which is the HF standard.
+	if want == "CW" {
+		// 1. Exact match "CW-L" or "CWL" (lower sideband).
+		for i, m := range flrigModes {
+			u := strings.ToUpper(m)
+			if u == "CW-L" || u == "CWL" {
+				return i
+			}
+		}
+		// 2. Exact match "CW".
+		for i, m := range flrigModes {
+			if strings.EqualFold(m, "CW") {
+				return i
+			}
+		}
+		// 3. Prefix "CW-" (matches "CW-L", "CW-U").
+		for i, m := range flrigModes {
+			if strings.HasPrefix(strings.ToUpper(m), "CW-") {
+				return i
+			}
+		}
+		// 4. Starts with "CW" and length 3 (matches "CWL", "CWU").
+		for i, m := range flrigModes {
+			u := strings.ToUpper(m)
+			if strings.HasPrefix(u, "CW") && len(u) == 3 {
+				return i
+			}
+		}
+		return -1
+	}
+
+	// Default: exact match first, then prefix match.
 	for i, m := range flrigModes {
 		if strings.EqualFold(m, want) {
 			return i

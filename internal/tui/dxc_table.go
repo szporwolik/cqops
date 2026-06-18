@@ -631,8 +631,8 @@ func (m *Model) dxcTuneCmd() tea.Cmd {
 	}
 }
 
-// spotModeToFlrigMode maps a DXC spot mode string to a flrig-compatible mode.
-// CW maps to CW-L (lower sideband) which is the standard for HF CW operation.
+// spotModeToFlrigMode maps a DXC spot mode string to a canonical flrig mode name.
+// The actual index matching against the rig's mode table is done by flrigModeIndex.
 func spotModeToFlrigMode(spotMode string) string {
 	switch strings.ToUpper(spotMode) {
 	case "USB":
@@ -640,7 +640,7 @@ func spotModeToFlrigMode(spotMode string) string {
 	case "LSB":
 		return "LSB"
 	case "CW":
-		return "CW-L"
+		return "CW" // flrigModeIndex picks best CW variant from rig's table
 	case "FM":
 		return "FM"
 	case "AM":
