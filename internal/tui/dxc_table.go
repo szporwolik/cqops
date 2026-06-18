@@ -481,41 +481,47 @@ func (m *Model) dxcFillFromSelected() {
 }
 
 // dxcSpotAtCursor returns the DXC spot at the current table cursor position.
-// Uses m.dxcSelectedCall to look up the spot from the DB, which is always
-// consistent regardless of table rebuilds.
+// Returns the spot data captured at the last cursor move — NOT a fresh DB query,
+// so the frequency matches what the user sees in the table.
 func (m *Model) dxcSpotAtCursor() (store.DXCSpot, bool) {
 	if m.dxcSelectedCall == "" || !m.dxcTableReady {
-		applog.Debug("DXC: dxcSpotAtCursor — no selected call")
 		return store.DXCSpot{}, false
 	}
-	spot, err := store.QueryDXCSpotByCall(m.App.DB, m.dxcSelectedCall)
-	if err != nil || spot == nil {
-		applog.Debug("DXC: dxcSpotAtCursor — not found in DB", "call", m.dxcSelectedCall, "err", err)
+	if m.dxcSelectedSpot.DXCall == "" {
 		return store.DXCSpot{}, false
 	}
-	return *spot, true
+	applog.Debug("DXC: dxcSpotAtCursor",
+		"call", m.dxcSelectedSpot.DXCall,
+		"freq_khz", m.dxcSelectedSpot.Frequency,
+	)
+	return m.dxcSelectedSpot, true
 }
 
-// updateDXCSelectedCall updates the cached selected callsign from the current
+// updateDXCSelectedCall updates the cached selected spot from the current
 // table cursor position. Call after cursor movement or table rebuild.
+// Stores the FULL spot data so frequency is locked at cursor-move time.
 func (m *Model) updateDXCSelectedCall() {
 	if !m.dxcTableReady {
 		m.dxcSelectedCall = ""
+		m.dxcSelectedSpot = store.DXCSpot{}
 		return
 	}
 	cursor := m.dxcTable.Cursor()
 	spots := m.dxcFilteredSpots()
 	prev := m.dxcSelectedCall
 	if cursor >= 0 && cursor < len(spots) {
-		m.dxcSelectedCall = spots[cursor].DXCall
+		m.dxcSelectedSpot = spots[cursor]
+		m.dxcSelectedCall = m.dxcSelectedSpot.DXCall
 	} else {
 		m.dxcSelectedCall = ""
+		m.dxcSelectedSpot = store.DXCSpot{}
 	}
 	if m.dxcSelectedCall != prev {
 		applog.Debug("DXC: selected call changed",
 			"cursor", cursor,
 			"prev", prev,
 			"new", m.dxcSelectedCall,
+			"freq_khz", m.dxcSelectedSpot.Frequency,
 		)
 	}
 }
