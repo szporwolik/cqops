@@ -16,23 +16,28 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 
 ## Features
 
+- **DX Cluster** — telnet connection to dxspider nodes, live spot table with band/mode/time filters, Enter to fill QSO form, Tab to tune rig to spot frequency and mode
+- **Rig control via flrig** — read frequency/mode/band, tune rig from DX spots, automatic mode mapping (CW→CW-L, FT8→DATA-U, etc.)
 - **WSJT-X integration** — automatic QSO logging from FT8/FT4 and other digital modes
-- **flrig / rigctld support** — read frequency, mode, and band directly from your rig
+- **PSK Reporter** — real-time propagation data with band/mode/time filters and world map
+- **Solar conditions** — SFI, SSN, A/K indices, geomagnetic field from hamqsl.com with N0NBH threshold highlighting
 - **QRZ.com callbook** — one-key callsign lookup with auto-fill of name, QTH, grid, and country
-- **Wavelog cloud sync** — batch upload, duplicate detection, and station normalization
+- **Wavelog cloud sync** — batch upload, duplicate detection, private lookup, and station normalization
 - **Full ADIF import/export** — compatible with any ADIF-based logging workflow
 - **Terminal UI (TUI)** — keyboard-driven, works over SSH, no GUI required
 - **Offline-first** — SQLite database, no internet required for core logging
 - **Multi-logbook** — switch between station logs with per-logbook station profiles
 - **Partner details view** — grid-to-grid distance, bearing, and world map
 - **Cross-platform** — Windows, Linux, macOS — including ARM builds for Raspberry Pi and Apple Silicon
+- **Potato PC ready** — runs comfortably on Raspberry Pi-class hardware, old laptops, and portable monitors
 
 ## Requirements
 
 - Go 1.26+
-- Terminal with 75×24 minimum (80×24 recommended)
-- WSJT-X 2.6+ (optional, for automatic logging)
-- flrig (optional, for rig control)
+- Terminal with 80×24 minimum
+- WSJT-X 2.6+ (optional, for automatic digital mode logging)
+- flrig (optional, for rig control and spot-to-radio tuning)
+- Internet connection (optional, for DX cluster, QRZ, Wavelog, solar data, PSK Reporter)
 
 ## Build
 
@@ -93,16 +98,36 @@ cqops version          # Print version
 cqops --help           # Show all commands
 ```
 
+### Key Bindings
+
+| Key | Context | Action |
+|---|---|---|
+| `F1` | Global | QSO form |
+| `F2` | Global | QRZ partner lookup |
+| `F4` | Global | DX Cluster (spots table) |
+| `F5` | Global | PSK Reporter (propagation) |
+| `F7` | Global | Logbook editor |
+| `F8` | Global | Configuration menu |
+| `F9` | Global | Log viewer |
+| `F10` | Global | Quit |
+
 ## Dependencies
 
 **Core:**
-- [Bubble Tea](https://github.com/charmbracelet/bubbletea) — Terminal UI framework
-- [Bubbles](https://github.com/charmbracelet/bubbles) — TUI components (text input)
-- [Lip Gloss](https://github.com/charmbracelet/lipgloss) — Terminal styling
+- [Bubble Tea v2](https://charm.land/bubbletea) — Terminal UI framework
+- [Bubbles v2](https://charm.land/bubbles) — TUI components (text input, table, viewport)
+- [Lip Gloss v2](https://charm.land/lipgloss) — Terminal styling and layout
 - [Cobra](https://github.com/spf13/cobra) — CLI framework
 - [modernc.org/sqlite](https://modernc.org/sqlite) — Pure Go SQLite (no CGO)
+- [ntcharts](https://github.com/NimbleMarkets/ntcharts) — Map rendering
+
+**Integrations:**
 - [wsjtx-go](https://github.com/k0swe/wsjtx-go) — WSJT-X UDP protocol
 - [farmergreg/adif](https://github.com/farmergreg/adif) — ADIF parsing/writing
+- [ftl/hamradio](https://github.com/ftl/hamradio) — Grid locator and distance math
+- [gen2brain/beeep](https://github.com/gen2brain/beeep) — Desktop notifications
+
+All licenses are permissive (MIT, Apache 2.0, BSD-3). See `licenses/` directory.
 
 ## Contributing
 

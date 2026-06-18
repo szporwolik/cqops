@@ -175,15 +175,16 @@ type Model struct {
 	dxcBuiltW       int
 	dxcBuiltH       int
 	dxcSpotCount    int
-	dxcBandFilter   string        // "" = all, band name = filter, "other" = unclassified
-	dxcTimeFilter   int           // minutes, 0 = all
-	dxcTimeIdx      int           // index into dxcTimeWindows
-	dxcBandIdx      int           // index into dxcBandChoices
-	dxcModeFilter   string        // "" = all, mode name = filter
-	dxcModeIdx      int           // index into mode choices
-	dxcSelectedCall string        // callsign of the currently highlighted DXC spot
-	dxcSelectedSpot store.DXCSpot // full spot data captured at cursor-move time
-	dxcTuneCancel   func()        // cancel previous tune command if running
+	dxcBandFilter   string          // "" = all, band name = filter, "other" = unclassified
+	dxcTimeFilter   int             // minutes, 0 = all
+	dxcTimeIdx      int             // index into dxcTimeWindows
+	dxcBandIdx      int             // index into dxcBandChoices
+	dxcModeFilter   string          // "" = all, mode name = filter
+	dxcModeIdx      int             // index into mode choices
+	dxcSelectedCall string          // callsign of the currently highlighted DXC spot
+	dxcSelectedSpot store.DXCSpot   // full spot data captured at cursor-move time
+	dxcTuneCancel   func()          // cancel previous tune command if running
+	dxcCachedSpots  []store.DXCSpot // cached result of last dxcFilteredSpots() call
 	// Layout cache — avoids redundant MeasureLayout() calls when terminal size
 	// and screen haven't changed between frames.
 	lastLayout   Layout

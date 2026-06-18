@@ -100,6 +100,7 @@ func (m *Model) dxcFilteredSpots() []store.DXCSpot {
 		})
 	}
 
+	m.dxcCachedSpots = spots
 	return spots
 }
 
@@ -523,7 +524,10 @@ func (m *Model) updateDXCSelectedCall() {
 		return
 	}
 	cursor := m.dxcTable.Cursor()
-	spots := m.dxcFilteredSpots()
+	spots := m.dxcCachedSpots
+	if len(spots) == 0 {
+		spots = m.dxcFilteredSpots()
+	}
 	prev := m.dxcSelectedCall
 	if cursor >= 0 && cursor < len(spots) {
 		m.dxcSelectedSpot = spots[cursor]
@@ -546,7 +550,7 @@ func (m *Model) updateDXCSelectedCall() {
 // frequency and mode. Cancels any previous tune command still in flight.
 func (m *Model) dxcTuneCmd() tea.Cmd {
 	if !m.rigConnected || m.wsjtxOnline || m.flrigClient == nil {
-		applog.Info("DXC: tune skipped",
+		applog.Debug("DXC: tune skipped",
 			"rigConnected", m.rigConnected,
 			"wsjtxOnline", m.wsjtxOnline,
 			"hasClient", m.flrigClient != nil,

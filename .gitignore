@@ -23,7 +23,11 @@ Thumbs.db
 coverage.out
 coverage.html
 
+# Tool outputs
+vet_output.txt
+
+# Python virtualenv (dev tooling)
+.venv/
+
 # Project-specific
 ai/assumptions.md
-cqops.exe~
-cqops.exe
