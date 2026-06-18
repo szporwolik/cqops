@@ -296,8 +296,10 @@ func TestQSOFormView_ShowsValidationHint(t *testing.T) {
 	m.fields[fieldCall].SetValue("SP9*MOA") // invalid
 
 	view := m.viewForm(90)
-	if !strings.Contains(view, "Invalid callsign") {
-		t.Error("viewForm should contain 'Invalid callsign' when callsign is invalid")
+	// Inline hints are no longer rendered in the form — validation is shown
+	// via toast on field exit instead.
+	if strings.Contains(view, "Invalid callsign") {
+		t.Error("viewForm should NOT contain inline 'Invalid callsign' — hints are shown via toast on field exit")
 	}
 }
 
@@ -317,20 +319,19 @@ func TestQSOFormView_HintChangesWithFocus(t *testing.T) {
 	m.fields[fieldCall].SetValue("SP9*MOA")
 	m.fields[fieldGrid].SetValue("JO90")
 
-	// Focus on Call → call hint shown.
+	// Focus on Call — inline hints are no longer shown in the form.
 	m.focus = fieldCall
 	v1 := m.viewForm(90)
-	if !strings.Contains(v1, "Invalid callsign") {
-		t.Error("should show callsign hint when call focused")
+	if strings.Contains(v1, "Invalid callsign") {
+		t.Error("should NOT show inline callsign hint — hints are shown via toast on field exit")
 	}
 
-	// Focus on Grid → no hint (grid is valid).
+	// Focus on Grid — no hint (grid is valid, and inline hints are not shown).
 	m.focus = fieldGrid
-	// Force cache miss.
 	m.rc.formSig = ""
 	v2 := m.viewForm(90)
 	if strings.Contains(v2, "Invalid callsign") {
-		t.Error("should NOT show callsign hint when grid focused (valid grid)")
+		t.Error("should NOT show inline callsign hint when grid focused")
 	}
 }
 

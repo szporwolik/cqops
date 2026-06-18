@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -341,6 +342,11 @@ func deriveSpotMode(comment string, freqMHz float64) string {
 			return kw
 		}
 	}
+	// When no mode keyword found in the comment, try to derive FT8 or FT4
+	// from the frequency — typical calling frequencies (± 3 kHz tolerance).
+	if mode := ft8ft4FromFrequency(freqMHz); mode != "" {
+		return mode
+	}
 	// "AM" is checked separately only at word boundaries to avoid matching
 	// the common word "am" in comments.
 	if wordContains(c, "AM") {
@@ -355,6 +361,29 @@ func deriveSpotMode(comment string, freqMHz float64) string {
 		return "LSB"
 	}
 	return "USB"
+}
+
+// ft8ft4FromFrequency returns "FT8" or "FT4" if freqMHz is within ±3 kHz of
+// a known FT8/FT4 calling frequency on any band. FT4 is checked first because
+// some FT4 frequencies are close to FT8. Returns "" if no match.
+func ft8ft4FromFrequency(freqMHz float64) string {
+	// FT4 calling frequencies (IARU Region 1, common worldwide).
+	for _, f := range []float64{
+		3.575, 7.047, 10.140, 14.080, 18.104, 21.080, 24.919, 28.080, 50.318,
+	} {
+		if math.Abs(freqMHz-f) <= 0.003 {
+			return "FT4"
+		}
+	}
+	// FT8 calling frequencies.
+	for _, f := range []float64{
+		1.840, 3.573, 7.074, 10.136, 14.074, 18.100, 21.074, 24.915, 28.074, 50.313, 144.174,
+	} {
+		if math.Abs(freqMHz-f) <= 0.003 {
+			return "FT8"
+		}
+	}
+	return ""
 }
 
 // isCWFrequency returns true if the frequency (MHz) falls in the typical

@@ -150,6 +150,16 @@ func (m *Model) dxcFillFromSelected() {
 			"call", spot.DXCall,
 		)
 	}
+
+	// Commit the callsign (normalizes, sets pathCall) and flag a deferred
+	// lookup — same logic as onFieldExit for the call field.
+	cur := m.commitCall()
+	if cur != "" {
+		m.autoFillRST()
+		m.autoFillSSBSubmode()
+		m.lookup.qrzNeed = true
+		m.lookup.qrzCall = cur
+	}
 }
 
 // dxcSpotAtCursor returns the DXC spot at the current table cursor position.

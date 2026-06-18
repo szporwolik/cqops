@@ -1020,6 +1020,12 @@ func TestValidate_DistanceUnitEnum(t *testing.T) {
 // =============================================================================
 
 func TestSave_PermissionsAre0600(t *testing.T) {
+	// 0600 is a Unix permission; on Windows os.WriteFile does not apply
+	// POSIX owner-only semantics, so the check is meaningless there.
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows does not enforce POSIX 0600 file permissions")
+	}
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 

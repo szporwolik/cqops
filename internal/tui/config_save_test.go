@@ -3,11 +3,14 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/config"
 )
+
+var isWindows = runtime.GOOS == "windows"
 
 // =============================================================================
 // Normal config save-boundary validation tests (Pass 13)
@@ -241,6 +244,11 @@ func TestSaveConfig_PermissionsAre0600(t *testing.T) {
 	info, err := os.Stat(m.App.ConfigPath)
 	if err != nil {
 		t.Fatalf("Stat: %v", err)
+	}
+	// 0600 is a Unix permission; on Windows os.WriteFile does not apply
+	// POSIX owner-only semantics, so the check is meaningless there.
+	if isWindows {
+		t.Skip("Windows does not enforce POSIX 0600 file permissions")
 	}
 	if info.Mode().Perm() != 0600 {
 		t.Errorf("config file permissions = %04o, want 0600", info.Mode().Perm())

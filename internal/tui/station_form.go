@@ -254,12 +254,6 @@ func (f *StationForm) View() tea.View {
 	var b strings.Builder
 	for _, field := range fields {
 		b.WriteString(f.renderFieldLine(field.label, field.ti, availW))
-		if hint := f.ValidateField(field.label); hint != "" {
-			b.WriteString(padOrTrunc(
-				S.Warning.Render("  \u26a0 "+hint),
-				availW))
-			b.WriteString("\n")
-		}
 	}
 
 	// Wavelog checkbox

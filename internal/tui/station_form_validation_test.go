@@ -183,8 +183,10 @@ func TestStationForm_View_IncludesValidationHint(t *testing.T) {
 	f.Locator.SetValue("JO90")
 
 	view := fmt.Sprint(f.View())
-	if !strings.Contains(view, "Invalid callsign") {
-		t.Error("View should contain 'Invalid callsign' hint when callsign is invalid")
+	// Inline hints are no longer rendered — validation is shown via toast on
+	// field exit / save instead.
+	if strings.Contains(view, "Invalid callsign") {
+		t.Error("View should NOT contain inline 'Invalid callsign' — hints are shown via toast on field exit")
 	}
 }
 
@@ -210,8 +212,10 @@ func TestStationForm_View_LocatorHint(t *testing.T) {
 	f.Locator.SetValue("XXXX") // invalid
 
 	view := fmt.Sprint(f.View())
-	if !strings.Contains(view, "Invalid locator") {
-		t.Error("View should contain 'Invalid locator' hint")
+	// Inline hints are no longer rendered — validation is shown via toast on
+	// field exit / save instead.
+	if strings.Contains(view, "Invalid locator") {
+		t.Error("View should NOT contain inline 'Invalid locator' — hints are shown via toast on field exit")
 	}
 }
 

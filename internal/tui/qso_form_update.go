@@ -307,18 +307,24 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 // =============================================================================
 
 // onFieldExit is called when leaving a field (via nextField/prevField/focusField).
-// It commits values for path calculation and triggers autofill / lookups.
+// It commits values for path calculation, validates the field (showing a toast
+// if invalid), and triggers autofill / lookups.
 func (m *Model) onFieldExit() {
+	// Show validation toast for the field being left, if the value is non-empty
+	// but invalid. Empty is OK — handled at save time by qso.ValidateForSave.
+	if hint := m.qsoFieldHint(m.focus); hint != "" {
+		m.toasts.Warn(hint)
+	}
+
 	switch m.focus {
 	case fieldCall:
 		cur := m.commitCall()
 		m.autoFillRST()
 		m.autoFillSSBSubmode()
 		if cur == "" {
-			raw := strings.TrimSpace(m.fields[fieldCall].Value())
-			if raw != "" {
-				m.toasts.Warn("Not a valid callsign")
-			}
+			// Callsign was cleared — reset last-looked-up state so that
+			// re-entering the same call triggers a fresh lookup.
+			m.lookup.qrzLastCall = ""
 			break
 		}
 		// Defer lookup via flag — onFieldExit can't return commands.

@@ -180,13 +180,6 @@ func (m *Model) viewForm(width int) string {
 		b.WriteString("\n")
 	}
 
-	// Validation hint for the currently focused field.
-	if hint := m.qsoFieldHint(m.focus); hint != "" {
-		hintLine := S.Warning.Render("  \u26a0 " + hint)
-		b.WriteString(hintLine)
-		b.WriteString("\n")
-	}
-
 	// Comment row spans first two columns; Retain checkbox in third.
 	commentLine := commentStyle.Render(renderLine(fieldComment, colW*2))
 	retainBox := colStyle.Render(m.renderRetainCheckbox(colW))
