@@ -24,9 +24,6 @@ func (m *Model) headerView() string {
 		logName = "\u2014"
 	}
 	op := s.Operator
-	if op == "" {
-		op = "\u2014"
-	}
 
 	leftParts := []string{
 		S.StatusApp.Render(" CQOps v" + version.Resolved() + " "),
@@ -34,8 +31,12 @@ func (m *Model) headerView() string {
 		" " + S.StatusValue.Render(clamp(callsign, 10)),
 		" " + S.StatusLabel.Render("Log"),
 		" " + S.StatusValue.Render(clamp(logName, 12)),
-		" " + S.StatusLabel.Render("Op"),
-		" " + S.StatusValue.Render(clamp(op, 10)),
+	}
+	if op != "" {
+		leftParts = append(leftParts,
+			" "+S.StatusLabel.Render("Op"),
+			" "+S.StatusValue.Render(clamp(op, 10)),
+		)
 	}
 
 	// Build right side first so we know how much width remains for MSG.
