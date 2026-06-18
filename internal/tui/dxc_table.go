@@ -244,12 +244,25 @@ func (m *Model) buildDXCTable() {
 		BorderBottom(true).
 		Bold(false).
 		Foreground(P.Text)
-	// Highlight Band/Mode header when filter is active.
 	if filtered {
 		sty.Header = sty.Header.Foreground(P.Cursor)
 	}
 	t.SetStyles(sty)
 	t.Focus()
+
+	// Preserve cursor position: try to keep the same callsign selected
+	// after a rebuild. Only reset to top if the call disappeared.
+	prevCall := m.dxcSelectedCall
+	if prevCall != "" {
+		for i, s := range spots {
+			if s.DXCall == prevCall {
+				// Force-scroll to the preserved row: go to top, then move down.
+				t.GotoTop()
+				t.MoveDown(i)
+				break
+			}
+		}
+	}
 
 	m.dxcTable = t
 	m.dxcTableReady = true
@@ -527,8 +540,7 @@ func (m *Model) updateDXCSelectedCall() {
 }
 
 // dxcTuneCmd returns a tea.Cmd that tunes flrig to the highlighted spot's
-// frequency and mode. Returns the result as a dxcTuneResultMsg for toasts.
-// Captures spot data at call time so it reflects exactly what the user selected.
+// frequency and mode. Cancels any previous tune command still in flight.
 func (m *Model) dxcTuneCmd() tea.Cmd {
 	if !m.rigConnected || m.wsjtxOnline || m.flrigClient == nil {
 		applog.Info("DXC: tune skipped",
@@ -537,6 +549,11 @@ func (m *Model) dxcTuneCmd() tea.Cmd {
 			"hasClient", m.flrigClient != nil,
 		)
 		return nil
+	}
+	// Cancel any previous tune command still in flight.
+	if m.dxcTuneCancel != nil {
+		m.dxcTuneCancel()
+		m.dxcTuneCancel = nil
 	}
 	spot, ok := m.dxcSpotAtCursor()
 	if !ok {
@@ -551,17 +568,27 @@ func (m *Model) dxcTuneCmd() tea.Cmd {
 
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Second)
-		defer cancel()
+		m.dxcTuneCancel = cancel
+		defer func() {
+			cancel()
+			m.dxcTuneCancel = nil
+		}()
 
 		if err := client.SetFrequency(ctx, freqHz); err != nil {
+			if ctx.Err() != nil {
+				return dxcTuneResultMsg{call: call, freqMHz: freqMHz, err: fmt.Errorf("cancelled")}
+			}
 			applog.Warn("DXC: tune rig freq failed",
 				"call", call, "freq_mhz", fmt.Sprintf("%.5f", freqMHz), "error", err,
 			)
 			return dxcTuneResultMsg{call: call, freqMHz: freqMHz, err: fmt.Errorf("freq: %w", err)}
 		}
 
-		// Wait for rig to settle, then verify the actual VFO frequency.
+		// Wait for rig to settle, then verify.
 		time.Sleep(400 * time.Millisecond)
+		if ctx.Err() != nil {
+			return dxcTuneResultMsg{call: call, freqMHz: freqMHz, err: fmt.Errorf("cancelled")}
+		}
 		status, err := client.Status(ctx)
 		var verifyMsg string
 		if err == nil && status.Connected {
@@ -581,7 +608,13 @@ func (m *Model) dxcTuneCmd() tea.Cmd {
 		}
 
 		if flrigModeIdx >= 0 {
+			if ctx.Err() != nil {
+				return dxcTuneResultMsg{call: call, freqMHz: freqMHz, err: fmt.Errorf("cancelled")}
+			}
 			if err := client.SetMode(ctx, flrigModeIdx); err != nil {
+				if ctx.Err() != nil {
+					return dxcTuneResultMsg{call: call, freqMHz: freqMHz, err: fmt.Errorf("cancelled")}
+				}
 				applog.Warn("DXC: tune rig mode failed",
 					"call", call, "mode", flrigModeName, "idx", flrigModeIdx, "error", err,
 				)

@@ -183,7 +183,7 @@ type Model struct {
 	dxcModeIdx      int           // index into mode choices
 	dxcSelectedCall string        // callsign of the currently highlighted DXC spot
 	dxcSelectedSpot store.DXCSpot // full spot data captured at cursor-move time
-
+	dxcTuneCancel   func()        // cancel previous tune command if running
 	// Layout cache — avoids redundant MeasureLayout() calls when terminal size
 	// and screen haven't changed between frames.
 	lastLayout   Layout

@@ -305,8 +305,11 @@ func (m *Model) fillDXCFreq(msg dxcSpotLookupMsg) {
 }
 
 // handleDXCSpotsStored checks newly stored spots against the QSO form call
-// and flags a deferred frequency lookup when a matching spot arrives.
+// and invalidates the DXC table cache to keep the view in sync with the DB.
 func (m *Model) handleDXCSpotsStored(msg dxcSpotsStoredMsg) {
+	// Invalidate table so it rebuilds with fresh data on next View().
+	m.dxcTableReady = false
+
 	formCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
 	if formCall == "" {
 		return

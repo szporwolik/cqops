@@ -29,7 +29,7 @@ func NewMainMenu() *MainMenu {
 			{"Callbook", "QRZ.com lookup credentials"},
 			{"Logbooks", "Station profiles, Wavelog, paths"},
 			{"Rigs", "Radio models, antennas, flrig"},
-			{"Integration", "WSJT-X UDP listener"},
+			{"Integration", "DXC Cluster, WSJT-X"},
 		},
 	}
 }
