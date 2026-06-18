@@ -507,6 +507,95 @@ func QueryPSKSpots(db *sql.DB, stationCall string, since int64) ([]PSKSpot, erro
 	return spots, rows.Err()
 }
 
+// ---------------------------------------------------------------------------
+// DXC spots
+// ---------------------------------------------------------------------------
+
+// DXCSpot holds a single DX Cluster spot from the database.
+type DXCSpot struct {
+	ID         int64
+	DXCall     string
+	Frequency  float64
+	Band       string
+	Comment    string
+	Spotter    string
+	ReceivedAt int64
+}
+
+// InsertDXCSpots bulk-inserts DX Cluster spots, skipping duplicates.
+func InsertDXCSpots(db *sql.DB, spots []DXCSpot) (int, error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	stmt, err := tx.Prepare(`INSERT OR IGNORE INTO dxc_spots
+		(dx_call, frequency, band, comment, spotter, received_at)
+		VALUES (?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return 0, fmt.Errorf("prepare: %w", err)
+	}
+	defer stmt.Close()
+
+	inserted := 0
+	for _, s := range spots {
+		res, err := stmt.Exec(s.DXCall, s.Frequency, s.Band, s.Comment, s.Spotter, s.ReceivedAt)
+		if err != nil {
+			return inserted, fmt.Errorf("insert dxc_spot: %w", err)
+		}
+		n, _ := res.RowsAffected()
+		if n > 0 {
+			inserted++
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return inserted, fmt.Errorf("commit: %w", err)
+	}
+	return inserted, nil
+}
+
+// PurgeOldDXCSpots removes DXC spots older than 120 minutes.
+func PurgeOldDXCSpots(db *sql.DB) error {
+	cutoff := time.Now().UTC().Add(-120 * time.Minute).Unix()
+	_, err := db.Exec(`DELETE FROM dxc_spots WHERE received_at < ?`, cutoff)
+	if err != nil {
+		return fmt.Errorf("purge dxc_spots: %w", err)
+	}
+	return nil
+}
+
+// QueryDXCSpots returns recent DXC spots ordered by time (newest first).
+func QueryDXCSpots(db *sql.DB) ([]DXCSpot, error) {
+	rows, err := db.Query(`SELECT id, dx_call, frequency, band, comment, spotter, received_at
+		FROM dxc_spots ORDER BY received_at DESC LIMIT 500`)
+	if err != nil {
+		return nil, fmt.Errorf("query dxc_spots: %w", err)
+	}
+	defer rows.Close()
+	var spots []DXCSpot
+	for rows.Next() {
+		var s DXCSpot
+		if err := rows.Scan(&s.ID, &s.DXCall, &s.Frequency, &s.Band, &s.Comment, &s.Spotter, &s.ReceivedAt); err != nil {
+			return spots, fmt.Errorf("scan dxc_spot: %w", err)
+		}
+		spots = append(spots, s)
+	}
+	return spots, rows.Err()
+}
+
+// QueryDXCSpotByCall returns the most recent DXC spot for a given callsign, if any.
+func QueryDXCSpotByCall(db *sql.DB, call string) (*DXCSpot, error) {
+	var s DXCSpot
+	err := db.QueryRow(`SELECT id, dx_call, frequency, band, comment, spotter, received_at
+		FROM dxc_spots WHERE dx_call = ? ORDER BY received_at DESC LIMIT 1`, call).Scan(
+		&s.ID, &s.DXCall, &s.Frequency, &s.Band, &s.Comment, &s.Spotter, &s.ReceivedAt)
+	if err != nil {
+		return nil, err // sql.ErrNoRows if not found
+	}
+	return &s, nil
+}
+
 // PurgeOldPSKSpots removes spots older than 7 days.
 func PurgeOldPSKSpots(db *sql.DB) error {
 	cutoff := time.Now().UTC().Add(-7 * 24 * time.Hour).Unix()

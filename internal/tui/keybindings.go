@@ -10,6 +10,7 @@ type KeyMap struct {
 	QSOForm      key.Binding
 	Partner      key.Binding
 	PSKReporter  key.Binding
+	DXC          key.Binding
 	LogEditor    key.Binding
 	Config       key.Binding
 	Logs         key.Binding
@@ -49,6 +50,10 @@ func DefaultKeyMap() KeyMap {
 		PSKReporter: key.NewBinding(
 			key.WithKeys("f5"),
 			key.WithHelp("F5", "PSK Reporter"),
+		),
+		DXC: key.NewBinding(
+			key.WithKeys("f4"),
+			key.WithHelp("F4", "cluster"),
 		),
 		LogEditor: key.NewBinding(
 			key.WithKeys("f7"),
@@ -242,6 +247,19 @@ func (m *Model) ActiveBindings() []key.Binding {
 		bindings = append(bindings,
 			key.NewBinding(key.WithKeys("f2", "esc"), key.WithHelp("F2/Esc", "Back to Partner")),
 		)
+	}
+	if m.screen == screenDXC {
+		bindings = append(bindings,
+			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
+			key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("PgUp/Dn", "Time")),
+			key.NewBinding(key.WithKeys("home", "end"), key.WithHelp("Home/End", "Band")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "QSO")),
+		)
+		if m.rigConnected && !m.wsjtxOnline {
+			bindings = append(bindings,
+				key.NewBinding(key.WithKeys("ctrl+enter"), key.WithHelp("C-Enter", "Tune")),
+			)
+		}
 	}
 	// Partner screen — show F2 Photo when image available.
 	if m.screen == screenPartner && m.partnerData != nil && m.partnerData.ImageURL != "" {

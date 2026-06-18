@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/table"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -17,6 +18,7 @@ import (
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/dxc"
 	"github.com/szporwolik/cqops/internal/psk"
 	"github.com/szporwolik/cqops/internal/qrz"
 	"github.com/szporwolik/cqops/internal/qso"
@@ -79,6 +81,7 @@ const (
 	screenLogView
 	screenLogbookEditor
 	screenNotifications
+	screenDXC
 )
 
 type Model struct {
@@ -160,6 +163,23 @@ type Model struct {
 	cachedSolarView string
 	cachedSolarSig  string
 
+	// DX Cluster — telnet connection to dxspider.co.uk.
+	dxcClient       *dxc.Client
+	dxcOnline       bool
+	dxcConnecting   bool
+	dxcLastAttempt  time.Time
+	dxcReconnectIdx int
+	dxcLastPurge    time.Time
+	dxcTable        table.Model
+	dxcTableReady   bool
+	dxcBuiltW       int
+	dxcBuiltH       int
+	dxcSpotCount    int
+	dxcBandFilter   string // "" = all, band name = filter, "other" = unclassified
+	dxcTimeFilter   int    // minutes, 0 = all
+	dxcTimeIdx      int    // index into dxcTimeWindows
+	dxcBandIdx      int    // index into dxcBandChoices
+
 	// Layout cache — avoids redundant MeasureLayout() calls when terminal size
 	// and screen haven't changed between frames.
 	lastLayout   Layout
@@ -188,6 +208,8 @@ type Model struct {
 	qrzLastCall    string // last looked-up callsign
 	wlNeed         bool   // re-trigger WL lookup after band/mode change
 	wlCall         string // callsign for pending WL lookup
+	dxcNeed        bool   // re-trigger DXC freq lookup after live spot arrives
+	dxcCall        string // callsign for pending DXC lookup
 	wlLastLook     time.Time
 	wlLastCall     string // last looked-up callsign
 	retainComment  bool
@@ -245,6 +267,10 @@ type wlResultMsg struct {
 	Call string
 	Data *wavelog.PrivateLookupResult
 	Err  error
+}
+type dxcSpotLookupMsg struct {
+	call string
+	freq float64 // 0 if not found
 }
 type inetResultMsg bool
 type statusPending struct {
@@ -477,6 +503,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case wlResultMsg:
 		m.fillWLData(r)
 		return m, cmd
+	case dxcSpotLookupMsg:
+		m.fillDXCFreq(r)
+		return m, cmd
+	case dxcSpotsStoredMsg:
+		m.handleDXCSpotsStored(r)
+		return m, cmd
 	}
 
 	// Deferred pending requests (QRZ lookup, WL lookup, QSO refresh) —
@@ -557,6 +589,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleLogViewUpdate(msg, cmd)
 	case screenNotifications:
 		return m.handleNotificationsUpdate(msg, cmd)
+	case screenDXC:
+		return m.handleDXCUpdate(msg, cmd)
 	}
 
 	// QSO form key handling
@@ -723,6 +757,8 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 		body = m.logbookEditor.View().Content
 	case screenNotifications:
 		body = m.notifMenu.View().Content
+	case screenDXC:
+		body = m.dxcView()
 	}
 	if body == "" {
 		return ""

@@ -15,6 +15,7 @@ import (
 // The production implementation is flrig.Client.
 type FlrigClient interface {
 	Status(ctx context.Context) (rig.RigStatus, error)
+	SetFrequency(ctx context.Context, freqHz int64) error
 }
 
 // =============================================================================
@@ -23,8 +24,10 @@ type FlrigClient interface {
 
 // fakeFlrigClient implements FlrigClient with controllable results.
 type fakeFlrigClient struct {
-	status rig.RigStatus
-	err    error
+	status      rig.RigStatus
+	err         error
+	setFreqErr  error
+	lastSetFreq int64
 }
 
 func (f *fakeFlrigClient) Status(ctx context.Context) (rig.RigStatus, error) {
@@ -32,6 +35,11 @@ func (f *fakeFlrigClient) Status(ctx context.Context) (rig.RigStatus, error) {
 		return rig.RigStatus{}, f.err
 	}
 	return f.status, nil
+}
+
+func (f *fakeFlrigClient) SetFrequency(ctx context.Context, freqHz int64) error {
+	f.lastSetFreq = freqHz
+	return f.setFreqErr
 }
 
 // disconnectedFakeFlrig returns a fake client that reports not connected.

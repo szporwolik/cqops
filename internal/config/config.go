@@ -14,6 +14,14 @@ type Config struct {
 	Logbooks map[string]Logbook   `yaml:"logbooks"`
 	Rigs     map[string]RigPreset `yaml:"rigs,omitempty"`
 	WSJTX    WSJTXConfig          `yaml:"wsjtx,omitempty"`
+	DXC      DXCConfig            `yaml:"dxc,omitempty"`
+}
+
+type DXCConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Host    string `yaml:"host,omitempty"`
+	Port    string `yaml:"port,omitempty"`
+	Login   string `yaml:"login,omitempty"`
 }
 
 type GeneralConfig struct {

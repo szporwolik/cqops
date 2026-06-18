@@ -52,6 +52,9 @@ func (m *Model) headerView() string {
 			rightParts = append(rightParts, statusDotStyled(m.rigConnected, "Rig"))
 		}
 	}
+	if m.App.Config.DXC.Enabled {
+		rightParts = append(rightParts, statusDotStyled(m.dxcOnline, "DXC"))
+	}
 	wl := m.App.Logbook.Wavelog
 	if wl != nil && wl.Enabled {
 		rightParts = append(rightParts, statusDotStyled(m.wlOnline, "WL"))

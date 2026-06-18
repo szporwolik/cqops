@@ -80,7 +80,7 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 		m.autoUpdateDateTime()
 	}
 	m.tickCount++
-	return tea.Batch(tickCmd(), m.maybeCheckInet(), m.pollFlrig(), m.maybeCheckWavelog(), m.maybeCheckQRZ(), m.maybeFetchSolar(), cmd)
+	return tea.Batch(tickCmd(), m.maybeCheckInet(), m.pollFlrig(), m.maybeCheckWavelog(), m.maybeCheckQRZ(), m.maybeFetchSolar(), m.maybeDXC(), cmd)
 }
 
 // handleAsyncMessages processes async result messages (internet check, Wavelog status,
@@ -173,6 +173,9 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) bool {
 	case solarFetchMsg:
 		m.handleSolarResult(r)
 		return true
+	case dxcStatusMsg:
+		m.handleDXCStatus(r)
+		return true
 	}
 	return false
 }
@@ -187,8 +190,17 @@ func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
 	if m.qrzNeed {
 		m.qrzNeed = false
 		call := m.qrzCall
-		if call == "" || !m.App.Config.QRZ.Enabled || m.App.Config.QRZ.User == "" {
+		applog.Debug("DXC: handlePendingRequests qrzNeed",
+			"call", call,
+			"qrzEnabled", m.App.Config.QRZ.Enabled,
+			"qrzUser", m.App.Config.QRZ.User != "",
+		)
+		if call == "" {
 			return cmd, false
+		}
+		// Always fire DXC spot lookup when call changes, even if QRZ is disabled.
+		if !m.App.Config.QRZ.Enabled || m.App.Config.QRZ.User == "" {
+			return tea.Batch(cmd, m.dxcSpotLookupCmd(call)), true
 		}
 		return tea.Batch(cmd, m.lookupCallCmd(call)), true
 	}
@@ -197,6 +209,13 @@ func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
 		call := m.wlCall
 		if call != "" {
 			return tea.Batch(cmd, m.wlLookup(call)), true
+		}
+	}
+	if m.dxcNeed {
+		m.dxcNeed = false
+		call := m.dxcCall
+		if call != "" {
+			return tea.Batch(cmd, m.dxcSpotLookupCmd(call)), true
 		}
 	}
 	return cmd, false

@@ -129,6 +129,16 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		}
 		return nil, true
 
+	case key.Matches(msg, m.keys.DXC):
+		if !m.App.Config.DXC.Enabled || !m.dxcOnline {
+			m.toasts.Warn("DXC: not connected")
+			return nil, true
+		}
+		applog.Debug("tab: F4 DXC")
+		m.dxcTableReady = false // force rebuild with fresh data
+		m.screen = screenDXC
+		return nil, true
+
 	case key.Matches(msg, m.keys.LogEditor):
 		applog.Debug("tab: F7 Editor")
 		wl := m.App.Logbook.Wavelog

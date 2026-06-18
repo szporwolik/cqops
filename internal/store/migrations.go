@@ -78,6 +78,17 @@ var migrations = []string{
 	`CREATE INDEX IF NOT EXISTS idx_psk_spots_station ON psk_spots(station_call)`,
 	`CREATE INDEX IF NOT EXISTS idx_psk_spots_flow_start ON psk_spots(flow_start)`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS idx_psk_spots_uniq ON psk_spots(receiver_call, frequency, mode, flow_start)`,
+	`CREATE TABLE IF NOT EXISTS dxc_spots (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		dx_call TEXT NOT NULL,
+		frequency REAL NOT NULL,
+		comment TEXT NOT NULL DEFAULT '',
+		spotter TEXT NOT NULL DEFAULT '',
+		received_at INTEGER NOT NULL
+	)`,
+	`CREATE INDEX IF NOT EXISTS idx_dxc_spots_received ON dxc_spots(received_at)`,
+	`CREATE UNIQUE INDEX IF NOT EXISTS idx_dxc_spots_uniq ON dxc_spots(dx_call, frequency, received_at)`,
+	`ALTER TABLE dxc_spots ADD COLUMN band TEXT NOT NULL DEFAULT ''`,
 }
 
 func Migrate(db *sql.DB) error {

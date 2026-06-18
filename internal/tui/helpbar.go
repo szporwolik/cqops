@@ -46,7 +46,7 @@ func (m *Model) helpView() string {
 	if m.chooser != nil && m.chooser.dialog != nil {
 		conf = 1
 	}
-	sig := fmt.Sprintf("%d|%d|%d|%d|%d|%d|%s", m.screen, m.width, conf, editing, chooserForm, rigForm, suffix)
+	sig := fmt.Sprintf("%d|%d|%d|%d|%d|%d|%t|%t|%s", m.screen, m.width, conf, editing, chooserForm, rigForm, m.rigConnected, m.wsjtxOnline, suffix)
 	if m.cachedHelpSig == sig && m.cachedHelpView != "" {
 		return m.cachedHelpView
 	}
@@ -122,6 +122,9 @@ func (m *Model) helpSuffix() string {
 	}
 	if m.screen == screenLogView && m.logViewer != nil {
 		return m.logViewer.ScrollInfo()
+	}
+	if m.screen == screenDXC {
+		return ""
 	}
 	return ""
 }

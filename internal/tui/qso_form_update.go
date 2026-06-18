@@ -28,7 +28,7 @@ func (m *Model) commitCall() string {
 	return cur
 }
 
-// lookupCallCmd returns a batch of lookup commands (QRZ + WL + filtered table)
+// lookupCallCmd returns a batch of lookup commands (QRZ + WL + DXC + filtered table)
 // for the given callsign. Returns nil if the call is empty or invalid.
 func (m *Model) lookupCallCmd(call string) tea.Cmd {
 	if call == "" || !qso.IsValidCall(call) {
@@ -42,6 +42,7 @@ func (m *Model) lookupCallCmd(call string) tea.Cmd {
 	if wl != nil && wl.Enabled && wl.APIKey != "" {
 		cmds = append(cmds, m.wlLookup(call))
 	}
+	cmds = append(cmds, m.dxcSpotLookupCmd(call))
 	cmds = append(cmds, m.updateFilteredTable())
 	return tea.Batch(cmds...)
 }

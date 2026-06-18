@@ -57,7 +57,7 @@ func (m *Model) tabView() string {
 	if m.confirm != nil {
 		conf = 1
 	}
-	sig := fmt.Sprintf("%d|%v|%d|%d|%v", m.screen, hasPartner, conf, m.width, m.inetOnline)
+	sig := fmt.Sprintf("%d|%v|%d|%d|%v|%v", m.screen, hasPartner, conf, m.width, m.inetOnline, m.dxcOnline)
 	if m.cachedTabSig == sig && m.cachedTabView != "" {
 		return m.cachedTabView
 	}
@@ -73,9 +73,11 @@ func (m *Model) tabView() string {
 		disabled bool
 	}
 
+	dxcOnline := m.App.Config.DXC.Enabled && m.dxcOnline
 	allTabs := []tab{
 		{"F1 QSO", m.screen == screenQSO && m.confirm == nil, false},
 		{"F2 QRZ", (m.screen == screenPartner || m.screen == screenImage) && hasPartner, !hasPartner},
+		{"F4 DXC", m.screen == screenDXC, !dxcOnline},
 		{"F5 HRD", m.screen == screenPSKReporter, !m.inetOnline},
 		{"F7 LOG", m.screen == screenLogbookEditor, false},
 		{"F8 CFG", m.screen == screenMainMenu || m.screen == screenConfig || m.screen == screenCallbook || m.screen == screenIntegration || m.screen == screenChooser || m.screen == screenRigEdit || m.screen == screenNotifications, false},

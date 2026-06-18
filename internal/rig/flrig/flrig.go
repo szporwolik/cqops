@@ -115,6 +115,12 @@ func (f *Client) getFrequency(ctx context.Context) (int64, error) {
 	return int64(math.Round(freq)), nil
 }
 
+// SetFrequency tunes the rig VFO to the given frequency in Hz via flrig XML-RPC.
+func (f *Client) SetFrequency(ctx context.Context, freqHz int64) error {
+	_, err := f.xmlrpcCall(ctx, "rig.set_vfo", fmt.Sprintf("%d", freqHz))
+	return err
+}
+
 func (f *Client) getMode(ctx context.Context) (string, error) {
 	v, err := f.xmlrpcCall(ctx, "rig.get_mode")
 	if err != nil {
@@ -135,10 +141,20 @@ func (f *Client) getPower(ctx context.Context) (float64, error) {
 	return pwr, nil
 }
 
-func (f *Client) xmlrpcCall(ctx context.Context, method string) (string, error) {
+func (f *Client) xmlrpcCall(ctx context.Context, method string, params ...string) (string, error) {
+	var paramXML string
+	for _, p := range params {
+		paramXML += fmt.Sprintf("<param><value><double>%s</double></value></param>", p)
+	}
 	body := fmt.Sprintf(
-		`<?xml version="1.0"?><methodCall><methodName>%s</methodName></methodCall>`,
+		`<?xml version="1.0"?><methodCall><methodName>%s</methodName>%s</methodCall>`,
 		method,
+		func() string {
+			if paramXML != "" {
+				return "<params>" + paramXML + "</params>"
+			}
+			return ""
+		}(),
 	)
 	req, err := http.NewRequestWithContext(ctx, "POST", f.url+"/RPC2", strings.NewReader(body))
 	if err != nil {

@@ -127,13 +127,18 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			m.screen = screenMainMenu
 		}
 		if m.integrationMenu.saved {
-			wsjtxE, wsjtxH, wsjtxP := m.integrationMenu.Values()
+			dxcE, dxcHost, dxcPort, dxcLogin, wsjtxE, wsjtxH, wsjtxP := m.integrationMenu.Values()
+			m.App.Config.DXC.Enabled = dxcE
+			m.App.Config.DXC.Host = dxcHost
+			m.App.Config.DXC.Port = dxcPort
+			m.App.Config.DXC.Login = dxcLogin
 			m.App.Config.WSJTX.Enabled = wsjtxE
 			m.App.Config.WSJTX.UDPHost = wsjtxH
 			m.App.Config.WSJTX.UDPPort = wsjtxP
 			m.saveConfig("Settings saved")
 			applog.Info("Integration config saved, restarting services")
 			m.App.MaybeRestartWSJTX()
+			m.resetDXC()
 			m.screen = screenMainMenu
 		}
 	}
