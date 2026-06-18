@@ -87,6 +87,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		}
 		applog.Debug("tab: F2 Partner Details")
 		m.commitCall()
+		m.dxccAutoFill()
 		band := strings.TrimSpace(m.fields[fieldBand].Value())
 		mode := strings.TrimSpace(m.fields[fieldMode].Value())
 
@@ -249,6 +250,7 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			}
 			return nil, true
 		}
+		m.dxccAutoFill()
 		m.screen = screenPartner
 		m.invalidatePartnerMapCache()
 		// Only trigger lookups when the call changed.
@@ -271,6 +273,7 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			}
 			return nil, true
 		}
+		m.dxccAutoFill()
 		return m.lookupCallCmd(call), true
 
 	case key.Matches(msg, m.keys.Enter):

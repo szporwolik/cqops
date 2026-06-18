@@ -332,6 +332,8 @@ func (m *Model) onFieldExit() {
 			m.lookup.qrzNeed = true
 			m.lookup.qrzCall = cur
 		}
+		// Fill country/continent from DXCC — runs regardless of QRZ status.
+		m.dxccAutoFill()
 
 	case fieldGrid:
 		m.rc.pathGrid = strings.ToUpper(strings.TrimSpace(m.fields[fieldGrid].Value()))

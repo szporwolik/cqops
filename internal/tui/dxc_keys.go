@@ -159,6 +159,7 @@ func (m *Model) dxcFillFromSelected() {
 		m.autoFillSSBSubmode()
 		m.lookup.qrzNeed = true
 		m.lookup.qrzCall = cur
+		m.dxccAutoFill()
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/ftl/hamradio/dxcc"
+	"github.com/ftl/hamradio/locator"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/qrz"
 	"github.com/szporwolik/cqops/internal/wavelog"
@@ -122,11 +123,13 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 	}
 	if msg.Err != nil {
 		m.toasts.Error(msg.Err.Error())
+		m.dxccAutoFill()
 		return
 	}
 	d := msg.Data
 	if d == nil || d.Callsign == "" {
 		m.toasts.Warn("QRZ.com: no data for " + msg.Call)
+		m.dxccAutoFill()
 		return
 	}
 	m.lookup.partnerData = d
@@ -168,7 +171,7 @@ func (m *Model) dxccLookup(call string) *dxcc.Prefix {
 	return &matches[0]
 }
 
-// dxccAutoFill fills empty QSO form country/continent fields from DXCC.
+// dxccAutoFill fills empty QSO form country and grid locator from DXCC.
 func (m *Model) dxccAutoFill() {
 	call := strings.TrimSpace(m.fields[fieldCall].Value())
 	if call == "" {
@@ -176,11 +179,25 @@ func (m *Model) dxccAutoFill() {
 	}
 	p := m.dxccLookup(call)
 	if p == nil {
+		applog.Debug("DXCC: dxccAutoFill no match", "call", call, "dxccLoaded", m.App != nil && m.App.DXCC != nil)
 		return
 	}
 	if p.Name != "" && strings.TrimSpace(m.fields[fieldCountry].Value()) == "" {
 		m.fields[fieldCountry].SetValue(p.Name)
+		applog.Debug("DXCC: dxccAutoFill country", "call", call, "country", p.Name)
 	}
+	// Derive approximate grid locator from the DXCC entity's center coordinates.
+	if strings.TrimSpace(m.fields[fieldGrid].Value()) == "" {
+		grid := locator.LatLonToLocator(p.LatLon, 4)
+		gridStr := strings.TrimRight(string(grid[:]), "\x00")
+		if len(gridStr) >= 4 {
+			m.fields[fieldGrid].SetValue(strings.ToUpper(gridStr[:4]))
+			applog.Debug("DXCC: dxccAutoFill grid", "call", call, "grid", strings.ToUpper(gridStr[:4]))
+		}
+	}
+	// Invalidate form render cache — the field values changed but the
+	// signature-based cache may not detect it synchronously in all paths.
+	m.rc.formSig = ""
 }
 
 // fillWLData stores Wavelog private lookup result data.
