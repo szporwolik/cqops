@@ -255,6 +255,7 @@ func (m *Model) buildDXCTable() {
 	m.dxcTableReady = true
 	m.dxcBuiltW = w
 	m.dxcBuiltH = h
+	m.updateDXCSelectedCall()
 }
 
 // dxcView renders the DXC cluster spots table.
@@ -440,6 +441,7 @@ func (m *Model) handleDXCUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	if m.dxcTableReady {
 		t, c := m.dxcTable.Update(msg)
 		m.dxcTable = t
+		m.updateDXCSelectedCall()
 		if c != nil {
 			cmd = tea.Batch(cmd, c)
 		}
@@ -479,16 +481,33 @@ func (m *Model) dxcFillFromSelected() {
 }
 
 // dxcSpotAtCursor returns the DXC spot at the current table cursor position.
+// Uses m.dxcSelectedCall to look up the spot from the DB, which is always
+// consistent regardless of table rebuilds.
 func (m *Model) dxcSpotAtCursor() (store.DXCSpot, bool) {
-	if !m.dxcTableReady {
+	if m.dxcSelectedCall == "" || !m.dxcTableReady {
 		return store.DXCSpot{}, false
+	}
+	spot, err := store.QueryDXCSpotByCall(m.App.DB, m.dxcSelectedCall)
+	if err != nil || spot == nil {
+		return store.DXCSpot{}, false
+	}
+	return *spot, true
+}
+
+// updateDXCSelectedCall updates the cached selected callsign from the current
+// table cursor position. Call after cursor movement or table rebuild.
+func (m *Model) updateDXCSelectedCall() {
+	if !m.dxcTableReady {
+		m.dxcSelectedCall = ""
+		return
 	}
 	cursor := m.dxcTable.Cursor()
 	spots := m.dxcFilteredSpots()
-	if cursor < 0 || cursor >= len(spots) {
-		return store.DXCSpot{}, false
+	if cursor >= 0 && cursor < len(spots) {
+		m.dxcSelectedCall = spots[cursor].DXCall
+	} else {
+		m.dxcSelectedCall = ""
 	}
-	return spots[cursor], true
 }
 
 // dxcTuneCmd returns a tea.Cmd that tunes flrig to the highlighted spot's

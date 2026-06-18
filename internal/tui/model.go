@@ -181,6 +181,7 @@ type Model struct {
 	dxcBandIdx      int    // index into dxcBandChoices
 	dxcModeFilter   string // "" = all, mode name = filter
 	dxcModeIdx      int    // index into mode choices
+	dxcSelectedCall string // callsign of the currently highlighted DXC spot
 
 	// Layout cache — avoids redundant MeasureLayout() calls when terminal size
 	// and screen haven't changed between frames.
