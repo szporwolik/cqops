@@ -771,13 +771,17 @@ func (w *Wizard) viewSummary() string {
 func (w *Wizard) handleEnter() tea.Cmd {
 	w.App.Config.General.Timezone = config.Timezones[w.tzIndex]
 	applog.InfoDetail("Wizard: summary step done — saving config", fmt.Sprintf("tz=%s", config.Timezones[w.tzIndex]))
-	w.saveConfig()
+	if err := w.saveConfig(); err != nil {
+		w.toasts.Error(fmt.Sprintf("Setup error: %v", err))
+		applog.Error("Wizard: config validation failed", "error", err)
+		return nil
+	}
 	w.Completed = true
 	applog.Info("Wizard completed — launching CQOps")
 	return tea.Quit
 }
 
-func (w *Wizard) saveConfig() {
+func (w *Wizard) saveConfig() error {
 	cs, op, gr, sotaRef, potaRef, wwffRef, wlEnabled, wlURL, wlKey, wlStationID := w.station.Values()
 	rig, ant, pwr := w.rigForm.Values()
 	flrigEnabled, flrigHost, flrigPort := w.rigForm.FlrigValues()
@@ -851,10 +855,16 @@ func (w *Wizard) saveConfig() {
 		},
 	}
 
+	// Validate the assembled config before finalizing.
+	if err := w.App.Config.Validate(); err != nil {
+		return fmt.Errorf("invalid setup: %w", err)
+	}
+
 	lb := w.App.Config.Logbooks[lbID]
 	w.App.Logbook = &lb
 	w.App.LogbookName = lbID
 
 	applog.InfoDetail("Wizard completed", fmt.Sprintf("call=%s rig=%s flrig=%v wsjtx=%v wavelog=%v tz=%s",
 		cs, rig, flrigEnabled, w.wsjtxEnable, wlEnabled, config.Timezones[w.tzIndex]))
+	return nil
 }

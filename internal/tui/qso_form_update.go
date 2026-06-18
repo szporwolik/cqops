@@ -19,12 +19,12 @@ import (
 func (m *Model) commitCall() string {
 	cur := qso.NormalizeCall(m.fields[fieldCall].Value())
 	if cur != "" && !qso.IsValidCall(cur) {
-		m.pathCall = ""
-		m.cachedPathSig = ""
+		m.rc.pathCall = ""
+		m.rc.pathSig = ""
 		return ""
 	}
-	m.pathCall = cur
-	m.cachedPathSig = ""
+	m.rc.pathCall = cur
+	m.rc.pathSig = ""
 	return cur
 }
 
@@ -271,16 +271,16 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 		// partner data, lookups, filtered table, path, and stats.
 		m.fields[f].SetValue(strings.ToUpper(m.fields[f].Value()))
 		if cur := strings.TrimSpace(m.fields[f].Value()); cur != strings.TrimSpace(prevVal) {
-			m.partnerData = nil
-			m.wlPrivateData = nil
-			m.wlLookupDone = false
+			m.lookup.partnerData = nil
+			m.lookup.wlPrivateData = nil
+			m.lookup.wlLookupDone = false
 			m.screen = screenQSO
 			m.clearFilteredTable()
 			m.invalidatePartnerMapCache()
-			m.pathCall = ""
-			m.pathGrid = ""
-			m.cachedPathSig = ""
-			m.cachedLogStatsSig = ""
+			m.rc.pathCall = ""
+			m.rc.pathGrid = ""
+			m.rc.pathSig = ""
+			m.rc.logStatsSig = ""
 		}
 
 	case fieldBand:
@@ -322,13 +322,13 @@ func (m *Model) onFieldExit() {
 			break
 		}
 		// Defer lookup via flag — onFieldExit can't return commands.
-		if cur != "" && !strings.EqualFold(cur, m.qrzLastCall) {
-			m.qrzNeed = true
-			m.qrzCall = cur
+		if cur != "" && !strings.EqualFold(cur, m.lookup.qrzLastCall) {
+			m.lookup.qrzNeed = true
+			m.lookup.qrzCall = cur
 		}
 
 	case fieldGrid:
-		m.pathGrid = strings.ToUpper(strings.TrimSpace(m.fields[fieldGrid].Value()))
+		m.rc.pathGrid = strings.ToUpper(strings.TrimSpace(m.fields[fieldGrid].Value()))
 
 	case fieldFreq:
 		m.applyFreqDefaults()
@@ -394,17 +394,17 @@ func (m *Model) resetQSOFields() {
 // actively viewing the Partner or Image screen.
 func (m *Model) resetPartnerLookup() {
 	if m.screen != screenPartner && m.screen != screenImage {
-		m.partnerData = nil
-		m.wlPrivateData = nil
-		m.wlLookupDone = false
+		m.lookup.partnerData = nil
+		m.lookup.wlPrivateData = nil
+		m.lookup.wlLookupDone = false
 	}
 }
 
 // resetNavigation clears the cached path line and the committed call/grid
 // values so the next path calculation starts fresh.
 func (m *Model) resetNavigation() {
-	m.pathCall = ""
-	m.pathGrid = ""
-	m.cachedPathLine = ""
-	m.cachedPathSig = ""
+	m.rc.pathCall = ""
+	m.rc.pathGrid = ""
+	m.rc.pathLine = ""
+	m.rc.pathSig = ""
 }

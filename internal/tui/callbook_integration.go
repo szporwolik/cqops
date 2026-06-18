@@ -24,7 +24,7 @@ var qrzLookupFunc = qrz.Lookup
 // internet health check already monitors connectivity.
 func (m *Model) maybeCheckQRZ() tea.Cmd {
 	if !m.App.Config.QRZ.Enabled {
-		m.qrzOnline = false
+		m.lookup.qrzOnline = false
 		return nil
 	}
 	if m.tickCount != 1 {
@@ -56,11 +56,11 @@ func (m *Model) qrzLookup(call string) tea.Cmd {
 	if call == "" {
 		return nil
 	}
-	if time.Since(m.qrzLastLook) < 3*time.Second && strings.EqualFold(call, m.qrzLastCall) {
+	if time.Since(m.lookup.qrzLast) < 3*time.Second && strings.EqualFold(call, m.lookup.qrzLastCall) {
 		return nil
 	}
-	m.qrzLastLook = time.Now()
-	m.qrzLastCall = call
+	m.lookup.qrzLast = time.Now()
+	m.lookup.qrzLastCall = call
 	applog.Info("QRZ: looking up", "call", call)
 	return m.qrzLookupCmd(call)
 }
@@ -92,15 +92,15 @@ func (m *Model) wlLookup(call string) tea.Cmd {
 	}
 	band := strings.TrimSpace(m.fields[fieldBand].Value())
 	mode := strings.TrimSpace(m.fields[fieldMode].Value())
-	if time.Since(m.wlLastLook) < 5*time.Second &&
-		strings.EqualFold(call, m.wlLastCall) &&
-		band == m.wlLastBand && mode == m.wlLastMode {
+	if time.Since(m.lookup.wlLast) < 5*time.Second &&
+		strings.EqualFold(call, m.lookup.wlLastCall) &&
+		band == m.lookup.wlLastBand && mode == m.lookup.wlLastMode {
 		return nil
 	}
-	m.wlLastLook = time.Now()
-	m.wlLastCall = call
-	m.wlLastBand = band
-	m.wlLastMode = mode
+	m.lookup.wlLast = time.Now()
+	m.lookup.wlLastCall = call
+	m.lookup.wlLastBand = band
+	m.lookup.wlLastMode = mode
 	applog.Info("Wavelog: looking up", "call", call)
 	return m.wlLookupCmd(call, band, mode)
 }
@@ -128,17 +128,17 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 		m.toasts.Warn("QRZ.com: no data for " + msg.Call)
 		return
 	}
-	m.partnerData = d
+	m.lookup.partnerData = d
 	m.invalidatePartnerMapCache()
-	if d.ImageURL != "" && d.ImageURL != m.lastPartnerPicURL {
-		m.partnerPicNeedLoad = true
+	if d.ImageURL != "" && d.ImageURL != m.photo.partnerPicURL {
+		m.photo.partnerPicNeedLoad = true
 	}
 	if d.Name != "" {
 		m.fields[fieldName].SetValue(d.Name)
 	}
 	if d.Grid != "" {
 		m.fields[fieldGrid].SetValue(formatLocator(d.Grid))
-		m.pathGrid = strings.ToUpper(formatLocator(d.Grid))
+		m.rc.pathGrid = strings.ToUpper(formatLocator(d.Grid))
 		applog.Debug("QRZ: filled partner grid", "grid", d.Grid)
 	}
 	if d.QTH != "" {
@@ -161,17 +161,17 @@ func (m *Model) fillWLData(msg wlResultMsg) {
 		return
 	}
 	if msg.Err != nil {
-		m.wlLookupDone = true
+		m.lookup.wlLookupDone = true
 		applog.Warn("Wavelog: lookup error", "call", msg.Call, "error", msg.Err)
 		m.toasts.Warn(msg.Err.Error())
 		return
 	}
-	m.wlLookupDone = true
+	m.lookup.wlLookupDone = true
 	if msg.Data == nil {
 		return
 	}
 	applog.InfoDetail("Wavelog: lookup OK", fmt.Sprintf("call=%s worked=%v confirmed=%v", msg.Call, msg.Data.Worked(), msg.Data.DXCCConfirmed()))
-	m.wlPrivateData = msg.Data
+	m.lookup.wlPrivateData = msg.Data
 	name := ""
 	if msg.Data.Name() != "" {
 		name = " " + msg.Data.Name()

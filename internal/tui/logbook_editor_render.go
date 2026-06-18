@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -106,8 +107,8 @@ func (le *LogbookEditor) View() tea.View {
 		if le.wlDownloadFailed > 0 {
 			msg += fmt.Sprintf("\n%d failed (DB locked — try again).", le.wlDownloadFailed)
 		}
-		if le.wlDownloadErr != "" {
-			msg = "Download failed: " + le.wlDownloadErr
+		if errText := strings.TrimSpace(le.wlDownloadErr); errText != "" {
+			msg = "Download failed: " + errText
 		}
 		le.ensureDialog("Wavelog Download", msg,
 			Option{Label: "OK", Value: "ok"},

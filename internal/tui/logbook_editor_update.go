@@ -68,6 +68,15 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return le, le.readDownloadMsg
 		}
 
+		// Download error received before done signal (e.g. FetchContacts failure).
+		// Capture the error immediately so it's not lost before the channel closes.
+		if le.dlActive && !msg.dlDone {
+			if errText := strings.TrimSpace(msg.dlErr); errText != "" {
+				le.wlDownloadErr = errText
+				return le, le.readDownloadMsg
+			}
+		}
+
 		// Download complete (or aborted).
 		if le.dlActive && msg.dlDone {
 			le.dlActive = false
@@ -81,6 +90,10 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				le.needsReload = true
 			} else if msg.dlErr != "" {
 				le.wlDownloadErr = msg.dlErr
+				le.mode = edModeWLDownloadResult
+			} else if le.wlDownloadErr != "" {
+				// Error was already captured from a previous dlErr message;
+				// keep it and transition to result screen.
 				le.mode = edModeWLDownloadResult
 			} else {
 				le.wlDownloadCount = msg.dlCount
@@ -533,7 +546,9 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 		qs.Source = "wavelog"
 		qs.WavelogUploaded = "yes"
 
-		if qs.Call == "" {
+		if err := qso.ValidateImportRecord(qs); err != nil {
+			applog.Warn("Wavelog: skipping invalid imported QSO", "call", qs.Call, "reason", err)
+			failed++
 			continue
 		}
 

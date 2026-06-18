@@ -8,7 +8,6 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/config"
-	"github.com/szporwolik/cqops/internal/qso"
 )
 
 func TestParseWSJTXADIFValid(t *testing.T) {
@@ -91,8 +90,12 @@ func TestParseWSJTXADIFModeSubmode(t *testing.T) {
 	if qs == nil {
 		t.Fatal("parseWSJTXADIF returned nil")
 	}
-	if qs.Mode != "FT8" {
-		t.Errorf("Mode = %q; want FT8", qs.Mode)
+	// FT8 normalizes to MFSK/FT8 since Pass 6.
+	if qs.Mode != "MFSK" {
+		t.Errorf("Mode = %q; want MFSK (FT8 normalized)", qs.Mode)
+	}
+	if qs.Submode != "FT8" {
+		t.Errorf("Submode = %q; want FT8", qs.Submode)
 	}
 }
 
@@ -205,9 +208,6 @@ func TestParseWSJTXADIFSource(t *testing.T) {
 	}
 }
 
-// Verify qso types import
-var _ = qso.NewQSO
-
 // =============================================================================
 // WSJT-X TX message handling tests
 // =============================================================================
@@ -222,19 +222,19 @@ func TestApplyWSJTXStatus_StoresTxMessage(t *testing.T) {
 
 	m.applyWSJTXStatus("SP9ABC", "JO90", 14074000, "FT8", "", "-12", "CQ SP9XXX JO90", true)
 
-	if !m.wsjtxOnline {
+	if !m.wsjtx.online {
 		t.Error("wsjtxOnline should be true after status")
 	}
-	if m.wsjtxTxMsg != "CQ SP9XXX JO90" {
-		t.Errorf("wsjtxTxMsg = %q; want 'CQ SP9XXX JO90'", m.wsjtxTxMsg)
+	if m.wsjtx.txMsg != "CQ SP9XXX JO90" {
+		t.Errorf("wsjtxTxMsg = %q; want 'CQ SP9XXX JO90'", m.wsjtx.txMsg)
 	}
-	if !m.wsjtxTx {
+	if !m.wsjtx.tx {
 		t.Error("wsjtxTx should be true when transmitting=true")
 	}
-	if m.wsjtxLastSeen.IsZero() {
+	if m.wsjtx.lastSeen.IsZero() {
 		t.Error("wsjtxLastSeen should be set")
 	}
-	if m.cachedStatus != "" {
+	if m.rc.status != "" {
 		t.Error("cachedStatus should be invalidated (empty)")
 	}
 }
@@ -247,56 +247,56 @@ func TestApplyWSJTXStatus_EmptyTxMessage(t *testing.T) {
 		m.fields[i] = newTextinput()
 	}
 
-	m.wsjtxOnline = true
-	m.wsjtxTxMsg = "CQ SP9XXX JO90"
+	m.wsjtx.online = true
+	m.wsjtx.txMsg = "CQ SP9XXX JO90"
 	m.applyWSJTXStatus("", "", 0, "", "", "", "", false)
 
-	if m.wsjtxTxMsg != "" {
-		t.Errorf("wsjtxTxMsg should be cleared to empty, got %q", m.wsjtxTxMsg)
+	if m.wsjtx.txMsg != "" {
+		t.Errorf("wsjtxTxMsg should be cleared to empty, got %q", m.wsjtx.txMsg)
 	}
-	if !m.wsjtxOnline {
+	if !m.wsjtx.online {
 		t.Error("wsjtxOnline should remain true even with empty message")
 	}
 }
 
 func TestWSJTXWatchdog_Expires(t *testing.T) {
 	m := &Model{}
-	m.wsjtxOnline = true
-	m.wsjtxTxMsg = "CQ SP9XXX JO90"
-	m.wsjtxLastSeen = time.Now().Add(-20 * time.Second)
+	m.wsjtx.online = true
+	m.wsjtx.txMsg = "CQ SP9XXX JO90"
+	m.wsjtx.lastSeen = time.Now().Add(-20 * time.Second)
 
 	// Simulate watchdog check.
-	if m.wsjtxOnline && time.Since(m.wsjtxLastSeen) > 15*time.Second {
-		m.wsjtxOnline = false
-		m.wsjtxTxMsg = ""
-		m.cachedStatus = ""
+	if m.wsjtx.online && time.Since(m.wsjtx.lastSeen) > 15*time.Second {
+		m.wsjtx.online = false
+		m.wsjtx.txMsg = ""
+		m.rc.status = ""
 	}
 
-	if m.wsjtxOnline {
+	if m.wsjtx.online {
 		t.Error("watchdog should set wsjtxOnline to false after 15s of inactivity")
 	}
-	if m.wsjtxTxMsg != "" {
+	if m.wsjtx.txMsg != "" {
 		t.Error("watchdog should clear wsjtxTxMsg")
 	}
-	if m.cachedStatus != "" {
+	if m.rc.status != "" {
 		t.Error("watchdog should invalidate cachedStatus")
 	}
 }
 
 func TestWSJTXWatchdog_NotExpired(t *testing.T) {
 	m := &Model{}
-	m.wsjtxOnline = true
-	m.wsjtxTxMsg = "CQ SP9XXX JO90"
-	m.wsjtxLastSeen = time.Now()
+	m.wsjtx.online = true
+	m.wsjtx.txMsg = "CQ SP9XXX JO90"
+	m.wsjtx.lastSeen = time.Now()
 
-	if m.wsjtxOnline && time.Since(m.wsjtxLastSeen) > 15*time.Second {
-		m.wsjtxOnline = false
+	if m.wsjtx.online && time.Since(m.wsjtx.lastSeen) > 15*time.Second {
+		m.wsjtx.online = false
 	}
 
-	if !m.wsjtxOnline {
+	if !m.wsjtx.online {
 		t.Error("watchdog should NOT expire when last seen is recent")
 	}
-	if m.wsjtxTxMsg != "CQ SP9XXX JO90" {
+	if m.wsjtx.txMsg != "CQ SP9XXX JO90" {
 		t.Error("tx message should be preserved when watchdog does not expire")
 	}
 }
@@ -311,8 +311,8 @@ func TestApplyWSJTXStatus_DirectedCall(t *testing.T) {
 
 	m.applyWSJTXStatus("K1ABC", "FN42", 21074000, "FT8", "", "-05", "K1ABC SP9XXX -05", true)
 
-	if m.wsjtxTxMsg != "K1ABC SP9XXX -05" {
-		t.Errorf("wsjtxTxMsg = %q; want directed call message", m.wsjtxTxMsg)
+	if m.wsjtx.txMsg != "K1ABC SP9XXX -05" {
+		t.Errorf("wsjtxTxMsg = %q; want directed call message", m.wsjtx.txMsg)
 	}
 	// Verify the call field was updated.
 	call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))

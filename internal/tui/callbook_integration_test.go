@@ -60,7 +60,7 @@ func TestQRZLookupSuccess(t *testing.T) {
 		t.Errorf("Country = %q; want Poland", m.fields[fieldCountry].Value())
 	}
 	// Partner data should be set
-	if m.partnerData == nil {
+	if m.lookup.partnerData == nil {
 		t.Error("partnerData should be set after QRZ fill")
 	}
 }
@@ -156,8 +156,8 @@ func TestQRZLookupOverwritesExistingGrid(t *testing.T) {
 	if m.fields[fieldGrid].Value() != "JO90" {
 		t.Errorf("Grid should be overwritten by QRZ result, got %q", m.fields[fieldGrid].Value())
 	}
-	if m.pathGrid != "JO90" {
-		t.Errorf("pathGrid should be updated by QRZ result, got %q", m.pathGrid)
+	if m.rc.pathGrid != "JO90" {
+		t.Errorf("pathGrid should be updated by QRZ result, got %q", m.rc.pathGrid)
 	}
 }
 
@@ -191,9 +191,9 @@ func TestQRZLookupCacheInvalidation(t *testing.T) {
 	})
 
 	// Partner view cache should have been invalidated
-	if m.partnerViewCache != "" {
+	if m.rc.partnerView != "" {
 		t.Log("Partner view cache was populated during fill — this is expected for new data")
 	}
 	// Cache signature should exist
-	_ = m.partnerViewCacheSig
+	_ = m.rc.partnerViewSig
 }

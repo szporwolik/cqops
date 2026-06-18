@@ -2,14 +2,12 @@ package tui
 
 import (
 	"testing"
-
-	tea "charm.land/bubbletea/v2"
 )
 
 func TestFlrigResultSuccess(t *testing.T) {
 	m := newTestModel()
 	// Inject a connected fake
-	m.flrigClient = connectedFakeFlrig(14.250, "SSB", "20m")
+	m.rig.client = connectedFakeFlrig(14.250, "SSB", "20m")
 
 	// Apply successful result
 	m.applyFlrigResult(flrigResultMsg{
@@ -19,11 +17,11 @@ func TestFlrigResultSuccess(t *testing.T) {
 		band:      "20m",
 	})
 
-	if !m.rigConnected {
+	if !m.rig.connected {
 		t.Error("rigConnected should be true after successful result")
 	}
-	if m.rigFreq != 14.250 {
-		t.Errorf("rigFreq = %f; want 14.250", m.rigFreq)
+	if m.rig.freq != 14.250 {
+		t.Errorf("rigFreq = %f; want 14.250", m.rig.freq)
 	}
 	if m.fields[fieldFreq].Value() != "14.250000" {
 		t.Errorf("Freq field = %q; want 14.250000", m.fields[fieldFreq].Value())
@@ -38,33 +36,33 @@ func TestFlrigResultSuccess(t *testing.T) {
 
 func TestFlrigResultError(t *testing.T) {
 	m := newTestModel()
-	m.rigConnected = true // start connected
+	m.rig.connected = true // start connected
 
 	m.applyFlrigResult(flrigResultMsg{
 		err: "connection refused",
 	})
 
-	if m.rigConnected {
+	if m.rig.connected {
 		t.Error("rigConnected should be false after error result")
 	}
 }
 
 func TestFlrigResultDisconnected(t *testing.T) {
 	m := newTestModel()
-	m.rigConnected = true
+	m.rig.connected = true
 
 	m.applyFlrigResult(flrigResultMsg{
 		connected: false,
 	})
 
-	if m.rigConnected {
+	if m.rig.connected {
 		t.Error("rigConnected should be false when not connected")
 	}
 }
 
 func TestFlrigPollDisabled(t *testing.T) {
 	m := newTestModel()
-	m.flrigClient = nil // disabled
+	m.rig.client = nil // disabled
 
 	cmd := m.pollFlrig()
 	// First call sets skipTicks to 1, which is < rigPollInterval (30)
@@ -73,14 +71,14 @@ func TestFlrigPollDisabled(t *testing.T) {
 		t.Log("pollFlrig returned non-nil when disabled (may be OK for first tick)")
 	}
 	// But rigConnected should be set to false
-	if !m.rigConnected {
+	if !m.rig.connected {
 		t.Log("rigConnected is false as expected when flrig is nil")
 	}
 }
 
 func TestFlrigStatusCmdNil(t *testing.T) {
 	m := newTestModel()
-	m.flrigClient = nil
+	m.rig.client = nil
 
 	cmd := m.flrigStatusCmd()
 	if cmd != nil {
@@ -90,7 +88,7 @@ func TestFlrigStatusCmdNil(t *testing.T) {
 
 func TestFlrigStatusCmdReturnsCmd(t *testing.T) {
 	m := newTestModel()
-	m.flrigClient = connectedFakeFlrig(14.250, "SSB", "20m")
+	m.rig.client = connectedFakeFlrig(14.250, "SSB", "20m")
 
 	cmd := m.flrigStatusCmd()
 	if cmd == nil {
@@ -124,6 +122,3 @@ func TestFlrigResultPower(t *testing.T) {
 		t.Errorf("TXPower = %q; want 100", m.fields[fieldTXPower].Value())
 	}
 }
-
-// Verify tea import used in tests
-var _ = tea.Quit

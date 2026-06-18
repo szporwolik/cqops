@@ -39,14 +39,14 @@ func (m *Model) refreshFlrigClient() {
 		}
 		url := "http://" + host + ":" + port
 		applog.InfoDetail("flrig: connecting", fmt.Sprintf("rig=%s host=%s port=%s url=%s", rigName, host, port, url))
-		m.flrigClient = flrig.New(url, flrigDefaultTimeout)
+		m.rig.client = flrig.New(url, flrigDefaultTimeout)
 	} else {
 		if !ok {
 			applog.Debug("flrig: rig not found in config", "rigName", rigName)
 		} else {
 			applog.Debug("flrig: disabled for rig", "rigName", rigName)
 		}
-		m.flrigClient = nil
+		m.rig.client = nil
 	}
 }
 
@@ -61,10 +61,10 @@ type flrigResultMsg struct {
 
 // flrigStatusCmd returns a tea.Cmd that fetches current rig status from flrig.
 func (m *Model) flrigStatusCmd() tea.Cmd {
-	if m.flrigClient == nil {
+	if m.rig.client == nil {
 		return nil
 	}
-	client := m.flrigClient
+	client := m.rig.client
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), flrigStatusTimeout)
 		defer cancel()
@@ -79,13 +79,13 @@ func (m *Model) flrigStatusCmd() tea.Cmd {
 // pollFlrig periodically polls flrig for rig status every 5 seconds.
 func (m *Model) pollFlrig() tea.Cmd {
 	const pollInterval = 5
-	m.rigSkipTicks++
-	if m.rigSkipTicks < pollInterval {
+	m.rig.skipTicks++
+	if m.rig.skipTicks < pollInterval {
 		return nil
 	}
-	m.rigSkipTicks = 0
-	if m.flrigClient == nil {
-		m.rigConnected = false
+	m.rig.skipTicks = 0
+	if m.rig.client == nil {
+		m.rig.connected = false
 		// Auto-reconnect: if flrig is enabled in config but the client
 		// was never created (e.g. flrig started after CQOps), try now.
 		// Limit to once every 30 ticks (30 seconds) to avoid log spam.
@@ -94,43 +94,43 @@ func (m *Model) pollFlrig() tea.Cmd {
 		}
 		return nil
 	}
-	if m.rigPolling {
+	if m.rig.polling {
 		return nil
 	}
-	m.rigPolling = true
-	m.rigBlink = !m.rigBlink
+	m.rig.polling = true
+	m.rig.blink = !m.rig.blink
 	return m.flrigStatusCmd()
 }
 
 // applyFlrigResult applies a flrig status result to the model state and QSO form.
 func (m *Model) applyFlrigResult(r flrigResultMsg) {
-	m.rigPolling = false
+	m.rig.polling = false
 	if r.err != "" || !r.connected {
-		if m.rigConnected {
-			m.cachedStatus = ""
+		if m.rig.connected {
+			m.rc.status = ""
 		}
-		m.rigConnected = false
+		m.rig.connected = false
 		return
 	}
-	if !m.rigConnected {
-		m.cachedStatus = ""
+	if !m.rig.connected {
+		m.rc.status = ""
 	}
-	m.rigConnected = true
+	m.rig.connected = true
 	// Fetch mode table on first successful connection.
-	if len(m.flrigModes) == 0 {
+	if len(m.rig.modes) == 0 {
 		go m.fetchFlrigModes()
 	}
-	m.rigFreq = r.freq
-	if !m.wsjtxOnline {
+	m.rig.freq = r.freq
+	if !m.wsjtx.online {
 		m.fields[fieldFreq].SetValue(fmt.Sprintf("%.6f", r.freq))
 	}
-	if r.mode != "" && !m.wsjtxOnline {
+	if r.mode != "" && !m.wsjtx.online {
 		m.fields[fieldMode].SetValue(r.mode)
 	}
 	if r.band != "" {
 		m.fields[fieldBand].SetValue(r.band)
 	}
-	if !m.wsjtxOnline {
+	if !m.wsjtx.online {
 		m.autoFillSSBSubmode()
 	}
 	if r.power > 0 {
@@ -140,24 +140,25 @@ func (m *Model) applyFlrigResult(r flrigResultMsg) {
 
 // fetchFlrigModes queries flrig for the available mode table and stores it.
 func (m *Model) fetchFlrigModes() {
-	if m.flrigClient == nil {
+	if m.rig.client == nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	modes, err := m.flrigClient.GetModes(ctx)
+	modes, err := m.rig.client.GetModes(ctx)
 	if err != nil {
 		applog.Warn("flrig: get_modes failed", "error", err)
 		return
 	}
-	m.flrigModes = modes
+	m.rig.modes = modes
 	applog.Info("flrig: modes fetched", "count", len(modes), "modes", modes)
 }
 
-// flrigModeIndex returns the index of the desired mode in flrig's mode table.
+// modeIndex returns the index of the desired mode in flrig's mode table.
 // For CW, prefers CW-L/CWL (lower sideband, standard for HF) over CW-U/CWU.
-func flrigModeIndex(flrigModes []string, want string) int {
+func (r *rigState) modeIndex(want string) int {
 	want = strings.ToUpper(want)
+	flrigModes := r.modes
 
 	// For CW: prefer lower-sideband CW, which is the HF standard.
 	if want == "CW" {

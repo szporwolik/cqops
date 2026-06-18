@@ -152,7 +152,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 
 	// Log editor — table navigation shortcuts
 	if m.screen == screenLogbookEditor {
-		if m.logbookEditor != nil && m.logbookEditor.IsEditing() {
+		if m.ui.logbookEditor != nil && m.ui.logbookEditor.IsEditing() {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("tab", "down", "shift+tab", "up"), key.WithHelp("↑↓", "Navigate")),
 				key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
@@ -204,7 +204,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 		)
 	}
 	if m.screen == screenChooser {
-		if m.chooser != nil && (m.chooser.mode == chooserEdit || m.chooser.mode == chooserCreate) {
+		if m.ui.chooser != nil && (m.ui.chooser.mode == chooserEdit || m.ui.chooser.mode == chooserCreate) {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("tab", "down", "shift+tab", "up"), key.WithHelp("↑↓", "Navigate")),
 				key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle")),
@@ -224,7 +224,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 		}
 	}
 	if m.screen == screenRigEdit {
-		if m.rigChooser != nil && (m.rigChooser.mode == rigChooserEdit || m.rigChooser.mode == rigChooserCreate) {
+		if m.ui.rigChooser != nil && (m.ui.rigChooser.mode == rigChooserEdit || m.ui.rigChooser.mode == rigChooserCreate) {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("tab", "down", "shift+tab", "up"), key.WithHelp("↑↓", "Navigate")),
 				key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle")),
@@ -257,14 +257,14 @@ func (m *Model) ActiveBindings() []key.Binding {
 			key.NewBinding(key.WithKeys("backspace"), key.WithHelp("Bksp", "Clear")),
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "QSO")),
 		)
-		if m.rigConnected && !m.wsjtxOnline {
+		if m.rig.connected && !m.wsjtx.online {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("tab"), key.WithHelp("Tab", "Tune")),
 			)
 		}
 	}
 	// Partner screen — show F2 Photo when image available.
-	if m.screen == screenPartner && m.partnerData != nil && m.partnerData.ImageURL != "" {
+	if m.screen == screenPartner && m.lookup.partnerData != nil && m.lookup.partnerData.ImageURL != "" {
 		bindings = append(bindings,
 			key.NewBinding(key.WithKeys("f2"), key.WithHelp("F2", "Photo")),
 		)

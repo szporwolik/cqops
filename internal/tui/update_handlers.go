@@ -29,12 +29,12 @@ import (
 // downstream work (logging, tea.Batch, form updates) to keep the critical
 // section minimal.
 func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
-	m.adifMu.Lock()
-	adifs := m.pendingADIFs
-	m.pendingADIFs = nil
-	sp := m.pendingStatus
-	m.pendingStatus = statusPending{}
-	m.adifMu.Unlock()
+	m.adifQ.mu.Lock()
+	adifs := m.adifQ.adifs
+	m.adifQ.adifs = nil
+	sp := m.adifQ.status
+	m.adifQ.status = statusPending{}
+	m.adifQ.mu.Unlock()
 
 	for _, adif := range adifs {
 		if adif == "" {
@@ -47,31 +47,31 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 		}
 		if retry {
 			// DB insert failed — re-queue for next tick.
-			m.adifMu.Lock()
-			m.pendingADIFs = append(m.pendingADIFs, adif)
-			m.adifMu.Unlock()
+			m.adifQ.mu.Lock()
+			m.adifQ.adifs = append(m.adifQ.adifs, adif)
+			m.adifQ.mu.Unlock()
 		}
 	}
 
 	// Persist any remaining (unprocessed or retry) ADIFs.
-	m.adifMu.Lock()
+	m.adifQ.mu.Lock()
 	m.savePendingADIFsLocked()
-	m.adifMu.Unlock()
+	m.adifQ.mu.Unlock()
 
 	if sp.hasData {
 		m.applyWSJTXStatus(sp.call, sp.grid, sp.freq, sp.mode, sp.submode, sp.report, sp.txMessage, sp.transmitting)
 	}
 	// WSJT-X watchdog: if no status received in 15 seconds, mark offline.
-	if m.wsjtxOnline && time.Since(m.wsjtxLastSeen) > 15*time.Second {
-		m.wsjtxOnline = false
-		m.wsjtxTx = false
-		m.wsjtxTxMsg = ""
-		m.cachedStatus = ""
+	if m.wsjtx.online && time.Since(m.wsjtx.lastSeen) > 15*time.Second {
+		m.wsjtx.online = false
+		m.wsjtx.tx = false
+		m.wsjtx.txMsg = ""
+		m.rc.status = ""
 	}
 	// WSJT-X auto-reconnect: if enabled but never online, retry start every 30s.
 	// MaybeRestartWSJTX is a no-op when the listener is already running; it only
 	// acts when the previous start failed (lastWSJTX wasn't updated on error).
-	if m.App.Config.WSJTX.Enabled && !m.wsjtxOnline && m.tickCount%30 == 0 {
+	if m.App.Config.WSJTX.Enabled && !m.wsjtx.online && m.tickCount%30 == 0 {
 		m.App.MaybeRestartWSJTX()
 	}
 	m.toasts.Expire()
@@ -91,12 +91,12 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) bool {
 		m.inetOnline = bool(r)
 		return true
 	case wlStatusMsg:
-		m.wlOnline = r.online
+		m.lookup.wlOnline = r.online
 		if r.stationName != "" {
-			m.wlStationName = r.stationName
+			m.lookup.wlStationName = r.stationName
 		}
 		if r.stationLabel != "" {
-			m.wlStationLabel = r.stationLabel
+			m.lookup.wlStationLabel = r.stationLabel
 		}
 		return true
 	case wlUploadResultMsg:
@@ -132,13 +132,13 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) bool {
 		}
 		return true
 	case qrzStatusMsg:
-		m.qrzOnline = r.online
+		m.lookup.qrzOnline = r.online
 		return true
 	case flrigResultMsg:
 		m.applyFlrigResult(r)
 		return true
 	case pskFetchMsg:
-		m.pskFetching = false
+		m.psk.fetching = false
 		if r.err != nil {
 			applog.Error("PSK Reporter: fetch failed", "error", r.err)
 			m.toasts.Error("PSK Reporter: " + r.err.Error())
@@ -161,12 +161,12 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) bool {
 				applog.Info("PSK Reporter: new spots stored", "count", n)
 			}
 			_ = store.PurgeOldPSKSpots(m.App.DB)
-			m.pskLastFetch = r.fetchTime
-			m.pskLastCall = call
-			m.pskFetched = true
-			m.pskSpotKey = ""
-			m.pskViewKey = ""
-			m.pskSpots = nil
+			m.psk.lastFetch = r.fetchTime
+			m.psk.lastCall = call
+			m.psk.fetched = true
+			m.psk.spotKey = ""
+			m.psk.viewKey = ""
+			m.psk.spots = nil
 			m.toasts.Info(fmt.Sprintf("PSK Reporter: %d spots updated", len(r.reports)))
 		}
 		return true
@@ -187,9 +187,9 @@ func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
 		m.needRefresh = false
 		return tea.Batch(cmd, m.refreshQSOS()), true
 	}
-	if m.qrzNeed {
-		m.qrzNeed = false
-		call := m.qrzCall
+	if m.lookup.qrzNeed {
+		m.lookup.qrzNeed = false
+		call := m.lookup.qrzCall
 		applog.Debug("DXC: handlePendingRequests qrzNeed",
 			"call", call,
 			"qrzEnabled", m.App.Config.QRZ.Enabled,
@@ -204,16 +204,16 @@ func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
 		}
 		return tea.Batch(cmd, m.lookupCallCmd(call)), true
 	}
-	if m.wlNeed {
-		m.wlNeed = false
-		call := m.wlCall
+	if m.lookup.wlNeed {
+		m.lookup.wlNeed = false
+		call := m.lookup.wlCall
 		if call != "" {
 			return tea.Batch(cmd, m.wlLookup(call)), true
 		}
 	}
-	if m.dxcNeed {
-		m.dxcNeed = false
-		call := m.dxcCall
+	if m.dxc.need {
+		m.dxc.need = false
+		call := m.dxc.call
 		if call != "" {
 			return tea.Batch(cmd, m.dxcSpotLookupCmd(call)), true
 		}

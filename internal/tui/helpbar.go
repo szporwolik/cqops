@@ -28,27 +28,27 @@ func (m *Model) helpView() string {
 	if m.confirm != nil {
 		conf = 1
 	}
-	if m.logbookEditor != nil && m.logbookEditor.isConfirmMode() {
+	if m.ui.logbookEditor != nil && m.ui.logbookEditor.isConfirmMode() {
 		conf = 1
 	}
-	if m.logbookEditor != nil && m.logbookEditor.IsEditing() {
+	if m.ui.logbookEditor != nil && m.ui.logbookEditor.IsEditing() {
 		editing = 1
 	}
-	if m.chooser != nil && (m.chooser.mode == chooserEdit || m.chooser.mode == chooserCreate) {
+	if m.ui.chooser != nil && (m.ui.chooser.mode == chooserEdit || m.ui.chooser.mode == chooserCreate) {
 		chooserForm = 1
 	}
-	if m.rigChooser != nil && (m.rigChooser.mode == rigChooserEdit || m.rigChooser.mode == rigChooserCreate) {
+	if m.ui.rigChooser != nil && (m.ui.rigChooser.mode == rigChooserEdit || m.ui.rigChooser.mode == rigChooserCreate) {
 		rigForm = 1
 	}
-	if m.rigChooser != nil && m.rigChooser.dialog != nil {
+	if m.ui.rigChooser != nil && m.ui.rigChooser.dialog != nil {
 		conf = 1
 	}
-	if m.chooser != nil && m.chooser.dialog != nil {
+	if m.ui.chooser != nil && m.ui.chooser.dialog != nil {
 		conf = 1
 	}
-	sig := fmt.Sprintf("%d|%d|%d|%d|%d|%d|%t|%t|%s", m.screen, m.width, conf, editing, chooserForm, rigForm, m.rigConnected, m.wsjtxOnline, suffix)
-	if m.cachedHelpSig == sig && m.cachedHelpView != "" {
-		return m.cachedHelpView
+	sig := fmt.Sprintf("%d|%d|%d|%d|%d|%d|%t|%t|%s", m.screen, m.width, conf, editing, chooserForm, rigForm, m.rig.connected, m.wsjtx.online, suffix)
+	if m.rc.helpSig == sig && m.rc.helpView != "" {
+		return m.rc.helpView
 	}
 
 	var result string
@@ -56,28 +56,28 @@ func (m *Model) helpView() string {
 	// Global confirm dialog (quit, etc.)
 	if m.confirm != nil {
 		result = HelpStyle.Render(m.help.ShortHelpView(confirmBindings))
-		m.cachedHelpSig = sig
-		m.cachedHelpView = result
+		m.rc.helpSig = sig
+		m.rc.helpView = result
 		return result
 	}
 
 	// Internal confirm dialogs: rig/chooser delete confirmations.
-	if m.rigChooser != nil && m.rigChooser.mode == rigChooserConfirmDelete && m.rigChooser.dialog != nil {
+	if m.ui.rigChooser != nil && m.ui.rigChooser.mode == rigChooserConfirmDelete && m.ui.rigChooser.dialog != nil {
 		result = HelpStyle.Render(m.help.ShortHelpView(confirmBindings))
-		m.cachedHelpSig = sig
-		m.cachedHelpView = result
+		m.rc.helpSig = sig
+		m.rc.helpView = result
 		return result
 	}
-	if m.chooser != nil && m.chooser.mode == chooserConfirmDelete && m.chooser.dialog != nil {
+	if m.ui.chooser != nil && m.ui.chooser.mode == chooserConfirmDelete && m.ui.chooser.dialog != nil {
 		result = HelpStyle.Render(m.help.ShortHelpView(confirmBindings))
-		m.cachedHelpSig = sig
-		m.cachedHelpView = result
+		m.rc.helpSig = sig
+		m.rc.helpView = result
 		return result
 	}
-	if m.logbookEditor != nil && m.logbookEditor.isConfirmMode() && m.logbookEditor.dialog != nil {
+	if m.ui.logbookEditor != nil && m.ui.logbookEditor.isConfirmMode() && m.ui.logbookEditor.dialog != nil {
 		result = HelpStyle.Render(m.help.ShortHelpView(confirmBindings))
-		m.cachedHelpSig = sig
-		m.cachedHelpView = result
+		m.rc.helpSig = sig
+		m.rc.helpView = result
 		return result
 	}
 
@@ -101,8 +101,8 @@ func (m *Model) helpView() string {
 	} else {
 		result = HelpStyle.Render(helpText)
 	}
-	m.cachedHelpSig = sig
-	m.cachedHelpView = result
+	m.rc.helpSig = sig
+	m.rc.helpView = result
 	return result
 }
 
@@ -110,8 +110,8 @@ func (m *Model) helpView() string {
 // (QSO counter in log editor, scroll info in log viewer). This is
 // computed every frame and not cached.
 func (m *Model) helpSuffix() string {
-	if m.screen == screenLogbookEditor && m.logbookEditor != nil {
-		le := m.logbookEditor
+	if m.screen == screenLogbookEditor && m.ui.logbookEditor != nil {
+		le := m.ui.logbookEditor
 		cursor := le.table.Cursor()
 		total := le.totalCount
 		if total > 0 {
@@ -120,8 +120,8 @@ func (m *Model) helpSuffix() string {
 			return fmt.Sprintf("QSO %d/%d  %s", globalPos, total, pageInfo)
 		}
 	}
-	if m.screen == screenLogView && m.logViewer != nil {
-		return m.logViewer.ScrollInfo()
+	if m.screen == screenLogView && m.ui.logViewer != nil {
+		return m.ui.logViewer.ScrollInfo()
 	}
 	if m.screen == screenDXC {
 		return ""

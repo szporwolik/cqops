@@ -43,21 +43,21 @@ func (m *Model) headerView() string {
 
 	rightParts = append(rightParts, statusDotStyled(m.inetOnline, "Net"))
 	if m.App.Config.WSJTX.Enabled {
-		rightParts = append(rightParts, statusDotStyled(m.wsjtxOnline, "WSJT"))
+		rightParts = append(rightParts, statusDotStyled(m.wsjtx.online, "WSJT"))
 	}
 	if cfgRig, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok && cfgRig.FlrigEnabled {
-		if m.wsjtxTx {
+		if m.wsjtx.tx {
 			rightParts = append(rightParts, txDotStyle.Render("Rig")+" ")
 		} else {
-			rightParts = append(rightParts, statusDotStyled(m.rigConnected, "Rig"))
+			rightParts = append(rightParts, statusDotStyled(m.rig.connected, "Rig"))
 		}
 	}
 	if m.App.Config.DXC.Enabled {
-		rightParts = append(rightParts, statusDotStyled(m.dxcOnline, "DXC"))
+		rightParts = append(rightParts, statusDotStyled(m.dxc.online, "DXC"))
 	}
 	wl := m.App.Logbook.Wavelog
 	if wl != nil && wl.Enabled {
-		rightParts = append(rightParts, statusDotStyled(m.wlOnline, "WL"))
+		rightParts = append(rightParts, statusDotStyled(m.lookup.wlOnline, "WL"))
 	}
 	rightParts = append(rightParts,
 		utcLabelStyle.Render("UTC"),
@@ -91,12 +91,12 @@ func (m *Model) headerView() string {
 	}
 
 	// WSJT-X TX message — only when at least 20 cells of free space remain.
-	if m.wsjtxTxMsg != "" && m.App.Config.WSJTX.Enabled && m.wsjtxOnline {
+	if m.wsjtx.txMsg != "" && m.App.Config.WSJTX.Enabled && m.wsjtx.online {
 		style := S.StatusValue
-		if m.wsjtxTx {
+		if m.wsjtx.tx {
 			style = txDotStyle
 		}
-		msgSeg := " " + S.StatusLabel.Render("MSG") + " " + style.Render(clamp(m.wsjtxTxMsg, 24))
+		msgSeg := " " + S.StatusLabel.Render("MSG") + " " + style.Render(clamp(m.wsjtx.txMsg, 24))
 		msgW := lipgloss.Width(msgSeg)
 		avail := m.width - leftW - rightW
 		if avail >= msgW+4 {

@@ -19,29 +19,29 @@ import (
 // screen transitions, config saves, and cleanup on exit.
 
 func (m *Model) handleChooserUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
-	m.chooser.width = m.width
-	m.chooser.height = m.height
-	_, chooserCmd := m.chooser.Update(msg)
+	m.ui.chooser.width = m.width
+	m.ui.chooser.height = m.height
+	_, chooserCmd := m.ui.chooser.Update(msg)
 	cmd = tea.Batch(cmd, chooserCmd)
-	if m.chooser.done {
+	if m.ui.chooser.done {
 		m.screen = screenMainMenu
-		m.wlForceCheck = true
+		m.lookup.wlForceCheck = true
 		m.needRefresh = true
 	}
 	// Logbook was switched via Enter in the chooser — force WL check.
 	if _, ok := msg.(logbookSwitchedMsg); ok {
-		m.wlForceCheck = true
+		m.lookup.wlForceCheck = true
 		m.needRefresh = true
 	}
 	return m, cmd
 }
 
 func (m *Model) handleRigEditUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
-	m.rigChooser.width = m.width
-	m.rigChooser.height = m.height
-	_, rigCmd := m.rigChooser.Update(msg)
+	m.ui.rigChooser.width = m.width
+	m.ui.rigChooser.height = m.height
+	_, rigCmd := m.ui.rigChooser.Update(msg)
 	cmd = tea.Batch(cmd, rigCmd)
-	if m.rigChooser.done {
+	if m.ui.rigChooser.done {
 		m.screen = screenMainMenu
 		m.refreshFlrigClient()
 	}
@@ -49,22 +49,22 @@ func (m *Model) handleRigEditUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 }
 
 func (m *Model) handleConfigUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
-	m.configMenu.width = m.width
-	m.configMenu.height = m.height
-	_, configCmd := m.configMenu.Update(msg)
+	m.ui.configMenu.width = m.width
+	m.ui.configMenu.height = m.height
+	_, configCmd := m.ui.configMenu.Update(msg)
 	cmd = tea.Batch(cmd, configCmd)
-	if m.configMenu.done {
+	if m.ui.configMenu.done {
 		m.screen = screenQSO
-		if m.configMenu.goBack {
+		if m.ui.configMenu.goBack {
 			m.screen = screenMainMenu
 		}
-		if m.configMenu.saved {
-			m.App.Config.General.DistanceUnit = m.configMenu.distanceUnit
-			m.App.Config.General.Timezone = m.configMenu.timezone
-			m.App.Config.General.RenderMap = m.configMenu.renderMap
-			m.App.Config.General.DrawGrayline = m.configMenu.drawGrayline
-			m.App.Config.General.PictureAtQRZPane = m.configMenu.pictureAtQRZ
-			m.App.Config.General.SolarAtQSOPane = m.configMenu.solarAtQSO
+		if m.ui.configMenu.saved {
+			m.App.Config.General.DistanceUnit = m.ui.configMenu.distanceUnit
+			m.App.Config.General.Timezone = m.ui.configMenu.timezone
+			m.App.Config.General.RenderMap = m.ui.configMenu.renderMap
+			m.App.Config.General.DrawGrayline = m.ui.configMenu.drawGrayline
+			m.App.Config.General.PictureAtQRZPane = m.ui.configMenu.pictureAtQRZ
+			m.App.Config.General.SolarAtQSOPane = m.ui.configMenu.solarAtQSO
 			m.saveConfig("Settings saved")
 			m.screen = screenMainMenu
 		}
@@ -73,21 +73,21 @@ func (m *Model) handleConfigUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd
 }
 
 func (m *Model) handleNotificationsUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
-	m.notifMenu.width = m.width
-	m.notifMenu.height = m.height
-	_, notifCmd := m.notifMenu.Update(msg)
+	m.ui.notifMenu.width = m.width
+	m.ui.notifMenu.height = m.height
+	_, notifCmd := m.ui.notifMenu.Update(msg)
 	cmd = tea.Batch(cmd, notifCmd)
-	if m.notifMenu.done {
+	if m.ui.notifMenu.done {
 		m.screen = screenQSO
-		if m.notifMenu.goBack {
+		if m.ui.notifMenu.goBack {
 			m.screen = screenMainMenu
 		}
-		if m.notifMenu.saved {
-			m.App.Config.General.Notifications.Enabled = m.notifMenu.enabled
-			m.App.Config.General.Notifications.QSO = m.notifMenu.qso
-			m.App.Config.General.Notifications.Wavelog = m.notifMenu.wavelog
-			m.App.Config.General.Notifications.WavelogErrors = m.notifMenu.wavelogErrors
-			m.App.Config.General.Notifications.BeepOnError = m.notifMenu.beepOnError
+		if m.ui.notifMenu.saved {
+			m.App.Config.General.Notifications.Enabled = m.ui.notifMenu.enabled
+			m.App.Config.General.Notifications.QSO = m.ui.notifMenu.qso
+			m.App.Config.General.Notifications.Wavelog = m.ui.notifMenu.wavelog
+			m.App.Config.General.Notifications.WavelogErrors = m.ui.notifMenu.wavelogErrors
+			m.App.Config.General.Notifications.BeepOnError = m.ui.notifMenu.beepOnError
 			m.applyBeepOnError()
 			m.saveConfig("Settings saved")
 			m.screen = screenMainMenu
@@ -97,19 +97,19 @@ func (m *Model) handleNotificationsUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 }
 
 func (m *Model) handleCallbookUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
-	m.callbookMenu.width = m.width
-	m.callbookMenu.height = m.height
-	m.callbookMenu.inetOnline = m.inetOnline
-	_, callbookCmd := m.callbookMenu.Update(msg)
-	if m.callbookMenu.done {
+	m.ui.callbookMenu.width = m.width
+	m.ui.callbookMenu.height = m.height
+	m.ui.callbookMenu.inetOnline = m.inetOnline
+	_, callbookCmd := m.ui.callbookMenu.Update(msg)
+	if m.ui.callbookMenu.done {
 		m.screen = screenQSO
-		if m.callbookMenu.goBack {
+		if m.ui.callbookMenu.goBack {
 			m.screen = screenMainMenu
 		}
-		if m.callbookMenu.saved {
-			m.App.Config.QRZ.User = m.callbookMenu.user.Value()
-			m.App.Config.QRZ.Pass = m.callbookMenu.pass.Value()
-			m.App.Config.QRZ.Enabled = m.callbookMenu.enabled
+		if m.ui.callbookMenu.saved {
+			m.App.Config.QRZ.User = m.ui.callbookMenu.user.Value()
+			m.App.Config.QRZ.Pass = m.ui.callbookMenu.pass.Value()
+			m.App.Config.QRZ.Enabled = m.ui.callbookMenu.enabled
 			m.saveConfig("Settings saved")
 			m.screen = screenMainMenu
 		}
@@ -118,23 +118,23 @@ func (m *Model) handleCallbookUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.C
 }
 
 func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
-	m.integrationMenu.width = m.width
-	m.integrationMenu.height = m.height
-	_, integrationCmd := m.integrationMenu.Update(msg)
+	m.ui.integrationMenu.width = m.width
+	m.ui.integrationMenu.height = m.height
+	_, integrationCmd := m.ui.integrationMenu.Update(msg)
 
 	// Show validation errors from the menu.
-	if m.integrationMenu.SaveError != "" {
-		m.toasts.Error(m.integrationMenu.SaveError)
-		m.integrationMenu.SaveError = ""
+	if m.ui.integrationMenu.SaveError != "" {
+		m.toasts.Error(m.ui.integrationMenu.SaveError)
+		m.ui.integrationMenu.SaveError = ""
 	}
 
-	if m.integrationMenu.done {
+	if m.ui.integrationMenu.done {
 		m.screen = screenQSO
-		if m.integrationMenu.goBack {
+		if m.ui.integrationMenu.goBack {
 			m.screen = screenMainMenu
 		}
-		if m.integrationMenu.saved {
-			dxcE, dxcHost, dxcPort, dxcLogin, wsjtxE, wsjtxH, wsjtxP := m.integrationMenu.Values()
+		if m.ui.integrationMenu.saved {
+			dxcE, dxcHost, dxcPort, dxcLogin, wsjtxE, wsjtxH, wsjtxP := m.ui.integrationMenu.Values()
 			m.App.Config.DXC.Enabled = dxcE
 			m.App.Config.DXC.Host = dxcHost
 			m.App.Config.DXC.Port = dxcPort
@@ -153,47 +153,47 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 }
 
 func (m *Model) handleMainMenuUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
-	m.mainMenu.width = m.width
-	m.mainMenu.height = m.height
-	_, mainCmd := m.mainMenu.Update(msg)
+	m.ui.mainMenu.width = m.width
+	m.ui.mainMenu.height = m.height
+	_, mainCmd := m.ui.mainMenu.Update(msg)
 	cmd = tea.Batch(cmd, mainCmd)
-	if m.mainMenu.action != "" {
-		action := m.mainMenu.action
-		m.mainMenu.action = ""
+	if m.ui.mainMenu.action != "" {
+		action := m.ui.mainMenu.action
+		m.ui.mainMenu.action = ""
 		switch action {
 		case "general":
-			m.configMenu = NewGeneralMenu(m.App.Config)
-			m.configMenu.width = m.width
-			m.configMenu.height = m.height
+			m.ui.configMenu = NewGeneralMenu(m.App.Config)
+			m.ui.configMenu.width = m.width
+			m.ui.configMenu.height = m.height
 			m.screen = screenConfig
 		case "notifications":
-			m.notifMenu = NewNotificationsMenu(m.App.Config)
-			m.notifMenu.width = m.width
-			m.notifMenu.height = m.height
+			m.ui.notifMenu = NewNotificationsMenu(m.App.Config)
+			m.ui.notifMenu.width = m.width
+			m.ui.notifMenu.height = m.height
 			m.screen = screenNotifications
 		case "callbook":
-			m.callbookMenu = NewCallbookMenu(m.App.Config)
-			m.callbookMenu.width = m.width
-			m.callbookMenu.height = m.height
+			m.ui.callbookMenu = NewCallbookMenu(m.App.Config)
+			m.ui.callbookMenu.width = m.width
+			m.ui.callbookMenu.height = m.height
 			m.screen = screenCallbook
 		case "logbook":
-			m.chooser = NewLogbookChooser(m.App, m.toasts)
-			m.chooser.width = m.width
-			m.chooser.height = m.height
+			m.ui.chooser = NewLogbookChooser(m.App, m.toasts)
+			m.ui.chooser.width = m.width
+			m.ui.chooser.height = m.height
 			m.screen = screenChooser
 		case "rig":
-			m.rigChooser = NewRigChooser(m.App, m.toasts)
-			m.rigChooser.width = m.width
-			m.rigChooser.height = m.height
+			m.ui.rigChooser = NewRigChooser(m.App, m.toasts)
+			m.ui.rigChooser.width = m.width
+			m.ui.rigChooser.height = m.height
 			m.screen = screenRigEdit
 		case "integration":
-			m.integrationMenu = NewIntegrationMenu(m.App.Config)
-			m.integrationMenu.width = m.width
-			m.integrationMenu.height = m.height
+			m.ui.integrationMenu = NewIntegrationMenu(m.App.Config)
+			m.ui.integrationMenu.width = m.width
+			m.ui.integrationMenu.height = m.height
 			m.screen = screenIntegration
 		}
 	}
-	if m.mainMenu.done {
+	if m.ui.mainMenu.done {
 		m.screen = screenQSO
 	}
 	return m, cmd
@@ -201,16 +201,16 @@ func (m *Model) handleMainMenuUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.C
 
 func (m *Model) handlePartnerUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	// Resize inline photo viewer when dimensions change (terminal resize etc).
-	w := m.partnerPicW
-	h := m.partnerPicH
-	if w >= 25 && h >= 4 && (w != m.partnerPicLastW || h != m.partnerPicLastH) {
-		m.partnerPicLastW = w
-		m.partnerPicLastH = h
-		cmd = tea.Batch(cmd, m.partnerPicViewer.SetSize(w, h))
+	w := m.photo.partnerPicW
+	h := m.photo.partnerPicH
+	if w >= 25 && h >= 4 && (w != m.photo.partnerPicLastW || h != m.photo.partnerPicLastH) {
+		m.photo.partnerPicLastW = w
+		m.photo.partnerPicLastH = h
+		cmd = tea.Batch(cmd, m.photo.partnerPicViewer.SetSize(w, h))
 	}
 	// Dispatch inline photo load when partner/URL changes.
-	if m.partnerPicNeedLoad {
-		m.partnerPicNeedLoad = false
+	if m.photo.partnerPicNeedLoad {
+		m.photo.partnerPicNeedLoad = false
 		if w < 25 {
 			w = 25
 		}
@@ -218,8 +218,8 @@ func (m *Model) handlePartnerUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 			h = 4
 		}
 		cmd = tea.Batch(cmd,
-			m.partnerPicViewer.SetSize(w, h),
-			m.partnerPicViewer.SetURL(m.lastPartnerPicURL),
+			m.photo.partnerPicViewer.SetSize(w, h),
+			m.photo.partnerPicViewer.SetURL(m.photo.partnerPicURL),
 		)
 	}
 	switch msg := msg.(type) {
@@ -232,9 +232,9 @@ func (m *Model) handlePartnerUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 			m.screen = screenQSO
 			return m, cmd
 		case "f7":
-			m.mainMenu = NewMainMenu()
-			m.mainMenu.width = m.width
-			m.mainMenu.height = m.height
+			m.ui.mainMenu = NewMainMenu()
+			m.ui.mainMenu.width = m.width
+			m.ui.mainMenu.height = m.height
 			m.screen = screenMainMenu
 			return m, cmd
 		}
@@ -244,17 +244,17 @@ func (m *Model) handlePartnerUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 
 func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	// Trigger initial fetch when first entering the tab (not yet fetched, not already fetching).
-	if !m.pskFetched && !m.pskFetching && m.inetOnline {
+	if !m.psk.fetched && !m.psk.fetching && m.inetOnline {
 		call := strings.ToUpper(strings.TrimSpace(m.App.Logbook.Station.Callsign))
 		if call != "" {
-			m.pskFetching = true
+			m.psk.fetching = true
 			return m, tea.Batch(cmd, m.pskFetchCmd())
 		}
 	}
 	// Auto-refresh: if data is older than 5 minutes, trigger a background refresh.
-	if m.pskFetched && !m.pskFetching && m.inetOnline &&
-		!m.pskLastFetch.IsZero() && time.Since(m.pskLastFetch) >= 5*time.Minute {
-		m.pskFetching = true
+	if m.psk.fetched && !m.psk.fetching && m.inetOnline &&
+		!m.psk.lastFetch.IsZero() && time.Since(m.psk.lastFetch) >= 5*time.Minute {
+		m.psk.fetching = true
 		return m, tea.Batch(cmd, m.pskFetchCmd())
 	}
 
@@ -270,8 +270,8 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			return m, cmd
 		case "f5":
 			// Refresh PSK data via async command — never block UI.
-			if !m.pskFetching && m.inetOnline {
-				m.pskFetching = true
+			if !m.psk.fetching && m.inetOnline {
+				m.psk.fetching = true
 				m.toasts.Info("PSK Reporter: fetching\u2026")
 				return m, m.pskFetchCmd()
 			}
@@ -288,7 +288,7 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			}
 			cur := -1
 			for i, b := range bands {
-				if b == m.pskBandFilter {
+				if b == m.psk.bandFilter {
 					cur = i
 					break
 				}
@@ -300,9 +300,9 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			if next < 0 {
 				next = len(bands) - 1
 			}
-			m.pskBandFilter = bands[next]
-			m.pskSelected = 0
-			label := m.pskBandFilter
+			m.psk.bandFilter = bands[next]
+			m.psk.selected = 0
+			label := m.psk.bandFilter
 			if label == "" {
 				label = "all bands"
 			}
@@ -316,7 +316,7 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			}
 			cur := -1
 			for i, s := range pskFilterSteps {
-				if s == m.pskFilterMins {
+				if s == m.psk.filterMins {
 					cur = i
 					break
 				}
@@ -329,18 +329,18 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 				if next < 0 {
 					next = len(pskFilterSteps) - 1
 				}
-				m.pskFilterMins = pskFilterSteps[next]
+				m.psk.filterMins = pskFilterSteps[next]
 			}
-			m.pskSelected = 0
-			m.toasts.Info(fmt.Sprintf("PSK Reporter: last %d min", m.pskFilterMins))
+			m.psk.selected = 0
+			m.toasts.Info(fmt.Sprintf("PSK Reporter: last %d min", m.psk.filterMins))
 			return m, cmd
 		case "up", "k":
-			if m.pskSelected > 0 {
-				m.pskSelected--
+			if m.psk.selected > 0 {
+				m.psk.selected--
 			}
 			return m, cmd
 		case "down", "j":
-			m.pskSelected++
+			m.psk.selected++
 			return m, cmd
 		case "insert":
 			m.pskCycleMode(1)
@@ -350,13 +350,13 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			return m, cmd
 		case "backspace":
 			// Clear all filters.
-			m.pskFilterMins = pskFilterSteps[0]
-			m.pskBandFilter = ""
-			m.pskModeFilter = ""
-			m.pskSelected = 0
-			m.pskSpotKey = ""
-			m.pskViewKey = ""
-			m.pskView = ""
+			m.psk.filterMins = pskFilterSteps[0]
+			m.psk.bandFilter = ""
+			m.psk.modeFilter = ""
+			m.psk.selected = 0
+			m.psk.spotKey = ""
+			m.psk.viewKey = ""
+			m.psk.view = ""
 			return m, cmd
 		}
 	}
@@ -366,11 +366,11 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 // pskAvailableBands returns the band filter options: "" (all) plus each band
 // that has at least one spot in the cached result set.
 func (m *Model) pskAvailableBands() []string {
-	if len(m.pskSpots) == 0 {
+	if len(m.psk.spots) == 0 {
 		return nil
 	}
 	seen := map[string]bool{"": true} // "all" is always first
-	for _, r := range m.pskSpots {
+	for _, r := range m.psk.spots {
 		band := freqToBandName(r.Frequency)
 		if band != "" {
 			seen[band] = true
@@ -405,11 +405,11 @@ func freqToBandName(freqHz float64) string {
 }
 
 func (m *Model) pskCycleMode(dir int) {
-	if len(m.pskSpots) == 0 {
+	if len(m.psk.spots) == 0 {
 		return
 	}
 	seen := map[string]bool{"": true}
-	for _, r := range m.pskSpots {
+	for _, r := range m.psk.spots {
 		if r.Mode != "" {
 			seen[strings.ToUpper(r.Mode)] = true
 		}
@@ -421,7 +421,7 @@ func (m *Model) pskCycleMode(dir int) {
 	sort.Strings(modes)
 	cur := -1
 	for i, mode := range modes {
-		if mode == m.pskModeFilter {
+		if mode == m.psk.modeFilter {
 			cur = i
 			break
 		}
@@ -433,9 +433,9 @@ func (m *Model) pskCycleMode(dir int) {
 	if next < 0 {
 		next = len(modes) - 1
 	}
-	m.pskModeFilter = modes[next]
-	m.pskSelected = 0
-	label := m.pskModeFilter
+	m.psk.modeFilter = modes[next]
+	m.psk.selected = 0
+	label := m.psk.modeFilter
 	if label == "" {
 		label = "all modes"
 	}
@@ -444,21 +444,21 @@ func (m *Model) pskCycleMode(dir int) {
 
 func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	// Block all non-editor keys during full-screen operations (download).
-	if m.logbookEditor.isDownloadActive() {
+	if m.ui.logbookEditor.isDownloadActive() {
 		if _, ok := msg.(tea.KeyPressMsg); ok {
-			_, editorCmd := m.logbookEditor.Update(msg)
+			_, editorCmd := m.ui.logbookEditor.Update(msg)
 			cmd = tea.Batch(cmd, editorCmd)
 			return m, cmd
 		}
 	}
 	// Detect resize — pageSize depends on terminal height, so reload.
-	oldW, oldH := m.logbookEditor.width, m.logbookEditor.height
-	m.logbookEditor.width = m.width
-	m.logbookEditor.height = m.height
+	oldW, oldH := m.ui.logbookEditor.width, m.ui.logbookEditor.height
+	m.ui.logbookEditor.width = m.width
+	m.ui.logbookEditor.height = m.height
 	if m.width != oldW || m.height != oldH {
-		m.logbookEditor.needsReload = true
+		m.ui.logbookEditor.needsReload = true
 	}
-	_, editorCmd := m.logbookEditor.Update(msg)
+	_, editorCmd := m.ui.logbookEditor.Update(msg)
 	if em, ok := msg.(editorMsg); ok {
 		if em.toastWarn != "" {
 			m.toasts.Warn(em.toastWarn)
@@ -474,8 +474,8 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 		}
 		if em.purged {
 			m.toasts.Success("Logbook purged")
-			m.logbookEditor.wlLastFetchedID = 0
-			m.logbookEditor.needsReload = true
+			m.ui.logbookEditor.wlLastFetchedID = 0
+			m.ui.logbookEditor.needsReload = true
 			if m.App.Logbook.Wavelog != nil {
 				m.App.Logbook.Wavelog.LastFetchedID = 0
 				if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
@@ -491,24 +491,24 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 				} else {
 					m.toasts.Success(fmt.Sprintf("Wavelog: %s sent", em.wlCall))
 				}
-				m.logbookEditor.UpdateWLStatus(em.wlQSOID, "yes")
-				m.logbookEditor.needsReload = true
+				m.ui.logbookEditor.UpdateWLStatus(em.wlQSOID, "yes")
+				m.ui.logbookEditor.needsReload = true
 			} else {
 				if em.err != nil {
 					m.toasts.Error(fmt.Sprintf("Wavelog: %s — %s", em.wlCall, em.err.Error()))
 				} else {
 					m.toasts.Error(fmt.Sprintf("Wavelog: %s failed", em.wlCall))
 				}
-				m.logbookEditor.UpdateWLStatus(em.wlQSOID, "no")
+				m.ui.logbookEditor.UpdateWLStatus(em.wlQSOID, "no")
 			}
 		}
-		if m.logbookEditor.wlSkipped > 0 {
-			m.toasts.Warn(fmt.Sprintf("Wavelog: %s", m.logbookEditor.wlSkipDetail))
-			m.logbookEditor.wlSkipped = 0
-			m.logbookEditor.wlSkipDetail = ""
+		if m.ui.logbookEditor.wlSkipped > 0 {
+			m.toasts.Warn(fmt.Sprintf("Wavelog: %s", m.ui.logbookEditor.wlSkipDetail))
+			m.ui.logbookEditor.wlSkipped = 0
+			m.ui.logbookEditor.wlSkipDetail = ""
 		}
 		if em.dlLastID != 0 {
-			m.logbookEditor.wlLastFetchedID = em.dlLastID
+			m.ui.logbookEditor.wlLastFetchedID = em.dlLastID
 			if m.App.Logbook.Wavelog != nil {
 				m.App.Logbook.Wavelog.LastFetchedID = em.dlLastID
 				if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
@@ -522,16 +522,16 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 				m.needRefresh = true
 			}
 		} else if em.dlErr != "" {
-			m.logbookEditor.wlDownloadErr = em.dlErr
-			m.logbookEditor.mode = edModeWLDownloadResult
+			m.ui.logbookEditor.wlDownloadErr = em.dlErr
+			m.ui.logbookEditor.mode = edModeWLDownloadResult
 		}
 	}
-	if m.logbookEditor.needsReload {
-		m.logbookEditor.needsReload = false
-		m.logbookEditor.loadPage()
+	if m.ui.logbookEditor.needsReload {
+		m.ui.logbookEditor.needsReload = false
+		m.ui.logbookEditor.loadPage()
 		m.needRefresh = true
 	}
-	if m.logbookEditor.done {
+	if m.ui.logbookEditor.done {
 		m.screen = screenQSO
 		m.needRefresh = true
 	}
@@ -539,11 +539,11 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 }
 
 func (m *Model) handleLogViewUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
-	m.logViewer.width = m.width
-	m.logViewer.height = m.height
-	_, logCmd := m.logViewer.Update(msg)
+	m.ui.logViewer.width = m.width
+	m.ui.logViewer.height = m.height
+	_, logCmd := m.ui.logViewer.Update(msg)
 	cmd = tea.Batch(cmd, logCmd)
-	if m.logViewer.done {
+	if m.ui.logViewer.done {
 		m.screen = screenQSO
 	}
 	return m, cmd

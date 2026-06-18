@@ -50,7 +50,7 @@ func (m *Model) dxcConnectCmd() tea.Cmd {
 		}
 
 		client := dxc.NewClient(host, port, login)
-		m.dxcClient = client
+		m.dxc.client = client
 
 		if err := client.Start(); err != nil {
 			return dxcStatusMsg{online: false, err: err}
@@ -73,13 +73,13 @@ func (m *Model) maybeDXC() tea.Cmd {
 
 	// Not enabled — ensure disconnected.
 	if !cfg.Enabled {
-		if m.dxcClient != nil {
-			m.dxcClient.Stop()
-			m.dxcClient = nil
+		if m.dxc.client != nil {
+			m.dxc.client.Stop()
+			m.dxc.client = nil
 		}
-		if m.dxcOnline {
-			m.dxcOnline = false
-			m.cachedStatus = ""
+		if m.dxc.online {
+			m.dxc.online = false
+			m.rc.status = ""
 			if m.screen == screenDXC {
 				m.screen = screenQSO
 			}
@@ -89,13 +89,13 @@ func (m *Model) maybeDXC() tea.Cmd {
 
 	// Need internet.
 	if !m.inetOnline {
-		if m.dxcClient != nil {
-			m.dxcClient.Stop()
-			m.dxcClient = nil
+		if m.dxc.client != nil {
+			m.dxc.client.Stop()
+			m.dxc.client = nil
 		}
-		if m.dxcOnline {
-			m.dxcOnline = false
-			m.cachedStatus = ""
+		if m.dxc.online {
+			m.dxc.online = false
+			m.rc.status = ""
 			if m.screen == screenDXC {
 				m.screen = screenQSO
 			}
@@ -104,25 +104,25 @@ func (m *Model) maybeDXC() tea.Cmd {
 	}
 
 	// Already connected — drain spots.
-	if m.dxcClient != nil && m.dxcOnline {
+	if m.dxc.client != nil && m.dxc.online {
 		return m.drainDXCSpots()
 	}
 
 	// Connecting in progress — don't double-connect.
-	if m.dxcConnecting {
+	if m.dxc.connecting {
 		return nil
 	}
 
 	// Reconnect delay.
-	if !m.dxcOnline && !m.dxcLastAttempt.IsZero() {
-		delay := dxcReconnectDelays[m.dxcReconnectIdx]
-		if time.Since(m.dxcLastAttempt) < delay {
+	if !m.dxc.online && !m.dxc.lastAttempt.IsZero() {
+		delay := dxcReconnectDelays[m.dxc.reconnectIdx]
+		if time.Since(m.dxc.lastAttempt) < delay {
 			return nil
 		}
 	}
 
-	m.dxcConnecting = true
-	m.dxcLastAttempt = time.Now()
+	m.dxc.connecting = true
+	m.dxc.lastAttempt = time.Now()
 	applog.Info("DXC: connecting")
 	return m.dxcConnectCmd()
 }
@@ -130,10 +130,10 @@ func (m *Model) maybeDXC() tea.Cmd {
 // drainDXCSpots reads any available spots from the cluster client and returns
 // a command to store them. Non-blocking — returns nil when no spots are queued.
 func (m *Model) drainDXCSpots() tea.Cmd {
-	if m.dxcClient == nil {
+	if m.dxc.client == nil {
 		return nil
 	}
-	ch := m.dxcClient.Spots()
+	ch := m.dxc.client.Spots()
 	var spots []dxc.Spot
 	for {
 		select {
@@ -190,8 +190,8 @@ func (m *Model) storeDXCSpotsCmd(spots []dxc.Spot) tea.Cmd {
 		}
 
 		// Purge old spots at most once per minute to reduce DB contention.
-		if time.Since(m.dxcLastPurge) > 60*time.Second {
-			m.dxcLastPurge = time.Now()
+		if time.Since(m.dxc.lastPurge) > 60*time.Second {
+			m.dxc.lastPurge = time.Now()
 			for attempt := 0; attempt < 3; attempt++ {
 				if err := store.PurgeOldDXCSpots(db); err == nil {
 					break
@@ -218,26 +218,26 @@ func (m *Model) storeDXCSpotsCmd(spots []dxc.Spot) tea.Cmd {
 
 // handleDXCStatus processes a connection state change.
 func (m *Model) handleDXCStatus(msg dxcStatusMsg) {
-	m.dxcConnecting = false
+	m.dxc.connecting = false
 	if msg.online {
-		m.dxcOnline = true
-		m.dxcReconnectIdx = 0
-		m.cachedStatus = ""
+		m.dxc.online = true
+		m.dxc.reconnectIdx = 0
+		m.rc.status = ""
 		applog.Info("DXC: connected OK")
 		m.toasts.Success("DXC: connected")
 	} else {
-		m.dxcOnline = false
-		m.dxcClient = nil
-		m.cachedStatus = ""
+		m.dxc.online = false
+		m.dxc.client = nil
+		m.rc.status = ""
 		// Redirect to QSO form if the user is viewing the DXC tab.
 		if m.screen == screenDXC {
 			m.screen = screenQSO
 		}
-		if m.dxcReconnectIdx < len(dxcReconnectDelays)-1 {
-			m.dxcReconnectIdx++
+		if m.dxc.reconnectIdx < len(dxcReconnectDelays)-1 {
+			m.dxc.reconnectIdx++
 		}
 		applog.Warn("DXC: connection failed",
-			"attempt", m.dxcReconnectIdx+1,
+			"attempt", m.dxc.reconnectIdx+1,
 			"error", msg.err,
 		)
 		m.toasts.Warn("DXC: connection failed — retrying")
@@ -247,15 +247,15 @@ func (m *Model) handleDXCStatus(msg dxcStatusMsg) {
 // resetDXC stops any active connection and resets reconnect state.
 // Called when the user saves new DXC settings so they take effect immediately.
 func (m *Model) resetDXC() {
-	if m.dxcClient != nil {
-		m.dxcClient.Stop()
-		m.dxcClient = nil
+	if m.dxc.client != nil {
+		m.dxc.client.Stop()
+		m.dxc.client = nil
 	}
-	m.dxcOnline = false
-	m.dxcConnecting = false
-	m.dxcReconnectIdx = 0
-	m.dxcLastAttempt = time.Time{}
-	m.cachedStatus = ""
+	m.dxc.online = false
+	m.dxc.connecting = false
+	m.dxc.reconnectIdx = 0
+	m.dxc.lastAttempt = time.Time{}
+	m.rc.status = ""
 }
 
 // dxcSpotLookupCmd searches the DXC spot database for the given callsign
@@ -279,8 +279,8 @@ func (m *Model) fillDXCFreq(msg dxcSpotLookupMsg) {
 	applog.Debug("DXC: fillDXCFreq called",
 		"call", msg.call,
 		"freq", msg.freq,
-		"rigConnected", m.rigConnected,
-		"wsjtxOnline", m.wsjtxOnline,
+		"rigConnected", m.rig.connected,
+		"wsjtxOnline", m.wsjtx.online,
 		"fieldFreq", strings.TrimSpace(m.fields[fieldFreq].Value()),
 	)
 	if msg.freq <= 0 {
@@ -289,7 +289,7 @@ func (m *Model) fillDXCFreq(msg dxcSpotLookupMsg) {
 	}
 	// Only use DXC spot freq when WSJT-X is NOT connected.
 	// flrig being connected is fine — the spot frequency overrides the rig's.
-	if m.wsjtxOnline {
+	if m.wsjtx.online {
 		applog.Debug("DXC: fillDXCFreq bail — wsjtx online")
 		return
 	}
@@ -310,20 +310,20 @@ func (m *Model) fillDXCFreq(msg dxcSpotLookupMsg) {
 // and invalidates the DXC table cache to keep the view in sync with the DB.
 func (m *Model) handleDXCSpotsStored(msg dxcSpotsStoredMsg) {
 	// Invalidate table so it rebuilds with fresh data on next View().
-	m.dxcTableReady = false
+	m.dxc.tableReady = false
 
 	formCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
 	if formCall == "" {
 		return
 	}
 	// Only override from live spots when WSJT-X is not connected.
-	if m.wsjtxOnline {
+	if m.wsjtx.online {
 		return
 	}
 	for _, c := range msg.calls {
 		if strings.EqualFold(c, formCall) {
-			m.dxcNeed = true
-			m.dxcCall = formCall
+			m.dxc.need = true
+			m.dxc.call = formCall
 			return
 		}
 	}

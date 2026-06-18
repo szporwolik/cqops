@@ -50,16 +50,16 @@ var (
 // tabView renders the function-key tab bar using lipgloss's tab border pattern.
 // Cached — only rebuilds when screen, partner presence, or confirm state change.
 func (m *Model) tabView() string {
-	hasPartner := m.partnerData != nil || strings.TrimSpace(m.fields[fieldCall].Value()) != ""
+	hasPartner := m.lookup.partnerData != nil || strings.TrimSpace(m.fields[fieldCall].Value()) != ""
 
 	// Cache key: screen + partner presence + confirm state + width.
 	conf := 0
 	if m.confirm != nil {
 		conf = 1
 	}
-	sig := fmt.Sprintf("%d|%v|%d|%d|%v|%v", m.screen, hasPartner, conf, m.width, m.inetOnline, m.dxcOnline)
-	if m.cachedTabSig == sig && m.cachedTabView != "" {
-		return m.cachedTabView
+	sig := fmt.Sprintf("%d|%v|%d|%d|%v|%v", m.screen, hasPartner, conf, m.width, m.inetOnline, m.dxc.online)
+	if m.rc.tabSig == sig && m.rc.tabView != "" {
+		return m.rc.tabView
 	}
 
 	w := m.width
@@ -73,7 +73,7 @@ func (m *Model) tabView() string {
 		disabled bool
 	}
 
-	dxcOnline := m.App.Config.DXC.Enabled && m.dxcOnline
+	dxcOnline := m.App.Config.DXC.Enabled && m.dxc.online
 	allTabs := []tab{
 		{"F1 QSO", m.screen == screenQSO && m.confirm == nil, false},
 		{"F2 QRZ", (m.screen == screenPartner || m.screen == screenImage) && hasPartner, !hasPartner},
@@ -104,8 +104,8 @@ func (m *Model) tabView() string {
 	gap := tabGapStyle.Render(strings.Repeat(" ", gapW))
 
 	result := lipgloss.JoinHorizontal(lipgloss.Bottom, row, gap)
-	m.cachedTabSig = sig
-	m.cachedTabView = result
+	m.rc.tabSig = sig
+	m.rc.tabView = result
 	return result
 }
 

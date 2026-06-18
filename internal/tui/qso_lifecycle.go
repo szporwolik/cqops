@@ -107,8 +107,8 @@ func (m *Model) refreshQSOS() tea.Cmd {
 		}
 		m.qsos = qsos
 		m.recentQSOs.SetQSOS(qsos)
-		m.cachedPathSig = ""
-		m.cachedLogStatsSig = ""
+		m.rc.pathSig = ""
+		m.rc.logStatsSig = ""
 
 		// Re-apply filter if active — new QSO might match.
 		if m.recentQSOs.IsFiltered() {

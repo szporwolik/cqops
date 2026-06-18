@@ -58,8 +58,8 @@ func (m *Model) viewForm(width int) string {
 		sigB.WriteByte('|')
 	}
 	sig := sigB.String()
-	if m.cachedFormSig == sig && m.cachedFormView != "" {
-		return m.cachedFormView
+	if m.rc.formSig == sig && m.rc.formView != "" {
+		return m.rc.formView
 	}
 
 	const maxColW = 41
@@ -73,9 +73,9 @@ func (m *Model) viewForm(width int) string {
 
 	// Cache column & comment styles per width.
 	var colStyle, commentStyle lipgloss.Style
-	if m.cachedFormColW == colW {
-		colStyle = m.cachedFormColStyle
-		commentStyle = m.cachedFormCommentStyle
+	if m.rc.formColW == colW {
+		colStyle = m.rc.formColStyle
+		commentStyle = m.rc.formCommentStyle
 	} else {
 		colStyle = lipgloss.NewStyle().Width(colW).MaxWidth(colW).Align(lipgloss.Left).Inline(true)
 		commentW := colW * 2
@@ -83,9 +83,9 @@ func (m *Model) viewForm(width int) string {
 			commentW = bodyW
 		}
 		commentStyle = lipgloss.NewStyle().Width(commentW).MaxWidth(commentW).Align(lipgloss.Left).Inline(true)
-		m.cachedFormColW = colW
-		m.cachedFormColStyle = colStyle
-		m.cachedFormCommentStyle = commentStyle
+		m.rc.formColW = colW
+		m.rc.formColStyle = colStyle
+		m.rc.formCommentStyle = commentStyle
 	}
 
 	// labelW is the fixed space: 2-char prefix + 11-char label.
@@ -180,14 +180,21 @@ func (m *Model) viewForm(width int) string {
 		b.WriteString("\n")
 	}
 
+	// Validation hint for the currently focused field.
+	if hint := m.qsoFieldHint(m.focus); hint != "" {
+		hintLine := S.Warning.Render("  \u26a0 " + hint)
+		b.WriteString(hintLine)
+		b.WriteString("\n")
+	}
+
 	// Comment row spans first two columns; Retain checkbox in third.
 	commentLine := commentStyle.Render(renderLine(fieldComment, colW*2))
 	retainBox := colStyle.Render(m.renderRetainCheckbox(colW))
 	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, commentLine, retainBox))
 
 	result := b.String()
-	m.cachedFormSig = sig
-	m.cachedFormView = result
+	m.rc.formSig = sig
+	m.rc.formView = result
 	return result
 }
 
@@ -272,9 +279,9 @@ func (m *Model) formPathRow(width int) string {
 	// ── No callsign: station profile ──
 	// Check both the committed pathCall and the current form field —
 	// the user may have backspaced the call without leaving the field.
-	if m.pathCall == "" || strings.TrimSpace(m.fields[fieldCall].Value()) == "" {
-		m.pathCall = ""
-		m.cachedPathSig = ""
+	if m.rc.pathCall == "" || strings.TrimSpace(m.fields[fieldCall].Value()) == "" {
+		m.rc.pathCall = ""
+		m.rc.pathSig = ""
 		return renderProfile(lipgloss.Right)
 	}
 
@@ -292,22 +299,22 @@ func (m *Model) formPathRow(width int) string {
 		band := strings.TrimSpace(m.fields[fieldBand].Value())
 		mode := strings.TrimSpace(m.fields[fieldMode].Value())
 		statsSig := call + "|" + band + "|" + mode
-		if m.cachedLogStatsSig != statsSig && m.App.DB != nil {
+		if m.rc.logStatsSig != statsSig && m.App.DB != nil {
 			stats, err := store.GetLogbookStats(m.App.DB, call, band, mode)
 			if err == nil {
-				m.cachedLogStats = stats
-				m.cachedLogStatsSig = statsSig
+				m.rc.logStats = stats
+				m.rc.logStatsSig = statsSig
 			}
 		}
 
 		// Build cache key: grids + distance + log stats + WL state.
 		wlSig := "WL:"
-		if m.wlPrivateData != nil {
-			wlSig += fmt.Sprintf("wk=%v,dxcc=%v", m.wlPrivateData.Worked(), m.wlPrivateData.DXCCConfirmed())
+		if m.lookup.wlPrivateData != nil {
+			wlSig += fmt.Sprintf("wk=%v,dxcc=%v", m.lookup.wlPrivateData.Worked(), m.lookup.wlPrivateData.DXCCConfirmed())
 		}
 		sig := ownGrid + "|" + partnerGrid + "|" + m.App.Config.General.DistanceUnit + "|" + statsSig + "|" + wlSig
-		if m.cachedPathSig == sig && m.cachedPathLine != "" {
-			return m.cachedPathLine
+		if m.rc.pathSig == sig && m.rc.pathLine != "" {
+			return m.rc.pathLine
 		}
 		line := distanceLine(ownGrid, partnerGrid, m.App.Config.General.DistanceUnit)
 		if line != "" {
@@ -315,12 +322,12 @@ func (m *Model) formPathRow(width int) string {
 			// Show New Call / New DXCC indicators.
 			// WL-first: if WL has data it wins; otherwise fall back to local.
 			var showNewCall bool
-			if m.wlPrivateData != nil {
-				showNewCall = !m.wlPrivateData.Worked()
+			if m.lookup.wlPrivateData != nil {
+				showNewCall = !m.lookup.wlPrivateData.Worked()
 			} else {
-				showNewCall = !m.cachedLogStats.CallWorked
+				showNewCall = !m.rc.logStats.CallWorked
 			}
-			wlNewDXCC := m.wlPrivateData != nil && !m.wlPrivateData.DXCCConfirmed()
+			wlNewDXCC := m.lookup.wlPrivateData != nil && !m.lookup.wlPrivateData.DXCCConfirmed()
 
 			// Build banners as plain text so truncation is ANSI-safe.
 			const bannerNewCall = "New Call!"
@@ -356,12 +363,12 @@ func (m *Model) formPathRow(width int) string {
 			if wlNewDXCC && strings.Contains(result, bannerNewDXCC) {
 				result = strings.Replace(result, bannerNewDXCC, S.Success.Render(bannerNewDXCC), 1)
 			}
-			m.cachedPathSig = sig
-			m.cachedPathLine = result
+			m.rc.pathSig = sig
+			m.rc.pathLine = result
 			return result
 		}
-		m.cachedPathSig = ""
-		m.cachedPathLine = ""
+		m.rc.pathSig = ""
+		m.rc.pathLine = ""
 	}
 
 	return renderProfile(lipgloss.Right)

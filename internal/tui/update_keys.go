@@ -18,7 +18,7 @@ import (
 // that are independent of the current screen. Returns true if the key was handled.
 func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	// Block tab switching during Wavelog download (full-screen operation).
-	if m.logbookEditor != nil && m.logbookEditor.isDownloadActive() {
+	if m.ui.logbookEditor != nil && m.ui.logbookEditor.isDownloadActive() {
 		// Only allow F10 (quit) to pass through.
 		if !key.Matches(msg, m.keys.Quit) {
 			return nil, true
@@ -52,14 +52,14 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		// Cycle: Partner → Image → Partner (when photo available).
 		if m.screen == screenImage {
 			m.screen = screenPartner
-			m.lastImageErr = nil
-			m.lastImageURL = ""
+			m.photo.lastErr = nil
+			m.photo.lastURL = ""
 			return nil, true
 		}
-		if m.screen == screenPartner && m.partnerData != nil && m.partnerData.ImageURL != "" {
-			applog.Debug("F2: opening image view", "url", m.partnerData.ImageURL)
+		if m.screen == screenPartner && m.lookup.partnerData != nil && m.lookup.partnerData.ImageURL != "" {
+			applog.Debug("F2: opening image view", "url", m.lookup.partnerData.ImageURL)
 			m.screen = screenImage
-			m.lastImageURL = m.partnerData.ImageURL
+			m.photo.lastURL = m.lookup.partnerData.ImageURL
 			w := m.width
 			h := m.height - 4 // header/tab/help overhead
 			if w < 20 {
@@ -70,8 +70,8 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			}
 			h-- // bottom hint row
 			return tea.Batch(
-				m.imageViewer.SetSize(w, h),
-				m.imageViewer.SetURL(m.partnerData.ImageURL),
+				m.photo.viewer.SetSize(w, h),
+				m.photo.viewer.SetURL(m.lookup.partnerData.ImageURL),
 			), true
 		}
 
@@ -90,23 +90,23 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		band := strings.TrimSpace(m.fields[fieldBand].Value())
 		mode := strings.TrimSpace(m.fields[fieldMode].Value())
 
-		callChanged := m.partnerData == nil || !strings.EqualFold(m.partnerData.Callsign, call)
-		bandChanged := band != m.wlLastBand
-		modeChanged := mode != m.wlLastMode
+		callChanged := m.lookup.partnerData == nil || !strings.EqualFold(m.lookup.partnerData.Callsign, call)
+		bandChanged := band != m.lookup.wlLastBand
+		modeChanged := mode != m.lookup.wlLastMode
 
 		if callChanged {
-			m.partnerData = nil
+			m.lookup.partnerData = nil
 		}
 		if callChanged || bandChanged || modeChanged {
-			m.wlPrivateData = nil
-			m.wlLookupDone = false
+			m.lookup.wlPrivateData = nil
+			m.lookup.wlLookupDone = false
 		}
 		m.screen = screenPartner
 		m.invalidatePartnerMapCache()
 
 		// Only trigger lookups when the call actually changed — avoid
 		// redundant network calls on every tab switch.
-		if callChanged || m.partnerData == nil {
+		if callChanged || m.lookup.partnerData == nil {
 			return m.lookupCallCmd(call), true
 		}
 		return nil, true
@@ -122,20 +122,20 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			m.screen = screenQSO
 		} else {
 			applog.Debug("tab: F8 Config")
-			m.mainMenu = NewMainMenu()
-			m.mainMenu.width = m.width
-			m.mainMenu.height = m.height
+			m.ui.mainMenu = NewMainMenu()
+			m.ui.mainMenu.width = m.width
+			m.ui.mainMenu.height = m.height
 			m.screen = screenMainMenu
 		}
 		return nil, true
 
 	case key.Matches(msg, m.keys.DXC):
-		if !m.App.Config.DXC.Enabled || !m.dxcOnline {
+		if !m.App.Config.DXC.Enabled || !m.dxc.online {
 			m.toasts.Warn("DXC: not connected")
 			return nil, true
 		}
 		applog.Debug("tab: F4 DXC")
-		m.dxcTableReady = false // force rebuild with fresh data
+		m.dxc.tableReady = false // force rebuild with fresh data
 		m.screen = screenDXC
 		return nil, true
 
@@ -150,18 +150,18 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		if m.App.Logbook.Wavelog != nil {
 			wlLastID = m.App.Logbook.Wavelog.LastFetchedID
 		}
-		m.logbookEditor = NewLogbookEditor(m.App.DB, wlURL, wlKey, wlStationID, wlLastID, m.App.Logbook.Station.Operator, m.App.Logbook.Station.Grid)
-		m.logbookEditor.width = m.width
-		m.logbookEditor.height = m.height
-		m.logbookEditor.loadPage()
+		m.ui.logbookEditor = NewLogbookEditor(m.App.DB, wlURL, wlKey, wlStationID, wlLastID, m.App.Logbook.Station.Operator, m.App.Logbook.Station.Grid)
+		m.ui.logbookEditor.width = m.width
+		m.ui.logbookEditor.height = m.height
+		m.ui.logbookEditor.loadPage()
 		m.screen = screenLogbookEditor
 		return nil, true
 
 	case key.Matches(msg, m.keys.Logs):
 		applog.Debug("tab: F9 Log Viewer")
-		m.logViewer = NewLogViewer(config.LogbookDisplayName(m.App.Logbook))
-		m.logViewer.width = m.width
-		m.logViewer.height = m.height
+		m.ui.logViewer = NewLogViewer(config.LogbookDisplayName(m.App.Logbook))
+		m.ui.logViewer.width = m.width
+		m.ui.logViewer.height = m.height
 		m.screen = screenLogView
 		return nil, true
 
@@ -234,9 +234,9 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, true
 
 	case msg.String() == "ctrl+c":
-		m.mainMenu = NewMainMenu()
-		m.mainMenu.width = m.width
-		m.mainMenu.height = m.height
+		m.ui.mainMenu = NewMainMenu()
+		m.ui.mainMenu.width = m.width
+		m.ui.mainMenu.height = m.height
 		m.screen = screenMainMenu
 		return nil, true
 
@@ -252,7 +252,7 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.screen = screenPartner
 		m.invalidatePartnerMapCache()
 		// Only trigger lookups when the call changed.
-		if m.partnerData == nil || !strings.EqualFold(m.partnerData.Callsign, call) {
+		if m.lookup.partnerData == nil || !strings.EqualFold(m.lookup.partnerData.Callsign, call) {
 			return m.lookupCallCmd(call), true
 		}
 		return nil, true
@@ -292,9 +292,9 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	curBand := strings.TrimSpace(m.fields[fieldBand].Value())
 	curMode := strings.TrimSpace(m.fields[fieldMode].Value())
 	call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
-	if call != "" && (curBand != m.wlLastBand || curMode != m.wlLastMode) && m.wlPrivateData != nil {
-		m.wlNeed = true
-		m.wlCall = call
+	if call != "" && (curBand != m.lookup.wlLastBand || curMode != m.lookup.wlLastMode) && m.lookup.wlPrivateData != nil {
+		m.lookup.wlNeed = true
+		m.lookup.wlCall = call
 	}
 	return nil, false
 }

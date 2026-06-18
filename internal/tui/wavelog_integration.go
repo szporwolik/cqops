@@ -23,14 +23,14 @@ import (
 func (m *Model) maybeCheckWavelog() tea.Cmd {
 	wl := m.App.Logbook.Wavelog
 	if wl == nil || !wl.Enabled || wl.StationProfileID == "" {
-		m.wlOnline = false
+		m.lookup.wlOnline = false
 		return nil
 	}
 	// Check on startup or when forced (logbook switch).
-	if m.tickCount != 1 && !m.wlForceCheck {
+	if m.tickCount != 1 && !m.lookup.wlForceCheck {
 		return nil
 	}
-	m.wlForceCheck = false
+	m.lookup.wlForceCheck = false
 	return m.checkWavelogCmd()
 }
 

@@ -37,11 +37,11 @@ func renderFlagStatus(isNew, known bool, newStyle, oldStyle lipgloss.Style) stri
 }
 
 func (m *Model) viewPartner() string {
-	d := m.partnerData
+	d := m.lookup.partnerData
 	if d == nil {
 		d = m.formPartnerData()
 		if d == nil || d.Callsign == "" {
-			m.partnerViewCacheSig = ""
+			m.rc.partnerViewSig = ""
 			return ""
 		}
 	}
@@ -54,36 +54,36 @@ func (m *Model) viewPartner() string {
 	// Build cache signature — includes all inputs that affect output.
 	var sigB strings.Builder
 	fmt.Fprintf(&sigB, "%d|%d|", m.width, m.height)
-	if m.partnerData != nil {
+	if m.lookup.partnerData != nil {
 		fmt.Fprintf(&sigB, "pd:%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s|",
-			m.partnerData.Callsign, m.partnerData.Name, m.partnerData.Grid,
-			m.partnerData.QTH, m.partnerData.Country, m.partnerData.State,
-			m.partnerData.County, m.partnerData.Zip, m.partnerData.Class,
-			m.partnerData.Email, m.partnerData.URL, m.partnerData.Lat,
-			m.partnerData.Lon, m.partnerData.DXCC, m.partnerData.CQZone, m.partnerData.ITUZone)
+			m.lookup.partnerData.Callsign, m.lookup.partnerData.Name, m.lookup.partnerData.Grid,
+			m.lookup.partnerData.QTH, m.lookup.partnerData.Country, m.lookup.partnerData.State,
+			m.lookup.partnerData.County, m.lookup.partnerData.Zip, m.lookup.partnerData.Class,
+			m.lookup.partnerData.Email, m.lookup.partnerData.URL, m.lookup.partnerData.Lat,
+			m.lookup.partnerData.Lon, m.lookup.partnerData.DXCC, m.lookup.partnerData.CQZone, m.lookup.partnerData.ITUZone)
 	} else {
 		sigB.WriteString("pd:nil|")
 	}
-	sigB.WriteString(m.cachedLogStatsSig)
+	sigB.WriteString(m.rc.logStatsSig)
 	sigB.WriteByte('|')
-	if m.wlPrivateData != nil {
+	if m.lookup.wlPrivateData != nil {
 		fmt.Fprintf(&sigB, "wl:wk=%v,dxcc=%v,band=%v,bm=%v,cband=%v,cbm=%v,lotw=%v|",
-			m.wlPrivateData.Worked(), m.wlPrivateData.DXCCConfirmed(),
-			m.wlPrivateData.WorkedBand(), m.wlPrivateData.WorkedBandMode(),
-			m.wlPrivateData.ConfirmedBand(), m.wlPrivateData.ConfirmedBandMode(),
-			m.wlPrivateData.LoTW())
+			m.lookup.wlPrivateData.Worked(), m.lookup.wlPrivateData.DXCCConfirmed(),
+			m.lookup.wlPrivateData.WorkedBand(), m.lookup.wlPrivateData.WorkedBandMode(),
+			m.lookup.wlPrivateData.ConfirmedBand(), m.lookup.wlPrivateData.ConfirmedBandMode(),
+			m.lookup.wlPrivateData.LoTW())
 	} else {
 		sigB.WriteString("wl:nil|")
 	}
 	fmt.Fprintf(&sigB, "wldone=%v|wlband=%s|wlmode=%s|qrz=%v|wlcfg=%v|rmap=%v|gray=%v",
-		m.wlLookupDone, m.wlLastBand, m.wlLastMode,
+		m.lookup.wlLookupDone, m.lookup.wlLastBand, m.lookup.wlLastMode,
 		m.App.Config.QRZ.Enabled,
 		m.App.Logbook.Wavelog != nil && m.App.Logbook.Wavelog.Enabled,
 		m.App.Config.General.RenderMap,
 		m.App.Config.General.DrawGrayline)
 	// Inline photo state — invalidate cache when photo loads.
 	if d != nil && d.ImageURL != "" {
-		picContent := m.partnerPicViewer.View().Content
+		picContent := m.photo.partnerPicViewer.View().Content
 		hash := len(picContent)
 		if hash > 0 {
 			hash = int(picContent[0]) + len(picContent)
@@ -92,8 +92,8 @@ func (m *Model) viewPartner() string {
 	}
 
 	sig := sigB.String()
-	if m.partnerViewCacheSig == sig && m.partnerViewCache != "" {
-		return m.partnerViewCache
+	if m.rc.partnerViewSig == sig && m.rc.partnerView != "" {
+		return m.rc.partnerView
 	}
 
 	totalW := w - 2
@@ -111,9 +111,9 @@ func (m *Model) viewPartner() string {
 	// Inline partner photo — right-side column on wide screens (≥180 cols).
 	showPhoto := m.width >= 180 && m.App.Config.General.PictureAtQRZPane &&
 		d != nil && d.ImageURL != ""
-	if showPhoto && d.ImageURL != m.lastPartnerPicURL {
-		m.lastPartnerPicURL = d.ImageURL
-		m.partnerPicNeedLoad = true
+	if showPhoto && d.ImageURL != m.photo.partnerPicURL {
+		m.photo.partnerPicURL = d.ImageURL
+		m.photo.partnerPicNeedLoad = true
 	}
 
 	// Left column stays at the standard max-width cap. Photo fills remaining space.
@@ -202,7 +202,7 @@ func (m *Model) viewPartner() string {
 	var block string
 	if showPhoto {
 		leftH := lipgloss.Height(leftCol)
-		picRaw := m.partnerPicViewer.View().Content
+		picRaw := m.photo.partnerPicViewer.View().Content
 		// Show "Loading…" when no image content yet (first load or in-flight).
 		if picRaw == "" {
 			picRaw = DimStyle.Render("Loading\u2026")
@@ -223,13 +223,13 @@ func (m *Model) viewPartner() string {
 		picBox := drawBorderedBox(inner, photoW+1)
 		// Force photo box height to exactly leftH using Place.
 		picBox = lipgloss.Place(photoW+1, leftH, lipgloss.Top, lipgloss.Left, picBox)
-		m.partnerPicW = photoW - 3
-		m.partnerPicH = picContentH
-		if m.partnerPicW < 25 {
-			m.partnerPicW = 25
+		m.photo.partnerPicW = photoW - 3
+		m.photo.partnerPicH = picContentH
+		if m.photo.partnerPicW < 25 {
+			m.photo.partnerPicW = 25
 		}
-		if m.partnerPicH < 4 {
-			m.partnerPicH = 4
+		if m.photo.partnerPicH < 4 {
+			m.photo.partnerPicH = 4
 		}
 		// Trigger resize if terminal dimensions changed (handled in handlePartnerUpdate).
 		block = lipgloss.JoinHorizontal(lipgloss.Top, leftCol, picBox)
@@ -241,15 +241,15 @@ func (m *Model) viewPartner() string {
 		block = PartnerBlock.Width(w).Render(block)
 	}
 	result := fillBody(block, contentHeight(m.height))
-	m.partnerViewCacheSig = sig
-	m.partnerViewCache = result
+	m.rc.partnerViewSig = sig
+	m.rc.partnerView = result
 	return result
 }
 
 // --- Box helpers ---
 
 func (m *Model) qrzSuffix() string {
-	if m.partnerData != nil && m.App.Config.QRZ.Enabled {
+	if m.lookup.partnerData != nil && m.App.Config.QRZ.Enabled {
 		return " (QRZ.com)"
 	}
 	return ""
@@ -335,15 +335,15 @@ func (m *Model) renderLogbookRows(d *qrz.CallData, maxW int) string {
 	band := strings.TrimSpace(m.fields[fieldBand].Value())
 	mode := strings.TrimSpace(m.fields[fieldMode].Value())
 	sig := call + "|" + band + "|" + mode
-	if m.cachedLogStatsSig != sig && m.App.DB != nil {
+	if m.rc.logStatsSig != sig && m.App.DB != nil {
 		stats, err := store.GetLogbookStats(m.App.DB, call, band, mode)
 		if err == nil {
-			m.cachedLogStats = stats
-			m.cachedLogStatsSig = sig
+			m.rc.logStats = stats
+			m.rc.logStatsSig = sig
 		}
 	}
-	s := m.cachedLogStats
-	wl := m.wlPrivateData
+	s := m.rc.logStats
+	wl := m.lookup.wlPrivateData
 
 	newStyle := S.Success // green — yes, it IS new
 	oldStyle := DimStyle  // dim — no, already worked
@@ -439,14 +439,14 @@ func (m *Model) renderLogbookRows(d *qrz.CallData, maxW int) string {
 // LoTW: N = red (not a member), last on list.
 
 func (m *Model) renderWLInfo(maxW int) string {
-	d := m.wlPrivateData
+	d := m.lookup.wlPrivateData
 	wl := m.App.Logbook.Wavelog
 	if wl == nil || !wl.Enabled || wl.URL == "" || wl.APIKey == "" {
 		return DimStyle.Width(maxW).Align(lipgloss.Center).Render("Wavelog not configured")
 	}
 	if d == nil {
 		msg := "WL lookup pending\u2026"
-		if m.wlLookupDone {
+		if m.lookup.wlLookupDone {
 			msg = "No WL data"
 		}
 		return DimStyle.Width(maxW).Align(lipgloss.Center).Render(msg)
@@ -462,8 +462,8 @@ func (m *Model) renderWLInfo(maxW int) string {
 
 	var rows []row
 
-	hasBand := m.wlLastBand != ""
-	hasMode := m.wlLastMode != ""
+	hasBand := m.lookup.wlLastBand != ""
+	hasMode := m.lookup.wlLastMode != ""
 
 	// New call
 	rows = append(rows, row{"New call", flag(!d.Worked(), true)})
@@ -567,6 +567,6 @@ func (m *Model) getOrBuildMap(d *qrz.CallData, mapW, mapAvailH int) string {
 }
 
 func (m *Model) invalidatePartnerMapCache() {
-	m.partnerViewCache = ""
-	m.partnerViewCacheSig = ""
+	m.rc.partnerView = ""
+	m.rc.partnerViewSig = ""
 }

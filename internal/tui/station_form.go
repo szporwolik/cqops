@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/qso"
 )
 
 type StationForm struct {
@@ -253,6 +254,12 @@ func (f *StationForm) View() tea.View {
 	var b strings.Builder
 	for _, field := range fields {
 		b.WriteString(f.renderFieldLine(field.label, field.ti, availW))
+		if hint := f.ValidateField(field.label); hint != "" {
+			b.WriteString(padOrTrunc(
+				S.Warning.Render("  \u26a0 "+hint),
+				availW))
+			b.WriteString("\n")
+		}
 	}
 
 	// Wavelog checkbox
@@ -379,8 +386,31 @@ func (f *StationForm) Validate() error {
 	if cs == "" {
 		return fmt.Errorf("callsign is required")
 	}
+	if !qso.IsValidCall(cs) {
+		return fmt.Errorf("invalid callsign")
+	}
 	if gr == "" {
 		return fmt.Errorf("grid locator is required")
 	}
+	if !qso.IsValidLocator(gr) {
+		return fmt.Errorf("invalid locator")
+	}
 	return nil
+}
+
+// ValidateField returns an error hint for the given render field label, or ""
+// if the field value is valid. Used for inline UI feedback.
+func (f *StationForm) ValidateField(label string) string {
+	cs, _, gr, _, _, _, _, _, _, _ := f.Values()
+	switch label {
+	case "Callsign:":
+		if cs != "" && !qso.IsValidCall(cs) {
+			return "Invalid callsign"
+		}
+	case "Grid locator:":
+		if gr != "" && !qso.IsValidLocator(gr) {
+			return "Invalid locator"
+		}
+	}
+	return ""
 }

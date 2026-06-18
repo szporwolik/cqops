@@ -831,3 +831,314 @@ func TestEnsureConfig_CreatesLogbooksMapIfNil(t *testing.T) {
 		t.Error("EnsureConfig should return error: empty logbooks map fails Validate")
 	}
 }
+
+// =============================================================================
+// Pass 11 — Station profile, config validation edge cases, permissions
+// =============================================================================
+
+func TestValidate_ValidCallsign(t *testing.T) {
+	cfg := DefaultConfig()
+	lb := cfg.Logbooks[cfg.State.ActiveLogbook]
+	lb.Station.Callsign = "SP9MOA"
+	cfg.Logbooks[cfg.State.ActiveLogbook] = lb
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("valid callsign should pass: %v", err)
+	}
+}
+
+func TestValidate_ValidPortableCallsign(t *testing.T) {
+	for _, call := range []string{"SP9MOA/P", "SP9MOA/M", "9A/SP9MOA", "DL/SP9MOA/P"} {
+		cfg := DefaultConfig()
+		lb := cfg.Logbooks[cfg.State.ActiveLogbook]
+		lb.Station.Callsign = call
+		cfg.Logbooks[cfg.State.ActiveLogbook] = lb
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("portable callsign %q should pass: %v", call, err)
+		}
+	}
+}
+
+func TestValidate_InvalidCallsign(t *testing.T) {
+	for _, call := range []string{"!!!!", "12345", "XX", "A", "SP9 MOA"} {
+		cfg := DefaultConfig()
+		lb := cfg.Logbooks[cfg.State.ActiveLogbook]
+		lb.Station.Callsign = call
+		cfg.Logbooks[cfg.State.ActiveLogbook] = lb
+		if err := cfg.Validate(); err == nil {
+			t.Errorf("invalid callsign %q should fail validation", call)
+		}
+	}
+}
+
+func TestValidate_ValidLocator(t *testing.T) {
+	for _, grid := range []string{"JO90", "JO90aa", "FN31pr", "KO00ca"} {
+		cfg := DefaultConfig()
+		lb := cfg.Logbooks[cfg.State.ActiveLogbook]
+		lb.Station.Callsign = "SP9MOA"
+		lb.Station.Grid = grid
+		cfg.Logbooks[cfg.State.ActiveLogbook] = lb
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("valid locator %q should pass: %v", grid, err)
+		}
+	}
+}
+
+func TestValidate_InvalidLocator(t *testing.T) {
+	for _, grid := range []string{"XXXX", "INVALID", "JO90xxx", "12", "A"} {
+		cfg := DefaultConfig()
+		lb := cfg.Logbooks[cfg.State.ActiveLogbook]
+		lb.Station.Callsign = "SP9MOA"
+		lb.Station.Grid = grid
+		cfg.Logbooks[cfg.State.ActiveLogbook] = lb
+		if err := cfg.Validate(); err == nil {
+			t.Errorf("invalid locator %q should fail validation", grid)
+		}
+	}
+}
+
+func TestValidate_EmptyLocatorIsOK(t *testing.T) {
+	cfg := DefaultConfig()
+	lb := cfg.Logbooks[cfg.State.ActiveLogbook]
+	lb.Station.Callsign = "SP9MOA"
+	lb.Station.Grid = ""
+	cfg.Logbooks[cfg.State.ActiveLogbook] = lb
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("empty locator should pass (optional): %v", err)
+	}
+}
+
+func TestValidate_QRZRequiresUserAndPass(t *testing.T) {
+	cfg := DefaultConfig()
+	lb := cfg.Logbooks[cfg.State.ActiveLogbook]
+	lb.Station.Callsign = "SP9MOA"
+	cfg.Logbooks[cfg.State.ActiveLogbook] = lb
+
+	cfg.QRZ.Enabled = true
+	cfg.QRZ.User = ""
+	cfg.QRZ.Pass = "secret"
+	if err := cfg.Validate(); err == nil {
+		t.Error("QRZ enabled with empty user should fail")
+	}
+
+	cfg.QRZ.User = "user"
+	cfg.QRZ.Pass = ""
+	if err := cfg.Validate(); err == nil {
+		t.Error("QRZ enabled with empty pass should fail")
+	}
+
+	cfg.QRZ.User = "user"
+	cfg.QRZ.Pass = "secret"
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("QRZ enabled with user+pass should pass: %v", err)
+	}
+}
+
+func TestValidate_WavelogRequiresHTTPS(t *testing.T) {
+	cfg := DefaultConfig()
+	lb := cfg.Logbooks[cfg.State.ActiveLogbook]
+	lb.Station.Callsign = "SP9MOA"
+	lb.Wavelog = &WavelogConfig{
+		Enabled:          true,
+		URL:              "http://log.example.com",
+		APIKey:           "test-key",
+		StationProfileID: "1",
+	}
+	cfg.Logbooks[cfg.State.ActiveLogbook] = lb
+	if err := cfg.Validate(); err == nil {
+		t.Error("Wavelog URL without HTTPS should fail")
+	}
+
+	lb.Wavelog.URL = "https://log.example.com"
+	cfg.Logbooks[cfg.State.ActiveLogbook] = lb
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Wavelog URL with HTTPS should pass: %v", err)
+	}
+}
+
+func TestValidate_WavelogRequiresAPIKey(t *testing.T) {
+	cfg := DefaultConfig()
+	lb := cfg.Logbooks[cfg.State.ActiveLogbook]
+	lb.Station.Callsign = "SP9MOA"
+	lb.Wavelog = &WavelogConfig{
+		Enabled:          true,
+		URL:              "https://log.example.com",
+		APIKey:           "",
+		StationProfileID: "1",
+	}
+	cfg.Logbooks[cfg.State.ActiveLogbook] = lb
+	if err := cfg.Validate(); err == nil {
+		t.Error("Wavelog enabled with empty API key should fail")
+	}
+}
+
+func TestValidate_WSJTXPortRange(t *testing.T) {
+	cfg := DefaultConfig()
+	lb := cfg.Logbooks[cfg.State.ActiveLogbook]
+	lb.Station.Callsign = "SP9MOA"
+	cfg.Logbooks[cfg.State.ActiveLogbook] = lb
+
+	cfg.WSJTX.Enabled = true
+	cfg.WSJTX.UDPHost = "127.0.0.1"
+
+	cfg.WSJTX.UDPPort = 0
+	if err := cfg.Validate(); err == nil {
+		t.Error("WSJT-X port 0 should fail")
+	}
+
+	cfg.WSJTX.UDPPort = 65536
+	if err := cfg.Validate(); err == nil {
+		t.Error("WSJT-X port 65536 should fail")
+	}
+
+	cfg.WSJTX.UDPPort = 2233
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("WSJT-X port 2233 should pass: %v", err)
+	}
+}
+
+func TestValidate_DistanceUnitEnum(t *testing.T) {
+	cfg := DefaultConfig()
+	lb := cfg.Logbooks[cfg.State.ActiveLogbook]
+	lb.Station.Callsign = "SP9MOA"
+	cfg.Logbooks[cfg.State.ActiveLogbook] = lb
+
+	for _, unit := range []string{"km", "mi", ""} {
+		cfg.General.DistanceUnit = unit
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("distance_unit %q should pass: %v", unit, err)
+		}
+	}
+
+	cfg.General.DistanceUnit = "feet"
+	if err := cfg.Validate(); err == nil {
+		t.Error("distance_unit 'feet' should fail")
+	}
+}
+
+// =============================================================================
+// Config file permissions and save/load roundtrip
+// =============================================================================
+
+func TestSave_PermissionsAre0600(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	cfg := DefaultConfig()
+	lb := cfg.Logbooks[cfg.State.ActiveLogbook]
+	lb.Station.Callsign = "SP9MOA"
+	cfg.Logbooks[cfg.State.ActiveLogbook] = lb
+
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("Stat: %v", err)
+	}
+	perm := info.Mode().Perm()
+	if perm != 0600 {
+		t.Errorf("config file permissions = %04o, want 0600", perm)
+	}
+}
+
+func TestSaveAndLoad_StationFieldsRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	cfg := DefaultConfig()
+	cfg.General.Timezone = "Europe/Warsaw"
+	cfg.General.DistanceUnit = "mi"
+	lb := cfg.Logbooks[cfg.State.ActiveLogbook]
+	lb.Station.Callsign = "SP9MOA"
+	lb.Station.Operator = "Szymon"
+	lb.Station.Grid = "KO00ca"
+	lb.Station.SOTARef = "SP/TA-001"
+	lb.Station.POTARef = "SP-0001"
+	lb.Station.WWFFRef = "SPFF-0001"
+	cfg.Logbooks[cfg.State.ActiveLogbook] = lb
+
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	lb2 := loaded.Logbooks[loaded.State.ActiveLogbook]
+	if lb2.Station.Callsign != "SP9MOA" {
+		t.Errorf("Callsign = %q", lb2.Station.Callsign)
+	}
+	if lb2.Station.Operator != "Szymon" {
+		t.Errorf("Operator = %q", lb2.Station.Operator)
+	}
+	if lb2.Station.Grid != "KO00ca" {
+		t.Errorf("Grid = %q", lb2.Station.Grid)
+	}
+	if lb2.Station.SOTARef != "SP/TA-001" {
+		t.Errorf("SOTARef = %q", lb2.Station.SOTARef)
+	}
+	if lb2.Station.POTARef != "SP-0001" {
+		t.Errorf("POTARef = %q", lb2.Station.POTARef)
+	}
+	if loaded.General.Timezone != "Europe/Warsaw" {
+		t.Errorf("Timezone = %q", loaded.General.Timezone)
+	}
+	if loaded.General.DistanceUnit != "mi" {
+		t.Errorf("DistanceUnit = %q", loaded.General.DistanceUnit)
+	}
+}
+
+func TestValidate_DXCPort(t *testing.T) {
+	cfg := DefaultConfig()
+	lb := cfg.Logbooks[cfg.State.ActiveLogbook]
+	lb.Station.Callsign = "SP9MOA"
+	cfg.Logbooks[cfg.State.ActiveLogbook] = lb
+
+	cfg.DXC.Enabled = true
+	cfg.DXC.Host = "dxspider.co.uk"
+
+	cfg.DXC.Port = "abc"
+	if err := cfg.Validate(); err == nil {
+		t.Error("DXC port 'abc' should fail")
+	}
+	cfg.DXC.Port = "0"
+	if err := cfg.Validate(); err == nil {
+		t.Error("DXC port 0 should fail")
+	}
+	cfg.DXC.Port = "7300"
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("DXC port 7300 should pass: %v", err)
+	}
+}
+
+func TestValidate_RigFlrigPort(t *testing.T) {
+	cfg := DefaultConfig()
+	lb := cfg.Logbooks[cfg.State.ActiveLogbook]
+	lb.Station.Callsign = "SP9MOA"
+	cfg.Logbooks[cfg.State.ActiveLogbook] = lb
+
+	cfg.Rigs["test-rig"] = RigPreset{
+		ID:           "test-rig",
+		Model:        "FT-891",
+		FlrigEnabled: true,
+		FlrigHost:    "localhost",
+		FlrigPort:    "abc",
+	}
+	if err := cfg.Validate(); err == nil {
+		t.Error("flrig port 'abc' should fail")
+	}
+
+	cfg.Rigs["test-rig"] = RigPreset{
+		ID:           "test-rig",
+		Model:        "FT-891",
+		FlrigEnabled: true,
+		FlrigHost:    "localhost",
+		FlrigPort:    "12345",
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("flrig port 12345 should pass: %v", err)
+	}
+}

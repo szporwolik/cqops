@@ -23,23 +23,23 @@ func (m *Model) renderSolarPanel(availW int) string {
 	// Fixed box width: 5 columns × 6 cells + 2 borders + 4 padding = 36.
 	const solarBoxW = 36
 
-	d := m.solarData
+	d := m.solar.data
 
 	// Loading / offline / failed placeholder — cached separately.
 	if d == nil {
-		if m.solarFailed {
+		if m.solar.failed {
 			return ""
 		}
 		placeholderSig := fmt.Sprintf("ld:%d|%v", availW, m.inetOnline)
-		if m.cachedSolarSig == placeholderSig && m.cachedSolarView != "" {
-			return m.cachedSolarView
+		if m.solar.cachedSig == placeholderSig && m.solar.cachedView != "" {
+			return m.solar.cachedView
 		}
 		var result string
 		if m.inetOnline {
 			result = m.renderSolarPlaceholder(solarBoxW, "Loading hamqsl.com\u2026")
 		}
-		m.cachedSolarSig = placeholderSig
-		m.cachedSolarView = result
+		m.solar.cachedSig = placeholderSig
+		m.solar.cachedView = result
 		return result
 	}
 
@@ -54,8 +54,8 @@ func (m *Model) renderSolarPanel(availW int) string {
 		fmt.Fprintf(&sigB, "%s:%s|", b+"_night", d.Bands[b+"_night"])
 	}
 	sig := sigB.String()
-	if m.cachedSolarSig == sig && m.cachedSolarView != "" {
-		return m.cachedSolarView
+	if m.solar.cachedSig == sig && m.solar.cachedView != "" {
+		return m.solar.cachedView
 	}
 
 	lbl := lipgloss.NewStyle().Foreground(P.TextMuted) // muted, no fixed width
@@ -202,8 +202,8 @@ func (m *Model) renderSolarPanel(availW int) string {
 		Align(lipgloss.Right, lipgloss.Top).
 		Render(content)
 
-	m.cachedSolarSig = sig
-	m.cachedSolarView = result
+	m.solar.cachedSig = sig
+	m.solar.cachedView = result
 	return result
 }
 

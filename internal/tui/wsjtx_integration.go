@@ -20,15 +20,15 @@ import (
 
 // applyWSJTXStatus applies a WSJT-X status update to the QSO form fields.
 func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode, report, txMessage string, transmitting bool) {
-	m.wsjtxOnline = true
-	prevTx := m.wsjtxTx
-	prevMsg := m.wsjtxTxMsg
-	m.wsjtxTxMsg = txMessage
-	m.wsjtxLastSeen = time.Now()
-	m.wsjtxTx = transmitting
+	m.wsjtx.online = true
+	prevTx := m.wsjtx.tx
+	prevMsg := m.wsjtx.txMsg
+	m.wsjtx.txMsg = txMessage
+	m.wsjtx.lastSeen = time.Now()
+	m.wsjtx.tx = transmitting
 	// Only invalidate the status bar cache when the visible TX state changes.
 	if prevTx != transmitting || prevMsg != txMessage {
-		m.cachedStatus = ""
+		m.rc.status = ""
 	}
 	if call != "" {
 		prevCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
@@ -39,26 +39,26 @@ func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode
 			m.fields[fieldName].SetValue("")
 			m.fields[fieldQTH].SetValue("")
 			m.fields[fieldGrid].SetValue("")
-			m.partnerData = nil
-			m.wlPrivateData = nil
-			m.wlLookupDone = false
-			m.cachedLogStatsSig = ""
+			m.lookup.partnerData = nil
+			m.lookup.wlPrivateData = nil
+			m.lookup.wlLookupDone = false
+			m.rc.logStatsSig = ""
 			m.invalidatePartnerMapCache()
 			applog.InfoDetail("WSJT-X: switching DX call", fmt.Sprintf("%s \u2192 %s", prevCall, newCall))
 			if m.App.Config.QRZ.Enabled && m.App.Config.QRZ.User != "" {
 				applog.Info("QRZ: looking up " + call + "\u2026")
-				m.qrzNeed = true
-				m.qrzCall = newCall
+				m.lookup.qrzNeed = true
+				m.lookup.qrzCall = newCall
 			}
 			if m.App.Logbook.Wavelog != nil && m.App.Logbook.Wavelog.Enabled {
-				m.wlNeed = true
-				m.wlCall = newCall
+				m.lookup.wlNeed = true
+				m.lookup.wlCall = newCall
 			}
 		}
 	}
 	if grid != "" {
 		m.fields[fieldGrid].SetValue(formatLocator(grid))
-		m.pathGrid = strings.ToUpper(formatLocator(grid))
+		m.rc.pathGrid = strings.ToUpper(formatLocator(grid))
 	}
 	if freqHz > 0 {
 		m.fields[fieldFreq].SetValue(fmt.Sprintf("%.6f", float64(freqHz)/1_000_000.0))
@@ -75,9 +75,9 @@ func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode
 		m.fields[fieldRSTRcvd].SetValue(report)
 	}
 	m.autoFillRST()
-	m.wsjtxStatus = mode
+	m.wsjtx.status = mode
 	if submode != "" {
-		m.wsjtxStatus = submode
+		m.wsjtx.status = submode
 	}
 }
 
