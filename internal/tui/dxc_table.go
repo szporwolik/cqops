@@ -155,7 +155,7 @@ func (m *Model) buildDXCTable() {
 	spots := m.dxcFilteredSpots()
 	m.dxc.spotCount = len(spots)
 
-	filtered := m.dxc.bandFilter != "" || m.dxc.modeFilter != ""
+	filtered := m.dxc.bandFilter != "" || m.dxc.modeFilter != "" || m.dxc.contFilter != ""
 	bandHighlight := S.Info
 
 	var rows []table.Row
@@ -171,6 +171,9 @@ func (m *Model) buildDXCTable() {
 				v = bandHighlight.Render(v)
 			}
 			if filtered && n == "Mode" && v != "\u2014" && m.dxc.modeFilter != "" {
+				v = bandHighlight.Render(v)
+			}
+			if filtered && n == "DX Cont" && v != "\u2014" && m.dxc.contFilter != "" {
 				v = bandHighlight.Render(v)
 			}
 			row = append(row, v)
@@ -250,12 +253,18 @@ func (m *Model) dxcView() string {
 	if m.dxc.bandFilter != "" {
 		bandVal = m.dxc.bandFilter
 	}
+	contVal := "all"
+	if m.dxc.contFilter != "" {
+		contVal = m.dxc.contFilter
+	}
 	modeVal := "all"
 	if m.dxc.modeFilter != "" {
 		modeVal = m.dxc.modeFilter
 	}
 	filterInfo := " " + DimStyle.Render("Filters:") + " " +
 		DimStyle.Render("Mode") + " " + ValueStyle.Render(modeVal) +
+		" " + DimStyle.Render("|") + " " +
+		DimStyle.Render("Cont") + " " + ValueStyle.Render(contVal) +
 		" " + DimStyle.Render("|") + " " +
 		DimStyle.Render("Band") + " " + ValueStyle.Render(bandVal) +
 		" " + DimStyle.Render("|") + " " +

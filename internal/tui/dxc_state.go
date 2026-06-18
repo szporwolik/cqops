@@ -27,6 +27,8 @@ type dxcState struct {
 	timeFilter   int             // minutes, 0 = all
 	timeIdx      int             // index into dxcTimeWindows
 	bandIdx      int             // index into dxcBandChoices
+	contFilter   string          // "" = all, 2-letter continent code = filter
+	contIdx      int             // index into continent choices
 	modeFilter   string          // "" = all, CW/DIGI/PHONE = filter
 	modeIdx      int             // index into mode choices
 	selectedCall string          // callsign of the currently highlighted spot

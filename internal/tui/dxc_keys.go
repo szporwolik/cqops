@@ -58,6 +58,16 @@ func (m *Model) handleDXCUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			m.dxc.tableReady = false
 			return m, cmd
 
+		case `\`:
+			// Cycle continent filter forward.
+			choices := m.dxcContChoices()
+			if len(choices) > 0 {
+				m.dxc.contIdx = (m.dxc.contIdx + 1) % len(choices)
+				m.dxc.contFilter = choices[m.dxc.contIdx]
+			}
+			m.dxc.tableReady = false
+			return m, cmd
+
 		case "enter":
 			// Fill QSO form with highlighted spot and jump to form.
 			m.dxcFillFromSelected()
@@ -103,6 +113,8 @@ func (m *Model) handleDXCUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			m.dxc.timeIdx = 0
 			m.dxc.bandFilter = ""
 			m.dxc.bandIdx = 0
+			m.dxc.contFilter = ""
+			m.dxc.contIdx = 0
 			m.dxc.modeFilter = ""
 			m.dxc.modeIdx = 0
 			m.dxc.tableReady = false

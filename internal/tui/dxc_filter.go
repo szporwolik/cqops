@@ -43,6 +43,17 @@ func (m *Model) dxcFilteredSpots() []store.DXCSpot {
 		spots = filtered
 	}
 
+	// Continent filter — filters by DX spot continent (DXCont).
+	if m.dxc.contFilter != "" {
+		var filtered []store.DXCSpot
+		for _, s := range spots {
+			if s.DXCont == m.dxc.contFilter {
+				filtered = append(filtered, s)
+			}
+		}
+		spots = filtered
+	}
+
 	// Mode filter — uses pre-computed mode_cat column.
 	if m.dxc.modeFilter != "" {
 		var filtered []store.DXCSpot
@@ -117,6 +128,34 @@ func (m *Model) dxcBandChoices() []string {
 // dxcAvailableModes returns the mode filter categories: CW, DIGI, PHONE.
 func (m *Model) dxcAvailableModes() []string {
 	return []string{"CW", "DIGI", "PHONE"}
+}
+
+// dxcAvailableContinents returns unique continent codes from spots, sorted.
+func (m *Model) dxcAvailableContinents() []string {
+	spots, err := store.QueryDXCSpots(m.App.DB)
+	if err != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	for _, s := range spots {
+		if s.DXCont != "" {
+			seen[s.DXCont] = true
+		}
+	}
+	var conts []string
+	for c := range seen {
+		conts = append(conts, c)
+	}
+	sort.Strings(conts)
+	return conts
+}
+
+// dxcContChoices returns continent filter choices: "" (all) then sorted codes.
+func (m *Model) dxcContChoices() []string {
+	conts := m.dxcAvailableContinents()
+	choices := []string{""}
+	choices = append(choices, conts...)
+	return choices
 }
 
 // spotModeCategory maps an individual spot mode to a filter category.
