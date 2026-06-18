@@ -620,6 +620,19 @@ func (m *Model) dxcTuneCmd() tea.Cmd {
 				)
 				return dxcTuneResultMsg{call: call, freqMHz: freqMHz, err: fmt.Errorf("mode: %w", err)}
 			}
+			// Verify mode was applied.
+			time.Sleep(200 * time.Millisecond)
+			status2, err2 := client.Status(ctx)
+			if err2 == nil && status2.Connected && status2.RawMode != "" {
+				if !strings.EqualFold(status2.RawMode, flrigModeName) &&
+					!strings.HasPrefix(strings.ToUpper(status2.RawMode), strings.ToUpper(flrigModeName)) {
+					applog.Warn("DXC: tune mode mismatch",
+						"call", call,
+						"sent", flrigModeName,
+						"rig_reports", status2.RawMode,
+					)
+				}
+			}
 		}
 		applog.Info("DXC: rig tuned OK",
 			"call", call,
