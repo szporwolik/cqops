@@ -11,6 +11,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/applog"
+	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 )
 
@@ -80,11 +81,11 @@ func (m *Model) dxcFilteredSpots() []store.DXCSpot {
 		spots = filtered
 	}
 
-	// Mode filter.
+	// Mode filter — groups individual modes into CW/DIGI/PHONE categories.
 	if m.dxcModeFilter != "" {
 		var filtered []store.DXCSpot
 		for _, s := range spots {
-			if s.Mode == m.dxcModeFilter {
+			if spotModeCategory(s.Mode) == m.dxcModeFilter {
 				filtered = append(filtered, s)
 			}
 		}
@@ -102,8 +103,7 @@ func (m *Model) dxcFilteredSpots() []store.DXCSpot {
 	return spots
 }
 
-// dxcAvailableBands returns a sorted list of unique bands present in the spots,
-// plus "other" if any spots lack a band classification.
+// dxcAvailableBands returns bands sorted by frequency (wavelength), plus "other".
 func (m *Model) dxcAvailableBands() []string {
 	spots, err := store.QueryDXCSpots(m.App.DB)
 	if err != nil {
@@ -122,31 +122,34 @@ func (m *Model) dxcAvailableBands() []string {
 	for b := range seen {
 		bands = append(bands, b)
 	}
-	sort.Strings(bands)
+	// Sort by frequency (lowest freq / longest wavelength first).
+	sort.Slice(bands, func(i, j int) bool {
+		return qso.BandIndex(bands[i]) < qso.BandIndex(bands[j])
+	})
 	if hasOther {
 		bands = append(bands, "other")
 	}
 	return bands
 }
 
-// dxcAvailableModes returns a sorted list of unique modes present in the spots.
+// spotModeCategory maps an individual spot mode to a filter category.
+// Categories: CW, DIGI (digital), PHONE (voice).
+func spotModeCategory(mode string) string {
+	switch strings.ToUpper(mode) {
+	case "CW", "CW-L", "CW-U", "CWL", "CWU", "CW-R":
+		return "CW"
+	case "FT8", "FT4", "RTTY", "PSK", "JT65", "JT9", "MSK144", "FSK", "DATA", "DATA-U", "DATA-L", "DATA-FM":
+		return "DIGI"
+	case "USB", "LSB", "AM", "FM":
+		return "PHONE"
+	default:
+		return ""
+	}
+}
+
+// dxcAvailableModes returns the mode filter categories: CW, DIGI, PHONE.
 func (m *Model) dxcAvailableModes() []string {
-	spots, err := store.QueryDXCSpots(m.App.DB)
-	if err != nil {
-		return nil
-	}
-	seen := map[string]bool{}
-	for _, s := range spots {
-		if s.Mode != "" {
-			seen[s.Mode] = true
-		}
-	}
-	var modes []string
-	for mo := range seen {
-		modes = append(modes, mo)
-	}
-	sort.Strings(modes)
-	return modes
+	return []string{"CW", "DIGI", "PHONE"}
 }
 
 // buildDXCTable constructs the bubbles/table for DXC spots.
@@ -314,11 +317,11 @@ func (m *Model) dxcView() string {
 		modeVal = m.dxcModeFilter
 	}
 	filterInfo := " " + DimStyle.Render("Filters:") + " " +
-		DimStyle.Render("Time") + " " + ValueStyle.Render(timeVal) +
+		DimStyle.Render("Mode") + " " + ValueStyle.Render(modeVal) +
 		" " + DimStyle.Render("|") + " " +
 		DimStyle.Render("Band") + " " + ValueStyle.Render(bandVal) +
 		" " + DimStyle.Render("|") + " " +
-		DimStyle.Render("Mode") + " " + ValueStyle.Render(modeVal) +
+		DimStyle.Render("Time") + " " + ValueStyle.Render(timeVal) +
 		" " + DimStyle.Render("|") + " " +
 		DimStyle.Render("Spots") + " " + ValueStyle.Render(fmt.Sprintf("%d", m.dxcSpotCount))
 	spacer := lipgloss.NewStyle().Width(bodyW).Render(filterInfo)
