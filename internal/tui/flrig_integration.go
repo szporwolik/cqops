@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -17,6 +16,7 @@ import (
 // =============================================================================
 
 // refreshFlrigClient reinitializes the flrig HTTP client from current config.
+// Clears cached mode table so it will be re-fetched on first successful status.
 func (m *Model) refreshFlrigClient() {
 	if m.App == nil || m.App.Logbook == nil {
 		return
@@ -48,6 +48,9 @@ func (m *Model) refreshFlrigClient() {
 		}
 		m.rig.client = nil
 	}
+	// Clear cached modes — a new client means the rig (or flrig instance)
+	// may have changed its mode table.
+	m.rig.modes = nil
 }
 
 type flrigResultMsg struct {
@@ -110,13 +113,15 @@ func (m *Model) applyFlrigResult(r flrigResultMsg) {
 			m.rc.status = ""
 		}
 		m.rig.connected = false
+		// Clear modes on disconnect so they are re-fetched when flrig comes back.
+		m.rig.modes = nil
 		return
 	}
 	if !m.rig.connected {
 		m.rc.status = ""
 	}
 	m.rig.connected = true
-	// Fetch mode table on first successful connection.
+	// Fetch mode table whenever we (re)connect — rig may have changed.
 	if len(m.rig.modes) == 0 {
 		go m.fetchFlrigModes()
 	}
@@ -139,68 +144,21 @@ func (m *Model) applyFlrigResult(r flrigResultMsg) {
 }
 
 // fetchFlrigModes queries flrig for the available mode table and stores it.
+// Retries once on transient failure, then gives up until the next reconnect.
 func (m *Model) fetchFlrigModes() {
 	if m.rig.client == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	modes, err := m.rig.client.GetModes(ctx)
-	if err != nil {
-		applog.Warn("flrig: get_modes failed", "error", err)
-		return
+	for attempt := 0; attempt < 2; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		modes, err := m.rig.client.GetModes(ctx)
+		cancel()
+		if err == nil {
+			m.rig.modes = modes
+			applog.Info("flrig: modes fetched", "count", len(modes), "modes", modes)
+			return
+		}
+		applog.Warn("flrig: get_modes failed", "attempt", attempt+1, "error", err)
+		time.Sleep(500 * time.Millisecond)
 	}
-	m.rig.modes = modes
-	applog.Info("flrig: modes fetched", "count", len(modes), "modes", modes)
-}
-
-// modeIndex returns the index of the desired mode in flrig's mode table.
-// For CW, prefers CW-L/CWL (lower sideband, standard for HF) over CW-U/CWU.
-func (r *rigState) modeIndex(want string) int {
-	want = strings.ToUpper(want)
-	flrigModes := r.modes
-
-	// For CW: prefer lower-sideband CW, which is the HF standard.
-	if want == "CW" {
-		// 1. Exact match "CW-L" or "CWL" (lower sideband).
-		for i, m := range flrigModes {
-			u := strings.ToUpper(m)
-			if u == "CW-L" || u == "CWL" {
-				return i
-			}
-		}
-		// 2. Exact match "CW".
-		for i, m := range flrigModes {
-			if strings.EqualFold(m, "CW") {
-				return i
-			}
-		}
-		// 3. Prefix "CW-" (matches "CW-L", "CW-U").
-		for i, m := range flrigModes {
-			if strings.HasPrefix(strings.ToUpper(m), "CW-") {
-				return i
-			}
-		}
-		// 4. Starts with "CW" and length 3 (matches "CWL", "CWU").
-		for i, m := range flrigModes {
-			u := strings.ToUpper(m)
-			if strings.HasPrefix(u, "CW") && len(u) == 3 {
-				return i
-			}
-		}
-		return -1
-	}
-
-	// Default: exact match first, then prefix match.
-	for i, m := range flrigModes {
-		if strings.EqualFold(m, want) {
-			return i
-		}
-	}
-	for i, m := range flrigModes {
-		if strings.HasPrefix(strings.ToUpper(m), want) {
-			return i
-		}
-	}
-	return -1
 }

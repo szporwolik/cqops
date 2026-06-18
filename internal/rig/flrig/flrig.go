@@ -125,24 +125,99 @@ func (f *Client) SetFrequency(ctx context.Context, freqHz int64) error {
 // GetModes returns the list of available mode names from flrig.
 // The returned slice is ordered by flrig's mode table index.
 func (f *Client) GetModes(ctx context.Context) ([]string, error) {
-	v, err := f.xmlrpcCall(ctx, xmlrpcDouble, "rig.get_modes")
+	// Use the dedicated array parser — flrig returns rig.get_modes as an
+	// XML-RPC array of strings, which the single-value parseXMLRPCResponse
+	// cannot handle.
+	return f.getModesArray(ctx)
+}
+
+// getModesArray calls rig.get_modes and parses the XML-RPC array response
+// directly, bypassing the single-value parseXMLRPCResponse.
+func (f *Client) getModesArray(ctx context.Context) ([]string, error) {
+	call := xmlrpcMethodCall{MethodName: "rig.get_modes"}
+	var buf bytes.Buffer
+	buf.WriteString(xml.Header)
+	if err := xml.NewEncoder(&buf).Encode(call); err != nil {
+		return nil, fmt.Errorf("encode xmlrpc: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", f.url+"/RPC2", &buf)
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(v) == "" {
-		return nil, nil
+	req.Header.Set("Content-Type", "text/xml")
+	resp, err := f.client.Do(req)
+	if err != nil {
+		return nil, err
 	}
-	return strings.Split(strings.TrimSpace(v), "\n"), nil
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	return parseXMLRPCStringArray(data)
 }
 
-// SetMode sets the rig operating mode by index into flrig's mode table.
-// Use GetModes to obtain the mode table first.
-func (f *Client) SetMode(ctx context.Context, modeIdx int) error {
-	_, err := f.xmlrpcCall(ctx, xmlrpcI4, "rig.set_mode", fmt.Sprintf("%d", modeIdx))
-	if err != nil {
-		return err
+// parseXMLRPCStringArray extracts a flat list of strings from an XML-RPC
+// array response. Handles both <array><data><value>X</value>... (flrig's
+// actual format) and <value><string>X</string>...</value> patterns.
+func parseXMLRPCStringArray(data []byte) ([]string, error) {
+	raw := strings.TrimSpace(string(data))
+
+	// ── Single newline-delimited string (older flrig versions) ──
+	if idx := strings.Index(raw, "<string>"); idx >= 0 {
+		content := raw[idx+8:]
+		if endIdx := strings.Index(content, "</string>"); endIdx >= 0 {
+			val := strings.TrimSpace(content[:endIdx])
+			if val != "" && strings.Contains(val, "\n") {
+				return strings.Split(val, "\n"), nil
+			}
+		}
 	}
-	return nil
+
+	// ── XML-RPC array of bare <value> elements (flrig's actual format) ──
+	dec := xml.NewDecoder(bytes.NewReader(data))
+	inValue := false
+	var result []string
+	var cur strings.Builder
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			break
+		}
+		switch t := tok.(type) {
+		case xml.StartElement:
+			switch t.Name.Local {
+			case "value", "string":
+				inValue = true
+				cur.Reset()
+			}
+		case xml.EndElement:
+			switch t.Name.Local {
+			case "value", "string":
+				inValue = false
+				s := strings.TrimSpace(cur.String())
+				if s != "" {
+					result = append(result, s)
+				}
+			}
+		case xml.CharData:
+			if inValue {
+				cur.Write(t)
+			}
+		}
+	}
+
+	if len(result) > 0 {
+		return result, nil
+	}
+	return nil, fmt.Errorf("no modes found in response")
+}
+
+// SetMode sets the rig operating mode by name (e.g. "LSB", "USB", "CW-L").
+// flrig's rig.set_mode expects the mode name string, not a numeric index.
+func (f *Client) SetMode(ctx context.Context, mode string) error {
+	_, err := f.xmlrpcCall(ctx, xmlrpcBare, "rig.set_mode", mode)
+	return err
 }
 
 func (f *Client) getMode(ctx context.Context) (string, error) {
@@ -181,9 +256,10 @@ type xmlrpcParam struct {
 }
 
 type xmlrpcValue struct {
-	Double string `xml:"double,omitempty"`
-	I4     string `xml:"i4,omitempty"`
-	Int    string `xml:"int,omitempty"`
+	CharData string `xml:",chardata"`
+	Double   string `xml:"double,omitempty"`
+	I4       string `xml:"i4,omitempty"`
+	Int      string `xml:"int,omitempty"`
 }
 
 // xmlrpcValueType selects the XML-RPC value element.
@@ -192,6 +268,7 @@ type xmlrpcValueType int
 const (
 	xmlrpcDouble xmlrpcValueType = iota
 	xmlrpcI4
+	xmlrpcBare // bare chardata, no type tag — flrig expects this for set_mode
 )
 
 // xmlrpcCall builds a properly marshaled XML-RPC request and returns the
@@ -206,6 +283,8 @@ func (f *Client) xmlrpcCall(ctx context.Context, vt xmlrpcValueType, method stri
 			switch vt {
 			case xmlrpcI4:
 				v.I4 = p
+			case xmlrpcBare:
+				v.CharData = p
 			default:
 				v.Double = p
 			}
@@ -279,6 +358,10 @@ func parseXMLRPCResponse(data []byte) (string, error) {
 
 	if v.CharData != "" {
 		return strings.TrimSpace(v.CharData), nil
+	}
+
+	if v.String != "" {
+		return strings.TrimSpace(v.String), nil
 	}
 
 	if v.Double != 0 || strings.Contains(string(data), "<double>") {

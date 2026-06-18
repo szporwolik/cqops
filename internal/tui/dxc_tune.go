@@ -33,8 +33,8 @@ func (m *Model) dxcTuneCmd() tea.Cmd {
 	freqHz := int64(spot.Frequency * 1000)
 	freqMHz := float64(freqHz) / 1_000_000
 	call := spot.DXCall
-	flrigModeIdx := m.rig.modeIndex(spotModeToFlrigMode(spot.Mode))
-	flrigModeName := spot.Mode
+	wantMode := spotModeToFlrigMode(spot.Mode)
+	spotModeName := spot.Mode
 	client := m.rig.client
 
 	return func() tea.Msg {
@@ -78,16 +78,32 @@ func (m *Model) dxcTuneCmd() tea.Cmd {
 			}
 		}
 
-		if flrigModeIdx >= 0 {
+		// Fetch modes fresh (not from the stale rigState cache) and find the
+		// best match index — same pattern as WaveLogGate's SetFreqMode.
+		modes, modeErr := client.GetModes(ctx)
+		if modeErr != nil {
+			applog.Warn("DXC: tune get_modes failed", "error", modeErr)
+		} else {
+			// Update the cached modes so future calls benefit.
+			m.rig.modes = modes
+		}
+		flrigModeName := findFlrigModeName(wantMode, modes)
+		applog.Debug("DXC: tune mode lookup",
+			"want", wantMode,
+			"found", flrigModeName,
+			"modes_count", len(modes),
+		)
+
+		if flrigModeName != "" {
 			if ctx.Err() != nil {
 				return dxcTuneResultMsg{call: call, freqMHz: freqMHz, err: fmt.Errorf("cancelled")}
 			}
-			if err := client.SetMode(ctx, flrigModeIdx); err != nil {
+			if err := client.SetMode(ctx, flrigModeName); err != nil {
 				if ctx.Err() != nil {
 					return dxcTuneResultMsg{call: call, freqMHz: freqMHz, err: fmt.Errorf("cancelled")}
 				}
 				applog.Warn("DXC: tune rig mode failed",
-					"call", call, "mode", flrigModeName, "idx", flrigModeIdx, "error", err,
+					"call", call, "mode", flrigModeName, "error", err,
 				)
 				return dxcTuneResultMsg{call: call, freqMHz: freqMHz, err: fmt.Errorf("mode: %w", err)}
 			}
@@ -110,9 +126,90 @@ func (m *Model) dxcTuneCmd() tea.Cmd {
 		return dxcTuneResultMsg{
 			call:    call,
 			freqMHz: freqMHz,
-			mode:    flrigModeName,
+			mode:    spotModeName,
 			verify:  verifyMsg,
 		}
+	}
+}
+
+// findFlrigModeName returns the best matching flrig mode name for the given
+// canonical mode. Uses fallback chains for CW, DATA, and RTTY to handle the
+// wide variety of flrig mode names across different rig models.
+// Returns "" if no match is found.
+func findFlrigModeName(want string, modes []string) string {
+	if len(modes) == 0 {
+		return ""
+	}
+	upper := strings.ToUpper(want)
+
+	// Try each candidate in priority order — first match wins.
+	for _, c := range flrigModeCandidates(upper) {
+		for _, m := range modes {
+			if strings.EqualFold(m, c) {
+				return m
+			}
+		}
+	}
+
+	// Prefix match as last resort.
+	for _, c := range flrigModeCandidates(upper) {
+		for _, m := range modes {
+			if strings.HasPrefix(strings.ToUpper(m), c) {
+				return m
+			}
+		}
+	}
+
+	return ""
+}
+
+// flrigModeCandidates returns an ordered list of flrig mode names to try for
+// a given canonical mode. The first match in the list wins. This handles the
+// wide variety of mode names across Icom, Yaesu, Kenwood, and other rigs.
+func flrigModeCandidates(want string) []string {
+	switch want {
+	// ── Data / digital modes ──
+	case "DATA-U":
+		return []string{"DATA-U", "USB-D", "PKTUSB", "DIGU", "D-USB", "DATA"}
+	case "DATA-L":
+		return []string{"DATA-L", "LSB-D", "PKTLSB", "DIGL", "D-LSB"}
+	case "DATA-FM":
+		return []string{"DATA-FM", "PKTFM", "DIGFM"}
+
+	// ── CW modes ──
+	case "CW":
+		return []string{"CW-L", "CWL", "CW", "CW-U", "CWU", "CWR", "CW-R"}
+	case "CW-L":
+		return []string{"CW-L", "CWL", "CW"}
+	case "CW-U":
+		return []string{"CW-U", "CWU", "CWR", "CW-R", "CW"}
+
+	// ── RTTY modes ──
+	case "RTTY":
+		return []string{"RTTY", "RTTY-R", "RTTYR", "RTTY-U", "RTTY-L"}
+	case "RTTY-R":
+		return []string{"RTTY-R", "RTTYR", "RTTY"}
+
+	// ── Phone modes ──
+	case "USB":
+		return []string{"USB"}
+	case "LSB":
+		return []string{"LSB"}
+	case "AM":
+		return []string{"AM", "AM-D"}
+	case "FM":
+		return []string{"FM", "FM-D", "WFM"}
+
+	// ── PKT modes ──
+	case "PKT-U":
+		return []string{"PKT-U", "PKTUSB", "DATA-U", "USB-D", "DIGU"}
+	case "PKT-L":
+		return []string{"PKT-L", "PKTLSB", "DATA-L", "LSB-D", "DIGL"}
+	case "PKT-FM":
+		return []string{"PKT-FM", "PKTFM", "DATA-FM"}
+
+	default:
+		return []string{want}
 	}
 }
 

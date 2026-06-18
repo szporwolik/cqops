@@ -400,9 +400,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				msg += " " + r.mode
 			}
 			if r.verify != "" {
-				msg += r.verify
+				m.toasts.Warn("Rig tuning failed")
+			} else {
+				m.toasts.Success(msg)
 			}
-			m.toasts.Success(msg)
 		}
 		return m, cmd
 	}
