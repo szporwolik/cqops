@@ -260,7 +260,19 @@ func (m *Model) Init() tea.Cmd {
 	} else {
 		applog.Debug("wsjt-x: disabled")
 	}
-	return tea.Batch(tickCmd(), checkInetCmd(), m.photo.viewer.Init())
+	return tea.Batch(tickCmd(), checkInetCmd(), m.photo.viewer.Init(), m.emitWindowIconCmd())
+}
+
+// emitWindowIconCmd emits OSC 0 which sets both the terminal window title and
+// the icon name. This is the only escape sequence that many terminals (xterm,
+// Windows Terminal, Konsole, GNOME Terminal, Kitty) use for the taskbar/dock
+// icon label. It's a one-shot — subsequent title updates via WindowTitle use
+// OSC 2 (title only) and won't overwrite the icon name.
+func (m *Model) emitWindowIconCmd() tea.Cmd {
+	return func() tea.Msg {
+		fmt.Fprintf(os.Stderr, "\x1b]0;%s\x07", m.windowTitle())
+		return nil
+	}
 }
 func tickCmd() tea.Cmd {
 	return tea.Tick(1000*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) })
