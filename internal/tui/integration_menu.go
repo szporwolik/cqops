@@ -28,6 +28,10 @@ type IntegrationMenu struct {
 	goBack bool
 	width  int
 	height int
+
+	// saveError is set when Ctrl+S is blocked by validation.
+	// The parent reads it to show a toast, then clears it.
+	SaveError string
 }
 
 const (
@@ -115,6 +119,21 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			im.goBack = true
 			return im, nil
 		case "ctrl+s", "\x13":
+			// Validate DXC fields when DXC is enabled.
+			if im.dxcEnabled {
+				if strings.TrimSpace(im.dxcHost.Value()) == "" {
+					im.SaveError = "DXC host (server) is required when DXC is enabled"
+					return im, nil
+				}
+				if strings.TrimSpace(im.dxcPort.Value()) == "" {
+					im.SaveError = "DXC port is required when DXC is enabled"
+					return im, nil
+				}
+				if strings.TrimSpace(im.dxcLogin.Value()) == "" {
+					im.SaveError = "DXC login (callsign) is required when DXC is enabled"
+					return im, nil
+				}
+			}
 			im.done = true
 			im.saved = true
 			return im, nil

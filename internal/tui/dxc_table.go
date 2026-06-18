@@ -386,8 +386,9 @@ func (m *Model) dxcFillFromSelected() {
 	m.wlLookupDone = false
 	m.invalidatePartnerMapCache()
 
-	// Fill frequency: only when neither rig nor WSJT-X is connected.
-	if !m.rigConnected && !m.wsjtxOnline {
+	// Fill frequency: when WSJT-X is offline, use DXC spot frequency.
+	// flrig being connected is fine — the spot frequency overrides the rig's.
+	if !m.wsjtxOnline {
 		freqMHz := spot.Frequency / 1000
 		m.fields[fieldFreq].SetValue(fmt.Sprintf("%.5f", freqMHz))
 		m.applyFreqDefaults()
@@ -405,24 +406,33 @@ func (m *Model) dxcFillFromSelected() {
 // dxcTuneRig sends the highlighted spot's frequency to flrig.
 // Only acts when flrig is connected and WSJT-X is offline/disabled.
 func (m *Model) dxcTuneRig() {
-	if m.rigConnected && !m.wsjtxOnline && m.flrigClient != nil {
-		cursor := m.dxcTable.Cursor()
-		spots := m.dxcFilteredSpots()
-		if cursor < 0 || cursor >= len(spots) {
-			return
-		}
-		freqHz := int64(spots[cursor].Frequency * 1000) // kHz → Hz
-		freqMHz := float64(freqHz) / 1_000_000
-		applog.Info("DXC: tuning rig to spot",
-			"call", spots[cursor].DXCall,
-			"freq", fmt.Sprintf("%.5f MHz", freqMHz),
+	if !m.rigConnected || m.wsjtxOnline || m.flrigClient == nil {
+		applog.Debug("DXC: tune skipped",
+			"rigConnected", m.rigConnected,
+			"wsjtxOnline", m.wsjtxOnline,
+			"hasClient", m.flrigClient != nil,
 		)
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-			defer cancel()
-			if err := m.flrigClient.SetFrequency(ctx, freqHz); err != nil {
-				applog.Warn("DXC: tune rig failed", "freq_hz", freqHz, "error", err)
-			}
-		}()
+		return
 	}
+	cursor := m.dxcTable.Cursor()
+	spots := m.dxcFilteredSpots()
+	if cursor < 0 || cursor >= len(spots) {
+		return
+	}
+	freqHz := int64(spots[cursor].Frequency * 1000) // kHz → Hz
+	freqMHz := float64(freqHz) / 1_000_000
+	applog.Info("DXC: tuning rig to spot",
+		"call", spots[cursor].DXCall,
+		"freq_mhz", fmt.Sprintf("%.5f", freqMHz),
+		"freq_hz", freqHz,
+	)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if err := m.flrigClient.SetFrequency(ctx, freqHz); err != nil {
+			applog.Warn("DXC: tune rig failed", "freq_hz", freqHz, "error", err)
+		} else {
+			applog.Info("DXC: rig tuned OK", "freq_hz", freqHz)
+		}
+	}()
 }

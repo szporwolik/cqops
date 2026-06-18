@@ -284,11 +284,8 @@ func (m *Model) fillDXCFreq(msg dxcSpotLookupMsg) {
 		applog.Debug("DXC: fillDXCFreq bail — freq <= 0")
 		return
 	}
-	// Only use DXC spot freq when rig and WSJT-X are both NOT connected.
-	if m.rigConnected {
-		applog.Debug("DXC: fillDXCFreq bail — rig connected")
-		return
-	}
+	// Only use DXC spot freq when WSJT-X is NOT connected.
+	// flrig being connected is fine — the spot frequency overrides the rig's.
 	if m.wsjtxOnline {
 		applog.Debug("DXC: fillDXCFreq bail — wsjtx online")
 		return
@@ -313,10 +310,7 @@ func (m *Model) handleDXCSpotsStored(msg dxcSpotsStoredMsg) {
 	if formCall == "" {
 		return
 	}
-	// Only override from live spots when neither rig nor WSJT-X is connected.
-	if m.rigConnected {
-		return
-	}
+	// Only override from live spots when WSJT-X is not connected.
 	if m.wsjtxOnline {
 		return
 	}

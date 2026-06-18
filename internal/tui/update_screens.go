@@ -128,6 +128,31 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 		}
 		if m.integrationMenu.saved {
 			dxcE, dxcHost, dxcPort, dxcLogin, wsjtxE, wsjtxH, wsjtxP := m.integrationMenu.Values()
+
+			// Validate: DXC enabled requires host, port, and login.
+			if dxcE {
+				missing := false
+				if strings.TrimSpace(dxcHost) == "" {
+					m.toasts.Error("DXC host (server) is required when DXC is enabled")
+					missing = true
+				}
+				if strings.TrimSpace(dxcPort) == "" {
+					m.toasts.Error("DXC port is required when DXC is enabled")
+					missing = true
+				}
+				if strings.TrimSpace(dxcLogin) == "" {
+					m.toasts.Error("DXC login (callsign) is required when DXC is enabled")
+					missing = true
+				}
+				if missing {
+					// Re-open the menu so the user can fix the fields.
+					m.integrationMenu.saved = false
+					m.integrationMenu.done = false
+					m.integrationMenu.goBack = false
+					return m, tea.Batch(cmd, integrationCmd)
+				}
+			}
+
 			m.App.Config.DXC.Enabled = dxcE
 			m.App.Config.DXC.Host = dxcHost
 			m.App.Config.DXC.Port = dxcPort
