@@ -130,6 +130,10 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) bool {
 				}
 			}
 		}
+		m.needRefresh = true
+		return true
+	case wsjtxEnrichDoneMsg:
+		m.needRefresh = true
 		return true
 	case qrzStatusMsg:
 		m.lookup.qrzOnline = r.online
@@ -205,10 +209,16 @@ func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
 		return tea.Batch(cmd, m.lookupCallCmd(call)), true
 	}
 	if m.lookup.wlNeed {
-		m.lookup.wlNeed = false
 		call := m.lookup.wlCall
 		if call != "" {
-			return tea.Batch(cmd, m.wlLookup(call)), true
+			if c := m.wlLookup(call); c != nil {
+				m.lookup.wlNeed = false
+				return tea.Batch(cmd, c), true
+			}
+			// wlLookup returned nil (rate-limited, offline, or disabled);
+			// leave wlNeed=true so the next tick retries the lookup.
+		} else {
+			m.lookup.wlNeed = false
 		}
 	}
 	if m.dxc.need {

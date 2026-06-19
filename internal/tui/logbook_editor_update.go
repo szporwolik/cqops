@@ -138,10 +138,12 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if msg.dlErr != "" {
 				le.wlDownloadErr = msg.dlErr
 				le.mode = edModeWLDownloadResult
+				le.needsReload = true
 			} else if le.wlDownloadErr != "" {
 				// Error was already captured from a previous dlErr message;
 				// keep it and transition to result screen.
 				le.mode = edModeWLDownloadResult
+				le.needsReload = true
 			} else {
 				le.wlDownloadCount = msg.dlCount
 				le.wlDownloadDupes = msg.dlDupes

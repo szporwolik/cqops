@@ -136,3 +136,8 @@ type wlUploadResultMsg struct {
 	isDup bool
 	err   error
 }
+
+// wsjtxEnrichDoneMsg signals that WSJT-X QRZ enrichment has completed
+// for an auto-logged QSO. The handler triggers a Recent QSOs refresh so
+// the name/QTH/country fields appear immediately.
+type wsjtxEnrichDoneMsg struct{}

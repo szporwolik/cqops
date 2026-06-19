@@ -547,7 +547,7 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 			m.ui.logbookEditor.wlSkipped = 0
 			m.ui.logbookEditor.wlSkipDetail = ""
 		}
-		if em.dlLastID != 0 {
+		if em.dlDone && !em.dlAborted && em.dlErr == "" {
 			m.ui.logbookEditor.wlLastFetchedID = em.dlLastID
 			if m.App.Logbook.Wavelog != nil {
 				m.App.Logbook.Wavelog.LastFetchedID = em.dlLastID

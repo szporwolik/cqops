@@ -235,7 +235,7 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 
 		// Step 3: upload the enriched QSO's ADIF to Wavelog.
 		if !wlenabled || !m.inetOnline {
-			return nil
+			return wsjtxEnrichDoneMsg{}
 		}
 		adifStr := qs.ToADIF()
 		ok, isDup, uploadErr := postQSO(wl.URL, wl.APIKey, wl.StationProfileID, adifStr, qsoID, call, m.App.DB)
