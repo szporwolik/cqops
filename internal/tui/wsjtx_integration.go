@@ -56,11 +56,23 @@ func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode
 		}
 	}
 	if grid != "" {
-		m.fields[fieldGrid].SetValue(formatLocator(grid))
-		m.rc.pathGrid = strings.ToUpper(formatLocator(grid))
+		formatted := formatLocator(grid)
+		current := strings.ToUpper(strings.TrimSpace(m.fields[fieldGrid].Value()))
+		// QRZ may have already filled a more precise grid (e.g. JN54ks vs
+		// WSJT-X's JN54). Only overwrite if the current grid is empty or
+		// if the WSJT-X grid is not a prefix of the current one (different
+		// location altogether).
+		if current == "" || !strings.HasPrefix(current, strings.ToUpper(formatted)) {
+			m.fields[fieldGrid].SetValue(formatted)
+			m.rc.pathGrid = strings.ToUpper(formatted)
+		}
 	}
 	if freqHz > 0 {
-		m.fields[fieldFreq].SetValue(fmt.Sprintf("%.6f", float64(freqHz)/1_000_000.0))
+		freqMHz := float64(freqHz) / 1_000_000.0
+		m.fields[fieldFreq].SetValue(fmt.Sprintf("%.6f", freqMHz))
+		if band := qso.DeriveBand(freqMHz); band != "" {
+			m.fields[fieldBand].SetValue(band)
+		}
 	}
 	if mode != "" {
 		mode, submode = qso.NormalizeMode(mode, submode)
@@ -151,37 +163,56 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 	if m.screen == screenQSO {
 		cmds = append(cmds, m.refreshQSOS())
 	}
-	cmds = append(cmds, m.maybeUploadRawADIFToWavelog(adif, id, qs.Call))
-	// Trigger async QRZ enrichment to fill Name, QTH, Country, Grid, IOTA.
-	if m.App.Config.QRZ.Enabled && m.App.Config.QRZ.User != "" {
-		cmds = append(cmds, m.wsjtxQRZEnrichCmd(id, qs.Call))
-	}
+	cmds = append(cmds, m.wsjtxEnrichAndUploadCmd(id, qs.Call))
 	return tea.Batch(cmds...), false
 }
 
-// wsjtxQRZEnrichCmd returns a command that performs an async QRZ lookup for a
-// WSJT-X auto-logged QSO and updates the database with enriched fields
-// (Name, QTH, Country, GridSquare, IOTA). Errors are logged but not shown
-// to the user — enrichment is best-effort.
-func (m *Model) wsjtxQRZEnrichCmd(qsoID int64, call string) tea.Cmd {
+// wsjtxEnrichAndUploadCmd returns a command that enriches a WSJT-X auto-logged
+// QSO via QRZ (if configured) and then uploads the enriched QSO to Wavelog.
+// This ensures the QSO on Wavelog contains QRZ-derived fields (Name, QTH,
+// Country, GridSquare) rather than the raw WSJT-X ADIF.
+// Returns nil when neither QRZ enrichment nor Wavelog upload is possible.
+func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 	if call == "" {
 		return nil
 	}
+	qrzenabled := m.App.Config.QRZ.Enabled && m.App.Config.QRZ.User != ""
+	wl := m.App.Logbook.Wavelog
+	wlenabled := wl != nil && wl.Enabled && wl.StationProfileID != ""
+	if !qrzenabled && !wlenabled {
+		return nil // nothing to do
+	}
 	return func() tea.Msg {
-		data, err := qrzLookupFunc(m.App.Config.QRZ.User, m.App.Config.QRZ.Pass, call)
+		// Step 1: enrich via QRZ (best-effort).
+		if qrzenabled {
+			data, err := qrzLookupFunc(m.App.Config.QRZ.User, m.App.Config.QRZ.Pass, call)
+			if err != nil {
+				applog.Warn("WSJT-X: QRZ enrichment failed", "call", call, "error", err)
+			} else {
+				store.UpdateQSOEnrichment(m.App.DB, qsoID, store.EnrichmentData{
+					Name:       data.Name,
+					QTH:        data.QTH,
+					Country:    data.Country,
+					GridSquare: data.Grid,
+				})
+				applog.Info("WSJT-X: QRZ enrichment applied", "call", call, "qso_id", qsoID)
+			}
+		}
+
+		// Step 2: load the enriched QSO from DB.
+		qs, err := store.GetQSOByID(m.App.DB, qsoID)
 		if err != nil {
-			applog.Warn("WSJT-X: QRZ enrichment failed", "call", call, "error", err)
+			applog.Error("WSJT-X: cannot load QSO for Wavelog upload", "qso_id", qsoID, "error", err)
 			return nil
 		}
-		// Update the QSO with enriched data (only fills empty fields).
-		store.UpdateQSOEnrichment(m.App.DB, qsoID, store.EnrichmentData{
-			Name:       data.Name,
-			QTH:        data.QTH,
-			Country:    data.Country,
-			GridSquare: data.Grid,
-		})
-		applog.Info("WSJT-X: QRZ enrichment applied", "call", call, "qso_id", qsoID)
-		return nil
+
+		// Step 3: upload the enriched QSO's ADIF to Wavelog.
+		if !wlenabled || !m.inetOnline {
+			return nil
+		}
+		adifStr := qs.ToADIF()
+		ok, isDup, uploadErr := postQSO(wl.URL, wl.APIKey, wl.StationProfileID, adifStr, qsoID, call, m.App.DB)
+		return wlUploadResultMsg{qID: qsoID, call: call, ok: ok, isDup: isDup, err: uploadErr}
 	}
 }
 
