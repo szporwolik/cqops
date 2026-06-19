@@ -134,8 +134,8 @@ var S = Styles{
 	FormFocusedXL: lipgloss.NewStyle().Width(36).Foreground(P.Cursor),
 
 	// Medium variants for General settings — wider than Wide, narrower than XL.
-	FormLabelGen:   lipgloss.NewStyle().Width(22).Foreground(P.TextMuted),
-	FormFocusedGen: lipgloss.NewStyle().Width(22).Foreground(P.Cursor),
+	FormLabelGen:   lipgloss.NewStyle().Width(30).Foreground(P.TextMuted),
+	FormFocusedGen: lipgloss.NewStyle().Width(30).Foreground(P.Cursor),
 
 	ToastInfo:    lipgloss.NewStyle().Foreground(P.Info),
 	ToastSuccess: lipgloss.NewStyle().Foreground(P.Success),
@@ -191,9 +191,9 @@ var (
 	// pathMutedStyle is used for the short-path info line when no path.
 	pathMutedStyle = lipgloss.NewStyle().Foreground(P.TextMuted)
 
-	// Border box style — simple border, no background fill.
+	// Border box style — rounded border, no background fill.
 	borderBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder()).
+			Border(lipgloss.RoundedBorder()).
 			BorderForeground(P.Border).
 			Padding(0, 1)
 

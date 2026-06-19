@@ -33,7 +33,7 @@ func centerAndBorderMap(mapBox string, contentW, boxW int) string {
 
 // menuBoxStyle is the bordered box used by config menus.
 var menuBoxStyle = lipgloss.NewStyle().
-	Border(lipgloss.NormalBorder()).
+	Border(lipgloss.RoundedBorder()).
 	BorderForeground(P.Border).
 	Padding(1, 2)
 

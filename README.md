@@ -22,6 +22,8 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 - **PSK Reporter** — real-time propagation data with band/mode/time filters and world map
 - **Solar conditions** — SFI, SSN, A/K indices, geomagnetic field from hamqsl.com with N0NBH threshold highlighting
 - **QRZ.com callbook** — one-key callsign lookup with auto-fill of name, QTH, grid, and country
+- **DXCC country/continent** — automatic country and grid locator from callsign prefix (CTY.DAT), continent detection for DX spots
+- **Super Check Partial** — live callsign auto-complete while typing with prefix highlighting, offline contest database
 - **Wavelog cloud sync** — batch upload, duplicate detection, private lookup, and station normalization
 - **Full ADIF import/export** — compatible with any ADIF-based logging workflow
 - **Terminal UI (TUI)** — keyboard-driven, works over SSH, no GUI required
@@ -129,9 +131,10 @@ cqops --help           # Show all commands
 - [gen2brain/beeep](https://github.com/gen2brain/beeep) — Desktop notifications
 
 **Data:**
-- [country-files.com](https://www.country-files.com/) — CTY.DAT DXCC prefix database (public domain factual data, loaded and cached locally)
-- [hamqsl.com](https://www.hamqsl.com/) — Solar conditions data (SFI, SSN, A/K indices) via N0NBH
-- [PSK Reporter](https://pskreporter.info/) — Real-time propagation spot data
+- [country-files.com](https://www.country-files.com/) — CTY.DAT DXCC prefix database by Jim Reisert AD1C (public domain factual data, loaded and cached locally)
+- [Super Check Partial](https://www.supercheckpartial.com/) — SCP callsign database by Stu Phillips K6TU (public domain contest data, loaded and cached locally)
+- [hamqsl.com](https://www.hamqsl.com/) — Solar conditions data (SFI, SSN, A/K indices) via Paul L Herrman N0NBH 
+- [PSK Reporter](https://pskreporter.info/) — Real-time propagation spot data by Philip Gladstone
 
 All licenses are permissive (MIT, Apache 2.0, BSD-3). See `licenses/` directory.
 

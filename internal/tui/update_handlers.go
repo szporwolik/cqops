@@ -80,7 +80,7 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 		m.autoUpdateDateTime()
 	}
 	m.tickCount++
-	return tea.Batch(tickCmd(), m.maybeCheckInet(), m.pollFlrig(), m.maybeCheckWavelog(), m.maybeCheckQRZ(), m.maybeFetchSolar(), m.maybeDXC(), cmd)
+	return tea.Batch(tickCmd(), m.maybeCheckInet(), m.maybeRefreshDataFiles(), m.pollFlrig(), m.maybeCheckWavelog(), m.maybeCheckQRZ(), m.maybeFetchSolar(), m.maybeDXC(), cmd)
 }
 
 // handleAsyncMessages processes async result messages (internet check, Wavelog status,

@@ -36,6 +36,8 @@ type GeneralConfig struct {
 	DrawGrayline     bool                `yaml:"draw_grayline,omitempty"`
 	PictureAtQRZPane bool                `yaml:"picture_at_qrz_pane,omitempty"`
 	SolarAtQSOPane   bool                `yaml:"solar_at_qso_pane,omitempty"`
+	UseCTY           bool                `yaml:"use_cty,omitempty"` // CTY.DAT DXCC country file
+	UseSCP           bool                `yaml:"use_scp,omitempty"` // Super Check Partial callsign database
 	Notifications    NotificationsConfig `yaml:"notifications"`
 }
 

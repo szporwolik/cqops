@@ -65,6 +65,8 @@ func (m *Model) handleConfigUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd
 			m.App.Config.General.DrawGrayline = m.ui.configMenu.drawGrayline
 			m.App.Config.General.PictureAtQRZPane = m.ui.configMenu.pictureAtQRZ
 			m.App.Config.General.SolarAtQSOPane = m.ui.configMenu.solarAtQSO
+			m.App.Config.General.UseCTY = m.ui.configMenu.useCTY
+			m.App.Config.General.UseSCP = m.ui.configMenu.useSCP
 			m.saveConfig("Settings saved")
 			m.screen = screenMainMenu
 		}

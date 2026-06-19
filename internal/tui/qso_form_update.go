@@ -281,6 +281,7 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 			m.rc.pathGrid = ""
 			m.rc.pathSig = ""
 			m.rc.logStatsSig = ""
+			m.updateSCP()
 		}
 
 	case fieldBand:

@@ -33,12 +33,12 @@ const (
 	fieldDate field = iota
 	fieldTime
 	fieldCall
+	fieldRSTSent
+	fieldRSTRcvd
 	fieldFreq
 	fieldBand
 	fieldMode
 	fieldSubmode
-	fieldRSTSent
-	fieldRSTRcvd
 	fieldName
 	fieldQTH
 	fieldGrid
@@ -54,8 +54,8 @@ const (
 )
 
 var fieldNames = []string{
-	"Date UTC", "Time UTC", "Call", "Frequency", "Band", "Mode", "Submode",
-	"RST sent", "RST rcvd", "Name", "QTH", "Grid", "Country", "Power W", "Freq RX",
+	"Date UTC", "Time UTC", "Call", "RST sent", "RST rcvd", "Frequency", "Band",
+	"Mode", "Submode", "Name", "QTH", "Grid", "Country", "Power W", "Freq RX",
 	"SOTA Ref", "POTA Ref", "WWFF Ref", "IOTA", "Comment",
 }
 
@@ -109,6 +109,13 @@ type Model struct {
 
 	// DX Cluster — telnet connection to dxspider.co.uk.
 	dxc dxcState
+
+	// lastDataCheck is the last time CTY.DAT / SCP files were checked for updates.
+	lastDataCheck time.Time
+
+	// SCP (Super Check Partial) auto-complete state.
+	scpMatches  []string // current prefix matches for the call field
+	scpCacheKey string   // the callsign prefix that produced scpMatches
 
 	// Render cache — avoids redundant layout, style, and view computation.
 	rc renderCache
@@ -737,9 +744,52 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 	}
 
 	tableW := w - 2
+	// Cap to same max as QSO form for visual consistency.
+	if tableW > partnerMapMaxW {
+		tableW = partnerMapMaxW
+	}
 	if tableH < 3 {
 		tableH = 3
 	}
+
+	// SCP auto-complete suggestions — shown below the QSO form when the
+	// call field is focused and SCP is enabled.
+	var scpBox string
+	if m.focus == fieldCall && len(m.scpMatches) > 0 {
+		scpH := len(m.scpMatches)
+		if scpH > 12 {
+			scpH = 12
+		}
+		if tableH-scpH < 5 {
+			scpH = tableH - 5
+		}
+		if scpH > 0 {
+			scpLines := m.scpMatches[:scpH]
+			// Highlight the matching prefix in each callsign with Info (cyan)
+			// and dim the rest.
+			prefix := m.scpCacheKey
+			var highlighted []string
+			for _, c := range scpLines {
+				if prefix != "" && strings.HasPrefix(strings.ToUpper(c), strings.ToUpper(prefix)) {
+					match := c[:len(prefix)]
+					rest := c[len(prefix):]
+					highlighted = append(highlighted, S.Info.Render(match)+DimStyle.Render(rest))
+				} else {
+					highlighted = append(highlighted, DimStyle.Render(c))
+				}
+			}
+			scpContent := strings.Join(highlighted, DimStyle.Render("  "))
+			// Match the form row width (QSO form + solar panel if present).
+			scpW := lipgloss.Width(formRow)
+			if scpW < 40 {
+				scpW = 40
+			}
+			scpBox = drawBorderedBox(scpContent, scpW)
+			scpBoxH := lipgloss.Height(scpBox)
+			tableH -= scpBoxH
+		}
+	}
+
 	m.recentQSOs.SetSize(tableW, tableH)
 
 	var parts []string
@@ -747,6 +797,9 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 		parts = append(parts, profileLine)
 	}
 	parts = append(parts, formRow)
+	if scpBox != "" {
+		parts = append(parts, scpBox)
+	}
 	parts = append(parts, m.recentQSOs.View())
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
 }

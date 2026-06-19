@@ -164,6 +164,9 @@ func (m *Model) dxccLookup(call string) *dxcc.Prefix {
 	if m.App == nil || m.App.DXCC == nil || call == "" {
 		return nil
 	}
+	if !m.App.Config.General.UseCTY {
+		return nil
+	}
 	matches, ok := m.App.DXCC.Find(call)
 	if !ok || len(matches) == 0 {
 		return nil
@@ -198,6 +201,35 @@ func (m *Model) dxccAutoFill() {
 	// Invalidate form render cache — the field values changed but the
 	// signature-based cache may not detect it synchronously in all paths.
 	m.rc.formSig = ""
+}
+
+// updateSCP queries the SCP database for callsigns matching the current
+// call field prefix. Only runs when SCP is enabled and >= 3 chars typed.
+func (m *Model) updateSCP() {
+	m.scpMatches = nil
+	m.scpCacheKey = ""
+
+	if m.App == nil || m.App.SCP == nil || !m.App.Config.General.UseSCP {
+		return
+	}
+	prefix := strings.TrimSpace(m.fields[fieldCall].Value())
+	if len(prefix) < 3 {
+		return
+	}
+	if prefix == m.scpCacheKey {
+		return
+	}
+	m.scpCacheKey = prefix
+
+	matches, err := m.App.SCP.FindStrings(prefix)
+	if err != nil || len(matches) == 0 {
+		return
+	}
+	// Cap at 12 results.
+	if len(matches) > 12 {
+		matches = matches[:12]
+	}
+	m.scpMatches = matches
 }
 
 // fillWLData stores Wavelog private lookup result data.

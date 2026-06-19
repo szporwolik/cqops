@@ -11,6 +11,8 @@ func DefaultConfig() *Config {
 			DistanceUnit:     "km",
 			PictureAtQRZPane: false,
 			SolarAtQSOPane:   true,
+			UseCTY:           true,
+			UseSCP:           true,
 			Notifications: NotificationsConfig{
 				Enabled:       true,
 				QSO:           false,
