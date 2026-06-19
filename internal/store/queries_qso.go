@@ -16,6 +16,7 @@ const qsoCols = `call, qso_date, time_on, time_off, band, freq, freq_rx, mode, s
 		sota_ref, pota_ref, wwff_ref, iota,
 		my_sota_ref, my_pota_ref, my_wwff_ref,
 		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
+		cq_zone, itu_zone,
 		wavelog_uploaded`
 
 // placeholders returns a string of n comma-separated "?" placeholders.
@@ -42,7 +43,7 @@ func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 	for attempt := 0; attempt < 3; attempt++ {
 		res, err := db.Exec(
 			`INSERT INTO qsos (`+qsoCols+`, created_at, updated_at)
-			VALUES (`+placeholders(36)+`)`,
+			VALUES (`+placeholders(38)+`)`,
 			q.Call, q.QSODate, q.TimeOn, q.TimeOff,
 			q.Band, q.Freq, q.FreqRx, q.Mode, q.Submode,
 			q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
@@ -50,6 +51,7 @@ func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 			q.SOTARef, q.POTARef, q.WWFFRef, q.IOTA,
 			q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
 			q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
+			q.CQZone, q.ITUZone,
 			q.WavelogUploaded,
 			q.CreatedAt.Format(time.RFC3339), q.UpdatedAt.Format(time.RFC3339),
 		)
@@ -77,6 +79,7 @@ func ListQSOs(db *sql.DB, limit int) ([]qso.QSO, error) {
 		sota_ref, pota_ref, wwff_ref, iota,
 		my_sota_ref, my_pota_ref, my_wwff_ref,
 		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
+		cq_zone, itu_zone,
 		wavelog_uploaded,
 		created_at, updated_at
 		FROM qsos
@@ -105,6 +108,7 @@ func ListQSOs(db *sql.DB, limit int) ([]qso.QSO, error) {
 			&q.SOTARef, &q.POTARef, &q.WWFFRef, &q.IOTA,
 			&q.MySOTARef, &q.MyPOTARef, &q.MyWWFFRef,
 			&q.StationCallsign, &q.Operator, &q.MyGridSquare, &q.MyRig, &q.MyAntenna, &q.Source,
+			&q.CQZone, &q.ITUZone,
 			&q.WavelogUploaded,
 			&createdAt, &updatedAt,
 		)
@@ -131,6 +135,7 @@ func ListQSOsPage(db *sql.DB, limit, offset int) ([]qso.QSO, error) {
 		sota_ref, pota_ref, wwff_ref, iota,
 		my_sota_ref, my_pota_ref, my_wwff_ref,
 		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
+		cq_zone, itu_zone,
 		wavelog_uploaded,
 		created_at, updated_at
 		FROM qsos
@@ -154,6 +159,7 @@ func ListQSOsPage(db *sql.DB, limit, offset int) ([]qso.QSO, error) {
 			&q.SOTARef, &q.POTARef, &q.WWFFRef, &q.IOTA,
 			&q.MySOTARef, &q.MyPOTARef, &q.MyWWFFRef,
 			&q.StationCallsign, &q.Operator, &q.MyGridSquare, &q.MyRig, &q.MyAntenna, &q.Source,
+			&q.CQZone, &q.ITUZone,
 			&q.WavelogUploaded,
 			&createdAt, &updatedAt,
 		)
@@ -181,6 +187,7 @@ func SearchQSOsByCall(db *sql.DB, call string, limit int) ([]qso.QSO, error) {
 		sota_ref, pota_ref, wwff_ref, iota,
 		my_sota_ref, my_pota_ref, my_wwff_ref,
 		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
+		cq_zone, itu_zone,
 		wavelog_uploaded,
 		created_at, updated_at
 		FROM qsos
@@ -206,6 +213,7 @@ func SearchQSOsByCall(db *sql.DB, call string, limit int) ([]qso.QSO, error) {
 			&q.SOTARef, &q.POTARef, &q.WWFFRef, &q.IOTA,
 			&q.MySOTARef, &q.MyPOTARef, &q.MyWWFFRef,
 			&q.StationCallsign, &q.Operator, &q.MyGridSquare, &q.MyRig, &q.MyAntenna, &q.Source,
+			&q.CQZone, &q.ITUZone,
 			&q.WavelogUploaded,
 			&createdAt, &updatedAt,
 		)
@@ -235,6 +243,7 @@ func GetQSOByID(db *sql.DB, id int64) (*qso.QSO, error) {
 		sota_ref, pota_ref, wwff_ref, iota,
 		my_sota_ref, my_pota_ref, my_wwff_ref,
 		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
+		cq_zone, itu_zone,
 		wavelog_uploaded,
 		created_at, updated_at
 		FROM qsos WHERE id = ?`, id,
@@ -246,6 +255,7 @@ func GetQSOByID(db *sql.DB, id int64) (*qso.QSO, error) {
 		&q.SOTARef, &q.POTARef, &q.WWFFRef, &q.IOTA,
 		&q.MySOTARef, &q.MyPOTARef, &q.MyWWFFRef,
 		&q.StationCallsign, &q.Operator, &q.MyGridSquare, &q.MyRig, &q.MyAntenna, &q.Source,
+		&q.CQZone, &q.ITUZone,
 		&q.WavelogUploaded,
 		&createdAt, &updatedAt,
 	)
@@ -303,6 +313,7 @@ func UpdateQSO(db *sql.DB, q *qso.QSO) error {
 			sota_ref=?, pota_ref=?, wwff_ref=?, iota=?,
 			my_sota_ref=?, my_pota_ref=?, my_wwff_ref=?,
 			station_callsign=?, operator=?, my_gridsquare=?, my_rig=?, my_antenna=?, source=?,
+			cq_zone=?, itu_zone=?,
 			wavelog_uploaded=?,
 			updated_at=?
 			WHERE id=?`,
@@ -313,6 +324,7 @@ func UpdateQSO(db *sql.DB, q *qso.QSO) error {
 			q.SOTARef, q.POTARef, q.WWFFRef, q.IOTA,
 			q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
 			q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
+			q.CQZone, q.ITUZone,
 			q.WavelogUploaded,
 			q.UpdatedAt.Format(time.RFC3339),
 			q.ID,
@@ -345,13 +357,15 @@ type EnrichmentData struct {
 	Country    string
 	GridSquare string
 	IOTA       string
+	CQZone     string
+	ITUZone    string
 }
 
 // UpdateQSOEnrichment applies callbook enrichment to a QSO.
 // Only fields that are currently empty in the database are updated —
 // existing data is never overwritten by enrichment.
 func UpdateQSOEnrichment(db *sql.DB, qsoID int64, e EnrichmentData) {
-	if e.Name == "" && e.QTH == "" && e.Country == "" && e.GridSquare == "" && e.IOTA == "" {
+	if e.Name == "" && e.QTH == "" && e.Country == "" && e.GridSquare == "" && e.IOTA == "" && e.CQZone == "" && e.ITUZone == "" {
 		return
 	}
 
@@ -377,6 +391,14 @@ func UpdateQSOEnrichment(db *sql.DB, qsoID int64, e EnrichmentData) {
 	if e.IOTA != "" {
 		sets = append(sets, "iota = CASE WHEN COALESCE(iota,'') = '' THEN ? ELSE iota END")
 		args = append(args, e.IOTA)
+	}
+	if e.CQZone != "" {
+		sets = append(sets, "cq_zone = CASE WHEN COALESCE(cq_zone,'') = '' THEN ? ELSE cq_zone END")
+		args = append(args, e.CQZone)
+	}
+	if e.ITUZone != "" {
+		sets = append(sets, "itu_zone = CASE WHEN COALESCE(itu_zone,'') = '' THEN ? ELSE itu_zone END")
+		args = append(args, e.ITUZone)
 	}
 
 	if len(sets) == 0 {

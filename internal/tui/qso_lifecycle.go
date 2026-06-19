@@ -59,6 +59,13 @@ func (m *Model) saveQSO() tea.Cmd {
 		qs.Distance = gridDistanceKm(station.MyGridSquare, qs.GridSquare)
 		qs.Bearing = gridBearingDeg(station.MyGridSquare, qs.GridSquare)
 	}
+	// Enrich CQ/ITU zone from DXCC prefix lookup (CTY.DAT).
+	if m.App.Config.General.UseCTY && m.App.DXCC != nil {
+		if p := m.dxccLookup(qs.Call); p != nil {
+			qs.CQZone = fmt.Sprintf("%d", p.CQZone)
+			qs.ITUZone = fmt.Sprintf("%d", p.ITUZone)
+		}
+	}
 	qso.ApplyStationDefaults(qs, station)
 	if err := qso.ValidateForSave(qs); err != nil {
 		applog.Warn("QSO validation failed", "error", err.Error())

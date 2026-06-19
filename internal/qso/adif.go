@@ -192,6 +192,8 @@ func (q *QSO) toADIFWithStation(stationCall string) string {
 	set(adifield.MY_WWFF_REF, q.MyWWFFRef)
 	setf(adifield.DISTANCE, q.Distance)
 	setf(adifield.ANT_AZ, q.Bearing)
+	set(adifield.CQZ, q.CQZone)
+	set(adifield.ITUZ, q.ITUZone)
 
 	return r.String() + "<EOR>"
 }
@@ -263,6 +265,8 @@ func ParseADIFRecord(r adif.Record, source string) *QSO {
 	qs.MyAntenna = get(adifield.MY_ANTENNA)
 	qs.Distance = getFloat(adifield.DISTANCE)
 	qs.Bearing = getFloat(adifield.ANT_AZ)
+	qs.CQZone = get(adifield.CQZ)
+	qs.ITUZone = get(adifield.ITUZ)
 	qs.Source = source
 
 	return qs

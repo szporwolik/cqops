@@ -194,8 +194,26 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 					QTH:        data.QTH,
 					Country:    data.Country,
 					GridSquare: data.Grid,
+					CQZone:     data.CQZone,
+					ITUZone:    data.ITUZone,
 				})
 				applog.Info("WSJT-X: QRZ enrichment applied", "call", call, "qso_id", qsoID)
+			}
+		}
+
+		// Step 1b: enrich CQ/ITU zone from DXCC if not already filled by QRZ.
+		if m.App.Config.General.UseCTY && m.App.DXCC != nil {
+			qs, _ := store.GetQSOByID(m.App.DB, qsoID)
+			if qs != nil && (qs.CQZone == "" || qs.ITUZone == "") {
+				if p := m.dxccLookup(call); p != nil {
+					cqz := fmt.Sprintf("%d", p.CQZone)
+					ituz := fmt.Sprintf("%d", p.ITUZone)
+					store.UpdateQSOEnrichment(m.App.DB, qsoID, store.EnrichmentData{
+						CQZone:  cqz,
+						ITUZone: ituz,
+					})
+					applog.Debug("DXCC: filled CQ/ITU zone from prefix", "call", call, "cqz", cqz, "ituz", ituz)
+				}
 			}
 		}
 
@@ -204,6 +222,15 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 		if err != nil {
 			applog.Error("WSJT-X: cannot load QSO for Wavelog upload", "qso_id", qsoID, "error", err)
 			return nil
+		}
+
+		// Step 2b: recompute distance/bearing after enrichment. WSJT-X may
+		// not include a grid, or the enriched grid may be more precise.
+		if myGrid := m.App.Logbook.Station.Grid; myGrid != "" && qs.GridSquare != "" {
+			qs.Distance = gridDistanceKm(myGrid, qs.GridSquare)
+			qs.Bearing = gridBearingDeg(myGrid, qs.GridSquare)
+			m.App.DB.Exec(`UPDATE qsos SET distance=?, bearing=? WHERE id=?`,
+				qs.Distance, qs.Bearing, qsoID)
 		}
 
 		// Step 3: upload the enriched QSO's ADIF to Wavelog.

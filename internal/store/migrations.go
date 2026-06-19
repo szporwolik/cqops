@@ -99,6 +99,8 @@ var migrations = []string{
 	`ALTER TABLE dxc_spots ADD COLUMN dxcc TEXT NOT NULL DEFAULT ''`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_source ON qsos(source)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_wavelog_uploaded ON qsos(wavelog_uploaded)`,
+	`ALTER TABLE qsos ADD COLUMN cq_zone TEXT DEFAULT ''`,
+	`ALTER TABLE qsos ADD COLUMN itu_zone TEXT DEFAULT ''`,
 	`DROP INDEX IF EXISTS idx_psk_spots_station`,
 	`CREATE INDEX IF NOT EXISTS idx_psk_spots_station_flow ON psk_spots(station_call, flow_start)`,
 }

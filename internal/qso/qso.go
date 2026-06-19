@@ -37,6 +37,8 @@ type QSO struct {
 	MySOTARef       string
 	MyPOTARef       string
 	MyWWFFRef       string
+	CQZone          string // DXCC CQ zone (1-40), enriched from CTY.DAT or QRZ
+	ITUZone         string // DXCC ITU zone (1-90), enriched from CTY.DAT or QRZ
 	WavelogUploaded string // "" = not attempted, "yes" = uploaded, "no" = failed
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
