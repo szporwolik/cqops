@@ -189,6 +189,9 @@ func (m *Model) dxccLookup(call string) *dxcc.Prefix {
 
 // dxccAutoFill fills empty QSO form country and grid locator from DXCC.
 func (m *Model) dxccAutoFill() {
+	if m.App == nil || m.App.DXCC == nil || !m.App.Config.General.UseCTY {
+		return
+	}
 	call := strings.TrimSpace(m.fields[fieldCall].Value())
 	if call == "" {
 		return
