@@ -35,7 +35,14 @@ func dxcColValue(col string, s *store.DXCSpot) string {
 	case "Time":
 		return time.Unix(s.ReceivedAt, 0).UTC().Format("15:04:05")
 	case "Freq":
-		return fmt.Sprintf("%.1f", s.Frequency)
+		if s.Frequency <= 0 {
+			return "\u2014"
+		}
+		mhz := s.Frequency / 1000
+		if mhz < 100 {
+			return fmt.Sprintf("%.4f", mhz)
+		}
+		return fmt.Sprintf("%.3f", mhz)
 	case "Band":
 		return s.Band
 	case "Mode":

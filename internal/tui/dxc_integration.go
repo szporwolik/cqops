@@ -158,6 +158,10 @@ func (m *Model) storeDXCSpotsCmd(spots []dxc.Spot) tea.Cmd {
 		var dbSpots []store.DXCSpot
 		now := time.Now().UTC().Unix()
 		for _, s := range spots {
+			// Drop spots with no callsign or no frequency.
+			if s.DXCall == "" || s.Frequency <= 0 {
+				continue
+			}
 			mode := deriveSpotMode(s.Comment, s.Frequency/1000)
 			spot := store.DXCSpot{
 				DXCall:     s.DXCall,

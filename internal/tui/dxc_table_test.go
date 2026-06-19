@@ -144,8 +144,8 @@ func TestDXCColValue_EmptyFields(t *testing.T) {
 	if v := dxcColValue("DX Call", s); v != "" {
 		t.Errorf("empty DX Call = %q, want empty", v)
 	}
-	if v := dxcColValue("Freq", s); v != "0.0" {
-		t.Errorf("empty Freq = %q", v)
+	if v := dxcColValue("Freq", s); v != "\u2014" {
+		t.Errorf("empty Freq = %q, want em dash", v)
 	}
 }
 
@@ -407,7 +407,7 @@ func TestDXCKeys_EnterFillsAndGoesToQSO(t *testing.T) {
 	}
 }
 
-func TestDXCKeys_TabFillsAndTunes(t *testing.T) {
+func TestDXCKeys_EnterFillsTunesAndJumps(t *testing.T) {
 	m := newDXCTestModel()
 	m.dxc.selectedCall = "SP9XXX"
 	m.dxc.selectedSpot = store.DXCSpot{DXCall: "SP9XXX", Frequency: 14250}
@@ -415,12 +415,32 @@ func TestDXCKeys_TabFillsAndTunes(t *testing.T) {
 	m.wsjtx.online = false
 	m.rig.connected = true
 	m.rig.client = &fakeFlrigClient{}
-	_, cmd := m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyTab}, nil)
+	_, cmd := m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyEnter}, nil)
 	if cmd == nil {
-		t.Error("Tab should return a tune command when rig is connected")
+		t.Error("Enter should return a tune command when rig is connected")
 	}
 	if m.fields[fieldCall].Value() != "SP9XXX" {
-		t.Errorf("Tab should fill call field, got %q", m.fields[fieldCall].Value())
+		t.Errorf("Enter should fill call field, got %q", m.fields[fieldCall].Value())
+	}
+	if m.screen != screenQSO {
+		t.Errorf("Enter should switch to QSO screen, got %v", m.screen)
+	}
+}
+
+func TestDXCKeys_SpaceTunesOnly(t *testing.T) {
+	m := newDXCTestModel()
+	m.dxc.selectedCall = "SP9XXX"
+	m.dxc.selectedSpot = store.DXCSpot{DXCall: "SP9XXX", Frequency: 14250}
+	m.dxc.tableReady = true
+	m.wsjtx.online = false
+	m.rig.connected = true
+	m.rig.client = &fakeFlrigClient{}
+	_, cmd := m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeySpace}, nil)
+	if cmd == nil {
+		t.Error("Space should return a tune command when rig is connected")
+	}
+	if m.fields[fieldCall].Value() != "" {
+		t.Errorf("Space should NOT fill call field, got %q", m.fields[fieldCall].Value())
 	}
 }
 
