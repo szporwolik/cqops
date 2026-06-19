@@ -17,22 +17,31 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 ## Features
 
 - **DX Cluster** — telnet connection to dxspider nodes, live spot table with band/mode/time filters, Enter to fill QSO form, Tab to tune rig to spot frequency and mode
-- **Rig control via flrig** — read frequency/mode/band, tune rig from DX spots, automatic mode mapping (CW→CW-L, FT8→DATA-U, etc.)
-- **WSJT-X integration** — automatic QSO logging from FT8/FT4 and other digital modes
+- **Rig control via flrig** — read frequency/mode/band, tune rig from DX spots, automatic mode mapping
+- **WSJT-X integration** — automatic QSO logging from FT8/FT4 and other digital modes, enriched with QRZ callbook data, distance/bearing computation, and Wavelog upload
 - **PSK Reporter** — real-time propagation data with band/mode/time filters and world map
 - **Solar conditions** — SFI, SSN, A/K indices, geomagnetic field from hamqsl.com with N0NBH threshold highlighting
 - **QRZ.com callbook** — one-key callsign lookup with auto-fill of name, QTH, grid, and country
 - **DXCC country/continent** — automatic country and grid locator from callsign prefix (CTY.DAT), continent detection for DX spots
 - **Super Check Partial** — live callsign auto-complete while typing with prefix highlighting, offline contest database
-- **Wavelog cloud sync** — batch upload, duplicate detection, private lookup, and station normalization
-- **Full ADIF import/export** — compatible with any ADIF-based logging workflow
+- **Wavelog cloud sync** — batch upload, duplicate detection, private lookup, station normalization, and bulk download with progress dialog
+- **ADIF import/export** — full ADIF 3.1.4 compliance with progress dialogs: ASCII sanitization (Unicode→ASCII via NFD normalization), IOTA validation, correct MODE/SUBMODE enumeration (FT8/FT2 standalone), all 32 QSO fields preserved on roundtrip
 - **Terminal UI (TUI)** — keyboard-driven, works over SSH, no GUI required
 - **Offline-first** — SQLite database, no internet required for core logging
 - **Multi-logbook** — switch between station logs with per-logbook station profiles
 - **Partner details view** — grid-to-grid distance, bearing, and world map
 - **Cross-platform** — Windows, Linux, macOS — including ARM builds for Raspberry Pi and Apple Silicon
-- **DXCC country/continent lookup** — automatic callsign→country resolution using CTY.DAT prefix data, continent detection for DX Cluster spots
 - **Potato PC ready** — runs comfortably on Raspberry Pi-class hardware, old laptops, and portable monitors
+
+## Screenshots
+
+<p align="center">
+  <img src="assets/screenshots/screen-shot-01.jpg" width="49%" alt="Screen 1">
+  <img src="assets/screenshots/screen-shot-02.png" width="49%" alt="Screen 2">
+</p>
+<p align="center">
+  <img src="assets/screenshots/screen-shot-03.png" width="49%" alt="Screen 3">
+</p>
 
 ## Requirements
 
@@ -100,19 +109,6 @@ cqops logbook list     # List logbooks
 cqops version          # Print version
 cqops --help           # Show all commands
 ```
-
-### Key Bindings
-
-| Key | Context | Action |
-|---|---|---|
-| `F1` | Global | QSO form |
-| `F2` | Global | QRZ partner lookup |
-| `F4` | Global | DX Cluster (spots table) |
-| `F5` | Global | PSK Reporter (propagation) |
-| `F7` | Global | Logbook editor |
-| `F8` | Global | Configuration menu |
-| `F9` | Global | Log viewer |
-| `F10` | Global | Quit |
 
 ## Dependencies
 
