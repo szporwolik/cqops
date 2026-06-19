@@ -112,7 +112,7 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 		MyGridSquare:    m.App.Logbook.Station.Grid,
 		MyRig:           m.App.Logbook.Station.RigModel(m.App.Config.Rigs),
 		MyAntenna:       m.App.Logbook.Station.RigAntenna(m.App.Config.Rigs),
-		TXPower:         m.App.Logbook.Station.RigPower(m.App.Config.Rigs),
+		TXPower:         txPowerForWSJTX(m),
 		MySOTARef:       m.App.Logbook.Station.SOTARef,
 		MyPOTARef:       m.App.Logbook.Station.POTARef,
 		MyWWFFRef:       m.App.Logbook.Station.WWFFRef,
@@ -266,4 +266,14 @@ func parseWSJTXADIF(adifStr string) *qso.QSO {
 		applog.Warn("WSJT-X: ADIF scanner error", "error", err)
 	}
 	return qso.NewQSO()
+}
+
+// txPowerForWSJTX returns the TX power to use when auto-logging a WSJT-X QSO.
+// Prefers the current form field value (populated by flrig or manual entry);
+// falls back to the station's rig preset power.
+func txPowerForWSJTX(m *Model) string {
+	if fp := strings.TrimSpace(m.fields[fieldTXPower].Value()); fp != "" {
+		return fp
+	}
+	return m.App.Logbook.Station.RigPower(m.App.Config.Rigs)
 }
