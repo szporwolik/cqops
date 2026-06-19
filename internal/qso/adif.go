@@ -87,8 +87,9 @@ var stubbornChars = map[rune]string{
 // =============================================================================
 
 // isValidIOTA returns true if s looks like a valid IOTA reference.
-// Valid format: two uppercase letters, hyphen, three digits (e.g. "EU-005").
+// Valid format: continent code, hyphen, digits (e.g. "EU-005", "eu-005").
 // Values like "BLANK", "NONE", "NULL", "16", etc. are rejected.
+// Case-insensitive per ADIF spec.
 func isValidIOTA(s string) bool {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -99,9 +100,9 @@ func isValidIOTA(s string) bool {
 	if idx < 1 || idx > len(s)-2 {
 		return false
 	}
-	// Before hyphen: must be 1-3 uppercase letters (continent code).
+	// Before hyphen: must be 1-3 letters (continent code, case-insensitive).
 	for _, r := range s[:idx] {
-		if r < 'A' || r > 'Z' {
+		if (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') {
 			return false
 		}
 	}
@@ -114,7 +115,7 @@ func isValidIOTA(s string) bool {
 		if r >= '0' && r <= '9' {
 			continue
 		}
-		if r >= 'A' && r <= 'Z' {
+		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') {
 			continue
 		}
 		return false
@@ -220,17 +221,22 @@ func ParseADIFRecord(r adif.Record, source string) *QSO {
 	if v := get(adifield.SUBMODE); v != "" {
 		qs.Submode = strings.ToUpper(v)
 	}
-	qs.QSODate = get(adifield.QSO_DATE)
-	qs.TimeOn = get(adifield.TIME_ON)
-	qs.TimeOff = get(adifield.TIME_OFF)
+	// Strip non-digit chars from date/time (WSJT-X includes punctuation).
+	qs.QSODate = stripNonDigits(get(adifield.QSO_DATE))
+	qs.TimeOn = stripNonDigits(get(adifield.TIME_ON))
+	qs.TimeOff = stripNonDigits(get(adifield.TIME_OFF))
 	qs.Freq = getFloat(adifield.FREQ)
 	qs.FreqRx = getFloat(adifield.FREQ_RX)
 	qs.RSTSent = get(adifield.RST_SENT)
 	qs.RSTRcvd = get(adifield.RST_RCVD)
-	qs.GridSquare = get(adifield.GRIDSQUARE)
+	qs.GridSquare = NormalizeLocator(get(adifield.GRIDSQUARE))
 	qs.Name = get(adifield.NAME)
 	qs.QTH = get(adifield.QTH)
 	qs.Country = get(adifield.COUNTRY)
+	// DXCC field may contain the entity name as a fallback for Country.
+	if qs.Country == "" {
+		qs.Country = get(adifield.DXCC)
+	}
 	qs.Comment = get(adifield.COMMENT)
 	qs.Notes = get(adifield.NOTES)
 	qs.TXPower = get(adifield.TX_PWR)
@@ -251,11 +257,26 @@ func ParseADIFRecord(r adif.Record, source string) *QSO {
 	if v := get(adifield.OPERATOR); v != "" {
 		qs.Operator = strings.ToUpper(v)
 	}
-	qs.MyGridSquare = get(adifield.MY_GRIDSQUARE)
+	qs.MyGridSquare = NormalizeLocator(get(adifield.MY_GRIDSQUARE))
 	qs.MyRig = get(adifield.MY_RIG)
 	qs.MyAntenna = get(adifield.MY_ANTENNA)
 	qs.Distance = getFloat(adifield.DISTANCE)
 	qs.Source = source
 
 	return qs
+}
+
+// stripNonDigits removes all non-digit characters from s.
+func stripNonDigits(s string) string {
+	if s == "" {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }

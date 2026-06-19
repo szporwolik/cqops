@@ -267,3 +267,122 @@ func TestResultRender_WhitespaceErrorShowsCount(t *testing.T) {
 		t.Error("should show duplicate count")
 	}
 }
+
+// =============================================================================
+// ADIF import result screen render tests
+// =============================================================================
+
+// newImportResultEditor creates a LogbookEditor in edModeImportResult.
+func newImportResultEditor(inserted, dupes, failed int, impErr string) *LogbookEditor {
+	le := NewLogbookEditor(nil, "", "", "", 0, "OP", "JO90")
+	le.mode = edModeImportResult
+	le.impInserted = inserted
+	le.impDupes = dupes
+	le.impFailed = failed
+	le.impErr = impErr
+	le.width = 120
+	le.height = 30
+	return le
+}
+
+func TestImportResultRender_Success(t *testing.T) {
+	le := newImportResultEditor(890, 7, 0, "")
+	view := fmt.Sprint(le.View())
+
+	if !strings.Contains(view, "Imported 890 QSOs") {
+		t.Error("should show imported count")
+	}
+	if !strings.Contains(view, "7 duplicates skipped") {
+		t.Error("should show duplicate count")
+	}
+	if strings.Contains(view, "failed") {
+		t.Error("should not show failed when 0")
+	}
+}
+
+func TestImportResultRender_ZeroInserted(t *testing.T) {
+	le := newImportResultEditor(0, 0, 0, "")
+	view := fmt.Sprint(le.View())
+
+	if !strings.Contains(view, "Imported 0 QSOs") {
+		t.Error("should show 0 imported rather than hide")
+	}
+}
+
+func TestImportResultRender_Error(t *testing.T) {
+	le := newImportResultEditor(0, 0, 0, "cannot open file")
+	view := fmt.Sprint(le.View())
+
+	if !strings.Contains(view, "Import failed") {
+		t.Error("should show error message")
+	}
+	if strings.Contains(view, "Imported") {
+		t.Error("should not show count when error present")
+	}
+}
+
+// TestImportResultRender_FallbackFromProgress verifies the fix for the
+// "Imported 0" bug: when the render transitions from importing→result
+// before the done handler fires, dlCurrent is used as fallback.
+func TestImportResultRender_FallbackFromProgress(t *testing.T) {
+	le := NewLogbookEditor(nil, "", "", "", 0, "OP", "JO90")
+	le.mode = edModeImporting
+	le.dlActive = false // simulate completed but done handler not yet run
+	le.dlCurrent = 890  // live progress counter
+	le.impInserted = 0  // not yet set by done handler
+	le.dlTotal = 890
+	le.width = 120
+	le.height = 30
+
+	// View() transitions to edModeImportResult and uses dlCurrent as fallback.
+	_ = fmt.Sprint(le.View())
+
+	if le.mode != edModeImportResult {
+		t.Errorf("mode should transition to edModeImportResult, got %v", le.mode)
+	}
+	if le.impInserted != 890 {
+		t.Errorf("impInserted should fallback to dlCurrent (890), got %d", le.impInserted)
+	}
+
+	// On the NEXT View() call, the result dialog renders with the correct count.
+	view := fmt.Sprint(le.View())
+	if !strings.Contains(view, "Imported 890 QSOs") {
+		t.Error("second View() should show 890 from fallback")
+	}
+}
+
+// =============================================================================
+// ADIF export result screen render tests
+// =============================================================================
+
+func newExportResultEditor(exported int, expErr, exportPath string) *LogbookEditor {
+	le := NewLogbookEditor(nil, "", "", "", 0, "OP", "JO90")
+	le.mode = edModeExportResult
+	le.impInserted = exported
+	le.impErr = expErr
+	le.exportPath = exportPath
+	le.width = 120
+	le.height = 30
+	return le
+}
+
+func TestExportResultRender_Success(t *testing.T) {
+	le := newExportResultEditor(1234, "", "/tmp/cqops_20260619.adi")
+	view := fmt.Sprint(le.View())
+
+	if !strings.Contains(view, "Exported 1234 QSOs") {
+		t.Error("should show exported count")
+	}
+	if !strings.Contains(view, "cqops_20260619.adi") {
+		t.Error("should show filename")
+	}
+}
+
+func TestExportResultRender_Error(t *testing.T) {
+	le := newExportResultEditor(0, "disk full", "")
+	view := fmt.Sprint(le.View())
+
+	if !strings.Contains(view, "Export failed") {
+		t.Error("should show error")
+	}
+}

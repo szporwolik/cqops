@@ -135,7 +135,7 @@ func TestADIFToQSO_FT8(t *testing.T) {
 	if stored.RSTRcvd != "-05" {
 		t.Errorf("RSTRcvd = %q", stored.RSTRcvd)
 	}
-	if stored.GridSquare != "JO90aa" {
+	if stored.GridSquare != "JO90AA" {
 		t.Errorf("GridSquare = %q", stored.GridSquare)
 	}
 	if stored.Name != "John" {
@@ -198,7 +198,7 @@ func TestADIFToQSO_FT4(t *testing.T) {
 	if stored.Submode != "FT4" {
 		t.Errorf("Submode = %q, want FT4", stored.Submode)
 	}
-	if stored.GridSquare != "FN31pr" {
+	if stored.GridSquare != "FN31PR" {
 		t.Errorf("GridSquare = %q", stored.GridSquare)
 	}
 }

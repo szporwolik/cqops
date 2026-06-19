@@ -336,3 +336,54 @@ func PurgeQSOs(db *sql.DB) error {
 	}
 	return nil
 }
+
+// EnrichmentData holds callbook-derived fields for non-destructive QSO enrichment.
+// Only non-empty fields are applied; existing data is never overwritten.
+type EnrichmentData struct {
+	Name       string
+	QTH        string
+	Country    string
+	GridSquare string
+	IOTA       string
+}
+
+// UpdateQSOEnrichment applies callbook enrichment to a QSO.
+// Only fields that are currently empty in the database are updated —
+// existing data is never overwritten by enrichment.
+func UpdateQSOEnrichment(db *sql.DB, qsoID int64, e EnrichmentData) {
+	if e.Name == "" && e.QTH == "" && e.Country == "" && e.GridSquare == "" && e.IOTA == "" {
+		return
+	}
+
+	var sets []string
+	var args []interface{}
+
+	if e.Name != "" {
+		sets = append(sets, "name = CASE WHEN COALESCE(name,'') = '' THEN ? ELSE name END")
+		args = append(args, e.Name)
+	}
+	if e.QTH != "" {
+		sets = append(sets, "qth = CASE WHEN COALESCE(qth,'') = '' THEN ? ELSE qth END")
+		args = append(args, e.QTH)
+	}
+	if e.Country != "" {
+		sets = append(sets, "country = CASE WHEN COALESCE(country,'') = '' THEN ? ELSE country END")
+		args = append(args, e.Country)
+	}
+	if e.GridSquare != "" {
+		sets = append(sets, "gridsquare = CASE WHEN COALESCE(gridsquare,'') = '' THEN ? ELSE gridsquare END")
+		args = append(args, e.GridSquare)
+	}
+	if e.IOTA != "" {
+		sets = append(sets, "iota = CASE WHEN COALESCE(iota,'') = '' THEN ? ELSE iota END")
+		args = append(args, e.IOTA)
+	}
+
+	if len(sets) == 0 {
+		return
+	}
+
+	args = append(args, qsoID)
+	query := fmt.Sprintf("UPDATE qsos SET %s WHERE id = ?", strings.Join(sets, ", "))
+	db.Exec(query, args...) // best-effort; errors logged by caller
+}

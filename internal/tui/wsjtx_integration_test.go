@@ -202,9 +202,9 @@ func TestParseWSJTXADIFSource(t *testing.T) {
 	if qs == nil {
 		t.Fatal("parseWSJTXADIF returned nil")
 	}
-	// Source should not be set by parser (it's set by NewQSO)
-	if qs.Source != "manual" {
-		t.Errorf("Source = %q; want 'manual' (from NewQSO)", qs.Source)
+	// Source should be "wsjtx" (set by ParseADIFRecord).
+	if qs.Source != "wsjtx" {
+		t.Errorf("Source = %q; want 'wsjtx' (from WSJT-X ADIF)", qs.Source)
 	}
 }
 

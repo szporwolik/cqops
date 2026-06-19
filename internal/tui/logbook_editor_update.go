@@ -598,7 +598,7 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 
 	var inserted, dupes, failed int
 	totalExported := result.ExportedQSOs
-	const batchInterval = 1 // report progress every QSO for smooth updates
+	const batchInterval = 50 // report progress every 50 QSOs for smooth but efficient UI
 
 	applog.Info("Wavelog: scanning ADIF", "exported", totalExported, "size_bytes", result.ADIFSize)
 
@@ -622,6 +622,12 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 
 		qs := qso.ParseADIFRecord(r, "wavelog")
 		qs.WavelogUploaded = "yes"
+
+		// Enrich: compute distance/bearing if both grids are available.
+		if myGrid := strings.TrimSpace(le.logStationGrid); myGrid != "" && qs.GridSquare != "" {
+			qs.Distance = gridDistanceKm(myGrid, qs.GridSquare)
+			qs.Bearing = gridBearingDeg(myGrid, qs.GridSquare)
+		}
 
 		if err := qso.ValidateImportRecord(qs); err != nil {
 			applog.Warn("Wavelog: skipping invalid imported QSO", "call", qs.Call, "reason", err)
@@ -716,7 +722,7 @@ func (le *LogbookEditor) runImport(path string) {
 	defer f.Close()
 
 	var inserted, dupes, failed int
-	const batchInterval = 1 // report every QSO for smooth progress
+	const batchInterval = 50 // report every 50 QSOs for smooth but efficient UI
 
 	applog.Info("ADIF import: scanning", "path", path, "estimated_records", totalRecords)
 
@@ -735,6 +741,12 @@ func (le *LogbookEditor) runImport(path string) {
 		}
 		r := scanner.Record()
 		qs := qso.ParseADIFRecord(r, "import")
+
+		// Enrich: compute distance/bearing if both grids are available.
+		if myGrid := strings.TrimSpace(le.logStationGrid); myGrid != "" && qs.GridSquare != "" {
+			qs.Distance = gridDistanceKm(myGrid, qs.GridSquare)
+			qs.Bearing = gridBearingDeg(myGrid, qs.GridSquare)
+		}
 
 		if err := qso.ValidateImportRecord(qs); err != nil {
 			applog.Warn("ADIF import: skipping invalid QSO", "call", qs.Call, "reason", err)
@@ -767,8 +779,9 @@ func (le *LogbookEditor) runImport(path string) {
 		}
 		inserted++
 
-		// Report progress every QSO for smooth UI updates.
-		if inserted%batchInterval == 0 {
+		// Report progress every batchInterval QSOs, and always for the first
+		// one so the UI transitions from "Importing…" to showing a count.
+		if inserted == 1 || inserted%batchInterval == 0 {
 			msgCh <- editorMsg{dlProgress: totalRecords, dlTotal: totalRecords, dlCount: inserted, dlDupes: dupes}
 		}
 

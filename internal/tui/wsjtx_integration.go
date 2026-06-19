@@ -7,7 +7,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	adif "github.com/farmergreg/adif/v5"
-	"github.com/farmergreg/spec/v6/adifield"
 	"github.com/gen2brain/beeep"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/qso"
@@ -106,6 +105,14 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 		MyPOTARef:       m.App.Logbook.Station.POTARef,
 		MyWWFFRef:       m.App.Logbook.Station.WWFFRef,
 	})
+
+	// Enrich QSO: compute distance/bearing from grid squares.
+	myGrid := m.App.Logbook.Station.Grid
+	if qs.GridSquare != "" && myGrid != "" {
+		qs.Distance = gridDistanceKm(myGrid, qs.GridSquare)
+		qs.Bearing = gridBearingDeg(myGrid, qs.GridSquare)
+	}
+
 	if err := qso.ValidateForSave(qs); err != nil {
 		applog.Error("WSJT-X: ADIF validation failed", "error", err.Error())
 		m.toasts.Error("WSJT-X: " + err.Error())
@@ -145,12 +152,42 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 		cmds = append(cmds, m.refreshQSOS())
 	}
 	cmds = append(cmds, m.maybeUploadRawADIFToWavelog(adif, id, qs.Call))
+	// Trigger async QRZ enrichment to fill Name, QTH, Country, Grid, IOTA.
+	if m.App.Config.QRZ.Enabled && m.App.Config.QRZ.User != "" {
+		cmds = append(cmds, m.wsjtxQRZEnrichCmd(id, qs.Call))
+	}
 	return tea.Batch(cmds...), false
 }
 
-// parseWSJTXADIF parses a single QSO record from an ADIF string.
+// wsjtxQRZEnrichCmd returns a command that performs an async QRZ lookup for a
+// WSJT-X auto-logged QSO and updates the database with enriched fields
+// (Name, QTH, Country, GridSquare, IOTA). Errors are logged but not shown
+// to the user — enrichment is best-effort.
+func (m *Model) wsjtxQRZEnrichCmd(qsoID int64, call string) tea.Cmd {
+	if call == "" {
+		return nil
+	}
+	return func() tea.Msg {
+		data, err := qrzLookupFunc(m.App.Config.QRZ.User, m.App.Config.QRZ.Pass, call)
+		if err != nil {
+			applog.Warn("WSJT-X: QRZ enrichment failed", "call", call, "error", err)
+			return nil
+		}
+		// Update the QSO with enriched data (only fills empty fields).
+		store.UpdateQSOEnrichment(m.App.DB, qsoID, store.EnrichmentData{
+			Name:       data.Name,
+			QTH:        data.QTH,
+			Country:    data.Country,
+			GridSquare: data.Grid,
+		})
+		applog.Info("WSJT-X: QRZ enrichment applied", "call", call, "qso_id", qsoID)
+		return nil
+	}
+}
+
+// parseWSJTXADIF parses a single QSO record from a WSJT-X ADIF string.
+// Delegates to the shared qso.ParseADIFRecord for field extraction.
 func parseWSJTXADIF(adifStr string) *qso.QSO {
-	qs := qso.NewQSO()
 	adifStr = strings.TrimSpace(adifStr)
 
 	s := adif.NewScanner(strings.NewReader(adifStr))
@@ -158,104 +195,17 @@ func parseWSJTXADIF(adifStr string) *qso.QSO {
 		if s.IsHeader() {
 			continue
 		}
-		r := s.Record()
-		if v := r[adifield.CALL]; v != "" {
-			qs.Call = strings.ToUpper(v)
+		qs := qso.ParseADIFRecord(s.Record(), "wsjtx")
+
+		// WSJT-X specific post-processing: normalize mode/submode and derive band.
+		qs.Mode, qs.Submode = qso.NormalizeMode(qs.Mode, qs.Submode)
+		if qs.Band == "" && qs.Freq > 0 {
+			qs.Band = qso.DeriveBand(qs.Freq)
 		}
-		if v := r[adifield.GRIDSQUARE]; v != "" {
-			qs.GridSquare = formatLocator(v)
-		}
-		if v := r[adifield.MODE]; v != "" {
-			qs.Mode = strings.ToUpper(v)
-		}
-		if v := r[adifield.SUBMODE]; v != "" {
-			qs.Submode = strings.ToUpper(v)
-		}
-		if v := r[adifield.RST_SENT]; v != "" {
-			qs.RSTSent = v
-		}
-		if v := r[adifield.RST_RCVD]; v != "" {
-			qs.RSTRcvd = v
-		}
-		if v := r[adifield.QSO_DATE]; v != "" {
-			qs.QSODate = stripNonDigits(v)
-		}
-		if v := r[adifield.TIME_ON]; v != "" {
-			qs.TimeOn = stripNonDigits(v)
-		}
-		if v := r[adifield.TIME_OFF]; v != "" {
-			qs.TimeOff = stripNonDigits(v)
-		}
-		if v := r[adifield.BAND]; v != "" {
-			qs.Band = qso.NormalizeBand(v)
-		}
-		if v := r[adifield.FREQ]; v != "" {
-			if _, err := fmt.Sscanf(v, "%f", &qs.Freq); err != nil {
-				applog.Warn("WSJT-X: bad ADIF frequency", "freq", v, "error", err)
-			}
-		}
-		if v := r[adifield.FREQ_RX]; v != "" {
-			if _, err := fmt.Sscanf(v, "%f", &qs.FreqRx); err != nil {
-				applog.Warn("WSJT-X: bad ADIF frequency_rx", "freq", v, "error", err)
-			}
-		}
-		if v := r[adifield.STATION_CALLSIGN]; v != "" {
-			qs.StationCallsign = strings.ToUpper(v)
-		}
-		if v := r[adifield.MY_GRIDSQUARE]; v != "" {
-			qs.MyGridSquare = formatLocator(v)
-		}
-		if v := r[adifield.OPERATOR]; v != "" {
-			qs.Operator = strings.ToUpper(v)
-		}
-		if v := r[adifield.COMMENT]; v != "" {
-			qs.Comment = v
-		}
-		if v := r[adifield.NAME]; v != "" {
-			qs.Name = v
-		}
-		if v := r[adifield.QTH]; v != "" {
-			qs.QTH = v
-		}
-		if v := r[adifield.COUNTRY]; v != "" {
-			qs.Country = v
-		}
-		if v := r[adifield.DXCC]; v != "" && qs.Country == "" {
-			qs.Country = v
-		}
-		if v := r[adifield.TX_PWR]; v != "" {
-			qs.TXPower = v
-		}
-		if v := r[adifield.SOTA_REF]; v != "" {
-			qs.SOTARef = v
-		}
-		if v := r[adifield.POTA_REF]; v != "" {
-			qs.POTARef = v
-		}
-		if v := r[adifield.WWFF_REF]; v != "" {
-			qs.WWFFRef = v
-		}
-		if v := r[adifield.IOTA]; v != "" {
-			qs.IOTA = v
-		}
-		if v := r[adifield.MY_SOTA_REF]; v != "" {
-			qs.MySOTARef = v
-		}
-		if v := r[adifield.MY_POTA_REF]; v != "" {
-			qs.MyPOTARef = v
-		}
-		if v := r[adifield.MY_WWFF_REF]; v != "" {
-			qs.MyWWFFRef = v
-		}
-		break
+		return qs
 	}
 	if err := s.Err(); err != nil {
 		applog.Warn("WSJT-X: ADIF scanner error", "error", err)
 	}
-
-	qs.Mode, qs.Submode = qso.NormalizeMode(qs.Mode, qs.Submode)
-	if qs.Band == "" && qs.Freq > 0 {
-		qs.Band = qso.DeriveBand(qs.Freq)
-	}
-	return qs
+	return qso.NewQSO()
 }

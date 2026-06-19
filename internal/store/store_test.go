@@ -428,3 +428,92 @@ func TestCountQSOs_Empty(t *testing.T) {
 		t.Errorf("total = %d; want 0", c.Total)
 	}
 }
+
+func TestUpdateQSOEnrichment_FillsEmpty(t *testing.T) {
+	db := newTempDB(t)
+
+	q := validQSO()
+	q.Name = ""
+	q.QTH = ""
+	q.Country = ""
+	q.GridSquare = ""
+	id, err := InsertQSO(db, q)
+	if err != nil {
+		t.Fatalf("InsertQSO: %v", err)
+	}
+
+	UpdateQSOEnrichment(db, id, EnrichmentData{
+		Name:       "Jan",
+		QTH:        "Warszawa",
+		Country:    "Poland",
+		GridSquare: "KO02",
+	})
+
+	stored, err := GetQSOByID(db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if stored.Name != "Jan" {
+		t.Errorf("Name = %q, want Jan", stored.Name)
+	}
+	if stored.QTH != "Warszawa" {
+		t.Errorf("QTH = %q, want Warszawa", stored.QTH)
+	}
+	if stored.Country != "Poland" {
+		t.Errorf("Country = %q, want Poland", stored.Country)
+	}
+	if stored.GridSquare != "KO02" {
+		t.Errorf("GridSquare = %q, want KO02", stored.GridSquare)
+	}
+}
+
+func TestUpdateQSOEnrichment_PreservesExisting(t *testing.T) {
+	db := newTempDB(t)
+
+	q := validQSO()
+	q.Name = "Original"
+	q.QTH = "OriginalQTH"
+	id, err := InsertQSO(db, q)
+	if err != nil {
+		t.Fatalf("InsertQSO: %v", err)
+	}
+
+	// Enrichment should not overwrite existing data.
+	UpdateQSOEnrichment(db, id, EnrichmentData{
+		Name: "Enriched",
+		QTH:  "EnrichedQTH",
+	})
+
+	stored, err := GetQSOByID(db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if stored.Name != "Original" {
+		t.Errorf("Name = %q, want Original (not overwritten)", stored.Name)
+	}
+	if stored.QTH != "OriginalQTH" {
+		t.Errorf("QTH = %q, want OriginalQTH (not overwritten)", stored.QTH)
+	}
+}
+
+func TestUpdateQSOEnrichment_NoopEmpty(t *testing.T) {
+	db := newTempDB(t)
+
+	q := validQSO()
+	id, err := InsertQSO(db, q)
+	if err != nil {
+		t.Fatalf("InsertQSO: %v", err)
+	}
+
+	// Empty enrichment data should be a no-op.
+	UpdateQSOEnrichment(db, id, EnrichmentData{})
+	UpdateQSOEnrichment(db, id, EnrichmentData{Name: "", QTH: "", Country: ""})
+
+	stored, err := GetQSOByID(db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if stored.Name != q.Name {
+		t.Errorf("Name changed unexpectedly")
+	}
+}
