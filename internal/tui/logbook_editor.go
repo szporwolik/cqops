@@ -97,6 +97,7 @@ type LogbookEditor struct {
 	built            bool
 	wlSkipped        int
 	wlSkipDetail     string
+	wlUnsentCount    int // cached unsent count from full DB, used by confirm dialog
 	width            int
 	height           int
 	wlURL            string

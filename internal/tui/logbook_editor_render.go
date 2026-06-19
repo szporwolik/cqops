@@ -45,15 +45,7 @@ func (le *LogbookEditor) View() tea.View {
 
 	case edModeConfirmWLSend:
 		le.ensureDialog("Send to Wavelog",
-			func() string {
-				unsent := 0
-				for _, q := range le.qsos {
-					if q.WavelogUploaded != "yes" {
-						unsent++
-					}
-				}
-				return fmt.Sprintf("%d unsent QSOs", unsent)
-			}(),
+			fmt.Sprintf("%d unsent QSOs", le.wlUnsentCount),
 			Option{Label: "Send", Value: "wlsend"},
 			Option{Label: "Cancel", Value: "cancel"},
 		)

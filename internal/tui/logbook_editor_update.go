@@ -326,6 +326,27 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if len(le.qsos) == 0 {
 					return le, func() tea.Msg { return editorMsg{toastWarn: "Logbook is empty — nothing to upload"} }
 				}
+				// Count unsent QSOs from the full database, not just the
+				// current page shown on screen.
+				le.wlUnsentCount = 0
+				if le.db != nil {
+					allQSOS, listErr := store.ListAllQSOs(le.db)
+					if listErr == nil {
+						for _, q := range allQSOS {
+							if q.WavelogUploaded != "yes" {
+								le.wlUnsentCount++
+							}
+						}
+					}
+				}
+				if le.wlUnsentCount == 0 {
+					// Fallback: count from current page if DB query failed.
+					for _, q := range le.qsos {
+						if q.WavelogUploaded != "yes" {
+							le.wlUnsentCount++
+						}
+					}
+				}
 				le.dialog = nil
 				le.mode = edModeConfirmWLSend
 			}
