@@ -2,11 +2,14 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/ftl/hamradio/dxcc"
+	"github.com/ftl/hamradio/scp"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
 )
@@ -68,6 +71,7 @@ func (m *Model) handleConfigUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd
 			m.App.Config.General.UseCTY = m.ui.configMenu.useCTY
 			m.App.Config.General.UseSCP = m.ui.configMenu.useSCP
 			m.saveConfig("Settings saved")
+			m.reloadDataFiles()
 			m.screen = screenMainMenu
 		}
 	}
@@ -152,6 +156,37 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 		}
 	}
 	return m, tea.Batch(cmd, integrationCmd)
+}
+
+// reloadDataFiles loads DXCC prefix data and SCP callsign database from
+// cached files when the user enables UseCTY or UseSCP in settings. This
+// avoids requiring an app restart for those features to become active.
+func (m *Model) reloadDataFiles() {
+	cacheDir, err := config.CacheDir()
+	if err != nil {
+		applog.Debug("reloadDataFiles: cannot determine cache dir", "error", err)
+		return
+	}
+
+	if m.App.Config.General.UseCTY && m.App.DXCC == nil {
+		ctyPath := filepath.Join(cacheDir, "cty.dat")
+		if prefixes, loadErr := dxcc.LoadLocal(ctyPath); loadErr == nil {
+			m.App.DXCC = prefixes
+			applog.Info("DXCC: prefix data loaded on demand")
+		} else {
+			applog.Info("DXCC: no cached data yet — will fetch when online")
+		}
+	}
+
+	if m.App.Config.General.UseSCP && m.App.SCP == nil {
+		scpPath := filepath.Join(cacheDir, "MASTER.SCP")
+		if db, loadErr := scp.LoadLocal(scpPath); loadErr == nil {
+			m.App.SCP = db
+			applog.Info("SCP: callsign database loaded on demand")
+		} else {
+			applog.Info("SCP: no cached data yet — will fetch when online")
+		}
+	}
 }
 
 func (m *Model) handleMainMenuUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {

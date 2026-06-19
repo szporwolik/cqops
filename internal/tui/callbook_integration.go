@@ -123,12 +123,14 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 	}
 	if msg.Err != nil {
 		m.toasts.Error(msg.Err.Error())
+		m.clearQRZFields()
 		m.dxccAutoFill()
 		return
 	}
 	d := msg.Data
 	if d == nil || d.Callsign == "" {
 		m.toasts.Warn("QRZ.com: no data for " + msg.Call)
+		m.clearQRZFields()
 		m.dxccAutoFill()
 		return
 	}
@@ -157,6 +159,17 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 	// After QRZ filled what it could, fill remaining empty country/continent
 	// from DXCC prefix lookup if available.
 	m.dxccAutoFill()
+}
+
+// clearQRZFields clears the form fields that QRZ normally populates
+// (name, QTH, grid, country). Called when a QRZ lookup returns no data
+// so that stale data from a previous lookup does not persist.
+func (m *Model) clearQRZFields() {
+	m.fields[fieldName].SetValue("")
+	m.fields[fieldQTH].SetValue("")
+	m.fields[fieldGrid].SetValue("")
+	m.fields[fieldCountry].SetValue("")
+	m.rc.formSig = ""
 }
 
 // dxccLookup returns the DXCC prefix entry for a callsign, or nil if not found.
