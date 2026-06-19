@@ -335,6 +335,9 @@ func (m *Model) onFieldExit() {
 		}
 		// Fill country/continent from DXCC — runs regardless of QRZ status.
 		m.dxccAutoFill()
+		// Callsign committed — hide SCP suggestions.
+		m.scpMatches = nil
+		m.scpCacheKey = ""
 
 	case fieldGrid:
 		m.rc.pathGrid = strings.ToUpper(strings.TrimSpace(m.fields[fieldGrid].Value()))
@@ -353,6 +356,8 @@ func (m *Model) clearForm() {
 	m.resetPartnerLookup()
 	m.resetNavigation()
 	m.clearFilteredTable()
+	m.scpMatches = nil
+	m.scpCacheKey = ""
 }
 
 // resetQSOFields blanks every field, restores date/time to UTC now, and
