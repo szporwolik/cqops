@@ -190,8 +190,13 @@ func (q *QSO) toADIFWithStation(stationCall string) string {
 	set(adifield.MY_SOTA_REF, q.MySOTARef)
 	set(adifield.MY_POTA_REF, q.MyPOTARef)
 	set(adifield.MY_WWFF_REF, q.MyWWFFRef)
-	setf(adifield.DISTANCE, q.Distance)
-	setf(adifield.ANT_AZ, q.Bearing)
+	// Distance: 1 decimal km. Bearing: integer degrees (ADIF ANT_AZ 0–360).
+	if q.Distance != 0 {
+		r[adifield.DISTANCE] = fmt.Sprintf("%.1f", q.Distance)
+	}
+	if q.Bearing != 0 {
+		r[adifield.ANT_AZ] = fmt.Sprintf("%.0f", q.Bearing)
+	}
 	set(adifield.CQZ, q.CQZone)
 	set(adifield.ITUZ, q.ITUZone)
 
