@@ -1,14 +1,16 @@
 # CQOps
 
+<p align="center">
+  <img src="assets/other/gh-logo.png" alt="CQOps logo" width="480">
+</p>
+
 [![release](https://img.shields.io/github/v/release/szporwolik/cqops?include_prereleases&label=release&color=1f6feb)](https://github.com/szporwolik/cqops/releases)
 [![go](https://img.shields.io/badge/Go-1.26-00ADD8)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 
 A small, fast, offline-first amateur radio logger for the terminal. Built for portable and field operations where every watt and every CPU cycle counts.
 
-CQOps is a personal project written primarily for my own use and my local club. It is not intended to replace full-featured desktop loggers — if you need a complete shack management solution, check out [Log4OM](https://www.log4om.com/) (Windows), [QLog](https://github.com/foldynl/QLog) (Linux), or [Wavelog](https://www.wavelog.com/) (self-hosted web). CQOps fills a different niche: a lightweight, dependency-minimal CLI tool that runs happily on a Raspberry Pi, an old laptop, or any "potato PC" without a GUI. Perfect for off-grid portable ops, SOTA/POTA activations, and situations where you want fast keystroke-driven logging without the overhead of a desktop environment.
-
-Repo: https://github.com/szporwolik/cqops
+CQOps is a personal project for my own use and my local club. It's not a full-featured desktop logger — for that, see [Log4OM](https://www.log4om.com/) (Windows), [QLog](https://github.com/foldynl/QLog) (Linux), or [Wavelog](https://www.wavelog.com/) (self-hosted web). CQOps fills a different niche: a lightweight, dependency-minimal CLI tool that runs on a Raspberry Pi, an old laptop, or any "potato PC" without a GUI — perfect for off-grid portable ops, SOTA/POTA, and fast keystroke-driven logging.
 
 ## Author
 
@@ -16,32 +18,27 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 
 ## Features
 
-- **DX Cluster** — telnet connection to dxspider nodes, live spot table with band/mode/time filters, Enter to fill QSO form, Tab to tune rig to spot frequency and mode
-- **Rig control via flrig** — read frequency/mode/band, tune rig from DX spots, automatic mode mapping
-- **WSJT-X integration** — automatic QSO logging from FT8/FT4 and other digital modes, enriched with QRZ callbook data, distance/bearing computation, and Wavelog upload
-- **PSK Reporter** — real-time propagation data with band/mode/time filters and world map
-- **Solar conditions** — SFI, SSN, A/K indices, geomagnetic field from hamqsl.com with N0NBH threshold highlighting
-- **QRZ.com callbook** — one-key callsign lookup with auto-fill of name, QTH, grid, and country
-- **DXCC country/continent** — automatic country and grid locator from callsign prefix (CTY.DAT), continent detection for DX spots
-- **Super Check Partial** — live callsign auto-complete while typing with prefix highlighting, offline contest database
-- **Wavelog cloud sync** — batch upload, duplicate detection, private lookup, station normalization, and bulk download with progress dialog
-- **ADIF import/export** — full ADIF 3.1.4 compliance with progress dialogs: ASCII sanitization (Unicode→ASCII via NFD normalization), IOTA validation, correct MODE/SUBMODE enumeration (FT8/FT2 standalone), all 32 QSO fields preserved on roundtrip
-- **Terminal UI (TUI)** — keyboard-driven, works over SSH, no GUI required
-- **Offline-first** — SQLite database, no internet required for core logging
-- **Multi-logbook** — switch between station logs with per-logbook station profiles
-- **Partner details view** — grid-to-grid distance, bearing, and world map
-- **Cross-platform** — Windows, Linux, macOS — including ARM builds for Raspberry Pi and Apple Silicon
-- **Potato PC ready** — runs comfortably on Raspberry Pi-class hardware, old laptops, and portable monitors
+- **DX Cluster** — live spots with band/mode/time filters, spot-to-rig tuning via flrig
+- **WSJT-X** — auto-log FT8/FT4 and digital modes with QRZ lookup & Wavelog sync
+- **PSK Reporter** — real-time propagation spots & world map
+- **Solar conditions** — SFI, SSN, A/K indices from hamqsl.com
+- **QRZ callbook** — one-key lookup with auto-fill of name, QTH, grid, country
+- **DXCC & SCP** — prefix-based country/continent/grid lookup, live callsign autocomplete
+- **Wavelog** — cloud upload, download, duplicate detection
+- **ADIF 3.1.4** — full import/export with validation, IOTA, Unicode→ASCII sanitization
+- **TUI** — keyboard-driven, SSH-friendly, offline-first SQLite, multi-logbook
+- **Partner view** — grid-to-grid distance, bearing, world map
+- **Cross-platform** — Windows, Linux, macOS, ARM (Raspberry Pi, Apple Silicon), potato-PC ready
 
 ## Screenshots
 
 <p align="center">
-  <img src="assets/screenshots/screen-shot-01.png" width="49%" alt="Screen 1">
-  <img src="assets/screenshots/screen-shot-02.png" width="49%" alt="Screen 2">
+  <img src="assets/screenshots/screen-shot-01.png?v=2" width="49%" alt="Screen 1">
+  <img src="assets/screenshots/screen-shot-02.png?v=2" width="49%" alt="Screen 2">
 </p>
 <p align="center">
-  <img src="assets/screenshots/screen-shot-03.png" width="49%" alt="Screen 3">
-  <img src="assets/screenshots/screen-shot-04.png" width="49%" alt="Screen 4">
+  <img src="assets/screenshots/screen-shot-03.png?v=2" width="49%" alt="Screen 3">
+  <img src="assets/screenshots/screen-shot-04.png?v=2" width="49%" alt="Screen 4">
 </p>
 
 ## Requirements
@@ -120,11 +117,13 @@ cqops --help           # Show all commands
 - [Cobra](https://github.com/spf13/cobra) — CLI framework
 - [modernc.org/sqlite](https://modernc.org/sqlite) — Pure Go SQLite (no CGO)
 - [ntcharts](https://github.com/NimbleMarkets/ntcharts) — Map rendering
+- [yaml.v3](https://gopkg.in/yaml.v3) — YAML config parsing
+- [golang.org/x/term](https://pkg.go.dev/golang.org/x/term) — Terminal I/O
 
 **Integrations:**
 - [wsjtx-go](https://github.com/k0swe/wsjtx-go) — WSJT-X UDP protocol
-- [farmergreg/adif](https://github.com/farmergreg/adif) — ADIF parsing/writing
-- [ftl/hamradio](https://github.com/ftl/hamradio) — Grid locator, distance math, and DXCC prefix lookup (CTY.DAT)
+- [farmergreg/adif](https://github.com/farmergreg/adif) + [farmergreg/spec](https://github.com/farmergreg/spec) — ADIF parsing/writing & spec types
+- [ftl/hamradio](https://github.com/ftl/hamradio) — Grid locator, distance math, DXCC prefix lookup (CTY.DAT)
 - [gen2brain/beeep](https://github.com/gen2brain/beeep) — Desktop notifications
 
 **Data:**

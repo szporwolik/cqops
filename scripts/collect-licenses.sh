@@ -33,6 +33,11 @@ NTDIR=$(find "$MODCACHE" -maxdepth 4 -path "*/NimbleMarkets/ntcharts/v2*" -type 
 ADIFDIR=$(find "$MODCACHE" -maxdepth 4 -path "*/farmergreg/adif/v5*" -type d 2>/dev/null | head -1)
 [ -n "$ADIFDIR" ] && copy_license "$ADIFDIR" "ADIF-MIT"
 
+SPECDIR=$(find "$MODCACHE" -maxdepth 4 -path "*/farmergreg/spec/v6*" -type d 2>/dev/null | head -1)
+[ -n "$SPECDIR" ] && copy_license "$SPECDIR" "SPEC-BSD3"
+
+copy_license "$MODCACHE/golang.org/x/term@v0.44.0" "XTERM-BSD3"
+
 copy_license "$MODCACHE/github.com/spf13/cobra@v1.10.2" "COBRA-APACHE2"
 copy_license "$MODCACHE/modernc.org/sqlite@v1.52.0" "SQLITE-BSD3"
 copy_license "$MODCACHE/gopkg.in/yaml.v3@v3.0.1" "YAML-MIT"
