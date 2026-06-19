@@ -36,7 +36,7 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 ## Screenshots
 
 <p align="center">
-  <img src="assets/screenshots/screen-shot-01.jpg" width="49%" alt="Screen 1">
+  <img src="assets/screenshots/screen-shot-01.png" width="49%" alt="Screen 1">
   <img src="assets/screenshots/screen-shot-02.png" width="49%" alt="Screen 2">
 </p>
 <p align="center">
