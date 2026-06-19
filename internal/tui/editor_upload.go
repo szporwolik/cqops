@@ -16,13 +16,29 @@ func (le *LogbookEditor) doBatchUpload() tea.Cmd {
 	logOp := le.logStationOp
 	logGrid := le.logStationGrid
 
-	applog.Info("Wavelog: batch upload starting", "total_qsos", len(le.qsos))
+	// Load ALL QSOs from the database, not just the current page.
+	// The page-sized le.qsos slice would miss QSOs on other pages.
+	var allQSOS []qso.QSO
+	if le.db != nil {
+		var err error
+		allQSOS, err = store.ListAllQSOs(le.db)
+		if err != nil {
+			applog.Error("Wavelog: batch upload — cannot list QSOs", "error", err)
+			return func() tea.Msg {
+				return editorMsg{wlOK: false, err: fmt.Errorf("cannot read logbook: %w", err)}
+			}
+		}
+	} else {
+		// Fallback for tests without a real database.
+		allQSOS = le.qsos
+	}
+	applog.Info("Wavelog: batch upload starting", "total_qsos", len(allQSOS))
 
 	// Collect unsent QSOs, skip those with missing required fields.
 	var unsent []qso.QSO
 	var skipped int
 	var firstSkipCall, firstSkipDate string
-	for _, q := range le.qsos {
+	for _, q := range allQSOS {
 		if q.WavelogUploaded != "yes" {
 			if q.Band == "" || q.Mode == "" || q.QSODate == "" {
 				applog.Warn("Wavelog: skipping QSO with missing required field",
@@ -105,12 +121,28 @@ func (le *LogbookEditor) doNormalizeAndUpload() tea.Cmd {
 	logOp := le.logStationOp
 	logGrid := le.logStationGrid
 
+	// Load ALL QSOs from the database, not just the current page.
+	var allQSOS []qso.QSO
+	if db != nil {
+		var listErr error
+		allQSOS, listErr = store.ListAllQSOs(db)
+		if listErr != nil {
+			applog.Error("Wavelog: normalize+upload — cannot list QSOs", "error", listErr)
+			return func() tea.Msg {
+				return editorMsg{wlOK: false, err: fmt.Errorf("cannot read logbook: %w", listErr)}
+			}
+		}
+	} else {
+		// Fallback for tests without a real database.
+		allQSOS = le.qsos
+	}
+
 	// Collect all unsent QSOs (some may not be mismatched but still unsent),
 	// skip those with missing required fields.
 	var unsent []qso.QSO
 	var skipped int
 	var firstSkipCall, firstSkipDate string
-	for _, q := range le.qsos {
+	for _, q := range allQSOS {
 		if q.WavelogUploaded != "yes" {
 			if q.Band == "" || q.Mode == "" || q.QSODate == "" {
 				if skipped == 0 {

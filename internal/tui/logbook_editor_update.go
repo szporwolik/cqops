@@ -161,14 +161,33 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			le.needsReload = true
 		}
 		if msg.normalized > 0 {
-			// Normalization done, now upload all unsent QSOs (skip invalid).
+			// Normalization done, now upload all unsent QSOs from the full
+			// database (not just the current page).
 			var unsent []qso.QSO
-			for _, q := range le.qsos {
-				if q.WavelogUploaded != "yes" {
-					if q.Band == "" || q.Mode == "" || q.QSODate == "" {
-						continue
+			if le.db != nil {
+				allQSOS, listErr := store.ListAllQSOs(le.db)
+				if listErr != nil {
+					applog.Error("Wavelog: post-normalize upload — cannot list QSOs", "error", listErr)
+					return le, func() tea.Msg {
+						return editorMsg{wlOK: false, err: fmt.Errorf("cannot read logbook: %w", listErr)}
 					}
-					unsent = append(unsent, q)
+				}
+				for _, q := range allQSOS {
+					if q.WavelogUploaded != "yes" {
+						if q.Band == "" || q.Mode == "" || q.QSODate == "" {
+							continue
+						}
+						unsent = append(unsent, q)
+					}
+				}
+			} else {
+				for _, q := range le.qsos {
+					if q.WavelogUploaded != "yes" {
+						if q.Band == "" || q.Mode == "" || q.QSODate == "" {
+							continue
+						}
+						unsent = append(unsent, q)
+					}
 				}
 			}
 			return le, le.uploadBatch(unsent)
@@ -373,6 +392,14 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return le.handleFilePickerUpdate(msg)
 		}
 		return le, nil
+	}
+
+	// Reload QSO list from DB after purge, import, download, or upload
+	// operations that set the needsReload flag. Without this, le.qsos
+	// holds stale data and batch uploads operate on outdated QSOs.
+	if le.needsReload && le.mode == edModeList && le.height > 0 {
+		le.needsReload = false
+		le.loadPage()
 	}
 
 	return le, nil
