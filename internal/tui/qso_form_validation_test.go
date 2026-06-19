@@ -248,7 +248,7 @@ func TestQSOFieldHint_EmptyMode(t *testing.T) {
 func TestQSOFieldHint_ValidSubmode(t *testing.T) {
 	m := newQSOFormTestModel()
 	m.fields[fieldMode].SetValue("MFSK")
-	m.fields[fieldSubmode].SetValue("FT8")
+	m.fields[fieldSubmode].SetValue("FT4") // FT4 IS an MFSK submode
 	if hint := m.qsoFieldHint(fieldSubmode); hint != "" {
 		t.Errorf("hint = %q, want \"\"", hint)
 	}

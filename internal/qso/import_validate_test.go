@@ -58,11 +58,11 @@ func TestValidateImportRecord_ValidFT8(t *testing.T) {
 	if err := ValidateImportRecord(q); err != nil {
 		t.Errorf("should accept valid FT8 QSO: %v", err)
 	}
-	if q.Mode != "MFSK" {
-		t.Errorf("FT8 should be normalized to MFSK, got %q", q.Mode)
+	if q.Mode != "FT8" {
+		t.Errorf("FT8 should remain standalone mode, got %q", q.Mode)
 	}
-	if q.Submode != "FT8" {
-		t.Errorf("submode should be FT8, got %q", q.Submode)
+	if q.Submode != "" {
+		t.Errorf("FT8 has no submode, got %q", q.Submode)
 	}
 }
 

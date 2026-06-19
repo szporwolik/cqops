@@ -117,8 +117,8 @@ func TestADIFToQSO_FT8(t *testing.T) {
 	if stored.Band != "20m" {
 		t.Errorf("Band = %q", stored.Band)
 	}
-	if stored.Mode != "MFSK" {
-		t.Errorf("Mode = %q, want MFSK (FT8 normalized)", stored.Mode)
+	if stored.Mode != "FT8" {
+		t.Errorf("Mode = %q, want FT8 (standalone mode per ADIF 3.1.4)", stored.Mode)
 	}
 	if stored.Freq < 14.074 || stored.Freq > 14.075 {
 		t.Errorf("Freq = %f", stored.Freq)
@@ -658,8 +658,8 @@ func TestLogQSOFromADIF_FullPipeline(t *testing.T) {
 	if q.Band != "20m" {
 		t.Errorf("Band = %q", q.Band)
 	}
-	if q.Mode != "MFSK" {
-		t.Errorf("Mode = %q, want MFSK (FT8 normalized)", q.Mode)
+	if q.Mode != "FT8" {
+		t.Errorf("Mode = %q, want FT8 (standalone per ADIF 3.1.4)", q.Mode)
 	}
 	if q.Source != "wsjtx" {
 		t.Errorf("Source = %q, want wsjtx", q.Source)
@@ -683,12 +683,12 @@ func TestADIFToQSO_StandaloneFT8Normalized(t *testing.T) {
 		"<QSO_DATE:8>20260618 <TIME_ON:6>120000 <RST_SENT:3>-10 <RST_RCVD:3>-05 <EOR>"
 
 	qs := parseWSJTXADIF(adif)
-	// After normalization, mode should be MFSK, submode FT8.
-	if qs.Mode != "MFSK" {
-		t.Errorf("standalone FT8 mode should normalize to MFSK, got %q", qs.Mode)
+	// FT8 is a standalone mode per ADIF 3.1.4, no normalization needed.
+	if qs.Mode != "FT8" {
+		t.Errorf("standalone FT8 mode should remain FT8, got %q", qs.Mode)
 	}
-	if qs.Submode != "FT8" {
-		t.Errorf("standalone FT8 submode should be FT8, got %q", qs.Submode)
+	if qs.Submode != "" {
+		t.Errorf("standalone FT8 should have no submode, got %q", qs.Submode)
 	}
 
 	qs.Source = "wsjtx"
@@ -711,11 +711,11 @@ func TestADIFToQSO_StandaloneFT8Normalized(t *testing.T) {
 		t.Fatalf("GetQSOByID: %v", err)
 	}
 
-	if stored.Mode != "MFSK" {
-		t.Errorf("stored mode = %q, want MFSK", stored.Mode)
+	if stored.Mode != "FT8" {
+		t.Errorf("stored mode = %q, want FT8", stored.Mode)
 	}
-	if stored.Submode != "FT8" {
-		t.Errorf("stored submode = %q, want FT8", stored.Submode)
+	if stored.Submode != "" {
+		t.Errorf("stored submode = %q, want empty (FT8 is standalone)", stored.Submode)
 	}
 }
 
@@ -785,27 +785,63 @@ func TestADIFToQSO_StandaloneFT8LogQSO(t *testing.T) {
 	if len(qsos) == 0 {
 		t.Fatal("no QSO found")
 	}
-	if qsos[0].Mode != "MFSK" {
-		t.Errorf("stored mode = %q, want MFSK", qsos[0].Mode)
+	if qsos[0].Mode != "FT8" {
+		t.Errorf("stored mode = %q, want FT8 (standalone per ADIF 3.1.4)", qsos[0].Mode)
 	}
-	if qsos[0].Submode != "FT8" {
-		t.Errorf("stored submode = %q, want FT8", qsos[0].Submode)
+	if qsos[0].Submode != "" {
+		t.Errorf("stored submode = %q, want empty", qsos[0].Submode)
 	}
 }
 
-func TestADIFToQSO_MFSK_FT8_Unchanged(t *testing.T) {
+func TestADIFToQSO_MFSK_FT8_LegacyNormalized(t *testing.T) {
 	m := newADIFTestModel(t)
 	m.App.Logbook.Wavelog = nil
 
-	// Existing MFSK+FT8 ADIF should still work as before.
+	// Legacy MFSK+FT8 ADIF should be normalized to standalone FT8.
 	adif := "<CALL:6>SP9MOA <BAND:3>20m <FREQ:8>14.074550 <MODE:4>MFSK <SUBMODE:3>FT8 " +
 		"<QSO_DATE:8>20260618 <TIME_ON:6>120000 <RST_SENT:3>-10 <RST_RCVD:3>-05 <EOR>"
 
 	qs := parseWSJTXADIF(adif)
-	if qs.Mode != "MFSK" {
-		t.Errorf("MFSK+FT8 mode should stay MFSK, got %q", qs.Mode)
+	if qs.Mode != "FT8" {
+		t.Errorf("legacy MFSK+FT8 mode should normalize to FT8, got %q", qs.Mode)
 	}
-	if qs.Submode != "FT8" {
-		t.Errorf("MFSK+FT8 submode should stay FT8, got %q", qs.Submode)
+	if qs.Submode != "" {
+		t.Errorf("legacy MFSK+FT8 submode should be empty, got %q", qs.Submode)
+	}
+
+	qs.Source = "import"
+	if err := qso.ValidateImportRecord(qs); err != nil {
+		t.Fatalf("ValidateImportRecord: %v", err)
+	}
+	id, err := store.InsertQSO(m.App.DB, qs)
+	if err != nil {
+		t.Fatalf("InsertQSO: %v", err)
+	}
+	stored, err := store.GetQSOByID(m.App.DB, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if stored.Mode != "FT8" {
+		t.Errorf("stored mode = %q, want FT8", stored.Mode)
+	}
+	if stored.Submode != "" {
+		t.Errorf("stored submode = %q, want empty", stored.Submode)
+	}
+}
+
+func TestADIFToQSO_MFSK_FT4_StillValid(t *testing.T) {
+	m := newADIFTestModel(t)
+	m.App.Logbook.Wavelog = nil
+
+	// FT4 IS a valid MFSK submode per ADIF 3.1.4.
+	adif := "<CALL:6>SP9MOA <BAND:3>15m <FREQ:8>21.140500 <MODE:4>MFSK <SUBMODE:3>FT4 " +
+		"<QSO_DATE:8>20260618 <TIME_ON:6>130000 <RST_SENT:3>-08 <RST_RCVD:3>+02 <EOR>"
+
+	qs := parseWSJTXADIF(adif)
+	if qs.Mode != "MFSK" {
+		t.Errorf("MFSK+FT4 mode should stay MFSK, got %q", qs.Mode)
+	}
+	if qs.Submode != "FT4" {
+		t.Errorf("MFSK+FT4 submode should stay FT4, got %q", qs.Submode)
 	}
 }

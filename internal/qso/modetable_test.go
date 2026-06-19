@@ -44,7 +44,7 @@ func TestIsValidSubmode(t *testing.T) {
 		{"CW", "USB", false},
 		{"FT8", "", true},
 		{"MFSK", "FT4", true},
-		{"MFSK", "FT8", true},
+		{"MFSK", "FT8", false}, // FT8 is standalone mode, not MFSK submode (ADIF 3.1.4)
 		{"DIGITALVOICE", "DMR", true},
 		{"DIGITALVOICE", "DSTAR", true},
 		{"DIGITALVOICE", "C4FM", true},
@@ -80,13 +80,13 @@ func TestNormalizeMode(t *testing.T) {
 		{"QPSK31", "", "PSK", "QPSK31"},
 		{"MFSK8", "", "MFSK", "MFSK8"},
 		{"MFSK16", "", "MFSK", "MFSK16"},
-		{"FT8", "", "MFSK", "FT8"},
+		{"FT8", "", "FT8", ""}, // FT8 is standalone mode (ADIF 3.1.4)
 		{"FT4", "", "MFSK", "FT4"},
 		{"MFSK", "FT4", "MFSK", "FT4"},
-		{"MFSK", "FT8", "MFSK", "FT8"},
-		{"ft8", "", "MFSK", "FT8"},
+		{"MFSK", "FT8", "FT8", ""}, // FT8 is standalone, not MFSK submode
+		{"ft8", "", "FT8", ""},
 		{"ft4", "", "MFSK", "FT4"},
-		{"Ft8", "", "MFSK", "FT8"},
+		{"Ft8", "", "FT8", ""},
 		{"", "", "", ""},
 	}
 	for _, tt := range tests {

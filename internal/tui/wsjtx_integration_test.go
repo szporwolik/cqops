@@ -90,12 +90,12 @@ func TestParseWSJTXADIFModeSubmode(t *testing.T) {
 	if qs == nil {
 		t.Fatal("parseWSJTXADIF returned nil")
 	}
-	// FT8 normalizes to MFSK/FT8 since Pass 6.
-	if qs.Mode != "MFSK" {
-		t.Errorf("Mode = %q; want MFSK (FT8 normalized)", qs.Mode)
+	// FT8 is a standalone mode per ADIF 3.1.4.
+	if qs.Mode != "FT8" {
+		t.Errorf("Mode = %q; want FT8 (standalone)", qs.Mode)
 	}
-	if qs.Submode != "FT8" {
-		t.Errorf("Submode = %q; want FT8", qs.Submode)
+	if qs.Submode != "" {
+		t.Errorf("Submode = %q; want empty", qs.Submode)
 	}
 }
 

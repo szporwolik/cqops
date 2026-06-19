@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -115,12 +116,98 @@ func (le *LogbookEditor) View() tea.View {
 		)
 		return tea.NewView(le.viewWithDialog(bodyW))
 
+	case edModeImporting:
+		if !le.dlActive {
+			// Import already completed but mode not yet advanced — show results.
+			// Carry the live progress counter into the result; the done handler
+			// may not have run yet (channel close vs message ordering).
+			if le.impInserted == 0 {
+				le.impInserted = le.dlCurrent
+			}
+			le.mode = edModeImportResult
+		} else {
+			msg := "Importing ADIF…"
+			if le.dlCurrent > 0 && le.dlTotal > 0 {
+				msg = fmt.Sprintf("Inserted %d QSOs (~%d in file)",
+					le.dlCurrent, le.dlTotal)
+				if le.impDupes > 0 {
+					msg += fmt.Sprintf(" — %d dupes", le.impDupes)
+				}
+			}
+			if le.dialog == nil {
+				d := NewDialog("ADIF Import", msg,
+					Option{Label: "Abort", Value: "abort"},
+				)
+				le.dialog = &d
+			} else {
+				le.dialog.Message = msg
+			}
+		}
+		return tea.NewView(le.viewWithDialog(bodyW))
+
+	case edModeExporting:
+		if !le.dlActive {
+			if le.impInserted == 0 {
+				le.impInserted = le.dlCurrent
+			}
+			le.mode = edModeExportResult
+		} else {
+			msg := "Exporting ADIF…"
+			if le.dlCurrent > 0 && le.dlTotal > 0 {
+				msg = fmt.Sprintf("Written %d / %d QSOs",
+					le.dlCurrent, le.dlTotal)
+			}
+			if le.dialog == nil {
+				d := NewDialog("ADIF Export", msg,
+					Option{Label: "Abort", Value: "abort"},
+				)
+				le.dialog = &d
+			} else {
+				le.dialog.Message = msg
+			}
+		}
+		return tea.NewView(le.viewWithDialog(bodyW))
+
+	case edModeExportResult:
+		msg := fmt.Sprintf("Exported %d QSOs.", le.impInserted)
+		path := le.exportPath
+		if path != "" {
+			msg += fmt.Sprintf("\nFile: %s", filepath.Base(path))
+		}
+		if errText := strings.TrimSpace(le.impErr); errText != "" {
+			msg = "Export failed: " + errText
+		}
+		le.ensureDialog("ADIF Export", msg,
+			Option{Label: "OK", Value: "ok"},
+		)
+		return tea.NewView(le.viewWithDialog(bodyW))
+
+	case edModeImportResult:
+		msg := fmt.Sprintf("Imported %d QSOs.", le.impInserted)
+		if le.impDupes > 0 {
+			msg += fmt.Sprintf("\n%d duplicates skipped.", le.impDupes)
+		}
+		if le.impFailed > 0 {
+			msg += fmt.Sprintf("\n%d failed.", le.impFailed)
+		}
+		if errText := strings.TrimSpace(le.impErr); errText != "" {
+			msg = "Import failed: " + errText
+		}
+		le.ensureDialog("ADIF Import", msg,
+			Option{Label: "OK", Value: "ok"},
+		)
+		return tea.NewView(le.viewWithDialog(bodyW))
+
 	case edModeEdit:
 		contentH := contentHeight(le.height)
 		if contentH < 10 {
 			contentH = 10
 		}
 		return tea.NewView(le.viewEdit(bodyW, contentH))
+	case edModeExport:
+		return tea.NewView(le.viewExport(bodyW))
+	case edModeImport:
+		return tea.NewView(le.viewImport(bodyW))
 	default:
 		// Rebuild the table when dimensions change (resize).
 		if le.built && (le.width != le.builtW || le.height != le.builtH) {
@@ -181,4 +268,52 @@ func (le *LogbookEditor) ensureDialog(title, message string, options ...Option) 
 		le.dialog = &d
 		applog.Debug("LogEditor: dialog shown", "title", title, "options", len(options))
 	}
+}
+
+// viewExport renders the ADIF export directory picker screen.
+func (le *LogbookEditor) viewExport(bodyW int) string {
+	boxW := bodyW
+	if boxW > partnerMapMaxW {
+		boxW = partnerMapMaxW
+	}
+	// Leave room for the bordered menu box (title + border + padding ≈ 5 rows).
+	// fpH = contentHeight - header(1) - border(2) - padding(2) - pathLine(1) - margin
+	// filepicker View() renders Height()+1 rows (off-by-one in lib).
+	// Overhead: header(1) + border(2) + padding(2) + pathLine(1) = 6, +1 fp bug = 7.
+	fpH := contentHeight(le.height) - 7
+	if fpH < 4 {
+		fpH = 4
+	}
+	le.filePicker.SetHeight(fpH)
+
+	pathLine := S.Info.Render("Path: ") + ValueStyle.Render(le.filePicker.CurrentDirectory)
+	fpView := le.filePicker.View()
+
+	content := lipgloss.JoinVertical(lipgloss.Left,
+		pathLine,
+		fpView,
+	)
+	return drawMenuWithHeader("ADIF Export - choose folder", content, boxW)
+}
+
+// viewImport renders the ADIF import file picker screen.
+func (le *LogbookEditor) viewImport(bodyW int) string {
+	boxW := bodyW
+	if boxW > partnerMapMaxW {
+		boxW = partnerMapMaxW
+	}
+	fpH := contentHeight(le.height) - 7
+	if fpH < 4 {
+		fpH = 4
+	}
+	le.filePicker.SetHeight(fpH)
+
+	pathLine := S.Info.Render("Path: ") + ValueStyle.Render(le.filePicker.CurrentDirectory)
+	fpView := le.filePicker.View()
+
+	content := lipgloss.JoinVertical(lipgloss.Left,
+		pathLine,
+		fpView,
+	)
+	return drawMenuWithHeader("ADIF Import - choose .adi/.adif file", content, boxW)
 }

@@ -465,6 +465,9 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 		if em.toastWarn != "" {
 			m.toasts.Warn(em.toastWarn)
 		}
+		if em.toastOK != "" {
+			m.toasts.Success(em.toastOK)
+		}
 		if em.err != nil && em.wlQSOID == 0 {
 			m.toasts.Error(em.err.Error())
 		}

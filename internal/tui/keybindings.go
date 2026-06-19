@@ -166,6 +166,8 @@ func (m *Model) ActiveBindings() []key.Binding {
 				key.NewBinding(key.WithKeys("p"), key.WithHelp("P", "Purge")),
 				key.NewBinding(key.WithKeys("w"), key.WithHelp("W", "WL upload")),
 				key.NewBinding(key.WithKeys("ctrl+w"), key.WithHelp("C-W", "WL download")),
+				key.NewBinding(key.WithKeys("ctrl+e"), key.WithHelp("C-E", "Export")),
+				key.NewBinding(key.WithKeys("ctrl+i"), key.WithHelp("C-I", "Import")),
 			)
 		}
 	}

@@ -2,7 +2,9 @@ package tui
 
 import (
 	"database/sql"
+	"os"
 
+	"charm.land/bubbles/v2/filepicker"
 	"charm.land/bubbles/v2/table"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -22,6 +24,12 @@ const (
 	edModeWLDownloading
 	edModeWLDownloadResult
 	edModeEdit
+	edModeExport
+	edModeExporting
+	edModeExportResult
+	edModeImport
+	edModeImporting
+	edModeImportResult
 )
 
 type qsoEditField int
@@ -109,7 +117,7 @@ type LogbookEditor struct {
 	totalCount  int
 	pageSize    int
 
-	// Batch download progress
+	// Batch download/import progress (shared infrastructure, one active at a time).
 	dlActive   bool // true while download goroutine is running
 	dlProgress int
 	dlTotal    int
@@ -117,11 +125,21 @@ type LogbookEditor struct {
 	dlCancel   chan struct{}
 	dlMsgCh    chan editorMsg
 
+	// ADIF import results.
+	impInserted int
+	impDupes    int
+	impFailed   int
+	impErr      string
+
 	// View cache — avoids rebuilding the table on every frame with large QSO sets.
 	cachedView string
 	cachedSig  string
 	builtW     int // width at last buildTable call
 	builtH     int // height at last buildTable call
+
+	// File export.
+	filePicker filepicker.Model
+	exportPath string
 }
 
 // =============================================================================
@@ -130,6 +148,14 @@ type LogbookEditor struct {
 
 func NewLogbookEditor(db *sql.DB, wlURL, wlKey, wlStationID string, wlLastFetchedID int64, logStationOp, logStationGrid string) *LogbookEditor {
 	le := &LogbookEditor{db: db, mode: edModeList, wlURL: wlURL, wlKey: wlKey, wlStationID: wlStationID, wlLastFetchedID: wlLastFetchedID, logStationOp: logStationOp, logStationGrid: logStationGrid}
+	le.filePicker = filepicker.New()
+	le.filePicker.FileAllowed = false
+	le.filePicker.DirAllowed = true
+	le.filePicker.AutoHeight = false
+	le.filePicker.ShowHidden = false
+	if home, err := os.UserHomeDir(); err == nil {
+		le.filePicker.CurrentDirectory = home
+	}
 	for i := qsoEditField(0); i < qefCount; i++ {
 		ti := newTextinput()
 		ti.CharLimit = 40
@@ -267,10 +293,22 @@ func (le *LogbookEditor) QSOCount() int { return len(le.qsos) }
 
 func (le *LogbookEditor) IsEditing() bool { return le.mode == edModeEdit }
 
+func (le *LogbookEditor) IsExporting() bool {
+	return le.mode == edModeExport || le.mode == edModeExporting || le.mode == edModeExportResult
+}
+func (le *LogbookEditor) IsImporting() bool {
+	return le.mode == edModeImport || le.mode == edModeImporting || le.mode == edModeImportResult
+}
+
+// FilePicker returns the filepicker model for external use (help suffix).
+func (le *LogbookEditor) FilePicker() filepicker.Model { return le.filePicker }
+
 func (le *LogbookEditor) isConfirmMode() bool {
 	switch le.mode {
 	case edModeConfirmDelete, edModeConfirmPurge, edModeConfirmWLSend, edModeConfirmWLDownload,
-		edModeConfirmNormalize, edModeWLDownloading, edModeWLDownloadResult:
+		edModeConfirmNormalize, edModeWLDownloading, edModeWLDownloadResult,
+		edModeExporting, edModeExportResult,
+		edModeImporting, edModeImportResult:
 		return true
 	}
 	return false
