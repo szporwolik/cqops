@@ -142,11 +142,13 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case c.mode == chooserList && k.String() == "enter":
-			return c, c.handleEnter()
-
-		case c.mode == chooserList && k.String() == "e":
 			if len(c.names) > 0 {
 				c.startEdit(c.names[c.cursor])
+			}
+
+		case c.mode == chooserList && (k.String() == " " || k.Code == ' ' || k.String() == "a"):
+			if len(c.names) > 0 {
+				return c, c.handleEnter()
 			}
 
 		case c.mode == chooserList && k.String() == "insert":
@@ -244,6 +246,8 @@ func (c *LogbookChooser) viewList() string {
 	if len(c.names) == 0 {
 		b.WriteString("No logbooks configured.\n")
 	} else {
+		activeLabelStyle := lipgloss.NewStyle().Width(9).Foreground(P.TextMuted)
+		activeFocusedStyle := lipgloss.NewStyle().Width(9).Foreground(P.Cursor)
 		for i, id := range c.names {
 			lb := c.app.Config.Logbooks[id]
 			displayName := config.LogbookDisplayName(&lb)
@@ -262,10 +266,10 @@ func (c *LogbookChooser) viewList() string {
 			if i == c.cursor {
 				prefix = S.FormPrefixOn.Render("> ")
 			}
-			lbl := S.FormLabelWide.Align(lipgloss.Left).Render(active)
+			lbl := activeLabelStyle.Align(lipgloss.Left).Render(active)
 			val := fmt.Sprintf("%s  %s", displayName, info)
 			if i == c.cursor {
-				lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(active)
+				lbl = activeFocusedStyle.Align(lipgloss.Left).Render(active)
 				val = CursorStyle.Render(val)
 			}
 			line := lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)

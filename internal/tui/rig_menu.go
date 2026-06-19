@@ -96,11 +96,13 @@ func (rc *RigChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case rc.mode == rigChooserList && k.String() == "enter":
-			return rc, rc.selectRig()
-
-		case rc.mode == rigChooserList && k.String() == "e":
 			if len(rc.names) > 0 {
 				rc.startEdit(rc.names[rc.cursor])
+			}
+
+		case rc.mode == rigChooserList && (k.String() == " " || k.Code == ' ' || k.String() == "a"):
+			if len(rc.names) > 0 {
+				return rc, rc.selectRig()
 			}
 
 		case rc.mode == rigChooserList && k.String() == "insert":
@@ -182,6 +184,8 @@ func (rc *RigChooser) viewList() string {
 		b.WriteString("No rigs configured.\n")
 	} else {
 		activeRig := rc.app.Logbook.Station.RigName
+		activeLabelStyle := lipgloss.NewStyle().Width(9).Foreground(P.TextMuted)
+		activeFocusedStyle := lipgloss.NewStyle().Width(9).Foreground(P.Cursor)
 		for i, id := range rc.names {
 			rp := rc.app.Config.Rigs[id]
 			displayName := config.RigDisplayName(&rp)
@@ -201,10 +205,10 @@ func (rc *RigChooser) viewList() string {
 			if i == rc.cursor {
 				prefix = S.FormPrefixOn.Render("> ")
 			}
-			lbl := S.FormLabelWide.Align(lipgloss.Left).Render(active)
+			lbl := activeLabelStyle.Align(lipgloss.Left).Render(active)
 			val := fmt.Sprintf("%s  %s  %s", displayName, info, flrig)
 			if i == rc.cursor {
-				lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(active)
+				lbl = activeFocusedStyle.Align(lipgloss.Left).Render(active)
 				val = CursorStyle.Render(val)
 			}
 			line := lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)

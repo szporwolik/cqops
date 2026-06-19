@@ -215,8 +215,8 @@ func (m *Model) ActiveBindings() []key.Binding {
 		} else {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
-				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Activate")),
-				key.NewBinding(key.WithKeys("e"), key.WithHelp("E", "Edit")),
+				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit")),
+				key.NewBinding(key.WithKeys("space"), key.WithHelp("Spc", "Activate")),
 				key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Create")),
 				key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
@@ -234,8 +234,8 @@ func (m *Model) ActiveBindings() []key.Binding {
 		} else {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
-				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Activate")),
-				key.NewBinding(key.WithKeys("e"), key.WithHelp("E", "Edit")),
+				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit")),
+				key.NewBinding(key.WithKeys("space"), key.WithHelp("Spc", "Activate")),
 				key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Create")),
 				key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
