@@ -41,6 +41,7 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 </p>
 <p align="center">
   <img src="assets/screenshots/screen-shot-03.png" width="49%" alt="Screen 3">
+  <img src="assets/screenshots/screen-shot-04.png" width="49%" alt="Screen 4">
 </p>
 
 ## Requirements
