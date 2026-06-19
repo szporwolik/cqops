@@ -256,13 +256,9 @@ func (m *Model) ActiveBindings() []key.Binding {
 			key.NewBinding(key.WithKeys("home", "end"), key.WithHelp("Home/End", "Band")),
 			key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("PgUp/Dn", "Time")),
 			key.NewBinding(key.WithKeys("backspace"), key.WithHelp("Bksp", "Clear")),
-			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "QSO")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "QSO+Tune")),
+			key.NewBinding(key.WithKeys(" "), key.WithHelp("Spc", "Tune")),
 		)
-		if m.rig.connected && !m.wsjtx.online {
-			bindings = append(bindings,
-				key.NewBinding(key.WithKeys("tab"), key.WithHelp("Tab", "Tune")),
-			)
-		}
 	}
 	// Partner screen — show F2 Photo when image available.
 	if m.screen == screenPartner && m.lookup.partnerData != nil && m.lookup.partnerData.ImageURL != "" {

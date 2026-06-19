@@ -69,15 +69,10 @@ func (m *Model) handleDXCUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			return m, cmd
 
 		case "enter":
-			// Fill QSO form with highlighted spot and jump to form.
-			m.dxcFillFromSelected()
-			m.screen = screenQSO
-			return m, cmd
-
-		case "tab":
-			// Fill QSO form with highlighted spot and tune rig.
+			// Fill QSO form with highlighted spot, tune rig, and jump to form.
 			m.dxcFillFromSelected()
 			cmd = tea.Batch(cmd, m.dxcTuneCmd())
+			m.screen = screenQSO
 			return m, cmd
 
 		case "insert":
@@ -123,6 +118,11 @@ func (m *Model) handleDXCUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	}
 
 	if m.dxc.tableReady {
+		// Space is reserved for tune — don't forward to the table.
+		if kp, ok := msg.(tea.KeyPressMsg); ok && (kp.String() == " " || kp.String() == "space" || kp.Code == ' ') {
+			cmd = tea.Batch(cmd, m.dxcTuneCmd())
+			return m, cmd
+		}
 		t, c := m.dxc.table.Update(msg)
 		m.dxc.table = t
 		m.updateDXCSelectedCall()
