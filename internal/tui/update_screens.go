@@ -687,7 +687,6 @@ var bandOrder = []bandplan.BandName{
 	bandplan.Band15m,
 	bandplan.Band12m,
 	bandplan.Band10m,
-	bandplan.Band6m,
 }
 
 // emcomFreqs holds EMCOM (Emergency Communication) center-of-activity
@@ -816,22 +815,16 @@ var vhfCalling = map[int][]vhfCall{
 		{Band: "4m", FromMHz: "70.000", ToMHz: "70.500"},
 		{Band: "", Freq: "70.200", Mode: "CALL", Note: "CW/SSB calling"},
 		{Band: "", Freq: "70.450", Mode: "CALL", Note: "FM calling"},
-		{Band: "10m", FromMHz: "28.000", ToMHz: "29.700"},
-		{Band: "", Freq: "29.600", Mode: "CALL", Note: "FM calling"},
 		{Band: "6m", FromMHz: "50.000", ToMHz: "52.000"},
 		{Band: "", Freq: "50.110", Mode: "DX", Note: "Intercontinental DX calling"},
 		{Band: "", Freq: "50.150", Mode: "CALL", Note: "SSB centre/calling"},
 	},
 	2: { // Region 2 — Americas
-		{Band: "10m", FromMHz: "28.000", ToMHz: "29.700"},
-		{Band: "", Freq: "29.600", Mode: "CALL", Note: "FM calling"},
 		{Band: "6m", FromMHz: "50.000", ToMHz: "54.000"},
 		{Band: "", Freq: "50.110", Mode: "DX", Note: "Intercontinental DX calling"},
 		{Band: "", Freq: "50.125", Mode: "CALL", Note: "SSB calling"},
 	},
 	3: { // Region 3 — Asia-Pacific
-		{Band: "10m", FromMHz: "28.000", ToMHz: "29.700"},
-		{Band: "", Freq: "29.600", Mode: "CALL", Note: "FM calling"},
 		{Band: "6m", FromMHz: "50.000", ToMHz: "54.000"},
 		{Band: "", Freq: "50.110", Mode: "DX", Note: "Intercontinental DX calling"},
 		{Band: "", Freq: "50.150", Mode: "CALL", Note: "SSB centre/calling"},
@@ -1827,8 +1820,8 @@ func (m *Model) buildBPLMarkdown(region int) string {
 
 	// Broadcast section.
 	b.WriteString("\n## Broadcast\n\n")
-	b.WriteString("| Band | Freq MHz | Station | Area | Reliability |\n")
-	b.WriteString("|------|----------|---------|------|-------------|\n")
+	b.WriteString("| Band | Freq MHz | Station | Area |\n")
+	b.WriteString("|------|----------|---------|------|\n")
 	m.writeBRCMarkdownRows(&b, region)
 
 	return b.String()
@@ -1839,7 +1832,7 @@ func (m *Model) writeBPLMarkdownRows(b *strings.Builder, region int) {
 	freqStr := func(f hamradio.Frequency) string { return fmt.Sprintf("%.3f", float64(f)/1e6) }
 	bwStr := func(bw hamradio.Frequency) string {
 		if bw <= 0 {
-			return "-"
+			return ""
 		}
 		return fmt.Sprintf("%.0f", float64(bw))
 	}
@@ -1861,7 +1854,7 @@ func (m *Model) writeBPLMarkdownRows(b *strings.Builder, region int) {
 		if qrps, ok := qrpFreqs[region]; ok {
 			if entries, ok := qrps[name]; ok {
 				for _, e := range entries {
-					fmt.Fprintf(b, "| | | | QRP %s | %s | | centre of activity |\n", e.Mode, e.Freq)
+					fmt.Fprintf(b, "| | | | %s | %s | | QRP centre |\n", e.Mode, e.Freq)
 				}
 			}
 		}
@@ -1944,7 +1937,6 @@ func (m *Model) writeCBMarkdownRows(b *strings.Builder, region int) {
 	profiles := nonHamProfiles(region)
 	for _, p := range profiles {
 		if p.ID == "CB_CEPT_EU" || p.ID == "CB_FCC_US" || p.ID == "CB_HF_AU" {
-			b.WriteString(fmt.Sprintf("<!-- %s: %s–%s MHz  %s  %s -->\n", p.Label, p.RangeLo, p.RangeHi, p.Mod, p.Note))
 			b.WriteString(fmt.Sprintf("\n**%s** — %s–%s MHz, %s\n\n", p.Label, p.RangeLo, p.RangeHi, p.Mod))
 		}
 	}
@@ -2016,11 +2008,7 @@ func (m *Model) writeBRCMarkdownRows(b *strings.Builder, region int) {
 		if bc.Reliability == "seasonal" {
 			area += " [seasonal]"
 		}
-		rel := bc.Reliability
-		if rel == "" {
-			rel = "-"
-		}
-		fmt.Fprintf(b, "| %s | %s | %s | %s | %s |\n", bc.Band, freqMHz, bc.Station, area, rel)
+		fmt.Fprintf(b, "| %s | %s | %s | %s |\n", bc.Band, freqMHz, bc.Station, area)
 	}
 }
 
