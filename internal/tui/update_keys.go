@@ -128,12 +128,22 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.screen = screenRef
 		return nil, true
 
+	case key.Matches(msg, m.keys.BPL):
+		applog.Debug("tab: F7 BPL")
+		m.screen = screenBPL
+		return nil, true
+
+	case key.Matches(msg, m.keys.CON):
+		applog.Debug("tab: F3 CON")
+		m.screen = screenCON
+		return nil, true
+
 	case key.Matches(msg, m.keys.Config):
 		if m.screen == screenMainMenu {
-			applog.Debug("tab: F7 close Config")
+			applog.Debug("tab: F9 close Config")
 			m.screen = screenQSO
 		} else {
-			applog.Debug("tab: F8 Config")
+			applog.Debug("tab: F9 Config")
 			m.ui.mainMenu = NewMainMenu()
 			m.ui.mainMenu.width = m.width
 			m.ui.mainMenu.height = m.height
@@ -152,7 +162,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, true
 
 	case key.Matches(msg, m.keys.LogEditor):
-		applog.Debug("tab: F7 Editor")
+		applog.Debug("tab: F8 Editor")
 		wl := m.App.Logbook.Wavelog
 		wlURL, wlKey, wlStationID := "", "", ""
 		if wl != nil {
@@ -170,7 +180,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, true
 
 	case key.Matches(msg, m.keys.Logs):
-		applog.Debug("tab: F9 Log Viewer")
+		applog.Debug("tab: Ctrl+F9 Log Viewer")
 		m.ui.logViewer = NewLogViewer(config.LogbookDisplayName(m.App.Logbook))
 		m.ui.logViewer.width = m.width
 		m.ui.logViewer.height = m.height

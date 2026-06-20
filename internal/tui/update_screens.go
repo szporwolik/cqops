@@ -8,6 +8,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/ftl/hamradio/dxcc"
 	"github.com/ftl/hamradio/scp"
 	"github.com/szporwolik/cqops/internal/applog"
@@ -627,4 +628,50 @@ func (m *Model) handleLogViewUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 		m.screen = screenQSO
 	}
 	return m, cmd
+}
+
+// =============================================================================
+// BPL placeholder pane (F7)
+// =============================================================================
+
+func (m *Model) handleBPLUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width, m.height = msg.Width, msg.Height
+		return m, cmd
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "f1", "esc":
+			m.screen = screenQSO
+			return m, cmd
+		}
+	}
+	return m, cmd
+}
+
+func (m *Model) viewBPL(l Layout) string {
+	return fillBody(DimStyle.Width(l.TerminalW).Align(lipgloss.Center).Render("BPL — placeholder"), l.ContentH)
+}
+
+// =============================================================================
+// CON placeholder pane (F3)
+// =============================================================================
+
+func (m *Model) handleCONUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width, m.height = msg.Width, msg.Height
+		return m, cmd
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "f1", "esc":
+			m.screen = screenQSO
+			return m, cmd
+		}
+	}
+	return m, cmd
+}
+
+func (m *Model) viewCON(l Layout) string {
+	return fillBody(DimStyle.Width(l.TerminalW).Align(lipgloss.Center).Render("CON — placeholder"), l.ContentH)
 }

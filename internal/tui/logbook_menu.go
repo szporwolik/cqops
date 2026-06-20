@@ -358,7 +358,7 @@ func (c *LogbookChooser) refreshNames() {
 
 func (c *LogbookChooser) startCreate() {
 	c.mode = chooserCreate
-	c.station.SetValues("", "", "", "", "", "")
+	c.station.SetValues("", "", "", "", "", "", 1)
 	c.station.BlurAll()
 	c.station.Callsign.Focus()
 	c.editing = ""
@@ -368,7 +368,7 @@ func (c *LogbookChooser) startEdit(id string) {
 	lb := c.app.Config.Logbooks[id]
 	c.mode = chooserEdit
 	c.editing = id
-	c.station.SetValues(lb.Station.Callsign, lb.Station.Operator, lb.Station.Grid, lb.Station.SOTARef, lb.Station.POTARef, lb.Station.WWFFRef)
+	c.station.SetValues(lb.Station.Callsign, lb.Station.Operator, lb.Station.Grid, lb.Station.SOTARef, lb.Station.POTARef, lb.Station.WWFFRef, lb.Station.IARURegion)
 	c.station.SetWavelogValues(lb.Wavelog)
 	c.wlStatus = ""
 	c.wlStations = nil
@@ -381,7 +381,7 @@ func (c *LogbookChooser) startEdit(id string) {
 }
 
 func (c *LogbookChooser) saveForm() tea.Cmd {
-	cs, op, gr, sotaRef, potaRef, wwffRef, wlEnabled, wlURL, wlKey, wlStationID := c.station.Values()
+	cs, op, gr, sotaRef, potaRef, wwffRef, wlEnabled, wlURL, wlKey, wlStationID, iaruRegion := c.station.Values()
 
 	if err := c.station.Validate(); err != nil {
 		c.toasts.Error(err.Error())
@@ -418,13 +418,14 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 			ID:          id,
 			Description: "Created from TUI",
 			Station: config.Station{
-				Callsign: cs,
-				Operator: op,
-				Grid:     gr,
-				SOTARef:  sotaRef,
-				POTARef:  potaRef,
-				WWFFRef:  wwffRef,
-				RigName:  prevRigName,
+				Callsign:   cs,
+				Operator:   op,
+				Grid:       gr,
+				SOTARef:    sotaRef,
+				POTARef:    potaRef,
+				WWFFRef:    wwffRef,
+				RigName:    prevRigName,
+				IARURegion: iaruRegion,
 			},
 			Wavelog: wl,
 		}
@@ -444,6 +445,7 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 		lb.Station.SOTARef = sotaRef
 		lb.Station.POTARef = potaRef
 		lb.Station.WWFFRef = wwffRef
+		lb.Station.IARURegion = iaruRegion
 		lb.Wavelog = wl
 		c.app.Config.Logbooks[id] = lb
 

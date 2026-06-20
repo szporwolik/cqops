@@ -18,6 +18,8 @@ type StationForm struct {
 	SOTARef     textinput.Model
 	POTARef     textinput.Model
 	WWFFRef     textinput.Model
+	IARURegion  int
+	iaruFocus   bool // true when IARU region selector has focus
 	WlEnabled   bool
 	wlCbFocus   bool // true when the WL checkbox has focus
 	wlBtnFocus  int  // 0=none, 1=Update, 2=Test
@@ -86,6 +88,13 @@ func (f *StationForm) Update(msg tea.KeyPressMsg) {
 	case f.WWFFRef.Focused():
 		f.WWFFRef, _ = f.WWFFRef.Update(msg)
 		f.WWFFRef.SetValue(strings.ToUpper(f.WWFFRef.Value()))
+	case f.iaruFocus:
+		if msg.String() == " " || msg.String() == "space" || msg.String() == "enter" {
+			f.IARURegion++
+			if f.IARURegion > 3 {
+				f.IARURegion = 1
+			}
+		}
 	case f.WlURL.Focused():
 		f.WlURL, _ = f.WlURL.Update(msg)
 	case f.WlKey.Focused():
@@ -114,6 +123,9 @@ func (f *StationForm) NextInput() {
 		f.WWFFRef.Focus()
 	case f.WWFFRef.Focused():
 		f.WWFFRef.Blur()
+		f.iaruFocus = true
+	case f.iaruFocus:
+		f.iaruFocus = false
 		f.wlCbFocus = true
 	case f.wlCbFocus:
 		f.wlCbFocus = false
@@ -170,6 +182,9 @@ func (f *StationForm) PrevInput() {
 		f.POTARef.Focus()
 	case f.wlCbFocus:
 		f.wlCbFocus = false
+		f.iaruFocus = true
+	case f.iaruFocus:
+		f.iaruFocus = false
 		f.WWFFRef.Focus()
 	case f.WlURL.Focused():
 		f.WlURL.Blur()
@@ -191,11 +206,12 @@ func (f *StationForm) BlurAll() {
 	blurTextinputs(&f.Callsign, &f.Operator, &f.Locator, &f.SOTARef, &f.POTARef, &f.WWFFRef,
 		&f.WlURL, &f.WlKey, &f.WlStationID)
 	f.wlCbFocus = false
+	f.iaruFocus = false
 	f.wlBtnFocus = 0
 }
 
 func (f *StationForm) Values() (callsign, operator, locator, sotaRef, potaRef, wwffRef string,
-	wlEnabled bool, wlURL, wlKey, wlStationID string) {
+	wlEnabled bool, wlURL, wlKey, wlStationID string, iaruRegion int) {
 	return strings.ToUpper(strings.TrimSpace(f.Callsign.Value())),
 		strings.ToUpper(strings.TrimSpace(f.Operator.Value())),
 		formatLocator(f.Locator.Value()),
@@ -205,16 +221,18 @@ func (f *StationForm) Values() (callsign, operator, locator, sotaRef, potaRef, w
 		f.WlEnabled,
 		strings.TrimSpace(f.WlURL.Value()),
 		strings.TrimSpace(f.WlKey.Value()),
-		strings.TrimSpace(f.WlStationID.Value())
+		strings.TrimSpace(f.WlStationID.Value()),
+		f.IARURegion
 }
 
-func (f *StationForm) SetValues(callsign, operator, locator, sotaRef, potaRef, wwffRef string) {
+func (f *StationForm) SetValues(callsign, operator, locator, sotaRef, potaRef, wwffRef string, iaruRegion int) {
 	f.Callsign.SetValue(callsign)
 	f.Operator.SetValue(operator)
 	f.Locator.SetValue(locator)
 	f.SOTARef.SetValue(sotaRef)
 	f.POTARef.SetValue(potaRef)
 	f.WWFFRef.SetValue(wwffRef)
+	f.IARURegion = iaruRegion
 }
 
 func (f *StationForm) SetWavelogValues(wl *config.WavelogConfig) {
@@ -255,6 +273,25 @@ func (f *StationForm) View() tea.View {
 	for _, field := range fields {
 		b.WriteString(f.renderFieldLine(field.label, field.ti, availW))
 	}
+
+	// IARU Region display (focusable, Space/Enter to cycle)
+	iaruLabel := "IARU Region:"
+	if f.IARURegion < 1 || f.IARURegion > 3 {
+		f.IARURegion = 1
+	}
+	iaruVal := fmt.Sprintf("%d — %s", f.IARURegion, iaruRegionName(f.IARURegion))
+	prefix := "  "
+	lbl := S.FormLabelWide.Align(lipgloss.Left).Render(iaruLabel)
+	val := ValueStyle.Render(iaruVal)
+	if f.iaruFocus {
+		prefix = S.FormPrefixOn.Render("> ")
+		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(iaruLabel)
+		val = CursorStyle.Render(iaruVal)
+	}
+	b.WriteString(padOrTrunc(
+		lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val),
+		availW))
+	b.WriteString("\n")
 
 	// Wavelog checkbox
 	wlCheckbox := "[ ]"
@@ -376,7 +413,7 @@ func (f *StationForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 type enterOnLastFieldMsg struct{}
 
 func (f *StationForm) Validate() error {
-	cs, _, gr, _, _, _, _, _, _, _ := f.Values()
+	cs, _, gr, _, _, _, _, _, _, _, _ := f.Values()
 	if cs == "" {
 		return fmt.Errorf("callsign is required")
 	}
@@ -395,7 +432,7 @@ func (f *StationForm) Validate() error {
 // ValidateField returns an error hint for the given render field label, or ""
 // if the field value is valid. Used for inline UI feedback.
 func (f *StationForm) ValidateField(label string) string {
-	cs, _, gr, _, _, _, _, _, _, _ := f.Values()
+	cs, _, gr, _, _, _, _, _, _, _, _ := f.Values()
 	switch label {
 	case "Callsign:":
 		if cs != "" && !qso.IsValidCall(cs) {
@@ -407,4 +444,18 @@ func (f *StationForm) ValidateField(label string) string {
 		}
 	}
 	return ""
+}
+
+// iaruRegionName returns the human-readable name for an IARU region number.
+func iaruRegionName(r int) string {
+	switch r {
+	case 1:
+		return "Europe, Africa, Middle East, N. Asia"
+	case 2:
+		return "Americas"
+	case 3:
+		return "Asia-Pacific"
+	default:
+		return "Unknown"
+	}
 }

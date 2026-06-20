@@ -15,6 +15,8 @@ type KeyMap struct {
 	Config       key.Binding
 	Logs         key.Binding
 	Ref          key.Binding
+	BPL          key.Binding
+	CON          key.Binding
 	Save         key.Binding
 	Delete       key.Binding
 	Lookup       key.Binding
@@ -57,20 +59,28 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("F4", "cluster"),
 		),
 		LogEditor: key.NewBinding(
-			key.WithKeys("f7"),
-			key.WithHelp("F7", "Editor"),
+			key.WithKeys("f8"),
+			key.WithHelp("F8", "Editor"),
 		),
 		Config: key.NewBinding(
-			key.WithKeys("f8"),
-			key.WithHelp("F8", "CFG"),
+			key.WithKeys("f9"),
+			key.WithHelp("F9", "CFG"),
 		),
 		Logs: key.NewBinding(
-			key.WithKeys("f9"),
-			key.WithHelp("F9", "Logs"),
+			key.WithKeys("ctrl+f9"),
+			key.WithHelp("Ctrl+F9", "Logs"),
 		),
 		Ref: key.NewBinding(
 			key.WithKeys("f6"),
 			key.WithHelp("F6", "REF"),
+		),
+		BPL: key.NewBinding(
+			key.WithKeys("f7"),
+			key.WithHelp("F7", "BPL"),
+		),
+		CON: key.NewBinding(
+			key.WithKeys("f3"),
+			key.WithHelp("F3", "CON"),
 		),
 		Save: key.NewBinding(
 			key.WithKeys("ctrl+s"),
@@ -274,6 +284,10 @@ func (m *Model) ActiveBindings() []key.Binding {
 			key.NewBinding(key.WithKeys("enter", "insert"), key.WithHelp("Enter/Ins", "Search")),
 			key.NewBinding(key.WithKeys("backspace"), key.WithHelp("Bksp", "Clear")),
 		)
+	}
+	// BPL / CON placeholder panes — only F10 Quit is shown.
+	if m.screen == screenBPL || m.screen == screenCON {
+		bindings = append(bindings)
 	}
 	// Partner screen — show F2 Photo when image available.
 	if m.screen == screenPartner && m.lookup.partnerData != nil && m.lookup.partnerData.ImageURL != "" {

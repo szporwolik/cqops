@@ -91,6 +91,8 @@ const (
 	screenNotifications
 	screenDXC
 	screenRef
+	screenBPL
+	screenCON
 )
 
 type Model struct {
@@ -547,6 +549,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleDXCUpdate(msg, cmd)
 	case screenRef:
 		return m.handleRefUpdate(msg, cmd)
+	case screenBPL:
+		return m.handleBPLUpdate(msg, cmd)
+	case screenCON:
+		return m.handleCONUpdate(msg, cmd)
 	}
 
 	// QSO form key handling
@@ -717,6 +723,10 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 		body = m.dxcView()
 	case screenRef:
 		body = m.viewRef()
+	case screenBPL:
+		body = m.viewBPL(l)
+	case screenCON:
+		body = m.viewCON(l)
 	}
 	if body == "" {
 		return ""

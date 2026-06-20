@@ -72,13 +72,14 @@ type Logbook struct {
 }
 
 type Station struct {
-	Callsign string `yaml:"callsign"`
-	Operator string `yaml:"operator"`
-	Grid     string `yaml:"grid"`
-	RigName  string `yaml:"rig_name,omitempty"`
-	SOTARef  string `yaml:"sota_ref,omitempty"`
-	POTARef  string `yaml:"pota_ref,omitempty"`
-	WWFFRef  string `yaml:"wwff_ref,omitempty"`
+	Callsign   string `yaml:"callsign"`
+	Operator   string `yaml:"operator"`
+	Grid       string `yaml:"grid"`
+	RigName    string `yaml:"rig_name,omitempty"`
+	SOTARef    string `yaml:"sota_ref,omitempty"`
+	POTARef    string `yaml:"pota_ref,omitempty"`
+	WWFFRef    string `yaml:"wwff_ref,omitempty"`
+	IARURegion int    `yaml:"iaru_region,omitempty"` // 1, 2, or 3
 }
 
 // Rig resolves the RigPreset referenced by RigName. Returns the preset and
