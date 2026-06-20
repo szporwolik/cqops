@@ -907,7 +907,7 @@ func TestWavelogUpload_IntegratedADIFToUpload(t *testing.T) {
 	}
 
 	// Verify QSO was persisted locally.
-	qsos, err := store.ListQSOs(m.App.DB, 1)
+	qsos, err := store.ListQSOs(m.App.DB, 1, "")
 	if err != nil {
 		t.Fatalf("ListQSOs: %v", err)
 	}
@@ -957,7 +957,7 @@ func TestWavelogUpload_DisabledPreservesLocalQSO(t *testing.T) {
 	}
 
 	// Local QSO must still be persisted.
-	qsos, err := store.ListQSOs(m.App.DB, 1)
+	qsos, err := store.ListQSOs(m.App.DB, 1, "")
 	if err != nil {
 		t.Fatalf("ListQSOs: %v", err)
 	}

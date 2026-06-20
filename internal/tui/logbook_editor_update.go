@@ -944,7 +944,7 @@ func (le *LogbookEditor) runExport(path string) {
 		if offset+limit > total {
 			limit = total - offset
 		}
-		qsos, err := store.ListQSOsPage(db, limit, offset)
+		qsos, err := store.ListQSOsPage(db, limit, offset, "")
 		if err != nil {
 			applog.Error("ADIF export: failed to list QSOs", "offset", offset, "error", err)
 			msgCh <- editorMsg{dlErr: "database read error: " + err.Error()}

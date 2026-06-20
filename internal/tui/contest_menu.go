@@ -2,11 +2,13 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/config"
 )
@@ -22,32 +24,68 @@ const (
 
 // ContestChooser manages the contest list, create, edit, and delete flow.
 type ContestChooser struct {
-	app       *app.App
-	mode      contestMode
-	names     []string // display order: "None" + sorted contest IDs
-	ids       []string // corresponding IDs (empty string for "None")
-	cursor    int
-	editID    string          // ID being edited (empty for create)
-	nameInput textinput.Model // textinput for editing contest name
-	toasts    *ToastQueue
-	dialog    *DialogModel
-	width     int
-	height    int
-	done      bool
+	app                 *app.App
+	mode                contestMode
+	names               []string
+	ids                 []string
+	cursor              int
+	editID              string
+	focus               int // 0=name,1=date,2=nextQSO,3=contestID,4=prefillSent,5=exchSent,6=prefillRcvd,7=exchRcvd
+	nameInput           textinput.Model
+	dateInput           textinput.Model
+	nextInput           textinput.Model
+	contInput           textinput.Model
+	exchSentInput       textinput.Model
+	exchRcvdInput       textinput.Model
+	prefillExchange     bool
+	prefillExchangeRcvd bool
+	adifIdx             int // index into adifContestIDs for space cycling
+	needsSave           bool
+	toasts              *ToastQueue
+	dialog              *DialogModel
+	width               int
+	height              int
+	done                bool
 }
 
 func NewContestChooser(a *app.App, tq *ToastQueue) *ContestChooser {
-	ti := textinput.New()
-	ti.Prompt = ""
-	ti.Placeholder = "Contest name"
-	ti.SetWidth(30)
-	ti.Focus()
+	ni := newTextinput()
+	ni.Placeholder = "Contest name"
+	ni.SetWidth(30)
+
+	di := newTextinput()
+	di.Placeholder = "YYYY-MM-DD"
+	di.SetWidth(12)
+	di.CharLimit = 10
+
+	xi := newTextinput()
+	xi.Placeholder = "1"
+	xi.SetWidth(6)
+	xi.CharLimit = 6
+
+	ci := newTextinput()
+	ci.Placeholder = "ADIF Contest-ID"
+	ci.SetWidth(20)
+	ci.CharLimit = 30
+
+	ei := newTextinput()
+	ei.SetWidth(40)
+	ei.CharLimit = 60
+
+	ri := newTextinput()
+	ri.SetWidth(40)
+	ri.CharLimit = 60
 
 	cc := &ContestChooser{
-		app:       a,
-		mode:      contestList,
-		nameInput: ti,
-		toasts:    tq,
+		app:           a,
+		mode:          contestList,
+		nameInput:     ni,
+		dateInput:     di,
+		nextInput:     xi,
+		contInput:     ci,
+		exchSentInput: ei,
+		exchRcvdInput: ri,
+		toasts:        tq,
 	}
 	cc.rebuildNames()
 	return cc
@@ -121,24 +159,21 @@ func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return c, nil
 			}
 
-		case c.mode == contestList && (k.String() == "enter" || k.String() == " " || msg.Code == ' '):
+		case c.mode == contestList && k.String() == "enter":
 			if c.cursor == 0 {
-				c.app.Config.State.ActiveContest = ""
-				c.toasts.Success("Contest: None (no contest active)")
-			} else if c.cursor > 0 && c.cursor < len(c.ids) {
-				id := c.ids[c.cursor]
-				c.app.Config.State.ActiveContest = id
-				ct := c.app.Config.Contests[id]
-				name := config.ContestDisplayName(&ct)
-				c.toasts.Success(fmt.Sprintf("Contest activated: %s", name))
+				return c, c.handleActivate()
 			}
-			return c, nil
+			if c.cursor < len(c.ids) {
+				c.startEdit(c.ids[c.cursor])
+				return c, c.nameInput.Focus()
+			}
+
+		case c.mode == contestList && (k.String() == " " || msg.Code == ' '):
+			return c, c.handleActivate()
 
 		case c.mode == contestList && k.String() == "insert":
-			c.mode = contestCreate
-			c.editID = ""
-			c.nameInput.SetValue("")
-			c.nameInput.Focus()
+			c.startCreate()
+			return c, c.nameInput.Focus()
 
 		case c.mode == contestList && (k.String() == "delete" || msg.Code == tea.KeyDelete):
 			if c.cursor > 0 && c.cursor < len(c.ids) {
@@ -152,12 +187,6 @@ func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				)
 				c.dialog = &d
 			}
-
-		case c.mode == contestList && k.String() == "e" && c.cursor > 0:
-			c.mode = contestEdit
-			c.editID = c.ids[c.cursor]
-			c.nameInput.SetValue(c.app.Config.Contests[c.editID].Name)
-			c.nameInput.Focus()
 
 		case c.mode == contestList && (msg.Code == tea.KeyUp || k.String() == "up" || k.String() == "k"):
 			if c.cursor == 0 {
@@ -175,18 +204,160 @@ func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case c.mode == contestEdit || c.mode == contestCreate:
 			switch {
-			case k.String() == "enter":
+			case k.String() == "ctrl+s":
 				return c, c.saveContest()
 			case k.String() == "esc":
 				c.mode = contestList
+				return c, nil
+			case c.focus == 4 && (k.String() == " " || msg.Code == ' ' || k.String() == "enter"):
+				// Toggle prefill exchange sent checkbox.
+				c.prefillExchange = !c.prefillExchange
+				if !c.prefillExchange {
+					c.exchSentInput.Blur()
+					c.exchSentInput.SetValue("")
+				}
+				return c, nil
+			case c.focus == 6 && (k.String() == " " || msg.Code == ' ' || k.String() == "enter"):
+				// Toggle prefill exchange rcvd checkbox.
+				c.prefillExchangeRcvd = !c.prefillExchangeRcvd
+				if !c.prefillExchangeRcvd {
+					c.exchRcvdInput.Blur()
+					c.exchRcvdInput.SetValue("")
+				}
+				return c, nil
+			case c.focus == 3 && (k.String() == " " || msg.Code == ' '):
+				// Space cycles through ADIF Contest IDs.
+				cur := strings.TrimSpace(c.contInput.Value())
+				nxt := nextContestID(cur)
+				c.contInput.SetValue(nxt)
+				c.adifIdx = 0
+				return c, nil
+			case k.String() == "tab" || k.String() == "down":
+				if c.focus == 3 {
+					c.validateContestID()
+				}
+				c.blurAll()
+				c.focus = (c.focus + 1) % c.visibleItems()
+				return c, c.focusField()
+			case k.String() == "shift+tab" || k.String() == "up":
+				if c.focus == 3 {
+					c.validateContestID()
+				}
+				c.blurAll()
+				c.focus = (c.focus - 1 + c.visibleItems()) % c.visibleItems()
+				return c, c.focusField()
+			case c.focus == 4 || c.focus == 6:
+				// Checkboxes handle Space/Enter; ignore other keys.
+				return c, nil
 			default:
 				var cmd tea.Cmd
-				c.nameInput, cmd = c.nameInput.Update(msg)
+				ti := c.focusedInput()
+				*ti, cmd = ti.Update(msg)
 				return c, cmd
 			}
 		}
 	}
 	return c, nil
+}
+
+func (c *ContestChooser) handleActivate() tea.Cmd {
+	if c.cursor == 0 {
+		c.app.Config.State.ActiveContest = ""
+		c.toasts.Success("Contest: None (no contest active)")
+		return nil
+	}
+	id := c.ids[c.cursor]
+	ct := c.app.Config.Contests[id]
+	c.app.Config.State.ActiveContest = id
+	c.toasts.Success(fmt.Sprintf("Contest activated: %s", config.ContestDisplayName(&ct)))
+	return nil
+}
+
+func (c *ContestChooser) focusedInput() *textinput.Model {
+	switch c.focus {
+	case 1:
+		return &c.dateInput
+	case 2:
+		return &c.nextInput
+	case 3:
+		return &c.contInput
+	case 5:
+		return &c.exchSentInput
+	case 7:
+		return &c.exchRcvdInput
+	default:
+		return &c.nameInput
+	}
+}
+
+// visibleItems returns the number of focusable items (used for tab wrapping).
+func (c *ContestChooser) visibleItems() int {
+	n := 4 // name, date, nextQSO, contestID
+	n += 2 // two checkboxes always visible
+	if c.prefillExchange {
+		n++ // exchange sent field
+	}
+	if c.prefillExchangeRcvd {
+		n++ // exchange rcvd field
+	}
+	return n
+}
+
+func (c *ContestChooser) blurAll() {
+	c.nameInput.Blur()
+	c.dateInput.Blur()
+	c.nextInput.Blur()
+	c.contInput.Blur()
+	c.exchSentInput.Blur()
+	c.exchRcvdInput.Blur()
+}
+
+func (c *ContestChooser) focusField() tea.Cmd {
+	if c.focus == 4 || c.focus == 6 {
+		// Checkboxes — no textinput to focus.
+		return nil
+	}
+	return c.focusedInput().Focus()
+}
+
+func (c *ContestChooser) validateContestID() {
+	cid := strings.TrimSpace(c.contInput.Value())
+	if cid != "" && !isValidContestID(cid) {
+		c.toasts.Warn("Contest ID not found in the ADIF spec")
+	}
+}
+
+func (c *ContestChooser) startEdit(id string) {
+	c.editID = id
+	c.focus = 0
+	ct := c.app.Config.Contests[id]
+	c.nameInput.SetValue(ct.Name)
+	c.dateInput.SetValue(ct.Date)
+	c.nextInput.SetValue(fmt.Sprintf("%d", ct.NextQSO))
+	c.contInput.SetValue(ct.ContestID)
+	c.prefillExchange = ct.PrefillExchange
+	c.exchSentInput.SetValue(ct.ExchangeSent)
+	c.prefillExchangeRcvd = ct.PrefillExchangeRcvd
+	c.exchRcvdInput.SetValue(ct.ExchangeRcvd)
+	c.blurAll()
+	c.mode = contestEdit
+	c.nameInput.Focus()
+}
+
+func (c *ContestChooser) startCreate() {
+	c.editID = ""
+	c.focus = 0
+	c.nameInput.SetValue("")
+	c.dateInput.SetValue(time.Now().Format("2006-01-02"))
+	c.nextInput.SetValue("1")
+	c.contInput.SetValue("")
+	c.prefillExchange = false
+	c.exchSentInput.SetValue("@rst @serial")
+	c.prefillExchangeRcvd = false
+	c.exchRcvdInput.SetValue("@rst")
+	c.blurAll()
+	c.mode = contestCreate
+	c.nameInput.Focus()
 }
 
 func (c *ContestChooser) saveContest() tea.Cmd {
@@ -195,6 +366,20 @@ func (c *ContestChooser) saveContest() tea.Cmd {
 		c.toasts.Warn("Contest name cannot be empty")
 		return nil
 	}
+	dateStr := strings.TrimSpace(c.dateInput.Value())
+	nextStr := strings.TrimSpace(c.nextInput.Value())
+	if nextStr == "" {
+		c.toasts.Warn("Next QSO seq is required")
+		return nil
+	}
+	nextQSO, err := strconv.Atoi(nextStr)
+	if err != nil || nextQSO < 1 {
+		c.toasts.Warn("Next QSO seq must be a positive integer")
+		return nil
+	}
+	contestID := strings.TrimSpace(c.contInput.Value())
+	exchangeSent := strings.TrimSpace(c.exchSentInput.Value())
+	exchangeRcvd := strings.TrimSpace(c.exchRcvdInput.Value())
 
 	if c.mode == contestCreate {
 		id := config.NewID(name)
@@ -202,21 +387,37 @@ func (c *ContestChooser) saveContest() tea.Cmd {
 			c.app.Config.Contests = make(map[string]config.Contest)
 		}
 		c.app.Config.Contests[id] = config.Contest{
-			ID:        id,
-			Name:      name,
-			CreatedAt: time.Now().Format("2006-01-02"),
+			ID:                  id,
+			Name:                name,
+			Date:                dateStr,
+			NextQSO:             nextQSO,
+			ContestID:           contestID,
+			ContestIDName:       contestIDDesc(contestID),
+			PrefillExchange:     c.prefillExchange,
+			ExchangeSent:        exchangeSent,
+			PrefillExchangeRcvd: c.prefillExchangeRcvd,
+			ExchangeRcvd:        exchangeRcvd,
 		}
 		c.app.Config.State.ActiveContest = id
 		c.toasts.Success(fmt.Sprintf("Contest created: %s", name))
 	} else {
 		ct := c.app.Config.Contests[c.editID]
 		ct.Name = name
+		ct.Date = dateStr
+		ct.NextQSO = nextQSO
+		ct.ContestID = contestID
+		ct.ContestIDName = contestIDDesc(contestID)
+		ct.PrefillExchange = c.prefillExchange
+		ct.ExchangeSent = exchangeSent
+		ct.PrefillExchangeRcvd = c.prefillExchangeRcvd
+		ct.ExchangeRcvd = exchangeRcvd
 		c.app.Config.Contests[c.editID] = ct
 		c.toasts.Success(fmt.Sprintf("Contest saved: %s", name))
 	}
 
 	c.rebuildNames()
 	c.mode = contestList
+	c.needsSave = true
 	return nil
 }
 
@@ -236,74 +437,260 @@ func (c *ContestChooser) deleteContest() tea.Cmd {
 }
 
 func (c *ContestChooser) View() tea.View {
+	if c.done {
+		return tea.NewView("")
+	}
+
+	switch c.mode {
+	case contestList:
+		return tea.NewView(c.viewList())
+	case contestEdit, contestCreate:
+		return tea.NewView(c.viewForm())
+	case contestConfirmDelete:
+		body := c.viewList()
+		if c.dialog != nil {
+			body = RenderDialogOverlay(body, *c.dialog, c.width, c.height)
+		}
+		return tea.NewView(body)
+	}
+	return tea.NewView("")
+}
+
+func (c *ContestChooser) viewList() string {
+	var b strings.Builder
 	w := c.width
 	if w < 40 {
 		w = 80
 	}
-
-	switch c.mode {
-	case contestEdit, contestCreate:
-		return tea.NewView(c.viewEdit(w))
-	case contestConfirmDelete:
-		return tea.NewView(c.viewListWithDialog(w))
-	default:
-		return tea.NewView(c.viewList(w))
+	h := c.height
+	if h < 10 {
+		h = 24
 	}
-}
-
-func (c *ContestChooser) viewList(w int) string {
-	var b strings.Builder
+	contentH := contentHeight(h)
+	if contentH < 3 {
+		contentH = 3
+	}
 
 	if len(c.names) == 0 {
-		b.WriteString("  No contests configured.\n")
+		b.WriteString("No contests configured.\n")
 	} else {
+		activeLabelStyle := lipgloss.NewStyle().Width(9).Foreground(P.TextMuted)
+		activeFocusedStyle := lipgloss.NewStyle().Width(9).Foreground(P.Cursor)
+		dateStyle := lipgloss.NewStyle().Width(12).Foreground(P.TextDim)
+
 		for i, name := range c.names {
 			prefix := "  "
 			if i == c.cursor {
 				prefix = S.FormPrefixOn.Render("> ")
-			} else {
-				prefix = "  "
 			}
 
-			// Build row: [Active] | date | name
-			active := " "
+			active := ""
 			if c.ids[i] == c.app.Config.State.ActiveContest && c.ids[i] != "" {
-				active = "*"
+				active = "[Active]"
 			} else if i == 0 && c.app.Config.State.ActiveContest == "" {
-				active = "*"
+				active = "[Active]"
 			}
 
-			dateStr := "          "
+			dateStr := ""
 			if i > 0 {
 				ct := c.app.Config.Contests[c.ids[i]]
-				if ct.CreatedAt != "" {
-					dateStr = c.formatDate(ct.CreatedAt)
-				}
+				dateStr = c.formatDate(ct.Date)
 			}
 
-			b.WriteString(fmt.Sprintf("%s[%s] %-10s %s\n", prefix, active, dateStr, name))
+			lbl := activeLabelStyle.Align(lipgloss.Left).Render(active)
+			val := fmt.Sprintf("%s  %s", dateStyle.Render(dateStr), name)
+			if i == c.cursor {
+				lbl = activeFocusedStyle.Align(lipgloss.Left).Render(active)
+				val = CursorStyle.Render(fmt.Sprintf("%s  %s", dateStyle.Render(dateStr), name))
+			}
+			line := lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)
+			b.WriteString(padOrTrunc(line, w-4))
+			if i < len(c.names)-1 {
+				b.WriteString("\n")
+			}
 		}
 	}
-	return drawMenuWithHeader("Configuration \u2014 Contests", b.String(), w)
+
+	body := drawMenuWithHeader("Configuration \u2014 Contests", b.String(), w)
+	return fillBody(body, contentH)
 }
 
-func (c *ContestChooser) viewEdit(w int) string {
+func (c *ContestChooser) viewForm() string {
 	var b strings.Builder
+	w := c.width
+	if w < 40 {
+		w = 80
+	}
+	h := c.height
+	if h < 10 {
+		h = 24
+	}
+	contentH := contentHeight(h)
+	if contentH < 3 {
+		contentH = 3
+	}
+
 	title := "Create Contest"
 	if c.mode == contestEdit {
-		title = "Edit Contest Name"
+		title = "Edit Contest"
 	}
 
+	// Use wider labels throughout this submenu.
+	lbl := S.FormLabelCtx
+	lblF := S.FormFocusedCtx
+
+	// Name field.
+	nl := lbl
+	if c.focus == 0 {
+		nl = lblF
+	}
 	b.WriteString("  ")
-	b.WriteString(S.FormLabel.Render("Name: "))
+	b.WriteString(nl.Render("Name:"))
 	b.WriteString(c.nameInput.View())
-	return drawMenuWithHeader("Configuration \u2014 Contests \u2014 "+title, b.String(), w)
+	b.WriteString("\n")
+
+	// Date field.
+	dl := lbl
+	if c.focus == 1 {
+		dl = lblF
+	}
+	b.WriteString("  ")
+	b.WriteString(dl.Render("Date:"))
+	b.WriteString(c.dateInput.View())
+	b.WriteString("\n")
+
+	// Next QSO ID field.
+	xl := lbl
+	if c.focus == 2 {
+		xl = lblF
+	}
+	b.WriteString("  ")
+	b.WriteString(xl.Render("Next QSO seq:"))
+	b.WriteString(c.nextInput.View())
+	b.WriteString("\n")
+
+	// Contest-ID field (ADIF).
+	cid := strings.TrimSpace(c.contInput.Value())
+	cidValid := cid != "" && isValidContestID(cid)
+	cl := lbl
+	cs := S.Input
+	if c.focus == 3 {
+		cl = lblF
+	}
+	if cidValid {
+		cs = S.Success
+	} else if cid != "" {
+		cs = S.Warning
+	}
+	// Show ADIF description as trailing note, cycling with the ID.
+	extra := ""
+	if cidValid {
+		extra = contestIDDesc(cid)
+	}
+	line := lipgloss.JoinHorizontal(lipgloss.Center, "  ", cl.Render("Contest ID:"), " ", cs.Render(c.contInput.View()))
+	if extra != "" {
+		line = line + " " + DimStyle.Render(extra)
+	}
+	maxW := c.width - 4
+	if maxW < 40 {
+		maxW = 40
+	}
+	b.WriteString(padOrTrunc(line, maxW))
+	b.WriteString("\n")
+
+	// Prefill Exchange Sent checkbox.
+	c.renderCheckbox(&b, w, 4, "Prefill Exchange Sent:", c.prefillExchange)
+
+	// Indented exchange sent field.
+	if c.prefillExchange {
+		b.WriteString("\n")
+		c.renderIndentedField(&b, 5, "  Exchange Sent:", &c.exchSentInput, "")
+	}
+
+	// Prefill Exchange Rcvd checkbox.
+	b.WriteString("\n")
+	c.renderCheckbox(&b, w, 6, "Prefill Exchange Rcvd:", c.prefillExchangeRcvd)
+
+	// Indented exchange rcvd field.
+	if c.prefillExchangeRcvd {
+		b.WriteString("\n")
+		c.renderIndentedField(&b, 7, "  Exchange Rcvd:", &c.exchRcvdInput, "")
+	}
+
+	// Marker reference section — shown below the form fields.
+	b.WriteString("\n\n")
+	b.WriteString("  Exchange markers")
+	b.WriteString("\n\n")
+	markers := [][2]string{
+		{"@rst", "RST sent or received"},
+		{"@serial", "Next QSO sequence number"},
+		{"@cqz", "DX station CQ zone"},
+		{"@mycqz", "Your station CQ zone"},
+		{"@itu", "DX station ITU zone"},
+		{"@myitu", "Your station ITU zone"},
+		{"@grid", "DX station grid square"},
+		{"@mygrid", "Your station grid square"},
+	}
+	colW := (w - 6) / 2
+	if colW < 20 {
+		colW = 20
+	}
+	for i := 0; i < len(markers); i += 2 {
+		left := fmt.Sprintf("  %-12s %s", markers[i][0], DimStyle.Render(markers[i][1]))
+		right := ""
+		if i+1 < len(markers) {
+			right = fmt.Sprintf("%-12s %s", markers[i+1][0], DimStyle.Render(markers[i+1][1]))
+		}
+		row := lipgloss.JoinHorizontal(lipgloss.Top,
+			lipgloss.NewStyle().Width(colW).Render(left),
+			lipgloss.NewStyle().Width(colW).Render(right),
+		)
+		b.WriteString(padOrTrunc(row, w-4))
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
+	b.WriteString(DimStyle.Render(" Example: @rst @serial will generate 59 023"))
+
+	body := drawMenuWithHeader("Configuration \u2014 Contests \u2014 "+title, b.String(), w)
+	return fillBody(body, contentH)
 }
 
-func (c *ContestChooser) viewListWithDialog(w int) string {
-	body := c.viewList(w)
-	if c.dialog != nil {
-		return RenderDialogOverlay(body, *c.dialog, w, 15)
+func (c *ContestChooser) renderCheckbox(b *strings.Builder, w, focusIdx int, label string, checked bool) {
+	cb := "[ ]"
+	if checked {
+		cb = "[x]"
 	}
-	return body
+	prefix := "  "
+	lbl := S.FormLabelCtx.Align(lipgloss.Left).Render(label)
+	if c.focus == focusIdx {
+		prefix = S.FormPrefixOn.Render("> ")
+		lbl = S.FormFocusedCtx.Align(lipgloss.Left).Render(label)
+		cb = CursorStyle.Render(cb)
+	}
+	b.WriteString(padOrTrunc(
+		lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", cb),
+		w-4))
+}
+
+func (c *ContestChooser) renderIndentedField(b *strings.Builder, focusIdx int, label string, ti *textinput.Model, extra string) {
+	prefix := "  "
+	lbl := S.FormLabelCtx.Align(lipgloss.Left).Render(label)
+	val := ti.View()
+	if c.focus == focusIdx {
+		prefix = S.FormPrefixOn.Render("> ")
+		lbl = S.FormFocusedCtx.Align(lipgloss.Left).Render(label)
+	}
+	// Show "See reference below" when the field is empty and not focused.
+	if strings.TrimSpace(ti.Value()) == "" && c.focus != focusIdx {
+		val = DimStyle.Render("See reference below")
+	}
+	line := lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)
+	if extra != "" {
+		line = line + " " + DimStyle.Render(extra)
+	}
+	maxW := c.width - 4
+	if maxW < 40 {
+		maxW = 40
+	}
+	b.WriteString(padOrTrunc(line, maxW))
 }

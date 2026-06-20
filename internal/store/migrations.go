@@ -104,6 +104,20 @@ var migrations = []string{
 	`ALTER TABLE qsos ADD COLUMN itu_zone TEXT DEFAULT ''`,
 	`DROP INDEX IF EXISTS idx_psk_spots_station`,
 	`CREATE INDEX IF NOT EXISTS idx_psk_spots_station_flow ON psk_spots(station_call, flow_start)`,
+	`ALTER TABLE qsos ADD COLUMN contest_id TEXT DEFAULT ''`,
+	`CREATE INDEX IF NOT EXISTS idx_qsos_contest_id ON qsos(contest_id)`,
+	`ALTER TABLE qsos ADD COLUMN exch_sent TEXT DEFAULT ''`,
+	`ALTER TABLE qsos ADD COLUMN exch_rcvd TEXT DEFAULT ''`,
+	`ALTER TABLE qsos ADD COLUMN stx INTEGER DEFAULT 0`,
+	`ALTER TABLE qsos ADD COLUMN srx INTEGER DEFAULT 0`,
+	`ALTER TABLE qsos ADD COLUMN stx_string TEXT DEFAULT ''`,
+	`ALTER TABLE qsos ADD COLUMN srx_string TEXT DEFAULT ''`,
+	`ALTER TABLE qsos ADD COLUMN contest_adif_id TEXT DEFAULT ''`,
+	`ALTER TABLE qsos ADD COLUMN my_cq_zone TEXT DEFAULT ''`,
+	`ALTER TABLE qsos ADD COLUMN my_itu_zone TEXT DEFAULT ''`,
+	`ALTER TABLE qsos ADD COLUMN my_dxcc TEXT DEFAULT ''`,
+	`ALTER TABLE qsos ADD COLUMN my_sig TEXT DEFAULT ''`,
+	`ALTER TABLE qsos ADD COLUMN my_sig_info TEXT DEFAULT ''`,
 }
 
 func Migrate(db *sql.DB) error {

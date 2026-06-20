@@ -17,7 +17,9 @@ const qsoCols = `call, qso_date, time_on, time_off, band, freq, freq_rx, mode, s
 		my_sota_ref, my_pota_ref, my_wwff_ref,
 		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
 		cq_zone, itu_zone,
-		wavelog_uploaded`
+		my_cq_zone, my_itu_zone, my_dxcc,
+		my_sig, my_sig_info,
+		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id`
 
 // placeholders returns a string of n comma-separated "?" placeholders.
 func placeholders(n int) string {
@@ -41,9 +43,10 @@ func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 	var id int64
 	var err error
 	for attempt := 0; attempt < 3; attempt++ {
-		res, err := db.Exec(
+		var res sql.Result
+		res, err = db.Exec(
 			`INSERT INTO qsos (`+qsoCols+`, created_at, updated_at)
-			VALUES (`+placeholders(39)+`)`,
+			VALUES (`+placeholders(52)+`)`,
 			q.Call, q.QSODate, q.TimeOn, q.TimeOff,
 			q.Band, q.Freq, q.FreqRx, q.Mode, q.Submode,
 			q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
@@ -51,8 +54,7 @@ func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 			q.SOTARef, q.POTARef, q.WWFFRef, q.IOTA, q.SIG,
 			q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
 			q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
-			q.CQZone, q.ITUZone,
-			q.WavelogUploaded,
+			q.CQZone, q.ITUZone, q.MyCQZone, q.MyITUZone, q.MyDXCC, q.MySIG, q.MySIGInfo, q.WavelogUploaded, q.ContestID, q.ExchSent, q.ExchRcvd, q.STX, q.SRX, q.STXString, q.SRXString, q.ContestADIFID,
 			q.CreatedAt.Format(time.RFC3339), q.UpdatedAt.Format(time.RFC3339),
 		)
 		if err == nil {
@@ -72,7 +74,9 @@ func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 }
 
 // ListQSOs returns recent QSOs ordered by id DESC.
-func ListQSOs(db *sql.DB, limit int) ([]qso.QSO, error) {
+// ListQSOs returns recent QSOs ordered by id DESC. If contestID is non-empty,
+// only QSOs matching that contest are returned.
+func ListQSOs(db *sql.DB, limit int, contestID string) ([]qso.QSO, error) {
 	query := `SELECT id, call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,
 		rst_sent, rst_rcvd, gridsquare, name, qth, country, comment, notes, tx_pwr,
 		distance, bearing,
@@ -80,16 +84,23 @@ func ListQSOs(db *sql.DB, limit int) ([]qso.QSO, error) {
 		my_sota_ref, my_pota_ref, my_wwff_ref,
 		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
 		cq_zone, itu_zone,
-		wavelog_uploaded,
+		my_cq_zone, my_itu_zone, my_dxcc,
+		my_sig, my_sig_info,
+		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
 		created_at, updated_at
-		FROM qsos
-		ORDER BY id DESC`
+		FROM qsos`
+	var args []any
+	if contestID != "" {
+		query += ` WHERE contest_id = ?`
+		args = append(args, contestID)
+	}
+	query += ` ORDER BY id DESC`
 	var rows *sql.Rows
 	var err error
 	if limit > 0 {
-		rows, err = db.Query(query+" LIMIT ?", limit)
+		rows, err = db.Query(query+" LIMIT ?", append(args, limit)...)
 	} else {
-		rows, err = db.Query(query)
+		rows, err = db.Query(query, args...)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("list qsos: %w", err)
@@ -109,7 +120,9 @@ func ListQSOs(db *sql.DB, limit int) ([]qso.QSO, error) {
 			&q.MySOTARef, &q.MyPOTARef, &q.MyWWFFRef,
 			&q.StationCallsign, &q.Operator, &q.MyGridSquare, &q.MyRig, &q.MyAntenna, &q.Source,
 			&q.CQZone, &q.ITUZone,
-			&q.WavelogUploaded,
+			&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
+			&q.MySIG, &q.MySIGInfo,
+			&q.WavelogUploaded, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
 			&createdAt, &updatedAt,
 		)
 		if err != nil {
@@ -128,7 +141,8 @@ func ListQSOs(db *sql.DB, limit int) ([]qso.QSO, error) {
 }
 
 // ListQSOsPage returns a page of QSOs ordered by id DESC.
-func ListQSOsPage(db *sql.DB, limit, offset int) ([]qso.QSO, error) {
+// If contestID is non-empty, only QSOs matching that contest are returned.
+func ListQSOsPage(db *sql.DB, limit, offset int, contestID string) ([]qso.QSO, error) {
 	query := `SELECT id, call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,
 		rst_sent, rst_rcvd, gridsquare, name, qth, country, comment, notes, tx_pwr,
 		distance, bearing,
@@ -136,12 +150,21 @@ func ListQSOsPage(db *sql.DB, limit, offset int) ([]qso.QSO, error) {
 		my_sota_ref, my_pota_ref, my_wwff_ref,
 		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
 		cq_zone, itu_zone,
-		wavelog_uploaded,
+		my_cq_zone, my_itu_zone, my_dxcc,
+		my_sig, my_sig_info,
+		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
 		created_at, updated_at
-		FROM qsos
+		FROM qsos`
+	var args []any
+	if contestID != "" {
+		query += ` WHERE contest_id = ?`
+		args = append(args, contestID)
+	}
+	query += `
 		ORDER BY id DESC
 		LIMIT ? OFFSET ?`
-	rows, err := db.Query(query, limit, offset)
+	args = append(args, limit, offset)
+	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list qsos page: %w", err)
 	}
@@ -160,7 +183,9 @@ func ListQSOsPage(db *sql.DB, limit, offset int) ([]qso.QSO, error) {
 			&q.MySOTARef, &q.MyPOTARef, &q.MyWWFFRef,
 			&q.StationCallsign, &q.Operator, &q.MyGridSquare, &q.MyRig, &q.MyAntenna, &q.Source,
 			&q.CQZone, &q.ITUZone,
-			&q.WavelogUploaded,
+			&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
+			&q.MySIG, &q.MySIGInfo,
+			&q.WavelogUploaded, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
 			&createdAt, &updatedAt,
 		)
 		if err != nil {
@@ -188,7 +213,9 @@ func SearchQSOsByCall(db *sql.DB, call string, limit int) ([]qso.QSO, error) {
 		my_sota_ref, my_pota_ref, my_wwff_ref,
 		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
 		cq_zone, itu_zone,
-		wavelog_uploaded,
+		my_cq_zone, my_itu_zone, my_dxcc,
+		my_sig, my_sig_info,
+		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
 		created_at, updated_at
 		FROM qsos
 		WHERE call = ? OR call LIKE ? OR call LIKE ? OR call LIKE ?
@@ -214,7 +241,9 @@ func SearchQSOsByCall(db *sql.DB, call string, limit int) ([]qso.QSO, error) {
 			&q.MySOTARef, &q.MyPOTARef, &q.MyWWFFRef,
 			&q.StationCallsign, &q.Operator, &q.MyGridSquare, &q.MyRig, &q.MyAntenna, &q.Source,
 			&q.CQZone, &q.ITUZone,
-			&q.WavelogUploaded,
+			&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
+			&q.MySIG, &q.MySIGInfo,
+			&q.WavelogUploaded, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
 			&createdAt, &updatedAt,
 		)
 		if err != nil {
@@ -244,7 +273,9 @@ func GetQSOByID(db *sql.DB, id int64) (*qso.QSO, error) {
 		my_sota_ref, my_pota_ref, my_wwff_ref,
 		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
 		cq_zone, itu_zone,
-		wavelog_uploaded,
+		my_cq_zone, my_itu_zone, my_dxcc,
+		my_sig, my_sig_info,
+		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
 		created_at, updated_at
 		FROM qsos WHERE id = ?`, id,
 	).Scan(
@@ -256,7 +287,9 @@ func GetQSOByID(db *sql.DB, id int64) (*qso.QSO, error) {
 		&q.MySOTARef, &q.MyPOTARef, &q.MyWWFFRef,
 		&q.StationCallsign, &q.Operator, &q.MyGridSquare, &q.MyRig, &q.MyAntenna, &q.Source,
 		&q.CQZone, &q.ITUZone,
-		&q.WavelogUploaded,
+		&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
+		&q.MySIG, &q.MySIGInfo,
+		&q.WavelogUploaded, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
 		&createdAt, &updatedAt,
 	)
 	if err != nil {
@@ -298,7 +331,7 @@ func FindQSOByKey(db *sql.DB, call, band, mode, qsoDate, timeOn string) int64 {
 
 // ListAllQSOs returns all QSOs ordered by id DESC.
 func ListAllQSOs(db *sql.DB) ([]qso.QSO, error) {
-	return ListQSOs(db, 0)
+	return ListQSOs(db, 0, "")
 }
 
 // UpdateQSO updates an existing QSO. Retries on SQLITE_BUSY.
@@ -314,7 +347,9 @@ func UpdateQSO(db *sql.DB, q *qso.QSO) error {
 			my_sota_ref=?, my_pota_ref=?, my_wwff_ref=?,
 			station_callsign=?, operator=?, my_gridsquare=?, my_rig=?, my_antenna=?, source=?,
 			cq_zone=?, itu_zone=?,
-			wavelog_uploaded=?,
+			my_cq_zone=?, my_itu_zone=?, my_dxcc=?,
+			my_sig=?, my_sig_info=?,
+			wavelog_uploaded=?, contest_id=?, exch_sent=?, exch_rcvd=?, stx=?, srx=?, stx_string=?, srx_string=?, contest_adif_id=?,
 			updated_at=?
 			WHERE id=?`,
 			q.Call, q.QSODate, q.TimeOn, q.TimeOff,
@@ -324,8 +359,7 @@ func UpdateQSO(db *sql.DB, q *qso.QSO) error {
 			q.SOTARef, q.POTARef, q.WWFFRef, q.IOTA, q.SIG,
 			q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
 			q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
-			q.CQZone, q.ITUZone,
-			q.WavelogUploaded,
+			q.CQZone, q.ITUZone, q.MyCQZone, q.MyITUZone, q.MyDXCC, q.MySIG, q.MySIGInfo, q.WavelogUploaded, q.ContestID, q.ExchSent, q.ExchRcvd, q.STX, q.SRX, q.STXString, q.SRXString, q.ContestADIFID,
 			q.UpdatedAt.Format(time.RFC3339),
 			q.ID,
 		)

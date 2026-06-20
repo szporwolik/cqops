@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -62,8 +63,11 @@ func (m *Model) handleContestUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 	m.ui.contestChooser.height = m.height
 	_, contestCmd := m.ui.contestChooser.Update(msg)
 	cmd = tea.Batch(cmd, contestCmd)
-	if m.ui.contestChooser.done {
+	if m.ui.contestChooser.needsSave {
+		m.ui.contestChooser.needsSave = false
 		m.saveConfig("Contests updated")
+	}
+	if m.ui.contestChooser.done {
 		m.screen = screenMainMenu
 	}
 	return m, cmd
@@ -562,6 +566,22 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 			return m, cmd
 		}
 	}
+
+	// Handle Ctrl+C contest cycling on the log editor screen (list mode only).
+	if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
+		if key.Matches(keyMsg, m.keys.CycleContest) && !m.ui.logbookEditor.IsEditing() {
+			m.cycleActiveContest()
+			// Refresh the editor's contest filter.
+			if m.App.Config.State.ActiveContest != "" {
+				ct := m.App.Config.Contests[m.App.Config.State.ActiveContest]
+				m.ui.logbookEditor.SetContestID(m.App.Config.State.ActiveContest, config.ContestDisplayName(&ct), ct.ContestID)
+			} else {
+				m.ui.logbookEditor.SetContestID("", "", "")
+			}
+			return m, nil
+		}
+	}
+
 	// Detect resize — pageSize depends on terminal height, so reload.
 	oldW, oldH := m.ui.logbookEditor.width, m.ui.logbookEditor.height
 	m.ui.logbookEditor.width = m.width

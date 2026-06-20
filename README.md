@@ -26,6 +26,7 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 - **DXCC & SCP** — prefix-based country/continent/grid lookup, live callsign autocomplete
 - **Wavelog** — cloud upload, download, duplicate detection
 - **REF database** — SOTA summits, POTA parks, WWFF areas, IOTA islands — offline search with grid locators
+- **Contest logging** — ADIF Contest ID cycling with descriptions, prefill exchange sent/received with `###` sequencing, STX/SRX serial parsing, per-contest QSO filtering
 - **ADIF 3.1.4** — full import/export with validation, IOTA, Unicode→ASCII sanitization
 - **TUI** — keyboard-driven, SSH-friendly, offline-first SQLite, multi-logbook
 - **Partner view** — grid-to-grid distance, bearing, world map

@@ -181,7 +181,7 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if cmd := w.station.HandleKey(msg); cmd != nil {
 					switch cmd().(type) {
 					case enterOnLastFieldMsg:
-						cs, _, gr, _, _, _, wlEnabled, _, _, wlStationID, _ := w.station.Values()
+						cs, _, gr, _, _, _, wlEnabled, _, _, wlStationID, _, _, _, _, _, _ := w.station.Values()
 						if cs == "" {
 							w.toasts.Error("Callsign is required")
 							return w, nil
@@ -211,7 +211,7 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						w.step = stepRig
 						applog.InfoDetail("Wizard: station step done", fmt.Sprintf("call=%s grid=%s", cs, gr))
 					case wlUpdateAction:
-						_, _, _, _, _, _, _, wlURL, wlKey, _, _ := w.station.Values()
+						_, _, _, _, _, _, _, wlURL, wlKey, _, _, _, _, _, _, _ := w.station.Values()
 						if wlURL == "" || wlKey == "" {
 							w.toasts.Error("Wavelog URL and API Key are required")
 							return w, nil
@@ -223,7 +223,7 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							return wlUpdateMsg{stations: stations, err: err}
 						}
 					case wlTestAction:
-						_, _, _, _, _, _, _, wlURL, wlKey, _, _ := w.station.Values()
+						_, _, _, _, _, _, _, wlURL, wlKey, _, _, _, _, _, _, _ := w.station.Values()
 						if wlURL == "" || wlKey == "" {
 							w.toasts.Error("Wavelog URL and API Key are required")
 							return w, nil
@@ -327,7 +327,7 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						}
 					}
 					w.step = stepTimezone
-					_, _, _, _, _, _, wlOn, _, _, _, _ := w.station.Values()
+					_, _, _, _, _, _, wlOn, _, _, _, _, _, _, _, _, _ := w.station.Values()
 					applog.InfoDetail("Wizard: integrations step done", fmt.Sprintf("wsjtx=%v qrz=%v wavelog=%v", w.wsjtxEnable, w.qrzEnable, wlOn))
 					return w, nil
 				}
@@ -782,7 +782,7 @@ func (w *Wizard) handleEnter() tea.Cmd {
 }
 
 func (w *Wizard) saveConfig() error {
-	cs, op, gr, sotaRef, potaRef, wwffRef, wlEnabled, wlURL, wlKey, wlStationID, iaruRegion := w.station.Values()
+	cs, op, gr, sotaRef, potaRef, wwffRef, wlEnabled, wlURL, wlKey, wlStationID, iaruRegion, cqZone, ituZone, dxcc, sig, sigInfo := w.station.Values()
 	rig, ant, pwr := w.rigForm.Values()
 	flrigEnabled, flrigHost, flrigPort := w.rigForm.FlrigValues()
 
@@ -851,6 +851,11 @@ func (w *Wizard) saveConfig() error {
 				POTARef:    potaRef,
 				WWFFRef:    wwffRef,
 				IARURegion: iaruRegion,
+				CQZone:     cqZone,
+				ITUZone:    ituZone,
+				DXCC:       dxcc,
+				SIG:        sig,
+				SIGInfo:    sigInfo,
 			},
 			Wavelog: wl,
 		},

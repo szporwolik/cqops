@@ -180,6 +180,9 @@ func (q *QSO) toADIFWithStation(stationCall string) string {
 	set(adifield.MY_GRIDSQUARE, q.MyGridSquare)
 	set(adifield.MY_RIG, q.MyRig)
 	set(adifield.MY_ANTENNA, q.MyAntenna)
+	set(adifield.Field("MY_CQZ"), q.MyCQZone)
+	set(adifield.Field("MY_ITUZ"), q.MyITUZone)
+	set(adifield.Field("MY_DXCC"), q.MyDXCC)
 	set(adifield.SOTA_REF, q.SOTARef)
 	set(adifield.POTA_REF, q.POTARef)
 	set(adifield.WWFF_REF, q.WWFFRef)
@@ -191,6 +194,8 @@ func (q *QSO) toADIFWithStation(stationCall string) string {
 	set(adifield.MY_SOTA_REF, q.MySOTARef)
 	set(adifield.MY_POTA_REF, q.MyPOTARef)
 	set(adifield.MY_WWFF_REF, q.MyWWFFRef)
+	set(adifield.Field("MY_SIG"), q.MySIG)
+	set(adifield.Field("MY_SIG_INFO"), q.MySIGInfo)
 	// Distance: 1 decimal km. Bearing: integer degrees (ADIF ANT_AZ 0–360).
 	if q.Distance != 0 {
 		r[adifield.DISTANCE] = fmt.Sprintf("%.1f", q.Distance)
@@ -200,6 +205,17 @@ func (q *QSO) toADIFWithStation(stationCall string) string {
 	}
 	set(adifield.CQZ, q.CQZone)
 	set(adifield.ITUZ, q.ITUZone)
+
+	// Contest exchange fields.
+	if q.STX != 0 {
+		r[adifield.Field("STX")] = fmt.Sprintf("%d", q.STX)
+	}
+	if q.SRX != 0 {
+		r[adifield.Field("SRX")] = fmt.Sprintf("%d", q.SRX)
+	}
+	set(adifield.Field("STX_STRING"), q.STXString)
+	set(adifield.Field("SRX_STRING"), q.SRXString)
+	set(adifield.Field("CONTEST_ID"), q.ContestADIFID)
 
 	return r.String() + "<EOR>"
 }
@@ -261,6 +277,8 @@ func ParseADIFRecord(r adif.Record, source string) *QSO {
 	qs.MySOTARef = get(adifield.MY_SOTA_REF)
 	qs.MyPOTARef = get(adifield.MY_POTA_REF)
 	qs.MyWWFFRef = get(adifield.MY_WWFF_REF)
+	qs.MySIG = get(adifield.Field("MY_SIG"))
+	qs.MySIGInfo = get(adifield.Field("MY_SIG_INFO"))
 	if v := get(adifield.STATION_CALLSIGN); v != "" {
 		qs.StationCallsign = strings.ToUpper(v)
 	}
@@ -270,10 +288,24 @@ func ParseADIFRecord(r adif.Record, source string) *QSO {
 	qs.MyGridSquare = NormalizeLocator(get(adifield.MY_GRIDSQUARE))
 	qs.MyRig = get(adifield.MY_RIG)
 	qs.MyAntenna = get(adifield.MY_ANTENNA)
+	qs.MyCQZone = get(adifield.Field("MY_CQZ"))
+	qs.MyITUZone = get(adifield.Field("MY_ITUZ"))
+	qs.MyDXCC = get(adifield.Field("MY_DXCC"))
 	qs.Distance = getFloat(adifield.DISTANCE)
 	qs.Bearing = getFloat(adifield.ANT_AZ)
 	qs.CQZone = get(adifield.CQZ)
 	qs.ITUZone = get(adifield.ITUZ)
+	// Contest exchange fields.
+	qs.STXString = get(adifield.Field("STX_STRING"))
+	qs.SRXString = get(adifield.Field("SRX_STRING"))
+	qs.ContestID = get(adifield.Field("CONTEST_ID"))     // hash for filtering
+	qs.ContestADIFID = get(adifield.Field("CONTEST_ID")) // ADIF Contest ID
+	if v := get(adifield.Field("STX")); v != "" {
+		fmt.Sscanf(v, "%d", &qs.STX)
+	}
+	if v := get(adifield.Field("SRX")); v != "" {
+		fmt.Sscanf(v, "%d", &qs.SRX)
+	}
 	qs.Source = source
 
 	return qs

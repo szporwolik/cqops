@@ -644,7 +644,7 @@ func TestLogQSOFromADIF_FullPipeline(t *testing.T) {
 	_ = cmd
 
 	// Query back from the DB to confirm persistence.
-	qsos, err := store.ListQSOs(m.App.DB, 1)
+	qsos, err := store.ListQSOs(m.App.DB, 1, "")
 	if err != nil {
 		t.Fatalf("ListQSOs: %v", err)
 	}
@@ -778,7 +778,7 @@ func TestADIFToQSO_StandaloneFT8LogQSO(t *testing.T) {
 	_ = cmd
 
 	// Verify persisted with normalized mode.
-	qsos, err := store.ListQSOs(m.App.DB, 1)
+	qsos, err := store.ListQSOs(m.App.DB, 1, "")
 	if err != nil {
 		t.Fatalf("ListQSOs: %v", err)
 	}

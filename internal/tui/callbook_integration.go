@@ -125,6 +125,7 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 		m.toasts.Error(msg.Err.Error())
 		m.clearQRZFields()
 		m.dxccAutoFill()
+		m.prefillContestExchange()
 		return
 	}
 	d := msg.Data
@@ -132,6 +133,7 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 		m.toasts.Warn("QRZ.com: no data for " + msg.Call)
 		m.clearQRZFields()
 		m.dxccAutoFill()
+		m.prefillContestExchange()
 		return
 	}
 	m.lookup.partnerData = d
@@ -165,6 +167,10 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 	// After QRZ filled what it could, fill remaining empty country/continent
 	// from DXCC prefix lookup if available.
 	m.dxccAutoFill()
+
+	// Recalculate exchange fields — async lookup may have filled grid/zone
+	// data that contest exchange markers depend on.
+	m.prefillContestExchange()
 }
 
 // clearQRZFields clears the form fields that QRZ normally populates

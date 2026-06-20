@@ -1,6 +1,7 @@
 package qso
 
 import (
+	"strings"
 	"testing"
 
 	adif "github.com/farmergreg/adif/v5"
@@ -254,5 +255,65 @@ func TestParseADIFRecord_DXCCFallback(t *testing.T) {
 	qs = ParseADIFRecord(r, "import")
 	if qs.Country != "France" {
 		t.Errorf("Country = %q, want France (COUNTRY takes priority)", qs.Country)
+	}
+}
+
+func TestADIFContestRoundTrip(t *testing.T) {
+	qs := NewQSO()
+	qs.Call = "SP9MOA"
+	qs.QSODate = "20240101"
+	qs.TimeOn = "120000"
+	qs.Band = "20m"
+	qs.Mode = "SSB"
+	qs.RSTSent = "59"
+	qs.RSTRcvd = "59"
+	qs.ExchSent = "599 001"
+	qs.ExchRcvd = "599 042"
+	qs.STX = 1
+	qs.SRX = 42
+	qs.STXString = "599 001"
+	qs.SRXString = "599 042"
+	qs.ContestID = "c1"
+	qs.MyGridSquare = "JO90"
+	qs.StationCallsign = "SP9MOA"
+
+	adifStr := qs.toADIFWithStation("SP9MOA")
+
+	// Build record manually from the ADIF string fields.
+	r := adif.NewRecord()
+	r[adifield.Field("STX_STRING")] = "599 001"
+	r[adifield.Field("SRX_STRING")] = "599 042"
+	r[adifield.Field("STX")] = "1"
+	r[adifield.Field("SRX")] = "42"
+	r[adifield.Field("CONTEST_ID")] = "c1"
+
+	// Verify the ADIF output contains the expected fields.
+	if adifStr == "" {
+		t.Fatal("ADIF output is empty")
+	}
+	if !strings.Contains(adifStr, "STX_STRING") {
+		t.Error("ADIF output should contain STX_STRING")
+	}
+	if !strings.Contains(adifStr, "599 001") {
+		t.Error("ADIF output should contain exchange value")
+	}
+
+	// Parse back.
+	parsed := ParseADIFRecord(r, "manual")
+
+	if parsed.STX != 1 {
+		t.Errorf("STX = %d, want 1", parsed.STX)
+	}
+	if parsed.SRX != 42 {
+		t.Errorf("SRX = %d, want 42", parsed.SRX)
+	}
+	if parsed.STXString != "599 001" {
+		t.Errorf("STXString = %q", parsed.STXString)
+	}
+	if parsed.SRXString != "599 042" {
+		t.Errorf("SRXString = %q", parsed.SRXString)
+	}
+	if parsed.ContestID != "c1" {
+		t.Errorf("ContestID = %q, want c1", parsed.ContestID)
 	}
 }

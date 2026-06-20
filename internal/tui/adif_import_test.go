@@ -128,7 +128,7 @@ func TestImportADIF_SingleQSO(t *testing.T) {
 		t.Fatalf("re-open DB: %v", err)
 	}
 	defer db.Close()
-	qsos, err := store.ListQSOs(db, 1)
+	qsos, err := store.ListQSOs(db, 1, "")
 	if err != nil {
 		t.Fatalf("ListQSOs: %v", err)
 	}
@@ -290,7 +290,7 @@ func TestImportADIF_InvalidGrid(t *testing.T) {
 	// Verify the grid was cleared.
 	db, _ := store.InitDB(dbPath)
 	defer db.Close()
-	qsos, _ := store.ListQSOs(db, 1)
+	qsos, _ := store.ListQSOs(db, 1, "")
 	if len(qsos) != 1 {
 		t.Fatal("no QSO found")
 	}
@@ -308,7 +308,7 @@ func TestImportADIF_WavelogStatusSet(t *testing.T) {
 
 	db, _ := store.InitDB(dbPath)
 	defer db.Close()
-	qsos, _ := store.ListQSOs(db, 1)
+	qsos, _ := store.ListQSOs(db, 1, "")
 	if len(qsos) != 1 {
 		t.Fatal("no QSO found")
 	}

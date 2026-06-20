@@ -12,7 +12,7 @@ import (
 
 // Pre-allocated QSO form layout data — avoids per-frame allocations.
 var (
-	formLeft      = []field{fieldDate, fieldTime, fieldCall, fieldRSTSent, fieldRSTRcvd, fieldFreq, fieldBand}
+	formLeft      = []field{fieldDate, fieldTime, fieldCall, fieldRSTSent, fieldRSTRcvd, fieldFreq, fieldBand, fieldExchSent, fieldExchRcvd}
 	formMiddle    = []field{fieldMode, fieldSubmode, fieldName, fieldQTH, fieldGrid, fieldCountry}
 	formRight     = []field{fieldTXPower, fieldFreqRx, fieldSOTA, fieldPOTA, fieldWWFF, fieldIOTA, fieldSIG}
 	allFields     = buildAllFields()
@@ -31,6 +31,15 @@ func buildAllFields() []field {
 // isChoiceField returns true for fields that have a cycle ▼ icon.
 func isChoiceField(f field) bool { return f == fieldBand || f == fieldMode || f == fieldSubmode }
 
+// isFieldHidden returns true when the given field should not be visible.
+// Exchange fields are hidden when no contest is active.
+func (m *Model) isFieldHidden(f field) bool {
+	if (f == fieldExchSent || f == fieldExchRcvd) && m.App.Config.State.ActiveContest == "" {
+		return true
+	}
+	return false
+}
+
 // viewForm renders the QSO entry form in a three-column layout.
 // Columns are capped at maxColW so they don't spread absurdly on wide screens;
 // the three-column block is left-aligned with a tight border.
@@ -43,7 +52,7 @@ func (m *Model) viewForm(width int) string {
 	// Build a cache signature from all inputs that affect form output.
 	// The date/time fields change every second, so this invalidates at 1 Hz.
 	var sigB strings.Builder
-	fmt.Fprintf(&sigB, "%d|%d|", width, m.focus)
+	fmt.Fprintf(&sigB, "%d|%d|%s|", width, m.focus, m.App.Config.State.ActiveContest)
 	if m.retainFocused {
 		sigB.WriteString("rf|")
 	} else {
@@ -149,19 +158,32 @@ func (m *Model) viewForm(width int) string {
 		return lipgloss.JoinHorizontal(lipgloss.Center, lblPart, " ", val)
 	}
 
+	// Count visible fields in each column so the form shrinks when exchange
+	// fields are hidden (non-contest mode).
+	visibleRows := len(formLeft)
+	for _, f := range formLeft {
+		if m.isFieldHidden(f) {
+			visibleRows--
+		}
+	}
+	if len(formMiddle) > visibleRows {
+		visibleRows = len(formMiddle)
+	}
+	if len(formRight) > visibleRows {
+		visibleRows = len(formRight)
+	}
+
 	var b strings.Builder
 
-	rows := len(formLeft)
-	if len(formMiddle) > rows {
-		rows = len(formMiddle)
-	}
-	if len(formRight) > rows {
-		rows = len(formRight)
-	}
-	for i := 0; i < rows; i++ {
+	for i := 0; i < visibleRows; i++ {
 		var cols []string
 		if i < len(formLeft) {
-			cols = append(cols, colStyle.Render(renderLine(formLeft[i], colW)))
+			f := formLeft[i]
+			if m.isFieldHidden(f) {
+				cols = append(cols, colStyle.Render(""))
+			} else {
+				cols = append(cols, colStyle.Render(renderLine(f, colW)))
+			}
 		} else {
 			cols = append(cols, colStyle.Render(""))
 		}

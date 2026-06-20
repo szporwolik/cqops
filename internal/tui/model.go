@@ -50,6 +50,8 @@ const (
 	fieldRSTRcvd
 	fieldFreq
 	fieldBand
+	fieldExchSent
+	fieldExchRcvd
 	fieldMode
 	fieldSubmode
 	fieldName
@@ -69,6 +71,7 @@ const (
 
 var fieldNames = []string{
 	"Date UTC", "Time UTC", "Call", "RST sent", "RST rcvd", "Frequency", "Band",
+	"Exch sent", "Exch rcvd",
 	"Mode", "Submode", "Name", "QTH", "Grid", "Country", "Power W", "Freq RX",
 	"SOTA Ref", "POTA Ref", "WWFF Ref", "IOTA", "SIG", "Comment",
 }
@@ -870,6 +873,19 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 		tableH -= refBoxH
 	}
 
+	// Contest mode box — shown when a contest is active.
+	var contestBox string
+	contestLine := m.buildContestLine()
+	if contestLine != "" {
+		contestW := lipgloss.Width(formRow)
+		if contestW < 40 {
+			contestW = 40
+		}
+		contestBox = contestBoxStyle.Width(contestW).Render(contestLine)
+		contestBoxH := lipgloss.Height(contestBox)
+		tableH -= contestBoxH
+	}
+
 	m.recentQSOs.SetSize(tableW, tableH)
 
 	var parts []string
@@ -880,11 +896,161 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 	if scpBox != "" {
 		parts = append(parts, scpBox)
 	}
+	if contestBox != "" {
+		parts = append(parts, contestBox)
+	}
 	if refBox != "" {
 		parts = append(parts, refBox)
 	}
 	parts = append(parts, m.recentQSOs.View())
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+// buildContestLine returns the contest info line for the QSO screen, or "" if
+// no contest is active.
+func (m *Model) buildContestLine() string {
+	id := m.App.Config.State.ActiveContest
+	if id == "" {
+		return ""
+	}
+	ct, ok := m.App.Config.Contests[id]
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf(" Contest: %s   Contest ID: %s   Next QSO seq: %d",
+		config.ContestDisplayName(&ct), ct.ContestID, ct.NextQSO)
+}
+
+// cycleActiveContest rotates through all configured contests (including None).
+// Persists the new active contest to config immediately.
+func (m *Model) cycleActiveContest() {
+	ids := config.SortedContestIDs(m.App.Config)
+	current := m.App.Config.State.ActiveContest
+
+	if current == "" {
+		if len(ids) > 0 {
+			m.App.Config.State.ActiveContest = ids[0]
+			ct := m.App.Config.Contests[ids[0]]
+			m.toasts.Info(fmt.Sprintf("Contest: %s", config.ContestDisplayName(&ct)))
+		}
+		m.needRefresh = true
+		m.saveConfig("")
+		return
+	}
+
+	for i, id := range ids {
+		if id == current {
+			if i+1 < len(ids) {
+				m.App.Config.State.ActiveContest = ids[i+1]
+				ct := m.App.Config.Contests[ids[i+1]]
+				m.toasts.Info(fmt.Sprintf("Contest: %s", config.ContestDisplayName(&ct)))
+			} else {
+				m.App.Config.State.ActiveContest = ""
+				m.toasts.Info("Contest: None")
+			}
+			m.needRefresh = true
+			m.saveConfig("")
+			return
+		}
+	}
+
+	m.App.Config.State.ActiveContest = ""
+	m.toasts.Info("Contest: None")
+	m.needRefresh = true
+	m.saveConfig("")
+}
+
+// prefillContestExchange fills the exchange sent/rcvd fields from the active
+// contest's prefill settings. Replaces special markers with current QSO
+// and station values. Next QSO is NOT incremented here — that happens on
+// successful QSO save.
+func (m *Model) prefillContestExchange() {
+	id := m.App.Config.State.ActiveContest
+	if id == "" {
+		return
+	}
+	ct, ok := m.App.Config.Contests[id]
+	if !ok {
+		return
+	}
+
+	if ct.PrefillExchange && ct.ExchangeSent != "" {
+		val := m.resolveExchangeMarkers(ct.ExchangeSent, "sent", ct.NextQSO)
+		m.fields[fieldExchSent].SetValue(val)
+	}
+
+	if ct.PrefillExchangeRcvd && ct.ExchangeRcvd != "" {
+		val := m.resolveExchangeMarkers(ct.ExchangeRcvd, "rcvd", ct.NextQSO)
+		m.fields[fieldExchRcvd].SetValue(val)
+	}
+}
+
+// resolveExchangeMarkers replaces special markers in an exchange template with
+// values from the current QSO form and station config. Supported markers:
+//
+//	@rst     — RST sent or received (depending on direction)
+//	@serial  — next contest QSO sequence number (zero-padded to 3 digits)
+//	@cqz     — DX station CQ zone (from form)
+//	@mycqz   — station CQ zone (from logbook config)
+//	@itu     — DX station ITU zone (from form)
+//	@myitu   — station ITU zone (from logbook config)
+//	@grid    — DX station grid square (from form)
+//	@mygrid  — station grid square (from logbook config)
+//
+// Backward-compatible: ### is also replaced with @serial.
+func (m *Model) resolveExchangeMarkers(tmpl, direction string, nextQSO int) string {
+	// Build replacement map.
+	rep := make(map[string]string)
+
+	// @serial / ### — contest sequence number.
+	seq := fmt.Sprintf("%03d", nextQSO)
+	if nextQSO > 999 {
+		seq = fmt.Sprintf("%d", nextQSO)
+	}
+	rep["@serial"] = seq
+	rep["###"] = seq
+
+	// @rst — RST depending on direction.
+	if direction == "sent" {
+		rep["@rst"] = strings.TrimSpace(m.fields[fieldRSTSent].Value())
+	} else {
+		rep["@rst"] = strings.TrimSpace(m.fields[fieldRSTRcvd].Value())
+	}
+
+	// @cqz / @itu / @grid — from the QSO form or DXCC lookup.
+	call := strings.TrimSpace(m.fields[fieldCall].Value())
+	if call != "" && m.App != nil && m.App.DXCC != nil && m.App.Config.General.UseCTY {
+		if p := m.dxccLookup(call); p != nil {
+			rep["@cqz"] = fmt.Sprintf("%d", int(p.CQZone))
+			rep["@itu"] = fmt.Sprintf("%d", int(p.ITUZone))
+		}
+	}
+	// Fall back to empty if no DXCC match.
+	if _, ok := rep["@cqz"]; !ok {
+		rep["@cqz"] = ""
+	}
+	if _, ok := rep["@itu"]; !ok {
+		rep["@itu"] = ""
+	}
+	rep["@grid"] = strings.TrimSpace(m.fields[fieldGrid].Value())
+
+	// @mycqz / @myitu / @mygrid — from station config.
+	rep["@mycqz"] = qso.ItoaOrEmpty(m.App.Logbook.Station.CQZone)
+	rep["@myitu"] = qso.ItoaOrEmpty(m.App.Logbook.Station.ITUZone)
+	rep["@mygrid"] = strings.ToUpper(strings.TrimSpace(m.App.Logbook.Station.Grid))
+
+	// Optional markers that resolved to empty → render "?".
+	for k, v := range rep {
+		if v == "" && k != "@serial" && k != "@rst" && k != "###" {
+			rep[k] = "?"
+		}
+	}
+
+	result := tmpl
+	for marker, value := range rep {
+		result = strings.ReplaceAll(result, marker, value)
+	}
+	return result
 }
 
 // formPartnerData builds a CallData from the current QSO form fields.

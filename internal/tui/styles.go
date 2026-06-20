@@ -65,8 +65,10 @@ type Styles struct {
 	FormFocusedWide lipgloss.Style // wider focused label for menus (17 cells)
 	FormLabelXL     lipgloss.Style // extra-wide for notifications (36 cells)
 	FormFocusedXL   lipgloss.Style // extra-wide focused for notifications (36 cells)
-	FormLabelGen    lipgloss.Style // medium for General settings (22 cells)
-	FormFocusedGen  lipgloss.Style // medium focused for General settings (22 cells)
+	FormLabelGen    lipgloss.Style // medium for General settings (30 cells)
+	FormFocusedGen  lipgloss.Style // medium focused for General settings (30 cells)
+	FormLabelCtx    lipgloss.Style // wider for Contest (28 cells)
+	FormFocusedCtx  lipgloss.Style // wider focused for Contest (28 cells)
 	FormPrefixOn    lipgloss.Style
 	FormPrefixOff   lipgloss.Style
 	Input           lipgloss.Style
@@ -142,6 +144,10 @@ var S = Styles{
 	FormLabelGen:   lipgloss.NewStyle().Width(30).Foreground(P.TextMuted),
 	FormFocusedGen: lipgloss.NewStyle().Width(30).Foreground(P.Cursor),
 
+	// Wider variants for Contest submenu — accommodate long exchange labels.
+	FormLabelCtx:   lipgloss.NewStyle().Width(28).Foreground(P.TextMuted),
+	FormFocusedCtx: lipgloss.NewStyle().Width(28).Foreground(P.Cursor),
+
 	ToastInfo:    lipgloss.NewStyle().Foreground(P.Info),
 	ToastSuccess: lipgloss.NewStyle().Foreground(P.Success),
 	ToastWarning: lipgloss.NewStyle().Foreground(P.Warning),
@@ -211,6 +217,12 @@ var (
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(P.Border).
 			Padding(1, 2)
+
+	// contestBoxStyle for contest info box on QSO screen.
+	contestBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(P.Warning).
+			Padding(0, 1)
 
 	// statusDotOn / statusDotOff — pre-allocated integration indicator styles.
 	// Airbus philosophy: default (white) when online, red when offline.

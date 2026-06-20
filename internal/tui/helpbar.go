@@ -27,6 +27,8 @@ func (m *Model) helpView() string {
 	editing := 0
 	chooserForm := 0
 	rigForm := 0
+	contestForm := 0
+	contestConfirm := 0
 	if m.confirm != nil {
 		conf = 1
 	}
@@ -42,6 +44,12 @@ func (m *Model) helpView() string {
 	if m.ui.rigChooser != nil && (m.ui.rigChooser.mode == rigChooserEdit || m.ui.rigChooser.mode == rigChooserCreate) {
 		rigForm = 1
 	}
+	if m.ui.contestChooser != nil && (m.ui.contestChooser.mode == contestEdit || m.ui.contestChooser.mode == contestCreate) {
+		contestForm = 1
+	}
+	if m.ui.contestChooser != nil && m.ui.contestChooser.mode == contestConfirmDelete {
+		contestConfirm = 1
+	}
 	if m.ui.rigChooser != nil && m.ui.rigChooser.dialog != nil {
 		conf = 1
 	}
@@ -56,7 +64,7 @@ func (m *Model) helpView() string {
 	if m.ui.logbookEditor != nil && m.ui.logbookEditor.IsImporting() {
 		importing = 1
 	}
-	sig := fmt.Sprintf("%d|%d|%d|%d|%d|%d|%d|%d|%t|%t|%s", m.screen, m.width, conf, editing, chooserForm, rigForm, exporting, importing, m.rig.connected, m.wsjtx.online, suffix)
+	sig := fmt.Sprintf("%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%t|%t|%s", m.screen, m.width, conf, editing, chooserForm, rigForm, contestForm, contestConfirm, exporting, importing, m.rig.connected, m.wsjtx.online, suffix)
 	if m.rc.helpSig == sig && m.rc.helpView != "" {
 		return m.rc.helpView
 	}

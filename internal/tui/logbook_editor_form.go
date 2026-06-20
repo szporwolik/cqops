@@ -43,6 +43,11 @@ func (le *LogbookEditor) fillEditForm(q *qso.QSO) {
 	s(qefMyGrid, q.MyGridSquare)
 	s(qefMyRig, q.MyRig)
 	s(qefMyAntenna, q.MyAntenna)
+	s(qefMyCQZone, q.MyCQZone)
+	s(qefMyITUZone, q.MyITUZone)
+	s(qefMyDXCC, q.MyDXCC)
+	s(qefMySIG, q.MySIG)
+	s(qefMySIGInfo, q.MySIGInfo)
 	s(qefSource, q.Source)
 	sf(qefDistance, q.Distance)
 	sf(qefBearing, q.Bearing)
@@ -56,8 +61,13 @@ func (le *LogbookEditor) fillEditForm(q *qso.QSO) {
 	s(qefMyWWFF, q.MyWWFFRef)
 	s(qefCQZone, q.CQZone)
 	s(qefITUZone, q.ITUZone)
-	// WL Status is read-only — set via async upload
-	le.fields[qefWLStatus].SetValue(q.WavelogUploaded)
+	s(qefExchSent, q.ExchSent)
+	s(qefExchRcvd, q.ExchRcvd)
+	s(qefSTX, fmt.Sprintf("%d", q.STX))
+	s(qefSRX, fmt.Sprintf("%d", q.SRX))
+	s(qefSTXString, q.STXString)
+	s(qefSRXString, q.SRXString)
+	s(qefContestID, q.ContestID)
 }
 
 func (le *LogbookEditor) readEditForm() *qso.QSO {
@@ -65,6 +75,11 @@ func (le *LogbookEditor) readEditForm() *qso.QSO {
 	gf := func(f qsoEditField) float64 {
 		var v float64
 		fmt.Sscanf(g(f), "%f", &v)
+		return v
+	}
+	gi := func(f qsoEditField) int {
+		var v int
+		fmt.Sscanf(g(f), "%d", &v)
 		return v
 	}
 	return &qso.QSO{
@@ -76,12 +91,20 @@ func (le *LogbookEditor) readEditForm() *qso.QSO {
 		Country: g(qefCountry), Comment: g(qefComment), Notes: g(qefNotes),
 		TXPower: g(qefTXPower), StationCallsign: g(qefStationCall),
 		Operator: g(qefOperator), MyGridSquare: g(qefMyGrid),
-		MyRig: g(qefMyRig), MyAntenna: g(qefMyAntenna), Source: g(qefSource),
+		MyRig: g(qefMyRig), MyAntenna: g(qefMyAntenna),
+		MyCQZone: g(qefMyCQZone), MyITUZone: g(qefMyITUZone), MyDXCC: g(qefMyDXCC), MySIG: g(qefMySIG), MySIGInfo: g(qefMySIGInfo), Source: g(qefSource),
 		Distance: gf(qefDistance), Bearing: gf(qefBearing),
 		IOTA: g(qefIOTA), SOTARef: g(qefSOTA), POTARef: g(qefPOTA), WWFFRef: g(qefWWFF),
 		SIG:       g(qefSIG),
 		MySOTARef: g(qefMySOTA), MyPOTARef: g(qefMyPOTA), MyWWFFRef: g(qefMyWWFF),
 		CQZone: g(qefCQZone), ITUZone: g(qefITUZone),
+		ExchSent:        g(qefExchSent),
+		ExchRcvd:        g(qefExchRcvd),
+		STX:             gi(qefSTX),
+		SRX:             gi(qefSRX),
+		STXString:       g(qefSTXString),
+		SRXString:       g(qefSRXString),
+		ContestID:       g(qefContestID),
 		WavelogUploaded: g(qefWLStatus),
 		CreatedAt:       le.editing.CreatedAt,
 	}

@@ -58,6 +58,11 @@ const (
 	qefMyGrid
 	qefMyRig
 	qefMyAntenna
+	qefMyCQZone
+	qefMyITUZone
+	qefMyDXCC
+	qefMySIG
+	qefMySIGInfo
 	qefDistance
 	qefBearing
 	qefIOTA
@@ -70,6 +75,13 @@ const (
 	qefMyWWFF
 	qefCQZone
 	qefITUZone
+	qefExchSent
+	qefExchRcvd
+	qefSTX
+	qefSRX
+	qefSTXString
+	qefSRXString
+	qefContestID
 	qefWLStatus // non-focusable read-only
 	qefSource   // non-focusable read-only — last real field
 	qefCount
@@ -80,10 +92,13 @@ var qefLabels = []string{
 	"Mode", "Submode", "RST Sent", "RST Rcvd", "Grid", "Name",
 	"QTH", "Country", "Comment", "Notes", "TX Power",
 	"Station Call", "Operator", "My Grid", "My Rig", "My Antenna",
+	"My CQ Zone", "My ITU Zone", "My DXCC",
+	"My SIG", "My SIG Info",
 	"Distance km", "Bearing",
 	"IOTA", "SOTA Ref", "POTA Ref", "WWFF Ref", "SIG",
 	"My SOTA", "My POTA", "My WWFF",
 	"CQ Zone", "ITU Zone",
+	"Exch Sent", "Exch Rcvd", "STX", "SRX", "STX String", "SRX String", "Contest ID",
 	"WL Upload (RO)",
 	"Source (RO)",
 }
@@ -111,6 +126,9 @@ type LogbookEditor struct {
 	wlLastFetchedID  int64
 	logStationOp     string
 	logStationGrid   string
+	contestID        string // active contest hash for filtering, "" = no filter
+	contestName      string // display name for the contest info line
+	contestAdifID    string // ADIF Contest-ID for the contest info line
 	mismatchQSOs     []qso.QSO
 	mismatchFields   []string
 	wlDownloadCount  int
@@ -190,8 +208,16 @@ func NewLogbookEditor(db *sql.DB, wlURL, wlKey, wlStationID string, wlLastFetche
 			ti.CharLimit = 200
 		case qefSOTA, qefPOTA, qefWWFF, qefIOTA, qefMySOTA, qefMyPOTA, qefMyWWFF:
 			ti.CharLimit = 20
+		case qefMyCQZone, qefMyITUZone, qefMyDXCC:
+			ti.CharLimit = 6
 		case qefWLStatus:
 			ti.CharLimit = 8
+		case qefExchSent, qefExchRcvd, qefSTXString, qefSRXString:
+			ti.CharLimit = 40
+		case qefSTX, qefSRX:
+			ti.CharLimit = 8
+		case qefContestID:
+			ti.CharLimit = 30
 		}
 		le.fields[i] = ti
 	}
@@ -211,6 +237,19 @@ func (le *LogbookEditor) SetQSOS(qsos []qso.QSO) {
 	le.buildTable()
 }
 
+// SetContestID sets the active contest filter for the editor.
+// Pass "" to clear the filter and show all QSOs.
+func (le *LogbookEditor) SetContestID(id, name, adifID string) {
+	if le.contestID != id {
+		le.contestID = id
+		le.contestName = name
+		le.contestAdifID = adifID
+		le.cachedSig = ""
+		le.currentPage = 1
+		le.loadPage()
+	}
+}
+
 // loadPage fetches the current page of QSOs from the database.
 func (le *LogbookEditor) loadPage() {
 	if le.db == nil {
@@ -228,7 +267,7 @@ func (le *LogbookEditor) loadPage() {
 	}
 
 	// Refresh total count.
-	counts, err := store.CountQSOs(le.db)
+	counts, err := store.CountQSOsForContest(le.db, le.contestID)
 	if err == nil {
 		le.totalCount = counts.Total
 	}
@@ -245,7 +284,7 @@ func (le *LogbookEditor) loadPage() {
 	}
 
 	offset := (le.currentPage - 1) * le.pageSize
-	qsos, err := store.ListQSOsPage(le.db, le.pageSize, offset)
+	qsos, err := store.ListQSOsPage(le.db, le.pageSize, offset, le.contestID)
 	if err != nil {
 		le.qsos = nil
 	} else {

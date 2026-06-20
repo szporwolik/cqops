@@ -116,6 +116,11 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 		MySOTARef:       m.App.Logbook.Station.SOTARef,
 		MyPOTARef:       m.App.Logbook.Station.POTARef,
 		MyWWFFRef:       m.App.Logbook.Station.WWFFRef,
+		MyCQZone:        qso.ItoaOrEmpty(m.App.Logbook.Station.CQZone),
+		MyITUZone:       qso.ItoaOrEmpty(m.App.Logbook.Station.ITUZone),
+		MyDXCC:          qso.ItoaOrEmpty(m.App.Logbook.Station.DXCC),
+		MySIG:           m.App.Logbook.Station.SIG,
+		MySIGInfo:       m.App.Logbook.Station.SIGInfo,
 	})
 
 	// Enrich QSO: compute distance/bearing from grid squares.

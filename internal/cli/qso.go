@@ -31,6 +31,11 @@ var (
 	logMyGrid      string
 	logMyRig       string
 	logMyAntenna   string
+	logMyCQZone    string
+	logMyITUZone   string
+	logMyDXCC      string
+	logMySIG       string
+	logMySIGInfo   string
 	logDate        string
 	logTime        string
 	logPower       string
@@ -103,6 +108,15 @@ var logAddCmd = &cobra.Command{
 		if logMyAntenna != "" {
 			qs.MyAntenna = logMyAntenna
 		}
+		if logMyCQZone != "" {
+			qs.MyCQZone = logMyCQZone
+		}
+		if logMyITUZone != "" {
+			qs.MyITUZone = logMyITUZone
+		}
+		if logMyDXCC != "" {
+			qs.MyDXCC = logMyDXCC
+		}
 
 		qso.ApplyStationDefaults(qs, qso.StationInfo{
 			StationCallsign: a.Logbook.Station.Callsign,
@@ -114,6 +128,11 @@ var logAddCmd = &cobra.Command{
 			MySOTARef:       a.Logbook.Station.SOTARef,
 			MyPOTARef:       a.Logbook.Station.POTARef,
 			MyWWFFRef:       a.Logbook.Station.WWFFRef,
+			MyCQZone:        qso.ItoaOrEmpty(a.Logbook.Station.CQZone),
+			MyITUZone:       qso.ItoaOrEmpty(a.Logbook.Station.ITUZone),
+			MyDXCC:          qso.ItoaOrEmpty(a.Logbook.Station.DXCC),
+			MySIG:           a.Logbook.Station.SIG,
+			MySIGInfo:       a.Logbook.Station.SIGInfo,
 		})
 
 		if err := qso.ValidateForSave(qs); err != nil {
@@ -170,7 +189,7 @@ var logListCmd = &cobra.Command{
 		}
 		defer a.Close()
 
-		qsos, err := store.ListQSOs(a.DB, logLimit)
+		qsos, err := store.ListQSOs(a.DB, logLimit, "")
 		if err != nil {
 			return err
 		}
@@ -271,6 +290,21 @@ var logShowCmd = &cobra.Command{
 		if q.MyAntenna != "" {
 			fmt.Printf("  My Antenna:   %s\n", q.MyAntenna)
 		}
+		if q.MyCQZone != "" {
+			fmt.Printf("  My CQ Zone:   %s\n", q.MyCQZone)
+		}
+		if q.MyITUZone != "" {
+			fmt.Printf("  My ITU Zone:  %s\n", q.MyITUZone)
+		}
+		if q.MyDXCC != "" {
+			fmt.Printf("  My DXCC:      %s\n", q.MyDXCC)
+		}
+		if q.MySIG != "" {
+			fmt.Printf("  My SIG:       %s\n", q.MySIG)
+		}
+		if q.MySIGInfo != "" {
+			fmt.Printf("  My SIG Info:  %s\n", q.MySIGInfo)
+		}
 		fmt.Printf("  Source:       %s\n", q.Source)
 		fmt.Printf("  Created:      %s\n", q.CreatedAt.Format("2006-01-02 15:04:05"))
 		return nil
@@ -325,6 +359,11 @@ func registerLogCommands() {
 	logAddCmd.Flags().StringVar(&logMyGrid, "my-grid", "", "My gridsquare")
 	logAddCmd.Flags().StringVar(&logMyRig, "my-rig", "", "My rig")
 	logAddCmd.Flags().StringVar(&logMyAntenna, "my-antenna", "", "My antenna")
+	logAddCmd.Flags().StringVar(&logMyCQZone, "my-cq-zone", "", "My CQ zone (1-40)")
+	logAddCmd.Flags().StringVar(&logMyITUZone, "my-itu-zone", "", "My ITU zone (1-90)")
+	logAddCmd.Flags().StringVar(&logMyDXCC, "my-dxcc", "", "My DXCC entity ID")
+	logAddCmd.Flags().StringVar(&logMySIG, "my-sig", "", "My Special Interest Group (e.g. SOTA)")
+	logAddCmd.Flags().StringVar(&logMySIGInfo, "my-sig-info", "", "My SIG info (e.g. summit/park ref)")
 	logAddCmd.Flags().StringVar(&logDate, "date", "", "QSO date YYYYMMDD (default: today UTC)")
 	logAddCmd.Flags().StringVar(&logTime, "time", "", "QSO time HHMMSS (default: now UTC)")
 	logAddCmd.Flags().StringVar(&logPower, "power", "", "TX power in watts")

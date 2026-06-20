@@ -358,7 +358,7 @@ func (c *LogbookChooser) refreshNames() {
 
 func (c *LogbookChooser) startCreate() {
 	c.mode = chooserCreate
-	c.station.SetValues("", "", "", "", "", "", 1)
+	c.station.SetValues("", "", "", "", "", "", 1, 0, 0, 0, "", "")
 	c.station.BlurAll()
 	c.station.Callsign.Focus()
 	c.editing = ""
@@ -368,7 +368,7 @@ func (c *LogbookChooser) startEdit(id string) {
 	lb := c.app.Config.Logbooks[id]
 	c.mode = chooserEdit
 	c.editing = id
-	c.station.SetValues(lb.Station.Callsign, lb.Station.Operator, lb.Station.Grid, lb.Station.SOTARef, lb.Station.POTARef, lb.Station.WWFFRef, lb.Station.IARURegion)
+	c.station.SetValues(lb.Station.Callsign, lb.Station.Operator, lb.Station.Grid, lb.Station.SOTARef, lb.Station.POTARef, lb.Station.WWFFRef, lb.Station.IARURegion, lb.Station.CQZone, lb.Station.ITUZone, lb.Station.DXCC, lb.Station.SIG, lb.Station.SIGInfo)
 	c.station.SetWavelogValues(lb.Wavelog)
 	c.wlStatus = ""
 	c.wlStations = nil
@@ -381,7 +381,7 @@ func (c *LogbookChooser) startEdit(id string) {
 }
 
 func (c *LogbookChooser) saveForm() tea.Cmd {
-	cs, op, gr, sotaRef, potaRef, wwffRef, wlEnabled, wlURL, wlKey, wlStationID, iaruRegion := c.station.Values()
+	cs, op, gr, sotaRef, potaRef, wwffRef, wlEnabled, wlURL, wlKey, wlStationID, iaruRegion, cqZone, ituZone, dxcc, sig, sigInfo := c.station.Values()
 
 	if err := c.station.Validate(); err != nil {
 		c.toasts.Error(err.Error())
@@ -426,6 +426,11 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 				WWFFRef:    wwffRef,
 				RigName:    prevRigName,
 				IARURegion: iaruRegion,
+				CQZone:     cqZone,
+				ITUZone:    ituZone,
+				DXCC:       dxcc,
+				SIG:        sig,
+				SIGInfo:    sigInfo,
 			},
 			Wavelog: wl,
 		}
@@ -446,6 +451,11 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 		lb.Station.POTARef = potaRef
 		lb.Station.WWFFRef = wwffRef
 		lb.Station.IARURegion = iaruRegion
+		lb.Station.CQZone = cqZone
+		lb.Station.ITUZone = ituZone
+		lb.Station.DXCC = dxcc
+		lb.Station.SIG = sig
+		lb.Station.SIGInfo = sigInfo
 		lb.Wavelog = wl
 		c.app.Config.Logbooks[id] = lb
 

@@ -478,7 +478,7 @@ func TestPurge_ClearsQSOs(t *testing.T) {
 	insertTestQSO(t, le.db, q2)
 
 	// Verify QSOs exist.
-	qsos, err := store.ListQSOs(le.db, 10)
+	qsos, err := store.ListQSOs(le.db, 10, "")
 	if err != nil {
 		t.Fatalf("ListQSOs: %v", err)
 	}
@@ -504,7 +504,7 @@ func TestPurge_ClearsQSOs(t *testing.T) {
 	}
 
 	// Verify QSOs are gone.
-	qsos, err = store.ListQSOs(le.db, 10)
+	qsos, err = store.ListQSOs(le.db, 10, "")
 	if err != nil {
 		t.Fatalf("ListQSOs after purge: %v", err)
 	}

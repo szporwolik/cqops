@@ -82,7 +82,7 @@ func runTUI() error {
 		return nil
 	}
 
-	qsos, err := store.ListQSOs(a.DB, 500)
+	qsos, err := store.ListQSOs(a.DB, 500, a.Config.State.ActiveContest)
 	if err != nil {
 		applog.Warn("Failed to load initial QSO list", "error", err.Error())
 	}

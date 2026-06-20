@@ -210,18 +210,30 @@ func (le *LogbookEditor) View() tea.View {
 		}
 		// Cache the rendered table — large QSO sets are paginated.
 		// Invalidate when QSO data, page, dimensions, or cursor change.
-		sig := fmt.Sprintf("%d|%d|%d|%d|%d", le.width, le.height, len(le.qsos), le.currentPage, le.table.Cursor())
+		sig := fmt.Sprintf("%d|%d|%d|%d|%d|%s", le.width, le.height, len(le.qsos), le.currentPage, le.table.Cursor(), le.contestID)
 		if le.cachedSig == sig && le.cachedView != "" {
 			return tea.NewView(le.cachedView)
 		}
 		contentH := contentHeight(le.height)
-		// Spacer row (reserved for future use) + table.
+
+		// Contest info line — warning-colored row when contest is active.
+		var headerLines []string
+		if le.contestID != "" {
+			contestLine := S.Warning.Render(fmt.Sprintf(" Contest: %s   Contest ID: %s",
+				le.contestName, le.contestAdifID))
+			headerLines = append(headerLines, lipgloss.NewStyle().Width(bodyW).Render(contestLine))
+			contentH-- // consume one row for the contest info line
+		}
+
+		// Spacer row + table.
 		spacer := lipgloss.NewStyle().Width(bodyW).Render("")
 		tablePart := lipgloss.NewStyle().
 			MaxWidth(bodyW).
-			Height(contentH - 1).
+			Height(contentH - 1 - len(headerLines)).
 			Render(le.table.View())
-		le.cachedView = lipgloss.JoinVertical(lipgloss.Left, spacer, tablePart)
+
+		allParts := append(headerLines, spacer, tablePart)
+		le.cachedView = lipgloss.JoinVertical(lipgloss.Left, allParts...)
 		le.cachedSig = sig
 		return tea.NewView(le.cachedView)
 	}

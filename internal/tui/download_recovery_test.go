@@ -92,7 +92,7 @@ func TestDownload_HTTP500(t *testing.T) {
 		t.Errorf("wlDownloadCount = %d, want 0 on failure", le.wlDownloadCount)
 	}
 	// Existing QSOs should still be present.
-	qsos, _ := store.ListQSOs(le.db, 10)
+	qsos, _ := store.ListQSOs(le.db, 10, "")
 	found := false
 	for _, q := range qsos {
 		if q.Call == "SP9EXISTING" {
@@ -314,7 +314,7 @@ func TestDownload_RetryAfterFailure(t *testing.T) {
 	}
 
 	// QSO should be in DB with Wavelog flags.
-	qsos, _ := store.ListQSOs(db, 10)
+	qsos, _ := store.ListQSOs(db, 10, "")
 	var found bool
 	for _, q := range qsos {
 		if q.Call == "SP9MOA" && q.Source == "wavelog" && q.WavelogUploaded == "yes" {
@@ -355,7 +355,7 @@ func TestDownload_MalformedADIFImportsValid(t *testing.T) {
 	if le.wlDownloadCount != 1 {
 		t.Errorf("wlDownloadCount = %d, want 1 (only valid QSO imported)", le.wlDownloadCount)
 	}
-	qsos, _ := store.ListQSOs(le.db, 10)
+	qsos, _ := store.ListQSOs(le.db, 10, "")
 	// Seed QSO + imported valid QSO = 2.
 	if len(qsos) != 2 {
 		t.Errorf("DB should have 2 QSOs (seed + imported valid), got %d", len(qsos))
@@ -425,7 +425,7 @@ func TestDownload_SetsWavelogUploaded(t *testing.T) {
 		t.Fatalf("wlDownloadCount = %d, want 1", le.wlDownloadCount)
 	}
 
-	qsos, _ := store.ListQSOs(le.db, 10)
+	qsos, _ := store.ListQSOs(le.db, 10, "")
 	// Seed QSO + imported QSO = 2.
 	if len(qsos) < 1 {
 		t.Fatalf("expected at least 1 QSO in DB, got %d", len(qsos))

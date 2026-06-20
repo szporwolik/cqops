@@ -14,14 +14,32 @@ type QSOCounts struct {
 
 // CountQSOs returns aggregate statistics for the current logbook.
 func CountQSOs(db *sql.DB) (QSOCounts, error) {
+	return CountQSOsForContest(db, "")
+}
+
+// CountQSOsForContest returns aggregate statistics filtered by contest ID.
+// Pass empty string for no contest filter.
+func CountQSOsForContest(db *sql.DB, contestID string) (QSOCounts, error) {
 	var c QSOCounts
-	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos`).Scan(&c.Total); err != nil {
+	filter := ""
+	args := []any{}
+	if contestID != "" {
+		filter = " WHERE contest_id = ?"
+		args = append(args, contestID)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos`+filter, args...).Scan(&c.Total); err != nil {
 		return c, fmt.Errorf("count qsos: %w", err)
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE source='wsjtx'`).Scan(&c.FromWSJTX); err != nil {
+	fromWSJTX := `SELECT COUNT(*) FROM qsos WHERE source='wsjtx'`
+	toWavelog := `SELECT COUNT(*) FROM qsos WHERE wavelog_uploaded='yes'`
+	if contestID != "" {
+		fromWSJTX += ` AND contest_id = ?`
+		toWavelog += ` AND contest_id = ?`
+	}
+	if err := db.QueryRow(fromWSJTX, args...).Scan(&c.FromWSJTX); err != nil {
 		return c, fmt.Errorf("count wsjtx qsos: %w", err)
 	}
-	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE wavelog_uploaded='yes'`).Scan(&c.ToWavelog); err != nil {
+	if err := db.QueryRow(toWavelog, args...).Scan(&c.ToWavelog); err != nil {
 		return c, fmt.Errorf("count wavelog qsos: %w", err)
 	}
 	return c, nil

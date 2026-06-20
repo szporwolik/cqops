@@ -33,6 +33,7 @@ type KeyMap struct {
 	Cancel       key.Binding
 	CycleLogbook key.Binding
 	CycleRig     key.Binding
+	CycleContest key.Binding
 }
 
 // DefaultKeyMap returns the default key bindings.
@@ -145,8 +146,10 @@ func DefaultKeyMap() KeyMap {
 		CycleRig: key.NewBinding(
 			key.WithKeys("ctrl+end"),
 			key.WithHelp("C-End", "Rig"),
-		),
-	}
+		), CycleContest: key.NewBinding(
+			key.WithKeys("ctrl+c"),
+			key.WithHelp("Ctrl+C", "Contest"),
+		)}
 }
 
 // ActiveBindings returns the currently visible key bindings based on app state.
@@ -162,6 +165,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 			m.keys.Delete,
 			m.keys.CycleLogbook,
 			m.keys.CycleRig,
+			m.keys.CycleContest,
 		)
 	}
 
@@ -181,6 +185,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 				key.NewBinding(key.WithKeys("p"), key.WithHelp("P", "Purge")),
 				key.NewBinding(key.WithKeys("ctrl+e"), key.WithHelp("C-E", "Export")),
 				key.NewBinding(key.WithKeys("ctrl+i"), key.WithHelp("C-I", "Import")),
+				m.keys.CycleContest,
 			)
 			wl := m.App.Logbook.Wavelog
 			if wl != nil && wl.Enabled {
@@ -267,16 +272,23 @@ func (m *Model) ActiveBindings() []key.Binding {
 	if m.screen == screenContest {
 		if m.ui.contestChooser != nil && (m.ui.contestChooser.mode == contestEdit || m.ui.contestChooser.mode == contestCreate) {
 			bindings = append(bindings,
-				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")),
+				key.NewBinding(key.WithKeys("tab", "down", "shift+tab", "up"), key.WithHelp("↑↓", "Navigate")),
+				key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle/Cycle")),
+				key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
+				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
+			)
+		} else if m.ui.contestChooser != nil && m.ui.contestChooser.mode == contestConfirmDelete {
+			bindings = append(bindings,
+				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Confirm")),
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Cancel")),
 			)
 		} else {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
-				key.NewBinding(key.WithKeys("enter", "space"), key.WithHelp("Ent/Spc", "Activate")),
+				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit")),
+				key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Activate")),
 				key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Create")),
 				key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
-				key.NewBinding(key.WithKeys("e"), key.WithHelp("E", "Edit name")),
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 			)
 		}

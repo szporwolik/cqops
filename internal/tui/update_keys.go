@@ -175,6 +175,13 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.ui.logbookEditor = NewLogbookEditor(m.App.DB, wlURL, wlKey, wlStationID, wlLastID, m.App.Logbook.Station.Operator, m.App.Logbook.Station.Grid)
 		m.ui.logbookEditor.width = m.width
 		m.ui.logbookEditor.height = m.height
+		// Apply active contest filter.
+		if m.App.Config.State.ActiveContest != "" {
+			ct := m.App.Config.Contests[m.App.Config.State.ActiveContest]
+			m.ui.logbookEditor.SetContestID(m.App.Config.State.ActiveContest, config.ContestDisplayName(&ct), ct.ContestID)
+		} else {
+			m.ui.logbookEditor.SetContestID("", "", "")
+		}
 		m.ui.logbookEditor.loadPage()
 		m.screen = screenLogbookEditor
 		return nil, true
@@ -259,10 +266,7 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, true
 
 	case msg.String() == "ctrl+c":
-		m.ui.mainMenu = NewMainMenu()
-		m.ui.mainMenu.width = m.width
-		m.ui.mainMenu.height = m.height
-		m.screen = screenMainMenu
+		m.cycleActiveContest()
 		return nil, true
 
 	case key.Matches(msg, m.keys.Partner):

@@ -72,6 +72,10 @@ func (m *Model) nextField() {
 		m.retainFocused = true
 	} else {
 		m.focus = (m.focus + 1) % fieldCount
+		// Skip hidden fields.
+		for m.isFieldHidden(m.focus) && m.focus != fieldComment {
+			m.focus = (m.focus + 1) % fieldCount
+		}
 		m.fields[m.focus].Focus()
 	}
 }
@@ -92,6 +96,10 @@ func (m *Model) prevField() {
 		m.retainFocused = true
 	} else {
 		m.focus--
+		// Skip hidden fields.
+		for m.isFieldHidden(m.focus) && m.focus > 0 {
+			m.focus--
+		}
 		m.fields[m.focus].Focus()
 	}
 }
@@ -342,6 +350,9 @@ func (m *Model) onFieldExit() {
 		m.scpMatches = nil
 		m.scpCacheKey = ""
 
+		// Contest prefill: fill exchange fields from active contest config.
+		m.prefillContestExchange()
+
 	case fieldGrid:
 		m.rc.pathGrid = strings.ToUpper(strings.TrimSpace(m.fields[fieldGrid].Value()))
 		m.gridSource = gridSourceManual
@@ -349,6 +360,10 @@ func (m *Model) onFieldExit() {
 
 	case fieldFreq:
 		m.applyFreqDefaults()
+
+	case fieldRSTSent, fieldRSTRcvd:
+		// Changing RST should recalculate pre-filled exchange fields.
+		m.prefillContestExchange()
 
 	case fieldSOTA, fieldPOTA, fieldWWFF, fieldIOTA:
 		m.fields[m.focus].SetValue(strings.ToUpper(m.fields[m.focus].Value()))

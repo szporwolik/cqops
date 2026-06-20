@@ -82,13 +82,25 @@ type Station struct {
 	POTARef    string `yaml:"pota_ref,omitempty"`
 	WWFFRef    string `yaml:"wwff_ref,omitempty"`
 	IARURegion int    `yaml:"iaru_region,omitempty"` // 1, 2, or 3
+	CQZone     int    `yaml:"cq_zone,omitempty"`     // station CQ zone (1-40)
+	ITUZone    int    `yaml:"itu_zone,omitempty"`    // station ITU zone (1-90)
+	DXCC       int    `yaml:"dxcc,omitempty"`        // station DXCC entity number
+	SIG        string `yaml:"sig,omitempty"`         // station Special Interest Group (e.g. SOTA, POTA)
+	SIGInfo    string `yaml:"sig_info,omitempty"`    // station SIG info (e.g. summit/park reference)
 }
 
-// Contest represents a contest configuration with a name.
+// Contest represents a contest configuration.
 type Contest struct {
-	ID        string `yaml:"-"`
-	Name      string `yaml:"name"`
-	CreatedAt string `yaml:"created_at,omitempty"`
+	ID                  string `yaml:"-"`
+	Name                string `yaml:"name"`
+	Date                string `yaml:"contest_date,omitempty"`
+	NextQSO             int    `yaml:"next_qso,omitempty"`
+	ContestID           string `yaml:"contest_id,omitempty"`
+	ContestIDName       string `yaml:"contest_id_name,omitempty"`
+	PrefillExchange     bool   `yaml:"prefill_exchange,omitempty"`
+	ExchangeSent        string `yaml:"exchange_sent,omitempty"`
+	PrefillExchangeRcvd bool   `yaml:"prefill_exchange_rcvd,omitempty"`
+	ExchangeRcvd        string `yaml:"exchange_rcvd,omitempty"`
 }
 
 // Rig resolves the RigPreset referenced by RigName. Returns the preset and
