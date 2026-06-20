@@ -1206,6 +1206,24 @@ func bcastPresets(region int) []bcastPreset {
 	}
 }
 
+// bcastPresetsAll returns all broadcast presets from all regions, deduplicated
+// by frequency+band. The Broadcast tab always shows the global list.
+func bcastPresetsAll() []bcastPreset {
+	seen := make(map[string]bool)
+	var all []bcastPreset
+	for r := 1; r <= 3; r++ {
+		for _, bc := range bcastPresets(r) {
+			key := fmt.Sprintf("%s|%d", bc.Band, bc.FreqKHz)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			all = append(all, bc)
+		}
+	}
+	return all
+}
+
 func (m *Model) handleBPLUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -1390,7 +1408,7 @@ func (m *Model) viewBPL(l Layout) string {
 
 	// Disclaimer footer.
 	footer := DimStyle.Width(w).Render(" Listen first. Check national rules. VHF/UHF often needs country/local overrides.")
-	content := header + "\n " + tabBar + "\n" + body + "\n\n" + footer
+	content := header + "\n " + tabBar + "\n\n" + body + "\n\n" + footer
 
 	m.bpl.cachedView = fillBody(content, ch)
 	m.bpl.cachedSig = sig
@@ -1599,13 +1617,32 @@ func (m *Model) viewBPLCB(region int) []string {
 	return lines
 }
 
-// viewBPLPMR renders PMR446 channels.
+// viewBPLPMR renders PMR446 channels and FRS/GMRS.
 func (m *Model) viewBPLPMR(region int) []string {
 	var lines []string
 	profiles := nonHamProfiles(region)
+
+	// No PMR profiles at all — show region-specific note.
+	hasPMR := false
+	for _, p := range profiles {
+		if p.ID == "PMR446_ANALOG" || p.ID == "PMR446_DIGITAL" || p.ID == "FRS_GMRS" {
+			hasPMR = true
+			break
+		}
+	}
+	if !hasPMR {
+		if region == 3 {
+			lines = append(lines, DimStyle.Render("No Asia-wide PMR446 equivalent. PMR446 exists in some Asian countries,"))
+			lines = append(lines, DimStyle.Render("but check the specific country's licence-free radio allocation."))
+		} else {
+			lines = append(lines, DimStyle.Render("No licence-free radio profiles for this region."))
+		}
+		return lines
+	}
+
 	for _, p := range profiles {
 		if p.ID == "PMR446_ANALOG" {
-			lines = append(lines, S.Error.Render("NOT A HAM BAND")+" — "+p.Label)
+			lines = append(lines, S.Warning.Render("NOT A HAM BAND")+" — "+p.Label)
 			lines = append(lines, fmt.Sprintf("%s–%s MHz  %s  %s", p.RangeLo, p.RangeHi, p.Mod, p.Note))
 			lines = append(lines, "")
 			var chRows []string
@@ -1628,10 +1665,15 @@ func (m *Model) viewBPLPMR(region int) []string {
 		}
 	}
 	// FRS/GMRS for R2.
+	firstFRS := true
 	for _, p := range profiles {
 		if p.ID == "FRS_GMRS" {
-			lines = append(lines, "")
-			lines = append(lines, S.Error.Render("NOT A HAM BAND")+" — "+p.Label)
+			if firstFRS && len(lines) == 0 {
+				// No PMR content — don't add blank separator line.
+			} else {
+				lines = append(lines, "")
+			}
+			lines = append(lines, S.Warning.Render("NOT A HAM BAND")+" — "+p.Label)
 			lines = append(lines, fmt.Sprintf("%s–%s MHz  %s  %s", p.RangeLo, p.RangeHi, p.Mod, p.Note))
 			for _, ch := range frsGmrsChannels {
 				svc := ""
@@ -1659,7 +1701,7 @@ func (m *Model) viewBPLPMR(region int) []string {
 // viewBPLBRC renders broadcast receive-only presets.
 func (m *Model) viewBPLBRC(region int) []string {
 	var lines []string
-	bcasts := bcastPresets(region)
+	bcasts := bcastPresetsAll()
 	if len(bcasts) == 0 {
 		return []string{DimStyle.Render("  No broadcast presets for this region.")}
 	}
@@ -1998,7 +2040,7 @@ func (m *Model) writePMRMarkdownRows(b *strings.Builder, region int) {
 }
 
 func (m *Model) writeBRCMarkdownRows(b *strings.Builder, region int) {
-	presets := bcastPresets(region)
+	presets := bcastPresetsAll()
 	sorted := make([]bcastPreset, len(presets))
 	copy(sorted, presets)
 	sort.Slice(sorted, func(i, j int) bool { return sorted[i].FreqKHz < sorted[j].FreqKHz })
@@ -2245,7 +2287,7 @@ func bplRows(region int) []table.Row {
 	}
 
 	// --- Broadcast presets (BRC) ---
-	if bcasts := bcastPresets(region); len(bcasts) > 0 {
+	if bcasts := bcastPresetsAll(); len(bcasts) > 0 {
 		rows = append(rows, table.Row{"", "", "", "", "", "", ""})
 		rows = append(rows, table.Row{
 			"", "", "",
