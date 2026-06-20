@@ -337,8 +337,8 @@ func TestContestPrefillExchangeToggle(t *testing.T) {
 	cc.cursor = 1
 	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	// Navigate to prefill exchange sent checkbox (focus 4)
-	cc.focus = 4
+	// Navigate to prefill exchange sent checkbox (focus 5)
+	cc.focus = 5
 	if cc.prefillExchange {
 		t.Error("prefillExchange should start false")
 	}
@@ -370,27 +370,26 @@ func TestContestExchangeFieldVisibleWhenChecked(t *testing.T) {
 	})
 	cc.cursor = 1
 	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	cc.focus = 4
+	cc.focus = 5
 
 	// Toggle sent on
 	cc.Update(tea.KeyPressMsg{Code: tea.KeySpace})
 
 	view := cc.View()
 	content := view.Content
-	// The hint text appears right of the exchange field value.
-	// On narrow terminals it may truncate; on >=100 cols it's visible.
-	if !strings.Contains(content, "for auto seq") && !strings.Contains(content, "auto seq") {
-		t.Logf("Hint may be truncated at width %d; full content:\n%s", cc.width, content)
+	// Exchange Sent field should be visible when checkbox is on.
+	if !strings.Contains(content, "Exchange Sent") {
+		t.Logf("Exchange Sent field not visible at width %d; full content:\n%s", cc.width, content)
 	}
 
 	// Toggle sent off
-	cc.focus = 4
+	cc.focus = 5
 	cc.Update(tea.KeyPressMsg{Code: tea.KeySpace})
 
 	view = cc.View()
 	content = view.Content
-	if strings.Contains(content, "for auto seq") {
-		t.Error("Exchange Sent hint should NOT be visible when checkbox is off")
+	if strings.Contains(content, "  Exchange Sent:") {
+		t.Error("Exchange Sent field should NOT be visible when checkbox is off")
 	}
 }
 
@@ -405,8 +404,8 @@ func TestContestIDSpaceCycling(t *testing.T) {
 	cc.cursor = 1
 	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	// Navigate to Contest ID field (focus 3)
-	cc.focus = 3
+	// Navigate to Contest ID field (focus 4)
+	cc.focus = 4
 	cc.contInput.SetValue("")
 
 	// Space should cycle to first ADIF ID
@@ -430,7 +429,7 @@ func TestContestIDGreenWhenValid(t *testing.T) {
 	})
 	cc.cursor = 1
 	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	cc.focus = 3
+	cc.focus = 4
 	cc.contInput.SetValue("CQ-WPX-CW")
 
 	view := cc.View()
@@ -472,10 +471,10 @@ func TestContestSaveLifecycle(t *testing.T) {
 	cc.dateInput.SetValue("2026-06-20")
 	cc.nextInput.SetValue("10")
 	cc.contInput.SetValue("CQ-WPX-CW")
-	cc.focus = 4
+	cc.focus = 5
 	cc.Update(tea.KeyPressMsg{Code: tea.KeySpace}) // toggle prefill sent on
 	cc.exchSentInput.SetValue("599 001")
-	cc.focus = 6
+	cc.focus = 7
 	cc.Update(tea.KeyPressMsg{Code: tea.KeySpace}) // toggle prefill rcvd on
 	cc.exchRcvdInput.SetValue("599 002")
 
@@ -707,7 +706,7 @@ func TestContestIDWarningWhenInvalid(t *testing.T) {
 	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	// Set invalid contest ID
-	cc.focus = 3
+	cc.focus = 4
 	cc.contInput.SetValue("NOT-REAL")
 
 	// Navigate away — triggers validateContestID

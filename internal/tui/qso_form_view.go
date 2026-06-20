@@ -52,7 +52,7 @@ func (m *Model) viewForm(width int) string {
 	// Build a cache signature from all inputs that affect form output.
 	// The date/time fields change every second, so this invalidates at 1 Hz.
 	var sigB strings.Builder
-	fmt.Fprintf(&sigB, "%d|%d|%s|", width, m.focus, m.App.Config.State.ActiveContest)
+	fmt.Fprintf(&sigB, "%d|%d|%s|%t|", width, m.focus, m.App.Config.State.ActiveContest, m.dupe)
 	if m.retainFocused {
 		sigB.WriteString("rf|")
 	} else {
@@ -209,6 +209,17 @@ func (m *Model) viewForm(width int) string {
 	commentLine := commentStyle.Render(renderLine(fieldComment, colW*2))
 	retainBox := colStyle.Render(m.renderRetainCheckbox(colW))
 	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, commentLine, retainBox))
+
+	// DUPE! warning — shown below comment when call/band/mode already logged today.
+	if m.dupe {
+		b.WriteString("\n")
+		b.WriteString(lipgloss.NewStyle().
+			Foreground(P.Text).
+			Background(P.Error).
+			Bold(true).
+			Padding(0, 1).
+			Render("DUPE!"))
+	}
 
 	result := b.String()
 	m.rc.formSig = sig

@@ -158,6 +158,18 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		}
 		applog.Debug("tab: F4 DXC")
 		m.dxc.tableReady = false // force rebuild with fresh data
+		// Set default continent filter from station config on first open.
+		if m.dxc.contFilter == "" && m.App.Logbook.Station.Continent != "" {
+			m.dxc.contFilter = m.App.Logbook.Station.Continent
+			// Sync contIdx to match.
+			choices := m.dxcContChoices()
+			for i, c := range choices {
+				if c == m.App.Logbook.Station.Continent {
+					m.dxc.contIdx = i
+					break
+				}
+			}
+		}
 		m.screen = screenDXC
 		return nil, true
 
@@ -239,7 +251,7 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			m.nextField()
 		case "shift+tab", "up":
 			m.prevField()
-		case "ctrl+r":
+		case "ctrl+t":
 			m.retainComment = !m.retainComment
 			m.persistRetainComment()
 		}

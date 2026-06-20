@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/qso"
+	"github.com/szporwolik/cqops/internal/store"
 )
 
 // =============================================================================
@@ -370,6 +371,40 @@ func (m *Model) onFieldExit() {
 		m.ref.refNamesDirty = true
 		m.applyRefGridAndQTH()
 	}
+
+	// Always re-check dupe on any field exit — cheap DB query.
+	m.checkDupe()
+}
+
+// checkDupe sets m.dupe to true when the current call/band/mode/date
+// combination already exists in the database, unless the existing QSO
+// has different reference data (e.g. different SOTA summit same day).
+func (m *Model) checkDupe() {
+	m.dupe = false
+	if m.App == nil || m.App.DB == nil {
+		return
+	}
+	call := qso.NormalizeCall(m.fields[fieldCall].Value())
+	band := qso.NormalizeBand(m.fields[fieldBand].Value())
+	mode := strings.ToUpper(strings.TrimSpace(m.fields[fieldMode].Value()))
+	date := strings.TrimSpace(m.fields[fieldDate].Value())
+	if call == "" || band == "" || mode == "" || date == "" {
+		return
+	}
+	isDupe, existing := store.IsDuplicateQSO(m.App.DB, call, band, mode, date)
+	if !isDupe || existing == nil {
+		return
+	}
+	// If any reference field differs, it's not a dupe (e.g. different summit).
+	formSOTA := strings.TrimSpace(m.fields[fieldSOTA].Value())
+	formPOTA := strings.TrimSpace(m.fields[fieldPOTA].Value())
+	formWWFF := strings.TrimSpace(m.fields[fieldWWFF].Value())
+	formIOTA := strings.TrimSpace(m.fields[fieldIOTA].Value())
+	if formSOTA != existing.SOTA || formPOTA != existing.POTA ||
+		formWWFF != existing.WWFF || formIOTA != existing.IOTA {
+		return
+	}
+	m.dupe = true
 }
 
 // clearForm resets the entire QSO form for a new QSO: clears fields (with
@@ -377,6 +412,7 @@ func (m *Model) onFieldExit() {
 // and the recent-QSO filter table.  Partner data is preserved when the user is
 // actively viewing the Partner/Image screen.
 func (m *Model) clearForm() {
+	m.dupe = false
 	m.resetQSOFields()
 	m.resetPartnerLookup()
 	m.resetNavigation()

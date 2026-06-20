@@ -21,6 +21,7 @@ type qsoRefreshedMsg struct{}
 func (m *Model) saveQSO() tea.Cmd {
 	m.autoFillRST()
 	m.autoFillSSBSubmode()
+	m.checkDupe() // ensure dupe state is fresh before saving
 	qs := qso.NewQSO()
 	var freq float64
 	if _, err := fmt.Sscanf(m.fields[fieldFreq].Value(), "%f", &freq); err != nil {

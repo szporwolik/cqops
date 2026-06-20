@@ -20,6 +20,9 @@ type StationForm struct {
 	WWFFRef     textinput.Model
 	IARURegion  int
 	iaruFocus   bool // true when IARU region selector has focus
+	Continent   string
+	contIdx     int  // index into continent list for cycling
+	contFocus   bool // true when continent selector has focus
 	CQZone      textinput.Model
 	ITUZone     textinput.Model
 	DXCC        textinput.Model
@@ -72,6 +75,7 @@ func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder strin
 		SOTARef:     sr,
 		POTARef:     pr,
 		WWFFRef:     wr,
+		Continent:   "EU",
 		CQZone:      cz,
 		ITUZone:     iz,
 		DXCC:        dx,
@@ -110,6 +114,12 @@ func (f *StationForm) Update(msg tea.KeyPressMsg) {
 				f.IARURegion = 1
 			}
 		}
+	case f.contFocus:
+		if msg.String() == " " || msg.String() == "space" || msg.String() == "enter" {
+			continents := continentList()
+			f.contIdx = (f.contIdx + 1) % len(continents)
+			f.Continent = continents[f.contIdx]
+		}
 	case f.CQZone.Focused():
 		f.CQZone, _ = f.CQZone.Update(msg)
 	case f.ITUZone.Focused():
@@ -145,6 +155,9 @@ func (f *StationForm) NextInput() {
 		f.iaruFocus = true
 	case f.iaruFocus:
 		f.iaruFocus = false
+		f.contFocus = true
+	case f.contFocus:
+		f.contFocus = false
 		f.Operator.Focus()
 	case f.SOTARef.Focused():
 		f.SOTARef.Blur()
@@ -210,7 +223,7 @@ func (f *StationForm) PrevInput() {
 		f.WlStationID.Focus()
 	case f.Operator.Focused():
 		f.Operator.Blur()
-		f.iaruFocus = true
+		f.contFocus = true
 	case f.Locator.Focused():
 		f.Locator.Blur()
 		f.Callsign.Focus()
@@ -226,6 +239,9 @@ func (f *StationForm) PrevInput() {
 	case f.iaruFocus:
 		f.iaruFocus = false
 		f.Locator.Focus()
+	case f.contFocus:
+		f.contFocus = false
+		f.iaruFocus = true
 	case f.CQZone.Focused():
 		f.CQZone.Blur()
 		f.WWFFRef.Focus()
@@ -266,12 +282,13 @@ func (f *StationForm) BlurAll() {
 		&f.WlURL, &f.WlKey, &f.WlStationID)
 	f.wlCbFocus = false
 	f.iaruFocus = false
+	f.contFocus = false
 	f.wlBtnFocus = 0
 }
 
 func (f *StationForm) Values() (callsign, operator, locator, sotaRef, potaRef, wwffRef string,
 	wlEnabled bool, wlURL, wlKey, wlStationID string, iaruRegion, cqZone, ituZone, dxcc int,
-	sig, sigInfo string) {
+	sig, sigInfo, continent string) {
 
 	var cz, iz, dx int
 	fmt.Sscanf(strings.TrimSpace(f.CQZone.Value()), "%d", &cz)
@@ -291,10 +308,11 @@ func (f *StationForm) Values() (callsign, operator, locator, sotaRef, potaRef, w
 		f.IARURegion,
 		cz, iz, dx,
 		strings.ToUpper(strings.TrimSpace(f.SIG.Value())),
-		strings.ToUpper(strings.TrimSpace(f.SIGInfo.Value()))
+		strings.ToUpper(strings.TrimSpace(f.SIGInfo.Value())),
+		f.Continent
 }
 
-func (f *StationForm) SetValues(callsign, operator, locator, sotaRef, potaRef, wwffRef string, iaruRegion, cqZone, ituZone, dxcc int, sig, sigInfo string) {
+func (f *StationForm) SetValues(callsign, operator, locator, sotaRef, potaRef, wwffRef string, iaruRegion, cqZone, ituZone, dxcc int, sig, sigInfo, continent string) {
 	f.Callsign.SetValue(callsign)
 	f.Operator.SetValue(operator)
 	f.Locator.SetValue(locator)
@@ -319,6 +337,16 @@ func (f *StationForm) SetValues(callsign, operator, locator, sotaRef, potaRef, w
 	}
 	f.SIG.SetValue(sig)
 	f.SIGInfo.SetValue(sigInfo)
+	if continent != "" {
+		f.Continent = continent
+		// Sync contIdx to match the continent.
+		for i, c := range continentList() {
+			if c == continent {
+				f.contIdx = i
+				break
+			}
+		}
+	}
 }
 
 func (f *StationForm) SetWavelogValues(wl *config.WavelogConfig) {
@@ -368,6 +396,22 @@ func (f *StationForm) View() tea.View {
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val),
+		availW))
+	b.WriteString("\n")
+
+	// Continent selector — focusable, Space/Enter to cycle.
+	contLabel := "Continent:"
+	contVal := f.Continent + " — " + continentName(f.Continent)
+	cPrefix := "  "
+	cLbl := S.FormLabelWide.Align(lipgloss.Left).Render(contLabel)
+	cVal := ValueStyle.Render(contVal)
+	if f.contFocus {
+		cPrefix = S.FormPrefixOn.Render("> ")
+		cLbl = S.FormFocusedWide.Align(lipgloss.Left).Render(contLabel)
+		cVal = CursorStyle.Render(contVal)
+	}
+	b.WriteString(padOrTrunc(
+		lipgloss.JoinHorizontal(lipgloss.Center, cPrefix, cLbl, " ", cVal),
 		availW))
 	b.WriteString("\n")
 
@@ -514,7 +558,7 @@ func (f *StationForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 type enterOnLastFieldMsg struct{}
 
 func (f *StationForm) Validate() error {
-	cs, _, gr, _, _, _, _, _, _, _, _, _, _, _, _, _ := f.Values()
+	cs, _, gr, _, _, _, _, _, _, _, _, _, _, _, _, _, cont := f.Values()
 	if cs == "" {
 		return fmt.Errorf("callsign is required")
 	}
@@ -527,13 +571,16 @@ func (f *StationForm) Validate() error {
 	if !qso.IsValidLocator(gr) {
 		return fmt.Errorf("invalid locator")
 	}
+	if cont == "" {
+		return fmt.Errorf("continent is required")
+	}
 	return nil
 }
 
 // ValidateField returns an error hint for the given render field label, or ""
 // if the field value is valid. Used for inline UI feedback.
 func (f *StationForm) ValidateField(label string) string {
-	cs, _, gr, _, _, _, _, _, _, _, _, _, _, _, _, _ := f.Values()
+	cs, _, gr, _, _, _, _, _, _, _, _, _, _, _, _, _, cont := f.Values()
 	switch label {
 	case "Callsign:":
 		if cs != "" && !qso.IsValidCall(cs) {
@@ -543,8 +590,17 @@ func (f *StationForm) ValidateField(label string) string {
 		if gr != "" && !qso.IsValidLocator(gr) {
 			return "Invalid locator"
 		}
+	case "Continent:":
+		if cont == "" {
+			return "Required"
+		}
 	}
 	return ""
+}
+
+// continentList returns the list of continent codes for cycling.
+func continentList() []string {
+	return []string{"EU", "NA", "SA", "AS", "AF", "OC", "AN"}
 }
 
 // iaruRegionName returns the human-readable name for an IARU region number.

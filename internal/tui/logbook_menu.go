@@ -123,6 +123,7 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			c.station.BlurAll()
 			c.mode = chooserList
+			return c, nil
 
 		case c.mode == chooserConfirmDelete:
 			if c.dialog == nil {
@@ -358,7 +359,7 @@ func (c *LogbookChooser) refreshNames() {
 
 func (c *LogbookChooser) startCreate() {
 	c.mode = chooserCreate
-	c.station.SetValues("", "", "", "", "", "", 1, 0, 0, 0, "", "")
+	c.station.SetValues("", "", "", "", "", "", 1, 0, 0, 0, "", "", "EU")
 	c.station.BlurAll()
 	c.station.Callsign.Focus()
 	c.editing = ""
@@ -368,7 +369,7 @@ func (c *LogbookChooser) startEdit(id string) {
 	lb := c.app.Config.Logbooks[id]
 	c.mode = chooserEdit
 	c.editing = id
-	c.station.SetValues(lb.Station.Callsign, lb.Station.Operator, lb.Station.Grid, lb.Station.SOTARef, lb.Station.POTARef, lb.Station.WWFFRef, lb.Station.IARURegion, lb.Station.CQZone, lb.Station.ITUZone, lb.Station.DXCC, lb.Station.SIG, lb.Station.SIGInfo)
+	c.station.SetValues(lb.Station.Callsign, lb.Station.Operator, lb.Station.Grid, lb.Station.SOTARef, lb.Station.POTARef, lb.Station.WWFFRef, lb.Station.IARURegion, lb.Station.CQZone, lb.Station.ITUZone, lb.Station.DXCC, lb.Station.SIG, lb.Station.SIGInfo, lb.Station.Continent)
 	c.station.SetWavelogValues(lb.Wavelog)
 	c.wlStatus = ""
 	c.wlStations = nil
@@ -381,7 +382,7 @@ func (c *LogbookChooser) startEdit(id string) {
 }
 
 func (c *LogbookChooser) saveForm() tea.Cmd {
-	cs, op, gr, sotaRef, potaRef, wwffRef, wlEnabled, wlURL, wlKey, wlStationID, iaruRegion, cqZone, ituZone, dxcc, sig, sigInfo := c.station.Values()
+	cs, op, gr, sotaRef, potaRef, wwffRef, wlEnabled, wlURL, wlKey, wlStationID, iaruRegion, cqZone, ituZone, dxcc, sig, sigInfo, continent := c.station.Values()
 
 	if err := c.station.Validate(); err != nil {
 		c.toasts.Error(err.Error())
@@ -431,6 +432,7 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 				DXCC:       dxcc,
 				SIG:        sig,
 				SIGInfo:    sigInfo,
+				Continent:  continent,
 			},
 			Wavelog: wl,
 		}
@@ -456,6 +458,7 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 		lb.Station.DXCC = dxcc
 		lb.Station.SIG = sig
 		lb.Station.SIGInfo = sigInfo
+		lb.Station.Continent = continent
 		lb.Wavelog = wl
 		c.app.Config.Logbooks[id] = lb
 

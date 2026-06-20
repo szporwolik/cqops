@@ -18,19 +18,22 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 
 ## Features
 
-- **DX Cluster** — live spots with band/mode/time filters, spot-to-rig tuning via flrig
+- **DX Cluster** — live spots with band/mode/time/continent filters, spot-to-rig tuning via flrig, default continent filter from station config
 - **WSJT-X** — auto-log FT8/FT4 and digital modes with QRZ lookup & Wavelog sync
 - **PSK Reporter** — real-time propagation spots & world map
 - **Solar conditions** — SFI, SSN, A/K indices from hamqsl.com
-- **QRZ callbook** — one-key lookup with auto-fill of name, QTH, grid, country
+- **QRZ callbook** — one-key lookup with auto-fill of name, QTH, grid, country; exchange recalculation on async lookup completion
 - **DXCC & SCP** — prefix-based country/continent/grid lookup, live callsign autocomplete
-- **Wavelog** — cloud upload, download, duplicate detection
+- **Wavelog** — cloud upload, download, duplicate detection, station profile cycling
 - **REF database** — SOTA summits, POTA parks, WWFF areas, IOTA islands — offline search with grid locators
-- **Contest logging** — ADIF Contest ID cycling with descriptions, prefill exchange sent/received with `###` sequencing, STX/SRX serial parsing, per-contest QSO filtering
-- **ADIF 3.1.4** — full import/export with validation, IOTA, Unicode→ASCII sanitization
-- **TUI** — keyboard-driven, SSH-friendly, offline-first SQLite, multi-logbook
-- **Partner view** — grid-to-grid distance, bearing, world map
+- **Contest logging** — ADIF Contest ID cycling with descriptions, exchange markers (`@rst @serial @cqz @mycqz @itu @myitu @grid @mygrid`), `###` backward compatibility, per-contest QSO filtering, contest info line on QSO and log editor screens, Ctrl+C contest cycling, "In use" toggle to exclude from rotation, dynamic form height (shrinks when inactive)
+- **DUPE! detection** — real-time duplicate QSO warning (same call/band/mode/day) with reference-aware logic (different SOTA/POTA/WWFF/IOTA refs skip the warning)
+- **Station identity** — configurable CQ zone, ITU zone, DXCC ID, SIG/SIGInfo, and continent per logbook, applied to every QSO (manual, WSJT-X, CLI)
+- **ADIF 3.1.7** — full import/export with Unicode→ASCII sanitization, contest exchange fields (STX/SRX/STX_STRING/SRX_STRING/CONTEST_ID), station fields (MY_CQZ/MY_ITUZ/MY_DXCC/MY_SIG/MY_SIG_INFO/MY_ANTENNA)
+- **TUI** — keyboard-driven, SSH-friendly, offline-first SQLite, multi-logbook, form cache with dynamic invalidation
+- **Partner view** — grid-to-grid distance, bearing, world map, Wavelog private lookup integration
 - **Cross-platform** — Windows, Linux, macOS, ARM (Raspberry Pi, Apple Silicon), potato-PC ready
+- **Key bindings** — ↑↓ Navigate • Enter Save • Ins QRZ • Del Clear • C-L Logbook • C-R Rig • C-C Contest • Ctrl+T Toggle retain • F10 Quit
 
 ## Screenshots
 
@@ -124,7 +127,7 @@ cqops --help           # Show all commands
 
 **Integrations:**
 - [wsjtx-go](https://github.com/k0swe/wsjtx-go) — WSJT-X UDP protocol
-- [farmergreg/adif](https://github.com/farmergreg/adif) + [farmergreg/spec](https://github.com/farmergreg/spec) — ADIF parsing/writing & spec types
+- [farmergreg/adif](https://github.com/farmergreg/adif) + [farmergreg/spec](https://github.com/farmergreg/spec) — ADIF 3.1.7 parsing/writing & spec types
 - [ftl/hamradio](https://github.com/ftl/hamradio) — Grid locator, distance math, DXCC prefix lookup (CTY.DAT)
 - [gen2brain/beeep](https://github.com/gen2brain/beeep) — Desktop notifications
 

@@ -140,15 +140,15 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("N", "Cancel"),
 		),
 		CycleLogbook: key.NewBinding(
-			key.WithKeys("ctrl+home"),
-			key.WithHelp("C-Home", "Logbook"),
+			key.WithKeys("ctrl+l"),
+			key.WithHelp("C-L", "Logbook"),
 		),
 		CycleRig: key.NewBinding(
-			key.WithKeys("ctrl+end"),
-			key.WithHelp("C-End", "Rig"),
+			key.WithKeys("ctrl+r"),
+			key.WithHelp("C-R", "Rig"),
 		), CycleContest: key.NewBinding(
 			key.WithKeys("ctrl+c"),
-			key.WithHelp("Ctrl+C", "Contest"),
+			key.WithHelp("C-C", "Contest"),
 		)}
 }
 
@@ -321,9 +321,8 @@ func (m *Model) ActiveBindings() []key.Binding {
 	}
 	if m.screen == screenBPL {
 		bindings = append(bindings,
-			key.NewBinding(key.WithKeys("left", "right"), key.WithHelp("\u2190\u2192", "Tabs")),
-			key.NewBinding(key.WithKeys("tab"), key.WithHelp("Tab", "Next tab")),
 			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("\u2191\u2193", "Scroll")),
+			key.NewBinding(key.WithKeys("left", "right"), key.WithHelp("\u2190\u2192", "Tabs")),
 			key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("PgUp/Dn", "Page")),
 			key.NewBinding(key.WithKeys("home", "end"), key.WithHelp("Home/End", "Top/Bottom")),
 			key.NewBinding(key.WithKeys("ctrl+e"), key.WithHelp("C-E", "Export")),

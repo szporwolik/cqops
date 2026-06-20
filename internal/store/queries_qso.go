@@ -73,8 +73,8 @@ func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 	return 0, fmt.Errorf("insert qso: %w", err)
 }
 
-// ListQSOs returns recent QSOs ordered by id DESC.
-// ListQSOs returns recent QSOs ordered by id DESC. If contestID is non-empty,
+// ListQSOs returns recent QSOs ordered by QSO date/time descending.
+// If contestID is non-empty, only QSOs matching that contest are returned.
 // only QSOs matching that contest are returned.
 func ListQSOs(db *sql.DB, limit int, contestID string) ([]qso.QSO, error) {
 	query := `SELECT id, call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,
@@ -94,7 +94,7 @@ func ListQSOs(db *sql.DB, limit int, contestID string) ([]qso.QSO, error) {
 		query += ` WHERE contest_id = ?`
 		args = append(args, contestID)
 	}
-	query += ` ORDER BY id DESC`
+	query += ` ORDER BY qso_date DESC, time_on DESC`
 	var rows *sql.Rows
 	var err error
 	if limit > 0 {
@@ -140,7 +140,7 @@ func ListQSOs(db *sql.DB, limit int, contestID string) ([]qso.QSO, error) {
 	return qsos, rows.Err()
 }
 
-// ListQSOsPage returns a page of QSOs ordered by id DESC.
+// ListQSOsPage returns a page of QSOs ordered by QSO date/time descending.
 // If contestID is non-empty, only QSOs matching that contest are returned.
 func ListQSOsPage(db *sql.DB, limit, offset int, contestID string) ([]qso.QSO, error) {
 	query := `SELECT id, call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,
@@ -161,7 +161,7 @@ func ListQSOsPage(db *sql.DB, limit, offset int, contestID string) ([]qso.QSO, e
 		args = append(args, contestID)
 	}
 	query += `
-		ORDER BY id DESC
+		ORDER BY qso_date DESC, time_on DESC
 		LIMIT ? OFFSET ?`
 	args = append(args, limit, offset)
 	rows, err := db.Query(query, args...)
@@ -327,6 +327,33 @@ func FindQSOByKey(db *sql.DB, call, band, mode, qsoDate, timeOn string) int64 {
 		return 0
 	}
 	return id
+}
+
+// DupeCheckResult holds the reference fields of a potential duplicate QSO.
+type DupeCheckResult struct {
+	ID     int64
+	SOTA   string
+	POTA   string
+	WWFF   string
+	IOTA   string
+}
+
+// IsDuplicateQSO returns (true, nil) if a QSO with the same call, band, mode
+// and date already exists. If a match is found but has different reference
+// data (SOTA/POTA/WWFF/IOTA), it is not considered a duplicate — the result
+// will be (false, &result) with the existing QSO's ref fields for comparison.
+func IsDuplicateQSO(db *sql.DB, call, band, mode, qsoDate string) (bool, *DupeCheckResult) {
+	var r DupeCheckResult
+	err := db.QueryRow(
+		`SELECT id, sota_ref, pota_ref, wwff_ref, iota FROM qsos
+		 WHERE call = ? AND band = ? AND mode = ? AND qso_date = ?
+		 LIMIT 1`,
+		call, band, mode, qsoDate,
+	).Scan(&r.ID, &r.SOTA, &r.POTA, &r.WWFF, &r.IOTA)
+	if err != nil {
+		return false, nil
+	}
+	return true, &r
 }
 
 // ListAllQSOs returns all QSOs ordered by id DESC.

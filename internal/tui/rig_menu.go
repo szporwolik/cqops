@@ -77,6 +77,7 @@ func (rc *RigChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			rc.form.blurAll()
 			rc.mode = rigChooserList
+			return rc, nil
 
 		case rc.mode == rigChooserConfirmDelete:
 			if rc.dialog == nil {

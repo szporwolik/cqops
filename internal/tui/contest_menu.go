@@ -30,7 +30,7 @@ type ContestChooser struct {
 	ids                 []string
 	cursor              int
 	editID              string
-	focus               int // 0=name,1=date,2=nextQSO,3=contestID,4=prefillSent,5=exchSent,6=prefillRcvd,7=exchRcvd
+	focus               int // 0=name,1=date,2=inUse,3=nextQSO,4=contestID,5=prefillSent,6=exchSent,7=prefillRcvd,8=exchRcvd
 	nameInput           textinput.Model
 	dateInput           textinput.Model
 	nextInput           textinput.Model
@@ -39,6 +39,7 @@ type ContestChooser struct {
 	exchRcvdInput       textinput.Model
 	prefillExchange     bool
 	prefillExchangeRcvd bool
+	inUse               bool
 	adifIdx             int // index into adifContestIDs for space cycling
 	needsSave           bool
 	toasts              *ToastQueue
@@ -209,7 +210,11 @@ func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case k.String() == "esc":
 				c.mode = contestList
 				return c, nil
-			case c.focus == 4 && (k.String() == " " || msg.Code == ' ' || k.String() == "enter"):
+			case c.focus == 2 && (k.String() == " " || msg.Code == ' ' || k.String() == "enter"):
+				// Toggle In Use checkbox.
+				c.inUse = !c.inUse
+				return c, nil
+			case c.focus == 5 && (k.String() == " " || msg.Code == ' ' || k.String() == "enter"):
 				// Toggle prefill exchange sent checkbox.
 				c.prefillExchange = !c.prefillExchange
 				if !c.prefillExchange {
@@ -217,7 +222,7 @@ func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					c.exchSentInput.SetValue("")
 				}
 				return c, nil
-			case c.focus == 6 && (k.String() == " " || msg.Code == ' ' || k.String() == "enter"):
+			case c.focus == 7 && (k.String() == " " || msg.Code == ' ' || k.String() == "enter"):
 				// Toggle prefill exchange rcvd checkbox.
 				c.prefillExchangeRcvd = !c.prefillExchangeRcvd
 				if !c.prefillExchangeRcvd {
@@ -225,7 +230,7 @@ func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					c.exchRcvdInput.SetValue("")
 				}
 				return c, nil
-			case c.focus == 3 && (k.String() == " " || msg.Code == ' '):
+			case c.focus == 4 && (k.String() == " " || msg.Code == ' '):
 				// Space cycles through ADIF Contest IDs.
 				cur := strings.TrimSpace(c.contInput.Value())
 				nxt := nextContestID(cur)
@@ -233,20 +238,20 @@ func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				c.adifIdx = 0
 				return c, nil
 			case k.String() == "tab" || k.String() == "down":
-				if c.focus == 3 {
+				if c.focus == 4 {
 					c.validateContestID()
 				}
 				c.blurAll()
 				c.focus = (c.focus + 1) % c.visibleItems()
 				return c, c.focusField()
 			case k.String() == "shift+tab" || k.String() == "up":
-				if c.focus == 3 {
+				if c.focus == 4 {
 					c.validateContestID()
 				}
 				c.blurAll()
 				c.focus = (c.focus - 1 + c.visibleItems()) % c.visibleItems()
 				return c, c.focusField()
-			case c.focus == 4 || c.focus == 6:
+			case c.focus == 2 || c.focus == 5 || c.focus == 7:
 				// Checkboxes handle Space/Enter; ignore other keys.
 				return c, nil
 			default:
@@ -277,13 +282,13 @@ func (c *ContestChooser) focusedInput() *textinput.Model {
 	switch c.focus {
 	case 1:
 		return &c.dateInput
-	case 2:
-		return &c.nextInput
 	case 3:
+		return &c.nextInput
+	case 4:
 		return &c.contInput
-	case 5:
+	case 6:
 		return &c.exchSentInput
-	case 7:
+	case 8:
 		return &c.exchRcvdInput
 	default:
 		return &c.nameInput
@@ -292,8 +297,8 @@ func (c *ContestChooser) focusedInput() *textinput.Model {
 
 // visibleItems returns the number of focusable items (used for tab wrapping).
 func (c *ContestChooser) visibleItems() int {
-	n := 4 // name, date, nextQSO, contestID
-	n += 2 // two checkboxes always visible
+	n := 5 // name, date, inUse, nextQSO, contestID
+	n += 2 // two checkboxes always visible (prefill sent, prefill rcvd)
 	if c.prefillExchange {
 		n++ // exchange sent field
 	}
@@ -313,7 +318,7 @@ func (c *ContestChooser) blurAll() {
 }
 
 func (c *ContestChooser) focusField() tea.Cmd {
-	if c.focus == 4 || c.focus == 6 {
+	if c.focus == 2 || c.focus == 5 || c.focus == 7 {
 		// Checkboxes — no textinput to focus.
 		return nil
 	}
@@ -333,6 +338,7 @@ func (c *ContestChooser) startEdit(id string) {
 	ct := c.app.Config.Contests[id]
 	c.nameInput.SetValue(ct.Name)
 	c.dateInput.SetValue(ct.Date)
+	c.inUse = ct.InUse == nil || *ct.InUse
 	c.nextInput.SetValue(fmt.Sprintf("%d", ct.NextQSO))
 	c.contInput.SetValue(ct.ContestID)
 	c.prefillExchange = ct.PrefillExchange
@@ -349,6 +355,7 @@ func (c *ContestChooser) startCreate() {
 	c.focus = 0
 	c.nameInput.SetValue("")
 	c.dateInput.SetValue(time.Now().Format("2006-01-02"))
+	c.inUse = true
 	c.nextInput.SetValue("1")
 	c.contInput.SetValue("")
 	c.prefillExchange = false
@@ -397,6 +404,7 @@ func (c *ContestChooser) saveContest() tea.Cmd {
 			ExchangeSent:        exchangeSent,
 			PrefillExchangeRcvd: c.prefillExchangeRcvd,
 			ExchangeRcvd:        exchangeRcvd,
+			InUse:               &c.inUse,
 		}
 		c.app.Config.State.ActiveContest = id
 		c.toasts.Success(fmt.Sprintf("Contest created: %s", name))
@@ -411,6 +419,7 @@ func (c *ContestChooser) saveContest() tea.Cmd {
 		ct.ExchangeSent = exchangeSent
 		ct.PrefillExchangeRcvd = c.prefillExchangeRcvd
 		ct.ExchangeRcvd = exchangeRcvd
+		ct.InUse = &c.inUse
 		c.app.Config.Contests[c.editID] = ct
 		c.toasts.Success(fmt.Sprintf("Contest saved: %s", name))
 	}
@@ -559,9 +568,13 @@ func (c *ContestChooser) viewForm() string {
 	b.WriteString(c.dateInput.View())
 	b.WriteString("\n")
 
+	// In Use checkbox — just below Date.
+	c.renderCheckbox(&b, w, 2, "In use:", c.inUse)
+	b.WriteString("\n")
+
 	// Next QSO ID field.
 	xl := lbl
-	if c.focus == 2 {
+	if c.focus == 3 {
 		xl = lblF
 	}
 	b.WriteString("  ")
@@ -574,7 +587,7 @@ func (c *ContestChooser) viewForm() string {
 	cidValid := cid != "" && isValidContestID(cid)
 	cl := lbl
 	cs := S.Input
-	if c.focus == 3 {
+	if c.focus == 4 {
 		cl = lblF
 	}
 	if cidValid {
@@ -599,22 +612,22 @@ func (c *ContestChooser) viewForm() string {
 	b.WriteString("\n")
 
 	// Prefill Exchange Sent checkbox.
-	c.renderCheckbox(&b, w, 4, "Prefill Exchange Sent:", c.prefillExchange)
+	c.renderCheckbox(&b, w, 5, "Prefill Exchange Sent:", c.prefillExchange)
 
 	// Indented exchange sent field.
 	if c.prefillExchange {
 		b.WriteString("\n")
-		c.renderIndentedField(&b, 5, "  Exchange Sent:", &c.exchSentInput, "")
+		c.renderIndentedField(&b, 6, "  Exchange Sent:", &c.exchSentInput, "")
 	}
 
 	// Prefill Exchange Rcvd checkbox.
 	b.WriteString("\n")
-	c.renderCheckbox(&b, w, 6, "Prefill Exchange Rcvd:", c.prefillExchangeRcvd)
+	c.renderCheckbox(&b, w, 7, "Prefill Exchange Rcvd:", c.prefillExchangeRcvd)
 
 	// Indented exchange rcvd field.
 	if c.prefillExchangeRcvd {
 		b.WriteString("\n")
-		c.renderIndentedField(&b, 7, "  Exchange Rcvd:", &c.exchRcvdInput, "")
+		c.renderIndentedField(&b, 8, "  Exchange Rcvd:", &c.exchRcvdInput, "")
 	}
 
 	// Marker reference section — shown below the form fields.

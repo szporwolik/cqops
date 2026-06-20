@@ -843,3 +843,117 @@ func TestNextQSONoIncrementWithoutContest(t *testing.T) {
 
 	// No contest active — nothing to check except no panic.
 }
+
+// =============================================================================
+// Dupe check tests
+// =============================================================================
+
+func TestCheckDupe_DetectsDuplicate(t *testing.T) {
+	m := newLifecycleTestModel(t)
+
+	// First, save a QSO to create a dupe candidate.
+	m.fields[fieldCall].SetValue("SP9MOA")
+	m.fields[fieldBand].SetValue("20m")
+	m.fields[fieldMode].SetValue("SSB")
+	m.fields[fieldDate].SetValue("20240501")
+	m.fields[fieldTime].SetValue("120000")
+	m.saveQSO()()
+
+	// Now fill the same call/band/mode/date in the form.
+	m.fields[fieldCall].SetValue("SP9MOA")
+	m.fields[fieldBand].SetValue("20m")
+	m.fields[fieldMode].SetValue("SSB")
+	m.fields[fieldDate].SetValue("20240501")
+	m.fields[fieldSOTA].SetValue("")
+	m.fields[fieldPOTA].SetValue("")
+	m.fields[fieldWWFF].SetValue("")
+	m.fields[fieldIOTA].SetValue("")
+
+	// Simulate tabbing away from Call to trigger onFieldExit.
+	m.focus = fieldCall
+	m.onFieldExit()
+
+	if !m.dupe {
+		t.Error("dupe should be true when same call/band/mode/date exists")
+	}
+
+	// Verify the form view contains DUPE!
+	m.width = 100
+	m.height = 30
+	view := m.viewForm(90)
+	if !strings.Contains(view, "DUPE!") {
+		t.Error("viewForm should contain DUPE! when dupe is detected")
+	}
+}
+
+func TestCheckDupe_NoDupeDifferentBand(t *testing.T) {
+	m := newLifecycleTestModel(t)
+
+	m.fields[fieldCall].SetValue("SP9MOA")
+	m.fields[fieldBand].SetValue("20m")
+	m.fields[fieldMode].SetValue("SSB")
+	m.fields[fieldDate].SetValue("20240501")
+	m.fields[fieldTime].SetValue("120000")
+	m.saveQSO()()
+
+	// Different band — should NOT be a dupe.
+	m.fields[fieldCall].SetValue("SP9MOA")
+	m.fields[fieldBand].SetValue("40m")
+	m.fields[fieldMode].SetValue("SSB")
+	m.fields[fieldDate].SetValue("20240501")
+
+	m.focus = fieldCall
+	m.onFieldExit()
+
+	if m.dupe {
+		t.Error("dupe should be false when band differs")
+	}
+}
+
+func TestCheckDupe_DifferentReferenceNotDupe(t *testing.T) {
+	m := newLifecycleTestModel(t)
+
+	// Save QSO with SOTA ref.
+	m.fields[fieldCall].SetValue("SP9MOA")
+	m.fields[fieldBand].SetValue("20m")
+	m.fields[fieldMode].SetValue("SSB")
+	m.fields[fieldDate].SetValue("20240501")
+	m.fields[fieldTime].SetValue("120000")
+	m.fields[fieldSOTA].SetValue("SP/TA-001")
+	m.saveQSO()()
+
+	// Same call/band/mode/date but DIFFERENT SOTA ref — NOT a dupe.
+	m.fields[fieldCall].SetValue("SP9MOA")
+	m.fields[fieldBand].SetValue("20m")
+	m.fields[fieldMode].SetValue("SSB")
+	m.fields[fieldDate].SetValue("20240501")
+	m.fields[fieldSOTA].SetValue("SP/TA-002")
+
+	m.focus = fieldCall
+	m.onFieldExit()
+
+	if m.dupe {
+		t.Error("dupe should be false when SOTA ref differs (different summit)")
+	}
+}
+
+func TestCheckDupe_ClearedOnFormReset(t *testing.T) {
+	m := newLifecycleTestModel(t)
+
+	m.fields[fieldCall].SetValue("SP9MOA")
+	m.fields[fieldBand].SetValue("20m")
+	m.fields[fieldMode].SetValue("SSB")
+	m.fields[fieldDate].SetValue("20240501")
+	m.fields[fieldTime].SetValue("120000")
+	m.saveQSO()()
+
+	// Set dupe to true (simulate detection).
+	m.dupe = true
+
+	// Clear form should reset dupe.
+	m.clearForm()
+
+	if m.dupe {
+		t.Error("dupe should be false after clearForm")
+	}
+}

@@ -87,6 +87,7 @@ type Station struct {
 	DXCC       int    `yaml:"dxcc,omitempty"`        // station DXCC entity number
 	SIG        string `yaml:"sig,omitempty"`         // station Special Interest Group (e.g. SOTA, POTA)
 	SIGInfo    string `yaml:"sig_info,omitempty"`    // station SIG info (e.g. summit/park reference)
+	Continent  string `yaml:"continent,omitempty"`   // station continent (EU, NA, SA, AS, AF, OC, AN)
 }
 
 // Contest represents a contest configuration.
@@ -101,6 +102,7 @@ type Contest struct {
 	ExchangeSent        string `yaml:"exchange_sent,omitempty"`
 	PrefillExchangeRcvd bool   `yaml:"prefill_exchange_rcvd,omitempty"`
 	ExchangeRcvd        string `yaml:"exchange_rcvd,omitempty"`
+	InUse               *bool  `yaml:"in_use,omitempty"` // nil or true = in use, false = excluded from cycling
 }
 
 // Rig resolves the RigPreset referenced by RigName. Returns the preset and

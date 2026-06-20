@@ -26,7 +26,7 @@ func continentName(code string) string {
 		return "Asia"
 	case "OC":
 		return "Oceania"
-	case "AA":
+	case "AN", "AA":
 		return "Antarctica"
 	default:
 		return code

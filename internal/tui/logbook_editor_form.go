@@ -67,7 +67,11 @@ func (le *LogbookEditor) fillEditForm(q *qso.QSO) {
 	s(qefSRX, fmt.Sprintf("%d", q.SRX))
 	s(qefSTXString, q.STXString)
 	s(qefSRXString, q.SRXString)
-	s(qefContestID, q.ContestID)
+	if q.ContestADIFID != "" {
+		s(qefContestID, q.ContestADIFID)
+	} else {
+		s(qefContestID, q.ContestID)
+	}
 }
 
 func (le *LogbookEditor) readEditForm() *qso.QSO {
@@ -104,7 +108,8 @@ func (le *LogbookEditor) readEditForm() *qso.QSO {
 		SRX:             gi(qefSRX),
 		STXString:       g(qefSTXString),
 		SRXString:       g(qefSRXString),
-		ContestID:       g(qefContestID),
+		ContestADIFID:   g(qefContestID),
+		ContestID:       le.editing.ContestID, // preserve internal hash for filtering
 		WavelogUploaded: g(qefWLStatus),
 		CreatedAt:       le.editing.CreatedAt,
 	}

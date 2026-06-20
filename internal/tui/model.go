@@ -116,6 +116,7 @@ type Model struct {
 	inetOnline   bool
 	wsjtx        wsjtxState
 	needRefresh  bool
+	dupe         bool // true when call/band/mode match an existing QSO today
 	adifQ        adifQueue
 	ui           uiComponents
 	photo        photoState
