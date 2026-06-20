@@ -98,6 +98,7 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) bool {
 		if r.stationLabel != "" {
 			m.lookup.wlStationLabel = r.stationLabel
 		}
+		m.rc.status = ""
 		return true
 	case wlUploadResultMsg:
 		n := m.App.Config.General.Notifications

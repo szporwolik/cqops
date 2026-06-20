@@ -18,6 +18,7 @@ type Config struct {
 	QRZ      QRZConfig            `yaml:"qrz,omitempty"`
 	Logbooks map[string]Logbook   `yaml:"logbooks"`
 	Rigs     map[string]RigPreset `yaml:"rigs,omitempty"`
+	Contests map[string]Contest   `yaml:"contests,omitempty"`
 	WSJTX    WSJTXConfig          `yaml:"wsjtx,omitempty"`
 	DXC      DXCConfig            `yaml:"dxc,omitempty"`
 }
@@ -52,6 +53,7 @@ type NotificationsConfig struct {
 
 type StateConfig struct {
 	ActiveLogbook   string `yaml:"active_logbook"`
+	ActiveContest   string `yaml:"active_contest,omitempty"`
 	RetainComment   bool   `yaml:"retain_comment,omitempty"`
 	RetainedComment string `yaml:"retained_comment,omitempty"`
 }
@@ -80,6 +82,13 @@ type Station struct {
 	POTARef    string `yaml:"pota_ref,omitempty"`
 	WWFFRef    string `yaml:"wwff_ref,omitempty"`
 	IARURegion int    `yaml:"iaru_region,omitempty"` // 1, 2, or 3
+}
+
+// Contest represents a contest configuration with a name.
+type Contest struct {
+	ID        string `yaml:"-"`
+	Name      string `yaml:"name"`
+	CreatedAt string `yaml:"created_at,omitempty"`
 }
 
 // Rig resolves the RigPreset referenced by RigName. Returns the preset and

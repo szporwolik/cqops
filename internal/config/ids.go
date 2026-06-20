@@ -32,6 +32,14 @@ func RigDisplayName(rp *RigPreset) string {
 	return "Unnamed"
 }
 
+// ContestDisplayName returns the human-readable name for a contest.
+func ContestDisplayName(c *Contest) string {
+	if c.Name != "" {
+		return c.Name
+	}
+	return "Unnamed"
+}
+
 // SortedLogbookIDs returns logbook IDs sorted by callsign (display name).
 func SortedLogbookIDs(cfg *Config) []string {
 	type pair struct {
@@ -84,6 +92,26 @@ func FindLogbookByCallsign(cfg *Config, callsign string) (string, *Logbook, bool
 	return "", nil, false
 }
 
+// SortedContestIDs returns contest IDs sorted by name.
+func SortedContestIDs(cfg *Config) []string {
+	type pair struct {
+		id   string
+		name string
+	}
+	pairs := make([]pair, 0, len(cfg.Contests))
+	for id, c := range cfg.Contests {
+		pairs = append(pairs, pair{id, ContestDisplayName(&c)})
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		return pairs[i].name < pairs[j].name
+	})
+	ids := make([]string, len(pairs))
+	for i, p := range pairs {
+		ids[i] = p.id
+	}
+	return ids
+}
+
 // FindRigByModel returns the first rig whose model name matches
 // (case-insensitive). Returns the ID, rig pointer, and true if found.
 func FindRigByModel(cfg *Config, model string) (string, *RigPreset, bool) {
@@ -116,9 +144,9 @@ func equalFold(a, b string) bool {
 	return true
 }
 
-// PopulateIDs ensures every logbook and rig has its ID field set from its
-// map key. Call this after loading a config from YAML (where the id field
-// is not serialized).
+// PopulateIDs ensures every logbook, rig, and contest has its ID field set
+// from its map key. Call this after loading a config from YAML (where the id
+// field is not serialized).
 func PopulateIDs(cfg *Config) {
 	if cfg.Logbooks != nil {
 		for key, lb := range cfg.Logbooks {
@@ -133,6 +161,14 @@ func PopulateIDs(cfg *Config) {
 			if rp.ID == "" {
 				rp.ID = key
 				cfg.Rigs[key] = rp
+			}
+		}
+	}
+	if cfg.Contests != nil {
+		for key, c := range cfg.Contests {
+			if c.ID == "" {
+				c.ID = key
+				cfg.Contests[key] = c
 			}
 		}
 	}

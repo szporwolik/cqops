@@ -188,7 +188,7 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 			data, err := qrzLookupFunc(m.App.Config.QRZ.User, m.App.Config.QRZ.Pass, call)
 			if err != nil {
 				applog.Warn("WSJT-X: QRZ enrichment failed", "call", call, "error", err)
-			} else {
+			} else if data != nil && data.Callsign != "" {
 				store.UpdateQSOEnrichment(m.App.DB, qsoID, store.EnrichmentData{
 					Name:       data.Name,
 					QTH:        data.QTH,
@@ -198,6 +198,8 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 					ITUZone:    data.ITUZone,
 				})
 				applog.Info("WSJT-X: QRZ enrichment applied", "call", call, "qso_id", qsoID)
+			} else {
+				applog.Debug("WSJT-X: QRZ returned no data", "call", call)
 			}
 		}
 

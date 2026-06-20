@@ -179,11 +179,16 @@ func (m *Model) ActiveBindings() []key.Binding {
 				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit QSO")),
 				key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
 				key.NewBinding(key.WithKeys("p"), key.WithHelp("P", "Purge")),
-				key.NewBinding(key.WithKeys("w"), key.WithHelp("W", "WL upload")),
-				key.NewBinding(key.WithKeys("ctrl+w"), key.WithHelp("C-W", "WL download")),
 				key.NewBinding(key.WithKeys("ctrl+e"), key.WithHelp("C-E", "Export")),
 				key.NewBinding(key.WithKeys("ctrl+i"), key.WithHelp("C-I", "Import")),
 			)
+			wl := m.App.Logbook.Wavelog
+			if wl != nil && wl.Enabled {
+				bindings = append(bindings,
+					key.NewBinding(key.WithKeys("w"), key.WithHelp("W", "WL upload")),
+					key.NewBinding(key.WithKeys("ctrl+w"), key.WithHelp("C-W", "WL download")),
+				)
+			}
 		}
 	}
 
@@ -255,6 +260,23 @@ func (m *Model) ActiveBindings() []key.Binding {
 				key.NewBinding(key.WithKeys("space"), key.WithHelp("Spc", "Activate")),
 				key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Create")),
 				key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
+				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
+			)
+		}
+	}
+	if m.screen == screenContest {
+		if m.ui.contestChooser != nil && (m.ui.contestChooser.mode == contestEdit || m.ui.contestChooser.mode == contestCreate) {
+			bindings = append(bindings,
+				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")),
+				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Cancel")),
+			)
+		} else {
+			bindings = append(bindings,
+				key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
+				key.NewBinding(key.WithKeys("enter", "space"), key.WithHelp("Ent/Spc", "Activate")),
+				key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Create")),
+				key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
+				key.NewBinding(key.WithKeys("e"), key.WithHelp("E", "Edit name")),
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 			)
 		}

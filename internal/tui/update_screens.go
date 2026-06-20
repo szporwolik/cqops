@@ -57,6 +57,18 @@ func (m *Model) handleRigEditUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 	return m, cmd
 }
 
+func (m *Model) handleContestUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	m.ui.contestChooser.width = m.width
+	m.ui.contestChooser.height = m.height
+	_, contestCmd := m.ui.contestChooser.Update(msg)
+	cmd = tea.Batch(cmd, contestCmd)
+	if m.ui.contestChooser.done {
+		m.saveConfig("Contests updated")
+		m.screen = screenMainMenu
+	}
+	return m, cmd
+}
+
 func (m *Model) handleConfigUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	m.ui.configMenu.width = m.width
 	m.ui.configMenu.height = m.height
@@ -280,6 +292,11 @@ func (m *Model) handleMainMenuUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.C
 			m.ui.rigChooser.width = m.width
 			m.ui.rigChooser.height = m.height
 			m.screen = screenRigEdit
+		case "contest":
+			m.ui.contestChooser = NewContestChooser(m.App, m.toasts)
+			m.ui.contestChooser.width = m.width
+			m.ui.contestChooser.height = m.height
+			m.screen = screenContest
 		case "integration":
 			m.ui.integrationMenu = NewIntegrationMenu(m.App.Config)
 			m.ui.integrationMenu.width = m.width
@@ -1998,7 +2015,22 @@ func (m *Model) writeCBMarkdownRows(b *strings.Builder, region int) {
 }
 
 func (m *Model) writePMRMarkdownRows(b *strings.Builder, region int) {
-	for _, p := range nonHamProfiles(region) {
+	profiles := nonHamProfiles(region)
+	hasPMR := false
+	for _, p := range profiles {
+		if p.ID == "PMR446_ANALOG" || p.ID == "PMR446_DIGITAL" || p.ID == "FRS_GMRS" {
+			hasPMR = true
+			break
+		}
+	}
+	if !hasPMR {
+		b.WriteString("No licence-free radio profiles for this region.\n\n")
+		if region == 3 {
+			b.WriteString("PMR446 exists in some Asian countries, but check the specific country's licence-free radio allocation.\n\n")
+		}
+		return
+	}
+	for _, p := range profiles {
 		switch p.ID {
 		case "PMR446_ANALOG":
 			b.WriteString(fmt.Sprintf("### %s\n\n", p.Label))

@@ -86,6 +86,7 @@ const (
 	screenIntegration
 	screenChooser
 	screenRigEdit
+	screenContest
 	screenLogView
 	screenLogbookEditor
 	screenNotifications
@@ -490,6 +491,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleChooserUpdate(msg, cmd)
 	case screenRigEdit:
 		return m.handleRigEditUpdate(msg, cmd)
+	case screenContest:
+		return m.handleContestUpdate(msg, cmd)
 	case screenConfig:
 		return m.handleConfigUpdate(msg, cmd)
 	case screenCallbook:
@@ -723,6 +726,8 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 		body = m.ui.chooser.View().Content
 	case screenRigEdit:
 		body = m.ui.rigChooser.View().Content
+	case screenContest:
+		body = m.ui.contestChooser.View().Content
 	case screenLogView:
 		body = m.ui.logViewer.View().Content
 	case screenLogbookEditor:

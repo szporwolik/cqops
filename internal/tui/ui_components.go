@@ -5,6 +5,7 @@ package tui
 type uiComponents struct {
 	chooser         *LogbookChooser
 	rigChooser      *RigChooser
+	contestChooser  *ContestChooser
 	configMenu      *GeneralMenu
 	callbookMenu    *CallbookMenu
 	integrationMenu *IntegrationMenu
