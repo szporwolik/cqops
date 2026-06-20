@@ -285,9 +285,15 @@ func (m *Model) ActiveBindings() []key.Binding {
 			key.NewBinding(key.WithKeys("backspace"), key.WithHelp("Bksp", "Clear")),
 		)
 	}
-	// BPL / CON placeholder panes — only F10 Quit is shown.
-	if m.screen == screenBPL || m.screen == screenCON {
-		bindings = append(bindings)
+	if m.screen == screenBPL {
+		bindings = append(bindings,
+			key.NewBinding(key.WithKeys("left", "right"), key.WithHelp("\u2190\u2192", "Tabs")),
+			key.NewBinding(key.WithKeys("tab"), key.WithHelp("Tab", "Next tab")),
+			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("\u2191\u2193", "Scroll")),
+			key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("PgUp/Dn", "Page")),
+			key.NewBinding(key.WithKeys("home", "end"), key.WithHelp("Home/End", "Top/Bottom")),
+			key.NewBinding(key.WithKeys("ctrl+e"), key.WithHelp("C-E", "Export")),
+		)
 	}
 	// Partner screen — show F2 Photo when image available.
 	if m.screen == screenPartner && m.lookup.partnerData != nil && m.lookup.partnerData.ImageURL != "" {

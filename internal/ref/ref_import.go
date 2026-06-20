@@ -44,7 +44,7 @@ const (
 const IotaGroupURL = "https://www.iota-world.org/islands-on-the-air/downloads/download-file.html?path=fulllist.json"
 
 // MaxAge is the maximum age of cached data files before a re-download.
-const MaxAge = 30 * 24 * time.Hour
+const MaxAge = 365 * 24 * time.Hour
 
 // downloadRetries and backoff for potato internet.
 const downloadRetries = 3

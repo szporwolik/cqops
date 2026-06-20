@@ -260,6 +260,18 @@ func (m *Model) helpSuffix() string {
 		}
 		return fmt.Sprintf("Result %d/%d  Page %d/%d", m.ref.cursor+1, total, page, totalPages)
 	}
+	if m.screen == screenBPL {
+		total := m.bplRowCount()
+		if total > 0 {
+			tableH := bplTableHeight(m.height)
+			page := m.bpl.cursor/tableH + 1
+			totalPages := (total + tableH - 1) / tableH
+			if totalPages < 1 {
+				totalPages = 1
+			}
+			return fmt.Sprintf("Line %d/%d  Page %d/%d", m.bpl.cursor+1, total, page, totalPages)
+		}
+	}
 	if m.screen == screenDXC {
 		return ""
 	}

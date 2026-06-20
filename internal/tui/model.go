@@ -130,6 +130,9 @@ type Model struct {
 	// REF — SOTA/POTA/WWFF reference lookup.
 	ref refState
 
+	// BPL — band plan display (F7).
+	bpl bplState
+
 	// lastDataCheck is the last time CTY.DAT / SCP files were checked for updates.
 	lastDataCheck time.Time
 
@@ -463,6 +466,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.toasts.Success(msg)
 			}
+		}
+		return m, cmd
+	case bplExportMsg:
+		if r.err != nil {
+			m.toasts.Error(fmt.Sprintf("Export failed: %v", r.err))
+		} else {
+			m.toasts.Success(fmt.Sprintf("Band plan exported to %s", r.path))
 		}
 		return m, cmd
 	}

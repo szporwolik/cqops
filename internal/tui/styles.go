@@ -94,6 +94,11 @@ type Styles struct {
 	MapBoth    lipgloss.Style
 	MapGrid    lipgloss.Style
 
+	// Band plan tabs
+	TabActive    lipgloss.Style
+	TabInactive  lipgloss.Style
+	TabSeparator lipgloss.Style
+
 	// Confirm dialog
 	ConfirmTitle  lipgloss.Style
 	ConfirmMsg    lipgloss.Style
@@ -155,6 +160,10 @@ var S = Styles{
 	MapPartner: lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Background(lipgloss.Color("0")).Bold(true),
 	MapBoth:    lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Background(lipgloss.Color("0")).Bold(true),
 	MapGrid:    lipgloss.NewStyle().Foreground(P.TextMuted),
+
+	TabActive:    lipgloss.NewStyle().Bold(true).Foreground(P.Cursor),
+	TabInactive:  lipgloss.NewStyle().Foreground(P.TextMuted),
+	TabSeparator: lipgloss.NewStyle().Foreground(P.TextDim),
 
 	ConfirmTitle:  lipgloss.NewStyle().Bold(true).Foreground(P.Primary),
 	ConfirmMsg:    lipgloss.NewStyle().Foreground(P.Text),
