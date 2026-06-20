@@ -93,19 +93,23 @@ func (le *LogbookEditor) View() tea.View {
 		return tea.NewView(le.viewWithDialog(bodyW))
 
 	case edModeWLDownloadResult:
-		msg := fmt.Sprintf("Downloaded %d QSOs.", le.wlDownloadCount)
-		if le.wlDownloadDupes > 0 {
-			msg += fmt.Sprintf("\n%d duplicates skipped.", le.wlDownloadDupes)
-		}
-		if le.wlDownloadFailed > 0 {
-			msg += fmt.Sprintf("\n%d failed (DB locked — try again).", le.wlDownloadFailed)
-		}
 		if errText := strings.TrimSpace(le.wlDownloadErr); errText != "" {
-			msg = "Download failed: " + errText
+			msg := "Download failed: " + errText
+			le.ensureDialog("Wavelog Download", msg,
+				Option{Label: "OK", Value: "ok"},
+			)
+		} else {
+			msg := fmt.Sprintf("Downloaded %d QSOs.", le.wlDownloadCount)
+			if le.wlDownloadDupes > 0 {
+				msg += fmt.Sprintf("\n%d duplicates skipped.", le.wlDownloadDupes)
+			}
+			if le.wlDownloadFailed > 0 {
+				msg += fmt.Sprintf("\n%d failed.", le.wlDownloadFailed)
+			}
+			le.ensureDialog("Wavelog Download", msg,
+				Option{Label: "OK", Value: "ok"},
+			)
 		}
-		le.ensureDialog("Wavelog Download", msg,
-			Option{Label: "OK", Value: "ok"},
-		)
 		return tea.NewView(le.viewWithDialog(bodyW))
 
 	case edModeImporting:

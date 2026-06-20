@@ -247,9 +247,9 @@ func ParseADIFRecord(r adif.Record, source string) *QSO {
 		qs.Submode = strings.ToUpper(v)
 	}
 	// Strip non-digit chars from date/time (WSJT-X includes punctuation).
-	qs.QSODate = stripNonDigits(get(adifield.QSO_DATE))
-	qs.TimeOn = stripNonDigits(get(adifield.TIME_ON))
-	qs.TimeOff = stripNonDigits(get(adifield.TIME_OFF))
+	qs.QSODate = StripNonDigits(get(adifield.QSO_DATE))
+	qs.TimeOn = StripNonDigits(get(adifield.TIME_ON))
+	qs.TimeOff = StripNonDigits(get(adifield.TIME_OFF))
 	qs.Freq = getFloat(adifield.FREQ)
 	qs.FreqRx = getFloat(adifield.FREQ_RX)
 	qs.RSTSent = get(adifield.RST_SENT)
@@ -311,8 +311,8 @@ func ParseADIFRecord(r adif.Record, source string) *QSO {
 	return qs
 }
 
-// stripNonDigits removes all non-digit characters from s.
-func stripNonDigits(s string) string {
+// StripNonDigits removes all non-digit characters from s.
+func StripNonDigits(s string) string {
 	if s == "" {
 		return s
 	}

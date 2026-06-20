@@ -52,7 +52,7 @@ func (m *Model) viewForm(width int) string {
 	// Build a cache signature from all inputs that affect form output.
 	// The date/time fields change every second, so this invalidates at 1 Hz.
 	var sigB strings.Builder
-	fmt.Fprintf(&sigB, "%d|%d|%s|%t|", width, m.focus, m.App.Config.State.ActiveContest, m.dupe)
+	fmt.Fprintf(&sigB, "%d|%d|%s|", width, m.focus, m.App.Config.State.ActiveContest)
 	if m.retainFocused {
 		sigB.WriteString("rf|")
 	} else {
@@ -210,20 +210,10 @@ func (m *Model) viewForm(width int) string {
 	retainBox := colStyle.Render(m.renderRetainCheckbox(colW))
 	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, commentLine, retainBox))
 
-	// DUPE! warning — shown below comment when call/band/mode already logged today.
-	if m.dupe {
-		b.WriteString("\n")
-		b.WriteString(lipgloss.NewStyle().
-			Foreground(P.Text).
-			Background(P.Error).
-			Bold(true).
-			Padding(0, 1).
-			Render("DUPE!"))
-	}
-
 	result := b.String()
 	m.rc.formSig = sig
 	m.rc.formView = result
+
 	return result
 }
 
@@ -287,9 +277,16 @@ func (m *Model) stationProfile() []string {
 	return parts
 }
 
+// renderPlainProfile joins station profile parts into a plain string (no styling).
+func (m *Model) renderPlainProfile() string {
+	return strings.Join(m.stationProfile(), "  \u00b7  ")
+}
+
 // formPathRow renders the info line between the QSO form and recent QSOs table.
 // Two states: no call → station profile (right-aligned); call entered → path (left-aligned)
 // or fall back to station profile if no grids.
+// Badges (DUPE!, New Call!, New DXCC!) are shown whenever a callsign is entered,
+// regardless of whether grids are available.
 func (m *Model) formPathRow(width int) string {
 	s := m.App.Logbook.Station
 
@@ -306,15 +303,35 @@ func (m *Model) formPathRow(width int) string {
 	}
 
 	// ── No callsign: station profile ──
-	// Check both the committed pathCall and the current form field —
-	// the user may have backspaced the call without leaving the field.
 	if m.rc.pathCall == "" || strings.TrimSpace(m.fields[fieldCall].Value()) == "" {
 		m.rc.pathCall = ""
 		m.rc.pathSig = ""
 		return renderProfile(lipgloss.Right)
 	}
 
-	// ── Callsign entered: try path, fall back to profile ──
+	// ── Callsign entered: load stats, compute badges, build path ──
+	call := strings.TrimSpace(m.fields[fieldCall].Value())
+	band := strings.TrimSpace(m.fields[fieldBand].Value())
+	mode := strings.TrimSpace(m.fields[fieldMode].Value())
+	statsSig := call + "|" + band + "|" + mode
+	if m.rc.logStatsSig != statsSig && m.App.DB != nil {
+		stats, err := store.GetLogbookStats(m.App.DB, call, band, mode)
+		if err == nil {
+			m.rc.logStats = stats
+			m.rc.logStatsSig = statsSig
+		}
+	}
+
+	// Compute badges — always evaluated when a call is present.
+	var showNewCall bool
+	if m.lookup.wlPrivateData != nil {
+		showNewCall = !m.lookup.wlPrivateData.Worked()
+	} else {
+		showNewCall = !m.rc.logStats.CallWorked
+	}
+	wlNewDXCC := m.lookup.wlPrivateData != nil && !m.lookup.wlPrivateData.DXCCConfirmed()
+
+	// Build the primary info line: path (grids) or profile fallback.
 	ownGrid := formatLocator(s.Grid)
 	rawGrid := strings.TrimSpace(m.fields[fieldGrid].Value())
 	partnerGrid := ""
@@ -322,83 +339,80 @@ func (m *Model) formPathRow(width int) string {
 		partnerGrid = formatLocator(rawGrid)
 	}
 
+	var primaryLine string
 	if ownGrid != "" && partnerGrid != "" {
-		// Load logbook stats if needed — used for "New Call!" indicator.
-		call := strings.TrimSpace(m.fields[fieldCall].Value())
-		band := strings.TrimSpace(m.fields[fieldBand].Value())
-		mode := strings.TrimSpace(m.fields[fieldMode].Value())
-		statsSig := call + "|" + band + "|" + mode
-		if m.rc.logStatsSig != statsSig && m.App.DB != nil {
-			stats, err := store.GetLogbookStats(m.App.DB, call, band, mode)
-			if err == nil {
-				m.rc.logStats = stats
-				m.rc.logStatsSig = statsSig
-			}
-		}
-
-		// Build cache key: grids + distance + log stats + WL state.
-		wlSig := "WL:"
-		if m.lookup.wlPrivateData != nil {
-			wlSig += fmt.Sprintf("wk=%v,dxcc=%v", m.lookup.wlPrivateData.Worked(), m.lookup.wlPrivateData.DXCCConfirmed())
-		}
-		sig := ownGrid + "|" + partnerGrid + "|" + m.App.Config.General.DistanceUnit + "|" + statsSig + "|" + wlSig
-		if m.rc.pathSig == sig && m.rc.pathLine != "" {
-			return m.rc.pathLine
-		}
 		line := distanceLine(ownGrid, partnerGrid, m.App.Config.General.DistanceUnit)
 		if line != "" {
-			line = " Path  " + line
-			// Show New Call / New DXCC indicators.
-			// WL-first: if WL has data it wins; otherwise fall back to local.
-			var showNewCall bool
-			if m.lookup.wlPrivateData != nil {
-				showNewCall = !m.lookup.wlPrivateData.Worked()
-			} else {
-				showNewCall = !m.rc.logStats.CallWorked
-			}
-			wlNewDXCC := m.lookup.wlPrivateData != nil && !m.lookup.wlPrivateData.DXCCConfirmed()
-
-			// Build banners as plain text so truncation is ANSI-safe.
-			const bannerNewCall = "New Call!"
-			const bannerNewDXCC = "New DXCC!"
-			var bannerPlain string
-			if showNewCall {
-				bannerPlain += "  " + bannerNewCall
-			}
-			if wlNewDXCC {
-				bannerPlain += "  " + bannerNewDXCC
-			}
-
-			// Determine final display text: path line + optional banners.
-			// Build plain text first, truncate if needed, then style banners.
-			displayText := line
-			if bannerPlain != "" {
-				candidate := line + bannerPlain
-				if lipgloss.Width(candidate) <= width {
-					displayText = candidate
-				}
-				// else: banners dropped, displayText stays as line alone.
-			}
-			// If line alone is too wide, truncate it.
-			if lipgloss.Width(displayText) > width {
-				displayText = truncateText(displayText, width)
-			}
-
-			result := pathInfoStyle.Width(width).Align(lipgloss.Left).Render(displayText)
-			// Re-apply banner styling after Lip Gloss width clamping.
-			if showNewCall && strings.Contains(result, bannerNewCall) {
-				result = strings.Replace(result, bannerNewCall, S.Success.Render(bannerNewCall), 1)
-			}
-			if wlNewDXCC && strings.Contains(result, bannerNewDXCC) {
-				result = strings.Replace(result, bannerNewDXCC, S.Success.Render(bannerNewDXCC), 1)
-			}
-			m.rc.pathSig = sig
-			m.rc.pathLine = result
-			return result
+			primaryLine = " Path  " + line
 		}
-		m.rc.pathSig = ""
-		m.rc.pathLine = ""
+	}
+	if primaryLine == "" {
+		// No path: show profile left-aligned as fallback.
+		primaryLine = m.renderPlainProfile()
+		if primaryLine != "" && lipgloss.Width(primaryLine) > width {
+			primaryLine = truncateText(primaryLine, width)
+		}
 	}
 
-	return renderProfile(lipgloss.Right)
+	// Build badge line (DUPE!, New Call!, New DXCC!).
+	const bannerNewCall = "New Call!"
+	const bannerNewDXCC = "New DXCC!"
+	const bannerDupe = "DUPE!"
+
+	dupeStyle := lipgloss.NewStyle().Foreground(P.Text).Background(P.Error).Bold(true).Padding(0, 1)
+	newStyle := lipgloss.NewStyle().Foreground(P.Text).Background(P.Success).Bold(true).Padding(0, 1)
+
+	var badges []string
+	if m.dupe {
+		badges = append(badges, dupeStyle.Render(bannerDupe))
+	}
+	if showNewCall {
+		badges = append(badges, newStyle.Render(bannerNewCall))
+	}
+	if wlNewDXCC {
+		badges = append(badges, newStyle.Render(bannerNewDXCC))
+	}
+
+	// Build cache key: grids + distance + stats + WL + dupe.
+	wlSig := "WL:"
+	if m.lookup.wlPrivateData != nil {
+		wlSig += fmt.Sprintf("wk=%v,dxcc=%v", m.lookup.wlPrivateData.Worked(), m.lookup.wlPrivateData.DXCCConfirmed())
+	}
+	sig := ownGrid + "|" + partnerGrid + "|" + m.App.Config.General.DistanceUnit + "|" + statsSig + "|" + wlSig + "|" + fmt.Sprint(m.dupe)
+
+	if m.rc.pathSig == sig && m.rc.pathLine != "" {
+		return m.rc.pathLine
+	}
+
+	// Assemble result: primary line + badges.
+	result := primaryLine
+	if len(badges) > 0 {
+		badgeLine := strings.Join(badges, " ")
+		if primaryLine != "" {
+			result = primaryLine + "  " + badgeLine
+		} else {
+			result = badgeLine
+		}
+	}
+
+	if result == "" {
+		m.rc.pathSig = sig
+		m.rc.pathLine = ""
+		return ""
+	}
+
+	// Truncate if too wide.
+	if lipgloss.Width(result) > width {
+		// Try without badges first (preserve primary line).
+		if primaryLine != "" && lipgloss.Width(primaryLine) <= width {
+			result = primaryLine
+		} else {
+			result = truncateText(result, width)
+		}
+	}
+
+	st := pathInfoStyle.Width(width).Align(lipgloss.Left).Render(result)
+	m.rc.pathSig = sig
+	m.rc.pathLine = st
+	return st
 }

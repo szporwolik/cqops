@@ -143,9 +143,9 @@ func TestStripNonDigits(t *testing.T) {
 		{"a1b2c3", "123"},
 	}
 	for _, tt := range tests {
-		got := stripNonDigits(tt.input)
+		got := StripNonDigits(tt.input)
 		if got != tt.expected {
-			t.Errorf("stripNonDigits(%q) = %q, want %q", tt.input, got, tt.expected)
+			t.Errorf("StripNonDigits(%q) = %q, want %q", tt.input, got, tt.expected)
 		}
 	}
 }
@@ -178,10 +178,10 @@ func TestParseADIFRecord_Basic(t *testing.T) {
 	if qs.Mode != "FT8" {
 		t.Errorf("Mode = %q, want FT8", qs.Mode)
 	}
-	if qs.QSODate != "20260619" { // stripNonDigits applied
+	if qs.QSODate != "20260619" { // StripNonDigits applied
 		t.Errorf("QSODate = %q, want 20260619", qs.QSODate)
 	}
-	if qs.TimeOn != "140530" { // stripNonDigits applied
+	if qs.TimeOn != "140530" { // StripNonDigits applied
 		t.Errorf("TimeOn = %q, want 140530", qs.TimeOn)
 	}
 	if qs.Freq != 14.074 {

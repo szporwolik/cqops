@@ -443,30 +443,47 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 
 		c.names = append(c.names, id)
 		savedName = cs
-	} else {
-		id := c.editing
-		lb := c.app.Config.Logbooks[id]
-		lb.Station.Callsign = cs
-		lb.Station.Operator = op
-		lb.Station.Grid = gr
-		lb.Station.SOTARef = sotaRef
-		lb.Station.POTARef = potaRef
-		lb.Station.WWFFRef = wwffRef
-		lb.Station.IARURegion = iaruRegion
-		lb.Station.CQZone = cqZone
-		lb.Station.ITUZone = ituZone
-		lb.Station.DXCC = dxcc
-		lb.Station.SIG = sig
-		lb.Station.SIGInfo = sigInfo
-		lb.Station.Continent = continent
-		lb.Wavelog = wl
-		c.app.Config.Logbooks[id] = lb
 
-		if id == c.app.LogbookName {
-			c.app.Logbook = &lb
+		// Open the new logbook's database and switch to it.
+		if err := c.app.SwitchLogbook(id); err != nil {
+			c.toasts.Error("Failed to open logbook: " + err.Error())
+			return nil
 		}
-		savedName = cs
+
+		c.mode = chooserList
+		c.station.BlurAll()
+		if err := config.Save(c.app.ConfigPath, c.app.Config); err != nil {
+			c.toasts.Error("Save " + savedName + " failed: " + err.Error())
+			return nil
+		}
+		c.toasts.Success("Logbook " + savedName + " created")
+		applog.Info("Logbook created", "name", savedName)
+		return func() tea.Msg { return logbookSwitchedMsg{} }
 	}
+
+	// Edit existing logbook.
+	id := c.editing
+	lb := c.app.Config.Logbooks[id]
+	lb.Station.Callsign = cs
+	lb.Station.Operator = op
+	lb.Station.Grid = gr
+	lb.Station.SOTARef = sotaRef
+	lb.Station.POTARef = potaRef
+	lb.Station.WWFFRef = wwffRef
+	lb.Station.IARURegion = iaruRegion
+	lb.Station.CQZone = cqZone
+	lb.Station.ITUZone = ituZone
+	lb.Station.DXCC = dxcc
+	lb.Station.SIG = sig
+	lb.Station.SIGInfo = sigInfo
+	lb.Station.Continent = continent
+	lb.Wavelog = wl
+	c.app.Config.Logbooks[id] = lb
+
+	if id == c.app.LogbookName {
+		c.app.Logbook = &lb
+	}
+	savedName = cs
 
 	c.mode = chooserList
 	c.station.BlurAll()

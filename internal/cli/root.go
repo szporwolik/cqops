@@ -16,13 +16,25 @@ import (
 
 var logbookFlag string
 
+func init() {
+	rootCmd.PersistentFlags().StringVarP(&logbookFlag, "logbook", "l", "", "Logbook name to use")
+	rootCmd.AddCommand(versionCmd)
+}
+
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "Print CQOps version",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Printf("CQOps version %s\n", version.Resolved())
+	},
+}
+
 var rootCmd = &cobra.Command{
 	Use:   "cqops",
-	Short: "CQOps - Ham Radio Logger",
+	Short: "CQOps - Ham Radio Logger (TUI)",
 	Long: `CQOps is a cross-platform amateur radio logging tool.
 
-Run without arguments to start the interactive TUI.
-Run with commands for CLI-based logging and management.`,
+Run without arguments to start the interactive TUI.`,
 	CompletionOptions: cobra.CompletionOptions{
 		DisableDefaultCmd: true,
 	},
@@ -31,19 +43,7 @@ Run with commands for CLI-based logging and management.`,
 	},
 }
 
-func RegisterCommands() {
-	rootCmd.PersistentFlags().StringVarP(&logbookFlag, "logbook", "l", "", "Logbook name to use")
-
-	registerConfigCommands()
-	registerLogbookCommands()
-	registerLogCommands()
-	registerRigCommands()
-	registerResetCommands()
-	registerVersionCommands()
-}
-
 func Execute() error {
-	RegisterCommands()
 	applog.Init()
 	applog.Info("══════════ CQOps STARTED ══════════", "v", version.Resolved(), "built", version.ResolvedDate())
 
@@ -78,7 +78,7 @@ func runTUI() error {
 	}
 
 	if config.IsFirstRun(a.Config) {
-		fmt.Println("No logbook configured. Run cqops again to complete setup, or use cqops logbook create.")
+		fmt.Println("No logbook configured. Run cqops again to complete setup.")
 		return nil
 	}
 

@@ -22,6 +22,9 @@ func (m *Model) saveQSO() tea.Cmd {
 	m.autoFillRST()
 	m.autoFillSSBSubmode()
 	m.checkDupe() // ensure dupe state is fresh before saving
+	if m.dupe {
+		m.toasts.Warn("DUPE! " + strings.TrimSpace(m.fields[fieldCall].Value()) + " already logged on this band/mode today")
+	}
 	qs := qso.NewQSO()
 	var freq float64
 	if _, err := fmt.Sscanf(m.fields[fieldFreq].Value(), "%f", &freq); err != nil {

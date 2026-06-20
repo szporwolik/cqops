@@ -159,12 +159,19 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		applog.Debug("tab: F4 DXC")
 		m.dxc.tableReady = false // force rebuild with fresh data
 		// Set default continent filter from station config on first open.
-		if m.dxc.contFilter == "" && m.App.Logbook.Station.Continent != "" {
-			m.dxc.contFilter = m.App.Logbook.Station.Continent
+		// Fall back to DXCC prefix lookup of own callsign if not configured.
+		cont := m.App.Logbook.Station.Continent
+		if cont == "" && m.App.DXCC != nil {
+			if p := m.dxccLookup(m.App.Logbook.Station.Callsign); p != nil && p.Continent != "" {
+				cont = p.Continent
+			}
+		}
+		if m.dxc.contFilter == "" && cont != "" {
+			m.dxc.contFilter = cont
 			// Sync contIdx to match.
 			choices := m.dxcContChoices()
 			for i, c := range choices {
-				if c == m.App.Logbook.Station.Continent {
+				if c == cont {
 					m.dxc.contIdx = i
 					break
 				}

@@ -877,12 +877,13 @@ func TestCheckDupe_DetectsDuplicate(t *testing.T) {
 		t.Error("dupe should be true when same call/band/mode/date exists")
 	}
 
-	// Verify the form view contains DUPE!
+	// Verify the path row contains DUPE!
 	m.width = 100
 	m.height = 30
-	view := m.viewForm(90)
-	if !strings.Contains(view, "DUPE!") {
-		t.Error("viewForm should contain DUPE! when dupe is detected")
+	m.rc.pathCall = "SP9MOA" // needed for formPathRow to render badges
+	row := m.formPathRow(90)
+	if !strings.Contains(row, "DUPE!") {
+		t.Error("formPathRow should contain DUPE! when dupe is detected")
 	}
 }
 
