@@ -353,6 +353,11 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				le.mode = edModeConfirmWLSend
 			}
 		case "ctrl+w":
+			if le.contestID != "" {
+				return le, func() tea.Msg {
+					return editorMsg{toastWarn: "Wavelog download is not available in contest-filtered view"}
+				}
+			}
 			if le.wlURL != "" && le.wlKey != "" && le.wlStationID != "" {
 				le.dialog = nil
 				le.mode = edModeConfirmWLDownload
@@ -898,11 +903,18 @@ func (le *LogbookEditor) runExport(path string) {
 
 	db := le.db
 
-	// Count total QSOs for progress.
-	counts, err := store.CountQSOs(db)
-	total := 0
-	if err == nil {
-		total = counts.Total
+	// Count QSOs — filtered by contest if active.
+	var total int
+	if le.contestID != "" {
+		counts, err := store.CountQSOsForContest(db, le.contestID)
+		if err == nil {
+			total = counts.Total
+		}
+	} else {
+		counts, err := store.CountQSOs(db)
+		if err == nil {
+			total = counts.Total
+		}
 	}
 	msgCh <- editorMsg{dlProgress: total, dlTotal: total, dlCount: 0}
 
@@ -944,7 +956,7 @@ func (le *LogbookEditor) runExport(path string) {
 		if offset+limit > total {
 			limit = total - offset
 		}
-		qsos, err := store.ListQSOsPage(db, limit, offset, "")
+		qsos, err := store.ListQSOsPage(db, limit, offset, le.contestID)
 		if err != nil {
 			applog.Error("ADIF export: failed to list QSOs", "offset", offset, "error", err)
 			msgCh <- editorMsg{dlErr: "database read error: " + err.Error()}

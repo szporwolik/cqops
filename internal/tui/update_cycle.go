@@ -44,12 +44,11 @@ func (m *Model) cycleLogbook() tea.Cmd {
 	m.rc.pathLine = ""
 	m.lookup.wlPrivateData = nil // WL data is logbook-specific
 	m.lookup.wlForceCheck = true
-	m.needRefresh = true
 	// Recheck dupe and new-call status against the new logbook.
 	if strings.TrimSpace(m.fields[fieldCall].Value()) != "" {
 		m.checkDupe()
 	}
-	return nil
+	return m.refreshQSOS()
 }
 
 // cycleRig cycles to the next rig preset in alphabetical order (by model).
@@ -91,5 +90,6 @@ func (m *Model) cycleRig() tea.Cmd {
 	m.rc.status = ""
 	m.invalidatePartnerMapCache()
 	m.rc.pathSig = ""
+	m.refreshFlrigClient() // reconnect/disconnect flrig for the new rig
 	return nil
 }

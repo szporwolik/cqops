@@ -10,8 +10,8 @@ import (
 	"github.com/szporwolik/cqops/internal/qso"
 )
 
-// handleFavoriteKey checks for alt+shift+digit (save) and alt+digit (recall)
-// and dispatches accordingly. Returns true if the key was handled.
+// handleFavoriteKey checks for alt+shift+digit / alt+shifted_char (save)
+// and alt+digit (recall). Returns true if the key was handled.
 func (m *Model) handleFavoriteKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	k := msg.String()
 	// alt+shift+0 … alt+shift+9  → save to slot
@@ -21,6 +21,11 @@ func (m *Model) handleFavoriteKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			return m.favoriteSave(int(d - '0')), true
 		}
 	}
+	// alt+shifted_char — what most terminals actually send for alt+shift+digit.
+	// Shift+1 = '!' … Shift+0 = ')'.
+	if d, ok := shiftedDigitFromAltPlus(k); ok {
+		return m.favoriteSave(d), true
+	}
 	// alt+0 … alt+9  → recall from slot
 	if strings.HasPrefix(k, "alt+") && len(k) == 5 {
 		d := k[4]
@@ -29,6 +34,37 @@ func (m *Model) handleFavoriteKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		}
 	}
 	return nil, false
+}
+
+// shiftedDigitFromAltPlus maps "alt+!" → 1, "alt+@" → 2, … "alt+)" → 0.
+// Returns the digit and true if k is one of these patterns.
+func shiftedDigitFromAltPlus(k string) (int, bool) {
+	if !strings.HasPrefix(k, "alt+") || len(k) != 5 {
+		return 0, false
+	}
+	switch k[4] {
+	case ')':
+		return 0, true
+	case '!':
+		return 1, true
+	case '@':
+		return 2, true
+	case '#':
+		return 3, true
+	case '$':
+		return 4, true
+	case '%':
+		return 5, true
+	case '^':
+		return 6, true
+	case '&':
+		return 7, true
+	case '*':
+		return 8, true
+	case '(':
+		return 9, true
+	}
+	return 0, false
 }
 
 // favoriteSave stores the current mode, frequency, submode, and band into
@@ -56,8 +92,8 @@ func (m *Model) favoriteSave(slot int) tea.Cmd {
 		m.toasts.Warn(fmt.Sprintf("Favorite %d save failed", slot))
 		return nil
 	}
-	m.toasts.Success(fmt.Sprintf("Favorite %d saved: %s %.0f %s",
-		slot, fav.Band, fav.Freq, fav.Mode))
+	m.toasts.Success(fmt.Sprintf("Favorite %d saved: %s %s %s",
+		slot, fav.Band, freqStr, fav.Mode))
 	return nil
 }
 
@@ -80,7 +116,8 @@ func (m *Model) favoriteRecall(slot int) tea.Cmd {
 		m.fields[fieldSubmode].SetValue(fav.Submode)
 	}
 	if fav.Freq > 0 {
-		m.fields[fieldFreq].SetValue(fmt.Sprintf("%.0f", fav.Freq))
+		// Match the precision used by flrig/WSJT-X (6 decimal places).
+		m.fields[fieldFreq].SetValue(fmt.Sprintf("%.6f", fav.Freq))
 	}
 	if fav.Band != "" {
 		m.fields[fieldBand].SetValue(fav.Band)

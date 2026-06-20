@@ -92,8 +92,8 @@ func FindLogbookByCallsign(cfg *Config, callsign string) (string, *Logbook, bool
 	return "", nil, false
 }
 
-// SortedContestIDs returns contest IDs sorted by name, excluding
-// contests where InUse is explicitly set to false.
+// SortedContestIDs returns all contest IDs sorted by name.
+// Use ActiveContestIDs for cycling — that one excludes not-in-use contests.
 func SortedContestIDs(cfg *Config) []string {
 	type pair struct {
 		id   string
@@ -101,7 +101,27 @@ func SortedContestIDs(cfg *Config) []string {
 	}
 	pairs := make([]pair, 0, len(cfg.Contests))
 	for id, c := range cfg.Contests {
-		// nil (legacy, not yet saved with field) or true = in use.
+		pairs = append(pairs, pair{id, ContestDisplayName(&c)})
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		return pairs[i].name < pairs[j].name
+	})
+	ids := make([]string, len(pairs))
+	for i, p := range pairs {
+		ids[i] = p.id
+	}
+	return ids
+}
+
+// ActiveContestIDs returns contest IDs sorted by name, excluding contests
+// where InUse is explicitly set to false. Used for Ctrl+C cycling.
+func ActiveContestIDs(cfg *Config) []string {
+	type pair struct {
+		id   string
+		name string
+	}
+	pairs := make([]pair, 0, len(cfg.Contests))
+	for id, c := range cfg.Contests {
 		if c.InUse != nil && !*c.InUse {
 			continue
 		}

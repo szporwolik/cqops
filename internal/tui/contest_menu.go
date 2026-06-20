@@ -421,6 +421,13 @@ func (c *ContestChooser) saveContest() tea.Cmd {
 		ct.ExchangeRcvd = exchangeRcvd
 		ct.InUse = &c.inUse
 		c.app.Config.Contests[c.editID] = ct
+		// If the contest was just marked "not in use" and it is the
+		// active contest, clear the active contest so the user isn't
+		// stuck inside a deactivated contest.
+		if !c.inUse && c.app.Config.State.ActiveContest == c.editID {
+			c.app.Config.State.ActiveContest = ""
+			c.toasts.Info(fmt.Sprintf("Contest %q deactivated — active contest cleared", name))
+		}
 		c.toasts.Success(fmt.Sprintf("Contest saved: %s", name))
 	}
 
@@ -653,32 +660,12 @@ func (c *ContestChooser) viewForm() string {
 	}
 	bodyW := refW - 4 // border padding
 
-	// Two-column layout when wide enough; single-column on narrow screens.
-	if bodyW >= 60 {
-		colW := (bodyW - 2) / 2
-		if colW < 25 {
-			colW = 25
-		}
-		for i := 0; i < len(markers); i += 2 {
-			left := fmt.Sprintf("  %-12s %s", markers[i][0], DimStyle.Render(markers[i][1]))
-			right := ""
-			if i+1 < len(markers) {
-				right = fmt.Sprintf("%-12s %s", markers[i+1][0], DimStyle.Render(markers[i+1][1]))
-			}
-			row := lipgloss.JoinHorizontal(lipgloss.Top,
-				lipgloss.NewStyle().Width(colW).Render(left),
-				lipgloss.NewStyle().Width(colW).Render(right),
-			)
-			b.WriteString(padOrTrunc(row, bodyW))
-			b.WriteString("\n")
-		}
-	} else {
-		// Single-column on very narrow screens.
-		for _, m := range markers {
-			line := fmt.Sprintf("  %-12s %s", m[0], DimStyle.Render(m[1]))
-			b.WriteString(padOrTrunc(line, bodyW))
-			b.WriteString("\n")
-		}
+	// Single-column layout — two columns wrap too easily on narrow
+	// terminals and the marker descriptions vary in length.
+	for _, m := range markers {
+		line := fmt.Sprintf("  %-12s %s", m[0], DimStyle.Render(m[1]))
+		b.WriteString(padOrTrunc(line, bodyW))
+		b.WriteString("\n")
 	}
 
 	b.WriteString("\n")

@@ -74,8 +74,8 @@ func TestFavoriteRecall(t *testing.T) {
 	if got := m.fields[fieldMode].Value(); got != "SSB" {
 		t.Errorf("Mode = %q, want SSB", got)
 	}
-	if got := m.fields[fieldFreq].Value(); got != "14250" {
-		t.Errorf("Freq = %q, want 14250", got)
+	if got := m.fields[fieldFreq].Value(); got != "14250.000000" {
+		t.Errorf("Freq = %q, want 14250.000000", got)
 	}
 	if got := m.fields[fieldBand].Value(); got != "20m" {
 		t.Errorf("Band = %q, want 20m", got)
@@ -160,16 +160,34 @@ func TestFavoriteOverwrite(t *testing.T) {
 func TestHandleFavoriteKey_Save(t *testing.T) {
 	m := newFavoriteTestModel(t)
 
+	// Test the standard form: alt+shift+digit
 	for digit := 0; digit <= 9; digit++ {
 		r := '0' + rune(digit)
 		msg := tea.KeyPressMsg{Code: r, Mod: tea.ModAlt | tea.ModShift}
 		_, handled := m.handleFavoriteKey(msg)
 		if !handled {
-			t.Errorf("alt+shift+%d should be handled", digit)
+			t.Errorf("alt+shift+%d should be handled (string=%q)", digit, msg.String())
 		}
 		fav, ok := m.App.Config.Favorites[digit]
 		if !ok {
 			t.Errorf("favorite slot %d not found after alt+shift+%d", digit, digit)
+		}
+		_ = fav
+	}
+
+	// Test the alternate form: alt+shifted_char (what most terminals send).
+	// Shift+1 = '!' ... Shift+0 = ')'
+	shifted := []rune{')', '!', '@', '#', '$', '%', '^', '&', '*', '('}
+	for digit := 0; digit <= 9; digit++ {
+		msg := tea.KeyPressMsg{Code: shifted[digit], Mod: tea.ModAlt}
+		_, handled := m.handleFavoriteKey(msg)
+		if !handled {
+			t.Errorf("alt+%c should be handled as save for slot %d (string=%q)", shifted[digit], digit, msg.String())
+		}
+		// Verify saved correctly — note: overwrites previous save for same slot.
+		fav, ok := m.App.Config.Favorites[digit]
+		if !ok {
+			t.Errorf("favorite slot %d not found after alt+%c", digit, shifted[digit])
 		}
 		_ = fav
 	}

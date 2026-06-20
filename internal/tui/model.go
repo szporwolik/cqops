@@ -922,20 +922,24 @@ func (m *Model) buildContestLine() string {
 		config.ContestDisplayName(&ct), ct.ContestID, ct.NextQSO)
 }
 
-// cycleActiveContest rotates through all configured contests (including None).
-// Persists the new active contest to config immediately.
+// cycleActiveContest rotates through all active contests (excluding None).
+// Persists the new active contest to config silently.
 func (m *Model) cycleActiveContest() {
-	ids := config.SortedContestIDs(m.App.Config)
+	ids := config.ActiveContestIDs(m.App.Config)
 	current := m.App.Config.State.ActiveContest
 
+	// No active contests — nothing to cycle.
+	if len(ids) == 0 {
+		m.toasts.Warn("No contests configured — create one in F9 → Contests")
+		return
+	}
+
 	if current == "" {
-		if len(ids) > 0 {
-			m.App.Config.State.ActiveContest = ids[0]
-			ct := m.App.Config.Contests[ids[0]]
-			m.toasts.Info(fmt.Sprintf("Contest: %s", config.ContestDisplayName(&ct)))
-		}
+		m.App.Config.State.ActiveContest = ids[0]
+		ct := m.App.Config.Contests[ids[0]]
+		m.toasts.Info(fmt.Sprintf("Contest: %s", config.ContestDisplayName(&ct)))
 		m.needRefresh = true
-		m.saveConfig("")
+		config.Save(m.App.ConfigPath, m.App.Config)
 		return
 	}
 
@@ -950,15 +954,17 @@ func (m *Model) cycleActiveContest() {
 				m.toasts.Info("Contest: None")
 			}
 			m.needRefresh = true
-			m.saveConfig("")
+			config.Save(m.App.ConfigPath, m.App.Config)
 			return
 		}
 	}
 
+	// Current contest not found in active list (possibly deleted or set to
+	// not-in-use) — clear and wrap to first.
 	m.App.Config.State.ActiveContest = ""
 	m.toasts.Info("Contest: None")
 	m.needRefresh = true
-	m.saveConfig("")
+	config.Save(m.App.ConfigPath, m.App.Config)
 }
 
 // prefillContestExchange fills the exchange sent/rcvd fields from the active

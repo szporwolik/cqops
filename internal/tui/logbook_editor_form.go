@@ -49,6 +49,7 @@ func (le *LogbookEditor) fillEditForm(q *qso.QSO) {
 	s(qefMySIG, q.MySIG)
 	s(qefMySIGInfo, q.MySIGInfo)
 	s(qefSource, q.Source)
+	s(qefWLStatus, q.WavelogUploaded)
 	sf(qefDistance, q.Distance)
 	sf(qefBearing, q.Bearing)
 	s(qefIOTA, q.IOTA)

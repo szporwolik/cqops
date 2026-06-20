@@ -66,6 +66,7 @@ func (m *Model) handleContestUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 	if m.ui.contestChooser.needsSave {
 		m.ui.contestChooser.needsSave = false
 		m.saveConfig("Contests updated")
+		m.needRefresh = true // contest changes may affect active contest / filtering
 	}
 	if m.ui.contestChooser.done {
 		m.screen = screenMainMenu
