@@ -236,6 +236,10 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			if key.Matches(msg, m.keys.CycleRig) {
 				return m.cycleRig(), true
 			}
+			// Favorite slots: ctrl+shift+digit saves, ctrl+digit recalls.
+			if cmd, handled := m.handleFavoriteKey(msg); handled {
+				return cmd, true
+			}
 		}
 	}
 	return nil, false

@@ -280,14 +280,15 @@ func TestQSOFormPathRowNoOwnGrid(t *testing.T) {
 	m.App.Logbook.Station.Grid = ""        // no own grid
 	m.fields[fieldCall].SetValue("SP9MOA") // callsign entered
 	m.fields[fieldGrid].SetValue("JN18")
+	m.rc.pathCall = "SP9MOA" // simulate commitCall()
 
 	row := m.formPathRow(90)
-	if row == "" {
-		t.Error("formPathRow returned empty — should fall back to station profile")
-	}
-	// Falls back to station profile when no own grid.
-	if !strings.Contains(row, "Op") {
-		t.Error("formPathRow should show station profile when no own grid")
+	// When callsign is entered but grids are unavailable, only badges
+	// (DUPE!, New Call!, New DXCC!) are shown — the station profile is
+	// reserved for when no callsign is present at all.
+	// In this test there are no badges, so the row may be empty.
+	if strings.Contains(row, "Op") || strings.Contains(row, "Rig") {
+		t.Error("formPathRow should NOT show station profile when a callsign is entered (badges only)")
 	}
 }
 

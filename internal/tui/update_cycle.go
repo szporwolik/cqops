@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strings"
+
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
@@ -39,8 +41,14 @@ func (m *Model) cycleLogbook() tea.Cmd {
 	m.invalidatePartnerMapCache()
 	m.rc.logStatsSig = ""
 	m.rc.pathSig = ""
+	m.rc.pathLine = ""
+	m.lookup.wlPrivateData = nil // WL data is logbook-specific
 	m.lookup.wlForceCheck = true
 	m.needRefresh = true
+	// Recheck dupe and new-call status against the new logbook.
+	if strings.TrimSpace(m.fields[fieldCall].Value()) != "" {
+		m.checkDupe()
+	}
 	return nil
 }
 

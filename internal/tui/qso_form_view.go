@@ -277,11 +277,6 @@ func (m *Model) stationProfile() []string {
 	return parts
 }
 
-// renderPlainProfile joins station profile parts into a plain string (no styling).
-func (m *Model) renderPlainProfile() string {
-	return strings.Join(m.stationProfile(), "  \u00b7  ")
-}
-
 // formPathRow renders the info line between the QSO form and recent QSOs table.
 // Two states: no call → station profile (right-aligned); call entered → path (left-aligned)
 // or fall back to station profile if no grids.
@@ -346,13 +341,9 @@ func (m *Model) formPathRow(width int) string {
 			primaryLine = " Path  " + line
 		}
 	}
-	if primaryLine == "" {
-		// No path: show profile left-aligned as fallback.
-		primaryLine = m.renderPlainProfile()
-		if primaryLine != "" && lipgloss.Width(primaryLine) > width {
-			primaryLine = truncateText(primaryLine, width)
-		}
-	}
+	// When a callsign is entered but grids are unavailable, only show
+	// badges (DUPE!, New Call!, New DXCC!) — do NOT fall back to the
+	// station profile. The profile is shown only when no call is entered.
 
 	// Build badge line (DUPE!, New Call!, New DXCC!).
 	const bannerNewCall = "New Call!"

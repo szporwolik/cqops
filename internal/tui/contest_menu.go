@@ -634,6 +634,7 @@ func (c *ContestChooser) viewForm() string {
 	b.WriteString("\n\n")
 	b.WriteString("  Exchange markers")
 	b.WriteString("\n\n")
+
 	markers := [][2]string{
 		{"@rst", "RST sent or received"},
 		{"@serial", "Next QSO sequence number"},
@@ -644,25 +645,44 @@ func (c *ContestChooser) viewForm() string {
 		{"@grid", "DX station grid square"},
 		{"@mygrid", "Your station grid square"},
 	}
-	colW := (w - 6) / 2
-	if colW < 20 {
-		colW = 20
+
+	// Cap width so the reference never stretches indefinitely.
+	refW := w
+	if refW > partnerMapMaxW {
+		refW = partnerMapMaxW
 	}
-	for i := 0; i < len(markers); i += 2 {
-		left := fmt.Sprintf("  %-12s %s", markers[i][0], DimStyle.Render(markers[i][1]))
-		right := ""
-		if i+1 < len(markers) {
-			right = fmt.Sprintf("%-12s %s", markers[i+1][0], DimStyle.Render(markers[i+1][1]))
+	bodyW := refW - 4 // border padding
+
+	// Two-column layout when wide enough; single-column on narrow screens.
+	if bodyW >= 60 {
+		colW := (bodyW - 2) / 2
+		if colW < 25 {
+			colW = 25
 		}
-		row := lipgloss.JoinHorizontal(lipgloss.Top,
-			lipgloss.NewStyle().Width(colW).Render(left),
-			lipgloss.NewStyle().Width(colW).Render(right),
-		)
-		b.WriteString(padOrTrunc(row, w-4))
-		b.WriteString("\n")
+		for i := 0; i < len(markers); i += 2 {
+			left := fmt.Sprintf("  %-12s %s", markers[i][0], DimStyle.Render(markers[i][1]))
+			right := ""
+			if i+1 < len(markers) {
+				right = fmt.Sprintf("%-12s %s", markers[i+1][0], DimStyle.Render(markers[i+1][1]))
+			}
+			row := lipgloss.JoinHorizontal(lipgloss.Top,
+				lipgloss.NewStyle().Width(colW).Render(left),
+				lipgloss.NewStyle().Width(colW).Render(right),
+			)
+			b.WriteString(padOrTrunc(row, bodyW))
+			b.WriteString("\n")
+		}
+	} else {
+		// Single-column on very narrow screens.
+		for _, m := range markers {
+			line := fmt.Sprintf("  %-12s %s", m[0], DimStyle.Render(m[1]))
+			b.WriteString(padOrTrunc(line, bodyW))
+			b.WriteString("\n")
+		}
 	}
+
 	b.WriteString("\n")
-	b.WriteString(DimStyle.Render(" Example: @rst @serial will generate 59 023"))
+	b.WriteString(DimStyle.Render("  Example: @rst @serial will generate 59 023"))
 
 	body := drawMenuWithHeader("Configuration \u2014 Contests \u2014 "+title, b.String(), w)
 	return fillBody(body, contentH)

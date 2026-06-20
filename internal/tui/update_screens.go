@@ -276,16 +276,12 @@ func (m *Model) handleMainMenuUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.C
 			m.ui.configMenu.width = m.width
 			m.ui.configMenu.height = m.height
 			m.screen = screenConfig
-		case "notifications":
-			m.ui.notifMenu = NewNotificationsMenu(m.App.Config)
-			m.ui.notifMenu.width = m.width
-			m.ui.notifMenu.height = m.height
-			m.screen = screenNotifications
-		case "callbook":
-			m.ui.callbookMenu = NewCallbookMenu(m.App.Config)
-			m.ui.callbookMenu.width = m.width
-			m.ui.callbookMenu.height = m.height
-			m.screen = screenCallbook
+		case "station":
+			m.ui.chooser = NewLogbookChooser(m.App, m.toasts)
+			m.ui.chooser.width = m.width
+			m.ui.chooser.height = m.height
+			m.ui.chooser.startEdit(m.App.Config.State.ActiveLogbook)
+			m.screen = screenChooser
 		case "logbook":
 			m.ui.chooser = NewLogbookChooser(m.App, m.toasts)
 			m.ui.chooser.width = m.width
@@ -296,6 +292,11 @@ func (m *Model) handleMainMenuUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.C
 			m.ui.rigChooser.width = m.width
 			m.ui.rigChooser.height = m.height
 			m.screen = screenRigEdit
+		case "callbook":
+			m.ui.callbookMenu = NewCallbookMenu(m.App.Config)
+			m.ui.callbookMenu.width = m.width
+			m.ui.callbookMenu.height = m.height
+			m.screen = screenCallbook
 		case "contest":
 			m.ui.contestChooser = NewContestChooser(m.App, m.toasts)
 			m.ui.contestChooser.width = m.width
@@ -306,6 +307,11 @@ func (m *Model) handleMainMenuUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.C
 			m.ui.integrationMenu.width = m.width
 			m.ui.integrationMenu.height = m.height
 			m.screen = screenIntegration
+		case "notifications":
+			m.ui.notifMenu = NewNotificationsMenu(m.App.Config)
+			m.ui.notifMenu.width = m.width
+			m.ui.notifMenu.height = m.height
+			m.screen = screenNotifications
 		}
 	}
 	if m.ui.mainMenu.done {

@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
@@ -45,7 +46,7 @@ Run without arguments to start the interactive TUI.`,
 
 func Execute() error {
 	applog.Init()
-	applog.Info("══════════ CQOps STARTED ══════════", "v", version.Resolved(), "built", version.ResolvedDate())
+	applog.Info("══════════ CQOps STARTED ══════════", "v", version.Resolved(), "built", version.ResolvedDate(), "utc", time.Now().UTC().Format("2006-01-02 15:04:05"))
 
 	if len(os.Args) <= 1 {
 		return runTUI()

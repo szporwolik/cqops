@@ -13,14 +13,15 @@ import (
 )
 
 type Config struct {
-	General  GeneralConfig        `yaml:"general"`
-	State    StateConfig          `yaml:"state"`
-	QRZ      QRZConfig            `yaml:"qrz,omitempty"`
-	Logbooks map[string]Logbook   `yaml:"logbooks"`
-	Rigs     map[string]RigPreset `yaml:"rigs,omitempty"`
-	Contests map[string]Contest   `yaml:"contests,omitempty"`
-	WSJTX    WSJTXConfig          `yaml:"wsjtx,omitempty"`
-	DXC      DXCConfig            `yaml:"dxc,omitempty"`
+	General   GeneralConfig        `yaml:"general"`
+	State     StateConfig          `yaml:"state"`
+	QRZ       QRZConfig            `yaml:"qrz,omitempty"`
+	Favorites map[int]Favorite     `yaml:"favorites,omitempty"`
+	Logbooks  map[string]Logbook   `yaml:"logbooks"`
+	Rigs      map[string]RigPreset `yaml:"rigs,omitempty"`
+	Contests  map[string]Contest   `yaml:"contests,omitempty"`
+	WSJTX     WSJTXConfig          `yaml:"wsjtx,omitempty"`
+	DXC       DXCConfig            `yaml:"dxc,omitempty"`
 }
 
 type DXCConfig struct {
@@ -62,6 +63,15 @@ type QRZConfig struct {
 	Enabled bool   `yaml:"enabled"`
 	User    string `yaml:"user,omitempty"`
 	Pass    string `yaml:"pass,omitempty"`
+}
+
+// Favorite stores a mode/freq/submode/band snapshot for quick recall.
+// Slots are 0-9, stored under alt+shift+N and recalled with alt+N.
+type Favorite struct {
+	Mode    string  `yaml:"mode,omitempty"`
+	Freq    float64 `yaml:"freq,omitempty"`
+	Submode string  `yaml:"submode,omitempty"`
+	Band    string  `yaml:"band,omitempty"`
 }
 
 type Logbook struct {

@@ -190,7 +190,11 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) bool {
 func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
 	if m.needRefresh {
 		m.needRefresh = false
-		return tea.Batch(cmd, m.refreshQSOS()), true
+		cmd = tea.Batch(cmd, m.refreshQSOS())
+		// Fall through — do NOT short-circuit.  The refresh runs
+		// asynchronously; dropping the current message (e.g. a
+		// navigation key right after a screen transition) would
+		// require the user to press the key twice.
 	}
 	if m.lookup.qrzNeed {
 		m.lookup.qrzNeed = false
