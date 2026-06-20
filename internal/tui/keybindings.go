@@ -14,6 +14,7 @@ type KeyMap struct {
 	LogEditor    key.Binding
 	Config       key.Binding
 	Logs         key.Binding
+	Ref          key.Binding
 	Save         key.Binding
 	Delete       key.Binding
 	Lookup       key.Binding
@@ -66,6 +67,10 @@ func DefaultKeyMap() KeyMap {
 		Logs: key.NewBinding(
 			key.WithKeys("f9"),
 			key.WithHelp("F9", "Logs"),
+		),
+		Ref: key.NewBinding(
+			key.WithKeys("f6"),
+			key.WithHelp("F6", "REF"),
 		),
 		Save: key.NewBinding(
 			key.WithKeys("ctrl+s"),
@@ -260,6 +265,14 @@ func (m *Model) ActiveBindings() []key.Binding {
 			key.NewBinding(key.WithKeys("backspace"), key.WithHelp("Bksp", "Clear")),
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "QSO+Tune")),
 			key.NewBinding(key.WithKeys(" "), key.WithHelp("Spc", "Tune")),
+		)
+	}
+	if m.screen == screenRef {
+		bindings = append(bindings,
+			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("\u2191\u2193", "Navigate")),
+			key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("PgUp/Dn", "Page")),
+			key.NewBinding(key.WithKeys("enter", "insert"), key.WithHelp("Enter/Ins", "Search")),
+			key.NewBinding(key.WithKeys("backspace"), key.WithHelp("Bksp", "Clear")),
 		)
 	}
 	// Partner screen — show F2 Photo when image available.

@@ -274,6 +274,7 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 			m.lookup.partnerData = nil
 			m.lookup.wlPrivateData = nil
 			m.lookup.wlLookupDone = false
+			m.gridSource = gridSourceNone
 			m.screen = screenQSO
 			m.clearFilteredTable()
 			m.invalidatePartnerMapCache()
@@ -301,6 +302,8 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 		}
 	}
 	// fieldFreq: band/mode derivation deferred to focus exit (see onFieldExit).
+	// REF fields (SOTA/POTA/WWFF/IOTA): uppercasing and name resolution
+	// are deferred to focus exit (onFieldExit) for performance.
 }
 
 // =============================================================================
@@ -341,9 +344,16 @@ func (m *Model) onFieldExit() {
 
 	case fieldGrid:
 		m.rc.pathGrid = strings.ToUpper(strings.TrimSpace(m.fields[fieldGrid].Value()))
+		m.gridSource = gridSourceManual
+		m.invalidatePartnerMapCache()
 
 	case fieldFreq:
 		m.applyFreqDefaults()
+
+	case fieldSOTA, fieldPOTA, fieldWWFF, fieldIOTA:
+		m.fields[m.focus].SetValue(strings.ToUpper(m.fields[m.focus].Value()))
+		m.ref.refNamesDirty = true
+		m.applyRefGridAndQTH()
 	}
 }
 
@@ -399,6 +409,8 @@ func (m *Model) resetQSOFields() {
 	}
 	m.dateTimeAuto = true
 	m.retainFocused = false
+	m.gridSource = gridSourceNone
+	m.ref.refNamesDirty = true
 	m.focus = fieldCall
 	m.fields[m.focus].Focus()
 }

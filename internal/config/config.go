@@ -38,6 +38,7 @@ type GeneralConfig struct {
 	SolarAtQSOPane   bool                `yaml:"solar_at_qso_pane,omitempty"`
 	UseCTY           bool                `yaml:"use_cty,omitempty"` // CTY.DAT DXCC country file
 	UseSCP           bool                `yaml:"use_scp,omitempty"` // Super Check Partial callsign database
+	UseRef           bool                `yaml:"use_ref,omitempty"` // REF database
 	Notifications    NotificationsConfig `yaml:"notifications"`
 }
 
@@ -51,6 +52,7 @@ type NotificationsConfig struct {
 
 type StateConfig struct {
 	ActiveLogbook string `yaml:"active_logbook"`
+	RetainComment bool   `yaml:"retain_comment,omitempty"`
 }
 
 type QRZConfig struct {

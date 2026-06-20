@@ -119,6 +119,15 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.screen = screenPSKReporter
 		return nil, true
 
+	case key.Matches(msg, m.keys.Ref):
+		if !m.isREFReady() {
+			m.toasts.Warn("REF database not available — enable in General settings")
+			return nil, true
+		}
+		applog.Debug("tab: F6 REF")
+		m.screen = screenRef
+		return nil, true
+
 	case key.Matches(msg, m.keys.Config):
 		if m.screen == screenMainMenu {
 			applog.Debug("tab: F7 close Config")
@@ -208,12 +217,14 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		switch msg.String() {
 		case "space", "enter":
 			m.retainComment = !m.retainComment
+			m.persistRetainComment()
 		case "tab", "down":
 			m.nextField()
 		case "shift+tab", "up":
 			m.prevField()
 		case "ctrl+r":
 			m.retainComment = !m.retainComment
+			m.persistRetainComment()
 		}
 		return nil, true
 
@@ -234,6 +245,7 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 
 	case key.Matches(msg, m.keys.Retain):
 		m.retainComment = !m.retainComment
+		m.persistRetainComment()
 		return nil, true
 
 	case msg.String() == "ctrl+c":
@@ -306,4 +318,16 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.lookup.wlCall = call
 	}
 	return nil, false
+}
+
+// persistRetainComment syncs the retain-comment checkbox state to the
+// in-memory config and writes it to disk so it survives restarts.
+func (m *Model) persistRetainComment() {
+	if m.App == nil || m.App.Config == nil {
+		return
+	}
+	m.App.Config.State.RetainComment = m.retainComment
+	if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
+		applog.Warn("Failed to save retain comment state", "error", err)
+	}
 }

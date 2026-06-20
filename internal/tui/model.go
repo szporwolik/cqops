@@ -23,6 +23,19 @@ import (
 
 type field int
 
+// gridSource tracks where the QSO form grid value originated.
+type gridSource string
+
+const (
+	gridSourceNone   gridSource = ""
+	gridSourceQRZ    gridSource = "QRZ.com"
+	gridSourceManual gridSource = "manual"
+	gridSourceSOTA   gridSource = "SOTA"
+	gridSourcePOTA   gridSource = "POTA"
+	gridSourceWWFF   gridSource = "WWFF"
+	gridSourceIOTA   gridSource = "IOTA"
+)
+
 const (
 	healthCheckTicks    = 600                     // ticks between health checks (10 min)
 	flrigStatusTimeout  = 1500 * time.Millisecond // context timeout for flrig status
@@ -76,6 +89,7 @@ const (
 	screenLogbookEditor
 	screenNotifications
 	screenDXC
+	screenRef
 )
 
 type Model struct {
@@ -110,6 +124,9 @@ type Model struct {
 	// DX Cluster — telnet connection to dxspider.co.uk.
 	dxc dxcState
 
+	// REF — SOTA/POTA/WWFF reference lookup.
+	ref refState
+
 	// lastDataCheck is the last time CTY.DAT / SCP files were checked for updates.
 	lastDataCheck time.Time
 
@@ -123,6 +140,7 @@ type Model struct {
 	lookup        lookupState
 	retainComment bool
 	retainFocused bool // true when the Retain checkbox has focus (instead of a text field)
+	gridSource    gridSource
 
 	keys       KeyMap
 	help       help.Model
@@ -200,7 +218,7 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 		case fieldComment:
 			ti.CharLimit = 60
 		case fieldSOTA, fieldPOTA, fieldWWFF, fieldIOTA:
-			ti.CharLimit = 20
+			ti.CharLimit = 40
 		}
 		m.fields[i] = ti
 	}
@@ -223,11 +241,13 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	})
 	m.mapView = newMapRenderer()
 	m.psk.filterMins = pskFilterSteps[0] // default 5 min
+	m.ref = newRefState()
 	if dir, err := config.CacheDir(); err == nil {
 		m.psk.cacheDir = dir
 		m.solar.cacheDir = dir
 	}
 	m.applyBeepOnError()
+	m.retainComment = a.Config.State.RetainComment
 	return m
 }
 
@@ -404,6 +424,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case wlResultMsg:
 		m.fillWLData(r)
 		return m, cmd
+	case refRebuildMsg:
+		m.ref.building = false
+		m.ref.refNamesDirty = true
+		if r.err != nil {
+			applog.Warn("REF: rebuild failed", "error", r.err)
+			m.toasts.Error("REF database build failed")
+		} else {
+			m.ref.ready = true
+			applog.Info("REF: rebuild complete", "total", r.total)
+			m.toasts.Success(fmt.Sprintf("REF database ready — %d references", r.total))
+		}
+		return m, cmd
 	case dxcSpotLookupMsg:
 		m.fillDXCFreq(r)
 		return m, cmd
@@ -507,6 +539,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleNotificationsUpdate(msg, cmd)
 	case screenDXC:
 		return m.handleDXCUpdate(msg, cmd)
+	case screenRef:
+		return m.handleRefUpdate(msg, cmd)
 	}
 
 	// QSO form key handling
@@ -675,6 +709,8 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 		body = m.ui.notifMenu.View().Content
 	case screenDXC:
 		body = m.dxcView()
+	case screenRef:
+		body = m.viewRef()
 	}
 	if body == "" {
 		return ""
@@ -790,6 +826,19 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 		}
 	}
 
+	// REF names — resolved from SOTA/POTA/WWFF/IOTA fields.
+	var refBox string
+	refLine := m.buildRefNamesLine()
+	if refLine != "" {
+		refW := lipgloss.Width(formRow)
+		if refW < 40 {
+			refW = 40
+		}
+		refBox = drawBorderedBox(refLine, refW)
+		refBoxH := lipgloss.Height(refBox)
+		tableH -= refBoxH
+	}
+
 	m.recentQSOs.SetSize(tableW, tableH)
 
 	var parts []string
@@ -799,6 +848,9 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 	parts = append(parts, formRow)
 	if scpBox != "" {
 		parts = append(parts, scpBox)
+	}
+	if refBox != "" {
+		parts = append(parts, refBox)
 	}
 	parts = append(parts, m.recentQSOs.View())
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)

@@ -79,6 +79,7 @@ func (m *Model) tabView() string {
 		{"F2 QRZ", (m.screen == screenPartner || m.screen == screenImage) && hasPartner, !hasPartner},
 		{"F4 DXC", m.screen == screenDXC, !dxcOnline},
 		{"F5 HRD", m.screen == screenPSKReporter, !m.inetOnline},
+		{"F6 REF", m.screen == screenRef, !m.isREFReady()},
 		{"F7 LOG", m.screen == screenLogbookEditor, false},
 		{"F8 CFG", m.screen == screenMainMenu || m.screen == screenConfig || m.screen == screenCallbook || m.screen == screenIntegration || m.screen == screenChooser || m.screen == screenRigEdit || m.screen == screenNotifications, false},
 	}

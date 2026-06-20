@@ -13,6 +13,7 @@ func DefaultConfig() *Config {
 			SolarAtQSOPane:   true,
 			UseCTY:           true,
 			UseSCP:           true,
+			UseRef:           true,
 			Notifications: NotificationsConfig{
 				Enabled:       true,
 				QSO:           false,

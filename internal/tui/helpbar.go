@@ -247,6 +247,19 @@ func (m *Model) helpSuffix() string {
 	if m.screen == screenLogView && m.ui.logViewer != nil {
 		return m.ui.logViewer.ScrollInfo()
 	}
+	if m.screen == screenRef && m.ref.searched && len(m.ref.rows) > 0 {
+		total := len(m.ref.rows)
+		tableH := contentHeight(m.height) - 2
+		if tableH < 1 {
+			tableH = 1
+		}
+		page := m.ref.cursor/tableH + 1
+		totalPages := (total + tableH - 1) / tableH
+		if totalPages < 1 {
+			totalPages = 1
+		}
+		return fmt.Sprintf("Result %d/%d  Page %d/%d", m.ref.cursor+1, total, page, totalPages)
+	}
 	if m.screen == screenDXC {
 		return ""
 	}

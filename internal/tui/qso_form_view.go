@@ -46,6 +46,9 @@ func (m *Model) viewForm(width int) string {
 	fmt.Fprintf(&sigB, "%d|%d|", width, m.focus)
 	if m.retainFocused {
 		sigB.WriteString("rf|")
+	} else {
+		// Cursor position affects View() output — must be part of the key.
+		fmt.Fprintf(&sigB, "cp%d|", m.fields[m.focus].Position())
 	}
 	if m.retainComment {
 		sigB.WriteString("rc|")

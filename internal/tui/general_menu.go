@@ -18,6 +18,7 @@ type GeneralMenu struct {
 	solarAtQSO   bool
 	useCTY       bool
 	useSCP       bool
+	useRef       bool
 	cursor       int
 	done         bool
 	saved        bool
@@ -52,6 +53,7 @@ func NewGeneralMenu(cfg *config.Config) *GeneralMenu {
 		solarAtQSO:   cfg.General.SolarAtQSOPane,
 		useCTY:       cfg.General.UseCTY,
 		useSCP:       cfg.General.UseSCP,
+		useRef:       cfg.General.UseRef,
 	}
 }
 
@@ -75,10 +77,10 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if gm.cursor > 0 {
 				gm.cursor--
 			} else {
-				gm.cursor = 7
+				gm.cursor = 8
 			}
 		case "down", "j":
-			if gm.cursor < 7 {
+			if gm.cursor < 8 {
 				gm.cursor++
 			} else {
 				gm.cursor = 0
@@ -109,6 +111,8 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				gm.useCTY = !gm.useCTY
 			case 7:
 				gm.useSCP = !gm.useSCP
+			case 8:
+				gm.useRef = !gm.useRef
 			}
 		case "enter":
 			// no-op: Enter does not save
@@ -158,6 +162,7 @@ func (gm *GeneralMenu) View() tea.View {
 	gm.renderCheckbox(&b, boxW, 5, "Solar at QSO pane", gm.solarAtQSO)
 	gm.renderCheckbox(&b, boxW, 6, "Use CTY.DAT country data", gm.useCTY)
 	gm.renderCheckbox(&b, boxW, 7, "Use Super Check Partial", gm.useSCP)
+	gm.renderCheckbox(&b, boxW, 8, "Use REF database", gm.useRef)
 
 	body := drawMenuWithHeader("Configuration \u2014 General Settings", b.String(), w)
 	return tea.NewView(fillBody(body, contentH))

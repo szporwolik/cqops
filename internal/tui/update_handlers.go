@@ -228,5 +228,16 @@ func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
 			return tea.Batch(cmd, m.dxcSpotLookupCmd(call)), true
 		}
 	}
+	// Auto-trigger REF database rebuild when enabled and empty.
+	if m.App != nil && m.App.Config.General.UseRef &&
+		m.App.RefDB != nil && !m.ref.building && !m.ref.ready {
+		if n, err := m.App.RefDB.Count(); err == nil && n == 0 {
+			if c := m.startRefRebuildCmd(); c != nil {
+				return tea.Batch(cmd, c), true
+			}
+		} else if n > 0 {
+			m.ref.ready = true
+		}
+	}
 	return cmd, false
 }

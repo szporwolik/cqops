@@ -25,6 +25,7 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 - **QRZ callbook** — one-key lookup with auto-fill of name, QTH, grid, country
 - **DXCC & SCP** — prefix-based country/continent/grid lookup, live callsign autocomplete
 - **Wavelog** — cloud upload, download, duplicate detection
+- **REF database** — SOTA summits, POTA parks, WWFF areas, IOTA islands — offline search with grid locators
 - **ADIF 3.1.4** — full import/export with validation, IOTA, Unicode→ASCII sanitization
 - **TUI** — keyboard-driven, SSH-friendly, offline-first SQLite, multi-logbook
 - **Partner view** — grid-to-grid distance, bearing, world map
@@ -131,8 +132,12 @@ cqops --help           # Show all commands
 - [Super Check Partial](https://www.supercheckpartial.com/) — SCP callsign database by Stu Phillips K6TU (public domain contest data, loaded and cached locally)
 - [hamqsl.com](https://www.hamqsl.com/) — Solar conditions data (SFI, SSN, A/K indices) via Paul L Herrman N0NBH 
 - [PSK Reporter](https://pskreporter.info/) — Real-time propagation spot data by Philip Gladstone
+- [SOTA](https://www.sota.org.uk/) — Summits On The Air summit list (public data, loaded and cached locally)
+- [POTA](https://pota.app/) — Parks On The Air park list (public data, loaded and cached locally)
+- [WWFF](https://wwff.co/) — World Wide Flora & Fauna directory (public data, loaded and cached locally)
+- [IOTA](https://www.iota-world.org/) — Islands On The Air directory (downloaded by the user at runtime from iota-world.org for personal non-commercial use; loaded and cached locally)
 
-All licenses are permissive (MIT, Apache 2.0, BSD-3). See `licenses/` directory.
+All licenses are permissive (MIT, Apache 2.0, BSD-3). IOTA data is used under the personal non-commercial terms published by RSGB IOTA Ltd. See `licenses/` directory.
 
 ## Contributing
 

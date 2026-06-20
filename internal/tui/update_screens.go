@@ -12,6 +12,7 @@ import (
 	"github.com/ftl/hamradio/scp"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/ref"
 )
 
 // =============================================================================
@@ -70,8 +71,33 @@ func (m *Model) handleConfigUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd
 			m.App.Config.General.SolarAtQSOPane = m.ui.configMenu.solarAtQSO
 			m.App.Config.General.UseCTY = m.ui.configMenu.useCTY
 			m.App.Config.General.UseSCP = m.ui.configMenu.useSCP
+			m.App.Config.General.UseRef = m.ui.configMenu.useRef
 			m.saveConfig("Settings saved")
 			m.reloadDataFiles()
+			// Handle REF database enable/disable.
+			if m.App.Config.General.UseRef {
+				if m.App.RefDB == nil {
+					cacheDir, _ := config.CacheDir()
+					refPath := filepath.Join(cacheDir, "ref.db")
+					if rdb, err := ref.Open(refPath); err == nil {
+						m.App.RefDB = rdb
+					}
+				}
+				// Start async rebuild if database is empty (won't block UI).
+				if c := m.startRefRebuildCmd(); c != nil {
+					cmd = tea.Batch(cmd, c)
+				}
+			} else {
+				// UseRef disabled — close database and reset state.
+				if m.App.RefDB != nil {
+					m.App.RefDB.Close()
+					m.App.RefDB = nil
+				}
+				m.ref.ready = false
+				m.ref.building = false
+				m.ref.searched = false
+				m.ref.rows = nil
+			}
 			m.screen = screenMainMenu
 		}
 	}
@@ -185,6 +211,20 @@ func (m *Model) reloadDataFiles() {
 			applog.Info("SCP: callsign database loaded on demand")
 		} else {
 			applog.Info("SCP: no cached data yet — will fetch when online")
+		}
+	}
+
+	if m.App.Config.General.UseRef && m.App.RefDB == nil {
+		refPath := filepath.Join(cacheDir, "ref.db")
+		if rdb, openErr := ref.Open(refPath); openErr == nil {
+			m.App.RefDB = rdb
+			applog.Info("REF: database opened on demand")
+			// Check if already populated.
+			if n, err := rdb.Count(); err == nil && n > 0 {
+				m.ref.ready = true
+			}
+		} else {
+			applog.Info("REF: cannot open database — will rebuild when online")
 		}
 	}
 }

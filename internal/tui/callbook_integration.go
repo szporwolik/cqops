@@ -143,9 +143,15 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 		m.fields[fieldName].SetValue(d.Name)
 	}
 	if d.Grid != "" {
-		m.fields[fieldGrid].SetValue(formatLocator(d.Grid))
-		m.rc.pathGrid = strings.ToUpper(formatLocator(d.Grid))
-		applog.Debug("QRZ: filled partner grid", "grid", d.Grid)
+		// Only fill grid from QRZ if no higher-priority source has set it
+		// (manual entry, SOTA, POTA, WWFF, or IOTA take precedence).
+		if m.gridSource == gridSourceNone || m.gridSource == gridSourceQRZ {
+			m.fields[fieldGrid].SetValue(formatLocator(d.Grid))
+			m.rc.pathGrid = strings.ToUpper(formatLocator(d.Grid))
+			m.gridSource = gridSourceQRZ
+			m.invalidatePartnerMapCache()
+			applog.Debug("QRZ: filled partner grid", "grid", d.Grid)
+		}
 	}
 	if d.QTH != "" {
 		m.fields[fieldQTH].SetValue(d.QTH)

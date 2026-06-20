@@ -103,6 +103,7 @@ func (m *Model) viewPartner() string {
 		m.App.Logbook.Wavelog != nil && m.App.Logbook.Wavelog.Enabled,
 		m.App.Config.General.RenderMap,
 		m.App.Config.General.DrawGrayline)
+	fmt.Fprintf(&sigB, "|fmgrid=%s|gridsrc=%s", m.fields[fieldGrid].Value(), m.gridSource)
 	// Inline photo state — invalidate cache when photo loads.
 	if d != nil && d.ImageURL != "" {
 		picContent := m.photo.partnerPicViewer.View().Content
@@ -321,8 +322,15 @@ func (m *Model) renderCallbookRows(d *qrz.CallData, maxW int) string {
 		}
 	}
 	add("Name", d.Name)
-	if d.Grid != "" {
+	// Show the QSO form grid (which may differ from QRZ grid due to REF autofill)
+	// with its source, or fall back to QRZ grid.
+	formGrid := strings.TrimSpace(m.fields[fieldGrid].Value())
+	if formGrid != "" && m.gridSource != "" && m.gridSource != gridSourceQRZ {
+		add("Grid", osc8Link("http://www.levinecentral.com/ham/grid_square.php?Grid="+formGrid, formGrid)+"  "+DimStyle.Render("("+string(m.gridSource)+")"))
+	} else if d.Grid != "" {
 		add("Grid", osc8Link("http://www.levinecentral.com/ham/grid_square.php?Grid="+d.Grid, d.Grid))
+	} else if formGrid != "" {
+		add("Grid", formGrid)
 	} else {
 		add("Grid", "")
 	}
@@ -566,7 +574,11 @@ func (m *Model) getOrBuildMap(d *qrz.CallData, mapW, mapAvailH int) string {
 	}
 
 	ownGrid := m.App.Logbook.Station.Grid
-	partnerGrid := d.Grid
+	// Use QSO form grid if set (may differ from QRZ due to REF autofill).
+	partnerGrid := strings.TrimSpace(m.fields[fieldGrid].Value())
+	if partnerGrid == "" {
+		partnerGrid = d.Grid
+	}
 
 	// No location data — show hint instead of map.
 	if ownGrid == "" {
@@ -581,7 +593,9 @@ func (m *Model) getOrBuildMap(d *qrz.CallData, mapW, mapAvailH int) string {
 	if partnerGrid != "" {
 		pl, plon = gridToLatLon(partnerGrid)
 	}
-	if d.Lat != "" {
+	// Only fall back to QRZ lat/lon when no form grid is set (i.e. no REF/manual override).
+	// This ensures field activation coordinates take precedence over home QTH.
+	if partnerGrid == "" && d.Lat != "" {
 		pl = parseCoord(d.Lat)
 		plon = parseCoord(d.Lon)
 	}
@@ -597,4 +611,7 @@ func (m *Model) getOrBuildMap(d *qrz.CallData, mapW, mapAvailH int) string {
 func (m *Model) invalidatePartnerMapCache() {
 	m.rc.partnerView = ""
 	m.rc.partnerViewSig = ""
+	if m.mapView != nil {
+		m.mapView.Invalidate()
+	}
 }

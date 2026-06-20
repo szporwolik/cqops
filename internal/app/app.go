@@ -10,6 +10,7 @@ import (
 	"github.com/ftl/hamradio/scp"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/ref"
 	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/wsjtx"
 )
@@ -25,6 +26,7 @@ type App struct {
 	WSJTXUpdated chan struct{}
 	DXCC         *dxcc.Prefixes // in-memory DXCC prefix→country lookup
 	SCP          *scp.Database  // in-memory Super Check Partial database
+	RefDB        *ref.DB        // reference database (SOTA/POTA/WWFF)
 
 	// lastWSJTX tracks the effective WSJT-X config last applied to the
 	// listener. Used to avoid unnecessary Stop/Start cycles when config
@@ -98,6 +100,16 @@ func Init(logbookFlag string) (*App, error) {
 			applog.Info("SCP: no cached data yet — will fetch when online")
 		}
 	}
+	if app.Config.General.UseRef {
+		cacheDir, _ := config.CacheDir()
+		refPath := filepath.Join(cacheDir, "ref.db")
+		if rdb, err := ref.Open(refPath); err == nil {
+			app.RefDB = rdb
+			applog.Info("REF: database opened")
+		} else {
+			applog.Info("REF: cannot open database — will rebuild when online")
+		}
+	}
 
 	return app, nil
 }
@@ -108,6 +120,10 @@ func (a *App) Close() {
 	if a.DB != nil {
 		applog.Debug("Closing database")
 		a.DB.Close()
+	}
+	if a.RefDB != nil {
+		applog.Debug("Closing reference database")
+		a.RefDB.Close()
 	}
 	applog.Info("CQOps shutdown complete")
 }

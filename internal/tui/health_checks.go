@@ -11,6 +11,7 @@ import (
 	"github.com/ftl/hamradio/scp"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/ref"
 )
 
 // =============================================================================
@@ -119,6 +120,14 @@ func (m *Model) maybeRefreshDataFiles() tea.Cmd {
 						applog.Info("SCP: database updated")
 					}
 				}
+			}
+		}
+
+		if m.App.Config.General.UseRef && m.App.RefDB == nil {
+			refPath := filepath.Join(cacheDir, "ref.db")
+			if rdb, openErr := ref.Open(refPath); openErr == nil {
+				m.App.RefDB = rdb
+				applog.Info("REF: database opened on demand")
 			}
 		}
 		return nil
