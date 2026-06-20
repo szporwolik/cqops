@@ -64,9 +64,12 @@ const (
 	qefSOTA
 	qefPOTA
 	qefWWFF
+	qefSIG
 	qefMySOTA
 	qefMyPOTA
 	qefMyWWFF
+	qefCQZone
+	qefITUZone
 	qefWLStatus // non-focusable read-only
 	qefSource   // non-focusable read-only — last real field
 	qefCount
@@ -78,8 +81,10 @@ var qefLabels = []string{
 	"QTH", "Country", "Comment", "Notes", "TX Power",
 	"Station Call", "Operator", "My Grid", "My Rig", "My Antenna",
 	"Distance km", "Bearing",
-	"IOTA", "SOTA Ref", "POTA Ref", "WWFF Ref",
-	"My SOTA", "My POTA", "My WWFF", "WL Upload (RO)",
+	"IOTA", "SOTA Ref", "POTA Ref", "WWFF Ref", "SIG",
+	"My SOTA", "My POTA", "My WWFF",
+	"CQ Zone", "ITU Zone",
+	"WL Upload (RO)",
 	"Source (RO)",
 }
 

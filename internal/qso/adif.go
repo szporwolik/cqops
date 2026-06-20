@@ -187,6 +187,7 @@ func (q *QSO) toADIFWithStation(stationCall string) string {
 	if isValidIOTA(q.IOTA) {
 		set(adifield.IOTA, q.IOTA)
 	}
+	set(adifield.SIG, q.SIG)
 	set(adifield.MY_SOTA_REF, q.MySOTARef)
 	set(adifield.MY_POTA_REF, q.MyPOTARef)
 	set(adifield.MY_WWFF_REF, q.MyWWFFRef)
@@ -256,6 +257,7 @@ func ParseADIFRecord(r adif.Record, source string) *QSO {
 	if qs.IOTA != "" && !isValidIOTA(qs.IOTA) {
 		qs.IOTA = ""
 	}
+	qs.SIG = get(adifield.SIG)
 	qs.MySOTARef = get(adifield.MY_SOTA_REF)
 	qs.MyPOTARef = get(adifield.MY_POTA_REF)
 	qs.MyWWFFRef = get(adifield.MY_WWFF_REF)

@@ -51,8 +51,9 @@ type NotificationsConfig struct {
 }
 
 type StateConfig struct {
-	ActiveLogbook string `yaml:"active_logbook"`
-	RetainComment bool   `yaml:"retain_comment,omitempty"`
+	ActiveLogbook   string `yaml:"active_logbook"`
+	RetainComment   bool   `yaml:"retain_comment,omitempty"`
+	RetainedComment string `yaml:"retained_comment,omitempty"`
 }
 
 type QRZConfig struct {

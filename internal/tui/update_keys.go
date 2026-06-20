@@ -327,6 +327,7 @@ func (m *Model) persistRetainComment() {
 		return
 	}
 	m.App.Config.State.RetainComment = m.retainComment
+	m.App.Config.State.RetainedComment = m.fields[fieldComment].Value()
 	if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
 		applog.Warn("Failed to save retain comment state", "error", err)
 	}

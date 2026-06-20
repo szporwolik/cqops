@@ -44,6 +44,7 @@ func (m *Model) saveQSO() tea.Cmd {
 	qs.POTARef = strings.TrimSpace(m.fields[fieldPOTA].Value())
 	qs.WWFFRef = strings.TrimSpace(m.fields[fieldWWFF].Value())
 	qs.IOTA = strings.TrimSpace(m.fields[fieldIOTA].Value())
+	qs.SIG = strings.TrimSpace(m.fields[fieldSIG].Value())
 	station := qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
 		Operator:        m.App.Logbook.Station.Operator,

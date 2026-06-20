@@ -50,9 +50,12 @@ func (le *LogbookEditor) fillEditForm(q *qso.QSO) {
 	s(qefSOTA, q.SOTARef)
 	s(qefPOTA, q.POTARef)
 	s(qefWWFF, q.WWFFRef)
+	s(qefSIG, q.SIG)
 	s(qefMySOTA, q.MySOTARef)
 	s(qefMyPOTA, q.MyPOTARef)
 	s(qefMyWWFF, q.MyWWFFRef)
+	s(qefCQZone, q.CQZone)
+	s(qefITUZone, q.ITUZone)
 	// WL Status is read-only — set via async upload
 	le.fields[qefWLStatus].SetValue(q.WavelogUploaded)
 }
@@ -76,7 +79,9 @@ func (le *LogbookEditor) readEditForm() *qso.QSO {
 		MyRig: g(qefMyRig), MyAntenna: g(qefMyAntenna), Source: g(qefSource),
 		Distance: gf(qefDistance), Bearing: gf(qefBearing),
 		IOTA: g(qefIOTA), SOTARef: g(qefSOTA), POTARef: g(qefPOTA), WWFFRef: g(qefWWFF),
+		SIG:       g(qefSIG),
 		MySOTARef: g(qefMySOTA), MyPOTARef: g(qefMyPOTA), MyWWFFRef: g(qefMyWWFF),
+		CQZone: g(qefCQZone), ITUZone: g(qefITUZone),
 		WavelogUploaded: g(qefWLStatus),
 		CreatedAt:       le.editing.CreatedAt,
 	}

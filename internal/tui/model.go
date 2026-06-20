@@ -62,6 +62,7 @@ const (
 	fieldPOTA
 	fieldWWFF
 	fieldIOTA
+	fieldSIG
 	fieldComment
 	fieldCount // sentinel: must be last; equals number of fields above
 )
@@ -69,7 +70,7 @@ const (
 var fieldNames = []string{
 	"Date UTC", "Time UTC", "Call", "RST sent", "RST rcvd", "Frequency", "Band",
 	"Mode", "Submode", "Name", "QTH", "Grid", "Country", "Power W", "Freq RX",
-	"SOTA Ref", "POTA Ref", "WWFF Ref", "IOTA", "Comment",
+	"SOTA Ref", "POTA Ref", "WWFF Ref", "IOTA", "SIG", "Comment",
 }
 
 type screenKind int
@@ -219,6 +220,8 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 			ti.CharLimit = 60
 		case fieldSOTA, fieldPOTA, fieldWWFF, fieldIOTA:
 			ti.CharLimit = 40
+		case fieldSIG:
+			ti.CharLimit = 30
 		}
 		m.fields[i] = ti
 	}
@@ -248,6 +251,9 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	}
 	m.applyBeepOnError()
 	m.retainComment = a.Config.State.RetainComment
+	if a.Config.State.RetainedComment != "" {
+		m.fields[fieldComment].SetValue(a.Config.State.RetainedComment)
+	}
 	return m
 }
 

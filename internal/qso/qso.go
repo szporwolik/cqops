@@ -34,6 +34,7 @@ type QSO struct {
 	POTARef         string
 	WWFFRef         string
 	IOTA            string
+	SIG             string // Special Interest Group name (e.g. "SOTA", "POTA")
 	MySOTARef       string
 	MyPOTARef       string
 	MyWWFFRef       string

@@ -14,7 +14,7 @@ import (
 var (
 	formLeft      = []field{fieldDate, fieldTime, fieldCall, fieldRSTSent, fieldRSTRcvd, fieldFreq, fieldBand}
 	formMiddle    = []field{fieldMode, fieldSubmode, fieldName, fieldQTH, fieldGrid, fieldCountry}
-	formRight     = []field{fieldTXPower, fieldFreqRx, fieldSOTA, fieldPOTA, fieldWWFF, fieldIOTA}
+	formRight     = []field{fieldTXPower, fieldFreqRx, fieldSOTA, fieldPOTA, fieldWWFF, fieldIOTA, fieldSIG}
 	allFields     = buildAllFields()
 	choiceIconStr = DimStyle.Render("\u25bc ")
 	choiceIconW   = lipgloss.Width(choiceIconStr)
