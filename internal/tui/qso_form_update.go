@@ -322,6 +322,12 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 			m.rc.pathGrid = ""
 			m.rc.pathSig = ""
 			m.rc.logStatsSig = ""
+			// Clear QRZ-populated fields so old callsign data does not bleed
+			// into the new callsign before the next lookup completes.
+			m.fields[fieldName].SetValue("")
+			m.fields[fieldQTH].SetValue("")
+			m.fields[fieldGrid].SetValue("")
+			m.fields[fieldCountry].SetValue("")
 			m.updateSCP()
 		}
 

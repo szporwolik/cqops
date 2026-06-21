@@ -147,6 +147,11 @@ func (m *Model) dxcFillFromSelected() {
 	m.lookup.wlPrivateData = nil
 	m.lookup.wlLookupDone = false
 	m.invalidatePartnerMapCache()
+	// Clear QRZ-populated fields so old callsign data does not bleed.
+	m.fields[fieldName].SetValue("")
+	m.fields[fieldQTH].SetValue("")
+	m.fields[fieldGrid].SetValue("")
+	m.fields[fieldCountry].SetValue("")
 
 	// Fill frequency: when WSJT-X is offline, use DXC spot frequency.
 	if !m.wsjtx.online {
