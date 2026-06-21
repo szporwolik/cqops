@@ -255,22 +255,32 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		case "space", "enter":
 			m.retainComment = !m.retainComment
 			persistCmd = m.persistRetainComment()
-		case "tab", "down":
+		case "tab":
 			m.nextField()
-		case "shift+tab", "up":
+		case "shift+tab":
 			m.prevField()
+		case "down":
+			m.nextRowField()
+		case "up":
+			m.prevRowField()
 		case "ctrl+t":
 			m.retainComment = !m.retainComment
 			persistCmd = m.persistRetainComment()
 		}
 		return persistCmd, true
 
-	case key.Matches(msg, m.keys.PrevField):
+	// Tab jumps horizontally across columns; Down/Up walk vertically.
+	case msg.String() == "tab":
+		m.nextField()
+		return nil, true
+	case msg.String() == "shift+tab":
 		m.prevField()
 		return nil, true
-
-	case key.Matches(msg, m.keys.NextField):
-		m.nextField()
+	case msg.String() == "down":
+		m.nextRowField()
+		return nil, true
+	case msg.String() == "up":
+		m.prevRowField()
 		return nil, true
 
 	case key.Matches(msg, m.keys.Save):
@@ -280,16 +290,10 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return m.openSpotDialog(), true
 
 	case key.Matches(msg, m.keys.Enter):
-		call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
-		if call != "" && m.lookupsCompleteForCall(call) && !m.dupe {
-			return m.saveQSO(), true
-		}
-		if m.dupe {
-			// Let saveQSO handle dupe confirmation (first press warns,
-			// second press logs).
-			return m.saveQSO(), true
-		}
-		return m.commitAndLookup(), true
+		// Enter logs what's in the form. Dupe check + two-press confirmation
+		// is handled inside saveQSO. Lookups (QRZ, Wavelog) are dispatched
+		// automatically via onFieldExit → tick loop — no need to trigger them here.
+		return m.saveQSO(), true
 
 	case key.Matches(msg, m.keys.Delete):
 		m.clearForm()

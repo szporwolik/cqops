@@ -43,6 +43,7 @@ var migrations = []string{
 		my_wwff_ref TEXT DEFAULT '',
 		iota TEXT DEFAULT '',
 		sig TEXT DEFAULT '',
+		sig_info TEXT DEFAULT '',
 		wavelog_uploaded TEXT DEFAULT '',
 
 		station_callsign TEXT,

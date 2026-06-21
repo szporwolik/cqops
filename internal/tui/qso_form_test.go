@@ -142,26 +142,52 @@ func TestQSOFormEmptyValues(t *testing.T) {
 	}
 }
 
-func TestQSOFormNextField(t *testing.T) {
+func TestQSOFormNextRowField(t *testing.T) {
 	m := newTestModel()
 	m.focus = fieldCall
 	m.fields[fieldCall].Focus()
 
 	initialFocus := m.focus
-	m.nextField()
+	m.nextRowField()
 	if m.focus == initialFocus {
-		t.Error("nextField did not change focus from Call")
+		t.Error("nextRowField did not change focus from Call")
+	}
+	// Vertical next from Call should go to RSTSent (next field in enum order).
+	if m.focus != fieldRSTSent {
+		t.Errorf("nextRowField from Call gave focus=%d, want fieldRSTSent=%d", m.focus, fieldRSTSent)
 	}
 }
 
-func TestQSOFormPrevField(t *testing.T) {
+func TestQSOFormPrevRowField(t *testing.T) {
 	m := newTestModel()
 	m.focus = fieldTime // second field
 	m.fields[fieldTime].Focus()
 
-	m.prevField()
+	m.prevRowField()
 	if m.focus != fieldDate {
-		t.Errorf("prevField should move to Date from Time, got focus=%d", m.focus)
+		t.Errorf("prevRowField should move to Date from Time, got focus=%d", m.focus)
+	}
+}
+
+func TestQSOFormNextFieldHorizontal(t *testing.T) {
+	m := newTestModel()
+	// Call is left[2]; horizontal Tab should go to middle[2] = Name.
+	m.focus = fieldCall
+	m.fields[fieldCall].Focus()
+	m.nextField()
+	if m.focus != fieldName {
+		t.Errorf("horizontal nextField from Call gave focus=%d, want fieldName=%d", m.focus, fieldName)
+	}
+}
+
+func TestQSOFormPrevFieldHorizontal(t *testing.T) {
+	m := newTestModel()
+	// Time is left[1]; horizontal Shift+Tab should go to right[1] = FreqRx.
+	m.focus = fieldTime
+	m.fields[fieldTime].Focus()
+	m.prevField()
+	if m.focus != fieldFreqRx {
+		t.Errorf("horizontal prevField from Time gave focus=%d, want fieldFreqRx=%d", m.focus, fieldFreqRx)
 	}
 }
 

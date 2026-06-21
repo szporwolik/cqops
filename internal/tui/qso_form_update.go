@@ -99,16 +99,22 @@ func (m *Model) nextField() {
 	if m.focus == fieldComment {
 		m.retainFocused = true
 	} else {
-		m.focus = (m.focus + 1) % fieldCount
-		// Skip hidden fields.
-		for m.isFieldHidden(m.focus) && m.focus != fieldComment {
-			m.focus = (m.focus + 1) % fieldCount
+		// Horizontal tab: jump to the same row position in the next column.
+		// Left → Middle → Right → Left. Comment wraps to first field.
+		col, pos := m.fieldColumnPos(m.focus)
+		next := m.horizontalTabTarget(col, pos, +1)
+		m.focus = next
+		// Skip hidden fields (exchange fields when no contest active).
+		for m.isFieldHidden(m.focus) {
+			col2, pos2 := m.fieldColumnPos(m.focus)
+			m.focus = m.horizontalTabTarget(col2, pos2, +1)
 		}
 		m.fields[m.focus].Focus()
 	}
 }
 
-// prevField moves focus to the previous QSO form field in sequence.
+// prevField moves focus to the previous QSO form field — horizontal column
+// cycling in reverse (Right → Middle → Left → Right).
 func (m *Model) prevField() {
 	m.onFieldExit()
 
@@ -123,13 +129,155 @@ func (m *Model) prevField() {
 	if m.focus == 0 {
 		m.retainFocused = true
 	} else {
-		m.focus--
-		// Skip hidden fields.
-		for m.isFieldHidden(m.focus) && m.focus > 0 {
-			m.focus--
+		col, pos := m.fieldColumnPos(m.focus)
+		next := m.horizontalTabTarget(col, pos, -1)
+		m.focus = next
+		for m.isFieldHidden(m.focus) {
+			col2, pos2 := m.fieldColumnPos(m.focus)
+			m.focus = m.horizontalTabTarget(col2, pos2, -1)
 		}
 		m.fields[m.focus].Focus()
 	}
+}
+
+// formColumns returns the three QSO form column arrays.
+func formColumns() [3][]field {
+	return [3][]field{formLeft, formMiddle, formRight}
+}
+
+// fieldColumnPos returns the column index (0=left, 1=middle, 2=right, 3=comment)
+// and the row position within that column for the given field.
+func (m *Model) fieldColumnPos(f field) (col, pos int) {
+	if f == fieldComment {
+		return 3, 0
+	}
+	for ci, colFields := range formColumns() {
+		for pi, cf := range colFields {
+			if cf == f {
+				return ci, pi
+			}
+		}
+	}
+	return 0, 0 // fallback
+}
+
+// horizontalTabTarget returns the field at the same row position in the next
+// (dir=+1) or previous (dir=-1) column. Wraps around columns.
+func (m *Model) horizontalTabTarget(fromCol, fromPos, dir int) field {
+	cols := formColumns()
+	toCol := (fromCol + dir + len(cols)) % len(cols)
+	targets := cols[toCol]
+	// Clamp to the last row if the target column is shorter.
+	if fromPos >= len(targets) {
+		fromPos = len(targets) - 1
+	}
+	return targets[fromPos]
+}
+
+// nextRowField moves focus to the next field vertically (Down arrow).
+// Walks down within the current column, then to Comment (the row below all
+// columns), then wraps to the top of the first column.
+func (m *Model) nextRowField() {
+	m.onFieldExit()
+
+	if m.retainFocused {
+		m.retainFocused = false
+		m.focus = 0
+		m.fields[m.focus].Focus()
+		return
+	}
+
+	m.fields[m.focus].Blur()
+	if m.focus == fieldComment {
+		// Comment is the bottom row. Wrap to the top of the left column.
+		m.focus = formLeft[0]
+	} else {
+		col, pos := m.fieldColumnPos(m.focus)
+		if col < 0 || col > 2 {
+			// Not in a column (shouldn't happen). Fall back to linear.
+			m.focus = (m.focus + 1) % fieldCount
+		} else {
+			cols := formColumns()
+			if pos+1 < len(cols[col]) {
+				// Same column, next row.
+				m.focus = cols[col][pos+1]
+			} else {
+				// Bottom of column → go to Comment (the row below).
+				m.focus = fieldComment
+			}
+		}
+	}
+	// Skip hidden fields (exchange fields when no contest).
+	for m.isFieldHidden(m.focus) {
+		col, pos := m.fieldColumnPos(m.focus)
+		if col < 0 || col > 2 {
+			m.focus = (m.focus + 1) % fieldCount
+		} else {
+			cols := formColumns()
+			if pos+1 < len(cols[col]) {
+				m.focus = cols[col][pos+1]
+			} else {
+				m.focus = fieldComment
+				break
+			}
+		}
+	}
+	m.fields[m.focus].Focus()
+}
+
+// prevRowField moves focus to the previous field vertically (Up arrow).
+// Walks up within the current column, then to Comment (the row below all
+// columns), then wraps to the bottom of the last column.
+func (m *Model) prevRowField() {
+	m.onFieldExit()
+
+	if m.retainFocused {
+		m.retainFocused = false
+		m.focus = fieldComment
+		m.fields[m.focus].Focus()
+		return
+	}
+
+	m.fields[m.focus].Blur()
+	if m.focus == fieldComment {
+		// Comment is the bottom row. Go up to the last field of the right column.
+		rc := formRight
+		m.focus = rc[len(rc)-1]
+	} else {
+		col, pos := m.fieldColumnPos(m.focus)
+		if col < 0 || col > 2 {
+			m.focus--
+			if m.focus < 0 {
+				m.focus = fieldComment
+			}
+		} else {
+			if pos > 0 {
+				// Same column, previous row.
+				m.focus = formColumns()[col][pos-1]
+			} else {
+				// Top of column → go to Comment (the row below).
+				m.focus = fieldComment
+			}
+		}
+	}
+	// Skip hidden fields.
+	for m.isFieldHidden(m.focus) {
+		col, pos := m.fieldColumnPos(m.focus)
+		if col < 0 || col > 2 {
+			m.focus--
+			if m.focus < 0 {
+				m.focus = fieldComment
+			}
+		} else {
+			if pos > 0 {
+				m.focus = formColumns()[col][pos-1]
+			} else {
+				m.focus = fieldComment
+				break
+			}
+		}
+	}
+	m.fields[m.focus].Focus()
 }
 
 // =============================================================================

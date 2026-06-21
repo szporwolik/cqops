@@ -689,28 +689,30 @@ func TestSaveQSOExchangeFields(t *testing.T) {
 	m.App.Logbook.ActiveContest = "c1"
 
 	fillMinimalValidQSO(m)
-	m.fields[fieldExchSent].SetValue("599 001")
+	// Sent exchange is auto-generated from the contest template ("599 @serial"
+	// with NextQSO=0 → "599 000"). Only set the received exchange manually —
+	// that's what the operator types during the QSO.
 	m.fields[fieldExchRcvd].SetValue("599 042")
 	m.saveQSO()()
 
 	saved := latestQSO(t, m)
-	if saved.ExchSent != "599 001" {
-		t.Errorf("ExchSent = %q, want 599 001", saved.ExchSent)
+	if saved.ExchSent != "599 000" {
+		t.Errorf("ExchSent = %q, want 599 000 (template-generated with NextQSO=0)", saved.ExchSent)
 	}
 	if saved.ExchRcvd != "599 042" {
 		t.Errorf("ExchRcvd = %q, want 599 042", saved.ExchRcvd)
 	}
-	if saved.STX != 1 {
-		t.Errorf("STX = %d, want 1 (last integer in '599 001')", saved.STX)
+	if saved.STX != 0 {
+		t.Errorf("STX = %d, want 0 (last integer in '599 000' is 0)", saved.STX)
 	}
 	if saved.SRX != 42 {
 		t.Errorf("SRX = %d, want 42 (last integer in '599 042')", saved.SRX)
 	}
-	if saved.STXString != "599 001" {
-		t.Errorf("STXString = %q, want 599 001", saved.STXString)
+	if saved.STXString != "000" {
+		t.Errorf("STXString = %q, want 000 (exchange without RST)", saved.STXString)
 	}
-	if saved.SRXString != "599 042" {
-		t.Errorf("SRXString = %q, want 599 042", saved.SRXString)
+	if saved.SRXString != "042" {
+		t.Errorf("SRXString = %q, want 042 (exchange without RST)", saved.SRXString)
 	}
 }
 

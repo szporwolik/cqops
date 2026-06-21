@@ -65,6 +65,7 @@ const (
 	fieldWWFF
 	fieldIOTA
 	fieldSIG
+	fieldSIGInfo
 	fieldComment
 	fieldCount // sentinel: must be last; equals number of fields above
 )
@@ -73,7 +74,7 @@ var fieldNames = []string{
 	"Date UTC", "Time UTC", "Call", "RST sent", "RST rcvd", "Frequency", "Band",
 	"Exch sent", "Exch rcvd",
 	"Mode", "Submode", "Name", "QTH", "Grid", "Country", "Power W", "Freq RX",
-	"SOTA Ref", "POTA Ref", "WWFF Ref", "IOTA", "SIG", "Comment",
+	"SOTA Ref", "POTA Ref", "WWFF Ref", "IOTA", "SIG", "SIG Info", "Comment",
 }
 
 type screenKind int
@@ -257,6 +258,8 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 			ti.CharLimit = 40
 		case fieldSIG:
 			ti.CharLimit = 30
+		case fieldSIGInfo:
+			ti.CharLimit = 40
 		}
 		m.fields[i] = ti
 	}
@@ -1081,12 +1084,14 @@ func (m *Model) prefillContestExchange() {
 		return
 	}
 
+	// Sent exchange: always regenerate (serial increments each QSO).
 	if ct.PrefillExchange && ct.ExchangeSent != "" {
 		val := m.resolveExchangeMarkers(ct.ExchangeSent, "sent", ct.NextQSO)
 		m.fields[fieldExchSent].SetValue(val)
 	}
 
-	if ct.PrefillExchangeRcvd && ct.ExchangeRcvd != "" {
+	// Received exchange: only fill if empty (don't overwrite user input).
+	if ct.PrefillExchangeRcvd && ct.ExchangeRcvd != "" && strings.TrimSpace(m.fields[fieldExchRcvd].Value()) == "" {
 		val := strings.TrimSpace(m.resolveExchangeMarkers(ct.ExchangeRcvd, "rcvd", ct.NextQSO))
 		m.fields[fieldExchRcvd].SetValue(val)
 	}

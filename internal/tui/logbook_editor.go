@@ -70,6 +70,7 @@ const (
 	qefPOTA
 	qefWWFF
 	qefSIG
+	qefSIGInfo
 	qefMySOTA
 	qefMyPOTA
 	qefMyWWFF
@@ -95,7 +96,7 @@ var qefLabels = []string{
 	"My CQ Zone", "My ITU Zone", "My DXCC",
 	"My SIG", "My SIG Info",
 	"Distance km", "Bearing",
-	"IOTA", "SOTA Ref", "POTA Ref", "WWFF Ref", "SIG",
+	"IOTA", "SOTA Ref", "POTA Ref", "WWFF Ref", "SIG", "SIG Info",
 	"My SOTA", "My POTA", "My WWFF",
 	"CQ Zone", "ITU Zone",
 	"Exch Sent", "Exch Rcvd", "STX", "SRX", "STX String", "SRX String", "Contest ID",

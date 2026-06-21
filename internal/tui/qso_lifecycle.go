@@ -18,7 +18,13 @@ type qsoRefreshedMsg struct{}
 // saveQSO validates, persists, and uploads the current QSO from the form fields.
 // It orchestrates validation, DB insert, Wavelog upload, toast feedback,
 // and form clearing/retention. This is cross-cutting lifecycle logic, not form-only.
+// Called directly by Enter (and Ctrl+S). All pre-save autofill (call commit,
+// DXCC, contest exchange, RST, submode, dupe check) runs here so Enter is a
+// single action: "log what's in the form".
 func (m *Model) saveQSO() tea.Cmd {
+	m.commitCall()
+	m.dxccAutoFill()
+	m.prefillContestExchange()
 	m.autoFillRST()
 	m.autoFillSSBSubmode()
 	m.checkDupe() // ensure dupe state is fresh before saving
@@ -56,22 +62,17 @@ func (m *Model) saveQSO() tea.Cmd {
 	qs.WWFFRef = strings.TrimSpace(m.fields[fieldWWFF].Value())
 	qs.IOTA = strings.TrimSpace(m.fields[fieldIOTA].Value())
 	qs.SIG = strings.TrimSpace(m.fields[fieldSIG].Value())
+	qs.SIGInfo = strings.TrimSpace(m.fields[fieldSIGInfo].Value())
 	qs.ExchSent = strings.TrimSpace(m.fields[fieldExchSent].Value())
 	qs.ExchRcvd = strings.TrimSpace(m.fields[fieldExchRcvd].Value())
-	qs.STXString = qs.ExchSent
-	qs.SRXString = qs.ExchRcvd
-
-	// Only set STX/SRX if the contest exchange template uses @serial.
-	// ParseSerial extracts the last integer from any exchange string,
-	// but STX/SRX are specifically for contest serial numbers.
-	if ct, ok := m.App.Config.Contests[m.App.Logbook.ActiveContest]; ok {
-		if ct.PrefillExchange && strings.Contains(ct.ExchangeSent, "@serial") {
-			qs.STX = qso.ParseSerial(qs.ExchSent)
-		}
-		if ct.PrefillExchangeRcvd && strings.Contains(ct.ExchangeRcvd, "@serial") {
-			qs.SRX = qso.ParseSerial(qs.ExchRcvd)
-		}
-	}
+	// Derive STX_STRING from EXCH_SENT by stripping the RST prefix;
+	// fall back to the full exchange if the RST is not a prefix match.
+	qs.STXString = qso.StripRSTPrefix(qs.ExchSent, qs.RSTSent)
+	qs.SRXString = qso.StripRSTPrefix(qs.ExchRcvd, qs.RSTRcvd)
+	// STX/SRX are the last integer in the exchange (the serial).
+	// ParseSerial returns 0 when no integer is found (normal QSOs, non-serial contests).
+	qs.STX = qso.ParseSerial(qs.ExchSent)
+	qs.SRX = qso.ParseSerial(qs.ExchRcvd)
 	station := qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
 		Operator:        m.App.Logbook.Station.Operator,

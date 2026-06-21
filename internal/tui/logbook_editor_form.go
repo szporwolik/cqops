@@ -57,6 +57,7 @@ func (le *LogbookEditor) fillEditForm(q *qso.QSO) {
 	s(qefPOTA, q.POTARef)
 	s(qefWWFF, q.WWFFRef)
 	s(qefSIG, q.SIG)
+	s(qefSIGInfo, q.SIGInfo)
 	s(qefMySOTA, q.MySOTARef)
 	s(qefMyPOTA, q.MyPOTARef)
 	s(qefMyWWFF, q.MyWWFFRef)
@@ -86,12 +87,7 @@ func (le *LogbookEditor) readEditForm() *qso.QSO {
 		fmt.Sscanf(g(f), "%f", &v)
 		return v
 	}
-	gi := func(f qsoEditField) int {
-		var v int
-		fmt.Sscanf(g(f), "%d", &v)
-		return v
-	}
-	return &qso.QSO{
+	q := &qso.QSO{
 		ID: le.editing.ID, Call: g(qefCall), QSODate: g(qefDate),
 		TimeOn: g(qefTimeOn), TimeOff: g(qefTimeOff), Band: g(qefBand),
 		Freq: gf(qefFreq), FreqRx: gf(qefFreqRx), Mode: g(qefMode), Submode: g(qefSubmode),
@@ -105,19 +101,18 @@ func (le *LogbookEditor) readEditForm() *qso.QSO {
 		Distance: gf(qefDistance), Bearing: gf(qefBearing),
 		IOTA: g(qefIOTA), SOTARef: g(qefSOTA), POTARef: g(qefPOTA), WWFFRef: g(qefWWFF),
 		SIG:       g(qefSIG),
+		SIGInfo:   g(qefSIGInfo),
 		MySOTARef: g(qefMySOTA), MyPOTARef: g(qefMyPOTA), MyWWFFRef: g(qefMyWWFF),
 		CQZone: g(qefCQZone), ITUZone: g(qefITUZone),
 		ExchSent:        g(qefExchSent),
 		ExchRcvd:        g(qefExchRcvd),
-		STX:             gi(qefSTX),
-		SRX:             gi(qefSRX),
-		STXString:       g(qefSTXString),
-		SRXString:       g(qefSRXString),
-		ContestADIFID:   g(qefContestID),
-		ContestID:       le.editing.ContestID, // preserve internal hash for filtering
 		WavelogUploaded: g(qefWLStatus),
+		ContestID:       le.editing.ContestID,
+		ContestADIFID:   le.editing.ContestADIFID,
 		CreatedAt:       le.editing.CreatedAt,
 	}
+	q.NormalizeExchange()
+	return q
 }
 
 func (le *LogbookEditor) nextField() {

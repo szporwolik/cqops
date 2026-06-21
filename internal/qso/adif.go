@@ -191,6 +191,7 @@ func (q *QSO) toADIFWithStation(stationCall string) string {
 		set(adifield.IOTA, q.IOTA)
 	}
 	set(adifield.SIG, q.SIG)
+	set(adifield.SIG_INFO, q.SIGInfo)
 	set(adifield.MY_SOTA_REF, q.MySOTARef)
 	set(adifield.MY_POTA_REF, q.MyPOTARef)
 	set(adifield.MY_WWFF_REF, q.MyWWFFRef)
@@ -207,6 +208,8 @@ func (q *QSO) toADIFWithStation(stationCall string) string {
 	set(adifield.ITUZ, q.ITUZone)
 
 	// Contest exchange fields.
+	set(adifield.Field("EXCH_SENT"), q.ExchSent)
+	set(adifield.Field("EXCH_RCVD"), q.ExchRcvd)
 	if q.STX != 0 {
 		r[adifield.Field("STX")] = fmt.Sprintf("%d", q.STX)
 	}
@@ -274,6 +277,7 @@ func ParseADIFRecord(r adif.Record, source string) *QSO {
 		qs.IOTA = ""
 	}
 	qs.SIG = get(adifield.SIG)
+	qs.SIGInfo = get(adifield.SIG_INFO)
 	qs.MySOTARef = get(adifield.MY_SOTA_REF)
 	qs.MyPOTARef = get(adifield.MY_POTA_REF)
 	qs.MyWWFFRef = get(adifield.MY_WWFF_REF)
@@ -296,6 +300,8 @@ func ParseADIFRecord(r adif.Record, source string) *QSO {
 	qs.CQZone = get(adifield.CQZ)
 	qs.ITUZone = get(adifield.ITUZ)
 	// Contest exchange fields.
+	qs.ExchSent = get(adifield.Field("EXCH_SENT"))
+	qs.ExchRcvd = get(adifield.Field("EXCH_RCVD"))
 	qs.STXString = get(adifield.Field("STX_STRING"))
 	qs.SRXString = get(adifield.Field("SRX_STRING"))
 	qs.ContestID = get(adifield.Field("CONTEST_ID"))     // hash for filtering
