@@ -60,9 +60,12 @@ func (m *Model) sendSpotCmd(call string, freqKhz float64, comment string) tea.Cm
 			ReceivedAt: now,
 		}
 		if prefixes := m.App.DXCC; prefixes != nil {
-			if m, ok := prefixes.Find(call); ok && len(m) > 0 {
-				spot.DXCont = m[0].Continent
-				spot.DXCC = m[0].Name
+			if mx, ok := prefixes.Find(call); ok && len(mx) > 0 {
+				spot.DXCont = mx[0].Continent
+				spot.DXCC = mx[0].Name
+			}
+			if mx, ok := prefixes.Find(spot.Spotter); ok && len(mx) > 0 {
+				spot.SpotCont = mx[0].Continent
 			}
 		}
 		if _, err := store.InsertDXCSpots(m.App.DB, []store.DXCSpot{spot}); err != nil {
