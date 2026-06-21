@@ -22,9 +22,13 @@ func (m *Model) saveQSO() tea.Cmd {
 	m.autoFillRST()
 	m.autoFillSSBSubmode()
 	m.checkDupe() // ensure dupe state is fresh before saving
-	if m.dupe {
-		m.toasts.Warn("DUPE! " + strings.TrimSpace(m.fields[fieldCall].Value()) + " already logged on this band/mode today")
+	if m.dupe && !m.dupeConfirmed {
+		m.dupeConfirmed = true
+		m.toasts.Warn("DUPE! " + strings.TrimSpace(m.fields[fieldCall].Value()) + " already logged on this band/mode today — press Enter again to log anyway")
+		m.rc.pathSig = "" // invalidate path row cache to show DUPE badge
+		return nil
 	}
+	m.dupeConfirmed = false
 	qs := qso.NewQSO()
 	var freq float64
 	if _, err := fmt.Sscanf(m.fields[fieldFreq].Value(), "%f", &freq); err != nil {
@@ -122,6 +126,7 @@ func (m *Model) saveQSO() tea.Cmd {
 	}
 
 	m.clearForm()
+	m.clearFilteredTable()
 	m.toasts.Success(fmt.Sprintf("QSO saved: %s", qs.Call))
 	return tea.Batch(m.refreshQSOS(), m.maybeUploadToWavelog(qs))
 }
@@ -151,13 +156,14 @@ func (m *Model) refreshQSOS() tea.Cmd {
 		m.rc.pathSig = ""
 		m.rc.logStatsSig = ""
 
-		// Re-apply filter if active.
-		if m.recentQSOs.IsFiltered() {
+		// Re-apply filter if active — suppressed after a save.
+		if !m.recentQSOs.filterSuppressed && m.recentQSOs.IsFiltered() {
 			filtered, err := store.SearchQSOsByCall(m.App.DB, m.recentQSOs.filterCall, 200)
 			if err == nil {
 				m.recentQSOs.SetFilterCall(m.recentQSOs.filterCall, filtered)
 			}
 		}
+		m.recentQSOs.filterSuppressed = false
 		return qsoRefreshedMsg{}
 	}
 }
@@ -176,11 +182,18 @@ func (m *Model) updateFilteredTable() tea.Cmd {
 		return nil
 	}
 	return func() tea.Msg {
-		qsos, err := store.SearchQSOsByCall(m.App.DB, call, 200)
+		// Re-read call at execution time — the field may have changed
+		// since the command was created.
+		currentCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+		if currentCall == "" {
+			m.recentQSOs.ClearFilter()
+			return nil
+		}
+		qsos, err := store.SearchQSOsByCall(m.App.DB, currentCall, 200)
 		if err != nil {
 			return nil
 		}
-		m.recentQSOs.SetFilterCall(call, qsos)
+		m.recentQSOs.SetFilterCall(currentCall, qsos)
 		return nil
 	}
 }

@@ -283,7 +283,11 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 		if cur := strings.TrimSpace(m.fields[f].Value()); cur != strings.TrimSpace(prevVal) {
 			m.lookup.partnerData = nil
 			m.lookup.wlPrivateData = nil
+			m.lookup.qrzLookupDone = false
+			m.lookup.qrzLookupCall = ""
 			m.lookup.wlLookupDone = false
+			m.lookup.wlLookupCall = ""
+			m.dupeConfirmed = false
 			m.gridSource = gridSourceNone
 			m.screen = screenQSO
 			m.clearFilteredTable()
@@ -323,6 +327,33 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 // onFieldExit is called when leaving a field (via nextField/prevField/focusField).
 // It commits values for path calculation, validates the field (showing a toast
 // if invalid), and triggers autofill / lookups.
+// commitAndLookup finalizes the callsign field, triggers lookups and dupe
+// check. Used by Insert, arrow-down field exit, and first Enter press.
+// Returns a lookup command (or nil).  Callers that discard the command
+// (e.g. arrow-down in onFieldExit) must set m.lookup.qrzNeed=true so that
+// handlePendingRequests dispatches the lookup on the next tick.
+func (m *Model) commitAndLookup() tea.Cmd {
+	call := m.commitCall()
+	if call == "" {
+		// Not a valid callsign — but still hide SCP suggestions.
+		m.scpMatches = nil
+		m.scpCacheKey = ""
+		return nil
+	}
+	m.scpMatches = nil
+	m.scpCacheKey = ""
+	m.dxccAutoFill()
+	m.prefillContestExchange()
+	m.lookup.qrzCall = call
+	m.lookup.wlCall = call
+	m.autoFillRST()
+	m.autoFillSSBSubmode()
+	m.checkDupe()
+	m.rc.pathSig = "" // invalidate cache to show DUPE badge
+	m.rc.logStatsSig = ""
+	return m.lookupCallCmd(call)
+}
+
 func (m *Model) onFieldExit() {
 	// Show validation toast for the field being left, if the value is non-empty
 	// but invalid. Empty is OK — handled at save time by qso.ValidateForSave.
@@ -336,24 +367,15 @@ func (m *Model) onFieldExit() {
 		m.autoFillRST()
 		m.autoFillSSBSubmode()
 		if cur == "" {
-			// Callsign was cleared — reset last-looked-up state so that
-			// re-entering the same call triggers a fresh lookup.
 			m.lookup.qrzLastCall = ""
 			break
 		}
-		// Defer lookup via flag — onFieldExit can't return commands.
-		if cur != "" && !strings.EqualFold(cur, m.lookup.qrzLastCall) {
-			m.lookup.qrzNeed = true
-			m.lookup.qrzCall = cur
-		}
-		// Fill country/continent from DXCC — runs regardless of QRZ status.
-		m.dxccAutoFill()
-		// Callsign committed — hide SCP suggestions.
-		m.scpMatches = nil
-		m.scpCacheKey = ""
-
-		// Contest prefill: fill exchange fields from active contest config.
-		m.prefillContestExchange()
+		m.lookup.qrzLastCall = strings.ToUpper(cur)
+		m.commitAndLookup()
+		// commitAndLookup returns a command, but onFieldExit cannot
+		// return it.  Flag for handlePendingRequests instead.
+		m.lookup.qrzNeed = true
+		m.lookup.wlNeed = true
 
 	case fieldGrid:
 		m.rc.pathGrid = strings.ToUpper(strings.TrimSpace(m.fields[fieldGrid].Value()))
@@ -480,8 +502,11 @@ func (m *Model) resetQSOFields() {
 func (m *Model) resetPartnerLookup() {
 	if m.screen != screenPartner && m.screen != screenImage {
 		m.lookup.partnerData = nil
+		m.lookup.qrzLookupDone = false
+		m.lookup.qrzLookupCall = ""
 		m.lookup.wlPrivateData = nil
 		m.lookup.wlLookupDone = false
+		m.lookup.wlLookupCall = ""
 	}
 }
 

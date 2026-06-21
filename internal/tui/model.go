@@ -99,29 +99,30 @@ const (
 )
 
 type Model struct {
-	App          *app.App
-	screen       screenKind
-	fields       [fieldCount]textinput.Model
-	focus        field
-	qsos         []qso.QSO
-	toasts       *ToastQueue
-	err          error
-	width        int
-	height       int
-	quitting     bool
-	rig          rigState
-	dateTimeAuto bool
-	tickCount    int
-	inetOnline   bool
-	Offline      bool // when true, skip all network-dependent operations
-	wsjtx        wsjtxState
-	needRefresh  bool
-	dupe         bool // true when call/band/mode match an existing QSO today
-	adifQ        adifQueue
-	ui           uiComponents
-	photo        photoState
-	mapView      *mapRenderer // embedded world map renderer
-	confirm      *DialogModel // active confirmation dialog (quit, etc.)
+	App           *app.App
+	screen        screenKind
+	fields        [fieldCount]textinput.Model
+	focus         field
+	qsos          []qso.QSO
+	toasts        *ToastQueue
+	err           error
+	width         int
+	height        int
+	quitting      bool
+	rig           rigState
+	dateTimeAuto  bool
+	tickCount     int
+	inetOnline    bool
+	Offline       bool // when true, skip all network-dependent operations
+	wsjtx         wsjtxState
+	needRefresh   bool
+	dupe          bool // true when call/band/mode match an existing QSO today
+	dupeConfirmed bool // true after first Enter on a dupe; second Enter proceeds
+	adifQ         adifQueue
+	ui            uiComponents
+	photo         photoState
+	mapView       *mapRenderer // embedded world map renderer
+	confirm       *DialogModel // active confirmation dialog (quit, etc.)
 
 	// PSK Reporter.
 	psk pskState
@@ -173,6 +174,10 @@ type wlResultMsg struct {
 	Data *wavelog.PrivateLookupResult
 	Err  error
 }
+
+// lookupTimeoutMsg is sent after 3s when lookups haven't completed;
+// it forces the deferred QSO save to proceed without waiting.
+type lookupTimeoutMsg struct{}
 type dxcSpotLookupMsg struct {
 	call string
 	freq float64 // 0 if not found
@@ -442,12 +447,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case qrzResultMsg:
 		m.fillQRZData(r)
 		cmd = tea.Batch(cmd, m.updateFilteredTable())
-		if m.lookup.lookupsInFlight > 0 {
-			m.lookup.lookupsInFlight--
-		}
-		if m.lookup.pendingSave && m.lookup.lookupsInFlight == 0 {
-			m.lookup.pendingSave = false
-			cmd = tea.Batch(cmd, m.saveQSO())
+		if m.lookup.pendingSave {
+			call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+			if m.lookupsCompleteForCall(call) {
+				m.lookup.pendingSave = false
+				cmd = tea.Batch(cmd, m.saveQSO())
+			}
 		}
 		if m.photo.partnerPicNeedLoad {
 			m.photo.partnerPicNeedLoad = false
@@ -463,14 +468,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.photo.partnerPicViewer.SetURL(m.photo.partnerPicURL))
 		}
 		return m, cmd
+	case lookupTimeoutMsg:
+		if m.lookup.pendingSave {
+			m.lookup.pendingSave = false
+			applog.Warn("Lookup timeout — saving QSO without waiting")
+			cmd = tea.Batch(cmd, m.saveQSO())
+		}
+		return m, cmd
 	case wlResultMsg:
 		m.fillWLData(r)
-		if m.lookup.lookupsInFlight > 0 {
-			m.lookup.lookupsInFlight--
-		}
-		if m.lookup.pendingSave && m.lookup.lookupsInFlight == 0 {
-			m.lookup.pendingSave = false
-			cmd = tea.Batch(cmd, m.saveQSO())
+		if m.lookup.pendingSave {
+			call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+			if m.lookupsCompleteForCall(call) {
+				m.lookup.pendingSave = false
+				cmd = tea.Batch(cmd, m.saveQSO())
+			}
 		}
 		return m, cmd
 	case refRebuildMsg:

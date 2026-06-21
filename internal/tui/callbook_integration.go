@@ -120,6 +120,8 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 	if formCall != "" && formCall != strings.ToUpper(msg.Call) {
 		return
 	}
+	m.lookup.qrzLookupDone = true
+	m.lookup.qrzLookupCall = strings.ToUpper(msg.Call)
 	if !m.App.Config.Integrations.QRZ.Enabled || m.App.Config.Integrations.QRZ.User == "" {
 		// QRZ not configured — silently skip. All callers guard before firing,
 		// this is a belt-and-suspenders check.
@@ -275,11 +277,13 @@ func (m *Model) fillWLData(msg wlResultMsg) {
 	}
 	if msg.Err != nil {
 		m.lookup.wlLookupDone = true
+		m.lookup.wlLookupCall = strings.ToUpper(msg.Call)
 		applog.Warn("Wavelog: lookup error", "call", msg.Call, "error", msg.Err)
 		m.toasts.Warn(msg.Err.Error())
 		return
 	}
 	m.lookup.wlLookupDone = true
+	m.lookup.wlLookupCall = strings.ToUpper(msg.Call)
 	if msg.Data == nil {
 		return
 	}
@@ -290,4 +294,67 @@ func (m *Model) fillWLData(msg wlResultMsg) {
 		name = " " + msg.Data.Name()
 	}
 	m.toasts.Info("Wavelog: " + msg.Call + name)
+}
+
+// lookupsCompleteForCall returns true when both QRZ and Wavelog lookups
+// for the given callsign have completed (or are not applicable).
+func (m *Model) lookupsCompleteForCall(call string) bool {
+	if call == "" {
+		return true
+	}
+
+	// QRZ: complete if disabled, offline, or lookup done for this exact call.
+	qrzEnabled := m.App.Config.Integrations.QRZ.Enabled && m.App.Config.Integrations.QRZ.User != ""
+	qrzDone := !qrzEnabled || m.Offline || !m.inetOnline || (m.lookup.qrzLookupDone && m.lookup.qrzLookupCall == call)
+
+	// Wavelog: complete if disabled, offline, or a lookup attempt returned.
+	wl := m.App.Logbook.Wavelog
+	wlEnabled := wl != nil && wl.Enabled
+	wlDone := !wlEnabled || m.Offline || !m.inetOnline || (m.lookup.wlLookupDone && m.lookup.wlLookupCall == call)
+
+	return qrzDone && wlDone
+}
+
+// smartSaveOrLookup is the canonical Enter handler for the QSO form.
+// If lookups for the current callsign aren't complete, it dispatches them
+// and defers the save until both return. Otherwise it saves immediately.
+func (m *Model) smartSaveOrLookup() tea.Cmd {
+	call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+	applog.InfoDetail("Enter: smartSaveOrLookup",
+		fmt.Sprintf("call=%q qrzDone=%v wlDone=%v", call, m.lookup.qrzLookupDone, m.lookup.wlLookupDone),
+	)
+	if call != "" && !m.lookupsCompleteForCall(call) {
+		m.lookup.pendingSave = true
+		m.lookup.qrzNeed = false
+		m.lookup.wlNeed = false
+		var cmds []tea.Cmd
+		qrzEnabled := m.App.Config.Integrations.QRZ.Enabled && m.App.Config.Integrations.QRZ.User != ""
+		if qrzEnabled && !m.Offline && m.inetOnline && !m.lookup.qrzLookupDone {
+			if c := m.qrzLookupCmd(call); c != nil {
+				cmds = append(cmds, c)
+			}
+		}
+		wl := m.App.Logbook.Wavelog
+		wlEnabled := wl != nil && wl.Enabled
+		if wlEnabled && !m.Offline && m.inetOnline && !m.lookup.wlLookupDone {
+			if c := m.wlLookup(call); c != nil {
+				cmds = append(cmds, c)
+			}
+		}
+		if len(cmds) > 0 {
+			cmds = append(cmds, m.lookupTimeoutCmd())
+			return tea.Batch(cmds...)
+		}
+		m.lookup.pendingSave = false
+		return m.saveQSO()
+	}
+	return m.saveQSO()
+}
+
+// lookupTimeoutCmd returns a command that fires after 3 seconds to
+// prevent a deferred save from waiting forever for slow lookups.
+func (m *Model) lookupTimeoutCmd() tea.Cmd {
+	return tea.Tick(3*time.Second, func(t time.Time) tea.Msg {
+		return lookupTimeoutMsg{}
+	})
 }

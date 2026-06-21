@@ -28,9 +28,10 @@ type RecentQSOs struct {
 	cachedQSOLen int
 
 	// Filtered mode: when filterCall is non-empty, only matching QSOs are shown.
-	filterCall    string
-	filteredQSOs  []qso.QSO
-	filterCacheID int64 // last QSO ID in filtered set — invalidated on new QSO
+	filterCall       string
+	filteredQSOs     []qso.QSO
+	filterCacheID    int64 // last QSO ID in filtered set — invalidated on new QSO
+	filterSuppressed bool  // set by ClearFilter to prevent refresh re-apply race
 }
 
 // NewRecentQSOs creates a read-only recent QSOs view.
@@ -54,11 +55,13 @@ func (r *RecentQSOs) SetFilterCall(call string, qsos []qso.QSO) {
 	}
 }
 
-// ClearFilter returns to normal (unfiltered) mode.
+// ClearFilter returns to normal (unfiltered) mode and suppresses the next
+// refreshQSOS filter re-apply to avoid a race with async filter commands.
 func (r *RecentQSOs) ClearFilter() {
 	r.filterCall = ""
 	r.filteredQSOs = nil
 	r.filterCacheID = 0
+	r.filterSuppressed = true
 }
 
 // IsFiltered returns true when the table is in filtered mode.

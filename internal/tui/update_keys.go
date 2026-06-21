@@ -224,15 +224,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 				return nil, true
 			}
 			if key.Matches(msg, m.keys.Lookup) {
-				call := m.commitCall()
-				if call == "" {
-					raw := strings.TrimSpace(m.fields[fieldCall].Value())
-					if raw != "" {
-						m.toasts.Warn("Not a valid callsign")
-					}
-					return nil, true
-				}
-				return m.lookupCallCmd(call), true
+				return m.commitAndLookup(), true
 			}
 			if key.Matches(msg, m.keys.CycleLogbook) {
 				return m.cycleLogbook(), true
@@ -283,6 +275,18 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	case key.Matches(msg, m.keys.Save):
 		return m.saveQSO(), true
 
+	case key.Matches(msg, m.keys.Enter):
+		call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+		if call != "" && m.lookupsCompleteForCall(call) && !m.dupe {
+			return m.saveQSO(), true
+		}
+		if m.dupe {
+			// Let saveQSO handle dupe confirmation (first press warns,
+			// second press logs).
+			return m.saveQSO(), true
+		}
+		return m.commitAndLookup(), true
+
 	case key.Matches(msg, m.keys.Delete):
 		m.clearForm()
 		return nil, true
@@ -326,49 +330,7 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, true
 
 	case key.Matches(msg, m.keys.Lookup):
-		call := m.commitCall()
-		if call == "" {
-			raw := strings.TrimSpace(m.fields[fieldCall].Value())
-			if raw != "" {
-				m.toasts.Warn("Not a valid callsign")
-			}
-			return nil, true
-		}
-		m.scpMatches = nil
-		m.scpCacheKey = ""
-		m.dxccAutoFill()
-		return m.lookupCallCmd(call), true
-
-	case key.Matches(msg, m.keys.Enter):
-		call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
-		if call != "" && (m.lookup.qrzNeed || m.lookup.wlNeed) {
-			// Lookups still pending — dispatch them now and defer save
-			// until both complete.
-			m.lookup.pendingSave = true
-			m.lookup.lookupsInFlight = 0
-			var cmds []tea.Cmd
-			if m.lookup.qrzNeed {
-				m.lookup.qrzNeed = false
-				m.lookup.lookupsInFlight++
-				if c := m.qrzLookupCmd(call); c != nil {
-					cmds = append(cmds, c)
-				}
-			}
-			if m.lookup.wlNeed {
-				m.lookup.wlNeed = false
-				m.lookup.lookupsInFlight++
-				if c := m.wlLookup(call); c != nil {
-					cmds = append(cmds, c)
-				}
-			}
-			if len(cmds) > 0 {
-				return tea.Batch(cmds...), true
-			}
-			// Both lookups are disabled/nil — save now.
-			m.lookup.pendingSave = false
-			return m.saveQSO(), true
-		}
-		return m.saveQSO(), true
+		return m.commitAndLookup(), true
 
 	case key.Matches(msg, m.keys.CycleUp):
 		m.cycleFieldUp()
