@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"regexp"
+	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
@@ -154,10 +156,20 @@ func (m *Model) dxcFillFromSelected() {
 	m.fields[fieldCountry].SetValue("")
 
 	// Fill frequency: when WSJT-X is offline, use DXC spot frequency.
+	// Always set band and mode from the spot — these are known regardless
+	// of flrig/WSJT-X state.
+	if spot.Band != "" {
+		m.fields[fieldBand].SetValue(spot.Band)
+	}
+	if spot.Mode != "" {
+		m.fields[fieldMode].SetValue(spot.Mode)
+	}
 	if !m.wsjtx.online {
 		freqMHz := spot.Frequency / 1000
 		m.fields[fieldFreq].SetValue(fmt.Sprintf("%.5f", freqMHz))
-		m.applyFreqDefaults()
+		// Don't call applyFreqDefaults — band and mode are already set from
+		// the spot above. Only auto-fill SSB submode if needed.
+		m.autoFillSSBSubmode()
 		applog.Info("DXC: populated QSO form from spot",
 			"call", spot.DXCall,
 			"freq", fmt.Sprintf("%.1f kHz", spot.Frequency),
@@ -167,6 +179,10 @@ func (m *Model) dxcFillFromSelected() {
 			"call", spot.DXCall,
 		)
 	}
+
+	// Parse spot comment for reference designators (SOTA, POTA, WWFF, IOTA)
+	// and auto-fill the corresponding QSO form fields.
+	m.parseSpotCommentForRefs(spot.Comment)
 
 	// Commit the callsign (normalizes, sets pathCall) and flag a deferred
 	// lookup — same logic as onFieldExit for the call field.
@@ -226,5 +242,62 @@ func (m *Model) updateDXCSelectedCall() {
 			"new", m.dxc.selectedCall,
 			"freq_khz", m.dxc.selectedSpot.Frequency,
 		)
+	}
+}
+
+// wellKnownWWFFPrefixes lists the most common country-specific WWFF prefixes
+// (top ~10 ham nations). The generic "WWFF" prefix is always checked first.
+var wellKnownWWFFPrefixes = []string{
+	"KFF", "DLFF", "SPFF", "FFF", "GFF", "JAFF",
+	"IFF", "EAFF", "OZFF", "VKFF", "VEFF", "ONFF",
+}
+
+// parseSpotCommentForRefs scans a DXC spot comment for SOTA, POTA, WWFF, and
+// IOTA reference designators and fills the corresponding QSO form fields.
+// Only fills empty fields — existing values are never overwritten.
+func (m *Model) parseSpotCommentForRefs(comment string) {
+	if comment == "" {
+		return
+	}
+	upper := strings.ToUpper(strings.TrimSpace(comment))
+
+	// IOTA: two letters, dash, digits (e.g. "EU-005", "NA-001")
+	if m.fields[fieldIOTA].Value() == "" {
+		re := regexp.MustCompile(`\b([A-Z]{2}-\d{3,4})\b`)
+		if match := re.FindStringSubmatch(upper); match != nil {
+			m.fields[fieldIOTA].SetValue(match[1])
+		}
+	}
+
+	// SOTA: country/association prefix, slash, summit code (e.g. "SP/BZ-001")
+	// Also matches without slash when preceded by "SOTA" keyword.
+	if m.fields[fieldSOTA].Value() == "" {
+		re := regexp.MustCompile(`\b([A-Z0-9]+/[A-Z0-9]+-\d{3,4})\b`)
+		if match := re.FindStringSubmatch(upper); match != nil {
+			m.fields[fieldSOTA].SetValue(match[1])
+		}
+	}
+
+	// POTA: country prefix, dash, digits (e.g. "SP-0001", "K-0001")
+	if m.fields[fieldPOTA].Value() == "" {
+		re := regexp.MustCompile(`\b([A-Z0-9]{1,4}-\d{4,6})\b`)
+		if match := re.FindStringSubmatch(upper); match != nil {
+			ref := match[1]
+			// Exclude IOTA-like and KHz-like patterns.
+			if !strings.Contains(ref, "KHZ") && !strings.Contains(ref, "DB-") {
+				m.fields[fieldPOTA].SetValue(ref)
+			}
+		}
+	}
+
+	// WWFF: generic "WWFF-xxxx" or country-specific (e.g. "SPFF-0001", "KFF-0001").
+	if m.fields[fieldWWFF].Value() == "" {
+		// Build a regex from the well-known prefixes.
+		prefixes := append([]string{"WWFF"}, wellKnownWWFFPrefixes...)
+		pattern := `\b((?:` + strings.Join(prefixes, "|") + `)-\d{3,5})\b`
+		re := regexp.MustCompile(pattern)
+		if match := re.FindStringSubmatch(upper); match != nil {
+			m.fields[fieldWWFF].SetValue(match[1])
+		}
 	}
 }
