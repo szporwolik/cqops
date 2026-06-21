@@ -184,14 +184,13 @@ func (m *Model) dxcFillFromSelected() {
 	// and auto-fill the corresponding QSO form fields.
 	m.parseSpotCommentForRefs(spot.Comment)
 
-	// Commit the callsign (normalizes, sets pathCall) and flag a deferred
-	// lookup — same logic as onFieldExit for the call field.
+	// Commit the callsign (normalizes, sets pathCall). Lookups (QRZ, Wavelog)
+	// are dispatched by onFieldExit when the user leaves the call field — no
+	// need to double-dispatch here.
 	cur := m.commitCall()
 	if cur != "" {
 		m.autoFillRST()
 		m.autoFillSSBSubmode()
-		m.lookup.qrzNeed = true
-		m.lookup.qrzCall = cur
 		m.dxccAutoFill()
 	}
 }
@@ -270,7 +269,6 @@ func (m *Model) parseSpotCommentForRefs(comment string) {
 	}
 
 	// SOTA: country/association prefix, slash, summit code (e.g. "SP/BZ-001")
-	// Also matches without slash when preceded by "SOTA" keyword.
 	if m.fields[fieldSOTA].Value() == "" {
 		re := regexp.MustCompile(`\b([A-Z0-9]+/[A-Z0-9]+-\d{3,4})\b`)
 		if match := re.FindStringSubmatch(upper); match != nil {
@@ -278,26 +276,32 @@ func (m *Model) parseSpotCommentForRefs(comment string) {
 		}
 	}
 
-	// POTA: country prefix, dash, digits (e.g. "SP-0001", "K-0001")
-	if m.fields[fieldPOTA].Value() == "" {
-		re := regexp.MustCompile(`\b([A-Z0-9]{1,4}-\d{4,6})\b`)
-		if match := re.FindStringSubmatch(upper); match != nil {
-			ref := match[1]
-			// Exclude IOTA-like and KHz-like patterns.
-			if !strings.Contains(ref, "KHZ") && !strings.Contains(ref, "DB-") {
-				m.fields[fieldPOTA].SetValue(ref)
-			}
-		}
-	}
-
-	// WWFF: generic "WWFF-xxxx" or country-specific (e.g. "SPFF-0001", "KFF-0001").
+	// WWFF: check BEFORE POTA — WWFF prefixes (e.g. DLFF, VEFF) would
+	// otherwise match the broader POTA pattern first.
 	if m.fields[fieldWWFF].Value() == "" {
-		// Build a regex from the well-known prefixes.
 		prefixes := append([]string{"WWFF"}, wellKnownWWFFPrefixes...)
 		pattern := `\b((?:` + strings.Join(prefixes, "|") + `)-\d{3,5})\b`
 		re := regexp.MustCompile(pattern)
 		if match := re.FindStringSubmatch(upper); match != nil {
 			m.fields[fieldWWFF].SetValue(match[1])
+		}
+	}
+
+	// POTA: country prefix, dash, digits (e.g. "SP-0001", "K-0001").
+	// Exclude WWFF-like patterns (any prefix ending in "FF") and KHz/DB- noise.
+	if m.fields[fieldPOTA].Value() == "" {
+		re := regexp.MustCompile(`\b([A-Z0-9]{1,4}-\d{4,6})\b`)
+		for _, match := range re.FindAllStringSubmatch(upper, -1) {
+			ref := match[1]
+			// Skip if it looks like a WWFF reference (prefix ending in FF).
+			if strings.HasSuffix(strings.SplitN(ref, "-", 2)[0], "FF") {
+				continue
+			}
+			if strings.Contains(ref, "KHZ") || strings.Contains(ref, "DB-") {
+				continue
+			}
+			m.fields[fieldPOTA].SetValue(ref)
+			break
 		}
 	}
 }
