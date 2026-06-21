@@ -205,25 +205,6 @@ type ADIFConfig struct {
 	DefaultExportPath string `yaml:"default_export_path"`
 }
 
-type RigConfig struct {
-	Provider     string `yaml:"provider"`
-	AutoFill     bool   `yaml:"auto_fill"`
-	FailSilently bool   `yaml:"fail_silently"`
-
-	Flrig struct {
-		Enabled   bool   `yaml:"enabled"`
-		URL       string `yaml:"url"`
-		TimeoutMS int    `yaml:"timeout_ms"`
-	} `yaml:"flrig"`
-
-	Rigctld struct {
-		Enabled   bool   `yaml:"enabled"`
-		Host      string `yaml:"host"`
-		Port      int    `yaml:"port"`
-		TimeoutMS int    `yaml:"timeout_ms"`
-	} `yaml:"rigctld,omitempty"`
-}
-
 type WavelogConfig struct {
 	Enabled          bool   `yaml:"enabled"`
 	URL              string `yaml:"url"`
