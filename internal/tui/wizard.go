@@ -166,7 +166,11 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if cmd := w.station.HandleKey(msg); cmd != nil {
 					switch cmd().(type) {
 					case enterOnLastFieldMsg:
-						_, cs, _, gr, _, _, _, wlEnabled, _, _, wlStationID, _, _, _, _, _, _, _ := w.station.Values()
+						nm, cs, _, gr, _, _, _, wlEnabled, _, _, wlStationID, _, _, _, _, _, _, _ := w.station.Values()
+						if nm == "" {
+							w.toasts.Warn("Station name is required")
+							return w, nil
+						}
 						if cs == "" {
 							w.toasts.Warn("Callsign is required")
 							return w, nil
@@ -228,7 +232,11 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if cmd := w.rigForm.HandleKey(msg); cmd != nil {
 					switch cmd().(type) {
 					case enterOnLastFieldMsg:
-						_, rig, _, _ := w.rigForm.Values()
+						nm, rig, _, _ := w.rigForm.Values()
+						if nm == "" {
+							w.toasts.Warn("Rig name is required")
+							return w, nil
+						}
 						if rig == "" {
 							w.toasts.Warn("Rig model is required")
 							return w, nil
