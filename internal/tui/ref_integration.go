@@ -20,7 +20,8 @@ type refRebuildMsg struct {
 }
 
 // refState holds the REF tab UI state: search input and result rows.
-// The table is built fresh on every render (matching RecentQSOs pattern).
+// The rendered table view is cached and invalidated when dimensions,
+// row count, scroll, or cursor change.
 type refState struct {
 	input    textinput.Model
 	rows     []ref.Row
@@ -31,6 +32,14 @@ type refState struct {
 	ready    bool
 	scroll   int // first visible row index
 	cursor   int // highlighted row (absolute index into rows)
+
+	// Render cache for the table portion (avoids table.New() every frame).
+	cachedTableView   string
+	cachedTableW      int
+	cachedTableH      int
+	cachedTableRows   int
+	cachedTableScroll int
+	cachedTableCursor int
 
 	// REF names line cache — recomputed only when a REF field is exited.
 	refNamesLine  string
@@ -71,6 +80,7 @@ func (m *Model) doRefSearch() {
 	m.ref.searched = true
 	m.ref.scroll = 0
 	m.ref.cursor = 0
+	m.ref.cachedTableView = "" // invalidate render cache
 	applog.InfoDetail("REF: search", fmt.Sprintf("query=%q results=%d", query, len(rows)))
 }
 
@@ -151,6 +161,7 @@ func (m *Model) handleRefUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			m.ref.rows = nil
 			m.ref.scroll = 0
 			m.ref.cursor = 0
+			m.ref.cachedTableView = "" // invalidate render cache
 			return m, cmd
 
 		case "up", "down", "pgup", "pgdown":
@@ -260,21 +271,6 @@ func (m *Model) viewRef() string {
 			if bodyW < 30 {
 				bodyW = 30
 			}
-			refW := 14
-			gridW := 8
-			altW := 10
-			nameW := bodyW - refW - gridW - altW - 3
-			if nameW < 10 {
-				nameW = 10
-			}
-
-			cols := []table.Column{
-				{Title: "Ref", Width: refW},
-				{Title: "Name", Width: nameW},
-				{Title: "Grid", Width: gridW},
-				{Title: "Alt (m)", Width: altW},
-			}
-
 			tableH := ch - 2
 			if tableH < 3 {
 				tableH = 3
@@ -292,49 +288,81 @@ func (m *Model) viewRef() string {
 				m.ref.scroll = maxScroll
 			}
 
-			// Build visible window with cursor marker on the first row.
-			end := m.ref.scroll + tableH
-			if end > total {
-				end = total
-			}
-			marker := m.ref.cursor // highlighted row
-			var rows []table.Row
-			for i := m.ref.scroll; i < end; i++ {
-				r := m.ref.rows[i]
-				alt := "\u2014"
-				if r.Height > 0 {
-					alt = fmt.Sprintf("%d", r.Height)
+			// Use cached table view when dimensions and positions are unchanged.
+			useCache := m.ref.cachedTableView != "" &&
+				m.ref.cachedTableW == bodyW &&
+				m.ref.cachedTableH == tableH &&
+				m.ref.cachedTableRows == total &&
+				m.ref.cachedTableScroll == m.ref.scroll &&
+				m.ref.cachedTableCursor == m.ref.cursor
+
+			if useCache {
+				b.WriteString(m.ref.cachedTableView)
+			} else {
+				refW := 14
+				gridW := 8
+				altW := 10
+				nameW := bodyW - refW - gridW - altW - 3
+				if nameW < 10 {
+					nameW = 10
 				}
-				var row table.Row
-				row = append(row, string(r.RefType)+" "+r.Ref)
-				row = append(row, r.Name)
-				row = append(row, r.Grid)
-				row = append(row, alt)
-				rows = append(rows, row)
+
+				cols := []table.Column{
+					{Title: "Ref", Width: refW},
+					{Title: "Name", Width: nameW},
+					{Title: "Grid", Width: gridW},
+					{Title: "Alt (m)", Width: altW},
+				}
+
+				// Build visible window with cursor marker on the first row.
+				end := m.ref.scroll + tableH
+				if end > total {
+					end = total
+				}
+				marker := m.ref.cursor // highlighted row
+				var rows []table.Row
+				for i := m.ref.scroll; i < end; i++ {
+					r := m.ref.rows[i]
+					alt := "\u2014"
+					if r.Height > 0 {
+						alt = fmt.Sprintf("%d", r.Height)
+					}
+					rows = append(rows, table.Row{
+						string(r.RefType) + " " + r.Ref,
+						r.Name,
+						r.Grid,
+						alt,
+					})
+				}
+
+				tbl := table.New(
+					table.WithColumns(cols),
+					table.WithRows(rows),
+					table.WithHeight(tableH+1),
+					table.WithWidth(bodyW),
+					table.WithFocused(true),
+				)
+				// Move cursor to the marker row within the visible window.
+				if marker >= m.ref.scroll && marker < end {
+					tbl.SetCursor(marker - m.ref.scroll)
+				}
+
+				s := table.DefaultStyles()
+				s.Header = s.Header.
+					BorderForeground(P.TextDim).
+					BorderBottom(true).
+					Bold(false).
+					Foreground(P.Text)
+				tbl.SetStyles(s)
+
+				m.ref.cachedTableView = tbl.View()
+				m.ref.cachedTableW = bodyW
+				m.ref.cachedTableH = tableH
+				m.ref.cachedTableRows = total
+				m.ref.cachedTableScroll = m.ref.scroll
+				m.ref.cachedTableCursor = m.ref.cursor
+				b.WriteString(m.ref.cachedTableView)
 			}
-
-			tbl := table.New(
-				table.WithColumns(cols),
-				table.WithRows(rows),
-				table.WithHeight(tableH+1),
-				table.WithWidth(bodyW),
-				table.WithFocused(true),
-			)
-			// Move cursor to the marker row within the visible window.
-			if marker >= m.ref.scroll && marker < end {
-				cursorRow := marker - m.ref.scroll
-				tbl.SetCursor(cursorRow)
-			}
-
-			s := table.DefaultStyles()
-			s.Header = s.Header.
-				BorderForeground(P.TextDim).
-				BorderBottom(true).
-				Bold(false).
-				Foreground(P.Text)
-			tbl.SetStyles(s)
-
-			b.WriteString(tbl.View())
 		}
 	} else {
 		b.WriteString(DimStyle.Width(w).Align(lipgloss.Center).Render("Enter a reference or name to search"))

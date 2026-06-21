@@ -585,7 +585,9 @@ func (rdb *DB) NeedsRebuild(cacheDir string) bool {
 		if err != nil {
 			continue
 		}
-		if fi.ModTime().After(time.Now().Add(-MaxAge)) {
+		cutoff := time.Now().Add(-MaxAge)
+		//lint:ignore SA4017 — After return value is used in if condition; staticcheck false positive.
+		if fi.ModTime().After(cutoff) {
 			// CSV was downloaded recently — but we need to check vs DB.
 			// For now, just rely on the 30-day rebuild cycle.
 			continue

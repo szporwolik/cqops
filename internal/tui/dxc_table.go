@@ -222,6 +222,7 @@ func (m *Model) buildDXCTable() {
 	m.dxc.tableReady = true
 	m.dxc.builtW = w
 	m.dxc.builtH = h
+	m.dxc.cachedFilterInfo = "" // invalidate on table rebuild (width/spot change)
 	m.updateDXCSelectedCall()
 }
 
@@ -268,19 +269,22 @@ func (m *Model) dxcView() string {
 	if m.dxc.modeFilter != "" {
 		modeVal = m.dxc.modeFilter
 	}
-	filterInfo := " " + DimStyle.Render("Filters:") + " " +
-		DimStyle.Render("Cont") + " " + ValueStyle.Render(contVal) +
-		" " + DimStyle.Render("|") + " " +
-		DimStyle.Render("Mode") + " " + ValueStyle.Render(modeVal) +
-		" " + DimStyle.Render("|") + " " +
-		DimStyle.Render("Band") + " " + ValueStyle.Render(bandVal) +
-		" " + DimStyle.Render("|") + " " +
-		DimStyle.Render("Time") + " " + ValueStyle.Render(timeVal) +
-		" " + DimStyle.Render("|") + " " +
-		DimStyle.Render("Time") + " " + ValueStyle.Render(timeVal) +
-		" " + DimStyle.Render("|") + " " +
-		DimStyle.Render("Spots") + " " + ValueStyle.Render(fmt.Sprintf("%d", m.dxc.spotCount))
-	spacer := lipgloss.NewStyle().Width(bodyW).Render(filterInfo)
+
+	// Cache filter info line — only rebuild when width or filters change.
+	if m.dxc.cachedFilterInfo == "" || m.dxc.cachedFilterW != bodyW {
+		m.dxc.cachedFilterInfo = " " + DimStyle.Render("Filters:") + " " +
+			DimStyle.Render("Cont") + " " + ValueStyle.Render(contVal) +
+			" " + DimStyle.Render("|") + " " +
+			DimStyle.Render("Mode") + " " + ValueStyle.Render(modeVal) +
+			" " + DimStyle.Render("|") + " " +
+			DimStyle.Render("Band") + " " + ValueStyle.Render(bandVal) +
+			" " + DimStyle.Render("|") + " " +
+			DimStyle.Render("Time") + " " + ValueStyle.Render(timeVal) +
+			" " + DimStyle.Render("|") + " " +
+			DimStyle.Render("Spots") + " " + ValueStyle.Render(fmt.Sprintf("%d", m.dxc.spotCount))
+		m.dxc.cachedFilterW = bodyW
+	}
+	spacer := lipgloss.NewStyle().Width(bodyW).Render(m.dxc.cachedFilterInfo)
 
 	tablePart := lipgloss.NewStyle().
 		MaxWidth(bodyW).

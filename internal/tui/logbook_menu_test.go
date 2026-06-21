@@ -71,14 +71,9 @@ func sendKey(c *LogbookChooser, msg tea.KeyPressMsg) *LogbookChooser {
 // Helper constructors for common keys.
 func keyEnter() tea.KeyPressMsg  { return tea.KeyPressMsg{Code: tea.KeyEnter} }
 func keyEsc() tea.KeyPressMsg    { return tea.KeyPressMsg{Code: tea.KeyEscape} }
-func keyLeft() tea.KeyPressMsg   { return tea.KeyPressMsg{Code: tea.KeyLeft} }
 func keyRight() tea.KeyPressMsg  { return tea.KeyPressMsg{Code: tea.KeyRight} }
-func keyUp() tea.KeyPressMsg     { return tea.KeyPressMsg{Code: tea.KeyUp} }
 func keyDown() tea.KeyPressMsg   { return tea.KeyPressMsg{Code: tea.KeyDown} }
 func keyDelete() tea.KeyPressMsg { return tea.KeyPressMsg{Code: tea.KeyDelete} }
-func keyRune(r rune) tea.KeyPressMsg {
-	return tea.KeyPressMsg{Code: r, Text: string(r)}
-}
 
 func TestLogbookChooserDeleteConfirmation(t *testing.T) {
 	a := newChooserTestApp(t)

@@ -108,13 +108,6 @@ func newTestContestChooser(t *testing.T, contests map[string]config.Contest) *Co
 	return cc
 }
 
-func contestWithName(name string) config.Contest {
-	return config.Contest{
-		ID:   config.NewID(name),
-		Name: name,
-	}
-}
-
 // =============================================================================
 // List view tests
 // =============================================================================

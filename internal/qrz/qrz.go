@@ -104,7 +104,7 @@ func Lookup(qrzUser, qrzPass, callsign string) (*CallData, error) {
 
 func qrzLookup(sessionKey, callsign string) (*CallData, error) {
 	u := "https://xmldata.qrz.com/xml/current/?s=" + url.QueryEscape(sessionKey) + ";callsign=" + url.QueryEscape(callsign)
-	data, err := httpGet(u)
+	data, err := httpGetFn(u)
 	if err != nil {
 		applog.Error("QRZ lookup failed", "error", err)
 		return nil, err
@@ -154,7 +154,7 @@ func qrzLookup(sessionKey, callsign string) (*CallData, error) {
 func qrzLoginLookup(user, pass, callsign string) (*CallData, error) {
 	applog.Debug("QRZ lookup", "callsign", callsign)
 	u := "https://xmldata.qrz.com/xml/current/?username=" + url.QueryEscape(user) + ";password=" + url.QueryEscape(pass) + ";agent=CQOps"
-	data, err := httpGet(u)
+	data, err := httpGetFn(u)
 	if err != nil {
 		applog.Error("QRZ auth failed", "error", err)
 		return nil, err
@@ -196,6 +196,10 @@ func httpGet(u string) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
+// httpGetFn is the function used by Lookup and TestConnection to make HTTP
+// requests. Tests can replace it with a mock that uses httptest.Server.
+var httpGetFn = httpGet
+
 func coalesce(a, b string) string {
 	if a != "" {
 		return a
@@ -210,7 +214,7 @@ func TestConnection(user, pass string) error {
 		return fmt.Errorf("QRZ username and password required")
 	}
 	u := "https://xmldata.qrz.com/xml/current/?username=" + url.QueryEscape(user) + ";password=" + url.QueryEscape(pass) + ";agent=CQOps"
-	data, err := httpGet(u)
+	data, err := httpGetFn(u)
 	if err != nil {
 		applog.Error("QRZ: connection failed", "error", err)
 		return fmt.Errorf("connection failed: %w", err)

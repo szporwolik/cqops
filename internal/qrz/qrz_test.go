@@ -1,6 +1,10 @@
 package qrz
 
 import (
+	"encoding/xml"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -126,4 +130,257 @@ func TestSessionCache_Concurrent(t *testing.T) {
 	for i := 0; i < 10; i++ {
 		<-done
 	}
+}
+
+// =============================================================================
+// Lookup integration tests — uses httptest.Server via httpGetFn seam.
+// =============================================================================
+
+func TestLookup_Success(t *testing.T) {
+	// First request is auth (has username param), second is lookup (has s= param).
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		q := r.URL.RawQuery
+		if strings.Contains(q, "username=") {
+			// Auth request — return a valid session key.
+			xml.NewEncoder(w).Encode(qrzDatabase{Session: qrzKey{Key: "testkey"}})
+		} else {
+			// Lookup request — return call data.
+			xml.NewEncoder(w).Encode(qrzDatabase{
+				Session:  qrzKey{Key: "testkey"},
+				Callsign: qrzCall{Call: "SP9ABC", Fname: "Jan", Grid: "JO90", Country: "Poland", Addr2: "Krakow", DXCC: "269", CQZone: "15", ITUZone: "28", Image: "https://example.com/photo.jpg"},
+			})
+		}
+	}))
+	defer srv.Close()
+
+	orig := httpGetFn
+	httpGetFn = rewriteURL(srv.URL)
+	defer func() { httpGetFn = orig }()
+
+	clearSessionCache()
+
+	data, err := Lookup("user", "pass", "SP9ABC")
+	if err != nil {
+		t.Fatalf("Lookup failed: %v", err)
+	}
+	if data == nil {
+		t.Fatal("expected data, got nil")
+	}
+	if data.Callsign != "SP9ABC" {
+		t.Errorf("callsign = %q, want SP9ABC", data.Callsign)
+	}
+	if data.Name != "Jan" {
+		t.Errorf("name = %q, want Jan", data.Name)
+	}
+	if data.Grid != "JO90" {
+		t.Errorf("grid = %q, want JO90", data.Grid)
+	}
+	if data.Country != "Poland" {
+		t.Errorf("country = %q, want Poland", data.Country)
+	}
+	if data.QTH != "Krakow" {
+		t.Errorf("qth = %q, want Krakow", data.QTH)
+	}
+	if data.DXCC != "269" {
+		t.Errorf("dxcc = %q, want 269", data.DXCC)
+	}
+	if data.CQZone != "15" {
+		t.Errorf("cqzone = %q, want 15", data.CQZone)
+	}
+	if data.ITUZone != "28" {
+		t.Errorf("ituzone = %q, want 28", data.ITUZone)
+	}
+	if data.ImageURL != "https://example.com/photo.jpg" {
+		t.Errorf("imageURL = %q", data.ImageURL)
+	}
+}
+
+func TestLookup_NotFound(t *testing.T) {
+	// First request is auth (has username param), second is lookup (has s= param).
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		q := r.URL.RawQuery
+		if strings.Contains(q, "username=") {
+			// Auth request — return a valid session key.
+			xml.NewEncoder(w).Encode(qrzDatabase{Session: qrzKey{Key: "testkey"}})
+		} else {
+			// Lookup request — return "not found".
+			xml.NewEncoder(w).Encode(qrzDatabase{Session: qrzKey{Key: "testkey", Error: "Not found: SP9XYZ"}})
+		}
+	}))
+	defer srv.Close()
+
+	orig := httpGetFn
+	httpGetFn = rewriteURL(srv.URL)
+	defer func() { httpGetFn = orig }()
+
+	clearSessionCache()
+
+	data, err := Lookup("user", "pass", "SP9XYZ")
+	if err != nil {
+		t.Fatalf("Lookup failed: %v", err)
+	}
+	if data != nil {
+		t.Error("expected nil for not-found callsign")
+	}
+}
+
+func TestLookup_AuthError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		// Auth request always returns error.
+		xml.NewEncoder(w).Encode(qrzDatabase{Session: qrzKey{Error: "Invalid username or password"}})
+	}))
+	defer srv.Close()
+
+	orig := httpGetFn
+	httpGetFn = rewriteURL(srv.URL)
+	defer func() { httpGetFn = orig }()
+
+	clearSessionCache()
+
+	data, err := Lookup("baduser", "badpass", "SP9ABC")
+	if err == nil {
+		t.Error("expected error for bad credentials")
+	}
+	if data != nil {
+		t.Error("expected nil data for bad credentials")
+	}
+}
+
+func TestLookup_EmptyCall(t *testing.T) {
+	data, err := Lookup("user", "pass", "")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if data != nil {
+		t.Error("expected nil for empty callsign")
+	}
+}
+
+func TestLookup_EmptyUser(t *testing.T) {
+	data, err := Lookup("", "pass", "SP9ABC")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if data != nil {
+		t.Error("expected nil for empty username")
+	}
+}
+
+func TestLookup_MalformedXML(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		w.Write([]byte("not valid xml {{{"))
+	}))
+	defer srv.Close()
+
+	orig := httpGetFn
+	httpGetFn = rewriteURL(srv.URL)
+	defer func() { httpGetFn = orig }()
+
+	clearSessionCache()
+
+	_, err := Lookup("user", "pass", "SP9ABC")
+	if err == nil {
+		t.Error("expected error for malformed XML")
+	}
+}
+
+func TestLookup_SessionReuse(t *testing.T) {
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/xml")
+		resp := qrzDatabase{
+			Session:  qrzKey{Key: "testkey"},
+			Callsign: qrzCall{Call: "SP9ABC", Fname: "Jan"},
+		}
+		xml.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	orig := httpGetFn
+	httpGetFn = rewriteURL(srv.URL)
+	defer func() { httpGetFn = orig }()
+
+	clearSessionCache()
+
+	// First call: should authenticate + lookup (2 HTTP calls).
+	data, err := Lookup("user", "pass", "SP9ABC")
+	if err != nil || data == nil {
+		t.Fatalf("first lookup failed: %v", err)
+	}
+
+	// Second call: should use cached session (1 HTTP call).
+	callCount = 0
+	data, err = Lookup("user", "pass", "SP9ABC")
+	if err != nil || data == nil {
+		t.Fatalf("second lookup failed: %v", err)
+	}
+	if callCount != 1 {
+		t.Errorf("expected 1 HTTP call with cached session, got %d", callCount)
+	}
+}
+
+func TestTestConnection_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		xml.NewEncoder(w).Encode(qrzDatabase{Session: qrzKey{Key: "testkey"}})
+	}))
+	defer srv.Close()
+
+	orig := httpGetFn
+	httpGetFn = rewriteURL(srv.URL)
+	defer func() { httpGetFn = orig }()
+
+	if err := TestConnection("user", "pass"); err != nil {
+		t.Errorf("TestConnection failed: %v", err)
+	}
+}
+
+func TestTestConnection_EmptyCreds(t *testing.T) {
+	if err := TestConnection("", ""); err == nil {
+		t.Error("expected error for empty credentials")
+	}
+}
+
+func TestTestConnection_AuthFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		xml.NewEncoder(w).Encode(qrzDatabase{Session: qrzKey{Error: "Invalid password"}})
+	}))
+	defer srv.Close()
+
+	orig := httpGetFn
+	httpGetFn = rewriteURL(srv.URL)
+	defer func() { httpGetFn = orig }()
+
+	if err := TestConnection("user", "wrongpass"); err == nil {
+		t.Error("expected error for bad auth")
+	}
+}
+
+// =============================================================================
+// Test helpers for Lookup integration tests
+// =============================================================================
+
+func rewriteURL(baseURL string) func(string) ([]byte, error) {
+	return func(origURL string) ([]byte, error) {
+		idx := strings.Index(origURL, "?")
+		if idx < 0 {
+			return httpGet(origURL)
+		}
+		newURL := baseURL + "/xml/current/" + origURL[idx:]
+		return httpGet(newURL)
+	}
+}
+
+func clearSessionCache() {
+	cacheMu.Lock()
+	cachedSessionKey = ""
+	cachedSessionUser = ""
+	cachedSessionPass = ""
+	cacheMu.Unlock()
 }

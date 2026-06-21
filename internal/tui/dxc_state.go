@@ -43,4 +43,8 @@ type dxcState struct {
 	// Cross-cutting lookup request flags.
 	need bool   // re-trigger DXC freq lookup after live spot arrives
 	call string // callsign for pending DXC lookup
+
+	// Render cache for filter info line — rebuilt only when filters change.
+	cachedFilterInfo string
+	cachedFilterW    int
 }

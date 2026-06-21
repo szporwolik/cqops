@@ -39,18 +39,6 @@ func wavelogVersionHandler(status string) http.HandlerFunc {
 	}
 }
 
-// wavelogStationInfoHandler returns a handler for /api/station_info/{key}.
-func wavelogStationInfoHandler(stations []map[string]string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(stations)
-	}
-}
-
 // wavelogQSOHandler returns a handler for /index.php/api/qso.
 func wavelogQSOHandler(status string, messages []string, adifErrors int) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
