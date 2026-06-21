@@ -209,18 +209,29 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 			}
 		}
 
-		// Step 1b: enrich CQ/ITU zone from DXCC if not already filled by QRZ.
+		// Step 1b: enrich Country, CQ/ITU zone from DXCC if not already filled by QRZ.
 		if m.App.Config.General.UseCTY && m.App.DXCC != nil {
 			qs, _ := store.GetQSOByID(m.App.DB, qsoID)
-			if qs != nil && (qs.CQZone == "" || qs.ITUZone == "") {
+			if qs != nil {
 				if p := m.dxccLookup(call); p != nil {
-					cqz := fmt.Sprintf("%d", p.CQZone)
-					ituz := fmt.Sprintf("%d", p.ITUZone)
-					store.UpdateQSOEnrichment(m.App.DB, qsoID, store.EnrichmentData{
-						CQZone:  cqz,
-						ITUZone: ituz,
-					})
-					applog.Debug("DXCC: filled CQ/ITU zone from prefix", "call", call, "cqz", cqz, "ituz", ituz)
+					ed := store.EnrichmentData{}
+					need := false
+					if qs.Country == "" && p.Name != "" {
+						ed.Country = p.Name
+						need = true
+					}
+					if qs.CQZone == "" {
+						ed.CQZone = fmt.Sprintf("%d", p.CQZone)
+						need = true
+					}
+					if qs.ITUZone == "" {
+						ed.ITUZone = fmt.Sprintf("%d", p.ITUZone)
+						need = true
+					}
+					if need {
+						store.UpdateQSOEnrichment(m.App.DB, qsoID, ed)
+						applog.Debug("DXCC: filled from prefix", "call", call, "country", ed.Country, "cqz", ed.CQZone, "ituz", ed.ITUZone)
+					}
 				}
 			}
 		}

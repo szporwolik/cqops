@@ -156,7 +156,10 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, true
 
 	case key.Matches(msg, m.keys.DXC):
-		if !m.App.Config.Integrations.DXC.Enabled || !m.dxc.online {
+		if !m.App.Config.Integrations.DXC.Enabled {
+			return nil, true // silently ignore — DXC is disabled
+		}
+		if !m.dxc.online {
 			m.toasts.Warn("DXC: not connected")
 			return nil, true
 		}
