@@ -569,6 +569,7 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 		m.ui.logbookEditor.needsReload = true
 	}
 	_, editorCmd := m.ui.logbookEditor.Update(msg)
+	var refreshCmd tea.Cmd
 	if em, ok := msg.(editorMsg); ok {
 		if em.toastWarn != "" {
 			m.toasts.Warn(em.toastWarn)
@@ -581,14 +582,17 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 		}
 		if em.deleted != 0 {
 			m.toasts.Success(fmt.Sprintf("QSO %s from %s deleted", em.delCall, em.delDate))
+			refreshCmd = m.refreshQSOS()
 		}
 		if em.saved != 0 {
 			m.toasts.Success(fmt.Sprintf("QSO %s from %s saved", em.saveCall, em.saveDate))
+			refreshCmd = m.refreshQSOS()
 		}
 		if em.purged {
 			m.toasts.Success("Logbook purged")
 			m.ui.logbookEditor.wlLastFetchedID = 0
 			m.ui.logbookEditor.needsReload = true
+			refreshCmd = m.refreshQSOS()
 			if m.App.Logbook.Wavelog != nil {
 				m.App.Logbook.Wavelog.LastFetchedID = 0
 				if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
@@ -648,7 +652,7 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 		m.screen = screenQSO
 		m.needRefresh = true
 	}
-	return m, tea.Batch(cmd, editorCmd)
+	return m, tea.Batch(cmd, editorCmd, refreshCmd)
 }
 
 func (m *Model) handleLogViewUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {

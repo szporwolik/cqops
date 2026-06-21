@@ -678,6 +678,16 @@ func TestContestBoxHiddenWhenUnknownID(t *testing.T) {
 
 func TestSaveQSOExchangeFields(t *testing.T) {
 	m := newLifecycleTestModel(t)
+	// STX/SRX are only parsed when @serial is in a contest exchange template.
+	// Set up an active contest with @serial in both sent and received.
+	m.App.Config.Contests = map[string]config.Contest{
+		"c1": {ID: "c1", LogbookID: m.App.LogbookName, Name: "Test Contest", ContestID: "CQ-WPX-CW",
+			PrefillExchange: true, ExchangeSent: "599 @serial",
+			PrefillExchangeRcvd: true, ExchangeRcvd: "599 @serial",
+		},
+	}
+	m.App.Logbook.ActiveContest = "c1"
+
 	fillMinimalValidQSO(m)
 	m.fields[fieldExchSent].SetValue("599 001")
 	m.fields[fieldExchRcvd].SetValue("599 042")
