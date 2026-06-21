@@ -31,6 +31,52 @@ type dxcSpotsStoredMsg struct {
 	spottedMe string // non-empty when own callsign was spotted: "spotter: comment"
 }
 
+// sendSpotCmd sends a DX spot to the connected cluster and stores it locally
+// so it appears immediately in the DXC table even if the cluster doesn't echo.
+func (m *Model) sendSpotCmd(call string, freqKhz float64, comment string) tea.Cmd {
+	return func() tea.Msg {
+		if m.dxc.client == nil || !m.dxc.online {
+			m.toasts.Warn("DXC: not connected — cannot send spot")
+			return nil
+		}
+		if err := m.dxc.client.SendSpot(freqKhz, call, comment); err != nil {
+			m.toasts.Warn("DXC: spot failed — " + err.Error())
+			return nil
+		}
+		applog.Info("DXC: spot sent", "cmd", fmt.Sprintf("DX %.1f %s %s", freqKhz, call, comment))
+
+		// Also store locally so it shows up in the DXC table immediately.
+		now := time.Now().UTC().Unix()
+		mode := deriveSpotMode(comment, freqKhz/1000)
+		spot := store.DXCSpot{
+			DXCall:     strings.ToUpper(call),
+			Frequency:  freqKhz,
+			Band:       qso.DeriveBand(freqKhz / 1000),
+			Mode:       mode,
+			ModeCat:    spotModeCategory(mode),
+			Comment:    comment,
+			Spotter:    m.App.Logbook.Station.Callsign,
+			ReceivedAt: now,
+		}
+		if prefixes := m.App.DXCC; prefixes != nil {
+			if m, ok := prefixes.Find(call); ok && len(m) > 0 {
+				spot.DXCont = m[0].Continent
+				spot.DXCC = m[0].Name
+			}
+		}
+		if _, err := store.InsertDXCSpots(m.App.DB, []store.DXCSpot{spot}); err != nil {
+			applog.Warn("DXC: local spot store failed", "error", err)
+		}
+
+		msg := fmt.Sprintf("Spotted %s @ %.1f kHz", call, freqKhz)
+		if comment != "" {
+			msg += " — " + comment
+		}
+		m.toasts.Info(msg)
+		return dxcSpotsStoredMsg{calls: []string{call}}
+	}
+}
+
 // dxcConnectCmd returns a tea.Cmd that attempts to connect to the DX cluster.
 func (m *Model) dxcConnectCmd() tea.Cmd {
 	return func() tea.Msg {

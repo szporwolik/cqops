@@ -34,6 +34,7 @@ type KeyMap struct {
 	CycleLogbook key.Binding
 	CycleRig     key.Binding
 	CycleContest key.Binding
+	Spot         key.Binding
 }
 
 // DefaultKeyMap returns the default key bindings.
@@ -94,6 +95,10 @@ func DefaultKeyMap() KeyMap {
 		Lookup: key.NewBinding(
 			key.WithKeys("insert"),
 			key.WithHelp("Ins", "QRZ"),
+		),
+		Spot: key.NewBinding(
+			key.WithKeys("ctrl+d"),
+			key.WithHelp("Ctrl+D", "Spot"),
 		),
 		Retain: key.NewBinding(
 			key.WithKeys("ctrl+r"),
@@ -161,6 +166,8 @@ func (m *Model) ActiveBindings() []key.Binding {
 		bindings = append(bindings,
 			m.keys.Enter,
 			m.keys.NextField,
+			m.keys.Save,
+			m.keys.Spot,
 			m.keys.Lookup,
 			m.keys.Delete,
 			m.keys.CycleLogbook,

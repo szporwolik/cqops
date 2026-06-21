@@ -118,6 +118,21 @@ func (c *Client) Connected() bool {
 	return c.conn != nil
 }
 
+// SendSpot sends a DX spot to the cluster.
+// Format: DX [freq_kHz] [call] [comment]
+func (c *Client) SendSpot(freqKhz float64, call, comment string) error {
+	if c.conn == nil {
+		return fmt.Errorf("dxc: not connected")
+	}
+	line := fmt.Sprintf("DX %.1f %s %s\r\n", freqKhz, strings.ToUpper(call), comment)
+	_, err := fmt.Fprint(c.conn, line)
+	if err != nil {
+		return fmt.Errorf("dxc: send spot: %w", err)
+	}
+	applog.Info("DXC: spot sent", "call", call, "freq", freqKhz, "comment", comment)
+	return nil
+}
+
 // readLoop reads lines from the telnet connection, parses spots,
 // and delivers them to the spots channel.
 func (c *Client) readLoop() {
@@ -142,6 +157,11 @@ func (c *Client) readLoop() {
 		line := scanner.Text()
 		spot, ok := parseSpot(line)
 		if !ok {
+			// Log cluster error messages (*** followed by a space — real errors,
+			// not decorative ****** banners).
+			if strings.HasPrefix(line, "*** ") {
+				applog.Warn("DXC: cluster message", "line", line)
+			}
 			continue
 		}
 		spot.ReceivedAt = time.Now().UTC()

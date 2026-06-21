@@ -17,6 +17,13 @@ var confirmBindings = []key.Binding{
 	key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
 }
 
+// Pre-allocated spot dialog key bindings.
+var spotBindings = []key.Binding{
+	key.NewBinding(key.WithKeys("left", "right"), key.WithHelp("←/→", "toggle")),
+	key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "send")),
+	key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "cancel")),
+}
+
 // helpView renders the bottom help/footer bar with context-sensitive key bindings.
 // Cached — only rebuilds when screen, confirm state, or dynamic suffix change.
 func (m *Model) helpView() string {
@@ -24,6 +31,7 @@ func (m *Model) helpView() string {
 	// and form modes (logbook editor, chooser, rig chooser).
 	suffix := m.helpSuffix()
 	conf := 0
+	spot := 0
 	editing := 0
 	chooserForm := 0
 	rigForm := 0
@@ -31,6 +39,9 @@ func (m *Model) helpView() string {
 	contestConfirm := 0
 	if m.confirm != nil {
 		conf = 1
+	}
+	if m.spotDialog != nil {
+		spot = 1
 	}
 	if m.ui.logbookEditor != nil && m.ui.logbookEditor.isConfirmMode() {
 		conf = 1
@@ -64,7 +75,7 @@ func (m *Model) helpView() string {
 	if m.ui.logbookEditor != nil && m.ui.logbookEditor.IsImporting() {
 		importing = 1
 	}
-	sig := fmt.Sprintf("%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%t|%t|%s", m.screen, m.width, conf, editing, chooserForm, rigForm, contestForm, contestConfirm, exporting, importing, m.rig.connected, m.wsjtx.online, suffix)
+	sig := fmt.Sprintf("%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%t|%t|%s", m.screen, m.width, conf, spot, editing, chooserForm, rigForm, contestForm, contestConfirm, exporting, importing, m.rig.connected, m.wsjtx.online, suffix)
 	if m.rc.helpSig == sig && m.rc.helpView != "" {
 		return m.rc.helpView
 	}
@@ -74,6 +85,14 @@ func (m *Model) helpView() string {
 	// Global confirm dialog (quit, etc.)
 	if m.confirm != nil {
 		result = HelpStyle.Render(m.help.ShortHelpView(confirmBindings))
+		m.rc.helpSig = sig
+		m.rc.helpView = result
+		return result
+	}
+
+	// Spot dialog
+	if m.spotDialog != nil {
+		result = HelpStyle.Render(m.help.ShortHelpView(spotBindings))
 		m.rc.helpSig = sig
 		m.rc.helpView = result
 		return result

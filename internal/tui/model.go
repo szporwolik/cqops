@@ -122,7 +122,8 @@ type Model struct {
 	ui            uiComponents
 	photo         photoState
 	mapView       *mapRenderer // embedded world map renderer
-	confirm       *DialogModel // active confirmation dialog (quit, etc.)
+	confirm    *DialogModel // active confirmation dialog (quit, etc.)
+	spotDialog *SpotDialog  // active DX spot dialog
 
 	// PSK Reporter.
 	psk pskState
@@ -394,6 +395,26 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.fields[m.focus].SetWidth(m.width - 16)
 			}
 		}
+	}
+
+	// Active spot dialog — blocks key input while open, but lets ticks
+	// through so toasts continue to expire.
+	if m.spotDialog != nil {
+		if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
+			updated, spotCmd := m.spotDialog.Update(keyMsg)
+			*m.spotDialog = updated.(SpotDialog)
+			if m.spotDialog.Done() {
+				if m.spotDialog.Result.Confirmed {
+					cmd = tea.Batch(cmd, m.sendSpotCmd(m.spotDialog.Call, m.spotDialog.FreqKhz, m.spotDialog.Result.Comment))
+				}
+				m.spotDialog = nil
+			}
+			if spotCmd != nil {
+				cmd = tea.Batch(cmd, spotCmd)
+			}
+			return m, cmd
+		}
+		// Non-key messages fall through for tick / toast expiry / async processing.
 	}
 
 	// Active confirmation dialog — highest priority, blocks everything else
@@ -692,6 +713,11 @@ func (m *Model) View() tea.View {
 	// Composite confirm dialog as a centered overlay if active
 	if m.confirm != nil {
 		mainView = RenderDialogOverlay(mainView, *m.confirm, layout.TerminalW, layout.TerminalH)
+	}
+
+	// Composite spot dialog as a centered overlay if active
+	if m.spotDialog != nil {
+		mainView = RenderSpotDialogOverlay(mainView, *m.spotDialog, layout.TerminalW, layout.TerminalH)
 	}
 
 	// Composite toasts as a floating overlay in the bottom-right corner.

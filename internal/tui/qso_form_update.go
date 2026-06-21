@@ -354,6 +354,71 @@ func (m *Model) commitAndLookup() tea.Cmd {
 	return m.lookupCallCmd(call)
 }
 
+// buildSpotComment constructs the pre-filled spot comment from reference fields.
+// Format: SOTA SP/BZ-001 CW, POTA SP-0123 SSB, etc.
+// Multiple references are joined: "SOTA SP/BZ-001 POTA SP-0123 CW"
+func (m *Model) buildSpotComment() string {
+	var parts []string
+
+	refs := map[string]string{
+		"SOTA": strings.TrimSpace(m.fields[fieldSOTA].Value()),
+		"POTA": strings.TrimSpace(m.fields[fieldPOTA].Value()),
+		"WWFF": strings.TrimSpace(m.fields[fieldWWFF].Value()),
+		"IOTA": strings.TrimSpace(m.fields[fieldIOTA].Value()),
+		"SIG":  strings.TrimSpace(m.fields[fieldSIG].Value()),
+	}
+	mode := strings.ToUpper(strings.TrimSpace(m.fields[fieldMode].Value()))
+	if mode == "" {
+		submode := strings.ToUpper(strings.TrimSpace(m.fields[fieldSubmode].Value()))
+		if submode != "" {
+			mode = submode
+		}
+	}
+
+	for _, key := range []string{"SOTA", "POTA", "WWFF", "IOTA", "SIG"} {
+		val := refs[key]
+		if val == "" {
+			continue
+		}
+		if key == "SIG" {
+			// SIG uses its own value as free text, not key:value format.
+			parts = append(parts, "SIG "+val)
+		} else {
+			parts = append(parts, key+" "+val)
+		}
+	}
+	if len(parts) > 0 && mode != "" {
+		parts = append(parts, mode)
+	}
+	return strings.Join(parts, " ")
+}
+
+// openSpotDialog validates preconditions and opens the spot dialog.
+func (m *Model) openSpotDialog() tea.Cmd {
+	call := qso.NormalizeCall(m.fields[fieldCall].Value())
+	if call == "" {
+		m.toasts.Warn("Enter a callsign to spot")
+		return nil
+	}
+	freqStr := strings.TrimSpace(m.fields[fieldFreq].Value())
+	if freqStr == "" {
+		m.toasts.Warn("Enter a frequency to spot")
+		return nil
+	}
+	var freqMhz float64
+	fmt.Sscanf(freqStr, "%f", &freqMhz)
+	if freqMhz <= 0 {
+		m.toasts.Warn("Enter a valid frequency to spot")
+		return nil
+	}
+	freqKhz := freqMhz * 1000
+
+	comment := m.buildSpotComment()
+	m.spotDialog = &SpotDialog{}
+	*m.spotDialog = NewSpotDialog(call, freqKhz, comment)
+	return nil
+}
+
 func (m *Model) onFieldExit() {
 	// Show validation toast for the field being left, if the value is non-empty
 	// but invalid. Empty is OK — handled at save time by qso.ValidateForSave.

@@ -275,6 +275,9 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	case key.Matches(msg, m.keys.Save):
 		return m.saveQSO(), true
 
+	case key.Matches(msg, m.keys.Spot):
+		return m.openSpotDialog(), true
+
 	case key.Matches(msg, m.keys.Enter):
 		call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
 		if call != "" && m.lookupsCompleteForCall(call) && !m.dupe {
