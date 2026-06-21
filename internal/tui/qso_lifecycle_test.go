@@ -1,4 +1,4 @@
-package tui
+﻿package tui
 
 import (
 	"log/slog"
@@ -477,10 +477,10 @@ func newContestTestModel(t *testing.T, activeContest string) *Model {
 	t.Helper()
 	m := newLifecycleTestModel(t)
 	m.App.Config.Contests = map[string]config.Contest{
-		"c1": {ID: "c1", Name: "CQ WPX", ContestID: "CQ-WPX-CW", NextQSO: 1},
-		"c2": {ID: "c2", Name: "ARRL DX", ContestID: "ARRL-DX-CW", NextQSO: 42},
+		"c1": {ID: "c1", LogbookID: m.App.LogbookName, Name: "CQ WPX", ContestID: "CQ-WPX-CW", NextQSO: 1},
+		"c2": {ID: "c2", LogbookID: m.App.LogbookName, Name: "ARRL DX", ContestID: "ARRL-DX-CW", NextQSO: 42},
 	}
-	m.App.Config.State.ActiveContest = activeContest
+	m.App.Logbook.ActiveContest = activeContest
 	return m
 }
 
@@ -515,7 +515,7 @@ func TestSaveQSOContestFilteredRecentQSOs(t *testing.T) {
 	m.saveQSO()()
 
 	// Switch to contest c2 and save another
-	m.App.Config.State.ActiveContest = "c2"
+	m.App.Logbook.ActiveContest = "c2"
 	fillMinimalValidQSO(m)
 	m.fields[fieldCall].SetValue("SP9MOA")
 	m.saveQSO()()
@@ -538,7 +538,7 @@ func TestSaveQSOContestFilterRespectsNone(t *testing.T) {
 	m.saveQSO()()
 
 	// Switch to None and save another
-	m.App.Config.State.ActiveContest = ""
+	m.App.Logbook.ActiveContest = ""
 	fillMinimalValidQSO(m)
 	m.fields[fieldCall].SetValue("DJ7NT")
 	m.saveQSO()()
@@ -617,8 +617,8 @@ func TestCycleActiveContestToasts(t *testing.T) {
 
 	// None → first alphabetically (c2 = ARRL DX)
 	m.cycleActiveContest()
-	if m.App.Config.State.ActiveContest != "c2" {
-		t.Errorf("ActiveContest = %q; want c2 (ARRL DX, first alphabetically)", m.App.Config.State.ActiveContest)
+	if m.App.Logbook.ActiveContest != "c2" {
+		t.Errorf("ActiveContest = %q; want c2 (ARRL DX, first alphabetically)", m.App.Logbook.ActiveContest)
 	}
 	if !m.needRefresh {
 		t.Error("needRefresh should be true after contest cycle")
@@ -626,20 +626,20 @@ func TestCycleActiveContestToasts(t *testing.T) {
 
 	// c2 → c1 (CQ WPX)
 	m.cycleActiveContest()
-	if m.App.Config.State.ActiveContest != "c1" {
-		t.Errorf("ActiveContest = %q; want c1 (CQ WPX, second)", m.App.Config.State.ActiveContest)
+	if m.App.Logbook.ActiveContest != "c1" {
+		t.Errorf("ActiveContest = %q; want c1 (CQ WPX, second)", m.App.Logbook.ActiveContest)
 	}
 
 	// c1 → None (wrap)
 	m.cycleActiveContest()
-	if m.App.Config.State.ActiveContest != "" {
-		t.Errorf("ActiveContest = %q; want empty (None)", m.App.Config.State.ActiveContest)
+	if m.App.Logbook.ActiveContest != "" {
+		t.Errorf("ActiveContest = %q; want empty (None)", m.App.Logbook.ActiveContest)
 	}
 
 	// None → c2 (wrap)
 	m.cycleActiveContest()
-	if m.App.Config.State.ActiveContest != "c2" {
-		t.Errorf("ActiveContest = %q; want c2 (wrap)", m.App.Config.State.ActiveContest)
+	if m.App.Logbook.ActiveContest != "c2" {
+		t.Errorf("ActiveContest = %q; want c2 (wrap)", m.App.Logbook.ActiveContest)
 	}
 }
 
@@ -727,15 +727,15 @@ func TestSaveQSOExchangeEmpty(t *testing.T) {
 
 func TestContestPrefillFillsExchFields(t *testing.T) {
 	m := newContestTestModel(t, "c1")
-	// Set up prefill template with ### marker.
+	// Set up prefill template with @serial marker.
 	ct := m.App.Config.Contests["c1"]
 	ct.PrefillExchange = true
-	ct.ExchangeSent = "599 ###"
+	ct.ExchangeSent = "599 @serial"
 	ct.PrefillExchangeRcvd = true
-	ct.ExchangeRcvd = "599 ###"
+	ct.ExchangeRcvd = "599 @serial"
 	ct.NextQSO = 7
 	m.App.Config.Contests["c1"] = ct
-	m.App.Config.State.ActiveContest = "c1"
+	m.App.Logbook.ActiveContest = "c1"
 
 	fillMinimalValidQSO(m)
 	// Simulate leaving the call field (triggers prefill).
@@ -745,8 +745,8 @@ func TestContestPrefillFillsExchFields(t *testing.T) {
 	if m.fields[fieldExchSent].Value() != "599 007" {
 		t.Errorf("ExchSent = %q, want 599 007", m.fields[fieldExchSent].Value())
 	}
-	if m.fields[fieldExchRcvd].Value() != "599 007" {
-		t.Errorf("ExchRcvd = %q, want 599 007", m.fields[fieldExchRcvd].Value())
+	if m.fields[fieldExchRcvd].Value() != "599" {
+		t.Errorf("ExchRcvd = %q, want '599' (@serial replaced with empty, trimmed)", m.fields[fieldExchRcvd].Value())
 	}
 	// NextQSO should NOT have incremented during prefill (happens on save).
 	ct = m.App.Config.Contests["c1"]
@@ -759,10 +759,10 @@ func TestContestPrefillLargeSerial(t *testing.T) {
 	m := newContestTestModel(t, "c1")
 	ct := m.App.Config.Contests["c1"]
 	ct.PrefillExchange = true
-	ct.ExchangeSent = "599 ###"
+	ct.ExchangeSent = "599 @serial"
 	ct.NextQSO = 10212
 	m.App.Config.Contests["c1"] = ct
-	m.App.Config.State.ActiveContest = "c1"
+	m.App.Logbook.ActiveContest = "c1"
 
 	fillMinimalValidQSO(m)
 	m.focus = fieldCall
@@ -777,10 +777,10 @@ func TestContestPrefillOnlyWhenEnabled(t *testing.T) {
 	m := newContestTestModel(t, "c1")
 	ct := m.App.Config.Contests["c1"]
 	ct.PrefillExchange = false // disabled
-	ct.ExchangeSent = "599 ###"
+	ct.ExchangeSent = "599 @serial"
 	ct.NextQSO = 5
 	m.App.Config.Contests["c1"] = ct
-	m.App.Config.State.ActiveContest = "c1"
+	m.App.Logbook.ActiveContest = "c1"
 
 	fillMinimalValidQSO(m)
 	m.focus = fieldCall

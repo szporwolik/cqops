@@ -34,7 +34,7 @@ func isChoiceField(f field) bool { return f == fieldBand || f == fieldMode || f 
 // isFieldHidden returns true when the given field should not be visible.
 // Exchange fields are hidden when no contest is active.
 func (m *Model) isFieldHidden(f field) bool {
-	if (f == fieldExchSent || f == fieldExchRcvd) && m.App.Config.State.ActiveContest == "" {
+	if (f == fieldExchSent || f == fieldExchRcvd) && m.App.Logbook.ActiveContest == "" {
 		return true
 	}
 	return false
@@ -52,7 +52,7 @@ func (m *Model) viewForm(width int) string {
 	// Build a cache signature from all inputs that affect form output.
 	// The date/time fields change every second, so this invalidates at 1 Hz.
 	var sigB strings.Builder
-	fmt.Fprintf(&sigB, "%d|%d|%s|", width, m.focus, m.App.Config.State.ActiveContest)
+	fmt.Fprintf(&sigB, "%d|%d|%s|", width, m.focus, m.App.Logbook.ActiveContest)
 	if m.retainFocused {
 		sigB.WriteString("rf|")
 	} else {

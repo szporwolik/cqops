@@ -131,6 +131,7 @@ func TestStationForm_ValidateField_UnknownLabel(t *testing.T) {
 
 func TestStationForm_Validate_Valid(t *testing.T) {
 	f := newStationFormForTest()
+	f.Name.SetValue("Test Station")
 	f.Callsign.SetValue("SP9MOA")
 	f.Locator.SetValue("JO90")
 	if err := f.Validate(); err != nil {
@@ -140,6 +141,7 @@ func TestStationForm_Validate_Valid(t *testing.T) {
 
 func TestStationForm_Validate_EmptyCallsign(t *testing.T) {
 	f := newStationFormForTest()
+	f.Name.SetValue("Test Station")
 	f.Locator.SetValue("JO90")
 	if err := f.Validate(); err == nil {
 		t.Error("Validate() should fail when callsign is empty")
@@ -148,6 +150,7 @@ func TestStationForm_Validate_EmptyCallsign(t *testing.T) {
 
 func TestStationForm_Validate_InvalidCallsign(t *testing.T) {
 	f := newStationFormForTest()
+	f.Name.SetValue("Test Station")
 	f.Callsign.SetValue("SP9*MOA")
 	f.Locator.SetValue("JO90")
 	if err := f.Validate(); err == nil {
@@ -157,6 +160,7 @@ func TestStationForm_Validate_InvalidCallsign(t *testing.T) {
 
 func TestStationForm_Validate_EmptyLocator(t *testing.T) {
 	f := newStationFormForTest()
+	f.Name.SetValue("Test Station")
 	f.Callsign.SetValue("SP9MOA")
 	if err := f.Validate(); err == nil {
 		t.Error("Validate() should fail when locator is empty")
@@ -165,6 +169,7 @@ func TestStationForm_Validate_EmptyLocator(t *testing.T) {
 
 func TestStationForm_Validate_InvalidLocator(t *testing.T) {
 	f := newStationFormForTest()
+	f.Name.SetValue("Test Station")
 	f.Callsign.SetValue("SP9MOA")
 	f.Locator.SetValue("XXXX")
 	if err := f.Validate(); err == nil {

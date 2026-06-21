@@ -213,3 +213,12 @@ func (a *App) StationSummary() string {
 func (a *App) LogbookDisplayName() string {
 	return config.LogbookDisplayName(a.Logbook)
 }
+
+// SetActiveContest sets the active contest for the current logbook, updating
+// both the in-memory pointer and the config map so the change survives saves.
+func (a *App) SetActiveContest(id string) {
+	a.Logbook.ActiveContest = id
+	lb := a.Config.Logbooks[a.LogbookName]
+	lb.ActiveContest = id
+	a.Config.Logbooks[a.LogbookName] = lb
+}

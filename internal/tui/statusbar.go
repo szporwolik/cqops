@@ -25,17 +25,24 @@ func (m *Model) headerView() string {
 	}
 	op := s.Operator
 
+	rigName := ""
+	if rp, ok := m.App.Config.Rigs[s.RigName]; ok {
+		rigName = rp.Name
+	}
+
 	leftParts := []string{
 		S.StatusApp.Render(" CQOps v" + version.Resolved() + " "),
+		S.StatusLabel.Render("Log"),
+		" " + S.StatusValue.Render(truncateText(logName, 16)) + " ",
+		S.StatusLabel.Render("Rig"),
+		" " + S.StatusValue.Render(truncateText(rigName, 8)) + " ",
 		S.StatusLabel.Render("Call"),
-		" " + S.StatusValue.Render(clamp(callsign, 10)),
-		" " + S.StatusLabel.Render("Log"),
-		" " + S.StatusValue.Render(clamp(logName, 12)),
+		" " + S.StatusValue.Render(truncateText(callsign, 14)) + " ",
 	}
 	if op != "" {
 		leftParts = append(leftParts,
-			" "+S.StatusLabel.Render("Op"),
-			" "+S.StatusValue.Render(clamp(op, 10)),
+			S.StatusLabel.Render("Op"),
+			" "+S.StatusValue.Render(truncateText(op, 14))+" ",
 		)
 	}
 
@@ -101,7 +108,7 @@ func (m *Model) headerView() string {
 		if m.wsjtx.tx {
 			style = txDotStyle
 		}
-		msgSeg := " " + S.StatusLabel.Render("MSG") + " " + style.Render(clamp(m.wsjtx.txMsg, 24))
+		msgSeg := " " + S.StatusLabel.Render("MSG") + " " + style.Render(truncateText(m.wsjtx.txMsg, 24))
 		msgW := lipgloss.Width(msgSeg)
 		avail := m.width - leftW - rightW
 		if avail >= msgW+4 {

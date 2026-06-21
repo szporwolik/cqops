@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
@@ -185,49 +184,43 @@ func (rc *RigChooser) viewList() string {
 	if len(rc.names) == 0 {
 		b.WriteString("No rigs configured.\n")
 	} else {
+		contentW := w - 8
+		if contentW > partnerMapMaxW-8 {
+			contentW = partnerMapMaxW - 8
+		}
+		if contentW < 20 {
+			contentW = 20
+		}
+
 		activeRig := rc.app.Logbook.Station.RigName
-		activeLabelStyle := lipgloss.NewStyle().Width(9).Foreground(P.TextMuted)
-		activeFocusedStyle := lipgloss.NewStyle().Width(9).Foreground(P.Cursor)
 		for i, id := range rc.names {
 			rp := rc.app.Config.Rigs[id]
-			displayName := config.RigDisplayName(&rp)
+			dn := config.RigDisplayName(&rp)
+			model := rp.Model
+			antenna := rp.Antenna
+			if antenna == "" {
+				antenna = "—"
+			}
+
+			// Truncate/pad raw values to fixed column widths before styling.
+			nameVal := padOrTrunc(dn, 24)
+			modelVal := padOrTrunc(model, 16)
+
 			prefix := "  "
-			active := ""
+			activeBadge := padOrTrunc("[      ]", 10)
 			if id == activeRig {
-				active = "[Active]"
+				activeBadge = S.ToastSuccess.Render(padOrTrunc("[Active]", 10))
 			}
-			info := rp.Model
-			if rp.Antenna != "" {
-				info += "  /  " + rp.Antenna
-			}
-			flrig := ""
-			if rp.FlrigEnabled {
-				flrig = "flrig"
-			}
-			wsjtx := ""
-			if rp.WsjtxEnabled {
-				if flrig != "" {
-					wsjtx = "wsjtx"
-				} else {
-					wsjtx = "wsjtx"
-				}
-			}
-			if flrig != "" && wsjtx != "" {
-				flrig = flrig + "/" + wsjtx
-			} else if wsjtx != "" {
-				flrig = wsjtx
-			}
+
 			if i == rc.cursor {
 				prefix = S.FormPrefixOn.Render("> ")
+				nameVal = CursorStyle.Render(nameVal)
+				modelVal = CursorStyle.Render(modelVal)
+				antenna = CursorStyle.Render(antenna)
 			}
-			lbl := activeLabelStyle.Align(lipgloss.Left).Render(active)
-			val := fmt.Sprintf("%s  %s  %s", displayName, info, flrig)
-			if i == rc.cursor {
-				lbl = activeFocusedStyle.Align(lipgloss.Left).Render(active)
-				val = CursorStyle.Render(val)
-			}
-			line := lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)
-			b.WriteString(padOrTrunc(line, w-4))
+
+			line := prefix + activeBadge + nameVal + modelVal + antenna
+			b.WriteString(padOrTrunc(line, contentW))
 			if i < len(rc.names)-1 {
 				b.WriteString("\n")
 			}
@@ -295,11 +288,11 @@ func (rc *RigChooser) refreshNames() {
 
 func (rc *RigChooser) startCreate() {
 	rc.mode = rigChooserCreate
-	rc.form.SetValues("", "", "")
+	rc.form.SetValues("", "", "", "")
 	rc.form.SetFlrig(false, "localhost", "12345")
 	rc.form.SetWsjtx(false, "127.0.0.1", "2233")
 	rc.form.blurAll()
-	rc.form.Rig.Focus()
+	rc.form.Name.Focus()
 	rc.editing = ""
 }
 
@@ -307,15 +300,15 @@ func (rc *RigChooser) startEdit(id string) {
 	rp := rc.app.Config.Rigs[id]
 	rc.mode = rigChooserEdit
 	rc.editing = id
-	rc.form.SetValues(rp.Model, rp.Antenna, rp.Power)
+	rc.form.SetValues(rp.Name, rp.Model, rp.Antenna, rp.Power)
 	rc.form.SetFlrig(rp.FlrigEnabled, rp.FlrigHost, rp.FlrigPort)
 	rc.form.SetWsjtx(rp.WsjtxEnabled, rp.WsjtxUDPHost, fmt.Sprintf("%d", rp.WsjtxUDPPort))
 	rc.form.blurAll()
-	rc.form.Rig.Focus()
+	rc.form.Name.Focus()
 }
 
 func (rc *RigChooser) saveForm() tea.Cmd {
-	rig, ant, pwr := rc.form.Values()
+	nm, rig, ant, pwr := rc.form.Values()
 	flrigEnabled, flrigHost, flrigPort := rc.form.FlrigValues()
 	wsjtxEnabled, wsjtxHost, wsjtxPortStr := rc.form.WsjtxValues()
 	wsjtxPort, _ := strconv.Atoi(wsjtxPortStr)
@@ -323,17 +316,21 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 		wsjtxPort = 2233
 	}
 
+	if nm == "" {
+		rc.toasts.Warn("Rig name is required")
+		return nil
+	}
 	if rig == "" {
-		rc.toasts.Error("Rig model is required")
+		rc.toasts.Warn("Rig model is required")
 		return nil
 	}
 	if flrigEnabled {
 		if flrigHost == "" {
-			rc.toasts.Error("Flrig host is required")
+			rc.toasts.Warn("Flrig host is required")
 			return nil
 		}
 		if flrigPort == "" {
-			rc.toasts.Error("Flrig port is required")
+			rc.toasts.Warn("Flrig port is required")
 			return nil
 		}
 	}
@@ -342,7 +339,7 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 	if rc.mode == rigChooserCreate {
 		// Check for duplicate by model name.
 		if _, _, found := config.FindRigByModel(rc.app.Config, rig); found {
-			rc.toasts.Error("Rig with model " + rig + " already exists")
+			rc.toasts.Warn("Rig with model " + rig + " already exists")
 			return nil
 		}
 		id := config.NewID(rig)
@@ -351,6 +348,7 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 		}
 		rc.app.Config.Rigs[id] = config.RigPreset{
 			ID:           id,
+			Name:         nm,
 			Model:        rig,
 			Antenna:      ant,
 			Power:        pwr,
@@ -366,6 +364,7 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 	} else {
 		id := rc.editing
 		rp := rc.app.Config.Rigs[id]
+		rp.Name = nm
 		rp.Model = rig
 		rp.Antenna = ant
 		rp.Power = pwr
@@ -423,13 +422,13 @@ func (rc *RigChooser) deleteRig() tea.Cmd {
 
 	// Active rig protection
 	if id == rc.app.Logbook.Station.RigName {
-		rc.toasts.Error("Cannot delete " + displayName + " — it is the active rig. Select another first.")
+		rc.toasts.Warn("Cannot delete " + displayName + " — it is the active rig. Select another first.")
 		rc.mode = rigChooserList
 		return nil
 	}
 
 	if len(rc.names) <= 1 {
-		rc.toasts.Error("Cannot delete " + displayName + " — at least one rig must remain.")
+		rc.toasts.Warn("Cannot delete " + displayName + " — at least one rig must remain.")
 		rc.mode = rigChooserList
 		return nil
 	}

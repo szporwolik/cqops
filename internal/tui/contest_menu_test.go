@@ -1,4 +1,4 @@
-package tui
+﻿package tui
 
 import (
 	"strings"
@@ -83,6 +83,14 @@ func TestAdifContestIDListDedup(t *testing.T) {
 func newTestContestChooser(t *testing.T, contests map[string]config.Contest) *ContestChooser {
 	t.Helper()
 
+	// Ensure contests are bound to the test logbook so they appear in lists.
+	for id, ct := range contests {
+		if ct.LogbookID == "" {
+			ct.LogbookID = "test"
+			contests[id] = ct
+		}
+	}
+
 	cfg := &config.Config{
 		Contests: contests,
 		General:  config.GeneralConfig{DistanceUnit: "km", RenderMap: true},
@@ -92,7 +100,8 @@ func newTestContestChooser(t *testing.T, contests map[string]config.Contest) *Co
 			},
 		},
 	}
-	a := &app.App{Config: cfg}
+	lb := cfg.Logbooks["test"]
+	a := &app.App{Config: cfg, Logbook: &lb, LogbookName: "test"}
 	cc := NewContestChooser(a, NewToastQueue())
 	cc.width = 80
 	cc.height = 24
@@ -196,15 +205,15 @@ func TestContestListActivate(t *testing.T) {
 	// Move to "None" and activate — should deactivate
 	cc.cursor = 0
 	cc.Update(tea.KeyPressMsg{Code: tea.KeySpace})
-	if cc.app.Config.State.ActiveContest != "" {
+	if cc.app.Logbook.ActiveContest != "" {
 		t.Error("activating None should clear active contest")
 	}
 
 	// Move to contest and activate
 	cc.cursor = 1
 	cc.Update(tea.KeyPressMsg{Code: tea.KeySpace})
-	if cc.app.Config.State.ActiveContest != "a1" {
-		t.Errorf("active contest = %q, want a1", cc.app.Config.State.ActiveContest)
+	if cc.app.Logbook.ActiveContest != "a1" {
+		t.Errorf("active contest = %q, want a1", cc.app.Logbook.ActiveContest)
 	}
 }
 
@@ -259,11 +268,11 @@ func TestContestEditFormRender(t *testing.T) {
 	if !strings.Contains(content, "Date:") {
 		t.Error("Edit form should show Date label")
 	}
-	if !strings.Contains(content, "Next QSO seq:") {
-		t.Error("Edit form should show Next QSO seq label")
+	if !strings.Contains(content, "Next QSO / Rcvd serial:") {
+		t.Error("Edit form should show Next QSO / Rcvd serial label")
 	}
-	if !strings.Contains(content, "Contest ID:") {
-		t.Error("Edit form should show Contest ID label")
+	if !strings.Contains(content, "Contest ADIF ID:") {
+		t.Error("Edit form should show Contest ADIF ID label")
 	}
 	if !strings.Contains(content, "Prefill Exchange Sent:") {
 		t.Error("Edit form should show Prefill Exchange Sent checkbox")
@@ -539,12 +548,12 @@ func TestContestCreateSaveLifecycle(t *testing.T) {
 	}
 
 	// The new contest should be active
-	if cc.app.Config.State.ActiveContest == "" {
+	if cc.app.Logbook.ActiveContest == "" {
 		t.Error("Newly created contest should be set as active")
 	}
 
 	// Verify config
-	contestID := cc.app.Config.State.ActiveContest
+	contestID := cc.app.Logbook.ActiveContest
 	ct := cc.app.Config.Contests[contestID]
 	if ct.Name != "New Contest" {
 		t.Errorf("Name = %q, want New Contest", ct.Name)
@@ -564,6 +573,7 @@ func TestNextQSOSeqValidation(t *testing.T) {
 
 	// Set invalid value and try to save
 	cc.nameInput.SetValue("Test")
+	cc.contInput.SetValue("CQ-WPX-CW")
 	cc.nextInput.SetValue("1asd")
 	cc.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 
@@ -585,7 +595,8 @@ func TestNextQSOSeqValidation(t *testing.T) {
 	cc.cursor = 1
 	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	cc.nameInput.SetValue("Test")
-	cc.nextInput.SetValue("-5")
+		cc.contInput.SetValue("CQ-WPX-CW")
+		cc.nextInput.SetValue("-5")
 	cc.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 	if ct.NextQSO == -5 {
 		t.Error("Negative NextQSO should be rejected")
@@ -595,7 +606,8 @@ func TestNextQSOSeqValidation(t *testing.T) {
 	cc.cursor = 1
 	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	cc.nameInput.SetValue("Test")
-	cc.nextInput.SetValue("0")
+		cc.contInput.SetValue("CQ-WPX-CW")
+		cc.nextInput.SetValue("0")
 	cc.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 	// NextQSO should not have changed to 0
 	ct = cc.app.Config.Contests["a1"]
@@ -612,7 +624,8 @@ func TestNextQSOSeqEmptyRejected(t *testing.T) {
 	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	cc.nameInput.SetValue("Test")
-	cc.nextInput.SetValue("")
+		cc.contInput.SetValue("CQ-WPX-CW")
+		cc.nextInput.SetValue("")
 	cc.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 
 	// Should not change when empty

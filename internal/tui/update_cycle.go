@@ -44,6 +44,14 @@ func (m *Model) cycleLogbook() tea.Cmd {
 	m.rc.pathLine = ""
 	m.lookup.wlPrivateData = nil // WL data is logbook-specific
 	m.lookup.wlForceCheck = true
+
+	// Clear contest exchange fields, then re-apply prefill if the new
+	// logbook has an active contest with prefilling enabled.
+	m.fields[fieldExchSent].SetValue("")
+	m.fields[fieldExchRcvd].SetValue("")
+	m.prefillContestExchange()
+	m.needRefresh = true
+
 	// Recheck dupe and new-call status against the new logbook.
 	if strings.TrimSpace(m.fields[fieldCall].Value()) != "" {
 		m.checkDupe()

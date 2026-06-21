@@ -32,7 +32,7 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 - **REF database** — SOTA summits, POTA parks, WWFF areas, IOTA islands — offline search with grid locators
 - **Contest logging** — ADIF Contest ID cycling with descriptions, exchange markers (`@rst @serial @cqz @mycqz @itu @myitu @grid @mygrid`), `###` backward compatibility, per-contest QSO filtering, contest info line on QSO and log editor screens, Ctrl+C contest cycling, "In use" toggle — inactive contests shown in menu but excluded from cycling
 - **Station identity** — configurable CQ zone, ITU zone, DXCC ID, continent, SIG/SIGInfo per logbook, applied to every QSO
-- **ADIF 3.1.7** — full import/export with Unicode→ASCII sanitization, contest exchange fields (STX/SRX/STX_STRING/SRX_STRING/CONTEST_ID), station fields (MY_CQZ/MY_ITUZ/MY_DXCC/MY_SIG/MY_SIG_INFO/MY_ANTENNA); export respects active contest filter
+- **ADIF 3.1.7** — full import/export with Unicode→ASCII sanitization, contest exchange fields (STX/SRX/STX_STRING/SRX_STRING/CONTEST_ID), station fields (MY_CQ_ZONE/MY_ITU_ZONE/MY_DXCC/MY_SIG/MY_SIG_INFO/MY_ANTENNA); export respects active contest filter
 - **Offline mode** — `--offline` / `-o` flag: skips all network checks, status dots show yellow; flrig and WSJT-X still work (local services)
 - **Debug mode** — `--debug` / `-d` flag enables debug-level logging (suppressed by default for performance)
 - **Multi-rig** — per-rig flrig and WSJT-X configuration, rig name field, Ctrl+C to duplicate a rig profile

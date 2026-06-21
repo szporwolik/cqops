@@ -199,9 +199,9 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.ui.logbookEditor.width = m.width
 		m.ui.logbookEditor.height = m.height
 		// Apply active contest filter.
-		if m.App.Config.State.ActiveContest != "" {
-			ct := m.App.Config.Contests[m.App.Config.State.ActiveContest]
-			m.ui.logbookEditor.SetContestID(m.App.Config.State.ActiveContest, config.ContestDisplayName(&ct), ct.ContestID)
+		if m.App.Logbook.ActiveContest != "" {
+			ct := m.App.Config.Contests[m.App.Logbook.ActiveContest]
+			m.ui.logbookEditor.SetContestID(m.App.Logbook.ActiveContest, config.ContestDisplayName(&ct), ct.ContestID)
 		} else {
 			m.ui.logbookEditor.SetContestID("", "", "")
 		}

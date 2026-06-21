@@ -58,6 +58,32 @@ func (m *Model) focusField(f field) {
 	m.fields[m.focus].Focus()
 }
 
+// contestAutoFocusExchRcvd moves focus to the Exch Rcvd field after
+// lookups complete, so the operator can type the received exchange and
+// press Enter to log — a tight contest workflow.
+func (m *Model) contestAutoFocusExchRcvd() {
+	if m.App == nil || m.App.Config == nil {
+		return
+	}
+	if m.App.Logbook.ActiveContest == "" {
+		return
+	}
+	if m.screen != screenQSO || m.confirm != nil || m.spotDialog != nil {
+		return
+	}
+	call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+	if call == "" || !m.lookupsCompleteForCall(call) {
+		return
+	}
+	// Don't steal focus if the user has already moved away from the call field.
+	if m.focus != fieldCall {
+		return
+	}
+	// Move cursor to end of Exch Rcvd so typing immediately appends.
+	m.focusField(fieldExchRcvd)
+	m.fields[fieldExchRcvd].SetCursor(len(m.fields[fieldExchRcvd].Value()))
+}
+
 // nextField moves focus to the next QSO form field in sequence.
 func (m *Model) nextField() {
 	m.onFieldExit()

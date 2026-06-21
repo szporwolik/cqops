@@ -259,12 +259,6 @@ func (m *Model) handleMainMenuUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.C
 			m.ui.configMenu.width = m.width
 			m.ui.configMenu.height = m.height
 			m.screen = screenConfig
-		case "station":
-			m.ui.chooser = NewLogbookChooser(m.App, m.toasts)
-			m.ui.chooser.width = m.width
-			m.ui.chooser.height = m.height
-			m.ui.chooser.startEdit(m.App.Config.State.ActiveLogbook)
-			m.screen = screenChooser
 		case "logbook":
 			m.ui.chooser = NewLogbookChooser(m.App, m.toasts)
 			m.ui.chooser.width = m.width
@@ -556,9 +550,9 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 		if key.Matches(keyMsg, m.keys.CycleContest) && !m.ui.logbookEditor.IsEditing() {
 			m.cycleActiveContest()
 			// Refresh the editor's contest filter.
-			if m.App.Config.State.ActiveContest != "" {
-				ct := m.App.Config.Contests[m.App.Config.State.ActiveContest]
-				m.ui.logbookEditor.SetContestID(m.App.Config.State.ActiveContest, config.ContestDisplayName(&ct), ct.ContestID)
+			if m.App.Logbook.ActiveContest != "" {
+				ct := m.App.Config.Contests[m.App.Logbook.ActiveContest]
+				m.ui.logbookEditor.SetContestID(m.App.Logbook.ActiveContest, config.ContestDisplayName(&ct), ct.ContestID)
 			} else {
 				m.ui.logbookEditor.SetContestID("", "", "")
 			}

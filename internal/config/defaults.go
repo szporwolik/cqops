@@ -27,10 +27,10 @@ func DefaultConfig() *Config {
 		},
 		Logbooks: map[string]Logbook{
 			defaultLogbookID: {
-				ID:          defaultLogbookID,
-				Description: "Default station logbook",
-				Station:     Station{},
-				ADIF:        ADIFConfig{},
+				ID:      defaultLogbookID,
+				Name:    "Default",
+				Station: Station{},
+				ADIF:    ADIFConfig{},
 			},
 		},
 		Rigs: map[string]RigPreset{

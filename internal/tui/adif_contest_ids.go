@@ -1,5 +1,7 @@
 package tui
 
+import "sort"
+
 // adifContestIDs is the ADIF 3.1.7 Contest ID enumeration (III.B.5).
 // Key is the Contest-ID value (as stored in ADIF). Value is the human-readable Description.
 // Sourced from https://adif.org.uk/317/ADIF_317.htm#Contest_ID
@@ -371,7 +373,7 @@ var adifContestIDs = []struct {
 	{"Z60A-NEW-YEAR", "Z60A New Year Contest"},
 }
 
-// adifContestIDList builds an ordered, deduplicated list of Contest-ID values for Space cycling.
+// adifContestIDList builds a sorted, deduplicated list of Contest-ID values for Space cycling.
 func adifContestIDList() []string {
 	seen := make(map[string]bool, len(adifContestIDs))
 	list := make([]string, 0, len(adifContestIDs))
@@ -381,6 +383,7 @@ func adifContestIDList() []string {
 			list = append(list, e.ID)
 		}
 	}
+	sort.Strings(list)
 	return list
 }
 

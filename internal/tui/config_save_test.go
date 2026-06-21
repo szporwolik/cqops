@@ -29,7 +29,7 @@ func newSaveTestModel(t *testing.T) *Model {
 	cfg.Logbooks = map[string]config.Logbook{
 		"default": {
 			ID:          "default",
-			Description: "Test",
+			Name: "Test",
 			Station: config.Station{
 				Callsign: "SP9MOA",
 				Operator: "Op",
@@ -139,7 +139,7 @@ func testSaveConfigBlocked(t *testing.T, cfgSetup func(*config.Config), desc str
 	cfg.Logbooks = map[string]config.Logbook{
 		"default": {
 			ID:          "default",
-			Description: "Test",
+			Name: "Test",
 			Station:     config.Station{Callsign: "SP9MOA", Grid: "JO90"},
 		},
 	}
@@ -154,7 +154,7 @@ func testSaveConfigBlocked(t *testing.T, cfgSetup func(*config.Config), desc str
 	origCfg := config.DefaultConfig()
 	origCfg.State.ActiveLogbook = "default"
 	origCfg.Logbooks = map[string]config.Logbook{
-		"default": {ID: "default", Description: "Test", Station: config.Station{Callsign: "SP9MOA", Grid: "JO90"}},
+		"default": {ID: "default", Name: "Test", Station: config.Station{Callsign: "SP9MOA", Grid: "JO90"}},
 	}
 	if err := config.Save(cfgPath, origCfg); err != nil {
 		t.Fatalf("pre-save valid config: %v", err)

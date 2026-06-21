@@ -33,7 +33,7 @@ func newChooserTestApp(t *testing.T) *app.App {
 		General: config.GeneralConfig{DistanceUnit: "km"},
 		Logbooks: map[string]config.Logbook{
 			"home": {
-				Description: "Home QTH",
+				Name: "Home QTH",
 				Station: config.Station{
 					Callsign: "SP9MOA",
 					Grid:     "JO90",
@@ -41,7 +41,7 @@ func newChooserTestApp(t *testing.T) *app.App {
 				},
 			},
 			"portable": {
-				Description: "Field operations",
+				Name: "Field operations",
 				Station: config.Station{
 					Callsign: "SP9MOA/P",
 					Grid:     "JO80",

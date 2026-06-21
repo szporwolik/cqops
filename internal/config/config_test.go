@@ -106,8 +106,8 @@ func TestDefaultConfig_HasDefaults(t *testing.T) {
 	if defLB.ID == "" {
 		t.Error("DefaultConfig: logbook ID should not be empty")
 	}
-	if defLB.Description == "" {
-		t.Error("DefaultConfig: default logbook description is empty")
+	if defLB.Name == "" {
+		t.Error("DefaultConfig: default logbook.Name is empty")
 	}
 
 	// Station defaults (should be zero-value — user fills them in)
@@ -161,7 +161,7 @@ func TestSaveAndLoad_RoundTrip(t *testing.T) {
 	cfg.Integrations.QRZ.User = "testuser"
 	cfg.State.ActiveLogbook = "default"
 	cfg.Logbooks["default"] = Logbook{
-		Description: "Test logbook",
+		Name: "Test logbook",
 		Station: Station{
 			Callsign: "SP9MOA",
 			Operator: "Szymon",
@@ -279,8 +279,8 @@ func TestSaveAndLoad_PreservesAPIKey(t *testing.T) {
 
 	cfg := DefaultConfig()
 	cfg.Logbooks["default"] = Logbook{
-		Description: "test",
-		Station:     Station{Callsign: "XX0XX", Operator: "Op", Grid: "JO90"},
+		Name:    "test",
+		Station: Station{Callsign: "XX0XX", Operator: "Op", Grid: "JO90"},
 		Wavelog: &WavelogConfig{
 			Enabled:          true,
 			URL:              "https://log.example.com",
@@ -444,7 +444,7 @@ func TestStationRigMethods(t *testing.T) {
 func TestResolveLogbook_UsesActiveLogbook(t *testing.T) {
 	cfg := &Config{
 		State:    StateConfig{ActiveLogbook: "home"},
-		Logbooks: map[string]Logbook{"home": {Description: "Home QTH"}},
+		Logbooks: map[string]Logbook{"home": {Name: "Home QTH"}},
 	}
 	name, lb, err := ResolveLogbook(cfg, "")
 	if err != nil {
@@ -453,15 +453,15 @@ func TestResolveLogbook_UsesActiveLogbook(t *testing.T) {
 	if name != "home" {
 		t.Errorf("name = %q; want home", name)
 	}
-	if lb.Description != "Home QTH" {
-		t.Errorf("description = %q", lb.Description)
+	if lb.Name != "Home QTH" {
+		t.Errorf("name = %q", lb.Name)
 	}
 }
 
 func TestResolveLogbook_CLIFlagOverrides(t *testing.T) {
 	cfg := &Config{
 		State:    StateConfig{ActiveLogbook: "home"},
-		Logbooks: map[string]Logbook{"field": {Description: "Field day"}},
+		Logbooks: map[string]Logbook{"field": {Name: "Field day"}},
 	}
 	name, _, err := ResolveLogbook(cfg, "field")
 	if err != nil {
@@ -476,7 +476,7 @@ func TestResolveLogbook_EnvVarOverrides(t *testing.T) {
 	t.Setenv("CQOPS_LOGBOOK", "contest")
 	cfg := &Config{
 		State:    StateConfig{ActiveLogbook: "home"},
-		Logbooks: map[string]Logbook{"contest": {Description: "Contest"}},
+		Logbooks: map[string]Logbook{"contest": {Name: "Contest"}},
 	}
 	name, _, err := ResolveLogbook(cfg, "")
 	if err != nil {

@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -17,6 +18,9 @@ func NewID(seed string) string {
 // LogbookDisplayName returns the human-readable name for a logbook:
 // the station callsign, or "Unnamed" if empty.
 func LogbookDisplayName(lb *Logbook) string {
+	if lb.Name != "" {
+		return lb.Name
+	}
 	if lb.Station.Callsign != "" {
 		return lb.Station.Callsign
 	}
@@ -54,7 +58,7 @@ func SortedLogbookIDs(cfg *Config) []string {
 		pairs = append(pairs, pair{id, LogbookDisplayName(&lb)})
 	}
 	sort.Slice(pairs, func(i, j int) bool {
-		return pairs[i].name < pairs[j].name
+		return strings.ToLower(pairs[i].name) < strings.ToLower(pairs[j].name)
 	})
 	ids := make([]string, len(pairs))
 	for i, p := range pairs {
@@ -74,7 +78,7 @@ func SortedRigIDs(cfg *Config) []string {
 		pairs = append(pairs, pair{id, RigDisplayName(&rp)})
 	}
 	sort.Slice(pairs, func(i, j int) bool {
-		return pairs[i].name < pairs[j].name
+		return strings.ToLower(pairs[i].name) < strings.ToLower(pairs[j].name)
 	})
 	ids := make([]string, len(pairs))
 	for i, p := range pairs {
@@ -95,19 +99,23 @@ func FindLogbookByCallsign(cfg *Config, callsign string) (string, *Logbook, bool
 	return "", nil, false
 }
 
-// SortedContestIDs returns all contest IDs sorted by name.
+// SortedContestIDs returns contest IDs for the given logbook, sorted by name.
+// Pass empty logbookID to get all contests (backward compatibility).
 // Use ActiveContestIDs for cycling — that one excludes not-in-use contests.
-func SortedContestIDs(cfg *Config) []string {
+func SortedContestIDs(cfg *Config, logbookID string) []string {
 	type pair struct {
 		id   string
 		name string
 	}
 	pairs := make([]pair, 0, len(cfg.Contests))
 	for id, c := range cfg.Contests {
+		if logbookID != "" && c.LogbookID != logbookID {
+			continue
+		}
 		pairs = append(pairs, pair{id, ContestDisplayName(&c)})
 	}
 	sort.Slice(pairs, func(i, j int) bool {
-		return pairs[i].name < pairs[j].name
+		return strings.ToLower(pairs[i].name) < strings.ToLower(pairs[j].name)
 	})
 	ids := make([]string, len(pairs))
 	for i, p := range pairs {
@@ -116,9 +124,10 @@ func SortedContestIDs(cfg *Config) []string {
 	return ids
 }
 
-// ActiveContestIDs returns contest IDs sorted by name, excluding contests
-// where InUse is explicitly set to false. Used for Ctrl+C cycling.
-func ActiveContestIDs(cfg *Config) []string {
+// ActiveContestIDs returns contest IDs for the given logbook, sorted by name,
+// excluding contests where InUse is explicitly set to false. Used for Ctrl+C cycling.
+// Pass empty logbookID to get all contests (backward compatibility).
+func ActiveContestIDs(cfg *Config, logbookID string) []string {
 	type pair struct {
 		id   string
 		name string
@@ -128,10 +137,13 @@ func ActiveContestIDs(cfg *Config) []string {
 		if c.InUse != nil && !*c.InUse {
 			continue
 		}
+		if logbookID != "" && c.LogbookID != logbookID {
+			continue
+		}
 		pairs = append(pairs, pair{id, ContestDisplayName(&c)})
 	}
 	sort.Slice(pairs, func(i, j int) bool {
-		return pairs[i].name < pairs[j].name
+		return strings.ToLower(pairs[i].name) < strings.ToLower(pairs[j].name)
 	})
 	ids := make([]string, len(pairs))
 	for i, p := range pairs {

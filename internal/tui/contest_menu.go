@@ -96,7 +96,7 @@ func NewContestChooser(a *app.App, tq *ToastQueue) *ContestChooser {
 func (c *ContestChooser) rebuildNames() {
 	c.names = []string{"None"}
 	c.ids = []string{""}
-	sorted := config.SortedContestIDs(c.app.Config)
+	sorted := config.SortedContestIDs(c.app.Config, c.app.LogbookName)
 	for _, id := range sorted {
 		contest := c.app.Config.Contests[id]
 		c.names = append(c.names, config.ContestDisplayName(&contest))
@@ -104,9 +104,9 @@ func (c *ContestChooser) rebuildNames() {
 	}
 	// Keep cursor on active contest.
 	c.cursor = 0
-	if c.app.Config.State.ActiveContest != "" {
+	if c.app.Logbook.ActiveContest != "" {
 		for i, id := range c.ids {
-			if id == c.app.Config.State.ActiveContest {
+			if id == c.app.Logbook.ActiveContest {
 				c.cursor = i
 				break
 			}
@@ -267,13 +267,13 @@ func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (c *ContestChooser) handleActivate() tea.Cmd {
 	if c.cursor == 0 {
-		c.app.Config.State.ActiveContest = ""
+		c.app.SetActiveContest("")
 		c.toasts.Success("Contest: None (no contest active)")
 		return nil
 	}
 	id := c.ids[c.cursor]
 	ct := c.app.Config.Contests[id]
-	c.app.Config.State.ActiveContest = id
+	c.app.SetActiveContest(id)
 	c.toasts.Success(fmt.Sprintf("Contest activated: %s", config.ContestDisplayName(&ct)))
 	return nil
 }
@@ -376,15 +376,19 @@ func (c *ContestChooser) saveContest() tea.Cmd {
 	dateStr := strings.TrimSpace(c.dateInput.Value())
 	nextStr := strings.TrimSpace(c.nextInput.Value())
 	if nextStr == "" {
-		c.toasts.Warn("Next QSO seq is required")
+		c.toasts.Warn("Next QSO / Rcvd serial is required")
 		return nil
 	}
 	nextQSO, err := strconv.Atoi(nextStr)
 	if err != nil || nextQSO < 1 {
-		c.toasts.Warn("Next QSO seq must be a positive integer")
+		c.toasts.Warn("Next QSO / Rcvd serial must be a positive integer")
 		return nil
 	}
 	contestID := strings.TrimSpace(c.contInput.Value())
+	if contestID == "" {
+		c.toasts.Warn("Contest ADIF ID is required — press Space to cycle through known IDs")
+		return nil
+	}
 	exchangeSent := strings.TrimSpace(c.exchSentInput.Value())
 	exchangeRcvd := strings.TrimSpace(c.exchRcvdInput.Value())
 
@@ -395,6 +399,7 @@ func (c *ContestChooser) saveContest() tea.Cmd {
 		}
 		c.app.Config.Contests[id] = config.Contest{
 			ID:                  id,
+			LogbookID:           c.app.LogbookName,
 			Name:                name,
 			Date:                dateStr,
 			NextQSO:             nextQSO,
@@ -406,7 +411,7 @@ func (c *ContestChooser) saveContest() tea.Cmd {
 			ExchangeRcvd:        exchangeRcvd,
 			InUse:               &c.inUse,
 		}
-		c.app.Config.State.ActiveContest = id
+		c.app.SetActiveContest(id)
 		c.toasts.Success(fmt.Sprintf("Contest created: %s", name))
 	} else {
 		ct := c.app.Config.Contests[c.editID]
@@ -424,8 +429,8 @@ func (c *ContestChooser) saveContest() tea.Cmd {
 		// If the contest was just marked "not in use" and it is the
 		// active contest, clear the active contest so the user isn't
 		// stuck inside a deactivated contest.
-		if !c.inUse && c.app.Config.State.ActiveContest == c.editID {
-			c.app.Config.State.ActiveContest = ""
+		if !c.inUse && c.app.Logbook.ActiveContest == c.editID {
+			c.app.SetActiveContest("")
 			c.toasts.Info(fmt.Sprintf("Contest %q deactivated — active contest cleared", name))
 		}
 		c.toasts.Success(fmt.Sprintf("Contest saved: %s", name))
@@ -442,8 +447,8 @@ func (c *ContestChooser) deleteContest() tea.Cmd {
 	ct := c.app.Config.Contests[id]
 	name := config.ContestDisplayName(&ct)
 	delete(c.app.Config.Contests, id)
-	if c.app.Config.State.ActiveContest == id {
-		c.app.Config.State.ActiveContest = ""
+	if c.app.Logbook.ActiveContest == id {
+		c.app.SetActiveContest("")
 	}
 	c.rebuildNames()
 	c.toasts.Success(fmt.Sprintf("Contest deleted: %s", name))
@@ -490,9 +495,13 @@ func (c *ContestChooser) viewList() string {
 	if len(c.names) == 0 {
 		b.WriteString("No contests configured.\n")
 	} else {
-		activeLabelStyle := lipgloss.NewStyle().Width(9).Foreground(P.TextMuted)
-		activeFocusedStyle := lipgloss.NewStyle().Width(9).Foreground(P.Cursor)
-		dateStyle := lipgloss.NewStyle().Width(12).Foreground(P.TextDim)
+		contentW := w - 8
+		if contentW > partnerMapMaxW-8 {
+			contentW = partnerMapMaxW - 8
+		}
+		if contentW < 20 {
+			contentW = 20
+		}
 
 		for i, name := range c.names {
 			prefix := "  "
@@ -500,11 +509,11 @@ func (c *ContestChooser) viewList() string {
 				prefix = S.FormPrefixOn.Render("> ")
 			}
 
-			active := ""
-			if c.ids[i] == c.app.Config.State.ActiveContest && c.ids[i] != "" {
-				active = "[Active]"
-			} else if i == 0 && c.app.Config.State.ActiveContest == "" {
-				active = "[Active]"
+			activeBadge := padOrTrunc("[      ]", 10)
+			if c.ids[i] == c.app.Logbook.ActiveContest && c.ids[i] != "" {
+				activeBadge = S.ToastSuccess.Render(padOrTrunc("[Active]", 10))
+			} else if i == 0 && c.app.Logbook.ActiveContest == "" {
+				activeBadge = S.ToastSuccess.Render(padOrTrunc("[Active]", 10))
 			}
 
 			dateStr := ""
@@ -513,14 +522,17 @@ func (c *ContestChooser) viewList() string {
 				dateStr = c.formatDate(ct.Date)
 			}
 
-			lbl := activeLabelStyle.Align(lipgloss.Left).Render(active)
-			val := fmt.Sprintf("%s  %s", dateStyle.Render(dateStr), name)
+			// Truncate/pad raw values before styling.
+			dateVal := padOrTrunc(dateStr, 12)
+			nameVal := padOrTrunc(name, 40)
+
 			if i == c.cursor {
-				lbl = activeFocusedStyle.Align(lipgloss.Left).Render(active)
-				val = CursorStyle.Render(fmt.Sprintf("%s  %s", dateStyle.Render(dateStr), name))
+				dateVal = CursorStyle.Render(dateVal)
+				nameVal = CursorStyle.Render(nameVal)
 			}
-			line := lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)
-			b.WriteString(padOrTrunc(line, w-4))
+
+			line := prefix + activeBadge + dateVal + nameVal
+			b.WriteString(padOrTrunc(line, contentW))
 			if i < len(c.names)-1 {
 				b.WriteString("\n")
 			}
@@ -585,7 +597,7 @@ func (c *ContestChooser) viewForm() string {
 		xl = lblF
 	}
 	b.WriteString("  ")
-	b.WriteString(xl.Render("Next QSO seq:"))
+	b.WriteString(xl.Render("Next QSO / Rcvd serial:"))
 	b.WriteString(c.nextInput.View())
 	b.WriteString("\n")
 
@@ -607,7 +619,7 @@ func (c *ContestChooser) viewForm() string {
 	if cidValid {
 		extra = contestIDDesc(cid)
 	}
-	line := lipgloss.JoinHorizontal(lipgloss.Center, "  ", cl.Render("Contest ID:"), " ", cs.Render(c.contInput.View()))
+	line := lipgloss.JoinHorizontal(lipgloss.Center, "  ", cl.Render("Contest ADIF ID:"), cs.Render(c.contInput.View()))
 	if extra != "" {
 		line = line + " " + DimStyle.Render(extra)
 	}
@@ -644,7 +656,7 @@ func (c *ContestChooser) viewForm() string {
 
 	markers := [][2]string{
 		{"@rst", "RST sent or received"},
-		{"@serial", "Next QSO sequence number"},
+		{"@serial", "Sent serial / rcvd serial placeholder"},
 		{"@cqz", "DX station CQ zone"},
 		{"@mycqz", "Your station CQ zone"},
 		{"@itu", "DX station ITU zone"},
@@ -688,7 +700,7 @@ func (c *ContestChooser) renderCheckbox(b *strings.Builder, w, focusIdx int, lab
 		cb = CursorStyle.Render(cb)
 	}
 	b.WriteString(padOrTrunc(
-		lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", cb),
+		lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, cb),
 		w-4))
 }
 
@@ -704,7 +716,7 @@ func (c *ContestChooser) renderIndentedField(b *strings.Builder, focusIdx int, l
 	if strings.TrimSpace(ti.Value()) == "" && c.focus != focusIdx {
 		val = DimStyle.Render("See reference below")
 	}
-	line := lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)
+	line := lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, val)
 	if extra != "" {
 		line = line + " " + DimStyle.Render(extra)
 	}

@@ -12,6 +12,7 @@ import (
 )
 
 type StationForm struct {
+	Name        textinput.Model
 	Callsign    textinput.Model
 	Operator    textinput.Model
 	Locator     textinput.Model
@@ -51,8 +52,10 @@ func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder strin
 		return ti
 	}
 
+	nm := mkTI(30, 28, "e.g. Home QTH, Field Day")
+	nm.Focus()
 	cs := mkTI(20, 28, callsignPlaceholder)
-	cs.Focus()
+	cs.Blur()
 	op := mkTI(20, 28, opPlaceholder)
 	lc := mkTI(8, 28, locatorPlaceholder)
 	sr := mkTI(20, 28, "e.g. SP/TA-001")
@@ -69,6 +72,7 @@ func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder strin
 	ws := mkTI(80, 60, "press Update to fetch")
 
 	return &StationForm{
+		Name:        nm,
 		Callsign:    cs,
 		Operator:    op,
 		Locator:     lc,
@@ -89,6 +93,8 @@ func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder strin
 
 func (f *StationForm) Update(msg tea.KeyPressMsg) {
 	switch {
+	case f.Name.Focused():
+		f.Name, _ = f.Name.Update(msg)
 	case f.Callsign.Focused():
 		f.Callsign, _ = f.Callsign.Update(msg)
 		f.Callsign.SetValue(strings.ToUpper(f.Callsign.Value()))
@@ -144,6 +150,9 @@ func (f *StationForm) Update(msg tea.KeyPressMsg) {
 
 func (f *StationForm) NextInput() {
 	switch {
+	case f.Name.Focused():
+		f.Name.Blur()
+		f.Callsign.Focus()
 	case f.Callsign.Focused():
 		f.Callsign.Blur()
 		f.Locator.Focus()
@@ -188,7 +197,7 @@ func (f *StationForm) NextInput() {
 		if f.WlEnabled {
 			f.WlURL.Focus()
 		} else {
-			f.Callsign.Focus()
+			f.Name.Focus()
 		}
 	case f.WlURL.Focused():
 		f.WlURL.Blur()
@@ -203,19 +212,22 @@ func (f *StationForm) NextInput() {
 		f.wlBtnFocus = 2
 	case f.wlBtnFocus == 2:
 		f.wlBtnFocus = 0
-		f.Callsign.Focus()
+		f.Name.Focus()
 	}
 }
 
 func (f *StationForm) PrevInput() {
 	switch {
-	case f.Callsign.Focused():
-		f.Callsign.Blur()
+	case f.Name.Focused():
+		f.Name.Blur()
 		if f.WlEnabled {
 			f.wlBtnFocus = 2
 		} else {
 			f.wlCbFocus = true
 		}
+	case f.Callsign.Focused():
+		f.Callsign.Blur()
+		f.Name.Focus()
 	case f.wlBtnFocus == 2:
 		f.wlBtnFocus = 1
 	case f.wlBtnFocus == 1:
@@ -277,7 +289,7 @@ func (f *StationForm) OnLastField() bool {
 }
 
 func (f *StationForm) BlurAll() {
-	blurTextinputs(&f.Callsign, &f.Operator, &f.Locator, &f.SOTARef, &f.POTARef, &f.WWFFRef,
+	blurTextinputs(&f.Name, &f.Callsign, &f.Operator, &f.Locator, &f.SOTARef, &f.POTARef, &f.WWFFRef,
 		&f.CQZone, &f.ITUZone, &f.DXCC, &f.SIG, &f.SIGInfo,
 		&f.WlURL, &f.WlKey, &f.WlStationID)
 	f.wlCbFocus = false
@@ -286,7 +298,7 @@ func (f *StationForm) BlurAll() {
 	f.wlBtnFocus = 0
 }
 
-func (f *StationForm) Values() (callsign, operator, locator, sotaRef, potaRef, wwffRef string,
+func (f *StationForm) Values() (name, callsign, operator, locator, sotaRef, potaRef, wwffRef string,
 	wlEnabled bool, wlURL, wlKey, wlStationID string, iaruRegion, cqZone, ituZone, dxcc int,
 	sig, sigInfo, continent string) {
 
@@ -295,7 +307,8 @@ func (f *StationForm) Values() (callsign, operator, locator, sotaRef, potaRef, w
 	fmt.Sscanf(strings.TrimSpace(f.ITUZone.Value()), "%d", &iz)
 	fmt.Sscanf(strings.TrimSpace(f.DXCC.Value()), "%d", &dx)
 
-	return strings.ToUpper(strings.TrimSpace(f.Callsign.Value())),
+	return strings.TrimSpace(f.Name.Value()),
+		strings.ToUpper(strings.TrimSpace(f.Callsign.Value())),
 		strings.ToUpper(strings.TrimSpace(f.Operator.Value())),
 		formatLocator(f.Locator.Value()),
 		strings.TrimSpace(f.SOTARef.Value()),
@@ -312,7 +325,8 @@ func (f *StationForm) Values() (callsign, operator, locator, sotaRef, potaRef, w
 		f.Continent
 }
 
-func (f *StationForm) SetValues(callsign, operator, locator, sotaRef, potaRef, wwffRef string, iaruRegion, cqZone, ituZone, dxcc int, sig, sigInfo, continent string) {
+func (f *StationForm) SetValues(name, callsign, operator, locator, sotaRef, potaRef, wwffRef string, iaruRegion, cqZone, ituZone, dxcc int, sig, sigInfo, continent string) {
+	f.Name.SetValue(name)
 	f.Callsign.SetValue(callsign)
 	f.Operator.SetValue(operator)
 	f.Locator.SetValue(locator)
@@ -375,6 +389,8 @@ func (f *StationForm) View() tea.View {
 	}
 	var b strings.Builder
 
+	// Station name
+	b.WriteString(f.renderFieldLine("Name:", &f.Name, availW))
 	// Callsign
 	b.WriteString(f.renderFieldLine("Callsign:", &f.Callsign, availW))
 	// Grid locator
@@ -558,7 +574,10 @@ func (f *StationForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 type enterOnLastFieldMsg struct{}
 
 func (f *StationForm) Validate() error {
-	cs, _, gr, _, _, _, _, _, _, _, _, _, _, _, _, _, cont := f.Values()
+	nm, cs, _, gr, _, _, _, _, _, _, _, _, _, _, _, _, _, cont := f.Values()
+	if nm == "" {
+		return fmt.Errorf("station name is required")
+	}
 	if cs == "" {
 		return fmt.Errorf("callsign is required")
 	}
@@ -580,7 +599,7 @@ func (f *StationForm) Validate() error {
 // ValidateField returns an error hint for the given render field label, or ""
 // if the field value is valid. Used for inline UI feedback.
 func (f *StationForm) ValidateField(label string) string {
-	cs, _, gr, _, _, _, _, _, _, _, _, _, _, _, _, _, cont := f.Values()
+	_, cs, _, gr, _, _, _, _, _, _, _, _, _, _, _, _, _, cont := f.Values()
 	switch label {
 	case "Callsign:":
 		if cs != "" && !qso.IsValidCall(cs) {

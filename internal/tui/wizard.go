@@ -1,4 +1,4 @@
-package tui
+﻿package tui
 
 import (
 	"fmt"
@@ -166,39 +166,39 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if cmd := w.station.HandleKey(msg); cmd != nil {
 					switch cmd().(type) {
 					case enterOnLastFieldMsg:
-						cs, _, gr, _, _, _, wlEnabled, _, _, wlStationID, _, _, _, _, _, _, _ := w.station.Values()
+						_, cs, _, gr, _, _, _, wlEnabled, _, _, wlStationID, _, _, _, _, _, _, _ := w.station.Values()
 						if cs == "" {
-							w.toasts.Error("Callsign is required")
+							w.toasts.Warn("Callsign is required")
 							return w, nil
 						}
 						if !qso.IsValidCall(cs) {
-							w.toasts.Error("Not a valid callsign")
+							w.toasts.Warn("Not a valid callsign")
 							return w, nil
 						}
 						if gr == "" {
-							w.toasts.Error("Grid locator is required")
+							w.toasts.Warn("Grid locator is required")
 							return w, nil
 						}
 						if !qso.IsValidLocator(gr) {
-							w.toasts.Error("Not a valid grid locator")
+							w.toasts.Warn("Not a valid grid locator")
 							return w, nil
 						}
 						if wlEnabled {
 							if wlStationID == "" {
-								w.toasts.Error("Wavelog: no Station ID — press Update then Space")
+								w.toasts.Warn("Wavelog: no Station ID — press Update then Space")
 								return w, nil
 							}
 							if len(w.wlStations) == 0 {
-								w.toasts.Error("No stations loaded — press Update to fetch from Wavelog")
+								w.toasts.Warn("No stations loaded — press Update to fetch from Wavelog")
 								return w, nil
 							}
 						}
 						w.step = stepRig
 						applog.InfoDetail("Wizard: station step done", fmt.Sprintf("call=%s grid=%s", cs, gr))
 					case wlUpdateAction:
-						_, _, _, _, _, _, _, wlURL, wlKey, _, _, _, _, _, _, _, _ := w.station.Values()
+						_, _, _, _, _, _, _, _, wlURL, wlKey, _, _, _, _, _, _, _, _ := w.station.Values()
 						if wlURL == "" || wlKey == "" {
-							w.toasts.Error("Wavelog URL and API Key are required")
+							w.toasts.Warn("Wavelog URL and API Key are required")
 							return w, nil
 						}
 						w.wlUpdating = true
@@ -208,9 +208,9 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							return wlUpdateMsg{stations: stations, err: err}
 						}
 					case wlTestAction:
-						_, _, _, _, _, _, _, wlURL, wlKey, _, _, _, _, _, _, _, _ := w.station.Values()
+						_, _, _, _, _, _, _, _, wlURL, wlKey, _, _, _, _, _, _, _, _ := w.station.Values()
 						if wlURL == "" || wlKey == "" {
-							w.toasts.Error("Wavelog URL and API Key are required")
+							w.toasts.Warn("Wavelog URL and API Key are required")
 							return w, nil
 						}
 						w.wlTesting = true
@@ -228,9 +228,9 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if cmd := w.rigForm.HandleKey(msg); cmd != nil {
 					switch cmd().(type) {
 					case enterOnLastFieldMsg:
-						rig, _, _ := w.rigForm.Values()
+						_, rig, _, _ := w.rigForm.Values()
 						if rig == "" {
-							w.toasts.Error("Rig model is required")
+							w.toasts.Warn("Rig model is required")
 							return w, nil
 						}
 						flrigOn, _, _ := w.rigForm.FlrigValues()
@@ -239,11 +239,11 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						rawPort := strings.TrimSpace(w.rigForm.FlrigPort.Value())
 						if flrigOn {
 							if rawHost == "" {
-								w.toasts.Error("Flrig host is required when flrig is enabled")
+								w.toasts.Warn("Flrig host is required when flrig is enabled")
 								return w, nil
 							}
 							if rawPort == "" {
-								w.toasts.Error("Flrig port is required when flrig is enabled")
+								w.toasts.Warn("Flrig port is required when flrig is enabled")
 								return w, nil
 							}
 						}
@@ -265,7 +265,7 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					user := strings.TrimSpace(w.qrzUser.Value())
 					pass := w.qrzPass.Value()
 					if user == "" || pass == "" {
-						w.toasts.Error("QRZ username and password required")
+						w.toasts.Warn("QRZ username and password required")
 						return w, nil
 					}
 					w.qrzTesting = true
@@ -282,16 +282,16 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if k.String() == "ctrl+s" || k.String() == "\x13" {
 					if w.qrzEnable {
 						if strings.TrimSpace(w.qrzUser.Value()) == "" {
-							w.toasts.Error("QRZ username is required when QRZ is enabled")
+							w.toasts.Warn("QRZ username is required when QRZ is enabled")
 							return w, nil
 						}
 						if w.qrzPass.Value() == "" {
-							w.toasts.Error("QRZ password is required when QRZ is enabled")
+							w.toasts.Warn("QRZ password is required when QRZ is enabled")
 							return w, nil
 						}
 					}
 					w.step = stepTimezone
-					_, _, _, _, _, _, wlOn, _, _, _, _, _, _, _, _, _, _ := w.station.Values()
+					_, _, _, _, _, _, _, wlOn, _, _, _, _, _, _, _, _, _, _ := w.station.Values()
 					applog.InfoDetail("Wizard: QRZ step done", fmt.Sprintf("qrz=%v wavelog=%v", w.qrzEnable, wlOn))
 					return w, nil
 				}
@@ -708,8 +708,8 @@ func (w *Wizard) handleEnter() tea.Cmd {
 }
 
 func (w *Wizard) saveConfig() error {
-	cs, op, gr, sotaRef, potaRef, wwffRef, wlEnabled, wlURL, wlKey, wlStationID, iaruRegion, cqZone, ituZone, dxcc, sig, sigInfo, continent := w.station.Values()
-	rig, ant, pwr := w.rigForm.Values()
+	sn, cs, op, gr, sotaRef, potaRef, wwffRef, wlEnabled, wlURL, wlKey, wlStationID, iaruRegion, cqZone, ituZone, dxcc, sig, sigInfo, continent := w.station.Values()
+	nm, rig, ant, pwr := w.rigForm.Values()
 	flrigEnabled, flrigHost, flrigPort := w.rigForm.FlrigValues()
 	wsjtxEnabled, wsjtxHost, wsjtxPortStr := w.rigForm.WsjtxValues()
 	wsjtxPort, _ := strconv.Atoi(wsjtxPortStr)
@@ -727,6 +727,7 @@ func (w *Wizard) saveConfig() error {
 	w.App.Config.Rigs = map[string]config.RigPreset{
 		rigID: {
 			ID:           rigID,
+			Name:         nm,
 			Model:        rig,
 			Antenna:      ant,
 			Power:        pwr,
@@ -760,11 +761,15 @@ func (w *Wizard) saveConfig() error {
 		}
 	}
 
+	lbName := sn
+	if lbName == "" {
+		lbName = "Default"
+	}
 	w.App.Config.State.ActiveLogbook = lbID
 	w.App.Config.Logbooks = map[string]config.Logbook{
 		lbID: {
 			ID:          lbID,
-			Description: "Default station logbook",
+			Name:        lbName,
 			Station: config.Station{
 				Callsign:   cs,
 				Operator:   op,

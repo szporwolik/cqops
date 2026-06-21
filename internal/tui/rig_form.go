@@ -12,7 +12,8 @@ import (
 type rigFormField int
 
 const (
-	rigFieldRig rigFormField = iota
+	rigFieldName rigFormField = iota
+	rigFieldRig
 	rigFieldAntenna
 	rigFieldPower
 	rigFieldFlrig
@@ -25,6 +26,7 @@ const (
 )
 
 type RigForm struct {
+	Name         textinput.Model
 	Rig          textinput.Model
 	Antenna      textinput.Model
 	Power        textinput.Model
@@ -39,11 +41,16 @@ type RigForm struct {
 }
 
 func NewRigForm(rigPlaceholder, antennaPlaceholder, powerPlaceholder string) *RigForm {
+	nm := newTextinput()
+	nm.CharLimit = 30
+	nm.SetWidth(28)
+	nm.Placeholder = "e.g. Home, Portable"
+	nm.Focus()
+
 	ri := newTextinput()
 	ri.CharLimit = 30
 	ri.SetWidth(28)
 	ri.Placeholder = rigPlaceholder
-	ri.Focus()
 
 	an := newTextinput()
 	an.CharLimit = 30
@@ -76,6 +83,7 @@ func NewRigForm(rigPlaceholder, antennaPlaceholder, powerPlaceholder string) *Ri
 	wp.Placeholder = "2233"
 
 	rf := &RigForm{
+		Name:      nm,
 		Rig:       ri,
 		Antenna:   an,
 		Power:     pw,
@@ -83,13 +91,15 @@ func NewRigForm(rigPlaceholder, antennaPlaceholder, powerPlaceholder string) *Ri
 		FlrigPort: fp,
 		WsjtxHost: wh,
 		WsjtxPort: wp,
-		focus:     rigFieldRig,
+		focus:     rigFieldName,
 	}
 	return rf
 }
 
 func (f *RigForm) Update(msg tea.KeyPressMsg) {
 	switch f.focus {
+	case rigFieldName:
+		f.Name, _ = f.Name.Update(msg)
 	case rigFieldRig:
 		f.Rig, _ = f.Rig.Update(msg)
 	case rigFieldAntenna:
@@ -134,7 +144,7 @@ func (f *RigForm) PrevInput() {
 }
 
 func (f *RigForm) blurAll() {
-	blurTextinputs(&f.Rig, &f.Antenna, &f.Power, &f.FlrigHost, &f.FlrigPort, &f.WsjtxHost, &f.WsjtxPort)
+	blurTextinputs(&f.Name, &f.Rig, &f.Antenna, &f.Power, &f.FlrigHost, &f.FlrigPort, &f.WsjtxHost, &f.WsjtxPort)
 }
 
 func (f *RigForm) focusField() {
@@ -166,8 +176,9 @@ func (f *RigForm) OnLastField() bool {
 	return f.focus == rigFieldWsjtx
 }
 
-func (f *RigForm) Values() (rig, antenna, power string) {
-	return strings.TrimSpace(f.Rig.Value()),
+func (f *RigForm) Values() (name, rig, antenna, power string) {
+	return strings.TrimSpace(f.Name.Value()),
+		strings.TrimSpace(f.Rig.Value()),
 		strings.TrimSpace(f.Antenna.Value()),
 		strings.TrimSpace(f.Power.Value())
 }
@@ -189,7 +200,8 @@ func (f *RigForm) FlrigURL() string {
 	return "http://" + host + ":" + port
 }
 
-func (f *RigForm) SetValues(rig, antenna, power string) {
+func (f *RigForm) SetValues(name, rig, antenna, power string) {
+	f.Name.SetValue(name)
 	f.Rig.SetValue(rig)
 	f.Antenna.SetValue(antenna)
 	f.Power.SetValue(power)
@@ -280,6 +292,8 @@ func (f *RigForm) View() tea.View {
 
 	var b strings.Builder
 
+	b.WriteString(padOrTrunc(renderField("Name:", &f.Name, f.focus == rigFieldName), availW))
+	b.WriteString("\n")
 	b.WriteString(padOrTrunc(renderField("Rig model:", &f.Rig, f.focus == rigFieldRig), availW))
 	b.WriteString("\n")
 	b.WriteString(padOrTrunc(renderField("Antenna (opt):", &f.Antenna, f.focus == rigFieldAntenna), availW))
@@ -384,7 +398,10 @@ func (f *RigForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 }
 
 func (f *RigForm) Validate() error {
-	rig, _, _ := f.Values()
+	nm, rig, _, _ := f.Values()
+	if nm == "" {
+		return fmt.Errorf("rig name is required")
+	}
 	if rig == "" {
 		return fmt.Errorf("rig model is required")
 	}

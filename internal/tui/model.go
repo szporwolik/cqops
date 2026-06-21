@@ -122,8 +122,8 @@ type Model struct {
 	ui            uiComponents
 	photo         photoState
 	mapView       *mapRenderer // embedded world map renderer
-	confirm    *DialogModel // active confirmation dialog (quit, etc.)
-	spotDialog *SpotDialog  // active DX spot dialog
+	confirm       *DialogModel // active confirmation dialog (quit, etc.)
+	spotDialog    *SpotDialog  // active DX spot dialog
 
 	// PSK Reporter.
 	psk pskState
@@ -475,6 +475,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmd = tea.Batch(cmd, m.saveQSO())
 			}
 		}
+		m.contestAutoFocusExchRcvd()
 		if m.photo.partnerPicNeedLoad {
 			m.photo.partnerPicNeedLoad = false
 			w := m.photo.partnerPicW
@@ -505,6 +506,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmd = tea.Batch(cmd, m.saveQSO())
 			}
 		}
+		m.contestAutoFocusExchRcvd()
 		return m, cmd
 	case refRebuildMsg:
 		m.ref.building = false
@@ -977,7 +979,7 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 // buildContestLine returns the contest info line for the QSO screen, or "" if
 // no contest is active.
 func (m *Model) buildContestLine() string {
-	id := m.App.Config.State.ActiveContest
+	id := m.App.Logbook.ActiveContest
 	if id == "" {
 		return ""
 	}
@@ -992,8 +994,8 @@ func (m *Model) buildContestLine() string {
 // cycleActiveContest rotates through all active contests (excluding None).
 // Persists the new active contest to config silently.
 func (m *Model) cycleActiveContest() {
-	ids := config.ActiveContestIDs(m.App.Config)
-	current := m.App.Config.State.ActiveContest
+	ids := config.ActiveContestIDs(m.App.Config, m.App.LogbookName)
+	current := m.App.Logbook.ActiveContest
 
 	// No active contests — nothing to cycle.
 	if len(ids) == 0 {
@@ -1002,7 +1004,7 @@ func (m *Model) cycleActiveContest() {
 	}
 
 	if current == "" {
-		m.App.Config.State.ActiveContest = ids[0]
+		m.App.SetActiveContest(ids[0])
 		ct := m.App.Config.Contests[ids[0]]
 		m.toasts.Info(fmt.Sprintf("Contest: %s", config.ContestDisplayName(&ct)))
 		m.needRefresh = true
@@ -1013,11 +1015,11 @@ func (m *Model) cycleActiveContest() {
 	for i, id := range ids {
 		if id == current {
 			if i+1 < len(ids) {
-				m.App.Config.State.ActiveContest = ids[i+1]
+				m.App.SetActiveContest(ids[i+1])
 				ct := m.App.Config.Contests[ids[i+1]]
 				m.toasts.Info(fmt.Sprintf("Contest: %s", config.ContestDisplayName(&ct)))
 			} else {
-				m.App.Config.State.ActiveContest = ""
+				m.App.SetActiveContest("")
 				m.toasts.Info("Contest: None")
 			}
 			m.needRefresh = true
@@ -1028,7 +1030,7 @@ func (m *Model) cycleActiveContest() {
 
 	// Current contest not found in active list (possibly deleted or set to
 	// not-in-use) — clear and wrap to first.
-	m.App.Config.State.ActiveContest = ""
+	m.App.SetActiveContest("")
 	m.toasts.Info("Contest: None")
 	m.needRefresh = true
 	config.Save(m.App.ConfigPath, m.App.Config)
@@ -1039,7 +1041,7 @@ func (m *Model) cycleActiveContest() {
 // and station values. Next QSO is NOT incremented here — that happens on
 // successful QSO save.
 func (m *Model) prefillContestExchange() {
-	id := m.App.Config.State.ActiveContest
+	id := m.App.Logbook.ActiveContest
 	if id == "" {
 		return
 	}
@@ -1054,7 +1056,7 @@ func (m *Model) prefillContestExchange() {
 	}
 
 	if ct.PrefillExchangeRcvd && ct.ExchangeRcvd != "" {
-		val := m.resolveExchangeMarkers(ct.ExchangeRcvd, "rcvd", ct.NextQSO)
+		val := strings.TrimSpace(m.resolveExchangeMarkers(ct.ExchangeRcvd, "rcvd", ct.NextQSO))
 		m.fields[fieldExchRcvd].SetValue(val)
 	}
 }
@@ -1076,13 +1078,19 @@ func (m *Model) resolveExchangeMarkers(tmpl, direction string, nextQSO int) stri
 	// Build replacement map.
 	rep := make(map[string]string)
 
-	// @serial / ### — contest sequence number.
-	seq := fmt.Sprintf("%03d", nextQSO)
-	if nextQSO > 999 {
-		seq = fmt.Sprintf("%d", nextQSO)
+	// @serial — contest sequence number.
+	// For received exchange, keep @serial as a format placeholder so the
+	// operator knows where to type the received serial; the actual number
+	// is parsed from user input at save time via ParseSerial.
+	if direction == "sent" {
+		seq := fmt.Sprintf("%03d", nextQSO)
+		if nextQSO > 999 {
+			seq = fmt.Sprintf("%d", nextQSO)
+		}
+		rep["@serial"] = seq
+	} else {
+		rep["@serial"] = ""
 	}
-	rep["@serial"] = seq
-	rep["###"] = seq
 
 	// @rst — RST depending on direction.
 	if direction == "sent" {
@@ -1115,7 +1123,7 @@ func (m *Model) resolveExchangeMarkers(tmpl, direction string, nextQSO int) stri
 
 	// Optional markers that resolved to empty → render "?".
 	for k, v := range rep {
-		if v == "" && k != "@serial" && k != "@rst" && k != "###" {
+		if v == "" && k != "@serial" && k != "@rst" {
 			rep[k] = "?"
 		}
 	}

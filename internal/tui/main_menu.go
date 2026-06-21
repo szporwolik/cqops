@@ -24,12 +24,11 @@ type MainMenu struct {
 func NewMainMenu() *MainMenu {
 	return &MainMenu{
 		items: []menuItem{
-			{"General", "Language, timezone, distance units"},
-			{"Station", "Callsign, operator, locator, CQ/ITU zones"},
-			{"Logbooks", "Logs, station profiles, paths"},
-			{"Rigs", "Radio models, antennas, flrig"},
+			{"General", "Display, timezone, data sources, debug"},
+			{"Logbooks", "Station name, callsign, grid, Wavelog"},
+			{"Rigs", "Name, model, antenna, flrig, WSJT-X"},
 			{"Contests", "Contest profiles, exchanges, serials"},
-			{"Integration", "DX Cluster, QRZ.com, Wavelog"},
+			{"Integration", "DX Cluster, QRZ.com"},
 			{"Notifications", "Desktop alert preferences"},
 		},
 	}
@@ -49,16 +48,14 @@ func (m *MainMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case 0:
 				m.action = "general"
 			case 1:
-				m.action = "station"
-			case 2:
 				m.action = "logbook"
-			case 3:
+			case 2:
 				m.action = "rig"
-			case 4:
+			case 3:
 				m.action = "contest"
-			case 5:
+			case 4:
 				m.action = "integration"
-			case 6:
+			case 5:
 				m.action = "notifications"
 			}
 		case "up", "k":

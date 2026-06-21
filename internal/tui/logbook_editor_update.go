@@ -939,8 +939,8 @@ func (le *LogbookEditor) runExport(path string) {
 
 	// Write ADIF header. Per ADIF spec, the first character must not be '<'
 	// or the file is treated as having no header.
-	_, err = fmt.Fprintf(f, "CQOps ADIF Export\n<ADIF_VER:5>3.1.4<PROGRAMID:5>CQOps<PROGRAMVERSION:%d>%s<EOH>\n",
-		len(version.Version), version.Version)
+	_, err = fmt.Fprintf(f, "CQOps ADIF Export\n<ADIF_VER:5>3.1.7<PROGRAMID:5>CQOps<PROGRAMVERSION:%d>%s<EOH>\n",
+		len(version.Resolved()), version.Resolved())
 	if err != nil {
 		applog.Error("ADIF export: failed to write header", "path", path, "error", err)
 		msgCh <- editorMsg{dlErr: "write error: " + err.Error()}

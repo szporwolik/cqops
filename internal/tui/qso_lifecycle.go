@@ -58,10 +58,20 @@ func (m *Model) saveQSO() tea.Cmd {
 	qs.SIG = strings.TrimSpace(m.fields[fieldSIG].Value())
 	qs.ExchSent = strings.TrimSpace(m.fields[fieldExchSent].Value())
 	qs.ExchRcvd = strings.TrimSpace(m.fields[fieldExchRcvd].Value())
-	qs.STX = qso.ParseSerial(qs.ExchSent)
-	qs.SRX = qso.ParseSerial(qs.ExchRcvd)
 	qs.STXString = qs.ExchSent
 	qs.SRXString = qs.ExchRcvd
+
+	// Only set STX/SRX if the contest exchange template uses @serial.
+	// ParseSerial extracts the last integer from any exchange string,
+	// but STX/SRX are specifically for contest serial numbers.
+	if ct, ok := m.App.Config.Contests[m.App.Logbook.ActiveContest]; ok {
+		if ct.PrefillExchange && strings.Contains(ct.ExchangeSent, "@serial") {
+			qs.STX = qso.ParseSerial(qs.ExchSent)
+		}
+		if ct.PrefillExchangeRcvd && strings.Contains(ct.ExchangeRcvd, "@serial") {
+			qs.SRX = qso.ParseSerial(qs.ExchRcvd)
+		}
+	}
 	station := qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
 		Operator:        m.App.Logbook.Station.Operator,
@@ -91,10 +101,10 @@ func (m *Model) saveQSO() tea.Cmd {
 	}
 	qso.ApplyStationDefaults(qs, station)
 	// Attach active contest to QSO.
-	qs.ContestID = m.App.Config.State.ActiveContest
+	qs.ContestID = m.App.Logbook.ActiveContest
 	// Set the ADIF Contest ID from the active contest config.
-	if m.App.Config.State.ActiveContest != "" {
-		if ct, ok := m.App.Config.Contests[m.App.Config.State.ActiveContest]; ok {
+	if m.App.Logbook.ActiveContest != "" {
+		if ct, ok := m.App.Config.Contests[m.App.Logbook.ActiveContest]; ok {
 			qs.ContestADIFID = ct.ContestID
 		}
 	}
@@ -138,7 +148,7 @@ func (m *Model) refreshQSOS() tea.Cmd {
 		var qsos []qso.QSO
 		var err error
 		for attempt := 0; attempt < 3; attempt++ {
-			qsos, err = store.ListQSOs(m.App.DB, 500, m.App.Config.State.ActiveContest)
+			qsos, err = store.ListQSOs(m.App.DB, 500, m.App.Logbook.ActiveContest)
 			if err == nil {
 				break
 			}

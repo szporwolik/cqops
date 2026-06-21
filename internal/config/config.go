@@ -10,6 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/szporwolik/cqops/internal/qso"
+	"github.com/szporwolik/cqops/internal/version"
 )
 
 type Config struct {
@@ -58,9 +59,9 @@ type NotificationsConfig struct {
 
 type StateConfig struct {
 	ActiveLogbook   string `yaml:"active_logbook"`
-	ActiveContest   string `yaml:"active_contest,omitempty"`
 	RetainComment   bool   `yaml:"retain_comment,omitempty"`
 	RetainedComment string `yaml:"retained_comment,omitempty"`
+	Version         string `yaml:"version,omitempty"`
 }
 
 type QRZConfig struct {
@@ -79,12 +80,13 @@ type Favorite struct {
 }
 
 type Logbook struct {
-	ID           string         `yaml:"-"`
-	Description  string         `yaml:"description"`
-	DatabasePath string         `yaml:"database_path,omitempty"`
-	Station      Station        `yaml:"station"`
-	ADIF         ADIFConfig     `yaml:"adif,omitempty"`
-	Wavelog      *WavelogConfig `yaml:"wavelog,omitempty"`
+	ID            string         `yaml:"-"`
+	Name          string         `yaml:"name"`
+	ActiveContest string         `yaml:"active_contest,omitempty"`
+	DatabasePath  string         `yaml:"database_path,omitempty"`
+	Station       Station        `yaml:"station"`
+	ADIF          ADIFConfig     `yaml:"adif,omitempty"`
+	Wavelog       *WavelogConfig `yaml:"wavelog,omitempty"`
 }
 
 type Station struct {
@@ -107,6 +109,7 @@ type Station struct {
 // Contest represents a contest configuration.
 type Contest struct {
 	ID                  string `yaml:"-"`
+	LogbookID           string `yaml:"logbook_id,omitempty"`
 	Name                string `yaml:"name"`
 	Date                string `yaml:"contest_date,omitempty"`
 	NextQSO             int    `yaml:"next_qso,omitempty"`
@@ -231,6 +234,7 @@ func Load(path string) (*Config, error) {
 // Save marshals cfg as YAML and writes it to path.
 
 func Save(path string, cfg *Config) error {
+	cfg.State.Version = version.Resolved()
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
