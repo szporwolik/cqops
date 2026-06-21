@@ -5,6 +5,7 @@
 </p>
 
 [![release](https://img.shields.io/github/v/release/szporwolik/cqops?include_prereleases&label=release&color=1f6feb)](https://github.com/szporwolik/cqops/releases)
+[![downloads](https://img.shields.io/github/downloads/szporwolik/cqops/total?color=1f6feb)](https://github.com/szporwolik/cqops/releases)
 [![go](https://img.shields.io/badge/Go-1.26-00ADD8)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 
@@ -121,7 +122,7 @@ Flags:
 - [modernc.org/sqlite](https://modernc.org/sqlite) — Pure Go SQLite (no CGO)
 - [ntcharts](https://github.com/NimbleMarkets/ntcharts) — Map rendering
 - [yaml.v3](https://gopkg.in/yaml.v3) — YAML config parsing
-- [golang.org/x/term](https://pkg.go.dev/golang.org/x/term) — Terminal I/O
+- [golang.org/x/text](https://pkg.go.dev/golang.org/x/text) — Unicode normalization for ADIF
 
 **Integrations:**
 - [wsjtx-go](https://github.com/k0swe/wsjtx-go) — WSJT-X UDP protocol
