@@ -127,6 +127,8 @@ var flrigModeMap = map[string]string{
 	"USB":    "SSB",
 	"LSB":    "SSB",
 	"CW":     "CW",
+	"CW-L":   "CW",
+	"CW-U":   "CW",
 	"CWR":    "CW",
 	"RTTY":   "RTTY",
 	"RTTYR":  "RTTY",

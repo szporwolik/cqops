@@ -248,6 +248,19 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 // handleFormKey processes QSO form-specific key bindings when no sub-screen is active.
 // Returns a command and true if the key was handled.
 func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
+	// drainPending returns any lookup command queued by onFieldExit (Tab/arrow
+	// out of the call field), batched with the caller's existing command.
+	drainPending := func(existing tea.Cmd) tea.Cmd {
+		if c := m.lookup.pendingLookupCmd; c != nil {
+			m.lookup.pendingLookupCmd = nil
+			if existing != nil {
+				return tea.Batch(existing, c)
+			}
+			return c
+		}
+		return existing
+	}
+
 	var persistCmd tea.Cmd
 	switch {
 	case m.retainFocused:
@@ -267,21 +280,21 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			m.retainComment = !m.retainComment
 			persistCmd = m.persistRetainComment()
 		}
-		return persistCmd, true
+		return drainPending(persistCmd), true
 
 	// Tab jumps horizontally across columns; Down/Up walk vertically.
 	case msg.String() == "tab":
 		m.nextField()
-		return nil, true
+		return drainPending(nil), true
 	case msg.String() == "shift+tab":
 		m.prevField()
-		return nil, true
+		return drainPending(nil), true
 	case msg.String() == "down":
 		m.nextRowField()
-		return nil, true
+		return drainPending(nil), true
 	case msg.String() == "up":
 		m.prevRowField()
-		return nil, true
+		return drainPending(nil), true
 
 	case key.Matches(msg, m.keys.Save):
 		return m.saveQSO(), true
@@ -358,6 +371,11 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	if call != "" && (curBand != m.lookup.wlLastBand || curMode != m.lookup.wlLastMode) && m.lookup.wlPrivateData != nil {
 		m.lookup.wlNeed = true
 		m.lookup.wlCall = call
+	}
+	// Dispatch any lookup command queued by onFieldExit (Tab/arrow out of call field).
+	if c := m.lookup.pendingLookupCmd; c != nil {
+		m.lookup.pendingLookupCmd = nil
+		return c, true
 	}
 	return nil, false
 }

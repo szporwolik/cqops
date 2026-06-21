@@ -410,10 +410,13 @@ func (m *Model) applyFreqDefaults() {
 	}
 
 	low, _, _ := qso.BandRange(band)
-	if low >= 50 {
-		m.fields[fieldMode].SetValue("FM")
-	} else {
-		m.fields[fieldMode].SetValue("SSB")
+	curMode := strings.TrimSpace(m.fields[fieldMode].Value())
+	if curMode == "" {
+		if low >= 50 {
+			m.fields[fieldMode].SetValue("FM")
+		} else {
+			m.fields[fieldMode].SetValue("SSB")
+		}
 	}
 
 	mode := strings.ToUpper(strings.TrimSpace(m.fields[fieldMode].Value()))
@@ -616,11 +619,8 @@ func (m *Model) onFieldExit() {
 			break
 		}
 		m.lookup.qrzLastCall = strings.ToUpper(cur)
-		m.commitAndLookup()
-		// commitAndLookup returns a command, but onFieldExit cannot
-		// return it.  Flag for handlePendingRequests instead.
-		m.lookup.qrzNeed = true
-		m.lookup.wlNeed = true
+		m.lookup.pendingLookupCmd = m.commitAndLookup()
+		// Also flag for handlePendingRequests as fallback (tick loop).
 
 	case fieldGrid:
 		m.rc.pathGrid = strings.ToUpper(strings.TrimSpace(m.fields[fieldGrid].Value()))

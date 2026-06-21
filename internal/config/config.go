@@ -21,7 +21,7 @@ type Config struct {
 	Logbooks          map[string]Logbook   `yaml:"logbooks"`
 	Rigs              map[string]RigPreset `yaml:"rigs,omitempty"`
 	Contests          map[string]Contest   `yaml:"contests,omitempty"`
-	BroadcastStations []BroadcastStation
+	BroadcastStations []BroadcastStation   `yaml:"-"`
 }
 
 // BroadcastStation represents a broadcast radio station preset.

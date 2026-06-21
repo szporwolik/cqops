@@ -693,9 +693,9 @@ func TestOnFieldExitCall(t *testing.T) {
 	if m.fields[fieldRSTSent].Value() != "59" {
 		t.Errorf("onFieldExit call: RST sent should be auto-filled, got %q", m.fields[fieldRSTSent].Value())
 	}
-	// QRZ lookup should be flagged
-	if !m.lookup.qrzNeed {
-		t.Error("onFieldExit call: qrzNeed should be true for new call")
+	// QRZ lookup should be dispatched (via pendingLookupCmd).
+	if m.lookup.pendingLookupCmd == nil {
+		t.Error("onFieldExit call: pendingLookupCmd should be set for new call")
 	}
 }
 

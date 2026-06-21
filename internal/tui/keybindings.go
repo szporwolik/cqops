@@ -110,7 +110,7 @@ func DefaultKeyMap() KeyMap {
 		),
 		NextField: key.NewBinding(
 			key.WithKeys("tab", "down"),
-			key.WithHelp("↑↓", "Navigate"),
+			key.WithHelp("Tab", "↹ Col"),
 		),
 		PrevField: key.NewBinding(
 			key.WithKeys("shift+tab", "up"),

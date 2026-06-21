@@ -3,6 +3,7 @@ package tui
 import (
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/qrz"
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
@@ -40,4 +41,8 @@ type lookupState struct {
 	// pendingSave is set when Enter is pressed while lookups are still
 	// in progress. The save fires automatically once both complete.
 	pendingSave bool
+
+	// pendingLookupCmd is set by onFieldExit when the call field is left
+	// via Tab/arrows. handleFormKey batches it so lookups fire immediately.
+	pendingLookupCmd tea.Cmd
 }
