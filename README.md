@@ -18,28 +18,16 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 
 ## Features
 
-- **Quick QSO logging** — keyboard-driven TUI with form cache, auto date/time, field cycling, retain comment toggle (Ctrl+T)
-- **DUPE! detection** — real-time duplicate QSO warning (same call/band/mode/day) shown as a red badge in the path row; reference-aware logic — different SOTA/POTA/WWFF/IOTA refs skip the warning
-- **New Call! / New DXCC!** — green badges in the path row when a callsign has never been worked or a new DXCC entity is confirmed
-- **Favorites** — 10 memory slots (0–9): Alt+N recalls mode/freq/band/submode, Alt+Shift+N saves the current form state; full-precision frequency, band auto-derived
-- **DX Cluster** — live spots with band/mode/time/continent filters, spot-to-rig tuning via flrig, default continent filter from station config (falls back to DXCC prefix lookup of own callsign)
-- **WSJT-X** — auto-log FT8/FT4 and digital modes with QRZ enrichment & Wavelog sync; configured per-rig (not globally)
-- **PSK Reporter** — real-time propagation spots & world map
-- **Solar conditions** — SFI, SSN, A/K indices from hamqsl.com, cached hourly
-- **QRZ callbook** — configured in Integration menu; one-key lookup (Ins/F2) with auto-fill of name, QTH, grid, country; exchange recalculation on async lookup completion
-- **DXCC & SCP** — prefix-based country/continent/grid lookup (CTY.DAT), live callsign autocomplete (Super Check Partial)
-- **Wavelog** — cloud upload, download, duplicate detection, station profile cycling; upload/download disabled in contest-filtered view and offline mode
-- **REF database** — SOTA summits, POTA parks, WWFF areas, IOTA islands — offline search with grid locators
-- **Contest logging** — ADIF Contest ID cycling with descriptions, exchange markers (`@rst @serial @cqz @mycqz @itu @myitu @grid @mygrid`), `###` backward compatibility, per-contest QSO filtering, contest info line on QSO and log editor screens, Ctrl+C contest cycling, "In use" toggle — inactive contests shown in menu but excluded from cycling
-- **Station identity** — configurable CQ zone, ITU zone, DXCC ID, continent, SIG/SIGInfo per logbook, applied to every QSO
-- **ADIF 3.1.7** — full import/export with Unicode→ASCII sanitization, contest exchange fields (STX/SRX/STX_STRING/SRX_STRING/CONTEST_ID), station fields (MY_CQ_ZONE/MY_ITU_ZONE/MY_DXCC/MY_SIG/MY_SIG_INFO/MY_ANTENNA); export respects active contest filter
-- **Offline mode** — `--offline` / `-o` flag: skips all network checks, status dots show yellow; flrig and WSJT-X still work (local services)
-- **Debug mode** — `--debug` / `-d` flag enables debug-level logging (suppressed by default for performance)
-- **Multi-rig** — per-rig flrig and WSJT-X configuration, rig name field, Ctrl+C to duplicate a rig profile
-- **TUI** — keyboard-driven, SSH-friendly, offline-first SQLite, multi-logbook, form cache with dynamic invalidation
-- **Partner view** — grid-to-grid distance, bearing, world map, Wavelog private lookup integration
-- **Cross-platform** — Windows, Linux, macOS, ARM (Raspberry Pi, Apple Silicon), potato-PC ready
-- **Key bindings** — ↑↓ Navigate • Enter Save • Ins QRZ • Del Clear • C-L Logbook • C-R Rig • C-C Contest • Ctrl+T Toggle retain • Alt+N Recall favorite • Alt+Shift+N Save favorite • F10 Quit
+- **Fast keyboard logging** — three-column form, Enter to log, Tab ↹ Col / ↑↓ Row navigation, auto date/time, DUPE! detection with two-press override, New Call / New DXCC badges
+- **Multi-rig with flrig** — per-rig flrig and WSJT-X config; auto-fills freq, mode, power, split (VFO A/B → Freq/Freq RX)
+- **QRZ, DXCC & SCP** — Ins triggers callbook lookup; auto-fills name, QTH, grid, country; prefix-based DXCC and live callsign autocomplete
+- **Wavelog cloud sync** — upload, download, duplicate detection, station profile cycling
+- **DX Cluster & PSK Reporter** — live spots with filters, spot-to-rig tuning, real-time propagation map
+- **Contest logging** — exchange markers (@rst @serial etc.), auto-derived STX/SRX/STX_STRING/SRX_STRING, per-contest QSO filtering
+- **Offline-first** — SQLite, REF database (SOTA/POTA/WWFF/IOTA), solar data cached hourly; `--offline` flag for fully disconnected ops
+- **ADIF 3.1.7** — full import/export with all station and contest fields
+- **Partner view** — distance, bearing, world map, QRZ photo, Wavelog private lookup
+- **Raspberry Pi ready** — Windows, Linux, macOS, ARM; runs on potato PCs over SSH
 
 ## Screenshots
 
