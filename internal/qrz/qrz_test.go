@@ -94,6 +94,15 @@ func TestQRZCall_ToCallData(t *testing.T) {
 	if cd.ImageURL != "https://example.com/img.jpg" {
 		t.Errorf("image = %q", cd.ImageURL)
 	}
+	if cd.State != "MA" || cd.Zip != "30-001" || cd.County != "Malopolskie" {
+		t.Errorf("state/zip/county = %q/%q/%q", cd.State, cd.Zip, cd.County)
+	}
+	if cd.Class != "A" || cd.Email != "sp9abc@example.com" || cd.URL != "https://example.com" {
+		t.Errorf("class/email/url = %q/%q/%q", cd.Class, cd.Email, cd.URL)
+	}
+	if cd.DXCC != "269" {
+		t.Errorf("DXCC = %q", cd.DXCC)
+	}
 }
 
 func TestCoalesce_FnameWins(t *testing.T) {

@@ -218,7 +218,7 @@ func (m *Model) viewForm(width int) string {
 }
 
 // renderRetainCheckbox renders the "Retain" checkbox next to the Comment field.
-func (m *Model) renderRetainCheckbox(colW int) string {
+func (m *Model) renderRetainCheckbox(_ int) string {
 	mark := "[ ]"
 	label := "Retain"
 	if m.retainComment {

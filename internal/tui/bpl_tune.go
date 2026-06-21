@@ -229,7 +229,7 @@ func (m *Model) bplTuneCmd() tea.Cmd {
 	case bplTabPMR:
 		lines = m.viewBPLPMR(region)
 	case bplTabBRC:
-		lines = m.viewBPLBRC(region)
+		lines = m.viewBPLBRC()
 	}
 
 	if m.bpl.cursor < 0 || m.bpl.cursor >= len(lines) {

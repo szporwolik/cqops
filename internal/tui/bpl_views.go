@@ -326,7 +326,7 @@ func (m *Model) viewBPL(l Layout) string {
 	case bplTabPMR:
 		lines = m.viewBPLPMR(region)
 	case bplTabBRC:
-		lines = m.viewBPLBRC(region)
+		lines = m.viewBPLBRC()
 	}
 	body := m.renderBPLContent(lines)
 
@@ -655,7 +655,7 @@ func (m *Model) bcastPresetsForBRC() []bcastPreset {
 }
 
 // viewBPLBRC renders broadcast receive-only presets.
-func (m *Model) viewBPLBRC(region int) []string {
+func (m *Model) viewBPLBRC() []string {
 	var lines []string
 	bcasts := m.bcastPresetsForBRC()
 	lines = append(lines, S.Warning.Render("BROADCAST ONLY - receive-only reference"))
@@ -823,7 +823,7 @@ func (m *Model) buildBPLMarkdown(region int) string {
 	b.WriteString("\n## Broadcast\n\n")
 	b.WriteString("| Band | Freq MHz | Station | Area |\n")
 	b.WriteString("|------|----------|---------|------|\n")
-	m.writeBRCMarkdownRows(&b, region)
+	m.writeBRCMarkdownRows(&b)
 
 	return b.String()
 }
@@ -1013,7 +1013,7 @@ func (m *Model) writePMRMarkdownRows(b *strings.Builder, region int) {
 	}
 }
 
-func (m *Model) writeBRCMarkdownRows(b *strings.Builder, region int) {
+func (m *Model) writeBRCMarkdownRows(b *strings.Builder) {
 	presets := bcastPresetsAll()
 	sorted := make([]bcastPreset, len(presets))
 	copy(sorted, presets)
@@ -1207,9 +1207,10 @@ func bplRows(region int) []table.Row {
 				prio = "P1"
 			}
 			note := bc.Area
-			if bc.Reliability == "seasonal" {
+			switch bc.Reliability {
+			case "seasonal":
 				note += "  [seasonal]"
-			} else if bc.Reliability == "check_status" {
+			case "check_status":
 				note += "  [check status]"
 			}
 			if bc.Note != "" {

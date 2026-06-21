@@ -36,7 +36,7 @@ func execAllDownloadMsgs(t *testing.T, le *LogbookEditor) *LogbookEditor {
 // startFakeDownload creates a LogbookEditor, starts a download against a fake
 // server, and drains all messages synchronously. Returns the editor after
 // the download goroutine has completed.
-func startFakeDownload(t *testing.T, server *httptest.Server, spots []store.DXCSpot) *LogbookEditor {
+func startFakeDownload(t *testing.T, server *httptest.Server, _ []store.DXCSpot) *LogbookEditor {
 	t.Helper()
 
 	dbPath := filepath.Join(t.TempDir(), "wl_dl_test.db")

@@ -76,11 +76,10 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Capture the error immediately so it's not lost before the channel closes.
 		if le.dlActive && !msg.dlDone {
 			if errText := strings.TrimSpace(msg.dlErr); errText != "" {
-				if le.mode == edModeImporting || le.mode == edModeImport {
+				switch le.mode {
+				case edModeImporting, edModeImport, edModeExporting, edModeExport:
 					le.impErr = errText
-				} else if le.mode == edModeExporting || le.mode == edModeExport {
-					le.impErr = errText // reuse impErr for export errors
-				} else {
+				default:
 					le.wlDownloadErr = errText
 				}
 				return le, le.readDownloadMsg

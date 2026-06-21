@@ -44,9 +44,10 @@ func editorColValue(col string, q *qso.QSO) string {
 	case "Call":
 		return q.Call
 	case "WL":
-		if q.WavelogUploaded == "yes" {
+		switch q.WavelogUploaded {
+		case "yes":
 			return "Y"
-		} else if q.WavelogUploaded == "no" {
+		case "no":
 			return "N"
 		}
 		return ""
