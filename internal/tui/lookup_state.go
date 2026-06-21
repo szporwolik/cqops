@@ -12,11 +12,12 @@ import (
 // results, and last-looked-up state for partner/callbook display.
 type lookupState struct {
 	// QRZ/callbook lookup.
-	qrzOnline   bool
-	qrzNeed     bool
-	qrzCall     string
-	qrzLast     time.Time
-	qrzLastCall string
+	qrzOnline     bool
+	qrzForceCheck bool
+	qrzNeed       bool
+	qrzCall       string
+	qrzLast       time.Time
+	qrzLastCall   string
 
 	// Wavelog connectivity and private lookup.
 	wlOnline       bool

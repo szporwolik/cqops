@@ -92,6 +92,11 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 	switch r := msg.(type) {
 	case inetResultMsg:
+		if !m.inetOnline && bool(r) {
+			// Internet just came up — force Wavelog and QRZ checks.
+			m.lookup.wlForceCheck = true
+			m.lookup.qrzForceCheck = true
+		}
 		m.inetOnline = bool(r)
 		return true, nil
 	case versionCheckMsg:

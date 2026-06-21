@@ -33,9 +33,10 @@ func (m *Model) maybeCheckQRZ() tea.Cmd {
 		m.lookup.qrzOnline = false
 		return nil
 	}
-	if m.tickCount != 1 {
+	if m.tickCount != 1 && !m.lookup.qrzForceCheck {
 		return nil
 	}
+	m.lookup.qrzForceCheck = false
 	return m.checkQRZCmd()
 }
 
