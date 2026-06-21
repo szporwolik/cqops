@@ -191,6 +191,14 @@ type dxcTuneResultMsg struct {
 	verify  string // non-empty when actual frequency differs from requested
 	err     error
 }
+
+// bplTuneResultMsg is sent after a BPL space-to-tune completes.
+type bplTuneResultMsg struct {
+	freqMHz float64
+	mode    string
+	verify  string // non-empty when actual frequency differs from requested
+	err     error
+}
 type inetResultMsg bool
 type statusPending struct {
 	call, grid, mode, submode, report, txMessage string
@@ -527,6 +535,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.handleDXCSpotsStored(r)
 		return m, cmd
 	case dxcTuneResultMsg:
+		if r.err != nil {
+			m.toasts.Error(fmt.Sprintf("Tune failed: %v", r.err))
+		} else {
+			msg := fmt.Sprintf("Rig tuned to %.5f MHz", r.freqMHz)
+			if r.mode != "" {
+				msg += " " + r.mode
+			}
+			if r.verify != "" {
+				m.toasts.Warn("Rig tuning failed")
+			} else {
+				m.toasts.Success(msg)
+			}
+		}
+		return m, cmd
+	case bplTuneResultMsg:
 		if r.err != nil {
 			m.toasts.Error(fmt.Sprintf("Tune failed: %v", r.err))
 		} else {

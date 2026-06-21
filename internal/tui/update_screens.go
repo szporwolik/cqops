@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -682,6 +683,7 @@ const (
 )
 
 var bplTabNames = []string{"Ham Radio - HF", "Ham Radio - VHF", "Citizen Band - CB", "Personal Mobile Radio - PMR", "Broadcast"}
+var bplTabShortNames = []string{"HF", "VHF", "CB", "PMR", "BC"}
 
 type bplState struct {
 	scroll  int
@@ -693,6 +695,9 @@ type bplState struct {
 	// Cache.
 	cachedView string
 	cachedSig  string // "tab|region|w|h|scroll|cursor|bandSel|search"
+
+	// Tune state.
+	tuneCancel context.CancelFunc // cancels previous in-flight BPL tune
 }
 
 // bandOrder is the display order for HF bands, low to high frequency.
@@ -1308,6 +1313,10 @@ func (m *Model) handleBPLUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 		case k.String() == "end" || msg.Code == tea.KeyEnd:
 			m.bpl.cursor = 9999 // clamped later
 			m.bpl.cachedSig = ""
+		case k.String() == " " || k.String() == "space":
+			if c := m.bplTuneCmd(); c != nil {
+				return m, tea.Batch(cmd, c)
+			}
 		}
 	}
 	return m, cmd
@@ -1398,9 +1407,13 @@ func (m *Model) viewBPL(l Layout) string {
 		return m.bpl.cachedView
 	}
 
-	// Tab bar.
+	// Tab bar — use short names on narrow screens.
+	names := bplTabNames
+	if w < 100 {
+		names = bplTabShortNames
+	}
 	var tabParts []string
-	for i, name := range bplTabNames {
+	for i, name := range names {
 		if i == m.bpl.tab {
 			tabParts = append(tabParts, S.TabActive.Render(name))
 		} else {
@@ -1515,8 +1528,10 @@ func (m *Model) viewBPLVHF(region int) []string {
 	if vhf, ok := vhfCalling[region]; ok {
 		for _, v := range vhf {
 			if v.Band != "" {
-				lines = append(lines, fmt.Sprintf("%s %s–%s", v.Band, v.FromMHz, v.ToMHz))
+				// Band range header — dimmed, not tunable.
+				lines = append(lines, DimStyle.Render(fmt.Sprintf("%s %s–%s", v.Band, v.FromMHz, v.ToMHz)))
 			} else {
+				// Single frequency — bright, tunable.
 				tag := shortModeTag(v.Mode)
 				lines = append(lines, fmt.Sprintf("  %s MHz  %s %s", v.Freq, tag, v.Note))
 			}
@@ -1528,21 +1543,23 @@ func (m *Model) viewBPLVHF(region int) []string {
 		lines = append(lines, "")
 		for _, s := range segs {
 			if s.Band != "" {
-				lines = append(lines, fmt.Sprintf("%s %s–%s  %s", s.Band, s.FromMHz, s.ToMHz, s.Note))
+				// Band range header — dimmed.
+				lines = append(lines, DimStyle.Render(fmt.Sprintf("%s %s–%s  %s", s.Band, s.FromMHz, s.ToMHz, s.Note)))
 			} else if s.ToMHz != "" {
+				// Frequency range entry — dimmed, not a single tunable freq.
 				freq := s.Freq
 				if freq != "" {
 					freq = " CoA " + freq
 				}
-				sev := severityStyle(s.Kind)
-				lines = append(lines, sev.Render(fmt.Sprintf("  %s–%s %s%s  %s", s.FromMHz, s.ToMHz, s.Kind, freq, s.Note)))
+				lines = append(lines, DimStyle.Render(fmt.Sprintf("  %s–%s %s%s  %s", s.FromMHz, s.ToMHz, s.Kind, freq, s.Note)))
 			} else {
-				sev := severityStyle(s.Kind)
+				// Single frequency — bright, tunable. Use severity for special kinds.
+				sty := severityStyle(s.Kind)
 				note := s.Note
 				if s.Kind == "LRA" {
 					note += " (country-specific)"
 				}
-				lines = append(lines, sev.Render(fmt.Sprintf("  %s MHz  %s %s", s.Freq, s.Kind, note)))
+				lines = append(lines, sty.Render(fmt.Sprintf("  %s MHz  %s %s", s.Freq, s.Kind, note)))
 			}
 		}
 	}
@@ -1552,21 +1569,23 @@ func (m *Model) viewBPLVHF(region int) []string {
 		lines = append(lines, "")
 		for _, s := range segs {
 			if s.Band != "" {
-				lines = append(lines, fmt.Sprintf("%s %s–%s  %s", s.Band, s.FromMHz, s.ToMHz, s.Note))
+				// Band range header — dimmed.
+				lines = append(lines, DimStyle.Render(fmt.Sprintf("%s %s–%s  %s", s.Band, s.FromMHz, s.ToMHz, s.Note)))
 			} else if s.ToMHz != "" {
+				// Frequency range entry — dimmed, not a single tunable freq.
 				freq := s.Freq
 				if freq != "" {
 					freq = " CoA " + freq
 				}
-				sev := severityStyle(s.Kind)
-				lines = append(lines, sev.Render(fmt.Sprintf("  %s–%s %s%s  %s", s.FromMHz, s.ToMHz, s.Kind, freq, s.Note)))
+				lines = append(lines, DimStyle.Render(fmt.Sprintf("  %s–%s %s%s  %s", s.FromMHz, s.ToMHz, s.Kind, freq, s.Note)))
 			} else {
-				sev := severityStyle(s.Kind)
+				// Single frequency — bright, tunable. Use severity for special kinds.
+				sty := severityStyle(s.Kind)
 				note := s.Note
 				if s.Kind == "LRA" {
 					note += " (country-specific)"
 				}
-				lines = append(lines, sev.Render(fmt.Sprintf("  %s MHz  %s %s", s.Freq, s.Kind, note)))
+				lines = append(lines, sty.Render(fmt.Sprintf("  %s MHz  %s %s", s.Freq, s.Kind, note)))
 			}
 		}
 	}
@@ -1596,10 +1615,9 @@ func (m *Model) viewBPLCB(region int) []string {
 
 	if cbProfile != nil {
 		lines = append(lines, S.Error.Render("NOT A HAM BAND")+" — "+cbProfile.Label)
-		lines = append(lines, fmt.Sprintf("%s–%s MHz  %s  %s", cbProfile.RangeLo, cbProfile.RangeHi, cbProfile.Mod, cbProfile.Note))
+		lines = append(lines, DimStyle.Render(fmt.Sprintf("%s–%s MHz  %s  %s", cbProfile.RangeLo, cbProfile.RangeHi, cbProfile.Mod, cbProfile.Note)))
 		lines = append(lines, "")
-		// Build fixed-width rows: "Ch XX  XXX.XXX  TAG" → 20 chars per channel.
-		var chRows []string
+		// Single-column layout — each channel on its own line for cursor navigation/tuning.
 		for _, ch := range cbChannels {
 			tag := ch.Tag
 			row := fmt.Sprintf("Ch %-2d  %s", ch.Ch, ch.Freq)
@@ -1611,26 +1629,14 @@ func (m *Model) viewBPLCB(region int) []string {
 					row += tag
 				}
 			}
-			chRows = append(chRows, row)
-		}
-		// 2-column layout: two per line, separated by 3 spaces.
-		mid := (len(chRows) + 1) / 2
-		for i := 0; i < mid; i++ {
-			left := chRows[i]
-			right := ""
-			if i+mid < len(chRows) {
-				right = chRows[i+mid]
-			}
-			// Pad left to consistent width for alignment.
-			leftPad := lipgloss.NewStyle().Width(26).Render(left)
-			lines = append(lines, leftPad+"   "+right)
+			lines = append(lines, row)
 		}
 	} else {
 		// UHF CB for R3.
 		for _, p := range profiles {
 			if p.ID == "CB_UHF_AU" {
 				lines = append(lines, S.Error.Render("NOT A HAM BAND")+" — "+p.Label)
-				lines = append(lines, fmt.Sprintf("%s–%s MHz  %s  %s", p.RangeLo, p.RangeHi, p.Mod, p.Note))
+				lines = append(lines, DimStyle.Render(fmt.Sprintf("%s–%s MHz  %s  %s", p.RangeLo, p.RangeHi, p.Mod, p.Note)))
 			}
 		}
 	}
@@ -1663,20 +1669,11 @@ func (m *Model) viewBPLPMR(region int) []string {
 	for _, p := range profiles {
 		if p.ID == "PMR446_ANALOG" {
 			lines = append(lines, S.Warning.Render("NOT A HAM BAND")+" — "+p.Label)
-			lines = append(lines, fmt.Sprintf("%s–%s MHz  %s  %s", p.RangeLo, p.RangeHi, p.Mod, p.Note))
+			lines = append(lines, DimStyle.Render(fmt.Sprintf("%s–%s MHz  %s  %s", p.RangeLo, p.RangeHi, p.Mod, p.Note)))
 			lines = append(lines, "")
-			var chRows []string
+			// Single-column layout — each channel on its own line for cursor navigation/tuning.
 			for _, ch := range pmr446Analog {
-				chRows = append(chRows, fmt.Sprintf("Ch %-2d  %s", ch.Ch, ch.Freq))
-			}
-			mid := (len(chRows) + 1) / 2
-			for i := 0; i < mid; i++ {
-				right := ""
-				if i+mid < len(chRows) {
-					right = chRows[i+mid]
-				}
-				leftPad := lipgloss.NewStyle().Width(26).Render(chRows[i])
-				lines = append(lines, leftPad+"   "+right)
+				lines = append(lines, fmt.Sprintf("Ch %-2d  %s", ch.Ch, ch.Freq))
 			}
 		}
 		if p.ID == "PMR446_DIGITAL" {
@@ -1694,7 +1691,7 @@ func (m *Model) viewBPLPMR(region int) []string {
 				lines = append(lines, "")
 			}
 			lines = append(lines, S.Warning.Render("NOT A HAM BAND")+" — "+p.Label)
-			lines = append(lines, fmt.Sprintf("%s–%s MHz  %s  %s", p.RangeLo, p.RangeHi, p.Mod, p.Note))
+			lines = append(lines, DimStyle.Render(fmt.Sprintf("%s–%s MHz  %s  %s", p.RangeLo, p.RangeHi, p.Mod, p.Note)))
 			for _, ch := range frsGmrsChannels {
 				svc := ""
 				if ch.FRS && ch.GMRS {
@@ -1743,7 +1740,8 @@ func (m *Model) viewBPLBRC(region int) []string {
 		if bc.Note != "" {
 			note += "  " + bc.Note
 		}
-		lines = append(lines, fmt.Sprintf("  %-6s %s MHz  %s  %s", bc.Band, freqMHz, bc.Station, note))
+		// Bright style — single frequency entries are tunable.
+		lines = append(lines, fmt.Sprintf("  %-6s %s MHz  %s  %s", bc.Band, freqMHz, bc.Station, DimStyle.Render(note)))
 	}
 	return lines
 }
@@ -1766,6 +1764,8 @@ func shortModeTag(mode string) string {
 }
 
 // severityStyle returns the appropriate Lip Gloss style for a segment kind.
+// Used only for VHF single-frequency (tunable) entries. Range headers use
+// DimStyle directly — not this function.
 func severityStyle(kind string) lipgloss.Style {
 	switch kind {
 	case "EMG", "AVOID":
@@ -1777,7 +1777,9 @@ func severityStyle(kind string) lipgloss.Style {
 	case "RNG":
 		return S.Value
 	default:
-		return DimStyle
+		// Plain identity style — single frequencies are tunable and should
+		// stand out (like the HF tab's QRP/QRS/IBP entries).
+		return lipgloss.NewStyle()
 	}
 }
 

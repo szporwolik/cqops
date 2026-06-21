@@ -240,6 +240,15 @@ func (f *Client) getPower(ctx context.Context) (float64, error) {
 	return pwr, nil
 }
 
+// GetName returns the rig model name from flrig (e.g. "FT-DX10", "FTDX10").
+func (f *Client) GetName(ctx context.Context) (string, error) {
+	v, err := f.xmlrpcCall(ctx, xmlrpcBare, "rig.get_xcvr")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(v), nil
+}
+
 // xmlrpcMethodCall is the XML-RPC request envelope.
 type xmlrpcMethodCall struct {
 	XMLName    xml.Name      `xml:"methodCall"`

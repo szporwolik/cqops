@@ -16,6 +16,7 @@ type rigState struct {
 	polling   bool
 	client    FlrigClient // flrig HTTP client (nil when disabled or not configured)
 	modes     []string    // mode table from flrig (indexed)
+	name      string      // rig model name from flrig (e.g. "FT-DX10")
 }
 
 // wsjtxState holds WSJT-X integration connection and status state.

@@ -48,9 +48,10 @@ func (m *Model) refreshFlrigClient() {
 		}
 		m.rig.client = nil
 	}
-	// Clear cached modes — a new client means the rig (or flrig instance)
-	// may have changed its mode table.
+	// Clear cached modes and name — a new client means the rig (or flrig instance)
+	// may have changed its mode table or model.
 	m.rig.modes = nil
+	m.rig.name = ""
 }
 
 type flrigResultMsg struct {
@@ -113,17 +114,21 @@ func (m *Model) applyFlrigResult(r flrigResultMsg) {
 			m.rc.status = ""
 		}
 		m.rig.connected = false
-		// Clear modes on disconnect so they are re-fetched when flrig comes back.
+		// Clear modes and name on disconnect so they are re-fetched when flrig comes back.
 		m.rig.modes = nil
+		m.rig.name = ""
 		return
 	}
 	if !m.rig.connected {
 		m.rc.status = ""
 	}
 	m.rig.connected = true
-	// Fetch mode table whenever we (re)connect — rig may have changed.
+	// Fetch mode table and rig name whenever we (re)connect — rig may have changed.
 	if len(m.rig.modes) == 0 {
 		go m.fetchFlrigModes()
+	}
+	if m.rig.name == "" {
+		go m.fetchFlrigName()
 	}
 	m.rig.freq = r.freq
 	if !m.wsjtx.online {
@@ -161,4 +166,20 @@ func (m *Model) fetchFlrigModes() {
 		applog.Warn("flrig: get_modes failed", "attempt", attempt+1, "error", err)
 		time.Sleep(500 * time.Millisecond)
 	}
+}
+
+// fetchFlrigName queries flrig for the rig model name and stores it.
+func (m *Model) fetchFlrigName() {
+	if m.rig.client == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	name, err := m.rig.client.GetName(ctx)
+	if err != nil {
+		applog.Warn("flrig: get_name failed", "error", err)
+		return
+	}
+	m.rig.name = name
+	applog.Info("flrig: rig name fetched", "name", name)
 }

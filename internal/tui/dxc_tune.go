@@ -45,6 +45,18 @@ func (m *Model) dxcTuneCmd() tea.Cmd {
 			m.dxc.tuneCancel = nil
 		}()
 
+		// Reject frequencies beyond the rig's supported range.
+		if maxFreq := rigMaxFreqHz(m.rig.name); freqHz > maxFreq {
+			verify := fmt.Sprintf(" (rig max %.0f MHz)", float64(maxFreq)/1_000_000)
+			applog.Warn("DXC: freq out of rig range",
+				"call", call,
+				"requested_mhz", fmt.Sprintf("%.5f", freqMHz),
+				"rig_max_mhz", fmt.Sprintf("%.0f", float64(maxFreq)/1_000_000),
+				"rig", m.rig.name,
+			)
+			return dxcTuneResultMsg{call: call, freqMHz: freqMHz, verify: verify}
+		}
+
 		if err := client.SetFrequency(ctx, freqHz); err != nil {
 			if ctx.Err() != nil {
 				return dxcTuneResultMsg{call: call, freqMHz: freqMHz, err: fmt.Errorf("cancelled")}

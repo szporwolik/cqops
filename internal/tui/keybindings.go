@@ -333,6 +333,11 @@ func (m *Model) ActiveBindings() []key.Binding {
 			key.NewBinding(key.WithKeys("home", "end"), key.WithHelp("Home/End", "Top/Bottom")),
 			key.NewBinding(key.WithKeys("ctrl+e"), key.WithHelp("C-E", "Export")),
 		)
+		if m.rig.connected && !m.wsjtx.online {
+			bindings = append(bindings,
+				key.NewBinding(key.WithKeys(" "), key.WithHelp("Spc", "Tune")),
+			)
+		}
 	}
 	// Partner screen — show F2 Photo when image available.
 	if m.screen == screenPartner && m.lookup.partnerData != nil && m.lookup.partnerData.ImageURL != "" {
