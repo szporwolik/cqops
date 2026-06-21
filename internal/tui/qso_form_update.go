@@ -6,7 +6,9 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/qso"
+	"github.com/szporwolik/cqops/internal/store"
 )
 
 // =============================================================================
@@ -19,29 +21,30 @@ import (
 func (m *Model) commitCall() string {
 	cur := qso.NormalizeCall(m.fields[fieldCall].Value())
 	if cur != "" && !qso.IsValidCall(cur) {
-		m.pathCall = ""
-		m.cachedPathSig = ""
+		m.rc.pathCall = ""
+		m.rc.pathSig = ""
 		return ""
 	}
-	m.pathCall = cur
-	m.cachedPathSig = ""
+	m.rc.pathCall = cur
+	m.rc.pathSig = ""
 	return cur
 }
 
-// lookupCallCmd returns a batch of lookup commands (QRZ + WL + filtered table)
+// lookupCallCmd returns a batch of lookup commands (QRZ + WL + DXC + filtered table)
 // for the given callsign. Returns nil if the call is empty or invalid.
 func (m *Model) lookupCallCmd(call string) tea.Cmd {
 	if call == "" || !qso.IsValidCall(call) {
 		return nil
 	}
 	var cmds []tea.Cmd
-	if m.App.Config.QRZ.Enabled && m.App.Config.QRZ.User != "" {
+	if m.App.Config.Integrations.QRZ.Enabled && m.App.Config.Integrations.QRZ.User != "" {
 		cmds = append(cmds, m.qrzLookup(call))
 	}
 	wl := m.App.Logbook.Wavelog
 	if wl != nil && wl.Enabled && wl.APIKey != "" {
 		cmds = append(cmds, m.wlLookup(call))
 	}
+	cmds = append(cmds, m.dxcSpotLookupCmd(call))
 	cmds = append(cmds, m.updateFilteredTable())
 	return tea.Batch(cmds...)
 }
@@ -53,6 +56,32 @@ func (m *Model) focusField(f field) {
 	m.fields[m.focus].Blur()
 	m.focus = f
 	m.fields[m.focus].Focus()
+}
+
+// contestAutoFocusExchRcvd moves focus to the Exch Rcvd field after
+// lookups complete, so the operator can type the received exchange and
+// press Enter to log — a tight contest workflow.
+func (m *Model) contestAutoFocusExchRcvd() {
+	if m.App == nil || m.App.Config == nil {
+		return
+	}
+	if m.App.Logbook.ActiveContest == "" {
+		return
+	}
+	if m.screen != screenQSO || m.confirm != nil || m.spotDialog != nil {
+		return
+	}
+	call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+	if call == "" || !m.lookupsCompleteForCall(call) {
+		return
+	}
+	// Don't steal focus if the user has already moved away from the call field.
+	if m.focus != fieldCall {
+		return
+	}
+	// Move cursor to end of Exch Rcvd so typing immediately appends.
+	m.focusField(fieldExchRcvd)
+	m.fields[fieldExchRcvd].SetCursor(len(m.fields[fieldExchRcvd].Value()))
 }
 
 // nextField moves focus to the next QSO form field in sequence.
@@ -70,12 +99,22 @@ func (m *Model) nextField() {
 	if m.focus == fieldComment {
 		m.retainFocused = true
 	} else {
-		m.focus = (m.focus + 1) % fieldCount
+		// Horizontal tab: jump to the same row position in the next column.
+		// Left → Middle → Right → Left. Comment wraps to first field.
+		col, pos := m.fieldColumnPos(m.focus)
+		next := m.horizontalTabTarget(col, pos, +1)
+		m.focus = next
+		// Skip hidden fields (exchange fields when no contest active).
+		for m.isFieldHidden(m.focus) {
+			col2, pos2 := m.fieldColumnPos(m.focus)
+			m.focus = m.horizontalTabTarget(col2, pos2, +1)
+		}
 		m.fields[m.focus].Focus()
 	}
 }
 
-// prevField moves focus to the previous QSO form field in sequence.
+// prevField moves focus to the previous QSO form field — horizontal column
+// cycling in reverse (Right → Middle → Left → Right).
 func (m *Model) prevField() {
 	m.onFieldExit()
 
@@ -90,9 +129,155 @@ func (m *Model) prevField() {
 	if m.focus == 0 {
 		m.retainFocused = true
 	} else {
-		m.focus--
+		col, pos := m.fieldColumnPos(m.focus)
+		next := m.horizontalTabTarget(col, pos, -1)
+		m.focus = next
+		for m.isFieldHidden(m.focus) {
+			col2, pos2 := m.fieldColumnPos(m.focus)
+			m.focus = m.horizontalTabTarget(col2, pos2, -1)
+		}
 		m.fields[m.focus].Focus()
 	}
+}
+
+// formColumns returns the three QSO form column arrays.
+func formColumns() [3][]field {
+	return [3][]field{formLeft, formMiddle, formRight}
+}
+
+// fieldColumnPos returns the column index (0=left, 1=middle, 2=right, 3=comment)
+// and the row position within that column for the given field.
+func (m *Model) fieldColumnPos(f field) (col, pos int) {
+	if f == fieldComment {
+		return 3, 0
+	}
+	for ci, colFields := range formColumns() {
+		for pi, cf := range colFields {
+			if cf == f {
+				return ci, pi
+			}
+		}
+	}
+	return 0, 0 // fallback
+}
+
+// horizontalTabTarget returns the field at the same row position in the next
+// (dir=+1) or previous (dir=-1) column. Wraps around columns.
+func (m *Model) horizontalTabTarget(fromCol, fromPos, dir int) field {
+	cols := formColumns()
+	toCol := (fromCol + dir + len(cols)) % len(cols)
+	targets := cols[toCol]
+	// Clamp to the last row if the target column is shorter.
+	if fromPos >= len(targets) {
+		fromPos = len(targets) - 1
+	}
+	return targets[fromPos]
+}
+
+// nextRowField moves focus to the next field vertically (Down arrow).
+// Walks down within the current column, then to Comment (the row below all
+// columns), then wraps to the top of the first column.
+func (m *Model) nextRowField() {
+	m.onFieldExit()
+
+	if m.retainFocused {
+		m.retainFocused = false
+		m.focus = 0
+		m.fields[m.focus].Focus()
+		return
+	}
+
+	m.fields[m.focus].Blur()
+	if m.focus == fieldComment {
+		// Comment is the bottom row. Wrap to the top of the left column.
+		m.focus = formLeft[0]
+	} else {
+		col, pos := m.fieldColumnPos(m.focus)
+		if col < 0 || col > 2 {
+			// Not in a column (shouldn't happen). Fall back to linear.
+			m.focus = (m.focus + 1) % fieldCount
+		} else {
+			cols := formColumns()
+			if pos+1 < len(cols[col]) {
+				// Same column, next row.
+				m.focus = cols[col][pos+1]
+			} else {
+				// Bottom of column → go to Comment (the row below).
+				m.focus = fieldComment
+			}
+		}
+	}
+	// Skip hidden fields (exchange fields when no contest).
+	for m.isFieldHidden(m.focus) {
+		col, pos := m.fieldColumnPos(m.focus)
+		if col < 0 || col > 2 {
+			m.focus = (m.focus + 1) % fieldCount
+		} else {
+			cols := formColumns()
+			if pos+1 < len(cols[col]) {
+				m.focus = cols[col][pos+1]
+			} else {
+				m.focus = fieldComment
+				break
+			}
+		}
+	}
+	m.fields[m.focus].Focus()
+}
+
+// prevRowField moves focus to the previous field vertically (Up arrow).
+// Walks up within the current column, then to Comment (the row below all
+// columns), then wraps to the bottom of the last column.
+func (m *Model) prevRowField() {
+	m.onFieldExit()
+
+	if m.retainFocused {
+		m.retainFocused = false
+		m.focus = fieldComment
+		m.fields[m.focus].Focus()
+		return
+	}
+
+	m.fields[m.focus].Blur()
+	if m.focus == fieldComment {
+		// Comment is the bottom row. Go up to the last field of the right column.
+		rc := formRight
+		m.focus = rc[len(rc)-1]
+	} else {
+		col, pos := m.fieldColumnPos(m.focus)
+		if col < 0 || col > 2 {
+			m.focus--
+			if m.focus < 0 {
+				m.focus = fieldComment
+			}
+		} else {
+			if pos > 0 {
+				// Same column, previous row.
+				m.focus = formColumns()[col][pos-1]
+			} else {
+				// Top of column → go to Comment (the row below).
+				m.focus = fieldComment
+			}
+		}
+	}
+	// Skip hidden fields.
+	for m.isFieldHidden(m.focus) {
+		col, pos := m.fieldColumnPos(m.focus)
+		if col < 0 || col > 2 {
+			m.focus--
+			if m.focus < 0 {
+				m.focus = fieldComment
+			}
+		} else {
+			if pos > 0 {
+				m.focus = formColumns()[col][pos-1]
+			} else {
+				m.focus = fieldComment
+				break
+			}
+		}
+	}
+	m.fields[m.focus].Focus()
 }
 
 // =============================================================================
@@ -225,10 +410,13 @@ func (m *Model) applyFreqDefaults() {
 	}
 
 	low, _, _ := qso.BandRange(band)
-	if low >= 50 {
-		m.fields[fieldMode].SetValue("FM")
-	} else {
-		m.fields[fieldMode].SetValue("SSB")
+	curMode := strings.TrimSpace(m.fields[fieldMode].Value())
+	if curMode == "" {
+		if low >= 50 {
+			m.fields[fieldMode].SetValue("FM")
+		} else {
+			m.fields[fieldMode].SetValue("SSB")
+		}
 	}
 
 	mode := strings.ToUpper(strings.TrimSpace(m.fields[fieldMode].Value()))
@@ -270,16 +458,28 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 		// partner data, lookups, filtered table, path, and stats.
 		m.fields[f].SetValue(strings.ToUpper(m.fields[f].Value()))
 		if cur := strings.TrimSpace(m.fields[f].Value()); cur != strings.TrimSpace(prevVal) {
-			m.partnerData = nil
-			m.wlPrivateData = nil
-			m.wlLookupDone = false
+			m.lookup.partnerData = nil
+			m.lookup.wlPrivateData = nil
+			m.lookup.qrzLookupDone = false
+			m.lookup.qrzLookupCall = ""
+			m.lookup.wlLookupDone = false
+			m.lookup.wlLookupCall = ""
+			m.dupeConfirmed = false
+			m.gridSource = gridSourceNone
 			m.screen = screenQSO
 			m.clearFilteredTable()
 			m.invalidatePartnerMapCache()
-			m.pathCall = ""
-			m.pathGrid = ""
-			m.cachedPathSig = ""
-			m.cachedLogStatsSig = ""
+			m.rc.pathCall = ""
+			m.rc.pathGrid = ""
+			m.rc.pathSig = ""
+			m.rc.logStatsSig = ""
+			// Clear QRZ-populated fields so old callsign data does not bleed
+			// into the new callsign before the next lookup completes.
+			m.fields[fieldName].SetValue("")
+			m.fields[fieldQTH].SetValue("")
+			m.fields[fieldGrid].SetValue("")
+			m.fields[fieldCountry].SetValue("")
+			m.updateSCP()
 		}
 
 	case fieldBand:
@@ -299,6 +499,8 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 		}
 	}
 	// fieldFreq: band/mode derivation deferred to focus exit (see onFieldExit).
+	// REF fields (SOTA/POTA/WWFF/IOTA): uppercasing and name resolution
+	// are deferred to focus exit (onFieldExit) for performance.
 }
 
 // =============================================================================
@@ -306,37 +508,198 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 // =============================================================================
 
 // onFieldExit is called when leaving a field (via nextField/prevField/focusField).
-// It commits values for path calculation and triggers autofill / lookups.
+// It commits values for path calculation, validates the field (showing a toast
+// if invalid), and triggers autofill / lookups.
+// commitAndLookup finalizes the callsign field, triggers lookups and dupe
+// check. Used by Insert, arrow-down field exit, and first Enter press.
+// Returns a lookup command (or nil).  Callers that discard the command
+// (e.g. arrow-down in onFieldExit) must set m.lookup.qrzNeed=true so that
+// handlePendingRequests dispatches the lookup on the next tick.
+func (m *Model) commitAndLookup() tea.Cmd {
+	call := m.commitCall()
+	if call == "" {
+		// Not a valid callsign — but still hide SCP suggestions.
+		m.scpMatches = nil
+		m.scpCacheKey = ""
+		return nil
+	}
+	m.scpMatches = nil
+	m.scpCacheKey = ""
+	m.dxccAutoFill()
+	m.prefillContestExchange()
+	m.lookup.qrzCall = call
+	m.lookup.wlCall = call
+	m.autoFillRST()
+	m.autoFillSSBSubmode()
+	m.checkDupe()
+	m.rc.pathSig = "" // invalidate cache to show DUPE badge
+	m.rc.logStatsSig = ""
+	return m.lookupCallCmd(call)
+}
+
+// buildSpotComment constructs the pre-filled spot comment from reference fields.
+// Format: SOTA SP/BZ-001 CW, POTA SP-0123 SSB, etc.
+// Multiple references are joined: "SOTA SP/BZ-001 POTA SP-0123 CW"
+func (m *Model) buildSpotComment() string {
+	var parts []string
+
+	refs := map[string]string{
+		"SOTA": strings.TrimSpace(m.fields[fieldSOTA].Value()),
+		"POTA": strings.TrimSpace(m.fields[fieldPOTA].Value()),
+		"WWFF": strings.TrimSpace(m.fields[fieldWWFF].Value()),
+		"IOTA": strings.TrimSpace(m.fields[fieldIOTA].Value()),
+		"SIG":  strings.TrimSpace(m.fields[fieldSIG].Value()),
+	}
+	mode := strings.ToUpper(strings.TrimSpace(m.fields[fieldMode].Value()))
+	if mode == "" {
+		submode := strings.ToUpper(strings.TrimSpace(m.fields[fieldSubmode].Value()))
+		if submode != "" {
+			mode = submode
+		}
+	}
+
+	for _, key := range []string{"SOTA", "POTA", "WWFF", "IOTA", "SIG"} {
+		val := refs[key]
+		if val == "" {
+			continue
+		}
+		if key == "SIG" {
+			// SIG uses its own value as free text, not key:value format.
+			parts = append(parts, "SIG "+val)
+		} else {
+			parts = append(parts, key+" "+val)
+		}
+	}
+	if len(parts) > 0 && mode != "" {
+		parts = append(parts, mode)
+	}
+	return strings.Join(parts, " ")
+}
+
+// openSpotDialog validates preconditions and opens the spot dialog.
+func (m *Model) openSpotDialog() tea.Cmd {
+	call := qso.NormalizeCall(m.fields[fieldCall].Value())
+	if call == "" {
+		m.toasts.Warn("Enter a callsign to spot")
+		return nil
+	}
+	freqStr := strings.TrimSpace(m.fields[fieldFreq].Value())
+	if freqStr == "" {
+		m.toasts.Warn("Enter a frequency to spot")
+		return nil
+	}
+	var freqMhz float64
+	fmt.Sscanf(freqStr, "%f", &freqMhz)
+	if freqMhz <= 0 {
+		m.toasts.Warn("Enter a valid frequency to spot")
+		return nil
+	}
+	freqKhz := freqMhz * 1000
+
+	comment := m.buildSpotComment()
+	m.spotDialog = &SpotDialog{}
+	*m.spotDialog = NewSpotDialog(call, freqKhz, comment)
+	return nil
+}
+
 func (m *Model) onFieldExit() {
+	// Show validation toast for the field being left, if the value is non-empty
+	// but invalid. Empty is OK — handled at save time by qso.ValidateForSave.
+	if hint := m.qsoFieldHint(m.focus); hint != "" {
+		m.toasts.Warn(hint)
+	}
+
 	switch m.focus {
 	case fieldCall:
 		cur := m.commitCall()
 		m.autoFillRST()
 		m.autoFillSSBSubmode()
 		if cur == "" {
-			raw := strings.TrimSpace(m.fields[fieldCall].Value())
-			if raw != "" {
-				m.toasts.Warn("Not a valid callsign")
-			}
+			m.lookup.qrzLastCall = ""
 			break
 		}
-		// Defer lookup via flag — onFieldExit can't return commands.
-		if cur != "" && !strings.EqualFold(cur, m.qrzLastCall) {
-			m.qrzNeed = true
-			m.qrzCall = cur
-		}
+		m.lookup.qrzLastCall = strings.ToUpper(cur)
+		m.lookup.pendingLookupCmd = m.commitAndLookup()
+		// Also flag for handlePendingRequests as fallback (tick loop).
 
 	case fieldGrid:
-		m.pathGrid = strings.ToUpper(strings.TrimSpace(m.fields[fieldGrid].Value()))
+		m.rc.pathGrid = strings.ToUpper(strings.TrimSpace(m.fields[fieldGrid].Value()))
+		m.gridSource = gridSourceManual
+		m.invalidatePartnerMapCache()
 
 	case fieldFreq:
 		m.applyFreqDefaults()
+
+	case fieldRSTSent, fieldRSTRcvd:
+		// Changing RST should recalculate pre-filled exchange fields.
+		m.prefillContestExchange()
+
+	case fieldSOTA, fieldPOTA, fieldWWFF, fieldIOTA:
+		m.fields[m.focus].SetValue(strings.ToUpper(m.fields[m.focus].Value()))
+		m.ref.refNamesDirty = true
+		m.applyRefGridAndQTH()
 	}
+
+	// Always re-check dupe on any field exit — cheap DB query.
+	applog.Debug("dupe: onFieldExit calling checkDupe", "focus", int(m.focus))
+	m.checkDupe()
 }
 
-// clearForm resets all QSO form fields to defaults, preserving retained comment
-// and rig-related field values.
+// checkDupe sets m.dupe to true when the current call/band/mode/date
+// combination already exists in the database, unless the existing QSO
+// has different reference data (e.g. different SOTA summit same day).
+func (m *Model) checkDupe() {
+	applog.Debug("dupe: checkDupe called", "focus", int(m.focus))
+	m.dupe = false
+	if m.App == nil || m.App.DB == nil {
+		applog.Debug("dupe: DB not available", "appNil", m.App == nil, "dbNil", m.App != nil && m.App.DB == nil)
+		return
+	}
+	call := qso.NormalizeCall(m.fields[fieldCall].Value())
+	band := qso.NormalizeBand(m.fields[fieldBand].Value())
+	mode := strings.ToUpper(strings.TrimSpace(m.fields[fieldMode].Value()))
+	date := qso.StripNonDigits(m.fields[fieldDate].Value())
+	if call == "" || band == "" || mode == "" || date == "" {
+		applog.Debug("dupe: fields empty", "call", call, "band", band, "mode", mode, "date", date)
+		return
+	}
+	isDupe, existing := store.IsDuplicateQSO(m.App.DB, call, band, mode, date)
+	if !isDupe || existing == nil {
+		applog.Debug("dupe: no match", "call", call, "band", band, "mode", mode, "date", date)
+		return
+	}
+	// If any reference field differs, it's not a dupe (e.g. different summit).
+	formSOTA := strings.TrimSpace(m.fields[fieldSOTA].Value())
+	formPOTA := strings.TrimSpace(m.fields[fieldPOTA].Value())
+	formWWFF := strings.TrimSpace(m.fields[fieldWWFF].Value())
+	formIOTA := strings.TrimSpace(m.fields[fieldIOTA].Value())
+	if formSOTA != existing.SOTA || formPOTA != existing.POTA ||
+		formWWFF != existing.WWFF || formIOTA != existing.IOTA {
+		applog.Debug("dupe: ref mismatch — not a dupe", "formSOTA", formSOTA, "dbSOTA", existing.SOTA)
+		return
+	}
+	m.dupe = true
+	applog.Debug("dupe: DETECTED", "call", call, "band", band, "mode", mode, "date", date)
+}
+
+// clearForm resets the entire QSO form for a new QSO: clears fields (with
+// retention of rig values and comment), partner lookup data, navigation state,
+// and the recent-QSO filter table.  Partner data is preserved when the user is
+// actively viewing the Partner/Image screen.
 func (m *Model) clearForm() {
+	m.dupe = false
+	m.resetQSOFields()
+	m.resetPartnerLookup()
+	m.resetNavigation()
+	m.clearFilteredTable()
+	m.scpMatches = nil
+	m.scpCacheKey = ""
+}
+
+// resetQSOFields blanks every field, restores date/time to UTC now, and
+// re-applies retained rig values (band, freq, mode, submode, power) and
+// the retain-comment setting.  Focus moves to the Call field.
+func (m *Model) resetQSOFields() {
 	retainedComment := ""
 	if m.retainComment {
 		retainedComment = m.fields[fieldComment].Value()
@@ -372,12 +735,31 @@ func (m *Model) clearForm() {
 	}
 	m.dateTimeAuto = true
 	m.retainFocused = false
+	m.gridSource = gridSourceNone
+	m.ref.refNamesDirty = true
 	m.focus = fieldCall
 	m.fields[m.focus].Focus()
-	m.partnerData = nil
-	m.wlPrivateData = nil
-	m.wlLookupDone = false
-	m.clearFilteredTable()
-	m.pathCall = ""
-	m.pathGrid = ""
+}
+
+// resetPartnerLookup clears QRZ and Wavelog lookup data so the next
+// lookup request starts from a clean state.  Skipped when the user is
+// actively viewing the Partner or Image screen.
+func (m *Model) resetPartnerLookup() {
+	if m.screen != screenPartner && m.screen != screenImage {
+		m.lookup.partnerData = nil
+		m.lookup.qrzLookupDone = false
+		m.lookup.qrzLookupCall = ""
+		m.lookup.wlPrivateData = nil
+		m.lookup.wlLookupDone = false
+		m.lookup.wlLookupCall = ""
+	}
+}
+
+// resetNavigation clears the cached path line and the committed call/grid
+// values so the next path calculation starts fresh.
+func (m *Model) resetNavigation() {
+	m.rc.pathCall = ""
+	m.rc.pathGrid = ""
+	m.rc.pathLine = ""
+	m.rc.pathSig = ""
 }

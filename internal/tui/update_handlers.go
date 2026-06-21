@@ -9,6 +9,7 @@ import (
 	"github.com/gen2brain/beeep"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/store"
+	"github.com/szporwolik/cqops/internal/version"
 )
 
 // =============================================================================
@@ -29,12 +30,12 @@ import (
 // downstream work (logging, tea.Batch, form updates) to keep the critical
 // section minimal.
 func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
-	m.adifMu.Lock()
-	adifs := m.pendingADIFs
-	m.pendingADIFs = nil
-	sp := m.pendingStatus
-	m.pendingStatus = statusPending{}
-	m.adifMu.Unlock()
+	m.adifQ.mu.Lock()
+	adifs := m.adifQ.adifs
+	m.adifQ.adifs = nil
+	sp := m.adifQ.status
+	m.adifQ.status = statusPending{}
+	m.adifQ.mu.Unlock()
 
 	for _, adif := range adifs {
 		if adif == "" {
@@ -47,26 +48,34 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 		}
 		if retry {
 			// DB insert failed — re-queue for next tick.
-			m.adifMu.Lock()
-			m.pendingADIFs = append(m.pendingADIFs, adif)
-			m.adifMu.Unlock()
+			m.adifQ.mu.Lock()
+			m.adifQ.adifs = append(m.adifQ.adifs, adif)
+			m.adifQ.mu.Unlock()
 		}
 	}
 
 	// Persist any remaining (unprocessed or retry) ADIFs.
-	m.adifMu.Lock()
+	m.adifQ.mu.Lock()
 	m.savePendingADIFsLocked()
-	m.adifMu.Unlock()
+	m.adifQ.mu.Unlock()
 
 	if sp.hasData {
 		m.applyWSJTXStatus(sp.call, sp.grid, sp.freq, sp.mode, sp.submode, sp.report, sp.txMessage, sp.transmitting)
 	}
 	// WSJT-X watchdog: if no status received in 15 seconds, mark offline.
-	if m.wsjtxOnline && time.Since(m.wsjtxLastSeen) > 15*time.Second {
-		m.wsjtxOnline = false
-		m.wsjtxTx = false
-		m.wsjtxTxMsg = ""
-		m.cachedStatus = ""
+	if m.wsjtx.online && time.Since(m.wsjtx.lastSeen) > 15*time.Second {
+		m.wsjtx.online = false
+		m.wsjtx.tx = false
+		m.wsjtx.txMsg = ""
+		m.rc.status = ""
+	}
+	// WSJT-X auto-reconnect: if enabled but never online, retry start every 30s.
+	// MaybeRestartWSJTX is a no-op when the listener is already running; it only
+	// acts when the previous start failed (lastWSJTX wasn't updated on error).
+	if !m.wsjtx.online && m.tickCount%30 == 0 {
+		if rp, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok && rp.WsjtxEnabled {
+			m.App.MaybeRestartWSJTX(rp.WsjtxEnabled, rp.WsjtxUDPHost, rp.WsjtxUDPPort)
+		}
 	}
 	m.toasts.Expire()
 	// Only update the QSO form clock when the form is visible.
@@ -74,25 +83,40 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 		m.autoUpdateDateTime()
 	}
 	m.tickCount++
-	return tea.Batch(tickCmd(), m.maybeCheckInet(), m.pollFlrig(), m.maybeCheckWavelog(), m.maybeCheckQRZ(), m.maybeFetchSolar(), cmd)
+	return tea.Batch(tickCmd(), m.maybeCheckInet(), m.maybeRefreshDataFiles(), m.pollFlrig(), m.maybeCheckWavelog(), m.maybeCheckQRZ(), m.maybeFetchSolar(), m.maybeDXC(), cmd)
 }
 
 // handleAsyncMessages processes async result messages (internet check, Wavelog status,
-// Wavelog upload results, flrig results). Returns true if the message was consumed.
-func (m *Model) handleAsyncMessages(msg tea.Msg) bool {
+// Wavelog upload results, flrig results). Returns true if the message was consumed
+// and an optional command to batch.
+func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 	switch r := msg.(type) {
 	case inetResultMsg:
+		if !m.inetOnline && bool(r) {
+			// Internet just came up — force Wavelog and QRZ checks.
+			m.lookup.wlForceCheck = true
+			m.lookup.qrzForceCheck = true
+		}
 		m.inetOnline = bool(r)
-		return true
+		return true, nil
+	case versionCheckMsg:
+		if r.latest != "" {
+			current := version.Resolved()
+			if versionNewer(r.latest, current) {
+				m.toasts.Warn(fmt.Sprintf("CQOps %s available — visit github.com/szporwolik/cqops/releases", r.latest))
+			}
+		}
+		return true, nil
 	case wlStatusMsg:
-		m.wlOnline = r.online
+		m.lookup.wlOnline = r.online
 		if r.stationName != "" {
-			m.wlStationName = r.stationName
+			m.lookup.wlStationName = r.stationName
 		}
 		if r.stationLabel != "" {
-			m.wlStationLabel = r.stationLabel
+			m.lookup.wlStationLabel = r.stationLabel
 		}
-		return true
+		m.rc.status = ""
+		return true, nil
 	case wlUploadResultMsg:
 		n := m.App.Config.General.Notifications
 		if r.ok {
@@ -124,15 +148,28 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) bool {
 				}
 			}
 		}
-		return true
+		m.needRefresh = true
+		return true, nil
+	case wsjtxEnrichDoneMsg:
+		m.needRefresh = true
+		return true, nil
 	case qrzStatusMsg:
-		m.qrzOnline = r.online
-		return true
+		m.lookup.qrzOnline = r.online
+		return true, nil
 	case flrigResultMsg:
-		m.applyFlrigResult(r)
-		return true
+		return true, m.applyFlrigResult(r)
+	case fmodesMsg:
+		if len(r.modes) > 0 {
+			m.rig.modes = r.modes
+		}
+		return true, nil
+	case fnameMsg:
+		if r.name != "" {
+			m.rig.name = r.name
+		}
+		return true, nil
 	case pskFetchMsg:
-		m.pskFetching = false
+		m.psk.fetching = false
 		if r.err != nil {
 			applog.Error("PSK Reporter: fetch failed", "error", r.err)
 			m.toasts.Error("PSK Reporter: " + r.err.Error())
@@ -155,20 +192,23 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) bool {
 				applog.Info("PSK Reporter: new spots stored", "count", n)
 			}
 			_ = store.PurgeOldPSKSpots(m.App.DB)
-			m.pskLastFetch = r.fetchTime
-			m.pskLastCall = call
-			m.pskFetched = true
-			m.pskSpotKey = ""
-			m.pskViewKey = ""
-			m.pskSpots = nil
+			m.psk.lastFetch = r.fetchTime
+			m.psk.lastCall = call
+			m.psk.fetched = true
+			m.psk.spotKey = ""
+			m.psk.viewKey = ""
+			m.psk.spots = nil
 			m.toasts.Info(fmt.Sprintf("PSK Reporter: %d spots updated", len(r.reports)))
 		}
-		return true
+		return true, nil
 	case solarFetchMsg:
 		m.handleSolarResult(r)
-		return true
+		return true, nil
+	case dxcStatusMsg:
+		m.handleDXCStatus(r)
+		return true, nil
 	}
-	return false
+	return false, nil
 }
 
 // handlePendingRequests processes deferred actions (QSO refresh, QRZ lookup, WL lookup)
@@ -176,21 +216,58 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) bool {
 func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
 	if m.needRefresh {
 		m.needRefresh = false
-		return tea.Batch(cmd, m.refreshQSOS()), true
+		cmd = tea.Batch(cmd, m.refreshQSOS())
+		// Fall through — do NOT short-circuit.  The refresh runs
+		// asynchronously; dropping the current message (e.g. a
+		// navigation key right after a screen transition) would
+		// require the user to press the key twice.
 	}
-	if m.qrzNeed {
-		m.qrzNeed = false
-		call := m.qrzCall
-		if call == "" || !m.App.Config.QRZ.Enabled || m.App.Config.QRZ.User == "" {
+	if m.lookup.qrzNeed {
+		m.lookup.qrzNeed = false
+		call := m.lookup.qrzCall
+		applog.Debug("DXC: handlePendingRequests qrzNeed",
+			"call", call,
+			"qrzEnabled", m.App.Config.Integrations.QRZ.Enabled,
+			"qrzUser", m.App.Config.Integrations.QRZ.User != "",
+		)
+		if call == "" {
 			return cmd, false
+		}
+		// Always fire DXC spot lookup when call changes, even if QRZ is disabled.
+		if !m.App.Config.Integrations.QRZ.Enabled || m.App.Config.Integrations.QRZ.User == "" {
+			return tea.Batch(cmd, m.dxcSpotLookupCmd(call)), true
 		}
 		return tea.Batch(cmd, m.lookupCallCmd(call)), true
 	}
-	if m.wlNeed {
-		m.wlNeed = false
-		call := m.wlCall
+	if m.lookup.wlNeed {
+		call := m.lookup.wlCall
 		if call != "" {
-			return tea.Batch(cmd, m.wlLookup(call)), true
+			if c := m.wlLookup(call); c != nil {
+				m.lookup.wlNeed = false
+				return tea.Batch(cmd, c), true
+			}
+			// wlLookup returned nil (rate-limited, offline, or disabled);
+			// leave wlNeed=true so the next tick retries the lookup.
+		} else {
+			m.lookup.wlNeed = false
+		}
+	}
+	if m.dxc.need {
+		m.dxc.need = false
+		call := m.dxc.call
+		if call != "" {
+			return tea.Batch(cmd, m.dxcSpotLookupCmd(call)), true
+		}
+	}
+	// Auto-trigger REF database rebuild when enabled and empty.
+	if m.App != nil && m.App.Config.General.UseRef &&
+		m.App.RefDB != nil && !m.ref.building && !m.ref.ready {
+		if n, err := m.App.RefDB.Count(); err == nil && n == 0 {
+			if c := m.startRefRebuildCmd(); c != nil {
+				return tea.Batch(cmd, c), true
+			}
+		} else if n > 0 {
+			m.ref.ready = true
 		}
 	}
 	return cmd, false

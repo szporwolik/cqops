@@ -3,15 +3,17 @@ package tui
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/filepicker"
 	tea "charm.land/bubbletea/v2"
 	adif "github.com/farmergreg/adif/v5"
-	"github.com/farmergreg/spec/v6/adifield"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
+	"github.com/szporwolik/cqops/internal/version"
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
@@ -32,8 +34,6 @@ type editorMsg struct {
 	wlOK       bool
 	wlDup      bool
 	normalized int
-	skipped    int
-	skipReason string
 	err        error
 	dlCount    int
 	dlDupes    int
@@ -57,22 +57,74 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		le.buildTable()
 
 	case editorMsg:
-		// Batch download progress — only when a download is actually active.
+		// Batch download/import/export progress — only when a download is actually active.
 		if le.dlActive && !msg.dlDone && msg.dlErr == "" {
 			le.dlProgress = msg.dlProgress
 			le.dlTotal = msg.dlTotal
 			le.dlCurrent = msg.dlCount
-			if le.mode != edModeWLDownloading {
+			if le.mode == edModeImport {
+				le.mode = edModeImporting
+			} else if le.mode == edModeExport {
+				le.mode = edModeExporting
+			} else if le.mode != edModeWLDownloading && le.mode != edModeImporting && le.mode != edModeExporting {
 				le.mode = edModeWLDownloading
 			}
 			return le, le.readDownloadMsg
 		}
 
-		// Download complete (or aborted).
+		// Download/import/export error received before done signal.
+		// Capture the error immediately so it's not lost before the channel closes.
+		if le.dlActive && !msg.dlDone {
+			if errText := strings.TrimSpace(msg.dlErr); errText != "" {
+				switch le.mode {
+				case edModeImporting, edModeImport, edModeExporting, edModeExport:
+					le.impErr = errText
+				default:
+					le.wlDownloadErr = errText
+				}
+				return le, le.readDownloadMsg
+			}
+		}
+
+		// Download/import/export complete (or aborted).
 		if le.dlActive && msg.dlDone {
 			le.dlActive = false
 			le.dlCancel = nil
 			le.dialog = nil // clear stale dialog so results can render
+
+			// ADIF export result.
+			if le.mode == edModeExporting || le.mode == edModeExport {
+				le.impInserted = msg.dlCount // reuse as exported count
+				if msg.dlAborted {
+					le.impErr = ""
+				} else if msg.dlErr != "" {
+					le.impErr = msg.dlErr
+				} else {
+					le.impErr = ""
+				}
+				le.mode = edModeExportResult
+				le.needsReload = true
+				return le, nil
+			}
+
+			// ADIF import result.
+			if le.mode == edModeImporting || le.mode == edModeImport {
+				le.impInserted = msg.dlCount
+				le.impDupes = msg.dlDupes
+				le.impFailed = msg.dlFailed
+				if msg.dlAborted {
+					le.impErr = ""
+				} else if msg.dlErr != "" {
+					le.impErr = msg.dlErr
+				} else {
+					le.impErr = ""
+				}
+				le.mode = edModeImportResult
+				le.needsReload = true
+				return le, nil
+			}
+
+			// Wavelog download result.
 			if msg.dlAborted {
 				le.wlDownloadCount = msg.dlCount
 				le.wlDownloadDupes = msg.dlDupes
@@ -82,6 +134,12 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if msg.dlErr != "" {
 				le.wlDownloadErr = msg.dlErr
 				le.mode = edModeWLDownloadResult
+				le.needsReload = true
+			} else if le.wlDownloadErr != "" {
+				// Error was already captured from a previous dlErr message;
+				// keep it and transition to result screen.
+				le.mode = edModeWLDownloadResult
+				le.needsReload = true
 			} else {
 				le.wlDownloadCount = msg.dlCount
 				le.wlDownloadDupes = msg.dlDupes
@@ -93,22 +151,38 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return le, nil
 		}
 
-		if msg.err != nil {
-			// error handled by caller via toast
-		}
 		if msg.deleted != 0 || msg.saved != 0 || msg.purged || msg.wlCall != "" {
 			le.mode = edModeList
 			le.needsReload = true
 		}
 		if msg.normalized > 0 {
-			// Normalization done, now upload all unsent QSOs (skip invalid).
+			// Normalization done, now upload all unsent QSOs from the full
+			// database (not just the current page).
 			var unsent []qso.QSO
-			for _, q := range le.qsos {
-				if q.WavelogUploaded != "yes" {
-					if q.Band == "" || q.Mode == "" || q.QSODate == "" {
-						continue
+			if le.db != nil {
+				allQSOS, listErr := store.ListAllQSOs(le.db)
+				if listErr != nil {
+					applog.Error("Wavelog: post-normalize upload — cannot list QSOs", "error", listErr)
+					return le, func() tea.Msg {
+						return editorMsg{wlOK: false, err: fmt.Errorf("cannot read logbook: %w", listErr)}
 					}
-					unsent = append(unsent, q)
+				}
+				for _, q := range allQSOS {
+					if q.WavelogUploaded != "yes" {
+						if q.Band == "" || q.Mode == "" || q.QSODate == "" {
+							continue
+						}
+						unsent = append(unsent, q)
+					}
+				}
+			} else {
+				for _, q := range le.qsos {
+					if q.WavelogUploaded != "yes" {
+						if q.Band == "" || q.Mode == "" || q.QSODate == "" {
+							continue
+						}
+						unsent = append(unsent, q)
+					}
 				}
 			}
 			return le, le.uploadBatch(unsent)
@@ -116,6 +190,11 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyPressMsg:
 		k := msg.String()
+
+		// File export/import mode — route ALL keys to the filepicker handler.
+		if le.mode == edModeExport || le.mode == edModeImport {
+			return le.handleFilePickerUpdate(msg)
+		}
 
 		// Download progress — route keys to the dialog (Abort button).
 		if le.dlActive && le.dialog != nil {
@@ -134,8 +213,30 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return le, le.readDownloadMsg
 		}
 
-		// Download result — route keys to the dialog (OK button).
+		// Download/import result — route keys to the dialog (OK button).
 		if le.mode == edModeWLDownloadResult && le.dialog != nil {
+			updated, _ := le.dialog.Update(msg)
+			d := updated.(DialogModel)
+			*le.dialog = d
+			if d.Done() {
+				le.dialog = nil
+				le.mode = edModeList
+				le.needsReload = true
+			}
+			return le, nil
+		}
+		if le.mode == edModeImportResult && le.dialog != nil {
+			updated, _ := le.dialog.Update(msg)
+			d := updated.(DialogModel)
+			*le.dialog = d
+			if d.Done() {
+				le.dialog = nil
+				le.mode = edModeList
+				le.needsReload = true
+			}
+			return le, nil
+		}
+		if le.mode == edModeExportResult && le.dialog != nil {
 			updated, _ := le.dialog.Update(msg)
 			d := updated.(DialogModel)
 			*le.dialog = d
@@ -216,14 +317,46 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				le.mode = edModeConfirmDelete
 			}
 		case "w":
+			if le.Offline {
+				return le, func() tea.Msg { return editorMsg{toastWarn: "Network not available — cannot upload to Wavelog"} }
+			}
 			if le.wlURL != "" && le.wlKey != "" && le.wlStationID != "" {
 				if len(le.qsos) == 0 {
 					return le, func() tea.Msg { return editorMsg{toastWarn: "Logbook is empty — nothing to upload"} }
+				}
+				// Count unsent QSOs from the full database, not just the
+				// current page shown on screen.
+				le.wlUnsentCount = 0
+				if le.db != nil {
+					allQSOS, listErr := store.ListAllQSOs(le.db)
+					if listErr == nil {
+						for _, q := range allQSOS {
+							if q.WavelogUploaded != "yes" {
+								le.wlUnsentCount++
+							}
+						}
+					}
+				}
+				if le.wlUnsentCount == 0 {
+					// Fallback: count from current page if DB query failed.
+					for _, q := range le.qsos {
+						if q.WavelogUploaded != "yes" {
+							le.wlUnsentCount++
+						}
+					}
 				}
 				le.dialog = nil
 				le.mode = edModeConfirmWLSend
 			}
 		case "ctrl+w":
+			if le.Offline {
+				return le, func() tea.Msg { return editorMsg{toastWarn: "Network not available — cannot download from Wavelog"} }
+			}
+			if le.contestID != "" {
+				return le, func() tea.Msg {
+					return editorMsg{toastWarn: "Wavelog download is not available in contest-filtered view"}
+				}
+			}
 			if le.wlURL != "" && le.wlKey != "" && le.wlStationID != "" {
 				le.dialog = nil
 				le.mode = edModeConfirmWLDownload
@@ -244,6 +377,33 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "p":
 			le.dialog = nil
 			le.mode = edModeConfirmPurge
+		case "ctrl+e":
+			le.filePicker = filepicker.New()
+			le.filePicker.FileAllowed = false
+			le.filePicker.DirAllowed = true
+			le.filePicker.AutoHeight = false
+			le.filePicker.ShowHidden = false
+			if home, err := os.UserHomeDir(); err == nil {
+				le.filePicker.CurrentDirectory = home
+			}
+			le.mode = edModeExport
+			return le, le.filePicker.Init()
+		case "ctrl+i", "tab":
+			// ctrl+i and Tab may be indistinguishable in some terminals.
+			// Only trigger import in list mode (Tab in edit mode is for field navigation).
+			if le.mode == edModeList {
+				le.filePicker = filepicker.New()
+				le.filePicker.AllowedTypes = []string{".adi", ".adif"}
+				le.filePicker.FileAllowed = true
+				le.filePicker.DirAllowed = true
+				le.filePicker.AutoHeight = false
+				le.filePicker.ShowHidden = false
+				if home, err := os.UserHomeDir(); err == nil {
+					le.filePicker.CurrentDirectory = home
+				}
+				le.mode = edModeImport
+				return le, le.filePicker.Init()
+			}
 		}
 	}
 
@@ -252,7 +412,91 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if le.dlActive {
 		return le, le.readDownloadMsg
 	}
+
+	// File export/import mode — route non-key messages to the filepicker.
+	if le.mode == edModeExport || le.mode == edModeImport {
+		if _, isKey := msg.(tea.KeyPressMsg); !isKey {
+			return le.handleFilePickerUpdate(msg)
+		}
+		return le, nil
+	}
+
+	// Reload QSO list from DB after purge, import, download, or upload
+	// operations that set the needsReload flag. Without this, le.qsos
+	// holds stale data and batch uploads operate on outdated QSOs.
+	if le.needsReload && le.mode == edModeList && le.height > 0 {
+		le.needsReload = false
+		le.loadPage()
+	}
+
 	return le, nil
+}
+
+func (le *LogbookEditor) handleFilePickerUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "ctrl+e", "ctrl+i", "esc":
+			le.mode = edModeList
+			return le, nil
+		case "enter":
+			if le.mode == edModeExport {
+				// Export: confirm current directory, start async export with progress.
+				dir := le.filePicker.CurrentDirectory
+				if p := le.filePicker.Path; p != "" {
+					dir = p
+				}
+				ts := time.Now().UTC().Format("20060102_150405")
+				name := "cqops"
+				if le.logStationOp != "" {
+					name = strings.ToLower(strings.ReplaceAll(le.logStationOp, " ", "_"))
+				}
+				path := filepath.Join(dir, fmt.Sprintf("%s_%s.adi", ts, name))
+				le.exportPath = path
+				// Start async export with progress dialog.
+				le.dlProgress = 0
+				le.dlTotal = 0
+				le.dlCurrent = 0
+				le.dlActive = true
+				le.dlMsgCh = make(chan editorMsg, 4)
+				le.dlCancel = make(chan struct{})
+				le.mode = edModeExporting
+				go le.runExport(path)
+				return le, le.readDownloadMsg
+			}
+			// Import: let filepicker handle selection via DidSelectFile below.
+		}
+	}
+
+	var cmd tea.Cmd
+	le.filePicker, cmd = le.filePicker.Update(msg)
+
+	// Import mode: check if a file was selected.
+	if le.mode == edModeImport {
+		if didSelect, path := le.filePicker.DidSelectFile(msg); didSelect && path != "" {
+			// Validate that the selected file is an ADIF file.
+			ext := strings.ToLower(filepath.Ext(path))
+			if ext != ".adi" && ext != ".adif" {
+				return le, func() tea.Msg { return editorMsg{toastWarn: "Only .adi / .adif files can be imported"} }
+			}
+			// Start async import with progress dialog.
+			le.dlProgress = 0
+			le.dlTotal = 0
+			le.dlCurrent = 0
+			le.dlActive = true
+			le.dlMsgCh = make(chan editorMsg, 4)
+			le.dlCancel = make(chan struct{})
+			le.impInserted = 0
+			le.impDupes = 0
+			le.impFailed = 0
+			le.impErr = ""
+			le.mode = edModeImporting
+			go le.runImport(path)
+			return le, le.readDownloadMsg
+		}
+	}
+
+	return le, cmd
 }
 
 func (le *LogbookEditor) doConfirm() tea.Cmd {
@@ -408,7 +652,7 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 
 	var inserted, dupes, failed int
 	totalExported := result.ExportedQSOs
-	const batchInterval = 1 // report progress every QSO for smooth updates
+	const batchInterval = 50 // report progress every 50 QSOs for smooth but efficient UI
 
 	applog.Info("Wavelog: scanning ADIF", "exported", totalExported, "size_bytes", result.ADIFSize)
 
@@ -430,110 +674,18 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 		r := scanner.Record()
 		processed++
 
-		qs := qso.NewQSO()
-		if v := r[adifield.CALL]; v != "" {
-			qs.Call = strings.ToUpper(v)
-		}
-		if v := r[adifield.BAND]; v != "" {
-			qs.Band = qso.NormalizeBand(v)
-		}
-		if v := r[adifield.MODE]; v != "" {
-			qs.Mode = strings.ToUpper(v)
-		}
-		if v := r[adifield.SUBMODE]; v != "" {
-			qs.Submode = strings.ToUpper(v)
-		}
-		if v := r[adifield.QSO_DATE]; v != "" {
-			qs.QSODate = v
-		}
-		if v := r[adifield.TIME_ON]; v != "" {
-			qs.TimeOn = v
-		}
-		if v := r[adifield.TIME_OFF]; v != "" {
-			qs.TimeOff = v
-		}
-		if v := r[adifield.FREQ]; v != "" {
-			if _, err := fmt.Sscanf(v, "%f", &qs.Freq); err != nil {
-				applog.Warn("Wavelog download: bad ADIF frequency", "freq", v, "error", err)
-			}
-		}
-		if v := r[adifield.FREQ_RX]; v != "" {
-			if _, err := fmt.Sscanf(v, "%f", &qs.FreqRx); err != nil {
-				applog.Warn("Wavelog download: bad ADIF frequency_rx", "freq", v, "error", err)
-			}
-		}
-		if v := r[adifield.RST_SENT]; v != "" {
-			qs.RSTSent = v
-		}
-		if v := r[adifield.RST_RCVD]; v != "" {
-			qs.RSTRcvd = v
-		}
-		if v := r[adifield.GRIDSQUARE]; v != "" {
-			qs.GridSquare = v
-		}
-		if v := r[adifield.NAME]; v != "" {
-			qs.Name = v
-		}
-		if v := r[adifield.QTH]; v != "" {
-			qs.QTH = v
-		}
-		if v := r[adifield.COUNTRY]; v != "" {
-			qs.Country = v
-		}
-		if v := r[adifield.COMMENT]; v != "" {
-			qs.Comment = v
-		}
-		if v := r[adifield.NOTES]; v != "" {
-			qs.Notes = v
-		}
-		if v := r[adifield.TX_PWR]; v != "" {
-			qs.TXPower = v
-		}
-		if v := r[adifield.SOTA_REF]; v != "" {
-			qs.SOTARef = v
-		}
-		if v := r[adifield.POTA_REF]; v != "" {
-			qs.POTARef = v
-		}
-		if v := r[adifield.WWFF_REF]; v != "" {
-			qs.WWFFRef = v
-		}
-		if v := r[adifield.IOTA]; v != "" {
-			qs.IOTA = v
-		}
-		if v := r[adifield.MY_SOTA_REF]; v != "" {
-			qs.MySOTARef = v
-		}
-		if v := r[adifield.MY_POTA_REF]; v != "" {
-			qs.MyPOTARef = v
-		}
-		if v := r[adifield.MY_WWFF_REF]; v != "" {
-			qs.MyWWFFRef = v
-		}
-		if v := r[adifield.STATION_CALLSIGN]; v != "" {
-			qs.StationCallsign = strings.ToUpper(v)
-		}
-		if v := r[adifield.OPERATOR]; v != "" {
-			qs.Operator = strings.ToUpper(v)
-		}
-		if v := r[adifield.MY_GRIDSQUARE]; v != "" {
-			qs.MyGridSquare = v
-		}
-		if v := r[adifield.MY_RIG]; v != "" {
-			qs.MyRig = v
-		}
-		if v := r[adifield.MY_ANTENNA]; v != "" {
-			qs.MyAntenna = v
-		}
-		if v := r[adifield.DISTANCE]; v != "" {
-			if _, err := fmt.Sscanf(v, "%f", &qs.Distance); err != nil {
-				applog.Warn("Wavelog download: bad ADIF distance", "dist", v, "error", err)
-			}
-		}
-		qs.Source = "wavelog"
+		qs := qso.ParseADIFRecord(r, "wavelog")
 		qs.WavelogUploaded = "yes"
 
-		if qs.Call == "" {
+		// Enrich: compute distance/bearing if both grids are available.
+		if myGrid := strings.TrimSpace(le.logStationGrid); myGrid != "" && qs.GridSquare != "" {
+			qs.Distance = gridDistanceKm(myGrid, qs.GridSquare)
+			qs.Bearing = gridBearingDeg(myGrid, qs.GridSquare)
+		}
+
+		if err := qso.ValidateImportRecord(qs); err != nil {
+			applog.Warn("Wavelog: skipping invalid imported QSO", "call", qs.Call, "reason", err)
+			failed++
 			continue
 		}
 
@@ -601,4 +753,230 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 		dlLastID: result.LastFetchedID(),
 		dlDone:   true,
 	}
+}
+
+// runImport performs ADIF import from a local file with progress reporting.
+// It mirrors runDownload but reads from a local file instead of Wavelog HTTP.
+func (le *LogbookEditor) runImport(path string) {
+	msgCh := le.dlMsgCh
+	defer close(msgCh)
+
+	db := le.db
+
+	// Count total records for progress estimation.
+	totalRecords := countADIFRecords(path)
+	msgCh <- editorMsg{dlProgress: totalRecords, dlTotal: totalRecords, dlCount: 0}
+
+	f, err := os.Open(path)
+	if err != nil {
+		applog.Error("ADIF import: failed to open file", "path", path, "error", err)
+		msgCh <- editorMsg{dlErr: "cannot open file: " + err.Error()}
+		return
+	}
+	defer f.Close()
+
+	var inserted, dupes, failed int
+	const batchInterval = 50 // report every 50 QSOs for smooth but efficient UI
+
+	applog.Info("ADIF import: scanning", "path", path, "estimated_records", totalRecords)
+
+	scanner := adif.NewScanner(f)
+	for scanner.Scan() {
+		// Check for abort between records.
+		select {
+		case <-le.dlCancel:
+			msgCh <- editorMsg{dlCount: inserted, dlDupes: dupes, dlAborted: true, dlDone: true}
+			return
+		default:
+		}
+
+		if scanner.IsHeader() {
+			continue
+		}
+		r := scanner.Record()
+		qs := qso.ParseADIFRecord(r, "import")
+
+		// Enrich: compute distance/bearing if both grids are available.
+		if myGrid := strings.TrimSpace(le.logStationGrid); myGrid != "" && qs.GridSquare != "" {
+			qs.Distance = gridDistanceKm(myGrid, qs.GridSquare)
+			qs.Bearing = gridBearingDeg(myGrid, qs.GridSquare)
+		}
+
+		if err := qso.ValidateImportRecord(qs); err != nil {
+			applog.Warn("ADIF import: skipping invalid QSO", "call", qs.Call, "reason", err)
+			failed++
+			continue
+		}
+
+		if existingID := store.FindQSOByKey(db, qs.Call, qs.Band, qs.Mode, qs.QSODate, qs.TimeOn); existingID != 0 {
+			applog.Warn("ADIF import: duplicate QSO skipped",
+				"local_id", existingID, "call", qs.Call, "band", qs.Band, "date", qs.QSODate)
+			dupes++
+			continue
+		}
+
+		var insertErr error
+		for attempt := 0; attempt < 3; attempt++ {
+			_, insertErr = store.InsertQSO(db, qs)
+			if insertErr == nil {
+				break
+			}
+			if !strings.Contains(insertErr.Error(), "database is locked") {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		if insertErr != nil {
+			applog.Error("ADIF import: failed to insert QSO", "call", qs.Call, "error", insertErr)
+			failed++
+			continue
+		}
+		inserted++
+
+		// Report progress every batchInterval QSOs, and always for the first
+		// one so the UI transitions from "Importing…" to showing a count.
+		if inserted == 1 || inserted%batchInterval == 0 {
+			msgCh <- editorMsg{dlProgress: totalRecords, dlTotal: totalRecords, dlCount: inserted, dlDupes: dupes}
+		}
+
+		if inserted%500 == 0 && inserted > 0 {
+			applog.Info("ADIF import: progress", "inserted", inserted, "dupes", dupes, "failed", failed)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		applog.Error("ADIF import: scanner error", "error", err, "inserted", inserted, "dupes", dupes)
+	}
+
+	applog.Info("ADIF import: complete", "inserted", inserted, "dupes", dupes, "failed", failed, "path", path)
+
+	msgCh <- editorMsg{
+		dlCount:  inserted,
+		dlDupes:  dupes,
+		dlFailed: failed,
+		dlDone:   true,
+	}
+}
+
+// countADIFRecords quickly estimates the number of ADIF records in a file
+// by counting "<CALL:" occurrences. This is fast and doesn't parse the full ADIF.
+func countADIFRecords(path string) int {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+
+	// Read first 1MB to estimate record count.
+	buf := make([]byte, 1024*1024)
+	n, _ := f.Read(buf)
+	if n == 0 {
+		return 0
+	}
+
+	count := 0
+	data := string(buf[:n])
+	// Count ADIF field markers to estimate records — rough but fast.
+	for {
+		idx := strings.Index(data, "<CALL:")
+		if idx == -1 {
+			break
+		}
+		count++
+		data = data[idx+1:]
+	}
+
+	// If file is larger than 1MB, extrapolate.
+	fi, err := f.Stat()
+	if err == nil && fi.Size() > int64(n) {
+		count = count * int(fi.Size()) / n
+	}
+
+	return count
+}
+
+// runExport performs ADIF export to a local file with progress reporting.
+func (le *LogbookEditor) runExport(path string) {
+	msgCh := le.dlMsgCh
+	defer close(msgCh)
+
+	db := le.db
+
+	// Count QSOs — filtered by contest if active.
+	var total int
+	if le.contestID != "" {
+		counts, err := store.CountQSOsForContest(db, le.contestID)
+		if err == nil {
+			total = counts.Total
+		}
+	} else {
+		counts, err := store.CountQSOs(db)
+		if err == nil {
+			total = counts.Total
+		}
+	}
+	msgCh <- editorMsg{dlProgress: total, dlTotal: total, dlCount: 0}
+
+	if total == 0 {
+		msgCh <- editorMsg{dlErr: "logbook is empty"}
+		return
+	}
+
+	f, err := os.Create(path)
+	if err != nil {
+		applog.Error("ADIF export: failed to create file", "path", path, "error", err)
+		msgCh <- editorMsg{dlErr: "cannot create file: " + err.Error()}
+		return
+	}
+	defer f.Close()
+
+	// Write ADIF header. Per ADIF spec, the first character must not be '<'
+	// or the file is treated as having no header.
+	_, err = fmt.Fprintf(f, "CQOps ADIF Export\n<ADIF_VER:5>3.1.7<PROGRAMID:5>CQOps<PROGRAMVERSION:%d>%s<EOH>\n",
+		len(version.Resolved()), version.Resolved())
+	if err != nil {
+		applog.Error("ADIF export: failed to write header", "path", path, "error", err)
+		msgCh <- editorMsg{dlErr: "write error: " + err.Error()}
+		return
+	}
+
+	// Stream QSOs from DB with pagination to avoid loading all into memory.
+	const pageSize = 500
+	written := 0
+	for offset := 0; offset < total; offset += pageSize {
+		select {
+		case <-le.dlCancel:
+			msgCh <- editorMsg{dlCount: written, dlAborted: true, dlDone: true}
+			return
+		default:
+		}
+
+		limit := pageSize
+		if offset+limit > total {
+			limit = total - offset
+		}
+		qsos, err := store.ListQSOsPage(db, limit, offset, le.contestID)
+		if err != nil {
+			applog.Error("ADIF export: failed to list QSOs", "offset", offset, "error", err)
+			msgCh <- editorMsg{dlErr: "database read error: " + err.Error()}
+			return
+		}
+		for _, q := range qsos {
+			if _, err := fmt.Fprintln(f, q.ToADIF()); err != nil {
+				applog.Error("ADIF export: write error", "offset", offset, "error", err)
+				msgCh <- editorMsg{dlErr: "write error: " + err.Error()}
+				return
+			}
+			written++
+		}
+		// Report progress after each page.
+		msgCh <- editorMsg{dlProgress: total, dlTotal: total, dlCount: written}
+
+		if written%1000 == 0 && written > 0 {
+			applog.Info("ADIF export: progress", "written", written, "total", total)
+		}
+	}
+
+	applog.Info("ADIF export: complete", "path", path, "count", written)
+	msgCh <- editorMsg{dlCount: written, dlDone: true}
 }

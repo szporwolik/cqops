@@ -8,15 +8,27 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/qso"
 )
 
 type StationForm struct {
+	Name        textinput.Model
 	Callsign    textinput.Model
 	Operator    textinput.Model
 	Locator     textinput.Model
 	SOTARef     textinput.Model
 	POTARef     textinput.Model
 	WWFFRef     textinput.Model
+	IARURegion  int
+	iaruFocus   bool // true when IARU region selector has focus
+	Continent   string
+	contIdx     int  // index into continent list for cycling
+	contFocus   bool // true when continent selector has focus
+	CQZone      textinput.Model
+	ITUZone     textinput.Model
+	DXCC        textinput.Model
+	SIG         textinput.Model
+	SIGInfo     textinput.Model
 	WlEnabled   bool
 	wlCbFocus   bool // true when the WL checkbox has focus
 	wlBtnFocus  int  // 0=none, 1=Update, 2=Test
@@ -40,25 +52,39 @@ func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder strin
 		return ti
 	}
 
+	nm := mkTI(30, 28, "e.g. Home QTH, Field Day")
+	nm.Focus()
 	cs := mkTI(20, 28, callsignPlaceholder)
-	cs.Focus()
+	cs.Blur()
 	op := mkTI(20, 28, opPlaceholder)
 	lc := mkTI(8, 28, locatorPlaceholder)
 	sr := mkTI(20, 28, "e.g. SP/TA-001")
 	pr := mkTI(20, 28, "e.g. SP-0001")
 	wr := mkTI(20, 28, "e.g. SPFF-0001")
+	cz := mkTI(4, 28, "1-40")
+	iz := mkTI(4, 28, "1-90")
+	dx := mkTI(6, 28, "e.g. 269")
+	sg := mkTI(10, 28, "e.g. SOTA")
+	si := mkTI(20, 28, "e.g. SP/TQ-001")
 
 	wu := mkTI(80, 28, "https://log.example.com")
 	wk := mkTI(64, 28, "Wavelog API key")
 	ws := mkTI(80, 60, "press Update to fetch")
 
 	return &StationForm{
+		Name:        nm,
 		Callsign:    cs,
 		Operator:    op,
 		Locator:     lc,
 		SOTARef:     sr,
 		POTARef:     pr,
 		WWFFRef:     wr,
+		Continent:   "EU",
+		CQZone:      cz,
+		ITUZone:     iz,
+		DXCC:        dx,
+		SIG:         sg,
+		SIGInfo:     si,
 		WlURL:       wu,
 		WlKey:       wk,
 		WlStationID: ws,
@@ -67,6 +93,8 @@ func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder strin
 
 func (f *StationForm) Update(msg tea.KeyPressMsg) {
 	switch {
+	case f.Name.Focused():
+		f.Name, _ = f.Name.Update(msg)
 	case f.Callsign.Focused():
 		f.Callsign, _ = f.Callsign.Update(msg)
 		f.Callsign.SetValue(strings.ToUpper(f.Callsign.Value()))
@@ -85,6 +113,32 @@ func (f *StationForm) Update(msg tea.KeyPressMsg) {
 	case f.WWFFRef.Focused():
 		f.WWFFRef, _ = f.WWFFRef.Update(msg)
 		f.WWFFRef.SetValue(strings.ToUpper(f.WWFFRef.Value()))
+	case f.iaruFocus:
+		if msg.String() == " " || msg.String() == "space" || msg.String() == "enter" {
+			f.IARURegion++
+			if f.IARURegion > 3 {
+				f.IARURegion = 1
+			}
+		}
+	case f.contFocus:
+		if msg.String() == " " || msg.String() == "space" || msg.String() == "enter" {
+			continents := continentList()
+			f.contIdx = (f.contIdx + 1) % len(continents)
+			f.Continent = continents[f.contIdx]
+		}
+	case f.CQZone.Focused():
+		f.CQZone, _ = f.CQZone.Update(msg)
+	case f.ITUZone.Focused():
+		f.ITUZone, _ = f.ITUZone.Update(msg)
+	case f.DXCC.Focused():
+		f.DXCC, _ = f.DXCC.Update(msg)
+		f.DXCC.SetValue(strings.ToUpper(f.DXCC.Value()))
+	case f.SIG.Focused():
+		f.SIG, _ = f.SIG.Update(msg)
+		f.SIG.SetValue(strings.ToUpper(f.SIG.Value()))
+	case f.SIGInfo.Focused():
+		f.SIGInfo, _ = f.SIGInfo.Update(msg)
+		f.SIGInfo.SetValue(strings.ToUpper(f.SIGInfo.Value()))
 	case f.WlURL.Focused():
 		f.WlURL, _ = f.WlURL.Update(msg)
 	case f.WlKey.Focused():
@@ -96,6 +150,9 @@ func (f *StationForm) Update(msg tea.KeyPressMsg) {
 
 func (f *StationForm) NextInput() {
 	switch {
+	case f.Name.Focused():
+		f.Name.Blur()
+		f.Callsign.Focus()
 	case f.Callsign.Focused():
 		f.Callsign.Blur()
 		f.Locator.Focus()
@@ -104,6 +161,12 @@ func (f *StationForm) NextInput() {
 		f.SOTARef.Focus()
 	case f.Locator.Focused():
 		f.Locator.Blur()
+		f.iaruFocus = true
+	case f.iaruFocus:
+		f.iaruFocus = false
+		f.contFocus = true
+	case f.contFocus:
+		f.contFocus = false
 		f.Operator.Focus()
 	case f.SOTARef.Focused():
 		f.SOTARef.Blur()
@@ -113,13 +176,28 @@ func (f *StationForm) NextInput() {
 		f.WWFFRef.Focus()
 	case f.WWFFRef.Focused():
 		f.WWFFRef.Blur()
+		f.CQZone.Focus()
+	case f.CQZone.Focused():
+		f.CQZone.Blur()
+		f.ITUZone.Focus()
+	case f.ITUZone.Focused():
+		f.ITUZone.Blur()
+		f.DXCC.Focus()
+	case f.DXCC.Focused():
+		f.DXCC.Blur()
+		f.SIG.Focus()
+	case f.SIG.Focused():
+		f.SIG.Blur()
+		f.SIGInfo.Focus()
+	case f.SIGInfo.Focused():
+		f.SIGInfo.Blur()
 		f.wlCbFocus = true
 	case f.wlCbFocus:
 		f.wlCbFocus = false
 		if f.WlEnabled {
 			f.WlURL.Focus()
 		} else {
-			f.Callsign.Focus()
+			f.Name.Focus()
 		}
 	case f.WlURL.Focused():
 		f.WlURL.Blur()
@@ -134,19 +212,22 @@ func (f *StationForm) NextInput() {
 		f.wlBtnFocus = 2
 	case f.wlBtnFocus == 2:
 		f.wlBtnFocus = 0
-		f.Callsign.Focus()
+		f.Name.Focus()
 	}
 }
 
 func (f *StationForm) PrevInput() {
 	switch {
-	case f.Callsign.Focused():
-		f.Callsign.Blur()
+	case f.Name.Focused():
+		f.Name.Blur()
 		if f.WlEnabled {
 			f.wlBtnFocus = 2
 		} else {
 			f.wlCbFocus = true
 		}
+	case f.Callsign.Focused():
+		f.Callsign.Blur()
+		f.Name.Focus()
 	case f.wlBtnFocus == 2:
 		f.wlBtnFocus = 1
 	case f.wlBtnFocus == 1:
@@ -154,7 +235,7 @@ func (f *StationForm) PrevInput() {
 		f.WlStationID.Focus()
 	case f.Operator.Focused():
 		f.Operator.Blur()
-		f.Locator.Focus()
+		f.contFocus = true
 	case f.Locator.Focused():
 		f.Locator.Blur()
 		f.Callsign.Focus()
@@ -167,9 +248,30 @@ func (f *StationForm) PrevInput() {
 	case f.WWFFRef.Focused():
 		f.WWFFRef.Blur()
 		f.POTARef.Focus()
+	case f.iaruFocus:
+		f.iaruFocus = false
+		f.Locator.Focus()
+	case f.contFocus:
+		f.contFocus = false
+		f.iaruFocus = true
+	case f.CQZone.Focused():
+		f.CQZone.Blur()
+		f.WWFFRef.Focus()
+	case f.ITUZone.Focused():
+		f.ITUZone.Blur()
+		f.CQZone.Focus()
+	case f.DXCC.Focused():
+		f.DXCC.Blur()
+		f.ITUZone.Focus()
 	case f.wlCbFocus:
 		f.wlCbFocus = false
-		f.WWFFRef.Focus()
+		f.SIGInfo.Focus()
+	case f.SIG.Focused():
+		f.SIG.Blur()
+		f.DXCC.Focus()
+	case f.SIGInfo.Focused():
+		f.SIGInfo.Blur()
+		f.SIG.Focus()
 	case f.WlURL.Focused():
 		f.WlURL.Blur()
 		f.wlCbFocus = true
@@ -187,15 +289,26 @@ func (f *StationForm) OnLastField() bool {
 }
 
 func (f *StationForm) BlurAll() {
-	blurTextinputs(&f.Callsign, &f.Operator, &f.Locator, &f.SOTARef, &f.POTARef, &f.WWFFRef,
+	blurTextinputs(&f.Name, &f.Callsign, &f.Operator, &f.Locator, &f.SOTARef, &f.POTARef, &f.WWFFRef,
+		&f.CQZone, &f.ITUZone, &f.DXCC, &f.SIG, &f.SIGInfo,
 		&f.WlURL, &f.WlKey, &f.WlStationID)
 	f.wlCbFocus = false
+	f.iaruFocus = false
+	f.contFocus = false
 	f.wlBtnFocus = 0
 }
 
-func (f *StationForm) Values() (callsign, operator, locator, sotaRef, potaRef, wwffRef string,
-	wlEnabled bool, wlURL, wlKey, wlStationID string) {
-	return strings.ToUpper(strings.TrimSpace(f.Callsign.Value())),
+func (f *StationForm) Values() (name, callsign, operator, locator, sotaRef, potaRef, wwffRef string,
+	wlEnabled bool, wlURL, wlKey, wlStationID string, iaruRegion, cqZone, ituZone, dxcc int,
+	sig, sigInfo, continent string) {
+
+	var cz, iz, dx int
+	fmt.Sscanf(strings.TrimSpace(f.CQZone.Value()), "%d", &cz)
+	fmt.Sscanf(strings.TrimSpace(f.ITUZone.Value()), "%d", &iz)
+	fmt.Sscanf(strings.TrimSpace(f.DXCC.Value()), "%d", &dx)
+
+	return strings.TrimSpace(f.Name.Value()),
+		strings.ToUpper(strings.TrimSpace(f.Callsign.Value())),
 		strings.ToUpper(strings.TrimSpace(f.Operator.Value())),
 		formatLocator(f.Locator.Value()),
 		strings.TrimSpace(f.SOTARef.Value()),
@@ -204,16 +317,50 @@ func (f *StationForm) Values() (callsign, operator, locator, sotaRef, potaRef, w
 		f.WlEnabled,
 		strings.TrimSpace(f.WlURL.Value()),
 		strings.TrimSpace(f.WlKey.Value()),
-		strings.TrimSpace(f.WlStationID.Value())
+		strings.TrimSpace(f.WlStationID.Value()),
+		f.IARURegion,
+		cz, iz, dx,
+		strings.ToUpper(strings.TrimSpace(f.SIG.Value())),
+		strings.ToUpper(strings.TrimSpace(f.SIGInfo.Value())),
+		f.Continent
 }
 
-func (f *StationForm) SetValues(callsign, operator, locator, sotaRef, potaRef, wwffRef string) {
+func (f *StationForm) SetValues(name, callsign, operator, locator, sotaRef, potaRef, wwffRef string, iaruRegion, cqZone, ituZone, dxcc int, sig, sigInfo, continent string) {
+	f.Name.SetValue(name)
 	f.Callsign.SetValue(callsign)
 	f.Operator.SetValue(operator)
 	f.Locator.SetValue(locator)
 	f.SOTARef.SetValue(sotaRef)
 	f.POTARef.SetValue(potaRef)
 	f.WWFFRef.SetValue(wwffRef)
+	f.IARURegion = iaruRegion
+	if cqZone > 0 {
+		f.CQZone.SetValue(fmt.Sprintf("%d", cqZone))
+	} else {
+		f.CQZone.SetValue("")
+	}
+	if ituZone > 0 {
+		f.ITUZone.SetValue(fmt.Sprintf("%d", ituZone))
+	} else {
+		f.ITUZone.SetValue("")
+	}
+	if dxcc > 0 {
+		f.DXCC.SetValue(fmt.Sprintf("%d", dxcc))
+	} else {
+		f.DXCC.SetValue("")
+	}
+	f.SIG.SetValue(sig)
+	f.SIGInfo.SetValue(sigInfo)
+	if continent != "" {
+		f.Continent = continent
+		// Sync contIdx to match the continent.
+		for i, c := range continentList() {
+			if c == continent {
+				f.contIdx = i
+				break
+			}
+		}
+	}
 }
 
 func (f *StationForm) SetWavelogValues(wl *config.WavelogConfig) {
@@ -240,18 +387,70 @@ func (f *StationForm) View() tea.View {
 		label string
 		ti    *textinput.Model
 	}
-	var fields []fieldDef
-	fields = append(fields,
-		fieldDef{"Callsign:", &f.Callsign},
-		fieldDef{"Grid locator:", &f.Locator},
-		fieldDef{"Operator (opt):", &f.Operator},
-		fieldDef{"SOTA Ref (opt):", &f.SOTARef},
-		fieldDef{"POTA Ref (opt):", &f.POTARef},
-		fieldDef{"WWFF Ref (opt):", &f.WWFFRef},
-	)
-
 	var b strings.Builder
-	for _, field := range fields {
+
+	// Station name
+	b.WriteString(f.renderFieldLine("Name:", &f.Name, availW))
+	// Callsign
+	b.WriteString(f.renderFieldLine("Callsign:", &f.Callsign, availW))
+	// Grid locator
+	b.WriteString(f.renderFieldLine("Grid locator:", &f.Locator, availW))
+
+	// IARU Region display (focusable, Space/Enter to cycle) — right after grid.
+	iaruLabel := "IARU Region:"
+	if f.IARURegion < 1 || f.IARURegion > 3 {
+		f.IARURegion = 1
+	}
+	iaruVal := fmt.Sprintf("%d — %s", f.IARURegion, iaruRegionName(f.IARURegion))
+	prefix := "  "
+	lbl := S.FormLabelWide.Align(lipgloss.Left).Render(iaruLabel)
+	val := ValueStyle.Render(iaruVal)
+	if f.iaruFocus {
+		prefix = S.FormPrefixOn.Render("> ")
+		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(iaruLabel)
+		val = CursorStyle.Render(iaruVal)
+	}
+	b.WriteString(padOrTrunc(
+		lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val),
+		availW))
+	b.WriteString("\n")
+
+	// Continent selector — focusable, Space/Enter to cycle.
+	contLabel := "Continent:"
+	contVal := f.Continent + " — " + continentName(f.Continent)
+	cPrefix := "  "
+	cLbl := S.FormLabelWide.Align(lipgloss.Left).Render(contLabel)
+	cVal := ValueStyle.Render(contVal)
+	if f.contFocus {
+		cPrefix = S.FormPrefixOn.Render("> ")
+		cLbl = S.FormFocusedWide.Align(lipgloss.Left).Render(contLabel)
+		cVal = CursorStyle.Render(contVal)
+	}
+	b.WriteString(padOrTrunc(
+		lipgloss.JoinHorizontal(lipgloss.Center, cPrefix, cLbl, " ", cVal),
+		availW))
+	b.WriteString("\n")
+
+	// Remaining text fields.
+	remFields := []fieldDef{
+		{"Operator (opt):", &f.Operator},
+		{"SOTA Ref (opt):", &f.SOTARef},
+		{"POTA Ref (opt):", &f.POTARef},
+		{"WWFF Ref (opt):", &f.WWFFRef},
+	}
+	for _, field := range remFields {
+		b.WriteString(f.renderFieldLine(field.label, field.ti, availW))
+	}
+
+	// CQ Zone, ITU Zone, DXCC, SIG, SIG Info — text inputs.
+	zoneFields := []fieldDef{
+		{"CQ Zone (opt):", &f.CQZone},
+		{"ITU Zone (opt):", &f.ITUZone},
+		{"DXCC ID (opt):", &f.DXCC},
+		{"SIG (opt):", &f.SIG},
+		{"SIG Info (opt):", &f.SIGInfo},
+	}
+	for _, field := range zoneFields {
 		b.WriteString(f.renderFieldLine(field.label, field.ti, availW))
 	}
 
@@ -375,12 +574,64 @@ func (f *StationForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 type enterOnLastFieldMsg struct{}
 
 func (f *StationForm) Validate() error {
-	cs, _, gr, _, _, _, _, _, _, _ := f.Values()
+	nm, cs, _, gr, _, _, _, _, _, _, _, _, _, _, _, _, _, cont := f.Values()
+	if nm == "" {
+		return fmt.Errorf("station name is required")
+	}
 	if cs == "" {
 		return fmt.Errorf("callsign is required")
+	}
+	if !qso.IsValidCall(cs) {
+		return fmt.Errorf("invalid callsign")
 	}
 	if gr == "" {
 		return fmt.Errorf("grid locator is required")
 	}
+	if !qso.IsValidLocator(gr) {
+		return fmt.Errorf("invalid locator")
+	}
+	if cont == "" {
+		return fmt.Errorf("continent is required")
+	}
 	return nil
+}
+
+// ValidateField returns an error hint for the given render field label, or ""
+// if the field value is valid. Used for inline UI feedback.
+func (f *StationForm) ValidateField(label string) string {
+	_, cs, _, gr, _, _, _, _, _, _, _, _, _, _, _, _, _, cont := f.Values()
+	switch label {
+	case "Callsign:":
+		if cs != "" && !qso.IsValidCall(cs) {
+			return "Invalid callsign"
+		}
+	case "Grid locator:":
+		if gr != "" && !qso.IsValidLocator(gr) {
+			return "Invalid locator"
+		}
+	case "Continent:":
+		if cont == "" {
+			return "Required"
+		}
+	}
+	return ""
+}
+
+// continentList returns the list of continent codes for cycling.
+func continentList() []string {
+	return []string{"EU", "NA", "SA", "AS", "AF", "OC", "AN"}
+}
+
+// iaruRegionName returns the human-readable name for an IARU region number.
+func iaruRegionName(r int) string {
+	switch r {
+	case 1:
+		return "Europe, Africa, Middle East, N. Asia"
+	case 2:
+		return "Americas"
+	case 3:
+		return "Asia-Pacific"
+	default:
+		return "Unknown"
+	}
 }

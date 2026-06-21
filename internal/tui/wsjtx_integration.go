@@ -7,7 +7,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	adif "github.com/farmergreg/adif/v5"
-	"github.com/farmergreg/spec/v6/adifield"
 	"github.com/gen2brain/beeep"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/qso"
@@ -20,15 +19,15 @@ import (
 
 // applyWSJTXStatus applies a WSJT-X status update to the QSO form fields.
 func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode, report, txMessage string, transmitting bool) {
-	m.wsjtxOnline = true
-	prevTx := m.wsjtxTx
-	prevMsg := m.wsjtxTxMsg
-	m.wsjtxTxMsg = txMessage
-	m.wsjtxLastSeen = time.Now()
-	m.wsjtxTx = transmitting
+	m.wsjtx.online = true
+	prevTx := m.wsjtx.tx
+	prevMsg := m.wsjtx.txMsg
+	m.wsjtx.txMsg = txMessage
+	m.wsjtx.lastSeen = time.Now()
+	m.wsjtx.tx = transmitting
 	// Only invalidate the status bar cache when the visible TX state changes.
 	if prevTx != transmitting || prevMsg != txMessage {
-		m.cachedStatus = ""
+		m.rc.status = ""
 	}
 	if call != "" {
 		prevCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
@@ -39,29 +38,41 @@ func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode
 			m.fields[fieldName].SetValue("")
 			m.fields[fieldQTH].SetValue("")
 			m.fields[fieldGrid].SetValue("")
-			m.partnerData = nil
-			m.wlPrivateData = nil
-			m.wlLookupDone = false
-			m.cachedLogStatsSig = ""
+			m.lookup.partnerData = nil
+			m.lookup.wlPrivateData = nil
+			m.lookup.wlLookupDone = false
+			m.rc.logStatsSig = ""
 			m.invalidatePartnerMapCache()
 			applog.InfoDetail("WSJT-X: switching DX call", fmt.Sprintf("%s \u2192 %s", prevCall, newCall))
-			if m.App.Config.QRZ.Enabled && m.App.Config.QRZ.User != "" {
+			if m.App.Config.Integrations.QRZ.Enabled && m.App.Config.Integrations.QRZ.User != "" {
 				applog.Info("QRZ: looking up " + call + "\u2026")
-				m.qrzNeed = true
-				m.qrzCall = newCall
+				m.lookup.qrzNeed = true
+				m.lookup.qrzCall = newCall
 			}
 			if m.App.Logbook.Wavelog != nil && m.App.Logbook.Wavelog.Enabled {
-				m.wlNeed = true
-				m.wlCall = newCall
+				m.lookup.wlNeed = true
+				m.lookup.wlCall = newCall
 			}
 		}
 	}
 	if grid != "" {
-		m.fields[fieldGrid].SetValue(formatLocator(grid))
-		m.pathGrid = strings.ToUpper(formatLocator(grid))
+		formatted := formatLocator(grid)
+		current := strings.ToUpper(strings.TrimSpace(m.fields[fieldGrid].Value()))
+		// QRZ may have already filled a more precise grid (e.g. JN54ks vs
+		// WSJT-X's JN54). Only overwrite if the current grid is empty or
+		// if the WSJT-X grid is not a prefix of the current one (different
+		// location altogether).
+		if current == "" || !strings.HasPrefix(current, strings.ToUpper(formatted)) {
+			m.fields[fieldGrid].SetValue(formatted)
+			m.rc.pathGrid = strings.ToUpper(formatted)
+		}
 	}
 	if freqHz > 0 {
-		m.fields[fieldFreq].SetValue(fmt.Sprintf("%.6f", float64(freqHz)/1_000_000.0))
+		freqMHz := float64(freqHz) / 1_000_000.0
+		m.fields[fieldFreq].SetValue(fmt.Sprintf("%.6f", freqMHz))
+		if band := qso.DeriveBand(freqMHz); band != "" {
+			m.fields[fieldBand].SetValue(band)
+		}
 	}
 	if mode != "" {
 		mode, submode = qso.NormalizeMode(mode, submode)
@@ -75,9 +86,9 @@ func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode
 		m.fields[fieldRSTRcvd].SetValue(report)
 	}
 	m.autoFillRST()
-	m.wsjtxStatus = mode
+	m.wsjtx.status = mode
 	if submode != "" {
-		m.wsjtxStatus = submode
+		m.wsjtx.status = submode
 	}
 }
 
@@ -101,11 +112,24 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 		MyGridSquare:    m.App.Logbook.Station.Grid,
 		MyRig:           m.App.Logbook.Station.RigModel(m.App.Config.Rigs),
 		MyAntenna:       m.App.Logbook.Station.RigAntenna(m.App.Config.Rigs),
-		TXPower:         m.App.Logbook.Station.RigPower(m.App.Config.Rigs),
+		TXPower:         txPowerForWSJTX(m),
 		MySOTARef:       m.App.Logbook.Station.SOTARef,
 		MyPOTARef:       m.App.Logbook.Station.POTARef,
 		MyWWFFRef:       m.App.Logbook.Station.WWFFRef,
+		MyCQZone:        qso.ItoaOrEmpty(m.App.Logbook.Station.CQZone),
+		MyITUZone:       qso.ItoaOrEmpty(m.App.Logbook.Station.ITUZone),
+		MyDXCC:          qso.ItoaOrEmpty(m.App.Logbook.Station.DXCC),
+		MySIG:           m.App.Logbook.Station.SIG,
+		MySIGInfo:       m.App.Logbook.Station.SIGInfo,
 	})
+
+	// Enrich QSO: compute distance/bearing from grid squares.
+	myGrid := m.App.Logbook.Station.Grid
+	if qs.GridSquare != "" && myGrid != "" {
+		qs.Distance = gridDistanceKm(myGrid, qs.GridSquare)
+		qs.Bearing = gridBearingDeg(myGrid, qs.GridSquare)
+	}
+
 	if err := qso.ValidateForSave(qs); err != nil {
 		applog.Error("WSJT-X: ADIF validation failed", "error", err.Error())
 		m.toasts.Error("WSJT-X: " + err.Error())
@@ -144,13 +168,103 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 	if m.screen == screenQSO {
 		cmds = append(cmds, m.refreshQSOS())
 	}
-	cmds = append(cmds, m.maybeUploadRawADIFToWavelog(adif, id, qs.Call))
+	cmds = append(cmds, m.wsjtxEnrichAndUploadCmd(id, qs.Call))
 	return tea.Batch(cmds...), false
 }
 
-// parseWSJTXADIF parses a single QSO record from an ADIF string.
+// wsjtxEnrichAndUploadCmd returns a command that enriches a WSJT-X auto-logged
+// QSO via QRZ (if configured) and then uploads the enriched QSO to Wavelog.
+// This ensures the QSO on Wavelog contains QRZ-derived fields (Name, QTH,
+// Country, GridSquare) rather than the raw WSJT-X ADIF.
+// Returns nil when offline, when neither QRZ enrichment nor Wavelog upload is
+// possible, or when the call is empty.
+func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
+	if call == "" || !m.inetOnline {
+		return nil
+	}
+	qrzenabled := m.App.Config.Integrations.QRZ.Enabled && m.App.Config.Integrations.QRZ.User != ""
+	wl := m.App.Logbook.Wavelog
+	wlenabled := wl != nil && wl.Enabled && wl.StationProfileID != ""
+	if !qrzenabled && !wlenabled {
+		return nil // nothing to do
+	}
+	return func() tea.Msg {
+		// Step 1: enrich via QRZ (best-effort). Only when still online.
+		if qrzenabled && m.inetOnline {
+			data, err := qrzLookupFunc(m.App.Config.Integrations.QRZ.User, m.App.Config.Integrations.QRZ.Pass, call)
+			if err != nil {
+				applog.Warn("WSJT-X: QRZ enrichment failed", "call", call, "error", err)
+			} else if data != nil && data.Callsign != "" {
+				store.UpdateQSOEnrichment(m.App.DB, qsoID, store.EnrichmentData{
+					Name:       data.Name,
+					QTH:        data.QTH,
+					Country:    data.Country,
+					GridSquare: data.Grid,
+					CQZone:     data.CQZone,
+					ITUZone:    data.ITUZone,
+				})
+				applog.Info("WSJT-X: QRZ enrichment applied", "call", call, "qso_id", qsoID)
+			} else {
+				applog.Debug("WSJT-X: QRZ returned no data", "call", call)
+			}
+		}
+
+		// Step 1b: enrich Country, CQ/ITU zone from DXCC if not already filled by QRZ.
+		if m.App.Config.General.UseCTY && m.App.DXCC != nil {
+			qs, _ := store.GetQSOByID(m.App.DB, qsoID)
+			if qs != nil {
+				if p := m.dxccLookup(call); p != nil {
+					ed := store.EnrichmentData{}
+					need := false
+					if qs.Country == "" && p.Name != "" {
+						ed.Country = p.Name
+						need = true
+					}
+					if qs.CQZone == "" {
+						ed.CQZone = fmt.Sprintf("%d", p.CQZone)
+						need = true
+					}
+					if qs.ITUZone == "" {
+						ed.ITUZone = fmt.Sprintf("%d", p.ITUZone)
+						need = true
+					}
+					if need {
+						store.UpdateQSOEnrichment(m.App.DB, qsoID, ed)
+						applog.Debug("DXCC: filled from prefix", "call", call, "country", ed.Country, "cqz", ed.CQZone, "ituz", ed.ITUZone)
+					}
+				}
+			}
+		}
+
+		// Step 2: load the enriched QSO from DB.
+		qs, err := store.GetQSOByID(m.App.DB, qsoID)
+		if err != nil {
+			applog.Error("WSJT-X: cannot load QSO for Wavelog upload", "qso_id", qsoID, "error", err)
+			return nil
+		}
+
+		// Step 2b: recompute distance/bearing after enrichment. WSJT-X may
+		// not include a grid, or the enriched grid may be more precise.
+		if myGrid := m.App.Logbook.Station.Grid; myGrid != "" && qs.GridSquare != "" {
+			qs.Distance = gridDistanceKm(myGrid, qs.GridSquare)
+			qs.Bearing = gridBearingDeg(myGrid, qs.GridSquare)
+			m.App.DB.Exec(`UPDATE qsos SET distance=?, bearing=? WHERE id=?`,
+				qs.Distance, qs.Bearing, qsoID)
+		}
+
+		// Step 3: upload the enriched QSO's ADIF to Wavelog.
+		if !wlenabled || !m.inetOnline {
+			return wsjtxEnrichDoneMsg{}
+		}
+		adifStr := qs.ToADIF()
+		ok, isDup, uploadErr := postQSO(wl.URL, wl.APIKey, wl.StationProfileID, adifStr, qsoID, call, m.App.DB)
+		return wlUploadResultMsg{qID: qsoID, call: call, ok: ok, isDup: isDup, err: uploadErr}
+	}
+}
+
+// parseWSJTXADIF parses a single QSO record from a WSJT-X ADIF string.
+// Delegates to the shared qso.ParseADIFRecord for field extraction.
 func parseWSJTXADIF(adifStr string) *qso.QSO {
-	qs := qso.NewQSO()
 	adifStr = strings.TrimSpace(adifStr)
 
 	s := adif.NewScanner(strings.NewReader(adifStr))
@@ -158,104 +272,27 @@ func parseWSJTXADIF(adifStr string) *qso.QSO {
 		if s.IsHeader() {
 			continue
 		}
-		r := s.Record()
-		if v := r[adifield.CALL]; v != "" {
-			qs.Call = strings.ToUpper(v)
+		qs := qso.ParseADIFRecord(s.Record(), "wsjtx")
+
+		// WSJT-X specific post-processing: normalize mode/submode and derive band.
+		qs.Mode, qs.Submode = qso.NormalizeMode(qs.Mode, qs.Submode)
+		if qs.Band == "" && qs.Freq > 0 {
+			qs.Band = qso.DeriveBand(qs.Freq)
 		}
-		if v := r[adifield.GRIDSQUARE]; v != "" {
-			qs.GridSquare = formatLocator(v)
-		}
-		if v := r[adifield.MODE]; v != "" {
-			qs.Mode = strings.ToUpper(v)
-		}
-		if v := r[adifield.SUBMODE]; v != "" {
-			qs.Submode = strings.ToUpper(v)
-		}
-		if v := r[adifield.RST_SENT]; v != "" {
-			qs.RSTSent = v
-		}
-		if v := r[adifield.RST_RCVD]; v != "" {
-			qs.RSTRcvd = v
-		}
-		if v := r[adifield.QSO_DATE]; v != "" {
-			qs.QSODate = stripNonDigits(v)
-		}
-		if v := r[adifield.TIME_ON]; v != "" {
-			qs.TimeOn = stripNonDigits(v)
-		}
-		if v := r[adifield.TIME_OFF]; v != "" {
-			qs.TimeOff = stripNonDigits(v)
-		}
-		if v := r[adifield.BAND]; v != "" {
-			qs.Band = qso.NormalizeBand(v)
-		}
-		if v := r[adifield.FREQ]; v != "" {
-			if _, err := fmt.Sscanf(v, "%f", &qs.Freq); err != nil {
-				applog.Warn("WSJT-X: bad ADIF frequency", "freq", v, "error", err)
-			}
-		}
-		if v := r[adifield.FREQ_RX]; v != "" {
-			if _, err := fmt.Sscanf(v, "%f", &qs.FreqRx); err != nil {
-				applog.Warn("WSJT-X: bad ADIF frequency_rx", "freq", v, "error", err)
-			}
-		}
-		if v := r[adifield.STATION_CALLSIGN]; v != "" {
-			qs.StationCallsign = strings.ToUpper(v)
-		}
-		if v := r[adifield.MY_GRIDSQUARE]; v != "" {
-			qs.MyGridSquare = formatLocator(v)
-		}
-		if v := r[adifield.OPERATOR]; v != "" {
-			qs.Operator = strings.ToUpper(v)
-		}
-		if v := r[adifield.COMMENT]; v != "" {
-			qs.Comment = v
-		}
-		if v := r[adifield.NAME]; v != "" {
-			qs.Name = v
-		}
-		if v := r[adifield.QTH]; v != "" {
-			qs.QTH = v
-		}
-		if v := r[adifield.COUNTRY]; v != "" {
-			qs.Country = v
-		}
-		if v := r[adifield.DXCC]; v != "" && qs.Country == "" {
-			qs.Country = v
-		}
-		if v := r[adifield.TX_PWR]; v != "" {
-			qs.TXPower = v
-		}
-		if v := r[adifield.SOTA_REF]; v != "" {
-			qs.SOTARef = v
-		}
-		if v := r[adifield.POTA_REF]; v != "" {
-			qs.POTARef = v
-		}
-		if v := r[adifield.WWFF_REF]; v != "" {
-			qs.WWFFRef = v
-		}
-		if v := r[adifield.IOTA]; v != "" {
-			qs.IOTA = v
-		}
-		if v := r[adifield.MY_SOTA_REF]; v != "" {
-			qs.MySOTARef = v
-		}
-		if v := r[adifield.MY_POTA_REF]; v != "" {
-			qs.MyPOTARef = v
-		}
-		if v := r[adifield.MY_WWFF_REF]; v != "" {
-			qs.MyWWFFRef = v
-		}
-		break
+		return qs
 	}
 	if err := s.Err(); err != nil {
 		applog.Warn("WSJT-X: ADIF scanner error", "error", err)
 	}
+	return qso.NewQSO()
+}
 
-	qs.Mode, qs.Submode = qso.NormalizeMode(qs.Mode, qs.Submode)
-	if qs.Band == "" && qs.Freq > 0 {
-		qs.Band = qso.DeriveBand(qs.Freq)
+// txPowerForWSJTX returns the TX power to use when auto-logging a WSJT-X QSO.
+// Prefers the current form field value (populated by flrig or manual entry);
+// falls back to the station's rig preset power.
+func txPowerForWSJTX(m *Model) string {
+	if fp := strings.TrimSpace(m.fields[fieldTXPower].Value()); fp != "" {
+		return fp
 	}
-	return qs
+	return m.App.Logbook.Station.RigPower(m.App.Config.Rigs)
 }

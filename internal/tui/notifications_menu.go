@@ -85,9 +85,10 @@ func (nm *NotificationsMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				nm.beepOnError = !nm.beepOnError
 			}
 		case "enter":
-			if nm.cursor == 5 {
+			switch nm.cursor {
+			case 5:
 				nm.sendTestNotification()
-			} else if nm.cursor == 6 {
+			case 6:
 				nm.sendTestBeep()
 			}
 		}

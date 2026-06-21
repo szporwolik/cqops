@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/szporwolik/cqops/internal/app"
@@ -52,7 +53,6 @@ func newLifecycleTestModel(t *testing.T) *Model {
 		},
 	}
 	// Disable all integrations for tests
-	cfg.WSJTX.Enabled = false
 
 	a := &app.App{
 		Config:      cfg,
@@ -91,7 +91,7 @@ func countQSOS(t *testing.T, m *Model) int {
 // latestQSO returns the most recently inserted QSO from the test database.
 func latestQSO(t *testing.T, m *Model) qso.QSO {
 	t.Helper()
-	qsos, err := store.ListQSOs(m.App.DB, 1)
+	qsos, err := store.ListQSOs(m.App.DB, 1, "")
 	if err != nil {
 		t.Fatalf("ListQSOs: %v", err)
 	}
@@ -465,5 +465,507 @@ func TestLogQSOFromADIFWavelogDisabled(t *testing.T) {
 	// RecentQSOs should be refreshed immediately
 	if len(m.qsos) != 1 {
 		t.Error("RecentQSOs should be refreshed immediately even when Wavelog is disabled")
+	}
+}
+
+// =============================================================================
+// Contest mode QSO tests
+// =============================================================================
+
+// newContestTestModel creates a Model with contests configured.
+func newContestTestModel(t *testing.T, activeContest string) *Model {
+	t.Helper()
+	m := newLifecycleTestModel(t)
+	m.App.Config.Contests = map[string]config.Contest{
+		"c1": {ID: "c1", LogbookID: m.App.LogbookName, Name: "CQ WPX", ContestID: "CQ-WPX-CW", NextQSO: 1},
+		"c2": {ID: "c2", LogbookID: m.App.LogbookName, Name: "ARRL DX", ContestID: "ARRL-DX-CW", NextQSO: 42},
+	}
+	m.App.Logbook.ActiveContest = activeContest
+	return m
+}
+
+func TestSaveQSOWithActiveContest(t *testing.T) {
+	m := newContestTestModel(t, "c1")
+	fillMinimalValidQSO(m)
+	m.saveQSO()()
+
+	saved := latestQSO(t, m)
+	if saved.ContestID != "c1" {
+		t.Errorf("ContestID = %q; want c1", saved.ContestID)
+	}
+}
+
+func TestSaveQSOWithoutActiveContest(t *testing.T) {
+	m := newContestTestModel(t, "") // None active
+	fillMinimalValidQSO(m)
+	m.saveQSO()()
+
+	saved := latestQSO(t, m)
+	if saved.ContestID != "" {
+		t.Errorf("ContestID = %q; want empty", saved.ContestID)
+	}
+}
+
+func TestSaveQSOContestFilteredRecentQSOs(t *testing.T) {
+	m := newContestTestModel(t, "c1")
+
+	// Save a QSO with contest c1 active
+	fillMinimalValidQSO(m)
+	m.fields[fieldCall].SetValue("DJ7NT")
+	m.saveQSO()()
+
+	// Switch to contest c2 and save another
+	m.App.Logbook.ActiveContest = "c2"
+	fillMinimalValidQSO(m)
+	m.fields[fieldCall].SetValue("SP9MOA")
+	m.saveQSO()()
+
+	// Recent QSOs should only show c2's QSO (active contest)
+	if len(m.qsos) != 1 {
+		t.Fatalf("RecentQSOs = %d QSOs; want 1 (only c2's)", len(m.qsos))
+	}
+	if m.qsos[0].Call != "SP9MOA" {
+		t.Errorf("RecentQSOs[0].Call = %q; want SP9MOA", m.qsos[0].Call)
+	}
+}
+
+func TestSaveQSOContestFilterRespectsNone(t *testing.T) {
+	m := newContestTestModel(t, "c1")
+
+	// Save with contest c1 active
+	fillMinimalValidQSO(m)
+	m.fields[fieldCall].SetValue("CT1AAA")
+	m.saveQSO()()
+
+	// Switch to None and save another
+	m.App.Logbook.ActiveContest = ""
+	fillMinimalValidQSO(m)
+	m.fields[fieldCall].SetValue("DJ7NT")
+	m.saveQSO()()
+
+	// With None active, all QSOs should be visible
+	if len(m.qsos) != 2 {
+		t.Fatalf("RecentQSOs = %d QSOs; want 2 (none active → no filter)", len(m.qsos))
+	}
+}
+
+func TestListQSOsContestFiltering(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	db := m.App.DB
+
+	// Insert QSOs with different contest IDs
+	mustInsert := func(call, contestID string) {
+		qs := qso.NewQSO()
+		qs.Call = call
+		qs.QSODate = "20260614"
+		qs.TimeOn = "120000"
+		qs.Band = "20m"
+		qs.Mode = "SSB"
+		qs.RSTSent = "59"
+		qs.RSTRcvd = "59"
+		qs.ContestID = contestID
+		qso.ApplyStationDefaults(qs, qso.StationInfo{
+			StationCallsign: m.App.Logbook.Station.Callsign,
+			Operator:        m.App.Logbook.Station.Operator,
+			MyGridSquare:    m.App.Logbook.Station.Grid,
+		})
+		if _, err := store.InsertQSO(db, qs); err != nil {
+			t.Fatalf("InsertQSO: %v", err)
+		}
+	}
+
+	mustInsert("C1AAA", "c1")
+	mustInsert("C1BBB", "c1")
+	mustInsert("C2AAA", "c2")
+	mustInsert("NOCONT", "")
+
+	// Filter by c1
+	qsos, err := store.ListQSOs(db, 10, "c1")
+	if err != nil {
+		t.Fatalf("ListQSOs c1: %v", err)
+	}
+	if len(qsos) != 2 {
+		t.Errorf("c1 filter: got %d QSOs, want 2", len(qsos))
+	}
+	for _, q := range qsos {
+		if q.ContestID != "c1" {
+			t.Errorf("c1 filter returned QSO with ContestID=%q", q.ContestID)
+		}
+	}
+
+	// Filter by c2
+	qsos, err = store.ListQSOs(db, 10, "c2")
+	if err != nil {
+		t.Fatalf("ListQSOs c2: %v", err)
+	}
+	if len(qsos) != 1 {
+		t.Errorf("c2 filter: got %d QSOs, want 1", len(qsos))
+	}
+
+	// No filter
+	qsos, err = store.ListQSOs(db, 10, "")
+	if err != nil {
+		t.Fatalf("ListQSOs all: %v", err)
+	}
+	if len(qsos) != 4 {
+		t.Errorf("no filter: got %d QSOs, want 4", len(qsos))
+	}
+}
+
+func TestCycleActiveContestToasts(t *testing.T) {
+	m := newContestTestModel(t, "")
+
+	// None → first alphabetically (c2 = ARRL DX)
+	m.cycleActiveContest()
+	if m.App.Logbook.ActiveContest != "c2" {
+		t.Errorf("ActiveContest = %q; want c2 (ARRL DX, first alphabetically)", m.App.Logbook.ActiveContest)
+	}
+	if !m.needRefresh {
+		t.Error("needRefresh should be true after contest cycle")
+	}
+
+	// c2 → c1 (CQ WPX)
+	m.cycleActiveContest()
+	if m.App.Logbook.ActiveContest != "c1" {
+		t.Errorf("ActiveContest = %q; want c1 (CQ WPX, second)", m.App.Logbook.ActiveContest)
+	}
+
+	// c1 → None (wrap)
+	m.cycleActiveContest()
+	if m.App.Logbook.ActiveContest != "" {
+		t.Errorf("ActiveContest = %q; want empty (None)", m.App.Logbook.ActiveContest)
+	}
+
+	// None → c2 (wrap)
+	m.cycleActiveContest()
+	if m.App.Logbook.ActiveContest != "c2" {
+		t.Errorf("ActiveContest = %q; want c2 (wrap)", m.App.Logbook.ActiveContest)
+	}
+}
+
+func TestContestBoxVisible(t *testing.T) {
+	m := newContestTestModel(t, "c1")
+
+	line := m.buildContestLine()
+	if line == "" {
+		t.Fatal("buildContestLine should return content when contest active")
+	}
+	if !strings.Contains(line, "CQ WPX") {
+		t.Errorf("Contest line should contain name, got: %s", line)
+	}
+	if !strings.Contains(line, "CQ-WPX-CW") {
+		t.Errorf("Contest line should contain Contest ID, got: %s", line)
+	}
+}
+
+func TestContestBoxHiddenWhenNone(t *testing.T) {
+	m := newContestTestModel(t, "")
+
+	line := m.buildContestLine()
+	if line != "" {
+		t.Errorf("buildContestLine should be empty when no contest active, got: %s", line)
+	}
+}
+
+func TestContestBoxHiddenWhenUnknownID(t *testing.T) {
+	m := newContestTestModel(t, "bogus")
+
+	line := m.buildContestLine()
+	if line != "" {
+		t.Errorf("buildContestLine should be empty for unknown contest ID, got: %s", line)
+	}
+}
+
+func TestSaveQSOExchangeFields(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	// STX/SRX are only parsed when @serial is in a contest exchange template.
+	// Set up an active contest with @serial in both sent and received.
+	m.App.Config.Contests = map[string]config.Contest{
+		"c1": {ID: "c1", LogbookID: m.App.LogbookName, Name: "Test Contest", ContestID: "CQ-WPX-CW",
+			PrefillExchange: true, ExchangeSent: "599 @serial",
+			PrefillExchangeRcvd: true, ExchangeRcvd: "599 @serial",
+		},
+	}
+	m.App.Logbook.ActiveContest = "c1"
+
+	fillMinimalValidQSO(m)
+	// Sent exchange is auto-generated from the contest template ("599 @serial"
+	// with NextQSO=0 → "599 000"). Only set the received exchange manually —
+	// that's what the operator types during the QSO.
+	m.fields[fieldExchRcvd].SetValue("599 042")
+	m.saveQSO()()
+
+	saved := latestQSO(t, m)
+	if saved.ExchSent != "599 000" {
+		t.Errorf("ExchSent = %q, want 599 000 (template-generated with NextQSO=0)", saved.ExchSent)
+	}
+	if saved.ExchRcvd != "599 042" {
+		t.Errorf("ExchRcvd = %q, want 599 042", saved.ExchRcvd)
+	}
+	if saved.STX != 0 {
+		t.Errorf("STX = %d, want 0 (last integer in '599 000' is 0)", saved.STX)
+	}
+	if saved.SRX != 42 {
+		t.Errorf("SRX = %d, want 42 (last integer in '599 042')", saved.SRX)
+	}
+	if saved.STXString != "000" {
+		t.Errorf("STXString = %q, want 000 (exchange without RST)", saved.STXString)
+	}
+	if saved.SRXString != "042" {
+		t.Errorf("SRXString = %q, want 042 (exchange without RST)", saved.SRXString)
+	}
+}
+
+func TestSaveQSOExchangeEmpty(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	fillMinimalValidQSO(m)
+	// Don't set exchange fields — leave them empty.
+	m.saveQSO()()
+
+	saved := latestQSO(t, m)
+	if saved.ExchSent != "" {
+		t.Errorf("ExchSent = %q, want empty", saved.ExchSent)
+	}
+	if saved.ExchRcvd != "" {
+		t.Errorf("ExchRcvd = %q, want empty", saved.ExchRcvd)
+	}
+	if saved.STX != 0 {
+		t.Errorf("STX = %d, want 0", saved.STX)
+	}
+	if saved.SRX != 0 {
+		t.Errorf("SRX = %d, want 0", saved.SRX)
+	}
+}
+
+func TestContestPrefillFillsExchFields(t *testing.T) {
+	m := newContestTestModel(t, "c1")
+	// Set up prefill template with @serial marker.
+	ct := m.App.Config.Contests["c1"]
+	ct.PrefillExchange = true
+	ct.ExchangeSent = "599 @serial"
+	ct.PrefillExchangeRcvd = true
+	ct.ExchangeRcvd = "599 @serial"
+	ct.NextQSO = 7
+	m.App.Config.Contests["c1"] = ct
+	m.App.Logbook.ActiveContest = "c1"
+
+	fillMinimalValidQSO(m)
+	// Simulate leaving the call field (triggers prefill).
+	m.focus = fieldCall
+	m.onFieldExit()
+
+	if m.fields[fieldExchSent].Value() != "599 007" {
+		t.Errorf("ExchSent = %q, want 599 007", m.fields[fieldExchSent].Value())
+	}
+	if m.fields[fieldExchRcvd].Value() != "599" {
+		t.Errorf("ExchRcvd = %q, want '599' (@serial replaced with empty, trimmed)", m.fields[fieldExchRcvd].Value())
+	}
+	// NextQSO should NOT have incremented during prefill (happens on save).
+	ct = m.App.Config.Contests["c1"]
+	if ct.NextQSO != 7 {
+		t.Errorf("NextQSO = %d, want 7 (not incremented during prefill)", ct.NextQSO)
+	}
+}
+
+func TestContestPrefillLargeSerial(t *testing.T) {
+	m := newContestTestModel(t, "c1")
+	ct := m.App.Config.Contests["c1"]
+	ct.PrefillExchange = true
+	ct.ExchangeSent = "599 @serial"
+	ct.NextQSO = 10212
+	m.App.Config.Contests["c1"] = ct
+	m.App.Logbook.ActiveContest = "c1"
+
+	fillMinimalValidQSO(m)
+	m.focus = fieldCall
+	m.onFieldExit()
+
+	if m.fields[fieldExchSent].Value() != "599 10212" {
+		t.Errorf("ExchSent = %q, want 599 10212", m.fields[fieldExchSent].Value())
+	}
+}
+
+func TestContestPrefillOnlyWhenEnabled(t *testing.T) {
+	m := newContestTestModel(t, "c1")
+	ct := m.App.Config.Contests["c1"]
+	ct.PrefillExchange = false // disabled
+	ct.ExchangeSent = "599 @serial"
+	ct.NextQSO = 5
+	m.App.Config.Contests["c1"] = ct
+	m.App.Logbook.ActiveContest = "c1"
+
+	fillMinimalValidQSO(m)
+	m.focus = fieldCall
+	m.onFieldExit()
+
+	// Should NOT prefill when disabled.
+	if m.fields[fieldExchSent].Value() != "" {
+		t.Errorf("ExchSent should be empty when prefill is off, got %q", m.fields[fieldExchSent].Value())
+	}
+}
+
+func TestContestPrefillOnlyWhenContestActive(t *testing.T) {
+	m := newContestTestModel(t, "") // None active
+	fillMinimalValidQSO(m)
+	m.focus = fieldCall
+	m.onFieldExit()
+
+	// Should not prefill when no contest is active.
+	if m.fields[fieldExchSent].Value() != "" {
+		t.Errorf("ExchSent should be empty when no contest active, got %q", m.fields[fieldExchSent].Value())
+	}
+}
+
+func TestClearFormResetsExchangeFields(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	fillMinimalValidQSO(m)
+	m.fields[fieldExchSent].SetValue("599 001")
+	m.fields[fieldExchRcvd].SetValue("599 042")
+
+	m.clearForm()
+
+	if m.fields[fieldExchSent].Value() != "" {
+		t.Errorf("ExchSent should be cleared, got %q", m.fields[fieldExchSent].Value())
+	}
+	if m.fields[fieldExchRcvd].Value() != "" {
+		t.Errorf("ExchRcvd should be cleared, got %q", m.fields[fieldExchRcvd].Value())
+	}
+}
+
+func TestNextQSOIncrementsOnSave(t *testing.T) {
+	m := newContestTestModel(t, "c1")
+	ct := m.App.Config.Contests["c1"]
+	ct.NextQSO = 7
+	m.App.Config.Contests["c1"] = ct
+
+	fillMinimalValidQSO(m)
+	m.saveQSO()()
+
+	ct = m.App.Config.Contests["c1"]
+	if ct.NextQSO != 8 {
+		t.Errorf("NextQSO = %d, want 8 (incremented on save)", ct.NextQSO)
+	}
+}
+
+func TestNextQSONoIncrementWithoutContest(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	fillMinimalValidQSO(m)
+	m.saveQSO()()
+
+	// No contest active — nothing to check except no panic.
+}
+
+// =============================================================================
+// Dupe check tests
+// =============================================================================
+
+func TestCheckDupe_DetectsDuplicate(t *testing.T) {
+	m := newLifecycleTestModel(t)
+
+	// First, save a QSO to create a dupe candidate.
+	m.fields[fieldCall].SetValue("SP9MOA")
+	m.fields[fieldBand].SetValue("20m")
+	m.fields[fieldMode].SetValue("SSB")
+	m.fields[fieldDate].SetValue("20240501")
+	m.fields[fieldTime].SetValue("120000")
+	m.saveQSO()()
+
+	// Now fill the same call/band/mode/date in the form.
+	m.fields[fieldCall].SetValue("SP9MOA")
+	m.fields[fieldBand].SetValue("20m")
+	m.fields[fieldMode].SetValue("SSB")
+	m.fields[fieldDate].SetValue("20240501")
+	m.fields[fieldSOTA].SetValue("")
+	m.fields[fieldPOTA].SetValue("")
+	m.fields[fieldWWFF].SetValue("")
+	m.fields[fieldIOTA].SetValue("")
+
+	// Simulate tabbing away from Call to trigger onFieldExit.
+	m.focus = fieldCall
+	m.onFieldExit()
+
+	if !m.dupe {
+		t.Error("dupe should be true when same call/band/mode/date exists")
+	}
+
+	// Verify the path row contains DUPE!
+	m.width = 100
+	m.height = 30
+	m.rc.pathCall = "SP9MOA" // needed for formPathRow to render badges
+	row := m.formPathRow(90)
+	if !strings.Contains(row, "DUPE!") {
+		t.Error("formPathRow should contain DUPE! when dupe is detected")
+	}
+}
+
+func TestCheckDupe_NoDupeDifferentBand(t *testing.T) {
+	m := newLifecycleTestModel(t)
+
+	m.fields[fieldCall].SetValue("SP9MOA")
+	m.fields[fieldBand].SetValue("20m")
+	m.fields[fieldMode].SetValue("SSB")
+	m.fields[fieldDate].SetValue("20240501")
+	m.fields[fieldTime].SetValue("120000")
+	m.saveQSO()()
+
+	// Different band — should NOT be a dupe.
+	m.fields[fieldCall].SetValue("SP9MOA")
+	m.fields[fieldBand].SetValue("40m")
+	m.fields[fieldMode].SetValue("SSB")
+	m.fields[fieldDate].SetValue("20240501")
+
+	m.focus = fieldCall
+	m.onFieldExit()
+
+	if m.dupe {
+		t.Error("dupe should be false when band differs")
+	}
+}
+
+func TestCheckDupe_DifferentReferenceNotDupe(t *testing.T) {
+	m := newLifecycleTestModel(t)
+
+	// Save QSO with SOTA ref.
+	m.fields[fieldCall].SetValue("SP9MOA")
+	m.fields[fieldBand].SetValue("20m")
+	m.fields[fieldMode].SetValue("SSB")
+	m.fields[fieldDate].SetValue("20240501")
+	m.fields[fieldTime].SetValue("120000")
+	m.fields[fieldSOTA].SetValue("SP/TA-001")
+	m.saveQSO()()
+
+	// Same call/band/mode/date but DIFFERENT SOTA ref — NOT a dupe.
+	m.fields[fieldCall].SetValue("SP9MOA")
+	m.fields[fieldBand].SetValue("20m")
+	m.fields[fieldMode].SetValue("SSB")
+	m.fields[fieldDate].SetValue("20240501")
+	m.fields[fieldSOTA].SetValue("SP/TA-002")
+
+	m.focus = fieldCall
+	m.onFieldExit()
+
+	if m.dupe {
+		t.Error("dupe should be false when SOTA ref differs (different summit)")
+	}
+}
+
+func TestCheckDupe_ClearedOnFormReset(t *testing.T) {
+	m := newLifecycleTestModel(t)
+
+	m.fields[fieldCall].SetValue("SP9MOA")
+	m.fields[fieldBand].SetValue("20m")
+	m.fields[fieldMode].SetValue("SSB")
+	m.fields[fieldDate].SetValue("20240501")
+	m.fields[fieldTime].SetValue("120000")
+	m.saveQSO()()
+
+	// Set dupe to true (simulate detection).
+	m.dupe = true
+
+	// Clear form should reset dupe.
+	m.clearForm()
+
+	if m.dupe {
+		t.Error("dupe should be false after clearForm")
 	}
 }

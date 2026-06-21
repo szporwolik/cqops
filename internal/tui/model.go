@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"os"
 	"strings"
-	"sync"
 	"time"
 
 	"charm.land/bubbles/v2/help"
@@ -17,18 +16,28 @@ import (
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
-	"github.com/szporwolik/cqops/internal/psk"
 	"github.com/szporwolik/cqops/internal/qrz"
 	"github.com/szporwolik/cqops/internal/qso"
-	"github.com/szporwolik/cqops/internal/solar"
-	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
 type field int
 
+// gridSource tracks where the QSO form grid value originated.
+type gridSource string
+
 const (
-	healthCheckTicks    = 600                     // ticks between health checks (10 min)
+	gridSourceNone   gridSource = ""
+	gridSourceQRZ    gridSource = "QRZ.com"
+	gridSourceManual gridSource = "manual"
+	gridSourceSOTA   gridSource = "SOTA"
+	gridSourcePOTA   gridSource = "POTA"
+	gridSourceWWFF   gridSource = "WWFF"
+	gridSourceIOTA   gridSource = "IOTA"
+)
+
+const (
+	healthCheckTicks    = 60                      // ticks between health checks (1 min)
 	flrigStatusTimeout  = 1500 * time.Millisecond // context timeout for flrig status
 	flrigDefaultTimeout = 1000                    // default flrig HTTP timeout (ms)
 )
@@ -37,12 +46,14 @@ const (
 	fieldDate field = iota
 	fieldTime
 	fieldCall
-	fieldFreq
-	fieldBand
-	fieldMode
-	fieldSubmode
 	fieldRSTSent
 	fieldRSTRcvd
+	fieldFreq
+	fieldBand
+	fieldExchSent
+	fieldExchRcvd
+	fieldMode
+	fieldSubmode
 	fieldName
 	fieldQTH
 	fieldGrid
@@ -53,14 +64,17 @@ const (
 	fieldPOTA
 	fieldWWFF
 	fieldIOTA
+	fieldSIG
+	fieldSIGInfo
 	fieldComment
 	fieldCount // sentinel: must be last; equals number of fields above
 )
 
 var fieldNames = []string{
-	"Date UTC", "Time UTC", "Call", "Frequency", "Band", "Mode", "Submode",
-	"RST sent", "RST rcvd", "Name", "QTH", "Grid", "Country", "Power W", "Freq RX",
-	"SOTA Ref", "POTA Ref", "WWFF Ref", "IOTA", "Comment",
+	"Date UTC", "Time UTC", "Call", "RST sent", "RST rcvd", "Frequency", "Band",
+	"Exch sent", "Exch rcvd",
+	"Mode", "Submode", "Name", "QTH", "Grid", "Country", "Power W", "Freq RX",
+	"SOTA Ref", "POTA Ref", "WWFF Ref", "IOTA", "SIG", "SIG Info", "Comment",
 }
 
 type screenKind int
@@ -72,163 +86,80 @@ const (
 	screenPSKReporter
 	screenMainMenu
 	screenConfig
-	screenCallbook
 	screenIntegration
 	screenChooser
 	screenRigEdit
+	screenContest
 	screenLogView
 	screenLogbookEditor
 	screenNotifications
+	screenDXC
+	screenRef
+	screenBPL
+	screenCON
 )
 
 type Model struct {
-	App                *app.App
-	screen             screenKind
-	fields             [fieldCount]textinput.Model
-	focus              field
-	qsos               []qso.QSO
-	toasts             *ToastQueue
-	err                error
-	width              int
-	height             int
-	quitting           bool
-	rigConnected       bool
-	rigFreq            float64
-	rigMode            string
-	rigPower           float64
-	rigBlink           bool
-	rigSkipTicks       int
-	rigPolling         bool
-	dateTimeAuto       bool
-	tickCount          int
-	inetOnline         bool
-	wsjtxOnline        bool
-	wsjtxTx            bool   // true when WSJT-X is transmitting (from StatusMessage)
-	wsjtxTxMsg         string // last TX message from WSJT-X (e.g. "CQ SP9XXX JO90")
-	wsjtxLastSeen      time.Time
-	wsjtxStatus        string
-	needRefresh        bool
-	pendingADIFs       []string // queued WSJT-X ADIF records — processed on tick
-	pendingStatus      statusPending
-	adifMu             sync.Mutex
-	chooser            *LogbookChooser
-	rigChooser         *RigChooser
-	configMenu         *GeneralMenu
-	callbookMenu       *CallbookMenu
-	integrationMenu    *IntegrationMenu
-	notifMenu          *NotificationsMenu
-	mainMenu           *MainMenu
-	logViewer          *LogViewer
-	logbookEditor      *LogbookEditor
-	imageViewer        pictureurl.Model // terminal image viewer for partner photos
-	lastImageErr       error            // dedup image error logging
-	lastImageURL       string           // track photo URL to detect partner changes
-	lastPartnerPicURL  string           // track inline photo URL on Partner page
-	partnerPicViewer   pictureurl.Model // inline photo viewer for Partner page (wide screens)
-	partnerPicNeedLoad bool             // set when photo URL changes; consumed by Update
-	partnerPicW        int              // photo box content width (computed in View, used in Update)
-	partnerPicH        int              // photo box content height
-	partnerPicLastW    int              // last SetSize width sent to viewer
-	partnerPicLastH    int              // last SetSize height sent to viewer
-	mapView            *mapRenderer     // embedded world map renderer
-	confirm            *DialogModel     // active confirmation dialog (quit, etc.)
+	App            *app.App
+	screen         screenKind
+	fields         [fieldCount]textinput.Model
+	focus          field
+	qsos           []qso.QSO
+	toasts         *ToastQueue
+	err            error
+	width          int
+	height         int
+	quitting       bool
+	rig            rigState
+	dateTimeAuto   bool
+	tickCount      int
+	inetOnline     bool
+	versionChecked bool // true after first GitHub version check
+	Offline        bool // when true, skip all network-dependent operations
+	wsjtx          wsjtxState
+	needRefresh    bool
+	dupe           bool // true when call/band/mode match an existing QSO today
+	dupeConfirmed  bool // true after first Enter on a dupe; second Enter proceeds
+	adifQ          adifQueue
+	ui             uiComponents
+	photo          photoState
+	mapView        *mapRenderer // embedded world map renderer
+	confirm        *DialogModel // active confirmation dialog (quit, etc.)
+	spotDialog     *SpotDialog  // active DX spot dialog
 
 	// PSK Reporter.
-
-	pskLastFetch  time.Time
-	pskLastCall   string
-	pskFilterMins int
-	pskBandFilter string // "" = all bands, or band name like "20m"
-	pskModeFilter string // "" = all modes, or mode name like "FT8"
-	pskSelected   int
-	pskFetched    bool
-	pskFetching   bool // true while async HTTP fetch is in flight
-	pskCacheDir   string
-
-	// PSK caches — avoids SQL + Lip Gloss work on every frame.
-	pskSpots   []psk.Report
-	pskSpotKey string
-	pskView    string
-	pskViewKey string
+	psk pskState
 
 	// Solar data — hourly fetch from hamqsl.com.
-	solarData       *solar.Data
-	solarLastFetch  time.Time
-	solarFetching   bool
-	solarFailed     bool // true after all retries exhausted
-	solarCacheDir   string
-	cachedSolarView string
-	cachedSolarSig  string
+	solar solarState
 
-	// Layout cache — avoids redundant MeasureLayout() calls when terminal size
-	// and screen haven't changed between frames.
-	lastLayout   Layout
-	lastLayoutW  int
-	lastLayoutH  int
-	lastLayoutSc screenKind
+	// DX Cluster — telnet connection to dxspider.co.uk.
+	dxc dxcState
 
-	// Bar caches — avoids rebuilding status/profile/tabs/help on every frame.
-	// Status bar has a 1-second TTL because it contains the UTC clock.
-	cachedStatus    string
-	cachedStatusSec int
-	cachedTabs      string
-	cachedHelp      string
-	cachedBarSc     screenKind
-	cachedBarW      int
+	// REF — SOTA/POTA/WWFF reference lookup.
+	ref refState
 
-	partnerData    *qrz.CallData
-	wlPrivateData  *wavelog.PrivateLookupResult // Wavelog callsign lookup
-	wlLookupDone   bool                         // true when any WL lookup result received
-	wlLastBand     string                       // band used in last WL query
-	wlLastMode     string                       // mode used in last WL query
-	flrigClient    FlrigClient
-	qrzNeed        bool
-	qrzCall        string
-	qrzLastLook    time.Time
-	qrzLastCall    string // last looked-up callsign
-	wlNeed         bool   // re-trigger WL lookup after band/mode change
-	wlCall         string // callsign for pending WL lookup
-	wlLastLook     time.Time
-	wlLastCall     string // last looked-up callsign
-	retainComment  bool
-	retainFocused  bool // true when the Retain checkbox has focus (instead of a text field)
-	wlOnline       bool
-	wlForceCheck   bool   // force Wavelog check on next tick
-	wlStationName  string // e.g. "JO30oo / DJ7NT"
-	wlStationLabel string // e.g. "Debug location"
+	// BPL — band plan display (F7).
+	bpl bplState
 
-	qrzOnline  bool
+	// lastDataCheck is the last time CTY.DAT / SCP files were checked for updates.
+	lastDataCheck time.Time
+
+	// SCP (Super Check Partial) auto-complete state.
+	scpMatches  []string // current prefix matches for the call field
+	scpCacheKey string   // the callsign prefix that produced scpMatches
+
+	// Render cache — avoids redundant layout, style, and view computation.
+	rc renderCache
+
+	lookup        lookupState
+	retainComment bool
+	retainFocused bool // true when the Retain checkbox has focus (instead of a text field)
+	gridSource    gridSource
+
 	keys       KeyMap
 	help       help.Model
 	recentQSOs *RecentQSOs // read-only Recent QSOs view
-
-	// Partner view cache — avoids rebuilding the entire partner page on every render.
-	partnerViewCache    string
-	partnerViewCacheSig string
-
-	// Path line cache — avoids locator parsing every View().
-	// pathCall/pathGrid are the committed values, updated only on field exit.
-	cachedPathLine string
-	cachedPathSig  string
-	pathCall       string
-	pathGrid       string
-
-	// Form column style cache — avoids re-creating lipgloss styles every frame.
-	cachedFormColW         int
-	cachedFormColStyle     lipgloss.Style
-	cachedFormCommentStyle lipgloss.Style
-
-	// Partner logbook stats cache — recomputed on call/band/mode change or QSO save.
-	cachedLogStats    store.LogbookStats
-	cachedLogStatsSig string
-
-	// Per-frame view caches — avoids rebuilding lipgloss output when inputs unchanged.
-	cachedFormView string
-	cachedFormSig  string
-	cachedTabView  string
-	cachedTabSig   string
-	cachedHelpView string
-	cachedHelpSig  string
 }
 
 type tickMsg time.Time
@@ -246,7 +177,37 @@ type wlResultMsg struct {
 	Data *wavelog.PrivateLookupResult
 	Err  error
 }
+
+// lookupTimeoutMsg is sent after 3s when lookups haven't completed;
+// it forces the deferred QSO save to proceed without waiting.
+type lookupTimeoutMsg struct{}
+type dxcSpotLookupMsg struct {
+	call string
+	freq float64 // 0 if not found
+}
+
+type dxcTuneResultMsg struct {
+	call    string
+	freqMHz float64
+	mode    string
+	verify  string // non-empty when actual frequency differs from requested
+	err     error
+}
+
+// bplTuneResultMsg is sent after a BPL space-to-tune completes.
+type bplTuneResultMsg struct {
+	freqMHz float64
+	mode    string
+	verify  string // non-empty when actual frequency differs from requested
+	err     error
+}
 type inetResultMsg bool
+
+// versionCheckMsg carries the result of a GitHub release version check.
+type versionCheckMsg struct {
+	latest string // latest release tag, empty if check failed
+}
+
 type statusPending struct {
 	call, grid, mode, submode, report, txMessage string
 	freq                                         uint64
@@ -255,6 +216,10 @@ type statusPending struct {
 }
 
 func New(a *app.App, initialQSOS []qso.QSO) *Model {
+	// Apply config debug mode at startup (CLI --debug flag may have
+	// already set it, but config value takes precedence).
+	applog.SetDebugMode(a.Config.General.Debug)
+
 	m := &Model{App: a, qsos: initialQSOS, toasts: NewToastQueue(), dateTimeAuto: true, width: 80, height: 24}
 	now := time.Now().UTC()
 	for i := field(0); i < fieldCount; i++ {
@@ -290,7 +255,11 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 		case fieldComment:
 			ti.CharLimit = 60
 		case fieldSOTA, fieldPOTA, fieldWWFF, fieldIOTA:
-			ti.CharLimit = 20
+			ti.CharLimit = 40
+		case fieldSIG:
+			ti.CharLimit = 30
+		case fieldSIGInfo:
+			ti.CharLimit = 40
 		}
 		m.fields[i] = ti
 	}
@@ -301,23 +270,28 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 
 	m.recentQSOs = NewRecentQSOs(initialQSOS)
 	transport := &imageTransport{base: http.DefaultTransport}
-	m.imageViewer = pictureurl.NewWithConfig(pictureurl.Config{
+	m.photo.viewer = pictureurl.NewWithConfig(pictureurl.Config{
 		CacheLimit: 4,
 		UserAgent:  "CQOps/1.0 (ham-radio-logger)",
 		HTTPClient: &http.Client{Transport: transport, Timeout: 15 * time.Second},
 	})
-	m.partnerPicViewer = pictureurl.NewWithConfig(pictureurl.Config{
+	m.photo.partnerPicViewer = pictureurl.NewWithConfig(pictureurl.Config{
 		CacheLimit: 4,
 		UserAgent:  "CQOps/1.0 (ham-radio-logger)",
 		HTTPClient: &http.Client{Transport: transport, Timeout: 15 * time.Second},
 	})
 	m.mapView = newMapRenderer()
-	m.pskFilterMins = pskFilterSteps[0] // default 5 min
+	m.psk.filterMins = pskFilterSteps[0] // default 5 min
+	m.ref = newRefState()
 	if dir, err := config.CacheDir(); err == nil {
-		m.pskCacheDir = dir
-		m.solarCacheDir = dir
+		m.psk.cacheDir = dir
+		m.solar.cacheDir = dir
 	}
 	m.applyBeepOnError()
+	m.retainComment = a.Config.State.RetainComment
+	if a.Config.State.RetainedComment != "" {
+		m.fields[fieldComment].SetValue(a.Config.State.RetainedComment)
+	}
 	return m
 }
 
@@ -334,38 +308,60 @@ func (m *Model) applyBeepOnError() {
 func (m *Model) Init() tea.Cmd {
 	m.refreshFlrigClient()
 	m.App.WSJTX.OnADIF = func(adif string) {
-		m.adifMu.Lock()
-		m.pendingADIFs = append(m.pendingADIFs, adif)
+		m.adifQ.mu.Lock()
+		m.adifQ.adifs = append(m.adifQ.adifs, adif)
 		// Persist to disk immediately so QSOs survive crashes.
 		// Failures are silent — the in-memory queue is authoritative.
 		m.savePendingADIFsLocked()
-		m.adifMu.Unlock()
+		m.adifQ.mu.Unlock()
 	}
 	// Recover any ADIF records left on disk from a previous crash.
 	if saved := loadPendingADIFs(); len(saved) > 0 {
-		m.pendingADIFs = append(m.pendingADIFs, saved...)
+		m.adifQ.adifs = append(m.adifQ.adifs, saved...)
 		applog.Info("WSJT-X: recovered pending ADIF records from disk", "count", len(saved))
 	}
 	m.App.WSJTX.OnStatus = func(call, grid string, freq uint64, mode, submode, report, txMessage string, transmitting bool) {
-		m.adifMu.Lock()
-		m.pendingStatus = statusPending{call: call, grid: grid, freq: freq, mode: mode, submode: submode, report: report, txMessage: txMessage, transmitting: transmitting, hasData: true}
-		m.adifMu.Unlock()
+		m.adifQ.mu.Lock()
+		m.adifQ.status = statusPending{call: call, grid: grid, freq: freq, mode: mode, submode: submode, report: report, txMessage: txMessage, transmitting: transmitting, hasData: true}
+		m.adifQ.mu.Unlock()
 	}
-	if m.App.Config.WSJTX.Enabled {
+	// Read WSJT-X config from the active rig preset (per-rig).
+	wsjtxE, wsjtxH, wsjtxP := false, "127.0.0.1", 2233
+	if rp, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok {
+		wsjtxE = rp.WsjtxEnabled
+		if rp.WsjtxUDPHost != "" {
+			wsjtxH = rp.WsjtxUDPHost
+		}
+		if rp.WsjtxUDPPort > 0 {
+			wsjtxP = rp.WsjtxUDPPort
+		}
+	}
+	if wsjtxE {
 		applog.Info("WSJT-X: callbacks registered, restarting listener")
-		m.App.MaybeRestartWSJTX()
+		m.App.MaybeRestartWSJTX(wsjtxE, wsjtxH, wsjtxP)
 	} else {
 		applog.Debug("wsjt-x: disabled")
 	}
-	return tea.Batch(tickCmd(), checkInetCmd(), m.imageViewer.Init())
+	cmds := []tea.Cmd{tickCmd(), m.photo.viewer.Init(), m.emitWindowIconCmd()}
+	if !m.Offline {
+		cmds = append(cmds, checkInetCmd())
+	}
+	return tea.Batch(cmds...)
+}
+
+// emitWindowIconCmd emits OSC 0 which sets both the terminal window title and
+// the icon name. This is the only escape sequence that many terminals (xterm,
+// Windows Terminal, Konsole, GNOME Terminal, Kitty) use for the taskbar/dock
+// icon label. It's a one-shot — subsequent title updates via WindowTitle use
+// OSC 2 (title only) and won't overwrite the icon name.
+func (m *Model) emitWindowIconCmd() tea.Cmd {
+	return func() tea.Msg {
+		fmt.Fprintf(os.Stderr, "\x1b]0;%s\x07", m.windowTitle())
+		return nil
+	}
 }
 func tickCmd() tea.Cmd {
 	return tea.Tick(1000*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) })
-}
-
-// hideAllSubmodels returns to the QSO form screen.
-func (m *Model) hideAllSubmodels() {
-	m.screen = screenQSO
 }
 
 // isSubmodelActive returns true when any sub-screen is visible.
@@ -375,6 +371,11 @@ func (m *Model) isSubmodelActive() bool {
 
 // saveConfig persists the app configuration and shows a toast.
 func (m *Model) saveConfig(msg string) {
+	if err := m.App.Config.Validate(); err != nil {
+		m.toasts.Error("Settings save failed: " + err.Error())
+		applog.Error("Config validation failed before save", "error", err)
+		return
+	}
 	if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
 		m.toasts.Error("Settings save failed: " + err.Error())
 	} else {
@@ -396,7 +397,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = wsm.Height
 		m.invalidatePartnerMapCache()
 		// Forward size to image viewer.
-		if c := m.imageViewer.Update(msg); c != nil {
+		if c := m.photo.viewer.Update(msg); c != nil {
 			cmd = tea.Batch(cmd, c)
 		}
 		// Update focused textinput width so scrolling stays correct.
@@ -407,6 +408,26 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.fields[m.focus].SetWidth(m.width - 16)
 			}
 		}
+	}
+
+	// Active spot dialog — blocks key input while open, but lets ticks
+	// through so toasts continue to expire.
+	if m.spotDialog != nil {
+		if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
+			updated, spotCmd := m.spotDialog.Update(keyMsg)
+			*m.spotDialog = updated.(SpotDialog)
+			if m.spotDialog.Done() {
+				if m.spotDialog.Result.Confirmed {
+					cmd = tea.Batch(cmd, m.sendSpotCmd(m.spotDialog.Call, m.spotDialog.FreqKhz, m.spotDialog.Result.Comment))
+				}
+				m.spotDialog = nil
+			}
+			if spotCmd != nil {
+				cmd = tea.Batch(cmd, spotCmd)
+			}
+			return m, cmd
+		}
+		// Non-key messages fall through for tick / toast expiry / async processing.
 	}
 
 	// Active confirmation dialog — highest priority, blocks everything else
@@ -431,12 +452,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Inline partner photo viewer — process its messages globally so
 	// loads complete regardless of which screen is active.
-	if c := m.partnerPicViewer.Update(msg); c != nil {
+	if c := m.photo.partnerPicViewer.Update(msg); c != nil {
 		cmd = tea.Batch(cmd, c)
 	}
 
 	// Async result messages (internet, Wavelog, flrig)
-	if m.handleAsyncMessages(msg) {
+	if handled, asyncCmd := m.handleAsyncMessages(msg); handled {
+		if asyncCmd != nil {
+			cmd = tea.Batch(cmd, asyncCmd)
+		}
+		if _, ok := msg.(inetResultMsg); ok && m.inetOnline {
+			cmd = tea.Batch(cmd, m.maybeCheckVersion())
+		}
 		if _, ok := msg.(flrigResultMsg); ok {
 			return m, cmd
 		}
@@ -460,22 +487,100 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case qrzResultMsg:
 		m.fillQRZData(r)
 		cmd = tea.Batch(cmd, m.updateFilteredTable())
-		if m.partnerPicNeedLoad {
-			m.partnerPicNeedLoad = false
-			w := m.partnerPicW
-			h := m.partnerPicH
+		if m.lookup.pendingSave {
+			call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+			if m.lookupsCompleteForCall(call) {
+				m.lookup.pendingSave = false
+				cmd = tea.Batch(cmd, m.saveQSO())
+			}
+		}
+		m.contestAutoFocusExchRcvd()
+		if m.photo.partnerPicNeedLoad {
+			m.photo.partnerPicNeedLoad = false
+			w := m.photo.partnerPicW
+			h := m.photo.partnerPicH
 			if w < 25 {
 				w = 40
 			}
 			if h < 4 {
 				h = 15
 			}
-			cmd = tea.Batch(cmd, m.partnerPicViewer.SetSize(w, h),
-				m.partnerPicViewer.SetURL(m.lastPartnerPicURL))
+			cmd = tea.Batch(cmd, m.photo.partnerPicViewer.SetSize(w, h),
+				m.photo.partnerPicViewer.SetURL(m.photo.partnerPicURL))
+		}
+		return m, cmd
+	case lookupTimeoutMsg:
+		if m.lookup.pendingSave {
+			m.lookup.pendingSave = false
+			applog.Warn("Lookup timeout — saving QSO without waiting")
+			cmd = tea.Batch(cmd, m.saveQSO())
 		}
 		return m, cmd
 	case wlResultMsg:
 		m.fillWLData(r)
+		if m.lookup.pendingSave {
+			call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+			if m.lookupsCompleteForCall(call) {
+				m.lookup.pendingSave = false
+				cmd = tea.Batch(cmd, m.saveQSO())
+			}
+		}
+		m.contestAutoFocusExchRcvd()
+		return m, cmd
+	case refRebuildMsg:
+		m.ref.building = false
+		m.ref.refNamesDirty = true
+		if r.err != nil {
+			applog.Warn("REF: rebuild failed", "error", r.err)
+			m.toasts.Error("REF database build failed")
+		} else {
+			m.ref.ready = true
+			applog.Info("REF: rebuild complete", "total", r.total)
+			m.toasts.Success(fmt.Sprintf("REF database ready — %d references", r.total))
+		}
+		return m, cmd
+	case dxcSpotLookupMsg:
+		m.fillDXCFreq(r)
+		return m, cmd
+	case dxcSpotsStoredMsg:
+		m.handleDXCSpotsStored(r)
+		return m, cmd
+	case dxcTuneResultMsg:
+		if r.err != nil {
+			m.toasts.Error(fmt.Sprintf("Tune failed: %v", r.err))
+		} else {
+			msg := fmt.Sprintf("Rig tuned to %.5f MHz", r.freqMHz)
+			if r.mode != "" {
+				msg += " " + r.mode
+			}
+			if r.verify != "" {
+				m.toasts.Warn("Rig tuning failed")
+			} else {
+				m.toasts.Success(msg)
+			}
+		}
+		return m, cmd
+	case bplTuneResultMsg:
+		if r.err != nil {
+			m.toasts.Error(fmt.Sprintf("Tune failed: %v", r.err))
+		} else {
+			msg := fmt.Sprintf("Rig tuned to %.5f MHz", r.freqMHz)
+			if r.mode != "" {
+				msg += " " + r.mode
+			}
+			if r.verify != "" {
+				m.toasts.Warn("Rig tuning failed")
+			} else {
+				m.toasts.Success(msg)
+			}
+		}
+		return m, cmd
+	case bplExportMsg:
+		if r.err != nil {
+			m.toasts.Error(fmt.Sprintf("Export failed: %v", r.err))
+		} else {
+			m.toasts.Success(fmt.Sprintf("Band plan exported to %s", r.path))
+		}
 		return m, cmd
 	}
 
@@ -492,10 +597,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleChooserUpdate(msg, cmd)
 	case screenRigEdit:
 		return m.handleRigEditUpdate(msg, cmd)
+	case screenContest:
+		return m.handleContestUpdate(msg, cmd)
 	case screenConfig:
 		return m.handleConfigUpdate(msg, cmd)
-	case screenCallbook:
-		return m.handleCallbookUpdate(msg, cmd)
 	case screenIntegration:
 		return m.handleIntegrationUpdate(msg, cmd)
 	case screenMainMenu:
@@ -510,9 +615,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		// Detect new partner photo URL while viewing image.
-		if m.partnerData != nil && m.partnerData.ImageURL != "" &&
-			m.partnerData.ImageURL != m.lastImageURL {
-			m.lastImageURL = m.partnerData.ImageURL
+		if m.lookup.partnerData != nil && m.lookup.partnerData.ImageURL != "" &&
+			m.lookup.partnerData.ImageURL != m.photo.lastURL {
+			m.photo.lastURL = m.lookup.partnerData.ImageURL
 			w := m.width
 			h := contentHeight(m.height)
 			if w < 20 {
@@ -521,16 +626,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if h < 10 {
 				h = 10
 			}
-			cmd = tea.Batch(cmd, m.imageViewer.SetSize(w, h-1), m.imageViewer.SetURL(m.partnerData.ImageURL))
+			cmd = tea.Batch(cmd, m.photo.viewer.SetSize(w, h-1), m.photo.viewer.SetURL(m.lookup.partnerData.ImageURL))
 		}
 		// Log image errors once and show toast.
-		if err := m.imageViewer.Err(); err != nil && m.lastImageErr != err {
-			m.lastImageErr = err
+		if err := m.photo.viewer.Err(); err != nil && m.photo.lastErr != err {
+			m.photo.lastErr = err
 			applog.Warn("Image load failed", "error", err.Error())
 			m.toasts.Warn("Photo unavailable — unsupported format")
 		}
-		if m.imageViewer.Err() == nil {
-			m.lastImageErr = nil
+		if m.photo.viewer.Err() == nil {
+			m.photo.lastErr = nil
 		}
 		// Reapply size on resize while viewing image.
 		if _, ok := msg.(tea.WindowSizeMsg); ok {
@@ -542,11 +647,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if h < 10 {
 				h = 10
 			}
-			if c := m.imageViewer.SetSize(w, h); c != nil {
+			if c := m.photo.viewer.SetSize(w, h); c != nil {
 				cmd = tea.Batch(cmd, c)
 			}
 		}
-		c := m.imageViewer.Update(msg)
+		c := m.photo.viewer.Update(msg)
 		if c != nil {
 			cmd = tea.Batch(cmd, c)
 		}
@@ -557,6 +662,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleLogViewUpdate(msg, cmd)
 	case screenNotifications:
 		return m.handleNotificationsUpdate(msg, cmd)
+	case screenDXC:
+		return m.handleDXCUpdate(msg, cmd)
+	case screenRef:
+		return m.handleRefUpdate(msg, cmd)
+	case screenBPL:
+		return m.handleBPLUpdate(msg, cmd)
+	case screenCON:
+		return m.handleCONUpdate(msg, cmd)
 	}
 
 	// QSO form key handling
@@ -583,14 +696,14 @@ func (m *Model) View() tea.View {
 	// Measure all fixed zones and calculate content area dimensions.
 	// Cache the layout when terminal size and screen haven't changed.
 	var layout Layout
-	if m.lastLayoutW == m.width && m.lastLayoutH == m.height && m.lastLayoutSc == m.screen {
-		layout = m.lastLayout
+	if m.rc.lastLayoutW == m.width && m.rc.lastLayoutH == m.height && m.rc.lastLayoutSc == m.screen {
+		layout = m.rc.lastLayout
 	} else {
 		layout = MeasureLayout(m)
-		m.lastLayout = layout
-		m.lastLayoutW = m.width
-		m.lastLayoutH = m.height
-		m.lastLayoutSc = m.screen
+		m.rc.lastLayout = layout
+		m.rc.lastLayoutW = m.width
+		m.rc.lastLayoutH = m.height
+		m.rc.lastLayoutSc = m.screen
 	}
 
 	if layout.TerminalW < 75 || layout.TerminalH < 24 {
@@ -601,20 +714,20 @@ func (m *Model) View() tea.View {
 
 	// Render fixed bars — cache when screen and width haven't changed.
 	// Status bar has a 1-second TTL because it contains the UTC clock.
-	cacheBars := m.cachedBarW == m.width && m.cachedBarSc == m.screen
+	cacheBars := m.rc.barW == m.width && m.rc.barSc == m.screen
 	if !cacheBars {
-		m.cachedStatus = ""
+		m.rc.status = ""
 	}
-	if m.cachedStatus == "" || m.cachedStatusSec != time.Now().UTC().Second() {
-		m.cachedStatus = m.renderStatusBar()
-		m.cachedStatusSec = time.Now().UTC().Second()
+	if m.rc.status == "" || m.rc.statusSec != time.Now().UTC().Second() {
+		m.rc.status = m.renderStatusBar()
+		m.rc.statusSec = time.Now().UTC().Second()
 	}
 	// Tab bar depends on partner data / call field — always fresh.
-	m.cachedTabs = m.renderTabBar()
+	m.rc.tabs = m.renderTabBar()
 	// Help bar has dynamic suffix (QSO counter, scroll info) — always fresh.
-	m.cachedHelp = m.renderHelpBar()
-	m.cachedBarW = m.width
-	m.cachedBarSc = m.screen
+	m.rc.help = m.renderHelpBar()
+	m.rc.barW = m.width
+	m.rc.barSc = m.screen
 
 	var mainParts []string
 	addRow := func(s string) {
@@ -622,20 +735,25 @@ func (m *Model) View() tea.View {
 			mainParts = append(mainParts, s)
 		}
 	}
-	addRow(m.cachedStatus)
-	addRow(m.cachedTabs)
+	addRow(m.rc.status)
+	addRow(m.rc.tabs)
 
 	body := m.buildBodyForScreen(layout)
 	if body == "" {
 		body = DimStyle.Render("\u2014")
 	}
 	addRow(body)
-	addRow(m.cachedHelp)
+	addRow(m.rc.help)
 	mainView := lipgloss.JoinVertical(lipgloss.Left, mainParts...)
 
 	// Composite confirm dialog as a centered overlay if active
 	if m.confirm != nil {
 		mainView = RenderDialogOverlay(mainView, *m.confirm, layout.TerminalW, layout.TerminalH)
+	}
+
+	// Composite spot dialog as a centered overlay if active
+	if m.spotDialog != nil {
+		mainView = RenderSpotDialogOverlay(mainView, *m.spotDialog, layout.TerminalW, layout.TerminalH)
 	}
 
 	// Composite toasts as a floating overlay in the bottom-right corner.
@@ -652,11 +770,11 @@ func (m *Model) View() tea.View {
 
 // viewImage renders the partner photo full-screen.
 func (m *Model) viewImage(l Layout) string {
-	content := m.imageViewer.View().Content
-	if m.imageViewer.Err() != nil || content == "" {
+	content := m.photo.viewer.View().Content
+	if m.photo.viewer.Err() != nil || content == "" {
 		msg := ""
-		if m.imageViewer.Err() != nil {
-			err := m.imageViewer.Err()
+		if m.photo.viewer.Err() != nil {
+			err := m.photo.viewer.Err()
 			msg = err.Error()
 			if strings.Contains(msg, "unexpected Content-Type") {
 				msg = "QRZ photo not available — unsupported format"
@@ -666,8 +784,10 @@ func (m *Model) viewImage(l Layout) string {
 				msg = "Image download timed out"
 			}
 		}
-		if msg == "" && m.partnerData != nil {
-			msg = "No photo for " + m.partnerData.Callsign
+		if msg == "" && m.photo.lastURL != "" {
+			msg = "Loading photo\u2026"
+		} else if msg == "" && m.lookup.partnerData != nil {
+			msg = "No photo for " + m.lookup.partnerData.Callsign
 		}
 		if msg == "" {
 			msg = "No image"
@@ -696,7 +816,7 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 	case screenQSO:
 		body = m.buildQSOFormWithLayout(l)
 	case screenPartner:
-		if m.partnerData != nil || strings.TrimSpace(m.fields[fieldCall].Value()) != "" {
+		if m.lookup.partnerData != nil || strings.TrimSpace(m.fields[fieldCall].Value()) != "" {
 			body = m.viewPartner()
 		}
 	case screenImage:
@@ -704,23 +824,31 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 	case screenPSKReporter:
 		body = m.viewPSKReporter()
 	case screenMainMenu:
-		body = m.mainMenu.View().Content
+		body = m.ui.mainMenu.View().Content
 	case screenConfig:
-		body = m.configMenu.View().Content
-	case screenCallbook:
-		body = m.callbookMenu.View().Content
+		body = m.ui.configMenu.View().Content
 	case screenIntegration:
-		body = m.integrationMenu.View().Content
+		body = m.ui.integrationMenu.View().Content
 	case screenChooser:
-		body = m.chooser.View().Content
+		body = m.ui.chooser.View().Content
 	case screenRigEdit:
-		body = m.rigChooser.View().Content
+		body = m.ui.rigChooser.View().Content
+	case screenContest:
+		body = m.ui.contestChooser.View().Content
 	case screenLogView:
-		body = m.logViewer.View().Content
+		body = m.ui.logViewer.View().Content
 	case screenLogbookEditor:
-		body = m.logbookEditor.View().Content
+		body = m.ui.logbookEditor.View().Content
 	case screenNotifications:
-		body = m.notifMenu.View().Content
+		body = m.ui.notifMenu.View().Content
+	case screenDXC:
+		body = m.dxcView()
+	case screenRef:
+		body = m.viewRef()
+	case screenBPL:
+		body = m.viewBPL(l)
+	case screenCON:
+		body = m.viewCON(l)
 	}
 	if body == "" {
 		return ""
@@ -790,9 +918,78 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 	}
 
 	tableW := w - 2
+	// Cap to same max as QSO form for visual consistency.
+	if tableW > partnerMapMaxW {
+		tableW = partnerMapMaxW
+	}
 	if tableH < 3 {
 		tableH = 3
 	}
+
+	// SCP auto-complete suggestions — shown below the QSO form when the
+	// call field is focused and SCP is enabled.
+	var scpBox string
+	if m.focus == fieldCall && len(m.scpMatches) > 0 {
+		scpH := len(m.scpMatches)
+		if scpH > 12 {
+			scpH = 12
+		}
+		if tableH-scpH < 5 {
+			scpH = tableH - 5
+		}
+		if scpH > 0 {
+			scpLines := m.scpMatches[:scpH]
+			// Highlight the matching prefix in each callsign with Info (cyan)
+			// and dim the rest.
+			prefix := m.scpCacheKey
+			var highlighted []string
+			for _, c := range scpLines {
+				if prefix != "" && strings.HasPrefix(strings.ToUpper(c), strings.ToUpper(prefix)) {
+					match := c[:len(prefix)]
+					rest := c[len(prefix):]
+					highlighted = append(highlighted, S.Info.Render(match)+DimStyle.Render(rest))
+				} else {
+					highlighted = append(highlighted, DimStyle.Render(c))
+				}
+			}
+			scpContent := strings.Join(highlighted, DimStyle.Render("  "))
+			// Match the form row width (QSO form + solar panel if present).
+			scpW := lipgloss.Width(formRow)
+			if scpW < 40 {
+				scpW = 40
+			}
+			scpBox = drawBorderedBox(scpContent, scpW)
+			scpBoxH := lipgloss.Height(scpBox)
+			tableH -= scpBoxH
+		}
+	}
+
+	// REF names — resolved from SOTA/POTA/WWFF/IOTA fields.
+	var refBox string
+	refLine := m.buildRefNamesLine()
+	if refLine != "" {
+		refW := lipgloss.Width(formRow)
+		if refW < 40 {
+			refW = 40
+		}
+		refBox = drawBorderedBox(refLine, refW)
+		refBoxH := lipgloss.Height(refBox)
+		tableH -= refBoxH
+	}
+
+	// Contest mode box — shown when a contest is active.
+	var contestBox string
+	contestLine := m.buildContestLine()
+	if contestLine != "" {
+		contestW := lipgloss.Width(formRow)
+		if contestW < 40 {
+			contestW = 40
+		}
+		contestBox = contestBoxStyle.Width(contestW).Render(contestLine)
+		contestBoxH := lipgloss.Height(contestBox)
+		tableH -= contestBoxH
+	}
+
 	m.recentQSOs.SetSize(tableW, tableH)
 
 	var parts []string
@@ -800,8 +997,178 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 		parts = append(parts, profileLine)
 	}
 	parts = append(parts, formRow)
+	if scpBox != "" {
+		parts = append(parts, scpBox)
+	}
+	if contestBox != "" {
+		parts = append(parts, contestBox)
+	}
+	if refBox != "" {
+		parts = append(parts, refBox)
+	}
 	parts = append(parts, m.recentQSOs.View())
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+// buildContestLine returns the contest info line for the QSO screen, or "" if
+// no contest is active.
+func (m *Model) buildContestLine() string {
+	id := m.App.Logbook.ActiveContest
+	if id == "" {
+		return ""
+	}
+	ct, ok := m.App.Config.Contests[id]
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf(" Contest: %s   Contest ID: %s   Next QSO seq: %d",
+		config.ContestDisplayName(&ct), ct.ContestID, ct.NextQSO)
+}
+
+// cycleActiveContest rotates through all active contests (excluding None).
+// Persists the new active contest to config silently.
+func (m *Model) cycleActiveContest() {
+	ids := config.ActiveContestIDs(m.App.Config, m.App.LogbookName)
+	current := m.App.Logbook.ActiveContest
+
+	// No active contests — nothing to cycle.
+	if len(ids) == 0 {
+		m.toasts.Warn("No contests configured — create one in F9 → Contests")
+		return
+	}
+
+	if current == "" {
+		m.App.SetActiveContest(ids[0])
+		ct := m.App.Config.Contests[ids[0]]
+		m.toasts.Info(fmt.Sprintf("Contest: %s", config.ContestDisplayName(&ct)))
+		m.needRefresh = true
+		config.Save(m.App.ConfigPath, m.App.Config)
+		return
+	}
+
+	for i, id := range ids {
+		if id == current {
+			if i+1 < len(ids) {
+				m.App.SetActiveContest(ids[i+1])
+				ct := m.App.Config.Contests[ids[i+1]]
+				m.toasts.Info(fmt.Sprintf("Contest: %s", config.ContestDisplayName(&ct)))
+			} else {
+				m.App.SetActiveContest("")
+				m.toasts.Info("Contest: None")
+			}
+			m.needRefresh = true
+			config.Save(m.App.ConfigPath, m.App.Config)
+			return
+		}
+	}
+
+	// Current contest not found in active list (possibly deleted or set to
+	// not-in-use) — clear and wrap to first.
+	m.App.SetActiveContest("")
+	m.toasts.Info("Contest: None")
+	m.needRefresh = true
+	config.Save(m.App.ConfigPath, m.App.Config)
+}
+
+// prefillContestExchange fills the exchange sent/rcvd fields from the active
+// contest's prefill settings. Replaces special markers with current QSO
+// and station values. Next QSO is NOT incremented here — that happens on
+// successful QSO save.
+func (m *Model) prefillContestExchange() {
+	id := m.App.Logbook.ActiveContest
+	if id == "" {
+		return
+	}
+	ct, ok := m.App.Config.Contests[id]
+	if !ok {
+		return
+	}
+
+	// Sent exchange: always regenerate (serial increments each QSO).
+	if ct.PrefillExchange && ct.ExchangeSent != "" {
+		val := m.resolveExchangeMarkers(ct.ExchangeSent, "sent", ct.NextQSO)
+		m.fields[fieldExchSent].SetValue(val)
+	}
+
+	// Received exchange: only fill if empty (don't overwrite user input).
+	if ct.PrefillExchangeRcvd && ct.ExchangeRcvd != "" && strings.TrimSpace(m.fields[fieldExchRcvd].Value()) == "" {
+		val := strings.TrimSpace(m.resolveExchangeMarkers(ct.ExchangeRcvd, "rcvd", ct.NextQSO))
+		m.fields[fieldExchRcvd].SetValue(val)
+	}
+}
+
+// resolveExchangeMarkers replaces special markers in an exchange template with
+// values from the current QSO form and station config. Supported markers:
+//
+//	@rst     — RST sent or received (depending on direction)
+//	@serial  — next contest QSO sequence number (zero-padded to 3 digits)
+//	@cqz     — DX station CQ zone (from form)
+//	@mycqz   — station CQ zone (from logbook config)
+//	@itu     — DX station ITU zone (from form)
+//	@myitu   — station ITU zone (from logbook config)
+//	@grid    — DX station grid square (from form)
+//	@mygrid  — station grid square (from logbook config)
+//
+// Backward-compatible: ### is also replaced with @serial.
+func (m *Model) resolveExchangeMarkers(tmpl, direction string, nextQSO int) string {
+	// Build replacement map.
+	rep := make(map[string]string)
+
+	// @serial — contest sequence number.
+	// For received exchange, keep @serial as a format placeholder so the
+	// operator knows where to type the received serial; the actual number
+	// is parsed from user input at save time via ParseSerial.
+	if direction == "sent" {
+		seq := fmt.Sprintf("%03d", nextQSO)
+		if nextQSO > 999 {
+			seq = fmt.Sprintf("%d", nextQSO)
+		}
+		rep["@serial"] = seq
+	} else {
+		rep["@serial"] = ""
+	}
+
+	// @rst — RST depending on direction.
+	if direction == "sent" {
+		rep["@rst"] = strings.TrimSpace(m.fields[fieldRSTSent].Value())
+	} else {
+		rep["@rst"] = strings.TrimSpace(m.fields[fieldRSTRcvd].Value())
+	}
+
+	// @cqz / @itu / @grid — from the QSO form or DXCC lookup.
+	call := strings.TrimSpace(m.fields[fieldCall].Value())
+	if call != "" && m.App != nil && m.App.DXCC != nil && m.App.Config.General.UseCTY {
+		if p := m.dxccLookup(call); p != nil {
+			rep["@cqz"] = fmt.Sprintf("%d", int(p.CQZone))
+			rep["@itu"] = fmt.Sprintf("%d", int(p.ITUZone))
+		}
+	}
+	// Fall back to empty if no DXCC match.
+	if _, ok := rep["@cqz"]; !ok {
+		rep["@cqz"] = ""
+	}
+	if _, ok := rep["@itu"]; !ok {
+		rep["@itu"] = ""
+	}
+	rep["@grid"] = strings.TrimSpace(m.fields[fieldGrid].Value())
+
+	// @mycqz / @myitu / @mygrid — from station config.
+	rep["@mycqz"] = qso.ItoaOrEmpty(m.App.Logbook.Station.CQZone)
+	rep["@myitu"] = qso.ItoaOrEmpty(m.App.Logbook.Station.ITUZone)
+	rep["@mygrid"] = strings.ToUpper(strings.TrimSpace(m.App.Logbook.Station.Grid))
+
+	// Optional markers that resolved to empty → render "?".
+	for k, v := range rep {
+		if v == "" && k != "@serial" && k != "@rst" {
+			rep[k] = "?"
+		}
+	}
+
+	result := tmpl
+	for marker, value := range rep {
+		result = strings.ReplaceAll(result, marker, value)
+	}
+	return result
 }
 
 // formPartnerData builds a CallData from the current QSO form fields.
@@ -842,7 +1209,7 @@ func (m *Model) savePendingADIFsLocked() {
 	if path == "" {
 		return
 	}
-	if len(m.pendingADIFs) == 0 {
+	if len(m.adifQ.adifs) == 0 {
 		os.Remove(path)
 		return
 	}
@@ -851,7 +1218,7 @@ func (m *Model) savePendingADIFsLocked() {
 		return
 	}
 	defer f.Close()
-	for _, adif := range m.pendingADIFs {
+	for _, adif := range m.adifQ.adifs {
 		// Escape newlines so each ADIF is exactly one line.
 		line := strings.ReplaceAll(adif, "\n", "\\n")
 		fmt.Fprintln(f, line)

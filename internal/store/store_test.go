@@ -173,7 +173,7 @@ func TestListQSOs_ReturnsInserted(t *testing.T) {
 	mustInsertQSO(t, db, &qso.QSO{Call: "A1A", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB"})
 	mustInsertQSO(t, db, &qso.QSO{Call: "B2B", QSODate: "20240502", TimeOn: "130000", Band: "40m", Mode: "CW"})
 
-	qsos, err := ListQSOs(db, 10)
+	qsos, err := ListQSOs(db, 10, "")
 	if err != nil {
 		t.Fatalf("ListQSOs: %v", err)
 	}
@@ -426,5 +426,227 @@ func TestCountQSOs_Empty(t *testing.T) {
 	}
 	if c.Total != 0 {
 		t.Errorf("total = %d; want 0", c.Total)
+	}
+}
+
+func TestUpdateQSOEnrichment_FillsEmpty(t *testing.T) {
+	db := newTempDB(t)
+
+	q := validQSO()
+	q.Name = ""
+	q.QTH = ""
+	q.Country = ""
+	q.GridSquare = ""
+	id, err := InsertQSO(db, q)
+	if err != nil {
+		t.Fatalf("InsertQSO: %v", err)
+	}
+
+	UpdateQSOEnrichment(db, id, EnrichmentData{
+		Name:       "Jan",
+		QTH:        "Warszawa",
+		Country:    "Poland",
+		GridSquare: "KO02",
+	})
+
+	stored, err := GetQSOByID(db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if stored.Name != "Jan" {
+		t.Errorf("Name = %q, want Jan", stored.Name)
+	}
+	if stored.QTH != "Warszawa" {
+		t.Errorf("QTH = %q, want Warszawa", stored.QTH)
+	}
+	if stored.Country != "Poland" {
+		t.Errorf("Country = %q, want Poland", stored.Country)
+	}
+	if stored.GridSquare != "KO02" {
+		t.Errorf("GridSquare = %q, want KO02", stored.GridSquare)
+	}
+}
+
+func TestUpdateQSOEnrichment_PreservesExisting(t *testing.T) {
+	db := newTempDB(t)
+
+	q := validQSO()
+	q.Name = "Original"
+	q.QTH = "OriginalQTH"
+	id, err := InsertQSO(db, q)
+	if err != nil {
+		t.Fatalf("InsertQSO: %v", err)
+	}
+
+	// Enrichment should not overwrite existing data.
+	UpdateQSOEnrichment(db, id, EnrichmentData{
+		Name: "Enriched",
+		QTH:  "EnrichedQTH",
+	})
+
+	stored, err := GetQSOByID(db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if stored.Name != "Original" {
+		t.Errorf("Name = %q, want Original (not overwritten)", stored.Name)
+	}
+	if stored.QTH != "OriginalQTH" {
+		t.Errorf("QTH = %q, want OriginalQTH (not overwritten)", stored.QTH)
+	}
+}
+
+func TestUpdateQSOEnrichment_NoopEmpty(t *testing.T) {
+	db := newTempDB(t)
+
+	q := validQSO()
+	id, err := InsertQSO(db, q)
+	if err != nil {
+		t.Fatalf("InsertQSO: %v", err)
+	}
+
+	// Empty enrichment data should be a no-op.
+	UpdateQSOEnrichment(db, id, EnrichmentData{})
+	UpdateQSOEnrichment(db, id, EnrichmentData{Name: "", QTH: "", Country: ""})
+
+	stored, err := GetQSOByID(db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if stored.Name != q.Name {
+		t.Errorf("Name changed unexpectedly")
+	}
+}
+
+// =============================================================================
+// CountQSOsForContest tests
+// =============================================================================
+
+func TestCountQSOsForContest_Filtered(t *testing.T) {
+	db := newTempDB(t)
+
+	// Insert QSOs with different contest IDs.
+	mustInsertQSO(t, db, &qso.QSO{Call: "A", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB", ContestID: "c1", Source: "wsjtx", WavelogUploaded: "yes"})
+	mustInsertQSO(t, db, &qso.QSO{Call: "B", QSODate: "20240502", TimeOn: "130000", Band: "40m", Mode: "CW", ContestID: "c1", Source: "manual"})
+	mustInsertQSO(t, db, &qso.QSO{Call: "C", QSODate: "20240503", TimeOn: "140000", Band: "15m", Mode: "FT8", ContestID: "c2", Source: "wsjtx", WavelogUploaded: "yes"})
+	mustInsertQSO(t, db, &qso.QSO{Call: "D", QSODate: "20240504", TimeOn: "150000", Band: "10m", Mode: "SSB"})
+
+	c, err := CountQSOsForContest(db, "c1")
+	if err != nil {
+		t.Fatalf("CountQSOsForContest: %v", err)
+	}
+	if c.Total != 2 {
+		t.Errorf("total = %d; want 2", c.Total)
+	}
+	if c.FromWSJTX != 1 {
+		t.Errorf("from_wsjtx = %d; want 1", c.FromWSJTX)
+	}
+	if c.ToWavelog != 1 {
+		t.Errorf("to_wavelog = %d; want 1", c.ToWavelog)
+	}
+}
+
+func TestCountQSOsForContest_Empty(t *testing.T) {
+	db := newTempDB(t)
+
+	c, err := CountQSOsForContest(db, "")
+	if err != nil {
+		t.Fatalf("CountQSOsForContest(empty): %v", err)
+	}
+	if c.Total != 0 {
+		t.Errorf("total = %d; want 0", c.Total)
+	}
+}
+
+func TestCountQSOsForContest_All(t *testing.T) {
+	db := newTempDB(t)
+
+	mustInsertQSO(t, db, &qso.QSO{Call: "A", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB", ContestID: "c1"})
+	mustInsertQSO(t, db, &qso.QSO{Call: "B", QSODate: "20240502", TimeOn: "130000", Band: "40m", Mode: "CW"})
+
+	// Empty contestID should count all QSOs.
+	c, err := CountQSOsForContest(db, "")
+	if err != nil {
+		t.Fatalf("CountQSOsForContest(all): %v", err)
+	}
+	if c.Total != 2 {
+		t.Errorf("total = %d; want 2", c.Total)
+	}
+}
+
+// =============================================================================
+// ListQSOsPage contest filter tests
+// =============================================================================
+
+func TestListQSOsPage_ContestFilter(t *testing.T) {
+	db := newTempDB(t)
+
+	mustInsertQSO(t, db, &qso.QSO{Call: "A1", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB", ContestID: "c1"})
+	mustInsertQSO(t, db, &qso.QSO{Call: "B2", QSODate: "20240502", TimeOn: "130000", Band: "40m", Mode: "CW", ContestID: "c1"})
+	mustInsertQSO(t, db, &qso.QSO{Call: "C3", QSODate: "20240503", TimeOn: "140000", Band: "15m", Mode: "FT8", ContestID: "c2"})
+	mustInsertQSO(t, db, &qso.QSO{Call: "D4", QSODate: "20240504", TimeOn: "150000", Band: "10m", Mode: "SSB"})
+
+	// Page filtered by c1 — should return 2 rows.
+	qsos, err := ListQSOsPage(db, 10, 0, "c1")
+	if err != nil {
+		t.Fatalf("ListQSOsPage(c1): %v", err)
+	}
+	if len(qsos) != 2 {
+		t.Errorf("len = %d; want 2", len(qsos))
+	}
+	for _, q := range qsos {
+		if q.ContestID != "c1" {
+			t.Errorf("unexpected ContestID %q in filtered results", q.ContestID)
+		}
+	}
+
+	// Page filtered by c2 — should return 1 row.
+	qsos, err = ListQSOsPage(db, 10, 0, "c2")
+	if err != nil {
+		t.Fatalf("ListQSOsPage(c2): %v", err)
+	}
+	if len(qsos) != 1 {
+		t.Errorf("len = %d; want 1", len(qsos))
+	}
+	if qsos[0].Call != "C3" {
+		t.Errorf("call = %q; want C3", qsos[0].Call)
+	}
+
+	// Page with empty contestID (no filter) — should return all 4.
+	qsos, err = ListQSOsPage(db, 10, 0, "")
+	if err != nil {
+		t.Fatalf("ListQSOsPage(all): %v", err)
+	}
+	if len(qsos) != 4 {
+		t.Errorf("len = %d; want 4", len(qsos))
+	}
+}
+
+func TestListQSOsPage_ContestFilterPagination(t *testing.T) {
+	db := newTempDB(t)
+
+	// Insert 5 QSOs, 3 in contest c1.
+	for i := 0; i < 3; i++ {
+		mustInsertQSO(t, db, &qso.QSO{Call: "C" + string(rune('A'+i)), QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB", ContestID: "c1"})
+	}
+	mustInsertQSO(t, db, &qso.QSO{Call: "X1", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB", ContestID: "c2"})
+	mustInsertQSO(t, db, &qso.QSO{Call: "X2", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB"})
+
+	// Page 1 of c1 — limit 2, offset 0.
+	qsos, err := ListQSOsPage(db, 2, 0, "c1")
+	if err != nil {
+		t.Fatalf("ListQSOsPage(c1, limit 2): %v", err)
+	}
+	if len(qsos) != 2 {
+		t.Errorf("len = %d; want 2", len(qsos))
+	}
+
+	// Page 2 of c1 — limit 2, offset 2. Should return 1 remaining.
+	qsos, err = ListQSOsPage(db, 2, 2, "c1")
+	if err != nil {
+		t.Fatalf("ListQSOsPage(c1, offset 2): %v", err)
+	}
+	if len(qsos) != 1 {
+		t.Errorf("len = %d; want 1", len(qsos))
 	}
 }

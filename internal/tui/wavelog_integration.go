@@ -21,16 +21,20 @@ import (
 // maybeCheckWavelog returns a tea.Cmd to check Wavelog connectivity
 // at startup (tick 1), when the logbook is switched, and periodically.
 func (m *Model) maybeCheckWavelog() tea.Cmd {
+	if m.Offline || !m.inetOnline {
+		m.lookup.wlOnline = false
+		return nil
+	}
 	wl := m.App.Logbook.Wavelog
 	if wl == nil || !wl.Enabled || wl.StationProfileID == "" {
-		m.wlOnline = false
+		m.lookup.wlOnline = false
 		return nil
 	}
 	// Check on startup or when forced (logbook switch).
-	if m.tickCount != 1 && !m.wlForceCheck {
+	if m.tickCount != 1 && !m.lookup.wlForceCheck {
 		return nil
 	}
-	m.wlForceCheck = false
+	m.lookup.wlForceCheck = false
 	return m.checkWavelogCmd()
 }
 
@@ -70,11 +74,6 @@ type wlStatusMsg struct {
 // maybeUploadToWavelog returns a tea.Cmd that sends a QSO to Wavelog.
 func (m *Model) maybeUploadToWavelog(qs *qso.QSO) tea.Cmd {
 	return m.uploadADIFToWavelog(qs.ToADIF(), qs.ID, qs.Call)
-}
-
-// maybeUploadRawADIFToWavelog returns a tea.Cmd that sends raw ADIF (from WSJT-X) to Wavelog.
-func (m *Model) maybeUploadRawADIFToWavelog(adifStr string, qID int64, call string) tea.Cmd {
-	return m.uploadADIFToWavelog(adifStr, qID, call)
 }
 
 // uploadADIFToWavelog returns a tea.Cmd that uploads an ADIF record to Wavelog.
@@ -136,3 +135,8 @@ type wlUploadResultMsg struct {
 	isDup bool
 	err   error
 }
+
+// wsjtxEnrichDoneMsg signals that WSJT-X QRZ enrichment has completed
+// for an auto-logged QSO. The handler triggers a Recent QSOs refresh so
+// the name/QTH/country fields appear immediately.
+type wsjtxEnrichDoneMsg struct{}

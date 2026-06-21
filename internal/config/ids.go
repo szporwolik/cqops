@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -17,6 +18,9 @@ func NewID(seed string) string {
 // LogbookDisplayName returns the human-readable name for a logbook:
 // the station callsign, or "Unnamed" if empty.
 func LogbookDisplayName(lb *Logbook) string {
+	if lb.Name != "" {
+		return lb.Name
+	}
 	if lb.Station.Callsign != "" {
 		return lb.Station.Callsign
 	}
@@ -24,10 +28,21 @@ func LogbookDisplayName(lb *Logbook) string {
 }
 
 // RigDisplayName returns the human-readable name for a rig preset:
-// the model name, or "Unnamed" if empty.
+// the Name field, or the Model field, or "Unnamed".
 func RigDisplayName(rp *RigPreset) string {
+	if rp.Name != "" {
+		return rp.Name
+	}
 	if rp.Model != "" {
 		return rp.Model
+	}
+	return "Unnamed"
+}
+
+// ContestDisplayName returns the human-readable name for a contest.
+func ContestDisplayName(c *Contest) string {
+	if c.Name != "" {
+		return c.Name
 	}
 	return "Unnamed"
 }
@@ -43,7 +58,7 @@ func SortedLogbookIDs(cfg *Config) []string {
 		pairs = append(pairs, pair{id, LogbookDisplayName(&lb)})
 	}
 	sort.Slice(pairs, func(i, j int) bool {
-		return pairs[i].name < pairs[j].name
+		return strings.ToLower(pairs[i].name) < strings.ToLower(pairs[j].name)
 	})
 	ids := make([]string, len(pairs))
 	for i, p := range pairs {
@@ -63,7 +78,7 @@ func SortedRigIDs(cfg *Config) []string {
 		pairs = append(pairs, pair{id, RigDisplayName(&rp)})
 	}
 	sort.Slice(pairs, func(i, j int) bool {
-		return pairs[i].name < pairs[j].name
+		return strings.ToLower(pairs[i].name) < strings.ToLower(pairs[j].name)
 	})
 	ids := make([]string, len(pairs))
 	for i, p := range pairs {
@@ -82,6 +97,59 @@ func FindLogbookByCallsign(cfg *Config, callsign string) (string, *Logbook, bool
 		}
 	}
 	return "", nil, false
+}
+
+// SortedContestIDs returns contest IDs for the given logbook, sorted by name.
+// Pass empty logbookID to get all contests (backward compatibility).
+// Use ActiveContestIDs for cycling — that one excludes not-in-use contests.
+func SortedContestIDs(cfg *Config, logbookID string) []string {
+	type pair struct {
+		id   string
+		name string
+	}
+	pairs := make([]pair, 0, len(cfg.Contests))
+	for id, c := range cfg.Contests {
+		if logbookID != "" && c.LogbookID != logbookID {
+			continue
+		}
+		pairs = append(pairs, pair{id, ContestDisplayName(&c)})
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		return strings.ToLower(pairs[i].name) < strings.ToLower(pairs[j].name)
+	})
+	ids := make([]string, len(pairs))
+	for i, p := range pairs {
+		ids[i] = p.id
+	}
+	return ids
+}
+
+// ActiveContestIDs returns contest IDs for the given logbook, sorted by name,
+// excluding contests where InUse is explicitly set to false. Used for Ctrl+C cycling.
+// Pass empty logbookID to get all contests (backward compatibility).
+func ActiveContestIDs(cfg *Config, logbookID string) []string {
+	type pair struct {
+		id   string
+		name string
+	}
+	pairs := make([]pair, 0, len(cfg.Contests))
+	for id, c := range cfg.Contests {
+		if c.InUse != nil && !*c.InUse {
+			continue
+		}
+		if logbookID != "" && c.LogbookID != logbookID {
+			continue
+		}
+		pairs = append(pairs, pair{id, ContestDisplayName(&c)})
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		return strings.ToLower(pairs[i].name) < strings.ToLower(pairs[j].name)
+	})
+	ids := make([]string, len(pairs))
+	for i, p := range pairs {
+		ids[i] = p.id
+	}
+	return ids
 }
 
 // FindRigByModel returns the first rig whose model name matches
@@ -116,9 +184,9 @@ func equalFold(a, b string) bool {
 	return true
 }
 
-// PopulateIDs ensures every logbook and rig has its ID field set from its
-// map key. Call this after loading a config from YAML (where the id field
-// is not serialized).
+// PopulateIDs ensures every logbook, rig, and contest has its ID field set
+// from its map key. Call this after loading a config from YAML (where the id
+// field is not serialized).
 func PopulateIDs(cfg *Config) {
 	if cfg.Logbooks != nil {
 		for key, lb := range cfg.Logbooks {
@@ -133,6 +201,14 @@ func PopulateIDs(cfg *Config) {
 			if rp.ID == "" {
 				rp.ID = key
 				cfg.Rigs[key] = rp
+			}
+		}
+	}
+	if cfg.Contests != nil {
+		for key, c := range cfg.Contests {
+			if c.ID == "" {
+				c.ID = key
+				cfg.Contests[key] = c
 			}
 		}
 	}

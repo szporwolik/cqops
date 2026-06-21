@@ -30,9 +30,9 @@ func TestQRZLookupSuccess(t *testing.T) {
 	}
 
 	m := newLifecycleTestModel(t)
-	m.App.Config.QRZ.Enabled = true
-	m.App.Config.QRZ.User = "testuser"
-	m.App.Config.QRZ.Pass = "testpass"
+	m.App.Config.Integrations.QRZ.Enabled = true
+	m.App.Config.Integrations.QRZ.User = "testuser"
+	m.App.Config.Integrations.QRZ.Pass = "testpass"
 	m.fields[fieldCall].SetValue("SP9MOA")
 
 	// Trigger QRZ fill
@@ -60,7 +60,7 @@ func TestQRZLookupSuccess(t *testing.T) {
 		t.Errorf("Country = %q; want Poland", m.fields[fieldCountry].Value())
 	}
 	// Partner data should be set
-	if m.partnerData == nil {
+	if m.lookup.partnerData == nil {
 		t.Error("partnerData should be set after QRZ fill")
 	}
 }
@@ -74,8 +74,8 @@ func TestQRZLookupError(t *testing.T) {
 	}
 
 	m := newLifecycleTestModel(t)
-	m.App.Config.QRZ.Enabled = true
-	m.App.Config.QRZ.User = "testuser"
+	m.App.Config.Integrations.QRZ.Enabled = true
+	m.App.Config.Integrations.QRZ.User = "testuser"
 	m.fields[fieldCall].SetValue("SP9MOA")
 
 	// fillQRZData with error should not panic
@@ -92,8 +92,8 @@ func TestQRZLookupError(t *testing.T) {
 
 func TestQRZLookupEmptyCall(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.QRZ.Enabled = true
-	m.App.Config.QRZ.User = "testuser"
+	m.App.Config.Integrations.QRZ.Enabled = true
+	m.App.Config.Integrations.QRZ.User = "testuser"
 
 	cmd := m.qrzLookup("")
 	if cmd != nil {
@@ -103,8 +103,8 @@ func TestQRZLookupEmptyCall(t *testing.T) {
 
 func TestQRZLookupDisabled(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.QRZ.Enabled = false
-	m.App.Config.QRZ.User = "testuser"
+	m.App.Config.Integrations.QRZ.Enabled = false
+	m.App.Config.Integrations.QRZ.User = "testuser"
 	m.fields[fieldCall].SetValue("SP9MOA")
 
 	// fillQRZData with QRZ disabled should warn and not fill
@@ -121,8 +121,8 @@ func TestQRZLookupDisabled(t *testing.T) {
 
 func TestQRZLookupNoCredentials(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.QRZ.Enabled = true
-	m.App.Config.QRZ.User = "" // no credentials
+	m.App.Config.Integrations.QRZ.Enabled = true
+	m.App.Config.Integrations.QRZ.User = "" // no credentials
 	m.fields[fieldCall].SetValue("SP9MOA")
 
 	m.fillQRZData(qrzResultMsg{
@@ -138,8 +138,8 @@ func TestQRZLookupNoCredentials(t *testing.T) {
 // TestQRZLookupOverwritesExistingGrid verifies QRZ grid always updates the field.
 func TestQRZLookupOverwritesExistingGrid(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.QRZ.Enabled = true
-	m.App.Config.QRZ.User = "testuser"
+	m.App.Config.Integrations.QRZ.Enabled = true
+	m.App.Config.Integrations.QRZ.User = "testuser"
 	m.fields[fieldCall].SetValue("SP9MOA")
 	m.fields[fieldGrid].SetValue("JN18") // already has a grid
 
@@ -156,15 +156,15 @@ func TestQRZLookupOverwritesExistingGrid(t *testing.T) {
 	if m.fields[fieldGrid].Value() != "JO90" {
 		t.Errorf("Grid should be overwritten by QRZ result, got %q", m.fields[fieldGrid].Value())
 	}
-	if m.pathGrid != "JO90" {
-		t.Errorf("pathGrid should be updated by QRZ result, got %q", m.pathGrid)
+	if m.rc.pathGrid != "JO90" {
+		t.Errorf("pathGrid should be updated by QRZ result, got %q", m.rc.pathGrid)
 	}
 }
 
 func TestQRZLookupNoDataResult(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.QRZ.Enabled = true
-	m.App.Config.QRZ.User = "testuser"
+	m.App.Config.Integrations.QRZ.Enabled = true
+	m.App.Config.Integrations.QRZ.User = "testuser"
 	m.fields[fieldCall].SetValue("SP9MOA")
 
 	// nil data should show warning toast, not panic
@@ -176,8 +176,8 @@ func TestQRZLookupNoDataResult(t *testing.T) {
 
 func TestQRZLookupCacheInvalidation(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.QRZ.Enabled = true
-	m.App.Config.QRZ.User = "testuser"
+	m.App.Config.Integrations.QRZ.Enabled = true
+	m.App.Config.Integrations.QRZ.User = "testuser"
 	m.fields[fieldCall].SetValue("SP9MOA")
 
 	// Fill with partner data
@@ -191,9 +191,9 @@ func TestQRZLookupCacheInvalidation(t *testing.T) {
 	})
 
 	// Partner view cache should have been invalidated
-	if m.partnerViewCache != "" {
+	if m.rc.partnerView != "" {
 		t.Log("Partner view cache was populated during fill — this is expected for new data")
 	}
 	// Cache signature should exist
-	_ = m.partnerViewCacheSig
+	_ = m.rc.partnerViewSig
 }

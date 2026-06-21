@@ -3,10 +3,14 @@ package app
 import (
 	"database/sql"
 	"fmt"
+	"path/filepath"
 	"strings"
 
+	"github.com/ftl/hamradio/dxcc"
+	"github.com/ftl/hamradio/scp"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/ref"
 	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/wsjtx"
 )
@@ -20,6 +24,9 @@ type App struct {
 	DBPath       string
 	WSJTX        *wsjtx.Listener
 	WSJTXUpdated chan struct{}
+	DXCC         *dxcc.Prefixes // in-memory DXCC prefix→country lookup
+	SCP          *scp.Database  // in-memory Super Check Partial database
+	RefDB        *ref.DB        // reference database (SOTA/POTA/WWFF)
 
 	// lastWSJTX tracks the effective WSJT-X config last applied to the
 	// listener. Used to avoid unnecessary Stop/Start cycles when config
@@ -69,7 +76,41 @@ func Init(logbookFlag string) (*App, error) {
 		WSJTXUpdated: make(chan struct{}, 1),
 	}
 
-	app.MaybeRestartWSJTX()
+	// WSJT-X will be started later by the TUI model Init() with per-rig settings.
+	// Don't start here — we don't know which rig is active yet.
+
+	// Load cached data files — download/update happens later in the TUI
+	// tick after internet availability is confirmed.
+	if app.Config.General.UseCTY {
+		cacheDir, _ := config.CacheDir()
+		ctyPath := filepath.Join(cacheDir, "cty.dat")
+		if prefixes, err := dxcc.LoadLocal(ctyPath); err == nil {
+			app.DXCC = prefixes
+			applog.Info("DXCC: prefix data loaded from cache")
+		} else {
+			applog.Info("DXCC: no cached data yet — will fetch when online")
+		}
+	}
+	if app.Config.General.UseSCP {
+		cacheDir, _ := config.CacheDir()
+		scpPath := filepath.Join(cacheDir, "MASTER.SCP")
+		if db, err := scp.LoadLocal(scpPath); err == nil {
+			app.SCP = db
+			applog.Info("SCP: callsign database loaded from cache")
+		} else {
+			applog.Info("SCP: no cached data yet — will fetch when online")
+		}
+	}
+	if app.Config.General.UseRef {
+		cacheDir, _ := config.CacheDir()
+		refPath := filepath.Join(cacheDir, "ref.db")
+		if rdb, err := ref.Open(refPath); err == nil {
+			app.RefDB = rdb
+			applog.Info("REF: database opened")
+		} else {
+			applog.Info("REF: cannot open database — will rebuild when online")
+		}
+	}
 
 	return app, nil
 }
@@ -81,35 +122,36 @@ func (a *App) Close() {
 		applog.Debug("Closing database")
 		a.DB.Close()
 	}
+	if a.RefDB != nil {
+		applog.Debug("Closing reference database")
+		a.RefDB.Close()
+	}
 	applog.Info("CQOps shutdown complete")
 }
 
 // MaybeRestartWSJTX restarts the WSJT-X listener only when the effective
 // configuration (enabled, host, port) has changed since the last apply.
-// This avoids leaking UDP goroutines/sockets from unnecessary restarts.
-func (a *App) MaybeRestartWSJTX() {
-	cur := a.Config.WSJTX
-
-	// If nothing changed, skip the restart entirely.
-	if cur.Enabled == a.lastWSJTX.enabled &&
-		cur.UDPHost == a.lastWSJTX.host &&
-		cur.UDPPort == a.lastWSJTX.port {
+// The UDP socket is properly closed and reopened, so switching between
+// rigs with different ports works correctly.
+// Settings are passed from the active rig preset (per-rig config).
+func (a *App) MaybeRestartWSJTX(enabled bool, host string, port int) {
+	if enabled == a.lastWSJTX.enabled &&
+		host == a.lastWSJTX.host &&
+		port == a.lastWSJTX.port {
 		return
 	}
 
 	a.WSJTX.Stop()
-	if cur.Enabled {
-		if err := a.WSJTX.Start(cur.UDPHost, cur.UDPPort); err != nil {
+	if enabled {
+		if err := a.WSJTX.Start(host, port); err != nil {
 			applog.Error("WSJT-X restart failed", "error", err.Error())
-			// Don't update last-applied on failure — next call will retry.
 			return
 		}
 	}
 
-	// Record as applied only after successful start or stop.
-	a.lastWSJTX.enabled = cur.Enabled
-	a.lastWSJTX.host = cur.UDPHost
-	a.lastWSJTX.port = cur.UDPPort
+	a.lastWSJTX.enabled = enabled
+	a.lastWSJTX.host = host
+	a.lastWSJTX.port = port
 
 	select {
 	case a.WSJTXUpdated <- struct{}{}:
@@ -170,4 +212,13 @@ func (a *App) StationSummary() string {
 // LogbookDisplayName returns the human-readable name for the active logbook.
 func (a *App) LogbookDisplayName() string {
 	return config.LogbookDisplayName(a.Logbook)
+}
+
+// SetActiveContest sets the active contest for the current logbook, updating
+// both the in-memory pointer and the config map so the change survives saves.
+func (a *App) SetActiveContest(id string) {
+	a.Logbook.ActiveContest = id
+	lb := a.Config.Logbooks[a.LogbookName]
+	lb.ActiveContest = id
+	a.Config.Logbooks[a.LogbookName] = lb
 }

@@ -3,6 +3,8 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
@@ -15,14 +17,30 @@ import (
 )
 
 var logbookFlag string
+var offlineFlag bool
+var debugFlag bool
+
+func init() {
+	rootCmd.PersistentFlags().StringVarP(&logbookFlag, "logbook", "l", "", "Logbook name to use")
+	rootCmd.PersistentFlags().BoolVarP(&offlineFlag, "offline", "o", false, "Run in offline mode (skip all network checks)")
+	rootCmd.PersistentFlags().BoolVarP(&debugFlag, "debug", "d", false, "Enable debug logging")
+	rootCmd.AddCommand(versionCmd)
+}
+
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "Print CQOps version",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Printf("CQOps version %s\n", version.Resolved())
+	},
+}
 
 var rootCmd = &cobra.Command{
 	Use:   "cqops",
-	Short: "CQOps - Ham Radio Logger",
+	Short: "CQOps - Ham Radio Logger (TUI)",
 	Long: `CQOps is a cross-platform amateur radio logging tool.
 
-Run without arguments to start the interactive TUI.
-Run with commands for CLI-based logging and management.`,
+Run without arguments to start the interactive TUI.`,
 	CompletionOptions: cobra.CompletionOptions{
 		DisableDefaultCmd: true,
 	},
@@ -31,26 +49,37 @@ Run with commands for CLI-based logging and management.`,
 	},
 }
 
-func RegisterCommands() {
-	rootCmd.PersistentFlags().StringVarP(&logbookFlag, "logbook", "l", "", "Logbook name to use")
-
-	registerConfigCommands()
-	registerLogbookCommands()
-	registerLogCommands()
-	registerRigCommands()
-	registerResetCommands()
-	registerVersionCommands()
-}
-
 func Execute() error {
-	RegisterCommands()
-	applog.Init()
-	applog.Info("══════════ CQOps STARTED ══════════", "v", version.Resolved(), "built", version.ResolvedDate())
-
-	if len(os.Args) <= 1 {
-		return runTUI()
+	// Always let cobra parse persistent flags (--offline, --logbook, --debug)
+	// even when launching the TUI without a subcommand. Must happen before
+	// applog.Init so debug mode can be set early.
+	if err := rootCmd.ParseFlags(os.Args[1:]); err != nil {
+		// Ignore "unknown flag" errors — cobra will handle validation.
 	}
-	return rootCmd.Execute()
+
+	applog.SetDebugMode(debugFlag)
+	applog.Init()
+
+	applog.Info("══════════ CQOps STARTED ══════════", "v", version.Resolved(), "built", version.ResolvedDate(), "utc", time.Now().UTC().Format("2006-01-02 15:04:05"))
+	if offlineFlag {
+		applog.Info("Running in OFFLINE mode — all network connections skipped")
+	}
+	if debugFlag {
+		applog.Info("Debug logging enabled")
+	}
+
+	// Only delegate to cobra when a subcommand is explicitly given.
+	hasSubcommand := false
+	for _, a := range os.Args[1:] {
+		if !strings.HasPrefix(a, "-") {
+			hasSubcommand = true
+			break
+		}
+	}
+	if hasSubcommand {
+		return rootCmd.Execute()
+	}
+	return runTUI()
 }
 
 func runTUI() error {
@@ -62,6 +91,7 @@ func runTUI() error {
 
 	if config.IsFirstRun(a.Config) {
 		w := tui.NewWizard(a)
+		w.Offline = offlineFlag
 		p := tea.NewProgram(w)
 		if _, err := p.Run(); err != nil {
 			return fmt.Errorf("wizard: %w", err)
@@ -78,16 +108,17 @@ func runTUI() error {
 	}
 
 	if config.IsFirstRun(a.Config) {
-		fmt.Println("No logbook configured. Run cqops again to complete setup, or use cqops logbook create.")
+		fmt.Println("No logbook configured. Run cqops again to complete setup.")
 		return nil
 	}
 
-	qsos, err := store.ListQSOs(a.DB, 500)
+	qsos, err := store.ListQSOs(a.DB, 500, a.Logbook.ActiveContest)
 	if err != nil {
 		applog.Warn("Failed to load initial QSO list", "error", err.Error())
 	}
 
 	m := tui.New(a, qsos)
+	m.Offline = offlineFlag
 	p := tea.NewProgram(m)
 
 	if _, err := p.Run(); err != nil {

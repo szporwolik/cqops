@@ -23,23 +23,23 @@ func (m *Model) renderSolarPanel(availW int) string {
 	// Fixed box width: 5 columns × 6 cells + 2 borders + 4 padding = 36.
 	const solarBoxW = 36
 
-	d := m.solarData
+	d := m.solar.data
 
 	// Loading / offline / failed placeholder — cached separately.
 	if d == nil {
-		if m.solarFailed {
+		if m.solar.failed {
 			return ""
 		}
 		placeholderSig := fmt.Sprintf("ld:%d|%v", availW, m.inetOnline)
-		if m.cachedSolarSig == placeholderSig && m.cachedSolarView != "" {
-			return m.cachedSolarView
+		if m.solar.cachedSig == placeholderSig && m.solar.cachedView != "" {
+			return m.solar.cachedView
 		}
 		var result string
 		if m.inetOnline {
 			result = m.renderSolarPlaceholder(solarBoxW, "Loading hamqsl.com\u2026")
 		}
-		m.cachedSolarSig = placeholderSig
-		m.cachedSolarView = result
+		m.solar.cachedSig = placeholderSig
+		m.solar.cachedView = result
 		return result
 	}
 
@@ -54,33 +54,35 @@ func (m *Model) renderSolarPanel(availW int) string {
 		fmt.Fprintf(&sigB, "%s:%s|", b+"_night", d.Bands[b+"_night"])
 	}
 	sig := sigB.String()
-	if m.cachedSolarSig == sig && m.cachedSolarView != "" {
-		return m.cachedSolarView
+	if m.solar.cachedSig == sig && m.solar.cachedView != "" {
+		return m.solar.cachedView
 	}
 
 	lbl := lipgloss.NewStyle().Foreground(P.TextMuted) // muted, no fixed width
 	err := S.Error                                     // red for problematic values.
 
-	// --- Thresholds: red when passing ham-unfriendly limits ---
+	// --- Thresholds based on N0NBH hamqsl.com reference table ---
+	// RED = actually problematic for HF propagation.
 	sfiStyle, aStyle, kStyle, ssnStyle := lbl, lbl, lbl, lbl
 	if d.SolarFlux < 70 {
-		sfiStyle = err
+		sfiStyle = err // bands above 40m unusable
 	}
 	if d.AIndex >= 15 {
-		aStyle = err
+		aStyle = err // Active geomagnetic field
 	}
-	if d.KIndex >= 4 {
-		kStyle = err
+	if d.KIndex >= 5 {
+		kStyle = err // Minor Geomagnetic Storm (K=4 is just "Active")
 	}
 	if d.Sunspots < 20 {
-		ssnStyle = err
+		ssnStyle = err // poor band conditions
 	}
 
-	// Compact summary — single space between label:value groups.
-	summary := lbl.Render("SFI") + " " + sfiStyle.Render(fmt.Sprintf("%d", d.SolarFlux)) +
-		" " + lbl.Render("A") + " " + aStyle.Render(fmt.Sprintf("%d", d.AIndex)) +
-		" " + lbl.Render("K") + " " + kStyle.Render(fmt.Sprintf("%.1f", d.KIndex)) +
-		" " + lbl.Render("SSN") + " " + ssnStyle.Render(fmt.Sprintf("%d", d.Sunspots))
+	// Compact summary: labels dimmed, values more visible.
+	dim := DimStyle
+	summary := dim.Render("SFI") + " " + sfiStyle.Render(fmt.Sprintf("%d", d.SolarFlux)) +
+		" " + dim.Render("A") + " " + aStyle.Render(fmt.Sprintf("%d", d.AIndex)) +
+		" " + dim.Render("K") + " " + kStyle.Render(fmt.Sprintf("%.1f", d.KIndex)) +
+		" " + dim.Render("SSN") + " " + ssnStyle.Render(fmt.Sprintf("%d", d.Sunspots))
 
 	// --- Band condition table ---
 	const colW = 6 // 1-char gap between columns (band names are 5 chars)
@@ -99,9 +101,9 @@ func (m *Model) renderSolarPanel(availW int) string {
 
 	// Data rows.
 	var tbl []string
-	tbl = append(tbl, DimStyle.Render(header))
+	tbl = append(tbl, dim.Render(header))
 	for _, tm := range times {
-		row := lbl.Render(renderCell(tm, colW))
+		row := dim.Render(renderCell(tm, colW))
 		for _, b := range bands {
 			key := b + "_" + strings.ToLower(tm)
 			cond := strings.TrimSpace(d.Bands[key])
@@ -120,10 +122,10 @@ func (m *Model) renderSolarPanel(availW int) string {
 	if d.GeomagField != "" {
 		gfStyle := lbl
 		upper := strings.ToUpper(d.GeomagField)
-		if strings.Contains(upper, "STORM") || strings.Contains(upper, "ACTIVE") {
+		if strings.Contains(upper, "STORM") {
 			gfStyle = err
 		}
-		extra1B.WriteString(lbl.Render("Geomag"))
+		extra1B.WriteString(dim.Render("Geomag"))
 		extra1B.WriteByte(' ')
 		extra1B.WriteString(gfStyle.Render(d.GeomagField))
 	}
@@ -133,12 +135,11 @@ func (m *Model) renderSolarPanel(availW int) string {
 		}
 		sigStyle := lbl
 		us := strings.ToUpper(d.SignalNoise)
-		if strings.Contains(us, "S4") || strings.Contains(us, "S5") ||
-			strings.Contains(us, "S6") || strings.Contains(us, "S7") ||
+		if strings.Contains(us, "S6") || strings.Contains(us, "S7") ||
 			strings.Contains(us, "S8") || strings.Contains(us, "S9") {
-			sigStyle = err
+			sigStyle = err // Moderate+ geomagnetic storm noise level
 		}
-		extra1B.WriteString(lbl.Render("Sig"))
+		extra1B.WriteString(dim.Render("Sig"))
 		extra1B.WriteByte(' ')
 		extra1B.WriteString(sigStyle.Render(d.SignalNoise))
 	}
@@ -147,32 +148,32 @@ func (m *Model) renderSolarPanel(availW int) string {
 	// --- Extra row 2: SW, PF, Aur, XRY ---
 	swStyle, pfStyle, aurStyle, xrStyle := lbl, lbl, lbl, lbl
 	if d.SolarWind > 500 {
-		swStyle = err
+		swStyle = err // Moderate Geomagnetic Storm
 	}
-	if d.ProtonFlux > 10 {
-		pfStyle = err
+	if d.ProtonFlux > 100 {
+		pfStyle = err // Minor Solar Radiation Storm (PF=10 is just Active)
 	}
-	if d.Aurora > 5 {
-		aurStyle = err
+	if d.Aurora > 7 {
+		aurStyle = err // Minor Storm aurora level (Aur=5-7 is Active)
 	}
 	if strings.HasPrefix(strings.ToUpper(d.XRay), "M") ||
 		strings.HasPrefix(strings.ToUpper(d.XRay), "X") {
 		xrStyle = err
 	}
 	var extra2B strings.Builder
-	extra2B.WriteString(lbl.Render("SW"))
+	extra2B.WriteString(dim.Render("SW"))
 	extra2B.WriteByte(' ')
 	extra2B.WriteString(swStyle.Render(fmt.Sprintf("%.0f", d.SolarWind)))
 	extra2B.WriteByte(' ')
-	extra2B.WriteString(lbl.Render("PF"))
+	extra2B.WriteString(dim.Render("PF"))
 	extra2B.WriteByte(' ')
 	extra2B.WriteString(pfStyle.Render(fmt.Sprintf("%.0f", d.ProtonFlux)))
 	extra2B.WriteByte(' ')
-	extra2B.WriteString(lbl.Render("Aur"))
+	extra2B.WriteString(dim.Render("Aur"))
 	extra2B.WriteByte(' ')
 	extra2B.WriteString(aurStyle.Render(fmt.Sprintf("%.0f", d.Aurora)))
 	extra2B.WriteByte(' ')
-	extra2B.WriteString(lbl.Render("XRY"))
+	extra2B.WriteString(dim.Render("XRY"))
 	extra2B.WriteByte(' ')
 	extra2B.WriteString(xrStyle.Render(d.XRay))
 	extra2 := extra2B.String()
@@ -201,8 +202,8 @@ func (m *Model) renderSolarPanel(availW int) string {
 		Align(lipgloss.Right, lipgloss.Top).
 		Render(content)
 
-	m.cachedSolarSig = sig
-	m.cachedSolarView = result
+	m.solar.cachedSig = sig
+	m.solar.cachedView = result
 	return result
 }
 

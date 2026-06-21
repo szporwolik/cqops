@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"errors"
 
 	"github.com/szporwolik/cqops/internal/rig"
 )
@@ -15,6 +14,10 @@ import (
 // The production implementation is flrig.Client.
 type FlrigClient interface {
 	Status(ctx context.Context) (rig.RigStatus, error)
+	SetFrequency(ctx context.Context, freqHz int64) error
+	GetModes(ctx context.Context) ([]string, error)
+	SetMode(ctx context.Context, mode string) error
+	GetName(ctx context.Context) (string, error)
 }
 
 // =============================================================================
@@ -23,8 +26,10 @@ type FlrigClient interface {
 
 // fakeFlrigClient implements FlrigClient with controllable results.
 type fakeFlrigClient struct {
-	status rig.RigStatus
-	err    error
+	status      rig.RigStatus
+	err         error
+	setFreqErr  error
+	lastSetFreq int64
 }
 
 func (f *fakeFlrigClient) Status(ctx context.Context) (rig.RigStatus, error) {
@@ -34,11 +39,21 @@ func (f *fakeFlrigClient) Status(ctx context.Context) (rig.RigStatus, error) {
 	return f.status, nil
 }
 
-// disconnectedFakeFlrig returns a fake client that reports not connected.
-func disconnectedFakeFlrig() *fakeFlrigClient {
-	return &fakeFlrigClient{
-		status: rig.RigStatus{Provider: "flrig", Connected: false},
-	}
+func (f *fakeFlrigClient) SetFrequency(ctx context.Context, freqHz int64) error {
+	f.lastSetFreq = freqHz
+	return f.setFreqErr
+}
+
+func (f *fakeFlrigClient) SetMode(ctx context.Context, mode string) error {
+	return nil
+}
+
+func (f *fakeFlrigClient) GetModes(ctx context.Context) ([]string, error) {
+	return []string{"USB", "LSB", "CW-L", "CW-U", "RTTY", "AM", "FM", "DATA-U", "DATA-L"}, nil
+}
+
+func (f *fakeFlrigClient) GetName(ctx context.Context) (string, error) {
+	return "FT-DX10", nil
 }
 
 // connectedFakeFlrig returns a fake client with the given frequency, mode, and band.
@@ -53,11 +68,6 @@ func connectedFakeFlrig(freq float64, mode, band string) *fakeFlrigClient {
 			Power:        50,
 		},
 	}
-}
-
-// errorFakeFlrig returns a fake client that always returns an error.
-func errorFakeFlrig() *fakeFlrigClient {
-	return &fakeFlrigClient{err: errors.New("connection refused")}
 }
 
 // Ensure fakeFlrigClient implements FlrigClient.

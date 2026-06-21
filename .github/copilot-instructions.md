@@ -11,7 +11,7 @@ The application targets normal desktops but must also stay usable on low-end mac
   - `charm.land/bubbles/v2/...` (e.g. `charm.land/bubbles/v2/textinput`, `/table`, `/viewport`, `/help`, `/key`)
   - `charm.land/lipgloss/v2`
   - When adding a Charm component, match the existing `charm.land/.../v2` imports. Never `go get github.com/charmbracelet/bubbles` (that is the wrong/older module and will break the build).
-- Other key deps already vendored in `go.mod`: `farmergreg/adif` + `spec` (ADIF), `ftl/hamradio` (grid/locator/distance), `k0swe/wsjtx-go` (WSJT-X UDP), `spf13/cobra` (CLI), `modernc.org/sqlite` (pure-Go SQLite, no cgo).
+- Other key deps already in `go.mod`: `farmergreg/adif` + `spec` (ADIF), `ftl/hamradio` (grid/locator/distance), `k0swe/wsjtx-go` (WSJT-X UDP), `spf13/cobra` (CLI), `modernc.org/sqlite` (pure-Go SQLite, no cgo), `NimbleMarkets/ntcharts` (charts), `gen2brain/beeep` (desktop notifications), `gopkg.in/yaml.v3` (config), `golang.org/x/text` (Unicode normalization for ADIF).
 - Do not add new dependencies unless they clearly remove complexity or improve correctness. Prefer the Charm ecosystem and the standard library.
 
 ## Core Principles
@@ -106,30 +106,42 @@ Keep code grouped by concern.
 
 ### Package boundaries (keep domain logic out of the UI)
 
-- `internal/qso` — domain: `QSO` struct, ADIF encode, band/frequency mapping, mode/submode tables, validation, station defaults. New domain rules belong here, not in `internal/tui`.
-- `internal/store` — SQLite: open, migrate, queries. All DB access goes through this package.
+- `internal/qso` — domain: `QSO` struct, ADIF encode/decode, band/frequency mapping, mode/submode tables, callsign/locator validation, station defaults. New domain rules belong here, not in `internal/tui`.
+- `internal/store` — SQLite: open, migrate, queries (QSO, DXC, PSK, stats, Wavelog). All DB access goes through this package.
 - `internal/config` — YAML config, logbooks, paths, timezone, defaults.
 - `internal/app` — aggregate that wires config + DB + WSJT-X lifecycle. Owns startup/shutdown.
-- `internal/{qrz,wavelog,wsjtx,rig}` — integrations (network/UDP/HTTP). Must fail safely and stay independent of the UI.
+- `internal/applog` — structured logging (slog with file rotation).
+- `internal/version` — version resolution (ldflags → VERSION file fallback).
 - `internal/cli` — Cobra commands (including non-interactive `qso`/`log` mode).
+- `internal/{qrz,wavelog,wsjtx,rig/flrig,rig/rigctld,dxc,psk,solar,ref}` — integrations (network/UDP/HTTP/file). Must fail safely and stay independent of the UI.
 - `internal/tui` — presentation only. It orchestrates and renders; it should not own ADIF formatting, band math, or schema details.
 
 Dependency direction is one-way: `tui`/`cli` → `app` → `{config, store, qso, integrations}`. Domain packages (`qso`, `store`) must not import `tui`. Do not create circular dependencies.
 
-### `internal/tui` file organization
+### `internal/tui` file organization (~94 files, 34 test files)
+
+Key files by responsibility:
 
 - `model.go` — root model, `Init`, `Update`, `View`, high-level orchestration.
-- `update_handlers.go` — focused update routing/handlers.
-- `qso_form_view.go` — QSO form rendering.
-- `qso_form_update.go` — QSO form focus/update helpers.
+- `update_handlers.go`, `update_keys.go`, `update_screens.go`, `update_cycle.go` — update routing.
+- `qso_form_view.go`, `qso_form_update.go`, `qso_form_validation.go`, `form_nav.go` — QSO form.
 - `qso_lifecycle.go` — save/refresh lifecycle.
 - `partner_view.go` — partner screen and map cache.
-- `statusbar.go`, `tabbar.go`, `helpbar.go` — top/bottom UI components.
-- `wavelog_integration.go` — Wavelog status/upload/lookup orchestration.
+- `recentqsos.go`, `logbook_editor.go`, `logbook_editor_*.go` — QSO table and editor.
+- `statusbar.go`, `tabbar.go`, `helpbar.go`, `toast.go` — UI chrome.
+- `render.go`, `render_cache.go`, `layout.go`, `styles.go` — rendering infrastructure.
+- `wavelog_integration.go` — Wavelog status/upload/lookup.
 - `wsjtx_integration.go` — WSJT-X status and ADIF logging.
-- `flrig_integration.go` — flrig polling/result handling.
+- `flrig_integration.go`, `flrig_interface.go` — flrig polling/result handling.
 - `callbook_integration.go` — QRZ/callbook lookup.
-- `health_checks.go` — internet/time/status checks.
+- `dxc_*.go` — DX Cluster table, filters, keys, tune, state.
+- `psk_*.go`, `solar_*.go` — PSK Reporter and solar data.
+- `ref_integration.go` — SOTA/POTA/WWFF/IOTA reference search.
+- `bpl_*.go` — band plan / broadcast presets.
+- `health_checks.go` — internet/time/version checks.
+- `wizard.go` — first-run setup wizard.
+- `*_menu.go` — sub-screen menus (logbook, rig, contest, general, integration, notifications, main).
+- `*_dialog.go` — modal dialogs (confirm, spot).
 
 Do not move code into random files. If adding a file, name it by responsibility.
 
@@ -158,33 +170,50 @@ When changing behavior, add or update tests.
 Current test coverage includes:
 
 - layout helpers
-- dialogs
-- recent QSO table
-- QSO form rendering/navigation/autofill/retain
+- dialogs (confirm, spot)
+- recent QSO table / logbook editor table
+- QSO form rendering/navigation/autofill/retain/validation
 - partner view and map cache
 - flrig integration via fake client
-- WSJT-X ADIF parsing
-- QSO save/refresh using temporary SQLite databases
-- Wavelog upload/status/private lookup using `httptest.Server`
+- WSJT-X ADIF parsing and auto-log
+- QSO save/refresh/delete using temporary SQLite databases
+- Wavelog upload/status/private lookup/download using `httptest.Server`
 - QRZ lookup behavior via function seam
+- PSK Reporter and solar data result handling
+- ADIF import (validation, persistence, Wavelog status)
+- Editor upload (single/batch/missing fields)
+- DXC table, band/mode/time filters
+- Form navigation (column-aware Tab/arrows)
+- Grid/bearing/distance computation
+- Screen routing
+- Station form validation
+- Wizard validation
+- Contest menu and contest QSO fields
+- Favorites management
+- Configuration save
+- Download recovery and result rendering
 
 Test files (run `go test ./...` for the authoritative current count; the list below may drift):
 
-`internal/tui/`:
-- `render_test.go` — layout helpers
-- `confirmdialog_test.go` — unified dialog component
-- `recentqsos_test.go` — recent QSO table
-- `qso_form_test.go` — QSO form rendering/navigation/autofill/retain
-- `partner_view_test.go` — partner view and map cache
-- `qso_lifecycle_test.go` — QSO save/refresh with temp SQLite
-- `wavelog_integration_test.go` — Wavelog upload/status/lookup via `httptest.Server`
-- `callbook_integration_test.go` — QRZ lookup via function seam
-- `wsjtx_integration_test.go` — WSJT-X ADIF parsing
-- `flrig_integration_test.go` — flrig integration via fake client
+`internal/tui/` (34 test files):
+- Core: `render_test.go`, `layout_test.go`, `confirmdialog_test.go`, `screen_routing_test.go`
+- QSO form: `qso_form_test.go`, `qso_form_validation_test.go`, `form_nav_test.go`
+- QSO lifecycle: `qso_lifecycle_test.go`, `adif_import_test.go`, `adif_persistence_test.go`
+- Partner/map: `partner_view_test.go`, `map_test.go`, `grid_test.go`
+- Wavelog: `wavelog_integration_test.go`, `editor_upload_test.go`, `download_recovery_test.go`, `download_result_render_test.go`
+- QRZ: `callbook_integration_test.go`
+- WSJT-X: `wsjtx_integration_test.go`
+- flrig: `flrig_integration_test.go`
+- DXC: `dxc_table_test.go`, `dxc_band_filter_test.go`, `dxc_mode_filter_test.go`, `dxc_time_filter_test.go`
+- PSK/Solar: `psk_reporter_test.go`, `psk_solar_result_test.go`
+- Editor/logbook: `logbook_menu_test.go`, `logbook_editor_contest_test.go`
+- Config/wizard: `config_save_test.go`, `wizard_validation_test.go`, `station_form_validation_test.go`
+- Other: `favorites_test.go`, `contest_menu_test.go`
 
 `internal/qso/`:
 - `band_test.go` — band/frequency logic
 - `modetable_test.go` — mode/submode tables
+- `callsign_test.go`, `locator_test.go`, `validate_test.go`, `adif_test.go`, `import_validate_test.go`
 
 Tests must not require:
 

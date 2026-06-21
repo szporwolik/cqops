@@ -5,10 +5,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/qso"
+	"github.com/szporwolik/cqops/internal/store"
+	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
 // =============================================================================
@@ -35,23 +39,11 @@ func wavelogVersionHandler(status string) http.HandlerFunc {
 	}
 }
 
-// wavelogStationInfoHandler returns a handler for /api/station_info/{key}.
-func wavelogStationInfoHandler(stations []map[string]string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", 405)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(stations)
-	}
-}
-
 // wavelogQSOHandler returns a handler for /index.php/api/qso.
 func wavelogQSOHandler(status string, messages []string, adifErrors int) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", 405)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		resp := map[string]interface{}{
@@ -69,7 +61,7 @@ func wavelogQSOHandler(status string, messages []string, adifErrors int) http.Ha
 func wavelogPrivateLookupHandler(data map[string]interface{}) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", 405)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		if data == nil {
@@ -217,7 +209,7 @@ func TestWavelogStatusCheckSuccess(t *testing.T) {
 	m.App.Logbook.Wavelog.URL = srv.URL
 	m.App.Logbook.Wavelog.APIKey = "test-key"
 	m.App.Logbook.Wavelog.StationProfileID = "1"
-	m.wlOnline = false
+	m.lookup.wlOnline = false
 
 	cmd := m.checkWavelogCmd()
 	if cmd == nil {
@@ -236,7 +228,7 @@ func TestWavelogStatusCheckSuccess(t *testing.T) {
 
 func TestWavelogStatusCheckFailure(t *testing.T) {
 	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "unauthorized", 401)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 	})
 	defer srv.Close()
 
@@ -244,7 +236,7 @@ func TestWavelogStatusCheckFailure(t *testing.T) {
 	m.App.Logbook.Wavelog.Enabled = true
 	m.App.Logbook.Wavelog.URL = srv.URL
 	m.App.Logbook.Wavelog.APIKey = "test-key"
-	m.wlOnline = true
+	m.lookup.wlOnline = true
 
 	cmd := m.checkWavelogCmd()
 	if cmd == nil {
@@ -394,7 +386,7 @@ func TestWavelogStatusCheckWithStations(t *testing.T) {
 	m.App.Logbook.Wavelog.URL = srv.URL
 	m.App.Logbook.Wavelog.APIKey = "test-key"
 	m.App.Logbook.Wavelog.StationProfileID = "1"
-	m.wlOnline = false
+	m.lookup.wlOnline = false
 
 	cmd := m.checkWavelogCmd()
 	if cmd == nil {
@@ -436,7 +428,7 @@ func TestWavelogStatusCheckNoStations(t *testing.T) {
 	m.App.Logbook.Wavelog.URL = srv.URL
 	m.App.Logbook.Wavelog.APIKey = "test-key"
 	m.App.Logbook.Wavelog.StationProfileID = "1"
-	m.wlOnline = false
+	m.lookup.wlOnline = false
 
 	cmd := m.checkWavelogCmd()
 	if cmd == nil {
@@ -474,7 +466,7 @@ func TestWavelogStatusCheckMalformedStations(t *testing.T) {
 	m.App.Logbook.Wavelog.URL = srv.URL
 	m.App.Logbook.Wavelog.APIKey = "test-key"
 	m.App.Logbook.Wavelog.StationProfileID = "1"
-	m.wlOnline = false
+	m.lookup.wlOnline = false
 
 	cmd := m.checkWavelogCmd()
 	if cmd == nil {
@@ -802,5 +794,360 @@ func TestPostQSO_HTMLMaintenancePage(t *testing.T) {
 	}
 	if status := getWavelogStatus(t, m.App.DB, qID); status != "no" {
 		t.Errorf("DB wavelog_uploaded = %q; want no (server down, not on Wavelog)", status)
+	}
+}
+
+// =============================================================================
+// Pass 7 — Request payload verification and ADIF-to-Wavelog integrated flow
+// =============================================================================
+
+func TestPostQSO_RequestPayloadVerification(t *testing.T) {
+	// Verify the POST body sent to Wavelog contains expected fields.
+	var capturedBody map[string]string
+	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&capturedBody); err != nil {
+			http.Error(w, "bad request", 400)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "ok", "adif_count": 1, "adif_errors": 0, "messages": []string{""},
+		})
+	})
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	qID := insertTestQSO(t, m.App.DB, makeTestQSO("SP9MOA"))
+
+	adifStr := "<CALL:6>SP9MOA<BAND:3>20m<MODE:3>SSB<QSO_DATE:8>20260614<TIME_ON:6>120000<EOR>"
+	ok, _, err := postQSO(srv.URL, "test-api-key-12345", "42", adifStr, qID, "SP9MOA", m.App.DB)
+	if err != nil {
+		t.Fatalf("postQSO: %v", err)
+	}
+	if !ok {
+		t.Fatal("postQSO should succeed")
+	}
+
+	// Verify the request payload structure.
+	if capturedBody["key"] != "test-api-key-12345" {
+		t.Errorf("key = %q, want test-api-key-12345", capturedBody["key"])
+	}
+	if capturedBody["station_profile_id"] != "42" {
+		t.Errorf("station_profile_id = %q, want 42", capturedBody["station_profile_id"])
+	}
+	if capturedBody["type"] != "adif" {
+		t.Errorf("type = %q, want adif", capturedBody["type"])
+	}
+	if capturedBody["string"] != adifStr {
+		t.Errorf("string (ADIF) = %q, want %q", capturedBody["string"], adifStr)
+	}
+}
+
+func TestWavelogUpload_IntegratedADIFToUpload(t *testing.T) {
+	// End-to-end: parse ADIF → insert to DB → trigger Wavelog upload → verify DB.
+	var capturedADIF string
+	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]string
+		json.NewDecoder(r.Body).Decode(&body)
+		capturedADIF = body["string"]
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "ok", "adif_count": 1, "adif_errors": 0, "messages": []string{""},
+		})
+	})
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	m.App.Logbook.Wavelog.Enabled = true
+	m.App.Logbook.Wavelog.URL = srv.URL
+	m.App.Logbook.Wavelog.APIKey = "test-key-123"
+	m.App.Logbook.Wavelog.StationProfileID = "1"
+	m.inetOnline = true
+
+	// Use the ADIF from Pass 5's FT8 test.
+	adif := "<CALL:6>SP9MOA <BAND:3>20m <FREQ:8>14.074550 <MODE:3>FT8 " +
+		"<QSO_DATE:8>20260618 <TIME_ON:6>120000 <RST_SENT:3>-10 <RST_RCVD:3>-05 <GRIDSQUARE:6>JO90aa <EOR>"
+
+	// Full logQSOFromADIF pipeline (parse → validate → insert → upload).
+	cmd, retry := m.logQSOFromADIF(adif)
+	if retry {
+		t.Fatal("logQSOFromADIF should not request retry")
+	}
+
+	// Execute the upload command (from maybeUploadRawADIFToWavelog).
+	if cmd != nil {
+		msg := cmd()
+		// logQSOFromADIF may return a Batch; execute each sub-command.
+		if batch, isBatch := msg.(tea.BatchMsg); isBatch {
+			for _, subCmd := range batch {
+				subMsg := subCmd()
+				if result, ok := subMsg.(wlUploadResultMsg); ok {
+					if !result.ok {
+						t.Errorf("upload should succeed, got err=%v", result.err)
+					}
+				}
+			}
+		} else if result, ok := msg.(wlUploadResultMsg); ok {
+			if !result.ok {
+				t.Errorf("upload should succeed, got err=%v", result.err)
+			}
+		}
+	}
+
+	// Verify QSO was persisted locally.
+	qsos, err := store.ListQSOs(m.App.DB, 1, "")
+	if err != nil {
+		t.Fatalf("ListQSOs: %v", err)
+	}
+	if len(qsos) == 0 {
+		t.Fatal("no QSO found after logQSOFromADIF")
+	}
+	q := qsos[0]
+	if q.Call != "SP9MOA" {
+		t.Errorf("Call = %q", q.Call)
+	}
+	if q.Source != "wsjtx" {
+		t.Errorf("Source = %q, want wsjtx", q.Source)
+	}
+
+	// Verify Wavelog status was updated locally.
+	if status := getWavelogStatus(t, m.App.DB, q.ID); status != "yes" {
+		t.Errorf("wavelog_uploaded = %q, want yes", status)
+	}
+
+	// Verify ADIF was sent to the mock server.
+	if capturedADIF == "" {
+		t.Error("no ADIF was captured by the mock server")
+	}
+}
+
+func TestWavelogUpload_DisabledPreservesLocalQSO(t *testing.T) {
+	// When Wavelog is disabled, QSO logs locally but no upload is triggered.
+	m := newLifecycleTestModel(t)
+	m.App.Logbook.Wavelog = nil // disabled
+	m.App.Config.Integrations.QRZ.Enabled = false
+
+	adif := "<CALL:6>SP9MOA <BAND:3>20m <FREQ:7>14.2500 <MODE:3>SSB " +
+		"<QSO_DATE:8>20260618 <TIME_ON:6>120000 <RST_SENT:2>59 <RST_RCVD:2>59 <EOR>"
+
+	cmd, retry := m.logQSOFromADIF(adif)
+	if retry {
+		t.Fatal("should not retry")
+	}
+
+	// Upload command should be nil when Wavelog disabled.
+	if cmd != nil {
+		// cmd may be refreshQSOS, which is fine.
+		msg := cmd()
+		if _, isUpload := msg.(wlUploadResultMsg); isUpload {
+			t.Error("upload should not be triggered when Wavelog is disabled")
+		}
+	}
+
+	// Local QSO must still be persisted.
+	qsos, err := store.ListQSOs(m.App.DB, 1, "")
+	if err != nil {
+		t.Fatalf("ListQSOs: %v", err)
+	}
+	if len(qsos) == 0 {
+		t.Fatal("no QSO found — local logging should work even with Wavelog disabled")
+	}
+}
+
+func TestWavelogUpload_APINotExposedInLogs(t *testing.T) {
+	// Verify the test uses a fake API key and it's sent in the POST body (not URL).
+	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		// API key must be in POST body, not in URL query string.
+		if r.URL.Query().Get("key") != "" {
+			t.Error("API key should NOT be in URL query string")
+		}
+		if r.URL.Path != "/index.php/api/qso" {
+			http.NotFound(w, r)
+			return
+		}
+		var body map[string]string
+		json.NewDecoder(r.Body).Decode(&body)
+		if body["key"] != "fake-key-for-test" {
+			t.Errorf("key in body = %q", body["key"])
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "ok", "adif_count": 1, "adif_errors": 0, "messages": []string{""},
+		})
+	})
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	qID := insertTestQSO(t, m.App.DB, makeTestQSO("SP9MOA"))
+
+	ok, _, err := postQSO(srv.URL, "fake-key-for-test", "1",
+		"<CALL:6>SP9MOA<EOR>", qID, "SP9MOA", m.App.DB)
+	if err != nil {
+		t.Errorf("postQSO: %v", err)
+	}
+	if !ok {
+		t.Error("postQSO should succeed")
+	}
+}
+
+// =============================================================================
+// Pass 15 — Wavelog FetchContacts (download) tests with httptest.Server
+// =============================================================================
+
+func TestFetchContacts_Success(t *testing.T) {
+	const adifResponse = `SP9MOA de DJ7NT
+<CALL:6>SP9MOA <BAND:3>20m <FREQ:7>14.2500 <MODE:3>SSB
+<QSO_DATE:8>20260614 <TIME_ON:6>120000 <RST_SENT:2>59 <RST_RCVD:2>59
+<GRIDSQUARE:4>JO90 <NAME:4>John <EOR>
+<CALL:5>W1AW <BAND:3>40m <FREQ:6>7.1850 <MODE:2>CW
+<QSO_DATE:8>20260615 <TIME_ON:6>130000 <RST_SENT:3>599 <RST_RCVD:3>579
+<GRIDSQUARE:6>FN31pr <EOR>`
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"exported_qsos": 2,
+			"lastfetchedid": "42",
+			"message":       "OK",
+			"adif":          adifResponse,
+		})
+	}))
+	defer srv.Close()
+
+	result, err := wavelog.FetchContacts(srv.URL, "test-key", "1", 0)
+	if err != nil {
+		t.Fatalf("FetchContacts: %v", err)
+	}
+	if result.ExportedQSOs != 2 {
+		t.Errorf("ExportedQSOs = %d, want 2", result.ExportedQSOs)
+	}
+	if result.LastFetchedID() != 42 {
+		t.Errorf("LastFetchedID = %d, want 42", result.LastFetchedID())
+	}
+	if result.ADIFPath == "" {
+		t.Error("ADIFPath should not be empty")
+	}
+	// Clean up temp file.
+	os.Remove(result.ADIFPath)
+}
+
+func TestFetchContacts_EmptyADIF(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"exported_qsos": 0,
+			"lastfetchedid": "0",
+			"message":       "No QSOs",
+			"adif":          "",
+		})
+	}))
+	defer srv.Close()
+
+	result, err := wavelog.FetchContacts(srv.URL, "test-key", "1", 0)
+	if err != nil {
+		t.Fatalf("FetchContacts with empty ADIF: %v", err)
+	}
+	if result.ExportedQSOs != 0 {
+		t.Errorf("ExportedQSOs = %d, want 0", result.ExportedQSOs)
+	}
+	os.Remove(result.ADIFPath)
+}
+
+func TestFetchContacts_ServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "internal error", 500)
+	}))
+	defer srv.Close()
+
+	_, err := wavelog.FetchContacts(srv.URL, "test-key", "1", 0)
+	if err == nil {
+		t.Error("FetchContacts should return error on HTTP 500")
+	}
+}
+
+func TestFetchContacts_AuthFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	_, err := wavelog.FetchContacts(srv.URL, "test-key", "1", 0)
+	if err == nil {
+		t.Error("FetchContacts should return error on HTTP 401")
+	}
+}
+
+func TestFetchContacts_InvalidJSON(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`not json`))
+	}))
+	defer srv.Close()
+
+	_, err := wavelog.FetchContacts(srv.URL, "test-key", "1", 0)
+	if err == nil {
+		t.Error("FetchContacts should return error on invalid JSON")
+	}
+}
+
+func TestFetchContacts_MissingParams(t *testing.T) {
+	_, err := wavelog.FetchContacts("", "key", "1", 0)
+	if err == nil {
+		t.Error("FetchContacts should fail with empty URL")
+	}
+	_, err = wavelog.FetchContacts("https://example.com", "", "1", 0)
+	if err == nil {
+		t.Error("FetchContacts should fail with empty API key")
+	}
+	_, err = wavelog.FetchContacts("https://example.com", "key", "", 0)
+	if err == nil {
+		t.Error("FetchContacts should fail with empty station ID")
+	}
+}
+
+func TestFetchContacts_HTMLResponse(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(503)
+		w.Write([]byte(`<html><body><h1>503 Maintenance</h1></body></html>`))
+	}))
+	defer srv.Close()
+
+	_, err := wavelog.FetchContacts(srv.URL, "test-key", "1", 0)
+	if err == nil {
+		t.Error("FetchContacts should return error on HTML maintenance page")
+	}
+}
+
+func TestFetchContacts_PayloadVerification(t *testing.T) {
+	var capturedBody map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&capturedBody)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"exported_qsos": 0,
+			"lastfetchedid": "0",
+			"message":       "",
+			"adif":          "",
+		})
+	}))
+	defer srv.Close()
+
+	result, err := wavelog.FetchContacts(srv.URL, "test-api-key", "42", 100)
+	if err != nil {
+		t.Fatalf("FetchContacts: %v", err)
+	}
+	os.Remove(result.ADIFPath)
+
+	if capturedBody["key"] != "test-api-key" {
+		t.Errorf("key = %q, want test-api-key", capturedBody["key"])
+	}
+	// station_id is sent as int in JSON
+	if capturedBody["fetchfromid"] != float64(100) {
+		t.Errorf("fetchfromid = %v, want 100", capturedBody["fetchfromid"])
 	}
 }

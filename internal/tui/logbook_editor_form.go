@@ -43,18 +43,41 @@ func (le *LogbookEditor) fillEditForm(q *qso.QSO) {
 	s(qefMyGrid, q.MyGridSquare)
 	s(qefMyRig, q.MyRig)
 	s(qefMyAntenna, q.MyAntenna)
+	s(qefMyCQZone, q.MyCQZone)
+	s(qefMyITUZone, q.MyITUZone)
+	s(qefMyDXCC, q.MyDXCC)
+	s(qefMySIG, q.MySIG)
+	s(qefMySIGInfo, q.MySIGInfo)
 	s(qefSource, q.Source)
+	s(qefWLStatus, q.WavelogUploaded)
 	sf(qefDistance, q.Distance)
 	sf(qefBearing, q.Bearing)
 	s(qefIOTA, q.IOTA)
 	s(qefSOTA, q.SOTARef)
 	s(qefPOTA, q.POTARef)
 	s(qefWWFF, q.WWFFRef)
+	s(qefSIG, q.SIG)
+	s(qefSIGInfo, q.SIGInfo)
 	s(qefMySOTA, q.MySOTARef)
 	s(qefMyPOTA, q.MyPOTARef)
 	s(qefMyWWFF, q.MyWWFFRef)
-	// WL Status is read-only — set via async upload
-	le.fields[qefWLStatus].SetValue(q.WavelogUploaded)
+	s(qefCQZone, q.CQZone)
+	s(qefITUZone, q.ITUZone)
+	s(qefExchSent, q.ExchSent)
+	s(qefExchRcvd, q.ExchRcvd)
+	s(qefSTXString, q.STXString)
+	s(qefSRXString, q.SRXString)
+	if q.STX != 0 {
+		s(qefSTX, fmt.Sprintf("%d", q.STX))
+	}
+	if q.SRX != 0 {
+		s(qefSRX, fmt.Sprintf("%d", q.SRX))
+	}
+	if q.ContestADIFID != "" {
+		s(qefContestID, q.ContestADIFID)
+	} else {
+		s(qefContestID, q.ContestID)
+	}
 }
 
 func (le *LogbookEditor) readEditForm() *qso.QSO {
@@ -64,7 +87,7 @@ func (le *LogbookEditor) readEditForm() *qso.QSO {
 		fmt.Sscanf(g(f), "%f", &v)
 		return v
 	}
-	return &qso.QSO{
+	q := &qso.QSO{
 		ID: le.editing.ID, Call: g(qefCall), QSODate: g(qefDate),
 		TimeOn: g(qefTimeOn), TimeOff: g(qefTimeOff), Band: g(qefBand),
 		Freq: gf(qefFreq), FreqRx: gf(qefFreqRx), Mode: g(qefMode), Submode: g(qefSubmode),
@@ -73,13 +96,23 @@ func (le *LogbookEditor) readEditForm() *qso.QSO {
 		Country: g(qefCountry), Comment: g(qefComment), Notes: g(qefNotes),
 		TXPower: g(qefTXPower), StationCallsign: g(qefStationCall),
 		Operator: g(qefOperator), MyGridSquare: g(qefMyGrid),
-		MyRig: g(qefMyRig), MyAntenna: g(qefMyAntenna), Source: g(qefSource),
+		MyRig: g(qefMyRig), MyAntenna: g(qefMyAntenna),
+		MyCQZone: g(qefMyCQZone), MyITUZone: g(qefMyITUZone), MyDXCC: g(qefMyDXCC), MySIG: g(qefMySIG), MySIGInfo: g(qefMySIGInfo), Source: g(qefSource),
 		Distance: gf(qefDistance), Bearing: gf(qefBearing),
 		IOTA: g(qefIOTA), SOTARef: g(qefSOTA), POTARef: g(qefPOTA), WWFFRef: g(qefWWFF),
+		SIG:       g(qefSIG),
+		SIGInfo:   g(qefSIGInfo),
 		MySOTARef: g(qefMySOTA), MyPOTARef: g(qefMyPOTA), MyWWFFRef: g(qefMyWWFF),
+		CQZone: g(qefCQZone), ITUZone: g(qefITUZone),
+		ExchSent:        g(qefExchSent),
+		ExchRcvd:        g(qefExchRcvd),
 		WavelogUploaded: g(qefWLStatus),
+		ContestID:       le.editing.ContestID,
+		ContestADIFID:   le.editing.ContestADIFID,
 		CreatedAt:       le.editing.CreatedAt,
 	}
+	q.NormalizeExchange()
+	return q
 }
 
 func (le *LogbookEditor) nextField() {

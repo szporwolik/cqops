@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
@@ -123,6 +122,7 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			c.station.BlurAll()
 			c.mode = chooserList
+			return c, nil
 
 		case c.mode == chooserConfirmDelete:
 			if c.dialog == nil {
@@ -142,11 +142,13 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case c.mode == chooserList && k.String() == "enter":
-			return c, c.handleEnter()
-
-		case c.mode == chooserList && k.String() == "e":
 			if len(c.names) > 0 {
 				c.startEdit(c.names[c.cursor])
+			}
+
+		case c.mode == chooserList && (k.String() == " " || k.Code == ' ' || k.String() == "a"):
+			if len(c.names) > 0 {
+				return c, c.handleEnter()
 			}
 
 		case c.mode == chooserList && k.String() == "insert":
@@ -244,32 +246,42 @@ func (c *LogbookChooser) viewList() string {
 	if len(c.names) == 0 {
 		b.WriteString("No logbooks configured.\n")
 	} else {
+		contentW := w - 8
+		if contentW > partnerMapMaxW-8 {
+			contentW = partnerMapMaxW - 8
+		}
+		if contentW < 20 {
+			contentW = 20
+		}
+
 		for i, id := range c.names {
 			lb := c.app.Config.Logbooks[id]
-			displayName := config.LogbookDisplayName(&lb)
+			dn := config.LogbookDisplayName(&lb)
+			call := lb.Station.Callsign
+			grid := lb.Station.Grid
+			if grid == "" {
+				grid = "—"
+			}
+
+			// Truncate/pad raw values to fixed column widths before styling.
+			nameVal := padOrTrunc(dn, 24)
+			callVal := padOrTrunc(call, 12)
+
 			prefix := "  "
-			active := ""
+			activeBadge := padOrTrunc("[      ]", 10)
 			if id == c.app.Config.State.ActiveLogbook {
-				active = "[Active]"
+				activeBadge = S.ToastSuccess.Render(padOrTrunc("[Active]", 10))
 			}
-			info := lb.Station.Callsign
-			if lb.Station.Grid != "" {
-				info += "  " + lb.Station.Grid
-			}
-			if info == "" {
-				info = lb.Description
-			}
+
 			if i == c.cursor {
 				prefix = S.FormPrefixOn.Render("> ")
+				nameVal = CursorStyle.Render(nameVal)
+				callVal = CursorStyle.Render(callVal)
+				grid = CursorStyle.Render(grid)
 			}
-			lbl := S.FormLabelWide.Align(lipgloss.Left).Render(active)
-			val := fmt.Sprintf("%s  %s", displayName, info)
-			if i == c.cursor {
-				lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(active)
-				val = CursorStyle.Render(val)
-			}
-			line := lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)
-			b.WriteString(padOrTrunc(line, w-4)) // inside menu box padding
+
+			line := prefix + activeBadge + nameVal + callVal + grid
+			b.WriteString(padOrTrunc(line, contentW))
 			if i < len(c.names)-1 {
 				b.WriteString("\n")
 			}
@@ -354,9 +366,9 @@ func (c *LogbookChooser) refreshNames() {
 
 func (c *LogbookChooser) startCreate() {
 	c.mode = chooserCreate
-	c.station.SetValues("", "", "", "", "", "")
+	c.station.SetValues("", "", "", "", "", "", "", 1, 0, 0, 0, "", "", "EU")
 	c.station.BlurAll()
-	c.station.Callsign.Focus()
+	c.station.Name.Focus()
 	c.editing = ""
 }
 
@@ -364,7 +376,7 @@ func (c *LogbookChooser) startEdit(id string) {
 	lb := c.app.Config.Logbooks[id]
 	c.mode = chooserEdit
 	c.editing = id
-	c.station.SetValues(lb.Station.Callsign, lb.Station.Operator, lb.Station.Grid, lb.Station.SOTARef, lb.Station.POTARef, lb.Station.WWFFRef)
+	c.station.SetValues(lb.Name, lb.Station.Callsign, lb.Station.Operator, lb.Station.Grid, lb.Station.SOTARef, lb.Station.POTARef, lb.Station.WWFFRef, lb.Station.IARURegion, lb.Station.CQZone, lb.Station.ITUZone, lb.Station.DXCC, lb.Station.SIG, lb.Station.SIGInfo, lb.Station.Continent)
 	c.station.SetWavelogValues(lb.Wavelog)
 	c.wlStatus = ""
 	c.wlStations = nil
@@ -373,14 +385,19 @@ func (c *LogbookChooser) startEdit(id string) {
 		c.wlStationID = lb.Wavelog.StationProfileID
 	}
 	c.station.BlurAll()
-	c.station.Callsign.Focus()
+	c.station.Name.Focus()
 }
 
 func (c *LogbookChooser) saveForm() tea.Cmd {
-	cs, op, gr, sotaRef, potaRef, wwffRef, wlEnabled, wlURL, wlKey, wlStationID := c.station.Values()
+	nm, cs, op, gr, sotaRef, potaRef, wwffRef, wlEnabled, wlURL, wlKey, wlStationID, iaruRegion, cqZone, ituZone, dxcc, sig, sigInfo, continent := c.station.Values()
 
 	if err := c.station.Validate(); err != nil {
-		c.toasts.Error(err.Error())
+		c.toasts.Warn(err.Error())
+		return nil
+	}
+
+	if nm == "" {
+		c.toasts.Warn("Station name cannot be empty")
 		return nil
 	}
 
@@ -388,7 +405,7 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 	var wl *config.WavelogConfig
 	if wlEnabled {
 		if wlStationID == "" {
-			c.toasts.Error("Wavelog enabled but Station ID not set — press Update to fetch")
+			c.toasts.Warn("Wavelog enabled but Station ID not set — press Update to fetch")
 			return nil
 		}
 		if wlURL != "" && wlKey != "" {
@@ -405,22 +422,29 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 	if c.mode == chooserCreate {
 		// Check for duplicate by callsign.
 		if _, _, found := config.FindLogbookByCallsign(c.app.Config, cs); found {
-			c.toasts.Error("Logbook with callsign " + cs + " already exists")
+			c.toasts.Warn("Logbook with callsign " + cs + " already exists")
 			return nil
 		}
 		id := config.NewID(cs)
 		prevRigName := c.app.Logbook.Station.RigName
 		c.app.Config.Logbooks[id] = config.Logbook{
-			ID:          id,
-			Description: "Created from TUI",
+			ID:   id,
+			Name: nm,
 			Station: config.Station{
-				Callsign: cs,
-				Operator: op,
-				Grid:     gr,
-				SOTARef:  sotaRef,
-				POTARef:  potaRef,
-				WWFFRef:  wwffRef,
-				RigName:  prevRigName,
+				Callsign:   cs,
+				Operator:   op,
+				Grid:       gr,
+				SOTARef:    sotaRef,
+				POTARef:    potaRef,
+				WWFFRef:    wwffRef,
+				RigName:    prevRigName,
+				IARURegion: iaruRegion,
+				CQZone:     cqZone,
+				ITUZone:    ituZone,
+				DXCC:       dxcc,
+				SIG:        sig,
+				SIGInfo:    sigInfo,
+				Continent:  continent,
 			},
 			Wavelog: wl,
 		}
@@ -431,23 +455,48 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 
 		c.names = append(c.names, id)
 		savedName = cs
-	} else {
-		id := c.editing
-		lb := c.app.Config.Logbooks[id]
-		lb.Station.Callsign = cs
-		lb.Station.Operator = op
-		lb.Station.Grid = gr
-		lb.Station.SOTARef = sotaRef
-		lb.Station.POTARef = potaRef
-		lb.Station.WWFFRef = wwffRef
-		lb.Wavelog = wl
-		c.app.Config.Logbooks[id] = lb
 
-		if id == c.app.LogbookName {
-			c.app.Logbook = &lb
+		// Open the new logbook's database and switch to it.
+		if err := c.app.SwitchLogbook(id); err != nil {
+			c.toasts.Error("Failed to open logbook: " + err.Error())
+			return nil
 		}
-		savedName = cs
+
+		c.mode = chooserList
+		c.station.BlurAll()
+		if err := config.Save(c.app.ConfigPath, c.app.Config); err != nil {
+			c.toasts.Error("Save " + savedName + " failed: " + err.Error())
+			return nil
+		}
+		c.toasts.Success("Logbook " + savedName + " created")
+		applog.Info("Logbook created", "name", savedName)
+		return func() tea.Msg { return logbookSwitchedMsg{} }
 	}
+
+	// Edit existing logbook.
+	id := c.editing
+	lb := c.app.Config.Logbooks[id]
+	lb.Name = nm
+	lb.Station.Callsign = cs
+	lb.Station.Operator = op
+	lb.Station.Grid = gr
+	lb.Station.SOTARef = sotaRef
+	lb.Station.POTARef = potaRef
+	lb.Station.WWFFRef = wwffRef
+	lb.Station.IARURegion = iaruRegion
+	lb.Station.CQZone = cqZone
+	lb.Station.ITUZone = ituZone
+	lb.Station.DXCC = dxcc
+	lb.Station.SIG = sig
+	lb.Station.SIGInfo = sigInfo
+	lb.Station.Continent = continent
+	lb.Wavelog = wl
+	c.app.Config.Logbooks[id] = lb
+
+	if id == c.app.LogbookName {
+		c.app.Logbook = &lb
+	}
+	savedName = cs
 
 	c.mode = chooserList
 	c.station.BlurAll()
@@ -468,29 +517,6 @@ func (c *LogbookChooser) updateStationIDField() {
 		c.station.WlStationID.SetValue(fmt.Sprintf("%s — %s (%s) %s", s.ID, s.Callsign, s.Name, s.Gridsquare))
 		c.wlStationID = s.ID
 	}
-}
-
-func (c *LogbookChooser) viewConfirmDelete() string {
-	id := c.names[c.cursor]
-	lb := c.app.Config.Logbooks[id]
-	displayName := config.LogbookDisplayName(&lb)
-	var b strings.Builder
-	w := c.width
-	if w < 40 {
-		w = 80
-	}
-	h := c.height
-	if h < 10 {
-		h = 24
-	}
-	contentH := h - 4
-	if contentH < 3 {
-		contentH = 3
-	}
-	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("  Delete logbook %q and ALL its QSOs?\n", displayName))
-	b.WriteString("  This cannot be undone. (y/N)")
-	return fillBody(b.String(), contentH)
 }
 
 func (c *LogbookChooser) deleteLogbook() tea.Cmd {

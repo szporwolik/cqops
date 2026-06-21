@@ -17,6 +17,7 @@ var modeSubmodes = map[string][]string{
 	"FM":           {},
 	"FSK441":       {},
 	"FSK":          {"SCAMP_FAST", "SCAMP_SLOW", "SCAMP_VSLOW"},
+	"FT2":          {}, // standalone mode per user convention (like FT8)
 	"FT8":          {},
 	"HELL":         {"FMHELL", "FSKH105", "FSKH245", "FSKHELL", "HELL80", "HELLX5", "HELLX9", "HFSK", "PSKHELL", "SLOWHELL"},
 	"ISCAT":        {"ISCAT-A", "ISCAT-B"},
@@ -29,7 +30,7 @@ var modeSubmodes = map[string][]string{
 	},
 	"JT44":   {},
 	"JT65":   {"JT65A", "JT65B", "JT65B2", "JT65C", "JT65C2"},
-	"MFSK":   {"FSQCALL", "FST4", "FST4W", "FT2", "FT4", "JS8", "JTMS", "MFSK4", "MFSK8", "MFSK11", "MFSK16", "MFSK22", "MFSK31", "MFSK32", "MFSK64", "MFSK64L", "MFSK128", "MFSK128L", "Q65"},
+	"MFSK":   {"FSQCALL", "FST4", "FST4W", "FT4", "JS8", "JTMS", "MFSK4", "MFSK8", "MFSK11", "MFSK16", "MFSK22", "MFSK31", "MFSK32", "MFSK64", "MFSK64L", "MFSK128", "MFSK128L", "Q65"},
 	"MSK144": {},
 	"MTONE":  {"SCAMP_OO", "SCAMP_OO_SLW"},
 	"MT63":   {},
@@ -84,6 +85,7 @@ var importOnlyModes = map[string]modeImport{
 	"DSTAR":    {"DIGITALVOICE", "DSTAR"},
 	"FMHELL":   {"HELL", "FMHELL"},
 	"FSK31":    {"PSK", "FSK31"},
+	"FT4":      {"MFSK", "FT4"},
 	"GTOR":     {"TOR", "GTOR"},
 	"HELL80":   {"HELL", "HELL80"},
 	"HFSK":     {"HELL", "HFSK"},
@@ -125,6 +127,8 @@ var flrigModeMap = map[string]string{
 	"USB":    "SSB",
 	"LSB":    "SSB",
 	"CW":     "CW",
+	"CW-L":   "CW",
+	"CW-U":   "CW",
 	"CWR":    "CW",
 	"RTTY":   "RTTY",
 	"RTTYR":  "RTTY",
@@ -191,6 +195,12 @@ func NormalizeMode(mode, submode string) (string, string) {
 				return mode, ""
 			}
 		}
+	}
+
+	// Legacy: FT8 and FT2 are standalone modes, not MFSK submodes.
+	// Some QSOs may have been stored as MFSK+FT8 or MFSK+FT2 before correction.
+	if mode == "MFSK" && (submode == "FT8" || submode == "FT2") {
+		return submode, ""
 	}
 
 	return mode, submode

@@ -18,8 +18,8 @@ var editorColTiers = []struct {
 	{[]string{"Date", "Time", "Call", "WL", "How", "Band", "Mode", "RSTs", "RSTr"}},
 	{[]string{"Date", "Time", "Call", "WL", "Src", "Band", "Mode", "RSTs", "RSTr", "DXCC"}},
 	{[]string{"Date", "Time", "Call", "WL", "Src", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name"}},
-	{[]string{"Date", "Time", "Call", "WL", "Src", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment"}},
-	{[]string{"Date", "Time", "Call", "WL", "Src", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Pwr"}},
+	{[]string{"Date", "Time", "Call", "WL", "Src", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Contest"}},
+	{[]string{"Date", "Time", "Call", "WL", "Src", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Pwr", "Contest"}},
 }
 
 // editorColWidths maps column titles to minimum widths.
@@ -27,7 +27,7 @@ var editorColWidths = map[string]int{
 	"Date": 10, "Time": 8, "Call": 10, "WL": 3, "Src": 3,
 	"Band": 5, "Mode": 5, "Sub": 4, "RSTs": 4, "RSTr": 4,
 	"DXCC": 6, "Name": 8, "Grid": 6, "QTH": 8,
-	"Comment": 8, "Dist": 5, "Pwr": 4,
+	"Comment": 8, "Dist": 5, "Pwr": 4, "Contest": 10,
 }
 
 // =============================================================================
@@ -44,9 +44,10 @@ func editorColValue(col string, q *qso.QSO) string {
 	case "Call":
 		return q.Call
 	case "WL":
-		if q.WavelogUploaded == "yes" {
+		switch q.WavelogUploaded {
+		case "yes":
 			return "Y"
-		} else if q.WavelogUploaded == "no" {
+		case "no":
 			return "N"
 		}
 		return ""
@@ -95,6 +96,11 @@ func editorColValue(col string, q *qso.QSO) string {
 		return ""
 	case "Pwr":
 		return q.TXPower
+	case "Contest":
+		if q.ContestADIFID != "" {
+			return q.ContestADIFID
+		}
+		return q.ContestID
 	}
 	return ""
 }

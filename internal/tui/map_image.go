@@ -51,6 +51,11 @@ type mapRenderer struct {
 
 func newMapRenderer() *mapRenderer { return &mapRenderer{} }
 
+// Invalidate clears the base image cache so the next View() fully rebuilds.
+func (mr *mapRenderer) Invalidate() {
+	mr.cached = ""
+}
+
 // View renders the map at the given terminal dimensions.
 // drawGrayline enables the day/night terminator overlay (CPU-friendly —
 // computed only on cache miss, i.e. dimension change or UTC-minute tick).

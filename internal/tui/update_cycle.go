@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strings"
+
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
@@ -35,13 +37,26 @@ func (m *Model) cycleLogbook() tea.Cmd {
 	displayName := config.LogbookDisplayName(m.App.Logbook)
 	m.toasts.Success("Logbook: " + displayName)
 	applog.Info("Logbook cycled", "name", displayName)
-	m.cachedStatus = ""
+	m.rc.status = ""
 	m.invalidatePartnerMapCache()
-	m.cachedLogStatsSig = ""
-	m.cachedPathSig = ""
-	m.wlForceCheck = true
+	m.rc.logStatsSig = ""
+	m.rc.pathSig = ""
+	m.rc.pathLine = ""
+	m.lookup.wlPrivateData = nil // WL data is logbook-specific
+	m.lookup.wlForceCheck = true
+
+	// Clear contest exchange fields, then re-apply prefill if the new
+	// logbook has an active contest with prefilling enabled.
+	m.fields[fieldExchSent].SetValue("")
+	m.fields[fieldExchRcvd].SetValue("")
+	m.prefillContestExchange()
 	m.needRefresh = true
-	return nil
+
+	// Recheck dupe and new-call status against the new logbook.
+	if strings.TrimSpace(m.fields[fieldCall].Value()) != "" {
+		m.checkDupe()
+	}
+	return m.refreshQSOS()
 }
 
 // cycleRig cycles to the next rig preset in alphabetical order (by model).
@@ -78,10 +93,12 @@ func (m *Model) cycleRig() tea.Cmd {
 		m.toasts.Error("Save rig failed: " + err.Error())
 		return nil
 	}
-	m.toasts.Success("Rig: " + rp.Model + " (" + rp.Antenna + ")")
-	applog.Info("Rig cycled", "name", rp.Model)
-	m.cachedStatus = ""
+	m.toasts.Success("Rig: " + config.RigDisplayName(&rp))
+	applog.Info("Rig cycled", "name", config.RigDisplayName(&rp))
+	m.rc.status = ""
 	m.invalidatePartnerMapCache()
-	m.cachedPathSig = ""
+	m.rc.pathSig = ""
+	m.refreshFlrigClient() // reconnect/disconnect flrig for the new rig
+	m.App.MaybeRestartWSJTX(rp.WsjtxEnabled, rp.WsjtxUDPHost, rp.WsjtxUDPPort)
 	return nil
 }

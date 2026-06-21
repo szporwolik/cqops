@@ -17,20 +17,24 @@ type RecentQSOs struct {
 	width  int
 	height int
 
-	// table is rebuilt on every View() from current data; it never receives
-	// Update calls so it's always read-only.
-	table table.Model
-
 	// View cache — avoids rebuilding the table on every frame when nothing changed.
 	cachedView   string
 	cachedW      int
 	cachedH      int
 	cachedQSOLen int
 
+	// Filtered view cache — same pattern as unfiltered cache but keyed on
+	// filterCall + filteredQSOs length to avoid table.New() every frame.
+	filteredCachedView string
+	filteredCachedW    int
+	filteredCachedH    int
+	filteredCachedLen  int
+
 	// Filtered mode: when filterCall is non-empty, only matching QSOs are shown.
-	filterCall    string
-	filteredQSOs  []qso.QSO
-	filterCacheID int64 // last QSO ID in filtered set — invalidated on new QSO
+	filterCall       string
+	filteredQSOs     []qso.QSO
+	filterCacheID    int64 // last QSO ID in filtered set — invalidated on new QSO
+	filterSuppressed bool  // set by ClearFilter to prevent refresh re-apply race
 }
 
 // NewRecentQSOs creates a read-only recent QSOs view.
@@ -49,16 +53,20 @@ func (r *RecentQSOs) SetQSOS(qsos []qso.QSO) {
 func (r *RecentQSOs) SetFilterCall(call string, qsos []qso.QSO) {
 	r.filterCall = strings.ToUpper(call)
 	r.filteredQSOs = qsos
+	r.filteredCachedView = "" // force rebuild
 	if len(qsos) > 0 {
 		r.filterCacheID = qsos[0].ID // newest matching QSO ID
 	}
 }
 
-// ClearFilter returns to normal (unfiltered) mode.
+// ClearFilter returns to normal (unfiltered) mode and suppresses the next
+// refreshQSOS filter re-apply to avoid a race with async filter commands.
 func (r *RecentQSOs) ClearFilter() {
 	r.filterCall = ""
 	r.filteredQSOs = nil
+	r.filteredCachedView = ""
 	r.filterCacheID = 0
+	r.filterSuppressed = true
 }
 
 // IsFiltered returns true when the table is in filtered mode.
@@ -94,11 +102,19 @@ func (r *RecentQSOs) View() string {
 	qsos := r.ActiveQSOs()
 	filtered := r.filterCall != ""
 
-	if r.cachedW == bodyW && r.cachedH == maxRows && r.cachedQSOLen == len(qsos) &&
-		r.cachedView != "" && !filtered {
-		return r.cachedView
+	// Filtered-mode cache — avoids table.New() every frame when the call
+	// highlight is the only difference (already rendered into the cached view).
+	if filtered {
+		if r.filteredCachedW == bodyW && r.filteredCachedH == maxRows &&
+			r.filteredCachedLen == len(qsos) && r.filteredCachedView != "" {
+			return r.filteredCachedView
+		}
+	} else {
+		if r.cachedW == bodyW && r.cachedH == maxRows && r.cachedQSOLen == len(qsos) &&
+			r.cachedView != "" {
+			return r.cachedView
+		}
 	}
-	// Always rebuild in filtered mode — callsign highlights are cheap.
 
 	var names []string
 	for _, t := range qsoColTiers {
@@ -205,7 +221,12 @@ func (r *RecentQSOs) View() string {
 
 	view := t.View()
 
-	if !filtered {
+	if filtered {
+		r.filteredCachedView = view
+		r.filteredCachedW = bodyW
+		r.filteredCachedH = maxRows
+		r.filteredCachedLen = len(qsos)
+	} else {
 		r.cachedView = view
 		r.cachedW = bodyW
 		r.cachedH = maxRows

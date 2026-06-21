@@ -33,7 +33,7 @@ func centerAndBorderMap(mapBox string, contentW, boxW int) string {
 
 // menuBoxStyle is the bordered box used by config menus.
 var menuBoxStyle = lipgloss.NewStyle().
-	Border(lipgloss.NormalBorder()).
+	Border(lipgloss.RoundedBorder()).
 	BorderForeground(P.Border).
 	Padding(1, 2)
 
@@ -84,15 +84,6 @@ func fillBody(content string, contentH int) string {
 		return content
 	}
 	return content + strings.Repeat("\n", contentH-current)
-}
-
-// clamp renders s padded/truncated to exactly w cells with spaces.
-// An empty string renders as w spaces.
-func clamp(s string, w int) string {
-	if s == "" {
-		return strings.Repeat(" ", w)
-	}
-	return padOrTrunc(s, w)
 }
 
 // padOrTrunc returns s truncated or padded with spaces to exactly w cells.
@@ -164,21 +155,43 @@ func newTextinput() textinput.Model {
 }
 
 // truncateText truncates s to maxW visual cells, appending "…" if needed.
+// ANSI escape sequences (e.g. \x1b[38;5;212m) are skipped and don't count
+// toward the visual width.
 func truncateText(s string, maxW int) string {
 	if maxW <= 1 {
 		return ""
 	}
 	w := 0
 	runes := []rune(s)
-	for i, r := range runes {
+	out := make([]rune, 0, len(runes))
+	inEsc := false
+	for i := 0; i < len(runes); i++ {
+		r := runes[i]
+		// Detect ANSI escape start: ESC [ ... (CSI sequences)
+		if !inEsc && r == '\x1b' && i+1 < len(runes) && runes[i+1] == '[' {
+			inEsc = true
+			out = append(out, r, runes[i+1])
+			i++ // skip the '['
+			continue
+		}
+		if inEsc {
+			out = append(out, r)
+			// ANSI sequences end with a letter (m, J, H, etc.) or bell
+			if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') {
+				inEsc = false
+			}
+			continue
+		}
 		rw := 1
 		if r > 0xffff {
 			rw = 2
 		}
 		if w+rw >= maxW {
-			return string(runes[:i]) + "\u2026"
+			out = append(out, '\u2026') // ellipsis
+			return string(out)
 		}
 		w += rw
+		out = append(out, r)
 	}
-	return s
+	return string(out)
 }

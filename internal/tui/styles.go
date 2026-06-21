@@ -65,8 +65,10 @@ type Styles struct {
 	FormFocusedWide lipgloss.Style // wider focused label for menus (17 cells)
 	FormLabelXL     lipgloss.Style // extra-wide for notifications (36 cells)
 	FormFocusedXL   lipgloss.Style // extra-wide focused for notifications (36 cells)
-	FormLabelGen    lipgloss.Style // medium for General settings (22 cells)
-	FormFocusedGen  lipgloss.Style // medium focused for General settings (22 cells)
+	FormLabelGen    lipgloss.Style // medium for General settings (30 cells)
+	FormFocusedGen  lipgloss.Style // medium focused for General settings (30 cells)
+	FormLabelCtx    lipgloss.Style // wider for Contest (28 cells)
+	FormFocusedCtx  lipgloss.Style // wider focused for Contest (28 cells)
 	FormPrefixOn    lipgloss.Style
 	FormPrefixOff   lipgloss.Style
 	Input           lipgloss.Style
@@ -93,6 +95,11 @@ type Styles struct {
 	MapPartner lipgloss.Style
 	MapBoth    lipgloss.Style
 	MapGrid    lipgloss.Style
+
+	// Band plan tabs
+	TabActive    lipgloss.Style
+	TabInactive  lipgloss.Style
+	TabSeparator lipgloss.Style
 
 	// Confirm dialog
 	ConfirmTitle  lipgloss.Style
@@ -134,8 +141,12 @@ var S = Styles{
 	FormFocusedXL: lipgloss.NewStyle().Width(36).Foreground(P.Cursor),
 
 	// Medium variants for General settings — wider than Wide, narrower than XL.
-	FormLabelGen:   lipgloss.NewStyle().Width(22).Foreground(P.TextMuted),
-	FormFocusedGen: lipgloss.NewStyle().Width(22).Foreground(P.Cursor),
+	FormLabelGen:   lipgloss.NewStyle().Width(30).Foreground(P.TextMuted),
+	FormFocusedGen: lipgloss.NewStyle().Width(30).Foreground(P.Cursor),
+
+	// Wider variants for Contest submenu — accommodate long exchange labels.
+	FormLabelCtx:   lipgloss.NewStyle().Width(28).Foreground(P.TextMuted),
+	FormFocusedCtx: lipgloss.NewStyle().Width(28).Foreground(P.Cursor),
 
 	ToastInfo:    lipgloss.NewStyle().Foreground(P.Info),
 	ToastSuccess: lipgloss.NewStyle().Foreground(P.Success),
@@ -155,6 +166,10 @@ var S = Styles{
 	MapPartner: lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Background(lipgloss.Color("0")).Bold(true),
 	MapBoth:    lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Background(lipgloss.Color("0")).Bold(true),
 	MapGrid:    lipgloss.NewStyle().Foreground(P.TextMuted),
+
+	TabActive:    lipgloss.NewStyle().Bold(true).Foreground(P.Cursor),
+	TabInactive:  lipgloss.NewStyle().Foreground(P.TextMuted),
+	TabSeparator: lipgloss.NewStyle().Foreground(P.TextDim),
 
 	ConfirmTitle:  lipgloss.NewStyle().Bold(true).Foreground(P.Primary),
 	ConfirmMsg:    lipgloss.NewStyle().Foreground(P.Text),
@@ -191,9 +206,9 @@ var (
 	// pathMutedStyle is used for the short-path info line when no path.
 	pathMutedStyle = lipgloss.NewStyle().Foreground(P.TextMuted)
 
-	// Border box style — simple border, no background fill.
+	// Border box style — rounded border, no background fill.
 	borderBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder()).
+			Border(lipgloss.RoundedBorder()).
 			BorderForeground(P.Border).
 			Padding(0, 1)
 
@@ -203,10 +218,17 @@ var (
 			BorderForeground(P.Border).
 			Padding(1, 2)
 
+	// contestBoxStyle for contest info box on QSO screen.
+	contestBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(P.Warning).
+			Padding(0, 1)
+
 	// statusDotOn / statusDotOff — pre-allocated integration indicator styles.
 	// Airbus philosophy: default (white) when online, red when offline.
-	statusDotOnStyle  = lipgloss.NewStyle().Foreground(P.Text)
-	statusDotOffStyle = lipgloss.NewStyle().Foreground(P.Error)
+	statusDotOnStyle   = lipgloss.NewStyle().Foreground(P.Text)
+	statusDotOffStyle  = lipgloss.NewStyle().Foreground(P.Error)
+	statusDotWarnStyle = lipgloss.NewStyle().Foreground(P.Warning)
 
 	// utcLabelStyle — "UTC " prefix in status bar.
 	utcLabelStyle = lipgloss.NewStyle().Foreground(P.TextMuted)

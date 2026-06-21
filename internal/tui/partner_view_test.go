@@ -16,7 +16,7 @@ func TestPartnerViewRender(t *testing.T) {
 	m.height = 30
 
 	// Set up partner data
-	m.partnerData = &qrz.CallData{
+	m.lookup.partnerData = &qrz.CallData{
 		Callsign: "SP9MOA",
 		Name:     "John",
 		Grid:     "JO90",
@@ -37,7 +37,7 @@ func TestPartnerViewNoData(t *testing.T) {
 	m := newTestModel()
 	m.width = 100
 	m.height = 30
-	m.partnerData = nil
+	m.lookup.partnerData = nil
 
 	// Empty call should render nothing
 	m.fields[fieldCall].SetValue("")
@@ -53,7 +53,7 @@ func TestPartnerViewNoOwnGrid(t *testing.T) {
 	m.height = 30
 	m.App.Logbook.Station.Grid = ""
 
-	m.partnerData = &qrz.CallData{
+	m.lookup.partnerData = &qrz.CallData{
 		Callsign: "SP9MOA",
 		Grid:     "JO90",
 	}
@@ -74,7 +74,7 @@ func TestPartnerViewMapCache(t *testing.T) {
 	m.App.Logbook.Station.Grid = "JO90"
 	m.App.Config.General.RenderMap = true
 
-	m.partnerData = &qrz.CallData{
+	m.lookup.partnerData = &qrz.CallData{
 		Callsign: "SP9MOA",
 		Grid:     "JN18",
 	}
@@ -84,7 +84,7 @@ func TestPartnerViewMapCache(t *testing.T) {
 	if view1 == "" {
 		t.Fatal("viewPartner returned empty")
 	}
-	sig1 := m.partnerViewCacheSig
+	sig1 := m.rc.partnerViewSig
 	if sig1 == "" {
 		t.Error("partnerViewCacheSig should be set after first render")
 	}
@@ -94,7 +94,7 @@ func TestPartnerViewMapCache(t *testing.T) {
 	if view2 != view1 {
 		t.Error("Cached view should be identical to first render")
 	}
-	sig2 := m.partnerViewCacheSig
+	sig2 := m.rc.partnerViewSig
 	if sig1 != sig2 {
 		t.Error("Cache signature should not change between renders with same state")
 	}
@@ -106,20 +106,20 @@ func TestPartnerViewMapCacheInvalidateOnResize(t *testing.T) {
 	m.height = 30
 	m.App.Logbook.Station.Grid = "JO90"
 	m.App.Config.General.RenderMap = true
-	m.partnerData = &qrz.CallData{Callsign: "SP9MOA", Grid: "JN18"}
+	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", Grid: "JN18"}
 
 	m.viewPartner()
-	sig1 := m.partnerViewCacheSig
+	sig1 := m.rc.partnerViewSig
 
 	// Simulate resize
 	m.width = 80
 	m.invalidatePartnerMapCache()
-	if m.partnerViewCacheSig != "" {
+	if m.rc.partnerViewSig != "" {
 		t.Error("View cache sig should be empty after invalidation")
 	}
 
 	m.viewPartner()
-	sig2 := m.partnerViewCacheSig
+	sig2 := m.rc.partnerViewSig
 	if sig1 == sig2 {
 		t.Error("Cache signature should change after resize")
 	}
@@ -131,17 +131,17 @@ func TestPartnerViewMapCacheInvalidateOnPartnerChange(t *testing.T) {
 	m.height = 30
 	m.App.Logbook.Station.Grid = "JO90"
 	m.App.Config.General.RenderMap = true
-	m.partnerData = &qrz.CallData{Callsign: "SP9MOA", Grid: "JN18"}
+	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", Grid: "JN18"}
 
 	m.viewPartner()
-	sig1 := m.partnerViewCacheSig
+	sig1 := m.rc.partnerViewSig
 
 	// Change partner
-	m.partnerData = &qrz.CallData{Callsign: "DJ7NT", Grid: "JO30"}
+	m.lookup.partnerData = &qrz.CallData{Callsign: "DJ7NT", Grid: "JO30"}
 	m.invalidatePartnerMapCache()
 
 	m.viewPartner()
-	sig2 := m.partnerViewCacheSig
+	sig2 := m.rc.partnerViewSig
 	if sig1 == sig2 {
 		t.Error("Cache signature should change when partner changes")
 	}
@@ -183,7 +183,7 @@ func TestPartnerViewRenderWLInfo(t *testing.T) {
 	// WL enabled, lookup not yet done — should show "pending"
 	m2 := newTestModel()
 	m2.App.Logbook.Wavelog = &config.WavelogConfig{Enabled: true, URL: "https://example.com", APIKey: "test-key"}
-	m2.wlLookupDone = false
+	m2.lookup.wlLookupDone = false
 	info2 := m2.renderWLInfo(40)
 	if !strings.Contains(info2, "pending") {
 		t.Error("renderWLInfo should show 'pending' when WL enabled but lookup not yet done")
@@ -192,7 +192,7 @@ func TestPartnerViewRenderWLInfo(t *testing.T) {
 	// WL enabled, lookup completed with no data — should show "No WL data"
 	m3 := newTestModel()
 	m3.App.Logbook.Wavelog = &config.WavelogConfig{Enabled: true, URL: "https://example.com", APIKey: "test-key"}
-	m3.wlLookupDone = true
+	m3.lookup.wlLookupDone = true
 	info3 := m3.renderWLInfo(40)
 	if !strings.Contains(info3, "No WL data") {
 		t.Error("renderWLInfo should show 'No WL data' when lookup completed with no results")
@@ -203,7 +203,7 @@ func TestPartnerViewNarrowWidth(t *testing.T) {
 	m := newTestModel()
 	m.width = 30
 	m.height = 20
-	m.partnerData = &qrz.CallData{Callsign: "SP9MOA", Grid: "JO90"}
+	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", Grid: "JO90"}
 
 	view := m.viewPartner()
 	if view == "" {
@@ -273,8 +273,8 @@ func TestRenderLogbookRowsWLFirst(t *testing.T) {
 	}
 
 	// Set local stats: call already worked.
-	m.cachedLogStats = store.LogbookStats{CallWorked: true, QSOCount: 3}
-	m.cachedLogStatsSig = "SP9MOA||"
+	m.rc.logStats = store.LogbookStats{CallWorked: true, QSOCount: 3}
+	m.rc.logStatsSig = "SP9MOA||"
 	rows = m.renderLogbookRows(d, 40)
 	// Without WL data, should use local: call worked → N.
 	// We can verify the rows still contain the label.
@@ -306,14 +306,14 @@ func TestPartnerViewCache(t *testing.T) {
 	m.width = 100
 	m.height = 30
 	m.App.Logbook.Station.Grid = "JO90"
-	m.partnerData = &qrz.CallData{Callsign: "SP9MOA", Grid: "JO90"}
+	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", Grid: "JO90"}
 
 	// First render — builds and caches.
 	v1 := m.viewPartner()
 	if v1 == "" {
 		t.Fatal("viewPartner returned empty")
 	}
-	if m.partnerViewCacheSig == "" {
+	if m.rc.partnerViewSig == "" {
 		t.Error("partnerViewCacheSig should be set after first render")
 	}
 
@@ -325,7 +325,7 @@ func TestPartnerViewCache(t *testing.T) {
 
 	// Invalidate and re-render — cache should rebuild.
 	m.invalidatePartnerMapCache()
-	if m.partnerViewCacheSig != "" {
+	if m.rc.partnerViewSig != "" {
 		t.Error("partnerViewCacheSig should be empty after invalidation")
 	}
 	v3 := m.viewPartner()
@@ -344,7 +344,7 @@ func TestPhotoBox_HiddenWhenDisabled(t *testing.T) {
 	m.height = 50
 	m.App.Logbook.Station.Grid = "JO90"
 	m.App.Config.General.PictureAtQRZPane = false
-	m.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
+	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
 
 	view := m.viewPartner()
 	if strings.Contains(view, "Photo") {
@@ -358,7 +358,7 @@ func TestPhotoBox_HiddenWhenNarrow(t *testing.T) {
 	m.height = 50
 	m.App.Logbook.Station.Grid = "JO90"
 	m.App.Config.General.PictureAtQRZPane = true
-	m.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
+	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
 
 	view := m.viewPartner()
 	if strings.Contains(view, "Photo") {
@@ -372,7 +372,7 @@ func TestPhotoBox_HiddenWhenNoImageURL(t *testing.T) {
 	m.height = 50
 	m.App.Logbook.Station.Grid = "JO90"
 	m.App.Config.General.PictureAtQRZPane = true
-	m.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: ""}
+	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: ""}
 
 	view := m.viewPartner()
 	if strings.Contains(view, "Photo") {
@@ -386,7 +386,7 @@ func TestPhotoBox_ShowsLoadingWhenNoContent(t *testing.T) {
 	m.height = 50
 	m.App.Logbook.Station.Grid = "JO90"
 	m.App.Config.General.PictureAtQRZPane = true
-	m.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
+	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
 
 	// partnerPicViewer has no content yet — should show "Loading…".
 	view := m.viewPartner()
@@ -404,7 +404,7 @@ func TestPhotoBox_AppearsOnWideScreen(t *testing.T) {
 	m.height = 50
 	m.App.Logbook.Station.Grid = "JO90"
 	m.App.Config.General.PictureAtQRZPane = true
-	m.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
+	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
 
 	view := m.viewPartner()
 	if !strings.Contains(view, "Photo") {
@@ -418,7 +418,7 @@ func TestPhotoBox_CacheInvalidation(t *testing.T) {
 	m.height = 50
 	m.App.Logbook.Station.Grid = "JO90"
 	m.App.Config.General.PictureAtQRZPane = true
-	m.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
+	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
 
 	// First render — caches with empty photo content.
 	v1 := m.viewPartner()
@@ -428,7 +428,7 @@ func TestPhotoBox_CacheInvalidation(t *testing.T) {
 
 	// Simulate photo loading by putting content in the viewer (same URL).
 	// The cache should miss because content hash changed.
-	m.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
+	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
 	m.invalidatePartnerMapCache()
 	v2 := m.viewPartner()
 	// Both should render without panicking.
@@ -443,15 +443,15 @@ func TestPhotoBox_DimensionsStored(t *testing.T) {
 	m.height = 50
 	m.App.Logbook.Station.Grid = "JO90"
 	m.App.Config.General.PictureAtQRZPane = true
-	m.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
+	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
 
 	m.viewPartner()
 
-	if m.partnerPicW < 25 {
-		t.Errorf("partnerPicW should be >= 25, got %d", m.partnerPicW)
+	if m.photo.partnerPicW < 25 {
+		t.Errorf("partnerPicW should be >= 25, got %d", m.photo.partnerPicW)
 	}
-	if m.partnerPicH < 4 {
-		t.Errorf("partnerPicH should be >= 4, got %d", m.partnerPicH)
+	if m.photo.partnerPicH < 4 {
+		t.Errorf("partnerPicH should be >= 4, got %d", m.photo.partnerPicH)
 	}
 }
 
@@ -461,21 +461,21 @@ func TestPhotoBox_LastPartnerPicURLTracked(t *testing.T) {
 	m.height = 50
 	m.App.Logbook.Station.Grid = "JO90"
 	m.App.Config.General.PictureAtQRZPane = true
-	m.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
+	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
 
 	m.viewPartner()
 
-	if m.lastPartnerPicURL != "https://example.com/photo.jpg" {
-		t.Errorf("lastPartnerPicURL = %q; want the image URL", m.lastPartnerPicURL)
+	if m.photo.partnerPicURL != "https://example.com/photo.jpg" {
+		t.Errorf("lastPartnerPicURL = %q; want the image URL", m.photo.partnerPicURL)
 	}
-	if !m.partnerPicNeedLoad {
+	if !m.photo.partnerPicNeedLoad {
 		t.Error("partnerPicNeedLoad should be true on first render with new URL")
 	}
 
 	// Second render with same URL — should NOT trigger reload.
-	m.partnerPicNeedLoad = false
+	m.photo.partnerPicNeedLoad = false
 	m.viewPartner()
-	if m.partnerPicNeedLoad {
+	if m.photo.partnerPicNeedLoad {
 		t.Error("partnerPicNeedLoad should be false when URL unchanged")
 	}
 }
@@ -486,7 +486,7 @@ func TestPhotoBox_DoesNotAffectLayoutWhenDisabled(t *testing.T) {
 	m.height = 50
 	m.App.Logbook.Station.Grid = "JO90"
 	m.App.Config.General.PictureAtQRZPane = false
-	m.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
+	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
 
 	viewWithPhoto := m.viewPartner()
 

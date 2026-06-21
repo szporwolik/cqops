@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/app"
@@ -143,26 +142,52 @@ func TestQSOFormEmptyValues(t *testing.T) {
 	}
 }
 
-func TestQSOFormNextField(t *testing.T) {
+func TestQSOFormNextRowField(t *testing.T) {
 	m := newTestModel()
 	m.focus = fieldCall
 	m.fields[fieldCall].Focus()
 
 	initialFocus := m.focus
-	m.nextField()
+	m.nextRowField()
 	if m.focus == initialFocus {
-		t.Error("nextField did not change focus from Call")
+		t.Error("nextRowField did not change focus from Call")
+	}
+	// Vertical next from Call should go to RSTSent (next field in enum order).
+	if m.focus != fieldRSTSent {
+		t.Errorf("nextRowField from Call gave focus=%d, want fieldRSTSent=%d", m.focus, fieldRSTSent)
 	}
 }
 
-func TestQSOFormPrevField(t *testing.T) {
+func TestQSOFormPrevRowField(t *testing.T) {
 	m := newTestModel()
 	m.focus = fieldTime // second field
 	m.fields[fieldTime].Focus()
 
-	m.prevField()
+	m.prevRowField()
 	if m.focus != fieldDate {
-		t.Errorf("prevField should move to Date from Time, got focus=%d", m.focus)
+		t.Errorf("prevRowField should move to Date from Time, got focus=%d", m.focus)
+	}
+}
+
+func TestQSOFormNextFieldHorizontal(t *testing.T) {
+	m := newTestModel()
+	// Call is left[2]; horizontal Tab should go to middle[2] = Name.
+	m.focus = fieldCall
+	m.fields[fieldCall].Focus()
+	m.nextField()
+	if m.focus != fieldName {
+		t.Errorf("horizontal nextField from Call gave focus=%d, want fieldName=%d", m.focus, fieldName)
+	}
+}
+
+func TestQSOFormPrevFieldHorizontal(t *testing.T) {
+	m := newTestModel()
+	// Time is left[1]; horizontal Shift+Tab should go to right[1] = FreqRx.
+	m.focus = fieldTime
+	m.fields[fieldTime].Focus()
+	m.prevField()
+	if m.focus != fieldFreqRx {
+		t.Errorf("horizontal prevField from Time gave focus=%d, want fieldFreqRx=%d", m.focus, fieldFreqRx)
 	}
 }
 
@@ -281,22 +306,17 @@ func TestQSOFormPathRowNoOwnGrid(t *testing.T) {
 	m.App.Logbook.Station.Grid = ""        // no own grid
 	m.fields[fieldCall].SetValue("SP9MOA") // callsign entered
 	m.fields[fieldGrid].SetValue("JN18")
+	m.rc.pathCall = "SP9MOA" // simulate commitCall()
 
 	row := m.formPathRow(90)
-	if row == "" {
-		t.Error("formPathRow returned empty — should fall back to station profile")
-	}
-	// Falls back to station profile when no own grid.
-	if !strings.Contains(row, "Op") {
-		t.Error("formPathRow should show station profile when no own grid")
+	// When callsign is entered but grids are unavailable, only badges
+	// (DUPE!, New Call!, New DXCC!) are shown — the station profile is
+	// reserved for when no callsign is present at all.
+	// In this test there are no badges, so the row may be empty.
+	if strings.Contains(row, "Op") || strings.Contains(row, "Rig") {
+		t.Error("formPathRow should NOT show station profile when a callsign is entered (badges only)")
 	}
 }
-
-// Verify no import issues with textinput
-var _ = textinput.New
-
-// Verify lipgloss import
-var _ = lipgloss.NewStyle
 
 // Verify tea import
 var _ = tea.Quit
@@ -310,18 +330,18 @@ func TestCommitCall(t *testing.T) {
 	if cur != "SP9MOA" {
 		t.Errorf("commitCall: return = %q, want %q", cur, "SP9MOA")
 	}
-	if m.pathCall != "SP9MOA" {
-		t.Errorf("commitCall: pathCall = %q, want %q", m.pathCall, "SP9MOA")
+	if m.rc.pathCall != "SP9MOA" {
+		t.Errorf("commitCall: pathCall = %q, want %q", m.rc.pathCall, "SP9MOA")
 	}
-	if m.cachedPathSig != "" {
-		t.Errorf("commitCall: cachedPathSig should be empty after commit, got %q", m.cachedPathSig)
+	if m.rc.pathSig != "" {
+		t.Errorf("commitCall: cachedPathSig should be empty after commit, got %q", m.rc.pathSig)
 	}
 }
 
 func TestCommitCallInvalid(t *testing.T) {
 	m := newTestModel()
-	m.pathCall = "OLD"
-	m.cachedPathSig = "something"
+	m.rc.pathCall = "OLD"
+	m.rc.pathSig = "something"
 
 	// No letters — invalid callsign.
 	m.fields[fieldCall].SetValue("12345")
@@ -330,26 +350,26 @@ func TestCommitCallInvalid(t *testing.T) {
 	if cur != "" {
 		t.Errorf("commitCall with invalid call: return = %q, want empty", cur)
 	}
-	if m.pathCall != "" {
-		t.Errorf("commitCall with invalid call: pathCall should be cleared, got %q", m.pathCall)
+	if m.rc.pathCall != "" {
+		t.Errorf("commitCall with invalid call: pathCall should be cleared, got %q", m.rc.pathCall)
 	}
-	if m.cachedPathSig != "" {
-		t.Errorf("commitCall with invalid call: cachedPathSig should be cleared, got %q", m.cachedPathSig)
+	if m.rc.pathSig != "" {
+		t.Errorf("commitCall with invalid call: cachedPathSig should be cleared, got %q", m.rc.pathSig)
 	}
 }
 
 func TestCommitCallEmptyCall(t *testing.T) {
 	m := newTestModel()
-	m.pathCall = "OLD"
-	m.cachedPathSig = "something"
+	m.rc.pathCall = "OLD"
+	m.rc.pathSig = "something"
 
 	m.commitCall() // field is empty
 
-	if m.pathCall != "" {
-		t.Errorf("commitCall with empty field: pathCall = %q, want empty", m.pathCall)
+	if m.rc.pathCall != "" {
+		t.Errorf("commitCall with empty field: pathCall = %q, want empty", m.rc.pathCall)
 	}
-	if m.cachedPathSig != "" {
-		t.Errorf("commitCall with empty field: cachedPathSig should be cleared, got %q", m.cachedPathSig)
+	if m.rc.pathSig != "" {
+		t.Errorf("commitCall with empty field: cachedPathSig should be cleared, got %q", m.rc.pathSig)
 	}
 }
 
@@ -361,10 +381,10 @@ func TestFormPathRowNewCallBannerWLFirst(t *testing.T) {
 	m.fields[fieldBand].SetValue("20m")
 	m.fields[fieldMode].SetValue("SSB")
 	m.fields[fieldGrid].SetValue("PG66pa")
-	m.pathCall = "VK3A"
+	m.rc.pathCall = "VK3A"
 
 	// WL says NOT worked (new call).
-	m.wlPrivateData = &wavelog.PrivateLookupResult{}
+	m.lookup.wlPrivateData = &wavelog.PrivateLookupResult{}
 	// No WL data means it defaults to false for Worked(), which means NOT worked → new.
 	// We can't easily set WL raw data, but nil WL acts as "no data".
 
@@ -374,7 +394,7 @@ func TestFormPathRowNewCallBannerWLFirst(t *testing.T) {
 	}
 
 	// Clear WL — banner should still show based on local.
-	m.wlPrivateData = nil
+	m.lookup.wlPrivateData = nil
 	row = m.formPathRow(100)
 	if !strings.Contains(row, "New Call!") {
 		t.Error("formPathRow should show 'New Call!' based on local when WL absent")
@@ -386,11 +406,11 @@ func TestFormPathRowNewCallBannerNotShownWhenWorked(t *testing.T) {
 	m.width = 100
 	m.fields[fieldCall].SetValue("SP9MOA")
 	m.fields[fieldGrid].SetValue("JN18")
-	m.pathCall = "SP9MOA"
+	m.rc.pathCall = "SP9MOA"
 
 	// Local stats: call already worked.
-	m.cachedLogStats = store.LogbookStats{CallWorked: true, QSOCount: 5}
-	m.cachedLogStatsSig = "SP9MOA||"
+	m.rc.logStats = store.LogbookStats{CallWorked: true, QSOCount: 5}
+	m.rc.logStatsSig = "SP9MOA||"
 
 	row := m.formPathRow(100)
 	if strings.Contains(row, "New Call!") {
@@ -403,8 +423,8 @@ func TestFormPathRowNewDXCCBanner(t *testing.T) {
 	m.width = 100
 	m.fields[fieldCall].SetValue("VK3A")
 	m.fields[fieldGrid].SetValue("PG66pa")
-	m.pathCall = "VK3A"
-	m.cachedLogStats = store.LogbookStats{CallWorked: false}
+	m.rc.pathCall = "VK3A"
+	m.rc.logStats = store.LogbookStats{CallWorked: false}
 
 	// No WL data → no DXCC banner.
 	row := m.formPathRow(100)
@@ -418,7 +438,7 @@ func TestFormPathRowCacheInvalidation(t *testing.T) {
 	m.width = 100
 	m.fields[fieldCall].SetValue("VK3A")
 	m.fields[fieldGrid].SetValue("PG66pa")
-	m.pathCall = "VK3A"
+	m.rc.pathCall = "VK3A"
 
 	// First render — builds and caches.
 	r1 := m.formPathRow(100)
@@ -428,13 +448,13 @@ func TestFormPathRowCacheInvalidation(t *testing.T) {
 
 	// Second render with same inputs — should return cached.
 	// cachedPathSig should be non-empty after first render.
-	if m.cachedPathSig == "" {
+	if m.rc.pathSig == "" {
 		t.Error("cachedPathSig should be set after first render")
 	}
 
 	// Call commitCall — cache should be invalidated.
 	m.commitCall()
-	if m.cachedPathSig != "" {
+	if m.rc.pathSig != "" {
 		t.Error("cachedPathSig should be empty after commitCall()")
 	}
 
@@ -666,16 +686,16 @@ func TestOnFieldExitCall(t *testing.T) {
 	m.onFieldExit()
 
 	// Call should be committed (normalized)
-	if m.pathCall != "DJ7NT" {
-		t.Errorf("onFieldExit call: pathCall = %q, want DJ7NT", m.pathCall)
+	if m.rc.pathCall != "DJ7NT" {
+		t.Errorf("onFieldExit call: pathCall = %q, want DJ7NT", m.rc.pathCall)
 	}
 	// RST should be auto-filled
 	if m.fields[fieldRSTSent].Value() != "59" {
 		t.Errorf("onFieldExit call: RST sent should be auto-filled, got %q", m.fields[fieldRSTSent].Value())
 	}
-	// QRZ lookup should be flagged
-	if !m.qrzNeed {
-		t.Error("onFieldExit call: qrzNeed should be true for new call")
+	// QRZ lookup should be dispatched (via pendingLookupCmd).
+	if m.lookup.pendingLookupCmd == nil {
+		t.Error("onFieldExit call: pendingLookupCmd should be set for new call")
 	}
 }
 
@@ -687,8 +707,8 @@ func TestOnFieldExitCallInvalid(t *testing.T) {
 	m.onFieldExit()
 
 	// Invalid call should not set pathCall
-	if m.pathCall != "" {
-		t.Errorf("onFieldExit invalid call: pathCall = %q, want empty", m.pathCall)
+	if m.rc.pathCall != "" {
+		t.Errorf("onFieldExit invalid call: pathCall = %q, want empty", m.rc.pathCall)
 	}
 }
 
@@ -699,8 +719,8 @@ func TestOnFieldExitGrid(t *testing.T) {
 
 	m.onFieldExit()
 
-	if m.pathGrid != "JN18" {
-		t.Errorf("onFieldExit grid: pathGrid = %q, want JN18", m.pathGrid)
+	if m.rc.pathGrid != "JN18" {
+		t.Errorf("onFieldExit grid: pathGrid = %q, want JN18", m.rc.pathGrid)
 	}
 }
 

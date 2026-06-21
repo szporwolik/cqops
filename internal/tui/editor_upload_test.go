@@ -2,7 +2,11 @@ package tui
 
 import (
 	"database/sql"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -474,7 +478,7 @@ func TestPurge_ClearsQSOs(t *testing.T) {
 	insertTestQSO(t, le.db, q2)
 
 	// Verify QSOs exist.
-	qsos, err := store.ListQSOs(le.db, 10)
+	qsos, err := store.ListQSOs(le.db, 10, "")
 	if err != nil {
 		t.Fatalf("ListQSOs: %v", err)
 	}
@@ -500,7 +504,7 @@ func TestPurge_ClearsQSOs(t *testing.T) {
 	}
 
 	// Verify QSOs are gone.
-	qsos, err = store.ListQSOs(le.db, 10)
+	qsos, err = store.ListQSOs(le.db, 10, "")
 	if err != nil {
 		t.Fatalf("ListQSOs after purge: %v", err)
 	}
@@ -568,5 +572,257 @@ func TestPurgeResetsWavelogLastID(t *testing.T) {
 	}
 	if le.wlLastFetchedID != 0 {
 		t.Errorf("wlLastFetchedID = %d; want 0 after purge", le.wlLastFetchedID)
+	}
+}
+
+// =============================================================================
+// Pass 10 — Batch upload with httptest.Server (full HTTP integration)
+// =============================================================================
+
+func TestUploadBatch_MockServerSuccess(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "ok", "adif_count": 2, "adif_errors": 0, "messages": []string{""},
+		})
+	}))
+	defer srv.Close()
+
+	le := newTestEditorWithDB(t, srv.URL, "test-key", "SP-0001", "Op", "JO90")
+
+	q1 := &qso.QSO{Call: "SP9AAA", Band: "20m", Mode: "SSB", QSODate: "20240501", TimeOn: "120000",
+		RSTSent: "59", RSTRcvd: "59", WavelogUploaded: "no"}
+	q2 := &qso.QSO{Call: "SP9BBB", Band: "40m", Mode: "CW", QSODate: "20240502", TimeOn: "130000",
+		RSTSent: "599", RSTRcvd: "579", WavelogUploaded: "no"}
+	id1 := insertTestQSO(t, le.db, q1)
+	id2 := insertTestQSO(t, le.db, q2)
+	q1.ID = id1
+	q2.ID = id2
+
+	unsent := []qso.QSO{*q1, *q2}
+	cmd := le.uploadBatch(unsent)
+	msg := execCmd(cmd)
+	em, ok := msg.(editorMsg)
+	if !ok {
+		t.Fatalf("expected editorMsg, got %T", msg)
+	}
+	if !em.wlOK {
+		t.Errorf("batch upload should succeed, got err=%v", em.err)
+	}
+
+	// Verify both QSOs are marked as uploaded in DB.
+	for _, id := range []int64{id1, id2} {
+		var status string
+		if err := le.db.QueryRow("SELECT wavelog_uploaded FROM qsos WHERE id=?", id).Scan(&status); err != nil {
+			t.Fatalf("query qso %d: %v", id, err)
+		}
+		if status != "yes" {
+			t.Errorf("QSO %d wavelog_uploaded = %q, want yes", id, status)
+		}
+	}
+}
+
+func TestUploadBatch_MockServerDuplicate(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "abort", "adif_count": 1, "adif_errors": 1,
+			"messages": []string{"", "Duplicate for SP9AAA"},
+		})
+	}))
+	defer srv.Close()
+
+	le := newTestEditorWithDB(t, srv.URL, "test-key", "SP-0001", "Op", "JO90")
+
+	q1 := &qso.QSO{Call: "SP9AAA", Band: "20m", Mode: "SSB", QSODate: "20240501", TimeOn: "120000",
+		RSTSent: "59", RSTRcvd: "59", WavelogUploaded: "no"}
+	id1 := insertTestQSO(t, le.db, q1)
+	q1.ID = id1
+
+	unsent := []qso.QSO{*q1}
+	cmd := le.uploadBatch(unsent)
+	msg := execCmd(cmd)
+	em := msg.(editorMsg)
+	if !em.wlOK {
+		t.Errorf("duplicate should be treated as OK, got err=%v", em.err)
+	}
+
+	// After duplicate batch, wavelog_uploaded should NOT yet be "yes"
+	// because AllDuplicates checks on the result object, not on error string.
+	// The error path for "duplicate" falls through to uploadIndividual.
+	// Let's verify the final state.
+	var status string
+	if err := le.db.QueryRow("SELECT wavelog_uploaded FROM qsos WHERE id=?", id1).Scan(&status); err != nil {
+		t.Fatalf("query qso %d: %v", id1, err)
+	}
+	// The result is "abort" with AllDuplicates=true after JSON parse.
+	// Verify status was updated.
+	if status != "yes" {
+		t.Errorf("QSO wavelog_uploaded = %q, want yes (duplicate = present on Wavelog)", status)
+	}
+}
+
+func TestUploadBatch_MockServerError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "internal error", 500)
+	}))
+	defer srv.Close()
+
+	le := newTestEditorWithDB(t, srv.URL, "test-key", "SP-0001", "Op", "JO90")
+
+	q1 := &qso.QSO{Call: "SP9AAA", Band: "20m", Mode: "SSB", QSODate: "20240501", TimeOn: "120000",
+		RSTSent: "59", RSTRcvd: "59", WavelogUploaded: "no"}
+	id1 := insertTestQSO(t, le.db, q1)
+	q1.ID = id1
+
+	unsent := []qso.QSO{*q1}
+	cmd := le.uploadBatch(unsent)
+	msg := execCmd(cmd)
+	em := msg.(editorMsg)
+	if em.wlOK {
+		t.Error("batch upload should fail on server 500")
+	}
+
+	// Verify QSO is NOT marked as uploaded after failure.
+	var status string
+	if err := le.db.QueryRow("SELECT wavelog_uploaded FROM qsos WHERE id=?", id1).Scan(&status); err != nil {
+		t.Fatalf("query qso %d: %v", id1, err)
+	}
+	if status != "no" {
+		t.Errorf("QSO wavelog_uploaded = %q, want no (upload failed)", status)
+	}
+}
+
+func TestUploadIndividual_MixedResults(t *testing.T) {
+	// Mock server: first QSO succeeds, second fails with 500.
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		w.Header().Set("Content-Type", "application/json")
+		if callCount == 1 {
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"status": "ok", "adif_count": 1, "adif_errors": 0, "messages": []string{""},
+			})
+		} else {
+			http.Error(w, "server error", 500)
+		}
+	}))
+	defer srv.Close()
+
+	le := newTestEditorWithDB(t, srv.URL, "test-key", "SP-0001", "Op", "JO90")
+
+	q1 := &qso.QSO{Call: "SP9AAA", Band: "20m", Mode: "SSB", QSODate: "20240501", TimeOn: "120000",
+		RSTSent: "59", RSTRcvd: "59", WavelogUploaded: "no"}
+	q2 := &qso.QSO{Call: "SP9BBB", Band: "40m", Mode: "CW", QSODate: "20240502", TimeOn: "130000",
+		RSTSent: "599", RSTRcvd: "579", WavelogUploaded: "no"}
+	id1 := insertTestQSO(t, le.db, q1)
+	id2 := insertTestQSO(t, le.db, q2)
+	q1.ID = id1
+	q2.ID = id2
+
+	// Use uploadIndividual directly (bypasses batch→individual fallback).
+	unsent := []qso.QSO{*q1, *q2}
+	cmd := le.uploadIndividual(unsent)
+	msg := execCmd(cmd)
+	em := msg.(editorMsg)
+	if !em.wlOK {
+		t.Errorf("individual upload should report OK (partial success), got err=%v", em.err)
+	}
+	if em.wlCall == "" {
+		t.Error("wlCall should contain summary")
+	}
+
+	// QSO 1 should be marked uploaded, QSO 2 should NOT.
+	var s1, s2 string
+	le.db.QueryRow("SELECT wavelog_uploaded FROM qsos WHERE id=?", id1).Scan(&s1)
+	le.db.QueryRow("SELECT wavelog_uploaded FROM qsos WHERE id=?", id2).Scan(&s2)
+	if s1 != "yes" {
+		t.Errorf("QSO 1 status = %q, want yes", s1)
+	}
+	// QSO 2: postQSO with 500 → error → UpdateWavelogStatus(db, id, "no").
+	// Actually, postQSO on 500 returns ok=false, so UpdateWavelogStatus("no") is called.
+	if s2 != "no" {
+		t.Errorf("QSO 2 status = %q, want no (upload failed)", s2)
+	}
+}
+
+func TestUploadBatch_RequestPayloadVerification(t *testing.T) {
+	var capturedBody map[string]string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&capturedBody)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "ok", "adif_count": 1, "adif_errors": 0, "messages": []string{""},
+		})
+	}))
+	defer srv.Close()
+
+	le := newTestEditorWithDB(t, srv.URL, "test-api-key", "42", "Op", "JO90")
+
+	q1 := &qso.QSO{Call: "SP9AAA", Band: "20m", Mode: "SSB", QSODate: "20240501", TimeOn: "120000",
+		RSTSent: "59", RSTRcvd: "59", WavelogUploaded: "no"}
+	id1 := insertTestQSO(t, le.db, q1)
+	q1.ID = id1
+
+	unsent := []qso.QSO{*q1}
+	cmd := le.uploadBatch(unsent)
+	execCmd(cmd)
+
+	if capturedBody["key"] != "test-api-key" {
+		t.Errorf("key = %q, want test-api-key", capturedBody["key"])
+	}
+	if capturedBody["station_profile_id"] != "42" {
+		t.Errorf("station_profile_id = %q, want 42", capturedBody["station_profile_id"])
+	}
+	if capturedBody["type"] != "adif" {
+		t.Errorf("type = %q, want adif", capturedBody["type"])
+	}
+	// Verify ADIF string contains the QSO data.
+	if capturedBody["string"] == "" {
+		t.Error("ADIF string should not be empty")
+	}
+	if !strings.Contains(capturedBody["string"], "SP9AAA") {
+		t.Error("ADIF should contain callsign SP9AAA")
+	}
+}
+
+func TestUploadBatch_EmptyUnsentList(t *testing.T) {
+	le := newTestEditorWithDB(t, "https://example.com", "key", "1", "Op", "JO90")
+
+	// uploadBatch with empty list should still work (returns all-sent message).
+	cmd := le.uploadBatch(nil)
+	msg := execCmd(cmd)
+	em := msg.(editorMsg)
+	// It will try to POST empty ADIF — PostQSOWithResult rejects empty adifStr.
+	if em.wlOK {
+		t.Error("uploadBatch with nil unsent should fail (empty ADIF rejected)")
+	}
+}
+
+func TestUploadBatch_AuthFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	le := newTestEditorWithDB(t, srv.URL, "wrong-key", "SP-0001", "Op", "JO90")
+
+	q1 := &qso.QSO{Call: "SP9AAA", Band: "20m", Mode: "SSB", QSODate: "20240501", TimeOn: "120000",
+		RSTSent: "59", RSTRcvd: "59", WavelogUploaded: "no"}
+	id1 := insertTestQSO(t, le.db, q1)
+	q1.ID = id1
+
+	unsent := []qso.QSO{*q1}
+	cmd := le.uploadBatch(unsent)
+	msg := execCmd(cmd)
+	em := msg.(editorMsg)
+	if em.wlOK {
+		t.Error("batch upload should fail on 401")
+	}
+
+	var status string
+	le.db.QueryRow("SELECT wavelog_uploaded FROM qsos WHERE id=?", id1).Scan(&status)
+	if status != "no" {
+		t.Errorf("QSO status = %q, want no (upload failed)", status)
 	}
 }

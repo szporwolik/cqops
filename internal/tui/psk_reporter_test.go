@@ -212,7 +212,7 @@ func TestPSKCellCoords(t *testing.T) {
 
 func TestBuildPSKTable_Empty(t *testing.T) {
 	m := &Model{
-		pskSelected: 0,
+		psk: pskState{selected: 0},
 	}
 
 	result := m.buildPSKTable(nil, 60, 5)
@@ -234,7 +234,7 @@ func TestBuildPSKTable_WithData(t *testing.T) {
 		{ReceiverCallsign: "ZL1ABC", ReceiverLocator: "RF73", Frequency: 14_074_000, SNR: -5, Mode: "FT4", FlowStartSeconds: time.Now().Add(-20 * time.Minute).Unix()},
 	}
 
-	m := &Model{pskSelected: 0}
+	m := &Model{psk: pskState{selected: 0}}
 	result := m.buildPSKTable(reports, 60, 5)
 
 	if result == "" {
@@ -248,7 +248,7 @@ func TestBuildPSKTable_WithData(t *testing.T) {
 	}
 
 	// Select the last visible row.
-	m.pskSelected = 4
+	m.psk.selected = 4
 	result = m.buildPSKTable(reports, 60, 5)
 	if !strings.Contains(result, "VK2ABC") {
 		t.Error("table should show 5th report when selected=4")
@@ -258,7 +258,7 @@ func TestBuildPSKTable_WithData(t *testing.T) {
 	}
 
 	// Select beyond visible page.
-	m.pskSelected = 5
+	m.psk.selected = 5
 	result = m.buildPSKTable(reports, 60, 5)
 	if !strings.Contains(result, "ZL1ABC") {
 		t.Error("table should scroll to show 6th report when selected=5")
@@ -270,10 +270,12 @@ func TestBuildPSKTable_WithData(t *testing.T) {
 
 func TestBuildPSKFilters(t *testing.T) {
 	m := &Model{
-		pskFilterMins: 15,
-		pskBandFilter: "20m",
-		pskModeFilter: "FT8",
-		pskLastFetch:  time.Now().Add(-2 * time.Minute),
+		psk: pskState{
+			filterMins: 15,
+			bandFilter: "20m",
+			modeFilter: "FT8",
+			lastFetch:  time.Now().Add(-2 * time.Minute),
+		},
 	}
 
 	result := m.buildPSKFilters(30)
@@ -294,10 +296,12 @@ func TestBuildPSKFilters(t *testing.T) {
 
 func TestBuildPSKFilters_Defaults(t *testing.T) {
 	m := &Model{
-		pskFilterMins: 60,
-		pskBandFilter: "",
-		pskModeFilter: "",
-		// pskLastFetch is zero — never fetched.
+		psk: pskState{
+			filterMins: 60,
+			bandFilter: "",
+			modeFilter: "",
+		},
+		// psk.lastFetch is zero — never fetched.
 	}
 
 	result := m.buildPSKFilters(30)

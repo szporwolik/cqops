@@ -32,13 +32,18 @@ jobs:
             echo "value=$(cat VERSION)" >> $GITHUB_OUTPUT
           fi
 
+      - name: Set build date
+        id: date
+        run: echo "value=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+
       - name: Build binaries
         env:
           VERSION: ${{ steps.version.outputs.value }}
-          LDFLAGS: -s -w -X github.com/szporwolik/cqops/internal/version.Version=${{ steps.version.outputs.value }}
+          BUILD_DATE: ${{ steps.date.outputs.value }}
+          LDFLAGS: -s -w -X github.com/szporwolik/cqops/internal/version.Version=${{ steps.version.outputs.value }} -X github.com/szporwolik/cqops/internal/version.BuildDate=${{ steps.date.outputs.value }}
         run: |
           mkdir -p dist
-          CGO_ENABLED=0
+          export CGO_ENABLED=0
 
           echo "Building $VERSION for linux/amd64..."
           GOOS=linux GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/cqops-linux-amd64 ./cmd/cqops/

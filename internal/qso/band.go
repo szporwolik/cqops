@@ -87,6 +87,16 @@ func BandRange(band string) (low, high float64, ok bool) {
 	return r.low, r.high, true
 }
 
+// BandIndex returns the position of a band name in the frequency-ordered list.
+// Lower index = lower frequency / longer wavelength. Returns -1 if unknown.
+func BandIndex(band string) int {
+	idx, ok := bandIndex[strings.ToLower(strings.TrimSpace(band))]
+	if !ok {
+		return -1
+	}
+	return idx
+}
+
 func AllBands() []string {
 	result := make([]string, len(bandRanges))
 	for i, r := range bandRanges {

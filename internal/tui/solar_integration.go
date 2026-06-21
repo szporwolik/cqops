@@ -50,7 +50,7 @@ func solarFetchCmd(cacheDir string) tea.Cmd {
 
 // maybeFetchSolar returns a tea.Cmd to fetch solar data if conditions are met.
 func (m *Model) maybeFetchSolar() tea.Cmd {
-	if m.solarFetching {
+	if m.solar.fetching {
 		return nil
 	}
 	if !m.inetOnline {
@@ -59,16 +59,16 @@ func (m *Model) maybeFetchSolar() tea.Cmd {
 	if !m.App.Config.General.SolarAtQSOPane {
 		return nil
 	}
-	if time.Since(m.solarLastFetch) < 5*time.Minute {
+	if time.Since(m.solar.lastFetch) < 5*time.Minute {
 		return nil
 	}
 
-	cached, fresh := solar.Cached(m.solarCacheDir)
-	if fresh && cached != nil {
-		m.solarData = cached
-		m.cachedSolarSig = ""
-		m.solarFailed = false
-		m.solarLastFetch = time.Now()
+	cached, fresh := solar.Cached(m.solar.cacheDir)
+	if fresh && cached != nil && m.inetOnline {
+		m.solar.data = cached
+		m.solar.cachedSig = ""
+		m.solar.failed = false
+		m.solar.lastFetch = time.Now()
 		applog.Info("Solar: data from cache",
 			"solarflux", cached.SolarFlux,
 			"aindex", cached.AIndex,
@@ -77,21 +77,20 @@ func (m *Model) maybeFetchSolar() tea.Cmd {
 		return nil
 	}
 
-	m.solarFetching = true
-	m.solarLastFetch = time.Now()
-	applog.Info("Solar: fetching hamqsl.com")
+	m.solar.fetching = true
+	m.solar.lastFetch = time.Now()
 	m.toasts.Info("Solar: fetching hamqsl.com\u2026")
-	return solarFetchCmd(m.solarCacheDir)
+	return solarFetchCmd(m.solar.cacheDir)
 }
 
 // handleSolarResult processes the result of an async solar fetch.
 func (m *Model) handleSolarResult(msg solarFetchMsg) {
-	m.solarFetching = false
+	m.solar.fetching = false
 	if msg.err != nil {
-		m.solarFailed = true
-		m.solarData = nil
-		m.cachedSolarSig = ""
-		m.cachedSolarView = ""
+		m.solar.failed = true
+		m.solar.data = nil
+		m.solar.cachedSig = ""
+		m.solar.cachedView = ""
 		m.toasts.Error("Solar: unavailable — will retry later")
 		applog.Warn("Solar: all fetch attempts failed",
 			"attempts", msg.attempts, "error", msg.err,
@@ -102,14 +101,10 @@ func (m *Model) handleSolarResult(msg solarFetchMsg) {
 		applog.Warn("Solar: nil data returned")
 		return
 	}
-	m.solarData = msg.data
-	m.solarFailed = false
-	m.cachedSolarSig = ""
-	applog.Info("Solar: fetched OK",
-		"solarflux", msg.data.SolarFlux,
-		"aindex", msg.data.AIndex,
-		"kindex", fmt.Sprintf("%.1f", msg.data.KIndex),
-		"sunspots", msg.data.Sunspots,
+	m.solar.data = msg.data
+	m.solar.failed = false
+	m.solar.cachedSig = ""
+	applog.Info("Solar: hamqsl.com data updated",
 		"attempts", msg.attempts,
 	)
 	m.toasts.Info("Solar: hamqsl.com data updated")
