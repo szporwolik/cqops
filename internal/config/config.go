@@ -20,7 +20,26 @@ type Config struct {
 	Favorites    map[int]Favorite     `yaml:"favorites,omitempty"`
 	Logbooks     map[string]Logbook   `yaml:"logbooks"`
 	Rigs         map[string]RigPreset `yaml:"rigs,omitempty"`
-	Contests     map[string]Contest   `yaml:"contests,omitempty"`
+	Contests          map[string]Contest   `yaml:"contests,omitempty"`
+	BroadcastStations []BroadcastStation
+}
+
+// BroadcastStation represents a broadcast radio station preset.
+type BroadcastStation struct {
+	Radio        string `yaml:"radio"`
+	Country      string `yaml:"country"`
+	FrequencyKHz int    `yaml:"frequency_khz"`
+}
+
+// BroadcastBand returns "LW", "MW", or "SW" based on the frequency in kHz.
+func (bs BroadcastStation) BroadcastBand() string {
+	if bs.FrequencyKHz < 300 {
+		return "LW"
+	}
+	if bs.FrequencyKHz < 1700 {
+		return "MW"
+	}
+	return "SW"
 }
 
 type IntegrationsConfig struct {
@@ -227,6 +246,8 @@ func Load(path string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
+
+	cfg.BroadcastStations = DefaultBroadcastStations()
 
 	return &cfg, nil
 }
