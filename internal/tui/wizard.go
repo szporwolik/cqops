@@ -163,6 +163,13 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 			switch w.step {
 			case stepStation:
+				// Space cycles loaded Wavelog stations when Station ID is focused.
+				if (k.String() == " " || msg.Code == tea.KeySpace) && w.station.WlStationID.Focused() && len(w.wlStations) > 0 {
+					w.wlStationIdx = (w.wlStationIdx + 1) % len(w.wlStations)
+					s := w.wlStations[w.wlStationIdx]
+					w.station.WlStationID.SetValue(fmt.Sprintf("%s — %s (%s) %s", s.ID, s.Callsign, s.Name, s.Gridsquare))
+					return w, nil
+				}
 				if cmd := w.station.HandleKey(msg); cmd != nil {
 					switch cmd().(type) {
 					case enterOnLastFieldMsg:
