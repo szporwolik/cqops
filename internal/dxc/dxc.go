@@ -25,12 +25,13 @@ type Spot struct {
 
 // Client is a DX Cluster telnet connection.
 type Client struct {
-	host    string
-	port    string
-	login   string
-	conn    net.Conn
-	spotsCh chan Spot
-	stopCh  chan struct{}
+	host       string
+	port       string
+	login      string
+	conn       net.Conn
+	spotsCh    chan Spot
+	stopCh     chan struct{}
+	pendingRsp chan string // set before sending a command, read by readLoop
 }
 
 // NewClient creates a DX Cluster client. It does not connect until Start is called.
@@ -118,19 +119,39 @@ func (c *Client) Connected() bool {
 	return c.conn != nil
 }
 
-// SendSpot sends a DX spot to the cluster.
+// SendSpot sends a DX spot to the cluster and returns any response
+// from the cluster (e.g. error message). Returns empty string on
+// timeout or if the cluster doesn't send a response.
 // Format: DX [freq_kHz] [call] [comment]
-func (c *Client) SendSpot(freqKhz float64, call, comment string) error {
+func (c *Client) SendSpot(freqKhz float64, call, comment string) (string, error) {
 	if c.conn == nil {
-		return fmt.Errorf("dxc: not connected")
+		return "", fmt.Errorf("dxc: not connected")
 	}
 	line := fmt.Sprintf("DX %.1f %s %s\r\n", freqKhz, strings.ToUpper(call), comment)
+
+	// Set up a response channel before writing so readLoop can capture the reply.
+	rspCh := make(chan string, 1)
+	c.pendingRsp = rspCh
+
 	_, err := fmt.Fprint(c.conn, line)
 	if err != nil {
-		return fmt.Errorf("dxc: send spot: %w", err)
+		c.pendingRsp = nil
+		return "", fmt.Errorf("dxc: send spot: %w", err)
 	}
 	applog.Info("DXC: spot sent", "call", call, "freq", freqKhz, "comment", comment)
-	return nil
+
+	// Wait up to 1.5s for a response (error message or confirmation).
+	select {
+	case rsp := <-rspCh:
+		c.pendingRsp = nil
+		if rsp != "" {
+			applog.Warn("DXC: cluster response", "response", rsp)
+		}
+		return rsp, nil
+	case <-time.After(1500 * time.Millisecond):
+		c.pendingRsp = nil
+		return "", nil
+	}
 }
 
 // readLoop reads lines from the telnet connection, parses spots,
@@ -161,6 +182,15 @@ func (c *Client) readLoop() {
 			// not decorative ****** banners).
 			if strings.HasPrefix(line, "*** ") {
 				applog.Warn("DXC: cluster message", "line", line)
+			}
+			// If there's a pending response reader (e.g. after SendSpot),
+			// forward error/status lines to it.
+			if c.pendingRsp != nil && (strings.HasPrefix(line, "***") ||
+				strings.HasPrefix(line, "DX") && !strings.HasPrefix(line, "DX de")) {
+				select {
+				case c.pendingRsp <- line:
+				default:
+				}
 			}
 			continue
 		}

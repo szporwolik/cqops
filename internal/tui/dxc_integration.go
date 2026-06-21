@@ -39,7 +39,8 @@ func (m *Model) sendSpotCmd(call string, freqKhz float64, comment string) tea.Cm
 			m.toasts.Warn("DXC: not connected — cannot send spot")
 			return nil
 		}
-		if err := m.dxc.client.SendSpot(freqKhz, call, comment); err != nil {
+		rsp, err := m.dxc.client.SendSpot(freqKhz, call, comment)
+		if err != nil {
 			m.toasts.Warn("DXC: spot failed — " + err.Error())
 			return nil
 		}
@@ -71,6 +72,9 @@ func (m *Model) sendSpotCmd(call string, freqKhz float64, comment string) tea.Cm
 		msg := fmt.Sprintf("Spotted %s @ %.1f kHz", call, freqKhz)
 		if comment != "" {
 			msg += " — " + comment
+		}
+		if rsp != "" {
+			msg += " [" + rsp + "]"
 		}
 		m.toasts.Info(msg)
 		return dxcSpotsStoredMsg{calls: []string{call}}
