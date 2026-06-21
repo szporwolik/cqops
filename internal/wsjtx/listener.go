@@ -153,13 +153,19 @@ func (l *Listener) eventLoop(gen uint64, msgCh chan interface{}, errCh chan erro
 				// Decode messages carry no callsign/freq data — just mark activity.
 				// No callback needed; the status message handles field updates.
 			case wsjtx.LoggedAdifMessage:
-				applog.InfoDetail("WSJT-X: logged ADIF", m.Adif)
+				applog.Info("WSJT-X: logged ADIF", "len", len(m.Adif))
+				applog.Debug("WSJT-X: logged ADIF raw", "adif", m.Adif)
 				if onADIF := l.snapshotOnADIF(gen); onADIF != nil {
 					onADIF(m.Adif)
 				}
 			case wsjtx.QsoLoggedMessage:
-				applog.InfoDetail("WSJT-X: QSO logged",
-					fmt.Sprintf("dx=%s dxGrid=%s freq=%d mode=%s", m.DxCall, m.DxGrid, m.TxFrequency, m.Mode))
+				applog.Info("WSJT-X: QSO logged",
+					"dx", m.DxCall, "dxGrid", m.DxGrid, "freq", m.TxFrequency, "mode", m.Mode,
+				)
+				applog.Debug("WSJT-X: QSO logged raw fields",
+					"dxCall", m.DxCall, "dxGrid", m.DxGrid,
+					"txFreq", m.TxFrequency, "mode", m.Mode,
+				)
 			case wsjtx.CloseMessage:
 				applog.Info("WSJT-X: close")
 			}
@@ -177,7 +183,12 @@ func (l *Listener) eventLoop(gen uint64, msgCh chan interface{}, errCh chan erro
 				if strings.Contains(e.Error(), "use of closed network connection") {
 					continue
 				}
-				applog.Error("WSJT-X: error", "error", e.Error())
+				// Log parse leftovers at DEBUG so we can analyze them.
+				if strings.Contains(e.Error(), "bytes left over") {
+					applog.Debug("WSJT-X: parse leftover bytes", "error", e.Error())
+				} else {
+					applog.Error("WSJT-X: error", "error", e.Error())
+				}
 			}
 		}
 	}
