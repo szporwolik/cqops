@@ -19,6 +19,7 @@ type GeneralMenu struct {
 	useCTY       bool
 	useSCP       bool
 	useRef       bool
+	debugMode    bool
 	cursor       int
 	done         bool
 	saved        bool
@@ -54,6 +55,7 @@ func NewGeneralMenu(cfg *config.Config) *GeneralMenu {
 		useCTY:       cfg.General.UseCTY,
 		useSCP:       cfg.General.UseSCP,
 		useRef:       cfg.General.UseRef,
+		debugMode:    cfg.General.Debug,
 	}
 }
 
@@ -77,10 +79,10 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if gm.cursor > 0 {
 				gm.cursor--
 			} else {
-				gm.cursor = 8
+				gm.cursor = 9
 			}
 		case "down", "j":
-			if gm.cursor < 8 {
+			if gm.cursor < 9 {
 				gm.cursor++
 			} else {
 				gm.cursor = 0
@@ -113,6 +115,8 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				gm.useSCP = !gm.useSCP
 			case 8:
 				gm.useRef = !gm.useRef
+			case 9:
+				gm.debugMode = !gm.debugMode
 			}
 		case "enter":
 			// no-op: Enter does not save
@@ -163,6 +167,7 @@ func (gm *GeneralMenu) View() tea.View {
 	gm.renderCheckbox(&b, boxW, 6, "Use CTY.DAT country data", gm.useCTY)
 	gm.renderCheckbox(&b, boxW, 7, "Use Super Check Partial", gm.useSCP)
 	gm.renderCheckbox(&b, boxW, 8, "Use REF database", gm.useRef)
+	gm.renderCheckbox(&b, boxW, 9, "Debug Mode", gm.debugMode)
 
 	body := drawMenuWithHeader("Configuration \u2014 General Settings", b.String(), w)
 	return tea.NewView(fillBody(body, contentH))

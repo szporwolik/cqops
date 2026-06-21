@@ -94,6 +94,8 @@ func (m *Model) handleConfigUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd
 			m.App.Config.General.UseCTY = m.ui.configMenu.useCTY
 			m.App.Config.General.UseSCP = m.ui.configMenu.useSCP
 			m.App.Config.General.UseRef = m.ui.configMenu.useRef
+			m.App.Config.General.Debug = m.ui.configMenu.debugMode
+			applog.SetDebugMode(m.ui.configMenu.debugMode)
 			m.saveConfig("Settings saved")
 			m.reloadDataFiles()
 			// Handle REF database enable/disable.
@@ -150,30 +152,10 @@ func (m *Model) handleNotificationsUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 	return m, cmd
 }
 
-func (m *Model) handleCallbookUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
-	m.ui.callbookMenu.width = m.width
-	m.ui.callbookMenu.height = m.height
-	m.ui.callbookMenu.inetOnline = m.inetOnline
-	_, callbookCmd := m.ui.callbookMenu.Update(msg)
-	if m.ui.callbookMenu.done {
-		m.screen = screenQSO
-		if m.ui.callbookMenu.goBack {
-			m.screen = screenMainMenu
-		}
-		if m.ui.callbookMenu.saved {
-			m.App.Config.QRZ.User = m.ui.callbookMenu.user.Value()
-			m.App.Config.QRZ.Pass = m.ui.callbookMenu.pass.Value()
-			m.App.Config.QRZ.Enabled = m.ui.callbookMenu.enabled
-			m.saveConfig("Settings saved")
-			m.screen = screenMainMenu
-		}
-	}
-	return m, tea.Batch(cmd, callbookCmd)
-}
-
 func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	m.ui.integrationMenu.width = m.width
 	m.ui.integrationMenu.height = m.height
+	m.ui.integrationMenu.inetOnline = m.inetOnline
 	_, integrationCmd := m.ui.integrationMenu.Update(msg)
 
 	// Show validation errors from the menu.
@@ -188,17 +170,17 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			m.screen = screenMainMenu
 		}
 		if m.ui.integrationMenu.saved {
-			dxcE, dxcHost, dxcPort, dxcLogin, wsjtxE, wsjtxH, wsjtxP := m.ui.integrationMenu.Values()
-			m.App.Config.DXC.Enabled = dxcE
-			m.App.Config.DXC.Host = dxcHost
-			m.App.Config.DXC.Port = dxcPort
-			m.App.Config.DXC.Login = dxcLogin
-			m.App.Config.WSJTX.Enabled = wsjtxE
-			m.App.Config.WSJTX.UDPHost = wsjtxH
-			m.App.Config.WSJTX.UDPPort = wsjtxP
+			dxcE, dxcHost, dxcPort, dxcLogin, qrzE, qrzUser, qrzPass := m.ui.integrationMenu.Values()
+			m.App.Config.Integrations.DXC.Enabled = dxcE
+			m.App.Config.Integrations.DXC.Host = dxcHost
+			m.App.Config.Integrations.DXC.Port = dxcPort
+			m.App.Config.Integrations.DXC.Login = dxcLogin
+			m.App.Config.Integrations.QRZ.Enabled = qrzE
+			m.App.Config.Integrations.QRZ.User = qrzUser
+			m.App.Config.Integrations.QRZ.Pass = qrzPass
 			m.saveConfig("Settings saved")
 			applog.Info("Integration config saved, restarting services")
-			m.App.MaybeRestartWSJTX()
+
 			m.resetDXC()
 			m.screen = screenMainMenu
 		}
@@ -293,11 +275,6 @@ func (m *Model) handleMainMenuUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.C
 			m.ui.rigChooser.width = m.width
 			m.ui.rigChooser.height = m.height
 			m.screen = screenRigEdit
-		case "callbook":
-			m.ui.callbookMenu = NewCallbookMenu(m.App.Config)
-			m.ui.callbookMenu.width = m.width
-			m.ui.callbookMenu.height = m.height
-			m.screen = screenCallbook
 		case "contest":
 			m.ui.contestChooser = NewContestChooser(m.App, m.toasts)
 			m.ui.contestChooser.width = m.width
@@ -585,7 +562,7 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 			} else {
 				m.ui.logbookEditor.SetContestID("", "", "")
 			}
-			return m, nil
+			return m, m.refreshQSOS()
 		}
 	}
 
@@ -593,6 +570,7 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 	oldW, oldH := m.ui.logbookEditor.width, m.ui.logbookEditor.height
 	m.ui.logbookEditor.width = m.width
 	m.ui.logbookEditor.height = m.height
+	m.ui.logbookEditor.Offline = m.Offline || !m.inetOnline
 	if m.width != oldW || m.height != oldH {
 		m.ui.logbookEditor.needsReload = true
 	}

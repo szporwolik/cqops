@@ -28,9 +28,8 @@ func NewMainMenu() *MainMenu {
 			{"Station", "Callsign, operator, locator, CQ/ITU zones"},
 			{"Logbooks", "Logs, station profiles, paths"},
 			{"Rigs", "Radio models, antennas, flrig"},
-			{"Callbook", "QRZ.com lookup credentials"},
 			{"Contests", "Contest profiles, exchanges, serials"},
-			{"Integration", "DX Cluster, WSJT-X, Wavelog"},
+			{"Integration", "DX Cluster, QRZ.com, Wavelog"},
 			{"Notifications", "Desktop alert preferences"},
 		},
 	}
@@ -56,12 +55,10 @@ func (m *MainMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case 3:
 				m.action = "rig"
 			case 4:
-				m.action = "callbook"
-			case 5:
 				m.action = "contest"
-			case 6:
+			case 5:
 				m.action = "integration"
-			case 7:
+			case 6:
 				m.action = "notifications"
 			}
 		case "up", "k":

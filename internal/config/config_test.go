@@ -135,19 +135,8 @@ func TestDefaultConfig_HasDefaults(t *testing.T) {
 		break
 	}
 
-	// WSJT-X
-	if cfg.WSJTX.Enabled != false {
-		t.Error("DefaultConfig: WSJT-X should be disabled")
-	}
-	if cfg.WSJTX.UDPHost != "127.0.0.1" {
-		t.Errorf("DefaultConfig: WSJT-X host = %q; want 127.0.0.1", cfg.WSJTX.UDPHost)
-	}
-	if cfg.WSJTX.UDPPort != 2233 {
-		t.Errorf("DefaultConfig: WSJT-X port = %d; want 2233", cfg.WSJTX.UDPPort)
-	}
-
 	// QRZ
-	if cfg.QRZ.Enabled != false {
+	if cfg.Integrations.QRZ.Enabled != false {
 		t.Error("DefaultConfig: QRZ should be disabled")
 	}
 }
@@ -169,10 +158,7 @@ func TestSaveAndLoad_RoundTrip(t *testing.T) {
 
 	cfg := DefaultConfig()
 	cfg.General.Timezone = "Europe/Warsaw"
-	cfg.WSJTX.Enabled = true
-	cfg.WSJTX.UDPHost = "192.168.0.1"
-	cfg.WSJTX.UDPPort = 2238
-	cfg.QRZ.User = "testuser"
+	cfg.Integrations.QRZ.User = "testuser"
 	cfg.State.ActiveLogbook = "default"
 	cfg.Logbooks["default"] = Logbook{
 		Description: "Test logbook",
@@ -184,9 +170,12 @@ func TestSaveAndLoad_RoundTrip(t *testing.T) {
 		},
 	}
 	cfg.Rigs["myrig"] = RigPreset{
-		Model:   "Xiegu G90",
-		Antenna: "HWEF",
-		Power:   "20",
+		Model:        "Xiegu G90",
+		Antenna:      "HWEF",
+		Power:        "20",
+		WsjtxEnabled: true,
+		WsjtxUDPHost: "192.168.0.1",
+		WsjtxUDPPort: 2238,
 	}
 
 	if err := Save(path, cfg); err != nil {
@@ -202,17 +191,21 @@ func TestSaveAndLoad_RoundTrip(t *testing.T) {
 	if loaded.General.Timezone != "Europe/Warsaw" {
 		t.Errorf("round-trip timezone: got %q", loaded.General.Timezone)
 	}
-	if loaded.WSJTX.Enabled != true {
-		t.Error("round-trip: WSJT-X not enabled")
+	if rp, ok := loaded.Rigs["myrig"]; !ok {
+		t.Error("round-trip: rig 'myrig' not found")
+	} else {
+		if rp.WsjtxEnabled != true {
+			t.Error("round-trip: rig WSJT-X not enabled")
+		}
+		if rp.WsjtxUDPHost != "192.168.0.1" {
+			t.Errorf("round-trip rig WSJT-X host: got %q", rp.WsjtxUDPHost)
+		}
+		if rp.WsjtxUDPPort != 2238 {
+			t.Errorf("round-trip rig WSJT-X port: got %d", rp.WsjtxUDPPort)
+		}
 	}
-	if loaded.WSJTX.UDPHost != "192.168.0.1" {
-		t.Errorf("round-trip WSJT-X host: got %q", loaded.WSJTX.UDPHost)
-	}
-	if loaded.WSJTX.UDPPort != 2238 {
-		t.Errorf("round-trip WSJT-X port: got %d", loaded.WSJTX.UDPPort)
-	}
-	if loaded.QRZ.User != "testuser" {
-		t.Errorf("round-trip QRZ user: got %q", loaded.QRZ.User)
+	if loaded.Integrations.QRZ.User != "testuser" {
+		t.Errorf("round-trip QRZ user: got %q", loaded.Integrations.QRZ.User)
 	}
 
 	lb := loaded.Logbooks["default"]
@@ -781,7 +774,6 @@ func TestEnsureConfig_SecondCallLoadsExisting(t *testing.T) {
 	}
 
 	cfg1.General.Timezone = "Europe/London"
-	cfg1.WSJTX.UDPPort = 2238
 	if err := Save(path1, cfg1); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -795,9 +787,6 @@ func TestEnsureConfig_SecondCallLoadsExisting(t *testing.T) {
 	}
 	if cfg2.General.Timezone != "Europe/London" {
 		t.Errorf("timezone = %q; want Europe/London", cfg2.General.Timezone)
-	}
-	if cfg2.WSJTX.UDPPort != 2238 {
-		t.Errorf("WSJTX port = %d; want 2238", cfg2.WSJTX.UDPPort)
 	}
 }
 
@@ -913,21 +902,21 @@ func TestValidate_QRZRequiresUserAndPass(t *testing.T) {
 	lb.Station.Callsign = "SP9MOA"
 	cfg.Logbooks[cfg.State.ActiveLogbook] = lb
 
-	cfg.QRZ.Enabled = true
-	cfg.QRZ.User = ""
-	cfg.QRZ.Pass = "secret"
+	cfg.Integrations.QRZ.Enabled = true
+	cfg.Integrations.QRZ.User = ""
+	cfg.Integrations.QRZ.Pass = "secret"
 	if err := cfg.Validate(); err == nil {
 		t.Error("QRZ enabled with empty user should fail")
 	}
 
-	cfg.QRZ.User = "user"
-	cfg.QRZ.Pass = ""
+	cfg.Integrations.QRZ.User = "user"
+	cfg.Integrations.QRZ.Pass = ""
 	if err := cfg.Validate(); err == nil {
 		t.Error("QRZ enabled with empty pass should fail")
 	}
 
-	cfg.QRZ.User = "user"
-	cfg.QRZ.Pass = "secret"
+	cfg.Integrations.QRZ.User = "user"
+	cfg.Integrations.QRZ.Pass = "secret"
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("QRZ enabled with user+pass should pass: %v", err)
 	}
@@ -968,31 +957,6 @@ func TestValidate_WavelogRequiresAPIKey(t *testing.T) {
 	cfg.Logbooks[cfg.State.ActiveLogbook] = lb
 	if err := cfg.Validate(); err == nil {
 		t.Error("Wavelog enabled with empty API key should fail")
-	}
-}
-
-func TestValidate_WSJTXPortRange(t *testing.T) {
-	cfg := DefaultConfig()
-	lb := cfg.Logbooks[cfg.State.ActiveLogbook]
-	lb.Station.Callsign = "SP9MOA"
-	cfg.Logbooks[cfg.State.ActiveLogbook] = lb
-
-	cfg.WSJTX.Enabled = true
-	cfg.WSJTX.UDPHost = "127.0.0.1"
-
-	cfg.WSJTX.UDPPort = 0
-	if err := cfg.Validate(); err == nil {
-		t.Error("WSJT-X port 0 should fail")
-	}
-
-	cfg.WSJTX.UDPPort = 65536
-	if err := cfg.Validate(); err == nil {
-		t.Error("WSJT-X port 65536 should fail")
-	}
-
-	cfg.WSJTX.UDPPort = 2233
-	if err := cfg.Validate(); err != nil {
-		t.Errorf("WSJT-X port 2233 should pass: %v", err)
 	}
 }
 
@@ -1103,18 +1067,18 @@ func TestValidate_DXCPort(t *testing.T) {
 	lb.Station.Callsign = "SP9MOA"
 	cfg.Logbooks[cfg.State.ActiveLogbook] = lb
 
-	cfg.DXC.Enabled = true
-	cfg.DXC.Host = "dxspider.co.uk"
+	cfg.Integrations.DXC.Enabled = true
+	cfg.Integrations.DXC.Host = "dxspider.co.uk"
 
-	cfg.DXC.Port = "abc"
+	cfg.Integrations.DXC.Port = "abc"
 	if err := cfg.Validate(); err == nil {
 		t.Error("DXC port 'abc' should fail")
 	}
-	cfg.DXC.Port = "0"
+	cfg.Integrations.DXC.Port = "0"
 	if err := cfg.Validate(); err == nil {
 		t.Error("DXC port 0 should fail")
 	}
-	cfg.DXC.Port = "7300"
+	cfg.Integrations.DXC.Port = "7300"
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("DXC port 7300 should pass: %v", err)
 	}

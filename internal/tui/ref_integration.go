@@ -135,6 +135,13 @@ func (m *Model) handleRefUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			return m, cmd
 
 		case "enter", "insert":
+			// If results are visible and cursor is on a row, add to QSO form.
+			if m.ref.searched && len(m.ref.rows) > 0 && m.ref.cursor >= 0 && m.ref.cursor < len(m.ref.rows) {
+				r := m.ref.rows[m.ref.cursor]
+				m.addRefToQSO(r)
+				return m, cmd
+			}
+			// Otherwise, execute search.
 			m.doRefSearch()
 			return m, cmd
 
@@ -491,4 +498,68 @@ func (m *Model) applyRefGridAndQTH() {
 	if len(qthParts) > 0 {
 		m.fields[fieldQTH].SetValue(strings.Join(qthParts, " | "))
 	}
+}
+
+// addRefToQSO adds the selected REF row's reference code to the matching
+// QSO form field (SOTA/POTA/WWFF/IOTA). Multiple references of the same
+// type can be comma-separated. The REF screen stays open so the user can
+// add more references from the same search.
+func (m *Model) addRefToQSO(r ref.Row) {
+	if r.Ref == "" {
+		return
+	}
+	var targetField field
+	var prefix string
+	switch r.RefType {
+	case ref.RefSOTA:
+		targetField = fieldSOTA
+		prefix = "SOTA: "
+	case ref.RefPOTA:
+		targetField = fieldPOTA
+		prefix = "POTA: "
+	case ref.RefWWFF:
+		targetField = fieldWWFF
+		prefix = "WWFF: "
+	case ref.RefIOTA:
+		targetField = fieldIOTA
+		prefix = "IOTA: "
+	default:
+		return
+	}
+
+	current := strings.TrimSpace(m.fields[targetField].Value())
+	if current == "" {
+		m.fields[targetField].SetValue(r.Ref)
+	} else {
+		// Check if this ref is already present.
+		existing := strings.Split(current, ",")
+		for _, e := range existing {
+			if strings.TrimSpace(e) == r.Ref {
+				m.toasts.Info(prefix + r.Ref + " already added")
+				m.invalidateRefNamesCache()
+				return
+			}
+		}
+		m.fields[targetField].SetValue(current + ", " + r.Ref)
+	}
+	m.invalidateRefNamesCache()
+	m.toasts.Success(prefix + r.Ref + " added to QSO")
+	applog.Info("REF: added to QSO", "type", string(r.RefType), "ref", r.Ref, "name", r.Name)
+}
+
+// clearQSOReferences clears all REF-related QSO form fields (SOTA, POTA,
+// WWFF, IOTA).
+func (m *Model) clearQSOReferences() {
+	m.fields[fieldSOTA].SetValue("")
+	m.fields[fieldPOTA].SetValue("")
+	m.fields[fieldWWFF].SetValue("")
+	m.fields[fieldIOTA].SetValue("")
+	m.invalidateRefNamesCache()
+	applog.Debug("REF: QSO reference fields cleared")
+}
+
+// invalidateRefNamesCache marks the REF names line cache as dirty.
+func (m *Model) invalidateRefNamesCache() {
+	m.ref.refNamesDirty = true
+	m.rc.status = ""
 }

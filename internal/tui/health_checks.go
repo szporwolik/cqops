@@ -41,6 +41,9 @@ func dateTimeFormats(width int) (dateFmt, timeFmt string) {
 
 // maybeCheckInet returns a tea.Cmd to check internet connectivity at intervals.
 func (m *Model) maybeCheckInet() tea.Cmd {
+	if m.Offline {
+		return nil
+	}
 	if m.tickCount%healthCheckTicks == 0 {
 		return checkInetCmd()
 	}

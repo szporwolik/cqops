@@ -21,6 +21,10 @@ import (
 // maybeCheckWavelog returns a tea.Cmd to check Wavelog connectivity
 // at startup (tick 1), when the logbook is switched, and periodically.
 func (m *Model) maybeCheckWavelog() tea.Cmd {
+	if m.Offline || !m.inetOnline {
+		m.lookup.wlOnline = false
+		return nil
+	}
 	wl := m.App.Logbook.Wavelog
 	if wl == nil || !wl.Enabled || wl.StationProfileID == "" {
 		m.lookup.wlOnline = false

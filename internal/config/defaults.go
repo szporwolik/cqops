@@ -14,6 +14,7 @@ func DefaultConfig() *Config {
 			UseCTY:           true,
 			UseSCP:           true,
 			UseRef:           true,
+			Debug:            true,
 			Notifications: NotificationsConfig{
 				Enabled:       true,
 				QSO:           false,
@@ -36,11 +37,6 @@ func DefaultConfig() *Config {
 			defaultRigID: {
 				ID: defaultRigID,
 			},
-		},
-		WSJTX: WSJTXConfig{
-			Enabled: false,
-			UDPHost: "127.0.0.1",
-			UDPPort: 2233,
 		},
 	}
 }

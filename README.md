@@ -18,22 +18,28 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 
 ## Features
 
-- **DX Cluster** — live spots with band/mode/time/continent filters, spot-to-rig tuning via flrig, default continent filter from station config
-- **WSJT-X** — auto-log FT8/FT4 and digital modes with QRZ lookup & Wavelog sync
+- **Quick QSO logging** — keyboard-driven TUI with form cache, auto date/time, field cycling, retain comment toggle (Ctrl+T)
+- **DUPE! detection** — real-time duplicate QSO warning (same call/band/mode/day) shown as a red badge in the path row; reference-aware logic — different SOTA/POTA/WWFF/IOTA refs skip the warning
+- **New Call! / New DXCC!** — green badges in the path row when a callsign has never been worked or a new DXCC entity is confirmed
+- **Favorites** — 10 memory slots (0–9): Alt+N recalls mode/freq/band/submode, Alt+Shift+N saves the current form state; full-precision frequency, band auto-derived
+- **DX Cluster** — live spots with band/mode/time/continent filters, spot-to-rig tuning via flrig, default continent filter from station config (falls back to DXCC prefix lookup of own callsign)
+- **WSJT-X** — auto-log FT8/FT4 and digital modes with QRZ enrichment & Wavelog sync; configured per-rig (not globally)
 - **PSK Reporter** — real-time propagation spots & world map
-- **Solar conditions** — SFI, SSN, A/K indices from hamqsl.com
-- **QRZ callbook** — one-key lookup with auto-fill of name, QTH, grid, country; exchange recalculation on async lookup completion
-- **DXCC & SCP** — prefix-based country/continent/grid lookup, live callsign autocomplete
-- **Wavelog** — cloud upload, download, duplicate detection, station profile cycling
+- **Solar conditions** — SFI, SSN, A/K indices from hamqsl.com, cached hourly
+- **QRZ callbook** — configured in Integration menu; one-key lookup (Ins/F2) with auto-fill of name, QTH, grid, country; exchange recalculation on async lookup completion
+- **DXCC & SCP** — prefix-based country/continent/grid lookup (CTY.DAT), live callsign autocomplete (Super Check Partial)
+- **Wavelog** — cloud upload, download, duplicate detection, station profile cycling; upload/download disabled in contest-filtered view and offline mode
 - **REF database** — SOTA summits, POTA parks, WWFF areas, IOTA islands — offline search with grid locators
-- **Contest logging** — ADIF Contest ID cycling with descriptions, exchange markers (`@rst @serial @cqz @mycqz @itu @myitu @grid @mygrid`), `###` backward compatibility, per-contest QSO filtering, contest info line on QSO and log editor screens, Ctrl+C contest cycling, "In use" toggle to exclude from rotation, dynamic form height (shrinks when inactive)
-- **DUPE! detection** — real-time duplicate QSO warning (same call/band/mode/day) with reference-aware logic (different SOTA/POTA/WWFF/IOTA refs skip the warning)
-- **Station identity** — configurable CQ zone, ITU zone, DXCC ID, SIG/SIGInfo, and continent per logbook, applied to every QSO (manual, WSJT-X, CLI)
-- **ADIF 3.1.7** — full import/export with Unicode→ASCII sanitization, contest exchange fields (STX/SRX/STX_STRING/SRX_STRING/CONTEST_ID), station fields (MY_CQZ/MY_ITUZ/MY_DXCC/MY_SIG/MY_SIG_INFO/MY_ANTENNA)
+- **Contest logging** — ADIF Contest ID cycling with descriptions, exchange markers (`@rst @serial @cqz @mycqz @itu @myitu @grid @mygrid`), `###` backward compatibility, per-contest QSO filtering, contest info line on QSO and log editor screens, Ctrl+C contest cycling, "In use" toggle — inactive contests shown in menu but excluded from cycling
+- **Station identity** — configurable CQ zone, ITU zone, DXCC ID, continent, SIG/SIGInfo per logbook, applied to every QSO
+- **ADIF 3.1.7** — full import/export with Unicode→ASCII sanitization, contest exchange fields (STX/SRX/STX_STRING/SRX_STRING/CONTEST_ID), station fields (MY_CQZ/MY_ITUZ/MY_DXCC/MY_SIG/MY_SIG_INFO/MY_ANTENNA); export respects active contest filter
+- **Offline mode** — `--offline` / `-o` flag: skips all network checks, status dots show yellow; flrig and WSJT-X still work (local services)
+- **Debug mode** — `--debug` / `-d` flag enables debug-level logging (suppressed by default for performance)
+- **Multi-rig** — per-rig flrig and WSJT-X configuration, rig name field, Ctrl+C to duplicate a rig profile
 - **TUI** — keyboard-driven, SSH-friendly, offline-first SQLite, multi-logbook, form cache with dynamic invalidation
 - **Partner view** — grid-to-grid distance, bearing, world map, Wavelog private lookup integration
 - **Cross-platform** — Windows, Linux, macOS, ARM (Raspberry Pi, Apple Silicon), potato-PC ready
-- **Key bindings** — ↑↓ Navigate • Enter Save • Ins QRZ • Del Clear • C-L Logbook • C-R Rig • C-C Contest • Ctrl+T Toggle retain • F10 Quit
+- **Key bindings** — ↑↓ Navigate • Enter Save • Ins QRZ • Del Clear • C-L Logbook • C-R Rig • C-C Contest • Ctrl+T Toggle retain • Alt+N Recall favorite • Alt+Shift+N Save favorite • F10 Quit
 
 ## Screenshots
 
@@ -104,13 +110,17 @@ A GitHub Actions workflow (`.github/workflows/release.yml`) automates the releas
 ## Usage
 
 ```bash
-cqops                  # Start interactive TUI
-cqops config show      # Show configuration
-cqops log add --call SP9ABC --band 20m --freq 14.074 --mode FT8
-cqops log list         # List recent QSOs
-cqops logbook list     # List logbooks
+cqops                  # Start interactive TUI (the only way to use CQOps)
+cqops --offline        # Start in offline mode (skip all network checks)
+cqops --debug          # Enable debug logging
+cqops --logbook <name> # Start with a specific logbook
 cqops version          # Print version
-cqops --help           # Show all commands
+cqops --help           # Show flags
+
+Flags:
+  -o, --offline        Run in offline mode (skip all network checks)
+  -d, --debug          Enable debug logging
+  -l, --logbook string Logbook name to use
 ```
 
 ## Dependencies

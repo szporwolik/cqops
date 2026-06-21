@@ -15,20 +15,19 @@ import (
 // WSJT-X config (enabled, host, port) actually changes.
 //
 // Tests that require Start() are limited because applog is nil in tests.
-// We focus on the comparison + last-applied tracking logic, and the
-// disabled path (which only calls Stop, never Start).
 
 func TestMaybeRestartWSJTX_NoOpWhenUnchanged(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.WSJTX.Enabled = false
+	enabled := false
+	host := "127.0.0.1"
+	port := 2233
 
 	a := &App{
-		Config: cfg,
+		Config: config.DefaultConfig(),
 		WSJTX:  wsjtx.NewListener(),
 	}
 
 	// First call: disabled. Stop() is a no-op on fresh listener.
-	a.MaybeRestartWSJTX()
+	a.MaybeRestartWSJTX(enabled, host, port)
 
 	if a.lastWSJTX.enabled != false {
 		t.Error("lastWSJTX.enabled should be false after apply")
@@ -36,7 +35,7 @@ func TestMaybeRestartWSJTX_NoOpWhenUnchanged(t *testing.T) {
 
 	// Second call: same config -> should be no-op (skips Stop too).
 	lastBefore := a.lastWSJTX
-	a.MaybeRestartWSJTX()
+	a.MaybeRestartWSJTX(enabled, host, port)
 
 	if a.lastWSJTX != lastBefore {
 		t.Error("lastWSJTX changed on unchanged config — should be no-op")
@@ -44,23 +43,22 @@ func TestMaybeRestartWSJTX_NoOpWhenUnchanged(t *testing.T) {
 }
 
 func TestMaybeRestartWSJTX_DetectsHostChange(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.WSJTX.Enabled = false
-	cfg.WSJTX.UDPHost = "127.0.0.1"
-	cfg.WSJTX.UDPPort = 2237
+	enabled := false
+	host := "127.0.0.1"
+	port := 2237
 
 	a := &App{
-		Config: cfg,
+		Config: config.DefaultConfig(),
 		WSJTX:  wsjtx.NewListener(),
 	}
 
 	// Apply initial config.
-	a.MaybeRestartWSJTX()
+	a.MaybeRestartWSJTX(enabled, host, port)
 	first := a.lastWSJTX
 
 	// Change host (still disabled — Stop is called but no Start).
-	cfg.WSJTX.UDPHost = "192.168.1.1"
-	a.MaybeRestartWSJTX()
+	host = "192.168.1.1"
+	a.MaybeRestartWSJTX(enabled, host, port)
 
 	if a.lastWSJTX.host != "192.168.1.1" {
 		t.Errorf("lastWSJTX.host = %q; want 192.168.1.1", a.lastWSJTX.host)
@@ -71,23 +69,22 @@ func TestMaybeRestartWSJTX_DetectsHostChange(t *testing.T) {
 }
 
 func TestMaybeRestartWSJTX_DetectsPortChange(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.WSJTX.Enabled = false
-	cfg.WSJTX.UDPHost = "127.0.0.1"
-	cfg.WSJTX.UDPPort = 2237
+	enabled := false
+	host := "127.0.0.1"
+	port := 2237
 
 	a := &App{
-		Config: cfg,
+		Config: config.DefaultConfig(),
 		WSJTX:  wsjtx.NewListener(),
 	}
 
 	// Apply initial config.
-	a.MaybeRestartWSJTX()
+	a.MaybeRestartWSJTX(enabled, host, port)
 	first := a.lastWSJTX
 
 	// Change port (still disabled).
-	cfg.WSJTX.UDPPort = 2238
-	a.MaybeRestartWSJTX()
+	port = 2238
+	a.MaybeRestartWSJTX(enabled, host, port)
 
 	if a.lastWSJTX.port != 2238 {
 		t.Errorf("lastWSJTX.port = %d; want 2238", a.lastWSJTX.port)
@@ -98,11 +95,8 @@ func TestMaybeRestartWSJTX_DetectsPortChange(t *testing.T) {
 }
 
 func TestMaybeRestartWSJTX_DisableStopsListener(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.WSJTX.Enabled = false
-
 	a := &App{
-		Config: cfg,
+		Config: config.DefaultConfig(),
 		WSJTX:  wsjtx.NewListener(),
 	}
 
@@ -113,7 +107,7 @@ func TestMaybeRestartWSJTX_DisableStopsListener(t *testing.T) {
 
 	// Now "disable" — config says disabled, last-applied says enabled.
 	// Should call Stop(), which is safe in tests.
-	a.MaybeRestartWSJTX()
+	a.MaybeRestartWSJTX(false, "127.0.0.1", 2237)
 
 	if a.lastWSJTX.enabled != false {
 		t.Error("lastWSJTX.enabled should be false after disable")
@@ -128,28 +122,27 @@ func TestMaybeRestartWSJTX_DisableStopsListener(t *testing.T) {
 // last-applied" path cannot be unit-tested reliably because UDP port
 // availability varies — it is verified by code review.
 func TestMaybeRestartWSJTX_NoOpOnSameConfig(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.WSJTX.Enabled = false
-	cfg.WSJTX.UDPHost = "127.0.0.1"
-	cfg.WSJTX.UDPPort = 2237
+	enabled := false
+	host := "127.0.0.1"
+	port := 2237
 
 	a := &App{
-		Config: cfg,
+		Config: config.DefaultConfig(),
 		WSJTX:  wsjtx.NewListener(),
 	}
 
 	// Apply disabled state.
-	a.MaybeRestartWSJTX()
+	a.MaybeRestartWSJTX(enabled, host, port)
 	first := a.lastWSJTX
 
 	// Same config again — no change expected.
-	a.MaybeRestartWSJTX()
+	a.MaybeRestartWSJTX(enabled, host, port)
 	if a.lastWSJTX != first {
 		t.Error("lastWSJTX changed on identical re-apply — should be no-op")
 	}
 
 	// Same config a third time.
-	a.MaybeRestartWSJTX()
+	a.MaybeRestartWSJTX(enabled, host, port)
 	if a.lastWSJTX != first {
 		t.Error("lastWSJTX changed on third identical apply")
 	}

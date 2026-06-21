@@ -226,8 +226,9 @@ var (
 
 	// statusDotOn / statusDotOff — pre-allocated integration indicator styles.
 	// Airbus philosophy: default (white) when online, red when offline.
-	statusDotOnStyle  = lipgloss.NewStyle().Foreground(P.Text)
-	statusDotOffStyle = lipgloss.NewStyle().Foreground(P.Error)
+	statusDotOnStyle   = lipgloss.NewStyle().Foreground(P.Text)
+	statusDotOffStyle  = lipgloss.NewStyle().Foreground(P.Error)
+	statusDotWarnStyle = lipgloss.NewStyle().Foreground(P.Warning)
 
 	// utcLabelStyle — "UTC " prefix in status bar.
 	utcLabelStyle = lipgloss.NewStyle().Foreground(P.TextMuted)

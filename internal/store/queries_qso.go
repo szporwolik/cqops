@@ -331,11 +331,11 @@ func FindQSOByKey(db *sql.DB, call, band, mode, qsoDate, timeOn string) int64 {
 
 // DupeCheckResult holds the reference fields of a potential duplicate QSO.
 type DupeCheckResult struct {
-	ID     int64
-	SOTA   string
-	POTA   string
-	WWFF   string
-	IOTA   string
+	ID   int64
+	SOTA string
+	POTA string
+	WWFF string
+	IOTA string
 }
 
 // IsDuplicateQSO returns (true, nil) if a QSO with the same call, band, mode

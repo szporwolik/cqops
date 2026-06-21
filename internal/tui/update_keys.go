@@ -115,6 +115,10 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, true
 
 	case key.Matches(msg, m.keys.PSKReporter):
+		if !m.inetOnline {
+			m.toasts.Warn("PSK Reporter: no internet connection")
+			return nil, true
+		}
 		applog.Debug("tab: F5 PSK Reporter")
 		m.screen = screenPSKReporter
 		return nil, true
@@ -152,7 +156,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, true
 
 	case key.Matches(msg, m.keys.DXC):
-		if !m.App.Config.DXC.Enabled || !m.dxc.online {
+		if !m.App.Config.Integrations.DXC.Enabled || !m.dxc.online {
 			m.toasts.Warn("DXC: not connected")
 			return nil, true
 		}
@@ -290,7 +294,7 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 
 	case msg.String() == "ctrl+c":
 		m.cycleActiveContest()
-		return nil, true
+		return m.refreshQSOS(), true
 
 	case key.Matches(msg, m.keys.Partner):
 		call := m.commitCall()
@@ -313,6 +317,10 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, true
 
 	case key.Matches(msg, m.keys.PSKReporter):
+		if !m.inetOnline {
+			m.toasts.Warn("PSK Reporter: no internet connection")
+			return nil, true
+		}
 		applog.Debug("tab: F5 PSK Reporter")
 		m.screen = screenPSKReporter
 		return nil, true
@@ -332,6 +340,34 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return m.lookupCallCmd(call), true
 
 	case key.Matches(msg, m.keys.Enter):
+		call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+		if call != "" && (m.lookup.qrzNeed || m.lookup.wlNeed) {
+			// Lookups still pending — dispatch them now and defer save
+			// until both complete.
+			m.lookup.pendingSave = true
+			m.lookup.lookupsInFlight = 0
+			var cmds []tea.Cmd
+			if m.lookup.qrzNeed {
+				m.lookup.qrzNeed = false
+				m.lookup.lookupsInFlight++
+				if c := m.qrzLookupCmd(call); c != nil {
+					cmds = append(cmds, c)
+				}
+			}
+			if m.lookup.wlNeed {
+				m.lookup.wlNeed = false
+				m.lookup.lookupsInFlight++
+				if c := m.wlLookup(call); c != nil {
+					cmds = append(cmds, c)
+				}
+			}
+			if len(cmds) > 0 {
+				return tea.Batch(cmds...), true
+			}
+			// Both lookups are disabled/nil — save now.
+			m.lookup.pendingSave = false
+			return m.saveQSO(), true
+		}
 		return m.saveQSO(), true
 
 	case key.Matches(msg, m.keys.CycleUp):

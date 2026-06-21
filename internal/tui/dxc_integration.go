@@ -33,7 +33,7 @@ type dxcSpotsStoredMsg struct {
 // dxcConnectCmd returns a tea.Cmd that attempts to connect to the DX cluster.
 func (m *Model) dxcConnectCmd() tea.Cmd {
 	return func() tea.Msg {
-		cfg := m.App.Config.DXC
+		cfg := m.App.Config.Integrations.DXC
 		host := cfg.Host
 		if host == "" {
 			host = "dxspider.co.uk"
@@ -70,7 +70,7 @@ var dxcReconnectDelays = []time.Duration{
 
 // maybeDXC returns a tea.Cmd to start, stop, or maintain the DX Cluster connection.
 func (m *Model) maybeDXC() tea.Cmd {
-	cfg := m.App.Config.DXC
+	cfg := m.App.Config.Integrations.DXC
 
 	// Not enabled — ensure disconnected.
 	if !cfg.Enabled {

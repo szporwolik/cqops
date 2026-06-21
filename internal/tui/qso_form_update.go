@@ -37,7 +37,7 @@ func (m *Model) lookupCallCmd(call string) tea.Cmd {
 		return nil
 	}
 	var cmds []tea.Cmd
-	if m.App.Config.QRZ.Enabled && m.App.Config.QRZ.User != "" {
+	if m.App.Config.Integrations.QRZ.Enabled && m.App.Config.Integrations.QRZ.User != "" {
 		cmds = append(cmds, m.qrzLookup(call))
 	}
 	wl := m.App.Logbook.Wavelog

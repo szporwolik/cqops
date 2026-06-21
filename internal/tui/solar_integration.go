@@ -64,7 +64,7 @@ func (m *Model) maybeFetchSolar() tea.Cmd {
 	}
 
 	cached, fresh := solar.Cached(m.solar.cacheDir)
-	if fresh && cached != nil {
+	if fresh && cached != nil && m.inetOnline {
 		m.solar.data = cached
 		m.solar.cachedSig = ""
 		m.solar.failed = false

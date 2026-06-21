@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -203,6 +204,19 @@ func (rc *RigChooser) viewList() string {
 			if rp.FlrigEnabled {
 				flrig = "flrig"
 			}
+			wsjtx := ""
+			if rp.WsjtxEnabled {
+				if flrig != "" {
+					wsjtx = "wsjtx"
+				} else {
+					wsjtx = "wsjtx"
+				}
+			}
+			if flrig != "" && wsjtx != "" {
+				flrig = flrig + "/" + wsjtx
+			} else if wsjtx != "" {
+				flrig = wsjtx
+			}
 			if i == rc.cursor {
 				prefix = S.FormPrefixOn.Render("> ")
 			}
@@ -283,6 +297,7 @@ func (rc *RigChooser) startCreate() {
 	rc.mode = rigChooserCreate
 	rc.form.SetValues("", "", "")
 	rc.form.SetFlrig(false, "localhost", "12345")
+	rc.form.SetWsjtx(false, "127.0.0.1", "2233")
 	rc.form.blurAll()
 	rc.form.Rig.Focus()
 	rc.editing = ""
@@ -294,6 +309,7 @@ func (rc *RigChooser) startEdit(id string) {
 	rc.editing = id
 	rc.form.SetValues(rp.Model, rp.Antenna, rp.Power)
 	rc.form.SetFlrig(rp.FlrigEnabled, rp.FlrigHost, rp.FlrigPort)
+	rc.form.SetWsjtx(rp.WsjtxEnabled, rp.WsjtxUDPHost, fmt.Sprintf("%d", rp.WsjtxUDPPort))
 	rc.form.blurAll()
 	rc.form.Rig.Focus()
 }
@@ -301,6 +317,11 @@ func (rc *RigChooser) startEdit(id string) {
 func (rc *RigChooser) saveForm() tea.Cmd {
 	rig, ant, pwr := rc.form.Values()
 	flrigEnabled, flrigHost, flrigPort := rc.form.FlrigValues()
+	wsjtxEnabled, wsjtxHost, wsjtxPortStr := rc.form.WsjtxValues()
+	wsjtxPort, _ := strconv.Atoi(wsjtxPortStr)
+	if wsjtxPort <= 0 {
+		wsjtxPort = 2233
+	}
 
 	if rig == "" {
 		rc.toasts.Error("Rig model is required")
@@ -336,6 +357,9 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 			FlrigEnabled: flrigEnabled,
 			FlrigHost:    flrigHost,
 			FlrigPort:    flrigPort,
+			WsjtxEnabled: wsjtxEnabled,
+			WsjtxUDPHost: wsjtxHost,
+			WsjtxUDPPort: wsjtxPort,
 		}
 		rc.names = append(rc.names, id)
 		savedName = rig
@@ -348,6 +372,9 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 		rp.FlrigEnabled = flrigEnabled
 		rp.FlrigHost = flrigHost
 		rp.FlrigPort = flrigPort
+		rp.WsjtxEnabled = wsjtxEnabled
+		rp.WsjtxUDPHost = wsjtxHost
+		rp.WsjtxUDPPort = wsjtxPort
 		rc.app.Config.Rigs[id] = rp
 		savedName = rig
 	}

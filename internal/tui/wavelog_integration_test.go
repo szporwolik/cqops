@@ -937,7 +937,7 @@ func TestWavelogUpload_DisabledPreservesLocalQSO(t *testing.T) {
 	// When Wavelog is disabled, QSO logs locally but no upload is triggered.
 	m := newLifecycleTestModel(t)
 	m.App.Logbook.Wavelog = nil // disabled
-	m.App.Config.QRZ.Enabled = false
+	m.App.Config.Integrations.QRZ.Enabled = false
 
 	adif := "<CALL:6>SP9MOA <BAND:3>20m <FREQ:7>14.2500 <MODE:3>SSB " +
 		"<QSO_DATE:8>20260618 <TIME_ON:6>120000 <RST_SENT:2>59 <RST_RCVD:2>59 <EOR>"

@@ -37,7 +37,7 @@ const (
 )
 
 const (
-	healthCheckTicks    = 600                     // ticks between health checks (10 min)
+	healthCheckTicks    = 60                      // ticks between health checks (1 min)
 	flrigStatusTimeout  = 1500 * time.Millisecond // context timeout for flrig status
 	flrigDefaultTimeout = 1000                    // default flrig HTTP timeout (ms)
 )
@@ -85,7 +85,6 @@ const (
 	screenPSKReporter
 	screenMainMenu
 	screenConfig
-	screenCallbook
 	screenIntegration
 	screenChooser
 	screenRigEdit
@@ -114,6 +113,7 @@ type Model struct {
 	dateTimeAuto bool
 	tickCount    int
 	inetOnline   bool
+	Offline      bool // when true, skip all network-dependent operations
 	wsjtx        wsjtxState
 	needRefresh  bool
 	dupe         bool // true when call/band/mode match an existing QSO today
@@ -194,6 +194,10 @@ type statusPending struct {
 }
 
 func New(a *app.App, initialQSOS []qso.QSO) *Model {
+	// Apply config debug mode at startup (CLI --debug flag may have
+	// already set it, but config value takes precedence).
+	applog.SetDebugMode(a.Config.General.Debug)
+
 	m := &Model{App: a, qsos: initialQSOS, toasts: NewToastQueue(), dateTimeAuto: true, width: 80, height: 24}
 	now := time.Now().UTC()
 	for i := field(0); i < fieldCount; i++ {
@@ -297,13 +301,28 @@ func (m *Model) Init() tea.Cmd {
 		m.adifQ.status = statusPending{call: call, grid: grid, freq: freq, mode: mode, submode: submode, report: report, txMessage: txMessage, transmitting: transmitting, hasData: true}
 		m.adifQ.mu.Unlock()
 	}
-	if m.App.Config.WSJTX.Enabled {
+	// Read WSJT-X config from the active rig preset (per-rig).
+	wsjtxE, wsjtxH, wsjtxP := false, "127.0.0.1", 2233
+	if rp, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok {
+		wsjtxE = rp.WsjtxEnabled
+		if rp.WsjtxUDPHost != "" {
+			wsjtxH = rp.WsjtxUDPHost
+		}
+		if rp.WsjtxUDPPort > 0 {
+			wsjtxP = rp.WsjtxUDPPort
+		}
+	}
+	if wsjtxE {
 		applog.Info("WSJT-X: callbacks registered, restarting listener")
-		m.App.MaybeRestartWSJTX()
+		m.App.MaybeRestartWSJTX(wsjtxE, wsjtxH, wsjtxP)
 	} else {
 		applog.Debug("wsjt-x: disabled")
 	}
-	return tea.Batch(tickCmd(), checkInetCmd(), m.photo.viewer.Init(), m.emitWindowIconCmd())
+	cmds := []tea.Cmd{tickCmd(), m.photo.viewer.Init(), m.emitWindowIconCmd()}
+	if !m.Offline {
+		cmds = append(cmds, checkInetCmd())
+	}
+	return tea.Batch(cmds...)
 }
 
 // emitWindowIconCmd emits OSC 0 which sets both the terminal window title and
@@ -423,6 +442,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case qrzResultMsg:
 		m.fillQRZData(r)
 		cmd = tea.Batch(cmd, m.updateFilteredTable())
+		if m.lookup.lookupsInFlight > 0 {
+			m.lookup.lookupsInFlight--
+		}
+		if m.lookup.pendingSave && m.lookup.lookupsInFlight == 0 {
+			m.lookup.pendingSave = false
+			cmd = tea.Batch(cmd, m.saveQSO())
+		}
 		if m.photo.partnerPicNeedLoad {
 			m.photo.partnerPicNeedLoad = false
 			w := m.photo.partnerPicW
@@ -439,6 +465,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case wlResultMsg:
 		m.fillWLData(r)
+		if m.lookup.lookupsInFlight > 0 {
+			m.lookup.lookupsInFlight--
+		}
+		if m.lookup.pendingSave && m.lookup.lookupsInFlight == 0 {
+			m.lookup.pendingSave = false
+			cmd = tea.Batch(cmd, m.saveQSO())
+		}
 		return m, cmd
 	case refRebuildMsg:
 		m.ref.building = false
@@ -499,8 +532,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleContestUpdate(msg, cmd)
 	case screenConfig:
 		return m.handleConfigUpdate(msg, cmd)
-	case screenCallbook:
-		return m.handleCallbookUpdate(msg, cmd)
 	case screenIntegration:
 		return m.handleIntegrationUpdate(msg, cmd)
 	case screenMainMenu:
@@ -722,8 +753,6 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 		body = m.ui.mainMenu.View().Content
 	case screenConfig:
 		body = m.ui.configMenu.View().Content
-	case screenCallbook:
-		body = m.ui.callbookMenu.View().Content
 	case screenIntegration:
 		body = m.ui.integrationMenu.View().Content
 	case screenChooser:

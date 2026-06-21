@@ -24,8 +24,11 @@ func LogbookDisplayName(lb *Logbook) string {
 }
 
 // RigDisplayName returns the human-readable name for a rig preset:
-// the model name, or "Unnamed" if empty.
+// the Name field, or the Model field, or "Unnamed".
 func RigDisplayName(rp *RigPreset) string {
+	if rp.Name != "" {
+		return rp.Name
+	}
 	if rp.Model != "" {
 		return rp.Model
 	}

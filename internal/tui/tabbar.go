@@ -80,7 +80,7 @@ func (m *Model) tabView() string {
 		disabled bool
 	}
 
-	dxcOnline := m.App.Config.DXC.Enabled && m.dxc.online
+	dxcOnline := m.App.Config.Integrations.DXC.Enabled && m.dxc.online
 	allTabs := []tab{
 		{"F1 QSO", "QSO", "F1", m.screen == screenQSO && m.confirm == nil, false},
 		{"F2 QRZ", "QRZ", "F2", (m.screen == screenPartner || m.screen == screenImage) && hasPartner, !hasPartner},
@@ -90,7 +90,7 @@ func (m *Model) tabView() string {
 		{"F6 REF", "REF", "F6", m.screen == screenRef, !m.isREFReady()},
 		{"F7 BPL", "BPL", "F7", m.screen == screenBPL, false},
 		{"F8 LOG", "LOG", "F8", m.screen == screenLogbookEditor, false},
-		{"F9 CFG", "CFG", "F9", m.screen == screenMainMenu || m.screen == screenConfig || m.screen == screenCallbook || m.screen == screenIntegration || m.screen == screenChooser || m.screen == screenRigEdit || m.screen == screenNotifications, false},
+		{"F9 CFG", "CFG", "F9", m.screen == screenMainMenu || m.screen == screenConfig || m.screen == screenIntegration || m.screen == screenChooser || m.screen == screenRigEdit || m.screen == screenNotifications, false},
 	}
 
 	// Pick the best-fit label tier and build the final parts in one pass.

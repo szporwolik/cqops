@@ -13,15 +13,18 @@ import (
 )
 
 type Config struct {
-	General   GeneralConfig        `yaml:"general"`
-	State     StateConfig          `yaml:"state"`
-	QRZ       QRZConfig            `yaml:"qrz,omitempty"`
-	Favorites map[int]Favorite     `yaml:"favorites,omitempty"`
-	Logbooks  map[string]Logbook   `yaml:"logbooks"`
-	Rigs      map[string]RigPreset `yaml:"rigs,omitempty"`
-	Contests  map[string]Contest   `yaml:"contests,omitempty"`
-	WSJTX     WSJTXConfig          `yaml:"wsjtx,omitempty"`
-	DXC       DXCConfig            `yaml:"dxc,omitempty"`
+	General      GeneralConfig        `yaml:"general"`
+	State        StateConfig          `yaml:"state"`
+	Integrations IntegrationsConfig   `yaml:"integrations,omitempty"`
+	Favorites    map[int]Favorite     `yaml:"favorites,omitempty"`
+	Logbooks     map[string]Logbook   `yaml:"logbooks"`
+	Rigs         map[string]RigPreset `yaml:"rigs,omitempty"`
+	Contests     map[string]Contest   `yaml:"contests,omitempty"`
+}
+
+type IntegrationsConfig struct {
+	DXC DXCConfig `yaml:"dxc,omitempty"`
+	QRZ QRZConfig `yaml:"qrz,omitempty"`
 }
 
 type DXCConfig struct {
@@ -41,6 +44,7 @@ type GeneralConfig struct {
 	UseCTY           bool                `yaml:"use_cty,omitempty"` // CTY.DAT DXCC country file
 	UseSCP           bool                `yaml:"use_scp,omitempty"` // Super Check Partial callsign database
 	UseRef           bool                `yaml:"use_ref,omitempty"` // REF database
+	Debug            bool                `yaml:"debug,omitempty"`   // verbose debug logging
 	Notifications    NotificationsConfig `yaml:"notifications"`
 }
 
@@ -163,12 +167,16 @@ func (s Station) RigFlrig(rgs map[string]RigPreset) (enabled bool, host, port st
 
 type RigPreset struct {
 	ID           string `yaml:"-"`
+	Name         string `yaml:"name,omitempty"`
 	Model        string `yaml:"model"`
 	Antenna      string `yaml:"antenna"`
 	Power        string `yaml:"power"`
 	FlrigEnabled bool   `yaml:"flrig_enabled"`
 	FlrigHost    string `yaml:"flrig_host"`
 	FlrigPort    string `yaml:"flrig_port"`
+	WsjtxEnabled bool   `yaml:"wsjtx_enabled,omitempty"`
+	WsjtxUDPHost string `yaml:"wsjtx_udp_host,omitempty"`
+	WsjtxUDPPort int    `yaml:"wsjtx_udp_port,omitempty"`
 }
 
 type ADIFConfig struct {
@@ -200,12 +208,6 @@ type WavelogConfig struct {
 	APIKey           string `yaml:"api_key"`
 	StationProfileID string `yaml:"station_profile_id"`
 	LastFetchedID    int64  `yaml:"last_fetched_id,omitempty"`
-}
-
-type WSJTXConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	UDPHost string `yaml:"udp_host"`
-	UDPPort int    `yaml:"udp_port"`
 }
 
 // Load reads and parses a YAML configuration file from path.
@@ -277,11 +279,11 @@ func (c *Config) Validate() error {
 	}
 
 	// --- QRZ ---
-	if c.QRZ.Enabled {
-		if strings.TrimSpace(c.QRZ.User) == "" {
+	if c.Integrations.QRZ.Enabled {
+		if strings.TrimSpace(c.Integrations.QRZ.User) == "" {
 			return fmt.Errorf("qrz.user is required when qrz.enabled is true")
 		}
-		if strings.TrimSpace(c.QRZ.Pass) == "" {
+		if strings.TrimSpace(c.Integrations.QRZ.Pass) == "" {
 			return fmt.Errorf("qrz.pass is required when qrz.enabled is true")
 		}
 	}
@@ -304,24 +306,14 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	// --- WSJT-X ---
-	if c.WSJTX.Enabled {
-		if strings.TrimSpace(c.WSJTX.UDPHost) == "" {
-			return fmt.Errorf("wsjtx.udp_host is required when enabled")
-		}
-		if c.WSJTX.UDPPort < 1 || c.WSJTX.UDPPort > 65535 {
-			return fmt.Errorf("wsjtx.udp_port must be 1-65535, got %d", c.WSJTX.UDPPort)
-		}
-	}
-
 	// --- DXC ---
-	if c.DXC.Enabled {
-		if strings.TrimSpace(c.DXC.Host) == "" {
+	if c.Integrations.DXC.Enabled {
+		if strings.TrimSpace(c.Integrations.DXC.Host) == "" {
 			return fmt.Errorf("dxc.host is required when enabled")
 		}
-		if c.DXC.Port != "" {
-			if p, err := strconv.Atoi(c.DXC.Port); err != nil || p < 1 || p > 65535 {
-				return fmt.Errorf("dxc.port must be 1-65535, got %q", c.DXC.Port)
+		if c.Integrations.DXC.Port != "" {
+			if p, err := strconv.Atoi(c.Integrations.DXC.Port); err != nil || p < 1 || p > 65535 {
+				return fmt.Errorf("dxc.port must be 1-65535, got %q", c.Integrations.DXC.Port)
 			}
 		}
 	}

@@ -37,8 +37,7 @@ func newSaveTestModel(t *testing.T) *Model {
 			},
 		},
 	}
-	cfg.QRZ.Enabled = false
-	cfg.WSJTX.Enabled = false
+	cfg.Integrations.QRZ.Enabled = false
 
 	a := &app.App{
 		Config:     cfg,
@@ -73,15 +72,9 @@ func setWavelog(cfg *config.Config, url, key string) {
 }
 
 func setQRZ(cfg *config.Config, user, pass string) {
-	cfg.QRZ.Enabled = true
-	cfg.QRZ.User = user
-	cfg.QRZ.Pass = pass
-}
-
-func setWSJTX(cfg *config.Config, host string, port int) {
-	cfg.WSJTX.Enabled = true
-	cfg.WSJTX.UDPHost = host
-	cfg.WSJTX.UDPPort = port
+	cfg.Integrations.QRZ.Enabled = true
+	cfg.Integrations.QRZ.User = user
+	cfg.Integrations.QRZ.Pass = pass
 }
 
 // =============================================================================
@@ -150,8 +143,7 @@ func testSaveConfigBlocked(t *testing.T, cfgSetup func(*config.Config), desc str
 			Station:     config.Station{Callsign: "SP9MOA", Grid: "JO90"},
 		},
 	}
-	cfg.QRZ.Enabled = false
-	cfg.WSJTX.Enabled = false
+	cfg.Integrations.QRZ.Enabled = false
 
 	cfgSetup(cfg)
 
@@ -216,15 +208,6 @@ func TestSaveConfig_Blocked_QRZNoPass(t *testing.T) {
 	testSaveConfigBlocked(t, func(cfg *config.Config) {
 		setQRZ(cfg, "user", "")
 	}, "qrz-no-pass")
-}
-
-func TestSaveConfig_Blocked_WSJTXBadPort(t *testing.T) {
-	testSaveConfigBlocked(t, func(cfg *config.Config) {
-		setWSJTX(cfg, "127.0.0.1", 0)
-	}, "wsjtx-port-0")
-	testSaveConfigBlocked(t, func(cfg *config.Config) {
-		setWSJTX(cfg, "127.0.0.1", 65536)
-	}, "wsjtx-port-65536")
 }
 
 func TestSaveConfig_Blocked_InvalidDistanceUnit(t *testing.T) {

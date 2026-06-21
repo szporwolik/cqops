@@ -33,4 +33,10 @@ type lookupState struct {
 	wlLookupDone  bool
 	wlLastBand    string
 	wlLastMode    string
+
+	// pendingSave is set when Enter is pressed while lookups are still
+	// in progress. The save fires automatically once both complete.
+	pendingSave bool
+	// lookupsInFlight counts dispatched but not yet completed lookups.
+	lookupsInFlight int
 }

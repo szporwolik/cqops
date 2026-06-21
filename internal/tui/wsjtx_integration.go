@@ -44,7 +44,7 @@ func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode
 			m.rc.logStatsSig = ""
 			m.invalidatePartnerMapCache()
 			applog.InfoDetail("WSJT-X: switching DX call", fmt.Sprintf("%s \u2192 %s", prevCall, newCall))
-			if m.App.Config.QRZ.Enabled && m.App.Config.QRZ.User != "" {
+			if m.App.Config.Integrations.QRZ.Enabled && m.App.Config.Integrations.QRZ.User != "" {
 				applog.Info("QRZ: looking up " + call + "\u2026")
 				m.lookup.qrzNeed = true
 				m.lookup.qrzCall = newCall
@@ -176,21 +176,22 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 // QSO via QRZ (if configured) and then uploads the enriched QSO to Wavelog.
 // This ensures the QSO on Wavelog contains QRZ-derived fields (Name, QTH,
 // Country, GridSquare) rather than the raw WSJT-X ADIF.
-// Returns nil when neither QRZ enrichment nor Wavelog upload is possible.
+// Returns nil when offline, when neither QRZ enrichment nor Wavelog upload is
+// possible, or when the call is empty.
 func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
-	if call == "" {
+	if call == "" || !m.inetOnline {
 		return nil
 	}
-	qrzenabled := m.App.Config.QRZ.Enabled && m.App.Config.QRZ.User != ""
+	qrzenabled := m.App.Config.Integrations.QRZ.Enabled && m.App.Config.Integrations.QRZ.User != ""
 	wl := m.App.Logbook.Wavelog
 	wlenabled := wl != nil && wl.Enabled && wl.StationProfileID != ""
 	if !qrzenabled && !wlenabled {
 		return nil // nothing to do
 	}
 	return func() tea.Msg {
-		// Step 1: enrich via QRZ (best-effort).
-		if qrzenabled {
-			data, err := qrzLookupFunc(m.App.Config.QRZ.User, m.App.Config.QRZ.Pass, call)
+		// Step 1: enrich via QRZ (best-effort). Only when still online.
+		if qrzenabled && m.inetOnline {
+			data, err := qrzLookupFunc(m.App.Config.Integrations.QRZ.User, m.App.Config.Integrations.QRZ.Pass, call)
 			if err != nil {
 				applog.Warn("WSJT-X: QRZ enrichment failed", "call", call, "error", err)
 			} else if data != nil && data.Callsign != "" {

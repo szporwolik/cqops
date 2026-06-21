@@ -53,7 +53,6 @@ func newLifecycleTestModel(t *testing.T) *Model {
 		},
 	}
 	// Disable all integrations for tests
-	cfg.WSJTX.Enabled = false
 
 	a := &app.App{
 		Config:      cfg,

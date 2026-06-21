@@ -324,6 +324,9 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				le.mode = edModeConfirmDelete
 			}
 		case "w":
+			if le.Offline {
+				return le, func() tea.Msg { return editorMsg{toastWarn: "Network not available — cannot upload to Wavelog"} }
+			}
 			if le.wlURL != "" && le.wlKey != "" && le.wlStationID != "" {
 				if len(le.qsos) == 0 {
 					return le, func() tea.Msg { return editorMsg{toastWarn: "Logbook is empty — nothing to upload"} }
@@ -353,6 +356,9 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				le.mode = edModeConfirmWLSend
 			}
 		case "ctrl+w":
+			if le.Offline {
+				return le, func() tea.Msg { return editorMsg{toastWarn: "Network not available — cannot download from Wavelog"} }
+			}
 			if le.contestID != "" {
 				return le, func() tea.Msg {
 					return editorMsg{toastWarn: "Wavelog download is not available in contest-filtered view"}

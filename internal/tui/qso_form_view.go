@@ -256,7 +256,11 @@ func (m *Model) stationProfile() []string {
 		parts = append(parts, "Op "+s.Operator)
 	}
 	if rig := s.RigModel(m.App.Config.Rigs); rig != "" {
-		part := "Rig " + rig
+		part := "Rig "
+		if rp, ok := m.App.Config.Rigs[s.RigName]; ok && rp.Name != "" {
+			part += rp.Name + " - "
+		}
+		part += rig
 		if ant := s.RigAntenna(m.App.Config.Rigs); ant != "" {
 			part += "/" + ant
 		}

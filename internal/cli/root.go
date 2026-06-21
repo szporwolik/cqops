@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -16,9 +17,13 @@ import (
 )
 
 var logbookFlag string
+var offlineFlag bool
+var debugFlag bool
 
 func init() {
 	rootCmd.PersistentFlags().StringVarP(&logbookFlag, "logbook", "l", "", "Logbook name to use")
+	rootCmd.PersistentFlags().BoolVarP(&offlineFlag, "offline", "o", false, "Run in offline mode (skip all network checks)")
+	rootCmd.PersistentFlags().BoolVarP(&debugFlag, "debug", "d", false, "Enable debug logging")
 	rootCmd.AddCommand(versionCmd)
 }
 
@@ -45,13 +50,36 @@ Run without arguments to start the interactive TUI.`,
 }
 
 func Execute() error {
-	applog.Init()
-	applog.Info("══════════ CQOps STARTED ══════════", "v", version.Resolved(), "built", version.ResolvedDate(), "utc", time.Now().UTC().Format("2006-01-02 15:04:05"))
-
-	if len(os.Args) <= 1 {
-		return runTUI()
+	// Always let cobra parse persistent flags (--offline, --logbook, --debug)
+	// even when launching the TUI without a subcommand. Must happen before
+	// applog.Init so debug mode can be set early.
+	if err := rootCmd.ParseFlags(os.Args[1:]); err != nil {
+		// Ignore "unknown flag" errors — cobra will handle validation.
 	}
-	return rootCmd.Execute()
+
+	applog.SetDebugMode(debugFlag)
+	applog.Init()
+
+	applog.Info("══════════ CQOps STARTED ══════════", "v", version.Resolved(), "built", version.ResolvedDate(), "utc", time.Now().UTC().Format("2006-01-02 15:04:05"))
+	if offlineFlag {
+		applog.Info("Running in OFFLINE mode — all network connections skipped")
+	}
+	if debugFlag {
+		applog.Info("Debug logging enabled")
+	}
+
+	// Only delegate to cobra when a subcommand is explicitly given.
+	hasSubcommand := false
+	for _, a := range os.Args[1:] {
+		if !strings.HasPrefix(a, "-") {
+			hasSubcommand = true
+			break
+		}
+	}
+	if hasSubcommand {
+		return rootCmd.Execute()
+	}
+	return runTUI()
 }
 
 func runTUI() error {
@@ -63,6 +91,7 @@ func runTUI() error {
 
 	if config.IsFirstRun(a.Config) {
 		w := tui.NewWizard(a)
+		w.Offline = offlineFlag
 		p := tea.NewProgram(w)
 		if _, err := p.Run(); err != nil {
 			return fmt.Errorf("wizard: %w", err)
@@ -89,6 +118,7 @@ func runTUI() error {
 	}
 
 	m := tui.New(a, qsos)
+	m.Offline = offlineFlag
 	p := tea.NewProgram(m)
 
 	if _, err := p.Run(); err != nil {

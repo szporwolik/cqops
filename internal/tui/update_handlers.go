@@ -71,8 +71,10 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 	// WSJT-X auto-reconnect: if enabled but never online, retry start every 30s.
 	// MaybeRestartWSJTX is a no-op when the listener is already running; it only
 	// acts when the previous start failed (lastWSJTX wasn't updated on error).
-	if m.App.Config.WSJTX.Enabled && !m.wsjtx.online && m.tickCount%30 == 0 {
-		m.App.MaybeRestartWSJTX()
+	if !m.wsjtx.online && m.tickCount%30 == 0 {
+		if rp, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok && rp.WsjtxEnabled {
+			m.App.MaybeRestartWSJTX(rp.WsjtxEnabled, rp.WsjtxUDPHost, rp.WsjtxUDPPort)
+		}
 	}
 	m.toasts.Expire()
 	// Only update the QSO form clock when the form is visible.
@@ -201,14 +203,14 @@ func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
 		call := m.lookup.qrzCall
 		applog.Debug("DXC: handlePendingRequests qrzNeed",
 			"call", call,
-			"qrzEnabled", m.App.Config.QRZ.Enabled,
-			"qrzUser", m.App.Config.QRZ.User != "",
+			"qrzEnabled", m.App.Config.Integrations.QRZ.Enabled,
+			"qrzUser", m.App.Config.Integrations.QRZ.User != "",
 		)
 		if call == "" {
 			return cmd, false
 		}
 		// Always fire DXC spot lookup when call changes, even if QRZ is disabled.
-		if !m.App.Config.QRZ.Enabled || m.App.Config.QRZ.User == "" {
+		if !m.App.Config.Integrations.QRZ.Enabled || m.App.Config.Integrations.QRZ.User == "" {
 			return tea.Batch(cmd, m.dxcSpotLookupCmd(call)), true
 		}
 		return tea.Batch(cmd, m.lookupCallCmd(call)), true

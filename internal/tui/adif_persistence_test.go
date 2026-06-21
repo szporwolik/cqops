@@ -38,7 +38,6 @@ func newADIFTestModel(t *testing.T) *Model {
 				},
 			},
 		},
-		WSJTX: config.WSJTXConfig{Enabled: false},
 	}
 	a := &app.App{
 		Config:      cfg,
@@ -71,7 +70,7 @@ const adifSSB = "<CALL:5>G4ABC <BAND:3>40m <FREQ:6>7.1850 <MODE:3>SSB <SUBMODE:3
 
 func TestADIFToQSO_FT8(t *testing.T) {
 	m := newADIFTestModel(t)
-	m.App.Config.QRZ.Enabled = false
+	m.App.Config.Integrations.QRZ.Enabled = false
 	// Disable Wavelog so upload is not triggered.
 	m.App.Logbook.Wavelog = nil
 
@@ -631,7 +630,7 @@ func TestWavelogBoundary_UploadState(t *testing.T) {
 func TestLogQSOFromADIF_FullPipeline(t *testing.T) {
 	m := newADIFTestModel(t)
 	m.App.Logbook.Wavelog = nil
-	m.App.Config.QRZ.Enabled = false
+	m.App.Config.Integrations.QRZ.Enabled = false
 
 	// Run the full logQSOFromADIF pipeline.
 	cmd, retry := m.logQSOFromADIF(adifFT8)
@@ -765,7 +764,7 @@ func TestADIFToQSO_StandaloneFT4Normalized(t *testing.T) {
 func TestADIFToQSO_StandaloneFT8LogQSO(t *testing.T) {
 	m := newADIFTestModel(t)
 	m.App.Logbook.Wavelog = nil
-	m.App.Config.QRZ.Enabled = false
+	m.App.Config.Integrations.QRZ.Enabled = false
 
 	// Full pipeline with standalone FT8.
 	adif := "<CALL:6>SP9MOA <BAND:3>20m <FREQ:8>14.074550 <MODE:3>FT8 " +

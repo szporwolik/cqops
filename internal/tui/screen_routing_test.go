@@ -51,7 +51,7 @@ func TestScreenRouting_F1ReturnsToQSO(t *testing.T) {
 
 func TestScreenRouting_F4TogglesDXC(t *testing.T) {
 	m := newTestModel()
-	m.App.Config.DXC.Enabled = true
+	m.App.Config.Integrations.DXC.Enabled = true
 	m.dxc.online = true
 	_, handled := m.handleGlobalKeys(tea.KeyPressMsg{Code: tea.KeyF4})
 	if !handled {
@@ -146,8 +146,8 @@ func TestFlrigResult_ZeroValuesNoPanic(t *testing.T) {
 
 func TestQRZResult_Success(t *testing.T) {
 	m := newTestModel()
-	m.App.Config.QRZ.Enabled = true
-	m.App.Config.QRZ.User = "testuser"
+	m.App.Config.Integrations.QRZ.Enabled = true
+	m.App.Config.Integrations.QRZ.User = "testuser"
 	m.fields[fieldCall].SetValue("SP9XXX")
 	msg := qrzResultMsg{
 		Call: "SP9XXX",
@@ -345,8 +345,8 @@ func TestHandlePendingRequests_QRZNeedWithCall(t *testing.T) {
 	m := newTestModel()
 	m.lookup.qrzNeed = true
 	m.lookup.qrzCall = "SP9XXX"
-	m.App.Config.QRZ.Enabled = true
-	m.App.Config.QRZ.User = "testuser"
+	m.App.Config.Integrations.QRZ.Enabled = true
+	m.App.Config.Integrations.QRZ.User = "testuser"
 	cmd, handled := m.handlePendingRequests(nil)
 	if !handled {
 		t.Error("handlePendingRequests with qrzNeed should be handled")
@@ -363,7 +363,7 @@ func TestHandlePendingRequests_QRZNeedDisabled(t *testing.T) {
 	m := newTestModel()
 	m.lookup.qrzNeed = true
 	m.lookup.qrzCall = "SP9XXX"
-	m.App.Config.QRZ.Enabled = false
+	m.App.Config.Integrations.QRZ.Enabled = false
 	cmd, handled := m.handlePendingRequests(nil)
 	if !handled {
 		t.Error("handlePendingRequests should handle disabled QRZ (triggers DXC lookup)")

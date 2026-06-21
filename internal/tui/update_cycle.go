@@ -85,11 +85,12 @@ func (m *Model) cycleRig() tea.Cmd {
 		m.toasts.Error("Save rig failed: " + err.Error())
 		return nil
 	}
-	m.toasts.Success("Rig: " + rp.Model + " (" + rp.Antenna + ")")
-	applog.Info("Rig cycled", "name", rp.Model)
+	m.toasts.Success("Rig: " + config.RigDisplayName(&rp))
+	applog.Info("Rig cycled", "name", config.RigDisplayName(&rp))
 	m.rc.status = ""
 	m.invalidatePartnerMapCache()
 	m.rc.pathSig = ""
 	m.refreshFlrigClient() // reconnect/disconnect flrig for the new rig
+	m.App.MaybeRestartWSJTX(rp.WsjtxEnabled, rp.WsjtxUDPHost, rp.WsjtxUDPPort)
 	return nil
 }

@@ -222,14 +222,6 @@ func (m *Model) ActiveBindings() []key.Binding {
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 		)
 	}
-	if m.screen == screenCallbook {
-		bindings = append(bindings,
-			key.NewBinding(key.WithKeys("up", "down", "tab"), key.WithHelp("↑↓", "Navigate")),
-			key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle")),
-			key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
-			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
-		)
-	}
 	if m.screen == screenChooser {
 		if m.ui.chooser != nil && (m.ui.chooser.mode == chooserEdit || m.ui.chooser.mode == chooserCreate) {
 			bindings = append(bindings,
@@ -312,12 +304,19 @@ func (m *Model) ActiveBindings() []key.Binding {
 		)
 	}
 	if m.screen == screenRef {
-		bindings = append(bindings,
-			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("\u2191\u2193", "Navigate")),
-			key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("PgUp/Dn", "Page")),
-			key.NewBinding(key.WithKeys("enter", "insert"), key.WithHelp("Enter/Ins", "Search")),
-			key.NewBinding(key.WithKeys("backspace"), key.WithHelp("Bksp", "Clear")),
-		)
+		if m.ref.searched && len(m.ref.rows) > 0 {
+			bindings = append(bindings,
+				key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("\u2191\u2193", "Navigate")),
+				key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("PgUp/Dn", "Page")),
+				key.NewBinding(key.WithKeys("enter", "insert"), key.WithHelp("Enter/Ins", "Add to QSO")),
+				key.NewBinding(key.WithKeys("backspace"), key.WithHelp("Bksp", "Clear")),
+			)
+		} else {
+			bindings = append(bindings,
+				key.NewBinding(key.WithKeys("enter", "insert"), key.WithHelp("Enter/Ins", "Search")),
+				key.NewBinding(key.WithKeys("backspace"), key.WithHelp("Bksp", "Clear")),
+			)
+		}
 	}
 	if m.screen == screenBPL {
 		bindings = append(bindings,

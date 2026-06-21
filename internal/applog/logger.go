@@ -16,10 +16,11 @@ import (
 var Logger *slog.Logger
 
 var (
-	mu      sync.Mutex
-	entries []Entry
-	logDir  string
-	beepFn  func() // called on errors when set (see SetBeepFunc)
+	mu        sync.Mutex
+	entries   []Entry
+	logDir    string
+	beepFn    func() // called on errors when set (see SetBeepFunc)
+	debugMode bool   // when false, Debug/DebugDetail are suppressed
 )
 
 const maxStored = 100   // max in-memory log entries for TUI viewer
@@ -144,6 +145,9 @@ func Entries() []Entry {
 
 // Debug logs a message at DEBUG level. Safe when Logger is nil (tests).
 func Debug(msg string, args ...any) {
+	if !debugMode {
+		return
+	}
 	Append("DEBUG", msg, "")
 	if Logger != nil {
 		Logger.Debug(msg, args...)
@@ -203,6 +207,9 @@ func ErrorDetail(msg, details string) {
 // DebugDetail logs a DEBUG message with an additional detail string shown
 // in the TUI log viewer. Safe when Logger is nil (tests).
 func DebugDetail(msg, details string) {
+	if !debugMode {
+		return
+	}
 	Append("DEBUG", msg, details)
 	if Logger != nil {
 		Logger.Debug(msg, "details", details)
@@ -217,4 +224,10 @@ func nowStamp() string {
 // Pass nil to disable. Callers should use this to trigger a system beep.
 func SetBeepFunc(fn func()) {
 	beepFn = fn
+}
+
+// SetDebugMode enables or disables DEBUG-level log output.
+// Default is false (debug logs suppressed).
+func SetDebugMode(on bool) {
+	debugMode = on
 }

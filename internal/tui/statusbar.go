@@ -42,8 +42,8 @@ func (m *Model) headerView() string {
 	// Build right side first so we know how much width remains for MSG.
 	var rightParts []string
 
-	rightParts = append(rightParts, statusDotStyled(m.inetOnline, "Net"))
-	if m.App.Config.WSJTX.Enabled {
+	rightParts = append(rightParts, statusDotStyled(m.inetOnline, "Net", m.Offline))
+	if rp, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok && rp.WsjtxEnabled {
 		rightParts = append(rightParts, statusDotStyled(m.wsjtx.online, "WSJT"))
 	}
 	if cfgRig, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok && cfgRig.FlrigEnabled {
@@ -53,12 +53,12 @@ func (m *Model) headerView() string {
 			rightParts = append(rightParts, statusDotStyled(m.rig.connected, "Rig"))
 		}
 	}
-	if m.App.Config.DXC.Enabled {
-		rightParts = append(rightParts, statusDotStyled(m.dxc.online, "DXC"))
+	if m.App.Config.Integrations.DXC.Enabled {
+		rightParts = append(rightParts, statusDotStyled(m.dxc.online, "DXC", m.Offline))
 	}
 	wl := m.App.Logbook.Wavelog
 	if wl != nil && wl.Enabled {
-		rightParts = append(rightParts, statusDotStyled(m.lookup.wlOnline, "WL"))
+		rightParts = append(rightParts, statusDotStyled(m.lookup.wlOnline, "WL", m.Offline))
 	}
 	rightParts = append(rightParts,
 		utcLabelStyle.Render("UTC"),
@@ -92,7 +92,11 @@ func (m *Model) headerView() string {
 	}
 
 	// WSJT-X TX message — only when at least 20 cells of free space remain.
-	if m.wsjtx.txMsg != "" && m.App.Config.WSJTX.Enabled && m.wsjtx.online {
+	wsjtxOn := false
+	if rp, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok {
+		wsjtxOn = rp.WsjtxEnabled
+	}
+	if m.wsjtx.txMsg != "" && wsjtxOn && m.wsjtx.online {
 		style := S.StatusValue
 		if m.wsjtx.tx {
 			style = txDotStyle
@@ -120,10 +124,13 @@ func (m *Model) headerView() string {
 var txDotStyle = lipgloss.NewStyle().Foreground(P.Accent).Bold(true)
 
 // statusDotStyled renders an integration indicator dot with label.
-func statusDotStyled(on bool, label string) string {
+// When offline is true, uses warning color instead of error for the off state.
+func statusDotStyled(on bool, label string, offline ...bool) string {
 	s := statusDotOffStyle
 	if on {
 		s = statusDotOnStyle
+	} else if len(offline) > 0 && offline[0] {
+		s = statusDotWarnStyle
 	}
 	return s.Render(label) + " "
 }

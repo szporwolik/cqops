@@ -3,7 +3,10 @@ package wsjtx
 import (
 	"fmt"
 	"net"
+	"reflect"
+	"strings"
 	"sync"
+	"unsafe"
 
 	wsjtx "github.com/k0swe/wsjtx-go/v4"
 	"github.com/szporwolik/cqops/internal/applog"
@@ -34,12 +37,8 @@ func NewListener() *Listener {
 
 // Start creates a new server and begins listening for WSJT-X UDP messages.
 // It is safe to call multiple times — a previous listener (if any) is stopped
-// first so that config changes (host/port) take effect.
-//
-// Known limitation: the underlying wsjtx-go library does not expose a way to
-// close the UDP socket. The goroutine that calls ListenToWsjtx will persist
-// until the process exits. On restart, the old UDP goroutine leaks, but the
-// event-processing goroutine (eventLoop) is properly cleaned up.
+// first (including closing the UDP socket) so that config changes (host/port)
+// take effect.
 func (l *Listener) Start(host string, port int) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -70,9 +69,8 @@ func (l *Listener) Start(host string, port int) error {
 	msgCh := make(chan interface{}, 128)
 	errCh := make(chan error, 16)
 
-	// This goroutine blocks on UDP read and cannot be interrupted from
-	// outside (the library exposes no Shutdown/Close for the socket).
-	// It will be cleaned up when the process exits.
+	// The ListenToWsjtx goroutine blocks on UDP read; it exits when the
+	// socket is closed (via reflection in stopLocked), receiving net.ErrClosed.
 	go func() {
 		l.server.ListenToWsjtx(msgCh, errCh)
 	}()
@@ -88,11 +86,9 @@ func (l *Listener) Start(host string, port int) error {
 }
 
 // Stop signals the event-processing goroutine to exit and waits for it.
+// It also shuts down the underlying UDP socket via the library's Shutdown
+// method, allowing the port to be reused on the next Start.
 // It is safe to call multiple times (idempotent).
-//
-// Note: the low-level UDP-listen goroutine (ListenToWsjtx) cannot be
-// stopped — the library provides no socket-close mechanism. It will
-// exit when the process terminates.
 func (l *Listener) Stop() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -103,6 +99,17 @@ func (l *Listener) Stop() {
 func (l *Listener) stopLocked() {
 	if !l.active {
 		return
+	}
+	// Close the underlying UDP socket so the port can be reused.
+	// wsjtx-go v4.2.1 does not expose Shutdown; we access the conn
+	// via unsafe pointer to avoid the unexported-field reflect panic.
+	if l.server != nil {
+		rv := reflect.ValueOf(l.server).Elem()
+		if connField := rv.FieldByName("conn"); connField.IsValid() && !connField.IsNil() {
+			// conn is *net.UDPConn, so its address is **net.UDPConn.
+			connPtr := (**net.UDPConn)(unsafe.Pointer(connField.UnsafeAddr()))
+			(*connPtr).Close()
+		}
 	}
 	close(l.stop)
 	l.wg.Wait()
@@ -165,6 +172,11 @@ func (l *Listener) eventLoop(gen uint64, msgCh chan interface{}, errCh chan erro
 				return
 			}
 			if e != nil {
+				// Suppress "use of closed network connection" — this is
+				// normal during listener shutdown/cycling.
+				if strings.Contains(e.Error(), "use of closed network connection") {
+					continue
+				}
 				applog.Error("WSJT-X: error", "error", e.Error())
 			}
 		}
