@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,10 +17,6 @@ import (
 	"github.com/ftl/hamradio/locator"
 	"github.com/szporwolik/cqops/internal/applog"
 )
-
-// errSkipRow is a sentinel used internally to signal that a CSV/JSON row
-// should be skipped without aborting the import.
-var errSkipRow = errors.New("skip row")
 
 // CSV URLs.
 const (

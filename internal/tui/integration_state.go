@@ -9,8 +9,6 @@ import (
 type rigState struct {
 	connected bool
 	freq      float64
-	mode      string
-	power     float64
 	blink     bool
 	skipTicks int
 	polling   bool

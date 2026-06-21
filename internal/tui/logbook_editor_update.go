@@ -34,8 +34,6 @@ type editorMsg struct {
 	wlOK       bool
 	wlDup      bool
 	normalized int
-	skipped    int
-	skipReason string
 	err        error
 	dlCount    int
 	dlDupes    int
