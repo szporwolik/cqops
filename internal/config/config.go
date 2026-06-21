@@ -14,12 +14,12 @@ import (
 )
 
 type Config struct {
-	General      GeneralConfig        `yaml:"general"`
-	State        StateConfig          `yaml:"state"`
-	Integrations IntegrationsConfig   `yaml:"integrations,omitempty"`
-	Favorites    map[int]Favorite     `yaml:"favorites,omitempty"`
-	Logbooks     map[string]Logbook   `yaml:"logbooks"`
-	Rigs         map[string]RigPreset `yaml:"rigs,omitempty"`
+	General           GeneralConfig        `yaml:"general"`
+	State             StateConfig          `yaml:"state"`
+	Integrations      IntegrationsConfig   `yaml:"integrations,omitempty"`
+	Favorites         map[int]Favorite     `yaml:"favorites,omitempty"`
+	Logbooks          map[string]Logbook   `yaml:"logbooks"`
+	Rigs              map[string]RigPreset `yaml:"rigs,omitempty"`
 	Contests          map[string]Contest   `yaml:"contests,omitempty"`
 	BroadcastStations []BroadcastStation
 }
@@ -264,6 +264,25 @@ func Save(path string, cfg *Config) error {
 		return fmt.Errorf("write config: %w", err)
 	}
 	return nil
+}
+
+// Upgrade runs version-gated migration steps based on the config's stored
+// version. Call after Load() and before any other config-dependent init.
+// Steps are idempotent — they only run when the stored version is older
+// than the step's target version.
+func (c *Config) Upgrade(currentVersion string) {
+	if c == nil {
+		return
+	}
+	stored := c.State.Version
+
+	// Example future step:
+	// if versionOlder(stored, "0.9.0") {
+	//     // migration logic for 0.9.0
+	// }
+
+	_ = stored
+	_ = currentVersion
 }
 
 // Validate checks the config for structural integrity. Returns an error

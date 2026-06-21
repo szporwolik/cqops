@@ -1,9 +1,12 @@
 package tui
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -12,6 +15,7 @@ import (
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/ref"
+	"github.com/szporwolik/cqops/internal/version"
 )
 
 // =============================================================================
@@ -65,6 +69,108 @@ func checkInetCmd() tea.Cmd {
 		applog.Info("Internet: reachable")
 		return inetResultMsg(true)
 	}
+}
+
+// =============================================================================
+// Version check — GitHub latest release.
+// =============================================================================
+
+// maybeCheckVersion returns a tea.Cmd to check GitHub for a newer release.
+// Runs once when internet is first confirmed reachable.
+func (m *Model) maybeCheckVersion() tea.Cmd {
+	if m.versionChecked {
+		return nil
+	}
+	if !m.inetOnline || m.Offline {
+		return nil
+	}
+	m.versionChecked = true
+	return checkVersionCmd()
+}
+
+// checkVersionCmd returns a tea.Cmd that queries the GitHub API for the
+// latest release tag and compares it to the running version.
+func checkVersionCmd() tea.Cmd {
+	return func() tea.Msg {
+		applog.Debug("Version: checking GitHub for latest release")
+		client := &http.Client{Timeout: 5 * time.Second}
+		req, err := http.NewRequest("GET", "https://api.github.com/repos/szporwolik/cqops/releases/latest", nil)
+		if err != nil {
+			applog.Debug("Version: failed to build request", "error", err)
+			return versionCheckMsg{}
+		}
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("User-Agent", "CQOps-version-check")
+		resp, err := client.Do(req)
+		if err != nil {
+			applog.Debug("Version: GitHub API unreachable", "error", err)
+			return versionCheckMsg{}
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			applog.Debug("Version: GitHub API returned non-OK status", "status", resp.StatusCode)
+			return versionCheckMsg{}
+		}
+
+		var release struct {
+			TagName string `json:"tag_name"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+			applog.Debug("Version: failed to parse GitHub response", "error", err)
+			return versionCheckMsg{}
+		}
+
+		latest := strings.TrimPrefix(release.TagName, "v")
+		if latest == "" {
+			applog.Debug("Version: empty tag in GitHub response")
+			return versionCheckMsg{}
+		}
+
+		current := version.Resolved()
+		applog.Info("Version: check complete",
+			"current", current,
+			"latest", latest,
+		)
+
+		return versionCheckMsg{latest: latest}
+	}
+}
+
+// versionNewer returns true if a is a newer semver-like version than b.
+// Handles "0.8.0" style dotted versions with simple string comparison
+// (works for equal-length segments).
+func versionNewer(a, b string) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	// Compare dotted segments lexicographically after zero-padding.
+	segA := strings.Split(strings.TrimPrefix(a, "v"), ".")
+	segB := strings.Split(strings.TrimPrefix(b, "v"), ".")
+	maxLen := len(segA)
+	if len(segB) > maxLen {
+		maxLen = len(segB)
+	}
+	for i := 0; i < maxLen; i++ {
+		var va, vb string
+		if i < len(segA) {
+			va = fmt.Sprintf("%010s", segA[i])
+		} else {
+			va = "0000000000"
+		}
+		if i < len(segB) {
+			vb = fmt.Sprintf("%010s", segB[i])
+		} else {
+			vb = "0000000000"
+		}
+		if va > vb {
+			return true
+		}
+		if va < vb {
+			return false
+		}
+	}
+	return false
 }
 
 // maybeRefreshDataFiles returns a command to download or update CTY.DAT and

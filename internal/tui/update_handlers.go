@@ -9,6 +9,7 @@ import (
 	"github.com/gen2brain/beeep"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/store"
+	"github.com/szporwolik/cqops/internal/version"
 )
 
 // =============================================================================
@@ -91,6 +92,14 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) bool {
 	switch r := msg.(type) {
 	case inetResultMsg:
 		m.inetOnline = bool(r)
+		return true
+	case versionCheckMsg:
+		if r.latest != "" {
+			current := version.Resolved()
+			if versionNewer(r.latest, current) {
+				m.toasts.Warn(fmt.Sprintf("CQOps %s available — visit github.com/szporwolik/cqops/releases", r.latest))
+			}
+		}
 		return true
 	case wlStatusMsg:
 		m.lookup.wlOnline = r.online

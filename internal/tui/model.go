@@ -99,31 +99,32 @@ const (
 )
 
 type Model struct {
-	App           *app.App
-	screen        screenKind
-	fields        [fieldCount]textinput.Model
-	focus         field
-	qsos          []qso.QSO
-	toasts        *ToastQueue
-	err           error
-	width         int
-	height        int
-	quitting      bool
-	rig           rigState
-	dateTimeAuto  bool
-	tickCount     int
-	inetOnline    bool
-	Offline       bool // when true, skip all network-dependent operations
-	wsjtx         wsjtxState
-	needRefresh   bool
-	dupe          bool // true when call/band/mode match an existing QSO today
-	dupeConfirmed bool // true after first Enter on a dupe; second Enter proceeds
-	adifQ         adifQueue
-	ui            uiComponents
-	photo         photoState
-	mapView       *mapRenderer // embedded world map renderer
-	confirm       *DialogModel // active confirmation dialog (quit, etc.)
-	spotDialog    *SpotDialog  // active DX spot dialog
+	App            *app.App
+	screen         screenKind
+	fields         [fieldCount]textinput.Model
+	focus          field
+	qsos           []qso.QSO
+	toasts         *ToastQueue
+	err            error
+	width          int
+	height         int
+	quitting       bool
+	rig            rigState
+	dateTimeAuto   bool
+	tickCount      int
+	inetOnline     bool
+	versionChecked bool // true after first GitHub version check
+	Offline        bool // when true, skip all network-dependent operations
+	wsjtx          wsjtxState
+	needRefresh    bool
+	dupe           bool // true when call/band/mode match an existing QSO today
+	dupeConfirmed  bool // true after first Enter on a dupe; second Enter proceeds
+	adifQ          adifQueue
+	ui             uiComponents
+	photo          photoState
+	mapView        *mapRenderer // embedded world map renderer
+	confirm        *DialogModel // active confirmation dialog (quit, etc.)
+	spotDialog     *SpotDialog  // active DX spot dialog
 
 	// PSK Reporter.
 	psk pskState
@@ -200,6 +201,12 @@ type bplTuneResultMsg struct {
 	err     error
 }
 type inetResultMsg bool
+
+// versionCheckMsg carries the result of a GitHub release version check.
+type versionCheckMsg struct {
+	latest string // latest release tag, empty if check failed
+}
+
 type statusPending struct {
 	call, grid, mode, submode, report, txMessage string
 	freq                                         uint64
@@ -453,6 +460,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Async result messages (internet, Wavelog, flrig)
 	if m.handleAsyncMessages(msg) {
+		if _, ok := msg.(inetResultMsg); ok && m.inetOnline {
+			cmd = tea.Batch(cmd, m.maybeCheckVersion())
+		}
 		if _, ok := msg.(flrigResultMsg); ok {
 			return m, cmd
 		}

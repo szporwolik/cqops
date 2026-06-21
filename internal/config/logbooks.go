@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/szporwolik/cqops/internal/version"
 )
 
 func EnsureConfig() (*Config, string, error) {
@@ -28,6 +30,10 @@ func EnsureConfig() (*Config, string, error) {
 			return nil, "", fmt.Errorf("save default config: %w", saveErr)
 		}
 	}
+
+	// Run version-gated upgrade steps before anything else touches config.
+	cfg.Upgrade(version.Resolved())
+
 	// Populate in-memory ID fields from map keys (id is not serialized).
 	PopulateIDs(cfg)
 	if cfg.Logbooks == nil {

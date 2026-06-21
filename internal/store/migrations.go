@@ -3,7 +3,6 @@ package store
 import (
 	"database/sql"
 	"fmt"
-	"strings"
 )
 
 var migrations = []string{
@@ -35,36 +34,53 @@ var migrations = []string{
 		distance REAL,
 		bearing REAL,
 
+		freq_rx REAL DEFAULT 0,
+		sota_ref TEXT DEFAULT '',
+		pota_ref TEXT DEFAULT '',
+		wwff_ref TEXT DEFAULT '',
+		my_sota_ref TEXT DEFAULT '',
+		my_pota_ref TEXT DEFAULT '',
+		my_wwff_ref TEXT DEFAULT '',
+		iota TEXT DEFAULT '',
+		sig TEXT DEFAULT '',
+		wavelog_uploaded TEXT DEFAULT '',
+
 		station_callsign TEXT,
 		operator TEXT,
 		my_gridsquare TEXT,
 		my_rig TEXT,
 		my_antenna TEXT,
 
+		cq_zone TEXT DEFAULT '',
+		itu_zone TEXT DEFAULT '',
+		contest_id TEXT DEFAULT '',
+		exch_sent TEXT DEFAULT '',
+		exch_rcvd TEXT DEFAULT '',
+		stx INTEGER DEFAULT 0,
+		srx INTEGER DEFAULT 0,
+		stx_string TEXT DEFAULT '',
+		srx_string TEXT DEFAULT '',
+		contest_adif_id TEXT DEFAULT '',
+		my_cq_zone TEXT DEFAULT '',
+		my_itu_zone TEXT DEFAULT '',
+		my_dxcc TEXT DEFAULT '',
+		my_sig TEXT DEFAULT '',
+		my_sig_info TEXT DEFAULT '',
+
 		source TEXT NOT NULL DEFAULT 'manual',
 
 		created_at TEXT NOT NULL,
 		updated_at TEXT NOT NULL
 	)`,
-	`ALTER TABLE qsos ADD COLUMN notes TEXT DEFAULT ''`,
-	`ALTER TABLE qsos ADD COLUMN tx_pwr TEXT DEFAULT ''`,
-	`ALTER TABLE qsos ADD COLUMN distance REAL DEFAULT 0`,
-	`ALTER TABLE qsos ADD COLUMN bearing REAL DEFAULT 0`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_call ON qsos(call)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_qso_date ON qsos(qso_date)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_band ON qsos(band)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_mode ON qsos(mode)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_gridsquare ON qsos(gridsquare)`,
-	`ALTER TABLE qsos ADD COLUMN freq_rx REAL DEFAULT 0`,
-	`ALTER TABLE qsos ADD COLUMN sota_ref TEXT DEFAULT ''`,
-	`ALTER TABLE qsos ADD COLUMN pota_ref TEXT DEFAULT ''`,
-	`ALTER TABLE qsos ADD COLUMN wwff_ref TEXT DEFAULT ''`,
-	`ALTER TABLE qsos ADD COLUMN my_sota_ref TEXT DEFAULT ''`,
-	`ALTER TABLE qsos ADD COLUMN my_pota_ref TEXT DEFAULT ''`,
-	`ALTER TABLE qsos ADD COLUMN my_wwff_ref TEXT DEFAULT ''`,
-	`ALTER TABLE qsos ADD COLUMN iota TEXT DEFAULT ''`,
-	`ALTER TABLE qsos ADD COLUMN sig TEXT DEFAULT ''`,
-	`ALTER TABLE qsos ADD COLUMN wavelog_uploaded TEXT DEFAULT ''`,
+	`CREATE INDEX IF NOT EXISTS idx_qsos_source ON qsos(source)`,
+	`CREATE INDEX IF NOT EXISTS idx_qsos_wavelog_uploaded ON qsos(wavelog_uploaded)`,
+	`CREATE INDEX IF NOT EXISTS idx_qsos_contest_id ON qsos(contest_id)`,
+
 	`CREATE TABLE IF NOT EXISTS psk_spots (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		receiver_call TEXT NOT NULL,
@@ -76,58 +92,32 @@ var migrations = []string{
 		fetch_time INTEGER NOT NULL,
 		station_call TEXT NOT NULL DEFAULT ''
 	)`,
-	`CREATE INDEX IF NOT EXISTS idx_psk_spots_station ON psk_spots(station_call)`,
-	`CREATE INDEX IF NOT EXISTS idx_psk_spots_flow_start ON psk_spots(flow_start)`,
+	`CREATE INDEX IF NOT EXISTS idx_psk_spots_station_flow ON psk_spots(station_call, flow_start)`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS idx_psk_spots_uniq ON psk_spots(receiver_call, frequency, mode, flow_start)`,
+
 	`CREATE TABLE IF NOT EXISTS dxc_spots (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		dx_call TEXT NOT NULL,
 		frequency REAL NOT NULL,
 		comment TEXT NOT NULL DEFAULT '',
 		spotter TEXT NOT NULL DEFAULT '',
+		band TEXT NOT NULL DEFAULT '',
+		mode TEXT NOT NULL DEFAULT '',
+		mode_cat TEXT NOT NULL DEFAULT '',
+		dx_cont TEXT NOT NULL DEFAULT '',
+		spot_cont TEXT NOT NULL DEFAULT '',
+		dxcc TEXT NOT NULL DEFAULT '',
 		received_at INTEGER NOT NULL
 	)`,
 	`CREATE INDEX IF NOT EXISTS idx_dxc_spots_received ON dxc_spots(received_at)`,
-	`CREATE UNIQUE INDEX IF NOT EXISTS idx_dxc_spots_uniq ON dxc_spots(dx_call, frequency, received_at)`,
-	`ALTER TABLE dxc_spots ADD COLUMN band TEXT NOT NULL DEFAULT ''`,
-	`ALTER TABLE dxc_spots ADD COLUMN mode TEXT NOT NULL DEFAULT ''`,
-	`DELETE FROM dxc_spots WHERE id NOT IN (SELECT id FROM (SELECT MAX(id) AS id FROM dxc_spots GROUP BY dx_call))`,
-	`DROP INDEX IF EXISTS idx_dxc_spots_uniq`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS idx_dxc_spots_call ON dxc_spots(dx_call)`,
-	`ALTER TABLE dxc_spots ADD COLUMN mode_cat TEXT NOT NULL DEFAULT ''`,
-	`ALTER TABLE dxc_spots ADD COLUMN dx_cont TEXT NOT NULL DEFAULT ''`,
-	`ALTER TABLE dxc_spots ADD COLUMN spot_cont TEXT NOT NULL DEFAULT ''`,
-	`ALTER TABLE dxc_spots ADD COLUMN dxcc TEXT NOT NULL DEFAULT ''`,
-	`CREATE INDEX IF NOT EXISTS idx_qsos_source ON qsos(source)`,
-	`CREATE INDEX IF NOT EXISTS idx_qsos_wavelog_uploaded ON qsos(wavelog_uploaded)`,
-	`ALTER TABLE qsos ADD COLUMN cq_zone TEXT DEFAULT ''`,
-	`ALTER TABLE qsos ADD COLUMN itu_zone TEXT DEFAULT ''`,
-	`DROP INDEX IF EXISTS idx_psk_spots_station`,
-	`CREATE INDEX IF NOT EXISTS idx_psk_spots_station_flow ON psk_spots(station_call, flow_start)`,
-	`ALTER TABLE qsos ADD COLUMN contest_id TEXT DEFAULT ''`,
-	`CREATE INDEX IF NOT EXISTS idx_qsos_contest_id ON qsos(contest_id)`,
-	`ALTER TABLE qsos ADD COLUMN exch_sent TEXT DEFAULT ''`,
-	`ALTER TABLE qsos ADD COLUMN exch_rcvd TEXT DEFAULT ''`,
-	`ALTER TABLE qsos ADD COLUMN stx INTEGER DEFAULT 0`,
-	`ALTER TABLE qsos ADD COLUMN srx INTEGER DEFAULT 0`,
-	`ALTER TABLE qsos ADD COLUMN stx_string TEXT DEFAULT ''`,
-	`ALTER TABLE qsos ADD COLUMN srx_string TEXT DEFAULT ''`,
-	`ALTER TABLE qsos ADD COLUMN contest_adif_id TEXT DEFAULT ''`,
-	`ALTER TABLE qsos ADD COLUMN my_cq_zone TEXT DEFAULT ''`,
-	`ALTER TABLE qsos ADD COLUMN my_itu_zone TEXT DEFAULT ''`,
-	`ALTER TABLE qsos ADD COLUMN my_dxcc TEXT DEFAULT ''`,
-	`ALTER TABLE qsos ADD COLUMN my_sig TEXT DEFAULT ''`,
-	`ALTER TABLE qsos ADD COLUMN my_sig_info TEXT DEFAULT ''`,
 }
 
+// Migrate runs all migrations against the given database.
+// Existing columns/indexes are skipped (IF NOT EXISTS).
 func Migrate(db *sql.DB) error {
 	for i, m := range migrations {
 		if _, err := db.Exec(m); err != nil {
-			errStr := err.Error()
-			if strings.Contains(errStr, "duplicate column name") ||
-				strings.Contains(errStr, "already exists") {
-				continue
-			}
 			return fmt.Errorf("migration %d: %w", i, err)
 		}
 	}
