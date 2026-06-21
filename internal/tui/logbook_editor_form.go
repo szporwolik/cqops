@@ -64,10 +64,14 @@ func (le *LogbookEditor) fillEditForm(q *qso.QSO) {
 	s(qefITUZone, q.ITUZone)
 	s(qefExchSent, q.ExchSent)
 	s(qefExchRcvd, q.ExchRcvd)
-	s(qefSTX, fmt.Sprintf("%d", q.STX))
-	s(qefSRX, fmt.Sprintf("%d", q.SRX))
 	s(qefSTXString, q.STXString)
 	s(qefSRXString, q.SRXString)
+	if q.STX != 0 {
+		s(qefSTX, fmt.Sprintf("%d", q.STX))
+	}
+	if q.SRX != 0 {
+		s(qefSRX, fmt.Sprintf("%d", q.SRX))
+	}
 	if q.ContestADIFID != "" {
 		s(qefContestID, q.ContestADIFID)
 	} else {
