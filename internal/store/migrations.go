@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 )
 
 var migrations = []string{
@@ -82,6 +83,9 @@ var migrations = []string{
 	`CREATE INDEX IF NOT EXISTS idx_qsos_wavelog_uploaded ON qsos(wavelog_uploaded)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_contest_id ON qsos(contest_id)`,
 
+	// sig_info column added in v0.8.1 — ALTER for existing databases.
+	`ALTER TABLE qsos ADD COLUMN sig_info TEXT DEFAULT ''`,
+
 	`CREATE TABLE IF NOT EXISTS psk_spots (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		receiver_call TEXT NOT NULL,
@@ -115,10 +119,15 @@ var migrations = []string{
 }
 
 // Migrate runs all migrations against the given database.
-// Existing columns/indexes are skipped (IF NOT EXISTS).
+// Existing columns/indexes are skipped (IF NOT EXISTS or error ignored).
 func Migrate(db *sql.DB) error {
 	for i, m := range migrations {
 		if _, err := db.Exec(m); err != nil {
+			// ALTER TABLE ADD COLUMN fails if the column already exists in a
+			// fresh database (CREATE TABLE already included it). Ignore.
+			if strings.Contains(err.Error(), "duplicate column name") {
+				continue
+			}
 			return fmt.Errorf("migration %d: %w", i, err)
 		}
 	}
