@@ -40,6 +40,9 @@ func (m *Model) refreshFlrigClient() {
 		url := "http://" + host + ":" + port
 		applog.InfoDetail("flrig: connecting", fmt.Sprintf("rig=%s host=%s port=%s url=%s", rigName, host, port, url))
 		m.rig.client = flrig.New(url, flrigDefaultTimeout)
+		// Trigger an immediate poll so the user sees flrig connect within ~1s
+		// instead of waiting up to 5 seconds for the next poll cycle.
+		m.rig.skipTicks = 4 // one tick before pollInterval=5 triggers
 	} else {
 		if !ok {
 			applog.Debug("flrig: rig not found in config", "rigName", rigName)

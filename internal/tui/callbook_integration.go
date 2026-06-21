@@ -144,6 +144,7 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 	}
 	m.lookup.partnerData = d
 	m.invalidatePartnerMapCache()
+	m.rc.helpSig = "" // force help bar refresh (may now show F2 Photo)
 	if d.ImageURL != "" && d.ImageURL != m.photo.partnerPicURL {
 		m.photo.partnerPicURL = d.ImageURL
 		m.photo.partnerPicNeedLoad = true
