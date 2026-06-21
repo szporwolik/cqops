@@ -165,8 +165,21 @@ func (m *Model) maybeDXC() tea.Cmd {
 		return nil
 	}
 
-	// Already connected — drain spots.
+	// Already connected — drain spots and check for disconnect.
 	if m.dxc.client != nil && m.dxc.online {
+		// Check if the connection dropped.
+		select {
+		case status, ok := <-m.dxc.client.Status():
+			if ok && !status {
+				applog.Warn("DXC: connection lost, will reconnect")
+				m.dxc.online = false
+				m.dxc.connecting = false
+				m.dxc.client = nil
+				m.rc.status = ""
+				return nil
+			}
+		default:
+		}
 		return m.drainDXCSpots()
 	}
 

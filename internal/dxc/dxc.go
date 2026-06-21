@@ -31,8 +31,9 @@ type Client struct {
 	conn       net.Conn
 	spotsCh    chan Spot
 	stopCh     chan struct{}
-	pendingRsp chan string // set before sending a command, read by readLoop
-	loginSent  bool        // true after login prompt responded to (avoid loops)
+	statusCh   chan bool   // true=connected, false=disconnected
+	pendingRsp chan string
+	loginSent  bool
 }
 
 // NewClient creates a DX Cluster client. It does not connect until Start is called.
@@ -44,11 +45,12 @@ func NewClient(host, port, login string) *Client {
 		port = "7300"
 	}
 	return &Client{
-		host:    host,
-		port:    port,
-		login:   login,
-		spotsCh: make(chan Spot, 256),
-		stopCh:  make(chan struct{}),
+		host:     host,
+		port:     port,
+		login:    login,
+		spotsCh:  make(chan Spot, 256),
+		stopCh:   make(chan struct{}),
+		statusCh: make(chan bool, 1),
 	}
 }
 
@@ -68,11 +70,28 @@ func (c *Client) Start() error {
 	c.conn = conn
 	c.stopCh = make(chan struct{})
 	c.spotsCh = make(chan Spot, 256)
+	c.statusCh = make(chan bool, 1)
+	c.statusCh <- true
 
 	applog.Info("DXC: connected", "host", addr)
 
-	// Send login. Uppercase — some clusters reject lowercase.
-	c.writeLine("%s\r\n", strings.ToUpper(c.login))
+	// Don't send login immediately — wait for the cluster's prompt.
+	// Some clusters (CC Cluster) send a MOTD first and ask for login afterwards.
+	// Others (DX Spider) accept the login immediately but don't send a prompt.
+	// The readLoop handles both: it sends login on prompt, or after a short
+	// timeout if no prompt is detected.
+	c.loginSent = false
+
+	go func() {
+		// Give the cluster 2s to send a login prompt. If none arrives,
+		// send login anyway (DX Spider-style immediate login).
+		time.Sleep(2 * time.Second)
+		if c.conn != nil && !c.loginSent {
+			applog.Debug("DXC: no login prompt detected, sending callsign")
+			c.writeLine("%s\r\n", strings.ToUpper(c.login))
+			c.loginSent = true
+		}
+	}()
 
 	// Request recent spots after login so the table isn't empty on startup.
 	// SH/FDX (alias "SH/DX real") delivers historical spots in the same
@@ -109,6 +128,11 @@ func (c *Client) Stop() {
 // Spots returns the channel on which parsed spots are delivered.
 func (c *Client) Spots() <-chan Spot {
 	return c.spotsCh
+}
+
+// Status returns a channel that receives true on connect and false on disconnect.
+func (c *Client) Status() <-chan bool {
+	return c.statusCh
 }
 
 // writeLine writes a line to the cluster, logging it at DEBUG level.
@@ -160,6 +184,11 @@ func (c *Client) readLoop() {
 			c.conn.Close()
 			c.conn = nil
 		}
+		// Signal disconnect.
+		select {
+		case c.statusCh <- false:
+		default:
+		}
 	}()
 
 	scanner := bufio.NewScanner(c.conn)
@@ -186,12 +215,11 @@ func (c *Client) readLoop() {
 				applog.Warn("DXC: cluster message", "line", line)
 			}
 
-			// Detect login prompts — some clusters (CC Cluster, AR-Cluster) ask
-			// for the callsign after the MOTD.  Skip lines that are error
-			// responses ("login: xyz command error") to avoid infinite loops.
-			lower := strings.ToLower(line)
-			isLoginError := strings.HasPrefix(lower, "login:") && strings.Contains(lower, "error")
-			if !isLoginError && !c.loginSent {
+			// Detect login prompts — respond once with callsign.
+			// Handles CC Cluster ("Please enter your call: "),
+			// AR-Cluster ("login:"), and similar.
+			if !c.loginSent {
+				lower := strings.ToLower(line)
 				if strings.Contains(lower, "enter your call") ||
 					strings.Contains(lower, "enter your callsign") ||
 					strings.HasPrefix(lower, "login:") {
