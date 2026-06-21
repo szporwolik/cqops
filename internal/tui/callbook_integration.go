@@ -145,6 +145,7 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 	m.lookup.partnerData = d
 	m.invalidatePartnerMapCache()
 	if d.ImageURL != "" && d.ImageURL != m.photo.partnerPicURL {
+		m.photo.partnerPicURL = d.ImageURL
 		m.photo.partnerPicNeedLoad = true
 	}
 	if d.Name != "" {
