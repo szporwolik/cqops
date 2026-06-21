@@ -60,6 +60,8 @@ func (m *Model) refreshFlrigClient() {
 type flrigResultMsg struct {
 	connected bool
 	freq      float64
+	freqRx    float64 // VFO B frequency (0 if not available)
+	split     bool    // true when radio is in split mode
 	mode      string
 	band      string
 	power     float64
@@ -79,7 +81,7 @@ func (m *Model) flrigStatusCmd() tea.Cmd {
 		if err != nil {
 			return flrigResultMsg{err: err.Error()}
 		}
-		return flrigResultMsg{connected: s.Connected, freq: s.FrequencyMHz, mode: s.Mode, band: s.Band, power: s.Power}
+		return flrigResultMsg{connected: s.Connected, freq: s.FrequencyMHz, freqRx: s.FrequencyRxMHz, split: s.Split, mode: s.Mode, band: s.Band, power: s.Power}
 	}
 }
 
@@ -136,8 +138,17 @@ func (m *Model) applyFlrigResult(r flrigResultMsg) tea.Cmd {
 		cmds = append(cmds, m.fetchFlrigNameCmd())
 	}
 	m.rig.freq = r.freq
+	// Split operation: when radio is in split mode (VFO A = RX, VFO B = TX),
+	// set Freq to TX (VFO B) and Freq RX to RX (VFO A).
+	split := r.split && r.freqRx > 0 && r.freqRx != r.freq && !m.wsjtx.online
 	if !m.wsjtx.online {
-		m.fields[fieldFreq].SetValue(fmt.Sprintf("%.6f", r.freq))
+		if split {
+			m.rig.freq = r.freqRx // track TX frequency
+			m.fields[fieldFreq].SetValue(fmt.Sprintf("%.6f", r.freqRx))
+			m.fields[fieldFreqRx].SetValue(fmt.Sprintf("%.6f", r.freq))
+		} else {
+			m.fields[fieldFreq].SetValue(fmt.Sprintf("%.6f", r.freq))
+		}
 	}
 	if r.mode != "" && !m.wsjtx.online {
 		m.fields[fieldMode].SetValue(r.mode)

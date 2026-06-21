@@ -43,13 +43,15 @@ func (f *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 	}
 
 	var (
-		freqHz int64
-		mode   string
-		pwr    float64
-		wg     sync.WaitGroup
+		freqHz   int64
+		freqRxHz int64
+		split    bool
+		mode     string
+		pwr      float64
+		wg       sync.WaitGroup
 	)
 
-	wg.Add(3)
+	wg.Add(5)
 
 	go func() {
 		defer wg.Done()
@@ -58,6 +60,24 @@ func (f *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 			return
 		}
 		freqHz = v
+	}()
+
+	go func() {
+		defer wg.Done()
+		v, err := f.getFrequencyB(ctx)
+		if err != nil {
+			return
+		}
+		freqRxHz = v
+	}()
+
+	go func() {
+		defer wg.Done()
+		v, err := f.getSplit(ctx)
+		if err != nil {
+			return
+		}
+		split = v
 	}()
 
 	go func() {
@@ -88,6 +108,11 @@ func (f *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 	rs.Connected = true
 	rs.FrequencyHz = freqHz
 	rs.FrequencyMHz = float64(freqHz) / 1_000_000.0
+	rs.Split = split
+	if freqRxHz > 0 && freqRxHz != freqHz {
+		rs.FrequencyRxHz = freqRxHz
+		rs.FrequencyRxMHz = float64(freqRxHz) / 1_000_000.0
+	}
 
 	if mode != "" {
 		rs.RawMode = mode
@@ -111,6 +136,32 @@ func (f *Client) getFrequency(ctx context.Context) (int64, error) {
 	var freq float64
 	if _, scanErr := fmt.Sscanf(v, "%f", &freq); scanErr != nil {
 		return 0, fmt.Errorf("parse frequency %q: %w", v, scanErr)
+	}
+	return int64(math.Round(freq)), nil
+}
+
+// getSplit queries flrig for the split state via rig.get_split.
+func (f *Client) getSplit(ctx context.Context) (bool, error) {
+	v, err := f.xmlrpcCall(ctx, xmlrpcI4, "rig.get_split")
+	if err != nil {
+		return false, err
+	}
+	var val int
+	if _, scanErr := fmt.Sscanf(v, "%d", &val); scanErr != nil {
+		return false, fmt.Errorf("parse split %q: %w", v, scanErr)
+	}
+	return val != 0, nil
+}
+
+// getFrequencyB queries flrig for the VFO B (RX) frequency via rig.get_vfoB.
+func (f *Client) getFrequencyB(ctx context.Context) (int64, error) {
+	v, err := f.xmlrpcCall(ctx, xmlrpcDouble, "rig.get_vfoB")
+	if err != nil {
+		return 0, err
+	}
+	var freq float64
+	if _, scanErr := fmt.Sscanf(v, "%f", &freq); scanErr != nil {
+		return 0, fmt.Errorf("parse vfoB frequency %q: %w", v, scanErr)
 	}
 	return int64(math.Round(freq)), nil
 }
