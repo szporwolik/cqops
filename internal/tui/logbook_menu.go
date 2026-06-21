@@ -519,29 +519,6 @@ func (c *LogbookChooser) updateStationIDField() {
 	}
 }
 
-func (c *LogbookChooser) viewConfirmDelete() string {
-	id := c.names[c.cursor]
-	lb := c.app.Config.Logbooks[id]
-	displayName := config.LogbookDisplayName(&lb)
-	var b strings.Builder
-	w := c.width
-	if w < 40 {
-		w = 80
-	}
-	h := c.height
-	if h < 10 {
-		h = 24
-	}
-	contentH := h - 4
-	if contentH < 3 {
-		contentH = 3
-	}
-	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("  Delete logbook %q and ALL its QSOs?\n", displayName))
-	b.WriteString("  This cannot be undone. (y/N)")
-	return fillBody(b.String(), contentH)
-}
-
 func (c *LogbookChooser) deleteLogbook() tea.Cmd {
 	if len(c.names) == 0 {
 		return nil

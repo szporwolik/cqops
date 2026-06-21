@@ -361,11 +361,6 @@ func tickCmd() tea.Cmd {
 	return tea.Tick(1000*time.Millisecond, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
-// hideAllSubmodels returns to the QSO form screen.
-func (m *Model) hideAllSubmodels() {
-	m.screen = screenQSO
-}
-
 // isSubmodelActive returns true when any sub-screen is visible.
 func (m *Model) isSubmodelActive() bool {
 	return m.screen != screenQSO

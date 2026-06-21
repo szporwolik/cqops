@@ -121,49 +121,6 @@ func (le *LogbookEditor) doNormalizeAndUpload() tea.Cmd {
 	logOp := le.logStationOp
 	logGrid := le.logStationGrid
 
-	// Load ALL QSOs from the database, not just the current page.
-	var allQSOS []qso.QSO
-	if db != nil {
-		var listErr error
-		allQSOS, listErr = store.ListAllQSOs(db)
-		if listErr != nil {
-			applog.Error("Wavelog: normalize+upload — cannot list QSOs", "error", listErr)
-			return func() tea.Msg {
-				return editorMsg{wlOK: false, err: fmt.Errorf("cannot read logbook: %w", listErr)}
-			}
-		}
-	} else {
-		// Fallback for tests without a real database.
-		allQSOS = le.qsos
-	}
-
-	// Collect all unsent QSOs (some may not be mismatched but still unsent),
-	// skip those with missing required fields.
-	var unsent []qso.QSO
-	var skipped int
-	var firstSkipCall, firstSkipDate string
-	for _, q := range allQSOS {
-		if q.WavelogUploaded != "yes" {
-			if q.Band == "" || q.Mode == "" || q.QSODate == "" {
-				if skipped == 0 {
-					firstSkipCall = q.Call
-					firstSkipDate = q.QSODate
-				}
-				skipped++
-				continue
-			}
-			unsent = append(unsent, q)
-		}
-	}
-	if skipped > 0 {
-		le.wlSkipped = skipped
-		if skipped == 1 {
-			le.wlSkipDetail = fmt.Sprintf("%s %s — missing band", firstSkipCall, firstSkipDate)
-		} else {
-			le.wlSkipDetail = fmt.Sprintf("%d QSOs skipped (e.g. %s %s — missing band)", skipped, firstSkipCall, firstSkipDate)
-		}
-	}
-
 	// Build list of IDs to normalize
 	var normIDs []int64
 	for _, q := range mismatch {

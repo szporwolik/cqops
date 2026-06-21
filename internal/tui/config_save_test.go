@@ -28,7 +28,7 @@ func newSaveTestModel(t *testing.T) *Model {
 	cfg.State.ActiveLogbook = "default"
 	cfg.Logbooks = map[string]config.Logbook{
 		"default": {
-			ID:          "default",
+			ID:   "default",
 			Name: "Test",
 			Station: config.Station{
 				Callsign: "SP9MOA",
@@ -138,9 +138,9 @@ func testSaveConfigBlocked(t *testing.T, cfgSetup func(*config.Config), desc str
 	cfg.State.ActiveLogbook = "default"
 	cfg.Logbooks = map[string]config.Logbook{
 		"default": {
-			ID:          "default",
-			Name: "Test",
-			Station:     config.Station{Callsign: "SP9MOA", Grid: "JO90"},
+			ID:      "default",
+			Name:    "Test",
+			Station: config.Station{Callsign: "SP9MOA", Grid: "JO90"},
 		},
 	}
 	cfg.Integrations.QRZ.Enabled = false

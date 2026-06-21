@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"errors"
 
 	"github.com/szporwolik/cqops/internal/rig"
 )
@@ -57,13 +56,6 @@ func (f *fakeFlrigClient) GetName(ctx context.Context) (string, error) {
 	return "FT-DX10", nil
 }
 
-// disconnectedFakeFlrig returns a fake client that reports not connected.
-func disconnectedFakeFlrig() *fakeFlrigClient {
-	return &fakeFlrigClient{
-		status: rig.RigStatus{Provider: "flrig", Connected: false},
-	}
-}
-
 // connectedFakeFlrig returns a fake client with the given frequency, mode, and band.
 func connectedFakeFlrig(freq float64, mode, band string) *fakeFlrigClient {
 	return &fakeFlrigClient{
@@ -76,11 +68,6 @@ func connectedFakeFlrig(freq float64, mode, band string) *fakeFlrigClient {
 			Power:        50,
 		},
 	}
-}
-
-// errorFakeFlrig returns a fake client that always returns an error.
-func errorFakeFlrig() *fakeFlrigClient {
-	return &fakeFlrigClient{err: errors.New("connection refused")}
 }
 
 // Ensure fakeFlrigClient implements FlrigClient.

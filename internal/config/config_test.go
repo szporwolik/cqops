@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -674,7 +675,7 @@ func TestConfigDir_DoesNotTouchRealHome(t *testing.T) {
 		t.Fatalf("ConfigDir: %v", err)
 	}
 
-	if !filepath.HasPrefix(dir, tmp) {
+	if !strings.HasPrefix(dir, tmp) {
 		t.Errorf("ConfigDir = %q; should be under temp dir %q", dir, tmp)
 	}
 }
@@ -693,7 +694,7 @@ func TestConfigPath_UnderIsolatedConfigDir(t *testing.T) {
 	if path != expected {
 		t.Errorf("ConfigPath = %q; want %q", path, expected)
 	}
-	if !filepath.HasPrefix(path, tmp) {
+	if !strings.HasPrefix(path, tmp) {
 		t.Errorf("ConfigPath = %q; should be under temp dir %q", path, tmp)
 	}
 }
@@ -710,7 +711,7 @@ func TestDataDir_UnderIsolatedHome(t *testing.T) {
 	if dir != expected {
 		t.Errorf("DataDir = %q; want %q", dir, expected)
 	}
-	if !filepath.HasPrefix(dir, tmp) {
+	if !strings.HasPrefix(dir, tmp) {
 		t.Errorf("DataDir = %q; should be under temp dir %q", dir, tmp)
 	}
 }
@@ -727,7 +728,7 @@ func TestLogDir_UnderIsolatedHome(t *testing.T) {
 	if dir != expected {
 		t.Errorf("LogDir = %q; want %q", dir, expected)
 	}
-	if !filepath.HasPrefix(dir, tmp) {
+	if !strings.HasPrefix(dir, tmp) {
 		t.Errorf("LogDir = %q; should be under temp dir %q", dir, tmp)
 	}
 }
@@ -745,7 +746,7 @@ func TestEnsureConfig_FirstRunCreatesDefault(t *testing.T) {
 		t.Fatalf("EnsureConfig: %v", err)
 	}
 
-	if !filepath.HasPrefix(configPath, tmp) {
+	if !strings.HasPrefix(configPath, tmp) {
 		t.Errorf("configPath = %q; should be under temp dir %q", configPath, tmp)
 	}
 
@@ -769,7 +770,7 @@ func TestEnsureConfig_SecondCallLoadsExisting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first EnsureConfig: %v", err)
 	}
-	if !filepath.HasPrefix(path1, tmp) {
+	if !strings.HasPrefix(path1, tmp) {
 		t.Errorf("config path should be under temp dir: %q", path1)
 	}
 

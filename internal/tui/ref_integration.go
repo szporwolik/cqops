@@ -547,17 +547,6 @@ func (m *Model) addRefToQSO(r ref.Row) {
 	applog.Info("REF: added to QSO", "type", string(r.RefType), "ref", r.Ref, "name", r.Name)
 }
 
-// clearQSOReferences clears all REF-related QSO form fields (SOTA, POTA,
-// WWFF, IOTA).
-func (m *Model) clearQSOReferences() {
-	m.fields[fieldSOTA].SetValue("")
-	m.fields[fieldPOTA].SetValue("")
-	m.fields[fieldWWFF].SetValue("")
-	m.fields[fieldIOTA].SetValue("")
-	m.invalidateRefNamesCache()
-	applog.Debug("REF: QSO reference fields cleared")
-}
-
 // invalidateRefNamesCache marks the REF names line cache as dirty.
 func (m *Model) invalidateRefNamesCache() {
 	m.ref.refNamesDirty = true

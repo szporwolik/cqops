@@ -145,11 +145,6 @@ func statusDotStyled(on bool, label string, offline ...bool) string {
 // renderStatusBar is the canonical entry point for status bar rendering.
 func (m *Model) renderStatusBar() string { return m.headerView() }
 
-// renderToastBar renders active toasts as a bar for layout measurement.
-func (m *Model) renderToastBar() string {
-	return RenderToasts(m.toasts.Active(), m.width)
-}
-
 // windowTitle returns the terminal window title for the main TUI.
 func (m *Model) windowTitle() string {
 	s := m.App.Logbook.Station

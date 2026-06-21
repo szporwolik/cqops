@@ -47,7 +47,6 @@ type editorMsg struct {
 	dlAborted  bool
 	// Simple toast from the editor.
 	toastWarn string
-	toastOK   string
 }
 
 func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -153,9 +152,6 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return le, nil
 		}
 
-		if msg.err != nil {
-			// error handled by caller via toast
-		}
 		if msg.deleted != 0 || msg.saved != 0 || msg.purged || msg.wlCall != "" {
 			le.mode = edModeList
 			le.needsReload = true

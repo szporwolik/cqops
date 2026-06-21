@@ -389,29 +389,6 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 	return nil
 }
 
-func (rc *RigChooser) viewConfirmDelete() string {
-	id := rc.names[rc.cursor]
-	rp := rc.app.Config.Rigs[id]
-	displayName := config.RigDisplayName(&rp)
-	var b strings.Builder
-	w := rc.width
-	if w < 40 {
-		w = 80
-	}
-	h := rc.height
-	if h < 10 {
-		h = 24
-	}
-	contentH := h - 4
-	if contentH < 3 {
-		contentH = 3
-	}
-	b.WriteString("\n")
-	b.WriteString(fmt.Sprintf("  Delete rig %q?\n", displayName))
-	b.WriteString("  (y/N)")
-	return fillBody(b.String(), contentH)
-}
-
 func (rc *RigChooser) deleteRig() tea.Cmd {
 	if len(rc.names) == 0 {
 		return nil

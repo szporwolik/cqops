@@ -31,7 +31,7 @@ type Client struct {
 	conn       net.Conn
 	spotsCh    chan Spot
 	stopCh     chan struct{}
-	statusCh   chan bool   // true=connected, false=disconnected
+	statusCh   chan bool // true=connected, false=disconnected
 	pendingRsp chan string
 	loginSent  bool
 }

@@ -86,15 +86,6 @@ func fillBody(content string, contentH int) string {
 	return content + strings.Repeat("\n", contentH-current)
 }
 
-// clamp renders s padded/truncated to exactly w cells with spaces.
-// An empty string renders as w spaces.
-func clamp(s string, w int) string {
-	if s == "" {
-		return strings.Repeat(" ", w)
-	}
-	return padOrTrunc(s, w)
-}
-
 // padOrTrunc returns s truncated or padded with spaces to exactly w cells.
 func padOrTrunc(s string, w int) string {
 	sw := lipgloss.Width(s)

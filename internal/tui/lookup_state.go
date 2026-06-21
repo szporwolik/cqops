@@ -28,14 +28,14 @@ type lookupState struct {
 	wlLastCall     string
 
 	// Partner/callbook display data.
-	partnerData    *qrz.CallData
-	qrzLookupDone  bool
-	qrzLookupCall  string // call the QRZ done flag is for
-	wlPrivateData  *wavelog.PrivateLookupResult
-	wlLookupDone   bool
-	wlLookupCall   string // call the WL done flag is for
-	wlLastBand     string
-	wlLastMode     string
+	partnerData   *qrz.CallData
+	qrzLookupDone bool
+	qrzLookupCall string // call the QRZ done flag is for
+	wlPrivateData *wavelog.PrivateLookupResult
+	wlLookupDone  bool
+	wlLookupCall  string // call the WL done flag is for
+	wlLastBand    string
+	wlLastMode    string
 
 	// pendingSave is set when Enter is pressed while lookups are still
 	// in progress. The save fires automatically once both complete.

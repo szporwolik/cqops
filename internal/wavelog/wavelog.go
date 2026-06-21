@@ -490,10 +490,3 @@ func FetchContacts(baseURL, apiKey, stationID string, fetchFromID int64) (*Conta
 			result.ADIFPath, result.ADIFSize, result.ExportedQSOs, result.LastFetchedID()))
 	return result, nil
 }
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}

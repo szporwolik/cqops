@@ -1,4 +1,4 @@
-﻿package tui
+package tui
 
 import (
 	"fmt"
@@ -768,8 +768,8 @@ func (w *Wizard) saveConfig() error {
 	w.App.Config.State.ActiveLogbook = lbID
 	w.App.Config.Logbooks = map[string]config.Logbook{
 		lbID: {
-			ID:          lbID,
-			Name:        lbName,
+			ID:   lbID,
+			Name: lbName,
 			Station: config.Station{
 				Callsign:   cs,
 				Operator:   op,

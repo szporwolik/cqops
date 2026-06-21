@@ -76,11 +76,6 @@ func (m *Model) maybeUploadToWavelog(qs *qso.QSO) tea.Cmd {
 	return m.uploadADIFToWavelog(qs.ToADIF(), qs.ID, qs.Call)
 }
 
-// maybeUploadRawADIFToWavelog returns a tea.Cmd that sends raw ADIF (from WSJT-X) to Wavelog.
-func (m *Model) maybeUploadRawADIFToWavelog(adifStr string, qID int64, call string) tea.Cmd {
-	return m.uploadADIFToWavelog(adifStr, qID, call)
-}
-
 // uploadADIFToWavelog returns a tea.Cmd that uploads an ADIF record to Wavelog.
 func (m *Model) uploadADIFToWavelog(adifStr string, qID int64, call string) tea.Cmd {
 	wl := m.App.Logbook.Wavelog

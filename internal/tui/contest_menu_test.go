@@ -1,4 +1,4 @@
-﻿package tui
+package tui
 
 import (
 	"strings"
@@ -595,8 +595,8 @@ func TestNextQSOSeqValidation(t *testing.T) {
 	cc.cursor = 1
 	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	cc.nameInput.SetValue("Test")
-		cc.contInput.SetValue("CQ-WPX-CW")
-		cc.nextInput.SetValue("-5")
+	cc.contInput.SetValue("CQ-WPX-CW")
+	cc.nextInput.SetValue("-5")
 	cc.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 	if ct.NextQSO == -5 {
 		t.Error("Negative NextQSO should be rejected")
@@ -606,8 +606,8 @@ func TestNextQSOSeqValidation(t *testing.T) {
 	cc.cursor = 1
 	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	cc.nameInput.SetValue("Test")
-		cc.contInput.SetValue("CQ-WPX-CW")
-		cc.nextInput.SetValue("0")
+	cc.contInput.SetValue("CQ-WPX-CW")
+	cc.nextInput.SetValue("0")
 	cc.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 	// NextQSO should not have changed to 0
 	ct = cc.app.Config.Contests["a1"]
@@ -624,8 +624,8 @@ func TestNextQSOSeqEmptyRejected(t *testing.T) {
 	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	cc.nameInput.SetValue("Test")
-		cc.contInput.SetValue("CQ-WPX-CW")
-		cc.nextInput.SetValue("")
+	cc.contInput.SetValue("CQ-WPX-CW")
+	cc.nextInput.SetValue("")
 	cc.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 
 	// Should not change when empty

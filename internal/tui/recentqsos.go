@@ -17,10 +17,6 @@ type RecentQSOs struct {
 	width  int
 	height int
 
-	// table is rebuilt on every View() from current data; it never receives
-	// Update calls so it's always read-only.
-	table table.Model
-
 	// View cache — avoids rebuilding the table on every frame when nothing changed.
 	cachedView   string
 	cachedW      int
