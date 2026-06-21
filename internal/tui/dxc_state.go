@@ -36,6 +36,10 @@ type dxcState struct {
 	tuneCancel   func()          // cancel previous tune command if running
 	cachedSpots  []store.DXCSpot // cached result of last filteredSpots() call
 
+	// Band/continent cache — avoids DB query on every filter-cycle keypress.
+	cachedBands []string
+	cachedConts []string
+
 	// Cross-cutting lookup request flags.
 	need bool   // re-trigger DXC freq lookup after live spot arrives
 	call string // callsign for pending DXC lookup

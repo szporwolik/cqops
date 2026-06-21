@@ -248,21 +248,22 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 // handleFormKey processes QSO form-specific key bindings when no sub-screen is active.
 // Returns a command and true if the key was handled.
 func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
+	var persistCmd tea.Cmd
 	switch {
 	case m.retainFocused:
 		switch msg.String() {
 		case "space", "enter":
 			m.retainComment = !m.retainComment
-			m.persistRetainComment()
+			persistCmd = m.persistRetainComment()
 		case "tab", "down":
 			m.nextField()
 		case "shift+tab", "up":
 			m.prevField()
 		case "ctrl+t":
 			m.retainComment = !m.retainComment
-			m.persistRetainComment()
+			persistCmd = m.persistRetainComment()
 		}
-		return nil, true
+		return persistCmd, true
 
 	case key.Matches(msg, m.keys.PrevField):
 		m.prevField()
@@ -296,8 +297,7 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 
 	case key.Matches(msg, m.keys.Retain):
 		m.retainComment = !m.retainComment
-		m.persistRetainComment()
-		return nil, true
+		return m.persistRetainComment(), true
 
 	case msg.String() == "ctrl+c":
 		m.cycleActiveContest()
@@ -359,14 +359,19 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 }
 
 // persistRetainComment syncs the retain-comment checkbox state to the
-// in-memory config and writes it to disk so it survives restarts.
-func (m *Model) persistRetainComment() {
+// in-memory config and returns a tea.Cmd that writes it to disk async.
+func (m *Model) persistRetainComment() tea.Cmd {
 	if m.App == nil || m.App.Config == nil {
-		return
+		return nil
 	}
 	m.App.Config.State.RetainComment = m.retainComment
 	m.App.Config.State.RetainedComment = m.fields[fieldComment].Value()
-	if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
-		applog.Warn("Failed to save retain comment state", "error", err)
+	cfgPath := m.App.ConfigPath
+	cfg := m.App.Config
+	return func() tea.Msg {
+		if err := config.Save(cfgPath, cfg); err != nil {
+			applog.Warn("Failed to save retain comment state", "error", err)
+		}
+		return nil
 	}
 }

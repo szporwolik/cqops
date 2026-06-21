@@ -241,7 +241,7 @@ func (le *LogbookEditor) uploadIndividual(unsent []qso.QSO) tea.Cmd {
 func (le *LogbookEditor) doUploadToWavelog() tea.Cmd {
 	if le.wlURL == "" || le.wlKey == "" || le.wlStationID == "" {
 		return func() tea.Msg {
-			return editorMsg{wlOK: false, err: fmt.Errorf("Wavelog not configured")}
+			return editorMsg{wlOK: false, err: fmt.Errorf("wavelog not configured")}
 		}
 	}
 	q := le.readEditForm()

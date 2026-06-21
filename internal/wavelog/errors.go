@@ -36,58 +36,58 @@ func FriendlyError(err error) error {
 		if idx := strings.Index(msg, "lookup "); idx >= 0 {
 			rest := msg[idx+7:]
 			if end := strings.IndexAny(rest, " :\n"); end > 0 {
-				return fmt.Errorf("Cannot reach %s — check the URL", rest[:end])
+				return fmt.Errorf("cannot reach %s — check the URL", rest[:end])
 			}
 		}
-		return fmt.Errorf("Cannot reach server — check the URL")
+		return fmt.Errorf("cannot reach server — check the URL")
 	}
 
 	// Connection refused
 	if strings.Contains(msg, "connection refused") {
-		return fmt.Errorf("Connection refused — is the server running?")
+		return fmt.Errorf("connection refused — is the server running?")
 	}
 
 	// Timeout
 	if strings.Contains(msg, "timeout") || strings.Contains(msg, "Timeout") ||
 		strings.Contains(msg, "deadline exceeded") {
-		return fmt.Errorf("Connection timed out — check the URL and try again")
+		return fmt.Errorf("connection timed out — check the URL and try again")
 	}
 
 	// HTTP 401 — differentiate between invalid key and station access.
 	if strings.Contains(msg, "HTTP 401") {
 		if strings.Contains(msg, "Station ID not accessible") {
-			return fmt.Errorf("Station profile not accessible — check your Wavelog Station Profile ID")
+			return fmt.Errorf("station profile not accessible — check your Wavelog Station Profile ID")
 		}
-		return fmt.Errorf("Invalid API key — check your Wavelog API key")
+		return fmt.Errorf("invalid API key — check your Wavelog API key")
 	}
 
 	// HTTP 403 Forbidden
 	if strings.Contains(msg, "HTTP 403") {
-		return fmt.Errorf("Access denied — check your API key permissions")
+		return fmt.Errorf("access denied — check your API key permissions")
 	}
 
 	// HTTP 404 Not Found
 	if strings.Contains(msg, "HTTP 404") {
-		return fmt.Errorf("Server not found at this URL — check the address")
+		return fmt.Errorf("server not found at this URL — check the address")
 	}
 
 	// Other HTTP errors
 	if strings.Contains(msg, "HTTP 5") {
-		return fmt.Errorf("Server error — the service may be down, try again later")
+		return fmt.Errorf("server error — the service may be down, try again later")
 	}
 	if strings.Contains(msg, "HTTP 4") {
-		return fmt.Errorf("Request failed — check the URL and API key")
+		return fmt.Errorf("request failed — check the URL and API key")
 	}
 
 	// TLS / certificate errors
 	if strings.Contains(msg, "x509") || strings.Contains(msg, "tls") ||
 		strings.Contains(msg, "certificate") {
-		return fmt.Errorf("Secure connection failed — check the URL (https vs http)")
+		return fmt.Errorf("secure connection failed — check the URL (https vs http)")
 	}
 
 	// Connection reset / EOF
 	if strings.Contains(msg, "connection reset") || strings.Contains(msg, "EOF") {
-		return fmt.Errorf("Connection lost — the server may have dropped the connection")
+		return fmt.Errorf("connection lost — the server may have dropped the connection")
 	}
 
 	// Known sentinel messages — pass through as-is.

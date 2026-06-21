@@ -10,7 +10,7 @@ func TestFlrigResultSuccess(t *testing.T) {
 	m.rig.client = connectedFakeFlrig(14.250, "SSB", "20m")
 
 	// Apply successful result
-	m.applyFlrigResult(flrigResultMsg{
+	_ = m.applyFlrigResult(flrigResultMsg{
 		connected: true,
 		freq:      14.250,
 		mode:      "SSB",
@@ -38,7 +38,7 @@ func TestFlrigResultError(t *testing.T) {
 	m := newTestModel()
 	m.rig.connected = true // start connected
 
-	m.applyFlrigResult(flrigResultMsg{
+	_ = m.applyFlrigResult(flrigResultMsg{
 		err: "connection refused",
 	})
 
@@ -51,7 +51,7 @@ func TestFlrigResultDisconnected(t *testing.T) {
 	m := newTestModel()
 	m.rig.connected = true
 
-	m.applyFlrigResult(flrigResultMsg{
+	_ = m.applyFlrigResult(flrigResultMsg{
 		connected: false,
 	})
 
@@ -110,7 +110,7 @@ func TestFlrigStatusCmdReturnsCmd(t *testing.T) {
 
 func TestFlrigResultPower(t *testing.T) {
 	m := newTestModel()
-	m.applyFlrigResult(flrigResultMsg{
+	_ = m.applyFlrigResult(flrigResultMsg{
 		connected: true,
 		freq:      7.100,
 		mode:      "SSB",

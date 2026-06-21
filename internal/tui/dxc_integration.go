@@ -285,6 +285,8 @@ func (m *Model) storeDXCSpotsCmd(spots []dxc.Spot) tea.Cmd {
 			m.dxc.lastPurge = time.Now()
 			for attempt := 0; attempt < 3; attempt++ {
 				if err := store.PurgeOldDXCSpots(db); err == nil {
+					m.dxc.cachedBands = nil
+					m.dxc.cachedConts = nil
 					break
 				} else if !strings.Contains(err.Error(), "database is locked") {
 					break
@@ -417,8 +419,10 @@ func (m *Model) fillDXCFreq(msg dxcSpotLookupMsg) {
 // handleDXCSpotsStored checks newly stored spots against the QSO form call
 // and invalidates the DXC table cache to keep the view in sync with the DB.
 func (m *Model) handleDXCSpotsStored(msg dxcSpotsStoredMsg) {
-	// Invalidate table so it rebuilds with fresh data on next View().
+	// Invalidate table and filter caches so they rebuild with fresh data.
 	m.dxc.tableReady = false
+	m.dxc.cachedBands = nil
+	m.dxc.cachedConts = nil
 
 	// Notify when own callsign was spotted.
 	if msg.spottedMe != "" {

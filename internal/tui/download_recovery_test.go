@@ -208,12 +208,7 @@ func TestDownload_ErrorDoesNotLeakAPIKey(t *testing.T) {
 	}))
 	defer server.Close()
 
-	dbPath := filepath.Join(t.TempDir(), "wl_dl_test.db")
-	db, _ := store.InitDB(dbPath)
-	defer db.Close()
-
-	le := NewLogbookEditor(db, server.URL, key, "1", 0, "OP", "JO90")
-	le = startFakeDownload(t, server, nil)
+	le := startFakeDownload(t, server, nil)
 
 	// dlErr should not contain the actual API key.
 	if strings.Contains(le.wlDownloadErr, key) {
@@ -228,12 +223,7 @@ func TestDownload_ErrorLogDoesNotContainKeyInEditorState(t *testing.T) {
 	}))
 	defer server.Close()
 
-	dbPath := filepath.Join(t.TempDir(), "wl_dl_test.db")
-	db, _ := store.InitDB(dbPath)
-	defer db.Close()
-
-	le := NewLogbookEditor(db, server.URL, key, "1", 0, "OP", "JO90")
-	le = startFakeDownload(t, server, nil)
+	le := startFakeDownload(t, server, nil)
 
 	// The wlDownloadErr message on the editor should not expose the key.
 	if strings.Contains(le.wlDownloadErr, key) {

@@ -28,7 +28,7 @@ func TestPSKFetchResult_Success(t *testing.T) {
 		err:       nil,
 	}
 
-	consumed := m.handleAsyncMessages(msg)
+	consumed, _ := m.handleAsyncMessages(msg)
 	if !consumed {
 		t.Error("pskFetchMsg should be consumed")
 	}
@@ -54,7 +54,7 @@ func TestPSKFetchResult_Error(t *testing.T) {
 		err:       errors.New("connection refused"),
 	}
 
-	consumed := m.handleAsyncMessages(msg)
+	consumed, _ := m.handleAsyncMessages(msg)
 	if !consumed {
 		t.Error("pskFetchMsg with error should be consumed")
 	}
@@ -77,7 +77,7 @@ func TestPSKFetchResult_Empty(t *testing.T) {
 		err:       nil,
 	}
 
-	consumed := m.handleAsyncMessages(msg)
+	consumed, _ := m.handleAsyncMessages(msg)
 	if !consumed {
 		t.Error("pskFetchMsg with empty reports should be consumed")
 	}
@@ -94,7 +94,7 @@ func TestPSKFetchResult_NoPanicOnNil(t *testing.T) {
 	m := newLifecycleTestModel(t)
 	msg := pskFetchMsg{}
 	// Should not panic — empty reports → no DB insert attempted beyond empty slice.
-	consumed := m.handleAsyncMessages(msg)
+	consumed, _ := m.handleAsyncMessages(msg)
 	if !consumed {
 		t.Error("zero pskFetchMsg should be consumed without panic")
 	}
@@ -121,7 +121,7 @@ func TestSolarFetchResult_Success(t *testing.T) {
 		attempts: 1,
 	}
 
-	consumed := m.handleAsyncMessages(msg)
+	consumed, _ := m.handleAsyncMessages(msg)
 	if !consumed {
 		t.Error("solarFetchMsg should be consumed")
 	}
@@ -150,7 +150,7 @@ func TestSolarFetchResult_Error(t *testing.T) {
 		attempts: 3,
 	}
 
-	consumed := m.handleAsyncMessages(msg)
+	consumed, _ := m.handleAsyncMessages(msg)
 	if !consumed {
 		t.Error("solarFetchMsg with error should be consumed")
 	}
@@ -173,7 +173,7 @@ func TestSolarFetchResult_ErrorWithRetriesLeft(t *testing.T) {
 		attempts: 1, // more retries available
 	}
 
-	consumed := m.handleAsyncMessages(msg)
+	consumed, _ := m.handleAsyncMessages(msg)
 	if !consumed {
 		t.Error("solarFetchMsg with retries left should be consumed")
 	}
@@ -193,7 +193,7 @@ func TestSolarFetchResult_EmptyDataSafe(t *testing.T) {
 		data: &solar.Data{},
 		err:  nil,
 	}
-	consumed := m.handleAsyncMessages(msg)
+	consumed, _ := m.handleAsyncMessages(msg)
 	if !consumed {
 		t.Error("solarFetchMsg with empty Data should be consumed")
 	}
@@ -202,7 +202,7 @@ func TestSolarFetchResult_EmptyDataSafe(t *testing.T) {
 func TestSolarFetchResult_NoPanicOnNil(t *testing.T) {
 	m := newTestModel()
 	msg := solarFetchMsg{}
-	consumed := m.handleAsyncMessages(msg)
+	consumed, _ := m.handleAsyncMessages(msg)
 	if !consumed {
 		t.Error("zero solarFetchMsg should be consumed without panic")
 	}

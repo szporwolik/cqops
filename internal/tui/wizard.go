@@ -435,7 +435,7 @@ func (w *Wizard) wizardLayout(body string, help string) string {
 		center.Render(body),
 	)
 
-	h, tw := w.clampedDims()
+	h, _ := w.clampedDims()
 	contentH := h - lipgloss.Height(help)
 	top = lipgloss.NewStyle().Height(contentH).MaxHeight(contentH).Render(top)
 

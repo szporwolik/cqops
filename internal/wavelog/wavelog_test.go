@@ -18,10 +18,10 @@ func TestFriendlyError_Nil(t *testing.T) {
 
 func TestFriendlyError_DNS(t *testing.T) {
 	cases := []struct{ msg, want string }{
-		{"lookup wavelog.example.com: no such host", "Cannot reach wavelog.example.com — check the URL"},
-		{"dial tcp: lookup invalid.host: no such host", "Cannot reach invalid.host — check the URL"},
-		{"Name or service not known", "Cannot reach server — check the URL"},
-		{"lookup api.example.com: Name or service not known", "Cannot reach api.example.com — check the URL"},
+		{"lookup wavelog.example.com: no such host", "cannot reach wavelog.example.com — check the URL"},
+		{"dial tcp: lookup invalid.host: no such host", "cannot reach invalid.host — check the URL"},
+		{"Name or service not known", "cannot reach server — check the URL"},
+		{"lookup api.example.com: Name or service not known", "cannot reach api.example.com — check the URL"},
 	}
 	for _, c := range cases {
 		err := FriendlyError(errors.New(c.msg))
@@ -33,7 +33,7 @@ func TestFriendlyError_DNS(t *testing.T) {
 
 func TestFriendlyError_ConnectionRefused(t *testing.T) {
 	err := FriendlyError(errors.New("dial tcp 1.2.3.4:443: connect: connection refused"))
-	if err == nil || !strings.Contains(err.Error(), "Connection refused") {
+	if err == nil || !strings.Contains(err.Error(), "connection refused") {
 		t.Errorf("got %q", friendlyMsg(err))
 	}
 }
@@ -55,14 +55,14 @@ func TestFriendlyError_Timeout(t *testing.T) {
 
 func TestFriendlyError_HTTP(t *testing.T) {
 	cases := []struct{ msg, want string }{
-		{"HTTP 401", "Invalid API key"},
-		{"HTTP 401 \u2014 Station ID not accessible", "Station profile not accessible"},
-		{"HTTP 403", "Access denied"},
-		{"HTTP 404", "Server not found"},
-		{"HTTP 500", "Server error"},
-		{"HTTP 503", "Server error"},
-		{"HTTP 400", "Request failed"},
-		{"HTTP 429", "Request failed"},
+		{"HTTP 401", "invalid API key"},
+		{"HTTP 401 \u2014 Station ID not accessible", "station profile not accessible"},
+		{"HTTP 403", "access denied"},
+		{"HTTP 404", "server not found"},
+		{"HTTP 500", "server error"},
+		{"HTTP 503", "server error"},
+		{"HTTP 400", "request failed"},
+		{"HTTP 429", "request failed"},
 	}
 	for _, c := range cases {
 		err := FriendlyError(errors.New(c.msg))
@@ -80,7 +80,7 @@ func TestFriendlyError_TLS(t *testing.T) {
 	}
 	for _, msg := range cases {
 		err := FriendlyError(errors.New(msg))
-		if err == nil || !strings.Contains(err.Error(), "Secure connection failed") {
+		if err == nil || !strings.Contains(err.Error(), "secure connection failed") {
 			t.Errorf("msg=%q: got %q", msg, friendlyMsg(err))
 		}
 	}
@@ -90,7 +90,7 @@ func TestFriendlyError_ConnectionLost(t *testing.T) {
 	cases := []string{"connection reset by peer", "EOF"}
 	for _, msg := range cases {
 		err := FriendlyError(errors.New(msg))
-		if err == nil || !strings.Contains(err.Error(), "Connection lost") {
+		if err == nil || !strings.Contains(err.Error(), "connection lost") {
 			t.Errorf("msg=%q: got %q", msg, friendlyMsg(err))
 		}
 	}

@@ -698,6 +698,10 @@ func shortModeTag(mode string) string {
 	}
 }
 
+// bplDefaultSeverity style is the fallback identity style for tunable
+// single-frequency entries (pre-allocated to avoid NewStyle() on cache miss).
+var bplDefaultSeverity = lipgloss.NewStyle()
+
 // severityStyle returns the appropriate Lip Gloss style for a segment kind.
 // Used only for VHF single-frequency (tunable) entries. Range headers use
 // DimStyle directly — not this function.
@@ -712,9 +716,7 @@ func severityStyle(kind string) lipgloss.Style {
 	case "RNG":
 		return S.Value
 	default:
-		// Plain identity style — single frequencies are tunable and should
-		// stand out (like the HF tab's QRP/QRS/IBP entries).
-		return lipgloss.NewStyle()
+		return bplDefaultSeverity
 	}
 }
 

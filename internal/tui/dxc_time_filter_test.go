@@ -310,7 +310,7 @@ func TestDXCTimeFilter_EmptySpotsNoPanic(t *testing.T) {
 	m := newDXCBandFilterModel(t, nil)
 	m.dxc.timeFilter = 30
 	filtered := m.dxcFilteredSpots()
-	if filtered != nil && len(filtered) > 0 {
+	if len(filtered) > 0 {
 		t.Errorf("filtered spots should be empty with no spots, got %d", len(filtered))
 	}
 }

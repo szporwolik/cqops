@@ -103,7 +103,7 @@ func TestFlrigResult_Connected(t *testing.T) {
 		mode:      "USB",
 		power:     50,
 	}
-	consumed := m.handleAsyncMessages(msg)
+	consumed, _ := m.handleAsyncMessages(msg)
 	if !consumed {
 		t.Error("flrigResultMsg should be consumed")
 	}
@@ -122,7 +122,7 @@ func TestFlrigResult_Disconnected(t *testing.T) {
 		connected: false,
 		err:       "timeout",
 	}
-	consumed := m.handleAsyncMessages(msg)
+	consumed, _ := m.handleAsyncMessages(msg)
 	if !consumed {
 		t.Error("flrigResultMsg with error should be consumed")
 	}
@@ -134,7 +134,7 @@ func TestFlrigResult_Disconnected(t *testing.T) {
 func TestFlrigResult_ZeroValuesNoPanic(t *testing.T) {
 	m := newTestModel()
 	msg := flrigResultMsg{}
-	consumed := m.handleAsyncMessages(msg)
+	consumed, _ := m.handleAsyncMessages(msg)
 	if !consumed {
 		t.Error("zero flrigResultMsg should be consumed")
 	}
@@ -191,7 +191,7 @@ func TestWLResult_SetsLookupDone(t *testing.T) {
 func TestInetResult_Online(t *testing.T) {
 	m := newTestModel()
 	m.inetOnline = false
-	consumed := m.handleAsyncMessages(inetResultMsg(true))
+	consumed, _ := m.handleAsyncMessages(inetResultMsg(true))
 	if !consumed {
 		t.Error("inetResultMsg should be consumed")
 	}
@@ -203,7 +203,7 @@ func TestInetResult_Online(t *testing.T) {
 func TestInetResult_Offline(t *testing.T) {
 	m := newTestModel()
 	m.inetOnline = true
-	consumed := m.handleAsyncMessages(inetResultMsg(false))
+	consumed, _ := m.handleAsyncMessages(inetResultMsg(false))
 	if !consumed {
 		t.Error("inetResultMsg should be consumed")
 	}
@@ -219,7 +219,7 @@ func TestInetResult_Offline(t *testing.T) {
 func TestWLStatus_Success(t *testing.T) {
 	m := newTestModel()
 	msg := wlStatusMsg{online: true, stationName: "TestStation", stationLabel: "Test"}
-	consumed := m.handleAsyncMessages(msg)
+	consumed, _ := m.handleAsyncMessages(msg)
 	if !consumed {
 		t.Error("wlStatusMsg should be consumed")
 	}
@@ -234,7 +234,7 @@ func TestWLStatus_Success(t *testing.T) {
 func TestWLUploadResult_Success(t *testing.T) {
 	m := newTestModel()
 	msg := wlUploadResultMsg{ok: true, call: "SP9XXX"}
-	consumed := m.handleAsyncMessages(msg)
+	consumed, _ := m.handleAsyncMessages(msg)
 	if !consumed {
 		t.Error("wlUploadResultMsg should be consumed")
 	}
@@ -243,7 +243,7 @@ func TestWLUploadResult_Success(t *testing.T) {
 func TestWLUploadResult_Error(t *testing.T) {
 	m := newTestModel()
 	msg := wlUploadResultMsg{ok: false, call: "SP9XXX", err: nil}
-	consumed := m.handleAsyncMessages(msg)
+	consumed, _ := m.handleAsyncMessages(msg)
 	if !consumed {
 		t.Error("wlUploadResultMsg (error) should be consumed")
 	}

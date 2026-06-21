@@ -325,7 +325,7 @@ func TestDXCModeFilter_EmptySpotsNoPanic(t *testing.T) {
 	m := newDXCBandFilterModel(t, nil)
 	m.dxc.modeFilter = "CW"
 	filtered := m.dxcFilteredSpots()
-	if filtered != nil && len(filtered) > 0 {
+	if len(filtered) > 0 {
 		t.Errorf("filtered spots should be empty, got %d", len(filtered))
 	}
 }

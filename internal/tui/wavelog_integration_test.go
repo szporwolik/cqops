@@ -43,7 +43,7 @@ func wavelogVersionHandler(status string) http.HandlerFunc {
 func wavelogStationInfoHandler(stations []map[string]string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", 405)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -55,7 +55,7 @@ func wavelogStationInfoHandler(stations []map[string]string) http.HandlerFunc {
 func wavelogQSOHandler(status string, messages []string, adifErrors int) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", 405)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		resp := map[string]interface{}{
@@ -73,7 +73,7 @@ func wavelogQSOHandler(status string, messages []string, adifErrors int) http.Ha
 func wavelogPrivateLookupHandler(data map[string]interface{}) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", 405)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		if data == nil {
@@ -240,7 +240,7 @@ func TestWavelogStatusCheckSuccess(t *testing.T) {
 
 func TestWavelogStatusCheckFailure(t *testing.T) {
 	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "unauthorized", 401)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 	})
 	defer srv.Close()
 
@@ -1017,7 +1017,7 @@ func TestFetchContacts_Success(t *testing.T) {
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			http.Error(w, "method not allowed", 405)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -1083,7 +1083,7 @@ func TestFetchContacts_ServerError(t *testing.T) {
 
 func TestFetchContacts_AuthFailure(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "unauthorized", 401)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 	}))
 	defer srv.Close()
 

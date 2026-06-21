@@ -801,7 +801,7 @@ func TestUploadBatch_EmptyUnsentList(t *testing.T) {
 
 func TestUploadBatch_AuthFailure(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "unauthorized", 401)
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
 	}))
 	defer srv.Close()
 

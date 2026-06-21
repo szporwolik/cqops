@@ -454,7 +454,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Async result messages (internet, Wavelog, flrig)
-	if m.handleAsyncMessages(msg) {
+	if handled, asyncCmd := m.handleAsyncMessages(msg); handled {
+		if asyncCmd != nil {
+			cmd = tea.Batch(cmd, asyncCmd)
+		}
 		if _, ok := msg.(inetResultMsg); ok && m.inetOnline {
 			cmd = tea.Batch(cmd, m.maybeCheckVersion())
 		}

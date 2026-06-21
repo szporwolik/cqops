@@ -87,12 +87,13 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 }
 
 // handleAsyncMessages processes async result messages (internet check, Wavelog status,
-// Wavelog upload results, flrig results). Returns true if the message was consumed.
-func (m *Model) handleAsyncMessages(msg tea.Msg) bool {
+// Wavelog upload results, flrig results). Returns true if the message was consumed
+// and an optional command to batch.
+func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 	switch r := msg.(type) {
 	case inetResultMsg:
 		m.inetOnline = bool(r)
-		return true
+		return true, nil
 	case versionCheckMsg:
 		if r.latest != "" {
 			current := version.Resolved()
@@ -100,7 +101,7 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) bool {
 				m.toasts.Warn(fmt.Sprintf("CQOps %s available — visit github.com/szporwolik/cqops/releases", r.latest))
 			}
 		}
-		return true
+		return true, nil
 	case wlStatusMsg:
 		m.lookup.wlOnline = r.online
 		if r.stationName != "" {
@@ -110,7 +111,7 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) bool {
 			m.lookup.wlStationLabel = r.stationLabel
 		}
 		m.rc.status = ""
-		return true
+		return true, nil
 	case wlUploadResultMsg:
 		n := m.App.Config.General.Notifications
 		if r.ok {
@@ -143,16 +144,25 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) bool {
 			}
 		}
 		m.needRefresh = true
-		return true
+		return true, nil
 	case wsjtxEnrichDoneMsg:
 		m.needRefresh = true
-		return true
+		return true, nil
 	case qrzStatusMsg:
 		m.lookup.qrzOnline = r.online
-		return true
+		return true, nil
 	case flrigResultMsg:
-		m.applyFlrigResult(r)
-		return true
+		return true, m.applyFlrigResult(r)
+	case fmodesMsg:
+		if len(r.modes) > 0 {
+			m.rig.modes = r.modes
+		}
+		return true, nil
+	case fnameMsg:
+		if r.name != "" {
+			m.rig.name = r.name
+		}
+		return true, nil
 	case pskFetchMsg:
 		m.psk.fetching = false
 		if r.err != nil {
@@ -185,15 +195,15 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) bool {
 			m.psk.spots = nil
 			m.toasts.Info(fmt.Sprintf("PSK Reporter: %d spots updated", len(r.reports)))
 		}
-		return true
+		return true, nil
 	case solarFetchMsg:
 		m.handleSolarResult(r)
-		return true
+		return true, nil
 	case dxcStatusMsg:
 		m.handleDXCStatus(r)
-		return true
+		return true, nil
 	}
-	return false
+	return false, nil
 }
 
 // handlePendingRequests processes deferred actions (QSO refresh, QRZ lookup, WL lookup)

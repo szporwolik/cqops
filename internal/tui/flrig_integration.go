@@ -107,7 +107,8 @@ func (m *Model) pollFlrig() tea.Cmd {
 }
 
 // applyFlrigResult applies a flrig status result to the model state and QSO form.
-func (m *Model) applyFlrigResult(r flrigResultMsg) {
+// Returns an optional tea.Cmd for async mode/name fetching (safe, not raw goroutines).
+func (m *Model) applyFlrigResult(r flrigResultMsg) tea.Cmd {
 	m.rig.polling = false
 	if r.err != "" || !r.connected {
 		if m.rig.connected {
@@ -117,18 +118,19 @@ func (m *Model) applyFlrigResult(r flrigResultMsg) {
 		// Clear modes and name on disconnect so they are re-fetched when flrig comes back.
 		m.rig.modes = nil
 		m.rig.name = ""
-		return
+		return nil
 	}
 	if !m.rig.connected {
 		m.rc.status = ""
 	}
 	m.rig.connected = true
 	// Fetch mode table and rig name whenever we (re)connect — rig may have changed.
+	var cmds []tea.Cmd
 	if len(m.rig.modes) == 0 {
-		go m.fetchFlrigModes()
+		cmds = append(cmds, m.fetchFlrigModesCmd())
 	}
 	if m.rig.name == "" {
-		go m.fetchFlrigName()
+		cmds = append(cmds, m.fetchFlrigNameCmd())
 	}
 	m.rig.freq = r.freq
 	if !m.wsjtx.online {
@@ -146,40 +148,60 @@ func (m *Model) applyFlrigResult(r flrigResultMsg) {
 	if r.power > 0 {
 		m.fields[fieldTXPower].SetValue(fmt.Sprintf("%.0f", r.power))
 	}
+	if len(cmds) > 0 {
+		return tea.Batch(cmds...)
+	}
+	return nil
 }
 
-// fetchFlrigModes queries flrig for the available mode table and stores it.
+// fmodesMsg carries the result of an async flrig mode fetch.
+type fmodesMsg struct {
+	modes []string
+	err   string
+}
+
+// fetchFlrigModesCmd returns a tea.Cmd that fetches the flrig mode table.
 // Retries once on transient failure, then gives up until the next reconnect.
-func (m *Model) fetchFlrigModes() {
-	if m.rig.client == nil {
-		return
-	}
-	for attempt := 0; attempt < 2; attempt++ {
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		modes, err := m.rig.client.GetModes(ctx)
-		cancel()
-		if err == nil {
-			m.rig.modes = modes
-			applog.Info("flrig: modes fetched", "count", len(modes), "modes", modes)
-			return
+func (m *Model) fetchFlrigModesCmd() tea.Cmd {
+	return func() tea.Msg {
+		if m.rig.client == nil {
+			return fmodesMsg{}
 		}
-		applog.Warn("flrig: get_modes failed", "attempt", attempt+1, "error", err)
-		time.Sleep(500 * time.Millisecond)
+		for attempt := 0; attempt < 2; attempt++ {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			modes, err := m.rig.client.GetModes(ctx)
+			cancel()
+			if err == nil {
+				applog.Info("flrig: modes fetched", "count", len(modes), "modes", modes)
+				return fmodesMsg{modes: modes}
+			}
+			applog.Warn("flrig: get_modes failed", "attempt", attempt+1, "error", err)
+			time.Sleep(500 * time.Millisecond)
+		}
+		return fmodesMsg{err: "get_modes failed"}
 	}
 }
 
-// fetchFlrigName queries flrig for the rig model name and stores it.
-func (m *Model) fetchFlrigName() {
-	if m.rig.client == nil {
-		return
+// fnameMsg carries the result of an async flrig name fetch.
+type fnameMsg struct {
+	name string
+	err  string
+}
+
+// fetchFlrigNameCmd returns a tea.Cmd that fetches the flrig rig model name.
+func (m *Model) fetchFlrigNameCmd() tea.Cmd {
+	return func() tea.Msg {
+		if m.rig.client == nil {
+			return fnameMsg{}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		name, err := m.rig.client.GetName(ctx)
+		if err != nil {
+			applog.Warn("flrig: get_name failed", "error", err)
+			return fnameMsg{err: err.Error()}
+		}
+		applog.Info("flrig: rig name fetched", "name", name)
+		return fnameMsg{name: name}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-	defer cancel()
-	name, err := m.rig.client.GetName(ctx)
-	if err != nil {
-		applog.Warn("flrig: get_name failed", "error", err)
-		return
-	}
-	m.rig.name = name
-	applog.Info("flrig: rig name fetched", "name", name)
 }

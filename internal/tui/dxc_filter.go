@@ -79,6 +79,9 @@ func (m *Model) dxcFilteredSpots() []store.DXCSpot {
 
 // dxcAvailableBands returns bands sorted by frequency (wavelength), plus "other".
 func (m *Model) dxcAvailableBands() []string {
+	if m.dxc.cachedBands != nil {
+		return m.dxc.cachedBands
+	}
 	spots, err := store.QueryDXCSpots(m.App.DB)
 	if err != nil {
 		return nil
@@ -103,6 +106,7 @@ func (m *Model) dxcAvailableBands() []string {
 	if hasOther {
 		bands = append(bands, "other")
 	}
+	m.dxc.cachedBands = bands
 	return bands
 }
 
@@ -132,6 +136,9 @@ func (m *Model) dxcAvailableModes() []string {
 
 // dxcAvailableContinents returns unique continent codes from spots, sorted.
 func (m *Model) dxcAvailableContinents() []string {
+	if m.dxc.cachedConts != nil {
+		return m.dxc.cachedConts
+	}
 	spots, err := store.QueryDXCSpots(m.App.DB)
 	if err != nil {
 		return nil
@@ -147,6 +154,7 @@ func (m *Model) dxcAvailableContinents() []string {
 		conts = append(conts, c)
 	}
 	sort.Strings(conts)
+	m.dxc.cachedConts = conts
 	return conts
 }
 
