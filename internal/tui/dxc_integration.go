@@ -46,6 +46,13 @@ func (m *Model) sendSpotCmd(call string, freqKhz float64, comment string) tea.Cm
 		}
 		applog.Info("DXC: spot sent", "cmd", fmt.Sprintf("DX %.1f %s %s", freqKhz, call, comment))
 
+		// If cluster responded with an error-like message, warn instead of toast.
+		if rsp != "" {
+			applog.Warn("DXC: cluster response", "response", rsp)
+			m.toasts.Warn("DXC: " + rsp)
+			return nil
+		}
+
 		// Also store locally so it shows up in the DXC table immediately.
 		now := time.Now().UTC().Unix()
 		mode := deriveSpotMode(comment, freqKhz/1000)
@@ -90,7 +97,7 @@ func (m *Model) dxcConnectCmd() tea.Cmd {
 		cfg := m.App.Config.Integrations.DXC
 		host := cfg.Host
 		if host == "" {
-			host = "dxspider.co.uk"
+			host = "dxspots.com"
 		}
 		port := cfg.Port
 		if port == "" {

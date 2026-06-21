@@ -59,11 +59,11 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 	dxcHost := newTextinput()
 	dxcHost.CharLimit = 60
 	dxcHost.SetWidth(28)
-	dxcHost.Placeholder = "dxspider.co.uk"
+	dxcHost.Placeholder = "dxspots.com"
 	if cfg.Integrations.DXC.Host != "" {
 		dxcHost.SetValue(cfg.Integrations.DXC.Host)
 	} else {
-		dxcHost.SetValue("dxspider.co.uk")
+		dxcHost.SetValue("dxspots.com")
 	}
 
 	dxcPort := newTextinput()

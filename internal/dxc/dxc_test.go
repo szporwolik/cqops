@@ -49,8 +49,8 @@ func TestParseSpot(t *testing.T) {
 
 func TestNewClientDefaults(t *testing.T) {
 	c := NewClient("", "", "SP9SPM")
-	if c.host != "dxspider.co.uk" {
-		t.Errorf("default host = %q, want dxspider.co.uk", c.host)
+	if c.host != "dxspots.com" {
+		t.Errorf("default host = %q, want dxspots.com", c.host)
 	}
 	if c.port != "7300" {
 		t.Errorf("default port = %q, want 7300", c.port)
