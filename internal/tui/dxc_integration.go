@@ -27,7 +27,8 @@ type dxcStatusMsg struct {
 // It carries the unique callsigns that were in the batch, so the
 // QSO form can auto-fill frequency when a spot arrives for the current call.
 type dxcSpotsStoredMsg struct {
-	calls []string
+	calls     []string
+	spottedMe string // non-empty when own callsign was spotted: "spotter: comment"
 }
 
 // dxcConnectCmd returns a tea.Cmd that attempts to connect to the DX cluster.
@@ -229,7 +230,24 @@ func (m *Model) storeDXCSpotsCmd(spots []dxc.Spot) tea.Cmd {
 		for c := range seen {
 			calls = append(calls, c)
 		}
-		return dxcSpotsStoredMsg{calls: calls}
+
+		// Check if own callsign was spotted.
+		var spottedMe string
+		myCall := strings.ToUpper(m.App.Logbook.Station.Callsign)
+		if myCall != "" {
+			for _, s := range spots {
+				if strings.EqualFold(s.DXCall, myCall) {
+					msg := s.Comment
+					if msg == "" {
+						msg = fmt.Sprintf("%.1f kHz", s.Frequency)
+					}
+					spottedMe = s.Spotter + ": " + msg
+					break
+				}
+			}
+		}
+
+		return dxcSpotsStoredMsg{calls: calls, spottedMe: spottedMe}
 	}
 }
 
@@ -328,6 +346,11 @@ func (m *Model) fillDXCFreq(msg dxcSpotLookupMsg) {
 func (m *Model) handleDXCSpotsStored(msg dxcSpotsStoredMsg) {
 	// Invalidate table so it rebuilds with fresh data on next View().
 	m.dxc.tableReady = false
+
+	// Notify when own callsign was spotted.
+	if msg.spottedMe != "" {
+		m.toasts.Info("You have been spotted by " + msg.spottedMe)
+	}
 
 	formCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
 	if formCall == "" {

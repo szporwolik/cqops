@@ -79,10 +79,10 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("f7"),
 			key.WithHelp("F7", "BPL"),
 		),
-		CON: key.NewBinding(
-			key.WithKeys("f3"),
-			key.WithHelp("F3", "CON"),
-		),
+		// CON: key.NewBinding(
+		// 	key.WithKeys("f3"),
+		// 	key.WithHelp("F3", "CON"),
+		// ),
 		Save: key.NewBinding(
 			key.WithKeys("ctrl+s"),
 			key.WithHelp("Ctrl+S", "Save"),

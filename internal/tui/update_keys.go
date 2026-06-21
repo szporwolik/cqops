@@ -137,10 +137,10 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.screen = screenBPL
 		return nil, true
 
-	case key.Matches(msg, m.keys.CON):
-		applog.Debug("tab: F3 CON")
-		m.screen = screenCON
-		return nil, true
+	// case key.Matches(msg, m.keys.CON):
+	// 	applog.Debug("tab: F3 CON")
+	// 	m.screen = screenCON
+	// 	return nil, true
 
 	case key.Matches(msg, m.keys.Config):
 		if m.screen == screenMainMenu {
