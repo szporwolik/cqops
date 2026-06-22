@@ -125,13 +125,15 @@ func (c *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 		return rig.RigStatus{}, err
 	}
 
-	// Read current VFO name.  'v' works in both modes.
+	// Read current VFO name.  Some backends (Icom) don't support this
+	// — treat as non-fatal so we can still poll freq/mode/split.
 	vfo, err := c.cmd(r, conn, "v")
 	if err != nil {
-		c.dropConn()
-		return rig.RigStatus{}, fmt.Errorf("hamlib: vfo: %w", err)
+		applog.Debug("hamlib: vfo name query failed, continuing without VFO name", "error", err)
+		vfo = ""
+	} else {
+		vfo = strings.TrimSpace(vfo)
 	}
-	vfo = strings.TrimSpace(vfo)
 
 	// Split status.  With --vfo, single-char 's' returns nothing — must
 	// use VFO-prefixed 's VFOA'.  Without --vfo, plain 's' works.
