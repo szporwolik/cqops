@@ -218,13 +218,19 @@ func (c *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 	return rs, nil
 }
 
-// probeVfoMode queries f VFOA and f VFOB on separate temp connections.
-// If both return numeric values that *differ*, --vfo is truly enabled and
-// per-VFO queries work.  If they match (or either fails), the VFO argument
-// is likely being ignored — typical of rigctld started without --vfo.
+// probeVfoMode detects whether rigctld is running with --vfo (VFO-aware
+// command protocol).  With --vfo, plain single-char commands (f, m, s, l)
+// return nothing; a VFO argument is required.  Without --vfo, plain
+// commands work and VFO arguments are silently ignored.
+//
+// Strategy: send plain "f" (no VFO).  If we get a frequency back, VFO
+// mode is OFF.  If we get nothing / an error, VFO mode is ON.  This is
+// more reliable than comparing VFOA vs VFOB frequencies, which fails
+// when a backend does not support VFOB queries (e.g. Icom without split).
 // Fails silently; VFO mode stays false if the probe is inconclusive.
 func (c *Client) probeVfoMode(ctx context.Context) {
-	readFreq := func(vfo string) (float64, bool) {
+	// Plain "f" — works only without --vfo.
+	send := func(cmd string) (float64, bool) {
 		probeCtx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
 		defer cancel()
 
@@ -236,7 +242,7 @@ func (c *Client) probeVfoMode(ctx context.Context) {
 		defer conn.Close()
 
 		conn.SetDeadline(time.Now().Add(300 * time.Millisecond))
-		fmt.Fprintf(conn, "f %s\r\n", vfo)
+		fmt.Fprintf(conn, "%s\r\n", cmd)
 		r := bufio.NewReader(conn)
 		resp, err := r.ReadString('\n')
 		if err != nil {
@@ -249,17 +255,20 @@ func (c *Client) probeVfoMode(ctx context.Context) {
 		return parseFloat(resp), true
 	}
 
-	freqA, okA := readFreq("VFOA")
-	freqB, okB := readFreq("VFOB")
-	if okA && okB && freqA != freqB {
-		c.vfoMode = true
-		applog.Debug("hamlib: vfo mode detected", "freqA", freqA, "freqB", freqB)
-	} else {
-		applog.Debug("hamlib: vfo mode not detected",
-			"freqA", freqA, "okA", okA,
-			"freqB", freqB, "okB", okB,
-		)
+	// If plain "f" returns a frequency, --vfo is NOT active.
+	if freq, ok := send("f"); ok && freq > 0 {
+		applog.Debug("hamlib: vfo mode not detected (plain f returned frequency)", "freq", freq)
+		return
 	}
+
+	// Plain "f" failed — try "f VFOA".  If it succeeds, --vfo is active.
+	if freq, ok := send("f VFOA"); ok && freq > 0 {
+		c.vfoMode = true
+		applog.Debug("hamlib: vfo mode detected (f VFOA ok, plain f not)", "freq", freq)
+		return
+	}
+
+	applog.Debug("hamlib: vfo mode probe inconclusive — assuming vfo off")
 }
 
 // discardReader replaces the shared buffered reader with a fresh one,
