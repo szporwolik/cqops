@@ -192,7 +192,7 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 				applog.Info("PSK Reporter: new spots stored", "count", n)
 			}
 			_ = store.PurgeOldPSKSpots(m.App.DB)
-			m.psk.lastFetch = r.fetchTime
+			m.psk.lastFetchByCall[call] = r.fetchTime
 			m.psk.lastCall = call
 			m.psk.fetched = true
 			m.psk.spotKey = ""

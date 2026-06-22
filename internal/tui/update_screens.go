@@ -334,19 +334,41 @@ func (m *Model) handlePartnerUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 }
 
 func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	call := strings.ToUpper(strings.TrimSpace(m.App.Logbook.Station.Callsign))
+
+	// Lazy-init per-callsign fetch timestamp map.
+	if m.psk.lastFetchByCall == nil {
+		m.psk.lastFetchByCall = make(map[string]time.Time)
+	}
+
+	// Detect callsign change (e.g. logbook cycled) — reset caches
+	// and allow an immediate fetch for the new callsign. The fetching
+	// flag prevents concurrent fetches; rapid logbook toggling is rare
+	// in normal ham radio operation.
+	if call != "" && call != m.psk.lastCall {
+		m.psk.fetched = false
+		m.psk.lastCall = call
+		m.psk.spots = nil
+		m.psk.spotKey = ""
+		m.psk.view = ""
+		m.psk.viewKey = ""
+	}
+
 	// Trigger initial fetch when first entering the tab (not yet fetched, not already fetching).
 	if !m.psk.fetched && !m.psk.fetching && m.inetOnline {
-		call := strings.ToUpper(strings.TrimSpace(m.App.Logbook.Station.Callsign))
 		if call != "" {
 			m.psk.fetching = true
 			return m, tea.Batch(cmd, m.pskFetchCmd())
 		}
 	}
-	// Auto-refresh: if data is older than 5 minutes, trigger a background refresh.
-	if m.psk.fetched && !m.psk.fetching && m.inetOnline &&
-		!m.psk.lastFetch.IsZero() && time.Since(m.psk.lastFetch) >= 5*time.Minute {
-		m.psk.fetching = true
-		return m, tea.Batch(cmd, m.pskFetchCmd())
+	// Auto-refresh: if data for this callsign is older than 5 minutes,
+	// trigger a background refresh (per-callsign, not global).
+	if m.psk.fetched && !m.psk.fetching && m.inetOnline {
+		last := m.psk.lastFetchByCall[call]
+		if !last.IsZero() && time.Since(last) >= 5*time.Minute {
+			m.psk.fetching = true
+			return m, tea.Batch(cmd, m.pskFetchCmd())
+		}
 	}
 
 	switch msg := msg.(type) {

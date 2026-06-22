@@ -287,6 +287,7 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 		m.psk.cacheDir = dir
 		m.solar.cacheDir = dir
 	}
+	m.psk.lastFetchByCall = make(map[string]time.Time)
 	m.applyBeepOnError()
 	m.retainComment = a.Config.State.RetainComment
 	if a.Config.State.RetainedComment != "" {

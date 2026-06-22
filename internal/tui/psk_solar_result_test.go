@@ -38,8 +38,8 @@ func TestPSKFetchResult_Success(t *testing.T) {
 	if !m.psk.fetched {
 		t.Error("psk.fetched should be true after successful fetch")
 	}
-	if m.psk.lastFetch.IsZero() {
-		t.Error("psk.lastFetch should be set")
+	if m.psk.lastFetchByCall["SP9MOA"].IsZero() {
+		t.Error("psk.lastFetchByCall should be set for SP9MOA")
 	}
 }
 

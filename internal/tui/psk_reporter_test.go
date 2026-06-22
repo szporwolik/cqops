@@ -271,10 +271,10 @@ func TestBuildPSKTable_WithData(t *testing.T) {
 func TestBuildPSKFilters(t *testing.T) {
 	m := &Model{
 		psk: pskState{
-			filterMins: 15,
-			bandFilter: "20m",
-			modeFilter: "FT8",
-			lastFetch:  time.Now().Add(-2 * time.Minute),
+			filterMins:      15,
+			bandFilter:      "20m",
+			modeFilter:      "FT8",
+			lastFetchByCall: map[string]time.Time{"": time.Now().Add(-2 * time.Minute)},
 		},
 	}
 
