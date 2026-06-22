@@ -223,7 +223,6 @@ func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
 		// require the user to press the key twice.
 	}
 	if m.lookup.qrzNeed {
-		m.lookup.qrzNeed = false
 		call := m.lookup.qrzCall
 		applog.Debug("DXC: handlePendingRequests qrzNeed",
 			"call", call,
@@ -231,13 +230,20 @@ func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
 			"qrzUser", m.App.Config.Integrations.QRZ.User != "",
 		)
 		if call == "" {
+			m.lookup.qrzNeed = false
 			return cmd, false
 		}
 		// Always fire DXC spot lookup when call changes, even if QRZ is disabled.
 		if !m.App.Config.Integrations.QRZ.Enabled || m.App.Config.Integrations.QRZ.User == "" {
+			m.lookup.qrzNeed = false
 			return tea.Batch(cmd, m.dxcSpotLookupCmd(call)), true
 		}
-		return tea.Batch(cmd, m.lookupCallCmd(call)), true
+		if c := m.qrzLookup(call); c != nil {
+			m.lookup.qrzNeed = false
+			return tea.Batch(cmd, c, m.dxcSpotLookupCmd(call)), true
+		}
+		// qrzLookup rate-limited — leave qrzNeed to retry next tick.
+		// Fall through so wlNeed below can still fire on this tick.
 	}
 	if m.lookup.wlNeed {
 		call := m.lookup.wlCall
