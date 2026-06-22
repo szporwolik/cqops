@@ -119,7 +119,20 @@ func (m *Model) buildDXCTable() {
 	for _, n := range names {
 		cw := dxcColWidths[n]
 		minTotal += cw
-		cols = append(cols, table.Column{Title: dxcColTitle(n), Width: cw})
+		title := dxcColTitle(n)
+		// Color only the header of the actively filtered column blue, so
+		// the user can see which column the filter applies to. Headers are
+		// static (no per-row ANSI nesting) so this never conflicts with
+		// the table's Selected-row style.
+		switch {
+		case m.dxc.bandFilter != "" && n == "Band":
+			title = S.Info.Render(title)
+		case m.dxc.modeFilter != "" && n == "Mode":
+			title = S.Info.Render(title)
+		case m.dxc.contFilter != "" && n == "DX Cont":
+			title = S.Info.Render(title)
+		}
+		cols = append(cols, table.Column{Title: title, Width: cw})
 	}
 	gaps := len(cols) - 1
 	extra := bodyW - gaps - minTotal
@@ -163,7 +176,6 @@ func (m *Model) buildDXCTable() {
 	m.dxc.spotCount = len(spots)
 
 	filtered := m.dxc.bandFilter != "" || m.dxc.modeFilter != "" || m.dxc.contFilter != ""
-	bandHighlight := S.Info
 
 	var rows []table.Row
 	for _, s := range spots {
@@ -173,15 +185,6 @@ func (m *Model) buildDXCTable() {
 			v := dxcColValue(n, &s)
 			if v == "" {
 				v = "\u2014"
-			}
-			if filtered && n == "Band" && v != "\u2014" && m.dxc.bandFilter != "" {
-				v = bandHighlight.Render(v)
-			}
-			if filtered && n == "Mode" && v != "\u2014" && m.dxc.modeFilter != "" {
-				v = bandHighlight.Render(v)
-			}
-			if filtered && n == "DX Cont" && v != "\u2014" && m.dxc.contFilter != "" {
-				v = bandHighlight.Render(v)
 			}
 			row = append(row, v)
 		}
