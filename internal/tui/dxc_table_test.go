@@ -6,6 +6,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/szporwolik/cqops/internal/app"
+	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/store"
 )
 
@@ -194,6 +196,142 @@ func TestDXCSpotAtCursor_NoSelectedCall(t *testing.T) {
 	_, ok := m.dxcSpotAtCursor()
 	if ok {
 		t.Error("dxcSpotAtCursor with empty selectedCall should return false")
+	}
+}
+
+// =============================================================================
+// parseSpotCommentForRefs tests
+// =============================================================================
+
+// newModelForRefParse creates a minimal Model with form fields for
+// parseSpotCommentForRefs testing. No DB, no integrations.
+func newModelForRefParse() *Model {
+	cfg := &config.Config{
+		General: config.GeneralConfig{DistanceUnit: "km"},
+		Logbooks: map[string]config.Logbook{
+			"test": {Station: config.Station{Callsign: "SP9MOA", Grid: "JO90"}},
+		},
+	}
+	a := &app.App{
+		Config:      cfg,
+		LogbookName: "test",
+		Logbook:     &config.Logbook{Station: config.Station{Callsign: "SP9MOA", Grid: "JO90"}},
+	}
+	return New(a, nil)
+}
+
+func TestParseSpotCommentForRefs_POTA(t *testing.T) {
+	m := newModelForRefParse()
+	m.parseSpotCommentForRefs("POTA US-1091")
+	if got := m.fields[fieldPOTA].Value(); got != "US-1091" {
+		t.Errorf("POTA = %q, want US-1091", got)
+	}
+	// IOTA must NOT be filled with a POTA reference.
+	if got := m.fields[fieldIOTA].Value(); got != "" {
+		t.Errorf("IOTA = %q, want empty (POTA ref should not fill IOTA)", got)
+	}
+	if got := m.fields[fieldSOTA].Value(); got != "" {
+		t.Errorf("SOTA = %q, want empty", got)
+	}
+	if got := m.fields[fieldWWFF].Value(); got != "" {
+		t.Errorf("WWFF = %q, want empty", got)
+	}
+}
+
+func TestParseSpotCommentForRefs_IOTA(t *testing.T) {
+	m := newModelForRefParse()
+	m.parseSpotCommentForRefs("IOTA EU-005")
+	if got := m.fields[fieldIOTA].Value(); got != "EU-005" {
+		t.Errorf("IOTA = %q, want EU-005", got)
+	}
+	// POTA must NOT be filled with an IOTA reference.
+	if got := m.fields[fieldPOTA].Value(); got != "" {
+		t.Errorf("POTA = %q, want empty", got)
+	}
+}
+
+func TestParseSpotCommentForRefs_SOTA(t *testing.T) {
+	m := newModelForRefParse()
+	m.parseSpotCommentForRefs("SOTA SP/BZ-001")
+	if got := m.fields[fieldSOTA].Value(); got != "SP/BZ-001" {
+		t.Errorf("SOTA = %q, want SP/BZ-001", got)
+	}
+}
+
+func TestParseSpotCommentForRefs_WWFF(t *testing.T) {
+	m := newModelForRefParse()
+	m.parseSpotCommentForRefs("WWFF DLFF-0123")
+	if got := m.fields[fieldWWFF].Value(); got != "DLFF-0123" {
+		t.Errorf("WWFF = %q, want DLFF-0123", got)
+	}
+	// POTA must NOT be filled with a WWFF reference.
+	if got := m.fields[fieldPOTA].Value(); got != "" {
+		t.Errorf("POTA = %q, want empty (WWFF ref should not fill POTA)", got)
+	}
+}
+
+func TestParseSpotCommentForRefs_NoFalseIOTA(t *testing.T) {
+	// US, PL, SP etc are NOT valid IOTA continent codes.
+	tests := []string{
+		"US-1091", // POTA reference
+		"PL-1234", // POTA reference
+		"K-0001",  // POTA reference
+		"SP-0001", // POTA reference
+		"VE-1234", // POTA reference
+		"G-0001",  // POTA reference
+	}
+	for _, tc := range tests {
+		m := newModelForRefParse()
+		m.parseSpotCommentForRefs(tc)
+		if got := m.fields[fieldIOTA].Value(); got != "" {
+			t.Errorf("comment %q: IOTA = %q, want empty", tc, got)
+		}
+		if got := m.fields[fieldPOTA].Value(); got != tc {
+			t.Errorf("comment %q: POTA = %q, want %q", tc, got, tc)
+		}
+	}
+}
+
+func TestParseSpotCommentForRefs_ValidIOTA(t *testing.T) {
+	// All valid IOTA continent codes must be recognized.
+	tests := []string{
+		"AF-001", "AN-016", "AS-007", "EU-005",
+		"NA-001", "OC-001", "SA-002",
+	}
+	for _, tc := range tests {
+		m := newModelForRefParse()
+		m.parseSpotCommentForRefs(tc)
+		if got := m.fields[fieldIOTA].Value(); got != tc {
+			t.Errorf("comment %q: IOTA = %q, want %q", tc, got, tc)
+		}
+	}
+}
+
+func TestParseSpotCommentForRefs_MultipleRefs(t *testing.T) {
+	m := newModelForRefParse()
+	m.parseSpotCommentForRefs("EU-005 and SP/BZ-001 with SP-0030")
+	if got := m.fields[fieldIOTA].Value(); got != "EU-005" {
+		t.Errorf("IOTA = %q, want EU-005", got)
+	}
+	if got := m.fields[fieldSOTA].Value(); got != "SP/BZ-001" {
+		t.Errorf("SOTA = %q, want SP/BZ-001", got)
+	}
+	if got := m.fields[fieldPOTA].Value(); got != "SP-0030" {
+		t.Errorf("POTA = %q, want SP-0030", got)
+	}
+}
+
+func TestParseSpotCommentForRefs_Empty(t *testing.T) {
+	m := newModelForRefParse()
+	m.parseSpotCommentForRefs("")
+	if got := m.fields[fieldIOTA].Value(); got != "" {
+		t.Errorf("IOTA = %q, want empty", got)
+	}
+	if got := m.fields[fieldPOTA].Value(); got != "" {
+		t.Errorf("POTA = %q, want empty", got)
+	}
+	if got := m.fields[fieldSOTA].Value(); got != "" {
+		t.Errorf("SOTA = %q, want empty", got)
 	}
 }
 

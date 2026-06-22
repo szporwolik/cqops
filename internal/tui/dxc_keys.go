@@ -260,11 +260,12 @@ func (m *Model) parseSpotCommentForRefs(comment string) {
 	}
 	upper := strings.ToUpper(strings.TrimSpace(comment))
 
-	// IOTA: two letters, dash, digits (e.g. "EU-005", "NA-001")
+	// IOTA: two-letter continent code, dash, digits (e.g. "EU-005", "NA-001").
+	// Only valid IOTA continent codes: AF, AN, AS, EU, NA, OC, SA.
 	if m.fields[fieldIOTA].Value() == "" {
-		re := regexp.MustCompile(`\b([A-Z]{2}-\d{3,4})\b`)
+		re := regexp.MustCompile(`\b(AF|AN|AS|EU|NA|OC|SA)-\d{3,4}\b`)
 		if match := re.FindStringSubmatch(upper); match != nil {
-			m.fields[fieldIOTA].SetValue(match[1])
+			m.fields[fieldIOTA].SetValue(match[0])
 		}
 	}
 
