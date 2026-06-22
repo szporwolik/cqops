@@ -12,6 +12,7 @@ import (
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/rig/flrig"
 	"github.com/szporwolik/cqops/internal/rig/hamlib"
+	rothamlib "github.com/szporwolik/cqops/internal/rotor/hamlib"
 )
 
 // =============================================================================
@@ -345,5 +346,116 @@ func (m *Model) fetchRigNameCmd() tea.Cmd {
 		}
 		applog.Info("rig: rig name fetched", "name", name)
 		return rigNameMsg{name: name}
+	}
+}
+
+// =============================================================================
+// Rotor polling — azimuth/elevation from hamlib rotctld.
+// =============================================================================
+
+// refreshRotorClient initializes or tears down the rotor client from config.
+func (m *Model) refreshRotorClient() {
+	if m.App == nil || m.App.Logbook == nil {
+		if closer, ok := m.rotor.client.(interface{ Close() error }); ok {
+			closer.Close()
+		}
+		m.rotor.client = nil
+		m.rotor.connected = false
+		return
+	}
+	// Close old connection.
+	if closer, ok := m.rotor.client.(interface{ Close() error }); ok {
+		closer.Close()
+	}
+	m.rotor.client = nil
+	m.rotor.connected = false
+
+	enabled, host, port := m.App.Logbook.Station.RigRotor(m.App.Config.Rigs)
+	if !enabled {
+		applog.Debug("rotor: disabled")
+		return
+	}
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	if port == "" {
+		port = "4533"
+	}
+	applog.InfoDetail("rotor: hamlib connecting", fmt.Sprintf("host=%s port=%s", host, port))
+	c := rothamlib.New(host, port, rigDefaultTimeout*time.Millisecond)
+	m.rotor.client = c
+}
+
+// rotorPollMsg carries the result of a rotor poll.
+type rotorPollMsg struct {
+	client    RotorClient // the client that produced this result (nil = stale)
+	connected bool
+	azimuth   float64
+	elevation float64
+	err       string
+}
+
+// rotorStatusCmd returns a tea.Cmd that queries current rotor position.
+func (m *Model) rotorStatusCmd() tea.Cmd {
+	if m.rotor.client == nil {
+		return nil
+	}
+	client := m.rotor.client
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), rigStatusTimeout)
+		defer cancel()
+		s, err := client.Status(ctx)
+		if err != nil {
+			return rotorPollMsg{client: client, err: err.Error()}
+		}
+		return rotorPollMsg{client: client, connected: s.Connected, azimuth: s.Azimuth, elevation: s.Elevation}
+	}
+}
+
+// pollRotor returns a tea.Cmd that queries rotor position every 2s.
+func (m *Model) pollRotor() tea.Cmd {
+	if m.rotor.client == nil {
+		return nil
+	}
+	// Slow poll (~2s) — rotor moves slowly.
+	if m.tickCount%2 != 0 {
+		return nil
+	}
+	return m.rotorStatusCmd()
+}
+
+// applyRotorPoll applies a rotor poll result to the model.
+func (m *Model) applyRotorPoll(r rotorPollMsg) tea.Cmd {
+	if r.client != m.rotor.client {
+		return nil
+	}
+	if r.err != "" || !r.connected {
+		if m.rotor.connected {
+			applog.Debug("rotor: disconnected", "err", r.err)
+			m.toasts.Warn("Rot: disconnected")
+		}
+		m.rotor.connected = false
+		return nil
+	}
+	if !m.rotor.connected {
+		applog.Info("rotor: connected", "az", r.azimuth, "el", r.elevation)
+		m.toasts.Success("Rot: connected")
+	}
+	m.rotor.connected = true
+	m.rotor.azimuth = r.azimuth
+	m.rotor.elevation = r.elevation
+	return nil
+}
+
+// shutdownConnections gracefully closes rig and rotor TCP connections
+// before the process exits.  Called from the quit dialog path.
+func (m *Model) shutdownConnections() {
+	if closer, ok := m.rig.client.(interface{ Close() error }); ok {
+		applog.Debug("rig: closing connection on shutdown")
+		closer.Close()
+	}
+	if closer, ok := m.rotor.client.(interface{ Close() error }); ok {
+		applog.Debug("rotor: closing connection on shutdown")
+		closer.Close()
 	}
 }

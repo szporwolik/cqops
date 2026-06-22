@@ -111,6 +111,7 @@ type Model struct {
 	height         int
 	quitting       bool
 	rig            rigState
+	rotor          rotorState
 	dateTimeAuto   bool
 	tickCount      int
 	inetOnline     bool
@@ -308,6 +309,7 @@ func (m *Model) applyBeepOnError() {
 
 func (m *Model) Init() tea.Cmd {
 	m.refreshRigClient()
+	m.refreshRotorClient()
 	m.App.WSJTX.OnADIF = func(adif string) {
 		m.adifQ.mu.Lock()
 		m.adifQ.adifs = append(m.adifQ.adifs, adif)
@@ -438,6 +440,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			*m.confirm = updated.(DialogModel)
 			if m.confirm.Done() {
 				if m.confirm.Result.Confirmed && m.confirm.Result.Value == "quit" {
+					m.shutdownConnections()
 					return m, tea.Quit
 				}
 				m.confirm = nil

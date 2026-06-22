@@ -83,7 +83,7 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 		m.autoUpdateDateTime()
 	}
 	m.tickCount++
-	return tea.Batch(tickCmd(), m.maybeCheckInet(), m.maybeRefreshDataFiles(), m.pollRig(), m.maybeCheckWavelog(), m.maybeCheckQRZ(), m.maybeFetchSolar(), m.maybeDXC(), cmd)
+	return tea.Batch(tickCmd(), m.maybeCheckInet(), m.maybeRefreshDataFiles(), m.pollRig(), m.pollRotor(), m.maybeCheckWavelog(), m.maybeCheckQRZ(), m.maybeFetchSolar(), m.maybeDXC(), cmd)
 }
 
 // handleAsyncMessages processes async result messages (internet check, Wavelog status,
@@ -164,6 +164,8 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 	case rigPowerMsg:
 		m.applyRigPower(r)
 		return true, nil
+	case rotorPollMsg:
+		return true, m.applyRotorPoll(r)
 	case rigModesMsg:
 		if len(r.modes) > 0 {
 			m.rig.modes = r.modes

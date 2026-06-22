@@ -20,6 +20,14 @@ type rigState struct {
 	name      string    // rig model name from rig backend (e.g. "FT-DX10")
 }
 
+// rotorState holds polled rotor data and the rotor backend client.
+type rotorState struct {
+	connected bool
+	azimuth   float64
+	elevation float64
+	client    RotorClient // rotor backend client (nil when disabled)
+}
+
 // wsjtxState holds WSJT-X integration connection and status state.
 type wsjtxState struct {
 	online   bool

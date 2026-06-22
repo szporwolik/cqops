@@ -52,10 +52,12 @@ func (m *Model) handleRigEditUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 	if m.ui.rigChooser.needsRefresh {
 		m.ui.rigChooser.needsRefresh = false
 		m.refreshRigClient()
+		m.refreshRotorClient()
 	}
 	if m.ui.rigChooser.done {
 		m.screen = screenMainMenu
 		m.refreshRigClient()
+		m.refreshRotorClient()
 	}
 	return m, cmd
 }

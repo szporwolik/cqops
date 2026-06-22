@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/szporwolik/cqops/internal/rig"
+	"github.com/szporwolik/cqops/internal/rotor"
 )
 
 // =============================================================================
@@ -19,6 +20,11 @@ type RigClient interface {
 	GetModes(ctx context.Context) ([]string, error)
 	SetMode(ctx context.Context, mode string) error
 	GetName(ctx context.Context) (string, error)
+}
+
+// RotorClient abstracts a rotor control backend (hamlib rotctld TCP).
+type RotorClient interface {
+	Status(ctx context.Context) (rotor.Status, error)
 }
 
 // =============================================================================
