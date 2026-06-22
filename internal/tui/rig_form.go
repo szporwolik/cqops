@@ -16,23 +16,50 @@ const (
 	rigFieldRig
 	rigFieldAntenna
 	rigFieldPower
-	rigFieldFlrig
-	rigFieldFlrigHost
-	rigFieldFlrigPort
+	rigFieldBackend
+	rigFieldBackendHost
+	rigFieldBackendPort
+	rigFieldRotor
+	rigFieldRotorHost
+	rigFieldRotorPort
 	rigFieldWsjtx
 	rigFieldWsjtxHost
 	rigFieldWsjtxPort
 	rigFieldEnd
 )
 
+// backendOptions maps backend index to label and host/port defaults.
+var backendOptions = []struct {
+	label       string
+	defaultHost string
+	defaultPort string
+}{
+	{"None", "", ""},
+	{"Hamlib", "127.0.0.1", "4533"},
+	{"Flrig", "localhost", "12345"},
+}
+
+// rotorOptions maps rotor backend index to label and defaults.
+var rotorOptions = []struct {
+	label       string
+	defaultHost string
+	defaultPort string
+}{
+	{"None", "", ""},
+	{"Hamlib", "127.0.0.1", "4533"},
+}
+
 type RigForm struct {
 	Name         textinput.Model
 	Rig          textinput.Model
 	Antenna      textinput.Model
 	Power        textinput.Model
-	FlrigEnabled bool
-	FlrigHost    textinput.Model
-	FlrigPort    textinput.Model
+	BackendIdx   int // 0=None, 1=Hamlib, 2=Flrig
+	BackendHost  textinput.Model
+	BackendPort  textinput.Model
+	RotorIdx     int // 0=None, 1=Hamlib
+	RotorHost    textinput.Model
+	RotorPort    textinput.Model
 	WsjtxEnabled bool
 	WsjtxHost    textinput.Model
 	WsjtxPort    textinput.Model
@@ -62,15 +89,15 @@ func NewRigForm(rigPlaceholder, antennaPlaceholder, powerPlaceholder string) *Ri
 	pw.SetWidth(28)
 	pw.Placeholder = powerPlaceholder
 
-	fh := newTextinput()
-	fh.CharLimit = 40
-	fh.SetWidth(28)
-	fh.Placeholder = "localhost"
+	bh := newTextinput()
+	bh.CharLimit = 40
+	bh.SetWidth(28)
+	bh.Placeholder = "127.0.0.1"
 
-	fp := newTextinput()
-	fp.CharLimit = 6
-	fp.SetWidth(28)
-	fp.Placeholder = "12345"
+	bp := newTextinput()
+	bp.CharLimit = 6
+	bp.SetWidth(28)
+	bp.Placeholder = "4533"
 
 	wh := newTextinput()
 	wh.CharLimit = 40
@@ -82,16 +109,28 @@ func NewRigForm(rigPlaceholder, antennaPlaceholder, powerPlaceholder string) *Ri
 	wp.SetWidth(28)
 	wp.Placeholder = "2233"
 
+	rh := newTextinput()
+	rh.CharLimit = 40
+	rh.SetWidth(28)
+	rh.Placeholder = "127.0.0.1"
+
+	rp := newTextinput()
+	rp.CharLimit = 6
+	rp.SetWidth(28)
+	rp.Placeholder = "4533"
+
 	rf := &RigForm{
-		Name:      nm,
-		Rig:       ri,
-		Antenna:   an,
-		Power:     pw,
-		FlrigHost: fh,
-		FlrigPort: fp,
-		WsjtxHost: wh,
-		WsjtxPort: wp,
-		focus:     rigFieldName,
+		Name:        nm,
+		Rig:         ri,
+		Antenna:     an,
+		Power:       pw,
+		BackendHost: bh,
+		BackendPort: bp,
+		RotorHost:   rh,
+		RotorPort:   rp,
+		WsjtxHost:   wh,
+		WsjtxPort:   wp,
+		focus:       rigFieldName,
 	}
 	return rf
 }
@@ -106,10 +145,14 @@ func (f *RigForm) Update(msg tea.KeyPressMsg) {
 		f.Antenna, _ = f.Antenna.Update(msg)
 	case rigFieldPower:
 		f.Power, _ = f.Power.Update(msg)
-	case rigFieldFlrigHost:
-		f.FlrigHost, _ = f.FlrigHost.Update(msg)
-	case rigFieldFlrigPort:
-		f.FlrigPort, _ = f.FlrigPort.Update(msg)
+	case rigFieldBackendHost:
+		f.BackendHost, _ = f.BackendHost.Update(msg)
+	case rigFieldBackendPort:
+		f.BackendPort, _ = f.BackendPort.Update(msg)
+	case rigFieldRotorHost:
+		f.RotorHost, _ = f.RotorHost.Update(msg)
+	case rigFieldRotorPort:
+		f.RotorPort, _ = f.RotorPort.Update(msg)
 	case rigFieldWsjtxHost:
 		f.WsjtxHost, _ = f.WsjtxHost.Update(msg)
 	case rigFieldWsjtxPort:
@@ -120,8 +163,11 @@ func (f *RigForm) Update(msg tea.KeyPressMsg) {
 func (f *RigForm) NextInput() {
 	f.blurAll()
 	next := rigFormField(wrapNext(int(f.focus), int(rigFieldEnd)))
-	if !f.FlrigEnabled && next == rigFieldFlrigHost {
-		next = rigFieldWsjtx // skip flrig host/port, jump to WSJT-X
+	if f.BackendIdx == 0 && next == rigFieldBackendHost {
+		next = rigFieldRotor // skip radio host/port, jump to rotor
+	}
+	if f.RotorIdx == 0 && next == rigFieldRotorHost {
+		next = rigFieldWsjtx // skip rotor host/port, jump to WSJT-X
 	}
 	if !f.WsjtxEnabled && next == rigFieldWsjtxHost {
 		next = rigFieldRig // skip wsjtx host/port, wrap to start
@@ -134,17 +180,20 @@ func (f *RigForm) PrevInput() {
 	f.blurAll()
 	prev := rigFormField(wrapPrev(int(f.focus), int(rigFieldEnd)))
 	if !f.WsjtxEnabled && (prev == rigFieldWsjtxPort || prev == rigFieldWsjtxHost) {
-		prev = rigFieldWsjtx // skip wsjtx host/port, land on checkbox
+		prev = rigFieldWsjtx
 	}
-	if !f.FlrigEnabled && (prev == rigFieldFlrigPort || prev == rigFieldFlrigHost) {
-		prev = rigFieldFlrig // skip flrig host/port, land on checkbox
+	if f.RotorIdx == 0 && (prev == rigFieldRotorPort || prev == rigFieldRotorHost) {
+		prev = rigFieldRotor
+	}
+	if f.BackendIdx == 0 && (prev == rigFieldBackendPort || prev == rigFieldBackendHost) {
+		prev = rigFieldBackend
 	}
 	f.focus = prev
 	f.focusField()
 }
 
 func (f *RigForm) blurAll() {
-	blurTextinputs(&f.Name, &f.Rig, &f.Antenna, &f.Power, &f.FlrigHost, &f.FlrigPort, &f.WsjtxHost, &f.WsjtxPort)
+	blurTextinputs(&f.Name, &f.Rig, &f.Antenna, &f.Power, &f.BackendHost, &f.BackendPort, &f.RotorHost, &f.RotorPort, &f.WsjtxHost, &f.WsjtxPort)
 }
 
 func (f *RigForm) focusField() {
@@ -155,10 +204,14 @@ func (f *RigForm) focusField() {
 		f.Antenna.Focus()
 	case rigFieldPower:
 		f.Power.Focus()
-	case rigFieldFlrigHost:
-		f.FlrigHost.Focus()
-	case rigFieldFlrigPort:
-		f.FlrigPort.Focus()
+	case rigFieldBackendHost:
+		f.BackendHost.Focus()
+	case rigFieldBackendPort:
+		f.BackendPort.Focus()
+	case rigFieldRotorHost:
+		f.RotorHost.Focus()
+	case rigFieldRotorPort:
+		f.RotorPort.Focus()
 	case rigFieldWsjtxHost:
 		f.WsjtxHost.Focus()
 	case rigFieldWsjtxPort:
@@ -170,34 +223,17 @@ func (f *RigForm) OnLastField() bool {
 	if f.WsjtxEnabled {
 		return f.focus == rigFieldWsjtxPort
 	}
-	if f.FlrigEnabled {
-		return f.focus == rigFieldFlrigPort
+	if f.RotorIdx != 0 {
+		return f.focus == rigFieldRotorPort
+	}
+	if f.BackendIdx != 0 {
+		return f.focus == rigFieldBackendPort
 	}
 	return f.focus == rigFieldWsjtx
 }
 
-func (f *RigForm) Values() (name, rig, antenna, power string) {
-	return strings.TrimSpace(f.Name.Value()),
-		strings.TrimSpace(f.Rig.Value()),
-		strings.TrimSpace(f.Antenna.Value()),
-		strings.TrimSpace(f.Power.Value())
-}
-
-func (f *RigForm) FlrigValues() (enabled bool, host, port string) {
-	host = strings.TrimSpace(f.FlrigHost.Value())
-	port = strings.TrimSpace(f.FlrigPort.Value())
-	if host == "" {
-		host = "localhost"
-	}
-	if port == "" {
-		port = "12345"
-	}
-	return f.FlrigEnabled, host, port
-}
-
 func (f *RigForm) FlrigURL() string {
-	_, host, port := f.FlrigValues()
-	return "http://" + host + ":" + port
+	return "http://" + f.BackendHost.Value() + ":" + f.BackendPort.Value()
 }
 
 func (f *RigForm) SetValues(name, rig, antenna, power string) {
@@ -207,18 +243,89 @@ func (f *RigForm) SetValues(name, rig, antenna, power string) {
 	f.Power.SetValue(power)
 }
 
-func (f *RigForm) SetFlrig(enabled bool, host, port string) {
-	f.FlrigEnabled = enabled
+func (f *RigForm) Values() (name, rig, antenna, power string) {
+	return strings.TrimSpace(f.Name.Value()),
+		strings.TrimSpace(f.Rig.Value()),
+		strings.TrimSpace(f.Antenna.Value()),
+		strings.TrimSpace(f.Power.Value())
+}
+
+// SetBackend configures the radio control select. idx: 0=None, 1=Hamlib, 2=Flrig.
+func (f *RigForm) SetBackend(idx int, host, port string) {
+	if idx < 0 || idx >= len(backendOptions) {
+		idx = 0
+	}
+	f.BackendIdx = idx
 	if host != "" {
-		f.FlrigHost.SetValue(host)
+		f.BackendHost.SetValue(host)
 	} else {
-		f.FlrigHost.SetValue("localhost")
+		f.BackendHost.SetValue(backendOptions[idx].defaultHost)
 	}
 	if port != "" {
-		f.FlrigPort.SetValue(port)
+		f.BackendPort.SetValue(port)
 	} else {
-		f.FlrigPort.SetValue("12345")
+		f.BackendPort.SetValue(backendOptions[idx].defaultPort)
 	}
+}
+
+// SetRotor configures the rotor control select. idx: 0=None, 1=Hamlib.
+func (f *RigForm) SetRotor(idx int, host, port string) {
+	if idx < 0 || idx >= len(rotorOptions) {
+		idx = 0
+	}
+	f.RotorIdx = idx
+	if host != "" {
+		f.RotorHost.SetValue(host)
+	} else {
+		f.RotorHost.SetValue(rotorOptions[idx].defaultHost)
+	}
+	if port != "" {
+		f.RotorPort.SetValue(port)
+	} else {
+		f.RotorPort.SetValue(rotorOptions[idx].defaultPort)
+	}
+}
+
+// RotorValues returns the selected rotor backend and host/port.
+func (f *RigForm) RotorValues() (backend string, host, port string) {
+	host = strings.TrimSpace(f.RotorHost.Value())
+	port = strings.TrimSpace(f.RotorPort.Value())
+	if f.RotorIdx == 1 {
+		backend = "hamlib"
+		if host == "" {
+			host = "127.0.0.1"
+		}
+		if port == "" {
+			port = "4533"
+		}
+	}
+	return backend, host, port
+}
+func (f *RigForm) BackendValues() (backend string, host, port string) {
+	host = strings.TrimSpace(f.BackendHost.Value())
+	port = strings.TrimSpace(f.BackendPort.Value())
+	if f.BackendIdx < 0 || f.BackendIdx >= len(backendOptions) {
+		return "", host, port
+	}
+	switch f.BackendIdx {
+	case 1:
+		backend = "hamlib"
+		if host == "" {
+			host = "127.0.0.1"
+		}
+		if port == "" {
+			port = "4533"
+		}
+	case 2:
+		backend = "flrig"
+		if host == "" {
+			host = "localhost"
+		}
+		if port == "" {
+			port = "12345"
+		}
+	}
+	return backend, host, port
 }
 
 func (f *RigForm) WsjtxValues() (enabled bool, host, port string) {
@@ -301,27 +408,50 @@ func (f *RigForm) View() tea.View {
 	b.WriteString(padOrTrunc(renderField("Power W (opt):", &f.Power, f.focus == rigFieldPower), availW))
 	b.WriteString("\n")
 
-	// flrig checkbox
-	checkbox := "[ ]"
-	if f.FlrigEnabled {
-		checkbox = "[x]"
-	}
-	flPrefix := "  "
-	flLabel := S.FormLabelWide.Align(lipgloss.Left).Render("Use flrig:")
-	if f.focus == rigFieldFlrig {
-		flPrefix = S.FormPrefixOn.Render("> ")
-		flLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("Use flrig:")
-		checkbox = CursorStyle.Render(checkbox)
+	// Radio control — cycles None → Hamlib → Flrig on Space.
+	backendLabel := backendOptions[f.BackendIdx].label
+	bePrefix := "  "
+	beLbl := S.FormLabelWide.Align(lipgloss.Left).Render("Radio control:")
+	if f.focus == rigFieldBackend {
+		bePrefix = S.FormPrefixOn.Render("> ")
+		beLbl = S.FormFocusedWide.Align(lipgloss.Left).Render("Radio control:")
+		backendLabel = CursorStyle.Render(backendLabel)
 	}
 	b.WriteString(padOrTrunc(
-		lipgloss.JoinHorizontal(lipgloss.Center, flPrefix, flLabel, " ", checkbox),
+		lipgloss.JoinHorizontal(lipgloss.Center, bePrefix, beLbl, " ", backendLabel),
 		availW))
 
-	if f.FlrigEnabled {
+	if f.BackendIdx != 0 {
+		hostLabel := fmt.Sprintf("  %s host:", backendOptions[f.BackendIdx].label)
+		portLabel := fmt.Sprintf("  %s port:", backendOptions[f.BackendIdx].label)
 		b.WriteString("\n")
-		b.WriteString(padOrTrunc(renderField("  Flrig host:", &f.FlrigHost, f.focus == rigFieldFlrigHost), availW))
+		b.WriteString(padOrTrunc(renderField(hostLabel, &f.BackendHost, f.focus == rigFieldBackendHost), availW))
 		b.WriteString("\n")
-		b.WriteString(padOrTrunc(renderField("  Flrig port:", &f.FlrigPort, f.focus == rigFieldFlrigPort), availW))
+		b.WriteString(padOrTrunc(renderField(portLabel, &f.BackendPort, f.focus == rigFieldBackendPort), availW))
+	}
+
+	b.WriteString("\n")
+
+	// Rotor control — cycles None → Hamlib on Space.
+	rotorLabel := rotorOptions[f.RotorIdx].label
+	roPrefix := "  "
+	roLbl := S.FormLabelWide.Align(lipgloss.Left).Render("Rotor control:")
+	if f.focus == rigFieldRotor {
+		roPrefix = S.FormPrefixOn.Render("> ")
+		roLbl = S.FormFocusedWide.Align(lipgloss.Left).Render("Rotor control:")
+		rotorLabel = CursorStyle.Render(rotorLabel)
+	}
+	b.WriteString(padOrTrunc(
+		lipgloss.JoinHorizontal(lipgloss.Center, roPrefix, roLbl, " ", rotorLabel),
+		availW))
+
+	if f.RotorIdx != 0 {
+		hostLabel := fmt.Sprintf("  %s host:", rotorOptions[f.RotorIdx].label)
+		portLabel := fmt.Sprintf("  %s port:", rotorOptions[f.RotorIdx].label)
+		b.WriteString("\n")
+		b.WriteString(padOrTrunc(renderField(hostLabel, &f.RotorHost, f.focus == rigFieldRotorHost), availW))
+		b.WriteString("\n")
+		b.WriteString(padOrTrunc(renderField(portLabel, &f.RotorPort, f.focus == rigFieldRotorPort), availW))
 	}
 
 	b.WriteString("\n")
@@ -359,15 +489,22 @@ func (f *RigForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 		return func() tea.Msg { return enterOnLastFieldMsg{} }
 	}
 
-	if f.focus == rigFieldFlrig && (k.String() == " " || msg.Code == tea.KeySpace) {
-		f.FlrigEnabled = !f.FlrigEnabled
-		if f.FlrigEnabled {
-			if f.FlrigHost.Value() == "" {
-				f.FlrigHost.SetValue("localhost")
-			}
-			if f.FlrigPort.Value() == "" {
-				f.FlrigPort.SetValue("12345")
-			}
+	if f.focus == rigFieldBackend && (k.String() == " " || msg.Code == tea.KeySpace) {
+		f.BackendIdx = (f.BackendIdx + 1) % len(backendOptions)
+		if f.BackendIdx != 0 {
+			opt := backendOptions[f.BackendIdx]
+			f.BackendHost.SetValue(opt.defaultHost)
+			f.BackendPort.SetValue(opt.defaultPort)
+		}
+		return nil
+	}
+
+	if f.focus == rigFieldRotor && (k.String() == " " || msg.Code == tea.KeySpace) {
+		f.RotorIdx = (f.RotorIdx + 1) % len(rotorOptions)
+		if f.RotorIdx != 0 {
+			opt := rotorOptions[f.RotorIdx]
+			f.RotorHost.SetValue(opt.defaultHost)
+			f.RotorPort.SetValue(opt.defaultPort)
 		}
 		return nil
 	}

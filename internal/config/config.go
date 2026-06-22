@@ -187,18 +187,43 @@ func (s Station) RigFlrig(rgs map[string]RigPreset) (enabled bool, host, port st
 	return rp.FlrigEnabled, rp.FlrigHost, rp.FlrigPort
 }
 
+// RigHamlib returns the hamlib settings from the referenced preset.
+func (s Station) RigHamlib(rgs map[string]RigPreset) (enabled bool, host, port string) {
+	rp, ok := s.Rig(rgs)
+	if !ok {
+		return false, "127.0.0.1", "4533"
+	}
+	return rp.RadioBackend == "hamlib", rp.HamlibRadioHost, rp.HamlibRadioPort
+}
+
+// RigRotor returns the rotor settings from the referenced preset.
+func (s Station) RigRotor(rgs map[string]RigPreset) (enabled bool, host, port string) {
+	rp, ok := s.Rig(rgs)
+	if !ok {
+		return false, "127.0.0.1", "4533"
+	}
+	return rp.RotorBackend == "hamlib", rp.RotorHamlibHost, rp.RotorHamlibPort
+}
+
 type RigPreset struct {
-	ID           string `yaml:"-"`
-	Name         string `yaml:"name,omitempty"`
-	Model        string `yaml:"model"`
-	Antenna      string `yaml:"antenna"`
-	Power        string `yaml:"power"`
-	FlrigEnabled bool   `yaml:"flrig_enabled"`
-	FlrigHost    string `yaml:"flrig_host"`
-	FlrigPort    string `yaml:"flrig_port"`
-	WsjtxEnabled bool   `yaml:"wsjtx_enabled,omitempty"`
-	WsjtxUDPHost string `yaml:"wsjtx_udp_host,omitempty"`
-	WsjtxUDPPort int    `yaml:"wsjtx_udp_port,omitempty"`
+	ID              string `yaml:"-"`
+	Name            string `yaml:"name,omitempty"`
+	Model           string `yaml:"model"`
+	Antenna         string `yaml:"antenna"`
+	Power           string `yaml:"power"`
+	RadioBackend    string `yaml:"radio_backend,omitempty"` // "" | "flrig" | "hamlib"
+	Backend         string `yaml:"backend,omitempty"`       // deprecated — migrated to RadioBackend
+	FlrigEnabled    bool   `yaml:"flrig_enabled,omitempty"`
+	FlrigHost       string `yaml:"flrig_host,omitempty"`
+	FlrigPort       string `yaml:"flrig_port,omitempty"`
+	HamlibRadioHost string `yaml:"hamlib_radio_host,omitempty"`
+	HamlibRadioPort string `yaml:"hamlib_radio_port,omitempty"`
+	RotorBackend    string `yaml:"rotor_backend,omitempty"` // "" | "hamlib"
+	RotorHamlibHost string `yaml:"rotor_hamlib_host,omitempty"`
+	RotorHamlibPort string `yaml:"rotor_hamlib_port,omitempty"`
+	WsjtxEnabled    bool   `yaml:"wsjtx_enabled,omitempty"`
+	WsjtxUDPHost    string `yaml:"wsjtx_udp_host,omitempty"`
+	WsjtxUDPPort    int    `yaml:"wsjtx_udp_port,omitempty"`
 }
 
 type ADIFConfig struct {
@@ -226,6 +251,20 @@ func Load(path string) (*Config, error) {
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
+	}
+
+	// Backward compat: migrate old backend → radio_backend, FlrigEnabled → RadioBackend.
+	for id, rp := range cfg.Rigs {
+		if rp.RadioBackend == "" && rp.Backend != "" {
+			rp.RadioBackend = rp.Backend
+			rp.Backend = ""
+		}
+		if rp.RadioBackend == "" && rp.FlrigEnabled {
+			rp.RadioBackend = "flrig"
+		}
+		rp.FlrigEnabled = false // no longer the source of truth
+		rp.Backend = ""         // clear old key
+		cfg.Rigs[id] = rp
 	}
 
 	cfg.BroadcastStations = DefaultBroadcastStations()

@@ -47,7 +47,7 @@ func NewRigChooser(a *app.App, tq *ToastQueue) *RigChooser {
 	}
 
 	rf := NewRigForm("", "", "")
-	rf.SetFlrig(false, "localhost", "12345")
+	rf.SetBackend(0, "", "")
 
 	return &RigChooser{
 		app:    a,
@@ -289,7 +289,8 @@ func (rc *RigChooser) refreshNames() {
 func (rc *RigChooser) startCreate() {
 	rc.mode = rigChooserCreate
 	rc.form.SetValues("", "", "", "")
-	rc.form.SetFlrig(false, "localhost", "12345")
+	rc.form.SetBackend(0, "", "")
+	rc.form.SetRotor(0, "", "")
 	rc.form.SetWsjtx(false, "127.0.0.1", "2233")
 	rc.form.blurAll()
 	rc.form.Name.Focus()
@@ -301,7 +302,27 @@ func (rc *RigChooser) startEdit(id string) {
 	rc.mode = rigChooserEdit
 	rc.editing = id
 	rc.form.SetValues(rp.Name, rp.Model, rp.Antenna, rp.Power)
-	rc.form.SetFlrig(rp.FlrigEnabled, rp.FlrigHost, rp.FlrigPort)
+	backendIdx := 0
+	switch rp.RadioBackend {
+	case "hamlib":
+		backendIdx = 1
+	case "flrig":
+		backendIdx = 2
+	}
+	// Fallback: pre-backend configs with FlrigEnabled.
+	if backendIdx == 0 && rp.FlrigEnabled {
+		backendIdx = 2
+	}
+	host, port := rp.HamlibRadioHost, rp.HamlibRadioPort
+	if backendIdx == 2 {
+		host, port = rp.FlrigHost, rp.FlrigPort
+	}
+	rc.form.SetBackend(backendIdx, host, port)
+	rotorIdx := 0
+	if rp.RotorBackend == "hamlib" {
+		rotorIdx = 1
+	}
+	rc.form.SetRotor(rotorIdx, rp.RotorHamlibHost, rp.RotorHamlibPort)
 	rc.form.SetWsjtx(rp.WsjtxEnabled, rp.WsjtxUDPHost, fmt.Sprintf("%d", rp.WsjtxUDPPort))
 	rc.form.blurAll()
 	rc.form.Name.Focus()
@@ -309,11 +330,20 @@ func (rc *RigChooser) startEdit(id string) {
 
 func (rc *RigChooser) saveForm() tea.Cmd {
 	nm, rig, ant, pwr := rc.form.Values()
-	flrigEnabled, flrigHost, flrigPort := rc.form.FlrigValues()
+	radioBackend, radioBackendHost, radioBackendPort := rc.form.BackendValues()
+	rotorBackend, rotorHost, rotorPort := rc.form.RotorValues()
 	wsjtxEnabled, wsjtxHost, wsjtxPortStr := rc.form.WsjtxValues()
 	wsjtxPort, _ := strconv.Atoi(wsjtxPortStr)
 	if wsjtxPort <= 0 {
 		wsjtxPort = 2233
+	}
+
+	flrigHost, flrigPort := "", ""
+	hamlibHost, hamlibPort := "", ""
+	if radioBackend == "flrig" {
+		flrigHost, flrigPort = radioBackendHost, radioBackendPort
+	} else if radioBackend == "hamlib" {
+		hamlibHost, hamlibPort = radioBackendHost, radioBackendPort
 	}
 
 	if nm == "" {
@@ -324,13 +354,23 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 		rc.toasts.Warn("Rig model is required")
 		return nil
 	}
-	if flrigEnabled {
+	if radioBackend == "flrig" {
 		if flrigHost == "" {
 			rc.toasts.Warn("Flrig host is required")
 			return nil
 		}
 		if flrigPort == "" {
 			rc.toasts.Warn("Flrig port is required")
+			return nil
+		}
+	}
+	if radioBackend == "hamlib" {
+		if hamlibHost == "" {
+			rc.toasts.Warn("Hamlib host is required")
+			return nil
+		}
+		if hamlibPort == "" {
+			rc.toasts.Warn("Hamlib port is required")
 			return nil
 		}
 	}
@@ -347,17 +387,22 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 			rc.app.Config.Rigs = make(map[string]config.RigPreset)
 		}
 		rc.app.Config.Rigs[id] = config.RigPreset{
-			ID:           id,
-			Name:         nm,
-			Model:        rig,
-			Antenna:      ant,
-			Power:        pwr,
-			FlrigEnabled: flrigEnabled,
-			FlrigHost:    flrigHost,
-			FlrigPort:    flrigPort,
-			WsjtxEnabled: wsjtxEnabled,
-			WsjtxUDPHost: wsjtxHost,
-			WsjtxUDPPort: wsjtxPort,
+			ID:              id,
+			Name:            nm,
+			Model:           rig,
+			Antenna:         ant,
+			Power:           pwr,
+			RadioBackend:    radioBackend,
+			FlrigHost:       flrigHost,
+			FlrigPort:       flrigPort,
+			HamlibRadioHost: hamlibHost,
+			HamlibRadioPort: hamlibPort,
+			RotorBackend:    rotorBackend,
+			RotorHamlibHost: rotorHost,
+			RotorHamlibPort: rotorPort,
+			WsjtxEnabled:    wsjtxEnabled,
+			WsjtxUDPHost:    wsjtxHost,
+			WsjtxUDPPort:    wsjtxPort,
 		}
 		rc.names = append(rc.names, id)
 		savedName = rig
@@ -368,9 +413,14 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 		rp.Model = rig
 		rp.Antenna = ant
 		rp.Power = pwr
-		rp.FlrigEnabled = flrigEnabled
+		rp.RadioBackend = radioBackend
 		rp.FlrigHost = flrigHost
 		rp.FlrigPort = flrigPort
+		rp.HamlibRadioHost = hamlibHost
+		rp.HamlibRadioPort = hamlibPort
+		rp.RotorBackend = rotorBackend
+		rp.RotorHamlibHost = rotorHost
+		rp.RotorHamlibPort = rotorPort
 		rp.WsjtxEnabled = wsjtxEnabled
 		rp.WsjtxUDPHost = wsjtxHost
 		rp.WsjtxUDPPort = wsjtxPort

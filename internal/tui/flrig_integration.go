@@ -29,7 +29,7 @@ func (m *Model) refreshFlrigClient() {
 			break
 		}
 	}
-	if rp, ok := m.App.Config.Rigs[rigName]; ok && rp.FlrigEnabled {
+	if rp, ok := m.App.Config.Rigs[rigName]; ok && rp.RadioBackend == "flrig" {
 		host, port := rp.FlrigHost, rp.FlrigPort
 		if host == "" {
 			host = "localhost"
