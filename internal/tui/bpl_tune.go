@@ -270,7 +270,7 @@ func (m *Model) bplTuneCmd() tea.Cmd {
 			applog.Warn("BPL: tune freq failed",
 				"freq_mhz", fmt.Sprintf("%.5f", freqMHz), "error", err,
 			)
-			return bplTuneResultMsg{freqMHz: freqMHz, mode: mode, err: fmt.Errorf("freq: %w", err)}
+			return bplTuneResultMsg{freqMHz: freqMHz, mode: mode, err: fmt.Errorf("rig did not respond — try again")}
 		}
 
 		// Wait for rig to settle, then verify.
@@ -312,7 +312,7 @@ func (m *Model) bplTuneCmd() tea.Cmd {
 			// Update the cached modes so future calls benefit.
 			m.rig.modes = modes
 		}
-		flrigModeName := findFlrigModeName(mode, modes)
+		flrigModeName := findRigModeName(mode, modes)
 		applog.Debug("BPL: tune mode lookup",
 			"want", mode,
 			"found", flrigModeName,
@@ -330,7 +330,7 @@ func (m *Model) bplTuneCmd() tea.Cmd {
 				applog.Warn("BPL: tune mode failed",
 					"mode", flrigModeName, "error", err,
 				)
-				return bplTuneResultMsg{freqMHz: freqMHz, mode: mode, err: fmt.Errorf("mode: %w", err)}
+				return bplTuneResultMsg{freqMHz: freqMHz, mode: mode, err: fmt.Errorf("rig did not respond — try again")}
 			}
 			// Verify mode was applied.
 			time.Sleep(200 * time.Millisecond)

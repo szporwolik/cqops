@@ -249,15 +249,25 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							return w, nil
 						}
 						radioBackend, _, _ := w.rigForm.BackendValues()
+						rawHost := strings.TrimSpace(w.rigForm.BackendHost.Value())
+						rawPort := strings.TrimSpace(w.rigForm.BackendPort.Value())
 						if radioBackend == "flrig" {
-							rawHost := strings.TrimSpace(w.rigForm.BackendHost.Value())
-							rawPort := strings.TrimSpace(w.rigForm.BackendPort.Value())
 							if rawHost == "" {
-								w.toasts.Warn("Flrig host is required when flrig is enabled")
+								w.toasts.Warn("Flrig host is required")
 								return w, nil
 							}
 							if rawPort == "" {
-								w.toasts.Warn("Flrig port is required when flrig is enabled")
+								w.toasts.Warn("Flrig port is required")
+								return w, nil
+							}
+						}
+						if radioBackend == "hamlib" {
+							if rawHost == "" {
+								w.toasts.Warn("Hamlib host is required")
+								return w, nil
+							}
+							if rawPort == "" {
+								w.toasts.Warn("Hamlib port is required")
 								return w, nil
 							}
 						}

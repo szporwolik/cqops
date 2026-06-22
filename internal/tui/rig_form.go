@@ -35,7 +35,7 @@ var backendOptions = []struct {
 	defaultPort string
 }{
 	{"None", "", ""},
-	{"Hamlib", "127.0.0.1", "4533"},
+	{"Hamlib", "127.0.0.1", "4532"},
 	{"Flrig", "localhost", "12345"},
 }
 
@@ -97,7 +97,7 @@ func NewRigForm(rigPlaceholder, antennaPlaceholder, powerPlaceholder string) *Ri
 	bp := newTextinput()
 	bp.CharLimit = 6
 	bp.SetWidth(28)
-	bp.Placeholder = "4533"
+	bp.Placeholder = "4532"
 
 	wh := newTextinput()
 	wh.CharLimit = 40
@@ -314,7 +314,7 @@ func (f *RigForm) BackendValues() (backend string, host, port string) {
 			host = "127.0.0.1"
 		}
 		if port == "" {
-			port = "4533"
+			port = "4532"
 		}
 	case 2:
 		backend = "flrig"

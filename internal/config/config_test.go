@@ -356,7 +356,7 @@ func TestStationRigMethods(t *testing.T) {
 			Model:        "Xiegu G90",
 			Antenna:      "HWEF 20.5",
 			Power:        "20",
-			FlrigEnabled: true,
+			RadioBackend: "flrig",
 			FlrigHost:    "localhost",
 			FlrigPort:    "12345",
 		},

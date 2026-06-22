@@ -140,7 +140,7 @@ func RenderToastOverlay(mainView string, toasts []Toast, viewW, viewH int) strin
 
 	// Build the toast content
 	var lines []string
-	showCount := 5
+	showCount := 6
 	if len(toasts) < showCount {
 		showCount = len(toasts)
 	}

@@ -403,7 +403,7 @@ func TestDXCTuneCmd_NoSelectedSpot(t *testing.T) {
 	m := &Model{}
 	m.rig.connected = true
 	m.wsjtx.online = false
-	m.rig.client = &fakeFlrigClient{}
+	m.rig.client = &fakeRigClient{}
 	m.dxc.tableReady = false
 	cmd := m.dxcTuneCmd()
 	if cmd != nil {
@@ -552,7 +552,7 @@ func TestDXCKeys_EnterFillsTunesAndJumps(t *testing.T) {
 	m.dxc.tableReady = true
 	m.wsjtx.online = false
 	m.rig.connected = true
-	m.rig.client = &fakeFlrigClient{}
+	m.rig.client = &fakeRigClient{}
 	_, cmd := m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyEnter}, nil)
 	if cmd == nil {
 		t.Error("Enter should return a tune command when rig is connected")
@@ -572,7 +572,7 @@ func TestDXCKeys_SpaceTunesOnly(t *testing.T) {
 	m.dxc.tableReady = true
 	m.wsjtx.online = false
 	m.rig.connected = true
-	m.rig.client = &fakeFlrigClient{}
+	m.rig.client = &fakeRigClient{}
 	_, cmd := m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeySpace}, nil)
 	if cmd == nil {
 		t.Error("Space should return a tune command when rig is connected")

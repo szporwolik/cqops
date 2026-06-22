@@ -21,17 +21,18 @@ const (
 )
 
 type RigChooser struct {
-	app     *app.App
-	mode    rigChooserMode
-	names   []string
-	cursor  int
-	form    *RigForm
-	editing string
-	toasts  *ToastQueue
-	dialog  *DialogModel
-	width   int
-	height  int
-	done    bool
+	app          *app.App
+	mode         rigChooserMode
+	names        []string
+	cursor       int
+	form         *RigForm
+	editing      string
+	toasts       *ToastQueue
+	dialog       *DialogModel
+	width        int
+	height       int
+	done         bool
+	needsRefresh bool // set by saveForm when active rig config changed
 }
 
 func NewRigChooser(a *app.App, tq *ToastQueue) *RigChooser {
@@ -374,6 +375,16 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 			return nil
 		}
 	}
+	if rotorBackend == "hamlib" {
+		if rotorHost == "" {
+			rc.toasts.Warn("Rotor hamlib host is required")
+			return nil
+		}
+		if rotorPort == "" {
+			rc.toasts.Warn("Rotor hamlib port is required")
+			return nil
+		}
+	}
 
 	var savedName string
 	if rc.mode == rigChooserCreate {
@@ -430,6 +441,7 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 
 	rc.mode = rigChooserList
 	rc.form.blurAll()
+	rc.needsRefresh = true
 	if err := config.Save(rc.app.ConfigPath, rc.app.Config); err != nil {
 		rc.toasts.Error("Save " + savedName + " failed: " + err.Error())
 	} else {

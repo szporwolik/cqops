@@ -64,7 +64,7 @@ func (m *Model) dxcTuneCmd() tea.Cmd {
 			applog.Warn("DXC: tune rig freq failed",
 				"call", call, "freq_mhz", fmt.Sprintf("%.5f", freqMHz), "error", err,
 			)
-			return dxcTuneResultMsg{call: call, freqMHz: freqMHz, err: fmt.Errorf("freq: %w", err)}
+			return dxcTuneResultMsg{call: call, freqMHz: freqMHz, err: fmt.Errorf("rig did not respond — try again")}
 		}
 
 		// Wait for rig to settle, then verify.
@@ -99,7 +99,7 @@ func (m *Model) dxcTuneCmd() tea.Cmd {
 			// Update the cached modes so future calls benefit.
 			m.rig.modes = modes
 		}
-		flrigModeName := findFlrigModeName(wantMode, modes)
+		flrigModeName := findRigModeName(wantMode, modes)
 		applog.Debug("DXC: tune mode lookup",
 			"want", wantMode,
 			"found", flrigModeName,
@@ -117,7 +117,7 @@ func (m *Model) dxcTuneCmd() tea.Cmd {
 				applog.Warn("DXC: tune rig mode failed",
 					"call", call, "mode", flrigModeName, "error", err,
 				)
-				return dxcTuneResultMsg{call: call, freqMHz: freqMHz, err: fmt.Errorf("mode: %w", err)}
+				return dxcTuneResultMsg{call: call, freqMHz: freqMHz, err: fmt.Errorf("rig did not respond — try again")}
 			}
 			// Verify mode was applied.
 			time.Sleep(200 * time.Millisecond)
@@ -144,18 +144,18 @@ func (m *Model) dxcTuneCmd() tea.Cmd {
 	}
 }
 
-// findFlrigModeName returns the best matching flrig mode name for the given
+// findRigModeName returns the best matching flrig mode name for the given
 // canonical mode. Uses fallback chains for CW, DATA, and RTTY to handle the
 // wide variety of flrig mode names across different rig models.
 // Returns "" if no match is found.
-func findFlrigModeName(want string, modes []string) string {
+func findRigModeName(want string, modes []string) string {
 	if len(modes) == 0 {
 		return ""
 	}
 	upper := strings.ToUpper(want)
 
 	// Try each candidate in priority order — first match wins.
-	for _, c := range flrigModeCandidates(upper) {
+	for _, c := range rigModeCandidates(upper) {
 		for _, m := range modes {
 			if strings.EqualFold(m, c) {
 				return m
@@ -164,7 +164,7 @@ func findFlrigModeName(want string, modes []string) string {
 	}
 
 	// Prefix match as last resort.
-	for _, c := range flrigModeCandidates(upper) {
+	for _, c := range rigModeCandidates(upper) {
 		for _, m := range modes {
 			if strings.HasPrefix(strings.ToUpper(m), c) {
 				return m
@@ -175,10 +175,10 @@ func findFlrigModeName(want string, modes []string) string {
 	return ""
 }
 
-// flrigModeCandidates returns an ordered list of flrig mode names to try for
+// rigModeCandidates returns an ordered list of flrig mode names to try for
 // a given canonical mode. The first match in the list wins. This handles the
 // wide variety of mode names across Icom, Yaesu, Kenwood, and other rigs.
-func flrigModeCandidates(want string) []string {
+func rigModeCandidates(want string) []string {
 	switch want {
 	// ── Data / digital modes ──
 	case "DATA-U":

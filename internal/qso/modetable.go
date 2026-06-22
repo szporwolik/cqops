@@ -123,7 +123,7 @@ var importOnlyModes = map[string]modeImport{
 	"USB":      {"SSB", "USB"},
 }
 
-var flrigModeMap = map[string]string{
+var rigModeMap = map[string]string{
 	"USB":    "SSB",
 	"LSB":    "SSB",
 	"CW":     "CW",
@@ -235,8 +235,11 @@ func CycleModes() []string {
 	return cycleModes
 }
 
-func MapFlrigMode(raw string) string {
-	if m, ok := flrigModeMap[strings.ToUpper(strings.TrimSpace(raw))]; ok {
+// NormalizeRigMode maps a raw mode string from any rig backend (flrig XML-RPC,
+// hamlib rigctld) to a canonical ADIF mode token.  Unknown modes pass through
+// unchanged.
+func NormalizeRigMode(raw string) string {
+	if m, ok := rigModeMap[strings.ToUpper(strings.TrimSpace(raw))]; ok {
 		return m
 	}
 	return strings.ToUpper(strings.TrimSpace(raw))

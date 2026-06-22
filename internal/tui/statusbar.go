@@ -53,11 +53,18 @@ func (m *Model) headerView() string {
 	if rp, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok && rp.WsjtxEnabled {
 		rightParts = append(rightParts, statusDotStyled(m.wsjtx.online, "WSJT"))
 	}
-	if cfgRig, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok && cfgRig.FlrigEnabled {
+	if cfgRig, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok && cfgRig.RadioBackend != "" {
+		rigLabel := "Rig"
+		switch cfgRig.RadioBackend {
+		case "flrig":
+			rigLabel = "Flrig"
+		case "hamlib":
+			rigLabel = "Hamlib"
+		}
 		if m.wsjtx.tx {
-			rightParts = append(rightParts, txDotStyle.Render("Rig")+" ")
+			rightParts = append(rightParts, txDotStyle.Render(rigLabel)+" ")
 		} else {
-			rightParts = append(rightParts, statusDotStyled(m.rig.connected, "Rig"))
+			rightParts = append(rightParts, statusDotStyled(m.rig.connected, rigLabel))
 		}
 	}
 	if m.App.Config.Integrations.DXC.Enabled {

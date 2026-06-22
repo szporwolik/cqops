@@ -119,8 +119,8 @@ func TestFlrigModeMap(t *testing.T) {
 	}
 	for raw, want := range tests {
 		t.Run(raw, func(t *testing.T) {
-			if got := MapFlrigMode(raw); got != want {
-				t.Errorf("MapFlrigMode(%q) = %q, want %q", raw, got, want)
+			if got := NormalizeRigMode(raw); got != want {
+				t.Errorf("NormalizeRigMode(%q) = %q, want %q", raw, got, want)
 			}
 		})
 	}

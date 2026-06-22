@@ -79,7 +79,6 @@ func (m *Model) maybeFetchSolar() tea.Cmd {
 
 	m.solar.fetching = true
 	m.solar.lastFetch = time.Now()
-	m.toasts.Info("Solar: fetching hamqsl.com\u2026")
 	return solarFetchCmd(m.solar.cacheDir)
 }
 
@@ -107,5 +106,5 @@ func (m *Model) handleSolarResult(msg solarFetchMsg) {
 	applog.Info("Solar: hamqsl.com data updated",
 		"attempts", msg.attempts,
 	)
-	m.toasts.Info("Solar: hamqsl.com data updated")
+	m.toasts.Success("Solar updated")
 }

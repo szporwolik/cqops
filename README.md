@@ -20,7 +20,7 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 ## Features
 
 - **Fast keyboard logging** — three-column form, Enter to log, Tab ↹ Col / ↑↓ Row navigation, auto date/time, DUPE! detection with two-press override, New Call / New DXCC badges
-- **Multi-rig with flrig** — per-rig flrig and WSJT-X config; auto-fills freq, mode, power, split (VFO A/B → Freq/Freq RX)
+- **Multi-rig with flrig & Hamlib** — per-rig flrig or hamlib rigctld config; auto-fills freq, mode, power, split (VFO A/B → Freq/Freq RX)
 - **QRZ, DXCC & SCP** — Ins triggers callbook lookup; auto-fills name, QTH, grid, country; prefix-based DXCC and live callsign autocomplete
 - **Wavelog cloud sync** — upload, download, duplicate detection, station profile cycling
 - **DX Cluster & PSK Reporter** — live spots with filters, spot-to-rig tuning, real-time propagation map
@@ -47,6 +47,7 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 - Terminal with 80×24 minimum
 - WSJT-X 2.6+ (optional, for automatic digital mode logging)
 - flrig (optional, for rig control and spot-to-radio tuning)
+- Hamlib rigctld (optional, for rig control and spot-to-radio tuning via TCP)
 - Internet connection (optional, for DX cluster, QRZ, Wavelog, solar data, PSK Reporter)
 
 ## Build

@@ -18,7 +18,7 @@ import (
 //
 // These are called in sequence from the main Update() in model.go:
 //   1. handleTick        — periodic tick messages
-//   2. handleAsyncMessages — async result messages (internet, Wavelog, flrig)
+//   2. handleAsyncMessages — async result messages (internet, Wavelog, rig)
 //   3. handlePendingRequests — deferred actions (QSO refresh, QRZ/WL lookups)
 
 // handleTick processes periodic tick messages: ADIF ingestion, WSJT-X status,
@@ -83,11 +83,11 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 		m.autoUpdateDateTime()
 	}
 	m.tickCount++
-	return tea.Batch(tickCmd(), m.maybeCheckInet(), m.maybeRefreshDataFiles(), m.pollFlrig(), m.maybeCheckWavelog(), m.maybeCheckQRZ(), m.maybeFetchSolar(), m.maybeDXC(), cmd)
+	return tea.Batch(tickCmd(), m.maybeCheckInet(), m.maybeRefreshDataFiles(), m.pollRig(), m.maybeCheckWavelog(), m.maybeCheckQRZ(), m.maybeFetchSolar(), m.maybeDXC(), cmd)
 }
 
 // handleAsyncMessages processes async result messages (internet check, Wavelog status,
-// Wavelog upload results, flrig results). Returns true if the message was consumed
+// Wavelog upload results, rig poll results). Returns true if the message was consumed
 // and an optional command to batch.
 func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 	switch r := msg.(type) {
@@ -96,6 +96,9 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			// Internet just came up — force Wavelog and QRZ checks.
 			m.lookup.wlForceCheck = true
 			m.lookup.qrzForceCheck = true
+			m.toasts.Success("Internet connected")
+		} else if m.inetOnline && !bool(r) {
+			m.toasts.Warn("Internet not available — working in offline mode")
 		}
 		m.inetOnline = bool(r)
 		return true, nil
@@ -156,14 +159,17 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 	case qrzStatusMsg:
 		m.lookup.qrzOnline = r.online
 		return true, nil
-	case flrigResultMsg:
-		return true, m.applyFlrigResult(r)
-	case fmodesMsg:
+	case rigPollMsg:
+		return true, m.applyRigPoll(r)
+	case rigPowerMsg:
+		m.applyRigPower(r)
+		return true, nil
+	case rigModesMsg:
 		if len(r.modes) > 0 {
 			m.rig.modes = r.modes
 		}
 		return true, nil
-	case fnameMsg:
+	case rigNameMsg:
 		if r.name != "" {
 			m.rig.name = r.name
 		}

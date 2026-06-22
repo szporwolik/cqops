@@ -4,6 +4,7 @@ import "context"
 
 type Rig interface {
 	Status(ctx context.Context) (RigStatus, error)
+	Power(ctx context.Context) (float64, error)
 }
 
 type RigStatus struct {

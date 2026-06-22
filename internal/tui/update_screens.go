@@ -49,9 +49,13 @@ func (m *Model) handleRigEditUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 	m.ui.rigChooser.height = m.height
 	_, rigCmd := m.ui.rigChooser.Update(msg)
 	cmd = tea.Batch(cmd, rigCmd)
+	if m.ui.rigChooser.needsRefresh {
+		m.ui.rigChooser.needsRefresh = false
+		m.refreshRigClient()
+	}
 	if m.ui.rigChooser.done {
 		m.screen = screenMainMenu
-		m.refreshFlrigClient()
+		m.refreshRigClient()
 	}
 	return m, cmd
 }

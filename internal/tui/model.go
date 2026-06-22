@@ -37,9 +37,9 @@ const (
 )
 
 const (
-	healthCheckTicks    = 60                      // ticks between health checks (1 min)
-	flrigStatusTimeout  = 1500 * time.Millisecond // context timeout for flrig status
-	flrigDefaultTimeout = 1000                    // default flrig HTTP timeout (ms)
+	healthCheckTicks  = 60                      // ticks between health checks (1 min)
+	rigStatusTimeout  = 1500 * time.Millisecond // context timeout for rig status
+	rigDefaultTimeout = 1000                    // default rig poll timeout (ms)
 )
 
 const (
@@ -307,7 +307,7 @@ func (m *Model) applyBeepOnError() {
 }
 
 func (m *Model) Init() tea.Cmd {
-	m.refreshFlrigClient()
+	m.refreshRigClient()
 	m.App.WSJTX.OnADIF = func(adif string) {
 		m.adifQ.mu.Lock()
 		m.adifQ.adifs = append(m.adifQ.adifs, adif)
@@ -457,7 +457,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = tea.Batch(cmd, c)
 	}
 
-	// Async result messages (internet, Wavelog, flrig)
+	// Async result messages (internet, Wavelog, rig)
 	if handled, asyncCmd := m.handleAsyncMessages(msg); handled {
 		if asyncCmd != nil {
 			cmd = tea.Batch(cmd, asyncCmd)
@@ -465,7 +465,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if _, ok := msg.(inetResultMsg); ok && m.inetOnline {
 			cmd = tea.Batch(cmd, m.maybeCheckVersion())
 		}
-		if _, ok := msg.(flrigResultMsg); ok {
+		if _, ok := msg.(rigPollMsg); ok {
 			return m, cmd
 		}
 	}
@@ -548,7 +548,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case dxcTuneResultMsg:
 		if r.err != nil {
-			m.toasts.Error(fmt.Sprintf("Tune failed: %v", r.err))
+			if strings.Contains(r.err.Error(), "cancelled") {
+				m.toasts.Warn(fmt.Sprintf("Tune cancelled: %v", r.err))
+			} else {
+				m.toasts.Error(fmt.Sprintf("Tune failed: %v", r.err))
+			}
 		} else {
 			msg := fmt.Sprintf("Rig tuned to %.5f MHz", r.freqMHz)
 			if r.mode != "" {
@@ -563,7 +567,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case bplTuneResultMsg:
 		if r.err != nil {
-			m.toasts.Error(fmt.Sprintf("Tune failed: %v", r.err))
+			if strings.Contains(r.err.Error(), "cancelled") {
+				m.toasts.Warn(fmt.Sprintf("Tune cancelled: %v", r.err))
+			} else {
+				m.toasts.Error(fmt.Sprintf("Tune failed: %v", r.err))
+			}
 		} else {
 			msg := fmt.Sprintf("Rig tuned to %.5f MHz", r.freqMHz)
 			if r.mode != "" {

@@ -4,13 +4,14 @@ import (
 	"testing"
 )
 
-func TestFlrigResultSuccess(t *testing.T) {
+func TestRigPollSuccess(t *testing.T) {
 	m := newTestModel()
 	// Inject a connected fake
-	m.rig.client = connectedFakeFlrig(14.250, "SSB", "20m")
+	m.rig.client = connectedFakeRig(14.250, "SSB", "20m")
 
 	// Apply successful result
-	_ = m.applyFlrigResult(flrigResultMsg{
+	_ = m.applyRigPoll(rigPollMsg{
+		client:    m.rig.client,
 		connected: true,
 		freq:      14.250,
 		mode:      "SSB",
@@ -34,12 +35,13 @@ func TestFlrigResultSuccess(t *testing.T) {
 	}
 }
 
-func TestFlrigResultError(t *testing.T) {
+func TestRigPollError(t *testing.T) {
 	m := newTestModel()
 	m.rig.connected = true // start connected
 
-	_ = m.applyFlrigResult(flrigResultMsg{
-		err: "connection refused",
+	_ = m.applyRigPoll(rigPollMsg{
+		client: m.rig.client,
+		err:    "connection refused",
 	})
 
 	if m.rig.connected {
@@ -47,11 +49,12 @@ func TestFlrigResultError(t *testing.T) {
 	}
 }
 
-func TestFlrigResultDisconnected(t *testing.T) {
+func TestRigPollDisconnected(t *testing.T) {
 	m := newTestModel()
 	m.rig.connected = true
 
-	_ = m.applyFlrigResult(flrigResultMsg{
+	_ = m.applyRigPoll(rigPollMsg{
+		client:    m.rig.client,
 		connected: false,
 	})
 
@@ -60,57 +63,58 @@ func TestFlrigResultDisconnected(t *testing.T) {
 	}
 }
 
-func TestFlrigPollDisabled(t *testing.T) {
+func TestPollDisabled(t *testing.T) {
 	m := newTestModel()
 	m.rig.client = nil // disabled
 
-	cmd := m.pollFlrig()
-	// First call sets skipTicks to 1, which is < rigPollInterval (30)
+	cmd := m.pollRig()
+	// First call sets skipTicks to 1, which is < pollInterval (1)
 	// So it returns nil regardless
 	if cmd != nil {
-		t.Log("pollFlrig returned non-nil when disabled (may be OK for first tick)")
+		t.Log("pollRig returned non-nil when disabled (may be OK for first tick)")
 	}
 	// But rigConnected should be set to false
 	if !m.rig.connected {
-		t.Log("rigConnected is false as expected when flrig is nil")
+		t.Log("rigConnected is false as expected when rig client is nil")
 	}
 }
 
-func TestFlrigStatusCmdNil(t *testing.T) {
+func TestRigStatusCmdNil(t *testing.T) {
 	m := newTestModel()
 	m.rig.client = nil
 
-	cmd := m.flrigStatusCmd()
+	cmd := m.rigStatusCmd()
 	if cmd != nil {
-		t.Error("flrigStatusCmd should return nil when client is nil")
+		t.Error("rigStatusCmd should return nil when client is nil")
 	}
 }
 
-func TestFlrigStatusCmdReturnsCmd(t *testing.T) {
+func TestRigStatusCmdReturnsCmd(t *testing.T) {
 	m := newTestModel()
-	m.rig.client = connectedFakeFlrig(14.250, "SSB", "20m")
+	m.rig.client = connectedFakeRig(14.250, "SSB", "20m")
 
-	cmd := m.flrigStatusCmd()
+	cmd := m.rigStatusCmd()
 	if cmd == nil {
-		t.Error("flrigStatusCmd should return a command when client is set")
+		t.Error("rigStatusCmd should return a command when client is set")
 	}
 	// Execute the command
 	msg := cmd()
-	fr, ok := msg.(flrigResultMsg)
+	fr, ok := msg.(rigPollMsg)
 	if !ok {
-		t.Fatalf("Expected flrigResultMsg, got %T", msg)
+		t.Fatalf("Expected rigPollMsg, got %T", msg)
 	}
 	if !fr.connected {
-		t.Error("Fake flrig should report connected")
+		t.Error("Fake rig should report connected")
 	}
 	if fr.freq != 14.250 {
-		t.Errorf("Fake flrig freq = %f; want 14.250", fr.freq)
+		t.Errorf("Fake rig freq = %f; want 14.250", fr.freq)
 	}
 }
 
-func TestFlrigResultPower(t *testing.T) {
+func TestRigPollPower(t *testing.T) {
 	m := newTestModel()
-	_ = m.applyFlrigResult(flrigResultMsg{
+	_ = m.applyRigPoll(rigPollMsg{
+		client:    m.rig.client,
 		connected: true,
 		freq:      7.100,
 		mode:      "SSB",

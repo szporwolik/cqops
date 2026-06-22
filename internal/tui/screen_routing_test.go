@@ -97,7 +97,7 @@ func TestScreenRouting_F10QuitDialog(t *testing.T) {
 
 func TestFlrigResult_Connected(t *testing.T) {
 	m := newTestModel()
-	msg := flrigResultMsg{
+	msg := rigPollMsg{
 		connected: true,
 		freq:      14.250,
 		mode:      "USB",
@@ -105,7 +105,7 @@ func TestFlrigResult_Connected(t *testing.T) {
 	}
 	consumed, _ := m.handleAsyncMessages(msg)
 	if !consumed {
-		t.Error("flrigResultMsg should be consumed")
+		t.Error("rigPollMsg should be consumed")
 	}
 	if !m.rig.connected {
 		t.Error("rig should be connected")
@@ -118,13 +118,13 @@ func TestFlrigResult_Connected(t *testing.T) {
 func TestFlrigResult_Disconnected(t *testing.T) {
 	m := newTestModel()
 	m.rig.connected = true
-	msg := flrigResultMsg{
+	msg := rigPollMsg{
 		connected: false,
 		err:       "timeout",
 	}
 	consumed, _ := m.handleAsyncMessages(msg)
 	if !consumed {
-		t.Error("flrigResultMsg with error should be consumed")
+		t.Error("rigPollMsg with error should be consumed")
 	}
 	if m.rig.connected {
 		t.Error("rig should be disconnected after error")
@@ -133,10 +133,10 @@ func TestFlrigResult_Disconnected(t *testing.T) {
 
 func TestFlrigResult_ZeroValuesNoPanic(t *testing.T) {
 	m := newTestModel()
-	msg := flrigResultMsg{}
+	msg := rigPollMsg{}
 	consumed, _ := m.handleAsyncMessages(msg)
 	if !consumed {
-		t.Error("zero flrigResultMsg should be consumed")
+		t.Error("zero rigPollMsg should be consumed")
 	}
 }
 

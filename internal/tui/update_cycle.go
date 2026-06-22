@@ -98,7 +98,7 @@ func (m *Model) cycleRig() tea.Cmd {
 	m.rc.status = ""
 	m.invalidatePartnerMapCache()
 	m.rc.pathSig = ""
-	m.refreshFlrigClient() // reconnect/disconnect flrig for the new rig
+	m.refreshRigClient() // reconnect/disconnect for the new rig
 	m.App.MaybeRestartWSJTX(rp.WsjtxEnabled, rp.WsjtxUDPHost, rp.WsjtxUDPPort)
 	return nil
 }

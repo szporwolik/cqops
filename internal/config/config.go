@@ -184,14 +184,14 @@ func (s Station) RigFlrig(rgs map[string]RigPreset) (enabled bool, host, port st
 	if !ok {
 		return false, "localhost", "12345"
 	}
-	return rp.FlrigEnabled, rp.FlrigHost, rp.FlrigPort
+	return rp.RadioBackend == "flrig", rp.FlrigHost, rp.FlrigPort
 }
 
 // RigHamlib returns the hamlib settings from the referenced preset.
 func (s Station) RigHamlib(rgs map[string]RigPreset) (enabled bool, host, port string) {
 	rp, ok := s.Rig(rgs)
 	if !ok {
-		return false, "127.0.0.1", "4533"
+		return false, "127.0.0.1", "4532"
 	}
 	return rp.RadioBackend == "hamlib", rp.HamlibRadioHost, rp.HamlibRadioPort
 }
@@ -387,13 +387,23 @@ func (c *Config) Validate() error {
 		if strings.TrimSpace(id) == "" {
 			return fmt.Errorf("rig entry with empty id")
 		}
-		if rig.FlrigEnabled {
+		if rig.RadioBackend == "flrig" || rig.FlrigEnabled {
 			if strings.TrimSpace(rig.FlrigHost) == "" {
-				return fmt.Errorf("rig %q: flrig_host is required when flrig_enabled", id)
+				return fmt.Errorf("rig %q: flrig_host is required when radio_backend=flrig", id)
 			}
 			if rig.FlrigPort != "" {
 				if p, err := strconv.Atoi(rig.FlrigPort); err != nil || p < 1 || p > 65535 {
 					return fmt.Errorf("rig %q: flrig_port must be 1-65535, got %q", id, rig.FlrigPort)
+				}
+			}
+		}
+		if rig.RadioBackend == "hamlib" {
+			if strings.TrimSpace(rig.HamlibRadioHost) == "" {
+				return fmt.Errorf("rig %q: hamlib_radio_host is required when radio_backend=hamlib", id)
+			}
+			if rig.HamlibRadioPort != "" {
+				if p, err := strconv.Atoi(rig.HamlibRadioPort); err != nil || p < 1 || p > 65535 {
+					return fmt.Errorf("rig %q: hamlib_radio_port must be 1-65535, got %q", id, rig.HamlibRadioPort)
 				}
 			}
 		}
