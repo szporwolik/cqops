@@ -742,8 +742,14 @@ func (w *Wizard) saveConfig() error {
 		wsjtxPort = 2233
 	}
 
-	if op == "" {
-		op = cs
+	// Create operator entry if one was selected in the form.
+	var activeOpID string
+	if op != "" {
+		activeOpID = config.NewID(op)
+		if w.App.Config.Operators == nil {
+			w.App.Config.Operators = make(map[string]config.Operator)
+		}
+		w.App.Config.Operators[activeOpID] = config.Operator{ID: activeOpID, Callsign: op}
 	}
 
 	rigID := config.NewID("default-rig")
@@ -806,11 +812,11 @@ func (w *Wizard) saveConfig() error {
 	w.App.Config.State.ActiveLogbook = lbID
 	w.App.Config.Logbooks = map[string]config.Logbook{
 		lbID: {
-			ID:   lbID,
-			Name: lbName,
+			ID:             lbID,
+			Name:           lbName,
+			ActiveOperator: activeOpID,
 			Station: config.Station{
 				Callsign:   cs,
-				Operator:   op,
 				Grid:       gr,
 				RigName:    rigID,
 				SOTARef:    sotaRef,

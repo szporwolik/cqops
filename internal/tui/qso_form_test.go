@@ -23,7 +23,6 @@ func newTestModel() *Model {
 				Station: config.Station{
 					Callsign: "SP9MOA",
 					Grid:     "JO90",
-					Operator: "OP",
 					RigName:  "default",
 				},
 			},
@@ -35,7 +34,7 @@ func newTestModel() *Model {
 	a := &app.App{
 		Config:      cfg,
 		LogbookName: "test",
-		Logbook:     &config.Logbook{Station: config.Station{Callsign: "SP9MOA", Grid: "JO90", Operator: "OP", RigName: "default"}},
+		Logbook:     &config.Logbook{Station: config.Station{Callsign: "SP9MOA", Grid: "JO90", RigName: "default"}},
 	}
 	m := New(a, nil)
 	return m

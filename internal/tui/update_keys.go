@@ -207,7 +207,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		if m.App.Logbook.Wavelog != nil {
 			wlLastID = m.App.Logbook.Wavelog.LastFetchedID
 		}
-		m.ui.logbookEditor = NewLogbookEditor(m.App.DB, wlURL, wlKey, wlStationID, wlLastID, m.App.Logbook.Station.Operator, m.App.Logbook.Station.Grid)
+		m.ui.logbookEditor = NewLogbookEditor(m.App.DB, wlURL, wlKey, wlStationID, wlLastID, m.activeOperatorCallsign(), m.App.Logbook.Station.Grid)
 		m.ui.logbookEditor.width = m.width
 		m.ui.logbookEditor.height = m.height
 		// Apply active contest filter.
@@ -339,6 +339,10 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	case msg.String() == "ctrl+c":
 		m.cycleActiveContest()
 		return m.refreshQSOS(), true
+
+	case msg.String() == "ctrl+o":
+		m.cycleActiveOperator()
+		return nil, true
 
 	case key.Matches(msg, m.keys.Partner):
 		call := m.commitCall()

@@ -42,7 +42,6 @@ func newDXCBandFilterModel(t *testing.T, spots []store.DXCSpot) *Model {
 				Station: config.Station{
 					Callsign: "SP9MOA",
 					Grid:     "JO90",
-					Operator: "OP",
 					RigName:  "default",
 				},
 			},
@@ -51,7 +50,7 @@ func newDXCBandFilterModel(t *testing.T, spots []store.DXCSpot) *Model {
 	a := &app.App{
 		Config:      cfg,
 		LogbookName: "test",
-		Logbook:     &config.Logbook{Station: config.Station{Callsign: "SP9MOA", Grid: "JO90", Operator: "OP", RigName: "default"}},
+		Logbook:     &config.Logbook{Station: config.Station{Callsign: "SP9MOA", Grid: "JO90", RigName: "default"}},
 		DB:          db,
 	}
 	m := New(a, nil)

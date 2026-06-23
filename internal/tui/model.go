@@ -90,6 +90,7 @@ const (
 	screenChooser
 	screenRigEdit
 	screenContest
+	screenOperator
 	screenLogView
 	screenLogbookEditor
 	screenNotifications
@@ -611,6 +612,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleRigEditUpdate(msg, cmd)
 	case screenContest:
 		return m.handleContestUpdate(msg, cmd)
+	case screenOperator:
+		return m.handleOperatorUpdate(msg, cmd)
 	case screenConfig:
 		return m.handleConfigUpdate(msg, cmd)
 	case screenIntegration:
@@ -726,7 +729,10 @@ func (m *Model) View() tea.View {
 
 	// Render fixed bars — cache when screen and width haven't changed.
 	// Status bar has a 1-second TTL because it contains the UTC clock.
-	cacheBars := m.rc.barW == m.width && m.rc.barSc == m.screen
+	cacheBars := m.rc.barW == m.width && m.rc.barSc == m.screen &&
+		m.rc.barOp == m.App.Logbook.ActiveOperator &&
+		m.rc.barLog == m.App.LogbookName &&
+		m.rc.barRig == m.App.Logbook.Station.RigName
 	if !cacheBars {
 		m.rc.status = ""
 	}
@@ -740,6 +746,9 @@ func (m *Model) View() tea.View {
 	m.rc.help = m.renderHelpBar()
 	m.rc.barW = m.width
 	m.rc.barSc = m.screen
+	m.rc.barOp = m.App.Logbook.ActiveOperator
+	m.rc.barLog = m.App.LogbookName
+	m.rc.barRig = m.App.Logbook.Station.RigName
 
 	var mainParts []string
 	addRow := func(s string) {
@@ -847,6 +856,8 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 		body = m.ui.rigChooser.View().Content
 	case screenContest:
 		body = m.ui.contestChooser.View().Content
+	case screenOperator:
+		body = m.ui.operatorChooser.View().Content
 	case screenLogView:
 		body = m.ui.logViewer.View().Content
 	case screenLogbookEditor:
@@ -1079,6 +1090,61 @@ func (m *Model) cycleActiveContest() {
 	m.App.SetActiveContest("")
 	m.toasts.Info("Contest: None")
 	m.needRefresh = true
+	config.Save(m.App.ConfigPath, m.App.Config)
+}
+
+// activeOperatorCallsign returns the callsign of the active operator,
+// or an empty string when no active operator is selected.
+func (m *Model) activeOperatorCallsign() string {
+	if m.App.Logbook.ActiveOperator != "" {
+		if op, ok := m.App.Config.Operators[m.App.Logbook.ActiveOperator]; ok {
+			return op.Callsign
+		}
+	}
+	return ""
+}
+
+// cycleActiveOperator cycles the active operator for the current logbook
+// through: None → first operator → second → … → None.
+func (m *Model) cycleActiveOperator() {
+	ids := config.SortedOperatorIDs(m.App.Config)
+	current := m.App.Logbook.ActiveOperator
+
+	if len(ids) == 0 {
+		m.toasts.Warn("No operators configured — add one in F9 → Operators")
+		return
+	}
+
+	if current == "" {
+		m.App.SetActiveOperator(ids[0])
+		op := m.App.Config.Operators[ids[0]]
+		m.toasts.Info(fmt.Sprintf("Operator: %s", config.OperatorDisplayName(&op)))
+		applog.Info("Operator cycled", "callsign", op.Callsign)
+		config.Save(m.App.ConfigPath, m.App.Config)
+		return
+	}
+
+	for i, id := range ids {
+		if id == current {
+			if i+1 < len(ids) {
+				m.App.SetActiveOperator(ids[i+1])
+				op := m.App.Config.Operators[ids[i+1]]
+				m.toasts.Info(fmt.Sprintf("Operator: %s", config.OperatorDisplayName(&op)))
+				applog.Info("Operator cycled", "callsign", op.Callsign)
+			} else {
+				m.App.SetActiveOperator("")
+				m.toasts.Info("Operator: None")
+				applog.Info("Operator cycled", "callsign", "None")
+			}
+			config.Save(m.App.ConfigPath, m.App.Config)
+			return
+		}
+	}
+
+	// Current operator not found — clear.
+	m.App.SetActiveOperator("")
+	m.toasts.Info("Operator: None")
+	applog.Info("Operator cycled (not found)", "callsign", "None")
 	config.Save(m.App.ConfigPath, m.App.Config)
 }
 

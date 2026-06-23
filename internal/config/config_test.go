@@ -115,7 +115,7 @@ func TestDefaultConfig_HasDefaults(t *testing.T) {
 	if defLB.Station.Callsign != "" {
 		t.Error("DefaultConfig: station callsign should be empty")
 	}
-	if defLB.Station.Operator != "" {
+	if defLB.Station.Callsign != "" {
 		t.Error("DefaultConfig: station operator should be empty")
 	}
 	if defLB.Station.Grid != "" {
@@ -165,7 +165,6 @@ func TestSaveAndLoad_RoundTrip(t *testing.T) {
 		Name: "Test logbook",
 		Station: Station{
 			Callsign: "SP9MOA",
-			Operator: "Szymon",
 			Grid:     "KO00ca",
 			RigName:  "myrig",
 		},
@@ -212,9 +211,6 @@ func TestSaveAndLoad_RoundTrip(t *testing.T) {
 	lb := loaded.Logbooks["default"]
 	if lb.Station.Callsign != "SP9MOA" {
 		t.Errorf("round-trip callsign: got %q", lb.Station.Callsign)
-	}
-	if lb.Station.Operator != "Szymon" {
-		t.Errorf("round-trip operator: got %q", lb.Station.Operator)
 	}
 	if lb.Station.Grid != "KO00ca" {
 		t.Errorf("round-trip grid: got %q", lb.Station.Grid)
@@ -281,7 +277,7 @@ func TestSaveAndLoad_PreservesAPIKey(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Logbooks["default"] = Logbook{
 		Name:    "test",
-		Station: Station{Callsign: "XX0XX", Operator: "Op", Grid: "JO90"},
+		Station: Station{Callsign: "XX0XX", Grid: "JO90"},
 		Wavelog: &WavelogConfig{
 			Enabled:          true,
 			URL:              "https://log.example.com",
@@ -588,11 +584,11 @@ func TestIsFirstRun_FalseWhenOperatorSet(t *testing.T) {
 	cfg := &Config{
 		State: StateConfig{ActiveLogbook: "abc123"},
 		Logbooks: map[string]Logbook{
-			"abc123": {ID: "abc123", Station: Station{Operator: "Szymon"}},
+			"abc123": {ID: "abc123", Station: Station{Callsign: "SP9XXX"}},
 		},
 	}
 	if IsFirstRun(cfg) {
-		t.Error("IsFirstRun should be false when operator is set")
+		t.Error("IsFirstRun should be false when station callsign is set")
 	}
 }
 
@@ -1022,7 +1018,6 @@ func TestSaveAndLoad_StationFieldsRoundTrip(t *testing.T) {
 	cfg.General.DistanceUnit = "mi"
 	lb := cfg.Logbooks[cfg.State.ActiveLogbook]
 	lb.Station.Callsign = "SP9MOA"
-	lb.Station.Operator = "Szymon"
 	lb.Station.Grid = "KO00ca"
 	lb.Station.SOTARef = "SP/TA-001"
 	lb.Station.POTARef = "SP-0001"
@@ -1041,9 +1036,6 @@ func TestSaveAndLoad_StationFieldsRoundTrip(t *testing.T) {
 	lb2 := loaded.Logbooks[loaded.State.ActiveLogbook]
 	if lb2.Station.Callsign != "SP9MOA" {
 		t.Errorf("Callsign = %q", lb2.Station.Callsign)
-	}
-	if lb2.Station.Operator != "Szymon" {
-		t.Errorf("Operator = %q", lb2.Station.Operator)
 	}
 	if lb2.Station.Grid != "KO00ca" {
 		t.Errorf("Grid = %q", lb2.Station.Grid)

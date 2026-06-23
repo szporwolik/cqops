@@ -23,7 +23,12 @@ func (m *Model) headerView() string {
 	if logName == "" {
 		logName = "\u2014"
 	}
-	op := s.Operator
+	op := m.App.Logbook.ActiveOperator
+	if op != "" {
+		if opCfg, ok := m.App.Config.Operators[op]; ok {
+			op = config.OperatorDisplayName(&opCfg)
+		}
+	}
 
 	rigName := ""
 	if rp, ok := m.App.Config.Rigs[s.RigName]; ok {

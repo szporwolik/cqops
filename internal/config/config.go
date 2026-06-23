@@ -21,6 +21,7 @@ type Config struct {
 	Logbooks          map[string]Logbook   `yaml:"logbooks"`
 	Rigs              map[string]RigPreset `yaml:"rigs,omitempty"`
 	Contests          map[string]Contest   `yaml:"contests,omitempty"`
+	Operators         map[string]Operator  `yaml:"operators,omitempty"`
 	BroadcastStations []BroadcastStation   `yaml:"-"`
 }
 
@@ -99,18 +100,18 @@ type Favorite struct {
 }
 
 type Logbook struct {
-	ID            string         `yaml:"-"`
-	Name          string         `yaml:"name"`
-	ActiveContest string         `yaml:"active_contest,omitempty"`
-	DatabasePath  string         `yaml:"database_path,omitempty"`
-	Station       Station        `yaml:"station"`
-	ADIF          ADIFConfig     `yaml:"adif,omitempty"`
-	Wavelog       *WavelogConfig `yaml:"wavelog,omitempty"`
+	ID             string         `yaml:"-"`
+	Name           string         `yaml:"name"`
+	ActiveContest  string         `yaml:"active_contest,omitempty"`
+	ActiveOperator string         `yaml:"active_operator,omitempty"`
+	DatabasePath   string         `yaml:"database_path,omitempty"`
+	Station        Station        `yaml:"station"`
+	ADIF           ADIFConfig     `yaml:"adif,omitempty"`
+	Wavelog        *WavelogConfig `yaml:"wavelog,omitempty"`
 }
 
 type Station struct {
 	Callsign   string `yaml:"callsign"`
-	Operator   string `yaml:"operator"`
 	Grid       string `yaml:"grid"`
 	RigName    string `yaml:"rig_name,omitempty"`
 	SOTARef    string `yaml:"sota_ref,omitempty"`
@@ -139,6 +140,13 @@ type Contest struct {
 	PrefillExchangeRcvd bool   `yaml:"prefill_exchange_rcvd,omitempty"`
 	ExchangeRcvd        string `yaml:"exchange_rcvd,omitempty"`
 	InUse               *bool  `yaml:"in_use,omitempty"` // nil or true = in use, false = excluded from cycling
+}
+
+// Operator represents a multi-operator station callsign profile.
+type Operator struct {
+	ID       string `yaml:"-"`
+	Callsign string `yaml:"callsign"`
+	Name     string `yaml:"name,omitempty"`
 }
 
 // Rig resolves the RigPreset referenced by RigName. Returns the preset and
@@ -406,6 +414,33 @@ func (c *Config) Validate() error {
 					return fmt.Errorf("rig %q: hamlib_radio_port must be 1-65535, got %q", id, rig.HamlibRadioPort)
 				}
 			}
+		}
+	}
+
+	// --- Operators ---
+	seenCalls := make(map[string]string)
+	for id, op := range c.Operators {
+		call := strings.TrimSpace(op.Callsign)
+		if call == "" {
+			return fmt.Errorf("operator %q: callsign is required", id)
+		}
+		if !qso.IsValidCall(call) {
+			return fmt.Errorf("operator %q: callsign %q is not valid", id, call)
+		}
+		lower := strings.ToLower(call)
+		if dup, ok := seenCalls[lower]; ok {
+			return fmt.Errorf("operator %q: callsign %q already used by operator %q", id, call, dup)
+		}
+		seenCalls[lower] = id
+	}
+
+	// --- ActiveOperator references ---
+	for lbID, lb := range c.Logbooks {
+		if lb.ActiveOperator == "" {
+			continue
+		}
+		if _, ok := c.Operators[lb.ActiveOperator]; !ok {
+			return fmt.Errorf("logbook %q: active_operator references unknown operator %q", lbID, lb.ActiveOperator)
 		}
 	}
 

@@ -108,7 +108,7 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 	qs.WavelogUploaded = "no"
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
-		Operator:        m.App.Logbook.Station.Operator,
+		Operator:        m.activeOperatorCallsign(),
 		MyGridSquare:    m.App.Logbook.Station.Grid,
 		MyRig:           m.App.Logbook.Station.RigModel(m.App.Config.Rigs),
 		MyAntenna:       m.App.Logbook.Station.RigAntenna(m.App.Config.Rigs),

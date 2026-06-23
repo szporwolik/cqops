@@ -78,6 +78,18 @@ func (m *Model) handleContestUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 	return m, cmd
 }
 
+func (m *Model) handleOperatorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	m.ui.operatorChooser.width = m.width
+	m.ui.operatorChooser.height = m.height
+
+	_, opCmd := m.ui.operatorChooser.Update(msg)
+	cmd = tea.Batch(cmd, opCmd)
+	if m.ui.operatorChooser.done {
+		m.screen = screenMainMenu
+	}
+	return m, cmd
+}
+
 func (m *Model) handleConfigUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	m.ui.configMenu.width = m.width
 	m.ui.configMenu.height = m.height
@@ -278,6 +290,11 @@ func (m *Model) handleMainMenuUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.C
 			m.ui.contestChooser.width = m.width
 			m.ui.contestChooser.height = m.height
 			m.screen = screenContest
+		case "operator":
+			m.ui.operatorChooser = NewOperatorChooser(m.App, m.toasts)
+			m.ui.operatorChooser.width = m.width
+			m.ui.operatorChooser.height = m.height
+			m.screen = screenOperator
 		case "integration":
 			m.ui.integrationMenu = NewIntegrationMenu(m.App.Config)
 			m.ui.integrationMenu.width = m.width

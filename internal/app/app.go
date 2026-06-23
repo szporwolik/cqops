@@ -203,9 +203,7 @@ func (a *App) StationSummary() string {
 	if s.Grid != "" {
 		parts = append(parts, s.Grid)
 	}
-	if s.Operator != "" && s.Operator != s.Callsign {
-		parts = append(parts, "op:"+s.Operator)
-	}
+
 	return strings.Join(parts, " ")
 }
 
@@ -220,5 +218,13 @@ func (a *App) SetActiveContest(id string) {
 	a.Logbook.ActiveContest = id
 	lb := a.Config.Logbooks[a.LogbookName]
 	lb.ActiveContest = id
+	a.Config.Logbooks[a.LogbookName] = lb
+}
+
+// SetActiveOperator sets the active operator for the current logbook.
+func (a *App) SetActiveOperator(id string) {
+	a.Logbook.ActiveOperator = id
+	lb := a.Config.Logbooks[a.LogbookName]
+	lb.ActiveOperator = id
 	a.Config.Logbooks[a.LogbookName] = lb
 }

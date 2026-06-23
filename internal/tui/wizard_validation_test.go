@@ -30,7 +30,6 @@ func newTestWizard(t *testing.T, callsign, locator string) *Wizard {
 
 	w := NewWizard(a)
 	w.station.Callsign.SetValue(callsign)
-	w.station.Operator.SetValue("TestOp")
 	w.station.Locator.SetValue(locator)
 	w.rigForm.Rig.SetValue("FT-891")
 	w.rigForm.Antenna.SetValue("Dipole")
@@ -145,7 +144,6 @@ func TestWizardSaveConfig_DoesNotWriteOutsideTempDir(t *testing.T) {
 	a := &app.App{Config: cfg, ConfigPath: cfgPath}
 	w := NewWizard(a)
 	w.station.Callsign.SetValue("SP9MOA")
-	w.station.Operator.SetValue("TestOp")
 	w.station.Locator.SetValue("JO90")
 	w.rigForm.Rig.SetValue("FT-891")
 	w.rigForm.Antenna.SetValue("Dipole")
