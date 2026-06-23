@@ -105,8 +105,15 @@ func (f *OperatorForm) Validate() string {
 	if call == "" {
 		return "Callsign is required"
 	}
-	if !qso.IsValidCall(call) {
-		return "Invalid callsign"
+	return ""
+}
+
+// ValidateCall checks whether the callsign looks like a standard ham callsign
+// (has both letters and digits). Returns a warning string or empty if ok.
+func (f *OperatorForm) ValidateCall() string {
+	call := strings.TrimSpace(f.Callsign.Value())
+	if call != "" && !qso.IsValidCall(call) {
+		return "Callsign \"" + call + "\" doesn't look like a standard callsign (no digit) — saved anyway"
 	}
 	return ""
 }

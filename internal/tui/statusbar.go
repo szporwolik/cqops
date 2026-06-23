@@ -47,7 +47,7 @@ func (m *Model) headerView() string {
 	if op != "" {
 		leftParts = append(leftParts,
 			S.StatusLabel.Render("Op"),
-			" "+S.StatusValue.Render(truncateText(op, 14))+" ",
+			" "+S.StatusValue.Render(truncateText(op, 24))+" ",
 		)
 	}
 

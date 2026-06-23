@@ -424,9 +424,6 @@ func (c *Config) Validate() error {
 		if call == "" {
 			return fmt.Errorf("operator %q: callsign is required", id)
 		}
-		if !qso.IsValidCall(call) {
-			return fmt.Errorf("operator %q: callsign %q is not valid", id, call)
-		}
 		lower := strings.ToLower(call)
 		if dup, ok := seenCalls[lower]; ok {
 			return fmt.Errorf("operator %q: callsign %q already used by operator %q", id, call, dup)

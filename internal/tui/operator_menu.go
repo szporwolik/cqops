@@ -211,6 +211,12 @@ func (oc *OperatorChooser) saveForm() tea.Cmd {
 		return nil
 	}
 
+	// Warn if the operator callsign doesn't look like a standard ham call,
+	// but allow saving anyway — operators may use short identifiers.
+	if w := oc.form.ValidateCall(); w != "" {
+		oc.toasts.Warn(w)
+	}
+
 	var savedName string
 	if oc.mode == operatorCreate {
 		// Check for duplicate callsign.
