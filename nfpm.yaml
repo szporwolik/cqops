@@ -52,7 +52,6 @@ overrides:
       - libc6
     recommends:
       - libsqlite3-0
-  rpm:
     depends:
       - glibc
 

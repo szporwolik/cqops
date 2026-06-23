@@ -23,6 +23,8 @@ build-all:
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/cqops-linux-amd64 ./cmd/cqops/
 	@echo "Building $(VERSION) for linux/arm64..."
 	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/cqops-linux-arm64 ./cmd/cqops/
+	@echo "Building $(VERSION) for linux/armv7 (Pi Zero/1/2)..."
+	GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/cqops-linux-armhf ./cmd/cqops/
 	@echo "Building $(VERSION) for darwin/amd64..."
 	GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/cqops-darwin-amd64 ./cmd/cqops/
 	@echo "Building $(VERSION) for darwin/arm64..."

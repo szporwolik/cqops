@@ -29,7 +29,7 @@ ManifestDPIAware true
 !endif
 
 Name "${PRODUCT_NAME} ${VERSION}"
-OutFile "${ROOT}\dist\cqops-setup-${VERSION}.exe"
+OutFile "${ROOT}\dist\cqops-setup.exe"
 InstallDir "$PROGRAMFILES64\${PRODUCT_NAME}"
 InstallDirRegKey HKLM "Software\${PRODUCT_NAME}" "InstallDir"
 RequestExecutionLevel admin
