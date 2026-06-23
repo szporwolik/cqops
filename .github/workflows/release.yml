@@ -144,6 +144,10 @@ jobs:
             echo "value=$(cat VERSION)" >> $GITHUB_OUTPUT
           fi
 
+      - name: Install NSIS
+        shell: powershell
+        run: choco install nsis -y --no-progress
+
       - name: Build NSIS installer
         shell: powershell
         env:
@@ -153,8 +157,9 @@ jobs:
           mkdir -p build
           copy dist\cqops-windows-amd64.exe build\cqops-windows-amd64.exe
 
-          # NSIS is pre-installed on windows-latest
-          & 'C:\Program Files (x86)\NSIS\makensis.exe' /DVERSION=$env:VERSION installer\cqops.nsi
+          # NSIS installed via Chocolatey above; refresh PATH
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+          makensis /DVERSION=$env:VERSION installer\cqops.nsi
           if ($LASTEXITCODE -ne 0) { throw "NSIS compilation failed" }
 
           Get-ChildItem dist\cqops-setup-*.exe | ForEach-Object { Write-Host "Installer: $($_.FullName) ($([math]::Round($_.Length/1MB,1)) MB)" }
