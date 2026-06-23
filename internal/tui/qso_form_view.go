@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
-	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 )
@@ -252,9 +251,6 @@ func (m *Model) renderRetainCheckbox(_ int) string {
 func (m *Model) stationProfile() []string {
 	s := m.App.Logbook.Station
 	var parts []string
-	if s.Operator != "" {
-		parts = append(parts, "Op "+s.Operator)
-	}
 	if rig := s.RigModel(m.App.Config.Rigs); rig != "" {
 		part := "Rig "
 		if rp, ok := m.App.Config.Rigs[s.RigName]; ok && rp.Name != "" {
@@ -268,12 +264,6 @@ func (m *Model) stationProfile() []string {
 	}
 	if s.Grid != "" {
 		parts = append(parts, "Grid "+formatLocator(s.Grid))
-	}
-	if wl := m.App.Logbook.Wavelog; wl != nil && wl.Enabled {
-		name := config.LogbookDisplayName(m.App.Logbook)
-		if name != "" {
-			parts = append(parts, "WL "+name)
-		}
 	}
 	if s.Callsign != "" && len(parts) == 0 {
 		parts = append(parts, s.Callsign)
