@@ -20,6 +20,7 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 ## Features
 
 - **Fast keyboard logging** — three-column form, Enter to log, Tab ↹ Col / ↑↓ Row navigation, auto date/time, DUPE! detection with two-press override, New Call / New DXCC badges
+- **Multi-operator & club station** — per-logbook active operator with Ctrl+O hot-swap, operator profiles (callsign + name), logged OPERATOR field and Wavelog upload follow the active operator
 - **Multi-rig with flrig & Hamlib** — per-rig flrig or hamlib rigctld config; auto-fills freq, mode, power, split (VFO A/B → Freq/Freq RX)
 - **QRZ, DXCC & SCP** — Ins triggers callbook lookup; auto-fills name, QTH, grid, country; prefix-based DXCC and live callsign autocomplete
 - **Wavelog cloud sync** — upload, download, duplicate detection, station profile cycling
