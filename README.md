@@ -96,7 +96,36 @@ go build -ldflags "-s -w -X github.com/szporwolik/cqops/internal/version.Version
 A GitHub Actions workflow (`.github/workflows/release.yml`) automates the release process. Before triggering it:
 
 1. Update the version in **`VERSION`** (plain version number, e.g. `0.1.1`).
-2. Run the **Create Release** workflow from the [Actions tab](https://github.com/szporwolik/cqops/actions) — it builds binaries for all 6 platforms (Windows, Linux, macOS; amd64 + arm64) and creates a tagged GitHub release with auto-generated notes from merged pull requests.
+2. Run the **Create Release** workflow from the [Actions tab](https://github.com/szporwolik/cqops/actions) — it builds binaries for all 6 platforms (Windows, Linux, macOS; amd64 + arm64), platform packages, and a Windows installer, then creates a tagged GitHub release.
+
+Each release includes:
+
+| Asset | Target |
+|---|---|
+| `cqops-setup-X.Y.Z.exe` | Windows installer (NSIS) |
+| `cqops_X.Y.Z_linux_amd64.deb` | Debian / Ubuntu amd64 |
+| `cqops_X.Y.Z_linux_arm64.deb` | Debian / Ubuntu arm64 (Raspberry Pi) |
+| `cqops_X.Y.Z_linux_amd64.rpm` | Fedora / RHEL amd64 |
+| `cqops_X.Y.Z_linux_arm64.rpm` | Fedora / RHEL arm64 |
+| `cqops_X.Y.Z_linux_amd64.pkg.tar.zst` | Arch / Manjaro amd64 |
+| `cqops_X.Y.Z_linux_arm64.pkg.tar.zst` | Arch / Manjaro arm64 |
+| Raw binaries | Windows, Linux, macOS — amd64 + arm64 |
+
+### Building installers locally
+
+```powershell
+# Windows: NSIS installer (requires makensis + ImageMagick)
+.\scripts\build-installer.ps1
+```
+```bash
+# Linux: deb, rpm, arch packages (requires nfpm)
+bash scripts/build-packages.sh
+```
+
+The Windows installer registers in Control Panel, adds Start Menu shortcuts, and integrates with `%PATH%`. The Linux packages install `cqops` to `/usr/bin/` with a `.desktop` entry and icon.
+
+**Build-time tools used (not linked into the binary):**
+[NSIS](https://nsis.sourceforge.io/) (zlib/libpng), [nfpm](https://nfpm.goreleaser.com/) (Apache 2.0), [go-winres](https://github.com/tc-hib/go-winres) (MIT), [ImageMagick](https://imagemagick.org/) (Apache 2.0).
 
 ## Usage
 

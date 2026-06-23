@@ -12,7 +12,10 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  # ---------------------------------------------------------------------------
+  # Build all Go binaries + Linux packages (deb/rpm)
+  # ---------------------------------------------------------------------------
+  build-unix:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -22,6 +25,9 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.26'
+
+      - name: Install nfpm
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 
       - name: Read version
         id: version
@@ -40,31 +46,139 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.value }}
           BUILD_DATE: ${{ steps.date.outputs.value }}
-          LDFLAGS: -s -w -X github.com/szporwolik/cqops/internal/version.Version=${{ steps.version.outputs.value }} -X github.com/szporwolik/cqops/internal/version.BuildDate=${{ steps.date.outputs.value }}
         run: |
-          mkdir -p dist
+          LDFLAGS="-s -w -X github.com/szporwolik/cqops/internal/version.Version=$VERSION -X github.com/szporwolik/cqops/internal/version.BuildDate=$BUILD_DATE"
+          mkdir -p dist build
           export CGO_ENABLED=0
 
           echo "Building $VERSION for linux/amd64..."
-          GOOS=linux GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/cqops-linux-amd64 ./cmd/cqops/
+          GOOS=linux GOARCH=amd64 go build -ldflags "$LDFLAGS" -o build/cqops-linux-amd64 ./cmd/cqops/
 
           echo "Building $VERSION for linux/arm64..."
-          GOOS=linux GOARCH=arm64 go build -ldflags "$LDFLAGS" -o dist/cqops-linux-arm64 ./cmd/cqops/
+          GOOS=linux GOARCH=arm64 go build -ldflags "$LDFLAGS" -o build/cqops-linux-arm64 ./cmd/cqops/
 
           echo "Building $VERSION for windows/amd64..."
-          GOOS=windows GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/cqops-windows-amd64.exe ./cmd/cqops/
+          GOOS=windows GOARCH=amd64 go build -ldflags "$LDFLAGS" -o build/cqops-windows-amd64.exe ./cmd/cqops/
 
           echo "Building $VERSION for windows/arm64..."
-          GOOS=windows GOARCH=arm64 go build -ldflags "$LDFLAGS" -o dist/cqops-windows-arm64.exe ./cmd/cqops/
+          GOOS=windows GOARCH=arm64 go build -ldflags "$LDFLAGS" -o build/cqops-windows-arm64.exe ./cmd/cqops/
 
           echo "Building $VERSION for darwin/amd64..."
-          GOOS=darwin GOARCH=amd64 go build -ldflags "$LDFLAGS" -o dist/cqops-darwin-amd64 ./cmd/cqops/
+          GOOS=darwin GOARCH=amd64 go build -ldflags "$LDFLAGS" -o build/cqops-darwin-amd64 ./cmd/cqops/
 
           echo "Building $VERSION for darwin/arm64..."
-          GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o dist/cqops-darwin-arm64 ./cmd/cqops/
+          GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o build/cqops-darwin-arm64 ./cmd/cqops/
+
+          # Copy raw binaries to dist/
+          cp build/cqops-linux-amd64   dist/cqops-linux-amd64
+          cp build/cqops-linux-arm64   dist/cqops-linux-arm64
+          cp build/cqops-windows-amd64.exe  dist/cqops-windows-amd64.exe
+          cp build/cqops-windows-arm64.exe  dist/cqops-windows-arm64.exe
+          cp build/cqops-darwin-amd64  dist/cqops-darwin-amd64
+          cp build/cqops-darwin-arm64  dist/cqops-darwin-arm64
 
           echo "Binaries:"
           ls -lh dist/
+
+      - name: Package Linux (deb + rpm)
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          for arch in amd64 arm64; do
+            for pkg in deb rpm archlinux; do
+              echo "Packaging $pkg / $arch ..."
+              NFFILE="dist/nfpm-${pkg}-${arch}.yaml"
+              sed -e "s/__VERSION__/${VERSION}/g" \
+                  -e "s/__ARCH__/${arch}/g" \
+                  nfpm.yaml > "$NFFILE"
+              nfpm package \
+                -f "$NFFILE" \
+                -p "$pkg" \
+                -t dist/ \
+                -r "$arch" \
+                --packager "${pkg}"
+            done
+          done
+          echo "Packages:"
+          ls -lh dist/*.deb dist/*.rpm dist/*.pkg.tar.zst
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-unix
+          path: dist/*
+
+  # ---------------------------------------------------------------------------
+  # Windows NSIS installer
+  # ---------------------------------------------------------------------------
+  build-installer:
+    runs-on: windows-latest
+    needs: build-unix
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: release-unix
+          path: dist/
+
+      - name: Read version
+        id: version
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "value=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "value=$(cat VERSION)" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build NSIS installer
+        shell: powershell
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+        run: |
+          # Copy the windows-amd64 binary to the path the NSIS script expects
+          mkdir -p build
+          copy dist\cqops-windows-amd64.exe build\cqops-windows-amd64.exe
+
+          # NSIS is pre-installed on windows-latest
+          & 'C:\Program Files (x86)\NSIS\makensis.exe' /DVERSION=$env:VERSION installer\cqops.nsi
+          if ($LASTEXITCODE -ne 0) { throw "NSIS compilation failed" }
+
+          Get-ChildItem dist\cqops-setup-*.exe | ForEach-Object { Write-Host "Installer: $($_.FullName) ($([math]::Round($_.Length/1MB,1)) MB)" }
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-installer
+          path: dist/cqops-setup-*.exe
+
+  # ---------------------------------------------------------------------------
+  # Create GitHub Release with all artifacts
+  # ---------------------------------------------------------------------------
+  publish:
+    runs-on: ubuntu-latest
+    needs: [build-unix, build-installer]
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: List assets
+        run: ls -lhR dist/
+
+      - name: Read version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "value=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "value=$(cat VERSION)" >> $GITHUB_OUTPUT
+          fi
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
@@ -73,3 +187,4 @@ jobs:
           name: v${{ steps.version.outputs.value }}
           generate_release_notes: true
           files: dist/*
+

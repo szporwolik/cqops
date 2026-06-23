@@ -1,0 +1,65 @@
+# =============================================================================
+# nfpm config template — variables substituted by build script.
+# ${VERSION} and ${ARCH} are replaced at build time.
+# =============================================================================
+
+name: "cqops"
+arch: "__ARCH__"
+platform: "linux"
+version: "__VERSION__"
+version_schema: semver
+section: "hamradio"
+priority: "optional"
+maintainer: "Szymon Porwolik <szporwolik@users.noreply.github.com>"
+description: |
+  CQOps — Fast, minimal Go TUI ham radio logger.
+  Built with Bubble Tea, supporting ADIF, WSJT-X, Wavelog,
+  QRZ, flrig/hamlib rig control, DX Cluster, PSK Reporter,
+  SOTA/POTA/WWFF references, and more.
+vendor: "Szymon Porwolik"
+homepage: "https://github.com/szporwolik/cqops"
+license: "MIT"
+
+depends:
+  - libc6
+
+contents:
+  - src: build/cqops-linux-__ARCH__
+    dst: /usr/bin/cqops
+    file_info:
+      mode: 0755
+
+  - src: assets/cqops-icon.svg
+    dst: /usr/share/icons/hicolor/scalable/apps/cqops.svg
+
+  - src: installer/cqops.desktop
+    dst: /usr/share/applications/cqops.desktop
+
+  - src: README.md
+    dst: /usr/share/doc/cqops/README.md
+
+  - src: CHANGELOG.md
+    dst: /usr/share/doc/cqops/CHANGELOG.md
+    type: ghost
+
+  - src: LICENSE
+    dst: /usr/share/doc/cqops/LICENSE
+    type: ghost
+
+overrides:
+  deb:
+    depends:
+      - libc6
+    recommends:
+      - libsqlite3-0
+  rpm:
+    depends:
+      - glibc
+
+# -----------------------------------------------------------------------------
+# For multi-arch builds, run nfpm once per arch:
+#   nfpm package -f nfpm.yaml -p deb -t dist/ -r amd64
+#   nfpm package -f nfpm.yaml -p deb -t dist/ -r arm64
+#   nfpm package -f nfpm.yaml -p rpm -t dist/ -r amd64
+#   nfpm package -f nfpm.yaml -p rpm -t dist/ -r arm64
+# -----------------------------------------------------------------------------
