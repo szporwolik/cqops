@@ -106,7 +106,6 @@ jobs:
                 -f "$NFFILE" \
                 -p "$pkg" \
                 -t dist/ \
-                -r "$arch" \
                 --packager "${pkg}"
             done
           done
