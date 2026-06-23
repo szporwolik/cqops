@@ -327,6 +327,8 @@ func (m *Model) handlePartnerUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 		switch msg.String() {
 		case "f1", "esc":
 			m.screen = screenQSO
+			m.photo.partnerPicURL = ""
+			m.photo.partnerPicNeedLoad = false
 			return m, cmd
 		case "f7":
 			m.ui.mainMenu = NewMainMenu()

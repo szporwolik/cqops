@@ -226,9 +226,12 @@ func (m *Model) viewPartner() string {
 	if showPhoto {
 		leftH := lipgloss.Height(leftCol)
 		picRaw := m.photo.partnerPicViewer.View().Content
-		// Show "Loading…" when no image content yet (first load or in-flight).
 		if picRaw == "" {
-			picRaw = DimStyle.Render("Loading\u2026")
+			if m.photo.partnerPicViewer.Err() != nil {
+				picRaw = DimStyle.Render("Photo unavailable")
+			} else {
+				picRaw = DimStyle.Render("Loading\u2026")
+			}
 		}
 		picContentH := leftH - 3 // header + border
 		if picContentH < 1 {

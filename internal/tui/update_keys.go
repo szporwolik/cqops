@@ -64,6 +64,10 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			applog.Debug("F2: opening image view", "url", m.lookup.partnerData.ImageURL)
 			m.screen = screenImage
 			m.photo.lastURL = m.lookup.partnerData.ImageURL
+			// Clear inline photo state so a fresh load fires when
+			// cycling back to Partner (fixes stuck "Loading…" on retry).
+			m.photo.partnerPicURL = ""
+			m.photo.partnerPicNeedLoad = false
 			w := m.width
 			h := m.height - 4 // header/tab/help overhead
 			if w < 20 {
