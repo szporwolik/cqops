@@ -75,6 +75,7 @@ for pkg in "${PACKAGERS[@]}"; do
         fi
     done
 done
+rm -f "$DIST_DIR"/nfpm-*.yaml
 
 echo ""
 echo "=== Done ==="
