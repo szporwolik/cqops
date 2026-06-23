@@ -163,7 +163,8 @@ jobs:
             $makensis = (Get-Command makensis -ErrorAction SilentlyContinue).Source
           }
           if (-not $makensis) { throw "makensis not found after install" }
-          & $makensis /DVERSION=$env:VERSION installer\cqops.nsi
+          $rootPath = (Resolve-Path '.').Path
+          & $makensis /DVERSION=$env:VERSION /DROOT=$rootPath installer\cqops.nsi
           if ($LASTEXITCODE -ne 0) { throw "NSIS compilation failed" }
 
           Get-ChildItem dist\cqops-setup-*.exe | ForEach-Object { Write-Host "Installer: $($_.FullName) ($([math]::Round($_.Length/1MB,1)) MB)" }
