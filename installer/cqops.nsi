@@ -75,38 +75,29 @@ Section "Install"
 
   File "${BIN_SRC}"
 
-  ; Copy the icon so the Control Panel uninstall entry can reference it.
-  ; The .exe itself has the icon embedded via go-winres, so Start Menu
-  ; shortcuts use the exe as their icon source.
+  ; Copy the icon for Control Panel (the .exe carries the embedded copy for taskbar/tab).
   !if /FileExists "${ICON_SRC}"
     File "${ICON_SRC}"
   !endif
 
-  ; Create a launcher batch file that keeps the terminal open on error.
-  FileOpen $0 "$INSTDIR\cqops.cmd" w
-  FileWrite $0 "@echo off$\r$\n"
-  FileWrite $0 "setlocal$\r$\n"
-  FileWrite $0 'set "CQOPS_HOME=$INSTDIR"$\r$\n'
-  FileWrite $0 '"$INSTDIR\cqops-windows-amd64.exe" %*$\r$\n'
-  FileWrite $0 "if %errorlevel% neq 0 (echo. & echo CQOps exited with error code %errorlevel% & pause)$\r$\n"
-  FileClose $0
+  ; Copy README into a docs/ subfolder so it's available offline.
+  CreateDirectory "$INSTDIR\docs"
+  SetOutPath "$INSTDIR\docs"
+  File /nonfatal "${ROOT}\README.md"
 
-  ; Create Start Menu shortcut.
-  ; Targets the .exe directly — the icon is embedded via go-winres so
-  ; Windows Terminal shows the CQOps icon in the tab.
-  ; The .exe pauses on error (panic or startup failure) so the user can
-  ; read the message before the window closes.
+  ; Back to install root for remaining operations.
+  SetOutPath "$INSTDIR"
+
+  ; Create Start Menu shortcuts.
   CreateDirectory "$SMPROGRAMS\${PRODUCT_NAME}"
   CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\CQOps.lnk" \
     "$INSTDIR\cqops-windows-amd64.exe" \
     "" \
     "$INSTDIR\cqops-windows-amd64.exe" 0
+  CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\README.lnk" \
+    "$INSTDIR\docs\README.md"
   CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\Uninstall CQOps.lnk" \
     "$INSTDIR\uninstall.exe"
-
-  ; Optional: copy a README / changelog
-  File /nonfatal "${ROOT}\README.md"
-  File /nonfatal "${ROOT}\CHANGELOG.md"
 
   ; Register uninstaller
   WriteUninstaller "$INSTDIR\uninstall.exe"
@@ -116,8 +107,9 @@ Section "Install"
   WriteRegStr HKLM "Software\${PRODUCT_NAME}" "Version" "${VERSION}"
 
   ; Registry — uninstall info (Control Panel)
+  ; Use ASCII hyphen in DisplayName to avoid mojibake in Windows Apps & Features.
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" \
-    "DisplayName" "${PRODUCT_NAME} — Amateur Radio Logging TUI"
+    "DisplayName" "${PRODUCT_NAME} - Amateur Radio Logging TUI"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" \
     "UninstallString" "$INSTDIR\uninstall.exe"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" \
@@ -159,16 +151,16 @@ SectionEnd
 Section "Uninstall"
   ; Remove Start Menu shortcuts
   Delete "$SMPROGRAMS\${PRODUCT_NAME}\CQOps.lnk"
+  Delete "$SMPROGRAMS\${PRODUCT_NAME}\README.lnk"
   Delete "$SMPROGRAMS\${PRODUCT_NAME}\Uninstall CQOps.lnk"
   RMDir  "$SMPROGRAMS\${PRODUCT_NAME}"
 
   ; Remove installed files
   Delete "$INSTDIR\cqops-windows-amd64.exe"
-  Delete "$INSTDIR\cqops.cmd"
-  Delete "$INSTDIR\uninstall.exe"
   Delete "$INSTDIR\cqops-icon.ico"
-  Delete "$INSTDIR\README.md"
-  Delete "$INSTDIR\CHANGELOG.md"
+  Delete "$INSTDIR\docs\README.md"
+  RMDir  "$INSTDIR\docs"
+  Delete "$INSTDIR\uninstall.exe"
   RMDir  "$INSTDIR"
 
   ; Remove registry keys

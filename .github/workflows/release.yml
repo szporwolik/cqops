@@ -80,6 +80,17 @@ jobs:
           echo "Binaries:"
           ls -lh dist/
 
+      - name: Smoke test (linux/amd64)
+        run: |
+          ./build/cqops-linux-amd64 version
+          echo "Smoke test (amd64) passed"
+
+      - name: Smoke test (linux/arm64 via QEMU)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq qemu-user-static
+          qemu-aarch64-static build/cqops-linux-arm64 version
+          echo "Smoke test (arm64) passed"
+
       - name: Package Linux (deb + rpm)
         env:
           VERSION: ${{ steps.version.outputs.value }}
@@ -148,6 +159,13 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "NSIS compilation failed" }
 
           Get-ChildItem dist\cqops-setup-*.exe | ForEach-Object { Write-Host "Installer: $($_.FullName) ($([math]::Round($_.Length/1MB,1)) MB)" }
+
+      - name: Smoke test (windows/amd64)
+        shell: powershell
+        run: |
+          & .\build\cqops-windows-amd64.exe version
+          if ($LASTEXITCODE -ne 0) { throw "Smoke test failed" }
+          Write-Host "Smoke test passed"
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4

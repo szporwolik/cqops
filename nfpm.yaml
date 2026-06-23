@@ -12,7 +12,7 @@ section: "hamradio"
 priority: "optional"
 maintainer: "Szymon Porwolik <szporwolik@users.noreply.github.com>"
 description: |
-  CQOps — Fast, minimal Go TUI ham radio logger.
+  CQOps - Fast, minimal Go TUI ham radio logger.
   Built with Bubble Tea, supporting ADIF, WSJT-X, Wavelog,
   QRZ, flrig/hamlib rig control, DX Cluster, PSK Reporter,
   SOTA/POTA/WWFF references, and more.

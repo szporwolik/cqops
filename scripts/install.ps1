@@ -24,7 +24,7 @@ $WScriptShell = New-Object -ComObject WScript.Shell
 $Shortcut = $WScriptShell.CreateShortcut($shortcut)
 $Shortcut.TargetPath = $BIN
 $Shortcut.WorkingDirectory = "$env:USERPROFILE"
-$Shortcut.Description = "CQOps — Amateur Radio Logging"
+$Shortcut.Description = "CQOps - Amateur Radio Logging"
 $Shortcut.Save()
 Write-Host "  Menu   : Start Menu → CQOps"
 
