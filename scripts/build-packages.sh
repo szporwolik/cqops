@@ -64,7 +64,6 @@ for pkg in "${PACKAGERS[@]}"; do
             -f "$NFFILE" \
             -p "$pkg" \
             -t "$DIST_DIR/" \
-            -r "$arch" \
             --packager "${pkg}"
 
         target="${DIST_DIR}/cqops_${VERSION}_linux_${arch}.${ext}"
