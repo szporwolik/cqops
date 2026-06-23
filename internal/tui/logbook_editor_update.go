@@ -249,7 +249,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		// Confirm modes — route keys to the dialog with left/right navigation.
-		if le.isConfirmMode() && le.dialog != nil {
+		if le.isModalMode() && le.dialog != nil {
 			updated, _ := le.dialog.Update(msg)
 			d := updated.(DialogModel)
 			*le.dialog = d
@@ -448,8 +448,9 @@ func (le *LogbookEditor) handleFilePickerUpdate(msg tea.Msg) (tea.Model, tea.Cmd
 				}
 				ts := time.Now().UTC().Format("20060102_150405")
 				name := "cqops"
-				if le.logStationOp != "" {
-					name = strings.ToLower(strings.ReplaceAll(le.logStationOp, " ", "_"))
+				if le.logStationCall != "" {
+					n := strings.ReplaceAll(le.logStationCall, "/", "-")
+					name = strings.ToLower(strings.ReplaceAll(n, " ", "_"))
 				}
 				path := filepath.Join(dir, fmt.Sprintf("%s_%s.adi", ts, name))
 				le.exportPath = path
@@ -678,7 +679,7 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 		qs.WavelogUploaded = "yes"
 
 		// Enrich: compute distance/bearing if both grids are available.
-		if myGrid := strings.TrimSpace(le.logStationGrid); myGrid != "" && qs.GridSquare != "" {
+		if myGrid := strings.TrimSpace(le.logStationCall); myGrid != "" && qs.GridSquare != "" {
 			qs.Distance = gridDistanceKm(myGrid, qs.GridSquare)
 			qs.Bearing = gridBearingDeg(myGrid, qs.GridSquare)
 		}
@@ -797,7 +798,7 @@ func (le *LogbookEditor) runImport(path string) {
 		qs := qso.ParseADIFRecord(r, "import")
 
 		// Enrich: compute distance/bearing if both grids are available.
-		if myGrid := strings.TrimSpace(le.logStationGrid); myGrid != "" && qs.GridSquare != "" {
+		if myGrid := strings.TrimSpace(le.logStationCall); myGrid != "" && qs.GridSquare != "" {
 			qs.Distance = gridDistanceKm(myGrid, qs.GridSquare)
 			qs.Bearing = gridBearingDeg(myGrid, qs.GridSquare)
 		}

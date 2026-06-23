@@ -811,8 +811,6 @@ func (m *Model) buildBPLMarkdown(region int) string {
 
 	// CB section.
 	b.WriteString("\n## Citizen Band - CB\n\n")
-	b.WriteString("| Ch | Freq MHz | Tag |\n")
-	b.WriteString("|---|----------|-----|\n")
 	m.writeCBMarkdownRows(&b, region)
 
 	// PMR section.
@@ -821,8 +819,6 @@ func (m *Model) buildBPLMarkdown(region int) string {
 
 	// Broadcast section.
 	b.WriteString("\n## Broadcast\n\n")
-	b.WriteString("| Band | Freq MHz | Station | Area |\n")
-	b.WriteString("|------|----------|---------|------|\n")
 	m.writeBRCMarkdownRows(&b)
 
 	return b.String()
@@ -941,6 +937,8 @@ func (m *Model) writeCBMarkdownRows(b *strings.Builder, region int) {
 			b.WriteString(fmt.Sprintf("\n**%s** — %s–%s MHz, %s\n\n", p.Label, p.RangeLo, p.RangeHi, p.Mod))
 		}
 	}
+	b.WriteString("| Ch | Freq MHz | Tag |\n")
+	b.WriteString("|---|----------|-----|\n")
 	for _, ch := range cbChannels {
 		tag := ch.Tag
 		if tag == "" {
@@ -1014,17 +1012,39 @@ func (m *Model) writePMRMarkdownRows(b *strings.Builder, region int) {
 }
 
 func (m *Model) writeBRCMarkdownRows(b *strings.Builder) {
-	presets := bcastPresetsAll()
-	sorted := make([]bcastPreset, len(presets))
-	copy(sorted, presets)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].FreqKHz < sorted[j].FreqKHz })
-	for _, bc := range sorted {
-		freqMHz := fmt.Sprintf("%.3f", float64(bc.FreqKHz)/1000.0)
-		area := bc.Area
-		if bc.Reliability == "seasonal" {
-			area += " [seasonal]"
+	presets := m.bcastPresetsForBRC()
+
+	for _, br := range bcBandRanges {
+		var inBand []bcastPreset
+		for _, bc := range presets {
+			if bc.FreqKHz >= br.FromKHz && bc.FreqKHz <= br.ToKHz {
+				inBand = append(inBand, bc)
+			}
 		}
-		fmt.Fprintf(b, "| %s | %s | %s | %s |\n", bc.Band, freqMHz, bc.Station, area)
+		if len(inBand) == 0 {
+			continue
+		}
+		b.WriteString(fmt.Sprintf("### %s %d–%d kHz", br.Label, br.FromKHz, br.ToKHz))
+		if br.Mod != "" {
+			b.WriteString(", ")
+			b.WriteString(br.Mod)
+		}
+		if br.Note != "" {
+			b.WriteString(", ")
+			b.WriteString(br.Note)
+		}
+		b.WriteString("\n\n")
+		b.WriteString("| Band | Freq MHz | Station | Area |\n")
+		b.WriteString("|------|----------|---------|------|\n")
+		for _, bc := range inBand {
+			freqMHz := fmt.Sprintf("%.3f", float64(bc.FreqKHz)/1000.0)
+			area := bc.Area
+			if bc.Reliability == "seasonal" {
+				area += " [seasonal]"
+			}
+			fmt.Fprintf(b, "| %s | %s | %s | %s |\n", bc.Band, freqMHz, bc.Station, area)
+		}
+		b.WriteString("\n")
 	}
 }
 
@@ -1229,24 +1249,5 @@ func bplRows(region int) []table.Row {
 }
 
 // =============================================================================
-// CON placeholder pane (F3)
+// end BPL views
 // =============================================================================
-
-func (m *Model) handleCONUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.width, m.height = msg.Width, msg.Height
-		return m, cmd
-	case tea.KeyPressMsg:
-		switch msg.String() {
-		case "f1", "esc":
-			m.screen = screenQSO
-			return m, cmd
-		}
-	}
-	return m, cmd
-}
-
-func (m *Model) viewCON(l Layout) string {
-	return fillBody(DimStyle.Width(l.TerminalW).Align(lipgloss.Center).Render("CON — placeholder"), l.ContentH)
-}

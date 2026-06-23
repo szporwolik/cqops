@@ -37,7 +37,6 @@ func newChooserTestApp(t *testing.T) *app.App {
 				Station: config.Station{
 					Callsign: "SP9MOA",
 					Grid:     "JO90",
-					Operator: "SP9MOA",
 				},
 			},
 			"portable": {
@@ -45,7 +44,6 @@ func newChooserTestApp(t *testing.T) *app.App {
 				Station: config.Station{
 					Callsign: "SP9MOA/P",
 					Grid:     "JO80",
-					Operator: "SP9MOA",
 				},
 			},
 		},

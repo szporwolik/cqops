@@ -43,7 +43,6 @@ func newLifecycleTestModel(t *testing.T) *Model {
 				Station: config.Station{
 					Callsign: "SP9MOA",
 					Grid:     "JO90",
-					Operator: "OP",
 					RigName:  "default",
 				},
 			},
@@ -58,7 +57,7 @@ func newLifecycleTestModel(t *testing.T) *Model {
 		Config:      cfg,
 		ConfigPath:  "", // no config file
 		LogbookName: "test",
-		Logbook:     &config.Logbook{Station: config.Station{Callsign: "SP9MOA", Grid: "JO90", Operator: "OP", RigName: "default"}, Wavelog: &config.WavelogConfig{}},
+		Logbook:     &config.Logbook{Station: config.Station{Callsign: "SP9MOA", Grid: "JO90", RigName: "default"}, Wavelog: &config.WavelogConfig{}},
 		DB:          db,
 		DBPath:      dbPath,
 	}
@@ -135,7 +134,7 @@ func TestRefreshQSOsOneQSO(t *testing.T) {
 	qs.RSTRcvd = "59"
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
-		Operator:        m.App.Logbook.Station.Operator,
+		Operator:        m.App.Logbook.Station.Callsign,
 		MyGridSquare:    m.App.Logbook.Station.Grid,
 	})
 	if _, err := store.InsertQSO(m.App.DB, qs); err != nil {
@@ -166,7 +165,7 @@ func TestRefreshQSOsMultipleQSOs(t *testing.T) {
 		qs.RSTRcvd = "59"
 		qso.ApplyStationDefaults(qs, qso.StationInfo{
 			StationCallsign: m.App.Logbook.Station.Callsign,
-			Operator:        m.App.Logbook.Station.Operator,
+			Operator:        m.App.Logbook.Station.Callsign,
 			MyGridSquare:    m.App.Logbook.Station.Grid,
 		})
 		store.InsertQSO(m.App.DB, qs)
@@ -338,8 +337,8 @@ func TestSaveQSOStationDefaults(t *testing.T) {
 	if saved.StationCallsign != "SP9MOA" {
 		t.Errorf("StationCallsign = %q; want SP9MOA", saved.StationCallsign)
 	}
-	if saved.Operator != "OP" {
-		t.Errorf("Operator = %q; want OP", saved.Operator)
+	if saved.Operator != "" {
+		t.Errorf("Operator = %q; want empty (no active operator)", saved.Operator)
 	}
 	if saved.MyGridSquare != "JO90" {
 		t.Errorf("MyGridSquare = %q; want JO90", saved.MyGridSquare)
@@ -566,7 +565,7 @@ func TestListQSOsContestFiltering(t *testing.T) {
 		qs.ContestID = contestID
 		qso.ApplyStationDefaults(qs, qso.StationInfo{
 			StationCallsign: m.App.Logbook.Station.Callsign,
-			Operator:        m.App.Logbook.Station.Operator,
+			Operator:        m.App.Logbook.Station.Callsign,
 			MyGridSquare:    m.App.Logbook.Station.Grid,
 		})
 		if _, err := store.InsertQSO(db, qs); err != nil {

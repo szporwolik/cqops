@@ -340,10 +340,10 @@ func PostQSOWithResult(baseURL, apiKey, stationID, adifStr string) (*QSOUploadRe
 	// Try to parse structured response
 	var result QSOUploadResult
 	if jsonErr := json.Unmarshal(respBody, &result); jsonErr == nil {
-		// Check if all errors are duplicates
-		if result.Status == "abort" && result.ADIFErrors > 0 && len(result.Messages) > 1 {
-			allDup := true
-			for _, m := range result.Messages[1:] { // messages[0] is usually empty
+		// Check if all errors are duplicates.
+		if result.Status == "abort" && result.ADIFErrors > 0 {
+			allDup := len(result.Messages) > 0
+			for _, m := range result.Messages {
 				if m != "" && !strings.Contains(m, "Duplicate for") {
 					allDup = false
 					break

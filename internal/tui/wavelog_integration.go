@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
@@ -19,23 +20,43 @@ import (
 // =============================================================================
 
 // maybeCheckWavelog returns a tea.Cmd to check Wavelog connectivity
-// at startup (tick 1), when the logbook is switched, and periodically.
+// at startup (tick 1), when the logbook is switched, and periodically
+// with exponential-like backoff on failure: 3 quick retries at 1s, then every 60s.
 func (m *Model) maybeCheckWavelog() tea.Cmd {
 	if m.Offline || !m.inetOnline {
 		m.lookup.wlOnline = false
+		m.lookup.wlFailCount = 0
 		return nil
 	}
 	wl := m.App.Logbook.Wavelog
 	if wl == nil || !wl.Enabled || wl.StationProfileID == "" {
 		m.lookup.wlOnline = false
+		m.lookup.wlFailCount = 0
 		return nil
 	}
 	// Check on startup or when forced (logbook switch).
 	if m.tickCount != 1 && !m.lookup.wlForceCheck {
+		// Retry with backoff when offline.
+		if !m.lookup.wlOnline && m.lookup.wlFailCount > 0 {
+			if time.Now().Before(m.lookup.wlNextRetry) {
+				return nil
+			}
+			m.lookup.wlNextRetry = time.Now().Add(retryInterval(m.lookup.wlFailCount))
+			return m.checkWavelogCmd()
+		}
 		return nil
 	}
 	m.lookup.wlForceCheck = false
 	return m.checkWavelogCmd()
+}
+
+// retryInterval returns the delay before the next Wavelog retry:
+// ≤3 failures: 1 second; >3 failures: 60 seconds.
+func retryInterval(failCount int) time.Duration {
+	if failCount <= 3 {
+		return 1 * time.Second
+	}
+	return 60 * time.Second
 }
 
 // checkWavelogCmd returns a tea.Cmd that tests Wavelog server connectivity

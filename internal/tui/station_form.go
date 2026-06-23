@@ -14,7 +14,7 @@ import (
 type StationForm struct {
 	Name        textinput.Model
 	Callsign    textinput.Model
-	Operator    textinput.Model
+	Operator    textinput.Model // display-only; driven by opFocus/opIdx + SetOperators
 	Locator     textinput.Model
 	SOTARef     textinput.Model
 	POTARef     textinput.Model
@@ -36,6 +36,11 @@ type StationForm struct {
 	WlKey       textinput.Model
 	WlStationID textinput.Model
 	width       int // terminal width for responsive layout
+
+	// Operator cycling (Space-toggleable, like Continent/IARU).
+	operators []config.Operator
+	opIdx     int  // index into operators; -1 = None
+	opFocus   bool // true when operator selector has focus
 }
 
 // Wavelog button action messages sent when a button is activated via Enter.
@@ -88,7 +93,38 @@ func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder strin
 		WlURL:       wu,
 		WlKey:       wk,
 		WlStationID: ws,
+		opIdx:       -1,
 	}
+}
+
+// SetOperators provides the operator list for the Space-toggleable selector.
+func (f *StationForm) SetOperators(ops []config.Operator) {
+	f.operators = ops
+	// Try to keep the current selection if it still exists.
+	if f.opIdx >= 0 && f.opIdx < len(ops) {
+		f.Operator.SetValue(config.OperatorDisplayName(&ops[f.opIdx]))
+	} else if f.opIdx < 0 || len(ops) == 0 {
+		f.opIdx = -1
+		f.Operator.SetValue("")
+	}
+}
+
+// updateOperatorDisplay sets the Operator textinput to show the current selection.
+func (f *StationForm) updateOperatorDisplay() {
+	if f.opIdx >= 0 && f.opIdx < len(f.operators) {
+		f.Operator.SetValue(config.OperatorDisplayName(&f.operators[f.opIdx]))
+	} else {
+		f.Operator.SetValue("")
+		f.opIdx = -1
+	}
+}
+
+// SelectedOperatorCallsign returns the callsign of the selected operator, or "" for none.
+func (f *StationForm) SelectedOperatorCallsign() string {
+	if f.opIdx >= 0 && f.opIdx < len(f.operators) {
+		return f.operators[f.opIdx].Callsign
+	}
+	return ""
 }
 
 func (f *StationForm) Update(msg tea.KeyPressMsg) {
@@ -98,9 +134,18 @@ func (f *StationForm) Update(msg tea.KeyPressMsg) {
 	case f.Callsign.Focused():
 		f.Callsign, _ = f.Callsign.Update(msg)
 		f.Callsign.SetValue(strings.ToUpper(f.Callsign.Value()))
-	case f.Operator.Focused():
-		f.Operator, _ = f.Operator.Update(msg)
-		f.Operator.SetValue(strings.ToUpper(f.Operator.Value()))
+	case f.opFocus:
+		if msg.String() == " " || msg.String() == "space" || msg.String() == "enter" {
+			if len(f.operators) == 0 {
+				f.opIdx = -1
+			} else {
+				f.opIdx++
+				if f.opIdx >= len(f.operators) {
+					f.opIdx = -1 // wrap to None
+				}
+			}
+			f.updateOperatorDisplay()
+		}
 	case f.Locator.Focused():
 		f.Locator, _ = f.Locator.Update(msg)
 		f.Locator.SetValue(formatLocator(f.Locator.Value()))
@@ -156,8 +201,8 @@ func (f *StationForm) NextInput() {
 	case f.Callsign.Focused():
 		f.Callsign.Blur()
 		f.Locator.Focus()
-	case f.Operator.Focused():
-		f.Operator.Blur()
+	case f.opFocus:
+		f.opFocus = false
 		f.SOTARef.Focus()
 	case f.Locator.Focused():
 		f.Locator.Blur()
@@ -167,7 +212,7 @@ func (f *StationForm) NextInput() {
 		f.contFocus = true
 	case f.contFocus:
 		f.contFocus = false
-		f.Operator.Focus()
+		f.opFocus = true
 	case f.SOTARef.Focused():
 		f.SOTARef.Blur()
 		f.POTARef.Focus()
@@ -233,15 +278,15 @@ func (f *StationForm) PrevInput() {
 	case f.wlBtnFocus == 1:
 		f.wlBtnFocus = 0
 		f.WlStationID.Focus()
-	case f.Operator.Focused():
-		f.Operator.Blur()
+	case f.opFocus:
+		f.opFocus = false
 		f.contFocus = true
 	case f.Locator.Focused():
 		f.Locator.Blur()
 		f.Callsign.Focus()
 	case f.SOTARef.Focused():
 		f.SOTARef.Blur()
-		f.Operator.Focus()
+		f.opFocus = true
 	case f.POTARef.Focused():
 		f.POTARef.Blur()
 		f.SOTARef.Focus()
@@ -295,6 +340,7 @@ func (f *StationForm) BlurAll() {
 	f.wlCbFocus = false
 	f.iaruFocus = false
 	f.contFocus = false
+	f.opFocus = false
 	f.wlBtnFocus = 0
 }
 
@@ -309,7 +355,7 @@ func (f *StationForm) Values() (name, callsign, operator, locator, sotaRef, pota
 
 	return strings.TrimSpace(f.Name.Value()),
 		strings.ToUpper(strings.TrimSpace(f.Callsign.Value())),
-		strings.ToUpper(strings.TrimSpace(f.Operator.Value())),
+		f.SelectedOperatorCallsign(),
 		formatLocator(f.Locator.Value()),
 		strings.TrimSpace(f.SOTARef.Value()),
 		strings.TrimSpace(f.POTARef.Value()),
@@ -328,7 +374,17 @@ func (f *StationForm) Values() (name, callsign, operator, locator, sotaRef, pota
 func (f *StationForm) SetValues(name, callsign, operator, locator, sotaRef, potaRef, wwffRef string, iaruRegion, cqZone, ituZone, dxcc int, sig, sigInfo, continent string) {
 	f.Name.SetValue(name)
 	f.Callsign.SetValue(callsign)
-	f.Operator.SetValue(operator)
+	// Set operator from callsign lookup.
+	f.opIdx = -1
+	if operator != "" {
+		for i, op := range f.operators {
+			if strings.EqualFold(op.Callsign, operator) {
+				f.opIdx = i
+				break
+			}
+		}
+	}
+	f.updateOperatorDisplay()
 	f.Locator.SetValue(locator)
 	f.SOTARef.SetValue(sotaRef)
 	f.POTARef.SetValue(potaRef)
@@ -431,9 +487,33 @@ func (f *StationForm) View() tea.View {
 		availW))
 	b.WriteString("\n")
 
+	// Operator selector — Space-toggleable, like Continent/IARU.
+	opLabel := "Operator (opt):"
+	var opVal string
+	if f.opIdx >= 0 && f.opIdx < len(f.operators) {
+		opVal = config.OperatorDisplayName(&f.operators[f.opIdx])
+	} else {
+		opVal = DimStyle.Render("None")
+	}
+	opPrefix := "  "
+	opLbl := S.FormLabelWide.Align(lipgloss.Left).Render(opLabel)
+	displayVal := ValueStyle.Render(opVal)
+	if f.opFocus {
+		opPrefix = S.FormPrefixOn.Render("> ")
+		opLbl = S.FormFocusedWide.Align(lipgloss.Left).Render(opLabel)
+		if f.opIdx >= 0 {
+			displayVal = CursorStyle.Render(opVal)
+		} else {
+			displayVal = CursorStyle.Render(DimStyle.Render("None"))
+		}
+	}
+	b.WriteString(padOrTrunc(
+		lipgloss.JoinHorizontal(lipgloss.Center, opPrefix, opLbl, " ", displayVal),
+		availW))
+	b.WriteString("\n")
+
 	// Remaining text fields.
 	remFields := []fieldDef{
-		{"Operator (opt):", &f.Operator},
 		{"SOTA Ref (opt):", &f.SOTARef},
 		{"POTA Ref (opt):", &f.POTARef},
 		{"WWFF Ref (opt):", &f.WWFFRef},

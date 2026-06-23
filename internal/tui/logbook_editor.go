@@ -127,6 +127,7 @@ type LogbookEditor struct {
 	wlLastFetchedID  int64
 	logStationOp     string
 	logStationGrid   string
+	logStationCall   string // station callsign, for export filename
 	contestID        string // active contest hash for filtering, "" = no filter
 	contestName      string // display name for the contest info line
 	contestAdifID    string // ADIF Contest-ID for the contest info line
@@ -172,8 +173,8 @@ type LogbookEditor struct {
 // Constructor
 // =============================================================================
 
-func NewLogbookEditor(db *sql.DB, wlURL, wlKey, wlStationID string, wlLastFetchedID int64, logStationOp, logStationGrid string) *LogbookEditor {
-	le := &LogbookEditor{db: db, mode: edModeList, wlURL: wlURL, wlKey: wlKey, wlStationID: wlStationID, wlLastFetchedID: wlLastFetchedID, logStationOp: logStationOp, logStationGrid: logStationGrid}
+func NewLogbookEditor(db *sql.DB, wlURL, wlKey, wlStationID string, wlLastFetchedID int64, logStationOp, logStationGrid, logStationCall string) *LogbookEditor {
+	le := &LogbookEditor{db: db, mode: edModeList, wlURL: wlURL, wlKey: wlKey, wlStationID: wlStationID, wlLastFetchedID: wlLastFetchedID, logStationOp: logStationOp, logStationGrid: logStationGrid, logStationCall: logStationCall}
 	le.filePicker = filepicker.New()
 	le.filePicker.FileAllowed = false
 	le.filePicker.DirAllowed = true
@@ -350,7 +351,7 @@ func (le *LogbookEditor) IsImporting() bool {
 // FilePicker returns the filepicker model for external use (help suffix).
 func (le *LogbookEditor) FilePicker() filepicker.Model { return le.filePicker }
 
-func (le *LogbookEditor) isConfirmMode() bool {
+func (le *LogbookEditor) isModalMode() bool {
 	switch le.mode {
 	case edModeConfirmDelete, edModeConfirmPurge, edModeConfirmWLSend, edModeConfirmWLDownload,
 		edModeConfirmNormalize, edModeWLDownloading, edModeWLDownloadResult,

@@ -13,8 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ftl/hamradio/latlon"
-	"github.com/ftl/hamradio/locator"
 	"github.com/szporwolik/cqops/internal/applog"
 )
 
@@ -222,21 +220,51 @@ func parseLatLon(latStr, lonStr string) (float64, float64, error) {
 	return lat, lon, nil
 }
 
-// gridFromLatLon returns a 6-character Maidenhead grid locator from lat/lon,
-// or empty string on invalid input. Falls back to 4-char when lat/lon precision
-// only supports coarser resolution.
+// gridFromLatLon returns a 6-character Maidenhead grid locator from lat/lon
+// strings, or empty string on invalid input.
 func gridFromLatLon(latStr, lonStr string) string {
 	lat, lon, err := parseLatLon(latStr, lonStr)
 	if err != nil {
 		return ""
 	}
-	ll := latlon.NewLatLon(latlon.Latitude(lat), latlon.Longitude(lon))
-	g := locator.LatLonToLocator(ll, 6)
-	s := strings.TrimRight(string(g[:]), "\x00")
-	if len(s) >= 4 {
-		return strings.ToUpper(s)
+	return maidenhead6(lat, lon)
+}
+
+// maidenhead6 computes a 6-character Maidenhead grid locator from
+// latitude and longitude in decimal degrees. Returns empty string for
+// coordinates outside the valid range.
+func maidenhead6(lat, lon float64) string {
+	// Shift to positive range: lon 0-360 (0=180°W), lat 0-180 (0=90°S).
+	slon := lon + 180.0
+	slat := lat + 90.0
+	if slon < 0 || slon > 360 || slat < 0 || slat > 180 {
+		return ""
 	}
-	return ""
+
+	// Field (AA-RR): 20° lon × 10° lat.
+	flon := int(slon / 20)
+	flat := int(slat / 10)
+	// Square (00-99): 2° lon × 1° lat.
+	qlon := int(slon/2) % 10
+	qlat := int(slat) % 10
+	// Sub-square (aa-xx): 5' lon × 2.5' lat, measured from the start of
+	// the 2°×1° square.
+	remLon := slon - float64(flon*20+qlon*2)
+	remLat := slat - float64(flat*10+qlat)
+	slonSub := int(remLon * 60.0 / 5.0)
+	slatSub := int(remLat * 60.0 / 2.5)
+	if slonSub > 23 {
+		slonSub = 23
+	}
+	if slatSub > 23 {
+		slatSub = 23
+	}
+
+	b := make([]byte, 0, 6)
+	b = append(b, byte('A'+flon), byte('A'+flat))
+	b = append(b, byte('0'+qlon), byte('0'+qlat))
+	b = append(b, byte('a'+slonSub), byte('a'+slatSub))
+	return strings.ToUpper(string(b))
 }
 
 // importSOTA parses a SOTA summits CSV and inserts rows into tx.
@@ -514,12 +542,7 @@ func importIOTA(tx *sql.Tx, islandsPath, groupsPath string) (int, error) {
 		if gi.latMax != 0 || gi.latMin != 0 || gi.lonMax != 0 || gi.lonMin != 0 {
 			centerLat := (gi.latMax + gi.latMin) / 2
 			centerLon := (gi.lonMax + gi.lonMin) / 2
-			ll := latlon.NewLatLon(latlon.Latitude(centerLat), latlon.Longitude(centerLon))
-			g := locator.LatLonToLocator(ll, 6)
-			s := strings.TrimRight(string(g[:]), "\x00")
-			if len(s) >= 4 {
-				grid = strings.ToUpper(s)
-			}
+			grid = maidenhead6(centerLat, centerLon)
 		}
 		if _, err := stmt.Exec(string(RefIOTA), refno, gi.name, grid, 1); err != nil {
 			applog.Warn("ref: iota group insert", "ref", refno, "name", gi.name, "error", err)
@@ -553,12 +576,7 @@ func importIOTA(tx *sql.Tx, islandsPath, groupsPath string) (int, error) {
 			if gi.latMax != 0 || gi.latMin != 0 || gi.lonMax != 0 || gi.lonMin != 0 {
 				centerLat := (gi.latMax + gi.latMin) / 2
 				centerLon := (gi.lonMax + gi.lonMin) / 2
-				ll := latlon.NewLatLon(latlon.Latitude(centerLat), latlon.Longitude(centerLon))
-				g := locator.LatLonToLocator(ll, 6)
-				s := strings.TrimRight(string(g[:]), "\x00")
-				if len(s) >= 4 {
-					grid = strings.ToUpper(s)
-				}
+				grid = maidenhead6(centerLat, centerLon)
 			}
 		}
 

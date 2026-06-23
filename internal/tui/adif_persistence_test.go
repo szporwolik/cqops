@@ -33,7 +33,6 @@ func newADIFTestModel(t *testing.T) *Model {
 			"test": {
 				Station: config.Station{
 					Callsign: "DJ7NT",
-					Operator: "DJ7NT",
 					Grid:     "JO30",
 				},
 			},
@@ -43,7 +42,7 @@ func newADIFTestModel(t *testing.T) *Model {
 		Config:      cfg,
 		DB:          db,
 		LogbookName: "test",
-		Logbook:     &config.Logbook{Station: config.Station{Callsign: "DJ7NT", Operator: "DJ7NT", Grid: "JO30"}},
+		Logbook:     &config.Logbook{Station: config.Station{Callsign: "DJ7NT", Grid: "JO30"}},
 	}
 	return New(a, nil)
 }
@@ -85,7 +84,7 @@ func TestADIFToQSO_FT8(t *testing.T) {
 	qs.WavelogUploaded = "no"
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
-		Operator:        m.App.Logbook.Station.Operator,
+		Operator:        m.App.Logbook.Station.Callsign,
 		MyGridSquare:    m.App.Logbook.Station.Grid,
 	})
 
@@ -169,7 +168,7 @@ func TestADIFToQSO_FT4(t *testing.T) {
 	qs.WavelogUploaded = "no"
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
-		Operator:        m.App.Logbook.Station.Operator,
+		Operator:        m.App.Logbook.Station.Callsign,
 		MyGridSquare:    m.App.Logbook.Station.Grid,
 	})
 
@@ -211,7 +210,7 @@ func TestADIFToQSO_SSB(t *testing.T) {
 	qs.WavelogUploaded = "no"
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
-		Operator:        m.App.Logbook.Station.Operator,
+		Operator:        m.App.Logbook.Station.Callsign,
 		MyGridSquare:    m.App.Logbook.Station.Grid,
 	})
 
@@ -256,7 +255,7 @@ func TestADIFToQSO_CW(t *testing.T) {
 	qs.WavelogUploaded = "no"
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
-		Operator:        m.App.Logbook.Station.Operator,
+		Operator:        m.App.Logbook.Station.Callsign,
 		MyGridSquare:    m.App.Logbook.Station.Grid,
 	})
 
@@ -355,7 +354,7 @@ func TestADIFToQSO_InvalidCall(t *testing.T) {
 	qs.WavelogUploaded = "no"
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
-		Operator:        m.App.Logbook.Station.Operator,
+		Operator:        m.App.Logbook.Station.Callsign,
 		MyGridSquare:    m.App.Logbook.Station.Grid,
 	})
 
@@ -424,7 +423,7 @@ func TestADIFToQSO_InvalidGrid(t *testing.T) {
 	qs.WavelogUploaded = "no"
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
-		Operator:        m.App.Logbook.Station.Operator,
+		Operator:        m.App.Logbook.Station.Callsign,
 		MyGridSquare:    m.App.Logbook.Station.Grid,
 	})
 
@@ -453,7 +452,7 @@ func TestADIFToQSO_DuplicateDetection(t *testing.T) {
 	qs.WavelogUploaded = "no"
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
-		Operator:        m.App.Logbook.Station.Operator,
+		Operator:        m.App.Logbook.Station.Callsign,
 		MyGridSquare:    m.App.Logbook.Station.Grid,
 	})
 	if err := qso.ValidateForSave(qs); err != nil {
@@ -596,7 +595,7 @@ func TestWavelogBoundary_UploadState(t *testing.T) {
 	qs.WavelogUploaded = "no"
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
-		Operator:        m.App.Logbook.Station.Operator,
+		Operator:        m.App.Logbook.Station.Callsign,
 		MyGridSquare:    m.App.Logbook.Station.Grid,
 	})
 	if err := qso.ValidateForSave(qs); err != nil {
@@ -694,7 +693,7 @@ func TestADIFToQSO_StandaloneFT8Normalized(t *testing.T) {
 	qs.WavelogUploaded = "no"
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
-		Operator:        m.App.Logbook.Station.Operator,
+		Operator:        m.App.Logbook.Station.Callsign,
 		MyGridSquare:    m.App.Logbook.Station.Grid,
 	})
 
@@ -737,7 +736,7 @@ func TestADIFToQSO_StandaloneFT4Normalized(t *testing.T) {
 	qs.WavelogUploaded = "no"
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
-		Operator:        m.App.Logbook.Station.Operator,
+		Operator:        m.App.Logbook.Station.Callsign,
 		MyGridSquare:    m.App.Logbook.Station.Grid,
 	})
 

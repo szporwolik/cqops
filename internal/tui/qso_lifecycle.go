@@ -75,7 +75,7 @@ func (m *Model) saveQSO() tea.Cmd {
 	qs.SRX = qso.ParseSerial(qs.ExchRcvd)
 	station := qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
-		Operator:        m.App.Logbook.Station.Operator,
+		Operator:        m.activeOperatorCallsign(),
 		MyGridSquare:    m.App.Logbook.Station.Grid,
 		MyRig:           m.App.Logbook.Station.RigModel(m.App.Config.Rigs),
 		MyAntenna:       m.App.Logbook.Station.RigAntenna(m.App.Config.Rigs),
@@ -101,6 +101,7 @@ func (m *Model) saveQSO() tea.Cmd {
 		}
 	}
 	qso.ApplyStationDefaults(qs, station)
+	applog.Debug("QSO save: operator", "active", m.App.Logbook.ActiveOperator, "callsign", station.Operator)
 	// Attach active contest to QSO.
 	qs.ContestID = m.App.Logbook.ActiveContest
 	// Set the ADIF Contest ID from the active contest config.

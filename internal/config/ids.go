@@ -99,7 +99,60 @@ func FindLogbookByCallsign(cfg *Config, callsign string) (string, *Logbook, bool
 	return "", nil, false
 }
 
-// SortedContestIDs returns contest IDs for the given logbook, sorted by name.
+// SortedOperatorIDs returns operator IDs sorted by callsign.
+func SortedOperatorIDs(cfg *Config) []string {
+	type pair struct {
+		id   string
+		name string
+	}
+	pairs := make([]pair, 0, len(cfg.Operators))
+	for id, op := range cfg.Operators {
+		pairs = append(pairs, pair{id, OperatorDisplayName(&op)})
+	}
+	sort.Slice(pairs, func(i, j int) bool {
+		return strings.ToLower(pairs[i].name) < strings.ToLower(pairs[j].name)
+	})
+	ids := make([]string, len(pairs))
+	for i, p := range pairs {
+		ids[i] = p.id
+	}
+	return ids
+}
+
+// OperatorDisplayName returns the human-readable name for an operator.
+func OperatorDisplayName(op *Operator) string {
+	if op.Callsign != "" {
+		n := op.Callsign
+		if op.Name != "" {
+			n += " (" + op.Name + ")"
+		}
+		return n
+	}
+	return "Unnamed"
+}
+
+// FindOperatorByCallsign returns the first operator whose callsign matches
+// (case-insensitive). Returns the ID, operator pointer, and true if found.
+func FindOperatorByCallsign(cfg *Config, callsign string) (string, *Operator, bool) {
+	for id, op := range cfg.Operators {
+		if equalFold(op.Callsign, callsign) {
+			opCopy := op
+			return id, &opCopy, true
+		}
+	}
+	return "", nil, false
+}
+
+// OperatorSlice returns operators ordered by callsign as a slice.
+func OperatorSlice(cfg *Config) []Operator {
+	ids := SortedOperatorIDs(cfg)
+	ops := make([]Operator, 0, len(ids))
+	for _, id := range ids {
+		ops = append(ops, cfg.Operators[id])
+	}
+	return ops
+}
+
 // Pass empty logbookID to get all contests (backward compatibility).
 // Use ActiveContestIDs for cycling — that one excludes not-in-use contests.
 func SortedContestIDs(cfg *Config, logbookID string) []string {
@@ -184,9 +237,8 @@ func equalFold(a, b string) bool {
 	return true
 }
 
-// PopulateIDs ensures every logbook, rig, and contest has its ID field set
-// from its map key. Call this after loading a config from YAML (where the id
-// field is not serialized).
+// PopulateIDs ensures every logbook, rig, contest, and operator has its
+// ID field set from its map key. Call this after loading a config from YAML.
 func PopulateIDs(cfg *Config) {
 	if cfg.Logbooks != nil {
 		for key, lb := range cfg.Logbooks {
@@ -209,6 +261,14 @@ func PopulateIDs(cfg *Config) {
 			if c.ID == "" {
 				c.ID = key
 				cfg.Contests[key] = c
+			}
+		}
+	}
+	if cfg.Operators != nil {
+		for key, op := range cfg.Operators {
+			if op.ID == "" {
+				op.ID = key
+				cfg.Operators[key] = op
 			}
 		}
 	}

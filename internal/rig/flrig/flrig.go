@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/rig"
 )
@@ -20,6 +21,14 @@ type Client struct {
 	url     string
 	timeout time.Duration
 	client  *http.Client
+}
+
+// Close drains idle HTTP connections so the transport can be garbage
+// collected.  Satisfies the same interface as hamlib.Client.Close() so
+// refreshRigClient can clean up either backend uniformly.
+func (f *Client) Close() error {
+	f.client.CloseIdleConnections()
+	return nil
 }
 
 // New creates a new flrig HTTP client. url is the base URL of the flrig
@@ -57,6 +66,7 @@ func (f *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 		defer wg.Done()
 		v, err := f.getFrequency(ctx)
 		if err != nil {
+			applog.Debug("flrig: get_vfo failed", "error", err)
 			return
 		}
 		freqHz = v
@@ -66,6 +76,7 @@ func (f *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 		defer wg.Done()
 		v, err := f.getFrequencyB(ctx)
 		if err != nil {
+			applog.Debug("flrig: get_vfoB failed", "error", err)
 			return
 		}
 		freqRxHz = v
@@ -75,6 +86,7 @@ func (f *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 		defer wg.Done()
 		v, err := f.getSplit(ctx)
 		if err != nil {
+			applog.Debug("flrig: get_split failed", "error", err)
 			return
 		}
 		split = v
@@ -84,6 +96,7 @@ func (f *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 		defer wg.Done()
 		v, err := f.getMode(ctx)
 		if err != nil {
+			applog.Debug("flrig: get_mode failed", "error", err)
 			return
 		}
 		mode = v
@@ -93,6 +106,7 @@ func (f *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 		defer wg.Done()
 		v, err := f.getPower(ctx)
 		if err != nil {
+			applog.Debug("flrig: get_power failed", "error", err)
 			return
 		}
 		pwr = v
@@ -101,6 +115,7 @@ func (f *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 	wg.Wait()
 
 	if freqHz == 0 {
+		applog.Debug("flrig: status — no VFO A freq, treating as disconnected")
 		rs.Connected = false
 		return rs, nil
 	}
@@ -109,14 +124,17 @@ func (f *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 	rs.FrequencyHz = freqHz
 	rs.FrequencyMHz = float64(freqHz) / 1_000_000.0
 	rs.Split = split
-	if freqRxHz > 0 && freqRxHz != freqHz {
+	// Always report VFO B when split is active — the two VFOs can
+	// briefly land on the same frequency during A/B swaps or when
+	// split is first engaged.  Dropping it breaks split tracking.
+	if freqRxHz > 0 {
 		rs.FrequencyRxHz = freqRxHz
 		rs.FrequencyRxMHz = float64(freqRxHz) / 1_000_000.0
 	}
 
 	if mode != "" {
 		rs.RawMode = mode
-		rs.Mode = qso.MapFlrigMode(mode)
+		rs.Mode = qso.NormalizeRigMode(mode)
 	}
 
 	rs.Power = pwr
@@ -124,6 +142,15 @@ func (f *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 	if rs.FrequencyMHz > 0 {
 		rs.Band = qso.DeriveBand(rs.FrequencyMHz)
 	}
+
+	applog.Debug("flrig: status",
+		"freq_mhz", fmt.Sprintf("%.6f", rs.FrequencyMHz),
+		"freq_rx_mhz", fmt.Sprintf("%.6f", rs.FrequencyRxMHz),
+		"vfoB_hz", freqRxHz,
+		"split", split,
+		"mode", mode,
+		"power", fmt.Sprintf("%.0f", pwr),
+	)
 
 	return rs, nil
 }
@@ -167,7 +194,6 @@ func (f *Client) getFrequencyB(ctx context.Context) (int64, error) {
 }
 
 // SetFrequency tunes the rig VFO to the given frequency in Hz via flrig XML-RPC.
-// SetFrequency sets the VFO frequency in Hz.
 func (f *Client) SetFrequency(ctx context.Context, freqHz int64) error {
 	_, err := f.xmlrpcCall(ctx, xmlrpcDouble, "rig.set_vfo", fmt.Sprintf("%d", freqHz))
 	return err
@@ -291,6 +317,11 @@ func (f *Client) getPower(ctx context.Context) (float64, error) {
 	return pwr, nil
 }
 
+// Power returns the current RF power setting (watts). Satisfies the rig.Rig interface.
+func (f *Client) Power(ctx context.Context) (float64, error) {
+	return f.getPower(ctx)
+}
+
 // GetName returns the rig model name from flrig (e.g. "FT-DX10", "FTDX10").
 func (f *Client) GetName(ctx context.Context) (string, error) {
 	v, err := f.xmlrpcCall(ctx, xmlrpcBare, "rig.get_xcvr")
@@ -332,9 +363,10 @@ const (
 )
 
 // xmlrpcCall builds a properly marshaled XML-RPC request and returns the
-// response body as a string. All parameters are encoded with the given
-// value type (Double for frequencies, I4 for mode indices).
+// response body as a string.  Value type selects the XML-RPC element:
+// Double for frequencies/power, I4 for split state, Bare for mode names.
 func (f *Client) xmlrpcCall(ctx context.Context, vt xmlrpcValueType, method string, params ...string) (string, error) {
+	t0 := time.Now()
 	call := xmlrpcMethodCall{MethodName: method}
 	if len(params) > 0 {
 		call.Params = &xmlrpcParams{}
@@ -371,6 +403,12 @@ func (f *Client) xmlrpcCall(ctx context.Context, vt xmlrpcValueType, method stri
 		return "", err
 	}
 	result, err := parseXMLRPCResponse(data)
+	elapsed := time.Since(t0)
+	if err != nil {
+		applog.Debug("flrig: rpc error", "method", method, "elapsed", elapsed, "error", err)
+	} else {
+		applog.Debug("flrig: rpc ok", "method", method, "elapsed", elapsed)
+	}
 	return result, err
 }
 

@@ -116,7 +116,7 @@ func (m *Model) viewPSKReporter() string {
 	}
 	sig := fmt.Sprintf("%d|%d|%s|%d|%s|%s|%d|%d|%d|%v",
 		w, m.height, call, m.psk.filterMins, m.psk.bandFilter, m.psk.modeFilter,
-		m.psk.selected, int(m.psk.lastFetch.Unix()), graySlot, m.psk.fetching)
+		m.psk.selected, int(m.psk.lastFetchByCall[call].Unix()), graySlot, m.psk.fetching)
 	if m.psk.viewKey == sig && m.psk.view != "" {
 		return m.psk.view
 	}
@@ -395,8 +395,12 @@ func (m *Model) buildPSKFilters(maxW int) string {
 	add("Mode filter", modeLabel)
 
 	nextUpdate := ""
-	if !m.psk.lastFetch.IsZero() {
-		nextFetch := m.psk.lastFetch.Add(5 * time.Minute)
+	pskCall := ""
+	if m.App != nil {
+		pskCall = strings.ToUpper(strings.TrimSpace(m.App.Logbook.Station.Callsign))
+	}
+	if last := m.psk.lastFetchByCall[pskCall]; !last.IsZero() {
+		nextFetch := last.Add(5 * time.Minute)
 		remaining := time.Until(nextFetch)
 		if remaining > 0 {
 			nextUpdate = fmt.Sprintf("%dm", int(remaining.Minutes())+1)

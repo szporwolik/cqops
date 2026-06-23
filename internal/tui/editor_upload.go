@@ -153,42 +153,76 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 	url, key, sid := le.wlURL, le.wlKey, le.wlStationID
 	db := le.db
 
-	// Build batch ADIF.
-	var adifStr string
-	for _, q := range unsent {
-		adifStr += q.ToADIF()
+	const chunkSize = 50
+
+	// Empty list — should not happen in production but callers may pass nil.
+	if len(unsent) == 0 {
+		return func() tea.Msg {
+			return editorMsg{wlOK: false, err: fmt.Errorf("no QSOs to upload")}
+		}
 	}
 
-	applog.InfoDetail("Wavelog: batch upload", fmt.Sprintf("count=%d", len(unsent)))
-
 	return func() tea.Msg {
-		result, err := wavelog.PostQSOWithResult(url, key, sid, adifStr)
-		if err != nil {
-			// If the error contains duplicates, fall back to individual uploads
-			// so that duplicates don't block new QSOs.
-			errStr := strings.ToLower(err.Error())
-			if strings.Contains(errStr, "duplicate") {
-				applog.Warn("Wavelog: batch had duplicates, falling back to individual uploads", "count", len(unsent))
-				return le.uploadIndividual(unsent)()
+		totalOK := 0
+		totalDup := 0
+		var lastErr error
+
+		for start := 0; start < len(unsent); start += chunkSize {
+			end := start + chunkSize
+			if end > len(unsent) {
+				end = len(unsent)
 			}
-			applog.Error("Wavelog: batch upload failed", "count", len(unsent), "error", err)
-			return editorMsg{wlOK: false, err: err, wlCall: fmt.Sprintf("%d QSOs", len(unsent))}
-		}
-		if result != nil && result.AllDuplicates {
-			for _, q := range unsent {
-				if dbErr := store.UpdateWavelogStatus(db, q.ID, "yes"); dbErr != nil {
-					applog.Error("Wavelog: batch upload — failed to update status", "qso_id", q.ID, "error", dbErr)
+			chunk := unsent[start:end]
+
+			// Build chunk ADIF.
+			var adifStr string
+			for _, q := range chunk {
+				adifStr += q.ToADIF()
+			}
+
+			applog.InfoDetail("Wavelog: batch upload chunk", fmt.Sprintf("count=%d total=%d/%d", len(chunk), end, len(unsent)))
+
+			result, err := wavelog.PostQSOWithResult(url, key, sid, adifStr)
+			if err != nil {
+				errStr := strings.ToLower(err.Error())
+				if strings.Contains(errStr, "duplicate") {
+					applog.Warn("Wavelog: chunk had duplicates, falling back to individual", "count", len(chunk))
+					msg := le.uploadIndividual(chunk)()
+					if em, ok := msg.(editorMsg); ok {
+						if em.wlOK {
+							totalOK += len(chunk)
+						} else {
+							lastErr = em.err
+						}
+					}
+					continue
 				}
+				applog.Error("Wavelog: chunk upload failed", "count", len(chunk), "error", err)
+				lastErr = err
+				continue
 			}
-			applog.InfoDetail("Wavelog: batch already present (duplicates)", fmt.Sprintf("count=%d", len(unsent)))
+			if result != nil && result.AllDuplicates {
+				for _, q := range chunk {
+					store.UpdateWavelogStatus(db, q.ID, "yes")
+				}
+				totalDup += len(chunk)
+				continue
+			}
+			for _, q := range chunk {
+				store.UpdateWavelogStatus(db, q.ID, "yes")
+			}
+			totalOK += len(chunk)
+		}
+
+		// Build summary message.
+		if totalOK+totalDup == 0 && lastErr != nil {
+			return editorMsg{wlOK: false, err: lastErr, wlCall: fmt.Sprintf("%d QSOs", len(unsent))}
+		}
+		if totalDup == len(unsent) {
+			applog.InfoDetail("Wavelog: all chunks already present", fmt.Sprintf("count=%d", len(unsent)))
 			return editorMsg{wlQSOID: unsent[0].ID, wlOK: true, wlCall: fmt.Sprintf("%d QSOs (already on Wavelog)", len(unsent))}
 		}
-		for _, q := range unsent {
-			if dbErr := store.UpdateWavelogStatus(db, q.ID, "yes"); dbErr != nil {
-				applog.Error("Wavelog: batch upload — failed to update status", "qso_id", q.ID, "error", dbErr)
-			}
-		}
-		applog.InfoDetail("Wavelog: batch upload OK", fmt.Sprintf("count=%d", len(unsent)))
+		applog.InfoDetail("Wavelog: chunked upload OK", fmt.Sprintf("ok=%d dup=%d total=%d", totalOK, totalDup, len(unsent)))
 		return editorMsg{wlQSOID: unsent[0].ID, wlOK: true, wlCall: fmt.Sprintf("%d QSOs", len(unsent))}
 	}
 }

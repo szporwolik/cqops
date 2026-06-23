@@ -22,6 +22,9 @@ type renderCache struct {
 	help      string
 	barSc     screenKind
 	barW      int
+	barOp     string // active operator ID; busts status cache on change
+	barLog    string // active logbook ID; busts status cache on change
+	barRig    string // active rig ID; busts status cache on change
 
 	// Partner view cache.
 	partnerView    string

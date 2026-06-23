@@ -1,5 +1,5 @@
 // Package solar fetches and caches solar/geomagnetic propagation data
-// from hamqsl.com. The data is updated hourly and used to display
+// from hamqsl.com. Data is cached for 15 minutes and used to display
 // current HF/VHF conditions to the operator.
 package solar
 
@@ -62,7 +62,7 @@ func cachedFilePath(cacheDir string) string {
 }
 
 // Fetch retrieves solar data from hamqsl.com. Results are cached to cacheDir
-// for 1 hour. Returns the parsed data. Errors are non-fatal — the caller should
+// for 15 minutes. Returns the parsed data. Errors are non-fatal — the caller should
 // simply skip displaying solar data.
 func Fetch(cacheDir string) (*Data, error) {
 	if cacheDir == "" {

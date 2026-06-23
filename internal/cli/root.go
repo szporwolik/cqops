@@ -19,11 +19,13 @@ import (
 var logbookFlag string
 var offlineFlag bool
 var debugFlag bool
+var versionFlag bool
 
 func init() {
 	rootCmd.PersistentFlags().StringVarP(&logbookFlag, "logbook", "l", "", "Logbook name to use")
 	rootCmd.PersistentFlags().BoolVarP(&offlineFlag, "offline", "o", false, "Run in offline mode (skip all network checks)")
 	rootCmd.PersistentFlags().BoolVarP(&debugFlag, "debug", "d", false, "Enable debug logging")
+	rootCmd.PersistentFlags().BoolVarP(&versionFlag, "version", "v", false, "Print CQOps version and exit")
 	rootCmd.AddCommand(versionCmd)
 }
 
@@ -75,6 +77,10 @@ func Execute() error {
 			hasSubcommand = true
 			break
 		}
+	}
+	if versionFlag {
+		fmt.Printf("CQOps version %s\n", version.Resolved())
+		return nil
 	}
 	if hasSubcommand {
 		return rootCmd.Execute()

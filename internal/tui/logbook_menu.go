@@ -367,6 +367,7 @@ func (c *LogbookChooser) refreshNames() {
 func (c *LogbookChooser) startCreate() {
 	c.mode = chooserCreate
 	c.station.SetValues("", "", "", "", "", "", "", 1, 0, 0, 0, "", "", "EU")
+	c.station.SetOperators(config.OperatorSlice(c.app.Config))
 	c.station.BlurAll()
 	c.station.Name.Focus()
 	c.editing = ""
@@ -376,7 +377,15 @@ func (c *LogbookChooser) startEdit(id string) {
 	lb := c.app.Config.Logbooks[id]
 	c.mode = chooserEdit
 	c.editing = id
-	c.station.SetValues(lb.Name, lb.Station.Callsign, lb.Station.Operator, lb.Station.Grid, lb.Station.SOTARef, lb.Station.POTARef, lb.Station.WWFFRef, lb.Station.IARURegion, lb.Station.CQZone, lb.Station.ITUZone, lb.Station.DXCC, lb.Station.SIG, lb.Station.SIGInfo, lb.Station.Continent)
+	// Resolve active operator to callsign for the form selector.
+	opCallsign := ""
+	if lb.ActiveOperator != "" {
+		if op, ok := c.app.Config.Operators[lb.ActiveOperator]; ok {
+			opCallsign = op.Callsign
+		}
+	}
+	c.station.SetValues(lb.Name, lb.Station.Callsign, opCallsign, lb.Station.Grid, lb.Station.SOTARef, lb.Station.POTARef, lb.Station.WWFFRef, lb.Station.IARURegion, lb.Station.CQZone, lb.Station.ITUZone, lb.Station.DXCC, lb.Station.SIG, lb.Station.SIGInfo, lb.Station.Continent)
+	c.station.SetOperators(config.OperatorSlice(c.app.Config))
 	c.station.SetWavelogValues(lb.Wavelog)
 	c.wlStatus = ""
 	c.wlStations = nil
@@ -390,6 +399,14 @@ func (c *LogbookChooser) startEdit(id string) {
 
 func (c *LogbookChooser) saveForm() tea.Cmd {
 	nm, cs, op, gr, sotaRef, potaRef, wwffRef, wlEnabled, wlURL, wlKey, wlStationID, iaruRegion, cqZone, ituZone, dxcc, sig, sigInfo, continent := c.station.Values()
+
+	// Resolve operator callsign to operator ID for ActiveOperator.
+	var activeOpID string
+	if op != "" {
+		if oid, _, found := config.FindOperatorByCallsign(c.app.Config, op); found {
+			activeOpID = oid
+		}
+	}
 
 	if err := c.station.Validate(); err != nil {
 		c.toasts.Warn(err.Error())
@@ -428,11 +445,12 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 		id := config.NewID(cs)
 		prevRigName := c.app.Logbook.Station.RigName
 		c.app.Config.Logbooks[id] = config.Logbook{
-			ID:   id,
-			Name: nm,
+			ID:             id,
+			Name:           nm,
+			ActiveOperator: activeOpID,
 			Station: config.Station{
-				Callsign:   cs,
-				Operator:   op,
+				Callsign: cs,
+
 				Grid:       gr,
 				SOTARef:    sotaRef,
 				POTARef:    potaRef,
@@ -478,7 +496,7 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 	lb := c.app.Config.Logbooks[id]
 	lb.Name = nm
 	lb.Station.Callsign = cs
-	lb.Station.Operator = op
+	lb.ActiveOperator = activeOpID
 	lb.Station.Grid = gr
 	lb.Station.SOTARef = sotaRef
 	lb.Station.POTARef = potaRef
@@ -557,12 +575,12 @@ func (c *LogbookChooser) deleteLogbook() tea.Cmd {
 	if err := config.Save(c.app.ConfigPath, c.app.Config); err != nil {
 		c.toasts.Error("Delete " + displayName + " failed: " + err.Error())
 	} else {
-		go func() {
-			if err := os.Remove(dbPath); err != nil && !os.IsNotExist(err) {
-				applog.Warn("Failed to remove logbook database", "path", dbPath, "error", err)
-			}
-		}()
-		c.toasts.Success("Logbook " + displayName + " deleted")
+		if err := os.Remove(dbPath); err != nil && !os.IsNotExist(err) {
+			applog.Warn("Failed to remove logbook database", "path", dbPath, "error", err)
+			c.toasts.Success("Logbook " + displayName + " deleted (DB cleanup failed — " + err.Error() + ")")
+		} else {
+			c.toasts.Success("Logbook " + displayName + " deleted")
+		}
 		applog.Info("Logbook deleted", "name", displayName)
 	}
 	return nil

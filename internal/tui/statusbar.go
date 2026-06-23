@@ -23,7 +23,12 @@ func (m *Model) headerView() string {
 	if logName == "" {
 		logName = "\u2014"
 	}
-	op := s.Operator
+	op := m.App.Logbook.ActiveOperator
+	if op != "" {
+		if opCfg, ok := m.App.Config.Operators[op]; ok {
+			op = config.OperatorDisplayName(&opCfg)
+		}
+	}
 
 	rigName := ""
 	if rp, ok := m.App.Config.Rigs[s.RigName]; ok {
@@ -42,7 +47,7 @@ func (m *Model) headerView() string {
 	if op != "" {
 		leftParts = append(leftParts,
 			S.StatusLabel.Render("Op"),
-			" "+S.StatusValue.Render(truncateText(op, 14))+" ",
+			" "+S.StatusValue.Render(truncateText(op, 24))+" ",
 		)
 	}
 
@@ -53,12 +58,22 @@ func (m *Model) headerView() string {
 	if rp, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok && rp.WsjtxEnabled {
 		rightParts = append(rightParts, statusDotStyled(m.wsjtx.online, "WSJT"))
 	}
-	if cfgRig, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok && cfgRig.FlrigEnabled {
-		if m.wsjtx.tx {
-			rightParts = append(rightParts, txDotStyle.Render("Rig")+" ")
-		} else {
-			rightParts = append(rightParts, statusDotStyled(m.rig.connected, "Rig"))
+	if cfgRig, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok && cfgRig.RadioBackend != "" {
+		rigLabel := "Rig"
+		switch cfgRig.RadioBackend {
+		case "flrig":
+			rigLabel = "Flrig"
+		case "hamlib":
+			rigLabel = "Hamlib"
 		}
+		if m.wsjtx.tx {
+			rightParts = append(rightParts, txDotStyle.Render(rigLabel)+" ")
+		} else {
+			rightParts = append(rightParts, statusDotStyled(m.rig.connected, rigLabel))
+		}
+	}
+	if cfgRig, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok && cfgRig.RotorBackend == "hamlib" {
+		rightParts = append(rightParts, statusDotStyled(m.rotor.connected, "Rotator"))
 	}
 	if m.App.Config.Integrations.DXC.Enabled {
 		rightParts = append(rightParts, statusDotStyled(m.dxc.online, "DXC", m.Offline))

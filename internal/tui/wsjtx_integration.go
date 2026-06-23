@@ -106,9 +106,10 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 	}
 	qs.Source = "wsjtx"
 	qs.WavelogUploaded = "no"
+	qs.ContestID = m.App.Logbook.ActiveContest
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
-		Operator:        m.App.Logbook.Station.Operator,
+		Operator:        m.activeOperatorCallsign(),
 		MyGridSquare:    m.App.Logbook.Station.Grid,
 		MyRig:           m.App.Logbook.Station.RigModel(m.App.Config.Rigs),
 		MyAntenna:       m.App.Logbook.Station.RigAntenna(m.App.Config.Rigs),
@@ -122,6 +123,15 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 		MySIG:           m.App.Logbook.Station.SIG,
 		MySIGInfo:       m.App.Logbook.Station.SIGInfo,
 	})
+
+	// Warn if WSJT-X operator differs from the active operator — the
+	// WSJT-X operator is preserved (not overwritten), but the mismatch
+	// means someone else's WSJT-X may be feeding QSOs.
+	activeOp := m.activeOperatorCallsign()
+	if qs.Operator != "" && activeOp != "" && !strings.EqualFold(qs.Operator, activeOp) {
+		applog.Warn("WSJT-X: operator mismatch", "wsjtx_op", qs.Operator, "active_op", activeOp)
+		m.toasts.Warn("WSJT-X operator " + qs.Operator + " differs from active operator " + activeOp)
+	}
 
 	// Enrich QSO: compute distance/bearing from grid squares.
 	myGrid := m.App.Logbook.Station.Grid

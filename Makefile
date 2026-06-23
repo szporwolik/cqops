@@ -1,4 +1,4 @@
-.PHONY: build test lint clean run version install uninstall
+.PHONY: build test lint clean run version install uninstall installer packages installer-all
 
 VERSION := $(shell cat VERSION 2>/dev/null || echo "dev")
 BUILD_DATE := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -67,5 +67,28 @@ vet:
 	go vet ./...
 
 clean:
-	rm -rf $(BUILD_DIR)
+	rm -rf $(BUILD_DIR) dist
 	go clean -cache -testcache
+
+# ---------------------------------------------------------------------------
+# Installers & packages
+# ---------------------------------------------------------------------------
+
+# Windows: NSIS installer (requires makensis on PATH)
+installer:
+ifeq ($(OS),Windows_NT)
+	@powershell -File scripts/build-installer.ps1
+else
+	@echo "NSIS installer requires Windows. Use 'make packages' for Linux packages."
+endif
+
+# Linux: deb + rpm via nfpm (requires nfpm on PATH)
+packages:
+	@bash scripts/build-packages.sh
+
+# All platforms: NSIS installer + Linux packages
+installer-all:
+ifeq ($(OS),Windows_NT)
+	@powershell -File scripts/build-installer.ps1
+endif
+	@bash scripts/build-packages.sh

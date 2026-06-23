@@ -32,7 +32,6 @@ func newSaveTestModel(t *testing.T) *Model {
 			Name: "Test",
 			Station: config.Station{
 				Callsign: "SP9MOA",
-				Operator: "Op",
 				Grid:     "JO90",
 			},
 		},
@@ -42,7 +41,7 @@ func newSaveTestModel(t *testing.T) *Model {
 	a := &app.App{
 		Config:     cfg,
 		ConfigPath: cfgPath,
-		Logbook:    &config.Logbook{Station: config.Station{Callsign: "SP9MOA", Operator: "Op", Grid: "JO90"}},
+		Logbook:    &config.Logbook{Station: config.Station{Callsign: "SP9MOA", Grid: "JO90"}},
 	}
 
 	return New(a, nil)

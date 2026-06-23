@@ -6,6 +6,7 @@ type uiComponents struct {
 	chooser         *LogbookChooser
 	rigChooser      *RigChooser
 	contestChooser  *ContestChooser
+	operatorChooser *OperatorChooser
 	configMenu      *GeneralMenu
 	integrationMenu *IntegrationMenu
 	notifMenu       *NotificationsMenu

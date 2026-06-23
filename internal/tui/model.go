@@ -37,9 +37,9 @@ const (
 )
 
 const (
-	healthCheckTicks    = 60                      // ticks between health checks (1 min)
-	flrigStatusTimeout  = 1500 * time.Millisecond // context timeout for flrig status
-	flrigDefaultTimeout = 1000                    // default flrig HTTP timeout (ms)
+	healthCheckTicks  = 60                      // ticks between health checks (1 min)
+	rigStatusTimeout  = 1500 * time.Millisecond // context timeout for rig status
+	rigDefaultTimeout = 1000                    // default rig poll timeout (ms)
 )
 
 const (
@@ -90,13 +90,13 @@ const (
 	screenChooser
 	screenRigEdit
 	screenContest
+	screenOperator
 	screenLogView
 	screenLogbookEditor
 	screenNotifications
 	screenDXC
 	screenRef
 	screenBPL
-	screenCON
 )
 
 type Model struct {
@@ -111,6 +111,7 @@ type Model struct {
 	height         int
 	quitting       bool
 	rig            rigState
+	rotor          rotorState
 	dateTimeAuto   bool
 	tickCount      int
 	inetOnline     bool
@@ -178,9 +179,6 @@ type wlResultMsg struct {
 	Err  error
 }
 
-// lookupTimeoutMsg is sent after 3s when lookups haven't completed;
-// it forces the deferred QSO save to proceed without waiting.
-type lookupTimeoutMsg struct{}
 type dxcSpotLookupMsg struct {
 	call string
 	freq float64 // 0 if not found
@@ -287,6 +285,7 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 		m.psk.cacheDir = dir
 		m.solar.cacheDir = dir
 	}
+	m.psk.lastFetchByCall = make(map[string]time.Time)
 	m.applyBeepOnError()
 	m.retainComment = a.Config.State.RetainComment
 	if a.Config.State.RetainedComment != "" {
@@ -306,7 +305,8 @@ func (m *Model) applyBeepOnError() {
 }
 
 func (m *Model) Init() tea.Cmd {
-	m.refreshFlrigClient()
+	m.refreshRigClient()
+	m.refreshRotorClient()
 	m.App.WSJTX.OnADIF = func(adif string) {
 		m.adifQ.mu.Lock()
 		m.adifQ.adifs = append(m.adifQ.adifs, adif)
@@ -437,6 +437,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			*m.confirm = updated.(DialogModel)
 			if m.confirm.Done() {
 				if m.confirm.Result.Confirmed && m.confirm.Result.Value == "quit" {
+					m.shutdownConnections()
 					return m, tea.Quit
 				}
 				m.confirm = nil
@@ -456,7 +457,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = tea.Batch(cmd, c)
 	}
 
-	// Async result messages (internet, Wavelog, flrig)
+	// Async result messages (internet, Wavelog, rig)
 	if handled, asyncCmd := m.handleAsyncMessages(msg); handled {
 		if asyncCmd != nil {
 			cmd = tea.Batch(cmd, asyncCmd)
@@ -464,7 +465,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if _, ok := msg.(inetResultMsg); ok && m.inetOnline {
 			cmd = tea.Batch(cmd, m.maybeCheckVersion())
 		}
-		if _, ok := msg.(flrigResultMsg); ok {
+		if _, ok := msg.(rigPollMsg); ok {
 			return m, cmd
 		}
 	}
@@ -487,13 +488,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case qrzResultMsg:
 		m.fillQRZData(r)
 		cmd = tea.Batch(cmd, m.updateFilteredTable())
-		if m.lookup.pendingSave {
-			call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
-			if m.lookupsCompleteForCall(call) {
-				m.lookup.pendingSave = false
-				cmd = tea.Batch(cmd, m.saveQSO())
-			}
-		}
 		m.contestAutoFocusExchRcvd()
 		if m.photo.partnerPicNeedLoad {
 			m.photo.partnerPicNeedLoad = false
@@ -509,22 +503,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.photo.partnerPicViewer.SetURL(m.photo.partnerPicURL))
 		}
 		return m, cmd
-	case lookupTimeoutMsg:
-		if m.lookup.pendingSave {
-			m.lookup.pendingSave = false
-			applog.Warn("Lookup timeout — saving QSO without waiting")
-			cmd = tea.Batch(cmd, m.saveQSO())
-		}
-		return m, cmd
 	case wlResultMsg:
 		m.fillWLData(r)
-		if m.lookup.pendingSave {
-			call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
-			if m.lookupsCompleteForCall(call) {
-				m.lookup.pendingSave = false
-				cmd = tea.Batch(cmd, m.saveQSO())
-			}
-		}
 		m.contestAutoFocusExchRcvd()
 		return m, cmd
 	case refRebuildMsg:
@@ -547,7 +527,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case dxcTuneResultMsg:
 		if r.err != nil {
-			m.toasts.Error(fmt.Sprintf("Tune failed: %v", r.err))
+			if strings.Contains(r.err.Error(), "cancelled") {
+				m.toasts.Warn(fmt.Sprintf("Tune cancelled: %v", r.err))
+			} else {
+				m.toasts.Error(fmt.Sprintf("Tune failed: %v", r.err))
+			}
 		} else {
 			msg := fmt.Sprintf("Rig tuned to %.5f MHz", r.freqMHz)
 			if r.mode != "" {
@@ -562,7 +546,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	case bplTuneResultMsg:
 		if r.err != nil {
-			m.toasts.Error(fmt.Sprintf("Tune failed: %v", r.err))
+			if strings.Contains(r.err.Error(), "cancelled") {
+				m.toasts.Warn(fmt.Sprintf("Tune cancelled: %v", r.err))
+			} else {
+				m.toasts.Error(fmt.Sprintf("Tune failed: %v", r.err))
+			}
 		} else {
 			msg := fmt.Sprintf("Rig tuned to %.5f MHz", r.freqMHz)
 			if r.mode != "" {
@@ -599,6 +587,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleRigEditUpdate(msg, cmd)
 	case screenContest:
 		return m.handleContestUpdate(msg, cmd)
+	case screenOperator:
+		return m.handleOperatorUpdate(msg, cmd)
 	case screenConfig:
 		return m.handleConfigUpdate(msg, cmd)
 	case screenIntegration:
@@ -668,8 +658,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleRefUpdate(msg, cmd)
 	case screenBPL:
 		return m.handleBPLUpdate(msg, cmd)
-	case screenCON:
-		return m.handleCONUpdate(msg, cmd)
 	}
 
 	// QSO form key handling
@@ -714,7 +702,10 @@ func (m *Model) View() tea.View {
 
 	// Render fixed bars — cache when screen and width haven't changed.
 	// Status bar has a 1-second TTL because it contains the UTC clock.
-	cacheBars := m.rc.barW == m.width && m.rc.barSc == m.screen
+	cacheBars := m.rc.barW == m.width && m.rc.barSc == m.screen &&
+		m.rc.barOp == m.App.Logbook.ActiveOperator &&
+		m.rc.barLog == m.App.LogbookName &&
+		m.rc.barRig == m.App.Logbook.Station.RigName
 	if !cacheBars {
 		m.rc.status = ""
 	}
@@ -728,6 +719,9 @@ func (m *Model) View() tea.View {
 	m.rc.help = m.renderHelpBar()
 	m.rc.barW = m.width
 	m.rc.barSc = m.screen
+	m.rc.barOp = m.App.Logbook.ActiveOperator
+	m.rc.barLog = m.App.LogbookName
+	m.rc.barRig = m.App.Logbook.Station.RigName
 
 	var mainParts []string
 	addRow := func(s string) {
@@ -835,6 +829,8 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 		body = m.ui.rigChooser.View().Content
 	case screenContest:
 		body = m.ui.contestChooser.View().Content
+	case screenOperator:
+		body = m.ui.operatorChooser.View().Content
 	case screenLogView:
 		body = m.ui.logViewer.View().Content
 	case screenLogbookEditor:
@@ -847,8 +843,6 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 		body = m.viewRef()
 	case screenBPL:
 		body = m.viewBPL(l)
-	case screenCON:
-		body = m.viewCON(l)
 	}
 	if body == "" {
 		return ""
@@ -1067,6 +1061,61 @@ func (m *Model) cycleActiveContest() {
 	m.App.SetActiveContest("")
 	m.toasts.Info("Contest: None")
 	m.needRefresh = true
+	config.Save(m.App.ConfigPath, m.App.Config)
+}
+
+// activeOperatorCallsign returns the callsign of the active operator,
+// or an empty string when no active operator is selected.
+func (m *Model) activeOperatorCallsign() string {
+	if m.App.Logbook.ActiveOperator != "" {
+		if op, ok := m.App.Config.Operators[m.App.Logbook.ActiveOperator]; ok {
+			return op.Callsign
+		}
+	}
+	return ""
+}
+
+// cycleActiveOperator cycles the active operator for the current logbook
+// through: None → first operator → second → … → None.
+func (m *Model) cycleActiveOperator() {
+	ids := config.SortedOperatorIDs(m.App.Config)
+	current := m.App.Logbook.ActiveOperator
+
+	if len(ids) == 0 {
+		m.toasts.Warn("No operators configured — add one in F9 → Operators")
+		return
+	}
+
+	if current == "" {
+		m.App.SetActiveOperator(ids[0])
+		op := m.App.Config.Operators[ids[0]]
+		m.toasts.Info(fmt.Sprintf("Operator: %s", config.OperatorDisplayName(&op)))
+		applog.Info("Operator cycled", "callsign", op.Callsign)
+		config.Save(m.App.ConfigPath, m.App.Config)
+		return
+	}
+
+	for i, id := range ids {
+		if id == current {
+			if i+1 < len(ids) {
+				m.App.SetActiveOperator(ids[i+1])
+				op := m.App.Config.Operators[ids[i+1]]
+				m.toasts.Info(fmt.Sprintf("Operator: %s", config.OperatorDisplayName(&op)))
+				applog.Info("Operator cycled", "callsign", op.Callsign)
+			} else {
+				m.App.SetActiveOperator("")
+				m.toasts.Info("Operator: None")
+				applog.Info("Operator cycled", "callsign", "None")
+			}
+			config.Save(m.App.ConfigPath, m.App.Config)
+			return
+		}
+	}
+
+	// Current operator not found — clear.
+	m.App.SetActiveOperator("")
+	m.toasts.Info("Operator: None")
+	applog.Info("Operator cycled (not found)", "callsign", "None")
 	config.Save(m.App.ConfigPath, m.App.Config)
 }
 

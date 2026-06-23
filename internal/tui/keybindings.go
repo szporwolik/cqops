@@ -6,35 +6,35 @@ import (
 
 // KeyMap holds all key bindings for the application.
 type KeyMap struct {
-	Quit         key.Binding
-	QSOForm      key.Binding
-	Partner      key.Binding
-	PSKReporter  key.Binding
-	DXC          key.Binding
-	LogEditor    key.Binding
-	Config       key.Binding
-	Logs         key.Binding
-	Ref          key.Binding
-	BPL          key.Binding
-	CON          key.Binding
-	Save         key.Binding
-	Delete       key.Binding
-	Lookup       key.Binding
-	Retain       key.Binding
-	FocusCall    key.Binding
-	NextField    key.Binding
-	PrevField    key.Binding
-	CycleUp      key.Binding
-	CycleDown    key.Binding
-	Up           key.Binding
-	Down         key.Binding
-	Enter        key.Binding
-	Confirm      key.Binding
-	Cancel       key.Binding
-	CycleLogbook key.Binding
-	CycleRig     key.Binding
-	CycleContest key.Binding
-	Spot         key.Binding
+	Quit          key.Binding
+	QSOForm       key.Binding
+	Partner       key.Binding
+	PSKReporter   key.Binding
+	DXC           key.Binding
+	LogEditor     key.Binding
+	Config        key.Binding
+	Logs          key.Binding
+	Ref           key.Binding
+	BPL           key.Binding
+	Save          key.Binding
+	Delete        key.Binding
+	Lookup        key.Binding
+	Retain        key.Binding
+	FocusCall     key.Binding
+	NextField     key.Binding
+	PrevField     key.Binding
+	CycleUp       key.Binding
+	CycleDown     key.Binding
+	Up            key.Binding
+	Down          key.Binding
+	Enter         key.Binding
+	Confirm       key.Binding
+	Cancel        key.Binding
+	CycleLogbook  key.Binding
+	CycleRig      key.Binding
+	CycleContest  key.Binding
+	CycleOperator key.Binding
+	Spot          key.Binding
 }
 
 // DefaultKeyMap returns the default key bindings.
@@ -80,10 +80,6 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("f7"),
 			key.WithHelp("F7", "BPL"),
 		),
-		// CON: key.NewBinding(
-		// 	key.WithKeys("f3"),
-		// 	key.WithHelp("F3", "CON"),
-		// ),
 		Save: key.NewBinding(
 			key.WithKeys("ctrl+s"),
 			key.WithHelp("Ctrl+S", "Save"),
@@ -154,6 +150,9 @@ func DefaultKeyMap() KeyMap {
 		), CycleContest: key.NewBinding(
 			key.WithKeys("ctrl+c"),
 			key.WithHelp("C-C", "Contest"),
+		), CycleOperator: key.NewBinding(
+			key.WithKeys("ctrl+o"),
+			key.WithHelp("C-O", "Oper"),
 		)}
 }
 
@@ -173,6 +172,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 			m.keys.CycleLogbook,
 			m.keys.CycleRig,
 			m.keys.CycleContest,
+			m.keys.CycleOperator,
 		)
 	}
 
@@ -257,6 +257,26 @@ func (m *Model) ActiveBindings() []key.Binding {
 				key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 			)
+		} else {
+			bindings = append(bindings,
+				key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
+				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit")),
+				key.NewBinding(key.WithKeys("space"), key.WithHelp("Spc", "Activate")),
+				key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Create")),
+				key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
+				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
+			)
+		}
+	}
+	if m.screen == screenOperator {
+		if m.ui.operatorChooser != nil && (m.ui.operatorChooser.mode == operatorEdit || m.ui.operatorChooser.mode == operatorCreate) {
+			bindings = append(bindings,
+				key.NewBinding(key.WithKeys("tab", "down", "shift+tab", "up"), key.WithHelp("↑↓", "Navigate")),
+				key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
+				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
+			)
+		} else if m.ui.operatorChooser != nil && m.ui.operatorChooser.mode == operatorConfirmDelete {
+			bindings = append(bindings, confirmBindings...)
 		} else {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),

@@ -248,22 +248,31 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							w.toasts.Warn("Rig model is required")
 							return w, nil
 						}
-						flrigOn, _, _ := w.rigForm.FlrigValues()
-						// Check raw field values (FlrigValues fills defaults, so check directly).
-						rawHost := strings.TrimSpace(w.rigForm.FlrigHost.Value())
-						rawPort := strings.TrimSpace(w.rigForm.FlrigPort.Value())
-						if flrigOn {
+						radioBackend, _, _ := w.rigForm.BackendValues()
+						rawHost := strings.TrimSpace(w.rigForm.BackendHost.Value())
+						rawPort := strings.TrimSpace(w.rigForm.BackendPort.Value())
+						if radioBackend == "flrig" {
 							if rawHost == "" {
-								w.toasts.Warn("Flrig host is required when flrig is enabled")
+								w.toasts.Warn("Flrig host is required")
 								return w, nil
 							}
 							if rawPort == "" {
-								w.toasts.Warn("Flrig port is required when flrig is enabled")
+								w.toasts.Warn("Flrig port is required")
+								return w, nil
+							}
+						}
+						if radioBackend == "hamlib" {
+							if rawHost == "" {
+								w.toasts.Warn("Hamlib host is required")
+								return w, nil
+							}
+							if rawPort == "" {
+								w.toasts.Warn("Hamlib port is required")
 								return w, nil
 							}
 						}
 						w.step = stepQRZ
-						applog.InfoDetail("Wizard: rig step done", fmt.Sprintf("rig=%s flrig=%v", rig, flrigOn))
+						applog.InfoDetail("Wizard: rig step done", fmt.Sprintf("rig=%s flrig=%v", rig, radioBackend == "flrig"))
 					}
 					return w, nil
 				}
@@ -725,33 +734,54 @@ func (w *Wizard) handleEnter() tea.Cmd {
 func (w *Wizard) saveConfig() error {
 	sn, cs, op, gr, sotaRef, potaRef, wwffRef, wlEnabled, wlURL, wlKey, wlStationID, iaruRegion, cqZone, ituZone, dxcc, sig, sigInfo, continent := w.station.Values()
 	nm, rig, ant, pwr := w.rigForm.Values()
-	flrigEnabled, flrigHost, flrigPort := w.rigForm.FlrigValues()
+	radioBackend, radioBackendHost, radioBackendPort := w.rigForm.BackendValues()
+	rotorBackend, rotorHost, rotorPort := w.rigForm.RotorValues()
 	wsjtxEnabled, wsjtxHost, wsjtxPortStr := w.rigForm.WsjtxValues()
 	wsjtxPort, _ := strconv.Atoi(wsjtxPortStr)
 	if wsjtxPort <= 0 {
 		wsjtxPort = 2233
 	}
 
-	if op == "" {
-		op = cs
+	// Create operator entry if one was selected in the form.
+	var activeOpID string
+	if op != "" {
+		activeOpID = config.NewID(op)
+		if w.App.Config.Operators == nil {
+			w.App.Config.Operators = make(map[string]config.Operator)
+		}
+		w.App.Config.Operators[activeOpID] = config.Operator{ID: activeOpID, Callsign: op}
 	}
 
 	rigID := config.NewID("default-rig")
 	lbID := config.NewID("default-logbook")
 
+	flrigHost, flrigPort := "", ""
+	hamlibHost, hamlibPort := "", ""
+	switch radioBackend {
+	case "flrig":
+		flrigHost, flrigPort = radioBackendHost, radioBackendPort
+	case "hamlib":
+		hamlibHost, hamlibPort = radioBackendHost, radioBackendPort
+	}
+
 	w.App.Config.Rigs = map[string]config.RigPreset{
 		rigID: {
-			ID:           rigID,
-			Name:         nm,
-			Model:        rig,
-			Antenna:      ant,
-			Power:        pwr,
-			FlrigEnabled: flrigEnabled,
-			FlrigHost:    flrigHost,
-			FlrigPort:    flrigPort,
-			WsjtxEnabled: wsjtxEnabled,
-			WsjtxUDPHost: wsjtxHost,
-			WsjtxUDPPort: wsjtxPort,
+			ID:              rigID,
+			Name:            nm,
+			Model:           rig,
+			Antenna:         ant,
+			Power:           pwr,
+			RadioBackend:    radioBackend,
+			FlrigHost:       flrigHost,
+			FlrigPort:       flrigPort,
+			HamlibRadioHost: hamlibHost,
+			HamlibRadioPort: hamlibPort,
+			RotorBackend:    rotorBackend,
+			RotorHamlibHost: rotorHost,
+			RotorHamlibPort: rotorPort,
+			WsjtxEnabled:    wsjtxEnabled,
+			WsjtxUDPHost:    wsjtxHost,
+			WsjtxUDPPort:    wsjtxPort,
 		},
 	}
 
@@ -783,11 +813,11 @@ func (w *Wizard) saveConfig() error {
 	w.App.Config.State.ActiveLogbook = lbID
 	w.App.Config.Logbooks = map[string]config.Logbook{
 		lbID: {
-			ID:   lbID,
-			Name: lbName,
+			ID:             lbID,
+			Name:           lbName,
+			ActiveOperator: activeOpID,
 			Station: config.Station{
 				Callsign:   cs,
-				Operator:   op,
 				Grid:       gr,
 				RigName:    rigID,
 				SOTARef:    sotaRef,
@@ -815,6 +845,6 @@ func (w *Wizard) saveConfig() error {
 	w.App.LogbookName = lbID
 
 	applog.InfoDetail("Wizard completed", fmt.Sprintf("call=%s rig=%s flrig=%v wsjtx=%v wavelog=%v tz=%s",
-		cs, rig, flrigEnabled, wsjtxEnabled, wlEnabled, config.Timezones[w.tzIndex]))
+		cs, rig, radioBackend == "flrig", wsjtxEnabled, wlEnabled, config.Timezones[w.tzIndex]))
 	return nil
 }

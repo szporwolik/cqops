@@ -105,9 +105,6 @@ func (m *Model) dxcConnectCmd() tea.Cmd {
 		}
 		login := cfg.Login
 		if login == "" {
-			login = m.App.Logbook.Station.Operator
-		}
-		if login == "" {
 			login = m.App.Logbook.Station.Callsign
 		}
 

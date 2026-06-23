@@ -112,7 +112,7 @@ func IsFirstRun(cfg *Config) bool {
 		return false
 	}
 	for _, lb := range cfg.Logbooks {
-		return lb.Station.Callsign == "" && lb.Station.Operator == "" && lb.Station.Grid == ""
+		return lb.Station.Callsign == "" && lb.Station.Grid == ""
 	}
 	return true
 }

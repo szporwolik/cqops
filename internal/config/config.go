@@ -21,6 +21,7 @@ type Config struct {
 	Logbooks          map[string]Logbook   `yaml:"logbooks"`
 	Rigs              map[string]RigPreset `yaml:"rigs,omitempty"`
 	Contests          map[string]Contest   `yaml:"contests,omitempty"`
+	Operators         map[string]Operator  `yaml:"operators,omitempty"`
 	BroadcastStations []BroadcastStation   `yaml:"-"`
 }
 
@@ -99,18 +100,18 @@ type Favorite struct {
 }
 
 type Logbook struct {
-	ID            string         `yaml:"-"`
-	Name          string         `yaml:"name"`
-	ActiveContest string         `yaml:"active_contest,omitempty"`
-	DatabasePath  string         `yaml:"database_path,omitempty"`
-	Station       Station        `yaml:"station"`
-	ADIF          ADIFConfig     `yaml:"adif,omitempty"`
-	Wavelog       *WavelogConfig `yaml:"wavelog,omitempty"`
+	ID             string         `yaml:"-"`
+	Name           string         `yaml:"name"`
+	ActiveContest  string         `yaml:"active_contest,omitempty"`
+	ActiveOperator string         `yaml:"active_operator,omitempty"`
+	DatabasePath   string         `yaml:"database_path,omitempty"`
+	Station        Station        `yaml:"station"`
+	ADIF           ADIFConfig     `yaml:"adif,omitempty"`
+	Wavelog        *WavelogConfig `yaml:"wavelog,omitempty"`
 }
 
 type Station struct {
 	Callsign   string `yaml:"callsign"`
-	Operator   string `yaml:"operator"`
 	Grid       string `yaml:"grid"`
 	RigName    string `yaml:"rig_name,omitempty"`
 	SOTARef    string `yaml:"sota_ref,omitempty"`
@@ -139,6 +140,13 @@ type Contest struct {
 	PrefillExchangeRcvd bool   `yaml:"prefill_exchange_rcvd,omitempty"`
 	ExchangeRcvd        string `yaml:"exchange_rcvd,omitempty"`
 	InUse               *bool  `yaml:"in_use,omitempty"` // nil or true = in use, false = excluded from cycling
+}
+
+// Operator represents a multi-operator station callsign profile.
+type Operator struct {
+	ID       string `yaml:"-"`
+	Callsign string `yaml:"callsign"`
+	Name     string `yaml:"name,omitempty"`
 }
 
 // Rig resolves the RigPreset referenced by RigName. Returns the preset and
@@ -184,21 +192,46 @@ func (s Station) RigFlrig(rgs map[string]RigPreset) (enabled bool, host, port st
 	if !ok {
 		return false, "localhost", "12345"
 	}
-	return rp.FlrigEnabled, rp.FlrigHost, rp.FlrigPort
+	return rp.RadioBackend == "flrig", rp.FlrigHost, rp.FlrigPort
+}
+
+// RigHamlib returns the hamlib settings from the referenced preset.
+func (s Station) RigHamlib(rgs map[string]RigPreset) (enabled bool, host, port string) {
+	rp, ok := s.Rig(rgs)
+	if !ok {
+		return false, "127.0.0.1", "4532"
+	}
+	return rp.RadioBackend == "hamlib", rp.HamlibRadioHost, rp.HamlibRadioPort
+}
+
+// RigRotor returns the rotor settings from the referenced preset.
+func (s Station) RigRotor(rgs map[string]RigPreset) (enabled bool, host, port string) {
+	rp, ok := s.Rig(rgs)
+	if !ok {
+		return false, "127.0.0.1", "4533"
+	}
+	return rp.RotorBackend == "hamlib", rp.RotorHamlibHost, rp.RotorHamlibPort
 }
 
 type RigPreset struct {
-	ID           string `yaml:"-"`
-	Name         string `yaml:"name,omitempty"`
-	Model        string `yaml:"model"`
-	Antenna      string `yaml:"antenna"`
-	Power        string `yaml:"power"`
-	FlrigEnabled bool   `yaml:"flrig_enabled"`
-	FlrigHost    string `yaml:"flrig_host"`
-	FlrigPort    string `yaml:"flrig_port"`
-	WsjtxEnabled bool   `yaml:"wsjtx_enabled,omitempty"`
-	WsjtxUDPHost string `yaml:"wsjtx_udp_host,omitempty"`
-	WsjtxUDPPort int    `yaml:"wsjtx_udp_port,omitempty"`
+	ID              string `yaml:"-"`
+	Name            string `yaml:"name,omitempty"`
+	Model           string `yaml:"model"`
+	Antenna         string `yaml:"antenna"`
+	Power           string `yaml:"power"`
+	RadioBackend    string `yaml:"radio_backend,omitempty"` // "" | "flrig" | "hamlib"
+	Backend         string `yaml:"backend,omitempty"`       // deprecated — migrated to RadioBackend
+	FlrigEnabled    bool   `yaml:"flrig_enabled,omitempty"`
+	FlrigHost       string `yaml:"flrig_host,omitempty"`
+	FlrigPort       string `yaml:"flrig_port,omitempty"`
+	HamlibRadioHost string `yaml:"hamlib_radio_host,omitempty"`
+	HamlibRadioPort string `yaml:"hamlib_radio_port,omitempty"`
+	RotorBackend    string `yaml:"rotor_backend,omitempty"` // "" | "hamlib"
+	RotorHamlibHost string `yaml:"rotor_hamlib_host,omitempty"`
+	RotorHamlibPort string `yaml:"rotor_hamlib_port,omitempty"`
+	WsjtxEnabled    bool   `yaml:"wsjtx_enabled,omitempty"`
+	WsjtxUDPHost    string `yaml:"wsjtx_udp_host,omitempty"`
+	WsjtxUDPPort    int    `yaml:"wsjtx_udp_port,omitempty"`
 }
 
 type ADIFConfig struct {
@@ -228,6 +261,20 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 
+	// Backward compat: migrate old backend → radio_backend, FlrigEnabled → RadioBackend.
+	for id, rp := range cfg.Rigs {
+		if rp.RadioBackend == "" && rp.Backend != "" {
+			rp.RadioBackend = rp.Backend
+			rp.Backend = ""
+		}
+		if rp.RadioBackend == "" && rp.FlrigEnabled {
+			rp.RadioBackend = "flrig"
+		}
+		rp.FlrigEnabled = false // no longer the source of truth
+		rp.Backend = ""         // clear old key
+		cfg.Rigs[id] = rp
+	}
+
 	cfg.BroadcastStations = DefaultBroadcastStations()
 
 	return &cfg, nil
@@ -249,25 +296,16 @@ func Save(path string, cfg *Config) error {
 
 // Upgrade runs version-gated migration steps based on the config's stored
 // version. Call after Load() and before any other config-dependent init.
-// Steps are idempotent — they only run when the stored version is older
-// than the step's target version.
+// At minimum, stamps the current version into state so future migrations
+// can gate on it.
 func (c *Config) Upgrade(currentVersion string) {
 	if c == nil {
 		return
 	}
-	stored := c.State.Version
-
-	// Example future step:
-	// if versionOlder(stored, "0.9.0") {
-	//     // migration logic for 0.9.0
-	// }
-
-	_ = stored
-	_ = currentVersion
+	// Stamp the running version so future migrations can use it.
+	c.State.Version = currentVersion
 }
 
-// Validate checks the config for structural integrity. Returns an error
-// describing the first problem found, or nil if the config is valid.
 // Validate checks the config for structural integrity and safe values.
 // Returns an error describing the first problem found, or nil if valid.
 func (c *Config) Validate() error {
@@ -341,6 +379,10 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("dxc.port must be 1-65535, got %q", c.Integrations.DXC.Port)
 			}
 		}
+		login := strings.TrimSpace(c.Integrations.DXC.Login)
+		if login != "" && !qso.IsValidCall(login) {
+			return fmt.Errorf("dxc.login must be a valid callsign, got %q", login)
+		}
 	}
 
 	// --- Rigs ---
@@ -348,15 +390,79 @@ func (c *Config) Validate() error {
 		if strings.TrimSpace(id) == "" {
 			return fmt.Errorf("rig entry with empty id")
 		}
-		if rig.FlrigEnabled {
+		if rig.RadioBackend == "flrig" || rig.FlrigEnabled {
 			if strings.TrimSpace(rig.FlrigHost) == "" {
-				return fmt.Errorf("rig %q: flrig_host is required when flrig_enabled", id)
+				return fmt.Errorf("rig %q: flrig_host is required when radio_backend=flrig", id)
 			}
 			if rig.FlrigPort != "" {
 				if p, err := strconv.Atoi(rig.FlrigPort); err != nil || p < 1 || p > 65535 {
 					return fmt.Errorf("rig %q: flrig_port must be 1-65535, got %q", id, rig.FlrigPort)
 				}
 			}
+		}
+		if rig.RadioBackend == "hamlib" {
+			if strings.TrimSpace(rig.HamlibRadioHost) == "" {
+				return fmt.Errorf("rig %q: hamlib_radio_host is required when radio_backend=hamlib", id)
+			}
+			if rig.HamlibRadioPort != "" {
+				if p, err := strconv.Atoi(rig.HamlibRadioPort); err != nil || p < 1 || p > 65535 {
+					return fmt.Errorf("rig %q: hamlib_radio_port must be 1-65535, got %q", id, rig.HamlibRadioPort)
+				}
+			}
+		}
+	}
+
+	// --- Operators ---
+	seenCalls := make(map[string]string)
+	for id, op := range c.Operators {
+		call := strings.TrimSpace(op.Callsign)
+		if call == "" {
+			return fmt.Errorf("operator %q: callsign is required", id)
+		}
+		lower := strings.ToLower(call)
+		if dup, ok := seenCalls[lower]; ok {
+			return fmt.Errorf("operator %q: callsign %q already used by operator %q", id, call, dup)
+		}
+		seenCalls[lower] = id
+	}
+
+	// --- ActiveOperator references ---
+	for lbID, lb := range c.Logbooks {
+		if lb.ActiveOperator == "" {
+			continue
+		}
+		if _, ok := c.Operators[lb.ActiveOperator]; !ok {
+			return fmt.Errorf("logbook %q: active_operator references unknown operator %q", lbID, lb.ActiveOperator)
+		}
+	}
+
+	// --- Station.RigName references ---
+	for lbID, lb := range c.Logbooks {
+		if lb.Station.RigName == "" {
+			continue
+		}
+		if _, ok := c.Rigs[lb.Station.RigName]; !ok {
+			return fmt.Errorf("logbook %q: rig_name references unknown rig %q", lbID, lb.Station.RigName)
+		}
+	}
+
+	// --- ActiveContest references ---
+	for lbID, lb := range c.Logbooks {
+		if lb.ActiveContest == "" {
+			continue
+		}
+		if _, ok := c.Contests[lb.ActiveContest]; !ok {
+			return fmt.Errorf("logbook %q: active_contest references unknown contest %q", lbID, lb.ActiveContest)
+		}
+	}
+
+	// --- Contest.LogbookID references ---
+	for ctID, ct := range c.Contests {
+		if ct.LogbookID == "" {
+			continue
+		}
+		if _, ok := c.Logbooks[ct.LogbookID]; !ok {
+			return fmt.Errorf("contest %q: logbook_id references unknown logbook %q", ctID, ct.LogbookID)
 		}
 	}
 

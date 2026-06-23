@@ -26,6 +26,7 @@ func NewMainMenu() *MainMenu {
 		items: []menuItem{
 			{"General", "Display, timezone, data sources, debug"},
 			{"Logbooks", "Station name, callsign, grid, Wavelog"},
+			{"Operators", "Multi-operator callsign profiles"},
 			{"Rigs", "Name, model, antenna, flrig, WSJT-X"},
 			{"Contests", "Contest profiles, exchanges, serials"},
 			{"Integration", "DX Cluster, QRZ.com"},
@@ -50,12 +51,14 @@ func (m *MainMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case 1:
 				m.action = "logbook"
 			case 2:
-				m.action = "rig"
+				m.action = "operator"
 			case 3:
-				m.action = "contest"
+				m.action = "rig"
 			case 4:
-				m.action = "integration"
+				m.action = "contest"
 			case 5:
+				m.action = "integration"
+			case 6:
 				m.action = "notifications"
 			}
 		case "up", "k":

@@ -49,9 +49,15 @@ func (m *Model) handleRigEditUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 	m.ui.rigChooser.height = m.height
 	_, rigCmd := m.ui.rigChooser.Update(msg)
 	cmd = tea.Batch(cmd, rigCmd)
+	if m.ui.rigChooser.needsRefresh {
+		m.ui.rigChooser.needsRefresh = false
+		m.refreshRigClient()
+		m.refreshRotorClient()
+	}
 	if m.ui.rigChooser.done {
 		m.screen = screenMainMenu
-		m.refreshFlrigClient()
+		m.refreshRigClient()
+		m.refreshRotorClient()
 	}
 	return m, cmd
 }
@@ -67,6 +73,18 @@ func (m *Model) handleContestUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 		m.needRefresh = true // contest changes may affect active contest / filtering
 	}
 	if m.ui.contestChooser.done {
+		m.screen = screenMainMenu
+	}
+	return m, cmd
+}
+
+func (m *Model) handleOperatorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	m.ui.operatorChooser.width = m.width
+	m.ui.operatorChooser.height = m.height
+
+	_, opCmd := m.ui.operatorChooser.Update(msg)
+	cmd = tea.Batch(cmd, opCmd)
+	if m.ui.operatorChooser.done {
 		m.screen = screenMainMenu
 	}
 	return m, cmd
@@ -272,6 +290,11 @@ func (m *Model) handleMainMenuUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.C
 			m.ui.contestChooser.width = m.width
 			m.ui.contestChooser.height = m.height
 			m.screen = screenContest
+		case "operator":
+			m.ui.operatorChooser = NewOperatorChooser(m.App, m.toasts)
+			m.ui.operatorChooser.width = m.width
+			m.ui.operatorChooser.height = m.height
+			m.screen = screenOperator
 		case "integration":
 			m.ui.integrationMenu = NewIntegrationMenu(m.App.Config)
 			m.ui.integrationMenu.width = m.width
@@ -321,6 +344,8 @@ func (m *Model) handlePartnerUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 		switch msg.String() {
 		case "f1", "esc":
 			m.screen = screenQSO
+			m.photo.partnerPicURL = ""
+			m.photo.partnerPicNeedLoad = false
 			return m, cmd
 		case "f7":
 			m.ui.mainMenu = NewMainMenu()
@@ -334,19 +359,41 @@ func (m *Model) handlePartnerUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 }
 
 func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	call := strings.ToUpper(strings.TrimSpace(m.App.Logbook.Station.Callsign))
+
+	// Lazy-init per-callsign fetch timestamp map.
+	if m.psk.lastFetchByCall == nil {
+		m.psk.lastFetchByCall = make(map[string]time.Time)
+	}
+
+	// Detect callsign change (e.g. logbook cycled) — reset caches
+	// and allow an immediate fetch for the new callsign. The fetching
+	// flag prevents concurrent fetches; rapid logbook toggling is rare
+	// in normal ham radio operation.
+	if call != "" && call != m.psk.lastCall {
+		m.psk.fetched = false
+		m.psk.lastCall = call
+		m.psk.spots = nil
+		m.psk.spotKey = ""
+		m.psk.view = ""
+		m.psk.viewKey = ""
+	}
+
 	// Trigger initial fetch when first entering the tab (not yet fetched, not already fetching).
 	if !m.psk.fetched && !m.psk.fetching && m.inetOnline {
-		call := strings.ToUpper(strings.TrimSpace(m.App.Logbook.Station.Callsign))
 		if call != "" {
 			m.psk.fetching = true
 			return m, tea.Batch(cmd, m.pskFetchCmd())
 		}
 	}
-	// Auto-refresh: if data is older than 5 minutes, trigger a background refresh.
-	if m.psk.fetched && !m.psk.fetching && m.inetOnline &&
-		!m.psk.lastFetch.IsZero() && time.Since(m.psk.lastFetch) >= 5*time.Minute {
-		m.psk.fetching = true
-		return m, tea.Batch(cmd, m.pskFetchCmd())
+	// Auto-refresh: if data for this callsign is older than 5 minutes,
+	// trigger a background refresh (per-callsign, not global).
+	if m.psk.fetched && !m.psk.fetching && m.inetOnline {
+		last := m.psk.lastFetchByCall[call]
+		if !last.IsZero() && time.Since(last) >= 5*time.Minute {
+			m.psk.fetching = true
+			return m, tea.Batch(cmd, m.pskFetchCmd())
+		}
 	}
 
 	switch msg := msg.(type) {

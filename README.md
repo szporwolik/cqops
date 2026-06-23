@@ -5,12 +5,13 @@
 </p>
 
 [![release](https://img.shields.io/github/v/release/szporwolik/cqops?include_prereleases&label=release&color=1f6feb)](https://github.com/szporwolik/cqops/releases)
+[![downloads](https://img.shields.io/github/downloads/szporwolik/cqops/total?color=1f6feb)](https://github.com/szporwolik/cqops/releases)
 [![go](https://img.shields.io/badge/Go-1.26-00ADD8)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 
 A small, fast, offline-first amateur radio logger for the terminal. Built for portable and field operations where every watt and every CPU cycle counts.
 
-CQOps is a personal project for my own use and my local club. It's not a full-featured desktop logger — for that, see [Log4OM](https://www.log4om.com/) (Windows), [QLog](https://github.com/foldynl/QLog) (Linux), or [Wavelog](https://www.wavelog.com/) (self-hosted web). CQOps fills a different niche: a lightweight, dependency-minimal CLI tool that runs on a Raspberry Pi, an old laptop, or any "potato PC" without a GUI — perfect for off-grid portable ops, SOTA/POTA, and fast keystroke-driven logging.
+CQOps is a personal project for my own use and my local club. It's not a full-featured desktop logger — for that, see [Log4OM](https://www.log4om.com/) (Windows), [QLog](https://github.com/foldynl/QLog) (Linux), or [Wavelog](https://www.wavelog.org/) (self-hosted web). CQOps fills a different niche: a lightweight, dependency-minimal CLI tool that runs on a Raspberry Pi, an old laptop, or any "potato PC" without a GUI — perfect for off-grid portable ops, SOTA/POTA, and fast keystroke-driven logging.
 
 ## Author
 
@@ -19,7 +20,8 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 ## Features
 
 - **Fast keyboard logging** — three-column form, Enter to log, Tab ↹ Col / ↑↓ Row navigation, auto date/time, DUPE! detection with two-press override, New Call / New DXCC badges
-- **Multi-rig with flrig** — per-rig flrig and WSJT-X config; auto-fills freq, mode, power, split (VFO A/B → Freq/Freq RX)
+- **Multi-operator & club station** — per-logbook active operator with Ctrl+O hot-swap, operator profiles (callsign + name), logged OPERATOR field and Wavelog upload follow the active operator
+- **Multi-rig with flrig & Hamlib** — per-rig flrig or hamlib rigctld config; auto-fills freq, mode, power, split (VFO A/B → Freq/Freq RX)
 - **QRZ, DXCC & SCP** — Ins triggers callbook lookup; auto-fills name, QTH, grid, country; prefix-based DXCC and live callsign autocomplete
 - **Wavelog cloud sync** — upload, download, duplicate detection, station profile cycling
 - **DX Cluster & PSK Reporter** — live spots with filters, spot-to-rig tuning, real-time propagation map
@@ -46,6 +48,7 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 - Terminal with 80×24 minimum
 - WSJT-X 2.6+ (optional, for automatic digital mode logging)
 - flrig (optional, for rig control and spot-to-radio tuning)
+- Hamlib rigctld (optional, for rig control and spot-to-radio tuning via TCP)
 - Internet connection (optional, for DX cluster, QRZ, Wavelog, solar data, PSK Reporter)
 
 ## Build
@@ -93,7 +96,36 @@ go build -ldflags "-s -w -X github.com/szporwolik/cqops/internal/version.Version
 A GitHub Actions workflow (`.github/workflows/release.yml`) automates the release process. Before triggering it:
 
 1. Update the version in **`VERSION`** (plain version number, e.g. `0.1.1`).
-2. Run the **Create Release** workflow from the [Actions tab](https://github.com/szporwolik/cqops/actions) — it builds binaries for all 6 platforms (Windows, Linux, macOS; amd64 + arm64) and creates a tagged GitHub release with auto-generated notes from merged pull requests.
+2. Run the **Create Release** workflow from the [Actions tab](https://github.com/szporwolik/cqops/actions) — it builds binaries for all 6 platforms (Windows, Linux, macOS; amd64 + arm64), platform packages, and a Windows installer, then creates a tagged GitHub release.
+
+Each release includes:
+
+| Asset | Target |
+|---|---|
+| `cqops-setup-X.Y.Z.exe` | Windows installer (NSIS) |
+| `cqops_X.Y.Z_linux_amd64.deb` | Debian / Ubuntu amd64 |
+| `cqops_X.Y.Z_linux_arm64.deb` | Debian / Ubuntu arm64 (Raspberry Pi) |
+| `cqops_X.Y.Z_linux_amd64.rpm` | Fedora / RHEL amd64 |
+| `cqops_X.Y.Z_linux_arm64.rpm` | Fedora / RHEL arm64 |
+| `cqops_X.Y.Z_linux_amd64.pkg.tar.zst` | Arch / Manjaro amd64 |
+| `cqops_X.Y.Z_linux_arm64.pkg.tar.zst` | Arch / Manjaro arm64 |
+| Raw binaries | Windows, Linux, macOS — amd64 + arm64 |
+
+### Building installers locally
+
+```powershell
+# Windows: NSIS installer (requires makensis + ImageMagick)
+.\scripts\build-installer.ps1
+```
+```bash
+# Linux: deb, rpm, arch packages (requires nfpm)
+bash scripts/build-packages.sh
+```
+
+The Windows installer registers in Control Panel, adds Start Menu shortcuts, and integrates with `%PATH%`. The Linux packages install `cqops` to `/usr/bin/` with a `.desktop` entry and icon.
+
+**Build-time tools used (not linked into the binary):**
+[NSIS](https://nsis.sourceforge.io/) (zlib/libpng), [nfpm](https://nfpm.goreleaser.com/) (Apache 2.0), [go-winres](https://github.com/tc-hib/go-winres) (MIT), [ImageMagick](https://imagemagick.org/) (Apache 2.0).
 
 ## Usage
 
@@ -121,7 +153,7 @@ Flags:
 - [modernc.org/sqlite](https://modernc.org/sqlite) — Pure Go SQLite (no CGO)
 - [ntcharts](https://github.com/NimbleMarkets/ntcharts) — Map rendering
 - [yaml.v3](https://gopkg.in/yaml.v3) — YAML config parsing
-- [golang.org/x/term](https://pkg.go.dev/golang.org/x/term) — Terminal I/O
+- [golang.org/x/text](https://pkg.go.dev/golang.org/x/text) — Unicode normalization for ADIF
 
 **Integrations:**
 - [wsjtx-go](https://github.com/k0swe/wsjtx-go) — WSJT-X UDP protocol

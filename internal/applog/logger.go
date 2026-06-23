@@ -1,6 +1,7 @@
 package applog
 
 import (
+	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -23,9 +24,10 @@ var (
 	debugMode bool   // when false, Debug/DebugDetail are suppressed
 )
 
-const maxStored = 100   // max in-memory log entries for TUI viewer
-const maxLogFiles = 20  // keep at most N rotated log files
-const retentionDays = 7 // delete log files older than this
+const maxStored = 100               // max in-memory log entries for TUI viewer
+const maxLogFiles = 20              // keep at most N rotated log files
+const retentionDays = 7             // delete log files older than this
+const maxLogSize = 10 * 1024 * 1024 // rotate current log file when it exceeds 10 MB
 
 // Entry is a single in-memory log record exposed via the TUI log viewer.
 type Entry struct {
@@ -33,6 +35,43 @@ type Entry struct {
 	Level   string `json:"level"`
 	Message string `json:"msg"`
 	Details string `json:"details,omitempty"`
+}
+
+// rotateWriter is an io.Writer that automatically rotates to a new file
+// when the current one exceeds maxLogSize. Safe for concurrent use.
+type rotateWriter struct {
+	mu   sync.Mutex
+	file *os.File
+	dir  string
+	size int64
+}
+
+func (w *rotateWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	if w.size >= maxLogSize {
+		if err := w.rotate(); err != nil {
+			return 0, fmt.Errorf("log rotate: %w", err)
+		}
+	}
+
+	n, err := w.file.Write(p)
+	w.size += int64(n)
+	return n, err
+}
+
+func (w *rotateWriter) rotate() error {
+	if w.file != nil {
+		w.file.Close()
+	}
+	f, err := openLogFileIn(w.dir)
+	if err != nil {
+		return err
+	}
+	w.file = f
+	w.size = 0
+	return nil
 }
 
 // Init initializes the structured logger, creates the log directory,
@@ -45,21 +84,21 @@ func Init() error {
 	}
 	os.MkdirAll(logDir, 0755)
 
-	f, err := openLogFile()
-	if err != nil {
+	rw := &rotateWriter{dir: logDir}
+	if err := rw.rotate(); err != nil {
 		return err
 	}
 
-	Logger = slog.New(slog.NewTextHandler(f, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	Logger = slog.New(slog.NewTextHandler(rw, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	slog.SetDefault(Logger)
 
 	go cleanupOldLogs()
 	return nil
 }
 
-func openLogFile() (*os.File, error) {
+func openLogFileIn(dir string) (*os.File, error) {
 	name := "cqops-" + time.Now().Format("2006-01-02T15-04-05") + ".log"
-	return os.OpenFile(filepath.Join(logDir, name), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	return os.OpenFile(filepath.Join(dir, name), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 }
 
 func cleanupOldLogs() {
