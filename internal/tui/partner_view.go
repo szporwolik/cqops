@@ -104,14 +104,14 @@ func (m *Model) viewPartner() string {
 		m.App.Config.General.RenderMap,
 		m.App.Config.General.DrawGrayline)
 	fmt.Fprintf(&sigB, "|fmgrid=%s|gridsrc=%s", m.fields[fieldGrid].Value(), m.gridSource)
-	// Inline photo state — invalidate cache when photo loads.
+	// Inline photo — only bust cache on significant content changes,
+	// not on every progressive-render frame (avoids 100% CPU on slow PCs).
 	if d != nil && d.ImageURL != "" {
 		picContent := m.photo.partnerPicViewer.View().Content
-		hash := len(picContent)
-		if hash > 0 {
-			hash = int(picContent[0]) + len(picContent)
-		}
-		fmt.Fprintf(&sigB, "|pic=%s,%d", d.ImageURL, hash)
+		// Hash on coarse length buckets (32-byte granularity) so the
+		// cache only invalidates a few times during photo download.
+		bucket := len(picContent) >> 5
+		fmt.Fprintf(&sigB, "|pic=%s,%d", d.ImageURL, bucket)
 	}
 
 	sig := sigB.String()
