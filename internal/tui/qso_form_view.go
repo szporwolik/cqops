@@ -301,10 +301,38 @@ func (m *Model) formPathRow(width int) string {
 		return pathMutedStyle.Width(width).Align(align).Render(profileLine)
 	}
 
-	// ── No callsign: station profile ──
+	// ── Rotor status line (always right-aligned when connected) ──
+	rotorLine := ""
+	if m.rotor.connected {
+		rotorLine = "Rotator"
+		if m.rotor.name != "" {
+			rotorLine += " " + m.rotor.name
+		}
+		rotorLine += fmt.Sprintf("  Az %.0f\u00b0", m.rotor.azimuth)
+		if m.rotor.targetAz != 0 && absDiff(m.rotor.azimuth, m.rotor.targetAz) >= 1 {
+			arrow := "\u2192"
+			if m.rotor.targetAz < m.rotor.azimuth {
+				arrow = "\u2190"
+			}
+			rotorLine += S.Warning.Render(fmt.Sprintf(" (%s %.0f\u00b0)", arrow, m.rotor.targetAz))
+		}
+		rotorLine += fmt.Sprintf("  El %.0f\u00b0", m.rotor.elevation)
+		if m.rotor.targetEl != 0 && absDiff(m.rotor.elevation, m.rotor.targetEl) >= 1 {
+			arrow := "\u2191"
+			if m.rotor.targetEl < m.rotor.elevation {
+				arrow = "\u2193"
+			}
+			rotorLine += S.Warning.Render(fmt.Sprintf(" (%s %.0f\u00b0)", arrow, m.rotor.targetEl))
+		}
+	}
+
+	// ── No callsign: station profile (or just rotor) ──
 	if m.rc.pathCall == "" || strings.TrimSpace(m.fields[fieldCall].Value()) == "" {
 		m.rc.pathCall = ""
 		m.rc.pathSig = ""
+		if rotorLine != "" {
+			return pathInfoStyle.Width(width).Align(lipgloss.Right).Render(rotorLine)
+		}
 		return renderProfile(lipgloss.Right)
 	}
 
@@ -374,20 +402,49 @@ func (m *Model) formPathRow(width int) string {
 		wlSig += fmt.Sprintf("wk=%v,dxcc=%v", m.lookup.wlPrivateData.Worked(), m.lookup.wlPrivateData.DXCCConfirmed())
 	}
 	sig := ownGrid + "|" + partnerGrid + "|" + m.App.Config.General.DistanceUnit + "|" + statsSig + "|" + wlSig + "|" + fmt.Sprint(m.dupe)
+	// Include rotor state so target arrows update immediately.
+	if m.rotor.connected {
+		sig += fmt.Sprintf("|rotor:%.0f,%.0f,%.0f,%.0f", m.rotor.azimuth, m.rotor.elevation, m.rotor.targetAz, m.rotor.targetEl)
+	}
 
 	if m.rc.pathSig == sig && m.rc.pathLine != "" {
 		return m.rc.pathLine
 	}
 
-	// Assemble result: primary line + badges.
-	result := primaryLine
+	// Assemble result: left side + right-side rotor status.
+	var left string
+	var result string
+	if primaryLine != "" {
+		left = primaryLine
+	}
 	if len(badges) > 0 {
 		badgeLine := strings.Join(badges, " ")
-		if primaryLine != "" {
-			result = primaryLine + "  " + badgeLine
+		if left != "" {
+			left = left + "  " + badgeLine
 		} else {
-			result = badgeLine
+			left = badgeLine
 		}
+	}
+
+	if rotorLine != "" {
+		if left != "" {
+			// Both sides: left + spacer + rotor right-aligned.
+			rotorW := lipgloss.Width(rotorLine)
+			leftW := width - rotorW - 2 // 2-char gap
+			if leftW < 10 {
+				leftW = width
+				rotorLine = ""
+			}
+			if rotorLine != "" {
+				left = pathInfoStyle.Width(leftW).Align(lipgloss.Left).Render(left)
+				right := pathInfoStyle.Render(rotorLine)
+				result = lipgloss.JoinHorizontal(lipgloss.Center, left, "  ", right)
+			}
+		} else {
+			result = pathInfoStyle.Width(width).Align(lipgloss.Right).Render(rotorLine)
+		}
+	} else {
+		result = left
 	}
 
 	if result == "" {
@@ -401,6 +458,17 @@ func (m *Model) formPathRow(width int) string {
 		// Try without badges first (preserve primary line).
 		if primaryLine != "" && lipgloss.Width(primaryLine) <= width {
 			result = primaryLine
+			if rotorLine != "" {
+				rotorW := lipgloss.Width(rotorLine)
+				leftW := width - rotorW - 2
+				if leftW >= 10 {
+					left = pathInfoStyle.Width(leftW).Align(lipgloss.Left).Render(primaryLine)
+					right := pathInfoStyle.Render(rotorLine)
+					result = lipgloss.JoinHorizontal(lipgloss.Center, left, "  ", right)
+				} else {
+					result = primaryLine
+				}
+			}
 		} else {
 			result = truncateText(result, width)
 		}

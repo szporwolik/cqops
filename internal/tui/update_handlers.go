@@ -166,6 +166,11 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 		return true, nil
 	case rotorPollMsg:
 		return true, m.applyRotorPoll(r)
+	case rotorNameMsg:
+		if r.name != "" {
+			m.rotor.name = r.name
+		}
+		return true, nil
 	case rigModesMsg:
 		if len(r.modes) > 0 {
 			m.rig.modes = r.modes

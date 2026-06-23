@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"math"
 	"strconv"
 	"time"
 
@@ -361,6 +362,9 @@ func (m *Model) refreshRotorClient() {
 		}
 		m.rotor.client = nil
 		m.rotor.connected = false
+		m.rotor.name = ""
+		m.rotor.targetAz = 0
+		m.rotor.targetEl = 0
 		return
 	}
 	// Close old connection.
@@ -369,6 +373,9 @@ func (m *Model) refreshRotorClient() {
 	}
 	m.rotor.client = nil
 	m.rotor.connected = false
+	m.rotor.name = ""
+	m.rotor.targetAz = 0
+	m.rotor.targetEl = 0
 
 	enabled, host, port := m.App.Logbook.Station.RigRotor(m.App.Config.Rigs)
 	if !enabled {
@@ -432,19 +439,64 @@ func (m *Model) applyRotorPoll(r rotorPollMsg) tea.Cmd {
 	if r.err != "" || !r.connected {
 		if m.rotor.connected {
 			applog.Debug("rotor: disconnected", "err", r.err)
-			m.toasts.Warn("Rot: disconnected")
+			m.toasts.Warn("Rotator: disconnected")
+			m.rotor.name = ""
 		}
 		m.rotor.connected = false
 		return nil
 	}
+	var cmds []tea.Cmd
 	if !m.rotor.connected {
 		applog.Info("rotor: connected", "az", r.azimuth, "el", r.elevation)
-		m.toasts.Success("Rot: connected")
+		m.toasts.Success("Rotator: connected")
+		if m.rotor.name == "" {
+			cmds = append(cmds, m.fetchRotorNameCmd())
+		}
 	}
 	m.rotor.connected = true
-	m.rotor.azimuth = r.azimuth
-	m.rotor.elevation = r.elevation
+	m.rotor.azimuth = math.Round(r.azimuth)
+	m.rotor.elevation = math.Round(r.elevation)
+	if m.rotor.targetAz != 0 && absDiff(m.rotor.azimuth, m.rotor.targetAz) < 1 &&
+		absDiff(m.rotor.elevation, m.rotor.targetEl) < 1 {
+		m.rotor.targetAz = 0
+		m.rotor.targetEl = 0
+	}
+	if len(cmds) > 0 {
+		return tea.Batch(cmds...)
+	}
 	return nil
+}
+
+// fetchRotorNameCmd returns a tea.Cmd that fetches the rotor model name.
+func (m *Model) fetchRotorNameCmd() tea.Cmd {
+	if m.rotor.client == nil {
+		return nil
+	}
+	client := m.rotor.client
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		name, err := client.GetName(ctx)
+		if err != nil {
+			applog.Debug("rotor: get_name failed", "error", err)
+			return rotorNameMsg{err: err.Error()}
+		}
+		applog.Info("rotor: name fetched", "name", name)
+		return rotorNameMsg{name: name}
+	}
+}
+
+// rotorNameMsg carries the result of an async rotor name fetch.
+type rotorNameMsg struct {
+	name string
+	err  string
+}
+
+func absDiff(a, b float64) float64 {
+	if a > b {
+		return a - b
+	}
+	return b - a
 }
 
 // shutdownConnections gracefully closes rig and rotor TCP connections

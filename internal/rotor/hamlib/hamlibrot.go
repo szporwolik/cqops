@@ -93,6 +93,42 @@ func (c *Client) SetPosition(ctx context.Context, az, el float64) error {
 	return nil
 }
 
+// Stop sends the emergency-stop command to the rotor.
+func (c *Client) Stop(ctx context.Context) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	conn, err := c.getConn(ctx)
+	if err != nil {
+		return err
+	}
+
+	_, err = c.cmd(conn, "S")
+	if err != nil {
+		c.dropConn()
+		return fmt.Errorf("rotor stop: %w", err)
+	}
+	return nil
+}
+
+// GetName returns the rotor model name from rotctld.
+func (c *Client) GetName(ctx context.Context) (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	conn, err := c.getConn(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	raw, err := c.cmd(conn, "_")
+	if err != nil {
+		c.dropConn()
+		return "", fmt.Errorf("rotor name: %w", err)
+	}
+	return strings.TrimSpace(raw), nil
+}
+
 // getConn returns the persistent connection or dials a new one.
 func (c *Client) getConn(ctx context.Context) (net.Conn, error) {
 	if c.conn != nil {

@@ -377,11 +377,11 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 	}
 	if rotorBackend == "hamlib" {
 		if rotorHost == "" {
-			rc.toasts.Warn("Rotor hamlib host is required")
+			rc.toasts.Warn("Rotator hamlib host is required")
 			return nil
 		}
 		if rotorPort == "" {
-			rc.toasts.Warn("Rotor hamlib port is required")
+			rc.toasts.Warn("Rotator hamlib port is required")
 			return nil
 		}
 	}

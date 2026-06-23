@@ -1,7 +1,11 @@
 package tui
 
 import (
+	"context"
+	"fmt"
+	"math"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
@@ -266,6 +270,14 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	}
 
 	var persistCmd tea.Cmd
+
+	// ── Rotor manual control (only when connected, QSO screen) ──
+	if m.rotor.connected && m.screen == screenQSO {
+		if cmd, handled := m.handleRotorKey(msg); handled {
+			return cmd, true
+		}
+	}
+
 	switch {
 	case m.retainFocused:
 		switch msg.String() {
@@ -382,6 +394,116 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return c, true
 	}
 	return nil, false
+}
+
+// handleRotorKey processes rotor control key bindings when the rotor is
+// connected and the QSO screen is active.
+//
+//	Ctrl+Left/Right → adjust azimuth ±5°
+//	Ctrl+Up/Down    → adjust elevation ±5°
+//	Ctrl+R          → point rotor to calculated path bearing (toast)
+func (m *Model) handleRotorKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
+	const step = 5.0
+
+	// Base off the current target (if moving) or the polled position,
+	// rounded to nearest integer so targets stay clean.
+	baseAz := math.Round(m.rotor.azimuth)
+	baseEl := math.Round(m.rotor.elevation)
+	if m.rotor.targetAz != 0 {
+		baseAz = math.Round(m.rotor.targetAz)
+	}
+	if m.rotor.targetEl != 0 {
+		baseEl = math.Round(m.rotor.targetEl)
+	}
+
+	switch msg.String() {
+	case "ctrl+left":
+		az := clampAz(baseAz - step)
+		applog.Debug("rotor: ctrl+left", "az", az)
+		return m.rotorSetPositionCmd(az, baseEl), true
+
+	case "ctrl+right":
+		az := clampAz(baseAz + step)
+		applog.Debug("rotor: ctrl+right", "az", az)
+		return m.rotorSetPositionCmd(az, baseEl), true
+
+	case "ctrl+up":
+		el := clampEl(baseEl + step)
+		applog.Debug("rotor: ctrl+up", "el", el)
+		return m.rotorSetPositionCmd(baseAz, el), true
+
+	case "ctrl+down":
+		el := clampEl(baseEl - step)
+		applog.Debug("rotor: ctrl+down", "el", el)
+		return m.rotorSetPositionCmd(baseAz, el), true
+
+	case "ctrl+a":
+		ownGrid := formatLocator(m.App.Logbook.Station.Grid)
+		partnerGrid := formatLocator(m.fields[fieldGrid].Value())
+		bearing := gridBearingDeg(ownGrid, partnerGrid)
+		if bearing < 0 {
+			m.toasts.Warn("Rotator: no path — enter partner grid first")
+			return nil, true
+		}
+		az := clampAz(math.Round(bearing))
+		applog.Debug("rotor: ctrl+a path bearing", "az", az, "from", ownGrid, "to", partnerGrid)
+		m.toasts.Info(fmt.Sprintf("Rotator: turning to %.0f\u00b0", bearing))
+		return m.rotorSetPositionCmd(az, math.Round(m.rotor.elevation)), true
+
+	case "ctrl+escape":
+		if m.rotor.client == nil {
+			return nil, false
+		}
+		applog.Debug("rotor: stop")
+		client := m.rotor.client
+		return func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			if err := client.Stop(ctx); err != nil {
+				applog.Debug("rotor: stop failed", "error", err)
+			}
+			return nil
+		}, true
+	}
+	return nil, false
+}
+
+// rotorSetPositionCmd returns a tea.Cmd that commands the rotor to turn.
+func (m *Model) rotorSetPositionCmd(az, el float64) tea.Cmd {
+	if m.rotor.client == nil {
+		return nil
+	}
+	m.rotor.targetAz = math.Round(az)
+	m.rotor.targetEl = math.Round(el)
+	client := m.rotor.client
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if err := client.SetPosition(ctx, az, el); err != nil {
+			applog.Debug("rotor: set position failed", "az", az, "el", el, "error", err)
+		}
+		return nil
+	}
+}
+
+func clampAz(a float64) float64 {
+	for a < 0 {
+		a += 360
+	}
+	for a >= 360 {
+		a -= 360
+	}
+	return a
+}
+
+func clampEl(e float64) float64 {
+	if e < -90 {
+		return -90
+	}
+	if e > 90 {
+		return 90
+	}
+	return e
 }
 
 // persistRetainComment syncs the retain-comment checkbox state to the

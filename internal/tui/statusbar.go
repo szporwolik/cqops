@@ -68,7 +68,7 @@ func (m *Model) headerView() string {
 		}
 	}
 	if cfgRig, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok && cfgRig.RotorBackend == "hamlib" {
-		rightParts = append(rightParts, statusDotStyled(m.rotor.connected, "Rot"))
+		rightParts = append(rightParts, statusDotStyled(m.rotor.connected, "Rotator"))
 	}
 	if m.App.Config.Integrations.DXC.Enabled {
 		rightParts = append(rightParts, statusDotStyled(m.dxc.online, "DXC", m.Offline))

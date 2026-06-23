@@ -25,6 +25,9 @@ type RigClient interface {
 // RotorClient abstracts a rotor control backend (hamlib rotctld TCP).
 type RotorClient interface {
 	Status(ctx context.Context) (rotor.Status, error)
+	SetPosition(ctx context.Context, az, el float64) error
+	Stop(ctx context.Context) error
+	GetName(ctx context.Context) (string, error)
 }
 
 // =============================================================================

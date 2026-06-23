@@ -435,10 +435,10 @@ func (f *RigForm) View() tea.View {
 	// Rotor control — cycles None → Hamlib on Space.
 	rotorLabel := rotorOptions[f.RotorIdx].label
 	roPrefix := "  "
-	roLbl := S.FormLabelWide.Align(lipgloss.Left).Render("Rotor control:")
+	roLbl := S.FormLabelWide.Align(lipgloss.Left).Render("Rotator control:")
 	if f.focus == rigFieldRotor {
 		roPrefix = S.FormPrefixOn.Render("> ")
-		roLbl = S.FormFocusedWide.Align(lipgloss.Left).Render("Rotor control:")
+		roLbl = S.FormFocusedWide.Align(lipgloss.Left).Render("Rotator control:")
 		rotorLabel = CursorStyle.Render(rotorLabel)
 	}
 	b.WriteString(padOrTrunc(

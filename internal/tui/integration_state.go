@@ -25,6 +25,9 @@ type rotorState struct {
 	connected bool
 	azimuth   float64
 	elevation float64
+	targetAz  float64     // commanded azimuth (0 when not moving)
+	targetEl  float64     // commanded elevation (0 when not moving)
+	name      string      // rotor model name (e.g. "YAESU G-800DXA")
 	client    RotorClient // rotor backend client (nil when disabled)
 }
 
