@@ -145,11 +145,6 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.screen = screenBPL
 		return nil, true
 
-	// case key.Matches(msg, m.keys.CON):
-	// 	applog.Debug("tab: F3 CON")
-	// 	m.screen = screenCON
-	// 	return nil, true
-
 	case key.Matches(msg, m.keys.Config):
 		if m.screen == screenMainMenu {
 			applog.Debug("tab: F9 close Config")
@@ -207,7 +202,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		if m.App.Logbook.Wavelog != nil {
 			wlLastID = m.App.Logbook.Wavelog.LastFetchedID
 		}
-		m.ui.logbookEditor = NewLogbookEditor(m.App.DB, wlURL, wlKey, wlStationID, wlLastID, m.activeOperatorCallsign(), m.App.Logbook.Station.Grid)
+		m.ui.logbookEditor = NewLogbookEditor(m.App.DB, wlURL, wlKey, wlStationID, wlLastID, m.activeOperatorCallsign(), m.App.Logbook.Station.Grid, m.App.Logbook.Station.Callsign)
 		m.ui.logbookEditor.width = m.width
 		m.ui.logbookEditor.height = m.height
 		// Apply active contest filter.

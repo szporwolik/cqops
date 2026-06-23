@@ -757,9 +757,10 @@ func (w *Wizard) saveConfig() error {
 
 	flrigHost, flrigPort := "", ""
 	hamlibHost, hamlibPort := "", ""
-	if radioBackend == "flrig" {
+	switch radioBackend {
+	case "flrig":
 		flrigHost, flrigPort = radioBackendHost, radioBackendPort
-	} else if radioBackend == "hamlib" {
+	case "hamlib":
 		hamlibHost, hamlibPort = radioBackendHost, radioBackendPort
 	}
 

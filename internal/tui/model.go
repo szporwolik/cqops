@@ -97,7 +97,6 @@ const (
 	screenDXC
 	screenRef
 	screenBPL
-	screenCON
 )
 
 type Model struct {
@@ -180,9 +179,6 @@ type wlResultMsg struct {
 	Err  error
 }
 
-// lookupTimeoutMsg is sent after 3s when lookups haven't completed;
-// it forces the deferred QSO save to proceed without waiting.
-type lookupTimeoutMsg struct{}
 type dxcSpotLookupMsg struct {
 	call string
 	freq float64 // 0 if not found
@@ -492,13 +488,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case qrzResultMsg:
 		m.fillQRZData(r)
 		cmd = tea.Batch(cmd, m.updateFilteredTable())
-		if m.lookup.pendingSave {
-			call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
-			if m.lookupsCompleteForCall(call) {
-				m.lookup.pendingSave = false
-				cmd = tea.Batch(cmd, m.saveQSO())
-			}
-		}
 		m.contestAutoFocusExchRcvd()
 		if m.photo.partnerPicNeedLoad {
 			m.photo.partnerPicNeedLoad = false
@@ -514,22 +503,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.photo.partnerPicViewer.SetURL(m.photo.partnerPicURL))
 		}
 		return m, cmd
-	case lookupTimeoutMsg:
-		if m.lookup.pendingSave {
-			m.lookup.pendingSave = false
-			applog.Warn("Lookup timeout — saving QSO without waiting")
-			cmd = tea.Batch(cmd, m.saveQSO())
-		}
-		return m, cmd
 	case wlResultMsg:
 		m.fillWLData(r)
-		if m.lookup.pendingSave {
-			call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
-			if m.lookupsCompleteForCall(call) {
-				m.lookup.pendingSave = false
-				cmd = tea.Batch(cmd, m.saveQSO())
-			}
-		}
 		m.contestAutoFocusExchRcvd()
 		return m, cmd
 	case refRebuildMsg:
@@ -683,8 +658,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleRefUpdate(msg, cmd)
 	case screenBPL:
 		return m.handleBPLUpdate(msg, cmd)
-	case screenCON:
-		return m.handleCONUpdate(msg, cmd)
 	}
 
 	// QSO form key handling
@@ -870,8 +843,6 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 		body = m.viewRef()
 	case screenBPL:
 		body = m.viewBPL(l)
-	case screenCON:
-		body = m.viewCON(l)
 	}
 	if body == "" {
 		return ""

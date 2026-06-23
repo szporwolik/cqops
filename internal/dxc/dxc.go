@@ -9,6 +9,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/szporwolik/cqops/internal/applog"
@@ -23,7 +24,7 @@ type Spot struct {
 	ReceivedAt time.Time
 }
 
-// Client is a DX Cluster telnet connection.
+// Client is a DX Cluster telnet connection with auto-reconnect.
 type Client struct {
 	host       string
 	port       string
@@ -34,6 +35,11 @@ type Client struct {
 	statusCh   chan bool // true=connected, false=disconnected
 	pendingRsp chan string
 	loginSent  bool
+
+	// Auto-reconnect state.
+	mu             sync.Mutex
+	reconnecting   bool
+	reconnectDelay time.Duration
 }
 
 // NewClient creates a DX Cluster client. It does not connect until Start is called.
@@ -85,7 +91,11 @@ func (c *Client) Start() error {
 	go func() {
 		// Give the cluster 2s to send a login prompt. If none arrives,
 		// send login anyway (DX Spider-style immediate login).
-		time.Sleep(2 * time.Second)
+		select {
+		case <-time.After(2 * time.Second):
+		case <-c.stopCh:
+			return
+		}
 		if c.conn != nil && !c.loginSent {
 			applog.Debug("DXC: no login prompt detected, sending callsign")
 			c.writeLine("%s\r\n", strings.ToUpper(c.login))
@@ -94,13 +104,12 @@ func (c *Client) Start() error {
 	}()
 
 	// Request recent spots after login so the table isn't empty on startup.
-	// SH/FDX (alias "SH/DX real") delivers historical spots in the same
-	// "DX de SPOTTER:" realtime format that parseSpot already handles.
-	// If the cluster doesn't support SH/FDX, the error response is just
-	// ignored by parseSpot — no harm done. The 2s delay gives the cluster
-	// time to finish its login handshake (MOTD, prompt, etc.).
 	go func() {
-		time.Sleep(2 * time.Second)
+		select {
+		case <-time.After(2 * time.Second):
+		case <-c.stopCh:
+			return
+		}
 		if c.conn == nil {
 			return
 		}
@@ -113,15 +122,70 @@ func (c *Client) Start() error {
 }
 
 // Stop closes the connection and stops the read goroutine.
+// After Stop, reconnection is disabled.
 func (c *Client) Stop() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if c.conn != nil {
 		c.conn.Close()
 		c.conn = nil
 	}
-	select {
-	case <-c.stopCh:
-	default:
-		close(c.stopCh)
+	if c.stopCh != nil {
+		select {
+		case <-c.stopCh:
+		default:
+			close(c.stopCh)
+		}
+		c.stopCh = nil
+	}
+}
+
+// reconnectLoop attempts to reconnect with exponential backoff:
+// 2s, 4s, 8s, ... up to 60s. Stops when Stop() is called.
+func (c *Client) reconnectLoop() {
+	c.mu.Lock()
+	if c.reconnecting || c.stopCh == nil {
+		c.mu.Unlock()
+		return
+	}
+	c.reconnecting = true
+	c.mu.Unlock()
+
+	defer func() {
+		c.mu.Lock()
+		c.reconnecting = false
+		c.mu.Unlock()
+	}()
+
+	delay := 2 * time.Second
+	maxDelay := 60 * time.Second
+
+	for {
+		c.mu.Lock()
+		if c.stopCh == nil {
+			c.mu.Unlock()
+			return
+		}
+		c.mu.Unlock()
+
+		applog.Info("DXC: reconnecting", "delay", delay.Round(time.Second))
+
+		select {
+		case <-time.After(delay):
+		case <-c.stopCh:
+			return
+		}
+
+		if err := c.Start(); err != nil {
+			applog.Warn("DXC: reconnect failed", "error", err.Error(), "next", delay*2)
+			delay *= 2
+			if delay > maxDelay {
+				delay = maxDelay
+			}
+			continue
+		}
+		applog.Info("DXC: reconnected")
+		return
 	}
 }
 
@@ -157,7 +221,9 @@ func (c *Client) SendSpot(freqKhz float64, call, comment string) (string, error)
 
 	// Set up a response channel before writing so readLoop can capture the reply.
 	rspCh := make(chan string, 1)
+	c.mu.Lock()
 	c.pendingRsp = rspCh
+	c.mu.Unlock()
 
 	c.writeLine("%s", line)
 	applog.Info("DXC: spot sent", "call", call, "freq", freqKhz, "comment", comment)
@@ -165,29 +231,40 @@ func (c *Client) SendSpot(freqKhz float64, call, comment string) (string, error)
 	// Wait up to 1.5s for a response (error message or confirmation).
 	select {
 	case rsp := <-rspCh:
+		c.mu.Lock()
 		c.pendingRsp = nil
+		c.mu.Unlock()
 		if rsp != "" {
 			applog.Warn("DXC: cluster response", "response", rsp)
 		}
 		return rsp, nil
 	case <-time.After(1500 * time.Millisecond):
+		c.mu.Lock()
 		c.pendingRsp = nil
+		c.mu.Unlock()
 		return "", nil
 	}
 }
 
 // readLoop reads lines from the telnet connection, parses spots,
-// and delivers them to the spots channel.
+// and delivers them to the spots channel. On disconnect, triggers
+// an auto-reconnect goroutine.
 func (c *Client) readLoop() {
 	defer func() {
 		if c.conn != nil {
 			c.conn.Close()
 			c.conn = nil
 		}
-		// Signal disconnect.
-		select {
-		case c.statusCh <- false:
-		default:
+		// Signal disconnect and start reconnection if not stopped.
+		c.mu.Lock()
+		stopped := c.stopCh == nil
+		c.mu.Unlock()
+		if !stopped {
+			select {
+			case c.statusCh <- false:
+			default:
+			}
+			go c.reconnectLoop()
 		}
 	}()
 
@@ -234,11 +311,14 @@ func (c *Client) readLoop() {
 			// Prompts look like "CALL de CLUSTER date time XXX >"
 			isPrompt := strings.HasSuffix(strings.TrimSpace(line), ">") &&
 				strings.Contains(line, "de")
-			if c.pendingRsp != nil &&
+			c.mu.Lock()
+			pr := c.pendingRsp
+			c.mu.Unlock()
+			if pr != nil &&
 				!strings.HasPrefix(line, "DX de") &&
 				!isPrompt {
 				select {
-				case c.pendingRsp <- line:
+				case pr <- line:
 				default:
 				}
 			}

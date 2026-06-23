@@ -43,7 +43,7 @@ func (m *Model) helpView() string {
 	if m.spotDialog != nil {
 		spot = 1
 	}
-	if m.ui.logbookEditor != nil && m.ui.logbookEditor.isConfirmMode() {
+	if m.ui.logbookEditor != nil && m.ui.logbookEditor.isModalMode() {
 		conf = 1
 	}
 	if m.ui.logbookEditor != nil && m.ui.logbookEditor.IsEditing() {
@@ -111,7 +111,7 @@ func (m *Model) helpView() string {
 		m.rc.helpView = result
 		return result
 	}
-	if m.ui.logbookEditor != nil && m.ui.logbookEditor.isConfirmMode() && m.ui.logbookEditor.dialog != nil {
+	if m.ui.logbookEditor != nil && m.ui.logbookEditor.isModalMode() && m.ui.logbookEditor.dialog != nil {
 		result = HelpStyle.Render(m.help.ShortHelpView(confirmBindings))
 		m.rc.helpSig = sig
 		m.rc.helpView = result

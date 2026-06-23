@@ -510,4 +510,8 @@ func (m *Model) shutdownConnections() {
 		applog.Debug("rotor: closing connection on shutdown")
 		closer.Close()
 	}
+	if m.dxc.client != nil {
+		applog.Debug("dxc: stopping client on shutdown")
+		m.dxc.client.Stop()
+	}
 }

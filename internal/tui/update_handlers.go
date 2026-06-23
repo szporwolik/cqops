@@ -112,6 +112,11 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 		return true, nil
 	case wlStatusMsg:
 		m.lookup.wlOnline = r.online
+		if r.online {
+			m.lookup.wlFailCount = 0
+		} else {
+			m.lookup.wlFailCount++
+		}
 		if r.stationName != "" {
 			m.lookup.wlStationName = r.stationName
 		}

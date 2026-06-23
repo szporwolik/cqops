@@ -296,25 +296,16 @@ func Save(path string, cfg *Config) error {
 
 // Upgrade runs version-gated migration steps based on the config's stored
 // version. Call after Load() and before any other config-dependent init.
-// Steps are idempotent — they only run when the stored version is older
-// than the step's target version.
+// At minimum, stamps the current version into state so future migrations
+// can gate on it.
 func (c *Config) Upgrade(currentVersion string) {
 	if c == nil {
 		return
 	}
-	stored := c.State.Version
-
-	// Example future step:
-	// if versionOlder(stored, "0.9.0") {
-	//     // migration logic for 0.9.0
-	// }
-
-	_ = stored
-	_ = currentVersion
+	// Stamp the running version so future migrations can use it.
+	c.State.Version = currentVersion
 }
 
-// Validate checks the config for structural integrity. Returns an error
-// describing the first problem found, or nil if the config is valid.
 // Validate checks the config for structural integrity and safe values.
 // Returns an error describing the first problem found, or nil if valid.
 func (c *Config) Validate() error {
@@ -388,6 +379,10 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("dxc.port must be 1-65535, got %q", c.Integrations.DXC.Port)
 			}
 		}
+		login := strings.TrimSpace(c.Integrations.DXC.Login)
+		if login != "" && !qso.IsValidCall(login) {
+			return fmt.Errorf("dxc.login must be a valid callsign, got %q", login)
+		}
 	}
 
 	// --- Rigs ---
@@ -438,6 +433,36 @@ func (c *Config) Validate() error {
 		}
 		if _, ok := c.Operators[lb.ActiveOperator]; !ok {
 			return fmt.Errorf("logbook %q: active_operator references unknown operator %q", lbID, lb.ActiveOperator)
+		}
+	}
+
+	// --- Station.RigName references ---
+	for lbID, lb := range c.Logbooks {
+		if lb.Station.RigName == "" {
+			continue
+		}
+		if _, ok := c.Rigs[lb.Station.RigName]; !ok {
+			return fmt.Errorf("logbook %q: rig_name references unknown rig %q", lbID, lb.Station.RigName)
+		}
+	}
+
+	// --- ActiveContest references ---
+	for lbID, lb := range c.Logbooks {
+		if lb.ActiveContest == "" {
+			continue
+		}
+		if _, ok := c.Contests[lb.ActiveContest]; !ok {
+			return fmt.Errorf("logbook %q: active_contest references unknown contest %q", lbID, lb.ActiveContest)
+		}
+	}
+
+	// --- Contest.LogbookID references ---
+	for ctID, ct := range c.Contests {
+		if ct.LogbookID == "" {
+			continue
+		}
+		if _, ok := c.Logbooks[ct.LogbookID]; !ok {
+			return fmt.Errorf("contest %q: logbook_id references unknown logbook %q", ctID, ct.LogbookID)
 		}
 	}
 

@@ -14,7 +14,7 @@ import (
 type StationForm struct {
 	Name        textinput.Model
 	Callsign    textinput.Model
-	Operator    textinput.Model
+	Operator    textinput.Model // display-only; driven by opFocus/opIdx + SetOperators
 	Locator     textinput.Model
 	SOTARef     textinput.Model
 	POTARef     textinput.Model

@@ -103,13 +103,21 @@ func (l *Listener) stopLocked() {
 	// Close the underlying UDP socket so the port can be reused.
 	// wsjtx-go v4.2.1 does not expose Shutdown; we access the conn
 	// via unsafe pointer to avoid the unexported-field reflect panic.
+	// If the library's internal struct changes, the recover prevents
+	// a crash — the socket just won't be closed immediately.
 	if l.server != nil {
-		rv := reflect.ValueOf(l.server).Elem()
-		if connField := rv.FieldByName("conn"); connField.IsValid() && !connField.IsNil() {
-			// conn is *net.UDPConn, so its address is **net.UDPConn.
-			connPtr := (**net.UDPConn)(unsafe.Pointer(connField.UnsafeAddr()))
-			(*connPtr).Close()
-		}
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					applog.Warn("WSJT-X: unsafe conn close panicked — library may have changed", "panic", r)
+				}
+			}()
+			rv := reflect.ValueOf(l.server).Elem()
+			if connField := rv.FieldByName("conn"); connField.IsValid() && connField.Kind() == reflect.Ptr && !connField.IsNil() {
+				connPtr := (**net.UDPConn)(unsafe.Pointer(connField.UnsafeAddr()))
+				(*connPtr).Close()
+			}
+		}()
 	}
 	close(l.stop)
 	l.wg.Wait()

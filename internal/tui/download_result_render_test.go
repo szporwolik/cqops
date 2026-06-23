@@ -15,7 +15,7 @@ import (
 // newResultEditor creates a LogbookEditor in edModeWLDownloadResult with
 // the given download result state. No DB is required for render tests.
 func newResultEditor(count, dupes, failed int, dlErr string) *LogbookEditor {
-	le := NewLogbookEditor(nil, "https://log.example.com", "key123", "1", 0, "OP", "JO90")
+	le := NewLogbookEditor(nil, "https://log.example.com", "key123", "1", 0, "OP", "JO90", "")
 	le.mode = edModeWLDownloadResult
 	le.wlDownloadCount = count
 	le.wlDownloadDupes = dupes
@@ -274,7 +274,7 @@ func TestResultRender_WhitespaceErrorShowsCount(t *testing.T) {
 
 // newImportResultEditor creates a LogbookEditor in edModeImportResult.
 func newImportResultEditor(inserted, dupes, failed int, impErr string) *LogbookEditor {
-	le := NewLogbookEditor(nil, "", "", "", 0, "OP", "JO90")
+	le := NewLogbookEditor(nil, "", "", "", 0, "OP", "JO90", "")
 	le.mode = edModeImportResult
 	le.impInserted = inserted
 	le.impDupes = dupes
@@ -325,7 +325,7 @@ func TestImportResultRender_Error(t *testing.T) {
 // "Imported 0" bug: when the render transitions from importing→result
 // before the done handler fires, dlCurrent is used as fallback.
 func TestImportResultRender_FallbackFromProgress(t *testing.T) {
-	le := NewLogbookEditor(nil, "", "", "", 0, "OP", "JO90")
+	le := NewLogbookEditor(nil, "", "", "", 0, "OP", "JO90", "")
 	le.mode = edModeImporting
 	le.dlActive = false // simulate completed but done handler not yet run
 	le.dlCurrent = 890  // live progress counter
@@ -356,7 +356,7 @@ func TestImportResultRender_FallbackFromProgress(t *testing.T) {
 // =============================================================================
 
 func newExportResultEditor(exported int, expErr, exportPath string) *LogbookEditor {
-	le := NewLogbookEditor(nil, "", "", "", 0, "OP", "JO90")
+	le := NewLogbookEditor(nil, "", "", "", 0, "OP", "JO90", "")
 	le.mode = edModeExportResult
 	le.impInserted = exported
 	le.impErr = expErr

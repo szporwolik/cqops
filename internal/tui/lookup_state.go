@@ -22,6 +22,8 @@ type lookupState struct {
 	// Wavelog connectivity and private lookup.
 	wlOnline       bool
 	wlForceCheck   bool
+	wlFailCount    int       // consecutive connection failures
+	wlNextRetry    time.Time // next retry attempt after backoff
 	wlStationName  string
 	wlStationLabel string
 	wlNeed         bool
@@ -38,10 +40,6 @@ type lookupState struct {
 	wlLookupCall  string // call the WL done flag is for
 	wlLastBand    string
 	wlLastMode    string
-
-	// pendingSave is set when Enter is pressed while lookups are still
-	// in progress. The save fires automatically once both complete.
-	pendingSave bool
 
 	// pendingLookupCmd is set by onFieldExit when the call field is left
 	// via Tab/arrows. handleFormKey batches it so lookups fire immediately.

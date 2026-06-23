@@ -29,6 +29,7 @@ type ToastQueue struct {
 }
 
 const toastMaxAge = 5 * time.Second
+const toastMaxItems = 20
 
 func NewToastQueue() *ToastQueue {
 	return &ToastQueue{}
@@ -44,6 +45,10 @@ func (tq *ToastQueue) Push(level ToastLevel, msg string) {
 		Message: msg,
 		Created: time.Now(),
 	})
+	// Cap queue size to prevent unbounded growth on error loops.
+	if len(tq.items) > toastMaxItems {
+		tq.items = tq.items[len(tq.items)-toastMaxItems:]
+	}
 	tq.mu.Unlock()
 
 	// Also log every toast

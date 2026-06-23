@@ -96,10 +96,6 @@ func Init() error {
 	return nil
 }
 
-func openLogFile() (*os.File, error) {
-	return openLogFileIn(logDir)
-}
-
 func openLogFileIn(dir string) (*os.File, error) {
 	name := "cqops-" + time.Now().Format("2006-01-02T15-04-05") + ".log"
 	return os.OpenFile(filepath.Join(dir, name), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)

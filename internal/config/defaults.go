@@ -14,7 +14,7 @@ func DefaultConfig() *Config {
 			UseCTY:           true,
 			UseSCP:           true,
 			UseRef:           true,
-			Debug:            true,
+			Debug:            false,
 			Notifications: NotificationsConfig{
 				Enabled:       true,
 				QSO:           false,

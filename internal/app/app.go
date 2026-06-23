@@ -73,7 +73,7 @@ func Init(logbookFlag string) (*App, error) {
 		DB:           db,
 		DBPath:       dbPath,
 		WSJTX:        wsjtx.NewListener(),
-		WSJTXUpdated: make(chan struct{}, 1),
+		WSJTXUpdated: make(chan struct{}, 10),
 	}
 
 	// WSJT-X will be started later by the TUI model Init() with per-rig settings.

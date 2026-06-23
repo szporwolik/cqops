@@ -16,7 +16,6 @@ type KeyMap struct {
 	Logs          key.Binding
 	Ref           key.Binding
 	BPL           key.Binding
-	CON           key.Binding
 	Save          key.Binding
 	Delete        key.Binding
 	Lookup        key.Binding
@@ -81,10 +80,6 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("f7"),
 			key.WithHelp("F7", "BPL"),
 		),
-		// CON: key.NewBinding(
-		// 	key.WithKeys("f3"),
-		// 	key.WithHelp("F3", "CON"),
-		// ),
 		Save: key.NewBinding(
 			key.WithKeys("ctrl+s"),
 			key.WithHelp("Ctrl+S", "Save"),

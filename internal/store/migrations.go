@@ -82,6 +82,7 @@ var migrations = []string{
 	`CREATE INDEX IF NOT EXISTS idx_qsos_source ON qsos(source)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_wavelog_uploaded ON qsos(wavelog_uploaded)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_contest_id ON qsos(contest_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_qsos_date_time ON qsos(qso_date DESC, time_on DESC)`,
 
 	// sig_info column added in v0.8.1 — ALTER for existing databases.
 	`ALTER TABLE qsos ADD COLUMN sig_info TEXT DEFAULT ''`,
@@ -115,6 +116,10 @@ var migrations = []string{
 		received_at INTEGER NOT NULL
 	)`,
 	`CREATE INDEX IF NOT EXISTS idx_dxc_spots_received ON dxc_spots(received_at)`,
+	// The UNIQUE index may fail on databases that previously had
+	// a botched migration (duplicate rows were inserted while the
+	// index was temporarily missing). Purge conflicting rows first.
+	`DELETE FROM dxc_spots WHERE rowid NOT IN (SELECT MIN(rowid) FROM dxc_spots GROUP BY dx_call)`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS idx_dxc_spots_call ON dxc_spots(dx_call)`,
 }
 
@@ -123,9 +128,13 @@ var migrations = []string{
 func Migrate(db *sql.DB) error {
 	for i, m := range migrations {
 		if _, err := db.Exec(m); err != nil {
-			// ALTER TABLE ADD COLUMN fails if the column already exists in a
-			// fresh database (CREATE TABLE already included it). Ignore.
+			// ALTER TABLE ADD COLUMN fails if the column already exists.
 			if strings.Contains(err.Error(), "duplicate column name") {
+				continue
+			}
+			// DROP INDEX may fail if the index doesn't exist or
+			// the database engine doesn't support the syntax.
+			if strings.Contains(m, "DROP INDEX") {
 				continue
 			}
 			return fmt.Errorf("migration %d: %w", i, err)

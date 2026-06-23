@@ -84,7 +84,6 @@ func (m *Model) tabView() string {
 	allTabs := []tab{
 		{"F1 QSO", "QSO", "F1", m.screen == screenQSO && m.confirm == nil, false},
 		{"F2 QRZ", "QRZ", "F2", (m.screen == screenPartner || m.screen == screenImage) && hasPartner, !hasPartner},
-		// {"F3 CON", "CON", "F3", m.screen == screenCON, false}, // temporarily hidden
 		{"F4 DXC", "DXC", "F4", m.screen == screenDXC, !dxcOnline},
 		{"F5 HRD", "HRD", "F5", m.screen == screenPSKReporter, !m.inetOnline},
 		{"F6 REF", "REF", "F6", m.screen == screenRef, !m.isREFReady()},

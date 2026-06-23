@@ -1026,10 +1026,12 @@ func (m *Model) writeBRCMarkdownRows(b *strings.Builder) {
 		}
 		b.WriteString(fmt.Sprintf("### %s %d–%d kHz", br.Label, br.FromKHz, br.ToKHz))
 		if br.Mod != "" {
-			b.WriteString(", " + br.Mod)
+			b.WriteString(", ")
+			b.WriteString(br.Mod)
 		}
 		if br.Note != "" {
-			b.WriteString(", " + br.Note)
+			b.WriteString(", ")
+			b.WriteString(br.Note)
 		}
 		b.WriteString("\n\n")
 		b.WriteString("| Band | Freq MHz | Station | Area |\n")
@@ -1247,24 +1249,5 @@ func bplRows(region int) []table.Row {
 }
 
 // =============================================================================
-// CON placeholder pane (F3)
+// end BPL views
 // =============================================================================
-
-func (m *Model) handleCONUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.width, m.height = msg.Width, msg.Height
-		return m, cmd
-	case tea.KeyPressMsg:
-		switch msg.String() {
-		case "f1", "esc":
-			m.screen = screenQSO
-			return m, cmd
-		}
-	}
-	return m, cmd
-}
-
-func (m *Model) viewCON(l Layout) string {
-	return fillBody(DimStyle.Width(l.TerminalW).Align(lipgloss.Center).Render("CON — placeholder"), l.ContentH)
-}
