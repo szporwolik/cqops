@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"unsafe"
@@ -174,6 +175,16 @@ func (l *Listener) eventLoop(gen uint64, msgCh chan interface{}, errCh chan erro
 					"dxCall", m.DxCall, "dxGrid", m.DxGrid,
 					"txFreq", m.TxFrequency, "mode", m.Mode,
 				)
+				// Also save this QSO. WSJT-X may send QsoLoggedMessage
+				// without a separate LoggedAdifMessage on some versions.
+				// Construct a minimal ADIF record from the known fields.
+				if onADIF := l.snapshotOnADIF(gen); onADIF != nil {
+					adif := buildADIFFromQsoLogged(m)
+					if adif != "" {
+						applog.Debug("WSJT-X: built ADIF from QsoLogged", "adif", adif)
+						onADIF(adif)
+					}
+				}
 			case wsjtx.CloseMessage:
 				applog.Info("WSJT-X: close")
 			}
@@ -222,4 +233,54 @@ func (l *Listener) snapshotOnStatus(gen uint64) func(string, string, uint64, str
 		return nil
 	}
 	return l.OnStatus
+}
+
+// buildADIFFromQsoLogged constructs a minimal ADIF record from a
+// QsoLoggedMessage. This ensures QSOs are saved even when WSJT-X
+// sends only the field-based message (without a separate LoggedAdifMessage).
+func buildADIFFromQsoLogged(m wsjtx.QsoLoggedMessage) string {
+	if m.DxCall == "" {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("\n<adif_ver:5>3.1.0\n<programid:6>WSJT-X\n<EOH>\n")
+	writeADIF(&b, "call", m.DxCall)
+	writeADIF(&b, "gridsquare", m.DxGrid)
+	if !m.DateTimeOn.IsZero() {
+		writeADIF(&b, "qso_date", m.DateTimeOn.UTC().Format("20060102"))
+		writeADIF(&b, "time_on", m.DateTimeOn.UTC().Format("150405"))
+	}
+	if !m.DateTimeOff.IsZero() {
+		writeADIF(&b, "qso_date_off", m.DateTimeOff.UTC().Format("20060102"))
+		writeADIF(&b, "time_off", m.DateTimeOff.UTC().Format("150405"))
+	}
+	writeADIF(&b, "mode", m.Mode)
+	if m.TxFrequency > 0 {
+		writeADIF(&b, "freq", fmt.Sprintf("%.6f", float64(m.TxFrequency)/1e6))
+	}
+	writeADIF(&b, "rst_sent", m.ReportSent)
+	writeADIF(&b, "rst_rcvd", m.ReportReceived)
+	writeADIF(&b, "tx_pwr", m.TxPower)
+	writeADIF(&b, "comment", m.Comments)
+	writeADIF(&b, "name", m.Name)
+	writeADIF(&b, "station_callsign", m.MyCall)
+	writeADIF(&b, "my_gridsquare", m.MyGrid)
+	writeADIF(&b, "operator", m.OperatorCall)
+	writeADIF(&b, "srx", m.ExchangeReceived)
+	writeADIF(&b, "stx", m.ExchangeSent)
+	b.WriteString("<EOR>")
+	return b.String()
+}
+
+func writeADIF(b *strings.Builder, field, value string) {
+	if value == "" {
+		return
+	}
+	b.WriteString("<")
+	b.WriteString(field)
+	b.WriteString(":")
+	b.WriteString(strconv.Itoa(len(value)))
+	b.WriteString(">")
+	b.WriteString(value)
+	b.WriteString(" ")
 }

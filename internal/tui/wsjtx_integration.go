@@ -106,6 +106,7 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 	}
 	qs.Source = "wsjtx"
 	qs.WavelogUploaded = "no"
+	qs.ContestID = m.App.Logbook.ActiveContest
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
 		Operator:        m.activeOperatorCallsign(),
