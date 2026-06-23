@@ -123,6 +123,15 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 		MySIGInfo:       m.App.Logbook.Station.SIGInfo,
 	})
 
+	// Warn if WSJT-X operator differs from the active operator — the
+	// WSJT-X operator is preserved (not overwritten), but the mismatch
+	// means someone else's WSJT-X may be feeding QSOs.
+	activeOp := m.activeOperatorCallsign()
+	if qs.Operator != "" && activeOp != "" && !strings.EqualFold(qs.Operator, activeOp) {
+		applog.Warn("WSJT-X: operator mismatch", "wsjtx_op", qs.Operator, "active_op", activeOp)
+		m.toasts.Warn("WSJT-X operator " + qs.Operator + " differs from active operator " + activeOp)
+	}
+
 	// Enrich QSO: compute distance/bearing from grid squares.
 	myGrid := m.App.Logbook.Station.Grid
 	if qs.GridSquare != "" && myGrid != "" {
