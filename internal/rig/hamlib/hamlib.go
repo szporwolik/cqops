@@ -137,6 +137,8 @@ func (c *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 
 	// Split status.  With --vfo, single-char 's' returns nothing — must
 	// use VFO-prefixed 's VFOA'.  Without --vfo, plain 's' works.
+	// Non-fatal: some backends (Xiegu) don't support this query; assume
+	// split is off when the command fails.
 	var splitRaw string
 	if c.vfoMode {
 		splitRaw, err = c.cmdDrain(r, conn, "s VFOA")
@@ -144,8 +146,15 @@ func (c *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 		splitRaw, err = c.cmd(r, conn, "s")
 	}
 	if err != nil {
-		c.dropConn()
-		return rig.RigStatus{}, fmt.Errorf("hamlib: split: %w", err)
+		applog.Debug("hamlib: split query failed, assuming split off", "error", err)
+		splitRaw = "0"
+		// Discard reader to ensure no stale buffered data from the
+		// failed read leaks into the subsequent frequency query.
+		c.discardReader()
+		conn, r, err = c.getConn(ctx)
+		if err != nil {
+			return rig.RigStatus{}, err
+		}
 	}
 	split := strings.TrimSpace(splitRaw) == "1"
 
