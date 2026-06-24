@@ -18,6 +18,7 @@ import (
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/qrz"
 	"github.com/szporwolik/cqops/internal/qso"
+	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
@@ -568,6 +569,23 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.toasts.Error(fmt.Sprintf("Export failed: %v", r.err))
 		} else {
 			m.toasts.Success(fmt.Sprintf("Band plan exported to %s", r.path))
+		}
+		return m, cmd
+	case qsoRefreshedMsg:
+		if r.err != nil {
+			m.toasts.Error(fmt.Sprintf("Refresh failed: %v", r.err))
+		} else {
+			m.qsos = r.qsos
+			m.recentQSOs.SetQSOS(r.qsos)
+			m.rc.pathSig = ""
+			m.rc.logStatsSig = ""
+			if !m.recentQSOs.filterSuppressed && m.recentQSOs.IsFiltered() {
+				filtered, filterErr := store.SearchQSOsByCall(m.App.DB, m.recentQSOs.filterCall, 200)
+				if filterErr == nil {
+					m.recentQSOs.SetFilterCall(m.recentQSOs.filterCall, filtered)
+				}
+			}
+			m.recentQSOs.filterSuppressed = false
 		}
 		return m, cmd
 	}
