@@ -3,6 +3,8 @@ package store
 import (
 	"database/sql"
 	"fmt"
+
+	"github.com/szporwolik/cqops/internal/qso"
 )
 
 // QSOCounts holds aggregate QSO statistics.
@@ -54,47 +56,37 @@ type LogbookStats struct {
 	LastQSODate string // YYYY-MM-DD or empty
 }
 
-// GetLogbookStats computes per-call statistics efficiently with a single
-// multi-count query. band and mode use the same prefix-match logic as
-// SearchQSOsByCall for consistency.
+// GetLogbookStats computes per-call statistics with a single query.
+// Uses the indexed base_call column for fast exact-match lookups,
+// avoiding the old unindexable LIKE '%/call' table scans.
 func GetLogbookStats(db *sql.DB, call, band, mode string) (LogbookStats, error) {
 	var s LogbookStats
+	baseCall := qso.DeriveBaseCall(call)
 
-	// Match: exact, suffix (/P etc.), prefix (DL/ etc.), both (DL/.../P).
-	if err := db.QueryRow(
-		`SELECT COUNT(*) FROM qsos WHERE call = ? OR call LIKE ? OR call LIKE ? OR call LIKE ?`,
-		call, call+"/%", "%/"+call, "%/"+call+"/%",
-	).Scan(&s.QSOCount); err != nil {
-		return s, fmt.Errorf("count call qsos: %w", err)
-	}
-	s.CallWorked = s.QSOCount > 0
-
-	// On specific band.
-	if band != "" {
-		var n int
-		db.QueryRow(
-			`SELECT COUNT(*) FROM qsos WHERE (call = ? OR call LIKE ? OR call LIKE ? OR call LIKE ?) AND band = ?`,
-			call, call+"/%", "%/"+call, "%/"+call+"/%", band,
-		).Scan(&n)
-		s.CallOnBand = n > 0
-	}
-
-	// On specific mode.
-	if mode != "" {
-		var n int
-		db.QueryRow(
-			`SELECT COUNT(*) FROM qsos WHERE (call = ? OR call LIKE ? OR call LIKE ? OR call LIKE ?) AND mode = ?`,
-			call, call+"/%", "%/"+call, "%/"+call+"/%", mode,
-		).Scan(&n)
-		s.CallOnMode = n > 0
-	}
-
-	// Last QSO date.
+	// Single query: COUNT total, SUM for band/mode matches, MAX for last date.
+	// All four aggregations run in one table scan over the matching rows.
+	// When band/mode is empty, the SUM returns 0 (no rows match ''=band).
+	var onBandCount, onModeCount int
 	var lastDate string
-	db.QueryRow(
-		`SELECT qso_date FROM qsos WHERE call = ? OR call LIKE ? OR call LIKE ? OR call LIKE ? ORDER BY id DESC LIMIT 1`,
-		call, call+"/%", "%/"+call, "%/"+call+"/%",
-	).Scan(&lastDate)
+	err := db.QueryRow(
+		`SELECT
+			COUNT(*),
+			COALESCE(SUM(CASE WHEN ? = '' THEN 0 WHEN band = ? THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN ? = '' THEN 0 WHEN mode = ? THEN 1 ELSE 0 END), 0),
+			COALESCE(MAX(qso_date), '')
+		FROM qsos
+		WHERE base_call = ?`,
+		band, band,
+		mode, mode,
+		baseCall,
+	).Scan(&s.QSOCount, &onBandCount, &onModeCount, &lastDate)
+	if err != nil {
+		return s, fmt.Errorf("logbook stats: %w", err)
+	}
+
+	s.CallWorked = s.QSOCount > 0
+	s.CallOnBand = onBandCount > 0
+	s.CallOnMode = onModeCount > 0
 	if lastDate != "" && len(lastDate) == 8 {
 		s.LastQSODate = lastDate[0:4] + "-" + lastDate[4:6] + "-" + lastDate[6:8]
 	}

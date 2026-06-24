@@ -162,7 +162,7 @@ func (m *Model) maybeDXC() tea.Cmd {
 		return nil
 	}
 
-	// Already connected — drain spots and check for disconnect.
+	// Already connected — check for disconnect, then drain spots (throttled to 4s).
 	if m.dxc.client != nil && m.dxc.online {
 		// Check if the connection dropped.
 		select {
@@ -177,7 +177,13 @@ func (m *Model) maybeDXC() tea.Cmd {
 			}
 		default:
 		}
-		return m.drainDXCSpots()
+		// Drain spots at most once every 4 seconds to reduce DB write pressure.
+		// The client buffers them; drainDXCSpots empties the entire channel at once.
+		if time.Since(m.dxc.lastDrain) >= 4*time.Second {
+			m.dxc.lastDrain = time.Now()
+			return m.drainDXCSpots()
+		}
+		return nil
 	}
 
 	// Connecting in progress — don't double-connect.
@@ -282,8 +288,6 @@ func (m *Model) storeDXCSpotsCmd(spots []dxc.Spot) tea.Cmd {
 			m.dxc.lastPurge = time.Now()
 			for attempt := 0; attempt < 3; attempt++ {
 				if err := store.PurgeOldDXCSpots(db); err == nil {
-					m.dxc.cachedBands = nil
-					m.dxc.cachedConts = nil
 					break
 				} else if !strings.Contains(err.Error(), "database is locked") {
 					break
@@ -418,6 +422,7 @@ func (m *Model) fillDXCFreq(msg dxcSpotLookupMsg) {
 func (m *Model) handleDXCSpotsStored(msg dxcSpotsStoredMsg) {
 	// Invalidate table and filter caches so they rebuild with fresh data.
 	m.dxc.tableReady = false
+	m.dxc.cachedSpots = nil
 	m.dxc.cachedBands = nil
 	m.dxc.cachedConts = nil
 

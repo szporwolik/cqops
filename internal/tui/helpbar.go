@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
@@ -75,7 +76,7 @@ func (m *Model) helpView() string {
 	if m.ui.logbookEditor != nil && m.ui.logbookEditor.IsImporting() {
 		importing = 1
 	}
-	sig := fmt.Sprintf("%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%t|%t|%s", m.screen, m.width, conf, spot, editing, chooserForm, rigForm, contestForm, contestConfirm, exporting, importing, m.rig.connected, m.wsjtx.online, suffix)
+	sig := m.buildHelpSig(m.screen, conf, spot, editing, chooserForm, rigForm, contestForm, contestConfirm, exporting, importing, suffix)
 	if m.rc.helpSig == sig && m.rc.helpView != "" {
 		return m.rc.helpView
 	}
@@ -183,6 +184,48 @@ func (m *Model) helpView() string {
 	m.rc.helpSig = sig
 	m.rc.helpView = result
 	return result
+}
+
+// buildHelpSig builds the help-bar cache key using strings.Builder to avoid
+// fmt.Sprintf allocation on every frame.
+func (m *Model) buildHelpSig(screen screenKind, conf, spot, editing, chooserForm, rigForm, contestForm, contestConfirm, exporting, importing int, suffix string) string {
+	var b strings.Builder
+	b.WriteString(strconv.Itoa(int(screen)))
+	b.WriteByte('|')
+	b.WriteString(strconv.Itoa(m.width))
+	b.WriteByte('|')
+	b.WriteString(strconv.Itoa(conf))
+	b.WriteByte('|')
+	b.WriteString(strconv.Itoa(spot))
+	b.WriteByte('|')
+	b.WriteString(strconv.Itoa(editing))
+	b.WriteByte('|')
+	b.WriteString(strconv.Itoa(chooserForm))
+	b.WriteByte('|')
+	b.WriteString(strconv.Itoa(rigForm))
+	b.WriteByte('|')
+	b.WriteString(strconv.Itoa(contestForm))
+	b.WriteByte('|')
+	b.WriteString(strconv.Itoa(contestConfirm))
+	b.WriteByte('|')
+	b.WriteString(strconv.Itoa(exporting))
+	b.WriteByte('|')
+	b.WriteString(strconv.Itoa(importing))
+	b.WriteByte('|')
+	if m.rig.connected {
+		b.WriteByte('1')
+	} else {
+		b.WriteByte('0')
+	}
+	b.WriteByte('|')
+	if m.wsjtx.online {
+		b.WriteByte('1')
+	} else {
+		b.WriteByte('0')
+	}
+	b.WriteByte('|')
+	b.WriteString(suffix)
+	return b.String()
 }
 
 // helpSuffix returns the dynamic right-aligned suffix for the help bar

@@ -43,9 +43,20 @@ type renderCache struct {
 	logStats    store.LogbookStats
 	logStatsSig string
 
+	// Async fetch state — avoids DB queries during View().
+	logStatsNeedFetch bool
+	logStatsFetchCall string
+	logStatsFetchBand string
+	logStatsFetchMode string
+
+	// DXCC continent cache — avoids prefix-tree lookup on every partner-view frame.
+	dxccContCall  string
+	dxccContValue string
+
 	// Per-frame view caches.
 	formView string
 	formSig  string
+	formSec  int // second of last form cache; busts at 1 Hz for clock fields
 	tabView  string
 	tabSig   string
 	helpView string

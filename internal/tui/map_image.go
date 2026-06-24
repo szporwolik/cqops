@@ -47,6 +47,10 @@ type mapRenderer struct {
 	cached       string
 	graylineOn   bool
 	graylineSlot int // UTC 5-minute slot (0–287); changes every 300 s
+
+	// Reusable RGBA buffer — avoids allocation on every cache miss.
+	buf    *image.RGBA
+	bufCap int // total pixels (W×H) the buffer can hold
 }
 
 func newMapRenderer() *mapRenderer { return &mapRenderer{} }
@@ -115,8 +119,14 @@ func (mr *mapRenderer) renderBase(mapW, mapAvailH int, drawGrayline bool) string
 	}
 
 	// Resize source to (mapW × (mapH*2)) pixels.
+	// Reuse a pre-allocated RGBA buffer to avoid per-frame allocation.
 	pixW, pixH := mapW, mapH*2
-	resized := image.NewRGBA(image.Rect(0, 0, pixW, pixH))
+	need := pixW * pixH
+	if mr.buf == nil || mr.bufCap < need {
+		mr.buf = image.NewRGBA(image.Rect(0, 0, pixW, pixH))
+		mr.bufCap = need
+	}
+	resized := mr.buf.SubImage(image.Rect(0, 0, pixW, pixH)).(*image.RGBA)
 	sb := mapImg.Bounds()
 	for y := 0; y < pixH; y++ {
 		sy := y * sb.Dy() / pixH

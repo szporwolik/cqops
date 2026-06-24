@@ -69,6 +69,16 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 		m.wsjtx.txMsg = ""
 		m.rc.status = ""
 	}
+	// WL lookup timeout: if a lookup was dispatched >20s ago and hasn't
+	// completed, force wlLookupDone to clear the "pending" state. This
+	// prevents the UI from getting stuck when the Wavelog server is
+	// unreachable or the HTTP request hangs.
+	if !m.lookup.wlLookupDone && !m.lookup.wlDispatchTime.IsZero() &&
+		time.Since(m.lookup.wlDispatchTime) > 20*time.Second {
+		m.lookup.wlLookupDone = true
+		m.lookup.wlLookupCall = m.lookup.wlLastCall
+		applog.Warn("Wavelog: lookup timed out", "call", m.lookup.wlLastCall)
+	}
 	// WSJT-X auto-reconnect: if enabled but never online, retry start every 30s.
 	// MaybeRestartWSJTX is a no-op when the listener is already running; it only
 	// acts when the previous start failed (lastWSJTX wasn't updated on error).
@@ -83,7 +93,43 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 		m.autoUpdateDateTime()
 	}
 	m.tickCount++
-	return tea.Batch(tickCmd(), m.maybeCheckInet(), m.maybeRefreshDataFiles(), m.pollRig(), m.pollRotor(), m.maybeCheckWavelog(), m.maybeCheckQRZ(), m.maybeFetchSolar(), m.maybeDXC(), cmd)
+	// Dispatch async logbook stats fetch if a View() cache miss was recorded.
+	if m.rc.logStatsNeedFetch && m.App.DB != nil {
+		m.rc.logStatsNeedFetch = false
+		cmd = tea.Batch(cmd, m.fetchLogbookStatsCmd(
+			m.rc.logStatsFetchCall, m.rc.logStatsFetchBand, m.rc.logStatsFetchMode))
+	}
+	// Consolidate periodic commands — only batch non-nil commands to reduce
+	// closure allocation and tea.Batch overhead on low-end hardware.
+	cmds := []tea.Cmd{tickCmd()}
+	if c := m.maybeCheckInet(); c != nil {
+		cmds = append(cmds, c)
+	}
+	if c := m.maybeRefreshDataFiles(); c != nil {
+		cmds = append(cmds, c)
+	}
+	if c := m.pollRig(); c != nil {
+		cmds = append(cmds, c)
+	}
+	if c := m.pollRotor(); c != nil {
+		cmds = append(cmds, c)
+	}
+	if c := m.maybeCheckWavelog(); c != nil {
+		cmds = append(cmds, c)
+	}
+	if c := m.maybeCheckQRZ(); c != nil {
+		cmds = append(cmds, c)
+	}
+	if c := m.maybeFetchSolar(); c != nil {
+		cmds = append(cmds, c)
+	}
+	if c := m.maybeDXC(); c != nil {
+		cmds = append(cmds, c)
+	}
+	if cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	return tea.Batch(cmds...)
 }
 
 // handleAsyncMessages processes async result messages (internet check, Wavelog status,

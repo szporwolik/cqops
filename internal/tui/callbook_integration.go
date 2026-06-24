@@ -108,6 +108,7 @@ func (m *Model) wlLookup(call string) tea.Cmd {
 	m.lookup.wlLastCall = call
 	m.lookup.wlLastBand = band
 	m.lookup.wlLastMode = mode
+	m.lookup.wlDispatchTime = time.Now() // for timeout detection
 	applog.Info("Wavelog: looking up", "call", call)
 	return m.wlLookupCmd(call, band, mode)
 }
@@ -270,25 +271,32 @@ func (m *Model) updateSCP() {
 }
 
 // fillWLData stores Wavelog private lookup result data.
-func (m *Model) fillWLData(msg wlResultMsg) {
+// When the result is for a stale callsign (user already moved on), we re-trigger
+// the lookup for the current form call instead of silently dropping — this
+// prevents the "WL lookup pending…" state from getting stuck indefinitely.
+func (m *Model) fillWLData(msg wlResultMsg) tea.Cmd {
 	if msg.Call == "" {
-		return
+		return nil
 	}
 	formCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
 	if formCall != "" && formCall != strings.ToUpper(msg.Call) {
-		return
+		// Stale result — the user cycled away. Re-trigger lookup for the
+		// current form call so the pending state eventually resolves.
+		applog.Debug("Wavelog: stale result, re-triggering",
+			"result_call", msg.Call, "form_call", formCall)
+		return m.wlLookup(formCall)
 	}
 	if msg.Err != nil {
 		m.lookup.wlLookupDone = true
 		m.lookup.wlLookupCall = strings.ToUpper(msg.Call)
 		applog.Warn("Wavelog: lookup error", "call", msg.Call, "error", msg.Err)
 		m.toasts.Warn(msg.Err.Error())
-		return
+		return nil
 	}
 	m.lookup.wlLookupDone = true
 	m.lookup.wlLookupCall = strings.ToUpper(msg.Call)
 	if msg.Data == nil {
-		return
+		return nil
 	}
 	applog.InfoDetail("Wavelog: lookup OK", fmt.Sprintf("call=%s worked=%v confirmed=%v", msg.Call, msg.Data.Worked(), msg.Data.DXCCConfirmed()))
 	m.lookup.wlPrivateData = msg.Data
@@ -297,6 +305,7 @@ func (m *Model) fillWLData(msg wlResultMsg) {
 		name = " " + msg.Data.Name()
 	}
 	m.toasts.Info("Wavelog: " + msg.Call + name)
+	return nil
 }
 
 // lookupsCompleteForCall returns true when both QRZ and Wavelog lookups

@@ -186,6 +186,12 @@ type dxcSpotLookupMsg struct {
 	freq float64 // 0 if not found
 }
 
+// logbookStatsMsg carries the async result of GetLogbookStats.
+type logbookStatsMsg struct {
+	stats store.LogbookStats
+	sig   string
+}
+
 type dxcTuneResultMsg struct {
 	call    string
 	freqMHz float64
@@ -407,11 +413,38 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd = tea.Batch(cmd, c)
 		}
 		// Update focused textinput width so scrolling stays correct.
-		if m.screen == screenQSO && !m.retainFocused {
+		// Set width on ALL form fields so View() doesn't need to mutate them.
+		if m.screen == screenQSO {
 			if m.width > 60 {
-				m.fields[m.focus].SetWidth(m.width/3 - 16)
+				colW := (m.width - 4) / 3
+				if colW > 41 {
+					colW = 41
+				}
+				vw := colW - 14 // subtract label+icon padding
+				if vw < 3 {
+					vw = 3
+				}
+				if vw > 40 {
+					vw = 40
+				}
+				for f := field(0); f < fieldCount; f++ {
+					ti := m.fields[f]
+					ti.SetWidth(vw)
+					m.fields[f] = ti
+				}
 			} else if m.width > 20 {
-				m.fields[m.focus].SetWidth(m.width - 16)
+				vw := m.width - 16
+				if vw < 3 {
+					vw = 3
+				}
+				if vw > 40 {
+					vw = 40
+				}
+				for f := field(0); f < fieldCount; f++ {
+					ti := m.fields[f]
+					ti.SetWidth(vw)
+					m.fields[f] = ti
+				}
 			}
 		}
 	}
@@ -521,8 +554,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, cmd
 	case wlResultMsg:
-		m.fillWLData(r)
+		wlCmd := m.fillWLData(r)
+		cmd = tea.Batch(cmd, wlCmd)
 		m.contestAutoFocusExchRcvd()
+		return m, cmd
+	case logbookStatsMsg:
+		m.handleLogbookStats(r)
 		return m, cmd
 	case refRebuildMsg:
 		m.ref.building = false

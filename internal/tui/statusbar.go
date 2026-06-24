@@ -13,7 +13,8 @@ import (
 // operator, WSJT-X TX message, integration status dots, and UTC clock.
 func (m *Model) headerView() string {
 	s := m.App.Logbook.Station
-	utc := time.Now().UTC()
+	now := time.Now()
+	utc := now.UTC()
 
 	callsign := s.Callsign
 	if callsign == "" {
@@ -83,35 +84,14 @@ func (m *Model) headerView() string {
 		rightParts = append(rightParts, statusDotStyled(m.lookup.wlOnline, "WL", m.Offline))
 	}
 	rightParts = append(rightParts,
-		utcLabelStyle.Render("UTC"),
-		S.StatusTime.Render(utc.Format("15:04:05")),
+		S.StatusTime.Render(now.Format("15:04")+"L  "+utc.Format("1504")+"Z"),
 	)
 
 	right := lipgloss.JoinHorizontal(lipgloss.Top, rightParts...)
-
-	// Show local time only when there is room to spare.
 	left := lipgloss.JoinHorizontal(lipgloss.Top, leftParts...)
 	leftW := lipgloss.Width(left)
 	rightW := lipgloss.Width(right)
 	fillerW := m.width - leftW - rightW
-
-	localTime := time.Now().Format("15:04")
-	ltSegment := lipgloss.JoinHorizontal(lipgloss.Top,
-		utcLabelStyle.Render("LT"),
-		S.StatusTime.Render(localTime)+" ",
-	)
-	ltW := lipgloss.Width(ltSegment)
-	if fillerW >= ltW+6 {
-		rightParts = rightParts[:len(rightParts)-2]
-		rightParts = append(rightParts,
-			utcLabelStyle.Render("LT"),
-			S.StatusTime.Render(localTime)+" ",
-			utcLabelStyle.Render("UTC"),
-			S.StatusTime.Render(utc.Format("15:04:05")),
-		)
-		right = lipgloss.JoinHorizontal(lipgloss.Top, rightParts...)
-		rightW = lipgloss.Width(right)
-	}
 
 	// WSJT-X TX message — only when at least 20 cells of free space remain.
 	wsjtxOn := false

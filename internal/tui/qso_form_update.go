@@ -484,8 +484,22 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 
 	case fieldBand:
 		// Changing band manually: derive default mode/submode.
+		// Also invalidate WL lookup data since band-specific stats changed.
 		if m.fields[f].Value() != prevVal {
 			m.applyFreqDefaults()
+			if m.lookup.wlPrivateData != nil || m.lookup.wlLookupDone {
+				m.lookup.wlPrivateData = nil
+				m.lookup.wlLookupDone = false
+			}
+		}
+
+	case fieldMode:
+		if m.fields[f].Value() != prevVal {
+			// Invalidate WL lookup data since mode-specific stats changed.
+			if m.lookup.wlPrivateData != nil || m.lookup.wlLookupDone {
+				m.lookup.wlPrivateData = nil
+				m.lookup.wlLookupDone = false
+			}
 		}
 
 	case fieldGrid:

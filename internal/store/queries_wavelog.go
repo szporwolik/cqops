@@ -26,26 +26,28 @@ func UpdateWavelogStatus(db *sql.DB, id int64, status string) error {
 }
 
 // NormalizeStationFields updates station_callsign, operator and my_gridsquare
-// for a set of QSOs. Used before batch upload to Wavelog to align QSOs with
-// the target station profile.
+// for a set of QSOs. Uses a single UPDATE with WHERE id IN (...) instead of
+// per-row prepared statements, reducing DB round-trips for batch operations.
 func NormalizeStationFields(db *sql.DB, ids []int64, stationCall, operator, grid string) error {
-	tx, err := db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
+	if len(ids) == 0 {
+		return nil
 	}
-	defer tx.Rollback()
 
-	stmt, err := tx.Prepare(`UPDATE qsos SET station_callsign=?, operator=?, my_gridsquare=?, updated_at=? WHERE id=?`)
-	if err != nil {
-		return fmt.Errorf("prepare: %w", err)
+	// Build WHERE id IN (?,?,...) clause.
+	placeholders := make([]string, len(ids))
+	args := make([]any, 0, len(ids)+4)
+	args = append(args, stationCall, operator, grid, time.Now().UTC().Format(time.RFC3339))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args = append(args, id)
 	}
-	defer stmt.Close()
 
-	now := time.Now().UTC().Format(time.RFC3339)
-	for _, id := range ids {
-		if _, err := stmt.Exec(stationCall, operator, grid, now, id); err != nil {
-			return fmt.Errorf("update qso %d: %w", id, err)
-		}
+	query := `UPDATE qsos SET station_callsign=?, operator=?, my_gridsquare=?, updated_at=? WHERE id IN (` +
+		strings.Join(placeholders, ",") + `)`
+
+	_, err := db.Exec(query, args...)
+	if err != nil {
+		return fmt.Errorf("normalize station fields: %w", err)
 	}
-	return tx.Commit()
+	return nil
 }

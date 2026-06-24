@@ -152,7 +152,7 @@ func (m *Model) refreshQSOS() tea.Cmd {
 	return func() tea.Msg {
 		var qsos []qso.QSO
 		var err error
-		for attempt := 0; attempt < 3; attempt++ {
+		for attempt := 0; attempt < 2; attempt++ {
 			qsos, err = store.ListQSOs(m.App.DB, 500, m.App.Logbook.ActiveContest)
 			if err == nil {
 				break
@@ -160,7 +160,7 @@ func (m *Model) refreshQSOS() tea.Cmd {
 			if !strings.Contains(err.Error(), "database is locked") {
 				break
 			}
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(50 * time.Millisecond)
 		}
 		return qsoRefreshedMsg{qsos: qsos, err: err}
 	}

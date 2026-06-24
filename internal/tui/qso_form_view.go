@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/qso"
@@ -49,13 +50,14 @@ func (m *Model) viewForm(width int) string {
 	}
 
 	// Build a cache signature from all inputs that affect form output.
-	// The date/time fields change every second, so this invalidates at 1 Hz.
+	// Exclude clock fields (date/time) when auto-updating since they change
+	// every second. Instead, use a 1-second TTL via the current second so
+	// the clock updates visually without busting the cache on every frame.
 	var sigB strings.Builder
 	fmt.Fprintf(&sigB, "%d|%d|%s|", width, m.focus, m.App.Logbook.ActiveContest)
 	if m.retainFocused {
 		sigB.WriteString("rf|")
 	} else {
-		// Cursor position affects View() output — must be part of the key.
 		fmt.Fprintf(&sigB, "cp%d|", m.fields[m.focus].Position())
 	}
 	if m.retainComment {
@@ -65,8 +67,21 @@ func (m *Model) viewForm(width int) string {
 		sigB.WriteString("dta|")
 	}
 	for _, f := range allFields {
+		if m.dateTimeAuto && (f == fieldDate || f == fieldTime) {
+			continue // clock fields change every second, use TTL instead
+		}
 		sigB.WriteString(m.fields[f].Value())
 		sigB.WriteByte('|')
+	}
+	if !m.dateTimeAuto {
+		sigB.WriteString(m.fields[fieldDate].Value())
+		sigB.WriteByte('|')
+		sigB.WriteString(m.fields[fieldTime].Value())
+		sigB.WriteByte('|')
+	}
+	// 1-second TTL: include the current second when clock is auto-updating.
+	if m.dateTimeAuto {
+		fmt.Fprintf(&sigB, "s%d", time.Now().Second())
 	}
 	sig := sigB.String()
 	if m.rc.formSig == sig && m.rc.formView != "" {
@@ -103,8 +118,9 @@ func (m *Model) viewForm(width int) string {
 	const labelW = 2 + 11
 
 	// renderLine returns the raw field line (label + value) without column-width
-	// wrapping. Textinput width is set here because bubbles/textinput requires
-	// width to be known at render time for cursor positioning.
+	// wrapping. Textinput width is set locally for rendering but is not persisted
+	// back to the model — width sync happens in Update() on WindowSizeMsg.
+	// This avoids mutating model state during View() and busting the form cache.
 	renderLine := func(f field, availW int) string {
 		label := fieldNames[f]
 		raw := strings.TrimSpace(m.fields[f].Value())
@@ -123,14 +139,11 @@ func (m *Model) viewForm(width int) string {
 		if vw > 40 {
 			vw = 40
 		}
-		ti.SetWidth(vw)
-		if isFocused {
-			if lipgloss.Width(raw) > vw {
-				ti.SetWidth(vw - 1)
-			}
-			ti.SetCursor(ti.Position())
-			m.fields[f] = ti
+		// Set width locally for correct View() output; don't persist back.
+		if isFocused && lipgloss.Width(raw) > vw {
+			vw = vw - 1
 		}
+		ti.SetWidth(vw)
 
 		var v string
 		if raw == "" && !isFocused {

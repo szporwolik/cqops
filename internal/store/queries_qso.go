@@ -21,7 +21,12 @@ const qsoCols = `call, qso_date, time_on, time_off, band, freq, freq_rx, mode, s
 		my_sig, my_sig_info,
 		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id`
 
+// placeholders51 is a pre-computed string of 51 comma-separated "?" markers,
+// used by InsertQSO to avoid a per-insert []string allocation.
+const placeholders51 = "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?"
+
 // placeholders returns a string of n comma-separated "?" placeholders.
+// Prefer the pre-computed placeholders51 constant when n=51.
 func placeholders(n int) string {
 	parts := make([]string, n)
 	for i := range parts {
@@ -45,8 +50,8 @@ func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 	for attempt := 0; attempt < 3; attempt++ {
 		var res sql.Result
 		res, err = db.Exec(
-			`INSERT INTO qsos (`+qsoCols+`, created_at, updated_at)
-			VALUES (`+placeholders(53)+`)`,
+			`INSERT INTO qsos (`+qsoCols+`, base_call, created_at, updated_at)
+			VALUES (`+placeholders51+`, ?, ?, ?)`,
 			q.Call, q.QSODate, q.TimeOn, q.TimeOff,
 			q.Band, q.Freq, q.FreqRx, q.Mode, q.Submode,
 			q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
@@ -55,6 +60,7 @@ func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 			q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
 			q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
 			q.CQZone, q.ITUZone, q.MyCQZone, q.MyITUZone, q.MyDXCC, q.MySIG, q.MySIGInfo, q.WavelogUploaded, q.ContestID, q.ExchSent, q.ExchRcvd, q.STX, q.SRX, q.STXString, q.SRXString, q.ContestADIFID,
+			qso.DeriveBaseCall(q.Call),
 			q.CreatedAt.Format(time.RFC3339), q.UpdatedAt.Format(time.RFC3339),
 		)
 		if err == nil {
@@ -202,9 +208,11 @@ func ListQSOsPage(db *sql.DB, limit, offset int, contestID string) ([]qso.QSO, e
 	return qsos, rows.Err()
 }
 
-// SearchQSOsByCall returns QSOs matching a callsign by exact or prefix match.
-// "SP9SPM" matches "SP9SPM", "SP9SPM/P", "9A/SP9SPM", "9A/SP9SPM/P", etc.
+// SearchQSOsByCall returns QSOs matching a callsign by base callsign match.
+// Uses the indexed base_call column (extracted core callsign) for fast lookups.
+// Matches: "SP9SPM", "SP9SPM/P", "9A/SP9SPM", "9A/SP9SPM/P" all via base_call="SP9SPM".
 func SearchQSOsByCall(db *sql.DB, call string, limit int) ([]qso.QSO, error) {
+	baseCall := qso.DeriveBaseCall(call)
 	query := `SELECT id, call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,
 		rst_sent, rst_rcvd, gridsquare, name, qth, country, comment, notes, tx_pwr,
 		distance, bearing,
@@ -217,11 +225,11 @@ func SearchQSOsByCall(db *sql.DB, call string, limit int) ([]qso.QSO, error) {
 		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
 		created_at, updated_at
 		FROM qsos
-		WHERE call = ? OR call LIKE ? OR call LIKE ? OR call LIKE ?
+		WHERE base_call = ?
 		ORDER BY id DESC
 		LIMIT ?`
 
-	rows, err := db.Query(query, call, call+"/%", "%/"+call, "%/"+call+"/%", limit)
+	rows, err := db.Query(query, baseCall, limit)
 	if err != nil {
 		return nil, fmt.Errorf("search qsos by call: %w", err)
 	}

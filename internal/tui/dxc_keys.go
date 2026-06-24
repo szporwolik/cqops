@@ -21,18 +21,26 @@ func (m *Model) handleDXCUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			return m, cmd
 
 		case "pgup":
-			// Cycle time window forward.
-			m.dxc.timeIdx = (m.dxc.timeIdx + 1) % len(dxcTimeWindows)
+			// Cycle time window forward — skip if same value.
+			next := (m.dxc.timeIdx + 1) % len(dxcTimeWindows)
+			if m.dxc.timeIdx == next {
+				return m, cmd
+			}
+			m.dxc.timeIdx = next
 			m.dxc.timeFilter = dxcTimeWindows[m.dxc.timeIdx]
 			m.dxc.tableReady = false
 			return m, cmd
 
 		case "pgdown":
 			// Cycle time window backward.
-			m.dxc.timeIdx--
-			if m.dxc.timeIdx < 0 {
-				m.dxc.timeIdx = len(dxcTimeWindows) - 1
+			next := m.dxc.timeIdx - 1
+			if next < 0 {
+				next = len(dxcTimeWindows) - 1
 			}
+			if m.dxc.timeIdx == next {
+				return m, cmd
+			}
+			m.dxc.timeIdx = next
 			m.dxc.timeFilter = dxcTimeWindows[m.dxc.timeIdx]
 			m.dxc.tableReady = false
 			return m, cmd
@@ -41,34 +49,42 @@ func (m *Model) handleDXCUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			// Cycle band filter forward.
 			choices := m.dxcBandChoices()
 			if len(choices) > 0 {
-				m.dxc.bandIdx = (m.dxc.bandIdx + 1) % len(choices)
-				m.dxc.bandFilter = choices[m.dxc.bandIdx]
+				next := (m.dxc.bandIdx + 1) % len(choices)
+				if m.dxc.bandIdx != next {
+					m.dxc.bandIdx = next
+					m.dxc.bandFilter = choices[m.dxc.bandIdx]
+					m.dxc.tableReady = false
+				}
 			}
-			m.dxc.tableReady = false
 			return m, cmd
 
 		case "end":
 			// Cycle band filter backward.
 			choices := m.dxcBandChoices()
 			if len(choices) > 0 {
-				m.dxc.bandIdx--
-				if m.dxc.bandIdx < 0 {
-					m.dxc.bandIdx = len(choices) - 1
+				next := m.dxc.bandIdx - 1
+				if next < 0 {
+					next = len(choices) - 1
 				}
-				m.dxc.bandFilter = choices[m.dxc.bandIdx]
+				if m.dxc.bandIdx != next {
+					m.dxc.bandIdx = next
+					m.dxc.bandFilter = choices[m.dxc.bandIdx]
+					m.dxc.tableReady = false
+				}
 			}
-			m.dxc.tableReady = false
 			return m, cmd
 
 		case `\`:
 			// Cycle continent filter forward.
 			choices := m.dxcContChoices()
 			if len(choices) > 0 {
-				m.dxc.contIdx = (m.dxc.contIdx + 1) % len(choices)
-				m.dxc.contFilter = choices[m.dxc.contIdx]
+				next := (m.dxc.contIdx + 1) % len(choices)
+				if m.dxc.contIdx != next {
+					m.dxc.contIdx = next
+					m.dxc.contFilter = choices[m.dxc.contIdx]
+					m.dxc.tableReady = false
+				}
 			}
-			m.dxc.tableReady = false
-			return m, cmd
 
 		case "enter":
 			// Fill QSO form with highlighted spot, tune rig, and jump to form.
@@ -80,13 +96,16 @@ func (m *Model) handleDXCUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 		case "insert":
 			// Cycle mode filter forward.
 			modes := m.dxcAvailableModes()
-			choices := []string{""} // "" means all
+			choices := []string{""}
 			choices = append(choices, modes...)
 			if len(choices) > 0 {
-				m.dxc.modeIdx = (m.dxc.modeIdx + 1) % len(choices)
-				m.dxc.modeFilter = choices[m.dxc.modeIdx]
+				next := (m.dxc.modeIdx + 1) % len(choices)
+				if m.dxc.modeIdx != next {
+					m.dxc.modeIdx = next
+					m.dxc.modeFilter = choices[m.dxc.modeIdx]
+					m.dxc.tableReady = false
+				}
 			}
-			m.dxc.tableReady = false
 			return m, cmd
 
 		case "delete":
@@ -95,26 +114,31 @@ func (m *Model) handleDXCUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			choices := []string{""}
 			choices = append(choices, modes...)
 			if len(choices) > 0 {
-				m.dxc.modeIdx--
-				if m.dxc.modeIdx < 0 {
-					m.dxc.modeIdx = len(choices) - 1
+				next := m.dxc.modeIdx - 1
+				if next < 0 {
+					next = len(choices) - 1
 				}
-				m.dxc.modeFilter = choices[m.dxc.modeIdx]
+				if m.dxc.modeIdx != next {
+					m.dxc.modeIdx = next
+					m.dxc.modeFilter = choices[m.dxc.modeIdx]
+					m.dxc.tableReady = false
+				}
 			}
-			m.dxc.tableReady = false
 			return m, cmd
 
 		case "backspace":
-			// Clear all filters.
-			m.dxc.timeFilter = 0
-			m.dxc.timeIdx = 0
-			m.dxc.bandFilter = ""
-			m.dxc.bandIdx = 0
-			m.dxc.contFilter = ""
-			m.dxc.contIdx = 0
-			m.dxc.modeFilter = ""
-			m.dxc.modeIdx = 0
-			m.dxc.tableReady = false
+			// Clear all filters — only rebuild if filters were actually active.
+			if m.dxc.timeFilter != 0 || m.dxc.bandFilter != "" || m.dxc.contFilter != "" || m.dxc.modeFilter != "" {
+				m.dxc.timeFilter = 0
+				m.dxc.timeIdx = 0
+				m.dxc.bandFilter = ""
+				m.dxc.bandIdx = 0
+				m.dxc.contFilter = ""
+				m.dxc.contIdx = 0
+				m.dxc.modeFilter = ""
+				m.dxc.modeIdx = 0
+				m.dxc.tableReady = false
+			}
 			return m, cmd
 		}
 	}

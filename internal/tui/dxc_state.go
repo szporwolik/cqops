@@ -16,6 +16,7 @@ type dxcState struct {
 	lastAttempt  time.Time
 	reconnectIdx int
 	lastPurge    time.Time
+	lastDrain    time.Time // last time drainDXCSpots was called; throttle to 4s
 
 	table      table.Model
 	tableReady bool
@@ -35,6 +36,12 @@ type dxcState struct {
 	selectedSpot store.DXCSpot   // full spot data captured at cursor-move time
 	tuneCancel   func()          // cancel previous tune command if running
 	cachedSpots  []store.DXCSpot // cached result of last filteredSpots() call
+
+	// Filter state at time of cache — used to detect staleness.
+	cachedBandFilter string
+	cachedTimeFilter int
+	cachedContFilter string
+	cachedModeFilter string
 
 	// Band/continent cache — avoids DB query on every filter-cycle keypress.
 	cachedBands []string
