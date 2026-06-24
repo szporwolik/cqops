@@ -240,20 +240,24 @@ func TestActiveBindings_LogEditorIncludesCycleContest(t *testing.T) {
 }
 
 // Test that the help bar shows the contest binding for log editor.
-func TestHelpBar_LogEditorShowsContestBinding(t *testing.T) {
+func TestHelpBar_ShowsMinimalBindings(t *testing.T) {
 	m := newTestModel()
-	m.screen = screenLogbookEditor
-	m.ui.logbookEditor = NewLogbookEditor(nil, "", "", "", 0, "OP", "JO90", "")
-	m.ui.logbookEditor.width = 80
-	m.ui.logbookEditor.height = 24
+	m.screen = screenQSO
 	m.width = 80
 	m.height = 24
 	m.keys = DefaultKeyMap()
 
 	help := m.renderHelpBar()
 
-	if !strings.Contains(help, "Contest") {
-		t.Error("help bar should mention 'Contest' for Ctrl+C on log editor screen")
+	// Bottom bar shows screen-specific minimal set.
+	if !strings.Contains(help, "Help") {
+		t.Error("help bar should mention 'Help' for ?")
+	}
+	if !strings.Contains(help, "Log QSO") {
+		t.Error("help bar should mention 'Log QSO' for Enter on QSO screen")
+	}
+	if !strings.Contains(help, "Quit") {
+		t.Error("help bar should mention 'Quit' for F10")
 	}
 }
 

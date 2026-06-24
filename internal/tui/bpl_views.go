@@ -155,7 +155,7 @@ func (m *Model) handleBPLUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 		case k.String() == "ctrl+e":
 			cmd = tea.Batch(cmd, m.exportBPL())
 			return m, cmd
-		case k.String() == "left" || msg.Code == tea.KeyLeft || k.String() == "h":
+		case k.String() == "left" || msg.Code == tea.KeyLeft:
 			if m.bpl.tab > 0 {
 				m.bpl.tab--
 			} else {
@@ -164,7 +164,7 @@ func (m *Model) handleBPLUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			m.bpl.cursor = 0
 			m.bpl.scroll = 0
 			m.bpl.cachedSig = ""
-		case k.String() == "right" || msg.Code == tea.KeyRight || k.String() == "l":
+		case k.String() == "right" || msg.Code == tea.KeyRight:
 			if m.bpl.tab < bplTabCount-1 {
 				m.bpl.tab++
 			} else {
@@ -178,15 +178,12 @@ func (m *Model) handleBPLUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			m.bpl.cursor = 0
 			m.bpl.scroll = 0
 			m.bpl.cachedSig = ""
-		case k.String() == "/":
-			m.bpl.search = ""
-			m.bpl.cachedSig = ""
-		case k.String() == "up" || msg.Code == tea.KeyUp || k.String() == "k":
+		case k.String() == "up" || msg.Code == tea.KeyUp:
 			if m.bpl.cursor > 0 {
 				m.bpl.cursor--
 				m.bpl.cachedSig = ""
 			}
-		case k.String() == "down" || msg.Code == tea.KeyDown || k.String() == "j":
+		case k.String() == "down" || msg.Code == tea.KeyDown:
 			m.bpl.cursor++
 			m.bpl.cachedSig = ""
 		case k.String() == "pgup" || msg.Code == tea.KeyPgUp:
@@ -204,7 +201,7 @@ func (m *Model) handleBPLUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 		case k.String() == "end" || msg.Code == tea.KeyEnd:
 			m.bpl.cursor = 9999 // clamped later
 			m.bpl.cachedSig = ""
-		case k.String() == " " || k.String() == "space":
+		case k.String() == " " || k.String() == "space" || k.String() == "enter":
 			if c := m.bplTuneCmd(); c != nil {
 				return m, tea.Batch(cmd, c)
 			}

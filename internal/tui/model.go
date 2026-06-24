@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -266,6 +267,10 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	m.focus = fieldCall
 	m.keys = DefaultKeyMap()
 	m.help = help.New()
+	// Brighten help overlay content: key in value color, desc in muted label color.
+	m.help.Styles.FullKey = S.Input
+	m.help.Styles.FullDesc = lipgloss.NewStyle().Foreground(P.TextMuted)
+	m.help.Styles.FullSeparator = lipgloss.NewStyle().Foreground(P.TextMuted)
 
 	m.recentQSOs = NewRecentQSOs(initialQSOS)
 	transport := &imageTransport{base: http.DefaultTransport}
@@ -429,6 +434,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		// Non-key messages fall through for tick / toast expiry / async processing.
+	}
+
+	// Active help overlay — blocks all input except dismiss keys.
+	if m.help.ShowAll {
+		if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
+			if key.Matches(keyMsg, m.keys.Help) || key.Matches(keyMsg, m.keys.Cancel) {
+				m.help.ShowAll = false
+			}
+			// Consume all keys while help is shown.
+		}
+		return m, cmd
 	}
 
 	// Active confirmation dialog — highest priority, blocks everything else
@@ -773,6 +789,11 @@ func (m *Model) View() tea.View {
 	// matches the visible terminal exactly.
 	mainView = lipgloss.NewStyle().MaxHeight(layout.TerminalH).Render(mainView)
 	finalView := RenderToastOverlay(mainView, m.toasts.Active(), layout.TerminalW, layout.TerminalH)
+
+	// Help overlay — floating bottom-left, above toasts, when ? is pressed.
+	if m.help.ShowAll {
+		finalView = m.renderHelpOverlay(finalView, layout)
+	}
 
 	v := tea.NewView(finalView)
 	v.AltScreen = true

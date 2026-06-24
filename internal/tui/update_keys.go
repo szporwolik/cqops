@@ -41,6 +41,15 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.screen = screenQSO
 		return nil, true
 
+	case key.Matches(msg, m.keys.Help):
+		m.help.ShowAll = !m.help.ShowAll
+		// When toggling help on, dismiss any open dialog.
+		if m.help.ShowAll {
+			m.confirm = nil
+			m.spotDialog = nil
+		}
+		return nil, true
+
 	case key.Matches(msg, m.keys.QSOForm):
 		applog.Debug("tab: F1 QSO")
 		if m.screen == screenQSO {
@@ -453,7 +462,7 @@ func (m *Model) handleRotorKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.toasts.Info(fmt.Sprintf("Rotator: turning to %.0f\u00b0", bearing))
 		return m.rotorSetPositionCmd(az, math.Round(m.rotor.elevation)), true
 
-	case "ctrl+escape":
+	case "ctrl+f1":
 		if m.rotor.client == nil {
 			return nil, false
 		}

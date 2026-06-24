@@ -166,14 +166,8 @@ func (m *Model) helpView() string {
 		return result
 	}
 
-	bindings := m.ActiveBindings()
-	if len(bindings) == 0 {
-		bindings = []key.Binding{m.keys.Quit}
-	}
+	bindings := m.minimalBarBindings()
 	helpText := m.help.ShortHelpView(bindings)
-	if helpText == "" {
-		helpText = m.help.ShortHelpView([]key.Binding{m.keys.Quit})
-	}
 
 	// Dynamic suffix (counter / scroll info) — always computed, never cached.
 	if suffix != "" {
@@ -305,5 +299,218 @@ func (m *Model) helpSuffix() string {
 	return ""
 }
 
+// minimalBarBindings returns the 2–3 key entries shown in the bottom bar.
+// Always includes ? Help and F10 Quit; the middle entry is screen-specific.
+func (m *Model) minimalBarBindings() []key.Binding {
+	h := m.keys.Help
+	q := m.keys.Quit
+	e := key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back"))
+	switch m.screen {
+	case screenQSO:
+		return []key.Binding{h, m.keys.Enter, q}
+	case screenPartner:
+		if m.lookup.partnerData != nil && m.lookup.partnerData.ImageURL != "" {
+			return []key.Binding{h, key.NewBinding(key.WithKeys("f2"), key.WithHelp("F2", "Photo")), q}
+		}
+		return []key.Binding{h, q}
+	case screenDXC:
+		return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "QSO+Tune")), e, q}
+	case screenLogbookEditor:
+		if m.ui.logbookEditor != nil && m.ui.logbookEditor.IsEditing() {
+			return []key.Binding{h, key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")), e, q}
+		}
+		return []key.Binding{h, e, q}
+	case screenConfig, screenIntegration, screenNotifications:
+		if m.isSubmodelActive() {
+			return []key.Binding{h, key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")), e, q}
+		}
+		return []key.Binding{h, e, q}
+	case screenChooser:
+		if m.ui.chooser != nil && (m.ui.chooser.mode == chooserEdit || m.ui.chooser.mode == chooserCreate) {
+			return []key.Binding{h, key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")), e, q}
+		}
+		return []key.Binding{h, key.NewBinding(key.WithKeys("space"), key.WithHelp("Spc", "Activate")), e, q}
+	case screenRigEdit:
+		if m.ui.rigChooser != nil && (m.ui.rigChooser.mode == rigChooserEdit || m.ui.rigChooser.mode == rigChooserCreate) {
+			return []key.Binding{h, key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")), e, q}
+		}
+		return []key.Binding{h, key.NewBinding(key.WithKeys("space"), key.WithHelp("Spc", "Activate")), e, q}
+	case screenContest:
+		if m.ui.contestChooser != nil && (m.ui.contestChooser.mode == contestEdit || m.ui.contestChooser.mode == contestCreate) {
+			return []key.Binding{h, key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")), e, q}
+		}
+		return []key.Binding{h, key.NewBinding(key.WithKeys("space"), key.WithHelp("Spc", "Activate")), e, q}
+	case screenOperator:
+		if m.ui.operatorChooser != nil && (m.ui.operatorChooser.mode == operatorEdit || m.ui.operatorChooser.mode == operatorCreate) {
+			return []key.Binding{h, key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")), e, q}
+		}
+		return []key.Binding{h, key.NewBinding(key.WithKeys("space"), key.WithHelp("Spc", "Activate")), e, q}
+	case screenMainMenu:
+		return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Select")), e, q}
+	case screenLogView:
+		return []key.Binding{h, key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Top")), q}
+	case screenRef:
+		if m.ref.searched && len(m.ref.rows) > 0 {
+			return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Commit")), q}
+		}
+		return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Search")), q}
+	case screenBPL:
+		if m.rig.connected && !m.wsjtx.online {
+			return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Tune")), q}
+		}
+		return []key.Binding{h, key.NewBinding(key.WithKeys("left", "right"), key.WithHelp("←→", "Tabs")), q}
+	case screenImage:
+		return []key.Binding{h, e, q}
+	case screenPSKReporter:
+		return []key.Binding{h, key.NewBinding(key.WithKeys("backspace"), key.WithHelp("Bksp", "Clear")), q}
+	default:
+		return []key.Binding{h, q}
+	}
+}
+
 // renderHelpBar is the canonical entry point for help bar rendering.
 func (m *Model) renderHelpBar() string { return m.helpView() }
+
+// activeHelpKeyMap adapts the context-sensitive ActiveBindings list into
+// the help.KeyMap interface so the help overlay can render columns.
+type activeHelpKeyMap struct {
+	bindings []key.Binding
+}
+
+func (a activeHelpKeyMap) ShortHelp() []key.Binding {
+	// Show all bindings that have help text.
+	out := make([]key.Binding, 0, len(a.bindings))
+	for _, b := range a.bindings {
+		if b.Help().Key != "" || b.Help().Desc != "" {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+func (a activeHelpKeyMap) FullHelp() [][]key.Binding {
+	flat := a.ShortHelp()
+	if len(flat) == 0 {
+		return nil
+	}
+	// Distribute into 3 columns, filling column-first.
+	colSize := (len(flat) + 2) / 3
+	cols := make([][]key.Binding, 3)
+	for i, b := range flat {
+		col := i / colSize
+		if col > 2 {
+			col = 2
+		}
+		cols[col] = append(cols[col], b)
+	}
+	// Remove empty trailing columns.
+	for len(cols) > 0 && len(cols[len(cols)-1]) == 0 {
+		cols = cols[:len(cols)-1]
+	}
+	return cols
+}
+
+// screenTitle returns a short human-readable name for the current screen.
+func (m *Model) screenTitle() string {
+	switch m.screen {
+	case screenQSO:
+		return "QSO"
+	case screenPartner:
+		return "Partner"
+	case screenImage:
+		return "Photo"
+	case screenDXC:
+		return "DX Cluster"
+	case screenPSKReporter:
+		return "PSK Reporter"
+	case screenRef:
+		return "References"
+	case screenBPL:
+		return "Band Plan"
+	case screenLogbookEditor:
+		return "Log Editor"
+	case screenLogView:
+		return "Log Viewer"
+	case screenConfig:
+		return "Settings"
+	case screenIntegration:
+		return "Integrations"
+	case screenNotifications:
+		return "Notifications"
+	case screenMainMenu:
+		return "Menu"
+	case screenChooser:
+		return "Logbooks"
+	case screenRigEdit:
+		return "Rigs"
+	case screenContest:
+		return "Contests"
+	case screenOperator:
+		return "Operators"
+	default:
+		return "CQOps"
+	}
+}
+
+// renderHelpOverlay composites a floating help overlay in the bottom-left
+// corner showing the current screen's keybindings in columns.
+// Dismissed with ? or Esc.
+func (m *Model) renderHelpOverlay(mainView string, l Layout) string {
+	bindings := m.ActiveBindings()
+	adapter := activeHelpKeyMap{bindings: bindings}
+
+	// Set help width so columns wrap gracefully.
+	m.help.SetWidth(max(l.TerminalW-4, 40))
+
+	helpContent := m.help.View(adapter)
+
+	// Build the floating box with screen title and dismiss hint.
+	// No extra spaces — padding (0,1) on the box already provides margins.
+	title := lipgloss.NewStyle().Bold(true).Foreground(P.Cursor).Render(m.screenTitle() + " Keys")
+	dismiss := lipgloss.NewStyle().Foreground(P.TextMuted).Render("?/Esc close")
+
+	// Pad the shorter element so title and help content share the same width,
+	// preventing the title from wrapping on screens with few bindings.
+	contentW := lipgloss.Width(helpContent)
+	titleW := lipgloss.Width(title)
+	w := max(contentW, titleW)
+	title = lipgloss.NewStyle().Width(w).Render(title)
+	// Only set width on help content if it's narrower — wider content
+	// already has columns set by m.help.SetWidth.
+	if contentW < w {
+		helpContent = lipgloss.NewStyle().Width(w).Render(helpContent)
+	}
+
+	boxContent := lipgloss.JoinVertical(lipgloss.Left,
+		title,
+		"",
+		helpContent,
+		"",
+		dismiss,
+	)
+
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(P.Cursor).
+		Padding(0, 1).
+		Background(lipgloss.Color("0")) // solid bg matching terminal default
+
+	box := boxStyle.Render(boxContent)
+
+	boxH := lipgloss.Height(box)
+
+	// Position: bottom-left corner with 1-cell margin.
+	x := 1
+	y := l.TerminalH - boxH - 1
+	if y < 0 {
+		y = 0
+	}
+
+	base := lipgloss.NewLayer(mainView)
+	helpLayer := lipgloss.NewLayer(box).
+		X(x).
+		Y(y).
+		Z(2) // above toasts
+
+	return lipgloss.NewCompositor(base, helpLayer).Render()
+}
