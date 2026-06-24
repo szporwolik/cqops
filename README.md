@@ -93,23 +93,28 @@ go build -ldflags "-s -w -X github.com/szporwolik/cqops/internal/version.Version
 
 ## Releases
 
+Release notes are published in [CHANGELOG.md](CHANGELOG.md).  
+All releases are available on the [GitHub Releases](https://github.com/szporwolik/cqops/releases) page.
+
 A GitHub Actions workflow (`.github/workflows/release.yml`) automates the release process. Before triggering it:
 
-1. Update the version in **`VERSION`** (plain version number, e.g. `0.1.1`).
-2. Run the **Create Release** workflow from the [Actions tab](https://github.com/szporwolik/cqops/actions) — it builds binaries for all 6 platforms (Windows, Linux, macOS; amd64 + arm64), platform packages, and a Windows installer, then creates a tagged GitHub release.
+1. Update the version in **`VERSION`** (plain version number, e.g. `0.8.7`).
+2. Run the **Create Release** workflow from the [Actions tab](https://github.com/szporwolik/cqops/actions) — it builds binaries for 6 platforms (linux/amd64, linux/arm64, linux/armhf, windows/amd64, darwin/amd64, darwin/arm64), Debian packages, portable archives, and a Windows installer, then creates a tagged GitHub release.
 
 Each release includes:
 
 | Asset | Target |
 |---|---|
-| `cqops-setup-X.Y.Z.exe` | Windows installer (NSIS) |
+| `cqops-setup.exe` | Windows installer (NSIS) |
+| `cqops-windows-portable.zip` | Windows portable (no install, amd64) |
 | `cqops_X.Y.Z_linux_amd64.deb` | Debian / Ubuntu amd64 |
-| `cqops_X.Y.Z_linux_arm64.deb` | Debian / Ubuntu arm64 (Raspberry Pi) |
-| `cqops_X.Y.Z_linux_amd64.rpm` | Fedora / RHEL amd64 |
-| `cqops_X.Y.Z_linux_arm64.rpm` | Fedora / RHEL arm64 |
-| `cqops_X.Y.Z_linux_amd64.pkg.tar.zst` | Arch / Manjaro amd64 |
-| `cqops_X.Y.Z_linux_arm64.pkg.tar.zst` | Arch / Manjaro arm64 |
-| Raw binaries | Windows, Linux, macOS — amd64 + arm64 |
+| `cqops_X.Y.Z_linux_arm64.deb` | Debian / Ubuntu arm64 |
+| `cqops_X.Y.Z_linux_armhf.deb` | Debian / Ubuntu armhf (Raspberry Pi) |
+| `cqops-linux-amd64.tar.gz` | Linux amd64 portable |
+| `cqops-linux-arm64.tar.gz` | Linux arm64 portable |
+| `cqops-linux-armhf.tar.gz` | Linux armhf portable |
+| `cqops-darwin-amd64` | macOS amd64 (raw binary) |
+| `cqops-darwin-arm64` | macOS arm64 (raw binary) |
 
 ### Building installers locally
 
@@ -118,7 +123,7 @@ Each release includes:
 .\scripts\build-installer.ps1
 ```
 ```bash
-# Linux: deb, rpm, arch packages (requires nfpm)
+# Linux: Debian packages (requires nfpm)
 bash scripts/build-packages.sh
 ```
 
