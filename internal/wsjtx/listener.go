@@ -28,6 +28,7 @@ type Listener struct {
 	wg         sync.WaitGroup
 	OnADIF     func(string)
 	OnStatus   func(string, string, uint64, string, string, string, string, bool) // call, grid, freqHz, mode, submode, report, txMessage, transmitting
+	dropped    uint64                                                             // event channel overflow counter; logged periodically
 }
 
 func NewListener() *Listener {
@@ -111,6 +112,7 @@ func (l *Listener) stopLocked() {
 			defer func() {
 				if r := recover(); r != nil {
 					applog.Warn("WSJT-X: unsafe conn close panicked — library may have changed", "panic", r)
+					applog.Debug("WSJT-X: socket close fallback — port may be held until OS timeout")
 				}
 			}()
 			rv := reflect.ValueOf(l.server).Elem()
@@ -191,6 +193,11 @@ func (l *Listener) eventLoop(gen uint64, msgCh chan interface{}, errCh chan erro
 			select {
 			case l.Events <- Event{Msg: msg}:
 			default:
+				l.dropped++
+				// Log once per 100 dropped events to avoid log spam.
+				if l.dropped%100 == 0 {
+					applog.Warn("WSJT-X: event channel full — dropping events", "dropped", l.dropped)
+				}
 			}
 		case e, ok := <-errCh:
 			if !ok {

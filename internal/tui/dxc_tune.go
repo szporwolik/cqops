@@ -133,6 +133,9 @@ func (m *Model) dxcTuneCmd() tea.Cmd {
 				}
 			}
 			_ = err2
+			if err2 != nil {
+				applog.Debug("DXC: tune mode verify failed", "call", call, "error", err2)
+			}
 		}
 
 		return dxcTuneResultMsg{

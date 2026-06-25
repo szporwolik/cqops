@@ -345,6 +345,9 @@ func (m *Model) bplTuneCmd() tea.Cmd {
 				}
 			}
 			_ = err2
+			if err2 != nil {
+				applog.Debug("BPL: tune mode verify failed", "error", err2)
+			}
 		}
 
 		return bplTuneResultMsg{

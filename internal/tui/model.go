@@ -537,121 +537,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Lookup result messages (QRZ, Wavelog) — must be processed before
 	// screen-specific routing so they work regardless of which screen is
-	// active (e.g. partner screen). Each screen's handler returns early
-	// for unrecognised messages, which would silently drop these.
-	switch r := msg.(type) {
-	case qrzResultMsg:
-		m.fillQRZData(r)
-		cmd = tea.Batch(cmd, m.updateFilteredTable())
-		m.contestAutoFocusExchRcvd()
-		if m.photo.partnerPicNeedLoad {
-			m.photo.partnerPicNeedLoad = false
-			w := m.photo.partnerPicW
-			h := m.photo.partnerPicH
-			if w < 25 {
-				w = 40
-			}
-			if h < 4 {
-				h = 15
-			}
-			cmd = tea.Batch(cmd, m.photo.partnerPicViewer.SetSize(w, h),
-				m.photo.partnerPicViewer.SetURL(m.photo.partnerPicURL))
-		}
-		return m, cmd
-	case wlResultMsg:
-		wlCmd := m.fillWLData(r)
-		cmd = tea.Batch(cmd, wlCmd)
-		m.contestAutoFocusExchRcvd()
-		return m, cmd
-	case logbookStatsMsg:
-		m.handleLogbookStats(r)
-		return m, cmd
-	case pskSpotsLoadedMsg:
-		if r.err == nil && r.spotKey != "" {
-			m.psk.spots = r.spots
-			m.psk.spotKey = r.spotKey
-		}
-		return m, cmd
-	case refRebuildMsg:
-		m.ref.building = false
-		m.ref.refNamesDirty = true
-		if r.err != nil {
-			applog.Warn("REF: rebuild failed", "error", r.err)
-			m.toasts.Error("REF database build failed")
-		} else {
-			m.ref.ready = true
-			applog.Info("REF: rebuild complete", "total", r.total)
-			m.toasts.Success(fmt.Sprintf("REF database ready — %d references", r.total))
-		}
-		return m, cmd
-	case dxcSpotLookupMsg:
-		m.fillDXCFreq(r)
-		return m, cmd
-	case dxcSpotsStoredMsg:
-		m.handleDXCSpotsStored(r)
-		return m, cmd
-	case dxcTuneResultMsg:
-		if r.err != nil {
-			if strings.Contains(r.err.Error(), "cancelled") {
-				m.toasts.Warn(fmt.Sprintf("Tune cancelled: %v", r.err))
-			} else {
-				m.toasts.Error(fmt.Sprintf("Tune failed: %v", r.err))
-			}
-		} else {
-			msg := fmt.Sprintf("Rig tuned to %.5f MHz", r.freqMHz)
-			if r.mode != "" {
-				msg += " " + r.mode
-			}
-			if r.verify != "" {
-				m.toasts.Warn("Rig tuning failed")
-			} else {
-				m.toasts.Success(msg)
-			}
-		}
-		return m, cmd
-	case bplTuneResultMsg:
-		if r.err != nil {
-			if strings.Contains(r.err.Error(), "cancelled") {
-				m.toasts.Warn(fmt.Sprintf("Tune cancelled: %v", r.err))
-			} else {
-				m.toasts.Error(fmt.Sprintf("Tune failed: %v", r.err))
-			}
-		} else {
-			msg := fmt.Sprintf("Rig tuned to %.5f MHz", r.freqMHz)
-			if r.mode != "" {
-				msg += " " + r.mode
-			}
-			if r.verify != "" {
-				m.toasts.Warn("Rig tuning failed")
-			} else {
-				m.toasts.Success(msg)
-			}
-		}
-		return m, cmd
-	case bplExportMsg:
-		if r.err != nil {
-			m.toasts.Error(fmt.Sprintf("Export failed: %v", r.err))
-		} else {
-			m.toasts.Success(fmt.Sprintf("Band plan exported to %s", r.path))
-		}
-		return m, cmd
-	case qsoRefreshedMsg:
-		if r.err != nil {
-			m.toasts.Error(fmt.Sprintf("Refresh failed: %v", r.err))
-		} else {
-			m.qsos = r.qsos
-			m.recentQSOs.SetQSOS(r.qsos)
-			m.rc.pathSig = ""
-			m.rc.logStatsSig = ""
-			if !m.recentQSOs.filterSuppressed && m.recentQSOs.IsFiltered() {
-				filtered, filterErr := store.SearchQSOsByCall(m.App.DB, m.recentQSOs.filterCall, 200)
-				if filterErr == nil {
-					m.recentQSOs.SetFilterCall(m.recentQSOs.filterCall, filtered)
-				}
-			}
-			m.recentQSOs.filterSuppressed = false
-		}
-		return m, cmd
+	// active (e.g. partner screen).
+	if result, resultCmd := m.handleLookupResultMsg(msg, cmd); result != nil {
+		return result, resultCmd
 	}
 
 	// Deferred pending requests (QRZ lookup, WL lookup, QSO refresh) —
@@ -1159,6 +1047,9 @@ func (m *Model) buildContestLine() string {
 // cycleActiveContest rotates through all active contests (excluding None).
 // Persists the new active contest to config silently.
 func (m *Model) cycleActiveContest() {
+	if m.App == nil || m.App.Config == nil {
+		return
+	}
 	ids := config.ActiveContestIDs(m.App.Config, m.App.LogbookName)
 	current := m.App.Logbook.ActiveContest
 
