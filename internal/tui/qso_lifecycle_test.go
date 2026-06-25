@@ -352,7 +352,7 @@ func TestSaveQSORetainDisabled(t *testing.T) {
 	m := newLifecycleTestModel(t)
 	fillMinimalValidQSO(m)
 	m.fields[fieldComment].SetValue("Will be cleared")
-	m.retainComment = false
+	m.keepComment = false
 
 	m.saveQSO()()
 
@@ -370,7 +370,7 @@ func TestSaveQSORetainEnabled(t *testing.T) {
 	m := newLifecycleTestModel(t)
 	fillMinimalValidQSO(m)
 	m.fields[fieldComment].SetValue("Retain this comment")
-	m.retainComment = true
+	m.keepComment = true
 
 	m.saveQSO()()
 

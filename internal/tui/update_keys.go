@@ -287,11 +287,15 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	}
 
 	switch {
-	case m.retainFocused:
+	case m.keepFocused:
 		switch msg.String() {
 		case "space", "enter":
-			m.retainComment = !m.retainComment
-			persistCmd = m.persistRetainComment()
+			if m.keepSubFocus == 0 {
+				m.keepComment = !m.keepComment
+				persistCmd = m.persistKeepComment()
+			} else {
+				m.retainForm = !m.retainForm
+			}
 		case "tab":
 			m.nextField()
 		case "shift+tab":
@@ -301,8 +305,12 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		case "up":
 			m.prevRowField()
 		case "ctrl+t":
-			m.retainComment = !m.retainComment
-			persistCmd = m.persistRetainComment()
+			if m.keepSubFocus == 0 {
+				m.keepComment = !m.keepComment
+				persistCmd = m.persistKeepComment()
+			} else {
+				m.retainForm = !m.retainForm
+			}
 		}
 		return drainPending(persistCmd), true
 
@@ -337,8 +345,8 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, true
 
 	case key.Matches(msg, m.keys.Retain):
-		m.retainComment = !m.retainComment
-		return m.persistRetainComment(), true
+		m.keepComment = !m.keepComment
+		return m.persistKeepComment(), true
 
 	case msg.String() == "ctrl+c":
 		m.cycleActiveContest()
@@ -518,16 +526,16 @@ func clampEl(e float64) float64 {
 	return e
 }
 
-// persistRetainComment syncs the retain-comment checkbox state to the
+// persistKeepComment syncs the retain-comment checkbox state to the
 // in-memory config and returns a tea.Cmd that writes it to disk async.
 // When retain is off, the retained comment is cleared so it doesn't
 // survive across restarts.
-func (m *Model) persistRetainComment() tea.Cmd {
+func (m *Model) persistKeepComment() tea.Cmd {
 	if m.App == nil || m.App.Config == nil {
 		return nil
 	}
-	m.App.Config.State.RetainComment = m.retainComment
-	if m.retainComment {
+	m.App.Config.State.RetainComment = m.keepComment
+	if m.keepComment {
 		m.App.Config.State.RetainedComment = m.fields[fieldComment].Value()
 	} else {
 		m.App.Config.State.RetainedComment = ""

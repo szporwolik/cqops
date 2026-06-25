@@ -55,13 +55,17 @@ func (m *Model) viewForm(width int) string {
 	// actually hits for ~59 out of 60 frames.
 	var sigB strings.Builder
 	fmt.Fprintf(&sigB, "%d|%d|%s|", width, m.focus, m.App.Logbook.ActiveContest)
-	if m.retainFocused {
+	if m.keepFocused {
 		sigB.WriteString("rf|")
+		fmt.Fprintf(&sigB, "ks%d|", m.keepSubFocus)
 	} else {
 		fmt.Fprintf(&sigB, "cp%d|", m.fields[m.focus].Position())
 	}
-	if m.retainComment {
+	if m.keepComment {
 		sigB.WriteString("rc|")
+	}
+	if m.retainForm {
+		sigB.WriteString("rt|")
 	}
 	if m.dateTimeAuto {
 		sigB.WriteString("dta|")
@@ -121,7 +125,7 @@ func (m *Model) viewForm(width int) string {
 	renderLine := func(f field, availW int) string {
 		label := fieldNames[f]
 		raw := strings.TrimSpace(m.fields[f].Value())
-		isFocused := int(f) == int(m.focus) && !m.retainFocused
+		isFocused := int(f) == int(m.focus) && !m.keepFocused
 		ti := m.fields[f]
 
 		choiceIcon := ""
@@ -164,7 +168,7 @@ func (m *Model) viewForm(width int) string {
 		} else {
 			lblPart = fieldUnfocusedPrefix.Render(prefix) + lblStyled
 		}
-		return lipgloss.JoinHorizontal(lipgloss.Center, lblPart, " ", val)
+		return "    " + lipgloss.JoinHorizontal(lipgloss.Center, lblPart, " ", val)
 	}
 
 	// Count visible fields in each column so the form shrinks when exchange
@@ -214,10 +218,11 @@ func (m *Model) viewForm(width int) string {
 		b.WriteString("\n")
 	}
 
-	// Comment row spans first two columns; Retain checkbox in third.
-	commentLine := commentStyle.Render(renderLine(fieldComment, colW*2))
-	retainBox := colStyle.Render(m.renderRetainCheckbox(colW))
-	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, commentLine, retainBox))
+	// Comment row: Comment in left, Keep in middle, Retain in right — all one line.
+	commentLine := colStyle.Render(renderLine(fieldComment, colW))
+	keepBox := colStyle.Render(m.renderKeepCheckbox(colW))
+	retainBox := colStyle.Render(m.renderRetainFormCheckbox(colW))
+	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, commentLine, keepBox, retainBox))
 
 	result := b.String()
 	m.rc.formSig = sig
@@ -227,30 +232,64 @@ func (m *Model) viewForm(width int) string {
 	return result
 }
 
-// renderRetainCheckbox renders the "Retain" checkbox next to the Comment field.
-func (m *Model) renderRetainCheckbox(_ int) string {
+// renderKeepCheckbox renders the "Keep" checkbox next to the Comment field.
+func (m *Model) renderKeepCheckbox(_ int) string {
 	mark := "[ ]"
-	label := "Retain"
-	if m.retainComment {
+	label := "Keep"
+	if m.keepComment {
 		mark = "[x]"
 	}
 	space := " "
-	if m.retainFocused {
-		return lipgloss.JoinHorizontal(lipgloss.Center,
+	if m.keepFocused && m.keepSubFocus == 0 {
+		return "    " + lipgloss.JoinHorizontal(lipgloss.Center,
 			CursorStyle.Render(" "+mark),
 			space,
 			InputStyle.Render(label),
 		)
 	}
-	if m.retainComment {
-		return lipgloss.JoinHorizontal(lipgloss.Center,
+	if m.keepComment {
+		return "    " + lipgloss.JoinHorizontal(lipgloss.Center,
 			space,
 			InputStyle.Render(mark),
 			space,
 			DimStyle.Render(label),
 		)
 	}
-	return lipgloss.JoinHorizontal(lipgloss.Center,
+	return "    " + lipgloss.JoinHorizontal(lipgloss.Center,
+		space,
+		DimStyle.Render(mark),
+		space,
+		DimStyle.Render(label),
+	)
+}
+
+// renderRetainFormCheckbox renders the "Retain" checkbox below the middle column.
+// When checked, the form is NOT cleared after a QSO save — useful for logging
+// the same contact across multiple logbooks (e.g. private → club station).
+func (m *Model) renderRetainFormCheckbox(_ int) string {
+	mark := "[ ]"
+	label := "Retain"
+	if m.retainForm {
+		mark = "[x]"
+	}
+	space := " "
+	focused := m.keepFocused && m.keepSubFocus == 1
+	if focused {
+		return "    " + lipgloss.JoinHorizontal(lipgloss.Center,
+			CursorStyle.Render(" "+mark),
+			space,
+			InputStyle.Render(label),
+		)
+	}
+	if m.retainForm {
+		return "    " + lipgloss.JoinHorizontal(lipgloss.Center,
+			space,
+			InputStyle.Render(mark),
+			space,
+			DimStyle.Render(label),
+		)
+	}
+	return "    " + lipgloss.JoinHorizontal(lipgloss.Center,
 		space,
 		DimStyle.Render(mark),
 		space,

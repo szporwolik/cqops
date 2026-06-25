@@ -155,10 +155,12 @@ type Model struct {
 	// Render cache — avoids redundant layout, style, and view computation.
 	rc renderCache
 
-	lookup        lookupState
-	retainComment bool
-	retainFocused bool // true when the Retain checkbox has focus (instead of a text field)
-	gridSource    gridSource
+	lookup       lookupState
+	keepComment  bool // "Keep" checkbox — retains comment field content across QSOs
+	keepFocused  bool // true when the Keep/Retain checkbox row has focus
+	keepSubFocus int  // 0=Keep, 1=Retain — which checkbox in the row is active
+	retainForm   bool // "Retain" checkbox — prevents form clearing after QSO save
+	gridSource   gridSource
 
 	keys       KeyMap
 	help       help.Model
@@ -299,8 +301,8 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	}
 	m.psk.lastFetchByCall = make(map[string]time.Time)
 	m.applyBeepOnError()
-	m.retainComment = a.Config.State.RetainComment
-	if m.retainComment && a.Config.State.RetainedComment != "" {
+	m.keepComment = a.Config.State.RetainComment
+	if m.keepComment && a.Config.State.RetainedComment != "" {
 		m.fields[fieldComment].SetValue(a.Config.State.RetainedComment)
 	}
 	return m
@@ -738,7 +740,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Forward paste messages to the focused textinput so clipboard paste works.
-	if pasteMsg, ok := msg.(tea.PasteMsg); ok && m.screen == screenQSO && !m.retainFocused {
+	if pasteMsg, ok := msg.(tea.PasteMsg); ok && m.screen == screenQSO && !m.keepFocused {
 		f := m.focus
 		ti, c := m.fields[f].Update(pasteMsg)
 		m.fields[f] = ti
