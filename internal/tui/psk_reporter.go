@@ -105,8 +105,37 @@ func pskTableRow(r psk.Report, callW, gridW, freqW, snrW, modeW int) string {
 	}
 	mode := truncateText(r.Mode, modeW)
 	age := formatAge(r.FlowStartSeconds)
-	return fmt.Sprintf("%-*s %-*s %*s %*s %-*s %s",
-		callW, call, gridW, loc, freqW, freq, snrW, snr, modeW, mode, age)
+
+	// Manual padding via strings.Builder — avoids fmt.Sprintf allocation.
+	var sb strings.Builder
+	padRight(&sb, call, callW)
+	sb.WriteByte(' ')
+	padRight(&sb, loc, gridW)
+	sb.WriteByte(' ')
+	padLeft(&sb, freq, freqW)
+	sb.WriteByte(' ')
+	padLeft(&sb, snr, snrW)
+	sb.WriteByte(' ')
+	padRight(&sb, mode, modeW)
+	sb.WriteByte(' ')
+	sb.WriteString(age)
+	return sb.String()
+}
+
+// padRight appends s to sb with space-padding to reach at least targetW.
+func padRight(sb *strings.Builder, s string, targetW int) {
+	sb.WriteString(s)
+	for i := len(s); i < targetW; i++ {
+		sb.WriteByte(' ')
+	}
+}
+
+// padLeft appends s to sb with leading space-padding to reach at least targetW.
+func padLeft(sb *strings.Builder, s string, targetW int) {
+	for i := len(s); i < targetW; i++ {
+		sb.WriteByte(' ')
+	}
+	sb.WriteString(s)
 }
 
 func formatAge(ts int64) string {
@@ -115,9 +144,9 @@ func formatAge(ts int64) string {
 	case d < time.Minute:
 		return "<1m"
 	case d < time.Hour:
-		return fmt.Sprintf("%dm", int(d.Minutes()))
+		return strconv.Itoa(int(d.Minutes())) + "m"
 	default:
-		return fmt.Sprintf("%dh", int(d.Hours()))
+		return strconv.Itoa(int(d.Hours())) + "h"
 	}
 }
 

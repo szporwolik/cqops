@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1120,18 +1121,29 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 }
 
 // buildContestLine returns the contest info line for the QSO screen, or "" if
-// no contest is active.
+// no contest is active. Cached — only recomputes when contest or seq changes.
 func (m *Model) buildContestLine() string {
 	id := m.App.Logbook.ActiveContest
 	if id == "" {
+		m.rc.contestLine = ""
+		m.rc.contestLineSig = ""
 		return ""
 	}
 	ct, ok := m.App.Config.Contests[id]
 	if !ok {
+		m.rc.contestLine = ""
+		m.rc.contestLineSig = ""
 		return ""
 	}
-	return fmt.Sprintf(" Contest: %s   Contest ID: %s   Next QSO seq: %d",
-		config.ContestDisplayName(&ct), ct.ContestID, ct.NextQSO)
+	sig := id + "|" + strconv.Itoa(ct.NextQSO)
+	if m.rc.contestLineSig == sig && m.rc.contestLine != "" {
+		return m.rc.contestLine
+	}
+	m.rc.contestLineSig = sig
+	m.rc.contestLine = " Contest: " + config.ContestDisplayName(&ct) +
+		"   Contest ID: " + ct.ContestID +
+		"   Next QSO seq: " + strconv.Itoa(ct.NextQSO)
+	return m.rc.contestLine
 }
 
 // cycleActiveContest rotates through all active contests (excluding None).

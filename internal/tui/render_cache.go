@@ -90,4 +90,12 @@ type renderCache struct {
 	// Path state (committed call/grid, updated on field exit).
 	pathCall string
 	pathGrid string
+
+	// Contest line cache — rebuilt only when contest or NextQSO changes.
+	contestLine    string
+	contestLineSig string
+
+	// Help suffix cache — avoids per-frame fmt.Sprintf on editor/log screens.
+	helpSuffix    string
+	helpSuffixSig string
 }

@@ -242,9 +242,47 @@ func (m *Model) buildHelpSig(screen screenKind, conf, spot, editing, chooserForm
 }
 
 // helpSuffix returns the dynamic right-aligned suffix for the help bar
-// (QSO counter in log editor, scroll info in log viewer). This is
-// computed every frame and not cached.
+// (QSO counter in log editor, scroll info in log viewer). Cached with
+// a signature to avoid per-frame fmt.Sprintf allocation.
 func (m *Model) helpSuffix() string {
+	// Build signature from all state that affects the suffix.
+	var sb strings.Builder
+	sb.WriteString(strconv.Itoa(int(m.screen)))
+	sb.WriteByte('|')
+	if m.ui.logbookEditor != nil {
+		le := m.ui.logbookEditor
+		sb.WriteString(strconv.Itoa(int(le.mode)))
+		sb.WriteByte('|')
+		sb.WriteString(strconv.Itoa(le.currentPage))
+		sb.WriteByte('|')
+		sb.WriteString(strconv.Itoa(le.table.Cursor()))
+		sb.WriteByte('|')
+		sb.WriteString(strconv.Itoa(le.totalCount))
+		sb.WriteByte('|')
+		if le.mode == edModeExport || le.mode == edModeImport {
+			fp := le.FilePicker()
+			sb.WriteString(fp.CurrentDirectory)
+		}
+	} else {
+		sb.WriteString("0|0|0|0")
+	}
+	if m.ui.logViewer != nil {
+		sb.WriteByte('|')
+		sb.WriteString(m.ui.logViewer.ScrollInfo())
+	}
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(len(m.ref.rows)))
+	sig := sb.String()
+	if m.rc.helpSuffixSig == sig && m.rc.helpSuffix != "" {
+		return m.rc.helpSuffix
+	}
+	m.rc.helpSuffixSig = sig
+	m.rc.helpSuffix = m.buildHelpSuffix()
+	return m.rc.helpSuffix
+}
+
+// buildHelpSuffix is the uncached suffix builder, called only on cache miss.
+func (m *Model) buildHelpSuffix() string {
 	if m.screen == screenLogbookEditor && m.ui.logbookEditor != nil {
 		le := m.ui.logbookEditor
 
