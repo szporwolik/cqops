@@ -42,6 +42,7 @@ type dxcState struct {
 	cachedTimeFilter int
 	cachedContFilter string
 	cachedModeFilter string
+	cachedSortBand   string // band filter active when last sorted; avoids redundant sort
 
 	// Band/continent cache — avoids DB query on every filter-cycle keypress.
 	cachedBands []string

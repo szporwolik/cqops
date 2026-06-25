@@ -16,6 +16,9 @@ func (m *Model) headerView() string {
 	now := time.Now()
 	utc := now.UTC()
 
+	// Look up rig config once — used 4× below.
+	rp, hasRig := m.App.Config.Rigs[s.RigName]
+
 	callsign := s.Callsign
 	if callsign == "" {
 		callsign = "\u2014"
@@ -32,7 +35,7 @@ func (m *Model) headerView() string {
 	}
 
 	rigName := ""
-	if rp, ok := m.App.Config.Rigs[s.RigName]; ok {
+	if hasRig {
 		rigName = rp.Name
 	}
 
@@ -56,12 +59,12 @@ func (m *Model) headerView() string {
 	var rightParts []string
 
 	rightParts = append(rightParts, statusDotStyled(m.inetOnline, "Net", m.Offline))
-	if rp, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok && rp.WsjtxEnabled {
+	if hasRig && rp.WsjtxEnabled {
 		rightParts = append(rightParts, statusDotStyled(m.wsjtx.online, "WSJT"))
 	}
-	if cfgRig, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok && cfgRig.RadioBackend != "" {
+	if hasRig && rp.RadioBackend != "" {
 		rigLabel := "Rig"
-		switch cfgRig.RadioBackend {
+		switch rp.RadioBackend {
 		case "flrig":
 			rigLabel = "Flrig"
 		case "hamlib":
@@ -73,7 +76,7 @@ func (m *Model) headerView() string {
 			rightParts = append(rightParts, statusDotStyled(m.rig.connected, rigLabel))
 		}
 	}
-	if cfgRig, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok && cfgRig.RotorBackend == "hamlib" {
+	if hasRig && rp.RotorBackend == "hamlib" {
 		rightParts = append(rightParts, statusDotStyled(m.rotor.connected, "Rotator"))
 	}
 	if m.App.Config.Integrations.DXC.Enabled {
@@ -94,10 +97,7 @@ func (m *Model) headerView() string {
 	fillerW := m.width - leftW - rightW
 
 	// WSJT-X TX message — only when at least 20 cells of free space remain.
-	wsjtxOn := false
-	if rp, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok {
-		wsjtxOn = rp.WsjtxEnabled
-	}
+	wsjtxOn := hasRig && rp.WsjtxEnabled
 	if m.wsjtx.txMsg != "" && wsjtxOn && m.wsjtx.online {
 		style := S.StatusValue
 		if m.wsjtx.tx {

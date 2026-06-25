@@ -300,7 +300,7 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	m.psk.lastFetchByCall = make(map[string]time.Time)
 	m.applyBeepOnError()
 	m.retainComment = a.Config.State.RetainComment
-	if a.Config.State.RetainedComment != "" {
+	if m.retainComment && a.Config.State.RetainedComment != "" {
 		m.fields[fieldComment].SetValue(a.Config.State.RetainedComment)
 	}
 	return m
@@ -561,6 +561,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case logbookStatsMsg:
 		m.handleLogbookStats(r)
 		return m, cmd
+	case pskSpotsLoadedMsg:
+		if r.err == nil && r.spotKey != "" {
+			m.psk.spots = r.spots
+			m.psk.spotKey = r.spotKey
+		}
+		return m, cmd
 	case refRebuildMsg:
 		m.ref.building = false
 		m.ref.refNamesDirty = true
@@ -731,6 +737,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleBPLUpdate(msg, cmd)
 	}
 
+	// Forward paste messages to the focused textinput so clipboard paste works.
+	if pasteMsg, ok := msg.(tea.PasteMsg); ok && m.screen == screenQSO && !m.retainFocused {
+		f := m.focus
+		ti, c := m.fields[f].Update(pasteMsg)
+		m.fields[f] = ti
+		if c != nil {
+			cmd = tea.Batch(cmd, c)
+		}
+		return m, cmd
+	}
+
 	// QSO form key handling
 	if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
 		if formCmd, handled := m.handleFormKey(keyMsg); handled {
@@ -784,9 +801,9 @@ func (m *Model) View() tea.View {
 		m.rc.status = m.renderStatusBar()
 		m.rc.statusSec = time.Now().UTC().Second()
 	}
-	// Tab bar depends on partner data / call field — always fresh.
+	// Tab bar depends on partner data / call field / connectivity — cached.
 	m.rc.tabs = m.renderTabBar()
-	// Help bar has dynamic suffix (QSO counter, scroll info) — always fresh.
+	// Help bar has dynamic suffix (QSO counter, scroll info) — cached.
 	m.rc.help = m.renderHelpBar()
 	m.rc.barW = m.width
 	m.rc.barSc = m.screen

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/ftl/hamradio/dxcc"
 	"github.com/ftl/hamradio/scp"
@@ -79,38 +80,53 @@ func Init(logbookFlag string) (*App, error) {
 	// WSJT-X will be started later by the TUI model Init() with per-rig settings.
 	// Don't start here — we don't know which rig is active yet.
 
-	// Load cached data files — download/update happens later in the TUI
-	// tick after internet availability is confirmed.
+	// Load cached data files concurrently — no mutual dependencies,
+	// independent I/O. On slow storage (SD card on Pi), this cuts
+	// startup time by loading all three files in parallel.
+	var wg sync.WaitGroup
 	if app.Config.General.UseCTY {
-		cacheDir, _ := config.CacheDir()
-		ctyPath := filepath.Join(cacheDir, "cty.dat")
-		if prefixes, err := dxcc.LoadLocal(ctyPath); err == nil {
-			app.DXCC = prefixes
-			applog.Info("DXCC: prefix data loaded from cache")
-		} else {
-			applog.Info("DXCC: no cached data yet — will fetch when online")
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			cacheDir, _ := config.CacheDir()
+			ctyPath := filepath.Join(cacheDir, "cty.dat")
+			if prefixes, err := dxcc.LoadLocal(ctyPath); err == nil {
+				app.DXCC = prefixes
+				applog.Info("DXCC: prefix data loaded from cache")
+			} else {
+				applog.Info("DXCC: no cached data yet — will fetch when online")
+			}
+		}()
 	}
 	if app.Config.General.UseSCP {
-		cacheDir, _ := config.CacheDir()
-		scpPath := filepath.Join(cacheDir, "MASTER.SCP")
-		if db, err := scp.LoadLocal(scpPath); err == nil {
-			app.SCP = db
-			applog.Info("SCP: callsign database loaded from cache")
-		} else {
-			applog.Info("SCP: no cached data yet — will fetch when online")
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			cacheDir, _ := config.CacheDir()
+			scpPath := filepath.Join(cacheDir, "MASTER.SCP")
+			if db, err := scp.LoadLocal(scpPath); err == nil {
+				app.SCP = db
+				applog.Info("SCP: callsign database loaded from cache")
+			} else {
+				applog.Info("SCP: no cached data yet — will fetch when online")
+			}
+		}()
 	}
 	if app.Config.General.UseRef {
-		cacheDir, _ := config.CacheDir()
-		refPath := filepath.Join(cacheDir, "ref.db")
-		if rdb, err := ref.Open(refPath); err == nil {
-			app.RefDB = rdb
-			applog.Info("REF: database opened")
-		} else {
-			applog.Info("REF: cannot open database — will rebuild when online")
-		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			cacheDir, _ := config.CacheDir()
+			refPath := filepath.Join(cacheDir, "ref.db")
+			if rdb, err := ref.Open(refPath); err == nil {
+				app.RefDB = rdb
+				applog.Info("REF: database opened")
+			} else {
+				applog.Info("REF: cannot open database — will rebuild when online")
+			}
+		}()
 	}
+	wg.Wait()
 
 	return app, nil
 }

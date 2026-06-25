@@ -29,6 +29,40 @@ func (m *Model) pskFetchCmd() tea.Cmd {
 	}
 }
 
+// pskSpotsLoadedMsg carries spots loaded from SQLite asynchronously.
+type pskSpotsLoadedMsg struct {
+	spots   []psk.Report
+	spotKey string
+	err     error
+}
+
+// loadPSKSpotsCmd returns a tea.Cmd that queries spots from SQLite
+// asynchronously, avoiding DB I/O during View().
+func (m *Model) loadPSKSpotsCmd(call string, cutoff int64, spotKey string) tea.Cmd {
+	db := m.App.DB
+	return func() tea.Msg {
+		rawSpots, err := store.QueryPSKSpots(db, call, cutoff)
+		if err != nil {
+			return pskSpotsLoadedMsg{spotKey: spotKey, err: err}
+		}
+		spots := make([]psk.Report, len(rawSpots))
+		for i, s := range rawSpots {
+			spots[i] = psk.Report{
+				ReceiverCallsign: s.ReceiverCall,
+				ReceiverLocator:  s.ReceiverLoc,
+				Frequency:        s.Frequency,
+				SNR:              s.SNR,
+				Mode:             s.Mode,
+				FlowStartSeconds: s.FlowStart,
+			}
+		}
+		sort.Slice(spots, func(i, j int) bool {
+			return spots[i].FlowStartSeconds > spots[j].FlowStartSeconds
+		})
+		return pskSpotsLoadedMsg{spots: spots, spotKey: spotKey}
+	}
+}
+
 // PSK Reporter time filter steps (minutes).
 var pskFilterSteps = []int{5, 15, 30, 60, 120, 360}
 
@@ -127,54 +161,14 @@ func (m *Model) viewPSKReporter() string {
 	if m.psk.spotKey == spotKey && len(m.psk.spots) > 0 {
 		filtered = m.psk.spots
 	} else {
-		// Query SQLite for the current time window.  Never call the API from View() —
-		// fetching is always done asynchronously via pskFetchCmd / pskFetchMsg.
-		cutoff := time.Now().UTC().Add(-time.Duration(m.psk.filterMins) * time.Minute).Unix()
-		spots, err := store.QueryPSKSpots(m.App.DB, call, cutoff)
-		if err != nil {
-			return fillBody(DimStyle.Render("PSK Reporter error: "+err.Error()), contentHeight(m.height))
-		}
-
-		// Convert to psk.Report for the table/map rendering.
-		filtered = make([]psk.Report, len(spots))
-		for i, s := range spots {
-			filtered[i] = psk.Report{
-				ReceiverCallsign: s.ReceiverCall,
-				ReceiverLocator:  s.ReceiverLoc,
-				Frequency:        s.Frequency,
-				SNR:              s.SNR,
-				Mode:             s.Mode,
-				FlowStartSeconds: s.FlowStart,
-			}
-		}
-		// Sort by time descending.
-		sort.Slice(filtered, func(i, j int) bool {
-			return filtered[i].FlowStartSeconds > filtered[j].FlowStartSeconds
-		})
-
-		// Apply band filter if set.
-		if m.psk.bandFilter != "" {
-			var bandFiltered []psk.Report
-			for _, r := range filtered {
-				if freqToBandName(r.Frequency) == m.psk.bandFilter {
-					bandFiltered = append(bandFiltered, r)
-				}
-			}
-			filtered = bandFiltered
-		}
-		// Apply mode filter if set.
-		if m.psk.modeFilter != "" {
-			var modeFiltered []psk.Report
-			for _, r := range filtered {
-				if strings.EqualFold(r.Mode, m.psk.modeFilter) {
-					modeFiltered = append(modeFiltered, r)
-				}
-			}
-			filtered = modeFiltered
-		}
-
-		m.psk.spots = filtered
-		m.psk.spotKey = spotKey
+		// Spot cache miss — set flag for async load; show placeholder this frame.
+		// This avoids synchronous SQLite I/O during View().
+		m.psk.needDBLoad = true
+		m.psk.pendingSpotKey = spotKey
+		m.psk.pendingCall = call
+		m.psk.pendingCutoff = time.Now().UTC().Add(-time.Duration(m.psk.filterMins) * time.Minute).Unix()
+		// Use existing spots if any, else empty.
+		filtered = m.psk.spots
 	}
 
 	// Clamp cursor only when there are reports.
@@ -356,8 +350,10 @@ func (m *Model) buildPSKTable(reports []psk.Report, maxW, visibleRows int) strin
 	}
 
 	// Force each line to exactly maxW width so the table fills the box.
+	// Use a single pre-built style instead of allocating per row.
+	rowStyle := lipgloss.NewStyle().Width(maxW).MaxWidth(maxW).Inline(true)
 	for i, l := range lines {
-		lines[i] = lipgloss.NewStyle().Width(maxW).MaxWidth(maxW).Inline(true).Render(l)
+		lines[i] = rowStyle.Render(l)
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)

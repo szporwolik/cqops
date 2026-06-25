@@ -23,4 +23,10 @@ type pskState struct {
 	spotKey string
 	view    string
 	viewKey string
+
+	// Async DB loading — avoids synchronous SQLite during View().
+	needDBLoad     bool
+	pendingSpotKey string
+	pendingCall    string
+	pendingCutoff  int64
 }

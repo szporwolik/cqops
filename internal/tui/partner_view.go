@@ -74,27 +74,23 @@ func (m *Model) viewPartner() string {
 		w = 80
 	}
 
-	// Build cache signature — includes all inputs that affect output.
+	// Build cache signature — uses pointer identity for QRZ/WL data structs
+	// instead of enumerating all fields, cutting the pre-frame string work.
+	// The pointers are replaced on every new lookup, so identity == freshness.
 	var sigB strings.Builder
 	fmt.Fprintf(&sigB, "%d|%d|", m.width, m.height)
 	if m.lookup.partnerData != nil {
-		fmt.Fprintf(&sigB, "pd:%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s|",
-			m.lookup.partnerData.Callsign, m.lookup.partnerData.Name, m.lookup.partnerData.Grid,
-			m.lookup.partnerData.QTH, m.lookup.partnerData.Country, m.lookup.partnerData.State,
-			m.lookup.partnerData.County, m.lookup.partnerData.Zip, m.lookup.partnerData.Class,
-			m.lookup.partnerData.Email, m.lookup.partnerData.URL, m.lookup.partnerData.Lat,
-			m.lookup.partnerData.Lon, m.lookup.partnerData.DXCC, m.lookup.partnerData.CQZone, m.lookup.partnerData.ITUZone)
+		fmt.Fprintf(&sigB, "pd=%p|", m.lookup.partnerData)
 	} else {
 		sigB.WriteString("pd:nil|")
 	}
 	sigB.WriteString(m.rc.logStatsSig)
 	sigB.WriteByte('|')
 	if m.lookup.wlPrivateData != nil {
-		fmt.Fprintf(&sigB, "wl:wk=%v,dxcc=%v,band=%v,bm=%v,cband=%v,cbm=%v,lotw=%v|",
-			m.lookup.wlPrivateData.Worked(), m.lookup.wlPrivateData.DXCCConfirmed(),
+		fmt.Fprintf(&sigB, "wl=%p,%v,%v,%v,%v|",
+			m.lookup.wlPrivateData,
 			m.lookup.wlPrivateData.WorkedBand(), m.lookup.wlPrivateData.WorkedBandMode(),
-			m.lookup.wlPrivateData.ConfirmedBand(), m.lookup.wlPrivateData.ConfirmedBandMode(),
-			m.lookup.wlPrivateData.LoTW())
+			m.lookup.wlPrivateData.ConfirmedBand(), m.lookup.wlPrivateData.ConfirmedBandMode())
 	} else {
 		sigB.WriteString("wl:nil|")
 	}

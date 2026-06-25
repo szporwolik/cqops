@@ -75,7 +75,9 @@ func (m *Model) dxcFilteredSpots() []store.DXCSpot {
 
 	// When a specific band is selected, sort by frequency descending
 	// so the highest frequency in the band appears at the top.
-	if bandFilter != "" {
+	// Only sort when the band filter changes (not on every spot refresh)
+	// since spots already arrive time-ordered from the database.
+	if bandFilter != "" && bandFilter != m.dxc.cachedSortBand {
 		sort.Slice(spots, func(i, j int) bool {
 			return spots[i].Frequency > spots[j].Frequency
 		})
@@ -86,6 +88,7 @@ func (m *Model) dxcFilteredSpots() []store.DXCSpot {
 	m.dxc.cachedTimeFilter = m.dxc.timeFilter
 	m.dxc.cachedContFilter = contFilter
 	m.dxc.cachedModeFilter = modeFilter
+	m.dxc.cachedSortBand = bandFilter
 	return spots
 }
 
@@ -98,6 +101,7 @@ func (m *Model) dxcInvalidateSpotCache() {
 	m.dxc.cachedTimeFilter = -1
 	m.dxc.cachedContFilter = ""
 	m.dxc.cachedModeFilter = ""
+	m.dxc.cachedSortBand = ""
 }
 
 // populateDXCFilterCaches extracts band and continent lists from raw spots

@@ -269,12 +269,7 @@ func (le *LogbookEditor) loadPage() {
 		le.pageSize = 5
 	}
 
-	// Refresh total count.
-	counts, err := store.CountQSOsForContest(le.db, le.contestID)
-	if err == nil {
-		le.totalCount = counts.Total
-	}
-
+	// Fetch page data and total count in a single query via COUNT(*) OVER().
 	totalPages := le.totalPages()
 	if totalPages < 1 {
 		totalPages = 1
@@ -287,11 +282,12 @@ func (le *LogbookEditor) loadPage() {
 	}
 
 	offset := (le.currentPage - 1) * le.pageSize
-	qsos, err := store.ListQSOsPage(le.db, le.pageSize, offset, le.contestID)
+	qsos, total, err := store.ListQSOsPageWithCount(le.db, le.pageSize, offset, le.contestID)
 	if err != nil {
 		le.qsos = nil
 	} else {
 		le.qsos = qsos
+		le.totalCount = total
 	}
 	le.cachedSig = ""
 	le.buildTable()

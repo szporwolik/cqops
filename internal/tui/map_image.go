@@ -10,11 +10,11 @@ package tui
 
 import (
 	"bytes"
-	"fmt"
 	"image"
 	"image/color"
 	"image/jpeg"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -140,8 +140,17 @@ func (mr *mapRenderer) renderBase(mapW, mapAvailH int, drawGrayline bool) string
 		blendGrayline(resized, pixW, pixH, now)
 	}
 
-	// Convert to half-block ANSI.
-	var b strings.Builder
+	// Convert to half-block ANSI using a []byte buffer and strconv to avoid
+	// fmt.Fprintf per cell (~1200+ calls on a typical terminal).
+	// Pre-allocate: each cell is ~48 bytes of escape + separator + newline.
+	cellCount := (pixH / 2) * pixW
+	buf := make([]byte, 0, cellCount*48+64)
+	fgPrefix := []byte("\x1b[38;2;")
+	bgPrefix := []byte("\x1b[48;2;")
+	semi := []byte(";")
+	endm := []byte("m")
+	reset := []byte("\x1b[0m")
+	block := []byte("▀")
 	for y := 0; y < pixH; y += 2 {
 		for x := 0; x < pixW; x++ {
 			r1, g1, b1, _ := resized.At(x, y).RGBA()
@@ -149,16 +158,29 @@ func (mr *mapRenderer) renderBase(mapW, mapAvailH int, drawGrayline bool) string
 			if y+1 < pixH {
 				r2, g2, b2, _ = resized.At(x, y+1).RGBA()
 			}
-			fmt.Fprintf(&b, "\x1b[38;2;%d;%d;%dm\x1b[48;2;%d;%d;%dm▀",
-				r1>>8, g1>>8, b1>>8, r2>>8, g2>>8, b2>>8)
+			buf = append(buf, fgPrefix...)
+			buf = strconv.AppendUint(buf, uint64(r1>>8), 10)
+			buf = append(buf, semi...)
+			buf = strconv.AppendUint(buf, uint64(g1>>8), 10)
+			buf = append(buf, semi...)
+			buf = strconv.AppendUint(buf, uint64(b1>>8), 10)
+			buf = append(buf, endm...)
+			buf = append(buf, bgPrefix...)
+			buf = strconv.AppendUint(buf, uint64(r2>>8), 10)
+			buf = append(buf, semi...)
+			buf = strconv.AppendUint(buf, uint64(g2>>8), 10)
+			buf = append(buf, semi...)
+			buf = strconv.AppendUint(buf, uint64(b2>>8), 10)
+			buf = append(buf, endm...)
+			buf = append(buf, block...)
 		}
-		b.WriteString("\x1b[0m")
+		buf = append(buf, reset...)
 		if y+2 < pixH {
-			b.WriteByte('\n')
+			buf = append(buf, '\n')
 		}
 	}
 
-	base := b.String()
+	base := string(buf)
 	mr.cached = base
 	mr.cacheW = mapW
 	mr.cacheH = mapH

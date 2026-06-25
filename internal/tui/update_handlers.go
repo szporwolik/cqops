@@ -99,6 +99,12 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 		cmd = tea.Batch(cmd, m.fetchLogbookStatsCmd(
 			m.rc.logStatsFetchCall, m.rc.logStatsFetchBand, m.rc.logStatsFetchMode))
 	}
+	// Dispatch async PSK spot DB load if a View() cache miss was recorded.
+	if m.psk.needDBLoad && m.App.DB != nil {
+		m.psk.needDBLoad = false
+		cmd = tea.Batch(cmd, m.loadPSKSpotsCmd(
+			m.psk.pendingCall, m.psk.pendingCutoff, m.psk.pendingSpotKey))
+	}
 	// Consolidate periodic commands — only batch non-nil commands to reduce
 	// closure allocation and tea.Batch overhead on low-end hardware.
 	cmds := []tea.Cmd{tickCmd()}
@@ -280,11 +286,11 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
 	if m.needRefresh {
 		m.needRefresh = false
-		cmd = tea.Batch(cmd, m.refreshQSOS())
-		// Fall through — do NOT short-circuit.  The refresh runs
-		// asynchronously; dropping the current message (e.g. a
-		// navigation key right after a screen transition) would
-		// require the user to press the key twice.
+		// Only refresh QSOs when on a screen that displays them — avoids
+		// unnecessary DB queries on DXC, PSK, BPL, and other screens.
+		if m.screen == screenQSO || m.screen == screenPartner || m.screen == screenLogbookEditor {
+			cmd = tea.Batch(cmd, m.refreshQSOS())
+		}
 	}
 	if m.lookup.qrzNeed {
 		call := m.lookup.qrzCall

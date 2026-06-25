@@ -50,9 +50,9 @@ func (m *Model) viewForm(width int) string {
 	}
 
 	// Build a cache signature from all inputs that affect form output.
-	// Exclude clock fields (date/time) when auto-updating since they change
-	// every second. Instead, use a 1-second TTL via the current second so
-	// the clock updates visually without busting the cache on every frame.
+	// Exclude clock fields (date/time) when auto-updating. The 1-second TTL
+	// is enforced via formSec comparison, not the cache key, so the cache
+	// actually hits for ~59 out of 60 frames.
 	var sigB strings.Builder
 	fmt.Fprintf(&sigB, "%d|%d|%s|", width, m.focus, m.App.Logbook.ActiveContest)
 	if m.retainFocused {
@@ -68,7 +68,7 @@ func (m *Model) viewForm(width int) string {
 	}
 	for _, f := range allFields {
 		if m.dateTimeAuto && (f == fieldDate || f == fieldTime) {
-			continue // clock fields change every second, use TTL instead
+			continue
 		}
 		sigB.WriteString(m.fields[f].Value())
 		sigB.WriteByte('|')
@@ -79,12 +79,9 @@ func (m *Model) viewForm(width int) string {
 		sigB.WriteString(m.fields[fieldTime].Value())
 		sigB.WriteByte('|')
 	}
-	// 1-second TTL: include the current second when clock is auto-updating.
-	if m.dateTimeAuto {
-		fmt.Fprintf(&sigB, "s%d", time.Now().Second())
-	}
 	sig := sigB.String()
-	if m.rc.formSig == sig && m.rc.formView != "" {
+	// Cache hit: signature match AND we're in the same second (clock TTL).
+	if m.rc.formSig == sig && m.rc.formView != "" && m.rc.formSec == time.Now().Second() {
 		return m.rc.formView
 	}
 
@@ -225,6 +222,7 @@ func (m *Model) viewForm(width int) string {
 	result := b.String()
 	m.rc.formSig = sig
 	m.rc.formView = result
+	m.rc.formSec = time.Now().Second()
 
 	return result
 }

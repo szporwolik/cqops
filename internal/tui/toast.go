@@ -24,12 +24,15 @@ type Toast struct {
 }
 
 type ToastQueue struct {
-	mu    sync.Mutex
-	items []Toast
+	mu       sync.Mutex
+	items    []Toast
+	lastMsg  string
+	lastTime time.Time
 }
 
 const toastMaxAge = 5 * time.Second
 const toastMaxItems = 20
+const toastDedupWindow = 2 * time.Second // suppress identical messages within this window
 
 func NewToastQueue() *ToastQueue {
 	return &ToastQueue{}
@@ -40,10 +43,17 @@ func (tq *ToastQueue) Push(level ToastLevel, msg string) {
 		return
 	}
 	tq.mu.Lock()
+	// Dedup: suppress identical messages within the dedup window.
+	if msg == tq.lastMsg && time.Since(tq.lastTime) < toastDedupWindow {
+		tq.mu.Unlock()
+		return
+	}
+	tq.lastMsg = msg
+	tq.lastTime = time.Now()
 	tq.items = append(tq.items, Toast{
 		Level:   level,
 		Message: msg,
-		Created: time.Now(),
+		Created: tq.lastTime,
 	})
 	// Cap queue size to prevent unbounded growth on error loops.
 	if len(tq.items) > toastMaxItems {

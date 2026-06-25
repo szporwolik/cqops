@@ -161,6 +161,11 @@ func truncateText(s string, maxW int) string {
 	if maxW <= 1 {
 		return ""
 	}
+	// Fast path: most strings don't need truncation. If the content is
+	// plain text (no ANSI escapes) and the rune count fits, return early.
+	if !strings.ContainsRune(s, '\x1b') && len([]rune(s)) <= maxW {
+		return s
+	}
 	w := 0
 	runes := []rune(s)
 	out := make([]rune, 0, len(runes))

@@ -737,6 +737,11 @@ type bplState struct {
 	cachedView string
 	cachedSig  string // "tab|region|w|h|scroll|cursor|bandSel|search"
 
+	// Pre-built line lists — avoid rebuilding hundreds of fmt.Sprintf calls
+	// on every tab switch or resize. Only rebuild when tab or region changes.
+	cachedLines    []string
+	cachedLinesKey string // "tab|region|search"
+
 	// Tune state.
 	tuneCancel context.CancelFunc // cancels previous in-flight BPL tune
 }

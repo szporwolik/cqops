@@ -312,18 +312,26 @@ func (m *Model) viewBPL(l Layout) string {
 	header := S.Title.Width(w).Render("Bandplan Iaru Region " + fmt.Sprintf("%d", region))
 
 	// Render tab content — each sub-view returns full line list, renderBPLContent handles scroll/cursor.
+	// Pre-built line lists are cached per tab+region so switching tabs doesn't rebuild.
+	linesKey := fmt.Sprintf("%d|%d|%s", m.bpl.tab, region, m.bpl.search)
 	var lines []string
-	switch m.bpl.tab {
-	case bplTabHAM:
-		lines = m.viewBPLHAM(region)
-	case bplTabVHF:
-		lines = m.viewBPLVHF(region)
-	case bplTabCB:
-		lines = m.viewBPLCB(region)
-	case bplTabPMR:
-		lines = m.viewBPLPMR(region)
-	case bplTabBRC:
-		lines = m.viewBPLBRC()
+	if m.bpl.cachedLinesKey == linesKey && m.bpl.cachedLines != nil {
+		lines = m.bpl.cachedLines
+	} else {
+		switch m.bpl.tab {
+		case bplTabHAM:
+			lines = m.viewBPLHAM(region)
+		case bplTabVHF:
+			lines = m.viewBPLVHF(region)
+		case bplTabCB:
+			lines = m.viewBPLCB(region)
+		case bplTabPMR:
+			lines = m.viewBPLPMR(region)
+		case bplTabBRC:
+			lines = m.viewBPLBRC()
+		}
+		m.bpl.cachedLines = lines
+		m.bpl.cachedLinesKey = linesKey
 	}
 	body := m.renderBPLContent(lines)
 
