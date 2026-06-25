@@ -151,10 +151,11 @@ func (m *Model) prevField() {
 	m.fields[m.focus].Focus()
 }
 
+// formCols is the pre-built QSO form column layout — immutable.
+var formCols = [3][]field{formLeft, formMiddle, formRight}
+
 // formColumns returns the three QSO form column arrays.
-func formColumns() [3][]field {
-	return [3][]field{formLeft, formMiddle, formRight}
-}
+func formColumns() [3][]field { return formCols }
 
 // fieldColumnPos returns the column index (0=left, 1=middle, 2=right, 3=comment)
 // and the row position within that column for the given field.

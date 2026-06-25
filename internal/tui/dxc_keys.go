@@ -275,6 +275,12 @@ var wellKnownWWFFPrefixes = []string{
 	"IFF", "EAFF", "OZFF", "VKFF", "VEFF", "ONFF",
 }
 
+// Pre-compiled reference regexps — compiled once at init, not per spot fill.
+var reIOTA = regexp.MustCompile(`\b(AF|AN|AS|EU|NA|OC|SA)-\d{3,4}\b`)
+var reSOTA = regexp.MustCompile(`\b([A-Z0-9]+/[A-Z0-9]+-\d{3,4})\b`)
+var rePOTA = regexp.MustCompile(`\b([A-Z0-9]{1,4}-\d{4,6})\b`)
+var reWWFF = regexp.MustCompile(`\b((?:` + strings.Join(append([]string{"WWFF"}, wellKnownWWFFPrefixes...), "|") + `)-\d{3,5})\b`)
+
 // parseSpotCommentForRefs scans a DXC spot comment for SOTA, POTA, WWFF, and
 // IOTA reference designators and fills the corresponding QSO form fields.
 // Only fills empty fields — existing values are never overwritten.
@@ -284,41 +290,31 @@ func (m *Model) parseSpotCommentForRefs(comment string) {
 	}
 	upper := strings.ToUpper(strings.TrimSpace(comment))
 
-	// IOTA: two-letter continent code, dash, digits (e.g. "EU-005", "NA-001").
-	// Only valid IOTA continent codes: AF, AN, AS, EU, NA, OC, SA.
+	// IOTA: two-letter continent code, dash, digits.
 	if m.fields[fieldIOTA].Value() == "" {
-		re := regexp.MustCompile(`\b(AF|AN|AS|EU|NA|OC|SA)-\d{3,4}\b`)
-		if match := re.FindStringSubmatch(upper); match != nil {
+		if match := reIOTA.FindStringSubmatch(upper); match != nil {
 			m.fields[fieldIOTA].SetValue(match[0])
 		}
 	}
 
-	// SOTA: country/association prefix, slash, summit code (e.g. "SP/BZ-001")
+	// SOTA: country/association prefix, slash, summit code.
 	if m.fields[fieldSOTA].Value() == "" {
-		re := regexp.MustCompile(`\b([A-Z0-9]+/[A-Z0-9]+-\d{3,4})\b`)
-		if match := re.FindStringSubmatch(upper); match != nil {
+		if match := reSOTA.FindStringSubmatch(upper); match != nil {
 			m.fields[fieldSOTA].SetValue(match[1])
 		}
 	}
 
-	// WWFF: check BEFORE POTA — WWFF prefixes (e.g. DLFF, VEFF) would
-	// otherwise match the broader POTA pattern first.
+	// WWFF: check BEFORE POTA.
 	if m.fields[fieldWWFF].Value() == "" {
-		prefixes := append([]string{"WWFF"}, wellKnownWWFFPrefixes...)
-		pattern := `\b((?:` + strings.Join(prefixes, "|") + `)-\d{3,5})\b`
-		re := regexp.MustCompile(pattern)
-		if match := re.FindStringSubmatch(upper); match != nil {
+		if match := reWWFF.FindStringSubmatch(upper); match != nil {
 			m.fields[fieldWWFF].SetValue(match[1])
 		}
 	}
 
-	// POTA: country prefix, dash, digits (e.g. "SP-0001", "K-0001").
-	// Exclude WWFF-like patterns (any prefix ending in "FF") and KHz/DB- noise.
+	// POTA: country prefix, dash, digits. Skip WWFF-like prefixes.
 	if m.fields[fieldPOTA].Value() == "" {
-		re := regexp.MustCompile(`\b([A-Z0-9]{1,4}-\d{4,6})\b`)
-		for _, match := range re.FindAllStringSubmatch(upper, -1) {
+		for _, match := range rePOTA.FindAllStringSubmatch(upper, -1) {
 			ref := match[1]
-			// Skip if it looks like a WWFF reference (prefix ending in FF).
 			if strings.HasSuffix(strings.SplitN(ref, "-", 2)[0], "FF") {
 				continue
 			}

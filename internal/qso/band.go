@@ -97,13 +97,15 @@ func BandIndex(band string) int {
 	return idx
 }
 
-func AllBands() []string {
+var allBands = func() []string {
 	result := make([]string, len(bandRanges))
 	for i, r := range bandRanges {
 		result[i] = r.name
 	}
 	return result
-}
+}()
+
+func AllBands() []string { return allBands }
 
 func FreqToHz(mhz float64) int64 {
 	return int64(math.Round(mhz * 1_000_000))

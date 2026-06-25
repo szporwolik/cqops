@@ -177,10 +177,11 @@ func (m *Model) dxcBandChoices() []string {
 	return choices
 }
 
+// dxcModeCategories are the mode filter categories — immutable.
+var dxcModeCategories = []string{"CW", "DIGI", "PHONE"}
+
 // dxcAvailableModes returns the mode filter categories: CW, DIGI, PHONE.
-func (m *Model) dxcAvailableModes() []string {
-	return []string{"CW", "DIGI", "PHONE"}
-}
+func (m *Model) dxcAvailableModes() []string { return dxcModeCategories }
 
 // dxcAvailableContinents returns unique continent codes from spots, sorted.
 // Cache is pre-populated by dxcFilteredSpots; the DB fallback handles cold starts.
