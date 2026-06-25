@@ -405,42 +405,10 @@ func (m *Model) handleLookupResultMsg(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.
 		m.handleDXCSpotsStored(r)
 		return m, cmd
 	case dxcTuneResultMsg:
-		if r.err != nil {
-			if strings.Contains(r.err.Error(), "cancelled") {
-				m.toasts.Warn(fmt.Sprintf("Tune cancelled: %v", r.err))
-			} else {
-				m.toasts.Error(fmt.Sprintf("Tune failed: %v", r.err))
-			}
-		} else {
-			msg := fmt.Sprintf("Rig tuned to %.5f MHz", r.freqMHz)
-			if r.mode != "" {
-				msg += " " + r.mode
-			}
-			if r.verify != "" {
-				m.toasts.Warn("Rig tuning failed")
-			} else {
-				m.toasts.Success(msg)
-			}
-		}
+		m.handleTuneResult(r.err, r.freqMHz, r.mode, r.verify)
 		return m, cmd
 	case bplTuneResultMsg:
-		if r.err != nil {
-			if strings.Contains(r.err.Error(), "cancelled") {
-				m.toasts.Warn(fmt.Sprintf("Tune cancelled: %v", r.err))
-			} else {
-				m.toasts.Error(fmt.Sprintf("Tune failed: %v", r.err))
-			}
-		} else {
-			msg := fmt.Sprintf("Rig tuned to %.5f MHz", r.freqMHz)
-			if r.mode != "" {
-				msg += " " + r.mode
-			}
-			if r.verify != "" {
-				m.toasts.Warn("Rig tuning failed")
-			} else {
-				m.toasts.Success(msg)
-			}
-		}
+		m.handleTuneResult(r.err, r.freqMHz, r.mode, r.verify)
 		return m, cmd
 	case bplExportMsg:
 		if r.err != nil {
@@ -468,5 +436,27 @@ func (m *Model) handleLookupResultMsg(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.
 		return m, cmd
 	default:
 		return nil, cmd
+	}
+}
+
+// handleTuneResult shows the appropriate toast for a rig tune operation
+// (shared by dxcTuneResultMsg and bplTuneResultMsg — identical handling).
+func (m *Model) handleTuneResult(err error, freqMHz float64, mode, verify string) {
+	if err != nil {
+		if strings.Contains(err.Error(), "cancelled") {
+			m.toasts.Warn(fmt.Sprintf("Tune cancelled: %v", err))
+		} else {
+			m.toasts.Error(fmt.Sprintf("Tune failed: %v", err))
+		}
+		return
+	}
+	msg := fmt.Sprintf("Rig tuned to %.5f MHz", freqMHz)
+	if mode != "" {
+		msg += " " + mode
+	}
+	if verify != "" {
+		m.toasts.Warn("Rig tuning failed")
+	} else {
+		m.toasts.Success(msg)
 	}
 }

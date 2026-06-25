@@ -46,45 +46,16 @@ func (m *Model) handleDXCUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			return m, cmd
 
 		case "home":
-			// Cycle band filter forward.
-			choices := m.dxcBandChoices()
-			if len(choices) > 0 {
-				next := (m.dxc.bandIdx + 1) % len(choices)
-				if m.dxc.bandIdx != next {
-					m.dxc.bandIdx = next
-					m.dxc.bandFilter = choices[m.dxc.bandIdx]
-					m.dxc.tableReady = false
-				}
-			}
+			m.dxcCycleFilter(&m.dxc.bandIdx, &m.dxc.bandFilter, m.dxcBandChoices())
 			return m, cmd
 
 		case "end":
-			// Cycle band filter backward.
-			choices := m.dxcBandChoices()
-			if len(choices) > 0 {
-				next := m.dxc.bandIdx - 1
-				if next < 0 {
-					next = len(choices) - 1
-				}
-				if m.dxc.bandIdx != next {
-					m.dxc.bandIdx = next
-					m.dxc.bandFilter = choices[m.dxc.bandIdx]
-					m.dxc.tableReady = false
-				}
-			}
+			m.dxcCycleFilterBack(&m.dxc.bandIdx, &m.dxc.bandFilter, m.dxcBandChoices())
 			return m, cmd
 
 		case `\`:
-			// Cycle continent filter forward.
-			choices := m.dxcContChoices()
-			if len(choices) > 0 {
-				next := (m.dxc.contIdx + 1) % len(choices)
-				if m.dxc.contIdx != next {
-					m.dxc.contIdx = next
-					m.dxc.contFilter = choices[m.dxc.contIdx]
-					m.dxc.tableReady = false
-				}
-			}
+			m.dxcCycleFilter(&m.dxc.contIdx, &m.dxc.contFilter, m.dxcContChoices())
+			return m, cmd
 
 		case "enter":
 			// Fill QSO form with highlighted spot, tune rig, and jump to form.
@@ -94,36 +65,11 @@ func (m *Model) handleDXCUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			return m, cmd
 
 		case "insert":
-			// Cycle mode filter forward.
-			modes := m.dxcAvailableModes()
-			choices := []string{""}
-			choices = append(choices, modes...)
-			if len(choices) > 0 {
-				next := (m.dxc.modeIdx + 1) % len(choices)
-				if m.dxc.modeIdx != next {
-					m.dxc.modeIdx = next
-					m.dxc.modeFilter = choices[m.dxc.modeIdx]
-					m.dxc.tableReady = false
-				}
-			}
+			m.dxcCycleFilter(&m.dxc.modeIdx, &m.dxc.modeFilter, dxcFilterChoices(m.dxcAvailableModes()))
 			return m, cmd
 
 		case "delete":
-			// Cycle mode filter backward.
-			modes := m.dxcAvailableModes()
-			choices := []string{""}
-			choices = append(choices, modes...)
-			if len(choices) > 0 {
-				next := m.dxc.modeIdx - 1
-				if next < 0 {
-					next = len(choices) - 1
-				}
-				if m.dxc.modeIdx != next {
-					m.dxc.modeIdx = next
-					m.dxc.modeFilter = choices[m.dxc.modeIdx]
-					m.dxc.tableReady = false
-				}
-			}
+			m.dxcCycleFilterBack(&m.dxc.modeIdx, &m.dxc.modeFilter, dxcFilterChoices(m.dxcAvailableModes()))
 			return m, cmd
 
 		case "backspace":
@@ -160,6 +106,42 @@ func (m *Model) handleDXCUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// dxcFilterChoices prepends "" to a list of filter options so "all" (no filter)
+// is the first choice, matching dxcBandChoices/dxcContChoices conventions.
+func dxcFilterChoices(opts []string) []string {
+	return append([]string{""}, opts...)
+}
+
+// dxcCycleFilter advances *idx to the next choice in opts and sets *filter.
+// No-op if opts is empty or the new idx equals the current idx.
+func (m *Model) dxcCycleFilter(idx *int, filter *string, opts []string) {
+	if len(opts) == 0 {
+		return
+	}
+	next := (*idx + 1) % len(opts)
+	if *idx != next {
+		*idx = next
+		*filter = opts[*idx]
+		m.dxc.tableReady = false
+	}
+}
+
+// dxcCycleFilterBack decrements *idx to the previous choice in opts.
+func (m *Model) dxcCycleFilterBack(idx *int, filter *string, opts []string) {
+	if len(opts) == 0 {
+		return
+	}
+	next := *idx - 1
+	if next < 0 {
+		next = len(opts) - 1
+	}
+	if *idx != next {
+		*idx = next
+		*filter = opts[*idx]
+		m.dxc.tableReady = false
+	}
+}
+
 // dxcFillFromSelected fills the QSO form with the currently highlighted DXC spot.
 func (m *Model) dxcFillFromSelected() {
 	spot, ok := m.dxcSpotAtCursor()
@@ -174,10 +156,7 @@ func (m *Model) dxcFillFromSelected() {
 	m.lookup.wlLookupDone = false
 	m.invalidatePartnerMapCache()
 	// Clear QRZ-populated fields so old callsign data does not bleed.
-	m.fields[fieldName].SetValue("")
-	m.fields[fieldQTH].SetValue("")
-	m.fields[fieldGrid].SetValue("")
-	m.fields[fieldCountry].SetValue("")
+	m.clearQRZFields()
 
 	// Fill frequency: when WSJT-X is offline, use DXC spot frequency.
 	// Always set band and mode from the spot — these are known regardless

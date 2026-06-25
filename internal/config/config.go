@@ -13,6 +13,16 @@ import (
 	"github.com/szporwolik/cqops/internal/version"
 )
 
+// Default host/port values for rig and rotor backends.
+const (
+	DefaultFlrigHost  = "localhost"
+	DefaultFlrigPort  = "12345"
+	DefaultHamlibHost = "127.0.0.1"
+	DefaultHamlibPort = "4532"
+	DefaultRotorHost  = "127.0.0.1"
+	DefaultRotorPort  = "4533"
+)
+
 type Config struct {
 	General           GeneralConfig        `yaml:"general"`
 	State             StateConfig          `yaml:"state"`
@@ -190,7 +200,7 @@ func (s Station) RigPower(rgs map[string]RigPreset) string {
 func (s Station) RigFlrig(rgs map[string]RigPreset) (enabled bool, host, port string) {
 	rp, ok := s.Rig(rgs)
 	if !ok {
-		return false, "localhost", "12345"
+		return false, DefaultFlrigHost, DefaultFlrigPort
 	}
 	return rp.RadioBackend == "flrig", rp.FlrigHost, rp.FlrigPort
 }
@@ -199,7 +209,7 @@ func (s Station) RigFlrig(rgs map[string]RigPreset) (enabled bool, host, port st
 func (s Station) RigHamlib(rgs map[string]RigPreset) (enabled bool, host, port string) {
 	rp, ok := s.Rig(rgs)
 	if !ok {
-		return false, "127.0.0.1", "4532"
+		return false, DefaultHamlibHost, DefaultHamlibPort
 	}
 	return rp.RadioBackend == "hamlib", rp.HamlibRadioHost, rp.HamlibRadioPort
 }
@@ -208,7 +218,7 @@ func (s Station) RigHamlib(rgs map[string]RigPreset) (enabled bool, host, port s
 func (s Station) RigRotor(rgs map[string]RigPreset) (enabled bool, host, port string) {
 	rp, ok := s.Rig(rgs)
 	if !ok {
-		return false, "127.0.0.1", "4533"
+		return false, DefaultRotorHost, DefaultRotorPort
 	}
 	return rp.RotorBackend == "hamlib", rp.RotorHamlibHost, rp.RotorHamlibPort
 }
