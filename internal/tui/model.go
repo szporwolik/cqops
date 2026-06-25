@@ -687,7 +687,8 @@ func (m *Model) View() tea.View {
 		m.rc.barOp == m.App.Logbook.ActiveOperator &&
 		m.rc.barLog == m.App.LogbookName &&
 		m.rc.barRig == m.App.Logbook.Station.RigName &&
-		m.rc.barTx == m.wsjtx.tx && m.rc.barTxMsg == m.wsjtx.txMsg
+		m.rc.barTx == m.wsjtx.tx && m.rc.barTxMsg == m.wsjtx.txMsg &&
+		m.rc.barOnline == m.wsjtx.online
 	if !cacheBars {
 		m.rc.status = ""
 	}
@@ -706,6 +707,7 @@ func (m *Model) View() tea.View {
 	m.rc.barRig = m.App.Logbook.Station.RigName
 	m.rc.barTx = m.wsjtx.tx
 	m.rc.barTxMsg = m.wsjtx.txMsg
+	m.rc.barOnline = m.wsjtx.online
 
 	var mainParts []string
 	addRow := func(s string) {
