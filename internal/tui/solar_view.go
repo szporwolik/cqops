@@ -8,6 +8,20 @@ import (
 	"github.com/szporwolik/cqops/internal/solar"
 )
 
+// Pre-allocated solar cell base style — only Width changes per render.
+var solarCellBaseStyle = lipgloss.NewStyle().Align(lipgloss.Right)
+
+// Fixed box width: 5 columns × 6 cells + 2 borders + 4 padding = 36.
+const solarBoxW = 36
+
+// Pre-allocated solar border box style — invariant.
+var solarBoxStyle = lipgloss.NewStyle().
+	Border(lipgloss.RoundedBorder()).
+	BorderForeground(P.Border).
+	Padding(0, 2).
+	Width(solarBoxW).
+	Align(lipgloss.Right, lipgloss.Top)
+
 // renderSolarPanel builds a compact bordered solar conditions panel for the
 // right side of the QSO form on wide screens. Returns empty string when
 // no solar data is available and we're not in a loading state.
@@ -19,9 +33,6 @@ func (m *Model) renderSolarPanel(availW int) string {
 	if availW < 30 {
 		return ""
 	}
-
-	// Fixed box width: 5 columns × 6 cells + 2 borders + 4 padding = 36.
-	const solarBoxW = 36
 
 	d := m.solar.data
 
@@ -90,7 +101,7 @@ func (m *Model) renderSolarPanel(availW int) string {
 	times := []string{"Day", "Night"}
 
 	renderCell := func(s string, w int) string {
-		return lipgloss.NewStyle().Width(w).Align(lipgloss.Right).Render(s)
+		return solarCellBaseStyle.Width(w).Render(s)
 	}
 
 	// Header row — first column same width as data cols.
@@ -194,13 +205,7 @@ func (m *Model) renderSolarPanel(availW int) string {
 	content := lipgloss.JoinVertical(lipgloss.Left, contentParts...)
 
 	// Fixed-width box — borders never change size.
-	result := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(P.Border).
-		Padding(0, 2).
-		Width(solarBoxW).
-		Align(lipgloss.Right, lipgloss.Top).
-		Render(content)
+	result := solarBoxStyle.Render(content)
 
 	m.solar.cachedSig = sig
 	m.solar.cachedView = result

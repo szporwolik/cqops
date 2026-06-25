@@ -7,6 +7,9 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
+// Pre-allocated menu cell base style — only Width changes per render.
+var menuCellBaseStyle = lipgloss.NewStyle().Align(lipgloss.Left)
+
 type menuItem struct {
 	label string
 	desc  string
@@ -114,7 +117,7 @@ func (m *MainMenu) View() tea.View {
 			prefix = S.FormPrefixOn.Render("> ")
 			label = CursorStyle.Render(item.label)
 		}
-		labelCell := lipgloss.NewStyle().Width(labelW).Align(lipgloss.Left).Render(label)
+		labelCell := menuCellBaseStyle.Width(labelW).Render(label)
 		line := prefix + labelCell
 		if showDesc {
 			line += "  " + DimStyle.Render(item.desc)

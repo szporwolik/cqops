@@ -153,6 +153,11 @@ type LogbookEditor struct {
 	dlCancel   chan struct{}
 	dlMsgCh    chan editorMsg
 
+	// Cached download progress message — rebuilt only when numbers change.
+	dlCachedMsg string
+	dlLastCur   int
+	dlLastTot   int
+
 	// ADIF import results.
 	impInserted int
 	impDupes    int

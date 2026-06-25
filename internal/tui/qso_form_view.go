@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +19,10 @@ var (
 	allFields     = buildAllFields()
 	choiceIconStr = DimStyle.Render("\u25bc ")
 	choiceIconW   = lipgloss.Width(choiceIconStr)
+
+	// Pre-allocated badge styles — invariant, created once at init.
+	dupeBadgeStyle = lipgloss.NewStyle().Foreground(P.Text).Background(P.Error).Bold(true).Padding(0, 1)
+	newBadgeStyle  = lipgloss.NewStyle().Foreground(P.Text).Background(P.Success).Bold(true).Padding(0, 1)
 )
 
 func buildAllFields() []field {
@@ -350,21 +355,21 @@ func (m *Model) formPathRow(width int) string {
 		if m.rotor.name != "" {
 			rotorLine += " " + m.rotor.name
 		}
-		rotorLine += fmt.Sprintf("  Az %.0f\u00b0", m.rotor.azimuth)
+		rotorLine += "  Az " + strconv.FormatFloat(m.rotor.azimuth, 'f', 0, 64) + "\u00b0"
 		if m.rotor.targetAz != 0 && absDiff(m.rotor.azimuth, m.rotor.targetAz) >= 1 {
 			arrow := "\u2192"
 			if m.rotor.targetAz < m.rotor.azimuth {
 				arrow = "\u2190"
 			}
-			rotorLine += S.Warning.Render(fmt.Sprintf(" (%s %.0f\u00b0)", arrow, m.rotor.targetAz))
+			rotorLine += S.Warning.Render(" (" + arrow + " " + strconv.FormatFloat(m.rotor.targetAz, 'f', 0, 64) + "\u00b0)")
 		}
-		rotorLine += fmt.Sprintf("  El %.0f\u00b0", m.rotor.elevation)
+		rotorLine += "  El " + strconv.FormatFloat(m.rotor.elevation, 'f', 0, 64) + "\u00b0"
 		if m.rotor.targetEl != 0 && absDiff(m.rotor.elevation, m.rotor.targetEl) >= 1 {
 			arrow := "\u2191"
 			if m.rotor.targetEl < m.rotor.elevation {
 				arrow = "\u2193"
 			}
-			rotorLine += S.Warning.Render(fmt.Sprintf(" (%s %.0f\u00b0)", arrow, m.rotor.targetEl))
+			rotorLine += S.Warning.Render(" (" + arrow + " " + strconv.FormatFloat(m.rotor.targetEl, 'f', 0, 64) + "\u00b0)")
 		}
 	}
 
@@ -424,8 +429,8 @@ func (m *Model) formPathRow(width int) string {
 	const bannerNewDXCC = "New DXCC!"
 	const bannerDupe = "DUPE!"
 
-	dupeStyle := lipgloss.NewStyle().Foreground(P.Text).Background(P.Error).Bold(true).Padding(0, 1)
-	newStyle := lipgloss.NewStyle().Foreground(P.Text).Background(P.Success).Bold(true).Padding(0, 1)
+	dupeStyle := dupeBadgeStyle
+	newStyle := newBadgeStyle
 
 	var badges []string
 	if m.dupe {

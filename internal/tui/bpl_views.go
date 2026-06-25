@@ -853,24 +853,32 @@ func (m *Model) buildBPLMarkdown(region int) string {
 	return b.String()
 }
 
+// bplFreqStr formats a hamradio.Frequency as MHz with 3 decimal places.
+// Uses strconv to avoid fmt.Sprintf allocation on every call.
+func bplFreqStr(f hamradio.Frequency) string {
+	return strconv.FormatFloat(float64(f)/1e6, 'f', 3, 64)
+}
+
+// bplBwStr formats a hamradio.Frequency as Hz with 0 decimal places,
+// or returns "" if zero/negative.
+func bplBwStr(bw hamradio.Frequency) string {
+	if bw <= 0 {
+		return ""
+	}
+	return strconv.FormatFloat(float64(bw), 'f', 0, 64)
+}
+
 func (m *Model) writeBPLMarkdownRows(b *strings.Builder, region int) {
 	bp := bplForRegion(region)
-	freqStr := func(f hamradio.Frequency) string { return fmt.Sprintf("%.3f", float64(f)/1e6) }
-	bwStr := func(bw hamradio.Frequency) string {
-		if bw <= 0 {
-			return ""
-		}
-		return fmt.Sprintf("%.0f", float64(bw))
-	}
 	for _, name := range bandOrder {
 		bd, ok := bp[name]
 		if !ok {
 			continue
 		}
 		// Band header row.
-		fmt.Fprintf(b, "| **%s** | %s | %s | | | | |\n", string(bd.Name), freqStr(bd.From), freqStr(bd.To))
+		fmt.Fprintf(b, "| **%s** | %s | %s | | | | |\n", string(bd.Name), bplFreqStr(bd.From), bplFreqStr(bd.To))
 		for _, p := range bd.Portions {
-			fmt.Fprintf(b, "| | | | %s | %s | %s | %s |\n", string(p.Mode), freqStr(p.From), freqStr(p.To), bwStr(p.MaxBandwidth))
+			fmt.Fprintf(b, "| | | | %s | %s | %s | %s |\n", string(p.Mode), bplFreqStr(p.From), bplFreqStr(p.To), bplBwStr(p.MaxBandwidth))
 		}
 		if emcom, ok := emcomFreqs[region]; ok {
 			if f, ok := emcom[name]; ok {
@@ -1083,16 +1091,6 @@ func (m *Model) writeBRCMarkdownRows(b *strings.Builder) {
 func bplRows(region int) []table.Row {
 	bp := bplForRegion(region)
 
-	freqStr := func(f hamradio.Frequency) string {
-		return fmt.Sprintf("%.3f", float64(f)/1e6)
-	}
-	bwStr := func(bw hamradio.Frequency) string {
-		if bw <= 0 {
-			return ""
-		}
-		return fmt.Sprintf("%.0f", float64(bw))
-	}
-
 	var rows []table.Row
 
 	// --- HF bandplan ---
@@ -1103,7 +1101,7 @@ func bplRows(region int) []table.Row {
 		}
 		rows = append(rows, table.Row{
 			string(b.Name),
-			freqStr(b.From), freqStr(b.To),
+			bplFreqStr(b.From), bplFreqStr(b.To),
 			"", "", "", "",
 		})
 		for _, p := range b.Portions {
@@ -1111,8 +1109,8 @@ func bplRows(region int) []table.Row {
 				"",
 				"", "",
 				string(p.Mode),
-				freqStr(p.From), freqStr(p.To),
-				bwStr(p.MaxBandwidth),
+				bplFreqStr(p.From), bplFreqStr(p.To),
+				bplBwStr(p.MaxBandwidth),
 			})
 		}
 		if emcom, ok := emcomFreqs[region]; ok {

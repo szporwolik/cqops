@@ -77,9 +77,14 @@ func (le *LogbookEditor) View() tea.View {
 		} else {
 			msg := "Downloading from Wavelog…"
 			if le.dlCurrent > 0 && le.dlTotal > 0 {
-				pct := le.dlCurrent * 100 / le.dlTotal
-				msg = fmt.Sprintf("Processing QSO %d / %d (%d%%)",
-					le.dlCurrent, le.dlTotal, pct)
+				if le.dlCurrent != le.dlLastCur || le.dlTotal != le.dlLastTot {
+					pct := le.dlCurrent * 100 / le.dlTotal
+					le.dlCachedMsg = fmt.Sprintf("Processing QSO %d / %d (%d%%)",
+						le.dlCurrent, le.dlTotal, pct)
+					le.dlLastCur = le.dlCurrent
+					le.dlLastTot = le.dlTotal
+				}
+				msg = le.dlCachedMsg
 			}
 			// Update message every frame so it reflects latest progress.
 			if le.dialog == nil {
