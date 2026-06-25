@@ -39,7 +39,7 @@ type App struct {
 	}
 }
 
-func Init(logbookFlag string) (*App, error) {
+func Init() (*App, error) {
 	cfg, configPath, err := config.EnsureConfig()
 	if err != nil {
 		applog.Error("Config is corrupted or missing — cannot start", "error", err.Error())
@@ -47,9 +47,9 @@ func Init(logbookFlag string) (*App, error) {
 	}
 	applog.Info("Config OK", "path", configPath)
 
-	name, lb, err := config.ResolveLogbook(cfg, logbookFlag)
+	name, lb, err := config.ResolveLogbook(cfg, "")
 	if err != nil {
-		applog.Error("Cannot resolve logbook", "name", logbookFlag, "error", err.Error())
+		applog.Error("Cannot resolve logbook", "error", err.Error())
 		return nil, fmt.Errorf("logbook: %w", err)
 	}
 

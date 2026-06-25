@@ -138,14 +138,12 @@ The Windows installer registers in Control Panel, adds Start Menu shortcuts, and
 cqops                  # Start interactive TUI (the only way to use CQOps)
 cqops --offline        # Start in offline mode (skip all network checks)
 cqops --debug          # Enable debug logging
-cqops --logbook <name> # Start with a specific logbook
 cqops version          # Print version
 cqops --help           # Show flags
 
 Flags:
   -o, --offline        Run in offline mode (skip all network checks)
   -d, --debug          Enable debug logging
-  -l, --logbook string Logbook name to use
 ```
 
 ## Dependencies
