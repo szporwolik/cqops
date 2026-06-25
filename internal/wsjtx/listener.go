@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unsafe"
 
 	wsjtx "github.com/k0swe/wsjtx-go/v4"
@@ -112,7 +113,8 @@ func (l *Listener) stopLocked() {
 			defer func() {
 				if r := recover(); r != nil {
 					applog.Warn("WSJT-X: unsafe conn close panicked — library may have changed", "panic", r)
-					applog.Debug("WSJT-X: socket close fallback — port may be held until OS timeout")
+					applog.Debug("WSJT-X: socket close fallback — port may be held until OS timeout; sleeping 500ms to help release")
+					time.Sleep(500 * time.Millisecond)
 				}
 			}()
 			rv := reflect.ValueOf(l.server).Elem()

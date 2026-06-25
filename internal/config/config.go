@@ -274,6 +274,7 @@ func Load(path string) (*Config, error) {
 	// Backward compat: migrate old backend → radio_backend, FlrigEnabled → RadioBackend.
 	for id, rp := range cfg.Rigs {
 		if rp.RadioBackend == "" && rp.Backend != "" {
+			fmt.Fprintf(os.Stderr, "CQOps: rig %s uses deprecated 'backend' field — please update to 'radio_backend'\n", id)
 			rp.RadioBackend = rp.Backend
 			rp.Backend = ""
 		}

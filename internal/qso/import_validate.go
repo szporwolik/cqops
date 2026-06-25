@@ -33,7 +33,7 @@ func ValidateImportRecord(q *QSO) error {
 	q.Mode = strings.ToUpper(strings.TrimSpace(q.Mode))
 	q.Submode = strings.ToUpper(strings.TrimSpace(q.Submode))
 	if q.Mode == "" {
-		return fmt.Errorf("mode is empty")
+		return fmt.Errorf("mode is empty for %s", q.Call)
 	}
 	// Normalize mode/submode through the same path as local QSO edit.
 	q.Mode, q.Submode = NormalizeMode(q.Mode, q.Submode)
