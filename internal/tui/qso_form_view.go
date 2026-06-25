@@ -444,15 +444,39 @@ func (m *Model) formPathRow(width int) string {
 	}
 
 	// Build cache key: grids + distance + stats + WL + dupe.
-	wlSig := "WL:"
+	var wlSigB strings.Builder
+	wlSigB.WriteString("WL:")
 	if m.lookup.wlPrivateData != nil {
-		wlSig += fmt.Sprintf("wk=%v,dxcc=%v", m.lookup.wlPrivateData.Worked(), m.lookup.wlPrivateData.DXCCConfirmed())
+		wlSigB.WriteString("wk=")
+		wlSigB.WriteString(strconv.FormatBool(m.lookup.wlPrivateData.Worked()))
+		wlSigB.WriteString(",dxcc=")
+		wlSigB.WriteString(strconv.FormatBool(m.lookup.wlPrivateData.DXCCConfirmed()))
 	}
-	sig := ownGrid + "|" + partnerGrid + "|" + m.App.Config.General.DistanceUnit + "|" + statsSig + "|" + wlSig + "|" + fmt.Sprint(m.dupe)
+	wlSig := wlSigB.String()
+	var sigB strings.Builder
+	sigB.WriteString(ownGrid)
+	sigB.WriteByte('|')
+	sigB.WriteString(partnerGrid)
+	sigB.WriteByte('|')
+	sigB.WriteString(m.App.Config.General.DistanceUnit)
+	sigB.WriteByte('|')
+	sigB.WriteString(statsSig)
+	sigB.WriteByte('|')
+	sigB.WriteString(wlSig)
+	sigB.WriteByte('|')
+	sigB.WriteString(strconv.FormatBool(m.dupe))
 	// Include rotor state so target arrows update immediately.
 	if m.rotor.connected {
-		sig += fmt.Sprintf("|rotor:%.0f,%.0f,%.0f,%.0f", m.rotor.azimuth, m.rotor.elevation, m.rotor.targetAz, m.rotor.targetEl)
+		sigB.WriteString("|rotor:")
+		sigB.WriteString(strconv.FormatFloat(m.rotor.azimuth, 'f', 0, 64))
+		sigB.WriteByte(',')
+		sigB.WriteString(strconv.FormatFloat(m.rotor.elevation, 'f', 0, 64))
+		sigB.WriteByte(',')
+		sigB.WriteString(strconv.FormatFloat(m.rotor.targetAz, 'f', 0, 64))
+		sigB.WriteByte(',')
+		sigB.WriteString(strconv.FormatFloat(m.rotor.targetEl, 'f', 0, 64))
 	}
+	sig := sigB.String()
 
 	if m.rc.pathSig == sig && m.rc.pathLine != "" {
 		return m.rc.pathLine
