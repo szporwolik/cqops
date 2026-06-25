@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,6 +30,14 @@ type ToastQueue struct {
 	items    []Toast
 	lastMsg  string
 	lastTime time.Time
+
+	// Active snapshot cache — avoids alloc+copy on every frame.
+	dirty        bool
+	cachedActive []Toast
+
+	// Overlay render cache — avoids rebuilding toast overlay every frame.
+	cachedView    string
+	cachedViewSig string
 }
 
 const toastMaxAge = 5 * time.Second
@@ -59,6 +69,7 @@ func (tq *ToastQueue) Push(level ToastLevel, msg string) {
 	if len(tq.items) > toastMaxItems {
 		tq.items = tq.items[len(tq.items)-toastMaxItems:]
 	}
+	tq.dirty = true
 	tq.mu.Unlock()
 
 	// Also log every toast
@@ -81,6 +92,7 @@ func (tq *ToastQueue) Expire() {
 	tq.mu.Lock()
 	defer tq.mu.Unlock()
 	cutoff := time.Now().Add(-toastMaxAge)
+	oldLen := len(tq.items)
 	n := 0
 	for _, t := range tq.items {
 		if t.Created.After(cutoff) {
@@ -89,13 +101,26 @@ func (tq *ToastQueue) Expire() {
 		}
 	}
 	tq.items = tq.items[:n]
+	if n != oldLen {
+		tq.dirty = true
+	}
 }
 
 func (tq *ToastQueue) Active() []Toast {
 	tq.mu.Lock()
 	defer tq.mu.Unlock()
+	if !tq.dirty && tq.cachedActive != nil {
+		return tq.cachedActive
+	}
+	if len(tq.items) == 0 {
+		tq.cachedActive = nil
+		tq.dirty = false
+		return nil
+	}
 	result := make([]Toast, len(tq.items))
 	copy(result, tq.items)
+	tq.cachedActive = result
+	tq.dirty = false
 	return result
 }
 
@@ -145,12 +170,29 @@ func RenderToasts(toasts []Toast, width int) string {
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
-// RenderToastOverlay returns the full view with toasts composited as a
-// floating overlay in the bottom-right corner, per lipgloss compositing.
-// If there are no active toasts, mainView is returned unchanged.
-func RenderToastOverlay(mainView string, toasts []Toast, viewW, viewH int) string {
+// RenderOverlay caches and returns the mainView with toasts composited as a
+// floating overlay in the bottom-right corner. Uses dirty-flag to avoid
+// rebuilding on every frame when toasts haven't changed.
+func (tq *ToastQueue) RenderOverlay(mainView string, viewW, viewH int) string {
+	toasts := tq.Active()
 	if len(toasts) == 0 {
+		tq.cachedView = ""
+		tq.cachedViewSig = ""
 		return mainView
+	}
+
+	// Build a signature from view dims + toast count + last toast message.
+	var sb strings.Builder
+	sb.WriteString(strconv.Itoa(viewW))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(viewH))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(len(toasts)))
+	sb.WriteByte('|')
+	sb.WriteString(toasts[len(toasts)-1].Message)
+	sig := sb.String()
+	if tq.cachedViewSig == sig && tq.cachedView != "" {
+		return tq.cachedView
 	}
 
 	// Build the toast content
@@ -187,5 +229,8 @@ func RenderToastOverlay(mainView string, toasts []Toast, viewW, viewH int) strin
 		Y(y).
 		Z(1) // above base
 
-	return lipgloss.NewCompositor(base, toastLayer).Render()
+	result := lipgloss.NewCompositor(base, toastLayer).Render()
+	tq.cachedView = result
+	tq.cachedViewSig = sig
+	return result
 }

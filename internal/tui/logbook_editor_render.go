@@ -265,9 +265,12 @@ func (le *LogbookEditor) viewWithDialog(bodyW int) string {
 		contentH = 5
 	}
 	// Spacer row + table (no border — the dialog provides its own).
-	spacer := lipgloss.NewStyle().Width(bodyW).Render("")
-	tablePart := lipgloss.NewStyle().
-		MaxWidth(bodyW).
+	if le.cachedSpacerStyleW != bodyW {
+		le.cachedSpacerStyle = lipgloss.NewStyle().Width(bodyW).MaxWidth(bodyW)
+		le.cachedSpacerStyleW = bodyW
+	}
+	spacer := le.cachedSpacerStyle.Render("")
+	tablePart := le.cachedSpacerStyle.
 		Height(contentH - 1).
 		Render(le.table.View())
 	body := lipgloss.JoinVertical(lipgloss.Left, spacer, tablePart)

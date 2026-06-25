@@ -72,6 +72,13 @@ type renderCache struct {
 	helpView string
 	helpSig  string
 
+	// Cached MaxHeight clip styles for root View() body and final compositing.
+	// Rebuilt only on terminal height change (resize).
+	clipStyle      lipgloss.Style
+	clipStyleH     int
+	bodyClipStyle  lipgloss.Style
+	bodyClipStyleH int
+
 	// Path state (committed call/grid, updated on field exit).
 	pathCall string
 	pathGrid string

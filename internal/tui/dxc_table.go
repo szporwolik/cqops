@@ -287,10 +287,13 @@ func (m *Model) dxcView() string {
 			DimStyle.Render("Spots") + " " + ValueStyle.Render(fmt.Sprintf("%d", m.dxc.spotCount))
 		m.dxc.cachedFilterW = bodyW
 	}
-	spacer := lipgloss.NewStyle().Width(bodyW).Render(m.dxc.cachedFilterInfo)
+	if m.dxc.cachedSpacerStyleW != bodyW {
+		m.dxc.cachedSpacerStyle = lipgloss.NewStyle().Width(bodyW).MaxWidth(bodyW)
+		m.dxc.cachedSpacerStyleW = bodyW
+	}
+	spacer := m.dxc.cachedSpacerStyle.Render(m.dxc.cachedFilterInfo)
 
-	tablePart := lipgloss.NewStyle().
-		MaxWidth(bodyW).
+	tablePart := m.dxc.cachedSpacerStyle.
 		Height(contentH - 1).
 		Render(m.dxc.table.View())
 	return lipgloss.JoinVertical(lipgloss.Left, spacer, tablePart)

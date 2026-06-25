@@ -410,7 +410,7 @@ func (w *Wizard) View() tea.View {
 	}
 
 	// Composite toasts as floating overlay (same pattern as model.go)
-	finalView := RenderToastOverlay(content, w.toasts.Active(), w.width, w.height)
+	finalView := w.toasts.RenderOverlay(content, w.width, w.height)
 
 	v := tea.NewView(finalView)
 	v.AltScreen = true

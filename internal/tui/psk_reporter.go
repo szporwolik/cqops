@@ -149,15 +149,41 @@ func (m *Model) viewPSKReporter() string {
 		now := time.Now().UTC()
 		graySlot = now.Hour()*12 + now.Minute()/5
 	}
-	sig := fmt.Sprintf("%d|%d|%s|%d|%s|%s|%d|%d|%d|%v",
-		w, m.height, call, m.psk.filterMins, m.psk.bandFilter, m.psk.modeFilter,
-		m.psk.selected, int(m.psk.lastFetchByCall[call].Unix()), graySlot, m.psk.fetching)
+	var sb strings.Builder
+	sb.WriteString(strconv.Itoa(w))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(m.height))
+	sb.WriteByte('|')
+	sb.WriteString(call)
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(m.psk.filterMins))
+	sb.WriteByte('|')
+	sb.WriteString(m.psk.bandFilter)
+	sb.WriteByte('|')
+	sb.WriteString(m.psk.modeFilter)
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(m.psk.selected))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.FormatInt(m.psk.lastFetchByCall[call].Unix(), 10))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(graySlot))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.FormatBool(m.psk.fetching))
+	sig := sb.String()
 	if m.psk.viewKey == sig && m.psk.view != "" {
 		return m.psk.view
 	}
 
 	// --- Spot cache: skip SQL when filters unchanged. ---
-	spotKey := fmt.Sprintf("%s|%d|%s|%s", call, m.psk.filterMins, m.psk.bandFilter, m.psk.modeFilter)
+	sb.Reset()
+	sb.WriteString(call)
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(m.psk.filterMins))
+	sb.WriteByte('|')
+	sb.WriteString(m.psk.bandFilter)
+	sb.WriteByte('|')
+	sb.WriteString(m.psk.modeFilter)
+	spotKey := sb.String()
 	var filtered []psk.Report
 	if m.psk.spotKey == spotKey && len(m.psk.spots) > 0 {
 		filtered = m.psk.spots

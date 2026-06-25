@@ -848,8 +848,12 @@ func (m *Model) View() tea.View {
 	// Composite toasts as a floating overlay in the bottom-right corner.
 	// Clip mainView to terminal height first so the compositor canvas
 	// matches the visible terminal exactly.
-	mainView = lipgloss.NewStyle().MaxHeight(layout.TerminalH).Render(mainView)
-	finalView := RenderToastOverlay(mainView, m.toasts.Active(), layout.TerminalW, layout.TerminalH)
+	if m.rc.clipStyleH != layout.TerminalH {
+		m.rc.clipStyle = lipgloss.NewStyle().MaxHeight(layout.TerminalH)
+		m.rc.clipStyleH = layout.TerminalH
+	}
+	mainView = m.rc.clipStyle.Render(mainView)
+	finalView := m.toasts.RenderOverlay(mainView, layout.TerminalW, layout.TerminalH)
 
 	// Help overlay — floating bottom-left, above toasts, when ? is pressed.
 	if m.help.ShowAll {
@@ -948,7 +952,11 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 		return ""
 	}
 	// Clamp to contentH so toggling a menu item never shifts the bottom bars.
-	return lipgloss.NewStyle().MaxHeight(l.ContentH).Render(body)
+	if m.rc.bodyClipStyleH != l.ContentH {
+		m.rc.bodyClipStyle = lipgloss.NewStyle().MaxHeight(l.ContentH)
+		m.rc.bodyClipStyleH = l.ContentH
+	}
+	return m.rc.bodyClipStyle.Render(body)
 }
 
 // buildQSOFormWithLayout renders the QSO form, short path info, and recent
