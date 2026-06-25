@@ -155,12 +155,14 @@ type Model struct {
 	// Render cache — avoids redundant layout, style, and view computation.
 	rc renderCache
 
-	lookup       lookupState
-	keepComment  bool // "Keep" checkbox — retains comment field content across QSOs
-	keepFocused  bool // true when the Keep/Retain checkbox row has focus
-	keepSubFocus int  // 0=Keep, 1=Retain — which checkbox in the row is active
-	retainForm   bool // "Retain" checkbox — prevents form clearing after QSO save
-	gridSource   gridSource
+	lookup          lookupState
+	keepComment     bool   // "Keep" checkbox — retains comment field content across QSOs
+	keepFocused     bool   // true when the Keep/Retain checkbox row has focus
+	keepSubFocus    int    // 0=Keep, 1=Retain — which checkbox in the row is active
+	retainForm      bool   // "Retain" checkbox — prevents form clearing after QSO save
+	dupeCacheKey    string // cache key for checkDupe result
+	dupeCacheResult bool   // cached outcome of last checkDupe
+	gridSource      gridSource
 
 	keys       KeyMap
 	help       help.Model

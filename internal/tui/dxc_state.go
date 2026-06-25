@@ -36,6 +36,7 @@ type dxcState struct {
 	selectedSpot store.DXCSpot   // full spot data captured at cursor-move time
 	tuneCancel   func()          // cancel previous tune command if running
 	cachedSpots  []store.DXCSpot // cached result of last filteredSpots() call
+	cachedRaw    []store.DXCSpot // raw unfiltered spots; new spots appended here
 
 	// Filter state at time of cache — used to detect staleness.
 	cachedBandFilter string

@@ -27,6 +27,9 @@ func (m *Model) dxcFilteredSpots() []store.DXCSpot {
 	if err != nil {
 		return nil
 	}
+	// Keep raw copy for in-memory append on new spots (avoids DB re-query).
+	m.dxc.cachedRaw = make([]store.DXCSpot, len(spots))
+	copy(m.dxc.cachedRaw, spots)
 
 	// Populate band and continent filter caches from the raw query result
 	// so dxcAvailableBands/Continents don't need their own DB scan.

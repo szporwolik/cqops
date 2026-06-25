@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/lipgloss/v2"
@@ -238,9 +239,11 @@ func (m *Model) helpSuffix() string {
 		// File picker modes — show position counter.
 		if le.mode == edModeExport || le.mode == edModeImport {
 			fp := le.FilePicker()
-			entries, err := os.ReadDir(fp.CurrentDirectory)
+			dir := fp.CurrentDirectory
+			// Cache directory listing with 500ms TTL to avoid per-frame disk I/O.
+			entries, err := m.cachedReadDir(dir)
 			if err != nil {
-				return fmt.Sprintf("Path: %s", fp.CurrentDirectory)
+				return fmt.Sprintf("Path: %s", dir)
 			}
 
 			// Export: count directories.
@@ -257,7 +260,7 @@ func (m *Model) helpSuffix() string {
 					for _, e := range entries {
 						if e.IsDir() {
 							pos++
-							if filepath.Join(fp.CurrentDirectory, e.Name()) == highlighted {
+							if filepath.Join(dir, e.Name()) == highlighted {
 								break
 							}
 						}
@@ -267,7 +270,7 @@ func (m *Model) helpSuffix() string {
 					}
 					return fmt.Sprintf("Folder %d/%d", pos, total)
 				}
-				return fmt.Sprintf("Path: %s", fp.CurrentDirectory)
+				return fmt.Sprintf("Path: %s", dir)
 			}
 
 			// Import: count only ADIF files (.adi, .adif).
@@ -287,7 +290,7 @@ func (m *Model) helpSuffix() string {
 				pos := 0
 				for _, name := range adifFiles {
 					pos++
-					if filepath.Join(fp.CurrentDirectory, name) == highlighted {
+					if filepath.Join(dir, name) == highlighted {
 						break
 					}
 				}
@@ -296,7 +299,7 @@ func (m *Model) helpSuffix() string {
 				}
 				return fmt.Sprintf("File %d/%d", pos, len(adifFiles))
 			}
-			return fmt.Sprintf("Path: %s", fp.CurrentDirectory)
+			return fmt.Sprintf("Path: %s", dir)
 		}
 
 		// QSO list counter.
@@ -556,4 +559,21 @@ func (m *Model) renderHelpOverlay(mainView string, l Layout) string {
 		Z(2) // above toasts
 
 	return lipgloss.NewCompositor(base, helpLayer).Render()
+}
+
+// cachedReadDir returns a cached directory listing with a 500ms TTL
+// to avoid per-frame os.ReadDir() during View().
+func (m *Model) cachedReadDir(dir string) ([]os.DirEntry, error) {
+	now := time.Now()
+	if m.rc.dirCachePath == dir && now.Sub(m.rc.dirCacheTime) < 500*time.Millisecond {
+		return m.rc.dirCacheEntries, nil
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, err
+	}
+	m.rc.dirCachePath = dir
+	m.rc.dirCacheTime = now
+	m.rc.dirCacheEntries = entries
+	return entries, nil
 }

@@ -726,7 +726,7 @@ func severityStyle(kind string) lipgloss.Style {
 }
 
 // bplRowCount returns the total number of rows in the band plan table.
-// Kept for export compatibility; the TUI no longer uses a single table.
+// Result is cached per region since the band plan data is static.
 func (m *Model) bplRowCount() int {
 	region := 1
 	if m.App != nil && m.App.Logbook != nil {
@@ -735,7 +735,12 @@ func (m *Model) bplRowCount() int {
 			region = r
 		}
 	}
-	return len(bplRows(region))
+	if m.bpl.cachedRowCount > 0 && m.bpl.cachedRowRegion == region {
+		return m.bpl.cachedRowCount
+	}
+	m.bpl.cachedRowCount = len(bplRows(region))
+	m.bpl.cachedRowRegion = region
+	return m.bpl.cachedRowCount
 }
 
 // bplTableHeight returns the available table height for the band plan.

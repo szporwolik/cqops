@@ -731,13 +731,11 @@ func (m *Model) onFieldExit() {
 }
 
 // checkDupe sets m.dupe to true when the current call/band/mode/date
-// combination already exists in the database, unless the existing QSO
-// has different reference data (e.g. different SOTA summit same day).
+// combination already exists in the database. Result is cached by
+// (call,band,mode,date) to avoid re-querying on every field navigation.
 func (m *Model) checkDupe() {
-	applog.Debug("dupe: checkDupe called", "focus", int(m.focus))
 	m.dupe = false
 	if m.App == nil || m.App.DB == nil {
-		applog.Debug("dupe: DB not available", "appNil", m.App == nil, "dbNil", m.App != nil && m.App.DB == nil)
 		return
 	}
 	call := qso.NormalizeCall(m.fields[fieldCall].Value())
@@ -745,12 +743,19 @@ func (m *Model) checkDupe() {
 	mode := strings.ToUpper(strings.TrimSpace(m.fields[fieldMode].Value()))
 	date := qso.StripNonDigits(m.fields[fieldDate].Value())
 	if call == "" || band == "" || mode == "" || date == "" {
-		applog.Debug("dupe: fields empty", "call", call, "band", band, "mode", mode, "date", date)
 		return
 	}
+	// Cache key — date changes once per day, so cache is highly effective.
+	key := call + "|" + band + "|" + mode + "|" + date
+	if m.dupeCacheKey == key {
+		m.dupe = m.dupeCacheResult
+		return
+	}
+	m.dupeCacheKey = key
+
 	isDupe, existing := store.IsDuplicateQSO(m.App.DB, call, band, mode, date)
 	if !isDupe || existing == nil {
-		applog.Debug("dupe: no match", "call", call, "band", band, "mode", mode, "date", date)
+		m.dupeCacheResult = false
 		return
 	}
 	// If any reference field differs, it's not a dupe (e.g. different summit).
@@ -760,11 +765,11 @@ func (m *Model) checkDupe() {
 	formIOTA := strings.TrimSpace(m.fields[fieldIOTA].Value())
 	if formSOTA != existing.SOTA || formPOTA != existing.POTA ||
 		formWWFF != existing.WWFF || formIOTA != existing.IOTA {
-		applog.Debug("dupe: ref mismatch — not a dupe", "formSOTA", formSOTA, "dbSOTA", existing.SOTA)
+		m.dupeCacheResult = false
 		return
 	}
 	m.dupe = true
-	applog.Debug("dupe: DETECTED", "call", call, "band", band, "mode", mode, "date", date)
+	m.dupeCacheResult = true
 }
 
 // clearForm resets the entire QSO form for a new QSO: clears fields (with
@@ -773,6 +778,7 @@ func (m *Model) checkDupe() {
 // actively viewing the Partner/Image screen.
 func (m *Model) clearForm() {
 	m.dupe = false
+	m.dupeCacheKey = ""
 	if !m.retainForm {
 		m.resetQSOFields()
 	}

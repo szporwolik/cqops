@@ -1,6 +1,9 @@
 package tui
 
 import (
+	"os"
+	"time"
+
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/store"
 )
@@ -54,6 +57,11 @@ type renderCache struct {
 	// DXCC continent cache — avoids prefix-tree lookup on every partner-view frame.
 	dxccContCall  string
 	dxccContValue string
+
+	// Directory listing cache — avoids os.ReadDir during View() in file picker.
+	dirCachePath    string
+	dirCacheTime    time.Time
+	dirCacheEntries []os.DirEntry
 
 	// Per-frame view caches.
 	formView string

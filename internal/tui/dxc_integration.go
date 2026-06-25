@@ -24,11 +24,10 @@ type dxcStatusMsg struct {
 }
 
 // dxcSpotsStoredMsg is sent after a batch of spots has been stored.
-// It carries the unique callsigns that were in the batch, so the
-// QSO form can auto-fill frequency when a spot arrives for the current call.
 type dxcSpotsStoredMsg struct {
 	calls     []string
-	spottedMe string // non-empty when own callsign was spotted: "spotter: comment"
+	spottedMe string
+	newSpots  []store.DXCSpot // newly inserted spots for in-memory append
 }
 
 // sendSpotCmd sends a DX spot to the connected cluster and stores it locally
@@ -87,7 +86,7 @@ func (m *Model) sendSpotCmd(call string, freqKhz float64, comment string) tea.Cm
 			msg += " [" + rsp + "]"
 		}
 		m.toasts.Info(msg)
-		return dxcSpotsStoredMsg{calls: []string{call}}
+		return dxcSpotsStoredMsg{calls: []string{call}, newSpots: []store.DXCSpot{spot}}
 	}
 }
 
@@ -323,7 +322,7 @@ func (m *Model) storeDXCSpotsCmd(spots []dxc.Spot) tea.Cmd {
 			}
 		}
 
-		return dxcSpotsStoredMsg{calls: calls, spottedMe: spottedMe}
+		return dxcSpotsStoredMsg{calls: calls, spottedMe: spottedMe, newSpots: dbSpots}
 	}
 }
 
@@ -420,11 +419,25 @@ func (m *Model) fillDXCFreq(msg dxcSpotLookupMsg) {
 // handleDXCSpotsStored checks newly stored spots against the QSO form call
 // and invalidates the DXC table cache to keep the view in sync with the DB.
 func (m *Model) handleDXCSpotsStored(msg dxcSpotsStoredMsg) {
-	// Invalidate table and filter caches so they rebuild with fresh data.
+	// Invalidate table cache so it rebuilds with fresh data.
 	m.dxc.tableReady = false
-	m.dxc.cachedSpots = nil
 	m.dxc.cachedBands = nil
 	m.dxc.cachedConts = nil
+
+	// Append new spots to the raw cache and re-filter in-memory
+	// instead of re-querying the full DB.
+	if len(msg.newSpots) > 0 {
+		m.dxc.cachedRaw = append(m.dxc.cachedRaw, msg.newSpots...)
+		// Cap raw cache to prevent unbounded growth (old spots are purged from DB too).
+		if len(m.dxc.cachedRaw) > 600 {
+			m.dxc.cachedRaw = m.dxc.cachedRaw[len(m.dxc.cachedRaw)-500:]
+		}
+		// Re-filter from updated raw cache.
+		m.dxc.cachedSpots = nil
+		m.dxcFilteredSpots()
+	} else {
+		m.dxc.cachedSpots = nil
+	}
 
 	// Notify when own callsign was spotted.
 	if msg.spottedMe != "" {

@@ -54,6 +54,10 @@ func (m *Model) saveQSO() tea.Cmd {
 		qs.QSODate = time.Now().UTC().Format("20060102")
 	}
 	qs.TimeOn = stripNonDigits(m.fields[fieldTime].Value())
+	// Pad to 6 digits (HHMMSS) if user didn't type seconds — DB expects full time.
+	if len(qs.TimeOn) == 4 {
+		qs.TimeOn += "00"
+	}
 	if qs.TimeOn == "" {
 		qs.TimeOn = time.Now().UTC().Format("150405")
 	}

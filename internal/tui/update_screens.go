@@ -742,6 +742,10 @@ type bplState struct {
 	cachedLines    []string
 	cachedLinesKey string // "tab|region|search"
 
+	// Cached row count — avoids rebuilding full band plan just to count rows.
+	cachedRowCount  int
+	cachedRowRegion int
+
 	// Tune state.
 	tuneCancel context.CancelFunc // cancels previous in-flight BPL tune
 }
