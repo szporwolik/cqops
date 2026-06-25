@@ -116,20 +116,29 @@ func (r *RecentQSOs) View() string {
 		}
 	}
 
+	// Pre-computed tier widths — pick the widest tier that fits bodyW.
+	// Fall back to whittling columns from the narrowest tier for very small terminals.
 	var names []string
-	for _, t := range qsoColTiers {
-		names = t.names
-	}
-	for len(names) > 0 {
-		total := 0
-		for _, n := range names {
-			total += qsoAllCols[n].minWidth
-		}
-		total += len(names) - 1
-		if total <= bodyW {
+	for i := len(qsoColTiers) - 1; i >= 0; i-- {
+		if bodyW >= qsoColTiers[i].maxW {
+			names = qsoColTiers[i].names
 			break
 		}
-		names = names[:len(names)-1]
+	}
+	if names == nil {
+		// Terminal too narrow for any tier — whittle from the narrowest set.
+		names = append([]string{}, qsoColTiers[0].names...)
+		for len(names) > 1 {
+			total := 0
+			for _, n := range names {
+				total += qsoAllCols[n].minWidth
+			}
+			total += len(names) - 1
+			if total <= bodyW {
+				break
+			}
+			names = names[:len(names)-1]
+		}
 	}
 
 	var cols []table.Column
@@ -244,18 +253,32 @@ func (r *RecentQSOs) Height() int {
 // qsoColTiers defines which columns to show at each terminal width.
 // Scales gracefully from narrow terminals up to 2K+ monitors.
 // No "ID" column — it's internal, not relevant for operators.
+// Pre-computed max widths avoid repeated inner loops on every cache miss.
 var qsoColTiers = []struct {
 	minW  int
+	maxW  int // pre-computed: sum of minWidths + (len(names)-1)
 	names []string
 }{
-	{0, []string{"Date", "Time", "Call", "Mode", "RSTs", "RSTr"}},
-	{55, []string{"Date", "Time", "Call", "Band", "Mode", "RSTs", "RSTr"}},
-	{70, []string{"Date", "Time", "Call", "Band", "Mode", "RSTs", "RSTr", "DXCC"}},
-	{90, []string{"Date", "Time", "Call", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name"}},
-	{115, []string{"Date", "Time", "Call", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist"}},
-	{150, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power"}},
-	{190, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Notes", "Source", "WL"}},
-	{240, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Notes", "Source", "WL", "SOTA", "POTA", "IOTA"}},
+	{0, 0, []string{"Date", "Time", "Call", "Mode", "RSTs", "RSTr"}},
+	{55, 0, []string{"Date", "Time", "Call", "Band", "Mode", "RSTs", "RSTr"}},
+	{70, 0, []string{"Date", "Time", "Call", "Band", "Mode", "RSTs", "RSTr", "DXCC"}},
+	{90, 0, []string{"Date", "Time", "Call", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name"}},
+	{115, 0, []string{"Date", "Time", "Call", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist"}},
+	{150, 0, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power"}},
+	{190, 0, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Notes", "Source", "WL"}},
+	{240, 0, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Notes", "Source", "WL", "SOTA", "POTA", "IOTA"}},
+}
+
+func init() {
+	for i := range qsoColTiers {
+		t := &qsoColTiers[i]
+		total := 0
+		for _, n := range t.names {
+			total += qsoAllCols[n].minWidth
+		}
+		total += len(t.names) - 1 // gaps between columns
+		t.maxW = total
+	}
 }
 
 // qsoAllCols defines all available columns for the QSO table.

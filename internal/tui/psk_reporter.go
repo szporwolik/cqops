@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -97,10 +98,10 @@ func pskBandStyle(freqHz float64) lipgloss.Style {
 func pskTableRow(r psk.Report, callW, gridW, freqW, snrW, modeW int) string {
 	call := truncateText(r.ReceiverCallsign, callW)
 	loc := truncateText(r.ReceiverLocator, gridW)
-	freq := truncateText(fmt.Sprintf("%.3f", r.Frequency/1_000_000), freqW)
+	freq := truncateText(strconv.FormatFloat(r.Frequency/1_000_000, 'f', 3, 64), freqW)
 	snr := ""
 	if r.SNR != 0 {
-		snr = truncateText(fmt.Sprintf("%d", r.SNR), snrW)
+		snr = truncateText(strconv.Itoa(r.SNR), snrW)
 	}
 	mode := truncateText(r.Mode, modeW)
 	age := formatAge(r.FlowStartSeconds)
@@ -350,10 +351,13 @@ func (m *Model) buildPSKTable(reports []psk.Report, maxW, visibleRows int) strin
 	}
 
 	// Force each line to exactly maxW width so the table fills the box.
-	// Use a single pre-built style instead of allocating per row.
-	rowStyle := lipgloss.NewStyle().Width(maxW).MaxWidth(maxW).Inline(true)
+	// Use a cached style — rebuilt only when maxW changes.
+	if m.psk.tableRowStyleW != maxW {
+		m.psk.tableRowStyle = lipgloss.NewStyle().Width(maxW).MaxWidth(maxW).Inline(true)
+		m.psk.tableRowStyleW = maxW
+	}
 	for i, l := range lines {
-		lines[i] = rowStyle.Render(l)
+		lines[i] = m.psk.tableRowStyle.Render(l)
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
@@ -421,6 +425,39 @@ func (m *Model) buildPSKMap(reports []psk.Report, mapW, mapAvailH int) string {
 	if ownGrid == "" {
 		return ""
 	}
+
+	// Map-with-spots cache — spot markers are expensive to redraw every frame.
+	// Key on: report count, first/last receiver, map dims, own grid, grayline.
+	var graySlot int
+	if m.App.Config.General.DrawGrayline {
+		now := time.Now().UTC()
+		graySlot = now.Hour()*12 + now.Minute()/5
+	}
+	var sb strings.Builder
+	sb.WriteString(strconv.Itoa(len(reports)))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(mapW))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(mapAvailH))
+	sb.WriteByte('|')
+	sb.WriteString(ownGrid)
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(graySlot))
+	if len(reports) > 0 {
+		sb.WriteByte('|')
+		sb.WriteString(reports[0].ReceiverCallsign)
+		sb.WriteByte('|')
+		sb.WriteString(strconv.FormatInt(reports[0].FlowStartSeconds, 10))
+		sb.WriteByte('|')
+		sb.WriteString(reports[len(reports)-1].ReceiverCallsign)
+		sb.WriteByte('|')
+		sb.WriteString(strconv.FormatInt(reports[len(reports)-1].FlowStartSeconds, 10))
+	}
+	mapSig := sb.String()
+	if m.psk.mapSig == mapSig && m.psk.mapView != "" {
+		return m.psk.mapView
+	}
+
 	ownLat, ownLon := gridToLatLon(ownGrid)
 
 	if m.mapView == nil {
@@ -485,7 +522,10 @@ func (m *Model) buildPSKMap(reports []psk.Report, mapW, mapAvailH int) string {
 		pskMarkOther.Render("\u25cf") + DimStyle.Render(" other")
 	lines = append(lines, legend)
 
-	return strings.Join(lines, "\n")
+	result := strings.Join(lines, "\n")
+	m.psk.mapView = result
+	m.psk.mapSig = mapSig
+	return result
 }
 
 func pskCellCoords(lat, lon float64, mapW, mapH int) (int, int) {

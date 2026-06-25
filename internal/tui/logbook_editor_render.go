@@ -225,13 +225,21 @@ func (le *LogbookEditor) View() tea.View {
 		if le.contestID != "" {
 			contestLine := S.Warning.Render(fmt.Sprintf(" Contest: %s   Contest ID: %s",
 				le.contestName, le.contestAdifID))
-			headerLines = append(headerLines, lipgloss.NewStyle().Width(bodyW).Render(contestLine))
+			if le.cachedSpacerStyleW != bodyW {
+				le.cachedSpacerStyle = lipgloss.NewStyle().Width(bodyW)
+				le.cachedSpacerStyleW = bodyW
+			}
+			headerLines = append(headerLines, le.cachedSpacerStyle.Render(contestLine))
 			contentH-- // consume one row for the contest info line
 		}
 
 		// Spacer row + table.
-		spacer := lipgloss.NewStyle().Width(bodyW).Render("")
-		tablePart := lipgloss.NewStyle().
+		if le.cachedSpacerStyleW != bodyW {
+			le.cachedSpacerStyle = lipgloss.NewStyle().Width(bodyW)
+			le.cachedSpacerStyleW = bodyW
+		}
+		spacer := le.cachedSpacerStyle.Render("")
+		tablePart := le.cachedSpacerStyle.
 			MaxWidth(bodyW).
 			Height(contentH - 1 - len(headerLines)).
 			Render(le.table.View())

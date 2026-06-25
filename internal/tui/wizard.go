@@ -49,6 +49,10 @@ type Wizard struct {
 	Completed     bool // true only when full wizard finished
 	Offline       bool // when true, skip all network-dependent operations
 
+	// Cached form box style — rebuilt only when width changes.
+	cachedFormBox  lipgloss.Style
+	cachedFormBoxW int
+
 	// Wavelog async state (for wizard step 1 buttons)
 	wlUpdating   bool
 	wlTesting    bool
@@ -430,6 +434,7 @@ func (w *Wizard) clampedDims() (h, ww int) {
 }
 
 // wizardFormBox builds the bordered box style for wizard forms.
+// Style is cached and rebuilt only when width changes.
 func (w *Wizard) wizardFormBox() lipgloss.Style {
 	formW := w.width - 6
 	if formW < 56 {
@@ -438,11 +443,16 @@ func (w *Wizard) wizardFormBox() lipgloss.Style {
 	if formW > 80 {
 		formW = 80
 	}
-	return lipgloss.NewStyle().
+	if w.cachedFormBoxW == formW {
+		return w.cachedFormBox
+	}
+	w.cachedFormBox = lipgloss.NewStyle().
 		Width(formW).
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(P.TextDim).
 		Padding(1, 2)
+	w.cachedFormBoxW = formW
+	return w.cachedFormBox
 }
 
 // wizardLayout composes banner, step indicator, bordered body, filler,

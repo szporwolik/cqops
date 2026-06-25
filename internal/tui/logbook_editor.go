@@ -8,6 +8,7 @@ import (
 	"charm.land/bubbles/v2/table"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 )
@@ -163,6 +164,10 @@ type LogbookEditor struct {
 	cachedSig  string
 	builtW     int // width at last buildTable call
 	builtH     int // height at last buildTable call
+
+	// Cached spacer style — avoids lipgloss.NewStyle() on every cache miss.
+	cachedSpacerStyle  lipgloss.Style
+	cachedSpacerStyleW int
 
 	// File export.
 	filePicker filepicker.Model
