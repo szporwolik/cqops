@@ -249,7 +249,7 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 			ti.SetValue(now.Format("2006-01-02"))
 		case fieldTime:
 			ti.CharLimit = 8
-			ti.SetValue(now.Format("15:04:05"))
+			ti.SetValue(now.Format("15:04"))
 		case fieldGrid:
 			ti.CharLimit = 8
 		case fieldCountry:
@@ -800,9 +800,9 @@ func (m *Model) View() tea.View {
 	if !cacheBars {
 		m.rc.status = ""
 	}
-	if m.rc.status == "" || m.rc.statusSec != time.Now().UTC().Second() {
+	if m.rc.status == "" || m.rc.statusSec != time.Now().UTC().Minute() {
 		m.rc.status = m.renderStatusBar()
-		m.rc.statusSec = time.Now().UTC().Second()
+		m.rc.statusSec = time.Now().UTC().Minute()
 	}
 	// Tab bar depends on partner data / call field / connectivity — cached.
 	m.rc.tabs = m.renderTabBar()

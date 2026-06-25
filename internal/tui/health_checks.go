@@ -34,13 +34,14 @@ func (m *Model) autoUpdateDateTime() {
 	m.fields[fieldTime].SetValue(now.Format(timeFmt))
 }
 
-// dateTimeFormats returns the format strings for date and time fields
-// based on terminal width. Below 85 chars, dashes and colons are omitted.
+// dateTimeFormats returns the format strings for date and time fields.
+// Seconds are omitted from default display; the user can type them manually.
+// DB saves and ADIF/Wavelog exports always include full seconds.
 func dateTimeFormats(width int) (dateFmt, timeFmt string) {
 	if width < 85 {
-		return "20060102", "150405"
+		return "20060102", "1504"
 	}
-	return "2006-01-02", "15:04:05"
+	return "2006-01-02", "15:04"
 }
 
 // maybeCheckInet returns a tea.Cmd to check internet connectivity at intervals.

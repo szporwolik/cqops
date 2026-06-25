@@ -84,8 +84,10 @@ func (m *Model) viewForm(width int) string {
 		sigB.WriteByte('|')
 	}
 	sig := sigB.String()
-	// Cache hit: signature match AND we're in the same second (clock TTL).
-	if m.rc.formSig == sig && m.rc.formView != "" && m.rc.formSec == time.Now().Second() {
+	// Cache hit: signature match AND we're in the same minute.
+	// Minute-based TTL synchronizes with the system clock crossing :00
+	// so the display is always in sync with real time.
+	if m.rc.formSig == sig && m.rc.formView != "" && m.rc.formSec == time.Now().Minute() {
 		return m.rc.formView
 	}
 
@@ -227,7 +229,7 @@ func (m *Model) viewForm(width int) string {
 	result := b.String()
 	m.rc.formSig = sig
 	m.rc.formView = result
-	m.rc.formSec = time.Now().Second()
+	m.rc.formSec = time.Now().Minute()
 
 	return result
 }
