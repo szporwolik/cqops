@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -214,7 +215,19 @@ func (le *LogbookEditor) View() tea.View {
 		}
 		// Cache the rendered table — large QSO sets are paginated.
 		// Invalidate when QSO data, page, dimensions, or cursor change.
-		sig := fmt.Sprintf("%d|%d|%d|%d|%d|%s", le.width, le.height, len(le.qsos), le.currentPage, le.table.Cursor(), le.contestID)
+		var sb strings.Builder
+		sb.WriteString(strconv.Itoa(le.width))
+		sb.WriteByte('|')
+		sb.WriteString(strconv.Itoa(le.height))
+		sb.WriteByte('|')
+		sb.WriteString(strconv.Itoa(len(le.qsos)))
+		sb.WriteByte('|')
+		sb.WriteString(strconv.Itoa(le.currentPage))
+		sb.WriteByte('|')
+		sb.WriteString(strconv.Itoa(le.table.Cursor()))
+		sb.WriteByte('|')
+		sb.WriteString(le.contestID)
+		sig := sb.String()
 		if le.cachedSig == sig && le.cachedView != "" {
 			return tea.NewView(le.cachedView)
 		}

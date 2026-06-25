@@ -869,6 +869,21 @@ func (m *Model) View() tea.View {
 // viewImage renders the partner photo full-screen.
 func (m *Model) viewImage(l Layout) string {
 	content := m.photo.viewer.View().Content
+
+	// Cache image styles — rebuilt only when dimensions change.
+	if m.rc.imagePlaceholderW != l.TerminalW || m.rc.imagePlaceholderH != l.ContentH {
+		m.rc.imagePlaceholderStyle = lipgloss.NewStyle().
+			Width(l.TerminalW).
+			Height(l.ContentH).
+			Align(lipgloss.Center, lipgloss.Center).
+			Foreground(P.TextMuted)
+		m.rc.imageContentStyle = lipgloss.NewStyle().
+			Width(l.TerminalW).
+			Height(l.ContentH)
+		m.rc.imagePlaceholderW = l.TerminalW
+		m.rc.imagePlaceholderH = l.ContentH
+	}
+
 	if m.photo.viewer.Err() != nil || content == "" {
 		msg := ""
 		if m.photo.viewer.Err() != nil {
@@ -890,17 +905,9 @@ func (m *Model) viewImage(l Layout) string {
 		if msg == "" {
 			msg = "No image"
 		}
-		content = lipgloss.NewStyle().
-			Width(l.TerminalW).
-			Height(l.ContentH).
-			Align(lipgloss.Center, lipgloss.Center).
-			Foreground(P.TextMuted).
-			Render(msg)
+		content = m.rc.imagePlaceholderStyle.Render(msg)
 	} else {
-		content = lipgloss.NewStyle().
-			Width(l.TerminalW).
-			Height(l.ContentH).
-			Render(content)
+		content = m.rc.imageContentStyle.Render(content)
 	}
 	return content
 }

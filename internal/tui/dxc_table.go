@@ -256,25 +256,24 @@ func (m *Model) dxcView() string {
 
 	contentH := contentHeight(h)
 
-	timeVal := "all"
-	if m.dxc.timeFilter > 0 {
-		timeVal = fmt.Sprintf("%dm", m.dxc.timeFilter)
-	}
-	bandVal := "all"
-	if m.dxc.bandFilter != "" {
-		bandVal = m.dxc.bandFilter
-	}
-	contVal := "all"
-	if m.dxc.contFilter != "" {
-		contVal = m.dxc.contFilter
-	}
-	modeVal := "all"
-	if m.dxc.modeFilter != "" {
-		modeVal = m.dxc.modeFilter
-	}
-
 	// Cache filter info line — only rebuild when width or filters change.
 	if m.dxc.cachedFilterInfo == "" || m.dxc.cachedFilterW != bodyW {
+		timeVal := "all"
+		if m.dxc.timeFilter > 0 {
+			timeVal = fmt.Sprintf("%dm", m.dxc.timeFilter)
+		}
+		bandVal := "all"
+		if m.dxc.bandFilter != "" {
+			bandVal = m.dxc.bandFilter
+		}
+		contVal := "all"
+		if m.dxc.contFilter != "" {
+			contVal = m.dxc.contFilter
+		}
+		modeVal := "all"
+		if m.dxc.modeFilter != "" {
+			modeVal = m.dxc.modeFilter
+		}
 		m.dxc.cachedFilterInfo = " " + DimStyle.Render("Filters:") + " " +
 			DimStyle.Render("Cont") + " " + ValueStyle.Render(contVal) +
 			" " + DimStyle.Render("|") + " " +

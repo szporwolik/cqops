@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"charm.land/bubbles/v2/table"
@@ -289,8 +290,23 @@ func (m *Model) viewBPL(l Layout) string {
 	}
 
 	// Cache: rebuild only when state changes.
-	sig := fmt.Sprintf("%d|%d|%d|%d|%d|%d|%d|%s",
-		m.bpl.tab, region, w, ch, m.bpl.scroll, m.bpl.cursor, m.bpl.bandSel, m.bpl.search)
+	var sb strings.Builder
+	sb.WriteString(strconv.Itoa(m.bpl.tab))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(region))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(w))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(ch))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(m.bpl.scroll))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(m.bpl.cursor))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(m.bpl.bandSel))
+	sb.WriteByte('|')
+	sb.WriteString(m.bpl.search)
+	sig := sb.String()
 	if m.bpl.cachedSig == sig && m.bpl.cachedView != "" {
 		return m.bpl.cachedView
 	}
@@ -347,7 +363,6 @@ func (m *Model) viewBPL(l Layout) string {
 // viewBPLHAM returns lines for the amateur HF band plan (160m–10m).
 func (m *Model) viewBPLHAM(region int) []string {
 	bp := bplForRegion(region)
-	freqStr := func(f hamradio.Frequency) string { return fmt.Sprintf("%.3f", float64(f)/1e6) }
 
 	var lines []string
 	for _, name := range bandOrder {
@@ -356,7 +371,9 @@ func (m *Model) viewBPLHAM(region int) []string {
 			continue
 		}
 		// Band summary line — just band name and range.
-		summary := fmt.Sprintf("%-5s %s–%s", string(b.Name), freqStr(b.From), freqStr(b.To))
+		fr := strconv.FormatFloat(float64(b.From)/1e6, 'f', 3, 64)
+		to := strconv.FormatFloat(float64(b.To)/1e6, 'f', 3, 64)
+		summary := fmt.Sprintf("%-5s %s–%s", string(b.Name), fr, to)
 		lines = append(lines, summary)
 
 		// Detail rows for this band.
@@ -366,7 +383,9 @@ func (m *Model) viewBPLHAM(region int) []string {
 			if p.MaxBandwidth > 0 {
 				bw = fmt.Sprintf(" BW %.0f Hz", float64(p.MaxBandwidth))
 			}
-			lines = append(lines, DimStyle.Render(fmt.Sprintf("  %s–%s %s%s", freqStr(p.From), freqStr(p.To), mode, bw)))
+			pfr := strconv.FormatFloat(float64(p.From)/1e6, 'f', 3, 64)
+			pto := strconv.FormatFloat(float64(p.To)/1e6, 'f', 3, 64)
+			lines = append(lines, DimStyle.Render(fmt.Sprintf("  %s–%s %s%s", pfr, pto, mode, bw)))
 		}
 		// Special frequencies under this band.
 		if emcom, ok := emcomFreqs[region]; ok {

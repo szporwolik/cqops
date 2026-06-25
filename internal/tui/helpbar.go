@@ -26,6 +26,18 @@ var spotBindings = []key.Binding{
 	key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "cancel")),
 }
 
+// Pre-allocated help overlay styles — invariant, created once at init.
+var helpTitleStyle = lipgloss.NewStyle().Bold(true).Foreground(P.Cursor)
+var helpDismissStyle = lipgloss.NewStyle().Foreground(P.TextMuted)
+var helpBoxStyle = lipgloss.NewStyle().
+	Border(lipgloss.RoundedBorder()).
+	BorderForeground(P.Cursor).
+	Padding(0, 1).
+	Background(lipgloss.Color("0"))
+
+// adifExtsMap avoids allocating a map every frame in helpSuffix().
+var adifExtsMap = map[string]bool{".adi": true, ".adif": true}
+
 // helpView renders the bottom help/footer bar with context-sensitive key bindings.
 // Cached — only rebuilds when screen, confirm state, or dynamic suffix change.
 func (m *Model) helpView() string {
@@ -274,7 +286,7 @@ func (m *Model) helpSuffix() string {
 			}
 
 			// Import: count only ADIF files (.adi, .adif).
-			adifExts := map[string]bool{".adi": true, ".adif": true}
+			adifExts := adifExtsMap
 			adifFiles := make([]string, 0)
 			for _, e := range entries {
 				if e.IsDir() {
@@ -512,8 +524,8 @@ func (m *Model) renderHelpOverlay(mainView string, l Layout) string {
 
 	// Build the floating box with screen title and dismiss hint.
 	// No extra spaces — padding (0,1) on the box already provides margins.
-	title := lipgloss.NewStyle().Bold(true).Foreground(P.Cursor).Render(m.screenTitle() + " Keys")
-	dismiss := lipgloss.NewStyle().Foreground(P.TextMuted).Render("?/Esc close")
+	title := helpTitleStyle.Render(m.screenTitle() + " Keys")
+	dismiss := helpDismissStyle.Render("?/Esc close")
 
 	// Pad the shorter element so title and help content share the same width,
 	// preventing the title from wrapping on screens with few bindings.
@@ -535,13 +547,7 @@ func (m *Model) renderHelpOverlay(mainView string, l Layout) string {
 		dismiss,
 	)
 
-	boxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(P.Cursor).
-		Padding(0, 1).
-		Background(lipgloss.Color("0")) // solid bg matching terminal default
-
-	box := boxStyle.Render(boxContent)
+	box := helpBoxStyle.Render(boxContent)
 
 	boxH := lipgloss.Height(box)
 
