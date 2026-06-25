@@ -1,6 +1,6 @@
 ; =============================================================================
 ; CQOps NSIS Installer — Amateur Radio Logging TUI
-; Build: makensis /DVERSION=0.8.6 installer\cqops.nsi
+; Build: makensis /DVERSION=X.Y.Z installer\cqops.nsi (version from VERSION file)
 ; =============================================================================
 
 Unicode true

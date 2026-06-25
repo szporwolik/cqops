@@ -14,7 +14,6 @@ $targets = @(
     @{OS="windows"; Arch="arm64"; Ext=".exe"},
     @{OS="linux";   Arch="amd64"; Ext=""},
     @{OS="linux";   Arch="arm64"; Ext=""},
-    @{OS="linux";   Arch="armhf"; Ext=""},
     @{OS="darwin";  Arch="amd64"; Ext=""},
     @{OS="darwin";  Arch="arm64"; Ext=""}
 )
