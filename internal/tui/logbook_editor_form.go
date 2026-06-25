@@ -157,7 +157,11 @@ func (le *LogbookEditor) viewEdit(bodyW int, contentH int) string {
 	if colW < 28 {
 		colW = innerW
 	}
-	colStyle := lipgloss.NewStyle().Width(colW).MaxWidth(colW).Align(lipgloss.Left).Inline(true)
+	if le.cachedEditColW != colW {
+		le.cachedEditColStyle = lipgloss.NewStyle().Width(colW).MaxWidth(colW).Align(lipgloss.Left).Inline(true)
+		le.cachedEditColW = colW
+	}
+	colStyle := le.cachedEditColStyle
 
 	half := (qefCount + 1) / 2
 

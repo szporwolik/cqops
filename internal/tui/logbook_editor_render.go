@@ -288,12 +288,15 @@ func (le *LogbookEditor) viewWithDialog(bodyW int) string {
 		le.cachedSpacerStyleW = bodyW
 	}
 	spacer := le.cachedSpacerStyle.Render("")
-	// Table part uses its own style (no Width, only MaxWidth+Height) to avoid
-	// forcing the table to pad to bodyW which can cause layout issues.
-	tablePart := lipgloss.NewStyle().
-		MaxWidth(bodyW).
-		Height(contentH - 1).
-		Render(le.table.View())
+	// Table part uses its own cached style (no Width, only MaxWidth+Height)
+	// to avoid forcing the table to pad to bodyW which can cause layout issues.
+	th := contentH - 1
+	if le.cachedTablePartW != bodyW || le.cachedTablePartH != th {
+		le.cachedTablePartStyle = lipgloss.NewStyle().MaxWidth(bodyW).Height(th)
+		le.cachedTablePartW = bodyW
+		le.cachedTablePartH = th
+	}
+	tablePart := le.cachedTablePartStyle.Render(le.table.View())
 	body := lipgloss.JoinVertical(lipgloss.Left, spacer, tablePart)
 	if le.dialog != nil {
 		return RenderDialogOverlay(body, *le.dialog, bodyW, contentH)

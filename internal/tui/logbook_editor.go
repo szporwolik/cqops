@@ -174,6 +174,15 @@ type LogbookEditor struct {
 	cachedSpacerStyle  lipgloss.Style
 	cachedSpacerStyleW int
 
+	// Cached dialog table style — avoids lipgloss.NewStyle() every frame.
+	cachedTablePartStyle lipgloss.Style
+	cachedTablePartW     int
+	cachedTablePartH     int
+
+	// Cached edit form column style — rebuilt only on colW change.
+	cachedEditColStyle lipgloss.Style
+	cachedEditColW     int
+
 	// File export.
 	filePicker filepicker.Model
 	exportPath string

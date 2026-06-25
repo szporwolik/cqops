@@ -101,7 +101,7 @@ func (d SpotDialog) render() string {
 		btnAccept.Render(" Accept "),
 		btnCancel.Render(" Cancel "),
 	)
-	btns = lipgloss.NewStyle().Width(contentW).Align(lipgloss.Center).Render(btns)
+	btns = dialogBtnAlignStyle.Width(contentW).Render(btns)
 
 	body := lipgloss.JoinVertical(lipgloss.Top,
 		title,

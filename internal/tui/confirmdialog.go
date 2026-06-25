@@ -156,7 +156,7 @@ func (m DialogModel) render() string {
 		btnParts = append(btnParts, s.Render(" "+opt.Label+" "))
 	}
 	btns := lipgloss.JoinHorizontal(lipgloss.Center, btnParts...)
-	btns = lipgloss.NewStyle().Width(contentW).Align(lipgloss.Center).Render(btns)
+	btns = dialogBtnAlignStyle.Width(contentW).Render(btns)
 
 	// Assemble modal body vertically (hint goes to the bottom help bar).
 	modal := lipgloss.JoinVertical(lipgloss.Top,

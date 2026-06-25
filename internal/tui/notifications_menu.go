@@ -22,6 +22,9 @@ type NotificationsMenu struct {
 	goBack        bool
 	width         int
 	height        int
+
+	cachedClipStyle lipgloss.Style
+	cachedClipH     int
 }
 
 const notifItemCount = 7 // 5 checkboxes + 2 buttons
@@ -167,7 +170,11 @@ func (nm *NotificationsMenu) View() tea.View {
 	renderBtn(6, "[ Test beep ]")
 
 	body := drawMenuWithHeader("Configuration \u2014 Notifications", b.String(), w)
-	return tea.NewView(lipgloss.NewStyle().MaxHeight(contentH).Render(fillBody(body, contentH)))
+	if nm.cachedClipH != contentH {
+		nm.cachedClipStyle = lipgloss.NewStyle().MaxHeight(contentH)
+		nm.cachedClipH = contentH
+	}
+	return tea.NewView(nm.cachedClipStyle.Render(fillBody(body, contentH)))
 }
 
 func (nm *NotificationsMenu) renderCheckbox(b *strings.Builder, boxW, cursor int, label string, checked, disabled bool) {
