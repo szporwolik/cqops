@@ -22,7 +22,7 @@ import (
 // The DB is nil because doBatchUpload/doUploadToWavelog pure-logic paths
 // don't touch the database directly (only the returned command closures do).
 func newTestEditor(wlURL, wlKey, wlStationID, logOp, logGrid string) *LogbookEditor {
-	return NewLogbookEditor(nil, wlURL, wlKey, wlStationID, 0, logOp, logGrid, "")
+	return NewLogbookEditor(LogbookEditorConfig{DB: nil, WLURL: wlURL, WLKey: wlKey, WLStationID: wlStationID, WLLastFetchedID: 0, StationOperator: logOp, StationGrid: logGrid, StationCall: ""})
 }
 
 // execCmd executes a tea.Cmd and returns the message. Returns nil if cmd is nil.
@@ -282,7 +282,7 @@ func newTestEditorWithDB(t *testing.T, wlURL, wlKey, wlStationID, logOp, logGrid
 		t.Fatalf("InitDB: %v", err)
 	}
 	t.Cleanup(func() { db.Close() })
-	return NewLogbookEditor(db, wlURL, wlKey, wlStationID, 0, logOp, logGrid, "")
+	return NewLogbookEditor(LogbookEditorConfig{DB: db, WLURL: wlURL, WLKey: wlKey, WLStationID: wlStationID, WLLastFetchedID: 0, StationOperator: logOp, StationGrid: logGrid, StationCall: ""})
 }
 
 // insertTestQSO inserts a QSO into the store and returns its assigned ID.

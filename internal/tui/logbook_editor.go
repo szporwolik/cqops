@@ -192,8 +192,20 @@ type LogbookEditor struct {
 // Constructor
 // =============================================================================
 
-func NewLogbookEditor(db *sql.DB, wlURL, wlKey, wlStationID string, wlLastFetchedID int64, logStationOp, logStationGrid, logStationCall string) *LogbookEditor {
-	le := &LogbookEditor{db: db, mode: edModeList, wlURL: wlURL, wlKey: wlKey, wlStationID: wlStationID, wlLastFetchedID: wlLastFetchedID, logStationOp: logStationOp, logStationGrid: logStationGrid, logStationCall: logStationCall}
+// LogbookEditorConfig groups the configuration parameters for NewLogbookEditor.
+type LogbookEditorConfig struct {
+	DB              *sql.DB
+	WLURL           string
+	WLKey           string
+	WLStationID     string
+	WLLastFetchedID int64
+	StationOperator string
+	StationGrid     string
+	StationCall     string
+}
+
+func NewLogbookEditor(cfg LogbookEditorConfig) *LogbookEditor {
+	le := &LogbookEditor{db: cfg.DB, mode: edModeList, wlURL: cfg.WLURL, wlKey: cfg.WLKey, wlStationID: cfg.WLStationID, wlLastFetchedID: cfg.WLLastFetchedID, logStationOp: cfg.StationOperator, logStationGrid: cfg.StationGrid, logStationCall: cfg.StationCall}
 	le.filePicker = filepicker.New()
 	le.filePicker.FileAllowed = false
 	le.filePicker.DirAllowed = true

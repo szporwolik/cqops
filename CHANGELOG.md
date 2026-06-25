@@ -1,5 +1,46 @@
 # Changelog
 
+## v0.8.7 — 2026-06-26
+
+### Performance — ~70 optimizations across 5 rounds
+- Render caches with signature-based invalidation: contest menu, PSK map, solar panel, help overlay, buildContestLine, helpSuffix
+- `lipgloss.NewStyle()` eliminated from every hot path: root View() clip styles, DXC spacer/table wrappers, logbook editor dialogs/edit forms, confirm/spot dialog buttons, notifications menu, help overlay
+- `fmt.Sprintf` replaced with `strings.Builder`+`strconv` in all cache keys: PSK Reporter, BPL views, logbook editor, QSO form path row, DXC filter info
+- DXC: filter-aware spot cache with in-memory raw cache, pre-allocated query slices, `strconv.FormatFloat` for frequency format, `formatDXCSpotTime()` avoids `time.Format`
+- PSK Reporter: async DB loading, cached spot map markers, table rowStyle caching
+- BPL: precomputed line lists at startup, `bplFreqStr()`/`bplBwStr()` helpers using `strconv`
+- RecentQSOs: pre-computed tier max widths at `init()`, O(1) tier lookup
+- flrig: 5 goroutines → sequential XML-RPC calls (~10,800 fewer goroutine spawns per 3h session)
+- Toast dedup (2s window), `Active()` dirty-flag cache, overlay content cache
+- Other: invariant styles promoted to package-level vars, pre-compiled regexps, wizard formBox style cache, logbook download progress message cache
+
+### Code Quality — ~30 fixes across 3 rounds
+- Error handling: solar parse errors now logged, tune verify errors logged, import_validate errors include callsign context, WSJT-X event overflow warning
+- Refactoring: 130-line lookup result switch extracted from `Update()` to `handleLookupResultMsg()`, shared `handleTuneResult()` for DXC/BPL tunes, `dxcCycleFilter()`/`dxcCycleFilterBack()` generic filter cycling, `clearQRZFields()` reused
+- Default host/port constants in `config/`, deprecated `backend` field now warns, `FriendlyError` handles all HTTP codes
+- Nil guard on `cycleActiveContest()`, WSJT-X toast nil guard
+
+### Features
+- Wider Recent QSOs table when solar panel active — shows Operator + WL columns on ≥166-col terminals
+- `map.go` → `map_ascii.go` clarity rename
+
+### Bug Fixes
+- WSJT-X status dot now turns green immediately on connect (cache key missing `wsjtx.online`)
+- DXC/BPL tune now works when WSJT-X is listening but not transmitting (`wsjtx.online` → `wsjtx.tx`)
+- Rig connect toasts suppressed on reconnect loops (`vfoWarned` flag)
+- Toast overlay no longer caches full composite (was hiding content on screen switch)
+- `nfpm.yaml` fixed: removed invalid `glibc` depends, unnecessary `libsqlite3-0` recommends
+- `build.ps1` fixed: removed invalid `GOARCH=armhf`
+
+### Tests
+- `store/migrations_test.go` — migration application + idempotency tests
+- `internal/rotor/rotor_test.go` — `Status` zero-value test
+
+### Packaging & Scripts
+- `uninstall.sh` now matches install-specific PATH line instead of deleting any line containing "cqops"
+- `installer/cqops.nsi` comment no longer hardcodes version
+- Backup file `build/cqops.exe~` removed
+
 ## v0.8.6 — 2026-06-24
 
 ### Multi-Operator & Club Station Support

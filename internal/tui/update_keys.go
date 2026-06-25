@@ -211,7 +211,16 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		if m.App.Logbook.Wavelog != nil {
 			wlLastID = m.App.Logbook.Wavelog.LastFetchedID
 		}
-		m.ui.logbookEditor = NewLogbookEditor(m.App.DB, wlURL, wlKey, wlStationID, wlLastID, m.activeOperatorCallsign(), m.App.Logbook.Station.Grid, m.App.Logbook.Station.Callsign)
+		m.ui.logbookEditor = NewLogbookEditor(LogbookEditorConfig{
+			DB:              m.App.DB,
+			WLURL:           wlURL,
+			WLKey:           wlKey,
+			WLStationID:     wlStationID,
+			WLLastFetchedID: wlLastID,
+			StationOperator: m.activeOperatorCallsign(),
+			StationGrid:     m.App.Logbook.Station.Grid,
+			StationCall:     m.App.Logbook.Station.Callsign,
+		})
 		m.ui.logbookEditor.width = m.width
 		m.ui.logbookEditor.height = m.height
 		// Apply active contest filter.
