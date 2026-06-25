@@ -25,6 +25,8 @@ type renderCache struct {
 	barOp     string // active operator ID; busts status cache on change
 	barLog    string // active logbook ID; busts status cache on change
 	barRig    string // active rig ID; busts status cache on change
+	barTx     bool   // WSJT-X TX state; busts status cache on change
+	barTxMsg  string // WSJT-X TX message; busts status cache on change
 
 	// Partner view cache.
 	partnerView    string
