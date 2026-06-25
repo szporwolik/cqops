@@ -11,7 +11,7 @@
       "0409": {
         "identity": {
           "name": "CQOps",
-          "version": "0.8.6.0"
+          "version": "0.8.7.0"
         },
         "description": "CQOps - Fast, offline-first amateur radio logger for the terminal",
         "minimum-os": "win7",
@@ -35,22 +35,22 @@
     "#1": {
       "0000": {
         "fixed": {
-          "file_version": "0.8.6.0",
-          "product_version": "0.8.6.0"
+          "file_version": "0.8.7.0",
+          "product_version": "0.8.7.0"
         },
         "info": {
           "0409": {
             "Comments": "",
             "CompanyName": "szporwolik",
             "FileDescription": "CQOps - Amateur Radio Logger",
-            "FileVersion": "0.8.6",
+            "FileVersion": "0.8.7",
             "InternalName": "cqops",
             "LegalCopyright": "Licensed under Apache 2.0",
             "LegalTrademarks": "",
             "OriginalFilename": "cqops.exe",
             "PrivateBuild": "",
             "ProductName": "CQOps",
-            "ProductVersion": "0.8.6",
+            "ProductVersion": "0.8.7",
             "SpecialBuild": ""
           }
         }
