@@ -19,6 +19,9 @@ import (
 
 // applyWSJTXStatus applies a WSJT-X status update to the QSO form fields.
 func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode, report, txMessage string, transmitting bool) {
+	if !m.wsjtx.online {
+		m.toasts.Success("WSJT-X connected")
+	}
 	m.wsjtx.online = true
 	m.wsjtx.txMsg = txMessage
 	m.wsjtx.lastSeen = time.Now()
