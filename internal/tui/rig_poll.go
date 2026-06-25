@@ -89,6 +89,7 @@ func (m *Model) refreshRigClient() {
 	// may have changed its mode table or model.
 	m.rig.modes = nil
 	m.rig.name = ""
+	m.rig.vfoWarned = false // allow fresh connect toast for new rig
 }
 
 type rigPollMsg struct {
@@ -201,15 +202,18 @@ func (m *Model) applyRigPoll(r rigPollMsg) tea.Cmd {
 	}
 	if !m.rig.connected {
 		m.rc.status = ""
-		// Connected — notify user and check VFO mode for hamlib.
-		if hc, ok := m.rig.client.(*hamlib.Client); ok {
-			if hc.VfoMode() {
-				m.toasts.Success("Hamlib connected (VFO mode)")
+		// Connected — notify user once per session.
+		if !m.rig.vfoWarned {
+			m.rig.vfoWarned = true
+			if hc, ok := m.rig.client.(*hamlib.Client); ok {
+				if hc.VfoMode() {
+					m.toasts.Success("Hamlib connected (VFO mode)")
+				} else {
+					m.toasts.Warn("Hamlib connected — add --vfo for split VFO support")
+				}
 			} else {
-				m.toasts.Warn("Hamlib connected — add --vfo for split VFO support")
+				m.toasts.Success("flrig connected")
 			}
-		} else {
-			m.toasts.Success("flrig connected")
 		}
 	}
 	m.rig.connected = true
