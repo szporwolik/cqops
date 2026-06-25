@@ -994,12 +994,13 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 	// Solar panel — right-side column on wide screens (≥166 cols),
 	// gated by the General → Solar at QSO pane config option.
 	var formRow string
+	var solarPanel string
 	if w >= 166 && m.App.Config.General.SolarAtQSOPane {
 		solarW := w - 2 - boxW - 0 + 2 // no gap, 2px wider panel
 		if solarW < 32 {
 			solarW = 32
 		}
-		solarPanel := m.renderSolarPanel(solarW)
+		solarPanel = m.renderSolarPanel(solarW)
 		if solarPanel != "" {
 			leftH := lipgloss.Height(formBox)
 			solarPanel = lipgloss.Place(
@@ -1029,8 +1030,17 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 
 	tableW := w - 2
 	// Cap to same max as QSO form for visual consistency.
+	// When solar panel is active, let the table use the full terminal width
+	// so richer columns (Operator, WL) can appear on wide screens.
 	if tableW > partnerMapMaxW {
-		tableW = partnerMapMaxW
+		if solarPanel != "" && m.App.Config.General.SolarAtQSOPane {
+			// Solar panel active — table gets full width, capped at 200.
+			if tableW > 200 {
+				tableW = 200
+			}
+		} else {
+			tableW = partnerMapMaxW
+		}
 	}
 	if tableH < 3 {
 		tableH = 3
