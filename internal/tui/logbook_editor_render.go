@@ -270,7 +270,10 @@ func (le *LogbookEditor) viewWithDialog(bodyW int) string {
 		le.cachedSpacerStyleW = bodyW
 	}
 	spacer := le.cachedSpacerStyle.Render("")
-	tablePart := le.cachedSpacerStyle.
+	// Table part uses its own style (no Width, only MaxWidth+Height) to avoid
+	// forcing the table to pad to bodyW which can cause layout issues.
+	tablePart := lipgloss.NewStyle().
+		MaxWidth(bodyW).
 		Height(contentH - 1).
 		Render(le.table.View())
 	body := lipgloss.JoinVertical(lipgloss.Left, spacer, tablePart)

@@ -171,13 +171,12 @@ func RenderToasts(toasts []Toast, width int) string {
 }
 
 // RenderOverlay caches and returns the mainView with toasts composited as a
-// floating overlay in the bottom-right corner. Uses dirty-flag to avoid
-// rebuilding on every frame when toasts haven't changed.
+// floating overlay in the bottom-right corner. Cache is for toast content only;
+// the final compositing with mainView is always done fresh (mainView changes on
+// screen switch, resize, or clock tick).
 func (tq *ToastQueue) RenderOverlay(mainView string, viewW, viewH int) string {
 	toasts := tq.Active()
 	if len(toasts) == 0 {
-		tq.cachedView = ""
-		tq.cachedViewSig = ""
 		return mainView
 	}
 
@@ -191,28 +190,35 @@ func (tq *ToastQueue) RenderOverlay(mainView string, viewW, viewH int) string {
 	sb.WriteByte('|')
 	sb.WriteString(toasts[len(toasts)-1].Message)
 	sig := sb.String()
+
+	// Cached toast content (expensive to rebuild: lines + JoinVertical + layout).
+	var toastContent string
+	var toastW, toastH int
 	if tq.cachedViewSig == sig && tq.cachedView != "" {
-		return tq.cachedView
+		toastContent = tq.cachedView
+		toastW = lipgloss.Width(toastContent)
+		toastH = lipgloss.Height(toastContent)
+	} else {
+		var lines []string
+		showCount := 6
+		if len(toasts) < showCount {
+			showCount = len(toasts)
+		}
+		for i := showCount - 1; i >= 0; i-- {
+			t := toasts[len(toasts)-1-i]
+			prefix := toastPrefix(t.Level)
+			msg := toastLevelStyle(t.Level).Render(t.Message)
+			lines = append(lines, prefix+" "+msg)
+		}
+		toastContent = lipgloss.JoinVertical(lipgloss.Right, lines...)
+		toastW = lipgloss.Width(toastContent)
+		toastH = lipgloss.Height(toastContent)
+		tq.cachedView = toastContent
+		tq.cachedViewSig = sig
 	}
 
-	// Build the toast content
-	var lines []string
-	showCount := 6
-	if len(toasts) < showCount {
-		showCount = len(toasts)
-	}
-	for i := showCount - 1; i >= 0; i-- {
-		t := toasts[len(toasts)-1-i]
-		prefix := toastPrefix(t.Level)
-		msg := toastLevelStyle(t.Level).Render(t.Message)
-		lines = append(lines, prefix+" "+msg)
-	}
-	toastContent := lipgloss.JoinVertical(lipgloss.Right, lines...)
-
-	toastW := lipgloss.Width(toastContent)
-	toastH := lipgloss.Height(toastContent)
-
-	// Position: bottom-right corner with 2-cell margin from edges
+	// Position: bottom-right corner with 2-cell margin from edges.
+	// Always re-composite with the current mainView (never cached).
 	x := viewW - toastW - 2
 	if x < 0 {
 		x = 0
@@ -222,15 +228,11 @@ func (tq *ToastQueue) RenderOverlay(mainView string, viewW, viewH int) string {
 		y = 0
 	}
 
-	// Composite: main content as base layer, toasts floating on top
 	base := lipgloss.NewLayer(mainView)
 	toastLayer := lipgloss.NewLayer(toastContent).
 		X(x).
 		Y(y).
-		Z(1) // above base
+		Z(1)
 
-	result := lipgloss.NewCompositor(base, toastLayer).Render()
-	tq.cachedView = result
-	tq.cachedViewSig = sig
-	return result
+	return lipgloss.NewCompositor(base, toastLayer).Render()
 }
