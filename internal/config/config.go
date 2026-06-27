@@ -10,6 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/szporwolik/cqops/internal/qso"
+	"github.com/szporwolik/cqops/internal/secrets"
 	"github.com/szporwolik/cqops/internal/version"
 )
 
@@ -33,7 +34,17 @@ type Config struct {
 	Contests          map[string]Contest   `yaml:"contests,omitempty"`
 	Operators         map[string]Operator  `yaml:"operators,omitempty"`
 	BroadcastStations []BroadcastStation   `yaml:"-"`
+
+	secrets      *secrets.Store `yaml:"-"`
+	savedSecrets *savedSecrets  `yaml:"-"`
 }
+
+// SetSecretsStore attaches a secrets store for encrypted persistence of
+// passwords and API keys. Call before Save.
+func (c *Config) SetSecretsStore(s *secrets.Store) { c.secrets = s }
+
+// SecretsStore returns the attached secrets store, or nil.
+func (c *Config) SecretsStore() *secrets.Store { return c.secrets }
 
 // BroadcastStation represents a broadcast radio station preset.
 type BroadcastStation struct {
@@ -291,10 +302,18 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// Save marshals cfg as YAML and writes it to path.
-
+// Save marshals cfg as YAML and writes it to path. If a secrets store is
+// attached via SetSecretsStore, passwords and API keys are extracted and
+// persisted to the encrypted store before the YAML is written.
 func Save(path string, cfg *Config) error {
 	cfg.State.Version = version.Resolved()
+
+	// Extract and persist secrets before marshaling.
+	if cfg.secrets != nil {
+		cfg.extractAndSaveSecrets()
+	}
+	defer cfg.restoreSecrets() // restore in-memory values after YAML marshal
+
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)

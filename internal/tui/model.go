@@ -322,6 +322,13 @@ func (m *Model) applyBeepOnError() {
 }
 
 func (m *Model) Init() tea.Cmd {
+	// Warn if the encrypted secrets file is corrupted or from another
+	// machine — passwords and API keys must be re-entered.
+	if m.App.Secrets != nil && m.App.Secrets.Corrupted {
+		m.toasts.Warn("Secrets: encrypted store could not be decrypted — passwords and API keys must be re-entered")
+		applog.Warn("Secrets: encrypted store corrupted or from different machine")
+	}
+
 	m.refreshRigClient()
 	m.refreshRotorClient()
 	m.App.WSJTX.OnADIF = func(adif string) {

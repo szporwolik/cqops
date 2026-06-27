@@ -12,6 +12,7 @@ import (
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/ref"
+	"github.com/szporwolik/cqops/internal/secrets"
 	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/wsjtx"
 )
@@ -28,6 +29,7 @@ type App struct {
 	DXCC         *dxcc.Prefixes // in-memory DXCC prefix→country lookup
 	SCP          *scp.Database  // in-memory Super Check Partial database
 	RefDB        *ref.DB        // reference database (SOTA/POTA/WWFF)
+	Secrets      *secrets.Store // encrypted secrets (passwords, API keys)
 
 	// lastWSJTX tracks the effective WSJT-X config last applied to the
 	// listener. Used to avoid unnecessary Stop/Start cycles when config
@@ -46,6 +48,10 @@ func Init() (*App, error) {
 		return nil, fmt.Errorf("config: %w", err)
 	}
 	applog.Info("Config OK", "path", configPath)
+
+	// Secrets are already loaded and applied by EnsureConfig — just grab
+	// the store reference for later use (e.g. corruption toast).
+	sec := cfg.SecretsStore()
 
 	name, lb, err := config.ResolveLogbook(cfg, "")
 	if err != nil {
@@ -75,6 +81,7 @@ func Init() (*App, error) {
 		DBPath:       dbPath,
 		WSJTX:        wsjtx.NewListener(),
 		WSJTXUpdated: make(chan struct{}, 10),
+		Secrets:      sec,
 	}
 
 	// WSJT-X will be started later by the TUI model Init() with per-rig settings.

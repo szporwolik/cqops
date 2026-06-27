@@ -88,6 +88,12 @@ func NewWizard(a *app.App) *Wizard {
 }
 
 func (w *Wizard) Init() tea.Cmd {
+	// Warn if the encrypted secrets file is corrupted or from another machine.
+	if w.App.Secrets != nil && w.App.Secrets.Corrupted {
+		w.toasts.Warn("Secrets: encrypted store could not be decrypted — passwords and API keys must be re-entered")
+		applog.Warn("Secrets: encrypted store corrupted or from different machine")
+	}
+
 	return tea.Tick(1*time.Second, func(t time.Time) tea.Msg {
 		return tickMsg{}
 	})
