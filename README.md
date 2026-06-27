@@ -24,6 +24,7 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 - **Multi-rig with flrig & Hamlib** — per-rig flrig or hamlib rigctld config; auto-fills freq, mode, power, split (VFO A/B → Freq/Freq RX)
 - **QRZ, DXCC & SCP** — Ins triggers callbook lookup; auto-fills name, QTH, grid, country; prefix-based DXCC and live callsign autocomplete
 - **Wavelog cloud sync** — upload, download, duplicate detection, station profile cycling
+- **Encrypted secrets** — QRZ password, Wavelog API keys, DXC login stored AES-256-GCM encrypted; never in plaintext config
 - **DX Cluster & PSK Reporter** — live spots with filters, spot-to-rig tuning, real-time propagation map
 - **Contest logging** — exchange markers (@rst @serial etc.), auto-derived STX/SRX/STX_STRING/SRX_STRING, per-contest QSO filtering
 - **Offline-first** — SQLite, REF database (SOTA/POTA/WWFF/IOTA), solar data cached hourly; `--offline` flag for fully disconnected ops

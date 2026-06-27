@@ -1,6 +1,43 @@
 # Changelog
 
-## v0.8.7 — 2026-06-26
+## v0.8.7 — 2026-06-27
+
+### Encrypted Secrets Store
+- **New `internal/secrets` package** — AES-256-GCM encrypted storage for passwords and API keys
+- Secrets live in `~/.config/cqops/secrets.enc` (0600 permissions), never in plaintext `config.yaml`
+- Key derived from `/etc/machine-id` (Linux) or hostname fallback — tied to the machine
+- Auto-migration: plaintext secrets from existing configs migrate to encrypted store on first run
+- Protected: QRZ password, DXC login, Wavelog API keys (per logbook)
+- Graceful degradation: corruption or wrong-machine → app starts normally, warning toast shown, secrets re-enterable via UI
+- Zero CPU overhead after startup: decrypted secrets cached in memory
+
+### Paste Support
+- Clipboard paste now works in the **wizard** (station form, rig form, QRZ credentials)
+- Clipboard paste now works in the **logbook editor** (inline QSO editing — callsign, comment, notes, etc.)
+- Clipboard paste now works in the **station editor** (logbook chooser → Wavelog section)
+- All paste targets respect field formatting (uppercase for callsigns, locator normalization, etc.)
+
+### Operator Editor Improvements
+- Callsign auto-uppercased on every keystroke (matches StationForm behavior)
+- Validation toast shown when leaving callsign field with non-standard value (no digit)
+- Validation fires on Tab, Shift+Tab, Up, Down, paste, and save (Ctrl+S)
+
+### Toast System Overhaul
+- UTF-8 symbols replace text prefixes: ● (info), ✓ (success), ▲ (warning), ✗ (error)
+- Symbols are geometric characters, not emoji — render correctly on B&W terminals
+- All integration toasts now use `Integration: message` prefix format:
+  - Solar, flrig, Hamlib, Internet, REF, Band Plan, Rig tune
+  - QRZ/Wavelog errors, DXC spotted-by notifications
+
+### Help Bar — Visible Key Bindings
+- Ins (Create) and Del (Delete) now visible in the bottom bar for:
+  - Rig config menu, logbook config menu, contest config menu, operator config menu
+- Previously only accessible via the ? help overlay
+
+### Bug Fixes (New)
+- **Wavelog upload race**: Recent QSOs table now refreshes immediately after upload completes, no longer shows stale "not sent" status
+- **Favorite recall**: frequency now trims trailing zeros (e.g. `14.250000` → `14.25`), matching ADIF export formatting
+- **Config validation**: `EnsureConfig()` now applies encrypted secrets before validating, so the app starts correctly with secrets in `secrets.enc`
 
 ### Performance — ~70 optimizations across 5 rounds
 - Render caches with signature-based invalidation: contest menu, PSK map, solar panel, help overlay, buildContestLine, helpSuffix
