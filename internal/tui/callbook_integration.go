@@ -130,7 +130,7 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 		return
 	}
 	if msg.Err != nil {
-		m.toasts.Error(msg.Err.Error())
+		m.toasts.Error("QRZ: " + msg.Err.Error())
 		m.clearQRZFields()
 		m.dxccAutoFill()
 		m.prefillContestExchange()
@@ -290,7 +290,7 @@ func (m *Model) fillWLData(msg wlResultMsg) tea.Cmd {
 		m.lookup.wlLookupDone = true
 		m.lookup.wlLookupCall = strings.ToUpper(msg.Call)
 		applog.Warn("Wavelog: lookup error", "call", msg.Call, "error", msg.Err)
-		m.toasts.Warn(msg.Err.Error())
+		m.toasts.Warn("Wavelog: " + msg.Err.Error())
 		return nil
 	}
 	m.lookup.wlLookupDone = true

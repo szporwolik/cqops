@@ -124,16 +124,19 @@ func (tq *ToastQueue) Active() []Toast {
 	return result
 }
 
+// toastPrefix returns a non-emoji UTF-8 symbol for each toast level so the
+// toast type is distinguishable even on black-and-white terminals or systems
+// that replace emoji with image glyphs.
 func toastPrefix(level ToastLevel) string {
 	switch level {
 	case ToastInfo:
-		return S.ToastInfo.Render("i")
+		return S.ToastInfo.Render("●")
 	case ToastSuccess:
-		return S.ToastSuccess.Render("OK")
+		return S.ToastSuccess.Render("✓")
 	case ToastWarning:
-		return S.ToastWarning.Render("!")
+		return S.ToastWarning.Render("▲")
 	case ToastError:
-		return S.ToastError.Render("ERR")
+		return S.ToastError.Render("✗")
 	}
 	return ""
 }

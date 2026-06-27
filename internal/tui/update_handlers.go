@@ -148,9 +148,9 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			// Internet just came up — force Wavelog and QRZ checks.
 			m.lookup.wlForceCheck = true
 			m.lookup.qrzForceCheck = true
-			m.toasts.Success("Internet connected")
+			m.toasts.Success("Internet: connected")
 		} else if m.inetOnline && !bool(r) {
-			m.toasts.Warn("Internet not available — working in offline mode")
+			m.toasts.Warn("Internet: not available — working in offline mode")
 		}
 		m.inetOnline = bool(r)
 		return true, nil
@@ -394,11 +394,11 @@ func (m *Model) handleLookupResultMsg(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.
 		m.ref.refNamesDirty = true
 		if r.err != nil {
 			applog.Warn("REF: rebuild failed", "error", r.err)
-			m.toasts.Error("REF database build failed")
+			m.toasts.Error("REF: database build failed")
 		} else {
 			m.ref.ready = true
 			applog.Info("REF: rebuild complete", "total", r.total)
-			m.toasts.Success(fmt.Sprintf("REF database ready — %d references", r.total))
+			m.toasts.Success(fmt.Sprintf("REF: database ready — %d references", r.total))
 		}
 		return m, cmd
 	case dxcSpotLookupMsg:
@@ -415,9 +415,9 @@ func (m *Model) handleLookupResultMsg(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.
 		return m, cmd
 	case bplExportMsg:
 		if r.err != nil {
-			m.toasts.Error(fmt.Sprintf("Export failed: %v", r.err))
+			m.toasts.Error(fmt.Sprintf("Band Plan: export failed — %v", r.err))
 		} else {
-			m.toasts.Success(fmt.Sprintf("Band plan exported to %s", r.path))
+			m.toasts.Success(fmt.Sprintf("Band Plan: exported to %s", r.path))
 		}
 		return m, cmd
 	case qsoRefreshedMsg:
@@ -447,18 +447,18 @@ func (m *Model) handleLookupResultMsg(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.
 func (m *Model) handleTuneResult(err error, freqMHz float64, mode, verify string) {
 	if err != nil {
 		if strings.Contains(err.Error(), "cancelled") {
-			m.toasts.Warn(fmt.Sprintf("Tune cancelled: %v", err))
+			m.toasts.Warn(fmt.Sprintf("Rig: tune cancelled — %v", err))
 		} else {
-			m.toasts.Error(fmt.Sprintf("Tune failed: %v", err))
+			m.toasts.Error(fmt.Sprintf("Rig: tune failed — %v", err))
 		}
 		return
 	}
-	msg := fmt.Sprintf("Rig tuned to %.5f MHz", freqMHz)
+	msg := fmt.Sprintf("Rig: tuned to %.5f MHz", freqMHz)
 	if mode != "" {
 		msg += " " + mode
 	}
 	if verify != "" {
-		m.toasts.Warn("Rig tuning failed")
+		m.toasts.Warn("Rig: tuning failed")
 	} else {
 		m.toasts.Success(msg)
 	}

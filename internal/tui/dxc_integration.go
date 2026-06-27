@@ -441,7 +441,7 @@ func (m *Model) handleDXCSpotsStored(msg dxcSpotsStoredMsg) {
 
 	// Notify when own callsign was spotted.
 	if msg.spottedMe != "" {
-		m.toasts.Info("You have been spotted by " + msg.spottedMe)
+		m.toasts.Info("DXC: spotted by " + msg.spottedMe)
 	}
 
 	formCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))

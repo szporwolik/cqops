@@ -106,5 +106,5 @@ func (m *Model) handleSolarResult(msg solarFetchMsg) {
 	applog.Info("Solar: hamqsl.com data updated",
 		"attempts", msg.attempts,
 	)
-	m.toasts.Success("Solar updated")
+	m.toasts.Success("Solar: updated")
 }

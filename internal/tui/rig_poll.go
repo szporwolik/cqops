@@ -207,12 +207,12 @@ func (m *Model) applyRigPoll(r rigPollMsg) tea.Cmd {
 			m.rig.vfoWarned = true
 			if hc, ok := m.rig.client.(*hamlib.Client); ok {
 				if hc.VfoMode() {
-					m.toasts.Success("Hamlib connected (VFO mode)")
+					m.toasts.Success("Hamlib: connected (VFO mode)")
 				} else {
-					m.toasts.Warn("Hamlib connected — add --vfo for split VFO support")
+					m.toasts.Warn("Hamlib: connected — add --vfo for split VFO support")
 				}
 			} else {
-				m.toasts.Success("flrig connected")
+				m.toasts.Success("flrig: connected")
 			}
 		}
 	}
