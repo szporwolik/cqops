@@ -151,6 +151,28 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			w.qrzTestResult = "QRZ test failed"
 		}
 
+	case tea.PasteMsg:
+		// Forward paste to the focused text input so clipboard paste works
+		// in the wizard (station form, rig form, and QRZ credentials).
+		switch w.step {
+		case stepStation:
+			if cmd := w.station.HandlePaste(msg.Content); cmd != nil {
+				return w, nil
+			}
+		case stepRig:
+			if cmd := w.rigForm.HandlePaste(msg.Content); cmd != nil {
+				return w, nil
+			}
+		case stepQRZ:
+			switch w.integFocus {
+			case 1:
+				w.qrzUser, _ = w.qrzUser.Update(msg)
+			case 2:
+				w.qrzPass, _ = w.qrzPass.Update(msg)
+			}
+		}
+		return w, nil
+
 	case tea.KeyPressMsg:
 		k := msg
 		switch {

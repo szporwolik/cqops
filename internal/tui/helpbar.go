@@ -425,22 +425,38 @@ func (m *Model) minimalBarBindings() []key.Binding {
 		if m.ui.chooser != nil && (m.ui.chooser.mode == chooserEdit || m.ui.chooser.mode == chooserCreate) {
 			return []key.Binding{h, key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")), e, q}
 		}
-		return []key.Binding{h, key.NewBinding(key.WithKeys("space"), key.WithHelp("Spc", "Activate")), e, q}
+		return []key.Binding{h,
+			key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Create")),
+			key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
+			key.NewBinding(key.WithKeys("space"), key.WithHelp("Spc", "Activate")),
+			e, q}
 	case screenRigEdit:
 		if m.ui.rigChooser != nil && (m.ui.rigChooser.mode == rigChooserEdit || m.ui.rigChooser.mode == rigChooserCreate) {
 			return []key.Binding{h, key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")), e, q}
 		}
-		return []key.Binding{h, key.NewBinding(key.WithKeys("space"), key.WithHelp("Spc", "Activate")), e, q}
+		return []key.Binding{h,
+			key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Create")),
+			key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
+			key.NewBinding(key.WithKeys("space"), key.WithHelp("Spc", "Activate")),
+			e, q}
 	case screenContest:
 		if m.ui.contestChooser != nil && (m.ui.contestChooser.mode == contestEdit || m.ui.contestChooser.mode == contestCreate) {
 			return []key.Binding{h, key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")), e, q}
 		}
-		return []key.Binding{h, key.NewBinding(key.WithKeys("space"), key.WithHelp("Spc", "Activate")), e, q}
+		return []key.Binding{h,
+			key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Create")),
+			key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
+			key.NewBinding(key.WithKeys("space"), key.WithHelp("Spc", "Activate")),
+			e, q}
 	case screenOperator:
 		if m.ui.operatorChooser != nil && (m.ui.operatorChooser.mode == operatorEdit || m.ui.operatorChooser.mode == operatorCreate) {
 			return []key.Binding{h, key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")), e, q}
 		}
-		return []key.Binding{h, key.NewBinding(key.WithKeys("space"), key.WithHelp("Spc", "Activate")), e, q}
+		return []key.Binding{h,
+			key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Create")),
+			key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
+			key.NewBinding(key.WithKeys("space"), key.WithHelp("Spc", "Activate")),
+			e, q}
 	case screenMainMenu:
 		return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Select")), e, q}
 	case screenLogView:

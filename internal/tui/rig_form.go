@@ -482,6 +482,38 @@ func (f *RigForm) View() tea.View {
 	return tea.NewView(b.String())
 }
 
+// HandlePaste forwards clipboard-paste content to the currently focused
+// text input. Non-text focus states (backend selector, rotor selector,
+// WSJT-X checkbox) are ignored.
+func (f *RigForm) HandlePaste(content string) tea.Cmd {
+	msg := tea.PasteMsg{Content: content}
+	switch f.focus {
+	case rigFieldName:
+		f.Name, _ = f.Name.Update(msg)
+	case rigFieldRig:
+		f.Rig, _ = f.Rig.Update(msg)
+	case rigFieldAntenna:
+		f.Antenna, _ = f.Antenna.Update(msg)
+	case rigFieldPower:
+		f.Power, _ = f.Power.Update(msg)
+	case rigFieldBackendHost:
+		f.BackendHost, _ = f.BackendHost.Update(msg)
+	case rigFieldBackendPort:
+		f.BackendPort, _ = f.BackendPort.Update(msg)
+	case rigFieldRotorHost:
+		f.RotorHost, _ = f.RotorHost.Update(msg)
+	case rigFieldRotorPort:
+		f.RotorPort, _ = f.RotorPort.Update(msg)
+	case rigFieldWsjtxHost:
+		f.WsjtxHost, _ = f.WsjtxHost.Update(msg)
+	case rigFieldWsjtxPort:
+		f.WsjtxPort, _ = f.WsjtxPort.Update(msg)
+	default:
+		return nil // Non-text focus — no paste target.
+	}
+	return nil
+}
+
 func (f *RigForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 	k := msg
 
