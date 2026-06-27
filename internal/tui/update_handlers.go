@@ -208,11 +208,14 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 				}
 			}
 		}
+		// Immediately refresh the QSO list so the Recent QSOs table picks up
+		// the updated Wavelog status. Also flag needRefresh so the logbook
+		// editor (if open) reloads on the next tick.
 		m.needRefresh = true
-		return true, nil
+		return true, m.refreshQSOS()
 	case wsjtxEnrichDoneMsg:
 		m.needRefresh = true
-		return true, nil
+		return true, m.refreshQSOS()
 	case qrzStatusMsg:
 		m.lookup.qrzOnline = r.online
 		return true, nil
