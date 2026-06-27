@@ -77,6 +77,7 @@ func (f *OperatorForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 
 	if f.focus == 0 {
 		f.Callsign, _ = f.Callsign.Update(msg)
+		f.Callsign.SetValue(strings.ToUpper(f.Callsign.Value()))
 	} else {
 		f.Name, _ = f.Name.Update(msg)
 	}
