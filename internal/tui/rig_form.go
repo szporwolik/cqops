@@ -401,7 +401,7 @@ func (f *RigForm) View() tea.View {
 
 	b.WriteString(padOrTrunc(renderField("Name:", &f.Name, f.focus == rigFieldName), availW))
 	b.WriteString("\n")
-	b.WriteString(padOrTrunc(renderField("Rig model:", &f.Rig, f.focus == rigFieldRig), availW))
+	b.WriteString(padOrTrunc(renderField("Rig model (opt):", &f.Rig, f.focus == rigFieldRig), availW))
 	b.WriteString("\n")
 	b.WriteString(padOrTrunc(renderField("Antenna (opt):", &f.Antenna, f.focus == rigFieldAntenna), availW))
 	b.WriteString("\n")
@@ -567,12 +567,9 @@ func (f *RigForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 }
 
 func (f *RigForm) Validate() error {
-	nm, rig, _, _ := f.Values()
+	nm, _, _, _ := f.Values()
 	if nm == "" {
 		return fmt.Errorf("rig name is required")
-	}
-	if rig == "" {
-		return fmt.Errorf("rig model is required")
 	}
 	return nil
 }

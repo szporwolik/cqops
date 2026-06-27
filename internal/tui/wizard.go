@@ -79,7 +79,7 @@ func NewWizard(a *app.App) *Wizard {
 		App:     a,
 		step:    stepStation,
 		station: NewStationForm("", "", ""),
-		rigForm: NewRigForm("Xiegu G90", "HWEF 20.5", "20"),
+		rigForm: NewRigForm("Xiegu G90 (optional)", "HWEF 20.5 (optional)", "20"),
 		qrzUser: qrzUser,
 		qrzPass: qrzPass,
 		tzIndex: config.SystemTimezoneIndex(),
@@ -274,10 +274,6 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						nm, rig, _, _ := w.rigForm.Values()
 						if nm == "" {
 							w.toasts.Warn("Rig name is required")
-							return w, nil
-						}
-						if rig == "" {
-							w.toasts.Warn("Rig model is required")
 							return w, nil
 						}
 						radioBackend, _, _ := w.rigForm.BackendValues()

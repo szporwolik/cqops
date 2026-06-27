@@ -47,7 +47,7 @@ func NewRigChooser(a *app.App, tq *ToastQueue) *RigChooser {
 		a.Config.Logbooks[a.LogbookName] = lb
 	}
 
-	rf := NewRigForm("", "", "")
+	rf := NewRigForm("e.g. IC-7300 (optional)", "e.g. Dipole (optional)", "e.g. 100")
 	rf.SetBackend(0, "", "")
 
 	return &RigChooser{
@@ -352,10 +352,6 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 		rc.toasts.Warn("Rig name is required")
 		return nil
 	}
-	if rig == "" {
-		rc.toasts.Warn("Rig model is required")
-		return nil
-	}
 	if radioBackend == "flrig" {
 		if flrigHost == "" {
 			rc.toasts.Warn("Flrig host is required")
@@ -389,10 +385,12 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 
 	var savedName string
 	if rc.mode == rigChooserCreate {
-		// Check for duplicate by model name.
-		if _, _, found := config.FindRigByModel(rc.app.Config, rig); found {
-			rc.toasts.Warn("Rig with model " + rig + " already exists")
-			return nil
+		// Skip duplicate check when rig model is empty (optional field).
+		if rig != "" {
+			if _, _, found := config.FindRigByModel(rc.app.Config, rig); found {
+				rc.toasts.Warn("Rig with model " + rig + " already exists")
+				return nil
+			}
 		}
 		id := config.NewID(rig)
 		if rc.app.Config.Rigs == nil {
