@@ -156,8 +156,16 @@ func (oc *OperatorChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case oc.mode == operatorEdit || oc.mode == operatorCreate:
+			prevFocus := oc.form.focus
 			if cmd := oc.form.HandleKey(msg); cmd != nil {
 				return oc, oc.saveForm()
+			}
+			// When focus leaves the callsign field, show a warning toast
+			// if the callsign doesn't look like a standard ham callsign.
+			if prevFocus == 0 && oc.form.focus != 0 {
+				if w := oc.form.ValidateCall(); w != "" {
+					oc.toasts.Warn(w)
+				}
 			}
 		}
 	}
