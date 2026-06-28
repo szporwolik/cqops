@@ -690,10 +690,17 @@ func (m *Model) View() tea.View {
 
 	// Render fixed bars — cache when screen and width haven't changed.
 	// Status bar has a 1-second TTL because it contains the UTC clock.
+	rp, hasRig := m.App.Config.Rigs[m.App.Logbook.Station.RigName]
+	rigBackend := ""
+	if hasRig {
+		rigBackend = rp.RadioBackend
+	}
 	cacheBars := m.rc.barW == m.width && m.rc.barSc == m.screen &&
 		m.rc.barOp == m.App.Logbook.ActiveOperator &&
 		m.rc.barLog == m.App.LogbookName &&
 		m.rc.barRig == m.App.Logbook.Station.RigName &&
+		m.rc.barBackend == rigBackend &&
+		m.rc.barRigConn == m.rig.connected &&
 		m.rc.barTx == m.wsjtx.tx && m.rc.barTxMsg == m.wsjtx.txMsg &&
 		m.rc.barOnline == m.wsjtx.online
 	if !cacheBars {
@@ -712,6 +719,8 @@ func (m *Model) View() tea.View {
 	m.rc.barOp = m.App.Logbook.ActiveOperator
 	m.rc.barLog = m.App.LogbookName
 	m.rc.barRig = m.App.Logbook.Station.RigName
+	m.rc.barBackend = rigBackend
+	m.rc.barRigConn = m.rig.connected
 	m.rc.barTx = m.wsjtx.tx
 	m.rc.barTxMsg = m.wsjtx.txMsg
 	m.rc.barOnline = m.wsjtx.online
