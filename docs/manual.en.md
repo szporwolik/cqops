@@ -1,3 +1,8 @@
+---
+title: CQOps User Manual
+description: Complete guide to installing, configuring, and using CQOps
+---
+
 # CQOps User Manual
 
 ## Table of Contents
@@ -29,41 +34,57 @@ CQOps is a fast, offline-first amateur radio logger for the terminal. It's built
 
 ---
 
-## Installation
+## Download
+
+> [Browse all releases →](https://github.com/szporwolik/cqops/releases)
 
 ### Windows
 
-Download the installer (`cqops-setup.exe`) from [GitHub Releases](https://github.com/szporwolik/cqops/releases). It adds CQOps to the Start Menu and PATH.
+| Package | Link |
+|---------|------|
+| **Installer** (recommended) | [cqops-setup.exe](https://github.com/szporwolik/cqops/releases/latest/download/cqops-setup.exe) |
+| Portable (ZIP) | [cqops-windows-portable.zip](https://github.com/szporwolik/cqops/releases/latest/download/cqops-windows-portable.zip) |
 
-Or download the standalone `cqops.exe` and run it from any terminal.
+The installer adds CQOps to the Start Menu and PATH.
 
-### Linux
+### Linux — Debian / Ubuntu
 
-**Debian/Ubuntu (`.deb`):**
+| Architecture | Link |
+|-------------|------|
+| **amd64** (most PCs) | [cqops_amd64.deb](https://github.com/szporwolik/cqops/releases/latest/download/cqops_amd64.deb) |
+| arm64 | [cqops_arm64.deb](https://github.com/szporwolik/cqops/releases/latest/download/cqops_arm64.deb) |
+| armhf (Raspberry Pi) | [cqops_armhf.deb](https://github.com/szporwolik/cqops/releases/latest/download/cqops_armhf.deb) |
+
 ```bash
 sudo dpkg -i cqops_*.deb
 ```
 
-**Fedora/RHEL (`.rpm`):**
+### Linux — Portable Tarball
+
+| Architecture | Link |
+|-------------|------|
+| **amd64** | [cqops-linux-amd64.tar.gz](https://github.com/szporwolik/cqops/releases/latest/download/cqops-linux-amd64.tar.gz) |
+| arm64 | [cqops-linux-arm64.tar.gz](https://github.com/szporwolik/cqops/releases/latest/download/cqops-linux-arm64.tar.gz) |
+| armhf (Pi) | [cqops-linux-armhf.tar.gz](https://github.com/szporwolik/cqops/releases/latest/download/cqops-linux-armhf.tar.gz) |
+
+### macOS
+
+| Architecture | Link |
+|-------------|------|
+| **Apple Silicon** (M1/M2/M3) | [cqops-darwin-arm64](https://github.com/szporwolik/cqops/releases/latest/download/cqops-darwin-arm64) |
+| Intel (x86_64) | [cqops-darwin-amd64](https://github.com/szporwolik/cqops/releases/latest/download/cqops-darwin-amd64) |
+
 ```bash
-sudo rpm -i cqops-*.rpm
+chmod +x cqops-darwin-* && sudo mv cqops-darwin-* /usr/local/bin/cqops
 ```
 
-**Arch Linux (`.pkg.tar.zst`):**
-```bash
-sudo pacman -U cqops-*.pkg.tar.zst
-```
+### From Source
 
-**From source:**
 ```bash
 git clone https://github.com/szporwolik/cqops.git
 cd cqops
 make build
 ```
-
-### macOS
-
-Download the binary from [GitHub Releases](https://github.com/szporwolik/cqops/releases) and place it in your PATH.
 
 ### Requirements
 
