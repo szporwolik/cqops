@@ -76,6 +76,13 @@ var pskMark15 = lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Bold(true)
 var pskMark10 = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)
 var pskMarkOther = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)
 
+// pskHeaderStyle colors the PSK Reporter table header — avoids DimStyle's
+// gray-on-gray appearance on dark terminals.
+var pskHeaderStyle = lipgloss.NewStyle().Foreground(P.Info).Bold(true)
+
+// pskHintStyle colors the "N more above/below" scroll hint.
+var pskHintStyle = lipgloss.NewStyle().Foreground(P.TextMuted)
+
 func pskBandStyle(freqHz float64) lipgloss.Style {
 	switch freqToBandName(freqHz) {
 	case "160m":
@@ -93,6 +100,42 @@ func pskBandStyle(freqHz float64) lipgloss.Style {
 	default:
 		return pskMarkOther
 	}
+}
+
+// pskResetCaches clears the PSK spot cache, view cache, and resets the
+// cursor. Call after any filter change (band, mode, time) so the next
+// View() re-queries the DB and re-renders from scratch.
+func (m *Model) pskResetCaches() {
+	m.psk.selected = 0
+	m.psk.spotKey = ""
+	m.psk.viewKey = ""
+	m.psk.view = ""
+}
+
+// pskApplyFilters narrows the spot list by band, mode, and time window
+// in-memory. The DB query only filters by time; band/mode narrowing and
+// a stricter time check are applied here so the table and map update
+// instantly on filter change without waiting for an async DB reload.
+// The time cutoff ensures cached spots from a wider window don't leak
+// through when the user switches to a narrower time filter.
+func pskApplyFilters(spots []psk.Report, bandFilter, modeFilter string, since int64) []psk.Report {
+	if bandFilter == "" && modeFilter == "" && since == 0 {
+		return spots
+	}
+	var out []psk.Report
+	for _, r := range spots {
+		if since > 0 && r.FlowStartSeconds < since {
+			continue
+		}
+		if bandFilter != "" && freqToBandName(r.Frequency) != bandFilter {
+			continue
+		}
+		if modeFilter != "" && !strings.EqualFold(r.Mode, modeFilter) {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
 }
 
 func pskTableRow(r psk.Report, callW, gridW, freqW, snrW, modeW int) string {
@@ -198,6 +241,10 @@ func (m *Model) viewPSKReporter() string {
 	sb.WriteString(strconv.Itoa(graySlot))
 	sb.WriteByte('|')
 	sb.WriteString(strconv.FormatBool(m.psk.fetching))
+	sb.WriteByte('|')
+	sb.WriteString(m.psk.spotKey)
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(len(m.psk.spots)))
 	sig := sb.String()
 	if m.psk.viewKey == sig && m.psk.view != "" {
 		return m.psk.view
@@ -217,15 +264,23 @@ func (m *Model) viewPSKReporter() string {
 	if m.psk.spotKey == spotKey && len(m.psk.spots) > 0 {
 		filtered = m.psk.spots
 	} else {
-		// Spot cache miss — set flag for async load; show placeholder this frame.
-		// This avoids synchronous SQLite I/O during View().
+		// Spot cache miss — set flag for async DB load. Fall back to
+		// existing cached spots (if any) so the table isn't blank while
+		// waiting; the in-memory band/mode filter still applies below.
 		m.psk.needDBLoad = true
 		m.psk.pendingSpotKey = spotKey
 		m.psk.pendingCall = call
 		m.psk.pendingCutoff = time.Now().UTC().Add(-time.Duration(m.psk.filterMins) * time.Minute).Unix()
-		// Use existing spots if any, else empty.
 		filtered = m.psk.spots
 	}
+
+	// Apply in-memory filters. The DB query only filters by time window;
+	// band/mode/time narrowing happens here so the user sees immediate
+	// results without waiting for an async DB reload. The time cutoff
+	// prevents stale cached spots from a wider window leaking through
+	// when the user switches to a narrower time filter.
+	cutoff := time.Now().UTC().Add(-time.Duration(m.psk.filterMins) * time.Minute).Unix()
+	filtered = pskApplyFilters(filtered, m.psk.bandFilter, m.psk.modeFilter, cutoff)
 
 	// Clamp cursor only when there are reports.
 	if len(filtered) > 0 {
@@ -353,7 +408,7 @@ func (m *Model) buildPSKTable(reports []psk.Report, maxW, visibleRows int) strin
 	snrW := 4
 	modeW := 6
 
-	header := DimStyle.Width(maxW).MaxWidth(maxW).Inline(true).Render(
+	header := pskHeaderStyle.Width(maxW).MaxWidth(maxW).Inline(true).Render(
 		fmt.Sprintf("%-*s %-*s %*s %*s %-*s %s",
 			callW, "Call", gridW, "Grid", freqW, "Freq", snrW, "SNR", modeW, "Mode", "Age"))
 	var lines []string
@@ -400,7 +455,7 @@ func (m *Model) buildPSKTable(reports []psk.Report, maxW, visibleRows int) strin
 			}
 			hint += fmt.Sprintf("\u2193 %d more below", below)
 		}
-		lines = append(lines, DimStyle.Render(hint))
+		lines = append(lines, pskHintStyle.Render(hint))
 	} else {
 		lines = append(lines, "")
 	}
@@ -558,23 +613,24 @@ func (m *Model) buildPSKMap(reports []psk.Report, mapW, mapAvailH int) string {
 		lines[ownY] = replaceANSICell(lines[ownY], ownX, S.MapOwn.Render("\u25c6"))
 	}
 
-	// One-line legend: own marker + band dots.
+	// One-line legend: own marker + band dots. Each label uses the same color
+	// as its band dot — no DimStyle gray-on-gray for readability.
 	legend := DimStyle.Render(" ") +
-		S.MapOwn.Render("\u25c6") + DimStyle.Render(" My station") +
+		S.MapOwn.Render("\u25c6") + S.MapOwn.Render(" My station") +
 		DimStyle.Render("  ") +
-		pskMark160.Render("\u25cf") + DimStyle.Render(" 160m") +
+		pskMark160.Render("\u25cf") + pskMark160.Render(" 160m") +
 		DimStyle.Render("  ") +
-		pskMark80.Render("\u25cf") + DimStyle.Render(" 80m") +
+		pskMark80.Render("\u25cf") + pskMark80.Render(" 80m") +
 		DimStyle.Render("  ") +
-		pskMark40.Render("\u25cf") + DimStyle.Render(" 40m") +
+		pskMark40.Render("\u25cf") + pskMark40.Render(" 40m") +
 		DimStyle.Render("  ") +
-		pskMark20.Render("\u25cf") + DimStyle.Render(" 20m") +
+		pskMark20.Render("\u25cf") + pskMark20.Render(" 20m") +
 		DimStyle.Render("  ") +
-		pskMark15.Render("\u25cf") + DimStyle.Render(" 15m") +
+		pskMark15.Render("\u25cf") + pskMark15.Render(" 15m") +
 		DimStyle.Render("  ") +
-		pskMark10.Render("\u25cf") + DimStyle.Render(" 10m") +
+		pskMark10.Render("\u25cf") + pskMark10.Render(" 10m") +
 		DimStyle.Render("  ") +
-		pskMarkOther.Render("\u25cf") + DimStyle.Render(" other")
+		pskMarkOther.Render("\u25cf") + pskMarkOther.Render(" other")
 	lines = append(lines, legend)
 
 	result := strings.Join(lines, "\n")

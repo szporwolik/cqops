@@ -439,7 +439,7 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 				next = len(bands) - 1
 			}
 			m.psk.bandFilter = bands[next]
-			m.psk.selected = 0
+			m.pskResetCaches()
 			label := m.psk.bandFilter
 			if label == "" {
 				label = "all bands"
@@ -469,7 +469,7 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 				}
 				m.psk.filterMins = pskFilterSteps[next]
 			}
-			m.psk.selected = 0
+			m.pskResetCaches()
 			m.toasts.Info(fmt.Sprintf("PSK Reporter: last %d min", m.psk.filterMins))
 			return m, cmd
 		case "up", "k":
@@ -491,10 +491,7 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			m.psk.filterMins = pskFilterSteps[0]
 			m.psk.bandFilter = ""
 			m.psk.modeFilter = ""
-			m.psk.selected = 0
-			m.psk.spotKey = ""
-			m.psk.viewKey = ""
-			m.psk.view = ""
+			m.pskResetCaches()
 			return m, cmd
 		}
 	}
@@ -572,7 +569,7 @@ func (m *Model) pskCycleMode(dir int) {
 		next = len(modes) - 1
 	}
 	m.psk.modeFilter = modes[next]
-	m.psk.selected = 0
+	m.pskResetCaches()
 	label := m.psk.modeFilter
 	if label == "" {
 		label = "all modes"
