@@ -17,10 +17,10 @@ Fast, terminal-first amateur radio logging — offline-first, QRP-ready, built f
 
 ### Language
 
-| [🇬🇧 English](manual.en) | [🇵🇱 Polski](manual.pl) | [🇩🇪 Deutsch](manual.de) |
+| [🇬🇧 English](manual.en.html) | [🇵🇱 Polski](manual.pl.html) | [🇩🇪 Deutsch](manual.de.html) |
 |---|---|---|
-| [🇪🇸 Español](manual.es) | [🇯🇵 日本語](manual.ja) | [🇫🇷 Français](manual.fr) |
-| | [🇮🇹 Italiano](manual.it) | |
+| [🇪🇸 Español](manual.es.html) | [🇯🇵 日本語](manual.ja.html) | [🇫🇷 Français](manual.fr.html) |
+| | [🇮🇹 Italiano](manual.it.html) | |
 
 ---
 
