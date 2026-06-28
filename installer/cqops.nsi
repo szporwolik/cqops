@@ -1,6 +1,6 @@
 ; =============================================================================
 ; CQOps NSIS Installer — Amateur Radio Logging TUI
-; Build: makensis /DVERSION=0.8.6 installer\cqops.nsi
+; Build: makensis /DVERSION=X.Y.Z installer\cqops.nsi (version from VERSION file)
 ; =============================================================================
 
 Unicode true
@@ -29,7 +29,7 @@ ManifestDPIAware true
 !endif
 
 Name "${PRODUCT_NAME} ${VERSION}"
-OutFile "${ROOT}\dist\cqops-setup-${VERSION}.exe"
+OutFile "${ROOT}\dist\cqops-setup.exe"
 InstallDir "$PROGRAMFILES64\${PRODUCT_NAME}"
 InstallDirRegKey HKLM "Software\${PRODUCT_NAME}" "InstallDir"
 RequestExecutionLevel admin

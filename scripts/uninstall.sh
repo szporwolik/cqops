@@ -33,7 +33,7 @@ fi
 
 # Remove from shell profiles
 for rc in "${HOME}/.profile" "${HOME}/.bashrc" "${HOME}/.zshrc"; do
-    sed -i '/cqops/d' "$rc" 2>/dev/null || true
+    sed -i '\|export PATH="'"$INSTALL_DIR"':$PATH"|d' "$rc" 2>/dev/null || true
 done
 echo "  Removed from shell profiles"
 

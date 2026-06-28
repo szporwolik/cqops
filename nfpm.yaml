@@ -50,11 +50,6 @@ overrides:
   deb:
     depends:
       - libc6
-    recommends:
-      - libsqlite3-0
-  rpm:
-    depends:
-      - glibc
 
 # -----------------------------------------------------------------------------
 # For multi-arch builds, run nfpm once per arch:

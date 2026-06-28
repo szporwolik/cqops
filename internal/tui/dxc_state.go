@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/table"
+	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/dxc"
 	"github.com/szporwolik/cqops/internal/store"
 )
@@ -16,6 +17,7 @@ type dxcState struct {
 	lastAttempt  time.Time
 	reconnectIdx int
 	lastPurge    time.Time
+	lastDrain    time.Time // last time drainDXCSpots was called; throttle to 4s
 
 	table      table.Model
 	tableReady bool
@@ -35,6 +37,14 @@ type dxcState struct {
 	selectedSpot store.DXCSpot   // full spot data captured at cursor-move time
 	tuneCancel   func()          // cancel previous tune command if running
 	cachedSpots  []store.DXCSpot // cached result of last filteredSpots() call
+	cachedRaw    []store.DXCSpot // raw unfiltered spots; new spots appended here
+
+	// Filter state at time of cache — used to detect staleness.
+	cachedBandFilter string
+	cachedTimeFilter int
+	cachedContFilter string
+	cachedModeFilter string
+	cachedSortBand   string // band filter active when last sorted; avoids redundant sort
 
 	// Band/continent cache — avoids DB query on every filter-cycle keypress.
 	cachedBands []string
@@ -47,4 +57,8 @@ type dxcState struct {
 	// Render cache for filter info line — rebuilt only when filters change.
 	cachedFilterInfo string
 	cachedFilterW    int
+
+	// Cached spacer + table wrapper styles — rebuilt only on width change.
+	cachedSpacerStyle  lipgloss.Style
+	cachedSpacerStyleW int
 }

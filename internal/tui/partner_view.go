@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/qrz"
 	"github.com/szporwolik/cqops/internal/store"
@@ -73,27 +74,23 @@ func (m *Model) viewPartner() string {
 		w = 80
 	}
 
-	// Build cache signature — includes all inputs that affect output.
+	// Build cache signature — uses pointer identity for QRZ/WL data structs
+	// instead of enumerating all fields, cutting the pre-frame string work.
+	// The pointers are replaced on every new lookup, so identity == freshness.
 	var sigB strings.Builder
 	fmt.Fprintf(&sigB, "%d|%d|", m.width, m.height)
 	if m.lookup.partnerData != nil {
-		fmt.Fprintf(&sigB, "pd:%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s|",
-			m.lookup.partnerData.Callsign, m.lookup.partnerData.Name, m.lookup.partnerData.Grid,
-			m.lookup.partnerData.QTH, m.lookup.partnerData.Country, m.lookup.partnerData.State,
-			m.lookup.partnerData.County, m.lookup.partnerData.Zip, m.lookup.partnerData.Class,
-			m.lookup.partnerData.Email, m.lookup.partnerData.URL, m.lookup.partnerData.Lat,
-			m.lookup.partnerData.Lon, m.lookup.partnerData.DXCC, m.lookup.partnerData.CQZone, m.lookup.partnerData.ITUZone)
+		fmt.Fprintf(&sigB, "pd=%p|", m.lookup.partnerData)
 	} else {
 		sigB.WriteString("pd:nil|")
 	}
 	sigB.WriteString(m.rc.logStatsSig)
 	sigB.WriteByte('|')
 	if m.lookup.wlPrivateData != nil {
-		fmt.Fprintf(&sigB, "wl:wk=%v,dxcc=%v,band=%v,bm=%v,cband=%v,cbm=%v,lotw=%v|",
-			m.lookup.wlPrivateData.Worked(), m.lookup.wlPrivateData.DXCCConfirmed(),
+		fmt.Fprintf(&sigB, "wl=%p,%v,%v,%v,%v|",
+			m.lookup.wlPrivateData,
 			m.lookup.wlPrivateData.WorkedBand(), m.lookup.wlPrivateData.WorkedBandMode(),
-			m.lookup.wlPrivateData.ConfirmedBand(), m.lookup.wlPrivateData.ConfirmedBandMode(),
-			m.lookup.wlPrivateData.LoTW())
+			m.lookup.wlPrivateData.ConfirmedBand(), m.lookup.wlPrivateData.ConfirmedBandMode())
 	} else {
 		sigB.WriteString("wl:nil|")
 	}
@@ -318,10 +315,18 @@ func (m *Model) renderCallbookRows(d *qrz.CallData, maxW int) string {
 		link := osc8Link("https://www.qrz.com/db/"+d.Callsign, S.Info.Render(d.Callsign))
 		add("Callsign", link)
 	}
-	// Continent from DXCC prefix lookup (not from QRZ — QRZ doesn't provide it).
+	// Continent from DXCC prefix lookup — cached per callsign to avoid
+	// prefix-tree access on every partner-view frame.
 	if d.Callsign != "" {
-		if p := m.dxccLookup(d.Callsign); p != nil && p.Continent != "" {
-			add("Continent", continentName(p.Continent))
+		if d.Callsign != m.rc.dxccContCall {
+			m.rc.dxccContCall = d.Callsign
+			m.rc.dxccContValue = ""
+			if p := m.dxccLookup(d.Callsign); p != nil && p.Continent != "" {
+				m.rc.dxccContValue = p.Continent
+			}
+		}
+		if m.rc.dxccContValue != "" {
+			add("Continent", continentName(m.rc.dxccContValue))
 		}
 	}
 	add("Name", d.Name)
@@ -375,11 +380,12 @@ func (m *Model) renderLogbookRows(d *qrz.CallData, maxW int) string {
 	mode := strings.TrimSpace(m.fields[fieldMode].Value())
 	sig := call + "|" + band + "|" + mode
 	if m.rc.logStatsSig != sig && m.App.DB != nil {
-		stats, err := store.GetLogbookStats(m.App.DB, call, band, mode)
-		if err == nil {
-			m.rc.logStats = stats
-			m.rc.logStatsSig = sig
-		}
+		// Cache miss — dispatch async fetch and use previous data this frame.
+		// The fetch will complete before the next View() call.
+		m.rc.logStatsNeedFetch = true
+		m.rc.logStatsFetchCall = call
+		m.rc.logStatsFetchBand = band
+		m.rc.logStatsFetchMode = mode
 	}
 	s := m.rc.logStats
 	wl := m.lookup.wlPrivateData
@@ -471,6 +477,28 @@ func (m *Model) renderLogbookRows(d *qrz.CallData, maxW int) string {
 	rows = append(rows, row{"Last QSO", ValueStyle.Width(valW).MaxWidth(valW).Inline(true).Render(truncateText(last, valW))})
 
 	return formatRowPairs(rows, S.FormLabel)
+}
+
+// fetchLogbookStatsCmd returns a tea.Cmd that runs GetLogbookStats
+// asynchronously, avoiding DB I/O during View().
+func (m *Model) fetchLogbookStatsCmd(call, band, mode string) tea.Cmd {
+	db := m.App.DB
+	return func() tea.Msg {
+		stats, err := store.GetLogbookStats(db, call, band, mode)
+		if err != nil {
+			return logbookStatsMsg{}
+		}
+		return logbookStatsMsg{stats: stats, sig: call + "|" + band + "|" + mode}
+	}
+}
+
+// handleLogbookStats stores the async result for use by the next View().
+func (m *Model) handleLogbookStats(msg logbookStatsMsg) {
+	if msg.sig == "" {
+		return
+	}
+	m.rc.logStats = msg.stats
+	m.rc.logStatsSig = msg.sig
 }
 
 // --- WL Info ---

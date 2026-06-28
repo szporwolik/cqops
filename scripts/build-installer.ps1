@@ -78,7 +78,7 @@ if (Test-Path "assets\cqops-icon.ico") {
 & $makensis $nsiArgs "installer\cqops.nsi"
 if ($LASTEXITCODE -ne 0) { throw "NSIS compilation failed" }
 
-$installer = Get-ChildItem "$rootPath\dist\cqops-setup-$VERSION.exe"
+$installer = Get-ChildItem "$rootPath\dist\cqops-setup.exe"
 $sizeMB = [math]::Round($installer.Length / 1048576, 1)
 Write-Host "=== Done ==="
 Write-Host "  Installer : $($installer.FullName)"

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/szporwolik/cqops/internal/secrets"
 	"github.com/szporwolik/cqops/internal/version"
 )
 
@@ -33,6 +34,14 @@ func EnsureConfig() (*Config, string, error) {
 
 	// Run version-gated upgrade steps before anything else touches config.
 	cfg.Upgrade(version.Resolved())
+
+	// Load encrypted secrets (passwords, API keys) and overlay them onto
+	// the config before validation. Without this, Validate() would reject
+	// the config because QRZ pass / Wavelog API key appear empty in YAML.
+	if sec, err := secrets.Load(configDir); err == nil {
+		cfg.SetSecretsStore(sec)
+		cfg.ApplySecrets()
+	}
 
 	// Populate in-memory ID fields from map keys (id is not serialized).
 	PopulateIDs(cfg)

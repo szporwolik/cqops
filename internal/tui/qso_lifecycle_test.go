@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
@@ -104,15 +105,67 @@ func latestQSO(t *testing.T, m *Model) qso.QSO {
 // refreshQSOS tests
 // =============================================================================
 
-func TestRefreshQSOsEmptyDB(t *testing.T) {
-	m := newLifecycleTestModel(t)
-
-	// refreshQSOS returns a tea.Cmd — execute it
+// refreshAndApply runs the refreshQSOS tea.Cmd and applies the resulting
+// qsoRefreshedMsg to the model, mirroring model.go's Update() handler.
+func refreshAndApply(t *testing.T, m *Model) {
+	t.Helper()
 	cmd := m.refreshQSOS()
 	if cmd == nil {
 		t.Fatal("refreshQSOS returned nil command")
 	}
-	cmd() // execute the function
+	msg := cmd()
+	refreshed, ok := msg.(qsoRefreshedMsg)
+	if !ok {
+		t.Fatalf("expected qsoRefreshedMsg, got %T", msg)
+	}
+	if refreshed.err != nil {
+		t.Fatalf("refreshQSOS: %v", refreshed.err)
+	}
+	m.qsos = refreshed.qsos
+	m.recentQSOs.SetQSOS(refreshed.qsos)
+	m.rc.pathSig = ""
+	m.rc.logStatsSig = ""
+}
+
+// applySaveCmd runs a saveQSO tea.Cmd, extracts the embedded refreshQSOS
+// command, and applies the qsoRefreshedMsg to the model.
+func applySaveCmd(t *testing.T, m *Model, cmd tea.Cmd) {
+	t.Helper()
+	if cmd == nil {
+		return
+	}
+	msg := cmd()
+	if batched, ok := msg.(tea.BatchMsg); ok {
+		for _, subCmd := range batched {
+			subMsg := subCmd()
+			if r, ok := subMsg.(qsoRefreshedMsg); ok {
+				if r.err != nil {
+					t.Fatalf("refreshQSOS: %v", r.err)
+				}
+				m.qsos = r.qsos
+				m.recentQSOs.SetQSOS(r.qsos)
+				m.rc.pathSig = ""
+				m.rc.logStatsSig = ""
+				return
+			}
+		}
+		return
+	}
+	// Fallback for single message (not batched).
+	if r, ok := msg.(qsoRefreshedMsg); ok {
+		if r.err != nil {
+			t.Fatalf("refreshQSOS: %v", r.err)
+		}
+		m.qsos = r.qsos
+		m.recentQSOs.SetQSOS(r.qsos)
+		m.rc.pathSig = ""
+		m.rc.logStatsSig = ""
+	}
+}
+
+func TestRefreshQSOsEmptyDB(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	refreshAndApply(t, m)
 
 	// RecentQSOs should be empty
 	if len(m.qsos) != 0 {
@@ -141,7 +194,7 @@ func TestRefreshQSOsOneQSO(t *testing.T) {
 		t.Fatalf("InsertQSO: %v", err)
 	}
 
-	m.refreshQSOS()()
+	refreshAndApply(t, m)
 	if len(m.qsos) != 1 {
 		t.Errorf("Expected 1 QSO after refresh, got %d", len(m.qsos))
 	}
@@ -171,7 +224,7 @@ func TestRefreshQSOsMultipleQSOs(t *testing.T) {
 		store.InsertQSO(m.App.DB, qs)
 	}
 
-	m.refreshQSOS()()
+	refreshAndApply(t, m)
 	if len(m.qsos) != 3 {
 		t.Errorf("Expected 3 QSOs after refresh, got %d", len(m.qsos))
 	}
@@ -288,7 +341,7 @@ func TestSaveQSORefreshesRecentQSOs(t *testing.T) {
 	m := newLifecycleTestModel(t)
 	fillMinimalValidQSO(m)
 
-	m.saveQSO()()
+	applySaveCmd(t, m, m.saveQSO())
 	// After save, refreshQSOS should have updated m.qsos
 	if len(m.qsos) != 1 {
 		t.Errorf("RecentQSOs should have 1 QSO after save, got %d", len(m.qsos))
@@ -299,7 +352,7 @@ func TestSaveQSORetainDisabled(t *testing.T) {
 	m := newLifecycleTestModel(t)
 	fillMinimalValidQSO(m)
 	m.fields[fieldComment].SetValue("Will be cleared")
-	m.retainComment = false
+	m.keepComment = false
 
 	m.saveQSO()()
 
@@ -317,7 +370,7 @@ func TestSaveQSORetainEnabled(t *testing.T) {
 	m := newLifecycleTestModel(t)
 	fillMinimalValidQSO(m)
 	m.fields[fieldComment].SetValue("Retain this comment")
-	m.retainComment = true
+	m.keepComment = true
 
 	m.saveQSO()()
 
@@ -433,10 +486,8 @@ func TestLogQSOFromADIFUpdatesRecentQSOs(t *testing.T) {
 		"<RST_SENT:2>59 <RST_RCVD:2>59 <EOR>"
 
 	cmd, _ := m.logQSOFromADIF(adif)
-	// cmd always includes refreshQSOS via tea.Batch
-	if cmd != nil {
-		cmd()
-	}
+	// cmd includes refreshQSOS via tea.Batch; extract and apply the message.
+	applySaveCmd(t, m, cmd)
 
 	if len(m.qsos) != 1 {
 		t.Errorf("RecentQSOs should have 1 QSO after ADIF log, got %d", len(m.qsos))
@@ -456,7 +507,7 @@ func TestLogQSOFromADIFWavelogDisabled(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("logQSOFromADIF should return cmd even when Wavelog disabled (refreshQSOS)")
 	}
-	cmd()
+	applySaveCmd(t, m, cmd)
 
 	if countQSOS(t, m) != 1 {
 		t.Error("QSO should be saved even when Wavelog is disabled")
@@ -511,13 +562,13 @@ func TestSaveQSOContestFilteredRecentQSOs(t *testing.T) {
 	// Save a QSO with contest c1 active
 	fillMinimalValidQSO(m)
 	m.fields[fieldCall].SetValue("DJ7NT")
-	m.saveQSO()()
+	applySaveCmd(t, m, m.saveQSO())
 
 	// Switch to contest c2 and save another
 	m.App.Logbook.ActiveContest = "c2"
 	fillMinimalValidQSO(m)
 	m.fields[fieldCall].SetValue("SP9MOA")
-	m.saveQSO()()
+	applySaveCmd(t, m, m.saveQSO())
 
 	// Recent QSOs should only show c2's QSO (active contest)
 	if len(m.qsos) != 1 {
@@ -534,13 +585,13 @@ func TestSaveQSOContestFilterRespectsNone(t *testing.T) {
 	// Save with contest c1 active
 	fillMinimalValidQSO(m)
 	m.fields[fieldCall].SetValue("CT1AAA")
-	m.saveQSO()()
+	applySaveCmd(t, m, m.saveQSO())
 
 	// Switch to None and save another
 	m.App.Logbook.ActiveContest = ""
 	fillMinimalValidQSO(m)
 	m.fields[fieldCall].SetValue("DJ7NT")
-	m.saveQSO()()
+	applySaveCmd(t, m, m.saveQSO())
 
 	// With None active, all QSOs should be visible
 	if len(m.qsos) != 2 {

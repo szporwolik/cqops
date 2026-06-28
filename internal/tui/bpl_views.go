@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"charm.land/bubbles/v2/table"
@@ -155,7 +156,7 @@ func (m *Model) handleBPLUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 		case k.String() == "ctrl+e":
 			cmd = tea.Batch(cmd, m.exportBPL())
 			return m, cmd
-		case k.String() == "left" || msg.Code == tea.KeyLeft || k.String() == "h":
+		case k.String() == "left" || msg.Code == tea.KeyLeft:
 			if m.bpl.tab > 0 {
 				m.bpl.tab--
 			} else {
@@ -164,7 +165,7 @@ func (m *Model) handleBPLUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			m.bpl.cursor = 0
 			m.bpl.scroll = 0
 			m.bpl.cachedSig = ""
-		case k.String() == "right" || msg.Code == tea.KeyRight || k.String() == "l":
+		case k.String() == "right" || msg.Code == tea.KeyRight:
 			if m.bpl.tab < bplTabCount-1 {
 				m.bpl.tab++
 			} else {
@@ -178,15 +179,12 @@ func (m *Model) handleBPLUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			m.bpl.cursor = 0
 			m.bpl.scroll = 0
 			m.bpl.cachedSig = ""
-		case k.String() == "/":
-			m.bpl.search = ""
-			m.bpl.cachedSig = ""
-		case k.String() == "up" || msg.Code == tea.KeyUp || k.String() == "k":
+		case k.String() == "up" || msg.Code == tea.KeyUp:
 			if m.bpl.cursor > 0 {
 				m.bpl.cursor--
 				m.bpl.cachedSig = ""
 			}
-		case k.String() == "down" || msg.Code == tea.KeyDown || k.String() == "j":
+		case k.String() == "down" || msg.Code == tea.KeyDown:
 			m.bpl.cursor++
 			m.bpl.cachedSig = ""
 		case k.String() == "pgup" || msg.Code == tea.KeyPgUp:
@@ -204,7 +202,7 @@ func (m *Model) handleBPLUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 		case k.String() == "end" || msg.Code == tea.KeyEnd:
 			m.bpl.cursor = 9999 // clamped later
 			m.bpl.cachedSig = ""
-		case k.String() == " " || k.String() == "space":
+		case k.String() == " " || k.String() == "space" || k.String() == "enter":
 			if c := m.bplTuneCmd(); c != nil {
 				return m, tea.Batch(cmd, c)
 			}
@@ -292,8 +290,23 @@ func (m *Model) viewBPL(l Layout) string {
 	}
 
 	// Cache: rebuild only when state changes.
-	sig := fmt.Sprintf("%d|%d|%d|%d|%d|%d|%d|%s",
-		m.bpl.tab, region, w, ch, m.bpl.scroll, m.bpl.cursor, m.bpl.bandSel, m.bpl.search)
+	var sb strings.Builder
+	sb.WriteString(strconv.Itoa(m.bpl.tab))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(region))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(w))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(ch))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(m.bpl.scroll))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(m.bpl.cursor))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(m.bpl.bandSel))
+	sb.WriteByte('|')
+	sb.WriteString(m.bpl.search)
+	sig := sb.String()
 	if m.bpl.cachedSig == sig && m.bpl.cachedView != "" {
 		return m.bpl.cachedView
 	}
@@ -315,18 +328,26 @@ func (m *Model) viewBPL(l Layout) string {
 	header := S.Title.Width(w).Render("Bandplan Iaru Region " + fmt.Sprintf("%d", region))
 
 	// Render tab content — each sub-view returns full line list, renderBPLContent handles scroll/cursor.
+	// Pre-built line lists are cached per tab+region so switching tabs doesn't rebuild.
+	linesKey := fmt.Sprintf("%d|%d|%s", m.bpl.tab, region, m.bpl.search)
 	var lines []string
-	switch m.bpl.tab {
-	case bplTabHAM:
-		lines = m.viewBPLHAM(region)
-	case bplTabVHF:
-		lines = m.viewBPLVHF(region)
-	case bplTabCB:
-		lines = m.viewBPLCB(region)
-	case bplTabPMR:
-		lines = m.viewBPLPMR(region)
-	case bplTabBRC:
-		lines = m.viewBPLBRC()
+	if m.bpl.cachedLinesKey == linesKey && m.bpl.cachedLines != nil {
+		lines = m.bpl.cachedLines
+	} else {
+		switch m.bpl.tab {
+		case bplTabHAM:
+			lines = m.viewBPLHAM(region)
+		case bplTabVHF:
+			lines = m.viewBPLVHF(region)
+		case bplTabCB:
+			lines = m.viewBPLCB(region)
+		case bplTabPMR:
+			lines = m.viewBPLPMR(region)
+		case bplTabBRC:
+			lines = m.viewBPLBRC()
+		}
+		m.bpl.cachedLines = lines
+		m.bpl.cachedLinesKey = linesKey
 	}
 	body := m.renderBPLContent(lines)
 
@@ -342,7 +363,6 @@ func (m *Model) viewBPL(l Layout) string {
 // viewBPLHAM returns lines for the amateur HF band plan (160m–10m).
 func (m *Model) viewBPLHAM(region int) []string {
 	bp := bplForRegion(region)
-	freqStr := func(f hamradio.Frequency) string { return fmt.Sprintf("%.3f", float64(f)/1e6) }
 
 	var lines []string
 	for _, name := range bandOrder {
@@ -351,7 +371,9 @@ func (m *Model) viewBPLHAM(region int) []string {
 			continue
 		}
 		// Band summary line — just band name and range.
-		summary := fmt.Sprintf("%-5s %s–%s", string(b.Name), freqStr(b.From), freqStr(b.To))
+		fr := strconv.FormatFloat(float64(b.From)/1e6, 'f', 3, 64)
+		to := strconv.FormatFloat(float64(b.To)/1e6, 'f', 3, 64)
+		summary := fmt.Sprintf("%-5s %s–%s", string(b.Name), fr, to)
 		lines = append(lines, summary)
 
 		// Detail rows for this band.
@@ -361,7 +383,9 @@ func (m *Model) viewBPLHAM(region int) []string {
 			if p.MaxBandwidth > 0 {
 				bw = fmt.Sprintf(" BW %.0f Hz", float64(p.MaxBandwidth))
 			}
-			lines = append(lines, DimStyle.Render(fmt.Sprintf("  %s–%s %s%s", freqStr(p.From), freqStr(p.To), mode, bw)))
+			pfr := strconv.FormatFloat(float64(p.From)/1e6, 'f', 3, 64)
+			pto := strconv.FormatFloat(float64(p.To)/1e6, 'f', 3, 64)
+			lines = append(lines, DimStyle.Render(fmt.Sprintf("  %s–%s %s%s", pfr, pto, mode, bw)))
 		}
 		// Special frequencies under this band.
 		if emcom, ok := emcomFreqs[region]; ok {
@@ -721,7 +745,7 @@ func severityStyle(kind string) lipgloss.Style {
 }
 
 // bplRowCount returns the total number of rows in the band plan table.
-// Kept for export compatibility; the TUI no longer uses a single table.
+// Result is cached per region since the band plan data is static.
 func (m *Model) bplRowCount() int {
 	region := 1
 	if m.App != nil && m.App.Logbook != nil {
@@ -730,7 +754,12 @@ func (m *Model) bplRowCount() int {
 			region = r
 		}
 	}
-	return len(bplRows(region))
+	if m.bpl.cachedRowCount > 0 && m.bpl.cachedRowRegion == region {
+		return m.bpl.cachedRowCount
+	}
+	m.bpl.cachedRowCount = len(bplRows(region))
+	m.bpl.cachedRowRegion = region
+	return m.bpl.cachedRowCount
 }
 
 // bplTableHeight returns the available table height for the band plan.
@@ -824,24 +853,32 @@ func (m *Model) buildBPLMarkdown(region int) string {
 	return b.String()
 }
 
+// bplFreqStr formats a hamradio.Frequency as MHz with 3 decimal places.
+// Uses strconv to avoid fmt.Sprintf allocation on every call.
+func bplFreqStr(f hamradio.Frequency) string {
+	return strconv.FormatFloat(float64(f)/1e6, 'f', 3, 64)
+}
+
+// bplBwStr formats a hamradio.Frequency as Hz with 0 decimal places,
+// or returns "" if zero/negative.
+func bplBwStr(bw hamradio.Frequency) string {
+	if bw <= 0 {
+		return ""
+	}
+	return strconv.FormatFloat(float64(bw), 'f', 0, 64)
+}
+
 func (m *Model) writeBPLMarkdownRows(b *strings.Builder, region int) {
 	bp := bplForRegion(region)
-	freqStr := func(f hamradio.Frequency) string { return fmt.Sprintf("%.3f", float64(f)/1e6) }
-	bwStr := func(bw hamradio.Frequency) string {
-		if bw <= 0 {
-			return ""
-		}
-		return fmt.Sprintf("%.0f", float64(bw))
-	}
 	for _, name := range bandOrder {
 		bd, ok := bp[name]
 		if !ok {
 			continue
 		}
 		// Band header row.
-		fmt.Fprintf(b, "| **%s** | %s | %s | | | | |\n", string(bd.Name), freqStr(bd.From), freqStr(bd.To))
+		fmt.Fprintf(b, "| **%s** | %s | %s | | | | |\n", string(bd.Name), bplFreqStr(bd.From), bplFreqStr(bd.To))
 		for _, p := range bd.Portions {
-			fmt.Fprintf(b, "| | | | %s | %s | %s | %s |\n", string(p.Mode), freqStr(p.From), freqStr(p.To), bwStr(p.MaxBandwidth))
+			fmt.Fprintf(b, "| | | | %s | %s | %s | %s |\n", string(p.Mode), bplFreqStr(p.From), bplFreqStr(p.To), bplBwStr(p.MaxBandwidth))
 		}
 		if emcom, ok := emcomFreqs[region]; ok {
 			if f, ok := emcom[name]; ok {
@@ -1054,16 +1091,6 @@ func (m *Model) writeBRCMarkdownRows(b *strings.Builder) {
 func bplRows(region int) []table.Row {
 	bp := bplForRegion(region)
 
-	freqStr := func(f hamradio.Frequency) string {
-		return fmt.Sprintf("%.3f", float64(f)/1e6)
-	}
-	bwStr := func(bw hamradio.Frequency) string {
-		if bw <= 0 {
-			return ""
-		}
-		return fmt.Sprintf("%.0f", float64(bw))
-	}
-
 	var rows []table.Row
 
 	// --- HF bandplan ---
@@ -1074,7 +1101,7 @@ func bplRows(region int) []table.Row {
 		}
 		rows = append(rows, table.Row{
 			string(b.Name),
-			freqStr(b.From), freqStr(b.To),
+			bplFreqStr(b.From), bplFreqStr(b.To),
 			"", "", "", "",
 		})
 		for _, p := range b.Portions {
@@ -1082,8 +1109,8 @@ func bplRows(region int) []table.Row {
 				"",
 				"", "",
 				string(p.Mode),
-				freqStr(p.From), freqStr(p.To),
-				bwStr(p.MaxBandwidth),
+				bplFreqStr(p.From), bplFreqStr(p.To),
+				bplBwStr(p.MaxBandwidth),
 			})
 		}
 		if emcom, ok := emcomFreqs[region]; ok {

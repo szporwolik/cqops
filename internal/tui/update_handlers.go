@@ -69,6 +69,16 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 		m.wsjtx.txMsg = ""
 		m.rc.status = ""
 	}
+	// WL lookup timeout: if a lookup was dispatched >20s ago and hasn't
+	// completed, force wlLookupDone to clear the "pending" state. This
+	// prevents the UI from getting stuck when the Wavelog server is
+	// unreachable or the HTTP request hangs.
+	if !m.lookup.wlLookupDone && !m.lookup.wlDispatchTime.IsZero() &&
+		time.Since(m.lookup.wlDispatchTime) > 20*time.Second {
+		m.lookup.wlLookupDone = true
+		m.lookup.wlLookupCall = m.lookup.wlLastCall
+		applog.Warn("Wavelog: lookup timed out", "call", m.lookup.wlLastCall)
+	}
 	// WSJT-X auto-reconnect: if enabled but never online, retry start every 30s.
 	// MaybeRestartWSJTX is a no-op when the listener is already running; it only
 	// acts when the previous start failed (lastWSJTX wasn't updated on error).
@@ -83,7 +93,49 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 		m.autoUpdateDateTime()
 	}
 	m.tickCount++
-	return tea.Batch(tickCmd(), m.maybeCheckInet(), m.maybeRefreshDataFiles(), m.pollRig(), m.pollRotor(), m.maybeCheckWavelog(), m.maybeCheckQRZ(), m.maybeFetchSolar(), m.maybeDXC(), cmd)
+	// Dispatch async logbook stats fetch if a View() cache miss was recorded.
+	if m.rc.logStatsNeedFetch && m.App.DB != nil {
+		m.rc.logStatsNeedFetch = false
+		cmd = tea.Batch(cmd, m.fetchLogbookStatsCmd(
+			m.rc.logStatsFetchCall, m.rc.logStatsFetchBand, m.rc.logStatsFetchMode))
+	}
+	// Dispatch async PSK spot DB load if a View() cache miss was recorded.
+	if m.psk.needDBLoad && m.App.DB != nil {
+		m.psk.needDBLoad = false
+		cmd = tea.Batch(cmd, m.loadPSKSpotsCmd(
+			m.psk.pendingCall, m.psk.pendingCutoff, m.psk.pendingSpotKey))
+	}
+	// Consolidate periodic commands — only batch non-nil commands to reduce
+	// closure allocation and tea.Batch overhead on low-end hardware.
+	cmds := []tea.Cmd{tickCmd()}
+	if c := m.maybeCheckInet(); c != nil {
+		cmds = append(cmds, c)
+	}
+	if c := m.maybeRefreshDataFiles(); c != nil {
+		cmds = append(cmds, c)
+	}
+	if c := m.pollRig(); c != nil {
+		cmds = append(cmds, c)
+	}
+	if c := m.pollRotor(); c != nil {
+		cmds = append(cmds, c)
+	}
+	if c := m.maybeCheckWavelog(); c != nil {
+		cmds = append(cmds, c)
+	}
+	if c := m.maybeCheckQRZ(); c != nil {
+		cmds = append(cmds, c)
+	}
+	if c := m.maybeFetchSolar(); c != nil {
+		cmds = append(cmds, c)
+	}
+	if c := m.maybeDXC(); c != nil {
+		cmds = append(cmds, c)
+	}
+	if cmd != nil {
+		cmds = append(cmds, cmd)
+	}
+	return tea.Batch(cmds...)
 }
 
 // handleAsyncMessages processes async result messages (internet check, Wavelog status,
@@ -96,9 +148,9 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			// Internet just came up — force Wavelog and QRZ checks.
 			m.lookup.wlForceCheck = true
 			m.lookup.qrzForceCheck = true
-			m.toasts.Success("Internet connected")
+			m.toasts.Success("Internet: connected")
 		} else if m.inetOnline && !bool(r) {
-			m.toasts.Warn("Internet not available — working in offline mode")
+			m.toasts.Warn("Internet: not available — working in offline mode")
 		}
 		m.inetOnline = bool(r)
 		return true, nil
@@ -156,11 +208,14 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 				}
 			}
 		}
+		// Immediately refresh the QSO list so the Recent QSOs table picks up
+		// the updated Wavelog status. Also flag needRefresh so the logbook
+		// editor (if open) reloads on the next tick.
 		m.needRefresh = true
-		return true, nil
+		return true, m.refreshQSOS()
 	case wsjtxEnrichDoneMsg:
 		m.needRefresh = true
-		return true, nil
+		return true, m.refreshQSOS()
 	case qrzStatusMsg:
 		m.lookup.qrzOnline = r.online
 		return true, nil
@@ -234,11 +289,11 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
 	if m.needRefresh {
 		m.needRefresh = false
-		cmd = tea.Batch(cmd, m.refreshQSOS())
-		// Fall through — do NOT short-circuit.  The refresh runs
-		// asynchronously; dropping the current message (e.g. a
-		// navigation key right after a screen transition) would
-		// require the user to press the key twice.
+		// Only refresh QSOs when on a screen that displays them — avoids
+		// unnecessary DB queries on DXC, PSK, BPL, and other screens.
+		if m.screen == screenQSO || m.screen == screenPartner || m.screen == screenLogbookEditor {
+			cmd = tea.Batch(cmd, m.refreshQSOS())
+		}
 	}
 	if m.lookup.qrzNeed {
 		call := m.lookup.qrzCall
@@ -295,4 +350,116 @@ func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
 		}
 	}
 	return cmd, false
+}
+
+// handleLookupResultMsg processes async lookup result messages (QRZ, Wavelog,
+// logbook stats, PSK spots, REF rebuild, DXC spot/fill/tune, BPL tune/export,
+// QSO refresh). Extracted from Update() to keep the main loop manageable.
+func (m *Model) handleLookupResultMsg(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	switch r := msg.(type) {
+	case qrzResultMsg:
+		m.fillQRZData(r)
+		cmd = tea.Batch(cmd, m.updateFilteredTable())
+		m.contestAutoFocusExchRcvd()
+		if m.photo.partnerPicNeedLoad {
+			m.photo.partnerPicNeedLoad = false
+			w := m.photo.partnerPicW
+			h := m.photo.partnerPicH
+			if w < 25 {
+				w = 40
+			}
+			if h < 4 {
+				h = 15
+			}
+			cmd = tea.Batch(cmd, m.photo.partnerPicViewer.SetSize(w, h),
+				m.photo.partnerPicViewer.SetURL(m.photo.partnerPicURL))
+		}
+		return m, cmd
+	case wlResultMsg:
+		wlCmd := m.fillWLData(r)
+		cmd = tea.Batch(cmd, wlCmd)
+		m.contestAutoFocusExchRcvd()
+		return m, cmd
+	case logbookStatsMsg:
+		m.handleLogbookStats(r)
+		return m, cmd
+	case pskSpotsLoadedMsg:
+		if r.err == nil && r.spotKey != "" {
+			m.psk.spots = r.spots
+			m.psk.spotKey = r.spotKey
+		}
+		return m, cmd
+	case refRebuildMsg:
+		m.ref.building = false
+		m.ref.refNamesDirty = true
+		if r.err != nil {
+			applog.Warn("REF: rebuild failed", "error", r.err)
+			m.toasts.Error("REF: database build failed")
+		} else {
+			m.ref.ready = true
+			applog.Info("REF: rebuild complete", "total", r.total)
+			m.toasts.Success(fmt.Sprintf("REF: database ready — %d references", r.total))
+		}
+		return m, cmd
+	case dxcSpotLookupMsg:
+		m.fillDXCFreq(r)
+		return m, cmd
+	case dxcSpotsStoredMsg:
+		m.handleDXCSpotsStored(r)
+		return m, cmd
+	case dxcTuneResultMsg:
+		m.handleTuneResult(r.err, r.freqMHz, r.mode, r.verify)
+		return m, cmd
+	case bplTuneResultMsg:
+		m.handleTuneResult(r.err, r.freqMHz, r.mode, r.verify)
+		return m, cmd
+	case bplExportMsg:
+		if r.err != nil {
+			m.toasts.Error(fmt.Sprintf("Band Plan: export failed — %v", r.err))
+		} else {
+			m.toasts.Success(fmt.Sprintf("Band Plan: exported to %s", r.path))
+		}
+		return m, cmd
+	case qsoRefreshedMsg:
+		if r.err != nil {
+			m.toasts.Error(fmt.Sprintf("Refresh failed: %v", r.err))
+		} else {
+			m.qsos = r.qsos
+			m.recentQSOs.SetQSOS(r.qsos)
+			m.rc.pathSig = ""
+			m.rc.logStatsSig = ""
+			if !m.recentQSOs.filterSuppressed && m.recentQSOs.IsFiltered() {
+				filtered, filterErr := store.SearchQSOsByCall(m.App.DB, m.recentQSOs.filterCall, 200)
+				if filterErr == nil {
+					m.recentQSOs.SetFilterCall(m.recentQSOs.filterCall, filtered)
+				}
+			}
+			m.recentQSOs.filterSuppressed = false
+		}
+		return m, cmd
+	default:
+		return nil, cmd
+	}
+}
+
+// handleTuneResult shows the appropriate toast for a rig tune operation
+// (shared by dxcTuneResultMsg and bplTuneResultMsg — identical handling).
+func (m *Model) handleTuneResult(err error, freqMHz float64, mode, verify string) {
+	if err != nil {
+		if strings.Contains(err.Error(), "cancelled") {
+			m.toasts.Warn(fmt.Sprintf("Rig: tune cancelled — %v", err))
+		} else {
+			m.toasts.Error(fmt.Sprintf("Rig: tune failed — %v", err))
+		}
+		return
+	}
+	msg := fmt.Sprintf("Rig: tuned to %.5f MHz", freqMHz)
+	if mode != "" {
+		msg += " " + mode
+	}
+	if verify != "" {
+		m.toasts.Warn("Rig: tuning failed")
+	} else {
+		m.toasts.Success(msg)
+	}
 }

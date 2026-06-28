@@ -1,7 +1,7 @@
 package tui
 
 import (
-	"fmt"
+	"strconv"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -62,7 +62,33 @@ func (m *Model) tabView() string {
 	if m.isREFReady() {
 		refReady = 1
 	}
-	sig := fmt.Sprintf("%d|%v|%d|%d|%v|%v|%d", m.screen, hasPartner, conf, m.width, m.inetOnline, m.dxc.online, refReady)
+	var sigB strings.Builder
+	sigB.WriteString(strconv.Itoa(int(m.screen)))
+	sigB.WriteByte('|')
+	if hasPartner {
+		sigB.WriteByte('1')
+	} else {
+		sigB.WriteByte('0')
+	}
+	sigB.WriteByte('|')
+	sigB.WriteString(strconv.Itoa(conf))
+	sigB.WriteByte('|')
+	sigB.WriteString(strconv.Itoa(m.width))
+	sigB.WriteByte('|')
+	if m.inetOnline {
+		sigB.WriteByte('1')
+	} else {
+		sigB.WriteByte('0')
+	}
+	sigB.WriteByte('|')
+	if m.dxc.online {
+		sigB.WriteByte('1')
+	} else {
+		sigB.WriteByte('0')
+	}
+	sigB.WriteByte('|')
+	sigB.WriteString(strconv.Itoa(refReady))
+	sig := sigB.String()
 	if m.rc.tabSig == sig && m.rc.tabView != "" {
 		return m.rc.tabView
 	}

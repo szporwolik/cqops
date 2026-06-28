@@ -74,8 +74,8 @@ func TestFavoriteRecall(t *testing.T) {
 	if got := m.fields[fieldMode].Value(); got != "SSB" {
 		t.Errorf("Mode = %q, want SSB", got)
 	}
-	if got := m.fields[fieldFreq].Value(); got != "14250.000000" {
-		t.Errorf("Freq = %q, want 14250.000000", got)
+	if got := m.fields[fieldFreq].Value(); got != "14250" {
+		t.Errorf("Freq = %q, want 14250", got)
 	}
 	if got := m.fields[fieldBand].Value(); got != "20m" {
 		t.Errorf("Band = %q, want 20m", got)

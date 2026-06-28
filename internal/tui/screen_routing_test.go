@@ -178,7 +178,7 @@ func TestWLResult_SetsLookupDone(t *testing.T) {
 		Call: "SP9XXX",
 		Data: &wavelog.PrivateLookupResult{},
 	}
-	m.fillWLData(msg)
+	_ = m.fillWLData(msg)
 	if !m.lookup.wlLookupDone {
 		t.Error("wlLookupDone should be true after result")
 	}

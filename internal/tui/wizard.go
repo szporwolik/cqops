@@ -49,6 +49,10 @@ type Wizard struct {
 	Completed     bool // true only when full wizard finished
 	Offline       bool // when true, skip all network-dependent operations
 
+	// Cached form box style — rebuilt only when width changes.
+	cachedFormBox  lipgloss.Style
+	cachedFormBoxW int
+
 	// Wavelog async state (for wizard step 1 buttons)
 	wlUpdating   bool
 	wlTesting    bool
@@ -75,7 +79,7 @@ func NewWizard(a *app.App) *Wizard {
 		App:     a,
 		step:    stepStation,
 		station: NewStationForm("", "", ""),
-		rigForm: NewRigForm("Xiegu G90", "HWEF 20.5", "20"),
+		rigForm: NewRigForm("Xiegu G90 (optional)", "HWEF 20.5 (optional)", "20"),
 		qrzUser: qrzUser,
 		qrzPass: qrzPass,
 		tzIndex: config.SystemTimezoneIndex(),
@@ -84,6 +88,12 @@ func NewWizard(a *app.App) *Wizard {
 }
 
 func (w *Wizard) Init() tea.Cmd {
+	// Warn if the encrypted secrets file is corrupted or from another machine.
+	if w.App.Secrets != nil && w.App.Secrets.Corrupted {
+		w.toasts.Warn("Secrets: encrypted store could not be decrypted — passwords and API keys must be re-entered")
+		applog.Warn("Secrets: encrypted store corrupted or from different machine")
+	}
+
 	return tea.Tick(1*time.Second, func(t time.Time) tea.Msg {
 		return tickMsg{}
 	})
@@ -146,6 +156,28 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			w.qrzTestResult = "QRZ test failed"
 		}
+
+	case tea.PasteMsg:
+		// Forward paste to the focused text input so clipboard paste works
+		// in the wizard (station form, rig form, and QRZ credentials).
+		switch w.step {
+		case stepStation:
+			if cmd := w.station.HandlePaste(msg.Content); cmd != nil {
+				return w, nil
+			}
+		case stepRig:
+			if cmd := w.rigForm.HandlePaste(msg.Content); cmd != nil {
+				return w, nil
+			}
+		case stepQRZ:
+			switch w.integFocus {
+			case 1:
+				w.qrzUser, _ = w.qrzUser.Update(msg)
+			case 2:
+				w.qrzPass, _ = w.qrzPass.Update(msg)
+			}
+		}
+		return w, nil
 
 	case tea.KeyPressMsg:
 		k := msg
@@ -242,10 +274,6 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						nm, rig, _, _ := w.rigForm.Values()
 						if nm == "" {
 							w.toasts.Warn("Rig name is required")
-							return w, nil
-						}
-						if rig == "" {
-							w.toasts.Warn("Rig model is required")
 							return w, nil
 						}
 						radioBackend, _, _ := w.rigForm.BackendValues()
@@ -406,7 +434,7 @@ func (w *Wizard) View() tea.View {
 	}
 
 	// Composite toasts as floating overlay (same pattern as model.go)
-	finalView := RenderToastOverlay(content, w.toasts.Active(), w.width, w.height)
+	finalView := w.toasts.RenderOverlay(content, w.width, w.height)
 
 	v := tea.NewView(finalView)
 	v.AltScreen = true
@@ -430,6 +458,7 @@ func (w *Wizard) clampedDims() (h, ww int) {
 }
 
 // wizardFormBox builds the bordered box style for wizard forms.
+// Style is cached and rebuilt only when width changes.
 func (w *Wizard) wizardFormBox() lipgloss.Style {
 	formW := w.width - 6
 	if formW < 56 {
@@ -438,11 +467,16 @@ func (w *Wizard) wizardFormBox() lipgloss.Style {
 	if formW > 80 {
 		formW = 80
 	}
-	return lipgloss.NewStyle().
+	if w.cachedFormBoxW == formW {
+		return w.cachedFormBox
+	}
+	w.cachedFormBox = lipgloss.NewStyle().
 		Width(formW).
 		Border(lipgloss.NormalBorder()).
 		BorderForeground(P.TextDim).
 		Padding(1, 2)
+	w.cachedFormBoxW = formW
+	return w.cachedFormBox
 }
 
 // wizardLayout composes banner, step indicator, bordered body, filler,

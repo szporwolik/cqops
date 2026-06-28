@@ -1,6 +1,9 @@
 package tui
 
 import (
+	"os"
+	"time"
+
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/store"
 )
@@ -25,6 +28,9 @@ type renderCache struct {
 	barOp     string // active operator ID; busts status cache on change
 	barLog    string // active logbook ID; busts status cache on change
 	barRig    string // active rig ID; busts status cache on change
+	barTx     bool   // WSJT-X TX state; busts status cache on change
+	barTxMsg  string // WSJT-X TX message; busts status cache on change
+	barOnline bool   // WSJT-X online state; busts status cache on change
 
 	// Partner view cache.
 	partnerView    string
@@ -43,15 +49,54 @@ type renderCache struct {
 	logStats    store.LogbookStats
 	logStatsSig string
 
+	// Async fetch state — avoids DB queries during View().
+	logStatsNeedFetch bool
+	logStatsFetchCall string
+	logStatsFetchBand string
+	logStatsFetchMode string
+
+	// DXCC continent cache — avoids prefix-tree lookup on every partner-view frame.
+	dxccContCall  string
+	dxccContValue string
+
+	// Directory listing cache — avoids os.ReadDir during View() in file picker.
+	dirCachePath    string
+	dirCacheTime    time.Time
+	dirCacheEntries []os.DirEntry
+
 	// Per-frame view caches.
 	formView string
 	formSig  string
+	formSec  int // second of last form cache; busts at 1 Hz for clock fields
 	tabView  string
 	tabSig   string
 	helpView string
 	helpSig  string
 
+	// Cached MaxHeight clip styles for root View() body and final compositing.
+	// Rebuilt only on terminal height change (resize).
+	clipStyle      lipgloss.Style
+	clipStyleH     int
+	bodyClipStyle  lipgloss.Style
+	bodyClipStyleH int
+
+	// Cached image-screen styles — rebuilt only on dimension change.
+	imagePlaceholderStyle lipgloss.Style
+	imagePlaceholderW     int
+	imagePlaceholderH     int
+	imageContentStyle     lipgloss.Style
+	imageContentW         int
+	imageContentH         int
+
 	// Path state (committed call/grid, updated on field exit).
 	pathCall string
 	pathGrid string
+
+	// Contest line cache — rebuilt only when contest or NextQSO changes.
+	contestLine    string
+	contestLineSig string
+
+	// Help suffix cache — avoids per-frame fmt.Sprintf on editor/log screens.
+	helpSuffix    string
+	helpSuffixSig string
 }

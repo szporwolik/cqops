@@ -111,6 +111,14 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			c.wlStatus = "OK — Wavelog reachable"
 		}
 
+	case tea.PasteMsg:
+		// Forward clipboard paste to the focused field in the station
+		// edit form (callsign, grid, Wavelog URL/key, etc.).
+		if c.mode == chooserEdit || c.mode == chooserCreate {
+			c.station.HandlePaste(msg.Content)
+		}
+		return c, nil
+
 	case tea.KeyPressMsg:
 		k := msg
 

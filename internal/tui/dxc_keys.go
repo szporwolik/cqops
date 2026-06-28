@@ -21,53 +21,40 @@ func (m *Model) handleDXCUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			return m, cmd
 
 		case "pgup":
-			// Cycle time window forward.
-			m.dxc.timeIdx = (m.dxc.timeIdx + 1) % len(dxcTimeWindows)
+			// Cycle time window forward — skip if same value.
+			next := (m.dxc.timeIdx + 1) % len(dxcTimeWindows)
+			if m.dxc.timeIdx == next {
+				return m, cmd
+			}
+			m.dxc.timeIdx = next
 			m.dxc.timeFilter = dxcTimeWindows[m.dxc.timeIdx]
 			m.dxc.tableReady = false
 			return m, cmd
 
 		case "pgdown":
 			// Cycle time window backward.
-			m.dxc.timeIdx--
-			if m.dxc.timeIdx < 0 {
-				m.dxc.timeIdx = len(dxcTimeWindows) - 1
+			next := m.dxc.timeIdx - 1
+			if next < 0 {
+				next = len(dxcTimeWindows) - 1
 			}
+			if m.dxc.timeIdx == next {
+				return m, cmd
+			}
+			m.dxc.timeIdx = next
 			m.dxc.timeFilter = dxcTimeWindows[m.dxc.timeIdx]
 			m.dxc.tableReady = false
 			return m, cmd
 
 		case "home":
-			// Cycle band filter forward.
-			choices := m.dxcBandChoices()
-			if len(choices) > 0 {
-				m.dxc.bandIdx = (m.dxc.bandIdx + 1) % len(choices)
-				m.dxc.bandFilter = choices[m.dxc.bandIdx]
-			}
-			m.dxc.tableReady = false
+			m.dxcCycleFilter(&m.dxc.bandIdx, &m.dxc.bandFilter, m.dxcBandChoices())
 			return m, cmd
 
 		case "end":
-			// Cycle band filter backward.
-			choices := m.dxcBandChoices()
-			if len(choices) > 0 {
-				m.dxc.bandIdx--
-				if m.dxc.bandIdx < 0 {
-					m.dxc.bandIdx = len(choices) - 1
-				}
-				m.dxc.bandFilter = choices[m.dxc.bandIdx]
-			}
-			m.dxc.tableReady = false
+			m.dxcCycleFilterBack(&m.dxc.bandIdx, &m.dxc.bandFilter, m.dxcBandChoices())
 			return m, cmd
 
 		case `\`:
-			// Cycle continent filter forward.
-			choices := m.dxcContChoices()
-			if len(choices) > 0 {
-				m.dxc.contIdx = (m.dxc.contIdx + 1) % len(choices)
-				m.dxc.contFilter = choices[m.dxc.contIdx]
-			}
-			m.dxc.tableReady = false
+			m.dxcCycleFilter(&m.dxc.contIdx, &m.dxc.contFilter, m.dxcContChoices())
 			return m, cmd
 
 		case "enter":
@@ -78,43 +65,26 @@ func (m *Model) handleDXCUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			return m, cmd
 
 		case "insert":
-			// Cycle mode filter forward.
-			modes := m.dxcAvailableModes()
-			choices := []string{""} // "" means all
-			choices = append(choices, modes...)
-			if len(choices) > 0 {
-				m.dxc.modeIdx = (m.dxc.modeIdx + 1) % len(choices)
-				m.dxc.modeFilter = choices[m.dxc.modeIdx]
-			}
-			m.dxc.tableReady = false
+			m.dxcCycleFilter(&m.dxc.modeIdx, &m.dxc.modeFilter, dxcFilterChoices(m.dxcAvailableModes()))
 			return m, cmd
 
 		case "delete":
-			// Cycle mode filter backward.
-			modes := m.dxcAvailableModes()
-			choices := []string{""}
-			choices = append(choices, modes...)
-			if len(choices) > 0 {
-				m.dxc.modeIdx--
-				if m.dxc.modeIdx < 0 {
-					m.dxc.modeIdx = len(choices) - 1
-				}
-				m.dxc.modeFilter = choices[m.dxc.modeIdx]
-			}
-			m.dxc.tableReady = false
+			m.dxcCycleFilterBack(&m.dxc.modeIdx, &m.dxc.modeFilter, dxcFilterChoices(m.dxcAvailableModes()))
 			return m, cmd
 
 		case "backspace":
-			// Clear all filters.
-			m.dxc.timeFilter = 0
-			m.dxc.timeIdx = 0
-			m.dxc.bandFilter = ""
-			m.dxc.bandIdx = 0
-			m.dxc.contFilter = ""
-			m.dxc.contIdx = 0
-			m.dxc.modeFilter = ""
-			m.dxc.modeIdx = 0
-			m.dxc.tableReady = false
+			// Clear all filters — only rebuild if filters were actually active.
+			if m.dxc.timeFilter != 0 || m.dxc.bandFilter != "" || m.dxc.contFilter != "" || m.dxc.modeFilter != "" {
+				m.dxc.timeFilter = 0
+				m.dxc.timeIdx = 0
+				m.dxc.bandFilter = ""
+				m.dxc.bandIdx = 0
+				m.dxc.contFilter = ""
+				m.dxc.contIdx = 0
+				m.dxc.modeFilter = ""
+				m.dxc.modeIdx = 0
+				m.dxc.tableReady = false
+			}
 			return m, cmd
 		}
 	}
@@ -136,6 +106,42 @@ func (m *Model) handleDXCUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// dxcFilterChoices prepends "" to a list of filter options so "all" (no filter)
+// is the first choice, matching dxcBandChoices/dxcContChoices conventions.
+func dxcFilterChoices(opts []string) []string {
+	return append([]string{""}, opts...)
+}
+
+// dxcCycleFilter advances *idx to the next choice in opts and sets *filter.
+// No-op if opts is empty or the new idx equals the current idx.
+func (m *Model) dxcCycleFilter(idx *int, filter *string, opts []string) {
+	if len(opts) == 0 {
+		return
+	}
+	next := (*idx + 1) % len(opts)
+	if *idx != next {
+		*idx = next
+		*filter = opts[*idx]
+		m.dxc.tableReady = false
+	}
+}
+
+// dxcCycleFilterBack decrements *idx to the previous choice in opts.
+func (m *Model) dxcCycleFilterBack(idx *int, filter *string, opts []string) {
+	if len(opts) == 0 {
+		return
+	}
+	next := *idx - 1
+	if next < 0 {
+		next = len(opts) - 1
+	}
+	if *idx != next {
+		*idx = next
+		*filter = opts[*idx]
+		m.dxc.tableReady = false
+	}
+}
+
 // dxcFillFromSelected fills the QSO form with the currently highlighted DXC spot.
 func (m *Model) dxcFillFromSelected() {
 	spot, ok := m.dxcSpotAtCursor()
@@ -150,10 +156,7 @@ func (m *Model) dxcFillFromSelected() {
 	m.lookup.wlLookupDone = false
 	m.invalidatePartnerMapCache()
 	// Clear QRZ-populated fields so old callsign data does not bleed.
-	m.fields[fieldName].SetValue("")
-	m.fields[fieldQTH].SetValue("")
-	m.fields[fieldGrid].SetValue("")
-	m.fields[fieldCountry].SetValue("")
+	m.clearQRZFields()
 
 	// Fill frequency: when WSJT-X is offline, use DXC spot frequency.
 	// Always set band and mode from the spot — these are known regardless
@@ -251,6 +254,12 @@ var wellKnownWWFFPrefixes = []string{
 	"IFF", "EAFF", "OZFF", "VKFF", "VEFF", "ONFF",
 }
 
+// Pre-compiled reference regexps — compiled once at init, not per spot fill.
+var reIOTA = regexp.MustCompile(`\b(AF|AN|AS|EU|NA|OC|SA)-\d{3,4}\b`)
+var reSOTA = regexp.MustCompile(`\b([A-Z0-9]+/[A-Z0-9]+-\d{3,4})\b`)
+var rePOTA = regexp.MustCompile(`\b([A-Z0-9]{1,4}-\d{4,6})\b`)
+var reWWFF = regexp.MustCompile(`\b((?:` + strings.Join(append([]string{"WWFF"}, wellKnownWWFFPrefixes...), "|") + `)-\d{3,5})\b`)
+
 // parseSpotCommentForRefs scans a DXC spot comment for SOTA, POTA, WWFF, and
 // IOTA reference designators and fills the corresponding QSO form fields.
 // Only fills empty fields — existing values are never overwritten.
@@ -260,41 +269,31 @@ func (m *Model) parseSpotCommentForRefs(comment string) {
 	}
 	upper := strings.ToUpper(strings.TrimSpace(comment))
 
-	// IOTA: two-letter continent code, dash, digits (e.g. "EU-005", "NA-001").
-	// Only valid IOTA continent codes: AF, AN, AS, EU, NA, OC, SA.
+	// IOTA: two-letter continent code, dash, digits.
 	if m.fields[fieldIOTA].Value() == "" {
-		re := regexp.MustCompile(`\b(AF|AN|AS|EU|NA|OC|SA)-\d{3,4}\b`)
-		if match := re.FindStringSubmatch(upper); match != nil {
+		if match := reIOTA.FindStringSubmatch(upper); match != nil {
 			m.fields[fieldIOTA].SetValue(match[0])
 		}
 	}
 
-	// SOTA: country/association prefix, slash, summit code (e.g. "SP/BZ-001")
+	// SOTA: country/association prefix, slash, summit code.
 	if m.fields[fieldSOTA].Value() == "" {
-		re := regexp.MustCompile(`\b([A-Z0-9]+/[A-Z0-9]+-\d{3,4})\b`)
-		if match := re.FindStringSubmatch(upper); match != nil {
+		if match := reSOTA.FindStringSubmatch(upper); match != nil {
 			m.fields[fieldSOTA].SetValue(match[1])
 		}
 	}
 
-	// WWFF: check BEFORE POTA — WWFF prefixes (e.g. DLFF, VEFF) would
-	// otherwise match the broader POTA pattern first.
+	// WWFF: check BEFORE POTA.
 	if m.fields[fieldWWFF].Value() == "" {
-		prefixes := append([]string{"WWFF"}, wellKnownWWFFPrefixes...)
-		pattern := `\b((?:` + strings.Join(prefixes, "|") + `)-\d{3,5})\b`
-		re := regexp.MustCompile(pattern)
-		if match := re.FindStringSubmatch(upper); match != nil {
+		if match := reWWFF.FindStringSubmatch(upper); match != nil {
 			m.fields[fieldWWFF].SetValue(match[1])
 		}
 	}
 
-	// POTA: country prefix, dash, digits (e.g. "SP-0001", "K-0001").
-	// Exclude WWFF-like patterns (any prefix ending in "FF") and KHz/DB- noise.
+	// POTA: country prefix, dash, digits. Skip WWFF-like prefixes.
 	if m.fields[fieldPOTA].Value() == "" {
-		re := regexp.MustCompile(`\b([A-Z0-9]{1,4}-\d{4,6})\b`)
-		for _, match := range re.FindAllStringSubmatch(upper, -1) {
+		for _, match := range rePOTA.FindAllStringSubmatch(upper, -1) {
 			ref := match[1]
-			// Skip if it looks like a WWFF reference (prefix ending in FF).
 			if strings.HasSuffix(strings.SplitN(ref, "-", 2)[0], "FF") {
 				continue
 			}

@@ -1,5 +1,83 @@
 # Changelog
 
+## v0.8.7 — 2026-06-28
+
+### Encrypted Secrets Store
+- **New `internal/secrets` package** — AES-256-GCM encrypted storage for passwords and API keys
+- Secrets live in `~/.config/cqops/secrets.enc` (0600 permissions), never in plaintext `config.yaml`
+- Key derived from `/etc/machine-id` (Linux) or hostname fallback — tied to the machine
+- Auto-migration: plaintext secrets from existing configs migrate to encrypted store on first run
+- Protected: QRZ password, DXC login, Wavelog API keys (per logbook)
+- Graceful degradation: corruption or wrong-machine → app starts normally, warning toast shown, secrets re-enterable via UI
+- Zero CPU overhead after startup: decrypted secrets cached in memory
+
+### Paste Support
+- Clipboard paste now works in the **wizard** (station form, rig form, QRZ credentials)
+- Clipboard paste now works in the **logbook editor** (inline QSO editing — callsign, comment, notes, etc.)
+- Clipboard paste now works in the **station editor** (logbook chooser → Wavelog section)
+- All paste targets respect field formatting (uppercase for callsigns, locator normalization, etc.)
+
+### Operator Editor Improvements
+- Callsign auto-uppercased on every keystroke (matches StationForm behavior)
+- Validation toast shown when leaving callsign field with non-standard value (no digit)
+- Validation fires on Tab, Shift+Tab, Up, Down, paste, and save (Ctrl+S)
+
+### Toast System Overhaul
+- UTF-8 symbols replace text prefixes: ● (info), ✓ (success), ▲ (warning), ✗ (error)
+- Symbols are geometric characters, not emoji — render correctly on B&W terminals
+- All integration toasts now use `Integration: message` prefix format:
+  - Solar, flrig, Hamlib, Internet, REF, Band Plan, Rig tune
+  - QRZ/Wavelog errors, DXC spotted-by notifications
+
+### Help Bar — Visible Key Bindings
+- Ins (Create) and Del (Delete) now visible in the bottom bar for:
+  - Rig config menu, logbook config menu, contest config menu, operator config menu
+- Previously only accessible via the ? help overlay
+
+### Bug Fixes (New)
+- **Wavelog upload race**: Recent QSOs table now refreshes immediately after upload completes, no longer shows stale "not sent" status
+- **Favorite recall**: frequency now trims trailing zeros (e.g. `14.250000` → `14.25`), matching ADIF export formatting
+- **Config validation**: `EnsureConfig()` now applies encrypted secrets before validating, so the app starts correctly with secrets in `secrets.enc`
+
+### Performance — ~70 optimizations across 5 rounds
+- Render caches with signature-based invalidation: contest menu, PSK map, solar panel, help overlay, buildContestLine, helpSuffix
+- `lipgloss.NewStyle()` eliminated from every hot path: root View() clip styles, DXC spacer/table wrappers, logbook editor dialogs/edit forms, confirm/spot dialog buttons, notifications menu, help overlay
+- `fmt.Sprintf` replaced with `strings.Builder`+`strconv` in all cache keys: PSK Reporter, BPL views, logbook editor, QSO form path row, DXC filter info
+- DXC: filter-aware spot cache with in-memory raw cache, pre-allocated query slices, `strconv.FormatFloat` for frequency format, `formatDXCSpotTime()` avoids `time.Format`
+- PSK Reporter: async DB loading, cached spot map markers, table rowStyle caching
+- BPL: precomputed line lists at startup, `bplFreqStr()`/`bplBwStr()` helpers using `strconv`
+- RecentQSOs: pre-computed tier max widths at `init()`, O(1) tier lookup
+- flrig: 5 goroutines → sequential XML-RPC calls (~10,800 fewer goroutine spawns per 3h session)
+- Toast dedup (2s window), `Active()` dirty-flag cache, overlay content cache
+- Other: invariant styles promoted to package-level vars, pre-compiled regexps, wizard formBox style cache, logbook download progress message cache
+
+### Code Quality — ~30 fixes across 3 rounds
+- Error handling: solar parse errors now logged, tune verify errors logged, import_validate errors include callsign context, WSJT-X event overflow warning
+- Refactoring: 130-line lookup result switch extracted from `Update()` to `handleLookupResultMsg()`, shared `handleTuneResult()` for DXC/BPL tunes, `dxcCycleFilter()`/`dxcCycleFilterBack()` generic filter cycling, `clearQRZFields()` reused
+- Default host/port constants in `config/`, deprecated `backend` field now warns, `FriendlyError` handles all HTTP codes
+- Nil guard on `cycleActiveContest()`, WSJT-X toast nil guard
+
+### Features
+- Wider Recent QSOs table when solar panel active — shows Operator + WL columns on ≥166-col terminals
+- `map.go` → `map_ascii.go` clarity rename
+
+### Bug Fixes
+- WSJT-X status dot now turns green immediately on connect (cache key missing `wsjtx.online`)
+- DXC/BPL tune now works when WSJT-X is listening but not transmitting (`wsjtx.online` → `wsjtx.tx`)
+- Rig connect toasts suppressed on reconnect loops (`vfoWarned` flag)
+- Toast overlay no longer caches full composite (was hiding content on screen switch)
+- `nfpm.yaml` fixed: removed invalid `glibc` depends, unnecessary `libsqlite3-0` recommends
+- `build.ps1` fixed: removed invalid `GOARCH=armhf`
+
+### Tests
+- `store/migrations_test.go` — migration application + idempotency tests
+- `internal/rotor/rotor_test.go` — `Status` zero-value test
+
+### Packaging & Scripts
+- `uninstall.sh` now matches install-specific PATH line instead of deleting any line containing "cqops"
+- `installer/cqops.nsi` comment no longer hardcodes version
+- Backup file `build/cqops.exe~` removed
+
 ## v0.8.6 — 2026-06-24
 
 ### Multi-Operator & Club Station Support

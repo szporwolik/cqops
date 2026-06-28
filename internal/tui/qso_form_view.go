@@ -2,7 +2,9 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/qso"
@@ -17,6 +19,10 @@ var (
 	allFields     = buildAllFields()
 	choiceIconStr = DimStyle.Render("\u25bc ")
 	choiceIconW   = lipgloss.Width(choiceIconStr)
+
+	// Pre-allocated badge styles — invariant, created once at init.
+	dupeBadgeStyle = lipgloss.NewStyle().Foreground(P.Text).Background(P.Error).Bold(true).Padding(0, 1)
+	newBadgeStyle  = lipgloss.NewStyle().Foreground(P.Text).Background(P.Success).Bold(true).Padding(0, 1)
 )
 
 func buildAllFields() []field {
@@ -49,27 +55,44 @@ func (m *Model) viewForm(width int) string {
 	}
 
 	// Build a cache signature from all inputs that affect form output.
-	// The date/time fields change every second, so this invalidates at 1 Hz.
+	// Exclude clock fields (date/time) when auto-updating. The 1-second TTL
+	// is enforced via formSec comparison, not the cache key, so the cache
+	// actually hits for ~59 out of 60 frames.
 	var sigB strings.Builder
 	fmt.Fprintf(&sigB, "%d|%d|%s|", width, m.focus, m.App.Logbook.ActiveContest)
-	if m.retainFocused {
+	if m.keepFocused {
 		sigB.WriteString("rf|")
+		fmt.Fprintf(&sigB, "ks%d|", m.keepSubFocus)
 	} else {
-		// Cursor position affects View() output — must be part of the key.
 		fmt.Fprintf(&sigB, "cp%d|", m.fields[m.focus].Position())
 	}
-	if m.retainComment {
+	if m.keepComment {
 		sigB.WriteString("rc|")
+	}
+	if m.retainForm {
+		sigB.WriteString("rt|")
 	}
 	if m.dateTimeAuto {
 		sigB.WriteString("dta|")
 	}
 	for _, f := range allFields {
+		if m.dateTimeAuto && (f == fieldDate || f == fieldTime) {
+			continue
+		}
 		sigB.WriteString(m.fields[f].Value())
 		sigB.WriteByte('|')
 	}
+	if !m.dateTimeAuto {
+		sigB.WriteString(m.fields[fieldDate].Value())
+		sigB.WriteByte('|')
+		sigB.WriteString(m.fields[fieldTime].Value())
+		sigB.WriteByte('|')
+	}
 	sig := sigB.String()
-	if m.rc.formSig == sig && m.rc.formView != "" {
+	// Cache hit: signature match AND we're in the same minute.
+	// Minute-based TTL synchronizes with the system clock crossing :00
+	// so the display is always in sync with real time.
+	if m.rc.formSig == sig && m.rc.formView != "" && m.rc.formSec == time.Now().Minute() {
 		return m.rc.formView
 	}
 
@@ -103,12 +126,13 @@ func (m *Model) viewForm(width int) string {
 	const labelW = 2 + 11
 
 	// renderLine returns the raw field line (label + value) without column-width
-	// wrapping. Textinput width is set here because bubbles/textinput requires
-	// width to be known at render time for cursor positioning.
+	// wrapping. Textinput width is set locally for rendering but is not persisted
+	// back to the model — width sync happens in Update() on WindowSizeMsg.
+	// This avoids mutating model state during View() and busting the form cache.
 	renderLine := func(f field, availW int) string {
 		label := fieldNames[f]
 		raw := strings.TrimSpace(m.fields[f].Value())
-		isFocused := int(f) == int(m.focus) && !m.retainFocused
+		isFocused := int(f) == int(m.focus) && !m.keepFocused
 		ti := m.fields[f]
 
 		choiceIcon := ""
@@ -123,14 +147,11 @@ func (m *Model) viewForm(width int) string {
 		if vw > 40 {
 			vw = 40
 		}
-		ti.SetWidth(vw)
-		if isFocused {
-			if lipgloss.Width(raw) > vw {
-				ti.SetWidth(vw - 1)
-			}
-			ti.SetCursor(ti.Position())
-			m.fields[f] = ti
+		// Set width locally for correct View() output; don't persist back.
+		if isFocused && lipgloss.Width(raw) > vw {
+			vw = vw - 1
 		}
+		ti.SetWidth(vw)
 
 		var v string
 		if raw == "" && !isFocused {
@@ -154,7 +175,7 @@ func (m *Model) viewForm(width int) string {
 		} else {
 			lblPart = fieldUnfocusedPrefix.Render(prefix) + lblStyled
 		}
-		return lipgloss.JoinHorizontal(lipgloss.Center, lblPart, " ", val)
+		return "    " + lipgloss.JoinHorizontal(lipgloss.Center, lblPart, " ", val)
 	}
 
 	// Count visible fields in each column so the form shrinks when exchange
@@ -204,42 +225,78 @@ func (m *Model) viewForm(width int) string {
 		b.WriteString("\n")
 	}
 
-	// Comment row spans first two columns; Retain checkbox in third.
-	commentLine := commentStyle.Render(renderLine(fieldComment, colW*2))
-	retainBox := colStyle.Render(m.renderRetainCheckbox(colW))
-	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, commentLine, retainBox))
+	// Comment row: Comment in left, Keep in middle, Retain in right — all one line.
+	commentLine := colStyle.Render(renderLine(fieldComment, colW))
+	keepBox := colStyle.Render(m.renderKeepCheckbox(colW))
+	retainBox := colStyle.Render(m.renderRetainFormCheckbox(colW))
+	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, commentLine, keepBox, retainBox))
 
 	result := b.String()
 	m.rc.formSig = sig
 	m.rc.formView = result
+	m.rc.formSec = time.Now().Minute()
 
 	return result
 }
 
-// renderRetainCheckbox renders the "Retain" checkbox next to the Comment field.
-func (m *Model) renderRetainCheckbox(_ int) string {
+// renderKeepCheckbox renders the "Keep" checkbox next to the Comment field.
+func (m *Model) renderKeepCheckbox(_ int) string {
 	mark := "[ ]"
-	label := "Retain"
-	if m.retainComment {
+	label := "Keep"
+	if m.keepComment {
 		mark = "[x]"
 	}
 	space := " "
-	if m.retainFocused {
-		return lipgloss.JoinHorizontal(lipgloss.Center,
+	if m.keepFocused && m.keepSubFocus == 0 {
+		return "    " + lipgloss.JoinHorizontal(lipgloss.Center,
 			CursorStyle.Render(" "+mark),
 			space,
 			InputStyle.Render(label),
 		)
 	}
-	if m.retainComment {
-		return lipgloss.JoinHorizontal(lipgloss.Center,
+	if m.keepComment {
+		return "    " + lipgloss.JoinHorizontal(lipgloss.Center,
 			space,
 			InputStyle.Render(mark),
 			space,
 			DimStyle.Render(label),
 		)
 	}
-	return lipgloss.JoinHorizontal(lipgloss.Center,
+	return "    " + lipgloss.JoinHorizontal(lipgloss.Center,
+		space,
+		DimStyle.Render(mark),
+		space,
+		DimStyle.Render(label),
+	)
+}
+
+// renderRetainFormCheckbox renders the "Retain" checkbox below the middle column.
+// When checked, the form is NOT cleared after a QSO save — useful for logging
+// the same contact across multiple logbooks (e.g. private → club station).
+func (m *Model) renderRetainFormCheckbox(_ int) string {
+	mark := "[ ]"
+	label := "Retain"
+	if m.retainForm {
+		mark = "[x]"
+	}
+	space := " "
+	focused := m.keepFocused && m.keepSubFocus == 1
+	if focused {
+		return "    " + lipgloss.JoinHorizontal(lipgloss.Center,
+			CursorStyle.Render(" "+mark),
+			space,
+			InputStyle.Render(label),
+		)
+	}
+	if m.retainForm {
+		return "    " + lipgloss.JoinHorizontal(lipgloss.Center,
+			space,
+			InputStyle.Render(mark),
+			space,
+			DimStyle.Render(label),
+		)
+	}
+	return "    " + lipgloss.JoinHorizontal(lipgloss.Center,
 		space,
 		DimStyle.Render(mark),
 		space,
@@ -298,21 +355,21 @@ func (m *Model) formPathRow(width int) string {
 		if m.rotor.name != "" {
 			rotorLine += " " + m.rotor.name
 		}
-		rotorLine += fmt.Sprintf("  Az %.0f\u00b0", m.rotor.azimuth)
+		rotorLine += "  Az " + strconv.FormatFloat(m.rotor.azimuth, 'f', 0, 64) + "\u00b0"
 		if m.rotor.targetAz != 0 && absDiff(m.rotor.azimuth, m.rotor.targetAz) >= 1 {
 			arrow := "\u2192"
 			if m.rotor.targetAz < m.rotor.azimuth {
 				arrow = "\u2190"
 			}
-			rotorLine += S.Warning.Render(fmt.Sprintf(" (%s %.0f\u00b0)", arrow, m.rotor.targetAz))
+			rotorLine += S.Warning.Render(" (" + arrow + " " + strconv.FormatFloat(m.rotor.targetAz, 'f', 0, 64) + "\u00b0)")
 		}
-		rotorLine += fmt.Sprintf("  El %.0f\u00b0", m.rotor.elevation)
+		rotorLine += "  El " + strconv.FormatFloat(m.rotor.elevation, 'f', 0, 64) + "\u00b0"
 		if m.rotor.targetEl != 0 && absDiff(m.rotor.elevation, m.rotor.targetEl) >= 1 {
 			arrow := "\u2191"
 			if m.rotor.targetEl < m.rotor.elevation {
 				arrow = "\u2193"
 			}
-			rotorLine += S.Warning.Render(fmt.Sprintf(" (%s %.0f\u00b0)", arrow, m.rotor.targetEl))
+			rotorLine += S.Warning.Render(" (" + arrow + " " + strconv.FormatFloat(m.rotor.targetEl, 'f', 0, 64) + "\u00b0)")
 		}
 	}
 
@@ -372,8 +429,8 @@ func (m *Model) formPathRow(width int) string {
 	const bannerNewDXCC = "New DXCC!"
 	const bannerDupe = "DUPE!"
 
-	dupeStyle := lipgloss.NewStyle().Foreground(P.Text).Background(P.Error).Bold(true).Padding(0, 1)
-	newStyle := lipgloss.NewStyle().Foreground(P.Text).Background(P.Success).Bold(true).Padding(0, 1)
+	dupeStyle := dupeBadgeStyle
+	newStyle := newBadgeStyle
 
 	var badges []string
 	if m.dupe {
@@ -387,15 +444,39 @@ func (m *Model) formPathRow(width int) string {
 	}
 
 	// Build cache key: grids + distance + stats + WL + dupe.
-	wlSig := "WL:"
+	var wlSigB strings.Builder
+	wlSigB.WriteString("WL:")
 	if m.lookup.wlPrivateData != nil {
-		wlSig += fmt.Sprintf("wk=%v,dxcc=%v", m.lookup.wlPrivateData.Worked(), m.lookup.wlPrivateData.DXCCConfirmed())
+		wlSigB.WriteString("wk=")
+		wlSigB.WriteString(strconv.FormatBool(m.lookup.wlPrivateData.Worked()))
+		wlSigB.WriteString(",dxcc=")
+		wlSigB.WriteString(strconv.FormatBool(m.lookup.wlPrivateData.DXCCConfirmed()))
 	}
-	sig := ownGrid + "|" + partnerGrid + "|" + m.App.Config.General.DistanceUnit + "|" + statsSig + "|" + wlSig + "|" + fmt.Sprint(m.dupe)
+	wlSig := wlSigB.String()
+	var sigB strings.Builder
+	sigB.WriteString(ownGrid)
+	sigB.WriteByte('|')
+	sigB.WriteString(partnerGrid)
+	sigB.WriteByte('|')
+	sigB.WriteString(m.App.Config.General.DistanceUnit)
+	sigB.WriteByte('|')
+	sigB.WriteString(statsSig)
+	sigB.WriteByte('|')
+	sigB.WriteString(wlSig)
+	sigB.WriteByte('|')
+	sigB.WriteString(strconv.FormatBool(m.dupe))
 	// Include rotor state so target arrows update immediately.
 	if m.rotor.connected {
-		sig += fmt.Sprintf("|rotor:%.0f,%.0f,%.0f,%.0f", m.rotor.azimuth, m.rotor.elevation, m.rotor.targetAz, m.rotor.targetEl)
+		sigB.WriteString("|rotor:")
+		sigB.WriteString(strconv.FormatFloat(m.rotor.azimuth, 'f', 0, 64))
+		sigB.WriteByte(',')
+		sigB.WriteString(strconv.FormatFloat(m.rotor.elevation, 'f', 0, 64))
+		sigB.WriteByte(',')
+		sigB.WriteString(strconv.FormatFloat(m.rotor.targetAz, 'f', 0, 64))
+		sigB.WriteByte(',')
+		sigB.WriteString(strconv.FormatFloat(m.rotor.targetEl, 'f', 0, 64))
 	}
+	sig := sigB.String()
 
 	if m.rc.pathSig == sig && m.rc.pathLine != "" {
 		return m.rc.pathLine

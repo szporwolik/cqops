@@ -2,17 +2,13 @@ package main
 
 import (
 	"testing"
-
-	"github.com/szporwolik/cqops/internal/cli"
 )
 
 // TestPackageStructure verifies the main package links correctly
 // against its dependency (internal/cli). A build failure here means
 // the import path or API is broken.
 func TestPackageStructure(t *testing.T) {
-	// Verify the CLI package can be referenced.
-	// cli.Execute is the entry point called by main().
-	_ = cli.Execute
+	// go build already verifies linkage — no explicit check needed.
 }
 
 // TestMainFunctionExists is a compile-time check that main exists.

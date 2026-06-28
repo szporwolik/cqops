@@ -47,6 +47,12 @@ type ContestChooser struct {
 	width               int
 	height              int
 	done                bool
+
+	// Render cache — avoids rebuilding views on every frame.
+	cachedList string
+	cachedForm string
+	listSig    string
+	formSig    string
 }
 
 func NewContestChooser(a *app.App, tq *ToastQueue) *ContestChooser {
@@ -478,7 +484,6 @@ func (c *ContestChooser) View() tea.View {
 }
 
 func (c *ContestChooser) viewList() string {
-	var b strings.Builder
 	w := c.width
 	if w < 40 {
 		w = 80
@@ -487,6 +492,26 @@ func (c *ContestChooser) viewList() string {
 	if h < 10 {
 		h = 24
 	}
+
+	// Render cache — skip expensive work on every frame.
+	var sb strings.Builder
+	sb.WriteString(strconv.Itoa(w))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(h))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(c.cursor))
+	sb.WriteByte('|')
+	sb.WriteString(c.app.Logbook.ActiveContest)
+	for _, n := range c.names {
+		sb.WriteByte(',')
+		sb.WriteString(n)
+	}
+	sig := sb.String()
+	if c.listSig == sig && c.cachedList != "" {
+		return c.cachedList
+	}
+
+	var b strings.Builder
 	contentH := contentHeight(h)
 	if contentH < 3 {
 		contentH = 3
@@ -540,11 +565,13 @@ func (c *ContestChooser) viewList() string {
 	}
 
 	body := drawMenuWithHeader("Configuration \u2014 Contests", b.String(), w)
-	return fillBody(body, contentH)
+	result := fillBody(body, contentH)
+	c.cachedList = result
+	c.listSig = sig
+	return result
 }
 
 func (c *ContestChooser) viewForm() string {
-	var b strings.Builder
 	w := c.width
 	if w < 40 {
 		w = 80
@@ -553,6 +580,36 @@ func (c *ContestChooser) viewForm() string {
 	if h < 10 {
 		h = 24
 	}
+
+	// Render cache — skip expensive work on every frame.
+	var sb strings.Builder
+	sb.WriteString(strconv.Itoa(w))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(h))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(c.focus))
+	sb.WriteByte('|')
+	sb.WriteString(c.nameInput.Value())
+	sb.WriteByte('|')
+	sb.WriteString(c.dateInput.Value())
+	sb.WriteByte('|')
+	sb.WriteString(c.nextInput.Value())
+	sb.WriteByte('|')
+	sb.WriteString(c.contInput.Value())
+	sb.WriteByte('|')
+	sb.WriteString(c.exchSentInput.Value())
+	sb.WriteByte('|')
+	sb.WriteString(c.exchRcvdInput.Value())
+	sb.WriteString(strconv.FormatBool(c.inUse))
+	sb.WriteString(strconv.FormatBool(c.prefillExchange))
+	sb.WriteString(strconv.FormatBool(c.prefillExchangeRcvd))
+	sb.WriteString(strconv.Itoa(int(c.mode)))
+	sig := sb.String()
+	if c.formSig == sig && c.cachedForm != "" {
+		return c.cachedForm
+	}
+
+	var b strings.Builder
 	contentH := contentHeight(h)
 	if contentH < 3 {
 		contentH = 3
@@ -665,26 +722,25 @@ func (c *ContestChooser) viewForm() string {
 		{"@mygrid", "Your station grid square"},
 	}
 
-	// Cap width so the reference never stretches indefinitely.
-	refW := w
-	if refW > partnerMapMaxW {
-		refW = partnerMapMaxW
-	}
-	bodyW := refW - 4 // border padding
-
-	// Single-column layout — two columns wrap too easily on narrow
-	// terminals and the marker descriptions vary in length.
+	// Pre-built marker lines — avoids fmt.Sprintf on every frame.
 	for _, m := range markers {
-		line := fmt.Sprintf("  %-12s %s", m[0], DimStyle.Render(m[1]))
-		b.WriteString(padOrTrunc(line, bodyW))
-		b.WriteString("\n")
+		b.WriteString("  ")
+		b.WriteString(m[0])
+		for i := len(m[0]); i < 12; i++ {
+			b.WriteByte(' ')
+		}
+		b.WriteString(DimStyle.Render(m[1]))
+		b.WriteByte('\n')
 	}
 
 	b.WriteString("\n")
 	b.WriteString(DimStyle.Render("  Example: @rst @serial will generate 59 023"))
 
 	body := drawMenuWithHeader("Configuration \u2014 Contests \u2014 "+title, b.String(), w)
-	return fillBody(body, contentH)
+	result := fillBody(body, contentH)
+	c.cachedForm = result
+	c.formSig = sig
+	return result
 }
 
 func (c *ContestChooser) renderCheckbox(b *strings.Builder, w, focusIdx int, label string, checked bool) {

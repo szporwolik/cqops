@@ -21,7 +21,12 @@ const qsoCols = `call, qso_date, time_on, time_off, band, freq, freq_rx, mode, s
 		my_sig, my_sig_info,
 		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id`
 
+// placeholders51 is a pre-computed string of 51 comma-separated "?" markers,
+// used by InsertQSO to avoid a per-insert []string allocation.
+const placeholders51 = "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?"
+
 // placeholders returns a string of n comma-separated "?" placeholders.
+// Prefer the pre-computed placeholders51 constant when n=51.
 func placeholders(n int) string {
 	parts := make([]string, n)
 	for i := range parts {
@@ -45,8 +50,8 @@ func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 	for attempt := 0; attempt < 3; attempt++ {
 		var res sql.Result
 		res, err = db.Exec(
-			`INSERT INTO qsos (`+qsoCols+`, created_at, updated_at)
-			VALUES (`+placeholders(53)+`)`,
+			`INSERT INTO qsos (`+qsoCols+`, base_call, created_at, updated_at)
+			VALUES (`+placeholders51+`, ?, ?, ?)`,
 			q.Call, q.QSODate, q.TimeOn, q.TimeOff,
 			q.Band, q.Freq, q.FreqRx, q.Mode, q.Submode,
 			q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
@@ -55,6 +60,7 @@ func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 			q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
 			q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
 			q.CQZone, q.ITUZone, q.MyCQZone, q.MyITUZone, q.MyDXCC, q.MySIG, q.MySIGInfo, q.WavelogUploaded, q.ContestID, q.ExchSent, q.ExchRcvd, q.STX, q.SRX, q.STXString, q.SRXString, q.ContestADIFID,
+			qso.DeriveBaseCall(q.Call),
 			q.CreatedAt.Format(time.RFC3339), q.UpdatedAt.Format(time.RFC3339),
 		)
 		if err == nil {
@@ -139,6 +145,72 @@ func ListQSOs(db *sql.DB, limit int, contestID string) ([]qso.QSO, error) {
 	return qsos, rows.Err()
 }
 
+// ListQSOsPageWithCount returns a page of QSOs and the total count in a single
+// query using COUNT(*) OVER(), avoiding the need for a separate CountQSOs call.
+func ListQSOsPageWithCount(db *sql.DB, limit, offset int, contestID string) ([]qso.QSO, int, error) {
+	query := `SELECT id, call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,
+		rst_sent, rst_rcvd, gridsquare, name, qth, country, comment, notes, tx_pwr,
+		distance, bearing,
+		sota_ref, pota_ref, wwff_ref, iota, sig, sig_info,
+		my_sota_ref, my_pota_ref, my_wwff_ref,
+		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
+		cq_zone, itu_zone,
+		my_cq_zone, my_itu_zone, my_dxcc,
+		my_sig, my_sig_info,
+		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
+		created_at, updated_at,
+		COUNT(*) OVER() as total_count
+		FROM qsos`
+	var args []any
+	if contestID != "" {
+		query += ` WHERE contest_id = ?`
+		args = append(args, contestID)
+	}
+	query += `
+		ORDER BY qso_date DESC, time_on DESC, id DESC
+		LIMIT ? OFFSET ?`
+	args = append(args, limit, offset)
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list qsos page with count: %w", err)
+	}
+	defer rows.Close()
+
+	var qsos []qso.QSO
+	total := 0
+	for rows.Next() {
+		var q qso.QSO
+		var createdAt, updatedAt string
+		err := rows.Scan(
+			&q.ID, &q.Call, &q.QSODate, &q.TimeOn, &q.TimeOff,
+			&q.Band, &q.Freq, &q.FreqRx, &q.Mode, &q.Submode,
+			&q.RSTSent, &q.RSTRcvd, &q.GridSquare, &q.Name, &q.QTH, &q.Country, &q.Comment, &q.Notes, &q.TXPower,
+			&q.Distance, &q.Bearing,
+			&q.SOTARef, &q.POTARef, &q.WWFFRef, &q.IOTA, &q.SIG, &q.SIGInfo,
+			&q.MySOTARef, &q.MyPOTARef, &q.MyWWFFRef,
+			&q.StationCallsign, &q.Operator, &q.MyGridSquare, &q.MyRig, &q.MyAntenna, &q.Source,
+			&q.CQZone, &q.ITUZone,
+			&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
+			&q.MySIG, &q.MySIGInfo,
+			&q.WavelogUploaded, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
+			&createdAt, &updatedAt,
+			&total,
+		)
+		if err != nil {
+			return nil, 0, fmt.Errorf("scan qso with count: %w", err)
+		}
+		if t, err := time.Parse(time.RFC3339, createdAt); err == nil {
+			q.CreatedAt = t
+		}
+		if t, err := time.Parse(time.RFC3339, updatedAt); err == nil {
+			q.UpdatedAt = t
+		}
+		qsos = append(qsos, q)
+	}
+
+	return qsos, total, rows.Err()
+}
+
 // ListQSOsPage returns a page of QSOs ordered by QSO date/time descending.
 // If contestID is non-empty, only QSOs matching that contest are returned.
 func ListQSOsPage(db *sql.DB, limit, offset int, contestID string) ([]qso.QSO, error) {
@@ -202,9 +274,11 @@ func ListQSOsPage(db *sql.DB, limit, offset int, contestID string) ([]qso.QSO, e
 	return qsos, rows.Err()
 }
 
-// SearchQSOsByCall returns QSOs matching a callsign by exact or prefix match.
-// "SP9SPM" matches "SP9SPM", "SP9SPM/P", "9A/SP9SPM", "9A/SP9SPM/P", etc.
+// SearchQSOsByCall returns QSOs matching a callsign by base callsign match.
+// Uses the indexed base_call column (extracted core callsign) for fast lookups.
+// Matches: "SP9SPM", "SP9SPM/P", "9A/SP9SPM", "9A/SP9SPM/P" all via base_call="SP9SPM".
 func SearchQSOsByCall(db *sql.DB, call string, limit int) ([]qso.QSO, error) {
+	baseCall := qso.DeriveBaseCall(call)
 	query := `SELECT id, call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,
 		rst_sent, rst_rcvd, gridsquare, name, qth, country, comment, notes, tx_pwr,
 		distance, bearing,
@@ -217,11 +291,11 @@ func SearchQSOsByCall(db *sql.DB, call string, limit int) ([]qso.QSO, error) {
 		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
 		created_at, updated_at
 		FROM qsos
-		WHERE call = ? OR call LIKE ? OR call LIKE ? OR call LIKE ?
+		WHERE base_call = ?
 		ORDER BY id DESC
 		LIMIT ?`
 
-	rows, err := db.Query(query, call, call+"/%", "%/"+call, "%/"+call+"/%", limit)
+	rows, err := db.Query(query, baseCall, limit)
 	if err != nil {
 		return nil, fmt.Errorf("search qsos by call: %w", err)
 	}

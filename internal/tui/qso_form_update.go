@@ -51,7 +51,7 @@ func (m *Model) lookupCallCmd(call string) tea.Cmd {
 
 // focusField sets focus to the specified QSO form field.
 func (m *Model) focusField(f field) {
-	m.retainFocused = false
+	m.keepFocused = false
 	m.onFieldExit()
 	m.fields[m.focus].Blur()
 	m.focus = f
@@ -88,23 +88,27 @@ func (m *Model) contestAutoFocusExchRcvd() {
 func (m *Model) nextField() {
 	m.onFieldExit()
 
-	if m.retainFocused {
-		m.retainFocused = false
-		m.focus = 0
-		m.fields[m.focus].Focus()
+	if m.keepFocused {
+		if m.keepSubFocus == 0 {
+			m.keepSubFocus = 1 // Keep → Retain
+		} else {
+			// Retain → Comment
+			m.keepFocused = false
+			m.keepSubFocus = 0
+			m.focus = fieldComment
+			m.fields[m.focus].Focus()
+		}
 		return
 	}
 
 	m.fields[m.focus].Blur()
 	if m.focus == fieldComment {
-		m.retainFocused = true
+		m.keepFocused = true
+		m.keepSubFocus = 0
 	} else {
-		// Horizontal tab: jump to the same row position in the next column.
-		// Left → Middle → Right → Left. Comment wraps to first field.
 		col, pos := m.fieldColumnPos(m.focus)
 		next := m.horizontalTabTarget(col, pos, +1)
 		m.focus = next
-		// Skip hidden fields (exchange fields when no contest active).
 		for m.isFieldHidden(m.focus) {
 			col2, pos2 := m.fieldColumnPos(m.focus)
 			m.focus = m.horizontalTabTarget(col2, pos2, +1)
@@ -118,32 +122,40 @@ func (m *Model) nextField() {
 func (m *Model) prevField() {
 	m.onFieldExit()
 
-	if m.retainFocused {
-		m.retainFocused = false
-		m.focus = fieldComment
-		m.fields[m.focus].Focus()
+	if m.keepFocused {
+		if m.keepSubFocus == 1 {
+			m.keepSubFocus = 0 // Retain → Keep
+		} else {
+			m.keepFocused = false
+			m.keepSubFocus = 0
+			m.focus = fieldComment
+			m.fields[m.focus].Focus()
+		}
 		return
 	}
 
 	m.fields[m.focus].Blur()
-	if m.focus == 0 {
-		m.retainFocused = true
-	} else {
-		col, pos := m.fieldColumnPos(m.focus)
-		next := m.horizontalTabTarget(col, pos, -1)
-		m.focus = next
-		for m.isFieldHidden(m.focus) {
-			col2, pos2 := m.fieldColumnPos(m.focus)
-			m.focus = m.horizontalTabTarget(col2, pos2, -1)
-		}
-		m.fields[m.focus].Focus()
+	if m.focus == fieldComment {
+		m.keepFocused = true
+		m.keepSubFocus = 1 // Comment → Retain
+		return
 	}
+	// Shift+Tab from field 0 wraps horizontally to right column, not to checkbox row.
+	col, pos := m.fieldColumnPos(m.focus)
+	next := m.horizontalTabTarget(col, pos, -1)
+	m.focus = next
+	for m.isFieldHidden(m.focus) {
+		col2, pos2 := m.fieldColumnPos(m.focus)
+		m.focus = m.horizontalTabTarget(col2, pos2, -1)
+	}
+	m.fields[m.focus].Focus()
 }
 
+// formCols is the pre-built QSO form column layout — immutable.
+var formCols = [3][]field{formLeft, formMiddle, formRight}
+
 // formColumns returns the three QSO form column arrays.
-func formColumns() [3][]field {
-	return [3][]field{formLeft, formMiddle, formRight}
-}
+func formColumns() [3][]field { return formCols }
 
 // fieldColumnPos returns the column index (0=left, 1=middle, 2=right, 3=comment)
 // and the row position within that column for the given field.
@@ -167,113 +179,173 @@ func (m *Model) horizontalTabTarget(fromCol, fromPos, dir int) field {
 	cols := formColumns()
 	toCol := (fromCol + dir + len(cols)) % len(cols)
 	targets := cols[toCol]
-	// Clamp to the last row if the target column is shorter.
 	if fromPos >= len(targets) {
 		fromPos = len(targets) - 1
 	}
 	return targets[fromPos]
 }
 
-// nextRowField moves focus to the next field vertically (Down arrow).
-// Walks down within the current column, then to Comment (the row below all
-// columns), then wraps to the top of the first column.
+// nextRowField moves focus down (↓). Each column wraps through its footer:
+// col 0 bottom → Comment → col 0 top. col 1 → Keep. col 2 → Retain.
 func (m *Model) nextRowField() {
 	m.onFieldExit()
 
-	if m.retainFocused {
-		m.retainFocused = false
-		m.focus = 0
+	if m.keepFocused {
+		// In checkbox row: Down wraps to top of corresponding column.
+		s := m.keepSubFocus
+		m.keepFocused = false
+		m.keepSubFocus = 0
+		switch s {
+		case 0:
+			m.focus = formMiddle[0]
+		case 1:
+			m.focus = formRight[0]
+		}
 		m.fields[m.focus].Focus()
 		return
 	}
 
 	m.fields[m.focus].Blur()
 	if m.focus == fieldComment {
-		// Comment is the bottom row. Wrap to the top of the left column.
 		m.focus = formLeft[0]
+		m.fields[m.focus].Focus()
+		return
+	}
+
+	col, pos := m.fieldColumnPos(m.focus)
+	if col < 0 || col > 2 {
+		m.focus = (m.focus + 1) % fieldCount
 	} else {
-		col, pos := m.fieldColumnPos(m.focus)
-		if col < 0 || col > 2 {
-			// Not in a column (shouldn't happen). Fall back to linear.
-			m.focus = (m.focus + 1) % fieldCount
+		colFields := formColumns()[col]
+		if pos+1 < len(colFields) {
+			m.focus = colFields[pos+1]
 		} else {
-			cols := formColumns()
-			if pos+1 < len(cols[col]) {
-				// Same column, next row.
-				m.focus = cols[col][pos+1]
-			} else {
-				// Bottom of column → go to Comment (the row below).
+			switch col {
+			case 0:
 				m.focus = fieldComment
+			case 1:
+				m.keepFocused = true
+				m.keepSubFocus = 0
+				return
+			case 2:
+				m.keepFocused = true
+				m.keepSubFocus = 1
+				return
 			}
 		}
 	}
-	// Skip hidden fields (exchange fields when no contest).
 	for m.isFieldHidden(m.focus) {
-		col, pos := m.fieldColumnPos(m.focus)
-		if col < 0 || col > 2 {
+		c, p := m.fieldColumnPos(m.focus)
+		if c < 0 || c > 2 {
 			m.focus = (m.focus + 1) % fieldCount
 		} else {
-			cols := formColumns()
-			if pos+1 < len(cols[col]) {
-				m.focus = cols[col][pos+1]
+			cf := formColumns()[c]
+			if p+1 < len(cf) {
+				m.focus = cf[p+1]
 			} else {
-				m.focus = fieldComment
-				break
+				// Bottom of column with hidden fields → route to footer.
+				switch c {
+				case 0:
+					m.focus = fieldComment
+				case 1:
+					m.keepFocused = true
+					m.keepSubFocus = 0
+					return
+				case 2:
+					m.keepFocused = true
+					m.keepSubFocus = 1
+					return
+				}
 			}
 		}
 	}
 	m.fields[m.focus].Focus()
 }
 
-// prevRowField moves focus to the previous field vertically (Up arrow).
-// Walks up within the current column, then to Comment (the row below all
-// columns), then wraps to the bottom of the last column.
+// prevRowField moves focus up (↑). Each column wraps through its footer:
+// Comment → col 0 bottom. Keep → col 1 bottom. Retain → col 2 bottom.
 func (m *Model) prevRowField() {
 	m.onFieldExit()
 
-	if m.retainFocused {
-		m.retainFocused = false
-		m.focus = fieldComment
+	if m.keepFocused {
+		// In checkbox row: Up wraps to bottom of corresponding column.
+		s := m.keepSubFocus
+		m.keepFocused = false
+		m.keepSubFocus = 0
+		switch s {
+		case 0:
+			m.focus = formMiddle[len(formMiddle)-1]
+		case 1:
+			m.focus = formRight[len(formRight)-1]
+		}
 		m.fields[m.focus].Focus()
 		return
 	}
 
 	m.fields[m.focus].Blur()
 	if m.focus == fieldComment {
-		// Comment is the bottom row. Go up to the last field of the right column.
-		rc := formRight
-		m.focus = rc[len(rc)-1]
-	} else {
-		col, pos := m.fieldColumnPos(m.focus)
-		if col < 0 || col > 2 {
-			m.focus--
-			if m.focus < 0 {
-				m.focus = fieldComment
-			}
-		} else {
+		// Go to the last visible field in the left column.
+		m.focus = formLeft[len(formLeft)-1]
+		for m.isFieldHidden(m.focus) {
+			col, pos := m.fieldColumnPos(m.focus)
 			if pos > 0 {
-				// Same column, previous row.
 				m.focus = formColumns()[col][pos-1]
 			} else {
-				// Top of column → go to Comment (the row below).
+				break
+			}
+		}
+		m.fields[m.focus].Focus()
+		return
+	}
+
+	col, pos := m.fieldColumnPos(m.focus)
+	if col < 0 || col > 2 {
+		m.focus--
+		if m.focus < 0 {
+			m.focus = fieldComment
+		}
+	} else {
+		if pos > 0 {
+			m.focus = formColumns()[col][pos-1]
+		} else {
+			// Top of column → go to footer.
+			switch col {
+			case 0:
 				m.focus = fieldComment
+			case 1:
+				m.keepFocused = true
+				m.keepSubFocus = 0
+				return
+			case 2:
+				m.keepFocused = true
+				m.keepSubFocus = 1
+				return
 			}
 		}
 	}
-	// Skip hidden fields.
 	for m.isFieldHidden(m.focus) {
-		col, pos := m.fieldColumnPos(m.focus)
-		if col < 0 || col > 2 {
+		c, p := m.fieldColumnPos(m.focus)
+		if c < 0 || c > 2 {
 			m.focus--
 			if m.focus < 0 {
 				m.focus = fieldComment
 			}
 		} else {
-			if pos > 0 {
-				m.focus = formColumns()[col][pos-1]
+			if p > 0 {
+				m.focus = formColumns()[c][p-1]
 			} else {
-				m.focus = fieldComment
-				break
+				switch c {
+				case 0:
+					m.focus = fieldComment
+				case 1:
+					m.keepFocused = true
+					m.keepSubFocus = 0
+					return
+				case 2:
+					m.keepFocused = true
+					m.keepSubFocus = 1
+					return
+				}
 			}
 		}
 	}
@@ -444,7 +516,7 @@ func (m *Model) autoFillSSBSubmode() {
 // updateFocused handles generic keypress input for the focused QSO form field.
 // Each field has specific side effects documented inline.
 func (m *Model) updateFocused(msg tea.KeyPressMsg) {
-	if m.retainFocused {
+	if m.keepFocused {
 		return
 	}
 
@@ -484,8 +556,22 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 
 	case fieldBand:
 		// Changing band manually: derive default mode/submode.
+		// Also invalidate WL lookup data since band-specific stats changed.
 		if m.fields[f].Value() != prevVal {
 			m.applyFreqDefaults()
+			if m.lookup.wlPrivateData != nil || m.lookup.wlLookupDone {
+				m.lookup.wlPrivateData = nil
+				m.lookup.wlLookupDone = false
+			}
+		}
+
+	case fieldMode:
+		if m.fields[f].Value() != prevVal {
+			// Invalidate WL lookup data since mode-specific stats changed.
+			if m.lookup.wlPrivateData != nil || m.lookup.wlLookupDone {
+				m.lookup.wlPrivateData = nil
+				m.lookup.wlLookupDone = false
+			}
 		}
 
 	case fieldGrid:
@@ -646,13 +732,11 @@ func (m *Model) onFieldExit() {
 }
 
 // checkDupe sets m.dupe to true when the current call/band/mode/date
-// combination already exists in the database, unless the existing QSO
-// has different reference data (e.g. different SOTA summit same day).
+// combination already exists in the database. Result is cached by
+// (call,band,mode,date) to avoid re-querying on every field navigation.
 func (m *Model) checkDupe() {
-	applog.Debug("dupe: checkDupe called", "focus", int(m.focus))
 	m.dupe = false
 	if m.App == nil || m.App.DB == nil {
-		applog.Debug("dupe: DB not available", "appNil", m.App == nil, "dbNil", m.App != nil && m.App.DB == nil)
 		return
 	}
 	call := qso.NormalizeCall(m.fields[fieldCall].Value())
@@ -660,12 +744,19 @@ func (m *Model) checkDupe() {
 	mode := strings.ToUpper(strings.TrimSpace(m.fields[fieldMode].Value()))
 	date := qso.StripNonDigits(m.fields[fieldDate].Value())
 	if call == "" || band == "" || mode == "" || date == "" {
-		applog.Debug("dupe: fields empty", "call", call, "band", band, "mode", mode, "date", date)
 		return
 	}
+	// Cache key — date changes once per day, so cache is highly effective.
+	key := call + "|" + band + "|" + mode + "|" + date
+	if m.dupeCacheKey == key {
+		m.dupe = m.dupeCacheResult
+		return
+	}
+	m.dupeCacheKey = key
+
 	isDupe, existing := store.IsDuplicateQSO(m.App.DB, call, band, mode, date)
 	if !isDupe || existing == nil {
-		applog.Debug("dupe: no match", "call", call, "band", band, "mode", mode, "date", date)
+		m.dupeCacheResult = false
 		return
 	}
 	// If any reference field differs, it's not a dupe (e.g. different summit).
@@ -675,11 +766,11 @@ func (m *Model) checkDupe() {
 	formIOTA := strings.TrimSpace(m.fields[fieldIOTA].Value())
 	if formSOTA != existing.SOTA || formPOTA != existing.POTA ||
 		formWWFF != existing.WWFF || formIOTA != existing.IOTA {
-		applog.Debug("dupe: ref mismatch — not a dupe", "formSOTA", formSOTA, "dbSOTA", existing.SOTA)
+		m.dupeCacheResult = false
 		return
 	}
 	m.dupe = true
-	applog.Debug("dupe: DETECTED", "call", call, "band", band, "mode", mode, "date", date)
+	m.dupeCacheResult = true
 }
 
 // clearForm resets the entire QSO form for a new QSO: clears fields (with
@@ -688,7 +779,10 @@ func (m *Model) checkDupe() {
 // actively viewing the Partner/Image screen.
 func (m *Model) clearForm() {
 	m.dupe = false
-	m.resetQSOFields()
+	m.dupeCacheKey = ""
+	if !m.retainForm {
+		m.resetQSOFields()
+	}
 	m.resetPartnerLookup()
 	m.resetNavigation()
 	m.clearFilteredTable()
@@ -701,7 +795,7 @@ func (m *Model) clearForm() {
 // the retain-comment setting.  Focus moves to the Call field.
 func (m *Model) resetQSOFields() {
 	retainedComment := ""
-	if m.retainComment {
+	if m.keepComment {
 		retainedComment = m.fields[fieldComment].Value()
 	}
 
@@ -734,7 +828,7 @@ func (m *Model) resetQSOFields() {
 		m.fields[fieldComment].SetValue(retainedComment)
 	}
 	m.dateTimeAuto = true
-	m.retainFocused = false
+	m.keepFocused = false
 	m.gridSource = gridSourceNone
 	m.ref.refNamesDirty = true
 	m.focus = fieldCall

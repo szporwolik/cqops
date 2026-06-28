@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +27,40 @@ func (m *Model) pskFetchCmd() tea.Cmd {
 	return func() tea.Msg {
 		reports, ft, err := psk.FetchReports(call, cacheDir)
 		return pskFetchMsg{reports: reports, fetchTime: ft, err: err}
+	}
+}
+
+// pskSpotsLoadedMsg carries spots loaded from SQLite asynchronously.
+type pskSpotsLoadedMsg struct {
+	spots   []psk.Report
+	spotKey string
+	err     error
+}
+
+// loadPSKSpotsCmd returns a tea.Cmd that queries spots from SQLite
+// asynchronously, avoiding DB I/O during View().
+func (m *Model) loadPSKSpotsCmd(call string, cutoff int64, spotKey string) tea.Cmd {
+	db := m.App.DB
+	return func() tea.Msg {
+		rawSpots, err := store.QueryPSKSpots(db, call, cutoff)
+		if err != nil {
+			return pskSpotsLoadedMsg{spotKey: spotKey, err: err}
+		}
+		spots := make([]psk.Report, len(rawSpots))
+		for i, s := range rawSpots {
+			spots[i] = psk.Report{
+				ReceiverCallsign: s.ReceiverCall,
+				ReceiverLocator:  s.ReceiverLoc,
+				Frequency:        s.Frequency,
+				SNR:              s.SNR,
+				Mode:             s.Mode,
+				FlowStartSeconds: s.FlowStart,
+			}
+		}
+		sort.Slice(spots, func(i, j int) bool {
+			return spots[i].FlowStartSeconds > spots[j].FlowStartSeconds
+		})
+		return pskSpotsLoadedMsg{spots: spots, spotKey: spotKey}
 	}
 }
 
@@ -63,15 +98,44 @@ func pskBandStyle(freqHz float64) lipgloss.Style {
 func pskTableRow(r psk.Report, callW, gridW, freqW, snrW, modeW int) string {
 	call := truncateText(r.ReceiverCallsign, callW)
 	loc := truncateText(r.ReceiverLocator, gridW)
-	freq := truncateText(fmt.Sprintf("%.3f", r.Frequency/1_000_000), freqW)
+	freq := truncateText(strconv.FormatFloat(r.Frequency/1_000_000, 'f', 3, 64), freqW)
 	snr := ""
 	if r.SNR != 0 {
-		snr = truncateText(fmt.Sprintf("%d", r.SNR), snrW)
+		snr = truncateText(strconv.Itoa(r.SNR), snrW)
 	}
 	mode := truncateText(r.Mode, modeW)
 	age := formatAge(r.FlowStartSeconds)
-	return fmt.Sprintf("%-*s %-*s %*s %*s %-*s %s",
-		callW, call, gridW, loc, freqW, freq, snrW, snr, modeW, mode, age)
+
+	// Manual padding via strings.Builder — avoids fmt.Sprintf allocation.
+	var sb strings.Builder
+	padRight(&sb, call, callW)
+	sb.WriteByte(' ')
+	padRight(&sb, loc, gridW)
+	sb.WriteByte(' ')
+	padLeft(&sb, freq, freqW)
+	sb.WriteByte(' ')
+	padLeft(&sb, snr, snrW)
+	sb.WriteByte(' ')
+	padRight(&sb, mode, modeW)
+	sb.WriteByte(' ')
+	sb.WriteString(age)
+	return sb.String()
+}
+
+// padRight appends s to sb with space-padding to reach at least targetW.
+func padRight(sb *strings.Builder, s string, targetW int) {
+	sb.WriteString(s)
+	for i := len(s); i < targetW; i++ {
+		sb.WriteByte(' ')
+	}
+}
+
+// padLeft appends s to sb with leading space-padding to reach at least targetW.
+func padLeft(sb *strings.Builder, s string, targetW int) {
+	for i := len(s); i < targetW; i++ {
+		sb.WriteByte(' ')
+	}
+	sb.WriteString(s)
 }
 
 func formatAge(ts int64) string {
@@ -80,9 +144,9 @@ func formatAge(ts int64) string {
 	case d < time.Minute:
 		return "<1m"
 	case d < time.Hour:
-		return fmt.Sprintf("%dm", int(d.Minutes()))
+		return strconv.Itoa(int(d.Minutes())) + "m"
 	default:
-		return fmt.Sprintf("%dh", int(d.Hours()))
+		return strconv.Itoa(int(d.Hours())) + "h"
 	}
 }
 
@@ -114,67 +178,53 @@ func (m *Model) viewPSKReporter() string {
 		now := time.Now().UTC()
 		graySlot = now.Hour()*12 + now.Minute()/5
 	}
-	sig := fmt.Sprintf("%d|%d|%s|%d|%s|%s|%d|%d|%d|%v",
-		w, m.height, call, m.psk.filterMins, m.psk.bandFilter, m.psk.modeFilter,
-		m.psk.selected, int(m.psk.lastFetchByCall[call].Unix()), graySlot, m.psk.fetching)
+	var sb strings.Builder
+	sb.WriteString(strconv.Itoa(w))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(m.height))
+	sb.WriteByte('|')
+	sb.WriteString(call)
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(m.psk.filterMins))
+	sb.WriteByte('|')
+	sb.WriteString(m.psk.bandFilter)
+	sb.WriteByte('|')
+	sb.WriteString(m.psk.modeFilter)
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(m.psk.selected))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.FormatInt(m.psk.lastFetchByCall[call].Unix(), 10))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(graySlot))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.FormatBool(m.psk.fetching))
+	sig := sb.String()
 	if m.psk.viewKey == sig && m.psk.view != "" {
 		return m.psk.view
 	}
 
 	// --- Spot cache: skip SQL when filters unchanged. ---
-	spotKey := fmt.Sprintf("%s|%d|%s|%s", call, m.psk.filterMins, m.psk.bandFilter, m.psk.modeFilter)
+	sb.Reset()
+	sb.WriteString(call)
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(m.psk.filterMins))
+	sb.WriteByte('|')
+	sb.WriteString(m.psk.bandFilter)
+	sb.WriteByte('|')
+	sb.WriteString(m.psk.modeFilter)
+	spotKey := sb.String()
 	var filtered []psk.Report
 	if m.psk.spotKey == spotKey && len(m.psk.spots) > 0 {
 		filtered = m.psk.spots
 	} else {
-		// Query SQLite for the current time window.  Never call the API from View() —
-		// fetching is always done asynchronously via pskFetchCmd / pskFetchMsg.
-		cutoff := time.Now().UTC().Add(-time.Duration(m.psk.filterMins) * time.Minute).Unix()
-		spots, err := store.QueryPSKSpots(m.App.DB, call, cutoff)
-		if err != nil {
-			return fillBody(DimStyle.Render("PSK Reporter error: "+err.Error()), contentHeight(m.height))
-		}
-
-		// Convert to psk.Report for the table/map rendering.
-		filtered = make([]psk.Report, len(spots))
-		for i, s := range spots {
-			filtered[i] = psk.Report{
-				ReceiverCallsign: s.ReceiverCall,
-				ReceiverLocator:  s.ReceiverLoc,
-				Frequency:        s.Frequency,
-				SNR:              s.SNR,
-				Mode:             s.Mode,
-				FlowStartSeconds: s.FlowStart,
-			}
-		}
-		// Sort by time descending.
-		sort.Slice(filtered, func(i, j int) bool {
-			return filtered[i].FlowStartSeconds > filtered[j].FlowStartSeconds
-		})
-
-		// Apply band filter if set.
-		if m.psk.bandFilter != "" {
-			var bandFiltered []psk.Report
-			for _, r := range filtered {
-				if freqToBandName(r.Frequency) == m.psk.bandFilter {
-					bandFiltered = append(bandFiltered, r)
-				}
-			}
-			filtered = bandFiltered
-		}
-		// Apply mode filter if set.
-		if m.psk.modeFilter != "" {
-			var modeFiltered []psk.Report
-			for _, r := range filtered {
-				if strings.EqualFold(r.Mode, m.psk.modeFilter) {
-					modeFiltered = append(modeFiltered, r)
-				}
-			}
-			filtered = modeFiltered
-		}
-
-		m.psk.spots = filtered
-		m.psk.spotKey = spotKey
+		// Spot cache miss — set flag for async load; show placeholder this frame.
+		// This avoids synchronous SQLite I/O during View().
+		m.psk.needDBLoad = true
+		m.psk.pendingSpotKey = spotKey
+		m.psk.pendingCall = call
+		m.psk.pendingCutoff = time.Now().UTC().Add(-time.Duration(m.psk.filterMins) * time.Minute).Unix()
+		// Use existing spots if any, else empty.
+		filtered = m.psk.spots
 	}
 
 	// Clamp cursor only when there are reports.
@@ -356,8 +406,13 @@ func (m *Model) buildPSKTable(reports []psk.Report, maxW, visibleRows int) strin
 	}
 
 	// Force each line to exactly maxW width so the table fills the box.
+	// Use a cached style — rebuilt only when maxW changes.
+	if m.psk.tableRowStyleW != maxW {
+		m.psk.tableRowStyle = lipgloss.NewStyle().Width(maxW).MaxWidth(maxW).Inline(true)
+		m.psk.tableRowStyleW = maxW
+	}
 	for i, l := range lines {
-		lines[i] = lipgloss.NewStyle().Width(maxW).MaxWidth(maxW).Inline(true).Render(l)
+		lines[i] = m.psk.tableRowStyle.Render(l)
 	}
 
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
@@ -425,6 +480,39 @@ func (m *Model) buildPSKMap(reports []psk.Report, mapW, mapAvailH int) string {
 	if ownGrid == "" {
 		return ""
 	}
+
+	// Map-with-spots cache — spot markers are expensive to redraw every frame.
+	// Key on: report count, first/last receiver, map dims, own grid, grayline.
+	var graySlot int
+	if m.App.Config.General.DrawGrayline {
+		now := time.Now().UTC()
+		graySlot = now.Hour()*12 + now.Minute()/5
+	}
+	var sb strings.Builder
+	sb.WriteString(strconv.Itoa(len(reports)))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(mapW))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(mapAvailH))
+	sb.WriteByte('|')
+	sb.WriteString(ownGrid)
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(graySlot))
+	if len(reports) > 0 {
+		sb.WriteByte('|')
+		sb.WriteString(reports[0].ReceiverCallsign)
+		sb.WriteByte('|')
+		sb.WriteString(strconv.FormatInt(reports[0].FlowStartSeconds, 10))
+		sb.WriteByte('|')
+		sb.WriteString(reports[len(reports)-1].ReceiverCallsign)
+		sb.WriteByte('|')
+		sb.WriteString(strconv.FormatInt(reports[len(reports)-1].FlowStartSeconds, 10))
+	}
+	mapSig := sb.String()
+	if m.psk.mapSig == mapSig && m.psk.mapView != "" {
+		return m.psk.mapView
+	}
+
 	ownLat, ownLon := gridToLatLon(ownGrid)
 
 	if m.mapView == nil {
@@ -489,7 +577,10 @@ func (m *Model) buildPSKMap(reports []psk.Report, mapW, mapAvailH int) string {
 		pskMarkOther.Render("\u25cf") + DimStyle.Render(" other")
 	lines = append(lines, legend)
 
-	return strings.Join(lines, "\n")
+	result := strings.Join(lines, "\n")
+	m.psk.mapView = result
+	m.psk.mapSig = mapSig
+	return result
 }
 
 func pskCellCoords(lat, lon float64, mapW, mapH int) (int, int) {

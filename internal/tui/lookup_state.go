@@ -32,14 +32,15 @@ type lookupState struct {
 	wlLastCall     string
 
 	// Partner/callbook display data.
-	partnerData   *qrz.CallData
-	qrzLookupDone bool
-	qrzLookupCall string // call the QRZ done flag is for
-	wlPrivateData *wavelog.PrivateLookupResult
-	wlLookupDone  bool
-	wlLookupCall  string // call the WL done flag is for
-	wlLastBand    string
-	wlLastMode    string
+	partnerData    *qrz.CallData
+	qrzLookupDone  bool
+	qrzLookupCall  string // call the QRZ done flag is for
+	wlPrivateData  *wavelog.PrivateLookupResult
+	wlLookupDone   bool
+	wlLookupCall   string // call the WL done flag is for
+	wlLastBand     string
+	wlLastMode     string
+	wlDispatchTime time.Time // last time a WL lookup was dispatched; for timeout
 
 	// pendingLookupCmd is set by onFieldExit when the call field is left
 	// via Tab/arrows. handleFormKey batches it so lookups fire immediately.

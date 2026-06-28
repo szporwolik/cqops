@@ -87,6 +87,12 @@ var migrations = []string{
 	// sig_info column added in v0.8.1 — ALTER for existing databases.
 	`ALTER TABLE qsos ADD COLUMN sig_info TEXT DEFAULT ''`,
 
+	// base_call column added in v0.8.7 — enables index-friendly callsign lookups
+	// by extracting the core callsign from prefixed/suffixed variants
+	// (e.g. "DL/SP9SPM/P" → "SP9SPM"). Avoids LIKE '%/call' table scans.
+	`ALTER TABLE qsos ADD COLUMN base_call TEXT DEFAULT ''`,
+	`CREATE INDEX IF NOT EXISTS idx_qsos_base_call ON qsos(base_call)`,
+
 	`CREATE TABLE IF NOT EXISTS psk_spots (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		receiver_call TEXT NOT NULL,

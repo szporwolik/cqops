@@ -218,6 +218,9 @@ var (
 			BorderForeground(P.Border).
 			Padding(1, 2)
 
+	// dialogBtnAlignStyle — base style for dialog button row centering.
+	dialogBtnAlignStyle = lipgloss.NewStyle().Align(lipgloss.Center)
+
 	// contestBoxStyle for contest info box on QSO screen.
 	contestBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).

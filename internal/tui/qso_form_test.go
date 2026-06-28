@@ -95,11 +95,11 @@ func TestQSOFormFocusedFieldMarker(t *testing.T) {
 
 func TestQSOFormRetainCheckboxUnchecked(t *testing.T) {
 	m := newTestModel()
-	m.retainComment = false
+	m.keepComment = false
 
-	box := m.renderRetainCheckbox(30)
+	box := m.renderKeepCheckbox(30)
 	if box == "" {
-		t.Error("renderRetainCheckbox returned empty")
+		t.Error("renderKeepCheckbox returned empty")
 	}
 	if !strings.Contains(box, "[ ]") {
 		t.Error("Retain checkbox should show [ ] when unchecked")
@@ -108,11 +108,11 @@ func TestQSOFormRetainCheckboxUnchecked(t *testing.T) {
 
 func TestQSOFormRetainCheckboxChecked(t *testing.T) {
 	m := newTestModel()
-	m.retainComment = true
+	m.keepComment = true
 
-	box := m.renderRetainCheckbox(30)
+	box := m.renderKeepCheckbox(30)
 	if box == "" {
-		t.Error("renderRetainCheckbox returned empty")
+		t.Error("renderKeepCheckbox returned empty")
 	}
 	if !strings.Contains(box, "[x]") {
 		t.Error("Retain checkbox should show [x] when checked")
@@ -121,11 +121,11 @@ func TestQSOFormRetainCheckboxChecked(t *testing.T) {
 
 func TestQSOFormRetainCheckboxFocused(t *testing.T) {
 	m := newTestModel()
-	m.retainFocused = true
+	m.keepFocused = true
 
-	box := m.renderRetainCheckbox(30)
+	box := m.renderKeepCheckbox(30)
 	if box == "" {
-		t.Error("renderRetainCheckbox returned empty when focused")
+		t.Error("renderKeepCheckbox returned empty when focused")
 	}
 }
 
@@ -205,7 +205,7 @@ func TestQSOFormClearForm(t *testing.T) {
 	m.fields[fieldComment].SetValue("Hello")
 	m.fields[fieldRSTSent].SetValue("59")
 	m.fields[fieldRSTRcvd].SetValue("59")
-	m.retainComment = true
+	m.keepComment = true
 
 	m.clearForm()
 

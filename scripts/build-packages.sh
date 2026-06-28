@@ -28,45 +28,57 @@ echo "[✓] nfpm found: $(which nfpm)"
 # ---------------------------------------------------------------------------
 # 2. Build binaries for each Linux arch
 # ---------------------------------------------------------------------------
-ARCHS=("amd64" "arm64")
+ARCHS=("amd64" "arm64" "armv7")
 
 for arch in "${ARCHS[@]}"; do
     echo ""
-    echo "[BUILD] linux/$arch"
-    GOOS=linux GOARCH=$arch go build -ldflags "$LDFLAGS" -o "build/cqops-linux-$arch" ./cmd/cqops/
-    echo "  Binary : build/cqops-linux-$arch ($(du -h build/cqops-linux-$arch | cut -f1))"
+    # Map Go arch to build params and Debian arch name.
+    case "$arch" in
+        armv7) goos=linux; goarch=arm; goarm=7; deb_arch="armhf" ;;
+        *)     goos=linux; goarch="$arch"; goarm=""; deb_arch="$arch" ;;
+    esac
+    echo "[BUILD] linux/$deb_arch"
+    if [ -n "$goarm" ]; then
+      GOOS=$goos GOARCH=$goarch GOARM=$goarm go build -ldflags "$LDFLAGS" -o "build/cqops-linux-$deb_arch" ./cmd/cqops/
+    else
+      GOOS=$goos GOARCH=$goarch go build -ldflags "$LDFLAGS" -o "build/cqops-linux-$deb_arch" ./cmd/cqops/
+    fi
+    echo "  Binary : build/cqops-linux-$deb_arch ($(du -h build/cqops-linux-$deb_arch | cut -f1))"
 done
 
 # ---------------------------------------------------------------------------
 # 3. Package with nfpm
 # ---------------------------------------------------------------------------
-PACKAGERS=("deb" "rpm" "archlinux")
+PACKAGERS=("deb")
 
 for pkg in "${PACKAGERS[@]}"; do
-    # Map nfpm packager name to file extension.
     case "$pkg" in
-        deb)       ext="deb" ;;
-        rpm)       ext="rpm" ;;
-        archlinux) ext="pkg.tar.zst" ;;
+        deb) ext="deb" ;;
     esac
 
     for arch in "${ARCHS[@]}"; do
-        echo ""
-        echo "[PACKAGE] $pkg / $arch"
+        # Map to Debian arch name.
+        case "$arch" in
+            armv7) deb_arch="armhf" ;;
+            *)     deb_arch="$arch" ;;
+        esac
 
-        # Generate nfpm config with substituted arch and version.
-        NFFILE="dist/nfpm-${pkg}-${arch}.yaml"
+        echo ""
+        echo "[PACKAGE] deb / $deb_arch"
+
+        NFFILE="dist/nfpm-deb-${deb_arch}.yaml"
         sed -e "s/__VERSION__/${VERSION}/g" \
-            -e "s/__ARCH__/${arch}/g" \
+            -e "s/__ARCH__/${deb_arch}/g" \
             nfpm.yaml > "$NFFILE"
 
         nfpm package \
             -f "$NFFILE" \
-            -p "$pkg" \
+            -p deb \
             -t "$DIST_DIR/" \
-            --packager "${pkg}"
+            --packager deb \
+            --target "${DIST_DIR}/cqops_${VERSION}_${deb_arch}.deb"
 
-        target="${DIST_DIR}/cqops_${VERSION}_linux_${arch}.${ext}"
+        target="${DIST_DIR}/cqops_${VERSION}_${deb_arch}.deb"
         if [ -f "$target" ]; then
             echo "  Package : $target ($(du -h "$target" | cut -f1))"
         else
@@ -75,7 +87,8 @@ for pkg in "${PACKAGERS[@]}"; do
         fi
     done
 done
+rm -f "$DIST_DIR"/nfpm-*.yaml
 
 echo ""
 echo "=== Done ==="
-ls -lh "$DIST_DIR"/*.deb "$DIST_DIR"/*.rpm "$DIST_DIR"/*.pkg.tar.zst 2>/dev/null || true
+ls -lh "$DIST_DIR"/*.deb 2>/dev/null || true

@@ -46,7 +46,7 @@ func startFakeDownload(t *testing.T, server *httptest.Server, _ []store.DXCSpot)
 	}
 	t.Cleanup(func() { db.Close() })
 
-	le := NewLogbookEditor(db, server.URL, "test-api-key", "1", 0, "OP", "JO90", "")
+	le := NewLogbookEditor(LogbookEditorConfig{DB: db, WLURL: server.URL, WLKey: "test-api-key", WLStationID: "1", WLLastFetchedID: 0, StationOperator: "OP", StationGrid: "JO90", StationCall: ""})
 	// Add a pre-existing QSO to verify it isn't removed by failed download.
 	if _, err := store.InsertQSO(db, &qso.QSO{
 		Call: "SP9EXISTING", QSODate: "20240601", TimeOn: "120000",
@@ -261,7 +261,7 @@ func TestDownload_RetryAfterFailure(t *testing.T) {
 	db, _ := store.InitDB(dbPath)
 	defer db.Close()
 
-	le := NewLogbookEditor(db, server.URL, "key", "1", 0, "OP", "JO90", "")
+	le := NewLogbookEditor(LogbookEditorConfig{DB: db, WLURL: server.URL, WLKey: "key", WLStationID: "1", WLLastFetchedID: 0, StationOperator: "OP", StationGrid: "JO90", StationCall: ""})
 
 	// First attempt — fail.
 	cmd := le.doWavelogDownload()

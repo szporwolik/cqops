@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"time"
 
 	"github.com/szporwolik/cqops/internal/cli"
 )
@@ -33,12 +34,22 @@ func main() {
 // pauseIfTerminal waits for Enter when launched directly (not from an
 // existing terminal session). Only active on Windows, where double-clicking
 // an .exe opens a new console that closes immediately on exit.
+// Times out after 5 seconds to avoid blocking indefinitely on headless systems.
 func pauseIfTerminal() {
 	if runtime.GOOS != "windows" {
 		return
 	}
-	fmt.Fprint(os.Stderr, "Press Enter to close...")
-	// Use a single byte read from stdin; simplest cross-shell approach.
-	var buf [1]byte
-	os.Stdin.Read(buf[:])
+	fmt.Fprint(os.Stderr, "Press Enter to close (5s timeout)...")
+
+	done := make(chan struct{}, 1)
+	go func() {
+		var buf [1]byte
+		os.Stdin.Read(buf[:])
+		done <- struct{}{}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+	}
 }

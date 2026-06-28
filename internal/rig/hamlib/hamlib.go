@@ -137,20 +137,27 @@ func (c *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 
 	// Split status.  With --vfo, single-char 's' returns nothing — must
 	// use VFO-prefixed 's VFOA'.  Without --vfo, plain 's' works.
-	var splitRaw string
+	// Non-fatal: some backends (Xiegu) don't support this query.
+	// Do NOT drop the connection on failure — if the connection is truly
+	// broken the subsequent frequency query will detect it.
+	var split bool
 	if c.vfoMode {
-		splitRaw, err = c.cmdDrain(r, conn, "s VFOA")
+		if raw, sErr := c.cmdDrain(r, conn, "s VFOA"); sErr == nil {
+			split = strings.TrimSpace(raw) == "1"
+		} else {
+			applog.Debug("hamlib: split query failed, assuming off", "error", sErr)
+		}
 	} else {
-		splitRaw, err = c.cmd(r, conn, "s")
+		if raw, sErr := c.cmd(r, conn, "s"); sErr == nil {
+			split = strings.TrimSpace(raw) == "1"
+		} else {
+			applog.Debug("hamlib: split query failed, assuming off", "error", sErr)
+		}
 	}
-	if err != nil {
-		c.dropConn()
-		return rig.RigStatus{}, fmt.Errorf("hamlib: split: %w", err)
-	}
-	split := strings.TrimSpace(splitRaw) == "1"
 
 	// Main VFO frequency.  With --vfo, 'f VFOA' targets the VFO; without
-	// --vfo, plain 'f' returns the active VFO frequency.
+	// --vfo, plain 'f' returns the active VFO frequency.  Fatal — without
+	// frequency there is nothing useful to show.
 	var freqHz string
 	if c.vfoMode {
 		freqHz, err = c.cmdDrain(r, conn, "f VFOA")
@@ -163,15 +170,20 @@ func (c *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 	}
 
 	// Mode.  With --vfo, 'm' needs the VFO prefix; without, plain 'm'.
+	// Non-fatal: same rationale as split.
 	var mode string
 	if c.vfoMode {
-		mode, err = c.cmdDrain(r, conn, "m VFOA")
+		if raw, mErr := c.cmdDrain(r, conn, "m VFOA"); mErr == nil {
+			mode = strings.TrimSpace(raw)
+		} else {
+			applog.Debug("hamlib: mode query failed, assuming empty", "error", mErr)
+		}
 	} else {
-		mode, err = c.cmd(r, conn, "m")
-	}
-	if err != nil {
-		c.dropConn()
-		return rig.RigStatus{}, fmt.Errorf("hamlib: mode: %w", err)
+		if raw, mErr := c.cmd(r, conn, "m"); mErr == nil {
+			mode = strings.TrimSpace(raw)
+		} else {
+			applog.Debug("hamlib: mode query failed, assuming empty", "error", mErr)
+		}
 	}
 
 	freq := parseFloat(freqHz)

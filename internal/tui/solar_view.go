@@ -8,6 +8,31 @@ import (
 	"github.com/szporwolik/cqops/internal/solar"
 )
 
+// Pre-allocated solar cell base style — only Width changes per render.
+var solarCellBaseStyle = lipgloss.NewStyle().Align(lipgloss.Right)
+
+// Pre-allocated solar label style — invariant muted foreground.
+var solarLabelStyle = lipgloss.NewStyle().Foreground(P.TextMuted)
+
+// Pre-allocated solar placeholder base style — only Width varies.
+var solarPlaceholderBaseStyle = lipgloss.NewStyle().
+	Border(lipgloss.RoundedBorder()).
+	BorderForeground(P.Border).
+	Padding(0, 2).
+	Height(10).
+	Align(lipgloss.Center, lipgloss.Top)
+
+// Fixed box width: 5 columns × 6 cells + 2 borders + 4 padding = 36.
+const solarBoxW = 36
+
+// Pre-allocated solar border box style — invariant.
+var solarBoxStyle = lipgloss.NewStyle().
+	Border(lipgloss.RoundedBorder()).
+	BorderForeground(P.Border).
+	Padding(0, 2).
+	Width(solarBoxW).
+	Align(lipgloss.Right, lipgloss.Top)
+
 // renderSolarPanel builds a compact bordered solar conditions panel for the
 // right side of the QSO form on wide screens. Returns empty string when
 // no solar data is available and we're not in a loading state.
@@ -19,9 +44,6 @@ func (m *Model) renderSolarPanel(availW int) string {
 	if availW < 30 {
 		return ""
 	}
-
-	// Fixed box width: 5 columns × 6 cells + 2 borders + 4 padding = 36.
-	const solarBoxW = 36
 
 	d := m.solar.data
 
@@ -58,12 +80,12 @@ func (m *Model) renderSolarPanel(availW int) string {
 		return m.solar.cachedView
 	}
 
-	lbl := lipgloss.NewStyle().Foreground(P.TextMuted) // muted, no fixed width
-	err := S.Error                                     // red for problematic values.
+	err := S.Error // red for problematic values.
 
 	// --- Thresholds based on N0NBH hamqsl.com reference table ---
 	// RED = actually problematic for HF propagation.
-	sfiStyle, aStyle, kStyle, ssnStyle := lbl, lbl, lbl, lbl
+	sfiStyle, aStyle, kStyle, ssnStyle := solarLabelStyle, solarLabelStyle, solarLabelStyle, solarLabelStyle
+	lbl := solarLabelStyle // local alias for remaining uses
 	if d.SolarFlux < 70 {
 		sfiStyle = err // bands above 40m unusable
 	}
@@ -90,7 +112,7 @@ func (m *Model) renderSolarPanel(availW int) string {
 	times := []string{"Day", "Night"}
 
 	renderCell := func(s string, w int) string {
-		return lipgloss.NewStyle().Width(w).Align(lipgloss.Right).Render(s)
+		return solarCellBaseStyle.Width(w).Render(s)
 	}
 
 	// Header row — first column same width as data cols.
@@ -194,13 +216,7 @@ func (m *Model) renderSolarPanel(availW int) string {
 	content := lipgloss.JoinVertical(lipgloss.Left, contentParts...)
 
 	// Fixed-width box — borders never change size.
-	result := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(P.Border).
-		Padding(0, 2).
-		Width(solarBoxW).
-		Align(lipgloss.Right, lipgloss.Top).
-		Render(content)
+	result := solarBoxStyle.Render(content)
 
 	m.solar.cachedSig = sig
 	m.solar.cachedView = result
@@ -213,12 +229,5 @@ func (m *Model) renderSolarPlaceholder(availW int, msg string) string {
 	if availW < 32 {
 		availW = 32
 	}
-	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(P.Border).
-		Padding(0, 2).
-		Width(availW).
-		Height(10).
-		Align(lipgloss.Center, lipgloss.Top).
-		Render(DimStyle.Render(msg))
+	return solarPlaceholderBaseStyle.Width(availW).Render(DimStyle.Render(msg))
 }

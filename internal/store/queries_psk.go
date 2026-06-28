@@ -66,7 +66,7 @@ func QueryPSKSpots(db *sql.DB, stationCall string, since int64) ([]PSKSpot, erro
 	}
 	defer rows.Close()
 
-	var spots []PSKSpot
+	var spots = make([]PSKSpot, 0, 500)
 	for rows.Next() {
 		var s PSKSpot
 		if err := rows.Scan(&s.ID, &s.ReceiverCall, &s.ReceiverLoc, &s.Frequency,

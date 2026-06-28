@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -76,9 +77,14 @@ func (le *LogbookEditor) View() tea.View {
 		} else {
 			msg := "Downloading from Wavelog…"
 			if le.dlCurrent > 0 && le.dlTotal > 0 {
-				pct := le.dlCurrent * 100 / le.dlTotal
-				msg = fmt.Sprintf("Processing QSO %d / %d (%d%%)",
-					le.dlCurrent, le.dlTotal, pct)
+				if le.dlCurrent != le.dlLastCur || le.dlTotal != le.dlLastTot {
+					pct := le.dlCurrent * 100 / le.dlTotal
+					le.dlCachedMsg = fmt.Sprintf("Processing QSO %d / %d (%d%%)",
+						le.dlCurrent, le.dlTotal, pct)
+					le.dlLastCur = le.dlCurrent
+					le.dlLastTot = le.dlTotal
+				}
+				msg = le.dlCachedMsg
 			}
 			// Update message every frame so it reflects latest progress.
 			if le.dialog == nil {
@@ -214,7 +220,19 @@ func (le *LogbookEditor) View() tea.View {
 		}
 		// Cache the rendered table — large QSO sets are paginated.
 		// Invalidate when QSO data, page, dimensions, or cursor change.
-		sig := fmt.Sprintf("%d|%d|%d|%d|%d|%s", le.width, le.height, len(le.qsos), le.currentPage, le.table.Cursor(), le.contestID)
+		var sb strings.Builder
+		sb.WriteString(strconv.Itoa(le.width))
+		sb.WriteByte('|')
+		sb.WriteString(strconv.Itoa(le.height))
+		sb.WriteByte('|')
+		sb.WriteString(strconv.Itoa(len(le.qsos)))
+		sb.WriteByte('|')
+		sb.WriteString(strconv.Itoa(le.currentPage))
+		sb.WriteByte('|')
+		sb.WriteString(strconv.Itoa(le.table.Cursor()))
+		sb.WriteByte('|')
+		sb.WriteString(le.contestID)
+		sig := sb.String()
 		if le.cachedSig == sig && le.cachedView != "" {
 			return tea.NewView(le.cachedView)
 		}
@@ -225,13 +243,21 @@ func (le *LogbookEditor) View() tea.View {
 		if le.contestID != "" {
 			contestLine := S.Warning.Render(fmt.Sprintf(" Contest: %s   Contest ID: %s",
 				le.contestName, le.contestAdifID))
-			headerLines = append(headerLines, lipgloss.NewStyle().Width(bodyW).Render(contestLine))
+			if le.cachedSpacerStyleW != bodyW {
+				le.cachedSpacerStyle = lipgloss.NewStyle().Width(bodyW)
+				le.cachedSpacerStyleW = bodyW
+			}
+			headerLines = append(headerLines, le.cachedSpacerStyle.Render(contestLine))
 			contentH-- // consume one row for the contest info line
 		}
 
 		// Spacer row + table.
-		spacer := lipgloss.NewStyle().Width(bodyW).Render("")
-		tablePart := lipgloss.NewStyle().
+		if le.cachedSpacerStyleW != bodyW {
+			le.cachedSpacerStyle = lipgloss.NewStyle().Width(bodyW)
+			le.cachedSpacerStyleW = bodyW
+		}
+		spacer := le.cachedSpacerStyle.Render("")
+		tablePart := le.cachedSpacerStyle.
 			MaxWidth(bodyW).
 			Height(contentH - 1 - len(headerLines)).
 			Render(le.table.View())
@@ -257,11 +283,20 @@ func (le *LogbookEditor) viewWithDialog(bodyW int) string {
 		contentH = 5
 	}
 	// Spacer row + table (no border — the dialog provides its own).
-	spacer := lipgloss.NewStyle().Width(bodyW).Render("")
-	tablePart := lipgloss.NewStyle().
-		MaxWidth(bodyW).
-		Height(contentH - 1).
-		Render(le.table.View())
+	if le.cachedSpacerStyleW != bodyW {
+		le.cachedSpacerStyle = lipgloss.NewStyle().Width(bodyW).MaxWidth(bodyW)
+		le.cachedSpacerStyleW = bodyW
+	}
+	spacer := le.cachedSpacerStyle.Render("")
+	// Table part uses its own cached style (no Width, only MaxWidth+Height)
+	// to avoid forcing the table to pad to bodyW which can cause layout issues.
+	th := contentH - 1
+	if le.cachedTablePartW != bodyW || le.cachedTablePartH != th {
+		le.cachedTablePartStyle = lipgloss.NewStyle().MaxWidth(bodyW).Height(th)
+		le.cachedTablePartW = bodyW
+		le.cachedTablePartH = th
+	}
+	tablePart := le.cachedTablePartStyle.Render(le.table.View())
 	body := lipgloss.JoinVertical(lipgloss.Left, spacer, tablePart)
 	if le.dialog != nil {
 		return RenderDialogOverlay(body, *le.dialog, bodyW, contentH)

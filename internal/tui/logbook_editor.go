@@ -8,6 +8,7 @@ import (
 	"charm.land/bubbles/v2/table"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 )
@@ -152,6 +153,11 @@ type LogbookEditor struct {
 	dlCancel   chan struct{}
 	dlMsgCh    chan editorMsg
 
+	// Cached download progress message — rebuilt only when numbers change.
+	dlCachedMsg string
+	dlLastCur   int
+	dlLastTot   int
+
 	// ADIF import results.
 	impInserted int
 	impDupes    int
@@ -164,6 +170,19 @@ type LogbookEditor struct {
 	builtW     int // width at last buildTable call
 	builtH     int // height at last buildTable call
 
+	// Cached spacer style — avoids lipgloss.NewStyle() on every cache miss.
+	cachedSpacerStyle  lipgloss.Style
+	cachedSpacerStyleW int
+
+	// Cached dialog table style — avoids lipgloss.NewStyle() every frame.
+	cachedTablePartStyle lipgloss.Style
+	cachedTablePartW     int
+	cachedTablePartH     int
+
+	// Cached edit form column style — rebuilt only on colW change.
+	cachedEditColStyle lipgloss.Style
+	cachedEditColW     int
+
 	// File export.
 	filePicker filepicker.Model
 	exportPath string
@@ -173,8 +192,20 @@ type LogbookEditor struct {
 // Constructor
 // =============================================================================
 
-func NewLogbookEditor(db *sql.DB, wlURL, wlKey, wlStationID string, wlLastFetchedID int64, logStationOp, logStationGrid, logStationCall string) *LogbookEditor {
-	le := &LogbookEditor{db: db, mode: edModeList, wlURL: wlURL, wlKey: wlKey, wlStationID: wlStationID, wlLastFetchedID: wlLastFetchedID, logStationOp: logStationOp, logStationGrid: logStationGrid, logStationCall: logStationCall}
+// LogbookEditorConfig groups the configuration parameters for NewLogbookEditor.
+type LogbookEditorConfig struct {
+	DB              *sql.DB
+	WLURL           string
+	WLKey           string
+	WLStationID     string
+	WLLastFetchedID int64
+	StationOperator string
+	StationGrid     string
+	StationCall     string
+}
+
+func NewLogbookEditor(cfg LogbookEditorConfig) *LogbookEditor {
+	le := &LogbookEditor{db: cfg.DB, mode: edModeList, wlURL: cfg.WLURL, wlKey: cfg.WLKey, wlStationID: cfg.WLStationID, wlLastFetchedID: cfg.WLLastFetchedID, logStationOp: cfg.StationOperator, logStationGrid: cfg.StationGrid, logStationCall: cfg.StationCall}
 	le.filePicker = filepicker.New()
 	le.filePicker.FileAllowed = false
 	le.filePicker.DirAllowed = true
@@ -269,12 +300,7 @@ func (le *LogbookEditor) loadPage() {
 		le.pageSize = 5
 	}
 
-	// Refresh total count.
-	counts, err := store.CountQSOsForContest(le.db, le.contestID)
-	if err == nil {
-		le.totalCount = counts.Total
-	}
-
+	// Fetch page data and total count in a single query via COUNT(*) OVER().
 	totalPages := le.totalPages()
 	if totalPages < 1 {
 		totalPages = 1
@@ -287,11 +313,12 @@ func (le *LogbookEditor) loadPage() {
 	}
 
 	offset := (le.currentPage - 1) * le.pageSize
-	qsos, err := store.ListQSOsPage(le.db, le.pageSize, offset, le.contestID)
+	qsos, total, err := store.ListQSOsPageWithCount(le.db, le.pageSize, offset, le.contestID)
 	if err != nil {
 		le.qsos = nil
 	} else {
 		le.qsos = qsos
+		le.totalCount = total
 	}
 	le.cachedSig = ""
 	le.buildTable()

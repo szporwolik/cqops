@@ -188,6 +188,15 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return le, le.uploadBatch(unsent)
 		}
 
+	case tea.PasteMsg:
+		// Forward clipboard paste to the focused text input during
+		// inline editing. Non-focusable fields (WLStatus, Source) are
+		// skipped — they're read-only display fields.
+		if le.mode == edModeEdit && le.focus != qefWLStatus && le.focus != qefSource {
+			le.fields[le.focus], _ = le.fields[le.focus].Update(msg)
+		}
+		return le, nil
+
 	case tea.KeyPressMsg:
 		k := msg.String()
 

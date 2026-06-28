@@ -84,6 +84,26 @@ func (oc *OperatorChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		oc.width = msg.Width
 		oc.height = msg.Height
 
+	case operatorWarnMsg:
+		oc.toasts.Warn(msg.text)
+		return oc, nil
+
+	case tea.PasteMsg:
+		// Forward paste to the currently focused field in the operator
+		// form, then validate if pasting into callsign.
+		if oc.mode == operatorEdit || oc.mode == operatorCreate {
+			if oc.form.focus == 0 {
+				oc.form.Callsign, _ = oc.form.Callsign.Update(msg)
+				oc.form.Callsign.SetValue(strings.ToUpper(oc.form.Callsign.Value()))
+				if w := oc.form.ValidateCall(); w != "" {
+					oc.toasts.Warn(w)
+				}
+			} else {
+				oc.form.Name, _ = oc.form.Name.Update(msg)
+			}
+		}
+		return oc, nil
+
 	case tea.KeyPressMsg:
 		k := msg
 
@@ -156,9 +176,20 @@ func (oc *OperatorChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 		case oc.mode == operatorEdit || oc.mode == operatorCreate:
-			if cmd := oc.form.HandleKey(msg); cmd != nil {
-				return oc, oc.saveForm()
+			cmd := oc.form.HandleKey(msg)
+			if cmd == nil {
+				return oc, nil
 			}
+			// Execute the command to inspect the message.
+			m := cmd()
+			switch m.(type) {
+			case enterOnLastFieldMsg:
+				return oc, oc.saveForm()
+			case operatorWarnMsg:
+				oc.toasts.Warn(m.(operatorWarnMsg).text)
+				return oc, nil
+			}
+			return oc, nil
 		}
 	}
 

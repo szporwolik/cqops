@@ -13,7 +13,11 @@ import (
 // operator, WSJT-X TX message, integration status dots, and UTC clock.
 func (m *Model) headerView() string {
 	s := m.App.Logbook.Station
-	utc := time.Now().UTC()
+	now := time.Now()
+	utc := now.UTC()
+
+	// Look up rig config once — used 4× below.
+	rp, hasRig := m.App.Config.Rigs[s.RigName]
 
 	callsign := s.Callsign
 	if callsign == "" {
@@ -31,7 +35,7 @@ func (m *Model) headerView() string {
 	}
 
 	rigName := ""
-	if rp, ok := m.App.Config.Rigs[s.RigName]; ok {
+	if hasRig {
 		rigName = rp.Name
 	}
 
@@ -55,12 +59,12 @@ func (m *Model) headerView() string {
 	var rightParts []string
 
 	rightParts = append(rightParts, statusDotStyled(m.inetOnline, "Net", m.Offline))
-	if rp, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok && rp.WsjtxEnabled {
+	if hasRig && rp.WsjtxEnabled {
 		rightParts = append(rightParts, statusDotStyled(m.wsjtx.online, "WSJT"))
 	}
-	if cfgRig, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok && cfgRig.RadioBackend != "" {
+	if hasRig && rp.RadioBackend != "" {
 		rigLabel := "Rig"
-		switch cfgRig.RadioBackend {
+		switch rp.RadioBackend {
 		case "flrig":
 			rigLabel = "Flrig"
 		case "hamlib":
@@ -72,7 +76,7 @@ func (m *Model) headerView() string {
 			rightParts = append(rightParts, statusDotStyled(m.rig.connected, rigLabel))
 		}
 	}
-	if cfgRig, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok && cfgRig.RotorBackend == "hamlib" {
+	if hasRig && rp.RotorBackend == "hamlib" {
 		rightParts = append(rightParts, statusDotStyled(m.rotor.connected, "Rotator"))
 	}
 	if m.App.Config.Integrations.DXC.Enabled {
@@ -83,41 +87,17 @@ func (m *Model) headerView() string {
 		rightParts = append(rightParts, statusDotStyled(m.lookup.wlOnline, "WL", m.Offline))
 	}
 	rightParts = append(rightParts,
-		utcLabelStyle.Render("UTC"),
-		S.StatusTime.Render(utc.Format("15:04:05")),
+		S.StatusTime.Render(now.Format("15:04")+"L  "+utc.Format("1504")+"Z"),
 	)
 
 	right := lipgloss.JoinHorizontal(lipgloss.Top, rightParts...)
-
-	// Show local time only when there is room to spare.
 	left := lipgloss.JoinHorizontal(lipgloss.Top, leftParts...)
 	leftW := lipgloss.Width(left)
 	rightW := lipgloss.Width(right)
 	fillerW := m.width - leftW - rightW
 
-	localTime := time.Now().Format("15:04")
-	ltSegment := lipgloss.JoinHorizontal(lipgloss.Top,
-		utcLabelStyle.Render("LT"),
-		S.StatusTime.Render(localTime)+" ",
-	)
-	ltW := lipgloss.Width(ltSegment)
-	if fillerW >= ltW+6 {
-		rightParts = rightParts[:len(rightParts)-2]
-		rightParts = append(rightParts,
-			utcLabelStyle.Render("LT"),
-			S.StatusTime.Render(localTime)+" ",
-			utcLabelStyle.Render("UTC"),
-			S.StatusTime.Render(utc.Format("15:04:05")),
-		)
-		right = lipgloss.JoinHorizontal(lipgloss.Top, rightParts...)
-		rightW = lipgloss.Width(right)
-	}
-
 	// WSJT-X TX message — only when at least 20 cells of free space remain.
-	wsjtxOn := false
-	if rp, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok {
-		wsjtxOn = rp.WsjtxEnabled
-	}
+	wsjtxOn := hasRig && rp.WsjtxEnabled
 	if m.wsjtx.txMsg != "" && wsjtxOn && m.wsjtx.online {
 		style := S.StatusValue
 		if m.wsjtx.tx {

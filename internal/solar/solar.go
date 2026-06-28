@@ -183,7 +183,11 @@ func Parse(xmlBytes []byte) (*Data, error) {
 	}
 	d.KIndex = k
 	d.KIndexNT = strings.TrimSpace(sd.KIndexNT)
-	d.Sunspots, _ = strconv.Atoi(strings.TrimSpace(sd.Sunspots))
+	ssn, ssnErr := strconv.Atoi(strings.TrimSpace(sd.Sunspots))
+	if ssnErr != nil && strings.TrimSpace(sd.Sunspots) != "" {
+		applog.Warn("Solar: bad sunspots", "value", sd.Sunspots, "error", ssnErr)
+	}
+	d.Sunspots = ssn
 	d.XRay = strings.TrimSpace(sd.XRay)
 	d.HeliumLine, _ = parseFloat(sd.HeliumLine)
 	// hamqsl.com has a typo in the XML: "electonflux" instead of "electronflux".

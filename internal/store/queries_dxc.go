@@ -74,7 +74,7 @@ func QueryDXCSpots(db *sql.DB) ([]DXCSpot, error) {
 		return nil, fmt.Errorf("query dxc_spots: %w", err)
 	}
 	defer rows.Close()
-	var spots []DXCSpot
+	var spots = make([]DXCSpot, 0, 500)
 	for rows.Next() {
 		var s DXCSpot
 		if err := rows.Scan(&s.ID, &s.DXCall, &s.Frequency, &s.Band, &s.Mode, &s.ModeCat, &s.Comment, &s.Spotter, &s.DXCont, &s.DXCC, &s.SpotCont, &s.ReceivedAt); err != nil {

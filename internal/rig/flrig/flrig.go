@@ -9,7 +9,6 @@ import (
 	"math"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/szporwolik/cqops/internal/applog"
@@ -51,93 +50,69 @@ func (f *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 		Provider: "flrig",
 	}
 
-	var (
-		freqHz   int64
-		freqRxHz int64
-		split    bool
-		mode     string
-		pwr      float64
-		wg       sync.WaitGroup
-	)
+	// Sequential XML-RPC calls — flrig runs on localhost with sub-millisecond
+	// latency. Sequential calls avoid goroutine churn (~5 goroutines per poll
+	// per second = 10,800 per 3-hour session) while adding <5ms total latency.
 
-	wg.Add(5)
+	v, err := f.getFrequency(ctx)
+	if err != nil {
+		applog.Debug("flrig: get_vfo failed", "error", err)
+	} else {
+		rs.FrequencyHz = v
+	}
 
-	go func() {
-		defer wg.Done()
-		v, err := f.getFrequency(ctx)
-		if err != nil {
-			applog.Debug("flrig: get_vfo failed", "error", err)
-			return
+	vB, err := f.getFrequencyB(ctx)
+	if err != nil {
+		applog.Debug("flrig: get_vfoB failed", "error", err)
+	} else {
+		if vB > 0 {
+			rs.FrequencyRxHz = vB
 		}
-		freqHz = v
-	}()
+	}
 
-	go func() {
-		defer wg.Done()
-		v, err := f.getFrequencyB(ctx)
-		if err != nil {
-			applog.Debug("flrig: get_vfoB failed", "error", err)
-			return
-		}
-		freqRxHz = v
-	}()
+	split, err := f.getSplit(ctx)
+	if err != nil {
+		applog.Debug("flrig: get_split failed", "error", err)
+	} else {
+		rs.Split = split
+	}
 
-	go func() {
-		defer wg.Done()
-		v, err := f.getSplit(ctx)
-		if err != nil {
-			applog.Debug("flrig: get_split failed", "error", err)
-			return
-		}
-		split = v
-	}()
+	mode, err := f.getMode(ctx)
+	if err != nil {
+		applog.Debug("flrig: get_mode failed", "error", err)
+	} else {
+		rs.Mode = mode
+	}
 
-	go func() {
-		defer wg.Done()
-		v, err := f.getMode(ctx)
-		if err != nil {
-			applog.Debug("flrig: get_mode failed", "error", err)
-			return
-		}
-		mode = v
-	}()
+	pwr, err := f.getPower(ctx)
+	if err != nil {
+		applog.Debug("flrig: get_power failed", "error", err)
+	} else {
+		rs.Power = pwr
+	}
 
-	go func() {
-		defer wg.Done()
-		v, err := f.getPower(ctx)
-		if err != nil {
-			applog.Debug("flrig: get_power failed", "error", err)
-			return
-		}
-		pwr = v
-	}()
-
-	wg.Wait()
-
-	if freqHz == 0 {
+	if rs.FrequencyHz == 0 && v == 0 {
 		applog.Debug("flrig: status — no VFO A freq, treating as disconnected")
 		rs.Connected = false
 		return rs, nil
 	}
 
 	rs.Connected = true
-	rs.FrequencyHz = freqHz
-	rs.FrequencyMHz = float64(freqHz) / 1_000_000.0
-	rs.Split = split
+	if rs.FrequencyHz == 0 {
+		rs.FrequencyHz = v
+	}
+	rs.FrequencyMHz = float64(rs.FrequencyHz) / 1_000_000.0
 	// Always report VFO B when split is active — the two VFOs can
 	// briefly land on the same frequency during A/B swaps or when
 	// split is first engaged.  Dropping it breaks split tracking.
-	if freqRxHz > 0 {
-		rs.FrequencyRxHz = freqRxHz
-		rs.FrequencyRxMHz = float64(freqRxHz) / 1_000_000.0
+	if rs.FrequencyRxHz > 0 {
+		rs.FrequencyRxMHz = float64(rs.FrequencyRxHz) / 1_000_000.0
 	}
 
-	if mode != "" {
-		rs.RawMode = mode
-		rs.Mode = qso.NormalizeRigMode(mode)
+	if rs.Mode != "" {
+		rs.RawMode = rs.Mode
+		rs.Mode = qso.NormalizeRigMode(rs.Mode)
 	}
-
-	rs.Power = pwr
 
 	if rs.FrequencyMHz > 0 {
 		rs.Band = qso.DeriveBand(rs.FrequencyMHz)
@@ -146,10 +121,10 @@ func (f *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 	applog.Debug("flrig: status",
 		"freq_mhz", fmt.Sprintf("%.6f", rs.FrequencyMHz),
 		"freq_rx_mhz", fmt.Sprintf("%.6f", rs.FrequencyRxMHz),
-		"vfoB_hz", freqRxHz,
-		"split", split,
-		"mode", mode,
-		"power", fmt.Sprintf("%.0f", pwr),
+		"vfoB_hz", rs.FrequencyRxHz,
+		"split", rs.Split,
+		"mode", rs.Mode,
+		"power", fmt.Sprintf("%.0f", rs.Power),
 	)
 
 	return rs, nil

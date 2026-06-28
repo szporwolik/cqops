@@ -13,7 +13,10 @@ import (
 )
 
 // qsoRefreshedMsg signals that the QSO list has been reloaded from the store.
-type qsoRefreshedMsg struct{}
+type qsoRefreshedMsg struct {
+	qsos []qso.QSO
+	err  error
+}
 
 // saveQSO validates, persists, and uploads the current QSO from the form fields.
 // It orchestrates validation, DB insert, Wavelog upload, toast feedback,
@@ -51,6 +54,10 @@ func (m *Model) saveQSO() tea.Cmd {
 		qs.QSODate = time.Now().UTC().Format("20060102")
 	}
 	qs.TimeOn = stripNonDigits(m.fields[fieldTime].Value())
+	// Pad to 6 digits (HHMMSS) if user didn't type seconds — DB expects full time.
+	if len(qs.TimeOn) == 4 {
+		qs.TimeOn += "00"
+	}
 	if qs.TimeOn == "" {
 		qs.TimeOn = time.Now().UTC().Format("150405")
 	}
@@ -149,7 +156,7 @@ func (m *Model) refreshQSOS() tea.Cmd {
 	return func() tea.Msg {
 		var qsos []qso.QSO
 		var err error
-		for attempt := 0; attempt < 3; attempt++ {
+		for attempt := 0; attempt < 2; attempt++ {
 			qsos, err = store.ListQSOs(m.App.DB, 500, m.App.Logbook.ActiveContest)
 			if err == nil {
 				break
@@ -157,26 +164,9 @@ func (m *Model) refreshQSOS() tea.Cmd {
 			if !strings.Contains(err.Error(), "database is locked") {
 				break
 			}
-			time.Sleep(100 * time.Millisecond)
+			time.Sleep(50 * time.Millisecond)
 		}
-		if err != nil {
-			m.toasts.Error(fmt.Sprintf("Refresh failed: %v", err))
-			return qsoRefreshedMsg{} // still return message to trigger re-render
-		}
-		m.qsos = qsos
-		m.recentQSOs.SetQSOS(qsos)
-		m.rc.pathSig = ""
-		m.rc.logStatsSig = ""
-
-		// Re-apply filter if active — suppressed after a save.
-		if !m.recentQSOs.filterSuppressed && m.recentQSOs.IsFiltered() {
-			filtered, err := store.SearchQSOsByCall(m.App.DB, m.recentQSOs.filterCall, 200)
-			if err == nil {
-				m.recentQSOs.SetFilterCall(m.recentQSOs.filterCall, filtered)
-			}
-		}
-		m.recentQSOs.filterSuppressed = false
-		return qsoRefreshedMsg{}
+		return qsoRefreshedMsg{qsos: qsos, err: err}
 	}
 }
 

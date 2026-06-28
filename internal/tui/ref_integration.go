@@ -67,13 +67,13 @@ func (m *Model) doRefSearch() {
 		return
 	}
 	if m.App.RefDB == nil {
-		m.toasts.Warn("REF database not available")
+		m.toasts.Warn("REF: database not available")
 		return
 	}
 	rows, err := m.App.RefDB.Search(query)
 	if err != nil {
 		applog.Warn("REF: search failed", "query", query, "error", err)
-		m.toasts.Error("Search failed")
+		m.toasts.Error("REF: search failed")
 		return
 	}
 	m.ref.rows = rows
@@ -125,11 +125,11 @@ func (m *Model) handleRefUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 		m.ref.building = false
 		if msg.err != nil {
 			applog.Warn("REF: rebuild failed", "error", msg.err)
-			m.toasts.Error("REF database build failed")
+			m.toasts.Error("REF: database build failed")
 		} else {
 			m.ref.ready = true
 			applog.Info("REF: rebuild complete", "total", msg.total)
-			m.toasts.Success(fmt.Sprintf("REF database ready — %d references", msg.total))
+			m.toasts.Success(fmt.Sprintf("REF: database ready — %d references", msg.total))
 		}
 		return m, cmd
 

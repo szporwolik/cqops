@@ -116,8 +116,9 @@ func (m *Model) favoriteRecall(slot int) tea.Cmd {
 		m.fields[fieldSubmode].SetValue(fav.Submode)
 	}
 	if fav.Freq > 0 {
-		// Match the precision used by flrig/WSJT-X (6 decimal places).
-		m.fields[fieldFreq].SetValue(fmt.Sprintf("%.6f", fav.Freq))
+		// Trim trailing zeros so the display is clean (e.g. 14.25 not 14.250000).
+		// This matches the ADIF export formatting in internal/qso/adif.go.
+		m.fields[fieldFreq].SetValue(strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.6f", fav.Freq), "0"), "."))
 	}
 	if fav.Band != "" {
 		m.fields[fieldBand].SetValue(fav.Band)

@@ -17,6 +17,13 @@ type OperatorForm struct {
 	focus    int // 0 = callsign, 1 = name
 }
 
+// operatorWarnMsg is returned by HandleKey when the callsign field loses
+// focus and the value doesn't look like a standard ham callsign. The
+// parent chooser converts it to a toast.
+type operatorWarnMsg struct {
+	text string
+}
+
 // NewOperatorForm creates a form with default values.
 func NewOperatorForm() OperatorForm {
 	cs := textinput.New()
@@ -58,7 +65,10 @@ func (f *OperatorForm) prevField() {
 	}
 }
 
-// HandleKey handles keyboard input and returns a command when Ctrl+S is pressed.
+// HandleKey handles keyboard input. Returns:
+//   - enterOnLastFieldMsg command when Ctrl+S is pressed (save)
+//   - operatorWarnMsg command when focus leaves callsign and it looks invalid
+//   - nil otherwise (continue editing)
 func (f *OperatorForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 	k := msg
 
@@ -67,18 +77,35 @@ func (f *OperatorForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 	}
 
 	if k.String() == "tab" || msg.Code == tea.KeyDown {
+		prev := f.focus
 		f.nextField()
-		return nil
+		return f.warnIfLeavingCall(prev)
 	}
 	if k.String() == "shift+tab" || msg.Code == tea.KeyUp {
+		prev := f.focus
 		f.prevField()
-		return nil
+		return f.warnIfLeavingCall(prev)
 	}
 
 	if f.focus == 0 {
 		f.Callsign, _ = f.Callsign.Update(msg)
+		f.Callsign.SetValue(strings.ToUpper(f.Callsign.Value()))
 	} else {
 		f.Name, _ = f.Name.Update(msg)
+	}
+	return nil
+}
+
+// warnIfLeavingCall returns an operatorWarnMsg command if focus just moved
+// away from the callsign field and the value doesn't look like a standard
+// ham callsign. Returns nil if the callsign is valid, empty, or focus
+// didn't leave the callsign field.
+func (f *OperatorForm) warnIfLeavingCall(prevFocus int) tea.Cmd {
+	if prevFocus != 0 || f.focus == 0 {
+		return nil
+	}
+	if w := f.ValidateCall(); w != "" {
+		return func() tea.Msg { return operatorWarnMsg{text: w} }
 	}
 	return nil
 }

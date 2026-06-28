@@ -616,6 +616,53 @@ func (f *StationForm) renderFieldLine(label string, ti *textinput.Model, availW 
 	return padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val), availW) + "\n"
 }
 
+// HandlePaste forwards clipboard-paste content to the currently focused
+// text input field. Non-text focus states (opFocus, iaruFocus, contFocus,
+// wlCbFocus, wlBtnFocus) are ignored — paste only makes sense for editable
+// text fields.
+func (f *StationForm) HandlePaste(content string) tea.Cmd {
+	msg := tea.PasteMsg{Content: content}
+	switch {
+	case f.Name.Focused():
+		f.Name, _ = f.Name.Update(msg)
+	case f.Callsign.Focused():
+		f.Callsign, _ = f.Callsign.Update(msg)
+		f.Callsign.SetValue(strings.ToUpper(f.Callsign.Value()))
+	case f.Locator.Focused():
+		f.Locator, _ = f.Locator.Update(msg)
+		f.Locator.SetValue(formatLocator(f.Locator.Value()))
+	case f.SOTARef.Focused():
+		f.SOTARef, _ = f.SOTARef.Update(msg)
+		f.SOTARef.SetValue(strings.ToUpper(f.SOTARef.Value()))
+	case f.POTARef.Focused():
+		f.POTARef, _ = f.POTARef.Update(msg)
+		f.POTARef.SetValue(strings.ToUpper(f.POTARef.Value()))
+	case f.WWFFRef.Focused():
+		f.WWFFRef, _ = f.WWFFRef.Update(msg)
+		f.WWFFRef.SetValue(strings.ToUpper(f.WWFFRef.Value()))
+	case f.CQZone.Focused():
+		f.CQZone, _ = f.CQZone.Update(msg)
+	case f.ITUZone.Focused():
+		f.ITUZone, _ = f.ITUZone.Update(msg)
+	case f.DXCC.Focused():
+		f.DXCC, _ = f.DXCC.Update(msg)
+		f.DXCC.SetValue(strings.ToUpper(f.DXCC.Value()))
+	case f.SIG.Focused():
+		f.SIG, _ = f.SIG.Update(msg)
+		f.SIG.SetValue(strings.ToUpper(f.SIG.Value()))
+	case f.SIGInfo.Focused():
+		f.SIGInfo, _ = f.SIGInfo.Update(msg)
+		f.SIGInfo.SetValue(strings.ToUpper(f.SIGInfo.Value()))
+	case f.WlURL.Focused():
+		f.WlURL, _ = f.WlURL.Update(msg)
+	case f.WlKey.Focused():
+		f.WlKey, _ = f.WlKey.Update(msg)
+	default:
+		return nil // Non-text focus — no paste target.
+	}
+	return nil
+}
+
 func (f *StationForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 	k := msg
 	if k.String() == "ctrl+s" || k.String() == "\x13" {

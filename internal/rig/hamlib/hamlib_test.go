@@ -1,6 +1,7 @@
 package hamlib
 
 import (
+	"bufio"
 	"context"
 	"net"
 	"strings"
@@ -195,6 +196,57 @@ func TestClient_Status_Split(t *testing.T) {
 	}
 	if status.FrequencyHz != 14123000 {
 		t.Errorf("FrequencyHz = %d, want 14123000", status.FrequencyHz)
+	}
+}
+
+func TestClient_Status_SplitUnsupported(t *testing.T) {
+	// Verifies that an unsupported split command (RPRT -11) is non-fatal:
+	// the status should succeed with split=false and report frequency/mode.
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		scanner := bufio.NewScanner(conn)
+		// v — RPRT -11 (unsupported, non-fatal)
+		scanner.Scan()
+		conn.Write([]byte("RPRT -11\n"))
+		// s — RPRT -11 (unsupported, now non-fatal — split stays false)
+		scanner.Scan()
+		conn.Write([]byte("RPRT -11\n"))
+		// f
+		scanner.Scan()
+		conn.Write([]byte("14123000\n"))
+		// m
+		scanner.Scan()
+		conn.Write([]byte("USB\n"))
+	}()
+
+	host, port, _ := net.SplitHostPort(ln.Addr().String())
+	c := New(host, port, 5*time.Second)
+	c.SetVfoMode(false)
+	status, err := c.Status(context.Background())
+	if err != nil {
+		t.Fatalf("Status should succeed despite split failure, got: %v", err)
+	}
+	if !status.Connected {
+		t.Error("expected connected")
+	}
+	if status.Split {
+		t.Error("expected split=false when split query is unsupported")
+	}
+	if status.FrequencyHz != 14123000 {
+		t.Errorf("FrequencyHz = %d, want 14123000", status.FrequencyHz)
+	}
+	if status.Mode != "USB" {
+		t.Errorf("Mode = %q, want USB", status.Mode)
 	}
 }
 

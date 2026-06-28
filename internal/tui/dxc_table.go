@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/table"
@@ -15,6 +17,14 @@ var dxcTimeWindows = []int{0, 60, 30, 15, 10, 5}
 // dxcColWidths maps DXC column keys to minimum widths.
 var dxcColWidths = map[string]int{
 	"Time": 8, "Freq": 8, "Band": 5, "Mode": 4, "DX Cont": 3, "DXCC": 10, "DX Call": 8, "Spot Cont": 3, "Spotter": 7, "Comment": 8,
+}
+
+// dxcMaxWidths maps column keys to maximum widths for width distribution.
+// Pre-allocated to avoid per-table-rebuild allocation.
+var dxcMaxWidths = map[string]int{
+	"DX Call": 11,
+	"Spotter": 9,
+	"DXCC":    12,
 }
 
 // dxcColOrder is the fixed display order (keys, not titles).
@@ -33,16 +43,16 @@ func dxcColTitle(key string) string {
 func dxcColValue(col string, s *store.DXCSpot) string {
 	switch col {
 	case "Time":
-		return time.Unix(s.ReceivedAt, 0).UTC().Format("15:04:05")
+		return formatDXCSpotTime(s.ReceivedAt)
 	case "Freq":
 		if s.Frequency <= 0 {
 			return "\u2014"
 		}
 		mhz := s.Frequency / 1000
 		if mhz < 100 {
-			return fmt.Sprintf("%.4f", mhz)
+			return strconv.FormatFloat(mhz, 'f', 4, 64)
 		}
-		return fmt.Sprintf("%.3f", mhz)
+		return strconv.FormatFloat(mhz, 'f', 3, 64)
 	case "Band":
 		return s.Band
 	case "Mode":
@@ -70,6 +80,29 @@ func dxcColValue(col string, s *store.DXCSpot) string {
 		return s.Comment
 	}
 	return ""
+}
+
+// formatDXCSpotTime formats a Unix timestamp as HH:MM:SS using strconv
+// instead of time.Format() to avoid allocation per spot row.
+func formatDXCSpotTime(ts int64) string {
+	t := time.Unix(ts, 0).UTC()
+	h, m, s := t.Hour(), t.Minute(), t.Second()
+	var sb strings.Builder
+	if h < 10 {
+		sb.WriteByte('0')
+	}
+	sb.WriteString(strconv.Itoa(h))
+	sb.WriteByte(':')
+	if m < 10 {
+		sb.WriteByte('0')
+	}
+	sb.WriteString(strconv.Itoa(m))
+	sb.WriteByte(':')
+	if s < 10 {
+		sb.WriteByte('0')
+	}
+	sb.WriteString(strconv.Itoa(s))
+	return sb.String()
 }
 
 // buildDXCTable constructs the bubbles/table for DXC spots.
@@ -138,13 +171,10 @@ func (m *Model) buildDXCTable() {
 	extra := bodyW - gaps - minTotal
 	if extra > 0 {
 		// Compute per-column max caps. DXCC gets double width on very wide screens.
-		maxWidths := map[string]int{
-			"DX Call": 11,
-			"Spotter": 9,
-			"DXCC":    12,
-		}
+		// Use package-level map; only override DXCC for ultra-wide terminals.
+		dxccExtra := 12
 		if w >= 125 {
-			maxWidths["DXCC"] = 24
+			dxccExtra = 24
 		}
 
 		// Give non-Comment columns a chance to grow to their max caps.
@@ -152,7 +182,13 @@ func (m *Model) buildDXCTable() {
 			if cols[i].Title == "Comment" {
 				continue
 			}
-			if maxW, ok := maxWidths[cols[i].Title]; ok && cols[i].Width < maxW {
+			maxW := 0
+			if cols[i].Title == "DXCC" {
+				maxW = dxccExtra
+			} else if mw, ok := dxcMaxWidths[cols[i].Title]; ok {
+				maxW = mw
+			}
+			if maxW > 0 && cols[i].Width < maxW {
 				need := maxW - cols[i].Width
 				if need > extra {
 					need = extra
@@ -256,25 +292,24 @@ func (m *Model) dxcView() string {
 
 	contentH := contentHeight(h)
 
-	timeVal := "all"
-	if m.dxc.timeFilter > 0 {
-		timeVal = fmt.Sprintf("%dm", m.dxc.timeFilter)
-	}
-	bandVal := "all"
-	if m.dxc.bandFilter != "" {
-		bandVal = m.dxc.bandFilter
-	}
-	contVal := "all"
-	if m.dxc.contFilter != "" {
-		contVal = m.dxc.contFilter
-	}
-	modeVal := "all"
-	if m.dxc.modeFilter != "" {
-		modeVal = m.dxc.modeFilter
-	}
-
 	// Cache filter info line — only rebuild when width or filters change.
 	if m.dxc.cachedFilterInfo == "" || m.dxc.cachedFilterW != bodyW {
+		timeVal := "all"
+		if m.dxc.timeFilter > 0 {
+			timeVal = fmt.Sprintf("%dm", m.dxc.timeFilter)
+		}
+		bandVal := "all"
+		if m.dxc.bandFilter != "" {
+			bandVal = m.dxc.bandFilter
+		}
+		contVal := "all"
+		if m.dxc.contFilter != "" {
+			contVal = m.dxc.contFilter
+		}
+		modeVal := "all"
+		if m.dxc.modeFilter != "" {
+			modeVal = m.dxc.modeFilter
+		}
 		m.dxc.cachedFilterInfo = " " + DimStyle.Render("Filters:") + " " +
 			DimStyle.Render("Cont") + " " + ValueStyle.Render(contVal) +
 			" " + DimStyle.Render("|") + " " +
@@ -287,10 +322,13 @@ func (m *Model) dxcView() string {
 			DimStyle.Render("Spots") + " " + ValueStyle.Render(fmt.Sprintf("%d", m.dxc.spotCount))
 		m.dxc.cachedFilterW = bodyW
 	}
-	spacer := lipgloss.NewStyle().Width(bodyW).Render(m.dxc.cachedFilterInfo)
+	if m.dxc.cachedSpacerStyleW != bodyW {
+		m.dxc.cachedSpacerStyle = lipgloss.NewStyle().Width(bodyW).MaxWidth(bodyW)
+		m.dxc.cachedSpacerStyleW = bodyW
+	}
+	spacer := m.dxc.cachedSpacerStyle.Render(m.dxc.cachedFilterInfo)
 
-	tablePart := lipgloss.NewStyle().
-		MaxWidth(bodyW).
+	tablePart := m.dxc.cachedSpacerStyle.
 		Height(contentH - 1).
 		Render(m.dxc.table.View())
 	return lipgloss.JoinVertical(lipgloss.Left, spacer, tablePart)

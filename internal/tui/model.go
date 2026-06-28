@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"charm.land/bubbles/v2/help"
+	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -18,6 +20,7 @@ import (
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/qrz"
 	"github.com/szporwolik/cqops/internal/qso"
+	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
@@ -153,10 +156,14 @@ type Model struct {
 	// Render cache — avoids redundant layout, style, and view computation.
 	rc renderCache
 
-	lookup        lookupState
-	retainComment bool
-	retainFocused bool // true when the Retain checkbox has focus (instead of a text field)
-	gridSource    gridSource
+	lookup          lookupState
+	keepComment     bool   // "Keep" checkbox — retains comment field content across QSOs
+	keepFocused     bool   // true when the Keep/Retain checkbox row has focus
+	keepSubFocus    int    // 0=Keep, 1=Retain — which checkbox in the row is active
+	retainForm      bool   // "Retain" checkbox — prevents form clearing after QSO save
+	dupeCacheKey    string // cache key for checkDupe result
+	dupeCacheResult bool   // cached outcome of last checkDupe
+	gridSource      gridSource
 
 	keys       KeyMap
 	help       help.Model
@@ -182,6 +189,12 @@ type wlResultMsg struct {
 type dxcSpotLookupMsg struct {
 	call string
 	freq float64 // 0 if not found
+}
+
+// logbookStatsMsg carries the async result of GetLogbookStats.
+type logbookStatsMsg struct {
+	stats store.LogbookStats
+	sig   string
 }
 
 type dxcTuneResultMsg struct {
@@ -239,7 +252,7 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 			ti.SetValue(now.Format("2006-01-02"))
 		case fieldTime:
 			ti.CharLimit = 8
-			ti.SetValue(now.Format("15:04:05"))
+			ti.SetValue(now.Format("15:04"))
 		case fieldGrid:
 			ti.CharLimit = 8
 		case fieldCountry:
@@ -265,6 +278,10 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	m.focus = fieldCall
 	m.keys = DefaultKeyMap()
 	m.help = help.New()
+	// Brighten help overlay content: key in value color, desc in muted label color.
+	m.help.Styles.FullKey = S.Input
+	m.help.Styles.FullDesc = lipgloss.NewStyle().Foreground(P.TextMuted)
+	m.help.Styles.FullSeparator = lipgloss.NewStyle().Foreground(P.TextMuted)
 
 	m.recentQSOs = NewRecentQSOs(initialQSOS)
 	transport := &imageTransport{base: http.DefaultTransport}
@@ -287,8 +304,8 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	}
 	m.psk.lastFetchByCall = make(map[string]time.Time)
 	m.applyBeepOnError()
-	m.retainComment = a.Config.State.RetainComment
-	if a.Config.State.RetainedComment != "" {
+	m.keepComment = a.Config.State.RetainComment
+	if m.keepComment && a.Config.State.RetainedComment != "" {
 		m.fields[fieldComment].SetValue(a.Config.State.RetainedComment)
 	}
 	return m
@@ -305,6 +322,13 @@ func (m *Model) applyBeepOnError() {
 }
 
 func (m *Model) Init() tea.Cmd {
+	// Warn if the encrypted secrets file is corrupted or from another
+	// machine — passwords and API keys must be re-entered.
+	if m.App.Secrets != nil && m.App.Secrets.Corrupted {
+		m.toasts.Warn("Secrets: encrypted store could not be decrypted — passwords and API keys must be re-entered")
+		applog.Warn("Secrets: encrypted store corrupted or from different machine")
+	}
+
 	m.refreshRigClient()
 	m.refreshRotorClient()
 	m.App.WSJTX.OnADIF = func(adif string) {
@@ -401,11 +425,38 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmd = tea.Batch(cmd, c)
 		}
 		// Update focused textinput width so scrolling stays correct.
-		if m.screen == screenQSO && !m.retainFocused {
+		// Set width on ALL form fields so View() doesn't need to mutate them.
+		if m.screen == screenQSO {
 			if m.width > 60 {
-				m.fields[m.focus].SetWidth(m.width/3 - 16)
+				colW := (m.width - 4) / 3
+				if colW > 41 {
+					colW = 41
+				}
+				vw := colW - 14 // subtract label+icon padding
+				if vw < 3 {
+					vw = 3
+				}
+				if vw > 40 {
+					vw = 40
+				}
+				for f := field(0); f < fieldCount; f++ {
+					ti := m.fields[f]
+					ti.SetWidth(vw)
+					m.fields[f] = ti
+				}
 			} else if m.width > 20 {
-				m.fields[m.focus].SetWidth(m.width - 16)
+				vw := m.width - 16
+				if vw < 3 {
+					vw = 3
+				}
+				if vw > 40 {
+					vw = 40
+				}
+				for f := field(0); f < fieldCount; f++ {
+					ti := m.fields[f]
+					ti.SetWidth(vw)
+					m.fields[f] = ti
+				}
 			}
 		}
 	}
@@ -428,6 +479,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		// Non-key messages fall through for tick / toast expiry / async processing.
+	}
+
+	// Active help overlay — blocks all input except dismiss keys.
+	if m.help.ShowAll {
+		if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
+			if key.Matches(keyMsg, m.keys.Help) || key.Matches(keyMsg, m.keys.Cancel) {
+				m.help.ShowAll = false
+			}
+			// Consume all keys while help is shown.
+		}
+		return m, cmd
 	}
 
 	// Active confirmation dialog — highest priority, blocks everything else
@@ -482,94 +544,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	// Lookup result messages (QRZ, Wavelog) — must be processed before
 	// screen-specific routing so they work regardless of which screen is
-	// active (e.g. partner screen). Each screen's handler returns early
-	// for unrecognised messages, which would silently drop these.
-	switch r := msg.(type) {
-	case qrzResultMsg:
-		m.fillQRZData(r)
-		cmd = tea.Batch(cmd, m.updateFilteredTable())
-		m.contestAutoFocusExchRcvd()
-		if m.photo.partnerPicNeedLoad {
-			m.photo.partnerPicNeedLoad = false
-			w := m.photo.partnerPicW
-			h := m.photo.partnerPicH
-			if w < 25 {
-				w = 40
-			}
-			if h < 4 {
-				h = 15
-			}
-			cmd = tea.Batch(cmd, m.photo.partnerPicViewer.SetSize(w, h),
-				m.photo.partnerPicViewer.SetURL(m.photo.partnerPicURL))
-		}
-		return m, cmd
-	case wlResultMsg:
-		m.fillWLData(r)
-		m.contestAutoFocusExchRcvd()
-		return m, cmd
-	case refRebuildMsg:
-		m.ref.building = false
-		m.ref.refNamesDirty = true
-		if r.err != nil {
-			applog.Warn("REF: rebuild failed", "error", r.err)
-			m.toasts.Error("REF database build failed")
-		} else {
-			m.ref.ready = true
-			applog.Info("REF: rebuild complete", "total", r.total)
-			m.toasts.Success(fmt.Sprintf("REF database ready — %d references", r.total))
-		}
-		return m, cmd
-	case dxcSpotLookupMsg:
-		m.fillDXCFreq(r)
-		return m, cmd
-	case dxcSpotsStoredMsg:
-		m.handleDXCSpotsStored(r)
-		return m, cmd
-	case dxcTuneResultMsg:
-		if r.err != nil {
-			if strings.Contains(r.err.Error(), "cancelled") {
-				m.toasts.Warn(fmt.Sprintf("Tune cancelled: %v", r.err))
-			} else {
-				m.toasts.Error(fmt.Sprintf("Tune failed: %v", r.err))
-			}
-		} else {
-			msg := fmt.Sprintf("Rig tuned to %.5f MHz", r.freqMHz)
-			if r.mode != "" {
-				msg += " " + r.mode
-			}
-			if r.verify != "" {
-				m.toasts.Warn("Rig tuning failed")
-			} else {
-				m.toasts.Success(msg)
-			}
-		}
-		return m, cmd
-	case bplTuneResultMsg:
-		if r.err != nil {
-			if strings.Contains(r.err.Error(), "cancelled") {
-				m.toasts.Warn(fmt.Sprintf("Tune cancelled: %v", r.err))
-			} else {
-				m.toasts.Error(fmt.Sprintf("Tune failed: %v", r.err))
-			}
-		} else {
-			msg := fmt.Sprintf("Rig tuned to %.5f MHz", r.freqMHz)
-			if r.mode != "" {
-				msg += " " + r.mode
-			}
-			if r.verify != "" {
-				m.toasts.Warn("Rig tuning failed")
-			} else {
-				m.toasts.Success(msg)
-			}
-		}
-		return m, cmd
-	case bplExportMsg:
-		if r.err != nil {
-			m.toasts.Error(fmt.Sprintf("Export failed: %v", r.err))
-		} else {
-			m.toasts.Success(fmt.Sprintf("Band plan exported to %s", r.path))
-		}
-		return m, cmd
+	// active (e.g. partner screen).
+	if result, resultCmd := m.handleLookupResultMsg(msg, cmd); result != nil {
+		return result, resultCmd
 	}
 
 	// Deferred pending requests (QRZ lookup, WL lookup, QSO refresh) —
@@ -660,6 +637,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleBPLUpdate(msg, cmd)
 	}
 
+	// Forward paste messages to the focused textinput so clipboard paste works.
+	if pasteMsg, ok := msg.(tea.PasteMsg); ok && m.screen == screenQSO && !m.keepFocused {
+		f := m.focus
+		ti, c := m.fields[f].Update(pasteMsg)
+		m.fields[f] = ti
+		if c != nil {
+			cmd = tea.Batch(cmd, c)
+		}
+		return m, cmd
+	}
+
 	// QSO form key handling
 	if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
 		if formCmd, handled := m.handleFormKey(keyMsg); handled {
@@ -705,23 +693,28 @@ func (m *Model) View() tea.View {
 	cacheBars := m.rc.barW == m.width && m.rc.barSc == m.screen &&
 		m.rc.barOp == m.App.Logbook.ActiveOperator &&
 		m.rc.barLog == m.App.LogbookName &&
-		m.rc.barRig == m.App.Logbook.Station.RigName
+		m.rc.barRig == m.App.Logbook.Station.RigName &&
+		m.rc.barTx == m.wsjtx.tx && m.rc.barTxMsg == m.wsjtx.txMsg &&
+		m.rc.barOnline == m.wsjtx.online
 	if !cacheBars {
 		m.rc.status = ""
 	}
-	if m.rc.status == "" || m.rc.statusSec != time.Now().UTC().Second() {
+	if m.rc.status == "" || m.rc.statusSec != time.Now().UTC().Minute() {
 		m.rc.status = m.renderStatusBar()
-		m.rc.statusSec = time.Now().UTC().Second()
+		m.rc.statusSec = time.Now().UTC().Minute()
 	}
-	// Tab bar depends on partner data / call field — always fresh.
+	// Tab bar depends on partner data / call field / connectivity — cached.
 	m.rc.tabs = m.renderTabBar()
-	// Help bar has dynamic suffix (QSO counter, scroll info) — always fresh.
+	// Help bar has dynamic suffix (QSO counter, scroll info) — cached.
 	m.rc.help = m.renderHelpBar()
 	m.rc.barW = m.width
 	m.rc.barSc = m.screen
 	m.rc.barOp = m.App.Logbook.ActiveOperator
 	m.rc.barLog = m.App.LogbookName
 	m.rc.barRig = m.App.Logbook.Station.RigName
+	m.rc.barTx = m.wsjtx.tx
+	m.rc.barTxMsg = m.wsjtx.txMsg
+	m.rc.barOnline = m.wsjtx.online
 
 	var mainParts []string
 	addRow := func(s string) {
@@ -753,8 +746,17 @@ func (m *Model) View() tea.View {
 	// Composite toasts as a floating overlay in the bottom-right corner.
 	// Clip mainView to terminal height first so the compositor canvas
 	// matches the visible terminal exactly.
-	mainView = lipgloss.NewStyle().MaxHeight(layout.TerminalH).Render(mainView)
-	finalView := RenderToastOverlay(mainView, m.toasts.Active(), layout.TerminalW, layout.TerminalH)
+	if m.rc.clipStyleH != layout.TerminalH {
+		m.rc.clipStyle = lipgloss.NewStyle().MaxHeight(layout.TerminalH)
+		m.rc.clipStyleH = layout.TerminalH
+	}
+	mainView = m.rc.clipStyle.Render(mainView)
+	finalView := m.toasts.RenderOverlay(mainView, layout.TerminalW, layout.TerminalH)
+
+	// Help overlay — floating bottom-left, above toasts, when ? is pressed.
+	if m.help.ShowAll {
+		finalView = m.renderHelpOverlay(finalView, layout)
+	}
 
 	v := tea.NewView(finalView)
 	v.AltScreen = true
@@ -765,6 +767,21 @@ func (m *Model) View() tea.View {
 // viewImage renders the partner photo full-screen.
 func (m *Model) viewImage(l Layout) string {
 	content := m.photo.viewer.View().Content
+
+	// Cache image styles — rebuilt only when dimensions change.
+	if m.rc.imagePlaceholderW != l.TerminalW || m.rc.imagePlaceholderH != l.ContentH {
+		m.rc.imagePlaceholderStyle = lipgloss.NewStyle().
+			Width(l.TerminalW).
+			Height(l.ContentH).
+			Align(lipgloss.Center, lipgloss.Center).
+			Foreground(P.TextMuted)
+		m.rc.imageContentStyle = lipgloss.NewStyle().
+			Width(l.TerminalW).
+			Height(l.ContentH)
+		m.rc.imagePlaceholderW = l.TerminalW
+		m.rc.imagePlaceholderH = l.ContentH
+	}
+
 	if m.photo.viewer.Err() != nil || content == "" {
 		msg := ""
 		if m.photo.viewer.Err() != nil {
@@ -786,17 +803,9 @@ func (m *Model) viewImage(l Layout) string {
 		if msg == "" {
 			msg = "No image"
 		}
-		content = lipgloss.NewStyle().
-			Width(l.TerminalW).
-			Height(l.ContentH).
-			Align(lipgloss.Center, lipgloss.Center).
-			Foreground(P.TextMuted).
-			Render(msg)
+		content = m.rc.imagePlaceholderStyle.Render(msg)
 	} else {
-		content = lipgloss.NewStyle().
-			Width(l.TerminalW).
-			Height(l.ContentH).
-			Render(content)
+		content = m.rc.imageContentStyle.Render(content)
 	}
 	return content
 }
@@ -848,7 +857,11 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 		return ""
 	}
 	// Clamp to contentH so toggling a menu item never shifts the bottom bars.
-	return lipgloss.NewStyle().MaxHeight(l.ContentH).Render(body)
+	if m.rc.bodyClipStyleH != l.ContentH {
+		m.rc.bodyClipStyle = lipgloss.NewStyle().MaxHeight(l.ContentH)
+		m.rc.bodyClipStyleH = l.ContentH
+	}
+	return m.rc.bodyClipStyle.Render(body)
 }
 
 // buildQSOFormWithLayout renders the QSO form, short path info, and recent
@@ -878,12 +891,13 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 	// Solar panel — right-side column on wide screens (≥166 cols),
 	// gated by the General → Solar at QSO pane config option.
 	var formRow string
+	var solarPanel string
 	if w >= 166 && m.App.Config.General.SolarAtQSOPane {
 		solarW := w - 2 - boxW - 0 + 2 // no gap, 2px wider panel
 		if solarW < 32 {
 			solarW = 32
 		}
-		solarPanel := m.renderSolarPanel(solarW)
+		solarPanel = m.renderSolarPanel(solarW)
 		if solarPanel != "" {
 			leftH := lipgloss.Height(formBox)
 			solarPanel = lipgloss.Place(
@@ -913,8 +927,17 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 
 	tableW := w - 2
 	// Cap to same max as QSO form for visual consistency.
+	// When solar panel is active, let the table use the full terminal width
+	// so richer columns (Operator, WL) can appear on wide screens.
 	if tableW > partnerMapMaxW {
-		tableW = partnerMapMaxW
+		if solarPanel != "" && m.App.Config.General.SolarAtQSOPane {
+			// Solar panel active — table gets full width, capped at 200.
+			if tableW > 200 {
+				tableW = 200
+			}
+		} else {
+			tableW = partnerMapMaxW
+		}
 	}
 	if tableH < 3 {
 		tableH = 3
@@ -1005,23 +1028,37 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 }
 
 // buildContestLine returns the contest info line for the QSO screen, or "" if
-// no contest is active.
+// no contest is active. Cached — only recomputes when contest or seq changes.
 func (m *Model) buildContestLine() string {
 	id := m.App.Logbook.ActiveContest
 	if id == "" {
+		m.rc.contestLine = ""
+		m.rc.contestLineSig = ""
 		return ""
 	}
 	ct, ok := m.App.Config.Contests[id]
 	if !ok {
+		m.rc.contestLine = ""
+		m.rc.contestLineSig = ""
 		return ""
 	}
-	return fmt.Sprintf(" Contest: %s   Contest ID: %s   Next QSO seq: %d",
-		config.ContestDisplayName(&ct), ct.ContestID, ct.NextQSO)
+	sig := id + "|" + strconv.Itoa(ct.NextQSO)
+	if m.rc.contestLineSig == sig && m.rc.contestLine != "" {
+		return m.rc.contestLine
+	}
+	m.rc.contestLineSig = sig
+	m.rc.contestLine = " Contest: " + config.ContestDisplayName(&ct) +
+		"   Contest ID: " + ct.ContestID +
+		"   Next QSO seq: " + strconv.Itoa(ct.NextQSO)
+	return m.rc.contestLine
 }
 
 // cycleActiveContest rotates through all active contests (excluding None).
 // Persists the new active contest to config silently.
 func (m *Model) cycleActiveContest() {
+	if m.App == nil || m.App.Config == nil {
+		return
+	}
 	ids := config.ActiveContestIDs(m.App.Config, m.App.LogbookName)
 	current := m.App.Logbook.ActiveContest
 

@@ -10,7 +10,18 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/szporwolik/cqops/internal/qso"
+	"github.com/szporwolik/cqops/internal/secrets"
 	"github.com/szporwolik/cqops/internal/version"
+)
+
+// Default host/port values for rig and rotor backends.
+const (
+	DefaultFlrigHost  = "localhost"
+	DefaultFlrigPort  = "12345"
+	DefaultHamlibHost = "127.0.0.1"
+	DefaultHamlibPort = "4532"
+	DefaultRotorHost  = "127.0.0.1"
+	DefaultRotorPort  = "4533"
 )
 
 type Config struct {
@@ -23,7 +34,17 @@ type Config struct {
 	Contests          map[string]Contest   `yaml:"contests,omitempty"`
 	Operators         map[string]Operator  `yaml:"operators,omitempty"`
 	BroadcastStations []BroadcastStation   `yaml:"-"`
+
+	secrets      *secrets.Store `yaml:"-"`
+	savedSecrets *savedSecrets  `yaml:"-"`
 }
+
+// SetSecretsStore attaches a secrets store for encrypted persistence of
+// passwords and API keys. Call before Save.
+func (c *Config) SetSecretsStore(s *secrets.Store) { c.secrets = s }
+
+// SecretsStore returns the attached secrets store, or nil.
+func (c *Config) SecretsStore() *secrets.Store { return c.secrets }
 
 // BroadcastStation represents a broadcast radio station preset.
 type BroadcastStation struct {
@@ -190,7 +211,7 @@ func (s Station) RigPower(rgs map[string]RigPreset) string {
 func (s Station) RigFlrig(rgs map[string]RigPreset) (enabled bool, host, port string) {
 	rp, ok := s.Rig(rgs)
 	if !ok {
-		return false, "localhost", "12345"
+		return false, DefaultFlrigHost, DefaultFlrigPort
 	}
 	return rp.RadioBackend == "flrig", rp.FlrigHost, rp.FlrigPort
 }
@@ -199,7 +220,7 @@ func (s Station) RigFlrig(rgs map[string]RigPreset) (enabled bool, host, port st
 func (s Station) RigHamlib(rgs map[string]RigPreset) (enabled bool, host, port string) {
 	rp, ok := s.Rig(rgs)
 	if !ok {
-		return false, "127.0.0.1", "4532"
+		return false, DefaultHamlibHost, DefaultHamlibPort
 	}
 	return rp.RadioBackend == "hamlib", rp.HamlibRadioHost, rp.HamlibRadioPort
 }
@@ -208,7 +229,7 @@ func (s Station) RigHamlib(rgs map[string]RigPreset) (enabled bool, host, port s
 func (s Station) RigRotor(rgs map[string]RigPreset) (enabled bool, host, port string) {
 	rp, ok := s.Rig(rgs)
 	if !ok {
-		return false, "127.0.0.1", "4533"
+		return false, DefaultRotorHost, DefaultRotorPort
 	}
 	return rp.RotorBackend == "hamlib", rp.RotorHamlibHost, rp.RotorHamlibPort
 }
@@ -264,6 +285,7 @@ func Load(path string) (*Config, error) {
 	// Backward compat: migrate old backend → radio_backend, FlrigEnabled → RadioBackend.
 	for id, rp := range cfg.Rigs {
 		if rp.RadioBackend == "" && rp.Backend != "" {
+			fmt.Fprintf(os.Stderr, "CQOps: rig %s uses deprecated 'backend' field — please update to 'radio_backend'\n", id)
 			rp.RadioBackend = rp.Backend
 			rp.Backend = ""
 		}
@@ -280,10 +302,18 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
-// Save marshals cfg as YAML and writes it to path.
-
+// Save marshals cfg as YAML and writes it to path. If a secrets store is
+// attached via SetSecretsStore, passwords and API keys are extracted and
+// persisted to the encrypted store before the YAML is written.
 func Save(path string, cfg *Config) error {
 	cfg.State.Version = version.Resolved()
+
+	// Extract and persist secrets before marshaling.
+	if cfg.secrets != nil {
+		cfg.extractAndSaveSecrets()
+	}
+	defer cfg.restoreSecrets() // restore in-memory values after YAML marshal
+
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)

@@ -13,7 +13,7 @@ import (
 // dxcTuneCmd returns a tea.Cmd that tunes flrig to the highlighted spot's
 // frequency and mode. Cancels any previous tune command still in flight.
 func (m *Model) dxcTuneCmd() tea.Cmd {
-	if !m.rig.connected || m.wsjtx.online || m.rig.client == nil {
+	if !m.rig.connected || m.wsjtx.tx || m.rig.client == nil {
 		applog.Debug("DXC: tune skipped",
 			"rigConnected", m.rig.connected,
 			"wsjtxOnline", m.wsjtx.online,
@@ -132,7 +132,9 @@ func (m *Model) dxcTuneCmd() tea.Cmd {
 					)
 				}
 			}
-			_ = err2
+			if err2 != nil {
+				applog.Debug("DXC: tune mode verify failed", "call", call, "error", err2)
+			}
 		}
 
 		return dxcTuneResultMsg{
