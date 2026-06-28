@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.8.7 — 2026-06-27
+## v0.8.7 — 2026-06-28
 
 ### Encrypted Secrets Store
 - **New `internal/secrets` package** — AES-256-GCM encrypted storage for passwords and API keys
