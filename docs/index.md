@@ -6,7 +6,7 @@ description: Fast, terminal-first amateur radio logger — offline-first, QRP-re
 <div align="center">
 
 <p align="center">
-  <img src="../assets/other/gh-logo.png" alt="CQOps logo" width="360">
+  <img src="https://raw.githubusercontent.com/szporwolik/cqops/main/assets/other/gh-logo.png" alt="CQOps logo" width="360">
 </p>
 
 # CQOps Documentation
@@ -17,10 +17,10 @@ Fast, terminal-first amateur radio logging — offline-first, QRP-ready, built f
 
 ### Language
 
-| [🇬🇧 English](manual.en.md) | [🇵🇱 Polski](manual.pl.md) | [🇩🇪 Deutsch](manual.de.md) |
+| [🇬🇧 English](manual.en) | [🇵🇱 Polski](manual.pl) | [🇩🇪 Deutsch](manual.de) |
 |---|---|---|
-| [🇪🇸 Español](manual.es.md) | [🇯🇵 日本語](manual.ja.md) | [🇫🇷 Français](manual.fr.md) |
-| | [🇮🇹 Italiano](manual.it.md) | |
+| [🇪🇸 Español](manual.es) | [🇯🇵 日本語](manual.ja) | [🇫🇷 Français](manual.fr) |
+| | [🇮🇹 Italiano](manual.it) | |
 
 ---
 
