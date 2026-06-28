@@ -69,6 +69,23 @@ jobs:
           echo "Building $VERSION for darwin/arm64..."
           GOOS=darwin GOARCH=arm64 go build -ldflags "$LDFLAGS" -o build/cqops-darwin-arm64 ./cmd/cqops/
 
+          echo "Binaries before UPX:"
+          ls -lh build/
+
+      - name: Compress with UPX (portable/raw binaries only)
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq upx-ucl
+          # Compress all non-Windows binaries (Windows skipped to avoid AV false positives)
+          upx --best build/cqops-linux-amd64
+          upx --best build/cqops-linux-arm64
+          upx --best build/cqops-linux-armhf
+          upx --best build/cqops-darwin-amd64
+          upx --best build/cqops-darwin-arm64
+          echo "Binaries after UPX:"
+          ls -lh build/
+
+      - name: Package dist
+        run: |
           # Copy to dist/: darwin (raw only), windows installer input,
           # and ARMv7 deb input. Linux/windows raw are redundant with
           # packages/installer — only darwin + ARMv7 get raw binaries.
@@ -83,7 +100,7 @@ jobs:
           tar -czf dist/cqops-linux-arm64.tar.gz -C build cqops-linux-arm64
           tar -czf dist/cqops-linux-armhf.tar.gz -C build cqops-linux-armhf
 
-          echo "Binaries:"
+          echo "Packaged dist:"
           ls -lh dist/
 
       - name: Smoke test (linux/amd64)
