@@ -111,13 +111,17 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		mode := strings.TrimSpace(m.fields[fieldMode].Value())
 
 		callChanged := m.lookup.partnerData == nil || !strings.EqualFold(m.lookup.partnerData.Callsign, call)
+		wlCallChanged := m.lookup.wlLookupCall == "" || !strings.EqualFold(m.lookup.wlLookupCall, call)
 		bandChanged := band != m.lookup.wlLastBand
 		modeChanged := mode != m.lookup.wlLastMode
 
 		if callChanged {
 			m.lookup.partnerData = nil
 		}
-		if callChanged || bandChanged || modeChanged {
+		// Only invalidate WL data when the call, band, or mode actually
+		// changed from the last WL lookup — not when QRZ partner data
+		// happens to be nil.
+		if wlCallChanged || bandChanged || modeChanged {
 			m.lookup.wlPrivateData = nil
 			m.lookup.wlLookupDone = false
 		}
