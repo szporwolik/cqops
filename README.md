@@ -8,10 +8,13 @@
 [![downloads](https://img.shields.io/github/downloads/szporwolik/cqops/total?color=1f6feb)](https://github.com/szporwolik/cqops/releases)
 [![go](https://img.shields.io/badge/Go-1.26-00ADD8)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
+[![docs](https://img.shields.io/badge/docs-cqops.com-1f6feb)](https://docs.cqops.com/)
 
 A small, fast, offline-first amateur radio logger for the terminal. Built for portable and field operations where every watt and every CPU cycle counts.
 
 CQOps is a personal project for my own use and my local club. It's not a full-featured desktop logger — for that, see [Log4OM](https://www.log4om.com/) (Windows), [QLog](https://github.com/foldynl/QLog) (Linux), or [Wavelog](https://www.wavelog.org/) (self-hosted web). CQOps fills a different niche: a lightweight, dependency-minimal CLI tool that runs on a Raspberry Pi, an old laptop, or any "potato PC" without a GUI — perfect for off-grid portable ops, SOTA/POTA, and fast keystroke-driven logging.
+
+> 📖 **Full documentation, installation guides, and translations at [docs.cqops.com](https://docs.cqops.com/)** — available in English, Polski, Deutsch, Español, 日本語, Français, and Italiano.
 
 ## Author
 
@@ -19,18 +22,19 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 
 ## Features
 
-- **Fast keyboard logging** — three-column form, Enter to log, Tab ↹ Col / ↑↓ Row navigation, auto date/time, DUPE! detection with two-press override, New Call / New DXCC badges
-- **Multi-operator & club station** — per-logbook active operator with Ctrl+O hot-swap, operator profiles (callsign + name), logged OPERATOR field and Wavelog upload follow the active operator
-- **Multi-rig with flrig & Hamlib** — per-rig flrig or hamlib rigctld config; auto-fills freq, mode, power, split (VFO A/B → Freq/Freq RX)
-- **QRZ, DXCC & SCP** — Ins triggers callbook lookup; auto-fills name, QTH, grid, country; prefix-based DXCC and live callsign autocomplete
-- **Wavelog cloud sync** — upload, download, duplicate detection, station profile cycling
-- **Encrypted secrets** — QRZ password, Wavelog API keys, DXC login stored AES-256-GCM encrypted; never in plaintext config
-- **DX Cluster & PSK Reporter** — live spots with filters, spot-to-rig tuning, real-time propagation map
-- **Contest logging** — exchange markers (@rst @serial etc.), auto-derived STX/SRX/STX_STRING/SRX_STRING, per-contest QSO filtering
-- **Offline-first** — SQLite, REF database (SOTA/POTA/WWFF/IOTA), solar data cached hourly; `--offline` flag for fully disconnected ops
-- **ADIF 3.1.7** — full import/export with all station and contest fields
-- **Partner view** — distance, bearing, world map, QRZ photo, Wavelog private lookup
-- **Raspberry Pi ready** — Windows, Linux, macOS, ARM; runs on potato PCs over SSH
+- **Fast keyboard logging** — three-column QSO form, Enter to log, dupe detection, badges
+- **Multi-operator & club station** — hot-swap operators and logbooks with Ctrl+O / Ctrl+L
+- **Multi-rig** — flrig and Hamlib rigctld support, Ctrl+R to cycle rigs
+- **QRZ callbook** — Ins triggers lookup, auto-fills name, QTH, grid, country
+- **Wavelog sync** — upload, incremental download, per-logbook configuration
+- **Encrypted secrets** — AES-256-GCM, machine-tied key, never plaintext
+- **DX Cluster & PSK Reporter** — live spots with filters, spot-to-rig tuning, ASCII propagation map
+- **Contest logging** — exchange markers, auto serial numbers, ADIF contest ID
+- **Offline-first** — SQLite, cached REF/Solar/DXCC data; `--offline` flag
+- **ADIF 3.1.7** — full import/export, contest fields preserved
+- **Raspberry Pi ready** — Windows, Linux, macOS, ARM; runs over SSH
+
+See the [documentation](https://docs.cqops.com/) for detailed workflows, configuration, keyboard shortcuts, and troubleshooting.
 
 ## Screenshots
 
@@ -54,53 +58,21 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 
 ## Build
 
-The version from the `VERSION` file is always embedded in the binary.
-
 ```bash
 git clone https://github.com/szporwolik/cqops.git
 cd cqops
-
-# Build for current platform (output in build/)
-make build
-
-# Or cross-compile for all platforms
-make build-all
-
-# Run tests
-make test
-
-# Lint (requires golangci-lint)
-make lint
+make build        # Build for current platform (output in build/)
+make build-all    # Cross-compile for all platforms
+make test         # Run tests
 ```
 
-Binaries are placed in the `build/` directory (git-ignored). For smaller binaries, install UPX and run `upx --best build/cqops`.
+For smaller binaries, install [UPX](https://upx.github.io/) and run `upx --best build/cqops`.
 
-### Without make (Windows / manual)
-
-```powershell
-# Windows PowerShell
-.\scripts\build.ps1
-```
-```bash
-# Linux / macOS
-./scripts/build.sh
-```
-
-Or a one-liner:
-
-```bash
-go build -ldflags "-s -w -X github.com/szporwolik/cqops/internal/version.Version=$(cat VERSION)" -o build/cqops ./cmd/cqops/
-```
+See the [documentation](https://docs.cqops.com/manual.en.html#download--installation) for pre-built downloads and platform-specific installation.
 
 ## Releases
 
-Release notes are published in [CHANGELOG.md](CHANGELOG.md).  
-All releases are available on the [GitHub Releases](https://github.com/szporwolik/cqops/releases) page.
-
-A GitHub Actions workflow (`.github/workflows/release.yml`) automates the release process. Before triggering it:
-
-1. Update the version in **`VERSION`** (plain version number, e.g. `0.8.7`).
-2. Run the **Create Release** workflow from the [Actions tab](https://github.com/szporwolik/cqops/actions) — it builds binaries for 6 platforms (linux/amd64, linux/arm64, linux/armhf, windows/amd64, darwin/amd64, darwin/arm64), Debian packages, portable archives, and a Windows installer, then creates a tagged GitHub release.
+Release notes are in [CHANGELOG.md](CHANGELOG.md). All releases are on the [GitHub Releases](https://github.com/szporwolik/cqops/releases) page.
 
 Each release includes:
 
@@ -108,56 +80,27 @@ Each release includes:
 |---|---|
 | `cqops-setup.exe` | Windows installer (NSIS) |
 | `cqops-windows-portable.zip` | Windows portable (no install, amd64) |
-| `cqops_X.Y.Z_linux_amd64.deb` | Debian / Ubuntu amd64 |
-| `cqops_X.Y.Z_linux_arm64.deb` | Debian / Ubuntu arm64 |
-| `cqops_X.Y.Z_linux_armhf.deb` | Debian / Ubuntu armhf (Raspberry Pi) |
+| `cqops_amd64.deb` | Debian / Ubuntu amd64 |
+| `cqops_arm64.deb` | Debian / Ubuntu arm64 |
+| `cqops_armhf.deb` | Debian / Ubuntu armhf (Raspberry Pi) |
 | `cqops-linux-amd64.tar.gz` | Linux amd64 portable |
 | `cqops-linux-arm64.tar.gz` | Linux arm64 portable |
 | `cqops-linux-armhf.tar.gz` | Linux armhf portable |
 | `cqops-darwin-amd64` | macOS amd64 (raw binary) |
 | `cqops-darwin-arm64` | macOS arm64 (raw binary) |
 
-### Building installers locally
-
-```powershell
-# Windows: NSIS installer (requires makensis + ImageMagick)
-.\scripts\build-installer.ps1
-```
-```bash
-# Linux: Debian packages (requires nfpm)
-bash scripts/build-packages.sh
-```
-
-The Windows installer registers in Control Panel, adds Start Menu shortcuts, and integrates with `%PATH%`. The Linux packages install `cqops` to `/usr/bin/` with a `.desktop` entry and icon.
-
-**Build-time tools used (not linked into the binary):**
-[NSIS](https://nsis.sourceforge.io/) (zlib/libpng), [nfpm](https://nfpm.goreleaser.com/) (Apache 2.0), [go-winres](https://github.com/tc-hib/go-winres) (MIT), [ImageMagick](https://imagemagick.org/) (Apache 2.0).
+See the [documentation](https://docs.cqops.com/manual.en.html#download--installation) for download links and install instructions per platform.
 
 ## Usage
 
 ```bash
-cqops                  # Start interactive TUI (the only way to use CQOps)
-cqops --offline        # Start in offline mode (skip all network checks)
-cqops --debug          # Enable debug logging
-cqops version          # Print version
-cqops --help           # Show flags
-
-Flags:
-  -o, --offline        Run in offline mode (skip all network checks)
-  -d, --debug          Enable debug logging
+cqops              # Start the TUI
+cqops --offline    # Start without network activity
+cqops --version    # Print version and exit
+cqops --help       # Show help
 ```
 
-## Dependencies
-
-**Core:**
-- [Bubble Tea v2](https://charm.land/bubbletea) — Terminal UI framework
-- [Bubbles v2](https://charm.land/bubbles) — TUI components (text input, table, viewport)
-- [Lip Gloss v2](https://charm.land/lipgloss) — Terminal styling and layout
-- [Cobra](https://github.com/spf13/cobra) — CLI framework
-- [modernc.org/sqlite](https://modernc.org/sqlite) — Pure Go SQLite (no CGO)
-- [ntcharts](https://github.com/NimbleMarkets/ntcharts) — Map rendering
-- [yaml.v3](https://gopkg.in/yaml.v3) — YAML config parsing
-- [golang.org/x/text](https://pkg.go.dev/golang.org/x/text) — Unicode normalization for ADIF
+Full usage guide, workflows, and keyboard shortcuts are in the [documentation](https://docs.cqops.com/).
 
 **Integrations:**
 - [wsjtx-go](https://github.com/k0swe/wsjtx-go) — WSJT-X UDP protocol
