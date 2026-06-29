@@ -28,9 +28,10 @@ type Client struct {
 	conn      net.Conn
 	r         *bufio.Reader
 	maxPower  float64 // rig max power in watts (default 100)
-	vfoMode   bool    // true if rigctld was started with --vfo
+	vfoMode   bool    // true if rigctld accepts VFO-prefixed commands
 	vfoProbed bool    // true after first probe attempt (pass or fail)
 
+	powerVfoOK bool // true if "l VFOA RFPOWER" works on this backend
 	modesOnce  sync.Once
 	modesCache []string // populated on first GetModes call
 }
@@ -38,9 +39,10 @@ type Client struct {
 // New returns a new hamlib client.
 func New(host, port string, timeout time.Duration) *Client {
 	return &Client{
-		addr:     net.JoinHostPort(host, port),
-		timeout:  timeout,
-		maxPower: 100,
+		addr:       net.JoinHostPort(host, port),
+		timeout:    timeout,
+		maxPower:   100,
+		powerVfoOK: true, // try VFO form first; cleared on first failure
 	}
 }
 
@@ -168,6 +170,17 @@ func (c *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 		c.dropConn()
 		return rig.RigStatus{}, fmt.Errorf("hamlib: frequency: %w", err)
 	}
+	freq := parseFloat(freqHz)
+	// A valid ham-band frequency is never <= 100 kHz.  Zero or tiny values
+	// mean the response was stale data (RPRT, mode string, etc.) leaking
+	// from a previous timed-out command.  Drop the connection so the next
+	// poll starts with a clean TCP buffer.
+	if freq <= 100000 {
+		applog.Debug("hamlib: frequency returned invalid value, dropping connection", "raw", freqHz, "freq", freq)
+		c.dropConn()
+		return rig.RigStatus{}, fmt.Errorf("hamlib: frequency invalid: %q (%.0f Hz)", freqHz, freq)
+	}
+	freqMHz := freq / 1e6
 
 	// Mode.  With --vfo, 'm' needs the VFO prefix; without, plain 'm'.
 	// Non-fatal: same rationale as split.
@@ -185,9 +198,6 @@ func (c *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 			applog.Debug("hamlib: mode query failed, assuming empty", "error", mErr)
 		}
 	}
-
-	freq := parseFloat(freqHz)
-	freqMHz := freq / 1e6
 
 	rs := rig.RigStatus{
 		Provider:     "hamlib",
@@ -235,15 +245,15 @@ func (c *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 // return nothing; a VFO argument is required.  Without --vfo, plain
 // commands work and VFO arguments are silently ignored.
 //
-// Strategy: send plain "f" (no VFO).  If we get a frequency back, VFO
-// mode is OFF.  If we get nothing / an error, VFO mode is ON.  This is
-// more reliable than comparing VFOA vs VFOB frequencies, which fails
-// when a backend does not support VFOB queries (e.g. Icom without split).
+// Strategy: try "f VFOA" first — on VFO-aware backends this returns a
+// single frequency line.  On non-VFO backends the 'f' character returns
+// the frequency but the ' VFOA' suffix triggers RPRT -1 on subsequent
+// lines.  We detect this to avoid false positives.  Falls back to plain
+// "f" when VFOA form is rejected.
 // Fails silently; VFO mode stays false if the probe is inconclusive.
 func (c *Client) probeVfoMode(ctx context.Context) {
-	// Plain "f" — works only without --vfo.
 	send := func(cmd string) (float64, bool) {
-		probeCtx, cancel := context.WithTimeout(ctx, 300*time.Millisecond)
+		probeCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
 
 		var d net.Dialer
@@ -253,7 +263,7 @@ func (c *Client) probeVfoMode(ctx context.Context) {
 		}
 		defer conn.Close()
 
-		conn.SetDeadline(time.Now().Add(300 * time.Millisecond))
+		conn.SetDeadline(time.Now().Add(2 * time.Second))
 		fmt.Fprintf(conn, "%s\r\n", cmd)
 		r := bufio.NewReader(conn)
 		resp, err := r.ReadString('\n')
@@ -264,19 +274,45 @@ func (c *Client) probeVfoMode(ctx context.Context) {
 		if strings.HasPrefix(resp, "RPRT ") {
 			return 0, false
 		}
-		return parseFloat(resp), true
+		freq := parseFloat(resp)
+		if freq <= 0 {
+			return 0, false
+		}
+
+		// On non-VFO backends "f VFOA" processes 'f' first (returns
+		// freq), then the ' VFOA' suffix triggers RPRT -1 on later
+		// lines.  Drain only the character-mode repeat line (60ms),
+		// then peek at the next line: RPRT -1 means the suffix was
+		// rejected → we are on a non-VFO backend.
+		if cmd == "f VFOA" {
+			// Drain at most one line of character-mode repeat.
+			conn.SetDeadline(time.Now().Add(60 * time.Millisecond))
+			r.ReadString('\n') // ignore result — it's the repeat or first RPRT
+			// Now peek: if the next line is RPRT -, the VFOA suffix
+			// was rejected character-by-character → non-VFO backend.
+			conn.SetDeadline(time.Now().Add(150 * time.Millisecond))
+			if extra, err := r.ReadString('\n'); err == nil {
+				extra = strings.TrimSpace(extra)
+				if strings.HasPrefix(extra, "RPRT -") {
+					applog.Debug("hamlib: vfo probe: f VFOA suffix rejected by backend", "extra", extra)
+					return 0, false
+				}
+			}
+		}
+
+		return freq, true
 	}
 
-	// If plain "f" returns a frequency, --vfo is NOT active.
-	if freq, ok := send("f"); ok && freq > 0 {
-		applog.Debug("hamlib: vfo mode not detected (plain f returned frequency)", "freq", freq)
+	// Try "f VFOA" first — works instantly on VFO-aware backends.
+	if freq, ok := send("f VFOA"); ok && freq > 0 {
+		c.vfoMode = true
+		applog.Debug("hamlib: vfo mode detected (f VFOA ok)", "freq", freq)
 		return
 	}
 
-	// Plain "f" failed — try "f VFOA".  If it succeeds, --vfo is active.
-	if freq, ok := send("f VFOA"); ok && freq > 0 {
-		c.vfoMode = true
-		applog.Debug("hamlib: vfo mode detected (f VFOA ok, plain f not)", "freq", freq)
+	// "f VFOA" failed — try plain "f".  Works on non-VFO backends.
+	if freq, ok := send("f"); ok && freq > 0 {
+		applog.Debug("hamlib: vfo mode not detected (plain f returned frequency)", "freq", freq)
 		return
 	}
 
@@ -320,19 +356,28 @@ func (c *Client) Power(ctx context.Context) (float64, error) {
 	}
 
 	var raw string
-	if c.vfoMode {
+	if c.vfoMode && c.powerVfoOK {
 		raw, err = c.cmdDrain(r, conn, "l VFOA RFPOWER")
 		if err != nil {
-			// VFO-prefixed form rejected — fall back to plain form.
+			// VFO-prefixed form rejected — fall back to plain form
+			// and remember so we skip it on future calls.
 			applog.Debug("hamlib: power VFO form failed, retrying plain", "error", err)
+			c.powerVfoOK = false
 			raw, err = c.cmdDrain(r, conn, "l RFPOWER")
 		}
+	} else if c.vfoMode && !c.powerVfoOK {
+		// VFO form already known to fail — use plain form directly.
+		raw, err = c.cmdDrain(r, conn, "l RFPOWER")
 	} else {
 		raw, err = c.cmdDrain(r, conn, "l RFPOWER")
 	}
 	if err != nil {
-		c.dropConn()
-		return 0, fmt.Errorf("hamlib: power: %w", err)
+		// Power is non-critical — don't drop the shared connection.
+		// Many backends don't support l VFOA RFPOWER or even l RFPOWER
+		// in VFO mode; the rig still works fine without power data.
+		c.discardReader()
+		applog.Debug("hamlib: power failed", "error", err)
+		return 0, nil
 	}
 	norm := parseFloat(strings.TrimSpace(raw))
 	pwr := norm * c.maxPower
@@ -482,13 +527,12 @@ func (c *Client) cmd(r *bufio.Reader, conn net.Conn, cmd string) (string, error)
 		return "", fmt.Errorf("hamlib read: %w", err)
 	}
 	resp = strings.TrimSpace(resp)
-	if strings.HasPrefix(resp, "RPRT ") && !strings.HasPrefix(resp, "RPRT 0") {
-		return "", fmt.Errorf("hamlib error: %s", resp)
-	}
 
-	// Drain the \r\n repeat and any multi-line extras (e.g. 's' with
+	// Drain the character-mode repeat / multi-line extras (e.g. 's' with
 	// --vfo returns split+VFO name) so nothing leaks into the next read.
 	// Short deadline — the repeat arrives immediately on the same conn.
+	// MUST drain BEFORE checking RPRT: an RPRT error line also gets
+	// repeated, and skipping the drain poisons subsequent commands.
 	if c.timeout > 0 {
 		conn.SetDeadline(time.Now().Add(60 * time.Millisecond))
 	}
@@ -496,6 +540,10 @@ func (c *Client) cmd(r *bufio.Reader, conn net.Conn, cmd string) (string, error)
 		if _, err := r.ReadString('\n'); err != nil {
 			break
 		}
+	}
+
+	if strings.HasPrefix(resp, "RPRT ") && !strings.HasPrefix(resp, "RPRT 0") {
+		return "", fmt.Errorf("hamlib error: %s", resp)
 	}
 	return resp, nil
 }
