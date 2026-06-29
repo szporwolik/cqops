@@ -555,22 +555,29 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 		}
 
 	case fieldBand:
-		// Changing band manually: derive default mode/submode.
-		// Also invalidate WL lookup data since band-specific stats changed.
+		// Only clear WL data when the band actually changes to a different
+		// band (not on transient keystrokes that leave the same value).
 		if m.fields[f].Value() != prevVal {
 			m.applyFreqDefaults()
-			if m.lookup.wlPrivateData != nil || m.lookup.wlLookupDone {
-				m.lookup.wlPrivateData = nil
-				m.lookup.wlLookupDone = false
+			newBand := qso.NormalizeBand(m.fields[f].Value())
+			oldBand := qso.NormalizeBand(prevVal)
+			if newBand != oldBand {
+				if m.lookup.wlPrivateData != nil || m.lookup.wlLookupDone {
+					m.lookup.wlPrivateData = nil
+					m.lookup.wlLookupDone = false
+				}
 			}
 		}
 
 	case fieldMode:
 		if m.fields[f].Value() != prevVal {
-			// Invalidate WL lookup data since mode-specific stats changed.
-			if m.lookup.wlPrivateData != nil || m.lookup.wlLookupDone {
-				m.lookup.wlPrivateData = nil
-				m.lookup.wlLookupDone = false
+			newMode := qso.NormalizeRigMode(m.fields[f].Value())
+			oldMode := qso.NormalizeRigMode(prevVal)
+			if newMode != oldMode {
+				if m.lookup.wlPrivateData != nil || m.lookup.wlLookupDone {
+					m.lookup.wlPrivateData = nil
+					m.lookup.wlLookupDone = false
+				}
 			}
 		}
 
