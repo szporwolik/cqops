@@ -688,7 +688,7 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 		qs.WavelogUploaded = "yes"
 
 		// Enrich: compute distance/bearing if both grids are available.
-		if myGrid := strings.TrimSpace(le.logStationCall); myGrid != "" && qs.GridSquare != "" {
+		if myGrid := strings.TrimSpace(le.logStationGrid); myGrid != "" && qs.GridSquare != "" {
 			qs.Distance = gridDistanceKm(myGrid, qs.GridSquare)
 			qs.Bearing = gridBearingDeg(myGrid, qs.GridSquare)
 		}
@@ -807,7 +807,7 @@ func (le *LogbookEditor) runImport(path string) {
 		qs := qso.ParseADIFRecord(r, "import")
 
 		// Enrich: compute distance/bearing if both grids are available.
-		if myGrid := strings.TrimSpace(le.logStationCall); myGrid != "" && qs.GridSquare != "" {
+		if myGrid := strings.TrimSpace(le.logStationGrid); myGrid != "" && qs.GridSquare != "" {
 			qs.Distance = gridDistanceKm(myGrid, qs.GridSquare)
 			qs.Bearing = gridBearingDeg(myGrid, qs.GridSquare)
 		}
