@@ -67,14 +67,15 @@ func (m *Model) loadPSKSpotsCmd(call string, cutoff int64, spotKey string) tea.C
 // PSK Reporter time filter steps (minutes).
 var pskFilterSteps = []int{5, 15, 30, 60, 120, 360}
 
-// Band marker colors per band.
-var pskMark160 = lipgloss.NewStyle().Foreground(lipgloss.Color("15")).Bold(true)
-var pskMark80 = lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Bold(true)
-var pskMark40 = lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true)
-var pskMark20 = lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Bold(true)
-var pskMark15 = lipgloss.NewStyle().Foreground(lipgloss.Color("13")).Bold(true)
-var pskMark10 = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)
-var pskMarkOther = lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true)
+// Band marker colors per band — use semantic palette instead of ANSI
+// 8-bit codes so bands are clearly distinguishable on modern terminals.
+var pskMark160 = lipgloss.NewStyle().Foreground(P.Text).Bold(true)
+var pskMark80 = lipgloss.NewStyle().Foreground(P.Primary).Bold(true)
+var pskMark40 = lipgloss.NewStyle().Foreground(P.Warning).Bold(true)
+var pskMark20 = lipgloss.NewStyle().Foreground(P.Success).Bold(true)
+var pskMark15 = lipgloss.NewStyle().Foreground(P.Accent).Bold(true)
+var pskMark10 = lipgloss.NewStyle().Foreground(P.Info).Bold(true)
+var pskMarkOther = lipgloss.NewStyle().Foreground(P.Error).Bold(true)
 
 // pskHeaderStyle colors the PSK Reporter table header — avoids DimStyle's
 // gray-on-gray appearance on dark terminals.
