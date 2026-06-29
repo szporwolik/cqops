@@ -55,9 +55,13 @@ func (d SpotDialog) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return d, nil
 		case "enter":
 			d.done = true
-			d.Result = SpotDialogResult{
-				Confirmed: true,
-				Comment:   strings.TrimSpace(d.input.Value()),
+			if d.selected == 0 {
+				d.Result = SpotDialogResult{
+					Confirmed: true,
+					Comment:   strings.TrimSpace(d.input.Value()),
+				}
+			} else {
+				d.Result = SpotDialogResult{Cancelled: true}
 			}
 			return d, nil
 		case "esc":

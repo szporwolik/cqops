@@ -113,8 +113,7 @@ func (c *Client) Start() error {
 		if c.conn == nil {
 			return
 		}
-		c.writeLine("SH/FDX 50\r\n")
-		applog.Debug("DXC: requested recent spots via SH/FDX")
+		c.RequestRecent(50)
 	}()
 
 	go c.readLoop()
@@ -197,6 +196,15 @@ func (c *Client) Spots() <-chan Spot {
 // Status returns a channel that receives true on connect and false on disconnect.
 func (c *Client) Status() <-chan bool {
 	return c.statusCh
+}
+
+// RequestRecent asks the cluster for the last n spots via SH/FDX.
+func (c *Client) RequestRecent(n int) {
+	if c.conn == nil {
+		return
+	}
+	c.writeLine("SH/FDX %d\r\n", n)
+	applog.Debug("DXC: requested recent spots via SH/FDX", "count", n)
 }
 
 // writeLine writes a line to the cluster, logging it at DEBUG level.

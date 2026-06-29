@@ -50,7 +50,12 @@ func FetchReports(callsign, cacheDir string) ([]Report, time.Time, error) {
 		return nil, time.Time{}, fmt.Errorf("no callsign provided")
 	}
 
-	cacheFile := filepath.Join(cacheDir, "psk_"+strings.ToUpper(callsign)+".xml")
+	// Sanitize callsign for use in a filename: on Windows, callsigns
+	// containing '/' (e.g. "SP9MOA/TEST") would be interpreted as path
+	// separators by filepath.Join, creating unintended subdirectories
+	// that os.MkdirAll doesn't create.
+	safe := strings.NewReplacer("/", "_", "\\", "_").Replace(strings.ToUpper(callsign))
+	cacheFile := filepath.Join(cacheDir, "psk_"+safe+".xml")
 
 	// Check cache — valid for 5 minutes.
 	if info, err := os.Stat(cacheFile); err == nil {

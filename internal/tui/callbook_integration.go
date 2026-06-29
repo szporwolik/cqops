@@ -10,6 +10,7 @@ import (
 	"github.com/ftl/hamradio/locator"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/qrz"
+	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
@@ -63,6 +64,10 @@ func (m *Model) qrzLookup(call string) tea.Cmd {
 	if call == "" {
 		return nil
 	}
+	// Already completed for this call — no need to re-query.
+	if m.lookup.qrzLookupDone && strings.EqualFold(call, m.lookup.qrzLookupCall) {
+		return nil
+	}
 	if time.Since(m.lookup.qrzLast) < 3*time.Second && strings.EqualFold(call, m.lookup.qrzLastCall) {
 		return nil
 	}
@@ -97,8 +102,12 @@ func (m *Model) wlLookup(call string) tea.Cmd {
 	if !m.inetOnline {
 		return nil
 	}
+	// Already completed for this call — no need to re-query.
+	if m.lookup.wlLookupDone && strings.EqualFold(call, m.lookup.wlLookupCall) {
+		return nil
+	}
 	band := strings.TrimSpace(m.fields[fieldBand].Value())
-	mode := strings.TrimSpace(m.fields[fieldMode].Value())
+	mode := qso.NormalizeRigMode(m.fields[fieldMode].Value())
 	if time.Since(m.lookup.wlLast) < 5*time.Second &&
 		strings.EqualFold(call, m.lookup.wlLastCall) &&
 		band == m.lookup.wlLastBand && mode == m.lookup.wlLastMode {

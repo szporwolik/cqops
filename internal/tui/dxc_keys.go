@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
@@ -59,8 +60,8 @@ func (m *Model) handleDXCUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 
 		case "enter":
 			// Fill QSO form with highlighted spot, tune rig, and jump to form.
-			m.dxcFillFromSelected()
-			cmd = tea.Batch(cmd, m.dxcTuneCmd())
+			lookupCmd := m.dxcFillFromSelected()
+			cmd = tea.Batch(cmd, m.dxcTuneCmd(), lookupCmd)
 			m.screen = screenQSO
 			return m, cmd
 
@@ -142,19 +143,24 @@ func (m *Model) dxcCycleFilterBack(idx *int, filter *string, opts []string) {
 	}
 }
 
-// dxcFillFromSelected fills the QSO form with the currently highlighted DXC spot.
-func (m *Model) dxcFillFromSelected() {
+// dxcFillFromSelected fills the QSO form with the currently highlighted DXC spot
+// and returns a Cmd that triggers QRZ/Wavelog lookups for the populated callsign.
+func (m *Model) dxcFillFromSelected() tea.Cmd {
 	spot, ok := m.dxcSpotAtCursor()
 	if !ok {
-		return
+		return nil
 	}
 
-	// Fill callsign.
+	// Clear call-dependent state only when the call actually changes.
+	prevCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+	if !strings.EqualFold(spot.DXCall, prevCall) {
+		m.lookup.partnerData = nil
+		m.lookup.wlPrivateData = nil
+		m.lookup.wlLookupDone = false
+		m.invalidatePartnerMapCache()
+	}
+	// Always set the callsign field.
 	m.fields[fieldCall].SetValue(spot.DXCall)
-	m.lookup.partnerData = nil
-	m.lookup.wlPrivateData = nil
-	m.lookup.wlLookupDone = false
-	m.invalidatePartnerMapCache()
 	// Clear QRZ-populated fields so old callsign data does not bleed.
 	m.clearQRZFields()
 
@@ -167,6 +173,12 @@ func (m *Model) dxcFillFromSelected() {
 	if spot.Mode != "" {
 		m.fields[fieldMode].SetValue(spot.Mode)
 	}
+	applog.Debug("DXC: dxcFillFromSelected fields",
+		"call", spot.DXCall,
+		"band", spot.Band,
+		"mode", spot.Mode,
+		"freq_khz", spot.Frequency,
+	)
 	if !m.wsjtx.online {
 		freqMHz := spot.Frequency / 1000
 		m.fields[fieldFreq].SetValue(fmt.Sprintf("%.5f", freqMHz))
@@ -187,15 +199,35 @@ func (m *Model) dxcFillFromSelected() {
 	// and auto-fill the corresponding QSO form fields.
 	m.parseSpotCommentForRefs(spot.Comment)
 
-	// Commit the callsign (normalizes, sets pathCall). Lookups (QRZ, Wavelog)
-	// are dispatched by onFieldExit when the user leaves the call field — no
-	// need to double-dispatch here.
+	// Commit the callsign and trigger lookups immediately — the user is
+	// jumping to the QSO form, so background QRZ/Wavelog lookups should
+	// start right away rather than waiting for a manual field exit.
 	cur := m.commitCall()
 	if cur != "" {
 		m.autoFillRST()
 		m.autoFillSSBSubmode()
 		m.dxccAutoFill()
+		m.scpMatches = nil
+		m.scpCacheKey = ""
+		m.prefillContestExchange()
+		// Ensure date is set before dupe check — checkDupe bails if
+		// the date field is empty, and the form may not have been in
+		// focus long enough for autoUpdateDateTime to run yet.
+		if strings.TrimSpace(m.fields[fieldDate].Value()) == "" {
+			m.fields[fieldDate].SetValue(time.Now().UTC().Format("20060102"))
+		}
+		m.lookup.qrzCall = cur
+		m.lookup.wlCall = cur
+		m.checkDupe()
+		applog.Debug("DXC: dupe result after populate",
+			"call", cur,
+			"dupe", m.dupe,
+		)
+		m.rc.pathSig = ""
+		m.rc.logStatsSig = ""
+		return m.lookupCallCmd(cur)
 	}
+	return nil
 }
 
 // dxcSpotAtCursor returns the DXC spot at the current table cursor position.

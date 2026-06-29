@@ -56,7 +56,17 @@ func (m *Model) cycleLogbook() tea.Cmd {
 	if strings.TrimSpace(m.fields[fieldCall].Value()) != "" {
 		m.checkDupe()
 	}
-	return m.refreshQSOS()
+	var cmds []tea.Cmd
+	cmds = append(cmds, m.refreshQSOS())
+	// Request recent DXC spots for the new logbook so the DXC table
+	// isn't left empty after the DB switch clears old spots.
+	if m.dxc.online && m.dxc.client != nil {
+		cmds = append(cmds, func() tea.Msg {
+			m.dxc.client.RequestRecent(50)
+			return nil
+		})
+	}
+	return tea.Batch(cmds...)
 }
 
 // cycleRig cycles to the next rig preset in alphabetical order (by model).

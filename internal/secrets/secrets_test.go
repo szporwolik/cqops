@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -187,6 +188,10 @@ func TestEncryptDecrypt_Empty(t *testing.T) {
 }
 
 func TestSave_WritesWithCorrectPermissions(t *testing.T) {
+	// os.Chmod 0600 has no effect on Windows; the file always gets 0666.
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix permission bits not applicable on Windows")
+	}
 	_ = setTestKey(t)
 	dir := t.TempDir()
 	s, err := Load(dir)

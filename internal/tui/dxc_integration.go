@@ -38,6 +38,15 @@ func (m *Model) sendSpotCmd(call string, freqKhz float64, comment string) tea.Cm
 			m.toasts.Warn("DXC: not connected — cannot send spot")
 			return nil
 		}
+
+		// Toast immediately so the user gets instant feedback that the spot
+		// is being sent — don't wait for the cluster round-trip (~1.5 s).
+		toastMsg := fmt.Sprintf("Spotted %s @ %.1f kHz", call, freqKhz)
+		if comment != "" {
+			toastMsg += " — " + comment
+		}
+		m.toasts.Info(toastMsg)
+
 		rsp, err := m.dxc.client.SendSpot(freqKhz, call, comment)
 		if err != nil {
 			m.toasts.Warn("DXC: spot failed — " + err.Error())
@@ -45,11 +54,10 @@ func (m *Model) sendSpotCmd(call string, freqKhz float64, comment string) tea.Cm
 		}
 		applog.Info("DXC: spot sent", "cmd", fmt.Sprintf("DX %.1f %s %s", freqKhz, call, comment))
 
-		// If cluster responded with an error-like message, warn instead of toast.
+		// If cluster responded with an error-like message, warn as a follow-up.
 		if rsp != "" {
 			applog.Warn("DXC: cluster response", "response", rsp)
 			m.toasts.Warn("DXC: " + rsp)
-			return nil
 		}
 
 		// Also store locally so it shows up in the DXC table immediately.
@@ -78,14 +86,6 @@ func (m *Model) sendSpotCmd(call string, freqKhz float64, comment string) tea.Cm
 			applog.Warn("DXC: local spot store failed", "error", err)
 		}
 
-		msg := fmt.Sprintf("Spotted %s @ %.1f kHz", call, freqKhz)
-		if comment != "" {
-			msg += " — " + comment
-		}
-		if rsp != "" {
-			msg += " [" + rsp + "]"
-		}
-		m.toasts.Info(msg)
 		return dxcSpotsStoredMsg{calls: []string{call}, newSpots: []store.DXCSpot{spot}}
 	}
 }
@@ -397,10 +397,15 @@ func (m *Model) fillDXCFreq(msg dxcSpotLookupMsg) {
 		applog.Debug("DXC: fillDXCFreq bail — freq <= 0")
 		return
 	}
-	// Only use DXC spot freq when WSJT-X is NOT connected.
-	// flrig being connected is fine — the spot frequency overrides the rig's.
+	// Only use DXC spot freq when NEITHER WSJT-X NOR flrig is connected.
+	// The rig provides authoritative frequency; don't let stale spot data
+	// overwrite the actual VFO frequency the operator is tuned to.
 	if m.wsjtx.online {
 		applog.Debug("DXC: fillDXCFreq bail — wsjtx online")
+		return
+	}
+	if m.rig.connected {
+		applog.Debug("DXC: fillDXCFreq bail — rig connected")
 		return
 	}
 	freqMHz := msg.freq / 1000 // DXC spots store kHz
@@ -434,6 +439,7 @@ func (m *Model) handleDXCSpotsStored(msg dxcSpotsStoredMsg) {
 		}
 		// Re-filter from updated raw cache.
 		m.dxc.cachedSpots = nil
+		m.dxc.cachedSortBand = "" // force re-sort on band-filtered views
 		m.dxcFilteredSpots()
 	} else {
 		m.dxc.cachedSpots = nil
@@ -468,7 +474,7 @@ func deriveSpotMode(comment string, freqMHz float64) string {
 	c := strings.ToUpper(comment)
 	// Check for mode keywords using word-boundary matching to avoid false
 	// positives like "AM" inside "I AM QRV" or callsign fragments.
-	for _, kw := range []string{"FT8", "FT4", "CW", "RTTY", "FM", "PSK", "JT65", "JT9", "MSK144", "FSK", "DATA"} {
+	for _, kw := range []string{"FT8", "FT4", "FT2", "CW", "RTTY", "FM", "PSK", "JT65", "JT9", "MSK144", "FSK", "DATA"} {
 		if wordContains(c, kw) {
 			return kw
 		}

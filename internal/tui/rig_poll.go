@@ -149,8 +149,13 @@ type rigPowerMsg struct {
 // pollRig periodically polls the rig backend.
 // Fast poll (every tick, ~1s):  frequency, mode, VFO, split.
 // Slow poll (every 3 ticks, ~3s): RF power.
+// When disconnected, back off to every 10 ticks (~10s) to avoid
+// flooding rigctld with rapid connect/drop cycles.
 func (m *Model) pollRig() tea.Cmd {
-	const pollInterval = 1 // fast-poll interval in ticks (~1 s)
+	pollInterval := 1 // fast-poll interval in ticks (~1 s)
+	if !m.rig.connected {
+		pollInterval = 10 // back off when disconnected (~10 s)
+	}
 	m.rig.skipTicks++
 	if m.rig.skipTicks < pollInterval {
 		return nil
@@ -205,12 +210,8 @@ func (m *Model) applyRigPoll(r rigPollMsg) tea.Cmd {
 		// Connected — notify user once per session.
 		if !m.rig.vfoWarned {
 			m.rig.vfoWarned = true
-			if hc, ok := m.rig.client.(*hamlib.Client); ok {
-				if hc.VfoMode() {
-					m.toasts.Success("Hamlib: connected (VFO mode)")
-				} else {
-					m.toasts.Warn("Hamlib: connected — add --vfo for split VFO support")
-				}
+			if _, ok := m.rig.client.(*hamlib.Client); ok {
+				m.toasts.Success("Hamlib: connected")
 			} else {
 				m.toasts.Success("flrig: connected")
 			}

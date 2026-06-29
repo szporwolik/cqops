@@ -274,7 +274,7 @@ func (rc *RigChooser) selectRig() tea.Cmd {
 	} else {
 		rc.toasts.Success("Rig \"" + displayName + "\" selected")
 		applog.Info("Rig selected", "name", displayName)
-		// Refresh names and stay in the menu.
+		rc.needsRefresh = true // trigger rig client reconnect in parent
 		rc.refreshNames()
 	}
 	return nil
