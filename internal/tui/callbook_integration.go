@@ -10,6 +10,7 @@ import (
 	"github.com/ftl/hamradio/locator"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/qrz"
+	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
@@ -106,7 +107,7 @@ func (m *Model) wlLookup(call string) tea.Cmd {
 		return nil
 	}
 	band := strings.TrimSpace(m.fields[fieldBand].Value())
-	mode := strings.TrimSpace(m.fields[fieldMode].Value())
+	mode := qso.NormalizeRigMode(m.fields[fieldMode].Value())
 	if time.Since(m.lookup.wlLast) < 5*time.Second &&
 		strings.EqualFold(call, m.lookup.wlLastCall) &&
 		band == m.lookup.wlLastBand && mode == m.lookup.wlLastMode {

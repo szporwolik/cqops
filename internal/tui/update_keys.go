@@ -108,7 +108,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.scpCacheKey = ""
 		m.dxccAutoFill()
 		band := strings.TrimSpace(m.fields[fieldBand].Value())
-		mode := strings.TrimSpace(m.fields[fieldMode].Value())
+		mode := qso.NormalizeRigMode(m.fields[fieldMode].Value())
 
 		callChanged := m.lookup.partnerData == nil || !strings.EqualFold(m.lookup.partnerData.Callsign, call)
 		wlCallChanged := m.lookup.wlLookupCall == "" || !strings.EqualFold(m.lookup.wlLookupCall, call)
