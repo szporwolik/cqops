@@ -750,13 +750,19 @@ func (m *Model) onFieldExit() {
 func (m *Model) checkDupe() {
 	m.dupe = false
 	if m.App == nil || m.App.DB == nil {
+		applog.Debug("dupe: checkDupe bail — no App/DB")
 		return
 	}
 	call := qso.NormalizeCall(m.fields[fieldCall].Value())
 	band := qso.NormalizeBand(m.fields[fieldBand].Value())
-	mode := strings.ToUpper(strings.TrimSpace(m.fields[fieldMode].Value()))
+	// Normalize via rig mode table so spot-derived modes ("USB"/"LSB")
+	// match QSOs saved from the rig ("SSB"). NormalizeRigMode maps
+	// USB→SSB, LSB→SSB, and passes through already-normalized values.
+	mode := qso.NormalizeRigMode(m.fields[fieldMode].Value())
 	date := qso.StripNonDigits(m.fields[fieldDate].Value())
 	if call == "" || band == "" || mode == "" || date == "" {
+		applog.Debug("dupe: checkDupe bail — missing field",
+			"call", call, "band", band, "mode", mode, "date", date)
 		return
 	}
 	// Cache key — date changes once per day, so cache is highly effective.
@@ -770,6 +776,7 @@ func (m *Model) checkDupe() {
 	isDupe, existing := store.IsDuplicateQSO(m.App.DB, call, band, mode, date)
 	if !isDupe || existing == nil {
 		m.dupeCacheResult = false
+		applog.Debug("dupe: checkDupe result", "key", key, "dupe", false)
 		return
 	}
 	// If any reference field differs, it's not a dupe (e.g. different summit).

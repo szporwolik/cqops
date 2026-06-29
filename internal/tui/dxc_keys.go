@@ -169,6 +169,12 @@ func (m *Model) dxcFillFromSelected() tea.Cmd {
 	if spot.Mode != "" {
 		m.fields[fieldMode].SetValue(spot.Mode)
 	}
+	applog.Debug("DXC: dxcFillFromSelected fields",
+		"call", spot.DXCall,
+		"band", spot.Band,
+		"mode", spot.Mode,
+		"freq_khz", spot.Frequency,
+	)
 	if !m.wsjtx.online {
 		freqMHz := spot.Frequency / 1000
 		m.fields[fieldFreq].SetValue(fmt.Sprintf("%.5f", freqMHz))
@@ -209,6 +215,10 @@ func (m *Model) dxcFillFromSelected() tea.Cmd {
 		m.lookup.qrzCall = cur
 		m.lookup.wlCall = cur
 		m.checkDupe()
+		applog.Debug("DXC: dupe result after populate",
+			"call", cur,
+			"dupe", m.dupe,
+		)
 		m.rc.pathSig = ""
 		m.rc.logStatsSig = ""
 		return m.lookupCallCmd(cur)
