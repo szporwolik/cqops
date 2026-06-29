@@ -397,10 +397,15 @@ func (m *Model) fillDXCFreq(msg dxcSpotLookupMsg) {
 		applog.Debug("DXC: fillDXCFreq bail — freq <= 0")
 		return
 	}
-	// Only use DXC spot freq when WSJT-X is NOT connected.
-	// flrig being connected is fine — the spot frequency overrides the rig's.
+	// Only use DXC spot freq when NEITHER WSJT-X NOR flrig is connected.
+	// The rig provides authoritative frequency; don't let stale spot data
+	// overwrite the actual VFO frequency the operator is tuned to.
 	if m.wsjtx.online {
 		applog.Debug("DXC: fillDXCFreq bail — wsjtx online")
+		return
+	}
+	if m.rig.connected {
+		applog.Debug("DXC: fillDXCFreq bail — rig connected")
 		return
 	}
 	freqMHz := msg.freq / 1000 // DXC spots store kHz

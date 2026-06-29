@@ -121,6 +121,9 @@ func (m *Model) dxcTuneCmd() tea.Cmd {
 			}
 			// Verify mode was applied.
 			time.Sleep(200 * time.Millisecond)
+			if ctx.Err() != nil {
+				return dxcTuneResultMsg{call: call, freqMHz: freqMHz, err: fmt.Errorf("cancelled")}
+			}
 			status2, err2 := client.Status(ctx)
 			if err2 == nil && status2.Connected && status2.RawMode != "" {
 				if !strings.EqualFold(status2.RawMode, flrigModeName) &&
