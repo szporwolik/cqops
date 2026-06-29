@@ -79,8 +79,7 @@ jobs:
           upx --best build/cqops-linux-amd64
           upx --best build/cqops-linux-arm64
           upx --best build/cqops-linux-armhf
-          upx --best build/cqops-darwin-amd64
-          upx --best build/cqops-darwin-arm64
+          # macOS binaries skipped — UPX macOS support is experimental
           echo "Binaries after UPX:"
           ls -lh build/
 
