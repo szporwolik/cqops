@@ -439,6 +439,7 @@ func (m *Model) handleDXCSpotsStored(msg dxcSpotsStoredMsg) {
 		}
 		// Re-filter from updated raw cache.
 		m.dxc.cachedSpots = nil
+		m.dxc.cachedSortBand = "" // force re-sort on band-filtered views
 		m.dxcFilteredSpots()
 	} else {
 		m.dxc.cachedSpots = nil
