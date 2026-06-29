@@ -63,6 +63,10 @@ func (m *Model) qrzLookup(call string) tea.Cmd {
 	if call == "" {
 		return nil
 	}
+	// Already completed for this call — no need to re-query.
+	if m.lookup.qrzLookupDone && strings.EqualFold(call, m.lookup.qrzLookupCall) {
+		return nil
+	}
 	if time.Since(m.lookup.qrzLast) < 3*time.Second && strings.EqualFold(call, m.lookup.qrzLastCall) {
 		return nil
 	}
@@ -95,6 +99,10 @@ func (m *Model) wlLookup(call string) tea.Cmd {
 		return nil
 	}
 	if !m.inetOnline {
+		return nil
+	}
+	// Already completed for this call — no need to re-query.
+	if m.lookup.wlLookupDone && strings.EqualFold(call, m.lookup.wlLookupCall) {
 		return nil
 	}
 	band := strings.TrimSpace(m.fields[fieldBand].Value())
