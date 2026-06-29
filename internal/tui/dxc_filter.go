@@ -212,7 +212,7 @@ func spotModeCategory(mode string) string {
 	switch strings.ToUpper(mode) {
 	case "CW", "CW-L", "CW-U", "CWL", "CWU", "CW-R":
 		return "CW"
-	case "FT8", "FT4", "RTTY", "PSK", "JT65", "JT9", "MSK144", "FSK", "DATA", "DATA-U", "DATA-L", "DATA-FM":
+	case "FT8", "FT4", "FT2", "RTTY", "PSK", "JT65", "JT9", "MSK144", "FSK", "DATA", "DATA-U", "DATA-L", "DATA-FM":
 		return "DIGI"
 	case "USB", "LSB", "AM", "FM":
 		return "PHONE"

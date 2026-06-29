@@ -473,7 +473,7 @@ func deriveSpotMode(comment string, freqMHz float64) string {
 	c := strings.ToUpper(comment)
 	// Check for mode keywords using word-boundary matching to avoid false
 	// positives like "AM" inside "I AM QRV" or callsign fragments.
-	for _, kw := range []string{"FT8", "FT4", "CW", "RTTY", "FM", "PSK", "JT65", "JT9", "MSK144", "FSK", "DATA"} {
+	for _, kw := range []string{"FT8", "FT4", "FT2", "CW", "RTTY", "FM", "PSK", "JT65", "JT9", "MSK144", "FSK", "DATA"} {
 		if wordContains(c, kw) {
 			return kw
 		}
