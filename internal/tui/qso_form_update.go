@@ -873,6 +873,7 @@ func (m *Model) resetPartnerLookup() {
 		m.lookup.wlPrivateData = nil
 		m.lookup.wlLookupDone = false
 		m.lookup.wlLookupCall = ""
+		m.lookup.wlDispatchTime = time.Time{}
 	}
 }
 
