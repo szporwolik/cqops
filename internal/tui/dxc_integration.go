@@ -38,6 +38,15 @@ func (m *Model) sendSpotCmd(call string, freqKhz float64, comment string) tea.Cm
 			m.toasts.Warn("DXC: not connected — cannot send spot")
 			return nil
 		}
+
+		// Toast immediately so the user gets instant feedback that the spot
+		// is being sent — don't wait for the cluster round-trip (~1.5 s).
+		toastMsg := fmt.Sprintf("Spotted %s @ %.1f kHz", call, freqKhz)
+		if comment != "" {
+			toastMsg += " — " + comment
+		}
+		m.toasts.Info(toastMsg)
+
 		rsp, err := m.dxc.client.SendSpot(freqKhz, call, comment)
 		if err != nil {
 			m.toasts.Warn("DXC: spot failed — " + err.Error())
@@ -45,11 +54,10 @@ func (m *Model) sendSpotCmd(call string, freqKhz float64, comment string) tea.Cm
 		}
 		applog.Info("DXC: spot sent", "cmd", fmt.Sprintf("DX %.1f %s %s", freqKhz, call, comment))
 
-		// If cluster responded with an error-like message, warn instead of toast.
+		// If cluster responded with an error-like message, warn as a follow-up.
 		if rsp != "" {
 			applog.Warn("DXC: cluster response", "response", rsp)
 			m.toasts.Warn("DXC: " + rsp)
-			return nil
 		}
 
 		// Also store locally so it shows up in the DXC table immediately.
@@ -78,14 +86,6 @@ func (m *Model) sendSpotCmd(call string, freqKhz float64, comment string) tea.Cm
 			applog.Warn("DXC: local spot store failed", "error", err)
 		}
 
-		msg := fmt.Sprintf("Spotted %s @ %.1f kHz", call, freqKhz)
-		if comment != "" {
-			msg += " — " + comment
-		}
-		if rsp != "" {
-			msg += " [" + rsp + "]"
-		}
-		m.toasts.Info(msg)
 		return dxcSpotsStoredMsg{calls: []string{call}, newSpots: []store.DXCSpot{spot}}
 	}
 }

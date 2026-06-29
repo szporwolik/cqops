@@ -109,8 +109,16 @@ func (tq *ToastQueue) Expire() {
 func (tq *ToastQueue) Active() []Toast {
 	tq.mu.Lock()
 	defer tq.mu.Unlock()
+	// If cached and not dirty, still verify the first item hasn't expired.
+	// This is defense-in-depth — Expire() normally sets dirty when it removes
+	// items, but a stale cache would keep toasts on screen forever.
 	if !tq.dirty && tq.cachedActive != nil {
-		return tq.cachedActive
+		cutoff := time.Now().Add(-toastMaxAge)
+		if len(tq.cachedActive) > 0 && tq.cachedActive[0].Created.Before(cutoff) {
+			tq.dirty = true // force rebuild
+		} else {
+			return tq.cachedActive
+		}
 	}
 	if len(tq.items) == 0 {
 		tq.cachedActive = nil
@@ -180,6 +188,10 @@ func RenderToasts(toasts []Toast, width int) string {
 func (tq *ToastQueue) RenderOverlay(mainView string, viewW, viewH int) string {
 	toasts := tq.Active()
 	if len(toasts) == 0 {
+		// Clear render cache when no toasts are active so stale
+		// content is never accidentally reused on the next frame.
+		tq.cachedView = ""
+		tq.cachedViewSig = ""
 		return mainView
 	}
 

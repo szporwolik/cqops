@@ -623,12 +623,24 @@ func (m *Model) commitAndLookup() tea.Cmd {
 	return m.lookupCallCmd(call)
 }
 
-// buildSpotComment constructs the pre-filled spot comment from reference fields.
-// Format: SOTA SP/BZ-001 CW, POTA SP-0123 SSB, etc.
-// Multiple references are joined: "SOTA SP/BZ-001 POTA SP-0123 CW"
+// buildSpotComment constructs the pre-filled spot comment.
+//
+// Format follows real-world DX cluster conventions:
+//
+//	[refs...] MODE
+//
+// Examples:
+//
+//	SSB                          (mode only)
+//	POTA SP-0123 SSB             (refs + mode)
+//	WWFF SPFF-0008 CW            (refs + mode)
+//
+// Mode is always included.
+// Zulu time is appended by the cluster, not part of the comment.
 func (m *Model) buildSpotComment() string {
 	var parts []string
 
+	// 1. References (SOTA, POTA, WWFF, IOTA, SIG).
 	refs := map[string]string{
 		"SOTA": strings.TrimSpace(m.fields[fieldSOTA].Value()),
 		"POTA": strings.TrimSpace(m.fields[fieldPOTA].Value()),
@@ -636,6 +648,19 @@ func (m *Model) buildSpotComment() string {
 		"IOTA": strings.TrimSpace(m.fields[fieldIOTA].Value()),
 		"SIG":  strings.TrimSpace(m.fields[fieldSIG].Value()),
 	}
+	for _, key := range []string{"SOTA", "POTA", "WWFF", "IOTA", "SIG"} {
+		val := refs[key]
+		if val == "" {
+			continue
+		}
+		if key == "SIG" {
+			parts = append(parts, "SIG "+val)
+		} else {
+			parts = append(parts, key+" "+val)
+		}
+	}
+
+	// 2. Mode — always included at the end.
 	mode := strings.ToUpper(strings.TrimSpace(m.fields[fieldMode].Value()))
 	if mode == "" {
 		submode := strings.ToUpper(strings.TrimSpace(m.fields[fieldSubmode].Value()))
@@ -643,22 +668,10 @@ func (m *Model) buildSpotComment() string {
 			mode = submode
 		}
 	}
-
-	for _, key := range []string{"SOTA", "POTA", "WWFF", "IOTA", "SIG"} {
-		val := refs[key]
-		if val == "" {
-			continue
-		}
-		if key == "SIG" {
-			// SIG uses its own value as free text, not key:value format.
-			parts = append(parts, "SIG "+val)
-		} else {
-			parts = append(parts, key+" "+val)
-		}
-	}
-	if len(parts) > 0 && mode != "" {
+	if mode != "" {
 		parts = append(parts, mode)
 	}
+
 	return strings.Join(parts, " ")
 }
 
