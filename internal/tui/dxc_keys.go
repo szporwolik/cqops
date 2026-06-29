@@ -59,8 +59,8 @@ func (m *Model) handleDXCUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 
 		case "enter":
 			// Fill QSO form with highlighted spot, tune rig, and jump to form.
-			m.dxcFillFromSelected()
-			cmd = tea.Batch(cmd, m.dxcTuneCmd())
+			lookupCmd := m.dxcFillFromSelected()
+			cmd = tea.Batch(cmd, m.dxcTuneCmd(), lookupCmd)
 			m.screen = screenQSO
 			return m, cmd
 
@@ -142,11 +142,12 @@ func (m *Model) dxcCycleFilterBack(idx *int, filter *string, opts []string) {
 	}
 }
 
-// dxcFillFromSelected fills the QSO form with the currently highlighted DXC spot.
-func (m *Model) dxcFillFromSelected() {
+// dxcFillFromSelected fills the QSO form with the currently highlighted DXC spot
+// and returns a Cmd that triggers QRZ/Wavelog lookups for the populated callsign.
+func (m *Model) dxcFillFromSelected() tea.Cmd {
 	spot, ok := m.dxcSpotAtCursor()
 	if !ok {
-		return
+		return nil
 	}
 
 	// Fill callsign.
@@ -187,15 +188,25 @@ func (m *Model) dxcFillFromSelected() {
 	// and auto-fill the corresponding QSO form fields.
 	m.parseSpotCommentForRefs(spot.Comment)
 
-	// Commit the callsign (normalizes, sets pathCall). Lookups (QRZ, Wavelog)
-	// are dispatched by onFieldExit when the user leaves the call field — no
-	// need to double-dispatch here.
+	// Commit the callsign and trigger lookups immediately — the user is
+	// jumping to the QSO form, so background QRZ/Wavelog lookups should
+	// start right away rather than waiting for a manual field exit.
 	cur := m.commitCall()
 	if cur != "" {
 		m.autoFillRST()
 		m.autoFillSSBSubmode()
 		m.dxccAutoFill()
+		m.scpMatches = nil
+		m.scpCacheKey = ""
+		m.prefillContestExchange()
+		m.lookup.qrzCall = cur
+		m.lookup.wlCall = cur
+		m.checkDupe()
+		m.rc.pathSig = ""
+		m.rc.logStatsSig = ""
+		return m.lookupCallCmd(cur)
 	}
+	return nil
 }
 
 // dxcSpotAtCursor returns the DXC spot at the current table cursor position.
