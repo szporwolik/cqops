@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
@@ -199,6 +200,12 @@ func (m *Model) dxcFillFromSelected() tea.Cmd {
 		m.scpMatches = nil
 		m.scpCacheKey = ""
 		m.prefillContestExchange()
+		// Ensure date is set before dupe check — checkDupe bails if
+		// the date field is empty, and the form may not have been in
+		// focus long enough for autoUpdateDateTime to run yet.
+		if strings.TrimSpace(m.fields[fieldDate].Value()) == "" {
+			m.fields[fieldDate].SetValue(time.Now().UTC().Format("20060102"))
+		}
 		m.lookup.qrzCall = cur
 		m.lookup.wlCall = cur
 		m.checkDupe()
