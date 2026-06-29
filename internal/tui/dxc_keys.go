@@ -151,12 +151,16 @@ func (m *Model) dxcFillFromSelected() tea.Cmd {
 		return nil
 	}
 
-	// Fill callsign.
+	// Clear call-dependent state only when the call actually changes.
+	prevCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+	if !strings.EqualFold(spot.DXCall, prevCall) {
+		m.lookup.partnerData = nil
+		m.lookup.wlPrivateData = nil
+		m.lookup.wlLookupDone = false
+		m.invalidatePartnerMapCache()
+	}
+	// Always set the callsign field.
 	m.fields[fieldCall].SetValue(spot.DXCall)
-	m.lookup.partnerData = nil
-	m.lookup.wlPrivateData = nil
-	m.lookup.wlLookupDone = false
-	m.invalidatePartnerMapCache()
 	// Clear QRZ-populated fields so old callsign data does not bleed.
 	m.clearQRZFields()
 

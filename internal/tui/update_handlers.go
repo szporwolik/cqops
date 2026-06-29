@@ -70,13 +70,13 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 		m.rc.status = ""
 	}
 	// WL lookup timeout: if a lookup was dispatched >20s ago and hasn't
-	// completed, force wlLookupDone to clear the "pending" state. This
-	// prevents the UI from getting stuck when the Wavelog server is
-	// unreachable or the HTTP request hangs.
+	// completed, force wlLookupDone and clear the dispatch time to prevent
+	// repeated warnings when wlLookupDone gets cleared again independently.
 	if !m.lookup.wlLookupDone && !m.lookup.wlDispatchTime.IsZero() &&
 		time.Since(m.lookup.wlDispatchTime) > 20*time.Second {
 		m.lookup.wlLookupDone = true
 		m.lookup.wlLookupCall = m.lookup.wlLastCall
+		m.lookup.wlDispatchTime = time.Time{}
 		applog.Warn("Wavelog: lookup timed out", "call", m.lookup.wlLastCall)
 	}
 	// WSJT-X auto-reconnect: if enabled but never online, retry start every 30s.
