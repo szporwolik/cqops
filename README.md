@@ -10,9 +10,9 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs](https://img.shields.io/badge/docs-cqops.com-1f6feb)](https://docs.cqops.com/)
 
-A small, fast, offline-first amateur radio logger for the terminal. Built for portable and field operations where every watt and every CPU cycle counts — and for club stations where multiple operators share rigs and logbooks.
+A small, fast, offline-first amateur radio logger for the terminal — built mainly for portable/field ops on Raspberry Pi and low-power devices. Supports hotseat operator switching for club stations: multiple ops share rigs and logbooks, swapping in and out with a single keystroke (Ctrl+O).
 
-CQOps is a personal project for my own use and my local club. It's not a full-featured desktop logger — for that, see [Log4OM](https://www.log4om.com/) (Windows), [QLog](https://github.com/foldynl/QLog) (Linux), or [Wavelog](https://www.wavelog.org/) (self-hosted web). CQOps fills a different niche: a lightweight, dependency-minimal CLI tool that runs on a Raspberry Pi, an old laptop, or any "potato PC" without a GUI — perfect for off-grid portable ops, SOTA/POTA, club stations with rotating operators, and fast keystroke-driven logging.
+CQOps is a personal project for my own use and my local club. It's not a full-featured desktop logger — for that, see [Log4OM](https://www.log4om.com/) (Windows), [QLog](https://github.com/foldynl/QLog) (Linux), or [Wavelog](https://www.wavelog.org/) (self-hosted web). CQOps fills a different niche: a lightweight, dependency-minimal CLI tool that runs on a Raspberry Pi, an old laptop, or any "potato PC" without a GUI — perfect for off-grid portable ops, SOTA/POTA, and club stations with rotating operators.
 
 > 📖 **Full documentation, installation guides, and translations at [docs.cqops.com](https://docs.cqops.com/)** — available in English, Polski, Deutsch, Español, 日本語, Français, and Italiano.
 
