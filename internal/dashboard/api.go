@@ -20,6 +20,11 @@ func NewMux(state *State, hub *Hub) *http.ServeMux {
 	mux.HandleFunc("/index.html", serveStaticFile("static/index.html", "text/html; charset=utf-8"))
 	mux.HandleFunc("/app.js", serveStaticFile("static/app.js", "application/javascript"))
 	mux.HandleFunc("/style.css", serveStaticFile("static/style.css", "text/css"))
+	mux.HandleFunc("/leaflet.js", serveStaticFile("static/leaflet.js", "application/javascript"))
+	mux.HandleFunc("/leaflet.css", serveStaticFile("static/leaflet.css", "text/css"))
+	mux.HandleFunc("/images/marker-icon.png", serveStaticFile("static/images/marker-icon.png", "image/png"))
+	mux.HandleFunc("/images/marker-icon-2x.png", serveStaticFile("static/images/marker-icon-2x.png", "image/png"))
+	mux.HandleFunc("/images/marker-shadow.png", serveStaticFile("static/images/marker-shadow.png", "image/png"))
 
 	// API endpoints.
 	mux.HandleFunc("/api/snapshot", handleSnapshot(state))

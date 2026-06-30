@@ -119,7 +119,7 @@ Full usage guide, workflows, and keyboard shortcuts are in the [documentation](h
 - [WWFF](https://wwff.co/) — World Wide Flora & Fauna directory (public data, loaded and cached locally)
 - [IOTA](https://www.iota-world.org/) — Islands On The Air directory (downloaded by the user at runtime from iota-world.org for personal non-commercial use; loaded and cached locally)
 
-All licenses are permissive (MIT, Apache 2.0, BSD-3). IOTA data is used under the personal non-commercial terms published by RSGB IOTA Ltd. See `licenses/` directory.
+All licenses are permissive (MIT, Apache 2.0, BSD-2, BSD-3). IOTA data is used under the personal non-commercial terms published by RSGB IOTA Ltd. Leaflet is bundled under BSD-2. See `licenses/` directory.
 
 ## Contributing
 
