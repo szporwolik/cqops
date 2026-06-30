@@ -131,7 +131,11 @@ Full usage guide, workflows, and keyboard shortcuts are in the [documentation](h
 - All services remain optional. CQOps and CQOps Live work offline with cached/local assets.
 - Use of third-party services does not imply endorsement of CQOps by those projects.
 
-All licenses are permissive (MIT, Apache 2.0, BSD-2, BSD-3). See `licenses/` directory.
+*APRS-IS & APRS symbol graphics:*
+- APRS symbol graphics are from the [aprs.fi APRS symbol set](https://github.com/hessu/aprs-symbols) by Heikki Hannikainen, OH7LZB. The graphics are third-party assets with mixed per-symbol copyright status — **not** covered by the CQOps Apache 2.0 license. Upstream copyright notes are preserved in [`third_party/aprs-symbols/COPYRIGHT.md`](third_party/aprs-symbols/COPYRIGHT.md). See [`third_party/NOTICE.md`](third_party/NOTICE.md) for details.
+- APRS Mic-E and Base-91 position decoding in `internal/aprs/parse.go` is an independent implementation based on algorithms from [go-aprs-fap](https://github.com/la5nta/go-aprs) (BSD-style) and the APRS 1.0.1/1.2 specifications.
+
+All licenses are permissive (MIT, Apache 2.0, BSD-2, BSD-3). See `licenses/` directory. Third-party asset notices are in `third_party/`.
 
 ## Contributing
 
