@@ -95,18 +95,6 @@ func (m *Model) dxcFilteredSpots() []store.DXCSpot {
 	return spots
 }
 
-// dxcInvalidateSpotCache clears the cached filtered spots so the next call
-// to dxcFilteredSpots re-queries the database. Called after new spots are
-// stored or when the DXC client reconnects.
-func (m *Model) dxcInvalidateSpotCache() {
-	m.dxc.cachedSpots = nil
-	m.dxc.cachedBandFilter = ""
-	m.dxc.cachedTimeFilter = -1
-	m.dxc.cachedContFilter = ""
-	m.dxc.cachedModeFilter = ""
-	m.dxc.cachedSortBand = ""
-}
-
 // populateDXCFilterCaches extracts band and continent lists from raw spots
 // and stores them so dxcAvailableBands/Continents avoid a separate DB scan.
 func (m *Model) populateDXCFilterCaches(spots []store.DXCSpot) {

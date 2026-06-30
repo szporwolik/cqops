@@ -25,16 +25,6 @@ const qsoCols = `call, qso_date, time_on, time_off, band, freq, freq_rx, mode, s
 // used by InsertQSO to avoid a per-insert []string allocation.
 const placeholders51 = "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?"
 
-// placeholders returns a string of n comma-separated "?" placeholders.
-// Prefer the pre-computed placeholders51 constant when n=51.
-func placeholders(n int) string {
-	parts := make([]string, n)
-	for i := range parts {
-		parts[i] = "?"
-	}
-	return strings.Join(parts, ", ")
-}
-
 // InsertQSO persists a QSO and sets its ID on success. Retries on SQLITE_BUSY.
 func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 	now := time.Now().UTC()

@@ -233,9 +233,6 @@ var (
 	statusDotOffStyle  = lipgloss.NewStyle().Foreground(P.Error)
 	statusDotWarnStyle = lipgloss.NewStyle().Foreground(P.Warning)
 
-	// utcLabelStyle — "UTC " prefix in status bar.
-	utcLabelStyle = lipgloss.NewStyle().Foreground(P.TextMuted)
-
 	// wizardCenterBase — centered layout helper for wizard.
 	wizardCenterBase = lipgloss.NewStyle().Align(lipgloss.Center)
 )

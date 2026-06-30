@@ -181,12 +181,12 @@ func (oc *OperatorChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return oc, nil
 			}
 			// Execute the command to inspect the message.
-			m := cmd()
-			switch m.(type) {
+			msg := cmd()
+			switch m := msg.(type) {
 			case enterOnLastFieldMsg:
 				return oc, oc.saveForm()
 			case operatorWarnMsg:
-				oc.toasts.Warn(m.(operatorWarnMsg).text)
+				oc.toasts.Warn(m.text)
 				return oc, nil
 			}
 			return oc, nil
