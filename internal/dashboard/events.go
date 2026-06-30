@@ -29,6 +29,7 @@ const (
 	EventWSJTX      EventType = "wsjtx"
 	EventPartner    EventType = "partner"
 	EventToday      EventType = "today"
+	EventAPRS       EventType = "aprs"
 	EventHeartbeat  EventType = "heartbeat"
 )
 

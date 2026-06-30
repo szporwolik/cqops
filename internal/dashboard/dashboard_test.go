@@ -313,3 +313,81 @@ func min(a, b int) int {
 	}
 	return b
 }
+
+// =============================================================================
+// APRS state tests
+// =============================================================================
+
+func TestSetAPRS_UpdatesSnapshot(t *testing.T) {
+	state := NewState(NewHub())
+	stations := []APRSStation{
+		{Callsign: "N0CALL", Lat: 50.0, Lon: 20.0, Symbol: "/r", Comment: "test", LastHeard: timeNow()},
+		{Callsign: "SP9MOA", Lat: 49.5, Lon: 19.3, Symbol: "/[", Comment: "test2", LastHeard: timeNow().Add(-5 * time.Minute)},
+	}
+	state.SetAPRS(stations)
+
+	snap := state.Snapshot()
+	if len(snap.APRS) != 2 {
+		t.Fatalf("expected 2 APRS stations, got %d", len(snap.APRS))
+	}
+	if snap.APRS[0].Callsign != "N0CALL" {
+		t.Errorf("expected N0CALL, got %s", snap.APRS[0].Callsign)
+	}
+}
+
+func TestSetAPRS_PublishesEvent(t *testing.T) {
+	hub := NewHub()
+	state := NewState(hub)
+	ch := hub.Subscribe()
+	defer hub.Unsubscribe(ch)
+
+	stations := []APRSStation{
+		{Callsign: "N0CALL", Lat: 50, Lon: 20, LastHeard: timeNow()},
+	}
+	state.SetAPRS(stations)
+
+	select {
+	case ev := <-ch:
+		if ev.Type != string(EventAPRS) {
+			t.Errorf("expected event type aprs, got %s", ev.Type)
+		}
+	case <-time.After(time.Second):
+		t.Error("timed out waiting for aprs event")
+	}
+}
+
+func TestHandleAPRS(t *testing.T) {
+	state := NewState(NewHub())
+	state.SetAPRS([]APRSStation{
+		{Callsign: "N0CALL", Lat: 50, Lon: 20, LastHeard: timeNow()},
+	})
+	mux := NewMux(state, state.hub)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/aprs", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var stations []APRSStation
+	if err := json.Unmarshal(rec.Body.Bytes(), &stations); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if len(stations) != 1 {
+		t.Errorf("expected 1 station, got %d", len(stations))
+	}
+	if stations[0].Callsign != "N0CALL" {
+		t.Errorf("expected N0CALL, got %s", stations[0].Callsign)
+	}
+}
+
+func TestSetAPRS_EmptyList(t *testing.T) {
+	state := NewState(NewHub())
+	state.SetAPRS([]APRSStation{})
+	snap := state.Snapshot()
+	if len(snap.APRS) != 0 {
+		t.Errorf("expected empty, got %d", len(snap.APRS))
+	}
+}

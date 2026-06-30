@@ -92,6 +92,10 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #map-local-container{flex:1;background:var(--blue-xsoft);position:relative}
 #map-container .leaflet-container{width:100%!important;height:100%!important;position:absolute!important;top:0;left:0}
 #map-local-container .leaflet-container{width:100%!important;height:100%!important;position:absolute!important;top:0;left:0}
+/* APRS symbol markers — no extra border/background on the container */
+.aprs-symbol-marker{background:transparent!important;border:none!important}
+/* APRS range circle — dashed, visible above tiles */
+.aprs-range-circle{stroke-dasharray:10 6!important;pointer-events:none}
 /* recent panel as bottom-row card */
 .panel-recent{flex:2.11;display:flex;flex-direction:column}
 #recent-panel h2{font-size:0.85rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:4px;flex-shrink:0}
@@ -313,6 +317,8 @@ footer a:hover{text-decoration:underline}
   #recent-table{font-size:0.82rem}
   #map-table-row{margin-bottom:12px}
   /* bottom panels */
+  /* APRS symbol markers — no extra border/background on the container */
+  .aprs-symbol-marker{background:transparent!important;border:none!important}
   main{gap:14px;margin-bottom:12px}
   .panel{padding:12px 16px}
   .panel h2{font-size:0.88rem;margin-bottom:8px}

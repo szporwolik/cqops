@@ -88,7 +88,7 @@ function connectSSE(){
   });
   es.addEventListener('station',function(e){var s=JSON.parse(e.data).payload;
     D('sse','station',s.callsign+' '+s.locator);
-    if(s.lat!=null&&s.lon!=null){ownStationLat=s.lat;ownStationLon=s.lon;initLocalMap(s.lat,s.lon);updateMapFromToday()}else{recentreLocalMapFromStation(s)}renderStation(s)
+    if(s.lat!=null&&s.lon!=null){ownStationLat=s.lat;ownStationLon=s.lon;initLocalMap(s.lat,s.lon);updateAprsCircle(s.lat,s.lon,s.aprsRadiusKm||0);updateMapFromToday()}else{recentreLocalMapFromStation(s)}renderStation(s)
   });
   es.addEventListener('operator',function(e){var o=JSON.parse(e.data).payload;
     D('sse','operator',o.callsign);
@@ -121,6 +121,11 @@ function connectSSE(){
     // have — prevents the map from flickering down to 1 QSO right after
     // logging, before the server catches up.
     if(t&&t.length>=todayQsos.length){todayQsos=t;updateMapFromToday();renderStats(null,todayQsos)}
+  });
+  es.addEventListener('aprs',function(e){
+    var a=JSON.parse(e.data).payload;
+    D('sse','aprs',a? a.length:0);
+    renderAPRSOnLocalMap(a);
   });
   es.addEventListener('heartbeat',function(){D('sse','heartbeat')});
   es.onopen=function(){sseReconnects=0;setSSEStatus('sse-connected');D('sse','connected ✓')};
@@ -156,6 +161,8 @@ function renderAll(snap){
   else{switchToOverview();renderHero(null)}
   // Stats + recent
   renderStats(snap.stats,todayQsos);renderRecentTable(snap.recent);
+  // APRS stations on local map
+  if(snap.aprs)renderAPRSOnLocalMap(snap.aprs);
   // Map
   D('renderAll','init map…');
   initMap(Object.assign({},displayCfg,{drawLines:displayCfg.drawLines!==false,maxLines:displayCfg.maxLines||250,highlightLastQSO:displayCfg.highlightLastQSO!==false,animateActivePath:!!displayCfg.animateActivePath}));
@@ -411,22 +418,44 @@ function initMap(cfg){
 }
 
 // ---- Local map (station-centre, ~50 km view) ----
+var aprsCircleLayer=null;
+
 function initLocalMap(lat,lon){
   if(mapLocal)return;
   var lc=document.getElementById('map-local-container');
   if(!lc)return;
-  mapLocal=L.map('map-local-container',{zoomControl:false,attributionControl:false}).setView([lat,lon],12);
+  mapLocal=L.map('map-local-container',{zoomControl:false,attributionControl:false}).setView([lat,lon],11);
   mapLocal.createPane('cqopsRadar');mapLocal.getPane('cqopsRadar').style.zIndex=350;mapLocal.getPane('cqopsRadar').style.pointerEvents='none';
   mapLocal.createPane('cqopsGrayline');mapLocal.getPane('cqopsGrayline').style.zIndex=300;mapLocal.getPane('cqopsGrayline').style.pointerEvents='none';
   localTiles=L.tileLayer(mapCfg.mapTileUrl||'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(mapLocal);
   localTiles.on('tileerror',function(e){e.tile.style.display='none'});
-  // Station marker on local map.
-  stationLocalMarker=L.circleMarker([lat,lon],{radius:8,color:'#007A3D',fillColor:'#007A3D',fillOpacity:0.85,weight:2.5}).addTo(mapLocal);
+  // Station marker on local map — small, below APRS symbols.
+  stationLocalMarker=L.circleMarker([lat,lon],{radius:5,color:'#007A3D',fillColor:'#007A3D',fillOpacity:0.85,weight:2.5,pane:'shadowPane'}).addTo(mapLocal);
   if(window.ResizeObserver){new ResizeObserver(function(){mapLocal.invalidateSize()}).observe(lc)}
   // Grayline on local map.
   enableGraylineLocal();
   // Add radar to local map if already enabled.
   addRadarToLocalMap();
+}
+
+function updateAprsCircle(lat,lon,radiusKm){
+  if(!mapLocal)return;
+  if(!aprsCircleLayer){aprsCircleLayer=L.layerGroup().addTo(mapLocal)}
+  aprsCircleLayer.clearLayers();
+  if(radiusKm>0&&lat!=null&&lon!=null){
+    var c=L.circle([lat,lon],{
+      radius:radiusKm*1000,
+      color:'#007A3D',
+      weight:2.5,
+      opacity:0.6,
+      dashArray:'10 6',
+      fillColor:'#007A3D',
+      fillOpacity:0.06,
+      interactive:false,
+      className:'aprs-range-circle'
+    }).addTo(aprsCircleLayer);
+    c.bringToFront();
+  }
 }
 
 function recentreLocalMap(lat,lon){
@@ -549,6 +578,97 @@ function enableGraylineLocal(){
     if(graylineLayerLocal)graylineLayerLocal.setTime();
   },60000);
   D('grayline','local map enabled');
+}
+
+// ---- APRS station markers on local map ----
+var aprsMarkerLayer=null;
+
+// APRS symbol sprite sheets: 16 columns × 6 rows, 24×24px per symbol.
+// Grid size: 384×144 pixels.
+// Sheet 0 = primary table (/), Sheet 1 = secondary table (\), Sheet 2 = overlays.
+// Per APRS 1.2: alternate tables (0-9, A-Z) composite overlay chars
+// from sheet 2 on top of the SECONDARY (alternate) table symbol at
+// the same code position — NOT the primary table.
+
+function _aprSpriteHTML(sheetIdx,charCode){
+  if(charCode<33||charCode>126)return '';
+  var idx=charCode-33,col=idx%16,row=Math.floor(idx/16);
+  var url='/images/symbols/aprs-symbols-24-'+sheetIdx+'.png';
+  var bgX=-(col*24),bgY=-(row*24);
+  return 'background-image:url('+url+');background-repeat:no-repeat;'+
+    'background-position:'+bgX+'px '+bgY+'px;background-size:384px 144px;';
+}
+
+function _aprIconHTML(sym,callsign){
+  var html='<div style="text-align:center;line-height:1;position:relative;display:inline-block;">';
+  var code=sym&&sym.length>1?sym.charCodeAt(1):0;
+  if(!sym||sym.length<2||code<33||code>126){
+    // Unrenderable symbol — orange diamond fallback.
+    html+='<div style="width:24px;height:24px;display:inline-block;'+
+      'background:#B45309;border:1.5px solid #fff;transform:rotate(45deg);"></div>';
+  }else{
+    var table=sym[0];
+    if(table=='/'){
+      // Primary table — simple single sprite.
+      html+='<div style="width:24px;height:24px;display:inline-block;'+_aprSpriteHTML(0,code)+'"></div>';
+    }else if(table=='\\'){
+      // Secondary table.
+      html+='<div style="width:24px;height:24px;display:inline-block;'+_aprSpriteHTML(1,code)+'"></div>';
+    }else{
+      // Alternate/overlay table (0-9, A-Z):
+      //   base    = secondary table (sheet 1) at code position
+      //   overlay = sheet 2 at table char position
+      html+='<div style="position:relative;width:24px;height:24px;display:inline-block;">'+
+        '<div style="position:absolute;inset:0;'+_aprSpriteHTML(1,code)+'"></div>'+
+        '<div style="position:absolute;inset:0;'+_aprSpriteHTML(2,table.charCodeAt(0))+';opacity:0.9;"></div>'+
+        '</div>';
+    }
+  }
+  if(callsign)html+='<div style="font-weight:700;font-size:0.58rem;color:#fff;text-shadow:0 0 3px #000,0 0 6px #000;margin-top:1px;white-space:nowrap;">'+esc(callsign)+'</div>';
+  html+='</div>';
+  return html;
+}
+
+function _aprMarker(s){
+  var html=_aprIconHTML(s.symbol,s.callsign);
+  var icon=L.divIcon({
+    className:'aprs-symbol-marker',
+    iconSize:[50,36],
+    iconAnchor:[25,34],
+    popupAnchor:[0,-30],
+    html:html
+  });
+  return L.marker([s.lat,s.lon],{icon:icon});
+}
+
+function renderAPRSOnLocalMap(stations){
+  if(!mapLocal)return;
+  if(!aprsMarkerLayer){aprsMarkerLayer=L.layerGroup().addTo(mapLocal)}
+  aprsMarkerLayer.clearLayers();
+  if(!stations||!stations.length)return;
+  var seen={};
+  var bounds=[];
+  stations.forEach(function(s){
+    if(!s.callsign||!s.lat||!s.lon)return;
+    // Deduplicate: keep only the latest entry per callsign.
+    if(seen[s.callsign])return;
+    seen[s.callsign]=true;
+    var popup=(s.callsign||'?')+'<br>APRS';
+    if(s.comment)popup+='<br>'+esc(s.comment);
+    var ago=Math.round((Date.now()-new Date(s.lastHeard).getTime())/60000);
+    popup+='<br>'+ago+' min ago';
+    if(s.course)popup+='<br>Course: '+s.course+'°';
+    if(s.speedKmh)popup+='<br>'+s.speedKmh+' km/h';
+    var m=_aprMarker(s);
+    m.bindPopup(popup);
+    aprsMarkerLayer.addLayer(m);
+    bounds.push([s.lat,s.lon]);
+  });
+  // Auto-fit map to show all APRS markers plus our station.
+  if(bounds.length>0){
+    if(ownStationLat!=null&&ownStationLon!=null)bounds.push([ownStationLat,ownStationLon]);
+    mapLocal.fitBounds(bounds,{padding:[30,30],maxZoom:15});
+  }
 }
 
 function updateMapFromToday(){

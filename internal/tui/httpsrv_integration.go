@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"strings"
 	"time"
@@ -274,6 +275,7 @@ func (m *Model) pushDashboardState() {
 		m.pushDashboardToday(ds)
 		m.pushDashboardStats(ds)
 		m.pushDashboardRecent(ds)
+		m.pushDashboardAPRS(ds)
 	}
 }
 
@@ -335,6 +337,10 @@ func (m *Model) pushDashboardFast() {
 			fmt.Sscanf(pw, "%d", &p)
 			stationInfo.PowerW = p
 		}
+	}
+	// APRS radius for local map circle.
+	if aprsCfg := m.App.Logbook.APRS; aprsCfg != nil && aprsCfg.Enabled && aprsCfg.RadiusKm > 0 {
+		stationInfo.AprsRadiusKm = float64(aprsCfg.RadiusKm)
 	}
 	ds.SetStation(stationInfo)
 
@@ -724,4 +730,62 @@ func (m *Model) pushDashboardStats(ds *dashboard.State) {
 		LastQSOAgoS: s.LastQSOAgoS,
 		RatePerHour: s.RatePerHour,
 	})
+}
+
+// pushDashboardAPRS reads recent APRS stations from the cache and pushes them
+// to the dashboard for the local map display. Stations outside the configured
+// radius are filtered out.
+func (m *Model) pushDashboardAPRS(ds *dashboard.State) {
+	if m.App.APRSCache == nil {
+		return
+	}
+	stations, err := m.App.APRSCache.RecentStations(200)
+	if err != nil {
+		applog.Debug("dashboard: cannot read APRS cache", "error", err)
+		return
+	}
+	// Get station position and APRS config for distance filtering.
+	var stLat, stLon, radiusKm float64
+	if g := m.App.Logbook.Station.Grid; g != "" {
+		stLat, stLon = gridToLatLon(g)
+	}
+	if aprsCfg := m.App.Logbook.APRS; aprsCfg != nil && aprsCfg.Enabled && aprsCfg.RadiusKm > 0 {
+		radiusKm = float64(aprsCfg.RadiusKm)
+	}
+	cutoff := time.Now().Add(-60 * time.Minute)
+	var view []dashboard.APRSStation
+	for _, s := range stations {
+		if s.LastHeard.Before(cutoff) {
+			continue
+		}
+		// Distance filter: only include stations within the configured radius.
+		if radiusKm > 0 && stLat != 0 && stLon != 0 {
+			d := haversineKm(stLat, stLon, s.Lat, s.Lon)
+			if d > radiusKm {
+				continue
+			}
+		}
+		view = append(view, dashboard.APRSStation{
+			Callsign:  s.Callsign,
+			Lat:       s.Lat,
+			Lon:       s.Lon,
+			Symbol:    s.Symbol,
+			Comment:   s.Comment,
+			Course:    s.Course,
+			SpeedKmH:  s.SpeedKmH,
+			LastHeard: s.LastHeard,
+		})
+	}
+	ds.SetAPRS(view)
+}
+
+// haversineKm computes the great-circle distance between two points in km.
+func haversineKm(lat1, lon1, lat2, lon2 float64) float64 {
+	const R = 6371.0 // Earth radius in km
+	dLat := (lat2 - lat1) * (math.Pi / 180)
+	dLon := (lon2 - lon1) * (math.Pi / 180)
+	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
+		math.Cos(lat1*(math.Pi/180))*math.Cos(lat2*(math.Pi/180))*
+			math.Sin(dLon/2)*math.Sin(dLon/2)
+	return R * 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
 }

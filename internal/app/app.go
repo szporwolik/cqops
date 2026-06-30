@@ -6,10 +6,12 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ftl/hamradio/dxcc"
 	"github.com/ftl/hamradio/scp"
 	"github.com/szporwolik/cqops/internal/applog"
+	"github.com/szporwolik/cqops/internal/aprs"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/ref"
 	"github.com/szporwolik/cqops/internal/secrets"
@@ -30,6 +32,10 @@ type App struct {
 	SCP          *scp.Database  // in-memory Super Check Partial database
 	RefDB        *ref.DB        // reference database (SOTA/POTA/WWFF)
 	Secrets      *secrets.Store // encrypted secrets (passwords, API keys)
+	APRSClient   *aprs.Client   // APRS-IS persistent connection
+	APRSCache    *aprs.CacheDB  // APRS station cache database
+	aprsStatusCB func(connected bool, err error)
+	pruneStopCh  chan struct{} // stops the APRS cache pruning goroutine
 
 	// lastWSJTX tracks the effective WSJT-X config last applied to the
 	// listener. Used to avoid unnecessary Stop/Start cycles when config
@@ -141,6 +147,16 @@ func Init() (*App, error) {
 func (a *App) Close() {
 	applog.Info("Shutting down — stopping WSJT-X listener")
 	a.WSJTX.Stop()
+	// Stop APRS cache pruner.
+	a.stopAPRSPruner()
+	if a.APRSClient != nil {
+		applog.Debug("Stopping APRS client")
+		a.APRSClient.Stop()
+	}
+	if a.APRSCache != nil {
+		applog.Debug("Closing APRS cache database")
+		a.APRSCache.Close()
+	}
 	if a.DB != nil {
 		applog.Debug("Closing database")
 		a.DB.Close()
@@ -182,6 +198,192 @@ func (a *App) MaybeRestartWSJTX(enabled bool, host string, port int) {
 	}
 }
 
+// MaybeRestartAPRS starts or stops the APRS-IS client based on the
+// active logbook's APRS configuration. Non-blocking — connection runs
+// asynchronously. Call SetAPRSStatusCallback to receive toast updates.
+func (a *App) MaybeRestartAPRS() {
+	aprsCfg := a.Logbook.APRS
+	enabled := aprsCfg != nil && aprsCfg.Enabled
+
+	if !enabled {
+		a.stopAPRSPruner()
+		if a.APRSClient != nil {
+			applog.Info("APRS: disabled, stopping client")
+			a.APRSClient.Stop()
+			a.APRSClient = nil
+			// Only notify if we actually stopped a running client.
+			if a.aprsStatusCB != nil {
+				a.aprsStatusCB(false, nil)
+			}
+		}
+		if a.APRSCache != nil {
+			a.APRSCache.Close()
+			a.APRSCache = nil
+		}
+		return
+	}
+
+	// Open cache database if needed.
+	if a.APRSCache == nil {
+		cacheDir, err := config.CacheDir()
+		if err != nil {
+			applog.Error("APRS: cannot determine cache directory", "error", err)
+			return
+		}
+		cachePath := filepath.Join(cacheDir, "aprs.db")
+		cache, err := aprs.OpenCacheDB(cachePath)
+		if err != nil {
+			applog.Error("APRS: cannot open cache database", "error", err)
+			return
+		}
+		a.APRSCache = cache
+	}
+
+	server := aprsCfg.Server
+	if server == "" {
+		server = "euro.aprs2.net:14580"
+	}
+	callsign := aprsCfg.Callsign
+	if callsign == "" {
+		// Derive from station callsign: strip portable/test suffixes, add -10 SSID.
+		base := a.Logbook.Station.Callsign
+		if idx := strings.IndexAny(base, "/"); idx >= 0 {
+			base = base[:idx]
+		}
+		if base != "" {
+			callsign = base + "-10"
+		}
+	}
+
+	// Build range filter from station position.
+	var filter string
+	if aprsCfg.RadiusKm > 0 {
+		g := a.Logbook.Station.Grid
+		if g != "" {
+			lat, lon, err := gridToLatLon(g)
+			if err == nil {
+				filter = aprs.BuildRangeFilter(lat, lon, aprsCfg.RadiusKm)
+			}
+		}
+	}
+
+	// Start or restart client.
+	if a.APRSClient != nil {
+		applog.Debug("APRS: stopping previous client")
+		a.APRSClient.Stop()
+	}
+	applog.Info("APRS: starting client", "server", server, "callsign", callsign)
+	a.APRSClient = aprs.NewClient(server, callsign, aprsCfg.Passcode, filter)
+	a.APRSClient.OnStatus = func(connected bool, err error) {
+		if connected {
+			applog.Info("APRS: connected", "server", server, "callsign", callsign)
+		}
+		// On error: connect() already logged the detail; just forward to TUI for toast.
+		if a.aprsStatusCB != nil {
+			a.aprsStatusCB(connected, err)
+		}
+	}
+	a.APRSClient.OnPacket = func(raw string) {
+		sr, ok := aprs.ParsePositionPacket(raw)
+		if !ok {
+			return
+		}
+		sr.RawPacket = raw
+		sr.LastHeard = time.Now()
+		applog.Debug("APRS: position parsed", "callsign", sr.Callsign, "lat", sr.Lat, "lon", sr.Lon)
+		if a.APRSCache != nil {
+			if err := a.APRSCache.UpsertStation(sr); err != nil {
+				applog.Debug("APRS: cache upsert failed", "error", err)
+			}
+		}
+	}
+
+	// Start is non-blocking — connects in a goroutine.
+	a.APRSClient.Start()
+
+	// Start periodic cache pruning (every 5 min, removes stations >60 min old).
+	a.startAPRSPruner()
+}
+
+// SetAPRSStatusCallback registers a callback for APRS connection state changes.
+// Called from the TUI model to enable toast notifications.
+func (a *App) SetAPRSStatusCallback(cb func(connected bool, err error)) {
+	a.aprsStatusCB = cb
+}
+
+// startAPRSPruner launches a background goroutine that periodically deletes
+// cached APRS stations older than the retention window (60 min). Runs every
+// 5 minutes. Stops when stopAPRSPruner is called or the app shuts down.
+func (a *App) startAPRSPruner() {
+	a.stopAPRSPruner() // ensure no duplicate
+	a.pruneStopCh = make(chan struct{})
+	go func() {
+		const pruneInterval = 5 * time.Minute
+		const retainDuration = 60 * time.Minute
+		ticker := time.NewTicker(pruneInterval)
+		defer ticker.Stop()
+
+		// Prune once at startup to clean up stale entries from a previous run.
+		a.pruneOnce(retainDuration)
+
+		for {
+			select {
+			case <-ticker.C:
+				a.pruneOnce(retainDuration)
+			case <-a.pruneStopCh:
+				return
+			}
+		}
+	}()
+	applog.Debug("APRS: cache pruner started", "interval", "5m", "retain", "60m")
+}
+
+func (a *App) stopAPRSPruner() {
+	if a.pruneStopCh != nil {
+		close(a.pruneStopCh)
+		a.pruneStopCh = nil
+		applog.Debug("APRS: cache pruner stopped")
+	}
+}
+
+func (a *App) pruneOnce(retainDuration time.Duration) {
+	if a.APRSCache == nil {
+		return
+	}
+	cutoff := time.Now().Add(-retainDuration)
+	n, err := a.APRSCache.PruneOlderThan(cutoff)
+	if err != nil {
+		applog.Debug("APRS: cache prune failed", "error", err)
+		return
+	}
+	if n > 0 {
+		applog.Debug("APRS: cache pruned", "removed", n)
+	}
+}
+
+// gridToLatLon converts a Maidenhead grid square (4 or 6 char) to decimal lat/lon.
+// Simplified local version to avoid import cycle.
+func gridToLatLon(grid string) (float64, float64, error) {
+	grid = strings.ToUpper(strings.TrimSpace(grid))
+	if len(grid) < 4 {
+		return 0, 0, fmt.Errorf("grid too short: %s", grid)
+	}
+	lon := float64(grid[0]-'A')*20 - 180
+	lat := float64(grid[1]-'A')*10 - 90
+	lon += float64(grid[2]-'0') * 2
+	lat += float64(grid[3]-'0') * 1
+	if len(grid) >= 6 {
+		lon += float64(grid[4]-'A') * (5.0 / 60.0)
+		lat += float64(grid[5]-'A') * (2.5 / 60.0)
+		lon += 2.5 / 60.0  // center
+		lat += 1.25 / 60.0 // center
+	} else {
+		lon += 1.0 // center of 2° square
+		lat += 0.5 // center of 1° square
+	}
+	return lat, lon, nil
+}
+
 func (a *App) SwitchLogbook(name string) error {
 	if _, ok := a.Config.Logbooks[name]; !ok {
 		return fmt.Errorf("logbook %q not found", name)
@@ -213,6 +415,9 @@ func (a *App) SwitchLogbook(name string) error {
 	if err := config.Save(a.ConfigPath, a.Config); err != nil {
 		applog.Warn("Failed to save active logbook", "error", err)
 	}
+
+	// Restart APRS for the new logbook config.
+	a.MaybeRestartAPRS()
 
 	return nil
 }

@@ -89,6 +89,15 @@ func (m *Model) headerView() string {
 	if wl != nil && wl.Enabled {
 		rightParts = append(rightParts, statusDotStyled(m.lookup.wlOnline, "WL", m.Offline))
 	}
+	aprsCfg := m.App.Logbook.APRS
+	if aprsCfg != nil && aprsCfg.Enabled {
+		label := "APRS-RX"
+		online := m.App.APRSClient != nil && m.App.APRSClient.IsRunning()
+		if aprsCfg.SendLocation {
+			label = "APRS"
+		}
+		rightParts = append(rightParts, statusDotStyled(online, label, m.Offline))
+	}
 	rightParts = append(rightParts,
 		S.StatusTime.Render(now.Format("15:04")+"L  "+utc.Format("1504")+"Z"),
 	)

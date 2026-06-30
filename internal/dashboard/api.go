@@ -27,12 +27,18 @@ func NewMux(state *State, hub *Hub) *http.ServeMux {
 	mux.HandleFunc("/images/marker-icon-2x.png", serveStaticFile("static/images/marker-icon-2x.png", "image/png"))
 	mux.HandleFunc("/images/marker-shadow.png", serveStaticFile("static/images/marker-shadow.png", "image/png"))
 
+	// APRS symbol sprite sheets (hessu/aprs-symbols, 24px base with @2x for retina).
+	mux.HandleFunc("/images/symbols/aprs-symbols-24-0.png", serveStaticFile("static/images/symbols/aprs-symbols-24-0.png", "image/png"))
+	mux.HandleFunc("/images/symbols/aprs-symbols-24-1.png", serveStaticFile("static/images/symbols/aprs-symbols-24-1.png", "image/png"))
+	mux.HandleFunc("/images/symbols/aprs-symbols-24-2.png", serveStaticFile("static/images/symbols/aprs-symbols-24-2.png", "image/png"))
+
 	// API endpoints.
 	mux.HandleFunc("/api/snapshot", handleSnapshot(state))
 	mux.HandleFunc("/api/recent", handleRecent(state))
 	mux.HandleFunc("/api/today", handleToday(state))
 	mux.HandleFunc("/api/stats", handleStats(state))
 	mux.HandleFunc("/api/map", handleMap(state))
+	mux.HandleFunc("/api/aprs", handleAPRS(state))
 	mux.HandleFunc("/api/events", handleEvents(state, hub))
 	mux.HandleFunc("/healthz", handleHealthz())
 
@@ -98,6 +104,17 @@ func handleMap(state *State) http.HandlerFunc {
 		}
 		snap := state.Snapshot()
 		writeJSON(w, http.StatusOK, snap.Map)
+	}
+}
+
+func handleAPRS(state *State) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		snap := state.Snapshot()
+		writeJSON(w, http.StatusOK, snap.APRS)
 	}
 }
 

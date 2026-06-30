@@ -369,6 +369,17 @@ func (m *Model) Init() tea.Cmd {
 	} else {
 		applog.Debug("wsjt-x: disabled")
 	}
+	// Start APRS-IS client if configured.
+	m.App.SetAPRSStatusCallback(func(connected bool, err error) {
+		if connected {
+			m.toasts.Success("APRS: connected")
+		} else if err != nil {
+			m.toasts.Warn("APRS: " + err.Error())
+		} else {
+			m.toasts.Info("APRS: stopped")
+		}
+	})
+	m.App.MaybeRestartAPRS()
 	cmds := []tea.Cmd{tickCmd(), m.photo.viewer.Init(), m.emitWindowIconCmd()}
 	if !m.Offline {
 		cmds = append(cmds, checkInetCmd())

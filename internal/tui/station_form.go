@@ -64,6 +64,10 @@ type wlCycleStation struct{}
 // APRS button action message.
 type aprsTestAction struct{}
 
+// scrollFormToEnd is emitted when a toggle (APRS/Wavelog checkbox) reveals
+// new fields below the fold; the parent should scroll the viewport to the end.
+type scrollFormToEnd struct{}
+
 func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder string) *StationForm {
 	mkTI := func(limit int, width int, placeholder string) textinput.Model {
 		ti := newTextinput()
@@ -94,7 +98,7 @@ func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder strin
 
 	// APRS defaults.
 	asrv := mkTI(60, 28, "euro.aprs2.net:14580")
-	apc := mkTI(20, 28, "-1")
+	apc := mkTI(20, 28, "APRS passcode")
 	arad := mkTI(5, 28, "50")
 	acall := mkTI(12, 28, "N0CALL-10")
 	aint := mkTI(3, 28, "15")
@@ -351,8 +355,6 @@ func (f *StationForm) PrevInput() {
 		f.Name.Blur()
 		if f.AprsEnabled {
 			f.aprsBtnFocus = 1
-		} else if f.WlEnabled {
-			f.wlBtnFocus = 2
 		} else {
 			f.aprsCbFocus = true
 		}
@@ -566,10 +568,11 @@ func (f *StationForm) APRSValues() *config.APRSConfig {
 	if iv < 15 {
 		iv = 15 // minimum 15 minutes per APRS spec
 	}
+	pass := strings.TrimSpace(f.AprsPasscode.Value())
 	return &config.APRSConfig{
 		Enabled:      f.AprsEnabled,
 		Server:       strings.TrimSpace(f.AprsServer.Value()),
-		Passcode:     strings.TrimSpace(f.AprsPasscode.Value()),
+		Passcode:     pass,
 		RadiusKm:     rad,
 		SendLocation: f.AprsSendLoc,
 		Callsign:     strings.ToUpper(strings.TrimSpace(f.AprsCallsign.Value())),
@@ -602,7 +605,7 @@ func (f *StationForm) SetAPRSValues(aprs *config.APRSConfig) {
 	} else {
 		f.AprsEnabled = false
 		f.AprsServer.SetValue("euro.aprs2.net:14580")
-		f.AprsPasscode.SetValue("-1")
+		f.AprsPasscode.SetValue("")
 		f.AprsRadiusKm.SetValue("50")
 		f.AprsSendLoc = false
 		f.AprsCallsign.SetValue("")
@@ -923,10 +926,16 @@ func (f *StationForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 	if k.String() == " " || k.String() == "space" {
 		if f.wlCbFocus {
 			f.WlEnabled = !f.WlEnabled
+			if f.WlEnabled {
+				return func() tea.Msg { return scrollFormToEnd{} }
+			}
 			return nil
 		}
 		if f.aprsCbFocus {
 			f.AprsEnabled = !f.AprsEnabled
+			if f.AprsEnabled {
+				return func() tea.Msg { return scrollFormToEnd{} }
+			}
 			return nil
 		}
 		if f.aprsSendLocFocus {

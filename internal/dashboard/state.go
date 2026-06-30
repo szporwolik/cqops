@@ -25,6 +25,7 @@ type Snapshot struct {
 	Map       MapState      `json:"map"`
 	Partner   *PartnerInfo  `json:"partner,omitempty"`
 	Display   DisplayConfig `json:"display"`
+	APRS      []APRSStation `json:"aprs,omitempty"`
 	UpdatedAt time.Time     `json:"updatedAt"`
 }
 
@@ -34,14 +35,15 @@ type AppInfo struct {
 }
 
 type StationInfo struct {
-	Callsign string  `json:"callsign"`
-	Locator  string  `json:"locator,omitempty"`
-	Lat      float64 `json:"lat,omitempty"`
-	Lon      float64 `json:"lon,omitempty"`
-	QTH      string  `json:"qth,omitempty"`
-	Radio    string  `json:"radio,omitempty"`
-	Antenna  string  `json:"antenna,omitempty"`
-	PowerW   int     `json:"powerW,omitempty"`
+	Callsign     string  `json:"callsign"`
+	Locator      string  `json:"locator,omitempty"`
+	Lat          float64 `json:"lat,omitempty"`
+	Lon          float64 `json:"lon,omitempty"`
+	QTH          string  `json:"qth,omitempty"`
+	Radio        string  `json:"radio,omitempty"`
+	Antenna      string  `json:"antenna,omitempty"`
+	PowerW       int     `json:"powerW,omitempty"`
+	AprsRadiusKm float64 `json:"aprsRadiusKm,omitempty"`
 }
 
 type OperatorInfo struct {
@@ -125,6 +127,18 @@ type Stats struct {
 	Modes       int     `json:"modes"`
 	LastQSOAgoS int     `json:"lastQsoAgoS,omitempty"`
 	RatePerHour float64 `json:"ratePerHour,omitempty"`
+}
+
+// APRSStation is a received APRS position report for the dashboard local map.
+type APRSStation struct {
+	Callsign  string    `json:"callsign"`
+	Lat       float64   `json:"lat"`
+	Lon       float64   `json:"lon"`
+	Symbol    string    `json:"symbol,omitempty"`
+	Comment   string    `json:"comment,omitempty"`
+	Course    int       `json:"course,omitempty"`
+	SpeedKmH  int       `json:"speedKmh,omitempty"`
+	LastHeard time.Time `json:"lastHeard"`
 }
 
 type MapState struct {
@@ -399,6 +413,15 @@ func (s *State) SetStats(stats Stats) {
 	s.snapshot.UpdatedAt = timeNow()
 	s.mu.Unlock()
 	s.hub.Publish(EventStats, stats)
+}
+
+// SetAPRS replaces the APRS station list for the local map.
+func (s *State) SetAPRS(stations []APRSStation) {
+	s.mu.Lock()
+	s.snapshot.APRS = stations
+	s.snapshot.UpdatedAt = timeNow()
+	s.mu.Unlock()
+	s.hub.Publish(EventAPRS, stations)
 }
 
 // LastActiveCall returns the most recently set active callsign.
