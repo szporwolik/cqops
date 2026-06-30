@@ -64,7 +64,7 @@ function connectSSE(){
   });
   es.addEventListener('qso_logged',function(e){var q=JSON.parse(e.data).payload;
     D('sse','qso_logged',q.call+' '+q.band+' '+q.mode);
-    appendTodayQSO(q);prependRecentRow(q);updateMapFromToday();switchToOverview();renderHero(null);renderStats(null,todayQsos)
+    appendTodayQSO(q);prependRecentRow(q);updateMapFromToday();switchToOverview();renderHero(null);renderStats(null,todayQsos);showQsoToast(q)
   });
   es.addEventListener('rig',function(e){var r=JSON.parse(e.data).payload;
     D('sse','rig',r.connected?(r.frequency||'?')+' '+(r.mode||''):'disconnected');
@@ -544,6 +544,19 @@ function guessContinent(c){
   if(as.indexOf(c)>=0)return'Asia';if(oc.indexOf(c)>=0)return'Oceania';if(af.indexOf(c)>=0)return'Africa';return'';
 }
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+// ---- QSO logged toast ----
+var _toastTimer=null;
+function showQsoToast(q){
+  var t=$('qso-toast');if(!t)return;
+  if(_toastTimer){clearTimeout(_toastTimer);t.className=''}
+  $('qso-toast-icon').textContent='\u2713';
+  $('qso-toast-call').textContent=q.call||'';
+  $('qso-toast-sub').textContent=(q.band||'')+' '+(q.mode||'')+' \u2022 '+(q.rstSent||'')+'/'+(q.rstRcvd||'');
+  void t.offsetWidth; // force reflow
+  t.className='show';
+  _toastTimer=setTimeout(function(){t.className='hide';_toastTimer=null},2200);
+}
 
 // ---- Init ----
 D('init','fetching /api/snapshot…');
