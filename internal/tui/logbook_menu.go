@@ -5,7 +5,9 @@ import (
 	"os"
 	"strings"
 
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
@@ -41,6 +43,10 @@ type LogbookChooser struct {
 	wlStations   []wavelog.StationProfile
 	wlStationIdx int // index into wlStations, -1 if none
 	wlStationID  string
+
+	// Viewport for scrolling form content on small terminals.
+	vp              viewport.Model
+	lastFormContent string
 }
 
 // Wavelog async message types
@@ -71,10 +77,14 @@ func NewLogbookChooser(a *app.App, tq *ToastQueue) *LogbookChooser {
 		cursor:  cursor,
 		station: NewStationForm("CALLSIGN", "operator", "GRID"),
 		toasts:  tq,
+		vp:      viewport.New(viewport.WithWidth(80), viewport.WithHeight(20)),
 	}
 }
 
-func (c *LogbookChooser) Init() tea.Cmd { return nil }
+func (c *LogbookChooser) Init() tea.Cmd {
+	c.vp.FillHeight = true
+	return nil
+}
 
 func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -201,6 +211,9 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return c, c.fetchWavelogStations()
 				case wlTestAction:
 					return c, c.testWavelogConnection()
+				case aprsTestAction:
+					c.toasts.Info("APRS test connection — not yet implemented")
+					return c, nil
 				case wlCycleStation:
 					if len(c.wlStations) > 0 {
 						c.wlStationIdx = (c.wlStationIdx + 1) % len(c.wlStations)
@@ -210,6 +223,12 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return c, nil
 			}
+			// Key not handled by station form — forward to viewport for scrolling,
+			// then clamp to prevent scrolling past the content end.
+			var cmd tea.Cmd
+			c.vp, cmd = c.vp.Update(msg)
+			c.autoScrollViewport()
+			return c, cmd
 		}
 	}
 
@@ -310,10 +329,6 @@ func (c *LogbookChooser) viewForm() string {
 	if h < 10 {
 		h = 24
 	}
-	contentH := contentHeight(h)
-	if contentH < 3 {
-		contentH = 3
-	}
 
 	c.station.width = w - 6 // account for menu box border + padding
 	b.WriteString(c.station.View().Content)
@@ -330,8 +345,65 @@ func (c *LogbookChooser) viewForm() string {
 		}
 	}
 
-	body := drawMenuWithHeader("Configuration \u2014 Logbooks \u2014 Edit Logbook", b.String(), w)
-	return fillBody(body, contentH)
+	// Use viewport for scrollable form body on small terminals.
+	boxW := w
+	if boxW > partnerMapMaxW {
+		boxW = partnerMapMaxW
+	}
+	vpW := boxW - 4 // account for menu box border + padding
+	if vpW < 20 {
+		vpW = 20
+	}
+	// contentH = usable area after status/help bars.
+	// vpH = contentH minus header(1) minus menu box overhead:
+	// border top(1) + padding top(1) + padding bottom(1) + border bottom(1) = 4.
+	contentH := contentHeight(h)
+	if contentH < 8 {
+		contentH = 8
+	}
+	vpH := contentH - 5
+	if vpH < 5 {
+		vpH = 5
+	}
+	c.vp.SetWidth(vpW)
+	c.vp.SetHeight(vpH)
+	bodyStr := b.String()
+	if c.vp.TotalLineCount() == 0 || bodyStr != c.lastFormContent {
+		c.vp.SetContent(bodyStr)
+		c.lastFormContent = bodyStr
+	}
+	// Prevent scrolling past the end: if past bottom, snap back.
+	if c.vp.PastBottom() {
+		c.autoScrollViewport()
+	}
+
+	header := S.Title.Width(boxW).Render("Configuration \u2014 Logbooks \u2014 Edit Logbook")
+	box := menuBoxStyle.Width(boxW).Render(c.vp.View())
+	return lipgloss.JoinVertical(lipgloss.Left, header, box)
+}
+
+// autoScrollViewport adjusts the viewport Y offset to keep the currently
+// focused form field visible, using the StationForm's ScrollFraction hint.
+func (c *LogbookChooser) autoScrollViewport() {
+	total := c.vp.TotalLineCount()
+	visible := c.vp.VisibleLineCount()
+	if total <= visible {
+		c.vp.SetYOffset(0)
+		return
+	}
+	frac := c.station.ScrollFraction()
+	maxOffset := total - visible
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	offset := int(float64(maxOffset) * frac)
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > maxOffset {
+		offset = maxOffset
+	}
+	c.vp.SetYOffset(offset)
 }
 
 // logbookSwitchedMsg is sent when the user switches active logbook via Enter.
@@ -395,6 +467,7 @@ func (c *LogbookChooser) startEdit(id string) {
 	c.station.SetValues(lb.Name, lb.Station.Callsign, opCallsign, lb.Station.Grid, lb.Station.SOTARef, lb.Station.POTARef, lb.Station.WWFFRef, lb.Station.IARURegion, lb.Station.CQZone, lb.Station.ITUZone, lb.Station.DXCC, lb.Station.SIG, lb.Station.SIGInfo, lb.Station.Continent)
 	c.station.SetOperators(config.OperatorSlice(c.app.Config))
 	c.station.SetWavelogValues(lb.Wavelog)
+	c.station.SetAPRSValues(lb.APRS)
 	c.wlStatus = ""
 	c.wlStations = nil
 	c.wlStationIdx = -1
@@ -442,6 +515,11 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 			}
 		}
 	}
+	// Build APRS config from form.
+	aprs := c.station.APRSValues()
+	if aprs != nil && !aprs.Enabled {
+		aprs = nil // store nil when disabled
+	}
 
 	var savedName string
 	if c.mode == chooserCreate {
@@ -473,6 +551,7 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 				Continent:  continent,
 			},
 			Wavelog: wl,
+			APRS:    aprs,
 		}
 		c.app.Config.State.ActiveLogbook = id
 		c.app.LogbookName = id
@@ -517,6 +596,7 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 	lb.Station.SIGInfo = sigInfo
 	lb.Station.Continent = continent
 	lb.Wavelog = wl
+	lb.APRS = aprs
 	c.app.Config.Logbooks[id] = lb
 
 	if id == c.app.LogbookName {

@@ -143,6 +143,7 @@ type Logbook struct {
 	Station        Station        `yaml:"station"`
 	ADIF           ADIFConfig     `yaml:"adif,omitempty"`
 	Wavelog        *WavelogConfig `yaml:"wavelog,omitempty"`
+	APRS           *APRSConfig    `yaml:"aprs,omitempty"`
 }
 
 type Station struct {
@@ -279,6 +280,21 @@ type WavelogConfig struct {
 	APIKey           string `yaml:"api_key"`
 	StationProfileID string `yaml:"station_profile_id"`
 	LastFetchedID    int64  `yaml:"last_fetched_id,omitempty"`
+}
+
+// APRSConfig holds APRS-IS beacon configuration for a logbook.
+// Disabled by default. When enabled, the station can beacon its
+// position to the APRS-IS network.
+type APRSConfig struct {
+	Enabled      bool   `yaml:"enabled"`
+	Server       string `yaml:"server"`
+	Passcode     string `yaml:"passcode"`
+	RadiusKm     int    `yaml:"radius_km"`
+	SendLocation bool   `yaml:"send_location"`
+	Callsign     string `yaml:"callsign"`
+	IntervalMin  int    `yaml:"interval_minutes"`
+	Symbol       string `yaml:"symbol"`
+	Comment      string `yaml:"comment"`
 }
 
 // Load reads and parses a YAML configuration file from path.
