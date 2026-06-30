@@ -295,6 +295,7 @@ type APRSConfig struct {
 	IntervalMin  int    `yaml:"interval_minutes"`
 	Symbol       string `yaml:"symbol"`
 	Comment      string `yaml:"comment"`
+	LastBeaconAt string `yaml:"last_beacon_at,omitempty"` // RFC3339, per-logbook
 }
 
 // Load reads and parses a YAML configuration file from path.

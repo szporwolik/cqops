@@ -646,29 +646,52 @@ function renderAPRSOnLocalMap(stations){
   if(!aprsMarkerLayer){aprsMarkerLayer=L.layerGroup().addTo(mapLocal)}
   aprsMarkerLayer.clearLayers();
   if(!stations||!stations.length)return;
-  var seen={};
-  var bounds=[];
+  // Group by base callsign (strip trailing numeric SSID like -0, -10).
+  // When both SP9SPM and SP9SPM-0 exist, only the SSID version wins.
+  var groups={};
   stations.forEach(function(s){
     if(!s.callsign||!s.lat||!s.lon)return;
-    // Deduplicate: keep only the latest entry per callsign.
-    if(seen[s.callsign])return;
-    seen[s.callsign]=true;
-    var popup=(s.callsign||'?')+'<br>APRS';
-    if(s.comment)popup+='<br>'+esc(s.comment);
-    var ago=Math.round((Date.now()-new Date(s.lastHeard).getTime())/60000);
-    popup+='<br>'+ago+' min ago';
-    if(s.course)popup+='<br>Course: '+s.course+'°';
-    if(s.speedKmh)popup+='<br>'+s.speedKmh+' km/h';
-    var m=_aprMarker(s);
-    m.bindPopup(popup);
-    aprsMarkerLayer.addLayer(m);
-    bounds.push([s.lat,s.lon]);
+    var base=s.callsign;
+    var dash=base.lastIndexOf('-');
+    if(dash>0&&/^\d+$/.test(base.substring(dash+1)))base=base.substring(0,dash);
+    if(!groups[base])groups[base]=[];
+    groups[base].push(s);
+  });
+  var bounds=[];
+  Object.values(groups).forEach(function(group){
+    if(group.length===1){
+      _renderAprsMarker(group[0],bounds);
+    }else{
+      // Prefer entries WITH a numeric SSID over bare callsigns.
+      var withSSID=group.filter(function(s){
+        var dash=s.callsign.lastIndexOf('-');
+        return dash>0&&/^\d+$/.test(s.callsign.substring(dash+1));
+      });
+      if(withSSID.length>0){
+        withSSID.forEach(function(s){_renderAprsMarker(s,bounds)});
+      }else{
+        _renderAprsMarker(group[0],bounds);
+      }
+    }
   });
   // Auto-fit map to show all APRS markers plus our station.
   if(bounds.length>0){
     if(ownStationLat!=null&&ownStationLon!=null)bounds.push([ownStationLat,ownStationLon]);
     mapLocal.fitBounds(bounds,{padding:[30,30],maxZoom:15});
   }
+}
+
+function _renderAprsMarker(s,bounds){
+  var popup=(s.callsign||'?')+'<br>APRS';
+  if(s.comment)popup+='<br>'+esc(s.comment);
+  var ago=Math.round((Date.now()-new Date(s.lastHeard).getTime())/60000);
+  popup+='<br>'+ago+' min ago';
+  if(s.course)popup+='<br>Course: '+s.course+'°';
+  if(s.speedKmh)popup+='<br>'+s.speedKmh+' km/h';
+  var m=_aprMarker(s);
+  m.bindPopup(popup);
+  aprsMarkerLayer.addLayer(m);
+  bounds.push([s.lat,s.lon]);
 }
 
 function updateMapFromToday(){

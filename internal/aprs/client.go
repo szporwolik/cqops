@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"strings"
 	"sync"
@@ -307,4 +308,82 @@ func (c *Client) receiveLoop() {
 // Example: "r/50.0/20.0/50" for 50km around 50°N 20°E.
 func BuildRangeFilter(lat, lon float64, radiusKm int) string {
 	return fmt.Sprintf("r/%.1f/%.1f/%d", lat, lon, radiusKm)
+}
+
+// SendPosition transmits an uncompressed APRS position report over the
+// active connection. Returns an error if the client is not connected or
+// the write fails. Safe for concurrent use with the receive loop.
+//
+// The packet is sent in the standard APRS-IS inject format:
+//
+//	CALLSIGN>APRS,TCPIP*:!DDMM.hhN/DDDMM.hhW<symbol>/...comment
+func (c *Client) SendPosition(callsign string, lat, lon float64, symbol, comment string) error {
+	c.mu.Lock()
+	conn := c.conn
+	c.mu.Unlock()
+
+	if conn == nil {
+		return fmt.Errorf("APRS send: not connected")
+	}
+
+	// Build uncompressed position body.
+	body := formatUncompressedPosition(lat, lon, symbol, comment)
+	packet := fmt.Sprintf("%s>APRS,TCPIP*:%s\r\n", strings.ToUpper(callsign), body)
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.conn == nil {
+		return fmt.Errorf("APRS send: connection lost")
+	}
+	if _, err := fmt.Fprint(c.conn, packet); err != nil {
+		applog.Error("APRS: send position failed", "error", err)
+		return fmt.Errorf("APRS send: %w", err)
+	}
+	applog.Info("APRS: position sent", "callsign", callsign, "lat", lat, "lon", lon)
+	return nil
+}
+
+// formatUncompressedPosition builds the body portion of an uncompressed
+// APRS position report:
+//
+//	!DDMM.hhN/DDDMM.hhW<symbol>/...comment
+func formatUncompressedPosition(lat, lon float64, symbol, comment string) string {
+	latHemi := 'N'
+	if lat < 0 {
+		latHemi = 'S'
+		lat = -lat
+	}
+	latDeg := int(lat)
+	latMin := (lat - float64(latDeg)) * 60.0
+
+	lonHemi := 'E'
+	if lon < 0 {
+		lonHemi = 'W'
+		lon = -lon
+	}
+	lonDeg := int(lon)
+	lonMin := (lon - float64(lonDeg)) * 60.0
+
+	// Ensure symbol is exactly 2 chars (pad with space if needed).
+	if len(symbol) == 0 {
+		symbol = "/-"
+	} else if len(symbol) == 1 {
+		symbol = "/" + symbol
+	}
+	// Take first 2 chars if longer.
+	if len(symbol) > 2 {
+		symbol = symbol[:2]
+	}
+
+	// Format: DDMM.hhN/DDDMM.hhW<sym>
+	body := fmt.Sprintf("!%02d%05.2f%c/%03d%05.2f%c%s",
+		latDeg, math.Round(latMin*100)/100, latHemi,
+		lonDeg, math.Round(lonMin*100)/100, lonHemi,
+		symbol,
+	)
+
+	if comment != "" {
+		body += "/..." + comment
+	}
+	return body
 }

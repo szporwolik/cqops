@@ -144,6 +144,12 @@ func mercatorXY(lat, lon float64, w, h int) (int, int) {
 }
 
 func gridToLatLon(grid string) (float64, float64) {
+	// ftl/hamradio/locator supports up to 8-char grids (4 pairs).
+	// Truncate longer grids to 8 chars — the 5th pair adds ~5m precision,
+	// which is below the map resolution anyway.
+	if len(grid) > 8 {
+		grid = grid[:8]
+	}
 	loc, err := locator.Parse(grid)
 	if err != nil {
 		return 0, 0
