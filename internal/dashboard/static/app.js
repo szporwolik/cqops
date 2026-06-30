@@ -17,7 +17,7 @@ var app=$('app'), hdLogo=$('hd-logo'), hdLogoBox=$('hd-logo-box'), hdTitle=$('hd
 var hdClockLocal=$('hd-clock-local'), hdClockUtc=$('hd-clock-utc'), hdSSE=$('hd-sse-status');
 var heroOverview=$('hero-overview'), heroHeadline=$('hero-headline'), heroSubline=$('hero-subline'), heroStatus=$('hero-status'), heroPromo=$('hero-promo');
 var heroLabel=$('hero-label'),heroCall=$('hero-call'),heroBadges=$('hero-badges'),heroIdentity=$('hero-identity'),heroMeta=$('hero-meta');
-var stationFields=$('station-fields'), statsFields=$('stats-fields'), operatorsFields=$('operators-fields'), topqsosFields=$('topqsos-fields');
+var stationFields=$('station-fields'), statsFields=$('stats-fields'), topqsosFields=$('topqsos-fields');
 var recentBody=$('recent-body');
 var mapContainer=$('map-container');
 
@@ -38,7 +38,7 @@ updateClocks();setInterval(updateClocks,1000);
 // ---- State switching ----
 function setState(active){
   var cls=active?'mode-active':'mode-overview';
-  if(app.className!==cls){D('state','switch → '+cls);app.className=cls}
+  if(app.className!==cls){D('state','switch → '+cls);app.className=cls;if(map)map.invalidateSize()}
   if(active&&!todayQsos.length)updateMapFromToday()
 }
 function switchToOverview(){D('state','overview');setState(false);activeGrid=null;updateMapFromToday()}
@@ -288,7 +288,7 @@ function updateStationField(key,val){var el=document.getElementById('sf-'+key);i
 function renderStats(st,todayBuf){
   if(!st)st={};
   // Browser-side stats from today buffer when server data is thin.
-  var qsosToday=st.qsosToday||0,session=st.qsosSession||0;
+  var qsosToday=st.qsosToday||0;
   var longestKm=0;
   if((!qsosToday||!st.uniqueCalls)&&todayBuf&&todayBuf.length){
     var u={},calls={},dxcc={},grids={},bands={},modes={};
@@ -317,33 +317,19 @@ function renderStats(st,todayBuf){
       var d=distKm(q.grid);if(d>longestKm)longestKm=d;
     });
   }
-  statsFields.innerHTML=[['QSOs',qsosToday||0],['Session',session||0],['Unique calls',st.uniqueCalls||0],['DXCC',st.dxcc||0],['Grids',st.grids||0],['Bands',st.bands||0],['Modes',st.modes||0],['Longest',longestKm?Math.round(longestKm)+' km':'—'],['Rate',(st.ratePerHour||0).toFixed(1)+'/hr']].map(function(r){return'<dt>'+r[0]+'</dt><dd>'+r[1]+'</dd>'}).join('');
-  renderTopOperators();
+  statsFields.innerHTML=[['QSOs',qsosToday||0],['Operators',st.operators||0],['Unique calls',st.uniqueCalls||0],['DXCC',st.dxcc||0],['Grids',st.grids||0],['Bands',st.bands||0],['Modes',st.modes||0],['Longest',longestKm?Math.round(longestKm)+' km':'—'],['Rate',(st.ratePerHour||0).toFixed(1)+'/hr']].map(function(r){return'<dt>'+r[0]+'</dt><dd>'+r[1]+'</dd>'}).join('');
   renderTopQSOs();
 }
 
-// ---- Top Operators (by QSO count in today's buffer) ----
-function renderTopOperators(){
-  if(!todayQsos.length){operatorsFields.innerHTML='<dt style=\"color:var(--dim)\">—</dt>';return}
-  var counts={};
-  todayQsos.forEach(function(q){
-    var op=(q.operator||'?').trim();if(!op)op='?';
-    counts[op]=(counts[op]||0)+1;
-  });
-  var sorted=Object.keys(counts).sort(function(a,b){return counts[b]-counts[a]}).slice(0,9);
-  operatorsFields.innerHTML=sorted.map(function(op,i){
-    return'<dt>'+(i+1)+'.</dt><dd>'+esc(op)+' <span style=\"color:var(--dim);font-size:0.78rem\">'+counts[op]+'</span></dd>';
-  }).join('')||'<dt style=\"color:var(--dim)\">—</dt>';
-}
 
 // ---- Top QSOs (by distance in today's buffer) ----
 function renderTopQSOs(){
   if(!todayQsos.length||ownStationLat==null){topqsosFields.innerHTML='<dt style=\"color:var(--dim)\">—</dt>';return}
   var ranked=todayQsos.map(function(q){
-    return{call:q.call||'?',grid:q.grid,band:q.band||'',mode:q.mode||'',km:distKm(q.grid)};
+    return{call:q.call||'?',grid:q.grid,band:q.band||'',mode:q.mode||'',operator:q.operator||'',km:distKm(q.grid)};
   }).filter(function(r){return r.km>0}).sort(function(a,b){return b.km-a.km}).slice(0,9);
   topqsosFields.innerHTML=ranked.map(function(r,i){
-    return'<dt>'+(i+1)+'.</dt><dd><strong>'+esc(r.call)+'</strong> <span style="color:var(--dim);font-size:0.78rem">'+Math.round(r.km)+' km '+esc(r.band)+' '+esc(r.mode)+'</span></dd>';
+    return'<dt>'+(i+1)+'.</dt><dd><strong>'+esc(r.call)+'</strong> <span style="color:var(--dim);font-size:0.78rem">'+Math.round(r.km)+' km '+esc(r.band)+' '+esc(r.mode)+(r.operator?' by '+esc(r.operator):'')+'</span></dd>';
   }).join('')||'<dt style=\"color:var(--dim)\">—</dt>';
 }
 
@@ -363,7 +349,7 @@ function formatDistDir(grid){
 
 // ---- Recent QSOs table ----
 function renderRecentTable(qsos){
-  var list=qsos&&qsos.length?qsos.slice(0,20):[];
+  var list=qsos&&qsos.length?qsos.slice(0,8):[];
   if(!list.length){recentBody.innerHTML='<tr><td colspan=\"7\" style=\"color:var(--dim)\">No QSOs yet</td></tr>';return}
   recentBody.innerHTML=list.map(function(q){
     var utc=q.timeUtc?q.timeUtc.slice(11,16).replace(':','')+'Z':'';
@@ -378,7 +364,7 @@ function prependRecentRow(q){
   var row=document.createElement('tr');row.className='new-row';
   row.innerHTML='<td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+(q.band||'')+'</td><td>'+(q.mode||'')+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+(q.grid||'')+'">'+dist+'</td><td>'+(q.country||'')+'</td>';
   if(recentBody.firstChild)recentBody.insertBefore(row,recentBody.firstChild);else recentBody.appendChild(row);
-  while(recentBody.children.length>20)recentBody.removeChild(recentBody.lastChild);
+  while(recentBody.children.length>8)recentBody.removeChild(recentBody.lastChild);
 }
 
 // ---- Today QSO buffer ----
@@ -409,6 +395,8 @@ function initMap(cfg){
   activeQsoLayer=L.layerGroup([],{pane:'cqopsActive'}).addTo(map);
   qsoMarkerLayer=L.layerGroup([],{pane:'cqopsMarker'}).addTo(map);
   stationLayer=L.layerGroup([],{pane:'cqopsMarker'}).addTo(map);
+  // Keep Leaflet in sync with container size changes (hero toggle, resize, etc.).
+  if(window.ResizeObserver){new ResizeObserver(function(){map.invalidateSize()}).observe(mapContainer)}
   // Radar: always enabled — no toggle button.
   enableRadarLayer();
 }
@@ -468,6 +456,7 @@ async function refreshRadarLayer(){
 
 function updateMapFromToday(){
   if(!map){D('map','not initialized, skipping');return}
+  map.invalidateSize();
   D('map','update',{todayQsos:todayQsos.length,hasStation:!!(ownStationLat!=null&&ownStationLon!=null)});
   // Clear all layers
   stationLayer.clearLayers();qsoMarkerLayer.clearLayers();qsoLineLayer.clearLayers();lastQsoLayer.clearLayers();activeQsoLayer.clearLayers();
@@ -505,6 +494,8 @@ function updateMapFromToday(){
       // Lines — only if within limit
       if(drawn<maxLines){
         var pts=greatCirclePoints(ownStationLat,ownStationLon,lat,lon,32);
+        // Include great-circle midpoint in bounds so the arc stays visible.
+        bounds.push(pts[16]);
         if(isActive){
           // Active QSO: prominent dashed line with animated dash offset.
           var alOpt={color:'#D00032',weight:4,opacity:0.9,dashArray:'12 8',className:'active-path-anim'};
@@ -532,21 +523,24 @@ function updateMapFromToday(){
   // ---- Active line (drawn on top, outside today loop) ----
   if(activeGrid&&ownStationLat!==null){
     var al=gridToLatLon(activeGrid);if(al[0]){
-      activeQsoLayer.addLayer(L.polyline(greatCirclePoints(ownStationLat,ownStationLon,al[0],al[1],48),{color:'#D00032',weight:4,opacity:0.9,dashArray:'12 8',className:'active-path-anim'}));
+      var actPts=greatCirclePoints(ownStationLat,ownStationLon,al[0],al[1],48);
+      activeQsoLayer.addLayer(L.polyline(actPts,{color:'#D00032',weight:4,opacity:0.9,dashArray:'12 8',className:'active-path-anim'}));
       // Partner location marker — pulsing dot at the far end of the active line.
       activeQsoLayer.addLayer(L.circleMarker(al,{radius:7,color:'#D00032',fillColor:'#D00032',fillOpacity:0.35,weight:2.5,className:'partner-dot'}));
+      // Include great-circle midpoint so arc stays in bounds.
+      bounds.push(actPts[24]);
       bounds.push(al);
     }
   }
 
   // Fit bounds — but don't override active-QSO focus set by focusMapOnGrid.
-  if(bounds.length>1&&!activeGrid)map.flyToBounds(bounds,{padding:[30,30],maxZoom:12});
+  if(bounds.length>1&&!activeGrid)map.flyToBounds(bounds,{padding:[50,50],maxZoom:18});
   else if(!hasStation)map.flyTo([51,10],2);
 }
 
 function getQsoLatLon(q){if(q.lat&&q.lon)return[q.lat,q.lon];if(q.grid){var ll=gridToLatLon(q.grid);if(ll[0])return ll}return null}
 
-function focusMapOnGrid(grid){if(!map)return;var ll=gridToLatLon(grid);if(!ll[0])return;if(ownStationLat!=null&&ownStationLon!=null){map.flyToBounds([[ownStationLat,ownStationLon],ll],{padding:[50,50],maxZoom:10,duration:2.5})}else{map.flyTo(ll,6,{duration:2})}}
+function focusMapOnGrid(grid){if(!map)return;var ll=gridToLatLon(grid);if(!ll[0])return;map.invalidateSize();if(ownStationLat!=null&&ownStationLon!=null){var mid=greatCirclePoints(ownStationLat,ownStationLon,ll[0],ll[1],48)[24];var b=L.latLngBounds([[ownStationLat,ownStationLon],ll]);b.extend(mid);map.flyToBounds(b,{padding:[60,60],maxZoom:17,duration:2.5})}else{map.flyTo(ll,6,{duration:2})}}
 function drawActiveLine(grid){if(grid===activeGrid)return;activeGrid=grid;updateMapFromToday()}
 
 // ---- Great-circle interpolation (browser-side, no plugin needed) ----

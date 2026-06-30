@@ -715,6 +715,7 @@ func (m *Model) pushDashboardStats(ds *dashboard.State) {
 	}
 	ds.SetStats(dashboard.Stats{
 		QSOsToday:   s.QSOsToday,
+		Operators:   s.Operators,
 		UniqueCalls: s.UniqueCalls,
 		DXCC:        s.DXCC,
 		Grids:       s.Grids,

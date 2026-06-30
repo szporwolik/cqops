@@ -117,7 +117,7 @@ type QSOView struct {
 
 type Stats struct {
 	QSOsToday   int     `json:"qsosToday"`
-	QSOsSession int     `json:"qsosSession"`
+	Operators   int     `json:"operators"`
 	UniqueCalls int     `json:"uniqueCalls"`
 	DXCC        int     `json:"dxcc"`
 	Grids       int     `json:"grids"`
@@ -395,7 +395,6 @@ func (s *State) SetToday(views []QSOView) {
 // SetStats updates statistics and publishes.
 func (s *State) SetStats(stats Stats) {
 	s.mu.Lock()
-	stats.QSOsSession = s.sessionQSOs
 	s.snapshot.Stats = stats
 	s.snapshot.UpdatedAt = timeNow()
 	s.mu.Unlock()

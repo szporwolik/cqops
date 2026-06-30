@@ -98,6 +98,7 @@ func GetLogbookStats(db *sql.DB, call, band, mode string) (LogbookStats, error) 
 // DashboardStats holds aggregate statistics for the CQOps Live dashboard.
 type DashboardStats struct {
 	QSOsToday   int
+	Operators   int
 	UniqueCalls int
 	DXCC        int
 	Grids       int
@@ -120,6 +121,7 @@ func GetDashboardStats(db *sql.DB, startDate string) (DashboardStats, error) {
 	err := db.QueryRow(`
 		SELECT
 			COALESCE(COUNT(*), 0),
+			COALESCE(COUNT(DISTINCT CASE WHEN operator_call != '' THEN operator_call END), 0),
 			COALESCE(COUNT(DISTINCT base_call), 0),
 			COALESCE(COUNT(DISTINCT country), 0),
 			COALESCE(COUNT(DISTINCT CASE WHEN gridsquare != '' THEN UPPER(SUBSTR(gridsquare,1,4)) END), 0),
@@ -129,6 +131,7 @@ func GetDashboardStats(db *sql.DB, startDate string) (DashboardStats, error) {
 		FROM qsos WHERE qso_date >= ?
 	`, cutoff).Scan(
 		&s.QSOsToday,
+		&s.Operators,
 		&s.UniqueCalls,
 		&s.DXCC,
 		&s.Grids,

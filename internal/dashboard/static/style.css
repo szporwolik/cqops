@@ -14,7 +14,6 @@
   --table-border:#A6B8CE; --table-alt:#F1F6FD; --table-hover:#E4F0FF;
   --logo-w:200px; --logo-h:120px; --photo-w:100px; --photo-h:100px;
   --active-photo-w:180px; --active-photo-h:180px;
-  --map-h:370px;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:system-ui,-apple-system,sans-serif;background:
@@ -42,9 +41,6 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 /* ── overview: hero hidden — header carries all branding ── */
 .mode-overview #hero{display:none}
 .mode-overview #map-table-row{margin-top:2px}
-/* In overview mode (no hero), use the freed vertical space for map + recent. */
-.mode-overview #map-container{min-height:calc(var(--map-h) + 200px)}
-.mode-overview #recent-panel{max-height:calc(var(--map-h) + 200px)}
 
 /* ── integrated active panel (photo + callsign + identity) ── */
 #hero{background:var(--blue-xsoft);border-radius:8px;padding:20px 24px;margin:10px 0;text-align:center}
@@ -88,14 +84,15 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #hero-meta{font-size:0.8rem;color:var(--dim);min-height:1em}
 #hero-meta:empty{visibility:hidden}
 
-/* ── map + recent row ── */
-#map-table-row{display:flex;gap:12px;margin-bottom:10px}
-#map-panel{flex:1.2;background:linear-gradient(180deg,#FFFFFF 0%,var(--surface-soft) 100%);border-radius:8px;overflow:hidden;min-width:0;display:flex;flex-direction:column;border:1px solid var(--border-strong);box-shadow:0 8px 24px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.8) inset}
-#map-container{flex:1;min-height:var(--map-h);background:var(--blue-xsoft);position:relative}
+/* ── map row (full width, fills remaining vertical space) ── */
+#map-table-row{flex:1;min-height:0;display:flex;flex-direction:column;margin-bottom:10px}
+#map-panel{flex:1;min-height:0;background:linear-gradient(180deg,#FFFFFF 0%,var(--surface-soft) 100%);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;border:1px solid var(--border-strong);box-shadow:0 8px 24px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.8) inset}
+#map-container{flex:1;background:var(--blue-xsoft);position:relative}
 #map-container .leaflet-container{width:100%!important;height:100%!important;position:absolute!important;top:0;left:0}
-#recent-panel{flex:0.8;background:linear-gradient(180deg,#FFFFFF 0%,var(--surface-soft) 100%);border-radius:8px;padding:10px 12px;min-width:0;display:flex;flex-direction:column;max-height:var(--map-h);border:1px solid var(--border-strong);box-shadow:0 8px 24px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.8) inset}
+/* recent panel as bottom-row card */
+.panel-recent{flex:2.11;display:flex;flex-direction:column}
 #recent-panel h2{font-size:0.85rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:4px;flex-shrink:0}
-#recent-table-wrap{overflow-y:auto;flex:1}
+#recent-table-wrap{overflow-y:auto;flex:1;max-height:320px}
 #recent-table{width:100%;border-collapse:collapse;font-size:0.8rem}
 #recent-table th{text-align:left;color:var(--text-secondary);font-weight:600;padding:2px 5px;border-bottom:2px solid var(--border-strong);white-space:nowrap;position:sticky;top:0;background:var(--surface)}
 #recent-table td{padding:2px 5px;border-bottom:1px solid var(--table-border);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
@@ -104,17 +101,16 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #recent-table tbody tr.new-row{animation:flash 1.2s ease-out}
 @keyframes flash{from{background:var(--blue-soft);color:var(--blue-dark)}to{background:transparent;color:inherit}}
 
-/* active mode: compact last QSOs, smaller recent panel */
-.mode-active #recent-panel{flex:0.8;font-size:0.78rem}
-
-/* ── station + stats cards ── */
+/* ── bottom row cards ── */
 main{display:flex;gap:12px;margin-bottom:10px}
 .mode-active main{opacity:0.85}
 .panel{flex:1;background:linear-gradient(180deg,#FFFFFF 0%,var(--surface-soft) 100%);border-radius:8px;padding:10px 14px;min-width:0;border:1px solid var(--border);box-shadow:0 8px 20px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.7) inset}
+.panel-narrow{flex:0.40}
+.panel-topqsos{flex:0.58}
 .panel h2{font-size:0.85rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:6px}
 .panel dl{display:grid;grid-template-columns:auto 1fr;gap:2px 8px}
-.panel dt{color:var(--dim);font-size:0.82rem;white-space:nowrap}
-.panel dd{font-size:0.9rem;font-weight:600;color:var(--text)}
+.panel dt{color:var(--dim);font-size:0.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.panel dd{font-size:0.9rem;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .panel dd strong{color:var(--text)}
 .status-on{color:var(--success)}.status-off{color:var(--offline)}
 
@@ -170,11 +166,10 @@ footer a:hover{text-decoration:underline}
   #hero-badges .badge{font-size:0.75rem;padding:2px 8px}
   #hero-identity{font-size:0.82rem}
   #hero-refs{font-size:0.75rem}
-  #map-container{min-height:260px}
-  #recent-panel{max-height:260px;padding:6px 10px}
-  #map-table-row{margin-bottom:4px;gap:8px}
+  #map-table-row{margin-bottom:4px}
   main{gap:5px;margin-bottom:3px}
   .panel{padding:6px 10px}
+  #recent-table-wrap{max-height:200px}
   .panel h2{margin-bottom:2px;font-size:0.72rem}
   .panel dt{font-size:0.7rem}
   .panel dd{font-size:0.78rem}
@@ -195,12 +190,11 @@ footer a:hover{text-decoration:underline}
   #hero-identity{font-size:0.7rem}
   #hero-refs{font-size:0.65rem}
   #hero-label{font-size:0.65rem}
-  #map-container{min-height:180px}
-  #recent-panel{max-height:180px;padding:4px 7px}
   #recent-table{font-size:0.68rem}
-  #map-table-row{margin-bottom:3px;gap:5px}
+  #map-table-row{margin-bottom:3px}
   main{gap:4px;margin-bottom:2px}
   .panel{padding:4px 7px}
+  #recent-table-wrap{max-height:140px}
   .panel h2{margin-bottom:1px;font-size:0.65rem}
   .panel dt{font-size:0.62rem}
   .panel dd{font-size:0.7rem}
@@ -221,13 +215,12 @@ footer a:hover{text-decoration:underline}
   #hero-identity{font-size:0.62rem}
   #hero-refs{font-size:0.58rem}
   #hero-label{font-size:0.55rem}
-  #map-container{min-height:140px}
-  #recent-panel{max-height:140px;padding:3px 6px}
   #recent-table{font-size:0.62rem}
   #recent-table th,#recent-table td{padding:1px 2px}
-  #map-table-row{margin-bottom:2px;gap:4px}
+  #map-table-row{margin-bottom:2px}
   main{gap:3px;margin-bottom:2px}
   .panel{padding:3px 6px}
+  #recent-table-wrap{max-height:100px}
   .panel h2{font-size:0.62rem;margin-bottom:1px}
   .panel dt,.panel dd{font-size:0.62rem}
   footer{padding:2px;font-size:0.55rem}
@@ -239,10 +232,9 @@ footer a:hover{text-decoration:underline}
   #hd-subtitle{font-size:0.6rem}
   #header{padding:2px 0;border-bottom-width:1px}
   #hero{display:none}
-  #map-container{min-height:110px}
-  #recent-panel{max-height:110px}
   #recent-table{font-size:0.55rem}
   main{gap:2px}
+  #recent-table-wrap{max-height:70px}
   .panel{padding:2px 4px}
   .panel h2{font-size:0.55rem}
   .panel dt,.panel dd{font-size:0.55rem}
@@ -256,9 +248,6 @@ footer a:hover{text-decoration:underline}
   #hd-logo-box{width:180px;height:108px}
   #hero-call{font-size:clamp(32px,5vw,64px)}
   #hero-photo-box{width:clamp(200px,30vw,340px);height:clamp(150px,22vw,260px)}
-  #map-table-row{flex-direction:column}
-  #map-container{min-height:280px}
-  #recent-panel{max-height:250px}
 }
 @media(max-width:760px){
   #app{padding:4px 8px}
@@ -275,9 +264,7 @@ footer a:hover{text-decoration:underline}
   #hero-identity{font-size:0.82rem}
   #hero-photo-box{width:clamp(120px,28vw,200px);height:clamp(90px,20vw,150px)}
   #hero-badges .badge{font-size:0.7rem;padding:2px 7px}
-  #map-table-row{flex-direction:column;gap:6px}
-  #map-container{min-height:220px}
-  #recent-panel{max-height:200px;padding:6px 8px}
+  #map-table-row{display:flex}
   #recent-table{font-size:0.68rem}
   #recent-table th,#recent-table td{padding:1px 3px}
   main{flex-wrap:wrap;gap:6px}
@@ -295,8 +282,6 @@ footer a:hover{text-decoration:underline}
   #hero-call{font-size:clamp(18px,7vw,32px)}
   #hero-photo-box{width:100%;height:clamp(100px,30vw,160px)}
   .mode-active #hero-active{flex-direction:column;gap:8px}
-  #map-container{min-height:180px}
-  #recent-panel{max-height:160px}
   #recent-table{font-size:0.6rem}
   main{flex-direction:column;gap:4px}
   .panel{flex:1 1 100%}
@@ -318,11 +303,9 @@ footer a:hover{text-decoration:underline}
   .mode-active #hero-active{min-height:70px;gap:20px}
   #hero-call{font-size:clamp(30px,4vw,50px)}
   #hero-photo-box{width:clamp(160px,15vw,240px);height:clamp(110px,9vw,165px)}
-  /* map + recent */
-  #map-container{min-height:400px}
-  #recent-panel{max-height:400px;padding:12px 16px}
+  /* map */
   #recent-table{font-size:0.82rem}
-  #map-table-row{gap:14px;margin-bottom:12px}
+  #map-table-row{margin-bottom:12px}
   /* bottom panels */
   main{gap:14px;margin-bottom:12px}
   .panel{padding:12px 16px}
