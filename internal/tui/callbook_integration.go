@@ -64,6 +64,9 @@ func (m *Model) qrzLookup(call string) tea.Cmd {
 	if call == "" {
 		return nil
 	}
+	if m.Offline || !m.inetOnline {
+		return nil
+	}
 	// Already completed for this call — no need to re-query.
 	if m.lookup.qrzLookupDone && strings.EqualFold(call, m.lookup.qrzLookupCall) {
 		return nil
@@ -95,11 +98,11 @@ func (m *Model) wlLookup(call string) tea.Cmd {
 	if call == "" {
 		return nil
 	}
-	wl := m.App.Logbook.Wavelog
-	if wl == nil || !wl.Enabled || wl.URL == "" || wl.APIKey == "" {
+	if m.Offline || !m.inetOnline {
 		return nil
 	}
-	if !m.inetOnline {
+	wl := m.App.Logbook.Wavelog
+	if wl == nil || !wl.Enabled || wl.URL == "" || wl.APIKey == "" {
 		return nil
 	}
 	// Already completed for this call — no need to re-query.

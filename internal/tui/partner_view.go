@@ -513,7 +513,9 @@ func (m *Model) renderWLInfo(maxW int) string {
 	}
 	if d == nil {
 		msg := "WL lookup pending\u2026"
-		if m.lookup.wlLookupDone {
+		if m.Offline || !m.inetOnline {
+			msg = "Offline mode"
+		} else if m.lookup.wlLookupDone {
 			msg = "No WL data"
 		}
 		return DimStyle.Width(maxW).Align(lipgloss.Center).Render(msg)

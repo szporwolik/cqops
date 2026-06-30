@@ -37,12 +37,14 @@ func (m *Model) lookupCallCmd(call string) tea.Cmd {
 		return nil
 	}
 	var cmds []tea.Cmd
-	if m.App.Config.Integrations.QRZ.Enabled && m.App.Config.Integrations.QRZ.User != "" {
-		cmds = append(cmds, m.qrzLookup(call))
-	}
-	wl := m.App.Logbook.Wavelog
-	if wl != nil && wl.Enabled && wl.APIKey != "" {
-		cmds = append(cmds, m.wlLookup(call))
+	if !m.Offline && m.inetOnline {
+		if m.App.Config.Integrations.QRZ.Enabled && m.App.Config.Integrations.QRZ.User != "" {
+			cmds = append(cmds, m.qrzLookup(call))
+		}
+		wl := m.App.Logbook.Wavelog
+		if wl != nil && wl.Enabled && wl.APIKey != "" {
+			cmds = append(cmds, m.wlLookup(call))
+		}
 	}
 	cmds = append(cmds, m.dxcSpotLookupCmd(call))
 	cmds = append(cmds, m.updateFilteredTable())
