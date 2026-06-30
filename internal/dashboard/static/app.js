@@ -37,8 +37,11 @@ updateClocks();setInterval(updateClocks,1000);
 
 // ---- State switching ----
 function setState(active){
-  var cls=active?'mode-active':'mode-overview';
-  if(app.className!==cls){D('state','switch → '+cls);app.className=cls;if(map)map.invalidateSize()}
+  var add=active?'mode-active':'mode-overview',rm=active?'mode-overview':'mode-active';
+  if(!app.classList.contains(add)){
+    app.classList.remove(rm);app.classList.add(add);if(map)map.invalidateSize();
+    D('state','switch → '+add);
+  }
   if(active&&!todayQsos.length)updateMapFromToday()
 }
 function switchToOverview(){D('state','overview');setState(false);activeGrid=null;updateMapFromToday()}
@@ -85,7 +88,7 @@ function connectSSE(){
   });
   es.addEventListener('station',function(e){var s=JSON.parse(e.data).payload;
     D('sse','station',s.callsign+' '+s.locator);
-    if(s.lat!=null&&s.lon!=null){ownStationLat=s.lat;ownStationLon=s.lon;updateMapFromToday()}renderStation(s)
+    if(s.lat!=null&&s.lon!=null){ownStationLat=s.lat;ownStationLon=s.lon;initLocalMap(s.lat,s.lon);updateMapFromToday()}else{recentreLocalMapFromStation(s)}renderStation(s)
   });
   es.addEventListener('operator',function(e){var o=JSON.parse(e.data).payload;
     D('sse','operator',o.callsign);
@@ -145,6 +148,7 @@ function renderAll(snap){
   // Station
   if(snap.station&&snap.station.lat&&snap.station.lon){
     ownStationLat=snap.station.lat;ownStationLon=snap.station.lon;
+    initLocalMap(ownStationLat,ownStationLon);
   }
   renderStation(snap.station,snap.operator,snap.logbook,snap.rig,snap.wsjtx);
   // Active QSO
@@ -371,19 +375,22 @@ function prependRecentRow(q){
 function appendTodayQSO(q){todayQsos.unshift(q);if(todayQsos.length>500)todayQsos.length=500}
 
 // ---- Map (Leaflet with great-circle paths) ----
-var mapCfg={drawLines:true,maxLines:250,highlightLastQSO:true,animateActivePath:false};
+var mapCfg={drawLines:true,maxLines:150,maxMarkers:200,highlightLastQSO:true,animateActivePath:false};
 var stationLayer=null,qsoMarkerLayer=null,qsoLineLayer=null,lastQsoLayer=null,activeQsoLayer=null;
 var lastQso=null,activeGrid=null;
+var mapLocal=null,stationLocalMarker=null,localTiles=null;
 
 function initMap(cfg){
   if(map)return;
   if(cfg.drawLines!==undefined)mapCfg.drawLines=!!cfg.drawLines;
   if(cfg.maxLines)mapCfg.maxLines=cfg.maxLines;
+  if(cfg.maxMarkers)mapCfg.maxMarkers=cfg.maxMarkers;
   if(cfg.highlightLastQSO!==undefined)mapCfg.highlightLastQSO=!!cfg.highlightLastQSO;
   if(cfg.animateActivePath!==undefined)mapCfg.animateActivePath=!!cfg.animateActivePath;
-  map=L.map('map-container',{zoomControl:true,attributionControl:false}).setView([51,10],3);
+  map=L.map('map-container',{zoomControl:false,attributionControl:false}).setView([51,10],3);
   // Custom panes for layer ordering: radar below QSO paths, markers on top.
   map.createPane('cqopsRadar');map.getPane('cqopsRadar').style.zIndex=350;map.getPane('cqopsRadar').style.pointerEvents='none';
+  map.createPane('cqopsGrayline');map.getPane('cqopsGrayline').style.zIndex=300;map.getPane('cqopsGrayline').style.pointerEvents='none';
   map.createPane('cqopsPath');map.getPane('cqopsPath').style.zIndex=430;map.getPane('cqopsPath').style.pointerEvents='none';
   map.createPane('cqopsActive');map.getPane('cqopsActive').style.zIndex=460;map.getPane('cqopsActive').style.pointerEvents='none';
   map.createPane('cqopsMarker');map.getPane('cqopsMarker').style.zIndex=500;
@@ -397,12 +404,48 @@ function initMap(cfg){
   stationLayer=L.layerGroup([],{pane:'cqopsMarker'}).addTo(map);
   // Keep Leaflet in sync with container size changes (hero toggle, resize, etc.).
   if(window.ResizeObserver){new ResizeObserver(function(){map.invalidateSize()}).observe(mapContainer)}
+  // Grayline: always-on below radar.
+  enableGrayline();
   // Radar: always enabled — no toggle button.
   enableRadarLayer();
 }
 
+// ---- Local map (station-centre, ~50 km view) ----
+function initLocalMap(lat,lon){
+  if(mapLocal)return;
+  var lc=document.getElementById('map-local-container');
+  if(!lc)return;
+  mapLocal=L.map('map-local-container',{zoomControl:false,attributionControl:false}).setView([lat,lon],12);
+  mapLocal.createPane('cqopsRadar');mapLocal.getPane('cqopsRadar').style.zIndex=350;mapLocal.getPane('cqopsRadar').style.pointerEvents='none';
+  mapLocal.createPane('cqopsGrayline');mapLocal.getPane('cqopsGrayline').style.zIndex=300;mapLocal.getPane('cqopsGrayline').style.pointerEvents='none';
+  localTiles=L.tileLayer(mapCfg.mapTileUrl||'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(mapLocal);
+  localTiles.on('tileerror',function(e){e.tile.style.display='none'});
+  // Station marker on local map.
+  stationLocalMarker=L.circleMarker([lat,lon],{radius:8,color:'#007A3D',fillColor:'#007A3D',fillOpacity:0.85,weight:2.5}).addTo(mapLocal);
+  if(window.ResizeObserver){new ResizeObserver(function(){mapLocal.invalidateSize()}).observe(lc)}
+  // Grayline on local map.
+  enableGraylineLocal();
+  // Add radar to local map if already enabled.
+  addRadarToLocalMap();
+}
+
+function recentreLocalMap(lat,lon){
+  if(!mapLocal)return;
+  mapLocal.setView([lat,lon],12);
+  if(stationLocalMarker){stationLocalMarker.setLatLng([lat,lon])}
+}
+
+function recentreLocalMapFromStation(st){
+  if(!st||!st.locator)return;
+  var ll=gridToLatLon(st.locator);
+  if(!ll[0])return;
+  if(!mapLocal){initLocalMap(ll[0],ll[1])}
+  else{recentreLocalMap(ll[0],ll[1])}
+}
+
 // ---- RainViewer weather radar overlay ----
-var radarLayer=null,radarEnabled=false,radarLoading=false,radarTimer=null;
+var radarLayer=null,radarLayerLocal=null,radarEnabled=false,radarLoading=false,radarTimer=null;
+var _radarUrl='';
 
 async function fetchJsonWithTimeout(url,ms){
   ms=ms||5000;var ctrl=new AbortController(),t=setTimeout(function(){ctrl.abort()},ms);
@@ -421,12 +464,14 @@ async function enableRadarLayer(){
     var latest=meta.radar.past[meta.radar.past.length-1];
     if(!latest.path)throw new Error('Missing frame path');
     var url=meta.host+latest.path+'/256/{z}/{x}/{y}/2/1_1.png';
+    _radarUrl=url;
     radarLayer=L.tileLayer(url,{
       pane:'cqopsRadar',opacity:0.55,maxNativeZoom:7,maxZoom:12,
       attribution:'Weather radar: <a href=\"https://www.rainviewer.com/\" target=\"_blank\" rel=\"noopener\">RainViewer</a>'
     }).addTo(map);
     radarEnabled=true;radarLoading=false;
     enableRainViewerAttribution();
+    addRadarToLocalMap();
     // Refresh radar every 10 minutes.
     radarTimer=setInterval(refreshRadarLayer,600000);
   }catch(e){
@@ -437,6 +482,7 @@ async function enableRadarLayer(){
 
 function disableRadarLayer(){
   if(radarLayer){map.removeLayer(radarLayer);radarLayer=null}
+  if(radarLayerLocal&&mapLocal){mapLocal.removeLayer(radarLayerLocal);radarLayerLocal=null}
   radarEnabled=false;radarLoading=false;
   if(radarTimer){clearInterval(radarTimer);radarTimer=null}
 }
@@ -449,9 +495,60 @@ async function refreshRadarLayer(){
     var latest=meta.radar.past[meta.radar.past.length-1];
     if(!latest.path)return;
     var url=meta.host+latest.path+'/256/{z}/{x}/{y}/2/1_1.png';
+    _radarUrl=url;
     var old=radarLayer;radarLayer=L.tileLayer(url,{pane:'cqopsRadar',opacity:0.55,maxNativeZoom:7,maxZoom:12}).addTo(map);
     if(old){map.removeLayer(old);old=null}
+    // Refresh local map radar too.
+    if(radarLayerLocal&&mapLocal){mapLocal.removeLayer(radarLayerLocal);radarLayerLocal=null}
+    addRadarToLocalMap();
   }catch(e){D('radar','refresh failed',''+e)}
+}
+
+function addRadarToLocalMap(){
+  if(!mapLocal||!_radarUrl)return;
+  if(radarLayerLocal){mapLocal.removeLayer(radarLayerLocal);radarLayerLocal=null}
+  radarLayerLocal=L.tileLayer(_radarUrl,{pane:'cqopsRadar',opacity:0.55,maxNativeZoom:7,maxZoom:12}).addTo(mapLocal);
+}
+
+// ---- Grayline / day-night terminator overlay (always-on, below radar) ----
+var graylineLayer=null,graylineTimer=null,graylineLayerLocal=null,graylineTimerLocal=null;
+
+function enableGrayline(){
+  if(!map||graylineLayer||!L.terminator)return;
+  graylineLayer=L.terminator({
+    pane:'cqopsGrayline',
+    resolution:2,
+    longitudeRange:360,
+    color:'#0B1220',
+    fillColor:'#0B1220',
+    fillOpacity:0.16,
+    opacity:0.40,
+    weight:1,
+    interactive:false
+  }).addTo(map);
+  graylineTimer=window.setInterval(function(){
+    if(graylineLayer)graylineLayer.setTime();
+  },60000);
+  D('grayline','main map enabled');
+}
+
+function enableGraylineLocal(){
+  if(!mapLocal||graylineLayerLocal||!L.terminator)return;
+  graylineLayerLocal=L.terminator({
+    pane:'cqopsGrayline',
+    resolution:2,
+    longitudeRange:360,
+    color:'#0B1220',
+    fillColor:'#0B1220',
+    fillOpacity:0.16,
+    opacity:0.40,
+    weight:1,
+    interactive:false
+  }).addTo(mapLocal);
+  graylineTimerLocal=window.setInterval(function(){
+    if(graylineLayerLocal)graylineLayerLocal.setTime();
+  },60000);
+  D('grayline','local map enabled');
 }
 
 function updateMapFromToday(){
@@ -465,18 +562,19 @@ function updateMapFromToday(){
   // ---- Station marker ----
   if(ownStationLat!=null&&ownStationLon!=null){
     var sm=L.circleMarker([ownStationLat,ownStationLon],{radius:9,color:'#007A3D',fillColor:'#007A3D',fillOpacity:0.85,weight:2.5});
-    sm.bindTooltip(displayCfg.header1||'Station',{permanent:true,direction:'top',offset:[0,-10]});
     stationLayer.addLayer(sm);bounds.push([ownStationLat,ownStationLon]);hasStation=true;
   }
 
   // ---- QSO markers + lines ----
   if(todayQsos.length&&mapCfg.drawLines&&hasStation){
-    var maxLines=mapCfg.maxLines||250;
-    var drawn=0,lastQsoIdx=-1;
+    var maxLines=mapCfg.maxLines||150;
+    var maxMarkers=mapCfg.maxMarkers||200;
+    var drawn=0,markersDrawn=0,lastQsoIdx=-1;
     // Find last QSO with coordinates
     for(var i=0;i<todayQsos.length;i++){var q=todayQsos[i];var ll=getQsoLatLon(q);if(ll){lastQsoIdx=i;break}}
 
     todayQsos.forEach(function(q,i){
+      if(markersDrawn>=maxMarkers)return;
       var ll=getQsoLatLon(q);if(!ll)return;
       var lat=ll[0],lon=ll[1];
       // Marker
@@ -490,6 +588,7 @@ function updateMapFromToday(){
       if(q.country)popup+='<br>'+q.country;
       mk.bindTooltip(q.call||'',{direction:'top'});mk.bindPopup(popup);
       qsoMarkerLayer.addLayer(mk);bounds.push([lat,lon]);
+      markersDrawn++;
 
       // Lines — only if within limit
       if(drawn<maxLines){
@@ -511,12 +610,16 @@ function updateMapFromToday(){
       }
     });
   }else if(todayQsos.length&&!hasStation){
-    // No station coords — still show markers without lines
+    // No station coords — still show markers without lines (capped).
+    var maxMarkers=mapCfg.maxMarkers||200;
+    var markersDrawn=0;
     todayQsos.forEach(function(q){
+      if(markersDrawn>=maxMarkers)return;
       var ll=getQsoLatLon(q);if(!ll)return;
       var mk=L.circleMarker(ll,{radius:4,color:'#0080FF',fillColor:'#0080FF',fillOpacity:0.8,weight:2,opacity:0.95});
       mk.bindTooltip(q.call||'',{direction:'top'});
       qsoMarkerLayer.addLayer(mk);bounds.push(ll);
+      markersDrawn++;
     });
   }
 
@@ -644,7 +747,7 @@ function showQsoToast(q){
 var _rainviewerActive=false;
 function enableRainViewerAttribution(){
   if(_rainviewerActive)return;_rainviewerActive=true;
-  app.className+=' has-rainviewer';
+  app.classList.add('has-rainviewer');
 }
 // Call enableRainViewerAttribution() when radar layer is added to the map.
 

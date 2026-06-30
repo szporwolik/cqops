@@ -85,10 +85,13 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #hero-meta:empty{visibility:hidden}
 
 /* ── map row (full width, fills remaining vertical space) ── */
-#map-table-row{flex:1;min-height:0;display:flex;flex-direction:column;margin-bottom:10px}
-#map-panel{flex:1;min-height:0;background:linear-gradient(180deg,#FFFFFF 0%,var(--surface-soft) 100%);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;border:1px solid var(--border-strong);box-shadow:0 8px 24px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.8) inset}
+#map-table-row{flex:1;min-height:0;display:flex;gap:10px;margin-bottom:10px}
+#map-panel{flex:7;min-height:0;background:linear-gradient(180deg,#FFFFFF 0%,var(--surface-soft) 100%);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;border:1px solid var(--border-strong);box-shadow:0 8px 24px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.8) inset}
+#map-local-panel{flex:3;min-height:0;background:linear-gradient(180deg,#FFFFFF 0%,var(--surface-soft) 100%);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;border:1px solid var(--border-strong);box-shadow:0 8px 24px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.8) inset}
 #map-container{flex:1;background:var(--blue-xsoft);position:relative}
+#map-local-container{flex:1;background:var(--blue-xsoft);position:relative}
 #map-container .leaflet-container{width:100%!important;height:100%!important;position:absolute!important;top:0;left:0}
+#map-local-container .leaflet-container{width:100%!important;height:100%!important;position:absolute!important;top:0;left:0}
 /* recent panel as bottom-row card */
 .panel-recent{flex:2.11;display:flex;flex-direction:column}
 #recent-panel h2{font-size:0.85rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:4px;flex-shrink:0}
@@ -264,7 +267,8 @@ footer a:hover{text-decoration:underline}
   #hero-identity{font-size:0.82rem}
   #hero-photo-box{width:clamp(120px,28vw,200px);height:clamp(90px,20vw,150px)}
   #hero-badges .badge{font-size:0.7rem;padding:2px 7px}
-  #map-table-row{display:flex}
+  #map-table-row{flex-direction:column;gap:6px}
+  #map-local-panel{min-height:160px}
   #recent-table{font-size:0.68rem}
   #recent-table th,#recent-table td{padding:1px 3px}
   main{flex-wrap:wrap;gap:6px}
@@ -283,6 +287,8 @@ footer a:hover{text-decoration:underline}
   #hero-photo-box{width:100%;height:clamp(100px,30vw,160px)}
   .mode-active #hero-active{flex-direction:column;gap:8px}
   #recent-table{font-size:0.6rem}
+  #map-table-row{flex-direction:column;gap:4px}
+  #map-local-panel{min-height:140px}
   main{flex-direction:column;gap:4px}
   .panel{flex:1 1 100%}
 }

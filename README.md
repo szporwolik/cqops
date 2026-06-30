@@ -127,6 +127,7 @@ Full usage guide, workflows, and keyboard shortcuts are in the [documentation](h
 - Map tiles: [OpenStreetMap](https://www.openstreetmap.org/copyright) — © OpenStreetMap contributors (ODbL).
 - Weather radar overlay: [RainViewer](https://www.rainviewer.com/) public API (browser-side, optional, offline-safe). Attribution displayed on-map and in footer.
 - Leaflet 1.9.4 bundled under BSD-2. See `licenses/LEAFLET-BSD2-LICENSE`.
+- Leaflet.Terminator (day/night grayline overlay) bundled under MIT. See `licenses/LEAFLET-TERMINATOR-MIT-LICENSE`.
 - All services remain optional. CQOps and CQOps Live work offline with cached/local assets.
 - Use of third-party services does not imply endorsement of CQOps by those projects.
 
