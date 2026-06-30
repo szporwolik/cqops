@@ -64,7 +64,7 @@ function connectSSE(){
   });
   es.addEventListener('qso_logged',function(e){var q=JSON.parse(e.data).payload;
     D('sse','qso_logged',q.call+' '+q.band+' '+q.mode);
-    appendTodayQSO(q);prependRecentRow(q);updateMapFromToday();switchToOverview();renderHero(null);renderStats(null,todayQsos);showQsoToast(q)
+    appendTodayQSO(q);prependRecentRow(q);updateMapFromToday();switchToOverview();renderHero(null);renderStats(null,todayQsos);showQsoToast(q);playPing()
   });
   es.addEventListener('rig',function(e){var r=JSON.parse(e.data).payload;
     D('sse','rig',r.connected?(r.frequency||'?')+' '+(r.mode||''):'disconnected');
@@ -429,7 +429,7 @@ function updateMapFromToday(){
       // Marker
       var isLast=(i===lastQsoIdx&&mapCfg.highlightLastQSO),isActive=(activeGrid&&q.grid&&q.grid.toUpperCase()===activeGrid.toUpperCase());
       var mr=isActive?7:isLast?5.5:3.5;
-      var mc=isActive?'#D00032':isLast?'#005BBB':'#005BBB';
+      var mc=isActive?'#D00032':isLast?'#0067C5':'#0067C5';
       var mf=isActive?1:isLast?0.85:0.5;
       var mk=L.circleMarker([lat,lon],{radius:mr,color:mc,fillColor:mc,fillOpacity:mf,weight:isActive?3:1.5});
       var popup=(q.call||'')+'<br>'+(q.band||'')+' '+(q.mode||'')+'<br>'+(q.grid||'');
@@ -447,10 +447,10 @@ function updateMapFromToday(){
           activeQsoLayer.addLayer(L.polyline(pts,alOpt));
         }else if(isLast&&mapCfg.highlightLastQSO){
           // Last QSO: blue, thicker, more opaque than older lines.
-          lastQsoLayer.addLayer(L.polyline(pts,{color:'#005BBB',weight:3,opacity:0.75}));
+          lastQsoLayer.addLayer(L.polyline(pts,{color:'#0067C5',weight:3,opacity:0.75}));
         }else{
           // Older QSO: subtle line
-          qsoLineLayer.addLayer(L.polyline(pts,{color:'#005BBB',weight:1.2,opacity:0.28}));
+          qsoLineLayer.addLayer(L.polyline(pts,{color:'#0067C5',weight:1.2,opacity:0.30}));
         }
         drawn++;
       }
@@ -459,7 +459,7 @@ function updateMapFromToday(){
     // No station coords — still show markers without lines
     todayQsos.forEach(function(q){
       var ll=getQsoLatLon(q);if(!ll)return;
-      var mk=L.circleMarker(ll,{radius:3.5,color:'#005BBB',fillColor:'#005BBB',fillOpacity:0.5,weight:1.5});
+      var mk=L.circleMarker(ll,{radius:3.5,color:'#0067C5',fillColor:'#0067C5',fillOpacity:0.5,weight:1.5});
       mk.bindTooltip(q.call||'',{direction:'top'});
       qsoMarkerLayer.addLayer(mk);bounds.push(ll);
     });
@@ -546,6 +546,28 @@ function guessContinent(c){
   if(as.indexOf(c)>=0)return'Asia';if(oc.indexOf(c)>=0)return'Oceania';if(af.indexOf(c)>=0)return'Africa';return'';
 }
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+// ---- QSO sound ----
+var _audioCtx=null;
+function _getAudioCtx(){
+  if(!_audioCtx){_audioCtx=new(window.AudioContext||window.webkitAudioContext)()}
+  if(_audioCtx.state==='suspended'){_audioCtx.resume()}
+  return _audioCtx;
+}
+// Unlock audio on first user interaction anywhere on the page.
+document.addEventListener('click',function(){_getAudioCtx()},{once:true});
+function playPing(){
+  try{
+    var ctx=_getAudioCtx();if(!ctx||ctx.state==='closed')return;
+    var o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='sine';o.frequency.setValueAtTime(880,ctx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(1760,ctx.currentTime+0.08);
+    g.gain.setValueAtTime(0.18,ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+0.35);
+    o.connect(g);g.connect(ctx.destination);
+    o.start(ctx.currentTime);o.stop(ctx.currentTime+0.35);
+  }catch(e){}
+}
 
 // ---- QSO logged toast ----
 var _toastTimer=null;
