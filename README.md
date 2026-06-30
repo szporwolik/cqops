@@ -109,17 +109,28 @@ Full usage guide, workflows, and keyboard shortcuts are in the [documentation](h
 - [ftl/hamradio](https://github.com/ftl/hamradio) — Grid locator, distance math, DXCC prefix lookup (CTY.DAT)
 - [gen2brain/beeep](https://github.com/gen2brain/beeep) — Desktop notifications
 
-**Data:**
-- [country-files.com](https://www.country-files.com/) — CTY.DAT DXCC prefix database by Jim Reisert AD1C (public domain factual data, loaded and cached locally)
-- [Super Check Partial](https://www.supercheckpartial.com/) — SCP callsign database by Stu Phillips K6TU (public domain contest data, loaded and cached locally)
-- [hamqsl.com](https://www.hamqsl.com/) — Solar conditions data (SFI, SSN, A/K indices) via Paul L Herrman N0NBH 
-- [PSK Reporter](https://pskreporter.info/) — Real-time propagation spot data by Philip Gladstone
-- [SOTA](https://www.sota.org.uk/) — Summits On The Air summit list (public data, loaded and cached locally)
-- [POTA](https://pota.app/) — Parks On The Air park list (public data, loaded and cached locally)
-- [WWFF](https://wwff.co/) — World Wide Flora & Fauna directory (public data, loaded and cached locally)
-- [IOTA](https://www.iota-world.org/) — Islands On The Air directory (downloaded by the user at runtime from iota-world.org for personal non-commercial use; loaded and cached locally)
+**Data & third-party services**
 
-All licenses are permissive (MIT, Apache 2.0, BSD-2, BSD-3). IOTA data is used under the personal non-commercial terms published by RSGB IOTA Ltd. Leaflet is bundled under BSD-2. See `licenses/` directory.
+*Reference data (loaded and cached locally):*
+- [country-files.com](https://www.country-files.com/) — CTY.DAT DXCC prefix database by Jim Reisert AD1C (public domain factual data)
+- [Super Check Partial](https://www.supercheckpartial.com/) — SCP callsign database by Stu Phillips K6TU (public domain contest data)
+- [SOTA](https://www.sota.org.uk/) — Summits On The Air summit list (public data)
+- [POTA](https://pota.app/) — Parks On The Air park list (public data)
+- [WWFF](https://wwff.co/) — World Wide Flora & Fauna directory (public data)
+- [IOTA](https://www.iota-world.org/) — Islands On The Air directory (personal non-commercial use per RSGB IOTA Ltd terms)
+
+*Live data (online, cached locally):*
+- [hamqsl.com](https://www.hamqsl.com/) — Solar conditions data (SFI, SSN, A/K indices) by Paul L Herrman N0NBH
+- [PSK Reporter](https://pskreporter.info/) — Real-time propagation spot data by Philip Gladstone
+
+*CQOps Live dashboard — map tiles, weather radar, Leaflet:*
+- Map tiles: [OpenStreetMap](https://www.openstreetmap.org/copyright) — © OpenStreetMap contributors (ODbL).
+- Weather radar overlay: [RainViewer](https://www.rainviewer.com/) public API (browser-side, optional, offline-safe). Attribution displayed on-map and in footer.
+- Leaflet 1.9.4 bundled under BSD-2. See `licenses/LEAFLET-BSD2-LICENSE`.
+- All services remain optional. CQOps and CQOps Live work offline with cached/local assets.
+- Use of third-party services does not imply endorsement of CQOps by those projects.
+
+All licenses are permissive (MIT, Apache 2.0, BSD-2, BSD-3). See `licenses/` directory.
 
 ## Contributing
 
