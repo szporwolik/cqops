@@ -449,6 +449,115 @@ func ListAllQSOs(db *sql.DB) ([]qso.QSO, error) {
 	return all, nil
 }
 
+// ListQSOsByDate returns all QSOs for a given date (YYYYMMDD).
+// Ordered by time_on descending. Used by the dashboard for today's map.
+func ListQSOsByDate(db *sql.DB, date string) ([]qso.QSO, error) {
+	query := `SELECT id, call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,
+		rst_sent, rst_rcvd, gridsquare, name, qth, country, comment, notes, tx_pwr,
+		distance, bearing,
+		sota_ref, pota_ref, wwff_ref, iota, sig, sig_info,
+		my_sota_ref, my_pota_ref, my_wwff_ref,
+		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
+		cq_zone, itu_zone,
+		my_cq_zone, my_itu_zone, my_dxcc,
+		my_sig, my_sig_info,
+		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
+		created_at, updated_at
+		FROM qsos WHERE qso_date = ? ORDER BY time_on DESC, id DESC`
+	rows, err := db.Query(query, date)
+	if err != nil {
+		return nil, fmt.Errorf("list qsos by date: %w", err)
+	}
+	defer rows.Close()
+	var qsos []qso.QSO
+	for rows.Next() {
+		var q qso.QSO
+		var createdAt, updatedAt string
+		err := rows.Scan(
+			&q.ID, &q.Call, &q.QSODate, &q.TimeOn, &q.TimeOff,
+			&q.Band, &q.Freq, &q.FreqRx, &q.Mode, &q.Submode,
+			&q.RSTSent, &q.RSTRcvd, &q.GridSquare, &q.Name, &q.QTH, &q.Country, &q.Comment, &q.Notes, &q.TXPower,
+			&q.Distance, &q.Bearing,
+			&q.SOTARef, &q.POTARef, &q.WWFFRef, &q.IOTA, &q.SIG, &q.SIGInfo,
+			&q.MySOTARef, &q.MyPOTARef, &q.MyWWFFRef,
+			&q.StationCallsign, &q.Operator, &q.MyGridSquare, &q.MyRig, &q.MyAntenna, &q.Source,
+			&q.CQZone, &q.ITUZone,
+			&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
+			&q.MySIG, &q.MySIGInfo,
+			&q.WavelogUploaded, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
+			&createdAt, &updatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan qso by date: %w", err)
+		}
+		if t, err := time.Parse(time.RFC3339, createdAt); err == nil {
+			q.CreatedAt = t
+		}
+		if t, err := time.Parse(time.RFC3339, updatedAt); err == nil {
+			q.UpdatedAt = t
+		}
+		qsos = append(qsos, q)
+	}
+	return qsos, rows.Err()
+}
+
+// ListQSOsFromDate returns all QSOs with qso_date >= the given date.
+// Used by the dashboard when an event start date is configured.
+func ListQSOsFromDate(db *sql.DB, date string) ([]qso.QSO, error) {
+	query := `SELECT id, call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,
+		rst_sent, rst_rcvd, gridsquare, name, qth, country, comment, notes, tx_pwr,
+		distance, bearing,
+		sota_ref, pota_ref, wwff_ref, iota, sig, sig_info,
+		my_sota_ref, my_pota_ref, my_wwff_ref,
+		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
+		cq_zone, itu_zone,
+		my_cq_zone, my_itu_zone, my_dxcc,
+		my_sig, my_sig_info,
+		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
+		created_at, updated_at
+		FROM qsos WHERE qso_date >= ? ORDER BY qso_date ASC, time_on ASC, id ASC`
+	return listQSOsByQuery(db, query, date)
+}
+
+// listQSOsByQuery is a helper that scans QSOs from a parameterized query.
+func listQSOsByQuery(db *sql.DB, query string, args ...any) ([]qso.QSO, error) {
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list qsos: %w", err)
+	}
+	defer rows.Close()
+	var qsos []qso.QSO
+	for rows.Next() {
+		var q qso.QSO
+		var createdAt, updatedAt string
+		err := rows.Scan(
+			&q.ID, &q.Call, &q.QSODate, &q.TimeOn, &q.TimeOff,
+			&q.Band, &q.Freq, &q.FreqRx, &q.Mode, &q.Submode,
+			&q.RSTSent, &q.RSTRcvd, &q.GridSquare, &q.Name, &q.QTH, &q.Country, &q.Comment, &q.Notes, &q.TXPower,
+			&q.Distance, &q.Bearing,
+			&q.SOTARef, &q.POTARef, &q.WWFFRef, &q.IOTA, &q.SIG, &q.SIGInfo,
+			&q.MySOTARef, &q.MyPOTARef, &q.MyWWFFRef,
+			&q.StationCallsign, &q.Operator, &q.MyGridSquare, &q.MyRig, &q.MyAntenna, &q.Source,
+			&q.CQZone, &q.ITUZone,
+			&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
+			&q.MySIG, &q.MySIGInfo,
+			&q.WavelogUploaded, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
+			&createdAt, &updatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("scan qso: %w", err)
+		}
+		if t, err := time.Parse(time.RFC3339, createdAt); err == nil {
+			q.CreatedAt = t
+		}
+		if t, err := time.Parse(time.RFC3339, updatedAt); err == nil {
+			q.UpdatedAt = t
+		}
+		qsos = append(qsos, q)
+	}
+	return qsos, rows.Err()
+}
+
 // UpdateQSO updates an existing QSO. Retries on SQLITE_BUSY.
 func UpdateQSO(db *sql.DB, q *qso.QSO) error {
 	q.UpdatedAt = time.Now().UTC()

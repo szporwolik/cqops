@@ -132,6 +132,11 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 	if c := m.maybeDXC(); c != nil {
 		cmds = append(cmds, c)
 	}
+	if c := m.maybeHTTP(); c != nil {
+		cmds = append(cmds, c)
+	}
+	// Push current state to the dashboard (cheap — early-exits if unchanged).
+	m.pushDashboardState()
 	if cmd != nil {
 		cmds = append(cmds, cmd)
 	}
@@ -218,6 +223,31 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 		return true, m.refreshQSOS()
 	case qrzStatusMsg:
 		m.lookup.qrzOnline = r.online
+		return true, nil
+	case httpStatusMsg:
+		if r.client != nil {
+			m.http.client = r.client
+		}
+		if r.online {
+			m.http.online = true
+			m.http.err = nil
+			// Push initial state NOW so the next SSE snapshot has data.
+			m.pushDashboardState()
+			if m.http.client != nil {
+				m.toasts.Success("HTTP server: listening on " + m.http.client.Addr())
+			}
+			applog.Info("HTTP server: online")
+			// Refresh QSO list from DB so dashboard recent matches TUI.
+			return true, m.refreshQSOS()
+		}
+		// Server failed to start — report the error.
+		m.http.online = false
+		m.http.err = r.err
+		if r.err != nil {
+			m.toasts.Error("HTTP server: " + r.err.Error())
+			applog.Error("HTTP server: failed", "error", r.err)
+		}
+		m.rc.status = ""
 		return true, nil
 	case rigPollMsg:
 		return true, m.applyRigPoll(r)

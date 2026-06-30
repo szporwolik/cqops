@@ -439,6 +439,49 @@ Integracja PSK Reporter wymaga dostępu do internetu. Zapewnia spoty propagacyjn
 
 Dane solarne obejmują SFI, liczbę plam, indeksy A/K i warunki pasmowe z hamqsl.com. Aktualizacje na żywo wymagają dostępu do internetu. Dane z pamięci podręcznej pozostają dostępne offline po udanym pobraniu.
 
+### CQOps Live — Pulpit przeglądarkowy
+
+CQOps Live to wbudowany pulpit webowy, który wyświetla aktywność Twojej stacji w czasie rzeczywistym w dowolnej przeglądarce — idealny na pokazy Field Day, ekrany klubowe, monitorowanie zawodów lub podgląd pracy stacji z innego pomieszczenia.
+
+**Jak włączyć**
+
+1. Naciśnij **F9**, aby otworzyć menu główne, a następnie wybierz **Integrations**.
+2. Przewiń do sekcji **HTTP Server** i zaznacz **Enable HTTP server**.
+3. Opcjonalnie ustaw adres (domyślnie `0.0.0.0`) i port (domyślnie `8073`).
+4. Naciśnij **Ctrl+S**, aby zapisać. Serwer uruchamia się natychmiast.
+5. Otwórz `http://localhost:8073` (lub skonfigurowany adres) w dowolnej przeglądarce.
+
+**Co pokazuje pulpit**
+
+Pulpit ma dwa tryby, które przełączają się automatycznie:
+
+- **Tryb przeglądu** (brak aktywnego znaku): mapa Leaflet na żywo ze znacznikami dzisiejszych QSO i ścieżkami po ortodromie, tabela ostatnich QSO, informacje o stacji, statystyki, najlepsi operatorzy i QSO o największym zasięgu.
+- **Tryb Aktywny / Now Working** (znak w trakcie łączności): wyróżniony znak wywoławczy, zdjęcie QRZ (jeśli dostępne), plakietki pasma/emisji, wskaźniki DUPE/NEW CALL/NEW DXCC, odległość i azymut oraz podświetlona przerywana linia na mapie od Twojej stacji do lokalizacji korespondenta.
+
+Wszystkie panele aktualizują się w czasie rzeczywistym przez Server-Sent Events (SSE) — bez przeładowywania strony.
+
+**Dostosowywanie**
+
+W formularzu integracji serwera HTTP możesz skonfigurować:
+
+| Pole | Opis |
+|-------|-------------|
+| Header 1 | Główny tytuł wyświetlany w nagłówku i obszarze hero. Wartość domyślna: "CQOps Live". |
+| Header 2 | Podtytuł pod tytułem. Wartość domyślna: "Fast, portable ham radio logger". |
+| Logo URL | Publicznie dostępny URL obrazu wyświetlany w lewym górnym rogu. Wartość domyślna: logo CQOps. |
+| Event Start | Data w formacie `YYYY-MM-DD`. Po ustawieniu statystyki i listy QSO są filtrowane od tej daty — przydatne przy kilkudniowych wydarzeniach. |
+
+**Wydajność**
+
+Pulpit został zaprojektowany z myślą o sprzęcie o niskim poborze mocy. Przeglądarka wykonuje całe renderowanie mapy, obliczenia odległości i statystyki. Aplikacja terminalowa CQOps wysyła tylko lekkie aktualizacje JSON przez SSE. Gdy serwer HTTP jest wyłączony, nie ma żadnego narzutu.
+
+**Typowe zastosowania**
+
+- **Field Day / pokaz publiczny**: podłącz duży ekran lub projektor, aby wyświetlić mapę na żywo i ostatnie QSO.
+- **Ekran informacyjny klubu**: dedykowany monitor pokazujący aktywność stacji odwiedzającym.
+- **Zdalny monitoring**: otwórz pulpit na tablecie lub telefonie, aby obserwować stację z innego pomieszczenia.
+- **Stoisko targowe / event**: skonfiguruj Header 1/2 i logo klubu dla profesjonalnej prezentacji.
+
 ---
 
 ## Konfiguracja

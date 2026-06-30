@@ -494,12 +494,20 @@ func (m *Model) applyFreqDefaults() {
 	mode := strings.ToUpper(strings.TrimSpace(m.fields[fieldMode].Value()))
 	switch mode {
 	case "SSB":
-		if freq < 10.0 {
-			m.fields[fieldSubmode].SetValue("LSB")
-		} else {
-			m.fields[fieldSubmode].SetValue("USB")
+		// Only auto-fill sideband when neither LSB nor USB is already
+		// set (e.g. from a DXC spot that carried USB/LSB explicitly).
+		curSub := strings.ToUpper(strings.TrimSpace(m.fields[fieldSubmode].Value()))
+		if curSub != "LSB" && curSub != "USB" {
+			if freq < 10.0 {
+				m.fields[fieldSubmode].SetValue("LSB")
+			} else {
+				m.fields[fieldSubmode].SetValue("USB")
+			}
 		}
-	case "FM":
+	default:
+		// Clear any stale submode from a previous QSO — only SSB has
+		// an auto-filled submode here. Other modes (CW, FT8, RTTY…)
+		// either have no submode or the user sets it separately.
 		m.fields[fieldSubmode].SetValue("")
 	}
 }

@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/szporwolik/cqops/internal/qso"
 )
@@ -90,6 +91,67 @@ func GetLogbookStats(db *sql.DB, call, band, mode string) (LogbookStats, error) 
 	if lastDate != "" && len(lastDate) == 8 {
 		s.LastQSODate = lastDate[0:4] + "-" + lastDate[4:6] + "-" + lastDate[6:8]
 	}
+
+	return s, nil
+}
+
+// DashboardStats holds aggregate statistics for the CQOps Live dashboard.
+type DashboardStats struct {
+	QSOsToday   int
+	UniqueCalls int
+	DXCC        int
+	Grids       int
+	Bands       int
+	Modes       int
+	LastQSOAgoS int
+	RatePerHour float64
+}
+
+// GetDashboardStats computes dashboard aggregate statistics for all QSOs
+// from the given start date (inclusive, YYYYMMDD format). For a typical
+// today-only view, pass time.Now().UTC().Format("20060102").
+// When an event start date is configured, pass that instead.
+func GetDashboardStats(db *sql.DB, startDate string) (DashboardStats, error) {
+	var s DashboardStats
+	var lastQSOStr string
+	// Limit scan to the event window for large logs.
+	cutoff := startDate
+
+	err := db.QueryRow(`
+		SELECT
+			COALESCE(COUNT(*), 0),
+			COALESCE(COUNT(DISTINCT base_call), 0),
+			COALESCE(COUNT(DISTINCT country), 0),
+			COALESCE(COUNT(DISTINCT CASE WHEN gridsquare != '' THEN UPPER(SUBSTR(gridsquare,1,4)) END), 0),
+			COALESCE(COUNT(DISTINCT band), 0),
+			COALESCE(COUNT(DISTINCT mode), 0),
+			COALESCE(MAX(qso_date) || MAX(time_on), '')
+		FROM qsos WHERE qso_date >= ?
+	`, cutoff).Scan(
+		&s.QSOsToday,
+		&s.UniqueCalls,
+		&s.DXCC,
+		&s.Grids,
+		&s.Bands,
+		&s.Modes,
+		&lastQSOStr,
+	)
+	if err != nil {
+		return s, fmt.Errorf("dashboard stats: %w", err)
+	}
+
+	// Parse last QSO time for elapsed-seconds computation.
+	if len(lastQSOStr) >= 14 {
+		if t, err := time.Parse("20060102150405", lastQSOStr[:14]); err == nil {
+			s.LastQSOAgoS = int(time.Since(t).Seconds())
+		}
+	}
+
+	// Rate: QSOs in the last hour.
+	var lastHour int
+	oneHourAgo := time.Now().UTC().Add(-1 * time.Hour).Format("20060102150405")
+	_ = db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE qso_date || time_on >= ?`, oneHourAgo).Scan(&lastHour)
+	s.RatePerHour = float64(lastHour)
 
 	return s, nil
 }

@@ -59,6 +59,9 @@ func (m *Model) headerView() string {
 	var rightParts []string
 
 	rightParts = append(rightParts, statusDotStyled(m.inetOnline, "Net", m.Offline))
+	if m.App.Config.Integrations.HTTPServer.Enabled {
+		rightParts = append(rightParts, statusDotStyled(m.http.online, "HTTP"))
+	}
 	if hasRig && rp.WsjtxEnabled {
 		rightParts = append(rightParts, statusDotStyled(m.wsjtx.online, "WSJT"))
 	}

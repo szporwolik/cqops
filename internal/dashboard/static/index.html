@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CQOps Live</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<div id="app" class="mode-overview">
+  <header id="header">
+    <div id="hd-left">
+      <div id="hd-logo-box"><img id="hd-logo" src="" alt=""></div>
+      <div id="hd-text">
+        <div id="hd-title">CQOps Live</div>
+        <div id="hd-subtitle"></div>
+      </div>
+    </div>
+    <div id="hd-right">
+      <span id="hd-clock-local"></span>
+      <span id="hd-clock-utc"></span>
+      <span id="hd-sse-status" class="sse-connecting" title="SSE status">●</span>
+    </div>
+  </header>
+  <section id="hero">
+    <div id="hero-overview">
+      <span id="hero-headline"></span>
+      <span id="hero-subline"></span>
+      <span id="hero-status">On air</span>
+      <div id="hero-promo"></div>
+    </div>
+    <div id="hero-active">
+      <div id="hero-photo-box">
+        <img id="hero-photo" src="" alt="" onerror="this.style.display='none';document.getElementById('hero-placeholder').style.display='flex'">
+        <div id="hero-placeholder"><span id="hero-placeholder-text"></span></div>
+      </div>
+      <div id="hero-main">
+        <div id="hero-label">NOW WORKING</div>
+        <div id="hero-call"></div>
+        <div id="hero-badges"></div>
+        <div id="hero-identity"></div>
+        <div id="hero-meta"></div>
+      </div>
+    </div>
+  </section>
+  <div id="map-table-row">
+    <section id="map-panel"><div id="map-container"></div></section>
+    <section id="recent-panel">
+      <h2>Recent QSOs</h2>
+      <div id="recent-table-wrap">
+        <table id="recent-table">
+          <thead><tr><th>UTC</th><th>Call</th><th>Band</th><th>Mode</th><th>RST</th><th>Dist / Dir</th><th>Country</th></tr></thead>
+          <tbody id="recent-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+  <main>
+    <section id="station-panel" class="panel">
+      <h2>Station</h2><dl id="station-fields"></dl>
+    </section>
+    <section id="stats-panel" class="panel">
+      <h2>Stats</h2><dl id="stats-fields"></dl>
+    </section>
+    <section id="operators-panel" class="panel">
+      <h2>Top Operators</h2><dl id="operators-fields"></dl>
+    </section>
+    <section id="topqsos-panel" class="panel">
+      <h2>Top QSOs</h2><dl id="topqsos-fields"></dl>
+    </section>
+  </main>
+  <footer><span id="footer-text">CQOps Live</span> · <span id="footer-attrib"></span></footer>
+</div>
+<div id="photo-overlay" onclick="this.style.display='none'"><img id="photo-overlay-img" src="" alt=""></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

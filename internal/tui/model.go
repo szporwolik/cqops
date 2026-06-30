@@ -146,6 +146,9 @@ type Model struct {
 	// BPL — band plan display (F7).
 	bpl bplState
 
+	// HTTP — built-in HTTP server for CQOps Live dashboard.
+	http httpState
+
 	// lastDataCheck is the last time CTY.DAT / SCP files were checked for updates.
 	lastDataCheck time.Time
 

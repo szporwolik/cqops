@@ -430,6 +430,49 @@ L'integrazione PSK Reporter richiede accesso a internet. Fornisce spot di propag
 
 I dati solari includono SFI, numero di macchie solari, indici A/K e condizioni banda per banda da hamqsl.com. Gli aggiornamenti in tempo reale richiedono accesso a internet. I dati nella cache rimangono disponibili offline dopo un recupero riuscito.
 
+### CQOps Live — Dashboard browser
+
+CQOps Live è un dashboard web integrato che mostra l'attività della tua stazione in tempo reale su qualsiasi browser — perfetto per display da Field Day, schermi di stazioni di club, monitoraggio contest o per tenere d'occhio la stazione da un'altra stanza.
+
+**Come attivarlo**
+
+1. Premi **F9** per aprire il menu principale, quindi seleziona **Integrations**.
+2. Scorri fino alla sezione **HTTP Server** e spunta **Enable HTTP server**.
+3. Opzionalmente imposta l'indirizzo (predefinito `0.0.0.0`) e la porta (predefinita `8073`).
+4. Premi **Ctrl+S** per salvare. Il server si avvia immediatamente.
+5. Apri `http://localhost:8073` (o l'indirizzo configurato) in qualsiasi browser.
+
+**Cosa mostra il dashboard**
+
+Il dashboard ha due modalità che cambiano automaticamente:
+
+- **Modalità panoramica** (nessun nominativo attivo): una mappa Leaflet in tempo reale con marcatori QSO odierni e percorsi ortodromici, una tabella dei QSO recenti, info stazione, statistiche, migliori operatori e QSO a maggiore distanza.
+- **Modalità Attivo / Now Working** (nominativo in lavorazione): visualizzazione prominente del nominativo, foto QRZ (se disponibile), badge banda/modo, indicatori DUPE/NEW CALL/NEW DXCC, distanza e azimuth, e una linea tratteggiata evidenziata sulla mappa dalla tua stazione alla posizione del corrispondente.
+
+Tutti i pannelli si aggiornano in tempo reale tramite Server-Sent Events (SSE) — nessun refresh della pagina necessario.
+
+**Personalizzazione**
+
+Nel modulo di integrazione del server HTTP puoi configurare:
+
+| Campo | Descrizione |
+|-------|-------------|
+| Header 1 | Titolo principale nell'intestazione e nell'area hero. Predefinito: "CQOps Live". |
+| Header 2 | Sottotitolo sotto il titolo. Predefinito: "Fast, portable ham radio logger". |
+| Logo URL | URL di un'immagine pubblicamente accessibile mostrata in alto a sinistra. Predefinito: logo CQOps. |
+| Event Start | Data in formato `YYYY-MM-DD`. Se impostata, le statistiche e le liste QSO vengono filtrate da questa data — utile per eventi di più giorni. |
+
+**Prestazioni**
+
+Il dashboard è progettato per hardware a basso consumo. Il browser gestisce tutto il rendering della mappa, i calcoli delle distanze e le statistiche. L'applicazione terminale CQOps invia solo aggiornamenti JSON leggeri via SSE. Quando il server HTTP è disattivato, non c'è alcun overhead.
+
+**Casi d'uso tipici**
+
+- **Field Day / display pubblico**: collega un grande schermo o proiettore per mostrare la mappa in tempo reale e i QSO recenti.
+- **Schermo informativo del club**: monitor dedicato che mostra l'attività della stazione ai visitatori.
+- **Monitoraggio remoto**: apri il dashboard su tablet o telefono per controllare la stazione da un'altra stanza.
+- **Stand fieristico / evento**: configura Header 1/2 e il logo del club per una presentazione professionale.
+
 ---
 
 ## Riferimento di configurazione

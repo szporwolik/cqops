@@ -186,7 +186,7 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			m.screen = screenMainMenu
 		}
 		if m.ui.integrationMenu.saved {
-			dxcE, dxcHost, dxcPort, dxcLogin, qrzE, qrzUser, qrzPass := m.ui.integrationMenu.Values()
+			dxcE, dxcHost, dxcPort, dxcLogin, qrzE, qrzUser, qrzPass, httpE, httpAddr, httpPort, httpHdr1, httpHdr2, httpLogo, httpEvtStart := m.ui.integrationMenu.Values()
 			m.App.Config.Integrations.DXC.Enabled = dxcE
 			m.App.Config.Integrations.DXC.Host = dxcHost
 			m.App.Config.Integrations.DXC.Port = dxcPort
@@ -194,10 +194,18 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			m.App.Config.Integrations.QRZ.Enabled = qrzE
 			m.App.Config.Integrations.QRZ.User = qrzUser
 			m.App.Config.Integrations.QRZ.Pass = qrzPass
+			m.App.Config.Integrations.HTTPServer.Enabled = httpE
+			m.App.Config.Integrations.HTTPServer.Address = httpAddr
+			m.App.Config.Integrations.HTTPServer.Port = httpPort
+			m.App.Config.Integrations.HTTPServer.Header1 = httpHdr1
+			m.App.Config.Integrations.HTTPServer.Header2 = httpHdr2
+			m.App.Config.Integrations.HTTPServer.ClubLogo = httpLogo
+			m.App.Config.Integrations.HTTPServer.EventStart = httpEvtStart
 			m.saveConfig("Settings saved")
 			applog.Info("Integration config saved, restarting services")
 
 			m.resetDXC()
+			m.restartHTTPServer()
 			m.screen = screenMainMenu
 		}
 	}

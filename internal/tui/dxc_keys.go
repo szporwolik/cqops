@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
+	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 )
 
@@ -171,7 +172,11 @@ func (m *Model) dxcFillFromSelected() tea.Cmd {
 		m.fields[fieldBand].SetValue(spot.Band)
 	}
 	if spot.Mode != "" {
-		m.fields[fieldMode].SetValue(spot.Mode)
+		mode, subm := qso.NormalizeMode(spot.Mode, "")
+		m.fields[fieldMode].SetValue(mode)
+		if subm != "" {
+			m.fields[fieldSubmode].SetValue(subm)
+		}
 	}
 	applog.Debug("DXC: dxcFillFromSelected fields",
 		"call", spot.DXCall,

@@ -147,6 +147,7 @@ func (m *Model) saveQSO() tea.Cmd {
 	m.clearForm()
 	m.clearFilteredTable()
 	m.toasts.Success(fmt.Sprintf("QSO saved: %s", qs.Call))
+	m.pushLoggedQSOToDashboard(qs)
 	return tea.Batch(m.refreshQSOS(), m.maybeUploadToWavelog(qs))
 }
 

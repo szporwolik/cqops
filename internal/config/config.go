@@ -65,8 +65,9 @@ func (bs BroadcastStation) BroadcastBand() string {
 }
 
 type IntegrationsConfig struct {
-	DXC DXCConfig `yaml:"dxc,omitempty"`
-	QRZ QRZConfig `yaml:"qrz,omitempty"`
+	DXC        DXCConfig        `yaml:"dxc,omitempty"`
+	QRZ        QRZConfig        `yaml:"qrz,omitempty"`
+	HTTPServer HTTPServerConfig `yaml:"http_server,omitempty"`
 }
 
 type DXCConfig struct {
@@ -109,6 +110,19 @@ type QRZConfig struct {
 	Enabled bool   `yaml:"enabled"`
 	User    string `yaml:"user,omitempty"`
 	Pass    string `yaml:"pass,omitempty"`
+}
+
+// HTTPServerConfig holds the optional built-in HTTP server configuration.
+type HTTPServerConfig struct {
+	Enabled    bool   `yaml:"enabled"`
+	Address    string `yaml:"address,omitempty"`      // e.g. "0.0.0.0" (LAN) or "localhost"
+	Port       string `yaml:"port,omitempty"`         // e.g. "8073"
+	Header1    string `yaml:"header_1,omitempty"`     // club name for dashboard
+	Header2    string `yaml:"header_2,omitempty"`     // event name for dashboard
+	ClubLogo   string `yaml:"club_logo,omitempty"`    // file path or URL to club logo
+	EventStart string `yaml:"event_start,omitempty"`  // YYYY-MM-DD, filter stats from this date
+	MapTileURL string `yaml:"map_tile_url,omitempty"` // Leaflet tile server URL
+	MapAttrib  string `yaml:"map_attrib,omitempty"`   // tile attribution text
 }
 
 // Favorite stores a mode/freq/submode/band snapshot for quick recall.

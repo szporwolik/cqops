@@ -29,6 +29,7 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 - **Wavelog sync** — upload, incremental download, per-logbook configuration
 - **Encrypted secrets** — AES-256-GCM, machine-tied key, never plaintext
 - **DX Cluster & PSK Reporter** — live spots with filters, spot-to-rig tuning, ASCII propagation map
+- **CQOps Live** — built-in browser dashboard with live map, recent QSOs, stats, QRZ photos, and top operators. Perfect for Field Day displays, club station screens, or remote monitoring — enable in F9 → Integrations
 - **Contest logging** — exchange markers, auto serial numbers, ADIF contest ID
 - **Offline-first** — SQLite, cached REF/Solar/DXCC data; `--offline` flag
 - **ADIF 3.1.7** — full import/export, contest fields preserved
