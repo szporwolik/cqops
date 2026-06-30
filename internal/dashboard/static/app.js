@@ -262,9 +262,12 @@ function showHeroPhoto(url){
   var img=$('hero-photo');img.style.display='';img.src=url;
   img.onclick=function(){var o=$('photo-overlay');$('photo-overlay-img').src=url;o.style.display='flex'};
   $('hero-placeholder').style.display='none';
+  $('hero-photo-box').style.display='';
 }
-function showHeroPlaceholder(call){$('hero-photo').style.display='none';$('hero-placeholder').style.display='flex';$('hero-placeholder-text').textContent=call||''}
-function hideHeroPhoto(){$('hero-photo').style.display='none';$('hero-placeholder').style.display='none'}
+function showHeroPlaceholder(call){
+  $('hero-photo').style.display='none';$('hero-photo-box').style.display='none';
+}
+function hideHeroPhoto(){$('hero-photo').style.display='none';$('hero-placeholder').style.display='none';$('hero-photo-box').style.display='none'}
 
 // ---- Station panel ----
 function renderStation(st,op,lb,rig,wsjtx){
@@ -393,7 +396,9 @@ function initMap(cfg){
   if(cfg.highlightLastQSO!==undefined)mapCfg.highlightLastQSO=!!cfg.highlightLastQSO;
   if(cfg.animateActivePath!==undefined)mapCfg.animateActivePath=!!cfg.animateActivePath;
   map=L.map('map-container',{zoomControl:true,attributionControl:false}).setView([51,10],3);
-  L.tileLayer(cfg.mapTileUrl||'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:cfg.mapAttrib||'&copy; OpenStreetMap'}).addTo(map);
+  var tiles=L.tileLayer(cfg.mapTileUrl||'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:cfg.mapAttrib||'&copy; OpenStreetMap'}).addTo(map);
+  // When offline, let the CSS background (#EEF6FF) show through — no grey error tiles.
+  tiles.on('tileerror',function(e){e.tile.style.display='none'});
   // Layer groups — ordered bottom to top
   qsoLineLayer=L.layerGroup().addTo(map);     // older QSO lines (bottom)
   lastQsoLayer=L.layerGroup().addTo(map);      // last QSO line

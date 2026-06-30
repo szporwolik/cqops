@@ -12,9 +12,9 @@
   --station-marker:#007A3D; --qso-marker:#0067C5;
   --active-path:#D00032; --last-qso:#D00032; --old-path:rgba(0,91,187,0.30);
   --table-border:#A6B8CE; --table-alt:#F1F6FD; --table-hover:#E4F0FF;
-  --logo-w:240px; --logo-h:144px; --photo-w:100px; --photo-h:100px;
+  --logo-w:200px; --logo-h:120px; --photo-w:100px; --photo-h:100px;
   --active-photo-w:180px; --active-photo-h:180px;
-  --map-h:400px;
+  --map-h:370px;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:system-ui,-apple-system,sans-serif;background:
@@ -30,8 +30,8 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #hd-logo-box{width:var(--logo-w);height:var(--logo-h);flex-shrink:0;border-radius:8px;overflow:hidden;background:var(--surface);border:2px solid var(--border-strong);display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px var(--shadow-soft)}
 #hd-logo{max-width:100%;max-height:100%;object-fit:contain}
 #hd-text{min-width:0}
-#hd-title{font-weight:800;font-size:2rem;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#hd-subtitle{font-size:1.3rem;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#hd-title{font-weight:800;font-size:1.6rem;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#hd-subtitle{font-size:1rem;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #hd-subtitle:empty{display:none}
 #hd-right{position:absolute;top:8px;right:16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;z-index:1}
 #hd-clock-local{color:var(--dim);font-variant-numeric:tabular-nums;font-size:0.9rem}
@@ -51,12 +51,12 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #hero-status{font-size:1rem;color:var(--success);font-weight:700}
 #hero-promo{font-size:0.95rem;color:var(--dim);font-style:italic;margin-top:4px}
 #hero-promo:empty{display:none}
-.mode-active #hero{background:radial-gradient(circle at 12% 50%,rgba(0,91,187,0.07),transparent 35%),linear-gradient(105deg,#FFFFFF 0%,var(--accent-xsoft) 42%,var(--blue-xsoft) 100%);border:1px solid var(--border-strong);border-radius:10px;padding:16px 20px;margin:8px 0;box-shadow:0 8px 24px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.8) inset}
+.mode-active #hero{background:radial-gradient(circle at 12% 50%,rgba(0,91,187,0.07),transparent 35%),linear-gradient(105deg,#FFFFFF 0%,var(--accent-xsoft) 42%,var(--blue-xsoft) 100%);border:1px solid var(--border-strong);border-radius:10px;padding:12px 20px;margin:8px 0;box-shadow:0 8px 24px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.8) inset}
 .mode-active #hero-overview{display:none}
-.mode-active #hero-active{display:flex;align-items:center;gap:22px;min-height:170px}
+.mode-active #hero-active{display:flex;align-items:center;gap:20px;min-height:100px}
 /* photo box */
 #hero-photo-box{
-  width:clamp(280px,32vw,440px);height:clamp(220px,24vw,340px);
+  width:clamp(190px,20vw,300px);height:clamp(140px,14vw,210px);
   flex:0 0 auto;border-radius:10px;overflow:hidden;background:var(--blue-soft);
   border:2px solid var(--border-strong);position:relative;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 12px var(--shadow-soft)
 }
@@ -71,7 +71,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 /* main content */
 #hero-main{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:6px}
 #hero-label{font-size:0.78rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--accent);font-weight:700}
-#hero-call{font-size:clamp(40px,6vw,80px);font-weight:900;color:var(--accent);line-height:1;letter-spacing:0.01em}
+#hero-call{font-size:clamp(30px,4.5vw,56px);font-weight:900;color:var(--accent);line-height:1;letter-spacing:0.01em}
 #hero-badges{display:inline-flex;flex-wrap:wrap;gap:6px}
 #hero-badges .badge{display:inline-block;background:var(--accent);color:#fff;padding:3px 10px;border-radius:4px;font-size:0.85rem;font-weight:600;margin:0 3px 3px 0}
 #hero-badges .badge.info{background:var(--blue-soft);color:var(--blue-dark);border:1px solid var(--border)}
