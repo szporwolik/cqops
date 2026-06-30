@@ -92,6 +92,7 @@ type ActiveQSO struct {
 	IsDupe       bool      `json:"isDupe,omitempty"`
 	IsNewCall    bool      `json:"isNewCall,omitempty"`
 	IsNewDXCC    bool      `json:"isNewDxcc,omitempty"`
+	RefNames     string    `json:"refNames,omitempty"`
 	UpdatedAtUTC time.Time `json:"updatedAtUtc"`
 }
 
@@ -315,7 +316,8 @@ func (s *State) SetActiveQSO(qso *ActiveQSO) {
 			qso.RSTRcvd != prev.RSTRcvd ||
 			qso.IsDupe != prev.IsDupe ||
 			qso.IsNewCall != prev.IsNewCall ||
-			qso.IsNewDXCC != prev.IsNewDXCC
+			qso.IsNewDXCC != prev.IsNewDXCC ||
+			qso.RefNames != prev.RefNames
 	}
 	s.snapshot.ActiveQSO = qso
 	s.snapshot.UpdatedAt = timeNow()

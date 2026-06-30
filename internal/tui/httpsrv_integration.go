@@ -414,6 +414,10 @@ func (m *Model) pushDashboardFast() {
 		if rr := m.fields[fieldRSTRcvd].Value(); rr != "" {
 			aq.RSTRcvd = rr
 		}
+		// Resolved reference names line (SOTA/POTA/WWFF/IOTA).
+		if rn := m.buildRefNamesLine(); rn != "" {
+			aq.RefNames = rn
+		}
 		aq.UpdatedAtUTC = time.Now().UTC()
 		// Dupe / new call / new DXCC flags.
 		// Only recompute when the callsign changed (avoid DB queries every tick).

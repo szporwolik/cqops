@@ -202,7 +202,19 @@ func (m *Model) dxcFillFromSelected() tea.Cmd {
 
 	// Parse spot comment for reference designators (SOTA, POTA, WWFF, IOTA)
 	// and auto-fill the corresponding QSO form fields.
+	// Clear previous references first so a second spot doesn't carry over
+	// stale data from the first.
+	m.fields[fieldSOTA].SetValue("")
+	m.fields[fieldPOTA].SetValue("")
+	m.fields[fieldWWFF].SetValue("")
+	m.fields[fieldIOTA].SetValue("")
 	m.parseSpotCommentForRefs(spot.Comment)
+	// Force the REF names bar and grid to rebuild from the new references.
+	m.ref.refNamesDirty = true
+	// Resolve reference grids immediately so the dashboard map and
+	// distance/bearing calculations use the activation location rather
+	// than the partner's home QTH.
+	m.applyRefGridAndQTH()
 
 	// Commit the callsign and trigger lookups immediately — the user is
 	// jumping to the QSO form, so background QRZ/Wavelog lookups should

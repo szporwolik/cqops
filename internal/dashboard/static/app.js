@@ -213,6 +213,8 @@ function renderHero(aq,p){
   buildIdentityLine(aq,p);
   // Meta
   heroMeta.textContent=p&&p.source==='qrz'?'Source: QRZ.com lookup':'';
+  // Resolved reference names (SOTA/POTA/WWFF/IOTA)
+  $('hero-refs').textContent=aq.refNames||'';
   // Map focus — debounced so QRZ data (more accurate grid) can arrive
   // before the fly animation starts. Avoids double-jump.
   // Priority: QSO form grid (may come from SOTA/POTA/WWFF reference
