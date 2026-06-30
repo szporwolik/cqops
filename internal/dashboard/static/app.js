@@ -396,15 +396,74 @@ function initMap(cfg){
   if(cfg.highlightLastQSO!==undefined)mapCfg.highlightLastQSO=!!cfg.highlightLastQSO;
   if(cfg.animateActivePath!==undefined)mapCfg.animateActivePath=!!cfg.animateActivePath;
   map=L.map('map-container',{zoomControl:true,attributionControl:false}).setView([51,10],3);
+  // Custom panes for layer ordering: radar below QSO paths, markers on top.
+  map.createPane('cqopsRadar');map.getPane('cqopsRadar').style.zIndex=350;map.getPane('cqopsRadar').style.pointerEvents='none';
+  map.createPane('cqopsPath');map.getPane('cqopsPath').style.zIndex=430;map.getPane('cqopsPath').style.pointerEvents='none';
+  map.createPane('cqopsActive');map.getPane('cqopsActive').style.zIndex=460;map.getPane('cqopsActive').style.pointerEvents='none';
+  map.createPane('cqopsMarker');map.getPane('cqopsMarker').style.zIndex=500;
   var tiles=L.tileLayer(cfg.mapTileUrl||'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:cfg.mapAttrib||'&copy; OpenStreetMap'}).addTo(map);
-  // When offline, let the CSS background (#EEF6FF) show through — no grey error tiles.
   tiles.on('tileerror',function(e){e.tile.style.display='none'});
-  // Layer groups — ordered bottom to top
-  qsoLineLayer=L.layerGroup().addTo(map);     // older QSO lines (bottom)
-  lastQsoLayer=L.layerGroup().addTo(map);      // last QSO line
-  activeQsoLayer=L.layerGroup().addTo(map);    // active QSO line (top)
-  qsoMarkerLayer=L.layerGroup().addTo(map);    // QSO markers
-  stationLayer=L.layerGroup().addTo(map);      // station marker (always on top)
+  // Layer groups — each on its own pane for correct z-ordering above radar.
+  qsoLineLayer=L.layerGroup([],{pane:'cqopsPath'}).addTo(map);
+  lastQsoLayer=L.layerGroup([],{pane:'cqopsPath'}).addTo(map);
+  activeQsoLayer=L.layerGroup([],{pane:'cqopsActive'}).addTo(map);
+  qsoMarkerLayer=L.layerGroup([],{pane:'cqopsMarker'}).addTo(map);
+  stationLayer=L.layerGroup([],{pane:'cqopsMarker'}).addTo(map);
+  // Radar: always enabled — no toggle button.
+  enableRadarLayer();
+}
+
+// ---- RainViewer weather radar overlay ----
+var radarLayer=null,radarEnabled=false,radarLoading=false,radarTimer=null;
+
+async function fetchJsonWithTimeout(url,ms){
+  ms=ms||5000;var ctrl=new AbortController(),t=setTimeout(function(){ctrl.abort()},ms);
+  try{var r=await fetch(url,{signal:ctrl.signal,cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);return await r.json()}
+  catch(e){throw e}
+  finally{clearTimeout(t)}
+}
+
+async function enableRadarLayer(){
+  if(radarEnabled||radarLoading||!map)return;
+  if(!navigator.onLine){return}
+  radarLoading=true;
+  try{
+    var meta=await fetchJsonWithTimeout('https://api.rainviewer.com/public/weather-maps.json',6000);
+    if(!meta||!meta.radar||!meta.radar.past||!meta.radar.past.length)throw new Error('No radar frames');
+    var latest=meta.radar.past[meta.radar.past.length-1];
+    if(!latest.path)throw new Error('Missing frame path');
+    var url=meta.host+latest.path+'/256/{z}/{x}/{y}/2/1_1.png';
+    radarLayer=L.tileLayer(url,{
+      pane:'cqopsRadar',opacity:0.55,maxNativeZoom:7,maxZoom:12,
+      attribution:'Weather radar: <a href=\"https://www.rainviewer.com/\" target=\"_blank\" rel=\"noopener\">RainViewer</a>'
+    }).addTo(map);
+    radarEnabled=true;radarLoading=false;
+    enableRainViewerAttribution();
+    // Refresh radar every 10 minutes.
+    radarTimer=setInterval(refreshRadarLayer,600000);
+  }catch(e){
+    radarLoading=false;radarLayer=null;
+    D('radar','enable failed',''+e);
+  }
+}
+
+function disableRadarLayer(){
+  if(radarLayer){map.removeLayer(radarLayer);radarLayer=null}
+  radarEnabled=false;radarLoading=false;
+  if(radarTimer){clearInterval(radarTimer);radarTimer=null}
+}
+
+async function refreshRadarLayer(){
+  if(!radarEnabled||!map)return;
+  try{
+    var meta=await fetchJsonWithTimeout('https://api.rainviewer.com/public/weather-maps.json',6000);
+    if(!meta||!meta.radar||!meta.radar.past||!meta.radar.past.length)return;
+    var latest=meta.radar.past[meta.radar.past.length-1];
+    if(!latest.path)return;
+    var url=meta.host+latest.path+'/256/{z}/{x}/{y}/2/1_1.png';
+    var old=radarLayer;radarLayer=L.tileLayer(url,{pane:'cqopsRadar',opacity:0.55,maxNativeZoom:7,maxZoom:12}).addTo(map);
+    if(old){map.removeLayer(old);old=null}
+  }catch(e){D('radar','refresh failed',''+e)}
 }
 
 function updateMapFromToday(){
@@ -433,10 +492,10 @@ function updateMapFromToday(){
       var lat=ll[0],lon=ll[1];
       // Marker
       var isLast=(i===lastQsoIdx&&mapCfg.highlightLastQSO),isActive=(activeGrid&&q.grid&&q.grid.toUpperCase()===activeGrid.toUpperCase());
-      var mr=isActive?7:isLast?5.5:3.5;
-      var mc=isActive?'#D00032':isLast?'#0067C5':'#0067C5';
-      var mf=isActive?1:isLast?0.85:0.5;
-      var mk=L.circleMarker([lat,lon],{radius:mr,color:mc,fillColor:mc,fillOpacity:mf,weight:isActive?3:1.5});
+      var mr=isActive?7:isLast?5.5:4;
+      var mc=isActive?'#D00032':isLast?'#0080FF':'#0080FF';
+      var mf=isActive?1:isLast?0.9:0.8;
+      var mk=L.circleMarker([lat,lon],{radius:mr,color:mc,fillColor:mc,fillOpacity:mf,weight:isActive?3:2,opacity:0.95});
       var popup=(q.call||'')+'<br>'+(q.band||'')+' '+(q.mode||'')+'<br>'+(q.grid||'');
       if(q.timeUtc)popup+='<br>'+q.timeUtc.slice(11,16)+'Z';
       if(q.country)popup+='<br>'+q.country;
@@ -451,11 +510,11 @@ function updateMapFromToday(){
           var alOpt={color:'#D00032',weight:4,opacity:0.9,dashArray:'12 8',className:'active-path-anim'};
           activeQsoLayer.addLayer(L.polyline(pts,alOpt));
         }else if(isLast&&mapCfg.highlightLastQSO){
-          // Last QSO: blue, thicker, more opaque than older lines.
-          lastQsoLayer.addLayer(L.polyline(pts,{color:'#0067C5',weight:3,opacity:0.75}));
+          // Last QSO: blue, thicker, more opaque.
+          lastQsoLayer.addLayer(L.polyline(pts,{color:'#0080FF',weight:3,opacity:0.85}));
         }else{
-          // Older QSO: subtle line
-          qsoLineLayer.addLayer(L.polyline(pts,{color:'#0067C5',weight:1.2,opacity:0.30}));
+          // Older QSO: visible above radar.
+          qsoLineLayer.addLayer(L.polyline(pts,{color:'#0080FF',weight:1.8,opacity:0.50}));
         }
         drawn++;
       }
@@ -464,7 +523,7 @@ function updateMapFromToday(){
     // No station coords — still show markers without lines
     todayQsos.forEach(function(q){
       var ll=getQsoLatLon(q);if(!ll)return;
-      var mk=L.circleMarker(ll,{radius:3.5,color:'#0067C5',fillColor:'#0067C5',fillOpacity:0.5,weight:1.5});
+      var mk=L.circleMarker(ll,{radius:4,color:'#0080FF',fillColor:'#0080FF',fillOpacity:0.8,weight:2,opacity:0.95});
       mk.bindTooltip(q.call||'',{direction:'top'});
       qsoMarkerLayer.addLayer(mk);bounds.push(ll);
     });
@@ -586,6 +645,14 @@ function showQsoToast(q){
   t.className='show';
   _toastTimer=setTimeout(function(){t.className='hide';_toastTimer=null},2200);
 }
+
+// ---- RainViewer radar attribution ----
+var _rainviewerActive=false;
+function enableRainViewerAttribution(){
+  if(_rainviewerActive)return;_rainviewerActive=true;
+  app.className+=' has-rainviewer';
+}
+// Call enableRainViewerAttribution() when radar layer is added to the map.
 
 // ---- Init ----
 D('init','fetching /api/snapshot…');
