@@ -42,6 +42,9 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 /* ── overview: hero hidden — header carries all branding ── */
 .mode-overview #hero{display:none}
 .mode-overview #map-table-row{margin-top:2px}
+/* In overview mode (no hero), use the freed vertical space for map + recent. */
+.mode-overview #map-container{min-height:calc(var(--map-h) + 200px)}
+.mode-overview #recent-panel{max-height:calc(var(--map-h) + 200px)}
 
 /* ── integrated active panel (photo + callsign + identity) ── */
 #hero{background:var(--blue-xsoft);border-radius:8px;padding:20px 24px;margin:10px 0;text-align:center}
@@ -51,9 +54,9 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #hero-status{font-size:1rem;color:var(--success);font-weight:700}
 #hero-promo{font-size:0.95rem;color:var(--dim);font-style:italic;margin-top:4px}
 #hero-promo:empty{display:none}
-.mode-active #hero{background:radial-gradient(circle at 12% 50%,rgba(0,91,187,0.07),transparent 35%),linear-gradient(105deg,#FFFFFF 0%,var(--accent-xsoft) 42%,var(--blue-xsoft) 100%);border:1px solid var(--border-strong);border-radius:10px;padding:12px 20px;margin:6px 0;box-shadow:0 8px 24px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.8) inset}
+.mode-active #hero{background:radial-gradient(circle at 12% 50%,rgba(0,91,187,0.10),transparent 35%),radial-gradient(circle at 85% 40%,rgba(208,0,50,0.06),transparent 30%),linear-gradient(105deg,#FFFFFF 0%,#F8FAFF 40%,var(--blue-xsoft) 100%);border:1px solid var(--border-strong);border-radius:10px;padding:6px 20px;margin:6px 0;box-shadow:0 8px 24px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.8) inset}
 .mode-active #hero-overview{display:none}
-.mode-active #hero-active{display:flex;align-items:center;gap:20px;min-height:100px}
+.mode-active #hero-active{display:flex;align-items:center;gap:14px;min-height:auto}
 /* photo box */
 #hero-photo-box{
   width:clamp(180px,18vw,280px);height:clamp(125px,12vw,185px);
@@ -69,7 +72,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #hero-placeholder-text{font-size:1.1rem;font-weight:700;color:var(--accent);line-height:1.2}
 #hero-placeholder-text::after{content:"\ANo photo";white-space:pre;display:block;font-size:0.68rem;font-weight:400;color:var(--text-secondary);margin-top:2px}
 /* main content */
-#hero-main{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:6px}
+#hero-main{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:3px}
 #hero-label{font-size:0.78rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--accent);font-weight:700}
 #hero-call{font-size:clamp(30px,4.5vw,56px);font-weight:900;color:var(--accent);line-height:1;letter-spacing:0.01em}
 #hero-badges{display:inline-flex;flex-wrap:wrap;gap:6px}
@@ -78,12 +81,12 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #hero-badges .badge.dupe{background:var(--warn);color:#fff}
 #hero-badges .badge.success{background:var(--success);color:#fff}
 #hero-badges:empty{display:none}
-#hero-identity{font-size:clamp(14px,1.4vw,22px);font-weight:600;color:var(--text);line-height:1.4}
-#hero-identity:empty{display:none}
-#hero-refs{font-size:0.85rem;color:var(--success);font-weight:600;line-height:1.3}
-#hero-refs:empty{display:none}
-#hero-meta{font-size:0.8rem;color:var(--dim)}
-#hero-meta:empty{display:none}
+#hero-identity{font-size:clamp(14px,1.4vw,22px);font-weight:600;color:var(--text);line-height:1.4;min-height:1.4em}
+#hero-identity:empty{visibility:hidden}
+#hero-refs{font-size:0.85rem;color:var(--success);font-weight:600;line-height:1.3;min-height:1.3em}
+#hero-refs:empty{visibility:hidden}
+#hero-meta{font-size:0.8rem;color:var(--dim);min-height:1em}
+#hero-meta:empty{visibility:hidden}
 
 /* ── map + recent row ── */
 #map-table-row{display:flex;gap:12px;margin-bottom:10px}
@@ -306,8 +309,8 @@ footer a:hover{text-decoration:underline}
   #header{padding:14px 0 10px 0;margin-bottom:12px}
   /* ── active hero: premium broadcast background ── */
   .mode-active #hero{background:
-    radial-gradient(circle at 18% 45%,rgba(0,91,187,0.10),transparent 34%),
-    radial-gradient(circle at 78% 35%,rgba(208,0,50,0.08),transparent 32%),
+    radial-gradient(circle at 18% 45%,rgba(0,91,187,0.12),transparent 34%),
+    radial-gradient(circle at 82% 38%,rgba(208,0,50,0.07),transparent 30%),
     linear-gradient(110deg,#FFFFFF 0%,#F7FAFF 48%,#EEF5FF 100%);
     padding:10px 20px;min-height:auto}
   .mode-active #hero-active{min-height:70px;gap:20px}

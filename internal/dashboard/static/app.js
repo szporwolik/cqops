@@ -30,7 +30,7 @@ function updateClocks(){
   var n=new Date();
   var local=n.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   var utc=n.toISOString().slice(11,19).replace(/:/g,'')+'Z';
-  hdClockLocal.textContent=local+' local '+utc;
+  hdClockLocal.textContent='Local '+local+' \u00b7 UTC '+utc;
   hdClockUtc.textContent='';
 }
 updateClocks();setInterval(updateClocks,1000);
@@ -178,7 +178,7 @@ function renderAll(snap){
   if(snap.app&&snap.app.version){
     $('footer-text').innerHTML='CQOps Live v'+esc(snap.app.version)+' · <a href=\"https://cqops.com\" style=\"color:var(--accent)\">cqops.com</a>';
   }
-  $('footer-attrib').innerHTML='Map: <a href=\"https://leafletjs.com\" target=\"_blank\" rel=\"noopener\">Leaflet</a> · Tiles: <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener\">&copy; OpenStreetMap contributors</a>';
+  $('footer-attrib').innerHTML='Map: <a href=\"https://leafletjs.com\" target=\"_blank\" rel=\"noopener\">Leaflet</a> · Tiles: <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener\">&copy; OpenStreetMap</a> · Callbook: <a href=\"https://www.qrz.com\" target=\"_blank\" rel=\"noopener\">QRZ.com</a>';
   D('renderAll','done');
 }
 
@@ -211,8 +211,8 @@ function renderHero(aq,p){
   if(p&&p.imageUrl){showHeroPhoto(p.imageUrl)}else{showHeroPlaceholder(p?p.call:aq.call)}
   // Identity line: merge partner data with form fields
   buildIdentityLine(aq,p);
-  // Meta
-  heroMeta.textContent=p&&p.source==='qrz'?'Source: QRZ.com lookup':'';
+  // Meta line removed — QRZ attribution moved to footer.
+  $('hero-meta').textContent='';
   // Resolved reference names (SOTA/POTA/WWFF/IOTA)
   $('hero-refs').textContent=aq.refNames||'';
   // Map focus — debounced so QRZ data (more accurate grid) can arrive
