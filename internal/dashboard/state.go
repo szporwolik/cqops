@@ -89,9 +89,9 @@ type ActiveQSO struct {
 	QTH          string    `json:"qth,omitempty"`
 	Country      string    `json:"country,omitempty"`
 	DXCC         int       `json:"dxcc,omitempty"`
-	IsDupe       bool      `json:"isDupe,omitempty"`
-	IsNewCall    bool      `json:"isNewCall,omitempty"`
-	IsNewDXCC    bool      `json:"isNewDxcc,omitempty"`
+	IsDupe       bool      `json:"isDupe"`
+	IsNewCall    bool      `json:"isNewCall"`
+	IsNewDXCC    bool      `json:"isNewDxcc"`
 	RefNames     string    `json:"refNames,omitempty"`
 	UpdatedAtUTC time.Time `json:"updatedAtUtc"`
 }

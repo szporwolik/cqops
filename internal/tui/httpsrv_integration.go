@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -180,6 +181,14 @@ func (m *Model) pushLoggedQSOToDashboard(qs *qso.QSO) {
 	// so the browser sees the new QSO instantly. The next tick will push
 	// a fresh DB-sourced list via pushDashboardRecent.
 	applog.Debug("dashboard: pushed logged QSO", "call", qs.Call)
+}
+
+// stripANSI removes ANSI escape sequences (CSI codes) from a string.
+// Used to clean Lip Gloss-styled text before sending it to the browser.
+var reANSI = regexp.MustCompile(`\x1b\[[0-9;]*m`)
+
+func stripANSI(s string) string {
+	return reANSI.ReplaceAllString(s, "")
 }
 
 func clubLogoURL(cfgURL string) string {
@@ -415,7 +424,9 @@ func (m *Model) pushDashboardFast() {
 			aq.RSTRcvd = rr
 		}
 		// Resolved reference names line (SOTA/POTA/WWFF/IOTA).
-		if rn := m.buildRefNamesLine(); rn != "" {
+		// Strip ANSI escape codes — the TUI form uses Lip Gloss styling
+		// (e.g. red for unresolved refs), but the browser renders HTML.
+		if rn := stripANSI(m.buildRefNamesLine()); rn != "" {
 			aq.RefNames = rn
 		}
 		aq.UpdatedAtUTC = time.Now().UTC()
@@ -438,7 +449,9 @@ func (m *Model) pushDashboardFast() {
 		} else if call != "" {
 			// Call unchanged — reuse cached flags so SetActiveQSO
 			// doesn't see a spurious reset to false and re-publish.
-			aq.IsDupe = lastActiveDupe
+			// Dupe is an exception: checkDupe may have updated m.dupe
+			// after the initial push, and it's a cheap in-memory read.
+			aq.IsDupe = m.dupe
 			aq.IsNewCall = lastActiveNewCall
 			aq.IsNewDXCC = lastActiveNewDXCC
 			// Country may arrive late (manual entry or QRZ lookup).
@@ -485,6 +498,17 @@ var lastFastTick int
 
 // lastTodayIDs holds the last pushed today QSO ID list for change detection.
 var lastTodayIDs []int64
+
+// invalidateDashboardFlags clears the cached dupe/new-call/new-DXCC state
+// so the next pushDashboardFast recomputes them from the DB. Called after
+// a QSO is saved — the QSO we just logged may change dupe status for the
+// current call.
+func (m *Model) invalidateDashboardFlags() {
+	pushDashboardLastCall = ""
+	lastActiveDupe = false
+	lastActiveNewCall = false
+	lastActiveNewDXCC = false
+}
 
 func idsEqual(a, b []int64) bool {
 	if len(a) != len(b) {

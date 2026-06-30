@@ -148,6 +148,9 @@ func (m *Model) saveQSO() tea.Cmd {
 	m.clearFilteredTable()
 	m.toasts.Success(fmt.Sprintf("QSO saved: %s", qs.Call))
 	m.pushLoggedQSOToDashboard(qs)
+	// The cached dupe/new-call/new-DXCC flags are now stale — the QSO
+	// we just saved changes the dupe status for this call.
+	m.invalidateDashboardFlags()
 	return tea.Batch(m.refreshQSOS(), m.maybeUploadToWavelog(qs))
 }
 

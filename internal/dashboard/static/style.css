@@ -136,38 +136,54 @@ footer a:hover{text-decoration:underline}
 
 /* ── responsive: short screens — guarantee full layout visibility ── */
 @media(max-height:1000px){
-  #app{min-height:0;padding:4px 16px}
-  #hd-logo-box{width:140px;height:84px}
-  #hd-title{font-size:1.4rem}
-  #hd-subtitle{font-size:0.9rem}
-  #header{padding:8px 0}
-  #map-container{min-height:280px}
-  #recent-panel{max-height:280px}
-  .mode-active #hero-active{gap:16px;min-height:auto}
-  #hero-call{font-size:clamp(28px,5vw,60px)}
+  #app{min-height:0;padding:3px 14px}
+  #hd-logo-box{width:130px;height:78px}
+  #hd-title{font-size:1.3rem}
+  #hd-subtitle{font-size:0.85rem}
+  #header{padding:6px 0}
+  #hero{padding:8px 16px;margin:3px 0}
+  .mode-active #hero{padding:8px 14px}
+  .mode-active #hero-active{gap:14px;min-height:auto}
+  #hero-call{font-size:clamp(26px,5vw,54px)}
+  #hero-photo-box{width:clamp(160px,22vw,280px);height:clamp(115px,16vw,200px)}
+  #hero-badges .badge{font-size:0.75rem;padding:2px 8px}
+  #hero-identity{font-size:0.82rem}
+  #hero-refs{font-size:0.75rem}
+  #map-container{min-height:260px}
+  #recent-panel{max-height:260px;padding:6px 10px}
+  #map-table-row{margin-bottom:4px;gap:8px}
+  main{gap:5px;margin-bottom:3px}
+  .panel{padding:6px 10px}
+  .panel h2{margin-bottom:2px;font-size:0.72rem}
+  .panel dt{font-size:0.7rem}
+  .panel dd{font-size:0.78rem}
+  footer{padding:2px;font-size:0.65rem}
 }
 @media(max-height:800px){
-  #app{padding:3px 12px}
-  #hd-logo-box{width:100px;height:60px}
-  #hd-title{font-size:1.1rem}
-  #hd-subtitle{font-size:0.78rem}
-  #header{padding:5px 0;border-bottom-width:2px}
-  #hero{padding:6px 14px;margin:3px 0}
-  .mode-active #hero{padding:6px 12px}
-  #hero-call{font-size:clamp(22px,4.5vw,48px)}
-  #hero-photo-box{width:clamp(120px,18vw,200px);height:clamp(85px,12vw,140px)}
-  #hero-badges .badge{font-size:0.68rem;padding:2px 6px}
-  .mode-active #hero-active{gap:10px;min-height:auto}
-  #map-container{min-height:200px}
-  #recent-panel{max-height:200px;padding:5px 8px}
-  #recent-table{font-size:0.7rem}
-  #map-table-row{margin-bottom:4px;gap:6px}
-  main{gap:5px;margin-bottom:3px}
-  .panel{padding:5px 8px}
-  .panel h2{margin-bottom:2px;font-size:0.7rem}
-  .panel dt{font-size:0.68rem}
-  .panel dd{font-size:0.75rem}
-  footer{padding:2px;font-size:0.62rem}
+  #app{padding:2px 10px}
+  #hd-logo-box{width:90px;height:54px}
+  #hd-title{font-size:1rem}
+  #hd-subtitle{font-size:0.72rem}
+  #header{padding:4px 0;border-bottom-width:2px}
+  #hero{padding:5px 10px;margin:2px 0}
+  .mode-active #hero{padding:5px 10px}
+  .mode-active #hero-active{gap:8px;min-height:auto}
+  #hero-call{font-size:clamp(20px,4vw,40px)}
+  #hero-photo-box{width:clamp(100px,16vw,170px);height:clamp(70px,10vw,115px)}
+  #hero-badges .badge{font-size:0.62rem;padding:1px 5px}
+  #hero-identity{font-size:0.7rem}
+  #hero-refs{font-size:0.65rem}
+  #hero-label{font-size:0.65rem}
+  #map-container{min-height:180px}
+  #recent-panel{max-height:180px;padding:4px 7px}
+  #recent-table{font-size:0.68rem}
+  #map-table-row{margin-bottom:3px;gap:5px}
+  main{gap:4px;margin-bottom:2px}
+  .panel{padding:4px 7px}
+  .panel h2{margin-bottom:1px;font-size:0.65rem}
+  .panel dt{font-size:0.62rem}
+  .panel dd{font-size:0.7rem}
+  footer{padding:2px;font-size:0.58rem}
 }
 @media(max-height:600px){
   #app{padding:2px 10px}
@@ -181,7 +197,9 @@ footer a:hover{text-decoration:underline}
   #hero-photo-box{width:clamp(80px,16vw,140px);height:clamp(55px,10vw,95px)}
   #hero-badges .badge{font-size:0.6rem;padding:1px 5px}
   .mode-active #hero-active{gap:6px}
-  #hero-identity{font-size:0.68rem}
+  #hero-identity{font-size:0.62rem}
+  #hero-refs{font-size:0.58rem}
+  #hero-label{font-size:0.55rem}
   #map-container{min-height:140px}
   #recent-panel{max-height:140px;padding:3px 6px}
   #recent-table{font-size:0.62rem}
