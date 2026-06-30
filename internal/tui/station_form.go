@@ -82,7 +82,7 @@ func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder strin
 	cs := mkTI(20, 28, callsignPlaceholder)
 	cs.Blur()
 	op := mkTI(20, 28, opPlaceholder)
-	lc := mkTI(8, 28, locatorPlaceholder)
+	lc := mkTI(10, 28, locatorPlaceholder)
 	sr := mkTI(20, 28, "e.g. SP/TA-001")
 	pr := mkTI(20, 28, "e.g. SP-0001")
 	wr := mkTI(20, 28, "e.g. SPFF-0001")

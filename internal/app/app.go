@@ -361,8 +361,8 @@ func (a *App) pruneOnce(retainDuration time.Duration) {
 	}
 }
 
-// gridToLatLon converts a Maidenhead grid square (4 or 6 char) to decimal lat/lon.
-// Simplified local version to avoid import cycle.
+// gridToLatLon converts a Maidenhead grid square (4/6/8/10 char) to decimal lat/lon.
+// Simplified local version to avoid import cycle. Returns the center of the grid cell.
 func gridToLatLon(grid string) (float64, float64, error) {
 	grid = strings.ToUpper(strings.TrimSpace(grid))
 	if len(grid) < 4 {
@@ -375,8 +375,20 @@ func gridToLatLon(grid string) (float64, float64, error) {
 	if len(grid) >= 6 {
 		lon += float64(grid[4]-'A') * (5.0 / 60.0)
 		lat += float64(grid[5]-'A') * (2.5 / 60.0)
-		lon += 2.5 / 60.0  // center
-		lat += 1.25 / 60.0 // center
+		lon += 2.5 / 60.0  // center of sub-square
+		lat += 1.25 / 60.0 // center of sub-square
+		if len(grid) >= 8 {
+			lon += float64(grid[6]-'0') * (0.5 / 60.0)
+			lat += float64(grid[7]-'0') * (0.25 / 60.0)
+			lon += 0.25 / 60.0  // center of extended cell
+			lat += 0.125 / 60.0 // center of extended cell
+			if len(grid) >= 10 {
+				lon += float64(grid[8]-'A') * (0.5 / 60.0 / 24.0)
+				lat += float64(grid[9]-'A') * (0.25 / 60.0 / 24.0)
+				lon += 0.5 / 60.0 / 48.0  // center
+				lat += 0.25 / 60.0 / 48.0 // center
+			}
+		}
 	} else {
 		lon += 1.0 // center of 2° square
 		lat += 0.5 // center of 1° square

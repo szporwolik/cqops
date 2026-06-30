@@ -224,8 +224,11 @@ func NewLogbookEditor(cfg LogbookEditorConfig) *LogbookEditor {
 			ti.CharLimit = 10
 		case qefTimeOn, qefTimeOff:
 			ti.CharLimit = 8
-		case qefBand, qefGrid, qefMyGrid, qefTXPower, qefRSTSent, qefRSTRcvd:
+		case qefBand, qefTXPower, qefRSTSent, qefRSTRcvd:
 			ti.CharLimit = 8
+		case qefGrid, qefMyGrid:
+			ti.CharLimit = 10
+			ti.Placeholder = "e.g. KO00ca"
 		case qefFreq, qefFreqRx:
 			ti.CharLimit = 16
 		case qefMode:

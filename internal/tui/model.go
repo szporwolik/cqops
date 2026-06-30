@@ -257,7 +257,8 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 			ti.CharLimit = 8
 			ti.SetValue(now.Format("15:04"))
 		case fieldGrid:
-			ti.CharLimit = 8
+			ti.CharLimit = 10
+			ti.Placeholder = "e.g. KO00ca"
 		case fieldCountry:
 			ti.CharLimit = 20
 		case fieldName:
