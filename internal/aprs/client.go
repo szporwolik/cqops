@@ -344,9 +344,12 @@ func (c *Client) SendPosition(callsign string, lat, lon float64, symbol, comment
 }
 
 // formatUncompressedPosition builds the body portion of an uncompressed
-// APRS position report:
+// APRS position report in the standard format:
 //
-//	!DDMM.hhN/DDDMM.hhW<symbol>/...comment
+//	!DDMM.hhN<sym_table>DDDMM.hhW<sym_code>/...comment
+//
+// The symbol TABLE goes between latitude hemisphere and longitude;
+// the symbol CODE goes after longitude hemisphere.
 func formatUncompressedPosition(lat, lon float64, symbol, comment string) string {
 	latHemi := 'N'
 	if lat < 0 {
@@ -364,26 +367,29 @@ func formatUncompressedPosition(lat, lon float64, symbol, comment string) string
 	lonDeg := int(lon)
 	lonMin := (lon - float64(lonDeg)) * 60.0
 
-	// Ensure symbol is exactly 2 chars (pad with space if needed).
+	// Ensure symbol is exactly 2 chars.
 	if len(symbol) == 0 {
 		symbol = "/-"
 	} else if len(symbol) == 1 {
 		symbol = "/" + symbol
 	}
-	// Take first 2 chars if longer.
 	if len(symbol) > 2 {
 		symbol = symbol[:2]
 	}
+	symTable := symbol[0]
+	symCode := symbol[1]
 
-	// Format: DDMM.hhN/DDDMM.hhW<sym>
-	body := fmt.Sprintf("!%02d%05.2f%c/%03d%05.2f%c%s",
+	// Standard uncompressed APRS format:
+	//   !<lat><hemi><sym_table><lon><hemi><sym_code>/...<comment>
+	body := fmt.Sprintf("!%02d%05.2f%c%c%03d%05.2f%c%c",
 		latDeg, math.Round(latMin*100)/100, latHemi,
+		symTable,
 		lonDeg, math.Round(lonMin*100)/100, lonHemi,
-		symbol,
+		symCode,
 	)
 
 	if comment != "" {
-		body += "/..." + comment
+		body += "/" + comment
 	}
 	return body
 }

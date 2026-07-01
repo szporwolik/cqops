@@ -35,8 +35,9 @@ type App struct {
 	APRSClient   *aprs.Client   // APRS-IS persistent connection
 	APRSCache    *aprs.CacheDB  // APRS station cache database
 	aprsStatusCB func(connected bool, err error)
-	pruneStopCh  chan struct{} // stops the APRS cache pruning goroutine
-	beaconStopCh chan struct{} // stops the APRS beacon goroutine
+	aprsBeaconCB func(callsign string) // called after each successful beacon
+	pruneStopCh  chan struct{}         // stops the APRS cache pruning goroutine
+	beaconStopCh chan struct{}         // stops the APRS beacon goroutine
 
 	// lastWSJTX tracks the effective WSJT-X config last applied to the
 	// listener. Used to avoid unnecessary Stop/Start cycles when config
@@ -317,6 +318,12 @@ func (a *App) SetAPRSStatusCallback(cb func(connected bool, err error)) {
 	a.aprsStatusCB = cb
 }
 
+// SetAPRSBeaconCallback registers a callback invoked after each successful
+// APRS position beacon. Called from the TUI model for toast notifications.
+func (a *App) SetAPRSBeaconCallback(cb func(callsign string)) {
+	a.aprsBeaconCB = cb
+}
+
 // startAPRSPruner launches a background goroutine that periodically deletes
 // cached APRS stations older than the retention window (60 min). Runs every
 // 5 minutes. Stops when stopAPRSPruner is called or the app shuts down.
@@ -370,12 +377,14 @@ func (a *App) pruneOnce(retainDuration time.Duration) {
 // startAPRSBeacon launches a goroutine that periodically sends the station's
 // position to APRS-IS. The interval is read from the active logbook's APRS
 // config on each tick (it can change when the user edits settings).
+// Respects LastBeaconAt on startup — won't send if a beacon was already
+// sent recently (e.g. after an app restart).
 func (a *App) startAPRSBeacon() {
 	a.stopAPRSBeacon()
 	a.beaconStopCh = make(chan struct{})
 	go func() {
 		defer func() { a.beaconStopCh = nil }()
-		// Wait 10s for the APRS client to connect before the first beacon.
+		// Wait 10s for the APRS client to connect.
 		select {
 		case <-time.After(10 * time.Second):
 		case <-a.beaconStopCh:
@@ -385,7 +394,6 @@ func (a *App) startAPRSBeacon() {
 		for {
 			aprsCfg := a.Logbook.APRS
 			if aprsCfg == nil || !aprsCfg.Enabled || !aprsCfg.SendLocation {
-				// Beaconing disabled — wait for config change.
 				select {
 				case <-time.After(30 * time.Second):
 					continue
@@ -396,31 +404,28 @@ func (a *App) startAPRSBeacon() {
 
 			intervalMin := aprsCfg.IntervalMin
 			if intervalMin < 15 {
-				intervalMin = 15 // minimum 15 min per APRS spec
+				intervalMin = 15
 			}
 			interval := time.Duration(intervalMin) * time.Minute
 
-			// Check if enough time has passed since the last beacon.
+			// Wait until next scheduled beacon based on LastBeaconAt.
 			if aprsCfg.LastBeaconAt != "" {
 				last, err := time.Parse(time.RFC3339, aprsCfg.LastBeaconAt)
-				if err == nil && time.Since(last) < interval {
-					// Not yet time — sleep until next tick.
-					remaining := interval - time.Since(last)
-					if remaining > 0 {
+				if err == nil {
+					elapsed := time.Since(last)
+					if elapsed < interval {
+						remaining := interval - elapsed
+						applog.Debug("APRS: beacon waiting", "remaining", remaining.Round(time.Second), "lastBeacon", aprsCfg.LastBeaconAt)
 						select {
 						case <-time.After(remaining):
 						case <-a.beaconStopCh:
 							return
 						}
-						continue
 					}
 				}
 			}
 
-			// Send beacon.
 			a.sendAPRSBeacon(aprsCfg)
-
-			// Persist timestamp to config.
 			a.persistBeaconTimestamp(aprsCfg)
 
 			// Wait for next interval.
@@ -477,6 +482,8 @@ func (a *App) sendAPRSBeacon(aprsCfg *config.APRSConfig) {
 
 	if err := a.APRSClient.SendPosition(callsign, lat, lon, symbol, aprsCfg.Comment); err != nil {
 		applog.Warn("APRS: beacon failed", "error", err)
+	} else if a.aprsBeaconCB != nil {
+		a.aprsBeaconCB(callsign)
 	}
 }
 

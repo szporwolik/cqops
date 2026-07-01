@@ -380,6 +380,9 @@ func (m *Model) Init() tea.Cmd {
 			m.toasts.Info("APRS: stopped")
 		}
 	})
+	m.App.SetAPRSBeaconCallback(func(callsign string) {
+		m.toasts.Success("APRS: position sent as " + callsign)
+	})
 	m.App.MaybeRestartAPRS()
 	cmds := []tea.Cmd{tickCmd(), m.photo.viewer.Init(), m.emitWindowIconCmd()}
 	if !m.Offline {
