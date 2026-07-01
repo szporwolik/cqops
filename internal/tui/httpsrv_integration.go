@@ -391,6 +391,18 @@ func (m *Model) pushDashboardFast() {
 	}
 	ds.SetWSJTX(wsjtxInfo)
 
+	// --- Solar ---
+	if m.solar.data != nil {
+		ds.SetSolar(dashboard.SolarInfo{
+			SolarFlux:      m.solar.data.SolarFlux,
+			AIndex:         m.solar.data.AIndex,
+			KIndex:         m.solar.data.KIndex,
+			Sunspots:       m.solar.data.Sunspots,
+			BandConditions: m.solar.data.Bands,
+			UpdatedAt:      "now",
+		})
+	}
+
 	// --- Active QSO ---
 	call := strings.TrimSpace(m.fields[fieldCall].Value())
 	if call != "" {

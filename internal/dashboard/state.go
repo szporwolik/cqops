@@ -26,6 +26,9 @@ type Snapshot struct {
 	Partner   *PartnerInfo  `json:"partner,omitempty"`
 	Display   DisplayConfig `json:"display"`
 	APRS      []APRSStation `json:"aprs,omitempty"`
+	Solar     *SolarInfo    `json:"solar,omitempty"`
+	DXC       *DXCInfo      `json:"dxc,omitempty"`
+	PSK       *PSKInfo      `json:"psk,omitempty"`
 	UpdatedAt time.Time     `json:"updatedAt"`
 }
 
@@ -73,6 +76,31 @@ type WSJTXInfo struct {
 	Connected    bool      `json:"connected"`
 	LastMessage  string    `json:"lastMessage,omitempty"`
 	UpdatedAtUTC time.Time `json:"updatedAtUtc,omitempty"`
+}
+
+// SolarInfo holds hamqsl.com solar-terrestrial data for the dashboard.
+type SolarInfo struct {
+	SolarFlux      int               `json:"solarFlux"`
+	AIndex         int               `json:"aIndex"`
+	KIndex         float64           `json:"kIndex"`
+	Sunspots       int               `json:"sunspots,omitempty"`
+	BandConditions map[string]string `json:"bandConditions,omitempty"`
+	UpdatedAt      string            `json:"updatedAt,omitempty"`
+}
+
+// DXCInfo holds the last "spotted me" event from the DX cluster.
+type DXCInfo struct {
+	SpottedBy string  `json:"spottedBy"`
+	FreqKhz   float64 `json:"freqKhz"`
+	Comment   string  `json:"comment,omitempty"`
+	When      string  `json:"when,omitempty"`
+}
+
+// PSKInfo holds PSK Reporter statistics for the dashboard.
+type PSKInfo struct {
+	Total     int            `json:"total"`
+	ByBand    map[string]int `json:"byBand"`
+	UpdatedAt string         `json:"updatedAt,omitempty"`
 }
 
 type ActiveQSO struct {
@@ -206,6 +234,9 @@ type State struct {
 	// Change detection — avoids publishing redundant events.
 	lastRig        RigInfo
 	lastWSJTX      WSJTXInfo
+	lastSolar      SolarInfo
+	lastDXC        DXCInfo
+	lastPSK        PSKInfo
 	lastActiveCall string
 
 	// Session counter — incremented on AddLoggedQSO.
@@ -297,6 +328,52 @@ func (s *State) SetWSJTX(info WSJTXInfo) {
 		s.snapshot.UpdatedAt = timeNow()
 		s.mu.Unlock()
 		s.hub.Publish(EventWSJTX, info)
+	} else {
+		s.mu.Unlock()
+	}
+}
+
+// SetSolar updates solar data and publishes when changed.
+func (s *State) SetSolar(info SolarInfo) {
+	s.mu.Lock()
+	changed := info.SolarFlux != s.lastSolar.SolarFlux ||
+		info.KIndex != s.lastSolar.KIndex
+	s.lastSolar = info
+	if changed {
+		s.snapshot.Solar = &info
+		s.snapshot.UpdatedAt = timeNow()
+		s.mu.Unlock()
+		s.hub.Publish(EventSolar, info)
+	} else {
+		s.mu.Unlock()
+	}
+}
+
+// SetDXC updates the last "spotted me" info and publishes when changed.
+func (s *State) SetDXC(info DXCInfo) {
+	s.mu.Lock()
+	changed := info.SpottedBy != s.lastDXC.SpottedBy
+	s.lastDXC = info
+	if changed {
+		s.snapshot.DXC = &info
+		s.snapshot.UpdatedAt = timeNow()
+		s.mu.Unlock()
+		s.hub.Publish(EventDXC, info)
+	} else {
+		s.mu.Unlock()
+	}
+}
+
+// SetPSK updates PSK Reporter stats and publishes when changed.
+func (s *State) SetPSK(info PSKInfo) {
+	s.mu.Lock()
+	changed := info.Total != s.lastPSK.Total
+	s.lastPSK = info
+	if changed {
+		s.snapshot.PSK = &info
+		s.snapshot.UpdatedAt = timeNow()
+		s.mu.Unlock()
+		s.hub.Publish(EventPSK, info)
 	} else {
 		s.mu.Unlock()
 	}

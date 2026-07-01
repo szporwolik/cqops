@@ -92,7 +92,7 @@ function connectSSE(){
   });
   es.addEventListener('operator',function(e){var o=JSON.parse(e.data).payload;
     D('sse','operator',o.callsign);
-    updateStationField('Operator',o.callsign+(o.name?' ('+o.name+')':''))
+    updateStationField('Operator',(o.callsign||'—')+(o.name?' ('+o.name+')':''))
   });
   es.addEventListener('logbook',function(e){var lb=JSON.parse(e.data).payload;
     D('sse','logbook',lb.name);
@@ -163,6 +163,9 @@ function renderAll(snap){
   // Stats + recent
   renderStats(snap.stats,todayQsos);renderRecentTable(snap.recent);
   // Extra info box above local map
+  if(snap.solar){registerSolarModule(snap.solar)}
+  if(snap.dxc&&snap.dxc.spottedBy){registerDXCModule(snap.dxc)}
+  if(snap.psk&&snap.psk.total>0){registerPSKModule(snap.psk)}
   updateExtraBox();
   // APRS stations on local map
   if(snap.aprs)renderAPRSOnLocalMap(snap.aprs);
@@ -286,7 +289,7 @@ function hideHeroPhoto(){$('hero-photo').style.display='none';$('hero-placeholde
 // ---- Station panel ----
 function renderStation(st,op,lb,rig,wsjtx){
   if(!st)return;op=op||{};lb=lb||{};rig=rig||{};wsjtx=wsjtx||{};
-  var opText=op.callsign||'';if(op.name)opText+=' ('+op.name+')';
+  var opText=(op.callsign||'')?op.callsign+(op.name?' ('+op.name+')':''):'—';
   var rigDot=rig.connected?'<span class=\"status-on\">●</span> Connected':'<span class=\"status-off\">○</span> Disconnected';
   var wsjtxDot=wsjtx.connected?'<span class=\"status-on\">●</span> Online':'<span class=\"status-off\">○</span> Offline';
   var rigFreq=rig.frequency?rig.frequency+(rig.mode?' '+rig.mode:''):'';
@@ -494,19 +497,134 @@ function recentreLocalMapFromStation(st){
   else{recentreLocalMap(ll[0],ll[1])}
 }
 
-// ---- Extra info box above local map ----
+// ---- Extra info box above local map: module cycling ---- 
+var extraModules=[];
+var extraModuleIdx=0;
+var extraCycleTimer=null;
+var solarData=null;
+
+function registerExtraModule(fn){extraModules.push(fn)}
+
+function registerSolarModule(d){
+  solarData=d;
+  // Remove previously registered solar sub-modules.
+  extraModules=extraModules.filter(function(f){return f._id!=='solar'});
+  var sf=d.solarFlux||0, a=d.aIndex||0, k=d.kIndex||0, ss=d.sunspots||0;
+  function sc(v,good,fair){return v<=good?'var(--success)':v<=fair?'var(--warn)':'var(--offline)'}
+  function sn(v){return v||'—'}
+  function cond(v,good,fair){var c=sc(v,good,fair);return'<b style="color:'+c+'">'+sn(v)+'</b>'}
+
+  // Module 1: Solar activity (SFI + Sunspots).
+  var m1=function(){
+    return'<div class="extra-title">Solar Activity</div>'+
+      '<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:4px 12px;font-size:0.85rem">'+
+      '<span><span style="color:var(--dim)">SFI</span> '+cond(sf,100,150)+'</span>'+
+      '<span><span style="color:var(--dim)">Sunspots</span> <b>'+sn(ss)+'</b></span>'+
+      '</div>';
+  };m1._id='solar';
+
+  // Module 2: Geomagnetic field (A + K indices).
+  var m2=function(){
+    return'<div class="extra-title">Geomagnetic Field</div>'+
+      '<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:4px 12px;font-size:0.85rem">'+
+      '<span><span style="color:var(--dim)">A-index</span> '+cond(a,7,15)+'</span>'+
+      '<span><span style="color:var(--dim)">K-index</span> '+cond(k,2.5,4)+'</span>'+
+      '</div>';
+  };m2._id='solar';
+
+  // Module 3: Band conditions (day/night per band).
+  var m3=function(){
+    function bc(v){return v==='Good'?'var(--success)':v==='Fair'?'var(--warn)':'var(--offline)'}
+    var html='<div class="extra-title">Band Conditions</div>'+
+      '<table style="font-size:0.72rem;border-collapse:collapse;margin:0 auto;line-height:1.35">'+
+      '<tr style="color:var(--dim)"><td></td><td style="padding:0 4px">Day</td><td style="padding:0 4px">Night</td></tr>';
+    var bands=[['80-40','80m-40m'],['30-20','30m-20m'],['17-15','17m-15m'],['12-10','12m-10m']];
+    for(var i=0;i<bands.length;i++){
+      var key=bands[i][1],label=bands[i][0];
+      var day=d.bandConditions? (d.bandConditions[key+'_day']||'—'):'—';
+      var night=d.bandConditions? (d.bandConditions[key+'_night']||'—'):'—';
+      html+='<tr>'+
+        '<td style="color:var(--dim);padding-right:6px;text-align:right">'+label+'</td>'+
+        '<td style="padding:0 4px;color:'+bc(day)+';font-weight:600">'+day+'</td>'+
+        '<td style="padding:0 4px;color:'+bc(night)+';font-weight:600">'+night+'</td>'+
+        '</tr>';
+    }
+    html+='</table>';return html;
+  };m3._id='solar';
+
+  extraModules.unshift(m3,m2,m1);
+}
+
+function registerDXCModule(d){
+  extraModules=extraModules.filter(function(f){return f._id!=='dxc'});
+  var mod=function(){
+    var spotter=d.spottedBy||'?';
+    var freq=d.freqKhz? (d.freqKhz/1000).toFixed(3)+' MHz' : '';
+    var comment=d.comment||'';
+    return'<div class="extra-title">Last Spotted By</div>'+
+      '<div style="font-size:1.1rem;font-weight:700;color:var(--accent)">'+spotter+'</div>'+
+      (freq?'<div style="font-size:0.78rem;color:var(--text-secondary)">'+freq+'</div>':'')+
+      (comment?'<div style="font-size:0.7rem;color:var(--dim);margin-top:2px">'+comment+'</div>':'');
+  };
+  mod._id='dxc';
+  extraModules.unshift(mod);
+}
+
+function registerPSKModule(d){
+  extraModules=extraModules.filter(function(f){return f._id!=='psk'});
+  var mod=function(){
+    var html='<div class="extra-title">PSK Reporter</div>'+
+      '<div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:3px">'+d.total+' reports</div>'+
+      '<table style="font-size:0.68rem;border-collapse:collapse;margin:0 auto;line-height:1.3">';
+    var order=['160m','80m','60m','40m','30m','20m','17m','15m','12m','10m','6m','4m','2m','70cm','23cm'];
+    for(var i=0;i<order.length;i++){
+      var b=order[i],count=d.byBand&&d.byBand[b]||0;
+      if(count>0)html+='<tr><td style="color:var(--dim);padding-right:8px;text-align:right">'+b+'</td><td style="font-weight:600">'+count+'</td></tr>';
+    }
+    html+='</table>';return html;
+  };
+  mod._id='psk';
+  extraModules.push(mod);
+}
+
+function cycleExtraModule(){
+  if(!extraModules.length)return;
+  var box=document.getElementById('map-extra-box');
+  var content=document.getElementById('map-extra-content');
+  if(!box||!content||!box.classList.contains('visible'))return;
+  extraModuleIdx=(extraModuleIdx+1)%extraModules.length;
+  content.style.opacity='0';
+  setTimeout(function(){
+    content.innerHTML=extraModules[extraModuleIdx]();
+    content.style.opacity='1';
+  },200);
+}
+
+// Show/hide the extra box and manage the cycle timer.
 function updateExtraBox(){
   var box=document.getElementById('map-extra-box');
   var right=document.getElementById('map-local-right');
   if(!box||!right)return;
-  // Show the box when the right column has enough room for both the
-  // box (min 80px) and the square map (min 180px).
-  if(right.clientHeight>=260){
+  if(right.clientHeight>=300){
     box.classList.add('visible');
-    var content=document.getElementById('map-extra-content');
-    if(content&&!content.textContent)content.textContent='— todo —';
+    if(!extraModules.length){
+      // Default module: CQOps marketing.
+      registerExtraModule(function(){
+        return '<div class="extra-title">CQOps.com</div>'+
+               '<div style="font-size:0.78rem;color:var(--text-secondary)">Fast · Portable · Open Source</div>'+
+               '<div style="font-size:0.7rem;color:var(--dim);margin-top:2px">Ham radio logger for the terminal</div>';
+      });
+    }
+    // Start cycling if not already running.
+    if(!extraCycleTimer){
+      // Render first module immediately.
+      var content=document.getElementById('map-extra-content');
+      if(content)content.innerHTML=extraModules[0]();
+      extraCycleTimer=setInterval(cycleExtraModule,5000);
+    }
   }else{
     box.classList.remove('visible');
+    if(extraCycleTimer){clearInterval(extraCycleTimer);extraCycleTimer=null}
   }
 }
 window.addEventListener('resize',function(){updateExtraBox();if(mapLocal)mapLocal.invalidateSize()});

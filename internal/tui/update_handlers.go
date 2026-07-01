@@ -8,6 +8,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/gen2brain/beeep"
 	"github.com/szporwolik/cqops/internal/applog"
+	"github.com/szporwolik/cqops/internal/dashboard"
+	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/version"
 )
@@ -302,6 +304,20 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			m.psk.viewKey = ""
 			m.psk.spots = nil
 			m.toasts.Info(fmt.Sprintf("PSK Reporter: %d spots updated", len(r.reports)))
+			// Push per-band stats to dashboard.
+			if m.http.client != nil && m.http.online {
+				byBand := make(map[string]int)
+				for _, rpt := range r.reports {
+					band := qso.DeriveBand(rpt.Frequency)
+					if band != "" {
+						byBand[band]++
+					}
+				}
+				m.http.client.State().SetPSK(dashboard.PSKInfo{
+					Total:  len(r.reports),
+					ByBand: byBand,
+				})
+			}
 		}
 		return true, nil
 	case solarFetchMsg:
