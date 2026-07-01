@@ -29,7 +29,7 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 - **Wavelog sync** — upload, incremental download, per-logbook configuration
 - **Encrypted secrets** — AES-256-GCM, machine-tied key, never plaintext
 - **DX Cluster & PSK Reporter** — live spots with filters, spot-to-rig tuning, ASCII propagation map
-- **CQOps Live** — built-in browser dashboard with live map, recent QSOs, stats, QRZ photos, and top operators. Perfect for Field Day displays, club station screens, or remote monitoring — enable in F9 → Integrations
+- **CQOps Live** — built-in browser dashboard with live map, recent QSOs, stats, weather forecast, QRZ photos, and top operators. Perfect for Field Day displays, club station screens, or remote monitoring — enable in F9 → Integrations
 - **APRS** — receive nearby position reports via APRS-IS, display on the Live dashboard map with standard symbols, range circle, callsign popups, and auto-fit. Periodic position beacon with grid locator
 - **Contest logging** — exchange markers, auto serial numbers, ADIF contest ID
 - **Offline-first** — SQLite, cached REF/Solar/DXCC data; `--offline` flag
@@ -123,10 +123,12 @@ Full usage guide, workflows, and keyboard shortcuts are in the [documentation](h
 *Live data (online, cached locally):*
 - [hamqsl.com](https://www.hamqsl.com/) — Solar conditions data (SFI, SSN, A/K indices) by Paul L Herrman N0NBH
 - [PSK Reporter](https://pskreporter.info/) — Real-time propagation spot data by Philip Gladstone
+- [Open-Meteo](https://open-meteo.com/) — Free weather forecast API (CC BY 4.0), fetched browser-side for the CQOps Live dashboard weather row
 
-*CQOps Live dashboard — map tiles, weather radar, Leaflet:*
+*CQOps Live dashboard — map tiles, weather radar, weather forecast, Leaflet:*
 - Map tiles: [OpenStreetMap](https://www.openstreetmap.org/copyright) — © OpenStreetMap contributors (ODbL).
 - Weather radar overlay: [RainViewer](https://www.rainviewer.com/) public API (browser-side, optional, offline-safe). Attribution displayed on-map and in footer.
+- Weather forecast row: [Open-Meteo](https://open-meteo.com/) free API (browser-side, no key required, offline-safe: hidden when disconnected). Attribution in footer. See `licenses/OPEN-METEO-CC-BY-4.0.txt`.
 - Leaflet 1.9.4 bundled under BSD-2. See `licenses/LEAFLET-BSD2-LICENSE`.
 - Leaflet.Terminator (day/night grayline overlay) bundled under MIT. See `licenses/LEAFLET-TERMINATOR-MIT-LICENSE`.
 - All services remain optional. CQOps and CQOps Live work offline with cached/local assets.

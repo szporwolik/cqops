@@ -38,6 +38,39 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #hd-sse-status{font-size:0.8rem}
 .sse-connected{color:var(--success)}.sse-connecting{color:var(--warn)}.sse-disconnected{color:var(--offline)}
 
+/* ── weather row (header extension, below clock) ── */
+#wx-row{display:flex;align-items:center;justify-content:center;gap:6px 18px;flex-wrap:nowrap;padding:4px 0;font-size:0.78rem;color:var(--text-secondary);border-bottom:1px solid var(--border-strong);margin-bottom:4px;min-height:0;overflow:hidden}
+#wx-row.wx-loading{min-height:0;border-bottom:none;margin-bottom:0;padding:0}
+#wx-row .wx-slot{display:flex;align-items:center;gap:4px;white-space:nowrap;flex-shrink:0}
+#wx-row .wx-icon{font-size:1.2rem;line-height:1}
+#wx-row .wx-temp{font-weight:600;color:var(--text)}
+#wx-row .wx-label{font-size:0.65rem;color:var(--dim);text-transform:uppercase}
+#wx-row .wx-wind{font-size:0.7rem}
+#wx-row .wx-wind .wx-wind-unit{font-size:0.6rem}
+#wx-row .wx-warn{color:var(--warn)}
+#wx-row .wx-danger{color:var(--offline)}
+#wx-row .wx-rain{font-size:0.7rem;color:var(--blue)}
+/* Progressive: hide extra slots first, then trim content inside remaining slots. */
+@media(max-width:950px){#wx-row .wx-slot:nth-child(n+6){display:none}}
+@media(max-width:850px){#wx-row .wx-slot:nth-child(n+5){display:none};#wx-row .wx-rain{display:none}}
+@media(max-width:700px){#wx-row .wx-slot:nth-child(n+4){display:none};#wx-row .wx-wind{display:none}}
+@media(max-width:500px){#wx-row{gap:4px 10px;font-size:0.7rem}#wx-row .wx-slot:nth-child(n+3){display:none}#wx-row .wx-label{display:none}}
+@media(max-width:360px){#wx-row{gap:4px 6px}#wx-row .wx-slot:nth-child(n+3){display:none}}
+/* Weather icon animations — subtle, no perf impact. */
+#wx-row .wx-icon{will-change:transform,opacity}
+.wx-anim-sun{animation:wx-sun 3s ease-in-out infinite}
+.wx-anim-cloud{animation:wx-cloud 6s ease-in-out infinite}
+.wx-anim-fog{animation:wx-fog 4s ease-in-out infinite}
+.wx-anim-rain{animation:wx-rain 0.8s ease-in-out infinite}
+.wx-anim-snow{animation:wx-snow 2.5s ease-in-out infinite}
+.wx-anim-storm{animation:wx-storm 1.2s ease-in-out infinite}
+@keyframes wx-sun{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
+@keyframes wx-cloud{0%,100%{transform:translateX(0)}50%{transform:translateX(3px)}}
+@keyframes wx-fog{0%,100%{opacity:0.5}50%{opacity:1}}
+@keyframes wx-rain{0%,100%{transform:translateY(0)}50%{transform:translateY(2px)}}
+@keyframes wx-snow{0%,100%{transform:translateY(0);opacity:0.7}50%{transform:translateY(2px);opacity:1}}
+@keyframes wx-storm{0%,90%,100%{opacity:1}92%,98%{opacity:0.25}}
+
 /* ── overview: hero hidden — header carries all branding ── */
 .mode-overview #hero{display:none}
 .mode-overview #map-table-row{margin-top:2px}

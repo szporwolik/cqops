@@ -155,6 +155,7 @@ function renderAll(snap){
     ownStationLat=snap.station.lat;ownStationLon=snap.station.lon;
     initLocalMap(ownStationLat,ownStationLon);
     recentreLocalMap(ownStationLat,ownStationLon);
+    fetchWeather(snap.station.lat,snap.station.lon);
   }
   renderStation(snap.station,snap.operator,snap.logbook,snap.rig,snap.wsjtx);
   // Active QSO
@@ -195,7 +196,7 @@ function renderAll(snap){
   if(snap.app&&snap.app.version){
     $('footer-text').innerHTML='CQOps Live v'+esc(snap.app.version)+' · <a href=\"https://cqops.com\" style=\"color:var(--accent)\">cqops.com</a>';
   }
-  $('footer-attrib').innerHTML='Map: <a href=\"https://leafletjs.com\" target=\"_blank\" rel=\"noopener\">Leaflet</a> · Tiles: <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener\">&copy; OpenStreetMap</a> · Solar: <a href=\"https://www.hamqsl.com/solar.html\" target=\"_blank\" rel=\"noopener\">HamQSL</a> · Spots: <a href=\"https://pskreporter.info/\" target=\"_blank\" rel=\"noopener\">PSK Reporter</a> · Callbook: <a href=\"https://www.qrz.com\" target=\"_blank\" rel=\"noopener\">QRZ.com</a>'+
+  $('footer-attrib').innerHTML='Map: <a href=\"https://leafletjs.com\" target=\"_blank\" rel=\"noopener\">Leaflet</a> · Tiles: <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener\">&copy; OpenStreetMap</a> · Solar: <a href=\"https://www.hamqsl.com/solar.html\" target=\"_blank\" rel=\"noopener\">HamQSL</a> · Spots: <a href=\"https://pskreporter.info/\" target=\"_blank\" rel=\"noopener\">PSK Reporter</a> · Weather: <a href=\"https://open-meteo.com/\" target=\"_blank\" rel=\"noopener\">Open-Meteo</a> · Callbook: <a href=\"https://www.qrz.com\" target=\"_blank\" rel=\"noopener\">QRZ.com</a>'+
     (snap.dxc&&snap.dxc.connected?' · Cluster: <span style=\"color:var(--dim)\">'+esc(snap.dxc.host||'DX Cluster')+'</span>':'');
   D('renderAll','done');
 }
@@ -1008,6 +1009,82 @@ function guessContinent(c){
   if(as.indexOf(c)>=0)return'Asia';if(oc.indexOf(c)>=0)return'Oceania';if(af.indexOf(c)>=0)return'Africa';return'';
 }
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+
+// ---- Weather: Open-Meteo free API (browser-side fetch) ----
+// Hidden when offline. Refreshes every 15 min or after reconnect.
+var wxTimer=null,wxInterval=null,wxLat=null,wxLon=null,wxEl=null;
+function weatherIcon(code,isDay){var m={
+  0:isDay?'☀️':'🌙',1:'🌤️',2:'⛅',3:'☁️',45:'🌫️',48:'🌫️',
+  51:'🌦️',53:'🌦️',55:'🌧️',56:'🌧️',57:'🌧️',
+  61:'🌧️',63:'🌧️',65:'🌧️',66:'🌧️',67:'🌧️',
+  71:'🌨️',73:'🌨️',75:'🌨️',77:'🌨️',
+  80:'🌦️',81:'🌧️',82:'🌧️',
+  85:'🌨️',86:'🌨️',
+  95:'⛈️',96:'⛈️',99:'⛈️'
+};return m[code]||(isDay?'🌡️':'🌡️')}
+function wxAnimClass(code){if(code===0)return'wx-anim-sun';if(code>=1&&code<=3)return'wx-anim-cloud';if(code===45||code===48)return'wx-anim-fog';if((code>=51&&code<=57)||(code>=61&&code<=67)||(code>=80&&code<=82))return'wx-anim-rain';if((code>=71&&code<=77)||(code>=85&&code<=86))return'wx-anim-snow';if(code>=95&&code<=99)return'wx-anim-storm';return''}
+function fetchWeather(lat,lon){
+  if(!navigator.onLine){wxUpdateVisibility();return}
+  if(wxLat===lat&&wxLon===lon)return;
+  wxLat=lat;wxLon=lon;
+  wxDoFetch();
+  wxStartInterval();
+}
+function wxDoFetch(){
+  if(!navigator.onLine||wxLat==null||wxLon==null)return;
+  var params=new URLSearchParams({latitude:String(wxLat),longitude:String(wxLon),
+    current:'temperature_2m,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m,precipitation,is_day',
+    minutely_15:'temperature_2m,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m,precipitation,is_day',
+    forecast_minutely_15:'13',timezone:'auto',wind_speed_unit:'kmh',precipitation_unit:'mm'});
+  fetch('https://api.open-meteo.com/v1/forecast?'+params,{cache:'no-store'}).then(function(r){return r.json()}).then(function(d){
+    renderWeather(d);
+  }).catch(function(e){D('wx','fetch err',e.message);wxUpdateVisibility()});
+}
+function wxStartInterval(){
+  if(wxInterval)return;
+  wxInterval=setInterval(function(){
+    if(navigator.onLine&&wxLat!=null&&wxLon!=null)wxDoFetch();
+  },15*60*1000);
+}
+function wxUpdateVisibility(){
+  if(!wxEl)wxEl=document.getElementById('wx-row');
+  if(wxEl){
+    if(navigator.onLine)wxEl.style.display='';
+    else{wxEl.style.display='none';wxEl.innerHTML=''}
+  }
+}
+// Listen for online/offline events.
+window.addEventListener('online',function(){
+  wxUpdateVisibility();
+  if(wxLat!=null&&wxLon!=null){wxLat=null;wxLon=null;wxDoFetch();wxStartInterval()}
+});
+window.addEventListener('offline',function(){wxUpdateVisibility()});
+function renderWeather(d){
+  if(!wxEl)wxEl=document.getElementById('wx-row');
+  if(!wxEl||!navigator.onLine){wxUpdateVisibility();return}
+  var now=d.current||{},mn=d.minutely_15||{};
+  var slots=[[0,'Now',now.temperature_2m,now.weather_code,now.wind_speed_10m,now.wind_gusts_10m,now.wind_direction_10m,now.precipitation,now.is_day]];
+  var targets=[30,60,90,120,150,180];
+  var nowTs=Date.now();
+  for(var t=0;t<targets.length;t++){
+    var ts=nowTs+targets[t]*60000,best=-1,bestD=Infinity;
+    for(var i=0;i<mn.time.length;i++){var d=new Date(mn.time[i]).getTime(),diff=Math.abs(d-ts);if(diff<bestD){bestD=diff;best=i}}
+    if(best>=0)slots.push([targets[t],'+'+targets[t]+'m',mn.temperature_2m[best],mn.weather_code[best],mn.wind_speed_10m[best],mn.wind_gusts_10m[best],mn.wind_direction_10m[best],mn.precipitation[best],mn.is_day[best]]);
+  }
+  var windArrow=function(deg){var a=['↓','↙','←','↖','↑','↗','→','↘'];return a[Math.round(deg/45)%8]||'•'};
+  var html='';
+  for(var s=0;s<slots.length;s++){
+    var slot=slots[s],label=slot[1],temp=slot[2],code=slot[3],wSpd=slot[4],wGst=slot[5],wDir=slot[6],precip=slot[7],isDay=slot[8];
+    var gustClass=wGst>50?'wx-danger':wGst>35?'wx-warn':'';
+    html+='<span class="wx-slot"><span class="wx-icon '+wxAnimClass(code)+'">'+weatherIcon(code,isDay)+'</span>'+
+      '<span class="wx-label">'+label+'</span>'+
+      (temp!=null?'<span class="wx-temp">'+Math.round(temp)+'°</span>':'')+
+      (wSpd!=null?'<span class="wx-wind '+gustClass+'">'+Math.round(wSpd)+(wGst!=null&&wGst>wSpd?'/'+Math.round(wGst):'')+'<span class="wx-wind-unit">km/h</span> '+windArrow(wDir||0)+'</span>':'')+
+      (precip!=null&&precip>0?'<span class="wx-rain">'+precip.toFixed(1)+'mm</span>':'')+
+      '</span>';
+  }
+  wxEl.className='';wxEl.innerHTML=html;wxEl.style.display='';
+}
 
 // ---- QSO sound ----
 var _audioCtx=null;
