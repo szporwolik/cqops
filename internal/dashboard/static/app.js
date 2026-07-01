@@ -162,6 +162,8 @@ function renderAll(snap){
   else{switchToOverview();renderHero(null)}
   // Stats + recent
   renderStats(snap.stats,todayQsos);renderRecentTable(snap.recent);
+  // Extra info box above local map
+  updateExtraBox();
   // APRS stations on local map
   if(snap.aprs)renderAPRSOnLocalMap(snap.aprs);
   // Map
@@ -418,7 +420,7 @@ function initMap(cfg){
   (function pollMapSize(){
     if(mapContainer.clientHeight>0){
       map.invalidateSize();
-      setTimeout(function(){map.invalidateSize()},150);
+      setTimeout(function(){map.invalidateSize();updateExtraBox()},150);
       return
     }
     requestAnimationFrame(pollMapSize)
@@ -447,7 +449,7 @@ function initLocalMap(lat,lon){
   (function pollLocalSize(){
     if(lc.clientHeight>0){
       mapLocal.invalidateSize();
-      setTimeout(function(){mapLocal.invalidateSize()},150);
+      setTimeout(function(){mapLocal.invalidateSize();updateExtraBox()},150);
       return
     }
     requestAnimationFrame(pollLocalSize)
@@ -491,6 +493,23 @@ function recentreLocalMapFromStation(st){
   if(!mapLocal){initLocalMap(ll[0],ll[1])}
   else{recentreLocalMap(ll[0],ll[1])}
 }
+
+// ---- Extra info box above local map ----
+function updateExtraBox(){
+  var box=document.getElementById('map-extra-box');
+  var right=document.getElementById('map-local-right');
+  if(!box||!right)return;
+  // Show the box when the right column has enough room for both the
+  // box (min 80px) and the square map (min 180px).
+  if(right.clientHeight>=260){
+    box.classList.add('visible');
+    var content=document.getElementById('map-extra-content');
+    if(content&&!content.textContent)content.textContent='— todo —';
+  }else{
+    box.classList.remove('visible');
+  }
+}
+window.addEventListener('resize',function(){updateExtraBox();if(mapLocal)mapLocal.invalidateSize()});
 
 // ---- RainViewer weather radar overlay ----
 var radarLayer=null,radarLayerLocal=null,radarEnabled=false,radarLoading=false,radarTimer=null;

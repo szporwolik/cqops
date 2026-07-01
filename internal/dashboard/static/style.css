@@ -87,9 +87,15 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 /* ── map row (full width, fills remaining vertical space) ── */
 #map-table-row{flex:1 1 40%;min-height:250px;display:flex;gap:10px;margin-bottom:10px}
 #map-panel{flex:7;background:linear-gradient(180deg,#FFFFFF 0%,var(--surface-soft) 100%);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;border:1px solid var(--border-strong);box-shadow:0 8px 24px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.8) inset}
-#map-local-panel{flex:3;background:linear-gradient(180deg,#FFFFFF 0%,var(--surface-soft) 100%);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;border:1px solid var(--border-strong);box-shadow:0 8px 24px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.8) inset}
+#map-local-panel{flex:1;min-height:180px;background:linear-gradient(180deg,#FFFFFF 0%,var(--surface-soft) 100%);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;border:1px solid var(--border-strong);box-shadow:0 8px 24px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.8) inset}
 #map-container{flex:1;background:var(--blue-xsoft);position:relative}
 #map-local-container{flex:1;background:var(--blue-xsoft);position:relative}
+/* Right column wrapper: extra box on top, square map below. */
+#map-local-right{flex:3;min-width:0;display:flex;flex-direction:column;gap:10px}
+/* Extra info box — separate from the map panel, own border and styling. */
+#map-extra-box{flex:0 0 auto;min-height:0;display:none;padding:8px 12px;overflow:hidden;background:linear-gradient(180deg,#FFFFFF 0%,var(--surface-soft) 100%);border-radius:8px;border:1px solid var(--border-strong);box-shadow:0 4px 12px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.7) inset}
+#map-extra-box.visible{display:flex;align-items:center;justify-content:center;min-height:80px}
+#map-extra-content{font-size:0.85rem;color:var(--dim);text-align:center}
 #map-container .leaflet-container{width:100%!important;height:100%!important;position:absolute!important;top:0;left:0}
 #map-local-container .leaflet-container{width:100%!important;height:100%!important;position:absolute!important;top:0;left:0}
 /* APRS symbol markers — no extra border/background on the container */
@@ -109,7 +115,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 @keyframes flash{from{background:var(--blue-soft);color:var(--blue-dark)}to{background:transparent;color:inherit}}
 
 /* ── bottom row cards ── */
-main{display:flex;gap:12px;margin-bottom:10px;flex:0 0 auto;max-height:35vh;overflow-y:auto}
+main{display:flex;gap:10px;margin-bottom:10px;flex:0 0 auto;max-height:35vh;overflow-y:auto}
 .mode-active main{opacity:0.85}
 .panel{flex:1;background:linear-gradient(180deg,#FFFFFF 0%,var(--surface-soft) 100%);border-radius:8px;padding:10px 14px;min-width:0;border:1px solid var(--border);box-shadow:0 8px 20px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.7) inset}
 .panel-narrow{flex:0.40}
@@ -173,8 +179,9 @@ footer a:hover{text-decoration:underline}
   #hero-badges .badge{font-size:0.75rem;padding:2px 8px}
   #hero-identity{font-size:0.82rem}
   #hero-refs{font-size:0.75rem}
-  #map-table-row{margin-bottom:4px}
-  main{gap:5px;margin-bottom:3px}
+  #map-table-row{gap:6px;margin-bottom:4px}
+  #map-local-right{gap:6px}
+  main{gap:6px;margin-bottom:4px}
   .panel{padding:6px 10px}
   #recent-table-wrap{max-height:200px}
   .panel h2{margin-bottom:2px;font-size:0.72rem}
@@ -198,7 +205,8 @@ footer a:hover{text-decoration:underline}
   #hero-refs{font-size:0.65rem}
   #hero-label{font-size:0.65rem}
   #recent-table{font-size:0.68rem}
-  #map-table-row{margin-bottom:3px}
+  #map-table-row{gap:4px;margin-bottom:3px}
+  #map-local-right{gap:4px}
   main{gap:4px;margin-bottom:2px}
   .panel{padding:4px 7px}
   #recent-table-wrap{max-height:140px}
@@ -224,7 +232,8 @@ footer a:hover{text-decoration:underline}
   #hero-label{font-size:0.55rem}
   #recent-table{font-size:0.62rem}
   #recent-table th,#recent-table td{padding:1px 2px}
-  #map-table-row{margin-bottom:2px}
+  #map-table-row{gap:3px;margin-bottom:2px}
+  #map-local-right{gap:3px}
   main{gap:3px;margin-bottom:2px}
   .panel{padding:3px 6px}
   #recent-table-wrap{max-height:100px}
@@ -241,6 +250,8 @@ footer a:hover{text-decoration:underline}
   #hero{display:none}
   #recent-table{font-size:0.55rem}
   main{gap:2px}
+  #map-table-row{gap:2px;margin-bottom:1px}
+  #map-local-right{gap:2px}
   #recent-table-wrap{max-height:70px}
   .panel{padding:2px 4px}
   .panel h2{font-size:0.55rem}
@@ -271,7 +282,8 @@ footer a:hover{text-decoration:underline}
   #hero-identity{font-size:0.82rem}
   #hero-photo-box{width:clamp(120px,28vw,200px);height:clamp(90px,20vw,150px)}
   #hero-badges .badge{font-size:0.7rem;padding:2px 7px}
-  #map-table-row{flex-direction:column;gap:6px;min-height:420px}
+  #map-table-row{flex-direction:column;gap:6px;min-height:420px;margin-bottom:6px}
+  #map-local-right{gap:6px}
   #map-local-panel{min-height:160px}
   #recent-table{font-size:0.68rem}
   #recent-table th,#recent-table td{padding:1px 3px}
@@ -291,7 +303,8 @@ footer a:hover{text-decoration:underline}
   #hero-photo-box{width:100%;height:clamp(100px,30vw,160px)}
   .mode-active #hero-active{flex-direction:column;gap:8px}
   #recent-table{font-size:0.6rem}
-  #map-table-row{flex-direction:column;gap:4px;min-height:380px}
+  #map-table-row{flex-direction:column;gap:4px;min-height:380px;margin-bottom:4px}
+  #map-local-right{gap:4px}
   #map-local-panel{min-height:140px}
   main{flex-direction:column;gap:4px}
   .panel{flex:1 1 100%}
@@ -315,11 +328,9 @@ footer a:hover{text-decoration:underline}
   #hero-photo-box{width:clamp(160px,15vw,240px);height:clamp(110px,9vw,165px)}
   /* map */
   #recent-table{font-size:0.82rem}
-  #map-table-row{margin-bottom:12px}
-  /* bottom panels */
-  /* APRS symbol markers — no extra border/background on the container */
-  .aprs-symbol-marker{background:transparent!important;border:none!important}
-  main{gap:14px;margin-bottom:12px}
+  #map-table-row{gap:12px;margin-bottom:12px}
+  #map-local-right{gap:12px}
+  main{gap:12px;margin-bottom:12px}
   .panel{padding:12px 16px}
   .panel h2{font-size:0.88rem;margin-bottom:8px}
   .panel dt{font-size:0.84rem}

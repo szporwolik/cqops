@@ -23,6 +23,7 @@ func NewMux(state *State, hub *Hub) *http.ServeMux {
 	mux.HandleFunc("/leaflet.js", serveStaticFile("static/leaflet.js", "application/javascript"))
 	mux.HandleFunc("/leaflet.css", serveStaticFile("static/leaflet.css", "text/css"))
 	mux.HandleFunc("/terminator.js", serveStaticFile("static/terminator.js", "application/javascript"))
+	mux.HandleFunc("/favicon.ico", serveStaticFile("static/favicon.ico", "image/x-icon"))
 	mux.HandleFunc("/images/marker-icon.png", serveStaticFile("static/images/marker-icon.png", "image/png"))
 	mux.HandleFunc("/images/marker-icon-2x.png", serveStaticFile("static/images/marker-icon-2x.png", "image/png"))
 	mux.HandleFunc("/images/marker-shadow.png", serveStaticFile("static/images/marker-shadow.png", "image/png"))
