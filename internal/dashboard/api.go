@@ -115,7 +115,11 @@ func handleAPRS(state *State) http.HandlerFunc {
 			return
 		}
 		snap := state.Snapshot()
-		writeJSON(w, http.StatusOK, snap.APRS)
+		aprs := snap.APRS
+		if aprs == nil {
+			aprs = []APRSStation{}
+		}
+		writeJSON(w, http.StatusOK, aprs)
 	}
 }
 

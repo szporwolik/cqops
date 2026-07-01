@@ -35,6 +35,9 @@ func (m *Model) saveQSO() tea.Cmd {
 		m.dupeConfirmed = true
 		m.toasts.Warn("DUPE! " + strings.TrimSpace(m.fields[fieldCall].Value()) + " already logged on this band/mode today — press Enter again to log anyway")
 		m.rc.pathSig = "" // invalidate path row cache to show DUPE badge
+		if m.App.Config.General.Notifications.BeepOnError {
+			_ = beeep.Beep(beeep.DefaultFreq, beeep.DefaultDuration)
+		}
 		return nil
 	}
 	m.dupeConfirmed = false
