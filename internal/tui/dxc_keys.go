@@ -153,7 +153,7 @@ func (m *Model) dxcFillFromSelected() tea.Cmd {
 	}
 
 	// Clear call-dependent state only when the call actually changes.
-	prevCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+	prevCall := qso.NormalizeCall(m.fields[fieldCall].Value())
 	if !strings.EqualFold(spot.DXCall, prevCall) {
 		m.lookup.partnerData = nil
 		m.lookup.wlPrivateData = nil

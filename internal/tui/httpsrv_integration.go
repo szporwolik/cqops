@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"math"
 	"regexp"
 	"strings"
 	"time"
@@ -11,6 +10,7 @@ import (
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/dashboard"
+	"github.com/szporwolik/cqops/internal/geo"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/version"
@@ -636,21 +636,7 @@ func (m *Model) pushDashboardRecent(ds *dashboard.State) {
 // loadRecentFromDate loads up to <limit> QSOs with qso_date >= date,
 // ordered newest-first.
 func (m *Model) loadRecentFromDate(date string, limit int) ([]qso.QSO, error) {
-	all, err := store.ListQSOsFromDate(m.App.DB, date)
-	if err != nil {
-		return nil, err
-	}
-	// ListQSOsFromDate returns ASC; take the last <limit> items (newest).
-	start := len(all) - limit
-	if start < 0 {
-		start = 0
-	}
-	// Reverse so newest is first.
-	result := make([]qso.QSO, 0, limit)
-	for i := len(all) - 1; i >= start; i-- {
-		result = append(result, all[i])
-	}
-	return result, nil
+	return store.ListQSOsFromDate(m.App.DB, date, limit)
 }
 
 func (m *Model) pushDashboardToday(ds *dashboard.State) {
@@ -667,15 +653,15 @@ func (m *Model) pushDashboardToday(ds *dashboard.State) {
 		}
 	}
 
-	// Load QSOs from minDate through today.
-	qsos, err := store.ListQSOsFromDate(m.App.DB, minDate)
+	// Load QSOs from minDate through today (capped at 5000).
+	qsos, err := store.ListQSOsFromDate(m.App.DB, minDate, 5000)
 	if err != nil {
 		applog.Debug("dashboard: cannot load QSOs from date", "minDate", minDate, "error", err)
 		return
 	}
 	// If today has very few QSOs (midnight crossing), also include yesterday.
 	if len(qsos) < 5 && minDate == today && yesterday > minDate {
-		yQsos, yErr := store.ListQSOsFromDate(m.App.DB, yesterday)
+		yQsos, yErr := store.ListQSOsFromDate(m.App.DB, yesterday, 5000)
 		if yErr == nil {
 			qsos = append(yQsos, qsos...)
 		}
@@ -715,11 +701,7 @@ func (m *Model) pushDashboardToday(ds *dashboard.State) {
 		}
 		views = append(views, view)
 	}
-	// Reverse: DB returns ASC, JS expects newest-first (matching
-	// appendTodayQSO which prepends).
-	for i, j := 0, len(views)-1; i < j; i, j = i+1, j-1 {
-		views[i], views[j] = views[j], views[i]
-	}
+	// DB returns newest-first; JS expects newest-first (matching appendTodayQSO).
 	ds.SetToday(views)
 	applog.Debug("dashboard: pushed today QSOs", "count", len(views))
 }
@@ -780,7 +762,7 @@ func (m *Model) pushDashboardAPRS(ds *dashboard.State) {
 		}
 		// Distance filter: only include stations within the configured radius.
 		if radiusKm > 0 && stLat != 0 && stLon != 0 {
-			d := haversineKm(stLat, stLon, s.Lat, s.Lon)
+			d := geo.HaversineKm(stLat, stLon, s.Lat, s.Lon)
 			if d > radiusKm {
 				continue
 			}
@@ -797,15 +779,4 @@ func (m *Model) pushDashboardAPRS(ds *dashboard.State) {
 		})
 	}
 	ds.SetAPRS(view)
-}
-
-// haversineKm computes the great-circle distance between two points in km.
-func haversineKm(lat1, lon1, lat2, lon2 float64) float64 {
-	const R = 6371.0 // Earth radius in km
-	dLat := (lat2 - lat1) * (math.Pi / 180)
-	dLon := (lon2 - lon1) * (math.Pi / 180)
-	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
-		math.Cos(lat1*(math.Pi/180))*math.Cos(lat2*(math.Pi/180))*
-			math.Sin(dLon/2)*math.Sin(dLon/2)
-	return R * 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
 }

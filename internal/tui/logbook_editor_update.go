@@ -208,7 +208,10 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Download progress — route keys to the dialog (Abort button).
 		if le.dlActive && le.dialog != nil {
 			updated, _ := le.dialog.Update(msg)
-			d := updated.(DialogModel)
+			d, ok := updated.(DialogModel)
+			if !ok {
+				return le, le.readDownloadMsg
+			}
 			*le.dialog = d
 			if d.Done() {
 				le.dialog = nil
@@ -225,7 +228,10 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Download/import result — route keys to the dialog (OK button).
 		if le.mode == edModeWLDownloadResult && le.dialog != nil {
 			updated, _ := le.dialog.Update(msg)
-			d := updated.(DialogModel)
+			d, ok := updated.(DialogModel)
+			if !ok {
+				return le, nil
+			}
 			*le.dialog = d
 			if d.Done() {
 				le.dialog = nil
@@ -236,7 +242,10 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if le.mode == edModeImportResult && le.dialog != nil {
 			updated, _ := le.dialog.Update(msg)
-			d := updated.(DialogModel)
+			d, ok := updated.(DialogModel)
+			if !ok {
+				return le, nil
+			}
 			*le.dialog = d
 			if d.Done() {
 				le.dialog = nil
@@ -247,7 +256,10 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if le.mode == edModeExportResult && le.dialog != nil {
 			updated, _ := le.dialog.Update(msg)
-			d := updated.(DialogModel)
+			d, ok := updated.(DialogModel)
+			if !ok {
+				return le, nil
+			}
 			*le.dialog = d
 			if d.Done() {
 				le.dialog = nil
@@ -260,7 +272,10 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Confirm modes — route keys to the dialog with left/right navigation.
 		if le.isModalMode() && le.dialog != nil {
 			updated, _ := le.dialog.Update(msg)
-			d := updated.(DialogModel)
+			d, ok := updated.(DialogModel)
+			if !ok {
+				return le, nil
+			}
 			*le.dialog = d
 			if d.Done() {
 				if d.Result.Confirmed && d.Result.Value != "cancel" {

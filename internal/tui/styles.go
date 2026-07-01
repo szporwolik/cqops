@@ -94,7 +94,6 @@ type Styles struct {
 	MapOwn     lipgloss.Style
 	MapPartner lipgloss.Style
 	MapBoth    lipgloss.Style
-	MapGrid    lipgloss.Style
 
 	// Band plan tabs
 	TabActive    lipgloss.Style
@@ -107,8 +106,6 @@ type Styles struct {
 	ConfirmBtn    lipgloss.Style
 	ConfirmBtnDim lipgloss.Style
 	ConfirmDanger lipgloss.Style
-	ConfirmHint   lipgloss.Style
-	ConfirmHelp   lipgloss.Style
 }
 
 var S = Styles{
@@ -165,7 +162,6 @@ var S = Styles{
 	MapOwn:     lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Background(lipgloss.Color("0")).Bold(true),
 	MapPartner: lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Background(lipgloss.Color("0")).Bold(true),
 	MapBoth:    lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Background(lipgloss.Color("0")).Bold(true),
-	MapGrid:    lipgloss.NewStyle().Foreground(P.TextMuted),
 
 	TabActive:    lipgloss.NewStyle().Bold(true).Foreground(P.Cursor),
 	TabInactive:  lipgloss.NewStyle().Foreground(P.TextMuted),
@@ -176,8 +172,6 @@ var S = Styles{
 	ConfirmBtn:    lipgloss.NewStyle().Bold(true).Foreground(P.Text).Background(P.Primary).Padding(0, 2),
 	ConfirmBtnDim: lipgloss.NewStyle().Foreground(P.TextDim).Padding(0, 2),
 	ConfirmDanger: lipgloss.NewStyle().Bold(true).Foreground(P.Text).Background(P.Error).Padding(0, 2),
-	ConfirmHint:   lipgloss.NewStyle().Foreground(P.TextDim),
-	ConfirmHelp:   lipgloss.NewStyle().Foreground(P.TextDim),
 }
 
 // Package-level style aliases.

@@ -58,10 +58,11 @@ func (s *Server) Start() {
 	applog.Info("dashboard: starting", "addr", s.addr)
 
 	mux := NewMux(s.state, s.hub)
+	handler := securityHeaders(mux)
 
 	srv := &http.Server{
 		Addr:         s.addr,
-		Handler:      mux,
+		Handler:      handler,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 0, // disabled — SSE streams never finish writing
 		IdleTimeout:  120 * time.Second,
@@ -131,3 +132,24 @@ func (s *Server) Error() error {
 
 // Addr returns the address the server was configured to listen on.
 func (s *Server) Addr() string { return s.addr }
+
+// securityHeaders wraps an http.Handler with basic hardening headers suitable
+// for a same-origin LAN dashboard. Not a substitute for a reverse proxy in
+// untrusted environments.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		// Restrict to same-origin by default; style-src 'unsafe-inline'
+		// needed for Leaflet. If your deployment needs external map tiles
+		// or weather APIs, adjust img-src and connect-src accordingly.
+		w.Header().Set("Content-Security-Policy",
+			"default-src 'self'; "+
+				"script-src 'self'; "+
+				"style-src 'self' 'unsafe-inline'; "+
+				"img-src 'self' data: https:; "+
+				"connect-src 'self' https:; "+
+				"font-src 'self'")
+		next.ServeHTTP(w, r)
+	})
+}

@@ -256,8 +256,8 @@ type RigPreset struct {
 	Antenna         string `yaml:"antenna"`
 	Power           string `yaml:"power"`
 	RadioBackend    string `yaml:"radio_backend,omitempty"` // "" | "flrig" | "hamlib"
-	Backend         string `yaml:"backend,omitempty"`       // deprecated — migrated to RadioBackend
-	FlrigEnabled    bool   `yaml:"flrig_enabled,omitempty"`
+	Backend         string `yaml:"backend,omitempty"`       // DEPRECATED: migrated to RadioBackend in Load() — remove after v1.0
+	FlrigEnabled    bool   `yaml:"flrig_enabled,omitempty"` // DEPRECATED: migrated to RadioBackend in Load() — remove after v1.0
 	FlrigHost       string `yaml:"flrig_host,omitempty"`
 	FlrigPort       string `yaml:"flrig_port,omitempty"`
 	HamlibRadioHost string `yaml:"hamlib_radio_host,omitempty"`
@@ -400,6 +400,24 @@ func (c *Config) Validate() error {
 	grid := strings.TrimSpace(lb.Station.Grid)
 	if grid != "" && !qso.IsValidLocator(grid) {
 		return fmt.Errorf("station grid %q is not a valid Maidenhead locator", grid)
+	}
+	if lb.Station.IARURegion != 0 && (lb.Station.IARURegion < 1 || lb.Station.IARURegion > 3) {
+		return fmt.Errorf("station iaru_region must be 1, 2, or 3, got %d", lb.Station.IARURegion)
+	}
+	if lb.Station.CQZone != 0 && (lb.Station.CQZone < 1 || lb.Station.CQZone > 40) {
+		return fmt.Errorf("station cq_zone must be 1-40, got %d", lb.Station.CQZone)
+	}
+	if lb.Station.ITUZone != 0 && (lb.Station.ITUZone < 1 || lb.Station.ITUZone > 90) {
+		return fmt.Errorf("station itu_zone must be 1-90, got %d", lb.Station.ITUZone)
+	}
+
+	// --- HTTPServer ---
+	if c.Integrations.HTTPServer.Enabled {
+		if c.Integrations.HTTPServer.Port != "" {
+			if p, err := strconv.Atoi(c.Integrations.HTTPServer.Port); err != nil || p < 1 || p > 65535 {
+				return fmt.Errorf("http_server.port must be 1-65535, got %q", c.Integrations.HTTPServer.Port)
+			}
+		}
 	}
 
 	// --- QRZ ---

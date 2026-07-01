@@ -66,7 +66,7 @@ func (mr *mapRenderer) Invalidate() {
 func (mr *mapRenderer) View(ownLat, ownLon, partnerLat, partnerLon float64, mapW, mapAvailH int, drawGrayline bool) string {
 	base := mr.renderBase(mapW, mapAvailH, drawGrayline)
 	if base == "" {
-		return renderWorldMap(ownLat, ownLon, partnerLat, partnerLon, mapW, mapAvailH)
+		return ""
 	}
 	// Use the cached (possibly adjusted) dimensions — not the requested ones.
 	return mr.drawMarkers(base, ownLat, ownLon, partnerLat, partnerLon, mr.cacheW, mr.cacheH)

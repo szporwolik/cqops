@@ -166,7 +166,7 @@ type APRSStation struct {
 	Symbol    string    `json:"symbol,omitempty"`
 	Comment   string    `json:"comment,omitempty"`
 	Course    int       `json:"course,omitempty"`
-	SpeedKmH  int       `json:"speedKmh,omitempty"`
+	SpeedKmH  int       `json:"speedKmH,omitempty"`
 	LastHeard time.Time `json:"lastHeard"`
 }
 
@@ -475,8 +475,12 @@ func (s *State) SetRecent(views []QSOView) {
 	s.hub.Publish(EventRecentQSOs, recent)
 }
 
-// SetToday replaces the full today QSO list (for map display, uncapped).
+// SetToday replaces the full today QSO list (for map display). Capped at 5000 to
+// prevent OOM on large event logbooks on low-memory devices.
 func (s *State) SetToday(views []QSOView) {
+	if len(views) > 5000 {
+		views = views[:5000]
+	}
 	s.mu.Lock()
 	s.snapshot.Today = views
 	s.snapshot.UpdatedAt = timeNow()

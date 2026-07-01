@@ -122,7 +122,10 @@ func (oc *OperatorChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Skip – dialog not yet created.
 			} else {
 				updated, _ := oc.dialog.Update(msg)
-				d := updated.(DialogModel)
+				d, ok := updated.(DialogModel)
+				if !ok {
+					return oc, nil
+				}
 				*oc.dialog = d
 				if d.Done() {
 					if d.Result.Value == "delete" {

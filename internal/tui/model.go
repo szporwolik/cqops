@@ -484,7 +484,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.spotDialog != nil {
 		if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
 			updated, spotCmd := m.spotDialog.Update(keyMsg)
-			*m.spotDialog = updated.(SpotDialog)
+			sd, ok := updated.(SpotDialog)
+			if !ok {
+				return m, cmd
+			}
+			*m.spotDialog = sd
 			if m.spotDialog.Done() {
 				if m.spotDialog.Result.Confirmed {
 					cmd = tea.Batch(cmd, m.sendSpotCmd(m.spotDialog.Call, m.spotDialog.FreqKhz, m.spotDialog.Result.Comment))
@@ -514,7 +518,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.confirm != nil {
 		if _, ok := msg.(tea.KeyPressMsg); ok {
 			updated, _ := m.confirm.Update(msg)
-			*m.confirm = updated.(DialogModel)
+			d, ok := updated.(DialogModel)
+			if !ok {
+				return m, cmd
+			}
+			*m.confirm = d
 			if m.confirm.Done() {
 				if m.confirm.Result.Confirmed && m.confirm.Result.Value == "quit" {
 					m.shutdownConnections()

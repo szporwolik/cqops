@@ -309,8 +309,8 @@ function renderStation(st,op,lb,rig,wsjtx){
   var wsjtxDot=wsjtx.connected?'<span class=\"status-on\">●</span> Online':'<span class=\"status-off\">○</span> Offline';
   var rigFreq=rig.frequency?rig.frequency+(rig.mode?' '+rig.mode:''):'';
   stationFields.innerHTML=[
-    ['Operator',opText||'—'],['Logbook',lb.name||'—'],['Locator',st.locator||'—'],
-    ['Radio',st.radio||'—'],['Antenna',st.antenna||'—'],['Power',st.powerW?st.powerW+' W':'—'],
+    ['Operator',esc(opText||'—')],['Logbook',esc(lb.name||'—')],['Locator',esc(st.locator||'—')],
+    ['Radio',esc(st.radio||'—')],['Antenna',esc(st.antenna||'—')],['Power',st.powerW?st.powerW+' W':'—'],
     ['Rig',rigDot],['WSJT-X',wsjtxDot],['Frequency',rigFreq]
   ].map(function(r){return'<dt>'+r[0]+'</dt><dd id=\"sf-'+r[0]+'\">'+r[1]+'</dd>'}).join('');
 }
@@ -387,14 +387,14 @@ function renderRecentTable(qsos){
     var utc=q.timeUtc?q.timeUtc.slice(11,16).replace(':','')+'Z':'';
     var ctry=(q.country||'').replace(/^The\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Federal Republic Of\s+/,'').trim().substring(0,22);
     var dist=formatDistDir(q.grid);
-    return'<tr><td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+(q.band||'')+'</td><td>'+(q.mode||'')+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+(q.grid||'')+'">'+dist+'</td><td title="'+(q.country||'')+'">'+esc(ctry)+'</td></tr>';
+    return'<tr><td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+esc(q.band||'')+'</td><td>'+esc(q.mode||'')+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td title="'+esc(q.country||'')+'">'+esc(ctry)+'</td></tr>';
   }).join('');
 }
 function prependRecentRow(q){
   var utc=q.timeUtc?q.timeUtc.slice(11,16).replace(':','')+'Z':'';
   var dist=formatDistDir(q.grid);
   var row=document.createElement('tr');row.className='new-row';
-  row.innerHTML='<td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+(q.band||'')+'</td><td>'+(q.mode||'')+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+(q.grid||'')+'">'+dist+'</td><td>'+(q.country||'')+'</td>';
+  row.innerHTML='<td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+esc(q.band||'')+'</td><td>'+esc(q.mode||'')+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td>'+esc(q.country||'')+'</td>';
   if(recentBody.firstChild)recentBody.insertBefore(row,recentBody.firstChild);else recentBody.appendChild(row);
   while(recentBody.children.length>8)recentBody.removeChild(recentBody.lastChild);
 }
@@ -577,9 +577,9 @@ function registerDXCModule(d){
     var freq=d.freqKhz? (d.freqKhz/1000).toFixed(3)+' MHz' : '';
     var comment=d.comment||'';
     return'<div class="extra-title">Last Spotted By</div>'+
-      '<div style="font-size:1.1rem;font-weight:700;color:var(--accent)">'+spotter+'</div>'+
+      '<div style="font-size:1.1rem;font-weight:700;color:var(--accent)">'+esc(spotter)+'</div>'+
       (freq?'<div style="font-size:0.78rem;color:var(--text-secondary)">'+freq+'</div>':'')+
-      (comment?'<div style="font-size:0.7rem;color:var(--dim);margin-top:2px">'+comment+'</div>':'');
+      (comment?'<div style="font-size:0.7rem;color:var(--dim);margin-top:2px">'+esc(comment)+'</div>':'');
   };
   mod._id='dxc';
   extraModules.unshift(mod);
@@ -872,7 +872,7 @@ function _renderAprsMarker(s,bounds){
   var ago=Math.round((Date.now()-new Date(s.lastHeard).getTime())/60000);
   popup+='<br>'+ago+' min ago';
   if(s.course)popup+='<br>Course: '+s.course+'°';
-  if(s.speedKmh)popup+='<br>'+s.speedKmh+' km/h';
+  if(s.speedKmH)popup+='<br>'+s.speedKmH+' km/h';
   var m=_aprMarker(s);
   m.bindPopup(popup);
   aprsMarkerLayer.addLayer(m);
@@ -1001,16 +1001,29 @@ function greatCirclePoints(lat1,lon1,lat2,lon2,steps){
 // ---- Math (browser-side, keeps Go lean) ----
 function gridToLatLon(grid){
   grid=grid.toUpperCase().trim();if(grid.length<4)return[0,0];
-  var lon=(grid.charCodeAt(0)-65)*20-180,lat=(grid.charCodeAt(1)-65)*10-90;
+  var c0=grid.charCodeAt(0),c1=grid.charCodeAt(1);
+  if(c0<65||c0>82||c1<65||c1>82)return[0,0]; // field must be A-R
+  var lon=(c0-65)*20-180,lat=(c1-65)*10-90;
   lon+=(grid.charCodeAt(2)-48)*2;lat+=(grid.charCodeAt(3)-48)*1;
   if(grid.length>=6){
-    // 5th char → subsquare longitude (5′ steps), 6th char → latitude (2.5′ steps).
-    lon+=(grid.charCodeAt(4)-65)*(5/60);
-    lat+=(grid.charCodeAt(5)-65)*(2.5/60);
-    // Center of the 5′×2.5′ subsquare — matches locator.ToLatLon in Go.
+    var c4=grid.charCodeAt(4),c5=grid.charCodeAt(5);
+    if(c4<65||c4>88||c5<65||c5>88)return[0,0]; // subsquare must be A-X
+    lon+=(c4-65)*(5/60);
+    lat+=(c5-65)*(2.5/60);
     lon+=2.5/60;lat+=1.25/60;
+    if(grid.length>=8){
+      lon+=(grid.charCodeAt(6)-48)*(0.5/60);
+      lat+=(grid.charCodeAt(7)-48)*(0.25/60);
+      lon+=0.25/60;lat+=0.125/60;
+      if(grid.length>=10){
+        var c8=grid.charCodeAt(8),c9=grid.charCodeAt(9);
+        if(c8<65||c8>88||c9<65||c9>88)return[0,0]; // extended must be A-X
+        lon+=(c8-65)*(0.5/60/24);
+        lat+=(c9-65)*(0.25/60/24);
+        lon+=0.5/60/48;lat+=0.25/60/48;
+      }
+    }
   }else{
-    // Center of the 2°×1° square (4-char grid).
     lon+=1;lat+=0.5;
   }
   return[lat,lon];

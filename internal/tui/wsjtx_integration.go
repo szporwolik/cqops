@@ -18,6 +18,9 @@ import (
 // =============================================================================
 
 // applyWSJTXStatus applies a WSJT-X status update to the QSO form fields.
+// IMPORTANT: This function is only called from the Bubble Tea Update loop
+// (single goroutine). Do NOT call it directly from WSJT-X listener callbacks
+// or other goroutines — use tea.Cmd to send a message instead.
 func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode, report, txMessage string, transmitting bool) {
 	if !m.wsjtx.online && m.toasts != nil {
 		m.toasts.Success("WSJT-X connected")
@@ -27,7 +30,7 @@ func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode
 	m.wsjtx.lastSeen = time.Now()
 	m.wsjtx.tx = transmitting
 	if call != "" {
-		prevCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+		prevCall := qso.NormalizeCall(m.fields[fieldCall].Value())
 		newCall := strings.ToUpper(call)
 		if prevCall != newCall {
 			m.fields[fieldCall].SetValue(call)

@@ -85,7 +85,10 @@ func (rc *RigChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Skip - dialog not yet created
 			} else {
 				updated, _ := rc.dialog.Update(msg)
-				d := updated.(DialogModel)
+				d, ok := updated.(DialogModel)
+				if !ok {
+					return rc, nil
+				}
 				*rc.dialog = d
 				if d.Done() {
 					if d.Result.Value == "delete" {

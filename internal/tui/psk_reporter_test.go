@@ -67,10 +67,10 @@ func TestFreqToBandName(t *testing.T) {
 		{28_100_000, "10m"},
 		{28_500_000, "10m"},
 		// Edge cases.
-		{1_799_000, "other"},  // just below 160m
-		{2_000_000, "other"},  // just above 160m
-		{5_000_000, "other"},  // 60m — not in our table
-		{50_000_000, "other"}, // 6m — not in our table
+		{1_799_000, "other"}, // just below 160m
+		{2_000_000, "160m"},  // top of 160m band (1.8–2.0 MHz)
+		{5_300_000, "60m"},   // 60m band (5.06–5.45 MHz)
+		{50_100_000, "6m"},   // 6m band (50–54 MHz)
 		{0, "other"},
 	}
 

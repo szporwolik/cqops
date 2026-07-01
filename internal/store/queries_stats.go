@@ -153,7 +153,9 @@ func GetDashboardStats(db *sql.DB, startDate string) (DashboardStats, error) {
 	// Rate: QSOs in the last hour.
 	var lastHour int
 	oneHourAgo := time.Now().UTC().Add(-1 * time.Hour).Format("20060102150405")
-	_ = db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE qso_date || time_on >= ?`, oneHourAgo).Scan(&lastHour)
+	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE qso_date || time_on >= ?`, oneHourAgo).Scan(&lastHour); err != nil {
+		lastHour = 0
+	}
 	s.RatePerHour = float64(lastHour)
 
 	return s, nil

@@ -171,7 +171,10 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Skip - dialog not yet created
 			} else {
 				updated, _ := c.dialog.Update(msg)
-				d := updated.(DialogModel)
+				d, ok := updated.(DialogModel)
+				if !ok {
+					return c, nil
+				}
 				*c.dialog = d
 				if d.Done() {
 					if d.Result.Value == "delete" {

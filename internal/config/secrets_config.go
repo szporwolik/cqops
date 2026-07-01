@@ -1,5 +1,10 @@
 package config
 
+import (
+	"fmt"
+	"os"
+)
+
 // --- Secret key constants ---
 const (
 	secretQRZPass  = "qrz.pass"
@@ -51,7 +56,9 @@ func (c *Config) extractAndSaveSecrets() {
 	}
 
 	// Persist to disk immediately.
-	_ = c.secrets.Save()
+	if err := c.secrets.Save(); err != nil {
+		fmt.Fprintf(os.Stderr, "CQOps: secrets save failed: %v\n", err)
+	}
 
 	// Stash copies for post-marshal restoration.
 	c.savedSecrets = &saved
@@ -98,7 +105,9 @@ func (c *Config) ApplySecrets() {
 		if c.Integrations.QRZ.Pass != "" && c.Integrations.QRZ.Pass != v {
 			// Plaintext value differs — migrate it.
 			c.secrets.Set(secretQRZPass, c.Integrations.QRZ.Pass)
-			_ = c.secrets.Save()
+			if err := c.secrets.Save(); err != nil {
+				fmt.Fprintf(os.Stderr, "CQOps: secrets save failed (qrz migration): %v\n", err)
+			}
 		}
 		c.Integrations.QRZ.Pass = v
 	} else if c.Integrations.QRZ.Pass != "" {
@@ -110,7 +119,9 @@ func (c *Config) ApplySecrets() {
 	if v, ok := c.secrets.Get(secretDXCLogin); ok {
 		if c.Integrations.DXC.Login != "" && c.Integrations.DXC.Login != v {
 			c.secrets.Set(secretDXCLogin, c.Integrations.DXC.Login)
-			_ = c.secrets.Save()
+			if err := c.secrets.Save(); err != nil {
+				fmt.Fprintf(os.Stderr, "CQOps: secrets save failed (dxc migration): %v\n", err)
+			}
 		}
 		c.Integrations.DXC.Login = v
 	} else if c.Integrations.DXC.Login != "" {
@@ -126,7 +137,9 @@ func (c *Config) ApplySecrets() {
 		if v, ok := c.secrets.Get(key); ok {
 			if lb.Wavelog.APIKey != "" && lb.Wavelog.APIKey != v {
 				c.secrets.Set(key, lb.Wavelog.APIKey)
-				_ = c.secrets.Save()
+				if err := c.secrets.Save(); err != nil {
+					fmt.Fprintf(os.Stderr, "CQOps: secrets save failed (wavelog migration): %v\n", err)
+				}
 			}
 			lb.Wavelog.APIKey = v
 		} else if lb.Wavelog.APIKey != "" {
@@ -136,5 +149,7 @@ func (c *Config) ApplySecrets() {
 	}
 
 	// Persist any newly migrated secrets.
-	_ = c.secrets.Save()
+	if err := c.secrets.Save(); err != nil {
+		fmt.Fprintf(os.Stderr, "CQOps: secrets save failed (migration): %v\n", err)
+	}
 }

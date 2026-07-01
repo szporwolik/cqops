@@ -16,6 +16,7 @@ import (
 	"github.com/ftl/hamradio/scp"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/ref"
 )
 
@@ -528,23 +529,11 @@ func (m *Model) pskAvailableBands() []string {
 }
 
 func freqToBandName(freqHz float64) string {
-	freqkHz := freqHz / 1000
-	switch {
-	case freqkHz >= 1800 && freqkHz < 2000:
-		return "160m"
-	case freqkHz >= 3500 && freqkHz < 4000:
-		return "80m"
-	case freqkHz >= 7000 && freqkHz < 7300:
-		return "40m"
-	case freqkHz >= 14000 && freqkHz < 14350:
-		return "20m"
-	case freqkHz >= 21000 && freqkHz < 21450:
-		return "15m"
-	case freqkHz >= 28000 && freqkHz < 29700:
-		return "10m"
-	default:
+	band := qso.DeriveBand(freqHz / 1_000_000)
+	if band == "" {
 		return "other"
 	}
+	return band
 }
 
 func (m *Model) pskCycleMode(dir int) {

@@ -198,12 +198,6 @@ func machineID() string {
 			return s
 		}
 	}
-	// macOS: try system profiling.
-	if id, err := os.ReadFile("/Library/Preferences/SystemConfiguration/com.apple.wifi.plist"); false {
-		_ = id
-		_ = err
-	}
-	// Windows: MachineGuid would require syscall, skip for now.
 	// Fallback: hostname.
 	if host, err := os.Hostname(); err == nil {
 		return host

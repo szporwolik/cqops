@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/qrz"
+	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 )
 
@@ -285,7 +286,12 @@ func (m *Model) renderPartnerBox(title, content string, boxW, maxInner int) stri
 	inner := lipgloss.JoinVertical(lipgloss.Left, header, content)
 	curH := lipgloss.Height(inner)
 	if curH < maxInner {
-		inner += strings.Repeat("\n", maxInner-curH)
+		var sb strings.Builder
+		sb.WriteString(inner)
+		for i := curH; i < maxInner; i++ {
+			sb.WriteByte('\n')
+		}
+		inner = sb.String()
 	}
 	return drawBorderedBox(inner, boxW)
 }
@@ -585,7 +591,7 @@ func renderLoTW(isMember bool, dimStyle, badStyle lipgloss.Style) string {
 // --- Form partner data ---
 
 func (m *Model) formPartnerData() *qrz.CallData {
-	call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+	call := qso.NormalizeCall(m.fields[fieldCall].Value())
 	if call == "" {
 		return nil
 	}
@@ -637,8 +643,7 @@ func (m *Model) getOrBuildMap(d *qrz.CallData, mapW, mapAvailH int) string {
 	if m.mapView != nil {
 		return m.mapView.View(ownLat, ownLon, pl, plon, mapW, mapAvailH, m.App.Config.General.DrawGrayline)
 	}
-	// Fallback: ASCII map.
-	return renderWorldMap(ownLat, ownLon, pl, plon, mapW, mapAvailH)
+	return ""
 }
 
 func (m *Model) invalidatePartnerMapCache() {

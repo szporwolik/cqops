@@ -73,7 +73,7 @@ func (m *Model) contestAutoFocusExchRcvd() {
 	if m.screen != screenQSO || m.confirm != nil || m.spotDialog != nil {
 		return
 	}
-	call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+	call := qso.NormalizeCall(m.fields[fieldCall].Value())
 	if call == "" || !m.lookupsCompleteForCall(call) {
 		return
 	}

@@ -472,7 +472,7 @@ func (m *Model) handleDXCSpotsStored(msg dxcSpotsStoredMsg) {
 		}
 	}
 
-	formCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+	formCall := qso.NormalizeCall(m.fields[fieldCall].Value())
 	if formCall == "" {
 		return
 	}

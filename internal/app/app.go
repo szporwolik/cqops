@@ -13,6 +13,7 @@ import (
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/aprs"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/geo"
 	"github.com/szporwolik/cqops/internal/ref"
 	"github.com/szporwolik/cqops/internal/secrets"
 	"github.com/szporwolik/cqops/internal/store"
@@ -245,17 +246,17 @@ func (a *App) MaybeRestartAPRS() {
 
 	server := aprsCfg.Server
 	if server == "" {
-		server = "euro.aprs2.net:14580"
+		server = aprsDefaultServer
 	}
 	callsign := aprsCfg.Callsign
 	if callsign == "" {
-		// Derive from station callsign: strip portable/test suffixes, add -10 SSID.
+		// Derive from station callsign: strip portable/test suffixes, add SSID.
 		base := a.Logbook.Station.Callsign
 		if idx := strings.IndexAny(base, "/"); idx >= 0 {
 			base = base[:idx]
 		}
 		if base != "" {
-			callsign = base + "-10"
+			callsign = base + aprsDefaultSSID
 		}
 	}
 
@@ -264,17 +265,19 @@ func (a *App) MaybeRestartAPRS() {
 	if aprsCfg.RadiusKm > 0 {
 		g := a.Logbook.Station.Grid
 		if g != "" {
-			lat, lon, err := gridToLatLon(g)
+			lat, lon, err := geo.GridToLatLon(g)
 			if err == nil {
 				filter = aprs.BuildRangeFilter(lat, lon, aprsCfg.RadiusKm)
 			}
 		}
 	}
 
-	// Start or restart client.
+	// Stop previous client asynchronously — the 3-second Stop() timeout
+	// would freeze the TUI if called from the Update path.
 	if a.APRSClient != nil {
-		applog.Debug("APRS: stopping previous client")
-		a.APRSClient.Stop()
+		old := a.APRSClient
+		a.APRSClient = nil
+		go old.Stop()
 	}
 	applog.Info("APRS: starting client", "server", server, "callsign", callsign)
 	a.APRSClient = aprs.NewClient(server, callsign, aprsCfg.Passcode, filter)
@@ -324,31 +327,38 @@ func (a *App) SetAPRSBeaconCallback(cb func(callsign string)) {
 	a.aprsBeaconCB = cb
 }
 
+// APRS cache retention and pruning intervals.
+const (
+	aprsPruneInterval  = 5 * time.Minute
+	aprsRetainDuration = 60 * time.Minute
+	aprsBeaconMin      = 15                     // minimum beacon interval in minutes
+	aprsDefaultServer  = "euro.aprs2.net:14580" // default APRS-IS server
+	aprsDefaultSSID    = "-10"                  // default APRS SSID suffix
+)
+
 // startAPRSPruner launches a background goroutine that periodically deletes
-// cached APRS stations older than the retention window (60 min). Runs every
-// 5 minutes. Stops when stopAPRSPruner is called or the app shuts down.
+// cached APRS stations older than the retention window. Runs every 5 minutes.
+// Stops when stopAPRSPruner is called or the app shuts down.
 func (a *App) startAPRSPruner() {
 	a.stopAPRSPruner() // ensure no duplicate
 	a.pruneStopCh = make(chan struct{})
 	go func() {
-		const pruneInterval = 5 * time.Minute
-		const retainDuration = 60 * time.Minute
-		ticker := time.NewTicker(pruneInterval)
+		ticker := time.NewTicker(aprsPruneInterval)
 		defer ticker.Stop()
 
 		// Prune once at startup to clean up stale entries from a previous run.
-		a.pruneOnce(retainDuration)
+		a.pruneOnce(aprsRetainDuration)
 
 		for {
 			select {
 			case <-ticker.C:
-				a.pruneOnce(retainDuration)
+				a.pruneOnce(aprsRetainDuration)
 			case <-a.pruneStopCh:
 				return
 			}
 		}
 	}()
-	applog.Debug("APRS: cache pruner started", "interval", "5m", "retain", "60m")
+	applog.Debug("APRS: cache pruner started", "interval", aprsPruneInterval, "retain", aprsRetainDuration)
 }
 
 func (a *App) stopAPRSPruner() {
@@ -360,11 +370,12 @@ func (a *App) stopAPRSPruner() {
 }
 
 func (a *App) pruneOnce(retainDuration time.Duration) {
-	if a.APRSCache == nil {
+	cache := a.APRSCache
+	if cache == nil {
 		return
 	}
 	cutoff := time.Now().Add(-retainDuration)
-	n, err := a.APRSCache.PruneOlderThan(cutoff)
+	n, err := cache.PruneOlderThan(cutoff)
 	if err != nil {
 		applog.Debug("APRS: cache prune failed", "error", err)
 		return
@@ -448,7 +459,10 @@ func (a *App) stopAPRSBeacon() {
 }
 
 func (a *App) sendAPRSBeacon(aprsCfg *config.APRSConfig) {
-	if a.APRSClient == nil || !a.APRSClient.IsConnected() {
+	// Guard against nil client — the beacon goroutine may fire between
+	// MaybeRestartAPRS stopping the old client and starting a new one.
+	client := a.APRSClient
+	if client == nil || !client.IsConnected() {
 		applog.Debug("APRS: beacon skipped — not connected")
 		return
 	}
@@ -469,7 +483,7 @@ func (a *App) sendAPRSBeacon(aprsCfg *config.APRSConfig) {
 		applog.Debug("APRS: beacon skipped — no station grid")
 		return
 	}
-	lat, lon, err := gridToLatLon(grid)
+	lat, lon, err := geo.GridToLatLon(grid)
 	if err != nil {
 		applog.Debug("APRS: beacon skipped — grid error", "error", err)
 		return
@@ -480,7 +494,7 @@ func (a *App) sendAPRSBeacon(aprsCfg *config.APRSConfig) {
 		symbol = "/-"
 	}
 
-	if err := a.APRSClient.SendPosition(callsign, lat, lon, symbol, aprsCfg.Comment); err != nil {
+	if err := client.SendPosition(callsign, lat, lon, symbol, aprsCfg.Comment); err != nil {
 		applog.Warn("APRS: beacon failed", "error", err)
 	} else if a.aprsBeaconCB != nil {
 		a.aprsBeaconCB(callsign)
@@ -494,41 +508,6 @@ func (a *App) persistBeaconTimestamp(aprsCfg *config.APRSConfig) {
 	if err := config.Save(a.ConfigPath, a.Config); err != nil {
 		applog.Warn("APRS: failed to persist beacon timestamp", "error", err)
 	}
-}
-
-// gridToLatLon converts a Maidenhead grid square (4/6/8/10 char) to decimal lat/lon.
-// Simplified local version to avoid import cycle. Returns the center of the grid cell.
-func gridToLatLon(grid string) (float64, float64, error) {
-	grid = strings.ToUpper(strings.TrimSpace(grid))
-	if len(grid) < 4 {
-		return 0, 0, fmt.Errorf("grid too short: %s", grid)
-	}
-	lon := float64(grid[0]-'A')*20 - 180
-	lat := float64(grid[1]-'A')*10 - 90
-	lon += float64(grid[2]-'0') * 2
-	lat += float64(grid[3]-'0') * 1
-	if len(grid) >= 6 {
-		lon += float64(grid[4]-'A') * (5.0 / 60.0)
-		lat += float64(grid[5]-'A') * (2.5 / 60.0)
-		lon += 2.5 / 60.0  // center of sub-square
-		lat += 1.25 / 60.0 // center of sub-square
-		if len(grid) >= 8 {
-			lon += float64(grid[6]-'0') * (0.5 / 60.0)
-			lat += float64(grid[7]-'0') * (0.25 / 60.0)
-			lon += 0.25 / 60.0  // center of extended cell
-			lat += 0.125 / 60.0 // center of extended cell
-			if len(grid) >= 10 {
-				lon += float64(grid[8]-'A') * (0.5 / 60.0 / 24.0)
-				lat += float64(grid[9]-'A') * (0.25 / 60.0 / 24.0)
-				lon += 0.5 / 60.0 / 48.0  // center
-				lat += 0.25 / 60.0 / 48.0 // center
-			}
-		}
-	} else {
-		lon += 1.0 // center of 2° square
-		lat += 0.5 // center of 1° square
-	}
-	return lat, lon, nil
 }
 
 func (a *App) SwitchLogbook(name string) error {
@@ -551,6 +530,11 @@ func (a *App) SwitchLogbook(name string) error {
 		return fmt.Errorf("init db: %w", err)
 	}
 	applog.Info("Database OK", "path", dbPath)
+
+	// Stop APRS goroutines BEFORE replacing the logbook to prevent the
+	// old beacon/pruner from reading the new logbook's config.
+	a.stopAPRSPruner()
+	a.stopAPRSBeacon()
 
 	a.Config.State.ActiveLogbook = name
 	a.LogbookName = name

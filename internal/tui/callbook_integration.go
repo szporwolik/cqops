@@ -299,7 +299,7 @@ func (m *Model) fillWLData(msg wlResultMsg) tea.Cmd {
 	if msg.Call == "" {
 		return nil
 	}
-	formCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+	formCall := qso.NormalizeCall(m.fields[fieldCall].Value())
 	if formCall != "" && formCall != strings.ToUpper(msg.Call) {
 		// Stale result — the user cycled away. Re-trigger lookup for the
 		// current form call so the pending state eventually resolves.

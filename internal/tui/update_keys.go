@@ -60,7 +60,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, true
 
 	case key.Matches(msg, m.keys.Partner):
-		call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+		call := qso.NormalizeCall(m.fields[fieldCall].Value())
 
 		// Cycle: Partner → Image → Partner (when photo available).
 		if m.screen == screenImage {
@@ -416,7 +416,7 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	// Re-trigger WL lookup when band or mode changes while partner data is already loaded.
 	curBand := strings.TrimSpace(m.fields[fieldBand].Value())
 	curMode := strings.TrimSpace(m.fields[fieldMode].Value())
-	call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+	call := qso.NormalizeCall(m.fields[fieldCall].Value())
 	if call != "" && (curBand != m.lookup.wlLastBand || curMode != m.lookup.wlLastMode) && m.lookup.wlPrivateData != nil {
 		m.lookup.wlNeed = true
 		m.lookup.wlCall = call
