@@ -88,7 +88,7 @@ function connectSSE(){
   });
   es.addEventListener('station',function(e){var s=JSON.parse(e.data).payload;
     D('sse','station',s.callsign+' '+s.locator);
-    if(s.lat!=null&&s.lon!=null){ownStationLat=s.lat;ownStationLon=s.lon;initLocalMap(s.lat,s.lon);updateAprsCircle(s.lat,s.lon,s.aprsRadiusKm||0);updateMapFromToday()}else{recentreLocalMapFromStation(s)}renderStation(s)
+    if(s.lat!=null&&s.lon!=null){ownStationLat=s.lat;ownStationLon=s.lon;initLocalMap(s.lat,s.lon);recentreLocalMap(s.lat,s.lon);updateAprsCircle(s.lat,s.lon,s.aprsRadiusKm||0);updateMapFromToday()}else{recentreLocalMapFromStation(s)}renderStation(s)
   });
   es.addEventListener('operator',function(e){var o=JSON.parse(e.data).payload;
     D('sse','operator',o.callsign);
@@ -154,6 +154,7 @@ function renderAll(snap){
   if(snap.station&&snap.station.lat&&snap.station.lon){
     ownStationLat=snap.station.lat;ownStationLon=snap.station.lon;
     initLocalMap(ownStationLat,ownStationLon);
+    recentreLocalMap(ownStationLat,ownStationLon);
   }
   renderStation(snap.station,snap.operator,snap.logbook,snap.rig,snap.wsjtx);
   // Active QSO

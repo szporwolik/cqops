@@ -155,7 +155,19 @@ func gridToLatLon(grid string) (float64, float64) {
 		return 0, 0
 	}
 	ll := locator.ToLatLon(loc)
-	return float64(ll.Lat), float64(ll.Lon)
+	lat, lon := float64(ll.Lat), float64(ll.Lon)
+	// locator.ToLatLon has a bug for 8-char grids: when the 4th pair
+	// is present the code takes the "if" branch for precision 2, adds
+	// the digit offset, but falls through without adding the centre
+	// offset for either the 3rd pair (subsquare: 2.5′ lon × 1.25′ lat)
+	// or the 4th pair (extended: 0.25′ lon × 0.125′ lat). The result
+	// is the SW corner of the cell instead of the centre.
+	// Add both missing centre offsets back.
+	if loc[6] > 0 {
+		lon += (2.5 + 0.25) / 60.0 // 3rd-pair centre + 4th-pair centre
+		lat += (1.25 + 0.125) / 60.0
+	}
+	return lat, lon
 }
 
 func parseCoord(s string) float64 {
