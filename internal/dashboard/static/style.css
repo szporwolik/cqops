@@ -39,7 +39,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 .sse-connected{color:var(--success)}.sse-connecting{color:var(--warn)}.sse-disconnected{color:var(--offline)}
 
 /* ── weather row (header extension, below clock) ── */
-#wx-row{display:flex;align-items:center;justify-content:center;gap:6px 18px;flex-wrap:nowrap;padding:4px 0;font-size:0.78rem;color:var(--text-secondary);border-bottom:1px solid var(--border-strong);margin-bottom:0;min-height:0;overflow:hidden}
+#wx-row{display:flex;align-items:center;justify-content:center;gap:6px 14px;flex-wrap:nowrap;padding:4px 0;font-size:0.78rem;color:var(--text-secondary);border-bottom:1px solid var(--border-strong);margin-bottom:0;overflow:hidden}
 #wx-row.wx-loading{min-height:0;border-bottom:none;margin-bottom:0;padding:0}
 #wx-row .wx-slot{display:flex;align-items:center;gap:4px;white-space:nowrap;flex-shrink:0}
 #wx-row .wx-icon{font-size:1.2rem;line-height:1}
@@ -76,22 +76,22 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 .mode-overview #map-table-row{margin-top:2px}
 
 /* ── integrated active panel (photo + callsign + identity) ── */
-#hero{background:var(--blue-xsoft);border-radius:8px;padding:20px 24px;margin:10px 0;text-align:center}
+#hero{background:var(--blue-xsoft);border-radius:8px;padding:20px 24px;margin:10px 0;text-align:center;overflow:hidden}
 #hero-overview{display:none}
 #hero-headline{font-size:1.8rem;font-weight:800;color:var(--accent);letter-spacing:-0.02em}
 #hero-subline{font-size:1.1rem;color:var(--text-secondary);font-weight:500}
 #hero-status{font-size:1rem;color:var(--success);font-weight:700}
 #hero-promo{font-size:0.95rem;color:var(--dim);font-style:italic;margin-top:4px}
 #hero-promo:empty{display:none}
-.mode-active #hero{background:radial-gradient(circle at 12% 50%,rgba(0,91,187,0.10),transparent 35%),radial-gradient(circle at 85% 40%,rgba(208,0,50,0.06),transparent 30%),linear-gradient(105deg,#FFFFFF 0%,#F8FAFF 40%,var(--blue-xsoft) 100%);border:1px solid var(--border-strong);border-radius:10px;padding:0 20px 0 0;margin:10px 0;box-shadow:0 8px 24px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.8) inset}
+.mode-active #hero{background:radial-gradient(circle at 12% 50%,rgba(0,91,187,0.10),transparent 35%),radial-gradient(circle at 85% 40%,rgba(208,0,50,0.06),transparent 30%),linear-gradient(105deg,#FFFFFF 0%,#F8FAFF 40%,var(--blue-xsoft) 100%);border:none;border-radius:10px;padding:0 20px 0 0;margin:10px 0;box-shadow:0 8px 24px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.8) inset}
 .mode-active #hero-overview{display:none}
 .mode-active #hero-active{display:flex;align-items:stretch;gap:0;min-height:auto}
-/* photo box — overflows hero border on top/left/bottom so hero border IS photo border */
+/* photo box — flush with hero edges, right edge is divider, hero clips corners */
 #hero-photo-box{
-  width:clamp(180px,18vw,280px);margin:-1px 0 -1px -1px;
+  width:clamp(180px,18vw,280px);
   flex:0 0 auto;overflow:hidden;background:var(--blue-soft);
-  border-radius:10px 0 0 10px;position:relative;display:flex;align-items:center;justify-content:center;
-  border-right:1px solid var(--border-strong)
+  position:relative;display:flex;align-items:center;justify-content:center;
+  border-right:1px solid var(--border-strong);border-radius:10px 0 0 10px
 }
 #hero-photo{width:100%;height:100%;object-fit:cover;display:block}
 #hero-photo[src=""],#hero-photo:not([src]){display:none}
@@ -222,10 +222,10 @@ footer a:hover{text-decoration:underline}
   #hd-subtitle{font-size:0.85rem}
   #header{padding:6px 0}
   #hero{padding:8px 16px;margin:3px 0}
-  .mode-active #hero{padding:8px 14px}
-  .mode-active #hero-active{gap:14px;min-height:auto}
+  .mode-active #hero{padding:0 14px 0 0}
+  .mode-active #hero-active{min-height:auto}
   #hero-call{font-size:clamp(26px,5vw,54px)}
-  #hero-photo-box{width:clamp(160px,22vw,280px);height:clamp(115px,16vw,200px)}
+  #hero-photo-box{width:clamp(160px,22vw,280px)}
   #hero-badges .badge{font-size:0.75rem;padding:2px 8px}
   #hero-identity{font-size:0.82rem}
   #hero-refs{font-size:0.75rem}
@@ -246,10 +246,10 @@ footer a:hover{text-decoration:underline}
   #hd-subtitle{font-size:0.72rem}
   #header{padding:4px 0;border-bottom-width:2px}
   #hero{padding:5px 10px;margin:2px 0}
-  .mode-active #hero{padding:5px 10px}
-  .mode-active #hero-active{gap:8px;min-height:auto}
+  .mode-active #hero{padding:0 10px 0 0}
+  .mode-active #hero-active{min-height:auto}
   #hero-call{font-size:clamp(20px,4vw,40px)}
-  #hero-photo-box{width:clamp(100px,16vw,170px);height:clamp(70px,10vw,115px)}
+  #hero-photo-box{width:clamp(100px,16vw,170px)}
   #hero-badges .badge{font-size:0.62rem;padding:1px 5px}
   #hero-identity{font-size:0.7rem}
   #hero-refs{font-size:0.65rem}
@@ -272,11 +272,10 @@ footer a:hover{text-decoration:underline}
   #hd-subtitle{font-size:0.68rem}
   #header{padding:3px 0}
   #hero{padding:4px 10px;margin:2px 0}
-  .mode-active #hero{padding:4px 8px}
+  .mode-active #hero{padding:0 8px 0 0}
   #hero-call{font-size:clamp(18px,4vw,36px)}
-  #hero-photo-box{width:clamp(80px,16vw,140px);height:clamp(55px,10vw,95px)}
+  #hero-photo-box{width:clamp(80px,16vw,140px)}
   #hero-badges .badge{font-size:0.6rem;padding:1px 5px}
-  .mode-active #hero-active{gap:6px}
   #hero-identity{font-size:0.62rem}
   #hero-refs{font-size:0.58rem}
   #hero-label{font-size:0.55rem}
@@ -315,7 +314,7 @@ footer a:hover{text-decoration:underline}
   #hd-subtitle{font-size:1rem}
   #hd-logo-box{width:180px;height:108px}
   #hero-call{font-size:clamp(32px,5vw,64px)}
-  #hero-photo-box{width:clamp(200px,30vw,340px);height:clamp(150px,22vw,260px)}
+  #hero-photo-box{width:clamp(200px,30vw,340px)}
 }
 @media(max-width:760px){
   #app{padding:4px 8px}
@@ -326,11 +325,11 @@ footer a:hover{text-decoration:underline}
   #hd-right{position:static;margin-left:auto;font-size:0.75rem}
   #hd-clock-local,#hd-clock-utc{font-size:0.72rem}
   #hero{padding:10px 14px}
-  .mode-active #hero{padding:10px 12px}
-  .mode-active #hero-active{gap:12px;min-height:auto}
+  .mode-active #hero{padding:0 12px 0 0}
+  .mode-active #hero-active{min-height:auto}
   #hero-call{font-size:clamp(22px,6vw,42px)}
   #hero-identity{font-size:0.82rem}
-  #hero-photo-box{width:clamp(120px,28vw,200px);height:clamp(90px,20vw,150px)}
+  #hero-photo-box{width:clamp(120px,28vw,200px)}
   #hero-badges .badge{font-size:0.7rem;padding:2px 7px}
   #map-table-row{flex-direction:column;gap:6px;min-height:420px;margin-bottom:6px}
   #map-local-right{gap:6px}
@@ -372,10 +371,10 @@ footer a:hover{text-decoration:underline}
     radial-gradient(circle at 18% 45%,rgba(0,91,187,0.12),transparent 34%),
     radial-gradient(circle at 82% 38%,rgba(208,0,50,0.07),transparent 30%),
     linear-gradient(110deg,#FFFFFF 0%,#F7FAFF 48%,#EEF5FF 100%);
-    padding:10px 20px;min-height:auto}
-  .mode-active #hero-active{min-height:70px;gap:20px}
+    padding:0 20px 0 0;min-height:auto}
+  .mode-active #hero-active{min-height:70px}
   #hero-call{font-size:clamp(30px,4vw,50px)}
-  #hero-photo-box{width:clamp(160px,15vw,240px);height:clamp(110px,9vw,165px)}
+  #hero-photo-box{width:clamp(160px,15vw,240px)}
   /* map */
   #recent-table{font-size:0.82rem}
   #map-table-row{gap:12px;margin-bottom:12px}
