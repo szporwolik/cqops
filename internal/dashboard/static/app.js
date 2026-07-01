@@ -412,6 +412,17 @@ function initMap(cfg){
   stationLayer=L.layerGroup([],{pane:'cqopsMarker'}).addTo(map);
   // Keep Leaflet in sync with container size changes (hero toggle, resize, etc.).
   if(window.ResizeObserver){new ResizeObserver(function(){map.invalidateSize()}).observe(mapContainer)}
+  // Firefox / narrow screens: the flex container may not have its final
+  // computed height when Leaflet initializes. Invalidate immediately once
+  // the container has height, then again after layout settles.
+  (function pollMapSize(){
+    if(mapContainer.clientHeight>0){
+      map.invalidateSize();
+      setTimeout(function(){map.invalidateSize()},150);
+      return
+    }
+    requestAnimationFrame(pollMapSize)
+  })()
   // Grayline: always-on below radar.
   enableGrayline();
   // Radar: always enabled — no toggle button.
@@ -433,6 +444,14 @@ function initLocalMap(lat,lon){
   // Station marker on local map — small, below APRS symbols.
   stationLocalMarker=L.circleMarker([lat,lon],{radius:5,color:'#007A3D',fillColor:'#007A3D',fillOpacity:0.85,weight:2.5,pane:'shadowPane'}).addTo(mapLocal);
   if(window.ResizeObserver){new ResizeObserver(function(){mapLocal.invalidateSize()}).observe(lc)}
+  (function pollLocalSize(){
+    if(lc.clientHeight>0){
+      mapLocal.invalidateSize();
+      setTimeout(function(){mapLocal.invalidateSize()},150);
+      return
+    }
+    requestAnimationFrame(pollLocalSize)
+  })()
   // Grayline on local map.
   enableGraylineLocal();
   // Add radar to local map if already enabled.
