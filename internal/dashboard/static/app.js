@@ -783,7 +783,7 @@ function _aprIconHTML(sym,callsign){
         '</div>';
     }
   }
-  if(callsign)html+='<div style="font-weight:700;font-size:0.58rem;color:#fff;text-shadow:0 0 3px #000,0 0 6px #000;margin-top:1px;white-space:nowrap;">'+esc(callsign)+'</div>';
+  if(callsign)html+='<div style="font-weight:700;font-size:0.58rem;color:#D00032;text-shadow:0 0 3px #000,0 0 6px #000;margin-top:1px;white-space:nowrap;">'+esc(callsign)+'</div>';
   html+='</div>';
   return html;
 }
