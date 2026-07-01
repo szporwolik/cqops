@@ -36,6 +36,8 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #hd-clock-local{color:var(--dim);font-variant-numeric:tabular-nums;font-size:1rem}
 #hd-clock-utc{margin-left:2px;color:var(--blue-dark);font-weight:600;font-size:1rem;font-variant-numeric:tabular-nums}
 #hd-sse-status{font-size:0.8rem}
+#hd-sun{font-size:0.68rem;color:var(--dim);white-space:nowrap;display:flex;align-items:center;gap:4px}
+#hd-sun:empty{display:none}
 .sse-connected{color:var(--success)}.sse-connecting{color:var(--warn)}.sse-disconnected{color:var(--offline)}
 
 /* ── weather row (header extension, below clock) ── */
@@ -84,9 +86,9 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 .mode-active #hero{background:radial-gradient(circle at 12% 50%,rgba(0,91,187,0.10),transparent 35%),radial-gradient(circle at 85% 40%,rgba(208,0,50,0.06),transparent 30%),linear-gradient(105deg,#FFFFFF 0%,#F8FAFF 40%,var(--blue-xsoft) 100%);border:none;border-radius:10px;padding:0 20px 0 0;margin:10px 0;box-shadow:0 8px 24px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.8) inset}
 .mode-active #hero-overview{display:none}
 .mode-active #hero-active{display:flex;align-items:stretch;gap:0;min-height:auto}
-/* photo box — flush with hero edges, right edge is divider, hero clips corners */
+/* photo box — fixed aspect ratio, never stretches, image crops to fill */
 #hero-photo-box{
-  width:clamp(180px,18vw,280px);
+  width:clamp(180px,18vw,280px);aspect-ratio:4/3;max-height:clamp(100px,10vw,160px);align-self:center;
   flex:0 0 auto;overflow:hidden;background:var(--blue-soft);
   position:relative;display:flex;align-items:center;justify-content:center;
   border-right:1px solid var(--border-strong);border-radius:10px 0 0 10px
@@ -143,6 +145,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #map-extra-box{flex:0 0 auto;min-height:0;display:none;overflow:hidden;background:linear-gradient(180deg,#FFFFFF 0%,var(--surface-soft) 100%);border-radius:8px;border:1px solid var(--border-strong);box-shadow:0 4px 12px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.7) inset}
 #map-extra-box.visible{display:flex;align-items:center;justify-content:center;min-height:110px;max-height:110px;padding:10px 14px;overflow:hidden}
 #map-extra-content{font-size:0.85rem;color:var(--dim);text-align:center;transition:opacity .3s ease;width:100%;overflow:hidden}
+.extra-module-sep{border-left:1px solid var(--border-strong)}
 .extra-title{font-weight:700;color:var(--accent);margin-bottom:4px;font-size:0.78rem;text-transform:uppercase;letter-spacing:0.3px}
 #map-container .leaflet-container{width:100%!important;height:100%!important;position:absolute!important;top:0;left:0}
 #map-local-container .leaflet-container{width:100%!important;height:100%!important;position:absolute!important;top:0;left:0}
@@ -329,7 +332,7 @@ footer a:hover{text-decoration:underline}
   #hero-identity{font-size:0.82rem}
   #hero-photo-box{width:clamp(120px,28vw,200px)}
   #hero-badges .badge{font-size:0.7rem;padding:2px 7px}
-  #map-table-row{flex-direction:column;gap:6px;min-height:420px;margin-bottom:6px}
+  #map-table-row{flex-direction:column;gap:6px;min-height:280px;margin-bottom:6px}
   #map-local-right{gap:6px}
   #map-local-panel{min-height:160px}
   #recent-table{font-size:0.68rem}
@@ -350,7 +353,7 @@ footer a:hover{text-decoration:underline}
   #hero-photo-box{width:100%;height:clamp(100px,30vw,160px)}
   .mode-active #hero-active{flex-direction:column;gap:8px}
   #recent-table{font-size:0.6rem}
-  #map-table-row{flex-direction:column;gap:4px;min-height:380px;margin-bottom:4px}
+  #map-table-row{flex-direction:column;gap:4px;min-height:220px;margin-bottom:4px}
   #map-local-right{gap:4px}
   #map-local-panel{min-height:140px}
   main{flex-direction:column;gap:4px}
@@ -392,7 +395,7 @@ footer a:hover{text-decoration:underline}
   #map-panel{flex:8}
   #map-local-right{flex:3;gap:14px}
   #map-local-panel{min-height:200px}
-  #map-extra-box.visible{min-height:120px;max-height:120px;padding:14px 20px}
+  #map-extra-box.visible{min-height:130px;max-height:130px;padding:14px 20px}
   main{gap:14px;margin-bottom:14px;max-height:26vh}
   .panel{padding:14px 20px}
   .panel h2{font-size:0.9rem;margin-bottom:6px}

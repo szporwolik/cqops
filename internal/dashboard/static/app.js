@@ -164,6 +164,7 @@ function renderAll(snap){
     recentreLocalMap(ownStationLat,ownStationLon);
     updateAprsCircle(ownStationLat,ownStationLon,snap.station.aprsRadiusKm||0);
     fetchWeather(snap.station.lat,snap.station.lon);
+    fetchSunTimes(snap.station.lat,snap.station.lon);
   }
   renderStation(snap.station,snap.operator,snap.logbook,snap.rig,snap.wsjtx);
   // Active QSO
@@ -614,7 +615,7 @@ function cycleExtraModule(){
   },200);
 }
 
-// Show/hide the extra box and manage the cycle timer.
+// Show/hide the extra box and render modules — multiple at once on wide screens.
 function updateExtraBox(){
   var box=document.getElementById('map-extra-box');
   var right=document.getElementById('map-local-right');
@@ -622,20 +623,33 @@ function updateExtraBox(){
   if(right.clientHeight>=300){
     box.classList.add('visible');
     if(!extraModules.length){
-      // Default module: CQOps marketing.
       registerExtraModule(function(){
         return '<div class="extra-title">CQOps.com</div>'+
                '<div style="font-size:0.78rem;color:var(--text-secondary)">Fast · Portable · Open Source</div>'+
                '<div style="font-size:0.7rem;color:var(--dim);margin-top:2px">Ham radio logger for the terminal</div>';
       });
     }
-    // Start cycling if not already running.
-    if(!extraCycleTimer){
-      // Render first module immediately.
-      var content=document.getElementById('map-extra-content');
-      if(content)content.innerHTML=extraModules[0]();
+    var content=document.getElementById('map-extra-content');
+    if(!content)return;
+    // Determine how many columns fit horizontally (~200px per module).
+    var cols=Math.max(1,Math.floor(box.clientWidth/200));
+    // If all modules fit, stop cycling. Otherwise cycle through groups.
+    if(cols>=extraModules.length){
+      if(extraCycleTimer){clearInterval(extraCycleTimer);extraCycleTimer=null}
+    }else if(!extraCycleTimer){
       extraCycleTimer=setInterval(cycleExtraModule,5000);
     }
+    // Render current slice: modules [start .. start+cols-1], wrapping around.
+    var start=extraModuleIdx%extraModules.length;
+    var html='<div style="display:flex;align-items:center;justify-content:center;gap:0;width:100%;height:100%">';
+    for(var i=0;i<cols&&i<extraModules.length;i++){
+      var idx=(start+i)%extraModules.length;
+      html+='<div class="extra-module'+(i>0?' extra-module-sep':'')+'" style="flex:1;min-width:0;padding:0 10px">'+extraModules[idx]()+'</div>';
+    }
+    html+='</div>';
+    content.innerHTML=html;
+    // Advance for next cycle (only when cycling is active).
+    if(cols<extraModules.length)extraModuleIdx=(start+cols)%extraModules.length;
   }else{
     box.classList.remove('visible');
     if(extraCycleTimer){clearInterval(extraCycleTimer);extraCycleTimer=null}
@@ -1127,6 +1141,32 @@ function clearContactWeather(){
   _contactWxGrid=null;
   var hwb=document.getElementById('hero-weather-box');if(hwb)hwb.classList.remove('visible');
   if(map)map.invalidateSize();if(mapLocal)mapLocal.invalidateSize();
+}
+
+// ---- Sunrise / sunset (daily, cached per lat/lon/date) ----
+var _sunCache='',_sunEl=null;
+function fetchSunTimes(lat,lon){
+  if(!navigator.onLine||lat==null||lon==null)return;
+  var today=new Date().toISOString().slice(0,10);
+  var key=lat.toFixed(2)+','+lon.toFixed(2)+','+today;
+  if(_sunCache===key)return;
+  _sunCache=key;
+  var params=new URLSearchParams({
+    latitude:String(lat),longitude:String(lon),
+    daily:'sunrise,sunset',timezone:'auto',forecast_days:'1'
+  });
+  fetch('https://api.open-meteo.com/v1/forecast?'+params,{cache:'no-store'}).then(function(r){return r.json()}).then(function(d){
+    renderSunTimes(d);
+  }).catch(function(e){D('sun','fetch err',e.message)});
+}
+function renderSunTimes(d){
+  if(!_sunEl)_sunEl=document.getElementById('hd-sun');
+  if(!_sunEl||!navigator.onLine)return;
+  var sun=d.daily||{};
+  var rise=sun.sunrise?sun.sunrise[0]:'',set=sun.sunset?sun.sunset[0]:'';
+  if(!rise||!set){_sunEl.innerHTML='';return}
+  var rt=rise.slice(11,16),st=set.slice(11,16);
+  _sunEl.innerHTML='🌅&nbsp;'+rt+'&nbsp;&nbsp;🌇&nbsp;'+st;
 }
 
 // ---- QSO sound ----
