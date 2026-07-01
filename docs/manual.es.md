@@ -435,6 +435,14 @@ Los filtros incluyen banda, continente, modo y antigüedad/tiempo. Presione **En
 
 La integración PSK Reporter requiere acceso a internet. Proporciona spots de propagación, filtros de banda/tiempo/modo y un mapa mundial ASCII en **F5**.
 
+### APRS
+
+La integración APRS utiliza una conexión TCP a un servidor APRS-IS y requiere acceso a internet. El servidor predeterminado es `euro.aprs2.net:14580`.
+
+CQOps recibe informes de posición de estaciones cercanas y los muestra en el mapa local del panel CQOps Live con símbolos estándar, ventanas emergentes de indicativos y una vista de autoajuste. Un círculo de alcance configurable muestra el área de cobertura de la baliza. Se puede enviar una baliza periódica con el indicativo de la estación, SSID, localizador de cuadrícula y comentario opcional.
+
+APRS se configura por libro de guardia en los ajustes de estación (**F9 → Libros de guardia → [libro activo] → APRS**).
+
 ### Datos solares
 
 Los datos solares incluyen SFI, número de manchas solares, índices A/K y condiciones banda por banda de hamqsl.com. Las actualizaciones en vivo requieren acceso a internet. Los datos en caché permanecen disponibles offline después de una obtención exitosa.

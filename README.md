@@ -30,6 +30,7 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 - **Encrypted secrets** — AES-256-GCM, machine-tied key, never plaintext
 - **DX Cluster & PSK Reporter** — live spots with filters, spot-to-rig tuning, ASCII propagation map
 - **CQOps Live** — built-in browser dashboard with live map, recent QSOs, stats, QRZ photos, and top operators. Perfect for Field Day displays, club station screens, or remote monitoring — enable in F9 → Integrations
+- **APRS** — receive nearby position reports via APRS-IS, display on the Live dashboard map with standard symbols, range circle, callsign popups, and auto-fit. Periodic position beacon with grid locator
 - **Contest logging** — exchange markers, auto serial numbers, ADIF contest ID
 - **Offline-first** — SQLite, cached REF/Solar/DXCC data; `--offline` flag
 - **ADIF 3.1.7** — full import/export, contest fields preserved

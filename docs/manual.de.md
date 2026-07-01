@@ -435,6 +435,14 @@ Filter umfassen Band, Kontinent, Mode und Alter/Zeit. Drücken Sie **Enter** auf
 
 PSK Reporter-Integration erfordert Internetzugang. Sie bietet Ausbreitungs-Spots, Band/Zeit/Mode-Filter und eine ASCII-Weltkarte auf **F5**.
 
+### APRS
+
+Die APRS-Integration verwendet eine TCP-Verbindung zu einem APRS-IS-Server und erfordert Internetzugang. Der Standardserver ist `euro.aprs2.net:14580`.
+
+CQOps empfängt Positionsmeldungen von nahegelegenen Stationen und zeigt sie auf der lokalen Karte des CQOps Live-Dashboards mit Standardsymbolen, Rufzeichen-Popups und einer automatischen Einpassung an. Ein konfigurierbarer Entfernungskreis zeigt den Abdeckungsbereich des Beacons. Ein periodisches Beacon mit Stationsrufzeichen, SSID, Grid-Locator und optionalem Kommentar kann gesendet werden.
+
+APRS wird pro Logbuch in den Stationseinstellungen konfiguriert (**F9 → Logbücher → [aktives Logbuch] → APRS**).
+
 ### Solardaten
 
 Solardaten umfassen SFI, Sonnenfleckenzahl, A/K-Indizes und bandweise Bedingungen von hamqsl.com. Live-Updates erfordern Internetzugang. Zwischengespeicherte Daten bleiben nach erfolgreichem Abruf offline verfügbar.

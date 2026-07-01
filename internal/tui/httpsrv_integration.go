@@ -275,6 +275,11 @@ func (m *Model) pushDashboardState() {
 		m.pushDashboardToday(ds)
 		m.pushDashboardStats(ds)
 		m.pushDashboardRecent(ds)
+	}
+
+	// --- APRS stations for the local map (rate-limited, 1 min) ---
+	if now.Sub(lastAPRSPush) > 60*time.Second {
+		lastAPRSPush = now
 		m.pushDashboardAPRS(ds)
 	}
 }
@@ -487,6 +492,9 @@ func (m *Model) pushDashboardFast() {
 
 // lastTodayPush rate-limits the DB query for today QSOs (map data).
 var lastTodayPush time.Time
+
+// lastAPRSPush rate-limits the APRS station push to the dashboard local map.
+var lastAPRSPush time.Time
 
 // pushDashboardLastCall tracks the last call for which we computed dupe/new flags.
 var pushDashboardLastCall string

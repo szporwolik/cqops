@@ -435,6 +435,14 @@ Filtry obejmują pasmo, kontynent, emisję i czas. Naciśnij **Enter** na spocie
 
 Integracja PSK Reporter wymaga dostępu do internetu. Zapewnia spoty propagacyjne, filtry pasma/czasu/emisji i mapę świata ASCII na **F5**.
 
+### APRS
+
+Integracja APRS używa połączenia TCP do serwera APRS-IS i wymaga dostępu do internetu. Domyślny serwer to `euro.aprs2.net:14580`.
+
+CQOps odbiera raporty pozycyjne z pobliskich stacji i wyświetla je na lokalnej mapie pulpitu CQOps Live ze standardowymi symbolami, wyskakującymi okienkami znaków wywoławczych i widokiem automatycznego dopasowania. Konfigurowalny okrąg zasięgu pokazuje obszar pokrycia beaconu. Można wysyłać okresowy beacon ze znakiem stacji, SSID, lokalizatorem siatki i opcjonalnym komentarzem.
+
+APRS jest konfigurowany dla każdego logbooka w ustawieniach stacji (**F9 → Logbooki → [aktywny logbook] → APRS**).
+
 ### Dane solarne
 
 Dane solarne obejmują SFI, liczbę plam, indeksy A/K i warunki pasmowe z hamqsl.com. Aktualizacje na żywo wymagają dostępu do internetu. Dane z pamięci podręcznej pozostają dostępne offline po udanym pobraniu.
