@@ -83,10 +83,11 @@ func ParsePositionPacket(raw string) (StationRecord, bool) {
 		return sr, false
 	}
 
-	// For '!', the format is ambiguous (uncompressed vs Base-91).
+	// For '!', '=', and '/', the format is ambiguous (uncompressed vs Base-91).
 	// Heuristic: uncompressed always starts with two digits (lat degrees).
-	// Base-91 starts with a base-91 character (typically a letter).
-	if dataType == '!' && len(body) > 2 && !(body[1] >= '0' && body[1] <= '9' && body[2] >= '0' && body[2] <= '9') {
+	// Base-91 compressed starts with a symbol table character (/\A-Za-j).
+	if (dataType == '!' || dataType == '=' || dataType == '/') && len(body) > 2 &&
+		!(body[1] >= '0' && body[1] <= '9') {
 		if tryDecodeBase91(body, &sr) {
 			return sr, true
 		}
@@ -405,7 +406,7 @@ func tryDecodeBase91(body string, sr *StationRecord) bool {
 // tryDecodeObject parses an APRS Object packet.
 // Format: ;OBJNAME  *HHMMSSh<position data>
 func tryDecodeObject(body string, sr *StationRecord) bool {
-	body = body[1:] // skip ';'
+	body = body[1:]     // skip ';'
 	if len(body) < 27 { // 9 name + 1 alive + 7 timestamp + 10 compressed pos
 		return false
 	}
