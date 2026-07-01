@@ -39,7 +39,14 @@ updateClocks();setInterval(updateClocks,1000);
 function setState(active){
   var add=active?'mode-active':'mode-overview',rm=active?'mode-overview':'mode-active';
   if(!app.classList.contains(add)){
-    app.classList.remove(rm);app.classList.add(add);if(map)map.invalidateSize();
+    app.classList.remove(rm);app.classList.add(add);
+    if(map)map.invalidateSize();
+    if(mapLocal)mapLocal.invalidateSize();
+    // Delayed re-check — layout may take a frame to settle after hero toggles.
+    setTimeout(function(){
+      if(map)map.invalidateSize();
+      if(mapLocal)mapLocal.invalidateSize();
+    },200);
     D('state','switch → '+add);
   }
   if(active&&!todayQsos.length)updateMapFromToday()
@@ -155,6 +162,7 @@ function renderAll(snap){
     ownStationLat=snap.station.lat;ownStationLon=snap.station.lon;
     initLocalMap(ownStationLat,ownStationLon);
     recentreLocalMap(ownStationLat,ownStationLon);
+    updateAprsCircle(ownStationLat,ownStationLon,snap.station.aprsRadiusKm||0);
     fetchWeather(snap.station.lat,snap.station.lon);
   }
   renderStation(snap.station,snap.operator,snap.logbook,snap.rig,snap.wsjtx);
@@ -1056,6 +1064,7 @@ function wxUpdateVisibility(){
     if(navigator.onLine)wxEl.style.display='';
     else{wxEl.style.display='none';wxEl.innerHTML=''}
   }
+  if(map)map.invalidateSize();if(mapLocal)mapLocal.invalidateSize();
 }
 // Listen for online/offline events.
 window.addEventListener('online',function(){
@@ -1073,21 +1082,22 @@ function renderWeather(d){
   for(var t=0;t<targets.length;t++){
     var ts=nowTs+targets[t]*60000,best=-1,bestD=Infinity;
     for(var i=0;i<mn.time.length;i++){var rowTime=new Date(mn.time[i]).getTime(),diff=Math.abs(rowTime-ts);if(diff<bestD){bestD=diff;best=i}}
-    if(best>=0)slots.push([targets[t],'+'+targets[t]+'m',mn.temperature_2m[best],mn.weather_code[best],mn.wind_speed_10m[best],mn.wind_gusts_10m[best],mn.wind_direction_10m[best],mn.precipitation[best],mn.is_day[best]]);
+    if(best>=0){var h=targets[t]/60,hl=(h%1===0?h:h.toFixed(1))+'h';slots.push([targets[t],'+'+hl,mn.temperature_2m[best],mn.weather_code[best],mn.wind_speed_10m[best],mn.wind_gusts_10m[best],mn.wind_direction_10m[best],mn.precipitation[best],mn.is_day[best]]);}
   }
   var windArrow=function(deg){var a=['↓','↙','←','↖','↑','↗','→','↘'];return a[Math.round(deg/45)%8]||'•'};
   var html='';
   for(var s=0;s<slots.length;s++){
     var slot=slots[s],label=slot[1],temp=slot[2],code=slot[3],wSpd=slot[4],wGst=slot[5],wDir=slot[6],precip=slot[7],isDay=slot[8];
-    var gustClass=wGst>50?'wx-danger':wGst>35?'wx-warn':'';
     html+='<span class="wx-slot"><span class="wx-icon '+wxAnimClass(code)+'">'+weatherIcon(code,isDay)+'</span>'+
       '<span class="wx-label">'+label+'</span>'+
       (temp!=null?'<span class="wx-temp">'+Math.round(temp)+'°</span>':'')+
-      (wSpd!=null?'<span class="wx-wind '+gustClass+'"><span class="wx-wind-spd">'+Math.round(wSpd)+'</span>'+(wGst!=null&&wGst>wSpd?'<span class="wx-wind-gust">/'+Math.round(wGst)+'</span>':'')+'<span class="wx-wind-unit">km/h</span> <span class="wx-wind-dir">'+windArrow(wDir||0)+'</span></span>':'')+
+      (wSpd!=null?'<span class="wx-wind"><span class="wx-wind-spd">'+Math.round(wSpd)+'</span><span class="wx-wind-unit">km/h</span> <span class="wx-wind-dir">'+windArrow(wDir||0)+'</span></span>':'')+
       (precip!=null&&precip>0?'<span class="wx-rain">'+precip.toFixed(1)+'mm</span>':'')+
       '</span>';
   }
   wxEl.className='';wxEl.innerHTML=html;wxEl.style.display='';
+  // Weather row changed height — maps need recalculation.
+  if(map)map.invalidateSize();if(mapLocal)mapLocal.invalidateSize();
 }
 
 // ---- Contact weather (hero box) — fetched per-contact when country+grid known ----
@@ -1111,10 +1121,12 @@ function renderContactWeather(d){
   document.getElementById('hero-wx-temp').textContent=c.temperature_2m!=null?Math.round(c.temperature_2m)+'°':'';
   document.getElementById('hero-wx-wind').textContent=c.wind_speed_10m!=null?Math.round(c.wind_speed_10m)+' km/h '+windArrow(c.wind_direction_10m||0):'';
   hwb.classList.add('visible');
+  if(map)map.invalidateSize();if(mapLocal)mapLocal.invalidateSize();
 }
 function clearContactWeather(){
   _contactWxGrid=null;
   var hwb=document.getElementById('hero-weather-box');if(hwb)hwb.classList.remove('visible');
+  if(map)map.invalidateSize();if(mapLocal)mapLocal.invalidateSize();
 }
 
 // ---- QSO sound ----

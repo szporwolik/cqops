@@ -47,12 +47,10 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #wx-row .wx-label{font-size:0.65rem;color:var(--dim);text-transform:uppercase}
 #wx-row .wx-wind{font-size:0.7rem}
 #wx-row .wx-wind .wx-wind-unit{font-size:0.6rem}
-#wx-row .wx-warn{color:var(--warn)}
-#wx-row .wx-danger{color:var(--offline)}
 #wx-row .wx-rain{font-size:0.7rem;color:var(--blue)}
 /* Progressive: hide extra slots first, then trim content inside remaining slots. */
 @media(max-width:950px){#wx-row{gap:6px 10px}#wx-row .wx-slot:nth-child(n+6){display:none}}
-@media(max-width:850px){#wx-row{gap:5px 8px}#wx-row .wx-slot:nth-child(n+5){display:none};#wx-row .wx-rain{display:none};#wx-row .wx-wind-unit{display:none};#wx-row .wx-wind-gust{display:none}}
+@media(max-width:850px){#wx-row{gap:5px 8px}#wx-row .wx-slot:nth-child(n+5){display:none};#wx-row .wx-rain{display:none};#wx-row .wx-wind-unit{display:none}}
 @media(max-width:700px){#wx-row{gap:4px 6px}#wx-row .wx-slot:nth-child(n+4){display:none};#wx-row .wx-wind{display:none}}
 @media(max-width:500px){#wx-row{gap:4px 5px;font-size:0.7rem}#wx-row .wx-slot:nth-child(n+3){display:none};#wx-row .wx-label{display:none}}
 @media(max-width:370px){#wx-row{gap:3px 4px;font-size:0.65rem}#wx-row .wx-icon{font-size:1rem}}
@@ -361,29 +359,48 @@ footer a:hover{text-decoration:underline}
 
 /* ── Full HD / TV display polish (1920×1080+) ── */
 @media(min-width:1600px) and (min-height:900px){
-  #app{max-width:1560px}
-  #hd-logo-box{width:220px;height:132px}
-  #hd-title{font-size:1.85rem}
-  #hd-subtitle{font-size:1.1rem}
-  #header{padding:14px 0 10px 0;margin-bottom:12px}
+  #app{max-width:none;margin:0 auto;padding:0 28px 14px 28px}
+  #hd-logo-box{width:240px;height:144px}
+  #hd-title{font-size:2rem}
+  #hd-subtitle{font-size:1.2rem}
+  #header{padding:16px 0 12px 0;margin-bottom:14px}
   /* ── active hero: premium broadcast background ── */
   .mode-active #hero{background:
     radial-gradient(circle at 18% 45%,rgba(0,91,187,0.12),transparent 34%),
     radial-gradient(circle at 82% 38%,rgba(208,0,50,0.07),transparent 30%),
     linear-gradient(110deg,#FFFFFF 0%,#F7FAFF 48%,#EEF5FF 100%);
-    padding:0 20px 0 0;min-height:auto}
-  .mode-active #hero-active{min-height:70px}
-  #hero-call{font-size:clamp(30px,4vw,50px)}
-  #hero-photo-box{width:clamp(160px,15vw,240px)}
-  /* map */
-  #recent-table{font-size:0.82rem}
-  #map-table-row{gap:12px;margin-bottom:12px}
-  #map-local-right{gap:12px}
-  main{gap:12px;margin-bottom:12px}
-  .panel{padding:12px 16px}
-  .panel h2{font-size:0.88rem;margin-bottom:8px}
-  .panel dt{font-size:0.84rem}
-  .panel dd{font-size:0.92rem}
+    padding:0 24px 0 0;min-height:auto}
+  .mode-active #hero-active{min-height:80px}
+  #hero-call{font-size:clamp(36px,4vw,60px)}
+  #hero-photo-box{width:clamp(180px,16vw,280px)}
+  #hero-identity{font-size:0.95rem}
+  #hero-label{font-size:0.85rem}
+  #hero-badges .badge{font-size:0.85rem;padding:4px 12px}
+  #hero-wx-icon{font-size:2.8rem}
+  #hero-wx-temp{font-size:2rem}
+  #wx-row{font-size:0.9rem;gap:6px 22px;padding:6px 0}
+  #wx-row .wx-icon{font-size:1.4rem}
+  #wx-row .wx-label{font-size:0.72rem}
+  #wx-row .wx-wind{font-size:0.8rem}
+  #wx-row .wx-slot:nth-child(n+8){display:none}
+  #wx-row .wx-slot:nth-child(n+5) .wx-rain,#wx-row .wx-slot:nth-child(n+5) .wx-wind-unit{display:none}
+  /* header clock */
+  #hd-right{font-size:0.9rem}
+  #hd-clock-local,#hd-clock-utc{font-size:0.85rem}
+  /* map — fill remaining space after hero, don't push hero out */
+  #map-table-row{gap:14px;margin-bottom:14px;min-height:30vh}
+  #map-panel{flex:8}
+  #map-local-right{flex:3;gap:14px}
+  #map-local-panel{min-height:200px}
+  #map-extra-box.visible{min-height:120px;max-height:120px;padding:14px 20px}
+  main{gap:14px;margin-bottom:14px;max-height:26vh}
+  .panel{padding:14px 20px}
+  .panel h2{font-size:0.9rem;margin-bottom:6px}
+  .panel dt{font-size:0.86rem}
+  .panel dd{font-size:0.94rem}
+  #recent-table-wrap{max-height:320px}
+  #recent-table{font-size:0.85rem}
+  #recent-table th,#recent-table td{padding:3px 6px}
   /* footer */
-  footer{padding:8px;font-size:0.78rem}
+  footer{padding:8px;font-size:0.8rem}
 }
