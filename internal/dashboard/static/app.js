@@ -206,7 +206,7 @@ var lastActiveFlags={},lastActiveQso=null,lastPartner=null;
 
 // ---- Integrated active panel (hero + partner merged) ----
 function renderHero(aq,p){
-  if(!aq||!aq.call){heroCall.textContent='';heroBadges.innerHTML='';heroIdentity.textContent='';heroMeta.textContent='';hideHeroPhoto();lastActiveFlags={};lastActiveQso=null;D('hero','cleared');return}
+  if(!aq||!aq.call){heroCall.textContent='';heroBadges.innerHTML='';heroIdentity.textContent='';heroMeta.textContent='';hideHeroPhoto();lastActiveFlags={};lastActiveQso=null;clearContactWeather();D('hero','cleared');return}
   // Merge with cached active QSO: caller may pass {call:…} only (partner event).
   // Preserve band/mode/flags from cached full QSO when available.
   if(aq.band||aq.isDupe!==undefined){lastActiveQso=aq}
@@ -243,6 +243,10 @@ function renderHero(aq,p){
     scheduleMapFly(mapGrid,aq.call);
     drawActiveLine(mapGrid);
   }
+  // Contact weather — fetch when we have country info (avoid premature API calls).
+  var contactGrid=aq.grid||(p&&p.grid)||'';
+  var contactCountry=(p&&p.country)||(aq&&aq.country)||'';
+  if(contactGrid&&contactCountry&&navigator.onLine) fetchContactWeather(contactGrid);
 }
 
 // ---- Debounced map fly ----
@@ -783,7 +787,7 @@ function _aprIconHTML(sym,callsign){
         '</div>';
     }
   }
-  if(callsign)html+='<div style="font-weight:700;font-size:0.58rem;color:#D00032;text-shadow:0 0 3px #000,0 0 6px #000;margin-top:1px;white-space:nowrap;">'+esc(callsign)+'</div>';
+  if(callsign)html+='<div style="font-weight:700;font-size:0.65rem;color:#fff;text-shadow:0 0 3px #000,0 0 6px #000;margin-top:1px;white-space:nowrap;">'+esc(callsign)+'</div>';
   html+='</div>';
   return html;
 }
@@ -1058,7 +1062,7 @@ window.addEventListener('online',function(){
   wxUpdateVisibility();
   if(wxLat!=null&&wxLon!=null){wxLat=null;wxLon=null;wxDoFetch();wxStartInterval()}
 });
-window.addEventListener('offline',function(){wxUpdateVisibility()});
+window.addEventListener('offline',function(){wxUpdateVisibility();clearContactWeather()});
 function renderWeather(d){
   if(!wxEl)wxEl=document.getElementById('wx-row');
   if(!wxEl||!navigator.onLine){wxUpdateVisibility();return}
@@ -1068,7 +1072,7 @@ function renderWeather(d){
   var nowTs=Date.now();
   for(var t=0;t<targets.length;t++){
     var ts=nowTs+targets[t]*60000,best=-1,bestD=Infinity;
-    for(var i=0;i<mn.time.length;i++){var d=new Date(mn.time[i]).getTime(),diff=Math.abs(d-ts);if(diff<bestD){bestD=diff;best=i}}
+    for(var i=0;i<mn.time.length;i++){var rowTime=new Date(mn.time[i]).getTime(),diff=Math.abs(rowTime-ts);if(diff<bestD){bestD=diff;best=i}}
     if(best>=0)slots.push([targets[t],'+'+targets[t]+'m',mn.temperature_2m[best],mn.weather_code[best],mn.wind_speed_10m[best],mn.wind_gusts_10m[best],mn.wind_direction_10m[best],mn.precipitation[best],mn.is_day[best]]);
   }
   var windArrow=function(deg){var a=['↓','↙','←','↖','↑','↗','→','↘'];return a[Math.round(deg/45)%8]||'•'};
@@ -1079,11 +1083,38 @@ function renderWeather(d){
     html+='<span class="wx-slot"><span class="wx-icon '+wxAnimClass(code)+'">'+weatherIcon(code,isDay)+'</span>'+
       '<span class="wx-label">'+label+'</span>'+
       (temp!=null?'<span class="wx-temp">'+Math.round(temp)+'°</span>':'')+
-      (wSpd!=null?'<span class="wx-wind '+gustClass+'">'+Math.round(wSpd)+(wGst!=null&&wGst>wSpd?'/'+Math.round(wGst):'')+'<span class="wx-wind-unit">km/h</span> '+windArrow(wDir||0)+'</span>':'')+
+      (wSpd!=null?'<span class="wx-wind '+gustClass+'"><span class="wx-wind-spd">'+Math.round(wSpd)+'</span>'+(wGst!=null&&wGst>wSpd?'<span class="wx-wind-gust">/'+Math.round(wGst)+'</span>':'')+'<span class="wx-wind-unit">km/h</span> <span class="wx-wind-dir">'+windArrow(wDir||0)+'</span></span>':'')+
       (precip!=null&&precip>0?'<span class="wx-rain">'+precip.toFixed(1)+'mm</span>':'')+
       '</span>';
   }
   wxEl.className='';wxEl.innerHTML=html;wxEl.style.display='';
+}
+
+// ---- Contact weather (hero box) — fetched per-contact when country+grid known ----
+var _contactWxGrid=null;
+function fetchContactWeather(grid){
+  if(!grid||!navigator.onLine)return;
+  if(_contactWxGrid===grid)return;
+  _contactWxGrid=grid;
+  var ll=gridToLatLon(grid);if(!ll[0])return;
+  var params=new URLSearchParams({latitude:String(ll[0]),longitude:String(ll[1]),
+    current:'temperature_2m,weather_code,wind_speed_10m,wind_direction_10m,is_day',
+    timezone:'auto',wind_speed_unit:'kmh'});
+  fetch('https://api.open-meteo.com/v1/forecast?'+params,{cache:'no-store'}).then(function(r){return r.json()}).then(function(d){
+    renderContactWeather(d);
+  }).catch(function(e){D('wx','contact fetch err',e.message)});
+}
+function renderContactWeather(d){
+  var hwb=document.getElementById('hero-weather-box');if(!hwb||!navigator.onLine)return;
+  var c=d.current||{},windArrow=function(deg){var a=['↓','↙','←','↖','↑','↗','→','↘'];return a[Math.round(deg/45)%8]||'•'};
+  document.getElementById('hero-wx-icon').innerHTML='<span class="'+wxAnimClass(c.weather_code||0)+'">'+weatherIcon(c.weather_code||0,c.is_day)+'</span>';
+  document.getElementById('hero-wx-temp').textContent=c.temperature_2m!=null?Math.round(c.temperature_2m)+'°':'';
+  document.getElementById('hero-wx-wind').textContent=c.wind_speed_10m!=null?Math.round(c.wind_speed_10m)+' km/h '+windArrow(c.wind_direction_10m||0):'';
+  hwb.classList.add('visible');
+}
+function clearContactWeather(){
+  _contactWxGrid=null;
+  var hwb=document.getElementById('hero-weather-box');if(hwb)hwb.classList.remove('visible');
 }
 
 // ---- QSO sound ----

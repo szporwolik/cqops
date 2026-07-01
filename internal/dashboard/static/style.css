@@ -39,7 +39,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 .sse-connected{color:var(--success)}.sse-connecting{color:var(--warn)}.sse-disconnected{color:var(--offline)}
 
 /* ── weather row (header extension, below clock) ── */
-#wx-row{display:flex;align-items:center;justify-content:center;gap:6px 18px;flex-wrap:nowrap;padding:4px 0;font-size:0.78rem;color:var(--text-secondary);border-bottom:1px solid var(--border-strong);margin-bottom:4px;min-height:0;overflow:hidden}
+#wx-row{display:flex;align-items:center;justify-content:center;gap:6px 18px;flex-wrap:nowrap;padding:4px 0;font-size:0.78rem;color:var(--text-secondary);border-bottom:1px solid var(--border-strong);margin-bottom:0;min-height:0;overflow:hidden}
 #wx-row.wx-loading{min-height:0;border-bottom:none;margin-bottom:0;padding:0}
 #wx-row .wx-slot{display:flex;align-items:center;gap:4px;white-space:nowrap;flex-shrink:0}
 #wx-row .wx-icon{font-size:1.2rem;line-height:1}
@@ -51,11 +51,11 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #wx-row .wx-danger{color:var(--offline)}
 #wx-row .wx-rain{font-size:0.7rem;color:var(--blue)}
 /* Progressive: hide extra slots first, then trim content inside remaining slots. */
-@media(max-width:950px){#wx-row .wx-slot:nth-child(n+6){display:none}}
-@media(max-width:850px){#wx-row .wx-slot:nth-child(n+5){display:none};#wx-row .wx-rain{display:none}}
-@media(max-width:700px){#wx-row .wx-slot:nth-child(n+4){display:none};#wx-row .wx-wind{display:none}}
-@media(max-width:500px){#wx-row{gap:4px 10px;font-size:0.7rem}#wx-row .wx-slot:nth-child(n+3){display:none}#wx-row .wx-label{display:none}}
-@media(max-width:360px){#wx-row{gap:4px 6px}#wx-row .wx-slot:nth-child(n+3){display:none}}
+@media(max-width:950px){#wx-row{gap:6px 10px}#wx-row .wx-slot:nth-child(n+6){display:none}}
+@media(max-width:850px){#wx-row{gap:5px 8px}#wx-row .wx-slot:nth-child(n+5){display:none};#wx-row .wx-rain{display:none};#wx-row .wx-wind-unit{display:none};#wx-row .wx-wind-gust{display:none}}
+@media(max-width:700px){#wx-row{gap:4px 6px}#wx-row .wx-slot:nth-child(n+4){display:none};#wx-row .wx-wind{display:none}}
+@media(max-width:500px){#wx-row{gap:4px 5px;font-size:0.7rem}#wx-row .wx-slot:nth-child(n+3){display:none};#wx-row .wx-label{display:none}}
+@media(max-width:370px){#wx-row{gap:3px 4px;font-size:0.65rem}#wx-row .wx-icon{font-size:1rem}}
 /* Weather icon animations — subtle, no perf impact. */
 #wx-row .wx-icon{will-change:transform,opacity}
 .wx-anim-sun{animation:wx-sun 3s ease-in-out infinite}
@@ -83,14 +83,15 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #hero-status{font-size:1rem;color:var(--success);font-weight:700}
 #hero-promo{font-size:0.95rem;color:var(--dim);font-style:italic;margin-top:4px}
 #hero-promo:empty{display:none}
-.mode-active #hero{background:radial-gradient(circle at 12% 50%,rgba(0,91,187,0.10),transparent 35%),radial-gradient(circle at 85% 40%,rgba(208,0,50,0.06),transparent 30%),linear-gradient(105deg,#FFFFFF 0%,#F8FAFF 40%,var(--blue-xsoft) 100%);border:1px solid var(--border-strong);border-radius:10px;padding:6px 20px;margin:6px 0;box-shadow:0 8px 24px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.8) inset}
+.mode-active #hero{background:radial-gradient(circle at 12% 50%,rgba(0,91,187,0.10),transparent 35%),radial-gradient(circle at 85% 40%,rgba(208,0,50,0.06),transparent 30%),linear-gradient(105deg,#FFFFFF 0%,#F8FAFF 40%,var(--blue-xsoft) 100%);border:1px solid var(--border-strong);border-radius:10px;padding:0 20px 0 0;margin:10px 0;box-shadow:0 8px 24px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.8) inset}
 .mode-active #hero-overview{display:none}
-.mode-active #hero-active{display:flex;align-items:center;gap:14px;min-height:auto}
-/* photo box */
+.mode-active #hero-active{display:flex;align-items:stretch;gap:0;min-height:auto}
+/* photo box — overflows hero border on top/left/bottom so hero border IS photo border */
 #hero-photo-box{
-  width:clamp(180px,18vw,280px);height:clamp(125px,12vw,185px);
-  flex:0 0 auto;border-radius:10px;overflow:hidden;background:var(--blue-soft);
-  border:2px solid var(--border-strong);position:relative;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 12px var(--shadow-soft)
+  width:clamp(180px,18vw,280px);margin:-1px 0 -1px -1px;
+  flex:0 0 auto;overflow:hidden;background:var(--blue-soft);
+  border-radius:10px 0 0 10px;position:relative;display:flex;align-items:center;justify-content:center;
+  border-right:1px solid var(--border-strong)
 }
 #hero-photo{width:100%;height:100%;object-fit:cover;display:block}
 #hero-photo[src=""],#hero-photo:not([src]){display:none}
@@ -101,9 +102,13 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #hero-placeholder-text{font-size:1.1rem;font-weight:700;color:var(--accent);line-height:1.2}
 #hero-placeholder-text::after{content:"\ANo photo";white-space:pre;display:block;font-size:0.68rem;font-weight:400;color:var(--text-secondary);margin-top:2px}
 /* main content */
-#hero-main{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:3px}
+#hero-main{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:3px;padding:8px 0 8px 16px}
 #hero-label{font-size:0.78rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--accent);font-weight:700}
 #hero-call{font-size:clamp(30px,4.5vw,56px);font-weight:900;color:var(--accent);line-height:1;letter-spacing:0.01em}
+.mode-active #hero-call{animation:hero-glow 4s ease-in-out infinite}
+.mode-active #hero-label{animation:hero-breathe 3s ease-in-out infinite}
+@keyframes hero-glow{0%,100%{text-shadow:0 0 8px transparent}50%{text-shadow:0 0 28px var(--accent)}}
+@keyframes hero-breathe{0%,100%{opacity:0.7}50%{opacity:1}}
 #hero-badges{display:inline-flex;flex-wrap:wrap;gap:6px}
 #hero-badges .badge{display:inline-block;background:var(--accent);color:#fff;padding:3px 10px;border-radius:4px;font-size:0.85rem;font-weight:600;margin:0 3px 3px 0}
 #hero-badges .badge.info{background:var(--blue-soft);color:var(--blue-dark);border:1px solid var(--border)}
@@ -116,6 +121,17 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #hero-refs:empty{visibility:hidden}
 #hero-meta{font-size:0.8rem;color:var(--dim);min-height:1em}
 #hero-meta:empty{visibility:hidden}
+/* Weather box — right side of hero, clean inline display. */
+#hero-weather-box{
+  display:none;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  flex:0 0 auto;padding:0 8px;text-align:center
+}
+#hero-weather-box.visible{display:flex}
+#hero-wx-icon{font-size:2.5rem;line-height:1;display:block}
+#hero-wx-temp{font-size:1.8rem;font-weight:800;color:var(--text);line-height:1}
+#hero-wx-wind{font-size:0.7rem;color:var(--text-secondary);line-height:1.2}
+#hero-wx-wind:empty{display:none}
+@media(max-width:550px){#hero-weather-box{display:none!important}}
 
 /* ── map row (full width, fills remaining vertical space) ── */
 #map-table-row{flex:1 1 40%;min-height:250px;display:flex;gap:10px;margin-bottom:10px}
