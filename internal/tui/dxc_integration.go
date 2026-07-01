@@ -336,6 +336,14 @@ func (m *Model) handleDXCStatus(msg dxcStatusMsg) {
 		m.rc.status = ""
 		applog.Info("DXC: connected OK")
 		m.toasts.Success("DXC: connected")
+		// Push DXC status to dashboard for footer attribution.
+		if m.http.client != nil && m.http.online {
+			cfg := m.App.Config.Integrations.DXC
+			m.http.client.State().SetDXC(dashboard.DXCInfo{
+				Connected: true,
+				Host:      cfg.Host + ":" + cfg.Port,
+			})
+		}
 	} else {
 		m.dxc.online = false
 		m.dxc.client = nil

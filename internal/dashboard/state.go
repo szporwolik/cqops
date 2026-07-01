@@ -88,12 +88,13 @@ type SolarInfo struct {
 	UpdatedAt      string            `json:"updatedAt,omitempty"`
 }
 
-// DXCInfo holds the last "spotted me" event from the DX cluster.
+// DXCInfo holds the last "spotted me" event and cluster info.
 type DXCInfo struct {
-	SpottedBy string  `json:"spottedBy"`
-	FreqKhz   float64 `json:"freqKhz"`
+	Connected bool    `json:"connected"`
+	Host      string  `json:"host,omitempty"`
+	SpottedBy string  `json:"spottedBy,omitempty"`
 	Comment   string  `json:"comment,omitempty"`
-	When      string  `json:"when,omitempty"`
+	FreqKhz   float64 `json:"freqKhz,omitempty"`
 }
 
 // PSKInfo holds PSK Reporter statistics for the dashboard.

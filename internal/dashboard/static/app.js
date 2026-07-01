@@ -195,7 +195,8 @@ function renderAll(snap){
   if(snap.app&&snap.app.version){
     $('footer-text').innerHTML='CQOps Live v'+esc(snap.app.version)+' · <a href=\"https://cqops.com\" style=\"color:var(--accent)\">cqops.com</a>';
   }
-  $('footer-attrib').innerHTML='Map: <a href=\"https://leafletjs.com\" target=\"_blank\" rel=\"noopener\">Leaflet</a> · Tiles: <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener\">&copy; OpenStreetMap</a> · Callbook: <a href=\"https://www.qrz.com\" target=\"_blank\" rel=\"noopener\">QRZ.com</a>';
+  $('footer-attrib').innerHTML='Map: <a href=\"https://leafletjs.com\" target=\"_blank\" rel=\"noopener\">Leaflet</a> · Tiles: <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener\">&copy; OpenStreetMap</a> · Solar: <a href=\"https://www.hamqsl.com/solar.html\" target=\"_blank\" rel=\"noopener\">HamQSL</a> · Spots: <a href=\"https://pskreporter.info/\" target=\"_blank\" rel=\"noopener\">PSK Reporter</a> · Callbook: <a href=\"https://www.qrz.com\" target=\"_blank\" rel=\"noopener\">QRZ.com</a>'+
+    (snap.dxc&&snap.dxc.connected?' · Cluster: <span style=\"color:var(--dim)\">'+esc(snap.dxc.host||'DX Cluster')+'</span>':'');
   D('renderAll','done');
 }
 
