@@ -969,7 +969,7 @@ function updateMapFromToday(){
   else if(!hasStation)map.flyTo([51,10],2);
 }
 
-function getQsoLatLon(q){if(q.lat&&q.lon)return[q.lat,q.lon];if(q.grid){var ll=gridToLatLon(q.grid);if(ll[0])return ll}return null}
+function getQsoLatLon(q){if(q.lat&&q.lon)return[q.lat,q.lon];if(q.grid){var g=q.grid.toUpperCase();if(g==='AA00AA')return null;var ll=gridToLatLon(q.grid);if(ll[0])return ll}return null}
 
 function focusMapOnGrid(grid){if(!map)return;var ll=gridToLatLon(grid);if(!ll[0])return;map.invalidateSize();if(ownStationLat!=null&&ownStationLon!=null){var mid=greatCirclePoints(ownStationLat,ownStationLon,ll[0],ll[1],48)[24];var b=L.latLngBounds([[ownStationLat,ownStationLon],ll]);b.extend(mid);map.flyToBounds(b,{padding:[60,60],maxZoom:17,duration:2.5})}else{map.flyTo(ll,6,{duration:2})}}
 function drawActiveLine(grid){if(grid===activeGrid)return;activeGrid=grid;updateMapFromToday()}
