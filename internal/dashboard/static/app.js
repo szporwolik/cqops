@@ -422,7 +422,7 @@ function renderTopQSOs(){
   if(!todayQsos.length||ownStationLat==null){topqsosFields.innerHTML='<dt style=\"color:var(--dim)\">—</dt>';return}
   var ranked=todayQsos.map(function(q){
     return{call:q.call||'?',grid:q.grid,band:q.band||'',mode:q.mode||'',country:q.country||'',operator:q.operator||'',km:distKm(q.grid)};
-  }).sort(function(a,b){return b.km-a.km}).slice(0,8);
+  }).sort(function(a,b){return b.km-a.km}).slice(0,10);
   var longest=ranked[0];
   topqsosFields.innerHTML=ranked.map(function(r,i){
     var countryText=r.country?r.country.replace(/^The\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Federal Republic Of\s+/,'').trim().substring(0,20):'';

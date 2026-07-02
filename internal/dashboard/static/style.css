@@ -230,6 +230,8 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #recent-table td:nth-child(2){font-weight:700;font-size:0.9rem}
 #recent-table td strong{color:var(--text)}
 #recent-table tbody tr:nth-child(even){background:var(--table-alt)}
+/* Top QSOs alternating row colors — match Recent QSOs table. */
+#topqsos-fields dt:nth-of-type(even),#topqsos-fields dd:nth-of-type(even){background:var(--table-alt)}
 #recent-table tbody tr.new-row{animation:flash 1.2s ease-out}
 @keyframes flash{from{background:var(--blue-soft);color:var(--blue-dark)}to{background:transparent;color:inherit}}
 /* Recent QSOs badge pills for band/mode cells. */
