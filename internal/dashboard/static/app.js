@@ -625,19 +625,18 @@ function registerSolarModule(d){
       '</div>';
   };m2._id='solar';
 
-  // Module 3: Band conditions (day/night per band) — pill/badge style.
+  // Module 3: Band conditions (day/night per band) — horizontal 2×2 grid.
   var m3=function(){
     function bc(v){return v==='Good'?'success':v==='Fair'?'warn':'offline'}
-    var html='<div class="extra-title">Band Conditions</div>'+'<div class="band-cond-grid">'+
-      '<div class="bc-hdr"><span>Band</span><span>Day</span><span>Night</span></div>';
+    var html='<div class="extra-title">Band Conditions</div>'+'<div class="band-cond-grid">';
     var bands=[['80–40','80m-40m'],['30–20','30m-20m'],['17–15','17m-15m'],['12–10','12m-10m']];
     for(var i=0;i<bands.length;i++){
       var key=bands[i][1],label=bands[i][0];
       var day=d.bandConditions? (d.bandConditions[key+'_day']||'—'):'—';
       var night=d.bandConditions? (d.bandConditions[key+'_night']||'—'):'—';
-      html+='<div class="bc-row"><span class="bc-label">'+label+'</span>'+
-        '<span class="bc-pill bc-'+bc(day)+'">'+day+'</span>'+
-        '<span class="bc-pill bc-'+bc(night)+'">'+night+'</span></div>';
+      html+='<div class="bc-block"><span class="bc-label">'+label+'</span>'+'<span class="bc-pill bc-'+bc(day)+'">D '+day+'</span>'+'<span class="bc-pill bc-'+bc(night)+'">N '+night+'</span></div>';
+    }
+    html+='</div>';return html;
     }
     html+='</div>';return html;
   };m3._id='solar';
