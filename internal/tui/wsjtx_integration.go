@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -310,15 +311,22 @@ func parseWSJTXADIF(adifStr string) *qso.QSO {
 
 // txPowerForWSJTX returns the TX power to use when auto-logging a WSJT-X QSO.
 // Priority (most authoritative first):
-//  1. Form field value (populated by hamlib/flrig real radio readout, or manual entry)
+//  1. Form field value from hamlib/flrig — but only if > 0 W (rig may report 0 in RX)
 //  2. WSJT-X reported tx_pwr from the ADIF message
 //  3. Station config rig preset power
 func txPowerForWSJTX(m *Model, wsjtxPower string) string {
 	if fp := strings.TrimSpace(m.fields[fieldTXPower].Value()); fp != "" {
-		return fp
+		if p, err := strconv.ParseFloat(fp, 64); err == nil && p > 0 {
+			return fp
+		}
 	}
 	if wp := strings.TrimSpace(wsjtxPower); wp != "" {
-		return wp
+		if p, err := strconv.ParseFloat(wp, 64); err == nil && p > 0 {
+			return wp
+		}
 	}
-	return m.App.Logbook.Station.RigPower(m.App.Config.Rigs)
+	if rp := m.App.Logbook.Station.RigPower(m.App.Config.Rigs); rp != "" {
+		return rp
+	}
+	return ""
 }
