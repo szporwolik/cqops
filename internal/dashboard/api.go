@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -42,6 +43,9 @@ func NewMux(state *State, hub *Hub) *http.ServeMux {
 	mux.HandleFunc("/api/aprs", handleAPRS(state))
 	mux.HandleFunc("/api/events", handleEvents(state, hub))
 	mux.HandleFunc("/healthz", handleHealthz())
+
+	// Radar tile proxy — avoids CORS/ORB issues with RainViewer CDN.
+	mux.HandleFunc("/radar-proxy/", handleRadarProxy())
 
 	return mux
 }
@@ -230,5 +234,51 @@ func serveStaticFile(embedPath, contentType string) http.HandlerFunc {
 		w.Header().Set("Cache-Control", "public, max-age=3600")
 		w.WriteHeader(http.StatusOK)
 		w.Write(data)
+	}
+}
+
+// handleRadarProxy proxies radar tile requests to the RainViewer CDN.
+// This avoids browser CORS/ORB blocking and the 429 rate-limiting that
+// occurs when many no-cors tile requests flood the CDN from a single client.
+func handleRadarProxy() http.HandlerFunc {
+	client := &http.Client{
+		Timeout: 12 * time.Second,
+	}
+	upstream := "https://tilecache.rainviewer.com"
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		path := strings.TrimPrefix(r.URL.Path, "/radar-proxy")
+		if path == r.URL.Path || path == "" || path == "/" {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+
+		req, err := http.NewRequestWithContext(r.Context(), r.Method, upstream+path, nil)
+		if err != nil {
+			http.Error(w, "bad gateway", http.StatusBadGateway)
+			return
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			http.Error(w, "bad gateway", http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+
+		// Only cache successful tile responses; 429/5xx should not be cached.
+		if resp.StatusCode == http.StatusOK {
+			w.Header().Set("Cache-Control", "public, max-age=600")
+		}
+		if ct := resp.Header.Get("Content-Type"); ct != "" {
+			w.Header().Set("Content-Type", ct)
+		}
+		w.WriteHeader(resp.StatusCode)
+		io.Copy(w, resp.Body)
 	}
 }

@@ -18,6 +18,26 @@ var hdClockLocal=$('hd-clock-local'), hdClockUtc=$('hd-clock-utc'), hdSSE=$('hd-
 var heroOverview=$('hero-overview'), heroHeadline=$('hero-headline'), heroSubline=$('hero-subline'), heroStatus=$('hero-status'), heroPromo=$('hero-promo');
 var heroLabel=$('hero-label'),heroCall=$('hero-call'),heroBadges=$('hero-badges'),heroIdentity=$('hero-identity'),heroMeta=$('hero-meta');
 var stationFields=$('station-fields'), statsFields=$('stats-fields'), topqsosFields=$('topqsos-fields');
+
+// ---- Data freshness timestamps ----
+var freshness={wx:null,psk:null,radar:null,aprs:null};
+function touchFreshness(key){freshness[key]=new Date();registerDataFreshness()}
+function fmtFreshness(d){if(!d)return'—';var h=d.getHours().toString().padStart(2,'0'),m=d.getMinutes().toString().padStart(2,'0');return h+':'+m}
+function registerDataFreshness(){
+  var mod=function(){
+    var rows=[];
+    if(freshness.wx)rows.push('<span class="fr-row"><span class="fr-label">WX</span> '+fmtFreshness(freshness.wx)+'</span>');
+    if(freshness.psk)rows.push('<span class="fr-row"><span class="fr-label">PSK</span> '+fmtFreshness(freshness.psk)+'</span>');
+    if(freshness.radar)rows.push('<span class="fr-row"><span class="fr-label">Radar</span> '+fmtFreshness(freshness.radar)+'</span>');
+    if(freshness.aprs)rows.push('<span class="fr-row"><span class="fr-label">APRS</span> '+fmtFreshness(freshness.aprs)+'</span>');
+    if(!rows.length)return'';
+    return'<div class="extra-title">Data Freshness</div><div class="freshness-grid">'+rows.join('')+'</div>';
+  };
+  mod._id='freshness';
+  extraModules=extraModules.filter(function(f){return f._id!=='freshness'});
+  if(freshness.wx||freshness.psk||freshness.radar||freshness.aprs)extraModules.unshift(mod);
+  updateExtraBox();
+}
 var recentBody=$('recent-body');
 var mapContainer=$('map-container');
 
@@ -30,8 +50,8 @@ function updateClocks(){
   var n=new Date();
   var local=n.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   var utc=n.toISOString().slice(11,19).replace(/:/g,'')+'Z';
-  hdClockLocal.textContent='Local '+local+' \u00b7 UTC '+utc;
-  hdClockUtc.textContent='';
+  hdClockLocal.textContent='LOCAL '+local;
+  hdClockUtc.textContent='UTC  '+utc;
 }
 updateClocks();setInterval(updateClocks,1000);
 
@@ -56,7 +76,7 @@ function switchToActive(){D('state','active');setState(true)}
 
 // ---- SSE ----
 var sseReconnects=0;
-function setSSEStatus(cls){hdSSE.className=cls;hdSSE.textContent=cls==='sse-connected'?'●':cls==='sse-connecting'?'◌':'○'}
+function setSSEStatus(cls){hdSSE.className=cls;hdSSE.textContent=cls==='sse-connected'?'Online':cls==='sse-connecting'?'Connecting':'Offline'}
 
 function connectSSE(){
   if(es)es.close();setSSEStatus('sse-connecting');
@@ -79,7 +99,7 @@ function connectSSE(){
   es.addEventListener('rig',function(e){var r=JSON.parse(e.data).payload;
     D('sse','rig',r.connected?(r.frequency||'?')+' '+(r.mode||''):'disconnected');
     updateStationField('Rig',r.connected?'<span class=\"status-on\">●</span> Connected':'<span class=\"status-off\">○</span> Disconnected');
-    if(r.frequency)updateStationField('Frequency',r.frequency+' '+(r.mode||''));
+    if(r.frequency)updateStationField('Frequency',esc(r.frequency)+(r.band?' <span class=\"stat-badge '+bandBadgeClass(r.band)+'\">'+esc(r.band)+'</span>':'')+(r.mode?' <span class=\"stat-badge '+modeBadgeClass(r.mode)+'\">'+esc(r.mode)+'</span>':''));
   });
   es.addEventListener('wsjtx',function(e){var w=JSON.parse(e.data).payload;
     D('sse','wsjtx',w.connected?'online':'offline');
@@ -229,8 +249,8 @@ function renderHero(aq,p){
   function addBadge(text,cls){
     var s=document.createElement('span');s.className='badge'+(cls?' '+cls:'');s.textContent=text;heroBadges.appendChild(s);
   }
-  if(aq.band)addBadge(aq.band);
-  if(aq.mode)addBadge(aq.mode);
+  if(aq.band)addBadge(aq.band,bandBadgeClass(aq.band));
+  if(aq.mode)addBadge(aq.mode,modeBadgeClass(aq.mode));
   if(lastActiveFlags.isDupe)addBadge('DUPE','dupe');
   else if(lastActiveFlags.isNewDxcc)addBadge('NEW DXCC','success');
   else if(lastActiveFlags.isNewCall)addBadge('NEW CALL','info');
@@ -304,19 +324,22 @@ function hideHeroPhoto(){$('hero-photo').style.display='none';$('hero-placeholde
 // ---- Station panel ----
 function renderStation(st,op,lb,rig,wsjtx){
   if(!st)return;op=op||{};lb=lb||{};rig=rig||{};wsjtx=wsjtx||{};
-  var opText=(op.callsign||'')?op.callsign+(op.name?' ('+op.name+')':''):'—';
+  var opHtml=op.callsign?'<span class=\"stat-badge stat-badge-op\">'+esc(op.callsign)+(op.name?' '+esc(op.name):'')+'</span>':'—';
   var rigDot=rig.connected?'<span class=\"status-on\">●</span> Connected':'<span class=\"status-off\">○</span> Disconnected';
   var wsjtxDot=wsjtx.connected?'<span class=\"status-on\">●</span> Online':'<span class=\"status-off\">○</span> Offline';
-  var rigFreq=rig.frequency?rig.frequency+(rig.mode?' '+rig.mode:''):'';
+  var freqHtml=rig.frequency?esc(rig.frequency)+(rig.band?' <span class=\"stat-badge '+bandBadgeClass(rig.band)+'\">'+esc(rig.band)+'</span>':'')+(rig.mode?' <span class=\"stat-badge '+modeBadgeClass(rig.mode)+'\">'+esc(rig.mode)+'</span>':''):'—';
   stationFields.innerHTML=[
-    ['Operator',esc(opText||'—')],['Logbook',esc(lb.name||'—')],['Locator',esc(st.locator||'—')],
+    ['Operator',opHtml],['Logbook',esc(lb.name||'—')],['Locator',esc(st.locator||'—')],
     ['Radio',esc(st.radio||'—')],['Antenna',esc(st.antenna||'—')],['Power',st.powerW?st.powerW+' W':'—'],
-    ['Rig',rigDot],['WSJT-X',wsjtxDot],['Frequency',rigFreq]
+    ['Rig',rigDot],['WSJT-X',wsjtxDot],['Frequency',freqHtml]
   ].map(function(r){return'<dt>'+r[0]+'</dt><dd id=\"sf-'+r[0]+'\">'+r[1]+'</dd>'}).join('');
 }
 function updateStationField(key,val){var el=document.getElementById('sf-'+key);if(el)el.innerHTML=val}
 
 // ---- Stats ----
+// Band order for frequency-consistent badge sorting.
+var _bandOrder=['2190m','630m','560m','160m','80m','60m','40m','30m','20m','17m','15m','12m','10m','6m','4m','2m','1.25m','70cm','33cm','23cm','13cm','9cm','6cm','3cm'];
+function _bandRank(b){var i=_bandOrder.indexOf(b);return i>=0?i:999}
 function renderStats(st,todayBuf){
   if(!st)st={};
   // Browser-side stats from today buffer when server data is thin.
@@ -338,10 +361,7 @@ function renderStats(st,todayBuf){
     st.grids=Object.keys(grids).length;
     st.bands=Object.keys(bands).length;
     st.modes=Object.keys(modes).length;
-    if(todayBuf.length>1){
-      var times=todayBuf.map(function(q){return q.timeUtc?new Date(q.timeUtc).getTime():0}).filter(function(t){return t>0}).sort();
-      if(times.length>1){var spanH=(times[times.length-1]-times[0])/3600000;if(spanH>0.05)st.ratePerHour=todayBuf.length/spanH}
-    }
+    // Rate is always from server (QSOs in last hour) — no JS fallback.
   }
   // Longest QSO distance — scan today buffer.
   if(ownStationLat!=null&&ownStationLon!=null&&todayQsos.length){
@@ -349,8 +369,51 @@ function renderStats(st,todayBuf){
       var d=distKm(q.grid);if(d>longestKm)longestKm=d;
     });
   }
-  statsFields.innerHTML=[['QSOs',qsosToday||0],['Operators',st.operators||0],['Unique calls',st.uniqueCalls||0],['DXCC',st.dxcc||0],['Grids',st.grids||0],['Bands',st.bands||0],['Modes',st.modes||0],['Longest',longestKm?Math.round(longestKm)+' km':'—'],['Rate',(st.ratePerHour||0).toFixed(1)+'/hr']].map(function(r){return'<dt>'+r[0]+'</dt><dd>'+r[1]+'</dd>'}).join('');
+  // Build band/mode/operator frequency maps from today QSOs for badges.
+  var buf=todayBuf&&todayBuf.length?todayBuf:todayQsos;
+  var bandFreq={},modeFreq={},opFreq={};
+  buf.forEach(function(q){
+    if(q.band)bandFreq[q.band]=(bandFreq[q.band]||0)+1;
+    if(q.mode)modeFreq[q.mode]=(modeFreq[q.mode]||0)+1;
+    if(q.operator)opFreq[q.operator]=(opFreq[q.operator]||0)+1;
+  });
+  var bandList=Object.keys(bandFreq).sort(function(a,b){return _bandRank(a)-_bandRank(b)||bandFreq[b]-bandFreq[a]});
+  var modeList=Object.keys(modeFreq).sort(function(a,b){return modeFreq[b]-modeFreq[a]});
+  var opList=Object.keys(opFreq).sort(function(a,b){return opFreq[b]-opFreq[a]});
+  // Render fields — bands/modes as badges, operators as count+top-3.
+  var rate=st.ratePerHour||0;
+  var opsTotal=st.operators||opList.length;
+  statsFields.innerHTML=[
+    ['QSOs',qsosToday||0],
+    ['Operators','<span class="stat-op-count">'+esc(String(opsTotal))+'</span>'+opList.slice(0,3).map(function(o){return'<span class="stat-badge stat-badge-op">'+esc(o)+'</span>'}).join('')+(opList.length>3?'<span class="stat-op-more">…</span>':'')],
+    ['Unique calls',st.uniqueCalls||0],
+    ['DXCC',st.dxcc||0],
+    ['Grids',st.grids||0],
+    ['Bands',bandList.length?bandList.map(function(b){return'<span class="stat-badge '+bandBadgeClass(b)+'">'+esc(b)+'</span>'}).join(''):(st.bands||'—')],
+    ['Modes',modeList.length?modeList.map(function(m){return'<span class="stat-badge '+modeBadgeClass(m)+'">'+esc(m)+'</span>'}).join(''):(st.modes||'—')],
+    ['Longest',longestKm?Math.round(longestKm)+' km':'—'],
+    ['Rate',Math.round(rate)+'/hr']
+  ].map(function(r){return'<dt>'+r[0]+'</dt><dd>'+r[1]+'</dd>'}).join('');
   renderTopQSOs();
+  // Session summary removed from extra modules — stats already shown in Stats panel.
+}
+
+// ---- Session Summary (extra module above APRS map) ----
+function registerSessionSummary(qsos,dxcc,grids,longestKm,rate){
+  var mod=function(){
+    var parts=[];
+    if(qsos)parts.push('<span class="ss-item"><span class="ss-val">'+qsos+'</span> QSOs</span>');
+    if(dxcc)parts.push('<span class="ss-item"><span class="ss-val">'+dxcc+'</span> DXCC</span>');
+    if(grids)parts.push('<span class="ss-item"><span class="ss-val">'+grids+'</span> grids</span>');
+    if(longestKm)parts.push('<span class="ss-item"><span class="ss-val">'+Math.round(longestKm)+' km</span> best</span>');
+    if(rate)parts.push('<span class="ss-item"><span class="ss-val">'+rate.toFixed(1)+'/hr</span></span>');
+    return'<div class="extra-title">Session</div><div class="session-summary">'+parts.join('<span class="ss-sep">|</span>')+'</div>';
+  };
+  mod._id='session';
+  // Replace existing session module if present, otherwise add.
+  extraModules=extraModules.filter(function(f){return f._id!=='session'});
+  extraModules.unshift(mod);
+  updateExtraBox();
 }
 
 
@@ -358,10 +421,18 @@ function renderStats(st,todayBuf){
 function renderTopQSOs(){
   if(!todayQsos.length||ownStationLat==null){topqsosFields.innerHTML='<dt style=\"color:var(--dim)\">—</dt>';return}
   var ranked=todayQsos.map(function(q){
-    return{call:q.call||'?',grid:q.grid,band:q.band||'',mode:q.mode||'',operator:q.operator||'',km:distKm(q.grid)};
+    return{call:q.call||'?',grid:q.grid,band:q.band||'',mode:q.mode||'',country:q.country||'',operator:q.operator||'',km:distKm(q.grid)};
   }).filter(function(r){return r.km>0}).sort(function(a,b){return b.km-a.km}).slice(0,9);
+  var longest=ranked[0];
   topqsosFields.innerHTML=ranked.map(function(r,i){
-    return'<dt>'+(i+1)+'.</dt><dd><strong>'+esc(r.call)+'</strong> <span style="color:var(--dim);font-size:0.78rem">'+Math.round(r.km)+' km '+esc(r.band)+' '+esc(r.mode)+(r.operator?' by '+esc(r.operator):'')+'</span></dd>';
+    var isLongest=i===0&&longest&&longest.km>0;
+    var countryText=r.country?r.country.replace(/^The\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Federal Republic Of\s+/,'').trim().substring(0,20):'';
+    var badge='<span class="tq-badge">'+esc(r.band)+'</span><span class="tq-badge tq-mode">'+esc(r.mode)+'</span>';
+    var distPart='<span class="tq-dist">'+Math.round(r.km)+' km</span>';
+    if(isLongest){
+      return'<dt class="tq-longest">🏆</dt><dd class="tq-longest"><strong>'+esc(r.call)+'</strong> '+distPart+' <span class="tq-country">'+esc(countryText)+'</span> '+badge+'</dd>';
+    }
+    return'<dt>'+(i+1)+'.</dt><dd><strong>'+esc(r.call)+'</strong> '+distPart+' '+badge+(r.operator?' <span class="tq-op">'+esc(r.operator)+'</span>':'')+'</dd>';
   }).join('')||'<dt style=\"color:var(--dim)\">—</dt>';
 }
 
@@ -382,19 +453,24 @@ function formatDistDir(grid){
 // ---- Recent QSOs table ----
 function renderRecentTable(qsos){
   var list=qsos&&qsos.length?qsos.slice(0,8):[];
-  if(!list.length){recentBody.innerHTML='<tr><td colspan=\"7\" style=\"color:var(--dim)\">No QSOs yet</td></tr>';return}
+  if(!list.length){recentBody.innerHTML='<tr><td colspan=\"8\" style=\"color:var(--dim)\">No QSOs yet</td></tr>';return}
   recentBody.innerHTML=list.map(function(q){
     var utc=q.timeUtc?q.timeUtc.slice(11,16).replace(':','')+'Z':'';
     var ctry=(q.country||'').replace(/^The\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Federal Republic Of\s+/,'').trim().substring(0,22);
     var dist=formatDistDir(q.grid);
-    return'<tr><td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+esc(q.band||'')+'</td><td>'+esc(q.mode||'')+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td title="'+esc(q.country||'')+'">'+esc(ctry)+'</td></tr>';
+    return'<tr><td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.mode,'mode')+'</td><td class="recent-op-col">'+esc(q.operator||'')+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td title="'+esc(q.country||'')+'">'+esc(ctry)+'</td></tr>';
   }).join('');
+}
+function renderCellBadge(val,type){
+  if(!val)return'';
+  var cls=type==='band'?bandBadgeClass(val):modeBadgeClass(val);
+  return'<span class=\"recent-badge '+cls+'\">'+esc(val)+'</span>';
 }
 function prependRecentRow(q){
   var utc=q.timeUtc?q.timeUtc.slice(11,16).replace(':','')+'Z':'';
   var dist=formatDistDir(q.grid);
   var row=document.createElement('tr');row.className='new-row';
-  row.innerHTML='<td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+esc(q.band||'')+'</td><td>'+esc(q.mode||'')+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td>'+esc(q.country||'')+'</td>';
+  row.innerHTML='<td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.mode,'mode')+'</td><td class="recent-op-col">'+esc(q.operator||'')+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td>'+esc(q.country||'')+'</td>';
   if(recentBody.firstChild)recentBody.insertBefore(row,recentBody.firstChild);else recentBody.appendChild(row);
   while(recentBody.children.length>8)recentBody.removeChild(recentBody.lastChild);
 }
@@ -547,24 +623,20 @@ function registerSolarModule(d){
       '</div>';
   };m2._id='solar';
 
-  // Module 3: Band conditions (day/night per band).
+  // Module 3: Band conditions (day/night per band) — pill/badge style.
   var m3=function(){
-    function bc(v){return v==='Good'?'var(--success)':v==='Fair'?'var(--warn)':'var(--offline)'}
-    var html='<div class="extra-title">Band Conditions</div>'+
-      '<table style="font-size:0.72rem;border-collapse:collapse;margin:0 auto;line-height:1.35">'+
-      '<tr style="color:var(--dim)"><td></td><td style="padding:0 4px">Day</td><td style="padding:0 4px">Night</td></tr>';
-    var bands=[['80-40','80m-40m'],['30-20','30m-20m'],['17-15','17m-15m'],['12-10','12m-10m']];
+    function bc(v){return v==='Good'?'success':v==='Fair'?'warn':'offline'}
+    var html='<div class="extra-title">Band Conditions</div>'+'<div class="band-cond-grid">';
+    var bands=[['80–40','80m-40m'],['30–20','30m-20m'],['17–15','17m-15m'],['12–10','12m-10m']];
     for(var i=0;i<bands.length;i++){
       var key=bands[i][1],label=bands[i][0];
       var day=d.bandConditions? (d.bandConditions[key+'_day']||'—'):'—';
       var night=d.bandConditions? (d.bandConditions[key+'_night']||'—'):'—';
-      html+='<tr>'+
-        '<td style="color:var(--dim);padding-right:6px;text-align:right">'+label+'</td>'+
-        '<td style="padding:0 4px;color:'+bc(day)+';font-weight:600">'+day+'</td>'+
-        '<td style="padding:0 4px;color:'+bc(night)+';font-weight:600">'+night+'</td>'+
-        '</tr>';
+      html+='<span class="bc-row"><span class="bc-label">'+label+'</span>'+
+        '<span class="bc-pill bc-'+bc(day)+'">Day '+day+'</span>'+
+        '<span class="bc-pill bc-'+bc(night)+'">Night '+night+'</span></span>';
     }
-    html+='</table>';return html;
+    html+='</div>';return html;
   };m3._id='solar';
 
   extraModules.unshift(m3,m2,m1);
@@ -586,6 +658,7 @@ function registerDXCModule(d){
 }
 
 function registerPSKModule(d){
+  touchFreshness('psk');
   extraModules=extraModules.filter(function(f){return f._id!=='psk'});
   var mod=function(){
     var html='<div class="extra-title">PSK Reporter</div>'+
@@ -603,16 +676,9 @@ function registerPSKModule(d){
 }
 
 function cycleExtraModule(){
-  if(!extraModules.length)return;
-  var box=document.getElementById('map-extra-box');
-  var content=document.getElementById('map-extra-content');
-  if(!box||!content||!box.classList.contains('visible'))return;
-  extraModuleIdx=(extraModuleIdx+1)%extraModules.length;
-  content.style.opacity='0';
-  setTimeout(function(){
-    content.innerHTML=extraModules[extraModuleIdx]();
-    content.style.opacity='1';
-  },200);
+  // Delegate to updateExtraBox — it knows the column count and handles
+  // rendering 1 or 2 modules + index advancement correctly.
+  updateExtraBox();
 }
 
 // Show/hide the extra box and render modules — multiple at once on wide screens.
@@ -631,12 +697,10 @@ function updateExtraBox(){
     }
     var content=document.getElementById('map-extra-content');
     if(!content)return;
-    // Determine how many columns fit horizontally (~200px per module).
-    var cols=Math.max(1,Math.floor(box.clientWidth/200));
-    // If all modules fit, stop cycling. Otherwise cycle through groups.
-    if(cols>=extraModules.length){
-      if(extraCycleTimer){clearInterval(extraCycleTimer);extraCycleTimer=null}
-    }else if(!extraCycleTimer){
+    // Show 1 or 2 modules depending on box width — never more than 2.
+    var cols=Math.min(2,Math.max(1,Math.floor(box.clientWidth/170)));
+    // Always cycle through all modules.
+    if(!extraCycleTimer){
       extraCycleTimer=setInterval(cycleExtraModule,5000);
     }
     // Render current slice: modules [start .. start+cols-1], wrapping around.
@@ -648,8 +712,8 @@ function updateExtraBox(){
     }
     html+='</div>';
     content.innerHTML=html;
-    // Advance for next cycle (only when cycling is active).
-    if(cols<extraModules.length)extraModuleIdx=(start+cols)%extraModules.length;
+    // Always advance for next cycle.
+    extraModuleIdx=(start+cols)%extraModules.length;
   }else{
     box.classList.remove('visible');
     if(extraCycleTimer){clearInterval(extraCycleTimer);extraCycleTimer=null}
@@ -677,7 +741,7 @@ async function enableRadarLayer(){
     if(!meta||!meta.radar||!meta.radar.past||!meta.radar.past.length)throw new Error('No radar frames');
     var latest=meta.radar.past[meta.radar.past.length-1];
     if(!latest.path)throw new Error('Missing frame path');
-    var url=meta.host+latest.path+'/256/{z}/{x}/{y}/2/1_1.png';
+    var url='/radar-proxy'+latest.path+'/256/{z}/{x}/{y}/2/1_1.png';
     _radarUrl=url;
     radarLayer=L.tileLayer(url,{
       pane:'cqopsRadar',opacity:0.55,maxNativeZoom:7,maxZoom:12,
@@ -708,13 +772,14 @@ async function refreshRadarLayer(){
     if(!meta||!meta.radar||!meta.radar.past||!meta.radar.past.length)return;
     var latest=meta.radar.past[meta.radar.past.length-1];
     if(!latest.path)return;
-    var url=meta.host+latest.path+'/256/{z}/{x}/{y}/2/1_1.png';
+    var url='/radar-proxy'+latest.path+'/256/{z}/{x}/{y}/2/1_1.png';
     _radarUrl=url;
     var old=radarLayer;radarLayer=L.tileLayer(url,{pane:'cqopsRadar',opacity:0.55,maxNativeZoom:7,maxZoom:12}).addTo(map);
     if(old){map.removeLayer(old);old=null}
     // Refresh local map radar too.
     if(radarLayerLocal&&mapLocal){mapLocal.removeLayer(radarLayerLocal);radarLayerLocal=null}
     addRadarToLocalMap();
+    touchFreshness('radar');
   }catch(e){D('radar','refresh failed',''+e)}
 }
 
@@ -828,6 +893,7 @@ function _aprMarker(s){
 
 function renderAPRSOnLocalMap(stations){
   if(!mapLocal)return;
+  touchFreshness('aprs');
   if(!aprsMarkerLayer){aprsMarkerLayer=L.layerGroup().addTo(mapLocal)}
   aprsMarkerLayer.clearLayers();
   if(!stations||!stations.length)return;
@@ -1048,6 +1114,14 @@ function guessContinent(c){
   if(as.indexOf(c)>=0)return'Asia';if(oc.indexOf(c)>=0)return'Oceania';if(af.indexOf(c)>=0)return'Africa';return'';
 }
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+// ---- Centralized band / mode styling ----
+var _modeGroups={cw:1,cwr:1,phone:1,ssb:1,usb:1,lsb:1,am:1,fm:1,nfm:1,digi:1,ft8:1,ft4:1,rtty:1,psk31:1,psk63:1,jt65:1,jt9:1,mfsk:1,olivia:1,hell:1,fsk441:1,jt6m:1,pkt:1,data:1,mfsk16:1,domino:1,thor:1,ros:1,js8:1,fst4:1,fst4w:1,q65:1,msk144:1,sstv:1,fax:1};
+function bandBadgeClass(band){return'band-badge band-'+(band||'').toLowerCase().replace(/[^a-z0-9]/g,'')}
+function modeBadgeClass(mode){
+  var m=(mode||'').toLowerCase().trim();
+  if(_modeGroups[m]===1){if(m==='cw'||m==='cwr')return'mode-badge mode-cw';if(m==='ssb'||m==='usb'||m==='lsb'||m==='am'||m==='fm'||m==='nfm'||m==='phone')return'mode-badge mode-phone';return'mode-badge mode-digi'}
+  return'mode-badge mode-other';
+}
 
 // ---- Weather: Open-Meteo free API (browser-side fetch) ----
 // Hidden when offline. Refreshes every 15 min or after reconnect.
@@ -1132,6 +1206,7 @@ function renderWeather(d){
       '</span>';
   }
   wxEl.className='';wxEl.innerHTML=html;wxEl.style.display='';
+  touchFreshness('wx');
   // Weather row changed height — maps need recalculation.
   if(map)map.invalidateSize();if(mapLocal)mapLocal.invalidateSize();
 }
@@ -1188,7 +1263,7 @@ function renderSunTimes(d){
   var rise=sun.sunrise?sun.sunrise[0]:'',set=sun.sunset?sun.sunset[0]:'';
   if(!rise||!set){_sunEl.innerHTML='';return}
   var rt=rise.slice(11,16),st=set.slice(11,16);
-  _sunEl.innerHTML='🌅&nbsp;'+rt+'&nbsp;&nbsp;🌇&nbsp;'+st;
+  _sunEl.innerHTML='<span class="sun-icon">\u2609\u2191</span>&nbsp;'+rt+'&nbsp;&nbsp;<span class="sun-icon">\u2609\u2193</span>&nbsp;'+st;
 }
 
 // ---- QSO sound ----

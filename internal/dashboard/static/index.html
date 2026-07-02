@@ -17,11 +17,11 @@
       <div id="hd-subtitle"></div>
     </div>
     <div id="hd-right">
-      <span id="hd-info">
+      <div id="hd-clock-box">
         <span id="hd-clock-local"></span>
         <span id="hd-clock-utc"></span>
-        <span id="hd-sse-status" class="sse-connecting" title="SSE status">●</span>
-      </span>
+      </div>
+      <span id="hd-sse-status" class="sse-connecting">Connecting</span>
       <span id="hd-sun"></span>
     </div>
   </header>
@@ -74,7 +74,7 @@
       <h2>Recent QSOs</h2>
       <div id="recent-table-wrap">
         <table id="recent-table">
-          <thead><tr><th>UTC</th><th>Call</th><th>Band</th><th>Mode</th><th>RST</th><th>Dist / Dir</th><th>Country</th></tr></thead>
+          <thead><tr><th>UTC</th><th>Call</th><th>Band</th><th>Mode</th><th class="recent-op-col">Op</th><th>RST</th><th>Dist / Dir</th><th>Country</th></tr></thead>
           <tbody id="recent-body"></tbody>
         </table>
       </div>

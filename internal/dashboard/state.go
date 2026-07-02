@@ -155,7 +155,7 @@ type Stats struct {
 	Bands       int     `json:"bands"`
 	Modes       int     `json:"modes"`
 	LastQSOAgoS int     `json:"lastQsoAgoS,omitempty"`
-	RatePerHour float64 `json:"ratePerHour,omitempty"`
+	RatePerHour float64 `json:"ratePerHour"`
 }
 
 // APRSStation is a received APRS position report for the dashboard local map.

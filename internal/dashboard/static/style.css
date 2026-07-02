@@ -1,9 +1,9 @@
 /* CQOps Live — Blue Onyx Field Day dashboard, two-mode layout */
 :root {
-  --page-bg:#EAF0F7; --page-bg-soft:#F4F8FC; --page-bg-onyx:#DDE7F2;
-  --surface:#FFFFFF; --surface-soft:#F8FBFF; --surface-blue:#F1F6FD;
-  --border:#A8B8CC; --border-strong:#7890AA;
-  --shadow:rgba(15,31,51,0.14); --shadow-soft:rgba(15,31,51,0.08);
+  --page-bg:#E8EEF5; --page-bg-soft:#F2F6FB; --page-bg-onyx:#DCE4EF;
+  --surface:#FFFFFF; --surface-soft:#FAFCFF; --surface-blue:#F3F7FD;
+  --border:rgba(120,140,165,0.22); --border-strong:rgba(100,120,148,0.35);
+  --shadow:rgba(15,31,51,0.07); --shadow-soft:rgba(15,31,51,0.04);
   --text:#07111F; --text-secondary:#263A52; --dim:#58708C; --dim-soft:#70849B;
   --accent:#D00032; --accent-dark:#A00026; --accent-soft:#FFE3EA; --accent-xsoft:#FFF2F5;
   --blue:#005BBB; --blue-dark:#003F88; --blue-deep:#123E6F; --blue-soft:#DDEBFF; --blue-xsoft:#EEF6FF;
@@ -11,33 +11,91 @@
   --success:#007A3D; --warn:#B45309; --offline:#C1121F;
   --station-marker:#007A3D; --qso-marker:#0067C5;
   --active-path:#D00032; --last-qso:#D00032; --old-path:rgba(0,91,187,0.30);
-  --table-border:#A6B8CE; --table-alt:#F1F6FD; --table-hover:#E4F0FF;
-  --logo-w:200px; --logo-h:120px; --photo-w:100px; --photo-h:100px;
-  --active-photo-w:180px; --active-photo-h:180px;
+  --table-border:rgba(130,150,175,0.20); --table-alt:#F6F9FD; --table-hover:#E8F0FA;
+  --card-radius:8px; --gap:10px;
+  --logo-w:140px; --logo-h:84px; --photo-w:100px; --photo-h:100px;
+  --active-photo-w:160px; --active-photo-h:160px;
+  --base-font:15px;
+  /* ── Ham band colors (bg + text for badges/pills) ── */
+  --b160m-bg:rgba(139,0,0,0.10);   --b160m-fg:#8B0000;
+  --b80m-bg:rgba(192,57,43,0.10);  --b80m-fg:#C0392B;
+  --b60m-bg:rgba(180,130,30,0.10); --b60m-fg:#B4821E;
+  --b40m-bg:rgba(210,105,30,0.10); --b40m-fg:#D2691E;
+  --b30m-bg:rgba(184,134,11,0.10); --b30m-fg:#B8860B;
+  --b20m-bg:rgba(0,91,187,0.10);   --b20m-fg:#005BBB;
+  --b17m-bg:rgba(0,128,128,0.10);  --b17m-fg:#008080;
+  --b15m-bg:rgba(46,125,50,0.10);  --b15m-fg:#2E7D32;
+  --b12m-bg:rgba(85,139,47,0.10);  --b12m-fg:#558B2F;
+  --b10m-bg:rgba(0,131,143,0.10);  --b10m-fg:#00838F;
+  --b6m-bg:rgba(106,27,154,0.10);  --b6m-fg:#6A1B9A;
+  --b4m-bg:rgba(74,20,140,0.10);   --b4m-fg:#4A148C;
+  --b2m-bg:rgba(40,53,147,0.10);   --b2m-fg:#283593;
+  --b70cm-bg:rgba(84,110,122,0.10);--b70m-fg:#546E7A; /* note: 70cm uses '70m' as var suffix */
+  --b23cm-bg:rgba(69,90,100,0.10); --b23m-fg:#455A64;
+  --b13cm-bg:rgba(96,96,96,0.10);  --b13m-fg:#606060;
+  --b9cm-bg:rgba(80,80,80,0.10);   --b9cm-fg:#505050;
+  --b6cm-bg:rgba(72,72,72,0.10);   --b6cm-fg:#484848;
+  --b3cm-bg:rgba(64,64,64,0.10);   --b3cm-fg:#404040;
+  --b1cm-bg:rgba(56,56,56,0.10);   --b1cm-fg:#383838;
+  --b-other-bg:rgba(100,110,130,0.08); --b-other-fg:#54647A;
+  /* ── Mode group colors ── */
+  --mode-cw-bg:rgba(198,40,40,0.10);    --mode-cw-fg:#C62828;
+  --mode-phone-bg:rgba(21,101,192,0.10);--mode-phone-fg:#1565C0;
+  --mode-digi-bg:rgba(46,125,50,0.10);  --mode-digi-fg:#2E7D32;
+  --mode-other-bg:rgba(96,100,110,0.08);--mode-other-fg:#54647A;
 }
+/* ── Band badge colors — one class per amateur band ── */
+.band-badge.band-160m,.badge.band-160m{background:var(--b160m-bg);color:var(--b160m-fg)}
+.band-badge.band-80m,.badge.band-80m{background:var(--b80m-bg);color:var(--b80m-fg)}
+.band-badge.band-60m,.badge.band-60m{background:var(--b60m-bg);color:var(--b60m-fg)}
+.band-badge.band-40m,.badge.band-40m{background:var(--b40m-bg);color:var(--b40m-fg)}
+.band-badge.band-30m,.badge.band-30m{background:var(--b30m-bg);color:var(--b30m-fg)}
+.band-badge.band-20m,.badge.band-20m{background:var(--b20m-bg);color:var(--b20m-fg)}
+.band-badge.band-17m,.badge.band-17m{background:var(--b17m-bg);color:var(--b17m-fg)}
+.band-badge.band-15m,.badge.band-15m{background:var(--b15m-bg);color:var(--b15m-fg)}
+.band-badge.band-12m,.badge.band-12m{background:var(--b12m-bg);color:var(--b12m-fg)}
+.band-badge.band-10m,.badge.band-10m{background:var(--b10m-bg);color:var(--b10m-fg)}
+.band-badge.band-6m,.badge.band-6m{background:var(--b6m-bg);color:var(--b6m-fg)}
+.band-badge.band-4m,.badge.band-4m{background:var(--b4m-bg);color:var(--b4m-fg)}
+.band-badge.band-2m,.badge.band-2m{background:var(--b2m-bg);color:var(--b2m-fg)}
+.band-badge.band-70cm,.badge.band-70cm{background:var(--b70cm-bg);color:var(--b70m-fg)}
+.band-badge.band-23cm,.badge.band-23cm{background:var(--b23cm-bg);color:var(--b23m-fg)}
+.band-badge.band-13cm,.badge.band-13cm{background:var(--b13cm-bg);color:var(--b13m-fg)}
+.band-badge.band-9cm,.badge.band-9cm{background:var(--b9cm-bg);color:var(--b9cm-fg)}
+.band-badge.band-6cm,.badge.band-6cm{background:var(--b6cm-bg);color:var(--b6cm-fg)}
+.band-badge.band-3cm,.badge.band-3cm{background:var(--b3cm-bg);color:var(--b3cm-fg)}
+.band-badge.band-1cm,.badge.band-1cm{background:var(--b1cm-bg);color:var(--b1cm-fg)}
+/* Fallback for bands not explicitly listed. */
+.band-badge[class*="band-"],.badge[class*="band-"]{background:var(--b-other-bg);color:var(--b-other-fg)}
+/* ── Mode badge colors — grouped by emission type ── */
+.mode-badge.mode-cw,.badge.mode-cw{background:var(--mode-cw-bg);color:var(--mode-cw-fg)}
+.mode-badge.mode-phone,.badge.mode-phone{background:var(--mode-phone-bg);color:var(--mode-phone-fg)}
+.mode-badge.mode-digi,.badge.mode-digi{background:var(--mode-digi-bg);color:var(--mode-digi-fg)}
+.mode-badge.mode-other,.badge.mode-other{background:var(--mode-other-bg);color:var(--mode-other-fg)}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:system-ui,-apple-system,sans-serif;background:
-    radial-gradient(circle at 12% 8%,rgba(208,0,50,0.055),transparent 28%),
-    radial-gradient(circle at 80% 5%,rgba(0,91,187,0.085),transparent 34%),
-    linear-gradient(135deg,#F6F9FC 0%,#EAF1F8 48%,#DDE8F3 100%);
-  color:var(--text);line-height:1.35;position:relative;overflow-x:hidden}
+    radial-gradient(circle at 12% 8%,rgba(208,0,50,0.025),transparent 28%),
+    radial-gradient(circle at 80% 5%,rgba(0,91,187,0.04),transparent 34%),
+    linear-gradient(135deg,#F5F8FC 0%,#EBF1F7 48%,#DEE6F0 100%);
+  color:var(--text);line-height:1.4;position:relative;overflow-x:hidden;font-size:var(--base-font)}
 #app{max-width:1360px;margin:0 auto;padding:0 16px 8px 16px;display:flex;flex-direction:column;min-height:100vh;position:relative}
 
 /* ── header ── */
-#header{display:flex;align-items:flex-start;gap:18px;padding:14px 0 4px 0;border-bottom:3px solid var(--accent);margin-bottom:4px}
-#hd-logo-box{width:var(--logo-w);height:var(--logo-h);flex-shrink:0;border-radius:8px;overflow:hidden;background:var(--surface);border:2px solid var(--border-strong);display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px var(--shadow-soft)}
+#header{display:flex;align-items:flex-start;gap:16px;padding:10px 0 4px 0;border-bottom:1.5px solid rgba(208,0,50,0.45);margin-bottom:6px}
+#hd-logo-box{width:var(--logo-w);height:var(--logo-h);flex-shrink:0;display:flex;align-items:center;justify-content:center}
 #hd-logo{max-width:100%;max-height:100%;object-fit:contain}
 #hd-text{flex:1;min-width:0}
-#hd-title{font-weight:800;font-size:1.85rem;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-#hd-subtitle{font-size:1.05rem;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#hd-title{font-weight:800;font-size:1.6rem;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#hd-subtitle{font-size:0.95rem;color:var(--text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #hd-subtitle:empty{display:none}
-#hd-right{display:flex;flex-direction:column;align-items:flex-end;gap:3px;flex-shrink:0}
-#hd-info{display:flex;align-items:center;gap:8px;white-space:nowrap}
-#hd-clock-local{color:var(--dim);font-variant-numeric:tabular-nums;font-size:0.95rem}
-#hd-clock-utc{color:var(--blue-dark);font-weight:600;font-size:0.95rem;font-variant-numeric:tabular-nums}
-#hd-sse-status{font-size:0.7rem}
+#hd-right{display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex-shrink:0}
+#hd-clock-box{display:flex;flex-direction:column;align-items:flex-end;line-height:1.2}
+#hd-clock-local{color:var(--dim);font-variant-numeric:tabular-nums;font-size:0.85rem}
+#hd-clock-utc{color:var(--blue-dark);font-weight:600;font-size:0.85rem;font-variant-numeric:tabular-nums}
+#hd-sse-status{font-size:0.72rem;font-weight:600}
 .sse-connected{color:var(--success)}.sse-connecting{color:var(--warn)}.sse-disconnected{color:var(--offline)}
-#hd-sun{font-size:0.7rem;color:var(--dim);white-space:nowrap}
+#hd-sun{font-size:0.72rem;color:var(--dim);white-space:nowrap;display:flex;align-items:center;gap:6px}
+#hd-sun .sun-icon{font-size:1.1rem;line-height:1}
 #hd-sun:empty{display:none}
 
 /* ── weather row (header extension, below clock) ── */
@@ -50,14 +108,12 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #wx-row .wx-wind{font-size:0.7rem}
 #wx-row .wx-wind .wx-wind-unit{font-size:0.6rem}
 #wx-row .wx-rain{font-size:0.7rem;color:var(--blue)}
-/* Progressive hide: drop slots from the right as screen narrows. */
-@media(max-width:1050px){#wx-row{gap:6px 10px}#wx-row .wx-slot:nth-child(n+9){display:none}}
-@media(max-width:920px){#wx-row{gap:5px 8px}#wx-row .wx-slot:nth-child(n+8){display:none}}
-@media(max-width:800px){#wx-row{gap:5px 7px}#wx-row .wx-slot:nth-child(n+7){display:none};#wx-row .wx-rain{display:none}}
-@media(max-width:680px){#wx-row{gap:4px 6px}#wx-row .wx-slot:nth-child(n+6){display:none};#wx-row .wx-wind-unit{display:none}}
-@media(max-width:560px){#wx-row{gap:4px 5px}#wx-row .wx-slot:nth-child(n+5){display:none};#wx-row .wx-wind{display:none}}
-@media(max-width:440px){#wx-row{gap:4px 5px;font-size:0.7rem}#wx-row .wx-slot:nth-child(n+4){display:none};#wx-row .wx-label{display:none}}
-@media(max-width:340px){#wx-row{gap:3px 4px;font-size:0.65rem}#wx-row .wx-slot:nth-child(n+3){display:none};#wx-row .wx-icon{font-size:1rem}}
+/* Progressive hide: drop 2-3 slots per step so the row always fits without overflow.
+   Sun-icon tracks wx-icon size. */
+@media(max-width:1080px){#wx-row{gap:5px 10px}#wx-row .wx-slot:nth-child(n+8){display:none}#hd-sun .sun-icon{font-size:1.08rem}}
+@media(max-width:800px){#wx-row{gap:4px 7px;font-size:0.74rem}#wx-row .wx-slot:nth-child(n+5){display:none}#wx-row .wx-rain{display:none}#hd-sun .sun-icon{font-size:1.02rem}}
+@media(max-width:600px){#wx-row{gap:4px 6px;font-size:0.7rem}#wx-row .wx-slot:nth-child(n+3){display:none}#wx-row .wx-wind{display:none}#hd-sun .sun-icon{font-size:0.98rem}}
+@media(max-width:420px){#wx-row{gap:3px 5px;font-size:0.65rem}#wx-row .wx-slot:nth-child(n+2){display:none}#wx-row .wx-label{display:none}#wx-row .wx-icon{font-size:1rem}#hd-sun .sun-icon{font-size:0.9rem}}
 /* Weather icon animations — subtle, no perf impact. */
 #wx-row .wx-icon{will-change:transform,opacity}
 .wx-anim-sun{animation:wx-sun 3s ease-in-out infinite}
@@ -137,14 +193,14 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 
 /* ── map row (full width, fills remaining vertical space) ── */
 #map-table-row{flex:1 1 40%;min-height:250px;display:flex;gap:10px;margin-bottom:10px}
-#map-panel{flex:7;background:linear-gradient(180deg,#FFFFFF 0%,var(--surface-soft) 100%);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;border:1px solid var(--border-strong);box-shadow:0 8px 24px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.8) inset}
-#map-local-panel{flex:1;min-height:180px;background:linear-gradient(180deg,#FFFFFF 0%,var(--surface-soft) 100%);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;border:1px solid var(--border-strong);box-shadow:0 8px 24px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.8) inset}
+#map-panel{flex:7;background:var(--surface);border-radius:var(--card-radius);overflow:hidden;display:flex;flex-direction:column;border:1px solid var(--border);box-shadow:0 2px 8px var(--shadow)}
+#map-local-panel{flex:1;min-height:180px;background:var(--surface);border-radius:var(--card-radius);overflow:hidden;display:flex;flex-direction:column;border:1px solid var(--border);box-shadow:0 2px 8px var(--shadow)}
 #map-container{flex:1;background:var(--blue-xsoft);position:relative}
 #map-local-container{flex:1;background:var(--blue-xsoft);position:relative}
 /* Right column wrapper: extra box on top, square map below. */
 #map-local-right{flex:3;min-width:0;display:flex;flex-direction:column;gap:10px}
 /* Extra info box — separate from the map panel, own border and styling. */
-#map-extra-box{flex:0 0 auto;min-height:0;display:none;overflow:hidden;background:linear-gradient(180deg,#FFFFFF 0%,var(--surface-soft) 100%);border-radius:8px;border:1px solid var(--border-strong);box-shadow:0 4px 12px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.7) inset}
+#map-extra-box{flex:0 0 auto;min-height:0;display:none;overflow:hidden;background:var(--surface);border-radius:var(--card-radius);border:1px solid var(--border);box-shadow:0 2px 6px var(--shadow)}
 #map-extra-box.visible{display:flex;align-items:center;justify-content:center;min-height:110px;max-height:110px;padding:10px 14px;overflow:hidden}
 #map-extra-content{font-size:0.85rem;color:var(--dim);text-align:center;transition:opacity .3s ease;width:100%;overflow:hidden}
 .extra-module-sep{border-left:1px solid var(--border-strong)}
@@ -159,24 +215,68 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 .panel-recent{flex:2.11;display:flex;flex-direction:column}
 #recent-panel h2{font-size:0.85rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:4px;flex-shrink:0}
 #recent-table-wrap{overflow-y:auto;flex:1;max-height:320px}
-#recent-table{width:100%;border-collapse:collapse;font-size:0.8rem}
-#recent-table th{text-align:left;color:var(--text-secondary);font-weight:600;padding:2px 5px;border-bottom:2px solid var(--border-strong);white-space:nowrap;position:sticky;top:0;background:var(--surface)}
-#recent-table td{padding:2px 5px;border-bottom:1px solid var(--table-border);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+#recent-table{width:100%;border-collapse:collapse;font-size:0.85rem;table-layout:fixed}
+#recent-table th{text-align:left;color:var(--text-secondary);font-weight:600;padding:4px 6px;border-bottom:1.5px solid var(--border-strong);white-space:nowrap;position:sticky;top:0;background:var(--surface);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.3px}
+#recent-table th:nth-child(1){width:10%} /* UTC */
+#recent-table th:nth-child(2){width:18%} /* Call */
+#recent-table th:nth-child(3){width:9%}  /* Band */
+#recent-table th:nth-child(4){width:9%}  /* Mode */
+/* Op column (5th) hidden by default, shown at FullHD+. */
+.recent-op-col{display:none}
+#recent-table th:nth-child(6){width:13%} /* RST */
+#recent-table th:nth-child(7){width:21%} /* Dist/Dir */
+#recent-table th:nth-child(8){width:20%} /* Country */
+#recent-table td{padding:4px 6px;border-bottom:1px solid var(--table-border);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-size:0.85rem;line-height:1.4}
+#recent-table td:nth-child(2){font-weight:700;font-size:0.9rem}
 #recent-table td strong{color:var(--text)}
 #recent-table tbody tr:nth-child(even){background:var(--table-alt)}
 #recent-table tbody tr.new-row{animation:flash 1.2s ease-out}
 @keyframes flash{from{background:var(--blue-soft);color:var(--blue-dark)}to{background:transparent;color:inherit}}
+/* Recent QSOs badge pills for band/mode cells. */
+.recent-badge{display:inline-block;padding:1px 5px;border-radius:3px;font-weight:600;font-size:0.7rem;line-height:1.4}
 
+/* ── extra module styles: band conditions, session summary ── */
+.band-cond-grid{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:0.82rem;line-height:1.5}
+.bc-row{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.bc-label{color:var(--dim);font-weight:600;min-width:44px;text-align:right;font-size:0.78rem}
+.bc-pill{display:inline-block;padding:1px 8px;border-radius:4px;font-weight:600;font-size:0.75rem;min-width:72px;text-align:center}
+.bc-pill.bc-success{background:rgba(0,122,61,0.12);color:var(--success)}
+.bc-pill.bc-warn{background:rgba(180,83,9,0.12);color:var(--warn)}
+.bc-pill.bc-offline{background:rgba(193,18,31,0.10);color:var(--offline)}
+.session-summary{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 10px;font-size:0.82rem;color:var(--text-secondary);line-height:1.5}
+.ss-item{white-space:nowrap}
+.ss-val{font-weight:700;color:var(--text)}
+.ss-sep{color:var(--dim);font-weight:300}
+.freshness-grid{display:flex;flex-wrap:wrap;justify-content:center;gap:3px 10px;font-size:0.78rem;color:var(--text-secondary);line-height:1.5}
+.fr-row{white-space:nowrap}
+.fr-label{font-weight:600;color:var(--dim);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.3px}
+/* ── Top QSOs badges ── */
+.tq-badge{display:inline-block;background:var(--blue-soft);color:var(--blue-dark);padding:0 5px;border-radius:3px;font-size:0.7rem;font-weight:600;margin-left:2px}
+.tq-badge.tq-mode{background:var(--accent-soft);color:var(--accent-dark)}
+.tq-dist{color:var(--dim);font-size:0.82rem}
+.tq-country{color:var(--success);font-size:0.78rem;font-weight:500}
+.tq-longest{color:var(--accent);font-weight:700}
+.tq-longest strong{color:var(--accent)}
+.tq-op{color:var(--dim-soft);font-size:0.72rem}
+/* ── Stats panel badges ── */
+.stat-badge{display:inline-block;padding:1px 6px;border-radius:3px;font-weight:600;font-size:0.7rem;margin-left:3px;vertical-align:middle}
+.stat-badge-op{background:rgba(90,55,160,0.08);color:var(--dim);font-weight:500}
+.stat-op-count{font-weight:700;color:var(--text);margin-right:2px;font-size:inherit}
+.stat-op-more{font-size:0.72rem;color:var(--dim);margin-left:2px;vertical-align:middle}
+/* Operator badge in station panel gets accent styling. */
+#sf-Operator .stat-badge-op{background:var(--accent-soft, rgba(0,91,187,0.12));color:var(--accent, #005bbb);font-size:0.78rem;padding:2px 8px;font-weight:600}
+.panel dd .stat-badge:first-child{margin-left:0}
 /* ── bottom row cards ── */
 main{display:flex;gap:10px;margin-bottom:10px;flex:0 0 auto;max-height:30vh;overflow-y:auto}
 .mode-active main{opacity:0.85}
-.panel{flex:1;background:linear-gradient(180deg,#FFFFFF 0%,var(--surface-soft) 100%);border-radius:8px;padding:10px 14px;min-width:0;border:1px solid var(--border);box-shadow:0 8px 20px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.7) inset}
+.panel{flex:1;background:var(--surface);border-radius:var(--card-radius);padding:10px 14px;min-width:0;border:1px solid var(--border);box-shadow:0 2px 8px var(--shadow),0 0 0 1px rgba(255,255,255,0.5) inset}
 .panel-narrow{flex:0.40}
 .panel-topqsos{flex:0.58}
 .panel h2{font-size:0.85rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:6px}
 .panel dl{display:grid;grid-template-columns:auto 1fr;gap:2px 8px}
 .panel dt{color:var(--dim);font-size:0.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .panel dd{font-size:0.9rem;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#stats-fields dd{white-space:normal;line-height:1.6}
 .panel dd strong{color:var(--text)}
 .status-on{color:var(--success)}.status-off{color:var(--offline)}
 
@@ -217,124 +317,70 @@ footer a:hover{text-decoration:underline}
 #qso-toast-call{font-weight:900;font-size:clamp(28px,5vw,56px);line-height:1}
 #qso-toast-sub{font-size:1rem;font-weight:500;opacity:0.85}
 
-/* ── responsive: short screens — guarantee full layout visibility ── */
-@media(max-height:1000px){
-  #app{min-height:0;padding:3px 14px}
-  #hd-logo-box{width:130px;height:78px}
-  #hd-title{font-size:1.3rem}
-  #hd-subtitle{font-size:0.85rem}
-  #header{padding:6px 0}
-  #hero{padding:8px 16px;margin:3px 0}
-  .mode-active #hero{padding:0 14px 0 0}
-  #hero-call{font-size:clamp(26px,5vw,54px)}
-  #hero-photo-box{width:clamp(160px,22vw,280px)}
-  #hero-badges .badge{font-size:0.75rem;padding:2px 8px}
-  #hero-identity{font-size:0.82rem}
-  #hero-refs{font-size:0.75rem}
-  #map-table-row{gap:6px;margin-bottom:4px}
-  #map-local-right{gap:6px}
-  main{gap:6px;margin-bottom:4px}
-  .panel{padding:6px 10px}
-  #recent-table-wrap{max-height:200px}
-  .panel h2{margin-bottom:2px;font-size:0.72rem}
-  .panel dt{font-size:0.7rem}
-  .panel dd{font-size:0.78rem}
-  footer{padding:2px;font-size:0.65rem}
-}
-@media(max-height:800px){
-  #app{padding:2px 10px}
-  #hd-logo-box{width:90px;height:54px}
-  #hd-title{font-size:1rem}
-  #hd-subtitle{font-size:0.72rem}
-  #header{padding:4px 0;border-bottom-width:2px}
-  #hero{padding:5px 10px;margin:2px 0}
-  .mode-active #hero{padding:0 10px 0 0}
-  #hero-call{font-size:clamp(20px,4vw,40px)}
-  #hero-photo-box{width:clamp(100px,16vw,170px)}
-  #hero-badges .badge{font-size:0.62rem;padding:1px 5px}
-  #hero-identity{font-size:0.7rem}
+/* ── responsive: short screens — fewer, more aggressive steps ── */
+@media(max-height:900px){
+  #app{min-height:0;padding:2px 12px}
+  #hd-logo-box{width:110px;height:66px}
+  #hd-title{font-size:1.1rem}
+  #hd-subtitle{font-size:0.76rem}
+  #header{padding:5px 0;border-bottom-width:2px}
+  #hero{padding:6px 12px;margin:2px 0}
+  .mode-active #hero{padding:0 12px 0 0}
+  #hero-call{font-size:clamp(22px,4vw,44px)}
+  #hero-photo-box{width:clamp(120px,18vw,200px)}
+  #hero-badges .badge{font-size:0.65rem;padding:1px 6px}
+  #hero-identity{font-size:0.72rem}
   #hero-refs{font-size:0.65rem}
   #hero-label{font-size:0.65rem}
   #recent-table{font-size:0.68rem}
   #map-table-row{gap:4px;margin-bottom:3px}
   #map-local-right{gap:4px}
   main{gap:4px;margin-bottom:2px}
-  .panel{padding:4px 7px}
-  #recent-table-wrap{max-height:140px}
-  .panel h2{margin-bottom:1px;font-size:0.65rem}
-  .panel dt{font-size:0.62rem}
-  .panel dd{font-size:0.7rem}
-  footer{padding:2px;font-size:0.58rem}
+  .panel{padding:4px 8px}
+  #recent-table-wrap{max-height:150px}
+  .panel h2{margin-bottom:1px;font-size:0.66rem}
+  .panel dt{font-size:0.64rem}
+  .panel dd{font-size:0.72rem}
+  footer{padding:2px;font-size:0.6rem}
 }
-@media(max-height:600px){
-  #app{padding:2px 10px}
-  #hd-logo-box{width:64px;height:40px}
-  #hd-title{font-size:0.9rem}
-  #hd-subtitle{font-size:0.68rem}
-  #header{padding:3px 0}
-  #hero{padding:4px 10px;margin:2px 0}
-  .mode-active #hero{padding:0 8px 0 0}
-  #hero-call{font-size:clamp(18px,4vw,36px)}
-  #hero-photo-box{width:clamp(80px,16vw,140px)}
-  #hero-badges .badge{font-size:0.6rem;padding:1px 5px}
-  #hero-identity{font-size:0.62rem}
-  #hero-refs{font-size:0.58rem}
-  #hero-label{font-size:0.55rem}
-  #recent-table{font-size:0.62rem}
-  #recent-table th,#recent-table td{padding:1px 2px}
-  #map-table-row{gap:3px;margin-bottom:2px}
-  #map-local-right{gap:3px}
-  main{gap:3px;margin-bottom:2px}
-  .panel{padding:3px 6px}
-  #recent-table-wrap{max-height:100px}
-  .panel h2{font-size:0.62rem;margin-bottom:1px}
-  .panel dt,.panel dd{font-size:0.62rem}
-  footer{padding:2px;font-size:0.55rem}
-}
-@media(max-height:450px){
+@media(max-height:550px){
   #app{padding:1px 8px}
-  #hd-logo-box{width:40px;height:28px}
-  #hd-title{font-size:0.75rem}
+  #hd-logo-box{width:50px;height:34px}
+  #hd-title{font-size:0.8rem}
   #hd-subtitle{font-size:0.6rem}
   #header{padding:2px 0;border-bottom-width:1px}
   #hero{display:none}
-  #recent-table{font-size:0.55rem}
-  main{gap:2px}
+  #recent-table{font-size:0.58rem}
+  #recent-table th,#recent-table td{padding:1px 2px}
   #map-table-row{gap:2px;margin-bottom:1px}
   #map-local-right{gap:2px}
-  #recent-table-wrap{max-height:70px}
-  .panel{padding:2px 4px}
-  .panel h2{font-size:0.55rem}
-  .panel dt,.panel dd{font-size:0.55rem}
-  footer{font-size:0.5rem;padding:1px}
+  main{gap:2px;margin-bottom:1px}
+  .panel{padding:2px 5px}
+  #recent-table-wrap{max-height:80px}
+  .panel h2{font-size:0.56rem;margin-bottom:1px}
+  .panel dt,.panel dd{font-size:0.56rem}
+  footer{padding:1px;font-size:0.5rem}
 }
 
-/* ── responsive: narrow screens ── */
-@media(max-width:1100px){
-  #hd-title{font-size:1.6rem}
-  #hd-subtitle{font-size:1rem}
-  #hd-logo-box{width:180px;height:108px}
-  #hero-call{font-size:clamp(32px,5vw,64px)}
-  #hero-photo-box{width:clamp(200px,30vw,340px)}
-}
-@media(max-width:760px){
+/* ── responsive: narrow screens — fewer, more aggressive steps ── */
+@media(max-width:880px){
   #app{padding:4px 8px}
   #header{gap:10px;padding:8px 0}
-  #hd-logo-box{width:80px;height:52px}
-  #hd-title{font-size:1.2rem}
-  #hd-subtitle{font-size:0.8rem}
-  #hd-right{position:static;margin-left:auto;font-size:0.75rem}
-  #hd-clock-local,#hd-clock-utc{font-size:0.72rem}
+  #hd-logo-box{width:100px;height:64px}
+  #hd-title{font-size:1.3rem}
+  #hd-subtitle{font-size:0.85rem}
+  #hd-right{position:static;margin-left:auto;font-size:0.78rem}
+  #hd-clock-local,#hd-clock-utc{font-size:0.75rem}
   #hero{padding:10px 14px}
   .mode-active #hero{padding:0 12px 0 0}
-  #hero-call{font-size:clamp(22px,6vw,42px)}
-  #hero-identity{font-size:0.82rem}
-  #hero-photo-box{width:clamp(120px,28vw,200px)}
-  #hero-badges .badge{font-size:0.7rem;padding:2px 7px}
+  #hero-call{font-size:clamp(24px,5vw,46px)}
+  #hero-identity{font-size:0.85rem}
+  #hero-photo-box{width:clamp(140px,26vw,220px)}
+  #hero-badges .badge{font-size:0.72rem;padding:2px 8px}
   #map-table-row{flex-direction:column;gap:6px;min-height:280px;margin-bottom:6px}
   #map-local-right{gap:6px}
   #map-local-panel{min-height:160px}
-  #recent-table{font-size:0.68rem}
+  #recent-table{font-size:0.7rem}
   #recent-table th,#recent-table td{padding:1px 3px}
   main{flex-wrap:wrap;gap:6px}
   .panel{flex:1 1 45%;min-width:140px;padding:6px 8px}
@@ -343,15 +389,15 @@ footer a:hover{text-decoration:underline}
   .panel dd{font-size:0.75rem}
   footer{font-size:0.65rem;padding:4px}
 }
-@media(max-width:480px){
+@media(max-width:540px){
   #app{padding:2px 4px}
-  #hd-logo-box{width:48px;height:34px}
-  #hd-title{font-size:0.95rem}
-  #hd-subtitle{font-size:0.7rem}
-  #hero-call{font-size:clamp(18px,7vw,32px)}
+  #hd-logo-box{width:56px;height:40px}
+  #hd-title{font-size:1rem}
+  #hd-subtitle{font-size:0.72rem}
+  #hero-call{font-size:clamp(18px,7vw,34px)}
   #hero-photo-box{width:100%;height:clamp(100px,30vw,160px)}
   .mode-active #hero-active{flex-direction:column;gap:8px}
-  #recent-table{font-size:0.6rem}
+  #recent-table{font-size:0.62rem}
   #map-table-row{flex-direction:column;gap:4px;min-height:220px;margin-bottom:4px}
   #map-local-right{gap:4px}
   #map-local-panel{min-height:140px}
@@ -361,38 +407,55 @@ footer a:hover{text-decoration:underline}
 
 /* ── Full HD / TV display polish (1920×1080+) ── */
 @media(min-width:1600px) and (min-height:900px){
-  #app{max-width:none;margin:0 auto;padding:0 28px 14px 28px}
-  #hd-logo-box{width:240px;height:144px}
-  #hd-title{font-size:2rem}
-  #hd-subtitle{font-size:1.2rem}
-  #header{padding:16px 0 6px 0;margin-bottom:6px}
+  #app{max-width:none;margin:0 auto;padding:0 32px 16px 32px}
+  #hd-logo-box{width:150px;height:90px}
+  #hd-title{font-size:1.8rem}
+  #hd-subtitle{font-size:1.05rem}
+  #header{padding:12px 0 6px 0;margin-bottom:8px}
+  #hd-clock-local,#hd-clock-utc{font-size:0.95rem}
+  #hd-sse-status{font-size:0.78rem}
+  #hd-sun{font-size:0.82rem}
+  #hd-sun .sun-icon{font-size:1.2rem}
   /* ── active hero: premium broadcast background ── */
   .mode-active #hero{background:
-    radial-gradient(circle at 18% 45%,rgba(0,91,187,0.12),transparent 34%),
-    radial-gradient(circle at 82% 38%,rgba(208,0,50,0.07),transparent 30%),
+    radial-gradient(circle at 18% 45%,rgba(0,91,187,0.10),transparent 34%),
+    radial-gradient(circle at 82% 38%,rgba(208,0,50,0.06),transparent 30%),
     linear-gradient(110deg,#FFFFFF 0%,#F7FAFF 48%,#EEF5FF 100%);
     padding:0 24px 0 0;min-height:auto}
   .mode-active #hero-active{min-height:80px}
   #hero-call{font-size:clamp(36px,4vw,60px)}
-  #hero-photo-box{width:clamp(180px,16vw,280px)}
+  #hero-photo-box{width:clamp(160px,14vw,240px)}
   #hero-identity{font-size:0.95rem}
   #hero-label{font-size:0.85rem}
   #hero-badges .badge{font-size:0.85rem;padding:4px 12px}
   #hero-wx-icon{font-size:2.8rem}
   #hero-wx-temp{font-size:2rem}
-  #wx-row{font-size:0.9rem;gap:6px 22px;padding:6px 0}
+  #wx-row{font-size:0.88rem;gap:6px 22px;padding:6px 0}
   #wx-row .wx-icon{font-size:1.4rem}
   #wx-row .wx-label{font-size:0.72rem}
   #wx-row .wx-wind{font-size:0.8rem}
-  /* header clock */
-  #hd-clock-local,#hd-clock-utc{font-size:1rem}
-  /* map — fill remaining space after hero, don't push hero out */
+  /* map — fill remaining space */
   #map-table-row{gap:14px;margin-bottom:14px;min-height:30vh}
   #map-panel{flex:8}
   #map-local-right{flex:3;gap:14px}
   #map-local-panel{min-height:200px}
   #map-extra-box.visible{min-height:130px;max-height:130px;padding:14px 20px}
   main{gap:14px;margin-bottom:14px;max-height:26vh}
+  #recent-table{font-size:0.88rem}
+  .panel dt{font-size:0.85rem}
+  .panel dd{font-size:0.95rem}
+  .panel h2{font-size:0.85rem}
+  /* Show Operator column at FullHD+. */
+  .recent-op-col{display:table-cell}
+  #recent-table th:nth-child(1){width:9%}  /* UTC */
+  #recent-table th:nth-child(2){width:17%} /* Call */
+  #recent-table th:nth-child(3){width:8%}  /* Band */
+  #recent-table th:nth-child(4){width:8%}  /* Mode */
+  #recent-table th:nth-child(5){width:8%}  /* Op */
+  #recent-table th:nth-child(6){width:9%}  /* RST */
+  #recent-table th:nth-child(7){width:19%} /* Dist/Dir */
+  #recent-table th:nth-child(8){width:22%} /* Country */
+}
   .panel{padding:14px 20px}
   .panel h2{font-size:0.9rem;margin-bottom:6px}
   .panel dt{font-size:0.86rem}
