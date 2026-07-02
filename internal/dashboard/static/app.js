@@ -49,7 +49,7 @@ var todayQsos=[], displayCfg={};
 function updateClocks(){
   var n=new Date();
   var local=n.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'});
-  var utc=n.toISOString().slice(11,19).replace(/:/g,'')+'Z';
+  var utc=n.toISOString().slice(11,19)+'Z';
   hdClockLocal.textContent='LOCAL '+local;
   hdClockUtc.textContent='UTC  '+utc;
 }
