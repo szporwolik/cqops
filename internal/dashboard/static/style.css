@@ -17,32 +17,32 @@
   --active-photo-w:160px; --active-photo-h:160px;
   --base-font:15px;
   /* ── Ham band colors (bg + text for badges/pills) ── */
-  --b160m-bg:rgba(139,0,0,0.10);   --b160m-fg:#8B0000;
-  --b80m-bg:rgba(192,57,43,0.10);  --b80m-fg:#C0392B;
-  --b60m-bg:rgba(180,130,30,0.10); --b60m-fg:#B4821E;
-  --b40m-bg:rgba(210,105,30,0.10); --b40m-fg:#D2691E;
-  --b30m-bg:rgba(184,134,11,0.10); --b30m-fg:#B8860B;
-  --b20m-bg:rgba(0,91,187,0.10);   --b20m-fg:#005BBB;
-  --b17m-bg:rgba(0,128,128,0.10);  --b17m-fg:#008080;
-  --b15m-bg:rgba(46,125,50,0.10);  --b15m-fg:#2E7D32;
-  --b12m-bg:rgba(85,139,47,0.10);  --b12m-fg:#558B2F;
-  --b10m-bg:rgba(0,131,143,0.10);  --b10m-fg:#00838F;
-  --b6m-bg:rgba(106,27,154,0.10);  --b6m-fg:#6A1B9A;
-  --b4m-bg:rgba(74,20,140,0.10);   --b4m-fg:#4A148C;
-  --b2m-bg:rgba(40,53,147,0.10);   --b2m-fg:#283593;
-  --b70cm-bg:rgba(84,110,122,0.10);--b70m-fg:#546E7A; /* note: 70cm uses '70m' as var suffix */
-  --b23cm-bg:rgba(69,90,100,0.10); --b23m-fg:#455A64;
-  --b13cm-bg:rgba(96,96,96,0.10);  --b13m-fg:#606060;
-  --b9cm-bg:rgba(80,80,80,0.10);   --b9cm-fg:#505050;
-  --b6cm-bg:rgba(72,72,72,0.10);   --b6cm-fg:#484848;
-  --b3cm-bg:rgba(64,64,64,0.10);   --b3cm-fg:#404040;
-  --b1cm-bg:rgba(56,56,56,0.10);   --b1cm-fg:#383838;
-  --b-other-bg:rgba(100,110,130,0.08); --b-other-fg:#54647A;
+  --b160m-bg:rgba(139,0,0,0.22);   --b160m-fg:#8B0000;
+  --b80m-bg:rgba(192,57,43,0.22);  --b80m-fg:#C0392B;
+  --b60m-bg:rgba(180,130,30,0.22); --b60m-fg:#B4821E;
+  --b40m-bg:rgba(210,105,30,0.22); --b40m-fg:#D2691E;
+  --b30m-bg:rgba(184,134,11,0.22); --b30m-fg:#B8860B;
+  --b20m-bg:rgba(0,91,187,0.22);   --b20m-fg:#005BBB;
+  --b17m-bg:rgba(0,128,128,0.22);  --b17m-fg:#008080;
+  --b15m-bg:rgba(46,125,50,0.22);  --b15m-fg:#2E7D32;
+  --b12m-bg:rgba(85,139,47,0.22);  --b12m-fg:#558B2F;
+  --b10m-bg:rgba(0,131,143,0.22);  --b10m-fg:#00838F;
+  --b6m-bg:rgba(106,27,154,0.22);  --b6m-fg:#6A1B9A;
+  --b4m-bg:rgba(74,20,140,0.22);   --b4m-fg:#4A148C;
+  --b2m-bg:rgba(40,53,147,0.22);   --b2m-fg:#283593;
+  --b70cm-bg:rgba(84,110,122,0.22);--b70m-fg:#546E7A;
+  --b23cm-bg:rgba(69,90,100,0.22); --b23m-fg:#455A64;
+  --b13cm-bg:rgba(96,96,96,0.22);  --b13m-fg:#606060;
+  --b9cm-bg:rgba(80,80,80,0.22);   --b9cm-fg:#505050;
+  --b6cm-bg:rgba(72,72,72,0.22);   --b6cm-fg:#484848;
+  --b3cm-bg:rgba(64,64,64,0.22);   --b3cm-fg:#404040;
+  --b1cm-bg:rgba(56,56,56,0.22);   --b1cm-fg:#383838;
+  --b-other-bg:rgba(100,110,130,0.18); --b-other-fg:#54647A;
   /* ── Mode group colors ── */
-  --mode-cw-bg:rgba(198,40,40,0.10);    --mode-cw-fg:#C62828;
-  --mode-phone-bg:rgba(21,101,192,0.10);--mode-phone-fg:#1565C0;
-  --mode-digi-bg:rgba(46,125,50,0.10);  --mode-digi-fg:#2E7D32;
-  --mode-other-bg:rgba(96,100,110,0.08);--mode-other-fg:#54647A;
+  --mode-cw-bg:rgba(198,40,40,0.22);    --mode-cw-fg:#C62828;
+  --mode-phone-bg:rgba(21,101,192,0.22);--mode-phone-fg:#1565C0;
+  --mode-digi-bg:rgba(46,125,50,0.22);  --mode-digi-fg:#2E7D32;
+  --mode-other-bg:rgba(96,100,110,0.18);--mode-other-fg:#54647A;
 }
 /* ── Band badge colors — one class per amateur band ── */
 /* Fallback first: lower specificity so explicit bands override it. */
@@ -244,9 +244,9 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 .bc-block{display:flex;align-items:center;gap:4px;white-space:nowrap}
 .bc-label{color:var(--dim);font-weight:600;font-size:0.72rem}
 .bc-pill{display:inline-block;padding:1px 6px;border-radius:3px;font-weight:600;font-size:0.68rem;text-align:center}
-.bc-pill.bc-success{background:rgba(0,122,61,0.12);color:var(--success)}
-.bc-pill.bc-warn{background:rgba(180,83,9,0.12);color:var(--warn)}
-.bc-pill.bc-offline{background:rgba(193,18,31,0.10);color:var(--offline)}
+.bc-pill.bc-success{background:rgba(0,122,61,0.22);color:var(--success)}
+.bc-pill.bc-warn{background:rgba(180,83,9,0.22);color:var(--warn)}
+.bc-pill.bc-offline{background:rgba(193,18,31,0.22);color:var(--offline)}
 .session-summary{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 10px;font-size:0.82rem;color:var(--text-secondary);line-height:1.5}
 .ss-item{white-space:nowrap}
 .ss-val{font-weight:700;color:var(--text)}
@@ -264,11 +264,11 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 .tq-op{color:var(--dim-soft);font-size:0.72rem}
 /* ── Stats panel badges ── */
 .stat-badge{display:inline-block;padding:1px 6px;border-radius:3px;font-weight:600;font-size:0.7rem;margin-left:3px;vertical-align:middle}
-.stat-badge-op{background:rgba(90,55,160,0.08);color:var(--dim);font-weight:500}
+.stat-badge-op{background:rgba(90,55,160,0.18);color:var(--dim);font-weight:500}
 .stat-op-count{font-weight:700;color:var(--text);margin-right:2px;font-size:inherit}
 .stat-op-more{font-size:0.72rem;color:var(--dim);margin-left:2px;vertical-align:middle}
 /* Operator badge in station panel gets accent styling. */
-#sf-Operator .stat-badge-op{background:var(--accent-soft, rgba(0,91,187,0.12));color:var(--accent, #005bbb);font-size:0.78rem;padding:2px 8px;font-weight:600}
+#sf-Operator .stat-badge-op{background:var(--accent-soft, rgba(0,91,187,0.22));color:var(--accent, #005bbb);font-size:0.78rem;padding:2px 8px;font-weight:600}
 .panel dd .stat-badge:first-child{margin-left:0}
 /* ── bottom row cards ── */
 main{display:flex;gap:10px;margin-bottom:10px;flex:0 0 auto;max-height:30vh;overflow-y:auto}

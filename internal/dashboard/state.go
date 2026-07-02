@@ -67,6 +67,7 @@ type RigInfo struct {
 	Frequency    string    `json:"frequency,omitempty"`
 	Band         string    `json:"band,omitempty"`
 	Mode         string    `json:"mode,omitempty"`
+	Submode      string    `json:"submode,omitempty"`
 	PowerW       int       `json:"powerW,omitempty"`
 	UpdatedAtUTC time.Time `json:"updatedAtUtc,omitempty"`
 }

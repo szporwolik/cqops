@@ -375,6 +375,7 @@ func (m *Model) pushDashboardFast() {
 		rigInfo.Frequency = fmt.Sprintf("%.3f MHz", m.rig.freq)
 		rigInfo.Band = qso.DeriveBand(m.rig.freq)
 		rigInfo.Mode = m.fields[fieldMode].Value()
+		rigInfo.Submode = m.fields[fieldSubmode].Value()
 		rigInfo.UpdatedAtUTC = time.Now().UTC()
 	}
 	ds.SetRig(rigInfo)

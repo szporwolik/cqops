@@ -99,7 +99,7 @@ function connectSSE(){
   es.addEventListener('rig',function(e){var r=JSON.parse(e.data).payload;
     D('sse','rig',r.connected?(r.frequency||'?')+' '+(r.mode||''):'disconnected');
     updateStationField('Rig',r.connected?'<span class=\"status-on\">●</span> Connected':'<span class=\"status-off\">○</span> Disconnected');
-    if(r.frequency)updateStationField('Frequency',esc(r.frequency)+(r.band?' <span class=\"stat-badge '+bandBadgeClass(r.band)+'\">'+esc(r.band)+'</span>':'')+(r.mode?' <span class=\"stat-badge '+modeBadgeClass(r.mode)+'\">'+esc(r.mode)+'</span>':''));
+    if(r.frequency)updateStationField('Frequency',esc(r.frequency)+(r.band?' <span class=\"stat-badge '+bandBadgeClass(r.band)+'\">'+esc(r.band)+'</span>':'')+(r.mode?' <span class=\"stat-badge '+modeBadgeClass(r.mode)+'\">'+esc(r.mode)+'</span>':'')+(r.submode?' <span class=\"stat-badge '+modeBadgeClass(r.submode)+'\">'+esc(r.submode)+'</span>':''));
   });
   es.addEventListener('wsjtx',function(e){var w=JSON.parse(e.data).payload;
     D('sse','wsjtx',w.connected?'online':'offline');
@@ -251,6 +251,7 @@ function renderHero(aq,p){
   }
   if(aq.band)addBadge(aq.band,bandBadgeClass(aq.band));
   if(aq.mode)addBadge(aq.mode,modeBadgeClass(aq.mode));
+  if(aq.submode)addBadge(aq.submode,modeBadgeClass(aq.submode));
   if(lastActiveFlags.isDupe)addBadge('DUPE','dupe');
   else if(lastActiveFlags.isNewDxcc)addBadge('NEW DXCC','success');
   else if(lastActiveFlags.isNewCall)addBadge('NEW CALL','info');
@@ -327,7 +328,7 @@ function renderStation(st,op,lb,rig,wsjtx){
   var opHtml=op.callsign?'<span class=\"stat-badge stat-badge-op\">'+esc(op.callsign)+(op.name?' '+esc(op.name):'')+'</span>':'—';
   var rigDot=rig.connected?'<span class=\"status-on\">●</span> Connected':'<span class=\"status-off\">○</span> Disconnected';
   var wsjtxDot=wsjtx.connected?'<span class=\"status-on\">●</span> Online':'<span class=\"status-off\">○</span> Offline';
-  var freqHtml=rig.frequency?esc(rig.frequency)+(rig.band?' <span class=\"stat-badge '+bandBadgeClass(rig.band)+'\">'+esc(rig.band)+'</span>':'')+(rig.mode?' <span class=\"stat-badge '+modeBadgeClass(rig.mode)+'\">'+esc(rig.mode)+'</span>':''):'—';
+  var freqHtml=rig.frequency?esc(rig.frequency)+(rig.band?' <span class=\"stat-badge '+bandBadgeClass(rig.band)+'\">'+esc(rig.band)+'</span>':'')+(rig.mode?' <span class=\"stat-badge '+modeBadgeClass(rig.mode)+'\">'+esc(rig.mode)+'</span>':'')+(rig.submode?' <span class=\"stat-badge '+modeBadgeClass(rig.submode)+'\">'+esc(rig.submode)+'</span>':''):'—';
   stationFields.innerHTML=[
     ['Operator',opHtml],['Logbook',esc(lb.name||'—')],['Locator',esc(st.locator||'—')],
     ['Radio',esc(st.radio||'—')],['Antenna',esc(st.antenna||'—')],['Power',st.powerW?st.powerW+' W':'—'],
@@ -421,12 +422,12 @@ function registerSessionSummary(qsos,dxcc,grids,longestKm,rate){
 function renderTopQSOs(){
   if(!todayQsos.length||ownStationLat==null){topqsosFields.innerHTML='<dt style=\"color:var(--dim)\">—</dt>';return}
   var ranked=todayQsos.map(function(q){
-    return{call:q.call||'?',grid:q.grid,band:q.band||'',mode:q.mode||'',country:q.country||'',operator:q.operator||'',km:distKm(q.grid)};
+    return{call:q.call||'?',grid:q.grid,band:q.band||'',mode:q.mode||'',submode:q.submode||'',country:q.country||'',operator:q.operator||'',km:distKm(q.grid)};
   }).sort(function(a,b){return b.km-a.km}).slice(0,9);
   var longest=ranked[0];
   topqsosFields.innerHTML=ranked.map(function(r,i){
     var countryText=r.country?r.country.replace(/^The\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Federal Republic Of\s+/,'').trim().substring(0,20):'';
-    var badge='<span class=\"tq-badge\">'+esc(r.band)+'</span><span class=\"tq-badge tq-mode\">'+esc(r.mode)+'</span>';
+    var badge='<span class=\"tq-badge\">'+esc(r.band)+'</span><span class=\"tq-badge tq-mode\">'+esc(r.mode)+'</span>'+(r.submode?'<span class=\"tq-badge tq-mode\">'+esc(r.submode)+'</span>':'');
     var distPart=r.km?'<span class=\"tq-dist\">'+Math.round(r.km)+'km</span>':'<span class=\"tq-dist\">—</span>';
     var isLongest=i===0&&r.km>0;
     var cls=isLongest?' class=\"tq-longest\"':'';
@@ -460,7 +461,7 @@ function renderRecentTable(qsos){
     var utc=q.timeUtc?q.timeUtc.slice(11,16).replace(':','')+'Z':'';
     var ctry=(q.country||'').replace(/^The\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Federal Republic Of\s+/,'').trim().substring(0,22);
     var dist=formatDistDir(q.grid);
-    return'<tr><td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.mode,'mode')+'</td><td class="recent-op-col">'+esc(q.operator||'')+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td title="'+esc(q.country||'')+'">'+esc(ctry)+'</td></tr>';
+    return'<tr><td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.mode,'mode')+(q.submode?renderCellBadge(q.submode,'mode'):'')+'</td><td class="recent-op-col">'+esc(q.operator||'')+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td title="'+esc(q.country||'')+'">'+esc(ctry)+'</td></tr>';
   }).join('');
 }
 function renderCellBadge(val,type){
@@ -472,7 +473,7 @@ function prependRecentRow(q){
   var utc=q.timeUtc?q.timeUtc.slice(11,16).replace(':','')+'Z':'';
   var dist=formatDistDir(q.grid);
   var row=document.createElement('tr');row.className='new-row';
-  row.innerHTML='<td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.mode,'mode')+'</td><td class="recent-op-col">'+esc(q.operator||'')+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td>'+esc(q.country||'')+'</td>';
+  row.innerHTML='<td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.mode,'mode')+(q.submode?renderCellBadge(q.submode,'mode'):'')+'</td><td class="recent-op-col">'+esc(q.operator||'')+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td>'+esc(q.country||'')+'</td>';
   if(recentBody.firstChild)recentBody.insertBefore(row,recentBody.firstChild);else recentBody.appendChild(row);
   while(recentBody.children.length>7)recentBody.removeChild(recentBody.lastChild);
 }
