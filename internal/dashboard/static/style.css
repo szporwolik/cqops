@@ -231,6 +231,8 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #recent-table td strong{color:var(--text)}
 #recent-table tbody tr:nth-child(even){background:var(--table-alt)}
 /* Top QSOs alternating row colors — match Recent QSOs table. */
+#topqsos-fields dt{font-weight:700;font-size:0.9rem;color:var(--text)}
+/* Top QSOs alternating row colors — match Recent QSOs table. */
 #topqsos-fields dt:nth-of-type(even),#topqsos-fields dd:nth-of-type(even){background:var(--table-alt)}
 #recent-table tbody tr.new-row{animation:flash 1.2s ease-out}
 @keyframes flash{from{background:var(--blue-soft);color:var(--blue-dark)}to{background:transparent;color:inherit}}
@@ -238,10 +240,13 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 .recent-badge{display:inline-block;padding:1px 5px;border-radius:3px;font-weight:600;font-size:0.7rem;line-height:1.4}
 
 /* ── extra module styles: band conditions, session summary ── */
-.band-cond-grid{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:0.82rem;line-height:1.5}
-.bc-row{display:flex;align-items:center;gap:6px;white-space:nowrap}
-.bc-label{color:var(--dim);font-weight:600;min-width:44px;text-align:right;font-size:0.78rem}
-.bc-pill{display:inline-block;padding:1px 8px;border-radius:4px;font-weight:600;font-size:0.75rem;min-width:72px;text-align:center}
+.band-cond-grid{display:grid;grid-template-columns:auto 1fr 1fr;gap:2px 8px;font-size:0.8rem;line-height:1.5;align-items:center}
+.bc-hdr{display:contents}
+.bc-hdr span{color:var(--dim);font-weight:600;font-size:0.65rem;text-transform:uppercase;letter-spacing:0.3px;text-align:center}
+.bc-hdr span:first-child{text-align:left}
+.bc-row{display:contents}
+.bc-label{color:var(--dim);font-weight:600;font-size:0.76rem;white-space:nowrap;text-align:left}
+.bc-pill{display:inline-block;padding:1px 8px;border-radius:4px;font-weight:600;font-size:0.72rem;text-align:center;justify-self:center}
 .bc-pill.bc-success{background:rgba(0,122,61,0.12);color:var(--success)}
 .bc-pill.bc-warn{background:rgba(180,83,9,0.12);color:var(--warn)}
 .bc-pill.bc-offline{background:rgba(193,18,31,0.10);color:var(--offline)}

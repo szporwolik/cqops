@@ -426,11 +426,15 @@ function renderTopQSOs(){
   var longest=ranked[0];
   topqsosFields.innerHTML=ranked.map(function(r,i){
     var countryText=r.country?r.country.replace(/^The\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Federal Republic Of\s+/,'').trim().substring(0,20):'';
-    var badge='<span class="tq-badge">'+esc(r.band)+'</span><span class="tq-badge tq-mode">'+esc(r.mode)+'</span>';
-    var distPart=r.km?'<span class="tq-dist">'+Math.round(r.km)+'km</span>':'<span class="tq-dist">—</span>';
+    var badge='<span class=\"tq-badge\">'+esc(r.band)+'</span><span class=\"tq-badge tq-mode\">'+esc(r.mode)+'</span>';
+    var distPart=r.km?'<span class=\"tq-dist\">'+Math.round(r.km)+'km</span>':'<span class=\"tq-dist\">—</span>';
     var isLongest=i===0&&r.km>0;
-    var cls=isLongest?' class="tq-longest"':'';
-    return'<dt'+cls+'>'+esc(r.call)+'</dt><dd'+cls+'>'+distPart+(countryText?' <span class="tq-country">'+esc(countryText)+'</span>':'')+' '+badge+(r.operator?' <span class="tq-op">'+esc(r.operator)+'</span>':'')+'</dd>';
+    var cls=isLongest?' class=\"tq-longest\"':'';
+    // Order: callsign distance band mode operator country
+    var parts=[distPart,badge];
+    if(r.operator)parts.push('<span class=\"tq-op\">'+esc(r.operator)+'</span>');
+    if(countryText)parts.push('<span class=\"tq-country\">'+esc(countryText)+'</span>');
+    return'<dt'+cls+'>'+esc(r.call)+'</dt><dd'+cls+'>'+parts.join(' ')+'</dd>';
   }).join('')||'<dt style=\"color:var(--dim)\">—</dt>';
 }
 
@@ -624,15 +628,16 @@ function registerSolarModule(d){
   // Module 3: Band conditions (day/night per band) — pill/badge style.
   var m3=function(){
     function bc(v){return v==='Good'?'success':v==='Fair'?'warn':'offline'}
-    var html='<div class="extra-title">Band Conditions</div>'+'<div class="band-cond-grid">';
+    var html='<div class="extra-title">Band Conditions</div>'+'<div class="band-cond-grid">'+
+      '<div class="bc-hdr"><span>Band</span><span>Day</span><span>Night</span></div>';
     var bands=[['80–40','80m-40m'],['30–20','30m-20m'],['17–15','17m-15m'],['12–10','12m-10m']];
     for(var i=0;i<bands.length;i++){
       var key=bands[i][1],label=bands[i][0];
       var day=d.bandConditions? (d.bandConditions[key+'_day']||'—'):'—';
       var night=d.bandConditions? (d.bandConditions[key+'_night']||'—'):'—';
-      html+='<span class="bc-row"><span class="bc-label">'+label+'</span>'+
-        '<span class="bc-pill bc-'+bc(day)+'">Day '+day+'</span>'+
-        '<span class="bc-pill bc-'+bc(night)+'">Night '+night+'</span></span>';
+      html+='<div class="bc-row"><span class="bc-label">'+label+'</span>'+
+        '<span class="bc-pill bc-'+bc(day)+'">'+day+'</span>'+
+        '<span class="bc-pill bc-'+bc(night)+'">'+night+'</span></div>';
     }
     html+='</div>';return html;
   };m3._id='solar';
