@@ -45,6 +45,8 @@
   --mode-other-bg:rgba(96,100,110,0.08);--mode-other-fg:#54647A;
 }
 /* ── Band badge colors — one class per amateur band ── */
+/* Fallback first: lower specificity so explicit bands override it. */
+.band-badge[class*="band-"],.badge[class*="band-"]{background:var(--b-other-bg);color:var(--b-other-fg)}
 .band-badge.band-160m,.badge.band-160m{background:var(--b160m-bg);color:var(--b160m-fg)}
 .band-badge.band-80m,.badge.band-80m{background:var(--b80m-bg);color:var(--b80m-fg)}
 .band-badge.band-60m,.badge.band-60m{background:var(--b60m-bg);color:var(--b60m-fg)}
@@ -65,8 +67,6 @@
 .band-badge.band-6cm,.badge.band-6cm{background:var(--b6cm-bg);color:var(--b6cm-fg)}
 .band-badge.band-3cm,.badge.band-3cm{background:var(--b3cm-bg);color:var(--b3cm-fg)}
 .band-badge.band-1cm,.badge.band-1cm{background:var(--b1cm-bg);color:var(--b1cm-fg)}
-/* Fallback for bands not explicitly listed. */
-.band-badge[class*="band-"],.badge[class*="band-"]{background:var(--b-other-bg);color:var(--b-other-fg)}
 /* ── Mode badge colors — grouped by emission type ── */
 .mode-badge.mode-cw,.badge.mode-cw{background:var(--mode-cw-bg);color:var(--mode-cw-fg)}
 .mode-badge.mode-phone,.badge.mode-phone{background:var(--mode-phone-bg);color:var(--mode-phone-fg)}
