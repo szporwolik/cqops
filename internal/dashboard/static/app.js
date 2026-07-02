@@ -637,8 +637,6 @@ function registerSolarModule(d){
       html+='<div class="bc-block"><span class="bc-label">'+label+'</span>'+'<span class="bc-pill bc-'+bc(day)+'">D '+day+'</span>'+'<span class="bc-pill bc-'+bc(night)+'">N '+night+'</span></div>';
     }
     html+='</div>';return html;
-    }
-    html+='</div>';return html;
   };m3._id='solar';
 
   extraModules.unshift(m3,m2,m1);
