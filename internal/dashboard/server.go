@@ -139,13 +139,13 @@ func (s *Server) Addr() string { return s.addr }
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		// Restrict to same-origin by default; style-src 'unsafe-inline'
 		// needed for Leaflet. If your deployment needs external map tiles
 		// or weather APIs, adjust img-src and connect-src accordingly.
 		w.Header().Set("Content-Security-Policy",
 			"default-src 'self'; "+
-				"script-src 'self'; "+
+				"script-src 'self' 'unsafe-inline'; "+
 				"style-src 'self' 'unsafe-inline'; "+
 				"img-src 'self' data: https:; "+
 				"connect-src 'self' https:; "+

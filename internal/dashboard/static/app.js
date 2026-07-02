@@ -1074,7 +1074,8 @@ function wxDoFetch(){
   var params=new URLSearchParams({latitude:String(wxLat),longitude:String(wxLon),
     current:'temperature_2m,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m,precipitation,is_day',
     minutely_15:'temperature_2m,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m,precipitation,is_day',
-    forecast_minutely_15:'13',timezone:'auto',wind_speed_unit:'kmh',precipitation_unit:'mm'});
+    hourly:'temperature_2m,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m,precipitation,is_day',
+    forecast_minutely_15:'13',forecast_hours:'25',timezone:'auto',wind_speed_unit:'kmh',precipitation_unit:'mm'});
   fetch('https://api.open-meteo.com/v1/forecast?'+params,{cache:'no-store'}).then(function(r){return r.json()}).then(function(d){
     renderWeather(d);
   }).catch(function(e){D('wx','fetch err',e.message);wxUpdateVisibility()});
@@ -1102,14 +1103,22 @@ window.addEventListener('offline',function(){wxUpdateVisibility();clearContactWe
 function renderWeather(d){
   if(!wxEl)wxEl=document.getElementById('wx-row');
   if(!wxEl||!navigator.onLine){wxUpdateVisibility();return}
-  var now=d.current||{},mn=d.minutely_15||{};
+  var now=d.current||{},mn=d.minutely_15||{},hr=d.hourly||{};
   var slots=[[0,'Now',now.temperature_2m,now.weather_code,now.wind_speed_10m,now.wind_gusts_10m,now.wind_direction_10m,now.precipitation,now.is_day]];
-  var targets=[30,60,90,120,150,180];
+  // Short-range (15-min intervals from minutely_15 API).
+  var shortTargets=[30,60]; // +0.5h, +1h
   var nowTs=Date.now();
-  for(var t=0;t<targets.length;t++){
-    var ts=nowTs+targets[t]*60000,best=-1,bestD=Infinity;
+  for(var t=0;t<shortTargets.length;t++){
+    var ts=nowTs+shortTargets[t]*60000,best=-1,bestD=Infinity;
     for(var i=0;i<mn.time.length;i++){var rowTime=new Date(mn.time[i]).getTime(),diff=Math.abs(rowTime-ts);if(diff<bestD){bestD=diff;best=i}}
-    if(best>=0){var h=targets[t]/60,hl=(h%1===0?h:h.toFixed(1))+'h';slots.push([targets[t],'+'+hl,mn.temperature_2m[best],mn.weather_code[best],mn.wind_speed_10m[best],mn.wind_gusts_10m[best],mn.wind_direction_10m[best],mn.precipitation[best],mn.is_day[best]]);}
+    if(best>=0){var h=shortTargets[t]/60;slots.push([shortTargets[t],'+'+h+'h',mn.temperature_2m[best],mn.weather_code[best],mn.wind_speed_10m[best],mn.wind_gusts_10m[best],mn.wind_direction_10m[best],mn.precipitation[best],mn.is_day[best]]);}
+  }
+  // Longer-range (hourly API).
+  var longTargets=[2,3,5,8,12,24]; // +2h, +3h, +5h, +8h, +12h, +24h
+  for(var t=0;t<longTargets.length;t++){
+    var ts=nowTs+longTargets[t]*3600000,best=-1,bestD=Infinity;
+    for(var i=0;i<hr.time.length;i++){var rowTime=new Date(hr.time[i]).getTime(),diff=Math.abs(rowTime-ts);if(diff<bestD){bestD=diff;best=i}}
+    if(best>=0){slots.push([longTargets[t]*60,'+'+longTargets[t]+'h',hr.temperature_2m[best],hr.weather_code[best],hr.wind_speed_10m[best],hr.wind_gusts_10m[best],hr.wind_direction_10m[best],hr.precipitation[best],hr.is_day[best]]);}
   }
   var windArrow=function(deg){var a=['↓','↙','←','↖','↑','↗','→','↘'];return a[Math.round(deg/45)%8]||'•'};
   var html='';
