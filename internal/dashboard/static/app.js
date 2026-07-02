@@ -352,7 +352,7 @@ function renderStats(st,todayBuf){
       if(q.call){calls[q.call.toUpperCase()]=1}
       if(q.country){var cn=q.country.replace(/^The\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Federal Republic Of\s+/,'').trim().substring(0,28);dxcc[cn]=1}
       if(q.band)bands[q.band]=1;
-      if(q.mode)modes[q.mode]=1;
+      if(q.mode){var dm=q.submode||q.mode;modes[dm]=1}
       if(q.grid&&q.grid.length>=4)grids[q.grid.toUpperCase().substring(0,4)]=1;
     });
     qsosToday=todayBuf.length;
@@ -375,7 +375,7 @@ function renderStats(st,todayBuf){
   var bandFreq={},modeFreq={},opFreq={};
   buf.forEach(function(q){
     if(q.band)bandFreq[q.band]=(bandFreq[q.band]||0)+1;
-    if(q.mode)modeFreq[q.mode]=(modeFreq[q.mode]||0)+1;
+    if(q.mode){var dm=q.submode||q.mode;modeFreq[dm]=(modeFreq[dm]||0)+1;}
     if(q.operator)opFreq[q.operator]=(opFreq[q.operator]||0)+1;
   });
   var bandList=Object.keys(bandFreq).sort(function(a,b){return _bandRank(a)-_bandRank(b)||bandFreq[b]-bandFreq[a]});
@@ -427,7 +427,8 @@ function renderTopQSOs(){
   var longest=ranked[0];
   topqsosFields.innerHTML=ranked.map(function(r,i){
     var countryText=r.country?r.country.replace(/^The\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Federal Republic Of\s+/,'').trim().substring(0,20):'';
-    var badge='<span class=\"tq-badge\">'+esc(r.band)+'</span><span class=\"tq-badge tq-mode\">'+esc(r.mode)+'</span>'+(r.submode?'<span class=\"tq-badge tq-mode\">'+esc(r.submode)+'</span>':'');
+    var displayMode=r.submode||r.mode;
+    var badge='<span class=\"tq-badge\">'+esc(r.band)+'</span><span class=\"tq-badge tq-mode\">'+esc(displayMode)+'</span>';
     var distPart=r.km?'<span class=\"tq-dist\">'+Math.round(r.km)+'km</span>':'<span class=\"tq-dist\">—</span>';
     var isLongest=i===0&&r.km>0;
     var cls=isLongest?' class=\"tq-longest\"':'';
@@ -461,7 +462,7 @@ function renderRecentTable(qsos){
     var utc=q.timeUtc?q.timeUtc.slice(11,16).replace(':','')+'Z':'';
     var ctry=(q.country||'').replace(/^The\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Federal Republic Of\s+/,'').trim().substring(0,22);
     var dist=formatDistDir(q.grid);
-    return'<tr><td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.mode,'mode')+(q.submode?renderCellBadge(q.submode,'mode'):'')+'</td><td class="recent-op-col">'+esc(q.operator||'')+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td title="'+esc(q.country||'')+'">'+esc(ctry)+'</td></tr>';
+    return'<tr><td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.submode||q.mode,'mode')+'</td><td class="recent-op-col">'+esc(q.operator||'')+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td title="'+esc(q.country||'')+'">'+esc(ctry)+'</td></tr>';
   }).join('');
 }
 function renderCellBadge(val,type){
@@ -473,7 +474,7 @@ function prependRecentRow(q){
   var utc=q.timeUtc?q.timeUtc.slice(11,16).replace(':','')+'Z':'';
   var dist=formatDistDir(q.grid);
   var row=document.createElement('tr');row.className='new-row';
-  row.innerHTML='<td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.mode,'mode')+(q.submode?renderCellBadge(q.submode,'mode'):'')+'</td><td class="recent-op-col">'+esc(q.operator||'')+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td>'+esc(q.country||'')+'</td>';
+  row.innerHTML='<td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.submode||q.mode,'mode')+'</td><td class="recent-op-col">'+esc(q.operator||'')+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td>'+esc(q.country||'')+'</td>';
   if(recentBody.firstChild)recentBody.insertBefore(row,recentBody.firstChild);else recentBody.appendChild(row);
   while(recentBody.children.length>7)recentBody.removeChild(recentBody.lastChild);
 }

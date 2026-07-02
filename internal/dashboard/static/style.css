@@ -1,9 +1,9 @@
 /* CQOps Live — Blue Onyx Field Day dashboard, two-mode layout */
 :root {
-  --page-bg:#E8EEF5; --page-bg-soft:#F2F6FB; --page-bg-onyx:#DCE4EF;
-  --surface:#FFFFFF; --surface-soft:#FAFCFF; --surface-blue:#F3F7FD;
-  --border:rgba(120,140,165,0.22); --border-strong:rgba(100,120,148,0.35);
-  --shadow:rgba(15,31,51,0.07); --shadow-soft:rgba(15,31,51,0.04);
+  --page-bg:#E2E8F2; --page-bg-soft:#EDF2F9; --page-bg-onyx:#D5DEE9;
+  --surface:#FFFFFF; --surface-soft:#FAFCFF; --surface-blue:#F2F6FD;
+  --border:rgba(100,120,150,0.35); --border-strong:rgba(80,100,135,0.50);
+  --shadow:rgba(15,31,51,0.12); --shadow-soft:rgba(15,31,51,0.06);
   --text:#07111F; --text-secondary:#263A52; --dim:#58708C; --dim-soft:#70849B;
   --accent:#D00032; --accent-dark:#A00026; --accent-soft:#FFE3EA; --accent-xsoft:#FFF2F5;
   --blue:#005BBB; --blue-dark:#003F88; --blue-deep:#123E6F; --blue-soft:#DDEBFF; --blue-xsoft:#EEF6FF;
@@ -11,7 +11,7 @@
   --success:#007A3D; --warn:#B45309; --offline:#C1121F;
   --station-marker:#007A3D; --qso-marker:#0067C5;
   --active-path:#D00032; --last-qso:#D00032; --old-path:rgba(0,91,187,0.30);
-  --table-border:rgba(130,150,175,0.20); --table-alt:#F6F9FD; --table-hover:#E8F0FA;
+  --table-border:rgba(110,135,160,0.25); --table-alt:#F4F7FC; --table-hover:#E6EEF8;
   --card-radius:8px; --gap:10px;
   --logo-w:140px; --logo-h:84px; --photo-w:100px; --photo-h:100px;
   --active-photo-w:160px; --active-photo-h:160px;
@@ -74,9 +74,9 @@
 .mode-badge.mode-other,.badge.mode-other{background:var(--mode-other-bg);color:var(--mode-other-fg)}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:system-ui,-apple-system,sans-serif;background:
-    radial-gradient(circle at 12% 8%,rgba(208,0,50,0.025),transparent 28%),
-    radial-gradient(circle at 80% 5%,rgba(0,91,187,0.04),transparent 34%),
-    linear-gradient(135deg,#F5F8FC 0%,#EBF1F7 48%,#DEE6F0 100%);
+    radial-gradient(circle at 12% 8%,rgba(208,0,50,0.04),transparent 28%),
+    radial-gradient(circle at 80% 5%,rgba(0,91,187,0.06),transparent 34%),
+    linear-gradient(135deg,#EDF1F7 0%,#DEE6F0 48%,#CDD7E5 100%);
   color:var(--text);line-height:1.4;position:relative;overflow-x:hidden;font-size:var(--base-font)}
 #app{max-width:1360px;margin:0 auto;padding:0 16px 8px 16px;display:flex;flex-direction:column;min-height:100vh;position:relative}
 
