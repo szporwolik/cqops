@@ -283,7 +283,7 @@ main{display:flex;gap:10px;margin-bottom:10px;flex:0 0 auto;max-height:30vh;over
 .panel dl{display:grid;grid-template-columns:auto 1fr;gap:2px 8px}
 .panel dt{color:var(--dim);font-size:0.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .panel dd{font-size:0.9rem;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#stats-fields dd{white-space:normal;line-height:1.6}
+#stats-fields dd{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .panel dd strong{color:var(--text)}
 .status-on{color:var(--success)}.status-off{color:var(--offline)}
 
