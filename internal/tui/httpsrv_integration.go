@@ -519,6 +519,14 @@ var lastActiveDupe, lastActiveNewCall, lastActiveNewDXCC bool
 // lastRecentIDs holds the last pushed QSO ID list for change detection.
 var lastRecentIDs []int64
 
+// forcePushDashboardRecent clears the change-detection cache and pushes.
+// Use when QSO fields (country, grid, distance) change without ID changes,
+// e.g. after WSJT-X enrichment.
+func (m *Model) forcePushDashboardRecent(ds *dashboard.State) {
+	lastRecentIDs = nil
+	m.pushDashboardRecent(ds)
+}
+
 // lastFastTick prevents pushDashboardFast from being called
 // redundantly from both handleTick and applyRigPoll within the same tick.
 var lastFastTick int

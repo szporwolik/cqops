@@ -266,11 +266,11 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 				qs.Distance, qs.Bearing, qsoID)
 		}
 
-		// Push enriched QSO to dashboard so the recent-QSOs table shows
-		// the updated country/grid/distance instead of the raw WSJT-X data.
+		// Push enriched QSO to dashboard — force-push because enrichment
+		// updates fields (country, grid, distance) without changing QSO IDs.
 		if m.http.client != nil && m.http.online {
 			ds := m.http.client.State()
-			m.pushDashboardRecent(ds)
+			m.forcePushDashboardRecent(ds)
 			m.pushDashboardToday(ds)
 		}
 
