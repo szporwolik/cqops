@@ -697,8 +697,9 @@ function updateExtraBox(){
     }
     var content=document.getElementById('map-extra-content');
     if(!content)return;
-    // Show 1 or 2 modules depending on box width — never more than 2.
-    var cols=Math.min(2,Math.max(1,Math.floor(box.clientWidth/170)));
+    // Show 1 or 2 modules — only split into two columns when box is wide enough
+    // to fit content like band conditions without cramping.
+    var cols=Math.min(2,Math.max(1,Math.floor(box.clientWidth/240)));
     // Always cycle through all modules.
     if(!extraCycleTimer){
       extraCycleTimer=setInterval(cycleExtraModule,5000);

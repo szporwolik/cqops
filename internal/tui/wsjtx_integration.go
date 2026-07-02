@@ -161,6 +161,9 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 	applog.InfoDetail("WSJT-X: auto-logged QSO", fmt.Sprintf("id=%d call=%s", id, qs.Call))
 	m.toasts.Success(fmt.Sprintf("WSJT-X: %s logged", qs.Call))
 
+	// Push to dashboard so the browser sees the toast + table update instantly.
+	m.pushLoggedQSOToDashboard(qs)
+
 	n := m.App.Config.General.Notifications
 	if n.Enabled && n.QSO {
 		applog.Info("Sending WSJT-X QSO notification", "call", qs.Call, "band", qs.Band, "mode", qs.Mode)
