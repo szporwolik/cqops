@@ -422,7 +422,7 @@ function renderTopQSOs(){
   if(!todayQsos.length||ownStationLat==null){topqsosFields.innerHTML='<dt style=\"color:var(--dim)\">—</dt>';return}
   var ranked=todayQsos.map(function(q){
     return{call:q.call||'?',grid:q.grid,band:q.band||'',mode:q.mode||'',country:q.country||'',operator:q.operator||'',km:distKm(q.grid)};
-  }).sort(function(a,b){return b.km-a.km}).slice(0,10);
+  }).sort(function(a,b){return b.km-a.km}).slice(0,9);
   var longest=ranked[0];
   topqsosFields.innerHTML=ranked.map(function(r,i){
     var countryText=r.country?r.country.replace(/^The\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Federal Republic Of\s+/,'').trim().substring(0,20):'';
@@ -454,7 +454,7 @@ function formatDistDir(grid){
 
 // ---- Recent QSOs table ----
 function renderRecentTable(qsos){
-  var list=qsos&&qsos.length?qsos.slice(0,8):[];
+  var list=qsos&&qsos.length?qsos.slice(0,7):[];
   if(!list.length){recentBody.innerHTML='<tr><td colspan=\"8\" style=\"color:var(--dim)\">No QSOs yet</td></tr>';return}
   recentBody.innerHTML=list.map(function(q){
     var utc=q.timeUtc?q.timeUtc.slice(11,16).replace(':','')+'Z':'';
@@ -474,7 +474,7 @@ function prependRecentRow(q){
   var row=document.createElement('tr');row.className='new-row';
   row.innerHTML='<td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.mode,'mode')+'</td><td class="recent-op-col">'+esc(q.operator||'')+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td>'+esc(q.country||'')+'</td>';
   if(recentBody.firstChild)recentBody.insertBefore(row,recentBody.firstChild);else recentBody.appendChild(row);
-  while(recentBody.children.length>8)recentBody.removeChild(recentBody.lastChild);
+  while(recentBody.children.length>7)recentBody.removeChild(recentBody.lastChild);
 }
 
 // ---- Today QSO buffer ----
