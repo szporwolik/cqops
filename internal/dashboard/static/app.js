@@ -392,7 +392,7 @@ function renderStats(st,todayBuf){
     ['Bands',bandList.length?bandList.map(function(b){return'<span class="stat-badge '+bandBadgeClass(b)+'">'+esc(b)+'</span>'}).join(''):(st.bands||'—')],
     ['Modes',modeList.length?modeList.map(function(m){return'<span class="stat-badge '+modeBadgeClass(m)+'">'+esc(m)+'</span>'}).join(''):(st.modes||'—')],
     ['Longest',longestKm?Math.round(longestKm)+' km':'—'],
-    ['Rate',Math.round(rate)+'/hr']
+    ['Rate (1h)',Math.round(rate)+'/hr']
   ].map(function(r){return'<dt>'+r[0]+'</dt><dd>'+r[1]+'</dd>'}).join('');
   renderTopQSOs();
   // Session summary removed from extra modules — stats already shown in Stats panel.
@@ -422,17 +422,15 @@ function renderTopQSOs(){
   if(!todayQsos.length||ownStationLat==null){topqsosFields.innerHTML='<dt style=\"color:var(--dim)\">—</dt>';return}
   var ranked=todayQsos.map(function(q){
     return{call:q.call||'?',grid:q.grid,band:q.band||'',mode:q.mode||'',country:q.country||'',operator:q.operator||'',km:distKm(q.grid)};
-  }).filter(function(r){return r.km>0}).sort(function(a,b){return b.km-a.km}).slice(0,9);
+  }).sort(function(a,b){return b.km-a.km}).slice(0,8);
   var longest=ranked[0];
   topqsosFields.innerHTML=ranked.map(function(r,i){
-    var isLongest=i===0&&longest&&longest.km>0;
     var countryText=r.country?r.country.replace(/^The\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Federal Republic Of\s+/,'').trim().substring(0,20):'';
     var badge='<span class="tq-badge">'+esc(r.band)+'</span><span class="tq-badge tq-mode">'+esc(r.mode)+'</span>';
-    var distPart='<span class="tq-dist">'+Math.round(r.km)+' km</span>';
-    if(isLongest){
-      return'<dt class="tq-longest">🏆</dt><dd class="tq-longest"><strong>'+esc(r.call)+'</strong> '+distPart+' <span class="tq-country">'+esc(countryText)+'</span> '+badge+'</dd>';
-    }
-    return'<dt>'+(i+1)+'.</dt><dd><strong>'+esc(r.call)+'</strong> '+distPart+' '+badge+(r.operator?' <span class="tq-op">'+esc(r.operator)+'</span>':'')+'</dd>';
+    var distPart=r.km?'<span class="tq-dist">'+Math.round(r.km)+'km</span>':'<span class="tq-dist">—</span>';
+    var isLongest=i===0&&r.km>0;
+    var cls=isLongest?' class="tq-longest"':'';
+    return'<dt'+cls+'>'+esc(r.call)+'</dt><dd'+cls+'>'+distPart+(countryText?' <span class="tq-country">'+esc(countryText)+'</span>':'')+' '+badge+(r.operator?' <span class="tq-op">'+esc(r.operator)+'</span>':'')+'</dd>';
   }).join('')||'<dt style=\"color:var(--dim)\">—</dt>';
 }
 

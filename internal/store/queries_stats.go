@@ -150,15 +150,15 @@ func GetDashboardStats(db *sql.DB, startDate string) (DashboardStats, error) {
 		}
 	}
 
-	// Rate: QSOs in the last hour. Compare date and time separately
-	// to avoid edge cases with variable-length time_on strings.
+	// Rate: QSOs in the last hour. Compare only the HHMM portion of time_on
+	// because it may be stored as HHMM (4 chars) or HHMMSS (6 chars).
 	var lastHour int
 	oneHourAgo := time.Now().UTC().Add(-1 * time.Hour)
 	oneHourDate := oneHourAgo.Format("20060102")
-	oneHourTime := oneHourAgo.Format("1504") // HHMM, matches time_on prefix
+	oneHourTime := oneHourAgo.Format("1504") // HHMM
 	if err := db.QueryRow(`
 		SELECT COUNT(*) FROM qsos
-		WHERE qso_date > ? OR (qso_date = ? AND time_on >= ?)
+		WHERE qso_date > ? OR (qso_date = ? AND SUBSTR(time_on,1,4) >= ?)
 	`, oneHourDate, oneHourDate, oneHourTime).Scan(&lastHour); err != nil {
 		lastHour = 0
 	}

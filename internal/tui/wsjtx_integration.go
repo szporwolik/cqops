@@ -265,6 +265,12 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 				qs.Distance, qs.Bearing, qsoID)
 		}
 
+		// Push enriched QSO to dashboard so the recent-QSOs table shows
+		// the updated country/grid/distance instead of the raw WSJT-X data.
+		if m.http.client != nil && m.http.online {
+			m.pushDashboardRecent(m.http.client.State())
+		}
+
 		// Step 3: upload the enriched QSO's ADIF to Wavelog.
 		if !wlenabled || !m.inetOnline {
 			return wsjtxEnrichDoneMsg{}
