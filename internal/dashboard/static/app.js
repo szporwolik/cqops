@@ -396,6 +396,7 @@ function renderStats(st,todayBuf){
     ['Rate (5m / 15m / 1h)',rate5+' / '+rate15+' / '+rate60]
   ].map(function(r){return'<dt>'+r[0]+'</dt><dd>'+r[1]+'</dd>'}).join('');
   renderTopQSOs();
+}
 
 // ---- Session Summary (extra module above APRS map) ----
 function registerSessionSummary(qsos,dxcc,grids,longestKm,rate){
