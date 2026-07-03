@@ -427,7 +427,7 @@ function renderTopQSOs(){
   topqsosFields.innerHTML=ranked.map(function(r,i){
     var countryText=r.country?r.country.replace(/^The\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Federal Republic Of\s+/,'').trim().substring(0,20):'';
     var displayMode=r.submode||r.mode;
-    var badge='<span class=\"tq-badge\">'+esc(r.band)+'</span><span class=\"tq-badge tq-mode\">'+esc(displayMode)+'</span>';
+    var badge='<span class=\"tq-badge '+bandBadgeClass(r.band)+'\">'+esc(r.band)+'</span><span class=\"tq-badge '+modeBadgeClass(displayMode)+'\">'+esc(displayMode)+'</span>';
     var distPart=r.km?'<span class=\"tq-dist\">'+Math.round(r.km)+'km</span>':'<span class=\"tq-dist\">—</span>';
     var isLongest=i===0&&r.km>0;
     var cls=isLongest?' class=\"tq-longest\"':'';

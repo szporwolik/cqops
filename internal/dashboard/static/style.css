@@ -255,8 +255,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 .fr-row{white-space:nowrap}
 .fr-label{font-weight:600;color:var(--dim);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.3px}
 /* ── Top QSOs badges ── */
-.tq-badge{display:inline-block;background:var(--blue-soft);color:var(--blue-dark);padding:0 5px;border-radius:3px;font-size:0.7rem;font-weight:600;margin-left:2px}
-.tq-badge.tq-mode{background:var(--accent-soft);color:var(--accent-dark)}
+.tq-badge{display:inline-block;padding:0 5px;border-radius:3px;font-size:0.7rem;font-weight:600;margin-left:2px}
 .tq-dist{color:var(--dim);font-size:0.82rem}
 .tq-country{color:var(--success);font-size:0.78rem;font-weight:500}
 .tq-longest{color:var(--accent);font-weight:700}
