@@ -148,17 +148,17 @@ type QSOView struct {
 }
 
 type Stats struct {
-	QSOsToday   int     `json:"qsosToday"`
-	Operators   int     `json:"operators"`
-	UniqueCalls int     `json:"uniqueCalls"`
-	DXCC        int     `json:"dxcc"`
-	Grids       int     `json:"grids"`
-	Bands       int     `json:"bands"`
-	Modes       int     `json:"modes"`
-	LastQSOAgoS int   `json:"lastQsoAgoS,omitempty"`
-	Rate5m      int   `json:"rate5m"`
-	Rate15m     int   `json:"rate15m"`
-	Rate60m     int   `json:"rate60m"`
+	QSOsToday   int `json:"qsosToday"`
+	Operators   int `json:"operators"`
+	UniqueCalls int `json:"uniqueCalls"`
+	DXCC        int `json:"dxcc"`
+	Grids       int `json:"grids"`
+	Bands       int `json:"bands"`
+	Modes       int `json:"modes"`
+	LastQSOAgoS int `json:"lastQsoAgoS,omitempty"`
+	Rate5m      int `json:"rate5m"`
+	Rate15m     int `json:"rate15m"`
+	Rate60m     int `json:"rate60m"`
 }
 
 // APRSStation is a received APRS position report for the dashboard local map.

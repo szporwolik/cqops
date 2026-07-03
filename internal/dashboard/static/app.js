@@ -396,7 +396,6 @@ function renderStats(st,todayBuf){
     ['Rate (5m / 15m / 1h)',rate5+' / '+rate15+' / '+rate60]
   ].map(function(r){return'<dt>'+r[0]+'</dt><dd>'+r[1]+'</dd>'}).join('');
   renderTopQSOs();
-}
 
 // ---- Session Summary (extra module above APRS map) ----
 function registerSessionSummary(qsos,dxcc,grids,longestKm,rate){
@@ -626,7 +625,7 @@ function registerSolarModule(d){
       '</div>';
   };m2._id='solar';
 
-  // Module 3: Band conditions (day/night per band) — pill grid with aligned columns.
+  // Module 3: Band conditions (day/night per band) — horizontal 2×2 grid.
   var m3=function(){
     function bc(v){return v==='Good'?'success':v==='Fair'?'warn':'offline'}
     var html='<div class="extra-title">Band Conditions</div>'+'<div class="band-cond-grid">';
