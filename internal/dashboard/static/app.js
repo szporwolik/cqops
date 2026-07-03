@@ -396,6 +396,7 @@ function renderStats(st,todayBuf){
     ['Rate (5m / 15m / 1h)',rate5+' / '+rate15+' / '+rate60]
   ].map(function(r){return'<dt>'+r[0]+'</dt><dd>'+r[1]+'</dd>'}).join('');
   renderTopQSOs();
+}
 
 // ---- Session Summary (extra module above APRS map) ----
 function registerSessionSummary(qsos,dxcc,grids,longestKm,rate){
@@ -625,20 +626,18 @@ function registerSolarModule(d){
       '</div>';
   };m2._id='solar';
 
-  // Module 3: Band conditions (day/night per band) — compact table with columns.
+  // Module 3: Band conditions (day/night per band) — pill grid with aligned columns.
   var m3=function(){
     function bc(v){return v==='Good'?'success':v==='Fair'?'warn':'offline'}
-    function cv(v){return v||'—'}
-    var html='<div class="extra-title">Band Conditions</div>'+'<table class="bc-table">';
-    html+='<thead><tr><th>Band</th><th>Day</th><th>Night</th></tr></thead><tbody>';
+    var html='<div class="extra-title">Band Conditions</div>'+'<div class="band-cond-grid">';
     var bands=[['80–40','80m-40m'],['30–20','30m-20m'],['17–15','17m-15m'],['12–10','12m-10m']];
     for(var i=0;i<bands.length;i++){
       var key=bands[i][1],label=bands[i][0];
-      var day=d.bandConditions? cv(d.bandConditions[key+'_day']):'—';
-      var night=d.bandConditions? cv(d.bandConditions[key+'_night']):'—';
-      html+='<tr>'+'<td class="bc-band">'+label+'</td>'+'<td class="bc-'+bc(day)+'">'+day+'</td>'+'<td class="bc-'+bc(night)+'">'+night+'</td>'+'</tr>';
+      var day=d.bandConditions? (d.bandConditions[key+'_day']||'—'):'—';
+      var night=d.bandConditions? (d.bandConditions[key+'_night']||'—'):'—';
+      html+='<div class="bc-block"><span class="bc-label">'+label+'</span>'+'<span class="bc-pill bc-'+bc(day)+'">D '+day+'</span>'+'<span class="bc-pill bc-'+bc(night)+'">N '+night+'</span></div>';
     }
-    html+='</tbody></table>';return html;
+    html+='</div>';return html;
   };m3._id='solar';
 
   extraModules.unshift(m3,m2,m1);

@@ -240,14 +240,13 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 .recent-badge{display:inline-block;padding:1px 5px;border-radius:3px;font-weight:600;font-size:0.7rem;line-height:1.4}
 
 /* ── extra module styles: band conditions, session summary ── */
-.bc-table{border-collapse:collapse;margin:0 auto;font-size:0.72rem;line-height:1.5;width:100%}
-.bc-table thead th{color:var(--dim);font-weight:600;font-size:0.68rem;text-transform:uppercase;letter-spacing:0.3px;padding:0 4px 2px;text-align:center}
-.bc-table thead th:first-child{text-align:left}
-.bc-table tbody td{padding:1px 4px;text-align:center;font-weight:600}
-.bc-table .bc-band{color:var(--dim);font-weight:600;text-align:left}
-.bc-table .bc-success{color:var(--success)}
-.bc-table .bc-warn{color:var(--warn)}
-.bc-table .bc-offline{color:var(--offline)}
+.band-cond-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px 14px;font-size:0.76rem;line-height:1.5;align-items:center;justify-items:start}
+.bc-block{display:flex;align-items:center;gap:5px;white-space:nowrap}
+.bc-label{color:var(--dim);font-weight:600;font-size:0.72rem;min-width:3em;text-align:right}
+.bc-pill{display:inline-block;padding:1px 7px;border-radius:3px;font-weight:600;font-size:0.68rem;text-align:center;min-width:3.2em}
+.bc-pill.bc-success{background:rgba(0,122,61,0.22);color:var(--success)}
+.bc-pill.bc-warn{background:rgba(180,83,9,0.22);color:var(--warn)}
+.bc-pill.bc-offline{background:rgba(193,18,31,0.22);color:var(--offline)}
 .session-summary{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 10px;font-size:0.82rem;color:var(--text-secondary);line-height:1.5}
 .ss-item{white-space:nowrap}
 .ss-val{font-weight:700;color:var(--text)}
