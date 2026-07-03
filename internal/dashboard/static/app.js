@@ -382,7 +382,7 @@ function renderStats(st,todayBuf){
   var modeList=Object.keys(modeFreq).sort(function(a,b){return modeFreq[b]-modeFreq[a]});
   var opList=Object.keys(opFreq).sort(function(a,b){return opFreq[b]-opFreq[a]});
   // Render fields — bands/modes as badges, operators as count+top-3.
-  var rate=st.ratePerHour||0;
+  var rate5=st.rate5m||0,rate15=st.rate15m||0,rate60=st.rate60m||0;
   var opsTotal=st.operators||opList.length;
   statsFields.innerHTML=[
     ['QSOs',qsosToday||0],
@@ -393,11 +393,9 @@ function renderStats(st,todayBuf){
     ['Bands',bandList.length?bandList.map(function(b){return'<span class="stat-badge '+bandBadgeClass(b)+'">'+esc(b)+'</span>'}).join(''):(st.bands||'—')],
     ['Modes',modeList.length?modeList.map(function(m){return'<span class="stat-badge '+modeBadgeClass(m)+'">'+esc(m)+'</span>'}).join(''):(st.modes||'—')],
     ['Longest',longestKm?Math.round(longestKm)+' km':'—'],
-    ['Rate (1h)',Math.round(rate)+'/hr']
+    ['Rate (5m / 15m / 1h)',rate5+' / '+rate15+' / '+rate60]
   ].map(function(r){return'<dt>'+r[0]+'</dt><dd>'+r[1]+'</dd>'}).join('');
   renderTopQSOs();
-  // Session summary removed from extra modules — stats already shown in Stats panel.
-}
 
 // ---- Session Summary (extra module above APRS map) ----
 function registerSessionSummary(qsos,dxcc,grids,longestKm,rate){

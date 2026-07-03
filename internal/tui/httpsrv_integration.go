@@ -739,7 +739,9 @@ func (m *Model) pushDashboardStats(ds *dashboard.State) {
 		Bands:       s.Bands,
 		Modes:       s.Modes,
 		LastQSOAgoS: s.LastQSOAgoS,
-		RatePerHour: s.RatePerHour,
+		Rate5m:      s.Rate5m,
+		Rate15m:     s.Rate15m,
+		Rate60m:     s.Rate60m,
 	})
 }
 

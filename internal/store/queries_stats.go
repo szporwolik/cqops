@@ -105,7 +105,9 @@ type DashboardStats struct {
 	Bands       int
 	Modes       int
 	LastQSOAgoS int
-	RatePerHour float64
+	Rate5m      int
+	Rate15m     int
+	Rate60m     int
 }
 
 // GetDashboardStats computes dashboard aggregate statistics for all QSOs
@@ -150,19 +152,26 @@ func GetDashboardStats(db *sql.DB, startDate string) (DashboardStats, error) {
 		}
 	}
 
-	// Rate: QSOs in the last hour. Compare only the HHMM portion of time_on
-	// because it may be stored as HHMM (4 chars) or HHMMSS (6 chars).
-	var lastHour int
-	oneHourAgo := time.Now().UTC().Add(-1 * time.Hour)
-	oneHourDate := oneHourAgo.Format("20060102")
-	oneHourTime := oneHourAgo.Format("1504") // HHMM
-	if err := db.QueryRow(`
-		SELECT COUNT(*) FROM qsos
-		WHERE qso_date > ? OR (qso_date = ? AND SUBSTR(time_on,1,4) >= ?)
-	`, oneHourDate, oneHourDate, oneHourTime).Scan(&lastHour); err != nil {
-		lastHour = 0
+	// Rate: QSOs in the last 5, 15, and 60 minutes.
+	// Use printf to normalise time_on to 6 chars (HHMMSS) for reliable comparison.
+	for _, w := range []struct {
+		mins int
+		dest *int
+	}{
+		{5, &s.Rate5m},
+		{15, &s.Rate15m},
+		{60, &s.Rate60m},
+	} {
+		cutoff := time.Now().UTC().Add(-time.Duration(w.mins) * time.Minute).Format("20060102150405")
+		var n int
+		if err := db.QueryRow(
+			`SELECT COUNT(*) FROM qsos WHERE printf('%s%06s', qso_date, COALESCE(time_on,'000000')) >= ?`,
+			cutoff,
+		).Scan(&n); err != nil {
+			n = 0
+		}
+		*w.dest = n
 	}
-	s.RatePerHour = float64(lastHour)
 
 	return s, nil
 }
