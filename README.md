@@ -22,23 +22,68 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 
 ## Features
 
-- **Fast keyboard logging** — three-column QSO form, Enter to log, dupe detection, badges
-- **Multi-operator & club station** — hot-swap operators and logbooks with Ctrl+O / Ctrl+L
-- **Multi-rig** — flrig and Hamlib rigctld support, Ctrl+R to cycle rigs
-- **QRZ callbook** — Ins triggers lookup, auto-fills name, QTH, grid, country
-- **Wavelog sync** — upload, incremental download, per-logbook configuration
-- **Encrypted secrets** — AES-256-GCM, machine-tied key, never plaintext
-- **DX Cluster & PSK Reporter** — live spots with filters, spot-to-rig tuning, ASCII propagation map
-- **CQOps Live** — built-in browser dashboard with live map, recent QSOs, stats, weather forecast, QRZ photos, and top operators. Perfect for Field Day displays, club station screens, or remote monitoring — enable in F9 → Integrations
-- **APRS** — receive nearby position reports via APRS-IS, display on the Live dashboard map with standard symbols, range circle, callsign popups, and auto-fit. Periodic position beacon with grid locator
-- **Contest logging** — exchange markers, auto serial numbers, ADIF contest ID
-- **Offline-first** — SQLite, cached REF/Solar/DXCC data; `--offline` flag
+- **Fast TUI logging** — three-column QSO form, dupe detection, form validation
+- **Multi-operator** — hot-swap operators and logbooks for club stations
+- **Rig control** — flrig and Hamlib rigctld, frequency/mode readback, spot-to-rig tuning
+- **QRZ callbook** — auto-fills name, QTH, grid, country
+- **Wavelog sync** — upload, incremental download, per-logbook config
+- **Encrypted secrets** — AES-256-GCM, machine-tied, never plaintext
+- **DX Cluster & PSK Reporter** — live spots with band/mode/time filters
+- **CQOps Live** — built-in browser dashboard with live map, QSO paths, stats, weather, band conditions, APRS. Great for Field Day displays or club station screens
+- **Contest logging** — exchange markers, auto serials, ADIF contest IDs
+- **Offline-first** — SQLite, cached reference data, `--offline` flag
 - **ADIF 3.1.7** — full import/export, contest fields preserved
 - **Raspberry Pi ready** — Windows, Linux, macOS, ARM; runs over SSH
 
 See the [documentation](https://docs.cqops.com/) for detailed workflows, configuration, keyboard shortcuts, and troubleshooting.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph Station["Station (optional)"]
+        rig["Transceiver"]
+        wsjtx["WSJT-X"]
+    end
+    subgraph CQOps["CQOps"]
+        core["Multiple Logbooks · Contests"]
+        db[("SQLite")]
+    end
+    subgraph Ops["Multi-Operator (optional)"]
+        op1["Operator 1"]
+        op2["Operator 2"]
+        opN["Operator N"]
+    end
+    subgraph Internet["Internet (optional)"]
+        qrz["QRZ.com"]
+        dxc["DX Cluster"]
+        psk["PSK Reporter"]
+        solar["Solar Data"]
+        wavelog["Wavelog"]
+    end
+    subgraph Dash["Read-only web dashboard (optional)"]
+        dash["Maps · Stats · Spots · Weather"]
+    end
+    subgraph FilesExport["File Export (optional)"]
+        adifOut["ADIF 3.1.7"]
+        bpl["Band Plan"]
+    end
+    subgraph FilesImport["File Import (optional)"]
+        adifIn["ADIF 3.1.7"]
+    end
+
+    Ops --> CQOps
+    rig <--> CQOps
+    wsjtx -. UDP .-> CQOps
+    CQOps <--> Internet
+    CQOps -. SSE .-> Dash
+    CQOps --> FilesExport
+    FilesImport --> CQOps
+```
+
 ## Screenshots
+
+### App
 
 <p align="center">
   <img src="assets/screenshots/screen-shot-01.png?v=2" width="49%" alt="Screen 1">
@@ -47,6 +92,12 @@ See the [documentation](https://docs.cqops.com/) for detailed workflows, configu
 <p align="center">
   <img src="assets/screenshots/screen-shot-03.png?v=2" width="49%" alt="Screen 3">
   <img src="assets/screenshots/screen-shot-04.png?v=2" width="49%" alt="Screen 4">
+</p>
+
+### Dashboard
+
+<p align="center">
+  <img src="assets/screenshots/screen-shot-05.png" width="100%" alt="Dashboard">
 </p>
 
 ## Requirements
