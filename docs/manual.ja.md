@@ -1,91 +1,114 @@
 ---
 title: CQOps ユーザーマニュアル
-description: CQOpsのインストール、設定、使い方をまとめた完全ガイド — 高速でターミナル中心のアマチュア無線ロガー
+description: CQOps のインストール、設定、利用方法 — 高速なターミナルファーストのアマチュア無線ロガー
 ---
 
-> **注記:** この翻訳はLLMモデルを使用して生成されました。修正歓迎です。`dev` ブランチへのPull Requestとして送ってください。
+> **翻訳メモ:** この翻訳は LLM モデルで生成されています。修正は `dev` ブランチへの Pull Request として歓迎します。CQOps の画面と一致させるため、一部の画面名、フィールド名、コマンド、ショートカットは意図的に英語のまま残しています。
 
 # CQOps ユーザーマニュアル
 
+CQOps は、低いシステム負荷で信頼できるキーボードログを行いたいオペレーター向けの、高速なターミナルファーストのアマチュア無線ロガーです。シャック、ポータブル運用、クラブ局、Field Day、Raspberry Pi クラスの機器や古いノート PC での使用を想定しています。
+
+CQOps は常に QSO を最初にローカルへ保存します。インターネットを使う連携機能は任意です。
+
 ## 目次
 
-1. [CQOpsについて](#cqopsについて)
+1. [CQOps とは](#cqops-とは)
 2. [ダウンロードとインストール](#ダウンロードとインストール)
-3. [初回起動 — セットアップウィザード](#初回起動--セットアップウィザード)
-4. [クイックスタート: 最初のQSOを記録](#クイックスタート-最初のqsoを記録)
-5. [メイン画面の概要](#メイン画面の概要)
-6. [一般的なワークフロー](#一般的なワークフロー)
-7. [主要機能](#主要機能)
-8. [連携機能](#連携機能)
-9. [設定リファレンス](#設定リファレンス)
-10. [キーボードショートカット](#キーボードショートカット)
-11. [トラブルシューティング](#トラブルシューティング)
+3. [初回起動](#初回起動)
+4. [最初の QSO を記録する](#最初の-qso-を記録する)
+5. [メイン画面](#メイン画面)
+6. [よく使うワークフロー](#よく使うワークフロー)
+7. [QSO ログ入力](#qso-ログ入力)
+8. [Logbook Editor と ADIF](#logbook-editor-と-adif)
+9. [コンテスト](#コンテスト)
+10. [Favorites、リファレンス、Band Plan](#favoritesリファレンスband-plan)
+11. [連携機能](#連携機能)
+12. [CQOps Live Dashboard](#cqops-live-dashboard)
+13. [設定](#設定)
+14. [キーボードショートカット](#キーボードショートカット)
+15. [トラブルシューティング](#トラブルシューティング)
+16. [バグ報告](#バグ報告)
 
 ---
 
-## CQOpsについて
+## CQOps とは
 
-CQOpsは高速でターミナル中心のアマチュア無線ロガーです。シャック、山頂、フィールドデー、共有クラブ局など、スピード、信頼性、低いシステム負荷を必要とするオペレーター向けに設計されています。
+CQOps は、QSO の高速入力、ローカルファーストのログ保存、実用的なフィールド運用を中心に設計されています。
 
-**オフラインファースト。** ローカルQSOログにはインターネット接続は不要です。キャッシュされた参照データ、Solarデータ、DXCCプリフィックスは、一度ダウンロードすれば引き続き利用できます。Wavelog、QRZ.com、DX Cluster、PSK Reporterなどのネットワーク連携は接続が必要で、`--offline` モードではスキップされます。
+### 主な考え方
 
-**フィールド運用向けに構築。** CQOpsはQRP対応で、SOTA/POTAにも使いやすく、Raspberry Piクラスのマシン、古いノートPC、デスクトップ環境のないシステムでも快適に動作します。
+- **Terminal-first** — キーボード操作に最適化。
+- **Offline-first** — ローカル QSO ログはインターネットなしで動作。
+- **低負荷** — Raspberry Pi クラス、古いノート PC、共有ステーション PC に適合。
+- **ポータブル設計** — 単一の Go バイナリとして配布。
+- **複数 logbook** — 個人、ポータブル、コンテスト、クラブ用ログに便利。
+- **複数 operator** — hot-seat やクラブ局の共有運用に便利。
+- **複数 rig** — 各 rig preset は独自の backend と WSJT-X 設定を保持可能。
+- **任意の連携** — QRZ.com、Wavelog、DX Cluster、PSK Reporter、APRS、rig control、rotor control、solar data、CQOps Live ブラウザ dashboard。
 
-**クラブ局対応。** CQOpsは複数のログブック、オペレータープロファイル、リグプリセットをサポートします。アクティブなログブック、オペレーター、リグを1キーで切り替えられます。
+ローカルログにはインターネット接続は不要です。ネットワーク機能は `--offline` モードではスキップされます。
 
-**ポータブル設計。** CQOpsはGoで書かれた単一バイナリです。CGOへの依存はなく、必須のシステムサービスもありません。
+### CQOps が向いているユーザー
 
-**クロスプラットフォーム。** Windows、Linux、macOSをamd64およびarm64でサポートします。
+CQOps は次の用途に適しています。
 
-### CQOpsが適している方
+- ポータブル運用者。
+- SOTA / POTA アクティベーター。
+- クラブ局。
+- Field Day チーム。
+- ターミナル操作を好むオペレーター。
+- operator、logbook、rig を素早く切り替える必要がある局。
 
-- 低電力ハードウェアで高速なキーボードロギングを必要とするポータブルオペレーター
-- オフラインでロギングし後でアップロードするSOTAおよびPOTAアクティベーター
-- 同じ局を共有する複数オペレーターのクラブ局
-- 共有マシンやRaspberry Piクラスのハードウェアを使用するフィールドデーチーム
-- デスクトップGUIより端末ワークフローを好むオペレーター
-
-CQOpsは本格的なデスクトップロガーやWebベースのログブックプラットフォームを置き換えるものではありません。高速なターミナルログ、フィールド運用、オフライン利用、共有局ワークフローに集中しています。
+CQOps は、フル機能のデスクトップロガーや Web ベースの logbook プラットフォームを完全に置き換えるものではありません。高速なターミナルログ、フィールド運用、オフライン利用、共有ステーション運用に集中しています。
 
 ---
 
 ## ダウンロードとインストール
 
-> [すべてのリリースを見る →](https://github.com/szporwolik/cqops/releases)
+すべてのリリース:
+
+<https://github.com/szporwolik/cqops/releases>
 
 ### Windows
 
-| パッケージ | リンク | 備考 |
-|---------|------|-------|
-| **インストーラー** | [cqops-setup.exe](https://github.com/szporwolik/cqops/releases/latest/download/cqops-setup.exe) | ほとんどのユーザーに推奨。スタートメニューとPATHに追加。 |
-| ポータブルZIP | [cqops-windows-portable.zip](https://github.com/szporwolik/cqops/releases/latest/download/cqops-windows-portable.zip) | 解凍してインストールなしで実行。 |
+| パッケージ | リンク | 注記 |
+|---|---|---|
+| Installer | [cqops-setup.exe](https://github.com/szporwolik/cqops/releases/latest/download/cqops-setup.exe) | ほとんどのユーザーに推奨。CQOps を Start Menu と PATH に追加します。 |
+| Portable ZIP | [cqops-windows-portable.zip](https://github.com/szporwolik/cqops/releases/latest/download/cqops-windows-portable.zip) | 展開してインストールなしで実行します。 |
+
+古いコンソールではなく **Windows Terminal** を使用してください。
 
 ### Linux — Debian / Ubuntu
 
 | アーキテクチャ | リンク | 用途 |
-|-------------|------|---------|
-| **amd64** | [cqops_amd64.deb](https://github.com/szporwolik/cqops/releases/latest/download/cqops_amd64.deb) | ほとんどのIntel/AMD PC |
-| arm64 | [cqops_arm64.deb](https://github.com/szporwolik/cqops/releases/latest/download/cqops_arm64.deb) | 64ビットARMシステム |
-| armhf | [cqops_armhf.deb](https://github.com/szporwolik/cqops/releases/latest/download/cqops_armhf.deb) | 32ビットRaspberry Pi OS |
+|---|---|---|
+| amd64 | [cqops_amd64.deb](https://github.com/szporwolik/cqops/releases/latest/download/cqops_amd64.deb) | ほとんどの Intel/AMD PC |
+| arm64 | [cqops_arm64.deb](https://github.com/szporwolik/cqops/releases/latest/download/cqops_arm64.deb) | 64-bit ARM システム |
+| armhf | [cqops_armhf.deb](https://github.com/szporwolik/cqops/releases/latest/download/cqops_armhf.deb) | 32-bit Raspberry Pi OS |
+
+ダウンロードしたパッケージをインストールします。
 
 ```bash
 sudo dpkg -i cqops_*.deb
 ```
 
-### Linux — ポータブルtarball
+### Linux — ポータブル tarball
 
 | アーキテクチャ | リンク | 用途 |
-|-------------|------|---------|
-| amd64 | [cqops-linux-amd64.tar.gz](https://github.com/szporwolik/cqops/releases/latest/download/cqops-linux-amd64.tar.gz) | ほとんどのIntel/AMD PC |
-| arm64 | [cqops-linux-arm64.tar.gz](https://github.com/szporwolik/cqops/releases/latest/download/cqops-linux-arm64.tar.gz) | 64ビットARMシステム |
-| armhf | [cqops-linux-armhf.tar.gz](https://github.com/szporwolik/cqops/releases/latest/download/cqops-linux-armhf.tar.gz) | 32ビットRaspberry Pi OS |
+|---|---|---|
+| amd64 | [cqops-linux-amd64.tar.gz](https://github.com/szporwolik/cqops/releases/latest/download/cqops-linux-amd64.tar.gz) | ほとんどの Intel/AMD PC |
+| arm64 | [cqops-linux-arm64.tar.gz](https://github.com/szporwolik/cqops/releases/latest/download/cqops-linux-arm64.tar.gz) | 64-bit ARM システム |
+| armhf | [cqops-linux-armhf.tar.gz](https://github.com/szporwolik/cqops/releases/latest/download/cqops-linux-armhf.tar.gz) | 32-bit Raspberry Pi OS |
 
 ### macOS
 
 | アーキテクチャ | リンク | 用途 |
-|-------------|------|---------|
-| **Apple Silicon** | [cqops-darwin-arm64](https://github.com/szporwolik/cqops/releases/latest/download/cqops-darwin-arm64) | M1/M2/M3 Mac |
+|---|---|---|
+| Apple Silicon | [cqops-darwin-arm64](https://github.com/szporwolik/cqops/releases/latest/download/cqops-darwin-arm64) | M1/M2/M3 Mac |
 | Intel | [cqops-darwin-amd64](https://github.com/szporwolik/cqops/releases/latest/download/cqops-darwin-amd64) | Intel Mac |
+
+手動インストール:
 
 ```bash
 chmod +x cqops-darwin-* && sudo mv cqops-darwin-* /usr/local/bin/cqops
@@ -96,22 +119,24 @@ chmod +x cqops-darwin-* && sudo mv cqops-darwin-* /usr/local/bin/cqops
 ```bash
 git clone https://github.com/szporwolik/cqops.git
 cd cqops
-make build        # ビルドのみ; バイナリは build/ に出力
-make install      # ビルドしてシステムにインストール
+make build
+make install
 ```
 
-ソースビルドにはGo 1.26以降が必要です。
+ソースビルドには Go 1.26 以降が必要です。
 
-### 要件
+### ターミナル要件
 
-- 端末サイズ: 最低80×24文字。
-- 推奨端末サイズ: 80×43以上。
-- モダンなターミナルエミュレーターを推奨。WindowsではレガシーコンソールではなくWindows Terminalを使用してください。
+| 要件 | 値 |
+|---|---|
+| 最小ターミナルサイズ | 80×24 文字 |
+| 推奨ターミナルサイズ | 80×43 文字以上 |
+| 推奨 Windows ターミナル | Windows Terminal |
 
-### コマンドラインオプション
+### 基本コマンド
 
 ```bash
-cqops              # TUIを起動
+cqops              # TUI を起動
 cqops --offline    # ネットワーク活動なしで起動
 cqops --version    # バージョンを表示して終了
 cqops --help       # ヘルプを表示
@@ -119,556 +144,983 @@ cqops --help       # ヘルプを表示
 
 ---
 
-## 初回起動 — セットアップウィザード
+## 初回起動
 
-初回起動時に、CQOpsは基本的な局設定のためのセットアップウィザードを開きます。ネットワーク連携はスキップできます。ローカルロギングはそれらなしで動作します。
+初回起動時、CQOps は setup wizard を開きます。ローカルログに必要なのは基本的な局情報だけです。ネットワーク連携はスキップして後で設定できます。
 
-1. **Station & Logbook** — 初期ログブック、局コールサイン、オペレーター、grid locatorを設定。オプションでSOTA/POTA/WWFF参照、IARUリージョン、CQ/ITUゾーン、DXCC、SIG/SIG Info。Wavelog設定（URL、APIキー、局プロファイルID、Update、Test）もここで行えます。
+### wizard ページ
 
-2. **Rig** — リグプリセットを設定: 名前、モデル、アンテナ、電力、radio backend。サポートされるバックエンド: None、flrig、Hamlib rigctld。オプションでHamlib rotor制御とWSJT-X UDP統合。
+| ページ | 設定内容 |
+|---|---|
+| Station & Logbook | 初期 logbook、局コールサイン、operator、grid locator、任意の references と zones、Wavelog URL/API/station profile ID |
+| Rig | rig preset、model、antenna、power、backend、任意の rotor、任意の WSJT-X UDP 設定 |
+| Integrations | QRZ.com lookup settings |
+| General | IANA timezone |
+| Summary | 確認と保存 |
 
-3. **Integrations** — QRZ.comコールブック検索を設定: 有効フラグ、ユーザー名、マスクされたパスワード、Test。
+対応する rig backend:
 
-4. **General** — IANAタイムゾーンを選択。CQOpsはデフォルトでシステムタイムゾーンを検出し、スクロール可能なリストも提供。
+- None,
+- flrig,
+- Hamlib `rigctld`.
 
-5. **Summary** — 設定を確認。**Ctrl+S** で保存してCQOpsを起動。
+### wizard の操作
 
-**ウィザードナビゲーション:** **Ctrl+S** で検証後に進む。**Esc** で戻る。**F10** で終了。スペースでチェックボックスを切り替え。TabとShift+Tabでフィールド間を移動。
+| キー | 操作 |
+|---|---|
+| Ctrl+S | 検証して次へ進む。Summary では保存して CQOps を開始 |
+| Esc | 戻る |
+| F10 | 終了 |
+| Tab / Shift+Tab | フィールド間を移動 |
+| Space | checkbox を切り替え |
 
-すべてのウィザード設定は後で **F9** のConfigurationメニューから変更できます。
+wizard の設定は後で **F9** から変更できます。
 
 ---
 
-## クイックスタート: 最初のQSOを記録
+## 最初の QSO を記録する
 
-1. **CQOpsをインストールして実行。** プラットフォーム用のパッケージをダウンロードし、`cqops` を起動、少なくともコールサインとgrid locatorでセットアップウィザードを完了します。
+1. CQOps を起動します。
 
-2. **QSO Formを使用。** QSO Formは **F1** で開きます。コールサインを入力するとCQOpsが自動的に大文字に変換します。アクティブリグがflrigまたはHamlibで接続されている場合、周波数、バンド、モード、サブモードが自動入力されます。日時は現在のUTCに設定されます。
+   ```bash
+   cqops
+   ```
 
-3. **フィールド間を移動。** **Tab**、**Shift+Tab**、**↑/↓** を使用します。
+2. setup wizard で少なくとも自局のコールサインと grid locator を入力します。
+3. **F1** で QSO form を開きます。
+4. 相手局のコールサインを入力します。CQOps はコールサインを自動的に大文字化します。
+5. 残りの項目を入力します。active rig が flrig または Hamlib で接続されている場合、CQOps は frequency、band、mode、submode を自動入力できます。
+6. **Enter** または **Ctrl+S** で保存します。
+7. **DUPE!** 警告が出た場合、もう一度 **Enter** でそれでも保存、または **Esc** でキャンセルします。
 
-4. **QSOを保存。** **Enter** または **Ctrl+S** を押します。**DUPE!** 警告が表示された場合、**Enter** を再度押して保存するか、**Esc** でキャンセルします。
-
-新しいQSOはフォームの下のRecent QSOsテーブルにすぐに表示されます。
+保存された QSO はすぐに Recent QSOs テーブルに表示されます。
 
 ---
 
-## メイン画面の概要
+## メイン画面
+
+CQOps は固定のターミナルレイアウトを使います。
 
 ```text
-┌─ Status Bar ───────────────────────────────────────────────────────────────┐
-│  CQOps v0.8.8  Log Portable  Rig FTDx10  Call SP9MOA/P                          │
-│  Net WSJT Hamlib DXC WL                                            23:00L 2100Z │
+┌─ Status Bar ───────────────────────────────────────────────────────────────────┐
+│  CQOps v0.8.9  Log Portable  Rig FTDx10  Call SP9MOA/P                         │
+│  Net WSJT Hamlib DXC WL                                           23:00L 2100Z │
 ├─ Tab Bar ──────────────────────────────────────────────────────────────────────┤
-│ ╭──────╮ ╭──────╮ ╭──────╮ ╭──────╮ ╭──────╮ ╭──────╮ ╭──────╮ ╭──────╮         │
-│ │F1 QSO│ │F2 QRZ│ │F4 DXC│ │F5 HRD│ │F6 REF│ │F7 BPL│ │F8 LOG│ │F9 CFG│         │
-├─ Main Content Area ──────────────────────────────────────────────────────────┤
-│                                                                                  │
-│  QSO Form、テーブル、マップ、エディター、またはアクティブ画面の内容               │
-│                                                                                  │
-├─ Help Bar ────────────────────────────────────────────────────────────────────┤
-│  ? Help • Enter Log QSO • F10 Quit                                               │
-└──────────────────────────────────────────────────────────────────────────────────┘
+│  F1 QSO   F2 QRZ   F4 DXC   F5 HRD   F6 REF   F7 BPL   F8 LOG   F9 CFG         │
+├─ Main Content Area ────────────────────────────────────────────────────────────┤
+│  QSO form, partner view, map, editor, dashboard data, or active screen content  │
+├─ Help Bar ─────────────────────────────────────────────────────────────────────┤
+│  ? Help • Enter Log QSO • F10 Quit                                              │
+└────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Status Bar
+### Status bar
 
-Status BarにはCQOpsバージョン、アクティブログブック、アクティブリグ、局コールサイン、アクティブオペレーターが表示されます。右側には統合ステータスラベルとローカル時刻（`L`）およびUTC（`Z`）が表示されます。
+Status bar には以下が表示されます。
 
-**ラベルの色:**
+- CQOps バージョン。
+- active logbook。
+- active rig。
+- station callsign。
+- active operator。
+- integration status labels。
+- `L` で示されるローカル時刻。
+- `Z` で示される UTC 時刻。
+
+よく使われるラベルには **Net**, **WSJT**, **Rig**, **Flrig**, **Hamlib**, **Rotator**, **DXC**, **WL** があります。
 
 | 色 | 意味 |
-|-------|---------|
-| 白/デフォルト | 接続済みまたはアクティブ |
-| 黄 | 無効、接続中、またはオフライン想定 |
-| 赤 | エラーまたは切断 |
-| アクセント+太字 | WSJT-Xが送信中 |
+|---|---|
+| 白/デフォルト | 接続済みまたは有効 |
+| 黄 | 無効、接続中、または想定された offline |
+| 赤 | エラーまたは未接続 |
+| アクセント + 太字 | WSJT-X が送信中 |
 
-表示される可能性のあるラベル: **Net**、**WSJT**、**Rig**、**Flrig**、**Hamlib**、**Rotator**、**DXC**、**WL**。
-
-### Tab Bar
+### メインタブ
 
 | キー | タブ | 画面 |
-|-----|-----|--------|
-| F1 | QSO | QSO FormとRecent QSOsテーブル |
-| F2 | QRZ | Partner view: callbookデータ、マップ、統計、写真 |
-| F4 | DXC | DX Clusterスポットとフィルター |
-| F5 | HRD | PSK Reporterスポットと伝搬マップ |
-| F6 | REF | SOTA/POTA/WWFF/IOTA参照検索 |
+|---|---|---|
+| F1 | QSO | QSO form と Recent QSOs |
+| F2 | QRZ | Partner view: callbook data、map、stats、photo |
+| F4 | DXC | DX Cluster spots と filters |
+| F5 | HRD | PSK Reporter spots と propagation map |
+| F6 | REF | SOTA/POTA/WWFF/IOTA reference search |
 | F7 | BPL | Band Plan Browser |
-| F8 | LOG | Logbook Editor、ADIF、Wavelog同期 |
-| F9 | CFG | Configurationメニュー |
+| F8 | LOG | Logbook Editor、ADIF、Wavelog sync |
+| F9 | CFG | Configuration menus |
 
-### Help Bar
-
-下段にはアクティブ画面の最も関連性の高いショートカットが表示されます。**?** を押すと完全なヘルプオーバーレイが表示されます。
+Help bar はアクティブ画面に関連するショートカットを表示します。**?** で全体ヘルプを開きます。
 
 ---
 
-## 一般的なワークフロー
+## よく使うワークフロー
 
-### ポータブル / SOTA / POTA運用
+### Portable、SOTA、POTA 運用
 
-1. **自宅を出る前に**、インターネットアクセスがある状態でCQOpsを一度実行します。Solarデータ、REFデータ、DXCCプリフィックスなどのキャッシュが生成されます。
-2. **オフラインになる前にキャッシュを確認。** Solar panelにデータが表示され、**F6** のREF検索が結果を返すことを確認します。
-3. **フィールドでは**、`cqops --offline` でCQOpsを起動します。ネットワーク活動がスキップされ、到達不能なサービスによる遅延が回避されます。
-4. **通常通りロギング。** ローカルロギングはインターネットなしで動作します。
-5. **後でアップロード。** オンラインに戻ったら、**F8** でLogbook Editorを開き、**w** を押して未送信QSOをWavelogにアップロードします。
+出発前:
 
-### 共有クラブ局とホットシート運用
+1. インターネット接続ありで CQOps を一度起動します。
+2. solar data、REF data、DXCC prefixes などのキャッシュを CQOps に取得または更新させます。
+3. Solar panel にデータが表示されることを確認します。
+4. **F6** の REF search が結果を返すことを確認します。
 
-1. **オペレータープロファイルを追加:** **F9 → Operators** を開き、各オペレーターに **Ins** を押します。コールサインと名前を入力。
-2. **アクティブオペレーターを切り替え:** QSO Formで **Ctrl+O** を押します。アクティブオペレーターがStatus Barに表示され、保存されたQSOの `OPERATOR` フィールドに書き込まれます。
-3. **ホットシートロギング:** オペレーターAがQSOをロギングし、オペレーターBが **Ctrl+O** を押してから自分のオペレータープロファイルでロギングします。
-4. **必要に応じてRetainを使用:** 複数のオペレーターが同じコンタクトをフォーム全体を再入力せずにロギングする必要がある場合、**Retain** を有効にします。
+現地で:
 
-共有局で保存する前に、Status Barのアクティブログブックとアクティブオペレーターを確認してください。
+1. CQOps を offline mode で起動します。
 
-### プライベート + クラブログブック
+   ```bash
+   cqops --offline
+   ```
 
-多くのオペレーターが個人ログブックと1つ以上のクラブログブックを維持しています。
+2. 通常どおりログします。QSOs はローカルに保存されます。
+3. オンラインに戻ったら **F8** を開き、**w** を押して未送信 QSOs を Wavelog にアップロードします。
 
-1. **ログブックを作成:** **F9 → Logbooks** を開き、各ログブックに **Ins** を押します。
-2. **アクティブログブックを切り替え:** QSO Formで **Ctrl+L** を押します。Status Barにアクティブログブックが表示されます。
-3. **局データを分離:** 各ログブックは独自の局コールサイン、Wavelog設定、コンテスト設定、オペレーターを持つことができます。
-4. **クイックデュアルロギング:** **Retain** を有効にし、QSOを1つのログブックに保存、**Ctrl+L** を押してから、適切な場合は他のログブックに再度保存します。
+### 共有クラブ局と hot-seat logging
 
-### 複数リグ
+1. **F9 → Operators** を開きます。
+2. **Ins** で operator profiles を追加します。
+3. QSO form で **Ctrl+O** を押して active operator を切り替えます。
+4. 保存前に Status bar で active operator を確認します。
+5. 複数 operator が似た内容の QSO を入力する場合は、全フォームを再入力しないよう **Retain** を使います。
 
-1. **リグプリセットを作成:** **F9 → Rigs** を開き、各リグに **Ins** を押します。
-2. **バックエンドを設定:** CAT制御のリグにはflrigまたはHamlibを使用。手動チューニングのリグにはNone。
-3. **アクティブリグを切り替え:** QSO Formで **Ctrl+R** を押します。
-4. **混合局を運用:** 例: CAT制御のHFリグと手動のVHF/UHFリグを同じセッションで使用。
-5. **リグごとにWSJT-Xを設定:** 各リグプリセットに独自のWSJT-X UDP設定を持たせることができます。
+active operator は ADIF の `OPERATOR` フィールドに保存されます。
 
-アクティブリグがCAT制御の場合、CQOpsは周波数、バンド、モード、サブモードを自動入力できます。手動リグの場合は自身で入力します。
+### 個人 logbook とクラブ logbook
 
-### FT8 / WSJT-X自動ロギング
+1. **F9 → Logbooks** を開きます。
+2. **Ins** で各 logbook を作成します。
+3. QSO form で **Ctrl+L** を押して active logbook を切り替えます。
+4. 保存前に Status bar で active logbook を確認します。
 
-WSJT-XがUDP経由で接続されている場合、CQOpsはWSJT-XのADIFメッセージからデジタルQSOを自動的にロギングできます。
+各 logbook は独自の station details、Wavelog settings、contest settings、operators を保持できます。
 
-- 自動ロギングされたQSOはアクティブログブックに保存されます。
-- 重複する自動ロギングQSOはスキップされます。
-- 自動ロギングQSOはアクティブコンテストIDを継承します。
-- QSOはすぐにRecent QSOsに表示されます。
-- Wavelogが設定され到達可能な場合、自動ロギングQSOは自動的にアップロードされます。
-- WSJT-Xオペレーターがアクティブオペレーターと一致しない場合、CQOpsは警告を表示します。
+### 複数 rig
 
-長いデジタルセッションの前に、アクティブログブック、アクティブオペレーター、アクティブコンテストを確認してください。
+1. **F9 → Rigs** を開きます。
+2. **Ins** で rig presets を作成します。
+3. backend を選択します: None、flrig、Hamlib。
+4. QSO form で **Ctrl+R** を押して active rig を切り替えます。
 
-### Wavelog同期
+rig preset には backend、model、antenna、power、rotor settings、WSJT-X UDP settings を含められます。
 
-Wavelog同期はオプションです。CQOpsは常にQSOを最初にローカルに保存します。
+### WSJT-X デジタル運用
 
-**アップロード:** Logbook Editor（**F8**）で **w** を押します。CQOpsは未送信QSOを50件ずつバッチでアップロードし、QSOごとにステータス（未送信、送信済み、エラー）を追跡します。
+WSJT-X UDP integration が有効な場合、CQOps は WSJT-X から ADIF メッセージを受信し、完了したデジタル QSO を自動ログできます。
 
-**ダウンロード:** Logbook Editorで **Ctrl+W** を押します。ダウンロードは増分です。CQOpsはアクティブログブックの保存された `last_fetched_id` より新しいQSOを取得します。重複はスキップされます。
+自動ログされた QSOs は:
 
-Wavelogアップロードが失敗した場合、QSOはローカルログブックに残り、後で再試行できます。ログブックをpurgeするとフェッチIDが `0` にリセットされ、完全な再ダウンロードが可能になります。
+- active logbook に保存されます。
+- すぐに Recent QSOs に表示されます。
+- 重複をスキップします。
+- active contest ID を継承します。
+- Wavelog が設定済みで到達可能な場合、自動アップロードできます。
+
+WSJT-X が報告する operator が CQOps の active operator と一致しない場合、CQOps は警告を表示します。
+
+長時間のデジタルセッション前に確認するもの:
+
+- active logbook。
+- active operator。
+- active contest。
+- WSJT-X status label。
+
+### Wavelog sync
+
+CQOps は QSO をまずローカルに保存します。Wavelog sync は任意です。
+
+| 操作 | 場所 | ショートカット | 注記 |
+|---|---|---|---|
+| 未送信 QSOs をアップロード | Logbook Editor | `w` | 50 件単位でアップロード |
+| Wavelog からダウンロード | Logbook Editor | `Ctrl+W` | `last_fetched_id` による差分ダウンロード |
+
+アップロード状態は QSO ごとに追跡されます。
+
+- not sent,
+- sent,
+- error.
+
+アップロードに失敗しても QSO はローカル logbook に残り、後で再試行できます。logbook を purge すると fetch ID が `0` に戻り、完全再ダウンロードが可能になります。
 
 ---
 
-## 主要機能
+## QSO ログ入力
 
-### QSOロギング
+QSO form はメインのログ入力画面です。**F1** で開きます。
 
-QSO Form（**F1**）が主要なロギング画面です。3列レイアウトで、リグ制御、QRZ.com、Wavelogルックアップ、DXCC/プリフィックスデータ、REFデータベースからフィールドを自動入力できます。
+CQOps は次の情報源からフィールドを入力できます。
 
-**フォームフィールド:**
+| 情報源 | フィールド |
+|---|---|
+| flrig / Hamlib | Frequency、split 時の Freq RX、mode、submode |
+| QRZ.com | Name、QTH、grid、country、CQ zone、ITU zone、DXCC、continent |
+| REF database | SOTA、POTA、WWFF、IOTA references |
+| Wavelog lookup | 設定時の worked/confirmed status |
+| DXCC/prefix data | prefix と country 関連データ |
+
+### フォーム配置
 
 | 左列 | 中央列 | 右列 |
-|-------------|---------------|--------------|
-| Date UTC | Mode **(▼)** | Power W |
-| Time UTC | Submode **(▼)** | Freq RX |
+|---|---|---|
+| Date UTC | Mode | Power W |
+| Time UTC | Submode | Freq RX |
 | Call | Name | SOTA Ref |
 | RST sent | QTH | POTA Ref |
 | RST rcvd | Grid | WWFF Ref |
 | Frequency MHz | Country | IOTA |
-| Band **(▼)** | SIG | SIG Info |
-| Exch sent ⚠️ | | |
-| Exch rcvd ⚠️ | | |
+| Band | SIG | SIG Info |
+| Exch sent |  |  |
+| Exch rcvd |  |  |
 
-⚠️ exchangeフィールドはコンテストがアクティブな場合のみ表示されます。**(▼)** のフィールドは **PgUp/PgDn** で切り替えます。
+exchange フィールドは contest が active の場合だけ表示されます。
 
-下段には以下が含まれます:
+下段には以下があります。
 
-- **Comment**（コメント）
-- **Keep** — QSO間でCommentフィールドを保持; **Ctrl+T** で切り替え
-- **Retain** — 保存後にフォーム全体を保持
+- **Comment**。
+- **Keep** — QSO 間で Comment フィールドを保持します。
+- **Retain** — 保存後もフォーム全体を保持します。
 
-パス/方位線は両方のgrid locatorが判明している場合に距離と方位角を表示します。**DUPE!**、**New Call!**、**New DXCC!** などのバッジも表示されます。
+Band、Mode、Submode などのフィールドは **PgUp/PgDn** で切り替えられます。
 
-### 自動入力ソース
+### 経路、方位、バッジ
 
-| ソース | フィールド |
-|--------|--------|
-| flrig / Hamlib | Frequency, Freq RX（スプリット時）, mode, submode |
-| QRZ.com | Name, QTH, grid, country, CQ zone, ITU zone, DXCC, continent |
-| REFデータベース | SOTA, POTA, WWFF, IOTA参照 |
-| Wavelogルックアップ | 設定時のworked/confirmedステータス |
+両方の grid locator が分かる場合、CQOps は距離と azimuth を表示します。
 
-### コンテストロギング
+QSO form は次のようなバッジも表示できます。
 
-コンテストはQSO Formにexchangeフィールドとシリアル処理を追加します。
+- **DUPE!**
+- **New Call!**
+- **New DXCC!**
 
-Logbook Editor（**F8**）で **Ins** を押してコンテストを作成または設定します。コンテスト名、日付、ADIFコンテストID、exchangeテンプレートを設定します。
+### 保存
 
-サポートされるテンプレートマーカー:
+| キー | 操作 |
+|---|---|
+| Enter | QSO を保存 |
+| Ctrl+S | 任意のフィールドから QSO を保存 |
+| Esc | 重複確認をキャンセル |
+| DUPE 確認で Enter | 重複をそれでも保存 |
 
-| マーカー | 置換後 |
-|--------|---------------|
-| `@rst` | RST送信または受信 |
-| `@serial` | 自動インクリメントシリアル番号 |
-| `@call` | あなたのコールサイン |
-| `@grid` | あなたのgrid locator |
-| `@name` | オペレータープロファイルからのオペレーター名 |
+---
 
-**Ctrl+C** でアクティブコンテストを切り替えます。コンテストがアクティブな場合:
+## Logbook Editor と ADIF
 
-- QSO Formにexchangeフィールドが表示される
-- シリアル番号が自動インクリメント
-- Recent QSOsをコンテストQSOにフィルター可能
-- ADIFエクスポートで `CONTEST_ID` が保持される
+Logbook Editor は **F8** で開きます。
 
-### Logbook Editor
+用途:
 
-Logbook Editor（**F8**）はQSO管理、ADIFインポート/エクスポート、Wavelog同期、コンテスト関連操作に使用します。
+- QSO 確認。
+- inline editing。
+- QSO 削除。
+- ADIF import。
+- ADIF export。
+- Wavelog upload。
+- Wavelog download。
+- contest 関連操作。
 
-**インライン編集:** **↑/↓** で行を選択、**Enter** または **e** を押し、QSOを編集、**Ctrl+S** で保存。変更はすぐにRecent QSOsに反映されます。
+### QSO の編集
 
-### ADIFインポートとエクスポート
+1. **↑/↓** で行を選択します。
+2. **Enter** または **e** を押します。
+3. QSO を編集します。
+4. **Ctrl+S** で保存します。
 
-CQOpsはADIF 3.1.7のインポートとエクスポートをサポートします。
+変更はすぐに Recent QSOs に反映されます。
 
-- **Ctrl+I** でADIFファイルをインポートし、レコードを検証、重複をスキップ、サマリーを表示。
-- **Ctrl+E** でQSOをエクスポート。全QSOまたはコンテストフィルター済みQSOをエクスポート可能。
-- インポートされたQSOはWavelog同期が設定されている場合、Wavelogアップロード用にマークされます。
+### ADIF import と export
 
-### お気に入り
+CQOps は ADIF 3.1.7 の import と export をサポートします。
 
-お気に入りは周波数、モード、バンドのプリセットを10スロットに保存します。
+| 操作 | ショートカット |
+|---|---|
+| Import ADIF | Ctrl+I |
+| Export ADIF | Ctrl+E |
 
-| ショートカット | アクション |
-|----------|--------|
-| Alt+0–9 | お気に入りスロットを呼び出し |
-| Alt+Shift+0–9 | 現在の周波数/モード/バンドをスロットに保存 |
+import はレコードを検証し、重複をスキップし、サマリーを表示します。Wavelog sync が設定されている場合、import された QSOs は Wavelog upload 用にマークされます。
 
-お気に入りは設定に保存され、ログブック間で共有されます。
+export はすべての QSOs または contest-filtered QSOs を含められます。`CONTEST_ID` は保持されます。
 
-例: ポーランドのSOTA FM呼出し設定の場合、`145.55` を入力し、モードを `FM`、バンドを `2m` に設定、**Alt+Shift+1** を押します。後で **Alt+1** を押して呼び出します。
+### デジタルモードの扱い
 
-### REF検索
+Mode と submode の扱いは、このマニュアルで説明する ADIF 3.1.7 に従います。
 
-REF画面（**F6**）でSOTA、POTA、WWFF、IOTA参照を検索します。プリフィックス、名前、または参照指定子で検索。選択した参照でQSO Formを入力できます。
+- FT8 は standalone mode として export されます。
+- FT4 と FT2 は適切な submode を持つ MFSK として export されます。
+- import された legacy MFSK + FT8 レコードは standalone FT8 に正規化されます。
+
+QSO form には **Mode** と **Submode** の別フィールドがあります。どちらも **PgUp/PgDn** で切り替えられます。
+
+---
+
+## コンテスト
+
+コンテストは QSO form に exchange フィールドと serial 処理を追加します。
+
+Logbook Editor で **Ins** を押して contest を作成または設定します。
+
+contest 設定には以下が含まれます。
+
+- contest name。
+- date。
+- ADIF contest ID。
+- exchange templates。
+
+### template markers
+
+| Marker | 置き換え内容 |
+|---|---|
+| `@rst` | 送信または受信 RST |
+| `@serial` | 自動増加する serial number |
+| `@call` | 自局コールサイン |
+| `@grid` | 自局 grid locator |
+| `@name` | operator profile の operator name |
+
+**Ctrl+C** で active contest を切り替えます。
+
+contest が active の場合:
+
+- QSO form は exchange フィールドを表示します。
+- serial numbers は自動増加します。
+- Recent QSOs は contest QSOs をフィルタできます。
+- ADIF export は `CONTEST_ID` を保持します。
+
+---
+
+## Favorites、リファレンス、Band Plan
+
+### Favorites
+
+Favorites は frequency、mode、band の presets を 10 slots に保存します。
+
+| ショートカット | 操作 |
+|---|---|
+| Alt+0–9 | favorite を呼び出す |
+| Alt+Shift+0–9 | 現在の frequency、mode、band を favorite に保存 |
+
+Favorites は設定に保存され、logbooks 間で共有されます。
+
+例:
+
+1. `145.55` を入力します。
+2. mode を `FM` にします。
+3. band を `2m` にします。
+4. **Alt+Shift+1** を押します。
+5. 後で **Alt+1** を押して preset を呼び出します。
+
+### REF Lookup
+
+**F6** で REF Lookup を開きます。
+
+検索対象:
+
+- SOTA,
+- POTA,
+- WWFF,
+- IOTA.
+
+prefix、name、reference designator で検索できます。選択した references は QSO form に入力できます。
 
 ### Band Plan Browser
 
-Band Plan Browser（**F7**）はアマチュアバンド、VHF/UHF範囲、CB、PMR446、ブロードキャストプリセットへのクイックアクセスを提供します。選択した周波数でアクティブリグをチューニングできます。バンドプランデータはMarkdownとしてエクスポートも可能です。
+**F7** で Band Plan Browser を開きます。
+
+すばやくアクセスできるもの:
+
+- amateur bands。
+- VHF/UHF ranges。
+- CB。
+- PMR446。
+- broadcast presets。
+
+選択した frequency は active rig のチューニングに使えます。band plan data は Markdown として export することもできます。
 
 ---
 
 ## 連携機能
 
+すべての連携機能は任意です。ローカルログはそれらなしで動作します。
+
 ### QRZ.com
 
-QRZ.comルックアップにはインターネットアクセスとQRZ XMLサブスクリプションが必要です。
+QRZ.com lookup にはインターネット接続と QRZ XML subscription が必要です。
 
-QSO Formで **Ins** を押して、名前、QTH、グリッド、国、CQ/ITUゾーン、DXCC、大陸などのコールブックフィールドを入力します。Partner view（**F2**）でオペレーター写真を表示できます（利用可能な場合）。
+QSO form で **Ins** を押すと、次のような callbook fields を入力できます。
+
+- name,
+- QTH,
+- grid,
+- country,
+- CQ/ITU zones,
+- DXCC,
+- continent.
+
+**F2** の Partner view は、利用可能な場合 operator photo を表示できます。
 
 ### Wavelog
 
-Wavelog統合にはインターネットアクセスが必要です。アップロード、増分ダウンロード、worked/confirmedルックアップをサポートします。
+Wavelog integration は以下をサポートします。
 
-WavelogはアクティブログブックごとにURL、APIキー、局プロファイルIDで設定します。CQOpsは常にQSOを最初にローカルに保存します。Wavelogアップロード失敗でデータが失われることはありません。
+- upload。
+- incremental download。
+- worked/confirmed lookup。
 
-[Wavelog同期](#wavelog同期) を参照。
+Wavelog は active logbook ごとに設定します。
+
+- URL。
+- API key。
+- station profile ID。
+
+CQOps は常に QSOs を先にローカルへ保存します。Wavelog upload failure によってローカルデータが削除されることはありません。
 
 ### flrig
 
-flrig統合はHTTP経由のXML-RPCを使用します。デフォルトエンドポイントは `localhost:12345` です。
+flrig integration は HTTP 上の XML-RPC を使用します。
 
-CQOpsはflrigから周波数、モード、電力を読み取ることができます。スプリット操作はVFO A→Frequency、VFO B→Freq RXとしてマッピングされます。
+デフォルト endpoint:
+
+```text
+localhost:12345
+```
+
+CQOps が読み取れるもの:
+
+- frequency,
+- mode,
+- power.
+
+split operation では VFO A を Frequency に、VFO B を Freq RX に対応させます。
 
 ### Hamlib / rigctld
 
-Hamlibリグ制御は `rigctld` TCPデーモンを使用します。CQOpsは無線機のサポートに応じて周波数、モード、VFO、スプリット、電力をクエリできます。
+Hamlib rig control は TCP daemon `rigctld` を使います。
 
-一部の無線機やHamlibバックエンドはすべてのクエリをサポートしていません。CQOpsは可能な限りVFO名サポートの欠如を適切に処理します。
+radio と backend のサポートにより、CQOps は以下を取得できます。
+
+- frequency,
+- mode,
+- VFO,
+- split,
+- power.
+
+CQOps は、可能な範囲で VFO-name support の不足を安全に扱います。
 
 ### Hamlib Rotor / rotctld
 
-ローテーター制御はHamlib `rotctld` を使用します。CQOpsは方位角、仰角、停止コマンドをサポートします。
+Rotor control は Hamlib `rotctld` を使います。
 
-便利なショートカット:
+CQOps は以下をサポートします。
 
-| ショートカット | アクション |
-|----------|--------|
-| Ctrl+←/→ | 方位角を5°調整 |
-| Ctrl+↑/↓ | 仰角を5°調整 |
-| Ctrl+A | 計算されたパス方位にローテーターを指向 |
-| Ctrl+F1 | ローテーター停止 |
+- azimuth,
+- elevation,
+- stop commands.
+
+| ショートカット | 操作 |
+|---|---|
+| Ctrl+←/→ | azimuth を 5° 調整 |
+| Ctrl+↑/↓ | elevation を 5° 調整 |
+| Ctrl+A | rotor を計算された path bearing へ向ける |
+| Ctrl+F1 | rotor を停止 |
 
 ### WSJT-X
 
-WSJT-X統合はWSJT-XからのUDPメッセージを使用します。CQOpsはADIFメッセージを解析し、完了したQSOを自動ロギングできます。
+WSJT-X integration は WSJT-X からの UDP messages を使います。CQOps は ADIF messages を解析し、完了した QSOs を自動ログできます。
 
-WSJT-Xが送信中はリグラベルがアクセント色になります。WSJT-Xが報告するオペレーターがアクティブオペレーターと一致しない場合、CQOpsは警告を表示します。
-
-[FT8 / WSJT-X自動ロギング](#ft8--wsjt-x自動ロギング) を参照。
+WSJT-X が送信中の間、rig label はアクセント色になります。WSJT-X が報告する operator が active operator と一致しない場合、CQOps は警告を表示します。
 
 ### DX Cluster
 
-DX Cluster統合はtelnet接続を使用し、インターネットアクセスが必要です。デフォルトサーバーは `dxspots.com:7300` です。
+DX Cluster integration は telnet を使用し、インターネット接続が必要です。
 
-フィルターにはバンド、大陸、モード、経過時間が含まれます。スポットで **Enter** を押すとQSO Formに入力し、アクティブリグをチューニングしてQSO画面に戻ります。**Space** を押すとフォームに入力せずにチューニングします。**Backspace** でフィルターをクリアします。
+デフォルト server:
+
+```text
+dxspots.com:7300
+```
+
+フィルター:
+
+- band,
+- continent,
+- mode,
+- age/time.
+
+| キー | 操作 |
+|---|---|
+| Enter | QSO form を入力し、rig をチューニングして QSO に戻る |
+| Space | rig をチューニングし、DX Cluster に留まる |
+| Backspace | filters をクリア |
 
 ### PSK Reporter
 
-PSK Reporter統合にはインターネットアクセスが必要です。**F5** で伝搬スポット、バンド/時間/モードフィルター、ASCII世界地図を提供します。
+PSK Reporter integration にはインターネット接続が必要です。
+
+提供するもの:
+
+- propagation spots。
+- band/time/mode filters。
+- **F5** の ASCII world map。
 
 ### APRS
 
-APRS統合はTCP接続でAPRS-ISサーバーに接続し、インターネットアクセスが必要です。デフォルトサーバーは `euro.aprs2.net:14580` です。
+APRS は APRS-IS server への TCP 接続を使い、インターネット接続が必要です。
 
-CQOpsは近隣局からの位置レポートを受信し、CQOps Liveダッシュボードのローカルマップに標準シンボル、コールサインポップアップ、自動フィットビューで表示します。設定可能な範囲円がビーコンのカバレッジエリアを示します。ステーションコールサイン、SSID、グリッドロケーター、オプションのコメントを含む定期的なビーコンを送信できます。
+デフォルト server:
 
-APRSは局設定でログブックごとに設定します（**F9 → ログブック → [アクティブログブック] → APRS**）。
+```text
+euro.aprs2.net:14580
+```
 
-### Solarデータ
+CQOps は近くの局から position reports を受信し、CQOps Live local map に表示できます。
 
-SolarデータにはSFI、黒点数、A/K指数、hamqsl.comからのバンド別状況が含まれます。ライブ更新にはインターネットアクセスが必要です。キャッシュされたデータは取得成功後オフラインで利用可能です。
+- standard symbols。
+- callsign popups。
+- auto-fit view。
+- configurable range circle。
 
-### CQOps Live — ブラウザダッシュボード
+CQOps は次の内容を含む periodic beacon も送信できます。
 
-CQOps Liveは内蔵のWebダッシュボードで、どのブラウザでもリアルタイムで運用状況を表示します。フィールドデイの公開展示、クラブ局の画面、コンテスト監視、または別の部屋から無線機を監視するのに最適です。
+- station callsign。
+- SSID。
+- grid locator。
+- optional comment。
 
-**有効化方法**
+APRS は logbook ごとに次で設定します。
 
-1. **F9** でメインメニューを開き、**Integrations** を選択します。
-2. **HTTP Server** セクションまでスクロールし、**Enable HTTP server** にチェックを入れます。
-3. 必要に応じてアドレス（デフォルト `0.0.0.0`）とポート（デフォルト `8073`）を設定します。
-4. **Ctrl+S** で保存すると、サーバーが即座に起動します。
-5. 任意のブラウザで `http://localhost:8073`（または設定したアドレス）を開きます。
+```text
+F9 → Logbooks → [active logbook] → APRS
+```
 
-**表示内容**
+### Solar Data
 
-ダッシュボードには自動的に切り替わる2つのモードがあります：
+Solar data は hamqsl.com から取得され、以下を含みます。
 
-- **概要モード**（アクティブなコールサインなし）：今日のQSOマーカーと大圏パスを表示するライブLeafletマップ、最近のQSOテーブル、運用局情報、統計、トップオペレーター、最長距離QSO。
-- **アクティブ / Now Workingモード**（交信中コールサイン）：大きなコールサイン表示、QRZ写真（利用可能な場合）、バンド/モードバッジ、DUPE/NEW CALL/NEW DXCCインジケーター、距離と方位、自局から相手局までの地図上のハイライト破線。
+- SFI。
+- sunspot number。
+- A/K indices。
+- band-by-band conditions。
 
-すべてのパネルはServer-Sent Events（SSE）でリアルタイム更新されます。ページの再読み込みは不要です。
-
-**カスタマイズ**
-
-HTTPサーバー統合フォームでは以下を設定できます：
-
-| 項目 | 説明 |
-|-------|-------------|
-| Header 1 | ヘッダーとヒーローエリアに表示されるメインタイトル。「CQOps Live」にフォールバックします。 |
-| Header 2 | タイトル下のサブタイトル。「Fast, portable ham radio logger」にフォールバックします。 |
-| Logo URL | 左上に表示される公開アクセス可能な画像URL。CQOpsロゴにフォールバックします。 |
-| Event Start | `YYYY-MM-DD` 形式の日付。設定すると統計とQSOリストがこの日付以降にフィルターされます。複数日にわたるイベントに便利です。 |
-
-**パフォーマンス**
-
-ダッシュボードは低消費電力ハードウェア向けに設計されています。地図のレンダリング、距離計算、統計はすべてブラウザ側で処理されます。CQOps端末アプリはSSE経由で軽量なJSON更新のみを送信します。HTTPサーバーが無効の場合はオーバーヘッドはありません。
-
-**主なユースケース**
-
-- **フィールドデイ / コンテスト公開展示**: 大型ディスプレイやプロジェクターにライブマップと最近のQSOを表示。
-- **クラブ局インフォメーション画面**: 専用モニターで訪問者に運用状況を表示。
-- **リモート監視**: タブレットやスマートフォンで別の部屋から運用状況を確認。
-- **展示会 / イベントブース**: Header 1/2とクラブロゴを設定してプロフェッショナルな表示に。
+live updates にはインターネット接続が必要です。取得成功後、キャッシュされたデータは offline でも利用できます。
 
 ---
 
-## 設定リファレンス
+## CQOps Live Dashboard
 
-CQOps設定の保存場所:
+CQOps Live はリアルタイムの局活動を表示する内蔵ブラウザ dashboard です。
 
-| プラットフォーム | 設定パス |
-|----------|-------------|
-| Linux / macOS | `~/.config/cqops/config.yaml` |
-| Windows | `%APPDATA%\cqops\config.yaml` |
+用途:
 
-機密認証情報は同じ設定ディレクトリの `secrets.enc` に別途保存されます。認証情報はマシンに紐付いたキーで暗号化されるため、設定を別のマシンに移動する際は認証情報を再入力する必要があります。
+- Field Day の公開表示。
+- クラブ局の情報画面。
+- contest monitoring。
+- 別室からの局監視。
+- イベントや展示ブース。
+
+### dashboard を有効化する
+
+1. **F9** を押します。
+2. **Integrations** を開きます。
+3. **HTTP Server** へ移動します。
+4. **HTTP server** を有効化します。
+5. 必要に応じて address と port を設定します。
+6. **Ctrl+S** で保存します。
+7. ブラウザで dashboard を開きます。
+
+デフォルト設定:
+
+| 設定 | デフォルト |
+|---|---|
+| Address | `0.0.0.0` |
+| Port | `8073` |
+| Local URL | `http://localhost:8073` |
+
+保存後、server はすぐに開始します。
+
+### 表示モード
+
+CQOps Live には 2 つの表示モードがあります。
+
+#### Overview mode
+
+active callsign を扱っていないときに表示されます。
+
+表示内容:
+
+- live Leaflet map。
+- 今日の QSO markers。
+- great-circle paths。
+- recent QSOs table。
+- station information。
+- statistics。
+- 5-minute、15-minute、1-hour rate tracking。
+- top operators。
+- longest-distance QSOs。
+
+#### Active / Now Working mode
+
+callsign を処理中のときに表示されます。
+
+表示内容:
+
+- 大きな callsign。
+- submode indicator。
+- 利用可能な場合の QRZ photo。
+- band と mode badges。
+- DUPE / NEW CALL / NEW DXCC indicators。
+- distance と bearing。
+- station grid から partner grid への強調された破線 map path。
+
+### Info box
+
+local map の上にある info box は、5 秒ごとに次の modules を切り替えます。
+
+- band conditions。
+- solar activity。
+- geomagnetic field。
+- latest DX Cluster spot。
+- PSK Reporter per-band report counts。
+
+Band conditions は常に全幅で表示されます。
+
+### Weather row
+
+weather row は station grid locator の現在の Open-Meteo conditions を表示します。
+
+- temperature。
+- wind。
+- humidity。
+- icon。
+
+天気データはブラウザ側で取得され、offline では自然に degrade します。
+
+### Local map
+
+右側の local map は以下を表示できます。
+
+- APRS stations。
+- standard APRS symbols。
+- range circle。
+- callsign popups。
+- optional day/night terminator overlay。
+- optional RainViewer weather radar overlay。
+
+### リアルタイム更新と性能
+
+CQOps Live は Server-Sent Events (SSE) で更新されます。ページ再読み込みは不要です。
+
+dashboard は低消費電力ハードウェア向けに設計されています。
+
+- map rendering はブラウザが処理。
+- distance calculations はブラウザが処理。
+- statistics はブラウザが処理。
+- CQOps は軽量な JSON updates を送信。
+- HTTP server が無効な場合、port は開かれず dashboard goroutines も動作しません。
+
+### dashboard のカスタマイズ
+
+HTTP Server integration form で設定できます。
+
+| フィールド | 説明 |
+|---|---|
+| Header 1 | page header と hero area に表示される主タイトル。空の場合 “CQOps Live”。 |
+| Header 2 | タイトル下のサブタイトル。空の場合 “Fast, portable ham radio logger”。 |
+| Logo URL | 左上に表示される公開画像 URL。空の場合 CQOps logo。 |
+| Event Start | `YYYY-MM-DD` 形式の日付。この日以降の stats と QSO lists に絞り込みます。 |
+
+---
+
+## 設定
 
 **F9** で設定を開きます。
 
-| メニュー | 設定内容 |
-|------|------------|
-| Station | コールサイン、グリッド、CQ/ITUゾーン、IARUリージョン、参照 |
-| Rig | リグプリセット、モデル、アンテナ、電力、バックエンド、ローテーター、WSJT-X |
-| Wavelog | URL、APIキー、局プロファイルID |
-| QRZ | ユーザー名とパスワード |
-| DX Cluster | ホスト、ポート、ログイン |
-| Operators | オペレータープロファイル: コールサインと名前 |
-| Logbooks | ログブックごとの局、Wavelog、コンテスト、オペレーター設定 |
-| Notifications | トーストと通知の動作 |
-| General | タイムゾーン、距離単位、マップ、デバッグモード |
+### 設定ファイル
 
-### マルチログブック
+| プラットフォーム | config path |
+|---|---|
+| Linux / macOS | `~/.config/cqops/config.yaml` |
+| Windows | `%APPDATA%\cqops\config.yaml` |
 
-自宅、ポータブル、コンテスト、クラブ運用に複数のログブックを使用します。**Ctrl+L** でアクティブログブックを切り替えます。各ログブックは独自の局詳細、Wavelog設定、コンテスト設定、オペレーター設定を保持します。
+機密 credential は同じ設定ディレクトリの `secrets.enc` に別保存されます。
 
-### マルチオペレーター
+secrets は machine-tied key で暗号化されます。別のマシンへ設定を移す場合、credential は再入力が必要です。
 
-オペレータープロファイルにはオペレーターのコールサインと名前が含まれます。**Ctrl+O** でアクティブオペレーターを切り替えます。アクティブオペレーターはADIFの `OPERATOR` フィールドに保存され、Wavelogアップロードに使用されます。
+### 設定メニュー
 
-### マルチリグ
+| Menu | 設定内容 |
+|---|---|
+| Station | Callsign, grid, CQ/ITU zone, IARU region, references |
+| Rig | Rig presets, model, antenna, power, backend, rotor, WSJT-X |
+| Wavelog | URL, API key, station profile ID |
+| QRZ | Username and password |
+| DX Cluster | Host, port, login |
+| Operators | Operator profiles |
+| Logbooks | Station, Wavelog, contest, operator, APRS settings per logbook |
+| Notifications | QSO saved alerts, Wavelog status, dupe beep, error sounds |
+| General | Timezone, distance units, map, debug mode |
 
-リグプリセットはバックエンド、モデル、アンテナ、電力、ローテーター、WSJT-X設定を保存します。**Ctrl+R** でアクティブリグを切り替えます。
+### Multi-logbook
 
-### 暗号化された認証情報
+自宅、portable、contest、club operation には複数 logbook を使えます。
 
-v0.8.7以降、認証情報は暗号化されて保存されます。
+**Ctrl+L** で active logbook を切り替えます。
 
-- **認証情報ファイル:** `secrets.enc`
-- **場所:** `config.yaml` と同じディレクトリ
-- **Unixパーミッション:** サポートされている場合は `0600`
-- **暗号化:** マシンに紐付いたキーによるAES-256-GCM
-- **保護データ:** QRZパスワード、DX Clusterログイン、Wavelog APIキー
-- **移行:** 古い設定の平文認証情報は初回起動時に移行
-- **復旧:** `secrets.enc` が破損した場合、CQOpsは警告付きで起動し、認証情報の再入力を求めます
+各 logbook は独自の以下を保持します。
+
+- station details。
+- Wavelog settings。
+- contest settings。
+- operator settings。
+
+### Multi-operator
+
+Operator profiles には以下が含まれます。
+
+- operator callsign。
+- operator name。
+
+**Ctrl+O** で active operator を切り替えます。
+
+active operator は ADIF `OPERATOR` フィールドに保存され、Wavelog uploads にも反映されます。
+
+### Multi-rig
+
+Rig presets は以下を保存します。
+
+- backend。
+- model。
+- antenna。
+- power。
+- rotor settings。
+- WSJT-X settings。
+
+**Ctrl+R** で active rig を切り替えます。
+
+### 暗号化 secrets
+
+v0.8.7 以降、credentials は暗号化保存されます。
+
+| 項目 | 値 |
+|---|---|
+| Secrets file | `secrets.enc` |
+| Location | `config.yaml` と同じディレクトリ |
+| Unix permissions | 対応環境では `0600` |
+| Encryption | machine-tied key による AES-256-GCM |
+| Protected data | QRZ password, DX Cluster login, Wavelog API keys |
+
+古い設定の plaintext secrets は初回起動時に移行されます。
+
+`secrets.enc` が破損している場合、CQOps は警告付きで起動し、credentials の再入力を求めます。
 
 ---
 
 ## キーボードショートカット
 
-### グローバル
+### Global
 
-| キー | アクション |
-|-----|--------|
-| F1 | QSO FormとRecent QSOs |
+| キー | 操作 |
+|---|---|
+| F1 | QSO form と Recent QSOs |
 | F2 | Partner view |
 | F4 | DX Cluster |
 | F5 | PSK Reporter |
-| F6 | REF検索 |
+| F6 | REF Lookup |
 | F7 | Band Plan Browser |
 | F8 | Logbook Editor |
-| F9 | 設定 / メインメニュー |
-| F10 | 終了 |
-| Ctrl+F9 | ログビューアー |
-| ? | ヘルプオーバーレイ |
-| Ctrl+L | アクティブログブックを切り替え |
-| Ctrl+R | アクティブリグを切り替え |
-| Ctrl+C | アクティブコンテストを切り替え |
-| Ctrl+O | アクティブオペレーターを切り替え |
-| Esc | 前の画面に戻る |
+| F9 | Configuration / main menu |
+| F10 | Quit |
+| Ctrl+F9 | Log viewer |
+| ? | Help overlay |
+| Ctrl+L | active logbook を切り替え |
+| Ctrl+R | active rig を切り替え |
+| Ctrl+C | active contest を切り替え |
+| Ctrl+O | active operator を切り替え |
+| Esc | 前の画面へ戻る |
 
-### QSO Form — F1
+### QSO form
 
-| キー | アクション |
-|-----|--------|
+| キー | 操作 |
+|---|---|
 | Tab | 次のフィールド |
 | Shift+Tab | 前のフィールド |
 | ↑ / ↓ | 列内を移動 |
-| Enter | QSOを保存、必要に応じて重複確認 |
-| Ctrl+S | 任意のフィールドからQSOを保存 |
-| Del | すべてのフォームフィールドをクリア |
-| Ins | 検索: QRZ、Wavelog、DXCC、重複チェック |
-| PgUp / PgDn | バンド、モード、サブモードを切り替え |
-| Ctrl+D | スポットダイアログを開く |
-| Ctrl+T | Keep Commentを切り替え |
-| Ctrl+←/→ | ローテーター方位角を5°調整 |
-| Ctrl+↑/↓ | ローテーター仰角を5°調整 |
-| Ctrl+A | 自グリッドからパートナーグリッドへの方位にローテーターを指向 |
-| Ctrl+F1 | ローテーター停止 |
-| Alt+0–9 | お気に入りスロットを呼び出し |
-| Alt+Shift+0–9 | 現在の周波数/モード/バンドをお気に入りスロットに保存 |
+| Enter | 必要に応じて重複確認付きで QSO 保存 |
+| Ctrl+S | 任意のフィールドから QSO 保存 |
+| Del | フォーム全フィールドをクリア |
+| Ins | Lookup: QRZ, Wavelog, DXCC, duplicate check |
+| PgUp / PgDn | band, mode, submode を切り替え |
+| Ctrl+D | spot dialog を開く |
+| Ctrl+T | Keep Comment を切り替え |
+| Ctrl+←/→ | rotor azimuth を 5° 調整 |
+| Ctrl+↑/↓ | rotor elevation を 5° 調整 |
+| Ctrl+A | 自局 grid から相手 grid への bearing に rotor を向ける |
+| Ctrl+F1 | rotor を停止 |
+| Alt+0–9 | favorite を呼び出す |
+| Alt+Shift+0–9 | 現在の frequency, mode, band を favorite として保存 |
 
-### Logbook Editor — F8
+### Logbook Editor
 
-| キー | アクション |
-|-----|--------|
-| ↑ / ↓ | 行をナビゲート |
-| PgUp / PgDn | 前または次のページ |
-| Home / End | 先頭または末尾の行 |
-| Enter / e | 選択したQSOを編集 |
-| Delete | 選択したQSOを削除 |
-| p | すべてのQSOをパージ |
-| Ctrl+C | コンテストフィルターを切り替え |
-| Ctrl+E | ADIFをエクスポート |
-| Ctrl+I / Tab | ADIFをインポート |
-| w | 未送信QSOをWavelogにアップロード |
-| Ctrl+W | Wavelogからコンタクトをダウンロード |
-| Esc / F6 | エディターを閉じてQSOに戻る |
+| キー | 操作 |
+|---|---|
+| ↑ / ↓ | 行を移動 |
+| PgUp / PgDn | 前ページまたは次ページ |
+| Home / End | 最初または最後の行 |
+| Enter / e | 選択 QSO を編集 |
+| Delete | 選択 QSO を削除 |
+| p | 全 QSOs を purge |
+| Ctrl+C | contest filter を切り替え |
+| Ctrl+E | Export ADIF |
+| Ctrl+I / Tab | Import ADIF |
+| w | 未送信 QSOs を Wavelog へ upload |
+| Ctrl+W | Wavelog から contacts を download |
+| Esc / F6 | editor を閉じて QSO form へ戻る |
 
-### DX Cluster — F4
+### DX Cluster
 
-| キー | アクション |
-|-----|--------|
-| ↑ / ↓ | スポットをナビゲート |
-| Enter | フォーム入力 + リグチューニング + QSOへ移動 |
-| Space | スポットにリグをチューニング（DXCにとどまる） |
-| Home | バンドフィルター進む |
-| End | バンドフィルター戻る |
-| \\ | 大陸フィルター |
-| Ins | モードフィルター進む |
-| Del | モードフィルター戻る |
-| PgUp | 時間フィルター進む |
-| PgDn | 時間フィルター戻る |
-| Backspace | すべてのフィルターをクリア |
-| Esc / F4 | QSO Formに戻る |
+| キー | 操作 |
+|---|---|
+| ↑ / ↓ | spots を移動 |
+| Enter | QSO form を入力し、rig をチューニングして QSO へ戻る |
+| Space | 選択 spot に rig をチューニングし、DX Cluster に留まる |
+| Home | band filter を前へ進める |
+| End | band filter を戻す |
+| `\` | continent filter を切り替え |
+| Ins | mode filter を前へ進める |
+| Del | mode filter を戻す |
+| PgUp | time filter を前へ進める |
+| PgDn | time filter を戻す |
+| Backspace | すべての filters をクリア |
+| Esc / F4 | QSO form へ戻る |
 
-### Partner View — F2
+### Partner view
 
-| キー | アクション |
-|-----|--------|
-| F2 | サイクル: Partner view → 写真 → 戻る |
-| Esc / F1 | QSO Formに戻る |
+| キー | 操作 |
+|---|---|
+| F2 | Partner view → Photo → Back を切り替え |
+| Esc / F1 | QSO form へ戻る |
 
 ---
 
 ## トラブルシューティング
 
-### アプリが起動しない
+### CQOps が起動しない
 
-- 端末は最低80×24文字必要です。
-- Windowsではレガシー `cmd.exe` コンソールではなくWindows Terminalを使用してください。
-- `cqops --offline` を試してネットワークの問題を除外してください。
-- ログを確認: `~/.local/share/cqops/logs/` (Linux), `~/Library/Application Support/cqops/logs/` (macOS), `%APPDATA%\cqops\logs\` (Windows)
+確認事項:
 
-### リグが接続しない
+- terminal size が 80×24 以上である。
+- Windows では Windows Terminal を使っている。
+- network startup がブロックしていないか次で確認する。
 
-- **flrig:** flrigが実行中でポートが一致しているか確認（デフォルト `12345`）。
-- **Hamlib:** rigctldが実行中でTCPポートが正しいか確認。
-- ステータスラベルの色: 白 = 接続済み、黄 = 接続中/無効、赤 = エラー。
-- 抑制された再接続トーストは正常です — CQOpsはバックグラウンドで再試行します。
+  ```bash
+  cqops --offline
+  ```
 
-### WSJT-Xが自動ロギングしない
+ログの場所:
 
-- WSJT-X UDP設定を確認: Settings → Reporting → UDP Server。
-- WSJT-Xはバージョン2.6以降が必要です。
-- WSJT-X実行中はステータスラベルが白（デフォルト）になるはずです。
+| プラットフォーム | Logs path |
+|---|---|
+| Linux | `~/.local/share/cqops/logs/` |
+| macOS | `~/Library/Application Support/cqops/logs/` |
+| Windows | `%APPDATA%\cqops\logs\` |
 
-### Wavelogアップロードが失敗する
+### Rig が接続しない
 
-- 設定のURL、APIキー、局プロファイルIDを確認。
-- ステータスラベル: 白 = 到達可能、黄 = 無効/インターネットなし、赤 = エラー。
-- アップロードエラーはトーストとして表示され、QSOはローカルに保存されたままです。
-- 個別のQSO失敗がバッチの残りをブロックすることはありません。
+flrig の場合:
 
-### 設定ファイルの問題
+- flrig が動作していることを確認します。
+- active rig preset の port を確認します。
+- default port は `12345` です。
 
-- 設定: `~/.config/cqops/config.yaml` (Linux/macOS) または `%APPDATA%\cqops\config.yaml` (Windows)
-- 認証情報: 同じディレクトリの `secrets.enc`
-- 設定が破損している場合は削除して再起動 — ウィザードが新規作成します。
-- `last_fetched_id` フィールドはWavelogダウンロード成功後にのみ表示されます。
+Hamlib の場合:
 
-### パフォーマンス
+- `rigctld` が動作していることを確認します。
+- host と port を確認します。
+- radio/backend が要求データをサポートしていることを確認します。
 
-- General設定でマップレンダリングとSolar panelを無効化。
-- 未使用のタブ（DXC、PSK）を閉じる。
-- ネットワークが不安定な場合は `--offline` で実行。
+Status labels は診断に役立ちます。
 
-### バグ報告
+| 色 | 意味 |
+|---|---|
+| 白/デフォルト | 接続済み |
+| 黄 | 無効または接続中 |
+| 赤 | 失敗 |
 
-問題を再現する前に **Debugモード** を有効にしてください — F9 → General → Debug、または設定で `debug: true` を設定。完全なログはプラットフォーム固有のログディレクトリに書き込まれます。
+Reconnect toasts は抑制される場合があります。CQOps は静かに再試行できます。
 
-[GitHub Issues](https://github.com/szporwolik/cqops/issues) で問題を報告してください:
-- CQOpsバージョン (`cqops --version`)
-- オペレーティングシステムと端末エミュレーター
-- 再現手順
-- デバッグログ
+### WSJT-X が自動ログしない
+
+確認事項:
+
+- WSJT-X **Settings → Reporting → UDP Server**。
+- UDP host と port が CQOps の active rig preset と一致している。
+- WSJT-X 2.6 以降を使っている。
+- WSJT status label が active。
+- active logbook が正しい。
+- active operator が正しい。
+
+### Wavelog upload が失敗する
+
+確認事項:
+
+- Wavelog URL。
+- API key。
+- station profile ID。
+- **WL** status label。
+
+upload errors は toasts として表示されます。upload に失敗しても QSOs はローカルに保存されたままです。個別 QSO の失敗は batch の残りをブロックしません。
+
+### config file の問題
+
+Config file:
+
+| プラットフォーム | パス |
+|---|---|
+| Linux / macOS | `~/.config/cqops/config.yaml` |
+| Windows | `%APPDATA%\cqops\config.yaml` |
+
+Secrets file:
+
+```text
+secrets.enc
+```
+
+secrets file は `config.yaml` と同じディレクトリに保存されます。
+
+config が破損している場合、移動または削除して CQOps を再起動します。setup wizard が新しい config を作成します。
+
+`last_fetched_id` フィールドは、Wavelog download が成功した後にだけ現れます。
+
+### 性能問題
+
+試すこと:
+
+- General settings で map rendering を無効化する。
+- 不要なら Solar panel を無効化する。
+- offline 時は DX Cluster や PSK Reporter などネットワーク負荷の高い画面を避ける。
+- ネットワークが不安定な場合は `cqops --offline` を使う。
+
+---
+
+## バグ報告
+
+バグを報告する前に:
+
+1. **F9 → General → Debug** で **Debug mode** を有効にする、または次を設定します。
+
+   ```yaml
+   debug: true
+   ```
+
+   `config.yaml` 内に設定します。
+
+2. 問題を再現します。
+3. 関連ログを添付します。
+
+GitHub に issue を報告してください。
+
+<https://github.com/szporwolik/cqops/issues>
+
+含める情報:
+
+- `cqops --version` の CQOps バージョン。
+- operating system。
+- terminal emulator。
+- 再現手順。
+- 関連 debug log。
