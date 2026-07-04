@@ -602,7 +602,7 @@ function registerExtraModule(fn){extraModules.push(fn)}
 function registerSolarModule(d){
   solarData=d;
   // Remove previously registered solar sub-modules.
-  extraModules=extraModules.filter(function(f){return f._id!=='solar'});
+  extraModules=extraModules.filter(function(f){return f._id!=='solar' && f._id!=='band-cond'});
   var sf=d.solarFlux||0, a=d.aIndex||0, k=d.kIndex||0, ss=d.sunspots||0;
   function sc(v,good,fair){return v<=good?'var(--success)':v<=fair?'var(--warn)':'var(--offline)'}
   function sn(v){return v||'—'}
@@ -638,7 +638,7 @@ function registerSolarModule(d){
       html+='<div class="bc-block"><span class="bc-label">'+label+'</span>'+'<span class="bc-pill bc-'+bc(day)+'">D '+day+'</span>'+'<span class="bc-pill bc-'+bc(night)+'">N '+night+'</span></div>';
     }
     html+='</div>';return html;
-  };m3._id='solar';
+  };m3._id='band-cond';
 
   extraModules.unshift(m3,m2,m1);
 }
@@ -700,7 +700,15 @@ function updateExtraBox(){
     if(!content)return;
     // Show 1 or 2 modules — only split into two columns when box is wide enough
     // to fit content like band conditions without cramping.
+    // Band conditions always takes full width.
     var cols=Math.min(2,Math.max(1,Math.floor(box.clientWidth/240)));
+    if(cols>1 && extraModules.length>1){
+      var checkIdx=extraModuleIdx%extraModules.length;
+      for(var ci=0;ci<cols&&ci<extraModules.length;ci++){
+        var mod=extraModules[(checkIdx+ci)%extraModules.length];
+        if(mod&&mod._id==='band-cond'){cols=1;break}
+      }
+    }
     // Always cycle through all modules.
     if(!extraCycleTimer){
       extraCycleTimer=setInterval(cycleExtraModule,5000);
