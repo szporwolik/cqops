@@ -116,7 +116,10 @@ func TestADIFToQSO_FT8(t *testing.T) {
 		t.Errorf("Band = %q", stored.Band)
 	}
 	if stored.Mode != "FT8" {
-		t.Errorf("Mode = %q, want FT8 (standalone mode per ADIF 3.1.4)", stored.Mode)
+		t.Errorf("Mode = %q, want FT8 (top-level mode per ADIF 3.1.7)", stored.Mode)
+	}
+	if stored.Submode != "" {
+		t.Errorf("Submode = %q, want empty (FT8 is top-level)", stored.Submode)
 	}
 	if stored.Freq < 14.074 || stored.Freq > 14.075 {
 		t.Errorf("Freq = %f", stored.Freq)
@@ -657,7 +660,7 @@ func TestLogQSOFromADIF_FullPipeline(t *testing.T) {
 		t.Errorf("Band = %q", q.Band)
 	}
 	if q.Mode != "FT8" {
-		t.Errorf("Mode = %q, want FT8 (standalone per ADIF 3.1.4)", q.Mode)
+		t.Errorf("Mode = %q, want FT8 (top-level mode per ADIF 3.1.7)", q.Mode)
 	}
 	if q.Source != "wsjtx" {
 		t.Errorf("Source = %q, want wsjtx", q.Source)
@@ -681,12 +684,12 @@ func TestADIFToQSO_StandaloneFT8Normalized(t *testing.T) {
 		"<QSO_DATE:8>20260618 <TIME_ON:6>120000 <RST_SENT:3>-10 <RST_RCVD:3>-05 <EOR>"
 
 	qs := parseWSJTXADIF(adif)
-	// FT8 is a standalone mode per ADIF 3.1.4, no normalization needed.
+	// FT8 is a top-level mode per ADIF 3.1.7 — stays standalone.
 	if qs.Mode != "FT8" {
-		t.Errorf("standalone FT8 mode should remain FT8, got %q", qs.Mode)
+		t.Errorf("standalone FT8 should stay FT8, got %q", qs.Mode)
 	}
 	if qs.Submode != "" {
-		t.Errorf("standalone FT8 should have no submode, got %q", qs.Submode)
+		t.Errorf("standalone FT8 should have empty submode, got %q", qs.Submode)
 	}
 
 	qs.Source = "wsjtx"
@@ -710,10 +713,10 @@ func TestADIFToQSO_StandaloneFT8Normalized(t *testing.T) {
 	}
 
 	if stored.Mode != "FT8" {
-		t.Errorf("stored mode = %q, want FT8", stored.Mode)
+		t.Errorf("stored mode = %q, want FT8 (top-level)", stored.Mode)
 	}
 	if stored.Submode != "" {
-		t.Errorf("stored submode = %q, want empty (FT8 is standalone)", stored.Submode)
+		t.Errorf("stored submode = %q, want empty", stored.Submode)
 	}
 }
 
@@ -784,7 +787,7 @@ func TestADIFToQSO_StandaloneFT8LogQSO(t *testing.T) {
 		t.Fatal("no QSO found")
 	}
 	if qsos[0].Mode != "FT8" {
-		t.Errorf("stored mode = %q, want FT8 (standalone per ADIF 3.1.4)", qsos[0].Mode)
+		t.Errorf("stored mode = %q, want FT8 (top-level per ADIF 3.1.7)", qsos[0].Mode)
 	}
 	if qsos[0].Submode != "" {
 		t.Errorf("stored submode = %q, want empty", qsos[0].Submode)
@@ -795,16 +798,17 @@ func TestADIFToQSO_MFSK_FT8_LegacyNormalized(t *testing.T) {
 	m := newADIFTestModel(t)
 	m.App.Logbook.Wavelog = nil
 
-	// Legacy MFSK+FT8 ADIF should be normalized to standalone FT8.
+	// MFSK+FT8 is non-standard per ADIF 3.1.7 (FT8 is top-level, not an MFSK submode).
+	// Import normalizes it to standalone FT8.
 	adif := "<CALL:6>SP9MOA <BAND:3>20m <FREQ:8>14.074550 <MODE:4>MFSK <SUBMODE:3>FT8 " +
 		"<QSO_DATE:8>20260618 <TIME_ON:6>120000 <RST_SENT:3>-10 <RST_RCVD:3>-05 <EOR>"
 
 	qs := parseWSJTXADIF(adif)
 	if qs.Mode != "FT8" {
-		t.Errorf("legacy MFSK+FT8 mode should normalize to FT8, got %q", qs.Mode)
+		t.Errorf("non-standard MFSK+FT8 should normalize to FT8 (top-level per ADIF 3.1.7), got %q", qs.Mode)
 	}
 	if qs.Submode != "" {
-		t.Errorf("legacy MFSK+FT8 submode should be empty, got %q", qs.Submode)
+		t.Errorf("FT8 is top-level, submode should be empty, got %q", qs.Submode)
 	}
 
 	qs.Source = "import"
@@ -820,10 +824,10 @@ func TestADIFToQSO_MFSK_FT8_LegacyNormalized(t *testing.T) {
 		t.Fatalf("GetQSOByID: %v", err)
 	}
 	if stored.Mode != "FT8" {
-		t.Errorf("stored mode = %q, want FT8", stored.Mode)
+		t.Errorf("stored mode = %q, want FT8 (top-level per ADIF 3.1.7)", stored.Mode)
 	}
 	if stored.Submode != "" {
-		t.Errorf("stored submode = %q, want empty", stored.Submode)
+		t.Errorf("stored submode = %q, want empty (FT8 is top-level)", stored.Submode)
 	}
 }
 

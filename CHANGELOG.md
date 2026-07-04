@@ -1,5 +1,60 @@
 # Changelog
 
+## v0.8.9 — 2026-07-05
+
+### CQOps Live — Built-in Browser Dashboard
+- **Real-time web dashboard** with SSE push, Leaflet map, and live station display. Enable in F9 → Integrations, then open `http://localhost:8073` in any browser.
+- **Live map** with QSO paths, active QSO tracking, partner photo display, day/night terminator overlay, and RainViewer weather radar.
+- **Stats panel**: today's QSOs, unique calls, 5m/15m/60m rate tracking, top operators.
+- **Recent QSOs table**: 7-row live feed with band/mode color badges, auto-scroll.
+- **Band conditions module**: day/night propagation per band group (80–40m, 30–20m, 17–15m, 12–10m) from HamQSL solar data. Always renders full-width in the info box.
+- **Solar & geomagnetic modules**: SFI, sunspots, A-index, K-index with color-coded condition thresholds.
+- **DXC & PSK Reporter modules**: last spotted station, per-band report counts.
+- **Weather row**: current conditions from Open-Meteo (temp, wind, humidity, icon) for the station's grid locator.
+- **APRS integration**: nearby stations on the local map with standard APRS symbol icons, range circle, callsign popups, and auto-fit. Optional periodic position beacon with grid locator.
+- **QRZ photos** displayed inline in the hero panel when available.
+- **Responsive design**: FullHD+ optimized, breakpoints for small screens, narrow layouts, and short viewports. Works on Field Day projector displays.
+- **Info box cycling**: modules rotate every 5 seconds, 1 or 2 columns depending on width.
+- **Offline-safe**: all third-party services degrade gracefully; dashboard works with cached/local assets.
+
+### ADIF 3.1.7 Compliance
+- **FT8** is now exported as a standalone mode (not MFSK+FT8), per ADIF 3.1.7 spec.
+- **FT4 and FT2** exported as MFSK with submode FT4/FT2.
+- **Mode normalization**: `NormalizeMode` converts standalone FT4/FT2→MFSK+submode, and legacy MFSK+FT8→standalone FT8.
+- **Submode display**: rig info and QSO form now include submode; dashboard shows submode via smart `submode||mode` fallback.
+
+### Stats & Rate Calculation
+- **Three-tier rate display**: 5-minute, 15-minute, and 1-hour rates replace the single `RatePerHour` field.
+- **Rate query robustness**: uses `printf('%s%06s', qso_date, time_on)` for reliable time comparison, fixing off-by-window errors.
+- **Stats fields** nowrap+ellipsis for clean overflow handling at any screen width.
+
+### Dashboard UI Polish
+- **21 band colors + 4 mode group colors** as CSS variables, used consistently across badges, pills, and table cells.
+- **Premium styling**: border strength 0.22→0.35, shadow 0.07→0.12, badge backgrounds 0.08→0.22 for better visibility.
+- **Consolidated breakpoints**: weather 8→4, height 4→2, width 3→2 for simpler maintenance.
+- **UTC clock** now displays seconds (`23:26:23Z`).
+- **Top QSOs** compact redesign: no trophy icons, no rank numbers, km without space, 9 items visible at FullHD+.
+
+### Bug Fixes
+- **SQLITE_BUSY on Wavelog status update**: `UpdateWavelogStatus` now retries 5 times with exponential backoff (100ms→1.6s), preventing "database is locked" errors from leaving the local status as "no" when the upload succeeded.
+- **WSJT-X event channel overflow**: removed dead `Events` channel write that caused "dropping events" warnings every ~2.6k events. Channel kept initialized for external consumers.
+- **HTTP server restart**: now only restarts when address, port, or enabled state changes — header/logo edits no longer trigger unnecessary restarts.
+- **WSJT-X TX power**: added `>0` guard with `strconv.ParseFloat` to prevent zero-watt power from rig-in-RX state overwriting WSJT-X reported power.
+- **Dashboard enrichment race**: `forcePushDashboardRecent` clears `lastRecentIDs` before pushing enriched QSOs, so country/grid updates from QRZ reach the browser immediately.
+- **Top QSOs without grids**: removed `km>0` filter so QSOs without grid squares still appear in the top list.
+- **Extra modules cycling**: `cycleExtraModule` now delegates to `updateExtraBox` (was calling itself inconsistently).
+
+### Rebranding
+- **New brand colors**: cyan `#08F8F8` and magenta `#F80868` replace the previous green palette.
+- **App icon**: `$c` in cyan, `q` in magenta on a dark rounded background. Regenerated across all formats (PNG, XPM, ICO, .syso).
+- **README overhaul**: architecture Mermaid diagram showing Station→CQOps→Internet/Dashboard/File I/O flow, platform badges, Quick Install section, tightened feature list, screenshot grouping.
+
+### Refactoring & Cleanup
+- **Dead code removal**: ASCII world map rendering, unused functions in `queries_qso.go`, `dxc_filter.go`, `operator_menu.go`, and `styles.go`.
+- **Geo package**: coordinate conversion utilities moved from `map_ascii.go` to new `internal/tui/geo.go` with comprehensive tests.
+- **8-char grid support**: latitude/longitude calculation now handles extended Maidenhead locators.
+- **Duplicate QSO notification**: system beep on dupe detection (configurable via notifications menu).
+
 ## v0.8.8 — 2026-06-29
 
 ### Hamlib Rigctld — Robust Multi-Rig Support

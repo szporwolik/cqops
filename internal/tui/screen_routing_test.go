@@ -343,6 +343,7 @@ func TestHandlePendingRequests_NoPending(t *testing.T) {
 
 func TestHandlePendingRequests_QRZNeedWithCall(t *testing.T) {
 	m := newTestModel()
+	m.inetOnline = true
 	m.lookup.qrzNeed = true
 	m.lookup.qrzCall = "SP9XXX"
 	m.App.Config.Integrations.QRZ.Enabled = true

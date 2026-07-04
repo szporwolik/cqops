@@ -26,7 +26,7 @@ var editorColTiers = []struct {
 var editorColWidths = map[string]int{
 	"Date": 10, "Time": 8, "Call": 10, "WL": 3, "Src": 3,
 	"Band": 5, "Mode": 5, "Sub": 4, "RSTs": 4, "RSTr": 4,
-	"DXCC": 6, "Name": 8, "Grid": 6, "QTH": 8,
+	"DXCC": 6, "Name": 8, "Grid": 8, "QTH": 8,
 	"Comment": 8, "Dist": 5, "Pwr": 4, "Contest": 10,
 }
 

@@ -5,9 +5,12 @@ import (
 	"os"
 	"strings"
 
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
+	"github.com/szporwolik/cqops/internal/aprs"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
@@ -41,6 +44,14 @@ type LogbookChooser struct {
 	wlStations   []wavelog.StationProfile
 	wlStationIdx int // index into wlStations, -1 if none
 	wlStationID  string
+
+	// Viewport for scrolling form content on small terminals.
+	vp              viewport.Model
+	lastFormContent string
+
+	// APRS async state.
+	aprsTesting bool
+	aprsStatus  string
 }
 
 // Wavelog async message types
@@ -49,6 +60,11 @@ type wlUpdateMsg struct {
 	err      error
 }
 type wlTestMsg struct {
+	err error
+}
+
+// APRS async message type.
+type aprsTestMsg struct {
 	err error
 }
 
@@ -71,10 +87,14 @@ func NewLogbookChooser(a *app.App, tq *ToastQueue) *LogbookChooser {
 		cursor:  cursor,
 		station: NewStationForm("CALLSIGN", "operator", "GRID"),
 		toasts:  tq,
+		vp:      viewport.New(viewport.WithWidth(80), viewport.WithHeight(20)),
 	}
 }
 
-func (c *LogbookChooser) Init() tea.Cmd { return nil }
+func (c *LogbookChooser) Init() tea.Cmd {
+	c.vp.FillHeight = true
+	return nil
+}
 
 func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
@@ -107,9 +127,23 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		c.wlTesting = false
 		if msg.err != nil {
 			c.wlStatus = msg.err.Error()
+			c.toasts.Error("Wavelog: " + msg.err.Error())
 		} else {
 			c.wlStatus = "OK — Wavelog reachable"
+			c.toasts.Success("Wavelog: connection verified")
 		}
+		c.scrollViewportToEnd()
+
+	case aprsTestMsg:
+		c.aprsTesting = false
+		if msg.err != nil {
+			c.aprsStatus = msg.err.Error()
+			c.toasts.Error("APRS: " + msg.err.Error())
+		} else {
+			c.aprsStatus = "OK — APRS-IS reachable"
+			c.toasts.Success("APRS: connection verified")
+		}
+		c.scrollViewportToEnd()
 
 	case tea.PasteMsg:
 		// Forward clipboard paste to the focused field in the station
@@ -137,7 +171,10 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Skip - dialog not yet created
 			} else {
 				updated, _ := c.dialog.Update(msg)
-				d := updated.(DialogModel)
+				d, ok := updated.(DialogModel)
+				if !ok {
+					return c, nil
+				}
 				*c.dialog = d
 				if d.Done() {
 					if d.Result.Value == "delete" {
@@ -201,15 +238,26 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return c, c.fetchWavelogStations()
 				case wlTestAction:
 					return c, c.testWavelogConnection()
+				case aprsTestAction:
+					return c, c.testAPRSConnection()
 				case wlCycleStation:
 					if len(c.wlStations) > 0 {
 						c.wlStationIdx = (c.wlStationIdx + 1) % len(c.wlStations)
 						c.updateStationIDField()
 					}
 					return c, c.testWavelogConnection()
+				case scrollFormToEnd:
+					c.scrollViewportToEnd()
+					return c, nil
 				}
 				return c, nil
 			}
+			// Key not handled by station form — forward to viewport for scrolling,
+			// then clamp to prevent scrolling past the content end.
+			var cmd tea.Cmd
+			c.vp, cmd = c.vp.Update(msg)
+			c.autoScrollViewport()
+			return c, cmd
 		}
 	}
 
@@ -310,10 +358,6 @@ func (c *LogbookChooser) viewForm() string {
 	if h < 10 {
 		h = 24
 	}
-	contentH := contentHeight(h)
-	if contentH < 3 {
-		contentH = 3
-	}
 
 	c.station.width = w - 6 // account for menu box border + padding
 	b.WriteString(c.station.View().Content)
@@ -330,8 +374,93 @@ func (c *LogbookChooser) viewForm() string {
 		}
 	}
 
-	body := drawMenuWithHeader("Configuration \u2014 Logbooks \u2014 Edit Logbook", b.String(), w)
-	return fillBody(body, contentH)
+	// APRS status line below the form.
+	if c.station.AprsEnabled && c.aprsStatus != "" {
+		b.WriteString("\n    ")
+		if strings.HasPrefix(c.aprsStatus, "OK") {
+			b.WriteString(SuccessStyle.Render(c.aprsStatus))
+		} else if c.aprsTesting {
+			b.WriteString(DimStyle.Render(c.aprsStatus))
+		} else {
+			b.WriteString(ErrorStyle.Render(c.aprsStatus))
+		}
+	}
+
+	// Use viewport for scrollable form body on small terminals.
+	boxW := w
+	if boxW > partnerMapMaxW {
+		boxW = partnerMapMaxW
+	}
+	vpW := boxW - 4 // account for menu box border + padding
+	if vpW < 20 {
+		vpW = 20
+	}
+	// contentH = usable area after status/help bars.
+	// vpH = contentH minus header(1) minus menu box overhead:
+	// border top(1) + padding top(1) + padding bottom(1) + border bottom(1) = 4.
+	contentH := contentHeight(h)
+	if contentH < 8 {
+		contentH = 8
+	}
+	vpH := contentH - 5
+	if vpH < 5 {
+		vpH = 5
+	}
+	c.vp.SetWidth(vpW)
+	c.vp.SetHeight(vpH)
+	bodyStr := b.String()
+	if c.vp.TotalLineCount() == 0 || bodyStr != c.lastFormContent {
+		c.vp.SetContent(bodyStr)
+		c.lastFormContent = bodyStr
+	}
+	// Prevent scrolling past the end: if past bottom, snap back.
+	if c.vp.PastBottom() {
+		c.autoScrollViewport()
+	}
+
+	header := S.Title.Width(boxW).Render("Configuration \u2014 Logbooks \u2014 Edit Logbook")
+	box := menuBoxStyle.Width(boxW).Render(c.vp.View())
+	return lipgloss.JoinVertical(lipgloss.Left, header, box)
+}
+
+// autoScrollViewport adjusts the viewport Y offset to keep the currently
+// focused form field visible, using the StationForm's ScrollFraction hint.
+func (c *LogbookChooser) autoScrollViewport() {
+	total := c.vp.TotalLineCount()
+	visible := c.vp.VisibleLineCount()
+	if total <= visible {
+		c.vp.SetYOffset(0)
+		return
+	}
+	frac := c.station.ScrollFraction()
+	maxOffset := total - visible
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	offset := int(float64(maxOffset) * frac)
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > maxOffset {
+		offset = maxOffset
+	}
+	c.vp.SetYOffset(offset)
+}
+
+// scrollViewportToEnd scrolls the viewport to the last visible page so the
+// user can see the APRS/Wavelog test status lines without manual scrolling.
+func (c *LogbookChooser) scrollViewportToEnd() {
+	total := c.vp.TotalLineCount()
+	visible := c.vp.VisibleLineCount()
+	if total <= visible {
+		c.vp.SetYOffset(0)
+		return
+	}
+	maxOffset := total - visible
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	c.vp.SetYOffset(maxOffset)
 }
 
 // logbookSwitchedMsg is sent when the user switches active logbook via Enter.
@@ -395,6 +524,7 @@ func (c *LogbookChooser) startEdit(id string) {
 	c.station.SetValues(lb.Name, lb.Station.Callsign, opCallsign, lb.Station.Grid, lb.Station.SOTARef, lb.Station.POTARef, lb.Station.WWFFRef, lb.Station.IARURegion, lb.Station.CQZone, lb.Station.ITUZone, lb.Station.DXCC, lb.Station.SIG, lb.Station.SIGInfo, lb.Station.Continent)
 	c.station.SetOperators(config.OperatorSlice(c.app.Config))
 	c.station.SetWavelogValues(lb.Wavelog)
+	c.station.SetAPRSValues(lb.APRS)
 	c.wlStatus = ""
 	c.wlStations = nil
 	c.wlStationIdx = -1
@@ -442,6 +572,33 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 			}
 		}
 	}
+	// Build APRS config from form.
+	aprs := c.station.APRSValues()
+	if aprs != nil && !aprs.Enabled {
+		aprs = nil // store nil when disabled
+	}
+	// Validate APRS fields when enabled.
+	if aprs != nil {
+		if aprs.Server == "" {
+			c.toasts.Warn("APRS: server is required when APRS is enabled")
+			return nil
+		}
+		if aprs.Passcode == "" {
+			c.toasts.Warn("APRS: passcode is required when APRS is enabled")
+			return nil
+		}
+		if aprs.Callsign == "" {
+			c.toasts.Warn("APRS: callsign is required when APRS is enabled")
+			return nil
+		}
+		if aprs.IntervalMin < 15 {
+			c.toasts.Warn("APRS: interval must be at least 15 minutes")
+			return nil
+		}
+		if aprs.Symbol == "" {
+			aprs.Symbol = "/-" // default if empty
+		}
+	}
 
 	var savedName string
 	if c.mode == chooserCreate {
@@ -473,6 +630,7 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 				Continent:  continent,
 			},
 			Wavelog: wl,
+			APRS:    aprs,
 		}
 		c.app.Config.State.ActiveLogbook = id
 		c.app.LogbookName = id
@@ -517,6 +675,7 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 	lb.Station.SIGInfo = sigInfo
 	lb.Station.Continent = continent
 	lb.Wavelog = wl
+	lb.APRS = aprs
 	c.app.Config.Logbooks[id] = lb
 
 	if id == c.app.LogbookName {
@@ -532,6 +691,8 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 	}
 	c.toasts.Success("Logbook " + savedName + " saved")
 	applog.Info("Logbook saved", "name", savedName)
+	// Restart APRS if config changed.
+	c.app.MaybeRestartAPRS()
 	return nil
 }
 
@@ -608,10 +769,26 @@ func (c *LogbookChooser) fetchWavelogStations() tea.Cmd {
 
 // testWavelogConnection tests Wavelog connectivity and station validity.
 func (c *LogbookChooser) testWavelogConnection() tea.Cmd {
-	c.wlTesting = true
-	c.wlStatus = "Testing…"
 	u := strings.TrimRight(strings.TrimSpace(c.station.WlURL.Value()), "/")
 	k := strings.TrimSpace(c.station.WlKey.Value())
+
+	// Validate required fields before testing.
+	if u == "" {
+		c.wlStatus = "API URL is required"
+		c.toasts.Warn("Wavelog: API URL is required")
+		c.scrollViewportToEnd()
+		return nil
+	}
+	if k == "" {
+		c.wlStatus = "API Key is required"
+		c.toasts.Warn("Wavelog: API Key is required")
+		c.scrollViewportToEnd()
+		return nil
+	}
+
+	c.wlTesting = true
+	c.wlStatus = "Testing…"
+	c.scrollViewportToEnd()
 	var sid string
 	if c.wlStationIdx >= 0 && c.wlStationIdx < len(c.wlStations) {
 		sid = c.wlStations[c.wlStationIdx].ID
@@ -626,5 +803,43 @@ func (c *LogbookChooser) testWavelogConnection() tea.Cmd {
 			}
 		}
 		return wlTestMsg{}
+	}
+}
+
+// testAPRSConnection tests APRS-IS connectivity with the configured server/callsign/passcode.
+func (c *LogbookChooser) testAPRSConnection() tea.Cmd {
+	cfg := c.station.APRSValues()
+	srv := cfg.Server
+	call := cfg.Callsign
+	pass := cfg.Passcode
+
+	// Validate required fields before testing.
+	if srv == "" {
+		c.aprsStatus = "Server is required"
+		c.toasts.Warn("APRS: server is required")
+		c.scrollViewportToEnd()
+		return nil
+	}
+	if pass == "" {
+		c.aprsStatus = "Passcode is required"
+		c.toasts.Warn("APRS: passcode is required")
+		c.scrollViewportToEnd()
+		return nil
+	}
+	if call == "" {
+		c.aprsStatus = "Callsign is required"
+		c.toasts.Warn("APRS: callsign is required")
+		c.scrollViewportToEnd()
+		return nil
+	}
+
+	c.aprsTesting = true
+	c.aprsStatus = "Testing…"
+	c.scrollViewportToEnd()
+	return func() tea.Msg {
+		if err := aprs.TestConnection(srv, call, pass); err != nil {
+			return aprsTestMsg{err: err}
+		}
+		return aprsTestMsg{}
 	}
 }

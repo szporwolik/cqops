@@ -59,6 +59,9 @@ func (m *Model) headerView() string {
 	var rightParts []string
 
 	rightParts = append(rightParts, statusDotStyled(m.inetOnline, "Net", m.Offline))
+	if m.App.Config.Integrations.HTTPServer.Enabled {
+		rightParts = append(rightParts, statusDotStyled(m.http.online, "HTTP"))
+	}
 	if hasRig && rp.WsjtxEnabled {
 		rightParts = append(rightParts, statusDotStyled(m.wsjtx.online, "WSJT"))
 	}
@@ -85,6 +88,15 @@ func (m *Model) headerView() string {
 	wl := m.App.Logbook.Wavelog
 	if wl != nil && wl.Enabled {
 		rightParts = append(rightParts, statusDotStyled(m.lookup.wlOnline, "WL", m.Offline))
+	}
+	aprsCfg := m.App.Logbook.APRS
+	if aprsCfg != nil && aprsCfg.Enabled {
+		label := "APRS-RX"
+		online := m.App.APRSClient != nil && m.App.APRSClient.IsRunning()
+		if aprsCfg.SendLocation {
+			label = "APRS"
+		}
+		rightParts = append(rightParts, statusDotStyled(online, label, m.Offline))
 	}
 	rightParts = append(rightParts,
 		S.StatusTime.Render(now.Format("15:04")+"L  "+utc.Format("1504")+"Z"),

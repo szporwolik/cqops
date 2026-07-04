@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +19,9 @@ import (
 // =============================================================================
 
 // applyWSJTXStatus applies a WSJT-X status update to the QSO form fields.
+// IMPORTANT: This function is only called from the Bubble Tea Update loop
+// (single goroutine). Do NOT call it directly from WSJT-X listener callbacks
+// or other goroutines — use tea.Cmd to send a message instead.
 func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode, report, txMessage string, transmitting bool) {
 	if !m.wsjtx.online && m.toasts != nil {
 		m.toasts.Success("WSJT-X connected")
@@ -27,7 +31,7 @@ func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode
 	m.wsjtx.lastSeen = time.Now()
 	m.wsjtx.tx = transmitting
 	if call != "" {
-		prevCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+		prevCall := qso.NormalizeCall(m.fields[fieldCall].Value())
 		newCall := strings.ToUpper(call)
 		if prevCall != newCall {
 			m.fields[fieldCall].SetValue(call)
@@ -158,6 +162,9 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 	applog.InfoDetail("WSJT-X: auto-logged QSO", fmt.Sprintf("id=%d call=%s", id, qs.Call))
 	m.toasts.Success(fmt.Sprintf("WSJT-X: %s logged", qs.Call))
 
+	// Push to dashboard so the browser sees the toast + table update instantly.
+	m.pushLoggedQSOToDashboard(qs)
+
 	n := m.App.Config.General.Notifications
 	if n.Enabled && n.QSO {
 		applog.Info("Sending WSJT-X QSO notification", "call", qs.Call, "band", qs.Band, "mode", qs.Mode)
@@ -259,6 +266,14 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 				qs.Distance, qs.Bearing, qsoID)
 		}
 
+		// Push enriched QSO to dashboard — force-push because enrichment
+		// updates fields (country, grid, distance) without changing QSO IDs.
+		if m.http.client != nil && m.http.online {
+			ds := m.http.client.State()
+			m.forcePushDashboardRecent(ds)
+			m.pushDashboardToday(ds)
+		}
+
 		// Step 3: upload the enriched QSO's ADIF to Wavelog.
 		if !wlenabled || !m.inetOnline {
 			return wsjtxEnrichDoneMsg{}
@@ -296,15 +311,22 @@ func parseWSJTXADIF(adifStr string) *qso.QSO {
 
 // txPowerForWSJTX returns the TX power to use when auto-logging a WSJT-X QSO.
 // Priority (most authoritative first):
-//  1. Form field value (populated by hamlib/flrig real radio readout, or manual entry)
+//  1. Form field value from hamlib/flrig — but only if > 0 W (rig may report 0 in RX)
 //  2. WSJT-X reported tx_pwr from the ADIF message
 //  3. Station config rig preset power
 func txPowerForWSJTX(m *Model, wsjtxPower string) string {
 	if fp := strings.TrimSpace(m.fields[fieldTXPower].Value()); fp != "" {
-		return fp
+		if p, err := strconv.ParseFloat(fp, 64); err == nil && p > 0 {
+			return fp
+		}
 	}
 	if wp := strings.TrimSpace(wsjtxPower); wp != "" {
-		return wp
+		if p, err := strconv.ParseFloat(wp, 64); err == nil && p > 0 {
+			return wp
+		}
 	}
-	return m.App.Logbook.Station.RigPower(m.App.Config.Rigs)
+	if rp := m.App.Logbook.Station.RigPower(m.App.Config.Rigs); rp != "" {
+		return rp
+	}
+	return ""
 }

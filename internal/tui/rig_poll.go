@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -271,7 +272,19 @@ func (m *Model) applyRigPoll(r rigPollMsg) tea.Cmd {
 	if r.mode != "" && !m.wsjtx.online {
 		mapped := qso.NormalizeRigMode(r.mode)
 		if mapped != m.fields[fieldMode].Value() {
-			m.fields[fieldMode].SetValue(mapped)
+			// Don't overwrite a real mode (e.g. FT8 from a DXC spot)
+			// with a container mode like DATA-U / DATA-L / DATA-FM
+			// that rigs use for generic digital operations.
+			if !qso.IsValidMode(mapped) {
+				cur := strings.TrimSpace(m.fields[fieldMode].Value())
+				if cur != "" && qso.IsValidMode(cur) {
+					// Keep the current valid mode, skip rig mode.
+				} else {
+					m.fields[fieldMode].SetValue(mapped)
+				}
+			} else {
+				m.fields[fieldMode].SetValue(mapped)
+			}
 		}
 	}
 	if r.band != "" && r.band != m.fields[fieldBand].Value() {
@@ -283,6 +296,9 @@ func (m *Model) applyRigPoll(r rigPollMsg) tea.Cmd {
 	if !m.wsjtx.online {
 		m.autoFillSSBSubmode()
 	}
+	// Push rig/mode/band changes to the dashboard immediately —
+	// don't wait for the next tick.
+	m.pushDashboardFast()
 	if len(cmds) > 0 {
 		return tea.Batch(cmds...)
 	}

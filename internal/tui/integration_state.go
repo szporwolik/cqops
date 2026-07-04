@@ -3,6 +3,8 @@ package tui
 import (
 	"sync"
 	"time"
+
+	"github.com/szporwolik/cqops/internal/dashboard"
 )
 
 // rigState holds polled data, connection state, and the rig backend client.
@@ -48,4 +50,13 @@ type adifQueue struct {
 	mu     sync.Mutex
 	adifs  []string
 	status statusPending
+}
+
+// httpState holds the built-in HTTP server connection status.
+type httpState struct {
+	online      bool
+	err         error
+	client      *dashboard.Server
+	restart     bool      // set when config changes to trigger a restart
+	lastAttempt time.Time // last time we tried to start (for backoff)
 }

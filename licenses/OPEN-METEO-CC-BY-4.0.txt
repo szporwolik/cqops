@@ -1,0 +1,14 @@
+Open-Meteo Weather Data
+CC BY 4.0 — Creative Commons Attribution 4.0 International
+
+CQOps fetches weather forecast data from the Open-Meteo free API
+(https://open-meteo.com/) in the user's browser only (client-side fetch,
+no API key required, no backend involvement).
+
+Full license text: https://creativecommons.org/licenses/by/4.0/
+
+Attribution: "Weather forecast data provided by Open-Meteo (CC BY 4.0)"
+is displayed in the CQOps Live dashboard footer.
+
+Open-Meteo is not bundled or redistributed; CQOps makes client-side
+HTTP requests to the public API endpoint at api.open-meteo.com.

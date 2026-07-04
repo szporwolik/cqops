@@ -37,12 +37,14 @@ func (m *Model) lookupCallCmd(call string) tea.Cmd {
 		return nil
 	}
 	var cmds []tea.Cmd
-	if m.App.Config.Integrations.QRZ.Enabled && m.App.Config.Integrations.QRZ.User != "" {
-		cmds = append(cmds, m.qrzLookup(call))
-	}
-	wl := m.App.Logbook.Wavelog
-	if wl != nil && wl.Enabled && wl.APIKey != "" {
-		cmds = append(cmds, m.wlLookup(call))
+	if !m.Offline && m.inetOnline {
+		if m.App.Config.Integrations.QRZ.Enabled && m.App.Config.Integrations.QRZ.User != "" {
+			cmds = append(cmds, m.qrzLookup(call))
+		}
+		wl := m.App.Logbook.Wavelog
+		if wl != nil && wl.Enabled && wl.APIKey != "" {
+			cmds = append(cmds, m.wlLookup(call))
+		}
 	}
 	cmds = append(cmds, m.dxcSpotLookupCmd(call))
 	cmds = append(cmds, m.updateFilteredTable())
@@ -71,7 +73,7 @@ func (m *Model) contestAutoFocusExchRcvd() {
 	if m.screen != screenQSO || m.confirm != nil || m.spotDialog != nil {
 		return
 	}
-	call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+	call := qso.NormalizeCall(m.fields[fieldCall].Value())
 	if call == "" || !m.lookupsCompleteForCall(call) {
 		return
 	}
@@ -494,12 +496,20 @@ func (m *Model) applyFreqDefaults() {
 	mode := strings.ToUpper(strings.TrimSpace(m.fields[fieldMode].Value()))
 	switch mode {
 	case "SSB":
-		if freq < 10.0 {
-			m.fields[fieldSubmode].SetValue("LSB")
-		} else {
-			m.fields[fieldSubmode].SetValue("USB")
+		// Only auto-fill sideband when neither LSB nor USB is already
+		// set (e.g. from a DXC spot that carried USB/LSB explicitly).
+		curSub := strings.ToUpper(strings.TrimSpace(m.fields[fieldSubmode].Value()))
+		if curSub != "LSB" && curSub != "USB" {
+			if freq < 10.0 {
+				m.fields[fieldSubmode].SetValue("LSB")
+			} else {
+				m.fields[fieldSubmode].SetValue("USB")
+			}
 		}
-	case "FM":
+	default:
+		// Clear any stale submode from a previous QSO — only SSB has
+		// an auto-filled submode here. Other modes (CW, FT8, RTTY…)
+		// either have no submode or the user sets it separately.
 		m.fields[fieldSubmode].SetValue("")
 	}
 }

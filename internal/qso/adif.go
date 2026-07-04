@@ -136,12 +136,21 @@ func (q *QSO) ToADIFWithStation(stationCall string) string {
 }
 
 func (q *QSO) toADIFWithStation(stationCall string) string {
-	// Fix legacy data: FT8/FT2 are standalone modes, not MFSK submodes.
-	// QSOs stored before this fix may have MODE=MFSK, SUBMODE=FT8 or FT2.
+	// ADIF 3.1.7 export: FT8 is top-level, FT4/FT2 are MFSK submodes.
+	// Fix legacy data stored in non-compliant format.
 	mode, submode := q.Mode, q.Submode
-	if strings.EqualFold(mode, "MFSK") && (strings.EqualFold(submode, "FT8") || strings.EqualFold(submode, "FT2")) {
-		mode = strings.ToUpper(submode)
+	if strings.EqualFold(mode, "MFSK") && strings.EqualFold(submode, "FT8") {
+		mode = "FT8"
 		submode = ""
+	}
+	if strings.EqualFold(mode, "FT8") && strings.EqualFold(submode, "FT8") {
+		submode = ""
+	}
+	if strings.EqualFold(mode, "FT2") {
+		if submode == "" {
+			mode = "MFSK"
+			submode = "FT2"
+		}
 	}
 
 	r := adif.NewRecord()

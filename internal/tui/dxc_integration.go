@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
+	"github.com/szporwolik/cqops/internal/dashboard"
 	"github.com/szporwolik/cqops/internal/dxc"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
@@ -335,6 +336,14 @@ func (m *Model) handleDXCStatus(msg dxcStatusMsg) {
 		m.rc.status = ""
 		applog.Info("DXC: connected OK")
 		m.toasts.Success("DXC: connected")
+		// Push DXC status to dashboard for footer attribution.
+		if m.http.client != nil && m.http.online {
+			cfg := m.App.Config.Integrations.DXC
+			m.http.client.State().SetDXC(dashboard.DXCInfo{
+				Connected: true,
+				Host:      cfg.Host + ":" + cfg.Port,
+			})
+		}
 	} else {
 		m.dxc.online = false
 		m.dxc.client = nil
@@ -448,9 +457,22 @@ func (m *Model) handleDXCSpotsStored(msg dxcSpotsStoredMsg) {
 	// Notify when own callsign was spotted.
 	if msg.spottedMe != "" {
 		m.toasts.Info("DXC: spotted by " + msg.spottedMe)
+		// Push to dashboard for the DXC info module.
+		if m.http.client != nil && m.http.online {
+			parts := strings.SplitN(msg.spottedMe, ": ", 2)
+			spotter := parts[0]
+			comment := ""
+			if len(parts) > 1 {
+				comment = parts[1]
+			}
+			m.http.client.State().SetDXC(dashboard.DXCInfo{
+				SpottedBy: spotter,
+				Comment:   comment,
+			})
+		}
 	}
 
-	formCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+	formCall := qso.NormalizeCall(m.fields[fieldCall].Value())
 	if formCall == "" {
 		return
 	}

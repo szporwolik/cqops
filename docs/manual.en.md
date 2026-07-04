@@ -433,9 +433,60 @@ Filters include band, continent, mode, and age/time. Press **Enter** on a spot t
 
 PSK Reporter integration requires internet access. It provides propagation spots, band/time/mode filters, and an ASCII world map on **F5**.
 
+### APRS
+
+APRS integration uses a TCP connection to an APRS-IS server and requires internet access. The default server is `euro.aprs2.net:14580`.
+
+CQOps receives position reports from nearby stations and displays them on the CQOps Live dashboard local map with standard symbols, callsign popups, and an auto-fit view. A configurable range circle shows the beacon coverage area. A periodic beacon with the station callsign, SSID, grid locator, and optional comment can be sent.
+
+APRS is configured per logbook in the station settings (**F9 → Logbooks → [active logbook] → APRS**).
+
 ### Solar Data
 
 Solar data includes SFI, sunspot number, A/K indices, and band-by-band conditions from hamqsl.com. Live updates require internet access. Cached data remains available offline after a successful fetch.
+
+### CQOps Live — Browser Dashboard
+
+CQOps Live is a built-in web dashboard that displays your station activity in real time on any browser — perfect for field day public displays, club station screens, contest monitoring, or keeping an eye on the shack from another room.
+
+**How to enable**
+
+1. Press **F9** to open the main menu, then select **Integrations**.
+2. Scroll down to the **HTTP Server** section and check **Enable HTTP server**.
+3. Optionally set the address (default `0.0.0.0`) and port (default `8073`).
+4. Press **Ctrl+S** to save. The server starts immediately.
+5. Open `http://localhost:8073` (or the configured address) in any browser.
+
+**What the dashboard shows**
+
+The dashboard has two display modes that switch automatically:
+
+- **Overview mode** (no active callsign): a live Leaflet map with today's QSO markers and great-circle paths, a recent QSOs table, station info, stats, top operators, and longest-distance QSOs.
+- **Active / Now Working mode** (callsign being worked): a prominent callsign display, QRZ photo (if available), band/mode badges, DUPE/NEW CALL/NEW DXCC indicators, distance and bearing, and a highlighted dashed line on the map from your station to the partner's grid.
+
+All panels update in real time via Server-Sent Events (SSE) — no page refresh needed.
+
+**Customisation**
+
+In the HTTP Server integration form you can configure:
+
+| Field | Description |
+|-------|-------------|
+| Header 1 | Main title shown in the page header and hero area. Falls back to "CQOps Live". |
+| Header 2 | Subtitle below the title. Falls back to "Fast, portable ham radio logger". |
+| Logo URL | A publicly-accessible image URL displayed in the top-left corner. Falls back to the CQOps logo. |
+| Event Start | A date in `YYYY-MM-DD` format. When set, stats and QSO lists are filtered from this date onward — useful for multi-day events. |
+
+**Performance**
+
+The dashboard is designed for low-power hardware. The browser handles all map rendering, distance calculations, and statistics. The CQOps terminal app only pushes lightweight JSON updates via SSE. When the HTTP server is disabled, there is zero overhead — no port is opened and no dashboard goroutines run.
+
+**Typical use cases**
+
+- **Field day / contest public display**: connect a large screen or projector to show the live map and recent QSOs.
+- **Club station information screen**: run on a dedicated monitor showing station activity to visitors.
+- **Remote monitoring**: open the dashboard on a tablet or phone to watch station activity from another room.
+- **Event / fair booth**: configure Header 1/2 and the club logo for a branded, professional display.
 
 ---
 

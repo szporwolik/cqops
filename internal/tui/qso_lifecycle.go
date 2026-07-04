@@ -35,6 +35,9 @@ func (m *Model) saveQSO() tea.Cmd {
 		m.dupeConfirmed = true
 		m.toasts.Warn("DUPE! " + strings.TrimSpace(m.fields[fieldCall].Value()) + " already logged on this band/mode today — press Enter again to log anyway")
 		m.rc.pathSig = "" // invalidate path row cache to show DUPE badge
+		if m.App.Config.General.Notifications.BeepOnError {
+			_ = beeep.Beep(beeep.DefaultFreq, beeep.DefaultDuration)
+		}
 		return nil
 	}
 	m.dupeConfirmed = false
@@ -147,6 +150,10 @@ func (m *Model) saveQSO() tea.Cmd {
 	m.clearForm()
 	m.clearFilteredTable()
 	m.toasts.Success(fmt.Sprintf("QSO saved: %s", qs.Call))
+	m.pushLoggedQSOToDashboard(qs)
+	// The cached dupe/new-call/new-DXCC flags are now stale — the QSO
+	// we just saved changes the dupe status for this call.
+	m.invalidateDashboardFlags()
 	return tea.Batch(m.refreshQSOS(), m.maybeUploadToWavelog(qs))
 }
 
@@ -174,7 +181,7 @@ func (m *Model) refreshQSOS() tea.Cmd {
 // and applies the filter to the RecentQSOs table. When no call is entered,
 // the filter is cleared and the table returns to normal mode.
 func (m *Model) updateFilteredTable() tea.Cmd {
-	call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+	call := qso.NormalizeCall(m.fields[fieldCall].Value())
 	if call == "" {
 		m.recentQSOs.ClearFilter()
 		return nil
@@ -186,7 +193,7 @@ func (m *Model) updateFilteredTable() tea.Cmd {
 	return func() tea.Msg {
 		// Re-read call at execution time — the field may have changed
 		// since the command was created.
-		currentCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+		currentCall := qso.NormalizeCall(m.fields[fieldCall].Value())
 		if currentCall == "" {
 			m.recentQSOs.ClearFilter()
 			return nil

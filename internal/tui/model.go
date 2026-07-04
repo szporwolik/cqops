@@ -146,6 +146,9 @@ type Model struct {
 	// BPL — band plan display (F7).
 	bpl bplState
 
+	// HTTP — built-in HTTP server for CQOps Live dashboard.
+	http httpState
+
 	// lastDataCheck is the last time CTY.DAT / SCP files were checked for updates.
 	lastDataCheck time.Time
 
@@ -254,7 +257,8 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 			ti.CharLimit = 8
 			ti.SetValue(now.Format("15:04"))
 		case fieldGrid:
-			ti.CharLimit = 8
+			ti.CharLimit = 10
+			ti.Placeholder = "e.g. KO00ca"
 		case fieldCountry:
 			ti.CharLimit = 20
 		case fieldName:
@@ -366,6 +370,20 @@ func (m *Model) Init() tea.Cmd {
 	} else {
 		applog.Debug("wsjt-x: disabled")
 	}
+	// Start APRS-IS client if configured.
+	m.App.SetAPRSStatusCallback(func(connected bool, err error) {
+		if connected {
+			m.toasts.Success("APRS: connected")
+		} else if err != nil {
+			m.toasts.Warn("APRS: " + err.Error())
+		} else {
+			m.toasts.Info("APRS: stopped")
+		}
+	})
+	m.App.SetAPRSBeaconCallback(func(callsign string) {
+		m.toasts.Success("APRS: position sent as " + callsign)
+	})
+	m.App.MaybeRestartAPRS()
 	cmds := []tea.Cmd{tickCmd(), m.photo.viewer.Init(), m.emitWindowIconCmd()}
 	if !m.Offline {
 		cmds = append(cmds, checkInetCmd())
@@ -466,7 +484,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.spotDialog != nil {
 		if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
 			updated, spotCmd := m.spotDialog.Update(keyMsg)
-			*m.spotDialog = updated.(SpotDialog)
+			sd, ok := updated.(SpotDialog)
+			if !ok {
+				return m, cmd
+			}
+			*m.spotDialog = sd
 			if m.spotDialog.Done() {
 				if m.spotDialog.Result.Confirmed {
 					cmd = tea.Batch(cmd, m.sendSpotCmd(m.spotDialog.Call, m.spotDialog.FreqKhz, m.spotDialog.Result.Comment))
@@ -496,7 +518,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.confirm != nil {
 		if _, ok := msg.(tea.KeyPressMsg); ok {
 			updated, _ := m.confirm.Update(msg)
-			*m.confirm = updated.(DialogModel)
+			d, ok := updated.(DialogModel)
+			if !ok {
+				return m, cmd
+			}
+			*m.confirm = d
 			if m.confirm.Done() {
 				if m.confirm.Result.Confirmed && m.confirm.Result.Value == "quit" {
 					m.shutdownConnections()

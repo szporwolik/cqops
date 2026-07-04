@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
+	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 )
 
@@ -152,7 +153,7 @@ func (m *Model) dxcFillFromSelected() tea.Cmd {
 	}
 
 	// Clear call-dependent state only when the call actually changes.
-	prevCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+	prevCall := qso.NormalizeCall(m.fields[fieldCall].Value())
 	if !strings.EqualFold(spot.DXCall, prevCall) {
 		m.lookup.partnerData = nil
 		m.lookup.wlPrivateData = nil
@@ -171,7 +172,11 @@ func (m *Model) dxcFillFromSelected() tea.Cmd {
 		m.fields[fieldBand].SetValue(spot.Band)
 	}
 	if spot.Mode != "" {
-		m.fields[fieldMode].SetValue(spot.Mode)
+		mode, subm := qso.NormalizeMode(spot.Mode, "")
+		m.fields[fieldMode].SetValue(mode)
+		if subm != "" {
+			m.fields[fieldSubmode].SetValue(subm)
+		}
 	}
 	applog.Debug("DXC: dxcFillFromSelected fields",
 		"call", spot.DXCall,
@@ -197,7 +202,19 @@ func (m *Model) dxcFillFromSelected() tea.Cmd {
 
 	// Parse spot comment for reference designators (SOTA, POTA, WWFF, IOTA)
 	// and auto-fill the corresponding QSO form fields.
+	// Clear previous references first so a second spot doesn't carry over
+	// stale data from the first.
+	m.fields[fieldSOTA].SetValue("")
+	m.fields[fieldPOTA].SetValue("")
+	m.fields[fieldWWFF].SetValue("")
+	m.fields[fieldIOTA].SetValue("")
 	m.parseSpotCommentForRefs(spot.Comment)
+	// Force the REF names bar and grid to rebuild from the new references.
+	m.ref.refNamesDirty = true
+	// Resolve reference grids immediately so the dashboard map and
+	// distance/bearing calculations use the activation location rather
+	// than the partner's home QTH.
+	m.applyRefGridAndQTH()
 
 	// Commit the callsign and trigger lookups immediately — the user is
 	// jumping to the QSO form, so background QRZ/Wavelog lookups should

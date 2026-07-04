@@ -154,7 +154,10 @@ func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case c.mode == contestConfirmDelete:
 			if c.dialog != nil {
 				updated, _ := c.dialog.Update(msg)
-				d := updated.(DialogModel)
+				d, ok := updated.(DialogModel)
+				if !ok {
+					return c, nil
+				}
 				*c.dialog = d
 				if d.Done() {
 					if d.Result.Value == "delete" {

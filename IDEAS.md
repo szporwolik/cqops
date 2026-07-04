@@ -5,7 +5,6 @@
 - Same workflow as Wavelog: download full logbook, upload unsent QSOs, track upload status per QSO.
 - Reuse the existing Wavelog UI patterns (editor buttons, confirm dialogs, progress dialog, result screen).
 
-## TV Screen Display (HTTP Server)
-- Built-in HTTP server serving a large-format "TV screen" display for shack/contest use.
-- Shows live rig frequency, mode, band, recent QSOs, DX cluster spots, solar data.
-- Auto-refreshing, minimal UI — designed for a monitor/TV across the room.
+Frequency+mode in status bar	🔷 Feature request — status bar shows rig name, not live freq
+Ctrl+Z undo last QSO	🔷 Feature request — needs undo queue, Wavelog delay, toast support
+ADIF OPERATOR field	🔷 Verification needed — field exists in ADIF schema, may already work

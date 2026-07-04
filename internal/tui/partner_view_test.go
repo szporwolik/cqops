@@ -182,6 +182,7 @@ func TestPartnerViewRenderWLInfo(t *testing.T) {
 
 	// WL enabled, lookup not yet done — should show "pending"
 	m2 := newTestModel()
+	m2.inetOnline = true
 	m2.App.Logbook.Wavelog = &config.WavelogConfig{Enabled: true, URL: "https://example.com", APIKey: "test-key"}
 	m2.lookup.wlLookupDone = false
 	info2 := m2.renderWLInfo(40)
@@ -191,6 +192,7 @@ func TestPartnerViewRenderWLInfo(t *testing.T) {
 
 	// WL enabled, lookup completed with no data — should show "No WL data"
 	m3 := newTestModel()
+	m3.inetOnline = true
 	m3.App.Logbook.Wavelog = &config.WavelogConfig{Enabled: true, URL: "https://example.com", APIKey: "test-key"}
 	m3.lookup.wlLookupDone = true
 	info3 := m3.renderWLInfo(40)

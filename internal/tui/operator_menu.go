@@ -122,7 +122,10 @@ func (oc *OperatorChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Skip – dialog not yet created.
 			} else {
 				updated, _ := oc.dialog.Update(msg)
-				d := updated.(DialogModel)
+				d, ok := updated.(DialogModel)
+				if !ok {
+					return oc, nil
+				}
 				*oc.dialog = d
 				if d.Done() {
 					if d.Result.Value == "delete" {
@@ -181,12 +184,12 @@ func (oc *OperatorChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return oc, nil
 			}
 			// Execute the command to inspect the message.
-			m := cmd()
-			switch m.(type) {
+			msg := cmd()
+			switch m := msg.(type) {
 			case enterOnLastFieldMsg:
 				return oc, oc.saveForm()
 			case operatorWarnMsg:
-				oc.toasts.Warn(m.(operatorWarnMsg).text)
+				oc.toasts.Warn(m.text)
 				return oc, nil
 			}
 			return oc, nil

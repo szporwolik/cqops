@@ -64,6 +64,9 @@ func (m *Model) qrzLookup(call string) tea.Cmd {
 	if call == "" {
 		return nil
 	}
+	if m.Offline || !m.inetOnline {
+		return nil
+	}
 	// Already completed for this call — no need to re-query.
 	if m.lookup.qrzLookupDone && strings.EqualFold(call, m.lookup.qrzLookupCall) {
 		return nil
@@ -95,11 +98,11 @@ func (m *Model) wlLookup(call string) tea.Cmd {
 	if call == "" {
 		return nil
 	}
-	wl := m.App.Logbook.Wavelog
-	if wl == nil || !wl.Enabled || wl.URL == "" || wl.APIKey == "" {
+	if m.Offline || !m.inetOnline {
 		return nil
 	}
-	if !m.inetOnline {
+	wl := m.App.Logbook.Wavelog
+	if wl == nil || !wl.Enabled || wl.URL == "" || wl.APIKey == "" {
 		return nil
 	}
 	// Already completed for this call — no need to re-query.
@@ -164,14 +167,23 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 		m.fields[fieldName].SetValue(d.Name)
 	}
 	if d.Grid != "" {
+		// Reject fake/default grids from QRZ (e.g. AA00aa, JJ00aa).
+		grid := strings.ToUpper(strings.TrimSpace(d.Grid))
+		if strings.HasPrefix(grid, "AA") || strings.HasPrefix(grid, "JJ") || len(grid) < 4 {
+			applog.Debug("QRZ: grid rejected as fake/default", "grid", d.Grid)
+			grid = ""
+		}
 		// Only fill grid from QRZ if no higher-priority source has set it
 		// (manual entry, SOTA, POTA, WWFF, or IOTA take precedence).
-		if m.gridSource == gridSourceNone || m.gridSource == gridSourceQRZ {
-			m.fields[fieldGrid].SetValue(formatLocator(d.Grid))
-			m.rc.pathGrid = strings.ToUpper(formatLocator(d.Grid))
+		if grid != "" && (m.gridSource == gridSourceNone || m.gridSource == gridSourceQRZ) {
+			m.fields[fieldGrid].SetValue(formatLocator(grid))
+			m.rc.pathGrid = strings.ToUpper(formatLocator(grid))
 			m.gridSource = gridSourceQRZ
 			m.invalidatePartnerMapCache()
-			applog.Debug("QRZ: filled partner grid", "grid", d.Grid)
+			applog.Debug("QRZ: filled partner grid", "grid", grid)
+		} else if grid == "" && m.gridSource == gridSourceNone {
+			// QRZ returned no usable grid — try DXCC country-based approximation.
+			m.dxccAutoFill()
 		}
 	}
 	if d.QTH != "" {
@@ -287,7 +299,7 @@ func (m *Model) fillWLData(msg wlResultMsg) tea.Cmd {
 	if msg.Call == "" {
 		return nil
 	}
-	formCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
+	formCall := qso.NormalizeCall(m.fields[fieldCall].Value())
 	if formCall != "" && formCall != strings.ToUpper(msg.Call) {
 		// Stale result — the user cycled away. Re-trigger lookup for the
 		// current form call so the pending state eventually resolves.

@@ -23,13 +23,12 @@ type Listener struct {
 	mu         sync.Mutex
 	server     *wsjtx.Server
 	active     bool
-	generation uint64 // incremented on each Start; used to reject stale callbacks
-	Events     chan Event
+	generation uint64     // incremented on each Start; used to reject stale callbacks
+	Events     chan Event // exported for external consumers; not drained by CQOps internally
 	stop       chan struct{}
 	wg         sync.WaitGroup
 	OnADIF     func(string)
 	OnStatus   func(string, string, uint64, string, string, string, string, bool) // call, grid, freqHz, mode, submode, report, txMessage, transmitting
-	dropped    uint64                                                             // event channel overflow counter; logged periodically
 }
 
 func NewListener() *Listener {
@@ -191,15 +190,6 @@ func (l *Listener) eventLoop(gen uint64, msgCh chan interface{}, errCh chan erro
 				}
 			case wsjtx.CloseMessage:
 				applog.Info("WSJT-X: close")
-			}
-			select {
-			case l.Events <- Event{Msg: msg}:
-			default:
-				l.dropped++
-				// Log once per 100 dropped events to avoid log spam.
-				if l.dropped%100 == 0 {
-					applog.Warn("WSJT-X: event channel full — dropping events", "dropped", l.dropped)
-				}
 			}
 		case e, ok := <-errCh:
 			if !ok {

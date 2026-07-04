@@ -65,8 +65,9 @@ func (bs BroadcastStation) BroadcastBand() string {
 }
 
 type IntegrationsConfig struct {
-	DXC DXCConfig `yaml:"dxc,omitempty"`
-	QRZ QRZConfig `yaml:"qrz,omitempty"`
+	DXC        DXCConfig        `yaml:"dxc,omitempty"`
+	QRZ        QRZConfig        `yaml:"qrz,omitempty"`
+	HTTPServer HTTPServerConfig `yaml:"http_server,omitempty"`
 }
 
 type DXCConfig struct {
@@ -111,6 +112,19 @@ type QRZConfig struct {
 	Pass    string `yaml:"pass,omitempty"`
 }
 
+// HTTPServerConfig holds the optional built-in HTTP server configuration.
+type HTTPServerConfig struct {
+	Enabled    bool   `yaml:"enabled"`
+	Address    string `yaml:"address,omitempty"`      // e.g. "0.0.0.0" (LAN) or "localhost"
+	Port       string `yaml:"port,omitempty"`         // e.g. "8073"
+	Header1    string `yaml:"header_1,omitempty"`     // club name for dashboard
+	Header2    string `yaml:"header_2,omitempty"`     // event name for dashboard
+	ClubLogo   string `yaml:"club_logo,omitempty"`    // file path or URL to club logo
+	EventStart string `yaml:"event_start,omitempty"`  // YYYY-MM-DD, filter stats from this date
+	MapTileURL string `yaml:"map_tile_url,omitempty"` // Leaflet tile server URL
+	MapAttrib  string `yaml:"map_attrib,omitempty"`   // tile attribution text
+}
+
 // Favorite stores a mode/freq/submode/band snapshot for quick recall.
 // Slots are 0-9, stored under alt+shift+N and recalled with alt+N.
 type Favorite struct {
@@ -129,6 +143,7 @@ type Logbook struct {
 	Station        Station        `yaml:"station"`
 	ADIF           ADIFConfig     `yaml:"adif,omitempty"`
 	Wavelog        *WavelogConfig `yaml:"wavelog,omitempty"`
+	APRS           *APRSConfig    `yaml:"aprs,omitempty"`
 }
 
 type Station struct {
@@ -241,8 +256,8 @@ type RigPreset struct {
 	Antenna         string `yaml:"antenna"`
 	Power           string `yaml:"power"`
 	RadioBackend    string `yaml:"radio_backend,omitempty"` // "" | "flrig" | "hamlib"
-	Backend         string `yaml:"backend,omitempty"`       // deprecated — migrated to RadioBackend
-	FlrigEnabled    bool   `yaml:"flrig_enabled,omitempty"`
+	Backend         string `yaml:"backend,omitempty"`       // DEPRECATED: migrated to RadioBackend in Load() — remove after v1.0
+	FlrigEnabled    bool   `yaml:"flrig_enabled,omitempty"` // DEPRECATED: migrated to RadioBackend in Load() — remove after v1.0
 	FlrigHost       string `yaml:"flrig_host,omitempty"`
 	FlrigPort       string `yaml:"flrig_port,omitempty"`
 	HamlibRadioHost string `yaml:"hamlib_radio_host,omitempty"`
@@ -265,6 +280,22 @@ type WavelogConfig struct {
 	APIKey           string `yaml:"api_key"`
 	StationProfileID string `yaml:"station_profile_id"`
 	LastFetchedID    int64  `yaml:"last_fetched_id,omitempty"`
+}
+
+// APRSConfig holds APRS-IS beacon configuration for a logbook.
+// Disabled by default. When enabled, the station can beacon its
+// position to the APRS-IS network.
+type APRSConfig struct {
+	Enabled      bool   `yaml:"enabled"`
+	Server       string `yaml:"server"`
+	Passcode     string `yaml:"passcode"`
+	RadiusKm     int    `yaml:"radius_km"`
+	SendLocation bool   `yaml:"send_location"`
+	Callsign     string `yaml:"callsign"`
+	IntervalMin  int    `yaml:"interval_minutes"`
+	Symbol       string `yaml:"symbol"`
+	Comment      string `yaml:"comment"`
+	LastBeaconAt string `yaml:"last_beacon_at,omitempty"` // RFC3339, per-logbook
 }
 
 // Load reads and parses a YAML configuration file from path.
@@ -369,6 +400,24 @@ func (c *Config) Validate() error {
 	grid := strings.TrimSpace(lb.Station.Grid)
 	if grid != "" && !qso.IsValidLocator(grid) {
 		return fmt.Errorf("station grid %q is not a valid Maidenhead locator", grid)
+	}
+	if lb.Station.IARURegion != 0 && (lb.Station.IARURegion < 1 || lb.Station.IARURegion > 3) {
+		return fmt.Errorf("station iaru_region must be 1, 2, or 3, got %d", lb.Station.IARURegion)
+	}
+	if lb.Station.CQZone != 0 && (lb.Station.CQZone < 1 || lb.Station.CQZone > 40) {
+		return fmt.Errorf("station cq_zone must be 1-40, got %d", lb.Station.CQZone)
+	}
+	if lb.Station.ITUZone != 0 && (lb.Station.ITUZone < 1 || lb.Station.ITUZone > 90) {
+		return fmt.Errorf("station itu_zone must be 1-90, got %d", lb.Station.ITUZone)
+	}
+
+	// --- HTTPServer ---
+	if c.Integrations.HTTPServer.Enabled {
+		if c.Integrations.HTTPServer.Port != "" {
+			if p, err := strconv.Atoi(c.Integrations.HTTPServer.Port); err != nil || p < 1 || p > 65535 {
+				return fmt.Errorf("http_server.port must be 1-65535, got %q", c.Integrations.HTTPServer.Port)
+			}
+		}
 	}
 
 	// --- QRZ ---

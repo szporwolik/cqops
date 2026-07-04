@@ -8,6 +8,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/gen2brain/beeep"
 	"github.com/szporwolik/cqops/internal/applog"
+	"github.com/szporwolik/cqops/internal/dashboard"
+	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/version"
 )
@@ -132,6 +134,11 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 	if c := m.maybeDXC(); c != nil {
 		cmds = append(cmds, c)
 	}
+	if c := m.maybeHTTP(); c != nil {
+		cmds = append(cmds, c)
+	}
+	// Push current state to the dashboard (cheap — early-exits if unchanged).
+	m.pushDashboardState()
 	if cmd != nil {
 		cmds = append(cmds, cmd)
 	}
@@ -219,6 +226,31 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 	case qrzStatusMsg:
 		m.lookup.qrzOnline = r.online
 		return true, nil
+	case httpStatusMsg:
+		if r.client != nil {
+			m.http.client = r.client
+		}
+		if r.online {
+			m.http.online = true
+			m.http.err = nil
+			// Push initial state NOW so the next SSE snapshot has data.
+			m.pushDashboardState()
+			if m.http.client != nil {
+				m.toasts.Success("HTTP server: listening on " + m.http.client.Addr())
+			}
+			applog.Info("HTTP server: online")
+			// Refresh QSO list from DB so dashboard recent matches TUI.
+			return true, m.refreshQSOS()
+		}
+		// Server failed to start — report the error.
+		m.http.online = false
+		m.http.err = r.err
+		if r.err != nil {
+			m.toasts.Error("HTTP server: " + r.err.Error())
+			applog.Error("HTTP server: failed", "error", r.err)
+		}
+		m.rc.status = ""
+		return true, nil
 	case rigPollMsg:
 		return true, m.applyRigPoll(r)
 	case rigPowerMsg:
@@ -272,6 +304,20 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			m.psk.viewKey = ""
 			m.psk.spots = nil
 			m.toasts.Info(fmt.Sprintf("PSK Reporter: %d spots updated", len(r.reports)))
+			// Push per-band stats to dashboard.
+			if m.http.client != nil && m.http.online {
+				byBand := make(map[string]int)
+				for _, rpt := range r.reports {
+					band := qso.DeriveBand(rpt.Frequency)
+					if band != "" {
+						byBand[band]++
+					}
+				}
+				m.http.client.State().SetPSK(dashboard.PSKInfo{
+					Total:  len(r.reports),
+					ByBand: byBand,
+				})
+			}
 		}
 		return true, nil
 	case solarFetchMsg:

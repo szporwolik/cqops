@@ -141,7 +141,7 @@ func (lv *LogViewer) View() tea.View {
 
 		msg := e.Message
 		if e.Details != "" {
-			msg += "  " + e.Details
+			msg = msg + "  " + e.Details
 		}
 
 		b.WriteString(logTimeStyle.Render(e.Time))

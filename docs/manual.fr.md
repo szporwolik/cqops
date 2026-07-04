@@ -426,9 +426,60 @@ Les filtres incluent la bande, le continent, le mode et l'âge/temps. Appuyez su
 
 L'intégration PSK Reporter nécessite un accès internet. Elle fournit des spots de propagation, des filtres bande/temps/mode et une carte du monde ASCII sur **F5**.
 
+### APRS
+
+L'intégration APRS utilise une connexion TCP vers un serveur APRS-IS et nécessite un accès internet. Le serveur par défaut est `euro.aprs2.net:14580`.
+
+CQOps reçoit les rapports de position des stations à proximité et les affiche sur la carte locale du tableau de bord CQOps Live avec des symboles standard, des popups d'indicatif et une vue à ajustement automatique. Un cercle de portée configurable montre la zone de couverture de la balise. Une balise périodique avec l'indicatif de la station, le SSID, le locator de grille et un commentaire optionnel peut être envoyée.
+
+APRS est configuré par logbook dans les paramètres de station (**F9 → Logbooks → [logbook actif] → APRS**).
+
 ### Données solaires
 
 Les données solaires incluent le SFI, le nombre de taches solaires, les indices A/K et les conditions bande par bande depuis hamqsl.com. Les mises à jour en direct nécessitent un accès internet. Les données mises en cache restent disponibles hors-ligne après une récupération réussie.
+
+### CQOps Live — Tableau de bord navigateur
+
+CQOps Live est un tableau de bord web intégré qui affiche l'activité de votre station en temps réel dans n'importe quel navigateur — parfait pour les présentations Field Day, les écrans de radio-club, la surveillance de concours ou pour garder un œil sur la station depuis une autre pièce.
+
+**Activation**
+
+1. Appuyez sur **F9** pour ouvrir le menu principal, puis sélectionnez **Integrations**.
+2. Faites défiler jusqu'à la section **HTTP Server** et cochez **Enable HTTP server**.
+3. Configurez éventuellement l'adresse (par défaut `0.0.0.0`) et le port (par défaut `8073`).
+4. Appuyez sur **Ctrl+S** pour enregistrer. Le serveur démarre immédiatement.
+5. Ouvrez `http://localhost:8073` (ou l'adresse configurée) dans n'importe quel navigateur.
+
+**Ce que montre le tableau de bord**
+
+Le tableau de bord a deux modes qui changent automatiquement :
+
+- **Mode aperçu** (aucun indicatif actif) : une carte Leaflet en direct avec les marqueurs QSO du jour et les tracés orthodromiques, un tableau des QSO récents, les infos de station, les statistiques, les meilleurs opérateurs et les QSO les plus longs.
+- **Mode Actif / Now Working** (indicatif en cours) : un affichage proéminent de l'indicatif, photo QRZ (si disponible), badges bande/mode, indicateurs DUPE/NEW CALL/NEW DXCC, distance et azimut, et une ligne pointillée mise en évidence sur la carte de votre station à l'emplacement du correspondant.
+
+Tous les panneaux sont mis à jour en temps réel via Server-Sent Events (SSE) — aucun rechargement de page nécessaire.
+
+**Personnalisation**
+
+Dans le formulaire d'intégration du serveur HTTP, vous pouvez configurer :
+
+| Champ | Description |
+|-------|-------------|
+| Header 1 | Titre principal affiché dans l'en-tête et la zone hero. Valeur par défaut : « CQOps Live ». |
+| Header 2 | Sous-titre sous le titre. Valeur par défaut : « Fast, portable ham radio logger ». |
+| Logo URL | URL d'image accessible publiquement affichée en haut à gauche. Valeur par défaut : logo CQOps. |
+| Event Start | Date au format `YYYY-MM-DD`. Lorsqu'elle est définie, les statistiques et les listes QSO sont filtrées à partir de cette date — utile pour les événements de plusieurs jours. |
+
+**Performance**
+
+Le tableau de bord est conçu pour du matériel à faible consommation. Le navigateur gère tout le rendu cartographique, les calculs de distance et les statistiques. L'application terminal CQOps envoie uniquement des mises à jour JSON légères via SSE. Lorsque le serveur HTTP est désactivé, il n'y a aucune surcharge.
+
+**Cas d'usage typiques**
+
+- **Field Day / présentation publique** : connectez un grand écran ou projecteur pour afficher la carte en direct et les QSO récents.
+- **Écran d'information du radio-club** : moniteur dédié montrant l'activité aux visiteurs.
+- **Surveillance à distance** : ouvrez le tableau de bord sur une tablette ou un téléphone pour suivre l'activité depuis une autre pièce.
+- **Stand salon / événement** : configurez Header 1/2 et le logo du club pour une présentation professionnelle.
 
 ---
 

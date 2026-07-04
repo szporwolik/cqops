@@ -2,6 +2,7 @@ package tui
 
 import (
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -26,6 +27,15 @@ type IntegrationMenu struct {
 	qrzTestResult string
 	inetOnline    bool
 
+	// HTTP Server
+	httpEnabled  bool
+	httpAddr     textinput.Model
+	httpPort     textinput.Model
+	httpHeader1  textinput.Model
+	httpHeader2  textinput.Model
+	httpClubLogo textinput.Model
+	httpEvtStart textinput.Model
+
 	focus  int
 	done   bool
 	saved  bool
@@ -47,7 +57,14 @@ const (
 	imQRZUser  = 5
 	imQRZPass  = 6
 	imQRZTest  = 7
-	imMax      = 8
+	imHTTPChk  = 8
+	imHTTPAddr = 9
+	imHTTPPort = 10
+	imHTTPHdr1 = 11
+	imHTTPHdr2 = 12
+	imHTTPLogo = 13
+	imHTTPEvt  = 14
+	imMax      = 15
 )
 
 type callbookTestMsg struct {
@@ -98,15 +115,74 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 	qrzPass.EchoCharacter = '*'
 	qrzPass.SetValue(cfg.Integrations.QRZ.Pass)
 
+	httpAddr := newTextinput()
+	httpAddr.CharLimit = 40
+	httpAddr.SetWidth(28)
+	httpAddr.Placeholder = "0.0.0.0"
+	if cfg.Integrations.HTTPServer.Address != "" {
+		httpAddr.SetValue(cfg.Integrations.HTTPServer.Address)
+	} else {
+		httpAddr.SetValue("0.0.0.0")
+	}
+
+	httpPort := newTextinput()
+	httpPort.CharLimit = 6
+	httpPort.SetWidth(28)
+	httpPort.Placeholder = "8073"
+	if cfg.Integrations.HTTPServer.Port != "" {
+		httpPort.SetValue(cfg.Integrations.HTTPServer.Port)
+	} else {
+		httpPort.SetValue("8073")
+	}
+
+	httpHeader1 := newTextinput()
+	httpHeader1.CharLimit = 60
+	httpHeader1.SetWidth(28)
+	httpHeader1.Placeholder = "e.g. Club Name"
+	if cfg.Integrations.HTTPServer.Header1 != "" {
+		httpHeader1.SetValue(cfg.Integrations.HTTPServer.Header1)
+	}
+
+	httpHeader2 := newTextinput()
+	httpHeader2.CharLimit = 60
+	httpHeader2.SetWidth(28)
+	httpHeader2.Placeholder = "e.g. Field Day 2026"
+	if cfg.Integrations.HTTPServer.Header2 != "" {
+		httpHeader2.SetValue(cfg.Integrations.HTTPServer.Header2)
+	}
+
+	httpClubLogo := newTextinput()
+	httpClubLogo.CharLimit = 200
+	httpClubLogo.SetWidth(28)
+	httpClubLogo.Placeholder = "https://... (URL only)"
+	if cfg.Integrations.HTTPServer.ClubLogo != "" {
+		httpClubLogo.SetValue(cfg.Integrations.HTTPServer.ClubLogo)
+	}
+
+	httpEvtStart := newTextinput()
+	httpEvtStart.CharLimit = 10
+	httpEvtStart.SetWidth(28)
+	httpEvtStart.Placeholder = "YYYY-MM-DD (optional)"
+	if cfg.Integrations.HTTPServer.EventStart != "" {
+		httpEvtStart.SetValue(cfg.Integrations.HTTPServer.EventStart)
+	}
+
 	return &IntegrationMenu{
-		dxcEnabled: cfg.Integrations.DXC.Enabled,
-		dxcHost:    dxcHost,
-		dxcPort:    dxcPort,
-		dxcLogin:   dxcLogin,
-		qrzEnabled: cfg.Integrations.QRZ.Enabled,
-		qrzUser:    qrzUser,
-		qrzPass:    qrzPass,
-		focus:      0,
+		dxcEnabled:   cfg.Integrations.DXC.Enabled,
+		dxcHost:      dxcHost,
+		dxcPort:      dxcPort,
+		dxcLogin:     dxcLogin,
+		qrzEnabled:   cfg.Integrations.QRZ.Enabled,
+		qrzUser:      qrzUser,
+		qrzPass:      qrzPass,
+		httpEnabled:  cfg.Integrations.HTTPServer.Enabled,
+		httpAddr:     httpAddr,
+		httpPort:     httpPort,
+		httpHeader1:  httpHeader1,
+		httpHeader2:  httpHeader2,
+		httpClubLogo: httpClubLogo,
+		httpEvtStart: httpEvtStart,
+		focus:        0,
 	}
 }
 
@@ -167,6 +243,24 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return im, nil
 				}
 			}
+			// Validate HTTP server fields when HTTP server is enabled.
+			if im.httpEnabled {
+				if strings.TrimSpace(im.httpAddr.Value()) == "" {
+					im.SaveError = "HTTP server address is required when HTTP server is enabled"
+					return im, nil
+				}
+				if strings.TrimSpace(im.httpPort.Value()) == "" {
+					im.SaveError = "HTTP server port is required when HTTP server is enabled"
+					return im, nil
+				}
+				// Validate Event Start format if entered.
+				if es := strings.TrimSpace(im.httpEvtStart.Value()); es != "" {
+					if _, err := time.Parse("2006-01-02", es); err != nil {
+						im.SaveError = "Event Start must be YYYY-MM-DD or empty"
+						return im, nil
+					}
+				}
+			}
 			im.done = true
 			im.saved = true
 			return im, nil
@@ -184,6 +278,12 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					im.fixFocus()
 				}
 				return im, nil
+			case imHTTPChk:
+				im.httpEnabled = !im.httpEnabled
+				if !im.isPositionVisible(im.focus) {
+					im.fixFocus()
+				}
+				return im, nil
 			}
 			// Fall through to text input for editable fields.
 			switch im.focus {
@@ -197,6 +297,16 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				im.qrzUser, _ = im.qrzUser.Update(msg)
 			case imQRZPass:
 				im.qrzPass, _ = im.qrzPass.Update(msg)
+			case imHTTPAddr:
+				im.httpAddr, _ = im.httpAddr.Update(msg)
+			case imHTTPPort:
+				im.httpPort, _ = im.httpPort.Update(msg)
+			case imHTTPHdr1:
+				im.httpHeader1, _ = im.httpHeader1.Update(msg)
+			case imHTTPHdr2:
+				im.httpHeader2, _ = im.httpHeader2.Update(msg)
+			case imHTTPLogo:
+				im.httpClubLogo, _ = im.httpClubLogo.Update(msg)
 			}
 		case "enter":
 			if im.focus == imQRZTest {
@@ -223,21 +333,40 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "shift+tab", "up":
 			im.prev()
 		default:
-			switch im.focus {
-			case imDXCHost:
-				im.dxcHost, _ = im.dxcHost.Update(msg)
-			case imDXCPort:
-				im.dxcPort, _ = im.dxcPort.Update(msg)
-			case imDXCLogin:
-				im.dxcLogin, _ = im.dxcLogin.Update(msg)
-			case imQRZUser:
-				im.qrzUser, _ = im.qrzUser.Update(msg)
-			case imQRZPass:
-				im.qrzPass, _ = im.qrzPass.Update(msg)
-			}
+			im.forwardToFocused(msg)
 		}
+	// Forward paste and other non-key messages to the focused textinput.
+	default:
+		im.forwardToFocused(msg)
 	}
 	return im, nil
+}
+
+func (im *IntegrationMenu) forwardToFocused(msg tea.Msg) {
+	switch im.focus {
+	case imDXCHost:
+		im.dxcHost, _ = im.dxcHost.Update(msg)
+	case imDXCPort:
+		im.dxcPort, _ = im.dxcPort.Update(msg)
+	case imDXCLogin:
+		im.dxcLogin, _ = im.dxcLogin.Update(msg)
+	case imQRZUser:
+		im.qrzUser, _ = im.qrzUser.Update(msg)
+	case imQRZPass:
+		im.qrzPass, _ = im.qrzPass.Update(msg)
+	case imHTTPAddr:
+		im.httpAddr, _ = im.httpAddr.Update(msg)
+	case imHTTPPort:
+		im.httpPort, _ = im.httpPort.Update(msg)
+	case imHTTPHdr1:
+		im.httpHeader1, _ = im.httpHeader1.Update(msg)
+	case imHTTPHdr2:
+		im.httpHeader2, _ = im.httpHeader2.Update(msg)
+	case imHTTPLogo:
+		im.httpClubLogo, _ = im.httpClubLogo.Update(msg)
+	case imHTTPEvt:
+		im.httpEvtStart, _ = im.httpEvtStart.Update(msg)
+	}
 }
 
 func (im *IntegrationMenu) next() {
@@ -264,12 +393,14 @@ func (im *IntegrationMenu) prev() {
 
 func (im *IntegrationMenu) isPositionVisible(pos int) bool {
 	switch pos {
-	case imDXCChk, imQRZChk:
+	case imDXCChk, imQRZChk, imHTTPChk:
 		return true
 	case imDXCHost, imDXCPort, imDXCLogin:
 		return im.dxcEnabled
 	case imQRZUser, imQRZPass, imQRZTest:
 		return im.qrzEnabled
+	case imHTTPAddr, imHTTPPort, imHTTPHdr1, imHTTPHdr2, imHTTPLogo, imHTTPEvt:
+		return im.httpEnabled
 	}
 	return true
 }
@@ -282,7 +413,7 @@ func (im *IntegrationMenu) fixFocus() {
 }
 
 func (im *IntegrationMenu) blurAll() {
-	blurTextinputs(&im.dxcHost, &im.dxcPort, &im.dxcLogin, &im.qrzUser, &im.qrzPass)
+	blurTextinputs(&im.dxcHost, &im.dxcPort, &im.dxcLogin, &im.qrzUser, &im.qrzPass, &im.httpAddr, &im.httpPort, &im.httpHeader1, &im.httpHeader2, &im.httpClubLogo, &im.httpEvtStart)
 }
 func (im *IntegrationMenu) focusField() {
 	switch im.focus {
@@ -296,6 +427,18 @@ func (im *IntegrationMenu) focusField() {
 		im.qrzUser.Focus()
 	case imQRZPass:
 		im.qrzPass.Focus()
+	case imHTTPAddr:
+		im.httpAddr.Focus()
+	case imHTTPPort:
+		im.httpPort.Focus()
+	case imHTTPHdr1:
+		im.httpHeader1.Focus()
+	case imHTTPHdr2:
+		im.httpHeader2.Focus()
+	case imHTTPLogo:
+		im.httpClubLogo.Focus()
+	case imHTTPEvt:
+		im.httpEvtStart.Focus()
 	}
 }
 
@@ -399,6 +542,41 @@ func (im *IntegrationMenu) View() tea.View {
 		}
 	}
 
+	b.WriteString("\n")
+	b.WriteString(padOrTrunc("", boxW))
+	b.WriteString("\n")
+
+	// --- HTTP Server section ---
+	httpCheckbox := "[ ]"
+	if im.httpEnabled {
+		httpCheckbox = "[x]"
+	}
+	httpPrefix := "  "
+	httpLabel := S.FormLabelWide.Align(lipgloss.Left).Render("HTTP Server:")
+	if im.focus == imHTTPChk {
+		httpPrefix = S.FormPrefixOn.Render("> ")
+		httpLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("HTTP Server:")
+		httpCheckbox = CursorStyle.Render(httpCheckbox)
+	}
+	b.WriteString(padOrTrunc(
+		lipgloss.JoinHorizontal(lipgloss.Center, httpPrefix, httpLabel, " ", httpCheckbox),
+		boxW))
+
+	if im.httpEnabled {
+		b.WriteString("\n")
+		b.WriteString(padOrTrunc(im.renderField(imHTTPAddr, "  Address:", &im.httpAddr, false), boxW))
+		b.WriteString("\n")
+		b.WriteString(padOrTrunc(im.renderField(imHTTPPort, "  Port:", &im.httpPort, false), boxW))
+		b.WriteString("\n")
+		b.WriteString(padOrTrunc(im.renderField(imHTTPHdr1, "  Header 1 (opt):", &im.httpHeader1, false), boxW))
+		b.WriteString("\n")
+		b.WriteString(padOrTrunc(im.renderField(imHTTPHdr2, "  Header 2 (opt):", &im.httpHeader2, false), boxW))
+		b.WriteString("\n")
+		b.WriteString(padOrTrunc(im.renderField(imHTTPLogo, "  Logo URL (opt):", &im.httpClubLogo, false), boxW))
+		b.WriteString("\n")
+		b.WriteString(padOrTrunc(im.renderField(imHTTPEvt, "  Event Start (opt):", &im.httpEvtStart, false), boxW))
+	}
+
 	body := drawMenuWithHeader("Configuration \u2014 Integrations", b.String(), w)
 	return tea.NewView(fillBody(body, contentH))
 }
@@ -426,15 +604,22 @@ func (im *IntegrationMenu) renderField(focusIdx int, label string, ti *textinput
 	return lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)
 }
 
-// Values returns DXC and QRZ config values.
-func (im *IntegrationMenu) Values() (dxcEnabled bool, dxcHost, dxcPort, dxcLogin string, qrzEnabled bool, qrzUser, qrzPass string) {
+// Values returns DXC, QRZ, and HTTP server config values.
+func (im *IntegrationMenu) Values() (dxcEnabled bool, dxcHost, dxcPort, dxcLogin string, qrzEnabled bool, qrzUser, qrzPass string, httpEnabled bool, httpAddr, httpPort, httpHdr1, httpHdr2, httpLogo, httpEvtStart string) {
 	return im.dxcEnabled,
 		strings.TrimSpace(im.dxcHost.Value()),
 		strings.TrimSpace(im.dxcPort.Value()),
 		strings.TrimSpace(im.dxcLogin.Value()),
 		im.qrzEnabled,
 		strings.TrimSpace(im.qrzUser.Value()),
-		im.qrzPass.Value()
+		im.qrzPass.Value(),
+		im.httpEnabled,
+		strings.TrimSpace(im.httpAddr.Value()),
+		strings.TrimSpace(im.httpPort.Value()),
+		strings.TrimSpace(im.httpHeader1.Value()),
+		strings.TrimSpace(im.httpHeader2.Value()),
+		strings.TrimSpace(im.httpClubLogo.Value()),
+		strings.TrimSpace(im.httpEvtStart.Value())
 }
 
 // friendlyQRZError wraps raw network errors from QRZ lookups into

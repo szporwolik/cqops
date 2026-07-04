@@ -16,6 +16,7 @@ import (
 	"github.com/ftl/hamradio/scp"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/ref"
 )
 
@@ -186,7 +187,15 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			m.screen = screenMainMenu
 		}
 		if m.ui.integrationMenu.saved {
-			dxcE, dxcHost, dxcPort, dxcLogin, qrzE, qrzUser, qrzPass := m.ui.integrationMenu.Values()
+			dxcE, dxcHost, dxcPort, dxcLogin, qrzE, qrzUser, qrzPass, httpE, httpAddr, httpPort, httpHdr1, httpHdr2, httpLogo, httpEvtStart := m.ui.integrationMenu.Values()
+
+			// Only restart the HTTP server when address, port, or enabled
+			// state actually change. Header/logo changes are picked up by
+			// pushDashboardState on the next tick — no restart needed.
+			needHTTPRestart := httpE != m.App.Config.Integrations.HTTPServer.Enabled ||
+				httpAddr != m.App.Config.Integrations.HTTPServer.Address ||
+				httpPort != m.App.Config.Integrations.HTTPServer.Port
+
 			m.App.Config.Integrations.DXC.Enabled = dxcE
 			m.App.Config.Integrations.DXC.Host = dxcHost
 			m.App.Config.Integrations.DXC.Port = dxcPort
@@ -194,10 +203,20 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			m.App.Config.Integrations.QRZ.Enabled = qrzE
 			m.App.Config.Integrations.QRZ.User = qrzUser
 			m.App.Config.Integrations.QRZ.Pass = qrzPass
+			m.App.Config.Integrations.HTTPServer.Enabled = httpE
+			m.App.Config.Integrations.HTTPServer.Address = httpAddr
+			m.App.Config.Integrations.HTTPServer.Port = httpPort
+			m.App.Config.Integrations.HTTPServer.Header1 = httpHdr1
+			m.App.Config.Integrations.HTTPServer.Header2 = httpHdr2
+			m.App.Config.Integrations.HTTPServer.ClubLogo = httpLogo
+			m.App.Config.Integrations.HTTPServer.EventStart = httpEvtStart
 			m.saveConfig("Settings saved")
 			applog.Info("Integration config saved, restarting services")
 
 			m.resetDXC()
+			if needHTTPRestart {
+				m.restartHTTPServer()
+			}
 			m.screen = screenMainMenu
 		}
 	}
@@ -520,23 +539,11 @@ func (m *Model) pskAvailableBands() []string {
 }
 
 func freqToBandName(freqHz float64) string {
-	freqkHz := freqHz / 1000
-	switch {
-	case freqkHz >= 1800 && freqkHz < 2000:
-		return "160m"
-	case freqkHz >= 3500 && freqkHz < 4000:
-		return "80m"
-	case freqkHz >= 7000 && freqkHz < 7300:
-		return "40m"
-	case freqkHz >= 14000 && freqkHz < 14350:
-		return "20m"
-	case freqkHz >= 21000 && freqkHz < 21450:
-		return "15m"
-	case freqkHz >= 28000 && freqkHz < 29700:
-		return "10m"
-	default:
+	band := qso.DeriveBand(freqHz / 1_000_000)
+	if band == "" {
 		return "other"
 	}
+	return band
 }
 
 func (m *Model) pskCycleMode(dir int) {

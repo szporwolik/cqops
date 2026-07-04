@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/szporwolik/cqops/internal/qso"
 )
@@ -89,6 +90,87 @@ func GetLogbookStats(db *sql.DB, call, band, mode string) (LogbookStats, error) 
 	s.CallOnMode = onModeCount > 0
 	if lastDate != "" && len(lastDate) == 8 {
 		s.LastQSODate = lastDate[0:4] + "-" + lastDate[4:6] + "-" + lastDate[6:8]
+	}
+
+	return s, nil
+}
+
+// DashboardStats holds aggregate statistics for the CQOps Live dashboard.
+type DashboardStats struct {
+	QSOsToday   int
+	Operators   int
+	UniqueCalls int
+	DXCC        int
+	Grids       int
+	Bands       int
+	Modes       int
+	LastQSOAgoS int
+	Rate5m      int
+	Rate15m     int
+	Rate60m     int
+}
+
+// GetDashboardStats computes dashboard aggregate statistics for all QSOs
+// from the given start date (inclusive, YYYYMMDD format). For a typical
+// today-only view, pass time.Now().UTC().Format("20060102").
+// When an event start date is configured, pass that instead.
+func GetDashboardStats(db *sql.DB, startDate string) (DashboardStats, error) {
+	var s DashboardStats
+	var lastQSOStr string
+	// Limit scan to the event window for large logs.
+	cutoff := startDate
+
+	err := db.QueryRow(`
+		SELECT
+			COALESCE(COUNT(*), 0),
+			COALESCE(COUNT(DISTINCT CASE WHEN operator != '' THEN operator END), 0),
+			COALESCE(COUNT(DISTINCT base_call), 0),
+			COALESCE(COUNT(DISTINCT country), 0),
+			COALESCE(COUNT(DISTINCT CASE WHEN gridsquare != '' THEN UPPER(SUBSTR(gridsquare,1,4)) END), 0),
+			COALESCE(COUNT(DISTINCT band), 0),
+			COALESCE(COUNT(DISTINCT mode), 0),
+			COALESCE(MAX(qso_date) || MAX(time_on), '')
+		FROM qsos WHERE qso_date >= ?
+	`, cutoff).Scan(
+		&s.QSOsToday,
+		&s.Operators,
+		&s.UniqueCalls,
+		&s.DXCC,
+		&s.Grids,
+		&s.Bands,
+		&s.Modes,
+		&lastQSOStr,
+	)
+	if err != nil {
+		return s, fmt.Errorf("dashboard stats: %w", err)
+	}
+
+	// Parse last QSO time for elapsed-seconds computation.
+	if len(lastQSOStr) >= 14 {
+		if t, err := time.Parse("20060102150405", lastQSOStr[:14]); err == nil {
+			s.LastQSOAgoS = int(time.Since(t).Seconds())
+		}
+	}
+
+	// Rate: QSOs in the last 5, 15, and 60 minutes.
+	// Use printf to normalise time_on to 6 chars (HHMMSS) for reliable comparison.
+	for _, w := range []struct {
+		mins int
+		dest *int
+	}{
+		{5, &s.Rate5m},
+		{15, &s.Rate15m},
+		{60, &s.Rate60m},
+	} {
+		cutoff := time.Now().UTC().Add(-time.Duration(w.mins) * time.Minute).Format("20060102150405")
+		var n int
+		if err := db.QueryRow(
+			`SELECT COUNT(*) FROM qsos WHERE printf('%s%06s', qso_date, COALESCE(time_on,'000000')) >= ?`,
+			cutoff,
+		).Scan(&n); err != nil {
+			n = 0
+		}
+		*w.dest = n
 	}
 
 	return s, nil

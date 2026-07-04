@@ -58,6 +58,7 @@ func TestValidateImportRecord_ValidFT8(t *testing.T) {
 	if err := ValidateImportRecord(q); err != nil {
 		t.Errorf("should accept valid FT8 QSO: %v", err)
 	}
+	// FT8 remains standalone (top-level mode per ADIF 3.1.7).
 	if q.Mode != "FT8" {
 		t.Errorf("FT8 should remain standalone mode, got %q", q.Mode)
 	}

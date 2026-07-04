@@ -44,7 +44,8 @@ func TestIsValidSubmode(t *testing.T) {
 		{"CW", "USB", false},
 		{"FT8", "", true},
 		{"MFSK", "FT4", true},
-		{"MFSK", "FT8", false}, // FT8 is standalone mode, not MFSK submode (ADIF 3.1.4)
+		{"MFSK", "FT8", false}, // FT8 is a top-level mode (ADIF 3.1.7), not an MFSK submode
+		{"MFSK", "FT2", true},  // FT2 is an MFSK submode (ADIF 3.1.7)
 		{"DIGITALVOICE", "DMR", true},
 		{"DIGITALVOICE", "DSTAR", true},
 		{"DIGITALVOICE", "C4FM", true},
@@ -80,10 +81,10 @@ func TestNormalizeMode(t *testing.T) {
 		{"QPSK31", "", "PSK", "QPSK31"},
 		{"MFSK8", "", "MFSK", "MFSK8"},
 		{"MFSK16", "", "MFSK", "MFSK16"},
-		{"FT8", "", "FT8", ""}, // FT8 is standalone mode (ADIF 3.1.4)
+		{"FT8", "", "FT8", ""}, // FT8 is a top-level mode (ADIF 3.1.7)
 		{"FT4", "", "MFSK", "FT4"},
 		{"MFSK", "FT4", "MFSK", "FT4"},
-		{"MFSK", "FT8", "FT8", ""}, // FT8 is standalone, not MFSK submode
+		{"MFSK", "FT8", "FT8", ""}, // MFSK+FT8 normalizes to standalone FT8 (legacy / non-standard)
 		{"ft8", "", "FT8", ""},
 		{"ft4", "", "MFSK", "FT4"},
 		{"Ft8", "", "FT8", ""},

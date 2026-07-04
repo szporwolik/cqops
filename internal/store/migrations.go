@@ -93,6 +93,17 @@ var migrations = []string{
 	`ALTER TABLE qsos ADD COLUMN base_call TEXT DEFAULT ''`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_base_call ON qsos(base_call)`,
 
+	// Dashboard performance indexes (v0.8.9):
+	// - country lookup for New DXCC / dupe detection
+	// - date+time+base_call for filtered recent QSO scanning
+	`CREATE INDEX IF NOT EXISTS idx_qsos_country ON qsos(country)`,
+	`CREATE INDEX IF NOT EXISTS idx_qsos_country_base ON qsos(country, base_call)`,
+	`CREATE INDEX IF NOT EXISTS idx_qsos_date_time_call ON qsos(qso_date, time_on, base_call)`,
+
+	// Dashboard stats operator count index (v0.9.x):
+	// - speeds up COUNT(DISTINCT operator) in GetDashboardStats
+	`CREATE INDEX IF NOT EXISTS idx_qsos_date_operator ON qsos(qso_date, operator)`,
+
 	`CREATE TABLE IF NOT EXISTS psk_spots (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		receiver_call TEXT NOT NULL,

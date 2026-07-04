@@ -35,7 +35,20 @@ type StationForm struct {
 	WlURL       textinput.Model
 	WlKey       textinput.Model
 	WlStationID textinput.Model
-	width       int // terminal width for responsive layout
+	// APRS fields.
+	AprsEnabled      bool
+	aprsCbFocus      bool // true when APRS checkbox has focus
+	aprsBtnFocus     int  // 0=none, 1=Test
+	AprsServer       textinput.Model
+	AprsPasscode     textinput.Model
+	AprsRadiusKm     textinput.Model
+	AprsSendLoc      bool
+	aprsSendLocFocus bool
+	AprsCallsign     textinput.Model
+	AprsIntervalMin  textinput.Model
+	AprsSymbol       textinput.Model
+	AprsComment      textinput.Model
+	width            int // terminal width for responsive layout
 
 	// Operator cycling (Space-toggleable, like Continent/IARU).
 	operators []config.Operator
@@ -47,6 +60,13 @@ type StationForm struct {
 type wlUpdateAction struct{}
 type wlTestAction struct{}
 type wlCycleStation struct{}
+
+// APRS button action message.
+type aprsTestAction struct{}
+
+// scrollFormToEnd is emitted when a toggle (APRS/Wavelog checkbox) reveals
+// new fields below the fold; the parent should scroll the viewport to the end.
+type scrollFormToEnd struct{}
 
 func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder string) *StationForm {
 	mkTI := func(limit int, width int, placeholder string) textinput.Model {
@@ -62,7 +82,7 @@ func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder strin
 	cs := mkTI(20, 28, callsignPlaceholder)
 	cs.Blur()
 	op := mkTI(20, 28, opPlaceholder)
-	lc := mkTI(8, 28, locatorPlaceholder)
+	lc := mkTI(10, 28, locatorPlaceholder)
 	sr := mkTI(20, 28, "e.g. SP/TA-001")
 	pr := mkTI(20, 28, "e.g. SP-0001")
 	wr := mkTI(20, 28, "e.g. SPFF-0001")
@@ -76,24 +96,40 @@ func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder strin
 	wk := mkTI(64, 28, "Wavelog API key")
 	ws := mkTI(80, 60, "press Update to fetch")
 
+	// APRS defaults.
+	asrv := mkTI(60, 28, "euro.aprs2.net:14580")
+	apc := mkTI(20, 28, "APRS passcode")
+	arad := mkTI(5, 28, "50")
+	acall := mkTI(12, 28, "N0CALL-10")
+	aint := mkTI(3, 28, "15")
+	asym := mkTI(6, 28, "/-")
+	acmt := mkTI(40, 28, "Field Day")
+
 	return &StationForm{
-		Name:        nm,
-		Callsign:    cs,
-		Operator:    op,
-		Locator:     lc,
-		SOTARef:     sr,
-		POTARef:     pr,
-		WWFFRef:     wr,
-		Continent:   "EU",
-		CQZone:      cz,
-		ITUZone:     iz,
-		DXCC:        dx,
-		SIG:         sg,
-		SIGInfo:     si,
-		WlURL:       wu,
-		WlKey:       wk,
-		WlStationID: ws,
-		opIdx:       -1,
+		Name:            nm,
+		Callsign:        cs,
+		Operator:        op,
+		Locator:         lc,
+		SOTARef:         sr,
+		POTARef:         pr,
+		WWFFRef:         wr,
+		Continent:       "EU",
+		CQZone:          cz,
+		ITUZone:         iz,
+		DXCC:            dx,
+		SIG:             sg,
+		SIGInfo:         si,
+		WlURL:           wu,
+		WlKey:           wk,
+		WlStationID:     ws,
+		AprsServer:      asrv,
+		AprsPasscode:    apc,
+		AprsRadiusKm:    arad,
+		AprsCallsign:    acall,
+		AprsIntervalMin: aint,
+		AprsSymbol:      asym,
+		AprsComment:     acmt,
+		opIdx:           -1,
 	}
 }
 
@@ -190,6 +226,23 @@ func (f *StationForm) Update(msg tea.KeyPressMsg) {
 		f.WlKey, _ = f.WlKey.Update(msg)
 	case f.WlStationID.Focused():
 		// Station ID is read-only — updated via Update button or Space cycle.
+
+	// APRS fields.
+	case f.AprsServer.Focused():
+		f.AprsServer, _ = f.AprsServer.Update(msg)
+	case f.AprsPasscode.Focused():
+		f.AprsPasscode, _ = f.AprsPasscode.Update(msg)
+	case f.AprsRadiusKm.Focused():
+		f.AprsRadiusKm, _ = f.AprsRadiusKm.Update(msg)
+	case f.AprsCallsign.Focused():
+		f.AprsCallsign, _ = f.AprsCallsign.Update(msg)
+		f.AprsCallsign.SetValue(strings.ToUpper(f.AprsCallsign.Value()))
+	case f.AprsIntervalMin.Focused():
+		f.AprsIntervalMin, _ = f.AprsIntervalMin.Update(msg)
+	case f.AprsSymbol.Focused():
+		f.AprsSymbol, _ = f.AprsSymbol.Update(msg)
+	case f.AprsComment.Focused():
+		f.AprsComment, _ = f.AprsComment.Update(msg)
 	}
 }
 
@@ -257,6 +310,41 @@ func (f *StationForm) NextInput() {
 		f.wlBtnFocus = 2
 	case f.wlBtnFocus == 2:
 		f.wlBtnFocus = 0
+		f.aprsCbFocus = true
+	// APRS section.
+	case f.aprsCbFocus:
+		f.aprsCbFocus = false
+		if f.AprsEnabled {
+			f.AprsServer.Focus()
+		} else {
+			f.Name.Focus()
+		}
+	case f.AprsServer.Focused():
+		f.AprsServer.Blur()
+		f.AprsPasscode.Focus()
+	case f.AprsPasscode.Focused():
+		f.AprsPasscode.Blur()
+		f.AprsRadiusKm.Focus()
+	case f.AprsRadiusKm.Focused():
+		f.AprsRadiusKm.Blur()
+		f.aprsSendLocFocus = true
+	case f.aprsSendLocFocus:
+		f.aprsSendLocFocus = false
+		f.AprsCallsign.Focus()
+	case f.AprsCallsign.Focused():
+		f.AprsCallsign.Blur()
+		f.AprsIntervalMin.Focus()
+	case f.AprsIntervalMin.Focused():
+		f.AprsIntervalMin.Blur()
+		f.AprsSymbol.Focus()
+	case f.AprsSymbol.Focused():
+		f.AprsSymbol.Blur()
+		f.AprsComment.Focus()
+	case f.AprsComment.Focused():
+		f.AprsComment.Blur()
+		f.aprsBtnFocus = 1
+	case f.aprsBtnFocus == 1:
+		f.aprsBtnFocus = 0
 		f.Name.Focus()
 	}
 }
@@ -265,14 +353,50 @@ func (f *StationForm) PrevInput() {
 	switch {
 	case f.Name.Focused():
 		f.Name.Blur()
+		if f.AprsEnabled {
+			f.aprsBtnFocus = 1
+		} else {
+			f.aprsCbFocus = true
+		}
+	case f.Callsign.Focused():
+		f.Callsign.Blur()
+		f.Name.Focus()
+	// APRS section — backwards.
+	case f.aprsBtnFocus == 1:
+		f.aprsBtnFocus = 0
+		f.AprsComment.Focus()
+	case f.AprsComment.Focused():
+		f.AprsComment.Blur()
+		f.AprsSymbol.Focus()
+	case f.AprsSymbol.Focused():
+		f.AprsSymbol.Blur()
+		f.AprsIntervalMin.Focus()
+	case f.AprsIntervalMin.Focused():
+		f.AprsIntervalMin.Blur()
+		f.AprsCallsign.Focus()
+	case f.AprsCallsign.Focused():
+		f.AprsCallsign.Blur()
+		f.aprsSendLocFocus = true
+	case f.aprsSendLocFocus:
+		f.aprsSendLocFocus = false
+		f.AprsRadiusKm.Focus()
+	case f.AprsRadiusKm.Focused():
+		f.AprsRadiusKm.Blur()
+		f.AprsPasscode.Focus()
+	case f.AprsPasscode.Focused():
+		f.AprsPasscode.Blur()
+		f.AprsServer.Focus()
+	case f.AprsServer.Focused():
+		f.AprsServer.Blur()
+		f.aprsCbFocus = true
+	case f.aprsCbFocus:
+		f.aprsCbFocus = false
 		if f.WlEnabled {
 			f.wlBtnFocus = 2
 		} else {
 			f.wlCbFocus = true
 		}
-	case f.Callsign.Focused():
-		f.Callsign.Blur()
-		f.Name.Focus()
+	// Wavelog section — backwards.
 	case f.wlBtnFocus == 2:
 		f.wlBtnFocus = 1
 	case f.wlBtnFocus == 1:
@@ -330,18 +454,22 @@ func (f *StationForm) PrevInput() {
 }
 
 func (f *StationForm) OnLastField() bool {
-	return f.wlBtnFocus == 2
+	return f.aprsBtnFocus == 1
 }
 
 func (f *StationForm) BlurAll() {
 	blurTextinputs(&f.Name, &f.Callsign, &f.Operator, &f.Locator, &f.SOTARef, &f.POTARef, &f.WWFFRef,
 		&f.CQZone, &f.ITUZone, &f.DXCC, &f.SIG, &f.SIGInfo,
-		&f.WlURL, &f.WlKey, &f.WlStationID)
+		&f.WlURL, &f.WlKey, &f.WlStationID,
+		&f.AprsServer, &f.AprsPasscode, &f.AprsRadiusKm, &f.AprsCallsign, &f.AprsIntervalMin, &f.AprsSymbol, &f.AprsComment)
 	f.wlCbFocus = false
+	f.aprsCbFocus = false
+	f.aprsSendLocFocus = false
 	f.iaruFocus = false
 	f.contFocus = false
 	f.opFocus = false
 	f.wlBtnFocus = 0
+	f.aprsBtnFocus = 0
 }
 
 func (f *StationForm) Values() (name, callsign, operator, locator, sotaRef, potaRef, wwffRef string,
@@ -431,6 +559,67 @@ func (f *StationForm) SetWavelogValues(wl *config.WavelogConfig) {
 		f.WlKey.SetValue("")
 		f.WlStationID.SetValue("")
 	}
+}
+
+// APRSValues returns the APRS configuration from the form fields.
+func (f *StationForm) APRSValues() *config.APRSConfig {
+	rad, _ := parseInt(f.AprsRadiusKm.Value())
+	iv, _ := parseInt(f.AprsIntervalMin.Value())
+	if iv < 15 {
+		iv = 15 // minimum 15 minutes per APRS spec
+	}
+	pass := strings.TrimSpace(f.AprsPasscode.Value())
+	return &config.APRSConfig{
+		Enabled:      f.AprsEnabled,
+		Server:       strings.TrimSpace(f.AprsServer.Value()),
+		Passcode:     pass,
+		RadiusKm:     rad,
+		SendLocation: f.AprsSendLoc,
+		Callsign:     strings.ToUpper(strings.TrimSpace(f.AprsCallsign.Value())),
+		IntervalMin:  iv,
+		Symbol:       strings.TrimSpace(f.AprsSymbol.Value()),
+		Comment:      strings.TrimSpace(f.AprsComment.Value()),
+	}
+}
+
+// SetAPRSValues populates the form fields from an APRS config.
+func (f *StationForm) SetAPRSValues(aprs *config.APRSConfig) {
+	if aprs != nil {
+		f.AprsEnabled = aprs.Enabled
+		f.AprsServer.SetValue(aprs.Server)
+		f.AprsPasscode.SetValue(aprs.Passcode)
+		if aprs.RadiusKm > 0 {
+			f.AprsRadiusKm.SetValue(fmt.Sprintf("%d", aprs.RadiusKm))
+		} else {
+			f.AprsRadiusKm.SetValue("50")
+		}
+		f.AprsSendLoc = aprs.SendLocation
+		f.AprsCallsign.SetValue(aprs.Callsign)
+		if aprs.IntervalMin >= 15 {
+			f.AprsIntervalMin.SetValue(fmt.Sprintf("%d", aprs.IntervalMin))
+		} else {
+			f.AprsIntervalMin.SetValue("15")
+		}
+		f.AprsSymbol.SetValue(aprs.Symbol)
+		f.AprsComment.SetValue(aprs.Comment)
+	} else {
+		f.AprsEnabled = false
+		f.AprsServer.SetValue("euro.aprs2.net:14580")
+		f.AprsPasscode.SetValue("")
+		f.AprsRadiusKm.SetValue("50")
+		f.AprsSendLoc = false
+		f.AprsCallsign.SetValue("")
+		f.AprsIntervalMin.SetValue("15")
+		f.AprsSymbol.SetValue("/-")
+		f.AprsComment.SetValue("")
+	}
+}
+
+// parseInt is a small helper to read an integer from a string value.
+func parseInt(s string) (int, error) {
+	var n int
+	_, err := fmt.Sscanf(strings.TrimSpace(s), "%d", &n)
+	return n, err
 }
 
 func (f *StationForm) View() tea.View {
@@ -577,6 +766,72 @@ func (f *StationForm) View() tea.View {
 		renderBtn(2, "[ Test ]", "verify connection and station")
 	}
 
+	// APRS checkbox
+	aprsCheckbox := "[ ]"
+	if f.AprsEnabled {
+		aprsCheckbox = "[x]"
+	}
+	aprsCbPrefix := "  "
+	aprsCbLabel := S.FormLabelWide.Align(lipgloss.Left).Render("APRS:")
+	if f.aprsCbFocus {
+		aprsCbPrefix = S.FormPrefixOn.Render("> ")
+		aprsCbLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("APRS:")
+		aprsCheckbox = CursorStyle.Render(aprsCheckbox)
+	}
+	b.WriteString(padOrTrunc(
+		lipgloss.JoinHorizontal(lipgloss.Center, aprsCbPrefix, aprsCbLabel, " ", aprsCheckbox),
+		availW))
+	b.WriteString("\n")
+
+	if f.AprsEnabled {
+		aprsFields := []fieldDef{
+			{"  Server:", &f.AprsServer},
+			{"  Passcode:", &f.AprsPasscode},
+			{"  Radius (km):", &f.AprsRadiusKm},
+		}
+		for _, field := range aprsFields {
+			b.WriteString(f.renderFieldLine(field.label, field.ti, availW))
+		}
+		// Send location checkbox.
+		locCheckbox := "[ ]"
+		if f.AprsSendLoc {
+			locCheckbox = "[x]"
+		}
+		locPrefix := "  "
+		locLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Send location:")
+		if f.aprsSendLocFocus {
+			locPrefix = S.FormPrefixOn.Render("> ")
+			locLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Send location:")
+			locCheckbox = CursorStyle.Render(locCheckbox)
+		}
+		b.WriteString(padOrTrunc(
+			lipgloss.JoinHorizontal(lipgloss.Center, locPrefix, locLabel, " ", locCheckbox),
+			availW))
+		b.WriteString("\n")
+
+		aprsFields2 := []fieldDef{
+			{"  Callsign:", &f.AprsCallsign},
+			{"  Interval (min):", &f.AprsIntervalMin},
+			{"  Symbol:", &f.AprsSymbol},
+			{"  Comment:", &f.AprsComment},
+		}
+		for _, field := range aprsFields2 {
+			b.WriteString(f.renderFieldLine(field.label, field.ti, availW))
+		}
+
+		// Test button.
+		prefix := "    "
+		styled := InputStyle.Render("[ Test ]")
+		hint := DimStyle.Render("verify APRS connection")
+		if f.aprsBtnFocus == 1 {
+			prefix = S.FormPrefixOn.Render("> ") + "  "
+			styled = CursorStyle.Render("[ Test ]")
+		}
+		line := prefix + styled + " " + hint
+		b.WriteString(padOrTrunc(line, availW))
+		b.WriteString("\n")
+	}
+
 	return tea.NewView(b.String())
 }
 
@@ -671,6 +926,20 @@ func (f *StationForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 	if k.String() == " " || k.String() == "space" {
 		if f.wlCbFocus {
 			f.WlEnabled = !f.WlEnabled
+			if f.WlEnabled {
+				return func() tea.Msg { return scrollFormToEnd{} }
+			}
+			return nil
+		}
+		if f.aprsCbFocus {
+			f.AprsEnabled = !f.AprsEnabled
+			if f.AprsEnabled {
+				return func() tea.Msg { return scrollFormToEnd{} }
+			}
+			return nil
+		}
+		if f.aprsSendLocFocus {
+			f.AprsSendLoc = !f.AprsSendLoc
 			return nil
 		}
 	}
@@ -684,6 +953,9 @@ func (f *StationForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 			return func() tea.Msg { return wlUpdateAction{} }
 		case 2:
 			return func() tea.Msg { return wlTestAction{} }
+		}
+		if f.aprsBtnFocus == 1 {
+			return func() tea.Msg { return aprsTestAction{} }
 		}
 	}
 	if k.String() == "tab" || msg.Code == tea.KeyDown {
@@ -699,6 +971,64 @@ func (f *StationForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 }
 
 type enterOnLastFieldMsg struct{}
+
+// ScrollFraction returns 0.0 (top) to 1.0 (bottom) indicating the relative
+// position of the currently focused field within the form. Used by the parent
+// to auto-scroll a viewport so the active field stays visible.
+func (f *StationForm) ScrollFraction() float64 {
+	switch {
+	case f.Name.Focused():
+		return 0.0
+	case f.Callsign.Focused():
+		return 0.04
+	case f.opFocus:
+		return 0.08
+	case f.Locator.Focused():
+		return 0.12
+	case f.iaruFocus:
+		return 0.17
+	case f.contFocus:
+		return 0.22
+	case f.SOTARef.Focused():
+		return 0.27
+	case f.POTARef.Focused():
+		return 0.32
+	case f.WWFFRef.Focused():
+		return 0.37
+	case f.CQZone.Focused():
+		return 0.42
+	case f.ITUZone.Focused():
+		return 0.47
+	case f.DXCC.Focused():
+		return 0.52
+	case f.SIG.Focused():
+		return 0.57
+	case f.SIGInfo.Focused():
+		return 0.62
+	case f.wlCbFocus:
+		return 0.67
+	case f.WlURL.Focused():
+		return 0.71
+	case f.WlKey.Focused():
+		return 0.75
+	case f.WlStationID.Focused():
+		return 0.79
+	case f.wlBtnFocus > 0:
+		return 0.83
+	case f.aprsCbFocus:
+		return 0.87
+	case f.AprsServer.Focused(), f.AprsPasscode.Focused(), f.AprsRadiusKm.Focused():
+		return 0.90
+	case f.aprsSendLocFocus:
+		return 0.93
+	case f.AprsCallsign.Focused(), f.AprsIntervalMin.Focused(), f.AprsSymbol.Focused(), f.AprsComment.Focused():
+		return 0.96
+	case f.aprsBtnFocus > 0:
+		return 1.0
+	default:
+		return 0.5
+	}
+}
 
 func (f *StationForm) Validate() error {
 	nm, cs, _, gr, _, _, _, _, _, _, _, _, _, _, _, _, _, cont := f.Values()
