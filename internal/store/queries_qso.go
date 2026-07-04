@@ -266,7 +266,7 @@ func ListQSOsPage(db *sql.DB, limit, offset int, contestID string) ([]qso.QSO, e
 
 // SearchQSOsByCall returns QSOs matching a callsign by base callsign match.
 // Uses the indexed base_call column (extracted core callsign) for fast lookups.
-// Matches: "SP9SPM", "SP9SPM/P", "9A/SP9SPM", "9A/SP9SPM/P" all via base_call="SP9SPM".
+// Matches: "SP9MOA", "SP9MOA/P", "9A/SP9MOA", "9A/SP9MOA/P" all via base_call="SP9MOA".
 func SearchQSOsByCall(db *sql.DB, call string, limit int) ([]qso.QSO, error) {
 	baseCall := qso.DeriveBaseCall(call)
 	query := `SELECT id, call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,

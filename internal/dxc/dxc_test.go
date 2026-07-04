@@ -12,7 +12,7 @@ func TestParseSpot(t *testing.T) {
 		wantFreq    float64
 		wantSpotter string
 	}{
-		{"DX de SP9SPM:  14074.0  K1ABC  FT8 TNX", true, "K1ABC", 14074.0, "SP9SPM"},
+		{"DX de SP9MOA:  14074.0  K1ABC  FT8 TNX", true, "K1ABC", 14074.0, "SP9MOA"},
 		{"DX de N0NBH:     3800.0   W1AW     Hello World", true, "W1AW", 3800.0, "N0NBH"},
 		{"DX de EA3XXX:  28001.5  JA1ABC", true, "JA1ABC", 28001.5, "EA3XXX"},
 		{"DX de IZ1:  7000.0  DL1ABC  59 QSL", true, "DL1ABC", 7000.0, "IZ1"},
@@ -48,14 +48,14 @@ func TestParseSpot(t *testing.T) {
 }
 
 func TestNewClientDefaults(t *testing.T) {
-	c := NewClient("", "", "SP9SPM")
+	c := NewClient("", "", "SP9MOA")
 	if c.host != "dxspots.com" {
 		t.Errorf("default host = %q, want dxspots.com", c.host)
 	}
 	if c.port != "7300" {
 		t.Errorf("default port = %q, want 7300", c.port)
 	}
-	if c.login != "SP9SPM" {
-		t.Errorf("login = %q, want SP9SPM", c.login)
+	if c.login != "SP9MOA" {
+		t.Errorf("login = %q, want SP9MOA", c.login)
 	}
 }

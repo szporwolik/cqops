@@ -908,7 +908,7 @@ function renderAPRSOnLocalMap(stations){
   aprsMarkerLayer.clearLayers();
   if(!stations||!stations.length)return;
   // Group by base callsign (strip trailing numeric SSID like -0, -10).
-  // When both SP9SPM and SP9SPM-0 exist, only the SSID version wins.
+  // When both SP9MOA and SP9MOA-0 exist, only the SSID version wins.
   var groups={};
   stations.forEach(function(s){
     if(!s.callsign||!s.lat||!s.lon)return;

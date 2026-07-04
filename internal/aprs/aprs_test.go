@@ -231,7 +231,7 @@ func TestParsePosition_InvalidLatLon(t *testing.T) {
 
 func TestParsePosition_MicEStandard(t *testing.T) {
 	// Standard Mic-E packet — now properly decodes Yaesu destinations.
-	raw := "SP9SPM>UPPQLL,SR9WXP*,WIDE1*,WIDE2-1,qAR,SR9NIS-1:`0(\x1cl \x1c-/\x145.500MHz QRV_4"
+	raw := "SP9MOA>UPPQLL,SR9WXP*,WIDE1*,WIDE2-1,qAR,SR9NIS-1:`0(\x1cl \x1c-/\x145.500MHz QRV_4"
 	sr, ok := ParsePositionPacket(raw)
 	if ok {
 		t.Logf("Yaesu Mic-E decoded: lat=%.4f lon=%.1f", sr.Lat, sr.Lon)
@@ -319,7 +319,7 @@ func TestParsePosition_Base91LoRa(t *testing.T) {
 
 func TestParsePosition_MicEYaesu(t *testing.T) {
 	// Yaesu FTM-500D Mic-E packet (destination UPPQLL).
-	raw := "SP9SPM>UPPQLL,WIDE1-1,WIDE2-1,qAR,SR9EMP-3:`0(\x1cl \x1c-/`145.500MHz QRV_4"
+	raw := "SP9MOA>UPPQLL,WIDE1-1,WIDE2-1,qAR,SR9EMP-3:`0(\x1cl \x1c-/`145.500MHz QRV_4"
 	sr, ok := ParsePositionPacket(raw)
 	if !ok {
 		t.Fatal("Yaesu Mic-E packet should parse")

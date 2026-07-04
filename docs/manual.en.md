@@ -164,7 +164,7 @@ The new QSO appears immediately in the Recent QSOs table below the form.
 
 ```text
 ┌─ Status Bar ───────────────────────────────────────────────────────────────────┐
-│  CQOps v0.8.8  Log Portable  Rig FTDx10  Call SP9MOA/P                          │
+│  CQOps v0.8.9  Log Portable  Rig FTDx10  Call SP9MOA/P                          │
 │  Net WSJT Hamlib DXC WL                                            23:00L 2100Z │
 ├─ Tab Bar ───────────────────────────────────────────────────────────────────────┤
 │ ╭──────╮ ╭──────╮ ╭──────╮ ╭──────╮ ╭──────╮ ╭──────╮ ╭──────╮ ╭──────╮         │
@@ -345,11 +345,12 @@ The Logbook Editor (**F8**) is used for QSO management, ADIF import/export, Wave
 
 ### ADIF Import & Export
 
-CQOps supports ADIF 3.1.7 import and export.
+CQOps supports ADIF 3.1.7 import and export. Mode and submode handling follows the ADIF 3.1.7 spec: FT8 is exported as a standalone mode, while FT4 and FT2 are exported as MFSK with the appropriate submode. Imported legacy MFSK+FT8 records are normalised to standalone FT8 automatically.
 
 - **Ctrl+I** imports an ADIF file, validates records, skips duplicates, and shows a summary.
-- **Ctrl+E** exports QSOs. Export can include all QSOs or contest-filtered QSOs.
+- **Ctrl+E** exports QSOs. Export can include all QSOs or contest-filtered QSOs. Contest IDs are preserved.
 - Imported QSOs are marked for Wavelog upload if Wavelog sync is configured.
+- The QSO form's **Submode** field works alongside **Mode** — cycle both independently with **PgUp/PgDn**.
 
 ### Favorites
 
@@ -461,8 +462,14 @@ CQOps Live is a built-in web dashboard that displays your station activity in re
 
 The dashboard has two display modes that switch automatically:
 
-- **Overview mode** (no active callsign): a live Leaflet map with today's QSO markers and great-circle paths, a recent QSOs table, station info, stats, top operators, and longest-distance QSOs.
-- **Active / Now Working mode** (callsign being worked): a prominent callsign display, QRZ photo (if available), band/mode badges, DUPE/NEW CALL/NEW DXCC indicators, distance and bearing, and a highlighted dashed line on the map from your station to the partner's grid.
+- **Overview mode** (no active callsign): a live Leaflet map with today's QSO markers and great-circle paths, a recent QSOs table, station info, stats with 5-minute/15-minute/1-hour rate tracking, top operators, and longest-distance QSOs.
+- **Active / Now Working mode** (callsign being worked): a prominent callsign display with submode indicator, QRZ photo (if available), band/mode badges, DUPE/NEW CALL/NEW DXCC indicators, distance and bearing, and a highlighted dashed line on the map from your station to the partner's grid.
+
+The **info box** above the local map cycles through modules every 5 seconds: band conditions (day/night propagation per band group from HamQSL solar data), solar activity (SFI, sunspots), geomagnetic field (A/K indices), DX Cluster last spot, and PSK Reporter per-band report counts. Band conditions always renders full-width.
+
+A **weather row** shows current conditions from Open-Meteo (temperature, wind, humidity, icon) for the station's grid locator. Weather data is fetched browser-side and degrades gracefully when offline.
+
+The **local map** (right panel) shows APRS stations with standard symbols, a range circle, and callsign popups. A day/night terminator overlay and RainViewer weather radar are available as optional overlays.
 
 All panels update in real time via Server-Sent Events (SSE) — no page refresh needed.
 
@@ -512,7 +519,7 @@ Open configuration with **F9**.
 | DX Cluster | Host, port, login |
 | Operators | Operator profiles: callsign and name |
 | Logbooks | Station, Wavelog, contest, and operator settings per logbook |
-| Notifications | Toasts and notification behavior |
+| Notifications | QSO saved alerts, Wavelog status, dupe beep, error sounds |
 | General | Timezone, distance units, map, debug mode |
 
 ### Multi-Logbook

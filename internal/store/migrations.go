@@ -89,7 +89,7 @@ var migrations = []string{
 
 	// base_call column added in v0.8.7 — enables index-friendly callsign lookups
 	// by extracting the core callsign from prefixed/suffixed variants
-	// (e.g. "DL/SP9SPM/P" → "SP9SPM"). Avoids LIKE '%/call' table scans.
+	// (e.g. "DL/SP9MOA/P" → "SP9MOA"). Avoids LIKE '%/call' table scans.
 	`ALTER TABLE qsos ADD COLUMN base_call TEXT DEFAULT ''`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_base_call ON qsos(base_call)`,
 
