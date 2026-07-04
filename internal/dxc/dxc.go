@@ -353,7 +353,7 @@ func (c *Client) readLoop() {
 
 // parseSpot attempts to parse a DX cluster spot line.
 // Format: DX de SPOTTER:  FREQ   CALL   COMMENT
-// Example: DX de SP9SPM:  14074.0  K1ABC  FT8 TNX
+// Example: DX de SP9MOA:  14074.0  K1ABC  FT8 TNX
 func parseSpot(line string) (Spot, bool) {
 	// Must start with "DX de "
 	const prefix = "DX de "

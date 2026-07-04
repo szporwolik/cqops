@@ -14,7 +14,7 @@ func NormalizeCall(s string) string {
 }
 
 // DeriveBaseCall extracts the base callsign from a possibly prefixed/suffixed
-// callsign. Examples: "DL/SP9SPM/P" → "SP9SPM", "SP9SPM" → "SP9SPM".
+// callsign. Examples: "DL/SP9MOA/P" → "SP9MOA", "SP9MOA" → "SP9MOA".
 // Returns empty string if no valid callsign part is found.
 // Used for indexed database lookups where LIKE '%/call' patterns are too slow.
 func DeriveBaseCall(call string) string {
