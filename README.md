@@ -1,7 +1,7 @@
 # CQOps
 
 <p align="center">
-  <img src="assets/other/gh-logo.png" alt="CQOps logo" width="480">
+  <img src="assets/other/gh-logo.png" alt="CQOps logo" width="300">
 </p>
 
 [![release](https://img.shields.io/github/v/release/szporwolik/cqops?include_prereleases&label=release&color=1f6feb)](https://github.com/szporwolik/cqops/releases)
@@ -9,12 +9,23 @@
 [![go](https://img.shields.io/badge/Go-1.26-00ADD8)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs](https://img.shields.io/badge/docs-cqops.com-1f6feb)](https://docs.cqops.com/)
+<br>
+[![Windows](https://img.shields.io/badge/Windows-0078D6)](https://github.com/szporwolik/cqops/releases)
+[![Linux](https://img.shields.io/badge/Linux-FCC624)](https://github.com/szporwolik/cqops/releases)
+[![macOS](https://img.shields.io/badge/macOS-000000)](https://github.com/szporwolik/cqops/releases)
+[![Raspberry Pi](https://img.shields.io/badge/Raspberry%20Pi-A22846)](https://github.com/szporwolik/cqops/releases)
 
-A small, fast, offline-first amateur radio logger for the terminal — built mainly for portable/field ops on Raspberry Pi and low-power devices. Supports hotseat operator switching for club stations: multiple ops share rigs and logbooks, swapping in and out with a single keystroke (Ctrl+O).
+A small, fast, offline-first amateur radio logger for the terminal — built for portable/field ops, SOTA/POTA activations, and club stations with rotating operators. Runs on Raspberry Pi, old laptops, or any low-power machine without a GUI, over SSH or a local terminal. Hot-swap operators and logbooks, log via WSJT-X auto-feed or keyboard, sync to Wavelog.
 
-CQOps is a personal project for my own use and my local club. It's not a full-featured desktop logger — for that, see [Log4OM](https://www.log4om.com/) (Windows), [QLog](https://github.com/foldynl/QLog) (Linux), or [Wavelog](https://www.wavelog.org/) (self-hosted web). CQOps fills a different niche: a lightweight, dependency-minimal CLI tool that runs on a Raspberry Pi, an old laptop, or any "potato PC" without a GUI — perfect for off-grid portable ops, SOTA/POTA, and club stations with rotating operators.
+> 📖 **Full documentation, installation guides, and translations at [docs.cqops.com](https://docs.cqops.com/)** — English, Polski, Deutsch, Español, 日本語, Français, Italiano.
 
-> 📖 **Full documentation, installation guides, and translations at [docs.cqops.com](https://docs.cqops.com/)** — available in English, Polski, Deutsch, Español, 日本語, Français, and Italiano.
+## Quick Install
+
+```bash
+go install github.com/szporwolik/cqops/cmd/cqops@latest
+```
+
+Or grab a binary from the [Releases](https://github.com/szporwolik/cqops/releases) page — `.deb`, `.zip`, `.exe` installer, and portable tarballs for all platforms.
 
 ## Author
 
