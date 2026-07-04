@@ -8,11 +8,13 @@ import (
 )
 
 // UpdateWavelogStatus sets the wavelog_uploaded status for a QSO.
-// Retries on SQLITE_BUSY — the main thread may briefly hold a write lock
-// during concurrent operations (e.g. WSJT-X insert + immediate upload).
+// Retries on SQLITE_BUSY with exponential backoff — concurrent enrichment,
+// dashboard pushes, or bulk imports may hold the write lock long enough
+// to exceed the default busy timeout.
 func UpdateWavelogStatus(db *sql.DB, id int64, status string) error {
 	var err error
-	for attempt := 0; attempt < 3; attempt++ {
+	sleep := 100 * time.Millisecond
+	for attempt := 0; attempt < 5; attempt++ {
 		_, err = db.Exec(`UPDATE qsos SET wavelog_uploaded=? WHERE id=?`, status, id)
 		if err == nil {
 			return nil
@@ -20,7 +22,8 @@ func UpdateWavelogStatus(db *sql.DB, id int64, status string) error {
 		if !strings.Contains(err.Error(), "database is locked") {
 			break
 		}
-		time.Sleep(100 * time.Millisecond)
+		time.Sleep(sleep)
+		sleep *= 2
 	}
 	return fmt.Errorf("update wavelog status: %w", err)
 }
