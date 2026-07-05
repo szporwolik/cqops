@@ -89,14 +89,16 @@ func (m *Model) headerView() string {
 	if wl != nil && wl.Enabled {
 		rightParts = append(rightParts, statusDotStyled(m.lookup.wlOnline, "WL", m.Offline))
 	}
-	aprsCfg := m.App.Logbook.APRS
-	if aprsCfg != nil && aprsCfg.Enabled {
-		label := "APRS-RX"
-		online := m.App.APRSClient != nil && m.App.APRSClient.IsRunning()
-		if aprsCfg.SendLocation {
-			label = "APRS"
+	if m.App.Config.Integrations.APRS.Enabled {
+		aprsCfg := m.App.Logbook.APRS
+		if aprsCfg != nil && aprsCfg.Enabled {
+			label := "APRS-RX"
+			online := m.App.APRSClient != nil && m.App.APRSClient.IsRunning()
+			if aprsCfg.SendLocation {
+				label = "APRS"
+			}
+			rightParts = append(rightParts, statusDotStyled(online, label, m.Offline))
 		}
-		rightParts = append(rightParts, statusDotStyled(online, label, m.Offline))
 	}
 	// GPS — red when disconnected, yellow when connected but no fix, white when fix acquired.
 	if m.App.Config.Integrations.GPS.Enabled {

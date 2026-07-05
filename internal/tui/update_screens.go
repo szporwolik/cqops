@@ -224,6 +224,18 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			m.App.Config.Integrations.GPS.GPSDHost = m.ui.integrationMenu.gpsdHost.Value()
 			m.App.Config.Integrations.GPS.GPSDPort = m.ui.integrationMenu.gpsdPort.Value()
 
+			// APRS
+			aprsWasEnabled := m.App.Config.Integrations.APRS.Enabled
+			aprsWasService := m.App.Config.Integrations.APRS.Service
+			aprsWasServer := m.App.Config.Integrations.APRS.Server
+			aprsWasPort := m.App.Config.Integrations.APRS.Port
+			aprsWasBaud := m.App.Config.Integrations.APRS.BaudRate
+			m.App.Config.Integrations.APRS.Enabled = m.ui.integrationMenu.aprsEnabled
+			m.App.Config.Integrations.APRS.Service = m.ui.integrationMenu.aprsServiceName()
+			m.App.Config.Integrations.APRS.Server = m.ui.integrationMenu.aprsServer.Value()
+			m.App.Config.Integrations.APRS.Port = m.ui.integrationMenu.aprsPort.Value()
+			m.App.Config.Integrations.APRS.BaudRate = m.ui.integrationMenu.aprsBaudRate
+
 			m.saveConfig("Settings saved")
 			applog.Info("Integration config saved, restarting services")
 
@@ -240,6 +252,14 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 				cmd = tea.Batch(cmd, m.startGPS())
 			case !gpsNowEnabled && gpsWasEnabled:
 				m.stopGPS()
+			}
+			// APRS: restart if config changed.
+			if m.App.Config.Integrations.APRS.Enabled != aprsWasEnabled ||
+				m.App.Config.Integrations.APRS.Service != aprsWasService ||
+				m.App.Config.Integrations.APRS.Server != aprsWasServer ||
+				m.App.Config.Integrations.APRS.Port != aprsWasPort ||
+				m.App.Config.Integrations.APRS.BaudRate != aprsWasBaud {
+				m.App.MaybeRestartAPRS()
 			}
 			m.screen = screenMainMenu
 		}

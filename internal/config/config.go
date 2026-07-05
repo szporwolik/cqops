@@ -69,6 +69,16 @@ type IntegrationsConfig struct {
 	QRZ        QRZConfig        `yaml:"qrz,omitempty"`
 	HTTPServer HTTPServerConfig `yaml:"http_server,omitempty"`
 	GPS        GPSConfig        `yaml:"gps,omitempty"`
+	APRS       APRSGlobalConfig `yaml:"aprs_is,omitempty"`
+}
+
+// APRSGlobalConfig holds global APRS service settings.
+type APRSGlobalConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	Service  string `yaml:"service,omitempty"`   // "aprs_is", "kiss", or "" (none/default)
+	Server   string `yaml:"server,omitempty"`    // APRS-IS server host:port
+	Port     string `yaml:"port,omitempty"`      // KISS serial port
+	BaudRate int    `yaml:"baud_rate,omitempty"` // KISS serial baud rate
 }
 
 type DXCConfig struct {
@@ -297,16 +307,14 @@ type WavelogConfig struct {
 	LastFetchedID    int64  `yaml:"last_fetched_id,omitempty"`
 }
 
-// APRSConfig holds APRS-IS beacon configuration for a logbook.
-// Disabled by default. When enabled, the station can beacon its
-// position to the APRS-IS network.
+// APRSConfig holds per-logbook APRS beacon settings.
+// Server is configured globally in Integrations → APRS-IS.
 type APRSConfig struct {
 	Enabled      bool   `yaml:"enabled"`
-	Server       string `yaml:"server"`
+	Callsign     string `yaml:"callsign"`
 	Passcode     string `yaml:"passcode"`
 	RadiusKm     int    `yaml:"radius_km"`
 	SendLocation bool   `yaml:"send_location"`
-	Callsign     string `yaml:"callsign"`
 	IntervalMin  int    `yaml:"interval_minutes"`
 	Symbol       string `yaml:"symbol"`
 	Comment      string `yaml:"comment"`

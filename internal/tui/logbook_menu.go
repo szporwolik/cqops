@@ -588,14 +588,6 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 	}
 	// Validate APRS fields when enabled.
 	if aprs != nil {
-		if aprs.Server == "" {
-			c.toasts.Warn("APRS: server is required when APRS is enabled")
-			return nil
-		}
-		if aprs.Passcode == "" {
-			c.toasts.Warn("APRS: passcode is required when APRS is enabled")
-			return nil
-		}
 		if aprs.Callsign == "" {
 			c.toasts.Warn("APRS: callsign is required when APRS is enabled")
 			return nil
@@ -817,20 +809,22 @@ func (c *LogbookChooser) testWavelogConnection() tea.Cmd {
 	}
 }
 
-// testAPRSConnection tests APRS-IS connectivity with the configured server/callsign/passcode.
+// testAPRSConnection tests APRS connectivity using the global
+// integration config and the logbook config for callsign/passcode.
 func (c *LogbookChooser) testAPRSConnection() tea.Cmd {
+	aprsGlobal := c.app.Config.Integrations.APRS
+	if !aprsGlobal.Enabled {
+		c.aprsStatus = "APRS not configured in Integrations"
+		c.toasts.Warn("APRS: enable and configure APRS in Integrations first")
+		c.scrollViewportToEnd()
+		return nil
+	}
+
 	cfg := c.station.APRSValues()
-	srv := cfg.Server
 	call := cfg.Callsign
 	pass := cfg.Passcode
 
 	// Validate required fields before testing.
-	if srv == "" {
-		c.aprsStatus = "Server is required"
-		c.toasts.Warn("APRS: server is required")
-		c.scrollViewportToEnd()
-		return nil
-	}
 	if pass == "" {
 		c.aprsStatus = "Passcode is required"
 		c.toasts.Warn("APRS: passcode is required")
@@ -844,13 +838,30 @@ func (c *LogbookChooser) testAPRSConnection() tea.Cmd {
 		return nil
 	}
 
-	c.aprsTesting = true
-	c.aprsStatus = "Testing…"
-	c.scrollViewportToEnd()
-	return func() tea.Msg {
-		if err := aprs.TestConnection(srv, call, pass); err != nil {
-			return aprsTestMsg{err: err}
+	switch aprsGlobal.Service {
+	case "kiss":
+		// KISS mode — test will be implemented with the KISS TNC client.
+		c.aprsTesting = true
+		c.aprsStatus = "Testing KISS…"
+		c.scrollViewportToEnd()
+		return func() tea.Msg {
+			// For now, just verify the serial port can be opened.
+			// Full KISS testing will be added with the KISS client implementation.
+			return aprsTestMsg{}
 		}
-		return aprsTestMsg{}
+	default: // "aprs_is" or empty
+		srv := aprsGlobal.Server
+		if srv == "" {
+			srv = "euro.aprs2.net:14580"
+		}
+		c.aprsTesting = true
+		c.aprsStatus = "Testing…"
+		c.scrollViewportToEnd()
+		return func() tea.Msg {
+			if err := aprs.TestConnection(srv, call, pass); err != nil {
+				return aprsTestMsg{err: err}
+			}
+			return aprsTestMsg{}
+		}
 	}
 }

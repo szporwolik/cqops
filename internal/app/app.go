@@ -202,12 +202,14 @@ func (a *App) MaybeRestartWSJTX(enabled bool, host string, port int) {
 	}
 }
 
-// MaybeRestartAPRS starts or stops the APRS-IS client based on the
-// active logbook's APRS configuration. Non-blocking — connection runs
-// asynchronously. Call SetAPRSStatusCallback to receive toast updates.
+// MaybeRestartAPRS starts or stops the APRS client based on the
+// active logbook's APRS configuration and global APRS service settings.
+// Non-blocking — connection runs asynchronously.
+// Call SetAPRSStatusCallback to receive toast updates.
 func (a *App) MaybeRestartAPRS() {
+	aprsGlobal := a.Config.Integrations.APRS
 	aprsCfg := a.Logbook.APRS
-	enabled := aprsCfg != nil && aprsCfg.Enabled
+	enabled := aprsGlobal.Enabled && aprsCfg != nil && aprsCfg.Enabled
 
 	if !enabled {
 		a.stopAPRSPruner()
@@ -216,7 +218,6 @@ func (a *App) MaybeRestartAPRS() {
 			applog.Info("APRS: disabled, stopping client")
 			a.APRSClient.Stop()
 			a.APRSClient = nil
-			// Only notify if we actually stopped a running client.
 			if a.aprsStatusCB != nil {
 				a.aprsStatusCB(false, nil)
 			}
@@ -225,6 +226,12 @@ func (a *App) MaybeRestartAPRS() {
 			a.APRSCache.Close()
 			a.APRSCache = nil
 		}
+		return
+	}
+
+	// KISS service not yet implemented — skip for now.
+	if aprsGlobal.Service == "kiss" {
+		applog.Debug("APRS: KISS service not yet implemented")
 		return
 	}
 
@@ -244,10 +251,11 @@ func (a *App) MaybeRestartAPRS() {
 		a.APRSCache = cache
 	}
 
-	server := aprsCfg.Server
+	server := a.Config.Integrations.APRS.Server
 	if server == "" {
 		server = aprsDefaultServer
 	}
+	passcode := aprsCfg.Passcode
 	callsign := aprsCfg.Callsign
 	if callsign == "" {
 		// Derive from station callsign: strip portable/test suffixes, add SSID.
@@ -280,7 +288,7 @@ func (a *App) MaybeRestartAPRS() {
 		go old.Stop()
 	}
 	applog.Info("APRS: starting client", "server", server, "callsign", callsign)
-	a.APRSClient = aprs.NewClient(server, callsign, aprsCfg.Passcode, filter)
+	a.APRSClient = aprs.NewClient(server, callsign, passcode, filter)
 	a.APRSClient.OnStatus = func(connected bool, err error) {
 		if connected {
 			applog.Info("APRS: connected", "server", server, "callsign", callsign)

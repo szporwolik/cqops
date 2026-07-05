@@ -55,6 +55,15 @@ type IntegrationMenu struct {
 	gpsTesting       bool
 	gpsTestResult    string
 
+	// APRS
+	aprsEnabled    bool
+	aprsService    int // 0=APRS-IS, 1=KISS
+	aprsServer     textinput.Model
+	aprsPort       textinput.Model
+	aprsBaudRate   int
+	aprsTesting    bool
+	aprsTestResult string
+
 	focus  int
 	done   bool
 	saved  bool
@@ -97,7 +106,13 @@ const (
 	imGPSDHost    = 22 // GPSD host
 	imGPSDPort    = 23 // GPSD port
 	imGPSTest     = 24 // test button
-	imMax         = 25
+	imAPRSChk     = 25
+	imAPRSSvc     = 26 // service type: APRS-IS / KISS
+	imAPRSServer  = 27 // APRS-IS server host:port
+	imAPRSPort    = 28 // KISS serial port
+	imAPRSBaud    = 29 // KISS baud rate
+	imAPRSTest    = 30 // test button
+	imMax         = 31
 )
 
 type callbookTestMsg struct {
@@ -116,6 +131,14 @@ var gpsServiceOptions = []struct {
 }{
 	{"Serial"},
 	{"GPSD"},
+}
+
+// aprsServiceOptions maps APRS service index to label.
+var aprsServiceOptions = []struct {
+	label string
+}{
+	{"APRS-IS"},
+	{"KISS"},
 }
 
 // gpsPrecisionOptions lists available grid precision levels for cycling.
@@ -276,6 +299,35 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 		gpsdPort.SetValue("2947")
 	}
 
+	// APRS
+	aprsSvc := 0
+	switch cfg.Integrations.APRS.Service {
+	case "kiss":
+		aprsSvc = 1
+	default:
+		aprsSvc = 0 // aprs_is (or empty → default to APRS-IS)
+	}
+	aprsServer := newTextinput()
+	aprsServer.CharLimit = 60
+	aprsServer.SetWidth(28)
+	aprsServer.Placeholder = "euro.aprs2.net:14580"
+	if cfg.Integrations.APRS.Server != "" {
+		aprsServer.SetValue(cfg.Integrations.APRS.Server)
+	} else {
+		aprsServer.SetValue("euro.aprs2.net:14580")
+	}
+	aprsPort := newTextinput()
+	aprsPort.CharLimit = 40
+	aprsPort.SetWidth(28)
+	aprsPort.Placeholder = "COM6 or /dev/ttyUSB0"
+	if cfg.Integrations.APRS.Port != "" {
+		aprsPort.SetValue(cfg.Integrations.APRS.Port)
+	}
+	aprsBaud := cfg.Integrations.APRS.BaudRate
+	if aprsBaud == 0 {
+		aprsBaud = 115200
+	}
+
 	return &IntegrationMenu{
 		dxcEnabled:       cfg.Integrations.DXC.Enabled,
 		dxcHost:          dxcHost,
@@ -300,6 +352,11 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 		gpsRTS:           cfg.Integrations.GPS.RTS,
 		gpsdHost:         gpsdHost,
 		gpsdPort:         gpsdPort,
+		aprsEnabled:      cfg.Integrations.APRS.Enabled,
+		aprsService:      aprsSvc,
+		aprsServer:       aprsServer,
+		aprsPort:         aprsPort,
+		aprsBaudRate:     aprsBaud,
 		focus:            0,
 	}
 }
@@ -334,6 +391,16 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			applog.Info("GPS test OK")
 		} else {
 			im.gpsTestResult = "No data received"
+		}
+
+	case aprsTestMsg:
+		im.aprsTesting = false
+		if msg.err != nil {
+			im.aprsTestResult = "Failed — " + msg.err.Error()
+			applog.Warn("APRS test failed", "error", msg.err.Error())
+		} else {
+			im.aprsTestResult = "OK — server reachable"
+			applog.Info("APRS test OK")
 		}
 
 	case tea.KeyPressMsg:
@@ -406,6 +473,21 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
+			// Validate APRS fields when APRS is enabled.
+			if im.aprsEnabled {
+				switch im.aprsService {
+				case 0: // APRS-IS
+					if strings.TrimSpace(im.aprsServer.Value()) == "" {
+						im.SaveError = "APRS server is required"
+						return im, nil
+					}
+				case 1: // KISS
+					if strings.TrimSpace(im.aprsPort.Value()) == "" {
+						im.SaveError = "APRS KISS port is required"
+						return im, nil
+					}
+				}
+			}
 			im.done = true
 			im.saved = true
 			return im, nil
@@ -439,6 +521,13 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				im.autoScrollViewport()
 				return im, nil
+			case imAPRSChk:
+				im.aprsEnabled = !im.aprsEnabled
+				if !im.isPositionVisible(im.focus) {
+					im.fixFocus()
+				}
+				im.autoScrollViewport()
+				return im, nil
 			case imGPSDTR:
 				im.gpsDTR = !im.gpsDTR
 				return im, nil
@@ -457,6 +546,16 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return im, nil
 			case imGPSGridPrec:
 				im.gpsGridPrecision = nextGPSCycleInt(im.gpsGridPrecision, gpsPrecisionOptions)
+				return im, nil
+			case imAPRSSvc:
+				im.aprsService = (im.aprsService + 1) % len(aprsServiceOptions)
+				if !im.isPositionVisible(im.focus) {
+					im.fixFocus()
+				}
+				im.autoScrollViewport()
+				return im, nil
+			case imAPRSBaud:
+				im.aprsBaudRate = nextGPSCycle(im.aprsBaudRate)
 				return im, nil
 			}
 			// Fall through to text input for editable fields.
@@ -544,6 +643,39 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
+			if im.focus == imAPRSTest {
+				switch im.aprsService {
+				case 0: // APRS-IS
+					srv := strings.TrimSpace(im.aprsServer.Value())
+					if srv == "" {
+						im.aprsTestResult = "Server is required"
+						return im, nil
+					}
+					im.aprsTesting = true
+					im.aprsTestResult = "Testing..."
+					return im, func() tea.Msg {
+						conn, err := net.DialTimeout("tcp", srv, 5*time.Second)
+						if err != nil {
+							return aprsTestMsg{err: fmt.Errorf("cannot reach %s: %v", srv, err)}
+						}
+						conn.Close()
+						return aprsTestMsg{}
+					}
+				case 1: // KISS
+					prt := strings.TrimSpace(im.aprsPort.Value())
+					baud := im.aprsBaudRate
+					if prt == "" || baud == 0 {
+						im.aprsTestResult = "Port and baud rate required"
+						return im, nil
+					}
+					im.aprsTesting = true
+					im.aprsTestResult = "Testing..."
+					return im, func() tea.Msg {
+						err := testKISSPort(prt, baud)
+						return aprsTestMsg{err: err}
+					}
+				}
+			}
 			im.next()
 			im.autoScrollViewport()
 		case "pgup":
@@ -551,10 +683,18 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				im.gpsBaudRate = nextGPSCycle(im.gpsBaudRate)
 				return im, nil
 			}
+			if im.focus == imAPRSBaud {
+				im.aprsBaudRate = nextGPSCycle(im.aprsBaudRate)
+				return im, nil
+			}
 			im.vp, _ = im.vp.Update(msg)
 		case "pgdown":
 			if im.focus == imGPSBaud {
 				im.gpsBaudRate = prevGPSCycle(im.gpsBaudRate)
+				return im, nil
+			}
+			if im.focus == imAPRSBaud {
+				im.aprsBaudRate = prevGPSCycle(im.aprsBaudRate)
 				return im, nil
 			}
 			im.vp, _ = im.vp.Update(msg)
@@ -600,6 +740,10 @@ func (im *IntegrationMenu) forwardToFocused(msg tea.Msg) {
 		im.gpsdHost, _ = im.gpsdHost.Update(msg)
 	case imGPSDPort:
 		im.gpsdPort, _ = im.gpsdPort.Update(msg)
+	case imAPRSServer:
+		im.aprsServer, _ = im.aprsServer.Update(msg)
+	case imAPRSPort:
+		im.aprsPort, _ = im.aprsPort.Update(msg)
 	}
 }
 
@@ -644,6 +788,16 @@ func (im *IntegrationMenu) isPositionVisible(pos int) bool {
 		return im.gpsEnabled && im.gpsService == 1 // GPSD
 	case imGPSTest:
 		return im.gpsEnabled // all services
+	case imAPRSChk:
+		return true // APRS checkbox always reachable
+	case imAPRSSvc:
+		return im.aprsEnabled
+	case imAPRSServer:
+		return im.aprsEnabled && im.aprsService == 0 // APRS-IS
+	case imAPRSPort, imAPRSBaud:
+		return im.aprsEnabled && im.aprsService == 1 // KISS
+	case imAPRSTest:
+		return im.aprsEnabled // all services
 	}
 	return true
 }
@@ -656,7 +810,7 @@ func (im *IntegrationMenu) fixFocus() {
 }
 
 func (im *IntegrationMenu) blurAll() {
-	blurTextinputs(&im.dxcHost, &im.dxcPort, &im.dxcLogin, &im.qrzUser, &im.qrzPass, &im.httpAddr, &im.httpPort, &im.httpHeader1, &im.httpHeader2, &im.httpClubLogo, &im.httpEvtStart, &im.gpsPort, &im.gpsdHost, &im.gpsdPort)
+	blurTextinputs(&im.dxcHost, &im.dxcPort, &im.dxcLogin, &im.qrzUser, &im.qrzPass, &im.httpAddr, &im.httpPort, &im.httpHeader1, &im.httpHeader2, &im.httpClubLogo, &im.httpEvtStart, &im.gpsPort, &im.gpsdHost, &im.gpsdPort, &im.aprsServer, &im.aprsPort)
 }
 func (im *IntegrationMenu) focusField() {
 	switch im.focus {
@@ -688,19 +842,36 @@ func (im *IntegrationMenu) focusField() {
 		im.gpsdHost.Focus()
 	case imGPSDPort:
 		im.gpsdPort.Focus()
+	case imAPRSServer:
+		im.aprsServer.Focus()
+	case imAPRSPort:
+		im.aprsPort.Focus()
 	}
 }
 
 // scrollFraction returns 0.0 (top) to 1.0 (bottom) indicating the
 // relative position of the currently focused field. Used to auto-scroll
 // the viewport so the active field stays visible on small terminals.
+// scrollFraction returns 0.0 (top) to 1.0 (bottom) indicating the relative
+// position of the currently focused field among all currently visible focus
+// positions. This adapts to collapsed sections (e.g. disabled DXC hides its
+// sub-fields) so the viewport scrolls accurately regardless of which
+// integrations are enabled.
 func (im *IntegrationMenu) scrollFraction() float64 {
-	n := float64(im.focus)
-	m := float64(imMax - 1)
-	if m <= 0 {
+	visible := 0
+	rank := -1
+	for i := 0; i < imMax; i++ {
+		if im.isPositionVisible(i) {
+			visible++
+		}
+		if i == im.focus {
+			rank = visible
+		}
+	}
+	if visible <= 1 || rank <= 0 {
 		return 0
 	}
-	return n / m
+	return float64(rank-1) / float64(visible-1)
 }
 
 // autoScrollViewport adjusts the viewport Y offset to keep the focused
@@ -993,6 +1164,88 @@ func (im *IntegrationMenu) View() tea.View {
 		}
 	}
 
+	b.WriteString("\n")
+	b.WriteString(padOrTrunc("", lineW))
+	b.WriteString("\n")
+
+	// --- APRS section ---
+	aprsCheckbox := "[ ]"
+	if im.aprsEnabled {
+		aprsCheckbox = "[x]"
+	}
+	aprsPrefix := "  "
+	aprsLabel := S.FormLabelWide.Align(lipgloss.Left).Render("APRS:")
+	if im.focus == imAPRSChk {
+		aprsPrefix = S.FormPrefixOn.Render("> ")
+		aprsLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("APRS:")
+		aprsCheckbox = CursorStyle.Render(aprsCheckbox) + " " + DimStyle.Render("(Space)")
+	}
+	b.WriteString(padOrTrunc(
+		lipgloss.JoinHorizontal(lipgloss.Center, aprsPrefix, aprsLabel, " ", aprsCheckbox),
+		lineW))
+
+	if im.aprsEnabled {
+		// Service type — Space to cycle.
+		b.WriteString("\n")
+		svcPrefix := "  "
+		svcLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Service:")
+		svcVal := aprsServiceOptions[im.aprsService].label
+		if im.focus == imAPRSSvc {
+			svcPrefix = S.FormPrefixOn.Render("> ")
+			svcLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Service:")
+			svcVal = CursorStyle.Render(svcVal) + " " + DimStyle.Render("(Space)")
+		} else {
+			svcVal = ValueStyle.Render(svcVal)
+		}
+		b.WriteString(padOrTrunc(
+			lipgloss.JoinHorizontal(lipgloss.Center, svcPrefix, svcLabel, " ", svcVal),
+			lineW))
+
+		// APRS-IS specific field.
+		if im.aprsService == 0 {
+			b.WriteString("\n")
+			b.WriteString(padOrTrunc(im.renderField(imAPRSServer, "  Server:", &im.aprsServer, false), lineW))
+		}
+
+		// KISS specific fields.
+		if im.aprsService == 1 {
+			b.WriteString("\n")
+			b.WriteString(padOrTrunc(im.renderField(imAPRSPort, "  Port:", &im.aprsPort, false), lineW))
+			b.WriteString("\n")
+			baudPrefix := "  "
+			baudLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Baud:")
+			baudVal := fmt.Sprintf("%d", im.aprsBaudRate)
+			if im.focus == imAPRSBaud {
+				baudPrefix = S.FormPrefixOn.Render("> ")
+				baudLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Baud:")
+				baudVal = CursorStyle.Render(baudVal) + " " + DimStyle.Render("(Space)")
+			} else {
+				baudVal = ValueStyle.Render(baudVal)
+			}
+			b.WriteString(padOrTrunc(
+				lipgloss.JoinHorizontal(lipgloss.Center, baudPrefix, baudLabel, " ", baudVal),
+				lineW))
+		}
+
+		// Test button — always available when APRS is enabled.
+		b.WriteString("\n")
+		btnText := "[ Test APRS ]"
+		var btnLine string
+		if im.aprsTesting {
+			btnLine = "    " + DimStyle.Render(btnText) + " " + DimStyle.Render("...")
+		} else if im.focus == imAPRSTest {
+			btnLine = S.FormPrefixOn.Render("> ") + CursorStyle.Render("  "+btnText)
+		} else {
+			btnLine = "    " + InputStyle.Render(btnText)
+		}
+		b.WriteString(padOrTrunc(btnLine, lineW))
+
+		if im.aprsTestResult != "" {
+			b.WriteString("\n")
+			b.WriteString(padOrTrunc("    "+im.aprsTestResultStyled(), lineW))
+		}
+	}
+
 	// Build raw form body — header is rendered separately above the viewport.
 	bodyStr := b.String()
 
@@ -1088,12 +1341,32 @@ func (im *IntegrationMenu) gpsTestResultStyled() string {
 	}
 	return ErrorStyle.Render(im.gpsTestResult)
 }
+
+func (im *IntegrationMenu) aprsTestResultStyled() string {
+	if im.aprsTesting {
+		return DimStyle.Render(im.aprsTestResult)
+	}
+	if strings.HasPrefix(im.aprsTestResult, "OK") {
+		return SuccessStyle.Render(im.aprsTestResult)
+	}
+	return ErrorStyle.Render(im.aprsTestResult)
+}
+
 func (im *IntegrationMenu) gpsServiceName() string {
 	switch im.gpsService {
 	case 1:
 		return "gpsd"
 	default:
 		return "serial"
+	}
+}
+
+func (im *IntegrationMenu) aprsServiceName() string {
+	switch im.aprsService {
+	case 1:
+		return "kiss"
+	default:
+		return "aprs_is"
 	}
 }
 
@@ -1235,4 +1508,13 @@ func testGPSDConnection(host, port string) error {
 		return fmt.Errorf("read error: %w", err)
 	}
 	return fmt.Errorf("no TPV position received from GPSD — check antenna")
+}
+
+// testKISSPort tries to open a serial port for KISS TNC communication.
+// Used by the [ Test APRS ] button when KISS service is selected.
+func testKISSPort(port string, baud int) error {
+	cfg := gps.SerialConfig{Port: port, BaudRate: baud}
+	r := gps.NewSerialReader(cfg)
+	defer r.Close()
+	return r.TryOpen()
 }

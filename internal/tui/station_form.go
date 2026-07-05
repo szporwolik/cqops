@@ -232,15 +232,13 @@ func (f *StationForm) Update(msg tea.KeyPressMsg) {
 		// Station ID is read-only — updated via Update button or Space cycle.
 
 	// APRS fields.
-	case f.AprsServer.Focused():
-		f.AprsServer, _ = f.AprsServer.Update(msg)
+	case f.AprsCallsign.Focused():
+		f.AprsCallsign, _ = f.AprsCallsign.Update(msg)
+		f.AprsCallsign.SetValue(strings.ToUpper(f.AprsCallsign.Value()))
 	case f.AprsPasscode.Focused():
 		f.AprsPasscode, _ = f.AprsPasscode.Update(msg)
 	case f.AprsRadiusKm.Focused():
 		f.AprsRadiusKm, _ = f.AprsRadiusKm.Update(msg)
-	case f.AprsCallsign.Focused():
-		f.AprsCallsign, _ = f.AprsCallsign.Update(msg)
-		f.AprsCallsign.SetValue(strings.ToUpper(f.AprsCallsign.Value()))
 	case f.AprsIntervalMin.Focused():
 		f.AprsIntervalMin, _ = f.AprsIntervalMin.Update(msg)
 	case f.AprsSymbol.Focused():
@@ -322,27 +320,24 @@ func (f *StationForm) NextInput() {
 	case f.aprsCbFocus:
 		f.aprsCbFocus = false
 		if f.AprsEnabled {
-			f.AprsServer.Focus()
+			f.AprsCallsign.Focus()
 		} else {
 			f.Name.Focus()
 		}
-	case f.AprsServer.Focused():
-		f.AprsServer.Blur()
+	case f.AprsCallsign.Focused():
+		f.AprsCallsign.Blur()
 		f.AprsPasscode.Focus()
 	case f.AprsPasscode.Focused():
 		f.AprsPasscode.Blur()
-		f.AprsRadiusKm.Focus()
-	case f.AprsRadiusKm.Focused():
-		f.AprsRadiusKm.Blur()
 		f.aprsSendLocFocus = true
 	case f.aprsSendLocFocus:
 		f.aprsSendLocFocus = false
-		f.AprsCallsign.Focus()
-	case f.AprsCallsign.Focused():
-		f.AprsCallsign.Blur()
 		f.AprsIntervalMin.Focus()
 	case f.AprsIntervalMin.Focused():
 		f.AprsIntervalMin.Blur()
+		f.AprsRadiusKm.Focus()
+	case f.AprsRadiusKm.Focused():
+		f.AprsRadiusKm.Blur()
 		f.AprsSymbol.Focus()
 	case f.AprsSymbol.Focused():
 		f.AprsSymbol.Blur()
@@ -377,24 +372,21 @@ func (f *StationForm) PrevInput() {
 		f.AprsSymbol.Focus()
 	case f.AprsSymbol.Focused():
 		f.AprsSymbol.Blur()
-		f.AprsIntervalMin.Focus()
-	case f.AprsIntervalMin.Focused():
-		f.AprsIntervalMin.Blur()
-		f.AprsCallsign.Focus()
-	case f.AprsCallsign.Focused():
-		f.AprsCallsign.Blur()
-		f.aprsSendLocFocus = true
-	case f.aprsSendLocFocus:
-		f.aprsSendLocFocus = false
 		f.AprsRadiusKm.Focus()
 	case f.AprsRadiusKm.Focused():
 		f.AprsRadiusKm.Blur()
+		f.AprsIntervalMin.Focus()
+	case f.AprsIntervalMin.Focused():
+		f.AprsIntervalMin.Blur()
+		f.aprsSendLocFocus = true
+	case f.aprsSendLocFocus:
+		f.aprsSendLocFocus = false
 		f.AprsPasscode.Focus()
 	case f.AprsPasscode.Focused():
 		f.AprsPasscode.Blur()
-		f.AprsServer.Focus()
-	case f.AprsServer.Focused():
-		f.AprsServer.Blur()
+		f.AprsCallsign.Focus()
+	case f.AprsCallsign.Focused():
+		f.AprsCallsign.Blur()
 		f.aprsCbFocus = true
 	case f.aprsCbFocus:
 		f.aprsCbFocus = false
@@ -577,16 +569,14 @@ func (f *StationForm) APRSValues() *config.APRSConfig {
 	rad, _ := parseInt(f.AprsRadiusKm.Value())
 	iv, _ := parseInt(f.AprsIntervalMin.Value())
 	if iv < 15 {
-		iv = 15 // minimum 15 minutes per APRS spec
+		iv = 15
 	}
-	pass := strings.TrimSpace(f.AprsPasscode.Value())
 	return &config.APRSConfig{
 		Enabled:      f.AprsEnabled,
-		Server:       strings.TrimSpace(f.AprsServer.Value()),
-		Passcode:     pass,
+		Callsign:     strings.ToUpper(strings.TrimSpace(f.AprsCallsign.Value())),
+		Passcode:     strings.TrimSpace(f.AprsPasscode.Value()),
 		RadiusKm:     rad,
 		SendLocation: f.AprsSendLoc,
-		Callsign:     strings.ToUpper(strings.TrimSpace(f.AprsCallsign.Value())),
 		IntervalMin:  iv,
 		Symbol:       strings.TrimSpace(f.AprsSymbol.Value()),
 		Comment:      strings.TrimSpace(f.AprsComment.Value()),
@@ -597,7 +587,7 @@ func (f *StationForm) APRSValues() *config.APRSConfig {
 func (f *StationForm) SetAPRSValues(aprs *config.APRSConfig) {
 	if aprs != nil {
 		f.AprsEnabled = aprs.Enabled
-		f.AprsServer.SetValue(aprs.Server)
+		f.AprsCallsign.SetValue(aprs.Callsign)
 		f.AprsPasscode.SetValue(aprs.Passcode)
 		if aprs.RadiusKm > 0 {
 			f.AprsRadiusKm.SetValue(fmt.Sprintf("%d", aprs.RadiusKm))
@@ -605,7 +595,6 @@ func (f *StationForm) SetAPRSValues(aprs *config.APRSConfig) {
 			f.AprsRadiusKm.SetValue("50")
 		}
 		f.AprsSendLoc = aprs.SendLocation
-		f.AprsCallsign.SetValue(aprs.Callsign)
 		if aprs.IntervalMin >= 15 {
 			f.AprsIntervalMin.SetValue(fmt.Sprintf("%d", aprs.IntervalMin))
 		} else {
@@ -615,11 +604,10 @@ func (f *StationForm) SetAPRSValues(aprs *config.APRSConfig) {
 		f.AprsComment.SetValue(aprs.Comment)
 	} else {
 		f.AprsEnabled = false
-		f.AprsServer.SetValue("euro.aprs2.net:14580")
+		f.AprsCallsign.SetValue("")
 		f.AprsPasscode.SetValue("")
 		f.AprsRadiusKm.SetValue("50")
 		f.AprsSendLoc = false
-		f.AprsCallsign.SetValue("")
 		f.AprsIntervalMin.SetValue("15")
 		f.AprsSymbol.SetValue("/-")
 		f.AprsComment.SetValue("")
@@ -810,23 +798,22 @@ func (f *StationForm) View() tea.View {
 
 	if f.AprsEnabled {
 		aprsFields := []fieldDef{
-			{"  Server:", &f.AprsServer},
+			{"  Callsign:", &f.AprsCallsign},
 			{"  Passcode:", &f.AprsPasscode},
-			{"  Radius (km):", &f.AprsRadiusKm},
 		}
 		for _, field := range aprsFields {
 			b.WriteString(f.renderFieldLine(field.label, field.ti, availW))
 		}
-		// Send location checkbox.
+		// TX Beacon checkbox.
 		locCheckbox := "[ ]"
 		if f.AprsSendLoc {
 			locCheckbox = "[x]"
 		}
 		locPrefix := "  "
-		locLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Send location:")
+		locLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  TX Beacon:")
 		if f.aprsSendLocFocus {
 			locPrefix = S.FormPrefixOn.Render("> ")
-			locLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Send location:")
+			locLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  TX Beacon:")
 			locCheckbox = CursorStyle.Render(locCheckbox) + " " + DimStyle.Render("(Space)")
 		}
 		b.WriteString(padOrTrunc(
@@ -835,8 +822,8 @@ func (f *StationForm) View() tea.View {
 		b.WriteString("\n")
 
 		aprsFields2 := []fieldDef{
-			{"  Callsign:", &f.AprsCallsign},
 			{"  Interval (min):", &f.AprsIntervalMin},
+			{"  Radius (km):", &f.AprsRadiusKm},
 			{"  Symbol:", &f.AprsSymbol},
 			{"  Comment:", &f.AprsComment},
 		}
@@ -1048,12 +1035,20 @@ func (f *StationForm) ScrollFraction() float64 {
 		return 0.83
 	case f.aprsCbFocus:
 		return 0.87
-	case f.AprsServer.Focused(), f.AprsPasscode.Focused(), f.AprsRadiusKm.Focused():
+	case f.AprsCallsign.Focused():
 		return 0.90
-	case f.aprsSendLocFocus:
+	case f.AprsPasscode.Focused():
 		return 0.93
-	case f.AprsCallsign.Focused(), f.AprsIntervalMin.Focused(), f.AprsSymbol.Focused(), f.AprsComment.Focused():
-		return 0.96
+	case f.aprsSendLocFocus:
+		return 0.945
+	case f.AprsIntervalMin.Focused():
+		return 0.955
+	case f.AprsRadiusKm.Focused():
+		return 0.965
+	case f.AprsSymbol.Focused():
+		return 0.975
+	case f.AprsComment.Focused():
+		return 0.985
 	case f.aprsBtnFocus > 0:
 		return 1.0
 	default:
