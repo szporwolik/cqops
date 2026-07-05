@@ -2,11 +2,13 @@ package tui
 
 import (
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
+	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/gps"
 )
 
@@ -17,7 +19,7 @@ import (
 // gpsState holds the live GPS integration state.
 type gpsState struct {
 	client   *gps.Client
-	reader   *gps.SerialReader
+	reader   gps.NMEAReader
 	online   bool
 	hasFix   bool
 	lastGrid string
@@ -44,15 +46,68 @@ type gpsState struct {
 // schedules a delayed reconnect instead of failing.
 func (m *Model) startGPS() tea.Cmd {
 	cfg := m.App.Config.Integrations.GPS
-	if !cfg.Enabled || cfg.Port == "" {
+	if !cfg.Enabled {
+		return nil
+	}
+
+	// Clean up any previous client/reader before creating new ones.
+	m.stopGPS()
+
+	switch cfg.Service {
+	case "serial":
+		return m.startGPSSerial(cfg)
+	case "gpsd":
+		return m.startGPSD(cfg)
+	default:
+		return nil
+	}
+}
+
+func (m *Model) startGPSD(cfg config.GPSConfig) tea.Cmd {
+	host := cfg.GPSDHost
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	port := cfg.GPSDPort
+	if port == "" {
+		port = "2947"
+	}
+
+	m.gps.reader = gps.NewGPSDReader(host, port)
+
+	// Synchronously verify the server is reachable.
+	if err := m.gps.reader.TryOpen(); err != nil {
+		applog.Warn("GPS: cannot connect to GPSD", "addr", net.JoinHostPort(host, port), "error", err.Error())
+		m.toasts.Error("GPS: cannot connect to GPSD")
+		m.gps.reader.Close()
+		m.gps.reader = nil
+		return m.pollGPS()
+	}
+
+	m.gps.client = gps.NewClient(m.gps.reader)
+	m.gps.client.Start()
+
+	m.gps.online = true
+	m.gps.lastSeen = time.Now()
+	m.gps.didToastConnect = false
+	m.gps.didToastFix = false
+	m.gps.didToastLost = false
+
+	applog.Info("GPS: GPSD started",
+		"host", host,
+		"port", port,
+	)
+	m.toasts.Success("GPS: connecting to GPSD")
+	return m.pollGPS()
+}
+
+func (m *Model) startGPSSerial(cfg config.GPSConfig) tea.Cmd {
+	if cfg.Port == "" {
 		return nil
 	}
 	if cfg.BaudRate == 0 {
 		cfg.BaudRate = 115200
 	}
-
-	// Clean up any previous client/reader before creating new ones.
-	m.stopGPS()
 
 	m.gps.reader = gps.NewSerialReader(gps.SerialConfig{
 		Port:     cfg.Port,
@@ -79,7 +134,7 @@ func (m *Model) startGPS() tea.Cmd {
 	m.gps.didToastFix = false
 	m.gps.didToastLost = false
 
-	applog.Info("GPS: integration started",
+	applog.Info("GPS: serial started",
 		"port", cfg.Port,
 		"baud", fmt.Sprintf("%d", cfg.BaudRate),
 	)
@@ -280,17 +335,30 @@ func gpsReconnectDelay(failures int) time.Duration {
 // the GPS-derived grid is used. Otherwise the configured station grid
 // is returned. This is the single source of truth for the station grid
 // used in QSO logging, APRS beacons, dashboard, and distance calculations.
+// The grid is truncated to the configured precision (6, 8, or 10 chars).
 func (m *Model) effectiveGrid() string {
+	var raw string
 	// GPS override: enabled + has fix + logbook flag set.
 	if m.App != nil && m.App.Config != nil &&
 		m.App.Config.Integrations.GPS.Enabled && m.gps.hasFix &&
 		m.App.Logbook != nil && m.App.Logbook.Station.GPSGrid && m.gps.lastGrid != "" {
-		return m.gps.lastGrid
-	}
-	if m.App == nil || m.App.Logbook == nil {
+		raw = m.gps.lastGrid
+	} else if m.App == nil || m.App.Logbook == nil {
 		return ""
+	} else {
+		raw = strings.TrimSpace(strings.ToUpper(m.App.Logbook.Station.Grid))
 	}
-	return strings.TrimSpace(strings.ToUpper(m.App.Logbook.Station.Grid))
+	// Truncate to configured grid precision.
+	prec := 10
+	if m.App != nil && m.App.Config != nil {
+		if p := m.App.Config.Integrations.GPS.GridPrecision; p == 6 || p == 8 {
+			prec = p
+		}
+	}
+	if len(raw) > prec {
+		raw = raw[:prec]
+	}
+	return raw
 }
 
 // isGPSGridActive returns true when the displayed station grid is

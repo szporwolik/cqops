@@ -128,11 +128,15 @@ type HTTPServerConfig struct {
 
 // GPSConfig holds GPS receiver serial port configuration.
 type GPSConfig struct {
-	Enabled  bool   `yaml:"enabled"`
-	Port     string `yaml:"port,omitempty"`      // e.g. "COM6" or "/dev/ttyUSB0"
-	BaudRate int    `yaml:"baud_rate,omitempty"` // e.g. 115200
-	DTR      bool   `yaml:"dtr,omitempty"`       // enable DTR on connect
-	RTS      bool   `yaml:"rts,omitempty"`       // enable RTS on connect
+	Enabled       bool   `yaml:"enabled"`
+	Service       string `yaml:"service,omitempty"`        // "serial", "gpsd", or "" (none)
+	Port          string `yaml:"port,omitempty"`           // serial port e.g. "COM6"
+	BaudRate      int    `yaml:"baud_rate,omitempty"`      // serial baud rate
+	DTR           bool   `yaml:"dtr,omitempty"`            // enable DTR
+	RTS           bool   `yaml:"rts,omitempty"`            // enable RTS
+	GPSDHost      string `yaml:"gpsd_host,omitempty"`      // GPSD server address
+	GPSDPort      string `yaml:"gpsd_port,omitempty"`      // GPSD server port
+	GridPrecision int    `yaml:"grid_precision,omitempty"` // 6, 8, or 10 (default 10)
 }
 
 // Favorite stores a mode/freq/submode/band snapshot for quick recall.

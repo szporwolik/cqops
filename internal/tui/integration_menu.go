@@ -1,7 +1,10 @@
 package tui
 
 import (
+	"bufio"
+	"encoding/json"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
@@ -40,13 +43,17 @@ type IntegrationMenu struct {
 	httpEvtStart textinput.Model
 
 	// GPS
-	gpsEnabled    bool
-	gpsPort       textinput.Model
-	gpsBaudRate   int
-	gpsDTR        bool
-	gpsRTS        bool
-	gpsTesting    bool
-	gpsTestResult string
+	gpsEnabled       bool
+	gpsService       int // 0=None, 1=Serial, 2=GPSD
+	gpsGridPrecision int // 6, 8, or 10
+	gpsPort          textinput.Model
+	gpsBaudRate      int
+	gpsDTR           bool
+	gpsRTS           bool
+	gpsdHost         textinput.Model
+	gpsdPort         textinput.Model
+	gpsTesting       bool
+	gpsTestResult    string
 
 	focus  int
 	done   bool
@@ -65,28 +72,32 @@ type IntegrationMenu struct {
 }
 
 const (
-	imDXCChk   = 0
-	imDXCHost  = 1
-	imDXCPort  = 2
-	imDXCLogin = 3
-	imQRZChk   = 4
-	imQRZUser  = 5
-	imQRZPass  = 6
-	imQRZTest  = 7
-	imHTTPChk  = 8
-	imHTTPAddr = 9
-	imHTTPPort = 10
-	imHTTPHdr1 = 11
-	imHTTPHdr2 = 12
-	imHTTPLogo = 13
-	imHTTPEvt  = 14
-	imGPSChk   = 15
-	imGPSPort  = 16
-	imGPSBaud  = 17
-	imGPSDTR   = 18
-	imGPSRTS   = 19
-	imGPSTest  = 20
-	imMax      = 21
+	imDXCChk      = 0
+	imDXCHost     = 1
+	imDXCPort     = 2
+	imDXCLogin    = 3
+	imQRZChk      = 4
+	imQRZUser     = 5
+	imQRZPass     = 6
+	imQRZTest     = 7
+	imHTTPChk     = 8
+	imHTTPAddr    = 9
+	imHTTPPort    = 10
+	imHTTPHdr1    = 11
+	imHTTPHdr2    = 12
+	imHTTPLogo    = 13
+	imHTTPEvt     = 14
+	imGPSChk      = 15
+	imGPSSvc      = 16 // service type: None / Serial / GPSD
+	imGPSGridPrec = 17 // grid precision: 10 / 8 / 6
+	imGPSPort     = 18 // serial port
+	imGPSBaud     = 19 // baud rate
+	imGPSDTR      = 20 // DTR
+	imGPSRTS      = 21 // RTS
+	imGPSDHost    = 22 // GPSD host
+	imGPSDPort    = 23 // GPSD port
+	imGPSTest     = 24 // test button
+	imMax         = 25
 )
 
 type callbookTestMsg struct {
@@ -97,6 +108,35 @@ type callbookTestMsg struct {
 type gpsTestMsg struct {
 	ok  bool
 	err error
+}
+
+// gpsServiceOptions maps service index to label.
+var gpsServiceOptions = []struct {
+	label string
+}{
+	{"Serial"},
+	{"GPSD"},
+}
+
+// gpsPrecisionOptions lists available grid precision levels for cycling.
+var gpsPrecisionOptions = []int{10, 8, 6}
+
+func nextGPSCycleInt(current int, opts []int) int {
+	for i, v := range opts {
+		if v == current && i+1 < len(opts) {
+			return opts[i+1]
+		}
+	}
+	return opts[0]
+}
+
+func prevGPSCycleInt(current int, opts []int) int {
+	for i := len(opts) - 1; i >= 0; i-- {
+		if opts[i] == current && i > 0 {
+			return opts[i-1]
+		}
+	}
+	return opts[len(opts)-1]
 }
 
 func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
@@ -195,6 +235,17 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 	}
 
 	// GPS
+	gpsSvc := 0
+	switch cfg.Integrations.GPS.Service {
+	case "gpsd":
+		gpsSvc = 1
+	default:
+		gpsSvc = 0 // serial (or empty → default to serial)
+	}
+	gridPrec := cfg.Integrations.GPS.GridPrecision
+	if gridPrec != 6 && gridPrec != 8 {
+		gridPrec = 10
+	}
 	gpsPort := newTextinput()
 	gpsPort.CharLimit = 40
 	gpsPort.SetWidth(28)
@@ -206,28 +257,50 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 	if gpsBaud == 0 {
 		gpsBaud = 115200
 	}
+	gpsdHost := newTextinput()
+	gpsdHost.CharLimit = 40
+	gpsdHost.SetWidth(28)
+	gpsdHost.Placeholder = "127.0.0.1"
+	if cfg.Integrations.GPS.GPSDHost != "" {
+		gpsdHost.SetValue(cfg.Integrations.GPS.GPSDHost)
+	} else {
+		gpsdHost.SetValue("127.0.0.1")
+	}
+	gpsdPort := newTextinput()
+	gpsdPort.CharLimit = 6
+	gpsdPort.SetWidth(28)
+	gpsdPort.Placeholder = "2947"
+	if cfg.Integrations.GPS.GPSDPort != "" {
+		gpsdPort.SetValue(cfg.Integrations.GPS.GPSDPort)
+	} else {
+		gpsdPort.SetValue("2947")
+	}
 
 	return &IntegrationMenu{
-		dxcEnabled:   cfg.Integrations.DXC.Enabled,
-		dxcHost:      dxcHost,
-		dxcPort:      dxcPort,
-		dxcLogin:     dxcLogin,
-		qrzEnabled:   cfg.Integrations.QRZ.Enabled,
-		qrzUser:      qrzUser,
-		qrzPass:      qrzPass,
-		httpEnabled:  cfg.Integrations.HTTPServer.Enabled,
-		httpAddr:     httpAddr,
-		httpPort:     httpPort,
-		httpHeader1:  httpHeader1,
-		httpHeader2:  httpHeader2,
-		httpClubLogo: httpClubLogo,
-		httpEvtStart: httpEvtStart,
-		gpsEnabled:   cfg.Integrations.GPS.Enabled,
-		gpsPort:      gpsPort,
-		gpsBaudRate:  gpsBaud,
-		gpsDTR:       cfg.Integrations.GPS.DTR,
-		gpsRTS:       cfg.Integrations.GPS.RTS,
-		focus:        0,
+		dxcEnabled:       cfg.Integrations.DXC.Enabled,
+		dxcHost:          dxcHost,
+		dxcPort:          dxcPort,
+		dxcLogin:         dxcLogin,
+		qrzEnabled:       cfg.Integrations.QRZ.Enabled,
+		qrzUser:          qrzUser,
+		qrzPass:          qrzPass,
+		httpEnabled:      cfg.Integrations.HTTPServer.Enabled,
+		httpAddr:         httpAddr,
+		httpPort:         httpPort,
+		httpHeader1:      httpHeader1,
+		httpHeader2:      httpHeader2,
+		httpClubLogo:     httpClubLogo,
+		httpEvtStart:     httpEvtStart,
+		gpsEnabled:       cfg.Integrations.GPS.Enabled,
+		gpsService:       gpsSvc,
+		gpsGridPrecision: gridPrec,
+		gpsPort:          gpsPort,
+		gpsBaudRate:      gpsBaud,
+		gpsDTR:           cfg.Integrations.GPS.DTR,
+		gpsRTS:           cfg.Integrations.GPS.RTS,
+		gpsdHost:         gpsdHost,
+		gpsdPort:         gpsdPort,
+		focus:            0,
 	}
 }
 
@@ -314,6 +387,21 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if es := strings.TrimSpace(im.httpEvtStart.Value()); es != "" {
 					if _, err := time.Parse("2006-01-02", es); err != nil {
 						im.SaveError = "Event Start must be YYYY-MM-DD or empty"
+						return im, nil
+					}
+				}
+			}
+			// Validate GPS fields when GPS is enabled.
+			if im.gpsEnabled {
+				switch im.gpsService {
+				case 0: // Serial
+					if strings.TrimSpace(im.gpsPort.Value()) == "" {
+						im.SaveError = "GPS serial port is required"
+						return im, nil
+					}
+				case 1: // GPSD
+					if strings.TrimSpace(im.gpsdHost.Value()) == "" {
+						im.SaveError = "GPSD host is required"
 						return im, nil
 					}
 				}
@@ -409,38 +497,81 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			if im.focus == imGPSTest {
-				port := strings.TrimSpace(im.gpsPort.Value())
-				baud := im.gpsBaudRate
-				dtr := im.gpsDTR
-				rts := im.gpsRTS
-				if port == "" || baud == 0 {
-					im.gpsTestResult = "Port and baud rate required"
-					return im, nil
-				}
-				// If GPS is enabled, the live client owns the port —
-				// testing would conflict. Point the user to the status bar.
+				// GPS is enabled — avoid port conflicts with live client.
 				if im.gpsEnabled {
 					im.gpsTestResult = "GPS is enabled — check status bar"
 					return im, nil
 				}
-				im.gpsTesting = true
-				im.gpsTestResult = "Testing..."
-				return im, func() tea.Msg {
-					err := testGPSConnection(port, baud, dtr, rts)
-					return gpsTestMsg{ok: err == nil, err: err}
+				switch im.gpsService {
+				case 0: // Serial
+					port := strings.TrimSpace(im.gpsPort.Value())
+					baud := im.gpsBaudRate
+					dtr := im.gpsDTR
+					rts := im.gpsRTS
+					if port == "" || baud == 0 {
+						im.gpsTestResult = "Port and baud rate required"
+						return im, nil
+					}
+					im.gpsTesting = true
+					im.gpsTestResult = "Testing..."
+					return im, func() tea.Msg {
+						err := testGPSConnection(port, baud, dtr, rts)
+						return gpsTestMsg{ok: err == nil, err: err}
+					}
+				case 1: // GPSD
+					host := strings.TrimSpace(im.gpsdHost.Value())
+					port := strings.TrimSpace(im.gpsdPort.Value())
+					if host == "" {
+						im.gpsTestResult = "GPSD host required"
+						return im, nil
+					}
+					if port == "" {
+						port = "2947"
+					}
+					im.gpsTesting = true
+					im.gpsTestResult = "Testing..."
+					return im, func() tea.Msg {
+						err := testGPSDConnection(host, port)
+						return gpsTestMsg{ok: err == nil, err: err}
+					}
+				default:
+					im.gpsTestResult = "No service selected"
+					return im, nil
 				}
 			}
 			im.next()
 			im.autoScrollViewport()
 		case "pgup":
-			if im.focus == imGPSBaud {
+			switch im.focus {
+			case imGPSBaud:
 				im.gpsBaudRate = nextGPSCycle(im.gpsBaudRate)
+				return im, nil
+			case imGPSSvc:
+				im.gpsService = (im.gpsService + 1) % len(gpsServiceOptions)
+				if !im.isPositionVisible(im.focus) {
+					im.fixFocus()
+				}
+				im.autoScrollViewport()
+				return im, nil
+			case imGPSGridPrec:
+				im.gpsGridPrecision = nextGPSCycleInt(im.gpsGridPrecision, gpsPrecisionOptions)
 				return im, nil
 			}
 			im.vp, _ = im.vp.Update(msg)
 		case "pgdown":
-			if im.focus == imGPSBaud {
+			switch im.focus {
+			case imGPSBaud:
 				im.gpsBaudRate = prevGPSCycle(im.gpsBaudRate)
+				return im, nil
+			case imGPSSvc:
+				im.gpsService = (im.gpsService - 1 + len(gpsServiceOptions)) % len(gpsServiceOptions)
+				if !im.isPositionVisible(im.focus) {
+					im.fixFocus()
+				}
+				im.autoScrollViewport()
+				return im, nil
+			case imGPSGridPrec:
+				im.gpsGridPrecision = prevGPSCycleInt(im.gpsGridPrecision, gpsPrecisionOptions)
 				return im, nil
 			}
 			im.vp, _ = im.vp.Update(msg)
@@ -482,6 +613,10 @@ func (im *IntegrationMenu) forwardToFocused(msg tea.Msg) {
 		im.httpEvtStart, _ = im.httpEvtStart.Update(msg)
 	case imGPSPort:
 		im.gpsPort, _ = im.gpsPort.Update(msg)
+	case imGPSDHost:
+		im.gpsdHost, _ = im.gpsdHost.Update(msg)
+	case imGPSDPort:
+		im.gpsdPort, _ = im.gpsdPort.Update(msg)
 	}
 }
 
@@ -517,8 +652,15 @@ func (im *IntegrationMenu) isPositionVisible(pos int) bool {
 		return im.qrzEnabled
 	case imHTTPAddr, imHTTPPort, imHTTPHdr1, imHTTPHdr2, imHTTPLogo, imHTTPEvt:
 		return im.httpEnabled
-	case imGPSPort, imGPSBaud, imGPSDTR, imGPSRTS, imGPSTest:
+	// GPS fields visibility depends on enabled + service type.
+	case imGPSSvc, imGPSGridPrec:
 		return im.gpsEnabled
+	case imGPSPort, imGPSBaud, imGPSDTR, imGPSRTS:
+		return im.gpsEnabled && im.gpsService == 0 // serial
+	case imGPSDHost, imGPSDPort:
+		return im.gpsEnabled && im.gpsService == 1 // GPSD
+	case imGPSTest:
+		return im.gpsEnabled // all services
 	}
 	return true
 }
@@ -531,7 +673,7 @@ func (im *IntegrationMenu) fixFocus() {
 }
 
 func (im *IntegrationMenu) blurAll() {
-	blurTextinputs(&im.dxcHost, &im.dxcPort, &im.dxcLogin, &im.qrzUser, &im.qrzPass, &im.httpAddr, &im.httpPort, &im.httpHeader1, &im.httpHeader2, &im.httpClubLogo, &im.httpEvtStart, &im.gpsPort)
+	blurTextinputs(&im.dxcHost, &im.dxcPort, &im.dxcLogin, &im.qrzUser, &im.qrzPass, &im.httpAddr, &im.httpPort, &im.httpHeader1, &im.httpHeader2, &im.httpClubLogo, &im.httpEvtStart, &im.gpsPort, &im.gpsdHost, &im.gpsdPort)
 }
 func (im *IntegrationMenu) focusField() {
 	switch im.focus {
@@ -559,6 +701,10 @@ func (im *IntegrationMenu) focusField() {
 		im.httpEvtStart.Focus()
 	case imGPSPort:
 		im.gpsPort.Focus()
+	case imGPSDHost:
+		im.gpsdHost.Focus()
+	case imGPSDPort:
+		im.gpsdPort.Focus()
 	}
 }
 
@@ -741,10 +887,10 @@ func (im *IntegrationMenu) View() tea.View {
 		gpsCheckbox = "[x]"
 	}
 	gpsPrefix := "  "
-	gpsLabel := S.FormLabelWide.Align(lipgloss.Left).Render("GPS Receiver:")
+	gpsLabel := S.FormLabelWide.Align(lipgloss.Left).Render("GPS Service:")
 	if im.focus == imGPSChk {
 		gpsPrefix = S.FormPrefixOn.Render("> ")
-		gpsLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("GPS Receiver:")
+		gpsLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("GPS Service:")
 		gpsCheckbox = CursorStyle.Render(gpsCheckbox)
 	}
 	b.WriteString(padOrTrunc(
@@ -752,57 +898,100 @@ func (im *IntegrationMenu) View() tea.View {
 		lineW))
 
 	if im.gpsEnabled {
+		// Service type — PgUp/PgDn to cycle.
 		b.WriteString("\n")
-		b.WriteString(padOrTrunc(im.renderField(imGPSPort, "  Port:", &im.gpsPort, false), lineW))
-		b.WriteString("\n")
-		// Baud rate with PgUp/PgDn cycling.
-		baudPrefix := "  "
-		baudLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Baud:")
-		baudVal := fmt.Sprintf("%d", im.gpsBaudRate)
-		if im.focus == imGPSBaud {
-			baudPrefix = S.FormPrefixOn.Render("> ")
-			baudLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Baud:")
-			baudVal = CursorStyle.Render(baudVal) + " " + DimStyle.Render("(PgUp/PgDn)")
+		svcPrefix := "  "
+		svcLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Service:")
+		svcVal := gpsServiceOptions[im.gpsService].label
+		if im.focus == imGPSSvc {
+			svcPrefix = S.FormPrefixOn.Render("> ")
+			svcLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Service:")
+			svcVal = CursorStyle.Render(svcVal) + " " + DimStyle.Render("(PgUp/PgDn)")
 		} else {
-			baudVal = ValueStyle.Render(baudVal)
+			svcVal = ValueStyle.Render(svcVal)
 		}
 		b.WriteString(padOrTrunc(
-			lipgloss.JoinHorizontal(lipgloss.Center, baudPrefix, baudLabel, " ", baudVal),
-			lineW))
-		b.WriteString("\n")
-		// DTR checkbox.
-		dtrCheckbox := "[ ]"
-		if im.gpsDTR {
-			dtrCheckbox = "[x]"
-		}
-		dtrPrefix := "  "
-		dtrLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  DTR:")
-		if im.focus == imGPSDTR {
-			dtrPrefix = S.FormPrefixOn.Render("> ")
-			dtrLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  DTR:")
-			dtrCheckbox = CursorStyle.Render(dtrCheckbox)
-		}
-		b.WriteString(padOrTrunc(
-			lipgloss.JoinHorizontal(lipgloss.Center, dtrPrefix, dtrLabel, " ", dtrCheckbox),
-			lineW))
-		b.WriteString("\n")
-		// RTS checkbox.
-		rtsCheckbox := "[ ]"
-		if im.gpsRTS {
-			rtsCheckbox = "[x]"
-		}
-		rtsPrefix := "  "
-		rtsLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  RTS:")
-		if im.focus == imGPSRTS {
-			rtsPrefix = S.FormPrefixOn.Render("> ")
-			rtsLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  RTS:")
-			rtsCheckbox = CursorStyle.Render(rtsCheckbox)
-		}
-		b.WriteString(padOrTrunc(
-			lipgloss.JoinHorizontal(lipgloss.Center, rtsPrefix, rtsLabel, " ", rtsCheckbox),
+			lipgloss.JoinHorizontal(lipgloss.Center, svcPrefix, svcLabel, " ", svcVal),
 			lineW))
 
-		// Test button
+		// Grid precision — PgUp/PgDn to cycle.
+		b.WriteString("\n")
+		precPrefix := "  "
+		precLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Grid precision:")
+		precVal := fmt.Sprintf("%d chars", im.gpsGridPrecision)
+		if im.focus == imGPSGridPrec {
+			precPrefix = S.FormPrefixOn.Render("> ")
+			precLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Grid precision:")
+			precVal = CursorStyle.Render(precVal) + " " + DimStyle.Render("(PgUp/PgDn)")
+		} else {
+			precVal = ValueStyle.Render(precVal)
+		}
+		b.WriteString(padOrTrunc(
+			lipgloss.JoinHorizontal(lipgloss.Center, precPrefix, precLabel, " ", precVal),
+			lineW))
+
+		// Serial-specific fields.
+		if im.gpsService == 0 {
+			b.WriteString("\n")
+			b.WriteString(padOrTrunc(im.renderField(imGPSPort, "  Port:", &im.gpsPort, false), lineW))
+			b.WriteString("\n")
+			// Baud rate with PgUp/PgDn cycling.
+			baudPrefix := "  "
+			baudLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Baud:")
+			baudVal := fmt.Sprintf("%d", im.gpsBaudRate)
+			if im.focus == imGPSBaud {
+				baudPrefix = S.FormPrefixOn.Render("> ")
+				baudLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Baud:")
+				baudVal = CursorStyle.Render(baudVal) + " " + DimStyle.Render("(PgUp/PgDn)")
+			} else {
+				baudVal = ValueStyle.Render(baudVal)
+			}
+			b.WriteString(padOrTrunc(
+				lipgloss.JoinHorizontal(lipgloss.Center, baudPrefix, baudLabel, " ", baudVal),
+				lineW))
+			b.WriteString("\n")
+			// DTR checkbox.
+			dtrCb := "[ ]"
+			if im.gpsDTR {
+				dtrCb = "[x]"
+			}
+			dtrPrefix := "  "
+			dtrLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  DTR:")
+			if im.focus == imGPSDTR {
+				dtrPrefix = S.FormPrefixOn.Render("> ")
+				dtrLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  DTR:")
+				dtrCb = CursorStyle.Render(dtrCb)
+			}
+			b.WriteString(padOrTrunc(
+				lipgloss.JoinHorizontal(lipgloss.Center, dtrPrefix, dtrLabel, " ", dtrCb),
+				lineW))
+			b.WriteString("\n")
+			// RTS checkbox.
+			rtsCb := "[ ]"
+			if im.gpsRTS {
+				rtsCb = "[x]"
+			}
+			rtsPrefix := "  "
+			rtsLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  RTS:")
+			if im.focus == imGPSRTS {
+				rtsPrefix = S.FormPrefixOn.Render("> ")
+				rtsLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  RTS:")
+				rtsCb = CursorStyle.Render(rtsCb)
+			}
+			b.WriteString(padOrTrunc(
+				lipgloss.JoinHorizontal(lipgloss.Center, rtsPrefix, rtsLabel, " ", rtsCb),
+				lineW))
+		}
+
+		// GPSD-specific fields.
+		if im.gpsService == 1 {
+			b.WriteString("\n")
+			b.WriteString(padOrTrunc(im.renderField(imGPSDHost, "  Host:", &im.gpsdHost, false), lineW))
+			b.WriteString("\n")
+			b.WriteString(padOrTrunc(im.renderField(imGPSDPort, "  Port:", &im.gpsdPort, false), lineW))
+		}
+
+		// Test button — always available when GPS is enabled.
 		b.WriteString("\n")
 		btnText := "[ Test GPS ]"
 		var btnLine string
@@ -912,6 +1101,16 @@ func (im *IntegrationMenu) Values() (dxcEnabled bool, dxcHost, dxcPort, dxcLogin
 		strings.TrimSpace(im.httpEvtStart.Value())
 }
 
+// gpsServiceName returns the config service string for the current index.
+func (im *IntegrationMenu) gpsServiceName() string {
+	switch im.gpsService {
+	case 1:
+		return "gpsd"
+	default:
+		return "serial"
+	}
+}
+
 // friendlyQRZError wraps raw network errors from QRZ lookups into
 // user-readable messages.
 func friendlyQRZError(err error) string {
@@ -974,4 +1173,63 @@ func testGPSConnection(port string, baud int, dtr, rts bool) error {
 		}
 	}
 	return fmt.Errorf("no NMEA GGA sentence received in 5 seconds")
+}
+
+// testGPSDConnection tries to connect to a GPSD server, send a WATCH
+// command, and read a TPV position report. Used by the [ Test GPS ]
+// button for GPSD service.
+func testGPSDConnection(host, port string) error {
+	if host == "" {
+		return fmt.Errorf("GPSD host is required")
+	}
+	if port == "" {
+		port = "2947"
+	}
+	addr := net.JoinHostPort(host, port)
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		return fmt.Errorf("cannot connect to %s: %w", addr, err)
+	}
+	defer conn.Close()
+
+	// Send WATCH command.
+	_, err = fmt.Fprintf(conn, "?WATCH={\"enable\":true,\"json\":true}\n")
+	if err != nil {
+		return fmt.Errorf("WATCH command failed: %w", err)
+	}
+
+	// Read up to 20 lines looking for a TPV with a valid fix.
+	scanner := bufio.NewScanner(conn)
+	for i := 0; i < 20 && scanner.Scan(); i++ {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" {
+			continue
+		}
+		var obj map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &obj); err != nil {
+			continue
+		}
+		if cls, _ := obj["class"].(string); cls != "TPV" {
+			continue
+		}
+		mode, _ := obj["mode"].(float64)
+		if mode < 2 {
+			continue
+		}
+		lat, _ := obj["lat"].(float64)
+		lon, _ := obj["lon"].(float64)
+		if lat == 0 && lon == 0 {
+			continue
+		}
+		applog.Info("GPSD test: TPV received",
+			"lat", fmt.Sprintf("%.6f", lat),
+			"lon", fmt.Sprintf("%.6f", lon),
+			"mode", fmt.Sprintf("%.0f", mode),
+		)
+		return nil
+	}
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("read error: %w", err)
+	}
+	return fmt.Errorf("no TPV position received from GPSD — check antenna")
 }

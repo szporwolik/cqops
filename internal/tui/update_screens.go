@@ -213,11 +213,16 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 
 			// GPS integration.
 			gpsWasEnabled := m.App.Config.Integrations.GPS.Enabled
+			gpsWasService := m.App.Config.Integrations.GPS.Service
 			m.App.Config.Integrations.GPS.Enabled = m.ui.integrationMenu.gpsEnabled
+			m.App.Config.Integrations.GPS.Service = m.ui.integrationMenu.gpsServiceName()
+			m.App.Config.Integrations.GPS.GridPrecision = m.ui.integrationMenu.gpsGridPrecision
 			m.App.Config.Integrations.GPS.Port = m.ui.integrationMenu.gpsPort.Value()
 			m.App.Config.Integrations.GPS.BaudRate = m.ui.integrationMenu.gpsBaudRate
 			m.App.Config.Integrations.GPS.DTR = m.ui.integrationMenu.gpsDTR
 			m.App.Config.Integrations.GPS.RTS = m.ui.integrationMenu.gpsRTS
+			m.App.Config.Integrations.GPS.GPSDHost = m.ui.integrationMenu.gpsdHost.Value()
+			m.App.Config.Integrations.GPS.GPSDPort = m.ui.integrationMenu.gpsdPort.Value()
 
 			m.saveConfig("Settings saved")
 			applog.Info("Integration config saved, restarting services")
@@ -226,10 +231,14 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			if needHTTPRestart {
 				m.restartHTTPServer()
 			}
-			// GPS: start or stop based on config change.
-			if m.App.Config.Integrations.GPS.Enabled && !gpsWasEnabled {
+			// GPS: start, stop, or restart based on config changes.
+			gpsNowEnabled := m.App.Config.Integrations.GPS.Enabled
+			gpsServiceChanged := gpsNowEnabled && gpsWasEnabled &&
+				m.App.Config.Integrations.GPS.Service != gpsWasService
+			switch {
+			case gpsNowEnabled && (!gpsWasEnabled || gpsServiceChanged):
 				cmd = tea.Batch(cmd, m.startGPS())
-			} else if !m.App.Config.Integrations.GPS.Enabled && gpsWasEnabled {
+			case !gpsNowEnabled && gpsWasEnabled:
 				m.stopGPS()
 			}
 			m.screen = screenMainMenu

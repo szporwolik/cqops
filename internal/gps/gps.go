@@ -59,10 +59,11 @@ type Client struct {
 	debugCount int // throttles debug logging
 }
 
-// NMEAReader abstracts the source of NMEA data (serial port, file, etc.).
+// NMEAReader abstracts the source of NMEA data (serial port, GPSD, file, etc.).
 type NMEAReader interface {
 	ReadLine() (string, error)
 	Close() error
+	TryOpen() error // synchronous pre-flight check
 }
 
 // NewClient creates a new GPS client that reads from r.

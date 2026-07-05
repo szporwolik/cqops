@@ -402,6 +402,10 @@ func (r *fakeReader) Close() error {
 	return nil
 }
 
+func (r *fakeReader) TryOpen() error {
+	return nil
+}
+
 type fakeError struct{ msg string }
 
 func (e *fakeError) Error() string { return e.msg }
