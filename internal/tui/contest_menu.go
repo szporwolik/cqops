@@ -683,6 +683,9 @@ func (c *ContestChooser) viewForm() string {
 	if extra != "" {
 		line = line + " " + DimStyle.Render(extra)
 	}
+	if c.focus == 4 {
+		line = line + " " + DimStyle.Render("(Space)")
+	}
 	maxW := c.width - 4
 	if maxW < 40 {
 		maxW = 40
@@ -756,7 +759,7 @@ func (c *ContestChooser) renderCheckbox(b *strings.Builder, w, focusIdx int, lab
 	if c.focus == focusIdx {
 		prefix = S.FormPrefixOn.Render("> ")
 		lbl = S.FormFocusedCtx.Align(lipgloss.Left).Render(label)
-		cb = CursorStyle.Render(cb)
+		cb = CursorStyle.Render(cb) + " " + DimStyle.Render("(Space)")
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, cb),

@@ -661,7 +661,7 @@ func (f *StationForm) View() tea.View {
 	if f.gpsGridFocus {
 		gpsPrefix = S.FormPrefixOn.Render("> ")
 		gpsLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("Grid from GPS:")
-		gpsCb = CursorStyle.Render(gpsCb)
+		gpsCb = CursorStyle.Render(gpsCb) + " " + DimStyle.Render("(Space)")
 	}
 	b.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, gpsPrefix, gpsLabel, " ", gpsCb), availW))
 	b.WriteString("\n")
@@ -678,7 +678,7 @@ func (f *StationForm) View() tea.View {
 	if f.iaruFocus {
 		prefix = S.FormPrefixOn.Render("> ")
 		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(iaruLabel)
-		val = CursorStyle.Render(iaruVal)
+		val = CursorStyle.Render(iaruVal) + " " + DimStyle.Render("(Space)")
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val),
@@ -694,7 +694,7 @@ func (f *StationForm) View() tea.View {
 	if f.contFocus {
 		cPrefix = S.FormPrefixOn.Render("> ")
 		cLbl = S.FormFocusedWide.Align(lipgloss.Left).Render(contLabel)
-		cVal = CursorStyle.Render(contVal)
+		cVal = CursorStyle.Render(contVal) + " " + DimStyle.Render("(Space)")
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, cPrefix, cLbl, " ", cVal),
@@ -716,9 +716,9 @@ func (f *StationForm) View() tea.View {
 		opPrefix = S.FormPrefixOn.Render("> ")
 		opLbl = S.FormFocusedWide.Align(lipgloss.Left).Render(opLabel)
 		if f.opIdx >= 0 {
-			displayVal = CursorStyle.Render(opVal)
+			displayVal = CursorStyle.Render(opVal) + " " + DimStyle.Render("(Space)")
 		} else {
-			displayVal = CursorStyle.Render(DimStyle.Render("None"))
+			displayVal = CursorStyle.Render(DimStyle.Render("None")) + " " + DimStyle.Render("(Space)")
 		}
 	}
 	b.WriteString(padOrTrunc(
@@ -758,7 +758,7 @@ func (f *StationForm) View() tea.View {
 	if f.wlCbFocus {
 		wlCbPrefix = S.FormPrefixOn.Render("> ")
 		wlCbLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("Wavelog:")
-		wlCheckbox = CursorStyle.Render(wlCheckbox)
+		wlCheckbox = CursorStyle.Render(wlCheckbox) + " " + DimStyle.Render("(Space)")
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, wlCbPrefix, wlCbLabel, " ", wlCheckbox),
@@ -801,7 +801,7 @@ func (f *StationForm) View() tea.View {
 	if f.aprsCbFocus {
 		aprsCbPrefix = S.FormPrefixOn.Render("> ")
 		aprsCbLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("APRS:")
-		aprsCheckbox = CursorStyle.Render(aprsCheckbox)
+		aprsCheckbox = CursorStyle.Render(aprsCheckbox) + " " + DimStyle.Render("(Space)")
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, aprsCbPrefix, aprsCbLabel, " ", aprsCheckbox),
@@ -827,7 +827,7 @@ func (f *StationForm) View() tea.View {
 		if f.aprsSendLocFocus {
 			locPrefix = S.FormPrefixOn.Render("> ")
 			locLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Send location:")
-			locCheckbox = CursorStyle.Render(locCheckbox)
+			locCheckbox = CursorStyle.Render(locCheckbox) + " " + DimStyle.Render("(Space)")
 		}
 		b.WriteString(padOrTrunc(
 			lipgloss.JoinHorizontal(lipgloss.Center, locPrefix, locLabel, " ", locCheckbox),
@@ -1014,6 +1014,8 @@ func (f *StationForm) ScrollFraction() float64 {
 		return 0.08
 	case f.Locator.Focused():
 		return 0.12
+	case f.gpsGridFocus:
+		return 0.145
 	case f.iaruFocus:
 		return 0.17
 	case f.contFocus:

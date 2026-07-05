@@ -327,13 +327,13 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case gpsTestMsg:
 		im.gpsTesting = false
 		if msg.err != nil {
-			im.gpsTestResult = "Failed — " + msg.err.Error()
+			im.gpsTestResult = "Failed — " + friendlyGPSError(msg.err)
 			applog.Warn("GPS test failed", "error", msg.err.Error())
 		} else if msg.ok {
 			im.gpsTestResult = "OK — GPS responding"
 			applog.Info("GPS test OK")
 		} else {
-			im.gpsTestResult = "No NMEA data received"
+			im.gpsTestResult = "No data received"
 		}
 
 	case tea.KeyPressMsg:
@@ -759,7 +759,7 @@ func (im *IntegrationMenu) View() tea.View {
 	if im.focus == imDXCChk {
 		dxcPrefix = S.FormPrefixOn.Render("> ")
 		dxcLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("DX Cluster:")
-		dxcCheckbox = CursorStyle.Render(dxcCheckbox)
+		dxcCheckbox = CursorStyle.Render(dxcCheckbox) + " " + DimStyle.Render("(Space)")
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, dxcPrefix, dxcLabel, " ", dxcCheckbox),
@@ -788,7 +788,7 @@ func (im *IntegrationMenu) View() tea.View {
 	if im.focus == imQRZChk {
 		qrzPrefix = S.FormPrefixOn.Render("> ")
 		qrzLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("QRZ.com:")
-		qrzCheckbox = CursorStyle.Render(qrzCheckbox)
+		qrzCheckbox = CursorStyle.Render(qrzCheckbox) + " " + DimStyle.Render("(Space)")
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, qrzPrefix, qrzLabel, " ", qrzCheckbox),
@@ -839,7 +839,7 @@ func (im *IntegrationMenu) View() tea.View {
 	if im.focus == imHTTPChk {
 		httpPrefix = S.FormPrefixOn.Render("> ")
 		httpLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("HTTP Server:")
-		httpCheckbox = CursorStyle.Render(httpCheckbox)
+		httpCheckbox = CursorStyle.Render(httpCheckbox) + " " + DimStyle.Render("(Space)")
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, httpPrefix, httpLabel, " ", httpCheckbox),
@@ -874,7 +874,7 @@ func (im *IntegrationMenu) View() tea.View {
 	if im.focus == imGPSChk {
 		gpsPrefix = S.FormPrefixOn.Render("> ")
 		gpsLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("GPS Service:")
-		gpsCheckbox = CursorStyle.Render(gpsCheckbox)
+		gpsCheckbox = CursorStyle.Render(gpsCheckbox) + " " + DimStyle.Render("(Space)")
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, gpsPrefix, gpsLabel, " ", gpsCheckbox),
@@ -943,7 +943,7 @@ func (im *IntegrationMenu) View() tea.View {
 			if im.focus == imGPSDTR {
 				dtrPrefix = S.FormPrefixOn.Render("> ")
 				dtrLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  DTR:")
-				dtrCb = CursorStyle.Render(dtrCb)
+				dtrCb = CursorStyle.Render(dtrCb) + " " + DimStyle.Render("(Space)")
 			}
 			b.WriteString(padOrTrunc(
 				lipgloss.JoinHorizontal(lipgloss.Center, dtrPrefix, dtrLabel, " ", dtrCb),
@@ -959,7 +959,7 @@ func (im *IntegrationMenu) View() tea.View {
 			if im.focus == imGPSRTS {
 				rtsPrefix = S.FormPrefixOn.Render("> ")
 				rtsLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  RTS:")
-				rtsCb = CursorStyle.Render(rtsCb)
+				rtsCb = CursorStyle.Render(rtsCb) + " " + DimStyle.Render("(Space)")
 			}
 			b.WriteString(padOrTrunc(
 				lipgloss.JoinHorizontal(lipgloss.Center, rtsPrefix, rtsLabel, " ", rtsCb),
@@ -988,14 +988,8 @@ func (im *IntegrationMenu) View() tea.View {
 		b.WriteString(padOrTrunc(btnLine, lineW))
 
 		if im.gpsTestResult != "" {
-			b.WriteString("\n    ")
-			if im.gpsTesting {
-				b.WriteString(DimStyle.Render(im.gpsTestResult))
-			} else if strings.HasPrefix(im.gpsTestResult, "OK") {
-				b.WriteString(SuccessStyle.Render(im.gpsTestResult))
-			} else {
-				b.WriteString(ErrorStyle.Render(im.gpsTestResult))
-			}
+			b.WriteString("\n")
+			b.WriteString(padOrTrunc("    "+im.gpsTestResultStyled(), lineW))
 		}
 	}
 
@@ -1084,7 +1078,16 @@ func (im *IntegrationMenu) Values() (dxcEnabled bool, dxcHost, dxcPort, dxcLogin
 		strings.TrimSpace(im.httpEvtStart.Value())
 }
 
-// gpsServiceName returns the config service string for the current index.
+// gpsTestResultStyled returns the GPS test result with appropriate styling.
+func (im *IntegrationMenu) gpsTestResultStyled() string {
+	if im.gpsTesting {
+		return DimStyle.Render(im.gpsTestResult)
+	}
+	if strings.HasPrefix(im.gpsTestResult, "OK") {
+		return SuccessStyle.Render(im.gpsTestResult)
+	}
+	return ErrorStyle.Render(im.gpsTestResult)
+}
 func (im *IntegrationMenu) gpsServiceName() string {
 	switch im.gpsService {
 	case 1:
@@ -1114,6 +1117,23 @@ func friendlyQRZError(err error) string {
 		return "Cannot connect to QRZ.com - try again later"
 	}
 	return "QRZ lookup failed - " + msg
+}
+
+// friendlyGPSError shortens verbose Go network errors for display in
+// the one-line test result field.
+func friendlyGPSError(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	// Strip the verbose ": dial tcp ..." suffix.
+	if idx := strings.Index(msg, ": dial tcp"); idx >= 0 {
+		msg = msg[:idx]
+	}
+	// Strip "GPSD: " or "GPS: " prefixes.
+	msg = strings.TrimPrefix(msg, "GPSD: ")
+	msg = strings.TrimPrefix(msg, "GPS: ")
+	return msg
 }
 
 // gpsBaudRates lists common GPS baud rates for PgUp/PgDn cycling.

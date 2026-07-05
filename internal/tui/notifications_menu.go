@@ -188,7 +188,7 @@ func (nm *NotificationsMenu) renderCheckbox(b *strings.Builder, boxW, cursor int
 	if nm.cursor == cursor {
 		prefix = S.FormPrefixOn.Render("> ")
 		lbl = S.FormFocusedXL.Align(lipgloss.Left).Render(label)
-		checkbox = CursorStyle.Render(checkbox)
+		checkbox = CursorStyle.Render(checkbox) + " " + DimStyle.Render("(Space)")
 	}
 	if disabled {
 		lbl = DimStyle.Render(S.FormLabelXL.Align(lipgloss.Left).Render(label))

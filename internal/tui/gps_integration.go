@@ -291,6 +291,13 @@ func (m *Model) handleGPSTick() tea.Cmd {
 		applog.Warn("GPS: fix lost")
 	}
 
+	// Push dashboard updates when GPS state changes (fix acquired/lost,
+	// or connection state changed). Dashboard already pulls on its own
+	// 1 Hz tick; this ensures the locator updates immediately on GPS events.
+	if prevFix != m.gps.hasFix || prevOnline != m.gps.online {
+		m.pushDashboardState()
+	}
+
 	// Reconnect logic — fixed 60s retry interval.
 	if !m.gps.online {
 		return m.scheduleOrReconnect()

@@ -183,7 +183,7 @@ func (gm *GeneralMenu) renderCheckbox(b *strings.Builder, boxW, cursor int, labe
 	if gm.cursor == cursor {
 		prefix = S.FormPrefixOn.Render("> ")
 		lbl = S.FormFocusedGen.Align(lipgloss.Left).Render(label)
-		checkbox = CursorStyle.Render(checkbox)
+		checkbox = CursorStyle.Render(checkbox) + " " + DimStyle.Render("(Space)")
 	}
 	b.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", checkbox), boxW))
 	b.WriteString("\n")
@@ -207,7 +207,7 @@ func (gm *GeneralMenu) renderSettingRow(b *strings.Builder, boxW, cursor int, la
 		if valW < 8 {
 			valW = 8
 		}
-		val = CursorStyle.Width(valW).MaxWidth(valW).Inline(true).Render(value)
+		val = CursorStyle.Width(valW).MaxWidth(valW).Inline(true).Render(value) + " " + DimStyle.Render("(Space)")
 	}
 	b.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val), boxW))
 	b.WriteString("\n")
