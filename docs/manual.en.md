@@ -230,7 +230,7 @@ The status bar shows:
 - local time marked as `L`,
 - UTC time marked as `Z`.
 
-Common labels include **Net**, **WSJT**, **Rig**, **Flrig**, **Hamlib**, **Rotator**, **DXC**, and **WL**.
+Common labels include **Net**, **WSJT**, **Rig**, **Flrig**, **Hamlib**, **Rotator**, **DXC**, **WL**, and **GPS**. The GPS label follows the same colour convention — red when disconnected, yellow when connected but without a fix, white when a position fix is acquired.
 
 | Color | Meaning |
 |---|---|
@@ -628,6 +628,43 @@ CQOps supports:
 WSJT-X integration uses UDP messages from WSJT-X. CQOps parses ADIF messages and can auto-log completed QSOs.
 
 The rig label becomes accent-colored while WSJT-X is transmitting. If the operator reported by WSJT-X does not match the active operator, CQOps shows a warning.
+
+### GPS
+
+CQOps can read position from a GPS receiver and use it as the station grid
+locator — ideal for portable, mobile, or field operations.
+
+Two backends are supported:
+
+- **Serial** — connects directly to a GPS receiver over a serial port
+  (USB-to-serial, built-in COM port, or `/dev/ttyUSB0`).
+- **GPSD** — connects to a [gpsd](https://gpsd.io/) server over TCP
+  (default `127.0.0.1:2947`). Useful when the GPS is shared with other
+  applications or accessed over the network.
+
+The GPS status indicator in the status bar shows:
+
+| Colour | Meaning |
+|--------|---------|
+| Red `GPS` | Disconnected / error |
+| Yellow `GPS` | Connected, no fix yet |
+| White `GPS` | Fix acquired, position locked |
+
+When a fix is acquired, the station grid locator is replaced with the
+GPS-derived position and marked `(GPS)` in the status line:
+
+```
+Rig SSB - FTDx10/Dipole  ·  Grid JO62TJ43PL (GPS)
+```
+
+Enable **Grid from GPS** in the Station & Logbook settings to use the
+GPS grid for QSO logging, APRS beacons, the dashboard map, and distance
+calculations.
+
+**Grid precision** — configurable in the Integration menu (10, 8, or 6
+characters). Default is 10-char (~25 m accuracy). The grid is always
+computed at full precision internally and truncated to the configured
+length at the usage layer.
 
 ### DX Cluster
 

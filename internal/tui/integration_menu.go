@@ -445,6 +445,19 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case imGPSRTS:
 				im.gpsRTS = !im.gpsRTS
 				return im, nil
+			case imGPSBaud:
+				im.gpsBaudRate = nextGPSCycle(im.gpsBaudRate)
+				return im, nil
+			case imGPSSvc:
+				im.gpsService = (im.gpsService + 1) % len(gpsServiceOptions)
+				if !im.isPositionVisible(im.focus) {
+					im.fixFocus()
+				}
+				im.autoScrollViewport()
+				return im, nil
+			case imGPSGridPrec:
+				im.gpsGridPrecision = nextGPSCycleInt(im.gpsGridPrecision, gpsPrecisionOptions)
+				return im, nil
 			}
 			// Fall through to text input for editable fields.
 			switch im.focus {
@@ -497,11 +510,6 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			if im.focus == imGPSTest {
-				// GPS is enabled — avoid port conflicts with live client.
-				if im.gpsEnabled {
-					im.gpsTestResult = "GPS is enabled — check status bar"
-					return im, nil
-				}
 				switch im.gpsService {
 				case 0: // Serial
 					port := strings.TrimSpace(im.gpsPort.Value())
@@ -534,44 +542,19 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						err := testGPSDConnection(host, port)
 						return gpsTestMsg{ok: err == nil, err: err}
 					}
-				default:
-					im.gpsTestResult = "No service selected"
-					return im, nil
 				}
 			}
 			im.next()
 			im.autoScrollViewport()
 		case "pgup":
-			switch im.focus {
-			case imGPSBaud:
+			if im.focus == imGPSBaud {
 				im.gpsBaudRate = nextGPSCycle(im.gpsBaudRate)
-				return im, nil
-			case imGPSSvc:
-				im.gpsService = (im.gpsService + 1) % len(gpsServiceOptions)
-				if !im.isPositionVisible(im.focus) {
-					im.fixFocus()
-				}
-				im.autoScrollViewport()
-				return im, nil
-			case imGPSGridPrec:
-				im.gpsGridPrecision = nextGPSCycleInt(im.gpsGridPrecision, gpsPrecisionOptions)
 				return im, nil
 			}
 			im.vp, _ = im.vp.Update(msg)
 		case "pgdown":
-			switch im.focus {
-			case imGPSBaud:
+			if im.focus == imGPSBaud {
 				im.gpsBaudRate = prevGPSCycle(im.gpsBaudRate)
-				return im, nil
-			case imGPSSvc:
-				im.gpsService = (im.gpsService - 1 + len(gpsServiceOptions)) % len(gpsServiceOptions)
-				if !im.isPositionVisible(im.focus) {
-					im.fixFocus()
-				}
-				im.autoScrollViewport()
-				return im, nil
-			case imGPSGridPrec:
-				im.gpsGridPrecision = prevGPSCycleInt(im.gpsGridPrecision, gpsPrecisionOptions)
 				return im, nil
 			}
 			im.vp, _ = im.vp.Update(msg)
@@ -906,7 +889,7 @@ func (im *IntegrationMenu) View() tea.View {
 		if im.focus == imGPSSvc {
 			svcPrefix = S.FormPrefixOn.Render("> ")
 			svcLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Service:")
-			svcVal = CursorStyle.Render(svcVal) + " " + DimStyle.Render("(PgUp/PgDn)")
+			svcVal = CursorStyle.Render(svcVal) + " " + DimStyle.Render("(Space)")
 		} else {
 			svcVal = ValueStyle.Render(svcVal)
 		}
@@ -922,7 +905,7 @@ func (im *IntegrationMenu) View() tea.View {
 		if im.focus == imGPSGridPrec {
 			precPrefix = S.FormPrefixOn.Render("> ")
 			precLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Grid precision:")
-			precVal = CursorStyle.Render(precVal) + " " + DimStyle.Render("(PgUp/PgDn)")
+			precVal = CursorStyle.Render(precVal) + " " + DimStyle.Render("(Space)")
 		} else {
 			precVal = ValueStyle.Render(precVal)
 		}
@@ -942,7 +925,7 @@ func (im *IntegrationMenu) View() tea.View {
 			if im.focus == imGPSBaud {
 				baudPrefix = S.FormPrefixOn.Render("> ")
 				baudLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Baud:")
-				baudVal = CursorStyle.Render(baudVal) + " " + DimStyle.Render("(PgUp/PgDn)")
+				baudVal = CursorStyle.Render(baudVal) + " " + DimStyle.Render("(Space)")
 			} else {
 				baudVal = ValueStyle.Render(baudVal)
 			}

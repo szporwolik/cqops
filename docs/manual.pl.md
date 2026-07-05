@@ -45,7 +45,7 @@ CQOps koncentruje się na szybkim wprowadzaniu QSO, lokalnym logowaniu i praktyc
 - **Wiele logbooków** — do pracy prywatnej, terenowej, zawodów i klubów.
 - **Wielu operatorów** — do pracy hot-seat i współdzielonych stacji.
 - **Wiele rigów** — każdy preset rigu może mieć własny backend i ustawienia WSJT-X.
-- **Opcjonalne integracje** — QRZ.com, Wavelog, DX Cluster, PSK Reporter, APRS, sterowanie radiem, sterowanie rotorem, dane solarne oraz CQOps Live w przeglądarce.
+- **Opcjonalne integracje** — QRZ.com, Wavelog, DX Cluster, PSK Reporter, APRS, odbiornik GPS, sterowanie radiem, sterowanie rotorem, dane solarne oraz CQOps Live w przeglądarce.
 
 Lokalne logowanie nie wymaga internetu. Funkcje sieciowe są pomijane w trybie `--offline`.
 
@@ -227,7 +227,7 @@ Status bar pokazuje:
 - czas lokalny oznaczony jako `L`,
 - czas UTC oznaczony jako `Z`.
 
-Typowe etykiety: **Net**, **WSJT**, **Rig**, **Flrig**, **Hamlib**, **Rotator**, **DXC**, **WL**.
+Typowe etykiety: **Net**, **WSJT**, **Rig**, **Flrig**, **Hamlib**, **Rotator**, **DXC**, **WL**, **GPS**. Etykieta GPS używa tej samej konwencji kolorów — czerwona gdy rozłączony, żółta gdy połączony bez fiksa, biała gdy pozycja została ustalona.
 
 | Kolor | Znaczenie |
 |---|---|
@@ -625,6 +625,41 @@ CQOps obsługuje:
 Integracja WSJT-X używa wiadomości UDP z WSJT-X. CQOps parsuje wiadomości ADIF i może automatycznie logować zakończone QSO.
 
 Etykieta rigu przyjmuje kolor akcentu, gdy WSJT-X nadaje. Jeśli operator raportowany przez WSJT-X nie zgadza się z aktywnym operatorem, CQOps pokazuje ostrzeżenie.
+
+### GPS
+
+CQOps może odczytywać pozycję z odbiornika GPS i używać jej jako grid
+locatora stacji — idealne do pracy przenośnej, mobilnej lub terenowej.
+
+Obsługiwane są dwa backendy:
+
+- **Serial** — łączy się bezpośrednio z odbiornikiem GPS przez port
+  szeregowy (USB-szeregowy, wbudowany COM lub `/dev/ttyUSB0`).
+- **GPSD** — łączy się z serwerem [gpsd](https://gpsd.io/) przez TCP
+  (domyślnie `127.0.0.1:2947`). Przydatne, gdy GPS jest współdzielony
+  z innymi aplikacjami lub dostępny przez sieć.
+
+Wskaźnik GPS na pasku statusu pokazuje:
+
+| Kolor | Znaczenie |
+|--------|---------|
+| Czerwony `GPS` | Rozłączony / błąd |
+| Żółty `GPS` | Połączony, brak fiksa |
+| Biały `GPS` | Fiks uzyskany, pozycja ustalona |
+
+Po uzyskaniu fiksa grid locator stacji jest zastępowany pozycją GPS
+i oznaczany `(GPS)` w linii statusu:
+
+```
+Rig SSB - FTDx10/Dipole  ·  Grid JO62TJ43PL (GPS)
+```
+
+Włącz **Grid from GPS** w ustawieniach Station & Logbook, aby używać
+grida GPS do logowania QSO, beaconów APRS, mapy dashboardu i obliczeń
+odległości.
+
+**Precyzja grida** — konfigurowalna w menu Integracji (10, 8 lub 6
+znaków). Domyślnie 10 znaków (~25 m dokładności).
 
 ### DX Cluster
 

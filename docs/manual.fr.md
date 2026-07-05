@@ -45,7 +45,7 @@ CQOps est construit autour de la saisie rapide des QSOs, de la journalisation lo
 - **Plusieurs logbooks** — utile pour les logs personnels, portables, concours et club.
 - **Plusieurs opérateurs** — utile pour les flux hot-seat et les stations de club partagées.
 - **Plusieurs rigs** — chaque preset de rig peut garder son propre backend et ses paramètres WSJT-X.
-- **Intégrations optionnelles** — QRZ.com, Wavelog, DX Cluster, PSK Reporter, APRS, contrôle de rig, contrôle de rotor, données solaires et CQOps Live dans le navigateur.
+- **Intégrations optionnelles** — QRZ.com, Wavelog, DX Cluster, PSK Reporter, APRS, récepteur GPS, contrôle de rig, contrôle de rotor, données solaires et CQOps Live dans le navigateur.
 
 La journalisation locale ne nécessite pas d'accès internet. Les fonctions réseau sont ignorées en mode `--offline`.
 
@@ -227,7 +227,7 @@ La Status bar affiche :
 - heure locale marquée `L`,
 - heure UTC marquée `Z`.
 
-Les étiquettes courantes incluent **Net**, **WSJT**, **Rig**, **Flrig**, **Hamlib**, **Rotator**, **DXC** et **WL**.
+Les étiquettes courantes incluent **Net**, **WSJT**, **Rig**, **Flrig**, **Hamlib**, **Rotator**, **DXC**, **WL** et **GPS**. L'étiquette GPS suit la même convention de couleur — rouge quand déconnecté, jaune quand connecté sans fix, blanc quand une position est acquise.
 
 | Couleur | Signification |
 |---|---|
@@ -625,6 +625,42 @@ CQOps supporte :
 L'intégration WSJT-X utilise les messages UDP de WSJT-X. CQOps analyse les messages ADIF et peut journaliser automatiquement les QSOs terminés.
 
 L'étiquette rig prend la couleur d'accent pendant que WSJT-X transmet. Si l'opérateur rapporté par WSJT-X ne correspond pas à l'opérateur actif, CQOps affiche un avertissement.
+
+### GPS
+
+CQOps peut lire la position d'un récepteur GPS et l'utiliser comme grid
+locator de la station — idéal pour les opérations portables, mobiles ou
+en extérieur.
+
+Deux backends sont pris en charge :
+
+- **Serial** — se connecte directement à un récepteur GPS via un port
+  série (USB-série, port COM intégré ou `/dev/ttyUSB0`).
+- **GPSD** — se connecte à un serveur [gpsd](https://gpsd.io/) via TCP
+  (par défaut `127.0.0.1:2947`). Utile lorsque le GPS est partagé avec
+  d'autres applications ou accessible via le réseau.
+
+L'indicateur GPS dans la barre d'état affiche :
+
+| Couleur | Signification |
+|--------|---------|
+| Rouge `GPS` | Déconnecté / erreur |
+| Jaune `GPS` | Connecté, pas encore de fix |
+| Blanc `GPS` | Fix acquis, position verrouillée |
+
+Lorsqu'un fix est acquis, le grid locator de la station est remplacé par
+la position GPS et marqué `(GPS)` dans la ligne d'état :
+
+```
+Rig SSB - FTDx10/Dipole  ·  Grid JO62TJ43PL (GPS)
+```
+
+Activez **Grid from GPS** dans les paramètres Station & Logbook pour
+utiliser le grid GPS pour la journalisation des QSO, les balises APRS,
+la carte du tableau de bord et les calculs de distance.
+
+**Précision du grid** — configurable dans le menu Intégrations (10, 8 ou
+6 caractères). Par défaut 10 caractères (~25 m de précision).
 
 ### DX Cluster
 
