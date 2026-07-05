@@ -88,16 +88,9 @@ func Execute() error {
 }
 
 func runTUI() error {
-	// Linux console (TERM=linux) sends different function-key escape
-	// sequences than xterm. The kernel console driver supports xterm
-	// colours when TERM is set appropriately, but the F1–F5 sequences
-	// remain incompatible (\e[[A vs \eOP). Fix both:
-	//   1. Set TERM=xterm-256color for colour support.
-	//   2. Wrap stdin with a translator for F1–F5 keys.
-	useConsoleWrapper := false
+	// Linux console (TERM=linux) needs xterm-256color for colour support.
 	if runtime.GOOS == "linux" && os.Getenv("TERM") == "linux" {
 		os.Setenv("TERM", "xterm-256color")
-		useConsoleWrapper = true
 	}
 
 	a, err := app.Init()
@@ -136,11 +129,7 @@ func runTUI() error {
 
 	m := tui.New(a, qsos)
 	m.Offline = offlineFlag
-	var opts []tea.ProgramOption
-	if useConsoleWrapper {
-		opts = append(opts, tea.WithInput(&linuxConsoleReader{inner: os.Stdin}))
-	}
-	p := tea.NewProgram(m, opts...)
+	p := tea.NewProgram(m)
 
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("tui: %w", err)
