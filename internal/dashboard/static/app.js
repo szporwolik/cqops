@@ -59,6 +59,7 @@ updateClocks();setInterval(updateClocks,1000);
 function isImperial(){return displayCfg.units==='imperial'}
 function fmtDist(km){if(!km||km<=0)return'—';return isImperial()?Math.round(km*0.621371)+' mi':Math.round(km)+' km'}
 function fmtTemp(c){if(c==null)return'—';return isImperial()?Math.round(c*9/5+32)+'\u00b0F':Math.round(c)+'\u00b0C'}
+function fmtWind(kmh){if(kmh==null)return'—';return isImperial()?Math.round(kmh*0.621371)+' mph':Math.round(kmh)+' km/h'}
 
 // ---- State switching ----
 function setState(active){
@@ -433,7 +434,7 @@ function renderTopQSOs(){
     var countryText=r.country?r.country.replace(/^The\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Federal Republic Of\s+/,'').trim().substring(0,20):'';
     var displayMode=r.submode||r.mode;
     var badge='<span class=\"tq-badge '+bandBadgeClass(r.band)+'\">'+esc(r.band)+'</span><span class=\"tq-badge '+modeBadgeClass(displayMode)+'\">'+esc(displayMode)+'</span>';
-    var distPart=r.km?'<span class=\"tq-dist\">'+Math.round(r.km)+'km</span>':'<span class=\"tq-dist\">—</span>';
+    var distPart='<span class=\"tq-dist\">'+fmtDist(r.km)+'</span>';
     var isLongest=i===0&&r.km>0;
     var cls=isLongest?' class=\"tq-longest\"':'';
     // Order: callsign distance band mode operator country
@@ -953,7 +954,7 @@ function _renderAprsMarker(s,bounds){
   var ago=Math.round((Date.now()-new Date(s.lastHeard).getTime())/60000);
   popup+='<br>'+ago+' min ago';
   if(s.course)popup+='<br>Course: '+s.course+'°';
-  if(s.speedKmH)popup+='<br>'+s.speedKmH+' km/h';
+  if(s.speedKmH)popup+='<br>'+fmtWind(s.speedKmH);
   var m=_aprMarker(s);
   m.bindPopup(popup);
   aprsMarkerLayer.addLayer(m);
@@ -1218,7 +1219,7 @@ function renderWeather(d){
     html+='<span class="wx-slot"><span class="wx-icon '+wxAnimClass(code)+'">'+weatherIcon(code,isDay)+'</span>'+
       '<span class="wx-label">'+label+'</span>'+
       (temp!=null?'<span class="wx-temp">'+fmtTemp(temp)+'</span>':'')+
-      (wSpd!=null?'<span class="wx-wind"><span class="wx-wind-spd">'+Math.round(wSpd)+'</span><span class="wx-wind-unit">km/h</span> <span class="wx-wind-dir">'+windArrow(wDir||0)+'</span></span>':'')+
+      (wSpd!=null?'<span class="wx-wind">'+fmtWind(wSpd)+' <span class="wx-wind-dir">'+windArrow(wDir||0)+'</span></span>':'')+
       (precip!=null&&precip>0?'<span class="wx-rain">'+precip.toFixed(1)+'mm</span>':'')+
       '</span>';
   }
@@ -1247,7 +1248,7 @@ function renderContactWeather(d){
   var c=d.current||{},windArrow=function(deg){var a=['↓','↙','←','↖','↑','↗','→','↘'];return a[Math.round(deg/45)%8]||'•'};
   document.getElementById('hero-wx-icon').innerHTML='<span class="'+wxAnimClass(c.weather_code||0)+'">'+weatherIcon(c.weather_code||0,c.is_day)+'</span>';
   document.getElementById('hero-wx-temp').textContent=fmtTemp(c.temperature_2m);
-  document.getElementById('hero-wx-wind').textContent=c.wind_speed_10m!=null?Math.round(c.wind_speed_10m)+' km/h '+windArrow(c.wind_direction_10m||0):'';
+  document.getElementById('hero-wx-wind').textContent=c.wind_speed_10m!=null?fmtWind(c.wind_speed_10m)+' '+windArrow(c.wind_direction_10m||0):'';
   hwb.classList.add('visible');
   if(map)map.invalidateSize();if(mapLocal)mapLocal.invalidateSize();
 }
