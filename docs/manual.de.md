@@ -696,7 +696,42 @@ Er bietet:
 
 ### APRS
 
-APRS nutzt eine TCP-Verbindung zu einem APRS-IS-Server und benötigt Internetzugang.
+CQOps unterstützt drei APRS-Diensttypen – wähle den passenden für dein
+Station-Setup:
+
+| Dienst | Verbindung | Internet nötig |
+|---|---|---|
+| **APRS-IS** | TCP zu einem APRS-IS-Server | Ja |
+| **KISS** | Serielle Schnittstelle zu einem Hardware-KISS-TNC | Nein |
+| **KISS Server** | TCP zu einem KISS-TNC-Server (z.B. Dire Wolf) | Nein (lokales Netzwerk) |
+
+Wähle den Diensttyp im Integrationsmenü:
+
+```text
+F9 → Integrations → APRS → Service (Leertaste zum Wechseln)
+```
+
+Alle drei Dienste unterstützen den Empfang von APRS-Positionsberichten
+nahegelegener Stationen und deren Anzeige auf der CQOps-Live-Karte mit:
+
+- standard APRS-Symbolen,
+- Callsign-Popups,
+- auto-fit view,
+- konfigurierbarem range circle.
+
+Alle Dienste unterstützen auch **periodische Positions-Beacons**. CQOps
+sendet deinen Grid-Locator im konfigurierten Intervall. Wenn GPS aktiv ist
+und **Grid from GPS** aktiviert ist, verwendet das Beacon automatisch die
+GPS-Position – ideal für portablen und mobilen Betrieb.
+
+#### APRS-IS
+
+Verbindet sich mit dem globalen APRS-IS-Netzwerk über das Internet.
+Benötigt:
+
+- ein gültiges Amateurfunk-Rufzeichen,
+- einen APRS-IS-Passcode (aus dem Rufzeichen generiert),
+- eine Internetverbindung.
 
 Standardserver:
 
@@ -704,25 +739,74 @@ Standardserver:
 euro.aprs2.net:14580
 ```
 
-CQOps kann Positionsberichte nahegelegener Stationen empfangen und auf der lokalen CQOps-Live-Karte anzeigen mit:
+APRS-IS wird global unter **F9 → Integrations → APRS** konfiguriert.
+Rufzeichen, SSID, Symbol, Kommentar, Beacon-Intervall und Reichweitenfilter
+pro Logbuch unter **F9 → Logbooks → [aktives Logbuch] → APRS**.
 
-- Standardsymbolen,
-- Callsign-Popups,
-- auto-fit view,
-- konfigurierbarem range circle.
+#### KISS (seriell)
 
-CQOps kann außerdem ein periodisches Beacon senden mit:
+Verbindet sich direkt mit einem Hardware-KISS-TNC über eine serielle
+Schnittstelle. Keine Internetverbindung nötig – APRS-Frames werden über
+dein Funkgerät gesendet und empfangen.
 
-- Stationsrufzeichen,
-- SSID,
-- Grid Locator,
-- optionalem Kommentar.
-
-APRS wird pro Logbuch konfiguriert in:
+Konfiguriere Port, Baudrate, Datenbits, Parität, Stoppbits und DTR/RTS
+im Integrationsmenü:
 
 ```text
-F9 → Logbooks → [active logbook] → APRS
+F9 → Integrations → APRS → Service: KISS
 ```
+
+Wenn KISS ausgewählt ist, werden die seriellen Felder (Port, Baud,
+Datenbits, Parität, Stoppbits, DTR, RTS) sichtbar.
+
+Der **Test**-Button öffnet die serielle Schnittstelle, um zu prüfen,
+ob der TNC erreichbar ist.
+
+#### KISS Server (TCP)
+
+Verbindet sich mit einem KISS-TNC, der über TCP erreichbar ist – z.B.
+eine [Dire Wolf](https://github.com/wb2osz/direwolf)-Instanz auf demselben
+Rechner oder im lokalen Netzwerk. Keine Internetverbindung nötig.
+
+Gib die Server-Adresse (host:port) im Integrationsmenü ein:
+
+```text
+F9 → Integrations → APRS → Service: KISS Server → Server
+```
+
+Standard: `localhost:8001`
+
+#### Beaconing
+
+Beacons werden im pro Logbuch konfigurierten Intervall gesendet. Das
+minimale Intervall beträgt 1 Minute. Das Beacon enthält:
+
+- Stationsrufzeichen mit SSID,
+- Grid-Locator (GPS-basiert, wenn verfügbar),
+- APRS-Symbol,
+- optionalen Kommentar.
+
+Wenn **GPS** aktiv ist und **Grid from GPS** in den Station-Einstellungen
+aktiviert ist, verwendet das Beacon automatisch den GPS-Grid-Locator –
+kein manuelles Grid-Update während der Fahrt nötig.
+
+Beacon-Intervall und andere Einstellungen pro Logbuch:
+
+```text
+F9 → Logbooks → [aktives Logbuch] → APRS
+```
+
+#### Empfang
+
+Empfangene APRS-Positionsberichte werden lokal gecached und auf der
+CQOps-Live-Dashboard-Karte angezeigt. Stationen werden mit ihren
+APRS-Symbolen dargestellt und können für Details angeklickt werden.
+Die Anzeige passt sich automatisch an, um alle sichtbaren Stationen
+innerhalb der konfigurierten Reichweite zu zeigen.
+
+APRS-Empfang ist unabhängig vom Beacon-Senden – du kannst empfangen,
+ohne ein Beacon zu senden, und umgekehrt. Aktiviere einfach APRS im
+Integrationsmenü und wähle den Diensttyp.
 
 ### Solar Data
 
@@ -888,6 +972,7 @@ Secrets werden mit einem maschinengebundenen Schlüssel verschlüsselt. Beim Umz
 | DX Cluster | Host, port, login |
 | Operators | Operator-Profile |
 | Logbooks | Station-, Wavelog-, contest-, operator- und APRS-Einstellungen pro Logbuch |
+| Integrations | APRS-Diensttyp (APRS-IS, KISS, KISS Server), GPS, HTTP-Server, DXC, QRZ |
 | Notifications | QSO saved alerts, Wavelog status, dupe beep, error sounds |
 | General | Timezone, distance units, map, debug mode |
 

@@ -697,7 +697,43 @@ Fornisce:
 
 ### APRS
 
-APRS usa una connessione TCP a un server APRS-IS e richiede internet.
+CQOps supporta tre tipi di servizio APRS — scegli quello adatto alla
+configurazione della tua stazione:
+
+| Servizio | Connessione | Internet richiesto |
+|---|---|---|
+| **APRS-IS** | TCP a un server APRS-IS | Sì |
+| **KISS** | Porta seriale a un TNC KISS hardware | No |
+| **KISS Server** | TCP a un server TNC KISS (es. Dire Wolf) | No (rete locale) |
+
+Seleziona il tipo di servizio nel menu Integrations:
+
+```text
+F9 → Integrations → APRS → Service (Spazio per cambiare)
+```
+
+Tutti e tre i servizi supportano la ricezione di rapporti di posizione
+APRS da stazioni vicine e la loro visualizzazione sulla mappa locale
+CQOps Live con:
+
+- simboli APRS standard,
+- popup callsign,
+- auto-fit view,
+- range circle configurabile.
+
+Tutti i servizi supportano anche il **beaconing periodico di posizione**.
+CQOps trasmette il tuo grid locator all'intervallo configurato. Quando
+il GPS è attivo e **Grid from GPS** è abilitato, il beacon usa
+automaticamente la posizione derivata dal GPS — ideale per operazioni
+portatili e mobili.
+
+#### APRS-IS
+
+Si connette alla rete globale APRS-IS tramite internet. Richiede:
+
+- un nominativo radioamatoriale valido,
+- un passcode APRS-IS (generato dal tuo nominativo),
+- una connessione internet.
 
 Server predefinito:
 
@@ -705,25 +741,76 @@ Server predefinito:
 euro.aprs2.net:14580
 ```
 
-CQOps può ricevere report di posizione da stazioni vicine e mostrarli sulla mappa locale CQOps Live con:
+APRS-IS è configurato globalmente in **F9 → Integrations → APRS**.
+Nominativo, SSID, simbolo, commento, intervallo beacon e filtro di
+portata per logbook in **F9 → Logbooks → [logbook attivo] → APRS**.
 
-- simboli standard,
-- popup callsign,
-- auto-fit view,
-- range circle configurabile.
+#### KISS (seriale)
 
-CQOps può anche inviare un beacon periodico con:
+Si connette direttamente a un TNC KISS hardware tramite porta seriale.
+Nessuna connessione internet richiesta — i frame APRS sono inviati e
+ricevuti attraverso la tua radio.
 
-- nominativo di stazione,
-- SSID,
-- grid locator,
-- commento opzionale.
-
-APRS è configurato per logbook in:
+Configura la porta seriale, baud rate, data bits, parità, stop bits e
+DTR/RTS nel menu Integrations:
 
 ```text
-F9 → Logbooks → [active logbook] → APRS
+F9 → Integrations → APRS → Service: KISS
 ```
+
+Quando KISS è selezionato, i campi seriali (Port, Baud, Data bits,
+Parity, Stop bits, DTR, RTS) diventano visibili.
+
+Il pulsante **Test** apre la porta seriale per verificare che il TNC
+sia raggiungibile.
+
+#### KISS Server (TCP)
+
+Si connette a un TNC KISS accessibile via TCP — ad esempio, un'istanza
+[Dire Wolf](https://github.com/wb2osz/direwolf) in esecuzione sulla
+stessa macchina o sulla rete locale. Nessuna connessione internet
+richiesta.
+
+Inserisci l'indirizzo del server (host:port) nel menu Integrations:
+
+```text
+F9 → Integrations → APRS → Service: KISS Server → Server
+```
+
+Predefinito: `localhost:8001`
+
+#### Beaconing
+
+I beacon vengono inviati all'intervallo configurato per logbook.
+L'intervallo minimo è di 1 minuto. Il beacon include:
+
+- nominativo di stazione con SSID,
+- grid locator (basato sul GPS quando disponibile),
+- simbolo APRS,
+- commento opzionale.
+
+Quando il **GPS** è attivo e **Grid from GPS** è abilitato nelle
+impostazioni Station, il beacon usa automaticamente il grid locator
+derivato dal GPS — nessun aggiornamento manuale del grid necessario
+durante gli spostamenti.
+
+Intervallo beacon e altre impostazioni per logbook:
+
+```text
+F9 → Logbooks → [logbook attivo] → APRS
+```
+
+#### Ricezione
+
+I rapporti di posizione APRS ricevuti vengono memorizzati nella cache
+locale e visualizzati sulla mappa del dashboard CQOps Live. Le stazioni
+sono mostrate con i loro simboli APRS e possono essere cliccate per i
+dettagli. La visualizzazione si auto-adatta per mostrare tutte le
+stazioni visibili entro la portata configurata.
+
+La ricezione APRS è indipendente dalla trasmissione beacon — puoi
+ricevere senza inviare un beacon, e viceversa. Attiva semplicemente
+APRS nel menu Integrations e imposta il tipo di servizio.
 
 ### Solar Data
 
@@ -889,6 +976,7 @@ I secrets sono cifrati con una chiave legata alla macchina. Spostando la configu
 | DX Cluster | Host, port, login |
 | Operators | Profili operatore |
 | Logbooks | Impostazioni station, Wavelog, contest, operator e APRS per logbook |
+| Integrations | Tipo di servizio APRS (APRS-IS, KISS, KISS Server), GPS, server HTTP, DXC, QRZ |
 | Notifications | QSO saved alerts, Wavelog status, dupe beep, error sounds |
 | General | Timezone, distance units, map, debug mode |
 

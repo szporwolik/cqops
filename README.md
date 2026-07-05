@@ -41,6 +41,7 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 - **Encrypted secrets** — AES-256-GCM, machine-tied, never plaintext
 - **DX Cluster & PSK Reporter** — live spots with band/mode/time filters
 - **GPS receiver** — serial or GPSD, live grid override for /P and mobile ops
+- **APRS** — APRS-IS, KISS TNC (serial), and KISS Server (TCP). Live position map, station caching, GPS-aware beaconing with configurable interval (1 min minimum)
 - **CQOps Live** — built-in browser dashboard with live map, QSO paths, stats, weather, band conditions, APRS. Great for Field Day displays or club station screens
 - **Contest logging** — exchange markers, auto serials, ADIF contest IDs
 - **Offline-first** — SQLite, cached reference data, `--offline` flag
@@ -73,6 +74,11 @@ flowchart LR
         solar["Solar Data"]
         wavelog["Wavelog"]
     end
+    subgraph APRS["APRS (optional)"]
+        aprsis["APRS-IS"]
+        kissS["KISS TNC (serial)"]
+        kissT["KISS Server (TCP)"]
+    end
     subgraph Dash["Read-only web dashboard (optional)"]
         dash["Maps · Stats · Spots · Weather"]
     end
@@ -88,6 +94,7 @@ flowchart LR
     rig <--> CQOps
     wsjtx -. UDP .-> CQOps
     CQOps <--> Internet
+    CQOps <--> APRS
     CQOps -. SSE .-> Dash
     CQOps --> FilesExport
     FilesImport --> CQOps

@@ -695,33 +695,118 @@ PSK Reporter integration にはインターネット接続が必要です。
 
 ### APRS
 
-APRS は APRS-IS server への TCP 接続を使い、インターネット接続が必要です。
+CQOps は 3 種類の APRS サービスに対応しています — お使いの局構成に
+合ったものを選んでください：
 
-デフォルト server:
+| サービス | 接続 | インターネット |
+|---|---|---|
+| **APRS-IS** | APRS-IS サーバーへの TCP 接続 | 必要 |
+| **KISS** | ハードウェア KISS TNC へのシリアル接続 | 不要 |
+| **KISS Server** | KISS TNC サーバー（Dire Wolf など）への TCP 接続 | 不要（ローカルネットワーク） |
+
+サービス種別は Integrations メニューで選択します：
+
+```text
+F9 → Integrations → APRS → Service（Space で切替）
+```
+
+3つのサービスすべてで、近隣局からの APRS 位置情報の受信と
+CQOps Live ローカルマップへの表示が可能です：
+
+- 標準 APRS シンボル、
+- コールサイン ポップアップ、
+- 自動フィット表示、
+- 設定可能な範囲円。
+
+また、すべてのサービスで**定期的な位置ビーコン送信**に対応しています。
+CQOps は設定された間隔で自局のグリッドロケーターを送信します。
+GPS が有効で **Grid from GPS** がオンになっている場合、ビーコンは
+自動的に GPS から取得した位置を使用します — ポータブルや移動運用に
+最適です。
+
+#### APRS-IS
+
+インターネット経由でグローバルな APRS-IS ネットワークに接続します。
+以下のものが必要です：
+
+- 有効なアマチュア無線コールサイン、
+- APRS-IS パスコード（コールサインから生成）、
+- インターネット接続。
+
+デフォルトサーバー：
 
 ```text
 euro.aprs2.net:14580
 ```
 
-CQOps は近くの局から position reports を受信し、CQOps Live local map に表示できます。
+APRS-IS は **F9 → Integrations → APRS** でグローバルに設定します。
+コールサイン、SSID、シンボル、コメント、ビーコン間隔、範囲フィルター
+はログブックごとに **F9 → Logbooks → [アクティブログブック] → APRS**
+で設定します。
 
-- standard symbols。
-- callsign popups。
-- auto-fit view。
-- configurable range circle。
+#### KISS（シリアル）
 
-CQOps は次の内容を含む periodic beacon も送信できます。
+シリアルポート経由でハードウェア KISS TNC に直接接続します。
+インターネット接続は不要です — APRS フレームは無線機を通じて
+送受信されます。
 
-- station callsign。
-- SSID。
-- grid locator。
-- optional comment。
-
-APRS は logbook ごとに次で設定します。
+シリアルポート、ボーレート、データビット、パリティ、ストップビット、
+DTR/RTS を Integrations メニューで設定します：
 
 ```text
-F9 → Logbooks → [active logbook] → APRS
+F9 → Integrations → APRS → Service: KISS
 ```
+
+KISS 選択時には、シリアル固有のフィールド（Port, Baud, Data bits,
+Parity, Stop bits, DTR, RTS）が表示されます。
+
+**Test** ボタンでシリアルポートを開き、TNC に到達可能かを確認します。
+
+#### KISS Server（TCP）
+
+TCP 経由でアクセス可能な KISS TNC に接続します — 例えば、同じマシン
+またはローカルネットワーク上の
+[Dire Wolf](https://github.com/wb2osz/direwolf) インスタンス。
+インターネット接続は不要です。
+
+Integrations メニューでサーバーアドレス（host:port）を入力します：
+
+```text
+F9 → Integrations → APRS → Service: KISS Server → Server
+```
+
+デフォルト：`localhost:8001`
+
+#### ビーコン送信
+
+ビーコンはログブックごとに設定された間隔で送信されます。
+最小間隔は 1 分です。ビーコンには以下が含まれます：
+
+- SSID 付きの局コールサイン、
+- グリッドロケーター（GPS 利用可能時は GPS から取得）、
+- APRS シンボル、
+- オプションのコメント。
+
+**GPS** が有効で **Grid from GPS** が Station 設定でオンになっている
+場合、ビーコンは自動的に GPS から取得したグリッドロケーターを使用
+します — 移動中に手動でグリッドを更新する必要はありません。
+
+ビーコン間隔とその他のログブックごとの設定：
+
+```text
+F9 → Logbooks → [アクティブログブック] → APRS
+```
+
+#### 受信
+
+受信した APRS 位置情報はローカルにキャッシュされ、CQOps Live ダッシュ
+ボードのマップに表示されます。各局は APRS シンボル付きで表示され、
+クリックで詳細を確認できます。設定された範囲内の全可視局を表示する
+ように表示は自動調整されます。
+
+APRS 受信はビーコン送信とは独立しています — ビーコンを送信せずに
+受信することも、その逆も可能です。Integrations メニューで APRS を
+有効にしてサービス種別を設定するだけです。
 
 ### Solar Data
 
@@ -887,6 +972,7 @@ secrets は machine-tied key で暗号化されます。別のマシンへ設定
 | DX Cluster | Host, port, login |
 | Operators | Operator profiles |
 | Logbooks | Station, Wavelog, contest, operator, APRS settings per logbook |
+| Integrations | APRS サービス種別（APRS-IS, KISS, KISS Server）, GPS, HTTP サーバー, DXC, QRZ |
 | Notifications | QSO saved alerts, Wavelog status, dupe beep, error sounds |
 | General | Timezone, distance units, map, debug mode |
 

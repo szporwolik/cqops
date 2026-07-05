@@ -701,7 +701,41 @@ It provides:
 
 ### APRS
 
-APRS integration uses a TCP connection to an APRS-IS server and requires internet access.
+CQOps supports three APRS service types — choose the one that matches your
+station setup:
+
+| Service | Connection | Internet required |
+|---|---|---|
+| **APRS-IS** | TCP to an APRS-IS server | Yes |
+| **KISS** | Serial port to a hardware KISS TNC | No |
+| **KISS Server** | TCP to a KISS TNC server (e.g. Dire Wolf) | No (local network) |
+
+Select the service type in the Integrations menu:
+
+```text
+F9 → Integrations → APRS → Service (Space to cycle)
+```
+
+All three services support receiving APRS position reports from nearby
+stations and displaying them on the CQOps Live local map with:
+
+- standard APRS symbols,
+- callsign popups,
+- auto-fit view,
+- configurable range circle.
+
+All services also support **periodic position beaconing**. CQOps transmits
+your station's grid locator at the configured interval. When GPS is active
+and **Grid from GPS** is enabled, the beacon automatically uses the
+GPS-derived position — ideal for portable and mobile operation.
+
+#### APRS-IS
+
+Connects to the global APRS-IS network over the internet. Requires:
+
+- a valid amateur radio callsign,
+- an APRS-IS passcode (generated from your callsign),
+- an internet connection.
 
 Default server:
 
@@ -709,25 +743,72 @@ Default server:
 euro.aprs2.net:14580
 ```
 
-CQOps can receive position reports from nearby stations and display them on the CQOps Live local map with:
+APRS-IS is configured globally under **F9 → Integrations → APRS**.
+Per-logbook callsign, SSID, symbol, comment, beacon interval, and range
+filter are set under **F9 → Logbooks → [active logbook] → APRS**.
 
-- standard symbols,
-- callsign popups,
-- auto-fit view,
-- configurable range circle.
+#### KISS (serial)
 
-CQOps can also send a periodic beacon with:
+Connects directly to a hardware KISS TNC over a serial port. No internet
+connection is required — APRS frames are sent and received through your
+radio.
 
-- station callsign,
-- SSID,
-- grid locator,
+Configure the serial port, baud rate, data bits, parity, stop bits, and
+DTR/RTS in the Integrations menu:
+
+```text
+F9 → Integrations → APRS → Service: KISS
+```
+
+When KISS is selected, serial-specific fields (Port, Baud, Data bits,
+Parity, Stop bits, DTR, RTS) become visible.
+
+The **Test** button opens the serial port to verify the TNC is reachable.
+
+#### KISS Server (TCP)
+
+Connects to a KISS TNC accessible over TCP — for example, a
+[Dire Wolf](https://github.com/wb2osz/direwolf) instance running on the
+same machine or on the local network. No internet connection is required.
+
+Enter the server address (host:port) in the Integrations menu:
+
+```text
+F9 → Integrations → APRS → Service: KISS Server → Server
+```
+
+Default: `localhost:8001`
+
+#### Beaconing
+
+Beacons are sent at the interval configured per logbook. The minimum
+interval is 1 minute. The beacon includes:
+
+- station callsign with SSID,
+- grid locator (GPS-derived when available),
+- APRS symbol,
 - optional comment.
 
-APRS is configured per logbook in:
+When **GPS** is active and **Grid from GPS** is enabled in the Station
+settings, the beacon automatically uses the GPS-derived grid locator —
+no manual grid update is needed while moving.
+
+Beacon interval and other per-logbook settings are configured under:
 
 ```text
 F9 → Logbooks → [active logbook] → APRS
 ```
+
+#### Receiving
+
+Received APRS position reports are cached locally and displayed on the
+CQOps Live dashboard map. Stations are shown with their APRS symbols and
+can be clicked for details. The display auto-fits to show all visible
+stations within the configured range.
+
+APRS receive is independent of beacon transmit — you can receive without
+sending a beacon, and vice versa. Simply enable APRS in the Integrations
+menu and set the service type.
 
 ### Solar Data
 
@@ -893,6 +974,7 @@ Secrets are encrypted with a machine-tied key. When moving configuration to anot
 | DX Cluster | Host, port, login |
 | Operators | Operator profiles |
 | Logbooks | Station, Wavelog, contest, operator, and APRS settings per logbook |
+| Integrations | APRS service type (APRS-IS, KISS, KISS Server), GPS, HTTP server, DXC, QRZ |
 | Notifications | QSO saved alerts, Wavelog status, dupe beep, error sounds |
 | General | Timezone, distance units, map, debug mode |
 
