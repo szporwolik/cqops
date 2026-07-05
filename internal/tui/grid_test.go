@@ -107,17 +107,17 @@ func TestFormatDistance(t *testing.T) {
 		unit string
 		want string
 	}{
-		{km: 100, unit: "km", want: "100 km"},
-		{km: 100, unit: "mi", want: "62 mi"},
-		{km: 0, unit: "km", want: ""},
-		{km: -1, unit: "km", want: ""},
-		{km: 1, unit: "km", want: "1 km"},
-		{km: 1.4, unit: "km", want: "1 km"},
-		{km: 1.6, unit: "km", want: "2 km"},
+		{km: 100, unit: "metric", want: "100 km"},
+		{km: 100, unit: "imperial", want: "62 mi"},
+		{km: 0, unit: "metric", want: ""},
+		{km: -1, unit: "metric", want: ""},
+		{km: 1, unit: "metric", want: "1 km"},
+		{km: 1.4, unit: "metric", want: "1 km"},
+		{km: 1.6, unit: "metric", want: "2 km"},
 		// Unknown unit defaults to km
 		{km: 50, unit: "nmi", want: "50 km"},
-		// mi rounding
-		{km: 10, unit: "mi", want: "6 mi"},
+		// imperial rounding
+		{km: 10, unit: "imperial", want: "6 mi"},
 	}
 	for _, tt := range tests {
 		got := formatDistance(tt.km, tt.unit)

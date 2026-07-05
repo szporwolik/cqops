@@ -93,10 +93,10 @@ func (m *Model) headerView() string {
 		aprsCfg := m.App.Logbook.APRS
 		if aprsCfg != nil && aprsCfg.Enabled {
 			label := "APRS-RX"
-			online := m.App.APRSClient != nil && m.App.APRSClient.IsRunning()
 			if aprsCfg.SendLocation {
 				label = "APRS"
 			}
+			online := m.App.APRSClient != nil && m.App.APRSClient.IsConnected()
 			rightParts = append(rightParts, statusDotStyled(online, label, m.Offline))
 		}
 	}
@@ -164,6 +164,13 @@ func statusDotStyled(on bool, label string, offline ...bool) string {
 
 // renderStatusBar is the canonical entry point for status bar rendering.
 func (m *Model) renderStatusBar() string { return m.headerView() }
+
+// aprsConnected returns true when the APRS client is connected (either
+// TCP APRS-IS or KISS serial). Used by the render cache to detect
+// connection state changes and invalidate the status bar.
+func (m *Model) aprsConnected() bool {
+	return m.App.APRSClient != nil && m.App.APRSClient.IsConnected()
+}
 
 // windowTitle returns the terminal window title for the main TUI.
 func (m *Model) windowTitle() string {

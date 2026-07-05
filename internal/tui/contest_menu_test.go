@@ -93,7 +93,7 @@ func newTestContestChooser(t *testing.T, contests map[string]config.Contest) *Co
 
 	cfg := &config.Config{
 		Contests: contests,
-		General:  config.GeneralConfig{DistanceUnit: "km", RenderMap: true},
+		General:  config.GeneralConfig{Units: "metric", RenderMap: true},
 		Logbooks: map[string]config.Logbook{
 			"test": {
 				Station: config.Station{Callsign: "SP9MOA", Grid: "JO90"},

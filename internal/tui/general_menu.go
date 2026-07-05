@@ -29,9 +29,9 @@ type GeneralMenu struct {
 }
 
 func NewGeneralMenu(cfg *config.Config) *GeneralMenu {
-	du := cfg.General.DistanceUnit
-	if du != "mi" {
-		du = "km"
+	du := cfg.General.Units
+	if du != "imperial" {
+		du = "metric"
 	}
 	tz := cfg.General.Timezone
 	tzIdx := 0
@@ -90,10 +90,10 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case " ", "space":
 			switch gm.cursor {
 			case 0:
-				if gm.distanceUnit == "km" {
-					gm.distanceUnit = "mi"
+				if gm.distanceUnit == "metric" {
+					gm.distanceUnit = "imperial"
 				} else {
-					gm.distanceUnit = "km"
+					gm.distanceUnit = "metric"
 				}
 			case 1:
 				gm.tzIndex++
@@ -151,7 +151,7 @@ func (gm *GeneralMenu) View() tea.View {
 
 	// Row 0: Units — toggles Metric/Imperial on space.
 	unitVal := "Metric"
-	if gm.distanceUnit == "mi" {
+	if gm.distanceUnit == "imperial" {
 		unitVal = "Imperial"
 	}
 	gm.renderSettingRow(&b, boxW, 0, "Units", unitVal)

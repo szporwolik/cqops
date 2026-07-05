@@ -33,6 +33,7 @@ type renderCache struct {
 	barTx      bool   // WSJT-X TX state; busts status cache on change
 	barTxMsg   string // WSJT-X TX message; busts status cache on change
 	barOnline  bool   // WSJT-X online state; busts status cache on change
+	barAPRS    bool   // APRS connection state; busts status cache on change
 
 	// Partner view cache.
 	partnerView    string

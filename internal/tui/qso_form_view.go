@@ -420,7 +420,7 @@ func (m *Model) formPathRow(width int) string {
 
 	var primaryLine string
 	if ownGrid != "" && partnerGrid != "" {
-		line := distanceLine(ownGrid, partnerGrid, m.App.Config.General.DistanceUnit)
+		line := distanceLine(ownGrid, partnerGrid, m.App.Config.General.Units)
 		if line != "" {
 			primaryLine = " Path  " + line
 		}
@@ -463,7 +463,7 @@ func (m *Model) formPathRow(width int) string {
 	sigB.WriteByte('|')
 	sigB.WriteString(partnerGrid)
 	sigB.WriteByte('|')
-	sigB.WriteString(m.App.Config.General.DistanceUnit)
+	sigB.WriteString(m.App.Config.General.Units)
 	sigB.WriteByte('|')
 	sigB.WriteString(statsSig)
 	sigB.WriteByte('|')

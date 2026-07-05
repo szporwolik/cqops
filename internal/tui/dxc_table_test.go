@@ -207,7 +207,7 @@ func TestDXCSpotAtCursor_NoSelectedCall(t *testing.T) {
 // parseSpotCommentForRefs testing. No DB, no integrations.
 func newModelForRefParse() *Model {
 	cfg := &config.Config{
-		General: config.GeneralConfig{DistanceUnit: "km"},
+		General: config.GeneralConfig{Units: "metric"},
 		Logbooks: map[string]config.Logbook{
 			"test": {Station: config.Station{Callsign: "SP9MOA", Grid: "JO90"}},
 		},

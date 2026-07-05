@@ -106,7 +106,7 @@ func TestConnection_Unverified(t *testing.T) {
 
 func TestClient_StartStop(t *testing.T) {
 	addr, done := fakeAPRSServer(t, true)
-	c := NewClient(addr, "N0CALL", "-1", "")
+	c := NewTCPClient(addr, "N0CALL", "-1", "")
 	connected := make(chan bool, 2)
 	c.OnStatus = func(ok bool, _ error) { connected <- ok }
 
@@ -135,7 +135,7 @@ func TestClient_StartStop(t *testing.T) {
 }
 
 func TestClient_StopDuringConnect(t *testing.T) {
-	c := NewClient("192.0.2.1:14580", "N0CALL", "-1", "")
+	c := NewTCPClient("192.0.2.1:14580", "N0CALL", "-1", "")
 	c.Start()
 	time.Sleep(100 * time.Millisecond)
 	c.Stop()

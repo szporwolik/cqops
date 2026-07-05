@@ -8,7 +8,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		General: GeneralConfig{
 			Timezone:         tz,
-			DistanceUnit:     "km",
+			Units:            "metric",
 			PictureAtQRZPane: false,
 			SolarAtQSOPane:   true,
 			UseCTY:           true,

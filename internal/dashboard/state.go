@@ -171,6 +171,7 @@ type APRSStation struct {
 	Course    int       `json:"course,omitempty"`
 	SpeedKmH  int       `json:"speedKmH,omitempty"`
 	LastHeard time.Time `json:"lastHeard"`
+	Source    string    `json:"source,omitempty"` // "aprs_is" or "kiss"
 }
 
 type MapState struct {

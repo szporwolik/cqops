@@ -102,7 +102,7 @@ func (m *Model) handleConfigUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd
 			m.screen = screenMainMenu
 		}
 		if m.ui.configMenu.saved {
-			m.App.Config.General.DistanceUnit = m.ui.configMenu.distanceUnit
+			m.App.Config.General.Units = m.ui.configMenu.distanceUnit
 			m.App.Config.General.Timezone = m.ui.configMenu.timezone
 			m.App.Config.General.RenderMap = m.ui.configMenu.renderMap
 			m.App.Config.General.DrawGrayline = m.ui.configMenu.drawGrayline
@@ -173,6 +173,7 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 	m.ui.integrationMenu.width = m.width
 	m.ui.integrationMenu.height = m.height
 	m.ui.integrationMenu.inetOnline = m.inetOnline
+	m.ui.integrationMenu.aprsOnline = m.aprsConnected()
 	_, integrationCmd := m.ui.integrationMenu.Update(msg)
 
 	// Show validation errors from the menu.
@@ -235,6 +236,11 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			m.App.Config.Integrations.APRS.Server = m.ui.integrationMenu.aprsServer.Value()
 			m.App.Config.Integrations.APRS.Port = m.ui.integrationMenu.aprsPort.Value()
 			m.App.Config.Integrations.APRS.BaudRate = m.ui.integrationMenu.aprsBaudRate
+			m.App.Config.Integrations.APRS.DataBits = m.ui.integrationMenu.aprsDataBits
+			m.App.Config.Integrations.APRS.Parity = m.ui.integrationMenu.aprsParityName()
+			m.App.Config.Integrations.APRS.StopBits = m.ui.integrationMenu.aprsStopBitsName()
+			m.App.Config.Integrations.APRS.DTR = m.ui.integrationMenu.aprsDTR
+			m.App.Config.Integrations.APRS.RTS = m.ui.integrationMenu.aprsRTS
 
 			m.saveConfig("Settings saved")
 			applog.Info("Integration config saved, restarting services")

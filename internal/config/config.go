@@ -69,16 +69,47 @@ type IntegrationsConfig struct {
 	QRZ        QRZConfig        `yaml:"qrz,omitempty"`
 	HTTPServer HTTPServerConfig `yaml:"http_server,omitempty"`
 	GPS        GPSConfig        `yaml:"gps,omitempty"`
-	APRS       APRSGlobalConfig `yaml:"aprs_is,omitempty"`
+	APRS       APRSGlobalConfig `yaml:"aprs,omitempty"`
+
+	// Legacy key — migrated to APRS on load. Remove after v0.9.x.
+	APRSLegacy APRSGlobalConfig `yaml:"aprs_is,omitempty"`
+}
+
+// Normalize migrates legacy config keys and values to their current names.
+// Called after every config load.
+func (c *Config) Normalize() {
+	// Legacy integration key: aprs_is → aprs
+	if !c.Integrations.APRS.Enabled && c.Integrations.APRSLegacy.Enabled {
+		c.Integrations.APRS = c.Integrations.APRSLegacy
+		c.Integrations.APRSLegacy = APRSGlobalConfig{}
+	}
+
+	// Legacy key: distance_unit → units
+	if c.General.Units == "" && c.General.UnitsLegacy != "" {
+		c.General.Units = c.General.UnitsLegacy
+		c.General.UnitsLegacy = ""
+	}
+	// Legacy values: km → metric, mi → imperial
+	switch c.General.Units {
+	case "km":
+		c.General.Units = "metric"
+	case "mi":
+		c.General.Units = "imperial"
+	}
 }
 
 // APRSGlobalConfig holds global APRS service settings.
 type APRSGlobalConfig struct {
 	Enabled  bool   `yaml:"enabled"`
-	Service  string `yaml:"service,omitempty"`   // "aprs_is", "kiss", or "" (none/default)
+	Service  string `yaml:"service,omitempty"`   // "aprs_is", "kiss", "kiss_server", or "" (none/default)
 	Server   string `yaml:"server,omitempty"`    // APRS-IS server host:port
 	Port     string `yaml:"port,omitempty"`      // KISS serial port
 	BaudRate int    `yaml:"baud_rate,omitempty"` // KISS serial baud rate
+	DataBits int    `yaml:"data_bits,omitempty"` // KISS: 5,6,7,8 (default 8)
+	Parity   string `yaml:"parity,omitempty"`    // KISS: "none","odd","even","mark","space"
+	StopBits string `yaml:"stop_bits,omitempty"` // KISS: "1","1.5","2" (default "1")
+	DTR      bool   `yaml:"dtr,omitempty"`       // KISS: enable DTR
+	RTS      bool   `yaml:"rts,omitempty"`       // KISS: enable RTS
 }
 
 type DXCConfig struct {
@@ -90,7 +121,8 @@ type DXCConfig struct {
 
 type GeneralConfig struct {
 	Timezone         string              `yaml:"timezone"`
-	DistanceUnit     string              `yaml:"distance_unit,omitempty"`
+	Units            string              `yaml:"units,omitempty"`         // "metric" or "imperial"
+	UnitsLegacy      string              `yaml:"distance_unit,omitempty"` // legacy key, migrated on load
 	RenderMap        bool                `yaml:"render_map,omitempty"`
 	DrawGrayline     bool                `yaml:"draw_grayline,omitempty"`
 	PictureAtQRZPane bool                `yaml:"picture_at_qrz_pane,omitempty"`
@@ -336,6 +368,9 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 
+	// Migrate legacy config keys to current names.
+	cfg.Normalize()
+
 	// Backward compat: migrate old backend → radio_backend, FlrigEnabled → RadioBackend.
 	for id, rp := range cfg.Rigs {
 		if rp.RadioBackend == "" && rp.Backend != "" {
@@ -409,10 +444,10 @@ func (c *Config) Validate() error {
 	if tz == "" {
 		return fmt.Errorf("general.timezone is required")
 	}
-	switch c.General.DistanceUnit {
-	case "", "km", "mi":
+	switch c.General.Units {
+	case "", "metric", "imperial":
 	default:
-		return fmt.Errorf("general.distance_unit must be 'km' or 'mi', got %q", c.General.DistanceUnit)
+		return fmt.Errorf("general.units must be 'metric' or 'imperial', got %q", c.General.Units)
 	}
 
 	// --- Active logbook station ---

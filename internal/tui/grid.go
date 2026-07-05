@@ -52,7 +52,7 @@ func formatDistance(km float64, unit string) string {
 	if km <= 0 {
 		return ""
 	}
-	if unit == "mi" {
+	if unit == "imperial" {
 		return fmt.Sprintf("%.0f mi", km*0.621371)
 	}
 	return fmt.Sprintf("%.0f km", km)

@@ -23,6 +23,7 @@ type StationRecord struct {
 	AltitudeM int
 	LastHeard time.Time
 	RawPacket string
+	Source    string // "aprs_is" or "kiss"
 }
 
 // CacheDB wraps a SQLite database for caching received APRS stations.
@@ -63,15 +64,20 @@ func (c *CacheDB) Close() error {
 // UpsertStation inserts or updates a station record in the cache.
 func (c *CacheDB) UpsertStation(s StationRecord) error {
 	lastHeardStr := s.LastHeard.UTC().Format(time.RFC3339)
+	src := s.Source
+	if src == "" {
+		src = "aprs_is"
+	}
 	_, err := c.db.Exec(`
-		INSERT INTO aprs_stations (callsign, lat, lon, symbol, comment, course, speed_kmh, altitude_m, last_heard, raw_packet)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO aprs_stations (callsign, lat, lon, symbol, comment, course, speed_kmh, altitude_m, last_heard, raw_packet, source)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(callsign) DO UPDATE SET
 			lat=excluded.lat, lon=excluded.lon, symbol=excluded.symbol,
 			comment=excluded.comment, course=excluded.course, speed_kmh=excluded.speed_kmh,
 			altitude_m=excluded.altitude_m, last_heard=excluded.last_heard,
-			raw_packet=excluded.raw_packet
-	`, s.Callsign, s.Lat, s.Lon, s.Symbol, s.Comment, s.Course, s.SpeedKmH, s.AltitudeM, lastHeardStr, s.RawPacket)
+			raw_packet=excluded.raw_packet,
+			source=excluded.source
+	`, s.Callsign, s.Lat, s.Lon, s.Symbol, s.Comment, s.Course, s.SpeedKmH, s.AltitudeM, lastHeardStr, s.RawPacket, src)
 	if err != nil {
 		return fmt.Errorf("aprs upsert: %w", err)
 	}
@@ -85,12 +91,26 @@ func (c *CacheDB) StationCount() (int, error) {
 	return n, err
 }
 
-// RecentStations returns the N most recently heard stations.
-func (c *CacheDB) RecentStations(limit int) ([]StationRecord, error) {
-	rows, err := c.db.Query(`
-		SELECT callsign, lat, lon, COALESCE(symbol,''), COALESCE(comment,''), COALESCE(course,0), COALESCE(speed_kmh,0), COALESCE(altitude_m,0), last_heard, COALESCE(raw_packet,'')
-		FROM aprs_stations ORDER BY last_heard DESC LIMIT ?
-	`, limit)
+// RecentStations returns the N most recently heard stations, optionally
+// filtered by source. Pass empty source to return all.
+func (c *CacheDB) RecentStations(limit int, source ...string) ([]StationRecord, error) {
+	src := ""
+	if len(source) > 0 {
+		src = source[0]
+	}
+	var rows *sql.Rows
+	var err error
+	if src != "" {
+		rows, err = c.db.Query(`
+			SELECT callsign, lat, lon, COALESCE(symbol,''), COALESCE(comment,''), COALESCE(course,0), COALESCE(speed_kmh,0), COALESCE(altitude_m,0), last_heard, COALESCE(raw_packet,''), COALESCE(source,'')
+			FROM aprs_stations WHERE source=? ORDER BY last_heard DESC LIMIT ?
+		`, src, limit)
+	} else {
+		rows, err = c.db.Query(`
+			SELECT callsign, lat, lon, COALESCE(symbol,''), COALESCE(comment,''), COALESCE(course,0), COALESCE(speed_kmh,0), COALESCE(altitude_m,0), last_heard, COALESCE(raw_packet,''), COALESCE(source,'')
+			FROM aprs_stations ORDER BY last_heard DESC LIMIT ?
+		`, limit)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +120,7 @@ func (c *CacheDB) RecentStations(limit int) ([]StationRecord, error) {
 	for rows.Next() {
 		var s StationRecord
 		var lastHeardStr string
-		if err := rows.Scan(&s.Callsign, &s.Lat, &s.Lon, &s.Symbol, &s.Comment, &s.Course, &s.SpeedKmH, &s.AltitudeM, &lastHeardStr, &s.RawPacket); err != nil {
+		if err := rows.Scan(&s.Callsign, &s.Lat, &s.Lon, &s.Symbol, &s.Comment, &s.Course, &s.SpeedKmH, &s.AltitudeM, &lastHeardStr, &s.RawPacket, &s.Source); err != nil {
 			return result, err
 		}
 		s.LastHeard, _ = time.Parse(time.RFC3339, lastHeardStr)
@@ -130,12 +150,15 @@ func migrateCache(db *sql.DB) error {
 			speed_kmh  INTEGER DEFAULT 0,
 			altitude_m INTEGER DEFAULT 0,
 			last_heard TEXT NOT NULL,
-			raw_packet TEXT DEFAULT ''
+			raw_packet TEXT DEFAULT '',
+			source     TEXT NOT NULL DEFAULT ''
 		)
 	`)
 	if err != nil {
 		return err
 	}
+	// Migration: add source column if upgrading from older schema.
+	db.Exec("ALTER TABLE aprs_stations ADD COLUMN source TEXT NOT NULL DEFAULT ''")
 	// Index for time-based pruning.
 	_, err = db.Exec("CREATE INDEX IF NOT EXISTS idx_aprs_last_heard ON aprs_stations(last_heard)")
 	return err

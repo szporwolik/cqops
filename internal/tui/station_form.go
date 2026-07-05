@@ -568,8 +568,8 @@ func (f *StationForm) SetWavelogValues(wl *config.WavelogConfig) {
 func (f *StationForm) APRSValues() *config.APRSConfig {
 	rad, _ := parseInt(f.AprsRadiusKm.Value())
 	iv, _ := parseInt(f.AprsIntervalMin.Value())
-	if iv < 15 {
-		iv = 15
+	if iv < 1 {
+		iv = 1
 	}
 	return &config.APRSConfig{
 		Enabled:      f.AprsEnabled,
@@ -595,10 +595,10 @@ func (f *StationForm) SetAPRSValues(aprs *config.APRSConfig) {
 			f.AprsRadiusKm.SetValue("50")
 		}
 		f.AprsSendLoc = aprs.SendLocation
-		if aprs.IntervalMin >= 15 {
+		if aprs.IntervalMin >= 1 {
 			f.AprsIntervalMin.SetValue(fmt.Sprintf("%d", aprs.IntervalMin))
 		} else {
-			f.AprsIntervalMin.SetValue("15")
+			f.AprsIntervalMin.SetValue("1")
 		}
 		f.AprsSymbol.SetValue(aprs.Symbol)
 		f.AprsComment.SetValue(aprs.Comment)
@@ -608,7 +608,7 @@ func (f *StationForm) SetAPRSValues(aprs *config.APRSConfig) {
 		f.AprsPasscode.SetValue("")
 		f.AprsRadiusKm.SetValue("50")
 		f.AprsSendLoc = false
-		f.AprsIntervalMin.SetValue("15")
+		f.AprsIntervalMin.SetValue("1")
 		f.AprsSymbol.SetValue("/-")
 		f.AprsComment.SetValue("")
 	}

@@ -38,7 +38,7 @@ func newLifecycleTestModel(t *testing.T) *Model {
 	t.Cleanup(func() { db.Close() })
 
 	cfg := &config.Config{
-		General: config.GeneralConfig{DistanceUnit: "km", RenderMap: true},
+		General: config.GeneralConfig{Units: "metric", RenderMap: true},
 		Logbooks: map[string]config.Logbook{
 			"test": {
 				Station: config.Station{

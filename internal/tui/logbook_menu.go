@@ -140,7 +140,7 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			c.aprsStatus = msg.err.Error()
 			c.toasts.Error("APRS: " + msg.err.Error())
 		} else {
-			c.aprsStatus = "OK — APRS-IS reachable"
+			c.aprsStatus = "OK — connection verified"
 			c.toasts.Success("APRS: connection verified")
 		}
 		c.scrollViewportToEnd()
@@ -592,8 +592,8 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 			c.toasts.Warn("APRS: callsign is required when APRS is enabled")
 			return nil
 		}
-		if aprs.IntervalMin < 15 {
-			c.toasts.Warn("APRS: interval must be at least 15 minutes")
+		if aprs.IntervalMin < 1 {
+			c.toasts.Warn("APRS: interval must be at least 1 minute")
 			return nil
 		}
 		if aprs.Symbol == "" {
@@ -694,8 +694,9 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 	}
 	c.toasts.Success("Logbook " + savedName + " saved")
 	applog.Info("Logbook saved", "name", savedName)
-	// Restart APRS if config changed.
-	c.app.MaybeRestartAPRS()
+	// Restart APRS if config changed (debounced).
+	c.app.ScheduleAPRSRestart()
+	c.app.RequestAPRSRefresh()
 	return nil
 }
 
@@ -840,13 +841,44 @@ func (c *LogbookChooser) testAPRSConnection() tea.Cmd {
 
 	switch aprsGlobal.Service {
 	case "kiss":
-		// KISS mode — test will be implemented with the KISS TNC client.
+		prt := aprsGlobal.Port
+		baud := aprsGlobal.BaudRate
+		if prt == "" || baud == 0 {
+			c.aprsStatus = "KISS port/baud not configured in Integrations"
+			c.toasts.Warn("APRS: configure KISS port and baud in Integrations first")
+			c.scrollViewportToEnd()
+			return nil
+		}
+		dataBits := aprsGlobal.DataBits
+		if dataBits < 5 || dataBits > 8 {
+			dataBits = 8
+		}
+		par := parityFromString(aprsGlobal.Parity)
+		stop := stopBitsFromString(aprsGlobal.StopBits)
 		c.aprsTesting = true
 		c.aprsStatus = "Testing KISS…"
 		c.scrollViewportToEnd()
 		return func() tea.Msg {
-			// For now, just verify the serial port can be opened.
-			// Full KISS testing will be added with the KISS client implementation.
+			if err := testKISSPort(prt, baud, dataBits, par, stop, aprsGlobal.DTR, aprsGlobal.RTS); err != nil {
+				return aprsTestMsg{err: err}
+			}
+			return aprsTestMsg{}
+		}
+	case "kiss_server":
+		addr := aprsGlobal.Server
+		if addr == "" {
+			addr = "localhost:8001"
+		}
+		if !strings.Contains(addr, ":") {
+			addr += ":8001"
+		}
+		c.aprsTesting = true
+		c.aprsStatus = "Testing KISS server…"
+		c.scrollViewportToEnd()
+		return func() tea.Msg {
+			if err := aprs.TestKISSServerConnection(addr); err != nil {
+				return aprsTestMsg{err: err}
+			}
 			return aprsTestMsg{}
 		}
 	default: // "aprs_is" or empty

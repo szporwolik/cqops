@@ -201,7 +201,7 @@ func clubLogoURL(cfgURL string) string {
 
 // unitForDashboard returns "imperial" or "metric" for the dashboard.
 func unitForDashboard(unit string) string {
-	if unit == "mi" {
+	if unit == "imperial" {
 		return "imperial"
 	}
 	return "metric"
@@ -285,8 +285,8 @@ func (m *Model) pushDashboardState() {
 		m.pushDashboardRecent(ds)
 	}
 
-	// --- APRS stations for the local map (rate-limited, 1 min) ---
-	if now.Sub(lastAPRSPush) > 60*time.Second {
+	// --- APRS stations for the local map (rate-limited, 30 s, or on-demand) ---
+	if now.Sub(lastAPRSPush) > 30*time.Second || m.App.ConsumeAPRSRefresh() {
 		lastAPRSPush = now
 		m.pushDashboardAPRS(ds)
 	}
@@ -320,7 +320,7 @@ func (m *Model) pushDashboardFast() {
 		DrawLines:        true,
 		MaxLines:         250,
 		HighlightLastQSO: true,
-		Units:            unitForDashboard(m.App.Config.General.DistanceUnit),
+		Units:            unitForDashboard(m.App.Config.General.Units),
 	})
 
 	// --- Station ---
@@ -762,11 +762,19 @@ func (m *Model) pushDashboardAPRS(ds *dashboard.State) {
 	if m.App.APRSCache == nil {
 		return
 	}
-	stations, err := m.App.APRSCache.RecentStations(200)
+	// Determine which source(s) to show based on the active APRS service.
+	src := ""
+	if svc := m.App.Config.Integrations.APRS.Service; svc == "kiss" || svc == "kiss_server" {
+		src = "kiss"
+	} else {
+		src = "aprs_is"
+	}
+	stations, err := m.App.APRSCache.RecentStations(200, src)
 	if err != nil {
 		applog.Debug("dashboard: cannot read APRS cache", "error", err)
 		return
 	}
+	applog.Debug("dashboard: APRS cache read", "source", src, "count", fmt.Sprintf("%d", len(stations)))
 	// Get station position and APRS config for distance filtering.
 	var stLat, stLon, radiusKm float64
 	if g := m.effectiveGrid(); g != "" {
@@ -797,6 +805,7 @@ func (m *Model) pushDashboardAPRS(ds *dashboard.State) {
 			Course:    s.Course,
 			SpeedKmH:  s.SpeedKmH,
 			LastHeard: s.LastHeard,
+			Source:    s.Source,
 		})
 	}
 	ds.SetAPRS(view)

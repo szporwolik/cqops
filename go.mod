@@ -13,6 +13,7 @@ require (
 	github.com/gen2brain/beeep v0.11.2
 	github.com/k0swe/wsjtx-go/v4 v4.2.1
 	github.com/spf13/cobra v1.10.2
+	go.bug.st/serial v1.7.1
 	golang.org/x/text v0.38.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.52.0
@@ -57,7 +58,6 @@ require (
 	github.com/tadvi/systray v0.0.0-20190226123456-11a2b8fa57af // indirect
 	github.com/texttheater/golang-levenshtein v1.0.1 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	go.bug.st/serial v1.7.1 // indirect
 	golang.org/x/exp v0.0.0-20240909161429-701f63a606c0 // indirect
 	golang.org/x/image v0.41.0 // indirect
 	golang.org/x/sync v0.21.0 // indirect

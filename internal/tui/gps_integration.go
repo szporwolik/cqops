@@ -249,12 +249,21 @@ func (m *Model) handleGPSTick() tea.Cmd {
 				"lon", fmt.Sprintf("%.6f", pos.Lon),
 			)
 		}
+		if !prevFix {
+			m.App.SetGPSGrid(m.gps.lastGrid, true)
+		}
 	} else if m.gps.online {
 		// Online but no valid fix — normal during acquisition.
 		m.gps.hasFix = false
+		if prevFix {
+			m.App.SetGPSGrid(m.gps.lastGrid, false)
+		}
 		m.gps.connectFailures = 0
 	} else {
 		m.gps.hasFix = false
+		if prevFix {
+			m.App.SetGPSGrid(m.gps.lastGrid, false)
+		}
 	}
 
 	// Toast on state changes — one-shot per transition.

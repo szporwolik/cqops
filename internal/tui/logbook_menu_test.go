@@ -30,7 +30,7 @@ func newChooserTestApp(t *testing.T) *app.App {
 
 	cfg := &config.Config{
 		State:   config.StateConfig{ActiveLogbook: "home"},
-		General: config.GeneralConfig{DistanceUnit: "km"},
+		General: config.GeneralConfig{Units: "metric"},
 		Logbooks: map[string]config.Logbook{
 			"home": {
 				Name: "Home QTH",

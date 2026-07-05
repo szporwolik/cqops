@@ -735,7 +735,8 @@ func (m *Model) View() tea.View {
 		m.rc.barBackend == rigBackend &&
 		m.rc.barRigConn == m.rig.connected &&
 		m.rc.barTx == m.wsjtx.tx && m.rc.barTxMsg == m.wsjtx.txMsg &&
-		m.rc.barOnline == m.wsjtx.online
+		m.rc.barOnline == m.wsjtx.online &&
+		m.rc.barAPRS == m.aprsConnected()
 	if !cacheBars {
 		m.rc.status = ""
 	}
@@ -757,6 +758,7 @@ func (m *Model) View() tea.View {
 	m.rc.barTx = m.wsjtx.tx
 	m.rc.barTxMsg = m.wsjtx.txMsg
 	m.rc.barOnline = m.wsjtx.online
+	m.rc.barAPRS = m.aprsConnected()
 
 	var mainParts []string
 	addRow := func(s string) {

@@ -16,6 +16,7 @@ import (
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/gps"
 	"github.com/szporwolik/cqops/internal/qrz"
+	"go.bug.st/serial"
 )
 
 type IntegrationMenu struct {
@@ -61,8 +62,14 @@ type IntegrationMenu struct {
 	aprsServer     textinput.Model
 	aprsPort       textinput.Model
 	aprsBaudRate   int
+	aprsDataBits   int // 8, 7, 6, 5
+	aprsParity     int // 0=None, 1=Odd, 2=Even, 3=Mark, 4=Space
+	aprsStopBits   int // 0=1, 1=1.5, 2=2
+	aprsDTR        bool
+	aprsRTS        bool
 	aprsTesting    bool
 	aprsTestResult string
+	aprsOnline     bool // true when APRS client is connected (KISS or APRS-IS)
 
 	focus  int
 	done   bool
@@ -111,8 +118,13 @@ const (
 	imAPRSServer  = 27 // APRS-IS server host:port
 	imAPRSPort    = 28 // KISS serial port
 	imAPRSBaud    = 29 // KISS baud rate
-	imAPRSTest    = 30 // test button
-	imMax         = 31
+	imAPRSData    = 30 // KISS data bits
+	imAPRSParity  = 31 // KISS parity
+	imAPRSStop    = 32 // KISS stop bits
+	imAPRSDTR     = 33 // KISS DTR
+	imAPRSRTS     = 34 // KISS RTS
+	imAPRSTest    = 35 // test button
+	imMax         = 36
 )
 
 type callbookTestMsg struct {
@@ -139,6 +151,30 @@ var aprsServiceOptions = []struct {
 }{
 	{"APRS-IS"},
 	{"KISS"},
+	{"KISS Server"},
+}
+
+// dataBitsOptions lists available serial data bit widths for cycling.
+var dataBitsOptions = []int{8, 7, 6, 5}
+
+// parityOptions maps parity index to label.
+var parityOptions = []struct {
+	label string
+}{
+	{"None"},
+	{"Odd"},
+	{"Even"},
+	{"Mark"},
+	{"Space"},
+}
+
+// stopBitsOptions maps stop bits index to label.
+var stopBitsOptions = []struct {
+	label string
+}{
+	{"1"},
+	{"1.5"},
+	{"2"},
 }
 
 // gpsPrecisionOptions lists available grid precision levels for cycling.
@@ -151,6 +187,11 @@ func nextGPSCycleInt(current int, opts []int) int {
 		}
 	}
 	return opts[0]
+}
+
+// nextCycleInt is the generic version of nextGPSCycleInt.
+func nextCycleInt(current int, opts []int) int {
+	return nextGPSCycleInt(current, opts)
 }
 
 func prevGPSCycleInt(current int, opts []int) int {
@@ -325,7 +366,34 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 	}
 	aprsBaud := cfg.Integrations.APRS.BaudRate
 	if aprsBaud == 0 {
-		aprsBaud = 115200
+		aprsBaud = 9600 // KISS default; GPS uses 115200
+	}
+	aprsDTR := cfg.Integrations.APRS.DTR
+	if !aprsDTR && cfg.Integrations.APRS.BaudRate == 0 {
+		// First time — apply KISS-typical default (DTR powers most hardware TNCs).
+		aprsDTR = true
+	}
+	aprsData := cfg.Integrations.APRS.DataBits
+	if aprsData < 5 || aprsData > 8 {
+		aprsData = 8
+	}
+	aprsPar := 0
+	switch cfg.Integrations.APRS.Parity {
+	case "odd":
+		aprsPar = 1
+	case "even":
+		aprsPar = 2
+	case "mark":
+		aprsPar = 3
+	case "space":
+		aprsPar = 4
+	}
+	aprsStop := 0
+	switch cfg.Integrations.APRS.StopBits {
+	case "1.5":
+		aprsStop = 1
+	case "2":
+		aprsStop = 2
 	}
 
 	return &IntegrationMenu{
@@ -357,6 +425,11 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 		aprsServer:       aprsServer,
 		aprsPort:         aprsPort,
 		aprsBaudRate:     aprsBaud,
+		aprsDataBits:     aprsData,
+		aprsParity:       aprsPar,
+		aprsStopBits:     aprsStop,
+		aprsDTR:          aprsDTR,
+		aprsRTS:          cfg.Integrations.APRS.RTS,
 		focus:            0,
 	}
 }
@@ -399,7 +472,7 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			im.aprsTestResult = "Failed — " + msg.err.Error()
 			applog.Warn("APRS test failed", "error", msg.err.Error())
 		} else {
-			im.aprsTestResult = "OK — server reachable"
+			im.aprsTestResult = "OK — connection working"
 			applog.Info("APRS test OK")
 		}
 
@@ -557,6 +630,21 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case imAPRSBaud:
 				im.aprsBaudRate = nextGPSCycle(im.aprsBaudRate)
 				return im, nil
+			case imAPRSData:
+				im.aprsDataBits = nextCycleInt(im.aprsDataBits, dataBitsOptions)
+				return im, nil
+			case imAPRSParity:
+				im.aprsParity = (im.aprsParity + 1) % len(parityOptions)
+				return im, nil
+			case imAPRSStop:
+				im.aprsStopBits = (im.aprsStopBits + 1) % len(stopBitsOptions)
+				return im, nil
+			case imAPRSDTR:
+				im.aprsDTR = !im.aprsDTR
+				return im, nil
+			case imAPRSRTS:
+				im.aprsRTS = !im.aprsRTS
+				return im, nil
 			}
 			// Fall through to text input for editable fields.
 			switch im.focus {
@@ -662,17 +750,41 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return aprsTestMsg{}
 					}
 				case 1: // KISS
+					// If the KISS client is already running, the port is open —
+					// no need to try opening it again (which would fail with "port busy").
+					if im.aprsOnline {
+						im.aprsTestResult = "OK — connection working"
+						return im, nil
+					}
 					prt := strings.TrimSpace(im.aprsPort.Value())
 					baud := im.aprsBaudRate
 					if prt == "" || baud == 0 {
 						im.aprsTestResult = "Port and baud rate required"
 						return im, nil
 					}
+					par := intToParity(im.aprsParity)
+					stop := intToStopBits(im.aprsStopBits)
 					im.aprsTesting = true
 					im.aprsTestResult = "Testing..."
 					return im, func() tea.Msg {
-						err := testKISSPort(prt, baud)
+						err := testKISSPort(prt, baud, im.aprsDataBits, par, stop, im.aprsDTR, im.aprsRTS)
 						return aprsTestMsg{err: err}
+					}
+				case 2: // KISS Server
+					srv := strings.TrimSpace(im.aprsServer.Value())
+					if srv == "" {
+						im.aprsTestResult = "Server address required"
+						return im, nil
+					}
+					im.aprsTesting = true
+					im.aprsTestResult = "Testing..."
+					return im, func() tea.Msg {
+						conn, err := net.DialTimeout("tcp", srv, 5*time.Second)
+						if err != nil {
+							return aprsTestMsg{err: fmt.Errorf("cannot reach %s: %v", srv, err)}
+						}
+						conn.Close()
+						return aprsTestMsg{}
 					}
 				}
 			}
@@ -793,9 +905,9 @@ func (im *IntegrationMenu) isPositionVisible(pos int) bool {
 	case imAPRSSvc:
 		return im.aprsEnabled
 	case imAPRSServer:
-		return im.aprsEnabled && im.aprsService == 0 // APRS-IS
-	case imAPRSPort, imAPRSBaud:
-		return im.aprsEnabled && im.aprsService == 1 // KISS
+		return im.aprsEnabled && (im.aprsService == 0 || im.aprsService == 2) // APRS-IS or KISS Server
+	case imAPRSPort, imAPRSBaud, imAPRSData, imAPRSParity, imAPRSStop, imAPRSDTR, imAPRSRTS:
+		return im.aprsEnabled && im.aprsService == 1 // KISS serial only
 	case imAPRSTest:
 		return im.aprsEnabled // all services
 	}
@@ -1201,8 +1313,8 @@ func (im *IntegrationMenu) View() tea.View {
 			lipgloss.JoinHorizontal(lipgloss.Center, svcPrefix, svcLabel, " ", svcVal),
 			lineW))
 
-		// APRS-IS specific field.
-		if im.aprsService == 0 {
+		// APRS-IS or KISS Server — server address.
+		if im.aprsService == 0 || im.aprsService == 2 {
 			b.WriteString("\n")
 			b.WriteString(padOrTrunc(im.renderField(imAPRSServer, "  Server:", &im.aprsServer, false), lineW))
 		}
@@ -1224,6 +1336,83 @@ func (im *IntegrationMenu) View() tea.View {
 			}
 			b.WriteString(padOrTrunc(
 				lipgloss.JoinHorizontal(lipgloss.Center, baudPrefix, baudLabel, " ", baudVal),
+				lineW))
+			// Data bits — Space to cycle.
+			b.WriteString("\n")
+			dataPrefix := "  "
+			dataLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Data bits:")
+			dataVal := fmt.Sprintf("%d", im.aprsDataBits)
+			if im.focus == imAPRSData {
+				dataPrefix = S.FormPrefixOn.Render("> ")
+				dataLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Data bits:")
+				dataVal = CursorStyle.Render(dataVal) + " " + DimStyle.Render("(Space)")
+			} else {
+				dataVal = ValueStyle.Render(dataVal)
+			}
+			b.WriteString(padOrTrunc(
+				lipgloss.JoinHorizontal(lipgloss.Center, dataPrefix, dataLabel, " ", dataVal),
+				lineW))
+			// Parity — Space to cycle.
+			b.WriteString("\n")
+			parPrefix := "  "
+			parLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Parity:")
+			parVal := parityOptions[im.aprsParity].label
+			if im.focus == imAPRSParity {
+				parPrefix = S.FormPrefixOn.Render("> ")
+				parLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Parity:")
+				parVal = CursorStyle.Render(parVal) + " " + DimStyle.Render("(Space)")
+			} else {
+				parVal = ValueStyle.Render(parVal)
+			}
+			b.WriteString(padOrTrunc(
+				lipgloss.JoinHorizontal(lipgloss.Center, parPrefix, parLabel, " ", parVal),
+				lineW))
+			// Stop bits — Space to cycle.
+			b.WriteString("\n")
+			stopPrefix := "  "
+			stopLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Stop bits:")
+			stopVal := stopBitsOptions[im.aprsStopBits].label
+			if im.focus == imAPRSStop {
+				stopPrefix = S.FormPrefixOn.Render("> ")
+				stopLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Stop bits:")
+				stopVal = CursorStyle.Render(stopVal) + " " + DimStyle.Render("(Space)")
+			} else {
+				stopVal = ValueStyle.Render(stopVal)
+			}
+			b.WriteString(padOrTrunc(
+				lipgloss.JoinHorizontal(lipgloss.Center, stopPrefix, stopLabel, " ", stopVal),
+				lineW))
+			// DTR checkbox.
+			b.WriteString("\n")
+			dtrCb := "[ ]"
+			if im.aprsDTR {
+				dtrCb = "[x]"
+			}
+			dtrPrefix := "  "
+			dtrLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  DTR:")
+			if im.focus == imAPRSDTR {
+				dtrPrefix = S.FormPrefixOn.Render("> ")
+				dtrLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  DTR:")
+				dtrCb = CursorStyle.Render(dtrCb) + " " + DimStyle.Render("(Space)")
+			}
+			b.WriteString(padOrTrunc(
+				lipgloss.JoinHorizontal(lipgloss.Center, dtrPrefix, dtrLabel, " ", dtrCb),
+				lineW))
+			// RTS checkbox.
+			b.WriteString("\n")
+			rtsCb := "[ ]"
+			if im.aprsRTS {
+				rtsCb = "[x]"
+			}
+			rtsPrefix := "  "
+			rtsLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  RTS:")
+			if im.focus == imAPRSRTS {
+				rtsPrefix = S.FormPrefixOn.Render("> ")
+				rtsLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  RTS:")
+				rtsCb = CursorStyle.Render(rtsCb) + " " + DimStyle.Render("(Space)")
+			}
+			b.WriteString(padOrTrunc(
+				lipgloss.JoinHorizontal(lipgloss.Center, rtsPrefix, rtsLabel, " ", rtsCb),
 				lineW))
 		}
 
@@ -1365,8 +1554,92 @@ func (im *IntegrationMenu) aprsServiceName() string {
 	switch im.aprsService {
 	case 1:
 		return "kiss"
+	case 2:
+		return "kiss_server"
 	default:
 		return "aprs_is"
+	}
+}
+
+func (im *IntegrationMenu) aprsParityName() string {
+	switch im.aprsParity {
+	case 1:
+		return "odd"
+	case 2:
+		return "even"
+	case 3:
+		return "mark"
+	case 4:
+		return "space"
+	default:
+		return "none"
+	}
+}
+
+func (im *IntegrationMenu) aprsStopBitsName() string {
+	switch im.aprsStopBits {
+	case 1:
+		return "1.5"
+	case 2:
+		return "2"
+	default:
+		return "1"
+	}
+}
+
+// intToParity converts the parity index (0-4) to a serial.Parity value.
+func intToParity(idx int) serial.Parity {
+	switch idx {
+	case 1:
+		return serial.OddParity
+	case 2:
+		return serial.EvenParity
+	case 3:
+		return serial.MarkParity
+	case 4:
+		return serial.SpaceParity
+	default:
+		return serial.NoParity
+	}
+}
+
+// intToStopBits converts the stop bits index (0-2) to a serial.StopBits value.
+func intToStopBits(idx int) serial.StopBits {
+	switch idx {
+	case 1:
+		return serial.OnePointFiveStopBits
+	case 2:
+		return serial.TwoStopBits
+	default:
+		return serial.OneStopBit
+	}
+}
+
+// parityFromString converts a config parity string to a serial.Parity value.
+func parityFromString(s string) serial.Parity {
+	switch s {
+	case "odd":
+		return serial.OddParity
+	case "even":
+		return serial.EvenParity
+	case "mark":
+		return serial.MarkParity
+	case "space":
+		return serial.SpaceParity
+	default:
+		return serial.NoParity
+	}
+}
+
+// stopBitsFromString converts a config stop bits string to a serial.StopBits value.
+func stopBitsFromString(s string) serial.StopBits {
+	switch s {
+	case "1.5":
+		return serial.OnePointFiveStopBits
+	case "2":
+		return serial.TwoStopBits
+	default:
+		return serial.OneStopBit
 	}
 }
 
@@ -1510,11 +1783,71 @@ func testGPSDConnection(host, port string) error {
 	return fmt.Errorf("no TPV position received from GPSD — check antenna")
 }
 
-// testKISSPort tries to open a serial port for KISS TNC communication.
+// testKISSPort opens a serial port, optionally toggles DTR to wake the TNC,
+// and verifies the port is readable/writable within 4 seconds.
+// Does NOT require incoming RF frames — a successful port open + write probe
+// is sufficient to confirm the TNC is alive.
 // Used by the [ Test APRS ] button when KISS service is selected.
-func testKISSPort(port string, baud int) error {
-	cfg := gps.SerialConfig{Port: port, BaudRate: baud}
-	r := gps.NewSerialReader(cfg)
-	defer r.Close()
-	return r.TryOpen()
+func testKISSPort(port string, baud, dataBits int, parity serial.Parity, stopBits serial.StopBits, dtr, rts bool) error {
+	mode := &serial.Mode{
+		BaudRate: baud,
+		DataBits: dataBits,
+		Parity:   parity,
+		StopBits: stopBits,
+	}
+	p, err := serial.Open(port, mode)
+	if err != nil {
+		return fmt.Errorf("cannot open %s: %v", port, err)
+	}
+	defer p.Close()
+
+	if rts {
+		if err := p.SetRTS(true); err != nil {
+			return fmt.Errorf("RTS failed on %s: %v", port, err)
+		}
+	}
+
+	// DTR toggle: many hardware TNCs use DTR for power/reset.
+	// Toggling DTR off→on triggers a reset, causing the TNC to output a
+	// boot message or start decoding RF — giving us data to confirm it's alive.
+	if dtr {
+		_ = p.SetDTR(false)
+		time.Sleep(300 * time.Millisecond)
+		if err := p.SetDTR(true); err != nil {
+			return fmt.Errorf("DTR failed on %s: %v", port, err)
+		}
+		// Give the TNC a moment to boot.
+		time.Sleep(500 * time.Millisecond)
+	}
+
+	// Send an empty KISS frame to probe the TNC.
+	// FEND (0xC0) + data command (0x00) + FEND (0xC0).
+	kissPing := []byte{0xC0, 0x00, 0xC0}
+	if _, err := p.Write(kissPing); err != nil {
+		return fmt.Errorf("TNC write failed on %s: %v", port, err)
+	}
+
+	// Read whatever the TNC sends back (boot message, KISS frames, etc.).
+	// 3-second window is enough for a boot message or nearby RF frames.
+	if err := p.SetReadTimeout(3 * time.Second); err != nil {
+		return nil // write succeeded, TNC is alive
+	}
+
+	buf := make([]byte, 4096)
+	n, _ := p.Read(buf)
+	if n > 0 {
+		applog.Info("KISS test: TNC responsive",
+			"port", port,
+			"baud", fmt.Sprintf("%d", baud),
+			"bytes", fmt.Sprintf("%d", n),
+		)
+		return nil
+	}
+
+	// No data received, but port opened and write succeeded — TNC is alive.
+	applog.Info("KISS test: port OK (no data received, but TNC accepts writes)",
+		"port", port,
+		"baud", fmt.Sprintf("%d", baud),
+	)
+	return nil
 }

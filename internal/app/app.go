@@ -18,27 +18,32 @@ import (
 	"github.com/szporwolik/cqops/internal/secrets"
 	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/wsjtx"
+	"go.bug.st/serial"
 )
 
 type App struct {
-	Config       *config.Config
-	ConfigPath   string
-	LogbookName  string
-	Logbook      *config.Logbook
-	DB           *sql.DB
-	DBPath       string
-	WSJTX        *wsjtx.Listener
-	WSJTXUpdated chan struct{}
-	DXCC         *dxcc.Prefixes // in-memory DXCC prefix→country lookup
-	SCP          *scp.Database  // in-memory Super Check Partial database
-	RefDB        *ref.DB        // reference database (SOTA/POTA/WWFF)
-	Secrets      *secrets.Store // encrypted secrets (passwords, API keys)
-	APRSClient   *aprs.Client   // APRS-IS persistent connection
-	APRSCache    *aprs.CacheDB  // APRS station cache database
-	aprsStatusCB func(connected bool, err error)
-	aprsBeaconCB func(callsign string) // called after each successful beacon
-	pruneStopCh  chan struct{}         // stops the APRS cache pruning goroutine
-	beaconStopCh chan struct{}         // stops the APRS beacon goroutine
+	Config           *config.Config
+	ConfigPath       string
+	LogbookName      string
+	Logbook          *config.Logbook
+	DB               *sql.DB
+	DBPath           string
+	WSJTX            *wsjtx.Listener
+	WSJTXUpdated     chan struct{}
+	DXCC             *dxcc.Prefixes // in-memory DXCC prefix→country lookup
+	SCP              *scp.Database  // in-memory Super Check Partial database
+	RefDB            *ref.DB        // reference database (SOTA/POTA/WWFF)
+	Secrets          *secrets.Store // encrypted secrets (passwords, API keys)
+	APRSClient       aprs.Client    // APRS connection (TCP APRS-IS or KISS serial)
+	APRSCache        *aprs.CacheDB  // APRS station cache database
+	aprsStatusCB     func(connected bool, err error)
+	aprsBeaconCB     func(callsign string) // called after each successful beacon
+	aprsRefresh      bool                  // set by RequestAPRSRefresh, cleared by dashboard
+	pruneStopCh      chan struct{}         // stops the APRS cache pruning goroutine
+	beaconStopCh     chan struct{}         // stops the APRS beacon goroutine
+	aprsRestartTimer *time.Timer           // debounces rapid logbook switches for APRS restart
+	gpsGrid          string                // last known GPS grid (set by TUI model)
+	gpsHasFix        bool                  // true when GPS has a valid fix
 
 	// lastWSJTX tracks the effective WSJT-X config last applied to the
 	// listener. Used to avoid unnecessary Stop/Start cycles when config
@@ -150,6 +155,8 @@ func Init() (*App, error) {
 func (a *App) Close() {
 	applog.Info("Shutting down — stopping WSJT-X listener")
 	a.WSJTX.Stop()
+	// Cancel any pending debounced APRS restart.
+	a.StopAPRSTimer()
 	// Stop APRS cache pruner and beacon.
 	a.stopAPRSPruner()
 	a.stopAPRSBeacon()
@@ -229,13 +236,7 @@ func (a *App) MaybeRestartAPRS() {
 		return
 	}
 
-	// KISS service not yet implemented — skip for now.
-	if aprsGlobal.Service == "kiss" {
-		applog.Debug("APRS: KISS service not yet implemented")
-		return
-	}
-
-	// Open cache database if needed.
+	// Open cache database if needed (shared by APRS-IS and KISS).
 	if a.APRSCache == nil {
 		cacheDir, err := config.CacheDir()
 		if err != nil {
@@ -249,6 +250,112 @@ func (a *App) MaybeRestartAPRS() {
 			return
 		}
 		a.APRSCache = cache
+	}
+
+	// KISS service — start KISS TNC client.
+	if aprsGlobal.Service == "kiss" {
+		port := aprsGlobal.Port
+		baud := aprsGlobal.BaudRate
+		if port == "" || baud == 0 {
+			applog.Debug("APRS: KISS not configured (missing port/baud)")
+			return
+		}
+		dataBits := aprsGlobal.DataBits
+		if dataBits < 5 || dataBits > 8 {
+			dataBits = 8
+		}
+		par := serialParity(aprsGlobal.Parity)
+		stop := serialStopBits(aprsGlobal.StopBits)
+
+		if a.APRSClient != nil {
+			a.APRSClient.Stop()
+			a.APRSClient = nil
+			// Let the OS release the serial port handle before reconnecting.
+			time.Sleep(200 * time.Millisecond)
+		}
+
+		kiss := aprs.NewKISSClient(port, baud, dataBits, par, stop, aprsGlobal.DTR, aprsGlobal.RTS)
+		kiss.OnStatus = func(connected bool, err error) {
+			if connected {
+				applog.Info("KISS: connected", "port", port)
+			}
+			if a.aprsStatusCB != nil {
+				a.aprsStatusCB(connected, err)
+			}
+		}
+		kiss.OnPacket = func(raw string) {
+			sr, ok := aprs.ParsePositionPacket(raw)
+			if !ok {
+				preview := raw
+				if len(preview) > 100 {
+					preview = preview[:100]
+				}
+				applog.Debug("KISS: unparsed frame", "preview", preview)
+				return
+			}
+			sr.RawPacket = raw
+			sr.Source = "kiss"
+			sr.LastHeard = time.Now()
+			applog.Debug("APRS: position parsed (KISS)", "callsign", sr.Callsign, "lat", sr.Lat, "lon", sr.Lon)
+			if a.APRSCache != nil {
+				if err := a.APRSCache.UpsertStation(sr); err != nil {
+					applog.Debug("APRS: cache upsert failed", "error", err)
+				}
+			}
+		}
+		a.APRSClient = kiss
+		kiss.Start()
+
+		// Start periodic cache pruning and beacon goroutine.
+		a.startAPRSPruner()
+		a.startAPRSBeacon()
+		return
+	}
+
+	// KISS Server service — connect to a KISS TNC over TCP.
+	if aprsGlobal.Service == "kiss_server" {
+		addr := aprsGlobal.Server
+		if addr == "" {
+			addr = "localhost:8001"
+		}
+		if !strings.Contains(addr, ":") {
+			addr += ":8001"
+		}
+
+		if a.APRSClient != nil {
+			a.APRSClient.Stop()
+			a.APRSClient = nil
+		}
+
+		kc := aprs.NewKISSServerClient(addr)
+		kc.OnStatus = func(connected bool, err error) {
+			if connected {
+				applog.Info("KISS server: connected", "addr", addr)
+			}
+			if a.aprsStatusCB != nil {
+				a.aprsStatusCB(connected, err)
+			}
+		}
+		kc.OnPacket = func(raw string) {
+			sr, ok := aprs.ParsePositionPacket(raw)
+			if !ok {
+				return
+			}
+			sr.RawPacket = raw
+			sr.Source = "kiss"
+			sr.LastHeard = time.Now()
+			if a.APRSCache != nil {
+				if err := a.APRSCache.UpsertStation(sr); err != nil {
+					applog.Debug("APRS: cache upsert failed", "error", err)
+				}
+			}
+		}
+		a.APRSClient = kc
+		kc.Start()
+
+		a.startAPRSPruner()
+		a.startAPRSBeacon()
+		return
 	}
 
 	server := a.Config.Integrations.APRS.Server
@@ -288,22 +395,22 @@ func (a *App) MaybeRestartAPRS() {
 		go old.Stop()
 	}
 	applog.Info("APRS: starting client", "server", server, "callsign", callsign)
-	a.APRSClient = aprs.NewClient(server, callsign, passcode, filter)
-	a.APRSClient.OnStatus = func(connected bool, err error) {
+	tcp := aprs.NewTCPClient(server, callsign, passcode, filter)
+	tcp.OnStatus = func(connected bool, err error) {
 		if connected {
 			applog.Info("APRS: connected", "server", server, "callsign", callsign)
 		}
-		// On error: connect() already logged the detail; just forward to TUI for toast.
 		if a.aprsStatusCB != nil {
 			a.aprsStatusCB(connected, err)
 		}
 	}
-	a.APRSClient.OnPacket = func(raw string) {
+	tcp.OnPacket = func(raw string) {
 		sr, ok := aprs.ParsePositionPacket(raw)
 		if !ok {
 			return
 		}
 		sr.RawPacket = raw
+		sr.Source = "aprs_is"
 		sr.LastHeard = time.Now()
 		applog.Debug("APRS: position parsed", "callsign", sr.Callsign, "lat", sr.Lat, "lon", sr.Lon)
 		if a.APRSCache != nil {
@@ -312,9 +419,8 @@ func (a *App) MaybeRestartAPRS() {
 			}
 		}
 	}
-
-	// Start is non-blocking — connects in a goroutine.
-	a.APRSClient.Start()
+	a.APRSClient = tcp
+	tcp.Start()
 
 	// Start periodic cache pruning (every 5 min, removes stations >60 min old).
 	a.startAPRSPruner()
@@ -335,11 +441,50 @@ func (a *App) SetAPRSBeaconCallback(cb func(callsign string)) {
 	a.aprsBeaconCB = cb
 }
 
+// RequestAPRSRefresh flags that the dashboard should push APRS data on the
+// next tick. Called when logbook radius changes so the map updates
+// immediately instead of waiting for the periodic timer.
+func (a *App) RequestAPRSRefresh() {
+	a.aprsRefresh = true
+}
+
+// ConsumeAPRSRefresh returns true and clears the flag if a refresh was
+// requested. Used by the dashboard tick to trigger an immediate push.
+func (a *App) ConsumeAPRSRefresh() bool {
+	if a.aprsRefresh {
+		a.aprsRefresh = false
+		return true
+	}
+	return false
+}
+
+// ScheduleAPRSRestart debounces APRS client restarts so rapid logbook
+// switching doesn't hammer the serial port or APRS-IS server with
+// repeated stop/start cycles. The restart fires 3 seconds after the
+// last call — if another call arrives before then, the timer resets.
+func (a *App) ScheduleAPRSRestart() {
+	if a.aprsRestartTimer != nil {
+		a.aprsRestartTimer.Stop()
+	}
+	a.aprsRestartTimer = time.AfterFunc(3*time.Second, func() {
+		a.MaybeRestartAPRS()
+	})
+}
+
+// StopAPRSTimer cancels any pending debounced APRS restart. Call during
+// app shutdown to avoid goroutine leaks.
+func (a *App) StopAPRSTimer() {
+	if a.aprsRestartTimer != nil {
+		a.aprsRestartTimer.Stop()
+		a.aprsRestartTimer = nil
+	}
+}
+
 // APRS cache retention and pruning intervals.
 const (
 	aprsPruneInterval  = 5 * time.Minute
 	aprsRetainDuration = 60 * time.Minute
-	aprsBeaconMin      = 15                     // minimum beacon interval in minutes
+	aprsBeaconMin      = 1                      // minimum beacon interval in minutes
 	aprsDefaultServer  = "euro.aprs2.net:14580" // default APRS-IS server
 	aprsDefaultSSID    = "-10"                  // default APRS SSID suffix
 )
@@ -422,8 +567,8 @@ func (a *App) startAPRSBeacon() {
 			}
 
 			intervalMin := aprsCfg.IntervalMin
-			if intervalMin < 15 {
-				intervalMin = 15
+			if intervalMin < 1 {
+				intervalMin = 1
 			}
 			interval := time.Duration(intervalMin) * time.Minute
 
@@ -486,7 +631,7 @@ func (a *App) sendAPRSBeacon(aprsCfg *config.APRSConfig) {
 		}
 	}
 
-	grid := a.Logbook.Station.Grid
+	grid := a.EffectiveGrid()
 	if grid == "" {
 		applog.Debug("APRS: beacon skipped — no station grid")
 		return
@@ -502,10 +647,24 @@ func (a *App) sendAPRSBeacon(aprsCfg *config.APRSConfig) {
 		symbol = "/-"
 	}
 
-	if err := client.SendPosition(callsign, lat, lon, symbol, aprsCfg.Comment); err != nil {
-		applog.Warn("APRS: beacon failed", "error", err)
-	} else if a.aprsBeaconCB != nil {
-		a.aprsBeaconCB(callsign)
+	if tcp, ok := a.APRSClient.(*aprs.TCPClient); ok {
+		if err := tcp.SendPosition(callsign, lat, lon, symbol, aprsCfg.Comment); err != nil {
+			applog.Warn("APRS: beacon failed", "error", err)
+		} else if a.aprsBeaconCB != nil {
+			a.aprsBeaconCB(callsign)
+		}
+	} else if kiss, ok := a.APRSClient.(*aprs.KISSClient); ok {
+		if err := kiss.SendPosition(callsign, lat, lon, symbol, aprsCfg.Comment); err != nil {
+			applog.Warn("KISS: beacon failed", "error", err)
+		} else if a.aprsBeaconCB != nil {
+			a.aprsBeaconCB(callsign)
+		}
+	} else if ks, ok := a.APRSClient.(*aprs.KISSServerClient); ok {
+		if err := ks.SendPosition(callsign, lat, lon, symbol, aprsCfg.Comment); err != nil {
+			applog.Warn("KISS server: beacon failed", "error", err)
+		} else if a.aprsBeaconCB != nil {
+			a.aprsBeaconCB(callsign)
+		}
 	}
 }
 
@@ -555,8 +714,9 @@ func (a *App) SwitchLogbook(name string) error {
 		applog.Warn("Failed to save active logbook", "error", err)
 	}
 
-	// Restart APRS for the new logbook config.
-	a.MaybeRestartAPRS()
+	// Restart APRS for the new logbook config (debounced — won't fire
+	// until rapid switching settles).
+	a.ScheduleAPRSRestart()
 
 	return nil
 }
@@ -572,6 +732,26 @@ func (a *App) StationSummary() string {
 	}
 
 	return strings.Join(parts, " ")
+}
+
+// SetGPSGrid is called by the TUI model when GPS position updates.
+func (a *App) SetGPSGrid(grid string, hasFix bool) {
+	a.gpsGrid = grid
+	a.gpsHasFix = hasFix
+}
+
+// EffectiveGrid returns the GPS-derived grid when GPS is enabled, has a fix,
+// and the logbook has gps_grid enabled. Falls back to the configured station
+// grid otherwise. Safe to call from any goroutine.
+func (a *App) EffectiveGrid() string {
+	if a.Config.Integrations.GPS.Enabled && a.gpsHasFix && a.gpsGrid != "" &&
+		a.Logbook != nil && a.Logbook.Station.GPSGrid {
+		return a.gpsGrid
+	}
+	if a.Logbook != nil {
+		return strings.TrimSpace(strings.ToUpper(a.Logbook.Station.Grid))
+	}
+	return ""
 }
 
 // LogbookDisplayName returns the human-readable name for the active logbook.
@@ -594,4 +774,32 @@ func (a *App) SetActiveOperator(id string) {
 	lb := a.Config.Logbooks[a.LogbookName]
 	lb.ActiveOperator = id
 	a.Config.Logbooks[a.LogbookName] = lb
+}
+
+// serialParity converts a config parity string to a serial.Parity value.
+func serialParity(s string) serial.Parity {
+	switch s {
+	case "odd":
+		return serial.OddParity
+	case "even":
+		return serial.EvenParity
+	case "mark":
+		return serial.MarkParity
+	case "space":
+		return serial.SpaceParity
+	default:
+		return serial.NoParity
+	}
+}
+
+// serialStopBits converts a config stop bits string to a serial.StopBits value.
+func serialStopBits(s string) serial.StopBits {
+	switch s {
+	case "1.5":
+		return serial.OnePointFiveStopBits
+	case "2":
+		return serial.TwoStopBits
+	default:
+		return serial.OneStopBit
+	}
 }
