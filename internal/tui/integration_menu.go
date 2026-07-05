@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/applog"
@@ -57,6 +58,10 @@ type IntegrationMenu struct {
 	// saveError is set when Ctrl+S is blocked by validation.
 	// The parent reads it to show a toast, then clears it.
 	SaveError string
+
+	// Viewport for scrolling form content on small terminals.
+	vp              viewport.Model
+	lastBodyContent string
 }
 
 const (
@@ -323,24 +328,28 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if !im.isPositionVisible(im.focus) {
 					im.fixFocus()
 				}
+				im.autoScrollViewport()
 				return im, nil
 			case imQRZChk:
 				im.qrzEnabled = !im.qrzEnabled
 				if !im.isPositionVisible(im.focus) {
 					im.fixFocus()
 				}
+				im.autoScrollViewport()
 				return im, nil
 			case imHTTPChk:
 				im.httpEnabled = !im.httpEnabled
 				if !im.isPositionVisible(im.focus) {
 					im.fixFocus()
 				}
+				im.autoScrollViewport()
 				return im, nil
 			case imGPSChk:
 				im.gpsEnabled = !im.gpsEnabled
 				if !im.isPositionVisible(im.focus) {
 					im.fixFocus()
 				}
+				im.autoScrollViewport()
 				return im, nil
 			case imGPSDTR:
 				im.gpsDTR = !im.gpsDTR
@@ -374,6 +383,12 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case imGPSPort:
 				im.gpsPort, _ = im.gpsPort.Update(msg)
 			}
+		case "tab", "down":
+			im.next()
+			im.autoScrollViewport()
+		case "shift+tab", "up":
+			im.prev()
+			im.autoScrollViewport()
 		case "enter":
 			if im.focus == imQRZTest {
 				if !im.inetOnline {
@@ -402,6 +417,12 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					im.gpsTestResult = "Port and baud rate required"
 					return im, nil
 				}
+				// If GPS is enabled, the live client owns the port —
+				// testing would conflict. Point the user to the status bar.
+				if im.gpsEnabled {
+					im.gpsTestResult = "GPS is enabled — check status bar"
+					return im, nil
+				}
 				im.gpsTesting = true
 				im.gpsTestResult = "Testing..."
 				return im, func() tea.Msg {
@@ -410,24 +431,23 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			im.next()
-		case "tab", "down":
-			im.next()
-		case "shift+tab", "up":
-			im.prev()
+			im.autoScrollViewport()
 		case "pgup":
 			if im.focus == imGPSBaud {
 				im.gpsBaudRate = nextGPSCycle(im.gpsBaudRate)
 				return im, nil
 			}
-			im.forwardToFocused(msg)
+			im.vp, _ = im.vp.Update(msg)
 		case "pgdown":
 			if im.focus == imGPSBaud {
 				im.gpsBaudRate = prevGPSCycle(im.gpsBaudRate)
 				return im, nil
 			}
-			im.forwardToFocused(msg)
+			im.vp, _ = im.vp.Update(msg)
 		default:
 			im.forwardToFocused(msg)
+			// Forward to viewport for manual scroll (home/end).
+			im.vp, _ = im.vp.Update(msg)
 		}
 	// Forward paste and other non-key messages to the focused textinput.
 	default:
@@ -542,6 +562,42 @@ func (im *IntegrationMenu) focusField() {
 	}
 }
 
+// scrollFraction returns 0.0 (top) to 1.0 (bottom) indicating the
+// relative position of the currently focused field. Used to auto-scroll
+// the viewport so the active field stays visible on small terminals.
+func (im *IntegrationMenu) scrollFraction() float64 {
+	n := float64(im.focus)
+	m := float64(imMax - 1)
+	if m <= 0 {
+		return 0
+	}
+	return n / m
+}
+
+// autoScrollViewport adjusts the viewport Y offset to keep the focused
+// field visible.
+func (im *IntegrationMenu) autoScrollViewport() {
+	total := im.vp.TotalLineCount()
+	visible := im.vp.VisibleLineCount()
+	if total <= visible {
+		im.vp.SetYOffset(0)
+		return
+	}
+	frac := im.scrollFraction()
+	maxOffset := total - visible
+	if maxOffset < 0 {
+		maxOffset = 0
+	}
+	offset := int(float64(maxOffset) * frac)
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > maxOffset {
+		offset = maxOffset
+	}
+	im.vp.SetYOffset(offset)
+}
+
 func (im *IntegrationMenu) View() tea.View {
 	if im.done {
 		return tea.NewView("")
@@ -554,17 +610,15 @@ func (im *IntegrationMenu) View() tea.View {
 	if h < 10 {
 		h = 24
 	}
-	contentH := contentHeight(h)
-	if contentH < 3 {
-		contentH = 3
-	}
-
-	boxW := w - 2
-	if boxW < 40 {
-		boxW = 40
-	}
 
 	var b strings.Builder
+
+	// Truncation width for form lines — must match viewport content width
+	// (boxW - 4 for menuBoxStyle border + padding).
+	lineW := w - 2 - 4
+	if lineW < 36 {
+		lineW = 36
+	}
 
 	// --- DXC section ---
 	dxcCheckbox := "[ ]"
@@ -580,19 +634,19 @@ func (im *IntegrationMenu) View() tea.View {
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, dxcPrefix, dxcLabel, " ", dxcCheckbox),
-		boxW))
+		lineW))
 
 	if im.dxcEnabled {
 		b.WriteString("\n")
-		b.WriteString(padOrTrunc(im.renderField(imDXCHost, "  Host:", &im.dxcHost, false), boxW))
+		b.WriteString(padOrTrunc(im.renderField(imDXCHost, "  Host:", &im.dxcHost, false), lineW))
 		b.WriteString("\n")
-		b.WriteString(padOrTrunc(im.renderField(imDXCPort, "  Port:", &im.dxcPort, false), boxW))
+		b.WriteString(padOrTrunc(im.renderField(imDXCPort, "  Port:", &im.dxcPort, false), lineW))
 		b.WriteString("\n")
-		b.WriteString(padOrTrunc(im.renderField(imDXCLogin, "  Login:", &im.dxcLogin, false), boxW))
+		b.WriteString(padOrTrunc(im.renderField(imDXCLogin, "  Login:", &im.dxcLogin, false), lineW))
 	}
 
 	b.WriteString("\n")
-	b.WriteString(padOrTrunc("", boxW))
+	b.WriteString(padOrTrunc("", lineW))
 	b.WriteString("\n")
 
 	// --- QRZ section ---
@@ -609,13 +663,13 @@ func (im *IntegrationMenu) View() tea.View {
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, qrzPrefix, qrzLabel, " ", qrzCheckbox),
-		boxW))
+		lineW))
 
 	if im.qrzEnabled {
 		b.WriteString("\n")
-		b.WriteString(padOrTrunc(im.renderField(imQRZUser, "  Username:", &im.qrzUser, false), boxW))
+		b.WriteString(padOrTrunc(im.renderField(imQRZUser, "  Username:", &im.qrzUser, false), lineW))
 		b.WriteString("\n")
-		b.WriteString(padOrTrunc(im.renderField(imQRZPass, "  Password:", &im.qrzPass, true), boxW))
+		b.WriteString(padOrTrunc(im.renderField(imQRZPass, "  Password:", &im.qrzPass, true), lineW))
 
 		// Test button
 		b.WriteString("\n")
@@ -628,7 +682,7 @@ func (im *IntegrationMenu) View() tea.View {
 		} else {
 			btnLine = "    " + InputStyle.Render(btnText)
 		}
-		b.WriteString(padOrTrunc(btnLine, boxW))
+		b.WriteString(padOrTrunc(btnLine, lineW))
 
 		if im.qrzTestResult != "" {
 			b.WriteString("\n    ")
@@ -643,7 +697,7 @@ func (im *IntegrationMenu) View() tea.View {
 	}
 
 	b.WriteString("\n")
-	b.WriteString(padOrTrunc("", boxW))
+	b.WriteString(padOrTrunc("", lineW))
 	b.WriteString("\n")
 
 	// --- HTTP Server section ---
@@ -660,25 +714,25 @@ func (im *IntegrationMenu) View() tea.View {
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, httpPrefix, httpLabel, " ", httpCheckbox),
-		boxW))
+		lineW))
 
 	if im.httpEnabled {
 		b.WriteString("\n")
-		b.WriteString(padOrTrunc(im.renderField(imHTTPAddr, "  Address:", &im.httpAddr, false), boxW))
+		b.WriteString(padOrTrunc(im.renderField(imHTTPAddr, "  Address:", &im.httpAddr, false), lineW))
 		b.WriteString("\n")
-		b.WriteString(padOrTrunc(im.renderField(imHTTPPort, "  Port:", &im.httpPort, false), boxW))
+		b.WriteString(padOrTrunc(im.renderField(imHTTPPort, "  Port:", &im.httpPort, false), lineW))
 		b.WriteString("\n")
-		b.WriteString(padOrTrunc(im.renderField(imHTTPHdr1, "  Header 1 (opt):", &im.httpHeader1, false), boxW))
+		b.WriteString(padOrTrunc(im.renderField(imHTTPHdr1, "  Header 1 (opt):", &im.httpHeader1, false), lineW))
 		b.WriteString("\n")
-		b.WriteString(padOrTrunc(im.renderField(imHTTPHdr2, "  Header 2 (opt):", &im.httpHeader2, false), boxW))
+		b.WriteString(padOrTrunc(im.renderField(imHTTPHdr2, "  Header 2 (opt):", &im.httpHeader2, false), lineW))
 		b.WriteString("\n")
-		b.WriteString(padOrTrunc(im.renderField(imHTTPLogo, "  Logo URL (opt):", &im.httpClubLogo, false), boxW))
+		b.WriteString(padOrTrunc(im.renderField(imHTTPLogo, "  Logo URL (opt):", &im.httpClubLogo, false), lineW))
 		b.WriteString("\n")
-		b.WriteString(padOrTrunc(im.renderField(imHTTPEvt, "  Event Start (opt):", &im.httpEvtStart, false), boxW))
+		b.WriteString(padOrTrunc(im.renderField(imHTTPEvt, "  Event Start (opt):", &im.httpEvtStart, false), lineW))
 	}
 
 	b.WriteString("\n")
-	b.WriteString(padOrTrunc("", boxW))
+	b.WriteString(padOrTrunc("", lineW))
 	b.WriteString("\n")
 
 	// --- GPS section ---
@@ -695,11 +749,11 @@ func (im *IntegrationMenu) View() tea.View {
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, gpsPrefix, gpsLabel, " ", gpsCheckbox),
-		boxW))
+		lineW))
 
 	if im.gpsEnabled {
 		b.WriteString("\n")
-		b.WriteString(padOrTrunc(im.renderField(imGPSPort, "  Port:", &im.gpsPort, false), boxW))
+		b.WriteString(padOrTrunc(im.renderField(imGPSPort, "  Port:", &im.gpsPort, false), lineW))
 		b.WriteString("\n")
 		// Baud rate with PgUp/PgDn cycling.
 		baudPrefix := "  "
@@ -714,7 +768,7 @@ func (im *IntegrationMenu) View() tea.View {
 		}
 		b.WriteString(padOrTrunc(
 			lipgloss.JoinHorizontal(lipgloss.Center, baudPrefix, baudLabel, " ", baudVal),
-			boxW))
+			lineW))
 		b.WriteString("\n")
 		// DTR checkbox.
 		dtrCheckbox := "[ ]"
@@ -730,7 +784,7 @@ func (im *IntegrationMenu) View() tea.View {
 		}
 		b.WriteString(padOrTrunc(
 			lipgloss.JoinHorizontal(lipgloss.Center, dtrPrefix, dtrLabel, " ", dtrCheckbox),
-			boxW))
+			lineW))
 		b.WriteString("\n")
 		// RTS checkbox.
 		rtsCheckbox := "[ ]"
@@ -746,7 +800,7 @@ func (im *IntegrationMenu) View() tea.View {
 		}
 		b.WriteString(padOrTrunc(
 			lipgloss.JoinHorizontal(lipgloss.Center, rtsPrefix, rtsLabel, " ", rtsCheckbox),
-			boxW))
+			lineW))
 
 		// Test button
 		b.WriteString("\n")
@@ -759,7 +813,7 @@ func (im *IntegrationMenu) View() tea.View {
 		} else {
 			btnLine = "    " + InputStyle.Render(btnText)
 		}
-		b.WriteString(padOrTrunc(btnLine, boxW))
+		b.WriteString(padOrTrunc(btnLine, lineW))
 
 		if im.gpsTestResult != "" {
 			b.WriteString("\n    ")
@@ -773,8 +827,48 @@ func (im *IntegrationMenu) View() tea.View {
 		}
 	}
 
-	body := drawMenuWithHeader("Configuration \u2014 Integrations", b.String(), w)
-	return tea.NewView(fillBody(body, contentH))
+	// Build raw form body — header is rendered separately above the viewport.
+	bodyStr := b.String()
+
+	// Wrap in viewport for scrolling on small terminals.
+	boxW := w
+	if boxW > partnerMapMaxW {
+		boxW = partnerMapMaxW
+	}
+	vpW := boxW - 4 // account for menu box border + padding
+	if vpW < 20 {
+		vpW = 20
+	}
+	contentH := contentHeight(h)
+	if contentH < 8 {
+		contentH = 8
+	}
+	// Reserve one line for the scroll indicator inside the box.
+	vpH := contentH - 6 // header(1) + box border/padding(4) + hint(1)
+	if vpH < 4 {
+		vpH = 4
+	}
+	im.vp.SetWidth(vpW)
+	im.vp.SetHeight(vpH)
+	if im.vp.TotalLineCount() == 0 || bodyStr != im.lastBodyContent {
+		im.vp.SetContent(bodyStr)
+		im.lastBodyContent = bodyStr
+		im.autoScrollViewport()
+	}
+	if im.vp.PastBottom() {
+		im.autoScrollViewport()
+	}
+
+	header := S.Title.Width(boxW).Render("Configuration \u2014 Integrations")
+	vpContent := im.vp.View()
+	hint := scrollHint(im.vp)
+	hintLine := DimStyle.Width(vpW).Render(hint)
+	if hintLine == "" {
+		hintLine = strings.Repeat(" ", vpW)
+	}
+	vpContent = lipgloss.JoinVertical(lipgloss.Left, vpContent, hintLine)
+	box := menuBoxStyle.Width(boxW).Render(vpContent)
+	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, header, box))
 }
 
 // renderField renders a labelled textinput line with cursor indicator.

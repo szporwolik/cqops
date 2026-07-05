@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
 	"charm.land/lipgloss/v2"
 )
 
@@ -96,6 +97,28 @@ func padOrTrunc(s string, w int) string {
 		return s + strings.Repeat(" ", w-sw)
 	}
 	return s
+}
+
+// scrollHint returns a visual indicator showing whether content extends
+// above or below the visible area. Returns "" when all content fits.
+func scrollHint(vp viewport.Model) string {
+	total := vp.TotalLineCount()
+	visible := vp.VisibleLineCount()
+	if total <= visible || total == 0 {
+		return ""
+	}
+	atTop := vp.AtTop()
+	atBottom := vp.AtBottom()
+	switch {
+	case atTop && !atBottom:
+		return "  ▼ more below"
+	case !atTop && atBottom:
+		return "  ▲ more above"
+	case !atTop && !atBottom:
+		return "  ▲ above · ▼ below"
+	default:
+		return ""
+	}
 }
 
 // --- standalone utilities ---

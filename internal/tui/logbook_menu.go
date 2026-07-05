@@ -397,14 +397,15 @@ func (c *LogbookChooser) viewForm() string {
 	}
 	// contentH = usable area after status/help bars.
 	// vpH = contentH minus header(1) minus menu box overhead:
-	// border top(1) + padding top(1) + padding bottom(1) + border bottom(1) = 4.
+	// border top(1) + padding top(1) + padding bottom(1) + border bottom(1) = 4,
+	// plus one reserved line for the scroll indicator.
 	contentH := contentHeight(h)
 	if contentH < 8 {
 		contentH = 8
 	}
-	vpH := contentH - 5
-	if vpH < 5 {
-		vpH = 5
+	vpH := contentH - 6
+	if vpH < 4 {
+		vpH = 4
 	}
 	c.vp.SetWidth(vpW)
 	c.vp.SetHeight(vpH)
@@ -419,7 +420,14 @@ func (c *LogbookChooser) viewForm() string {
 	}
 
 	header := S.Title.Width(boxW).Render("Configuration \u2014 Logbooks \u2014 Edit Logbook")
-	box := menuBoxStyle.Width(boxW).Render(c.vp.View())
+	vpContent := c.vp.View()
+	hint := scrollHint(c.vp)
+	hintLine := DimStyle.Width(vpW).Render(hint)
+	if hintLine == "" {
+		hintLine = strings.Repeat(" ", vpW)
+	}
+	vpContent = lipgloss.JoinVertical(lipgloss.Left, vpContent, hintLine)
+	box := menuBoxStyle.Width(boxW).Render(vpContent)
 	return lipgloss.JoinVertical(lipgloss.Left, header, box)
 }
 

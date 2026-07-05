@@ -657,10 +657,10 @@ func (f *StationForm) View() tea.View {
 		gpsCb = "[x]"
 	}
 	gpsPrefix := "  "
-	gpsLabel := S.FormLabelWide.Align(lipgloss.Left).Render("GPS Grid:")
+	gpsLabel := S.FormLabelWide.Align(lipgloss.Left).Render("Grid from GPS:")
 	if f.gpsGridFocus {
 		gpsPrefix = S.FormPrefixOn.Render("> ")
-		gpsLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("GPS Grid:")
+		gpsLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("Grid from GPS:")
 		gpsCb = CursorStyle.Render(gpsCb)
 	}
 	b.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, gpsPrefix, gpsLabel, " ", gpsCb), availW))
