@@ -88,9 +88,18 @@ func Execute() error {
 }
 
 func runTUI() error {
-	// Linux console (TERM=linux) needs xterm-256color for colour support.
+	// The Linux console (TERM=linux) sends incompatible function-key
+	// escape sequences that Bubble Tea cannot parse.  tmux provides a
+	// proper xterm-compatible terminal layer — refuse to start without it.
 	if runtime.GOOS == "linux" && os.Getenv("TERM") == "linux" {
-		os.Setenv("TERM", "xterm-256color")
+		fmt.Fprintln(os.Stderr, "CQOps: The Linux console (TERM=linux) does not support function keys.")
+		fmt.Fprintln(os.Stderr, "CQOps: Please run CQOps inside tmux:")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "    tmux")
+		fmt.Fprintln(os.Stderr, "    cqops")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "CQOps: If tmux is not installed:  sudo apt install tmux")
+		return nil
 	}
 
 	a, err := app.Init()
