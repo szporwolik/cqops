@@ -110,11 +110,21 @@ func runTUI() error {
 		//   escape-time 0  — no ESC-key delay
 		//   exec ...       — tmux exits when CQOps quits
 		//   TERM=xterm-256color — proper borders, glyphs, colours
+		// Resolve the absolute path to the CQOps binary.  os.Args[0]
+		// can be a relative path (e.g. "./cqops") that won't work
+		// inside tmux where the working directory may differ.
+		bin, err := os.Executable()
+		if err != nil {
+			bin = os.Args[0]
+		}
 		args := []string{
 			"set", "-g", "status", "off", ";",
 			"set", "-s", "escape-time", "0", ";",
 			"new-session", "-A", "-s", "cqops",
-			"exec", "env", "TERM=xterm-256color", os.Args[0],
+			"exec", "env",
+			"TERM=xterm-256color",
+			"COLORTERM=truecolor",
+			bin,
 		}
 		args = append(args, os.Args[1:]...)
 		cmd := exec.Command(tmux, args...)
