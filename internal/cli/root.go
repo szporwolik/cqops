@@ -114,7 +114,7 @@ func runTUI() error {
 			"set", "-g", "status", "off", ";",
 			"set", "-s", "escape-time", "0", ";",
 			"new-session", "-A", "-s", "cqops",
-			"env", "TERM=xterm-256color", "exec", os.Args[0],
+			"exec", "env", "TERM=xterm-256color", os.Args[0],
 		}
 		args = append(args, os.Args[1:]...)
 		cmd := exec.Command(tmux, args...)
