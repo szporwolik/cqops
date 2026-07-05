@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" style="background:transparent">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#161b22"/>
@@ -9,3 +9,5 @@
   <text x="95" y="156" text-anchor="middle" font-family="'Courier New', Courier, monospace" font-weight="bold" font-size="110" fill="#08F8F8">$c</text>
   <text x="194" y="156" text-anchor="middle" font-family="'Courier New', Courier, monospace" font-weight="bold" font-size="110" fill="#F80868">q</text>
 </svg>
+
+
