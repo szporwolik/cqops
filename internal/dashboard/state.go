@@ -163,15 +163,23 @@ type Stats struct {
 
 // APRSStation is a received APRS position report for the dashboard local map.
 type APRSStation struct {
-	Callsign  string    `json:"callsign"`
+	Callsign  string       `json:"callsign"`
+	Lat       float64      `json:"lat"`
+	Lon       float64      `json:"lon"`
+	Symbol    string       `json:"symbol,omitempty"`
+	Comment   string       `json:"comment,omitempty"`
+	Course    int          `json:"course,omitempty"`
+	SpeedKmH  int          `json:"speedKmH,omitempty"`
+	LastHeard time.Time    `json:"lastHeard"`
+	Source    string       `json:"source,omitempty"` // "aprs_is" or "kiss"
+	Trail     []TrailPoint `json:"trail,omitempty"`  // last 3 positions, oldest first
+}
+
+// TrailPoint is a single historic position in a station's movement trail.
+type TrailPoint struct {
 	Lat       float64   `json:"lat"`
 	Lon       float64   `json:"lon"`
-	Symbol    string    `json:"symbol,omitempty"`
-	Comment   string    `json:"comment,omitempty"`
-	Course    int       `json:"course,omitempty"`
-	SpeedKmH  int       `json:"speedKmH,omitempty"`
 	LastHeard time.Time `json:"lastHeard"`
-	Source    string    `json:"source,omitempty"` // "aprs_is" or "kiss"
 }
 
 type MapState struct {

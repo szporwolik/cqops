@@ -785,6 +785,7 @@ func (m *Model) pushDashboardAPRS(ds *dashboard.State) {
 	}
 	cutoff := time.Now().Add(-60 * time.Minute)
 	var view []dashboard.APRSStation
+	var trailCalls []string
 	for _, s := range stations {
 		if s.LastHeard.Before(cutoff) {
 			continue
@@ -796,7 +797,7 @@ func (m *Model) pushDashboardAPRS(ds *dashboard.State) {
 				continue
 			}
 		}
-		view = append(view, dashboard.APRSStation{
+		ds := dashboard.APRSStation{
 			Callsign:  s.Callsign,
 			Lat:       s.Lat,
 			Lon:       s.Lon,
@@ -806,7 +807,34 @@ func (m *Model) pushDashboardAPRS(ds *dashboard.State) {
 			SpeedKmH:  s.SpeedKmH,
 			LastHeard: s.LastHeard,
 			Source:    s.Source,
-		})
+		}
+		trailCalls = append(trailCalls, s.Callsign)
+		view = append(view, ds)
+	}
+	// Fetch trails for all visible stations — trail query returns
+	// data only for callsigns that have moved ≥50 m between updates,
+	// regardless of whether the current packet includes speed.
+	trailCount := 0
+	if len(trailCalls) > 0 {
+		trails, err := m.App.APRSCache.StationTrails(trailCalls)
+		if err == nil {
+			for i := range view {
+				if t, ok := trails[view[i].Callsign]; ok && len(t) >= 1 {
+					dt := make([]dashboard.TrailPoint, len(t))
+					for j, p := range t {
+						dt[j] = dashboard.TrailPoint{Lat: p.Lat, Lon: p.Lon, LastHeard: p.LastHeard}
+					}
+					view[i].Trail = dt
+					trailCount++
+				}
+				// Diagnostic: log trail status for SP9KSK-9 specifically.
+				if view[i].Callsign == "SP9KSK-9" {
+					t, has := trails[view[i].Callsign]
+					applog.Debug("dashboard: SP9KSK-9 trail", "hasTrail", has, "trailLen", len(t), "currentLat", fmt.Sprintf("%.5f", view[i].Lat), "currentLon", fmt.Sprintf("%.5f", view[i].Lon))
+				}
+			}
+		}
+		applog.Debug("dashboard: APRS trails attached", "stationsWithTrail", fmt.Sprintf("%d", trailCount), "totalStations", fmt.Sprintf("%d", len(view)))
 	}
 	ds.SetAPRS(view)
 }

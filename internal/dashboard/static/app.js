@@ -562,6 +562,11 @@ function initLocalMap(lat,lon){
   enableGraylineLocal();
   // Add radar to local map if already enabled.
   addRadarToLocalMap();
+  // Render any APRS data that arrived before the map was ready.
+  if(_pendingAPRS){
+    var p=_pendingAPRS;_pendingAPRS=null;
+    renderAPRSOnLocalMap(p);
+  }
 }
 
 function updateAprsCircle(lat,lon,radiusKm){
@@ -849,6 +854,7 @@ function enableGraylineLocal(){
 
 // ---- APRS station markers on local map ----
 var aprsMarkerLayer=null;
+var _pendingAPRS=null; // cached stations when map not yet ready
 
 // APRS symbol sprite sheets: 16 columns × 6 rows, 24×24px per symbol.
 // Grid size: 384×144 pixels.
@@ -909,7 +915,13 @@ function _aprMarker(s){
 }
 
 function renderAPRSOnLocalMap(stations){
-  if(!mapLocal)return;
+  if(!mapLocal){
+    // Map not yet initialised — cache the data and render when ready.
+    // This handles the race between the initial /api/snapshot fetch
+    // and the SSE connection on first page load.
+    _pendingAPRS = stations;
+    return;
+  }
   touchFreshness('aprs');
   if(!aprsMarkerLayer){aprsMarkerLayer=L.layerGroup().addTo(mapLocal)}
   aprsMarkerLayer.clearLayers();
@@ -960,6 +972,24 @@ function _renderAprsMarker(s,bounds){
   m.bindPopup(popup);
   aprsMarkerLayer.addLayer(m);
   bounds.push([s.lat,s.lon]);
+  // Draw position trail if station has historic points.
+  if(s.trail&&s.trail.length>=1){
+    var pts=[];
+    s.trail.forEach(function(p){
+      pts.push([p.lat,p.lon]);
+    });
+    // Add current position as the trail endpoint.
+    pts.push([s.lat,s.lon]);
+    // Blue trail line (apr s.fi style).
+    L.polyline(pts,{color:'#1565C0',weight:3,opacity:0.75}).addTo(aprsMarkerLayer);
+    // Red dots at historic positions, older = smaller + more transparent.
+    s.trail.forEach(function(p,i){
+      var frac=i/s.trail.length;
+      var r=3+frac*2;
+      var o=0.45+frac*0.40;
+      L.circleMarker([p.lat,p.lon],{radius:r,color:'#C62828',fillColor:'#C62828',fillOpacity:o,weight:1}).addTo(aprsMarkerLayer);
+    });
+  }
 }
 
 function updateMapFromToday(){
