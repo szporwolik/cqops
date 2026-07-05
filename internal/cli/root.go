@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -87,6 +88,14 @@ func Execute() error {
 }
 
 func runTUI() error {
+	// Linux console (TERM=linux) sends different function-key escape
+	// sequences than xterm. The kernel's console driver supports xterm
+	// sequences natively when TERM is set appropriately — do this early
+	// so Bubble Tea sees the right terminal type from the start.
+	if runtime.GOOS == "linux" && os.Getenv("TERM") == "linux" {
+		os.Setenv("TERM", "xterm-256color")
+	}
+
 	a, err := app.Init()
 	if err != nil {
 		return err
