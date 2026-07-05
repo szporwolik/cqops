@@ -60,6 +60,7 @@ function isImperial(){return displayCfg.units==='imperial'}
 function fmtDist(km){if(!km||km<=0)return'—';return isImperial()?Math.round(km*0.621371)+' mi':Math.round(km)+' km'}
 function fmtTemp(c){if(c==null)return'—';return isImperial()?Math.round(c*9/5+32)+'\u00b0F':Math.round(c)+'\u00b0C'}
 function fmtWind(kmh){if(kmh==null)return'—';return isImperial()?Math.round(kmh*0.621371)+' mph':Math.round(kmh)+' km/h'}
+function fmtPrecip(mm){if(mm==null||mm<=0)return'';return isImperial()?(mm/25.4).toFixed(1)+' in':mm.toFixed(1)+' mm'}
 
 // ---- State switching ----
 function setState(active){
@@ -1220,7 +1221,7 @@ function renderWeather(d){
       '<span class="wx-label">'+label+'</span>'+
       (temp!=null?'<span class="wx-temp">'+fmtTemp(temp)+'</span>':'')+
       (wSpd!=null?'<span class="wx-wind">'+fmtWind(wSpd)+' <span class="wx-wind-dir">'+windArrow(wDir||0)+'</span></span>':'')+
-      (precip!=null&&precip>0?'<span class="wx-rain">'+precip.toFixed(1)+'mm</span>':'')+
+      (precip!=null&&precip>0?'<span class="wx-rain">'+fmtPrecip(precip)+'</span>':'')+
       '</span>';
   }
   wxEl.className='';wxEl.innerHTML=html;wxEl.style.display='';
