@@ -229,11 +229,15 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			aprsWasEnabled := m.App.Config.Integrations.APRS.Enabled
 			aprsWasService := m.App.Config.Integrations.APRS.Service
 			aprsWasServer := m.App.Config.Integrations.APRS.Server
+			aprsWasKISSHost := m.App.Config.Integrations.APRS.KISSServerHost
+			aprsWasKISSPort := m.App.Config.Integrations.APRS.KISSServerPort
 			aprsWasPort := m.App.Config.Integrations.APRS.Port
 			aprsWasBaud := m.App.Config.Integrations.APRS.BaudRate
 			m.App.Config.Integrations.APRS.Enabled = m.ui.integrationMenu.aprsEnabled
 			m.App.Config.Integrations.APRS.Service = m.ui.integrationMenu.aprsServiceName()
 			m.App.Config.Integrations.APRS.Server = m.ui.integrationMenu.aprsServer.Value()
+			m.App.Config.Integrations.APRS.KISSServerHost = m.ui.integrationMenu.aprsKISSHost.Value()
+			m.App.Config.Integrations.APRS.KISSServerPort = m.ui.integrationMenu.aprsKISSPort.Value()
 			m.App.Config.Integrations.APRS.Port = m.ui.integrationMenu.aprsPort.Value()
 			m.App.Config.Integrations.APRS.BaudRate = m.ui.integrationMenu.aprsBaudRate
 			m.App.Config.Integrations.APRS.DataBits = m.ui.integrationMenu.aprsDataBits
@@ -263,6 +267,8 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			if m.App.Config.Integrations.APRS.Enabled != aprsWasEnabled ||
 				m.App.Config.Integrations.APRS.Service != aprsWasService ||
 				m.App.Config.Integrations.APRS.Server != aprsWasServer ||
+				m.App.Config.Integrations.APRS.KISSServerHost != aprsWasKISSHost ||
+				m.App.Config.Integrations.APRS.KISSServerPort != aprsWasKISSPort ||
 				m.App.Config.Integrations.APRS.Port != aprsWasPort ||
 				m.App.Config.Integrations.APRS.BaudRate != aprsWasBaud {
 				m.App.MaybeRestartAPRS()

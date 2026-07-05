@@ -768,13 +768,13 @@ Se conecta a un TNC KISS accesible por TCP — por ejemplo, una instancia
 de [Dire Wolf](https://github.com/wb2osz/direwolf) ejecutándose en la
 misma máquina o en la red local. No se requiere conexión a internet.
 
-Introduce la dirección del servidor (host:port) en el menú Integrations:
+Introduce el host y el puerto en el menú Integrations:
 
 ```text
-F9 → Integrations → APRS → Service: KISS Server → Server
+F9 → Integrations → APRS → Service: KISS Server → Host / Port
 ```
 
-Predeterminado: `localhost:8001`
+Predeterminado: `127.0.0.1:8001`
 
 #### Beaconing
 

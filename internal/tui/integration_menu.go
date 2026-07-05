@@ -58,8 +58,10 @@ type IntegrationMenu struct {
 
 	// APRS
 	aprsEnabled    bool
-	aprsService    int // 0=APRS-IS, 1=KISS
+	aprsService    int // 0=APRS-IS, 1=KISS, 2=KISS Server
 	aprsServer     textinput.Model
+	aprsKISSHost   textinput.Model
+	aprsKISSPort   textinput.Model
 	aprsPort       textinput.Model
 	aprsBaudRate   int
 	aprsDataBits   int // 8, 7, 6, 5
@@ -88,43 +90,45 @@ type IntegrationMenu struct {
 }
 
 const (
-	imDXCChk      = 0
-	imDXCHost     = 1
-	imDXCPort     = 2
-	imDXCLogin    = 3
-	imQRZChk      = 4
-	imQRZUser     = 5
-	imQRZPass     = 6
-	imQRZTest     = 7
-	imHTTPChk     = 8
-	imHTTPAddr    = 9
-	imHTTPPort    = 10
-	imHTTPHdr1    = 11
-	imHTTPHdr2    = 12
-	imHTTPLogo    = 13
-	imHTTPEvt     = 14
-	imGPSChk      = 15
-	imGPSSvc      = 16 // service type: None / Serial / GPSD
-	imGPSGridPrec = 17 // grid precision: 10 / 8 / 6
-	imGPSPort     = 18 // serial port
-	imGPSBaud     = 19 // baud rate
-	imGPSDTR      = 20 // DTR
-	imGPSRTS      = 21 // RTS
-	imGPSDHost    = 22 // GPSD host
-	imGPSDPort    = 23 // GPSD port
-	imGPSTest     = 24 // test button
-	imAPRSChk     = 25
-	imAPRSSvc     = 26 // service type: APRS-IS / KISS
-	imAPRSServer  = 27 // APRS-IS server host:port
-	imAPRSPort    = 28 // KISS serial port
-	imAPRSBaud    = 29 // KISS baud rate
-	imAPRSData    = 30 // KISS data bits
-	imAPRSParity  = 31 // KISS parity
-	imAPRSStop    = 32 // KISS stop bits
-	imAPRSDTR     = 33 // KISS DTR
-	imAPRSRTS     = 34 // KISS RTS
-	imAPRSTest    = 35 // test button
-	imMax         = 36
+	imDXCChk       = 0
+	imDXCHost      = 1
+	imDXCPort      = 2
+	imDXCLogin     = 3
+	imQRZChk       = 4
+	imQRZUser      = 5
+	imQRZPass      = 6
+	imQRZTest      = 7
+	imHTTPChk      = 8
+	imHTTPAddr     = 9
+	imHTTPPort     = 10
+	imHTTPHdr1     = 11
+	imHTTPHdr2     = 12
+	imHTTPLogo     = 13
+	imHTTPEvt      = 14
+	imGPSChk       = 15
+	imGPSSvc       = 16 // service type: None / Serial / GPSD
+	imGPSGridPrec  = 17 // grid precision: 10 / 8 / 6
+	imGPSPort      = 18 // serial port
+	imGPSBaud      = 19 // baud rate
+	imGPSDTR       = 20 // DTR
+	imGPSRTS       = 21 // RTS
+	imGPSDHost     = 22 // GPSD host
+	imGPSDPort     = 23 // GPSD port
+	imGPSTest      = 24 // test button
+	imAPRSChk      = 25
+	imAPRSSvc      = 26 // service type: APRS-IS / KISS / KISS Server
+	imAPRSServer   = 27 // APRS-IS server host:port
+	imAPRSKISSHost = 28 // KISS Server TCP host
+	imAPRSKISSPort = 29 // KISS Server TCP port
+	imAPRSPort     = 30 // KISS serial port
+	imAPRSBaud     = 31 // KISS baud rate
+	imAPRSData     = 32 // KISS data bits
+	imAPRSParity   = 33 // KISS parity
+	imAPRSStop     = 34 // KISS stop bits
+	imAPRSDTR      = 35 // KISS DTR
+	imAPRSRTS      = 36 // KISS RTS
+	imAPRSTest     = 37 // test button
+	imMax          = 38
 )
 
 type callbookTestMsg struct {
@@ -357,6 +361,24 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 	} else {
 		aprsServer.SetValue("euro.aprs2.net:14580")
 	}
+	aprsKISSHost := newTextinput()
+	aprsKISSHost.CharLimit = 40
+	aprsKISSHost.SetWidth(28)
+	aprsKISSHost.Placeholder = "127.0.0.1"
+	if cfg.Integrations.APRS.KISSServerHost != "" {
+		aprsKISSHost.SetValue(cfg.Integrations.APRS.KISSServerHost)
+	} else {
+		aprsKISSHost.SetValue("127.0.0.1")
+	}
+	aprsKISSPort := newTextinput()
+	aprsKISSPort.CharLimit = 6
+	aprsKISSPort.SetWidth(28)
+	aprsKISSPort.Placeholder = "8001"
+	if cfg.Integrations.APRS.KISSServerPort != "" {
+		aprsKISSPort.SetValue(cfg.Integrations.APRS.KISSServerPort)
+	} else {
+		aprsKISSPort.SetValue("8001")
+	}
 	aprsPort := newTextinput()
 	aprsPort.CharLimit = 40
 	aprsPort.SetWidth(28)
@@ -423,6 +445,8 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 		aprsEnabled:      cfg.Integrations.APRS.Enabled,
 		aprsService:      aprsSvc,
 		aprsServer:       aprsServer,
+		aprsKISSHost:     aprsKISSHost,
+		aprsKISSPort:     aprsKISSPort,
 		aprsPort:         aprsPort,
 		aprsBaudRate:     aprsBaud,
 		aprsDataBits:     aprsData,
@@ -771,17 +795,22 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return aprsTestMsg{err: err}
 					}
 				case 2: // KISS Server
-					srv := strings.TrimSpace(im.aprsServer.Value())
-					if srv == "" {
-						im.aprsTestResult = "Server address required"
+					host := strings.TrimSpace(im.aprsKISSHost.Value())
+					port := strings.TrimSpace(im.aprsKISSPort.Value())
+					if host == "" {
+						im.aprsTestResult = "Host is required"
 						return im, nil
 					}
+					if port == "" {
+						port = "8001"
+					}
+					addr := net.JoinHostPort(host, port)
 					im.aprsTesting = true
 					im.aprsTestResult = "Testing..."
 					return im, func() tea.Msg {
-						conn, err := net.DialTimeout("tcp", srv, 5*time.Second)
+						conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 						if err != nil {
-							return aprsTestMsg{err: fmt.Errorf("cannot reach %s: %v", srv, err)}
+							return aprsTestMsg{err: fmt.Errorf("cannot reach %s: %v", addr, err)}
 						}
 						conn.Close()
 						return aprsTestMsg{}
@@ -905,7 +934,9 @@ func (im *IntegrationMenu) isPositionVisible(pos int) bool {
 	case imAPRSSvc:
 		return im.aprsEnabled
 	case imAPRSServer:
-		return im.aprsEnabled && (im.aprsService == 0 || im.aprsService == 2) // APRS-IS or KISS Server
+		return im.aprsEnabled && im.aprsService == 0 // APRS-IS only
+	case imAPRSKISSHost, imAPRSKISSPort:
+		return im.aprsEnabled && im.aprsService == 2 // KISS Server only
 	case imAPRSPort, imAPRSBaud, imAPRSData, imAPRSParity, imAPRSStop, imAPRSDTR, imAPRSRTS:
 		return im.aprsEnabled && im.aprsService == 1 // KISS serial only
 	case imAPRSTest:
@@ -922,7 +953,7 @@ func (im *IntegrationMenu) fixFocus() {
 }
 
 func (im *IntegrationMenu) blurAll() {
-	blurTextinputs(&im.dxcHost, &im.dxcPort, &im.dxcLogin, &im.qrzUser, &im.qrzPass, &im.httpAddr, &im.httpPort, &im.httpHeader1, &im.httpHeader2, &im.httpClubLogo, &im.httpEvtStart, &im.gpsPort, &im.gpsdHost, &im.gpsdPort, &im.aprsServer, &im.aprsPort)
+	blurTextinputs(&im.dxcHost, &im.dxcPort, &im.dxcLogin, &im.qrzUser, &im.qrzPass, &im.httpAddr, &im.httpPort, &im.httpHeader1, &im.httpHeader2, &im.httpClubLogo, &im.httpEvtStart, &im.gpsPort, &im.gpsdHost, &im.gpsdPort, &im.aprsServer, &im.aprsKISSHost, &im.aprsKISSPort, &im.aprsPort)
 }
 func (im *IntegrationMenu) focusField() {
 	switch im.focus {
@@ -956,6 +987,10 @@ func (im *IntegrationMenu) focusField() {
 		im.gpsdPort.Focus()
 	case imAPRSServer:
 		im.aprsServer.Focus()
+	case imAPRSKISSHost:
+		im.aprsKISSHost.Focus()
+	case imAPRSKISSPort:
+		im.aprsKISSPort.Focus()
 	case imAPRSPort:
 		im.aprsPort.Focus()
 	}
@@ -1313,10 +1348,18 @@ func (im *IntegrationMenu) View() tea.View {
 			lipgloss.JoinHorizontal(lipgloss.Center, svcPrefix, svcLabel, " ", svcVal),
 			lineW))
 
-		// APRS-IS or KISS Server — server address.
-		if im.aprsService == 0 || im.aprsService == 2 {
+		// APRS-IS — server host:port.
+		if im.aprsService == 0 {
 			b.WriteString("\n")
 			b.WriteString(padOrTrunc(im.renderField(imAPRSServer, "  Server:", &im.aprsServer, false), lineW))
+		}
+
+		// KISS Server — separate host and port fields.
+		if im.aprsService == 2 {
+			b.WriteString("\n")
+			b.WriteString(padOrTrunc(im.renderField(imAPRSKISSHost, "  Host:", &im.aprsKISSHost, false), lineW))
+			b.WriteString("\n")
+			b.WriteString(padOrTrunc(im.renderField(imAPRSKISSPort, "  Port:", &im.aprsKISSPort, false), lineW))
 		}
 
 		// KISS specific fields.

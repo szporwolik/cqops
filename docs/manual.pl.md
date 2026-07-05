@@ -769,13 +769,13 @@ jest osiągalny.
 samym komputerze lub w sieci lokalnej. Nie wymaga połączenia
 internetowego.
 
-Wprowadź adres serwera (host:port) w menu Integrations:
+Wprowadź host i port w menu Integrations:
 
 ```text
-F9 → Integrations → APRS → Service: KISS Server → Server
+F9 → Integrations → APRS → Service: KISS Server → Host / Port
 ```
 
-Domyślnie: `localhost:8001`
+Domyślnie: `127.0.0.1:8001`
 
 #### Beaconing
 

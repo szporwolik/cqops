@@ -100,16 +100,18 @@ func (c *Config) Normalize() {
 
 // APRSGlobalConfig holds global APRS service settings.
 type APRSGlobalConfig struct {
-	Enabled  bool   `yaml:"enabled"`
-	Service  string `yaml:"service,omitempty"`   // "aprs_is", "kiss", "kiss_server", or "" (none/default)
-	Server   string `yaml:"server,omitempty"`    // APRS-IS server host:port
-	Port     string `yaml:"port,omitempty"`      // KISS serial port
-	BaudRate int    `yaml:"baud_rate,omitempty"` // KISS serial baud rate
-	DataBits int    `yaml:"data_bits,omitempty"` // KISS: 5,6,7,8 (default 8)
-	Parity   string `yaml:"parity,omitempty"`    // KISS: "none","odd","even","mark","space"
-	StopBits string `yaml:"stop_bits,omitempty"` // KISS: "1","1.5","2" (default "1")
-	DTR      bool   `yaml:"dtr,omitempty"`       // KISS: enable DTR
-	RTS      bool   `yaml:"rts,omitempty"`       // KISS: enable RTS
+	Enabled        bool   `yaml:"enabled"`
+	Service        string `yaml:"service,omitempty"`          // "aprs_is", "kiss", "kiss_server", or "" (none/default)
+	Server         string `yaml:"server,omitempty"`           // APRS-IS server host:port
+	KISSServerHost string `yaml:"kiss_server_host,omitempty"` // KISS Server TCP host (default 127.0.0.1)
+	KISSServerPort string `yaml:"kiss_server_port,omitempty"` // KISS Server TCP port (default 8001)
+	Port           string `yaml:"port,omitempty"`             // KISS serial port
+	BaudRate       int    `yaml:"baud_rate,omitempty"`        // KISS serial baud rate
+	DataBits       int    `yaml:"data_bits,omitempty"`        // KISS: 5,6,7,8 (default 8)
+	Parity         string `yaml:"parity,omitempty"`           // KISS: "none","odd","even","mark","space"
+	StopBits       string `yaml:"stop_bits,omitempty"`        // KISS: "1","1.5","2" (default "1")
+	DTR            bool   `yaml:"dtr,omitempty"`              // KISS: enable DTR
+	RTS            bool   `yaml:"rts,omitempty"`              // KISS: enable RTS
 }
 
 type DXCConfig struct {

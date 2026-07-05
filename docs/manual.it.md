@@ -771,13 +771,13 @@ Si connette a un TNC KISS accessibile via TCP — ad esempio, un'istanza
 stessa macchina o sulla rete locale. Nessuna connessione internet
 richiesta.
 
-Inserisci l'indirizzo del server (host:port) nel menu Integrations:
+Inserisci host e porta nel menu Integrations:
 
 ```text
-F9 → Integrations → APRS → Service: KISS Server → Server
+F9 → Integrations → APRS → Service: KISS Server → Host / Port
 ```
 
-Predefinito: `localhost:8001`
+Predefinito: `127.0.0.1:8001`
 
 #### Beaconing
 

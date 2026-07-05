@@ -3,6 +3,7 @@ package app
 import (
 	"database/sql"
 	"fmt"
+	"net"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -314,13 +315,15 @@ func (a *App) MaybeRestartAPRS() {
 
 	// KISS Server service — connect to a KISS TNC over TCP.
 	if aprsGlobal.Service == "kiss_server" {
-		addr := aprsGlobal.Server
-		if addr == "" {
-			addr = "localhost:8001"
+		host := aprsGlobal.KISSServerHost
+		if host == "" {
+			host = "127.0.0.1"
 		}
-		if !strings.Contains(addr, ":") {
-			addr += ":8001"
+		port := aprsGlobal.KISSServerPort
+		if port == "" {
+			port = "8001"
 		}
+		addr := net.JoinHostPort(host, port)
 
 		if a.APRSClient != nil {
 			a.APRSClient.Stop()
