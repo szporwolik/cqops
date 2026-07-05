@@ -30,6 +30,23 @@ func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode
 	m.wsjtx.txMsg = txMessage
 	m.wsjtx.lastSeen = time.Now()
 	m.wsjtx.tx = transmitting
+	// When the user starts calling CQ (DxCall empty + transmitting),
+	// clear the form from the previous QSO partner. Only fires once
+	// per CQ cycle — on the transition from a directed call to CQ.
+	if call == "" && transmitting && m.wsjtx.lastDxCall != "" {
+		m.fields[fieldCall].SetValue("")
+		m.fields[fieldCountry].SetValue("")
+		m.fields[fieldName].SetValue("")
+		m.fields[fieldQTH].SetValue("")
+		m.fields[fieldGrid].SetValue("")
+		m.lookup.partnerData = nil
+		m.lookup.wlPrivateData = nil
+		m.lookup.wlLookupDone = false
+		m.rc.logStatsSig = ""
+		m.invalidatePartnerMapCache()
+		applog.Debug("WSJT-X: form cleared (calling CQ)")
+	}
+	m.wsjtx.lastDxCall = call
 	if call != "" {
 		prevCall := qso.NormalizeCall(m.fields[fieldCall].Value())
 		newCall := strings.ToUpper(call)

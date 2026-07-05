@@ -36,11 +36,12 @@ type rotorState struct {
 
 // wsjtxState holds WSJT-X integration connection and status state.
 type wsjtxState struct {
-	online   bool
-	tx       bool   // true when WSJT-X is transmitting (from StatusMessage)
-	txMsg    string // last TX message from WSJT-X (e.g. "CQ SP9XXX JO90")
-	lastSeen time.Time
-	status   string // current mode/submode from WSJT-X
+	online     bool
+	tx         bool   // true when WSJT-X is transmitting (from StatusMessage)
+	txMsg      string // last TX message from WSJT-X (e.g. "CQ SP9XXX JO90")
+	lastSeen   time.Time
+	status     string // current mode/submode from WSJT-X
+	lastDxCall string // last DX call from WSJT-X status; empty when calling CQ
 }
 
 // adifQueue holds the WSJT-X ADIF queue with its mutex.
