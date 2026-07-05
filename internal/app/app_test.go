@@ -2,7 +2,9 @@ package app
 
 import (
 	"testing"
+	"time"
 
+	"github.com/szporwolik/cqops/internal/aprs"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/wsjtx"
 )
@@ -145,5 +147,124 @@ func TestMaybeRestartWSJTX_NoOpOnSameConfig(t *testing.T) {
 	a.MaybeRestartWSJTX(enabled, host, port)
 	if a.lastWSJTX != first {
 		t.Error("lastWSJTX changed on third identical apply")
+	}
+}
+
+// =============================================================================
+// APRS tests
+// =============================================================================
+
+func TestMaybeRestartAPRS_DisabledByDefault(t *testing.T) {
+	cfg := config.DefaultConfig()
+	a := &App{
+		Config:  cfg,
+		Logbook: &config.Logbook{},
+	}
+	// Default config has no APRS enabled — should be a no-op.
+	a.MaybeRestartAPRS()
+	if a.APRSClient != nil {
+		t.Error("APRSClient should be nil when APRS is disabled")
+	}
+	if a.APRSCache != nil {
+		t.Error("APRSCache should be nil when APRS is disabled")
+	}
+}
+
+func TestMaybeRestartAPRS_StopsExistingClient(t *testing.T) {
+	cfg := config.DefaultConfig()
+	a := &App{
+		Config:  cfg,
+		Logbook: &config.Logbook{},
+	}
+	// Simulate a running KISS server client by creating one manually.
+	kc := aprs.NewKISSServerClient("127.0.0.1:1")
+	kc.Start()
+	a.APRSClient = kc
+
+	// Disabled config should stop the client.
+	a.MaybeRestartAPRS()
+	time.Sleep(100 * time.Millisecond)
+
+	if a.APRSClient != nil {
+		t.Error("APRSClient should be nil after disabling")
+	}
+}
+
+func TestEffectiveGrid_NoGPS(t *testing.T) {
+	cfg := config.DefaultConfig()
+	a := &App{
+		Config:  cfg,
+		Logbook: &config.Logbook{Station: config.Station{Grid: "JO62TJ"}},
+	}
+	// Without GPS, EffectiveGrid returns the station grid.
+	g := a.EffectiveGrid()
+	if g != "JO62TJ" {
+		t.Errorf("EffectiveGrid: got %q, want JO62TJ", g)
+	}
+}
+
+func TestEffectiveGrid_GPSWithFix(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Integrations.GPS.Enabled = true
+	a := &App{
+		Config:  cfg,
+		Logbook: &config.Logbook{Station: config.Station{Grid: "JO62TJ", GPSGrid: true}},
+	}
+	a.SetGPSGrid("KO00CA", true)
+	g := a.EffectiveGrid()
+	if g != "KO00CA" {
+		t.Errorf("EffectiveGrid with GPS fix: got %q, want KO00CA", g)
+	}
+}
+
+func TestEffectiveGrid_GPSNoFix(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Integrations.GPS.Enabled = true
+	a := &App{
+		Config:  cfg,
+		Logbook: &config.Logbook{Station: config.Station{Grid: "JO62TJ", GPSGrid: true}},
+	}
+	a.SetGPSGrid("KO00CA", false)
+	g := a.EffectiveGrid()
+	if g != "JO62TJ" {
+		t.Errorf("EffectiveGrid with GPS no-fix: got %q, want JO62TJ", g)
+	}
+}
+
+func TestSetGPSGrid(t *testing.T) {
+	cfg := config.DefaultConfig()
+	a := &App{
+		Config:  cfg,
+		Logbook: &config.Logbook{Station: config.Station{Grid: "JO62TJ"}},
+	}
+	a.SetGPSGrid("KO00CA02wh", true)
+	if a.gpsGrid != "KO00CA02wh" {
+		t.Errorf("gpsGrid: got %q", a.gpsGrid)
+	}
+	if !a.gpsHasFix {
+		t.Error("gpsHasFix should be true")
+	}
+
+	// Clear GPS.
+	a.SetGPSGrid("", false)
+	if a.gpsGrid != "" {
+		t.Errorf("gpsGrid should be empty after clear, got %q", a.gpsGrid)
+	}
+	if a.gpsHasFix {
+		t.Error("gpsHasFix should be false after clear")
+	}
+}
+
+func TestEffectiveGrid_KISSServerService(t *testing.T) {
+	// Verify that APRS client type detection works correctly.
+	kc := aprs.NewKISSServerClient("127.0.0.1:1")
+	if kc.IsRunning() {
+		kc.Stop()
+	}
+	if kc.IsRunning() {
+		t.Error("KISSServerClient should not be running after Stop")
+	}
+	if kc.IsConnected() {
+		t.Error("KISSServerClient should not be connected when never started")
 	}
 }

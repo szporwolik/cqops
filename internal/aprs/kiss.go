@@ -279,6 +279,7 @@ func (c *KISSServerClient) readFrames(conn net.Conn) {
 					}
 					tnc2 := extractTNC2(payload)
 					if tnc2 != "" {
+						applog.Debug("KISS server: frame received", "len", fmt.Sprintf("%d", len(payload)), "tnc2Len", fmt.Sprintf("%d", len(tnc2)))
 						if c.OnPacket != nil {
 							c.OnPacket(tnc2)
 						}

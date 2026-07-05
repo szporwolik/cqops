@@ -349,6 +349,8 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 	switch cfg.Integrations.APRS.Service {
 	case "kiss":
 		aprsSvc = 1
+	case "kiss_server":
+		aprsSvc = 2
 	default:
 		aprsSvc = 0 // aprs_is (or empty → default to APRS-IS)
 	}
@@ -883,6 +885,10 @@ func (im *IntegrationMenu) forwardToFocused(msg tea.Msg) {
 		im.gpsdPort, _ = im.gpsdPort.Update(msg)
 	case imAPRSServer:
 		im.aprsServer, _ = im.aprsServer.Update(msg)
+	case imAPRSKISSHost:
+		im.aprsKISSHost, _ = im.aprsKISSHost.Update(msg)
+	case imAPRSKISSPort:
+		im.aprsKISSPort, _ = im.aprsKISSPort.Update(msg)
 	case imAPRSPort:
 		im.aprsPort, _ = im.aprsPort.Update(msg)
 	}

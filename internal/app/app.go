@@ -277,9 +277,6 @@ func (a *App) MaybeRestartAPRS() {
 
 		kiss := aprs.NewKISSClient(port, baud, dataBits, par, stop, aprsGlobal.DTR, aprsGlobal.RTS)
 		kiss.OnStatus = func(connected bool, err error) {
-			if connected {
-				applog.Info("KISS: connected", "port", port)
-			}
 			if a.aprsStatusCB != nil {
 				a.aprsStatusCB(connected, err)
 			}
@@ -332,9 +329,6 @@ func (a *App) MaybeRestartAPRS() {
 
 		kc := aprs.NewKISSServerClient(addr)
 		kc.OnStatus = func(connected bool, err error) {
-			if connected {
-				applog.Info("KISS server: connected", "addr", addr)
-			}
 			if a.aprsStatusCB != nil {
 				a.aprsStatusCB(connected, err)
 			}
@@ -342,11 +336,17 @@ func (a *App) MaybeRestartAPRS() {
 		kc.OnPacket = func(raw string) {
 			sr, ok := aprs.ParsePositionPacket(raw)
 			if !ok {
+				preview := raw
+				if len(preview) > 100 {
+					preview = preview[:100]
+				}
+				applog.Debug("KISS server: unparsed frame", "preview", preview)
 				return
 			}
 			sr.RawPacket = raw
 			sr.Source = "kiss"
 			sr.LastHeard = time.Now()
+			applog.Debug("APRS: position parsed (KISS server)", "callsign", sr.Callsign, "lat", sr.Lat, "lon", sr.Lon)
 			if a.APRSCache != nil {
 				if err := a.APRSCache.UpsertStation(sr); err != nil {
 					applog.Debug("APRS: cache upsert failed", "error", err)
