@@ -192,22 +192,11 @@ func (gm *GeneralMenu) renderCheckbox(b *strings.Builder, boxW, cursor int, labe
 func (gm *GeneralMenu) renderSettingRow(b *strings.Builder, boxW, cursor int, label, value string) {
 	prefix := "  "
 	lbl := S.FormLabelGen.Align(lipgloss.Left).Render(label)
-	lblW := lipgloss.Width(lbl)
-	// Values get remaining space: boxW minus 2 (prefix) minus lblW (label) minus 1 (space) minus 6 (border+padding).
-	valW := boxW - 2 - lblW - 1 - 6
-	if valW < 8 {
-		valW = 8
-	}
-	val := ValueStyle.Width(valW).MaxWidth(valW).Inline(true).Render(value)
+	val := ValueStyle.Render(value)
 	if gm.cursor == cursor {
 		prefix = S.FormPrefixOn.Render("> ")
 		lbl = S.FormFocusedGen.Align(lipgloss.Left).Render(label)
-		lblW = lipgloss.Width(lbl)
-		valW = boxW - 2 - lblW - 1 - 6
-		if valW < 8 {
-			valW = 8
-		}
-		val = CursorStyle.Width(valW).MaxWidth(valW).Inline(true).Render(value) + " " + DimStyle.Render("(Space)")
+		val = CursorStyle.Render(value) + " " + DimStyle.Render("(Space)")
 	}
 	b.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val), boxW))
 	b.WriteString("\n")
