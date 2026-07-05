@@ -42,30 +42,25 @@ var linuxFKey = map[[3]byte][]byte{
 }
 
 func (r *linuxConsoleReader) Read(p []byte) (int, error) {
-	// Return buffered translated bytes first.
+	// Serve buffered translated bytes first.
 	if r.buf.Len() > 0 {
 		return r.buf.Read(p)
 	}
 
-	n, err := r.inner.Read(p)
-	if n <= 0 {
-		return n, err
+	// Read a chunk from real stdin into a local buffer. This is critical:
+	// Bubble Tea's input scanner may request 1 byte at a time, and an
+	// F-key escape sequence is 4 bytes. By reading into our own buffer we
+	// capture the full sequence in one kernel read.
+	var chunk [64]byte
+	n, err := r.inner.Read(chunk[:])
+	if n > 0 {
+		translated := translateLinuxFKeys(chunk[:n])
+		r.buf.Write(translated)
 	}
-
-	// Scan for \e[[X patterns (X ∈ A–E) and translate them.
-	translated := translateLinuxFKeys(p[:n])
-	if len(translated) > n {
-		// Translated version is longer (e.g. F5 → 5 bytes from 4).
-		// Return n bytes and buffer the remainder.
-		written := copy(p, translated[:n])
-		r.buf.Write(translated[n:])
-		return written, err
+	if r.buf.Len() > 0 {
+		return r.buf.Read(p)
 	}
-	// In-place replacement (same or shorter length).
-	copy(p, translated)
-	// If shorter, zero-fill the tail (we can't shrink p, but the caller
-	// uses n, not len(p)).
-	return n, err
+	return 0, err
 }
 
 // translateLinuxFKeys finds Linux-console F-key sequences in data and
