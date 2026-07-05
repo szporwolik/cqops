@@ -86,7 +86,7 @@ func (m *Model) saveQSO() tea.Cmd {
 	station := qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
 		Operator:        m.activeOperatorCallsign(),
-		MyGridSquare:    m.App.Logbook.Station.Grid,
+		MyGridSquare:    m.effectiveGrid(),
 		MyRig:           m.App.Logbook.Station.RigModel(m.App.Config.Rigs),
 		MyAntenna:       m.App.Logbook.Station.RigAntenna(m.App.Config.Rigs),
 		TXPower:         m.App.Logbook.Station.RigPower(m.App.Config.Rigs),

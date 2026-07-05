@@ -319,8 +319,13 @@ func (m *Model) stationProfile() []string {
 		}
 		parts = append(parts, part)
 	}
-	if s.Grid != "" {
-		parts = append(parts, "Grid "+formatLocator(s.Grid))
+	grid := m.effectiveGrid()
+	if grid != "" {
+		label := "Grid " + formatLocator(grid)
+		if m.isGPSGridActive() {
+			label += " (GPS)"
+		}
+		parts = append(parts, label)
 	}
 	if s.Callsign != "" && len(parts) == 0 {
 		parts = append(parts, s.Callsign)

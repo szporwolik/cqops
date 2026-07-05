@@ -222,7 +222,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			WLStationID:     wlStationID,
 			WLLastFetchedID: wlLastID,
 			StationOperator: m.activeOperatorCallsign(),
-			StationGrid:     m.App.Logbook.Station.Grid,
+			StationGrid:     m.effectiveGrid(),
 			StationCall:     m.App.Logbook.Station.Callsign,
 		})
 		m.ui.logbookEditor.width = m.width
@@ -471,7 +471,7 @@ func (m *Model) handleRotorKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return m.rotorSetPositionCmd(baseAz, el), true
 
 	case "ctrl+a":
-		ownGrid := formatLocator(m.App.Logbook.Station.Grid)
+		ownGrid := formatLocator(m.effectiveGrid())
 		partnerGrid := formatLocator(m.fields[fieldGrid].Value())
 		bearing := gridBearingDeg(ownGrid, partnerGrid)
 		if bearing < 0 {

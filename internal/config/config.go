@@ -68,6 +68,7 @@ type IntegrationsConfig struct {
 	DXC        DXCConfig        `yaml:"dxc,omitempty"`
 	QRZ        QRZConfig        `yaml:"qrz,omitempty"`
 	HTTPServer HTTPServerConfig `yaml:"http_server,omitempty"`
+	GPS        GPSConfig        `yaml:"gps,omitempty"`
 }
 
 type DXCConfig struct {
@@ -125,6 +126,15 @@ type HTTPServerConfig struct {
 	MapAttrib  string `yaml:"map_attrib,omitempty"`   // tile attribution text
 }
 
+// GPSConfig holds GPS receiver serial port configuration.
+type GPSConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	Port     string `yaml:"port,omitempty"`      // e.g. "COM6" or "/dev/ttyUSB0"
+	BaudRate int    `yaml:"baud_rate,omitempty"` // e.g. 115200
+	DTR      bool   `yaml:"dtr,omitempty"`       // enable DTR on connect
+	RTS      bool   `yaml:"rts,omitempty"`       // enable RTS on connect
+}
+
 // Favorite stores a mode/freq/submode/band snapshot for quick recall.
 // Slots are 0-9, stored under alt+shift+N and recalled with alt+N.
 type Favorite struct {
@@ -149,6 +159,7 @@ type Logbook struct {
 type Station struct {
 	Callsign   string `yaml:"callsign"`
 	Grid       string `yaml:"grid"`
+	GPSGrid    bool   `yaml:"gps_grid,omitempty"` // use GPS grid when available
 	RigName    string `yaml:"rig_name,omitempty"`
 	SOTARef    string `yaml:"sota_ref,omitempty"`
 	POTARef    string `yaml:"pota_ref,omitempty"`

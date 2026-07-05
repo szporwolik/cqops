@@ -273,6 +273,8 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			m.rig.name = r.name
 		}
 		return true, nil
+	case gpsTickMsg:
+		return true, m.handleGPSTick()
 	case pskFetchMsg:
 		m.psk.fetching = false
 		if r.err != nil {

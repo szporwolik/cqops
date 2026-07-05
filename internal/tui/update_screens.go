@@ -210,12 +210,27 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			m.App.Config.Integrations.HTTPServer.Header2 = httpHdr2
 			m.App.Config.Integrations.HTTPServer.ClubLogo = httpLogo
 			m.App.Config.Integrations.HTTPServer.EventStart = httpEvtStart
+
+			// GPS integration.
+			gpsWasEnabled := m.App.Config.Integrations.GPS.Enabled
+			m.App.Config.Integrations.GPS.Enabled = m.ui.integrationMenu.gpsEnabled
+			m.App.Config.Integrations.GPS.Port = m.ui.integrationMenu.gpsPort.Value()
+			m.App.Config.Integrations.GPS.BaudRate = m.ui.integrationMenu.gpsBaudRate
+			m.App.Config.Integrations.GPS.DTR = m.ui.integrationMenu.gpsDTR
+			m.App.Config.Integrations.GPS.RTS = m.ui.integrationMenu.gpsRTS
+
 			m.saveConfig("Settings saved")
 			applog.Info("Integration config saved, restarting services")
 
 			m.resetDXC()
 			if needHTTPRestart {
 				m.restartHTTPServer()
+			}
+			// GPS: start or stop based on config change.
+			if m.App.Config.Integrations.GPS.Enabled && !gpsWasEnabled {
+				cmd = tea.Batch(cmd, m.startGPS())
+			} else if !m.App.Config.Integrations.GPS.Enabled && gpsWasEnabled {
+				m.stopGPS()
 			}
 			m.screen = screenMainMenu
 		}

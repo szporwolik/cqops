@@ -111,7 +111,7 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
 		Operator:        m.activeOperatorCallsign(),
-		MyGridSquare:    m.App.Logbook.Station.Grid,
+		MyGridSquare:    m.effectiveGrid(),
 		MyRig:           m.App.Logbook.Station.RigModel(m.App.Config.Rigs),
 		MyAntenna:       m.App.Logbook.Station.RigAntenna(m.App.Config.Rigs),
 		TXPower:         txPowerForWSJTX(m, qs.TXPower),
@@ -135,7 +135,7 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 	}
 
 	// Enrich QSO: compute distance/bearing from grid squares.
-	myGrid := m.App.Logbook.Station.Grid
+	myGrid := m.effectiveGrid()
 	if qs.GridSquare != "" && myGrid != "" {
 		qs.Distance = gridDistanceKm(myGrid, qs.GridSquare)
 		qs.Bearing = gridBearingDeg(myGrid, qs.GridSquare)
@@ -259,7 +259,7 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 
 		// Step 2b: recompute distance/bearing after enrichment. WSJT-X may
 		// not include a grid, or the enriched grid may be more precise.
-		if myGrid := m.App.Logbook.Station.Grid; myGrid != "" && qs.GridSquare != "" {
+		if myGrid := m.effectiveGrid(); myGrid != "" && qs.GridSquare != "" {
 			qs.Distance = gridDistanceKm(myGrid, qs.GridSquare)
 			qs.Bearing = gridBearingDeg(myGrid, qs.GridSquare)
 			m.App.DB.Exec(`UPDATE qsos SET distance=?, bearing=? WHERE id=?`,

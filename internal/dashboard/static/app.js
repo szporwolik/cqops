@@ -1086,21 +1086,23 @@ function gridToLatLon(grid){
     if(c4<65||c4>88||c5<65||c5>88)return[0,0]; // subsquare must be A-X
     lon+=(c4-65)*(5/60);
     lat+=(c5-65)*(2.5/60);
-    lon+=2.5/60;lat+=1.25/60;
     if(grid.length>=8){
       lon+=(grid.charCodeAt(6)-48)*(0.5/60);
       lat+=(grid.charCodeAt(7)-48)*(0.25/60);
-      lon+=0.25/60;lat+=0.125/60;
       if(grid.length>=10){
         var c8=grid.charCodeAt(8),c9=grid.charCodeAt(9);
-        if(c8<65||c8>88||c9<65||c9>88)return[0,0]; // extended must be A-X
+        if(c8<65||c8>88||c9<65||c9>88)return[0,0];
         lon+=(c8-65)*(0.5/60/24);
         lat+=(c9-65)*(0.25/60/24);
-        lon+=0.5/60/48;lat+=0.25/60/48;
+        lon+=0.5/60/48;lat+=0.25/60/48;        // centre of 10-char
+      }else{
+        lon+=0.25/60;lat+=0.125/60;             // centre of 8-char
       }
+    }else{
+      lon+=2.5/60;lat+=1.25/60;                 // centre of 6-char
     }
   }else{
-    lon+=1;lat+=0.5;
+    lon+=1;lat+=0.5;                             // centre of 4-char
   }
   return[lat,lon];
 }

@@ -149,6 +149,9 @@ type Model struct {
 	// HTTP — built-in HTTP server for CQOps Live dashboard.
 	http httpState
 
+	// GPS — serial NMEA receiver for position tracking.
+	gps gpsState
+
 	// lastDataCheck is the last time CTY.DAT / SCP files were checked for updates.
 	lastDataCheck time.Time
 
@@ -385,6 +388,10 @@ func (m *Model) Init() tea.Cmd {
 	})
 	m.App.MaybeRestartAPRS()
 	cmds := []tea.Cmd{tickCmd(), m.photo.viewer.Init(), m.emitWindowIconCmd()}
+	// Start GPS receiver if configured.
+	if m.App.Config.Integrations.GPS.Enabled {
+		cmds = append(cmds, m.startGPS())
+	}
 	if !m.Offline {
 		cmds = append(cmds, checkInetCmd())
 	}
@@ -1276,7 +1283,7 @@ func (m *Model) resolveExchangeMarkers(tmpl, direction string, nextQSO int) stri
 	// @mycqz / @myitu / @mygrid — from station config.
 	rep["@mycqz"] = qso.ItoaOrEmpty(m.App.Logbook.Station.CQZone)
 	rep["@myitu"] = qso.ItoaOrEmpty(m.App.Logbook.Station.ITUZone)
-	rep["@mygrid"] = strings.ToUpper(strings.TrimSpace(m.App.Logbook.Station.Grid))
+	rep["@mygrid"] = strings.ToUpper(strings.TrimSpace(m.effectiveGrid()))
 
 	// Optional markers that resolved to empty → render "?".
 	for k, v := range rep {

@@ -535,4 +535,8 @@ func (m *Model) shutdownConnections() {
 		applog.Debug("dxc: stopping client on shutdown")
 		m.dxc.client.Stop()
 	}
+	if m.gps.client != nil {
+		applog.Debug("gps: stopping on shutdown")
+		m.stopGPS()
+	}
 }

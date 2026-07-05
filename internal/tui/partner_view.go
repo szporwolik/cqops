@@ -612,7 +612,7 @@ func (m *Model) getOrBuildMap(d *qrz.CallData, mapW, mapAvailH int) string {
 		return ""
 	}
 
-	ownGrid := m.App.Logbook.Station.Grid
+	ownGrid := m.effectiveGrid()
 	// Use QSO form grid if set (may differ from QRZ due to REF autofill).
 	partnerGrid := strings.TrimSpace(m.fields[fieldGrid].Value())
 	if partnerGrid == "" {

@@ -51,19 +51,21 @@ func GridToLatLon(grid string) (float64, float64, error) {
 	if len(grid) >= 6 {
 		lon += float64(grid[4]-'A') * (5.0 / 60.0)
 		lat += float64(grid[5]-'A') * (2.5 / 60.0)
-		lon += 2.5 / 60.0  // centre of sub-square
-		lat += 1.25 / 60.0 // centre of sub-square
 		if len(grid) >= 8 {
 			lon += float64(grid[6]-'0') * (0.5 / 60.0)
 			lat += float64(grid[7]-'0') * (0.25 / 60.0)
-			lon += 0.25 / 60.0  // centre of extended cell
-			lat += 0.125 / 60.0 // centre of extended cell
 			if len(grid) >= 10 {
 				lon += float64(grid[8]-'A') * (0.5 / 60.0 / 24.0)
 				lat += float64(grid[9]-'A') * (0.25 / 60.0 / 24.0)
-				lon += 0.5 / 60.0 / 48.0  // centre
-				lat += 0.25 / 60.0 / 48.0 // centre
+				lon += 0.5 / 60.0 / 48.0  // centre of 10-char cell
+				lat += 0.25 / 60.0 / 48.0 // centre of 10-char cell
+			} else {
+				lon += 0.25 / 60.0  // centre of 8-char cell
+				lat += 0.125 / 60.0 // centre of 8-char cell
 			}
+		} else {
+			lon += 2.5 / 60.0  // centre of 6-char cell
+			lat += 1.25 / 60.0 // centre of 6-char cell
 		}
 	} else {
 		lon += 1.0 // centre of 2° square (4-char grid)

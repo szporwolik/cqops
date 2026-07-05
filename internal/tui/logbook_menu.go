@@ -522,6 +522,7 @@ func (c *LogbookChooser) startEdit(id string) {
 		}
 	}
 	c.station.SetValues(lb.Name, lb.Station.Callsign, opCallsign, lb.Station.Grid, lb.Station.SOTARef, lb.Station.POTARef, lb.Station.WWFFRef, lb.Station.IARURegion, lb.Station.CQZone, lb.Station.ITUZone, lb.Station.DXCC, lb.Station.SIG, lb.Station.SIGInfo, lb.Station.Continent)
+	c.station.GPSGrid = lb.Station.GPSGrid
 	c.station.SetOperators(config.OperatorSlice(c.app.Config))
 	c.station.SetWavelogValues(lb.Wavelog)
 	c.station.SetAPRSValues(lb.APRS)
@@ -617,6 +618,7 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 				Callsign: cs,
 
 				Grid:       gr,
+				GPSGrid:    c.station.GPSGrid,
 				SOTARef:    sotaRef,
 				POTARef:    potaRef,
 				WWFFRef:    wwffRef,
@@ -664,6 +666,7 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 	lb.Station.Callsign = cs
 	lb.ActiveOperator = activeOpID
 	lb.Station.Grid = gr
+	lb.Station.GPSGrid = c.station.GPSGrid
 	lb.Station.SOTARef = sotaRef
 	lb.Station.POTARef = potaRef
 	lb.Station.WWFFRef = wwffRef

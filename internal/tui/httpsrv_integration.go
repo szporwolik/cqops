@@ -317,12 +317,13 @@ func (m *Model) pushDashboardFast() {
 	// --- Station ---
 	st := m.App.Logbook.Station
 	rp, hasRig := m.App.Config.Rigs[st.RigName]
+	grid := m.effectiveGrid()
 	stationInfo := dashboard.StationInfo{
 		Callsign: st.Callsign,
-		Locator:  st.Grid,
+		Locator:  grid,
 	}
-	if st.Grid != "" {
-		stationInfo.Lat, stationInfo.Lon = gridToLatLon(st.Grid)
+	if grid != "" {
+		stationInfo.Lat, stationInfo.Lon = gridToLatLon(grid)
 	}
 	if hasRig {
 		stationInfo.Radio = rp.Name
@@ -759,7 +760,7 @@ func (m *Model) pushDashboardAPRS(ds *dashboard.State) {
 	}
 	// Get station position and APRS config for distance filtering.
 	var stLat, stLon, radiusKm float64
-	if g := m.App.Logbook.Station.Grid; g != "" {
+	if g := m.effectiveGrid(); g != "" {
 		stLat, stLon = gridToLatLon(g)
 	}
 	if aprsCfg := m.App.Logbook.APRS; aprsCfg != nil && aprsCfg.Enabled && aprsCfg.RadiusKm > 0 {

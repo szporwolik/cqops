@@ -532,7 +532,7 @@ func (m *Model) buildPSKFilters(maxW int) string {
 }
 
 func (m *Model) buildPSKMap(reports []psk.Report, mapW, mapAvailH int) string {
-	ownGrid := m.App.Logbook.Station.Grid
+	ownGrid := m.effectiveGrid()
 	if ownGrid == "" {
 		return ""
 	}

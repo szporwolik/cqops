@@ -50,6 +50,10 @@ type StationForm struct {
 	AprsComment      textinput.Model
 	width            int // terminal width for responsive layout
 
+	// GPS Grid — use GPS-derived grid when checked and GPS has fix.
+	GPSGrid      bool
+	gpsGridFocus bool
+
 	// Operator cycling (Space-toggleable, like Continent/IARU).
 	operators []config.Operator
 	opIdx     int  // index into operators; -1 = None
@@ -259,6 +263,9 @@ func (f *StationForm) NextInput() {
 		f.SOTARef.Focus()
 	case f.Locator.Focused():
 		f.Locator.Blur()
+		f.gpsGridFocus = true
+	case f.gpsGridFocus:
+		f.gpsGridFocus = false
 		f.iaruFocus = true
 	case f.iaruFocus:
 		f.iaruFocus = false
@@ -419,6 +426,9 @@ func (f *StationForm) PrevInput() {
 		f.POTARef.Focus()
 	case f.iaruFocus:
 		f.iaruFocus = false
+		f.gpsGridFocus = true
+	case f.gpsGridFocus:
+		f.gpsGridFocus = false
 		f.Locator.Focus()
 	case f.contFocus:
 		f.contFocus = false
@@ -465,6 +475,7 @@ func (f *StationForm) BlurAll() {
 	f.wlCbFocus = false
 	f.aprsCbFocus = false
 	f.aprsSendLocFocus = false
+	f.gpsGridFocus = false
 	f.iaruFocus = false
 	f.contFocus = false
 	f.opFocus = false
@@ -640,6 +651,20 @@ func (f *StationForm) View() tea.View {
 	b.WriteString(f.renderFieldLine("Callsign:", &f.Callsign, availW))
 	// Grid locator
 	b.WriteString(f.renderFieldLine("Grid locator:", &f.Locator, availW))
+	// GPS Grid checkbox — below grid locator.
+	gpsCb := "[ ]"
+	if f.GPSGrid {
+		gpsCb = "[x]"
+	}
+	gpsPrefix := "  "
+	gpsLabel := S.FormLabelWide.Align(lipgloss.Left).Render("GPS Grid:")
+	if f.gpsGridFocus {
+		gpsPrefix = S.FormPrefixOn.Render("> ")
+		gpsLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("GPS Grid:")
+		gpsCb = CursorStyle.Render(gpsCb)
+	}
+	b.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, gpsPrefix, gpsLabel, " ", gpsCb), availW))
+	b.WriteString("\n")
 
 	// IARU Region display (focusable, Space/Enter to cycle) — right after grid.
 	iaruLabel := "IARU Region:"
@@ -940,6 +965,10 @@ func (f *StationForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		if f.aprsSendLocFocus {
 			f.AprsSendLoc = !f.AprsSendLoc
+			return nil
+		}
+		if f.gpsGridFocus {
+			f.GPSGrid = !f.GPSGrid
 			return nil
 		}
 	}

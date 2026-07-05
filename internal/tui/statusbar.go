@@ -98,6 +98,17 @@ func (m *Model) headerView() string {
 		}
 		rightParts = append(rightParts, statusDotStyled(online, label, m.Offline))
 	}
+	// GPS — red when disconnected, yellow when connected but no fix, white when fix acquired.
+	if m.App.Config.Integrations.GPS.Enabled {
+		switch {
+		case m.gps.online && m.gps.hasFix:
+			rightParts = append(rightParts, statusDotOnStyle.Render("GPS")+" ")
+		case m.gps.online:
+			rightParts = append(rightParts, statusDotWarnStyle.Render("GPS")+" ")
+		default:
+			rightParts = append(rightParts, statusDotOffStyle.Render("GPS")+" ")
+		}
+	}
 	rightParts = append(rightParts,
 		S.StatusTime.Render(now.Format("15:04")+"L  "+utc.Format("1504")+"Z"),
 	)
