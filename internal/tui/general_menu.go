@@ -149,12 +149,12 @@ func (gm *GeneralMenu) View() tea.View {
 
 	var b strings.Builder
 
-	// Row 0: Distance unit — shows current value, toggles on space.
-	unitVal := "Kilometers (km)"
+	// Row 0: Units — toggles Metric/Imperial on space.
+	unitVal := "Metric"
 	if gm.distanceUnit == "mi" {
-		unitVal = "Miles (mi)"
+		unitVal = "Imperial"
 	}
-	gm.renderSettingRow(&b, boxW, 0, "Distance unit", unitVal)
+	gm.renderSettingRow(&b, boxW, 0, "Units", unitVal)
 
 	// Row 1: Timezone — shows current value, cycles on space.
 	gm.renderSettingRow(&b, boxW, 1, "Timezone", gm.timezone)

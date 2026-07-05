@@ -55,6 +55,11 @@ function updateClocks(){
 }
 updateClocks();setInterval(updateClocks,1000);
 
+// ---- Units helpers ----
+function isImperial(){return displayCfg.units==='imperial'}
+function fmtDist(km){if(!km||km<=0)return'—';return isImperial()?Math.round(km*0.621371)+' mi':Math.round(km)+' km'}
+function fmtTemp(c){if(c==null)return'—';return isImperial()?Math.round(c*9/5+32)+'\u00b0F':Math.round(c)+'\u00b0C'}
+
 // ---- State switching ----
 function setState(active){
   var add=active?'mode-active':'mode-overview',rm=active?'mode-overview':'mode-active';
@@ -392,7 +397,7 @@ function renderStats(st,todayBuf){
     ['Grids',st.grids||0],
     ['Bands',bandList.length?bandList.map(function(b){return'<span class="stat-badge '+bandBadgeClass(b)+'">'+esc(b)+'</span>'}).join(''):(st.bands||'—')],
     ['Modes',modeList.length?modeList.map(function(m){return'<span class="stat-badge '+modeBadgeClass(m)+'">'+esc(m)+'</span>'}).join(''):(st.modes||'—')],
-    ['Longest',longestKm?Math.round(longestKm)+' km':'—'],
+    ['Longest',longestKm?fmtDist(longestKm):'—'],
     ['Rate (5m / 15m / 1h)',rate5+' / '+rate15+' / '+rate60]
   ].map(function(r){return'<dt>'+r[0]+'</dt><dd>'+r[1]+'</dd>'}).join('');
   renderTopQSOs();
@@ -405,7 +410,7 @@ function registerSessionSummary(qsos,dxcc,grids,longestKm,rate){
     if(qsos)parts.push('<span class="ss-item"><span class="ss-val">'+qsos+'</span> QSOs</span>');
     if(dxcc)parts.push('<span class="ss-item"><span class="ss-val">'+dxcc+'</span> DXCC</span>');
     if(grids)parts.push('<span class="ss-item"><span class="ss-val">'+grids+'</span> grids</span>');
-    if(longestKm)parts.push('<span class="ss-item"><span class="ss-val">'+Math.round(longestKm)+' km</span> best</span>');
+    if(longestKm)parts.push('<span class="ss-item"><span class="ss-val">'+fmtDist(longestKm)+'</span> best</span>');
     if(rate)parts.push('<span class="ss-item"><span class="ss-val">'+rate.toFixed(1)+'/hr</span></span>');
     return'<div class="extra-title">Session</div><div class="session-summary">'+parts.join('<span class="ss-sep">|</span>')+'</div>';
   };
@@ -1212,7 +1217,7 @@ function renderWeather(d){
     var slot=slots[s],label=slot[1],temp=slot[2],code=slot[3],wSpd=slot[4],wGst=slot[5],wDir=slot[6],precip=slot[7],isDay=slot[8];
     html+='<span class="wx-slot"><span class="wx-icon '+wxAnimClass(code)+'">'+weatherIcon(code,isDay)+'</span>'+
       '<span class="wx-label">'+label+'</span>'+
-      (temp!=null?'<span class="wx-temp">'+Math.round(temp)+'°</span>':'')+
+      (temp!=null?'<span class="wx-temp">'+fmtTemp(temp)+'</span>':'')+
       (wSpd!=null?'<span class="wx-wind"><span class="wx-wind-spd">'+Math.round(wSpd)+'</span><span class="wx-wind-unit">km/h</span> <span class="wx-wind-dir">'+windArrow(wDir||0)+'</span></span>':'')+
       (precip!=null&&precip>0?'<span class="wx-rain">'+precip.toFixed(1)+'mm</span>':'')+
       '</span>';
@@ -1241,7 +1246,7 @@ function renderContactWeather(d){
   var hwb=document.getElementById('hero-weather-box');if(!hwb||!navigator.onLine)return;
   var c=d.current||{},windArrow=function(deg){var a=['↓','↙','←','↖','↑','↗','→','↘'];return a[Math.round(deg/45)%8]||'•'};
   document.getElementById('hero-wx-icon').innerHTML='<span class="'+wxAnimClass(c.weather_code||0)+'">'+weatherIcon(c.weather_code||0,c.is_day)+'</span>';
-  document.getElementById('hero-wx-temp').textContent=c.temperature_2m!=null?Math.round(c.temperature_2m)+'°':'';
+  document.getElementById('hero-wx-temp').textContent=fmtTemp(c.temperature_2m);
   document.getElementById('hero-wx-wind').textContent=c.wind_speed_10m!=null?Math.round(c.wind_speed_10m)+' km/h '+windArrow(c.wind_direction_10m||0):'';
   hwb.classList.add('visible');
   if(map)map.invalidateSize();if(mapLocal)mapLocal.invalidateSize();

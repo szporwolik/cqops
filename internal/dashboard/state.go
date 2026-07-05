@@ -219,6 +219,7 @@ type DisplayConfig struct {
 	MaxLines          int    `json:"maxLines,omitempty"`
 	HighlightLastQSO  bool   `json:"highlightLastQso"`
 	AnimateActivePath bool   `json:"animateActivePath"`
+	Units             string `json:"units,omitempty"` // "metric" or "imperial"
 }
 
 // =============================================================================

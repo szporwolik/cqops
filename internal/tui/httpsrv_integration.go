@@ -199,6 +199,14 @@ func clubLogoURL(cfgURL string) string {
 	return "https://raw.githubusercontent.com/szporwolik/cqops/main/assets/other/gh-logo.png"
 }
 
+// unitForDashboard returns "imperial" or "metric" for the dashboard.
+func unitForDashboard(unit string) string {
+	if unit == "mi" {
+		return "imperial"
+	}
+	return "metric"
+}
+
 // eventStartDate returns the event start date as YYYYMMDD, or empty if not set.
 func (m *Model) eventStartDate() string {
 	es := m.App.Config.Integrations.HTTPServer.EventStart
@@ -312,6 +320,7 @@ func (m *Model) pushDashboardFast() {
 		DrawLines:        true,
 		MaxLines:         250,
 		HighlightLastQSO: true,
+		Units:            unitForDashboard(m.App.Config.General.DistanceUnit),
 	})
 
 	// --- Station ---
