@@ -89,11 +89,15 @@ func Execute() error {
 
 func runTUI() error {
 	// Linux console (TERM=linux) sends different function-key escape
-	// sequences than xterm. The kernel's console driver supports xterm
-	// sequences natively when TERM is set appropriately — do this early
-	// so Bubble Tea sees the right terminal type from the start.
+	// sequences than xterm. The kernel console driver supports xterm
+	// colours when TERM is set appropriately, but the F1–F5 sequences
+	// remain incompatible (\e[[A vs \eOP). Fix both:
+	//   1. Set TERM=xterm-256color for colour support.
+	//   2. Wrap stdin with a translator for F1–F5 keys.
+	useConsoleWrapper := false
 	if runtime.GOOS == "linux" && os.Getenv("TERM") == "linux" {
 		os.Setenv("TERM", "xterm-256color")
+		useConsoleWrapper = true
 	}
 
 	a, err := app.Init()
@@ -132,7 +136,11 @@ func runTUI() error {
 
 	m := tui.New(a, qsos)
 	m.Offline = offlineFlag
-	p := tea.NewProgram(m)
+	var opts []tea.ProgramOption
+	if useConsoleWrapper {
+		opts = append(opts, tea.WithInput(&linuxConsoleReader{inner: os.Stdin}))
+	}
+	p := tea.NewProgram(m, opts...)
 
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("tui: %w", err)
