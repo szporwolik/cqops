@@ -13,6 +13,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/NimbleMarkets/ntcharts/v2/picture"
 	"github.com/NimbleMarkets/ntcharts/v2/picture/pictureurl"
 	"github.com/gen2brain/beeep"
 	"github.com/szporwolik/cqops/internal/app"
@@ -407,7 +408,7 @@ func (m *Model) Init() tea.Cmd {
 		m.toasts.Success("APRS: position sent as " + callsign)
 	})
 	m.App.MaybeRestartAPRS()
-	cmds := []tea.Cmd{tickCmd(), m.photo.viewer.Init(), m.emitWindowIconCmd()}
+	cmds := []tea.Cmd{tickCmd(), picture.QueryKittySupport(), m.photo.viewer.Init(), m.emitWindowIconCmd()}
 	// Start GPS receiver if configured.
 	if m.App.Config.Integrations.GPS.Enabled {
 		cmds = append(cmds, m.startGPS())
