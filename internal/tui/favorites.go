@@ -10,60 +10,48 @@ import (
 	"github.com/szporwolik/cqops/internal/qso"
 )
 
-// handleFavoriteKey checks for ctrl+digit (recall) and ctrl+shift+digit /
-// ctrl+shifted_char (save). Returns true if the key was handled.
-func (m *Model) handleFavoriteKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
-	k := msg.String()
-	// ctrl+shift+0 … ctrl+shift+9  → save to slot
-	if strings.HasPrefix(k, "ctrl+shift+") && len(k) == 12 {
-		d := k[11]
-		if d >= '0' && d <= '9' {
-			return m.favoriteSave(int(d - '0')), true
-		}
+// favoriteKeySlot returns a slot number (0-2) for known favorite keys.
+// Returns -1 if the key is not a favorite shortcut.
+func favoriteKeySlot(code rune) int {
+	switch code {
+	case tea.KeyInsert:
+		return 0
+	case tea.KeyHome:
+		return 1
+	case tea.KeyPgUp:
+		return 2
 	}
-	// ctrl+shifted_char — what some terminals send for ctrl+shift+digit.
-	if d, ok := shiftedDigitFromCtrlPlus(k); ok {
-		return m.favoriteSave(d), true
-	}
-	// ctrl+0 … ctrl+9  → recall from slot
-	if strings.HasPrefix(k, "ctrl+") && len(k) == 6 {
-		d := k[5]
-		if d >= '0' && d <= '9' {
-			return m.favoriteRecall(int(d - '0')), true
-		}
-	}
-	return nil, false
+	return -1
 }
 
-// shiftedDigitFromCtrlPlus maps "ctrl+!" → 1, "ctrl+@" → 2, … "ctrl+)" → 0.
-// Returns the digit and true if k is one of these patterns.
-func shiftedDigitFromCtrlPlus(k string) (int, bool) {
-	if !strings.HasPrefix(k, "ctrl+") || len(k) != 6 {
-		return 0, false
+// favoriteKeyLabel returns a human label for a favorite slot.
+func favoriteKeyLabel(slot int) string {
+	switch slot {
+	case 0:
+		return "Ins"
+	case 1:
+		return "Home"
+	case 2:
+		return "PgUp"
 	}
-	switch k[5] {
-	case ')':
-		return 0, true
-	case '!':
-		return 1, true
-	case '@':
-		return 2, true
-	case '#':
-		return 3, true
-	case '$':
-		return 4, true
-	case '%':
-		return 5, true
-	case '^':
-		return 6, true
-	case '&':
-		return 7, true
-	case '*':
-		return 8, true
-	case '(':
-		return 9, true
+	return "?"
+}
+
+// handleFavoriteKey checks for Alt+Ins/Home/PgUp (recall) and
+// Alt+Shift+Ins/Home/PgUp (save).  Alt avoids conflicts with standard
+// terminal editing keys and works reliably across all terminal types.
+func (m *Model) handleFavoriteKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
+	if msg.Mod&tea.ModAlt == 0 {
+		return nil, false
 	}
-	return 0, false
+	slot := favoriteKeySlot(msg.Code)
+	if slot < 0 {
+		return nil, false
+	}
+	if msg.Mod&tea.ModShift != 0 {
+		return m.favoriteSave(slot), true
+	}
+	return m.favoriteRecall(slot), true
 }
 
 // favoriteSave stores the current mode, frequency, submode, and band into
@@ -88,11 +76,11 @@ func (m *Model) favoriteSave(slot int) tea.Cmd {
 
 	m.App.Config.Favorites[slot] = fav
 	if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
-		m.toasts.Warn(fmt.Sprintf("Favorite %d save failed", slot))
+		m.toasts.Warn(fmt.Sprintf("Favorite %s save failed", favoriteKeyLabel(slot)))
 		return nil
 	}
-	m.toasts.Success(fmt.Sprintf("Favorite %d saved: %s %s %s",
-		slot, fav.Band, freqStr, fav.Mode))
+	m.toasts.Success(fmt.Sprintf("Favorite %s saved: %s %s %s",
+		favoriteKeyLabel(slot), fav.Band, freqStr, fav.Mode))
 	return nil
 }
 
@@ -104,7 +92,7 @@ func (m *Model) favoriteRecall(slot int) tea.Cmd {
 	}
 	fav, ok := m.App.Config.Favorites[slot]
 	if !ok || (fav.Mode == "" && fav.Freq == 0 && fav.Band == "") {
-		m.toasts.Warn(fmt.Sprintf("Favorite %d is empty", slot))
+		m.toasts.Warn(fmt.Sprintf("Favorite %s is empty", favoriteKeyLabel(slot)))
 		return nil
 	}
 
@@ -129,7 +117,7 @@ func (m *Model) favoriteRecall(slot int) tea.Cmd {
 	}
 
 	m.rc.formSig = "" // invalidate form render cache
-	m.toasts.Success(fmt.Sprintf("Favorite %d recalled: %s %.0f %s",
-		slot, fav.Band, fav.Freq, fav.Mode))
+	m.toasts.Success(fmt.Sprintf("Favorite %s recalled: %s %g %s",
+		favoriteKeyLabel(slot), fav.Band, fav.Freq, fav.Mode))
 	return nil
 }

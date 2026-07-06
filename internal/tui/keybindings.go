@@ -259,8 +259,8 @@ func (m *Model) ActiveBindings() []key.Binding {
 		}
 		// Favorite slots — always available on QSO form.
 		bindings = append(bindings,
-			key.NewBinding(key.WithKeys("alt+1…9"), key.WithHelp("Alt+1-9", "Recall fav")),
-			key.NewBinding(key.WithKeys("alt+shift+1…9"), key.WithHelp("Alt+⇧+1-9", "Save fav")),
+			key.NewBinding(key.WithKeys("alt+insert", "alt+home", "alt+pgup"), key.WithHelp("Alt+Ins/Hom/PUp", "Recall fav")),
+			key.NewBinding(key.WithKeys("alt+shift+insert", "alt+shift+home", "alt+shift+pgup"), key.WithHelp("Alt+⇧+Ins/Hom/PUp", "Save fav")),
 		)
 	}
 
