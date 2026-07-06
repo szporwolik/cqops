@@ -37,6 +37,7 @@ type App struct {
 	Secrets          *secrets.Store // encrypted secrets (passwords, API keys)
 	APRSClient       aprs.Client    // APRS connection (TCP APRS-IS or KISS serial)
 	APRSCache        *aprs.CacheDB  // APRS station cache database
+	lock             *lockFile      // single-instance guard
 	aprsStatusCB     func(connected bool, err error)
 	aprsBeaconCB     func(callsign string) // called after each successful beacon
 	aprsRefresh      bool                  // set by RequestAPRSRefresh, cleared by dashboard
@@ -63,6 +64,14 @@ func Init() (*App, error) {
 		return nil, fmt.Errorf("config: %w", err)
 	}
 	applog.Info("Config OK", "path", configPath)
+
+	// Single-instance guard — prevents dataloss from two processes
+	// writing to the same SQLite database.
+	lk, err := acquireLock(filepath.Dir(configPath))
+	if err != nil {
+		applog.Error("Lock acquisition failed", "error", err.Error())
+		return nil, err
+	}
 
 	// Secrets are already loaded and applied by EnsureConfig — just grab
 	// the store reference for later use (e.g. corruption toast).
@@ -97,6 +106,7 @@ func Init() (*App, error) {
 		WSJTX:        wsjtx.NewListener(),
 		WSJTXUpdated: make(chan struct{}, 10),
 		Secrets:      sec,
+		lock:         lk,
 	}
 
 	// WSJT-X will be started later by the TUI model Init() with per-rig settings.
@@ -172,6 +182,9 @@ func (a *App) Close() {
 	if a.DB != nil {
 		applog.Debug("Closing database")
 		a.DB.Close()
+	}
+	if a.lock != nil {
+		a.lock.release()
 	}
 	if a.RefDB != nil {
 		applog.Debug("Closing reference database")
