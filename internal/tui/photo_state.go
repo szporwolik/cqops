@@ -1,6 +1,9 @@
 package tui
 
-import "github.com/NimbleMarkets/ntcharts/v2/picture/pictureurl"
+import (
+	tea "charm.land/bubbletea/v2"
+	"github.com/NimbleMarkets/ntcharts/v2/picture/pictureurl"
+)
 
 // photoState holds partner photo viewer state for both full-screen image view
 // and inline photo on the Partner page.
@@ -16,4 +19,6 @@ type photoState struct {
 	partnerPicH        int              // photo box content height
 	partnerPicLastW    int              // last SetSize width sent to viewer
 	partnerPicLastH    int              // last SetSize height sent to viewer
+
+	toggleCmds []tea.Cmd // Kitty mode toggle cmds to batch in Init
 }

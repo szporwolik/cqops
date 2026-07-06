@@ -305,8 +305,9 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	})
 	applog.Info("Photo viewer: ready",
 		"kitty_cap", m.photo.viewer.KittySupported(),
-		"term", os.Getenv("TERM"),
 		"mode", m.photo.viewer.Mode())
+	// Toggle to Kitty mode if capability is Supported but the model
+	// defaulted to Glyph.  Toggle cycles through the available modes.
 	m.mapView = newMapRenderer()
 	m.psk.filterMins = pskFilterSteps[0] // default 5 min
 	m.ref = newRefState()
