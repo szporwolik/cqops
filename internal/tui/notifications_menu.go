@@ -103,15 +103,19 @@ func (nm *NotificationsMenu) sendTestNotification() {
 	title := "CQOps — Test Notification"
 	body := "This is a test notification from CQOps."
 	applog.Info("Test notification sent")
-	if err := beeep.Notify(title, body, ""); err != nil {
-		applog.Warn("Test notification failed", "error", err.Error())
+	if desktopAvailable() {
+		if err := beeep.Notify(title, body, ""); err != nil {
+			applog.Warn("Test notification failed", "error", err.Error())
+		}
 	}
 }
 
 func (nm *NotificationsMenu) sendTestBeep() {
 	applog.Info("Test beep triggered")
-	if err := beeep.Beep(beeep.DefaultFreq, beeep.DefaultDuration); err != nil {
-		applog.Warn("Test beep failed", "error", err.Error())
+	if desktopAvailable() {
+		if err := beeep.Beep(beeep.DefaultFreq, beeep.DefaultDuration); err != nil {
+			applog.Warn("Test beep failed", "error", err.Error())
+		}
 	}
 }
 

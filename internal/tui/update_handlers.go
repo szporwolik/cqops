@@ -193,8 +193,10 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 				m.toasts.Success(fmt.Sprintf("Wavelog: %s sent", r.call))
 				if n.Enabled && n.Wavelog {
 					applog.Info("Sending Wavelog success notification", "call", r.call)
-					if err := beeep.Notify("CQOps — Wavelog", fmt.Sprintf("QSO %s sent to Wavelog", r.call), ""); err != nil {
-						applog.Info("Wavelog notification failed", "error", err.Error())
+					if desktopAvailable() {
+						if err := beeep.Notify("CQOps — Wavelog", fmt.Sprintf("QSO %s sent to Wavelog", r.call), ""); err != nil {
+							applog.Info("Wavelog notification failed", "error", err.Error())
+						}
 					}
 				}
 			}
@@ -210,8 +212,10 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 					msg = fmt.Sprintf("QSO %s: %s", r.call, r.err.Error())
 				}
 				applog.Info("Sending Wavelog error notification", "call", r.call)
-				if err := beeep.Notify("CQOps — Wavelog Error", msg, ""); err != nil {
-					applog.Info("Wavelog error notification failed", "error", err.Error())
+				if desktopAvailable() {
+					if err := beeep.Notify("CQOps — Wavelog Error", msg, ""); err != nil {
+						applog.Info("Wavelog error notification failed", "error", err.Error())
+					}
 				}
 			}
 		}

@@ -35,7 +35,7 @@ func (m *Model) saveQSO() tea.Cmd {
 		m.dupeConfirmed = true
 		m.toasts.Warn("DUPE! " + strings.TrimSpace(m.fields[fieldCall].Value()) + " already logged on this band/mode today — press Enter again to log anyway")
 		m.rc.pathSig = "" // invalidate path row cache to show DUPE badge
-		if m.App.Config.General.Notifications.BeepOnError {
+		if m.App.Config.General.Notifications.BeepOnError && desktopAvailable() {
 			_ = beeep.Beep(beeep.DefaultFreq, beeep.DefaultDuration)
 		}
 		return nil
@@ -142,8 +142,10 @@ func (m *Model) saveQSO() tea.Cmd {
 	n := m.App.Config.General.Notifications
 	if n.Enabled && n.QSO {
 		applog.Info("Sending QSO notification", "call", qs.Call, "band", qs.Band, "mode", qs.Mode)
-		if err := beeep.Notify("CQOps — QSO Logged", fmt.Sprintf("%s on %s %s", qs.Call, qs.Band, qs.Mode), ""); err != nil {
-			applog.Warn("QSO notification failed", "error", err.Error())
+		if desktopAvailable() {
+			if err := beeep.Notify("CQOps — QSO Logged", fmt.Sprintf("%s on %s %s", qs.Call, qs.Band, qs.Mode), ""); err != nil {
+				applog.Warn("QSO notification failed", "error", err.Error())
+			}
 		}
 	}
 

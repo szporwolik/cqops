@@ -321,11 +321,18 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 // applyBeepOnError wires the system beep to all ERROR-level log calls
 // when BeepOnError is enabled in the notifications config.
 func (m *Model) applyBeepOnError() {
-	if m.App.Config.General.Notifications.BeepOnError {
+	if m.App.Config.General.Notifications.BeepOnError && desktopAvailable() {
 		applog.SetBeepFunc(func() { beeep.Beep(beeep.DefaultFreq, beeep.DefaultDuration) })
 	} else {
 		applog.SetBeepFunc(nil)
 	}
+}
+
+// desktopAvailable returns true if desktop notifications are likely to
+// work (D-Bus is reachable).  On a raw Linux console without X, calling
+// beeep.Notify / beeep.Beep hangs indefinitely, so we skip them entirely.
+func desktopAvailable() bool {
+	return os.Getenv("DBUS_SESSION_BUS_ADDRESS") != ""
 }
 
 func (m *Model) Init() tea.Cmd {
