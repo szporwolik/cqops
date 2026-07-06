@@ -54,40 +54,40 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("F10", "Quit"),
 		),
 		QSOForm: key.NewBinding(
-			key.WithKeys("f1"),
-			key.WithHelp("F1", "QSO"),
+			key.WithKeys("f1", "alt+1"),
+			key.WithHelp("F1/Alt+1", "QSO"),
 		),
 		Partner: key.NewBinding(
-			key.WithKeys("f2"),
-			key.WithHelp("F2", "QRZ"),
+			key.WithKeys("f2", "alt+2"),
+			key.WithHelp("F2/Alt+2", "QRZ"),
 		),
 		PSKReporter: key.NewBinding(
-			key.WithKeys("f5"),
-			key.WithHelp("F5", "PSK Reporter"),
+			key.WithKeys("f5", "alt+5"),
+			key.WithHelp("F5/Alt+5", "PSK Reporter"),
 		),
 		DXC: key.NewBinding(
-			key.WithKeys("f4"),
-			key.WithHelp("F4", "cluster"),
+			key.WithKeys("f4", "alt+4"),
+			key.WithHelp("F4/Alt+4", "cluster"),
 		),
 		LogEditor: key.NewBinding(
-			key.WithKeys("f8"),
-			key.WithHelp("F8", "Editor"),
+			key.WithKeys("f8", "alt+8"),
+			key.WithHelp("F8/Alt+8", "Editor"),
 		),
 		Config: key.NewBinding(
-			key.WithKeys("f9"),
-			key.WithHelp("F9", "CFG"),
+			key.WithKeys("f9", "alt+9"),
+			key.WithHelp("F9/Alt+9", "CFG"),
 		),
 		Logs: key.NewBinding(
 			key.WithKeys("ctrl+f9"),
 			key.WithHelp("Ctrl+F9", "Logs"),
 		),
 		Ref: key.NewBinding(
-			key.WithKeys("f6"),
-			key.WithHelp("F6", "REF"),
+			key.WithKeys("f6", "alt+6"),
+			key.WithHelp("F6/Alt+6", "REF"),
 		),
 		BPL: key.NewBinding(
-			key.WithKeys("f7"),
-			key.WithHelp("F7", "BPL"),
+			key.WithKeys("f7", "alt+7"),
+			key.WithHelp("F7/Alt+7", "BPL"),
 		),
 		Save: key.NewBinding(
 			key.WithKeys("ctrl+s"),

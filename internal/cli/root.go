@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 	"os"
-	"runtime"
 	"strings"
 	"time"
 
@@ -88,23 +87,6 @@ func Execute() error {
 }
 
 func runTUI() error {
-	// The Linux console (TERM=linux) sends function-key escape sequences
-	// that Bubble Tea cannot parse.  Refuse to start — the user must
-	// launch tmux first (which provides xterm-compatible input and full
-	// colour rendering).
-	if runtime.GOOS == "linux" && os.Getenv("TERM") == "linux" {
-		fmt.Fprintln(os.Stderr, "CQOps: The Linux text console does not support function keys.")
-		fmt.Fprintln(os.Stderr, "CQOps: Please run CQOps inside tmux:")
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "    tmux")
-		fmt.Fprintln(os.Stderr, "    cqops")
-		fmt.Fprintln(os.Stderr)
-		fmt.Fprintln(os.Stderr, "CQOps: If tmux is not installed:")
-		fmt.Fprintln(os.Stderr, "    sudo apt install tmux    # Debian / Ubuntu")
-		fmt.Fprintln(os.Stderr, "    sudo dnf install tmux    # Fedora")
-		return nil
-	}
-
 	a, err := app.Init()
 	if err != nil {
 		return err

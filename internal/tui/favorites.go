@@ -10,25 +10,24 @@ import (
 	"github.com/szporwolik/cqops/internal/qso"
 )
 
-// handleFavoriteKey checks for alt+shift+digit / alt+shifted_char (save)
-// and alt+digit (recall). Returns true if the key was handled.
+// handleFavoriteKey checks for ctrl+digit (recall) and ctrl+shift+digit /
+// ctrl+shifted_char (save). Returns true if the key was handled.
 func (m *Model) handleFavoriteKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	k := msg.String()
-	// alt+shift+0 … alt+shift+9  → save to slot
-	if strings.HasPrefix(k, "alt+shift+") && len(k) == 11 {
-		d := k[10]
+	// ctrl+shift+0 … ctrl+shift+9  → save to slot
+	if strings.HasPrefix(k, "ctrl+shift+") && len(k) == 12 {
+		d := k[11]
 		if d >= '0' && d <= '9' {
 			return m.favoriteSave(int(d - '0')), true
 		}
 	}
-	// alt+shifted_char — what most terminals actually send for alt+shift+digit.
-	// Shift+1 = '!' … Shift+0 = ')'.
-	if d, ok := shiftedDigitFromAltPlus(k); ok {
+	// ctrl+shifted_char — what some terminals send for ctrl+shift+digit.
+	if d, ok := shiftedDigitFromCtrlPlus(k); ok {
 		return m.favoriteSave(d), true
 	}
-	// alt+0 … alt+9  → recall from slot
-	if strings.HasPrefix(k, "alt+") && len(k) == 5 {
-		d := k[4]
+	// ctrl+0 … ctrl+9  → recall from slot
+	if strings.HasPrefix(k, "ctrl+") && len(k) == 6 {
+		d := k[5]
 		if d >= '0' && d <= '9' {
 			return m.favoriteRecall(int(d - '0')), true
 		}
@@ -36,13 +35,13 @@ func (m *Model) handleFavoriteKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	return nil, false
 }
 
-// shiftedDigitFromAltPlus maps "alt+!" → 1, "alt+@" → 2, … "alt+)" → 0.
+// shiftedDigitFromCtrlPlus maps "ctrl+!" → 1, "ctrl+@" → 2, … "ctrl+)" → 0.
 // Returns the digit and true if k is one of these patterns.
-func shiftedDigitFromAltPlus(k string) (int, bool) {
-	if !strings.HasPrefix(k, "alt+") || len(k) != 5 {
+func shiftedDigitFromCtrlPlus(k string) (int, bool) {
+	if !strings.HasPrefix(k, "ctrl+") || len(k) != 6 {
 		return 0, false
 	}
-	switch k[4] {
+	switch k[5] {
 	case ')':
 		return 0, true
 	case '!':

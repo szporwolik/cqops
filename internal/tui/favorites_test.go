@@ -160,34 +160,34 @@ func TestFavoriteOverwrite(t *testing.T) {
 func TestHandleFavoriteKey_Save(t *testing.T) {
 	m := newFavoriteTestModel(t)
 
-	// Test the standard form: alt+shift+digit
+	// Test the standard form: ctrl+shift+digit
 	for digit := 0; digit <= 9; digit++ {
 		r := '0' + rune(digit)
-		msg := tea.KeyPressMsg{Code: r, Mod: tea.ModAlt | tea.ModShift}
+		msg := tea.KeyPressMsg{Code: r, Mod: tea.ModCtrl | tea.ModShift}
 		_, handled := m.handleFavoriteKey(msg)
 		if !handled {
-			t.Errorf("alt+shift+%d should be handled (string=%q)", digit, msg.String())
+			t.Errorf("ctrl+shift+%d should be handled (string=%q)", digit, msg.String())
 		}
 		fav, ok := m.App.Config.Favorites[digit]
 		if !ok {
-			t.Errorf("favorite slot %d not found after alt+shift+%d", digit, digit)
+			t.Errorf("favorite slot %d not found after ctrl+shift+%d", digit, digit)
 		}
 		_ = fav
 	}
 
-	// Test the alternate form: alt+shifted_char (what most terminals send).
-	// Shift+1 = '!' ... Shift+0 = ')'
+	// Test the alternate form: ctrl+shifted_char (what some terminals send).
+	// Shift+1 = '!' … Shift+0 = ')'
 	shifted := []rune{')', '!', '@', '#', '$', '%', '^', '&', '*', '('}
 	for digit := 0; digit <= 9; digit++ {
-		msg := tea.KeyPressMsg{Code: shifted[digit], Mod: tea.ModAlt}
+		msg := tea.KeyPressMsg{Code: shifted[digit], Mod: tea.ModCtrl}
 		_, handled := m.handleFavoriteKey(msg)
 		if !handled {
-			t.Errorf("alt+%c should be handled as save for slot %d (string=%q)", shifted[digit], digit, msg.String())
+			t.Errorf("ctrl+%c should be handled as save for slot %d (string=%q)", shifted[digit], digit, msg.String())
 		}
 		// Verify saved correctly — note: overwrites previous save for same slot.
 		fav, ok := m.App.Config.Favorites[digit]
 		if !ok {
-			t.Errorf("favorite slot %d not found after alt+%c", digit, shifted[digit])
+			t.Errorf("favorite slot %d not found after ctrl+%c", digit, shifted[digit])
 		}
 		_ = fav
 	}
@@ -204,10 +204,10 @@ func TestHandleFavoriteKey_Recall(t *testing.T) {
 	m.fields[fieldFreq].SetValue("")
 	m.fields[fieldBand].SetValue("")
 
-	msg := tea.KeyPressMsg{Code: '4', Mod: tea.ModAlt}
+	msg := tea.KeyPressMsg{Code: '4', Mod: tea.ModCtrl}
 	_, handled := m.handleFavoriteKey(msg)
 	if !handled {
-		t.Error("alt+4 should be handled")
+		t.Error("ctrl+4 should be handled")
 	}
 	if got := m.fields[fieldMode].Value(); got != "SSB" {
 		t.Errorf("Mode = %q after recall, want SSB", got)
@@ -221,6 +221,8 @@ func TestHandleFavoriteKey_NotHandled(t *testing.T) {
 		{Code: 'a', Mod: tea.ModAlt},
 		{Code: 's', Mod: tea.ModAlt},
 		{Code: 'x', Mod: tea.ModAlt | tea.ModShift},
+		{Code: '4', Mod: tea.ModAlt},   // Alt+digit no longer handled
+		{Code: '4', Mod: tea.ModShift}, // Shift+digit alone: not handled
 		{Code: 'a', Mod: tea.ModCtrl},
 		{Code: 's', Mod: tea.ModCtrl},
 		{Code: tea.KeyEnter},
