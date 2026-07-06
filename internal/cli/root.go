@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"runtime"
 	"strings"
 	"time"
@@ -90,50 +89,19 @@ func Execute() error {
 
 func runTUI() error {
 	// The Linux console (TERM=linux) sends function-key escape sequences
-	// that Bubble Tea cannot parse (\e[[A vs \eOP).  Auto-launch tmux
-	// when available — it provides a proper xterm-compatible layer with
-	// full 256-colour and true-colour support.
+	// that Bubble Tea cannot parse.  Refuse to start — the user must
+	// launch tmux first (which provides xterm-compatible input and full
+	// colour rendering).
 	if runtime.GOOS == "linux" && os.Getenv("TERM") == "linux" {
-		tmux, err := exec.LookPath("tmux")
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "CQOps: The Linux text console does not support function keys.")
-			fmt.Fprintln(os.Stderr, "CQOps: Please install tmux and try again:")
-			fmt.Fprintln(os.Stderr)
-			fmt.Fprintln(os.Stderr, "    sudo apt install tmux    # Debian / Ubuntu")
-			fmt.Fprintln(os.Stderr, "    sudo dnf install tmux    # Fedora")
-			fmt.Fprintln(os.Stderr)
-			fmt.Fprintln(os.Stderr, "    Then just run:  cqops")
-			return nil
-		}
-		// Launch tmux with quality-of-life settings:
-		//   status off     — no status bar (full-screen TUI)
-		//   escape-time 0  — no ESC-key delay
-		//   exec ...       — tmux exits when CQOps quits
-		//   TERM=xterm-256color — proper borders, glyphs, colours
-		// Resolve the absolute path to the CQOps binary.  os.Args[0]
-		// can be a relative path (e.g. "./cqops") that won't work
-		// inside tmux where the working directory may differ.
-		bin, err := os.Executable()
-		if err != nil {
-			bin = os.Args[0]
-		}
-		args := []string{
-			"set", "-g", "status", "off", ";",
-			"set", "-s", "escape-time", "0", ";",
-			"new-session", "-A", "-s", "cqops",
-			"exec", "env",
-			"TERM=xterm-256color",
-			"COLORTERM=truecolor",
-			bin,
-		}
-		args = append(args, os.Args[1:]...)
-		cmd := exec.Command(tmux, args...)
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
-		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("tmux: %w", err)
-		}
+		fmt.Fprintln(os.Stderr, "CQOps: The Linux text console does not support function keys.")
+		fmt.Fprintln(os.Stderr, "CQOps: Please run CQOps inside tmux:")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "    tmux")
+		fmt.Fprintln(os.Stderr, "    cqops")
+		fmt.Fprintln(os.Stderr)
+		fmt.Fprintln(os.Stderr, "CQOps: If tmux is not installed:")
+		fmt.Fprintln(os.Stderr, "    sudo apt install tmux    # Debian / Ubuntu")
+		fmt.Fprintln(os.Stderr, "    sudo dnf install tmux    # Fedora")
 		return nil
 	}
 
