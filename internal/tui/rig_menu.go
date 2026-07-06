@@ -113,6 +113,11 @@ func (rc *RigChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case rc.mode == rigChooserList && k.String() == "insert":
 			rc.startCreate()
 
+		case rc.mode == rigChooserList && (k.String() == "ctrl+d"):
+			if len(rc.names) > 0 {
+				return rc, rc.duplicateRig()
+			}
+
 		case rc.mode == rigChooserList && (k.String() == "delete" || msg.Code == tea.KeyDelete):
 			if len(rc.names) > 0 {
 				rc.mode = rigChooserConfirmDelete
@@ -491,6 +496,44 @@ func (rc *RigChooser) deleteRig() tea.Cmd {
 	} else {
 		rc.toasts.Success("Rig " + displayName + " deleted")
 		applog.Info("Rig deleted", "name", displayName)
+	}
+	return nil
+}
+
+func (rc *RigChooser) duplicateRig() tea.Cmd {
+	id := rc.names[rc.cursor]
+	rp := rc.app.Config.Rigs[id]
+	displayName := config.RigDisplayName(&rp)
+
+	cloneName := displayName + " (Clone)"
+	if rp.Name != "" {
+		cloneName = rp.Name + " (Clone)"
+	}
+
+	// Build a clone with the same settings but a new ID and name.
+	clone := rp
+	clone.ID = config.NewID(cloneName)
+	clone.Name = cloneName
+
+	if rc.app.Config.Rigs == nil {
+		rc.app.Config.Rigs = make(map[string]config.RigPreset)
+	}
+	rc.app.Config.Rigs[clone.ID] = clone
+	rc.refreshNames()
+
+	// Position cursor on the newly created clone.
+	for i, n := range rc.names {
+		if n == clone.ID {
+			rc.cursor = i
+			break
+		}
+	}
+
+	if err := config.Save(rc.app.ConfigPath, rc.app.Config); err != nil {
+		rc.toasts.Error("Duplicate " + displayName + " failed: " + err.Error())
+	} else {
+		rc.toasts.Success("Rig \"" + displayName + "\" duplicated as \"" + cloneName + "\"")
+		applog.Info("Rig duplicated", "original", displayName, "clone", cloneName)
 	}
 	return nil
 }

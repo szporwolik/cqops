@@ -351,6 +351,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit")),
 				key.NewBinding(key.WithKeys("space"), key.WithHelp("Spc", "Activate")),
 				key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Create")),
+				key.NewBinding(key.WithKeys("ctrl+d"), key.WithHelp("Ctrl+D", "Duplicate")),
 				key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 			)
