@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"os"
 	"strconv"
 	"strings"
 
@@ -107,15 +108,26 @@ func (m *Model) tabView() string {
 	}
 
 	dxcOnline := m.App.Config.Integrations.DXC.Enabled && m.dxc.online
+
+	// On the raw Linux console (TERM=linux) function keys are not
+	// delivered to userspace.  Show Alt+digit shortcuts instead so
+	// the tab labels match what actually works.
+	mk := func(f string, a string) string {
+		if strings.ToLower(os.Getenv("TERM")) == "linux" {
+			return a
+		}
+		return f
+	}
+
 	allTabs := []tab{
-		{"F1 QSO", "QSO", "F1", m.screen == screenQSO && m.confirm == nil, false},
-		{"F2 QRZ", "QRZ", "F2", (m.screen == screenPartner || m.screen == screenImage) && hasPartner, !hasPartner},
-		{"F4 DXC", "DXC", "F4", m.screen == screenDXC, !dxcOnline},
-		{"F5 HRD", "HRD", "F5", m.screen == screenPSKReporter, !m.inetOnline},
-		{"F6 REF", "REF", "F6", m.screen == screenRef, !m.isREFReady()},
-		{"F7 BPL", "BPL", "F7", m.screen == screenBPL, false},
-		{"F8 LOG", "LOG", "F8", m.screen == screenLogbookEditor, false},
-		{"F9 CFG", "CFG", "F9", m.screen == screenMainMenu || m.screen == screenConfig || m.screen == screenIntegration || m.screen == screenChooser || m.screen == screenRigEdit || m.screen == screenNotifications, false},
+		{"F1 QSO", "QSO", mk("F1", "A1"), m.screen == screenQSO && m.confirm == nil, false},
+		{"F2 QRZ", "QRZ", mk("F2", "A2"), (m.screen == screenPartner || m.screen == screenImage) && hasPartner, !hasPartner},
+		{"F4 DXC", "DXC", mk("F4", "A4"), m.screen == screenDXC, !dxcOnline},
+		{"F5 HRD", "HRD", mk("F5", "A5"), m.screen == screenPSKReporter, !m.inetOnline},
+		{"F6 REF", "REF", mk("F6", "A6"), m.screen == screenRef, !m.isREFReady()},
+		{"F7 BPL", "BPL", mk("F7", "A7"), m.screen == screenBPL, false},
+		{"F8 LOG", "LOG", mk("F8", "A8"), m.screen == screenLogbookEditor, false},
+		{"F9 CFG", "CFG", mk("F9", "A9"), m.screen == screenMainMenu || m.screen == screenConfig || m.screen == screenIntegration || m.screen == screenChooser || m.screen == screenRigEdit || m.screen == screenNotifications, false},
 	}
 
 	// Pick the best-fit label tier and build the final parts in one pass.
