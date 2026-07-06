@@ -143,11 +143,11 @@ func DefaultKeyMap() KeyMap {
 		),
 		NextField: key.NewBinding(
 			key.WithKeys("tab"),
-			key.WithHelp("Tab", "↹ Col"),
+			key.WithHelp("Tab", "Col Right"),
 		),
 		PrevField: key.NewBinding(
 			key.WithKeys("shift+tab"),
-			key.WithHelp("Shift+Tab", "↹ Col"),
+			key.WithHelp("Shift+Tab", "Col Left"),
 		),
 		NextRow: key.NewBinding(
 			key.WithKeys("down"),
