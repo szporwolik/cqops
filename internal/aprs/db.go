@@ -228,14 +228,14 @@ func (c *CacheDB) StationTrail(callsign string, limit int) ([]TrailPoint, error)
 }
 
 // StationTrails returns trail positions for multiple callsigns at once.
-// Returns a map from callsign to trail (oldest first, max 3 per station).
+// Returns a map from callsign to trail (oldest first, max 5 per station).
 func (c *CacheDB) StationTrails(callsigns []string) (map[string][]TrailPoint, error) {
 	if len(callsigns) == 0 {
 		return nil, nil
 	}
 	result := make(map[string][]TrailPoint)
 	for _, cs := range callsigns {
-		trail, err := c.StationTrail(cs, 3)
+		trail, err := c.StationTrail(cs, 5)
 		if err != nil {
 			continue
 		}

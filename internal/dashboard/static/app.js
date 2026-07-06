@@ -907,8 +907,8 @@ function _aprMarker(s){
   var icon=L.divIcon({
     className:'aprs-symbol-marker',
     iconSize:[50,36],
-    iconAnchor:[25,34],
-    popupAnchor:[0,-30],
+    iconAnchor:[25,12],
+    popupAnchor:[0,-16],
     html:html
   });
   return L.marker([s.lat,s.lon],{icon:icon});
