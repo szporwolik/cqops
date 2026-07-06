@@ -2,6 +2,7 @@ package tui
 
 import (
 	tea "charm.land/bubbletea/v2"
+	"github.com/NimbleMarkets/ntcharts/v2/picture"
 	"github.com/NimbleMarkets/ntcharts/v2/picture/pictureurl"
 )
 
@@ -20,5 +21,19 @@ type photoState struct {
 	partnerPicLastW    int              // last SetSize width sent to viewer
 	partnerPicLastH    int              // last SetSize height sent to viewer
 
-	toggleCmds []tea.Cmd // Kitty mode toggle cmds to batch in Init
+	kittyToggled bool // true once viewers have been switched to Kitty mode
+}
+
+// ensureKitty toggles both viewers into Kitty mode once the probe
+// resolves to Supported.  Toggle() silently no-ops until then.
+// Pattern from ntcharts-lorem-picsum example.
+func (ps *photoState) ensureKitty() tea.Cmd {
+	if ps.kittyToggled {
+		return nil
+	}
+	if ps.viewer.KittySupported() != picture.KittyCapabilitySupported {
+		return nil
+	}
+	ps.kittyToggled = true
+	return tea.Batch(ps.viewer.Toggle(), ps.partnerPicViewer.Toggle())
 }

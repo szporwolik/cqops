@@ -293,6 +293,16 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 
 	m.recentQSOs = NewRecentQSOs(initialQSOS)
 	transport := &imageTransport{base: http.DefaultTransport}
+
+	// Kitty graphics: force-enable before model creation (mode locks at
+	// construction).  Only for known-good terminals: real Kitty, or
+	// opt-in via NTCHARTS_KITTY=supported (VS Code terminal, custom
+	// WezTerm config).  Other terminals stay in safe glyph mode.
+	if os.Getenv("NTCHARTS_KITTY") == "supported" ||
+		os.Getenv("KITTY_WINDOW_ID") != "" {
+		picture.ForceKittyCapability(picture.KittyCapabilitySupported)
+	}
+
 	m.photo.viewer = pictureurl.NewWithConfig(pictureurl.Config{
 		CacheLimit: 4,
 		UserAgent:  "CQOps/1.0 (ham-radio-logger)",
@@ -306,8 +316,6 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	applog.Info("Photo viewer: ready",
 		"kitty_cap", m.photo.viewer.KittySupported(),
 		"mode", m.photo.viewer.Mode())
-	// Toggle to Kitty mode if capability is Supported but the model
-	// defaulted to Glyph.  Toggle cycles through the available modes.
 	m.mapView = newMapRenderer()
 	m.psk.filterMins = pskFilterSteps[0] // default 5 min
 	m.ref = newRefState()
@@ -577,6 +585,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// capability detection (terminal query/response round-trip) completes
 	// even before the user opens the image screen.
 	if c := m.photo.viewer.Update(msg); c != nil {
+		cmd = tea.Batch(cmd, c)
+	}
+	// Deferred Kitty toggle — once the probe resolves to Supported
+	// (typically within 50ms), switch both viewers to Kitty mode.
+	if c := m.photo.ensureKitty(); c != nil {
 		cmd = tea.Batch(cmd, c)
 	}
 
