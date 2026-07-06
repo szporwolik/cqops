@@ -302,8 +302,10 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 		UserAgent:  "CQOps/1.0 (ham-radio-logger)",
 		HTTPClient: &http.Client{Transport: transport, Timeout: 15 * time.Second},
 	})
-	applog.Info("Photo viewer: Kitty capability %v, TERM=%s, mode=%v",
-		m.photo.viewer.KittySupported(), os.Getenv("TERM"), m.photo.viewer.Mode())
+	applog.Info("Photo viewer: ready",
+		"kitty_cap", m.photo.viewer.KittySupported(),
+		"term", os.Getenv("TERM"),
+		"mode", m.photo.viewer.Mode())
 	m.mapView = newMapRenderer()
 	m.psk.filterMins = pskFilterSteps[0] // default 5 min
 	m.ref = newRefState()
@@ -567,6 +569,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Inline partner photo viewer — process its messages globally so
 	// loads complete regardless of which screen is active.
 	if c := m.photo.partnerPicViewer.Update(msg); c != nil {
+		cmd = tea.Batch(cmd, c)
+	}
+	// Full-screen photo viewer — must receive ALL messages so Kitty
+	// capability detection (terminal query/response round-trip) completes
+	// even before the user opens the image screen.
+	if c := m.photo.viewer.Update(msg); c != nil {
 		cmd = tea.Batch(cmd, c)
 	}
 
