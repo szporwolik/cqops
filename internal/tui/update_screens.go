@@ -54,11 +54,13 @@ func (m *Model) handleRigEditUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 		m.ui.rigChooser.needsRefresh = false
 		m.refreshRigClient()
 		m.refreshRotorClient()
+		m.restartWSJTXForActiveRig()
 	}
 	if m.ui.rigChooser.done {
 		m.screen = screenMainMenu
 		m.refreshRigClient()
 		m.refreshRotorClient()
+		m.restartWSJTXForActiveRig()
 	}
 	return m, cmd
 }
