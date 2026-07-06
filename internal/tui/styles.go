@@ -2,6 +2,8 @@ package tui
 
 import (
 	"image/color"
+	"os"
+	"strings"
 
 	"charm.land/lipgloss/v2"
 )
@@ -22,7 +24,8 @@ type Palette struct {
 	Cursor    color.Color // cursor/focus highlight (pink)
 }
 
-var P = Palette{
+// Full-colour palette (xterm-256color / truecolor terminals).
+var fullPalette = Palette{
 	Text:      lipgloss.Color("#DDE3EA"),
 	TextMuted: lipgloss.Color("#9CA3AF"),
 	TextDim:   lipgloss.Color("#6B7280"),
@@ -34,6 +37,53 @@ var P = Palette{
 	Accent:    lipgloss.Color("#A78BFA"),
 	Border:    lipgloss.Color("#566170"),
 	Cursor:    lipgloss.Color("212"),
+}
+
+// ANSI 16-colour palette for raw Linux console and other limited terminals.
+// Uses only ANSI codes 0–15, avoiding RGB hex which collapses to
+// indistinguishable colours on 8/16-colour displays.
+var ansiPalette = Palette{
+	Text:      lipgloss.Color("15"), // bright white
+	TextMuted: lipgloss.Color("8"),  // bright black (grey)
+	TextDim:   lipgloss.Color("8"),  // bright black
+	Primary:   lipgloss.Color("14"), // bright cyan
+	Success:   lipgloss.Color("10"), // bright green
+	Warning:   lipgloss.Color("11"), // bright yellow
+	Error:     lipgloss.Color("9"),  // bright red
+	Info:      lipgloss.Color("12"), // bright blue
+	Accent:    lipgloss.Color("13"), // bright magenta
+	Border:    lipgloss.Color("8"),  // bright black
+	Cursor:    lipgloss.Color("13"), // bright magenta
+}
+
+var P = func() Palette {
+	if useANSIPalette() {
+		return ansiPalette
+	}
+	return fullPalette
+}()
+
+// useANSIPalette returns true when the terminal is known to have limited
+// colour support and should use ANSI 0–15 codes only.
+func useANSIPalette() bool {
+	term := strings.ToLower(os.Getenv("TERM"))
+	// Raw Linux console.
+	if term == "linux" {
+		return true
+	}
+	// tmux / screen without 256-color terminfo.
+	if strings.HasPrefix(term, "screen") && !strings.Contains(term, "256") {
+		return true
+	}
+	return false
+}
+
+// InitPalette picks the right palette for the terminal and must be called
+// once at startup, before any rendering.
+func InitPalette() {
+	if useANSIPalette() {
+		P = ansiPalette
+	}
 }
 
 // Styles collects all named semantic styles for the application.
