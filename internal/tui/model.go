@@ -334,7 +334,16 @@ func (m *Model) applyBeepOnError() {
 // work (D-Bus is reachable).  On a raw Linux console without X, calling
 // beeep.Notify / beeep.Beep hangs indefinitely, so we skip them entirely.
 func desktopAvailable() bool {
-	return os.Getenv("DBUS_SESSION_BUS_ADDRESS") != ""
+	dbus := os.Getenv("DBUS_SESSION_BUS_ADDRESS")
+	display := os.Getenv("DISPLAY")
+	wayland := os.Getenv("WAYLAND_DISPLAY")
+	ok := dbus != "" && (display != "" || wayland != "")
+	applog.Debug("notify: desktop check",
+		"dbus", dbus != "",
+		"display", display,
+		"wayland", wayland,
+		"available", ok)
+	return ok
 }
 
 func (m *Model) Init() tea.Cmd {
