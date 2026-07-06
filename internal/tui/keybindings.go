@@ -110,28 +110,28 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("?", "Help"),
 		),
 		RotorLeft: key.NewBinding(
-			key.WithKeys("ctrl+left"),
-			key.WithHelp("Ctrl+←", "Az −5°"),
+			key.WithKeys("ctrl+left", "alt+,"),
+			key.WithHelp("Ctrl+←/Alt+,", "Az −5°"),
 		),
 		RotorRight: key.NewBinding(
-			key.WithKeys("ctrl+right"),
-			key.WithHelp("Ctrl+→", "Az +5°"),
+			key.WithKeys("ctrl+right", "alt+."),
+			key.WithHelp("Ctrl+→/Alt+.", "Az +5°"),
 		),
 		RotorUp: key.NewBinding(
-			key.WithKeys("ctrl+up"),
-			key.WithHelp("Ctrl+↑", "El +5°"),
+			key.WithKeys("ctrl+up", "alt+;"),
+			key.WithHelp("Ctrl+↑/Alt+;", "El +5°"),
 		),
 		RotorDown: key.NewBinding(
-			key.WithKeys("ctrl+down"),
-			key.WithHelp("Ctrl+↓", "El −5°"),
+			key.WithKeys("ctrl+down", "alt+'"),
+			key.WithHelp("Ctrl+↓/Alt+'", "El −5°"),
 		),
 		RotorBearing: key.NewBinding(
-			key.WithKeys("ctrl+a"),
-			key.WithHelp("Ctrl+A", "→ Path"),
+			key.WithKeys("ctrl+a", "alt+\\"),
+			key.WithHelp("Ctrl+A/Alt+\\", "→ Path"),
 		),
 		RotorStop: key.NewBinding(
-			key.WithKeys("ctrl+f1"),
-			key.WithHelp("Ctrl+F1", "Stop"),
+			key.WithKeys("ctrl+f1", "alt+/"),
+			key.WithHelp("Ctrl+F1/Alt+/", "Stop"),
 		),
 		Retain: key.NewBinding(
 			key.WithKeys(),

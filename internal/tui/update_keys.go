@@ -450,27 +450,27 @@ func (m *Model) handleRotorKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	}
 
 	switch msg.String() {
-	case "ctrl+left":
+	case "ctrl+left", "alt+,":
 		az := clampAz(baseAz - step)
-		applog.Debug("rotor: ctrl+left", "az", az)
+		applog.Debug("rotor: left", "az", az, "key", msg.String())
 		return m.rotorSetPositionCmd(az, baseEl), true
 
-	case "ctrl+right":
+	case "ctrl+right", "alt+.":
 		az := clampAz(baseAz + step)
-		applog.Debug("rotor: ctrl+right", "az", az)
+		applog.Debug("rotor: right", "az", az, "key", msg.String())
 		return m.rotorSetPositionCmd(az, baseEl), true
 
-	case "ctrl+up":
+	case "ctrl+up", "alt+;":
 		el := clampEl(baseEl + step)
-		applog.Debug("rotor: ctrl+up", "el", el)
+		applog.Debug("rotor: up", "el", el, "key", msg.String())
 		return m.rotorSetPositionCmd(baseAz, el), true
 
-	case "ctrl+down":
+	case "ctrl+down", "alt+'":
 		el := clampEl(baseEl - step)
-		applog.Debug("rotor: ctrl+down", "el", el)
+		applog.Debug("rotor: down", "el", el, "key", msg.String())
 		return m.rotorSetPositionCmd(baseAz, el), true
 
-	case "ctrl+a":
+	case "ctrl+a", "alt+\\":
 		ownGrid := formatLocator(m.effectiveGrid())
 		partnerGrid := formatLocator(m.fields[fieldGrid].Value())
 		bearing := gridBearingDeg(ownGrid, partnerGrid)
@@ -479,15 +479,15 @@ func (m *Model) handleRotorKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			return nil, true
 		}
 		az := clampAz(math.Round(bearing))
-		applog.Debug("rotor: ctrl+a path bearing", "az", az, "from", ownGrid, "to", partnerGrid)
+		applog.Debug("rotor: path bearing", "az", az, "from", ownGrid, "to", partnerGrid, "key", msg.String())
 		m.toasts.Info(fmt.Sprintf("Rotator: turning to %.0f\u00b0", bearing))
 		return m.rotorSetPositionCmd(az, math.Round(m.rotor.elevation)), true
 
-	case "ctrl+f1":
+	case "ctrl+f1", "alt+/":
 		if m.rotor.client == nil {
 			return nil, false
 		}
-		applog.Debug("rotor: stop")
+		applog.Debug("rotor: stop", "key", msg.String())
 		client := m.rotor.client
 		return func() tea.Msg {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
