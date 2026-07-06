@@ -302,6 +302,8 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 		UserAgent:  "CQOps/1.0 (ham-radio-logger)",
 		HTTPClient: &http.Client{Transport: transport, Timeout: 15 * time.Second},
 	})
+	applog.Info("Photo viewer: Kitty capability %v, TERM=%s, mode=%v",
+		m.photo.viewer.KittySupported(), os.Getenv("TERM"), m.photo.viewer.Mode())
 	m.mapView = newMapRenderer()
 	m.psk.filterMins = pskFilterSteps[0] // default 5 min
 	m.ref = newRefState()
