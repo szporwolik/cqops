@@ -110,12 +110,12 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("?", "Help"),
 		),
 		RotorLeft: key.NewBinding(
-			key.WithKeys("ctrl+left", "alt+,"),
-			key.WithHelp("Ctrl+←/Alt+,", "Az −5°"),
+			key.WithKeys("alt+,"),
+			key.WithHelp("Alt+,", "Az −5°"),
 		),
 		RotorRight: key.NewBinding(
-			key.WithKeys("ctrl+right", "alt+."),
-			key.WithHelp("Ctrl+→/Alt+.", "Az +5°"),
+			key.WithKeys("alt+."),
+			key.WithHelp("Alt+.", "Az +5°"),
 		),
 		RotorUp: key.NewBinding(
 			key.WithKeys("ctrl+up", "alt+;"),
@@ -226,6 +226,11 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 // ActiveBindings returns the currently visible key bindings based on app state.
 func (m *Model) ActiveBindings() []key.Binding {
 	var bindings []key.Binding
+
+	// Pane navigation — Ctrl+←/→ cycles through available screens everywhere.
+	bindings = append(bindings,
+		key.NewBinding(key.WithKeys("ctrl+left", "ctrl+right"), key.WithHelp("Ctrl+←/→", "Pane")),
+	)
 
 	// QSO form — show editing shortcuts when no sub-model is active
 	if !m.isSubmodelActive() {

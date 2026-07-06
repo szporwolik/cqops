@@ -30,6 +30,9 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	}
 
 	switch {
+	case m.handlePaneNav(msg):
+		return nil, true
+
 	case key.Matches(msg, m.keys.Quit):
 		applog.Debug("tab: F10 quit requested")
 		dlg := NewDialog("Quit CQOps", "Exit the application?",
@@ -206,35 +209,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 
 	case key.Matches(msg, m.keys.LogEditor):
 		applog.Debug("tab: F8 Editor")
-		wl := m.App.Logbook.Wavelog
-		wlURL, wlKey, wlStationID := "", "", ""
-		if wl != nil {
-			wlURL, wlKey, wlStationID = wl.URL, wl.APIKey, wl.StationProfileID
-		}
-		wlLastID := int64(0)
-		if m.App.Logbook.Wavelog != nil {
-			wlLastID = m.App.Logbook.Wavelog.LastFetchedID
-		}
-		m.ui.logbookEditor = NewLogbookEditor(LogbookEditorConfig{
-			DB:              m.App.DB,
-			WLURL:           wlURL,
-			WLKey:           wlKey,
-			WLStationID:     wlStationID,
-			WLLastFetchedID: wlLastID,
-			StationOperator: m.activeOperatorCallsign(),
-			StationGrid:     m.effectiveGrid(),
-			StationCall:     m.App.Logbook.Station.Callsign,
-		})
-		m.ui.logbookEditor.width = m.width
-		m.ui.logbookEditor.height = m.height
-		// Apply active contest filter.
-		if m.App.Logbook.ActiveContest != "" {
-			ct := m.App.Config.Contests[m.App.Logbook.ActiveContest]
-			m.ui.logbookEditor.SetContestID(m.App.Logbook.ActiveContest, config.ContestDisplayName(&ct), ct.ContestID)
-		} else {
-			m.ui.logbookEditor.SetContestID("", "", "")
-		}
-		m.ui.logbookEditor.loadPage()
+		m.initLogbookEditor()
 		m.screen = screenLogbookEditor
 		return nil, true
 
@@ -450,12 +425,12 @@ func (m *Model) handleRotorKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	}
 
 	switch msg.String() {
-	case "ctrl+left", "alt+,":
+	case "alt+,":
 		az := clampAz(baseAz - step)
 		applog.Debug("rotor: left", "az", az, "key", msg.String())
 		return m.rotorSetPositionCmd(az, baseEl), true
 
-	case "ctrl+right", "alt+.":
+	case "alt+.":
 		az := clampAz(baseAz + step)
 		applog.Debug("rotor: right", "az", az, "key", msg.String())
 		return m.rotorSetPositionCmd(az, baseEl), true
@@ -517,6 +492,120 @@ func (m *Model) rotorSetPositionCmd(az, el float64) tea.Cmd {
 		}
 		return nil
 	}
+}
+
+// paneScreens returns the ordered list of available screens for Ctrl+←/→
+// navigation.  Screens that are not currently usable (e.g. DXC offline,
+// Partner without callsign) are excluded so Ctrl+arrows only cycle through
+// active panes.
+func (m *Model) paneScreens() []screenKind {
+	hasPartner := m.lookup.partnerData != nil || strings.TrimSpace(m.fields[fieldCall].Value()) != ""
+	dxcOnline := m.App.Config.Integrations.DXC.Enabled && m.dxc.online
+
+	var screens []screenKind
+	screens = append(screens, screenQSO) // always
+	if hasPartner {
+		screens = append(screens, screenPartner)
+	}
+	if dxcOnline {
+		screens = append(screens, screenDXC)
+	}
+	if m.inetOnline {
+		screens = append(screens, screenPSKReporter)
+	}
+	if m.isREFReady() {
+		screens = append(screens, screenRef)
+	}
+	screens = append(screens, screenBPL)           // always
+	screens = append(screens, screenLogbookEditor) // always
+	screens = append(screens, screenMainMenu)      // always
+	return screens
+}
+
+// handlePaneNav cycles the active screen left/right with Ctrl+←/→.
+// Only cycles through currently available screens.
+func (m *Model) handlePaneNav(msg tea.KeyPressMsg) bool {
+	k := msg.String()
+	if k != "ctrl+left" && k != "ctrl+right" {
+		return false
+	}
+	screens := m.paneScreens()
+	if len(screens) == 0 {
+		return false
+	}
+	idx := -1
+	for i, s := range screens {
+		if s == m.screen {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return false
+	}
+	if k == "ctrl+left" {
+		idx--
+	} else {
+		idx++
+	}
+	if idx < 0 {
+		idx = len(screens) - 1
+	}
+	if idx >= len(screens) {
+		idx = 0
+	}
+	target := screens[idx]
+
+	// Lazily initialise sub-screens that need it — same logic as the
+	// dedicated F-key handlers.
+	switch target {
+	case screenLogbookEditor:
+		if m.ui.logbookEditor == nil {
+			m.initLogbookEditor()
+		}
+	case screenMainMenu:
+		if m.ui.mainMenu == nil {
+			m.ui.mainMenu = NewMainMenu()
+			m.ui.mainMenu.width = m.width
+			m.ui.mainMenu.height = m.height
+		}
+	}
+
+	m.screen = target
+	applog.Debug("pane: ctrl+arrow", "screen", m.screen)
+	return true
+}
+
+// initLogbookEditor creates a fresh logbook editor with current config.
+func (m *Model) initLogbookEditor() {
+	wl := m.App.Logbook.Wavelog
+	wlURL, wlKey, wlStationID := "", "", ""
+	if wl != nil {
+		wlURL, wlKey, wlStationID = wl.URL, wl.APIKey, wl.StationProfileID
+	}
+	wlLastID := int64(0)
+	if m.App.Logbook.Wavelog != nil {
+		wlLastID = m.App.Logbook.Wavelog.LastFetchedID
+	}
+	m.ui.logbookEditor = NewLogbookEditor(LogbookEditorConfig{
+		DB:              m.App.DB,
+		WLURL:           wlURL,
+		WLKey:           wlKey,
+		WLStationID:     wlStationID,
+		WLLastFetchedID: wlLastID,
+		StationOperator: m.activeOperatorCallsign(),
+		StationGrid:     m.effectiveGrid(),
+		StationCall:     m.App.Logbook.Station.Callsign,
+	})
+	m.ui.logbookEditor.width = m.width
+	m.ui.logbookEditor.height = m.height
+	if m.App.Logbook.ActiveContest != "" {
+		ct := m.App.Config.Contests[m.App.Logbook.ActiveContest]
+		m.ui.logbookEditor.SetContestID(m.App.Logbook.ActiveContest, config.ContestDisplayName(&ct), ct.ContestID)
+	} else {
+		m.ui.logbookEditor.SetContestID("", "", "")
+	}
+	m.ui.logbookEditor.loadPage()
 }
 
 func clampAz(a float64) float64 {
