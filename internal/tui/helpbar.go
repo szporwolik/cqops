@@ -32,8 +32,7 @@ var helpDismissStyle = lipgloss.NewStyle().Foreground(P.TextMuted)
 var helpBoxStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
 	BorderForeground(P.Cursor).
-	Padding(0, 1).
-	Background(lipgloss.Color("0"))
+	Padding(0, 1)
 
 // adifExtsMap avoids allocating a map every frame in helpSuffix().
 var adifExtsMap = map[string]bool{".adi": true, ".adif": true}

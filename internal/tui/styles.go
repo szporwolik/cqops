@@ -208,10 +208,10 @@ var S = Styles{
 	LogError: lipgloss.NewStyle().Foreground(P.Error),
 	LogDebug: lipgloss.NewStyle().Foreground(P.TextDim),
 
-	// Map markers — bold on black background for maximum contrast over the map.
-	MapOwn:     lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Background(lipgloss.Color("0")).Bold(true),
-	MapPartner: lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Background(lipgloss.Color("0")).Bold(true),
-	MapBoth:    lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Background(lipgloss.Color("0")).Bold(true),
+	// Map markers — bold foreground, no background (follows terminal theme).
+	MapOwn:     lipgloss.NewStyle().Foreground(lipgloss.Color("10")).Bold(true),
+	MapPartner: lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true),
+	MapBoth:    lipgloss.NewStyle().Foreground(lipgloss.Color("11")).Bold(true),
 
 	TabActive:    lipgloss.NewStyle().Bold(true).Foreground(P.Cursor),
 	TabInactive:  lipgloss.NewStyle().Foreground(P.TextMuted),
