@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -87,6 +88,13 @@ func Execute() error {
 }
 
 func runTUI() error {
+	// The Linux console sets TERM=linux, which lacks proper colour and
+	// key-sequence support.  Override to xterm-256color — the kernel's
+	// console driver supports it natively and Bubble Tea needs it.
+	if runtime.GOOS == "linux" && os.Getenv("TERM") == "linux" {
+		os.Setenv("TERM", "xterm-256color")
+	}
+
 	a, err := app.Init()
 	if err != nil {
 		return err
