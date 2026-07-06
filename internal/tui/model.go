@@ -295,11 +295,11 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	transport := &imageTransport{base: http.DefaultTransport}
 
 	// Kitty graphics: force-enable before model creation (mode locks at
-	// construction).  Only for known-good terminals: real Kitty, or
-	// opt-in via NTCHARTS_KITTY=supported (VS Code terminal, custom
-	// WezTerm config).  Other terminals stay in safe glyph mode.
-	if os.Getenv("NTCHARTS_KITTY") == "supported" ||
-		os.Getenv("KITTY_WINDOW_ID") != "" {
+	// construction).  The General → Kitty graphics checkbox is the
+	// master switch; env vars only take effect when it is on.
+	if a.Config.General.KittyGraphics &&
+		(os.Getenv("NTCHARTS_KITTY") == "supported" ||
+			os.Getenv("KITTY_WINDOW_ID") != "") {
 		picture.ForceKittyCapability(picture.KittyCapabilitySupported)
 	}
 
@@ -589,7 +589,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	// Deferred Kitty toggle — once the probe resolves to Supported
 	// (typically within 50ms), switch both viewers to Kitty mode.
-	if c := m.photo.ensureKitty(); c != nil {
+	// Gated behind the General → Kitty graphics config option.
+	if c := m.photo.ensureKitty(m.App.Config.General.KittyGraphics); c != nil {
 		cmd = tea.Batch(cmd, c)
 	}
 

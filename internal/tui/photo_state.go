@@ -27,8 +27,8 @@ type photoState struct {
 // ensureKitty toggles both viewers into Kitty mode once the probe
 // resolves to Supported.  Toggle() silently no-ops until then.
 // Pattern from ntcharts-lorem-picsum example.
-func (ps *photoState) ensureKitty() tea.Cmd {
-	if ps.kittyToggled {
+func (ps *photoState) ensureKitty(enabled bool) tea.Cmd {
+	if !enabled || ps.kittyToggled {
 		return nil
 	}
 	if ps.viewer.KittySupported() != picture.KittyCapabilitySupported {

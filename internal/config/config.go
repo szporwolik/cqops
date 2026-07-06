@@ -129,10 +129,11 @@ type GeneralConfig struct {
 	DrawGrayline     bool                `yaml:"draw_grayline,omitempty"`
 	PictureAtQRZPane bool                `yaml:"picture_at_qrz_pane,omitempty"`
 	SolarAtQSOPane   bool                `yaml:"solar_at_qso_pane,omitempty"`
-	UseCTY           bool                `yaml:"use_cty,omitempty"` // CTY.DAT DXCC country file
-	UseSCP           bool                `yaml:"use_scp,omitempty"` // Super Check Partial callsign database
-	UseRef           bool                `yaml:"use_ref,omitempty"` // REF database
-	Debug            bool                `yaml:"debug,omitempty"`   // verbose debug logging
+	UseCTY           bool                `yaml:"use_cty,omitempty"`        // CTY.DAT DXCC country file
+	UseSCP           bool                `yaml:"use_scp,omitempty"`        // Super Check Partial callsign database
+	UseRef           bool                `yaml:"use_ref,omitempty"`        // REF database
+	Debug            bool                `yaml:"debug,omitempty"`          // verbose debug logging
+	KittyGraphics    bool                `yaml:"kitty_graphics,omitempty"` // experimental Kitty terminal graphics
 	Notifications    NotificationsConfig `yaml:"notifications"`
 }
 

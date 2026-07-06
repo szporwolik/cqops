@@ -114,6 +114,7 @@ func (m *Model) handleConfigUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd
 			m.App.Config.General.UseSCP = m.ui.configMenu.useSCP
 			m.App.Config.General.UseRef = m.ui.configMenu.useRef
 			m.App.Config.General.Debug = m.ui.configMenu.debugMode
+			m.App.Config.General.KittyGraphics = m.ui.configMenu.kittyGraphics
 			applog.SetDebugMode(m.ui.configMenu.debugMode)
 			m.saveConfig("Settings saved")
 			m.reloadDataFiles()
