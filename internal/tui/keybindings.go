@@ -250,6 +250,8 @@ func (m *Model) ActiveBindings() []key.Binding {
 			m.keys.CycleRig,
 			m.keys.CycleContest,
 			m.keys.CycleOperator,
+			key.NewBinding(key.WithKeys("ctrl+k"), key.WithHelp("Ctrl+K", "Keep Cmt")),
+			key.NewBinding(key.WithKeys("ctrl+h"), key.WithHelp("Ctrl+H", "Hold Form")),
 		)
 		// Rotor control — only when rotor is connected and on QSO screen.
 		if m.rotor.connected && m.screen == screenQSO {
@@ -265,7 +267,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 		// Favorite slots — always available on QSO form.
 		bindings = append(bindings,
 			key.NewBinding(key.WithKeys("alt+insert", "alt+home", "alt+pgup"), key.WithHelp("Alt+Ins/Hom/PUp", "Recall fav")),
-			key.NewBinding(key.WithKeys("alt+shift+insert", "alt+shift+home", "alt+shift+pgup"), key.WithHelp("Alt+⇧+Ins/Hom/PUp", "Save fav")),
+			key.NewBinding(key.WithKeys("alt+shift+insert", "alt+shift+home", "alt+shift+pgup"), key.WithHelp("Alt+Shift+Ins/Hom/PUp", "Save fav")),
 		)
 	}
 

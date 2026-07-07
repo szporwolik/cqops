@@ -164,7 +164,7 @@ type Model struct {
 	rc renderCache
 
 	lookup          lookupState
-	keepComment     bool   // "Keep" checkbox — retains comment field content across QSOs
+	keepComment     bool   // "Keep Comment" checkbox — retains comment field content across QSOs
 	keepFocused     bool   // true when the Keep/Retain checkbox row has focus
 	keepSubFocus    int    // 0=Keep, 1=Retain — which checkbox in the row is active
 	retainForm      bool   // "Retain" checkbox — prevents form clearing after QSO save

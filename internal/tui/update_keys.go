@@ -299,8 +299,21 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			} else {
 				m.retainForm = !m.retainForm
 			}
+		case "ctrl+k":
+			m.keepComment = !m.keepComment
+			persistCmd = m.persistKeepComment()
+		case "ctrl+h":
+			m.retainForm = !m.retainForm
 		}
 		return drainPending(persistCmd), true
+
+	// Global QSO form toggles — work regardless of focus.
+	case msg.String() == "ctrl+k":
+		m.keepComment = !m.keepComment
+		return m.persistKeepComment(), true
+	case msg.String() == "ctrl+h":
+		m.retainForm = !m.retainForm
+		return nil, true
 
 	// Tab jumps horizontally across columns; Down/Up walk vertically.
 	case msg.String() == "tab":
