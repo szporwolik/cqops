@@ -313,7 +313,7 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 		UserAgent:  "CQOps/1.0 (ham-radio-logger)",
 		HTTPClient: &http.Client{Transport: transport, Timeout: 15 * time.Second},
 	})
-	applog.Info("Photo viewer: ready",
+	applog.Info("Photo viewer: ready (Kitty graphics: experimental — requires Kitty, Ghostty, or WezTerm)",
 		"kitty_cap", m.photo.viewer.KittySupported(),
 		"mode", m.photo.viewer.Mode())
 	m.mapView = newMapRenderer()
@@ -368,6 +368,7 @@ func (m *Model) Init() tea.Cmd {
 
 	m.refreshRigClient()
 	m.refreshRotorClient()
+	applog.Info("Rotator: ready (experimental — requires hamlib or compatible backend)")
 	m.App.WSJTX.OnADIF = func(adif string) {
 		m.adifQ.mu.Lock()
 		m.adifQ.adifs = append(m.adifQ.adifs, adif)

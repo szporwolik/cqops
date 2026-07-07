@@ -439,7 +439,7 @@ func (f *RigForm) View() tea.View {
 	if f.focus == rigFieldRotor {
 		roPrefix = S.FormPrefixOn.Render("> ")
 		roLbl = S.FormFocusedWide.Align(lipgloss.Left).Render("Rotator control:")
-		rotorLabel = CursorStyle.Render(rotorLabel) + " " + DimStyle.Render("(Space)")
+		rotorLabel = CursorStyle.Render(rotorLabel) + " " + DimStyle.Render("(Space) \u2014 experimental")
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, roPrefix, roLbl, " ", rotorLabel),

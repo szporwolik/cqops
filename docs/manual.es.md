@@ -132,6 +132,7 @@ Compilar desde fuente requiere Go 1.26 o más reciente.
 | Tamaño mínimo del terminal | 80×24 caracteres |
 | Tamaño recomendado | 80×43 caracteres o más |
 | Terminal recomendado en Windows | Windows Terminal |
+| Terminal para gráficos Kitty | [Kitty](https://sw.kovidgoyal.net/kitty/), [Ghostty](https://ghostty.org/) o [WezTerm](https://wezfurlong.org/wezterm/) |
 
 ### Comandos básicos
 
@@ -555,6 +556,11 @@ En el QSO form, pulsa **Ins** para completar campos de callbook como:
 
 La Partner view en **F2** puede mostrar la foto del operador cuando esté disponible.
 
+> ⚠️ **Experimental.** La visualización de fotos puede usar el protocolo de
+> gráficos Kitty y requiere un terminal compatible: Kitty, Ghostty o WezTerm.
+> Activar en **F9 → General → Kitty Graphics**. Los terminales estándar y las
+> sesiones SSH sin paso de gráficos mostrarán una foto de glifo en su lugar.
+
 ### Wavelog
 
 La integración Wavelog soporta:
@@ -605,6 +611,11 @@ CQOps maneja la falta de soporte para nombres de VFO de forma robusta cuando es 
 
 ### Hamlib Rotor / rotctld
 
+> ⚠️ **Experimental.** El control de rotor es experimental. Verifica siempre
+> los límites físicos de tu antena antes de operar. Esté listo para detener
+> el movimiento inmediatamente con **Alt+/** . Usa con precaución — una
+> configuración incorrecta puede dañar tu rotor o antena.
+
 El control de rotor usa Hamlib `rotctld`.
 
 CQOps soporta:
@@ -615,10 +626,12 @@ CQOps soporta:
 
 | Atajo | Acción |
 |---|---|
-| Ctrl+←/→ | Ajustar azimuth en 5° |
-| Ctrl+↑/↓ | Ajustar elevation en 5° |
-| Ctrl+A | Apuntar rotor al path bearing calculado |
-| Ctrl+F1 | Detener rotor |
+| Alt+, | Ajustar azimuth −5° |
+| Alt+. | Ajustar azimuth +5° |
+| Alt+; | Ajustar elevation +5° |
+| Alt+' | Ajustar elevation −5° |
+| Alt+\ | Apuntar rotor al path bearing calculado |
+| Alt+/ | Detener rotor |
 
 ### WSJT-X
 
@@ -745,6 +758,9 @@ alcance por logbook en **F9 → Logbooks → [logbook activo] → APRS**.
 
 #### KISS (serie)
 
+> ⚠️ **Experimental.** El soporte KISS TNC es experimental. Prueba
+> exhaustivamente antes de confiar en él para operar.
+
 Se conecta directamente a un TNC KISS hardware a través de un puerto
 serie. No se requiere conexión a internet — las tramas APRS se envían
 y reciben a través de tu radio.
@@ -763,6 +779,9 @@ El botón **Test** abre el puerto serie para verificar que el TNC es
 accesible.
 
 #### KISS Server (TCP)
+
+> ⚠️ **Experimental.** El soporte KISS Server es experimental. Prueba
+> exhaustivamente antes de confiar en él para operar.
 
 Se conecta a un TNC KISS accesible por TCP — por ejemplo, una instancia
 de [Dire Wolf](https://github.com/wb2osz/direwolf) ejecutándose en la
@@ -1069,10 +1088,12 @@ Si `secrets.enc` está corrupto, CQOps arranca con una advertencia y pide reintr
 | PgUp / PgDn | Cambiar band, mode o submode |
 | Ctrl+D | Abrir spot dialog |
 | Ctrl+T | Cambiar Keep Comment |
-| Ctrl+←/→ | Ajustar azimuth del rotor en 5° |
-| Ctrl+↑/↓ | Ajustar elevation del rotor en 5° |
-| Ctrl+A | Apuntar rotor al bearing desde tu grid al grid del corresponsal |
-| Ctrl+F1 | Detener rotor |
+| Alt+, | Ajustar azimuth del rotor −5° |
+| Alt+. | Ajustar azimuth del rotor +5° |
+| Alt+; | Ajustar elevation del rotor +5° |
+| Alt+' | Ajustar elevation del rotor −5° |
+| Alt+\ | Apuntar rotor al bearing desde tu grid al grid del corresponsal |
+| Alt+/ | Detener rotor |
 | Alt+0–9 | Recuperar favorite |
 | Alt+Shift+0–9 | Guardar frequency, mode y band actuales como favorite |
 

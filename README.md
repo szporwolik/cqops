@@ -41,12 +41,15 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 - **Encrypted secrets** — AES-256-GCM, machine-tied, never plaintext
 - **DX Cluster & PSK Reporter** — live spots with band/mode/time filters
 - **GPS receiver** — serial or GPSD, live grid override for /P and mobile ops
-- **APRS** — APRS-IS, KISS TNC (serial), and KISS Server (TCP). Live position map, station caching, GPS-aware beaconing with configurable interval (1 min minimum)
+- **APRS** — APRS-IS with live position map, station caching, GPS-aware beaconing
 - **CQOps Live** — built-in browser dashboard with live map, QSO paths, stats, weather, band conditions, APRS. Great for Field Day displays or club station screens
 - **Contest logging** — exchange markers, auto serials, ADIF contest IDs
 - **Offline-first** — SQLite, cached reference data, `--offline` flag
 - **ADIF 3.1.7** — full import/export, contest fields preserved
 - **Raspberry Pi ready** — Windows, Linux, macOS, ARM; runs over SSH
+- **APRS KISS & KISS TCP** 🧪 — serial KISS TNC and KISS Server (Dire Wolf). 
+- **Kitty terminal graphics** 🧪 — photo display via Kitty/Ghostty/WezTerm. Enable in Settings → General.
+- **Antenna rotator control** 🧪 — manual azimuth/elevation via hamlib. Enable in Rig Profiles.
 
 See the [documentation](https://docs.cqops.com/) for detailed workflows, configuration, keyboard shortcuts, and troubleshooting.
 
