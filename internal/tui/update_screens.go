@@ -395,6 +395,14 @@ func (m *Model) handlePartnerUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 	// Resize inline photo viewer when dimensions change (terminal resize etc).
 	w := m.photo.partnerPicW
 	h := m.photo.partnerPicH
+	// After returning from F2/ESC, force SetSize on the next frame
+	// using whatever dimensions viewPartner() last computed. Don't
+	// invent approximate sizes — that misaligns the Kitty grid.
+	if m.photo.partnerPicNeedSize {
+		m.photo.partnerPicNeedSize = false
+		m.photo.partnerPicLastW = 0
+		m.photo.partnerPicLastH = 0
+	}
 	if w >= 25 && h >= 4 && (w != m.photo.partnerPicLastW || h != m.photo.partnerPicLastH) {
 		m.photo.partnerPicLastW = w
 		m.photo.partnerPicLastH = h

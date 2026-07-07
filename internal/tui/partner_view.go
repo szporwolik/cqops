@@ -245,8 +245,16 @@ func (m *Model) viewPartner() string {
 		header := S.Label.Width(photoW - 4).MaxWidth(photoW - 4).Inline(true).Render("Photo")
 		inner := lipgloss.JoinVertical(lipgloss.Left, header, strings.Join(picLines, "\n"))
 		picBox := drawBorderedBox(inner, photoW+1)
-		// Force photo box height to exactly leftH using Place.
-		picBox = lipgloss.Place(photoW+1, leftH, lipgloss.Top, lipgloss.Left, picBox)
+		// Pad the shorter column with newlines instead of using
+		// lipgloss.Place, which wraps content in ANSI escapes
+		// that can shift Kitty virtual image placement.
+		picH := lipgloss.Height(picBox)
+		if leftH > picH {
+			picBox += strings.Repeat("\n", leftH-picH)
+		} else if picH > leftH {
+			leftCol += strings.Repeat("\n", picH-leftH)
+			leftH = picH
+		}
 		m.photo.partnerPicW = photoW - 3
 		m.photo.partnerPicH = picContentH
 		if m.photo.partnerPicW < 25 {

@@ -4,6 +4,11 @@
 // at startup, and rendered as half-block ANSI true-colour for terminal display.
 // Markers for own/partner station are drawn over the map.
 //
+// When the Kitty graphics protocol is available, the map is rendered at full
+// pixel resolution via the Kitty APC escape sequence instead of half-block ANSI.
+// This gives much sharper maps on kitty-compatible terminals (kitty, Ghostty,
+// WezTerm).
+//
 // World map raster derived from Natural Earth public domain data.
 
 package tui
@@ -18,8 +23,12 @@ import (
 	"strings"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
+	"github.com/NimbleMarkets/ntcharts/v2/picture"
 	"github.com/szporwolik/cqops/assets"
 )
+
+const kittyMapImageID = 42070 // distinct from photo viewer's default (42069)
 
 // mapImg holds the decoded world map image, loaded once at startup.
 var mapImg image.Image
@@ -51,19 +60,45 @@ type mapRenderer struct {
 	// Reusable RGBA buffer — avoids allocation on every cache miss.
 	buf    *image.RGBA
 	bufCap int // total pixels (W×H) the buffer can hold
+
+	// Kitty graphics protocol support.
+	kittyPic picture.Model
+	kittyOn  bool
+	// kittyPending holds SetImage/SetSize cmds dispatched during View(),
+	// consumed by Update() on the next frame.
+	kittyPending tea.Cmd
+	// kittyDirty is set on Invalidate() and cleared in renderKitty
+	// after dispatching a new SetImage/SetSize.
+	kittyDirty bool
+	// kittyW/kittyH track the last SetSize sent to kittyPic so we
+	// avoid re-dispatching when dimensions are stable.
+	kittyW, kittyH int
 }
 
-func newMapRenderer() *mapRenderer { return &mapRenderer{} }
+func newMapRenderer() *mapRenderer {
+	return &mapRenderer{
+		kittyPic: picture.NewWithConfig(picture.Config{
+			KittyID: kittyMapImageID,
+		}),
+	}
+}
 
 // Invalidate clears the base image cache so the next View() fully rebuilds.
 func (mr *mapRenderer) Invalidate() {
 	mr.cached = ""
+	mr.kittyDirty = true
 }
 
 // View renders the map at the given terminal dimensions.
 // drawGrayline enables the day/night terminator overlay (CPU-friendly —
 // computed only on cache miss, i.e. dimension change or UTC-minute tick).
+//
+// When Kitty graphics protocol is active, the map is rendered at full
+// pixel resolution; otherwise the half-block ANSI path is used.
 func (mr *mapRenderer) View(ownLat, ownLon, partnerLat, partnerLon float64, mapW, mapAvailH int, drawGrayline bool) string {
+	if mr.kittyOn && picture.KittySupported() == picture.KittyCapabilitySupported {
+		return mr.renderKitty(ownLat, ownLon, partnerLat, partnerLon, mapW, mapAvailH, drawGrayline)
+	}
 	base := mr.renderBase(mapW, mapAvailH, drawGrayline)
 	if base == "" {
 		return ""
@@ -75,6 +110,215 @@ func (mr *mapRenderer) View(ownLat, ownLon, partnerLat, partnerLon float64, mapW
 // BaseImage returns the raw ANSI map image without any markers or legend.
 func (mr *mapRenderer) BaseImage(mapW, mapAvailH int, drawGrayline bool) string {
 	return mr.renderBase(mapW, mapAvailH, drawGrayline)
+}
+
+// --- Kitty graphics protocol support ---------------------------------------
+
+// SetKittyEnabled enables or disables Kitty graphics protocol rendering.
+// Returns a Cmd that the caller must batch into their Update() return.
+func (mr *mapRenderer) SetKittyEnabled(enabled bool) tea.Cmd {
+	if enabled && picture.KittySupported() != picture.KittyCapabilitySupported {
+		return nil // terminal doesn't support it; don't toggle
+	}
+	if mr.kittyOn == enabled {
+		return nil
+	}
+	mr.kittyOn = enabled
+	mr.kittyDirty = true
+	return mr.kittyPic.Toggle()
+}
+
+// Update forwards messages to the embedded picture.Model and returns any
+// pending SetImage/SetSize Cmds stored by the last View() call.
+// The caller MUST call this on every Update() frame for Kitty graphics to work.
+func (mr *mapRenderer) Update(msg tea.Msg) tea.Cmd {
+	var cmd tea.Cmd
+	if c := mr.kittyPic.Update(msg); c != nil {
+		cmd = tea.Batch(cmd, c)
+	}
+	if mr.kittyPending != nil {
+		cmd = tea.Batch(cmd, mr.kittyPending)
+		mr.kittyPending = nil
+	}
+	return cmd
+}
+
+// renderKitty prepares the map image with pixel-level markers, dispatches
+// it to the Kitty picture model, and returns the current Kitty render output
+// with a text legend appended below. Caches are used to avoid redundant
+// PNG encodes.
+func (mr *mapRenderer) renderKitty(ownLat, ownLon, partnerLat, partnerLon float64, mapW, mapAvailH int, drawGrayline bool) string {
+	// Compute dimensions — same logic as renderBase.
+	if mapImg == nil || mapW < 20 || mapAvailH < 2 {
+		return ""
+	}
+	if mapW > partnerMapMaxW {
+		mapW = partnerMapMaxW
+	}
+	mapH := mapW
+	if mapAspect > 0 {
+		mapH = int(float64(mapW) / (2 * mapAspect))
+	}
+	if mapH < 1 {
+		mapH = 1
+	}
+	if mapH > mapAvailH {
+		mapH = mapAvailH
+		mapW = int(float64(mapH) * 2 * mapAspect)
+	}
+	const maxH = 30
+	if mapH > maxH {
+		mapH = maxH
+		mapW = int(float64(mapH) * 2 * mapAspect)
+	}
+	if mapW < 20 {
+		mapW = 20
+	}
+
+	now := time.Now().UTC()
+	graySlot := now.Hour()*12 + now.Minute()/5
+
+	// Cache check: dimensions, grayline, AND kitty frame readiness must
+	// all match. kittyW/H are only set when a valid kitty frame was
+	// previously displayed; 0 means "no kitty frame yet."
+	if !mr.kittyDirty && mr.kittyW == mapW && mr.kittyH == mapH &&
+		mr.graylineOn == drawGrayline && mr.graylineSlot == graySlot &&
+		mr.kittyW > 0 {
+		kittyOut := mr.kittyPic.View().Content
+		if kittyOut != "" {
+			return mr.appendKittyLegend(kittyOut)
+		}
+		// Kitty frame not yet available (shouldn't normally happen
+		// when W/H are set, but guard against it). Fall through
+		// to rebuild.
+	}
+
+	// Render at the picture model's cell-pixel resolution so no
+	// upscaling is needed — avoids blur from CatmullRom enlargement.
+	cpw, cph := mr.kittyPic.CellPixelSize()
+	pixW, pixH := mapW*cpw, mapH*cph
+
+	need := pixW * pixH
+	if mr.buf == nil || mr.bufCap < need {
+		mr.buf = image.NewRGBA(image.Rect(0, 0, pixW, pixH))
+		mr.bufCap = need
+	}
+	resized := mr.buf.SubImage(image.Rect(0, 0, pixW, pixH)).(*image.RGBA)
+	sb := mapImg.Bounds()
+	for y := 0; y < pixH; y++ {
+		sy := y * sb.Dy() / pixH
+		for x := 0; x < pixW; x++ {
+			sx := x * sb.Dx() / pixW
+			resized.Set(x, y, mapImg.At(sx+sb.Min.X, sy+sb.Min.Y))
+		}
+	}
+	if drawGrayline {
+		blendGrayline(resized, pixW, pixH, now)
+	}
+
+	// Draw pixel-level station markers with precise lat/lon math.
+	mr.drawPixelMarker(resized, pixW, pixH, ownLat, ownLon, partnerLat, partnerLon)
+
+	cmd1 := mr.kittyPic.SetSize(mapW, mapH)
+	cmd2 := mr.kittyPic.SetImage(resized)
+	mr.kittyPending = tea.Batch(cmd1, cmd2)
+
+	// Always mark grayline slot so the ANSI fallback path (renderBase)
+	// shares the same timing anchor and doesn't disagree on cache.
+	mr.graylineOn = drawGrayline
+	mr.graylineSlot = graySlot
+
+	kittyOut := mr.kittyPic.View().Content
+	if kittyOut == "" {
+		// Kitty frame not ready yet — use the ANSI map as a
+		// height-stable fallback. Do NOT set kittyW/H;
+		// mr.kittyDirty stays false so the next frame hits
+		// the ANSI fallback again until kittyOut is ready.
+		return mr.drawMarkers(mr.renderBase(mapW, mapAvailH, drawGrayline),
+			ownLat, ownLon, partnerLat, partnerLon, mr.cacheW, mr.cacheH)
+	}
+
+	// Kitty frame arrived — persist the cache dimensions so future
+	// frames short-circuit on the cheap cache check.
+	mr.kittyDirty = false
+	mr.kittyW = mapW
+	mr.kittyH = mapH
+	return mr.appendKittyLegend(kittyOut)
+}
+
+// appendKittyLegend appends a text legend row below the Kitty image output.
+func (mr *mapRenderer) appendKittyLegend(kittyOut string) string {
+	legend := DimStyle.Render(" ") +
+		S.MapOwn.Render("\u25c6") + DimStyle.Render(" My station") +
+		DimStyle.Render("  ") +
+		S.MapPartner.Render("\u00d7") + DimStyle.Render(" Partner") +
+		DimStyle.Render("  ") +
+		S.MapBoth.Render("\u25ce") + DimStyle.Render(" Merged")
+	if kittyOut == "" {
+		return legend
+	}
+	return kittyOut + "\n" + legend
+}
+
+// drawPixelMarker paints own/partner station dots directly onto the RGBA
+// image using direct lat/lon → pixel math (no double integer division).
+// pixW and pixH are the pixel dimensions of the RGBA image.
+func (mr *mapRenderer) drawPixelMarker(img *image.RGBA, pixW, pixH int, ownLat, ownLon, partnerLat, partnerLon float64) {
+	latLonToPixel := func(lat, lon float64) (px, py int) {
+		xf := (lon + 180.0) / 360.0 * float64(pixW)
+		yf := (90.0 - lat) / 180.0 * float64(pixH)
+		return clampPixel(int(math.Round(xf)), int(math.Round(yf)), pixW, pixH)
+	}
+	ownX, ownY := latLonToPixel(ownLat, ownLon)
+	partnerX, partnerY := latLonToPixel(partnerLat, partnerLon)
+
+	// Marker radius: ~0.5% of image width, min 2px, max 6px.
+	r := pixW / 200
+	if r < 2 {
+		r = 2
+	}
+	if r > 6 {
+		r = 6
+	}
+
+	drawDot := func(cx, cy int, col color.RGBA) {
+		for dy := -r; dy <= r; dy++ {
+			for dx := -r; dx <= r; dx++ {
+				if dx*dx+dy*dy > r*r {
+					continue
+				}
+				x, y := cx+dx, cy+dy
+				if x >= 0 && x < pixW && y >= 0 && y < pixH {
+					img.Set(x, y, col)
+				}
+			}
+		}
+	}
+
+	sameCell := ownX == partnerX && ownY == partnerY
+	if sameCell {
+		drawDot(ownX, ownY, color.RGBA{R: 255, G: 255, B: 0, A: 255}) // yellow — merged
+	} else {
+		drawDot(ownX, ownY, color.RGBA{R: 0, G: 255, B: 0, A: 255})           // green — own
+		drawDot(partnerX, partnerY, color.RGBA{R: 255, G: 50, B: 50, A: 255}) // red — partner
+	}
+}
+
+// clampPixel clamps (x, y) to [0, w) and [0, h).
+func clampPixel(x, y, w, h int) (int, int) {
+	if x < 0 {
+		x = 0
+	}
+	if x >= w {
+		x = w - 1
+	}
+	if y < 0 {
+		y = 0
+	}
+	if y >= h {
+		y = h - 1
+	}
+	return x, y
 }
 
 // renderBase computes dimensions, resizes the source image, and caches the
