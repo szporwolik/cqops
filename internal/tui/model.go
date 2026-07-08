@@ -15,6 +15,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/NimbleMarkets/ntcharts/v2/picture"
 	"github.com/NimbleMarkets/ntcharts/v2/picture/pictureurl"
+	"github.com/charmbracelet/x/term"
 	"github.com/gen2brain/beeep"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
@@ -239,6 +240,14 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	applog.SetDebugMode(a.Config.General.Debug)
 
 	m := &Model{App: a, qsos: initialQSOS, toasts: NewToastQueue(), dateTimeAuto: true, width: 80, height: 24}
+
+	// Probe the terminal size at startup so the first render matches
+	// the real dimensions — avoids a visible resize flash on slow PCs.
+	if w, h, err := term.GetSize(os.Stdout.Fd()); err == nil && w >= 75 && h >= 24 {
+		m.width = w
+		m.height = h
+	}
+
 	now := time.Now().UTC()
 	for i := field(0); i < fieldCount; i++ {
 		ti := newTextinput()
