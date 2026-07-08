@@ -323,6 +323,32 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	applog.Info("Photo viewer: ready (Kitty graphics: experimental — requires Kitty, Ghostty, or WezTerm)",
 		"kitty_cap", m.photo.viewer.KittySupported(),
 		"mode", m.photo.viewer.Mode())
+
+	// Log terminal capabilities for debugging Linux framebuffer console issues.
+	term := os.Getenv("TERM")
+	applog.Info("Terminal environment",
+		"TERM", term,
+		"COLORTERM", os.Getenv("COLORTERM"),
+		"TERM_PROGRAM", os.Getenv("TERM_PROGRAM"),
+		"TERM_PROGRAM_VERSION", os.Getenv("TERM_PROGRAM_VERSION"),
+		"VTE_VERSION", os.Getenv("VTE_VERSION"),
+		"KONSOLE_VERSION", os.Getenv("KONSOLE_VERSION"),
+		"TMUX", os.Getenv("TMUX"),
+		"SCREEN", os.Getenv("STY"),
+		"SSH_TTY", os.Getenv("SSH_TTY"),
+		"DISPLAY", os.Getenv("DISPLAY"),
+		"WAYLAND_DISPLAY", os.Getenv("WAYLAND_DISPLAY"),
+		"XDG_SESSION_TYPE", os.Getenv("XDG_SESSION_TYPE"),
+		"DBUS", os.Getenv("DBUS_SESSION_BUS_ADDRESS") != "",
+		"KITTY_WINDOW_ID", os.Getenv("KITTY_WINDOW_ID") != "",
+		"GHOSTTY_RESOURCES_DIR", os.Getenv("GHOSTTY_RESOURCES_DIR") != "",
+		"WEZTERM_EXECUTABLE", os.Getenv("WEZTERM_EXECUTABLE") != "",
+		"ALACRITTY_LOG", os.Getenv("ALACRITTY_LOG") != "",
+		"WT_SESSION", os.Getenv("WT_SESSION") != "",
+		"ansi_palette", useANSIPalette(),
+		"force_clear", useANSIPalette(),
+		"desktop_available", desktopAvailable(),
+	)
 	m.mapView = newMapRenderer()
 	// Kitty graphics for the map is activated by ensureMapKitty() once
 	// the terminal probe resolves — do NOT set kittyOn here; the Toggle()
