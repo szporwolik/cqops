@@ -346,7 +346,7 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 		"ALACRITTY_LOG", os.Getenv("ALACRITTY_LOG") != "",
 		"WT_SESSION", os.Getenv("WT_SESSION") != "",
 		"ansi_palette", useANSIPalette(),
-		"force_clear", useANSIPalette(),
+		"bare_tty", isTTYWithoutDisplay(),
 		"desktop_available", desktopAvailable(),
 	)
 	m.mapView = newMapRenderer()
@@ -974,9 +974,10 @@ func (m *Model) View() tea.View {
 	v := tea.NewView(finalView)
 	v.AltScreen = true
 	v.WindowTitle = m.windowTitle()
-	// On Linux framebuffer console, clear the screen before every frame.
-	// Cellbuf's diff-based rendering is unreliable on terminals without BCE.
-	if useANSIPalette() {
+	// On bare TTY terminals without a display server, clear the screen
+	// before every frame. Cellbuf's diff-based rendering is unreliable
+	// on terminals without Background Color Erase (BCE).
+	if isTTYWithoutDisplay() {
 		v.Content = "\033[2J\033[H" + v.Content
 	}
 	return v
