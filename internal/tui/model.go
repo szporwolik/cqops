@@ -571,6 +571,19 @@ func (m *Model) saveConfig(msg string) {
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	model, cmd := m.updateImpl(msg)
+	// On bare TTY terminals without BCE, force a full terminal clear
+	// on every keypress. Screen handlers may drop this from cmd, so
+	// we apply it at the outermost level — impossible to bypass.
+	if isTTYWithoutDisplay() {
+		if _, isKey := msg.(tea.KeyPressMsg); isKey {
+			cmd = tea.Batch(cmd, tea.ClearScreen)
+		}
+	}
+	return model, cmd
+}
+
+func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	// WindowSizeMsg — store dimensions first; invalidate map cache on resize
@@ -974,12 +987,6 @@ func (m *Model) View() tea.View {
 	v := tea.NewView(finalView)
 	v.AltScreen = true
 	v.WindowTitle = m.windowTitle()
-	// On bare TTY terminals without a display server, clear the screen
-	// before every frame. Cellbuf's diff-based rendering is unreliable
-	// on terminals without Background Color Erase (BCE).
-	if isTTYWithoutDisplay() {
-		v.Content = "\033[2J\033[H" + v.Content
-	}
 	return v
 }
 
