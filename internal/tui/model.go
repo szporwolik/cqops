@@ -369,13 +369,20 @@ func desktopAvailable() bool {
 
 // ensureMapKitty activates Kitty graphics protocol rendering on the embedded
 // world map once the terminal capability probe resolves to Supported.
-// Mirrors the pattern used by photoState.ensureKitty.
+// Also busts the PSK map cache so the PSK view re-renders in the new mode.
 func (m *Model) ensureMapKitty() tea.Cmd {
 	if m.mapView == nil || !m.App.Config.General.KittyGraphics {
 		return nil
 	}
 	if !m.mapView.kittyOn && m.App.Config.General.KittyGraphics &&
 		picture.KittySupported() == picture.KittyCapabilitySupported {
+		// Clear PSK caches so the map switches from ANSI to Kitty on
+		// the next refresh cycle (both the inner map cache and the
+		// outer view cache must be busted).
+		m.psk.mapSig = ""
+		m.psk.mapView = ""
+		m.psk.viewKey = ""
+		m.psk.view = ""
 		return m.mapView.SetKittyEnabled(true)
 	}
 	return nil
@@ -622,6 +629,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// picture model, and return any pending SetImage/SetSize cmds.
 	if m.mapView != nil {
 		if c := m.mapView.Update(msg); c != nil {
+			cmd = tea.Batch(cmd, c)
+		}
+		if c := m.mapView.PSKUpdate(msg); c != nil {
 			cmd = tea.Batch(cmd, c)
 		}
 	}

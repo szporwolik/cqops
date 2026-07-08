@@ -26,9 +26,11 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/NimbleMarkets/ntcharts/v2/picture"
 	"github.com/szporwolik/cqops/assets"
+	"github.com/szporwolik/cqops/internal/applog"
 )
 
-const kittyMapImageID = 42070 // distinct from photo viewer's default (42069)
+const kittyMapImageID = 42070 // partner map
+const kittyPSKImageID = 42071 // PSK Reporter map
 
 // mapImg holds the decoded world map image, loaded once at startup.
 var mapImg image.Image
@@ -61,7 +63,7 @@ type mapRenderer struct {
 	buf    *image.RGBA
 	bufCap int // total pixels (W×H) the buffer can hold
 
-	// Kitty graphics protocol support.
+	// Kitty graphics protocol support — partner map.
 	kittyPic picture.Model
 	kittyOn  bool
 	// kittyPending holds SetImage/SetSize cmds dispatched during View(),
@@ -73,12 +75,22 @@ type mapRenderer struct {
 	// kittyW/kittyH track the last SetSize sent to kittyPic so we
 	// avoid re-dispatching when dimensions are stable.
 	kittyW, kittyH int
+
+	// Kitty graphics protocol support — PSK Reporter map.
+	pskKittyPic     picture.Model
+	pskKittyPending tea.Cmd
+	pskKittyW       int
+	pskKittyH       int
+	pskKittySig     string // last mapSig sent to SetPSKImage; avoids re-dispatch
 }
 
 func newMapRenderer() *mapRenderer {
 	return &mapRenderer{
 		kittyPic: picture.NewWithConfig(picture.Config{
 			KittyID: kittyMapImageID,
+		}),
+		pskKittyPic: picture.NewWithConfig(picture.Config{
+			KittyID: kittyPSKImageID,
 		}),
 	}
 }
@@ -125,7 +137,9 @@ func (mr *mapRenderer) SetKittyEnabled(enabled bool) tea.Cmd {
 	}
 	mr.kittyOn = enabled
 	mr.kittyDirty = true
-	return mr.kittyPic.Toggle()
+	mr.pskKittySig = "" // force re-dispatch after mode switch
+	applog.Debug("PSK SetKittyEnabled", "on", enabled, "kittyMode", mr.pskKittyPic.Mode())
+	return tea.Batch(mr.kittyPic.Toggle(), mr.pskKittyPic.Toggle())
 }
 
 // Update forwards messages to the embedded picture.Model and returns any
@@ -221,7 +235,7 @@ func (mr *mapRenderer) renderKitty(ownLat, ownLon, partnerLat, partnerLon float6
 
 	cmd1 := mr.kittyPic.SetSize(mapW, mapH)
 	cmd2 := mr.kittyPic.SetImage(resized)
-	mr.kittyPending = tea.Batch(cmd1, cmd2)
+	mr.kittyPending = tea.Sequence(cmd1, cmd2)
 
 	// Always mark grayline slot so the ANSI fallback path (renderBase)
 	// shares the same timing anchor and doesn't disagree on cache.
@@ -258,6 +272,138 @@ func (mr *mapRenderer) appendKittyLegend(kittyOut string) string {
 		return legend
 	}
 	return kittyOut + "\n" + legend
+}
+
+// --- PSK Reporter Kitty support -------------------------------------------
+
+// PSKUpdate forwards messages to the PSK picture model and returns any
+// pending SetImage/SetSize Cmds. Must be called on every Update() frame.
+func (mr *mapRenderer) PSKUpdate(msg tea.Msg) tea.Cmd {
+	var cmd tea.Cmd
+	if c := mr.pskKittyPic.Update(msg); c != nil {
+		cmd = tea.Batch(cmd, c)
+	}
+	if mr.pskKittyPending != nil {
+		applog.Debug("PSK PSKUpdate: returning pending cmd")
+		cmd = tea.Batch(cmd, mr.pskKittyPending)
+		mr.pskKittyPending = nil
+	}
+	return cmd
+}
+
+// BaseImageRGBA returns the raw RGBA map image (resized, grayline applied)
+// plus its pixel and cell dimensions. Used by PSK Reporter to draw spots
+// directly onto the bitmap when Kitty mode is active.
+func (mr *mapRenderer) BaseImageRGBA(mapW, mapAvailH int, drawGrayline bool) (*image.RGBA, int, int, int, int) {
+	if mapImg == nil || mapW < 20 || mapAvailH < 2 {
+		return nil, 0, 0, 0, 0
+	}
+	if mapW > partnerMapMaxW {
+		mapW = partnerMapMaxW
+	}
+	mapH := mapW
+	if mapAspect > 0 {
+		mapH = int(float64(mapW) / (2 * mapAspect))
+	}
+	if mapH < 1 {
+		mapH = 1
+	}
+	if mapH > mapAvailH {
+		mapH = mapAvailH
+		mapW = int(float64(mapH) * 2 * mapAspect)
+	}
+	const maxH = 30
+	if mapH > maxH {
+		mapH = maxH
+		mapW = int(float64(mapH) * 2 * mapAspect)
+	}
+	if mapW < 20 {
+		mapW = 20
+	}
+
+	cpw, cph := mr.pskKittyPic.CellPixelSize()
+	pixW, pixH := mapW*cpw, mapH*cph
+
+	need := pixW * pixH
+	if mr.buf == nil || mr.bufCap < need {
+		mr.buf = image.NewRGBA(image.Rect(0, 0, pixW, pixH))
+		mr.bufCap = need
+	}
+	resized := mr.buf.SubImage(image.Rect(0, 0, pixW, pixH)).(*image.RGBA)
+	sb := mapImg.Bounds()
+	for y := 0; y < pixH; y++ {
+		sy := y * sb.Dy() / pixH
+		for x := 0; x < pixW; x++ {
+			sx := x * sb.Dx() / pixW
+			resized.Set(x, y, mapImg.At(sx+sb.Min.X, sy+sb.Min.Y))
+		}
+	}
+	if drawGrayline {
+		blendGrayline(resized, pixW, pixH, time.Now().UTC())
+	}
+
+	return resized, pixW, pixH, mapW, mapH
+}
+
+// SetPSKImage dispatches the marked-up PSK map to the PSK Kitty picture
+// model. Call after drawing spots onto the RGBA. Only re-dispatches when
+// the sig changes — avoids flooding the picture model with SetImage calls
+// that would increment the sequence and stall the async Kitty frame.
+func (mr *mapRenderer) SetPSKImage(rgba *image.RGBA, mapW, mapH int, sig string) tea.Cmd {
+	if sig == mr.pskKittySig {
+		return nil // already dispatched for this data
+	}
+	applog.Debug("PSK SetPSKImage: dispatching", "mapW", mapW, "mapH", mapH, "sig", sig)
+	mr.pskKittySig = sig
+	mr.pskKittyPending = tea.Sequence(
+		mr.pskKittyPic.SetSize(mapW, mapH),
+		mr.pskKittyPic.SetImage(rgba),
+	)
+	return mr.pskKittyPending
+}
+
+// PSKView returns the current PSK Kitty picture model output.
+func (mr *mapRenderer) PSKView() string {
+	return mr.pskKittyPic.View().Content
+}
+
+// PSKMode returns the PSK picture model's current rendering mode.
+func (mr *mapRenderer) PSKMode() picture.PictureMode { return mr.pskKittyPic.Mode() }
+
+// PSKKittyReady reports whether the real Kitty grid (not the glyph
+// fallback) has arrived from the async PNG encode.
+// The glyph uses half-block characters (U+2580 ▀ or U+2584 ▄); the
+// Kitty grid uses Unicode PUA placeholder U+10EEEE.
+func (mr *mapRenderer) PSKKittyReady() bool {
+	c := mr.pskKittyPic.View().Content
+	return c != "" && !strings.Contains(c, "\u2580") && !strings.Contains(c, "\u2584")
+}
+
+// PSKDrawDot draws a filled circle at the given lat/lon on the RGBA image.
+// pixW/pixH are the image pixel dimensions.
+func (mr *mapRenderer) PSKDrawDot(img *image.RGBA, pixW, pixH int, lat, lon float64, col color.RGBA) {
+	xf := (lon + 180.0) / 360.0 * float64(pixW)
+	yf := (90.0 - lat) / 180.0 * float64(pixH)
+	cx, cy := clampPixel(int(math.Round(xf)), int(math.Round(yf)), pixW, pixH)
+
+	r := pixW / 200 // radius ~0.5% of image width
+	if r < 2 {
+		r = 2
+	}
+	if r > 4 {
+		r = 4
+	}
+	for dy := -r; dy <= r; dy++ {
+		for dx := -r; dx <= r; dx++ {
+			if dx*dx+dy*dy > r*r {
+				continue
+			}
+			x, y := cx+dx, cy+dy
+			if x >= 0 && x < pixW && y >= 0 && y < pixH {
+				img.Set(x, y, col)
+			}
+		}
+	}
 }
 
 // drawPixelMarker paints own/partner station dots directly onto the RGBA
