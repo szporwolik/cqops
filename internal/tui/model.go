@@ -1061,7 +1061,29 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 		}
 		clamped = m.rc.bodyClipStyle.Render(body)
 	}
-	return fillBodyEpoch(clamped, l.ContentH, m.screenEpoch)
+	result := fillBodyEpoch(clamped, l.ContentH, m.screenEpoch)
+
+	// On Linux terminals, embed an invisible cycling ANSI marker at the
+	// start of every line so that no cell is "clearable" from cellbuf's
+	// perspective. This forces every line to be fully re-emitted on every
+	// frame, preventing stale content from \e[K optimisations which are
+	// broken on the Linux framebuffer console (no BCE support).
+	// Only dim (2/22) and reverse (7/27) are used — they don't affect
+	// foreground/background colours, preserving Lip Gloss styles.
+	if useANSIPalette() && m.screenEpoch > 0 {
+		marker := "\033[2m\033[22m" // dim then undim
+		if m.screenEpoch%2 == 0 {
+			marker = "\033[7m\033[27m" // reverse then unreverse
+		}
+		lines := strings.Split(result, "\n")
+		for i := range lines {
+			if lines[i] != "" {
+				lines[i] = marker + lines[i]
+			}
+		}
+		result = strings.Join(lines, "\n")
+	}
+	return result
 }
 
 // buildQSOFormWithLayout renders the QSO form, short path info, and recent
