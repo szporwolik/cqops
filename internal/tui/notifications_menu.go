@@ -25,6 +25,9 @@ type NotificationsMenu struct {
 
 	cachedClipStyle lipgloss.Style
 	cachedClipH     int
+
+	// statusMsg is shown in the view, cleared on next keypress.
+	statusMsg string
 }
 
 const notifItemCount = 7 // 5 checkboxes + 2 buttons
@@ -47,6 +50,7 @@ func (nm *NotificationsMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		nm.width, nm.height = msg.Width, msg.Height
 	case tea.KeyPressMsg:
+		nm.statusMsg = "" // clear status on any key
 		switch msg.String() {
 		case "esc":
 			nm.done = true
@@ -103,19 +107,31 @@ func (nm *NotificationsMenu) sendTestNotification() {
 	title := "CQOps — Test Notification"
 	body := "This is a test notification from CQOps."
 	applog.Info("Test notification sent")
-	if desktopAvailable() {
-		if err := beeep.Notify(title, body, ""); err != nil {
-			applog.Warn("Test notification failed", "error", err.Error())
-		}
+	if !desktopAvailable() {
+		nm.statusMsg = "Notifications unavailable — no desktop environment detected (D-Bus/GUI required)"
+		applog.Warn("Test notification skipped: desktop unavailable")
+		return
+	}
+	if err := beeep.Notify(title, body, ""); err != nil {
+		applog.Warn("Test notification failed", "error", err.Error())
+		nm.statusMsg = "Notification failed: " + err.Error()
+	} else {
+		nm.statusMsg = "Test notification sent — check your desktop"
 	}
 }
 
 func (nm *NotificationsMenu) sendTestBeep() {
 	applog.Info("Test beep triggered")
-	if desktopAvailable() {
-		if err := beeep.Beep(beeep.DefaultFreq, beeep.DefaultDuration); err != nil {
-			applog.Warn("Test beep failed", "error", err.Error())
-		}
+	if !desktopAvailable() {
+		nm.statusMsg = "Beep unavailable — no desktop environment detected (D-Bus/GUI required)"
+		applog.Warn("Test beep skipped: desktop unavailable")
+		return
+	}
+	if err := beeep.Beep(beeep.DefaultFreq, beeep.DefaultDuration); err != nil {
+		applog.Warn("Test beep failed", "error", err.Error())
+		nm.statusMsg = "Beep failed: " + err.Error()
+	} else {
+		nm.statusMsg = "Test beep played"
 	}
 }
 
@@ -142,6 +158,18 @@ func (nm *NotificationsMenu) View() tea.View {
 	}
 
 	var b strings.Builder
+
+	// Permanent warning when desktop notifications are not available.
+	if !desktopAvailable() {
+		b.WriteString(S.ToastWarning.Render("  ⚠ Desktop notifications unavailable — no GUI/D-Bus session detected"))
+		b.WriteString("\n\n")
+	}
+
+	// Status message (test result).
+	if nm.statusMsg != "" {
+		b.WriteString(S.ToastInfo.Render("  " + nm.statusMsg))
+		b.WriteString("\n\n")
+	}
 
 	// Row 0: master toggle
 	nm.renderCheckbox(&b, boxW, 0, "System notifications", nm.enabled, false)
