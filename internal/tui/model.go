@@ -636,15 +636,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if c := m.photo.ensureKitty(m.App.Config.General.KittyGraphics); c != nil {
 		cmd = tea.Batch(cmd, c)
 	}
-	// Map renderer Kitty support — forward ALL messages so that
-	// KittyFrameMsg (async PNG encode result) reaches the map's
-	// picture model, and return any pending SetImage/SetSize cmds.
+	// Map renderer Kitty support — always forward messages so
+	// internal state (KittyFrameMsg, cell size, etc.) updates,
+	// but only return SetImage/SetSize/APC cmds when a map is
+	// actually on-screen.  Raw APC escapes emitted on unrelated
+	// screens corrupt the terminal and cause missing borders,
+	// headers, and partial screen updates (Ghostty/xrdp).
 	if m.mapView != nil {
-		if c := m.mapView.Update(msg); c != nil {
-			cmd = tea.Batch(cmd, c)
-		}
-		if c := m.mapView.PSKUpdate(msg); c != nil {
-			cmd = tea.Batch(cmd, c)
+		mapsVisible := m.screen == screenPartner || m.screen == screenPSKReporter
+		mapC := m.mapView.Update(msg)
+		pskC := m.mapView.PSKUpdate(msg)
+		if mapsVisible {
+			cmd = tea.Batch(cmd, mapC, pskC)
 		}
 	}
 	if c := m.ensureMapKitty(); c != nil {
