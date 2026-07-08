@@ -136,14 +136,6 @@ func tern(cond bool, t, f string) string {
 // equals contentH. Each trailing line carries a single space to force
 // Bubble Tea's render diff to write to every line.
 func fillBody(content string, contentH int) string {
-	return fillBodyEpoch(content, contentH, 0)
-}
-
-// fillBodyEpoch is like fillBody but on Linux terminals (epoch>0) it wraps
-// each padded line with a cycling invisible ANSI marker so that cellbuf's
-// Clear() check fails — forcing every padded cell to be emitted as a real
-// write rather than optimised away with \e[K (which is broken on Linux).
-func fillBodyEpoch(content string, contentH int, epoch uint64) string {
 	if contentH <= 0 {
 		return content
 	}
@@ -151,20 +143,7 @@ func fillBodyEpoch(content string, contentH int, epoch uint64) string {
 	if current >= contentH {
 		return content
 	}
-	pad := " \n"
-	if epoch > 0 {
-		// Cycle through invisible markers that are visually identical
-		// but produce different cellbuf cells, forcing a full redraw.
-		switch epoch % 3 {
-		case 1:
-			pad = "\033[2m \033[22m\n" // dim space, then undim
-		case 2:
-			pad = "\033[7m \033[27m\n" // reverse space, then unreverse
-		default:
-			pad = "\033[0m \n" // reset + space
-		}
-	}
-	return content + strings.Repeat(pad, contentH-current)
+	return content + strings.Repeat(" \n", contentH-current)
 }
 
 // padOrTrunc returns s truncated or padded with spaces to exactly w cells.

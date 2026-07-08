@@ -547,14 +547,6 @@ func (m *Model) saveConfig(msg string) {
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
-	// On Linux terminals, bump epoch on every update so fillBodyEpoch
-	// toggles padding and forces cellbuf to re-render all lines.
-	// This prevents stale content from the render diff optimisation
-	// which is unreliable on the Linux framebuffer console.
-	if useANSIPalette() {
-		m.screenEpoch++
-	}
-
 	// WindowSizeMsg — store dimensions first; invalidate map cache on resize
 	if wsm, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width = wsm.Width
@@ -715,7 +707,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if handledCmd != nil {
 				cmd = tea.Batch(cmd, handledCmd)
 			}
+			// On Linux terminals, clear the screen on every keypress
+			// to work around cellbuf rendering artifacts (BCE issues).
+			if useANSIPalette() {
+				cmd = tea.Batch(cmd, tea.ClearScreen)
+			}
 			return m, cmd
+		}
+		// Non-global key: still clear on Linux to prevent stale content.
+		if useANSIPalette() {
+			cmd = tea.Batch(cmd, tea.ClearScreen)
 		}
 	}
 
@@ -1061,29 +1062,7 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 		}
 		clamped = m.rc.bodyClipStyle.Render(body)
 	}
-	result := fillBodyEpoch(clamped, l.ContentH, m.screenEpoch)
-
-	// On Linux terminals, embed an invisible cycling ANSI marker at the
-	// start of every line so that no cell is "clearable" from cellbuf's
-	// perspective. This forces every line to be fully re-emitted on every
-	// frame, preventing stale content from \e[K optimisations which are
-	// broken on the Linux framebuffer console (no BCE support).
-	// Only dim (2/22) and reverse (7/27) are used — they don't affect
-	// foreground/background colours, preserving Lip Gloss styles.
-	if useANSIPalette() && m.screenEpoch > 0 {
-		marker := "\033[2m\033[22m" // dim then undim
-		if m.screenEpoch%2 == 0 {
-			marker = "\033[7m\033[27m" // reverse then unreverse
-		}
-		lines := strings.Split(result, "\n")
-		for i := range lines {
-			if lines[i] != "" {
-				lines[i] = marker + lines[i]
-			}
-		}
-		result = strings.Join(lines, "\n")
-	}
-	return result
+	return fillBody(clamped, l.ContentH)
 }
 
 // buildQSOFormWithLayout renders the QSO form, short path info, and recent
