@@ -240,21 +240,24 @@ func (mr *mapRenderer) renderKitty(ownLat, ownLon, partnerLat, partnerLon float6
 	mr.graylineOn = drawGrayline
 	mr.graylineSlot = graySlot
 
+	// Pre-set cache dimensions so the next frame hits the cheap cache
+	// check and uses whatever Kitty frame has arrived by then. Without
+	// this, kittyW stays 0 and every frame rebuilds + falls back to
+	// ANSI because View().Content is still stale (pending not yet run).
+	mr.kittyW = mapW
+	mr.kittyH = mapH
+	mr.kittyDirty = false
+
 	kittyOut := mr.kittyPic.View().Content
 	if kittyOut == "" || isGlyphFallback(kittyOut) {
 		// Kitty frame not ready yet — use the ANSI map as a
-		// height-stable fallback. Do NOT set kittyW/H;
-		// mr.kittyDirty stays false so the next frame hits
-		// the ANSI fallback again until kittyOut is ready.
+		// height-stable fallback. Next frame will hit the cache
+		// and try kittyOut again (pending has now been processed).
 		return mr.drawMarkers(mr.renderBase(mapW, mapAvailH, drawGrayline),
 			ownLat, ownLon, partnerLat, partnerLon, mr.cacheW, mr.cacheH)
 	}
 
-	// Kitty frame arrived — persist the cache dimensions so future
-	// frames short-circuit on the cheap cache check.
-	mr.kittyDirty = false
-	mr.kittyW = mapW
-	mr.kittyH = mapH
+	// Kitty frame arrived — persist and return.
 	return mr.appendKittyLegend(kittyOut)
 }
 

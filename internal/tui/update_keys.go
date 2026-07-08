@@ -70,8 +70,12 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			m.screen = screenPartner
 			m.photo.lastErr = nil
 			m.photo.lastURL = ""
+			m.photo.viewerLastW = 0
+			m.photo.viewerLastH = 0
 			// Reset photo dimension tracking so handlePartnerUpdate
 			// re-applies SetSize with correct inline dimensions.
+			m.photo.partnerPicW = 0
+			m.photo.partnerPicH = 0
 			m.photo.partnerPicLastW = 0
 			m.photo.partnerPicLastH = 0
 			m.photo.partnerPicNeedSize = true
@@ -82,19 +86,18 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			applog.Debug("F2: opening image view", "url", m.lookup.partnerData.ImageURL)
 			m.screen = screenImage
 			m.photo.lastURL = m.lookup.partnerData.ImageURL
-			// Clear inline photo state so a fresh load fires when
-			// cycling back to Partner (fixes stuck "Loading…" on retry).
 			m.photo.partnerPicURL = ""
 			m.photo.partnerPicNeedLoad = false
 			w := m.width
-			h := m.height - 4 // header/tab/help overhead
+			h := contentHeight(m.height)
 			if w < 20 {
 				w = 80
 			}
 			if h < 10 {
 				h = 10
 			}
-			h-- // bottom hint row
+			m.photo.viewerLastW = w
+			m.photo.viewerLastH = h
 			return tea.Batch(
 				m.photo.viewer.SetSize(w, h),
 				m.photo.viewer.SetURL(m.lookup.partnerData.ImageURL),
@@ -601,6 +604,10 @@ func (m *Model) handlePaneNav(msg tea.KeyPressMsg) bool {
 	if m.screen == screenImage && target != screenImage {
 		m.photo.lastErr = nil
 		m.photo.lastURL = ""
+		m.photo.viewerLastW = 0
+		m.photo.viewerLastH = 0
+		m.photo.partnerPicW = 0
+		m.photo.partnerPicH = 0
 		m.photo.partnerPicLastW = 0
 		m.photo.partnerPicLastH = 0
 		m.photo.partnerPicNeedSize = true

@@ -239,7 +239,7 @@ func (m *Model) viewPartner() string {
 				picRaw = DimStyle.Render("Loading\u2026")
 			}
 		}
-		picContentH := leftH - 3 // header + border
+		picContentH := leftH - 1 // header only (no border)
 		if picContentH < 1 {
 			picContentH = 1
 		}
@@ -252,7 +252,10 @@ func (m *Model) viewPartner() string {
 		}
 		header := S.Label.Width(photoW - 4).MaxWidth(photoW - 4).Inline(true).Render("Photo")
 		inner := lipgloss.JoinVertical(lipgloss.Left, header, strings.Join(picLines, "\n"))
-		picBox := drawBorderedBox(inner, photoW+1)
+		// Use plain padding (no border, no lipgloss.Border()) — ANSI
+		// sequences from Border() offset the Kitty placeholder's grid
+		// position, shifting the image right.
+		picBox := menuBoxStyle.Width(photoW + 1).Render(inner)
 		// Pad the shorter column with newlines instead of using
 		// lipgloss.Place, which wraps content in ANSI escapes
 		// that can shift Kitty virtual image placement.

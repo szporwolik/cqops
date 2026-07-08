@@ -513,6 +513,11 @@ func (m *Model) Init() tea.Cmd {
 	})
 	m.App.MaybeRestartAPRS()
 	cmds := []tea.Cmd{tickCmd(), m.photo.viewer.Init(), m.emitWindowIconCmd()}
+	// Give the inline partner photo viewer an initial size so the Kitty
+	// placeholder renders at a valid position from frame one. Without
+	// this, the first frame's placeholder is 0-sized and the Kitty image
+	// appears shifted until handlePartnerUpdate dispatches the real SetSize.
+	cmds = append(cmds, m.photo.partnerPicViewer.SetSize(25, 4))
 	// Only probe Kitty support when the config is enabled AND the
 	// terminal env vars indicate a Kitty-compatible terminal.
 	// Avoids emitting APC probe garbage on Konsole/xterm/linux console
@@ -807,7 +812,9 @@ func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if h < 10 {
 				h = 10
 			}
-			cmd = tea.Batch(cmd, m.photo.viewer.SetSize(w, h-1), m.photo.viewer.SetURL(m.lookup.partnerData.ImageURL))
+			m.photo.viewerLastW = w
+			m.photo.viewerLastH = h
+			cmd = tea.Batch(cmd, m.photo.viewer.SetSize(w, h), m.photo.viewer.SetURL(m.lookup.partnerData.ImageURL))
 		}
 		// Log image errors once and show toast.
 		if err := m.photo.viewer.Err(); err != nil && m.photo.lastErr != err {
@@ -828,8 +835,12 @@ func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if h < 10 {
 				h = 10
 			}
-			if c := m.photo.viewer.SetSize(w, h); c != nil {
-				cmd = tea.Batch(cmd, c)
+			if (w != m.photo.viewerLastW || h != m.photo.viewerLastH) && w >= 20 && h >= 10 {
+				m.photo.viewerLastW = w
+				m.photo.viewerLastH = h
+				if c := m.photo.viewer.SetSize(w, h); c != nil {
+					cmd = tea.Batch(cmd, c)
+				}
 			}
 		}
 		c := m.photo.viewer.Update(msg)
