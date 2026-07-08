@@ -707,16 +707,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if handledCmd != nil {
 				cmd = tea.Batch(cmd, handledCmd)
 			}
-			// On Linux terminals, clear the screen on every keypress
-			// to work around cellbuf rendering artifacts (BCE issues).
-			if useANSIPalette() {
-				cmd = tea.Batch(cmd, tea.ClearScreen)
-			}
 			return m, cmd
-		}
-		// Non-global key: still clear on Linux to prevent stale content.
-		if useANSIPalette() {
-			cmd = tea.Batch(cmd, tea.ClearScreen)
 		}
 	}
 
@@ -957,6 +948,11 @@ func (m *Model) View() tea.View {
 	v := tea.NewView(finalView)
 	v.AltScreen = true
 	v.WindowTitle = m.windowTitle()
+	// On Linux framebuffer console, clear the screen before every frame.
+	// Cellbuf's diff-based rendering is unreliable on terminals without BCE.
+	if useANSIPalette() {
+		v.Content = "\033[2J\033[H" + v.Content
+	}
 	return v
 }
 
