@@ -1061,24 +1061,7 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 		}
 		clamped = m.rc.bodyClipStyle.Render(body)
 	}
-	result := fillBodyEpoch(clamped, l.ContentH, m.screenEpoch)
-
-	// On Linux terminals, prefix every line with an invisible marker
-	// that alternates per frame. This makes the first cell of every
-	// line differ from the previous frame, forcing cellbuf to re-render
-	// the entire line — preventing stale content and ghost cursors.
-	if useANSIPalette() && m.screenEpoch > 0 {
-		marker := "\033[0m"
-		if m.screenEpoch%2 == 0 {
-			marker = "\033[1m\033[22m" // bold-then-normal, invisible
-		}
-		lines := strings.Split(result, "\n")
-		for i := range lines {
-			lines[i] = marker + lines[i]
-		}
-		result = strings.Join(lines, "\n")
-	}
-	return result
+	return fillBodyEpoch(clamped, l.ContentH, m.screenEpoch)
 }
 
 // buildQSOFormWithLayout renders the QSO form, short path info, and recent
