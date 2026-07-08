@@ -89,7 +89,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			m.photo.partnerPicURL = ""
 			m.photo.partnerPicNeedLoad = false
 			w := m.width
-			h := contentHeight(m.height)
+			h := m.height - 3 // full content area (ContentH = TerminalH - 3)
 			if w < 20 {
 				w = 80
 			}

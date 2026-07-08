@@ -814,7 +814,7 @@ func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lookup.partnerData.ImageURL != m.photo.lastURL {
 			m.photo.lastURL = m.lookup.partnerData.ImageURL
 			w := m.width
-			h := contentHeight(m.height)
+			h := m.height - 3 // full content area (ContentH = TerminalH - 3)
 			if w < 20 {
 				w = 80
 			}
@@ -837,7 +837,7 @@ func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Reapply size on resize while viewing image.
 		if _, ok := msg.(tea.WindowSizeMsg); ok {
 			w := m.width
-			h := contentHeight(m.height)
+			h := m.height - 3 // full content area (ContentH = TerminalH - 3)
 			if w < 20 {
 				w = 80
 			}
@@ -1013,16 +1013,13 @@ func (m *Model) View() tea.View {
 func (m *Model) viewImage(l Layout) string {
 	content := m.photo.viewer.View().Content
 
-	// Cache image styles — rebuilt only when dimensions change.
+	// Cache placeholder style — rebuilt only when dimensions change.
 	if m.rc.imagePlaceholderW != l.TerminalW || m.rc.imagePlaceholderH != l.ContentH {
 		m.rc.imagePlaceholderStyle = lipgloss.NewStyle().
 			Width(l.TerminalW).
 			Height(l.ContentH).
 			Align(lipgloss.Center, lipgloss.Center).
 			Foreground(P.TextMuted)
-		m.rc.imageContentStyle = lipgloss.NewStyle().
-			Width(l.TerminalW).
-			Height(l.ContentH)
 		m.rc.imagePlaceholderW = l.TerminalW
 		m.rc.imagePlaceholderH = l.ContentH
 	}
@@ -1049,9 +1046,10 @@ func (m *Model) viewImage(l Layout) string {
 			msg = "No image"
 		}
 		content = m.rc.imagePlaceholderStyle.Render(msg)
-	} else {
-		content = m.rc.imageContentStyle.Render(content)
 	}
+	// Return raw content — buildBodyForScreen's fillBody handles height
+	// padding. Wrapping in lipgloss styles adds ANSI sequences that shift
+	// the Kitty placeholder's grid position.
 	return content
 }
 
@@ -1068,7 +1066,14 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 			body = m.viewPartner()
 		}
 	case screenImage:
-		body = m.viewImage(l)
+		raw := m.photo.viewer.View().Content
+		if raw == "" || m.photo.viewer.Err() != nil {
+			body = m.viewImage(l)
+		} else {
+			// Kitty/glyph content already at correct dimensions —
+			// no wrapping, no padding, no ANSI before placeholder.
+			return raw
+		}
 	case screenPSKReporter:
 		body = m.viewPSKReporter()
 	case screenMainMenu:

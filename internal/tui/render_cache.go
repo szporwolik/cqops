@@ -87,9 +87,6 @@ type renderCache struct {
 	imagePlaceholderStyle lipgloss.Style
 	imagePlaceholderW     int
 	imagePlaceholderH     int
-	imageContentStyle     lipgloss.Style
-	imageContentW         int
-	imageContentH         int
 
 	// Path state (committed call/grid, updated on field exit).
 	pathCall string
