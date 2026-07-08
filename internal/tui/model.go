@@ -1042,12 +1042,17 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 	if body == "" {
 		return ""
 	}
-	// Clamp to contentH so toggling a menu item never shifts the bottom bars.
-	if m.rc.bodyClipStyleH != l.ContentH {
-		m.rc.bodyClipStyle = lipgloss.NewStyle().MaxHeight(l.ContentH)
-		m.rc.bodyClipStyleH = l.ContentH
+	// Clamp overflow to contentH, then pad to fill the content area so the
+	// help bar always sits at the bottom row.
+	clamped := body
+	if h := lipgloss.Height(body); h > l.ContentH {
+		if m.rc.bodyClipStyleH != l.ContentH {
+			m.rc.bodyClipStyle = lipgloss.NewStyle().MaxHeight(l.ContentH)
+			m.rc.bodyClipStyleH = l.ContentH
+		}
+		clamped = m.rc.bodyClipStyle.Render(body)
 	}
-	return m.rc.bodyClipStyle.Render(body)
+	return fillBody(clamped, l.ContentH)
 }
 
 // buildQSOFormWithLayout renders the QSO form, short path info, and recent

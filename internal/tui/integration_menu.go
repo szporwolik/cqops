@@ -1492,7 +1492,7 @@ func (im *IntegrationMenu) View() tea.View {
 	if boxW > partnerMapMaxW {
 		boxW = partnerMapMaxW
 	}
-	vpW := boxW - 4 // account for menu box border + padding
+	vpW := boxW - 4 // account for menu box left+right padding
 	if vpW < 20 {
 		vpW = 20
 	}
@@ -1500,8 +1500,8 @@ func (im *IntegrationMenu) View() tea.View {
 	if contentH < 8 {
 		contentH = 8
 	}
-	// Reserve one line for the scroll indicator inside the box.
-	vpH := contentH - 6 // header(1) + box border/padding(4) + hint(1)
+	// Overhead: header(1) + blank row(1) + scroll hint(1) = 3 lines.
+	vpH := contentH - 3
 	if vpH < 4 {
 		vpH = 4
 	}
@@ -1525,7 +1525,7 @@ func (im *IntegrationMenu) View() tea.View {
 	}
 	vpContent = lipgloss.JoinVertical(lipgloss.Left, vpContent, hintLine)
 	box := menuBoxStyle.Width(boxW).Render(vpContent)
-	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, header, box))
+	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, header, "", box))
 }
 
 // renderField renders a labelled textinput line with cursor indicator.

@@ -48,6 +48,7 @@ type LogbookChooser struct {
 	// Viewport for scrolling form content on small terminals.
 	vp              viewport.Model
 	lastFormContent string
+	lastListContent string
 
 	// APRS async state.
 	aprsTesting bool
@@ -212,12 +213,17 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				c.dialog = &d
 			}
 
+		case c.mode == chooserList && (k.String() == "pgup" || k.String() == "pgdown" || k.String() == "home" || k.String() == "end"):
+			c.vp, _ = c.vp.Update(msg)
+			return c, nil
+
 		case c.mode == chooserList && (msg.Code == tea.KeyUp || k.String() == "up" || k.String() == "k"):
 			if c.cursor == 0 {
 				c.cursor = len(c.names) - 1
 			} else {
 				c.cursor--
 			}
+			scrollVpToLine(&c.vp, c.cursor)
 
 		case c.mode == chooserList && (msg.Code == tea.KeyDown || k.String() == "down" || k.String() == "j"):
 			if c.cursor == len(c.names)-1 {
@@ -225,6 +231,7 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				c.cursor++
 			}
+			scrollVpToLine(&c.vp, c.cursor)
 
 		case c.mode == chooserEdit || c.mode == chooserCreate:
 			if cmd := c.station.HandleKey(msg); cmd != nil {
@@ -294,10 +301,6 @@ func (c *LogbookChooser) viewList() string {
 	if h < 10 {
 		h = 24
 	}
-	contentH := contentHeight(h)
-	if contentH < 3 {
-		contentH = 3
-	}
 
 	if len(c.names) == 0 {
 		b.WriteString("No logbooks configured.\n")
@@ -344,8 +347,7 @@ func (c *LogbookChooser) viewList() string {
 		}
 	}
 
-	body := drawMenuWithHeader("Configuration \u2014 Logbooks", b.String(), w)
-	return fillBody(body, contentH)
+	return renderScrollableMenu("Configuration \u2014 Logbooks", b.String(), &c.vp, &c.lastListContent, w, h)
 }
 
 func (c *LogbookChooser) viewForm() string {
@@ -391,19 +393,16 @@ func (c *LogbookChooser) viewForm() string {
 	if boxW > partnerMapMaxW {
 		boxW = partnerMapMaxW
 	}
-	vpW := boxW - 4 // account for menu box border + padding
+	vpW := boxW - 4 // account for menu box left+right padding
 	if vpW < 20 {
 		vpW = 20
 	}
-	// contentH = usable area after status/help bars.
-	// vpH = contentH minus header(1) minus menu box overhead:
-	// border top(1) + padding top(1) + padding bottom(1) + border bottom(1) = 4,
-	// plus one reserved line for the scroll indicator.
+	// Overhead: header(1) + blank row(1) + scroll hint(1) = 3 lines.
 	contentH := contentHeight(h)
 	if contentH < 8 {
 		contentH = 8
 	}
-	vpH := contentH - 6
+	vpH := contentH - 3
 	if vpH < 4 {
 		vpH = 4
 	}
@@ -428,7 +427,7 @@ func (c *LogbookChooser) viewForm() string {
 	}
 	vpContent = lipgloss.JoinVertical(lipgloss.Left, vpContent, hintLine)
 	box := menuBoxStyle.Width(boxW).Render(vpContent)
-	return lipgloss.JoinVertical(lipgloss.Left, header, box)
+	return lipgloss.JoinVertical(lipgloss.Left, header, "", box)
 }
 
 // autoScrollViewport adjusts the viewport Y offset to keep the currently
