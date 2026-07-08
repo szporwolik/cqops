@@ -78,8 +78,7 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("F9/Alt+9", "CFG"),
 		),
 		Logs: key.NewBinding(
-			key.WithKeys("ctrl+f9"),
-			key.WithHelp("Ctrl+F9", "Logs"),
+			key.WithKeys("ctrl+f9", "ctrl+alt+9"),
 		),
 		Ref: key.NewBinding(
 			key.WithKeys("f6", "alt+6"),

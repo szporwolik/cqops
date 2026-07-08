@@ -159,18 +159,6 @@ func (nm *NotificationsMenu) View() tea.View {
 
 	var b strings.Builder
 
-	// Permanent warning when desktop notifications are not available.
-	if !desktopAvailable() {
-		b.WriteString(S.ToastWarning.Render("  ⚠ Desktop notifications unavailable — no GUI/D-Bus session detected"))
-		b.WriteString("\n\n")
-	}
-
-	// Status message (test result).
-	if nm.statusMsg != "" {
-		b.WriteString(S.ToastInfo.Render("  " + nm.statusMsg))
-		b.WriteString("\n\n")
-	}
-
 	// Row 0: master toggle
 	nm.renderCheckbox(&b, boxW, 0, "System notifications", nm.enabled, false)
 
@@ -200,6 +188,16 @@ func (nm *NotificationsMenu) View() tea.View {
 
 	// Row 6: Test beep button
 	renderBtn(6, "[ Test beep ]")
+
+	// Status lines shown below the buttons.
+	if !desktopAvailable() {
+		b.WriteString("\n")
+		b.WriteString(S.ToastWarning.Render("  ⚠ Desktop notifications unavailable — no GUI/D-Bus session detected"))
+	}
+	if nm.statusMsg != "" {
+		b.WriteString("\n")
+		b.WriteString(S.ToastInfo.Render("  " + nm.statusMsg))
+	}
 
 	body := drawMenuWithHeader("Configuration \u2014 Notifications", b.String(), w)
 	if nm.cachedClipH != contentH {

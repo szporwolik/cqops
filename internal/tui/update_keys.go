@@ -523,16 +523,16 @@ func (m *Model) paneScreens() []screenKind {
 
 	var screens []screenKind
 	screens = append(screens, screenQSO) // always
-	if hasPartner {
+	if hasPartner || m.screen == screenPartner {
 		screens = append(screens, screenPartner)
 	}
-	if dxcOnline {
+	if dxcOnline || m.screen == screenDXC {
 		screens = append(screens, screenDXC)
 	}
-	if m.inetOnline {
+	if m.inetOnline || m.screen == screenPSKReporter {
 		screens = append(screens, screenPSKReporter)
 	}
-	if m.isREFReady() {
+	if m.isREFReady() || m.screen == screenRef {
 		screens = append(screens, screenRef)
 	}
 	screens = append(screens, screenBPL)           // always
@@ -548,13 +548,20 @@ func (m *Model) handlePaneNav(msg tea.KeyPressMsg) bool {
 	if k != "ctrl+left" && k != "ctrl+right" {
 		return false
 	}
+
+	// Image is an overlay on Partner, not a pane. Navigate as Partner.
+	screen := m.screen
+	if screen == screenImage {
+		screen = screenPartner
+	}
+
 	screens := m.paneScreens()
 	if len(screens) == 0 {
 		return false
 	}
 	idx := -1
 	for i, s := range screens {
-		if s == m.screen {
+		if s == screen {
 			idx = i
 			break
 		}
@@ -588,6 +595,16 @@ func (m *Model) handlePaneNav(msg tea.KeyPressMsg) bool {
 			m.ui.mainMenu.width = m.width
 			m.ui.mainMenu.height = m.height
 		}
+	}
+
+	// When leaving the image screen via pane nav, clear photo state.
+	if m.screen == screenImage && target != screenImage {
+		m.photo.lastErr = nil
+		m.photo.lastURL = ""
+		m.photo.partnerPicLastW = 0
+		m.photo.partnerPicLastH = 0
+		m.photo.partnerPicNeedSize = true
+		m.invalidatePartnerMapCache()
 	}
 
 	m.screen = target
