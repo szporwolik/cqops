@@ -102,6 +102,14 @@ func (m *Model) viewPartner() string {
 		m.App.Config.General.RenderMap,
 		m.App.Config.General.DrawGrayline)
 	fmt.Fprintf(&sigB, "|fmgrid=%s|gridsrc=%s", m.fields[fieldGrid].Value(), m.gridSource)
+	// Kitty map readiness — bust cache when the real Kitty grid
+	// replaces the glyph fallback so the map switches quality.
+	if m.mapView != nil && m.mapView.KittyOn() && m.App.Config.General.RenderMap {
+		kittyContent := m.mapView.KittyContent()
+		// Bucket by 256-byte chunks; 0 = not ready (glyph/empty),
+		// non-zero = real kitty grid arrived.
+		fmt.Fprintf(&sigB, "|kmap=%d", len(kittyContent)>>8)
+	}
 	// Inline photo — only bust cache on significant content changes,
 	// not on every progressive-render frame (avoids 100% CPU on slow PCs).
 	if d != nil && d.ImageURL != "" {

@@ -199,12 +199,10 @@ func (mr *mapRenderer) renderKitty(ownLat, ownLon, partnerLat, partnerLon float6
 		mr.graylineOn == drawGrayline && mr.graylineSlot == graySlot &&
 		mr.kittyW > 0 {
 		kittyOut := mr.kittyPic.View().Content
-		if kittyOut != "" {
+		if kittyOut != "" && !isGlyphFallback(kittyOut) {
 			return mr.appendKittyLegend(kittyOut)
 		}
-		// Kitty frame not yet available (shouldn't normally happen
-		// when W/H are set, but guard against it). Fall through
-		// to rebuild.
+		// Glyph fallback — fall through to rebuild.
 	}
 
 	// Render at the picture model's cell-pixel resolution so no
@@ -243,7 +241,7 @@ func (mr *mapRenderer) renderKitty(ownLat, ownLon, partnerLat, partnerLon float6
 	mr.graylineSlot = graySlot
 
 	kittyOut := mr.kittyPic.View().Content
-	if kittyOut == "" {
+	if kittyOut == "" || isGlyphFallback(kittyOut) {
 		// Kitty frame not ready yet — use the ANSI map as a
 		// height-stable fallback. Do NOT set kittyW/H;
 		// mr.kittyDirty stays false so the next frame hits
@@ -372,11 +370,20 @@ func (mr *mapRenderer) PSKMode() picture.PictureMode { return mr.pskKittyPic.Mod
 
 // PSKKittyReady reports whether the real Kitty grid (not the glyph
 // fallback) has arrived from the async PNG encode.
-// The glyph uses half-block characters (U+2580 ▀ or U+2584 ▄); the
-// Kitty grid uses Unicode PUA placeholder U+10EEEE.
 func (mr *mapRenderer) PSKKittyReady() bool {
-	c := mr.pskKittyPic.View().Content
-	return c != "" && !strings.Contains(c, "\u2580") && !strings.Contains(c, "\u2584")
+	return mr.pskKittyPic.View().Content != "" && !isGlyphFallback(mr.pskKittyPic.View().Content)
+}
+
+// KittyOn reports whether Kitty graphics mode is active on this renderer.
+func (mr *mapRenderer) KittyOn() bool { return mr.kittyOn }
+
+// KittyContent returns the current partner-map picture model output.
+func (mr *mapRenderer) KittyContent() string { return mr.kittyPic.View().Content }
+
+// isGlyphFallback detects the picture model's half-block glyph fallback
+// (▀ U+2580 or ▄ U+2584) which means the real Kitty grid hasn't arrived.
+func isGlyphFallback(s string) bool {
+	return strings.Contains(s, "\u2580") || strings.Contains(s, "\u2584")
 }
 
 // PSKDrawDot draws a filled circle at the given lat/lon on the RGBA image.
