@@ -218,7 +218,7 @@ func (m *Model) viewPartner() string {
 		}
 		mapBox := m.getOrBuildMap(d, contentW, mapAvailH)
 		if mapBox != "" {
-			mapBox = centerAndBorderMap(mapBox, contentW, leftW)
+			mapBox = menuBoxStyle.Width(leftW).Render(mapBox)
 			leftCol = lipgloss.JoinVertical(lipgloss.Left, topRow, mapBox)
 		} else {
 			leftCol = topRow

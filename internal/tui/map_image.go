@@ -85,7 +85,7 @@ type mapRenderer struct {
 }
 
 func newMapRenderer() *mapRenderer {
-	return &mapRenderer{
+	mr := &mapRenderer{
 		kittyPic: picture.NewWithConfig(picture.Config{
 			KittyID: kittyMapImageID,
 		}),
@@ -93,6 +93,14 @@ func newMapRenderer() *mapRenderer {
 			KittyID: kittyPSKImageID,
 		}),
 	}
+	// Pre-size both picture models so CellPixelSize() returns valid
+	// values from frame one — avoids generating tiny RGBA buffers
+	// before the first SetSize command is processed.
+	mr.kittyPending = tea.Sequence(
+		mr.kittyPic.SetSize(1, 1),
+		mr.pskKittyPic.SetSize(1, 1),
+	)
+	return mr
 }
 
 // Invalidate clears the base image cache so the next View() fully rebuilds.

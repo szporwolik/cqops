@@ -372,7 +372,7 @@ func (m *Model) viewPSKReporter() string {
 	if m.App.Config.General.RenderMap && m.mapView != nil {
 		mapW := totalW
 		topH := lipgloss.Height(topRow)
-		mapAvailH := contentHeight(m.height) - topH - 3
+		mapAvailH := contentHeight(m.height) - topH
 		if mapAvailH < 3 {
 			mapAvailH = 3
 		}
@@ -388,7 +388,7 @@ func (m *Model) viewPSKReporter() string {
 			mapBox = m.buildPSKMap(nil, contentW, mapAvailH)
 		}
 		if mapBox != "" {
-			mapBox = centerAndBorderMap(mapBox, contentW, mapW)
+			mapBox = menuBoxStyle.Width(mapW).Render(mapBox)
 			block = lipgloss.JoinVertical(lipgloss.Left, topRow, mapBox)
 		} else {
 			block = topRow
@@ -603,6 +603,12 @@ func (m *Model) buildPSKMap(reports []psk.Report, mapW, mapAvailH int) string {
 		}
 		applog.Debug("PSK: kitty pending, fallback to ANSI")
 		// Kitty frame not ready — fall through to ANSI path below.
+	} else if m.mapView != nil {
+		applog.Debug("PSK: kitty OFF",
+			"kittyOn", m.mapView.kittyOn,
+			"kittySupported", picture.KittySupported(),
+			"config", m.App.Config.General.KittyGraphics,
+		)
 	}
 
 	// --- ANSI path ---
@@ -661,7 +667,7 @@ func (m *Model) buildPSKMapKitty(reports []psk.Report, ownLat, ownLon float64, m
 		return ""
 	}
 
-	applog.Debug("PSK: buildPSKMapKitty", "mode", m.mapView.PSKMode(), "ready", m.mapView.PSKKittyReady())
+	applog.Debug("PSK: buildPSKMapKitty", "mode", m.mapView.PSKMode(), "ready", m.mapView.PSKKittyReady(), "adjW", adjW, "adjH", adjH)
 	for i := len(reports) - 1; i >= 0; i-- {
 		r := reports[i]
 		if r.ReceiverLocator == "" {
