@@ -547,6 +547,14 @@ func (m *Model) saveConfig(msg string) {
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
+	// On Linux terminals, bump epoch on every update so fillBodyEpoch
+	// toggles padding and forces cellbuf to re-render all lines.
+	// This prevents stale content from the render diff optimisation
+	// which is unreliable on the Linux framebuffer console.
+	if useANSIPalette() {
+		m.screenEpoch++
+	}
+
 	// WindowSizeMsg — store dimensions first; invalidate map cache on resize
 	if wsm, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width = wsm.Width
@@ -1042,12 +1050,6 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 	}
 	if body == "" {
 		return ""
-	}
-	// Bump screen epoch on transition — used by fillBody to force a full
-	// render diff, clearing stale content on Linux terminals.
-	if m.rc.lastScreen != m.screen {
-		m.screenEpoch++
-		m.rc.lastScreen = m.screen
 	}
 	// Clamp overflow to contentH, then pad to fill the content area so the
 	// help bar always sits at the bottom row.
