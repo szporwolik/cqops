@@ -136,6 +136,14 @@ func tern(cond bool, t, f string) string {
 // equals contentH. Each trailing line carries a single space to force
 // Bubble Tea's render diff to write to every line.
 func fillBody(content string, contentH int) string {
+	return fillBodyEpoch(content, contentH, 0)
+}
+
+// fillBodyEpoch is like fillBody but includes an epoch in the padding
+// to force a full render diff on screen transitions. When epoch > 0 and
+// has changed since the last frame, every padded line differs from the
+// previous frame, clearing stale content on Linux terminals.
+func fillBodyEpoch(content string, contentH int, epoch uint64) string {
 	if contentH <= 0 {
 		return content
 	}
@@ -143,7 +151,14 @@ func fillBody(content string, contentH int) string {
 	if current >= contentH {
 		return content
 	}
-	return content + strings.Repeat(" \n", contentH-current)
+	// Use non-breaking space (U+00A0) when forcing clear — it differs
+	// from the regular space (U+0020) normally used, making cellbuf
+	// detect a change on every padded line.
+	pad := " "
+	if epoch > 0 && epoch%2 == 1 {
+		pad = "\u00A0"
+	}
+	return content + strings.Repeat(pad+"\n", contentH-current)
 }
 
 // padOrTrunc returns s truncated or padded with spaces to exactly w cells.

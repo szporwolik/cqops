@@ -106,6 +106,7 @@ const (
 type Model struct {
 	App            *app.App
 	screen         screenKind
+	screenEpoch    uint64 // bumps on every screen transition, forces render diff
 	fields         [fieldCount]textinput.Model
 	focus          field
 	qsos           []qso.QSO
@@ -1042,6 +1043,12 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 	if body == "" {
 		return ""
 	}
+	// Bump screen epoch on transition — used by fillBody to force a full
+	// render diff, clearing stale content on Linux terminals.
+	if m.rc.lastScreen != m.screen {
+		m.screenEpoch++
+		m.rc.lastScreen = m.screen
+	}
 	// Clamp overflow to contentH, then pad to fill the content area so the
 	// help bar always sits at the bottom row.
 	clamped := body
@@ -1052,7 +1059,7 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 		}
 		clamped = m.rc.bodyClipStyle.Render(body)
 	}
-	return fillBody(clamped, l.ContentH)
+	return fillBodyEpoch(clamped, l.ContentH, m.screenEpoch)
 }
 
 // buildQSOFormWithLayout renders the QSO form, short path info, and recent

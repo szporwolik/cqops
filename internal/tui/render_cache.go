@@ -83,6 +83,9 @@ type renderCache struct {
 	bodyClipStyle  lipgloss.Style
 	bodyClipStyleH int
 
+	// Screen transition tracking — used to force full render clear on Linux.
+	lastScreen screenKind
+
 	// Cached image-screen styles — rebuilt only on dimension change.
 	imagePlaceholderStyle lipgloss.Style
 	imagePlaceholderW     int
