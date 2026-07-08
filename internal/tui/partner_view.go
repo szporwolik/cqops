@@ -11,7 +11,7 @@ import (
 	"github.com/szporwolik/cqops/internal/store"
 )
 
-const partnerMapMaxW = 128 // also used as max page width for QSO form consistency
+const partnerMapMaxW = 140 // also used as max page width for QSO form consistency
 
 // continentName maps 2-letter CTY.DAT continent codes to full names.
 func continentName(code string) string {
@@ -218,7 +218,7 @@ func (m *Model) viewPartner() string {
 		}
 		mapBox := m.getOrBuildMap(d, contentW, mapAvailH)
 		if mapBox != "" {
-			mapBox = menuBoxStyle.Width(leftW).Render(mapBox)
+			mapBox = lipgloss.PlaceHorizontal(leftW, lipgloss.Center, mapBox)
 			leftCol = lipgloss.JoinVertical(lipgloss.Left, topRow, mapBox)
 		} else {
 			leftCol = topRow

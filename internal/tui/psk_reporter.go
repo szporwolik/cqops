@@ -372,7 +372,7 @@ func (m *Model) viewPSKReporter() string {
 	if m.App.Config.General.RenderMap && m.mapView != nil {
 		mapW := totalW
 		topH := lipgloss.Height(topRow)
-		mapAvailH := contentHeight(m.height) - topH
+		mapAvailH := contentHeight(m.height) - topH - 1 // -1 for legend line
 		if mapAvailH < 3 {
 			mapAvailH = 3
 		}
@@ -388,7 +388,7 @@ func (m *Model) viewPSKReporter() string {
 			mapBox = m.buildPSKMap(nil, contentW, mapAvailH)
 		}
 		if mapBox != "" {
-			mapBox = menuBoxStyle.Width(mapW).Render(mapBox)
+			mapBox = lipgloss.PlaceHorizontal(mapW, lipgloss.Center, mapBox)
 			block = lipgloss.JoinVertical(lipgloss.Left, topRow, mapBox)
 		} else {
 			block = topRow
