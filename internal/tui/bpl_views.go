@@ -353,13 +353,13 @@ func (m *Model) viewBPL(l Layout) string {
 	}
 	body := m.renderBPLContent(lines)
 
-	// Disclaimer footer.
-	footer := DimStyle.Width(w).Render(" Listen first. Check national rules. VHF/UHF often needs country/local overrides.")
-	content := header + "\n " + tabBar + "\n\n" + body + "\n\n" + footer
+	// Content without the disclaimer footer — that's pinned as the last
+	// content row by buildBodyForScreen directly above the help bar.
+	content := header + "\n " + tabBar + "\n\n" + body
 
-	m.bpl.cachedView = fillBody(content, ch)
+	m.bpl.cachedView = content
 	m.bpl.cachedSig = sig
-	return m.bpl.cachedView
+	return content
 }
 
 // viewBPLHAM returns lines for the amateur HF band plan (160m–10m).
