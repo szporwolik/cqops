@@ -130,18 +130,19 @@ var dxcReconnectDelays = []time.Duration{
 func (m *Model) maybeDXC() tea.Cmd {
 	cfg := m.App.Config.Integrations.DXC
 
-	// Not enabled — ensure disconnected.
+	// Not enabled — ensure disconnected and reset all state.
 	if !cfg.Enabled {
 		if m.dxc.client != nil {
 			m.dxc.client.Stop()
 			m.dxc.client = nil
 		}
-		if m.dxc.online {
-			m.dxc.online = false
-			m.rc.status = ""
-			if m.screen == screenDXC {
-				m.screen = screenQSO
-			}
+		m.dxc.online = false
+		m.dxc.connecting = false
+		m.dxc.lastAttempt = time.Time{}
+		m.dxc.reconnectIdx = 0
+		m.rc.status = ""
+		if m.screen == screenDXC {
+			m.screen = screenQSO
 		}
 		return nil
 	}
@@ -152,12 +153,13 @@ func (m *Model) maybeDXC() tea.Cmd {
 			m.dxc.client.Stop()
 			m.dxc.client = nil
 		}
-		if m.dxc.online {
-			m.dxc.online = false
-			m.rc.status = ""
-			if m.screen == screenDXC {
-				m.screen = screenQSO
-			}
+		m.dxc.online = false
+		m.dxc.connecting = false
+		m.dxc.lastAttempt = time.Time{}
+		m.dxc.reconnectIdx = 0
+		m.rc.status = ""
+		if m.screen == screenDXC {
+			m.screen = screenQSO
 		}
 		return nil
 	}

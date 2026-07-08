@@ -193,12 +193,14 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 		if m.ui.integrationMenu.saved {
 			dxcE, dxcHost, dxcPort, dxcLogin, qrzE, qrzUser, qrzPass, httpE, httpAddr, httpPort, httpHdr1, httpHdr2, httpLogo, httpEvtStart := m.ui.integrationMenu.Values()
 
-			// Only restart the HTTP server when address, port, or enabled
-			// state actually change. Header/logo changes are picked up by
-			// pushDashboardState on the next tick — no restart needed.
+			// Restart the HTTP server when address, port, or enabled
+			// state actually change, OR when the server should be running
+			// but isn't (silent crash recovery). Header/logo changes are
+			// picked up by pushDashboardState — no restart needed.
 			needHTTPRestart := httpE != m.App.Config.Integrations.HTTPServer.Enabled ||
 				httpAddr != m.App.Config.Integrations.HTTPServer.Address ||
-				httpPort != m.App.Config.Integrations.HTTPServer.Port
+				httpPort != m.App.Config.Integrations.HTTPServer.Port ||
+				(httpE && !m.http.online)
 
 			m.App.Config.Integrations.DXC.Enabled = dxcE
 			m.App.Config.Integrations.DXC.Host = dxcHost
