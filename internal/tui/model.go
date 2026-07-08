@@ -106,7 +106,6 @@ const (
 type Model struct {
 	App            *app.App
 	screen         screenKind
-	screenEpoch    uint64 // bumps on every screen transition, forces render diff
 	fields         [fieldCount]textinput.Model
 	focus          field
 	qsos           []qso.QSO
