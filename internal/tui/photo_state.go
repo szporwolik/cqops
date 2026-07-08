@@ -31,6 +31,11 @@ type photoState struct {
 // short-circuits on nil image). The mode change persists and
 // takes effect when the next SetURL / SetImage arrives.
 func (ps *photoState) ensureKitty(enabled bool) tea.Cmd {
+	// Toggle back to Glyph when Kitty is disabled mid-run.
+	if !enabled && ps.kittyToggled {
+		ps.kittyToggled = false
+		return tea.Batch(ps.viewer.Toggle(), ps.partnerPicViewer.Toggle())
+	}
 	if !enabled || ps.kittyToggled {
 		return nil
 	}
