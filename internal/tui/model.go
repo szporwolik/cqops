@@ -386,6 +386,12 @@ func (m *Model) ensureMapKitty() tea.Cmd {
 	}
 	if !m.mapView.kittyOn &&
 		picture.KittySupported() == picture.KittyCapabilitySupported {
+		// Double-check with env vars — ntcharts may have
+		// force-enabled via QueryKittySupport on terminals
+		// that don't actually support it (Konsole, etc.).
+		if !kittyTerminalEnv() {
+			return nil
+		}
 		m.psk.mapSig = ""
 		m.psk.mapView = ""
 		m.psk.viewKey = ""
@@ -393,6 +399,31 @@ func (m *Model) ensureMapKitty() tea.Cmd {
 		return m.mapView.SetKittyEnabled(true)
 	}
 	return nil
+}
+
+// kittyTerminalEnv reports whether the current terminal is known to
+// support the Kitty graphics protocol (kitty, Ghostty, WezTerm).
+// Used as a guard to prevent ntcharts from activating Kitty on
+// terminals like Konsole that may accidentally pass the probe.
+func kittyTerminalEnv() bool {
+	if os.Getenv("KITTY_WINDOW_ID") != "" || os.Getenv("KITTY_INSTALLATION_DIR") != "" {
+		return true
+	}
+	if os.Getenv("GHOSTTY_RESOURCES_DIR") != "" {
+		return true
+	}
+	if os.Getenv("WEZTERM_EXECUTABLE") != "" || os.Getenv("WEZTERM_PANE") != "" {
+		return true
+	}
+	switch os.Getenv("TERM") {
+	case "xterm-kitty", "xterm-ghostty":
+		return true
+	}
+	switch os.Getenv("TERM_PROGRAM") {
+	case "ghostty", "WezTerm", "kitty", "iTerm.app":
+		return true
+	}
+	return false
 }
 
 func (m *Model) Init() tea.Cmd {
