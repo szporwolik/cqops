@@ -384,8 +384,13 @@ func (m *Model) ensureMapKitty() tea.Cmd {
 	if !m.App.Config.General.KittyGraphics {
 		return nil
 	}
-	if !m.mapView.kittyOn &&
-		picture.KittySupported() == picture.KittyCapabilitySupported {
+	// Force-enable the process-wide capability. This covers the case
+	// where KittyGraphics was off at startup (probe already timed out
+	// to Unsupported) and was later enabled mid-run.
+	if picture.KittySupported() != picture.KittyCapabilitySupported {
+		picture.ForceKittyCapability(picture.KittyCapabilitySupported)
+	}
+	if !m.mapView.kittyOn {
 		m.psk.mapSig = ""
 		m.psk.mapView = ""
 		m.psk.viewKey = ""
