@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"image/color"
 	"sort"
 	"strconv"
 	"strings"
@@ -9,6 +10,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/NimbleMarkets/ntcharts/v2/picture"
+	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/psk"
 	"github.com/szporwolik/cqops/internal/store"
 )
@@ -246,8 +249,21 @@ func (m *Model) viewPSKReporter() string {
 	sb.WriteString(m.psk.spotKey)
 	sb.WriteByte('|')
 	sb.WriteString(strconv.Itoa(len(m.psk.spots)))
+	// Kitty frame readiness — when the PSK kitty grid arrives its
+	// content length changes, busting the outer view cache.
+	if m.mapView != nil {
+		sb.WriteByte('|')
+		sb.WriteString(strconv.Itoa(len(m.mapView.PSKView())))
+	}
 	sig := sb.String()
-	if m.psk.viewKey == sig && m.psk.view != "" {
+	// While waiting for the Kitty frame, skip the outer cache so
+	// buildPSKMap runs every frame and SetPSKImage gets dispatched.
+	// PSKView() returns the glyph fallback when kitty isn't ready,
+	// so we must check PSKKittyReady() — not just non-empty.
+	kittyPending := m.mapView != nil && m.mapView.kittyOn &&
+		picture.KittySupported() == picture.KittyCapabilitySupported &&
+		!m.mapView.PSKKittyReady()
+	if !kittyPending && m.psk.viewKey == sig && m.psk.view != "" {
 		return m.psk.view
 	}
 
@@ -537,8 +553,9 @@ func (m *Model) buildPSKMap(reports []psk.Report, mapW, mapAvailH int) string {
 		return ""
 	}
 
-	// Map-with-spots cache — spot markers are expensive to redraw every frame.
-	// Key on: report count, first/last receiver, map dims, own grid, grayline.
+	// Map-with-spots cache — key includes kitty mode (different render paths).
+	kittyOn := m.mapView != nil && m.mapView.kittyOn &&
+		picture.KittySupported() == picture.KittyCapabilitySupported
 	var graySlot int
 	if m.App.Config.General.DrawGrayline {
 		now := time.Now().UTC()
@@ -554,6 +571,8 @@ func (m *Model) buildPSKMap(reports []psk.Report, mapW, mapAvailH int) string {
 	sb.WriteString(ownGrid)
 	sb.WriteByte('|')
 	sb.WriteString(strconv.Itoa(graySlot))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.FormatBool(kittyOn))
 	if len(reports) > 0 {
 		sb.WriteByte('|')
 		sb.WriteString(reports[0].ReceiverCallsign)
@@ -575,7 +594,18 @@ func (m *Model) buildPSKMap(reports []psk.Report, mapW, mapAvailH int) string {
 		return ""
 	}
 
-	// Get raw map image — no markers, no legend.
+	if kittyOn {
+		applog.Debug("PSK: kitty path", "reports", len(reports), "mapSig", mapSig)
+		result := m.buildPSKMapKitty(reports, ownLat, ownLon, mapW, mapAvailH, mapSig)
+		if result != "" {
+			applog.Debug("PSK: kitty OK", "len", len(result))
+			return result
+		}
+		applog.Debug("PSK: kitty pending, fallback to ANSI")
+		// Kitty frame not ready — fall through to ANSI path below.
+	}
+
+	// --- ANSI path ---
 	baseMap := m.mapView.BaseImage(mapW, mapAvailH, m.App.Config.General.DrawGrayline)
 	if baseMap == "" {
 		return ""
@@ -583,8 +613,6 @@ func (m *Model) buildPSKMap(reports []psk.Report, mapW, mapAvailH int) string {
 
 	lines := strings.Split(baseMap, "\n")
 	mapH := len(lines)
-	// Use the actual rendered width — BaseImage may return a narrower map
-	// than requested when height is constrained (small terminal).
 	actualW := 0
 	if mapH > 0 {
 		actualW = lipgloss.Width(lines[0])
@@ -593,8 +621,6 @@ func (m *Model) buildPSKMap(reports []psk.Report, mapW, mapAvailH int) string {
 		actualW = mapW
 	}
 
-	// Draw band-colored markers for each receiver — oldest first, newest last
-	// so the newest spot's color wins when multiple spots share a cell.
 	for i := len(reports) - 1; i >= 0; i-- {
 		r := reports[i]
 		if r.ReceiverLocator == "" {
@@ -608,15 +634,85 @@ func (m *Model) buildPSKMap(reports []psk.Report, mapW, mapAvailH int) string {
 		}
 	}
 
-	// Draw own station LAST — so it's always visible on top of any receiver.
 	ownX, ownY := pskCellCoords(ownLat, ownLon, actualW, mapH)
 	if ownY >= 0 && ownY < mapH && ownX >= 0 && ownX < actualW {
 		lines[ownY] = replaceANSICell(lines[ownY], ownX, S.MapOwn.Render("\u25c6"))
 	}
 
-	// One-line legend: own marker + band dots. Each label uses the same color
-	// as its band dot — no DimStyle gray-on-gray for readability.
-	legend := DimStyle.Render(" ") +
+	legend := pskLegend()
+	lines = append(lines, legend)
+	result := strings.Join(lines, "\n")
+	// Only cache when kitty is off; when kitty is on but the frame
+	// hasn't arrived yet, skip the cache so the kitty path can
+	// take over on the next frame.
+	if !kittyOn {
+		m.psk.mapView = result
+		m.psk.mapSig = mapSig
+	}
+	return result
+}
+
+// buildPSKMapKitty renders the PSK map at full resolution via Kitty protocol.
+// Mirrors the partner map's renderKitty() — only dispatches SetImage/SetSize
+// when data actually changed (guarded by mapSig), avoiding seq flooding.
+func (m *Model) buildPSKMapKitty(reports []psk.Report, ownLat, ownLon float64, mapW, mapAvailH int, mapSig string) string {
+	rgba, pixW, pixH, adjW, adjH := m.mapView.BaseImageRGBA(mapW, mapAvailH, m.App.Config.General.DrawGrayline)
+	if rgba == nil {
+		return ""
+	}
+
+	applog.Debug("PSK: buildPSKMapKitty", "mode", m.mapView.PSKMode(), "ready", m.mapView.PSKKittyReady())
+	for i := len(reports) - 1; i >= 0; i-- {
+		r := reports[i]
+		if r.ReceiverLocator == "" {
+			continue
+		}
+		rlat, rlon := gridToLatLon(r.ReceiverLocator)
+		c := pskBandColor(r.Frequency)
+		m.mapView.PSKDrawDot(rgba, pixW, pixH, rlat, rlon, c)
+	}
+
+	// Own station — green, drawn last so always visible.
+	ownCol := color.RGBA{R: 0, G: 255, B: 0, A: 255}
+	m.mapView.PSKDrawDot(rgba, pixW, pixH, ownLat, ownLon, ownCol)
+
+	// Only dispatch if data changed — prevents seq advance that would
+	// discard the in-flight KittyFrameMsg.
+	if mapSig != m.psk.mapSig {
+		applog.Debug("PSK: dispatching SetPSKImage", "mapSig", mapSig, "oldSig", m.psk.mapSig)
+		_ = m.mapView.SetPSKImage(rgba, adjW, adjH, mapSig)
+		m.psk.mapSig = mapSig // block re-dispatch until data changes
+		m.psk.mapView = ""    // clear stale cached output
+	}
+
+	kittyOut := m.mapView.PSKView()
+	applog.Debug("PSK: PSKView len", "len", len(kittyOut), "ready", m.mapView.PSKKittyReady())
+	if !m.mapView.PSKKittyReady() {
+		return "" // glyph fallback, frame not ready
+	}
+	if kittyOut == "" {
+		return "" // frame not ready, caller falls through to ANSI
+	}
+
+	legend := pskLegend()
+	result := kittyOut + "\n" + legend
+	m.psk.mapView = result
+	m.psk.mapSig = mapSig
+	return result
+}
+
+// pskBandColor returns the RGBA color matching the existing pskMark* styles
+// (P.Text, P.Primary, P.Warning, P.Success, P.Accent, P.Info, P.Error).
+func pskBandColor(freq float64) color.RGBA {
+	s := pskBandStyle(freq)
+	// Resolve the Lip Gloss foreground colour to its actual RGB.
+	r, g, b, _ := s.GetForeground().RGBA()
+	return color.RGBA{R: uint8(r >> 8), G: uint8(g >> 8), B: uint8(b >> 8), A: 255}
+}
+
+// pskLegend returns the text legend for the PSK map.
+func pskLegend() string {
+	return DimStyle.Render(" ") +
 		S.MapOwn.Render("\u25c6") + S.MapOwn.Render(" My station") +
 		DimStyle.Render("  ") +
 		pskMark160.Render("\u25cf") + pskMark160.Render(" 160m") +
@@ -632,12 +728,6 @@ func (m *Model) buildPSKMap(reports []psk.Report, mapW, mapAvailH int) string {
 		pskMark10.Render("\u25cf") + pskMark10.Render(" 10m") +
 		DimStyle.Render("  ") +
 		pskMarkOther.Render("\u25cf") + pskMarkOther.Render(" other")
-	lines = append(lines, legend)
-
-	result := strings.Join(lines, "\n")
-	m.psk.mapView = result
-	m.psk.mapSig = mapSig
-	return result
 }
 
 func pskCellCoords(lat, lon float64, mapW, mapH int) (int, int) {

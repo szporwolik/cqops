@@ -297,9 +297,13 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	// Kitty graphics: force-enable before model creation (mode locks at
 	// construction).  The General → Kitty graphics checkbox is the
 	// master switch; env vars only take effect when it is on.
+	// Recognises: kitty (KITTY_WINDOW_ID), Ghostty (TERM=xterm-ghostty,
+	// GHOSTTY_RESOURCES_DIR), WezTerm, and the NTCHARTS_KITTY override.
 	if a.Config.General.KittyGraphics &&
 		(os.Getenv("NTCHARTS_KITTY") == "supported" ||
-			os.Getenv("KITTY_WINDOW_ID") != "") {
+			os.Getenv("KITTY_WINDOW_ID") != "" ||
+			strings.HasPrefix(os.Getenv("TERM"), "xterm-ghostty") ||
+			os.Getenv("GHOSTTY_RESOURCES_DIR") != "") {
 		picture.ForceKittyCapability(picture.KittyCapabilitySupported)
 	}
 
@@ -307,16 +311,21 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 		CacheLimit: 4,
 		UserAgent:  "CQOps/1.0 (ham-radio-logger)",
 		HTTPClient: &http.Client{Transport: transport, Timeout: 15 * time.Second},
+		KittyID:    43, // full-screen F2 viewer
 	})
 	m.photo.partnerPicViewer = pictureurl.NewWithConfig(pictureurl.Config{
 		CacheLimit: 4,
 		UserAgent:  "CQOps/1.0 (ham-radio-logger)",
 		HTTPClient: &http.Client{Transport: transport, Timeout: 15 * time.Second},
+		KittyID:    44, // inline partner photo — distinct from F2 viewer
 	})
 	applog.Info("Photo viewer: ready (Kitty graphics: experimental — requires Kitty, Ghostty, or WezTerm)",
 		"kitty_cap", m.photo.viewer.KittySupported(),
 		"mode", m.photo.viewer.Mode())
 	m.mapView = newMapRenderer()
+	// Kitty graphics for the map is activated by ensureMapKitty() once
+	// the terminal probe resolves — do NOT set kittyOn here; the Toggle()
+	// must happen via SetKittyEnabled from inside Update().
 	m.psk.filterMins = pskFilterSteps[0] // default 5 min
 	m.ref = newRefState()
 	if dir, err := config.CacheDir(); err == nil {
@@ -356,6 +365,27 @@ func desktopAvailable() bool {
 		"wayland", wayland,
 		"available", ok)
 	return ok
+}
+
+// ensureMapKitty activates Kitty graphics protocol rendering on the embedded
+// world map once the terminal capability probe resolves to Supported.
+// Also busts the PSK map cache so the PSK view re-renders in the new mode.
+func (m *Model) ensureMapKitty() tea.Cmd {
+	if m.mapView == nil || !m.App.Config.General.KittyGraphics {
+		return nil
+	}
+	if !m.mapView.kittyOn && m.App.Config.General.KittyGraphics &&
+		picture.KittySupported() == picture.KittyCapabilitySupported {
+		// Clear PSK caches so the map switches from ANSI to Kitty on
+		// the next refresh cycle (both the inner map cache and the
+		// outer view cache must be busted).
+		m.psk.mapSig = ""
+		m.psk.mapView = ""
+		m.psk.viewKey = ""
+		m.psk.view = ""
+		return m.mapView.SetKittyEnabled(true)
+	}
+	return nil
 }
 
 func (m *Model) Init() tea.Cmd {
@@ -594,6 +624,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if c := m.photo.ensureKitty(m.App.Config.General.KittyGraphics); c != nil {
 		cmd = tea.Batch(cmd, c)
 	}
+	// Map renderer Kitty support — forward ALL messages so that
+	// KittyFrameMsg (async PNG encode result) reaches the map's
+	// picture model, and return any pending SetImage/SetSize cmds.
+	if m.mapView != nil {
+		if c := m.mapView.Update(msg); c != nil {
+			cmd = tea.Batch(cmd, c)
+		}
+		if c := m.mapView.PSKUpdate(msg); c != nil {
+			cmd = tea.Batch(cmd, c)
+		}
+	}
+	if c := m.ensureMapKitty(); c != nil {
+		cmd = tea.Batch(cmd, c)
+	}
 
 	// Async result messages (internet, Wavelog, rig)
 	if handled, asyncCmd := m.handleAsyncMessages(msg); handled {
@@ -655,6 +699,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case screenImage:
 		if keyMsg, ok := msg.(tea.KeyPressMsg); ok && keyMsg.String() == "esc" {
 			m.screen = screenPartner
+			m.invalidatePartnerMapCache()
+			// Reset photo dimension tracking so handlePartnerUpdate
+			// re-applies SetSize with the inline (not full-screen)
+			// dimensions on the next frame.
+			m.photo.partnerPicLastW = 0
+			m.photo.partnerPicLastH = 0
+			m.photo.partnerPicNeedSize = true
 			return m, cmd
 		}
 		// Detect new partner photo URL while viewing image.

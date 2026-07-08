@@ -70,6 +70,12 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			m.screen = screenPartner
 			m.photo.lastErr = nil
 			m.photo.lastURL = ""
+			// Reset photo dimension tracking so handlePartnerUpdate
+			// re-applies SetSize with correct inline dimensions.
+			m.photo.partnerPicLastW = 0
+			m.photo.partnerPicLastH = 0
+			m.photo.partnerPicNeedSize = true
+			m.invalidatePartnerMapCache()
 			return nil, true
 		}
 		if m.screen == screenPartner && m.lookup.partnerData != nil && m.lookup.partnerData.ImageURL != "" {
