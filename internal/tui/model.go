@@ -486,7 +486,14 @@ func (m *Model) Init() tea.Cmd {
 		m.toasts.Success("APRS: position sent as " + callsign)
 	})
 	m.App.MaybeRestartAPRS()
-	cmds := []tea.Cmd{tickCmd(), picture.QueryKittySupport(), m.photo.viewer.Init(), m.emitWindowIconCmd()}
+	cmds := []tea.Cmd{tickCmd(), m.photo.viewer.Init(), m.emitWindowIconCmd()}
+	// Only probe Kitty support when the config is enabled AND the
+	// terminal env vars indicate a Kitty-compatible terminal.
+	// Avoids emitting APC probe garbage on Konsole/xterm/linux console
+	// that would corrupt the TUI rendering.
+	if m.App.Config.General.KittyGraphics && kittyTerminalEnv() {
+		cmds = append(cmds, picture.QueryKittySupport())
+	}
 	// Start GPS receiver if configured.
 	if m.App.Config.Integrations.GPS.Enabled {
 		cmds = append(cmds, m.startGPS())
