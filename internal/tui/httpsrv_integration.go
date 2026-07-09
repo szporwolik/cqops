@@ -276,12 +276,26 @@ func (m *Model) pushDashboardPartner(ds *dashboard.State, call string) {
 	}
 }
 
+// lastDashboardPushTick throttles pushDashboardState to every 2 ticks (~2 s)
+// instead of every tick (~1 s). On low-end hardware this halves the per-tick
+// overhead of building rig/WSJT-X/solar/partner structs. The 2 s interval is
+// still fast enough for SSE push to feel real-time in the browser.
+var lastDashboardPushTick int
+
 // Called from the tick handler every second. Most Set* calls early-exit because
 // nothing changed (same rig freq, same WSJT-X state, etc.).
 func (m *Model) pushDashboardState() {
 	if m.http.client == nil || !m.http.online {
 		return
 	}
+
+	// Throttle to every 2 ticks (~2 s) to reduce CPU on low-end hardware.
+	// The dashboard SSE push is change-detected, so a slightly slower poll
+	// rate is imperceptible while significantly reducing per-tick work.
+	if m.tickCount-lastDashboardPushTick < 2 {
+		return
+	}
+	lastDashboardPushTick = m.tickCount
 
 	// Fast: rig, operator, logbook, station, active QSO — cheap, change-detected.
 	m.pushDashboardFast()
