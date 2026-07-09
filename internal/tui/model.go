@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -390,6 +391,10 @@ func (m *Model) applyBeepOnError() {
 // work (D-Bus is reachable).  On a raw Linux console without X, calling
 // beeep.Notify / beeep.Beep hangs indefinitely, so we skip them entirely.
 func desktopAvailable() bool {
+	// Windows uses native Toast API via beeep — always available.
+	if runtime.GOOS == "windows" {
+		return true
+	}
 	dbus := os.Getenv("DBUS_SESSION_BUS_ADDRESS")
 	display := os.Getenv("DISPLAY")
 	wayland := os.Getenv("WAYLAND_DISPLAY")

@@ -173,7 +173,7 @@ func (c *TCPClient) runLoop() {
 		c.disconnectLocked()
 		c.mu.Unlock()
 		c.setConnected(false, fmt.Errorf("connection lost"))
-		applog.Debug("APRS: disconnected, reconnecting in %v", delay)
+		applog.Debug("APRS: disconnected", "reconnect_delay", delay)
 
 		select {
 		case <-c.stopCh:
