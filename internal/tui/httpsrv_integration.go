@@ -555,8 +555,8 @@ var lastActiveDupe, lastActiveNewCall, lastActiveNewDXCC bool
 // UpdatedAtUTC is excluded — it always changes.
 type cachedAQSO struct {
 	Call, Band, Mode, Submode, Frequency, Grid, Name, QTH, Country string
-	RSTSent, RSTRcvd, RefNames                                      string
-	IsDupe, IsNewCall, IsNewDXCC                                    bool
+	RSTSent, RSTRcvd, RefNames                                     string
+	IsDupe, IsNewCall, IsNewDXCC                                   bool
 }
 
 var lastPushedAQSO cachedAQSO
