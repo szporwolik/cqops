@@ -45,6 +45,11 @@ func (ps *photoState) ensureKitty(enabled bool) tea.Cmd {
 	if ps.viewer.KittySupported() != picture.KittyCapabilitySupported {
 		return nil
 	}
+	// Double-check with env vars — ntcharts may probe-support Kitty
+	// on terminals that don't actually render it (Konsole, Windows conhost).
+	if !kittyTerminalEnv() {
+		return nil
+	}
 	ps.kittyToggled = true
 	return tea.Batch(ps.viewer.Toggle(), ps.partnerPicViewer.Toggle())
 }
