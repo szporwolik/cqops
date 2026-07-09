@@ -291,7 +291,7 @@ func (m *Model) applyRigPoll(r rigPollMsg) tea.Cmd {
 		m.fields[fieldBand].SetValue(r.band)
 	}
 	if r.power > 0 {
-		m.fields[fieldTXPower].SetValue(fmt.Sprintf("%.0f", r.power))
+		m.fields[fieldTXPower].SetValue(fmt.Sprintf("%.0f", clampRigPower(r.power, m)))
 	}
 	if !m.wsjtx.online {
 		m.autoFillSSBSubmode()
@@ -315,8 +315,23 @@ func (m *Model) applyRigPower(r rigPowerMsg) {
 		return
 	}
 	if r.power > 0 {
-		m.fields[fieldTXPower].SetValue(fmt.Sprintf("%.0f", r.power))
+		m.fields[fieldTXPower].SetValue(fmt.Sprintf("%.0f", clampRigPower(r.power, m)))
 	}
+}
+
+// clampRigPower floors the raw power value and clamps it to the rig's
+// configured max power. Hamlib backends return normalised 0.0–1.0 values
+// that we scale by maxPower — slight firmware deviations or rounding can
+// produce 20.1 W on a 20 W rig. Floor + clamp prevents impossible values.
+func clampRigPower(raw float64, m *Model) float64 {
+	p := math.Floor(raw)
+	if p <= 0 {
+		return raw // shouldn't happen — caller checks > 0
+	}
+	if maxW, err := strconv.ParseFloat(m.App.Logbook.Station.RigPower(m.App.Config.Rigs), 64); err == nil && maxW > 0 && p > maxW {
+		return maxW
+	}
+	return p
 }
 
 // rigModesMsg carries the result of an async rig mode fetch.
