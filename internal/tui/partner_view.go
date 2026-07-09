@@ -95,12 +95,13 @@ func (m *Model) viewPartner() string {
 	} else {
 		sigB.WriteString("wl:nil|")
 	}
-	fmt.Fprintf(&sigB, "wldone=%v|wlband=%s|wlmode=%s|qrz=%v|wlcfg=%v|rmap=%v|gray=%v",
+	fmt.Fprintf(&sigB, "wldone=%v|wlband=%s|wlmode=%s|qrz=%v|wlcfg=%v|rmap=%v|gray=%v|picpane=%v",
 		m.lookup.wlLookupDone, m.lookup.wlLastBand, m.lookup.wlLastMode,
 		m.App.Config.Integrations.QRZ.Enabled,
 		m.App.Logbook.Wavelog != nil && m.App.Logbook.Wavelog.Enabled,
 		m.App.Config.General.RenderMap,
-		m.App.Config.General.DrawGrayline)
+		m.App.Config.General.DrawGrayline,
+		m.App.Config.General.PictureAtQRZPane)
 	fmt.Fprintf(&sigB, "|fmgrid=%s|gridsrc=%s", m.fields[fieldGrid].Value(), m.gridSource)
 	// Kitty map readiness — bust cache when the real Kitty grid
 	// replaces the glyph fallback so the map switches quality.

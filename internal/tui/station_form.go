@@ -53,6 +53,7 @@ type StationForm struct {
 	// GPS Grid — use GPS-derived grid when checked and GPS has fix.
 	GPSGrid      bool
 	gpsGridFocus bool
+	HideGPSGrid  bool // set true to hide checkbox (e.g. in wizard)
 
 	// Operator cycling (Space-toggleable, like Continent/IARU).
 	operators []config.Operator
@@ -261,7 +262,11 @@ func (f *StationForm) NextInput() {
 		f.SOTARef.Focus()
 	case f.Locator.Focused():
 		f.Locator.Blur()
-		f.gpsGridFocus = true
+		if f.HideGPSGrid {
+			f.iaruFocus = true
+		} else {
+			f.gpsGridFocus = true
+		}
 	case f.gpsGridFocus:
 		f.gpsGridFocus = false
 		f.iaruFocus = true
@@ -315,8 +320,12 @@ func (f *StationForm) NextInput() {
 		f.wlBtnFocus = 2
 	case f.wlBtnFocus == 2:
 		f.wlBtnFocus = 0
-		f.aprsCbFocus = true
-	// APRS section.
+		if f.HideGPSGrid {
+			f.Name.Focus()
+		} else {
+			f.aprsCbFocus = true
+		}
+	// APRS section — skipped when HideGPSGrid.
 	case f.aprsCbFocus:
 		f.aprsCbFocus = false
 		if f.AprsEnabled {
@@ -355,7 +364,9 @@ func (f *StationForm) PrevInput() {
 	switch {
 	case f.Name.Focused():
 		f.Name.Blur()
-		if f.AprsEnabled {
+		if f.HideGPSGrid {
+			f.wlBtnFocus = 2
+		} else if f.AprsEnabled {
 			f.aprsBtnFocus = 1
 		} else {
 			f.aprsCbFocus = true
@@ -418,7 +429,11 @@ func (f *StationForm) PrevInput() {
 		f.POTARef.Focus()
 	case f.iaruFocus:
 		f.iaruFocus = false
-		f.gpsGridFocus = true
+		if f.HideGPSGrid {
+			f.Locator.Focus()
+		} else {
+			f.gpsGridFocus = true
+		}
 	case f.gpsGridFocus:
 		f.gpsGridFocus = false
 		f.Locator.Focus()
@@ -639,20 +654,22 @@ func (f *StationForm) View() tea.View {
 	b.WriteString(f.renderFieldLine("Callsign:", &f.Callsign, availW))
 	// Grid locator
 	b.WriteString(f.renderFieldLine("Grid locator:", &f.Locator, availW))
-	// GPS Grid checkbox — below grid locator.
-	gpsCb := "[ ]"
-	if f.GPSGrid {
-		gpsCb = "[x]"
+	// GPS Grid checkbox — below grid locator. Hidden in wizard.
+	if !f.HideGPSGrid {
+		gpsCb := "[ ]"
+		if f.GPSGrid {
+			gpsCb = "[x]"
+		}
+		gpsPrefix := "  "
+		gpsLabel := S.FormLabelWide.Align(lipgloss.Left).Render("Grid from GPS:")
+		if f.gpsGridFocus {
+			gpsPrefix = S.FormPrefixOn.Render("> ")
+			gpsLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("Grid from GPS:")
+			gpsCb = CursorStyle.Render(gpsCb) + " " + DimStyle.Render("(Space)")
+		}
+		b.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, gpsPrefix, gpsLabel, " ", gpsCb), availW))
+		b.WriteString("\n")
 	}
-	gpsPrefix := "  "
-	gpsLabel := S.FormLabelWide.Align(lipgloss.Left).Render("Grid from GPS:")
-	if f.gpsGridFocus {
-		gpsPrefix = S.FormPrefixOn.Render("> ")
-		gpsLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("Grid from GPS:")
-		gpsCb = CursorStyle.Render(gpsCb) + " " + DimStyle.Render("(Space)")
-	}
-	b.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, gpsPrefix, gpsLabel, " ", gpsCb), availW))
-	b.WriteString("\n")
 
 	// IARU Region display (focusable, Space/Enter to cycle) — right after grid.
 	iaruLabel := "IARU Region:"
@@ -779,69 +796,72 @@ func (f *StationForm) View() tea.View {
 		renderBtn(2, "[ Test ]", "verify connection and station")
 	}
 
-	// APRS checkbox
-	aprsCheckbox := "[ ]"
-	if f.AprsEnabled {
-		aprsCheckbox = "[x]"
-	}
-	aprsCbPrefix := "  "
-	aprsCbLabel := S.FormLabelWide.Align(lipgloss.Left).Render("APRS:")
-	if f.aprsCbFocus {
-		aprsCbPrefix = S.FormPrefixOn.Render("> ")
-		aprsCbLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("APRS:")
-		aprsCheckbox = CursorStyle.Render(aprsCheckbox) + " " + DimStyle.Render("(Space)")
-	}
-	b.WriteString(padOrTrunc(
-		lipgloss.JoinHorizontal(lipgloss.Center, aprsCbPrefix, aprsCbLabel, " ", aprsCheckbox),
-		availW))
-	b.WriteString("\n")
-
-	if f.AprsEnabled {
-		aprsFields := []fieldDef{
-			{"  Callsign:", &f.AprsCallsign},
-			{"  Passcode:", &f.AprsPasscode},
+	// APRS section — hidden in wizard.
+	if !f.HideGPSGrid {
+		// APRS checkbox
+		aprsCheckbox := "[ ]"
+		if f.AprsEnabled {
+			aprsCheckbox = "[x]"
 		}
-		for _, field := range aprsFields {
-			b.WriteString(f.renderFieldLine(field.label, field.ti, availW))
-		}
-		// TX Beacon checkbox.
-		locCheckbox := "[ ]"
-		if f.AprsSendLoc {
-			locCheckbox = "[x]"
-		}
-		locPrefix := "  "
-		locLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  TX Beacon:")
-		if f.aprsSendLocFocus {
-			locPrefix = S.FormPrefixOn.Render("> ")
-			locLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  TX Beacon:")
-			locCheckbox = CursorStyle.Render(locCheckbox) + " " + DimStyle.Render("(Space)")
+		aprsCbPrefix := "  "
+		aprsCbLabel := S.FormLabelWide.Align(lipgloss.Left).Render("APRS:")
+		if f.aprsCbFocus {
+			aprsCbPrefix = S.FormPrefixOn.Render("> ")
+			aprsCbLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("APRS:")
+			aprsCheckbox = CursorStyle.Render(aprsCheckbox) + " " + DimStyle.Render("(Space)")
 		}
 		b.WriteString(padOrTrunc(
-			lipgloss.JoinHorizontal(lipgloss.Center, locPrefix, locLabel, " ", locCheckbox),
+			lipgloss.JoinHorizontal(lipgloss.Center, aprsCbPrefix, aprsCbLabel, " ", aprsCheckbox),
 			availW))
 		b.WriteString("\n")
 
-		aprsFields2 := []fieldDef{
-			{"  Interval (min):", &f.AprsIntervalMin},
-			{"  Radius (km):", &f.AprsRadiusKm},
-			{"  Symbol:", &f.AprsSymbol},
-			{"  Comment:", &f.AprsComment},
-		}
-		for _, field := range aprsFields2 {
-			b.WriteString(f.renderFieldLine(field.label, field.ti, availW))
-		}
+		if f.AprsEnabled {
+			aprsFields := []fieldDef{
+				{"  Callsign:", &f.AprsCallsign},
+				{"  Passcode:", &f.AprsPasscode},
+			}
+			for _, field := range aprsFields {
+				b.WriteString(f.renderFieldLine(field.label, field.ti, availW))
+			}
+			// TX Beacon checkbox.
+			locCheckbox := "[ ]"
+			if f.AprsSendLoc {
+				locCheckbox = "[x]"
+			}
+			locPrefix := "  "
+			locLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  TX Beacon:")
+			if f.aprsSendLocFocus {
+				locPrefix = S.FormPrefixOn.Render("> ")
+				locLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  TX Beacon:")
+				locCheckbox = CursorStyle.Render(locCheckbox) + " " + DimStyle.Render("(Space)")
+			}
+			b.WriteString(padOrTrunc(
+				lipgloss.JoinHorizontal(lipgloss.Center, locPrefix, locLabel, " ", locCheckbox),
+				availW))
+			b.WriteString("\n")
 
-		// Test button.
-		prefix := "    "
-		styled := InputStyle.Render("[ Test ]")
-		hint := DimStyle.Render("verify APRS connection")
-		if f.aprsBtnFocus == 1 {
-			prefix = S.FormPrefixOn.Render("> ") + "  "
-			styled = CursorStyle.Render("[ Test ]")
+			aprsFields2 := []fieldDef{
+				{"  Interval (min):", &f.AprsIntervalMin},
+				{"  Radius (km):", &f.AprsRadiusKm},
+				{"  Symbol:", &f.AprsSymbol},
+				{"  Comment:", &f.AprsComment},
+			}
+			for _, field := range aprsFields2 {
+				b.WriteString(f.renderFieldLine(field.label, field.ti, availW))
+			}
+
+			// Test button.
+			prefix := "    "
+			styled := InputStyle.Render("[ Test ]")
+			hint := DimStyle.Render("verify APRS connection")
+			if f.aprsBtnFocus == 1 {
+				prefix = S.FormPrefixOn.Render("> ") + "  "
+				styled = CursorStyle.Render("[ Test ]")
+			}
+			line := prefix + styled + " " + hint
+			b.WriteString(padOrTrunc(line, availW))
+			b.WriteString("\n")
 		}
-		line := prefix + styled + " " + hint
-		b.WriteString(padOrTrunc(line, availW))
-		b.WriteString("\n")
 	}
 
 	return tea.NewView(b.String())
