@@ -214,7 +214,7 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 				}
 				applog.Info("Sending Wavelog error notification", "call", r.call)
 				if desktopAvailable() {
-					if err := beeep.Notify("CQOps — Wavelog Error", msg, ""); err != nil {
+					if err := beeep.Alert("CQOps — Wavelog Error", msg, ""); err != nil {
 						applog.Info("Wavelog error notification failed", "error", err.Error())
 					}
 				}
