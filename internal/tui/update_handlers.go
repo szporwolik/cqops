@@ -81,11 +81,12 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 		m.lookup.wlDispatchTime = time.Time{}
 		applog.Warn("Wavelog: lookup timed out", "call", m.lookup.wlLastCall)
 	}
-	// WSJT-X auto-reconnect: if enabled but never online, retry start every 30s.
-	// MaybeRestartWSJTX is a no-op when the listener is already running; it only
-	// acts when the previous start failed (lastWSJTX wasn't updated on error).
+	// WSJT-X auto-recover: only retry when the rig preset has WSJT-X
+	// enabled AND the listener was explicitly started (not user-disabled).
+	// MaybeRestartWSJTX is a no-op when config hasn't changed, so we
+	// never "fight" a user who intentionally turned WSJT-X off.
 	if !m.wsjtx.online && m.tickCount%30 == 0 {
-		if rp, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok && rp.WsjtxEnabled {
+		if rp, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok {
 			m.App.MaybeRestartWSJTX(rp.WsjtxEnabled, rp.WsjtxUDPHost, rp.WsjtxUDPPort)
 		}
 	}
