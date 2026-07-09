@@ -1,5 +1,106 @@
 # Changelog
 
+## v0.8.10 — 2026-07-09
+
+### Kitty Graphics Protocol — Terminal-Native Images
+- **Kitty graphics support** for partner map, PSK Reporter map, inline partner photo, and full-screen photo viewer (F2). No external viewer needed — images render directly in supporting terminals (Kitty, WezTerm, Konsole ≥24.08, Ghostty).
+- **Graceful fallback**: ANSI half-block map + Unicode glyph photo placeholder on non-Kitty terminals. Zero configuration — `charm.land/bubbles/v2/picture` handles capability detection.
+- **Kitty toggle** in General Settings (`kittyGraphics`) — can be disabled to force ANSI/glyph rendering.
+- **Photo viewer**: full-screen image (F2) with ESC to close; Kitty protocol handles sizing and placement automatically.
+- **Map cache**: Kitty image dimensions are tracked to avoid redundant re-encodes; only rebuilds when inputs (grid, grayline, window size) actually change.
+
+### GPS Integration — Serial NMEA + GPSD
+- **Serial GPS**: connect a USB/RS-232 NMEA receiver (e.g. u-blox) — configure port, baud rate, DTR/RTS in F9 → Integrations → GPS.
+- **GPSD**: TCP connection to a local `gpsd` daemon with host/port configuration.
+- **Grid precision control**: choose 6, 8, or 10-character Maidenhead grid (F9 → Integrations → GPS Precision). Controls accuracy of position shared via APRS beacons, QSO logging, and dashboard.
+- **GPS Grid** toggle on station form: use GPS-derived grid instead of fixed station grid. Auto-updates on position change.
+- **APRS beacon grid**: respects GPS precision setting — never transmits a more accurate grid than the user configured.
+- **Dashboard weather**: falls back to GPS-derived coordinates when available for Open-Meteo location resolution.
+
+### APRS — KISS TNC Support
+- **KISS TNC** (serial/TCP): send APRS position beacons and receive packets via a hardware TNC or software modem (Direwolf, QtSoundModem). Configure in F9 → Integrations → APRS.
+- **KISS Server** mode: connect to a remote KISS-over-TCP server for shared TNC access.
+- **APRS-IS** (existing): unchanged — internet-based APRS reporting continues to work alongside KISS.
+- **Station trails**: dashboard shows last 5 position points for each APRS station with directional arrows on the map.
+- **AX.25/KISS tests**: comprehensive test coverage for frame encoding/decoding.
+
+### Portable SOTA/POTA Starting Areas
+- **New "Portable" tab** on the Band Plan screen (F7 → right-arrow to PORT). Per-IARU-region suggested CW and SSB starting areas for QRP/portable/SOTA/POTA operations (40m–10m).
+- **Not official channels** — clearly labeled as suggestions. Always check band plans, listen, ask QRL, spot exact frequency.
+- **Markdown export** (Ctrl+E) includes the Portable section.
+- **Data sourced** from IARU Region 1/2/3 band plans and practical field reports.
+
+### Dashboard Enhancements
+- **Metric/imperial units**: temperature (°C/°F), wind speed (km|m/h, mph, kn), precipitation (mm/in) — configurable in F9 → General.
+- **APRS station trails**: directional path history on the Leaflet map with marker arrows.
+- **Wind speed & precipitation formatting**: unit-aware display in the weather module.
+- **APRS map**: nearby station markers now use standard APRS symbol icons with improved popup positioning.
+
+### Linux TTY & Bare Terminal Support
+- **Bare TTY detection**: auto-detects `TERM=linux`, `XDG_SESSION_TYPE=tty`, or framebuffer console (no `$DISPLAY`).
+- **Forced screen clear**: on bare TTYs, `tea.ClearScreen` is issued on every keypress at the outermost `Update()` level — unstoppable by screen handlers.
+- **ANSI 16-color palette**: automatic fallback when terminal doesn't support 256 colors.
+- **tmux auto-launch**: on Linux console (no desktop), CQOps auto-launches inside `tmux` for proper function-key support (F1–F12).
+- **Window size probe**: terminal dimensions are probed at startup to eliminate resize flash on slow machines (Raspberry Pi).
+
+### Map & Partner View Polish
+- **Partner map centering**: map and legend now centered horizontally with `lipgloss.PlaceHorizontal`.
+- **PSK map centering**: same centering applied to Heard/PSK pane.
+- **Map width**: increased from 128→140 chars on large screens; uses full column width on partner page.
+- **Inline photo**: properly positioned with asymmetric padding; cache respects `PictureAtQRZPane` toggle (no restart needed).
+- **Kitty F2 viewer**: full-screen dimensions match content area; exit properly resets photo dimensions for inline view.
+
+### Config Menu Redesign
+- **Borderless menus**: all config choosers (logbook, rig, contest, operator, integration, notifications) use `menuBoxStyle` — no ANSI border escapes that corrupt Kitty graphics placement.
+- **Viewport scrolling**: all menu list and edit views now use `bubbles/viewport` with auto-scroll that follows cursor focus.
+- **PgUp/PgDown/Home/End** support in all viewport-backed menus.
+- **Integration menu**: blank row between header and content for visual breathing room.
+
+### Rig Power Handling
+- **Power clamping**: rig power values are floored and clamped to the rig preset's configured maximum — a Xiegu G90 set to 20W will never display 21W due to firmware rounding.
+- **WSJT-X power priority**: `txPowerForWSJTX` now directly sets the QSO power before `ApplyStationDefaults`, so the hamlib/flrig form value always wins over WSJT-X ADIF `tx_pwr` — fixes QSOs logged with 10W while the form showed 21W.
+
+### Integration Lifecycle Fixes
+- **HTTP server mid-run enable**: stale backoff timer is now reset when HTTP is disabled; server restarts when config is re-saved even if address/port haven't changed.
+- **DXC mid-run enable**: `connecting` and `lastAttempt` state is fully reset on disable and internet loss — no more silent failures when toggling DXC on mid-session.
+- **WSJT-X CQ transition**: form is cleared when the user starts calling CQ (DX call → empty + transmitting), removing the previous partner's data.
+
+### Key Bindings & Navigation
+- **Favorites**: Ctrl+V/B/N to recall favorites 1/2/3; Ctrl+Shift+V/B/N to save.
+- **Rotor controls**: Alt+←/→/↑/↓ for azimuth and elevation (Alt only, no Ctrl required).
+- **Pane navigation**: Ctrl+←/→ to switch between QSO form, Recent QSOs, and partner/map panes.
+- **Comment retention**: Ctrl+K toggles keep-comment mode.
+- **Form holding**: Ctrl+H toggles retain-form mode.
+- **Tab shortcuts**: Alt+digit labels for Linux console compatibility.
+- **Focusable item hints**: space-key indicator on toggles and buttons throughout menus.
+
+### Wizard Cleanup
+- **APRS section removed** from first-run wizard (callsign, passcode, TX beacon, interval, radius, symbol, comment, test button).
+- **GPS Grid checkbox removed** from first-run wizard.
+- Both remain fully available in the regular Settings → Station screen.
+
+### Security & Safety
+- **Single-instance guard**: file-lock prevents running two CQOps instances against the same config directory — protects SQLite from concurrent write corruption.
+- **QRZ password sanitizing**: password is redacted in error log messages.
+
+### Bug Fixes & Polish
+- **Photo cache invalidation**: partner view cache now includes `PictureAtQRZPane` flag — toggling the setting mid-run no longer shows a stale empty column.
+- **Toast simplification**: removed internal caching from ToastQueue; dedup window unchanged.
+- **ADIF export**: bearing is validated before writing; contest exchange fields use standard ADIF keys.
+- **Rig edit restart**: WSJT-X listener is immediately restarted when rig configuration changes, no app restart needed.
+- **Rig preset duplication**: Ctrl+D in the rig chooser copies the selected preset.
+- **Linux console**: `TERM=xterm-256color` is set as fallback for proper color and key support.
+- **Config reset**: Ctrl+Alt+R with confirmation dialog resets configuration to defaults.
+- **Cache reset**: Ctrl+Alt+C clears all render caches.
+- **Terminal capability logging**: comprehensive environment diagnostics at startup for debugging Linux framebuffer console issues.
+
+### Under the Hood
+- **91 commits**, 92 files changed (10,189 insertions, 1,121 deletions).
+- **ntcharts v2.2.0**: `picture.Model` and `pictureurl.Model` for Kitty graphics.
+- **Dependencies bumped**: Bubble Tea v2, Bubbles v2, Lip Gloss v2, and all Charm ecosystem packages.
+- **Build scripts**: `build.sh`/`build.ps1` use correct module path for ldflags version embedding.
+- **All tests pass**: `go test ./...` — 34 TUI test files, comprehensive coverage for new GPS, APRS KISS, and power handling code.
+
 ## v0.8.9 — 2026-07-05
 
 ### CQOps Live — Built-in Browser Dashboard

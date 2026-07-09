@@ -17,8 +17,10 @@ This document lists third-party components used by CQOps that are not covered by
 | **golang.org/x/text** | Unicode normalization for ADIF | BSD-3-Clause | `../licenses/TEXT-BSD3-LICENSE` | https://golang.org/x/text |
 | **NimbleMarkets/ntcharts** | Terminal chart rendering | MIT | `../licenses/NTCHARTS-MIT-LICENSE.txt` | https://github.com/NimbleMarkets/ntcharts |
 | **gen2brain/beeep** | Desktop notifications | MIT | `../licenses/BEEEP-MIT-LICENSE` | https://github.com/gen2brain/beeep |
+| **go.bug.st/serial** | Serial port (GPS NMEA, APRS KISS TNC) | BSD-3-Clause | `../licenses/SERIAL-BSD3-LICENSE` | https://github.com/bugst/go-serial |
 | **Leaflet 1.9.4** | Dashboard interactive maps (bundled) | BSD-2-Clause | `../licenses/LEAFLET-BSD2-LICENSE` | https://leafletjs.com |
 | **Leaflet.Terminator** | Day/night grayline overlay (bundled) | MIT | `../licenses/LEAFLET-TERMINATOR-MIT-LICENSE` | https://github.com/joergdietrich/Leaflet.Terminator |
+| **Open-Meteo** | Weather forecast API (browser-side) | CC BY 4.0 | `../licenses/OPEN-METEO-CC-BY-4.0.txt` | https://open-meteo.com/ |
 | **OpenStreetMap tiles** | Dashboard map tiles (optional, browser-side) | ODbL, © OpenStreetMap contributors | — | https://www.openstreetmap.org/copyright |
 | **RainViewer** | Weather radar overlay (optional, browser-side) | Free public API; attribution displayed on-map | — | https://www.rainviewer.com |
 
