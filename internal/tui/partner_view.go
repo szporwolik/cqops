@@ -11,7 +11,7 @@ import (
 	"github.com/szporwolik/cqops/internal/store"
 )
 
-const partnerMapMaxW = 128 // also used as max page width for QSO form consistency
+const partnerMapMaxW = 140 // also used as max page width for QSO form consistency
 
 // continentName maps 2-letter CTY.DAT continent codes to full names.
 func continentName(code string) string {
@@ -95,13 +95,22 @@ func (m *Model) viewPartner() string {
 	} else {
 		sigB.WriteString("wl:nil|")
 	}
-	fmt.Fprintf(&sigB, "wldone=%v|wlband=%s|wlmode=%s|qrz=%v|wlcfg=%v|rmap=%v|gray=%v",
+	fmt.Fprintf(&sigB, "wldone=%v|wlband=%s|wlmode=%s|qrz=%v|wlcfg=%v|rmap=%v|gray=%v|picpane=%v",
 		m.lookup.wlLookupDone, m.lookup.wlLastBand, m.lookup.wlLastMode,
 		m.App.Config.Integrations.QRZ.Enabled,
 		m.App.Logbook.Wavelog != nil && m.App.Logbook.Wavelog.Enabled,
 		m.App.Config.General.RenderMap,
-		m.App.Config.General.DrawGrayline)
+		m.App.Config.General.DrawGrayline,
+		m.App.Config.General.PictureAtQRZPane)
 	fmt.Fprintf(&sigB, "|fmgrid=%s|gridsrc=%s", m.fields[fieldGrid].Value(), m.gridSource)
+	// Kitty map readiness — bust cache when the real Kitty grid
+	// replaces the glyph fallback so the map switches quality.
+	if m.mapView != nil && m.mapView.KittyOn() && m.App.Config.General.RenderMap {
+		kittyContent := m.mapView.KittyContent()
+		// Bucket by 256-byte chunks; 0 = not ready (glyph/empty),
+		// non-zero = real kitty grid arrived.
+		fmt.Fprintf(&sigB, "|kmap=%d", len(kittyContent)>>8)
+	}
 	// Inline photo — only bust cache on significant content changes,
 	// not on every progressive-render frame (avoids 100% CPU on slow PCs).
 	if d != nil && d.ImageURL != "" {
@@ -210,7 +219,7 @@ func (m *Model) viewPartner() string {
 		}
 		mapBox := m.getOrBuildMap(d, contentW, mapAvailH)
 		if mapBox != "" {
-			mapBox = centerAndBorderMap(mapBox, contentW, leftW)
+			mapBox = lipgloss.PlaceHorizontal(leftW, lipgloss.Center, mapBox)
 			leftCol = lipgloss.JoinVertical(lipgloss.Left, topRow, mapBox)
 		} else {
 			leftCol = topRow
@@ -231,7 +240,7 @@ func (m *Model) viewPartner() string {
 				picRaw = DimStyle.Render("Loading\u2026")
 			}
 		}
-		picContentH := leftH - 3 // header + border
+		picContentH := leftH - 1 // header only (no border)
 		if picContentH < 1 {
 			picContentH = 1
 		}
@@ -244,9 +253,20 @@ func (m *Model) viewPartner() string {
 		}
 		header := S.Label.Width(photoW - 4).MaxWidth(photoW - 4).Inline(true).Render("Photo")
 		inner := lipgloss.JoinVertical(lipgloss.Left, header, strings.Join(picLines, "\n"))
-		picBox := drawBorderedBox(inner, photoW+1)
-		// Force photo box height to exactly leftH using Place.
-		picBox = lipgloss.Place(photoW+1, leftH, lipgloss.Top, lipgloss.Left, picBox)
+		// Use plain padding (no border, no lipgloss.Border()) — ANSI
+		// sequences from Border() offset the Kitty placeholder's grid
+		// position, shifting the image right.
+		picBox := menuBoxStyle.Width(photoW + 1).Render(inner)
+		// Pad the shorter column with newlines instead of using
+		// lipgloss.Place, which wraps content in ANSI escapes
+		// that can shift Kitty virtual image placement.
+		picH := lipgloss.Height(picBox)
+		if leftH > picH {
+			picBox += strings.Repeat("\n", leftH-picH)
+		} else if picH > leftH {
+			leftCol += strings.Repeat("\n", picH-leftH)
+			leftH = picH
+		}
 		m.photo.partnerPicW = photoW - 3
 		m.photo.partnerPicH = picContentH
 		if m.photo.partnerPicW < 25 {
@@ -612,7 +632,7 @@ func (m *Model) getOrBuildMap(d *qrz.CallData, mapW, mapAvailH int) string {
 		return ""
 	}
 
-	ownGrid := m.App.Logbook.Station.Grid
+	ownGrid := m.effectiveGrid()
 	// Use QSO form grid if set (may differ from QRZ due to REF autofill).
 	partnerGrid := strings.TrimSpace(m.fields[fieldGrid].Value())
 	if partnerGrid == "" {

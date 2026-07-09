@@ -68,6 +68,50 @@ type IntegrationsConfig struct {
 	DXC        DXCConfig        `yaml:"dxc,omitempty"`
 	QRZ        QRZConfig        `yaml:"qrz,omitempty"`
 	HTTPServer HTTPServerConfig `yaml:"http_server,omitempty"`
+	GPS        GPSConfig        `yaml:"gps,omitempty"`
+	APRS       APRSGlobalConfig `yaml:"aprs,omitempty"`
+
+	// Legacy key — migrated to APRS on load. Remove after v0.9.x.
+	APRSLegacy APRSGlobalConfig `yaml:"aprs_is,omitempty"`
+}
+
+// Normalize migrates legacy config keys and values to their current names.
+// Called after every config load.
+func (c *Config) Normalize() {
+	// Legacy integration key: aprs_is → aprs
+	if !c.Integrations.APRS.Enabled && c.Integrations.APRSLegacy.Enabled {
+		c.Integrations.APRS = c.Integrations.APRSLegacy
+		c.Integrations.APRSLegacy = APRSGlobalConfig{}
+	}
+
+	// Legacy key: distance_unit → units
+	if c.General.Units == "" && c.General.UnitsLegacy != "" {
+		c.General.Units = c.General.UnitsLegacy
+		c.General.UnitsLegacy = ""
+	}
+	// Legacy values: km → metric, mi → imperial
+	switch c.General.Units {
+	case "km":
+		c.General.Units = "metric"
+	case "mi":
+		c.General.Units = "imperial"
+	}
+}
+
+// APRSGlobalConfig holds global APRS service settings.
+type APRSGlobalConfig struct {
+	Enabled        bool   `yaml:"enabled"`
+	Service        string `yaml:"service,omitempty"`          // "aprs_is", "kiss", "kiss_server", or "" (none/default)
+	Server         string `yaml:"server,omitempty"`           // APRS-IS server host:port
+	KISSServerHost string `yaml:"kiss_server_host,omitempty"` // KISS Server TCP host (default 127.0.0.1)
+	KISSServerPort string `yaml:"kiss_server_port,omitempty"` // KISS Server TCP port (default 8001)
+	Port           string `yaml:"port,omitempty"`             // KISS serial port
+	BaudRate       int    `yaml:"baud_rate,omitempty"`        // KISS serial baud rate
+	DataBits       int    `yaml:"data_bits,omitempty"`        // KISS: 5,6,7,8 (default 8)
+	Parity         string `yaml:"parity,omitempty"`           // KISS: "none","odd","even","mark","space"
+	StopBits       string `yaml:"stop_bits,omitempty"`        // KISS: "1","1.5","2" (default "1")
+	DTR            bool   `yaml:"dtr,omitempty"`              // KISS: enable DTR
+	RTS            bool   `yaml:"rts,omitempty"`              // KISS: enable RTS
 }
 
 type DXCConfig struct {
@@ -79,15 +123,17 @@ type DXCConfig struct {
 
 type GeneralConfig struct {
 	Timezone         string              `yaml:"timezone"`
-	DistanceUnit     string              `yaml:"distance_unit,omitempty"`
+	Units            string              `yaml:"units,omitempty"`         // "metric" or "imperial"
+	UnitsLegacy      string              `yaml:"distance_unit,omitempty"` // legacy key, migrated on load
 	RenderMap        bool                `yaml:"render_map,omitempty"`
 	DrawGrayline     bool                `yaml:"draw_grayline,omitempty"`
 	PictureAtQRZPane bool                `yaml:"picture_at_qrz_pane,omitempty"`
 	SolarAtQSOPane   bool                `yaml:"solar_at_qso_pane,omitempty"`
-	UseCTY           bool                `yaml:"use_cty,omitempty"` // CTY.DAT DXCC country file
-	UseSCP           bool                `yaml:"use_scp,omitempty"` // Super Check Partial callsign database
-	UseRef           bool                `yaml:"use_ref,omitempty"` // REF database
-	Debug            bool                `yaml:"debug,omitempty"`   // verbose debug logging
+	UseCTY           bool                `yaml:"use_cty,omitempty"`        // CTY.DAT DXCC country file
+	UseSCP           bool                `yaml:"use_scp,omitempty"`        // Super Check Partial callsign database
+	UseRef           bool                `yaml:"use_ref,omitempty"`        // REF database
+	Debug            bool                `yaml:"debug,omitempty"`          // verbose debug logging
+	KittyGraphics    bool                `yaml:"kitty_graphics,omitempty"` // experimental Kitty terminal graphics
 	Notifications    NotificationsConfig `yaml:"notifications"`
 }
 
@@ -125,6 +171,19 @@ type HTTPServerConfig struct {
 	MapAttrib  string `yaml:"map_attrib,omitempty"`   // tile attribution text
 }
 
+// GPSConfig holds GPS receiver serial port configuration.
+type GPSConfig struct {
+	Enabled       bool   `yaml:"enabled"`
+	Service       string `yaml:"service,omitempty"`        // "serial", "gpsd", or "" (none)
+	Port          string `yaml:"port,omitempty"`           // serial port e.g. "COM6"
+	BaudRate      int    `yaml:"baud_rate,omitempty"`      // serial baud rate
+	DTR           bool   `yaml:"dtr,omitempty"`            // enable DTR
+	RTS           bool   `yaml:"rts,omitempty"`            // enable RTS
+	GPSDHost      string `yaml:"gpsd_host,omitempty"`      // GPSD server address
+	GPSDPort      string `yaml:"gpsd_port,omitempty"`      // GPSD server port
+	GridPrecision int    `yaml:"grid_precision,omitempty"` // 6, 8, or 10 (default 10)
+}
+
 // Favorite stores a mode/freq/submode/band snapshot for quick recall.
 // Slots are 0-9, stored under alt+shift+N and recalled with alt+N.
 type Favorite struct {
@@ -149,6 +208,7 @@ type Logbook struct {
 type Station struct {
 	Callsign   string `yaml:"callsign"`
 	Grid       string `yaml:"grid"`
+	GPSGrid    bool   `yaml:"gps_grid,omitempty"` // use GPS grid when available
 	RigName    string `yaml:"rig_name,omitempty"`
 	SOTARef    string `yaml:"sota_ref,omitempty"`
 	POTARef    string `yaml:"pota_ref,omitempty"`
@@ -282,16 +342,14 @@ type WavelogConfig struct {
 	LastFetchedID    int64  `yaml:"last_fetched_id,omitempty"`
 }
 
-// APRSConfig holds APRS-IS beacon configuration for a logbook.
-// Disabled by default. When enabled, the station can beacon its
-// position to the APRS-IS network.
+// APRSConfig holds per-logbook APRS beacon settings.
+// Server is configured globally in Integrations → APRS-IS.
 type APRSConfig struct {
 	Enabled      bool   `yaml:"enabled"`
-	Server       string `yaml:"server"`
+	Callsign     string `yaml:"callsign"`
 	Passcode     string `yaml:"passcode"`
 	RadiusKm     int    `yaml:"radius_km"`
 	SendLocation bool   `yaml:"send_location"`
-	Callsign     string `yaml:"callsign"`
 	IntervalMin  int    `yaml:"interval_minutes"`
 	Symbol       string `yaml:"symbol"`
 	Comment      string `yaml:"comment"`
@@ -312,6 +370,9 @@ func Load(path string) (*Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
+
+	// Migrate legacy config keys to current names.
+	cfg.Normalize()
 
 	// Backward compat: migrate old backend → radio_backend, FlrigEnabled → RadioBackend.
 	for id, rp := range cfg.Rigs {
@@ -386,10 +447,10 @@ func (c *Config) Validate() error {
 	if tz == "" {
 		return fmt.Errorf("general.timezone is required")
 	}
-	switch c.General.DistanceUnit {
-	case "", "km", "mi":
+	switch c.General.Units {
+	case "", "metric", "imperial":
 	default:
-		return fmt.Errorf("general.distance_unit must be 'km' or 'mi', got %q", c.General.DistanceUnit)
+		return fmt.Errorf("general.units must be 'metric' or 'imperial', got %q", c.General.Units)
 	}
 
 	// --- Active logbook station ---

@@ -209,10 +209,10 @@ func TestSaveConfig_Blocked_QRZNoPass(t *testing.T) {
 	}, "qrz-no-pass")
 }
 
-func TestSaveConfig_Blocked_InvalidDistanceUnit(t *testing.T) {
+func TestSaveConfig_Blocked_InvalidUnits(t *testing.T) {
 	testSaveConfigBlocked(t, func(cfg *config.Config) {
-		cfg.General.DistanceUnit = "feet"
-	}, "distance-unit")
+		cfg.General.Units = "feet"
+	}, "units")
 }
 
 // =============================================================================

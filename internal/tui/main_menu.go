@@ -32,7 +32,7 @@ func NewMainMenu() *MainMenu {
 			{"Operators", "Multi-operator callsign profiles"},
 			{"Rigs", "Name, model, antenna, flrig, WSJT-X"},
 			{"Contests", "Contest profiles, exchanges, serials"},
-			{"Integration", "DX Cluster, QRZ.com"},
+			{"Integration", "DX Cluster, QRZ.com, GPS, HTTP"},
 			{"Notifications", "Desktop alert preferences"},
 		},
 	}

@@ -9,29 +9,30 @@ import (
 )
 
 type GeneralMenu struct {
-	distanceUnit string
-	timezone     string
-	tzIndex      int
-	renderMap    bool
-	drawGrayline bool
-	pictureAtQRZ bool
-	solarAtQSO   bool
-	useCTY       bool
-	useSCP       bool
-	useRef       bool
-	debugMode    bool
-	cursor       int
-	done         bool
-	saved        bool
-	goBack       bool
-	width        int
-	height       int
+	distanceUnit  string
+	timezone      string
+	tzIndex       int
+	renderMap     bool
+	drawGrayline  bool
+	pictureAtQRZ  bool
+	solarAtQSO    bool
+	useCTY        bool
+	useSCP        bool
+	useRef        bool
+	debugMode     bool
+	kittyGraphics bool
+	cursor        int
+	done          bool
+	saved         bool
+	goBack        bool
+	width         int
+	height        int
 }
 
 func NewGeneralMenu(cfg *config.Config) *GeneralMenu {
-	du := cfg.General.DistanceUnit
-	if du != "mi" {
-		du = "km"
+	du := cfg.General.Units
+	if du != "imperial" {
+		du = "metric"
 	}
 	tz := cfg.General.Timezone
 	tzIdx := 0
@@ -45,17 +46,18 @@ func NewGeneralMenu(cfg *config.Config) *GeneralMenu {
 		tz = "UTC"
 	}
 	return &GeneralMenu{
-		distanceUnit: du,
-		timezone:     tz,
-		tzIndex:      tzIdx,
-		renderMap:    cfg.General.RenderMap,
-		drawGrayline: cfg.General.DrawGrayline,
-		pictureAtQRZ: cfg.General.PictureAtQRZPane,
-		solarAtQSO:   cfg.General.SolarAtQSOPane,
-		useCTY:       cfg.General.UseCTY,
-		useSCP:       cfg.General.UseSCP,
-		useRef:       cfg.General.UseRef,
-		debugMode:    cfg.General.Debug,
+		distanceUnit:  du,
+		timezone:      tz,
+		tzIndex:       tzIdx,
+		renderMap:     cfg.General.RenderMap,
+		drawGrayline:  cfg.General.DrawGrayline,
+		pictureAtQRZ:  cfg.General.PictureAtQRZPane,
+		solarAtQSO:    cfg.General.SolarAtQSOPane,
+		useCTY:        cfg.General.UseCTY,
+		useSCP:        cfg.General.UseSCP,
+		useRef:        cfg.General.UseRef,
+		debugMode:     cfg.General.Debug,
+		kittyGraphics: cfg.General.KittyGraphics,
 	}
 }
 
@@ -79,10 +81,10 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if gm.cursor > 0 {
 				gm.cursor--
 			} else {
-				gm.cursor = 9
+				gm.cursor = 10
 			}
 		case "down", "j":
-			if gm.cursor < 9 {
+			if gm.cursor < 10 {
 				gm.cursor++
 			} else {
 				gm.cursor = 0
@@ -90,10 +92,10 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case " ", "space":
 			switch gm.cursor {
 			case 0:
-				if gm.distanceUnit == "km" {
-					gm.distanceUnit = "mi"
+				if gm.distanceUnit == "metric" {
+					gm.distanceUnit = "imperial"
 				} else {
-					gm.distanceUnit = "km"
+					gm.distanceUnit = "metric"
 				}
 			case 1:
 				gm.tzIndex++
@@ -116,6 +118,8 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case 8:
 				gm.useRef = !gm.useRef
 			case 9:
+				gm.kittyGraphics = !gm.kittyGraphics
+			case 10:
 				gm.debugMode = !gm.debugMode
 			}
 		case "enter":
@@ -149,25 +153,26 @@ func (gm *GeneralMenu) View() tea.View {
 
 	var b strings.Builder
 
-	// Row 0: Distance unit — shows current value, toggles on space.
-	unitVal := "Kilometers (km)"
-	if gm.distanceUnit == "mi" {
-		unitVal = "Miles (mi)"
+	// Row 0: Units — toggles Metric/Imperial on space.
+	unitVal := "Metric"
+	if gm.distanceUnit == "imperial" {
+		unitVal = "Imperial"
 	}
-	gm.renderSettingRow(&b, boxW, 0, "Distance unit", unitVal)
+	gm.renderSettingRow(&b, boxW, 0, "Units", unitVal)
 
 	// Row 1: Timezone — shows current value, cycles on space.
 	gm.renderSettingRow(&b, boxW, 1, "Timezone", gm.timezone)
 
 	// Row 2-4: Checkbox options.
-	gm.renderCheckbox(&b, boxW, 2, "Render map", gm.renderMap)
-	gm.renderCheckbox(&b, boxW, 3, "Draw grayline", gm.drawGrayline)
-	gm.renderCheckbox(&b, boxW, 4, "Picture at QRZ pane", gm.pictureAtQRZ)
-	gm.renderCheckbox(&b, boxW, 5, "Solar at QSO pane", gm.solarAtQSO)
+	gm.renderCheckbox(&b, boxW, 2, "Render partner map", gm.renderMap)
+	gm.renderCheckbox(&b, boxW, 3, "Render grayline at partner map", gm.drawGrayline)
+	gm.renderCheckbox(&b, boxW, 4, "Render partner picture", gm.pictureAtQRZ)
+	gm.renderCheckbox(&b, boxW, 5, "Solar data next to QSO form", gm.solarAtQSO)
 	gm.renderCheckbox(&b, boxW, 6, "Use CTY.DAT country data", gm.useCTY)
 	gm.renderCheckbox(&b, boxW, 7, "Use Super Check Partial", gm.useSCP)
-	gm.renderCheckbox(&b, boxW, 8, "Use REF database", gm.useRef)
-	gm.renderCheckbox(&b, boxW, 9, "Debug Mode", gm.debugMode)
+	gm.renderCheckbox(&b, boxW, 8, "Use SOTA/POTA/IOTA database", gm.useRef)
+	gm.renderKittyCheckbox(&b, boxW, 9, "Kitty graphics", gm.kittyGraphics)
+	gm.renderCheckbox(&b, boxW, 10, "Debug Mode", gm.debugMode)
 
 	body := drawMenuWithHeader("Configuration \u2014 General Settings", b.String(), w)
 	return tea.NewView(fillBody(body, contentH))
@@ -183,7 +188,23 @@ func (gm *GeneralMenu) renderCheckbox(b *strings.Builder, boxW, cursor int, labe
 	if gm.cursor == cursor {
 		prefix = S.FormPrefixOn.Render("> ")
 		lbl = S.FormFocusedGen.Align(lipgloss.Left).Render(label)
-		checkbox = CursorStyle.Render(checkbox)
+		checkbox = CursorStyle.Render(checkbox) + " " + DimStyle.Render("(Space)")
+	}
+	b.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", checkbox), boxW))
+	b.WriteString("\n")
+}
+
+func (gm *GeneralMenu) renderKittyCheckbox(b *strings.Builder, boxW, cursor int, label string, checked bool) {
+	checkbox := "[ ]"
+	if checked {
+		checkbox = "[x]"
+	}
+	prefix := "  "
+	lbl := S.FormLabelGen.Align(lipgloss.Left).Render(label)
+	if gm.cursor == cursor {
+		prefix = S.FormPrefixOn.Render("> ")
+		lbl = S.FormFocusedGen.Align(lipgloss.Left).Render(label)
+		checkbox = CursorStyle.Render(checkbox) + " " + DimStyle.Render("(Space) \u2014 experimental")
 	}
 	b.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", checkbox), boxW))
 	b.WriteString("\n")
@@ -192,22 +213,11 @@ func (gm *GeneralMenu) renderCheckbox(b *strings.Builder, boxW, cursor int, labe
 func (gm *GeneralMenu) renderSettingRow(b *strings.Builder, boxW, cursor int, label, value string) {
 	prefix := "  "
 	lbl := S.FormLabelGen.Align(lipgloss.Left).Render(label)
-	lblW := lipgloss.Width(lbl)
-	// Values get remaining space: boxW minus 2 (prefix) minus lblW (label) minus 1 (space) minus 6 (border+padding).
-	valW := boxW - 2 - lblW - 1 - 6
-	if valW < 8 {
-		valW = 8
-	}
-	val := ValueStyle.Width(valW).MaxWidth(valW).Inline(true).Render(value)
+	val := ValueStyle.Render(value)
 	if gm.cursor == cursor {
 		prefix = S.FormPrefixOn.Render("> ")
 		lbl = S.FormFocusedGen.Align(lipgloss.Left).Render(label)
-		lblW = lipgloss.Width(lbl)
-		valW = boxW - 2 - lblW - 1 - 6
-		if valW < 8 {
-			valW = 8
-		}
-		val = CursorStyle.Width(valW).MaxWidth(valW).Inline(true).Render(value)
+		val = CursorStyle.Render(value) + " " + DimStyle.Render("(Space)")
 	}
 	b.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val), boxW))
 	b.WriteString("\n")

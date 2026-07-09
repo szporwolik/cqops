@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -19,11 +22,16 @@ import (
 var offlineFlag bool
 var debugFlag bool
 var versionFlag bool
+var resetConfigFlag bool
+var resetCacheFlag bool
+var helpFlag bool
 
 func init() {
 	rootCmd.PersistentFlags().BoolVarP(&offlineFlag, "offline", "o", false, "Run in offline mode (skip all network checks)")
 	rootCmd.PersistentFlags().BoolVarP(&debugFlag, "debug", "d", false, "Enable debug logging")
 	rootCmd.PersistentFlags().BoolVarP(&versionFlag, "version", "v", false, "Print CQOps version and exit")
+	rootCmd.PersistentFlags().BoolVar(&resetConfigFlag, "reset-config", false, "Reset all configuration, secrets, databases, cache, and lock file")
+	rootCmd.PersistentFlags().BoolVar(&resetCacheFlag, "reset-cache", false, "Reset cached data only (solar, DXCC, REF, APRS)")
 	rootCmd.AddCommand(versionCmd)
 }
 
@@ -71,24 +79,47 @@ func Execute() error {
 	// Only delegate to cobra when a subcommand is explicitly given.
 	hasSubcommand := false
 	for _, a := range os.Args[1:] {
+		if a == "-h" || a == "--help" {
+			helpFlag = true
+		}
 		if !strings.HasPrefix(a, "-") {
 			hasSubcommand = true
-			break
 		}
 	}
 	if versionFlag {
 		fmt.Printf("CQOps version %s\n", version.Resolved())
 		return nil
 	}
+	if helpFlag {
+		return rootCmd.Help()
+	}
 	if hasSubcommand {
 		return rootCmd.Execute()
+	}
+	if resetConfigFlag {
+		return resetConfig()
+	}
+	if resetCacheFlag {
+		return resetCache()
 	}
 	return runTUI()
 }
 
 func runTUI() error {
+	// The Linux console sets TERM=linux, which lacks proper colour and
+	// key-sequence support.  Override to xterm-256color — the kernel's
+	// console driver supports it natively and Bubble Tea needs it.
+	if runtime.GOOS == "linux" && os.Getenv("TERM") == "linux" {
+		os.Setenv("TERM", "xterm-256color")
+	}
+
 	a, err := app.Init()
 	if err != nil {
+		// Append a reset hint for configuration and database errors.
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "config:") || strings.Contains(errMsg, "database:") || strings.Contains(errMsg, "logbook:") {
+			return fmt.Errorf("%w\n\nRun 'cqops --reset-config' to reset all configuration, secrets, and databases, then start fresh.", err)
+		}
 		return err
 	}
 	defer a.Close()
@@ -131,4 +162,150 @@ func runTUI() error {
 
 	applog.Info("TUI exited, cleaning up")
 	return nil
+}
+
+// resetConfig removes all CQOps configuration, secrets, databases, cache,
+// and the lock file. It prompts for confirmation before deleting anything.
+func resetConfig() error {
+	configDir, err := config.ConfigDir()
+	if err != nil {
+		return fmt.Errorf("cannot determine config directory: %w", err)
+	}
+	dataDir, err := config.DataDir()
+	if err != nil {
+		return fmt.Errorf("cannot determine data directory: %w", err)
+	}
+	cacheDir, err := config.CacheDir()
+	if err != nil {
+		return fmt.Errorf("cannot determine cache directory: %w", err)
+	}
+
+	fmt.Println("CQOps Configuration Reset")
+	fmt.Println("")
+	fmt.Println("This will permanently delete:")
+	fmt.Println("  - All configuration (config.yaml)")
+	fmt.Println("  - All encrypted secrets (secrets.enc)")
+	fmt.Println("  - All logbook databases (*.db)")
+	fmt.Println("  - All cached data (solar, DXCC, REF, APRS)")
+	fmt.Println("  - The instance lock file (cqops.lock)")
+	fmt.Println("")
+	fmt.Printf("Config dir: %s\n", configDir)
+	fmt.Printf("Data dir:   %s\n", dataDir)
+	fmt.Printf("Cache dir:  %s\n", cacheDir)
+	fmt.Println("")
+
+	if !promptYN("Proceed with reset?") {
+		fmt.Println("Reset cancelled.")
+		return nil
+	}
+
+	var deleted, failed int
+
+	// Remove files in config dir: config.yaml, secrets.enc, cqops.lock
+	for _, name := range []string{"config.yaml", "secrets.enc", "cqops.lock"} {
+		p := filepath.Join(configDir, name)
+		if err := os.Remove(p); err != nil {
+			if !os.IsNotExist(err) {
+				fmt.Fprintf(os.Stderr, "Warning: could not remove %s: %v\n", p, err)
+				failed++
+			}
+		} else {
+			fmt.Printf("Removed: %s\n", p)
+			deleted++
+		}
+	}
+
+	// Remove all .db files in data dir
+	if entries, err := os.ReadDir(dataDir); err == nil {
+		for _, e := range entries {
+			if !e.IsDir() && strings.HasSuffix(e.Name(), ".db") {
+				p := filepath.Join(dataDir, e.Name())
+				if err := os.Remove(p); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: could not remove %s: %v\n", p, err)
+					failed++
+				} else {
+					fmt.Printf("Removed: %s\n", p)
+					deleted++
+				}
+			}
+		}
+	}
+
+	// Remove all files in cache dir
+	if entries, err := os.ReadDir(cacheDir); err == nil {
+		for _, e := range entries {
+			p := filepath.Join(cacheDir, e.Name())
+			if err := os.RemoveAll(p); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not remove %s: %v\n", p, err)
+				failed++
+			} else {
+				fmt.Printf("Removed: %s\n", p)
+				deleted++
+			}
+		}
+	}
+
+	fmt.Printf("\nReset complete: %d file(s) removed", deleted)
+	if failed > 0 {
+		fmt.Printf(", %d warning(s)", failed)
+	}
+	fmt.Println(".\n\nRun cqops to start fresh with the setup wizard.")
+
+	return nil
+}
+
+// resetCache removes cached data only (solar, DXCC, REF, APRS) and prompts
+// for confirmation.
+func resetCache() error {
+	cacheDir, err := config.CacheDir()
+	if err != nil {
+		return fmt.Errorf("cannot determine cache directory: %w", err)
+	}
+
+	fmt.Println("CQOps Cache Reset")
+	fmt.Println("")
+	fmt.Println("This will delete all cached data (solar, DXCC, REF, APRS).")
+	fmt.Println("Configuration, logbooks, and secrets are not affected.")
+	fmt.Println("")
+	fmt.Printf("Cache dir: %s\n", cacheDir)
+	fmt.Println("")
+
+	if !promptYN("Proceed with cache reset?") {
+		fmt.Println("Reset cancelled.")
+		return nil
+	}
+
+	var deleted, failed int
+
+	if entries, err := os.ReadDir(cacheDir); err == nil {
+		for _, e := range entries {
+			p := filepath.Join(cacheDir, e.Name())
+			if err := os.RemoveAll(p); err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not remove %s: %v\n", p, err)
+				failed++
+			} else {
+				fmt.Printf("Removed: %s\n", p)
+				deleted++
+			}
+		}
+	}
+
+	fmt.Printf("\nCache reset complete: %d file(s) removed", deleted)
+	if failed > 0 {
+		fmt.Printf(", %d warning(s)", failed)
+	}
+	fmt.Println(".")
+
+	return nil
+}
+
+func promptYN(prompt string) bool {
+	fmt.Fprintf(os.Stderr, "%s [y/N]: ", prompt)
+	reader := bufio.NewReader(os.Stdin)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return false
+	}
+	line = strings.TrimSpace(strings.ToLower(line))
+	return line == "y" || line == "yes"
 }

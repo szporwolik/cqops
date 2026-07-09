@@ -54,40 +54,39 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("F10", "Quit"),
 		),
 		QSOForm: key.NewBinding(
-			key.WithKeys("f1"),
-			key.WithHelp("F1", "QSO"),
+			key.WithKeys("f1", "alt+1"),
+			key.WithHelp("F1/Alt+1", "QSO"),
 		),
 		Partner: key.NewBinding(
-			key.WithKeys("f2"),
-			key.WithHelp("F2", "QRZ"),
+			key.WithKeys("f2", "alt+2"),
+			key.WithHelp("F2/Alt+2", "QRZ"),
 		),
 		PSKReporter: key.NewBinding(
-			key.WithKeys("f5"),
-			key.WithHelp("F5", "PSK Reporter"),
+			key.WithKeys("f5", "alt+5"),
+			key.WithHelp("F5/Alt+5", "PSK Reporter"),
 		),
 		DXC: key.NewBinding(
-			key.WithKeys("f4"),
-			key.WithHelp("F4", "cluster"),
+			key.WithKeys("f4", "alt+4"),
+			key.WithHelp("F4/Alt+4", "cluster"),
 		),
 		LogEditor: key.NewBinding(
-			key.WithKeys("f8"),
-			key.WithHelp("F8", "Editor"),
+			key.WithKeys("f8", "alt+8"),
+			key.WithHelp("F8/Alt+8", "Editor"),
 		),
 		Config: key.NewBinding(
-			key.WithKeys("f9"),
-			key.WithHelp("F9", "CFG"),
+			key.WithKeys("f9", "alt+9"),
+			key.WithHelp("F9/Alt+9", "CFG"),
 		),
 		Logs: key.NewBinding(
-			key.WithKeys("ctrl+f9"),
-			key.WithHelp("Ctrl+F9", "Logs"),
+			key.WithKeys("ctrl+f9", "ctrl+alt+9"),
 		),
 		Ref: key.NewBinding(
-			key.WithKeys("f6"),
-			key.WithHelp("F6", "REF"),
+			key.WithKeys("f6", "alt+6"),
+			key.WithHelp("F6/Alt+6", "REF"),
 		),
 		BPL: key.NewBinding(
-			key.WithKeys("f7"),
-			key.WithHelp("F7", "BPL"),
+			key.WithKeys("f7", "alt+7"),
+			key.WithHelp("F7/Alt+7", "BPL"),
 		),
 		Save: key.NewBinding(
 			key.WithKeys("ctrl+s"),
@@ -110,28 +109,28 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("?", "Help"),
 		),
 		RotorLeft: key.NewBinding(
-			key.WithKeys("ctrl+left"),
-			key.WithHelp("Ctrl+←", "Az −5°"),
+			key.WithKeys("alt+,"),
+			key.WithHelp("Alt+,", "Az −5°"),
 		),
 		RotorRight: key.NewBinding(
-			key.WithKeys("ctrl+right"),
-			key.WithHelp("Ctrl+→", "Az +5°"),
+			key.WithKeys("alt+."),
+			key.WithHelp("Alt+.", "Az +5°"),
 		),
 		RotorUp: key.NewBinding(
-			key.WithKeys("ctrl+up"),
-			key.WithHelp("Ctrl+↑", "El +5°"),
+			key.WithKeys("ctrl+up", "alt+;"),
+			key.WithHelp("Ctrl+↑/Alt+;", "El +5°"),
 		),
 		RotorDown: key.NewBinding(
-			key.WithKeys("ctrl+down"),
-			key.WithHelp("Ctrl+↓", "El −5°"),
+			key.WithKeys("ctrl+down", "alt+'"),
+			key.WithHelp("Ctrl+↓/Alt+'", "El −5°"),
 		),
 		RotorBearing: key.NewBinding(
-			key.WithKeys("ctrl+a"),
-			key.WithHelp("Ctrl+A", "→ Path"),
+			key.WithKeys("ctrl+a", "alt+\\"),
+			key.WithHelp("Ctrl+A/Alt+\\", "→ Path"),
 		),
 		RotorStop: key.NewBinding(
-			key.WithKeys("ctrl+f1"),
-			key.WithHelp("Ctrl+F1", "Stop"),
+			key.WithKeys("ctrl+f1", "alt+/"),
+			key.WithHelp("Ctrl+F1/Alt+/", "Stop"),
 		),
 		Retain: key.NewBinding(
 			key.WithKeys(),
@@ -143,11 +142,11 @@ func DefaultKeyMap() KeyMap {
 		),
 		NextField: key.NewBinding(
 			key.WithKeys("tab"),
-			key.WithHelp("Tab", "↹ Col"),
+			key.WithHelp("Tab", "Col Right"),
 		),
 		PrevField: key.NewBinding(
 			key.WithKeys("shift+tab"),
-			key.WithHelp("Shift+Tab", "↹ Col"),
+			key.WithHelp("Shift+Tab", "Col Left"),
 		),
 		NextRow: key.NewBinding(
 			key.WithKeys("down"),
@@ -227,6 +226,11 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 func (m *Model) ActiveBindings() []key.Binding {
 	var bindings []key.Binding
 
+	// Pane navigation — Ctrl+←/→ cycles through available screens everywhere.
+	bindings = append(bindings,
+		key.NewBinding(key.WithKeys("ctrl+left", "ctrl+right"), key.WithHelp("Ctrl+←/→", "Pane")),
+	)
+
 	// QSO form — show editing shortcuts when no sub-model is active
 	if !m.isSubmodelActive() {
 		bindings = append(bindings,
@@ -245,6 +249,8 @@ func (m *Model) ActiveBindings() []key.Binding {
 			m.keys.CycleRig,
 			m.keys.CycleContest,
 			m.keys.CycleOperator,
+			key.NewBinding(key.WithKeys("ctrl+k"), key.WithHelp("Ctrl+K", "Keep Cmt")),
+			key.NewBinding(key.WithKeys("ctrl+h"), key.WithHelp("Ctrl+H", "Hold Form")),
 		)
 		// Rotor control — only when rotor is connected and on QSO screen.
 		if m.rotor.connected && m.screen == screenQSO {
@@ -259,8 +265,8 @@ func (m *Model) ActiveBindings() []key.Binding {
 		}
 		// Favorite slots — always available on QSO form.
 		bindings = append(bindings,
-			key.NewBinding(key.WithKeys("alt+1…9"), key.WithHelp("Alt+1-9", "Recall fav")),
-			key.NewBinding(key.WithKeys("alt+shift+1…9"), key.WithHelp("Alt+⇧+1-9", "Save fav")),
+			key.NewBinding(key.WithKeys("alt+insert", "alt+home", "alt+pgup"), key.WithHelp("Alt+Ins/Hom/PUp", "Recall fav")),
+			key.NewBinding(key.WithKeys("alt+shift+insert", "alt+shift+home", "alt+shift+pgup"), key.WithHelp("Alt+Shift+Ins/Hom/PUp", "Save fav")),
 		)
 	}
 
@@ -351,6 +357,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit")),
 				key.NewBinding(key.WithKeys("space"), key.WithHelp("Spc", "Activate")),
 				key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Create")),
+				key.NewBinding(key.WithKeys("ctrl+d"), key.WithHelp("Ctrl+D", "Duplicate")),
 				key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 			)

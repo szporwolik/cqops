@@ -36,7 +36,7 @@ func newDXCBandFilterModel(t *testing.T, spots []store.DXCSpot) *Model {
 	}
 
 	cfg := &config.Config{
-		General: config.GeneralConfig{DistanceUnit: "km", RenderMap: true},
+		General: config.GeneralConfig{Units: "metric", RenderMap: true},
 		Logbooks: map[string]config.Logbook{
 			"test": {
 				Station: config.Station{

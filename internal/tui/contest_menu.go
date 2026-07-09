@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/app"
@@ -53,6 +54,11 @@ type ContestChooser struct {
 	cachedForm string
 	listSig    string
 	formSig    string
+
+	// Viewport for scrolling form content on small terminals.
+	vp              viewport.Model
+	lastFormContent string
+	lastListContent string
 }
 
 func NewContestChooser(a *app.App, tq *ToastQueue) *ContestChooser {
@@ -198,12 +204,17 @@ func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				c.dialog = &d
 			}
 
+		case c.mode == contestList && (k.String() == "pgup" || k.String() == "pgdown" || k.String() == "home" || k.String() == "end"):
+			c.vp, _ = c.vp.Update(msg)
+			return c, nil
+
 		case c.mode == contestList && (msg.Code == tea.KeyUp || k.String() == "up" || k.String() == "k"):
 			if c.cursor == 0 {
 				c.cursor = len(c.names) - 1
 			} else {
 				c.cursor--
 			}
+			scrollVpToLine(&c.vp, c.cursor)
 
 		case c.mode == contestList && (msg.Code == tea.KeyDown || k.String() == "down" || k.String() == "j"):
 			if c.cursor == len(c.names)-1 {
@@ -211,6 +222,7 @@ func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				c.cursor++
 			}
+			scrollVpToLine(&c.vp, c.cursor)
 
 		case c.mode == contestEdit || c.mode == contestCreate:
 			switch {
@@ -252,6 +264,7 @@ func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				c.blurAll()
 				c.focus = (c.focus + 1) % c.visibleItems()
+				scrollVpToLine(&c.vp, c.focus)
 				return c, c.focusField()
 			case k.String() == "shift+tab" || k.String() == "up":
 				if c.focus == 4 {
@@ -259,9 +272,13 @@ func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				c.blurAll()
 				c.focus = (c.focus - 1 + c.visibleItems()) % c.visibleItems()
+				scrollVpToLine(&c.vp, c.focus)
 				return c, c.focusField()
 			case c.focus == 2 || c.focus == 5 || c.focus == 7:
 				// Checkboxes handle Space/Enter; ignore other keys.
+				return c, nil
+			case k.String() == "pgup", k.String() == "pgdown", k.String() == "home", k.String() == "end":
+				c.vp, _ = c.vp.Update(msg)
 				return c, nil
 			default:
 				var cmd tea.Cmd
@@ -510,68 +527,69 @@ func (c *ContestChooser) viewList() string {
 		sb.WriteString(n)
 	}
 	sig := sb.String()
-	if c.listSig == sig && c.cachedList != "" {
-		return c.cachedList
-	}
 
-	var b strings.Builder
-	contentH := contentHeight(h)
-	if contentH < 3 {
-		contentH = 3
-	}
-
-	if len(c.names) == 0 {
-		b.WriteString("No contests configured.\n")
-	} else {
-		contentW := w - 8
-		if contentW > partnerMapMaxW-8 {
-			contentW = partnerMapMaxW - 8
-		}
-		if contentW < 20 {
-			contentW = 20
+	// Cache the expensive content building, but always re-render
+	// the viewport layout (scroll position may have changed).
+	listContent := c.cachedList
+	if c.listSig != sig || listContent == "" {
+		var b strings.Builder
+		contentH := contentHeight(h)
+		if contentH < 3 {
+			contentH = 3
 		}
 
-		for i, name := range c.names {
-			prefix := "  "
-			if i == c.cursor {
-				prefix = S.FormPrefixOn.Render("> ")
+		if len(c.names) == 0 {
+			b.WriteString("No contests configured.\n")
+		} else {
+			contentW := w - 8
+			if contentW > partnerMapMaxW-8 {
+				contentW = partnerMapMaxW - 8
+			}
+			if contentW < 20 {
+				contentW = 20
 			}
 
-			activeBadge := padOrTrunc("[      ]", 10)
-			if c.ids[i] == c.app.Logbook.ActiveContest && c.ids[i] != "" {
-				activeBadge = S.ToastSuccess.Render(padOrTrunc("[Active]", 10))
-			} else if i == 0 && c.app.Logbook.ActiveContest == "" {
-				activeBadge = S.ToastSuccess.Render(padOrTrunc("[Active]", 10))
-			}
+			for i, name := range c.names {
+				prefix := "  "
+				if i == c.cursor {
+					prefix = S.FormPrefixOn.Render("> ")
+				}
 
-			dateStr := ""
-			if i > 0 {
-				ct := c.app.Config.Contests[c.ids[i]]
-				dateStr = c.formatDate(ct.Date)
-			}
+				activeBadge := padOrTrunc("[      ]", 10)
+				if c.ids[i] == c.app.Logbook.ActiveContest && c.ids[i] != "" {
+					activeBadge = S.ToastSuccess.Render(padOrTrunc("[Active]", 10))
+				} else if i == 0 && c.app.Logbook.ActiveContest == "" {
+					activeBadge = S.ToastSuccess.Render(padOrTrunc("[Active]", 10))
+				}
 
-			// Truncate/pad raw values before styling.
-			dateVal := padOrTrunc(dateStr, 12)
-			nameVal := padOrTrunc(name, 40)
+				dateStr := ""
+				if i > 0 {
+					ct := c.app.Config.Contests[c.ids[i]]
+					dateStr = c.formatDate(ct.Date)
+				}
 
-			if i == c.cursor {
-				dateVal = CursorStyle.Render(dateVal)
-				nameVal = CursorStyle.Render(nameVal)
-			}
+				// Truncate/pad raw values before styling.
+				dateVal := padOrTrunc(dateStr, 12)
+				nameVal := padOrTrunc(name, 40)
 
-			line := prefix + activeBadge + dateVal + nameVal
-			b.WriteString(padOrTrunc(line, contentW))
-			if i < len(c.names)-1 {
-				b.WriteString("\n")
+				if i == c.cursor {
+					dateVal = CursorStyle.Render(dateVal)
+					nameVal = CursorStyle.Render(nameVal)
+				}
+
+				line := prefix + activeBadge + dateVal + nameVal
+				b.WriteString(padOrTrunc(line, contentW))
+				if i < len(c.names)-1 {
+					b.WriteString("\n")
+				}
 			}
 		}
-	}
 
-	body := drawMenuWithHeader("Configuration \u2014 Contests", b.String(), w)
-	result := fillBody(body, contentH)
-	c.cachedList = result
-	c.listSig = sig
-	return result
+		listContent = b.String()
+		c.cachedList = listContent
+		c.listSig = sig
+	}
+	return renderScrollableMenu("Configuration \u2014 Contests", listContent, &c.vp, &c.lastListContent, w, h)
 }
 
 func (c *ContestChooser) viewForm() string {
@@ -607,6 +625,8 @@ func (c *ContestChooser) viewForm() string {
 	sb.WriteString(strconv.FormatBool(c.prefillExchange))
 	sb.WriteString(strconv.FormatBool(c.prefillExchangeRcvd))
 	sb.WriteString(strconv.Itoa(int(c.mode)))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(c.vp.YOffset()))
 	sig := sb.String()
 	if c.formSig == sig && c.cachedForm != "" {
 		return c.cachedForm
@@ -683,6 +703,9 @@ func (c *ContestChooser) viewForm() string {
 	if extra != "" {
 		line = line + " " + DimStyle.Render(extra)
 	}
+	if c.focus == 4 {
+		line = line + " " + DimStyle.Render("(Space)")
+	}
 	maxW := c.width - 4
 	if maxW < 40 {
 		maxW = 40
@@ -739,8 +762,39 @@ func (c *ContestChooser) viewForm() string {
 	b.WriteString("\n")
 	b.WriteString(DimStyle.Render("  Example: @rst @serial will generate 59 023"))
 
-	body := drawMenuWithHeader("Configuration \u2014 Contests \u2014 "+title, b.String(), w)
-	result := fillBody(body, contentH)
+	// Use viewport for scrollable form body on small terminals.
+	boxW := w
+	if boxW > partnerMapMaxW {
+		boxW = partnerMapMaxW
+	}
+	vpW := boxW - 4 // account for menu box left+right padding
+	if vpW < 20 {
+		vpW = 20
+	}
+	// Overhead: header(1) + blank row(1) + scroll hint(1) = 3 lines.
+	vpH := contentH - 3
+	if vpH < 4 {
+		vpH = 4
+	}
+	c.vp.SetWidth(vpW)
+	c.vp.SetHeight(vpH)
+	bodyStr := b.String()
+	if c.vp.TotalLineCount() == 0 || bodyStr != c.lastFormContent {
+		c.vp.SetContent(bodyStr)
+		c.lastFormContent = bodyStr
+	}
+	if c.vp.PastBottom() {
+		c.vp.SetYOffset(c.vp.TotalLineCount() - c.vp.VisibleLineCount())
+	}
+	header := S.Title.Width(boxW).Render("Configuration \u2014 Contests \u2014 " + title)
+	vpContent := c.vp.View()
+	hintLine := DimStyle.Width(vpW).Render(scrollHint(c.vp))
+	if hintLine == "" {
+		hintLine = strings.Repeat(" ", vpW)
+	}
+	vpContent = lipgloss.JoinVertical(lipgloss.Left, vpContent, hintLine)
+	box := menuBoxStyle.Width(boxW).Render(vpContent)
+	result := lipgloss.JoinVertical(lipgloss.Left, header, "", box)
 	c.cachedForm = result
 	c.formSig = sig
 	return result
@@ -756,7 +810,7 @@ func (c *ContestChooser) renderCheckbox(b *strings.Builder, w, focusIdx int, lab
 	if c.focus == focusIdx {
 		prefix = S.FormPrefixOn.Render("> ")
 		lbl = S.FormFocusedCtx.Align(lipgloss.Left).Render(label)
-		cb = CursorStyle.Render(cb)
+		cb = CursorStyle.Render(cb) + " " + DimStyle.Render("(Space)")
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, cb),

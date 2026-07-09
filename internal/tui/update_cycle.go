@@ -113,3 +113,17 @@ func (m *Model) cycleRig() tea.Cmd {
 	m.App.MaybeRestartWSJTX(rp.WsjtxEnabled, rp.WsjtxUDPHost, rp.WsjtxUDPPort)
 	return nil
 }
+
+// restartWSJTXForActiveRig reads the active rig's WSJT-X config and
+// calls MaybeRestartWSJTX.  Used after rig editor save/close so WSJT-X
+// starts/stops immediately instead of waiting for the periodic retry.
+func (m *Model) restartWSJTXForActiveRig() {
+	if m.App == nil || m.App.Logbook == nil || m.App.Config == nil {
+		return
+	}
+	rp, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]
+	if !ok {
+		return
+	}
+	m.App.MaybeRestartWSJTX(rp.WsjtxEnabled, rp.WsjtxUDPHost, rp.WsjtxUDPPort)
+}

@@ -347,19 +347,21 @@ func (m *Model) viewBPL(l Layout) string {
 			lines = m.viewBPLPMR(region)
 		case bplTabBRC:
 			lines = m.viewBPLBRC()
+		case bplTabPORT:
+			lines = m.viewBPLPORT(region)
 		}
 		m.bpl.cachedLines = lines
 		m.bpl.cachedLinesKey = linesKey
 	}
 	body := m.renderBPLContent(lines)
 
-	// Disclaimer footer.
-	footer := DimStyle.Width(w).Render(" Listen first. Check national rules. VHF/UHF often needs country/local overrides.")
-	content := header + "\n " + tabBar + "\n\n" + body + "\n\n" + footer
+	// Content without the disclaimer footer — that's pinned as the last
+	// content row by buildBodyForScreen directly above the help bar.
+	content := header + "\n " + tabBar + "\n\n" + body
 
-	m.bpl.cachedView = fillBody(content, ch)
+	m.bpl.cachedView = content
 	m.bpl.cachedSig = sig
-	return m.bpl.cachedView
+	return content
 }
 
 // viewBPLHAM returns lines for the amateur HF band plan (160m–10m).
@@ -764,6 +766,51 @@ func (m *Model) bplRowCount() int {
 	return m.bpl.cachedRowCount
 }
 
+// viewBPLPORT renders the Portable/SOTA/POTA suggested starting areas tab.
+// These are NOT official channels — see disclaimer in the tab heading.
+func (m *Model) viewBPLPORT(region int) []string {
+	presets, ok := portablePresets[region]
+	if !ok || len(presets) == 0 {
+		return []string{DimStyle.Render("No portable presets for this IARU region")}
+	}
+
+	var lines []string
+	lines = append(lines, S.Warning.Render("NOT official channels — suggested portable QRP/SOTA/POTA starting areas only"))
+	lines = append(lines, S.Warning.Render("Check bandplan + licence rules. Listen first, ask QRL, self-spot exact frequency."))
+	lines = append(lines, "")
+
+	for _, p := range presets {
+		cw := ""
+		if p.CW != "" {
+			cw = fmt.Sprintf("CW %s  ", p.CW)
+			if p.CWRange != "" {
+				cw += fmt.Sprintf("[%s]", p.CWRange)
+			}
+		}
+		ssb := ""
+		if p.SSB != "" {
+			if cw != "" {
+				ssb = "  │  "
+			}
+			ssb += fmt.Sprintf("SSB %s  ", p.SSB)
+			if p.SSBRange != "" {
+				ssb += fmt.Sprintf("[%s]", p.SSBRange)
+			}
+		}
+		bandHdr := fmt.Sprintf("%-5s", p.Band)
+		if cw != "" || ssb != "" {
+			lines = append(lines, bandHdr+cw+ssb)
+		}
+		if p.CWNote != "" {
+			lines = append(lines, DimStyle.Render(fmt.Sprintf("      %s", p.CWNote)))
+		}
+		if p.SSBNote != "" && p.SSBNote != p.CWNote {
+			lines = append(lines, DimStyle.Render(fmt.Sprintf("      %s", p.SSBNote)))
+		}
+	}
+	return lines
+}
+
 // bplTableHeight returns the available table height for the band plan.
 func bplTableHeight(termH int) int {
 	h := contentHeight(termH) - 2
@@ -851,6 +898,11 @@ func (m *Model) buildBPLMarkdown(region int) string {
 	// Broadcast section.
 	b.WriteString("\n## Broadcast\n\n")
 	m.writeBRCMarkdownRows(&b)
+
+	// Portable/SOTA section.
+	b.WriteString("\n## Portable SOTA/POTA Starting Areas\n\n")
+	b.WriteString("> NOT official channels — suggested starting areas. Check bandplan + licence rules. Listen first, ask QRL, self-spot exact frequency.\n\n")
+	m.writePORTMarkdownRows(&b, region)
 
 	// Footer with version and timestamp.
 	b.WriteString("\n---\n")
@@ -1090,6 +1142,46 @@ func (m *Model) writeBRCMarkdownRows(b *strings.Builder) {
 		}
 		b.WriteString("\n")
 	}
+}
+
+// writePORTMarkdownRows writes the portable/SOTA/POTA presets as a Markdown table.
+func (m *Model) writePORTMarkdownRows(b *strings.Builder, region int) {
+	presets, ok := portablePresets[region]
+	if !ok || len(presets) == 0 {
+		return
+	}
+	b.WriteString("| Band | CW Start | CW Range | SSB Start | SSB Range | Notes |\n")
+	b.WriteString("|------|----------|----------|-----------|-----------|-------|\n")
+	for _, p := range presets {
+		cw := p.CW
+		if cw == "" {
+			cw = "—"
+		}
+		cwR := p.CWRange
+		if cwR == "" {
+			cwR = "—"
+		}
+		ssb := p.SSB
+		if ssb == "" {
+			ssb = "—"
+		}
+		ssbR := p.SSBRange
+		if ssbR == "" {
+			ssbR = "—"
+		}
+		note := p.CWNote
+		if p.SSBNote != "" && p.SSBNote != p.CWNote {
+			if note != "" {
+				note += "; "
+			}
+			note += p.SSBNote
+		}
+		if note == "" {
+			note = "—"
+		}
+		fmt.Fprintf(b, "| %s | %s | %s | %s | %s | %s |\n", p.Band, cw, cwR, ssb, ssbR, note)
+	}
+	b.WriteString("\n")
 }
 
 // bplRows builds all table rows for the BPL page (HF + VHF + non-ham + BRC).

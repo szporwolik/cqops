@@ -5,7 +5,9 @@ import (
 	"strconv"
 	"strings"
 
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
@@ -33,6 +35,11 @@ type RigChooser struct {
 	height       int
 	done         bool
 	needsRefresh bool // set by saveForm when active rig config changed
+
+	// Viewport for scrolling form/content on small terminals.
+	vp              viewport.Model
+	lastFormContent string
+	lastListContent string
 }
 
 func NewRigChooser(a *app.App, tq *ToastQueue) *RigChooser {
@@ -113,6 +120,11 @@ func (rc *RigChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case rc.mode == rigChooserList && k.String() == "insert":
 			rc.startCreate()
 
+		case rc.mode == rigChooserList && (k.String() == "ctrl+d"):
+			if len(rc.names) > 0 {
+				return rc, rc.duplicateRig()
+			}
+
 		case rc.mode == rigChooserList && (k.String() == "delete" || msg.Code == tea.KeyDelete):
 			if len(rc.names) > 0 {
 				rc.mode = rigChooserConfirmDelete
@@ -126,12 +138,17 @@ func (rc *RigChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				rc.dialog = &d
 			}
 
+		case rc.mode == rigChooserList && (k.String() == "pgup" || k.String() == "pgdown" || k.String() == "home" || k.String() == "end"):
+			rc.vp, _ = rc.vp.Update(msg)
+			return rc, nil
+
 		case rc.mode == rigChooserList && (msg.Code == tea.KeyUp || k.String() == "up" || k.String() == "k"):
 			if rc.cursor == 0 {
 				rc.cursor = len(rc.names) - 1
 			} else {
 				rc.cursor--
 			}
+			scrollVpToLine(&rc.vp, rc.cursor)
 
 		case rc.mode == rigChooserList && (msg.Code == tea.KeyDown || k.String() == "down" || k.String() == "j"):
 			if rc.cursor == len(rc.names)-1 {
@@ -139,10 +156,17 @@ func (rc *RigChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				rc.cursor++
 			}
+			scrollVpToLine(&rc.vp, rc.cursor)
 
 		case rc.mode == rigChooserEdit || rc.mode == rigChooserCreate:
-			if cmd := rc.form.HandleKey(msg); cmd != nil {
-				return rc, rc.saveForm()
+			switch {
+			case k.String() == "pgup", k.String() == "pgdown", k.String() == "home", k.String() == "end":
+				rc.vp, _ = rc.vp.Update(msg)
+				return rc, nil
+			default:
+				if cmd := rc.form.HandleKey(msg); cmd != nil {
+					return rc, rc.saveForm()
+				}
 			}
 		}
 	}
@@ -179,10 +203,6 @@ func (rc *RigChooser) viewList() string {
 	h := rc.height
 	if h < 10 {
 		h = 24
-	}
-	contentH := contentHeight(h)
-	if contentH < 3 {
-		contentH = 3
 	}
 
 	if len(rc.names) == 0 {
@@ -231,12 +251,10 @@ func (rc *RigChooser) viewList() string {
 		}
 	}
 
-	body := drawMenuWithHeader("Configuration \u2014 Rig Profiles", b.String(), w)
-	return fillBody(body, contentH)
+	return renderScrollableMenu("Configuration \u2014 Rig Profiles", b.String(), &rc.vp, &rc.lastListContent, w, h)
 }
 
 func (rc *RigChooser) viewForm() string {
-	var b strings.Builder
 	w := rc.width
 	if w < 40 {
 		w = 80
@@ -250,11 +268,40 @@ func (rc *RigChooser) viewForm() string {
 		contentH = 3
 	}
 
-	rc.form.width = w - 6 // account for menu box border + padding
-	b.WriteString(rc.form.View().Content)
-
-	body := drawMenuWithHeader("Configuration \u2014 Rig Profiles \u2014 Edit Rig", b.String(), w)
-	return fillBody(body, contentH)
+	// Use viewport for scrollable form body on small terminals.
+	boxW := w
+	if boxW > partnerMapMaxW {
+		boxW = partnerMapMaxW
+	}
+	vpW := boxW - 4 // account for menu box left+right padding
+	if vpW < 20 {
+		vpW = 20
+	}
+	// Overhead: header(1) + blank row(1) + scroll hint(1) = 3 lines.
+	vpH := contentH - 3
+	if vpH < 4 {
+		vpH = 4
+	}
+	rc.form.width = vpW
+	bodyStr := rc.form.View().Content
+	rc.vp.SetWidth(vpW)
+	rc.vp.SetHeight(vpH)
+	if rc.vp.TotalLineCount() == 0 || bodyStr != rc.lastFormContent {
+		rc.vp.SetContent(bodyStr)
+		rc.lastFormContent = bodyStr
+	}
+	if rc.vp.PastBottom() {
+		rc.vp.SetYOffset(rc.vp.TotalLineCount() - rc.vp.VisibleLineCount())
+	}
+	header := S.Title.Width(boxW).Render("Configuration \u2014 Rig Profiles \u2014 Edit Rig")
+	vpContent := rc.vp.View()
+	hintLine := DimStyle.Width(vpW).Render(scrollHint(rc.vp))
+	if hintLine == "" {
+		hintLine = strings.Repeat(" ", vpW)
+	}
+	vpContent = lipgloss.JoinVertical(lipgloss.Left, vpContent, hintLine)
+	box := menuBoxStyle.Width(boxW).Render(vpContent)
+	return lipgloss.JoinVertical(lipgloss.Left, header, "", box)
 }
 
 func (rc *RigChooser) selectRig() tea.Cmd {
@@ -491,6 +538,44 @@ func (rc *RigChooser) deleteRig() tea.Cmd {
 	} else {
 		rc.toasts.Success("Rig " + displayName + " deleted")
 		applog.Info("Rig deleted", "name", displayName)
+	}
+	return nil
+}
+
+func (rc *RigChooser) duplicateRig() tea.Cmd {
+	id := rc.names[rc.cursor]
+	rp := rc.app.Config.Rigs[id]
+	displayName := config.RigDisplayName(&rp)
+
+	cloneName := displayName + " (Clone)"
+	if rp.Name != "" {
+		cloneName = rp.Name + " (Clone)"
+	}
+
+	// Build a clone with the same settings but a new ID and name.
+	clone := rp
+	clone.ID = config.NewID(cloneName)
+	clone.Name = cloneName
+
+	if rc.app.Config.Rigs == nil {
+		rc.app.Config.Rigs = make(map[string]config.RigPreset)
+	}
+	rc.app.Config.Rigs[clone.ID] = clone
+	rc.refreshNames()
+
+	// Position cursor on the newly created clone.
+	for i, n := range rc.names {
+		if n == clone.ID {
+			rc.cursor = i
+			break
+		}
+	}
+
+	if err := config.Save(rc.app.ConfigPath, rc.app.Config); err != nil {
+		rc.toasts.Error("Duplicate " + displayName + " failed: " + err.Error())
+	} else {
+		rc.toasts.Success("Rig \"" + displayName + "\" duplicated as \"" + cloneName + "\"")
+		applog.Info("Rig duplicated", "original", displayName, "clone", cloneName)
 	}
 	return nil
 }

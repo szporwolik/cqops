@@ -48,6 +48,7 @@ type LogbookChooser struct {
 	// Viewport for scrolling form content on small terminals.
 	vp              viewport.Model
 	lastFormContent string
+	lastListContent string
 
 	// APRS async state.
 	aprsTesting bool
@@ -140,7 +141,7 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			c.aprsStatus = msg.err.Error()
 			c.toasts.Error("APRS: " + msg.err.Error())
 		} else {
-			c.aprsStatus = "OK — APRS-IS reachable"
+			c.aprsStatus = "OK — connection verified"
 			c.toasts.Success("APRS: connection verified")
 		}
 		c.scrollViewportToEnd()
@@ -212,12 +213,17 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				c.dialog = &d
 			}
 
+		case c.mode == chooserList && (k.String() == "pgup" || k.String() == "pgdown" || k.String() == "home" || k.String() == "end"):
+			c.vp, _ = c.vp.Update(msg)
+			return c, nil
+
 		case c.mode == chooserList && (msg.Code == tea.KeyUp || k.String() == "up" || k.String() == "k"):
 			if c.cursor == 0 {
 				c.cursor = len(c.names) - 1
 			} else {
 				c.cursor--
 			}
+			scrollVpToLine(&c.vp, c.cursor)
 
 		case c.mode == chooserList && (msg.Code == tea.KeyDown || k.String() == "down" || k.String() == "j"):
 			if c.cursor == len(c.names)-1 {
@@ -225,6 +231,7 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				c.cursor++
 			}
+			scrollVpToLine(&c.vp, c.cursor)
 
 		case c.mode == chooserEdit || c.mode == chooserCreate:
 			if cmd := c.station.HandleKey(msg); cmd != nil {
@@ -294,10 +301,6 @@ func (c *LogbookChooser) viewList() string {
 	if h < 10 {
 		h = 24
 	}
-	contentH := contentHeight(h)
-	if contentH < 3 {
-		contentH = 3
-	}
 
 	if len(c.names) == 0 {
 		b.WriteString("No logbooks configured.\n")
@@ -344,8 +347,7 @@ func (c *LogbookChooser) viewList() string {
 		}
 	}
 
-	body := drawMenuWithHeader("Configuration \u2014 Logbooks", b.String(), w)
-	return fillBody(body, contentH)
+	return renderScrollableMenu("Configuration \u2014 Logbooks", b.String(), &c.vp, &c.lastListContent, w, h)
 }
 
 func (c *LogbookChooser) viewForm() string {
@@ -391,20 +393,18 @@ func (c *LogbookChooser) viewForm() string {
 	if boxW > partnerMapMaxW {
 		boxW = partnerMapMaxW
 	}
-	vpW := boxW - 4 // account for menu box border + padding
+	vpW := boxW - 4 // account for menu box left+right padding
 	if vpW < 20 {
 		vpW = 20
 	}
-	// contentH = usable area after status/help bars.
-	// vpH = contentH minus header(1) minus menu box overhead:
-	// border top(1) + padding top(1) + padding bottom(1) + border bottom(1) = 4.
+	// Overhead: header(1) + blank row(1) + scroll hint(1) = 3 lines.
 	contentH := contentHeight(h)
 	if contentH < 8 {
 		contentH = 8
 	}
-	vpH := contentH - 5
-	if vpH < 5 {
-		vpH = 5
+	vpH := contentH - 3
+	if vpH < 4 {
+		vpH = 4
 	}
 	c.vp.SetWidth(vpW)
 	c.vp.SetHeight(vpH)
@@ -419,8 +419,15 @@ func (c *LogbookChooser) viewForm() string {
 	}
 
 	header := S.Title.Width(boxW).Render("Configuration \u2014 Logbooks \u2014 Edit Logbook")
-	box := menuBoxStyle.Width(boxW).Render(c.vp.View())
-	return lipgloss.JoinVertical(lipgloss.Left, header, box)
+	vpContent := c.vp.View()
+	hint := scrollHint(c.vp)
+	hintLine := DimStyle.Width(vpW).Render(hint)
+	if hintLine == "" {
+		hintLine = strings.Repeat(" ", vpW)
+	}
+	vpContent = lipgloss.JoinVertical(lipgloss.Left, vpContent, hintLine)
+	box := menuBoxStyle.Width(boxW).Render(vpContent)
+	return lipgloss.JoinVertical(lipgloss.Left, header, "", box)
 }
 
 // autoScrollViewport adjusts the viewport Y offset to keep the currently
@@ -522,6 +529,7 @@ func (c *LogbookChooser) startEdit(id string) {
 		}
 	}
 	c.station.SetValues(lb.Name, lb.Station.Callsign, opCallsign, lb.Station.Grid, lb.Station.SOTARef, lb.Station.POTARef, lb.Station.WWFFRef, lb.Station.IARURegion, lb.Station.CQZone, lb.Station.ITUZone, lb.Station.DXCC, lb.Station.SIG, lb.Station.SIGInfo, lb.Station.Continent)
+	c.station.GPSGrid = lb.Station.GPSGrid
 	c.station.SetOperators(config.OperatorSlice(c.app.Config))
 	c.station.SetWavelogValues(lb.Wavelog)
 	c.station.SetAPRSValues(lb.APRS)
@@ -579,20 +587,12 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 	}
 	// Validate APRS fields when enabled.
 	if aprs != nil {
-		if aprs.Server == "" {
-			c.toasts.Warn("APRS: server is required when APRS is enabled")
-			return nil
-		}
-		if aprs.Passcode == "" {
-			c.toasts.Warn("APRS: passcode is required when APRS is enabled")
-			return nil
-		}
 		if aprs.Callsign == "" {
 			c.toasts.Warn("APRS: callsign is required when APRS is enabled")
 			return nil
 		}
-		if aprs.IntervalMin < 15 {
-			c.toasts.Warn("APRS: interval must be at least 15 minutes")
+		if aprs.IntervalMin < 1 {
+			c.toasts.Warn("APRS: interval must be at least 1 minute")
 			return nil
 		}
 		if aprs.Symbol == "" {
@@ -617,6 +617,7 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 				Callsign: cs,
 
 				Grid:       gr,
+				GPSGrid:    c.station.GPSGrid,
 				SOTARef:    sotaRef,
 				POTARef:    potaRef,
 				WWFFRef:    wwffRef,
@@ -664,6 +665,7 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 	lb.Station.Callsign = cs
 	lb.ActiveOperator = activeOpID
 	lb.Station.Grid = gr
+	lb.Station.GPSGrid = c.station.GPSGrid
 	lb.Station.SOTARef = sotaRef
 	lb.Station.POTARef = potaRef
 	lb.Station.WWFFRef = wwffRef
@@ -691,8 +693,9 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 	}
 	c.toasts.Success("Logbook " + savedName + " saved")
 	applog.Info("Logbook saved", "name", savedName)
-	// Restart APRS if config changed.
-	c.app.MaybeRestartAPRS()
+	// Restart APRS if config changed (debounced).
+	c.app.ScheduleAPRSRestart()
+	c.app.RequestAPRSRefresh()
 	return nil
 }
 
@@ -806,20 +809,22 @@ func (c *LogbookChooser) testWavelogConnection() tea.Cmd {
 	}
 }
 
-// testAPRSConnection tests APRS-IS connectivity with the configured server/callsign/passcode.
+// testAPRSConnection tests APRS connectivity using the global
+// integration config and the logbook config for callsign/passcode.
 func (c *LogbookChooser) testAPRSConnection() tea.Cmd {
+	aprsGlobal := c.app.Config.Integrations.APRS
+	if !aprsGlobal.Enabled {
+		c.aprsStatus = "APRS not configured in Integrations"
+		c.toasts.Warn("APRS: enable and configure APRS in Integrations first")
+		c.scrollViewportToEnd()
+		return nil
+	}
+
 	cfg := c.station.APRSValues()
-	srv := cfg.Server
 	call := cfg.Callsign
 	pass := cfg.Passcode
 
 	// Validate required fields before testing.
-	if srv == "" {
-		c.aprsStatus = "Server is required"
-		c.toasts.Warn("APRS: server is required")
-		c.scrollViewportToEnd()
-		return nil
-	}
 	if pass == "" {
 		c.aprsStatus = "Passcode is required"
 		c.toasts.Warn("APRS: passcode is required")
@@ -833,13 +838,63 @@ func (c *LogbookChooser) testAPRSConnection() tea.Cmd {
 		return nil
 	}
 
-	c.aprsTesting = true
-	c.aprsStatus = "Testing…"
-	c.scrollViewportToEnd()
-	return func() tea.Msg {
-		if err := aprs.TestConnection(srv, call, pass); err != nil {
-			return aprsTestMsg{err: err}
+	switch aprsGlobal.Service {
+	case "kiss":
+		prt := aprsGlobal.Port
+		baud := aprsGlobal.BaudRate
+		if prt == "" || baud == 0 {
+			c.aprsStatus = "KISS port/baud not configured in Integrations"
+			c.toasts.Warn("APRS: configure KISS port and baud in Integrations first")
+			c.scrollViewportToEnd()
+			return nil
 		}
-		return aprsTestMsg{}
+		dataBits := aprsGlobal.DataBits
+		if dataBits < 5 || dataBits > 8 {
+			dataBits = 8
+		}
+		par := parityFromString(aprsGlobal.Parity)
+		stop := stopBitsFromString(aprsGlobal.StopBits)
+		c.aprsTesting = true
+		c.aprsStatus = "Testing KISS…"
+		c.scrollViewportToEnd()
+		return func() tea.Msg {
+			if err := testKISSPort(prt, baud, dataBits, par, stop, aprsGlobal.DTR, aprsGlobal.RTS); err != nil {
+				return aprsTestMsg{err: err}
+			}
+			return aprsTestMsg{}
+		}
+	case "kiss_server":
+		host := aprsGlobal.KISSServerHost
+		if host == "" {
+			host = "127.0.0.1"
+		}
+		port := aprsGlobal.KISSServerPort
+		if port == "" {
+			port = "8001"
+		}
+		addr := host + ":" + port
+		c.aprsTesting = true
+		c.aprsStatus = "Testing KISS server…"
+		c.scrollViewportToEnd()
+		return func() tea.Msg {
+			if err := aprs.TestKISSServerConnection(addr); err != nil {
+				return aprsTestMsg{err: err}
+			}
+			return aprsTestMsg{}
+		}
+	default: // "aprs_is" or empty
+		srv := aprsGlobal.Server
+		if srv == "" {
+			srv = "euro.aprs2.net:14580"
+		}
+		c.aprsTesting = true
+		c.aprsStatus = "Testing…"
+		c.scrollViewportToEnd()
+		return func() tea.Msg {
+			if err := aprs.TestConnection(srv, call, pass); err != nil {
+				return aprsTestMsg{err: err}
+			}
+			return aprsTestMsg{}
+		}
 	}
 }

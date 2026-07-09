@@ -24,12 +24,11 @@ func TestGridToLatLon_6Char(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// KO00CA: 20° + 10′ + 2.5′ = ~20.2083°E, 50° + 0′ + 1.25′ = ~50.0208°N
-	if lat < 49 || lat > 51 {
-		t.Errorf("lat = %v, want ~50.02", lat)
-	}
-	if lon < 19 || lon > 21 {
-		t.Errorf("lon = %v, want ~20.21", lon)
+	// KO00CA: 20° + 10′ + 2.5′ = 20.208333°E, 50° + 0′ + 1.25′ = 50.020833°N
+	// (half-cell only at the finest level — 6-char → 2.5′/1.25′ centres)
+	expectLat, expectLon := 50.020833, 20.208333
+	if math.Abs(lat-expectLat) > 0.001 || math.Abs(lon-expectLon) > 0.001 {
+		t.Errorf("lat=%v lon=%v, want lat≈%v lon≈%v", lat, lon, expectLat, expectLon)
 	}
 }
 
@@ -38,14 +37,13 @@ func TestGridToLatLon_8Char(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// KO00CA02: subsquare 'C'→2×5′, 'A'→0×2.5′, ext '0'→0×0.5′, '2'→2×0.25′
-	// lon = 20° + 0° + 10′ + 2.5′ + 0 + 0.25′ = 20.2125°
-	// lat = 50° + 0° + 0′ + 1.25′ + 0.5′ + 0.125′ = 50.03125°
-	if lat < 49 || lat > 51 {
-		t.Errorf("lat = %v, want ~50.03", lat)
-	}
-	if lon < 19 || lon > 21 {
-		t.Errorf("lon = %v, want ~20.21", lon)
+	// KO00CA02: sub C→2×5′ lon, A→0×2.5′ lat; ext 0→0×0.5′ lon, 2→2×0.25′ lat.
+	// lon = 20° + 0′ + 10′ + 0′ + 0.25′ = 20.170833°
+	// lat = 50° + 0′ + 0′ + 0.5′ + 0.125′ = 50.010417°
+	// (half-cell only at 8-char level: 0.25′/0.125′)
+	expectLat, expectLon := 50.010417, 20.170833
+	if math.Abs(lat-expectLat) > 0.001 || math.Abs(lon-expectLon) > 0.001 {
+		t.Errorf("lat=%v lon=%v, want lat≈%v lon≈%v", lat, lon, expectLat, expectLon)
 	}
 }
 
@@ -54,11 +52,13 @@ func TestGridToLatLon_10Char(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if lat == 0 && lon == 0 {
-		t.Error("expected non-zero coords for 10-char grid")
-	}
-	if lat < 49 || lat > 51 {
-		t.Errorf("lat = %v, expected near 50°N", lat)
+	// KO00CA02WH: sub C→2×5′ lon, A→0×2.5′ lat; ext 0→0×0.5′ lon, 2→2×0.25′ lat;
+	// ext-sub W→22×1.25″ lon, H→7×0.625″ lat.
+	// lon = 20° + 0° + 10′ + 0′ + 22×1.25″ + 0.625″ = 20° + 10′ + 28.125″ = 20.174479°
+	// lat = 50° + 0° + 0′ + 0.5′ + 7×0.625″ + 0.3125″ = 50° + 0.5′ + 4.6875″ = 50.009635°
+	expectLat, expectLon := 50.009635, 20.174479
+	if math.Abs(lat-expectLat) > 0.001 || math.Abs(lon-expectLon) > 0.001 {
+		t.Errorf("lat=%v lon=%v, want lat≈%v lon≈%v", lat, lon, expectLat, expectLon)
 	}
 }
 

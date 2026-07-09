@@ -22,9 +22,17 @@ var ErrAuthFailed = fmt.Errorf("APRS: authentication failed")
 // file or invoke the filesystem on every APRS connection attempt.
 var clientVersion = version.Resolved()
 
-// Client maintains a persistent connection to an APRS-IS server,
+// Client is the interface for APRS data sources (TCP APRS-IS or KISS serial).
+type Client interface {
+	Start()
+	Stop()
+	IsRunning() bool
+	IsConnected() bool
+}
+
+// TCPClient maintains a persistent connection to an APRS-IS server,
 // receives position reports, and stores them in a local cache.
-type Client struct {
+type TCPClient struct {
 	mu        sync.Mutex
 	conn      net.Conn
 	scanner   *bufio.Scanner
@@ -42,9 +50,9 @@ type Client struct {
 	OnStatus func(connected bool, err error) // called on connect/disconnect/reconnect
 }
 
-// NewClient creates an APRS-IS client. Call Start() to connect.
-func NewClient(server, callsign, passcode, filter string) *Client {
-	return &Client{
+// NewTCPClient creates an APRS-IS client. Call Start() to connect.
+func NewTCPClient(server, callsign, passcode, filter string) *TCPClient {
+	return &TCPClient{
 		server:   server,
 		callsign: callsign,
 		passcode: passcode,
@@ -54,7 +62,7 @@ func NewClient(server, callsign, passcode, filter string) *Client {
 
 // Start connects to the APRS-IS server and begins receiving packets.
 // Non-blocking — connection runs in a goroutine. Use OnStatus for feedback.
-func (c *Client) Start() {
+func (c *TCPClient) Start() {
 	c.mu.Lock()
 	if c.running {
 		c.mu.Unlock()
@@ -69,7 +77,7 @@ func (c *Client) Start() {
 }
 
 // Stop disconnects and shuts down the receive loop.
-func (c *Client) Stop() {
+func (c *TCPClient) Stop() {
 	c.mu.Lock()
 	if !c.running {
 		c.mu.Unlock()
@@ -89,21 +97,21 @@ func (c *Client) Stop() {
 }
 
 // IsRunning returns true when the client is active (may not be connected yet).
-func (c *Client) IsRunning() bool {
+func (c *TCPClient) IsRunning() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.running
 }
 
 // IsConnected returns true when we have an active TCP connection.
-func (c *Client) IsConnected() bool {
+func (c *TCPClient) IsConnected() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.connected
 }
 
 // UpdateFilter changes the server-side filter and reconnects.
-func (c *Client) UpdateFilter(filter string) {
+func (c *TCPClient) UpdateFilter(filter string) {
 	c.mu.Lock()
 	c.filter = filter
 	wasRunning := c.running
@@ -118,7 +126,7 @@ func (c *Client) UpdateFilter(filter string) {
 // runLoop is the main goroutine — connects, receives, reconnects.
 // Exponential backoff on transient errors: 2s → 4s → 8s → … → max 60s.
 // Permanent errors (ErrAuthFailed) stop the loop immediately.
-func (c *Client) runLoop() {
+func (c *TCPClient) runLoop() {
 	defer close(c.doneCh)
 
 	delay := 2 * time.Second
@@ -179,7 +187,7 @@ func (c *Client) runLoop() {
 	}
 }
 
-func (c *Client) setConnected(connected bool, err error) {
+func (c *TCPClient) setConnected(connected bool, err error) {
 	c.mu.Lock()
 	c.connected = connected
 	c.mu.Unlock()
@@ -188,7 +196,7 @@ func (c *Client) setConnected(connected bool, err error) {
 	}
 }
 
-func (c *Client) connect() error {
+func (c *TCPClient) connect() error {
 	applog.Debug("APRS: connecting", "server", c.server)
 	conn, err := net.DialTimeout("tcp", c.server, DefaultTimeout)
 	if err != nil {
@@ -257,7 +265,7 @@ func (c *Client) connect() error {
 	return nil
 }
 
-func (c *Client) disconnectLocked() {
+func (c *TCPClient) disconnectLocked() {
 	if c.conn != nil {
 		c.conn.Close()
 		c.conn = nil
@@ -267,7 +275,7 @@ func (c *Client) disconnectLocked() {
 
 // receiveLoop reads packets from the active connection. It returns when
 // the scanner fails (connection lost) or the client is stopped.
-func (c *Client) receiveLoop() {
+func (c *TCPClient) receiveLoop() {
 	for {
 		select {
 		case <-c.stopCh:
@@ -317,7 +325,7 @@ func BuildRangeFilter(lat, lon float64, radiusKm int) string {
 // The packet is sent in the standard APRS-IS inject format:
 //
 //	CALLSIGN>APRS,TCPIP*:!DDMM.hhN/DDDMM.hhW<symbol>/...comment
-func (c *Client) SendPosition(callsign string, lat, lon float64, symbol, comment string) error {
+func (c *TCPClient) SendPosition(callsign string, lat, lon float64, symbol, comment string) error {
 	c.mu.Lock()
 	conn := c.conn
 	c.mu.Unlock()
@@ -343,7 +351,35 @@ func (c *Client) SendPosition(callsign string, lat, lon float64, symbol, comment
 	return nil
 }
 
-// formatUncompressedPosition builds the body portion of an uncompressed
+// TestKISSServerConnection tries to open a brief TCP connection to the
+// KISS server at addr and sends a KISS command frame (no operation) to
+// verify the server is reachable and speaks KISS.
+func TestKISSServerConnection(addr string) error {
+	const fend byte = 0xC0
+	const kissCmdReset byte = 0xFF
+
+	conn, err := net.DialTimeout("tcp", addr, DefaultTimeout)
+	if err != nil {
+		return fmt.Errorf("KISS server: connect: %w", err)
+	}
+	defer conn.Close()
+
+	if err := conn.SetDeadline(time.Now().Add(DefaultTimeout)); err != nil {
+		return fmt.Errorf("KISS server: set deadline: %w", err)
+	}
+
+	// Send a KISS reset command (FEND CMD FEND) as a simple probe.
+	if _, err := conn.Write([]byte{fend, kissCmdReset, fend}); err != nil {
+		return fmt.Errorf("KISS server: write: %w", err)
+	}
+
+	// Try to read any response — not required, just a connectivity test.
+	buf := make([]byte, 64)
+	conn.Read(buf)
+
+	return nil
+}
+
 // APRS position report in the standard format:
 //
 //	!DDMM.hhN<sym_table>DDDMM.hhW<sym_code>/...comment

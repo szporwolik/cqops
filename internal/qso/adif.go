@@ -207,26 +207,36 @@ func (q *QSO) toADIFWithStation(stationCall string) string {
 	set(adifield.Field("MY_SIG"), q.MySIG)
 	set(adifield.Field("MY_SIG_INFO"), q.MySIGInfo)
 	// Distance: 1 decimal km. Bearing: integer degrees (ADIF ANT_AZ 0–360).
+	// Only export when bearing is set to a valid value (-1 means unknown).
 	if q.Distance != 0 {
 		r[adifield.DISTANCE] = fmt.Sprintf("%.1f", q.Distance)
 	}
-	if q.Bearing != 0 {
+	if q.Bearing >= 0 && q.Bearing <= 360 {
 		r[adifield.ANT_AZ] = fmt.Sprintf("%.0f", q.Bearing)
 	}
 	set(adifield.CQZ, q.CQZone)
 	set(adifield.ITUZ, q.ITUZone)
 
-	// Contest exchange fields.
-	set(adifield.Field("EXCH_SENT"), q.ExchSent)
-	set(adifield.Field("EXCH_RCVD"), q.ExchRcvd)
+	// Contest exchange fields — use only standard ADIF tags.
+	// STX / SRX: integer sequence numbers.
 	if q.STX != 0 {
 		r[adifield.Field("STX")] = fmt.Sprintf("%d", q.STX)
 	}
 	if q.SRX != 0 {
 		r[adifield.Field("SRX")] = fmt.Sprintf("%d", q.SRX)
 	}
-	set(adifield.Field("STX_STRING"), q.STXString)
-	set(adifield.Field("SRX_STRING"), q.SRXString)
+	// STX_STRING / SRX_STRING: full exchange including RST when contest data
+	// is present, otherwise the RST-stripped exchange string.
+	if q.ExchSent != "" {
+		set(adifield.Field("STX_STRING"), q.ExchSent)
+	} else {
+		set(adifield.Field("STX_STRING"), q.STXString)
+	}
+	if q.ExchRcvd != "" {
+		set(adifield.Field("SRX_STRING"), q.ExchRcvd)
+	} else {
+		set(adifield.Field("SRX_STRING"), q.SRXString)
+	}
 	set(adifield.Field("CONTEST_ID"), q.ContestADIFID)
 
 	return r.String() + "<EOR>"

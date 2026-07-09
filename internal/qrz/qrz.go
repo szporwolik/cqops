@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -156,8 +157,8 @@ func qrzLoginLookup(user, pass, callsign string) (*CallData, error) {
 	u := "https://xmldata.qrz.com/xml/current/?username=" + url.QueryEscape(user) + ";password=" + url.QueryEscape(pass) + ";agent=CQOps"
 	data, err := httpGetFn(u)
 	if err != nil {
-		applog.Error("QRZ auth failed", "error", err)
-		return nil, err
+		applog.Error("QRZ auth failed", "error", sanitizeQRError(err))
+		return nil, fmt.Errorf("QRZ: %s", sanitizeQRError(err))
 	}
 
 	var authDB qrzDatabase
@@ -180,6 +181,17 @@ func qrzLoginLookup(user, pass, callsign string) (*CallData, error) {
 	cacheMu.Unlock()
 
 	return qrzLookup(authDB.Session.Key, callsign)
+}
+
+// sanitizeQRError strips the QRZ password from error messages before
+// they are logged or shown in toasts.  The HTTP client's error includes
+// the full request URL which embeds the password query parameter.
+func sanitizeQRError(err error) string {
+	msg := err.Error()
+	// Strip ";password=..." up to the next ";" or "?" or end-of-string.
+	// QRZ URLs use ";password=XXXX;agent=CQOps".
+	re := regexp.MustCompile(`;password=[^;&?]+`)
+	return re.ReplaceAllString(msg, ";password=****")
 }
 
 func httpGet(u string) ([]byte, error) {
@@ -216,8 +228,8 @@ func TestConnection(user, pass string) error {
 	u := "https://xmldata.qrz.com/xml/current/?username=" + url.QueryEscape(user) + ";password=" + url.QueryEscape(pass) + ";agent=CQOps"
 	data, err := httpGetFn(u)
 	if err != nil {
-		applog.Error("QRZ: connection failed", "error", err)
-		return fmt.Errorf("connection failed: %w", err)
+		applog.Error("QRZ: connection failed", "error", sanitizeQRError(err))
+		return fmt.Errorf("connection failed: %s", sanitizeQRError(err))
 	}
 
 	var authDB qrzDatabase

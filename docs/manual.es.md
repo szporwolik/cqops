@@ -45,7 +45,7 @@ CQOps está construido alrededor de la entrada rápida de QSOs, el registro loca
 - **Varios logbooks** — útil para logs personales, portables, de concursos y de club.
 - **Varios operadores** — útil para operación hot-seat y estaciones de club compartidas.
 - **Varios rigs** — cada preset de rig puede tener su propio backend y configuración de WSJT-X.
-- **Integraciones opcionales** — QRZ.com, Wavelog, DX Cluster, PSK Reporter, APRS, control de rig, control de rotor, datos solares y CQOps Live en navegador.
+- **Integraciones opcionales** — QRZ.com, Wavelog, DX Cluster, PSK Reporter, APRS, receptor GPS, control de rig, control de rotor, datos solares y CQOps Live en navegador.
 
 El registro local no requiere internet. Las funciones de red se omiten en modo `--offline`.
 
@@ -132,6 +132,7 @@ Compilar desde fuente requiere Go 1.26 o más reciente.
 | Tamaño mínimo del terminal | 80×24 caracteres |
 | Tamaño recomendado | 80×43 caracteres o más |
 | Terminal recomendado en Windows | Windows Terminal |
+| Terminal para gráficos Kitty | [Kitty](https://sw.kovidgoyal.net/kitty/), [Ghostty](https://ghostty.org/) o [WezTerm](https://wezfurlong.org/wezterm/) |
 
 ### Comandos básicos
 
@@ -227,7 +228,7 @@ La Status bar muestra:
 - hora local marcada como `L`,
 - hora UTC marcada como `Z`.
 
-Etiquetas comunes: **Net**, **WSJT**, **Rig**, **Flrig**, **Hamlib**, **Rotator**, **DXC** y **WL**.
+Etiquetas comunes: **Net**, **WSJT**, **Rig**, **Flrig**, **Hamlib**, **Rotator**, **DXC**, **WL** y **GPS**. La etiqueta GPS sigue la misma convención de colores — rojo cuando está desconectado, amarillo cuando está conectado sin fix, blanco cuando se adquiere una posición.
 
 | Color | Significado |
 |---|---|
@@ -555,6 +556,11 @@ En el QSO form, pulsa **Ins** para completar campos de callbook como:
 
 La Partner view en **F2** puede mostrar la foto del operador cuando esté disponible.
 
+> ⚠️ **Experimental.** La visualización de fotos puede usar el protocolo de
+> gráficos Kitty y requiere un terminal compatible: Kitty, Ghostty o WezTerm.
+> Activar en **F9 → General → Kitty Graphics**. Los terminales estándar y las
+> sesiones SSH sin paso de gráficos mostrarán una foto de glifo en su lugar.
+
 ### Wavelog
 
 La integración Wavelog soporta:
@@ -605,6 +611,11 @@ CQOps maneja la falta de soporte para nombres de VFO de forma robusta cuando es 
 
 ### Hamlib Rotor / rotctld
 
+> ⚠️ **Experimental.** El control de rotor es experimental. Verifica siempre
+> los límites físicos de tu antena antes de operar. Esté listo para detener
+> el movimiento inmediatamente con **Alt+/** . Usa con precaución — una
+> configuración incorrecta puede dañar tu rotor o antena.
+
 El control de rotor usa Hamlib `rotctld`.
 
 CQOps soporta:
@@ -615,16 +626,53 @@ CQOps soporta:
 
 | Atajo | Acción |
 |---|---|
-| Ctrl+←/→ | Ajustar azimuth en 5° |
-| Ctrl+↑/↓ | Ajustar elevation en 5° |
-| Ctrl+A | Apuntar rotor al path bearing calculado |
-| Ctrl+F1 | Detener rotor |
+| Alt+, | Ajustar azimuth −5° |
+| Alt+. | Ajustar azimuth +5° |
+| Alt+; | Ajustar elevation +5° |
+| Alt+' | Ajustar elevation −5° |
+| Alt+\ | Apuntar rotor al path bearing calculado |
+| Alt+/ | Detener rotor |
 
 ### WSJT-X
 
 La integración WSJT-X usa mensajes UDP de WSJT-X. CQOps parsea mensajes ADIF y puede registrar automáticamente QSOs completados.
 
 La etiqueta del rig cambia al color de acento mientras WSJT-X transmite. Si el operador reportado por WSJT-X no coincide con el operador activo, CQOps muestra una advertencia.
+
+### GPS
+
+CQOps puede leer la posición de un receptor GPS y usarla como grid locator
+de la estación — ideal para operaciones portátiles, móviles o de campo.
+
+Se admiten dos backends:
+
+- **Serial** — se conecta directamente a un receptor GPS a través de un
+  puerto serie (USB-a-serie, puerto COM integrado o `/dev/ttyUSB0`).
+- **GPSD** — se conecta a un servidor [gpsd](https://gpsd.io/) por TCP
+  (por defecto `127.0.0.1:2947`). Útil cuando el GPS se comparte con otras
+  aplicaciones o se accede a través de la red.
+
+El indicador GPS en la barra de estado muestra:
+
+| Color | Significado |
+|--------|---------|
+| Rojo `GPS` | Desconectado / error |
+| Amarillo `GPS` | Conectado, sin fix aún |
+| Blanco `GPS` | Fix adquirido, posición fijada |
+
+Cuando se adquiere un fix, el grid locator de la estación se reemplaza
+por la posición GPS y se marca con `(GPS)` en la línea de estado:
+
+```
+Rig SSB - FTDx10/Dipole  ·  Grid JO62TJ43PL (GPS)
+```
+
+Active **Grid from GPS** en los ajustes de Station & Logbook para usar
+el grid GPS en el registro de QSO, balizas APRS, el mapa del panel y
+cálculos de distancia.
+
+**Precisión del grid** — configurable en el menú de Integraciones (10, 8
+o 6 caracteres). Por defecto 10 caracteres (~25 m de precisión).
 
 ### DX Cluster
 
@@ -661,7 +709,42 @@ Proporciona:
 
 ### APRS
 
-APRS usa una conexión TCP a un servidor APRS-IS y requiere internet.
+CQOps admite tres tipos de servicio APRS — elige el que se adapte a la
+configuración de tu estación:
+
+| Servicio | Conexión | Internet necesario |
+|---|---|---|
+| **APRS-IS** | TCP a un servidor APRS-IS | Sí |
+| **KISS** | Puerto serie a un TNC KISS hardware | No |
+| **KISS Server** | TCP a un servidor TNC KISS (ej. Dire Wolf) | No (red local) |
+
+Selecciona el tipo de servicio en el menú Integrations:
+
+```text
+F9 → Integrations → APRS → Service (Espacio para cambiar)
+```
+
+Los tres servicios permiten recibir informes de posición APRS de
+estaciones cercanas y mostrarlos en el mapa local de CQOps Live con:
+
+- símbolos APRS estándar,
+- popups de callsign,
+- auto-fit view,
+- range circle configurable.
+
+Todos los servicios también admiten **beaconing periódico de posición**.
+CQOps transmite tu grid locator en el intervalo configurado. Cuando el
+GPS está activo y **Grid from GPS** está habilitado, el beacon usa
+automáticamente la posición derivada del GPS — ideal para operación
+portable y móvil.
+
+#### APRS-IS
+
+Se conecta a la red global APRS-IS a través de internet. Requiere:
+
+- un indicativo de radioaficionado válido,
+- un passcode APRS-IS (generado a partir de tu indicativo),
+- conexión a internet.
 
 Servidor predeterminado:
 
@@ -669,25 +752,81 @@ Servidor predeterminado:
 euro.aprs2.net:14580
 ```
 
-CQOps puede recibir reportes de posición de estaciones cercanas y mostrarlos en el mapa local de CQOps Live con:
+APRS-IS se configura globalmente en **F9 → Integrations → APRS**.
+Indicativo, SSID, símbolo, comentario, intervalo de beacon y filtro de
+alcance por logbook en **F9 → Logbooks → [logbook activo] → APRS**.
 
-- símbolos estándar,
-- popups de callsign,
-- auto-fit view,
-- range circle configurable.
+#### KISS (serie)
 
-CQOps también puede enviar un beacon periódico con:
+> ⚠️ **Experimental.** El soporte KISS TNC es experimental. Prueba
+> exhaustivamente antes de confiar en él para operar.
 
-- indicativo de estación,
-- SSID,
-- grid locator,
-- comentario opcional.
+Se conecta directamente a un TNC KISS hardware a través de un puerto
+serie. No se requiere conexión a internet — las tramas APRS se envían
+y reciben a través de tu radio.
 
-APRS se configura por logbook en:
+Configura el puerto serie, baud rate, data bits, paridad, stop bits y
+DTR/RTS en el menú Integrations:
 
 ```text
-F9 → Logbooks → [active logbook] → APRS
+F9 → Integrations → APRS → Service: KISS
 ```
+
+Cuando se selecciona KISS, los campos específicos de serie (Port, Baud,
+Data bits, Parity, Stop bits, DTR, RTS) se vuelven visibles.
+
+El botón **Test** abre el puerto serie para verificar que el TNC es
+accesible.
+
+#### KISS Server (TCP)
+
+> ⚠️ **Experimental.** El soporte KISS Server es experimental. Prueba
+> exhaustivamente antes de confiar en él para operar.
+
+Se conecta a un TNC KISS accesible por TCP — por ejemplo, una instancia
+de [Dire Wolf](https://github.com/wb2osz/direwolf) ejecutándose en la
+misma máquina o en la red local. No se requiere conexión a internet.
+
+Introduce el host y el puerto en el menú Integrations:
+
+```text
+F9 → Integrations → APRS → Service: KISS Server → Host / Port
+```
+
+Predeterminado: `127.0.0.1:8001`
+
+#### Beaconing
+
+Los beacons se envían en el intervalo configurado por logbook. El
+intervalo mínimo es de 1 minuto. El beacon incluye:
+
+- indicativo de estación con SSID,
+- grid locator (basado en GPS cuando está disponible),
+- símbolo APRS,
+- comentario opcional.
+
+Cuando el **GPS** está activo y **Grid from GPS** está habilitado en
+los ajustes de Station, el beacon usa automáticamente el grid locator
+derivado del GPS — sin necesidad de actualizar el grid manualmente
+mientras te desplazas.
+
+Intervalo de beacon y otros ajustes por logbook:
+
+```text
+F9 → Logbooks → [logbook activo] → APRS
+```
+
+#### Recepción
+
+Los informes de posición APRS recibidos se almacenan en caché localmente
+y se muestran en el mapa del dashboard CQOps Live. Las estaciones se
+muestran con sus símbolos APRS y se puede hacer clic para ver detalles.
+La pantalla se auto-ajusta para mostrar todas las estaciones visibles
+dentro del alcance configurado.
+
+La recepción APRS es independiente de la transmisión de beacons — puedes
+recibir sin enviar un beacon y viceversa. Simplemente activa APRS en el
+menú Integrations y establece el tipo de servicio.
 
 ### Solar Data
 
@@ -853,6 +992,7 @@ Los secrets se cifran con una clave ligada a la máquina. Al mover la configurac
 | DX Cluster | Host, port, login |
 | Operators | Perfiles de operador |
 | Logbooks | Ajustes de station, Wavelog, contest, operator y APRS por logbook |
+| Integrations | Tipo de servicio APRS (APRS-IS, KISS, KISS Server), GPS, servidor HTTP, DXC, QRZ |
 | Notifications | QSO saved alerts, Wavelog status, dupe beep, error sounds |
 | General | Timezone, distance units, map, debug mode |
 
@@ -948,10 +1088,12 @@ Si `secrets.enc` está corrupto, CQOps arranca con una advertencia y pide reintr
 | PgUp / PgDn | Cambiar band, mode o submode |
 | Ctrl+D | Abrir spot dialog |
 | Ctrl+T | Cambiar Keep Comment |
-| Ctrl+←/→ | Ajustar azimuth del rotor en 5° |
-| Ctrl+↑/↓ | Ajustar elevation del rotor en 5° |
-| Ctrl+A | Apuntar rotor al bearing desde tu grid al grid del corresponsal |
-| Ctrl+F1 | Detener rotor |
+| Alt+, | Ajustar azimuth del rotor −5° |
+| Alt+. | Ajustar azimuth del rotor +5° |
+| Alt+; | Ajustar elevation del rotor +5° |
+| Alt+' | Ajustar elevation del rotor −5° |
+| Alt+\ | Apuntar rotor al bearing desde tu grid al grid del corresponsal |
+| Alt+/ | Detener rotor |
 | Alt+0–9 | Recuperar favorite |
 | Alt+Shift+0–9 | Guardar frequency, mode y band actuales como favorite |
 

@@ -239,30 +239,30 @@ func (m *Model) viewForm(width int) string {
 	return result
 }
 
-// renderKeepCheckbox renders the "Keep" checkbox next to the Comment field.
+// renderKeepCheckbox renders the "Keep Comment" checkbox next to the Comment field.
 func (m *Model) renderKeepCheckbox(_ int) string {
 	mark := "[ ]"
-	label := "Keep"
+	label := "Keep Comment"
 	if m.keepComment {
 		mark = "[x]"
 	}
 	space := " "
 	if m.keepFocused && m.keepSubFocus == 0 {
-		return "    " + lipgloss.JoinHorizontal(lipgloss.Center,
+		return "     " + lipgloss.JoinHorizontal(lipgloss.Center,
 			CursorStyle.Render(" "+mark),
 			space,
 			InputStyle.Render(label),
 		)
 	}
 	if m.keepComment {
-		return "    " + lipgloss.JoinHorizontal(lipgloss.Center,
+		return "     " + lipgloss.JoinHorizontal(lipgloss.Center,
 			space,
 			InputStyle.Render(mark),
 			space,
 			DimStyle.Render(label),
 		)
 	}
-	return "    " + lipgloss.JoinHorizontal(lipgloss.Center,
+	return "     " + lipgloss.JoinHorizontal(lipgloss.Center,
 		space,
 		DimStyle.Render(mark),
 		space,
@@ -270,33 +270,33 @@ func (m *Model) renderKeepCheckbox(_ int) string {
 	)
 }
 
-// renderRetainFormCheckbox renders the "Retain" checkbox below the middle column.
+// renderRetainFormCheckbox renders the "Hold Form" checkbox below the middle column.
 // When checked, the form is NOT cleared after a QSO save — useful for logging
 // the same contact across multiple logbooks (e.g. private → club station).
 func (m *Model) renderRetainFormCheckbox(_ int) string {
 	mark := "[ ]"
-	label := "Retain"
+	label := "Hold Form"
 	if m.retainForm {
 		mark = "[x]"
 	}
 	space := " "
 	focused := m.keepFocused && m.keepSubFocus == 1
 	if focused {
-		return "    " + lipgloss.JoinHorizontal(lipgloss.Center,
+		return "     " + lipgloss.JoinHorizontal(lipgloss.Center,
 			CursorStyle.Render(" "+mark),
 			space,
 			InputStyle.Render(label),
 		)
 	}
 	if m.retainForm {
-		return "    " + lipgloss.JoinHorizontal(lipgloss.Center,
+		return "     " + lipgloss.JoinHorizontal(lipgloss.Center,
 			space,
 			InputStyle.Render(mark),
 			space,
 			DimStyle.Render(label),
 		)
 	}
-	return "    " + lipgloss.JoinHorizontal(lipgloss.Center,
+	return "     " + lipgloss.JoinHorizontal(lipgloss.Center,
 		space,
 		DimStyle.Render(mark),
 		space,
@@ -319,8 +319,13 @@ func (m *Model) stationProfile() []string {
 		}
 		parts = append(parts, part)
 	}
-	if s.Grid != "" {
-		parts = append(parts, "Grid "+formatLocator(s.Grid))
+	grid := m.effectiveGrid()
+	if grid != "" {
+		label := "Grid " + formatLocator(grid)
+		if m.isGPSGridActive() {
+			label += " (GPS)"
+		}
+		parts = append(parts, label)
 	}
 	if s.Callsign != "" && len(parts) == 0 {
 		parts = append(parts, s.Callsign)
@@ -415,7 +420,7 @@ func (m *Model) formPathRow(width int) string {
 
 	var primaryLine string
 	if ownGrid != "" && partnerGrid != "" {
-		line := distanceLine(ownGrid, partnerGrid, m.App.Config.General.DistanceUnit)
+		line := distanceLine(ownGrid, partnerGrid, m.App.Config.General.Units)
 		if line != "" {
 			primaryLine = " Path  " + line
 		}
@@ -458,7 +463,7 @@ func (m *Model) formPathRow(width int) string {
 	sigB.WriteByte('|')
 	sigB.WriteString(partnerGrid)
 	sigB.WriteByte('|')
-	sigB.WriteString(m.App.Config.General.DistanceUnit)
+	sigB.WriteString(m.App.Config.General.Units)
 	sigB.WriteByte('|')
 	sigB.WriteString(statsSig)
 	sigB.WriteByte('|')

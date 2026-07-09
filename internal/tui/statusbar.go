@@ -89,14 +89,27 @@ func (m *Model) headerView() string {
 	if wl != nil && wl.Enabled {
 		rightParts = append(rightParts, statusDotStyled(m.lookup.wlOnline, "WL", m.Offline))
 	}
-	aprsCfg := m.App.Logbook.APRS
-	if aprsCfg != nil && aprsCfg.Enabled {
-		label := "APRS-RX"
-		online := m.App.APRSClient != nil && m.App.APRSClient.IsRunning()
-		if aprsCfg.SendLocation {
-			label = "APRS"
+	if m.App.Config.Integrations.APRS.Enabled {
+		aprsCfg := m.App.Logbook.APRS
+		if aprsCfg != nil && aprsCfg.Enabled {
+			label := "APRS-RX"
+			if aprsCfg.SendLocation {
+				label = "APRS"
+			}
+			online := m.App.APRSClient != nil && m.App.APRSClient.IsConnected()
+			rightParts = append(rightParts, statusDotStyled(online, label, m.Offline))
 		}
-		rightParts = append(rightParts, statusDotStyled(online, label, m.Offline))
+	}
+	// GPS — red when disconnected, yellow when connected but no fix, white when fix acquired.
+	if m.App.Config.Integrations.GPS.Enabled {
+		switch {
+		case m.gps.online && m.gps.hasFix:
+			rightParts = append(rightParts, statusDotOnStyle.Render("GPS")+" ")
+		case m.gps.online:
+			rightParts = append(rightParts, statusDotWarnStyle.Render("GPS")+" ")
+		default:
+			rightParts = append(rightParts, statusDotOffStyle.Render("GPS")+" ")
+		}
 	}
 	rightParts = append(rightParts,
 		S.StatusTime.Render(now.Format("15:04")+"L  "+utc.Format("1504")+"Z"),
@@ -151,6 +164,13 @@ func statusDotStyled(on bool, label string, offline ...bool) string {
 
 // renderStatusBar is the canonical entry point for status bar rendering.
 func (m *Model) renderStatusBar() string { return m.headerView() }
+
+// aprsConnected returns true when the APRS client is connected (either
+// TCP APRS-IS or KISS serial). Used by the render cache to detect
+// connection state changes and invalidate the status bar.
+func (m *Model) aprsConnected() bool {
+	return m.App.APRSClient != nil && m.App.APRSClient.IsConnected()
+}
 
 // windowTitle returns the terminal window title for the main TUI.
 func (m *Model) windowTitle() string {

@@ -200,7 +200,7 @@ func TestRotorSetPositionCmd(t *testing.T) {
 	}
 }
 
-func TestHandleRotorKey_CtrlLeft(t *testing.T) {
+func TestHandleRotorKey_AltComma(t *testing.T) {
 	m := &Model{toasts: NewToastQueue()}
 	client := &fakeRotorClient{}
 	m.rotor.client = client
@@ -208,7 +208,7 @@ func TestHandleRotorKey_CtrlLeft(t *testing.T) {
 	m.rotor.azimuth = 180
 	m.screen = screenQSO
 
-	cmd, handled := m.handleRotorKey(ctrlKey(tea.KeyLeft))
+	cmd, handled := m.handleRotorKey(altKey(','))
 	if !handled {
 		t.Fatal("expected handled")
 	}
@@ -219,7 +219,7 @@ func TestHandleRotorKey_CtrlLeft(t *testing.T) {
 	}
 }
 
-func TestHandleRotorKey_CtrlRight(t *testing.T) {
+func TestHandleRotorKey_AltPeriod(t *testing.T) {
 	m := &Model{toasts: NewToastQueue()}
 	client := &fakeRotorClient{}
 	m.rotor.client = client
@@ -227,7 +227,7 @@ func TestHandleRotorKey_CtrlRight(t *testing.T) {
 	m.rotor.azimuth = 180
 	m.screen = screenQSO
 
-	cmd, handled := m.handleRotorKey(ctrlKey(tea.KeyRight))
+	cmd, handled := m.handleRotorKey(altKey('.'))
 	if !handled {
 		t.Fatal("expected handled")
 	}
@@ -285,8 +285,8 @@ func TestHandleRotorKey_NotConnected(t *testing.T) {
 	// handleRotorKey does NOT check connected itself — the guard is in
 	// handleFormKey.  This test verifies keys still work if called directly.
 	// (The actual guard at the call site prevents this scenario.)
-	_, handled := m.handleRotorKey(ctrlKey(tea.KeyLeft))
-	// Ctrl+Left matches, so it's handled even though "disconnected".
+	_, handled := m.handleRotorKey(altKey(','))
+	// Alt+, matches, so it's handled even though "disconnected".
 	if !handled {
 		t.Error("key should match — connected check is caller's responsibility")
 	}
@@ -319,4 +319,9 @@ func TestHandleRotorKey_CtrlA_NoGrid(t *testing.T) {
 // ctrlKey creates a tea.KeyPressMsg with Ctrl modifier for testing.
 func ctrlKey(r rune) tea.KeyPressMsg {
 	return tea.KeyPressMsg{Code: r, Mod: tea.ModCtrl}
+}
+
+// altKey creates a tea.KeyPressMsg with Alt modifier for testing.
+func altKey(r rune) tea.KeyPressMsg {
+	return tea.KeyPressMsg{Code: r, Mod: tea.ModAlt}
 }

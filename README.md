@@ -15,7 +15,7 @@
 [![macOS](https://img.shields.io/badge/macOS-000000)](https://github.com/szporwolik/cqops/releases)
 [![Raspberry Pi](https://img.shields.io/badge/Raspberry%20Pi-A22846)](https://github.com/szporwolik/cqops/releases)
 
-A small, fast, offline-first amateur radio logger for the terminal — built for portable/field ops, SOTA/POTA activations, and club stations with rotating operators. Runs on Raspberry Pi, old laptops, or any low-power machine without a GUI, over SSH or a local terminal. Hot-swap operators and logbooks, log via WSJT-X auto-feed or keyboard, sync to Wavelog.
+A small, fast, offline-first amateur radio logger for the terminal — built for portable/field ops, SOTA/POTA activations, and club stations with rotating operators. Runs on Raspberry Pi, old laptops, or any low-power machine without a GUI, over SSH or a local terminal. Hot-swap operators and logbooks, log via WSJT-X auto-feed or keyboard, sync to Wavelog. GPS-aware — uses your receiver's position for the station grid automatically.
 
 > 📖 **Full documentation, installation guides, and translations at [docs.cqops.com](https://docs.cqops.com/)** — English, Polski, Deutsch, Español, 日本語, Français, Italiano.
 
@@ -40,11 +40,16 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 - **Wavelog sync** — upload, incremental download, per-logbook config
 - **Encrypted secrets** — AES-256-GCM, machine-tied, never plaintext
 - **DX Cluster & PSK Reporter** — live spots with band/mode/time filters
+- **GPS receiver** — serial or GPSD, live grid override for /P and mobile ops
+- **APRS** — APRS-IS with live position map, station caching, GPS-aware beaconing
 - **CQOps Live** — built-in browser dashboard with live map, QSO paths, stats, weather, band conditions, APRS. Great for Field Day displays or club station screens
 - **Contest logging** — exchange markers, auto serials, ADIF contest IDs
 - **Offline-first** — SQLite, cached reference data, `--offline` flag
 - **ADIF 3.1.7** — full import/export, contest fields preserved
 - **Raspberry Pi ready** — Windows, Linux, macOS, ARM; runs over SSH
+- **APRS KISS & KISS TCP** 🧪 — serial KISS TNC and KISS Server (Dire Wolf). 
+- **Kitty terminal graphics** 🧪 — photo display via Kitty/Ghostty/WezTerm. Enable in Settings → General.
+- **Antenna rotator control** 🧪 — manual azimuth/elevation via hamlib. Enable in Rig Profiles.
 
 See the [documentation](https://docs.cqops.com/) for detailed workflows, configuration, keyboard shortcuts, and troubleshooting.
 
@@ -72,6 +77,11 @@ flowchart LR
         solar["Solar Data"]
         wavelog["Wavelog"]
     end
+    subgraph APRS["APRS (optional)"]
+        aprsis["APRS-IS"]
+        kissS["KISS TNC (serial)"]
+        kissT["KISS Server (TCP)"]
+    end
     subgraph Dash["Read-only web dashboard (optional)"]
         dash["Maps · Stats · Spots · Weather"]
     end
@@ -87,6 +97,7 @@ flowchart LR
     rig <--> CQOps
     wsjtx -. UDP .-> CQOps
     CQOps <--> Internet
+    CQOps <--> APRS
     CQOps -. SSE .-> Dash
     CQOps --> FilesExport
     FilesImport --> CQOps

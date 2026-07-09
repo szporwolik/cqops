@@ -30,6 +30,23 @@ func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode
 	m.wsjtx.txMsg = txMessage
 	m.wsjtx.lastSeen = time.Now()
 	m.wsjtx.tx = transmitting
+	// When the user starts calling CQ (DxCall empty + transmitting),
+	// clear the form from the previous QSO partner. Only fires once
+	// per CQ cycle — on the transition from a directed call to CQ.
+	if call == "" && transmitting && m.wsjtx.lastDxCall != "" {
+		m.fields[fieldCall].SetValue("")
+		m.fields[fieldCountry].SetValue("")
+		m.fields[fieldName].SetValue("")
+		m.fields[fieldQTH].SetValue("")
+		m.fields[fieldGrid].SetValue("")
+		m.lookup.partnerData = nil
+		m.lookup.wlPrivateData = nil
+		m.lookup.wlLookupDone = false
+		m.rc.logStatsSig = ""
+		m.invalidatePartnerMapCache()
+		applog.Debug("WSJT-X: form cleared (calling CQ)")
+	}
+	m.wsjtx.lastDxCall = call
 	if call != "" {
 		prevCall := qso.NormalizeCall(m.fields[fieldCall].Value())
 		newCall := strings.ToUpper(call)
@@ -108,13 +125,17 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 	qs.Source = "wsjtx"
 	qs.WavelogUploaded = "no"
 	qs.ContestID = m.App.Logbook.ActiveContest
+	// Resolve TX power BEFORE ApplyStationDefaults — the default-fill logic
+	// only fills EMPTY fields, so WSJT-X's reported power would take
+	// precedence over the hamlib/flrig form value otherwise.
+	qs.TXPower = txPowerForWSJTX(m, qs.TXPower)
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
 		Operator:        m.activeOperatorCallsign(),
-		MyGridSquare:    m.App.Logbook.Station.Grid,
+		MyGridSquare:    m.effectiveGrid(),
 		MyRig:           m.App.Logbook.Station.RigModel(m.App.Config.Rigs),
 		MyAntenna:       m.App.Logbook.Station.RigAntenna(m.App.Config.Rigs),
-		TXPower:         txPowerForWSJTX(m, qs.TXPower),
+		TXPower:         "", // already set on qs directly above
 		MySOTARef:       m.App.Logbook.Station.SOTARef,
 		MyPOTARef:       m.App.Logbook.Station.POTARef,
 		MyWWFFRef:       m.App.Logbook.Station.WWFFRef,
@@ -135,7 +156,7 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 	}
 
 	// Enrich QSO: compute distance/bearing from grid squares.
-	myGrid := m.App.Logbook.Station.Grid
+	myGrid := m.effectiveGrid()
 	if qs.GridSquare != "" && myGrid != "" {
 		qs.Distance = gridDistanceKm(myGrid, qs.GridSquare)
 		qs.Bearing = gridBearingDeg(myGrid, qs.GridSquare)
@@ -168,8 +189,10 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 	n := m.App.Config.General.Notifications
 	if n.Enabled && n.QSO {
 		applog.Info("Sending WSJT-X QSO notification", "call", qs.Call, "band", qs.Band, "mode", qs.Mode)
-		if err := beeep.Notify("CQOps — QSO Logged", fmt.Sprintf("%s on %s %s", qs.Call, qs.Band, qs.Mode), ""); err != nil {
-			applog.Warn("QSO notification failed", "error", err.Error())
+		if desktopAvailable() {
+			if err := beeep.Notify("CQOps — QSO Logged", fmt.Sprintf("%s on %s %s", qs.Call, qs.Band, qs.Mode), ""); err != nil {
+				applog.Warn("QSO notification failed", "error", err.Error())
+			}
 		}
 	}
 
@@ -259,7 +282,7 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 
 		// Step 2b: recompute distance/bearing after enrichment. WSJT-X may
 		// not include a grid, or the enriched grid may be more precise.
-		if myGrid := m.App.Logbook.Station.Grid; myGrid != "" && qs.GridSquare != "" {
+		if myGrid := m.effectiveGrid(); myGrid != "" && qs.GridSquare != "" {
 			qs.Distance = gridDistanceKm(myGrid, qs.GridSquare)
 			qs.Bearing = gridBearingDeg(myGrid, qs.GridSquare)
 			m.App.DB.Exec(`UPDATE qsos SET distance=?, bearing=? WHERE id=?`,

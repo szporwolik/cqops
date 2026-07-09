@@ -55,6 +55,13 @@ function updateClocks(){
 }
 updateClocks();setInterval(updateClocks,1000);
 
+// ---- Units helpers ----
+function isImperial(){return displayCfg.units==='imperial'}
+function fmtDist(km){if(!km||km<=0)return'—';return isImperial()?Math.round(km*0.621371)+' mi':Math.round(km)+' km'}
+function fmtTemp(c){if(c==null)return'—';return isImperial()?Math.round(c*9/5+32)+'\u00b0F':Math.round(c)+'\u00b0C'}
+function fmtWind(kmh){if(kmh==null)return'—';return isImperial()?Math.round(kmh*0.621371)+' mph':Math.round(kmh)+' km/h'}
+function fmtPrecip(mm){if(mm==null||mm<=0)return'';return isImperial()?(mm/25.4).toFixed(1)+' in':mm.toFixed(1)+' mm'}
+
 // ---- State switching ----
 function setState(active){
   var add=active?'mode-active':'mode-overview',rm=active?'mode-overview':'mode-active';
@@ -392,7 +399,7 @@ function renderStats(st,todayBuf){
     ['Grids',st.grids||0],
     ['Bands',bandList.length?bandList.map(function(b){return'<span class="stat-badge '+bandBadgeClass(b)+'">'+esc(b)+'</span>'}).join(''):(st.bands||'—')],
     ['Modes',modeList.length?modeList.map(function(m){return'<span class="stat-badge '+modeBadgeClass(m)+'">'+esc(m)+'</span>'}).join(''):(st.modes||'—')],
-    ['Longest',longestKm?Math.round(longestKm)+' km':'—'],
+    ['Longest',longestKm?fmtDist(longestKm):'—'],
     ['Rate (5m / 15m / 1h)',rate5+' / '+rate15+' / '+rate60]
   ].map(function(r){return'<dt>'+r[0]+'</dt><dd>'+r[1]+'</dd>'}).join('');
   renderTopQSOs();
@@ -405,7 +412,7 @@ function registerSessionSummary(qsos,dxcc,grids,longestKm,rate){
     if(qsos)parts.push('<span class="ss-item"><span class="ss-val">'+qsos+'</span> QSOs</span>');
     if(dxcc)parts.push('<span class="ss-item"><span class="ss-val">'+dxcc+'</span> DXCC</span>');
     if(grids)parts.push('<span class="ss-item"><span class="ss-val">'+grids+'</span> grids</span>');
-    if(longestKm)parts.push('<span class="ss-item"><span class="ss-val">'+Math.round(longestKm)+' km</span> best</span>');
+    if(longestKm)parts.push('<span class="ss-item"><span class="ss-val">'+fmtDist(longestKm)+'</span> best</span>');
     if(rate)parts.push('<span class="ss-item"><span class="ss-val">'+rate.toFixed(1)+'/hr</span></span>');
     return'<div class="extra-title">Session</div><div class="session-summary">'+parts.join('<span class="ss-sep">|</span>')+'</div>';
   };
@@ -428,7 +435,7 @@ function renderTopQSOs(){
     var countryText=r.country?r.country.replace(/^The\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Federal Republic Of\s+/,'').trim().substring(0,20):'';
     var displayMode=r.submode||r.mode;
     var badge='<span class=\"tq-badge '+bandBadgeClass(r.band)+'\">'+esc(r.band)+'</span><span class=\"tq-badge '+modeBadgeClass(displayMode)+'\">'+esc(displayMode)+'</span>';
-    var distPart=r.km?'<span class=\"tq-dist\">'+Math.round(r.km)+'km</span>':'<span class=\"tq-dist\">—</span>';
+    var distPart='<span class=\"tq-dist\">'+fmtDist(r.km)+'</span>';
     var isLongest=i===0&&r.km>0;
     var cls=isLongest?' class=\"tq-longest\"':'';
     // Order: callsign distance band mode operator country
@@ -555,6 +562,11 @@ function initLocalMap(lat,lon){
   enableGraylineLocal();
   // Add radar to local map if already enabled.
   addRadarToLocalMap();
+  // Render any APRS data that arrived before the map was ready.
+  if(_pendingAPRS){
+    var p=_pendingAPRS;_pendingAPRS=null;
+    renderAPRSOnLocalMap(p);
+  }
 }
 
 function updateAprsCircle(lat,lon,radiusKm){
@@ -842,6 +854,7 @@ function enableGraylineLocal(){
 
 // ---- APRS station markers on local map ----
 var aprsMarkerLayer=null;
+var _pendingAPRS=null; // cached stations when map not yet ready
 
 // APRS symbol sprite sheets: 16 columns × 6 rows, 24×24px per symbol.
 // Grid size: 384×144 pixels.
@@ -894,15 +907,21 @@ function _aprMarker(s){
   var icon=L.divIcon({
     className:'aprs-symbol-marker',
     iconSize:[50,36],
-    iconAnchor:[25,34],
-    popupAnchor:[0,-30],
+    iconAnchor:[25,12],
+    popupAnchor:[0,-16],
     html:html
   });
   return L.marker([s.lat,s.lon],{icon:icon});
 }
 
 function renderAPRSOnLocalMap(stations){
-  if(!mapLocal)return;
+  if(!mapLocal){
+    // Map not yet initialised — cache the data and render when ready.
+    // This handles the race between the initial /api/snapshot fetch
+    // and the SSE connection on first page load.
+    _pendingAPRS = stations;
+    return;
+  }
   touchFreshness('aprs');
   if(!aprsMarkerLayer){aprsMarkerLayer=L.layerGroup().addTo(mapLocal)}
   aprsMarkerLayer.clearLayers();
@@ -948,11 +967,29 @@ function _renderAprsMarker(s,bounds){
   var ago=Math.round((Date.now()-new Date(s.lastHeard).getTime())/60000);
   popup+='<br>'+ago+' min ago';
   if(s.course)popup+='<br>Course: '+s.course+'°';
-  if(s.speedKmH)popup+='<br>'+s.speedKmH+' km/h';
+  if(s.speedKmH)popup+='<br>'+fmtWind(s.speedKmH);
   var m=_aprMarker(s);
   m.bindPopup(popup);
   aprsMarkerLayer.addLayer(m);
   bounds.push([s.lat,s.lon]);
+  // Draw position trail if station has historic points.
+  if(s.trail&&s.trail.length>=1){
+    var pts=[];
+    s.trail.forEach(function(p){
+      pts.push([p.lat,p.lon]);
+    });
+    // Add current position as the trail endpoint.
+    pts.push([s.lat,s.lon]);
+    // Blue trail line (apr s.fi style).
+    L.polyline(pts,{color:'#1565C0',weight:3,opacity:0.75}).addTo(aprsMarkerLayer);
+    // Red dots at historic positions, older = smaller + more transparent.
+    s.trail.forEach(function(p,i){
+      var frac=i/s.trail.length;
+      var r=3+frac*2;
+      var o=0.45+frac*0.40;
+      L.circleMarker([p.lat,p.lon],{radius:r,color:'#C62828',fillColor:'#C62828',fillOpacity:o,weight:1}).addTo(aprsMarkerLayer);
+    });
+  }
 }
 
 function updateMapFromToday(){
@@ -1086,21 +1123,23 @@ function gridToLatLon(grid){
     if(c4<65||c4>88||c5<65||c5>88)return[0,0]; // subsquare must be A-X
     lon+=(c4-65)*(5/60);
     lat+=(c5-65)*(2.5/60);
-    lon+=2.5/60;lat+=1.25/60;
     if(grid.length>=8){
       lon+=(grid.charCodeAt(6)-48)*(0.5/60);
       lat+=(grid.charCodeAt(7)-48)*(0.25/60);
-      lon+=0.25/60;lat+=0.125/60;
       if(grid.length>=10){
         var c8=grid.charCodeAt(8),c9=grid.charCodeAt(9);
-        if(c8<65||c8>88||c9<65||c9>88)return[0,0]; // extended must be A-X
+        if(c8<65||c8>88||c9<65||c9>88)return[0,0];
         lon+=(c8-65)*(0.5/60/24);
         lat+=(c9-65)*(0.25/60/24);
-        lon+=0.5/60/48;lat+=0.25/60/48;
+        lon+=0.5/60/48;lat+=0.25/60/48;        // centre of 10-char
+      }else{
+        lon+=0.25/60;lat+=0.125/60;             // centre of 8-char
       }
+    }else{
+      lon+=2.5/60;lat+=1.25/60;                 // centre of 6-char
     }
   }else{
-    lon+=1;lat+=0.5;
+    lon+=1;lat+=0.5;                             // centre of 4-char
   }
   return[lat,lon];
 }
@@ -1210,9 +1249,9 @@ function renderWeather(d){
     var slot=slots[s],label=slot[1],temp=slot[2],code=slot[3],wSpd=slot[4],wGst=slot[5],wDir=slot[6],precip=slot[7],isDay=slot[8];
     html+='<span class="wx-slot"><span class="wx-icon '+wxAnimClass(code)+'">'+weatherIcon(code,isDay)+'</span>'+
       '<span class="wx-label">'+label+'</span>'+
-      (temp!=null?'<span class="wx-temp">'+Math.round(temp)+'°</span>':'')+
-      (wSpd!=null?'<span class="wx-wind"><span class="wx-wind-spd">'+Math.round(wSpd)+'</span><span class="wx-wind-unit">km/h</span> <span class="wx-wind-dir">'+windArrow(wDir||0)+'</span></span>':'')+
-      (precip!=null&&precip>0?'<span class="wx-rain">'+precip.toFixed(1)+'mm</span>':'')+
+      (temp!=null?'<span class="wx-temp">'+fmtTemp(temp)+'</span>':'')+
+      (wSpd!=null?'<span class="wx-wind">'+fmtWind(wSpd)+' <span class="wx-wind-dir">'+windArrow(wDir||0)+'</span></span>':'')+
+      (precip!=null&&precip>0?'<span class="wx-rain">'+fmtPrecip(precip)+'</span>':'')+
       '</span>';
   }
   wxEl.className='';wxEl.innerHTML=html;wxEl.style.display='';
@@ -1239,8 +1278,8 @@ function renderContactWeather(d){
   var hwb=document.getElementById('hero-weather-box');if(!hwb||!navigator.onLine)return;
   var c=d.current||{},windArrow=function(deg){var a=['↓','↙','←','↖','↑','↗','→','↘'];return a[Math.round(deg/45)%8]||'•'};
   document.getElementById('hero-wx-icon').innerHTML='<span class="'+wxAnimClass(c.weather_code||0)+'">'+weatherIcon(c.weather_code||0,c.is_day)+'</span>';
-  document.getElementById('hero-wx-temp').textContent=c.temperature_2m!=null?Math.round(c.temperature_2m)+'°':'';
-  document.getElementById('hero-wx-wind').textContent=c.wind_speed_10m!=null?Math.round(c.wind_speed_10m)+' km/h '+windArrow(c.wind_direction_10m||0):'';
+  document.getElementById('hero-wx-temp').textContent=fmtTemp(c.temperature_2m);
+  document.getElementById('hero-wx-wind').textContent=c.wind_speed_10m!=null?fmtWind(c.wind_speed_10m)+' '+windArrow(c.wind_direction_10m||0):'';
   hwb.classList.add('visible');
   if(map)map.invalidateSize();if(mapLocal)mapLocal.invalidateSize();
 }

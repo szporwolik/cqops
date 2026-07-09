@@ -83,8 +83,8 @@ func TestDefaultConfig_HasDefaults(t *testing.T) {
 	if cfg.General.Timezone == "" {
 		t.Error("DefaultConfig: timezone should not be empty")
 	}
-	if cfg.General.DistanceUnit != "km" {
-		t.Errorf("DefaultConfig: distance_unit = %q; want km", cfg.General.DistanceUnit)
+	if cfg.General.Units != "metric" {
+		t.Errorf("DefaultConfig: units = %q; want metric", cfg.General.Units)
 	}
 
 	// State — ActiveLogbook should be a non-empty hash ID.
@@ -963,14 +963,14 @@ func TestValidate_DistanceUnitEnum(t *testing.T) {
 	lb.Station.Callsign = "SP9MOA"
 	cfg.Logbooks[cfg.State.ActiveLogbook] = lb
 
-	for _, unit := range []string{"km", "mi", ""} {
-		cfg.General.DistanceUnit = unit
+	for _, unit := range []string{"metric", "imperial", ""} {
+		cfg.General.Units = unit
 		if err := cfg.Validate(); err != nil {
 			t.Errorf("distance_unit %q should pass: %v", unit, err)
 		}
 	}
 
-	cfg.General.DistanceUnit = "feet"
+	cfg.General.Units = "feet"
 	if err := cfg.Validate(); err == nil {
 		t.Error("distance_unit 'feet' should fail")
 	}
@@ -1015,7 +1015,7 @@ func TestSaveAndLoad_StationFieldsRoundTrip(t *testing.T) {
 
 	cfg := DefaultConfig()
 	cfg.General.Timezone = "Europe/Warsaw"
-	cfg.General.DistanceUnit = "mi"
+	cfg.General.Units = "imperial"
 	lb := cfg.Logbooks[cfg.State.ActiveLogbook]
 	lb.Station.Callsign = "SP9MOA"
 	lb.Station.Grid = "KO00ca"
@@ -1049,8 +1049,8 @@ func TestSaveAndLoad_StationFieldsRoundTrip(t *testing.T) {
 	if loaded.General.Timezone != "Europe/Warsaw" {
 		t.Errorf("Timezone = %q", loaded.General.Timezone)
 	}
-	if loaded.General.DistanceUnit != "mi" {
-		t.Errorf("DistanceUnit = %q", loaded.General.DistanceUnit)
+	if loaded.General.Units != "imperial" {
+		t.Errorf("Units = %q", loaded.General.Units)
 	}
 }
 

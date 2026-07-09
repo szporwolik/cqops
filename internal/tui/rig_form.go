@@ -415,7 +415,7 @@ func (f *RigForm) View() tea.View {
 	if f.focus == rigFieldBackend {
 		bePrefix = S.FormPrefixOn.Render("> ")
 		beLbl = S.FormFocusedWide.Align(lipgloss.Left).Render("Radio control:")
-		backendLabel = CursorStyle.Render(backendLabel)
+		backendLabel = CursorStyle.Render(backendLabel) + " " + DimStyle.Render("(Space)")
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, bePrefix, beLbl, " ", backendLabel),
@@ -439,7 +439,7 @@ func (f *RigForm) View() tea.View {
 	if f.focus == rigFieldRotor {
 		roPrefix = S.FormPrefixOn.Render("> ")
 		roLbl = S.FormFocusedWide.Align(lipgloss.Left).Render("Rotator control:")
-		rotorLabel = CursorStyle.Render(rotorLabel)
+		rotorLabel = CursorStyle.Render(rotorLabel) + " " + DimStyle.Render("(Space) \u2014 experimental")
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, roPrefix, roLbl, " ", rotorLabel),
@@ -466,7 +466,7 @@ func (f *RigForm) View() tea.View {
 	if f.focus == rigFieldWsjtx {
 		wxPrefix = S.FormPrefixOn.Render("> ")
 		wxLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("Use WSJT-X:")
-		wsjtxCheckbox = CursorStyle.Render(wsjtxCheckbox)
+		wsjtxCheckbox = CursorStyle.Render(wsjtxCheckbox) + " " + DimStyle.Render("(Space)")
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, wxPrefix, wxLabel, " ", wsjtxCheckbox),

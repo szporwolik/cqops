@@ -30,6 +30,9 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	}
 
 	switch {
+	case m.handlePaneNav(msg):
+		return nil, true
+
 	case key.Matches(msg, m.keys.Quit):
 		applog.Debug("tab: F10 quit requested")
 		dlg := NewDialog("Quit CQOps", "Exit the application?",
@@ -67,25 +70,34 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			m.screen = screenPartner
 			m.photo.lastErr = nil
 			m.photo.lastURL = ""
+			m.photo.viewerLastW = 0
+			m.photo.viewerLastH = 0
+			// Reset photo dimension tracking so handlePartnerUpdate
+			// re-applies SetSize with correct inline dimensions.
+			m.photo.partnerPicW = 0
+			m.photo.partnerPicH = 0
+			m.photo.partnerPicLastW = 0
+			m.photo.partnerPicLastH = 0
+			m.photo.partnerPicNeedSize = true
+			m.invalidatePartnerMapCache()
 			return nil, true
 		}
 		if m.screen == screenPartner && m.lookup.partnerData != nil && m.lookup.partnerData.ImageURL != "" {
 			applog.Debug("F2: opening image view", "url", m.lookup.partnerData.ImageURL)
 			m.screen = screenImage
 			m.photo.lastURL = m.lookup.partnerData.ImageURL
-			// Clear inline photo state so a fresh load fires when
-			// cycling back to Partner (fixes stuck "Loading…" on retry).
 			m.photo.partnerPicURL = ""
 			m.photo.partnerPicNeedLoad = false
 			w := m.width
-			h := m.height - 4 // header/tab/help overhead
+			h := m.height - 3 // full content area (ContentH = TerminalH - 3)
 			if w < 20 {
 				w = 80
 			}
 			if h < 10 {
 				h = 10
 			}
-			h-- // bottom hint row
+			m.photo.viewerLastW = w
+			m.photo.viewerLastH = h
 			return tea.Batch(
 				m.photo.viewer.SetSize(w, h),
 				m.photo.viewer.SetURL(m.lookup.partnerData.ImageURL),
@@ -206,35 +218,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 
 	case key.Matches(msg, m.keys.LogEditor):
 		applog.Debug("tab: F8 Editor")
-		wl := m.App.Logbook.Wavelog
-		wlURL, wlKey, wlStationID := "", "", ""
-		if wl != nil {
-			wlURL, wlKey, wlStationID = wl.URL, wl.APIKey, wl.StationProfileID
-		}
-		wlLastID := int64(0)
-		if m.App.Logbook.Wavelog != nil {
-			wlLastID = m.App.Logbook.Wavelog.LastFetchedID
-		}
-		m.ui.logbookEditor = NewLogbookEditor(LogbookEditorConfig{
-			DB:              m.App.DB,
-			WLURL:           wlURL,
-			WLKey:           wlKey,
-			WLStationID:     wlStationID,
-			WLLastFetchedID: wlLastID,
-			StationOperator: m.activeOperatorCallsign(),
-			StationGrid:     m.App.Logbook.Station.Grid,
-			StationCall:     m.App.Logbook.Station.Callsign,
-		})
-		m.ui.logbookEditor.width = m.width
-		m.ui.logbookEditor.height = m.height
-		// Apply active contest filter.
-		if m.App.Logbook.ActiveContest != "" {
-			ct := m.App.Config.Contests[m.App.Logbook.ActiveContest]
-			m.ui.logbookEditor.SetContestID(m.App.Logbook.ActiveContest, config.ContestDisplayName(&ct), ct.ContestID)
-		} else {
-			m.ui.logbookEditor.SetContestID("", "", "")
-		}
-		m.ui.logbookEditor.loadPage()
+		m.initLogbookEditor()
 		m.screen = screenLogbookEditor
 		return nil, true
 
@@ -324,8 +308,21 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			} else {
 				m.retainForm = !m.retainForm
 			}
+		case "ctrl+k":
+			m.keepComment = !m.keepComment
+			persistCmd = m.persistKeepComment()
+		case "ctrl+h":
+			m.retainForm = !m.retainForm
 		}
 		return drainPending(persistCmd), true
+
+	// Global QSO form toggles — work regardless of focus.
+	case msg.String() == "ctrl+k":
+		m.keepComment = !m.keepComment
+		return m.persistKeepComment(), true
+	case msg.String() == "ctrl+h":
+		m.retainForm = !m.retainForm
+		return nil, true
 
 	// Tab jumps horizontally across columns; Down/Up walk vertically.
 	case msg.String() == "tab":
@@ -450,28 +447,28 @@ func (m *Model) handleRotorKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	}
 
 	switch msg.String() {
-	case "ctrl+left":
+	case "alt+,":
 		az := clampAz(baseAz - step)
-		applog.Debug("rotor: ctrl+left", "az", az)
+		applog.Debug("rotor: left", "az", az, "key", msg.String())
 		return m.rotorSetPositionCmd(az, baseEl), true
 
-	case "ctrl+right":
+	case "alt+.":
 		az := clampAz(baseAz + step)
-		applog.Debug("rotor: ctrl+right", "az", az)
+		applog.Debug("rotor: right", "az", az, "key", msg.String())
 		return m.rotorSetPositionCmd(az, baseEl), true
 
-	case "ctrl+up":
+	case "ctrl+up", "alt+;":
 		el := clampEl(baseEl + step)
-		applog.Debug("rotor: ctrl+up", "el", el)
+		applog.Debug("rotor: up", "el", el, "key", msg.String())
 		return m.rotorSetPositionCmd(baseAz, el), true
 
-	case "ctrl+down":
+	case "ctrl+down", "alt+'":
 		el := clampEl(baseEl - step)
-		applog.Debug("rotor: ctrl+down", "el", el)
+		applog.Debug("rotor: down", "el", el, "key", msg.String())
 		return m.rotorSetPositionCmd(baseAz, el), true
 
-	case "ctrl+a":
-		ownGrid := formatLocator(m.App.Logbook.Station.Grid)
+	case "ctrl+a", "alt+\\":
+		ownGrid := formatLocator(m.effectiveGrid())
 		partnerGrid := formatLocator(m.fields[fieldGrid].Value())
 		bearing := gridBearingDeg(ownGrid, partnerGrid)
 		if bearing < 0 {
@@ -479,15 +476,15 @@ func (m *Model) handleRotorKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			return nil, true
 		}
 		az := clampAz(math.Round(bearing))
-		applog.Debug("rotor: ctrl+a path bearing", "az", az, "from", ownGrid, "to", partnerGrid)
+		applog.Debug("rotor: path bearing", "az", az, "from", ownGrid, "to", partnerGrid, "key", msg.String())
 		m.toasts.Info(fmt.Sprintf("Rotator: turning to %.0f\u00b0", bearing))
 		return m.rotorSetPositionCmd(az, math.Round(m.rotor.elevation)), true
 
-	case "ctrl+f1":
+	case "ctrl+f1", "alt+/":
 		if m.rotor.client == nil {
 			return nil, false
 		}
-		applog.Debug("rotor: stop")
+		applog.Debug("rotor: stop", "key", msg.String())
 		client := m.rotor.client
 		return func() tea.Msg {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -517,6 +514,141 @@ func (m *Model) rotorSetPositionCmd(az, el float64) tea.Cmd {
 		}
 		return nil
 	}
+}
+
+// paneScreens returns the ordered list of available screens for Ctrl+←/→
+// navigation.  Screens that are not currently usable (e.g. DXC offline,
+// Partner without callsign) are excluded so Ctrl+arrows only cycle through
+// active panes.
+func (m *Model) paneScreens() []screenKind {
+	hasPartner := m.lookup.partnerData != nil || strings.TrimSpace(m.fields[fieldCall].Value()) != ""
+	dxcOnline := m.App.Config.Integrations.DXC.Enabled && m.dxc.online
+
+	var screens []screenKind
+	screens = append(screens, screenQSO) // always
+	if hasPartner || m.screen == screenPartner {
+		screens = append(screens, screenPartner)
+	}
+	if dxcOnline || m.screen == screenDXC {
+		screens = append(screens, screenDXC)
+	}
+	if m.inetOnline || m.screen == screenPSKReporter {
+		screens = append(screens, screenPSKReporter)
+	}
+	if m.isREFReady() || m.screen == screenRef {
+		screens = append(screens, screenRef)
+	}
+	screens = append(screens, screenBPL)           // always
+	screens = append(screens, screenLogbookEditor) // always
+	screens = append(screens, screenMainMenu)      // always
+	return screens
+}
+
+// handlePaneNav cycles the active screen left/right with Ctrl+←/→.
+// Only cycles through currently available screens.
+func (m *Model) handlePaneNav(msg tea.KeyPressMsg) bool {
+	k := msg.String()
+	if k != "ctrl+left" && k != "ctrl+right" {
+		return false
+	}
+
+	// Image is an overlay on Partner, not a pane. Navigate as Partner.
+	screen := m.screen
+	if screen == screenImage {
+		screen = screenPartner
+	}
+
+	screens := m.paneScreens()
+	if len(screens) == 0 {
+		return false
+	}
+	idx := -1
+	for i, s := range screens {
+		if s == screen {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return false
+	}
+	if k == "ctrl+left" {
+		idx--
+	} else {
+		idx++
+	}
+	if idx < 0 {
+		idx = len(screens) - 1
+	}
+	if idx >= len(screens) {
+		idx = 0
+	}
+	target := screens[idx]
+
+	// Lazily initialise sub-screens that need it — same logic as the
+	// dedicated F-key handlers.
+	switch target {
+	case screenLogbookEditor:
+		if m.ui.logbookEditor == nil {
+			m.initLogbookEditor()
+		}
+	case screenMainMenu:
+		if m.ui.mainMenu == nil {
+			m.ui.mainMenu = NewMainMenu()
+			m.ui.mainMenu.width = m.width
+			m.ui.mainMenu.height = m.height
+		}
+	}
+
+	// When leaving the image screen via pane nav, clear photo state.
+	if m.screen == screenImage && target != screenImage {
+		m.photo.lastErr = nil
+		m.photo.lastURL = ""
+		m.photo.viewerLastW = 0
+		m.photo.viewerLastH = 0
+		m.photo.partnerPicW = 0
+		m.photo.partnerPicH = 0
+		m.photo.partnerPicLastW = 0
+		m.photo.partnerPicLastH = 0
+		m.photo.partnerPicNeedSize = true
+		m.invalidatePartnerMapCache()
+	}
+
+	m.screen = target
+	applog.Debug("pane: ctrl+arrow", "screen", m.screen)
+	return true
+}
+
+// initLogbookEditor creates a fresh logbook editor with current config.
+func (m *Model) initLogbookEditor() {
+	wl := m.App.Logbook.Wavelog
+	wlURL, wlKey, wlStationID := "", "", ""
+	if wl != nil {
+		wlURL, wlKey, wlStationID = wl.URL, wl.APIKey, wl.StationProfileID
+	}
+	wlLastID := int64(0)
+	if m.App.Logbook.Wavelog != nil {
+		wlLastID = m.App.Logbook.Wavelog.LastFetchedID
+	}
+	m.ui.logbookEditor = NewLogbookEditor(LogbookEditorConfig{
+		DB:              m.App.DB,
+		WLURL:           wlURL,
+		WLKey:           wlKey,
+		WLStationID:     wlStationID,
+		WLLastFetchedID: wlLastID,
+		StationOperator: m.activeOperatorCallsign(),
+		StationGrid:     m.effectiveGrid(),
+		StationCall:     m.App.Logbook.Station.Callsign,
+	})
+	m.ui.logbookEditor.width = m.width
+	m.ui.logbookEditor.height = m.height
+	if m.App.Logbook.ActiveContest != "" {
+		ct := m.App.Config.Contests[m.App.Logbook.ActiveContest]
+		m.ui.logbookEditor.SetContestID(m.App.Logbook.ActiveContest, config.ContestDisplayName(&ct), ct.ContestID)
+	} else {
+		m.ui.logbookEditor.SetContestID("", "", "")
+	}
+	m.ui.logbookEditor.loadPage()
 }
 
 func clampAz(a float64) float64 {
