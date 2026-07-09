@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"charm.land/bubbles/v2/help"
@@ -387,24 +388,33 @@ func (m *Model) applyBeepOnError() {
 	}
 }
 
+var desktopAvailCache struct {
+	sync.Once
+	ok bool
+}
+
 // desktopAvailable returns true if desktop notifications are likely to
 // work (D-Bus is reachable).  On a raw Linux console without X, calling
 // beeep.Notify / beeep.Beep hangs indefinitely, so we skip them entirely.
+// The result is computed once and cached; the debug log fires only on the
+// first call.
 func desktopAvailable() bool {
-	// Windows uses native Toast API via beeep — always available.
-	if runtime.GOOS == "windows" {
-		return true
-	}
-	dbus := os.Getenv("DBUS_SESSION_BUS_ADDRESS")
-	display := os.Getenv("DISPLAY")
-	wayland := os.Getenv("WAYLAND_DISPLAY")
-	ok := dbus != "" && (display != "" || wayland != "")
-	applog.Debug("notify: desktop check",
-		"dbus", dbus != "",
-		"display", display,
-		"wayland", wayland,
-		"available", ok)
-	return ok
+	desktopAvailCache.Do(func() {
+		if runtime.GOOS == "windows" {
+			desktopAvailCache.ok = true
+		} else {
+			dbus := os.Getenv("DBUS_SESSION_BUS_ADDRESS")
+			display := os.Getenv("DISPLAY")
+			wayland := os.Getenv("WAYLAND_DISPLAY")
+			desktopAvailCache.ok = dbus != "" && (display != "" || wayland != "")
+		}
+		applog.Debug("notify: desktop check",
+			"dbus", os.Getenv("DBUS_SESSION_BUS_ADDRESS") != "",
+			"display", os.Getenv("DISPLAY"),
+			"wayland", os.Getenv("WAYLAND_DISPLAY"),
+			"available", desktopAvailCache.ok)
+	})
+	return desktopAvailCache.ok
 }
 
 // ensureMapKitty activates or deactivates Kitty graphics on the embedded
