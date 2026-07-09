@@ -15,6 +15,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/NimbleMarkets/ntcharts/v2/picture"
 	"github.com/NimbleMarkets/ntcharts/v2/picture/pictureurl"
+	"github.com/charmbracelet/x/term"
 	"github.com/gen2brain/beeep"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
@@ -239,6 +240,14 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	applog.SetDebugMode(a.Config.General.Debug)
 
 	m := &Model{App: a, qsos: initialQSOS, toasts: NewToastQueue(), dateTimeAuto: true, width: 80, height: 24}
+
+	// Probe the terminal size at startup so the first render matches
+	// the real dimensions — avoids a visible resize flash on slow PCs.
+	if w, h, err := term.GetSize(os.Stdout.Fd()); err == nil && w >= 75 && h >= 24 {
+		m.width = w
+		m.height = h
+	}
+
 	now := time.Now().UTC()
 	for i := field(0); i < fieldCount; i++ {
 		ti := newTextinput()
@@ -322,6 +331,32 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	applog.Info("Photo viewer: ready (Kitty graphics: experimental — requires Kitty, Ghostty, or WezTerm)",
 		"kitty_cap", m.photo.viewer.KittySupported(),
 		"mode", m.photo.viewer.Mode())
+
+	// Log terminal capabilities for debugging Linux framebuffer console issues.
+	term := os.Getenv("TERM")
+	applog.Info("Terminal environment",
+		"TERM", term,
+		"COLORTERM", os.Getenv("COLORTERM"),
+		"TERM_PROGRAM", os.Getenv("TERM_PROGRAM"),
+		"TERM_PROGRAM_VERSION", os.Getenv("TERM_PROGRAM_VERSION"),
+		"VTE_VERSION", os.Getenv("VTE_VERSION"),
+		"KONSOLE_VERSION", os.Getenv("KONSOLE_VERSION"),
+		"TMUX", os.Getenv("TMUX"),
+		"SCREEN", os.Getenv("STY"),
+		"SSH_TTY", os.Getenv("SSH_TTY"),
+		"DISPLAY", os.Getenv("DISPLAY"),
+		"WAYLAND_DISPLAY", os.Getenv("WAYLAND_DISPLAY"),
+		"XDG_SESSION_TYPE", os.Getenv("XDG_SESSION_TYPE"),
+		"DBUS", os.Getenv("DBUS_SESSION_BUS_ADDRESS") != "",
+		"KITTY_WINDOW_ID", os.Getenv("KITTY_WINDOW_ID") != "",
+		"GHOSTTY_RESOURCES_DIR", os.Getenv("GHOSTTY_RESOURCES_DIR") != "",
+		"WEZTERM_EXECUTABLE", os.Getenv("WEZTERM_EXECUTABLE") != "",
+		"ALACRITTY_LOG", os.Getenv("ALACRITTY_LOG") != "",
+		"WT_SESSION", os.Getenv("WT_SESSION") != "",
+		"ansi_palette", useANSIPalette(),
+		"bare_tty", isTTYWithoutDisplay(),
+		"desktop_available", desktopAvailable(),
+	)
 	m.mapView = newMapRenderer()
 	// Kitty graphics for the map is activated by ensureMapKitty() once
 	// the terminal probe resolves — do NOT set kittyOn here; the Toggle()
@@ -386,6 +421,12 @@ func (m *Model) ensureMapKitty() tea.Cmd {
 	}
 	if !m.mapView.kittyOn &&
 		picture.KittySupported() == picture.KittyCapabilitySupported {
+		// Double-check with env vars — ntcharts may have
+		// force-enabled via QueryKittySupport on terminals
+		// that don't actually support it (Konsole, etc.).
+		if !kittyTerminalEnv() {
+			return nil
+		}
 		m.psk.mapSig = ""
 		m.psk.mapView = ""
 		m.psk.viewKey = ""
@@ -393,6 +434,31 @@ func (m *Model) ensureMapKitty() tea.Cmd {
 		return m.mapView.SetKittyEnabled(true)
 	}
 	return nil
+}
+
+// kittyTerminalEnv reports whether the current terminal is known to
+// support the Kitty graphics protocol (kitty, Ghostty, WezTerm).
+// Used as a guard to prevent ntcharts from activating Kitty on
+// terminals like Konsole that may accidentally pass the probe.
+func kittyTerminalEnv() bool {
+	if os.Getenv("KITTY_WINDOW_ID") != "" || os.Getenv("KITTY_INSTALLATION_DIR") != "" {
+		return true
+	}
+	if os.Getenv("GHOSTTY_RESOURCES_DIR") != "" {
+		return true
+	}
+	if os.Getenv("WEZTERM_EXECUTABLE") != "" || os.Getenv("WEZTERM_PANE") != "" {
+		return true
+	}
+	switch os.Getenv("TERM") {
+	case "xterm-kitty", "xterm-ghostty":
+		return true
+	}
+	switch os.Getenv("TERM_PROGRAM") {
+	case "ghostty", "WezTerm", "kitty", "iTerm.app":
+		return true
+	}
+	return false
 }
 
 func (m *Model) Init() tea.Cmd {
@@ -455,7 +521,19 @@ func (m *Model) Init() tea.Cmd {
 		m.toasts.Success("APRS: position sent as " + callsign)
 	})
 	m.App.MaybeRestartAPRS()
-	cmds := []tea.Cmd{tickCmd(), picture.QueryKittySupport(), m.photo.viewer.Init(), m.emitWindowIconCmd()}
+	cmds := []tea.Cmd{tickCmd(), m.photo.viewer.Init(), m.emitWindowIconCmd()}
+	// Give the inline partner photo viewer an initial size so the Kitty
+	// placeholder renders at a valid position from frame one. Without
+	// this, the first frame's placeholder is 0-sized and the Kitty image
+	// appears shifted until handlePartnerUpdate dispatches the real SetSize.
+	cmds = append(cmds, m.photo.partnerPicViewer.SetSize(25, 4))
+	// Only probe Kitty support when the config is enabled AND the
+	// terminal env vars indicate a Kitty-compatible terminal.
+	// Avoids emitting APC probe garbage on Konsole/xterm/linux console
+	// that would corrupt the TUI rendering.
+	if m.App.Config.General.KittyGraphics && kittyTerminalEnv() {
+		cmds = append(cmds, picture.QueryKittySupport())
+	}
 	// Start GPS receiver if configured.
 	if m.App.Config.Integrations.GPS.Enabled {
 		cmds = append(cmds, m.startGPS())
@@ -506,6 +584,19 @@ func (m *Model) saveConfig(msg string) {
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	model, cmd := m.updateImpl(msg)
+	// On bare TTY terminals without BCE, force a full terminal clear
+	// on every keypress. Screen handlers may drop this from cmd, so
+	// we apply it at the outermost level — impossible to bypass.
+	if isTTYWithoutDisplay() {
+		if _, isKey := msg.(tea.KeyPressMsg); isKey {
+			cmd = tea.Batch(cmd, tea.ClearScreen)
+		}
+	}
+	return model, cmd
+}
+
+func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
 	// WindowSizeMsg — store dimensions first; invalidate map cache on resize
@@ -723,14 +814,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.lookup.partnerData.ImageURL != m.photo.lastURL {
 			m.photo.lastURL = m.lookup.partnerData.ImageURL
 			w := m.width
-			h := contentHeight(m.height)
+			h := m.height - 3 // full content area (ContentH = TerminalH - 3)
 			if w < 20 {
 				w = 80
 			}
 			if h < 10 {
 				h = 10
 			}
-			cmd = tea.Batch(cmd, m.photo.viewer.SetSize(w, h-1), m.photo.viewer.SetURL(m.lookup.partnerData.ImageURL))
+			m.photo.viewerLastW = w
+			m.photo.viewerLastH = h
+			cmd = tea.Batch(cmd, m.photo.viewer.SetSize(w, h), m.photo.viewer.SetURL(m.lookup.partnerData.ImageURL))
 		}
 		// Log image errors once and show toast.
 		if err := m.photo.viewer.Err(); err != nil && m.photo.lastErr != err {
@@ -744,15 +837,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Reapply size on resize while viewing image.
 		if _, ok := msg.(tea.WindowSizeMsg); ok {
 			w := m.width
-			h := contentHeight(m.height)
+			h := m.height - 3 // full content area (ContentH = TerminalH - 3)
 			if w < 20 {
 				w = 80
 			}
 			if h < 10 {
 				h = 10
 			}
-			if c := m.photo.viewer.SetSize(w, h); c != nil {
-				cmd = tea.Batch(cmd, c)
+			if (w != m.photo.viewerLastW || h != m.photo.viewerLastH) && w >= 20 && h >= 10 {
+				m.photo.viewerLastW = w
+				m.photo.viewerLastH = h
+				if c := m.photo.viewer.SetSize(w, h); c != nil {
+					cmd = tea.Batch(cmd, c)
+				}
 			}
 		}
 		c := m.photo.viewer.Update(msg)
@@ -916,16 +1013,13 @@ func (m *Model) View() tea.View {
 func (m *Model) viewImage(l Layout) string {
 	content := m.photo.viewer.View().Content
 
-	// Cache image styles — rebuilt only when dimensions change.
+	// Cache placeholder style — rebuilt only when dimensions change.
 	if m.rc.imagePlaceholderW != l.TerminalW || m.rc.imagePlaceholderH != l.ContentH {
 		m.rc.imagePlaceholderStyle = lipgloss.NewStyle().
 			Width(l.TerminalW).
 			Height(l.ContentH).
 			Align(lipgloss.Center, lipgloss.Center).
 			Foreground(P.TextMuted)
-		m.rc.imageContentStyle = lipgloss.NewStyle().
-			Width(l.TerminalW).
-			Height(l.ContentH)
 		m.rc.imagePlaceholderW = l.TerminalW
 		m.rc.imagePlaceholderH = l.ContentH
 	}
@@ -952,9 +1046,10 @@ func (m *Model) viewImage(l Layout) string {
 			msg = "No image"
 		}
 		content = m.rc.imagePlaceholderStyle.Render(msg)
-	} else {
-		content = m.rc.imageContentStyle.Render(content)
 	}
+	// Return raw content — buildBodyForScreen's fillBody handles height
+	// padding. Wrapping in lipgloss styles adds ANSI sequences that shift
+	// the Kitty placeholder's grid position.
 	return content
 }
 
@@ -971,7 +1066,14 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 			body = m.viewPartner()
 		}
 	case screenImage:
-		body = m.viewImage(l)
+		raw := m.photo.viewer.View().Content
+		if raw == "" || m.photo.viewer.Err() != nil {
+			body = m.viewImage(l)
+		} else {
+			// Kitty/glyph content already at correct dimensions —
+			// no wrapping, no padding, no ANSI before placeholder.
+			return raw
+		}
 	case screenPSKReporter:
 		body = m.viewPSKReporter()
 	case screenMainMenu:
@@ -1004,12 +1106,28 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 	if body == "" {
 		return ""
 	}
-	// Clamp to contentH so toggling a menu item never shifts the bottom bars.
-	if m.rc.bodyClipStyleH != l.ContentH {
-		m.rc.bodyClipStyle = lipgloss.NewStyle().MaxHeight(l.ContentH)
-		m.rc.bodyClipStyleH = l.ContentH
+	// Clamp overflow to contentH, then pad to fill the content area so the
+	// help bar always sits at the bottom row.
+	clamped := body
+	if h := lipgloss.Height(body); h > l.ContentH {
+		if m.rc.bodyClipStyleH != l.ContentH {
+			m.rc.bodyClipStyle = lipgloss.NewStyle().MaxHeight(l.ContentH)
+			m.rc.bodyClipStyleH = l.ContentH
+		}
+		clamped = m.rc.bodyClipStyle.Render(body)
 	}
-	return m.rc.bodyClipStyle.Render(body)
+	result := fillBody(clamped, l.ContentH)
+	// Bandplan disclaimer always the last content row, directly above the
+	// help bar — replace the trailing padding line.
+	if m.screen == screenBPL && l.ContentH > 0 {
+		lines := strings.Split(result, "\n")
+		if len(lines) > 0 {
+			lines[len(lines)-1] = DimStyle.Width(l.TerminalW).Render(
+				" Listen first. Check national rules. VHF/UHF often needs country/local overrides.")
+		}
+		result = strings.Join(lines, "\n")
+	}
+	return result
 }
 
 // buildQSOFormWithLayout renders the QSO form, short path info, and recent

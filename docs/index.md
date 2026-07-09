@@ -3,12 +3,6 @@ title: CQOps Documentation
 description: Fast, terminal-first amateur radio logger — offline-first, QRP-ready, built for portable ops, club stations, and hot-seat logging
 ---
 
-<p align="center">
-  <img src="https://raw.githubusercontent.com/szporwolik/cqops/main/assets/other/gh-logo.png" alt="CQOps logo" width="360">
-</p>
-
-# CQOps Documentation
-
 Fast, terminal-first amateur radio logging — offline-first, QRP-ready, built for portable ops, club stations, and hot-seat logging. Runs on Windows, Linux, macOS, and Raspberry Pi.
 
 ---

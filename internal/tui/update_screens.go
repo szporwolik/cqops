@@ -193,12 +193,14 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 		if m.ui.integrationMenu.saved {
 			dxcE, dxcHost, dxcPort, dxcLogin, qrzE, qrzUser, qrzPass, httpE, httpAddr, httpPort, httpHdr1, httpHdr2, httpLogo, httpEvtStart := m.ui.integrationMenu.Values()
 
-			// Only restart the HTTP server when address, port, or enabled
-			// state actually change. Header/logo changes are picked up by
-			// pushDashboardState on the next tick — no restart needed.
+			// Restart the HTTP server when address, port, or enabled
+			// state actually change, OR when the server should be running
+			// but isn't (silent crash recovery). Header/logo changes are
+			// picked up by pushDashboardState — no restart needed.
 			needHTTPRestart := httpE != m.App.Config.Integrations.HTTPServer.Enabled ||
 				httpAddr != m.App.Config.Integrations.HTTPServer.Address ||
-				httpPort != m.App.Config.Integrations.HTTPServer.Port
+				httpPort != m.App.Config.Integrations.HTTPServer.Port ||
+				(httpE && !m.http.online)
 
 			m.App.Config.Integrations.DXC.Enabled = dxcE
 			m.App.Config.Integrations.DXC.Host = dxcHost
@@ -791,11 +793,12 @@ const (
 	bplTabCB    = 2 // CB channels
 	bplTabPMR   = 3 // PMR446
 	bplTabBRC   = 4 // broadcast presets
-	bplTabCount = 5
+	bplTabPORT  = 5 // portable SOTA/POTA starting areas
+	bplTabCount = 6
 )
 
-var bplTabNames = []string{"Ham Radio - HF", "Ham Radio - VHF", "Citizen Band - CB", "Personal Mobile Radio - PMR", "Broadcast"}
-var bplTabShortNames = []string{"HF", "VHF", "CB", "PMR", "BC"}
+var bplTabNames = []string{"Ham Radio - HF", "Ham Radio - VHF", "Citizen Band - CB", "Personal Mobile Radio - PMR", "Broadcast", "Portable"}
+var bplTabShortNames = []string{"HF", "VHF", "CB", "PMR", "BC", "PORT"}
 
 type bplState struct {
 	scroll  int
@@ -923,6 +926,48 @@ var sstvFreqs = map[int]map[bandplan.BandName]string{
 	},
 	3: { // Region 3 — Asia-Pacific
 		bandplan.Band20m: "14.230",
+	},
+}
+
+// portablePreset is a suggested portable starting area for a band+mode.
+// These are NOT official SOTA/POTA channels — always check bandplan, listen,
+// ask QRL, and self-spot your exact frequency.
+type portablePreset struct {
+	Band     string // "40m", "20m", etc.
+	CW       string // suggested CW start, e.g. "7.032"
+	CWRange  string // "7.030–7.035"
+	CWNote   string // optional extra info
+	SSB      string // suggested SSB start, e.g. "7.118"
+	SSBRange string // "7.090–7.130"
+	SSBNote  string // optional extra info
+}
+
+// portablePresets holds per-IARU-region portable SOTA/POTA starting areas.
+// Frequencies in MHz, sourced from IARU band plans and practical field reports.
+var portablePresets = map[int][]portablePreset{
+	1: { // IARU Region 1 — Europe, Africa, Middle East, Northern Asia
+		{"40m", "7.032", "7.030–7.035", "", "7.118", "7.090–7.130", "7.090 QRP CoA; 7.118/7.144 common EU portable"},
+		{"30m", "10.118", "10.116–10.120", "QRP CoA 10.116", "", "", "SSB not permitted"},
+		{"20m", "14.062", "14.060–14.065", "", "14.285", "14.250–14.300", ""},
+		{"17m", "18.086", "18.086–18.090", "", "18.130", "18.130–18.150", ""},
+		{"15m", "21.062", "21.060–21.065", "", "21.285", "21.285–21.300", ""},
+		{"10m", "28.062", "28.060–28.065", "", "28.450", "28.400–28.500", "28.360 QRP CoA"},
+	},
+	2: { // IARU Region 2 — Americas
+		{"40m", "7.032", "7.030–7.035", "", "7.285", "7.200–7.290", "Avoid 7.118 as generic Americas default"},
+		{"30m", "10.116", "10.116–10.120", "", "", "", "SSB not permitted"},
+		{"20m", "14.060", "14.060–14.065", "", "14.285", "14.250–14.300", ""},
+		{"17m", "18.086", "18.086–18.090", "", "18.130", "18.130–18.150", ""},
+		{"15m", "21.060", "21.060–21.065", "", "21.285", "21.285–21.300", ""},
+		{"10m", "28.060", "28.060–28.065", "", "28.450", "28.400–28.500", "28.360 QRP CoA"},
+	},
+	3: { // IARU Region 3 — Asia-Pacific
+		{"40m", "7.032", "7.030–7.035", "", "7.090", "7.090–7.120", "7.090 QRP CoA; 7.095 DX phone CoA"},
+		{"30m", "10.116", "10.116–10.120", "Some admins allow phone; not global default", "", "", ""},
+		{"20m", "14.060", "14.060–14.065", "", "14.285", "14.250–14.300", ""},
+		{"17m", "18.086", "18.086–18.090", "", "18.130", "18.130–18.150", ""},
+		{"15m", "21.060", "21.060–21.065", "", "21.285", "21.285–21.300", "21.295 DX phone CoA"},
+		{"10m", "28.060", "28.055–28.065", "28.055 QRS CoA", "28.450", "28.400–28.500", "28.360 QRP CoA"},
 	},
 }
 

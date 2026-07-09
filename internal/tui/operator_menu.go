@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
@@ -35,6 +36,10 @@ type OperatorChooser struct {
 	dialog *DialogModel
 	width  int
 	height int
+
+	// Viewport for scrolling list/form content on small terminals.
+	vp              viewport.Model
+	lastListContent string
 }
 
 // NewOperatorChooser creates a new operator chooser.
@@ -164,12 +169,17 @@ func (oc *OperatorChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				oc.dialog = &d
 			}
 
+		case oc.mode == operatorList && (k.String() == "pgup" || k.String() == "pgdown" || k.String() == "home" || k.String() == "end"):
+			oc.vp, _ = oc.vp.Update(msg)
+			return oc, nil
+
 		case oc.mode == operatorList && (msg.Code == tea.KeyUp || k.String() == "up" || k.String() == "k"):
 			if oc.cursor == 0 {
 				oc.cursor = len(oc.ids) - 1
 			} else {
 				oc.cursor--
 			}
+			scrollVpToLine(&oc.vp, oc.cursor)
 
 		case oc.mode == operatorList && (msg.Code == tea.KeyDown || k.String() == "down" || k.String() == "j"):
 			if oc.cursor == len(oc.ids)-1 {
@@ -177,6 +187,7 @@ func (oc *OperatorChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				oc.cursor++
 			}
+			scrollVpToLine(&oc.vp, oc.cursor)
 
 		case oc.mode == operatorEdit || oc.mode == operatorCreate:
 			cmd := oc.form.HandleKey(msg)
@@ -346,10 +357,6 @@ func (oc *OperatorChooser) viewList() string {
 	if h < 10 {
 		h = 24
 	}
-	contentH := contentHeight(h)
-	if contentH < 3 {
-		contentH = 3
-	}
 
 	contentW := w - 8
 	if contentW > partnerMapMaxW-8 {
@@ -398,8 +405,7 @@ func (oc *OperatorChooser) viewList() string {
 		}
 	}
 
-	body := drawMenuWithHeader("Configuration \u2014 Operators", b.String(), w)
-	return fillBody(body, contentH)
+	return renderScrollableMenu("Configuration \u2014 Operators", b.String(), &oc.vp, &oc.lastListContent, w, h)
 }
 
 func (oc *OperatorChooser) viewForm() string {

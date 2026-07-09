@@ -125,13 +125,17 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 	qs.Source = "wsjtx"
 	qs.WavelogUploaded = "no"
 	qs.ContestID = m.App.Logbook.ActiveContest
+	// Resolve TX power BEFORE ApplyStationDefaults — the default-fill logic
+	// only fills EMPTY fields, so WSJT-X's reported power would take
+	// precedence over the hamlib/flrig form value otherwise.
+	qs.TXPower = txPowerForWSJTX(m, qs.TXPower)
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
 		Operator:        m.activeOperatorCallsign(),
 		MyGridSquare:    m.effectiveGrid(),
 		MyRig:           m.App.Logbook.Station.RigModel(m.App.Config.Rigs),
 		MyAntenna:       m.App.Logbook.Station.RigAntenna(m.App.Config.Rigs),
-		TXPower:         txPowerForWSJTX(m, qs.TXPower),
+		TXPower:         "", // already set on qs directly above
 		MySOTARef:       m.App.Logbook.Station.SOTARef,
 		MyPOTARef:       m.App.Logbook.Station.POTARef,
 		MyWWFFRef:       m.App.Logbook.Station.WWFFRef,

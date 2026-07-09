@@ -78,6 +78,24 @@ func useANSIPalette() bool {
 	return false
 }
 
+// isTTYWithoutDisplay returns true when running on a bare TTY without
+// a graphical display server (X11 or Wayland). Such terminals lack
+// Background Color Erase (BCE) and have unreliable cellbuf rendering —
+// the app uses full-screen clears and ANSI palette fallbacks.
+func isTTYWithoutDisplay() bool {
+	if useANSIPalette() {
+		return true // TERM=linux always implies bare TTY
+	}
+	display := os.Getenv("DISPLAY")
+	wayland := os.Getenv("WAYLAND_DISPLAY")
+	sessionType := os.Getenv("XDG_SESSION_TYPE")
+	// TTY session without any display server.
+	if sessionType == "tty" && display == "" && wayland == "" {
+		return true
+	}
+	return false
+}
+
 // InitPalette picks the right palette for the terminal and must be called
 // once at startup, before any rendering.
 func InitPalette() {

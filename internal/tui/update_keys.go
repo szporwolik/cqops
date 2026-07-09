@@ -70,8 +70,12 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			m.screen = screenPartner
 			m.photo.lastErr = nil
 			m.photo.lastURL = ""
+			m.photo.viewerLastW = 0
+			m.photo.viewerLastH = 0
 			// Reset photo dimension tracking so handlePartnerUpdate
 			// re-applies SetSize with correct inline dimensions.
+			m.photo.partnerPicW = 0
+			m.photo.partnerPicH = 0
 			m.photo.partnerPicLastW = 0
 			m.photo.partnerPicLastH = 0
 			m.photo.partnerPicNeedSize = true
@@ -82,19 +86,18 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			applog.Debug("F2: opening image view", "url", m.lookup.partnerData.ImageURL)
 			m.screen = screenImage
 			m.photo.lastURL = m.lookup.partnerData.ImageURL
-			// Clear inline photo state so a fresh load fires when
-			// cycling back to Partner (fixes stuck "Loading…" on retry).
 			m.photo.partnerPicURL = ""
 			m.photo.partnerPicNeedLoad = false
 			w := m.width
-			h := m.height - 4 // header/tab/help overhead
+			h := m.height - 3 // full content area (ContentH = TerminalH - 3)
 			if w < 20 {
 				w = 80
 			}
 			if h < 10 {
 				h = 10
 			}
-			h-- // bottom hint row
+			m.photo.viewerLastW = w
+			m.photo.viewerLastH = h
 			return tea.Batch(
 				m.photo.viewer.SetSize(w, h),
 				m.photo.viewer.SetURL(m.lookup.partnerData.ImageURL),
@@ -523,16 +526,16 @@ func (m *Model) paneScreens() []screenKind {
 
 	var screens []screenKind
 	screens = append(screens, screenQSO) // always
-	if hasPartner {
+	if hasPartner || m.screen == screenPartner {
 		screens = append(screens, screenPartner)
 	}
-	if dxcOnline {
+	if dxcOnline || m.screen == screenDXC {
 		screens = append(screens, screenDXC)
 	}
-	if m.inetOnline {
+	if m.inetOnline || m.screen == screenPSKReporter {
 		screens = append(screens, screenPSKReporter)
 	}
-	if m.isREFReady() {
+	if m.isREFReady() || m.screen == screenRef {
 		screens = append(screens, screenRef)
 	}
 	screens = append(screens, screenBPL)           // always
@@ -548,13 +551,20 @@ func (m *Model) handlePaneNav(msg tea.KeyPressMsg) bool {
 	if k != "ctrl+left" && k != "ctrl+right" {
 		return false
 	}
+
+	// Image is an overlay on Partner, not a pane. Navigate as Partner.
+	screen := m.screen
+	if screen == screenImage {
+		screen = screenPartner
+	}
+
 	screens := m.paneScreens()
 	if len(screens) == 0 {
 		return false
 	}
 	idx := -1
 	for i, s := range screens {
-		if s == m.screen {
+		if s == screen {
 			idx = i
 			break
 		}
@@ -588,6 +598,20 @@ func (m *Model) handlePaneNav(msg tea.KeyPressMsg) bool {
 			m.ui.mainMenu.width = m.width
 			m.ui.mainMenu.height = m.height
 		}
+	}
+
+	// When leaving the image screen via pane nav, clear photo state.
+	if m.screen == screenImage && target != screenImage {
+		m.photo.lastErr = nil
+		m.photo.lastURL = ""
+		m.photo.viewerLastW = 0
+		m.photo.viewerLastH = 0
+		m.photo.partnerPicW = 0
+		m.photo.partnerPicH = 0
+		m.photo.partnerPicLastW = 0
+		m.photo.partnerPicLastH = 0
+		m.photo.partnerPicNeedSize = true
+		m.invalidatePartnerMapCache()
 	}
 
 	m.screen = target

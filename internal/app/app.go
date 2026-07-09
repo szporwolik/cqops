@@ -758,16 +758,29 @@ func (a *App) SetGPSGrid(grid string, hasFix bool) {
 
 // EffectiveGrid returns the GPS-derived grid when GPS is enabled, has a fix,
 // and the logbook has gps_grid enabled. Falls back to the configured station
-// grid otherwise. Safe to call from any goroutine.
+// grid otherwise. The grid is truncated to the configured GPS precision
+// (6, 8, or 10 chars) to avoid leaking more-accurate position data than
+// the user intended. Safe to call from any goroutine.
 func (a *App) EffectiveGrid() string {
+	var raw string
 	if a.Config.Integrations.GPS.Enabled && a.gpsHasFix && a.gpsGrid != "" &&
 		a.Logbook != nil && a.Logbook.Station.GPSGrid {
-		return a.gpsGrid
+		raw = a.gpsGrid
+	} else if a.Logbook != nil {
+		raw = strings.TrimSpace(strings.ToUpper(a.Logbook.Station.Grid))
 	}
-	if a.Logbook != nil {
-		return strings.TrimSpace(strings.ToUpper(a.Logbook.Station.Grid))
+	if raw == "" {
+		return ""
 	}
-	return ""
+	// Truncate to configured GPS grid precision.
+	prec := 10
+	if p := a.Config.Integrations.GPS.GridPrecision; p == 6 || p == 8 {
+		prec = p
+	}
+	if len(raw) > prec {
+		raw = raw[:prec]
+	}
+	return raw
 }
 
 // LogbookDisplayName returns the human-readable name for the active logbook.

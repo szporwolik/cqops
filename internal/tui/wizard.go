@@ -75,10 +75,12 @@ func NewWizard(a *app.App) *Wizard {
 	qrzPass.EchoCharacter = '*'
 
 	applog.Info("Wizard started — first-run setup")
+	sf := NewStationForm("", "", "")
+	sf.HideGPSGrid = true // GPS Grid is not relevant during first-run setup
 	return &Wizard{
 		App:     a,
 		step:    stepStation,
-		station: NewStationForm("", "", ""),
+		station: sf,
 		rigForm: NewRigForm("Xiegu G90 (optional)", "HWEF 20.5 (optional)", "20"),
 		qrzUser: qrzUser,
 		qrzPass: qrzPass,

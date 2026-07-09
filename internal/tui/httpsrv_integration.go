@@ -41,14 +41,9 @@ func (m *Model) maybeHTTP() tea.Cmd {
 			m.http.client.Stop()
 			m.http.client = nil
 		}
-		if m.http.online {
-			m.http.online = false
-			m.http.err = nil
-			m.http.lastAttempt = time.Time{}
-
-			m.toasts.Info("HTTP server: stopped")
-			applog.Info("HTTP server: disabled — stopped")
-		}
+		m.http.online = false
+		m.http.err = nil
+		m.http.lastAttempt = time.Time{}
 		m.http.restart = false
 		return nil
 	}

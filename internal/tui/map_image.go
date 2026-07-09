@@ -85,7 +85,7 @@ type mapRenderer struct {
 }
 
 func newMapRenderer() *mapRenderer {
-	return &mapRenderer{
+	mr := &mapRenderer{
 		kittyPic: picture.NewWithConfig(picture.Config{
 			KittyID: kittyMapImageID,
 		}),
@@ -93,6 +93,14 @@ func newMapRenderer() *mapRenderer {
 			KittyID: kittyPSKImageID,
 		}),
 	}
+	// Pre-size both picture models so CellPixelSize() returns valid
+	// values from frame one — avoids generating tiny RGBA buffers
+	// before the first SetSize command is processed.
+	mr.kittyPending = tea.Sequence(
+		mr.kittyPic.SetSize(1, 1),
+		mr.pskKittyPic.SetSize(1, 1),
+	)
+	return mr
 }
 
 // Invalidate clears the base image cache so the next View() fully rebuilds.
@@ -199,12 +207,10 @@ func (mr *mapRenderer) renderKitty(ownLat, ownLon, partnerLat, partnerLon float6
 		mr.graylineOn == drawGrayline && mr.graylineSlot == graySlot &&
 		mr.kittyW > 0 {
 		kittyOut := mr.kittyPic.View().Content
-		if kittyOut != "" {
+		if kittyOut != "" && !isGlyphFallback(kittyOut) {
 			return mr.appendKittyLegend(kittyOut)
 		}
-		// Kitty frame not yet available (shouldn't normally happen
-		// when W/H are set, but guard against it). Fall through
-		// to rebuild.
+		// Glyph fallback — fall through to rebuild.
 	}
 
 	// Render at the picture model's cell-pixel resolution so no
@@ -242,21 +248,24 @@ func (mr *mapRenderer) renderKitty(ownLat, ownLon, partnerLat, partnerLon float6
 	mr.graylineOn = drawGrayline
 	mr.graylineSlot = graySlot
 
+	// Pre-set cache dimensions so the next frame hits the cheap cache
+	// check and uses whatever Kitty frame has arrived by then. Without
+	// this, kittyW stays 0 and every frame rebuilds + falls back to
+	// ANSI because View().Content is still stale (pending not yet run).
+	mr.kittyW = mapW
+	mr.kittyH = mapH
+	mr.kittyDirty = false
+
 	kittyOut := mr.kittyPic.View().Content
-	if kittyOut == "" {
+	if kittyOut == "" || isGlyphFallback(kittyOut) {
 		// Kitty frame not ready yet — use the ANSI map as a
-		// height-stable fallback. Do NOT set kittyW/H;
-		// mr.kittyDirty stays false so the next frame hits
-		// the ANSI fallback again until kittyOut is ready.
+		// height-stable fallback. Next frame will hit the cache
+		// and try kittyOut again (pending has now been processed).
 		return mr.drawMarkers(mr.renderBase(mapW, mapAvailH, drawGrayline),
 			ownLat, ownLon, partnerLat, partnerLon, mr.cacheW, mr.cacheH)
 	}
 
-	// Kitty frame arrived — persist the cache dimensions so future
-	// frames short-circuit on the cheap cache check.
-	mr.kittyDirty = false
-	mr.kittyW = mapW
-	mr.kittyH = mapH
+	// Kitty frame arrived — persist and return.
 	return mr.appendKittyLegend(kittyOut)
 }
 
@@ -372,11 +381,20 @@ func (mr *mapRenderer) PSKMode() picture.PictureMode { return mr.pskKittyPic.Mod
 
 // PSKKittyReady reports whether the real Kitty grid (not the glyph
 // fallback) has arrived from the async PNG encode.
-// The glyph uses half-block characters (U+2580 ▀ or U+2584 ▄); the
-// Kitty grid uses Unicode PUA placeholder U+10EEEE.
 func (mr *mapRenderer) PSKKittyReady() bool {
-	c := mr.pskKittyPic.View().Content
-	return c != "" && !strings.Contains(c, "\u2580") && !strings.Contains(c, "\u2584")
+	return mr.pskKittyPic.View().Content != "" && !isGlyphFallback(mr.pskKittyPic.View().Content)
+}
+
+// KittyOn reports whether Kitty graphics mode is active on this renderer.
+func (mr *mapRenderer) KittyOn() bool { return mr.kittyOn }
+
+// KittyContent returns the current partner-map picture model output.
+func (mr *mapRenderer) KittyContent() string { return mr.kittyPic.View().Content }
+
+// isGlyphFallback detects the picture model's half-block glyph fallback
+// (▀ U+2580 or ▄ U+2584) which means the real Kitty grid hasn't arrived.
+func isGlyphFallback(s string) bool {
+	return strings.Contains(s, "\u2580") || strings.Contains(s, "\u2584")
 }
 
 // PSKDrawDot draws a filled circle at the given lat/lon on the RGBA image.

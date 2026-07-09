@@ -13,13 +13,16 @@ type photoState struct {
 	lastErr error            // dedup image error logging
 	lastURL string           // track photo URL to detect partner changes
 
+	viewerLastW int // last SetSize width sent to full-screen viewer
+	viewerLastH int // last SetSize height sent to full-screen viewer
+
 	partnerPicURL      string           // inline photo URL on Partner page
 	partnerPicViewer   pictureurl.Model // inline photo viewer for Partner page (wide screens)
 	partnerPicNeedLoad bool             // set when photo URL changes; consumed by Update
 	partnerPicW        int              // photo box content width (computed in View, used in Update)
 	partnerPicH        int              // photo box content height
-	partnerPicLastW    int              // last SetSize width sent to viewer
-	partnerPicLastH    int              // last SetSize height sent to viewer
+	partnerPicLastW    int              // last SetSize width sent to viewer (init 25)
+	partnerPicLastH    int              // last SetSize height sent to viewer (init 4)
 	partnerPicNeedSize bool             // force SetSize on next handlePartnerUpdate frame
 
 	kittyToggled bool // true once viewers have been switched to Kitty mode

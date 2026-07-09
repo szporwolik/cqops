@@ -1,4 +1,7 @@
-theme: jekyll-theme-hacker
-title: CQOps User Manual
-description: Fast, minimal terminal-based amateur radio logger — user documentation
-show_downloads: false
+theme: jekyll-theme-minimal
+title: CQOps
+description: Fast, minimal terminal-based amateur radio logger
+logo: https://raw.githubusercontent.com/szporwolik/cqops/main/assets/other/gh-logo.png
+show_downloads: true
+github:
+  repository_url: https://github.com/szporwolik/cqops
