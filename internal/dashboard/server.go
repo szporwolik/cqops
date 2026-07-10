@@ -84,7 +84,7 @@ func (s *Server) Start() {
 			return
 		}
 		s.status <- true
-		applog.Info("dashboard: listening", "addr", s.addr, fmt.Sprintf("http://%s", s.addr))
+		applog.Info("dashboard: listening", "addr", s.addr, "url", fmt.Sprintf("http://%s", s.addr))
 
 		err = srv.Serve(ln)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {

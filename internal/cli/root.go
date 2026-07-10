@@ -136,6 +136,19 @@ func runTUI() error {
 			if err := config.Save(a.ConfigPath, a.Config); err != nil {
 				return fmt.Errorf("save after wizard: %w", err)
 			}
+			// Wizard may have changed the active logbook — reopen the
+			// database so subsequent operations use the correct file.
+			a.DB.Close()
+			dbPath, err := config.DBPath(a.LogbookName, a.Logbook)
+			if err != nil {
+				return fmt.Errorf("db path after wizard: %w", err)
+			}
+			a.DB, err = store.InitDB(dbPath)
+			if err != nil {
+				return fmt.Errorf("reopen db after wizard: %w", err)
+			}
+			a.DBPath = dbPath
+			applog.Info("Database reopened after wizard", "path", dbPath)
 		} else {
 			applog.Info("Wizard not completed — config not saved")
 			return nil

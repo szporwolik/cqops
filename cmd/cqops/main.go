@@ -10,6 +10,15 @@ import (
 )
 
 func main() {
+	// Hide the terminal cursor on startup — prevents a double-cursor
+	// artifact on Windows conhost where the native block cursor remains
+	// visible alongside Bubble Tea's text-input cursor.
+	// Restored in the defer below.
+	fmt.Print("\033[?25l")
+	defer func() {
+		fmt.Print("\033[?25h") // restore cursor on exit
+	}()
+
 	// Set the console window icon from the embedded resource so
 	// Windows Terminal / conhost shows the CQOps icon in the tab.
 	setConsoleIcon()

@@ -32,6 +32,7 @@ type Client struct {
 	vfoProbed bool    // true after first probe attempt (pass or fail)
 
 	powerVfoOK bool // true if "l VFOA RFPOWER" works on this backend
+	vfoNameOK  bool // true if "v" VFO name query works on this backend
 	modesOnce  sync.Once
 	modesCache []string // populated on first GetModes call
 }
@@ -43,6 +44,7 @@ func New(host, port string, timeout time.Duration) *Client {
 		timeout:    timeout,
 		maxPower:   100,
 		powerVfoOK: true, // try VFO form first; cleared on first failure
+		vfoNameOK:  true, // try "v" query first; cleared on first failure
 	}
 }
 
@@ -129,12 +131,18 @@ func (c *Client) Status(ctx context.Context) (rig.RigStatus, error) {
 
 	// Read current VFO name.  Some backends (Icom) don't support this
 	// — treat as non-fatal so we can still poll freq/mode/split.
-	vfo, err := c.cmd(r, conn, "v")
-	if err != nil {
-		applog.Debug("hamlib: vfo name query failed, continuing without VFO name", "error", err)
-		vfo = ""
-	} else {
-		vfo = strings.TrimSpace(vfo)
+	// Once the query fails, stop retrying (like powerVfoOK for power).
+	var vfo string
+	if c.vfoNameOK {
+		var err error
+		vfo, err = c.cmd(r, conn, "v")
+		if err != nil {
+			applog.Debug("hamlib: vfo name query failed, skipping future attempts", "error", err)
+			c.vfoNameOK = false
+			vfo = ""
+		} else {
+			vfo = strings.TrimSpace(vfo)
+		}
 	}
 
 	// Split status.  With --vfo, single-char 's' returns nothing — must

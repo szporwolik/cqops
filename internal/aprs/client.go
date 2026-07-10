@@ -162,7 +162,6 @@ func (c *TCPClient) runLoop() {
 
 		// Connection successful — reset backoff.
 		delay = 2 * time.Second
-		applog.Info("APRS: connected", "server", c.server, "callsign", c.callsign)
 		c.setConnected(true, nil)
 
 		// Receive loop blocks until connection drops.
@@ -173,7 +172,7 @@ func (c *TCPClient) runLoop() {
 		c.disconnectLocked()
 		c.mu.Unlock()
 		c.setConnected(false, fmt.Errorf("connection lost"))
-		applog.Debug("APRS: disconnected, reconnecting in %v", delay)
+		applog.Debug("APRS: disconnected", "reconnect_delay", delay)
 
 		select {
 		case <-c.stopCh:

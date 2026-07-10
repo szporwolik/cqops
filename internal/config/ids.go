@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"time"
 )
 
-// NewID generates a short unique hex identifier from a seed string.
+// NewID generates a deterministic hex identifier from a seed string.
 // The returned ID is 12 hex characters (48 bits), suitable as a map key.
+// The same seed always produces the same ID — use a unique seed (callsign,
+// name) to avoid collisions; do NOT rely on this for randomness.
 func NewID(seed string) string {
-	h := sha256.Sum256([]byte(fmt.Sprintf("%s:%d", seed, time.Now().UnixNano())))
+	h := sha256.Sum256([]byte("cqops/id/v2:" + seed))
 	return fmt.Sprintf("%x", h[:6])
 }
 

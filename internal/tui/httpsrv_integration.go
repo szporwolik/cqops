@@ -219,16 +219,25 @@ func (m *Model) eventStartDate() string {
 // actual lookup data (from QRZ) is available, not partial form fields.
 func (m *Model) pushDashboardPartner(ds *dashboard.State, call string) {
 	if call == "" {
+		if partnerEmpty {
+			return // already reported empty, skip log
+		}
+		partnerEmpty = true
+		lastPushedPartner = cachedPartner{}
 		ds.SetPartner(nil)
 		applog.Debug("dashboard: partner cleared (empty call)")
 		return
 	}
+	partnerEmpty = false
 	// Clear stale partner data when the callsign changed and the old
 	// QRZ lookup no longer matches the current form call.
 	if m.lookup.partnerData != nil && !strings.EqualFold(m.lookup.partnerData.Callsign, call) {
-		ds.SetPartner(nil)
-		applog.Debug("dashboard: partner cleared (call changed)",
-			"old", m.lookup.partnerData.Callsign, "new", call)
+		if lastPushedPartner.Call != "" {
+			lastPushedPartner = cachedPartner{}
+			ds.SetPartner(nil)
+			applog.Debug("dashboard: partner cleared (call changed)",
+				"old", m.lookup.partnerData.Callsign, "new", call)
+		}
 		return
 	}
 	// Only push when QRZ/Wavelog lookup data is actually available
@@ -250,14 +259,28 @@ func (m *Model) pushDashboardPartner(ds *dashboard.State, call string) {
 	fmt.Sscanf(d.Lon, "%f", &pi.Lon)
 	pi.ImageURL = d.ImageURL
 
-	ds.SetPartner(pi)
-	applog.Debug("dashboard: partner pushed",
-		"call", pi.Call,
-		"name", pi.Name,
-		"country", pi.Country,
-		"grid", pi.Grid,
-		"hasPhoto", pi.ImageURL != "")
+	// Skip push + debug log when nothing changed since last tick.
+	cur := cachedPartner{
+		Call: pi.Call, Name: pi.Name, QTH: pi.QTH,
+		Country: pi.Country, Grid: pi.Grid, ImageURL: pi.ImageURL,
+	}
+	if cur != lastPushedPartner {
+		lastPushedPartner = cur
+		ds.SetPartner(pi)
+		applog.Debug("dashboard: partner pushed",
+			"call", pi.Call,
+			"name", pi.Name,
+			"country", pi.Country,
+			"grid", pi.Grid,
+			"hasPhoto", pi.ImageURL != "")
+	}
 }
+
+// lastDashboardPushTick throttles pushDashboardState to every 2 ticks (~2 s)
+// instead of every tick (~1 s). On low-end hardware this halves the per-tick
+// overhead of building rig/WSJT-X/solar/partner structs. The 2 s interval is
+// still fast enough for SSE push to feel real-time in the browser.
+var lastDashboardPushTick int
 
 // Called from the tick handler every second. Most Set* calls early-exit because
 // nothing changed (same rig freq, same WSJT-X state, etc.).
@@ -265,6 +288,14 @@ func (m *Model) pushDashboardState() {
 	if m.http.client == nil || !m.http.online {
 		return
 	}
+
+	// Throttle to every 2 ticks (~2 s) to reduce CPU on low-end hardware.
+	// The dashboard SSE push is change-detected, so a slightly slower poll
+	// rate is imperceptible while significantly reducing per-tick work.
+	if m.tickCount-lastDashboardPushTick < 2 {
+		return
+	}
+	lastDashboardPushTick = m.tickCount
 
 	// Fast: rig, operator, logbook, station, active QSO — cheap, change-detected.
 	m.pushDashboardFast()
@@ -492,16 +523,28 @@ func (m *Model) pushDashboardFast() {
 				}
 			}
 		}
-		ds.SetActiveQSO(aq)
-		applog.Debug("dashboard: pushed active QSO",
-			"call", call,
-			"band", aq.Band,
-			"mode", aq.Mode,
-			"dupe", aq.IsDupe,
-			"newCall", aq.IsNewCall,
-			"newDxcc", aq.IsNewDXCC)
+		// Skip the push + debug log when nothing changed since last tick.
+		cur := cachedAQSO{
+			Call: aq.Call, Band: aq.Band, Mode: aq.Mode, Submode: aq.Submode,
+			Frequency: aq.Frequency, Grid: aq.Grid, Name: aq.Name, QTH: aq.QTH,
+			Country: aq.Country, RSTSent: aq.RSTSent, RSTRcvd: aq.RSTRcvd,
+			RefNames: aq.RefNames, IsDupe: aq.IsDupe, IsNewCall: aq.IsNewCall,
+			IsNewDXCC: aq.IsNewDXCC,
+		}
+		if cur != lastPushedAQSO {
+			lastPushedAQSO = cur
+			ds.SetActiveQSO(aq)
+			applog.Debug("dashboard: pushed active QSO",
+				"call", call,
+				"band", aq.Band,
+				"mode", aq.Mode,
+				"dupe", aq.IsDupe,
+				"newCall", aq.IsNewCall,
+				"newDxcc", aq.IsNewDXCC)
+		}
 	} else if call == "" && ds.LastActiveCall() != "" {
 		ds.ClearActiveQSO()
+		lastPushedAQSO = cachedAQSO{}
 	}
 
 	// --- Partner info (QRZ/Wavelog lookup results) ---
@@ -520,6 +563,27 @@ var pushDashboardLastCall string
 // lastActiveDupe/newCall/newDXCC cache computed flags for reuse on subsequent
 // ticks when the call hasn't changed (avoids DB queries and spurious resets).
 var lastActiveDupe, lastActiveNewCall, lastActiveNewDXCC bool
+
+// lastPushedAQSO caches the last active-QSO fields pushed to the dashboard
+// so we skip ds.SetActiveQSO and the debug log when nothing changed.
+// UpdatedAtUTC is excluded — it always changes.
+type cachedAQSO struct {
+	Call, Band, Mode, Submode, Frequency, Grid, Name, QTH, Country string
+	RSTSent, RSTRcvd, RefNames                                     string
+	IsDupe, IsNewCall, IsNewDXCC                                   bool
+}
+
+var lastPushedAQSO cachedAQSO
+
+// lastPushedPartner caches the last partner fields pushed to the dashboard.
+type cachedPartner struct {
+	Call, Name, QTH, Country, Grid, ImageURL string
+}
+
+var lastPushedPartner cachedPartner
+
+// partnerEmpty tracks whether we already reported partner as empty.
+var partnerEmpty bool
 
 // lastRecentIDs holds the last pushed QSO ID list for change detection.
 var lastRecentIDs []int64
@@ -548,6 +612,7 @@ func (m *Model) invalidateDashboardFlags() {
 	lastActiveDupe = false
 	lastActiveNewCall = false
 	lastActiveNewDXCC = false
+	lastPushedAQSO = cachedAQSO{}
 }
 
 func idsEqual(a, b []int64) bool {
