@@ -20,7 +20,8 @@ type rigState struct {
 	client    RigClient // rig backend client (nil when disabled or not configured)
 	modes     []string  // mode table from rig backend (indexed)
 	name      string    // rig model name from rig backend (e.g. "FT-DX10")
-	vfoWarned bool      // suppress repeated VFO-mode toasts on reconnect loops
+	vfoWarned      bool // suppress repeated VFO-mode toasts on reconnect loops
+	backendWarned  bool // suppress repeated "backend not configured" debug logs
 }
 
 // rotorState holds polled rotor data and the rotor backend client.

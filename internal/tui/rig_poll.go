@@ -83,7 +83,10 @@ func (m *Model) refreshRigClient() {
 		m.rig.skipTicks = 4
 
 	default:
-		applog.Debug("rig: backend not configured", "rigName", rigName)
+		if !m.rig.backendWarned {
+			applog.Debug("rig: backend not configured", "rigName", rigName)
+			m.rig.backendWarned = true
+		}
 		m.rig.client = nil
 	}
 	// Clear cached modes and name — a new client means the rig
