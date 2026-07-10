@@ -162,7 +162,6 @@ func (c *TCPClient) runLoop() {
 
 		// Connection successful — reset backoff.
 		delay = 2 * time.Second
-		applog.Info("APRS: connected", "server", c.server, "callsign", c.callsign)
 		c.setConnected(true, nil)
 
 		// Receive loop blocks until connection drops.
