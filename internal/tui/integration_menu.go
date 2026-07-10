@@ -1790,6 +1790,11 @@ func testGPSDConnection(host, port string) error {
 	}
 	defer conn.Close()
 
+	// Read deadline: prevent indefinite hang when the server accepts
+	// the connection but never sends data. 10 seconds total is plenty
+	// for a GPSD server to respond with a TPV.
+	conn.SetDeadline(time.Now().Add(10 * time.Second))
+
 	// Send WATCH command.
 	_, err = fmt.Fprintf(conn, "?WATCH={\"enable\":true,\"json\":true}\n")
 	if err != nil {
