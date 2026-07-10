@@ -1,5 +1,34 @@
 # Changelog
 
+## v0.8.11 — 2026-07-10
+
+### Critical Fixes
+- **Database orphan**: `NewID()` now uses deterministic SHA-256 hashing instead of `time.Now().UnixNano()`. Previously, running the wizard twice could produce different database filenames, leaving imported QSOs stranded in an orphaned file. The database is now also reopened after the wizard when the logbook changes.
+- **WSJT-X auto-recovery**: tick handler no longer checks `rp.WsjtxEnabled` directly — it always delegates to `MaybeRestartWSJTX`, which has its own change-detection. This prevents the auto-recovery from re-enabling WSJT-X after the user intentionally disabled it.
+- **Desktop notifications on Windows**: `desktopAvailable()` now returns `true` on Windows (`runtime.GOOS` check), fixing silent notification failures on Windows 10/11.
+
+### Integration Fixes
+- **Hamlib VFO name query spam**: VFO name query ("v" command) is attempted only once per connection via `vfoNameOK` flag. On rigs that don't support it (e.g., Xiegu G90), this eliminates 12,000+ retries per session.
+- **Power clamping**: `clampRigPower()` applies `math.Floor` then clamps to the rig preset's max power, fixing a Xiegu G90 displaying 21W when set to 20W due to firmware rounding.
+- **WSJT-X power priority**: `txPowerForWSJTX` now directly sets QSO power before `ApplyStationDefaults`. Previously, `ApplyStationDefaults` only filled empty fields, so the WSJT-X ADIF `tx_pwr=10W` survived even when the form showed 21W from hamlib.
+- **Kitty guard**: `ensureKitty()` now checks `kittyTerminalEnv()` in addition to `picture.KittySupported()`, preventing false Kitty activation on terminals that pass the probe but lack true graphics support.
+- **Dashboard HTTP/DXC mid-run enable**: stale backoff timers and incomplete state reset are now cleared unconditionally when disabled or offline, fixing services that wouldn't start after being toggled on mid-session with the "Enable when CQOps starts" checkbox off.
+- **APRS double log**: removed redundant "APRS: connected" log from the client run-loop (the app-level `OnStatus` callback already logs it).
+
+### Dashboard Performance
+- **Active QSO dedup**: field-level cache comparison in `pushDashboardFast` skips `SetActiveQSO` and its debug log when nothing changed since the previous tick, reducing ~10,000 redundant pushes per session to 1 per change.
+- **Partner dedup**: same field-level cache for partner lookups — `partner pushed` log fires only when QRZ/Wavelog data actually changes, not every tick.
+- **Empty partner guard**: `partnerEmpty` flag prevents the "partner cleared" debug log from firing every tick when no call is entered.
+- **Dashboard throttle**: `pushDashboardState` now throttles to every 2 ticks (~2s) instead of every tick (~1s). The dashboard SSE push is already change-detected, so the slightly slower poll rate is imperceptible while halving per-tick CPU overhead on low-end hardware.
+
+### Log Cleanup
+- **`!BADKEY` fixes**: structured log keys added for dashboard listening URL and APRS reconnect delay.
+- **Duplicate debug logs**: `desktopAvailable()` result is cached via `sync.Once` — the "notify: desktop check" debug line fires once at startup instead of twice (or more on repeated calls).
+- **Double cursor on Windows**: `\033[?25l` at startup hides the conhost block cursor, preventing a double-cursor artifact alongside Bubble Tea's text cursor.
+
+### Under the Hood
+- **14 commits**, 11 files changed (162 insertions, 46 deletions).
+
 ## v0.8.10 — 2026-07-09
 
 ### Kitty Graphics Protocol — Terminal-Native Images
