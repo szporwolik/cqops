@@ -1011,12 +1011,14 @@ func (m *Model) View() tea.View {
 		m.rc.clipStyleH = layout.TerminalH
 	}
 	mainView = m.rc.clipStyle.Render(mainView)
-	finalView := m.toasts.RenderOverlay(mainView, layout.TerminalW, layout.TerminalH)
 
-	// Help overlay — floating bottom-left, above toasts, when ? is pressed.
+	// Help overlay — floating bottom-left, rendered before toasts so
+	// toasts stay visible on top. Help must not block status feedback.
 	if m.help.ShowAll {
-		finalView = m.renderHelpOverlay(finalView, layout)
+		mainView = m.renderHelpOverlay(mainView, layout)
 	}
+
+	finalView := m.toasts.RenderOverlay(mainView, layout.TerminalW, layout.TerminalH)
 
 	v := tea.NewView(finalView)
 	v.AltScreen = true
