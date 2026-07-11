@@ -162,6 +162,8 @@ func (m *Model) viewForm(width int) string {
 			v = ti.View()
 		} else if f == fieldCall {
 			v = S.Info.Render(truncateText(raw, vw))
+		} else if f == fieldFreq && raw != "" && qso.DeriveBand(parseFrequency(raw)) == "" {
+			v = S.Error.Render(truncateText(raw, vw))
 		} else {
 			v = ValueStyle.Render(truncateText(raw, vw))
 		}
@@ -767,4 +769,12 @@ func dxcSpotsEqual(a, b []store.DXCSpot) bool {
 		}
 	}
 	return true
+}
+
+// parseFrequency parses a frequency string (MHz) and returns the float value.
+// Returns 0 on parse failure.
+func parseFrequency(s string) float64 {
+	var f float64
+	fmt.Sscanf(strings.TrimSpace(s), "%f", &f)
+	return f
 }
