@@ -741,6 +741,27 @@ func (m *Model) fillFromDXCSpot() {
 	m.dxc.pathSpotIdx = (m.dxc.pathSpotIdx + 1) % len(m.dxc.pathSpots)
 	s := m.dxc.pathSpots[m.dxc.pathSpotIdx]
 	call := s.DXCall
+	// Clear call-dependent fields so stale data doesn't bleed into the new call.
+	m.fields[fieldName].SetValue("")
+	m.fields[fieldQTH].SetValue("")
+	m.fields[fieldGrid].SetValue("")
+	m.fields[fieldCountry].SetValue("")
+	m.fields[fieldRSTSent].SetValue("")
+	m.fields[fieldRSTRcvd].SetValue("")
+	m.lookup.partnerData = nil
+	m.lookup.wlPrivateData = nil
+	m.lookup.qrzLookupDone = false
+	m.lookup.qrzLookupCall = ""
+	m.lookup.wlLookupDone = false
+	m.lookup.wlLookupCall = ""
+	m.dupeConfirmed = false
+	m.gridSource = gridSourceNone
+	m.rc.pathCall = ""
+	m.rc.pathGrid = ""
+	m.rc.pathSig = ""
+	m.rc.logStatsSig = ""
+	m.scpMatches = nil
+	m.scpCacheKey = ""
 	m.fields[fieldCall].SetValue(call)
 	m.focusField(fieldCall)
 	m.toasts.Info(fmt.Sprintf("DXC: %s @ %s", call, formatFreqCompact(s.Frequency)))
