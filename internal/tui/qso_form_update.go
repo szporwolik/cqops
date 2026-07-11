@@ -658,6 +658,17 @@ func (m *Model) commitAndLookup() tea.Cmd {
 func (m *Model) buildSpotComment() string {
 	var parts []string
 
+	// 0. Contest — when active, prepend the ADIF Contest-ID (or name).
+	if m.App.Logbook.ActiveContest != "" {
+		if ct, ok := m.App.Config.Contests[m.App.Logbook.ActiveContest]; ok {
+			if ct.ContestID != "" {
+				parts = append(parts, ct.ContestID)
+			} else if ct.Name != "" {
+				parts = append(parts, ct.Name)
+			}
+		}
+	}
+
 	// 1. References (SOTA, POTA, WWFF, IOTA, SIG).
 	refs := map[string]string{
 		"SOTA": strings.TrimSpace(m.fields[fieldSOTA].Value()),

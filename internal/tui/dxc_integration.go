@@ -40,34 +40,20 @@ func (m *Model) sendSpotCmd(call string, freqKhz float64, comment string) tea.Cm
 			return nil
 		}
 
-		// When a contest is active, prepend its ADIF Contest-ID (or name)
-		// to the spot comment so the cluster knows it's a contest spot.
-		commentPrefix := ""
-		if m.App.Logbook.ActiveContest != "" {
-			if ct, ok := m.App.Config.Contests[m.App.Logbook.ActiveContest]; ok {
-				if ct.ContestID != "" {
-					commentPrefix = "[" + ct.ContestID + "] "
-				} else if ct.Name != "" {
-					commentPrefix = "[" + ct.Name + "] "
-				}
-			}
-		}
-
 		// Toast immediately so the user gets instant feedback that the spot
 		// is being sent — don't wait for the cluster round-trip (~1.5 s).
 		toastMsg := fmt.Sprintf("Spotted %s @ %.1f kHz", call, freqKhz)
-		fullComment := commentPrefix + comment
-		if fullComment != "" {
-			toastMsg += " — " + fullComment
+		if comment != "" {
+			toastMsg += " — " + comment
 		}
 		m.toasts.Info(toastMsg)
 
-		rsp, err := m.dxc.client.SendSpot(freqKhz, call, fullComment)
+		rsp, err := m.dxc.client.SendSpot(freqKhz, call, comment)
 		if err != nil {
 			m.toasts.Warn("DXC: spot failed — " + err.Error())
 			return nil
 		}
-		applog.Info("DXC: spot sent", "cmd", fmt.Sprintf("DX %.1f %s %s", freqKhz, call, fullComment))
+		applog.Info("DXC: spot sent", "cmd", fmt.Sprintf("DX %.1f %s %s", freqKhz, call, comment))
 
 		// If cluster responded with an error-like message, warn as a follow-up.
 		if rsp != "" {
@@ -84,7 +70,7 @@ func (m *Model) sendSpotCmd(call string, freqKhz float64, comment string) tea.Cm
 			Band:       qso.DeriveBand(freqKhz / 1000),
 			Mode:       mode,
 			ModeCat:    spotModeCategory(mode),
-			Comment:    fullComment,
+			Comment:    comment,
 			Spotter:    m.App.Logbook.Station.Callsign,
 			ReceivedAt: now,
 		}
