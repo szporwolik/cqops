@@ -643,7 +643,7 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				im.aprsBaudRate = nextGPSCycle(im.aprsBaudRate)
 				return im, nil
 			case imAPRSData:
-				im.aprsDataBits = nextCycleInt(im.aprsDataBits, dataBitsOptions)
+				im.aprsDataBits = nextGPSCycleInt(im.aprsDataBits, dataBitsOptions)
 				return im, nil
 			case imAPRSParity:
 				im.aprsParity = (im.aprsParity + 1) % len(parityOptions)

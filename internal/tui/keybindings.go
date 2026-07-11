@@ -92,8 +92,8 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("F7/Alt+7", "BPL"),
 		),
 		Save: key.NewBinding(
-			key.WithKeys("ctrl+s", "ctrl+d"),
-			key.WithHelp("Ctrl+S/D", "Log QSO"),
+			key.WithKeys(), // Enter logs QSO; Ctrl+S is Spot
+			key.WithHelp("", ""),
 		),
 		Delete: key.NewBinding(
 			key.WithKeys("delete"),
@@ -104,8 +104,8 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("Ins", "QRZ"),
 		),
 		Spot: key.NewBinding(
-			key.WithKeys("ctrl+shift+d"),
-			key.WithHelp("Ctrl+Shift+D", "Spot"),
+			key.WithKeys("ctrl+s"),
+			key.WithHelp("Ctrl+S", "Spot"),
 		),
 		Help: key.NewBinding(
 			key.WithKeys("?"),
@@ -251,7 +251,6 @@ func (m *Model) ActiveBindings() []key.Binding {
 			m.keys.PrevField,
 			m.keys.NextRow,
 			m.keys.PrevRow,
-			m.keys.Save,
 			m.keys.Spot,
 			m.keys.Lookup,
 			m.keys.Delete,
