@@ -228,7 +228,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		// Column 2: editing & actions
 		{k.Save, k.Spot, k.Lookup, k.Delete, k.Retain, k.NextField, k.PrevField},
 		// Column 3: cycling & meta
-		{k.CycleLogbook, k.CycleRig, k.CycleContest, k.CycleOperator, k.Up, k.Down, k.Enter},
+		{k.CycleLogbook, k.CycleRig, k.CycleContest, k.CycleOperator, k.DXCSpotFill, k.RigTuneUp, k.RigTuneDown, k.Up, k.Down, k.Enter},
 		// Column 4: system
 		{k.CycleUp, k.CycleDown, k.Confirm, k.Cancel, k.Help, k.Quit},
 	}
