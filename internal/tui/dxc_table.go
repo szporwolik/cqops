@@ -163,7 +163,7 @@ func (m *Model) buildDXCTable() {
 			title = S.Info.Render(title)
 		case m.dxc.modeFilter != "" && n == "Mode":
 			title = S.Info.Render(title)
-		case m.dxc.contFilter != "" && n == "DX Cont":
+		case m.dxc.contFilter != "" && n == "Spot Cont":
 			title = S.Info.Render(title)
 		}
 		cols = append(cols, table.Column{Title: title, Width: cw})
@@ -336,7 +336,7 @@ func (m *Model) dxcView() string {
 			modeVal = m.dxc.modeFilter
 		}
 		m.dxc.cachedFilterInfo = " " + DimStyle.Render("Filters:") + " " +
-			DimStyle.Render("Cont") + " " + ValueStyle.Render(contVal) +
+			DimStyle.Render("Sp Cont") + " " + ValueStyle.Render(contVal) +
 			" " + DimStyle.Render("|") + " " +
 			DimStyle.Render("Mode") + " " + ValueStyle.Render(modeVal) +
 			" " + DimStyle.Render("|") + " " +
