@@ -718,23 +718,24 @@ func (m *Model) dxcPathLine(width int) string {
 		dxcLine = lipgloss.JoinHorizontal(lipgloss.Center, leftStyled, " ", center, " ", rightStyled)
 	}
 
-	// Append rig info on the right side when space permits.
+	// Append rig info right-aligned when space permits.
 	profileParts := m.stationProfile()
 	if len(profileParts) > 0 {
 		rigInfo := strings.Join(profileParts, "  ·  ")
 		rigW := lipgloss.Width(rigInfo)
 		dxcW := lipgloss.Width(dxcLine)
-		gap := 3 // spaces between DXC line and rig info
+		gap := 3
 		availForDXC := width - rigW - gap
 		if availForDXC >= 40 && dxcW > availForDXC {
-			// Not enough room for both — truncate DXC side.
 			dxcLine = truncateText(dxcLine, availForDXC)
+			dxcW = lipgloss.Width(dxcLine)
 		}
-		if lipgloss.Width(dxcLine)+gap+rigW <= width {
+		if dxcW+gap+rigW <= width {
+			spacer := strings.Repeat(" ", width-dxcW-rigW)
 			rigStyled := pathMutedStyle.Render(rigInfo)
 			dxcLine = lipgloss.JoinHorizontal(lipgloss.Center,
 				dxcLine,
-				strings.Repeat(" ", gap),
+				spacer,
 				rigStyled,
 			)
 		}
