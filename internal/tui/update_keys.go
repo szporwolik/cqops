@@ -366,6 +366,10 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.cycleActiveOperator()
 		return nil, true
 
+	case msg.String() == "ctrl+f":
+		m.fillFromDXCSpot()
+		return nil, true
+
 	case key.Matches(msg, m.keys.Partner):
 		call := m.commitCall()
 		if call == "" {

@@ -730,6 +730,22 @@ func (m *Model) openSpotDialog() tea.Cmd {
 	return nil
 }
 
+// fillFromDXCSpot cycles through DXC spots at the current frequency and fills
+// the call field. No lookup is triggered — the user must press Enter/Insert
+// manually to look up the callsign.
+func (m *Model) fillFromDXCSpot() {
+	if len(m.dxc.pathSpots) == 0 {
+		m.toasts.Warn("No DXC spots at this frequency")
+		return
+	}
+	m.dxc.pathSpotIdx = (m.dxc.pathSpotIdx + 1) % len(m.dxc.pathSpots)
+	s := m.dxc.pathSpots[m.dxc.pathSpotIdx]
+	call := s.DXCall
+	m.fields[fieldCall].SetValue(call)
+	m.focusField(fieldCall)
+	m.toasts.Info(fmt.Sprintf("DXC: %s @ %s", call, formatFreqCompact(s.Frequency)))
+}
+
 func (m *Model) onFieldExit() {
 	// Show validation toast for the field being left, if the value is non-empty
 	// but invalid. Empty is OK — handled at save time by qso.ValidateForSave.

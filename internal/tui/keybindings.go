@@ -44,6 +44,7 @@ type KeyMap struct {
 	RotorDown     key.Binding
 	RotorBearing  key.Binding
 	RotorStop     key.Binding
+	DXCSpotFill   key.Binding
 }
 
 // DefaultKeyMap returns the default key bindings.
@@ -197,6 +198,9 @@ func DefaultKeyMap() KeyMap {
 		), CycleOperator: key.NewBinding(
 			key.WithKeys("ctrl+o"),
 			key.WithHelp("Ctrl+O", "Operator"),
+		), DXCSpotFill: key.NewBinding(
+			key.WithKeys("ctrl+f"),
+			key.WithHelp("Ctrl+F", "Spot→Call"),
 		)}
 }
 

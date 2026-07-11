@@ -579,9 +579,10 @@ func (m *Model) dxcPathLine(width int) string {
 	// freqKhz is in MHz from the form; convert to kHz for comparison.
 	curKhz := freqKhz * 1000
 
-	// Build cache signature: frequency + spot count + width.
+	// Build cache signature: frequency + spot count + width + rig identity.
 	var sigB strings.Builder
-	fmt.Fprintf(&sigB, "%.1f|%d|%d", freqKhz, len(m.dxc.cachedRaw), width)
+	fmt.Fprintf(&sigB, "%.1f|%d|%d|%s|%s", freqKhz, len(m.dxc.cachedRaw), width,
+		m.App.Logbook.Station.RigName, m.App.Logbook.Station.RigPower(m.App.Config.Rigs))
 	sig := sigB.String()
 	if m.rc.dxcPathSig == sig && m.rc.dxcPathLine != "" {
 		return m.rc.dxcPathLine
@@ -674,14 +675,20 @@ func (m *Model) dxcPathLine(width int) string {
 
 	var center string
 	if len(matched) > 0 {
-		// On-frequency match: show callsigns between double bars.
-		matchNames := make([]string, len(matched))
+		// On-frequency match: show callsign + freq between double bars.
+		matchParts := make([]string, len(matched))
 		for i, s := range matched {
-			matchNames[i] = s.DXCall
+			matchParts[i] = formatSpot(s)
 		}
-		center = fmt.Sprintf("││ %s ││", strings.Join(matchNames, " "))
+		center = fmt.Sprintf("││ %s ││", strings.Join(matchParts, "  "))
 	} else {
 		center = fmt.Sprintf("│ %s │", formatFreqCompact(curKhz))
+	}
+
+	// Update cycling state for Ctrl+F. Reset index when spots change.
+	if !dxcSpotsEqual(m.dxc.pathSpots, matched) {
+		m.dxc.pathSpots = matched
+		m.dxc.pathSpotIdx = -1
 	}
 	left := strings.Join(belowParts, "  ")
 	right := strings.Join(aboveParts, "  ")
@@ -689,10 +696,10 @@ func (m *Model) dxcPathLine(width int) string {
 	// Right-align left side, left-align right side.
 	leftStyled := pathMutedStyle.Align(lipgloss.Right).Render(left)
 	rightStyled := pathMutedStyle.Align(lipgloss.Left).Render(right)
-	result := lipgloss.JoinHorizontal(lipgloss.Center, leftStyled, " ", center, " ", rightStyled)
+	dxcLine := lipgloss.JoinHorizontal(lipgloss.Center, leftStyled, " ", center, " ", rightStyled)
 
 	// If too wide, reduce to 1 per side.
-	if lipgloss.Width(result) > width && maxEach > 1 {
+	if lipgloss.Width(dxcLine) > width && maxEach > 1 {
 		maxEach = 1
 		below = below[:min(len(below), 1)]
 		above = above[:min(len(above), 1)]
@@ -708,20 +715,55 @@ func (m *Model) dxcPathLine(width int) string {
 		right = strings.Join(aboveParts, "  ")
 		leftStyled = pathMutedStyle.Align(lipgloss.Right).Render(left)
 		rightStyled = pathMutedStyle.Align(lipgloss.Left).Render(right)
-		result = lipgloss.JoinHorizontal(lipgloss.Center, leftStyled, " ", center, " ", rightStyled)
+		dxcLine = lipgloss.JoinHorizontal(lipgloss.Center, leftStyled, " ", center, " ", rightStyled)
 	}
 
-	if lipgloss.Width(result) > width {
-		result = truncateText(result, width)
+	// Append rig info on the right side when space permits.
+	profileParts := m.stationProfile()
+	if len(profileParts) > 0 {
+		rigInfo := strings.Join(profileParts, "  ·  ")
+		rigW := lipgloss.Width(rigInfo)
+		dxcW := lipgloss.Width(dxcLine)
+		gap := 3 // spaces between DXC line and rig info
+		availForDXC := width - rigW - gap
+		if availForDXC >= 40 && dxcW > availForDXC {
+			// Not enough room for both — truncate DXC side.
+			dxcLine = truncateText(dxcLine, availForDXC)
+		}
+		if lipgloss.Width(dxcLine)+gap+rigW <= width {
+			rigStyled := pathMutedStyle.Render(rigInfo)
+			dxcLine = lipgloss.JoinHorizontal(lipgloss.Center,
+				dxcLine,
+				strings.Repeat(" ", gap),
+				rigStyled,
+			)
+		}
+	}
+
+	if lipgloss.Width(dxcLine) > width {
+		dxcLine = truncateText(dxcLine, width)
 	}
 
 	m.rc.dxcPathSig = sig
-	m.rc.dxcPathLine = result
-	return result
+	m.rc.dxcPathLine = dxcLine
+	return dxcLine
 }
 
 // formatFreqCompact formats a frequency in kHz to a compact display string.
 // Examples: 7123.4 → "7123.4", 14200.0 → "14200.0".
 func formatFreqCompact(khz float64) string {
 	return fmt.Sprintf("%.1f", khz)
+}
+
+// dxcSpotsEqual compares two DXC spot slices for equality (callsign + frequency).
+func dxcSpotsEqual(a, b []store.DXCSpot) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].DXCall != b[i].DXCall || a[i].Frequency != b[i].Frequency {
+			return false
+		}
+	}
+	return true
 }
