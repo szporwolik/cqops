@@ -162,7 +162,7 @@ func (m *Model) viewForm(width int) string {
 			v = ti.View()
 		} else if f == fieldCall {
 			v = S.Info.Render(truncateText(raw, vw))
-		} else if f == fieldFreq && raw != "" && qso.DeriveBand(parseFrequency(raw)) == "" {
+		} else if f == fieldFreq && raw != "" && !qso.IsInHamBand(parseFrequency(raw), m.App.Logbook.Station.IARURegion) {
 			v = S.Error.Render(truncateText(raw, vw))
 		} else {
 			v = ValueStyle.Render(truncateText(raw, vw))

@@ -64,6 +64,31 @@ func DeriveBand(freqMHz float64) string {
 	return ""
 }
 
+// IsInHamBand checks whether a frequency falls within an amateur band,
+// accounting for IARU region-specific limits. Region 0 (unknown) uses
+// the widest limits (equivalent to Region 2). Returns true if valid.
+func IsInHamBand(freqMHz float64, region int) bool {
+	for _, r := range bandRanges {
+		high := r.high
+		switch r.name {
+		case "80m":
+			if region == 1 && high > 3.8 {
+				high = 3.8
+			} else if region == 3 && high > 3.9 {
+				high = 3.9
+			}
+		case "40m":
+			if (region == 1 || region == 3) && high > 7.2 {
+				high = 7.2
+			}
+		}
+		if freqMHz >= r.low && freqMHz <= high {
+			return true
+		}
+	}
+	return false
+}
+
 func IsValidBand(band string) bool {
 	_, ok := bandIndex[strings.ToLower(strings.TrimSpace(band))]
 	return ok
