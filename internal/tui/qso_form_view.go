@@ -581,7 +581,7 @@ func (m *Model) dxcPathLine(width int) string {
 
 	// Build cache signature: frequency + spot count + width + rig identity.
 	var sigB strings.Builder
-	fmt.Fprintf(&sigB, "%.1f|%d|%d|%s|%s", freqKhz, len(m.dxc.cachedRaw), width,
+	fmt.Fprintf(&sigB, "%.3f|%d|%d|%s|%s", freqKhz, len(m.dxc.cachedRaw), width,
 		m.App.Logbook.Station.RigName, m.App.Logbook.Station.RigPower(m.App.Config.Rigs))
 	sig := sigB.String()
 	if m.rc.dxcPathSig == sig && m.rc.dxcPathLine != "" {
