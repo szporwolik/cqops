@@ -252,9 +252,21 @@ func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return c, nil
 			case c.focus == 4 && (k.String() == " " || msg.Code == ' '):
-				// Space cycles through ADIF Contest IDs.
+				// Space cycles forward through ADIF Contest IDs.
 				cur := strings.TrimSpace(c.contInput.Value())
 				nxt := nextContestID(cur)
+				c.contInput.SetValue(nxt)
+				c.adifIdx = 0
+				return c, nil
+			case c.focus == 4 && (k.String() == "pgdown" || k.String() == "pgup"):
+				// PgDn/PgUp cycle forward/backward through ADIF Contest IDs.
+				cur := strings.TrimSpace(c.contInput.Value())
+				var nxt string
+				if k.String() == "pgup" {
+					nxt = prevContestID(cur)
+				} else {
+					nxt = nextContestID(cur)
+				}
 				c.contInput.SetValue(nxt)
 				c.adifIdx = 0
 				return c, nil
