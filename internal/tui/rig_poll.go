@@ -64,7 +64,7 @@ func (m *Model) refreshRigClient() {
 		url := "http://" + host + ":" + port
 		applog.InfoDetail("rig: flrig connecting", fmt.Sprintf("rig=%s host=%s port=%s url=%s", rigName, host, port, url))
 		m.rig.client = flrig.New(url, rigDefaultTimeout)
-		m.rig.skipTicks = 4 // one tick before pollInterval=5 triggers
+		m.rig.skipTicks = 10 // give flrig ~10s to start its XML-RPC server
 
 	case "hamlib":
 		host, port := rp.HamlibRadioHost, rp.HamlibRadioPort
@@ -197,6 +197,10 @@ func (m *Model) pollRig() tea.Cmd {
 	pollInterval := 1 // fast-poll interval in ticks (~1 s)
 	if !m.rig.connected {
 		pollInterval = 10 // back off when disconnected (~10 s)
+		// flrig runs on localhost — shorter retry is safe.
+		if _, ok := m.rig.client.(*flrig.Client); ok {
+			pollInterval = 3
+		}
 	}
 	m.rig.skipTicks++
 	if m.rig.skipTicks < pollInterval {
