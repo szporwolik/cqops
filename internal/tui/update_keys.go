@@ -45,6 +45,12 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, true
 
 	case key.Matches(msg, m.keys.Help):
+		// Defer help overlay until initialisation is complete (first tick
+		// has dispatched all startup commands). Pressing ? during early
+		// startup must not interrupt or delay initialisation.
+		if m.tickCount < 1 {
+			return nil, true
+		}
 		m.help.ShowAll = !m.help.ShowAll
 		// When toggling help on, dismiss any open dialog.
 		if m.help.ShowAll {
