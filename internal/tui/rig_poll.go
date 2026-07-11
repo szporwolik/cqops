@@ -226,7 +226,20 @@ func (m *Model) pollRig() tea.Cmd {
 	// Every 300 polls (~5 min), log a heartbeat so we can detect silent stops.
 	m.rig.pollCount++
 	if m.rig.pollCount%300 == 1 {
-		applog.Debug("rig: poll heartbeat", "count", m.rig.pollCount)
+		applog.Debug("rig: poll heartbeat", "count", m.rig.pollCount, "connected", m.rig.connected, "clientNil", m.rig.client == nil, "polling", m.rig.polling)
+	}
+	// Log every 30th poll so we can trace the polling rhythm in logs.
+	if m.rig.pollCount%30 == 0 {
+		applog.Debug("rig: poll tick", "count", m.rig.pollCount, "connected", m.rig.connected)
+	}
+
+	// Extra: log when a poll is dispatched for the first time after connection.
+	if m.rig.pollCount == 1 {
+		applog.Info("rig: first poll dispatched", "backend", "flrig")
+	}
+	// Extra diagnostics: log every 30th poll so we can see the polling rhythm.
+	if m.rig.pollCount%30 == 0 {
+		applog.Debug("rig: poll tick", "count", m.rig.pollCount, "connected", m.rig.connected)
 	}
 
 	// Slow poll: add RF power every 3 fast-poll cycles.
@@ -244,6 +257,7 @@ func (m *Model) applyRigPoll(r rigPollMsg) tea.Cmd {
 	// Reject stale results from a previous client (e.g. after rig config
 	// was changed or rig was disabled while a poll was in flight).
 	if r.client != m.rig.client {
+		applog.Debug("rig: poll stale client, dropping")
 		return nil
 	}
 	if r.err != "" || !r.connected {
@@ -265,6 +279,7 @@ func (m *Model) applyRigPoll(r rigPollMsg) tea.Cmd {
 		// Connected — notify user once per session.
 		if !m.rig.vfoWarned {
 			m.rig.vfoWarned = true
+			applog.Info("rig: poll connected", "backend", "flrig")
 			if _, ok := m.rig.client.(*hamlib.Client); ok {
 				m.toasts.Success("Hamlib: connected")
 			} else {
