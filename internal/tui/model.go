@@ -1437,6 +1437,34 @@ func (m *Model) cycleActiveOperator() {
 	config.Save(m.App.ConfigPath, m.App.Config)
 }
 
+// prefillPreviousContestExchange looks up the most recent QSO with the same
+// callsign in the active contest and prefills the received exchange fields.
+// This helps when working the same station on a different band/mode — the
+// operator doesn't need to re-type the exchange. Only fills fields that are
+// currently empty so it never overwrites manual input.
+func (m *Model) prefillPreviousContestExchange(call string) {
+	id := m.App.Logbook.ActiveContest
+	if id == "" || call == "" || m.App.DB == nil {
+		return
+	}
+	exchRcvd, rstRcvd, exchSent, err := store.LastContestExchange(m.App.DB, call, id)
+	if err != nil {
+		return // no previous QSO or DB error — silently skip
+	}
+	// Prefill received exchange fields if empty.
+	if strings.TrimSpace(m.fields[fieldExchRcvd].Value()) == "" && exchRcvd != "" {
+		m.fields[fieldExchRcvd].SetValue(exchRcvd)
+	}
+	if strings.TrimSpace(m.fields[fieldRSTRcvd].Value()) == "" && rstRcvd != "" {
+		m.fields[fieldRSTRcvd].SetValue(rstRcvd)
+	}
+	// Prefill sent exchange so the operator sees what they sent last time
+	// (same contest, same station — their exchange likely hasn't changed).
+	if strings.TrimSpace(m.fields[fieldExchSent].Value()) == "" && exchSent != "" {
+		m.fields[fieldExchSent].SetValue(exchSent)
+	}
+}
+
 // prefillContestExchange fills the exchange sent/rcvd fields from the active
 // contest's prefill settings. Replaces special markers with current QSO
 // and station values. Next QSO is NOT incremented here — that happens on

@@ -135,6 +135,20 @@ func ListQSOs(db *sql.DB, limit int, contestID string) ([]qso.QSO, error) {
 	return qsos, rows.Err()
 }
 
+// LastContestExchange returns the exchange fields from the most recent QSO
+// with the given callsign in the given contest. Used to prefill the received
+// exchange when working the same station on another band/mode.
+func LastContestExchange(db *sql.DB, call, contestID string) (exchRcvd, rstRcvd, exchSent string, err error) {
+	query := `SELECT exch_rcvd, rst_rcvd, exch_sent FROM qsos
+		WHERE call = ? AND contest_id = ?
+		ORDER BY qso_date DESC, time_on DESC LIMIT 1`
+	err = db.QueryRow(query, call, contestID).Scan(&exchRcvd, &rstRcvd, &exchSent)
+	if err != nil {
+		return "", "", "", err
+	}
+	return exchRcvd, rstRcvd, exchSent, nil
+}
+
 // ListQSOsPageWithCount returns a page of QSOs and the total count in a single
 // query using COUNT(*) OVER(), avoiding the need for a separate CountQSOs call.
 func ListQSOsPageWithCount(db *sql.DB, limit, offset int, contestID string) ([]qso.QSO, int, error) {

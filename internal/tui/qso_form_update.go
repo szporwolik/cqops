@@ -629,6 +629,7 @@ func (m *Model) commitAndLookup() tea.Cmd {
 	m.scpMatches = nil
 	m.scpCacheKey = ""
 	m.dxccAutoFill()
+	m.prefillPreviousContestExchange(call)
 	m.prefillContestExchange()
 	m.lookup.qrzCall = call
 	m.lookup.wlCall = call
