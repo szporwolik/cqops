@@ -144,7 +144,7 @@ func (m *Model) rigPowerCmd() tea.Cmd {
 }
 
 // tuneRigStep tunes the connected rig up or down by a band-appropriate step.
-// HF (<30 MHz): 0.01 MHz (10 kHz). VHF/UHF (>=30 MHz): 0.1 MHz (100 kHz).
+// HF (<30 MHz): 0.001 MHz (1 kHz). VHF/UHF (≥30 MHz): 0.1 MHz (100 kHz).
 func (m *Model) tuneRigStep(dir int) tea.Cmd {
 	if m.rig.client == nil || !m.rig.connected {
 		m.toasts.Warn("Rig not connected")
@@ -161,7 +161,7 @@ func (m *Model) tuneRigStep(dir int) tea.Cmd {
 	if freqMhz <= 0 {
 		return nil
 	}
-	step := 0.01 // 10 kHz for HF
+	step := 0.001 // 1 kHz for HF
 	if freqMhz >= 30 {
 		step = 0.1 // 100 kHz for VHF/UHF
 	}
