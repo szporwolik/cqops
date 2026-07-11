@@ -402,12 +402,10 @@ func (m *Model) minimalBarBindings() []key.Binding {
 	e := key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back"))
 	switch m.screen {
 	case screenQSO:
-		bindings := []key.Binding{h, m.keys.Enter, m.keys.DXCSpotFill}
-		if m.rig.connected {
-			bindings = append(bindings, m.keys.RigTuneUp, m.keys.RigTuneDown)
-		}
-		bindings = append(bindings, q)
-		return bindings
+		// Enter is the primary action; Ctrl+F/Ctrl+↑/Ctrl+↓ are
+		// available via the ? help overlay and kept out of the bar
+		// to keep the bottom line clean for portable/small screens.
+		return []key.Binding{h, m.keys.Enter, q}
 	case screenPartner:
 		if m.lookup.partnerData != nil && m.lookup.partnerData.ImageURL != "" {
 			return []key.Binding{h, key.NewBinding(key.WithKeys("f2"), key.WithHelp("F2", "Photo")), q}
