@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -632,20 +633,33 @@ func (m *Model) dxcPathLine(width int) string {
 		maxEach = 2
 	}
 
-	// Collect up to maxEach below and above.
+	// Collect up to maxEach below and above, excluding spots that match
+	// our frequency (within ±0.5 kHz). Matched spots go in the center.
+	const matchTol = 0.5 // kHz tolerance for "on frequency"
+	var matched []store.DXCSpot
 	var below, above []store.DXCSpot
-	for i := idx - 1; i >= 0 && len(below) < maxEach; i-- {
-		below = append(below, spots[i])
+	for i := idx - 1; i >= 0 && len(below)+len(matched) < maxEach*2; i-- {
+		s := spots[i]
+		if math.Abs(s.Frequency-curKhz) <= matchTol {
+			matched = append(matched, s)
+		} else if len(below) < maxEach {
+			below = append(below, s)
+		}
 	}
-	for i := idx; i < len(spots) && len(above) < maxEach; i++ {
-		above = append(above, spots[i])
+	for i := idx; i < len(spots) && len(above)+len(matched) < maxEach*2; i++ {
+		s := spots[i]
+		if math.Abs(s.Frequency-curKhz) <= matchTol {
+			matched = append(matched, s)
+		} else if len(above) < maxEach {
+			above = append(above, s)
+		}
 	}
-	// Reverse below so closest is last (display order: farthest…closest | closest…farthest).
+	// Reverse below so closest is last (display order: farthest…closest | center | closest…farthest).
 	for i, j := 0, len(below)-1; i < j; i, j = i+1, j-1 {
 		below[i], below[j] = below[j], below[i]
 	}
 
-	// Format: "CALL FREQ  CALL FREQ  CALL FREQ │ FREQ │ CALL FREQ  CALL FREQ  CALL FREQ"
+	// Format: "CALL FREQ  CALL FREQ  CALL FREQ │ FREQ/|| CALLS || │ CALL FREQ  CALL FREQ  CALL FREQ"
 	formatSpot := func(s store.DXCSpot) string {
 		return fmt.Sprintf("%s %s", s.DXCall, formatFreqCompact(s.Frequency))
 	}
@@ -658,7 +672,17 @@ func (m *Model) dxcPathLine(width int) string {
 		aboveParts[i] = formatSpot(s)
 	}
 
-	center := fmt.Sprintf("│ %s │", formatFreqCompact(curKhz))
+	var center string
+	if len(matched) > 0 {
+		// On-frequency match: show callsigns between double bars.
+		matchNames := make([]string, len(matched))
+		for i, s := range matched {
+			matchNames[i] = s.DXCall
+		}
+		center = fmt.Sprintf("││ %s ││", strings.Join(matchNames, " "))
+	} else {
+		center = fmt.Sprintf("│ %s │", formatFreqCompact(curKhz))
+	}
 	left := strings.Join(belowParts, "  ")
 	right := strings.Join(aboveParts, "  ")
 
