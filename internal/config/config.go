@@ -96,6 +96,16 @@ func (c *Config) Normalize() {
 	case "mi":
 		c.General.Units = "imperial"
 	}
+
+	// Default IARU region to 1 (Europe) for logbooks that don't have it set.
+	// Without this, region 0 falls through to Region 2 (widest) limits in
+	// band.go:regionBands(), causing incorrect out-of-band frequency warnings.
+	for id, lb := range c.Logbooks {
+		if lb.Station.IARURegion == 0 {
+			lb.Station.IARURegion = 1
+			c.Logbooks[id] = lb
+		}
+	}
 }
 
 // APRSGlobalConfig holds global APRS service settings.

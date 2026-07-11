@@ -402,6 +402,9 @@ func (m *Model) minimalBarBindings() []key.Binding {
 	e := key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back"))
 	switch m.screen {
 	case screenQSO:
+		// Enter is the primary action; Ctrl+F/Ctrl+↑/Ctrl+↓ are
+		// available via the ? help overlay and kept out of the bar
+		// to keep the bottom line clean for portable/small screens.
 		return []key.Binding{h, m.keys.Enter, q}
 	case screenPartner:
 		if m.lookup.partnerData != nil && m.lookup.partnerData.ImageURL != "" {
@@ -567,6 +570,11 @@ func (m *Model) screenTitle() string {
 // corner showing the current screen's keybindings in columns.
 // Dismissed with ? or Esc.
 func (m *Model) renderHelpOverlay(mainView string, l Layout) string {
+	// Never render before the first tick completes — initialization
+	// commands must not be delayed by overlay compositing.
+	if m.tickCount < 1 {
+		return mainView
+	}
 	bindings := m.ActiveBindings()
 	adapter := activeHelpKeyMap{bindings: bindings}
 

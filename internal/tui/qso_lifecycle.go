@@ -156,6 +156,8 @@ func (m *Model) saveQSO() tea.Cmd {
 	// The cached dupe/new-call/new-DXCC flags are now stale — the QSO
 	// we just saved changes the dupe status for this call.
 	m.invalidateDashboardFlags()
+	m.dxc.dupeSet = nil      // force DXC dupe set recompute
+	m.dxc.tableReady = false // force DXC table rebuild to show updated markers
 	return tea.Batch(m.refreshQSOS(), m.maybeUploadToWavelog(qs))
 }
 

@@ -61,4 +61,15 @@ type dxcState struct {
 	// Cached spacer + table wrapper styles — rebuilt only on width change.
 	cachedSpacerStyle  lipgloss.Style
 	cachedSpacerStyleW int
+
+	// Path line state — caches matched spots for Ctrl+F cycling.
+	pathSpots   []store.DXCSpot // spots at/near current frequency (from dxcPathLine)
+	pathSpotIdx int             // cycling index for Ctrl+F
+
+	// Dupe set — computed once per table rebuild, keyed by "CALL|BAND|MODE".
+	// Checked per spot row to dim already-worked calls. Invalidated when
+	// the logbook or contest changes (cache key stored alongside the set).
+	dupeSet        map[string]bool
+	dupeSetLogbook string // logbook name at time of computation
+	dupeSetContest string // contest ID at time of computation
 }

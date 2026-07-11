@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.8.12 — 2026-07-12
+
+### Recent QSOs Table — Full-Width + Smart Columns
+- **Full terminal width**: the recent QSOs table is no longer capped at 140/200 columns. On large screens, it uses all available space — richer column tiers appear naturally and text-heavy columns (Name, QTH, DXCC) stop truncating. Small-screen behavior is unchanged.
+- **Smart column caps**: every column has a reasonable maximum width — `Call` caps at 12, `Comment` at 30, `Band` at 7, `Mode` at 6, etc. Extra space on ultra-wide screens flows to text-heavy columns via iterative redistribution instead of blowing up short fields.
+- **Notes column removed**: the rarely-used Notes column is removed from all tiers. Its 12-char allocation is redistributed to Name, QTH, Comment, and reference fields.
+- **Reference fields breathe**: SOTA, POTA, WWFF, IOTA, SIG caps raised so they absorb leftover space on huge monitors instead of it all dumping to the last column.
+- **Contest exchange columns**: when contest mode is active, `ExchSent` and `ExchRcvd` replace SOTA/POTA/WWFF/IOTA/SIG at the wide tiers. Non-contest behavior is unchanged.
+
+### DXC Dupe Markers — Spotter-Aware
+- **DXC table**: already-worked spots show a `D ` prefix before the callsign (dimmed) — visually distinct from new spots. A single batch query (`DXCDupeSet`) checks all spots against logged QSOs with zero per-spot DB access.
+- **DXC path line**: dupe spots in the band-line above the QSO form use the same `D ` prefix convention for consistency.
+- **Contest-aware**: in contest mode, dupe checks span the entire contest (48h+), not just today's date. Switching logbooks or contests invalidates the dupe cache automatically.
+- **Instant refresh**: dupe markers update immediately after logging a QSO — no waiting for the next spot drain cycle.
+- **SQLite covering indexes**: `idx_qsos_date_call_band_mode` and `idx_qsos_contest_call_band_mode` let SQLite answer dupe queries from the index alone, avoiding table scans on every DXC table rebuild.
+- **Monochrome-safe**: all dupe markers use text characters (`D ` prefix), not just color, so they work on simple terminals and SSH sessions.
+
+### IARU Region Fix
+- **Region 0 default**: `Normalize()` now defaults unset `IARURegion` to 1 (Europe) for all logbooks. Previously, a missing config key silently mapped to Region 2 (widest) limits, causing incorrect out-of-band frequency warnings on 40m (red at 7.300 instead of 7.200 for EU stations).
+- **Tests**: 40 new test cases for `IsInHamBand` covering all three IARU regions, band edges, and out-of-band frequencies.
+
+### DXC Continent Filter Fix
+- **Spotter continent**: the continent filter now operates on the spotter's continent (`SpotCont`) instead of the spotted station's continent (`DXCont`). Press `\` to filter for spots heard FROM a specific continent. Filter label updated to `Sp Cont`.
+
+### UI Polish
+- **Help bar decluttered**: `Ctrl+F` (Spot→Call), `Ctrl+↑` (Rig +step), and `Ctrl+↓` (Rig −step) removed from the default bottom bar. Still available via the `?` help overlay — keeps the bottom line clean on portable/small screens.
+- **Dashboard favicon**: updated to the rebranded CQOps icon.
+
+### Under the Hood
+- **14 files changed**, 1 new test file (40 cases). No dependency changes, no config format changes, no breaking API changes.
+
 ## v0.8.11 — 2026-07-10
 
 ### Critical Fixes

@@ -64,7 +64,7 @@ func (m *Model) dxcFilteredSpots() []store.DXCSpot {
 					continue
 				}
 			}
-			if contFilter != "" && s.DXCont != contFilter {
+			if contFilter != "" && s.SpotCont != contFilter {
 				continue
 			}
 			if modeFilter != "" && s.ModeCat != modeFilter {
@@ -107,8 +107,8 @@ func (m *Model) populateDXCFilterCaches(spots []store.DXCSpot) {
 		} else {
 			seenBands[s.Band] = true
 		}
-		if s.DXCont != "" {
-			seenConts[s.DXCont] = true
+		if s.SpotCont != "" {
+			seenConts[s.SpotCont] = true
 		}
 	}
 	var bands []string

@@ -43,6 +43,10 @@ type renderCache struct {
 	pathLine string
 	pathSig  string
 
+	// DXC path line cache — shows nearby spots below the QSO form.
+	dxcPathLine string
+	dxcPathSig  string
+
 	// Form column style cache.
 	formColW         int
 	formColStyle     lipgloss.Style

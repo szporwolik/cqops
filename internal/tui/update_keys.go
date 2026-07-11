@@ -45,7 +45,20 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, true
 
 	case key.Matches(msg, m.keys.Help):
+		// Defer help overlay until initialisation is complete (first tick
+		// has dispatched all startup commands). Pressing ? during early
+		// startup must not interrupt or delay initialisation.
+		if m.tickCount < 1 {
+			return nil, true
+		}
 		m.help.ShowAll = !m.help.ShowAll
+		// When dismissing help, force-start services that may have been
+		// blocked during initialisation (observed: DXC skips connection
+		// when ? is pressed before internet is confirmed).
+		if !m.help.ShowAll && m.inetOnline && m.tickCount < 60 {
+			cmd := m.forceStartServices()
+			return cmd, true
+		}
 		// When toggling help on, dismiss any open dialog.
 		if m.help.ShowAll {
 			m.confirm = nil
@@ -254,6 +267,24 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	return nil, false
 }
 
+// forceStartServices kicks off DXC and HTTP connections when they may have
+// been missed during early startup (e.g. when help overlay was opened before
+// internet was confirmed). Safe to call repeatedly — each service guards
+// against duplicate connections internally.
+func (m *Model) forceStartServices() tea.Cmd {
+	var cmds []tea.Cmd
+	if c := m.maybeDXC(); c != nil {
+		cmds = append(cmds, c)
+	}
+	if c := m.maybeHTTP(); c != nil {
+		cmds = append(cmds, c)
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Batch(cmds...)
+}
+
 // =============================================================================
 // QSO form key bindings
 // =============================================================================
@@ -366,6 +397,10 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.cycleActiveOperator()
 		return nil, true
 
+	case msg.String() == "ctrl+f":
+		m.fillFromDXCSpot()
+		return nil, true
+
 	case key.Matches(msg, m.keys.Partner):
 		call := m.commitCall()
 		if call == "" {
@@ -405,6 +440,12 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	case key.Matches(msg, m.keys.CycleDown):
 		m.cycleFieldDown()
 		return nil, true
+
+	case key.Matches(msg, m.keys.RigTuneUp):
+		return m.tuneRigStep(+1), true
+
+	case key.Matches(msg, m.keys.RigTuneDown):
+		return m.tuneRigStep(-1), true
 
 	default:
 		m.updateFocused(msg)

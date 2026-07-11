@@ -44,6 +44,9 @@ type KeyMap struct {
 	RotorDown     key.Binding
 	RotorBearing  key.Binding
 	RotorStop     key.Binding
+	DXCSpotFill   key.Binding
+	RigTuneUp     key.Binding
+	RigTuneDown   key.Binding
 }
 
 // DefaultKeyMap returns the default key bindings.
@@ -89,8 +92,8 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("F7/Alt+7", "BPL"),
 		),
 		Save: key.NewBinding(
-			key.WithKeys("ctrl+s"),
-			key.WithHelp("Ctrl+S", "Log QSO"),
+			key.WithKeys(), // Enter logs QSO; Ctrl+S is Spot
+			key.WithHelp("", ""),
 		),
 		Delete: key.NewBinding(
 			key.WithKeys("delete"),
@@ -101,8 +104,8 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("Ins", "QRZ"),
 		),
 		Spot: key.NewBinding(
-			key.WithKeys("ctrl+d"),
-			key.WithHelp("Ctrl+D", "Spot"),
+			key.WithKeys("ctrl+s"),
+			key.WithHelp("Ctrl+S", "Spot"),
 		),
 		Help: key.NewBinding(
 			key.WithKeys("?"),
@@ -197,6 +200,15 @@ func DefaultKeyMap() KeyMap {
 		), CycleOperator: key.NewBinding(
 			key.WithKeys("ctrl+o"),
 			key.WithHelp("Ctrl+O", "Operator"),
+		), DXCSpotFill: key.NewBinding(
+			key.WithKeys("ctrl+f"),
+			key.WithHelp("Ctrl+F", "Spot→Call"),
+		), RigTuneUp: key.NewBinding(
+			key.WithKeys("ctrl+up"),
+			key.WithHelp("Ctrl+↑", "Rig +step"),
+		), RigTuneDown: key.NewBinding(
+			key.WithKeys("ctrl+down"),
+			key.WithHelp("Ctrl+↓", "Rig −step"),
 		)}
 }
 
@@ -216,7 +228,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		// Column 2: editing & actions
 		{k.Save, k.Spot, k.Lookup, k.Delete, k.Retain, k.NextField, k.PrevField},
 		// Column 3: cycling & meta
-		{k.CycleLogbook, k.CycleRig, k.CycleContest, k.CycleOperator, k.Up, k.Down, k.Enter},
+		{k.CycleLogbook, k.CycleRig, k.CycleContest, k.CycleOperator, k.DXCSpotFill, k.RigTuneUp, k.RigTuneDown, k.Up, k.Down, k.Enter},
 		// Column 4: system
 		{k.CycleUp, k.CycleDown, k.Confirm, k.Cancel, k.Help, k.Quit},
 	}
@@ -239,7 +251,6 @@ func (m *Model) ActiveBindings() []key.Binding {
 			m.keys.PrevField,
 			m.keys.NextRow,
 			m.keys.PrevRow,
-			m.keys.Save,
 			m.keys.Spot,
 			m.keys.Lookup,
 			m.keys.Delete,

@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -160,6 +162,8 @@ func (m *Model) viewForm(width int) string {
 			v = ti.View()
 		} else if f == fieldCall {
 			v = S.Info.Render(truncateText(raw, vw))
+		} else if f == fieldFreq && raw != "" && !qso.IsInHamBand(parseFrequency(raw), m.App.Logbook.Station.IARURegion) {
+			v = S.Error.Render(truncateText(raw, vw))
 		} else {
 			v = ValueStyle.Render(truncateText(raw, vw))
 		}
@@ -378,12 +382,18 @@ func (m *Model) formPathRow(width int) string {
 		}
 	}
 
-	// ── No callsign: station profile (or just rotor) ──
+	// ── No callsign: DXC snapshot or station profile ──
 	if m.rc.pathCall == "" || strings.TrimSpace(m.fields[fieldCall].Value()) == "" {
 		m.rc.pathCall = ""
 		m.rc.pathSig = ""
 		if rotorLine != "" {
 			return pathInfoStyle.Width(width).Align(lipgloss.Right).Render(rotorLine)
+		}
+		// When DXC is connected and we have a frequency, show nearby spots.
+		if m.dxc.online && m.App.Config.Integrations.DXC.Enabled {
+			if line := m.dxcPathLine(width); line != "" {
+				return line
+			}
 		}
 		return renderProfile(lipgloss.Right)
 	}
@@ -554,4 +564,240 @@ func (m *Model) formPathRow(width int) string {
 	m.rc.pathSig = sig
 	m.rc.pathLine = st
 	return st
+}
+
+// dxcPathLine returns a line showing nearby DXC spots around the current
+// frequency. Displays up to N spots below and N above, with frequencies.
+// N adapts to available width. Cached until frequency or spot list changes.
+func (m *Model) dxcPathLine(width int) string {
+	freqStr := strings.TrimSpace(m.fields[fieldFreq].Value())
+	if freqStr == "" {
+		return ""
+	}
+	freqKhz, err := strconv.ParseFloat(freqStr, 64)
+	if err != nil || freqKhz <= 0 {
+		return ""
+	}
+	// freqKhz is in MHz from the form; convert to kHz for comparison.
+	curKhz := freqKhz * 1000
+
+	// Build cache signature: frequency + spot count + width + rig identity.
+	var sigB strings.Builder
+	fmt.Fprintf(&sigB, "%.3f|%d|%d|%s|%s|%s|%s", freqKhz, len(m.dxc.cachedRaw), width,
+		m.App.Logbook.Station.RigName, m.App.Logbook.Station.RigPower(m.App.Config.Rigs),
+		m.App.LogbookName, m.App.Logbook.ActiveContest)
+	sig := sigB.String()
+	if m.rc.dxcPathSig == sig && m.rc.dxcPathLine != "" {
+		return m.rc.dxcPathLine
+	}
+
+	// Collect spots on the current band, sorted by frequency.
+	band := qso.DeriveBand(freqKhz)
+	if band == "" {
+		return ""
+	}
+	lo, hi, ok := qso.BandRange(band)
+	if !ok {
+		return ""
+	}
+	var spots []store.DXCSpot
+	for _, s := range m.dxc.cachedRaw {
+		if s.Frequency >= lo*1000 && s.Frequency <= hi*1000 && s.Frequency > 0 {
+			spots = append(spots, s)
+		}
+	}
+	// Also check DB-fresh spots: cachedRaw may be empty if no new spots arrived.
+	if len(spots) == 0 && m.App.DB != nil {
+		dbSpots, err := store.QueryDXCSpots(m.App.DB)
+		if err == nil {
+			for _, s := range dbSpots {
+				if s.Frequency >= lo*1000 && s.Frequency <= hi*1000 && s.Frequency > 0 {
+					spots = append(spots, s)
+				}
+			}
+		}
+	}
+	if len(spots) == 0 {
+		m.rc.dxcPathSig = sig
+		m.rc.dxcPathLine = ""
+		return ""
+	}
+
+	// Sort by frequency ascending.
+	sort.Slice(spots, func(i, j int) bool { return spots[i].Frequency < spots[j].Frequency })
+
+	// Find the insertion point for curKhz.
+	idx := sort.Search(len(spots), func(i int) bool { return spots[i].Frequency >= curKhz })
+
+	// Determine how many to show based on width. Each spot takes ~18-22 chars.
+	maxEach := 3
+	if width < 80 {
+		maxEach = 1
+	} else if width < 120 {
+		maxEach = 2
+	}
+
+	// Collect up to maxEach below and above, excluding spots that match
+	// our frequency (within ±0.5 kHz). Matched spots go in the center.
+	const matchTol = 0.5 // kHz tolerance for "on frequency"
+	var matched []store.DXCSpot
+	var below, above []store.DXCSpot
+	for i := idx - 1; i >= 0 && len(below)+len(matched) < maxEach*2; i-- {
+		s := spots[i]
+		if math.Abs(s.Frequency-curKhz) <= matchTol {
+			matched = append(matched, s)
+		} else if len(below) < maxEach {
+			below = append(below, s)
+		}
+	}
+	for i := idx; i < len(spots) && len(above)+len(matched) < maxEach*2; i++ {
+		s := spots[i]
+		if math.Abs(s.Frequency-curKhz) <= matchTol {
+			matched = append(matched, s)
+		} else if len(above) < maxEach {
+			above = append(above, s)
+		}
+	}
+	// Reverse below so closest is last (display order: farthest…closest | center | closest…farthest).
+	for i, j := 0, len(below)-1; i < j; i, j = i+1, j-1 {
+		below[i], below[j] = below[j], below[i]
+	}
+
+	// Build dupe set for the current band (reuses DXCDupeSet which is
+	// shared with the DXC table — single query covers both). In contest
+	// mode the check spans the entire contest; outside contests we use
+	// today's date. Only query when the screen is wide enough to absorb
+	// the "(D)" markers gracefully.
+	var dupeSet map[string]bool
+	if width >= 100 && m.App.DB != nil {
+		dateStr := time.Now().UTC().Format("20060102")
+		if ds, err := store.DXCDupeSet(m.App.DB, dateStr, m.App.Logbook.ActiveContest); err == nil {
+			dupeSet = ds
+		}
+	}
+
+	// Format: "CALL FREQ  CALL FREQ … │ FREQ ││ CALLS ││ … CALL FREQ  CALL FREQ"
+	// Dupes get a "D " prefix (matching the DXC table convention) so
+	// they stand out even on monochrome terminals.
+	formatSpot := func(s store.DXCSpot) string {
+		prefix := ""
+		if dupeSet != nil {
+			key := qso.NormalizeCall(s.DXCall) + "|" + qso.NormalizeBand(s.Band) + "|" + qso.NormalizeRigMode(s.Mode)
+			if dupeSet[key] {
+				prefix = "D "
+			}
+		}
+		return fmt.Sprintf("%s%s %s", prefix, s.DXCall, formatFreqCompact(s.Frequency))
+	}
+	belowParts := make([]string, len(below))
+	for i, s := range below {
+		belowParts[i] = formatSpot(s)
+	}
+	aboveParts := make([]string, len(above))
+	for i, s := range above {
+		aboveParts[i] = formatSpot(s)
+	}
+
+	var center string
+	if len(matched) > 0 {
+		// On-frequency match: show callsign + freq between double bars.
+		matchParts := make([]string, len(matched))
+		for i, s := range matched {
+			matchParts[i] = formatSpot(s)
+		}
+		center = fmt.Sprintf("││ %s ││", strings.Join(matchParts, "  "))
+	} else {
+		center = fmt.Sprintf("│ %s │", formatFreqCompact(curKhz))
+	}
+
+	// Update cycling state for Ctrl+F. Reset index when spots change.
+	if !dxcSpotsEqual(m.dxc.pathSpots, matched) {
+		m.dxc.pathSpots = matched
+		m.dxc.pathSpotIdx = -1
+	}
+	left := strings.Join(belowParts, "  ")
+	right := strings.Join(aboveParts, "  ")
+
+	// Right-align left side, left-align right side.
+	leftStyled := pathMutedStyle.Align(lipgloss.Right).Render(left)
+	rightStyled := pathMutedStyle.Align(lipgloss.Left).Render(right)
+	dxcLine := lipgloss.JoinHorizontal(lipgloss.Center, leftStyled, " ", center, " ", rightStyled)
+
+	// If too wide, reduce to 1 per side.
+	if lipgloss.Width(dxcLine) > width && maxEach > 1 {
+		maxEach = 1
+		below = below[:min(len(below), 1)]
+		above = above[:min(len(above), 1)]
+		belowParts = make([]string, len(below))
+		for i, s := range below {
+			belowParts[i] = formatSpot(s)
+		}
+		aboveParts = make([]string, len(above))
+		for i, s := range above {
+			aboveParts[i] = formatSpot(s)
+		}
+		left = strings.Join(belowParts, "  ")
+		right = strings.Join(aboveParts, "  ")
+		leftStyled = pathMutedStyle.Align(lipgloss.Right).Render(left)
+		rightStyled = pathMutedStyle.Align(lipgloss.Left).Render(right)
+		dxcLine = lipgloss.JoinHorizontal(lipgloss.Center, leftStyled, " ", center, " ", rightStyled)
+	}
+
+	// Append rig info right-aligned when space permits.
+	profileParts := m.stationProfile()
+	if len(profileParts) > 0 {
+		rigInfo := strings.Join(profileParts, "  ·  ")
+		rigW := lipgloss.Width(rigInfo)
+		dxcW := lipgloss.Width(dxcLine)
+		gap := 3
+		availForDXC := width - rigW - gap
+		if availForDXC >= 40 && dxcW > availForDXC {
+			dxcLine = truncateText(dxcLine, availForDXC)
+			dxcW = lipgloss.Width(dxcLine)
+		}
+		if dxcW+gap+rigW <= width {
+			spacer := strings.Repeat(" ", width-dxcW-rigW)
+			rigStyled := pathMutedStyle.Render(rigInfo)
+			dxcLine = lipgloss.JoinHorizontal(lipgloss.Center,
+				dxcLine,
+				spacer,
+				rigStyled,
+			)
+		}
+	}
+
+	if lipgloss.Width(dxcLine) > width {
+		dxcLine = truncateText(dxcLine, width)
+	}
+
+	m.rc.dxcPathSig = sig
+	m.rc.dxcPathLine = dxcLine
+	return dxcLine
+}
+
+// formatFreqCompact formats a frequency in kHz to a compact display string.
+// Examples: 7123.4 → "7123.4", 14200.0 → "14200.0".
+func formatFreqCompact(khz float64) string {
+	return fmt.Sprintf("%.1f", khz)
+}
+
+// dxcSpotsEqual compares two DXC spot slices for equality (callsign + frequency).
+func dxcSpotsEqual(a, b []store.DXCSpot) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].DXCall != b[i].DXCall || a[i].Frequency != b[i].Frequency {
+			return false
+		}
+	}
+	return true
+}
+
+// parseFrequency parses a frequency string (MHz) and returns the float value.
+// Returns 0 on parse failure.
+func parseFrequency(s string) float64 {
+	var f float64
+	fmt.Sscanf(strings.TrimSpace(s), "%f", &f)
+	return f
 }

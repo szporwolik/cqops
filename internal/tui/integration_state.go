@@ -9,18 +9,21 @@ import (
 
 // rigState holds polled data, connection state, and the rig backend client.
 type rigState struct {
-	connected bool
-	freq      float64 // display frequency (VFO B/TX when split, VFO A otherwise)
-	freqRx    float64 // non-display RX frequency (VFO A when split, 0 otherwise)
-	wasSplit  bool    // true if split was active on previous poll
-	blink     bool
-	skipTicks int
-	slowTick  int // counter for slow-poll cycle (power, preamp, etc.)
-	polling   bool
-	client    RigClient // rig backend client (nil when disabled or not configured)
-	modes     []string  // mode table from rig backend (indexed)
-	name      string    // rig model name from rig backend (e.g. "FT-DX10")
-	vfoWarned bool      // suppress repeated VFO-mode toasts on reconnect loops
+	connected     bool
+	freq          float64 // display frequency (VFO B/TX when split, VFO A otherwise)
+	freqRx        float64 // non-display RX frequency (VFO A when split, 0 otherwise)
+	wasSplit      bool    // true if split was active on previous poll
+	blink         bool
+	skipTicks     int
+	slowTick      int // counter for slow-poll cycle (power, preamp, etc.)
+	polling       bool
+	pollStarted   int       // tickCount when current poll was dispatched
+	pollCount     int       // total polls dispatched (for heartbeat logging)
+	client        RigClient // rig backend client (nil when disabled or not configured)
+	modes         []string  // mode table from rig backend (indexed)
+	name          string    // rig model name from rig backend (e.g. "FT-DX10")
+	vfoWarned     bool      // suppress repeated VFO-mode toasts on reconnect loops
+	backendWarned bool      // suppress repeated "backend not configured" debug logs
 }
 
 // rotorState holds polled rotor data and the rotor backend client.

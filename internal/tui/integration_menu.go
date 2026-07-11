@@ -193,20 +193,6 @@ func nextGPSCycleInt(current int, opts []int) int {
 	return opts[0]
 }
 
-// nextCycleInt is the generic version of nextGPSCycleInt.
-func nextCycleInt(current int, opts []int) int {
-	return nextGPSCycleInt(current, opts)
-}
-
-func prevGPSCycleInt(current int, opts []int) int {
-	for i := len(opts) - 1; i >= 0; i-- {
-		if opts[i] == current && i > 0 {
-			return opts[i-1]
-		}
-	}
-	return opts[len(opts)-1]
-}
-
 func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 	dxcHost := newTextinput()
 	dxcHost.CharLimit = 60
@@ -657,7 +643,7 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				im.aprsBaudRate = nextGPSCycle(im.aprsBaudRate)
 				return im, nil
 			case imAPRSData:
-				im.aprsDataBits = nextCycleInt(im.aprsDataBits, dataBitsOptions)
+				im.aprsDataBits = nextGPSCycleInt(im.aprsDataBits, dataBitsOptions)
 				return im, nil
 			case imAPRSParity:
 				im.aprsParity = (im.aprsParity + 1) % len(parityOptions)
@@ -1789,6 +1775,11 @@ func testGPSDConnection(host, port string) error {
 		return fmt.Errorf("cannot connect to %s: %w", addr, err)
 	}
 	defer conn.Close()
+
+	// Read deadline: prevent indefinite hang when the server accepts
+	// the connection but never sends data. 10 seconds total is plenty
+	// for a GPSD server to respond with a TPV.
+	conn.SetDeadline(time.Now().Add(10 * time.Second))
 
 	// Send WATCH command.
 	_, err = fmt.Fprintf(conn, "?WATCH={\"enable\":true,\"json\":true}\n")

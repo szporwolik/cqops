@@ -553,6 +553,16 @@ func (m *Model) Init() tea.Cmd {
 	if m.App.Config.Integrations.GPS.Enabled {
 		cmds = append(cmds, m.startGPS())
 	}
+	// Kick off DXC and HTTP startup immediately — these have internal
+	// internet-availability checks and retry logic. Dispatching them
+	// from Init() avoids a race where the tick handler silently skips
+	// the first connection attempt when ? is pressed early.
+	if m.App.Config.Integrations.DXC.Enabled {
+		cmds = append(cmds, m.maybeDXC())
+	}
+	if m.App.Config.Integrations.HTTPServer.Enabled {
+		cmds = append(cmds, m.maybeHTTP())
+	}
 	if !m.Offline {
 		cmds = append(cmds, checkInetCmd())
 	}
@@ -684,15 +694,18 @@ func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Non-key messages fall through for tick / toast expiry / async processing.
 	}
 
-	// Active help overlay — blocks all input except dismiss keys.
+	// Active help overlay — blocks key input while open, but lets ticks
+	// and async messages through so flrig polling, Wavelog, DXC, etc.
+	// continue to run while the overlay is visible.
 	if m.help.ShowAll {
 		if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
 			if key.Matches(keyMsg, m.keys.Help) || key.Matches(keyMsg, m.keys.Cancel) {
 				m.help.ShowAll = false
 			}
 			// Consume all keys while help is shown.
+			return m, cmd
 		}
-		return m, cmd
+		// Non-key messages fall through for tick / rig poll / async processing.
 	}
 
 	// Active confirmation dialog — highest priority, blocks everything else
@@ -937,44 +950,15 @@ func (m *Model) View() tea.View {
 		return tea.NewView(ErrorStyle.Render(msg))
 	}
 
-	// Render fixed bars — cache when screen and width haven't changed.
-	// Status bar has a 1-second TTL because it contains the UTC clock.
-	rp, hasRig := m.App.Config.Rigs[m.App.Logbook.Station.RigName]
-	rigBackend := ""
-	if hasRig {
-		rigBackend = rp.RadioBackend
-	}
-	cacheBars := m.rc.barW == m.width && m.rc.barSc == m.screen &&
-		m.rc.barOp == m.App.Logbook.ActiveOperator &&
-		m.rc.barLog == m.App.LogbookName &&
-		m.rc.barRig == m.App.Logbook.Station.RigName &&
-		m.rc.barBackend == rigBackend &&
-		m.rc.barRigConn == m.rig.connected &&
-		m.rc.barTx == m.wsjtx.tx && m.rc.barTxMsg == m.wsjtx.txMsg &&
-		m.rc.barOnline == m.wsjtx.online &&
-		m.rc.barAPRS == m.aprsConnected()
-	if !cacheBars {
-		m.rc.status = ""
-	}
-	if m.rc.status == "" || m.rc.statusSec != time.Now().UTC().Minute() {
-		m.rc.status = m.renderStatusBar()
-		m.rc.statusSec = time.Now().UTC().Minute()
-	}
+	// Render fixed bars.
+	// Status bar is a single line — always recomputed for correctness.
+	// Caching caused stale integration dots (DXC/HTTP/APRS) when the
+	// bar cache hit suppressed the status reset triggered by async handlers.
+	m.rc.status = m.renderStatusBar()
 	// Tab bar depends on partner data / call field / connectivity — cached.
 	m.rc.tabs = m.renderTabBar()
 	// Help bar has dynamic suffix (QSO counter, scroll info) — cached.
 	m.rc.help = m.renderHelpBar()
-	m.rc.barW = m.width
-	m.rc.barSc = m.screen
-	m.rc.barOp = m.App.Logbook.ActiveOperator
-	m.rc.barLog = m.App.LogbookName
-	m.rc.barRig = m.App.Logbook.Station.RigName
-	m.rc.barBackend = rigBackend
-	m.rc.barRigConn = m.rig.connected
-	m.rc.barTx = m.wsjtx.tx
-	m.rc.barTxMsg = m.wsjtx.txMsg
-	m.rc.barOnline = m.wsjtx.online
-	m.rc.barAPRS = m.aprsConnected()
 
 	var mainParts []string
 	addRow := func(s string) {
@@ -1011,12 +995,14 @@ func (m *Model) View() tea.View {
 		m.rc.clipStyleH = layout.TerminalH
 	}
 	mainView = m.rc.clipStyle.Render(mainView)
-	finalView := m.toasts.RenderOverlay(mainView, layout.TerminalW, layout.TerminalH)
 
-	// Help overlay — floating bottom-left, above toasts, when ? is pressed.
+	// Help overlay — floating bottom-left, rendered before toasts so
+	// toasts stay visible on top. Help must not block status feedback.
 	if m.help.ShowAll {
-		finalView = m.renderHelpOverlay(finalView, layout)
+		mainView = m.renderHelpOverlay(mainView, layout)
 	}
+
+	finalView := m.toasts.RenderOverlay(mainView, layout.TerminalW, layout.TerminalH)
 
 	v := tea.NewView(finalView)
 	v.AltScreen = true
@@ -1206,20 +1192,12 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 		tableH = 5
 	}
 
+	// tableW: recent QSOs use the full terminal width. The tier-based
+	// column selection in RecentQSOs.View() handles small screens
+	// gracefully (narrowest tier fits 36 cols), and the extra-width
+	// distribution gives more room to Comment/Name/QTH on large screens
+	// where truncation was previously the bottleneck.
 	tableW := w - 2
-	// Cap to same max as QSO form for visual consistency.
-	// When solar panel is active, let the table use the full terminal width
-	// so richer columns (Operator, WL) can appear on wide screens.
-	if tableW > partnerMapMaxW {
-		if solarPanel != "" && m.App.Config.General.SolarAtQSOPane {
-			// Solar panel active — table gets full width, capped at 200.
-			if tableW > 200 {
-				tableW = 200
-			}
-		} else {
-			tableW = partnerMapMaxW
-		}
-	}
 	if tableH < 3 {
 		tableH = 3
 	}
@@ -1288,6 +1266,7 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 		tableH -= contestBoxH
 	}
 
+	m.recentQSOs.SetContest(m.App.Logbook.ActiveContest != "")
 	m.recentQSOs.SetSize(tableW, tableH)
 
 	var parts []string
@@ -1435,6 +1414,34 @@ func (m *Model) cycleActiveOperator() {
 	m.toasts.Info("Operator: None")
 	applog.Info("Operator cycled (not found)", "callsign", "None")
 	config.Save(m.App.ConfigPath, m.App.Config)
+}
+
+// prefillPreviousContestExchange looks up the most recent QSO with the same
+// callsign in the active contest and prefills the received exchange fields.
+// This helps when working the same station on a different band/mode — the
+// operator doesn't need to re-type the exchange. Only fills fields that are
+// currently empty so it never overwrites manual input.
+func (m *Model) prefillPreviousContestExchange(call string) {
+	id := m.App.Logbook.ActiveContest
+	if id == "" || call == "" || m.App.DB == nil {
+		return
+	}
+	exchRcvd, rstRcvd, exchSent, err := store.LastContestExchange(m.App.DB, call, id)
+	if err != nil {
+		return // no previous QSO or DB error — silently skip
+	}
+	// Prefill received exchange fields if empty.
+	if strings.TrimSpace(m.fields[fieldExchRcvd].Value()) == "" && exchRcvd != "" {
+		m.fields[fieldExchRcvd].SetValue(exchRcvd)
+	}
+	if strings.TrimSpace(m.fields[fieldRSTRcvd].Value()) == "" && rstRcvd != "" {
+		m.fields[fieldRSTRcvd].SetValue(rstRcvd)
+	}
+	// Prefill sent exchange so the operator sees what they sent last time
+	// (same contest, same station — their exchange likely hasn't changed).
+	if strings.TrimSpace(m.fields[fieldExchSent].Value()) == "" && exchSent != "" {
+		m.fields[fieldExchSent].SetValue(exchSent)
+	}
 }
 
 // prefillContestExchange fills the exchange sent/rcvd fields from the active

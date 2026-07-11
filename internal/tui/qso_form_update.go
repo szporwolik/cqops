@@ -629,6 +629,7 @@ func (m *Model) commitAndLookup() tea.Cmd {
 	m.scpMatches = nil
 	m.scpCacheKey = ""
 	m.dxccAutoFill()
+	m.prefillPreviousContestExchange(call)
 	m.prefillContestExchange()
 	m.lookup.qrzCall = call
 	m.lookup.wlCall = call
@@ -657,7 +658,19 @@ func (m *Model) commitAndLookup() tea.Cmd {
 func (m *Model) buildSpotComment() string {
 	var parts []string
 
-	// 1. References (SOTA, POTA, WWFF, IOTA, SIG).
+	// 1. Mode — always included first.
+	mode := strings.ToUpper(strings.TrimSpace(m.fields[fieldMode].Value()))
+	if mode == "" {
+		submode := strings.ToUpper(strings.TrimSpace(m.fields[fieldSubmode].Value()))
+		if submode != "" {
+			mode = submode
+		}
+	}
+	if mode != "" {
+		parts = append(parts, mode)
+	}
+
+	// 2. References (SOTA, POTA, WWFF, IOTA, SIG).
 	refs := map[string]string{
 		"SOTA": strings.TrimSpace(m.fields[fieldSOTA].Value()),
 		"POTA": strings.TrimSpace(m.fields[fieldPOTA].Value()),
@@ -677,16 +690,15 @@ func (m *Model) buildSpotComment() string {
 		}
 	}
 
-	// 2. Mode — always included at the end.
-	mode := strings.ToUpper(strings.TrimSpace(m.fields[fieldMode].Value()))
-	if mode == "" {
-		submode := strings.ToUpper(strings.TrimSpace(m.fields[fieldSubmode].Value()))
-		if submode != "" {
-			mode = submode
+	// 3. Contest — when active, append the ADIF Contest-ID (or name) last.
+	if m.App.Logbook.ActiveContest != "" {
+		if ct, ok := m.App.Config.Contests[m.App.Logbook.ActiveContest]; ok {
+			if ct.ContestID != "" {
+				parts = append(parts, ct.ContestID)
+			} else if ct.Name != "" {
+				parts = append(parts, ct.Name)
+			}
 		}
-	}
-	if mode != "" {
-		parts = append(parts, mode)
 	}
 
 	return strings.Join(parts, " ")
@@ -716,6 +728,43 @@ func (m *Model) openSpotDialog() tea.Cmd {
 	m.spotDialog = &SpotDialog{}
 	*m.spotDialog = NewSpotDialog(call, freqKhz, comment)
 	return nil
+}
+
+// fillFromDXCSpot cycles through DXC spots at the current frequency and fills
+// the call field. No lookup is triggered — the user must press Enter/Insert
+// manually to look up the callsign.
+func (m *Model) fillFromDXCSpot() {
+	if len(m.dxc.pathSpots) == 0 {
+		m.toasts.Warn("No DXC spots at this frequency")
+		return
+	}
+	m.dxc.pathSpotIdx = (m.dxc.pathSpotIdx + 1) % len(m.dxc.pathSpots)
+	s := m.dxc.pathSpots[m.dxc.pathSpotIdx]
+	call := s.DXCall
+	// Clear call-dependent fields so stale data doesn't bleed into the new call.
+	m.fields[fieldName].SetValue("")
+	m.fields[fieldQTH].SetValue("")
+	m.fields[fieldGrid].SetValue("")
+	m.fields[fieldCountry].SetValue("")
+	m.fields[fieldRSTSent].SetValue("")
+	m.fields[fieldRSTRcvd].SetValue("")
+	m.lookup.partnerData = nil
+	m.lookup.wlPrivateData = nil
+	m.lookup.qrzLookupDone = false
+	m.lookup.qrzLookupCall = ""
+	m.lookup.wlLookupDone = false
+	m.lookup.wlLookupCall = ""
+	m.dupeConfirmed = false
+	m.gridSource = gridSourceNone
+	m.rc.pathCall = ""
+	m.rc.pathGrid = ""
+	m.rc.pathSig = ""
+	m.rc.logStatsSig = ""
+	m.scpMatches = nil
+	m.scpCacheKey = ""
+	m.fields[fieldCall].SetValue(call)
+	m.focusField(fieldCall)
+	m.toasts.Info(fmt.Sprintf("DXC: %s @ %s", call, formatFreqCompact(s.Frequency)))
 }
 
 func (m *Model) onFieldExit() {

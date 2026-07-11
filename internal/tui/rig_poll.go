@@ -64,7 +64,7 @@ func (m *Model) refreshRigClient() {
 		url := "http://" + host + ":" + port
 		applog.InfoDetail("rig: flrig connecting", fmt.Sprintf("rig=%s host=%s port=%s url=%s", rigName, host, port, url))
 		m.rig.client = flrig.New(url, rigDefaultTimeout)
-		m.rig.skipTicks = 4 // one tick before pollInterval=5 triggers
+		m.rig.skipTicks = 10 // give flrig ~10s to start its XML-RPC server
 
 	case "hamlib":
 		host, port := rp.HamlibRadioHost, rp.HamlibRadioPort
@@ -83,7 +83,10 @@ func (m *Model) refreshRigClient() {
 		m.rig.skipTicks = 4
 
 	default:
-		applog.Debug("rig: backend not configured", "rigName", rigName)
+		if !m.rig.backendWarned {
+			applog.Debug("rig: backend not configured", "rigName", rigName)
+			m.rig.backendWarned = true
+		}
 		m.rig.client = nil
 	}
 	// Clear cached modes and name — a new client means the rig
@@ -140,6 +143,44 @@ func (m *Model) rigPowerCmd() tea.Cmd {
 	}
 }
 
+// tuneRigStep tunes the connected rig up or down by a band-appropriate step.
+// HF (<30 MHz): 0.001 MHz (1 kHz). VHF/UHF (≥30 MHz): 0.1 MHz (100 kHz).
+func (m *Model) tuneRigStep(dir int) tea.Cmd {
+	if m.rig.client == nil || !m.rig.connected {
+		m.toasts.Warn("Rig not connected")
+		return nil
+	}
+	freqMhz := m.rig.freq
+	if freqMhz <= 0 {
+		freqStr := strings.TrimSpace(m.fields[fieldFreq].Value())
+		if freqStr == "" {
+			return nil
+		}
+		fmt.Sscanf(freqStr, "%f", &freqMhz)
+	}
+	if freqMhz <= 0 {
+		return nil
+	}
+	step := 0.001 // 1 kHz for HF
+	if freqMhz >= 30 {
+		step = 0.1 // 100 kHz for VHF/UHF
+	}
+	newFreq := freqMhz + float64(dir)*step
+	if newFreq <= 0 {
+		return nil
+	}
+	freqHz := int64(newFreq * 1_000_000)
+	client := m.rig.client
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), rigStatusTimeout)
+		defer cancel()
+		if err := client.SetFrequency(ctx, freqHz); err != nil {
+			applog.Warn("rig: tune step failed", "error", err.Error())
+		}
+		return nil
+	}
+}
+
 // rigPowerMsg carries the result of a slow-cycle RF power query.
 type rigPowerMsg struct {
 	client RigClient // the client that produced this result (nil = stale)
@@ -156,6 +197,10 @@ func (m *Model) pollRig() tea.Cmd {
 	pollInterval := 1 // fast-poll interval in ticks (~1 s)
 	if !m.rig.connected {
 		pollInterval = 10 // back off when disconnected (~10 s)
+		// flrig runs on localhost — shorter retry is safe.
+		if _, ok := m.rig.client.(*flrig.Client); ok {
+			pollInterval = 3
+		}
 	}
 	m.rig.skipTicks++
 	if m.rig.skipTicks < pollInterval {
@@ -170,10 +215,36 @@ func (m *Model) pollRig() tea.Cmd {
 		return nil
 	}
 	if m.rig.polling {
-		return nil
+		// Stuck poll detection: if a poll has been in-flight for >3 seconds,
+		// force-reset and log a warning so we don't silently stop polling.
+		if m.tickCount-m.rig.pollStarted > 3 {
+			applog.Warn("rig: poll stuck, force-resetting", "age_ticks", m.tickCount-m.rig.pollStarted)
+			m.rig.polling = false
+		} else {
+			return nil
+		}
 	}
 	m.rig.polling = true
+	m.rig.pollStarted = m.tickCount
 	m.rig.blink = !m.rig.blink
+	// Every 300 polls (~5 min), log a heartbeat so we can detect silent stops.
+	m.rig.pollCount++
+	if m.rig.pollCount%300 == 1 {
+		applog.Debug("rig: poll heartbeat", "count", m.rig.pollCount, "connected", m.rig.connected, "clientNil", m.rig.client == nil, "polling", m.rig.polling)
+	}
+	// Log every 30th poll so we can trace the polling rhythm in logs.
+	if m.rig.pollCount%30 == 0 {
+		applog.Debug("rig: poll tick", "count", m.rig.pollCount, "connected", m.rig.connected)
+	}
+
+	// Extra: log when a poll is dispatched for the first time after connection.
+	if m.rig.pollCount == 1 {
+		applog.Info("rig: first poll dispatched", "backend", "flrig")
+	}
+	// Extra diagnostics: log every 30th poll so we can see the polling rhythm.
+	if m.rig.pollCount%30 == 0 {
+		applog.Debug("rig: poll tick", "count", m.rig.pollCount, "connected", m.rig.connected)
+	}
 
 	// Slow poll: add RF power every 3 fast-poll cycles.
 	if m.rig.slowTick++; m.rig.slowTick >= 3 {
@@ -190,15 +261,16 @@ func (m *Model) applyRigPoll(r rigPollMsg) tea.Cmd {
 	// Reject stale results from a previous client (e.g. after rig config
 	// was changed or rig was disabled while a poll was in flight).
 	if r.client != m.rig.client {
+		applog.Debug("rig: poll stale client, dropping")
 		return nil
 	}
 	if r.err != "" || !r.connected {
 		if m.rig.connected {
-			applog.Debug("rig: disconnected", "err", r.err)
+			applog.Warn("rig: disconnected", "err", r.err)
 			m.rc.status = ""
 		}
 		if r.err != "" && !m.rig.connected {
-			applog.Debug("rig: connect failed", "err", r.err)
+			applog.Warn("rig: connect failed", "err", r.err)
 		}
 		m.rig.connected = false
 		// Clear modes and name on disconnect so they are re-fetched when rig comes back.
@@ -211,6 +283,7 @@ func (m *Model) applyRigPoll(r rigPollMsg) tea.Cmd {
 		// Connected — notify user once per session.
 		if !m.rig.vfoWarned {
 			m.rig.vfoWarned = true
+			applog.Info("rig: poll connected", "backend", "flrig")
 			if _, ok := m.rig.client.(*hamlib.Client); ok {
 				m.toasts.Success("Hamlib: connected")
 			} else {

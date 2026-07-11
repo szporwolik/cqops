@@ -421,3 +421,22 @@ func nextContestID(prev string) string {
 	}
 	return list[0]
 }
+
+// prevContestID returns the Contest-ID that precedes prev in the sorted list.
+// When prev is empty or not found it returns the last entry.
+func prevContestID(cur string) string {
+	list := adifContestIDList()
+	if cur == "" {
+		return list[len(list)-1]
+	}
+	for i, id := range list {
+		if id == cur {
+			idx := i - 1
+			if idx < 0 {
+				idx = len(list) - 1
+			}
+			return list[idx]
+		}
+	}
+	return list[len(list)-1]
+}
