@@ -143,6 +143,44 @@ func (m *Model) rigPowerCmd() tea.Cmd {
 	}
 }
 
+// tuneRigStep tunes the connected rig up or down by a band-appropriate step.
+// HF (<30 MHz): 0.01 MHz (10 kHz). VHF/UHF (>=30 MHz): 0.1 MHz (100 kHz).
+func (m *Model) tuneRigStep(dir int) tea.Cmd {
+	if m.rig.client == nil || !m.rig.connected {
+		m.toasts.Warn("Rig not connected")
+		return nil
+	}
+	freqMhz := m.rig.freq
+	if freqMhz <= 0 {
+		freqStr := strings.TrimSpace(m.fields[fieldFreq].Value())
+		if freqStr == "" {
+			return nil
+		}
+		fmt.Sscanf(freqStr, "%f", &freqMhz)
+	}
+	if freqMhz <= 0 {
+		return nil
+	}
+	step := 0.01 // 10 kHz for HF
+	if freqMhz >= 30 {
+		step = 0.1 // 100 kHz for VHF/UHF
+	}
+	newFreq := freqMhz + float64(dir)*step
+	if newFreq <= 0 {
+		return nil
+	}
+	freqHz := int64(newFreq * 1_000_000)
+	client := m.rig.client
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), rigStatusTimeout)
+		defer cancel()
+		if err := client.SetFrequency(ctx, freqHz); err != nil {
+			applog.Warn("rig: tune step failed", "error", err.Error())
+		}
+		return nil
+	}
+}
+
 // rigPowerMsg carries the result of a slow-cycle RF power query.
 type rigPowerMsg struct {
 	client RigClient // the client that produced this result (nil = stale)

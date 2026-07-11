@@ -410,6 +410,12 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.cycleFieldDown()
 		return nil, true
 
+	case key.Matches(msg, m.keys.RigTuneUp):
+		return m.tuneRigStep(+1), true
+
+	case key.Matches(msg, m.keys.RigTuneDown):
+		return m.tuneRigStep(-1), true
+
 	default:
 		m.updateFocused(msg)
 	}

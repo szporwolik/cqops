@@ -203,6 +203,12 @@ func DefaultKeyMap() KeyMap {
 		), DXCSpotFill: key.NewBinding(
 			key.WithKeys("ctrl+f"),
 			key.WithHelp("Ctrl+F", "Spot→Call"),
+		), RigTuneUp: key.NewBinding(
+			key.WithKeys("ctrl+up"),
+			key.WithHelp("Ctrl+↑", "Rig +step"),
+		), RigTuneDown: key.NewBinding(
+			key.WithKeys("ctrl+down"),
+			key.WithHelp("Ctrl+↓", "Rig −step"),
 		)}
 }
 

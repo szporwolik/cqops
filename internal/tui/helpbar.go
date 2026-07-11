@@ -402,7 +402,12 @@ func (m *Model) minimalBarBindings() []key.Binding {
 	e := key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back"))
 	switch m.screen {
 	case screenQSO:
-		return []key.Binding{h, m.keys.Enter, m.keys.DXCSpotFill, q}
+		bindings := []key.Binding{h, m.keys.Enter, m.keys.DXCSpotFill}
+		if m.rig.connected {
+			bindings = append(bindings, m.keys.RigTuneUp, m.keys.RigTuneDown)
+		}
+		bindings = append(bindings, q)
+		return bindings
 	case screenPartner:
 		if m.lookup.partnerData != nil && m.lookup.partnerData.ImageURL != "" {
 			return []key.Binding{h, key.NewBinding(key.WithKeys("f2"), key.WithHelp("F2", "Photo")), q}
