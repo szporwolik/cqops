@@ -570,6 +570,11 @@ func (m *Model) screenTitle() string {
 // corner showing the current screen's keybindings in columns.
 // Dismissed with ? or Esc.
 func (m *Model) renderHelpOverlay(mainView string, l Layout) string {
+	// Never render before the first tick completes — initialization
+	// commands must not be delayed by overlay compositing.
+	if m.tickCount < 1 {
+		return mainView
+	}
 	bindings := m.ActiveBindings()
 	adapter := activeHelpKeyMap{bindings: bindings}
 
