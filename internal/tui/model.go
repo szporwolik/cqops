@@ -1206,20 +1206,12 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 		tableH = 5
 	}
 
+	// tableW: recent QSOs use the full terminal width. The tier-based
+	// column selection in RecentQSOs.View() handles small screens
+	// gracefully (narrowest tier fits 36 cols), and the extra-width
+	// distribution gives more room to Comment/Name/QTH on large screens
+	// where truncation was previously the bottleneck.
 	tableW := w - 2
-	// Cap to same max as QSO form for visual consistency.
-	// When solar panel is active, let the table use the full terminal width
-	// so richer columns (Operator, WL) can appear on wide screens.
-	if tableW > partnerMapMaxW {
-		if solarPanel != "" && m.App.Config.General.SolarAtQSOPane {
-			// Solar panel active — table gets full width, capped at 200.
-			if tableW > 200 {
-				tableW = 200
-			}
-		} else {
-			tableW = partnerMapMaxW
-		}
-	}
 	if tableH < 3 {
 		tableH = 3
 	}
@@ -1288,6 +1280,7 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 		tableH -= contestBoxH
 	}
 
+	m.recentQSOs.SetContest(m.App.Logbook.ActiveContest != "")
 	m.recentQSOs.SetSize(tableW, tableH)
 
 	var parts []string

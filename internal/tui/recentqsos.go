@@ -35,6 +35,10 @@ type RecentQSOs struct {
 	filteredQSOs     []qso.QSO
 	filterCacheID    int64 // last QSO ID in filtered set — invalidated on new QSO
 	filterSuppressed bool  // set by ClearFilter to prevent refresh re-apply race
+
+	// Contest mode swaps SOTA/POTA/WWFF/IOTA/SIG for ExchSent/ExchRcvd
+	// at the wide tiers. Cache is invalidated when this changes.
+	contest bool
 }
 
 // NewRecentQSOs creates a read-only recent QSOs view.
@@ -86,6 +90,17 @@ func (r *RecentQSOs) SetSize(w, h int) {
 	r.height = h
 }
 
+// SetContest enables or disables contest column mode. When active, the
+// SOTA/POTA/WWFF/IOTA/SIG columns are replaced with ExchSent/ExchRcvd.
+func (r *RecentQSOs) SetContest(v bool) {
+	if r.contest == v {
+		return
+	}
+	r.contest = v
+	r.cachedView = ""
+	r.filteredCachedView = ""
+}
+
 // View renders the read-only recent QSOs table. In normal mode it shows
 // recent QSOs; in filtered mode it shows QSOs matching the partner call
 // with the call column highlighted.
@@ -118,16 +133,20 @@ func (r *RecentQSOs) View() string {
 
 	// Pre-computed tier widths — pick the widest tier that fits bodyW.
 	// Fall back to whittling columns from the narrowest tier for very small terminals.
+	tiers := qsoColTiers
+	if r.contest {
+		tiers = qsoColTiersContest
+	}
 	var names []string
-	for i := len(qsoColTiers) - 1; i >= 0; i-- {
-		if bodyW >= qsoColTiers[i].maxW {
-			names = qsoColTiers[i].names
+	for i := len(tiers) - 1; i >= 0; i-- {
+		if bodyW >= tiers[i].maxW {
+			names = tiers[i].names
 			break
 		}
 	}
 	if names == nil {
 		// Terminal too narrow for any tier — whittle from the narrowest set.
-		names = append([]string{}, qsoColTiers[0].names...)
+		names = append([]string{}, tiers[0].names...)
 		for len(names) > 1 {
 			total := 0
 			for _, n := range names {
@@ -152,7 +171,43 @@ func (r *RecentQSOs) View() string {
 	}
 	gaps := len(names) - 1
 	extra := bodyW - gaps - minTotal
+
+	// Per-column width caps prevent short fields from blowing up on
+	// ultra-wide screens. Caps are generous enough to never truncate
+	// real data — they only cap the extra space distributed beyond
+	// minWidth. Columns not listed here (e.g. future additions)
+	// absorb leftover via the final dump to the last column.
+	caps := map[string]int{
+		"Date":    10, // YYYY-MM-DD
+		"Time":    8,  // HH:MM:SS
+		"Call":    12, // longest ~10 (with portable suffix)
+		"Band":    7,  // "1.25cm" is 6
+		"Freq":    10, // "1296.0000" is 9
+		"Mode":    6,  // "RTTY" is 4
+		"Sub":     5,  // "LSB"/"USB" is 3
+		"RSTs":    5,  // "599" is 3
+		"RSTr":    5,
+		"DXCC":    20, // longest country name ~32, but 20 is practical
+		"Name":    30, // generous for operator/org names
+		"Grid":    8,  // "AA00aa" max 6
+		"QTH":     25, // city/region names rarely exceed this
+		"Comment": 30, // generous for short notes
+		"Dist":    6,  // distance in km, 5 digits max
+		"Pwr":     5,  // "1500" is 4
+		"Src":     5,  // "WSJT" or "Man" max 4
+		"WL":      4,  // "Y"/"N"/"—" max 1
+		"SOTA":    14, // "XX-nnnn" ~7-8; higher cap lets it breathe on huge screens
+		"POTA":    14, // same pattern
+		"WWFF":    16, // "XXFF-nnnn" ~9; higher cap absorbs leftover on wide displays
+		"IOTA":    10, // "XX-nnn" is 6
+		"SIG":     8,  // "SOTA"/"POTA" max 4
+		"Snt":     10, // "599 0001" is 8
+		"Rcv":     10,
+		"Op":      12, // callsign ~6-8
+	}
+
 	if extra > 0 && len(cols) > 0 {
+		// Pass 1: proportional distribution to text-heavy columns.
 		distributed := 0
 		for i := range cols {
 			var share int
@@ -165,14 +220,56 @@ func (r *RecentQSOs) View() string {
 				share = extra / 10
 			case "Call":
 				share = extra / 10
-			case "Notes":
-				share = extra / 10
+			}
+			if share > 0 {
+				share = applyCap(cols[i].Width, share, cols[i].Title, caps)
 			}
 			cols[i].Width += share
 			distributed += share
 		}
-		if leftover := extra - distributed; leftover > 0 {
-			cols[len(cols)-1].Width += leftover
+
+		// Pass 2+: iteratively redistribute leftover among columns
+		// still below their caps. Stop when nothing moves or no
+		// columns can accept more.
+		leftover := extra - distributed
+		for leftover > 0 {
+			moved := 0
+			eligible := 0
+			for i := range cols {
+				if cap, ok := caps[cols[i].Title]; !ok || cols[i].Width < cap {
+					eligible++
+				}
+			}
+			if eligible == 0 {
+				// All columns at cap — dump remainder on last column.
+				cols[len(cols)-1].Width += leftover
+				break
+			}
+			perCol := leftover / eligible
+			if perCol == 0 {
+				perCol = 1
+			}
+			for i := range cols {
+				if cap, ok := caps[cols[i].Title]; ok && cols[i].Width >= cap {
+					continue
+				}
+				add := perCol
+				if add > leftover {
+					add = leftover
+				}
+				add = applyCap(cols[i].Width, add, cols[i].Title, caps)
+				cols[i].Width += add
+				leftover -= add
+				moved += add
+				if leftover <= 0 {
+					break
+				}
+			}
+			if moved == 0 {
+				// Safety: nothing moved, dump and exit.
+				cols[len(cols)-1].Width += leftover
+				break
+			}
 		}
 	}
 
@@ -266,8 +363,32 @@ var qsoColTiers = []struct {
 	{115, 0, []string{"Date", "Time", "Call", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist"}},
 	{150, 0, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power"}},
 	{165, 0, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Operator", "WL"}},
-	{190, 0, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Notes", "Source", "WL"}},
-	{240, 0, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Notes", "Source", "WL", "SOTA", "POTA", "IOTA"}},
+	{190, 0, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Source", "WL"}},
+	{240, 0, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Source", "WL", "SOTA", "POTA", "IOTA"}},
+	{280, 0, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Source", "WL", "SOTA", "POTA", "WWFF", "IOTA", "SIG"}},
+}
+
+// qsoColTiersContest mirrors qsoColTiers but swaps SOTA/POTA/WWFF/IOTA/SIG
+// for ExchSent/ExchRcvd at the wide tiers. Narrow and medium tiers are
+// identical — contest exchanges only appear once there is enough room
+// (same thresholds as SOTA/POTA/IOTA would in non-contest mode).
+var qsoColTiersContest = []struct {
+	minW  int
+	maxW  int
+	names []string
+}{
+	{0, 0, []string{"Date", "Time", "Call", "Mode", "RSTs", "RSTr"}},
+	{55, 0, []string{"Date", "Time", "Call", "Band", "Mode", "RSTs", "RSTr"}},
+	{70, 0, []string{"Date", "Time", "Call", "Band", "Mode", "RSTs", "RSTr", "DXCC"}},
+	{90, 0, []string{"Date", "Time", "Call", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name"}},
+	{115, 0, []string{"Date", "Time", "Call", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist"}},
+	{150, 0, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power"}},
+	{165, 0, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Operator", "WL"}},
+	{190, 0, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Source", "WL"}},
+	// Wide tier: ExchSent/ExchRcvd replace SOTA/POTA/IOTA.
+	{220, 0, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Source", "WL", "ExchSent", "ExchRcvd"}},
+	// Super-wide tier: same as wide but triggers later (more room for exchange to breathe).
+	{280, 0, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Source", "WL", "ExchSent", "ExchRcvd"}},
 }
 
 func init() {
@@ -278,6 +399,15 @@ func init() {
 			total += qsoAllCols[n].minWidth
 		}
 		total += len(t.names) - 1 // gaps between columns
+		t.maxW = total
+	}
+	for i := range qsoColTiersContest {
+		t := &qsoColTiersContest[i]
+		total := 0
+		for _, n := range t.names {
+			total += qsoAllCols[n].minWidth
+		}
+		total += len(t.names) - 1
 		t.maxW = total
 	}
 }
@@ -325,9 +455,13 @@ var qsoAllCols = map[string]struct {
 		}
 		return "\u2014"
 	}},
-	"SOTA": {"SOTA", 8, func(q *qso.QSO) string { return q.SOTARef }},
-	"POTA": {"POTA", 8, func(q *qso.QSO) string { return q.POTARef }},
-	"IOTA": {"IOTA", 6, func(q *qso.QSO) string { return q.IOTA }},
+	"SOTA":     {"SOTA", 8, func(q *qso.QSO) string { return q.SOTARef }},
+	"POTA":     {"POTA", 8, func(q *qso.QSO) string { return q.POTARef }},
+	"WWFF":     {"WWFF", 8, func(q *qso.QSO) string { return q.WWFFRef }},
+	"IOTA":     {"IOTA", 6, func(q *qso.QSO) string { return q.IOTA }},
+	"SIG":      {"SIG", 5, func(q *qso.QSO) string { return q.SIG }},
+	"ExchSent": {"Snt", 6, func(q *qso.QSO) string { return q.ExchSent }},
+	"ExchRcvd": {"Rcv", 6, func(q *qso.QSO) string { return q.ExchRcvd }},
 }
 
 func bandOrFreq(q *qso.QSO) string {
@@ -350,4 +484,21 @@ func formatFreqShort(f float64) string {
 		return ""
 	}
 	return fmt.Sprintf("%.4f", f)
+}
+
+// applyCap clamps share so that width+share does not exceed the column's
+// cap. Returns the (possibly reduced) share. If the column is not in the
+// caps map, share is returned unchanged.
+func applyCap(currentWidth, share int, title string, caps map[string]int) int {
+	cap, ok := caps[title]
+	if !ok {
+		return share
+	}
+	if currentWidth+share > cap {
+		share = cap - currentWidth
+		if share < 0 {
+			share = 0
+		}
+	}
+	return share
 }
