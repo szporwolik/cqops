@@ -17,6 +17,8 @@ type rigState struct {
 	skipTicks     int
 	slowTick      int // counter for slow-poll cycle (power, preamp, etc.)
 	polling       bool
+	pollStarted   int       // tickCount when current poll was dispatched
+	pollCount     int       // total polls dispatched (for heartbeat logging)
 	client        RigClient // rig backend client (nil when disabled or not configured)
 	modes         []string  // mode table from rig backend (indexed)
 	name          string    // rig model name from rig backend (e.g. "FT-DX10")

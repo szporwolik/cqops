@@ -211,10 +211,23 @@ func (m *Model) pollRig() tea.Cmd {
 		return nil
 	}
 	if m.rig.polling {
-		return nil
+		// Stuck poll detection: if a poll has been in-flight for >3 seconds,
+		// force-reset and log a warning so we don't silently stop polling.
+		if m.tickCount-m.rig.pollStarted > 3 {
+			applog.Warn("rig: poll stuck, force-resetting", "age_ticks", m.tickCount-m.rig.pollStarted)
+			m.rig.polling = false
+		} else {
+			return nil
+		}
 	}
 	m.rig.polling = true
+	m.rig.pollStarted = m.tickCount
 	m.rig.blink = !m.rig.blink
+	// Every 300 polls (~5 min), log a heartbeat so we can detect silent stops.
+	m.rig.pollCount++
+	if m.rig.pollCount%300 == 1 {
+		applog.Debug("rig: poll heartbeat", "count", m.rig.pollCount)
+	}
 
 	// Slow poll: add RF power every 3 fast-poll cycles.
 	if m.rig.slowTick++; m.rig.slowTick >= 3 {
@@ -235,11 +248,11 @@ func (m *Model) applyRigPoll(r rigPollMsg) tea.Cmd {
 	}
 	if r.err != "" || !r.connected {
 		if m.rig.connected {
-			applog.Debug("rig: disconnected", "err", r.err)
+			applog.Warn("rig: disconnected", "err", r.err)
 			m.rc.status = ""
 		}
 		if r.err != "" && !m.rig.connected {
-			applog.Debug("rig: connect failed", "err", r.err)
+			applog.Warn("rig: connect failed", "err", r.err)
 		}
 		m.rig.connected = false
 		// Clear modes and name on disconnect so they are re-fetched when rig comes back.
