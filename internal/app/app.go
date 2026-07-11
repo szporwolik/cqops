@@ -500,7 +500,6 @@ func (a *App) StopAPRSTimer() {
 const (
 	aprsPruneInterval  = 5 * time.Minute
 	aprsRetainDuration = 60 * time.Minute
-	aprsBeaconMin      = 1                      // minimum beacon interval in minutes
 	aprsDefaultServer  = "euro.aprs2.net:14580" // default APRS-IS server
 	aprsDefaultSSID    = "-10"                  // default APRS SSID suffix
 )

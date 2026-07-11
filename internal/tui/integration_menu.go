@@ -193,20 +193,6 @@ func nextGPSCycleInt(current int, opts []int) int {
 	return opts[0]
 }
 
-// nextCycleInt is the generic version of nextGPSCycleInt.
-func nextCycleInt(current int, opts []int) int {
-	return nextGPSCycleInt(current, opts)
-}
-
-func prevGPSCycleInt(current int, opts []int) int {
-	for i := len(opts) - 1; i >= 0; i-- {
-		if opts[i] == current && i > 0 {
-			return opts[i-1]
-		}
-	}
-	return opts[len(opts)-1]
-}
-
 func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 	dxcHost := newTextinput()
 	dxcHost.CharLimit = 60

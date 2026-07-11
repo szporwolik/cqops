@@ -92,8 +92,8 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("F7/Alt+7", "BPL"),
 		),
 		Save: key.NewBinding(
-			key.WithKeys("ctrl+s"),
-			key.WithHelp("Ctrl+S", "Log QSO"),
+			key.WithKeys("ctrl+s", "ctrl+d"),
+			key.WithHelp("Ctrl+S/D", "Log QSO"),
 		),
 		Delete: key.NewBinding(
 			key.WithKeys("delete"),
@@ -104,8 +104,8 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("Ins", "QRZ"),
 		),
 		Spot: key.NewBinding(
-			key.WithKeys("ctrl+d"),
-			key.WithHelp("Ctrl+D", "Spot"),
+			key.WithKeys("ctrl+shift+d"),
+			key.WithHelp("Ctrl+Shift+D", "Spot"),
 		),
 		Help: key.NewBinding(
 			key.WithKeys("?"),

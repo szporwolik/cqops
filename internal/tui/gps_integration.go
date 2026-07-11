@@ -342,7 +342,7 @@ func (m *Model) scheduleOrReconnect() tea.Cmd {
 // gpsReconnectDelay returns a fixed 60s retry interval.
 // GPS devices are either physically present or not — exponential backoff
 // doesn't help, and a one-minute retry catches a replugged device promptly.
-func gpsReconnectDelay(failures int) time.Duration {
+func gpsReconnectDelay(_ int) time.Duration {
 	return 60 * time.Second
 }
 

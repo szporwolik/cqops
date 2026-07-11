@@ -69,7 +69,8 @@ func ParsePositionPacket(raw string) (StationRecord, bool) {
 	// (strict charset validation), then fall back to uncompressed.
 
 	bodyUncomp := body
-	if dataType == '@' {
+	switch dataType {
+	case '@':
 		if len(bodyUncomp) < 8 {
 			return sr, false
 		}
@@ -77,9 +78,9 @@ func ParsePositionPacket(raw string) (StationRecord, bool) {
 		if len(bodyUncomp) < 10 {
 			return sr, false
 		}
-	} else if dataType == '!' || dataType == '=' || dataType == '/' {
+	case '!', '=', '/':
 		bodyUncomp = bodyUncomp[1:] // skip data type indicator
-	} else {
+	default:
 		return sr, false
 	}
 
