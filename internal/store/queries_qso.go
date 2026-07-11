@@ -433,6 +433,55 @@ func IsDuplicateQSO(db *sql.DB, call, band, mode, qsoDate string) (bool, *DupeCh
 	return true, &r
 }
 
+// WorkedCallsOnBandDate returns a set of (call,mode) pairs for QSOs
+// logged on the given band and date. Used by the DXC path line to mark
+// already-worked spots as dupes.
+func WorkedCallsOnBandDate(db *sql.DB, band, qsoDate string) (map[string]bool, error) {
+	rows, err := db.Query(
+		`SELECT DISTINCT call, mode FROM qsos WHERE band = ? AND qso_date = ?`,
+		band, qsoDate,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	worked := make(map[string]bool)
+	for rows.Next() {
+		var call, mode string
+		if err := rows.Scan(&call, &mode); err != nil {
+			continue
+		}
+		// Key: normalized call|mode so spot-mode (USB) matches logged-mode (SSB).
+		worked[qso.NormalizeCall(call)+"|"+qso.NormalizeRigMode(mode)] = true
+	}
+	return worked, rows.Err()
+}
+
+// WorkedCallsInContest returns a set of (call,mode) pairs already logged
+// on the given band within a specific contest (48h+ events span multiple
+// dates, so the date filter from WorkedCallsOnBandDate is insufficient).
+func WorkedCallsInContest(db *sql.DB, contestID, band string) (map[string]bool, error) {
+	rows, err := db.Query(
+		`SELECT DISTINCT call, mode FROM qsos WHERE contest_id = ? AND band = ?`,
+		contestID, band,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	worked := make(map[string]bool)
+	for rows.Next() {
+		var call, mode string
+		if err := rows.Scan(&call, &mode); err != nil {
+			continue
+		}
+		worked[qso.NormalizeCall(call)+"|"+qso.NormalizeRigMode(mode)] = true
+	}
+	return worked, rows.Err()
+}
+
 // ListAllQSOs returns all QSOs ordered by id DESC. Uses paginated
 // iteration internally to avoid loading massive logbooks into memory.
 func ListAllQSOs(db *sql.DB) ([]qso.QSO, error) {
