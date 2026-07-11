@@ -52,6 +52,13 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			return nil, true
 		}
 		m.help.ShowAll = !m.help.ShowAll
+		// When dismissing help, force-start services that may have been
+		// blocked during initialisation (observed: DXC skips connection
+		// when ? is pressed before internet is confirmed).
+		if !m.help.ShowAll && m.inetOnline && m.tickCount < 60 {
+			cmd := m.forceStartServices()
+			return cmd, true
+		}
 		// When toggling help on, dismiss any open dialog.
 		if m.help.ShowAll {
 			m.confirm = nil
@@ -258,6 +265,24 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		}
 	}
 	return nil, false
+}
+
+// forceStartServices kicks off DXC and HTTP connections when they may have
+// been missed during early startup (e.g. when help overlay was opened before
+// internet was confirmed). Safe to call repeatedly — each service guards
+// against duplicate connections internally.
+func (m *Model) forceStartServices() tea.Cmd {
+	var cmds []tea.Cmd
+	if c := m.maybeDXC(); c != nil {
+		cmds = append(cmds, c)
+	}
+	if c := m.maybeHTTP(); c != nil {
+		cmds = append(cmds, c)
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Batch(cmds...)
 }
 
 // =============================================================================

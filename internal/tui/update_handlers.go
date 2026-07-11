@@ -153,10 +153,32 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 	switch r := msg.(type) {
 	case inetResultMsg:
 		if !m.inetOnline && bool(r) {
-			// Internet just came up — force Wavelog and QRZ checks.
+			// Internet just came up — set the flag FIRST so the
+			// dispatch functions below don't bail out on !m.inetOnline.
+			m.inetOnline = true
 			m.lookup.wlForceCheck = true
 			m.lookup.qrzForceCheck = true
 			m.toasts.Success("Internet: connected")
+			var cmds []tea.Cmd
+			if c := m.maybeDXC(); c != nil {
+				cmds = append(cmds, c)
+			}
+			if c := m.maybeHTTP(); c != nil {
+				cmds = append(cmds, c)
+			}
+			if c := m.maybeCheckWavelog(); c != nil {
+				cmds = append(cmds, c)
+			}
+			if c := m.maybeCheckQRZ(); c != nil {
+				cmds = append(cmds, c)
+			}
+			if c := m.maybeFetchSolar(); c != nil {
+				cmds = append(cmds, c)
+			}
+			if len(cmds) > 0 {
+				return true, tea.Batch(cmds...)
+			}
+			return true, nil
 		} else if m.inetOnline && !bool(r) {
 			m.toasts.Warn("Internet: not available — working in offline mode")
 		}

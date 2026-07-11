@@ -553,6 +553,16 @@ func (m *Model) Init() tea.Cmd {
 	if m.App.Config.Integrations.GPS.Enabled {
 		cmds = append(cmds, m.startGPS())
 	}
+	// Kick off DXC and HTTP startup immediately — these have internal
+	// internet-availability checks and retry logic. Dispatching them
+	// from Init() avoids a race where the tick handler silently skips
+	// the first connection attempt when ? is pressed early.
+	if m.App.Config.Integrations.DXC.Enabled {
+		cmds = append(cmds, m.maybeDXC())
+	}
+	if m.App.Config.Integrations.HTTPServer.Enabled {
+		cmds = append(cmds, m.maybeHTTP())
+	}
 	if !m.Offline {
 		cmds = append(cmds, checkInetCmd())
 	}
@@ -684,15 +694,18 @@ func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Non-key messages fall through for tick / toast expiry / async processing.
 	}
 
-	// Active help overlay — blocks all input except dismiss keys.
+	// Active help overlay — blocks key input while open, but lets ticks
+	// and async messages through so flrig polling, Wavelog, DXC, etc.
+	// continue to run while the overlay is visible.
 	if m.help.ShowAll {
 		if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
 			if key.Matches(keyMsg, m.keys.Help) || key.Matches(keyMsg, m.keys.Cancel) {
 				m.help.ShowAll = false
 			}
 			// Consume all keys while help is shown.
+			return m, cmd
 		}
-		return m, cmd
+		// Non-key messages fall through for tick / rig poll / async processing.
 	}
 
 	// Active confirmation dialog — highest priority, blocks everything else
