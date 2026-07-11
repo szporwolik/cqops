@@ -937,44 +937,15 @@ func (m *Model) View() tea.View {
 		return tea.NewView(ErrorStyle.Render(msg))
 	}
 
-	// Render fixed bars — cache when screen and width haven't changed.
-	// Status bar has a 1-second TTL because it contains the UTC clock.
-	rp, hasRig := m.App.Config.Rigs[m.App.Logbook.Station.RigName]
-	rigBackend := ""
-	if hasRig {
-		rigBackend = rp.RadioBackend
-	}
-	cacheBars := m.rc.barW == m.width && m.rc.barSc == m.screen &&
-		m.rc.barOp == m.App.Logbook.ActiveOperator &&
-		m.rc.barLog == m.App.LogbookName &&
-		m.rc.barRig == m.App.Logbook.Station.RigName &&
-		m.rc.barBackend == rigBackend &&
-		m.rc.barRigConn == m.rig.connected &&
-		m.rc.barTx == m.wsjtx.tx && m.rc.barTxMsg == m.wsjtx.txMsg &&
-		m.rc.barOnline == m.wsjtx.online &&
-		m.rc.barAPRS == m.aprsConnected()
-	if !cacheBars {
-		m.rc.status = ""
-	}
-	if m.rc.status == "" || m.rc.statusSec != time.Now().UTC().Minute() {
-		m.rc.status = m.renderStatusBar()
-		m.rc.statusSec = time.Now().UTC().Minute()
-	}
+	// Render fixed bars.
+	// Status bar is a single line — always recomputed for correctness.
+	// Caching caused stale integration dots (DXC/HTTP/APRS) when the
+	// bar cache hit suppressed the status reset triggered by async handlers.
+	m.rc.status = m.renderStatusBar()
 	// Tab bar depends on partner data / call field / connectivity — cached.
 	m.rc.tabs = m.renderTabBar()
 	// Help bar has dynamic suffix (QSO counter, scroll info) — cached.
 	m.rc.help = m.renderHelpBar()
-	m.rc.barW = m.width
-	m.rc.barSc = m.screen
-	m.rc.barOp = m.App.Logbook.ActiveOperator
-	m.rc.barLog = m.App.LogbookName
-	m.rc.barRig = m.App.Logbook.Station.RigName
-	m.rc.barBackend = rigBackend
-	m.rc.barRigConn = m.rig.connected
-	m.rc.barTx = m.wsjtx.tx
-	m.rc.barTxMsg = m.wsjtx.txMsg
-	m.rc.barOnline = m.wsjtx.online
-	m.rc.barAPRS = m.aprsConnected()
 
 	var mainParts []string
 	addRow := func(s string) {
