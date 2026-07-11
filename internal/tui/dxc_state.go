@@ -63,6 +63,6 @@ type dxcState struct {
 	cachedSpacerStyleW int
 
 	// Path line state — caches matched spots for Ctrl+F cycling.
-	pathSpots  []store.DXCSpot // spots at/near current frequency (from dxcPathLine)
-	pathSpotIdx int            // cycling index for Ctrl+F
+	pathSpots   []store.DXCSpot // spots at/near current frequency (from dxcPathLine)
+	pathSpotIdx int             // cycling index for Ctrl+F
 }

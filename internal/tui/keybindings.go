@@ -45,6 +45,8 @@ type KeyMap struct {
 	RotorBearing  key.Binding
 	RotorStop     key.Binding
 	DXCSpotFill   key.Binding
+	RigTuneUp     key.Binding
+	RigTuneDown   key.Binding
 }
 
 // DefaultKeyMap returns the default key bindings.
