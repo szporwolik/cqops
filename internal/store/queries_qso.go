@@ -482,6 +482,44 @@ func WorkedCallsInContest(db *sql.DB, contestID, band string) (map[string]bool, 
 	return worked, rows.Err()
 }
 
+// DXCDupeSet returns a set of (call,band,mode) triples for QSOs that
+// mark DXC spots as dupes. Outside contests the scope is today's date;
+// inside contests it spans the entire contest (48h+). Key format is
+// "CALL|BAND|MODE" — the caller checks each spot's (call,band,mode)
+// against this set with zero per-spot DB queries.
+func DXCDupeSet(db *sql.DB, qsoDate, contestID string) (map[string]bool, error) {
+	var (
+		rows *sql.Rows
+		err  error
+	)
+	if contestID != "" {
+		rows, err = db.Query(
+			`SELECT DISTINCT call, band, mode FROM qsos WHERE contest_id = ?`,
+			contestID,
+		)
+	} else {
+		rows, err = db.Query(
+			`SELECT DISTINCT call, band, mode FROM qsos WHERE qso_date = ?`,
+			qsoDate,
+		)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	worked := make(map[string]bool, 256)
+	for rows.Next() {
+		var call, band, mode string
+		if err := rows.Scan(&call, &band, &mode); err != nil {
+			continue
+		}
+		key := qso.NormalizeCall(call) + "|" + qso.NormalizeBand(band) + "|" + qso.NormalizeRigMode(mode)
+		worked[key] = true
+	}
+	return worked, rows.Err()
+}
+
 // ListAllQSOs returns all QSOs ordered by id DESC. Uses paginated
 // iteration internally to avoid loading massive logbooks into memory.
 func ListAllQSOs(db *sql.DB) ([]qso.QSO, error) {

@@ -198,6 +198,8 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 
 	m.clearForm()
 	m.needRefresh = true
+	m.dxc.dupeSet = nil // new QSO logged — dupe markers are stale
+	m.dxc.tableReady = false
 
 	// Only refresh the QSO table immediately if the user is on the QSO form.
 	// On other screens the refresh is deferred via needRefresh → handlePendingRequests.

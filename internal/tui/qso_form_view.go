@@ -663,36 +663,31 @@ func (m *Model) dxcPathLine(width int) string {
 		below[i], below[j] = below[j], below[i]
 	}
 
-	// Build dupe set for the current band. In contest mode the check
-	// spans the entire contest (48h+ events cross date boundaries);
-	// outside contests we use today's date. Only query when the screen
-	// is wide enough to absorb the "(D)" markers gracefully.
+	// Build dupe set for the current band (reuses DXCDupeSet which is
+	// shared with the DXC table — single query covers both). In contest
+	// mode the check spans the entire contest; outside contests we use
+	// today's date. Only query when the screen is wide enough to absorb
+	// the "(D)" markers gracefully.
 	var dupeSet map[string]bool
 	if width >= 100 && m.App.DB != nil {
-		contestID := m.App.Logbook.ActiveContest
-		if contestID != "" {
-			if ds, err := store.WorkedCallsInContest(m.App.DB, contestID, band); err == nil {
-				dupeSet = ds
-			}
-		} else {
-			dateStr := time.Now().UTC().Format("20060102")
-			if ds, err := store.WorkedCallsOnBandDate(m.App.DB, band, dateStr); err == nil {
-				dupeSet = ds
-			}
+		dateStr := time.Now().UTC().Format("20060102")
+		if ds, err := store.DXCDupeSet(m.App.DB, dateStr, m.App.Logbook.ActiveContest); err == nil {
+			dupeSet = ds
 		}
 	}
 
-	// Format: "CALL FREQ  CALL FREQ  CALL FREQ │ FREQ/|| CALLS || │ CALL FREQ  CALL FREQ  CALL FREQ"
-	// Append "(D)" for dupes when we have the set and screen is wide enough.
+	// Format: "CALL FREQ  CALL FREQ … │ FREQ ││ CALLS ││ … CALL FREQ  CALL FREQ"
+	// Dupes get a "D " prefix (matching the DXC table convention) so
+	// they stand out even on monochrome terminals.
 	formatSpot := func(s store.DXCSpot) string {
-		base := fmt.Sprintf("%s %s", s.DXCall, formatFreqCompact(s.Frequency))
+		prefix := ""
 		if dupeSet != nil {
-			key := qso.NormalizeCall(s.DXCall) + "|" + qso.NormalizeRigMode(s.Mode)
+			key := qso.NormalizeCall(s.DXCall) + "|" + qso.NormalizeBand(s.Band) + "|" + qso.NormalizeRigMode(s.Mode)
 			if dupeSet[key] {
-				base += "(D)"
+				prefix = "D "
 			}
 		}
-		return base
+		return fmt.Sprintf("%s%s %s", prefix, s.DXCall, formatFreqCompact(s.Frequency))
 	}
 	belowParts := make([]string, len(below))
 	for i, s := range below {

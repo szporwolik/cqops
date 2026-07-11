@@ -104,6 +104,13 @@ var migrations = []string{
 	// - speeds up COUNT(DISTINCT operator) in GetDashboardStats
 	`CREATE INDEX IF NOT EXISTS idx_qsos_date_operator ON qsos(qso_date, operator)`,
 
+	// Covering indexes for dupe-set queries (v0.10.x):
+	// - DXCDupeSet / DXC path line dupe markers query by date or contest_id
+	//   selecting DISTINCT call, band, mode. These indexes let SQLite
+	//   answer the query from the index alone — no table scan needed.
+	`CREATE INDEX IF NOT EXISTS idx_qsos_date_call_band_mode ON qsos(qso_date, call, band, mode)`,
+	`CREATE INDEX IF NOT EXISTS idx_qsos_contest_call_band_mode ON qsos(contest_id, call, band, mode)`,
+
 	`CREATE TABLE IF NOT EXISTS psk_spots (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		receiver_call TEXT NOT NULL,

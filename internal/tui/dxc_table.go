@@ -8,6 +8,7 @@ import (
 
 	"charm.land/bubbles/v2/table"
 	"charm.land/lipgloss/v2"
+	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 )
 
@@ -22,7 +23,7 @@ var dxcColWidths = map[string]int{
 // dxcMaxWidths maps column keys to maximum widths for width distribution.
 // Pre-allocated to avoid per-table-rebuild allocation.
 var dxcMaxWidths = map[string]int{
-	"DX Call": 11,
+	"DX Call": 13, // +2 for dupe "D " prefix
 	"Spotter": 9,
 	"DXCC":    12,
 }
@@ -211,6 +212,21 @@ func (m *Model) buildDXCTable() {
 	spots := m.dxcFilteredSpots()
 	m.dxc.spotCount = len(spots)
 
+	// Dupe set: a single batch query computes which (call,band,mode)
+	// triples have already been worked today (or within the active
+	// contest). Checked per row — zero per-spot DB queries.
+	// Cache valid as long as logbook and contest haven't changed.
+	logbook := m.App.LogbookName
+	contest := m.App.Logbook.ActiveContest
+	if m.dxc.dupeSet == nil || m.dxc.dupeSetLogbook != logbook || m.dxc.dupeSetContest != contest {
+		dateStr := time.Now().UTC().Format("20060102")
+		if ds, err := store.DXCDupeSet(m.App.DB, dateStr, contest); err == nil {
+			m.dxc.dupeSet = ds
+			m.dxc.dupeSetLogbook = logbook
+			m.dxc.dupeSetContest = contest
+		}
+	}
+
 	filtered := m.dxc.bandFilter != "" || m.dxc.modeFilter != "" || m.dxc.contFilter != ""
 
 	var rows []table.Row
@@ -221,6 +237,15 @@ func (m *Model) buildDXCTable() {
 			v := dxcColValue(n, &s)
 			if v == "" {
 				v = "\u2014"
+			}
+			// Prefix dupe calls with "D " and dim the whole cell
+			// so already-worked spots are instantly distinguishable
+			// from new ones in the cluster list.
+			if n == "DX Call" && m.dxc.dupeSet != nil {
+				key := qso.NormalizeCall(s.DXCall) + "|" + qso.NormalizeBand(s.Band) + "|" + qso.NormalizeRigMode(s.Mode)
+				if m.dxc.dupeSet[key] {
+					v = S.Dim.Render("D " + v)
+				}
 			}
 			row = append(row, v)
 		}
