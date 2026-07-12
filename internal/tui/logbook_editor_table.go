@@ -1,10 +1,8 @@
 package tui
 
 import (
-	"fmt"
-
-	"charm.land/bubbles/v2/table"
-	"github.com/szporwolik/cqops/internal/qso"
+"charm.land/bubbles/v2/table"
+"github.com/szporwolik/cqops/internal/qso"
 )
 
 // =============================================================================
@@ -12,198 +10,202 @@ import (
 // =============================================================================
 
 // editorColTiers defines which columns to show at each available width.
+// Uses the same qsoAllCols registry as RecentQSOs — column keys, widths,
+// and value functions are shared. The editor adds "Contest" at the wide
+// end; otherwise the tier structure mirrors RecentQSOs.
 var editorColTiers = []struct {
-	names []string
+names []string
 }{
-	{[]string{"Date", "Time", "Call", "WL", "How", "Band", "Mode", "RSTs", "RSTr"}},
-	{[]string{"Date", "Time", "Call", "WL", "Src", "Band", "Mode", "RSTs", "RSTr", "DXCC"}},
-	{[]string{"Date", "Time", "Call", "WL", "Src", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name"}},
-	{[]string{"Date", "Time", "Call", "WL", "Src", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Contest"}},
-	{[]string{"Date", "Time", "Call", "WL", "Src", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Pwr", "Contest"}},
+{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Mode", "RSTs", "RSTr"}},
+{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Mode", "RSTs", "RSTr", "DXCC"}},
+{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name"}},
+{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Contest"}},
+{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Contest"}},
+{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Operator", "Contest"}},
 }
 
-// editorColWidths maps column titles to minimum widths.
-var editorColWidths = map[string]int{
-	"Date": 10, "Time": 8, "Call": 10, "WL": 3, "Src": 3,
-	"Band": 5, "Mode": 5, "Sub": 4, "RSTs": 4, "RSTr": 4,
-	"DXCC": 6, "Name": 8, "Grid": 8, "QTH": 8,
-	"Comment": 8, "Dist": 5, "Pwr": 4, "Contest": 10,
+// editorColTiersContest mirrors editorColTiers but replaces reference
+// columns with ExchSent/ExchRcvd at the wide tiers (same as RecentQSOs).
+var editorColTiersContest = []struct {
+names []string
+}{
+{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Mode", "RSTs", "RSTr"}},
+{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Mode", "RSTs", "RSTr", "DXCC"}},
+{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name"}},
+{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Contest"}},
+{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Contest"}},
+{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "ExchSent", "ExchRcvd", "Contest"}},
 }
 
 // =============================================================================
-// Column value extraction
+// Column value extraction (delegates to shared qsoAllCols)
 // =============================================================================
 
-// editorColValue returns the display value for a column and QSO.
 func editorColValue(col string, q *qso.QSO) string {
-	switch col {
-	case "Date":
-		return formatDate(q.QSODate)
-	case "Time":
-		return formatTime(q.TimeOn)
-	case "Call":
-		return q.Call
-	case "WL":
-		switch q.WavelogUploaded {
-		case "yes":
-			return "Y"
-		case "no":
-			return "N"
-		}
-		return ""
-	case "Src":
-		switch q.Source {
-		case "wsjtx":
-			return "WS"
-		case "manual":
-			return "M"
-		case "wavelog":
-			return "WL"
-		default:
-			if len(q.Source) > 3 {
-				return q.Source[:3]
-			}
-			return q.Source
-		}
-	case "Band":
-		b := qso.NormalizeBand(q.Band)
-		if b == "" && q.Freq > 0 {
-			return fmt.Sprintf("%.1f", q.Freq)
-		}
-		return b
-	case "Mode":
-		return q.Mode
-	case "Sub":
-		return q.Submode
-	case "RSTs":
-		return q.RSTSent
-	case "RSTr":
-		return q.RSTRcvd
-	case "DXCC":
-		return q.Country
-	case "Name":
-		return q.Name
-	case "Grid":
-		return q.GridSquare
-	case "QTH":
-		return q.QTH
-	case "Comment":
-		return q.Comment
-	case "Dist":
-		if q.Distance > 0 {
-			return fmt.Sprintf("%.0f", q.Distance)
-		}
-		return ""
-	case "Pwr":
-		return q.TXPower
-	case "Contest":
-		if q.ContestADIFID != "" {
-			return q.ContestADIFID
-		}
-		return q.ContestID
-	}
-	return ""
+info, ok := qsoAllCols[col]
+if !ok {
+return ""
+}
+v := info.value(q)
+if v == "" {
+return "\u2014"
+}
+return v
 }
 
 // =============================================================================
-// Table construction
+// Table construction (shared logic with RecentQSOs)
 // =============================================================================
 
 func (le *LogbookEditor) buildTable() {
-	w := le.width
-	if w < 40 {
-		w = 80
-	}
-	h := le.height
-	if h < 10 {
-		h = 24
-	}
-	// Dynamic viewport: fill available vertical space. Terminal height minus
-	// status(1) + tabs(3) + help(1) = 5 fixed rows, plus 1 spacer row above table.
-	tableH := h - 6
-	if tableH < 5 {
-		tableH = 5
-	}
-	// Select the widest tier that fits within bodyW.
-	bodyW := w - 4
-	if bodyW < 20 {
-		bodyW = 20
-	}
-	var names []string
-	for _, t := range editorColTiers {
-		total := 0
-		for _, n := range t.names {
-			total += editorColWidths[n]
-		}
-		total += len(t.names) - 1
-		if total <= bodyW {
-			names = t.names
-		}
-	}
-	// Fall back to the narrowest tier when nothing fits (small terminal).
-	if len(names) == 0 && len(editorColTiers) > 0 {
-		names = editorColTiers[0].names
-	}
+w := le.width
+if w < 40 {
+w = 80
+}
+h := le.height
+if h < 10 {
+h = 24
+}
+tableH := h - 6
+if tableH < 5 {
+tableH = 5
+}
+bodyW := w - 4
+if bodyW < 20 {
+bodyW = 20
+}
 
-	// Build columns from selected tier.
-	var cols []table.Column
-	minTotal := 0
-	for _, n := range names {
-		w := editorColWidths[n]
-		minTotal += w
-		cols = append(cols, table.Column{Title: n, Width: w})
-	}
-	gaps := len(cols) - 1
-	extra := bodyW - gaps - minTotal
-	if extra > 0 {
-		dist := 0
-		for i := range cols {
-			var share int
-			switch cols[i].Title {
-			case "Comment":
-				share = extra * 2 / 10
-			case "Name":
-				share = extra * 2 / 10
-			case "QTH":
-				share = extra * 2 / 10
-			case "Call":
-				share = extra / 10
-			}
-			cols[i].Width += share
-			dist += share
-		}
-		if leftover := extra - dist; leftover > 0 {
-			cols[len(cols)-1].Width += leftover
-		}
-	}
+// Select tiers — contest-aware and multi-operator-aware.
+tiers := editorColTiers
+if le.contest {
+tiers = editorColTiersContest
+}
+var names []string
+for i := len(tiers) - 1; i >= 0; i-- {
+total := 0
+for _, n := range tiers[i].names {
+total += qsoAllCols[n].minWidth
+}
+total += len(tiers[i].names) - 1
+if total <= bodyW {
+names = tiers[i].names
+break
+}
+}
+if len(names) == 0 && len(tiers) > 0 {
+names = tiers[0].names
+}
 
-	// Rebuild rows with only the selected columns.
-	var trimmedRows []table.Row
-	for _, q := range le.qsos {
-		var row table.Row
-		for _, n := range names {
-			row = append(row, editorColValue(n, &q))
-		}
-		trimmedRows = append(trimmedRows, row)
-	}
-	t := table.New(
-		table.WithColumns(cols),
-		table.WithRows(trimmedRows),
-		table.WithFocused(true),
-		table.WithHeight(tableH),
-		table.WithWidth(bodyW),
-	)
-	s := table.DefaultStyles()
-	s.Header = s.Header.
-		BorderForeground(P.TextDim).
-		BorderBottom(true).
-		Bold(false).
-		Foreground(P.Text)
-	t.SetStyles(s)
-	t.Focus()
-	le.table = t
-	le.built = true
-	le.builtW = w
-	le.builtH = h
-	le.cachedSig = "" // invalidate view cache — table was rebuilt
+// Multi-operator: swap Grid for Operator.
+if le.multiOp {
+for i, n := range names {
+if n == "Grid" {
+names[i] = "Operator"
+break
+}
+}
+}
+
+// Build columns from shared qsoAllCols registry.
+var cols []table.Column
+minTotal := 0
+for _, n := range names {
+cw := qsoAllCols[n].minWidth
+minTotal += cw
+cols = append(cols, table.Column{Title: qsoAllCols[n].header, Width: cw})
+}
+
+// Extra width — capped per-column, iteratively redistributed (shared
+// colCaps map and applyCap from RecentQSOs).
+gaps := len(cols) - 1
+extra := bodyW - gaps - minTotal
+if extra > 0 && len(cols) > 0 {
+distributed := 0
+for i := range cols {
+var share int
+switch cols[i].Title {
+case "Comment":
+share = extra * 5 / 10
+case "Name":
+share = extra * 2 / 10
+case "QTH":
+share = extra / 10
+case "Call":
+share = extra / 10
+}
+if share > 0 {
+share = applyCap(cols[i].Width, share, cols[i].Title, colCaps)
+}
+cols[i].Width += share
+distributed += share
+}
+leftover := extra - distributed
+for leftover > 0 {
+moved := 0
+eligible := 0
+for i := range cols {
+if cap, ok := colCaps[cols[i].Title]; !ok || cols[i].Width < cap {
+eligible++
+}
+}
+if eligible == 0 {
+cols[len(cols)-1].Width += leftover
+break
+}
+perCol := leftover / eligible
+if perCol == 0 {
+perCol = 1
+}
+for i := range cols {
+if cap, ok := colCaps[cols[i].Title]; ok && cols[i].Width >= cap {
+continue
+}
+add := perCol
+if add > leftover {
+add = leftover
+}
+add = applyCap(cols[i].Width, add, cols[i].Title, colCaps)
+cols[i].Width += add
+leftover -= add
+moved += add
+if leftover <= 0 {
+break
+}
+}
+if moved == 0 {
+cols[len(cols)-1].Width += leftover
+break
+}
+}
+}
+
+// Build rows from shared column registry.
+var trimmedRows []table.Row
+for _, q := range le.qsos {
+var row table.Row
+for _, n := range names {
+row = append(row, editorColValue(n, &q))
+}
+trimmedRows = append(trimmedRows, row)
+}
+t := table.New(
+table.WithColumns(cols),
+table.WithRows(trimmedRows),
+table.WithFocused(true),
+table.WithHeight(tableH),
+table.WithWidth(bodyW),
+)
+s := table.DefaultStyles()
+s.Header = s.Header.
+BorderForeground(P.TextDim).
+BorderBottom(true).
+Bold(false).
+Foreground(P.Text)
+t.SetStyles(s)
+t.Focus()
+le.table = t
+le.built = true
+le.builtW = w
+le.builtH = h
+le.cachedSig = "" // invalidate view cache — table was rebuilt
 }

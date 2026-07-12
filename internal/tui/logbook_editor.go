@@ -132,6 +132,8 @@ type LogbookEditor struct {
 	contestID        string // active contest hash for filtering, "" = no filter
 	contestName      string // display name for the contest info line
 	contestAdifID    string // ADIF Contest-ID for the contest info line
+	contest          bool   // show ExchSent/ExchRcvd instead of ref columns
+	multiOp          bool   // show Operator instead of Grid
 	mismatchQSOs     []qso.QSO
 	mismatchFields   []string
 	wlDownloadCount  int
@@ -285,6 +287,28 @@ func (le *LogbookEditor) SetContestID(id, name, adifID string) {
 		le.currentPage = 1
 		le.loadPage()
 	}
+}
+
+// SetContestMode enables or disables contest column mode (ExchSent/ExchRcvd
+// instead of ref columns at wide tiers — mirrors RecentQSOs logic).
+func (le *LogbookEditor) SetContestMode(v bool) {
+	if le.contest == v {
+		return
+	}
+	le.contest = v
+	le.built = false
+	le.cachedSig = ""
+}
+
+// SetMultiOp enables or disables multi-operator mode (Operator instead of
+// Grid — mirrors RecentQSOs logic for club logbooks).
+func (le *LogbookEditor) SetMultiOp(v bool) {
+	if le.multiOp == v {
+		return
+	}
+	le.multiOp = v
+	le.built = false
+	le.cachedSig = ""
 }
 
 // loadPage fetches the current page of QSOs from the database.

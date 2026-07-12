@@ -363,10 +363,13 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 // that were flagged during normal message handling.
 func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
 	if m.needRefresh {
-		m.needRefresh = false
 		// Only refresh QSOs when on a screen that displays them — avoids
 		// unnecessary DB queries on DXC, PSK, BPL, and other screens.
+		// Keep the flag set when the current screen can't show QSOs so
+		// the refresh fires as soon as the user navigates to a QSO screen
+		// (fixes stale recent QSOs after logbook create/switch).
 		if m.screen == screenQSO || m.screen == screenPartner || m.screen == screenLogbookEditor {
+			m.needRefresh = false
 			cmd = tea.Batch(cmd, m.refreshQSOS())
 		}
 	}
