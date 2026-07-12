@@ -179,8 +179,12 @@ type LogbookEditor struct {
 
 	// Cached dialog table style — avoids lipgloss.NewStyle() every frame.
 	cachedTablePartStyle lipgloss.Style
-	cachedTablePartW     int
-	cachedTablePartH     int
+	// Pre-formatted row cache — avoids re-formatting every cell on every
+	// buildTable() call. Cleared on loadPage, resize, or contest change.
+	formattedRows    []table.Row
+	formattedNames   []string
+	formattedWidth   int
+	cachedTablePartH int
 
 	// Cached edit form column style — rebuilt only on colW change.
 	cachedEditColStyle lipgloss.Style
@@ -273,6 +277,7 @@ func (le *LogbookEditor) Init() tea.Cmd {
 
 func (le *LogbookEditor) SetQSOS(qsos []qso.QSO) {
 	le.qsos = qsos
+	le.formattedRows = nil
 	le.cachedSig = "" // invalidate view cache
 	le.buildTable()
 }
@@ -299,6 +304,8 @@ func (le *LogbookEditor) SetContestMode(v bool) {
 	}
 	le.contest = v
 	le.built = false
+	le.formattedNames = nil
+	le.formattedRows = nil
 	le.cachedSig = ""
 }
 
@@ -310,6 +317,8 @@ func (le *LogbookEditor) SetMultiOp(v bool) {
 	}
 	le.multiOp = v
 	le.built = false
+	le.formattedNames = nil
+	le.formattedRows = nil
 	le.cachedSig = ""
 }
 
@@ -349,6 +358,11 @@ func (le *LogbookEditor) loadPage() {
 		le.qsos = qsos
 		le.totalCount = total
 	}
+
+	// Pre-format row cells once per page load — buildTable() reuses this
+	// cache instead of calling editorColValue() for every cell on every
+	// frame. Invalidated on resize (formattedWidth mismatch) or page change.
+	le.formattedRows = nil
 	le.cachedSig = ""
 	le.buildTable()
 }

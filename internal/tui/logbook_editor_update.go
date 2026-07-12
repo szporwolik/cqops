@@ -52,9 +52,11 @@ type editorMsg struct {
 func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		le.width = msg.Width
-		le.height = msg.Height
-		le.buildTable()
+		if msg.Width != le.width || msg.Height != le.height {
+			le.width = msg.Width
+			le.height = msg.Height
+			le.buildTable()
+		}
 
 	case editorMsg:
 		// Batch download/import/export progress — only when a download is actually active.
