@@ -463,18 +463,33 @@ jobs:
   # ──────────────────────────────────────────────────────────────────────────
   # WinGet update — submits an update PR to microsoft/winget-pkgs.
   # Requires WINGET_GITHUB_TOKEN secret (classic PAT with public_repo scope).
+  # Gate: check inside steps (secrets not allowed in job-level if: condition).
   # ──────────────────────────────────────────────────────────────────────────
   publish-winget:
     runs-on: windows-latest
     needs: create-github-release
-    if: secrets.WINGET_GITHUB_TOKEN != ''
     steps:
+      - name: Check token
+        id: gate
+        shell: bash
+        env:
+          TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "WINGET_GITHUB_TOKEN not set — skipping WinGet submission."
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Read version
+        if: steps.gate.outputs.skip != 'true'
         id: meta
         shell: bash
         run: echo "version=${{ needs.create-github-release.outputs.version }}" >> $GITHUB_OUTPUT
 
       - name: Submit WinGet update
+        if: steps.gate.outputs.skip != 'true'
         shell: powershell
         env:
           VERSION: ${{ steps.meta.outputs.version }}
