@@ -368,6 +368,24 @@ func (m *Model) applyRigPoll(r rigPollMsg) tea.Cmd {
 	}
 	if !m.wsjtx.online {
 		m.autoFillSSBSubmode()
+		// When frequency changed, force-correct SSB submode based on the
+		// convention (LSB < 10 MHz, USB >= 10 MHz).  Without this the
+		// retained submode from resetQSOFields would keep a stale value
+		// (e.g. USB from 20 m bleeding into a 40 m QSO after QSY).
+		if freqChanged || splitBecameActive {
+			mode := strings.ToUpper(strings.TrimSpace(m.fields[fieldMode].Value()))
+			if mode == "SSB" {
+				var freqMHz float64
+				fmt.Sscanf(strings.TrimSpace(m.fields[fieldFreq].Value()), "%f", &freqMHz)
+				if freqMHz > 0 {
+					if freqMHz < 10.0 {
+						m.fields[fieldSubmode].SetValue("LSB")
+					} else {
+						m.fields[fieldSubmode].SetValue("USB")
+					}
+				}
+			}
+		}
 	}
 	// Push rig/mode/band changes to the dashboard immediately —
 	// don't wait for the next tick.
