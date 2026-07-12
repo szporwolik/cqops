@@ -257,8 +257,10 @@ func (le *LogbookEditor) View() tea.View {
 			le.cachedSpacerStyleW = bodyW
 		}
 		spacer := le.cachedSpacerStyle.Render("")
-		tablePart := le.cachedSpacerStyle.
-			MaxWidth(bodyW).
+		// Table already handles its own width via WithWidth(bodyW); only
+		// constrain height here. Applying Width/MaxWidth on top causes
+		// lipgloss to word-wrap the table output instead of truncating.
+		tablePart := lipgloss.NewStyle().
 			Height(contentH - 1 - len(headerLines)).
 			Render(le.table.View())
 
@@ -290,10 +292,10 @@ func (le *LogbookEditor) viewWithDialog(bodyW int) string {
 	spacer := le.cachedSpacerStyle.Render("")
 	// Table part uses its own cached style (no Width, only MaxWidth+Height)
 	// to avoid forcing the table to pad to bodyW which can cause layout issues.
+	// Only constrain height — table manages its own width.
 	th := contentH - 1
-	if le.cachedTablePartW != bodyW || le.cachedTablePartH != th {
-		le.cachedTablePartStyle = lipgloss.NewStyle().MaxWidth(bodyW).Height(th)
-		le.cachedTablePartW = bodyW
+	if le.cachedTablePartH != th {
+		le.cachedTablePartStyle = lipgloss.NewStyle().Height(th)
 		le.cachedTablePartH = th
 	}
 	tablePart := le.cachedTablePartStyle.Render(le.table.View())
