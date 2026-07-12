@@ -271,7 +271,10 @@ jobs:
 
       - name: Read version
         id: meta
-        run: echo "version=${{ needs.validate-version.outputs.version }}" >> $GITHUB_OUTPUT
+        run: |
+          V="$(cat VERSION)"
+          echo "version=$V" >> $GITHUB_OUTPUT
+          echo "Version: $V"
 
       - name: Build release notes from merged PRs
         env:
@@ -315,6 +318,8 @@ jobs:
     permissions:
       contents: read
     steps:
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           path: dist/
@@ -322,7 +327,10 @@ jobs:
 
       - name: Read version
         id: meta
-        run: echo "version=${{ needs.create-github-release.outputs.version }}" >> $GITHUB_OUTPUT
+        run: |
+          V="$(cat VERSION)"
+          echo "version=$V" >> $GITHUB_OUTPUT
+          echo "Version: $V"
 
       - name: Install Cloudsmith CLI
         run: |
