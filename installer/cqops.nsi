@@ -1,6 +1,6 @@
 ; =============================================================================
 ; CQOps NSIS Installer — Fast, offline-first ham radio logger
-; Build: makensis /DVERSION=X.Y.Z installer\cqops.nsi (version from VERSION file)
+; Build: makensis /DVERSION=X.Y.Z installer\cqops.nsi
 ; =============================================================================
 
 Unicode true
@@ -13,6 +13,8 @@ ManifestDPIAware true
 !define PRODUCT_NAME "CQOps"
 !define PRODUCT_PUBLISHER "Szymon Porwolik"
 !define PRODUCT_WEB_SITE "https://github.com/szporwolik/cqops"
+!define REG_UNINST "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"
+!define REG_APP "Software\${PRODUCT_NAME}"
 
 ; Paths — override via /DROOT=... /DBIN_SRC=... /DICON_SRC=... on makensis CLI.
 !ifndef ROOT
@@ -24,14 +26,11 @@ ManifestDPIAware true
 !ifndef ICON_SRC
   !define ICON_SRC "${ROOT}\assets\cqops-icon.ico"
 !endif
-!ifndef ICON_FILENAME
-  !define ICON_FILENAME "cqops-icon.ico"
-!endif
 
 Name "${PRODUCT_NAME} ${VERSION}"
 OutFile "${ROOT}\dist\cqops-setup.exe"
 InstallDir "$PROGRAMFILES64\${PRODUCT_NAME}"
-InstallDirRegKey HKLM "Software\${PRODUCT_NAME}" "InstallDir"
+InstallDirRegKey HKLM "${REG_APP}" "InstallDir"
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
 
@@ -41,9 +40,74 @@ SetCompressor /SOLID lzma
 !include "MUI2.nsh"
 !include "FileFunc.nsh"
 !include "LogicLib.nsh"
+!include "StrFunc.nsh"
 
 !insertmacro GetParameters
 !insertmacro GetOptions
+
+${StrStr}
+${StrStrAdv}
+${UnStrStr}
+${UnStrStrAdv}
+
+; -----------------------------------------------------------------------------
+; Macros — idempotent machine PATH add / remove
+; -----------------------------------------------------------------------------
+!define ENV_HKLM 'HKLM "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"'
+
+!macro AddToPath Dir
+  Push $0
+  Push $1
+  Push $2
+  ReadRegStr $0 ${ENV_HKLM} "Path"
+  ${If} $0 == ""
+    StrCpy $0 "${Dir}"
+  ${Else}
+    ${StrStr} $1 "$0" "${Dir}"
+    ${If} $1 == ""
+      StrCpy $0 "$0;${Dir}"
+    ${EndIf}
+  ${EndIf}
+  WriteRegExpandStr ${ENV_HKLM} "Path" "$0"
+  SendMessage ${HWND_BROADCAST} ${WM_WININICHANGE} 0 "STR:Environment" /TIMEOUT=500
+  Pop $2
+  Pop $1
+  Pop $0
+!macroend
+
+!macro RemoveFromPath Dir
+  Push $0
+  Push $1
+  Push $2
+  ReadRegStr $0 ${ENV_HKLM} "Path"
+  ${If} $0 != ""
+    ; Strip trailing semicolon for consistent matching.
+    StrCpy $1 $0
+    StrCpy $2 $0 "" -1
+    ${If} $2 == ";"
+      StrCpy $1 $0 -1
+    ${EndIf}
+    ; Remove ";Dir" and "Dir;" patterns.
+    ${StrStrAdv} $2 "$1" ";${Dir}" "<" "<" "0" "0"
+    ${If} $2 != ""
+      StrCpy $1 "$2"
+    ${EndIf}
+    ${StrStrAdv} $2 "$1" "${Dir};" "<" "<" "0" "0"
+    ${If} $2 != ""
+      StrCpy $1 "$2"
+    ${EndIf}
+    ; Clean up double semicolons.
+    ${StrStrAdv} $2 "$1" ";;" "<" "<" "0" "0"
+    ${If} $2 != ""
+      StrCpy $1 "$2"
+    ${EndIf}
+    WriteRegExpandStr ${ENV_HKLM} "Path" "$1"
+    SendMessage ${HWND_BROADCAST} ${WM_WININICHANGE} 0 "STR:Environment" /TIMEOUT=500
+  ${EndIf}
+  Pop $2
+  Pop $1
+  Pop $0
+!macroend
 
 ; -----------------------------------------------------------------------------
 ; Pages
@@ -73,97 +137,99 @@ SetCompressor /SOLID lzma
 Section "Install"
   SetOutPath "$INSTDIR"
 
-  File "${BIN_SRC}"
+  ; Install binary as cqops.exe.
+  File "/oname=cqops.exe" "${BIN_SRC}"
 
-  ; Copy the icon for Control Panel (the .exe carries the embedded copy for taskbar/tab).
+  ; Copy the icon.
   !if /FileExists "${ICON_SRC}"
     File "${ICON_SRC}"
   !endif
 
-  ; Copy README into a docs/ subfolder so it's available offline.
+  ; Copy README into docs/.
   CreateDirectory "$INSTDIR\docs"
   SetOutPath "$INSTDIR\docs"
   File /nonfatal "${ROOT}\README.md"
-
-  ; Back to install root for remaining operations.
   SetOutPath "$INSTDIR"
 
-  ; Create Start Menu shortcuts.
+  ; Start Menu shortcuts.
   CreateDirectory "$SMPROGRAMS\${PRODUCT_NAME}"
   CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\CQOps.lnk" \
-    "$INSTDIR\cqops-windows-amd64.exe" \
-    "" \
-    "$INSTDIR\cqops-windows-amd64.exe" 0
+    "$INSTDIR\cqops.exe" "" "$INSTDIR\cqops.exe" 0
   CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\README.lnk" \
     "$INSTDIR\docs\README.md"
   CreateShortCut "$SMPROGRAMS\${PRODUCT_NAME}\Uninstall CQOps.lnk" \
     "$INSTDIR\uninstall.exe"
 
-  ; Register uninstaller
+  ; Uninstaller.
   WriteUninstaller "$INSTDIR\uninstall.exe"
 
-  ; Registry — install info
-  WriteRegStr HKLM "Software\${PRODUCT_NAME}" "InstallDir" "$INSTDIR"
-  WriteRegStr HKLM "Software\${PRODUCT_NAME}" "Version" "${VERSION}"
+  ; Registry — app info.
+  WriteRegStr HKLM "${REG_APP}" "InstallDir" "$INSTDIR"
+  WriteRegStr HKLM "${REG_APP}" "Version" "${VERSION}"
 
-  ; Registry — uninstall info (Control Panel)
-  ; Use ASCII hyphen in DisplayName to avoid mojibake in Windows Apps & Features.
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" \
-    "DisplayName" "${PRODUCT_NAME} - Fast offline-first ham radio logger"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" \
-    "UninstallString" "$INSTDIR\uninstall.exe"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" \
-    "DisplayIcon" "$INSTDIR\cqops-windows-amd64.exe,0"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" \
-    "DisplayVersion" "${VERSION}"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" \
-    "Publisher" "${PRODUCT_PUBLISHER}"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" \
-    "URLInfoAbout" "${PRODUCT_WEB_SITE}"
-  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" \
-    "NoModify" 1
-  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" \
-    "NoRepair" 1
+  ; Registry — uninstall info (Control Panel).
+  WriteRegStr HKLM "${REG_UNINST}" "DisplayName" \
+    "${PRODUCT_NAME} - Fast offline-first ham radio logger"
+  WriteRegStr HKLM "${REG_UNINST}" "UninstallString" \
+    '"$INSTDIR\uninstall.exe"'
+  WriteRegStr HKLM "${REG_UNINST}" "QuietUninstallString" \
+    '"$INSTDIR\uninstall.exe" /S'
+  WriteRegStr HKLM "${REG_UNINST}" "DisplayIcon" \
+    "$INSTDIR\cqops.exe,0"
+  WriteRegStr HKLM "${REG_UNINST}" "DisplayVersion" "${VERSION}"
+  WriteRegStr HKLM "${REG_UNINST}" "Publisher" "${PRODUCT_PUBLISHER}"
+  WriteRegStr HKLM "${REG_UNINST}" "URLInfoAbout" "${PRODUCT_WEB_SITE}"
+  WriteRegDWORD HKLM "${REG_UNINST}" "NoModify" 1
+  WriteRegDWORD HKLM "${REG_UNINST}" "NoRepair" 1
 
-  ; Estimate size
+  ; Estimated size.
   ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
   IntFmt $0 "0x%08X" $0
-  WriteRegDWORD HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" \
-    "EstimatedSize" "$0"
+  WriteRegDWORD HKLM "${REG_UNINST}" "EstimatedSize" "$0"
 
-  ; Add to PATH — per-machine, append if not present
-  ; Save current PATH, append $INSTDIR, broadcast WM_SETTINGCHANGE
-  ReadRegStr $0 HKLM "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "Path"
-  ${If} $0 != ""
-    StrCpy $1 "$0;$INSTDIR"
-    ${If} $0 == $1
-      ; Already present — skip
-    ${Else}
-      WriteRegExpandStr HKLM "SYSTEM\CurrentControlSet\Control\Session Manager\Environment" "Path" "$1"
-      SendMessage ${HWND_BROADCAST} ${WM_WININICHANGE} 0 "STR:Environment" /TIMEOUT=500
-    ${EndIf}
-  ${EndIf}
+  ; Add to machine PATH.
+  !insertmacro AddToPath "$INSTDIR"
 SectionEnd
 
 ; -----------------------------------------------------------------------------
 ; Uninstall Section
 ; -----------------------------------------------------------------------------
 Section "Uninstall"
-  ; Remove Start Menu shortcuts
+  ; Remove from machine PATH.
+  !insertmacro RemoveFromPath "$INSTDIR"
+
+  ; Remove Start Menu shortcuts.
   Delete "$SMPROGRAMS\${PRODUCT_NAME}\CQOps.lnk"
   Delete "$SMPROGRAMS\${PRODUCT_NAME}\README.lnk"
   Delete "$SMPROGRAMS\${PRODUCT_NAME}\Uninstall CQOps.lnk"
   RMDir  "$SMPROGRAMS\${PRODUCT_NAME}"
 
-  ; Remove installed files
-  Delete "$INSTDIR\cqops-windows-amd64.exe"
+  ; Remove installed files — does NOT touch user config or logs.
+  Delete "$INSTDIR\cqops.exe"
   Delete "$INSTDIR\cqops-icon.ico"
   Delete "$INSTDIR\docs\README.md"
   RMDir  "$INSTDIR\docs"
   Delete "$INSTDIR\uninstall.exe"
   RMDir  "$INSTDIR"
 
-  ; Remove registry keys
-  DeleteRegKey HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"
-  DeleteRegKey HKLM "Software\${PRODUCT_NAME}"
+  ; Remove registry keys.
+  DeleteRegKey HKLM "${REG_UNINST}"
+  DeleteRegKey HKLM "${REG_APP}"
 SectionEnd
+
+; -----------------------------------------------------------------------------
+; Silent install/uninstall support
+; -----------------------------------------------------------------------------
+Function .onInit
+  ${GetParameters} $R0
+  ${GetOptions} $R0 "/S" $R1
+  IfErrors +2
+    SetSilent silent
+FunctionEnd
+
+Function un.onInit
+  ${GetParameters} $R0
+  ${GetOptions} $R0 "/S" $R1
+  IfErrors +2
+    SetSilent silent
+FunctionEnd
