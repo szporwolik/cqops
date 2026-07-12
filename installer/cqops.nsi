@@ -35,20 +35,15 @@ RequestExecutionLevel admin
 SetCompressor /SOLID lzma
 
 ; -----------------------------------------------------------------------------
-; Modern UI 2
+; Modern UI 2 + helpers
 ; -----------------------------------------------------------------------------
 !include "MUI2.nsh"
 !include "FileFunc.nsh"
 !include "LogicLib.nsh"
-!include "StrFunc.nsh"
+!include "WordFunc.nsh"
 
 !insertmacro GetParameters
 !insertmacro GetOptions
-
-${StrStr}
-${StrStrAdv}
-${UnStrStr}
-${UnStrStrAdv}
 
 ; -----------------------------------------------------------------------------
 ; Macros — idempotent machine PATH add / remove
@@ -58,19 +53,17 @@ ${UnStrStrAdv}
 !macro AddToPath Dir
   Push $0
   Push $1
-  Push $2
   ReadRegStr $0 ${ENV_HKLM} "Path"
   ${If} $0 == ""
     StrCpy $0 "${Dir}"
   ${Else}
-    ${StrStr} $1 "$0" "${Dir}"
-    ${If} $1 == ""
+    ${WordFind} "$0" "${Dir}" "E+1;" $1
+    ${If} $1 == 0
       StrCpy $0 "$0;${Dir}"
     ${EndIf}
   ${EndIf}
   WriteRegExpandStr ${ENV_HKLM} "Path" "$0"
   SendMessage ${HWND_BROADCAST} ${WM_WININICHANGE} 0 "STR:Environment" /TIMEOUT=500
-  Pop $2
   Pop $1
   Pop $0
 !macroend
@@ -81,26 +74,20 @@ ${UnStrStrAdv}
   Push $2
   ReadRegStr $0 ${ENV_HKLM} "Path"
   ${If} $0 != ""
-    ; Strip trailing semicolon for consistent matching.
-    StrCpy $1 $0
-    StrCpy $2 $0 "" -1
+    ; Delete every occurrence of Dir as a semicolon-delimited word.
+    ${WordReplace} "$0" "${Dir}" "" "E+};" $1
+    ; Clean up leading semicolon.
+    StrCpy $2 $1 1
     ${If} $2 == ";"
-      StrCpy $1 $0 -1
+      StrCpy $1 $1 "" 1
     ${EndIf}
-    ; Remove ";Dir" and "Dir;" patterns.
-    ${StrStrAdv} $2 "$1" ";${Dir}" "<" "<" "0" "0"
-    ${If} $2 != ""
-      StrCpy $1 "$2"
+    ; Clean up trailing semicolon.
+    StrCpy $2 $1 "" -1
+    ${If} $2 == ";"
+      StrCpy $1 $1 -1
     ${EndIf}
-    ${StrStrAdv} $2 "$1" "${Dir};" "<" "<" "0" "0"
-    ${If} $2 != ""
-      StrCpy $1 "$2"
-    ${EndIf}
-    ; Clean up double semicolons.
-    ${StrStrAdv} $2 "$1" ";;" "<" "<" "0" "0"
-    ${If} $2 != ""
-      StrCpy $1 "$2"
-    ${EndIf}
+    ; Collapse double semicolons (from adjacent deleted entries).
+    ${WordReplace} "$1" ";;" ";" "E+};" $1
     WriteRegExpandStr ${ENV_HKLM} "Path" "$1"
     SendMessage ${HWND_BROADCAST} ${WM_WININICHANGE} 0 "STR:Environment" /TIMEOUT=500
   ${EndIf}
