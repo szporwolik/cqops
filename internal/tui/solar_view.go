@@ -75,6 +75,9 @@ func (m *Model) renderSolarPanel(availW int) string {
 		fmt.Fprintf(&sigB, "%s:%s|", b+"_day", d.Bands[b+"_day"])
 		fmt.Fprintf(&sigB, "%s:%s|", b+"_night", d.Bands[b+"_night"])
 	}
+	// Include contest mode in cache key — padding rows change with form height.
+	contest := m.App.Logbook.ActiveContest != ""
+	fmt.Fprintf(&sigB, "c:%v", contest)
 	sig := sigB.String()
 	if m.solar.cachedSig == sig && m.solar.cachedView != "" {
 		return m.solar.cachedView
@@ -200,9 +203,13 @@ func (m *Model) renderSolarPanel(availW int) string {
 	extra2B.WriteString(xrStyle.Render(d.XRay))
 	extra2 := extra2B.String()
 
-	// --- Assemble: left-aligned, no stretching ---
-	// Build content first to measure natural width.
+	// --- Assemble: left-aligned. In contest mode the QSO form is
+	// taller (exchange fields), so add an empty row top and bottom
+	// to keep the solar box border flush with the form border.
 	var contentParts []string
+	if contest {
+		contentParts = append(contentParts, "")
+	}
 	contentParts = append(contentParts, summary)
 	if extra2 != "" {
 		contentParts = append(contentParts, extra2)
@@ -212,6 +219,9 @@ func (m *Model) renderSolarPanel(availW int) string {
 	if extra1 != "" {
 		contentParts = append(contentParts, "")
 		contentParts = append(contentParts, extra1)
+	}
+	if contest {
+		contentParts = append(contentParts, "")
 	}
 	content := lipgloss.JoinVertical(lipgloss.Left, contentParts...)
 
