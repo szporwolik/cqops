@@ -226,18 +226,13 @@ func (q *QSO) toADIFWithStation(stationCall string) string {
 	if q.SRX != 0 {
 		r[adifield.Field("SRX")] = fmt.Sprintf("%d", q.SRX)
 	}
-	// STX_STRING / SRX_STRING: full exchange including RST when contest data
-	// is present, otherwise the RST-stripped exchange string.
-	if q.ExchSent != "" {
-		set(adifield.Field("STX_STRING"), q.ExchSent)
-	} else {
-		set(adifield.Field("STX_STRING"), q.STXString)
-	}
-	if q.ExchRcvd != "" {
-		set(adifield.Field("SRX_STRING"), q.ExchRcvd)
-	} else {
-		set(adifield.Field("SRX_STRING"), q.SRXString)
-	}
+	// STX_STRING / SRX_STRING: contest exchange portion WITHOUT the RST.
+	// RST already has dedicated fields (RST_SENT / RST_RCVD). Per ADIF
+	// 3.1.7, STX_STRING / SRX_STRING carry the exchange information not
+	// represented by another dedicated field — i.e. the zone, serial,
+	// or HQ abbreviation, but NOT the signal report.
+	set(adifield.Field("STX_STRING"), q.STXString)
+	set(adifield.Field("SRX_STRING"), q.SRXString)
 	set(adifield.Field("CONTEST_ID"), q.ContestADIFID)
 
 	return r.String() + "<EOR>"
