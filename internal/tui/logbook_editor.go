@@ -132,6 +132,7 @@ type LogbookEditor struct {
 	contestID        string // active contest hash for filtering, "" = no filter
 	contestName      string // display name for the contest info line
 	contestAdifID    string // ADIF Contest-ID for the contest info line
+	contestDate      string // YYYY-MM-DD contest date, for export filenames
 	contest          bool   // show ExchSent/ExchRcvd instead of ref columns
 	multiOp          bool   // show Operator instead of Grid
 	mismatchQSOs     []qso.QSO
@@ -278,11 +279,12 @@ func (le *LogbookEditor) SetQSOS(qsos []qso.QSO) {
 
 // SetContestID sets the active contest filter for the editor.
 // Pass "" to clear the filter and show all QSOs.
-func (le *LogbookEditor) SetContestID(id, name, adifID string) {
+func (le *LogbookEditor) SetContestID(id, name, adifID, date string) {
 	if le.contestID != id {
 		le.contestID = id
 		le.contestName = name
 		le.contestAdifID = adifID
+		le.contestDate = date
 		le.cachedSig = ""
 		le.currentPage = 1
 		le.loadPage()

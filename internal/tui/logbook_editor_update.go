@@ -476,6 +476,14 @@ func (le *LogbookEditor) handleFilePickerUpdate(msg tea.Msg) (tea.Model, tea.Cmd
 					n := strings.ReplaceAll(le.logStationCall, "/", "-")
 					name = strings.ToLower(strings.ReplaceAll(n, " ", "_"))
 				}
+				// Append contest info when a contest filter is active.
+				if le.contestID != "" && le.contestAdifID != "" {
+					cid := sanitizeFilename(le.contestAdifID)
+					name += "_" + strings.ToLower(cid)
+					if le.contestDate != "" {
+						name += "_" + strings.ReplaceAll(le.contestDate, "-", "")
+					}
+				}
 				path := filepath.Join(dir, fmt.Sprintf("%s_%s.adi", ts, name))
 				le.exportPath = path
 				// Start async export with progress dialog.
@@ -918,6 +926,17 @@ func countADIFRecords(path string) int {
 	}
 
 	return count
+}
+
+// sanitizeFilename replaces characters that are unsafe in filenames across
+// Windows, macOS, and Linux. Returns a string safe for use in file paths.
+func sanitizeFilename(s string) string {
+	repl := strings.NewReplacer(
+		"/", "-", "\\", "-", ":", "-", "*", "-", "?", "-",
+		"\"", "-", "<", "-", ">", "-", "|", "-",
+		" ", "_",
+	)
+	return repl.Replace(s)
 }
 
 // runExport performs ADIF export to a local file with progress reporting.
