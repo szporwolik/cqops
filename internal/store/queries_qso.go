@@ -218,7 +218,9 @@ func ListQSOsPageWithCount(db *sql.DB, limit, offset int, contestID string) ([]q
 
 // ListQSOsPage returns a page of QSOs ordered by QSO date/time descending.
 // If contestID is non-empty, only QSOs matching that contest are returned.
-func ListQSOsPage(db *sql.DB, limit, offset int, contestID string) ([]qso.QSO, error) {
+// When orderAsc is true, the order is chronological (ASC) — used for contest
+// ADIF export so the output maps directly to Cabrillo.
+func ListQSOsPage(db *sql.DB, limit, offset int, contestID string, orderAsc bool) ([]qso.QSO, error) {
 	query := `SELECT id, call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,
 		rst_sent, rst_rcvd, gridsquare, name, qth, country, comment, notes, tx_pwr,
 		distance, bearing,
@@ -237,7 +239,13 @@ func ListQSOsPage(db *sql.DB, limit, offset int, contestID string) ([]qso.QSO, e
 		args = append(args, contestID)
 	}
 	query += `
-		ORDER BY qso_date DESC, time_on DESC, id DESC
+		ORDER BY qso_date `
+	if orderAsc {
+		query += `ASC, time_on ASC, id ASC`
+	} else {
+		query += `DESC, time_on DESC, id DESC`
+	}
+	query += `
 		LIMIT ? OFFSET ?`
 	args = append(args, limit, offset)
 	rows, err := db.Query(query, args...)
@@ -528,7 +536,7 @@ func ListAllQSOs(db *sql.DB) ([]qso.QSO, error) {
 	var all []qso.QSO
 	offset := 0
 	for {
-		page, err := ListQSOsPage(db, pageSize, offset, "")
+		page, err := ListQSOsPage(db, pageSize, offset, "", false)
 		if err != nil {
 			return nil, err
 		}
