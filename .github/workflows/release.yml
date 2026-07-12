@@ -378,7 +378,7 @@ jobs:
           echo "Pruning old Cloudsmith packages, keeping only $VERSION..."
           REPO_PATH="${NAMESPACE}/${REPO}"
           cloudsmith list pkgs "$REPO_PATH" -q cqops --output-format json 2>/dev/null | \
-            python3 -c "import json,sys,os; d=json.load(sys.stdin); c=os.environ['VERSION']; [print(p['slug']) for p in d.get('data',[]) if p.get('version','')!=c]" | \
+            python3 -c "import json,sys,os; d=json.load(sys.stdin); c=os.environ['VERSION']; [print(p['slug']) for p in d.get('data',[]) if not (p.get('version','') or '').startswith(c)]" | \
             while read slug; do
               [ -z "$slug" ] && continue
               echo "Deleting old package: $slug"
@@ -495,6 +495,8 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+
       - name: Prune old GitHub releases (keep latest 3)
         env:
           GH_TOKEN: ${{ github.token }}
