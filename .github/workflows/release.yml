@@ -400,6 +400,18 @@ for p in data.get('data', []):
           done
           echo "Cleanup complete."
 
+      - name: Prune old GitHub releases (keep last 3)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          OLD=$(gh release list --limit 20 --json tagName,isLatest --jq '.[] | select(.isLatest == false) | .tagName' | tail -n +4 || echo "")
+          for tag in $OLD; do
+            echo "Deleting old release: $tag"
+            gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || echo "  (already gone)"
+          done
+          echo "Prune complete."
+
       - name: Write summary
         run: |
           NAMESPACE="${{ vars.CLOUDSMITH_NAMESPACE }}"
