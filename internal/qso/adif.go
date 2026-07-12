@@ -216,6 +216,7 @@ func (q *QSO) toADIFWithStation(stationCall string) string {
 	}
 	set(adifield.CQZ, q.CQZone)
 	set(adifield.ITUZ, q.ITUZone)
+	set(adifield.DXCC, q.DXCC)
 
 	// Contest exchange fields — use only standard ADIF tags.
 	// STX / SRX: integer sequence numbers.
@@ -318,6 +319,7 @@ func ParseADIFRecord(r adif.Record, source string) *QSO {
 	qs.Bearing = getFloat(adifield.ANT_AZ)
 	qs.CQZone = get(adifield.CQZ)
 	qs.ITUZone = get(adifield.ITUZ)
+	qs.DXCC = get(adifield.DXCC)
 	// Contest exchange fields.
 	qs.ExchSent = get(adifield.Field("EXCH_SENT"))
 	qs.ExchRcvd = get(adifield.Field("EXCH_RCVD"))

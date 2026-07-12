@@ -114,6 +114,12 @@ func (m *Model) saveQSO() tea.Cmd {
 			qs.ITUZone = fmt.Sprintf("%d", p.ITUZone)
 		}
 	}
+	// Enrich DXCC entity number from QRZ lookup when available.
+	if m.lookup.partnerData != nil && strings.EqualFold(m.lookup.partnerData.Callsign, qs.Call) {
+		if m.lookup.partnerData.DXCC != "" {
+			qs.DXCC = m.lookup.partnerData.DXCC
+		}
+	}
 	qso.ApplyStationDefaults(qs, station)
 	applog.Debug("QSO save: operator", "active", m.App.Logbook.ActiveOperator, "callsign", station.Operator)
 	// Attach active contest to QSO.

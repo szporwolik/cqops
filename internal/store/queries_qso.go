@@ -19,11 +19,12 @@ const qsoCols = `call, qso_date, time_on, time_off, band, freq, freq_rx, mode, s
 		cq_zone, itu_zone,
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
-		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id`
+		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
+		dxcc`
 
-// placeholders51 is a pre-computed string of 51 comma-separated "?" markers,
+// placeholders52 is a pre-computed string of 52 comma-separated "?" markers,
 // used by InsertQSO to avoid a per-insert []string allocation.
-const placeholders51 = "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?"
+const placeholders52 = "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?"
 
 // InsertQSO persists a QSO and sets its ID on success. Retries on SQLITE_BUSY.
 func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
@@ -41,7 +42,7 @@ func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 		var res sql.Result
 		res, err = db.Exec(
 			`INSERT INTO qsos (`+qsoCols+`, base_call, created_at, updated_at)
-			VALUES (`+placeholders51+`, ?, ?, ?)`,
+			VALUES (`+placeholders52+`, ?, ?, ?)`,
 			q.Call, q.QSODate, q.TimeOn, q.TimeOff,
 			q.Band, q.Freq, q.FreqRx, q.Mode, q.Submode,
 			q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
@@ -49,7 +50,7 @@ func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 			q.SOTARef, q.POTARef, q.WWFFRef, q.IOTA, q.SIG, q.SIGInfo,
 			q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
 			q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
-			q.CQZone, q.ITUZone, q.MyCQZone, q.MyITUZone, q.MyDXCC, q.MySIG, q.MySIGInfo, q.WavelogUploaded, q.ContestID, q.ExchSent, q.ExchRcvd, q.STX, q.SRX, q.STXString, q.SRXString, q.ContestADIFID,
+			q.CQZone, q.ITUZone, q.MyCQZone, q.MyITUZone, q.MyDXCC, q.MySIG, q.MySIGInfo, q.WavelogUploaded, q.ContestID, q.ExchSent, q.ExchRcvd, q.STX, q.SRX, q.STXString, q.SRXString, q.ContestADIFID, q.DXCC,
 			qso.DeriveBaseCall(q.Call),
 			q.CreatedAt.Format(time.RFC3339), q.UpdatedAt.Format(time.RFC3339),
 		)
@@ -158,7 +159,7 @@ func ListQSOsPageWithCount(db *sql.DB, limit, offset int, contestID string) ([]q
 		sota_ref, pota_ref, wwff_ref, iota, sig, sig_info,
 		my_sota_ref, my_pota_ref, my_wwff_ref,
 		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
-		cq_zone, itu_zone,
+		cq_zone, itu_zone, dxcc,
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
 		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
@@ -193,7 +194,7 @@ func ListQSOsPageWithCount(db *sql.DB, limit, offset int, contestID string) ([]q
 			&q.SOTARef, &q.POTARef, &q.WWFFRef, &q.IOTA, &q.SIG, &q.SIGInfo,
 			&q.MySOTARef, &q.MyPOTARef, &q.MyWWFFRef,
 			&q.StationCallsign, &q.Operator, &q.MyGridSquare, &q.MyRig, &q.MyAntenna, &q.Source,
-			&q.CQZone, &q.ITUZone,
+			&q.CQZone, &q.ITUZone, &q.DXCC,
 			&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
 			&q.MySIG, &q.MySIGInfo,
 			&q.WavelogUploaded, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
@@ -224,7 +225,7 @@ func ListQSOsPage(db *sql.DB, limit, offset int, contestID string) ([]qso.QSO, e
 		sota_ref, pota_ref, wwff_ref, iota, sig, sig_info,
 		my_sota_ref, my_pota_ref, my_wwff_ref,
 		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
-		cq_zone, itu_zone,
+		cq_zone, itu_zone, dxcc,
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
 		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
@@ -257,7 +258,7 @@ func ListQSOsPage(db *sql.DB, limit, offset int, contestID string) ([]qso.QSO, e
 			&q.SOTARef, &q.POTARef, &q.WWFFRef, &q.IOTA, &q.SIG, &q.SIGInfo,
 			&q.MySOTARef, &q.MyPOTARef, &q.MyWWFFRef,
 			&q.StationCallsign, &q.Operator, &q.MyGridSquare, &q.MyRig, &q.MyAntenna, &q.Source,
-			&q.CQZone, &q.ITUZone,
+			&q.CQZone, &q.ITUZone, &q.DXCC,
 			&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
 			&q.MySIG, &q.MySIGInfo,
 			&q.WavelogUploaded, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
@@ -349,7 +350,7 @@ func GetQSOByID(db *sql.DB, id int64) (*qso.QSO, error) {
 		sota_ref, pota_ref, wwff_ref, iota, sig, sig_info,
 		my_sota_ref, my_pota_ref, my_wwff_ref,
 		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
-		cq_zone, itu_zone,
+		cq_zone, itu_zone, dxcc,
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
 		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
@@ -363,7 +364,7 @@ func GetQSOByID(db *sql.DB, id int64) (*qso.QSO, error) {
 		&q.SOTARef, &q.POTARef, &q.WWFFRef, &q.IOTA, &q.SIG, &q.SIGInfo,
 		&q.MySOTARef, &q.MyPOTARef, &q.MyWWFFRef,
 		&q.StationCallsign, &q.Operator, &q.MyGridSquare, &q.MyRig, &q.MyAntenna, &q.Source,
-		&q.CQZone, &q.ITUZone,
+		&q.CQZone, &q.ITUZone, &q.DXCC,
 		&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
 		&q.MySIG, &q.MySIGInfo,
 		&q.WavelogUploaded, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,

@@ -279,11 +279,11 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 			ti.CharLimit = 10
 			ti.Placeholder = "e.g. KO00ca"
 		case fieldCountry:
-			ti.CharLimit = 20
+			ti.CharLimit = 40
 		case fieldName:
-			ti.CharLimit = 30
+			ti.CharLimit = 60
 		case fieldQTH:
-			ti.CharLimit = 30
+			ti.CharLimit = 60
 		case fieldTXPower:
 			ti.CharLimit = 8
 		case fieldComment:

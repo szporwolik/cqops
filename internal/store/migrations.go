@@ -66,6 +66,7 @@ var migrations = []string{
 		my_cq_zone TEXT DEFAULT '',
 		my_itu_zone TEXT DEFAULT '',
 		my_dxcc TEXT DEFAULT '',
+		dxcc TEXT DEFAULT '',
 		my_sig TEXT DEFAULT '',
 		my_sig_info TEXT DEFAULT '',
 
@@ -98,6 +99,9 @@ var migrations = []string{
 	// - date+time+base_call for filtered recent QSO scanning
 	`CREATE INDEX IF NOT EXISTS idx_qsos_country ON qsos(country)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_country_base ON qsos(country, base_call)`,
+
+	// dxcc column added in v0.8.14 — remote station DXCC entity number (from QRZ).
+	`ALTER TABLE qsos ADD COLUMN dxcc TEXT DEFAULT ''`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_date_time_call ON qsos(qso_date, time_on, base_call)`,
 
 	// Dashboard stats operator count index (v0.9.x):
