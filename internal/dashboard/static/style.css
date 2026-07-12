@@ -110,10 +110,11 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #wx-row .wx-rain{font-size:0.7rem;color:var(--blue)}
 /* Progressive hide: drop 2-3 slots per step so the row always fits without overflow.
    Sun-icon tracks wx-icon size. */
-@media(max-width:1080px){#wx-row{gap:5px 10px}#wx-row .wx-slot:nth-child(n+8){display:none}#hd-sun .sun-icon{font-size:1.08rem}}
-@media(max-width:800px){#wx-row{gap:4px 7px;font-size:0.74rem}#wx-row .wx-slot:nth-child(n+5){display:none}#wx-row .wx-rain{display:none}#hd-sun .sun-icon{font-size:1.02rem}}
-@media(max-width:600px){#wx-row{gap:4px 6px;font-size:0.7rem}#wx-row .wx-slot:nth-child(n+3){display:none}#wx-row .wx-wind{display:none}#hd-sun .sun-icon{font-size:0.98rem}}
-@media(max-width:420px){#wx-row{gap:3px 5px;font-size:0.65rem}#wx-row .wx-slot:nth-child(n+2){display:none}#wx-row .wx-label{display:none}#wx-row .wx-icon{font-size:1rem}#hd-sun .sun-icon{font-size:0.9rem}}
+@media(max-width:1300px){#wx-row{gap:5px 10px}#wx-row .wx-slot:nth-child(n+8){display:none}#hd-sun .sun-icon{font-size:1.08rem}}
+@media(max-width:1100px){#wx-row{gap:4px 8px}#wx-row .wx-slot:nth-child(n+6){display:none}#hd-sun .sun-icon{font-size:1.05rem}}
+@media(max-width:900px){#wx-row{gap:4px 7px;font-size:0.74rem}#wx-row .wx-slot:nth-child(n+5){display:none}#wx-row .wx-rain{display:none}#hd-sun .sun-icon{font-size:1.02rem}}
+@media(max-width:700px){#wx-row{gap:4px 6px;font-size:0.7rem}#wx-row .wx-slot:nth-child(n+4){display:none}#hd-sun .sun-icon{font-size:0.98rem}}
+@media(max-width:500px){#wx-row{gap:3px 5px;font-size:0.65rem}#wx-row .wx-slot:nth-child(n+3){display:none}#wx-row .wx-label{display:none}#wx-row .wx-icon{font-size:1rem}#hd-sun .sun-icon{font-size:0.9rem}}
 /* Weather icon animations — subtle, no perf impact. */
 #wx-row .wx-icon{will-change:transform,opacity}
 .wx-anim-sun{animation:wx-sun 3s ease-in-out infinite}
