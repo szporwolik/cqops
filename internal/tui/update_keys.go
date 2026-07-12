@@ -470,9 +470,9 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 // handleRotorKey processes rotor control key bindings when the rotor is
 // connected and the QSO screen is active.
 //
-//	Ctrl+Left/Right → adjust azimuth ±5°
-//	Ctrl+Up/Down    → adjust elevation ±5°
-//	Ctrl+R          → point rotor to calculated path bearing (toast)
+//	Alt+,/.       → adjust azimuth ±5°
+//	Alt+;/'       → adjust elevation ±5°
+//	Alt+\         → point rotor to calculated path bearing
 func (m *Model) handleRotorKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	const step = 5.0
 
@@ -498,17 +498,17 @@ func (m *Model) handleRotorKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		applog.Debug("rotor: right", "az", az, "key", msg.String())
 		return m.rotorSetPositionCmd(az, baseEl), true
 
-	case "ctrl+up", "alt+;":
+	case "alt+;":
 		el := clampEl(baseEl + step)
 		applog.Debug("rotor: up", "el", el, "key", msg.String())
 		return m.rotorSetPositionCmd(baseAz, el), true
 
-	case "ctrl+down", "alt+'":
+	case "alt+'":
 		el := clampEl(baseEl - step)
 		applog.Debug("rotor: down", "el", el, "key", msg.String())
 		return m.rotorSetPositionCmd(baseAz, el), true
 
-	case "ctrl+a", "alt+\\":
+	case "alt+\\":
 		ownGrid := formatLocator(m.effectiveGrid())
 		partnerGrid := formatLocator(m.fields[fieldGrid].Value())
 		bearing := gridBearingDeg(ownGrid, partnerGrid)

@@ -120,16 +120,16 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("Alt+.", "Az +5°"),
 		),
 		RotorUp: key.NewBinding(
-			key.WithKeys("ctrl+up", "alt+;"),
-			key.WithHelp("Ctrl+↑/Alt+;", "El +5°"),
+			key.WithKeys("alt+;"),
+			key.WithHelp("Alt+;", "El +5°"),
 		),
 		RotorDown: key.NewBinding(
-			key.WithKeys("ctrl+down", "alt+'"),
-			key.WithHelp("Ctrl+↓/Alt+'", "El −5°"),
+			key.WithKeys("alt+'"),
+			key.WithHelp("Alt+'", "El −5°"),
 		),
 		RotorBearing: key.NewBinding(
-			key.WithKeys("ctrl+a", "alt+\\"),
-			key.WithHelp("Ctrl+A/Alt+\\", "→ Path"),
+			key.WithKeys("alt+\\"),
+			key.WithHelp("Alt+\\", "→ Path"),
 		),
 		RotorStop: key.NewBinding(
 			key.WithKeys("ctrl+f1", "alt+/"),
@@ -352,7 +352,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
 				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit")),
-				key.NewBinding(key.WithKeys("space"), key.WithHelp("Spc", "Activate")),
+				key.NewBinding(key.WithKeys("space"), key.WithHelp("Space", "Activate")),
 				key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Create")),
 				key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
@@ -371,7 +371,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
 				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit")),
-				key.NewBinding(key.WithKeys("space"), key.WithHelp("Spc", "Activate")),
+				key.NewBinding(key.WithKeys("space"), key.WithHelp("Space", "Activate")),
 				key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Create")),
 				key.NewBinding(key.WithKeys("ctrl+d"), key.WithHelp("Ctrl+D", "Duplicate")),
 				key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
@@ -392,7 +392,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
 				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit")),
-				key.NewBinding(key.WithKeys("space"), key.WithHelp("Spc", "Activate")),
+				key.NewBinding(key.WithKeys("space"), key.WithHelp("Space", "Activate")),
 				key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Create")),
 				key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
@@ -432,13 +432,13 @@ func (m *Model) ActiveBindings() []key.Binding {
 	if m.screen == screenDXC {
 		bindings = append(bindings,
 			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
-			key.NewBinding(key.WithKeys(`\`), key.WithHelp("\\", "Continent")),
+			key.NewBinding(key.WithKeys(`\`), key.WithHelp("\\", "Sp Cont")),
 			key.NewBinding(key.WithKeys("insert", "delete"), key.WithHelp("Ins/Del", "Mode")),
 			key.NewBinding(key.WithKeys("home", "end"), key.WithHelp("Home/End", "Band")),
 			key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("PgUp/Dn", "Time")),
 			key.NewBinding(key.WithKeys("backspace"), key.WithHelp("Bksp", "Clear")),
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "QSO+Tune")),
-			key.NewBinding(key.WithKeys(" "), key.WithHelp("Spc", "Tune")),
+			key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Tune")),
 		)
 	}
 	if m.screen == screenRef {
