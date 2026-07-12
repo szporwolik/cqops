@@ -101,7 +101,7 @@ echo "  Binary : $INSTALL_DIR/cqops"
 cat > "$DESKTOP_DIR/cqops.desktop" << EOF
 [Desktop Entry]
 Name=CQOps
-Comment=Amateur Radio Logging
+Comment=Fast, offline-first ham radio logger for the terminal
 Exec=$INSTALL_DIR/cqops
 Icon=cqops
 Terminal=true

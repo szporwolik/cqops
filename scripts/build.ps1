@@ -5,6 +5,20 @@ $BUILD_DATE = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 $BUILD_DIR = "build"
 New-Item -ItemType Directory -Force -Path $BUILD_DIR | Out-Null
 
+# Patch winres.json with current version before Windows builds
+$winres = Get-Content winres\winres.json -Raw | ConvertFrom-Json
+$ver4 = "$VERSION.0"
+$winres.RT_MANIFEST.'#1'.'0409'.identity.version = $ver4
+$winres.RT_VERSION.'#1'.'0000'.fixed.file_version = $ver4
+$winres.RT_VERSION.'#1'.'0000'.fixed.product_version = $ver4
+$winres.RT_VERSION.'#1'.'0000'.info.'0409'.FileVersion = $VERSION
+$winres.RT_VERSION.'#1'.'0000'.info.'0409'.ProductVersion = $VERSION
+$winres | ConvertTo-Json -Depth 10 | Set-Content winres\winres.json -Encoding UTF8
+# Regenerate .syso if go-winres is available
+if (Get-Command go-winres -ErrorAction SilentlyContinue) {
+    Push-Location winres; go-winres make; Pop-Location
+}
+
 $LDFLAGS = "-s -w -X github.com/szporwolik/cqops/internal/version.Version=$VERSION -X github.com/szporwolik/cqops/internal/version.BuildDate=$BUILD_DATE"
 
 $env:CGO_ENABLED = "0"
