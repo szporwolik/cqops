@@ -20,6 +20,11 @@ CQOps always saves QSOs locally first. Internet-based integrations are optional.
 7. [QSO Logging](#qso-logging)
 8. [Logbook Editor and ADIF](#logbook-editor-and-adif)
 9. [Contests](#contests)
+    - [Setting Up a Contest](#setting-up-a-contest)
+    - [Bottom Status Bar](#bottom-status-bar)
+    - [Contest Statistics Panel](#contest-statistics-panel)
+    - [Contest ADIF Export](#contest-adif-export)
+    - [Contest Mode Behavior](#contest-mode-behavior)
 10. [Favorites, References, and Band Plans](#favorites-references-and-band-plans)
 11. [Integrations](#integrations)
 12. [CQOps Live Dashboard](#cqops-live-dashboard)
@@ -43,7 +48,7 @@ CQOps is built around fast QSO entry, local-first logging, and practical field o
 - **Multiple logbooks** — useful for personal, portable, contest, and club logs.
 - **Multiple operators** — useful for hot-seat and shared club station workflows.
 - **Multiple rigs** — each rig preset can keep its own backend and WSJT-X settings.
-- **Optional integrations** — QRZ.com, Wavelog, DX Cluster, PSK Reporter, APRS, rig control, rotor control, solar data, and the CQOps Live browser dashboard.
+- **Optional integrations** — QRZ.com, Wavelog, DX Cluster, PSK Reporter, GPS, APRS, rig control, rotor control, solar data, and the CQOps Live browser dashboard.
 
 Local logging does not require internet access. Network features are skipped in `--offline` mode.
 
@@ -60,6 +65,14 @@ CQOps is a good fit for:
 
 CQOps is not intended to replace every feature of a full desktop logger or a web-based logbook platform. It focuses on fast terminal logging, field operation, offline use, and shared-station workflows.
 
+### Club and shared-station use
+
+CQOps was built with ham club environments in mind. The active operator is always visible in the status bar — **one glance** tells you who is currently logged in. Switching operators takes a single keystroke (`Ctrl+O`) and takes effect immediately, with the operator's callsign and name written into every subsequent QSO. No log-out, no password prompt, no interruption.
+
+Logbooks, rig presets, and contests are cycled the same way — `Ctrl+L`, `Ctrl+R`, `Ctrl+C`. A club station with rotating operators, multiple rigs, and several active contests can switch context in under a second without touching a mouse.
+
+For field days and public events, the **CQOps Live dashboard** projects a real-time map, QSO feed, and stats onto a big screen — visitors and club members can watch the station work without crowding the operator's terminal. Just enable http server integration and use any device with web browser to access it.
+
 ---
 
 ## Download and Installation
@@ -75,7 +88,6 @@ Browse all releases:
 | Installer | [cqops-setup.exe](https://github.com/szporwolik/cqops/releases/latest/download/cqops-setup.exe) | Recommended for most users. Adds CQOps to the Start Menu and PATH. |
 | Portable ZIP | [cqops-windows-portable.zip](https://github.com/szporwolik/cqops/releases/latest/download/cqops-windows-portable.zip) | Extract and run without installing. |
 
-Use **Windows Terminal** rather than the legacy console.
 
 ### Linux — Debian / Ubuntu
 
@@ -193,7 +205,7 @@ You can change wizard settings later with **F9**.
 
 5. Fill the remaining fields. If the active rig is connected through flrig or Hamlib, CQOps can fill frequency, band, mode, and submode automatically.
 
-6. Press **Enter** or **Ctrl+S** to save.
+6. Press **Enter** to save.
 
 7. If a **DUPE!** warning appears, press **Enter** again to save anyway, or **Esc** to cancel.
 
@@ -400,7 +412,7 @@ The QSO form can also show badges such as:
 | Key | Action |
 |---|---|
 | Enter | Save QSO |
-| Ctrl+S | Save QSO from any field |
+| Ctrl+S | Send DX spot from filled form |
 | Esc | Cancel duplicate confirmation |
 | Enter on DUPE confirmation | Save duplicate anyway |
 
@@ -457,7 +469,9 @@ The QSO form has separate **Mode** and **Submode** fields. Both can be cycled wi
 
 ## Contests
 
-Contests add exchange fields and serial handling to the QSO form.
+CQOps includes a lightweight contest-logging panel designed for **casual contest participation** — it is not a replacement for dedicated contest loggers like N1MM, Win-Test, or TR4W. If you are operating a serious multi-op, multi-radio, or assisted-category contest entry, use a purpose-built contest logger. CQOps is there when you want to hand out a few points, track your rate for fun, or log a handful of contest QSOs during a SOTA/POTA activation without leaving your everyday logger.
+
+### Setting Up a Contest
 
 Create or configure a contest in the Logbook Editor with **Ins**.
 
@@ -468,7 +482,7 @@ Contest configuration includes:
 - ADIF contest ID,
 - exchange templates.
 
-### Template markers
+#### Template markers
 
 | Marker | Replaced with |
 |---|---|
@@ -478,14 +492,77 @@ Contest configuration includes:
 | `@grid` | Your grid locator |
 | `@name` | Operator name from the operator profile |
 
-Press **Ctrl+C** to cycle the active contest.
+Press **Ctrl+C** to cycle the active contest, or select from the Contest menu (**F7**). The exchange fields appear automatically in the QSO form and serials auto-increment.
+
+### Bottom Status Bar
+
+When a contest is active, the bottom bar shows a live summary line:
+
+```
+ IARU-HF · IARU HF   45 QSOs   Started 16:13   Last 14:04 ago   Next #45   On 2:41
+```
+
+| Field | Meaning |
+|-------|---------|
+| `IARU-HF` | Contest ADIF ID (machine-readable contest identifier) |
+| `· IARU HF` | Contest display name — shown when different from the ID |
+| `45 QSOs` | Total QSOs logged in this contest session |
+| `Started 16:13` | Time of the first QSO in the contest today |
+| `Last 14:04 ago` | Time since the most recent contest QSO |
+| `Next #45` | Serial number that will be sent for the next QSO |
+| `On 2:41` | Total on-air time — sum of inter-QSO gaps shorter than 30 minutes |
+
+The "Started" field hides on narrow terminals (below 120 columns). The contest name and on-air time hide below 100 columns.
+
+### Contest Statistics Panel
+
+When a contest is active and your terminal is wide enough, a compact statistics panel appears to the right of the QSO form with a yellow border:
+
+```
+╭──────────────────────────────────╮
+│  Rate     2/h   --/h             │
+│  Count 60m   0  hr   0           │
+│  Peak  1m120 10m 54 60m 29       │
+│  Avg      8/h  Sess 5:36         │
+│  QSO/min  last 60m  max 1        │
+│                                  │
+│                                  │
+│                                  │
+│                                  │
+│  -60m                       now  │
+╰──────────────────────────────────╯
+```
+
+| Row | Field | Meaning |
+|-----|-------|---------|
+| **Rate** | `2/h` | Rate over the last **10 QSOs** — short-term burst speed |
+| | `--/h` | Rate over the last **100 QSOs** — shows `--` until 100 QSOs are logged |
+| **Count** | `60m 0` | QSOs logged in the last 60 minutes |
+| | `hr 0` | QSOs logged in the current clock hour (since `:00`) |
+| **Peak** | `1m120` | Best 1-minute rate: 120/h = 2 QSOs in that minute |
+| | `10m 54` | Best 10-minute sliding window: 54/h average |
+| | `60m 29` | Best 60-minute sliding window: 29/h average |
+| **Avg** | `8/h` | Session average — total QSOs ÷ hours since the first QSO |
+| | `Sess 5:36` | Total session duration from first to last QSO (H:MM or minutes only) |
+| **Chart** | `max 1` | Busiest minute had 1 QSO. Bars show QSOs per minute |
+| | `-60m…now` | Left edge = 60 minutes ago, right edge = right now |
+
+The chart uses Unicode block characters (`█`) scaled to 4 rows of vertical bars. Peak rates drop the `/h` suffix since "Peak" already implies "per hour". All durations drop seconds — per-minute refresh makes them noise.
+
+### Contest ADIF Export
+
+To submit your contest log, open the **Logbook Editor** (`Ctrl+E`) while a contest is active. When a contest filter is applied, the ADIF export dialog offers to export **only the QSOs belonging to the active contest**. This produces a standards-compliant ADIF 3.1.7 file with contest exchange fields, serial numbers, and the contest ADIF ID preserved — ready for upload to the contest organiser's robot or log-checking system.
+
+### Contest Mode Behavior
 
 When a contest is active:
 
 - the QSO form shows exchange fields,
 - serial numbers auto-increment,
 - Recent QSOs can filter to contest QSOs,
-- ADIF export preserves `CONTEST_ID`.
+- ADIF export preserves `CONTEST_ID`,
+- the QSO form, contest panel, and solar panel gain a yellow border for visual distinction,
+- DXC spots are checked against all contest QSOs (not just today's) for dupe marking.
 
 ---
 
@@ -493,12 +570,12 @@ When a contest is active:
 
 ### Favorites
 
-Favorites store frequency, mode, and band presets in 10 slots.
+Favorites store frequency, mode, and band presets in 3 slots — enough for your most-used calling frequencies. The shortcuts use `Alt` to avoid conflicts with standard terminal editing keys and work reliably across all terminal types.
 
 | Shortcut | Action |
 |---|---|
-| Alt+0–9 | Recall a favorite |
-| Alt+Shift+0–9 | Save current frequency, mode, and band to a favorite |
+| Alt+Ins / Alt+Home / Alt+PgUp | Recall favorite from slot 1, 2, or 3 |
+| Alt+Shift+Ins / Alt+Shift+Home / Alt+Shift+PgUp | Save current frequency, mode, and band to slot 1, 2, or 3 |
 
 Favorites are stored in the configuration and are shared across logbooks.
 
@@ -507,8 +584,8 @@ Example:
 1. Enter `145.55`.
 2. Set mode to `FM`.
 3. Set band to `2m`.
-4. Press **Alt+Shift+1**.
-5. Later, press **Alt+1** to recall the preset.
+4. Press **Alt+Shift+Ins** to save to slot 1.
+5. Later, press **Alt+Ins** to recall the preset.
 
 ### REF Lookup
 
@@ -529,11 +606,12 @@ Open the Band Plan Browser with **F7**.
 
 It provides quick access to:
 
-- amateur bands,
+- Amateur bands,
 - VHF/UHF ranges,
 - CB,
 - PMR446,
-- broadcast presets.
+- Broadcast presets,
+- Portable — common portable/field operation frequencies (SOTA, POTA, calling channels).
 
 A selected frequency can be used to tune the active rig. Band plan data can also be exported as Markdown.
 
@@ -612,9 +690,9 @@ Depending on radio and backend support, CQOps can query:
 
 CQOps handles missing VFO-name support gracefully where possible.
 
-### Hamlib Rotor / rotctld
+### Hamlib Rotator / rotctld
 
-> ⚠️ **Experimental.** Rotor control is experimental. Always verify your
+> ⚠️ **Experimental.** Rotator control is experimental. Always verify your
 > antenna's physical limits before operating. Be ready to stop movement
 > immediately with **Alt+/** . Use with caution — incorrect configuration
 > can damage your rotor or antenna.
@@ -692,7 +770,7 @@ dxspots.com:7300
 Filters include:
 
 - band,
-- continent,
+- spotter continent,
 - mode,
 - age/time.
 
@@ -702,9 +780,14 @@ Filters include:
 | Space | Tune rig and stay on DX Cluster |
 | Backspace | Clear filters |
 
+When the DX Cluster is connected, the QSO form gains two extra capabilities:
+
+- **Send a spot** — with the form filled, press **Ctrl+S** to open the spot dialog and send a DX spot to the cluster.
+- **Nearest spots** — when a frequency is tuned, up to three nearby spots appear directly on the QSO form so you can see what is on the band without leaving the logging screen. Press **Ctrl+P** to fill the callsign from the closest spot.
+
 ### PSK Reporter
 
-PSK Reporter integration requires internet access.
+PSK Reporter integration requires internet access. It is an excellent tool for quickly checking real-world propagation — see who is hearing your signal (or who you can hear) on any band, right now.
 
 It provides:
 
@@ -762,8 +845,6 @@ filter are set under **F9 → Logbooks → [active logbook] → APRS**.
 
 #### KISS (serial)
 
-> ⚠️ **Experimental.** KISS TNC support is experimental. Test thoroughly
-> before relying on it for operation.
 
 Connects directly to a hardware KISS TNC over a serial port. No internet
 connection is required — APRS frames are sent and received through your
@@ -783,8 +864,6 @@ The **Test** button opens the serial port to verify the TNC is reachable.
 
 #### KISS Server (TCP)
 
-> ⚠️ **Experimental.** KISS Server support is experimental. Test thoroughly
-> before relying on it for operation.
 
 Connects to a KISS TNC accessible over TCP — for example, a
 [Dire Wolf](https://github.com/wb2osz/direwolf) instance running on the
@@ -874,6 +953,8 @@ Default settings:
 
 The server starts immediately after saving.
 
+> **Address binding:** The default `0.0.0.0` makes the dashboard accessible from any device on your local network — useful for field day displays, club station screens, or checking the station from another room. Set the address to `127.0.0.1` to restrict access to the local machine only.
+
 ### Display modes
 
 CQOps Live has two display modes.
@@ -884,9 +965,7 @@ Shown when no active callsign is being worked.
 
 It displays:
 
-- live Leaflet map,
-- today's QSO markers,
-- great-circle paths,
+- **live maps** — today's QSO markers with great-circle paths from your station grid to each contact and local aprs map to display APRS stations around
 - recent QSOs table,
 - station information,
 - statistics,
@@ -918,8 +997,6 @@ The info box above the local map cycles every 5 seconds through modules:
 - latest DX Cluster spot,
 - PSK Reporter per-band report counts.
 
-Band conditions always render full-width.
-
 ### Weather row
 
 The weather row shows current Open-Meteo conditions for the station grid locator:
@@ -933,12 +1010,11 @@ Weather data is fetched browser-side and degrades gracefully when offline.
 
 ### Local map
 
-The right-side local map can show:
+The right-side local map is dedicated to **APRS neighbourhood monitoring** — see who is on APRS around your station. It can show:
 
-- APRS stations,
-- standard APRS symbols,
-- range circle,
-- callsign popups,
+- nearby APRS stations with standard APRS symbols,
+- callsign popups on hover/click,
+- configurable range circle,
 - optional day/night terminator overlay,
 - optional RainViewer weather radar overlay.
 
@@ -984,18 +1060,17 @@ Secrets are encrypted with a machine-tied key. When moving configuration to anot
 
 ### Configuration menus
 
+Press **F9** to open the main menu, then select:
+
 | Menu | Configures |
 |---|---|
-| Station | Callsign, grid, CQ/ITU zone, IARU region, references |
-| Rig | Rig presets, model, antenna, power, backend, rotor, WSJT-X |
-| Wavelog | URL, API key, station profile ID |
-| QRZ | Username and password |
-| DX Cluster | Host, port, login |
-| Operators | Operator profiles |
-| Logbooks | Station, Wavelog, contest, operator, and APRS settings per logbook |
-| Integrations | APRS service type (APRS-IS, KISS, KISS Server), GPS, HTTP server, DXC, QRZ |
-| Notifications | QSO saved alerts, Wavelog status, dupe beep, error sounds |
-| General | Timezone, distance units, map, debug mode |
+| General | Units, timezone, partner map/picture, solar panel, CTY.DAT/SCP/REF data sources, Kitty graphics, debug mode |
+| Logbooks | Station callsign, grid, references, CQ/ITU zones, IARU region, GPS grid; per-logbook Wavelog (URL, API key, station profile); per-logbook APRS (callsign, symbol, beacon, range) |
+| Operators | Operator callsign and name profiles for multi-operator stations |
+| Rigs | Rig presets: model, antenna, power, backend (None/flrig/Hamlib), rotor, WSJT-X UDP |
+| Contests | Contest profiles: name, date, ADIF contest ID, exchange templates, starting serial number |
+| Integration | DX Cluster (host, port, login), QRZ.com (username, password), HTTP server for dashboard (address, port, branding), GPS service (serial/GPSD, grid precision) |
+| Notifications | QSO saved alerts, Wavelog upload status, dupe beep, error sounds |
 
 ### Multi-logbook
 
@@ -1083,20 +1158,20 @@ If `secrets.enc` is corrupted, CQOps starts with a warning and asks you to re-en
 | Shift+Tab | Previous field |
 | ↑ / ↓ | Move within column |
 | Enter | Save QSO, with duplicate confirmation if needed |
-| Ctrl+S | Save QSO from any field |
 | Del | Clear all form fields |
 | Ins | Lookup: QRZ, Wavelog, DXCC, and duplicate check |
 | PgUp / PgDn | Cycle band, mode, or submode |
-| Ctrl+D | Open spot dialog |
-| Ctrl+T | Toggle Keep Comment |
+| Ctrl+S | Send DX spot from filled form |
+| Ctrl+P | Fill call from nearest DXC spot |
+| Ctrl+C | Cycle active contest |
 | Alt+, | Adjust rotor azimuth −5° |
 | Alt+. | Adjust rotor azimuth +5° |
 | Alt+; | Adjust rotor elevation +5° |
 | Alt+' | Adjust rotor elevation −5° |
 | Alt+\ | Point rotor to bearing from own grid to partner grid |
 | Alt+/ | Stop rotor |
-| Alt+0–9 | Recall favorite |
-| Alt+Shift+0–9 | Save current frequency, mode, and band as favorite |
+| Alt+Ins / Alt+Home / Alt+PgUp | Recall favorite (slot 1/2/3) |
+| Alt+Shift+Ins / Alt+Shift+Home / Alt+Shift+PgUp | Save frequency, mode, band to favorite |
 
 ### Logbook Editor
 
@@ -1124,7 +1199,7 @@ If `secrets.enc` is corrupted, CQOps starts with a warning and asks you to re-en
 | Space | Tune rig to selected spot and stay on DX Cluster |
 | Home | Cycle band filter forward |
 | End | Cycle band filter backward |
-| `\` | Cycle continent filter |
+| `\` | Cycle spotter continent filter |
 | Ins | Cycle mode filter forward |
 | Del | Cycle mode filter backward |
 | PgUp | Cycle time filter forward |
