@@ -1,5 +1,46 @@
 # Changelog
 
+## v0.8.13 — 2026-07-12
+
+### Contest Statistics Panel
+- **Live stats panel**: when a contest is active and the terminal is wide enough, a compact statistics panel appears to the right of the QSO form with a yellow border. Shows Rate (last 10/100 QSOs), Count (last 60m / current hour), Peak (best 1m/10m/60m sliding window), Avg (session average + duration).
+- **Activity chart**: Unicode block-character (`█`) vertical bar chart showing QSOs per minute over the last 60 minutes, scaled to 4 rows.
+- **Bottom status bar**: contest line shows ID, name, total QSOs, first QSO time, time since last QSO, next serial number, and on-air time. Responsive — fields hide on narrow terminals.
+- **On-air time**: computed as sum of inter-QSO gaps shorter than 30 minutes — approximates active operating time vs idle.
+- **Performance**: panel render is signature-cached (like solar panel) — rebuilds only when data changes, not every frame. Data refreshes every 5 seconds. Pre-sized allocations, no goroutine leaks.
+- **Accurate totals**: TotalQSOs uses `COUNT(*)` query instead of `len(qsos)` — no longer capped at 1000 rows for active contests.
+- **DB index**: composite index `idx_qsos_contest_date_time` so the ListQSOs contest query satisfies both WHERE and ORDER BY from a single index scan.
+
+### REF Search — Diacritic and Case Insensitive
+- **Unicode-aware search**: `normalizeForSearch()` strips diacritics and lowercases — `ćwilin`, `cwilin`, and `Ćwilin` all find `Ćwilin`. Uses `golang.org/x/text` NFD normalization.
+- **search column**: new column in the refs table populated during rebuild. Existing databases auto-detect missing backfill and trigger a rebuild on next restart. Fallback preserves old behavior for unpopulated databases.
+- **Backspace fix**: Backspace now works as normal character deletion in the REF search box. **Delete** key clears the entire search. Help overlay updated (`Del → Clear`).
+
+### Keybinding Consistency Pass
+- **Rotor**: removed `Ctrl+↑/↓` and `Ctrl+A` — `Alt+;`/`Alt+'`/`Alt+\` are the only rotor shortcuts now. No more conflict with rig tune or "select all" surprise.
+- **DXC help**: continent filter label `\ → Sp Cont` (was vague `\ → Continent`).
+- **Standardized**: all help bars now say `Space` instead of `Spc`.
+- **Stale comment**: rotor handler doc fixed (was `Ctrl+R`, actually `Alt+\`).
+- **Manual**: full keybinding section updated to match actual bindings. Favorites section corrected (3 slots via Alt+Ins/Home/PgUp, not 10 via Alt+0–9).
+
+### Duration Display
+- **Seconds dropped**: `formatDurationShort` now returns `H:MM` (≥1 hour) or `M` (<1 hour). Per-minute refresh makes seconds meaningless. `Sess 1:18` instead of `Sess 1:18:55`.
+
+### ADIF Export — Contest Filenames
+- **Contest-aware filenames**: when a contest filter is active, the exported filename includes the contest ADIF ID and date: `20260712_150405_sp9spm_IARU-HF_20260712.adi`.
+- **OS-safe sanitization**: all filename-unsafe characters (`/ \ : * ? " < > |`) replaced with `-`, spaces with `_`.
+
+### Distribution & Packaging
+- **nfpm.yaml**: removed bogus `libc6` dependency (binary is statically linked, CGO_ENABLED=0). License corrected to Apache-2.0. RPM packaging support added.
+- **Release workflow**: rewritten with `validate-version` job, RPM packages (x86_64 + aarch64), Cloudsmith publishing via OIDC, versionless `cqops_amd64.deb` for stable download links. SHA-256 checksums generated for all assets.
+- **winres.json**: version auto-injected from `VERSION` file by build scripts. File description updated.
+- **Package metadata**: descriptions in nfpm, NSIS installer, Windows resource file, install scripts, and .desktop file all updated to match README tone.
+- **README**: new Installation section with WinGet, Cloudsmith APT/RPM, AUR, and Go methods. Release assets table includes RPM. Cloudsmith OSS hosting badge and attribution.
+
+### Licenses
+- Added `CHARM-X-TERM-MIT-LICENSE` for `github.com/charmbracelet/x/term`.
+- Updated `third_party/NOTICE.md` with the new entry.
+
 ## v0.8.12 — 2026-07-12
 
 ### Recent QSOs Table — Full-Width + Smart Columns
