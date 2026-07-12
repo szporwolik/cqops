@@ -461,12 +461,13 @@ jobs:
           fi
 
   # ──────────────────────────────────────────────────────────────────────────
-  # WinGet update — disabled until initial submission accepted
+  # WinGet update — submits an update PR to microsoft/winget-pkgs.
+  # Requires WINGET_GITHUB_TOKEN secret (classic PAT with public_repo scope).
   # ──────────────────────────────────────────────────────────────────────────
   publish-winget:
     runs-on: windows-latest
     needs: create-github-release
-    if: false
+    if: secrets.WINGET_GITHUB_TOKEN != ''
     steps:
       - name: Read version
         id: meta
@@ -477,12 +478,13 @@ jobs:
         shell: powershell
         env:
           VERSION: ${{ steps.meta.outputs.version }}
+          WINGET_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
         run: |
-          dotnet tool install --global Microsoft.WingetCreateCLI --version 1.9.2.5
+          dotnet tool install --global Microsoft.WingetCreateCLI --version 1.12.8.0
           wingetcreate update SzymonPorwolik.CQOps `
             --version $env:VERSION `
             --urls "https://github.com/szporwolik/cqops/releases/download/v$env:VERSION/cqops-setup.exe" `
-            --token ${{ secrets.WINGET_GITHUB_TOKEN }} `
+            --token $env:WINGET_TOKEN `
             --submit
 
   # ──────────────────────────────────────────────────────────────────────────
