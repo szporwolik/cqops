@@ -1,0 +1,26 @@
+# cqops-bin AUR package — reference copy
+#
+# The release workflow (release.yml) auto-generates PKGBUILD and .SRCINFO
+# with the correct version and SHA-256 checksum on each release. This file
+# is a reference only and is NOT used by the CI pipeline.
+#
+# Package: https://aur.archlinux.org/packages/cqops-bin
+# Install: paru -S cqops-bin
+
+pkgname=cqops-bin
+pkgver=0.0.0
+pkgrel=1
+pkgdesc="A small, fast, offline-first amateur radio logger for the terminal"
+arch=('x86_64')
+url="https://github.com/szporwolik/cqops"
+license=('Apache-2.0')
+provides=('cqops')
+conflicts=('cqops')
+source=("cqops-${pkgver}.deb::https://github.com/szporwolik/cqops/releases/download/v${pkgver}/cqops_${pkgver}_amd64.deb")
+sha256sums=('SKIP')
+install=cqops-bin.install
+
+package() {
+  bsdtar -xf "${srcdir}/cqops-${pkgver}.deb"
+  tar -xf data.tar.xz -C "${pkgdir}"
+}

@@ -22,8 +22,8 @@ vendor: "Szymon Porwolik"
 homepage: "https://github.com/szporwolik/cqops"
 license: "Apache-2.0"
 
-depends:
-  - libc6
+# Binary is statically linked (CGO_ENABLED=0) — no runtime library deps.
+depends: []
 
 contents:
   - src: build/cqops-linux-__ARCH__
@@ -50,13 +50,19 @@ contents:
 
 overrides:
   deb:
-    depends:
-      - libc6
+    # Static binary — no runtime dependencies needed.
+    depends: []
+  rpm:
+    provides:
+      - cqops
 
 # -----------------------------------------------------------------------------
-# For multi-arch builds, run nfpm once per arch:
+# For multi-arch builds, run nfpm once per arch+format combination:
 #   nfpm package -f nfpm.yaml -p deb -t dist/ -r amd64
 #   nfpm package -f nfpm.yaml -p deb -t dist/ -r arm64
+#   nfpm package -f nfpm.yaml -p deb -t dist/ -r armhf
 #   nfpm package -f nfpm.yaml -p rpm -t dist/ -r amd64
+#   nfpm package -f nfpm.yaml -p rpm -t dist/ -r arm64
+# -----------------------------------------------------------------------------
 #   nfpm package -f nfpm.yaml -p rpm -t dist/ -r arm64
 # -----------------------------------------------------------------------------
