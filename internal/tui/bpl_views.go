@@ -533,7 +533,7 @@ func (m *Model) viewBPLCB(region int) []string {
 	}
 
 	if cbProfile != nil {
-		lines = append(lines, S.Error.Render("NOT A HAM BAND")+" — "+cbProfile.Label)
+		lines = append(lines, S.Warning.Render("NOT A HAM BAND")+" — "+cbProfile.Label)
 		lines = append(lines, DimStyle.Render(fmt.Sprintf("%s–%s MHz  %s  %s", cbProfile.RangeLo, cbProfile.RangeHi, cbProfile.Mod, cbProfile.Note)))
 		lines = append(lines, "")
 		// Single-column layout — each channel on its own line for cursor navigation/tuning.
@@ -554,7 +554,7 @@ func (m *Model) viewBPLCB(region int) []string {
 		// UHF CB for R3.
 		for _, p := range profiles {
 			if p.ID == "CB_UHF_AU" {
-				lines = append(lines, S.Error.Render("NOT A HAM BAND")+" — "+p.Label)
+				lines = append(lines, S.Warning.Render("NOT A HAM BAND")+" — "+p.Label)
 				lines = append(lines, DimStyle.Render(fmt.Sprintf("%s–%s MHz  %s  %s", p.RangeLo, p.RangeHi, p.Mod, p.Note)))
 			}
 		}
