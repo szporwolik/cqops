@@ -5,16 +5,15 @@
 </p>
 
 [![release](https://img.shields.io/github/v/release/szporwolik/cqops?include_prereleases&label=release&color=1f6feb)](https://github.com/szporwolik/cqops/releases)
-[![downloads](https://img.shields.io/github/downloads/szporwolik/cqops/total?color=1f6feb)](https://github.com/szporwolik/cqops/releases)
 [![go](https://img.shields.io/badge/Go-1.26-00ADD8)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs](https://img.shields.io/badge/docs-cqops.com-1f6feb)](https://docs.cqops.com/)
+[![Cloudsmith](https://img.shields.io/badge/OSS%20hosting%20by-cloudsmith-blue?logo=cloudsmith&style=flat-square)](https://cloudsmith.com)
 <br>
 [![Windows](https://img.shields.io/badge/Windows-0078D6)](https://github.com/szporwolik/cqops/releases)
 [![Linux](https://img.shields.io/badge/Linux-FCC624)](https://github.com/szporwolik/cqops/releases)
 [![macOS](https://img.shields.io/badge/macOS-000000)](https://github.com/szporwolik/cqops/releases)
 [![Raspberry Pi](https://img.shields.io/badge/Raspberry%20Pi-A22846)](https://github.com/szporwolik/cqops/releases)
-[![Cloudsmith](https://img.shields.io/badge/OSS%20hosting%20by-cloudsmith-blue?logo=cloudsmith&style=flat-square)](https://cloudsmith.com)
 
 A small, fast, offline-first amateur radio logger for the terminal - built for portable/field ops, SOTA/POTA activations, and club stations with rotating operators. Runs on Raspberry Pi, old laptops, or any low-power machine without a GUI, over SSH or a local terminal. Hot-swap operators and logbooks, log via WSJT-X auto-feed or keyboard, sync to Wavelog. GPS-aware - uses your receiver's position for the station grid automatically.
 
