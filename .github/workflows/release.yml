@@ -33,28 +33,18 @@ jobs:
         id: version
         run: |
           set -euo pipefail
-          # Always read from VERSION file for consistency.
           V="$(cat VERSION)"
-          # If triggered by tag push, verify it matches.
+          # If triggered by tag push, cross-check.
           if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
             TAG="${GITHUB_REF#refs/tags/v}"
+            TAG="${TAG#v}"
             if [ "$V" != "$TAG" ]; then
-              echo "ERROR: tag 'v${TAG}' does not match VERSION file '${V}'" >&2
+              echo "ERROR: tag 'v${TAG}' != VERSION file '${V}'" >&2
               exit 1
             fi
           fi
-          # If workflow_dispatch with explicit version, override.
-          if [ -n "${INPUT_VERSION:-}" ] && [ "${INPUT_VERSION}" != "" ]; then
-            V="${INPUT_VERSION#v}"
-          fi
-          if ! echo "$V" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "ERROR: version '$V' is not valid SemVer (X.Y.Z)" >&2
-            exit 1
-          fi
           echo "value=$V" >> $GITHUB_OUTPUT
           echo "Version: $V"
-        env:
-          INPUT_VERSION: ${{ github.event.inputs.version }}
 
   # ──────────────────────────────────────────────────────────────────────────
   # Build all Go binaries + Linux packages (deb + rpm)
@@ -298,7 +288,6 @@ jobs:
     if: vars.CLOUDSMITH_NAMESPACE != '' && vars.CLOUDSMITH_REPOSITORY != ''
     permissions:
       contents: read
-      id-token: write
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -321,19 +310,11 @@ jobs:
           NAMESPACE: ${{ vars.CLOUDSMITH_NAMESPACE }}
           REPO: ${{ vars.CLOUDSMITH_REPOSITORY }}
           CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY || '' }}
-          CLOUDSMITH_OIDC_SLUG: ${{ vars.CLOUDSMITH_OIDC_SERVICE_SLUG || '' }}
         run: |
           set -euo pipefail
 
-          # Auth: OIDC preferred, API key fallback.
-          if [ -n "$CLOUDSMITH_OIDC_SLUG" ]; then
-            echo "Authenticating via OIDC..."
-            cloudsmith oidc login --service-slug "$CLOUDSMITH_OIDC_SLUG"
-          elif [ -n "$CLOUDSMITH_API_KEY" ]; then
-            echo "Authenticating via API key..."
-            cloudsmith api-key set "$CLOUDSMITH_API_KEY"
-          else
-            echo "ERROR: no Cloudsmith credentials configured" >&2
+          if [ -z "$CLOUDSMITH_API_KEY" ]; then
+            echo "ERROR: CLOUDSMITH_API_KEY secret not set" >&2
             exit 1
           fi
 
