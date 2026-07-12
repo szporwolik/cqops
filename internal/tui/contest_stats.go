@@ -31,6 +31,7 @@ type contestStats struct {
 
 	computedAt  time.Time
 	contestID   string
+	cachedSig   string
 	cachedPanel string
 }
 
@@ -50,7 +51,13 @@ func (cs *contestStats) computeIfStale(db *sql.DB, contestID string, contestName
 		return true
 	}
 
-	cs.TotalQSOs = len(qsos)
+	// TotalQSOs from COUNT — ListQSOs is capped at 1000 rows and
+	// undercounts active contests.
+	if counts, err := store.CountQSOsForContest(db, contestID); err == nil {
+		cs.TotalQSOs = counts.Total
+	} else {
+		cs.TotalQSOs = len(qsos)
+	}
 	cs.LastQSO = qsos[0].CreatedAt.UTC()
 	cs.FirstQSO = qsos[len(qsos)-1].CreatedAt.UTC()
 	cs.Session = cs.LastQSO.Sub(cs.FirstQSO)
@@ -146,11 +153,10 @@ func formatDurationShort(d time.Duration) string {
 	}
 	h := int(d.Hours())
 	m := int(d.Minutes()) % 60
-	s := int(d.Seconds()) % 60
 	if h > 0 {
-		return fmt.Sprintf("%d:%02d:%02d", h, m, s)
+		return fmt.Sprintf("%d:%02d", h, m)
 	}
-	return fmt.Sprintf("%d:%02d", m, s)
+	return fmt.Sprintf("%d", m)
 }
 
 func bucketQSOsByMinute(qsos []qso.QSO, numBuckets int, now time.Time) []float64 {
@@ -203,21 +209,36 @@ func (m *Model) renderContestPanel() string {
 
 	m.contest.computeIfStale(m.App.DB, contestID, ct.Name)
 
-	// Available content width after border padding is ~32 chars
-	// (Width 36 − Padding 0,2 × 2 sides). Use 30 to stay clear of
-	// Lip Gloss ANSI edge cases.
-	const chartW = 30
-	contentW := solarBoxW
-	if contentW < 20 {
-		contentW = 20
+	// Cache key — avoids rebuilding the panel string at 60fps when
+	// the underlying data only changes every 5 seconds.
+	var sigB strings.Builder
+	fmt.Fprintf(&sigB, "%s|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|%d|",
+		contestID,
+		m.contest.TotalQSOs, m.contest.ThisHour, m.contest.Last60Min,
+		m.contest.Rate10, m.contest.Rate100,
+		m.contest.Best1Min, m.contest.Best10Min, m.contest.Best60Min,
+		m.contest.AvgSession,
+		int(m.contest.Session.Seconds()), int(m.contest.OnAir.Seconds()),
+	)
+	if len(m.contest.MinuteBuckets) > 0 {
+		sum := 0.0
+		for _, v := range m.contest.MinuteBuckets {
+			sum += v
+		}
+		fmt.Fprintf(&sigB, "%d:%.0f", len(m.contest.MinuteBuckets), sum)
 	}
+	sig := sigB.String()
+	if m.contest.cachedPanel != "" && m.contest.cachedSig == sig {
+		return m.contest.cachedPanel
+	}
+	m.contest.cachedSig = sig
+
+	const chartW = 30
 
 	v := ValueStyle.Render
 	d := DimStyle.Render
-	var rows []string
+	rows := make([]string, 0, 12) // 4 data + caption + 4 chart + footer
 
-	// Pad a plain label to 6 visible chars, then apply dim style.
-	// Must NOT use fmt.Sprintf width on styled strings — ANSI codes break it.
 	pad := func(s string) string {
 		n := len(s)
 		if n < 6 {
@@ -236,7 +257,7 @@ func (m *Model) renderContestPanel() string {
 	// --- Count row ---
 	rows = append(rows, d(pad("Count"))+v(fmt.Sprintf("60m %3d  hr %3d", m.contest.Last60Min, m.contest.ThisHour)))
 
-	// --- Peak row: "/h" suffix dropped — implied by "Peak" context.
+	// --- Peak row ---
 	rows = append(rows, d(pad("Peak"))+v(fmt.Sprintf("1m%3d 10m%3d 60m%3d",
 		m.contest.Best1Min, m.contest.Best10Min, m.contest.Best60Min)))
 
@@ -273,13 +294,13 @@ func (m *Model) renderContestPanel() string {
 			}
 			rows = append(rows, string(line))
 		}
-		footerLabels := 7 // len("-60m") + len("now") = 4 + 3
-		fpad := len(data) - footerLabels
+		fpad := len(data) - 7 // len("-60m") + len("now") = 4 + 3
 		if fpad < 0 {
 			fpad = 0
 		}
 		rows = append(rows, fmt.Sprintf("-60m%snow", strings.Repeat(" ", fpad)))
 	}
 
-	return contestBorderBoxStyle.Width(solarBoxW).Padding(0, 2).Render(strings.Join(rows, "\n"))
+	m.contest.cachedPanel = contestBorderBoxStyle.Width(solarBoxW).Padding(0, 2).Render(strings.Join(rows, "\n"))
+	return m.contest.cachedPanel
 }

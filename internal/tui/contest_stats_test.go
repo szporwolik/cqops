@@ -101,11 +101,11 @@ func TestFormatDurationShort(t *testing.T) {
 		d    time.Duration
 		want string
 	}{
-		{0, "0:00"},
-		{30 * time.Second, "0:30"},
-		{5 * time.Minute, "5:00"},
-		{90 * time.Minute, "1:30:00"},
-		{25 * time.Hour, "25:00:00"},
+		{0, "0"},
+		{30 * time.Second, "0"},
+		{5 * time.Minute, "5"},
+		{90 * time.Minute, "1:30"},
+		{25 * time.Hour, "25:00"},
 	}
 	for _, tt := range tests {
 		got := formatDurationShort(tt.d)

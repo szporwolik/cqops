@@ -111,6 +111,11 @@ var migrations = []string{
 	`CREATE INDEX IF NOT EXISTS idx_qsos_date_call_band_mode ON qsos(qso_date, call, band, mode)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_contest_call_band_mode ON qsos(contest_id, call, band, mode)`,
 
+	// Composite index for contest-filtered ListQSOs — covers
+	//   WHERE contest_id = ? ORDER BY qso_date DESC, time_on DESC
+	// so SQLite can satisfy both the filter and sort from one index.
+	`CREATE INDEX IF NOT EXISTS idx_qsos_contest_date_time ON qsos(contest_id, qso_date DESC, time_on DESC)`,
+
 	`CREATE TABLE IF NOT EXISTS psk_spots (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		receiver_call TEXT NOT NULL,
