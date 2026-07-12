@@ -279,6 +279,7 @@ jobs:
       - name: Build release notes from merged PRs
         env:
           VERSION: ${{ steps.meta.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           NOTES="release-notes.md"
@@ -288,13 +289,16 @@ jobs:
 
           LAST_TAG=$(git tag --sort=-v:refname | grep -E '^v[0-9]' | head -1 || echo "")
           if [ -n "$LAST_TAG" ]; then
-            echo "**Full Changelog:** https://github.com/szporwolik/cqops/compare/${LAST_TAG}...v${VERSION}" >> "$NOTES"
-            echo "" >> "$NOTES"
-            # List all PRs merged since last tag.
-            git log "${LAST_TAG}..HEAD" --merges --pretty=format:"- %s%n  %b" --reverse >> "$NOTES" 2>/dev/null || true
+            # Get PR numbers merged since last tag.
+            PRS=$(git log "${LAST_TAG}..HEAD" --merges --pretty=format:"#%s" --reverse | grep -oP '#\d+' | sed 's/#//' | sort -u || echo "")
+            for pr in $PRS; do
+              echo "### PR #${pr}" >> "$NOTES"
+              # Use gh to get PR title and body.
+              gh pr view "$pr" --json title,body --jq '"**\(.title)**\n\n\(.body)"' >> "$NOTES" 2>/dev/null || echo "_PR details unavailable_" >> "$NOTES"
+              echo "" >> "$NOTES"
+            done
           else
-            echo "**First release.**" >> "$NOTES"
-            git log --merges --pretty=format:"- %s%n  %b" --reverse >> "$NOTES" 2>/dev/null || true
+            echo "_First release._" >> "$NOTES"
           fi
 
           echo "Release notes:"
