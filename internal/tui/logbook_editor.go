@@ -7,6 +7,7 @@ import (
 	"charm.land/bubbles/v2/filepicker"
 	"charm.land/bubbles/v2/table"
 	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/qso"
@@ -83,9 +84,9 @@ const (
 	qefSRX
 	qefSTXString
 	qefSRXString
-	qefContestID
 	qefWLStatus // non-focusable read-only
-	qefSource   // non-focusable read-only — last real field
+	qefSource   // non-focusable read-only
+	qefContestID
 	qefCount
 )
 
@@ -100,9 +101,10 @@ var qefLabels = []string{
 	"IOTA", "SOTA Ref", "POTA Ref", "WWFF Ref", "SIG", "SIG Info",
 	"My SOTA", "My POTA", "My WWFF",
 	"CQ Zone", "ITU Zone",
-	"Exch Sent", "Exch Rcvd", "STX", "SRX", "STX String", "SRX String", "Contest ID",
+	"Exch Sent", "Exch Rcvd", "STX", "SRX", "STX String", "SRX String",
 	"WL Upload (RO)",
 	"Source (RO)",
+	"Contest ID",
 }
 
 type LogbookEditor struct {
@@ -186,9 +188,9 @@ type LogbookEditor struct {
 	formattedWidth   int
 	cachedTablePartH int
 
-	// Cached edit form column style — rebuilt only on colW change.
-	cachedEditColStyle lipgloss.Style
-	cachedEditColW     int
+	// Edit form scrolling — viewport for long single-column form.
+	editVP          viewport.Model
+	lastEditContent string
 
 	// File export.
 	filePicker filepicker.Model

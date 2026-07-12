@@ -295,10 +295,15 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return le, le.doSave()
 			case "esc", "f6":
 				le.mode = edModeList
+			case "pgup", "pgdown", "home", "end":
+				le.editVP, _ = le.editVP.Update(msg)
+				return le, nil
 			case "tab", "down":
 				le.nextField()
+				scrollVpToLine(&le.editVP, int(le.focus))
 			case "shift+tab", "up":
 				le.prevField()
+				scrollVpToLine(&le.editVP, int(le.focus))
 			default:
 				if le.focus != qefWLStatus && le.focus != qefSource {
 					le.fields[le.focus], _ = le.fields[le.focus].Update(msg)

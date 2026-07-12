@@ -138,48 +138,73 @@ func (le *LogbookEditor) prevField() {
 }
 
 // =============================================================================
-// Edit form rendering
+// Edit form rendering — single column, no border, viewport scrolling
 // =============================================================================
 
 func (le *LogbookEditor) viewEdit(bodyW int, contentH int) string {
-	// Cap width to match QSO form — prevents absurdly wide form on large monitors.
 	if bodyW > partnerMapMaxW {
 		bodyW = partnerMapMaxW
 	}
 	header := S.Title.Width(bodyW).Render("Edit QSO")
 
-	// Two-column form layout — matches QSO form pattern.
-	innerW := bodyW - 2
+	// Single-column layout — one field per line.
+	innerW := bodyW - 4
 	if innerW < 20 {
 		innerW = 20
 	}
-	colW := innerW / 2
-	if colW < 28 {
-		colW = innerW
-	}
-	if le.cachedEditColW != colW {
-		le.cachedEditColStyle = lipgloss.NewStyle().Width(colW).MaxWidth(colW).Align(lipgloss.Left).Inline(true)
-		le.cachedEditColW = colW
-	}
-	colStyle := le.cachedEditColStyle
 
-	half := (qefCount + 1) / 2
+	var sb strings.Builder
+	for i := qsoEditField(0); i < qefCount; i++ {
+		if i > 0 {
+			sb.WriteByte('\n')
+		}
+		sb.WriteString(le.renderEditField(i, innerW))
+	}
+	formContent := sb.String()
 
-	var lines []string
-	for i := qsoEditField(0); i < half; i++ {
-		left := colStyle.Render(le.renderEditField(i, colW))
-		rightIdx := i + half
-		if rightIdx < qefCount {
-			right := colStyle.Render(le.renderEditField(rightIdx, colW))
-			lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Top, left, right))
-		} else {
-			lines = append(lines, left)
+	// Viewport setup — same pattern as renderScrollableMenu.
+	vpW := bodyW - 2
+	if vpW < 20 {
+		vpW = 20
+	}
+	vpH := contentH - 3 // header + blank + hint
+	if vpH < 4 {
+		vpH = 4
+	}
+	le.editVP.SetWidth(vpW)
+	le.editVP.SetHeight(vpH)
+	if le.editVP.TotalLineCount() == 0 || formContent != le.lastEditContent {
+		le.editVP.SetContent(formContent)
+		le.lastEditContent = formContent
+	}
+	// Clamp Y offset manually — viewport.PastBottom() can be off by one.
+	total := le.editVP.TotalLineCount()
+	vis := le.editVP.VisibleLineCount()
+	if vis > 0 && le.editVP.YOffset()+vis > total {
+		le.editVP.SetYOffset(total - vis)
+	}
+	vpContent := le.editVP.View()
+	// Scroll hint — computed manually because viewport.AtBottom()
+	// can be off by one after SetContent due to line-ending handling.
+	if vis > 0 && total > vis {
+		yOff := le.editVP.YOffset()
+		atTop := yOff <= 0
+		atBottom := yOff+vis >= total
+		var hint string
+		switch {
+		case atTop && !atBottom:
+			hint = "  ▼ more below"
+		case !atTop && atBottom:
+			hint = "  ▲ more above"
+		case !atTop && !atBottom:
+			hint = "  ▲ above · ▼ below"
+		}
+		if hint != "" {
+			hintLine := DimStyle.Width(vpW).Render(hint)
+			vpContent = lipgloss.JoinVertical(lipgloss.Left, vpContent, hintLine)
 		}
 	}
-	formContent := lipgloss.JoinVertical(lipgloss.Left, lines...)
-	formBox := drawBorderedBox(formContent, bodyW)
-
-	body := lipgloss.JoinVertical(lipgloss.Left, header, formBox)
+	body := lipgloss.JoinVertical(lipgloss.Left, header, "", vpContent)
 	return fillBody(body, contentH)
 }
 
