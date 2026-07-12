@@ -447,12 +447,12 @@ func (m *Model) ActiveBindings() []key.Binding {
 				key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("\u2191\u2193", "Navigate")),
 				key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("PgUp/Dn", "Page")),
 				key.NewBinding(key.WithKeys("enter", "insert"), key.WithHelp("Enter/Ins", "Commit")),
-				key.NewBinding(key.WithKeys("backspace"), key.WithHelp("Bksp", "Clear")),
+				key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Clear")),
 			)
 		} else {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("enter", "insert"), key.WithHelp("Enter/Ins", "Search")),
-				key.NewBinding(key.WithKeys("backspace"), key.WithHelp("Bksp", "Clear")),
+				key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Clear")),
 			)
 		}
 	}

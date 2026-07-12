@@ -160,13 +160,13 @@ func (m *Model) handleRefUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			m.doRefSearch()
 			return m, cmd
 
-		case "backspace":
+		case "delete":
 			m.ref.input.SetValue("")
 			m.ref.searched = false
 			m.ref.rows = nil
 			m.ref.scroll = 0
 			m.ref.cursor = 0
-			m.ref.cachedTableView = "" // invalidate render cache
+			m.ref.cachedTableView = ""
 			return m, cmd
 
 		case "up", "down", "pgup", "pgdown":
