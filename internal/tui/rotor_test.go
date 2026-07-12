@@ -316,11 +316,6 @@ func TestHandleRotorKey_AltBackslash_NoGrid(t *testing.T) {
 	}
 }
 
-// ctrlKey creates a tea.KeyPressMsg with Ctrl modifier for testing.
-func ctrlKey(r rune) tea.KeyPressMsg {
-	return tea.KeyPressMsg{Code: r, Mod: tea.ModCtrl}
-}
-
 // altKey creates a tea.KeyPressMsg with Alt modifier for testing.
 func altKey(r rune) tea.KeyPressMsg {
 	return tea.KeyPressMsg{Code: r, Mod: tea.ModAlt}

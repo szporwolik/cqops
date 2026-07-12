@@ -5,15 +5,9 @@
 </p>
 
 [![release](https://img.shields.io/github/v/release/szporwolik/cqops?include_prereleases&label=release&color=1f6feb)](https://github.com/szporwolik/cqops/releases)
-[![downloads](https://img.shields.io/github/downloads/szporwolik/cqops/total?color=1f6feb)](https://github.com/szporwolik/cqops/releases)
 [![go](https://img.shields.io/badge/Go-1.26-00ADD8)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs](https://img.shields.io/badge/docs-cqops.com-1f6feb)](https://docs.cqops.com/)
-<br>
-[![Windows](https://img.shields.io/badge/Windows-0078D6)](https://github.com/szporwolik/cqops/releases)
-[![Linux](https://img.shields.io/badge/Linux-FCC624)](https://github.com/szporwolik/cqops/releases)
-[![macOS](https://img.shields.io/badge/macOS-000000)](https://github.com/szporwolik/cqops/releases)
-[![Raspberry Pi](https://img.shields.io/badge/Raspberry%20Pi-A22846)](https://github.com/szporwolik/cqops/releases)
 [![Cloudsmith](https://img.shields.io/badge/OSS%20hosting%20by-cloudsmith-blue?logo=cloudsmith&style=flat-square)](https://cloudsmith.com)
 
 A small, fast, offline-first amateur radio logger for the terminal - built for portable/field ops, SOTA/POTA activations, and club stations with rotating operators. Runs on Raspberry Pi, old laptops, or any low-power machine without a GUI, over SSH or a local terminal. Hot-swap operators and logbooks, log via WSJT-X auto-feed or keyboard, sync to Wavelog. GPS-aware - uses your receiver's position for the station grid automatically.
@@ -43,33 +37,12 @@ sudo apt update
 sudo apt install cqops
 ```
 
-> Cloudsmith repository publication pending. Until then, download the latest `.deb`:
-> ```bash
-> curl -sSLo cqops.deb https://github.com/szporwolik/cqops/releases/latest/download/cqops_amd64.deb
-> sudo dpkg -i cqops.deb
-> ```
-
 ### Fedora, RHEL, Rocky Linux, AlmaLinux
 
 ```bash
 curl -1sLf 'https://dl.cloudsmith.io/public/szporwolik/cqops/setup.rpm.sh' | sudo -E bash
 sudo dnf install cqops
 ```
-
-> Cloudsmith repository publication pending.
-
-### Arch Linux, CachyOS, EndeavourOS, Manjaro
-
-```bash
-paru -S cqops-bin
-```
-
-Or with `yay`:
-```bash
-yay -S cqops-bin
-```
-
-> AUR package publication pending first push.
 
 ### Go (universal)
 
@@ -83,9 +56,6 @@ Requires Go 1.26+. This is the fallback for all platforms, not the recommended m
 
 Grab the latest binary, installer, or package from the [Releases](https://github.com/szporwolik/cqops/releases) page — Windows portable ZIP, NSIS installer, macOS binaries, Linux `.deb`/`.rpm`, and portable tarballs for all platforms including Raspberry Pi.
 
-## Author
-
-Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 
 ## Features
 
@@ -197,29 +167,6 @@ For smaller binaries, install [UPX](https://upx.github.io/) and run `upx --best 
 
 See the [documentation](https://docs.cqops.com/manual.en.html#download--installation) for pre-built downloads and platform-specific installation.
 
-## Releases
-
-Release notes are in [CHANGELOG.md](CHANGELOG.md). All releases are on the [GitHub Releases](https://github.com/szporwolik/cqops/releases) page.
-
-Each release includes:
-
-| Asset | Target |
-|---|---|
-| `cqops-setup.exe` | Windows installer (NSIS) |
-| `cqops-windows-portable.zip` | Windows portable (no install, amd64) |
-| `cqops_{version}_amd64.deb` | Debian / Ubuntu amd64 |
-| `cqops_{version}_arm64.deb` | Debian / Ubuntu arm64 |
-| `cqops_{version}_armhf.deb` | Debian / Ubuntu armhf (Raspberry Pi) |
-| `cqops-{version}-1.x86_64.rpm` | Fedora / RHEL x86_64 |
-| `cqops-{version}-1.aarch64.rpm` | Fedora / RHEL aarch64 |
-| `cqops-linux-amd64.tar.gz` | Linux amd64 portable |
-| `cqops-linux-arm64.tar.gz` | Linux arm64 portable |
-| `cqops-linux-armhf.tar.gz` | Linux armhf portable |
-| `cqops-darwin-amd64` | macOS amd64 (raw binary) |
-| `cqops-darwin-arm64` | macOS arm64 (raw binary) |
-
-See the [documentation](https://docs.cqops.com/manual.en.html#download--installation) for download links and install instructions per platform.
-
 ## Usage
 
 ```bash
@@ -231,13 +178,14 @@ cqops --help       # Show help
 
 Full usage guide, workflows, and keyboard shortcuts are in the [documentation](https://docs.cqops.com/).
 
-**Integrations:**
+## Third-party party integrations and services
+### Integrations
 - [wsjtx-go](https://github.com/k0swe/wsjtx-go) — WSJT-X UDP protocol
 - [farmergreg/adif](https://github.com/farmergreg/adif) + [farmergreg/spec](https://github.com/farmergreg/spec) — ADIF 3.1.7 parsing/writing & spec types
 - [ftl/hamradio](https://github.com/ftl/hamradio) — Grid locator, distance math, DXCC prefix lookup (CTY.DAT)
 - [gen2brain/beeep](https://github.com/gen2brain/beeep) — Desktop notifications
 
-**Data & third-party services**
+### Data & third-party services
 
 *Reference data (loaded and cached locally):*
 - [country-files.com](https://www.country-files.com/) — CTY.DAT DXCC prefix database by Jim Reisert AD1C (public domain factual data)
@@ -265,8 +213,12 @@ Full usage guide, workflows, and keyboard shortcuts are in the [documentation](h
 - APRS symbol graphics are from the [aprs.fi APRS symbol set](https://github.com/hessu/aprs-symbols) by Heikki Hannikainen, OH7LZB. The graphics are third-party assets with mixed per-symbol copyright status — **not** covered by the CQOps Apache 2.0 license. Upstream copyright notes are preserved in [`third_party/aprs-symbols/COPYRIGHT.md`](third_party/aprs-symbols/COPYRIGHT.md). See [`third_party/NOTICE.md`](third_party/NOTICE.md) for details.
 - APRS Mic-E and Base-91 position decoding in `internal/aprs/parse.go` is an independent implementation based on algorithms from [go-aprs-fap](https://github.com/la5nta/go-aprs) (BSD-style) and the APRS 1.0.1/1.2 specifications.
 
+### Licensing
 All licenses are permissive (MIT, Apache 2.0, BSD-2, BSD-3). See `licenses/` directory. Third-party asset notices are in `third_party/`.
 
+## Special thanks
+
+### Cloudsmith
 Package repository hosting is graciously provided by [Cloudsmith](https://cloudsmith.com). Cloudsmith is the only fully hosted, cloud-native, universal package management solution, that enables your organization to create, store, and share packages in any format, to any place, with total confidence.
 
 ## Contributing
