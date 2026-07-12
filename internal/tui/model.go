@@ -1267,6 +1267,24 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 	}
 
 	m.recentQSOs.SetContest(m.App.Logbook.ActiveContest != "")
+
+	// Multi-operator detection: if the logbook has QSOs from more than
+	// one distinct operator (excluding empty), show Operator instead
+	// of Grid — useful for club logbooks.
+	multiOp := false
+	ops := make(map[string]struct{})
+	for _, q := range m.recentQSOs.qsos {
+		if q.Operator == "" {
+			continue
+		}
+		ops[q.Operator] = struct{}{}
+		if len(ops) > 1 {
+			multiOp = true
+			break
+		}
+	}
+	m.recentQSOs.SetMultiOp(multiOp)
+
 	m.recentQSOs.SetSize(tableW, tableH)
 
 	var parts []string

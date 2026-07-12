@@ -39,6 +39,10 @@ type RecentQSOs struct {
 	// Contest mode swaps SOTA/POTA/WWFF/IOTA/SIG for ExchSent/ExchRcvd
 	// at the wide tiers. Cache is invalidated when this changes.
 	contest bool
+
+	// Multi-operator mode swaps Grid for Operator at all tiers. Used
+	// for club logbooks where multiple ops log under one callsign.
+	multiOp bool
 }
 
 // NewRecentQSOs creates a read-only recent QSOs view.
@@ -101,6 +105,18 @@ func (r *RecentQSOs) SetContest(v bool) {
 	r.filteredCachedView = ""
 }
 
+// SetMultiOp enables or disables multi-operator mode. When active, the
+// Operator column replaces Grid — useful for club logbooks where
+// multiple operators log under the same callsign.
+func (r *RecentQSOs) SetMultiOp(v bool) {
+	if r.multiOp == v {
+		return
+	}
+	r.multiOp = v
+	r.cachedView = ""
+	r.filteredCachedView = ""
+}
+
 // View renders the read-only recent QSOs table. In normal mode it shows
 // recent QSOs; in filtered mode it shows QSOs matching the partner call
 // with the call column highlighted.
@@ -157,6 +173,17 @@ func (r *RecentQSOs) View() string {
 				break
 			}
 			names = names[:len(names)-1]
+		}
+	}
+
+	// Multi-operator mode: swap Grid for Operator (useful for club
+	// logbooks where callsign alone doesn't identify the op).
+	if r.multiOp {
+		for i, n := range names {
+			if n == "Grid" {
+				names[i] = "Operator"
+				break
+			}
 		}
 	}
 
