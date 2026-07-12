@@ -1366,13 +1366,4 @@ fetch('/api/snapshot').then(function(r){return r.json()}).then(function(snap){
 }).catch(function(e){D('fetch','/api/snapshot ERR',''+e)});
 connectSSE();
 
-// ---- Auto-reload every 5 minutes (silent safety net) ----
-// If SSE silently breaks or the tab goes stale, a periodic reload
-// ensures the display stays fresh. Preserves ?debug=1 and restores
-// the correct state from the server snapshot.
-setTimeout(function(){
-  D('reload','5-minute auto-reload triggered');
-  location.reload();
-},300000);
-
 })();
