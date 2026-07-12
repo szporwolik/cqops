@@ -33,22 +33,22 @@ jobs:
         id: version
         run: |
           set -euo pipefail
-          V=""
-          if [ -n "${INPUT_VERSION:-}" ]; then
-            V="${INPUT_VERSION}"
-          elif [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
-            V="${GITHUB_REF#refs/tags/v}"
-          else
-            V="$(cat VERSION)"
+          # Always read from VERSION file for consistency.
+          V="$(cat VERSION)"
+          # If triggered by tag push, verify it matches.
+          if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            TAG="${GITHUB_REF#refs/tags/v}"
+            if [ "$V" != "$TAG" ]; then
+              echo "ERROR: tag 'v${TAG}' does not match VERSION file '${V}'" >&2
+              exit 1
+            fi
           fi
-          V="${V#v}"
+          # If workflow_dispatch with explicit version, override.
+          if [ -n "${INPUT_VERSION:-}" ] && [ "${INPUT_VERSION}" != "" ]; then
+            V="${INPUT_VERSION#v}"
+          fi
           if ! echo "$V" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "ERROR: version '$V' is not valid SemVer (X.Y.Z)" >&2
-            exit 1
-          fi
-          FILE_VER="$(cat VERSION)"
-          if [ "$V" != "$FILE_VER" ] && [ -z "${INPUT_VERSION:-}" ] && [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
-            echo "ERROR: tag version '$V' does not match VERSION file '$FILE_VER'" >&2
             exit 1
           fi
           echo "value=$V" >> $GITHUB_OUTPUT
@@ -109,14 +109,14 @@ jobs:
           echo "Binaries before UPX:"
           ls -lh build/
 
-      - name: Compress with UPX
-        run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq upx-ucl
-          upx --best build/cqops-linux-amd64
-          upx --best build/cqops-linux-arm64
-          upx --best build/cqops-linux-armhf
-          echo "Binaries after UPX:"
-          ls -lh build/
+      # - name: Compress with UPX
+      #   run: |
+      #     sudo apt-get update -qq && sudo apt-get install -y -qq upx-ucl
+      #     upx --best build/cqops-linux-amd64
+      #     upx --best build/cqops-linux-arm64
+      #     upx --best build/cqops-linux-armhf
+      #     echo "Binaries after UPX:"
+      #     ls -lh build/
 
       - name: Package archives
         run: |
