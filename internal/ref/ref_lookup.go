@@ -37,18 +37,33 @@ func (rdb *DB) CountByType(rt RefType) (int, error) {
 	return n, err
 }
 
+// NeedsSearchBackfill returns true when the search column is empty for some
+// rows — meaning the database predates the diacritic-insensitive search
+// feature and should be rebuilt.
+func (rdb *DB) NeedsSearchBackfill() (bool, error) {
+	var n int
+	err := rdb.db.QueryRow(`SELECT COUNT(*) FROM refs WHERE search = '' LIMIT 1`).Scan(&n)
+	return n > 0, err
+}
+
 // Search returns all reference rows whose ref or name contains the query string
-// (case-insensitive substring match). Also matches by prefix for grid searches.
-// Results are ordered by ref_type then ref, limited to 500 rows.
+// (case-insensitive and diacritic-insensitive substring match). Also matches
+// by prefix for grid searches. Results are ordered by ref_type then ref,
+// limited to 500 rows.
 func (rdb *DB) Search(query string) ([]Row, error) {
-	like := "%" + query + "%"
-	// Try substring match first; if empty, try prefix search.
+	q := normalizeForSearch(query)
+	like := "%" + q + "%"
+	// Raw LIKE for databases that predate the search column — preserves
+	// ASCII case-insensitive matching on the original ref/name text.
+	rawLike := "%" + query + "%"
 	rows, err := rdb.db.Query(
 		`SELECT ref_type, ref, name, grid, height FROM refs
-		 WHERE ref LIKE ? ESCAPE '\' OR name LIKE ? ESCAPE '\' OR grid LIKE ? ESCAPE '\'
+		 WHERE search LIKE ? ESCAPE '\'
+		    OR (search = '' AND (ref LIKE ? ESCAPE '\' OR name LIKE ? ESCAPE '\'))
+		    OR grid LIKE ? ESCAPE '\'
 		 ORDER BY ref_type, ref
 		 LIMIT 500`,
-		like, like, like+"%",
+		like, rawLike, rawLike, like+"%",
 	)
 	if err != nil {
 		return nil, fmt.Errorf("ref search %q: %w", query, err)

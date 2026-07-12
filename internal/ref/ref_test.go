@@ -32,7 +32,7 @@ func TestSchema(t *testing.T) {
 	db := openDB(t)
 	defer db.Close()
 	cols := EnsureColumns(db.UnderlyingDB())
-	expected := map[string]bool{"ref_type": true, "ref": true, "name": true, "grid": true, "height": true, "is_group": true}
+	expected := map[string]bool{"ref_type": true, "ref": true, "name": true, "grid": true, "height": true, "is_group": true, "search": true}
 	for _, c := range cols {
 		if !expected[c] {
 			t.Errorf("unexpected column %q", c)
@@ -446,6 +446,25 @@ func TestSearch_AfterRebuild(t *testing.T) {
 	r, _ = db.Search("e")
 	if len(r) > 500 {
 		t.Errorf("limit exceeded: %d", len(r))
+	}
+}
+
+func TestNormalizeForSearch(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"Ćwilin", "cwilin"},
+		{"ćwilin", "cwilin"},
+		{"Cwilin", "cwilin"},
+		{"G/SP-001", "g/sp-001"},
+		{"Österreich", "osterreich"},
+		{"Åland", "aland"},
+		{"hello", "hello"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		got := normalizeForSearch(tt.in)
+		if got != tt.want {
+			t.Errorf("normalizeForSearch(%q) = %q, want %q", tt.in, got, tt.want)
+		}
 	}
 }
 

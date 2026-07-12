@@ -86,7 +86,7 @@ func (m *Model) doRefSearch() {
 
 // startRefRebuildCmd returns a command that asynchronously downloads CSVs
 // and rebuilds the reference database. Returns nil if already building or
-// the database is already populated.
+// the database is already populated with a modern schema.
 func (m *Model) startRefRebuildCmd() tea.Cmd {
 	if m.ref.building {
 		return nil
@@ -94,10 +94,15 @@ func (m *Model) startRefRebuildCmd() tea.Cmd {
 	if m.App.RefDB == nil {
 		return nil
 	}
-	// Check if already populated — skip unnecessary rebuilds.
+	// Trigger rebuild when empty OR when the search column needs backfill
+	// (databases created before the diacritic-insensitive search feature).
 	if n, err := m.App.RefDB.Count(); err == nil && n > 0 {
-		m.ref.ready = true
-		return nil
+		needRebuild, _ := m.App.RefDB.NeedsSearchBackfill()
+		if !needRebuild {
+			m.ref.ready = true
+			return nil
+		}
+		applog.Info("REF: search column needs backfill, triggering rebuild")
 	}
 	m.ref.building = true
 	applog.Info("REF: starting async rebuild")

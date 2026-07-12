@@ -89,6 +89,7 @@ func (rdb *DB) migrate() error {
 			grid     TEXT NOT NULL DEFAULT '',
 			height   INTEGER NOT NULL DEFAULT 0,
 			is_group INTEGER NOT NULL DEFAULT 0,
+			search   TEXT NOT NULL DEFAULT '',
 			PRIMARY KEY (ref_type, ref, name)
 		);
 		CREATE INDEX IF NOT EXISTS idx_refs_lookup ON refs(ref_type, ref);
@@ -98,5 +99,7 @@ func (rdb *DB) migrate() error {
 	}
 	// Migration: add is_group column for databases created before this field existed.
 	rdb.db.Exec(`ALTER TABLE refs ADD COLUMN is_group INTEGER NOT NULL DEFAULT 0`)
+	// Migration: add search column for diacritic/case-insensitive search.
+	rdb.db.Exec(`ALTER TABLE refs ADD COLUMN search TEXT NOT NULL DEFAULT ''`)
 	return nil
 }
