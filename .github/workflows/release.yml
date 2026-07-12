@@ -2,11 +2,6 @@ name: CQOps — Build and Publish
 
 on:
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version (leave empty to use VERSION file)'
-        required: false
-        default: ''
   push:
     tags:
       - 'v[0-9]+.[0-9]+.[0-9]+'
@@ -374,6 +369,36 @@ jobs:
           done
 
           echo "Cloudsmith upload complete."
+
+      - name: Remove old package versions
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          NAMESPACE: ${{ vars.CLOUDSMITH_NAMESPACE }}
+          REPO: ${{ vars.CLOUDSMITH_REPOSITORY }}
+          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY || '' }}
+        run: |
+          set -euo pipefail
+          echo "Cleaning up old versions (keeping only $VERSION)..."
+          REPO_PATH="${NAMESPACE}/${REPO}"
+          for pkg in cqops; do
+            # List all versions, skip current, delete the rest.
+            cloudsmith list pkgs "$REPO_PATH" -q "$pkg" --output-format json 2>/dev/null | \
+              python3 -c "
+import json, sys, os
+data = json.load(sys.stdin)
+current = os.environ['VERSION']
+for p in data.get('data', []):
+    v = p.get('version', '')
+    slug = p.get('slug', '')
+    if v and slug and v != current:
+        print(slug)
+" | while read slug; do
+              [ -z "$slug" ] && continue
+              echo "Deleting $pkg v$(echo $slug | grep -oP '\d+\.\d+\.\d+' || echo $slug)..."
+              cloudsmith delete "$REPO_PATH/$slug" --yes 2>/dev/null || echo "  (could not delete — may already be gone)"
+            done
+          done
+          echo "Cleanup complete."
 
       - name: Write summary
         run: |
