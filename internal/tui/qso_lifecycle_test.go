@@ -731,6 +731,7 @@ func TestSaveQSOExchangeFields(t *testing.T) {
 		"c1": {ID: "c1", LogbookID: m.App.LogbookName, Name: "Test Contest", ContestID: "CQ-WPX-CW",
 			PrefillExchange: true, ExchangeSent: "599 @serial",
 			PrefillExchangeRcvd: true, ExchangeRcvd: "599 @serial",
+			SerialExchange: true,
 		},
 	}
 	m.App.Logbook.ActiveContest = "c1"

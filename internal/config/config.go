@@ -245,7 +245,8 @@ type Contest struct {
 	ExchangeSent        string `yaml:"exchange_sent,omitempty"`
 	PrefillExchangeRcvd bool   `yaml:"prefill_exchange_rcvd,omitempty"`
 	ExchangeRcvd        string `yaml:"exchange_rcvd,omitempty"`
-	InUse               *bool  `yaml:"in_use,omitempty"` // nil or true = in use, false = excluded from cycling
+	InUse               *bool  `yaml:"in_use,omitempty"`          // nil or true = in use, false = excluded from cycling
+	SerialExchange      bool   `yaml:"serial_exchange,omitempty"` // true when contest uses integer serial numbers (STX/SRX)
 }
 
 // Operator represents a multi-operator station callsign profile.
@@ -434,8 +435,111 @@ func (c *Config) Upgrade(currentVersion string) {
 	if c == nil {
 		return
 	}
-	// Stamp the running version so future migrations can use it.
 	c.State.Version = currentVersion
+	// One-time migration: set serial_exchange:true on known serial-based
+	// contests for existing users upgrading from pre-0.8.14 configs.
+	if c.VersionBefore("0.8.14") {
+		c.migrateSerialExchange()
+	}
+}
+
+// VersionBefore returns true when the stored config version (State.Version)
+// is strictly less than the given semver string. An empty stored version
+// (pre-versioning config) is treated as older than any concrete version.
+func (c *Config) VersionBefore(ver string) bool {
+	if c == nil {
+		return false
+	}
+	if c.State.Version == "" {
+		return true // pre-versioning config — treat as old
+	}
+	return versionLess(c.State.Version, ver)
+}
+
+// serialContestIDs lists ADIF Contest-ID values whose exchange uses integer
+// serial numbers rather than zones or abbreviations. Mutually exclusive
+// with IARU-HF, field-day, VHF, and similar non-serial contests.
+var serialContestIDs = map[string]bool{
+	"AP-SPRINT":       true,
+	"ARRL-10":         true,
+	"ARRL-160":        true,
+	"ARRL-222":        true,
+	"ARRL-EME":        true,
+	"ARRL-RR-CW":      true,
+	"ARRL-RR-SSB":     true,
+	"ARRL-RTTY":       true,
+	"ARRL-SCR":        true,
+	"ARRL-SS-CW":      true,
+	"ARRL-SS-SSB":     true,
+	"ARRL-UHF-AUG":    true,
+	"ARRL-VHF-JAN":    true,
+	"ARRL-VHF-JUN":    true,
+	"ARRL-VHF-SEP":    true,
+	"CQ-160-CW":       true,
+	"CQ-160-SSB":      true,
+	"CQ-VHF":          true,
+	"CQ-WPX-CW":       true,
+	"CQ-WPX-RTTY":     true,
+	"CQ-WPX-SSB":      true,
+	"CQ-WW-CW":        true,
+	"CQ-WW-RTTY":      true,
+	"CQ-WW-SSB":       true,
+	"DARC-WAEDC-CW":   true,
+	"DARC-WAEDC-RTTY": true,
+	"DARC-WAEDC-SSB":  true,
+}
+
+// migrateSerialExchange sets SerialExchange=true on any existing contest
+// whose ContestID is a known serial-based contest.
+func (c *Config) migrateSerialExchange() {
+	if c.Contests == nil {
+		return
+	}
+	for id, ct := range c.Contests {
+		if ct.ContestID == "" || ct.SerialExchange {
+			continue
+		}
+		if serialContestIDs[ct.ContestID] {
+			ct.SerialExchange = true
+			c.Contests[id] = ct
+		}
+	}
+}
+
+// versionLess compares two dotted version strings (e.g. "0.8.13", "0.8.14").
+// Returns true when a < b. Non-numeric segments are compared lexicographically.
+// Malformed versions are treated as equal.
+func versionLess(a, b string) bool {
+	pa := splitVersion(a)
+	pb := splitVersion(b)
+	n := len(pa)
+	if len(pb) < n {
+		n = len(pb)
+	}
+	for i := 0; i < n; i++ {
+		va, ea := strconv.Atoi(pa[i])
+		vb, eb := strconv.Atoi(pb[i])
+		if ea == nil && eb == nil {
+			if va < vb {
+				return true
+			}
+			if va > vb {
+				return false
+			}
+		} else {
+			if pa[i] < pb[i] {
+				return true
+			}
+			if pa[i] > pb[i] {
+				return false
+			}
+		}
+	}
+	return len(pa) < len(pb)
+}
+
+func splitVersion(v string) []string {
+	return strings.Split(strings.TrimSpace(v), ".")
 }
 
 // Validate checks the config for structural integrity and safe values.

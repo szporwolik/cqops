@@ -339,8 +339,8 @@ func TestContestPrefillExchangeToggle(t *testing.T) {
 	cc.cursor = 1
 	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	// Navigate to prefill exchange sent checkbox (focus 5)
-	cc.focus = 5
+	// Navigate to prefill exchange sent checkbox (focus 6)
+	cc.focus = 6
 	if cc.prefillExchange {
 		t.Error("prefillExchange should start false")
 	}
@@ -372,7 +372,7 @@ func TestContestExchangeFieldVisibleWhenChecked(t *testing.T) {
 	})
 	cc.cursor = 1
 	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	cc.focus = 5
+	cc.focus = 6
 
 	// Toggle sent on
 	cc.Update(tea.KeyPressMsg{Code: tea.KeySpace})
@@ -385,7 +385,7 @@ func TestContestExchangeFieldVisibleWhenChecked(t *testing.T) {
 	}
 
 	// Toggle sent off
-	cc.focus = 5
+	cc.focus = 6
 	cc.Update(tea.KeyPressMsg{Code: tea.KeySpace})
 
 	view = cc.View()
@@ -473,10 +473,10 @@ func TestContestSaveLifecycle(t *testing.T) {
 	cc.dateInput.SetValue("2026-06-20")
 	cc.nextInput.SetValue("10")
 	cc.contInput.SetValue("CQ-WPX-CW")
-	cc.focus = 5
+	cc.focus = 6
 	cc.Update(tea.KeyPressMsg{Code: tea.KeySpace}) // toggle prefill sent on
 	cc.exchSentInput.SetValue("599 001")
-	cc.focus = 7
+	cc.focus = 8
 	cc.Update(tea.KeyPressMsg{Code: tea.KeySpace}) // toggle prefill rcvd on
 	cc.exchRcvdInput.SetValue("599 002")
 

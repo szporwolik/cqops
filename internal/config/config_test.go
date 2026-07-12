@@ -1105,3 +1105,118 @@ func TestValidate_RigFlrigPort(t *testing.T) {
 		t.Errorf("flrig port 12345 should pass: %v", err)
 	}
 }
+
+// =============================================================================
+// SerialExchange migration
+// =============================================================================
+
+func TestMigrateSerialExchange_SetsKnownContests(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Contests = map[string]Contest{
+		"c1": {ID: "c1", ContestID: "CQ-WPX-CW", SerialExchange: false},
+		"c2": {ID: "c2", ContestID: "CQ-WW-SSB", SerialExchange: false},
+		"c3": {ID: "c3", ContestID: "ARRL-SS-CW", SerialExchange: false},
+	}
+	cfg.migrateSerialExchange()
+
+	for _, id := range []string{"c1", "c2", "c3"} {
+		if !cfg.Contests[id].SerialExchange {
+			t.Errorf("contest %s (%s) should have SerialExchange=true after migration",
+				id, cfg.Contests[id].ContestID)
+		}
+	}
+}
+
+func TestMigrateSerialExchange_SkipsNonSerial(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Contests = map[string]Contest{
+		"c1": {ID: "c1", ContestID: "IARU-HF", SerialExchange: false},
+		"c2": {ID: "c2", ContestID: "ARRL-FIELD-DAY", SerialExchange: false},
+		"c3": {ID: "c3", ContestID: "IARU-R1-FIELD-DAY-SSB", SerialExchange: false},
+	}
+	cfg.migrateSerialExchange()
+
+	for _, id := range []string{"c1", "c2", "c3"} {
+		if cfg.Contests[id].SerialExchange {
+			t.Errorf("contest %s (%s) should NOT have SerialExchange after migration",
+				id, cfg.Contests[id].ContestID)
+		}
+	}
+}
+
+func TestMigrateSerialExchange_Idempotent(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Contests = map[string]Contest{
+		"c1": {ID: "c1", ContestID: "CQ-WPX-CW", SerialExchange: true},
+	}
+	// Run twice — should not panic or change anything.
+	cfg.migrateSerialExchange()
+	if !cfg.Contests["c1"].SerialExchange {
+		t.Error("already-set SerialExchange=true should remain true")
+	}
+	cfg.migrateSerialExchange()
+	if !cfg.Contests["c1"].SerialExchange {
+		t.Error("second migration should preserve SerialExchange=true")
+	}
+}
+
+func TestMigrateSerialExchange_EmptyContestID(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Contests = map[string]Contest{
+		"c1": {ID: "c1", ContestID: "", SerialExchange: false},
+	}
+	cfg.migrateSerialExchange()
+	if cfg.Contests["c1"].SerialExchange {
+		t.Error("contest with empty ContestID should not get SerialExchange")
+	}
+}
+
+func TestVersionBefore(t *testing.T) {
+	cfg := &Config{}
+	cfg.State.Version = "0.8.13"
+	if !cfg.VersionBefore("0.8.14") {
+		t.Error("0.8.13 should be before 0.8.14")
+	}
+	if cfg.VersionBefore("0.8.13") {
+		t.Error("0.8.13 should not be before itself")
+	}
+	if cfg.VersionBefore("0.8.12") {
+		t.Error("0.8.13 should not be before 0.8.12")
+	}
+}
+
+func TestVersionBefore_EmptyVersion(t *testing.T) {
+	cfg := &Config{}
+	// Empty version means pre-versioning config — treat as old.
+	if !cfg.VersionBefore("1.0.0") {
+		t.Error("empty version should be treated as before any concrete version")
+	}
+}
+
+func TestVersionBefore_NilConfig(t *testing.T) {
+	var cfg *Config
+	if cfg.VersionBefore("1.0.0") {
+		t.Error("nil config should return false")
+	}
+}
+
+func TestVersionLess(t *testing.T) {
+	tests := []struct {
+		a, b string
+		less bool
+	}{
+		{"0.8.13", "0.8.14", true},
+		{"0.8.14", "0.8.13", false},
+		{"1.0.0", "1.0.0", false},
+		{"1.0.0", "1.0.1", true},
+		{"0.9.0", "1.0.0", true},
+		{"1.0", "1.0.0", true},
+		{"", "", false},
+	}
+	for _, tt := range tests {
+		got := versionLess(tt.a, tt.b)
+		if got != tt.less {
+			t.Errorf("versionLess(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.less)
+		}
+	}
+}
