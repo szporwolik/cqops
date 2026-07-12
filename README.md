@@ -42,33 +42,12 @@ sudo apt update
 sudo apt install cqops
 ```
 
-> Cloudsmith repository publication pending. Until then, download the latest `.deb`:
-> ```bash
-> curl -sSLo cqops.deb https://github.com/szporwolik/cqops/releases/latest/download/cqops_amd64.deb
-> sudo dpkg -i cqops.deb
-> ```
-
 ### Fedora, RHEL, Rocky Linux, AlmaLinux
 
 ```bash
 curl -1sLf 'https://dl.cloudsmith.io/public/szporwolik/cqops/setup.rpm.sh' | sudo -E bash
 sudo dnf install cqops
 ```
-
-> Cloudsmith repository publication pending.
-
-### Arch Linux, CachyOS, EndeavourOS, Manjaro
-
-```bash
-paru -S cqops-bin
-```
-
-Or with `yay`:
-```bash
-yay -S cqops-bin
-```
-
-> AUR package publication pending first push.
 
 ### Go (universal)
 
