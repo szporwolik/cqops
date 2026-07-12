@@ -8,13 +8,13 @@ import (
 	"github.com/szporwolik/cqops/internal/solar"
 )
 
-// Pre-allocated solar cell base style — only Width changes per render.
+// Pre-allocated solar cell base style Ă˘â‚¬â€ť only Width changes per render.
 var solarCellBaseStyle = lipgloss.NewStyle().Align(lipgloss.Right)
 
-// Pre-allocated solar label style — invariant muted foreground.
+// Pre-allocated solar label style Ă˘â‚¬â€ť invariant muted foreground.
 var solarLabelStyle = lipgloss.NewStyle().Foreground(P.TextMuted)
 
-// Pre-allocated solar placeholder base style — only Width varies.
+// Pre-allocated solar placeholder base style Ă˘â‚¬â€ť only Width varies.
 var solarPlaceholderBaseStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
 	BorderForeground(P.Border).
@@ -22,10 +22,10 @@ var solarPlaceholderBaseStyle = lipgloss.NewStyle().
 	Height(10).
 	Align(lipgloss.Center, lipgloss.Top)
 
-// Fixed box width: 5 columns × 6 cells + 2 borders + 4 padding = 36.
+// Fixed box width: 5 columns Ä‚â€” 6 cells + 2 borders + 4 padding = 36.
 const solarBoxW = 36
 
-// Pre-allocated solar border box style — invariant.
+// Pre-allocated solar border box style Ă˘â‚¬â€ť invariant.
 var solarBoxStyle = lipgloss.NewStyle().
 	Border(lipgloss.RoundedBorder()).
 	BorderForeground(P.Border).
@@ -37,7 +37,7 @@ var solarBoxStyle = lipgloss.NewStyle().
 // right side of the QSO form on wide screens. Returns empty string when
 // no solar data is available and we're not in a loading state.
 //
-// Cached — only rebuilds when solar data content or loading state changes.
+// Cached Ă˘â‚¬â€ť only rebuilds when solar data content or loading state changes.
 // Box width is fixed so borders never resize when transitioning from
 // placeholder to real data.
 func (m *Model) renderSolarPanel(availW int) string {
@@ -47,7 +47,7 @@ func (m *Model) renderSolarPanel(availW int) string {
 
 	d := m.solar.data
 
-	// Loading / offline / failed placeholder — cached separately.
+	// Loading / offline / failed placeholder Ă˘â‚¬â€ť cached separately.
 	if d == nil {
 		if m.solar.failed {
 			return ""
@@ -75,7 +75,7 @@ func (m *Model) renderSolarPanel(availW int) string {
 		fmt.Fprintf(&sigB, "%s:%s|", b+"_day", d.Bands[b+"_day"])
 		fmt.Fprintf(&sigB, "%s:%s|", b+"_night", d.Bands[b+"_night"])
 	}
-	// Include contest mode in cache key — padding rows change with form height.
+	// Include contest mode in cache key Ă˘â‚¬â€ť padding rows change with form height.
 	contest := m.App.Logbook.ActiveContest != ""
 	fmt.Fprintf(&sigB, "c:%v", contest)
 	sig := sigB.String()
@@ -118,7 +118,7 @@ func (m *Model) renderSolarPanel(availW int) string {
 		return solarCellBaseStyle.Width(w).Render(s)
 	}
 
-	// Header row — first column same width as data cols.
+	// Header row Ă˘â‚¬â€ť first column same width as data cols.
 	header := renderCell("", colW)
 	for _, b := range bands {
 		header += renderCell(solar.BandShort[b], colW)
@@ -225,8 +225,13 @@ func (m *Model) renderSolarPanel(availW int) string {
 	}
 	content := lipgloss.JoinVertical(lipgloss.Left, contentParts...)
 
-	// Fixed-width box — borders never change size.
-	result := solarBoxStyle.Render(content)
+	// Fixed-width box Ă˘â‚¬â€ť borders never change size.
+	// Fixed-width box; yellow border in contest mode matching QSO form.
+	boxStyle := solarBoxStyle
+	if contest {
+		boxStyle = contestBorderBoxStyle.Width(solarBoxW).Padding(0, 2).Align(lipgloss.Right, lipgloss.Top)
+	}
+	result := boxStyle.Render(content)
 
 	m.solar.cachedSig = sig
 	m.solar.cachedView = result

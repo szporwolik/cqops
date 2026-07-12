@@ -179,6 +179,9 @@ type Model struct {
 	help           help.Model
 	recentQSOs     *RecentQSOs // read-only Recent QSOs view
 	callRecentQSOs *RecentQSOs // filtered QSOs for the entered callsign (shown above recentQSOs)
+
+	// Contest stats panel — computed from DB, refreshed every few seconds.
+	contest contestStats
 }
 
 type tickMsg time.Time
@@ -1157,27 +1160,45 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 	}
 	formBox := drawBorderedBox(formContent, boxW)
 
-	// Solar panel — right-side column on wide screens (≥166 cols),
-	// gated by the General → Solar at QSO pane config option.
+	// When contest is active, give the form and contest panel a yellow
+	// border matching the contest info box above the recent QSOs.
+	if m.App.Logbook.ActiveContest != "" {
+		formBox = contestBorderBoxStyle.Width(boxW).Render(formContent)
+	}
+
+	// Side panels on wide screens: contest first (left), then solar
+	// (right). Both are fixed 36-char boxes (+6 border/padding = 42).
+	// Only render when the full panel fits — no partial rendering.
 	var formRow string
-	var solarPanel string
-	if w >= 166 && m.App.Config.General.SolarAtQSOPane {
-		solarW := w - 2 - boxW - 0 + 2 // no gap, 2px wider panel
-		if solarW < 32 {
-			solarW = 32
+	const panelMinW = 42 // solarBoxW (36) + border + padding
+	free := w - 2 - boxW // space right of the form box
+	if free >= panelMinW {
+		leftH := lipgloss.Height(formBox)
+
+		// Contest panel — shown when contest is active.
+		if m.App.Logbook.ActiveContest != "" {
+			cp := m.renderContestPanel()
+			if cp != "" {
+				cp = lipgloss.Place(lipgloss.Width(cp), leftH, lipgloss.Top, lipgloss.Left, cp)
+				formRow = lipgloss.JoinHorizontal(lipgloss.Top, formBox, cp)
+				free -= lipgloss.Width(cp)
+			}
 		}
-		solarPanel = m.renderSolarPanel(solarW)
-		if solarPanel != "" {
-			leftH := lipgloss.Height(formBox)
-			solarPanel = lipgloss.Place(
-				lipgloss.Width(solarPanel),
-				leftH,
-				lipgloss.Top, lipgloss.Left,
-				solarPanel,
-			)
-			formRow = lipgloss.JoinHorizontal(lipgloss.Top, formBox, solarPanel)
+
+		// Solar panel — gated by config, only if there's still room.
+		if m.App.Config.General.SolarAtQSOPane && free >= panelMinW {
+			sp := m.renderSolarPanel(solarBoxW)
+			if sp != "" {
+				sp = lipgloss.Place(lipgloss.Width(sp), leftH, lipgloss.Top, lipgloss.Left, sp)
+				if formRow != "" {
+					formRow = lipgloss.JoinHorizontal(lipgloss.Top, formRow, sp)
+				} else {
+					formRow = lipgloss.JoinHorizontal(lipgloss.Top, formBox, sp)
+				}
+			}
 		}
 	}
+
 	if formRow == "" {
 		formRow = formBox
 	}
@@ -1257,13 +1278,24 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 
 	// Contest mode box — shown when a contest is active.
 	var contestBox string
-	contestLine := m.buildContestLine()
+	contestW := lipgloss.Width(formRow)
+	if contestW < 40 {
+		contestW = 40
+	}
+	contestLine := m.buildContestLine(contestW)
 	if contestLine != "" {
-		contestW := lipgloss.Width(formRow)
-		if contestW < 40 {
-			contestW = 40
+		// Truncate to fit — never wrap. Padding(0,1) = 2px overhead.
+		contentW := contestW - 2
+		if contentW < 20 {
+			contentW = 20
 		}
-		contestBox = contestBoxStyle.Width(contestW).Render(contestLine)
+		if lipgloss.Width(contestLine) > contentW {
+			runes := []rune(contestLine)
+			if len(runes) > contentW {
+				contestLine = string(runes[:contentW])
+			}
+		}
+		contestBox = contestBoxStyle.Width(contestW).Align(lipgloss.Center, lipgloss.Center).Render(contestLine)
 		contestBoxH := lipgloss.Height(contestBox)
 		tableH -= contestBoxH
 	}
@@ -1334,8 +1366,9 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 }
 
 // buildContestLine returns the contest info line for the QSO screen, or "" if
-// no contest is active. Cached — only recomputes when contest or seq changes.
-func (m *Model) buildContestLine() string {
+// no contest is active. Cached — only recomputes when contest, seq, or width changes.
+// On narrow screens (< 120 cols), "First HH:MM" is dropped to save space.
+func (m *Model) buildContestLine(boxW int) string {
 	id := m.App.Logbook.ActiveContest
 	if id == "" {
 		m.rc.contestLine = ""
@@ -1348,14 +1381,26 @@ func (m *Model) buildContestLine() string {
 		m.rc.contestLineSig = ""
 		return ""
 	}
-	sig := id + "|" + strconv.Itoa(ct.NextQSO)
+	sig := id + "|" + strconv.Itoa(ct.NextQSO) + "|" + strconv.Itoa(m.contest.TotalQSOs) + "|" + strconv.FormatInt(time.Now().UTC().Unix()/10, 10) + "|" + strconv.Itoa(boxW) + "|" + strconv.FormatInt(int64(m.contest.OnAir.Seconds()), 10)
 	if m.rc.contestLineSig == sig && m.rc.contestLine != "" {
 		return m.rc.contestLine
 	}
 	m.rc.contestLineSig = sig
-	m.rc.contestLine = " Contest: " + config.ContestDisplayName(&ct) +
-		"   Contest ID: " + ct.ContestID +
-		"   Next QSO seq: " + strconv.Itoa(ct.NextQSO)
+	since := formatDurationShort(time.Now().UTC().Sub(m.contest.LastQSO))
+	first := ""
+	if !m.contest.FirstQSO.IsZero() && boxW >= 120 {
+		first = "  Started " + m.contest.FirstQSO.Format("15:04")
+	}
+	onAir := ""
+	if m.contest.OnAir > 0 && boxW >= 100 {
+		onAir = "  On " + formatDurationShort(m.contest.OnAir)
+	}
+	namePart := ""
+	if ct.Name != "" && ct.Name != ct.ContestID && boxW >= 100 {
+		namePart = " \u00b7 " + ct.Name
+	}
+	m.rc.contestLine = fmt.Sprintf(" %s%s   %d QSOs%s   Last %s ago   Next #%d%s",
+		ct.ContestID, namePart, m.contest.TotalQSOs, first, since, ct.NextQSO, onAir)
 	return m.rc.contestLine
 }
 
@@ -1376,6 +1421,7 @@ func (m *Model) cycleActiveContest() {
 
 	if current == "" {
 		m.App.SetActiveContest(ids[0])
+		m.contest = contestStats{} // reset on contest change
 		ct := m.App.Config.Contests[ids[0]]
 		m.toasts.Info(fmt.Sprintf("Contest: %s", config.ContestDisplayName(&ct)))
 		m.needRefresh = true
@@ -1387,10 +1433,12 @@ func (m *Model) cycleActiveContest() {
 		if id == current {
 			if i+1 < len(ids) {
 				m.App.SetActiveContest(ids[i+1])
+				m.contest = contestStats{} // reset on contest change
 				ct := m.App.Config.Contests[ids[i+1]]
 				m.toasts.Info(fmt.Sprintf("Contest: %s", config.ContestDisplayName(&ct)))
 			} else {
 				m.App.SetActiveContest("")
+				m.contest = contestStats{} // reset on contest clear
 				m.toasts.Info("Contest: None")
 			}
 			m.needRefresh = true
@@ -1402,6 +1450,7 @@ func (m *Model) cycleActiveContest() {
 	// Current contest not found in active list (possibly deleted or set to
 	// not-in-use) — clear and wrap to first.
 	m.App.SetActiveContest("")
+	m.contest = contestStats{} // reset on contest clear
 	m.toasts.Info("Contest: None")
 	m.needRefresh = true
 	config.Save(m.App.ConfigPath, m.App.Config)
