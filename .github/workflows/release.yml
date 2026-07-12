@@ -258,6 +258,8 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/download-artifact@v4
         with:
@@ -271,12 +273,36 @@ jobs:
         id: meta
         run: echo "version=${{ needs.validate-version.outputs.version }}" >> $GITHUB_OUTPUT
 
+      - name: Build release notes from merged PRs
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          NOTES="release-notes.md"
+
+          echo "## What's Changed" > "$NOTES"
+          echo "" >> "$NOTES"
+
+          LAST_TAG=$(git tag --sort=-v:refname | grep -E '^v[0-9]' | head -1 || echo "")
+          if [ -n "$LAST_TAG" ]; then
+            echo "**Full Changelog:** https://github.com/szporwolik/cqops/compare/${LAST_TAG}...v${VERSION}" >> "$NOTES"
+            echo "" >> "$NOTES"
+            # List all PRs merged since last tag.
+            git log "${LAST_TAG}..HEAD" --merges --pretty=format:"- %s%n  %b" --reverse >> "$NOTES" 2>/dev/null || true
+          else
+            echo "**First release.**" >> "$NOTES"
+            git log --merges --pretty=format:"- %s%n  %b" --reverse >> "$NOTES" 2>/dev/null || true
+          fi
+
+          echo "Release notes:"
+          cat "$NOTES"
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ steps.meta.outputs.version }}
           name: v${{ steps.meta.outputs.version }}
-          generate_release_notes: true
+          body_path: release-notes.md
           files: dist/*
 
   # ──────────────────────────────────────────────────────────────────────────
