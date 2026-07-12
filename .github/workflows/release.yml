@@ -2,9 +2,6 @@ name: CQOps — Build and Publish
 
 on:
   workflow_dispatch:
-  push:
-    tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
 
 concurrency:
   group: release-${{ github.ref }}
@@ -370,47 +367,19 @@ jobs:
 
           echo "Cloudsmith upload complete."
 
-      - name: Remove old package versions
-        env:
-          VERSION: ${{ steps.meta.outputs.version }}
-          NAMESPACE: ${{ vars.CLOUDSMITH_NAMESPACE }}
-          REPO: ${{ vars.CLOUDSMITH_REPOSITORY }}
-          CLOUDSMITH_API_KEY: ${{ secrets.CLOUDSMITH_API_KEY || '' }}
-        run: |
-          set -euo pipefail
-          echo "Cleaning up old versions (keeping only $VERSION)..."
-          REPO_PATH="${NAMESPACE}/${REPO}"
-          for pkg in cqops; do
-            # List all versions, skip current, delete the rest.
-            cloudsmith list pkgs "$REPO_PATH" -q "$pkg" --output-format json 2>/dev/null | \
-              python3 -c "
-import json, sys, os
-data = json.load(sys.stdin)
-current = os.environ['VERSION']
-for p in data.get('data', []):
-    v = p.get('version', '')
-    slug = p.get('slug', '')
-    if v and slug and v != current:
-        print(slug)
-" | while read slug; do
-              [ -z "$slug" ] && continue
-              echo "Deleting $pkg v$(echo $slug | grep -oP '\d+\.\d+\.\d+' || echo $slug)..."
-              cloudsmith delete "$REPO_PATH/$slug" --yes 2>/dev/null || echo "  (could not delete — may already be gone)"
-            done
-          done
-          echo "Cleanup complete."
-
       - name: Prune old GitHub releases (keep last 3)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          OLD=$(gh release list --limit 20 --json tagName,isLatest --jq '.[] | select(.isLatest == false) | .tagName' | tail -n +4 || echo "")
-          for tag in $OLD; do
+          echo "Pruning old releases, keeping latest 3..."
+          gh release list --limit 20 --json tagName,isLatest,createdAt \
+            --jq 'sort_by(.createdAt) | reverse | .[3:] | .[].tagName' | while read tag; do
+            [ -z "$tag" ] && continue
             echo "Deleting old release: $tag"
-            gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || echo "  (already gone)"
+            gh release delete "$tag" --yes --cleanup-tag 2>/dev/null || echo "  skip"
           done
-          echo "Prune complete."
+          echo "Prune done."
 
       - name: Write summary
         run: |
