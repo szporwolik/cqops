@@ -201,8 +201,8 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("ctrl+o"),
 			key.WithHelp("Ctrl+O", "Operator"),
 		), DXCSpotFill: key.NewBinding(
-			key.WithKeys("ctrl+f"),
-			key.WithHelp("Ctrl+F", "Spot→Call"),
+			key.WithKeys("ctrl+p"),
+			key.WithHelp("Ctrl+P", "Spot→Call"),
 		), RigTuneUp: key.NewBinding(
 			key.WithKeys("ctrl+up"),
 			key.WithHelp("Ctrl+↑", "Rig +step"),
@@ -252,6 +252,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 			m.keys.NextRow,
 			m.keys.PrevRow,
 			m.keys.Spot,
+			m.keys.DXCSpotFill,
 			m.keys.Lookup,
 			m.keys.Delete,
 			m.keys.CycleUp,
@@ -273,6 +274,10 @@ func (m *Model) ActiveBindings() []key.Binding {
 				m.keys.RotorBearing,
 				m.keys.RotorStop,
 			)
+		}
+		// Rig tune — shift frequency up/down by band-appropriate step.
+		if m.rig.connected && m.screen == screenQSO {
+			bindings = append(bindings, m.keys.RigTuneUp, m.keys.RigTuneDown)
 		}
 		// Favorite slots — always available on QSO form.
 		bindings = append(bindings,

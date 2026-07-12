@@ -710,7 +710,7 @@ func (m *Model) dxcPathLine(width int) string {
 		center = fmt.Sprintf("│ %s │", formatFreqCompact(curKhz))
 	}
 
-	// Update cycling state for Ctrl+F. Reset index when spots change.
+	// Update cycling state for Ctrl+P. Reset index when spots change.
 	if !dxcSpotsEqual(m.dxc.pathSpots, matched) {
 		m.dxc.pathSpots = matched
 		m.dxc.pathSpotIdx = -1

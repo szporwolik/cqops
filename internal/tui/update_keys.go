@@ -397,7 +397,7 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.cycleActiveOperator()
 		return nil, true
 
-	case msg.String() == "ctrl+f":
+	case msg.String() == "ctrl+p":
 		m.fillFromDXCSpot()
 		return nil, true
 
