@@ -696,12 +696,9 @@ func TestCycleActiveContestToasts(t *testing.T) {
 func TestContestBoxVisible(t *testing.T) {
 	m := newContestTestModel(t, "c1")
 
-	line := m.buildContestLine()
+	line := m.buildContestLine(120)
 	if line == "" {
 		t.Fatal("buildContestLine should return content when contest active")
-	}
-	if !strings.Contains(line, "CQ WPX") {
-		t.Errorf("Contest line should contain name, got: %s", line)
 	}
 	if !strings.Contains(line, "CQ-WPX-CW") {
 		t.Errorf("Contest line should contain Contest ID, got: %s", line)
@@ -711,7 +708,7 @@ func TestContestBoxVisible(t *testing.T) {
 func TestContestBoxHiddenWhenNone(t *testing.T) {
 	m := newContestTestModel(t, "")
 
-	line := m.buildContestLine()
+	line := m.buildContestLine(120)
 	if line != "" {
 		t.Errorf("buildContestLine should be empty when no contest active, got: %s", line)
 	}
@@ -720,7 +717,7 @@ func TestContestBoxHiddenWhenNone(t *testing.T) {
 func TestContestBoxHiddenWhenUnknownID(t *testing.T) {
 	m := newContestTestModel(t, "bogus")
 
-	line := m.buildContestLine()
+	line := m.buildContestLine(120)
 	if line != "" {
 		t.Errorf("buildContestLine should be empty for unknown contest ID, got: %s", line)
 	}

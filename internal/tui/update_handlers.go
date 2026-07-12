@@ -363,10 +363,13 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 // that were flagged during normal message handling.
 func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
 	if m.needRefresh {
-		m.needRefresh = false
 		// Only refresh QSOs when on a screen that displays them — avoids
 		// unnecessary DB queries on DXC, PSK, BPL, and other screens.
+		// Keep the flag set when the current screen can't show QSOs so
+		// the refresh fires as soon as the user navigates to a QSO screen
+		// (fixes stale recent QSOs after logbook create/switch).
 		if m.screen == screenQSO || m.screen == screenPartner || m.screen == screenLogbookEditor {
+			m.needRefresh = false
 			cmd = tea.Batch(cmd, m.refreshQSOS())
 		}
 	}
@@ -413,7 +416,8 @@ func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
 			return tea.Batch(cmd, m.dxcSpotLookupCmd(call)), true
 		}
 	}
-	// Auto-trigger REF database rebuild when enabled and empty.
+	// Auto-trigger REF database rebuild when enabled and empty or when
+	// the search column needs backfill (diacritic-insensitive search).
 	if m.App != nil && m.App.Config.General.UseRef &&
 		m.App.RefDB != nil && !m.ref.building && !m.ref.ready {
 		if n, err := m.App.RefDB.Count(); err == nil && n == 0 {
@@ -421,7 +425,14 @@ func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
 				return tea.Batch(cmd, c), true
 			}
 		} else if n > 0 {
-			m.ref.ready = true
+			needBackfill, _ := m.App.RefDB.NeedsSearchBackfill()
+			if needBackfill {
+				if c := m.startRefRebuildCmd(); c != nil {
+					return tea.Batch(cmd, c), true
+				}
+			} else {
+				m.ref.ready = true
+			}
 		}
 	}
 	return cmd, false
@@ -503,13 +514,13 @@ func (m *Model) handleLookupResultMsg(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.
 			m.recentQSOs.SetQSOS(r.qsos)
 			m.rc.pathSig = ""
 			m.rc.logStatsSig = ""
-			if !m.recentQSOs.filterSuppressed && m.recentQSOs.IsFiltered() {
-				filtered, filterErr := store.SearchQSOsByCall(m.App.DB, m.recentQSOs.filterCall, 200)
+			if !m.callRecentQSOs.filterSuppressed && m.callRecentQSOs.IsFiltered() {
+				filtered, filterErr := store.SearchQSOsByCall(m.App.DB, m.callRecentQSOs.filterCall, 200)
 				if filterErr == nil {
-					m.recentQSOs.SetFilterCall(m.recentQSOs.filterCall, filtered)
+					m.callRecentQSOs.SetFilterCall(m.callRecentQSOs.filterCall, filtered)
 				}
 			}
-			m.recentQSOs.filterSuppressed = false
+			m.callRecentQSOs.filterSuppressed = false
 		}
 		return m, cmd
 	default:

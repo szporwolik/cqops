@@ -12,16 +12,18 @@ section: "hamradio"
 priority: "optional"
 maintainer: "Szymon Porwolik <szporwolik@users.noreply.github.com>"
 description: |
-  CQOps - Fast, minimal Go TUI ham radio logger.
-  Built with Bubble Tea, supporting ADIF, WSJT-X, Wavelog,
-  QRZ, flrig/hamlib rig control, DX Cluster, PSK Reporter,
-  SOTA/POTA/WWFF references, and more.
+  A small, fast, offline-first amateur radio logger for the terminal —
+  built for portable/field ops, SOTA/POTA activations, and club stations
+  with rotating operators. Hot-swap operators and logbooks, log via
+  WSJT-X auto-feed or keyboard, sync to Wavelog. GPS-aware with APRS
+  beaconing and a built-in browser dashboard. Runs on Raspberry Pi,
+  old laptops, or any low-power machine over SSH or a local terminal.
 vendor: "Szymon Porwolik"
 homepage: "https://github.com/szporwolik/cqops"
-license: "MIT"
+license: "Apache-2.0"
 
-depends:
-  - libc6
+# Binary is statically linked (CGO_ENABLED=0) — no runtime library deps.
+depends: []
 
 contents:
   - src: build/cqops-linux-__ARCH__
@@ -48,13 +50,19 @@ contents:
 
 overrides:
   deb:
-    depends:
-      - libc6
+    # Static binary — no runtime dependencies needed.
+    depends: []
+  rpm:
+    provides:
+      - cqops
 
 # -----------------------------------------------------------------------------
-# For multi-arch builds, run nfpm once per arch:
+# For multi-arch builds, run nfpm once per arch+format combination:
 #   nfpm package -f nfpm.yaml -p deb -t dist/ -r amd64
 #   nfpm package -f nfpm.yaml -p deb -t dist/ -r arm64
+#   nfpm package -f nfpm.yaml -p deb -t dist/ -r armhf
 #   nfpm package -f nfpm.yaml -p rpm -t dist/ -r amd64
+#   nfpm package -f nfpm.yaml -p rpm -t dist/ -r arm64
+# -----------------------------------------------------------------------------
 #   nfpm package -f nfpm.yaml -p rpm -t dist/ -r arm64
 # -----------------------------------------------------------------------------

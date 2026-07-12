@@ -39,6 +39,10 @@ type RecentQSOs struct {
 	// Contest mode swaps SOTA/POTA/WWFF/IOTA/SIG for ExchSent/ExchRcvd
 	// at the wide tiers. Cache is invalidated when this changes.
 	contest bool
+
+	// Multi-operator mode swaps Grid for Operator at all tiers. Used
+	// for club logbooks where multiple ops log under one callsign.
+	multiOp bool
 }
 
 // NewRecentQSOs creates a read-only recent QSOs view.
@@ -97,6 +101,18 @@ func (r *RecentQSOs) SetContest(v bool) {
 		return
 	}
 	r.contest = v
+	r.cachedView = ""
+	r.filteredCachedView = ""
+}
+
+// SetMultiOp enables or disables multi-operator mode. When active, the
+// Operator column replaces Grid — useful for club logbooks where
+// multiple operators log under the same callsign.
+func (r *RecentQSOs) SetMultiOp(v bool) {
+	if r.multiOp == v {
+		return
+	}
+	r.multiOp = v
 	r.cachedView = ""
 	r.filteredCachedView = ""
 }
@@ -160,6 +176,17 @@ func (r *RecentQSOs) View() string {
 		}
 	}
 
+	// Multi-operator mode: swap Grid for Operator (useful for club
+	// logbooks where callsign alone doesn't identify the op).
+	if r.multiOp {
+		for i, n := range names {
+			if n == "Grid" {
+				names[i] = "Operator"
+				break
+			}
+		}
+	}
+
 	var cols []table.Column
 	minTotal := 0
 	for _, n := range names {
@@ -171,40 +198,6 @@ func (r *RecentQSOs) View() string {
 	}
 	gaps := len(names) - 1
 	extra := bodyW - gaps - minTotal
-
-	// Per-column width caps prevent short fields from blowing up on
-	// ultra-wide screens. Caps are generous enough to never truncate
-	// real data — they only cap the extra space distributed beyond
-	// minWidth. Columns not listed here (e.g. future additions)
-	// absorb leftover via the final dump to the last column.
-	caps := map[string]int{
-		"Date":    10, // YYYY-MM-DD
-		"Time":    8,  // HH:MM:SS
-		"Call":    12, // longest ~10 (with portable suffix)
-		"Band":    7,  // "1.25cm" is 6
-		"Freq":    10, // "1296.0000" is 9
-		"Mode":    6,  // "RTTY" is 4
-		"Sub":     5,  // "LSB"/"USB" is 3
-		"RSTs":    5,  // "599" is 3
-		"RSTr":    5,
-		"DXCC":    20, // longest country name ~32, but 20 is practical
-		"Name":    30, // generous for operator/org names
-		"Grid":    8,  // "AA00aa" max 6
-		"QTH":     25, // city/region names rarely exceed this
-		"Comment": 30, // generous for short notes
-		"Dist":    6,  // distance in km, 5 digits max
-		"Pwr":     5,  // "1500" is 4
-		"Src":     5,  // "WSJT" or "Man" max 4
-		"WL":      4,  // "Y"/"N"/"—" max 1
-		"SOTA":    14, // "XX-nnnn" ~7-8; higher cap lets it breathe on huge screens
-		"POTA":    14, // same pattern
-		"WWFF":    16, // "XXFF-nnnn" ~9; higher cap absorbs leftover on wide displays
-		"IOTA":    10, // "XX-nnn" is 6
-		"SIG":     8,  // "SOTA"/"POTA" max 4
-		"Snt":     10, // "599 0001" is 8
-		"Rcv":     10,
-		"Op":      12, // callsign ~6-8
-	}
 
 	if extra > 0 && len(cols) > 0 {
 		// Pass 1: proportional distribution to text-heavy columns.
@@ -222,7 +215,7 @@ func (r *RecentQSOs) View() string {
 				share = extra / 10
 			}
 			if share > 0 {
-				share = applyCap(cols[i].Width, share, cols[i].Title, caps)
+				share = applyCap(cols[i].Width, share, cols[i].Title, colCaps)
 			}
 			cols[i].Width += share
 			distributed += share
@@ -236,7 +229,7 @@ func (r *RecentQSOs) View() string {
 			moved := 0
 			eligible := 0
 			for i := range cols {
-				if cap, ok := caps[cols[i].Title]; !ok || cols[i].Width < cap {
+				if cap, ok := colCaps[cols[i].Title]; !ok || cols[i].Width < cap {
 					eligible++
 				}
 			}
@@ -250,14 +243,14 @@ func (r *RecentQSOs) View() string {
 				perCol = 1
 			}
 			for i := range cols {
-				if cap, ok := caps[cols[i].Title]; ok && cols[i].Width >= cap {
+				if cap, ok := colCaps[cols[i].Title]; ok && cols[i].Width >= cap {
 					continue
 				}
 				add := perCol
 				if add > leftover {
 					add = leftover
 				}
-				add = applyCap(cols[i].Width, add, cols[i].Title, caps)
+				add = applyCap(cols[i].Width, add, cols[i].Title, colCaps)
 				cols[i].Width += add
 				leftover -= add
 				moved += add
@@ -345,6 +338,40 @@ func (r *RecentQSOs) View() string {
 // Height returns the rendered height of the component.
 func (r *RecentQSOs) Height() int {
 	return lipgloss.Height(r.View())
+}
+
+// colCaps defines per-column maximum widths (by header/title — NOT qsoAllCols
+// key). Prevents short fields (Band, Mode, Pwr, etc.) from blowing up on
+// ultra-wide screens. Caps are generous enough to never truncate real data.
+// Shared by RecentQSOs and LogbookEditor via applyCap().
+var colCaps = map[string]int{
+	"Date":    10, // YYYY-MM-DD
+	"Time":    8,  // HH:MM:SS
+	"Call":    12, // longest ~10 (with portable suffix)
+	"Band":    7,  // "1.25cm" is 6
+	"Freq":    10, // "1296.0000" is 9
+	"Mode":    6,  // "RTTY" is 4
+	"Sub":     5,  // "LSB"/"USB" is 3
+	"RSTs":    5,  // "599" is 3
+	"RSTr":    5,
+	"DXCC":    20, // longest country name ~32, but 20 is practical
+	"Name":    30, // generous for operator/org names
+	"Grid":    8,  // "AA00aa" max 6
+	"QTH":     25, // city/region names rarely exceed this
+	"Comment": 30, // generous for short notes
+	"Dist":    6,  // distance in km, 5 digits max
+	"Pwr":     5,  // "1500" is 4
+	"Src":     5,  // "WSJT" or "Man" max 4
+	"WL":      4,  // "Y"/"N"/"—" max 1
+	"SOTA":    14, // "XX-nnnn" ~7-8; higher cap lets it breathe on huge screens
+	"POTA":    14, // same pattern
+	"WWFF":    16, // "XXFF-nnnn" ~9; higher cap absorbs leftover on wide displays
+	"IOTA":    10, // "XX-nnn" is 6
+	"SIG":     8,  // "SOTA"/"POTA" max 4
+	"Snt":     10, // "599 0001" is 8
+	"Rcv":     10,
+	"Op":      12, // callsign ~6-8
+	"Contest": 16, // contest ADIF ID
 }
 
 // qsoColTiers defines which columns to show at each terminal width.
@@ -462,6 +489,12 @@ var qsoAllCols = map[string]struct {
 	"SIG":      {"SIG", 5, func(q *qso.QSO) string { return q.SIG }},
 	"ExchSent": {"Snt", 6, func(q *qso.QSO) string { return q.ExchSent }},
 	"ExchRcvd": {"Rcv", 6, func(q *qso.QSO) string { return q.ExchRcvd }},
+	"Contest": {"Contest", 10, func(q *qso.QSO) string {
+		if q.ContestADIFID != "" {
+			return q.ContestADIFID
+		}
+		return q.ContestID
+	}},
 }
 
 func bandOrFreq(q *qso.QSO) string {

@@ -10,7 +10,7 @@ This document lists third-party components used by CQOps that are not covered by
 | **farmergreg/spec** | ADIF specification types | BSD-3-Clause | `../licenses/SPEC-BSD3-LICENSE` | https://github.com/farmergreg/spec |
 | **ftl/hamradio** | Grid locator, distance math, DXCC prefix lookup | MIT | `../licenses/HAMRADIO-MIT-LICENSE` | https://github.com/ftl/hamradio |
 | **k0swe/wsjtx-go** | WSJT-X UDP protocol | MIT | `../licenses/WSJTXGO-MIT-LICENSE` | https://github.com/k0swe/wsjtx-go |
-| **Charm stack** (Bubble Tea v2, Bubbles, Lip Gloss) | TUI framework | MIT | `../licenses/BUBBLETEA-MIT-LICENSE`, `../licenses/BUBBLES-MIT-LICENSE`, `../licenses/LIPGLOSS-MIT-LICENSE` | https://charm.land |
+| **Charm stack** (Bubble Tea v2, Bubbles, Lip Gloss, x/term) | TUI framework and terminal support | MIT | `../licenses/BUBBLETEA-MIT-LICENSE`, `../licenses/BUBBLES-MIT-LICENSE`, `../licenses/LIPGLOSS-MIT-LICENSE`, `../licenses/CHARM-X-TERM-MIT-LICENSE` | https://charm.land |
 | **modernc.org/sqlite** | Pure-Go SQLite database | BSD-3-Clause | `../licenses/SQLITE-BSD3-LICENSE` | https://modernc.org/sqlite |
 | **spf13/cobra** | CLI framework | Apache 2.0 | `../licenses/COBRA-APACHE2-LICENSE.txt` | https://github.com/spf13/cobra |
 | **gopkg.in/yaml.v3** | Configuration parsing | MIT | `../licenses/YAML-MIT-LICENSE` | https://github.com/go-yaml/yaml |

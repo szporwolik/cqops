@@ -62,9 +62,9 @@ type dxcState struct {
 	cachedSpacerStyle  lipgloss.Style
 	cachedSpacerStyleW int
 
-	// Path line state — caches matched spots for Ctrl+F cycling.
+	// Path line state — caches matched spots for Ctrl+P cycling.
 	pathSpots   []store.DXCSpot // spots at/near current frequency (from dxcPathLine)
-	pathSpotIdx int             // cycling index for Ctrl+F
+	pathSpotIdx int             // cycling index for Ctrl+P
 
 	// Dupe set — computed once per table rebuild, keyed by "CALL|BAND|MODE".
 	// Checked per spot row to dim already-worked calls. Invalidated when

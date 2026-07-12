@@ -14,18 +14,74 @@
 [![Linux](https://img.shields.io/badge/Linux-FCC624)](https://github.com/szporwolik/cqops/releases)
 [![macOS](https://img.shields.io/badge/macOS-000000)](https://github.com/szporwolik/cqops/releases)
 [![Raspberry Pi](https://img.shields.io/badge/Raspberry%20Pi-A22846)](https://github.com/szporwolik/cqops/releases)
+[![Cloudsmith](https://img.shields.io/badge/OSS%20hosting%20by-cloudsmith-blue?logo=cloudsmith&style=flat-square)](https://cloudsmith.com)
 
-A small, fast, offline-first amateur radio logger for the terminal — built for portable/field ops, SOTA/POTA activations, and club stations with rotating operators. Runs on Raspberry Pi, old laptops, or any low-power machine without a GUI, over SSH or a local terminal. Hot-swap operators and logbooks, log via WSJT-X auto-feed or keyboard, sync to Wavelog. GPS-aware — uses your receiver's position for the station grid automatically.
+A small, fast, offline-first amateur radio logger for the terminal - built for portable/field ops, SOTA/POTA activations, and club stations with rotating operators. Runs on Raspberry Pi, old laptops, or any low-power machine without a GUI, over SSH or a local terminal. Hot-swap operators and logbooks, log via WSJT-X auto-feed or keyboard, sync to Wavelog. GPS-aware - uses your receiver's position for the station grid automatically.
 
 > 📖 **Full documentation, installation guides, and translations at [docs.cqops.com](https://docs.cqops.com/)** — English, Polski, Deutsch, Español, 日本語, Français, Italiano.
 
-## Quick Install
+## Installation
+
+### Windows
+
+```powershell
+winget install --exact --id SzymonPorwolik.CQOps
+```
+
+Update:
+```powershell
+winget upgrade --exact --id SzymonPorwolik.CQOps
+```
+
+> WinGet installation pending initial package acceptance at [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs). Until then, use the portable ZIP or NSIS installer from [Releases](https://github.com/szporwolik/cqops/releases).
+
+### Ubuntu, Linux Mint, Debian, Pop!_OS
+
+```bash
+curl -1sLf 'https://dl.cloudsmith.io/public/szporwolik/cqops/setup.deb.sh' | sudo -E bash
+sudo apt update
+sudo apt install cqops
+```
+
+> Cloudsmith repository publication pending. Until then, download the latest `.deb`:
+> ```bash
+> curl -sSLo cqops.deb https://github.com/szporwolik/cqops/releases/latest/download/cqops_amd64.deb
+> sudo dpkg -i cqops.deb
+> ```
+
+### Fedora, RHEL, Rocky Linux, AlmaLinux
+
+```bash
+curl -1sLf 'https://dl.cloudsmith.io/public/szporwolik/cqops/setup.rpm.sh' | sudo -E bash
+sudo dnf install cqops
+```
+
+> Cloudsmith repository publication pending.
+
+### Arch Linux, CachyOS, EndeavourOS, Manjaro
+
+```bash
+paru -S cqops-bin
+```
+
+Or with `yay`:
+```bash
+yay -S cqops-bin
+```
+
+> AUR package publication pending first push.
+
+### Go (universal)
 
 ```bash
 go install github.com/szporwolik/cqops/cmd/cqops@latest
 ```
 
-Or grab a binary from the [Releases](https://github.com/szporwolik/cqops/releases) page — `.deb`, `.zip`, `.exe` installer, and portable tarballs for all platforms.
+Requires Go 1.26+. This is the fallback for all platforms, not the recommended method for end users.
+
+### Manual download
+
+Grab the latest binary, installer, or package from the [Releases](https://github.com/szporwolik/cqops/releases) page — Windows portable ZIP, NSIS installer, macOS binaries, Linux `.deb`/`.rpm`, and portable tarballs for all platforms including Raspberry Pi.
 
 ## Author
 
@@ -42,12 +98,12 @@ Szymon Porwolik — [szymon.porwolik.com](https://szymon.porwolik.com/)
 - **DX Cluster & PSK Reporter** — live spots with band/mode/time filters
 - **GPS receiver** — serial or GPSD, live grid override for /P and mobile ops
 - **APRS** — APRS-IS with live position map, station caching, GPS-aware beaconing
+- **APRS KISS & KISS TCP**  — serial KISS TNC and KISS Server (Dire Wolf). 
 - **CQOps Live** — built-in browser dashboard with live map, QSO paths, stats, weather, band conditions, APRS. Great for Field Day displays or club station screens
 - **Contest logging** — exchange markers, auto serials, ADIF contest IDs
 - **Offline-first** — SQLite, cached reference data, `--offline` flag
 - **ADIF 3.1.7** — full import/export, contest fields preserved
 - **Raspberry Pi ready** — Windows, Linux, macOS, ARM; runs over SSH
-- **APRS KISS & KISS TCP** 🧪 — serial KISS TNC and KISS Server (Dire Wolf). 
 - **Kitty terminal graphics** 🧪 — photo display via Kitty/Ghostty/WezTerm. Enable in Settings → General.
 - **Antenna rotator control** 🧪 — manual azimuth/elevation via hamlib. Enable in Rig Profiles.
 
@@ -126,10 +182,6 @@ flowchart LR
 
 - Go 1.26+
 - Terminal with 80×24 minimum
-- WSJT-X 2.6+ (optional, for automatic digital mode logging)
-- flrig (optional, for rig control and spot-to-radio tuning)
-- Hamlib rigctld (optional, for rig control and spot-to-radio tuning via TCP)
-- Internet connection (optional, for DX cluster, QRZ, Wavelog, solar data, PSK Reporter)
 
 ## Build
 
@@ -155,9 +207,11 @@ Each release includes:
 |---|---|
 | `cqops-setup.exe` | Windows installer (NSIS) |
 | `cqops-windows-portable.zip` | Windows portable (no install, amd64) |
-| `cqops_amd64.deb` | Debian / Ubuntu amd64 |
-| `cqops_arm64.deb` | Debian / Ubuntu arm64 |
-| `cqops_armhf.deb` | Debian / Ubuntu armhf (Raspberry Pi) |
+| `cqops_{version}_amd64.deb` | Debian / Ubuntu amd64 |
+| `cqops_{version}_arm64.deb` | Debian / Ubuntu arm64 |
+| `cqops_{version}_armhf.deb` | Debian / Ubuntu armhf (Raspberry Pi) |
+| `cqops-{version}-1.x86_64.rpm` | Fedora / RHEL x86_64 |
+| `cqops-{version}-1.aarch64.rpm` | Fedora / RHEL aarch64 |
 | `cqops-linux-amd64.tar.gz` | Linux amd64 portable |
 | `cqops-linux-arm64.tar.gz` | Linux arm64 portable |
 | `cqops-linux-armhf.tar.gz` | Linux armhf portable |
@@ -212,6 +266,8 @@ Full usage guide, workflows, and keyboard shortcuts are in the [documentation](h
 - APRS Mic-E and Base-91 position decoding in `internal/aprs/parse.go` is an independent implementation based on algorithms from [go-aprs-fap](https://github.com/la5nta/go-aprs) (BSD-style) and the APRS 1.0.1/1.2 specifications.
 
 All licenses are permissive (MIT, Apache 2.0, BSD-2, BSD-3). See `licenses/` directory. Third-party asset notices are in `third_party/`.
+
+Package repository hosting is graciously provided by [Cloudsmith](https://cloudsmith.com). Cloudsmith is the only fully hosted, cloud-native, universal package management solution, that enables your organization to create, store, and share packages in any format, to any place, with total confidence.
 
 ## Contributing
 

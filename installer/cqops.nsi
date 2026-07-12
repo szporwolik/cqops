@@ -1,5 +1,5 @@
 ; =============================================================================
-; CQOps NSIS Installer — Amateur Radio Logging TUI
+; CQOps NSIS Installer — Fast, offline-first ham radio logger
 ; Build: makensis /DVERSION=X.Y.Z installer\cqops.nsi (version from VERSION file)
 ; =============================================================================
 
@@ -109,7 +109,7 @@ Section "Install"
   ; Registry — uninstall info (Control Panel)
   ; Use ASCII hyphen in DisplayName to avoid mojibake in Windows Apps & Features.
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" \
-    "DisplayName" "${PRODUCT_NAME} - Amateur Radio Logging TUI"
+    "DisplayName" "${PRODUCT_NAME} - Fast offline-first ham radio logger"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" \
     "UninstallString" "$INSTDIR\uninstall.exe"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}" \

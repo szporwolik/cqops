@@ -237,7 +237,7 @@ func TestHandleRotorKey_AltPeriod(t *testing.T) {
 	}
 }
 
-func TestHandleRotorKey_CtrlUp(t *testing.T) {
+func TestHandleRotorKey_AltSemicolon(t *testing.T) {
 	m := &Model{toasts: NewToastQueue()}
 	client := &fakeRotorClient{}
 	m.rotor.client = client
@@ -245,7 +245,7 @@ func TestHandleRotorKey_CtrlUp(t *testing.T) {
 	m.rotor.elevation = 10
 	m.screen = screenQSO
 
-	cmd, handled := m.handleRotorKey(ctrlKey(tea.KeyUp))
+	cmd, handled := m.handleRotorKey(altKey(';'))
 	if !handled {
 		t.Fatal("expected handled")
 	}
@@ -255,7 +255,7 @@ func TestHandleRotorKey_CtrlUp(t *testing.T) {
 	}
 }
 
-func TestHandleRotorKey_CtrlDown(t *testing.T) {
+func TestHandleRotorKey_AltQuote(t *testing.T) {
 	m := &Model{toasts: NewToastQueue()}
 	client := &fakeRotorClient{}
 	m.rotor.client = client
@@ -263,7 +263,7 @@ func TestHandleRotorKey_CtrlDown(t *testing.T) {
 	m.rotor.elevation = 10
 	m.screen = screenQSO
 
-	cmd, handled := m.handleRotorKey(ctrlKey(tea.KeyDown))
+	cmd, handled := m.handleRotorKey(altKey('\''))
 	if !handled {
 		t.Fatal("expected handled")
 	}
@@ -292,7 +292,7 @@ func TestHandleRotorKey_NotConnected(t *testing.T) {
 	}
 }
 
-func TestHandleRotorKey_CtrlA_NoGrid(t *testing.T) {
+func TestHandleRotorKey_AltBackslash_NoGrid(t *testing.T) {
 	m := &Model{toasts: NewToastQueue()}
 	client := &fakeRotorClient{}
 	m.rotor.client = client
@@ -307,7 +307,7 @@ func TestHandleRotorKey_CtrlA_NoGrid(t *testing.T) {
 		m.fields[i] = textinput.New()
 	}
 
-	cmd, handled := m.handleRotorKey(ctrlKey('a'))
+	cmd, handled := m.handleRotorKey(altKey('\\'))
 	if !handled {
 		t.Fatal("expected handled even when no grids")
 	}

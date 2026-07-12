@@ -670,9 +670,9 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 			// Refresh the editor's contest filter.
 			if m.App.Logbook.ActiveContest != "" {
 				ct := m.App.Config.Contests[m.App.Logbook.ActiveContest]
-				m.ui.logbookEditor.SetContestID(m.App.Logbook.ActiveContest, config.ContestDisplayName(&ct), ct.ContestID)
+				m.ui.logbookEditor.SetContestID(m.App.Logbook.ActiveContest, config.ContestDisplayName(&ct), ct.ContestID, ct.Date)
 			} else {
-				m.ui.logbookEditor.SetContestID("", "", "")
+				m.ui.logbookEditor.SetContestID("", "", "", "")
 			}
 			return m, m.refreshQSOS()
 		}

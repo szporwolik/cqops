@@ -294,7 +294,7 @@ func importSOTA(tx *sql.Tx, path string) (int, error) {
 		return 0, fmt.Errorf("read header: %w", err)
 	}
 
-	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO refs (ref_type, ref, name, grid, height, is_group) VALUES (?,?,?,?,?,0)`)
+	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO refs (ref_type, ref, name, grid, height, is_group, search) VALUES (?,?,?,?,?,0,?)`)
 	if err != nil {
 		return 0, err
 	}
@@ -325,7 +325,7 @@ func importSOTA(tx *sql.Tx, path string) (int, error) {
 		if ref == "" || name == "" {
 			continue
 		}
-		if _, err := stmt.Exec(string(RefSOTA), ref, name, grid, height); err != nil {
+		if _, err := stmt.Exec(string(RefSOTA), ref, name, grid, height, normalizeForSearch(ref+" "+name)); err != nil {
 			applog.Warn("ref: sota insert", "ref", ref, "error", err)
 			continue
 		}
@@ -354,7 +354,7 @@ func importPOTA(tx *sql.Tx, path string) (int, error) {
 		return 0, fmt.Errorf("read header: %w", err)
 	}
 
-	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO refs (ref_type, ref, name, grid, height, is_group) VALUES (?,?,?,?,0,0)`)
+	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO refs (ref_type, ref, name, grid, height, is_group, search) VALUES (?,?,?,?,0,0,?)`)
 	if err != nil {
 		return 0, err
 	}
@@ -393,7 +393,7 @@ func importPOTA(tx *sql.Tx, path string) (int, error) {
 		if ref == "" || name == "" {
 			continue
 		}
-		if _, err := stmt.Exec(string(RefPOTA), ref, name, grid); err != nil {
+		if _, err := stmt.Exec(string(RefPOTA), ref, name, grid, normalizeForSearch(ref+" "+name)); err != nil {
 			applog.Warn("ref: pota insert", "ref", ref, "error", err)
 			continue
 		}
@@ -423,7 +423,7 @@ func importWWFF(tx *sql.Tx, path string) (int, error) {
 		return 0, fmt.Errorf("read header: %w", err)
 	}
 
-	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO refs (ref_type, ref, name, grid, height, is_group) VALUES (?,?,?,?,0,0)`)
+	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO refs (ref_type, ref, name, grid, height, is_group, search) VALUES (?,?,?,?,0,0,?)`)
 	if err != nil {
 		return 0, err
 	}
@@ -463,7 +463,7 @@ func importWWFF(tx *sql.Tx, path string) (int, error) {
 		if ref == "" || name == "" {
 			continue
 		}
-		if _, err := stmt.Exec(string(RefWWFF), ref, name, grid); err != nil {
+		if _, err := stmt.Exec(string(RefWWFF), ref, name, grid, normalizeForSearch(ref+" "+name)); err != nil {
 			applog.Warn("ref: wwff insert", "ref", ref, "error", err)
 			continue
 		}
@@ -525,7 +525,7 @@ func importIOTA(tx *sql.Tx, islandsPath, groupsPath string) (int, error) {
 		}
 	}
 
-	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO refs (ref_type, ref, name, grid, height, is_group) VALUES (?,?,?,?,0,?)`)
+	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO refs (ref_type, ref, name, grid, height, is_group, search) VALUES (?,?,?,?,0,?,?)`)
 	if err != nil {
 		return 0, err
 	}
@@ -544,7 +544,7 @@ func importIOTA(tx *sql.Tx, islandsPath, groupsPath string) (int, error) {
 			centerLon := (gi.lonMax + gi.lonMin) / 2
 			grid = maidenhead6(centerLat, centerLon)
 		}
-		if _, err := stmt.Exec(string(RefIOTA), refno, gi.name, grid, 1); err != nil {
+		if _, err := stmt.Exec(string(RefIOTA), refno, gi.name, grid, 1, normalizeForSearch(refno+" "+gi.name)); err != nil {
 			applog.Warn("ref: iota group insert", "ref", refno, "name", gi.name, "error", err)
 			continue
 		}
@@ -580,7 +580,7 @@ func importIOTA(tx *sql.Tx, islandsPath, groupsPath string) (int, error) {
 			}
 		}
 
-		if _, err := stmt.Exec(string(RefIOTA), isl.RefNo, isl.Name, grid, 0); err != nil {
+		if _, err := stmt.Exec(string(RefIOTA), isl.RefNo, isl.Name, grid, 0, normalizeForSearch(isl.RefNo+" "+isl.Name)); err != nil {
 			applog.Warn("ref: iota island insert", "ref", isl.RefNo, "name", isl.Name, "error", err)
 			continue
 		}

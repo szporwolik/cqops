@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=CQOps
-Comment=A fast, offline-first amateur radio logger for the terminal
+Comment=A small, fast, offline-first ham radio logger for the terminal — portable ops, SOTA/POTA, club stations, contest logging, APRS, GPS, and a built-in browser dashboard
 Exec=cqops
 Terminal=true
 Type=Application

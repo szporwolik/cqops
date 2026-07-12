@@ -274,6 +274,14 @@ var (
 			BorderForeground(P.Border).
 			Padding(0, 1)
 
+	// contestBorderBoxStyle — same as borderBoxStyle but with Warning
+	// (yellow) border, used for the QSO form + contest panel when a
+	// contest is active.
+	contestBorderBoxStyle = lipgloss.NewStyle().
+				Border(lipgloss.RoundedBorder()).
+				BorderForeground(P.Warning).
+				Padding(0, 1)
+
 	// confirmBoxStyle for dialog overlays.
 	confirmBoxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).

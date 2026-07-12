@@ -1,112 +1,123 @@
 ---
-title: Manuel utilisateur CQOps
-description: Guide d'installation, de configuration et d'utilisation de CQOps — un logger radioamateur rapide, orienté terminal
+title: Manuel utilisateur de CQOps
+description: Guide d’installation, de configuration et d’utilisation de CQOps — un logger radioamateur rapide, conçu en priorité pour le terminal
 ---
 
-> **Note de traduction :** Cette traduction a été générée avec un modèle LLM. Les corrections sont bienvenues sous forme de Pull Request vers la branche `dev`. Certains noms d'écrans, de champs, de commandes et de raccourcis restent volontairement en anglais afin de correspondre à l'interface CQOps.
+# Manuel utilisateur de CQOps
 
-# Manuel utilisateur CQOps
+CQOps est un logger radioamateur rapide, conçu en priorité pour le terminal, destiné aux opérateurs qui souhaitent saisir leurs contacts de manière fiable au clavier tout en conservant une faible charge système. Il convient à l’utilisation en station, aux opérations portables, aux stations de club, aux field days ainsi qu’aux machines de classe Raspberry Pi ou aux anciens ordinateurs portables.
 
-CQOps est un logger radioamateur rapide, orienté terminal, pour les opérateurs qui veulent une journalisation fiable au clavier avec une faible charge système. Il est conçu pour le shack, l'opération portable, les stations de club, les field days et les machines comme les Raspberry Pi ou les anciens ordinateurs portables.
-
-CQOps enregistre toujours les QSOs localement en premier. Les intégrations basées sur internet sont optionnelles.
+CQOps enregistre toujours les QSO localement en premier. Les intégrations utilisant Internet sont facultatives.
 
 ## Sommaire
 
-1. [Qu'est-ce que CQOps](#quest-ce-que-cqops)
-2. [Téléchargement et installation](#téléchargement-et-installation)
-3. [Premier lancement](#premier-lancement)
-4. [Enregistrer votre premier QSO](#enregistrer-votre-premier-qso)
-5. [Écran principal](#écran-principal)
-6. [Flux de travail courants](#flux-de-travail-courants)
-7. [Journalisation QSO](#journalisation-qso)
-8. [Logbook Editor et ADIF](#logbook-editor-et-adif)
-9. [Concours](#concours)
-10. [Favorites, références et plans de bande](#favorites-références-et-plans-de-bande)
-11. [Intégrations](#intégrations)
+1. [Présentation de CQOps](#what-cqops-is)
+2. [Téléchargement et installation](#download-and-installation)
+3. [Premier démarrage](#first-launch)
+4. [Enregistrer votre premier QSO](#log-your-first-qso)
+5. [Écran principal](#main-screen)
+6. [Flux de travail courants](#common-workflows)
+7. [Enregistrement des QSO](#qso-logging)
+8. [Éditeur de log et ADIF](#logbook-editor-and-adif)
+9. [Concours](#contests)
+    - [Configurer un concours](#setting-up-a-contest)
+    - [Barre d’état inférieure](#bottom-status-bar)
+    - [Panneau de statistiques du concours](#contest-statistics-panel)
+    - [Export ADIF du concours](#contest-adif-export)
+    - [Comportement du mode concours](#contest-mode-behavior)
+10. [Favoris, références et plans de bandes](#favorites-references-and-band-plans)
+11. [Intégrations](#integrations)
 12. [CQOps Live Dashboard](#cqops-live-dashboard)
 13. [Configuration](#configuration)
-14. [Raccourcis clavier](#raccourcis-clavier)
-15. [Dépannage](#dépannage)
-16. [Signaler des bugs](#signaler-des-bugs)
+14. [Raccourcis clavier](#keyboard-shortcuts)
+15. [Dépannage](#troubleshooting)
+16. [Signaler des bogues](#reporting-bugs)
 
 ---
 
-## Qu'est-ce que CQOps
+<a id="what-cqops-is"></a>
+## Présentation de CQOps
 
-CQOps est construit autour de la saisie rapide des QSOs, de la journalisation locale et de l'opération pratique sur le terrain.
+CQOps est centré sur la saisie rapide des QSO, l’enregistrement local des données et une utilisation pratique sur le terrain.
 
-### Idées principales
+### Principes essentiels
 
-- **Terminal-first** — optimisé pour l'utilisation au clavier.
-- **Offline-first** — la journalisation locale des QSOs fonctionne sans accès internet.
-- **Faible charge** — adapté aux systèmes de classe Raspberry Pi, aux anciens portables et aux PCs de station partagée.
-- **Conception portable** — distribué comme un seul binaire Go.
-- **Plusieurs logbooks** — utile pour les logs personnels, portables, concours et club.
-- **Plusieurs opérateurs** — utile pour les flux hot-seat et les stations de club partagées.
-- **Plusieurs rigs** — chaque preset de rig peut garder son propre backend et ses paramètres WSJT-X.
-- **Intégrations optionnelles** — QRZ.com, Wavelog, DX Cluster, PSK Reporter, APRS, récepteur GPS, contrôle de rig, contrôle de rotor, données solaires et CQOps Live dans le navigateur.
+- **Utilisation orientée terminal** — optimisée pour le clavier.
+- **Enregistrement offline-first** — l’enregistrement local des QSO fonctionne sans accès à Internet.
+- **Faible consommation de ressources** — adapté aux systèmes de classe Raspberry Pi, aux anciens ordinateurs portables et aux PC de station partagés.
+- **Conception portable** — distribué sous la forme d’un unique binaire Go.
+- **Plusieurs logs** — utile pour les logs personnels, portables, de concours et de club.
+- **Plusieurs opérateurs** — adapté aux flux hot-seat et aux stations de club partagées.
+- **Plusieurs équipements** — chaque preset d’équipement peut conserver ses propres réglages de backend et de WSJT-X.
+- **Intégrations facultatives** — QRZ.com, Wavelog, DX Cluster, PSK Reporter, GPS, APRS, contrôle du poste, contrôle du rotor, données solaires et CQOps Live dashboard dans le navigateur.
 
-La journalisation locale ne nécessite pas d'accès internet. Les fonctions réseau sont ignorées en mode `--offline`.
+L’enregistrement local ne nécessite pas d’accès à Internet. Les fonctions réseau sont ignorées en mode `--offline`.
 
-### À qui s'adresse CQOps
+### À qui s’adresse CQOps
 
-CQOps convient bien aux :
+CQOps convient notamment aux utilisateurs suivants :
 
 - opérateurs portables,
 - activateurs SOTA et POTA,
 - stations de club,
 - équipes de field day,
-- opérateurs qui préfèrent un flux de travail en terminal,
-- stations qui doivent changer rapidement d'opérateur, de logbook ou de rig.
+- opérateurs qui préfèrent travailler dans un terminal,
+- stations nécessitant un passage rapide entre opérateurs, logs ou équipements.
 
-CQOps n'a pas vocation à remplacer toutes les fonctions d'un logger de bureau complet ou d'une plateforme web de logbook. Il se concentre sur la journalisation rapide en terminal, l'opération sur le terrain, l'utilisation hors-ligne et les stations partagées.
+CQOps n’a pas vocation à remplacer toutes les fonctions d’un logger de bureau complet ou d’une plateforme web de log. Il se concentre sur la saisie rapide dans le terminal, l’utilisation sur le terrain, le fonctionnement hors ligne et les stations partagées.
+
+### Utilisation en club et station partagée
+
+CQOps a été conçu en tenant compte des besoins des clubs radioamateurs. L’opérateur actif est toujours visible dans la barre d’état — **un seul coup d’œil** suffit pour savoir qui utilise actuellement la station. Le changement d’opérateur nécessite une seule combinaison (`Ctrl+O`) et prend effet immédiatement : l’indicatif et le nom de l’opérateur sont inscrits dans chaque QSO suivant. Aucun logout, aucune demande de mot de passe, aucune interruption.
+
+Les logs, presets d’équipement et concours sont parcourus de la même manière — `Ctrl+L`, `Ctrl+R`, `Ctrl+C`. Une station de club avec des opérateurs tournants, plusieurs équipements et plusieurs concours actifs peut changer de contexte en moins d’une seconde, sans toucher à la souris.
+
+Lors des field days et des événements publics, le **CQOps Live dashboard** peut projeter une carte en temps réel, le flux des QSO et des statistiques sur un grand écran. Les visiteurs et les membres du club peuvent suivre l’activité de la station sans se regrouper autour du terminal de l’opérateur. Il suffit d’activer l’intégration **HTTP Server** et d’y accéder depuis n’importe quel appareil équipé d’un navigateur web.
 
 ---
 
+<a id="download-and-installation"></a>
 ## Téléchargement et installation
 
-Toutes les versions :
+Parcourir toutes les versions :
 
 <https://github.com/szporwolik/cqops/releases>
 
 ### Windows
 
-| Paquet | Lien | Notes |
+| Paquet | Lien | Remarques |
 |---|---|---|
-| Installer | [cqops-setup.exe](https://github.com/szporwolik/cqops/releases/latest/download/cqops-setup.exe) | Recommandé pour la plupart des utilisateurs. Ajoute CQOps au Start Menu et au PATH. |
-| Portable ZIP | [cqops-windows-portable.zip](https://github.com/szporwolik/cqops/releases/latest/download/cqops-windows-portable.zip) | Extraire et exécuter sans installation. |
-
-Utilisez **Windows Terminal** plutôt que l'ancienne console.
+| Programme d’installation | [cqops-setup.exe](https://github.com/szporwolik/cqops/releases/latest/download/cqops-setup.exe) | Recommandé pour la plupart des utilisateurs. Ajoute CQOps au menu Démarrer et au PATH. |
+| ZIP portable | [cqops-windows-portable.zip](https://github.com/szporwolik/cqops/releases/latest/download/cqops-windows-portable.zip) | Extraire et exécuter sans installation. |
 
 ### Linux — Debian / Ubuntu
 
-| Architecture | Lien | Utilisation |
+| Architecture | Lien | Usage |
 |---|---|---|
-| amd64 | [cqops_amd64.deb](https://github.com/szporwolik/cqops/releases/latest/download/cqops_amd64.deb) | La plupart des PCs Intel/AMD |
+| amd64 | [cqops_amd64.deb](https://github.com/szporwolik/cqops/releases/latest/download/cqops_amd64.deb) | La plupart des PC Intel/AMD |
 | arm64 | [cqops_arm64.deb](https://github.com/szporwolik/cqops/releases/latest/download/cqops_arm64.deb) | Systèmes ARM 64 bits |
 | armhf | [cqops_armhf.deb](https://github.com/szporwolik/cqops/releases/latest/download/cqops_armhf.deb) | Raspberry Pi OS 32 bits |
 
-Installer le paquet téléchargé :
+Installez le paquet téléchargé :
 
 ```bash
 sudo dpkg -i cqops_*.deb
 ```
 
-### Linux — tarball portable
+### Linux — archive Tarball portable
 
-| Architecture | Lien | Utilisation |
+| Architecture | Lien | Usage |
 |---|---|---|
-| amd64 | [cqops-linux-amd64.tar.gz](https://github.com/szporwolik/cqops/releases/latest/download/cqops-linux-amd64.tar.gz) | La plupart des PCs Intel/AMD |
+| amd64 | [cqops-linux-amd64.tar.gz](https://github.com/szporwolik/cqops/releases/latest/download/cqops-linux-amd64.tar.gz) | La plupart des PC Intel/AMD |
 | arm64 | [cqops-linux-arm64.tar.gz](https://github.com/szporwolik/cqops/releases/latest/download/cqops-linux-arm64.tar.gz) | Systèmes ARM 64 bits |
 | armhf | [cqops-linux-armhf.tar.gz](https://github.com/szporwolik/cqops/releases/latest/download/cqops-linux-armhf.tar.gz) | Raspberry Pi OS 32 bits |
 
 ### macOS
 
-| Architecture | Lien | Utilisation |
+| Architecture | Lien | Usage |
 |---|---|---|
-| Apple Silicon | [cqops-darwin-arm64](https://github.com/szporwolik/cqops/releases/latest/download/cqops-darwin-arm64) | Macs M1/M2/M3 |
-| Intel | [cqops-darwin-amd64](https://github.com/szporwolik/cqops/releases/latest/download/cqops-darwin-amd64) | Macs Intel |
+| Apple Silicon | [cqops-darwin-arm64](https://github.com/szporwolik/cqops/releases/latest/download/cqops-darwin-arm64) | Mac M1/M2/M3 |
+| Intel | [cqops-darwin-amd64](https://github.com/szporwolik/cqops/releases/latest/download/cqops-darwin-amd64) | Mac Intel |
 
 Installation manuelle :
 
@@ -114,7 +125,7 @@ Installation manuelle :
 chmod +x cqops-darwin-* && sudo mv cqops-darwin-* /usr/local/bin/cqops
 ```
 
-### Construire depuis les sources
+### Compiler depuis les sources
 
 ```bash
 git clone https://github.com/szporwolik/cqops.git
@@ -123,81 +134,89 @@ make build
 make install
 ```
 
-La construction depuis les sources nécessite Go 1.26 ou plus récent.
+La compilation depuis les sources nécessite Go 1.26 ou une version ultérieure.
 
-### Exigences du terminal
+### Exigences relatives au terminal
 
 | Exigence | Valeur |
 |---|---|
 | Taille minimale du terminal | 80×24 caractères |
 | Taille recommandée | 80×43 caractères ou plus |
-| Terminal recommandé sous Windows | Windows Terminal |
-| Terminal pour graphiques Kitty | [Kitty](https://sw.kovidgoyal.net/kitty/), [Ghostty](https://ghostty.org/) ou [WezTerm](https://wezfurlong.org/wezterm/) |
+| Terminal Windows recommandé | Windows Terminal |
+| Terminal prenant en charge Kitty graphics | [Kitty](https://sw.kovidgoyal.net/kitty/), [Ghostty](https://ghostty.org/) ou [WezTerm](https://wezfurlong.org/wezterm/) |
 
 ### Commandes de base
 
 ```bash
-cqops              # Lancer la TUI
-cqops --offline    # Lancer sans activité réseau
-cqops --version    # Afficher la version et quitter
-cqops --help       # Afficher l'aide
+cqops              # Start the TUI
+cqops --offline    # Start without network activity
+cqops --version    # Print version and exit
+cqops --help       # Show help
 ```
 
 ---
 
-## Premier lancement
+<a id="first-launch"></a>
+## Premier démarrage
 
-Au premier lancement, CQOps ouvre le setup wizard. Seules les informations essentielles de station sont nécessaires pour la journalisation locale. Les intégrations réseau peuvent être ignorées et configurées plus tard.
+Au premier démarrage, CQOps ouvre l’assistant de configuration. Seules les informations essentielles de la station sont nécessaires pour l’enregistrement local. Les intégrations réseau peuvent être ignorées puis configurées ultérieurement.
 
-### Pages du wizard
+### Pages de l’assistant
 
-| Page | Ce qu'elle configure |
+| Page | Configuration effectuée |
 |---|---|
-| Station & Logbook | Logbook initial, indicatif de station, opérateur, grid locator, références et zones optionnelles, Wavelog URL/API/station profile ID |
-| Rig | Preset de rig, modèle, antenne, puissance, backend, rotor optionnel, paramètres UDP WSJT-X optionnels |
-| Integrations | Paramètres QRZ.com lookup |
+| Station & Logbook | Log initial, indicatif de station, opérateur, grid locator, références et zones facultatives, Wavelog URL/API/station profile ID |
+| Rig | Preset d’équipement, modèle, antenne, puissance, backend, rotor facultatif et réglages UDP WSJT-X facultatifs |
+| Integrations | Réglages de recherche QRZ.com |
 | General | Fuseau horaire IANA |
-| Summary | Vérification et sauvegarde |
+| Summary | Vérification et enregistrement |
 
-Backends de rig supportés :
+Backends d’équipement pris en charge :
 
 - None,
 - flrig,
 - Hamlib `rigctld`.
 
-### Navigation dans le wizard
+### Navigation dans l’assistant
 
-| Touche | Action |
+| Key | Action |
 |---|---|
-| Ctrl+S | Valider et continuer ; sur Summary, sauvegarder et lancer CQOps |
+| Ctrl+S | Valider et continuer ; sur **Summary**, enregistrer et démarrer CQOps |
 | Esc | Revenir en arrière |
 | F10 | Quitter |
-| Tab / Shift+Tab | Passer d'un champ à l'autre |
-| Space | Basculer une case à cocher |
+| Tab / Shift+Tab | Passer d’un champ à l’autre |
+| Space | Basculer les cases à cocher |
 
-Les paramètres du wizard peuvent être modifiés plus tard avec **F9**.
+Les réglages de l’assistant peuvent être modifiés ultérieurement avec **F9**.
 
 ---
 
+<a id="log-your-first-qso"></a>
 ## Enregistrer votre premier QSO
 
-1. Lancez CQOps :
+1. Démarrez CQOps :
 
    ```bash
    cqops
    ```
 
-2. Terminez le setup wizard avec au moins votre indicatif et votre grid locator.
-3. Ouvrez le QSO form avec **F1**.
-4. Saisissez l'indicatif du contact. CQOps met automatiquement les indicatifs en majuscules.
-5. Remplissez les autres champs. Si le rig actif est connecté via flrig ou Hamlib, CQOps peut remplir automatiquement la fréquence, la bande, le mode et le submode.
-6. Appuyez sur **Enter** ou **Ctrl+S** pour sauvegarder.
-7. Si l'avertissement **DUPE!** apparaît, appuyez de nouveau sur **Enter** pour enregistrer quand même, ou **Esc** pour annuler.
+2. Terminez l’assistant de configuration en indiquant au minimum votre indicatif et votre grid locator.
 
-Le QSO sauvegardé apparaît immédiatement dans la table Recent QSOs.
+3. Ouvrez **QSO form** avec **F1**.
+
+4. Saisissez l’indicatif du correspondant. CQOps convertit automatiquement les indicatifs en majuscules.
+
+5. Complétez les autres champs. Si l’équipement actif est connecté par flrig ou Hamlib, CQOps peut remplir automatiquement frequency, band, mode et submode.
+
+6. Appuyez sur **Enter** pour enregistrer.
+
+7. Si un avertissement **DUPE!** apparaît, appuyez à nouveau sur **Enter** pour enregistrer malgré tout, ou sur **Esc** pour annuler.
+
+Le QSO enregistré apparaît immédiatement dans le tableau **Recent QSOs**.
 
 ---
 
+<a id="main-screen"></a>
 ## Écran principal
 
 CQOps utilise une disposition fixe dans le terminal :
@@ -217,146 +236,148 @@ CQOps utilise une disposition fixe dans le terminal :
 
 ### Status bar
 
-La Status bar affiche :
+La **Status bar** affiche :
 
-- version de CQOps,
-- logbook actif,
-- rig actif,
-- indicatif de station,
-- opérateur actif,
-- étiquettes de statut des intégrations,
-- heure locale marquée `L`,
-- heure UTC marquée `Z`.
+- la version de CQOps,
+- le log actif,
+- l’équipement actif,
+- l’indicatif de la station,
+- l’opérateur actif,
+- les libellés d’état des intégrations,
+- l’heure locale marquée `L`,
+- l’heure UTC marquée `Z`.
 
-Les étiquettes courantes incluent **Net**, **WSJT**, **Rig**, **Flrig**, **Hamlib**, **Rotator**, **DXC**, **WL** et **GPS**. L'étiquette GPS suit la même convention de couleur — rouge quand déconnecté, jaune quand connecté sans fix, blanc quand une position est acquise.
+Les libellés courants comprennent **Net**, **WSJT**, **Rig**, **Flrig**, **Hamlib**, **Rotator**, **DXC**, **WL** et **GPS**. Le libellé **GPS** suit la même convention de couleurs : rouge lorsque la connexion est absente, jaune lorsque le GPS est connecté sans fix et blanc lorsqu’une position est acquise.
 
 | Couleur | Signification |
 |---|---|
-| Blanc/défaut | Connecté ou actif |
-| Jaune | Désactivé, connexion en cours ou offline attendu |
+| Blanc/par défaut | Connecté ou actif |
+| Jaune | Désactivé, en cours de connexion ou normalement hors ligne |
 | Rouge | Erreur ou déconnecté |
-| Accent + gras | WSJT-X transmet |
+| Couleur d’accent + gras | WSJT-X émet |
 
 ### Onglets principaux
 
-| Touche | Onglet | Écran |
+| Key | Tab | Screen |
 |---|---|---|
-| F1 | QSO | QSO form et Recent QSOs |
-| F2 | QRZ | Partner view : données callbook, carte, stats, photo |
-| F4 | DXC | Spots DX Cluster et filtres |
-| F5 | HRD | Spots PSK Reporter et carte de propagation |
+| F1 | QSO | **QSO form** et **Recent QSOs** |
+| F2 | QRZ | **Partner view** : données du callbook, carte, statistiques, photo |
+| F4 | DXC | Spots et filtres de **DX Cluster** |
+| F5 | HRD | Spots de **PSK Reporter** et carte de propagation |
 | F6 | REF | Recherche de références SOTA/POTA/WWFF/IOTA |
-| F7 | BPL | Band Plan Browser |
-| F8 | LOG | Logbook Editor, ADIF, synchronisation Wavelog |
+| F7 | BPL | **Band Plan Browser** |
+| F8 | LOG | **Logbook Editor**, ADIF, synchronisation Wavelog |
 | F9 | CFG | Menus de configuration |
 
-La Help bar affiche les raccourcis adaptés à l'écran actif. **?** ouvre l'aide complète.
+La **Help bar** affiche les raccourcis correspondant à l’écran actif. Appuyez sur **?** pour ouvrir l’intégralité du **Help overlay**.
 
 ---
 
+<a id="common-workflows"></a>
 ## Flux de travail courants
 
 ### Opération portable, SOTA ou POTA
 
-Avant de partir :
+Avant le départ :
 
-1. Lancez CQOps une fois avec un accès internet.
-2. Laissez CQOps télécharger ou rafraîchir les données en cache : données solaires, données REF et préfixes DXCC.
-3. Vérifiez que le Solar panel affiche des données.
-4. Vérifiez que REF search sur **F6** renvoie des résultats.
+1. Exécutez CQOps une fois avec un accès à Internet.
+2. Laissez CQOps télécharger ou actualiser les données en cache telles que les données solaires, les données REF et les préfixes DXCC.
+3. Vérifiez que le panneau **Solar** affiche des données.
+4. Vérifiez que la recherche **REF** sous **F6** renvoie des résultats.
 
 Sur le terrain :
 
-1. Lancez CQOps en mode offline :
+1. Démarrez CQOps en mode hors ligne :
 
    ```bash
    cqops --offline
    ```
 
-2. Journalisez normalement. Les QSOs sont sauvegardés localement.
-3. Une fois de retour en ligne, ouvrez **F8** et appuyez sur **w** pour téléverser les QSOs non envoyés vers Wavelog.
+2. Loggez normalement. Les QSO sont enregistrés localement.
+3. Une fois la connexion rétablie, ouvrez **F8** et appuyez sur **w** pour envoyer à Wavelog les QSO non transmis.
 
-### Station de club partagée et hot-seat logging
+### Station de club partagée et enregistrement hot-seat
 
 1. Ouvrez **F9 → Operators**.
-2. Appuyez sur **Ins** pour ajouter des profils d'opérateur.
-3. Dans le QSO form, appuyez sur **Ctrl+O** pour changer l'opérateur actif.
-4. Vérifiez l'opérateur actif dans la Status bar avant de sauvegarder.
-5. Utilisez **Retain** quand plusieurs opérateurs doivent journaliser des contacts similaires sans ressaisir tout le formulaire.
+2. Appuyez sur **Ins** pour ajouter des profils d’opérateur.
+3. Dans **QSO form**, appuyez sur **Ctrl+O** pour changer d’opérateur actif.
+4. Vérifiez l’opérateur actif dans la barre d’état avant l’enregistrement.
+5. Utilisez **Retain** lorsque plusieurs opérateurs doivent enregistrer des contacts similaires sans ressaisir l’ensemble du formulaire.
 
-L'opérateur actif est sauvegardé dans le champ ADIF `OPERATOR`.
+L’opérateur actif est enregistré dans le champ ADIF `OPERATOR`.
 
-### Logbooks personnels et de club
+### Logs personnels et de club
 
 1. Ouvrez **F9 → Logbooks**.
-2. Appuyez sur **Ins** pour créer chaque logbook.
-3. Dans le QSO form, appuyez sur **Ctrl+L** pour changer le logbook actif.
-4. Vérifiez le logbook actif dans la Status bar avant de sauvegarder.
+2. Appuyez sur **Ins** pour créer chaque log.
+3. Dans **QSO form**, appuyez sur **Ctrl+L** pour changer de log actif.
+4. Vérifiez le log actif dans la barre d’état avant l’enregistrement.
 
-Chaque logbook peut conserver ses propres détails de station, paramètres Wavelog, paramètres de concours et opérateurs.
+Chaque log peut conserver ses propres informations de station, réglages Wavelog, réglages de concours et opérateurs.
 
-### Plusieurs rigs
+### Plusieurs équipements
 
 1. Ouvrez **F9 → Rigs**.
-2. Appuyez sur **Ins** pour créer des presets de rig.
+2. Appuyez sur **Ins** pour créer des presets d’équipement.
 3. Sélectionnez le backend : None, flrig ou Hamlib.
-4. Dans le QSO form, appuyez sur **Ctrl+R** pour changer le rig actif.
+4. Dans **QSO form**, appuyez sur **Ctrl+R** pour changer d’équipement actif.
 
-Un preset de rig peut inclure backend, modèle, antenne, puissance, paramètres de rotor et paramètres UDP WSJT-X.
+Un preset d’équipement peut contenir le backend, le modèle, l’antenne, la puissance, les réglages du rotor et les réglages UDP de WSJT-X.
 
-### Opération numérique WSJT-X
+### Opération numérique avec WSJT-X
 
-Quand l'intégration UDP WSJT-X est activée, CQOps peut recevoir des messages ADIF depuis WSJT-X et journaliser automatiquement les QSOs numériques terminés.
+Lorsque l’intégration UDP de WSJT-X est activée, CQOps peut recevoir les messages ADIF de WSJT-X et enregistrer automatiquement les QSO numériques terminés.
 
-Les QSOs auto-journalisés :
+Les QSO enregistrés automatiquement :
 
-- sont sauvegardés dans le logbook actif,
-- apparaissent immédiatement dans Recent QSOs,
+- sont sauvegardés dans le log actif,
+- apparaissent immédiatement dans **Recent QSOs**,
 - ignorent les doublons,
-- héritent du contest ID actif,
-- peuvent être envoyés automatiquement vers Wavelog quand Wavelog est configuré et joignable.
+- héritent de la contest ID active,
+- peuvent être envoyés automatiquement à Wavelog lorsque celui-ci est configuré et accessible.
 
-Si l'opérateur indiqué par WSJT-X ne correspond pas à l'opérateur actif dans CQOps, CQOps affiche un avertissement.
+Si l’opérateur indiqué par WSJT-X ne correspond pas à l’opérateur actif dans CQOps, un avertissement est affiché.
 
-Avant de longues sessions numériques, vérifiez :
+Avant une longue session numérique, vérifiez :
 
-- logbook actif,
-- opérateur actif,
-- concours actif,
-- étiquette de statut WSJT-X.
+- le log actif,
+- l’opérateur actif,
+- le concours actif,
+- le libellé d’état **WSJT**.
 
 ### Synchronisation Wavelog
 
-CQOps sauvegarde d'abord les QSOs localement. La synchronisation Wavelog est optionnelle.
+CQOps enregistre toujours les QSO localement en premier. La synchronisation Wavelog est facultative.
 
-| Action | Où | Raccourci | Notes |
+| Action | Where | Shortcut | Notes |
 |---|---|---|---|
-| Envoyer les QSOs non envoyés | Logbook Editor | `w` | Envoi par lots de 50 |
-| Télécharger depuis Wavelog | Logbook Editor | `Ctrl+W` | Téléchargement incrémental via `last_fetched_id` |
+| Upload unsent QSOs | **Logbook Editor** | `w` | Envoi par lots de 50 |
+| Download from Wavelog | **Logbook Editor** | `Ctrl+W` | Téléchargement incrémental avec `last_fetched_id` |
 
-L'état d'envoi est suivi par QSO :
+L’état d’envoi est suivi pour chaque QSO :
 
 - not sent,
 - sent,
 - error.
 
-Si l'envoi échoue, le QSO reste dans le logbook local et peut être réessayé plus tard. Purging un logbook remet le fetch ID à `0`, ce qui permet un téléchargement complet.
+En cas d’échec de l’envoi, le QSO reste dans le log local et l’opération peut être réessayée ultérieurement. Le purge d’un log réinitialise la fetch ID à `0`, ce qui permet un téléchargement complet.
 
 ---
 
-## Journalisation QSO
+<a id="qso-logging"></a>
+## Enregistrement des QSO
 
-Le QSO form est l'écran principal de journalisation. Ouvrez-le avec **F1**.
+**QSO form** est l’écran principal d’enregistrement. Ouvrez-le avec **F1**.
 
-CQOps peut remplir les champs depuis :
+CQOps peut remplir les champs à partir des sources suivantes :
 
 | Source | Champs |
 |---|---|
-| flrig / Hamlib | Frequency, Freq RX en split, mode, submode |
-| QRZ.com | Name, QTH, grid, country, CQ zone, ITU zone, DXCC, continent |
-| REF database | Références SOTA, POTA, WWFF, IOTA |
-| Wavelog lookup | Worked/confirmed status quand configuré |
-| DXCC/prefix data | Données de préfixe et de pays |
+| flrig / Hamlib | Frequency, Freq RX en split, Mode, Submode |
+| QRZ.com | Name, QTH, Grid, Country, CQ zone, ITU zone, DXCC, Continent |
+| Base REF | Références SOTA, POTA, WWFF et IOTA |
+| Wavelog lookup | État worked/confirmed si configuré |
+| Données DXCC/préfixes | Données liées au préfixe et au pays |
 
 ### Disposition du formulaire
 
@@ -372,214 +393,290 @@ CQOps peut remplir les champs depuis :
 | Exch sent |  |  |
 | Exch rcvd |  |  |
 
-Les champs exchange apparaissent uniquement lorsqu'un concours est actif.
+Les champs **Exch sent** et **Exch rcvd** n’apparaissent que lorsqu’un concours est actif.
 
-La ligne du bas contient :
+La ligne inférieure contient :
 
 - **Comment**,
-- **Keep** — conserve le champ Comment entre les QSOs,
-- **Retain** — conserve tout le formulaire après sauvegarde.
+- **Keep** — conserve le champ **Comment** entre les QSO,
+- **Retain** — conserve l’ensemble du formulaire après l’enregistrement.
 
-Les champs comme Band, Mode et Submode peuvent être parcourus avec **PgUp/PgDn**.
+Les champs tels que **Band**, **Mode** et **Submode** peuvent être parcourus avec **PgUp/PgDn**.
 
-### Chemin, azimut et badges
+### Trajet, azimut et indicateurs
 
-Quand les deux grid locators sont connus, CQOps affiche la distance et l'azimut.
+Lorsque les deux grid locator sont connus, CQOps affiche la distance et l’azimut.
 
-Le QSO form peut aussi afficher des badges comme :
+**QSO form** peut également afficher des indicateurs comme :
 
 - **DUPE!**
 - **New Call!**
 - **New DXCC!**
 
-### Sauvegarde
+### Enregistrement
 
-| Touche | Action |
+| Key | Action |
 |---|---|
-| Enter | Sauvegarder le QSO |
-| Ctrl+S | Sauvegarder le QSO depuis n'importe quel champ |
+| Enter | Enregistrer le QSO |
+| Ctrl+S | Envoyer un spot DX depuis le formulaire rempli |
 | Esc | Annuler la confirmation de doublon |
-| Enter sur la confirmation DUPE | Sauvegarder le doublon quand même |
+| Enter dans la confirmation DUPE | Enregistrer malgré tout le doublon |
 
 ---
 
-## Logbook Editor et ADIF
+<a id="logbook-editor-and-adif"></a>
+## Éditeur de log et ADIF
 
-Ouvrez le Logbook Editor avec **F8**.
+Ouvrez **Logbook Editor** avec **F8**.
 
-Il sert à :
+Il permet de :
 
-- vérifier les QSOs,
-- éditer inline,
-- supprimer des QSOs,
-- importer ADIF,
-- exporter ADIF,
-- téléverser vers Wavelog,
+- consulter les QSO,
+- effectuer des modifications directes,
+- supprimer des QSO,
+- importer des fichiers ADIF,
+- exporter des fichiers ADIF,
+- envoyer vers Wavelog,
 - télécharger depuis Wavelog,
-- effectuer des opérations liées aux concours.
+- exécuter les opérations liées aux concours.
 
-### Modifier les QSOs
+### Modifier les QSO
 
 1. Sélectionnez une ligne avec **↑/↓**.
 2. Appuyez sur **Enter** ou **e**.
 3. Modifiez le QSO.
-4. Sauvegardez avec **Ctrl+S**.
+4. Enregistrez avec **Ctrl+S**.
 
-Les changements apparaissent immédiatement dans Recent QSOs.
+Les modifications apparaissent immédiatement dans **Recent QSOs**.
 
 ### Import et export ADIF
 
-CQOps prend en charge l'import et l'export ADIF 3.1.7.
+CQOps prend en charge l’import et l’export ADIF 3.1.7.
 
-| Action | Raccourci |
+| Action | Shortcut |
 |---|---|
 | Import ADIF | Ctrl+I |
 | Export ADIF | Ctrl+E |
 
-L'import valide les enregistrements, ignore les doublons et affiche un résumé. Les QSOs importés sont marqués pour l'envoi vers Wavelog lorsque la synchronisation Wavelog est configurée.
+L’import valide les enregistrements, ignore les doublons et affiche un résumé. Les QSO importés sont marqués pour l’envoi à Wavelog si la synchronisation Wavelog est configurée.
 
-L'export peut inclure tous les QSOs ou les QSOs filtrés par concours. `CONTEST_ID` est conservé.
+L’export peut contenir tous les QSO ou uniquement ceux filtrés par concours. `CONTEST_ID` est conservé.
 
-### Gestion des modes numériques
+### Traitement des modes numériques
 
-La gestion de mode et submode suit ADIF 3.1.7 comme décrit dans ce manuel :
+Le traitement de mode et submode suit ADIF 3.1.7 comme décrit dans ce manuel :
 
 - FT8 est exporté comme mode autonome.
 - FT4 et FT2 sont exportés comme MFSK avec le submode approprié.
 - Les anciens enregistrements MFSK + FT8 importés sont normalisés en FT8 autonome.
 
-Le QSO form possède des champs séparés **Mode** et **Submode**. Les deux peuvent être parcourus avec **PgUp/PgDn**.
+**QSO form** comporte des champs séparés **Mode** et **Submode**. Les deux peuvent être parcourus avec **PgUp/PgDn**.
 
 ---
 
+<a id="contests"></a>
 ## Concours
 
-Les concours ajoutent des champs exchange et la gestion du numéro de série au QSO form.
+CQOps comprend un panneau léger de logging de concours destiné à une **participation occasionnelle aux concours**. Il ne remplace pas les loggers spécialisés comme N1MM, Win-Test ou TR4W. Pour une participation sérieuse en multi-op, multi-radio ou catégorie assisted, utilisez un logger de concours dédié. CQOps convient lorsque vous souhaitez donner quelques points, suivre votre rate pour le plaisir ou enregistrer quelques QSO de concours pendant une activation SOTA/POTA sans quitter votre logger habituel.
 
-Créez ou configurez un concours dans le Logbook Editor avec **Ins**.
+<a id="setting-up-a-contest"></a>
+### Configurer un concours
 
-La configuration d'un concours comprend :
+Créez ou configurez un concours dans **Logbook Editor** avec **Ins**.
 
-- nom du concours,
-- date,
-- ADIF contest ID,
-- templates exchange.
+La configuration du concours comprend :
 
-### Marqueurs de template
+- le nom du concours,
+- la date,
+- l’ADIF contest ID,
+- les modèles d’échange.
 
-| Marqueur | Remplacé par |
+#### Marqueurs de modèle
+
+| Marker | Replaced with |
 |---|---|
 | `@rst` | RST envoyé ou reçu |
-| `@serial` | Numéro de série auto-incrémenté |
+| `@serial` | Numéro de série incrémenté automatiquement |
 | `@call` | Votre indicatif |
 | `@grid` | Votre grid locator |
-| `@name` | Nom d'opérateur depuis le profil opérateur |
+| `@name` | Operator name du profil opérateur |
 
-Appuyez sur **Ctrl+C** pour changer le concours actif.
+Appuyez sur **Ctrl+C** pour parcourir les concours actifs ou sélectionnez-en un dans le menu **Contest** (**F7**). Les champs d’échange apparaissent automatiquement dans **QSO form** et les numéros de série s’incrémentent automatiquement.
 
-Quand un concours est actif :
+<a id="bottom-status-bar"></a>
+### Barre d’état inférieure
 
-- le QSO form affiche les champs exchange,
-- les numéros de série s'incrémentent automatiquement,
-- Recent QSOs peut filtrer les QSOs de concours,
-- l'export ADIF conserve `CONTEST_ID`.
+Lorsqu’un concours est actif, la barre inférieure affiche un résumé en temps réel :
+
+```
+ IARU-HF · IARU HF   45 QSOs   Started 16:13   Last 14:04 ago   Next #45   On 2:41
+```
+
+| Champ | Signification |
+|-------|---------|
+| `IARU-HF` | ADIF ID du concours, c’est-à-dire son identifiant exploitable par machine |
+| `· IARU HF` | Nom affiché du concours, visible lorsqu’il diffère de l’ID |
+| `45 QSOs` | Nombre total de QSO enregistrés pendant cette session de concours |
+| `Started 16:13` | Heure du premier QSO de concours de la journée |
+| `Last 14:04 ago` | Temps écoulé depuis le dernier QSO de concours |
+| `Next #45` | Numéro de série qui sera envoyé lors du prochain QSO |
+| `On 2:41` | Temps total d’activité — somme des intervalles entre QSO inférieurs à 30 minutes |
+
+Le champ `Started` est masqué sur les terminaux de moins de 120 colonnes. Le nom du concours et le temps `On` sont masqués en dessous de 100 colonnes.
+
+<a id="contest-statistics-panel"></a>
+### Panneau de statistiques du concours
+
+Lorsqu’un concours est actif et que le terminal est suffisamment large, un panneau compact bordé de jaune apparaît à droite de **QSO form** :
+
+```
+╭──────────────────────────────────╮
+│  Rate     2/h   --/h             │
+│  Count 60m   0  hr   0           │
+│  Peak  1m120 10m 54 60m 29       │
+│  Avg      8/h  Sess 5:36         │
+│  QSO/min  last 60m  max 1        │
+│                                  │
+│                                  │
+│                                  │
+│                                  │
+│  -60m                       now  │
+╰──────────────────────────────────╯
+```
+
+| Ligne | Champ | Signification |
+|-----|-------|---------|
+| **Rate** | `2/h` | Rate sur les **10 derniers QSO** — vitesse de courte rafale |
+| | `--/h` | Rate sur les **100 derniers QSO** — affiche `--` jusqu’à 100 QSO |
+| **Count** | `60m 0` | QSO enregistrés pendant les 60 dernières minutes |
+| | `hr 0` | QSO enregistrés pendant l’heure en cours depuis `:00` |
+| **Peak** | `1m120` | Meilleur rate sur 1 minute : 120/h correspond à 2 QSO dans cette minute |
+| | `10m 54` | Meilleure fenêtre glissante de 10 minutes : moyenne de 54/h |
+| | `60m 29` | Meilleure fenêtre glissante de 60 minutes : moyenne de 29/h |
+| **Avg** | `8/h` | Moyenne de session — total des QSO divisé par le nombre d’heures depuis le premier QSO |
+| | `Sess 5:36` | Durée totale de la session du premier au dernier QSO, en H:MM ou en minutes |
+| **Chart** | `max 1` | La minute la plus chargée comportait 1 QSO. Les barres affichent les QSO par minute |
+| | `-60m…now` | Bord gauche = il y a 60 minutes ; bord droit = maintenant |
+
+Le graphique utilise des blocs Unicode (`█`) répartis sur quatre lignes de barres verticales. Les rates **Peak** omettent le suffixe `/h`, puisque **Peak** implique déjà « par heure ». Les durées omettent les secondes, qui ne feraient qu’ajouter du bruit avec une actualisation à la minute.
+
+<a id="contest-adif-export"></a>
+### Export ADIF du concours
+
+Pour soumettre votre log de concours, ouvrez **Logbook Editor** (`Ctrl+E`) lorsqu’un concours est actif. Lorsqu’un filtre de concours est appliqué, la boîte d’export ADIF propose d’exporter **uniquement les QSO appartenant au concours actif**. Le résultat est un fichier ADIF 3.1.7 conforme, avec les champs d’échange, les numéros de série et l’ADIF ID du concours conservés, prêt à être envoyé au robot de l’organisateur ou à son système de contrôle des logs.
+
+<a id="contest-mode-behavior"></a>
+### Comportement du mode concours
+
+Lorsqu’un concours est actif :
+
+- **QSO form** affiche les champs d’échange,
+- les numéros de série s’incrémentent automatiquement,
+- **Recent QSOs** peut être filtré sur les QSO du concours,
+- l’export ADIF conserve `CONTEST_ID`,
+- **QSO form**, le panneau du concours et le panneau **Solar** reçoivent une bordure jaune pour être facilement identifiables,
+- les spots DXC sont vérifiés par rapport à tous les QSO du concours, et pas seulement ceux du jour, afin de signaler les doublons.
 
 ---
 
-## Favorites, références et plans de bande
+<a id="favorites-references-and-band-plans"></a>
+## Favoris, références et plans de bandes
 
 ### Favorites
 
-Favorites stocke les presets de fréquence, mode et band dans 10 emplacements.
+**Favorites** enregistre des presets de frequency, mode et band dans trois slots, ce qui suffit pour les fréquences d’appel les plus utilisées. Les raccourcis utilisent `Alt` pour éviter les conflits avec les touches d’édition habituelles du terminal et fonctionner de manière fiable dans différents terminaux.
 
-| Raccourci | Action |
+| Shortcut | Action |
 |---|---|
-| Alt+0–9 | Rappeler un favorite |
-| Alt+Shift+0–9 | Sauvegarder les frequency, mode et band actuels comme favorite |
+| Alt+Ins / Alt+Home / Alt+PgUp | Rappeler un favorite du slot 1, 2 ou 3 |
+| Alt+Shift+Ins / Alt+Shift+Home / Alt+Shift+PgUp | Enregistrer les frequency, mode et band actuels dans le slot 1, 2 ou 3 |
 
-Favorites est stocké dans la configuration et partagé entre logbooks.
+**Favorites** est enregistré dans la configuration et partagé entre les logs.
 
 Exemple :
 
 1. Saisissez `145.55`.
-2. Réglez mode sur `FM`.
-3. Réglez band sur `2m`.
-4. Appuyez sur **Alt+Shift+1**.
-5. Plus tard, appuyez sur **Alt+1** pour rappeler le preset.
+2. Réglez **Mode** sur `FM`.
+3. Réglez **Band** sur `2m`.
+4. Appuyez sur **Alt+Shift+Ins** pour enregistrer le preset dans le slot 1.
+5. Plus tard, appuyez sur **Alt+Ins** pour le rappeler.
 
 ### REF Lookup
 
-Ouvrez REF Lookup avec **F6**.
+Ouvrez **REF Lookup** avec **F6**.
 
-Il recherche :
+La recherche porte sur :
 
 - SOTA,
 - POTA,
 - WWFF,
 - IOTA.
 
-Vous pouvez chercher par préfixe, nom ou désignateur de référence. Les références sélectionnées peuvent remplir le QSO form.
+Vous pouvez rechercher par préfixe, nom ou identifiant de référence. Les références sélectionnées peuvent remplir **QSO form**.
 
 ### Band Plan Browser
 
-Ouvrez le Band Plan Browser avec **F7**.
+Ouvrez **Band Plan Browser** avec **F7**.
 
-Il donne un accès rapide à :
+Il offre un accès rapide à :
 
-- bandes radioamateur,
-- plages VHF/UHF,
+- Amateur bands,
+- VHF/UHF ranges,
 - CB,
 - PMR446,
-- presets broadcast.
+- Broadcast presets,
+- Portable — fréquences courantes pour les opérations portables et sur le terrain, notamment SOTA, POTA et les canaux d’appel.
 
-Une fréquence sélectionnée peut servir à régler le rig actif. Les données de band plan peuvent aussi être exportées en Markdown.
+Une fréquence sélectionnée peut être utilisée pour régler l’équipement actif. Les données du plan de bandes peuvent également être exportées au format Markdown.
 
 ---
 
+<a id="integrations"></a>
 ## Intégrations
 
-Toutes les intégrations sont optionnelles. La journalisation locale fonctionne sans elles.
+Toutes les intégrations sont facultatives. L’enregistrement local fonctionne sans elles.
 
 ### QRZ.com
 
-QRZ.com lookup nécessite un accès internet et un abonnement QRZ XML.
+La recherche QRZ.com nécessite un accès à Internet et un abonnement QRZ XML.
 
-Dans le QSO form, appuyez sur **Ins** pour remplir des champs callbook comme :
+Dans **QSO form**, appuyez sur **Ins** pour remplir des champs du callbook tels que :
 
-- name,
+- Name,
 - QTH,
-- grid,
-- country,
+- Grid,
+- Country,
 - CQ/ITU zones,
 - DXCC,
-- continent.
+- Continent.
 
-La Partner view sur **F2** peut afficher la photo de l'opérateur lorsqu'elle est disponible.
+**Partner view** sous **F2** peut afficher la photo de l’opérateur lorsqu’elle est disponible.
 
-> ⚠️ **Expérimental.** L'affichage des photos peut utiliser le protocole
-> graphique Kitty et nécessite un terminal compatible : Kitty, Ghostty ou
-> WezTerm. Activez dans **F9 → General → Kitty Graphics**. Les terminaux
-> standard et les sessions SSH sans relais graphique afficheront un glyphe.
+> ⚠️ **Experimental.** L’affichage des photos peut utiliser le protocole Kitty
+> terminal graphics et nécessite un terminal compatible : Kitty, Ghostty ou
+> WezTerm. Activez-le sous **F9 → General → Kitty Graphics**. Les terminaux
+> standard et les sessions SSH sans transmission graphique utiliseront une
+> image de remplacement composée de glyphes.
 
 ### Wavelog
 
-L'intégration Wavelog supporte :
+L’intégration Wavelog prend en charge :
 
-- envoi,
-- téléchargement incrémental,
-- worked/confirmed lookup.
+- l’envoi,
+- le téléchargement incrémental,
+- la recherche de l’état worked/confirmed.
 
-Wavelog est configuré par logbook actif avec :
+Wavelog se configure par log actif avec :
 
 - URL,
 - API key,
 - station profile ID.
 
-CQOps sauvegarde toujours les QSOs localement en premier. Un échec d'envoi Wavelog ne supprime pas les données locales.
+CQOps enregistre toujours les QSO localement en premier. Un échec de l’envoi Wavelog ne supprime pas les données locales.
 
 ### flrig
 
-L'intégration flrig utilise XML-RPC sur HTTP.
+L’intégration flrig utilise XML-RPC sur HTTP.
 
 Endpoint par défaut :
 
@@ -593,13 +690,13 @@ CQOps peut lire :
 - mode,
 - power.
 
-En split, VFO A est mappé à Frequency et VFO B à Freq RX.
+En fonctionnement split, VFO A correspond à **Frequency** et VFO B à **Freq RX**.
 
 ### Hamlib / rigctld
 
-Le contrôle de rig Hamlib utilise le daemon TCP `rigctld`.
+Le contrôle du poste par Hamlib utilise le daemon TCP `rigctld`.
 
-Selon le support radio/backend, CQOps peut interroger :
+Selon le poste et les possibilités du backend, CQOps peut interroger :
 
 - frequency,
 - mode,
@@ -607,53 +704,49 @@ Selon le support radio/backend, CQOps peut interroger :
 - split,
 - power.
 
-CQOps gère autant que possible l'absence de support des noms VFO.
+CQOps gère proprement l’absence de prise en charge des noms de VFO lorsque cela est possible.
 
-### Hamlib Rotor / rotctld
+### Hamlib Rotator / rotctld
 
-> ⚠️ **Expérimental.** Le contrôle de rotor est expérimental. Vérifiez toujours
-> les limites physiques de votre antenne avant d'opérer. Soyez prêt à arrêter
-> le mouvement immédiatement avec **Alt+/** . À utiliser avec précaution — une
-> configuration incorrecte peut endommager votre rotor ou votre antenne.
+> ⚠️ **Experimental.** Le contrôle du rotor est expérimental. Vérifiez toujours
+> les limites physiques de votre antenne avant toute utilisation. Soyez prêt à
+> arrêter immédiatement le mouvement avec **Alt+/**. Utilisez cette fonction
+> avec prudence : une mauvaise configuration peut endommager le rotor ou
+> l’antenne.
 
-Le contrôle de rotor utilise Hamlib `rotctld`.
+Le contrôle du rotor utilise Hamlib `rotctld`.
 
-CQOps supporte :
+CQOps prend en charge :
 
 - azimuth,
 - elevation,
 - stop commands.
 
-| Raccourci | Action |
+| Shortcut | Action |
 |---|---|
-| Alt+, | Ajuster l'azimuth −5° |
-| Alt+. | Ajuster l'azimuth +5° |
-| Alt+; | Ajuster l'elevation +5° |
-| Alt+' | Ajuster l'elevation −5° |
-| Alt+\ | Pointer le rotor vers le path bearing calculé |
+| Alt+, | Modifier azimuth de −5° |
+| Alt+. | Modifier azimuth de +5° |
+| Alt+; | Modifier elevation de +5° |
+| Alt+' | Modifier elevation de −5° |
+| Alt+\ | Orienter le rotor vers le cap de trajet calculé |
 | Alt+/ | Arrêter le rotor |
 
 ### WSJT-X
 
-L'intégration WSJT-X utilise les messages UDP de WSJT-X. CQOps analyse les messages ADIF et peut journaliser automatiquement les QSOs terminés.
+L’intégration WSJT-X utilise les messages UDP de WSJT-X. CQOps analyse les messages ADIF et peut enregistrer automatiquement les QSO terminés.
 
-L'étiquette rig prend la couleur d'accent pendant que WSJT-X transmet. Si l'opérateur rapporté par WSJT-X ne correspond pas à l'opérateur actif, CQOps affiche un avertissement.
+Le libellé de l’équipement prend la couleur d’accent lorsque WSJT-X émet. Si l’opérateur indiqué par WSJT-X ne correspond pas à l’opérateur actif, CQOps affiche un avertissement.
 
 ### GPS
 
-CQOps peut lire la position d'un récepteur GPS et l'utiliser comme grid
-locator de la station — idéal pour les opérations portables, mobiles ou
-en extérieur.
+CQOps peut lire la position d’un récepteur GPS et l’utiliser comme grid locator de la station — idéal pour les opérations portables, mobiles ou sur le terrain.
 
 Deux backends sont pris en charge :
 
-- **Serial** — se connecte directement à un récepteur GPS via un port
-  série (USB-série, port COM intégré ou `/dev/ttyUSB0`).
-- **GPSD** — se connecte à un serveur [gpsd](https://gpsd.io/) via TCP
-  (par défaut `127.0.0.1:2947`). Utile lorsque le GPS est partagé avec
-  d'autres applications ou accessible via le réseau.
+- **Serial** — connexion directe à un récepteur GPS par port série, par exemple USB-to-serial, port COM intégré ou `/dev/ttyUSB0`.
+- **GPSD** — connexion à un serveur [gpsd](https://gpsd.io/) par TCP, par défaut `127.0.0.1:2947`. Utile lorsque le GPS est partagé avec d’autres applications ou accessible par le réseau.
 
-L'indicateur GPS dans la barre d'état affiche :
+L’indicateur **GPS** dans la barre d’état affiche :
 
 | Couleur | Signification |
 |--------|---------|
@@ -661,23 +754,19 @@ L'indicateur GPS dans la barre d'état affiche :
 | Jaune `GPS` | Connecté, pas encore de fix |
 | Blanc `GPS` | Fix acquis, position verrouillée |
 
-Lorsqu'un fix est acquis, le grid locator de la station est remplacé par
-la position GPS et marqué `(GPS)` dans la ligne d'état :
+Lorsqu’un fix est obtenu, le grid locator de la station est remplacé par la position calculée à partir du GPS et marqué `(GPS)` dans la ligne d’état :
 
 ```
 Rig SSB - FTDx10/Dipole  ·  Grid JO62TJ43PL (GPS)
 ```
 
-Activez **Grid from GPS** dans les paramètres Station & Logbook pour
-utiliser le grid GPS pour la journalisation des QSO, les balises APRS,
-la carte du tableau de bord et les calculs de distance.
+Activez **Grid from GPS** dans les réglages **Station & Logbook** pour utiliser le grid GPS dans l’enregistrement des QSO, les balises APRS, la carte du dashboard et les calculs de distance.
 
-**Précision du grid** — configurable dans le menu Intégrations (10, 8 ou
-6 caractères). Par défaut 10 caractères (~25 m de précision).
+**Grid precision** se configure dans le menu **Integration** avec 10, 8 ou 6 caractères. La valeur par défaut est 10 caractères, soit environ 25 m de précision. Le grid est toujours calculé en interne à pleine précision puis tronqué au niveau de son utilisation.
 
 ### DX Cluster
 
-L'intégration DX Cluster utilise telnet et nécessite internet.
+L’intégration **DX Cluster** utilise telnet et nécessite un accès à Internet.
 
 Serveur par défaut :
 
@@ -685,68 +774,66 @@ Serveur par défaut :
 dxspots.com:7300
 ```
 
-Les filtres incluent :
+Les filtres comprennent :
 
 - band,
-- continent,
+- spotter continent,
 - mode,
 - age/time.
 
-| Touche | Action |
+| Key | Action |
 |---|---|
-| Enter | Remplir le QSO form, régler le rig et revenir à QSO |
-| Space | Régler le rig et rester sur DX Cluster |
-| Backspace | Effacer les filtres |
+| Enter | Remplir **QSO form**, régler l’équipement et revenir à **QSO** |
+| Space | Régler l’équipement et rester dans **DX Cluster** |
+| Backspace | Effacer tous les filtres |
+
+Lorsque **DX Cluster** est connecté, **QSO form** bénéficie de deux fonctions supplémentaires :
+
+- **Send a spot** — lorsque le formulaire est rempli, appuyez sur **Ctrl+S** pour ouvrir la boîte de spot et envoyer un spot DX au cluster.
+- **Nearest spots** — lorsqu’une fréquence est réglée, jusqu’à trois spots proches apparaissent directement dans **QSO form**, ce qui permet de voir l’activité de la bande sans quitter l’écran d’enregistrement. Appuyez sur **Ctrl+P** pour remplir l’indicatif à partir du spot le plus proche.
 
 ### PSK Reporter
 
-PSK Reporter nécessite internet.
+L’intégration **PSK Reporter** nécessite un accès à Internet. C’est un excellent outil pour vérifier rapidement la propagation réelle : qui reçoit votre signal, ou qui recevez-vous actuellement sur une bande donnée ?
 
-Il fournit :
+Elle fournit :
 
-- spots de propagation,
-- filtres band/time/mode,
-- ASCII world map sur **F5**.
+- des spots de propagation,
+- des filtres band/time/mode,
+- une carte du monde ASCII sous **F5**.
 
 ### APRS
 
-CQOps prend en charge trois types de service APRS — choisissez celui qui
-correspond à votre configuration de station :
+CQOps prend en charge trois types de service APRS. Choisissez celui qui correspond à la configuration de votre station :
 
-| Service | Connexion | Internet requis |
+| Service | Connection | Internet required |
 |---|---|---|
 | **APRS-IS** | TCP vers un serveur APRS-IS | Oui |
 | **KISS** | Port série vers un TNC KISS matériel | Non |
-| **KISS Server** | TCP vers un serveur TNC KISS (ex. Dire Wolf) | Non (réseau local) |
+| **KISS Server** | TCP vers un serveur TNC KISS, par exemple Dire Wolf | Non, le réseau local suffit |
 
-Sélectionnez le type de service dans le menu Integrations :
+Sélectionnez le type de service dans le menu **Integrations** :
 
 ```text
-F9 → Integrations → APRS → Service (Espace pour changer)
+F9 → Integrations → APRS → Service (Space to cycle)
 ```
 
-Les trois services prennent en charge la réception de rapports de
-position APRS des stations proches et leur affichage sur la carte
-locale CQOps Live avec :
+Les trois services prennent en charge la réception des rapports de position APRS des stations proches et leur affichage sur la carte locale de **CQOps Live** avec :
 
-- symboles APRS standards,
-- popups callsign,
-- auto-fit view,
-- range circle configurable.
+- les symboles APRS standard,
+- des popups de callsign,
+- l’ajustement automatique de la vue,
+- un cercle de portée configurable.
 
-Tous les services prennent également en charge le **beaconing périodique
-de position**. CQOps transmet votre grid locator à l'intervalle configuré.
-Lorsque le GPS est actif et **Grid from GPS** est activé, le beacon
-utilise automatiquement la position GPS — idéal pour l'opération
-portable et mobile.
+Tous les services prennent également en charge le **periodic position beaconing**. CQOps transmet le grid locator de la station à l’intervalle configuré. Lorsque GPS est actif et que **Grid from GPS** est activé, la balise utilise automatiquement la position issue du GPS — idéal en portable ou en mobile.
 
 #### APRS-IS
 
-Se connecte au réseau mondial APRS-IS via internet. Nécessite :
+Se connecte au réseau mondial APRS-IS par Internet. Nécessite :
 
 - un indicatif radioamateur valide,
-- un passcode APRS-IS (généré à partir de votre indicatif),
-- une connexion internet.
+- un APRS-IS passcode généré à partir de l’indicatif,
+- une connexion Internet.
 
 Serveur par défaut :
 
@@ -754,410 +841,384 @@ Serveur par défaut :
 euro.aprs2.net:14580
 ```
 
-APRS-IS est configuré globalement sous **F9 → Integrations → APRS**.
-Indicatif, SSID, symbole, commentaire, intervalle de beacon et filtre
-de portée par logbook sous **F9 → Logbooks → [logbook actif] → APRS**.
+APRS-IS est configuré globalement sous **F9 → Integrations → APRS**. Callsign, SSID, symbol, comment, beacon interval et range filter de chaque log sont configurés sous **F9 → Logbooks → [active logbook] → APRS**.
 
-#### KISS (série)
+#### KISS (serial)
 
-> ⚠️ **Expérimental.** Le support KISS TNC est expérimental. Testez
-> soigneusement avant d'en dépendre pour l'opération.
+Se connecte directement à un TNC KISS matériel par port série. Aucune connexion Internet n’est nécessaire : les trames APRS sont émises et reçues par la radio.
 
-Se connecte directement à un TNC KISS matériel via un port série. Aucune
-connexion internet n'est requise — les trames APRS sont envoyées et
-reçues via votre radio.
-
-Configurez le port série, le baud rate, les data bits, la parité, les
-stop bits et DTR/RTS dans le menu Integrations :
+Configurez serial port, baud rate, data bits, parity, stop bits et DTR/RTS dans le menu **Integrations** :
 
 ```text
 F9 → Integrations → APRS → Service: KISS
 ```
 
-Lorsque KISS est sélectionné, les champs série (Port, Baud, Data bits,
-Parity, Stop bits, DTR, RTS) deviennent visibles.
+Lorsque **KISS** est sélectionné, les champs série **Port**, **Baud**, **Data bits**, **Parity**, **Stop bits**, **DTR** et **RTS** deviennent visibles.
 
-Le bouton **Test** ouvre le port série pour vérifier que le TNC est
-accessible.
+Le bouton **Test** ouvre le port série afin de vérifier que le TNC est accessible.
 
 #### KISS Server (TCP)
 
-> ⚠️ **Expérimental.** Le support KISS Server est expérimental. Testez
-> soigneusement avant d'en dépendre pour l'opération.
+Se connecte à un TNC KISS accessible en TCP, par exemple une instance [Dire Wolf](https://github.com/wb2osz/direwolf) exécutée sur la même machine ou sur le réseau local. Aucune connexion Internet n’est nécessaire.
 
-Se connecte à un TNC KISS accessible via TCP — par exemple, une instance
-[Dire Wolf](https://github.com/wb2osz/direwolf) exécutée sur la même
-machine ou sur le réseau local. Aucune connexion internet n'est requise.
-
-Entrez l'hôte et le port dans le menu Integrations :
+Saisissez l’hôte et le port dans le menu **Integrations** :
 
 ```text
 F9 → Integrations → APRS → Service: KISS Server → Host / Port
 ```
 
-Par défaut : `127.0.0.1:8001`
+Valeurs par défaut : `127.0.0.1:8001`
 
 #### Beaconing
 
-Les beacons sont envoyés à l'intervalle configuré par logbook.
-L'intervalle minimum est de 1 minute. Le beacon inclut :
+Les balises sont envoyées selon l’intervalle configuré pour chaque log. L’intervalle minimal est de 1 minute. La balise contient :
 
-- indicatif de station avec SSID,
-- grid locator (basé sur le GPS lorsque disponible),
-- symbole APRS,
-- commentaire optionnel.
+- le callsign de la station avec SSID,
+- le grid locator issu du GPS lorsqu’il est disponible,
+- le symbol APRS,
+- un comment facultatif.
 
-Lorsque le **GPS** est actif et **Grid from GPS** est activé dans les
-paramètres Station, le beacon utilise automatiquement le grid locator
-GPS — aucune mise à jour manuelle du grid n'est nécessaire en
-déplacement.
+Lorsque **GPS** est actif et que **Grid from GPS** est activé dans les réglages **Station**, la balise utilise automatiquement le grid locator calculé à partir du GPS. Aucune mise à jour manuelle du grid n’est nécessaire pendant un déplacement.
 
-Intervalle de beacon et autres paramètres par logbook :
+Beacon interval et les autres réglages propres au log sont configurés sous :
 
 ```text
-F9 → Logbooks → [logbook actif] → APRS
+F9 → Logbooks → [active logbook] → APRS
 ```
 
-#### Réception
+#### Receiving
 
-Les rapports de position APRS reçus sont mis en cache localement et
-affichés sur la carte du dashboard CQOps Live. Les stations sont
-montrées avec leurs symboles APRS et peuvent être cliquées pour plus
-de détails. L'affichage s'auto-ajuste pour montrer toutes les stations
-visibles dans la portée configurée.
+Les rapports de position APRS reçus sont conservés en cache local et affichés sur la carte du **CQOps Live dashboard**. Les stations sont représentées par leurs symboles APRS et peuvent être sélectionnées pour afficher les détails. La vue s’ajuste automatiquement afin de montrer toutes les stations visibles dans la portée configurée.
 
-La réception APRS est indépendante de la transmission de beacon — vous
-pouvez recevoir sans envoyer de beacon, et vice-versa. Activez
-simplement APRS dans le menu Integrations et définissez le type de
-service.
+La réception APRS est indépendante de l’émission des balises : vous pouvez recevoir sans émettre, et inversement. Activez simplement APRS dans **Integrations** et choisissez le type de service.
 
 ### Solar Data
 
-Solar data provient de hamqsl.com et inclut :
+Les données solaires proviennent de hamqsl.com et comprennent :
 
 - SFI,
 - sunspot number,
 - A/K indices,
-- band-by-band conditions.
+- les conditions bande par bande.
 
-Les mises à jour live nécessitent internet. Les données en cache restent disponibles offline après un fetch réussi.
+Les mises à jour en direct nécessitent un accès à Internet. Les données en cache restent disponibles hors ligne après un téléchargement réussi.
 
 ---
 
+<a id="cqops-live-dashboard"></a>
 ## CQOps Live Dashboard
 
-CQOps Live est un dashboard intégré dans le navigateur pour l'activité de station en temps réel.
+CQOps Live est un dashboard intégré au navigateur qui affiche en temps réel l’activité de la station.
 
 Il est utile pour :
 
-- affichages publics de field day,
-- écrans de station de club,
-- monitoring de concours,
-- suivi de la station depuis une autre pièce,
-- stands d'événement ou de salon.
+- les affichages publics pendant les field days,
+- les écrans de station de club,
+- la surveillance d’un concours,
+- l’observation de la station depuis une autre pièce,
+- les stands lors d’événements ou de salons.
 
 ### Activer le dashboard
 
 1. Appuyez sur **F9**.
 2. Ouvrez **Integrations**.
-3. Allez à **HTTP Server**.
+3. Accédez à **HTTP Server**.
 4. Activez **HTTP server**.
-5. Définissez optionnellement address et port.
-6. Appuyez sur **Ctrl+S** pour sauvegarder.
+5. Définissez éventuellement address et port.
+6. Appuyez sur **Ctrl+S** pour enregistrer.
 7. Ouvrez le dashboard dans un navigateur.
 
-Paramètres par défaut :
+Réglages par défaut :
 
-| Paramètre | Défaut |
+| Setting | Default |
 |---|---|
 | Address | `0.0.0.0` |
 | Port | `8073` |
 | Local URL | `http://localhost:8073` |
 
-Le serveur démarre immédiatement après sauvegarde.
+Le serveur démarre immédiatement après l’enregistrement.
 
-### Modes d'affichage
+> **Address binding:** La valeur par défaut `0.0.0.0` rend le dashboard accessible depuis tout appareil du réseau local. Cela est utile pour les écrans de field day, les stations de club ou la surveillance depuis une autre pièce. Réglez address sur `127.0.0.1` pour limiter l’accès à la machine locale.
 
-CQOps Live a deux modes d'affichage.
+### Modes d’affichage
+
+CQOps Live possède deux modes d’affichage.
 
 #### Overview mode
 
-Affiché lorsqu'aucun indicatif actif n'est en cours.
+Affiché lorsqu’aucun callsign actif n’est en cours de contact.
 
-Il affiche :
+Il présente :
 
-- live Leaflet map,
-- marqueurs QSO du jour,
-- great-circle paths,
-- table recent QSOs,
-- informations station,
-- statistiques,
-- suivi du rythme 5 minutes, 15 minutes et 1 heure,
-- top operators,
-- QSOs les plus longs.
+- **live maps** — les marqueurs des QSO du jour avec des trajets orthodromiques depuis le grid de la station vers chaque correspondant, ainsi qu’une carte APRS locale montrant les stations proches,
+- le tableau des recent QSOs,
+- les informations de station,
+- les statistiques,
+- le suivi du rate sur 5 minutes, 15 minutes et 1 heure,
+- les meilleurs opérateurs,
+- les QSO les plus lointains.
 
 #### Active / Now Working mode
 
-Affiché lorsqu'un indicatif est en cours de travail.
+Affiché lorsqu’un callsign est en cours de contact.
 
-Il affiche :
+Il présente :
 
-- grand callsign,
-- submode indicator,
-- photo QRZ si disponible,
-- badges band et mode,
-- indicateurs DUPE / NEW CALL / NEW DXCC,
-- distance et bearing,
-- chemin cartographique pointillé mis en évidence du grid station au grid partenaire.
+- un callsign en grand,
+- l’indicateur submode,
+- la photo QRZ lorsqu’elle est disponible,
+- les indicateurs band et mode,
+- les indicateurs **DUPE / NEW CALL / NEW DXCC**,
+- la distance et l’azimut,
+- un trajet en pointillés mis en évidence sur la carte entre le grid de la station et celui du correspondant.
 
 ### Info box
 
-L'info box au-dessus de la local map alterne toutes les 5 secondes entre modules :
+L’**Info box** au-dessus de la carte locale change de module toutes les 5 secondes :
 
-- band conditions,
-- solar activity,
-- geomagnetic field,
+- conditions des bandes,
+- activité solaire,
+- champ géomagnétique,
 - dernier spot DX Cluster,
-- compteurs de rapports PSK Reporter par bande.
-
-Band conditions est toujours rendu en pleine largeur.
+- nombre de rapports PSK Reporter par bande.
 
 ### Weather row
 
-La weather row affiche les conditions Open-Meteo actuelles pour le grid locator de la station :
+La **Weather row** affiche les conditions Open-Meteo actuelles pour le grid locator de la station :
 
-- temperature,
-- wind,
-- humidity,
-- icon.
+- température,
+- vent,
+- humidité,
+- icône.
 
-Les données météo sont récupérées côté navigateur et se dégradent proprement hors-ligne.
+Les données météo sont récupérées dans le navigateur et sont simplement omises lorsque la connexion est indisponible.
 
 ### Local map
 
-La local map à droite peut afficher :
+La **local map** de droite est consacrée à la **surveillance du voisinage APRS**. Elle peut afficher :
 
-- stations APRS,
-- symboles APRS standards,
-- range circle,
-- popups callsign,
-- day/night terminator overlay optionnel,
-- RainViewer weather radar overlay optionnel.
+- les stations APRS proches avec les symboles standard,
+- des popups de callsign au survol ou au clic,
+- un cercle de portée configurable,
+- un overlay facultatif du terminateur jour/nuit,
+- un overlay facultatif du radar météo RainViewer.
 
-### Mises à jour temps réel et performance
+### Mises à jour en temps réel et performances
 
-CQOps Live se met à jour via Server-Sent Events (SSE). Aucun rafraîchissement de page n'est nécessaire.
+CQOps Live se met à jour par Server-Sent Events (SSE). Aucun rechargement de page n’est nécessaire.
 
-Le dashboard est conçu pour du matériel peu puissant :
+Le dashboard est conçu pour le matériel peu puissant :
 
-- le navigateur rend la carte,
+- le navigateur effectue le rendu des cartes,
 - le navigateur calcule les distances,
 - le navigateur calcule les statistiques,
-- CQOps pousse de légères mises à jour JSON,
-- quand le HTTP server est désactivé, aucun port n'est ouvert et aucune goroutine du dashboard ne tourne.
+- CQOps envoie des mises à jour JSON légères,
+- lorsque **HTTP server** est désactivé, aucun port n’est ouvert et aucune goroutine du dashboard ne s’exécute.
 
-### Personnalisation du dashboard
+### Personnaliser le dashboard
 
-Dans le formulaire d'intégration HTTP Server, vous pouvez configurer :
+Dans le formulaire d’intégration **HTTP Server**, vous pouvez configurer :
 
-| Champ | Description |
+| Field | Description |
 |---|---|
-| Header 1 | Titre principal dans le page header et la hero area. Revient à « CQOps Live » par défaut. |
-| Header 2 | Sous-titre sous le titre. Revient à « Fast, portable ham radio logger » par défaut. |
-| Logo URL | URL d'image publiquement accessible affichée en haut à gauche. Revient au logo CQOps par défaut. |
-| Event Start | Date au format `YYYY-MM-DD`. Filtre les statistiques et listes QSO à partir de cette date. |
+| Header 1 | Titre principal de l’en-tête et de la zone hero. Utilise « CQOps Live » par défaut. |
+| Header 2 | Sous-titre sous le titre. Utilise « Fast, portable ham radio logger » par défaut. |
+| Logo URL | URL publique de l’image affichée en haut à gauche. Utilise le logo CQOps par défaut. |
+| Event Start | Date au format `YYYY-MM-DD`. Filtre les statistiques et listes de QSO à partir de cette date. |
 
 ---
 
+<a id="configuration"></a>
 ## Configuration
 
 Ouvrez la configuration avec **F9**.
 
 ### Fichiers de configuration
 
-| Plateforme | Chemin config |
+| Plateforme | Chemin de configuration |
 |---|---|
 | Linux / macOS | `~/.config/cqops/config.yaml` |
 | Windows | `%APPDATA%\cqops\config.yaml` |
 
-Les identifiants sensibles sont stockés séparément dans `secrets.enc` dans le même répertoire de configuration.
+Les identifiants sensibles sont enregistrés séparément dans `secrets.enc`, dans le même répertoire de configuration.
 
-Les secrets sont chiffrés avec une clé liée à la machine. Lors du déplacement d'une configuration vers une autre machine, les identifiants doivent être saisis de nouveau.
+Les secrets sont chiffrés avec une clé liée à la machine. Lors du transfert de la configuration vers une autre machine, les identifiants doivent être saisis à nouveau.
 
 ### Menus de configuration
 
-| Menu | Configure |
+Appuyez sur **F9** pour ouvrir le menu principal, puis sélectionnez :
+
+| Menu | Configures |
 |---|---|
-| Station | Callsign, grid, CQ/ITU zone, IARU region, references |
-| Rig | Rig presets, model, antenna, power, backend, rotor, WSJT-X |
-| Wavelog | URL, API key, station profile ID |
-| QRZ | Username et password |
-| DX Cluster | Host, port, login |
-| Operators | Profils opérateur |
-| Logbooks | Paramètres station, Wavelog, contest, operator et APRS par logbook |
-| Integrations | Type de service APRS (APRS-IS, KISS, KISS Server), GPS, serveur HTTP, DXC, QRZ |
-| Notifications | QSO saved alerts, Wavelog status, dupe beep, error sounds |
-| General | Timezone, distance units, map, debug mode |
+| General | Units, timezone, partner map/picture, solar panel, sources CTY.DAT/SCP/REF, Kitty Graphics, Debug mode |
+| Logbooks | Station callsign, grid, references, CQ/ITU zones, IARU region, GPS grid ; Wavelog par log (URL, API key, station profile) ; APRS par log (callsign, symbol, beacon, range) |
+| Operators | Profils operator callsign et operator name pour les stations multi-opérateurs |
+| Rigs | Presets d’équipement : model, antenna, power, backend (None/flrig/Hamlib), rotor, WSJT-X UDP |
+| Contests | Profils de concours : name, date, ADIF contest ID, exchange templates, starting serial number |
+| Integration | DX Cluster (host, port, login), QRZ.com (username, password), HTTP Server du dashboard (address, port, branding), GPS service (serial/GPSD, grid precision) |
+| Notifications | QSO saved alerts, Wavelog upload status, dupe beep, error sounds |
 
 ### Multi-logbook
 
-Utilisez plusieurs logbooks pour la maison, le portable, les concours et le club.
+Utilisez plusieurs logs pour home, portable, contest et club.
 
-**Ctrl+L** change le logbook actif.
+Appuyez sur **Ctrl+L** pour parcourir les logs actifs.
 
-Chaque logbook conserve ses propres :
+Chaque log conserve ses propres :
 
-- station details,
-- Wavelog settings,
-- contest settings,
-- operator settings.
+- informations de station,
+- réglages Wavelog,
+- réglages de concours,
+- réglages d’opérateur.
 
 ### Multi-operator
 
 Les profils opérateur contiennent :
 
-- indicatif opérateur,
-- nom opérateur.
+- operator callsign,
+- operator name.
 
-**Ctrl+O** change l'opérateur actif.
+Appuyez sur **Ctrl+O** pour parcourir les opérateurs actifs.
 
-L'opérateur actif est enregistré dans le champ ADIF `OPERATOR` et suit les envois Wavelog.
+L’opérateur actif est enregistré dans le champ ADIF `OPERATOR` et transmis lors des envois vers Wavelog.
 
 ### Multi-rig
 
-Les presets de rig stockent :
+Les presets d’équipement enregistrent :
 
 - backend,
 - model,
 - antenna,
 - power,
-- rotor settings,
-- WSJT-X settings.
+- réglages du rotor,
+- réglages WSJT-X.
 
-**Ctrl+R** change le rig actif.
+Appuyez sur **Ctrl+R** pour parcourir les équipements actifs.
 
 ### Secrets chiffrés
 
-Depuis v0.8.7, les identifiants sont stockés chiffrés.
+Depuis la version v0.8.7, les identifiants sont enregistrés sous forme chiffrée.
 
 | Élément | Valeur |
 |---|---|
-| Secrets file | `secrets.enc` |
-| Location | Même répertoire que `config.yaml` |
-| Unix permissions | `0600` lorsque supporté |
-| Encryption | AES-256-GCM avec une clé liée à la machine |
-| Protected data | QRZ password, DX Cluster login, Wavelog API keys |
+| Fichier des secrets | `secrets.enc` |
+| Emplacement | Même répertoire que `config.yaml` |
+| Permissions Unix | `0600` lorsque pris en charge |
+| Chiffrement | AES-256-GCM avec une clé liée à la machine |
+| Données protégées | QRZ password, DX Cluster login, Wavelog API keys |
 
-Les plaintext secrets des anciennes configurations migrent au premier lancement.
+Les secrets en clair provenant d’anciennes configurations sont migrés au premier démarrage.
 
-Si `secrets.enc` est corrompu, CQOps démarre avec un avertissement et demande de ressaisir les identifiants.
+Si `secrets.enc` est endommagé, CQOps démarre avec un avertissement et demande de saisir à nouveau les identifiants.
 
 ---
 
+<a id="keyboard-shortcuts"></a>
 ## Raccourcis clavier
 
 ### Global
 
-| Touche | Action |
+| Key | Action |
 |---|---|
-| F1 | QSO form et Recent QSOs |
-| F2 | Partner view |
-| F4 | DX Cluster |
-| F5 | PSK Reporter |
-| F6 | REF Lookup |
-| F7 | Band Plan Browser |
-| F8 | Logbook Editor |
-| F9 | Configuration / main menu |
+| F1 | **QSO form** et **Recent QSOs** |
+| F2 | **Partner view** |
+| F4 | **DX Cluster** |
+| F5 | **PSK Reporter** |
+| F6 | **REF Lookup** |
+| F7 | **Band Plan Browser** |
+| F8 | **Logbook Editor** |
+| F9 | **Configuration / main menu** |
 | F10 | Quit |
-| Ctrl+F9 | Log viewer |
-| ? | Help overlay |
-| Ctrl+L | Changer le logbook actif |
-| Ctrl+R | Changer le rig actif |
-| Ctrl+C | Changer le concours actif |
-| Ctrl+O | Changer l'opérateur actif |
-| Esc | Retour à l'écran précédent |
+| Ctrl+F9 | **Log viewer** |
+| ? | **Help overlay** |
+| Ctrl+L | Cycle active logbook |
+| Ctrl+R | Cycle active rig |
+| Ctrl+C | Cycle active contest |
+| Ctrl+O | Cycle active operator |
+| Esc | Back to previous screen |
 
 ### QSO form
 
-| Touche | Action |
+| Key | Action |
 |---|---|
-| Tab | Champ suivant |
-| Shift+Tab | Champ précédent |
-| ↑ / ↓ | Se déplacer dans la colonne |
-| Enter | Sauvegarder le QSO, avec confirmation de doublon si nécessaire |
-| Ctrl+S | Sauvegarder le QSO depuis n'importe quel champ |
-| Del | Effacer tous les champs du formulaire |
-| Ins | Lookup : QRZ, Wavelog, DXCC et duplicate check |
-| PgUp / PgDn | Changer band, mode ou submode |
-| Ctrl+D | Ouvrir spot dialog |
-| Ctrl+T | Basculer Keep Comment |
-| Alt+, | Ajuster l'azimuth du rotor de −5° |
-| Alt+. | Ajuster l'azimuth du rotor de +5° |
-| Alt+; | Ajuster l'elevation du rotor de +5° |
-| Alt+' | Ajuster l'elevation du rotor de −5° |
-| Alt+\ | Pointer le rotor vers le bearing du grid local au grid partenaire |
-| Alt+/ | Arrêter le rotor |
-| Alt+0–9 | Rappeler un favorite |
-| Alt+Shift+0–9 | Sauvegarder frequency, mode et band actuels comme favorite |
+| Tab | Next field |
+| Shift+Tab | Previous field |
+| ↑ / ↓ | Move within column |
+| Enter | Save QSO, with duplicate confirmation if needed |
+| Del | Clear all form fields |
+| Ins | Lookup: QRZ, Wavelog, DXCC, and duplicate check |
+| PgUp / PgDn | Cycle band, mode, or submode |
+| Ctrl+S | Send DX spot from filled form |
+| Ctrl+P | Fill call from nearest DXC spot |
+| Ctrl+C | Cycle active contest |
+| Alt+, | Adjust rotor azimuth −5° |
+| Alt+. | Adjust rotor azimuth +5° |
+| Alt+; | Adjust rotor elevation +5° |
+| Alt+' | Adjust rotor elevation −5° |
+| Alt+\ | Point rotor to bearing from own grid to partner grid |
+| Alt+/ | Stop rotor |
+| Alt+Ins / Alt+Home / Alt+PgUp | Recall favorite (slot 1/2/3) |
+| Alt+Shift+Ins / Alt+Shift+Home / Alt+Shift+PgUp | Save frequency, mode, band to favorite |
 
 ### Logbook Editor
 
-| Touche | Action |
+| Key | Action |
 |---|---|
-| ↑ / ↓ | Naviguer dans les lignes |
-| PgUp / PgDn | Page précédente ou suivante |
-| Home / End | Première ou dernière ligne |
-| Enter / e | Modifier le QSO sélectionné |
-| Delete | Supprimer le QSO sélectionné |
-| p | Purge de tous les QSOs |
-| Ctrl+C | Changer le filtre concours |
+| ↑ / ↓ | Navigate rows |
+| PgUp / PgDn | Previous or next page |
+| Home / End | First or last row |
+| Enter / e | Edit selected QSO |
+| Delete | Delete selected QSO |
+| p | Purge all QSOs |
+| Ctrl+C | Cycle contest filter |
 | Ctrl+E | Export ADIF |
 | Ctrl+I / Tab | Import ADIF |
-| w | Envoyer les QSOs non envoyés vers Wavelog |
-| Ctrl+W | Télécharger les contacts depuis Wavelog |
-| Esc / F6 | Fermer l'éditeur et revenir au QSO form |
+| w | Upload unsent QSOs to Wavelog |
+| Ctrl+W | Download contacts from Wavelog |
+| Esc / F6 | Close editor and return to QSO form |
 
 ### DX Cluster
 
-| Touche | Action |
+| Key | Action |
 |---|---|
-| ↑ / ↓ | Naviguer dans les spots |
-| Enter | Remplir le QSO form, régler le rig et revenir à QSO |
-| Space | Régler le rig sur le spot sélectionné et rester sur DX Cluster |
-| Home | Avancer le filtre band |
-| End | Reculer le filtre band |
-| `\` | Changer le filtre continent |
-| Ins | Avancer le filtre mode |
-| Del | Reculer le filtre mode |
-| PgUp | Avancer le filtre time |
-| PgDn | Reculer le filtre time |
-| Backspace | Effacer tous les filtres |
-| Esc / F4 | Revenir au QSO form |
+| ↑ / ↓ | Navigate spots |
+| Enter | Fill QSO form, tune rig, and return to QSO |
+| Space | Tune rig to selected spot and stay on DX Cluster |
+| Home | Cycle band filter forward |
+| End | Cycle band filter backward |
+| `\` | Cycle spotter continent filter |
+| Ins | Cycle mode filter forward |
+| Del | Cycle mode filter backward |
+| PgUp | Cycle time filter forward |
+| PgDn | Cycle time filter backward |
+| Backspace | Clear all filters |
+| Esc / F4 | Return to QSO form |
 
 ### Partner view
 
-| Touche | Action |
+| Key | Action |
 |---|---|
-| F2 | Parcourir Partner view → Photo → Back |
-| Esc / F1 | Revenir au QSO form |
+| F2 | Cycle Partner view → Photo → Back |
+| Esc / F1 | Return to QSO form |
 
 ---
 
+<a id="troubleshooting"></a>
 ## Dépannage
 
 ### CQOps ne démarre pas
 
 Vérifiez :
 
-- la taille du terminal est au moins 80×24,
-- les utilisateurs Windows utilisent Windows Terminal,
-- le démarrage réseau ne bloque pas en essayant :
+- que le terminal mesure au moins 80×24 caractères,
+- que les utilisateurs de Windows utilisent Windows Terminal,
+- que le démarrage réseau ne bloque pas, en essayant :
 
   ```bash
   cqops --offline
   ```
 
-Vérifiez les logs :
+Consultez les logs :
 
 | Plateforme | Chemin des logs |
 |---|---|
@@ -1165,87 +1226,88 @@ Vérifiez les logs :
 | macOS | `~/Library/Application Support/cqops/logs/` |
 | Windows | `%APPDATA%\cqops\logs\` |
 
-### Le rig ne se connecte pas
+### L’équipement ne se connecte pas
 
 Pour flrig :
 
-- vérifiez que flrig tourne,
-- vérifiez le port dans le preset de rig actif,
+- vérifiez que flrig est en cours d’exécution,
+- vérifiez le port dans le preset actif,
 - le port par défaut est `12345`.
 
 Pour Hamlib :
 
-- vérifiez que `rigctld` tourne,
+- vérifiez que `rigctld` est en cours d’exécution,
 - vérifiez host et port,
-- vérifiez que votre radio/backend supporte les données demandées.
+- vérifiez que l’équipement/backend prend en charge les données demandées.
 
-Les status labels aident au diagnostic :
+Les libellés d’état facilitent le diagnostic :
 
 | Couleur | Signification |
 |---|---|
-| Blanc/défaut | Connecté |
-| Jaune | Désactivé ou connexion en cours |
+| Blanc/par défaut | Connecté |
+| Jaune | Désactivé ou en cours de connexion |
 | Rouge | Échec |
 
-Les reconnect toasts peuvent être supprimés. CQOps peut réessayer silencieusement.
+Les toasts de reconnexion peuvent être masqués. CQOps peut effectuer silencieusement de nouvelles tentatives.
 
-### WSJT-X ne journalise pas automatiquement
+### WSJT-X n’enregistre pas automatiquement
 
 Vérifiez :
 
-- WSJT-X **Settings → Reporting → UDP Server**,
-- host et port UDP correspondent au preset de rig actif dans CQOps,
-- WSJT-X 2.6 ou plus récent est utilisé,
-- le status label WSJT est actif,
-- le logbook actif est correct,
-- l'opérateur actif est correct.
+- **WSJT-X Settings → Reporting → UDP Server**,
+- que UDP host et port correspondent au preset actif dans CQOps,
+- que WSJT-X 2.6 ou une version ultérieure est utilisé,
+- que le libellé d’état **WSJT** est actif,
+- que le log actif est correct,
+- que l’opérateur actif est correct.
 
-### L'envoi Wavelog échoue
+### L’envoi Wavelog échoue
 
 Vérifiez :
 
 - Wavelog URL,
 - API key,
 - station profile ID,
-- status label **WL**.
+- le libellé d’état **WL**.
 
-Les erreurs d'envoi sont affichées comme toasts. Les QSOs restent sauvegardés localement même si l'envoi échoue. Les échecs individuels de QSO ne bloquent pas le reste du lot.
+Les erreurs d’envoi sont affichées sous forme de toasts. Les QSO restent enregistrés localement même si l’envoi échoue. L’échec d’un QSO individuel ne bloque pas le reste du lot.
 
-### Problèmes de config file
+### Problèmes liés au fichier de configuration
 
-Config file :
+Fichier de configuration :
 
 | Plateforme | Chemin |
 |---|---|
 | Linux / macOS | `~/.config/cqops/config.yaml` |
 | Windows | `%APPDATA%\cqops\config.yaml` |
 
-Secrets file :
+Fichier des secrets :
 
 ```text
 secrets.enc
 ```
 
-Le secrets file est stocké dans le même répertoire que `config.yaml`.
+Le fichier des secrets est enregistré dans le même répertoire que `config.yaml`.
 
-Si la configuration est corrompue, déplacez-la ou supprimez-la puis redémarrez CQOps. Le setup wizard créera une configuration fraîche.
+Si la configuration est endommagée, déplacez ou supprimez le fichier puis redémarrez CQOps. L’assistant de configuration créera une nouvelle configuration.
 
-Le champ `last_fetched_id` n'apparaît qu'après un téléchargement Wavelog réussi.
+Le champ `last_fetched_id` n’apparaît qu’après un téléchargement Wavelog réussi.
 
-### Problèmes de performance
+### Problèmes de performances
 
-Essayez :
+Essayez de :
 
-- désactiver map rendering dans General settings,
-- désactiver le Solar panel si inutile,
-- éviter les écrans lourds en réseau comme DX Cluster et PSK Reporter en offline,
-- utiliser `cqops --offline` lorsque le réseau est peu fiable.
+- désactiver le rendu de la carte dans **General**,
+- désactiver le panneau **Solar** s’il n’est pas nécessaire,
+- éviter les écrans utilisant beaucoup le réseau, comme **DX Cluster** et **PSK Reporter**, lorsque vous travaillez hors ligne,
+- utiliser `cqops --offline` lorsque le réseau n’est pas fiable.
 
 ---
 
-## Signaler des bugs
+<a id="reporting-bugs"></a>
+## Signaler des bogues
 
-Avant de signaler un bug :
+Avant de signaler un bogue :
 
 1. Activez **Debug mode** dans **F9 → General → Debug**, ou définissez :
 
@@ -1262,10 +1324,10 @@ Signalez les problèmes sur GitHub :
 
 <https://github.com/szporwolik/cqops/issues>
 
-Incluez :
+Indiquez :
 
-- version de CQOps depuis `cqops --version`,
-- système d'exploitation,
-- terminal emulator,
-- étapes pour reproduire,
-- debug log pertinent.
+- la version de CQOps obtenue avec `cqops --version`,
+- le système d’exploitation,
+- l’émulateur de terminal,
+- les étapes permettant de reproduire le problème,
+- le debug log pertinent.

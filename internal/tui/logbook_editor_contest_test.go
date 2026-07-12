@@ -54,7 +54,7 @@ func TestLogbookEditor_SetContestID_FiltersQSOs(t *testing.T) {
 	insertQSO(t, le, &qso.QSO{Call: "D4D", QSODate: "20240504", TimeOn: "150000", Band: "10m", Mode: "SSB", ContestID: "c2hash"})
 
 	// Set contest filter to c1hash.
-	le.SetContestID("c1hash", "Test Contest", "TEST-CONTEST-ID")
+	le.SetContestID("c1hash", "Test Contest", "TEST-CONTEST-ID", "2024-05-01")
 
 	// After SetContestID, loadPage should have been called automatically.
 	if le.totalCount != 2 {
@@ -70,7 +70,7 @@ func TestLogbookEditor_SetContestID_FiltersQSOs(t *testing.T) {
 	}
 
 	// Clear the filter.
-	le.SetContestID("", "", "")
+	le.SetContestID("", "", "", "")
 
 	if le.totalCount != 4 {
 		t.Errorf("totalCount after clear = %d; want 4", le.totalCount)
@@ -83,7 +83,7 @@ func TestLogbookEditor_SetContestID_FiltersQSOs(t *testing.T) {
 func TestLogbookEditor_SetContestID_StoresDisplayInfo(t *testing.T) {
 	le := newEditorWithDB(t)
 
-	le.SetContestID("hash123", "CQ WPX", "CQ-WPX-CW")
+	le.SetContestID("hash123", "CQ WPX", "CQ-WPX-CW", "2024-01-01")
 
 	if le.contestID != "hash123" {
 		t.Errorf("contestID = %q; want hash123", le.contestID)
@@ -96,7 +96,7 @@ func TestLogbookEditor_SetContestID_StoresDisplayInfo(t *testing.T) {
 	}
 
 	// Clear — all should be empty.
-	le.SetContestID("", "", "")
+	le.SetContestID("", "", "", "")
 	if le.contestID != "" {
 		t.Errorf("contestID after clear = %q; want empty", le.contestID)
 	}
@@ -110,7 +110,7 @@ func TestLogbookEditor_SetContestID_ResetsPage(t *testing.T) {
 		insertQSO(t, le, &qso.QSO{Call: "T" + string(rune('A'+i)), QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB", ContestID: "c"})
 	}
 
-	le.SetContestID("c", "Test", "T")
+	le.SetContestID("c", "Test", "T", "")
 	if le.currentPage != 1 {
 		t.Errorf("currentPage = %d; want 1 after SetContestID", le.currentPage)
 	}
@@ -125,7 +125,7 @@ func TestLogbookEditor_ContestInfoLine_ShowsWhenActive(t *testing.T) {
 
 	insertQSO(t, le, &qso.QSO{Call: "SP9MOA", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB", ContestID: "c1"})
 
-	le.SetContestID("c1", "My Contest", "MY-CONTEST-ID")
+	le.SetContestID("c1", "My Contest", "MY-CONTEST-ID", "2024-06-15")
 	le.loadPage()
 	le.buildTable()
 
@@ -146,7 +146,7 @@ func TestLogbookEditor_ContestInfoLine_HiddenWhenInactive(t *testing.T) {
 
 	insertQSO(t, le, &qso.QSO{Call: "SP9MOA", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB"})
 
-	le.SetContestID("", "", "")
+	le.SetContestID("", "", "", "")
 	le.loadPage()
 	le.buildTable()
 
@@ -169,7 +169,7 @@ func TestLogbookEditor_CacheInvalidatesOnContestChange(t *testing.T) {
 	insertQSO(t, le, &qso.QSO{Call: "A", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB", ContestID: "c1"})
 	insertQSO(t, le, &qso.QSO{Call: "B", QSODate: "20240502", TimeOn: "130000", Band: "40m", Mode: "CW"})
 
-	le.SetContestID("c1", "First", "ID1")
+	le.SetContestID("c1", "First", "ID1", "")
 	le.loadPage()
 	le.buildTable()
 	// Render view to populate cache.
@@ -181,7 +181,7 @@ func TestLogbookEditor_CacheInvalidatesOnContestChange(t *testing.T) {
 	}
 
 	// Change contest — cache should invalidate.
-	le.SetContestID("", "", "")
+	le.SetContestID("", "", "", "")
 	le.loadPage()
 	le.buildTable()
 	le.View()
@@ -212,7 +212,7 @@ func TestLogbookEditor_CycleContestKeyHandling(t *testing.T) {
 
 	// In edit mode, Ctrl+C should NOT change the contest filter.
 	// (The model layer blocks it; here we verify the editor state is unchanged.)
-	le.SetContestID("before", "Before", "BEFORE")
+	le.SetContestID("before", "Before", "BEFORE", "")
 	// Simulate a key press in edit mode — should not trigger contest change.
 	// The real test for this is in the model integration test below.
 	if le.contestID != "before" {

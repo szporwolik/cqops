@@ -7,46 +7,83 @@ on:
         description: 'Version (leave empty to use VERSION file)'
         required: false
         default: ''
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 permissions:
   contents: write
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # Build all Go binaries + Linux packages (deb/rpm)
-  # ---------------------------------------------------------------------------
+  # ──────────────────────────────────────────────────────────────────────────
+  # Validate version consistency between tag, VERSION file, and input.
+  # ──────────────────────────────────────────────────────────────────────────
+  validate-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        run: |
+          set -euo pipefail
+          V=""
+          if [ -n "${INPUT_VERSION:-}" ]; then
+            V="${INPUT_VERSION}"
+          elif [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            V="${GITHUB_REF#refs/tags/v}"
+          else
+            V="$(cat VERSION)"
+          fi
+          V="${V#v}"
+          if ! echo "$V" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "ERROR: version '$V' is not valid SemVer (X.Y.Z)" >&2
+            exit 1
+          fi
+          FILE_VER="$(cat VERSION)"
+          if [ "$V" != "$FILE_VER" ] && [ -z "${INPUT_VERSION:-}" ] && [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            echo "ERROR: tag version '$V' does not match VERSION file '$FILE_VER'" >&2
+            exit 1
+          fi
+          echo "value=$V" >> $GITHUB_OUTPUT
+          echo "Version: $V"
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Build all Go binaries + Linux packages (deb + rpm)
+  # ──────────────────────────────────────────────────────────────────────────
   build-unix:
     runs-on: ubuntu-latest
+    needs: validate-version
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
           go-version: '1.26'
 
       - name: Install nfpm
-        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.41.3
 
-      - name: Read version
-        id: version
+      - name: Set version and build date
+        id: meta
         run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            echo "value=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-          else
-            echo "value=$(cat VERSION)" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Set build date
-        id: date
-        run: echo "value=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+          echo "version=${{ needs.validate-version.outputs.version }}" >> $GITHUB_OUTPUT
+          echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
 
       - name: Build binaries
         env:
-          VERSION: ${{ steps.version.outputs.value }}
-          BUILD_DATE: ${{ steps.date.outputs.value }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          BUILD_DATE: ${{ steps.meta.outputs.date }}
         run: |
+          set -euo pipefail
           LDFLAGS="-s -w -X github.com/szporwolik/cqops/internal/version.Version=$VERSION -X github.com/szporwolik/cqops/internal/version.BuildDate=$BUILD_DATE"
           mkdir -p dist build
           export CGO_ENABLED=0
@@ -57,7 +94,7 @@ jobs:
           echo "Building $VERSION for linux/arm64..."
           GOOS=linux GOARCH=arm64 go build -ldflags "$LDFLAGS" -o build/cqops-linux-arm64 ./cmd/cqops/
 
-          echo "Building $VERSION for linux/arm (ARMv7 — Pi Zero/1/2)..."
+          echo "Building $VERSION for linux/arm (ARMv7 Pi)..."
           GOOS=linux GOARCH=arm GOARM=7 go build -ldflags "$LDFLAGS" -o build/cqops-linux-armhf ./cmd/cqops/
 
           echo "Building $VERSION for windows/amd64..."
@@ -72,91 +109,109 @@ jobs:
           echo "Binaries before UPX:"
           ls -lh build/
 
-      - name: Compress with UPX (portable/raw binaries only)
+      - name: Compress with UPX
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq upx-ucl
-          # Compress all non-Windows binaries (Windows skipped to avoid AV false positives)
           upx --best build/cqops-linux-amd64
           upx --best build/cqops-linux-arm64
           upx --best build/cqops-linux-armhf
-          # macOS binaries skipped — UPX macOS support is experimental
           echo "Binaries after UPX:"
           ls -lh build/
 
-      - name: Package dist
+      - name: Package archives
         run: |
-          # Copy to dist/: darwin (raw only), windows installer input,
-          # and ARMv7 deb input. Linux/windows raw are redundant with
-          # packages/installer — only darwin + ARMv7 get raw binaries.
+          set -euo pipefail
           cp build/cqops-darwin-amd64  dist/cqops-darwin-amd64
           cp build/cqops-darwin-arm64  dist/cqops-darwin-arm64
           cp build/cqops-linux-armhf   dist/cqops-linux-armhf
           cp build/cqops-windows-amd64.exe  dist/cqops-windows-amd64.exe
 
-          # Portable archives - no install, just extract and run.
           zip -j dist/cqops-windows-portable.zip build/cqops-windows-amd64.exe
           tar -czf dist/cqops-linux-amd64.tar.gz -C build cqops-linux-amd64
           tar -czf dist/cqops-linux-arm64.tar.gz -C build cqops-linux-arm64
           tar -czf dist/cqops-linux-armhf.tar.gz -C build cqops-linux-armhf
 
-          echo "Packaged dist:"
+          echo "Archives package:"
           ls -lh dist/
 
-      - name: Smoke test (linux/amd64)
+      - name: Smoke test (amd64)
         run: |
           ./build/cqops-linux-amd64 version
           echo "Smoke test (amd64) passed"
 
-      - name: Smoke test (linux/arm64 via QEMU)
+      - name: Smoke test (arm64 via QEMU)
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq qemu-user-static
           qemu-aarch64-static build/cqops-linux-arm64 version
           echo "Smoke test (arm64) passed"
 
-      - name: Smoke test (linux/armv7 via QEMU)
+      - name: Smoke test (armv7 via QEMU)
         run: |
           qemu-arm-static build/cqops-linux-armhf version
           echo "Smoke test (armhf) passed"
 
-      - name: Package Linux (deb)
+      - name: Package Debian (deb)
         env:
-          VERSION: ${{ steps.version.outputs.value }}
+          VERSION: ${{ steps.meta.outputs.version }}
         run: |
+          set -euo pipefail
           for arch in amd64 arm64 armhf; do
             echo "Packaging deb / $arch ..."
-            NFFILE="dist/nfpm-deb-${arch}.yaml"
+            NFFILE="dist/nfpm-${arch}.yaml"
             sed -e "s/__VERSION__/${VERSION}/g" \
                 -e "s/__ARCH__/${arch}/g" \
                 nfpm.yaml > "$NFFILE"
-            nfpm package \
-              -f "$NFFILE" \
-              -p deb \
-              -t dist/ \
-              --packager deb \
-              --target "dist/cqops_${arch}.deb"
+            nfpm package -f "$NFFILE" -p deb -t dist/ --packager deb \
+              --target "dist/cqops_${VERSION}_${arch}.deb"
           done
+          # Versionless copy for "latest" direct download link.
+          cp "dist/cqops_${VERSION}_amd64.deb" "dist/cqops_amd64.deb"
           rm -f dist/nfpm-*.yaml
-          echo "Packages:"
+          echo "DEB packages:"
           ls -lh dist/*.deb
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - name: Package RPM (amd64 + arm64)
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          for goarch in amd64 arm64; do
+            rpmarch="$goarch"
+            [ "$goarch" = "amd64" ] && rpmarch="x86_64"
+            [ "$goarch" = "arm64" ] && rpmarch="aarch64"
+            echo "Packaging rpm / $goarch -> $rpmarch ..."
+            NFFILE="dist/nfpm-rpm-${goarch}.yaml"
+            sed -e "s/__VERSION__/${VERSION}/g" \
+                -e "s/__ARCH__/${goarch}/g" \
+                nfpm.yaml > "$NFFILE"
+            nfpm package -f "$NFFILE" -p rpm -t dist/ --packager rpm \
+              --target "dist/cqops-${VERSION}-1.${rpmarch}.rpm"
+          done
+          rm -f dist/nfpm-*.yaml
+          echo "RPM packages:"
+          ls -lh dist/*.rpm
+
+      - name: Generate SHA-256 checksums
+        run: |
+          cd dist
+          sha256sum * > checksums.txt
+          cat checksums.txt
+
+      - uses: actions/upload-artifact@v4
         with:
           name: release-unix
           path: dist/*
 
-  # ---------------------------------------------------------------------------
+  # ──────────────────────────────────────────────────────────────────────────
   # Windows NSIS installer
-  # ---------------------------------------------------------------------------
+  # ──────────────────────────────────────────────────────────────────────────
   build-installer:
     runs-on: windows-latest
     needs: build-unix
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Download binaries
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           name: release-unix
           path: dist/
@@ -164,12 +219,7 @@ jobs:
       - name: Read version
         id: version
         shell: bash
-        run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            echo "value=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-          else
-            echo "value=$(cat VERSION)" >> $GITHUB_OUTPUT
-          fi
+        run: echo "value=${{ needs.validate-version.outputs.version }}" >> $GITHUB_OUTPUT
 
       - name: Install NSIS
         shell: powershell
@@ -180,11 +230,9 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.value }}
         run: |
-          # Copy the windows-amd64 binary to the path the NSIS script expects
           New-Item -ItemType Directory -Force -Path build | Out-Null
           copy dist\cqops-windows-amd64.exe build\cqops-windows-amd64.exe
 
-          # NSIS installed via Chocolatey above
           $makensis = 'C:\Program Files (x86)\NSIS\makensis.exe'
           if (-not (Test-Path $makensis)) {
             $makensis = (Get-Command makensis -ErrorAction SilentlyContinue).Source
@@ -194,33 +242,34 @@ jobs:
           & $makensis /DVERSION=$env:VERSION /DROOT=$rootPath installer\cqops.nsi
           if ($LASTEXITCODE -ne 0) { throw "NSIS compilation failed" }
 
-          Get-ChildItem dist\cqops-setup.exe | ForEach-Object { Write-Host "Installer: $($_.FullName) ($([math]::Round($_.Length/1MB,1)) MB)" }
+          Get-ChildItem dist\cqops-setup.exe | ForEach-Object {
+            Write-Host "Installer: $($_.FullName) ($([math]::Round($_.Length/1MB,1)) MB)"
+          }
 
-      - name: Smoke test (windows/amd64)
+      - name: Smoke test
         shell: powershell
         run: |
           & .\build\cqops-windows-amd64.exe version
           if ($LASTEXITCODE -ne 0) { throw "Smoke test failed" }
           Write-Host "Smoke test passed"
 
-      - name: Upload installer artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
           name: release-installer
           path: dist/cqops-setup.exe
 
-  # ---------------------------------------------------------------------------
-  # Create GitHub Release with all artifacts
-  # ---------------------------------------------------------------------------
-  publish:
+  # ──────────────────────────────────────────────────────────────────────────
+  # Create GitHub Release
+  # ──────────────────────────────────────────────────────────────────────────
+  create-github-release:
     runs-on: ubuntu-latest
     needs: [build-unix, build-installer]
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v4
         with:
           path: dist/
           merge-multiple: true
@@ -229,19 +278,207 @@ jobs:
         run: ls -lhR dist/
 
       - name: Read version
-        id: version
-        run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            echo "value=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
-          else
-            echo "value=$(cat VERSION)" >> $GITHUB_OUTPUT
-          fi
+        id: meta
+        run: echo "version=${{ needs.validate-version.outputs.version }}" >> $GITHUB_OUTPUT
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.version.outputs.value }}
-          name: v${{ steps.version.outputs.value }}
+          tag_name: v${{ steps.meta.outputs.version }}
+          name: v${{ steps.meta.outputs.version }}
           generate_release_notes: true
           files: dist/*
 
+  # ──────────────────────────────────────────────────────────────────────────
+  # Publish to Cloudsmith (deb + rpm)
+  # ──────────────────────────────────────────────────────────────────────────
+  publish-cloudsmith:
+    runs-on: ubuntu-latest
+    needs: create-github-release
+    if: vars.CLOUDSMITH_NAMESPACE != '' && vars.CLOUDSMITH_REPOSITORY != ''
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Read version
+        id: meta
+        run: echo "version=${{ needs.create-github-release.outputs.version }}" >> $GITHUB_OUTPUT
+
+      - name: Publish to Cloudsmith
+        uses: cloudsmith-io/action@v0.7.0
+        with:
+          api-key: ${{ secrets.CLOUDSMITH_API_KEY || '' }}
+          oidc-service-slug: ${{ vars.CLOUDSMITH_OIDC_SERVICE_SLUG || '' }}
+          command: upload
+          format: '*'
+          owner: ${{ vars.CLOUDSMITH_NAMESPACE }}
+          repo: ${{ vars.CLOUDSMITH_REPOSITORY }}
+          republish: 'false'
+          file: |
+            dist/cqops_${{ steps.meta.outputs.version }}_amd64.deb
+            dist/cqops_${{ steps.meta.outputs.version }}_arm64.deb
+            dist/cqops_${{ steps.meta.outputs.version }}_armhf.deb
+            dist/cqops-${{ steps.meta.outputs.version }}-1.x86_64.rpm
+            dist/cqops-${{ steps.meta.outputs.version }}-1.aarch64.rpm
+
+      - name: Write summary
+        run: |
+          NAMESPACE="${{ vars.CLOUDSMITH_NAMESPACE }}"
+          REPO="${{ vars.CLOUDSMITH_REPOSITORY }}"
+          echo "### Cloudsmith" >> $GITHUB_STEP_SUMMARY
+          echo "- Repository: https://cloudsmith.io/~${NAMESPACE}/repos/${REPO}/packages/" >> $GITHUB_STEP_SUMMARY
+          echo "- Setup APT: \`curl -1sLf 'https://dl.cloudsmith.io/public/${NAMESPACE}/${REPO}/setup.deb.sh' | sudo -E bash\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Setup RPM: \`curl -1sLf 'https://dl.cloudsmith.io/public/${NAMESPACE}/${REPO}/setup.rpm.sh' | sudo -E bash\`" >> $GITHUB_STEP_SUMMARY
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Publish AUR package (cqops-bin)
+  # ──────────────────────────────────────────────────────────────────────────
+  publish-aur:
+    runs-on: ubuntu-latest
+    needs: create-github-release
+    if: false  # disabled — AUR setup not yet completed
+    steps:
+      - name: Read version
+        id: meta
+        run: echo "version=${{ needs.create-github-release.outputs.version }}" >> $GITHUB_OUTPUT
+
+      - name: Generate PKGBUILD
+        run: |
+          set -euo pipefail
+          V="${{ steps.meta.outputs.version }}"
+          URL="https://github.com/szporwolik/cqops/releases/download/v${V}/cqops_${V}_amd64.deb"
+          curl -sSLo /tmp/cqops.deb "$URL"
+          SHA256=$(sha256sum /tmp/cqops.deb | awk '{print $1}')
+          rm /tmp/cqops.deb
+
+          mkdir -p aur-dist
+          cat > aur-dist/PKGBUILD << 'PKGBUILD_EOF'
+          # Maintainer: Szymon Porwolik <szporwolik@users.noreply.github.com>
+          pkgname=cqops-bin
+          pkgver=__VERSION__
+          pkgrel=1
+          pkgdesc="A small, fast, offline-first amateur radio logger for the terminal"
+          arch=('x86_64')
+          url="https://github.com/szporwolik/cqops"
+          license=('Apache-2.0')
+          provides=('cqops')
+          conflicts=('cqops')
+          source=("cqops-__VERSION__.deb::https://github.com/szporwolik/cqops/releases/download/v__VERSION__/cqops___VERSION___amd64.deb")
+          sha256sums=('__SHA256__')
+          install=cqops-bin.install
+
+          package() {
+            bsdtar -xf "${srcdir}/cqops-__VERSION__.deb"
+            tar -xf data.tar.xz -C "${pkgdir}"
+          }
+          PKGBUILD_EOF
+
+          sed -i "s/__VERSION__/${V}/g; s/__SHA256__/${SHA256}/g" aur-dist/PKGBUILD
+
+          cat > aur-dist/cqops-bin.install << 'INSTALL_EOF'
+          post_install() {
+            echo "CQOps installed. Run 'cqops' to start."
+          }
+          INSTALL_EOF
+
+          cat > aur-dist/.SRCINFO << 'SRCINFO_EOF'
+          pkgbase = cqops-bin
+          	pkgdesc = A small, fast, offline-first amateur radio logger for the terminal
+          	pkgver = __VERSION__
+          	pkgrel = 1
+          	url = https://github.com/szporwolik/cqops
+          	arch = x86_64
+          	license = Apache-2.0
+          	provides = cqops
+          	conflicts = cqops
+          	source = cqops-__VERSION__.deb::https://github.com/szporwolik/cqops/releases/download/v__VERSION__/cqops___VERSION___amd64.deb
+          	sha256sums = __SHA256__
+          SRCINFO_EOF
+
+          sed -i "s/__VERSION__/${V}/g; s/__SHA256__/${SHA256}/g" aur-dist/.SRCINFO
+
+          echo "Generated AUR files:"
+          ls -la aur-dist/
+
+      - name: Publish to AUR
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/aur_key
+          chmod 600 ~/.ssh/aur_key
+          cat >> ~/.ssh/config << 'SSH_EOF'
+          Host aur.archlinux.org
+            IdentityFile ~/.ssh/aur_key
+            User aur
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/aur_known_hosts
+          SSH_EOF
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/aur_known_hosts 2>/dev/null
+
+          cd aur-dist
+          if git clone ssh://aur@aur.archlinux.org/cqops-bin.git aur-repo 2>/dev/null; then
+            cp PKGBUILD cqops-bin.install .SRCINFO aur-repo/
+            cd aur-repo
+            git add PKGBUILD cqops-bin.install .SRCINFO
+            if git diff --cached --quiet; then
+              echo "AUR: no changes — already published."
+              exit 0
+            fi
+            git commit -m "Update to ${{ steps.meta.outputs.version }}"
+            git push
+            echo "AUR: pushed update to ${{ steps.meta.outputs.version }}"
+          else
+            echo "AUR: cqops-bin repository not found — skip (initial push required)."
+          fi
+
+      - name: Write summary
+        run: |
+          echo "### AUR" >> $GITHUB_STEP_SUMMARY
+          echo "- Package: https://aur.archlinux.org/packages/cqops-bin" >> $GITHUB_STEP_SUMMARY
+          echo "- Install: \`paru -S cqops-bin\` or \`yay -S cqops-bin\`" >> $GITHUB_STEP_SUMMARY
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # WinGet update (automatic after initial acceptance)
+  # ──────────────────────────────────────────────────────────────────────────
+  publish-winget:
+    runs-on: windows-latest
+    needs: create-github-release
+    if: false  # disabled — WinGet initial submission not yet accepted
+    steps:
+      - name: Read version
+        id: meta
+        shell: bash
+        run: echo "version=${{ needs.create-github-release.outputs.version }}" >> $GITHUB_OUTPUT
+
+      - name: Install WingetCreate
+        shell: powershell
+        run: |
+          dotnet tool install --global Microsoft.WingetCreateCLI --version 1.9.2.5
+          Write-Host "WingetCreate installed"
+
+      - name: Submit WinGet update
+        shell: powershell
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          WINGET_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
+        run: |
+          $installerUrl = "https://github.com/szporwolik/cqops/releases/download/v$env:VERSION/cqops-setup.exe"
+          wingetcreate update SzymonPorwolik.CQOps `
+            --version $env:VERSION `
+            --urls "$installerUrl" `
+            --token $env:WINGET_TOKEN `
+            --submit
+          if ($LASTEXITCODE -ne 0) {
+            Write-Warning "WinGet update failed (may not be accepted yet). Check https://github.com/microsoft/winget-pkgs/pulls"
+          }
+
+      - name: Write summary
+        run: |
+          echo "### WinGet" >> $env:GITHUB_STEP_SUMMARY
+          echo "- Package: \`winget install --exact --id SzymonPorwolik.CQOps\`" >> $env:GITHUB_STEP_SUMMARY
+          echo "- Check PRs: https://github.com/microsoft/winget-pkgs/pulls?q=is%3Apr+CQOps" >> $env:GITHUB_STEP_SUMMARY

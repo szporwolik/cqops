@@ -424,7 +424,7 @@ func (c *ContestChooser) saveContest() tea.Cmd {
 	}
 	contestID := strings.TrimSpace(c.contInput.Value())
 	if contestID == "" {
-		c.toasts.Warn("Contest ADIF ID is required — press Space to cycle through known IDs")
+		c.toasts.Warn("Contest ADIF ID is required — PgUp/PgDn to cycle through known IDs")
 		return nil
 	}
 	exchangeSent := strings.TrimSpace(c.exchSentInput.Value())
@@ -716,7 +716,7 @@ func (c *ContestChooser) viewForm() string {
 		line = line + " " + DimStyle.Render(extra)
 	}
 	if c.focus == 4 {
-		line = line + " " + DimStyle.Render("(Space)")
+		line = line + " " + DimStyle.Render("(PgUp/PgDn)")
 	}
 	maxW := c.width - 4
 	if maxW < 40 {
