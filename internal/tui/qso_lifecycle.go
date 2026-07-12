@@ -187,31 +187,29 @@ func (m *Model) refreshQSOS() tea.Cmd {
 func (m *Model) updateFilteredTable() tea.Cmd {
 	call := qso.NormalizeCall(m.fields[fieldCall].Value())
 	if call == "" {
-		m.recentQSOs.ClearFilter()
+		m.callRecentQSOs.ClearFilter()
 		return nil
 	}
 	// Don't re-query if already filtered for the same call and cache is valid.
-	if m.recentQSOs.IsFiltered() && m.recentQSOs.filterCall == call && m.recentQSOs.filterCacheID != 0 {
+	if m.callRecentQSOs.IsFiltered() && m.callRecentQSOs.filterCall == call && m.callRecentQSOs.filterCacheID != 0 {
 		return nil
 	}
 	return func() tea.Msg {
-		// Re-read call at execution time — the field may have changed
-		// since the command was created.
 		currentCall := qso.NormalizeCall(m.fields[fieldCall].Value())
 		if currentCall == "" {
-			m.recentQSOs.ClearFilter()
+			m.callRecentQSOs.ClearFilter()
 			return nil
 		}
 		qsos, err := store.SearchQSOsByCall(m.App.DB, currentCall, 200)
 		if err != nil {
 			return nil
 		}
-		m.recentQSOs.SetFilterCall(currentCall, qsos)
+		m.callRecentQSOs.SetFilterCall(currentCall, qsos)
 		return nil
 	}
 }
 
-// clearFilteredTable clears the RecentQSOs filter, returning to normal mode.
+// clearFilteredTable clears the callRecentQSOs filter.
 func (m *Model) clearFilteredTable() {
-	m.recentQSOs.ClearFilter()
+	m.callRecentQSOs.ClearFilter()
 }

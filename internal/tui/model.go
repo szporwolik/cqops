@@ -175,9 +175,10 @@ type Model struct {
 	dupeCacheResult bool   // cached outcome of last checkDupe
 	gridSource      gridSource
 
-	keys       KeyMap
-	help       help.Model
-	recentQSOs *RecentQSOs // read-only Recent QSOs view
+	keys           KeyMap
+	help           help.Model
+	recentQSOs     *RecentQSOs // read-only Recent QSOs view
+	callRecentQSOs *RecentQSOs // filtered QSOs for the entered callsign (shown above recentQSOs)
 }
 
 type tickMsg time.Time
@@ -303,6 +304,7 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	m.help.Styles.FullSeparator = lipgloss.NewStyle().Foreground(P.TextMuted)
 
 	m.recentQSOs = NewRecentQSOs(initialQSOS)
+	m.callRecentQSOs = NewRecentQSOs(nil)
 	transport := &imageTransport{base: http.DefaultTransport}
 
 	// Kitty graphics: force-enable before model creation (mode locks at
@@ -1267,6 +1269,7 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 	}
 
 	m.recentQSOs.SetContest(m.App.Logbook.ActiveContest != "")
+	m.callRecentQSOs.SetContest(m.App.Logbook.ActiveContest != "")
 
 	// Multi-operator detection: if the logbook has QSOs from more than
 	// one distinct operator (excluding empty), show Operator instead
@@ -1284,7 +1287,29 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 		}
 	}
 	m.recentQSOs.SetMultiOp(multiOp)
+	m.callRecentQSOs.SetMultiOp(multiOp)
 
+	// When a callsign is entered and there's enough vertical space,
+	// show past QSOs with that call above the main recent QSOs table.
+	var callQSOPart string
+	if m.callRecentQSOs.IsFiltered() {
+		callQSOs := m.callRecentQSOs.ActiveQSOs()
+		if len(callQSOs) > 0 {
+			callRows := len(callQSOs) + 2 // rows + header
+			if callRows > tableH/2 {
+				callRows = tableH / 2
+			}
+			if callRows < 3 {
+				callRows = 3
+			}
+			m.callRecentQSOs.SetSize(tableW, callRows)
+			callQSOPart = m.callRecentQSOs.View()
+			tableH -= callRows
+			if tableH < 3 {
+				tableH = 3
+			}
+		}
+	}
 	m.recentQSOs.SetSize(tableW, tableH)
 
 	var parts []string
@@ -1300,6 +1325,9 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 	}
 	if refBox != "" {
 		parts = append(parts, refBox)
+	}
+	if callQSOPart != "" {
+		parts = append(parts, callQSOPart)
 	}
 	parts = append(parts, m.recentQSOs.View())
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)

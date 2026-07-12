@@ -506,13 +506,13 @@ func (m *Model) handleLookupResultMsg(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.
 			m.recentQSOs.SetQSOS(r.qsos)
 			m.rc.pathSig = ""
 			m.rc.logStatsSig = ""
-			if !m.recentQSOs.filterSuppressed && m.recentQSOs.IsFiltered() {
-				filtered, filterErr := store.SearchQSOsByCall(m.App.DB, m.recentQSOs.filterCall, 200)
+			if !m.callRecentQSOs.filterSuppressed && m.callRecentQSOs.IsFiltered() {
+				filtered, filterErr := store.SearchQSOsByCall(m.App.DB, m.callRecentQSOs.filterCall, 200)
 				if filterErr == nil {
-					m.recentQSOs.SetFilterCall(m.recentQSOs.filterCall, filtered)
+					m.callRecentQSOs.SetFilterCall(m.callRecentQSOs.filterCall, filtered)
 				}
 			}
-			m.recentQSOs.filterSuppressed = false
+			m.callRecentQSOs.filterSuppressed = false
 		}
 		return m, cmd
 	default:
