@@ -182,9 +182,11 @@ function renderAll(snap){
   if(snap.logbook&&snap.logbook.name)document.title='CQOps: '+snap.logbook.name;
   // Theme — apply dark class to root element.
   var wasDark=document.documentElement.classList.contains('dark');
-  if(displayCfg.theme==='dark'){document.documentElement.classList.add('dark')}
-  else if(displayCfg.theme==='bright'){document.documentElement.classList.remove('dark')}
-  // If theme is not yet known (first snapshot), keep whatever localStorage set.
+  var theme=displayCfg.theme;
+  if(!theme){try{theme=localStorage.getItem('cqops-theme')}catch(e){}}
+  if(theme==='dark'){document.documentElement.classList.add('dark')}
+  else if(theme==='bright'){document.documentElement.classList.remove('dark')}
+  // If still unknown, keep whatever was set (inline script / previous state).
   var isDark=document.documentElement.classList.contains('dark');
   // Persist theme so next load applies before first paint.
   try{localStorage.setItem('cqops-theme',isDark?'dark':'bright')}catch(e){}
