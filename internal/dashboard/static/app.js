@@ -514,6 +514,11 @@ function styleUrlForTheme(customUrl){
   return dark?'https://tiles.openfreemap.org/styles/fiord'
            :'https://tiles.openfreemap.org/styles/bright';
 }
+function qsoPathColors(){
+  var dark=document.documentElement.classList.contains('dark');
+  return dark?{active:'#FF405F',last:'#FFB454',past:'#FFB454',pastOpacity:0.55,marker:'#55AEFF',markerActive:'#FF405F'}
+            :{active:'#D00032',last:'#0080FF',past:'#0080FF',pastOpacity:0.50,marker:'#0080FF',markerActive:'#D00032'};
+}
 
 var mapCfg={drawLines:true,maxLines:150,maxMarkers:200,highlightLastQSO:true,animateActivePath:false};
 var stationLayer=null,qsoMarkerLayer=null,qsoLineLayer=null,lastQsoLayer=null,activeQsoLayer=null;
@@ -1026,6 +1031,7 @@ function updateMapFromToday(){
   // Clear all layers
   stationLayer.clearLayers();qsoMarkerLayer.clearLayers();qsoLineLayer.clearLayers();lastQsoLayer.clearLayers();activeQsoLayer.clearLayers();
   var bounds=[],hasStation=false;
+  var pc=qsoPathColors();
 
   // ---- Station marker ----
   if(ownStationLat!=null&&ownStationLon!=null){
@@ -1048,7 +1054,7 @@ function updateMapFromToday(){
       // Marker
       var isLast=(i===lastQsoIdx&&mapCfg.highlightLastQSO),isActive=(activeGrid&&q.grid&&q.grid.toUpperCase()===activeGrid.toUpperCase());
       var mr=isActive?7:isLast?5.5:4;
-      var mc=isActive?'#D00032':isLast?'#0080FF':'#0080FF';
+      var mc=isActive?pc.markerActive:isLast?pc.marker:pc.marker;
       var mf=isActive?1:isLast?0.9:0.8;
       var mk=L.circleMarker([lat,lon],{radius:mr,color:mc,fillColor:mc,fillOpacity:mf,weight:isActive?3:2,opacity:0.95});
       var popup=(q.call||'')+'<br>'+(q.band||'')+' '+(q.mode||'')+'<br>'+(q.grid||'');
@@ -1065,14 +1071,14 @@ function updateMapFromToday(){
         bounds.push(pts[16]);
         if(isActive){
           // Active QSO: prominent dashed line with animated dash offset.
-          var alOpt={color:'#D00032',weight:4,opacity:0.9,dashArray:'12 8',className:'active-path-anim'};
+          var alOpt={color:pc.active,weight:4,opacity:0.9,dashArray:'12 8',className:'active-path-anim'};
           activeQsoLayer.addLayer(L.polyline(pts,alOpt));
         }else if(isLast&&mapCfg.highlightLastQSO){
           // Last QSO: blue, thicker, more opaque.
-          lastQsoLayer.addLayer(L.polyline(pts,{color:'#0080FF',weight:3,opacity:0.85}));
+          lastQsoLayer.addLayer(L.polyline(pts,{color:pc.last,weight:3,opacity:0.85}));
         }else{
           // Older QSO: visible above radar.
-          qsoLineLayer.addLayer(L.polyline(pts,{color:'#0080FF',weight:1.8,opacity:0.50}));
+          qsoLineLayer.addLayer(L.polyline(pts,{color:pc.past,weight:1.8,opacity:pc.pastOpacity}));
         }
         drawn++;
       }
@@ -1084,7 +1090,7 @@ function updateMapFromToday(){
     todayQsos.forEach(function(q){
       if(markersDrawn>=maxMarkers)return;
       var ll=getQsoLatLon(q);if(!ll)return;
-      var mk=L.circleMarker(ll,{radius:4,color:'#0080FF',fillColor:'#0080FF',fillOpacity:0.8,weight:2,opacity:0.95});
+      var mk=L.circleMarker(ll,{radius:4,color:pc.marker,fillColor:pc.marker,fillOpacity:0.8,weight:2,opacity:0.95});
       mk.bindTooltip(q.call||'',{direction:'top'});
       qsoMarkerLayer.addLayer(mk);bounds.push(ll);
       markersDrawn++;
@@ -1095,9 +1101,9 @@ function updateMapFromToday(){
   if(activeGrid&&ownStationLat!==null){
     var al=gridToLatLon(activeGrid);if(al[0]){
       var actPts=greatCirclePoints(ownStationLat,ownStationLon,al[0],al[1],48);
-      activeQsoLayer.addLayer(L.polyline(actPts,{color:'#D00032',weight:4,opacity:0.9,dashArray:'12 8',className:'active-path-anim'}));
+      activeQsoLayer.addLayer(L.polyline(actPts,{color:pc.active,weight:4,opacity:0.9,dashArray:'12 8',className:'active-path-anim'}));
       // Partner location marker — pulsing dot at the far end of the active line.
-      activeQsoLayer.addLayer(L.circleMarker(al,{radius:7,color:'#D00032',fillColor:'#D00032',fillOpacity:0.35,weight:2.5,className:'partner-dot'}));
+      activeQsoLayer.addLayer(L.circleMarker(al,{radius:7,color:pc.active,fillColor:pc.active,fillOpacity:0.35,weight:2.5,className:'partner-dot'}));
       // Include great-circle midpoint so arc stays in bounds.
       bounds.push(actPts[24]);
       bounds.push(al);
