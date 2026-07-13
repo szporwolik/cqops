@@ -287,8 +287,7 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 	httpQRLink := newTextinput()
 	httpQRLink.CharLimit = 70
 	httpQRLink.SetWidth(28)
-	httpQRLink.Placeholder = "https://cqops.com"
-	httpQRLink.SetValue("https://cqops.com")
+	httpQRLink.Placeholder = "https://cqops.com (default)"
 	if cfg.Integrations.HTTPServer.QRLink != "" {
 		httpQRLink.SetValue(cfg.Integrations.HTTPServer.QRLink)
 	}
