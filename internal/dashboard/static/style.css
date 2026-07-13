@@ -449,6 +449,22 @@ footer a:hover{text-decoration:underline}
   footer{padding:1px;font-size:0.5rem}
 }
 
+/* ── responsive: mid-width — hide stats panel, give space to Top QSOs + Recent ── */
+@media(max-width:1350px){
+  #stats-panel{display:none}
+  .panel-narrow{flex:0.52}
+  .panel-topqsos{flex:0.82}
+  .panel-recent{flex:2.36}
+  /* Recent QSOs: tighten UTC, RST, Dist/Dir; give more to Call, Country */
+  #recent-table th:nth-child(1){width:8%}   /* UTC */
+  #recent-table th:nth-child(2){width:22%}  /* Call */
+  #recent-table th:nth-child(3){width:10%}  /* Band */
+  #recent-table th:nth-child(4){width:10%}  /* Mode */
+  #recent-table th:nth-child(6){width:9%}   /* RST */
+  #recent-table th:nth-child(7){width:17%}  /* Dist/Dir */
+  #recent-table th:nth-child(8){width:24%}  /* Country */
+}
+
 /* ── responsive: narrow screens — fewer, more aggressive steps ── */
 @media(max-width:880px){
   #app{padding:4px 8px}
