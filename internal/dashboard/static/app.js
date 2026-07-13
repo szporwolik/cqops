@@ -130,7 +130,7 @@ function connectSSE(){
   });
   es.addEventListener('logbook',function(e){var lb=JSON.parse(e.data).payload;
     D('sse','logbook',lb.name);
-    if(lb&&lb.name)document.title='CQOps: '+lb.name;
+    if(lb&&lb.name)document.title='CQOps - '+lb.name;
     updateStationField('Logbook',lb.name)
   });
   es.addEventListener('partner',function(e){var p=JSON.parse(e.data).payload;
