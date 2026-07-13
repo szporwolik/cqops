@@ -366,6 +366,8 @@ function hideHeroPhoto(){$('hero-photo').style.display='none';$('hero-placeholde
 function opBadgeStyle(call){
   if(!call)return'';
   var h=0,i;for(i=0;i<call.length;i++)h=(h*31+call.charCodeAt(i))&0xffff;
+  var dark=document.documentElement.classList.contains('dark')||document.documentElement.classList.contains('hivis');
+  if(dark)return'background:hsl('+(h%360)+',30%,18%);color:hsl('+(h%360)+',55%,82%);border:1px solid hsl('+(h%360)+',22%,28%)';
   return'background:hsl('+(h%360)+',45%,88%);color:hsl('+(h%360)+',50%,32%);border:1px solid hsl('+(h%360)+',40%,78%)';
 }
 function opBadgeHTML(call,name){
