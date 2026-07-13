@@ -296,32 +296,43 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 /* APRS range circle — dashed, visible above tiles */
 .aprs-range-circle{stroke-dasharray:10 6!important;pointer-events:none}
 /* recent panel as bottom-row card */
-.panel-recent{flex:2.11;display:flex;flex-direction:column}
+#recent-panel{display:flex;flex-direction:column}
 #recent-panel h2{font-size:0.85rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:4px;flex-shrink:0}
 #recent-table-wrap{overflow-y:auto;flex:1;max-height:320px}
 #recent-table{width:100%;border-collapse:collapse;font-size:0.85rem;table-layout:fixed}
 #recent-table th{text-align:left;color:var(--text-secondary);font-weight:600;padding:4px 6px;border-bottom:1.5px solid var(--border-strong);white-space:nowrap;position:sticky;top:0;background:var(--surface);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.3px}
-#recent-table th:nth-child(1){width:10%} /* UTC */
-#recent-table th:nth-child(2){width:18%} /* Call */
-#recent-table th:nth-child(3){width:9%}  /* Band */
-#recent-table th:nth-child(4){width:9%}  /* Mode */
+#recent-table th:nth-child(1){width:7%}  /* UTC */
+#recent-table th:nth-child(2){width:22%} /* Call */
+#recent-table th:nth-child(3){width:8%}  /* Band */
+#recent-table th:nth-child(4){width:8%}  /* Mode */
 /* Op column (5th) hidden by default, shown at FullHD+. */
 .recent-op-col{display:none}
-#recent-table th:nth-child(6){width:13%} /* RST */
-#recent-table th:nth-child(7){width:21%} /* Dist/Dir */
-#recent-table th:nth-child(8){width:20%} /* Country */
+#recent-table th:nth-child(6){width:8%}  /* RST */
+#recent-table th:nth-child(7){width:18%} /* Dist/Dir */
+#recent-table th:nth-child(8){width:29%} /* Country */
 #recent-table td{padding:4px 6px;border-bottom:1px solid var(--table-border);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-size:0.85rem;line-height:1.4}
 #recent-table td:nth-child(2){font-weight:700;font-size:0.9rem}
 #recent-table td strong{color:var(--text)}
 #recent-table tbody tr:nth-child(even){background:var(--table-alt)}
-/* Top QSOs alternating row colors — match Recent QSOs table. */
-#topqsos-fields dt{font-weight:700;font-size:0.9rem;color:var(--text)}
-/* Top QSOs alternating row colors — match Recent QSOs table. */
-#topqsos-fields dt:nth-of-type(even),#topqsos-fields dd:nth-of-type(even){background:var(--table-alt)}
+/* Top QSOs table — exact match of Recent QSOs formatting */
+#topqsos-panel{display:flex;flex-direction:column}
+#topqsos-panel h2{font-size:0.85rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:4px;flex-shrink:0}
+#topqsos-table-wrap{overflow-y:auto;flex:1;max-height:320px}
+#topqsos-table{width:100%;border-collapse:collapse;font-size:0.85rem;table-layout:fixed}
+#topqsos-table th{text-align:left;color:var(--text-secondary);font-weight:600;padding:4px 6px;border-bottom:1.5px solid var(--border-strong);white-space:nowrap;position:sticky;top:0;background:var(--surface);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.3px}
+#topqsos-table td{padding:4px 6px;border-bottom:1px solid var(--table-border);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-size:0.85rem;line-height:1.4}
+#topqsos-table td:first-child{font-weight:700;font-size:0.9rem}
+#topqsos-table tbody tr:nth-child(even){background:var(--table-alt)}
+#topqsos-table th:nth-child(1){width:28%} /* Call */
+#topqsos-table th:nth-child(2){width:14%} /* Band */
+#topqsos-table th:nth-child(3){width:14%} /* Mode */
+#topqsos-table th:nth-child(4){width:20%} /* Dist */
+#topqsos-table th:nth-child(5){width:24%} /* Country */
 #recent-table tbody tr.new-row{animation:flash 1.2s ease-out}
 @keyframes flash{from{background:var(--blue-soft);color:var(--blue-dark)}to{background:transparent;color:inherit}}
 /* Recent QSOs badge pills for band/mode cells. */
 .recent-badge{display:inline-block;padding:1px 5px;border-radius:3px;font-weight:600;font-size:0.7rem;line-height:1.4}
+.recent-badge.country-badge{background:rgba(0,122,61,0.16);color:var(--success);font-weight:500;font-size:0.8rem}
 
 /* ── extra module styles: band conditions, session summary ── */
 .band-cond-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px 14px;font-size:0.76rem;line-height:1.5;align-items:center;justify-items:start}
@@ -338,13 +349,9 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 .freshness-grid{display:flex;flex-wrap:wrap;justify-content:center;gap:3px 10px;font-size:0.78rem;color:var(--text-secondary);line-height:1.5}
 .fr-row{white-space:nowrap}
 .fr-label{font-weight:600;color:var(--dim);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.3px}
-/* ── Top QSOs badges ── */
-.tq-badge{display:inline-block;padding:0 5px;border-radius:3px;font-size:0.7rem;font-weight:600;margin-left:2px}
-.tq-dist{color:var(--dim);font-size:0.82rem}
-.tq-country{color:var(--success);font-size:0.78rem;font-weight:500}
+/* ── Top QSOs longest row highlight ── */
 .tq-longest{color:var(--accent);font-weight:700}
-.tq-longest strong{color:var(--accent)}
-.tq-op{color:var(--dim-soft);font-size:0.72rem}
+.tq-longest td{color:var(--accent)}
 /* ── Stats panel badges ── */
 .stat-badge{display:inline-block;padding:1px 6px;border-radius:3px;font-weight:600;font-size:0.7rem;margin-left:3px;vertical-align:middle}
 .stat-badge-op{background:rgba(90,55,160,0.18);color:var(--dim);font-weight:500}
@@ -354,13 +361,13 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #sf-Operator .stat-badge-op{background:var(--accent-soft, rgba(0,91,187,0.22));color:var(--accent, #005bbb);font-size:0.78rem;padding:2px 8px;font-weight:600}
 .panel dd .stat-badge:first-child{margin-left:0}
 /* ── bottom row cards ── */
-main{display:flex;gap:10px;margin-bottom:10px;flex:0 0 auto;max-height:30vh;overflow-y:auto}
+main{display:grid;grid-template-columns:minmax(290px,0.9fr) minmax(270px,0.85fr) minmax(380px,1.15fr) minmax(680px,2.2fr);gap:14px;margin-bottom:10px;max-height:30vh;overflow-y:auto}
 .mode-active main{opacity:0.85}
-.panel{flex:1;background:var(--surface);border-radius:var(--card-radius);padding:10px 14px;min-width:0;border:1px solid var(--border);box-shadow:0 2px 8px var(--shadow),inset 0 0 0 1px var(--surface-soft)}
-.panel-narrow{flex:0.40}
-.panel-topqsos{flex:0.58}
+.panel{background:var(--surface);border-radius:var(--card-radius);padding:10px 14px;min-width:0;border:1px solid var(--border);box-shadow:0 2px 8px var(--shadow),inset 0 0 0 1px var(--surface-soft)}
+.panel-narrow{min-width:0}
+.panel-topqsos{min-width:0}
 .panel h2{font-size:0.85rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:6px}
-.panel dl{display:grid;grid-template-columns:auto 1fr;gap:2px 8px}
+.panel dl{display:grid;grid-template-columns:minmax(0,auto) 1fr;gap:2px 8px;min-width:0;overflow:hidden}
 .panel dt{color:var(--dim);font-size:0.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .panel dd{font-size:0.9rem;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #stats-fields dd{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -425,6 +432,7 @@ footer a:hover{text-decoration:underline}
   main{gap:4px;margin-bottom:2px}
   .panel{padding:4px 8px}
   #recent-table-wrap{max-height:150px}
+  #topqsos-table-wrap{max-height:150px}
   .panel h2{margin-bottom:1px;font-size:0.66rem}
   .panel dt{font-size:0.64rem}
   .panel dd{font-size:0.72rem}
@@ -444,25 +452,21 @@ footer a:hover{text-decoration:underline}
   main{gap:2px;margin-bottom:1px}
   .panel{padding:2px 5px}
   #recent-table-wrap{max-height:80px}
+  #topqsos-table-wrap{max-height:80px}
   .panel h2{font-size:0.56rem;margin-bottom:1px}
   .panel dt,.panel dd{font-size:0.56rem}
   footer{padding:1px;font-size:0.5rem}
 }
 
-/* ── responsive: mid-width — hide stats panel, give space to Top QSOs + Recent ── */
+/* ── responsive: mid-width — hide stats panel, 3-column grid ── */
 @media(max-width:1350px){
   #stats-panel{display:none}
-  .panel-narrow{flex:0.52}
-  .panel-topqsos{flex:0.82}
-  .panel-recent{flex:2.36}
-  /* Recent QSOs: tighten UTC, RST, Dist/Dir; give more to Call, Country */
-  #recent-table th:nth-child(1){width:8%}   /* UTC */
-  #recent-table th:nth-child(2){width:22%}  /* Call */
-  #recent-table th:nth-child(3){width:10%}  /* Band */
-  #recent-table th:nth-child(4){width:10%}  /* Mode */
-  #recent-table th:nth-child(6){width:9%}   /* RST */
-  #recent-table th:nth-child(7){width:17%}  /* Dist/Dir */
-  #recent-table th:nth-child(8){width:24%}  /* Country */
+  main{grid-template-columns:minmax(280px,1fr) minmax(400px,1.2fr) minmax(540px,2.5fr);gap:10px}
+  #recent-table th:nth-child(1){width:8%}
+  #recent-table th:nth-child(2){width:22%}
+  #recent-table th:nth-child(6){width:8%}
+  #recent-table th:nth-child(7){width:17%}
+  #recent-table th:nth-child(8){width:27%}
 }
 
 /* ── responsive: narrow screens — fewer, more aggressive steps ── */
@@ -485,8 +489,8 @@ footer a:hover{text-decoration:underline}
   #map-local-panel{min-height:160px}
   #recent-table{font-size:0.7rem}
   #recent-table th,#recent-table td{padding:1px 3px}
-  main{flex-wrap:wrap;gap:6px}
-  .panel{flex:1 1 45%;min-width:140px;padding:6px 8px}
+  main{grid-template-columns:1fr 1fr;gap:6px}
+  .panel{padding:6px 8px}
   .panel h2{font-size:0.72rem;margin-bottom:3px}
   .panel dt{font-size:0.68rem}
   .panel dd{font-size:0.75rem}
@@ -504,8 +508,8 @@ footer a:hover{text-decoration:underline}
   #map-table-row{flex-direction:column;gap:4px;min-height:220px;margin-bottom:4px}
   #map-local-right{gap:4px}
   #map-local-panel{min-height:140px}
-  main{flex-direction:column;gap:4px}
-  .panel{flex:1 1 100%}
+  main{grid-template-columns:1fr;gap:4px}
+  .panel{padding:4px 6px}
 }
 
 /* ── Full HD / TV display polish (1920×1080+) ── */
@@ -550,23 +554,17 @@ footer a:hover{text-decoration:underline}
   .panel h2{font-size:0.85rem}
   /* Show Operator column at FullHD+. */
   .recent-op-col{display:table-cell}
-  #recent-table th:nth-child(1){width:9%}  /* UTC */
-  #recent-table th:nth-child(2){width:17%} /* Call */
+  #recent-table th:nth-child(1){width:7%}  /* UTC */
+  #recent-table th:nth-child(2){width:18%} /* Call */
   #recent-table th:nth-child(3){width:8%}  /* Band */
   #recent-table th:nth-child(4){width:8%}  /* Mode */
   #recent-table th:nth-child(5){width:8%}  /* Op */
-  #recent-table th:nth-child(6){width:9%}  /* RST */
-  #recent-table th:nth-child(7){width:19%} /* Dist/Dir */
-  #recent-table th:nth-child(8){width:22%} /* Country */
-}
-  .panel{padding:14px 20px}
-  .panel h2{font-size:0.9rem;margin-bottom:6px}
-  .panel dt{font-size:0.86rem}
-  .panel dd{font-size:0.94rem}
-  #recent-table-wrap{max-height:320px}
-  #recent-table{font-size:0.85rem}
-  #recent-table th,#recent-table td{padding:3px 6px}
-  /* footer */
+  #recent-table th:nth-child(6){width:8%}  /* RST */
+  #recent-table th:nth-child(7){width:17%} /* Dist/Dir */
+  #recent-table th:nth-child(8){width:26%} /* Country */
+  #topqsos-table{font-size:0.88rem}
+  #topqsos-table th,#topqsos-table td{padding:3px 6px}
+  #topqsos-table-wrap{max-height:320px}
   footer{padding:8px;font-size:0.8rem}
 }
 

@@ -17,7 +17,7 @@ var app=$('app'), hdLogo=$('hd-logo'), hdLogoBox=$('hd-logo-box'), hdTitle=$('hd
 var hdClockLocal=$('hd-clock-local'), hdClockUtc=$('hd-clock-utc'), hdSSE=$('hd-sse-status');
 var heroOverview=$('hero-overview'), heroHeadline=$('hero-headline'), heroSubline=$('hero-subline'), heroStatus=$('hero-status'), heroPromo=$('hero-promo');
 var heroLabel=$('hero-label'),heroCall=$('hero-call'),heroBadges=$('hero-badges'),heroIdentity=$('hero-identity'),heroMeta=$('hero-meta');
-var stationFields=$('station-fields'), statsFields=$('stats-fields'), topqsosFields=$('topqsos-fields');
+var stationFields=$('station-fields'), statsFields=$('stats-fields'), topqsosBody=$('topqsos-body');
 
 // ---- Data freshness timestamps ----
 var freshness={wx:null,psk:null,radar:null,aprs:null};
@@ -130,6 +130,7 @@ function connectSSE(){
   });
   es.addEventListener('logbook',function(e){var lb=JSON.parse(e.data).payload;
     D('sse','logbook',lb.name);
+    if(lb&&lb.name)document.title='CQOps: '+lb.name;
     updateStationField('Logbook',lb.name)
   });
   es.addEventListener('partner',function(e){var p=JSON.parse(e.data).payload;
@@ -177,10 +178,13 @@ function renderAll(snap){
   if(!snap){D('renderAll','null snapshot, skipping');return}
   D('renderAll','start',{hasStation:!!snap.station,hasActive:!!(snap.activeQso&&snap.activeQso.call),today:snap.today? snap.today.length:0,recent:snap.recent? snap.recent.length:0});
   displayCfg=snap.display||{};
+  // Window title — show active logbook.
+  if(snap.logbook&&snap.logbook.name)document.title='CQOps: '+snap.logbook.name;
   // Theme — apply dark class to root element.
   var wasDark=document.documentElement.classList.contains('dark');
   if(displayCfg.theme==='dark'){document.documentElement.classList.add('dark')}
-  else{document.documentElement.classList.remove('dark')}
+  else if(displayCfg.theme==='bright'){document.documentElement.classList.remove('dark')}
+  // If theme is not yet known (first snapshot), keep whatever localStorage set.
   var isDark=document.documentElement.classList.contains('dark');
   // Persist theme so next load applies before first paint.
   try{localStorage.setItem('cqops-theme',isDark?'dark':'bright')}catch(e){}
@@ -439,24 +443,23 @@ function registerSessionSummary(qsos,dxcc,grids,longestKm,rate){
 
 // ---- Top QSOs (by distance in today's buffer) ----
 function renderTopQSOs(){
-  if(!todayQsos.length||ownStationLat==null){topqsosFields.innerHTML='<dt style=\"color:var(--dim)\">—</dt>';return}
+  if(!todayQsos.length||ownStationLat==null){topqsosBody.innerHTML='<tr><td colspan=\"5\" style=\"color:var(--dim)\">—</td></tr>';return}
   var ranked=todayQsos.map(function(q){
-    return{call:q.call||'?',grid:q.grid,band:q.band||'',mode:q.mode||'',submode:q.submode||'',country:q.country||'',operator:q.operator||'',km:distKm(q.grid)};
-  }).sort(function(a,b){return b.km-a.km}).slice(0,9);
-  var longest=ranked[0];
-  topqsosFields.innerHTML=ranked.map(function(r,i){
-    var countryText=r.country?r.country.replace(/^The\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Federal Republic Of\s+/,'').trim().substring(0,20):'';
+    return{call:q.call||'?',grid:q.grid,band:q.band||'',mode:q.mode||'',submode:q.submode||'',country:q.country||'',km:distKm(q.grid)};
+  }).sort(function(a,b){return b.km-a.km}).slice(0,7);
+  topqsosBody.innerHTML=ranked.map(function(r,i){
+    var countryText=r.country?r.country.replace(/^The\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Federal Republic Of\s+/,'').trim().substring(0,22):'';
     var displayMode=r.submode||r.mode;
-    var badge='<span class=\"tq-badge '+bandBadgeClass(r.band)+'\">'+esc(r.band)+'</span><span class=\"tq-badge '+modeBadgeClass(displayMode)+'\">'+esc(displayMode)+'</span>';
-    var distPart='<span class=\"tq-dist\">'+fmtDist(r.km)+'</span>';
     var isLongest=i===0&&r.km>0;
-    var cls=isLongest?' class=\"tq-longest\"':'';
-    // Order: callsign distance band mode operator country
-    var parts=[distPart,badge];
-    if(r.operator)parts.push('<span class=\"tq-op\">'+esc(r.operator)+'</span>');
-    if(countryText)parts.push('<span class=\"tq-country\">'+esc(countryText)+'</span>');
-    return'<dt'+cls+'>'+esc(r.call)+'</dt><dd'+cls+'>'+parts.join(' ')+'</dd>';
-  }).join('')||'<dt style=\"color:var(--dim)\">—</dt>';
+    var rowCls=isLongest?' class=\"tq-longest\"':'';
+    return'<tr'+rowCls+'>'+
+      '<td>'+esc(r.call)+'</td>'+
+      '<td><span class=\"recent-badge '+bandBadgeClass(r.band)+'\">'+esc(r.band)+'</span></td>'+
+      '<td><span class=\"recent-badge '+modeBadgeClass(displayMode)+'\">'+esc(displayMode)+'</span></td>'+
+      '<td>'+fmtDist(r.km)+'</td>'+
+      '<td><span class="recent-badge country-badge">'+esc(countryText)+'</span></td>'+
+      '</tr>';
+  }).join('')||'<tr><td colspan=\"5\" style=\"color:var(--dim)\">—</td></tr>';
 }
 
 // ---- Distance helpers ----
@@ -470,7 +473,7 @@ function formatDistDir(grid){
   var ll=gridToLatLon(grid);
   var deg=bearingDeg(ownStationLat,ownStationLon,ll[0],ll[1]);
   var dirs=['N','NE','E','SE','S','SW','W','NW'];
-  return Math.round(km)+' km '+dirs[Math.round(deg/45)%8];
+  return fmtDist(km)+' '+dirs[Math.round(deg/45)%8];
 }
 
 // ---- Recent QSOs table ----
@@ -481,7 +484,7 @@ function renderRecentTable(qsos){
     var utc=q.timeUtc?q.timeUtc.slice(11,16).replace(':','')+'Z':'';
     var ctry=(q.country||'').replace(/^The\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Federal Republic Of\s+/,'').trim().substring(0,22);
     var dist=formatDistDir(q.grid);
-    return'<tr><td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.submode||q.mode,'mode')+'</td><td class="recent-op-col">'+esc(q.operator||'')+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td title="'+esc(q.country||'')+'">'+esc(ctry)+'</td></tr>';
+    return'<tr><td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.submode||q.mode,'mode')+'</td><td class="recent-op-col">'+esc(q.operator||'')+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td title="'+esc(q.country||'')+'"><span class="recent-badge country-badge">'+esc(ctry)+'</span></td></tr>';
   }).join('');
 }
 function renderCellBadge(val,type){
@@ -493,7 +496,7 @@ function prependRecentRow(q){
   var utc=q.timeUtc?q.timeUtc.slice(11,16).replace(':','')+'Z':'';
   var dist=formatDistDir(q.grid);
   var row=document.createElement('tr');row.className='new-row';
-  row.innerHTML='<td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.submode||q.mode,'mode')+'</td><td class="recent-op-col">'+esc(q.operator||'')+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td>'+esc(q.country||'')+'</td>';
+  row.innerHTML='<td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.submode||q.mode,'mode')+'</td><td class="recent-op-col">'+esc(q.operator||'')+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td><span class="recent-badge country-badge">'+esc(q.country||'')+'</span></td>';
   if(recentBody.firstChild)recentBody.insertBefore(row,recentBody.firstChild);else recentBody.appendChild(row);
   while(recentBody.children.length>7)recentBody.removeChild(recentBody.lastChild);
 }
