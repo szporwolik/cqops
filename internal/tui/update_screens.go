@@ -191,7 +191,7 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			m.screen = screenMainMenu
 		}
 		if m.ui.integrationMenu.saved {
-			dxcE, dxcHost, dxcPort, dxcLogin, qrzE, qrzUser, qrzPass, httpE, httpAddr, httpPort, httpHdr1, httpHdr2, httpLogo, httpEvtStart := m.ui.integrationMenu.Values()
+			dxcE, dxcHost, dxcPort, dxcLogin, qrzE, qrzUser, qrzPass, httpE, httpAddr, httpPort, httpTheme, httpHdr1, httpHdr2, httpLogo, httpEvtStart := m.ui.integrationMenu.Values()
 
 			// Restart the HTTP server when address, port, or enabled
 			// state actually change, OR when the server should be running
@@ -212,6 +212,7 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			m.App.Config.Integrations.HTTPServer.Enabled = httpE
 			m.App.Config.Integrations.HTTPServer.Address = httpAddr
 			m.App.Config.Integrations.HTTPServer.Port = httpPort
+			m.App.Config.Integrations.HTTPServer.Theme = httpTheme
 			m.App.Config.Integrations.HTTPServer.Header1 = httpHdr1
 			m.App.Config.Integrations.HTTPServer.Header2 = httpHdr2
 			m.App.Config.Integrations.HTTPServer.ClubLogo = httpLogo
@@ -257,6 +258,12 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			m.resetDXC()
 			if needHTTPRestart {
 				m.restartHTTPServer()
+			}
+			// Push dashboard state immediately when server is online
+			// so theme and header changes appear without waiting for
+			// the next 2-second tick throttle.
+			if m.http.online && m.http.client != nil {
+				m.pushDashboardState()
 			}
 			// GPS: start, stop, or restart based on config changes.
 			gpsNowEnabled := m.App.Config.Integrations.GPS.Enabled

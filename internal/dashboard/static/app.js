@@ -41,7 +41,7 @@ function registerDataFreshness(){
 var recentBody=$('recent-body');
 var mapContainer=$('map-container');
 
-var es=null, map=null;
+var es=null, map=null, mainGL=null;
 var ownStationLat=null,ownStationLon=null;
 var todayQsos=[], displayCfg={};
 
@@ -177,6 +177,17 @@ function renderAll(snap){
   if(!snap){D('renderAll','null snapshot, skipping');return}
   D('renderAll','start',{hasStation:!!snap.station,hasActive:!!(snap.activeQso&&snap.activeQso.call),today:snap.today? snap.today.length:0,recent:snap.recent? snap.recent.length:0});
   displayCfg=snap.display||{};
+  // Theme — apply dark class to root element.
+  var wasDark=document.documentElement.classList.contains('dark');
+  if(displayCfg.theme==='dark'){document.documentElement.classList.add('dark')}
+  else{document.documentElement.classList.remove('dark')}
+  var isDark=document.documentElement.classList.contains('dark');
+  // Update tile layers if theme changed and maps are already live.
+  if(wasDark!==isDark){
+    var newStyle=styleUrlForTheme(displayCfg.mapTileUrl);
+    if(mainGL)mainGL.getMaplibreMap().setStyle(newStyle);
+    if(localTiles)localTiles.getMaplibreMap().setStyle(styleUrlForTheme(mapCfg.mapTileUrl));
+  }
   // Display config
   if(displayCfg.clubLogo){hdLogo.src=displayCfg.clubLogo;hdLogoBox.style.display=''}else{hdLogoBox.style.display='none'}
   if(displayCfg.header1){hdTitle.textContent=displayCfg.header1;heroHeadline.textContent=displayCfg.header1}
@@ -230,9 +241,9 @@ function renderAll(snap){
   }).catch(function(e){D('fetch','/api/today ERR',''+e)});
   // Footer: version + map attributions.
   if(snap.app&&snap.app.version){
-    $('footer-text').innerHTML='CQOps Live v'+esc(snap.app.version)+' · <a href=\"https://cqops.com\" style=\"color:var(--accent)\">cqops.com</a>';
+    $('footer-text').innerHTML='CQOps Live v'+esc(snap.app.version)+' · <a href=\"https://cqops.com\">cqops.com</a>';
   }
-  $('footer-attrib').innerHTML='Map: <a href=\"https://leafletjs.com\" target=\"_blank\" rel=\"noopener\">Leaflet</a> · Tiles: <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener\">&copy; OpenStreetMap</a> · Solar: <a href=\"https://www.hamqsl.com/solar.html\" target=\"_blank\" rel=\"noopener\">HamQSL</a> · Spots: <a href=\"https://pskreporter.info/\" target=\"_blank\" rel=\"noopener\">PSK Reporter</a> · Weather: <a href=\"https://open-meteo.com/\" target=\"_blank\" rel=\"noopener\">Open-Meteo</a> · Callbook: <a href=\"https://www.qrz.com\" target=\"_blank\" rel=\"noopener\">QRZ.com</a>'+
+  $('footer-attrib').innerHTML='Map: <a href=\"https://leafletjs.com\" target=\"_blank\" rel=\"noopener\">Leaflet</a> · Tiles: <a href=\"https://openfreemap.org\" target=\"_blank\" rel=\"noopener\">OpenFreeMap</a> &copy; <a href=\"https://www.openmaptiles.org/\" target=\"_blank\" rel=\"noopener\">OpenMapTiles</a> Data from <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener\">OpenStreetMap</a> · Solar: <a href=\"https://www.hamqsl.com/solar.html\" target=\"_blank\" rel=\"noopener\">HamQSL</a> · Spots: <a href=\"https://pskreporter.info/\" target=\"_blank\" rel=\"noopener\">PSK Reporter</a> · Weather: <a href=\"https://open-meteo.com/\" target=\"_blank\" rel=\"noopener\">Open-Meteo</a> · Callbook: <a href=\"https://www.qrz.com\" target=\"_blank\" rel=\"noopener\">QRZ.com</a>'+
     (snap.dxc&&snap.dxc.connected?' · Cluster: <span style=\"color:var(--dim)\">'+esc(snap.dxc.host||'DX Cluster')+'</span>':'');
   D('renderAll','done');
 }
@@ -489,6 +500,21 @@ function prependRecentRow(q){
 function appendTodayQSO(q){todayQsos.unshift(q);if(todayQsos.length>500)todayQsos.length=500}
 
 // ---- Map (Leaflet with great-circle paths) ----
+// ---- Map style helpers (OpenFreeMap via MapLibre GL, theme-aware) ----
+function suppressMissingImages(glLayer){
+  var m=glLayer.getMaplibreMap();
+  if(!m)return;
+  m.on('styleimagemissing',function(e){
+    m.addImage(e.id,{width:1,height:1,data:new Uint8ClampedArray([0,0,0,0])});
+  });
+}
+function styleUrlForTheme(customUrl){
+  if(customUrl)return customUrl;
+  var dark=document.documentElement.classList.contains('dark');
+  return dark?'https://tiles.openfreemap.org/styles/fiord'
+           :'https://tiles.openfreemap.org/styles/bright';
+}
+
 var mapCfg={drawLines:true,maxLines:150,maxMarkers:200,highlightLastQSO:true,animateActivePath:false};
 var stationLayer=null,qsoMarkerLayer=null,qsoLineLayer=null,lastQsoLayer=null,activeQsoLayer=null;
 var lastQso=null,activeGrid=null;
@@ -508,8 +534,9 @@ function initMap(cfg){
   map.createPane('cqopsPath');map.getPane('cqopsPath').style.zIndex=430;map.getPane('cqopsPath').style.pointerEvents='none';
   map.createPane('cqopsActive');map.getPane('cqopsActive').style.zIndex=460;map.getPane('cqopsActive').style.pointerEvents='none';
   map.createPane('cqopsMarker');map.getPane('cqopsMarker').style.zIndex=500;
-  var tiles=L.tileLayer(cfg.mapTileUrl||'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:cfg.mapAttrib||'&copy; OpenStreetMap'}).addTo(map);
-  tiles.on('tileerror',function(e){e.tile.style.display='none'});
+  var style=styleUrlForTheme(cfg.mapTileUrl);
+  mainGL=L.maplibreGL({style:style,attributionControl:false}).addTo(map);
+  suppressMissingImages(mainGL);
   // Layer groups — each on its own pane for correct z-ordering above radar.
   qsoLineLayer=L.layerGroup([],{pane:'cqopsPath'}).addTo(map);
   lastQsoLayer=L.layerGroup([],{pane:'cqopsPath'}).addTo(map);
@@ -542,11 +569,11 @@ function initLocalMap(lat,lon){
   if(mapLocal)return;
   var lc=document.getElementById('map-local-container');
   if(!lc)return;
-  mapLocal=L.map('map-local-container',{zoomControl:false,attributionControl:false}).setView([lat,lon],11);
+  mapLocal=L.map('map-local-container',{zoomControl:false,attributionControl:false,maxZoom:18}).setView([lat,lon],11);
   mapLocal.createPane('cqopsRadar');mapLocal.getPane('cqopsRadar').style.zIndex=350;mapLocal.getPane('cqopsRadar').style.pointerEvents='none';
   mapLocal.createPane('cqopsGrayline');mapLocal.getPane('cqopsGrayline').style.zIndex=300;mapLocal.getPane('cqopsGrayline').style.pointerEvents='none';
-  localTiles=L.tileLayer(mapCfg.mapTileUrl||'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(mapLocal);
-  localTiles.on('tileerror',function(e){e.tile.style.display='none'});
+  localTiles=L.maplibreGL({style:styleUrlForTheme(mapCfg.mapTileUrl),attributionControl:false}).addTo(mapLocal);
+  suppressMissingImages(localTiles);
   // Station marker on local map — small, below APRS symbols.
   stationLocalMarker=L.circleMarker([lat,lon],{radius:5,color:'#007A3D',fillColor:'#007A3D',fillOpacity:0.85,weight:2.5,pane:'shadowPane'}).addTo(mapLocal);
   if(window.ResizeObserver){new ResizeObserver(function(){mapLocal.invalidateSize()}).observe(lc)}

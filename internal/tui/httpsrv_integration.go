@@ -347,6 +347,7 @@ func (m *Model) pushDashboardFast() {
 		MaxLines:         250,
 		HighlightLastQSO: true,
 		Units:            unitForDashboard(m.App.Config.General.Units),
+		Theme:            cfg.Theme,
 	})
 
 	// --- Station ---

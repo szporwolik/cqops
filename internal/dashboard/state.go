@@ -229,6 +229,7 @@ type DisplayConfig struct {
 	HighlightLastQSO  bool   `json:"highlightLastQso"`
 	AnimateActivePath bool   `json:"animateActivePath"`
 	Units             string `json:"units,omitempty"` // "metric" or "imperial"
+	Theme             string `json:"theme,omitempty"` // "bright" or "dark"
 }
 
 // =============================================================================

@@ -1,22 +1,42 @@
-/* CQOps Live — Blue Onyx Field Day dashboard, two-mode layout */
+/* CQOps Live — Dashboard stylesheet with CSS custom property theming.
+   To create a dark theme, override the variables in :root.dark below.
+   Do NOT change any selectors, layouts, or media queries. */
+
+/* ───────────────────────────────────────────────────────────────────
+   Theme: Bright (default)
+   ─────────────────────────────────────────────────────────────────── */
 :root {
+  /* Page & surfaces */
   --page-bg:#E2E8F2; --page-bg-soft:#EDF2F9; --page-bg-onyx:#D5DEE9;
   --surface:#FFFFFF; --surface-soft:#FAFCFF; --surface-blue:#F2F6FD;
+  /* Borders & shadows */
   --border:rgba(100,120,150,0.35); --border-strong:rgba(80,100,135,0.50);
   --shadow:rgba(15,31,51,0.12); --shadow-soft:rgba(15,31,51,0.06);
+  /* Text */
   --text:#07111F; --text-secondary:#263A52; --dim:#58708C; --dim-soft:#70849B;
+  /* Accent (red) */
   --accent:#D00032; --accent-dark:#A00026; --accent-soft:#FFE3EA; --accent-xsoft:#FFF2F5;
+  /* Blue */
   --blue:#005BBB; --blue-dark:#003F88; --blue-deep:#123E6F; --blue-soft:#DDEBFF; --blue-xsoft:#EEF6FF;
+  /* Cyan */
   --cyan:#007C91; --cyan-soft:#DDF6FA;
+  /* Status */
   --success:#007A3D; --warn:#B45309; --offline:#C1121F;
+  /* Map markers */
   --station-marker:#007A3D; --qso-marker:#0067C5;
   --active-path:#D00032; --last-qso:#D00032; --old-path:rgba(0,91,187,0.30);
+  /* Table */
   --table-border:rgba(110,135,160,0.25); --table-alt:#F4F7FC; --table-hover:#E6EEF8;
+  /* Body gradient stops */
+  --body-grad-1:rgba(208,0,50,0.04); --body-grad-2:rgba(0,91,187,0.06);
+  --body-grad-3:#EDF1F7; --body-grad-4:#DEE6F0; --body-grad-5:#CDD7E5;
+
+  /* ── Layout (not themed) ── */
   --card-radius:8px; --gap:10px;
-  --logo-w:140px; --logo-h:84px; --photo-w:100px; --photo-h:100px;
-  --active-photo-w:160px; --active-photo-h:160px;
+  --logo-w:140px; --logo-h:84px;
   --base-font:15px;
-  /* ── Ham band colors (bg + text for badges/pills) ── */
+
+  /* ── Ham band badge colors ── */
   --b160m-bg:rgba(139,0,0,0.22);   --b160m-fg:#8B0000;
   --b80m-bg:rgba(192,57,43,0.22);  --b80m-fg:#C0392B;
   --b60m-bg:rgba(180,130,30,0.22); --b60m-fg:#B4821E;
@@ -30,19 +50,82 @@
   --b6m-bg:rgba(106,27,154,0.22);  --b6m-fg:#6A1B9A;
   --b4m-bg:rgba(74,20,140,0.22);   --b4m-fg:#4A148C;
   --b2m-bg:rgba(40,53,147,0.22);   --b2m-fg:#283593;
-  --b70cm-bg:rgba(84,110,122,0.22);--b70m-fg:#546E7A;
-  --b23cm-bg:rgba(69,90,100,0.22); --b23m-fg:#455A64;
-  --b13cm-bg:rgba(96,96,96,0.22);  --b13m-fg:#606060;
+  --b70cm-bg:rgba(84,110,122,0.22);--b70cm-fg:#546E7A;
+  --b23cm-bg:rgba(69,90,100,0.22); --b23cm-fg:#455A64;
+  --b13cm-bg:rgba(96,96,96,0.22);  --b13cm-fg:#606060;
   --b9cm-bg:rgba(80,80,80,0.22);   --b9cm-fg:#505050;
   --b6cm-bg:rgba(72,72,72,0.22);   --b6cm-fg:#484848;
   --b3cm-bg:rgba(64,64,64,0.22);   --b3cm-fg:#404040;
   --b1cm-bg:rgba(56,56,56,0.22);   --b1cm-fg:#383838;
   --b-other-bg:rgba(100,110,130,0.18); --b-other-fg:#54647A;
-  /* ── Mode group colors ── */
+
+  /* ── Mode badge colors ── */
   --mode-cw-bg:rgba(198,40,40,0.22);    --mode-cw-fg:#C62828;
   --mode-phone-bg:rgba(21,101,192,0.22);--mode-phone-fg:#1565C0;
   --mode-digi-bg:rgba(46,125,50,0.22);  --mode-digi-fg:#2E7D32;
   --mode-other-bg:rgba(96,100,110,0.18);--mode-other-fg:#54647A;
+}
+
+/* ───────────────────────────────────────────────────────────────────
+   Theme: Dark — "CQOps RF Console"
+   Graphite chassis, cyan phosphor telemetry, blue data, red TX/alarm,
+   green RX/online. Professional radio console aesthetic.
+   ─────────────────────────────────────────────────────────────────── */
+:root.dark {
+  color-scheme: dark;
+  /* Page & surfaces */
+  --page-bg:#070A0F; --page-bg-soft:#0B1017; --page-bg-onyx:#04070B;
+  --surface:#10161E; --surface-soft:#141B24; --surface-blue:#0C1824;
+  /* Borders & shadows */
+  --border:rgba(104,190,255,0.16); --border-strong:rgba(104,205,255,0.34);
+  --shadow:rgba(0,0,0,0.72); --shadow-soft:rgba(0,0,0,0.38);
+  /* Text */
+  --text:#EAF4FF; --text-secondary:#B5C6D8; --dim:#71869A; --dim-soft:#8FA2B5;
+  /* Accent — TX / critical / active */
+  --accent:#FF3B5C; --accent-dark:#C91F43; --accent-soft:rgba(255,59,92,0.18); --accent-xsoft:rgba(255,59,92,0.08);
+  /* Blue — navigation / QSO / primary data */
+  --blue:#4FA3FF; --blue-dark:#287ACA; --blue-deep:#82C7FF; --blue-soft:rgba(79,163,255,0.18); --blue-xsoft:rgba(79,163,255,0.08);
+  /* Cyan — telemetry / instruments / RF indicators */
+  --cyan:#35DDE7; --cyan-soft:rgba(53,221,231,0.16);
+  /* Status */
+  --success:#4FE39A; --warn:#FFB454; --offline:#FF5966;
+  /* Map markers */
+  --station-marker:#50E3A4; --qso-marker:#55AEFF;
+  --active-path:#FF405F; --last-qso:#FF405F; --old-path:rgba(79,163,255,0.34);
+  /* Table */
+  --table-border:rgba(116,185,235,0.12); --table-alt:#121923; --table-hover:#182431;
+  /* Body gradient */
+  --body-grad-1:rgba(255,44,83,0.055); --body-grad-2:rgba(30,199,222,0.075);
+  --body-grad-3:#070A0F; --body-grad-4:#0A1017; --body-grad-5:#0D151E;
+
+  /* ── Ham band badge colors ── */
+  --b160m-bg:rgba(255,70,82,0.16); --b160m-fg:#FF6874;
+  --b80m-bg:rgba(255,100,74,0.16); --b80m-fg:#FF8066;
+  --b60m-bg:rgba(255,164,62,0.16); --b60m-fg:#FFB25A;
+  --b40m-bg:rgba(255,132,52,0.17); --b40m-fg:#FF984D;
+  --b30m-bg:rgba(238,186,58,0.17); --b30m-fg:#F1C75B;
+  --b20m-bg:rgba(62,154,255,0.18); --b20m-fg:#65B1FF;
+  --b17m-bg:rgba(43,213,203,0.17); --b17m-fg:#52E1D8;
+  --b15m-bg:rgba(69,218,132,0.17); --b15m-fg:#5FE39A;
+  --b12m-bg:rgba(140,216,78,0.17); --b12m-fg:#9BE466;
+  --b10m-bg:rgba(32,206,224,0.18); --b10m-fg:#42DCE9;
+  --b6m-bg:rgba(188,107,255,0.18); --b6m-fg:#CB83FF;
+  --b4m-bg:rgba(157,110,255,0.18); --b4m-fg:#B28AFF;
+  --b2m-bg:rgba(103,127,255,0.19); --b2m-fg:#8599FF;
+  --b70cm-bg:rgba(72,196,230,0.16); --b70cm-fg:#61CDEB;
+  --b23cm-bg:rgba(104,177,205,0.16); --b23cm-fg:#7BC1DB;
+  --b13cm-bg:rgba(155,169,185,0.15); --b13cm-fg:#A8B8C8;
+  --b9cm-bg:rgba(141,159,178,0.15); --b9cm-fg:#9DADBF;
+  --b6cm-bg:rgba(128,148,168,0.15); --b6cm-fg:#90A3B7;
+  --b3cm-bg:rgba(116,138,159,0.15); --b3cm-fg:#8498AC;
+  --b1cm-bg:rgba(103,126,148,0.15); --b1cm-fg:#788DA2;
+  --b-other-bg:rgba(113,134,154,0.14); --b-other-fg:#8FA2B5;
+
+  /* ── Mode badge colors ── */
+  --mode-cw-bg:rgba(255,176,70,0.18); --mode-cw-fg:#FFC067;
+  --mode-phone-bg:rgba(75,163,255,0.18); --mode-phone-fg:#69B5FF;
+  --mode-digi-bg:rgba(71,225,153,0.18); --mode-digi-fg:#64E6A7;
+  --mode-other-bg:rgba(148,166,185,0.14); --mode-other-fg:#A0B0C0;
 }
 /* ── Band badge colors — one class per amateur band ── */
 /* Fallback first: lower specificity so explicit bands override it. */
@@ -74,14 +157,14 @@
 .mode-badge.mode-other,.badge.mode-other{background:var(--mode-other-bg);color:var(--mode-other-fg)}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:system-ui,-apple-system,sans-serif;background:
-    radial-gradient(circle at 12% 8%,rgba(208,0,50,0.04),transparent 28%),
-    radial-gradient(circle at 80% 5%,rgba(0,91,187,0.06),transparent 34%),
-    linear-gradient(135deg,#EDF1F7 0%,#DEE6F0 48%,#CDD7E5 100%);
+    radial-gradient(circle at 12% 8%,var(--body-grad-1),transparent 28%),
+    radial-gradient(circle at 80% 5%,var(--body-grad-2),transparent 34%),
+    linear-gradient(135deg,var(--body-grad-3) 0%,var(--body-grad-4) 48%,var(--body-grad-5) 100%);
   color:var(--text);line-height:1.4;position:relative;overflow-x:hidden;font-size:var(--base-font)}
 #app{max-width:1360px;margin:0 auto;padding:0 16px 8px 16px;display:flex;flex-direction:column;min-height:100vh;position:relative}
 
 /* ── header ── */
-#header{display:flex;align-items:flex-start;gap:16px;padding:10px 0 4px 0;border-bottom:1.5px solid rgba(208,0,50,0.45);margin-bottom:6px}
+#header{display:flex;align-items:flex-start;gap:16px;padding:10px 0 4px 0;border-bottom:1.5px solid var(--accent);margin-bottom:6px}
 #hd-logo-box{width:var(--logo-w);height:var(--logo-h);flex-shrink:0;display:flex;align-items:center;justify-content:center}
 #hd-logo{max-width:100%;max-height:100%;object-fit:contain}
 #hd-text{flex:1;min-width:0}
@@ -142,7 +225,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #hero-status{font-size:1rem;color:var(--success);font-weight:700}
 #hero-promo{font-size:0.95rem;color:var(--dim);font-style:italic;margin-top:4px}
 #hero-promo:empty{display:none}
-.mode-active #hero{background:radial-gradient(circle at 12% 50%,rgba(0,91,187,0.10),transparent 35%),radial-gradient(circle at 85% 40%,rgba(208,0,50,0.06),transparent 30%),linear-gradient(105deg,#FFFFFF 0%,#F8FAFF 40%,var(--blue-xsoft) 100%);border:none;border-radius:10px;padding:0 20px 0 0;margin:10px 0;box-shadow:0 8px 24px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.8) inset}
+.mode-active #hero{background:radial-gradient(circle at 12% 50%,var(--blue-soft),transparent 35%),radial-gradient(circle at 85% 40%,var(--accent-xsoft),transparent 30%),linear-gradient(105deg,var(--surface) 0%,var(--surface-soft) 40%,var(--blue-xsoft) 100%);border:none;border-radius:10px;padding:0 20px 0 0;margin:10px 0;box-shadow:0 8px 24px var(--shadow-soft),inset 0 1px 0 var(--surface-soft)}
 .mode-active #hero-overview{display:none}
 .mode-active #hero-active{display:flex;align-items:stretch;gap:0;min-height:clamp(100px,12vw,160px)}
 /* photo box — stretches to match hero content height, min-height ensures decent size */
@@ -273,7 +356,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 /* ── bottom row cards ── */
 main{display:flex;gap:10px;margin-bottom:10px;flex:0 0 auto;max-height:30vh;overflow-y:auto}
 .mode-active main{opacity:0.85}
-.panel{flex:1;background:var(--surface);border-radius:var(--card-radius);padding:10px 14px;min-width:0;border:1px solid var(--border);box-shadow:0 2px 8px var(--shadow),0 0 0 1px rgba(255,255,255,0.5) inset}
+.panel{flex:1;background:var(--surface);border-radius:var(--card-radius);padding:10px 14px;min-width:0;border:1px solid var(--border);box-shadow:0 2px 8px var(--shadow),inset 0 0 0 1px var(--surface-soft)}
 .panel-narrow{flex:0.40}
 .panel-topqsos{flex:0.58}
 .panel h2{font-size:0.85rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:6px}
@@ -422,9 +505,9 @@ footer a:hover{text-decoration:underline}
   #hd-sun .sun-icon{font-size:1.2rem}
   /* ── active hero: premium broadcast background ── */
   .mode-active #hero{background:
-    radial-gradient(circle at 18% 45%,rgba(0,91,187,0.10),transparent 34%),
-    radial-gradient(circle at 82% 38%,rgba(208,0,50,0.06),transparent 30%),
-    linear-gradient(110deg,#FFFFFF 0%,#F7FAFF 48%,#EEF5FF 100%);
+    radial-gradient(circle at 18% 45%,var(--blue-soft),transparent 34%),
+    radial-gradient(circle at 82% 38%,var(--accent-xsoft),transparent 30%),
+    linear-gradient(110deg,var(--surface) 0%,var(--surface-soft) 48%,var(--blue-xsoft) 100%);
     padding:0 24px 0 0;min-height:auto}
   .mode-active #hero-active{min-height:80px}
   #hero-call{font-size:clamp(36px,4vw,60px)}
@@ -470,3 +553,84 @@ footer a:hover{text-decoration:underline}
   /* footer */
   footer{padding:8px;font-size:0.8rem}
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   Dark theme — technical enhancements (CQOps RF Console)
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* Panel glow — subtle backlight on dark surfaces. */
+:root.dark .panel,
+:root.dark .card {
+  border:1px solid var(--border);
+  background:
+    linear-gradient(145deg,rgba(255,255,255,0.022),transparent 42%),
+    var(--surface);
+  box-shadow:
+    0 14px 38px var(--shadow-soft),
+    inset 0 1px 0 rgba(255,255,255,0.035),
+    inset 0 0 24px rgba(40,130,190,0.025);
+}
+/* Active hero: keep its gradient, just enhance the shadow in dark mode. */
+:root.dark .mode-active #hero {
+  box-shadow:
+    0 14px 38px var(--shadow-soft),
+    inset 0 1px 0 rgba(255,255,255,0.035),
+    inset 0 0 24px rgba(40,130,190,0.025);
+}
+:root.dark .panel:hover,
+:root.dark .card:hover {
+  border-color:var(--border-strong);
+}
+
+/* Header diamond — instrument-style markers. */
+:root.dark .panel-title::before,
+:root.dark .widget-title::before,
+:root.dark h2::before,
+:root.dark h3::before {
+  content:"◆";
+  margin-right:0.55rem;
+  color:var(--cyan);
+  font-size:0.65em;
+  filter:drop-shadow(0 0 5px rgba(53,221,231,0.4));
+}
+:root.dark .panel-title,
+:root.dark .widget-title,
+:root.dark h2,
+:root.dark h3 {
+  color:var(--text);
+  letter-spacing:0.075em;
+  text-transform:uppercase;
+  text-shadow:0 0 14px rgba(53,221,231,0.10);
+}
+
+/* Technical grid — barely visible, non-fatiguing. */
+:root.dark body {
+  background:
+    radial-gradient(circle at 15% 0%,var(--body-grad-1),transparent 34%),
+    radial-gradient(circle at 85% 5%,var(--body-grad-2),transparent 38%),
+    linear-gradient(rgba(78,160,210,0.022) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(78,160,210,0.022) 1px,transparent 1px),
+    linear-gradient(150deg,var(--body-grad-3),var(--body-grad-4) 55%,var(--body-grad-5));
+  background-size:auto,auto,32px 32px,32px 32px,auto;
+  color:var(--text);
+}
+
+/* Status glow — only active data, TX/RX, alarms. */
+:root.dark .status-online,
+:root.dark .status-rx,
+:root.dark .sse-connected {
+  color:var(--success);
+  text-shadow:0 0 10px rgba(79,227,154,0.35);
+}
+:root.dark .status-tx,
+:root.dark .status-critical,
+:root.dark .status-active {
+  color:var(--accent);
+  text-shadow:0 0 12px rgba(255,59,92,0.42);
+}
+:root.dark .status-warning,
+:root.dark .sse-connecting {
+  color:var(--warn);
+  text-shadow:0 0 10px rgba(255,180,84,0.28);
+}
+

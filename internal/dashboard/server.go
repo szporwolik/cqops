@@ -145,10 +145,11 @@ func securityHeaders(next http.Handler) http.Handler {
 		// or weather APIs, adjust img-src and connect-src accordingly.
 		w.Header().Set("Content-Security-Policy",
 			"default-src 'self'; "+
-				"script-src 'self' 'unsafe-inline'; "+
-				"style-src 'self' 'unsafe-inline'; "+
+				"script-src 'self' 'unsafe-inline' https://unpkg.com; "+
+				"style-src 'self' 'unsafe-inline' https://unpkg.com; "+
 				"img-src 'self' data: https:; "+
 				"connect-src 'self' https:; "+
+				"worker-src 'self' blob: https://unpkg.com; "+
 				"font-src 'self'")
 		next.ServeHTTP(w, r)
 	})

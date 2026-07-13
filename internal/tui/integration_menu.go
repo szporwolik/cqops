@@ -36,6 +36,7 @@ type IntegrationMenu struct {
 
 	// HTTP Server
 	httpEnabled  bool
+	httpTheme    int // 0=Bright, 1=Dark
 	httpAddr     textinput.Model
 	httpPort     textinput.Model
 	httpHeader1  textinput.Model
@@ -101,34 +102,35 @@ const (
 	imHTTPChk      = 8
 	imHTTPAddr     = 9
 	imHTTPPort     = 10
-	imHTTPHdr1     = 11
-	imHTTPHdr2     = 12
-	imHTTPLogo     = 13
-	imHTTPEvt      = 14
-	imGPSChk       = 15
-	imGPSSvc       = 16 // service type: None / Serial / GPSD
-	imGPSGridPrec  = 17 // grid precision: 10 / 8 / 6
-	imGPSPort      = 18 // serial port
-	imGPSBaud      = 19 // baud rate
-	imGPSDTR       = 20 // DTR
-	imGPSRTS       = 21 // RTS
-	imGPSDHost     = 22 // GPSD host
-	imGPSDPort     = 23 // GPSD port
-	imGPSTest      = 24 // test button
-	imAPRSChk      = 25
-	imAPRSSvc      = 26 // service type: APRS-IS / KISS / KISS Server
-	imAPRSServer   = 27 // APRS-IS server host:port
-	imAPRSKISSHost = 28 // KISS Server TCP host
-	imAPRSKISSPort = 29 // KISS Server TCP port
-	imAPRSPort     = 30 // KISS serial port
-	imAPRSBaud     = 31 // KISS baud rate
-	imAPRSData     = 32 // KISS data bits
-	imAPRSParity   = 33 // KISS parity
-	imAPRSStop     = 34 // KISS stop bits
-	imAPRSDTR      = 35 // KISS DTR
-	imAPRSRTS      = 36 // KISS RTS
-	imAPRSTest     = 37 // test button
-	imMax          = 38
+	imHTTPTheme    = 11
+	imHTTPHdr1     = 12
+	imHTTPHdr2     = 13
+	imHTTPLogo     = 14
+	imHTTPEvt      = 15
+	imGPSChk       = 16
+	imGPSSvc       = 17 // service type: None / Serial / GPSD
+	imGPSGridPrec  = 18 // grid precision: 10 / 8 / 6
+	imGPSPort      = 19 // serial port
+	imGPSBaud      = 20 // baud rate
+	imGPSDTR       = 21 // DTR
+	imGPSRTS       = 22 // RTS
+	imGPSDHost     = 23 // GPSD host
+	imGPSDPort     = 24 // GPSD port
+	imGPSTest      = 25 // test button
+	imAPRSChk      = 26
+	imAPRSSvc      = 27 // service type: APRS-IS / KISS / KISS Server
+	imAPRSServer   = 28 // APRS-IS server host:port
+	imAPRSKISSHost = 29 // KISS Server TCP host
+	imAPRSKISSPort = 30 // KISS Server TCP port
+	imAPRSPort     = 31 // KISS serial port
+	imAPRSBaud     = 32 // KISS baud rate
+	imAPRSData     = 33 // KISS data bits
+	imAPRSParity   = 34 // KISS parity
+	imAPRSStop     = 35 // KISS stop bits
+	imAPRSDTR      = 36 // KISS DTR
+	imAPRSRTS      = 37 // KISS RTS
+	imAPRSTest     = 38 // test button
+	imMax          = 39
 )
 
 type callbookTestMsg struct {
@@ -288,6 +290,11 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 		httpEvtStart.SetValue(cfg.Integrations.HTTPServer.EventStart)
 	}
 
+	httpTheme := 0 // Bright
+	if cfg.Integrations.HTTPServer.Theme == "dark" {
+		httpTheme = 1
+	}
+
 	// GPS
 	gpsSvc := 0
 	switch cfg.Integrations.GPS.Service {
@@ -415,6 +422,7 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 		qrzUser:          qrzUser,
 		qrzPass:          qrzPass,
 		httpEnabled:      cfg.Integrations.HTTPServer.Enabled,
+		httpTheme:        httpTheme,
 		httpAddr:         httpAddr,
 		httpPort:         httpPort,
 		httpHeader1:      httpHeader1,
@@ -598,6 +606,9 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					im.fixFocus()
 				}
 				im.autoScrollViewport()
+				return im, nil
+			case imHTTPTheme:
+				im.httpTheme = (im.httpTheme + 1) % 2
 				return im, nil
 			case imGPSChk:
 				im.gpsEnabled = !im.gpsEnabled
@@ -910,7 +921,7 @@ func (im *IntegrationMenu) isPositionVisible(pos int) bool {
 		return im.dxcEnabled
 	case imQRZUser, imQRZPass, imQRZTest:
 		return im.qrzEnabled
-	case imHTTPAddr, imHTTPPort, imHTTPHdr1, imHTTPHdr2, imHTTPLogo, imHTTPEvt:
+	case imHTTPAddr, imHTTPPort, imHTTPTheme, imHTTPHdr1, imHTTPHdr2, imHTTPLogo, imHTTPEvt:
 		return im.httpEnabled
 	// GPS fields visibility depends on enabled + service type.
 	case imGPSSvc, imGPSGridPrec:
@@ -1160,6 +1171,8 @@ func (im *IntegrationMenu) View() tea.View {
 		b.WriteString(padOrTrunc(im.renderField(imHTTPAddr, "  Address:", &im.httpAddr, false), lineW))
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(im.renderField(imHTTPPort, "  Port:", &im.httpPort, false), lineW))
+		b.WriteString("\n")
+		b.WriteString(padOrTrunc(im.renderTheme(), lineW))
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(im.renderField(imHTTPHdr1, "  Header 1 (opt):", &im.httpHeader1, false), lineW))
 		b.WriteString("\n")
@@ -1537,8 +1550,23 @@ func (im *IntegrationMenu) renderField(focusIdx int, label string, ti *textinput
 	return lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)
 }
 
+func (im *IntegrationMenu) renderTheme() string {
+	prefix := "  "
+	lbl := S.FormLabelWide.Align(lipgloss.Left).Render("  Theme:")
+	if im.focus == imHTTPTheme {
+		prefix = S.FormPrefixOn.Render("> ")
+		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render("  Theme:")
+	}
+	themeNames := []string{"Bright", "Dark"}
+	val := ValueStyle.Render(themeNames[im.httpTheme])
+	if im.focus == imHTTPTheme {
+		val = CursorStyle.Render(val) + " " + DimStyle.Render("(Space)")
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)
+}
+
 // Values returns DXC, QRZ, and HTTP server config values.
-func (im *IntegrationMenu) Values() (dxcEnabled bool, dxcHost, dxcPort, dxcLogin string, qrzEnabled bool, qrzUser, qrzPass string, httpEnabled bool, httpAddr, httpPort, httpHdr1, httpHdr2, httpLogo, httpEvtStart string) {
+func (im *IntegrationMenu) Values() (dxcEnabled bool, dxcHost, dxcPort, dxcLogin string, qrzEnabled bool, qrzUser, qrzPass string, httpEnabled bool, httpAddr, httpPort, httpTheme string, httpHdr1, httpHdr2, httpLogo, httpEvtStart string) {
 	return im.dxcEnabled,
 		strings.TrimSpace(im.dxcHost.Value()),
 		strings.TrimSpace(im.dxcPort.Value()),
@@ -1549,6 +1577,12 @@ func (im *IntegrationMenu) Values() (dxcEnabled bool, dxcHost, dxcPort, dxcLogin
 		im.httpEnabled,
 		strings.TrimSpace(im.httpAddr.Value()),
 		strings.TrimSpace(im.httpPort.Value()),
+		func() string {
+			if im.httpTheme == 1 {
+				return "dark"
+			}
+			return "bright"
+		}(),
 		strings.TrimSpace(im.httpHeader1.Value()),
 		strings.TrimSpace(im.httpHeader2.Value()),
 		strings.TrimSpace(im.httpClubLogo.Value()),

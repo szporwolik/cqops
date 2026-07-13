@@ -201,7 +201,8 @@ Full usage guide, workflows, and keyboard shortcuts are in the [documentation](h
 - [Open-Meteo](https://open-meteo.com/) — Free weather forecast API (CC BY 4.0), fetched browser-side for the CQOps Live dashboard weather row
 
 *CQOps Live dashboard — map tiles, weather radar, weather forecast, Leaflet:*
-- Map tiles: [OpenStreetMap](https://www.openstreetmap.org/copyright) — © OpenStreetMap contributors (ODbL).
+- Map tiles: [OpenFreeMap](https://openfreemap.org/) — © [OpenMapTiles](https://www.openmaptiles.org/) Data from [OpenStreetMap](https://www.openstreetmap.org/copyright) (ODbL). Styles: Bright (light theme), Fiord (dark theme).
+- Map rendering: [MapLibre GL JS](https://github.com/maplibre/maplibre-gl) (BSD-3) + [MapLibre GL Leaflet](https://github.com/maplibre/maplibre-gl-leaflet) (ISC), loaded from CDN.
 - Weather radar overlay: [RainViewer](https://www.rainviewer.com/) public API (browser-side, optional, offline-safe). Attribution displayed on-map and in footer.
 - Weather forecast row: [Open-Meteo](https://open-meteo.com/) free API (browser-side, no key required, offline-safe: hidden when disconnected). Attribution in footer. See `licenses/OPEN-METEO-CC-BY-4.0.txt`.
 - Leaflet 1.9.4 bundled under BSD-2. See `licenses/LEAFLET-BSD2-LICENSE`.
