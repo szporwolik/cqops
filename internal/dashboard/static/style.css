@@ -390,7 +390,8 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 @keyframes hero-glow{0%,100%{text-shadow:0 0 8px transparent}50%{text-shadow:0 0 28px var(--accent)}}
 @keyframes hero-breathe{0%,100%{opacity:0.7}50%{opacity:1}}
 #hero-badges{display:inline-flex;flex-wrap:wrap;gap:6px}
-#hero-badges .badge{display:inline-block;background:var(--accent);color:#fff;padding:3px 10px;border-radius:4px;font-size:0.85rem;font-weight:600;margin:0 3px 3px 0}
+#hero-badges .badge{display:inline-block;padding:3px 10px;border-radius:4px;font-size:0.85rem;font-weight:600;margin:0 3px 3px 0}
+#hero-badges .badge:not([class*="band-"]):not([class*="mode-"]){background:var(--accent);color:#fff}
 #hero-badges .badge.info{background:var(--blue-soft);color:var(--blue-dark);border:1px solid var(--border)}
 #hero-badges .badge.dupe{background:var(--warn);color:#fff}
 #hero-badges .badge.success{background:var(--success);color:#fff}
