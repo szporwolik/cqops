@@ -696,10 +696,10 @@ footer a:hover{text-decoration:underline}
   /* Show Operator column at FullHD+. */
   .recent-op-col{display:table-cell}
   #recent-table th:nth-child(1){width:7%}  /* UTC */
-  #recent-table th:nth-child(2){width:18%} /* Call */
+  #recent-table th:nth-child(2){width:16%} /* Call */
   #recent-table th:nth-child(3){width:8%}  /* Band */
   #recent-table th:nth-child(4){width:8%}  /* Mode */
-  #recent-table th:nth-child(5){width:8%}  /* Op */
+  #recent-table th:nth-child(5){width:10%} /* Op */
   #recent-table th:nth-child(6){width:8%}  /* RST */
   #recent-table th:nth-child(7){width:17%} /* Dist/Dir */
   #recent-table th:nth-child(8){width:26%} /* Country */
