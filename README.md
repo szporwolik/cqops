@@ -19,12 +19,12 @@ A small, fast, offline-first amateur radio logger for the terminal - built for p
 ### Windows
 
 ```powershell
-winget install --exact --id SzymonPorwolik.CQOps
+winget install cqops
 ```
 
 Update:
 ```powershell
-winget upgrade --exact --id SzymonPorwolik.CQOps
+winget upgrade cqops
 ```
 
 > WinGet installation pending initial package acceptance at [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs). Until then, use the portable ZIP or NSIS installer from [Releases](https://github.com/szporwolik/cqops/releases).
