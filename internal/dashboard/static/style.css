@@ -367,7 +367,7 @@ main{display:flex;gap:10px;margin-bottom:10px;flex:0 0 auto;max-height:30vh;over
 .panel dd strong{color:var(--text)}
 .status-on{color:var(--success)}.status-off{color:var(--offline)}
 
-footer{text-align:center;color:var(--dim);font-size:0.75rem;padding:6px;margin-top:auto}
+footer{text-align:center;color:var(--dim);font-size:0.75rem;padding:6px;margin-top:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 footer a{color:var(--blue);text-decoration:none}
 footer a:hover{text-decoration:underline}
 .footer-rainviewer{display:none}
