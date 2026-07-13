@@ -177,6 +177,7 @@ type HTTPServerConfig struct {
 	Header1    string `yaml:"header_1,omitempty"`     // club name for dashboard
 	Header2    string `yaml:"header_2,omitempty"`     // event name for dashboard
 	ClubLogo   string `yaml:"club_logo,omitempty"`    // file path or URL to club logo
+	QRLink     string `yaml:"qr_link,omitempty"`      // URL for dashboard QR code (default https://cqops.com)
 	EventStart string `yaml:"event_start,omitempty"`  // YYYY-MM-DD, filter stats from this date
 	MapTileURL string `yaml:"map_tile_url,omitempty"` // Leaflet tile server URL
 	MapAttrib  string `yaml:"map_attrib,omitempty"`   // tile attribution text

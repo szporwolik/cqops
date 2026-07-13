@@ -81,7 +81,7 @@ func TestIntegrationMenu_HTTPThemeValues(t *testing.T) {
 	im.focus = imHTTPTheme
 
 	// Default → Bright
-	_, _, _, _, _, _, _, _, _, _, theme, _, _, _, _ := im.Values()
+	_, _, _, _, _, _, _, _, _, _, theme, _, _, _, _, _ := im.Values()
 	if theme != "bright" {
 		t.Errorf("Values() theme = %q, want 'bright'", theme)
 	}
@@ -89,7 +89,7 @@ func TestIntegrationMenu_HTTPThemeValues(t *testing.T) {
 	// Space → Dark
 	m, _ := im.Update(tea.KeyPressMsg{Code: tea.KeySpace})
 	im = m.(*IntegrationMenu)
-	_, _, _, _, _, _, _, _, _, _, theme, _, _, _, _ = im.Values()
+	_, _, _, _, _, _, _, _, _, _, theme, _, _, _, _, _ = im.Values()
 	if theme != "dark" {
 		t.Errorf("Values() theme = %q, want 'dark'", theme)
 	}
@@ -97,7 +97,7 @@ func TestIntegrationMenu_HTTPThemeValues(t *testing.T) {
 	// Space → Orchid (yl)
 	m, _ = im.Update(tea.KeyPressMsg{Code: tea.KeySpace})
 	im = m.(*IntegrationMenu)
-	_, _, _, _, _, _, _, _, _, _, theme, _, _, _, _ = im.Values()
+	_, _, _, _, _, _, _, _, _, _, theme, _, _, _, _, _ = im.Values()
 	if theme != "yl" {
 		t.Errorf("Values() theme = %q, want 'yl' (Orchid)", theme)
 	}
@@ -105,7 +105,7 @@ func TestIntegrationMenu_HTTPThemeValues(t *testing.T) {
 	// Space → HighVis
 	m, _ = im.Update(tea.KeyPressMsg{Code: tea.KeySpace})
 	im = m.(*IntegrationMenu)
-	_, _, _, _, _, _, _, _, _, _, theme, _, _, _, _ = im.Values()
+	_, _, _, _, _, _, _, _, _, _, theme, _, _, _, _, _ = im.Values()
 	if theme != "hivis" {
 		t.Errorf("Values() theme = %q, want 'hivis'", theme)
 	}

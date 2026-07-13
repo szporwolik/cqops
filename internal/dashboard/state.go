@@ -222,6 +222,7 @@ type DisplayConfig struct {
 	Header1           string `json:"header1,omitempty"`
 	Header2           string `json:"header2,omitempty"`
 	ClubLogo          string `json:"clubLogo,omitempty"`
+	QRLink            string `json:"qrLink,omitempty"`
 	MapTileURL        string `json:"mapTileUrl,omitempty"`
 	MapAttrib         string `json:"mapAttrib,omitempty"`
 	DrawLines         bool   `json:"drawLines"`

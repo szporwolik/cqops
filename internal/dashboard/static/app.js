@@ -198,6 +198,15 @@ function renderAll(snap){
   }
   // Display config
   if(displayCfg.clubLogo){hdLogo.src=displayCfg.clubLogo;hdLogoBox.style.display=''}else{hdLogoBox.style.display='none'}
+  // QR code — QuickChart API, only when config has qrLink set.
+  var hdQR=$('hd-qr'),hdQRImg=$('hd-qr-img'),hdQRErr=$('hd-qr-err');
+  if(displayCfg.qrLink){
+    hdQRErr.style.display='none';hdQRImg.style.display='';
+    hdQRImg.onload=function(){hdQRErr.style.display='none';hdQRImg.style.display=''};
+    hdQRImg.onerror=function(){hdQRErr.style.display='';hdQRImg.style.display='none'};
+    hdQRImg.src='https://quickchart.io/qr?text='+encodeURIComponent(displayCfg.qrLink)+'&size=80&margin=1&format=svg&ecLevel=M&dark=111827&light=ffffff';
+    hdQR.style.display='';
+  }
   if(displayCfg.header1){hdTitle.textContent=displayCfg.header1;heroHeadline.textContent=displayCfg.header1}
   else{hdTitle.textContent='CQOps Live';heroHeadline.textContent='CQOps Live'}
   hdSubtitle.textContent=displayCfg.header2||'Fast, portable ham radio logger';heroSubline.textContent=displayCfg.header2||'';

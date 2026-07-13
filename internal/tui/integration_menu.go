@@ -42,6 +42,7 @@ type IntegrationMenu struct {
 	httpHeader1  textinput.Model
 	httpHeader2  textinput.Model
 	httpClubLogo textinput.Model
+	httpQRLink   textinput.Model
 	httpEvtStart textinput.Model
 
 	// GPS
@@ -106,31 +107,32 @@ const (
 	imHTTPHdr1     = 12
 	imHTTPHdr2     = 13
 	imHTTPLogo     = 14
-	imHTTPEvt      = 15
-	imGPSChk       = 16
-	imGPSSvc       = 17 // service type: None / Serial / GPSD
-	imGPSGridPrec  = 18 // grid precision: 10 / 8 / 6
-	imGPSPort      = 19 // serial port
-	imGPSBaud      = 20 // baud rate
-	imGPSDTR       = 21 // DTR
-	imGPSRTS       = 22 // RTS
-	imGPSDHost     = 23 // GPSD host
-	imGPSDPort     = 24 // GPSD port
-	imGPSTest      = 25 // test button
-	imAPRSChk      = 26
-	imAPRSSvc      = 27 // service type: APRS-IS / KISS / KISS Server
-	imAPRSServer   = 28 // APRS-IS server host:port
-	imAPRSKISSHost = 29 // KISS Server TCP host
-	imAPRSKISSPort = 30 // KISS Server TCP port
-	imAPRSPort     = 31 // KISS serial port
-	imAPRSBaud     = 32 // KISS baud rate
-	imAPRSData     = 33 // KISS data bits
-	imAPRSParity   = 34 // KISS parity
-	imAPRSStop     = 35 // KISS stop bits
-	imAPRSDTR      = 36 // KISS DTR
-	imAPRSRTS      = 37 // KISS RTS
-	imAPRSTest     = 38 // test button
-	imMax          = 39
+	imHTTPQRLink   = 15
+	imHTTPEvt      = 16
+	imGPSChk       = 17
+	imGPSSvc       = 18 // service type: None / Serial / GPSD
+	imGPSGridPrec  = 19 // grid precision: 10 / 8 / 6
+	imGPSPort      = 20 // serial port
+	imGPSBaud      = 21 // baud rate
+	imGPSDTR       = 22 // DTR
+	imGPSRTS       = 23 // RTS
+	imGPSDHost     = 24 // GPSD host
+	imGPSDPort     = 25 // GPSD port
+	imGPSTest      = 26 // test button
+	imAPRSChk      = 27
+	imAPRSSvc      = 28 // service type: APRS-IS / KISS / KISS Server
+	imAPRSServer   = 29 // APRS-IS server host:port
+	imAPRSKISSHost = 30 // KISS Server TCP host
+	imAPRSKISSPort = 31 // KISS Server TCP port
+	imAPRSPort     = 32 // KISS serial port
+	imAPRSBaud     = 33 // KISS baud rate
+	imAPRSData     = 34 // KISS data bits
+	imAPRSParity   = 35 // KISS parity
+	imAPRSStop     = 36 // KISS stop bits
+	imAPRSDTR      = 37 // KISS DTR
+	imAPRSRTS      = 38 // KISS RTS
+	imAPRSTest     = 39 // test button
+	imMax          = 40
 )
 
 type callbookTestMsg struct {
@@ -280,6 +282,15 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 	httpClubLogo.Placeholder = "https://... (URL only)"
 	if cfg.Integrations.HTTPServer.ClubLogo != "" {
 		httpClubLogo.SetValue(cfg.Integrations.HTTPServer.ClubLogo)
+	}
+
+	httpQRLink := newTextinput()
+	httpQRLink.CharLimit = 70
+	httpQRLink.SetWidth(28)
+	httpQRLink.Placeholder = "https://cqops.com"
+	httpQRLink.SetValue("https://cqops.com")
+	if cfg.Integrations.HTTPServer.QRLink != "" {
+		httpQRLink.SetValue(cfg.Integrations.HTTPServer.QRLink)
 	}
 
 	httpEvtStart := newTextinput()
@@ -433,6 +444,7 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 		httpHeader1:      httpHeader1,
 		httpHeader2:      httpHeader2,
 		httpClubLogo:     httpClubLogo,
+		httpQRLink:       httpQRLink,
 		httpEvtStart:     httpEvtStart,
 		gpsEnabled:       cfg.Integrations.GPS.Enabled,
 		gpsService:       gpsSvc,
@@ -877,6 +889,8 @@ func (im *IntegrationMenu) forwardToFocused(msg tea.Msg) {
 		im.httpHeader2, _ = im.httpHeader2.Update(msg)
 	case imHTTPLogo:
 		im.httpClubLogo, _ = im.httpClubLogo.Update(msg)
+	case imHTTPQRLink:
+		im.httpQRLink, _ = im.httpQRLink.Update(msg)
 	case imHTTPEvt:
 		im.httpEvtStart, _ = im.httpEvtStart.Update(msg)
 	case imGPSPort:
@@ -926,7 +940,7 @@ func (im *IntegrationMenu) isPositionVisible(pos int) bool {
 		return im.dxcEnabled
 	case imQRZUser, imQRZPass, imQRZTest:
 		return im.qrzEnabled
-	case imHTTPAddr, imHTTPPort, imHTTPTheme, imHTTPHdr1, imHTTPHdr2, imHTTPLogo, imHTTPEvt:
+	case imHTTPAddr, imHTTPPort, imHTTPTheme, imHTTPHdr1, imHTTPHdr2, imHTTPLogo, imHTTPQRLink, imHTTPEvt:
 		return im.httpEnabled
 	// GPS fields visibility depends on enabled + service type.
 	case imGPSSvc, imGPSGridPrec:
@@ -985,6 +999,8 @@ func (im *IntegrationMenu) focusField() {
 		im.httpHeader2.Focus()
 	case imHTTPLogo:
 		im.httpClubLogo.Focus()
+	case imHTTPQRLink:
+		im.httpQRLink.Focus()
 	case imHTTPEvt:
 		im.httpEvtStart.Focus()
 	case imGPSPort:
@@ -1184,6 +1200,8 @@ func (im *IntegrationMenu) View() tea.View {
 		b.WriteString(padOrTrunc(im.renderField(imHTTPHdr2, "  Header 2 (opt):", &im.httpHeader2, false), lineW))
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(im.renderField(imHTTPLogo, "  Logo URL (opt):", &im.httpClubLogo, false), lineW))
+		b.WriteString("\n")
+		b.WriteString(padOrTrunc(im.renderField(imHTTPQRLink, "  QR Link (opt):", &im.httpQRLink, false), lineW))
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(im.renderField(imHTTPEvt, "  Event Start (opt):", &im.httpEvtStart, false), lineW))
 	}
@@ -1571,7 +1589,7 @@ func (im *IntegrationMenu) renderTheme() string {
 }
 
 // Values returns DXC, QRZ, and HTTP server config values.
-func (im *IntegrationMenu) Values() (dxcEnabled bool, dxcHost, dxcPort, dxcLogin string, qrzEnabled bool, qrzUser, qrzPass string, httpEnabled bool, httpAddr, httpPort, httpTheme string, httpHdr1, httpHdr2, httpLogo, httpEvtStart string) {
+func (im *IntegrationMenu) Values() (dxcEnabled bool, dxcHost, dxcPort, dxcLogin string, qrzEnabled bool, qrzUser, qrzPass string, httpEnabled bool, httpAddr, httpPort, httpTheme string, httpHdr1, httpHdr2, httpLogo, httpQRLink, httpEvtStart string) {
 	return im.dxcEnabled,
 		strings.TrimSpace(im.dxcHost.Value()),
 		strings.TrimSpace(im.dxcPort.Value()),
@@ -1597,6 +1615,7 @@ func (im *IntegrationMenu) Values() (dxcEnabled bool, dxcHost, dxcPort, dxcLogin
 		strings.TrimSpace(im.httpHeader1.Value()),
 		strings.TrimSpace(im.httpHeader2.Value()),
 		strings.TrimSpace(im.httpClubLogo.Value()),
+		strings.TrimSpace(im.httpQRLink.Value()),
 		strings.TrimSpace(im.httpEvtStart.Value())
 }
 

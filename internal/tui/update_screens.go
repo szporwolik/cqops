@@ -191,7 +191,7 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			m.screen = screenMainMenu
 		}
 		if m.ui.integrationMenu.saved {
-			dxcE, dxcHost, dxcPort, dxcLogin, qrzE, qrzUser, qrzPass, httpE, httpAddr, httpPort, httpTheme, httpHdr1, httpHdr2, httpLogo, httpEvtStart := m.ui.integrationMenu.Values()
+			dxcE, dxcHost, dxcPort, dxcLogin, qrzE, qrzUser, qrzPass, httpE, httpAddr, httpPort, httpTheme, httpHdr1, httpHdr2, httpLogo, httpQRLink, httpEvtStart := m.ui.integrationMenu.Values()
 
 			// Restart the HTTP server when address, port, or enabled
 			// state actually change, OR when the server should be running
@@ -216,6 +216,7 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			m.App.Config.Integrations.HTTPServer.Header1 = httpHdr1
 			m.App.Config.Integrations.HTTPServer.Header2 = httpHdr2
 			m.App.Config.Integrations.HTTPServer.ClubLogo = httpLogo
+			m.App.Config.Integrations.HTTPServer.QRLink = httpQRLink
 			m.App.Config.Integrations.HTTPServer.EventStart = httpEvtStart
 
 			// GPS integration.

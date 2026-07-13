@@ -341,6 +341,7 @@ func (m *Model) pushDashboardFast() {
 		Header1:          cfg.Header1,
 		Header2:          cfg.Header2,
 		ClubLogo:         clubLogoURL(cfg.ClubLogo),
+		QRLink:           cfg.QRLink,
 		MapTileURL:       cfg.MapTileURL,
 		MapAttrib:        cfg.MapAttrib,
 		DrawLines:        true,

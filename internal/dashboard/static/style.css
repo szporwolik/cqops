@@ -314,6 +314,10 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #hd-sun{font-size:0.72rem;color:var(--dim);white-space:nowrap;display:flex;align-items:center;gap:6px}
 #hd-sun .sun-icon{font-size:1.1rem;line-height:1}
 #hd-sun:empty{display:none}
+/* ── QR code in header ── */
+#hd-qr{flex-shrink:0;margin-left:auto;display:flex;align-items:flex-start}
+#hd-qr-img{width:80px;height:80px;border-radius:5px;background:#fff;box-shadow:0 2px 8px var(--shadow)}
+#hd-qr-err{font-size:0.6rem;color:var(--offline);text-align:center}
 
 /* ── weather row (header extension, below clock) ── */
 #wx-row{display:flex;align-items:center;justify-content:center;gap:6px 14px;flex-wrap:nowrap;padding:4px 0 6px 0;font-size:0.78rem;color:var(--text-secondary);margin-bottom:0;overflow:hidden}
