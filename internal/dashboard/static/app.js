@@ -224,7 +224,8 @@ function renderAll(snap){
   if(snap.psk&&snap.psk.total>0){registerPSKModule(snap.psk)}
   updateExtraBox();
   // APRS stations on local map
-  if(snap.aprs)renderAPRSOnLocalMap(snap.aprs);
+  if(snap.aprs&&snap.aprs.length){renderAPRSOnLocalMap(snap.aprs)}
+  else if(aprsMarkerLayer){aprsMarkerLayer.clearLayers()}
   // Map
   D('renderAll','init map…');
   initMap(Object.assign({},displayCfg,{drawLines:displayCfg.drawLines!==false,maxLines:displayCfg.maxLines||250,highlightLastQSO:displayCfg.highlightLastQSO!==false,animateActivePath:!!displayCfg.animateActivePath}));
@@ -522,11 +523,37 @@ function styleUrlForTheme(customUrl){
   if(root.contains('hivis'))return'https://tiles.openfreemap.org/styles/positron';
   return'https://tiles.openfreemap.org/styles/bright';
 }
-function qsoPathColors(){
+function qsoPathTheme(){
   var root=document.documentElement.classList;
-  if(root.contains('hivis')) return{active:'#FFD400',last:'#FF5CA8',past:'#55F3E8',pastOpacity:0.60,marker:'#72BCFF',markerActive:'#FFD400'};
-  if(root.contains('dark'))   return{active:'#FF405F',last:'#FFB454',past:'#FFB454',pastOpacity:0.55,marker:'#55AEFF',markerActive:'#FF405F'};
-                              return{active:'#D00032',last:'#0080FF',past:'#0080FF',pastOpacity:0.50,marker:'#0080FF',markerActive:'#D00032'};
+  if(root.contains('hivis')) return{
+    active:{main:'#FFD400',mainW:2.7,u:'#000000',uW:4,uOpacity:0.92,dash:null},
+    last:  {main:'#FFD400',mainW:2.7,u:'#000000',uW:4,uOpacity:0.92,dash:null},
+    past:  {main:'#35E6F2',mainW:2.2,u:'#000000',uW:3.2,uOpacity:0.88,dash:null},
+    marker:'#72BCFF',markerActive:'#FFD400',station:'#63F7C8'
+  };
+  if(root.contains('dark')) return{
+    active:{main:'#FF405F',mainW:2.6,u:'rgba(0,0,0,0.58)',uW:3.1},
+    last:  {main:'#E7A21A',mainW:1.8,u:'rgba(0,0,0,0.58)',uW:3.1},
+    past:  {main:'#E7A21A',mainW:1.8,u:'rgba(0,0,0,0.58)',uW:3.1,opacity:0.55},
+    marker:'#55AEFF',markerActive:'#FF405F',station:'#50E3A4'
+  };
+  if(root.contains('yl')) return{
+    active:{main:'#C12678',mainW:2.5,u:'rgba(255,255,255,0.74)',uW:3},
+    last:  {main:'#7844B6',mainW:1.9,u:'rgba(255,255,255,0.74)',uW:3},
+    past:  {main:'#7844B6',mainW:1.9,u:'rgba(255,255,255,0.74)',uW:3,opacity:0.50},
+    marker:'#7650B8',markerActive:'#C12678',station:'#207A5D'
+  };
+  // Bright (default)
+  return{
+    active:{main:'#D00032',mainW:2.6,u:'rgba(255,255,255,0.74)',uW:2.8},
+    last:  {main:'#0875C9',mainW:1.9,u:'rgba(255,255,255,0.74)',uW:2.8},
+    past:  {main:'#0875C9',mainW:1.9,u:'rgba(255,255,255,0.74)',uW:2.8,opacity:0.50},
+    marker:'#0875C9',markerActive:'#D00032',station:'#007A3D'
+  };
+}
+function addDualPolyline(layer,pts,cfg){
+  if(cfg.uW>0)layer.addLayer(L.polyline(pts,{color:cfg.u,weight:cfg.uW,opacity:cfg.uOpacity||1,lineCap:'round',lineJoin:'round'}));
+  layer.addLayer(L.polyline(pts,{color:cfg.main,weight:cfg.mainW,opacity:cfg.opacity||0.9,lineCap:'round',lineJoin:'round',dashArray:cfg.dash||null,className:cfg.className||''}));
 }
 
 var mapCfg={drawLines:true,maxLines:150,maxMarkers:200,highlightLastQSO:true,animateActivePath:false};
@@ -589,7 +616,7 @@ function initLocalMap(lat,lon){
   localTiles=L.maplibreGL({style:styleUrlForTheme(mapCfg.mapTileUrl),attributionControl:false}).addTo(mapLocal);
   suppressMissingImages(localTiles);
   // Station marker on local map — small, below APRS symbols.
-  stationLocalMarker=L.circleMarker([lat,lon],{radius:5,color:'#007A3D',fillColor:'#007A3D',fillOpacity:0.85,weight:2.5,pane:'shadowPane'}).addTo(mapLocal);
+  stationLocalMarker=L.circleMarker([lat,lon],{radius:5,color:qsoPathTheme().station,fillColor:qsoPathTheme().station,fillOpacity:0.85,weight:2.5,pane:'shadowPane',className:'local-station-dot'}).addTo(mapLocal);
   if(window.ResizeObserver){new ResizeObserver(function(){mapLocal.invalidateSize()}).observe(lc)}
   (function pollLocalSize(){
     if(lc.clientHeight>0){
@@ -1003,14 +1030,19 @@ function renderAPRSOnLocalMap(stations){
 }
 
 function _renderAprsMarker(s,bounds){
+  var ago=Math.round((Date.now()-new Date(s.lastHeard).getTime())/60000);
+  // Fade linearly between 30 and 60 minutes; skip entirely if older.
+  var fade=1;
+  if(ago>30){fade=Math.max(0,(60-ago)/30)}
+  if(fade<=0)return;
   var popup=(s.callsign||'?')+'<br>APRS';
   if(s.comment)popup+='<br>'+esc(s.comment);
-  var ago=Math.round((Date.now()-new Date(s.lastHeard).getTime())/60000);
   popup+='<br>'+ago+' min ago';
   if(s.course)popup+='<br>Course: '+s.course+'°';
   if(s.speedKmH)popup+='<br>'+fmtWind(s.speedKmH);
   var m=_aprMarker(s);
   m.bindPopup(popup);
+  if(fade<1)m.setOpacity(fade);
   aprsMarkerLayer.addLayer(m);
   bounds.push([s.lat,s.lon]);
   // Draw position trail if station has historic points.
@@ -1019,16 +1051,13 @@ function _renderAprsMarker(s,bounds){
     s.trail.forEach(function(p){
       pts.push([p.lat,p.lon]);
     });
-    // Add current position as the trail endpoint.
     pts.push([s.lat,s.lon]);
-    // Blue trail line (apr s.fi style).
-    L.polyline(pts,{color:'#1565C0',weight:3,opacity:0.75}).addTo(aprsMarkerLayer);
-    // Red dots at historic positions, older = smaller + more transparent.
+    L.polyline(pts,{color:'#1565C0',weight:3,opacity:0.75*fade}).addTo(aprsMarkerLayer);
     s.trail.forEach(function(p,i){
       var frac=i/s.trail.length;
       var r=3+frac*2;
-      var o=0.45+frac*0.40;
-      L.circleMarker([p.lat,p.lon],{radius:r,color:'#C62828',fillColor:'#C62828',fillOpacity:o,weight:1}).addTo(aprsMarkerLayer);
+      var o=(0.45+frac*0.40)*fade;
+      if(o>0.02)L.circleMarker([p.lat,p.lon],{radius:r,color:'#C62828',fillColor:'#C62828',fillOpacity:o,weight:1}).addTo(aprsMarkerLayer);
     });
   }
 }
@@ -1040,11 +1069,11 @@ function updateMapFromToday(){
   // Clear all layers
   stationLayer.clearLayers();qsoMarkerLayer.clearLayers();qsoLineLayer.clearLayers();lastQsoLayer.clearLayers();activeQsoLayer.clearLayers();
   var bounds=[],hasStation=false;
-  var pc=qsoPathColors();
+  var pt=qsoPathTheme();
 
   // ---- Station marker ----
   if(ownStationLat!=null&&ownStationLon!=null){
-    var sm=L.circleMarker([ownStationLat,ownStationLon],{radius:9,color:'#007A3D',fillColor:'#007A3D',fillOpacity:0.85,weight:2.5});
+    var sm=L.circleMarker([ownStationLat,ownStationLon],{radius:9,color:pt.station,fillColor:pt.station,fillOpacity:0.85,weight:2.5,className:'station-dot'});
     stationLayer.addLayer(sm);bounds.push([ownStationLat,ownStationLon]);hasStation=true;
   }
 
@@ -1063,7 +1092,7 @@ function updateMapFromToday(){
       // Marker
       var isLast=(i===lastQsoIdx&&mapCfg.highlightLastQSO),isActive=(activeGrid&&q.grid&&q.grid.toUpperCase()===activeGrid.toUpperCase());
       var mr=isActive?7:isLast?5.5:4;
-      var mc=isActive?pc.markerActive:isLast?pc.marker:pc.marker;
+      var mc=isActive?pt.markerActive:isLast?pt.marker:pt.marker;
       var mf=isActive?1:isLast?0.9:0.8;
       var mk=L.circleMarker([lat,lon],{radius:mr,color:mc,fillColor:mc,fillOpacity:mf,weight:isActive?3:2,opacity:0.95});
       var popup=(q.call||'')+'<br>'+(q.band||'')+' '+(q.mode||'')+'<br>'+(q.grid||'');
@@ -1079,15 +1108,12 @@ function updateMapFromToday(){
         // Include great-circle midpoint in bounds so the arc stays visible.
         bounds.push(pts[16]);
         if(isActive){
-          // Active QSO: prominent dashed line with animated dash offset.
-          var alOpt={color:pc.active,weight:4,opacity:0.9,dashArray:'12 8',className:'active-path-anim'};
-          activeQsoLayer.addLayer(L.polyline(pts,alOpt));
+          var ac=pt.active;if(ac.dash!==null){ac.dash='12 8';ac.className='active-path-anim';}
+          addDualPolyline(activeQsoLayer,pts,ac);
         }else if(isLast&&mapCfg.highlightLastQSO){
-          // Last QSO: blue, thicker, more opaque.
-          lastQsoLayer.addLayer(L.polyline(pts,{color:pc.last,weight:3,opacity:0.85}));
+          addDualPolyline(lastQsoLayer,pts,pt.last);
         }else{
-          // Older QSO: visible above radar.
-          qsoLineLayer.addLayer(L.polyline(pts,{color:pc.past,weight:1.8,opacity:pc.pastOpacity}));
+          addDualPolyline(qsoLineLayer,pts,pt.past);
         }
         drawn++;
       }
@@ -1099,7 +1125,7 @@ function updateMapFromToday(){
     todayQsos.forEach(function(q){
       if(markersDrawn>=maxMarkers)return;
       var ll=getQsoLatLon(q);if(!ll)return;
-      var mk=L.circleMarker(ll,{radius:4,color:pc.marker,fillColor:pc.marker,fillOpacity:0.8,weight:2,opacity:0.95});
+      var mk=L.circleMarker(ll,{radius:4,color:pt.marker,fillColor:pt.marker,fillOpacity:0.8,weight:2,opacity:0.95});
       mk.bindTooltip(q.call||'',{direction:'top'});
       qsoMarkerLayer.addLayer(mk);bounds.push(ll);
       markersDrawn++;
@@ -1110,9 +1136,10 @@ function updateMapFromToday(){
   if(activeGrid&&ownStationLat!==null){
     var al=gridToLatLon(activeGrid);if(al[0]){
       var actPts=greatCirclePoints(ownStationLat,ownStationLon,al[0],al[1],48);
-      activeQsoLayer.addLayer(L.polyline(actPts,{color:pc.active,weight:4,opacity:0.9,dashArray:'12 8',className:'active-path-anim'}));
+      var ac=pt.active;ac.dash='12 8';ac.className='active-path-anim';
+      addDualPolyline(activeQsoLayer,actPts,ac);
       // Partner location marker — pulsing dot at the far end of the active line.
-      activeQsoLayer.addLayer(L.circleMarker(al,{radius:7,color:pc.active,fillColor:pc.active,fillOpacity:0.35,weight:2.5,className:'partner-dot'}));
+      activeQsoLayer.addLayer(L.circleMarker(al,{radius:7,color:pt.active.main,fillColor:pt.active.main,fillOpacity:0.35,weight:2.5,className:'partner-dot'}));
       // Include great-circle midpoint so arc stays in bounds.
       bounds.push(actPts[24]);
       bounds.push(al);

@@ -7,14 +7,14 @@
    ─────────────────────────────────────────────────────────────────── */
 :root {
   /* Page & surfaces */
-  --page-bg:#E2E8F2; --page-bg-soft:#EDF2F9; --page-bg-onyx:#D5DEE9;
-  --surface:#FFFFFF; --surface-soft:#FAFCFF; --surface-blue:#F2F6FD;
+  --page-bg:#DDE4F0; --page-bg-soft:#E8EFF7; --page-bg-onyx:#D0D9E8;
+  --surface:#FFFFFF; --surface-soft:#F8FAFE; --surface-blue:#F0F4FC;
   /* Borders & shadows */
-  --border:rgba(100,120,150,0.35); --border-strong:rgba(80,100,135,0.50);
-  --shadow:rgba(15,31,51,0.12); --shadow-soft:rgba(15,31,51,0.06);
+  --border:rgba(80,100,130,0.22); --border-strong:rgba(60,80,115,0.38);
+  --shadow:rgba(15,31,51,0.10); --shadow-soft:rgba(15,31,51,0.05);
   /* Text */
   --text:#07111F; --text-secondary:#263A52; --dim:#58708C; --dim-soft:#70849B;
-  /* Accent (red) */
+  /* Accent (red) — reserved for alerts, active state, critical live data */
   --accent:#D00032; --accent-dark:#A00026; --accent-soft:#FFE3EA; --accent-xsoft:#FFF2F5;
   /* Blue */
   --blue:#005BBB; --blue-dark:#003F88; --blue-deep:#123E6F; --blue-soft:#DDEBFF; --blue-xsoft:#EEF6FF;
@@ -26,10 +26,10 @@
   --station-marker:#007A3D; --qso-marker:#0067C5;
   --active-path:#D00032; --last-qso:#D00032; --old-path:rgba(0,91,187,0.30);
   /* Table */
-  --table-border:rgba(110,135,160,0.25); --table-alt:#F4F7FC; --table-hover:#E6EEF8;
+  --table-border:rgba(90,115,145,0.18); --table-alt:#F5F8FC; --table-hover:#EAF0F8;
   /* Body gradient stops */
-  --body-grad-1:rgba(208,0,50,0.04); --body-grad-2:rgba(0,91,187,0.06);
-  --body-grad-3:#EDF1F7; --body-grad-4:#DEE6F0; --body-grad-5:#CDD7E5;
+  --body-grad-1:rgba(208,0,50,0.035); --body-grad-2:rgba(0,91,187,0.055);
+  --body-grad-3:#EAF0F7; --body-grad-4:#DBE3EF; --body-grad-5:#CAD4E4;
 
   /* ── Layout (not themed) ── */
   --card-radius:8px; --gap:10px;
@@ -73,12 +73,12 @@
    ─────────────────────────────────────────────────────────────────── */
 :root.dark {
   color-scheme: dark;
-  /* Page & surfaces */
-  --page-bg:#070A0F; --page-bg-soft:#0B1017; --page-bg-onyx:#04070B;
-  --surface:#10161E; --surface-soft:#141B24; --surface-blue:#0C1824;
-  /* Borders & shadows */
-  --border:rgba(104,190,255,0.16); --border-strong:rgba(104,205,255,0.34);
-  --shadow:rgba(0,0,0,0.72); --shadow-soft:rgba(0,0,0,0.38);
+  /* Page & surfaces — layered depth */
+  --page-bg:#06090E; --page-bg-soft:#0A0F16; --page-bg-onyx:#030508;
+  --surface:#0E141D; --surface-soft:#131A24; --surface-blue:#0B1622;
+  /* Borders & shadows — blue-grey, restrained */
+  --border:rgba(90,120,155,0.18); --border-strong:rgba(80,110,145,0.36);
+  --shadow:rgba(0,0,0,0.78); --shadow-soft:rgba(0,0,0,0.42);
   /* Text */
   --text:#EAF4FF; --text-secondary:#B5C6D8; --dim:#71869A; --dim-soft:#8FA2B5;
   /* Accent — TX / critical / active */
@@ -93,10 +93,10 @@
   --station-marker:#50E3A4; --qso-marker:#55AEFF;
   --active-path:#FF405F; --last-qso:#FF405F; --old-path:rgba(79,163,255,0.34);
   /* Table */
-  --table-border:rgba(116,185,235,0.12); --table-alt:#121923; --table-hover:#182431;
+  --table-border:rgba(100,130,160,0.13); --table-alt:#111822; --table-hover:#172330;
   /* Body gradient */
   --body-grad-1:rgba(255,44,83,0.055); --body-grad-2:rgba(30,199,222,0.075);
-  --body-grad-3:#070A0F; --body-grad-4:#0A1017; --body-grad-5:#0D151E;
+  --body-grad-3:#06090E; --body-grad-4:#0A1016; --body-grad-5:#0D151E;
 
   /* ── Ham band badge colors ── */
   --b160m-bg:rgba(255,70,82,0.16); --b160m-fg:#FF6874;
@@ -133,12 +133,12 @@
    ─────────────────────────────────────────────────────────────────── */
 :root.yl {
   color-scheme: light;
-  /* Page & surfaces */
-  --page-bg:#F7ECF5; --page-bg-soft:#FCF7FB; --page-bg-onyx:#E7D6E4;
-  --surface:#FFFDFE; --surface-soft:#FCF7FA; --surface-blue:#F4EEFA;
-  /* Borders & shadows */
-  --border:rgba(123,73,110,0.27); --border-strong:rgba(112,60,99,0.46);
-  --shadow:rgba(73,35,68,0.17); --shadow-soft:rgba(73,35,68,0.08);
+  /* Page & surfaces — pearl-blush depth */
+  --page-bg:#F5E9F3; --page-bg-soft:#FBF6FA; --page-bg-onyx:#E5D3E2;
+  --surface:#FFFDFE; --surface-soft:#FCF7FA; --surface-blue:#F3EDF9;
+  /* Borders & shadows — mauve, soft rose-plum */
+  --border:rgba(115,68,105,0.22); --border-strong:rgba(105,55,95,0.40);
+  --shadow:rgba(73,35,68,0.15); --shadow-soft:rgba(73,35,68,0.07);
   /* Text */
   --text:#241522; --text-secondary:#4F3A4B; --dim:#705C6C; --dim-soft:#806D7D;
   /* Accent — orchid raspberry */
@@ -195,12 +195,12 @@
    ─────────────────────────────────────────────────────────────────── */
 :root.hivis {
   color-scheme: dark;
-  /* Page & surfaces */
-  --page-bg:#000000; --page-bg-soft:#050607; --page-bg-onyx:#000000;
-  --surface:#0A0C0F; --surface-soft:#11151A; --surface-blue:#071720;
-  /* Borders & shadows */
-  --border:rgba(255,255,255,0.38); --border-strong:rgba(255,255,255,0.78);
-  --shadow:rgba(0,0,0,0.95); --shadow-soft:rgba(0,0,0,0.65);
+  /* Page & surfaces — black base, charcoal cards for depth */
+  --page-bg:#000000; --page-bg-soft:#030506; --page-bg-onyx:#000000;
+  --surface:#080B10; --surface-soft:#0E1219; --surface-blue:#06141E;
+  /* Borders & shadows — clean, accessible contrast */
+  --border:rgba(255,255,255,0.30); --border-strong:rgba(255,255,255,0.64);
+  --shadow:rgba(0,0,0,0.95); --shadow-soft:rgba(0,0,0,0.60);
   /* Text */
   --text:#FFFFFF; --text-secondary:#F2F5F7; --dim:#CBD4DD; --dim-soft:#B4C0CB;
   /* Accent — signal yellow */
@@ -254,6 +254,13 @@
 .hivis .sse-connected::before{content:"✓ ";font-weight:700}
 .hivis .sse-connecting::before{content:"▲ ";font-weight:700}
 .hivis .sse-disconnected::before{content:"✕ ";font-weight:700}
+/* ── Theme-scoped refinements ── */
+/* Dark: subtle top-edge highlight on cards */
+.dark .panel{box-shadow:0 2px 8px var(--shadow),inset 0 1px 0 rgba(255,255,255,0.035),inset 0 0 0 1px var(--surface-soft)}
+/* YL Orchid: stronger plum headings */
+.yl h2,.yl .extra-title{color:#4F2D5A}
+/* HighVis: stronger panel borders */
+.hivis .panel{border-width:1.5px}
 /* ── Band badge colors — one class per amateur band ── */
 /* Fallback first: lower specificity so explicit bands override it. */
 .band-badge[class*="band-"],.badge[class*="band-"]{background:var(--b-other-bg);color:var(--b-other-fg)}
@@ -520,6 +527,9 @@ footer a:hover{text-decoration:underline}
 
 .partner-dot{animation:pulse-partner 1.4s ease-in-out infinite}
 @keyframes pulse-partner{0%,100%{opacity:0.35;stroke-width:2}50%{opacity:1;stroke-width:4}}
+.mode-active .station-dot{animation:pulse-station 1.6s ease-in-out infinite}
+@keyframes pulse-station{0%,100%{opacity:0.85;fill-opacity:0.85}50%{opacity:1;fill-opacity:1}}
+.local-station-dot{animation:pulse-station 1.6s ease-in-out infinite}
 
 /* ── QSO logged toast ── */
 #qso-toast{
