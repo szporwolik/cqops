@@ -6,7 +6,6 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/config"
-	"github.com/szporwolik/cqops/internal/version"
 )
 
 // headerView renders the top status bar with callsign, logbook name,
@@ -40,7 +39,8 @@ func (m *Model) headerView() string {
 	}
 
 	leftParts := []string{
-		S.StatusApp.Render(" CQOps v" + version.Resolved() + " "),
+		S.StatusApp.Render(" CQOps "),
+		" ",
 		S.StatusLabel.Render("Log"),
 		" " + S.StatusValue.Render(truncateText(logName, 16)) + " ",
 		S.StatusLabel.Render("Rig"),

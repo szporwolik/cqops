@@ -59,14 +59,16 @@ jobs:
         run: |
           echo "version=${{ needs.validate-version.outputs.version }}" >> $GITHUB_OUTPUT
           echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+          echo "commit=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
       - name: Build binaries
         env:
           VERSION: ${{ steps.meta.outputs.version }}
           BUILD_DATE: ${{ steps.meta.outputs.date }}
+          COMMIT: ${{ steps.meta.outputs.commit }}
         run: |
           set -euo pipefail
-          LDFLAGS="-s -w -X github.com/szporwolik/cqops/internal/version.Version=$VERSION -X github.com/szporwolik/cqops/internal/version.BuildDate=$BUILD_DATE"
+          LDFLAGS="-s -w -X github.com/szporwolik/cqops/internal/version.Version=$VERSION -X github.com/szporwolik/cqops/internal/version.Commit=$COMMIT -X github.com/szporwolik/cqops/internal/version.BuildDate=$BUILD_DATE"
           mkdir -p dist build
           export CGO_ENABLED=0
 

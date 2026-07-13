@@ -1,6 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 $VERSION = Get-Content VERSION
+$COMMIT = try { git rev-parse --short HEAD 2>$null } catch { "" }
 $BUILD_DATE = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 $BUILD_DIR = "build"
 New-Item -ItemType Directory -Force -Path $BUILD_DIR | Out-Null
@@ -19,7 +20,7 @@ if (Get-Command go-winres -ErrorAction SilentlyContinue) {
     Push-Location winres; go-winres make; Pop-Location
 }
 
-$LDFLAGS = "-s -w -X github.com/szporwolik/cqops/internal/version.Version=$VERSION -X github.com/szporwolik/cqops/internal/version.BuildDate=$BUILD_DATE"
+$LDFLAGS = "-s -w -X github.com/szporwolik/cqops/internal/version.Version=$VERSION -X github.com/szporwolik/cqops/internal/version.Commit=$COMMIT -X github.com/szporwolik/cqops/internal/version.BuildDate=$BUILD_DATE"
 
 $env:CGO_ENABLED = "0"
 

@@ -10,7 +10,13 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/lipgloss/v2"
+
+	"github.com/szporwolik/cqops/internal/version"
 )
+
+func dimVersion() string {
+	return DimStyle.Render("v" + version.ResolvedFull())
+}
 
 // Pre-allocated confirm dialog key bindings — reused across all confirm screens.
 var confirmBindings = []key.Binding{
@@ -277,6 +283,12 @@ func (m *Model) helpSuffix() string {
 	}
 	m.rc.helpSuffixSig = sig
 	m.rc.helpSuffix = m.buildHelpSuffix()
+	ver := dimVersion()
+	if m.rc.helpSuffix != "" {
+		m.rc.helpSuffix = ver + "  " + m.rc.helpSuffix
+	} else {
+		m.rc.helpSuffix = ver
+	}
 	return m.rc.helpSuffix
 }
 

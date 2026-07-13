@@ -39,7 +39,7 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print CQOps version",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("CQOps version %s\n", version.Resolved())
+		fmt.Printf("CQOps version %s\n", version.ResolvedFull())
 	},
 }
 
@@ -68,7 +68,7 @@ func Execute() error {
 	applog.SetDebugMode(debugFlag)
 	applog.Init()
 
-	applog.Info("══════════ CQOps STARTED ══════════", "v", version.Resolved(), "built", version.ResolvedDate(), "utc", time.Now().UTC().Format("2006-01-02 15:04:05"))
+	applog.Info("══════════ CQOps STARTED ══════════", "v", version.ResolvedFull(), "built", version.ResolvedDate(), "utc", time.Now().UTC().Format("2006-01-02 15:04:05"))
 	if offlineFlag {
 		applog.Info("Running in OFFLINE mode — all network connections skipped")
 	}
@@ -87,7 +87,7 @@ func Execute() error {
 		}
 	}
 	if versionFlag {
-		fmt.Printf("CQOps version %s\n", version.Resolved())
+		fmt.Printf("CQOps version %s\n", version.ResolvedFull())
 		return nil
 	}
 	if helpFlag {
