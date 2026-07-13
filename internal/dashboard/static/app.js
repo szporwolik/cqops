@@ -182,6 +182,8 @@ function renderAll(snap){
   if(displayCfg.theme==='dark'){document.documentElement.classList.add('dark')}
   else{document.documentElement.classList.remove('dark')}
   var isDark=document.documentElement.classList.contains('dark');
+  // Persist theme so next load applies before first paint.
+  try{localStorage.setItem('cqops-theme',isDark?'dark':'bright')}catch(e){}
   // Update tile layers if theme changed and maps are already live.
   if(wasDark!==isDark){
     var newStyle=styleUrlForTheme(displayCfg.mapTileUrl);
