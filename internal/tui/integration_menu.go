@@ -36,7 +36,7 @@ type IntegrationMenu struct {
 
 	// HTTP Server
 	httpEnabled  bool
-	httpTheme    int // 0=Bright, 1=Dark
+	httpTheme    int // 0=Bright, 1=Dark, 2=Orchid(YL), 3=HighVis
 	httpAddr     textinput.Model
 	httpPort     textinput.Model
 	httpHeader1  textinput.Model
@@ -291,8 +291,13 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 	}
 
 	httpTheme := 0 // Bright
-	if cfg.Integrations.HTTPServer.Theme == "dark" {
+	switch cfg.Integrations.HTTPServer.Theme {
+	case "dark":
 		httpTheme = 1
+	case "yl":
+		httpTheme = 2
+	case "hivis":
+		httpTheme = 3
 	}
 
 	// GPS
@@ -608,7 +613,7 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				im.autoScrollViewport()
 				return im, nil
 			case imHTTPTheme:
-				im.httpTheme = (im.httpTheme + 1) % 2
+				im.httpTheme = (im.httpTheme + 1) % 4
 				return im, nil
 			case imGPSChk:
 				im.gpsEnabled = !im.gpsEnabled
@@ -1557,7 +1562,7 @@ func (im *IntegrationMenu) renderTheme() string {
 		prefix = S.FormPrefixOn.Render("> ")
 		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render("  Theme:")
 	}
-	themeNames := []string{"Bright", "Dark"}
+	themeNames := []string{"Bright", "Dark", "Orchid", "HighVis"}
 	val := ValueStyle.Render(themeNames[im.httpTheme])
 	if im.focus == imHTTPTheme {
 		val = CursorStyle.Render(val) + " " + DimStyle.Render("(Space)")
@@ -1578,10 +1583,16 @@ func (im *IntegrationMenu) Values() (dxcEnabled bool, dxcHost, dxcPort, dxcLogin
 		strings.TrimSpace(im.httpAddr.Value()),
 		strings.TrimSpace(im.httpPort.Value()),
 		func() string {
-			if im.httpTheme == 1 {
+			switch im.httpTheme {
+			case 1:
 				return "dark"
+			case 2:
+				return "yl"
+			case 3:
+				return "hivis"
+			default:
+				return "bright"
 			}
-			return "bright"
 		}(),
 		strings.TrimSpace(im.httpHeader1.Value()),
 		strings.TrimSpace(im.httpHeader2.Value()),

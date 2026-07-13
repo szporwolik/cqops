@@ -127,6 +127,133 @@
   --mode-digi-bg:rgba(71,225,153,0.18); --mode-digi-fg:#64E6A7;
   --mode-other-bg:rgba(148,166,185,0.14); --mode-other-fg:#A0B0C0;
 }
+/* ───────────────────────────────────────────────────────────────────
+   Theme: YL Orchid Luxe — bold feminine palette.
+   Orchid, fuchsia, plum, pearl rose, cool teal.
+   ─────────────────────────────────────────────────────────────────── */
+:root.yl {
+  color-scheme: light;
+  /* Page & surfaces */
+  --page-bg:#F7ECF5; --page-bg-soft:#FCF7FB; --page-bg-onyx:#E7D6E4;
+  --surface:#FFFDFE; --surface-soft:#FCF7FA; --surface-blue:#F4EEFA;
+  /* Borders & shadows */
+  --border:rgba(123,73,110,0.27); --border-strong:rgba(112,60,99,0.46);
+  --shadow:rgba(73,35,68,0.17); --shadow-soft:rgba(73,35,68,0.08);
+  /* Text */
+  --text:#241522; --text-secondary:#4F3A4B; --dim:#705C6C; --dim-soft:#806D7D;
+  /* Accent — orchid raspberry */
+  --accent:#C12678; --accent-dark:#941B59; --accent-soft:#F6D8E8; --accent-xsoft:#FDF0F7;
+  /* Blue — premium orchid violet */
+  --blue:#7650B8; --blue-dark:#5B3C91; --blue-deep:#44306F; --blue-soft:#E9E0F5; --blue-xsoft:#F5F0FA;
+  /* Cyan — mineral teal */
+  --cyan:#167E79; --cyan-soft:#D9EEEC;
+  /* Status */
+  --success:#207A5D; --warn:#9D5F00; --offline:#C72A5A;
+  /* Map markers */
+  --station-marker:#207A5D; --qso-marker:#7650B8;
+  --active-path:#C12678; --last-qso:#8E34A8; --old-path:rgba(118,80,184,0.34);
+  /* Table */
+  --table-border:rgba(125,80,116,0.20); --table-alt:#FAF2F8; --table-hover:#F2E4EF;
+  /* Body gradient */
+  --body-grad-1:rgba(193,38,120,0.10); --body-grad-2:rgba(118,80,184,0.10);
+  --body-grad-3:#FBF4F9; --body-grad-4:#F0E3ED; --body-grad-5:#E4D2E1;
+
+  /* ── Ham band badge colors ── */
+  --b160m-bg:rgba(141,23,79,0.16); --b160m-fg:#8D174F;
+  --b80m-bg:rgba(173,40,94,0.16);  --b80m-fg:#AD285E;
+  --b60m-bg:rgba(124,89,0,0.16);   --b60m-fg:#7C5900;
+  --b40m-bg:rgba(155,64,53,0.16);  --b40m-fg:#9B4035;
+  --b30m-bg:rgba(128,97,0,0.16);   --b30m-fg:#806100;
+  --b20m-bg:rgba(107,67,177,0.16); --b20m-fg:#6B43B1;
+  --b17m-bg:rgba(17,107,103,0.16); --b17m-fg:#116B67;
+  --b15m-bg:rgba(28,105,76,0.16);  --b15m-fg:#1C694C;
+  --b12m-bg:rgba(77,102,25,0.16);  --b12m-fg:#4D6619;
+  --b10m-bg:rgba(8,102,117,0.16);  --b10m-fg:#086675;
+  --b6m-bg:rgba(142,52,168,0.16);  --b6m-fg:#8E34A8;
+  --b4m-bg:rgba(104,67,163,0.16);  --b4m-fg:#6843A3;
+  --b2m-bg:rgba(77,88,167,0.16);   --b2m-fg:#4D58A7;
+  --b70cm-bg:rgba(52,101,116,0.16);--b70cm-fg:#346574;
+  --b23cm-bg:rgba(82,101,113,0.16);--b23cm-fg:#526571;
+  --b13cm-bg:rgba(100,90,98,0.15); --b13cm-fg:#645A62;
+  --b9cm-bg:rgba(92,84,91,0.15);   --b9cm-fg:#5C545B;
+  --b6cm-bg:rgba(84,78,84,0.15);   --b6cm-fg:#544E54;
+  --b3cm-bg:rgba(76,72,77,0.15);   --b3cm-fg:#4C484D;
+  --b1cm-bg:rgba(68,66,70,0.15);   --b1cm-fg:#444246;
+  --b-other-bg:rgba(105,90,102,0.14);--b-other-fg:#695A66;
+
+  /* ── Mode badge colors ── */
+  --mode-cw-bg:rgba(158,29,97,0.16);    --mode-cw-fg:#9E1D61;
+  --mode-phone-bg:rgba(107,67,177,0.16);--mode-phone-fg:#6B43B1;
+  --mode-digi-bg:rgba(17,107,103,0.16); --mode-digi-fg:#116B67;
+  --mode-other-bg:rgba(94,82,96,0.14);  --mode-other-fg:#5E5260;
+}
+/* ── YL Orchid Luxe accessibility ── */
+.yl :focus-visible{outline:3px solid #C12678;outline-offset:3px}
+/* ───────────────────────────────────────────────────────────────────
+   Theme: HighVis — premium accessibility, color-blind safe.
+   True black, white text, signal yellow accent, mint/magenta status.
+   ─────────────────────────────────────────────────────────────────── */
+:root.hivis {
+  color-scheme: dark;
+  /* Page & surfaces */
+  --page-bg:#000000; --page-bg-soft:#050607; --page-bg-onyx:#000000;
+  --surface:#0A0C0F; --surface-soft:#11151A; --surface-blue:#071720;
+  /* Borders & shadows */
+  --border:rgba(255,255,255,0.38); --border-strong:rgba(255,255,255,0.78);
+  --shadow:rgba(0,0,0,0.95); --shadow-soft:rgba(0,0,0,0.65);
+  /* Text */
+  --text:#FFFFFF; --text-secondary:#F2F5F7; --dim:#CBD4DD; --dim-soft:#B4C0CB;
+  /* Accent — signal yellow */
+  --accent:#FFD400; --accent-dark:#E4B900; --accent-soft:rgba(255,212,0,0.24); --accent-xsoft:rgba(255,212,0,0.10);
+  /* Blue */
+  --blue:#72BCFF; --blue-dark:#2C91EC; --blue-deep:#B4DCFF; --blue-soft:rgba(114,188,255,0.24); --blue-xsoft:rgba(114,188,255,0.10);
+  /* Cyan */
+  --cyan:#55F3E8; --cyan-soft:rgba(85,243,232,0.20);
+  /* Status — mint / yellow / magenta */
+  --success:#63F7C8; --warn:#FFD400; --offline:#FF5CA8;
+  /* Map markers */
+  --station-marker:#63F7C8; --qso-marker:#72BCFF;
+  --active-path:#FFD400; --last-qso:#FF5CA8; --old-path:rgba(114,188,255,0.44);
+  /* Table */
+  --table-border:rgba(255,255,255,0.28); --table-alt:#0D1116; --table-hover:#17232D;
+  /* Body gradient */
+  --body-grad-1:rgba(255,212,0,0.055); --body-grad-2:rgba(85,243,232,0.050);
+  --body-grad-3:#000000; --body-grad-4:#040608; --body-grad-5:#080D12;
+
+  /* ── Ham band badge colors ── */
+  --b160m-bg:rgba(255,92,168,0.24); --b160m-fg:#FF83BD;
+  --b80m-bg:rgba(255,126,95,0.24);  --b80m-fg:#FF967D;
+  --b60m-bg:rgba(255,209,102,0.24); --b60m-fg:#FFD166;
+  --b40m-bg:rgba(255,159,67,0.24);  --b40m-fg:#FF9F43;
+  --b30m-bg:rgba(255,224,102,0.24); --b30m-fg:#FFE066;
+  --b20m-bg:rgba(114,188,255,0.24); --b20m-fg:#72BCFF;
+  --b17m-bg:rgba(85,243,232,0.22);  --b17m-fg:#55F3E8;
+  --b15m-bg:rgba(99,247,200,0.22);  --b15m-fg:#63F7C8;
+  --b12m-bg:rgba(192,255,105,0.22); --b12m-fg:#C0FF69;
+  --b10m-bg:rgba(78,226,255,0.22);  --b10m-fg:#4EE2FF;
+  --b6m-bg:rgba(221,139,255,0.22);  --b6m-fg:#DD8BFF;
+  --b4m-bg:rgba(190,162,255,0.22);  --b4m-fg:#BEA2FF;
+  --b2m-bg:rgba(143,174,255,0.23);  --b2m-fg:#8FAEFF;
+  --b70cm-bg:rgba(103,216,255,0.22);--b70cm-fg:#67D8FF;
+  --b23cm-bg:rgba(176,229,242,0.20);--b23cm-fg:#B0E5F2;
+  --b13cm-bg:rgba(200,200,205,0.18);--b13cm-fg:#C8C8CD;
+  --b9cm-bg:rgba(185,185,190,0.18); --b9cm-fg:#B9B9BE;
+  --b6cm-bg:rgba(170,170,175,0.18); --b6cm-fg:#AAAAB0;
+  --b3cm-bg:rgba(155,155,160,0.18); --b3cm-fg:#9B9BA0;
+  --b1cm-bg:rgba(140,140,145,0.18); --b1cm-fg:#8C8C91;
+  --b-other-bg:rgba(190,195,200,0.16);--b-other-fg:#CFD4D9;
+
+  /* ── Mode badge colors ── */
+  --mode-cw-bg:rgba(255,209,102,0.24);    --mode-cw-fg:#FFD166;
+  --mode-phone-bg:rgba(114,188,255,0.24); --mode-phone-fg:#72BCFF;
+  --mode-digi-bg:rgba(99,247,200,0.22);   --mode-digi-fg:#63F7C8;
+  --mode-other-bg:rgba(227,232,239,0.18); --mode-other-fg:#E3E8EF;
+}
+/* ── HighVis accessibility extras ── */
+.hivis :focus-visible{outline:3px solid #FFD400;outline-offset:3px}
+.hivis .sse-connected::before{content:"✓ ";font-weight:700}
+.hivis .sse-connecting::before{content:"▲ ";font-weight:700}
+.hivis .sse-disconnected::before{content:"✕ ";font-weight:700}
 /* ── Band badge colors — one class per amateur band ── */
 /* Fallback first: lower specificity so explicit bands override it. */
 .band-badge[class*="band-"],.badge[class*="band-"]{background:var(--b-other-bg);color:var(--b-other-fg)}

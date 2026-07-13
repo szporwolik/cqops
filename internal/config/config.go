@@ -173,7 +173,7 @@ type HTTPServerConfig struct {
 	Enabled    bool   `yaml:"enabled"`
 	Address    string `yaml:"address,omitempty"`      // e.g. "0.0.0.0" (LAN) or "localhost"
 	Port       string `yaml:"port,omitempty"`         // e.g. "8073"
-	Theme      string `yaml:"theme,omitempty"`        // "bright" or "dark" (default "bright")
+	Theme      string `yaml:"theme,omitempty"`        // "bright", "dark", "yl", or "hivis" (default "bright")
 	Header1    string `yaml:"header_1,omitempty"`     // club name for dashboard
 	Header2    string `yaml:"header_2,omitempty"`     // event name for dashboard
 	ClubLogo   string `yaml:"club_logo,omitempty"`    // file path or URL to club logo

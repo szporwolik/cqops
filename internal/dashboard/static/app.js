@@ -180,16 +180,16 @@ function renderAll(snap){
   displayCfg=snap.display||{};
   // Window title — show active logbook.
   if(snap.logbook&&snap.logbook.name)document.title='CQOps: '+snap.logbook.name;
-  // Theme — apply dark class to root element.
+  // Theme — apply theme class to root element.
   var wasDark=document.documentElement.classList.contains('dark');
   var theme=displayCfg.theme;
   if(!theme){try{theme=localStorage.getItem('cqops-theme')}catch(e){}}
-  if(theme==='dark'){document.documentElement.classList.add('dark')}
-  else if(theme==='bright'){document.documentElement.classList.remove('dark')}
-  // If still unknown, keep whatever was set (inline script / previous state).
+  // Remove any previous theme class, then add the active one (except 'bright' = default).
+  document.documentElement.classList.remove('dark','yl','hivis');
+  if(theme&&theme!=='bright')document.documentElement.classList.add(theme);
   var isDark=document.documentElement.classList.contains('dark');
   // Persist theme so next load applies before first paint.
-  try{localStorage.setItem('cqops-theme',isDark?'dark':'bright')}catch(e){}
+  try{localStorage.setItem('cqops-theme',theme||'bright')}catch(e){}
   // Update tile layers if theme changed and maps are already live.
   if(wasDark!==isDark){
     var newStyle=styleUrlForTheme(displayCfg.mapTileUrl);
@@ -517,14 +517,16 @@ function suppressMissingImages(glLayer){
 }
 function styleUrlForTheme(customUrl){
   if(customUrl)return customUrl;
-  var dark=document.documentElement.classList.contains('dark');
-  return dark?'https://tiles.openfreemap.org/styles/fiord'
-           :'https://tiles.openfreemap.org/styles/bright';
+  var root=document.documentElement.classList;
+  if(root.contains('dark'))return'https://tiles.openfreemap.org/styles/fiord';
+  if(root.contains('hivis'))return'https://tiles.openfreemap.org/styles/positron';
+  return'https://tiles.openfreemap.org/styles/bright';
 }
 function qsoPathColors(){
-  var dark=document.documentElement.classList.contains('dark');
-  return dark?{active:'#FF405F',last:'#FFB454',past:'#FFB454',pastOpacity:0.55,marker:'#55AEFF',markerActive:'#FF405F'}
-            :{active:'#D00032',last:'#0080FF',past:'#0080FF',pastOpacity:0.50,marker:'#0080FF',markerActive:'#D00032'};
+  var root=document.documentElement.classList;
+  if(root.contains('hivis')) return{active:'#FFD400',last:'#FF5CA8',past:'#55F3E8',pastOpacity:0.60,marker:'#72BCFF',markerActive:'#FFD400'};
+  if(root.contains('dark'))   return{active:'#FF405F',last:'#FFB454',past:'#FFB454',pastOpacity:0.55,marker:'#55AEFF',markerActive:'#FF405F'};
+                              return{active:'#D00032',last:'#0080FF',past:'#0080FF',pastOpacity:0.50,marker:'#0080FF',markerActive:'#D00032'};
 }
 
 var mapCfg={drawLines:true,maxLines:150,maxMarkers:200,highlightLastQSO:true,animateActivePath:false};

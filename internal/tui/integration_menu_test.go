@@ -39,8 +39,20 @@ func TestIntegrationMenu_HTTPThemeToggle(t *testing.T) {
 
 	m, _ = im.Update(tea.KeyPressMsg{Code: tea.KeySpace})
 	im = m.(*IntegrationMenu)
+	if im.httpTheme != 2 {
+		t.Errorf("after second Space: theme = %d, want 2 (Orchid)", im.httpTheme)
+	}
+
+	m, _ = im.Update(tea.KeyPressMsg{Code: tea.KeySpace})
+	im = m.(*IntegrationMenu)
+	if im.httpTheme != 3 {
+		t.Errorf("after third Space: theme = %d, want 3 (HighVis)", im.httpTheme)
+	}
+
+	m, _ = im.Update(tea.KeyPressMsg{Code: tea.KeySpace})
+	im = m.(*IntegrationMenu)
 	if im.httpTheme != 0 {
-		t.Errorf("after second Space: theme = %d, want 0 (Bright)", im.httpTheme)
+		t.Errorf("after fourth Space: theme = %d, want 0 (Bright)", im.httpTheme)
 	}
 }
 
@@ -68,19 +80,62 @@ func TestIntegrationMenu_HTTPThemeValues(t *testing.T) {
 	im := NewIntegrationMenu(cfg)
 	im.focus = imHTTPTheme
 
+	// Default → Bright
+	_, _, _, _, _, _, _, _, _, _, theme, _, _, _, _ := im.Values()
+	if theme != "bright" {
+		t.Errorf("Values() theme = %q, want 'bright'", theme)
+	}
+
+	// Space → Dark
 	m, _ := im.Update(tea.KeyPressMsg{Code: tea.KeySpace})
 	im = m.(*IntegrationMenu)
-
-	_, _, _, _, _, _, _, _, _, _, theme, _, _, _, _ := im.Values()
+	_, _, _, _, _, _, _, _, _, _, theme, _, _, _, _ = im.Values()
 	if theme != "dark" {
 		t.Errorf("Values() theme = %q, want 'dark'", theme)
 	}
 
+	// Space → Orchid (yl)
 	m, _ = im.Update(tea.KeyPressMsg{Code: tea.KeySpace})
 	im = m.(*IntegrationMenu)
 	_, _, _, _, _, _, _, _, _, _, theme, _, _, _, _ = im.Values()
-	if theme != "bright" {
-		t.Errorf("Values() theme = %q, want 'bright'", theme)
+	if theme != "yl" {
+		t.Errorf("Values() theme = %q, want 'yl' (Orchid)", theme)
+	}
+
+	// Space → HighVis
+	m, _ = im.Update(tea.KeyPressMsg{Code: tea.KeySpace})
+	im = m.(*IntegrationMenu)
+	_, _, _, _, _, _, _, _, _, _, theme, _, _, _, _ = im.Values()
+	if theme != "hivis" {
+		t.Errorf("Values() theme = %q, want 'hivis'", theme)
+	}
+}
+
+func TestIntegrationMenu_HTTPThemeYlFromConfig(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.State.ActiveLogbook = "default"
+	cfg.Logbooks = map[string]config.Logbook{
+		"default": {Name: "Default", Station: config.Station{Callsign: "SP9MOA", Grid: "KO00"}},
+	}
+	cfg.Integrations.HTTPServer.Theme = "yl"
+
+	im := NewIntegrationMenu(cfg)
+	if im.httpTheme != 2 {
+		t.Errorf("theme from config 'yl' = %d, want 2 (Orchid)", im.httpTheme)
+	}
+}
+
+func TestIntegrationMenu_HTTPThemeHighVisFromConfig(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.State.ActiveLogbook = "default"
+	cfg.Logbooks = map[string]config.Logbook{
+		"default": {Name: "Default", Station: config.Station{Callsign: "SP9MOA", Grid: "KO00"}},
+	}
+	cfg.Integrations.HTTPServer.Theme = "hivis"
+
+	im := NewIntegrationMenu(cfg)
+	if im.httpTheme != 3 {
+		t.Errorf("theme from config 'hivis' = %d, want 3 (HighVis)", im.httpTheme)
 	}
 }
 
