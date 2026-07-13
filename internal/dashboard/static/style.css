@@ -391,7 +391,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 @keyframes hero-breathe{0%,100%{opacity:0.7}50%{opacity:1}}
 #hero-badges{display:inline-flex;flex-wrap:wrap;gap:6px}
 #hero-badges .badge{display:inline-block;padding:3px 10px;border-radius:4px;font-size:0.85rem;font-weight:600;margin:0 3px 3px 0}
-#hero-badges .badge:not([class*="band-"]):not([class*="mode-"]){background:var(--accent);color:#fff}
+#hero-badges .badge:not(.band-badge):not(.mode-badge){background:var(--accent);color:#fff}
 #hero-badges .badge.info{background:var(--blue-soft);color:var(--blue-dark);border:1px solid var(--border)}
 #hero-badges .badge.dupe{background:var(--warn);color:#fff}
 #hero-badges .badge.success{background:var(--success);color:#fff}
@@ -493,11 +493,11 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 .tq-longest td{color:var(--accent)}
 /* ── Stats panel badges ── */
 .stat-badge{display:inline-block;padding:1px 6px;border-radius:3px;font-weight:600;font-size:0.7rem;margin-left:3px;vertical-align:middle}
-.stat-badge-op{background:rgba(90,55,160,0.18);color:var(--dim);font-weight:500}
+.stat-badge-op{font-weight:500}
 .stat-op-count{font-weight:700;color:var(--text);margin-right:2px;font-size:inherit}
 .stat-op-more{font-size:0.72rem;color:var(--dim);margin-left:2px;vertical-align:middle}
-/* Operator badge in station panel gets accent styling. */
-#sf-Operator .stat-badge-op{background:var(--accent-soft, rgba(0,91,187,0.22));color:var(--accent, #005bbb);font-size:0.78rem;padding:2px 8px;font-weight:600}
+/* Operator badge in station panel. */
+#sf-Operator .stat-badge-op{font-size:0.78rem;padding:2px 8px;font-weight:600}
 .panel dd .stat-badge:first-child{margin-left:0}
 /* ── bottom row cards ── */
 main{display:grid;grid-template-columns:minmax(290px,0.9fr) minmax(270px,0.85fr) minmax(380px,1.15fr) minmax(680px,2.2fr);gap:14px;margin-bottom:10px;max-height:30vh;overflow-y:auto}

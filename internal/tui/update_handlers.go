@@ -260,7 +260,9 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 		if r.online {
 			m.http.online = true
 			m.http.err = nil
-			// Push initial state NOW so the next SSE snapshot has data.
+			// Push initial state NOW — bypass throttle so first SSE snapshot has full data.
+			lastDashboardPushTick = -10
+			lastFastTick = -1
 			m.pushDashboardState()
 			if m.http.client != nil {
 				m.toasts.Success("HTTP server: listening on " + m.http.client.Addr())

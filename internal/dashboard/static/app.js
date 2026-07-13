@@ -126,7 +126,8 @@ function connectSSE(){
   });
   es.addEventListener('operator',function(e){var o=JSON.parse(e.data).payload;
     D('sse','operator',o.callsign);
-    updateStationField('Operator',(o.callsign||'—')+(o.name?' ('+o.name+')':''))
+    var opVal=o.callsign||ownStationCall;
+    updateStationField('Operator',opVal?opBadgeHTML(opVal,o.name):'—')
   });
   es.addEventListener('logbook',function(e){var lb=JSON.parse(e.data).payload;
     D('sse','logbook',lb.name);
@@ -213,14 +214,16 @@ function renderAll(snap){
   // Marketing/PR line in hero when no custom header2 is configured.
   heroPromo.textContent=displayCfg.header2?'':'Powered by CQOps &mdash; cqops.com';
   // Station
-  if(snap.station&&snap.station.lat&&snap.station.lon){
+  if(snap.station){
+    if(snap.station.callsign)ownStationCall=snap.station.callsign;
+    if(snap.station.lat&&snap.station.lon){
     ownStationLat=snap.station.lat;ownStationLon=snap.station.lon;
-    ownStationCall=snap.station.callsign||'';
     initLocalMap(ownStationLat,ownStationLon);
     recentreLocalMap(ownStationLat,ownStationLon);
     updateAprsCircle(ownStationLat,ownStationLon,snap.station.aprsRadiusKm||0);
     fetchWeather(snap.station.lat,snap.station.lon);
     fetchSunTimes(snap.station.lat,snap.station.lon);
+    }
   }
   renderStation(snap.station,snap.operator,snap.logbook,snap.rig,snap.wsjtx);
   // Active QSO
@@ -359,10 +362,22 @@ function showHeroPlaceholder(call){
 }
 function hideHeroPhoto(){$('hero-photo').style.display='none';$('hero-placeholder').style.display='none';$('hero-photo-box').style.display='none'}
 
+// ---- Operator badge helpers ----
+function opBadgeStyle(call){
+  if(!call)return'';
+  var h=0,i;for(i=0;i<call.length;i++)h=(h*31+call.charCodeAt(i))&0xffff;
+  return'background:hsl('+(h%360)+',45%,88%);color:hsl('+(h%360)+',50%,32%);border:1px solid hsl('+(h%360)+',40%,78%)';
+}
+function opBadgeHTML(call,name){
+  if(!call)return'';
+  return'<span class=\"stat-badge stat-badge-op\" style=\"'+opBadgeStyle(call)+'\">'+esc(call)+(name?' '+esc(name):'')+'</span>';
+}
+
 // ---- Station panel ----
 function renderStation(st,op,lb,rig,wsjtx){
   if(!st)return;op=op||{};lb=lb||{};rig=rig||{};wsjtx=wsjtx||{};
-  var opHtml=(op.callsign||st.callsign)?'<span class=\"stat-badge stat-badge-op\">'+esc(op.callsign||st.callsign)+(op.name?' '+esc(op.name):'')+'</span>':'—';
+  var opCall=op.callsign||st.callsign;
+  var opHtml=opCall?opBadgeHTML(opCall,op.name):'—';
   var rigDot=rig.connected?'<span class=\"status-on\">●</span> Connected':'<span class=\"status-off\">○</span> Disconnected';
   var wsjtxDot=wsjtx.connected?'<span class=\"status-on\">●</span> Online':'<span class=\"status-off\">○</span> Offline';
   var freqHtml=rig.frequency?esc(rig.frequency)+(rig.band?' <span class=\"stat-badge '+bandBadgeClass(rig.band)+'\">'+esc(rig.band)+'</span>':'')+(rig.mode?' <span class=\"stat-badge '+modeBadgeClass(rig.mode)+'\">'+esc(rig.mode)+'</span>':'')+(rig.submode?' <span class=\"stat-badge '+modeBadgeClass(rig.submode)+'\">'+esc(rig.submode)+'</span>':''):'—';
@@ -423,7 +438,7 @@ function renderStats(st,todayBuf){
   var opsTotal=st.operators||opList.length||(ownStationCall?1:0);
   statsFields.innerHTML=[
     ['QSOs',qsosToday||0],
-    ['Operators','<span class="stat-op-count">'+esc(String(opsTotal))+'</span>'+opList.slice(0,3).map(function(o){return'<span class="stat-badge stat-badge-op">'+esc(o)+'</span>'}).join('')+(opList.length>3?'<span class="stat-op-more">…</span>':'')],
+    ['Operators','<span class="stat-op-count">'+esc(String(opsTotal))+'</span>'+opList.slice(0,3).map(function(o){return'<span class="stat-badge stat-badge-op" style="'+opBadgeStyle(o)+'">'+esc(o)+'</span>'}).join('')+(opList.length>3?'<span class="stat-op-more">…</span>':'')],
     ['Unique calls',st.uniqueCalls||0],
     ['DXCC',st.dxcc||0],
     ['Grids',st.grids||0],
@@ -497,7 +512,9 @@ function renderRecentTable(qsos){
     var utc=q.timeUtc?q.timeUtc.slice(11,16).replace(':','')+'Z':'';
     var ctry=(q.country||'').replace(/^The\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Federal Republic Of\s+/,'').trim().substring(0,22);
     var dist=formatDistDir(q.grid);
-    return'<tr><td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.submode||q.mode,'mode')+'</td><td class="recent-op-col">'+esc(q.operator||ownStationCall)+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td title="'+esc(q.country||'')+'"><span class="recent-badge country-badge">'+esc(ctry)+'</span></td></tr>';
+    var op=q.operator||ownStationCall;
+    var opBadge=op?'<span class="recent-badge" style="'+opBadgeStyle(op)+'">'+esc(op)+'</span>':'';
+    return'<tr><td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.submode||q.mode,'mode')+'</td><td class="recent-op-col">'+opBadge+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td title="'+esc(q.country||'')+'"><span class="recent-badge country-badge">'+esc(ctry)+'</span></td></tr>';
   }).join('');
 }
 function renderCellBadge(val,type){
@@ -509,7 +526,9 @@ function prependRecentRow(q){
   var utc=q.timeUtc?q.timeUtc.slice(11,16).replace(':','')+'Z':'';
   var dist=formatDistDir(q.grid);
   var row=document.createElement('tr');row.className='new-row';
-  row.innerHTML='<td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.submode||q.mode,'mode')+'</td><td class="recent-op-col">'+esc(q.operator||ownStationCall)+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td><span class="recent-badge country-badge">'+esc(q.country||'')+'</span></td>';
+  var op=q.operator||ownStationCall;
+  var opBadge=op?'<span class="recent-badge" style="'+opBadgeStyle(op)+'">'+esc(op)+'</span>':'';
+  row.innerHTML='<td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.submode||q.mode,'mode')+'</td><td class="recent-op-col">'+opBadge+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td><span class="recent-badge country-badge">'+esc(q.country||'')+'</span></td>';
   if(recentBody.firstChild)recentBody.insertBefore(row,recentBody.firstChild);else recentBody.appendChild(row);
   while(recentBody.children.length>7)recentBody.removeChild(recentBody.lastChild);
 }
