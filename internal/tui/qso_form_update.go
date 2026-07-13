@@ -415,6 +415,7 @@ func (m *Model) cycleMode(dir int) {
 	}
 	m.fields[fieldMode].SetValue(list[idx])
 	m.fields[fieldSubmode].SetValue("")
+	m.autoFillSSBSubmode()
 }
 
 // cycleSubmode cycles the submode field in the given direction.
@@ -581,6 +582,7 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 
 	case fieldMode:
 		if m.fields[f].Value() != prevVal {
+			m.autoFillSSBSubmode()
 			newMode := qso.NormalizeRigMode(m.fields[f].Value())
 			oldMode := qso.NormalizeRigMode(prevVal)
 			if newMode != oldMode {
