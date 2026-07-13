@@ -85,6 +85,30 @@ function switchToActive(){D('state','active');setState(true)}
 var sseReconnects=0;
 function setSSEStatus(cls){hdSSE.className=cls;hdSSE.textContent=cls==='sse-connected'?'Online':cls==='sse-connecting'?'Connecting':'Offline'}
 
+// ---- Disconnected overlay ----
+var _discTimer=null,_discSince=null,_discTimeout=null,_discShown=false;
+function scheduleDisconnected(){
+  if(_discTimeout)return;
+  _discSince=Date.now();
+  var sub=$('disconnected-sub'),host=location.host;
+  sub.textContent=host+' · '+(window._discLogbook||'');
+  _discTimeout=setTimeout(function(){
+    $('disconnected-overlay').classList.add('show');
+    _discShown=true;
+    _discTimer=setInterval(function(){
+      var s=Math.floor((Date.now()-_discSince)/1000);
+      $('disconnected-timer').textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
+    },1000);
+  },8000);
+}
+function hideDisconnected(){
+  if(_discTimeout){clearTimeout(_discTimeout);_discTimeout=null}
+  if(_discTimer){clearInterval(_discTimer);_discTimer=null}
+  _discSince=null;
+  $('disconnected-overlay').classList.remove('show');
+  if(_discShown){_discShown=false;setTimeout(function(){location.reload()},600)}
+}
+
 function connectSSE(){
   if(es)es.close();setSSEStatus('sse-connecting');
   D('sse','connecting…');
@@ -131,7 +155,7 @@ function connectSSE(){
   });
   es.addEventListener('logbook',function(e){var lb=JSON.parse(e.data).payload;
     D('sse','logbook',lb.name);
-    if(lb&&lb.name)document.title='CQOps - '+lb.name;
+    if(lb&&lb.name){document.title='CQOps - '+lb.name;window._discLogbook=lb.name}
     updateStationField('Logbook',lb.name)
   });
   es.addEventListener('partner',function(e){var p=JSON.parse(e.data).payload;
@@ -164,9 +188,10 @@ function connectSSE(){
     renderAPRSOnLocalMap(a);
   });
   es.addEventListener('heartbeat',function(){D('sse','heartbeat')});
-  es.onopen=function(){sseReconnects=0;setSSEStatus('sse-connected');D('sse','connected ✓')};
+  es.onopen=function(){sseReconnects=0;setSSEStatus('sse-connected');hideDisconnected();D('sse','connected ✓')};
   es.onerror=function(){sseReconnects++;setSSEStatus('sse-disconnected');es.close();
     D('sse','error — reconnect #'+sseReconnects+' in 3s');
+    scheduleDisconnected();
     setTimeout(function(){
       D('sse','fetching /api/snapshot fallback…');
       fetch('/api/snapshot').then(function(r){return r.json()}).then(renderAll).catch(function(){});connectSSE()
@@ -180,7 +205,7 @@ function renderAll(snap){
   D('renderAll','start',{hasStation:!!snap.station,hasActive:!!(snap.activeQso&&snap.activeQso.call),today:snap.today? snap.today.length:0,recent:snap.recent? snap.recent.length:0});
   displayCfg=snap.display||{};
   // Window title — show active logbook.
-  if(snap.logbook&&snap.logbook.name)document.title='CQOps: '+snap.logbook.name;
+  if(snap.logbook&&snap.logbook.name){document.title='CQOps - '+snap.logbook.name;window._discLogbook=snap.logbook.name}
   // Theme — apply theme class to root element.
   var wasDark=document.documentElement.classList.contains('dark');
   var theme=displayCfg.theme;
@@ -447,7 +472,7 @@ function renderStats(st,todayBuf){
     ['Bands',bandList.length?bandList.map(function(b){return'<span class="stat-badge '+bandBadgeClass(b)+'">'+esc(b)+'</span>'}).join(''):(st.bands||'—')],
     ['Modes',modeList.length?modeList.map(function(m){return'<span class="stat-badge '+modeBadgeClass(m)+'">'+esc(m)+'</span>'}).join(''):(st.modes||'—')],
     ['Longest',longestKm?fmtDist(longestKm):'—'],
-    ['Rate (5m / 15m / 1h)',rate5+' / '+rate15+' / '+rate60]
+    ['QSO rate','<span class=\"stat-badge rate-badge\">5m '+rate5+'</span> <span class=\"stat-badge rate-badge\">15m '+rate15+'</span> <span class=\"stat-badge rate-badge\">1h '+rate60+'</span>']
   ].map(function(r){return'<dt>'+r[0]+'</dt><dd>'+r[1]+'</dd>'}).join('');
   renderTopQSOs();
 }
