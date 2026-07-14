@@ -93,14 +93,12 @@ jobs:
           echo "Binaries before UPX:"
           ls -lh build/
 
-      - name: Compress with UPX
+      - name: Compress with UPX (Linux only — macOS not supported)
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq upx-ucl
           upx --best build/cqops-linux-amd64
           upx --best build/cqops-linux-arm64
           upx --best build/cqops-linux-armhf
-          upx --best build/cqops-darwin-amd64
-          upx --best build/cqops-darwin-arm64
           echo "Binaries after UPX:"
           ls -lh build/
 
