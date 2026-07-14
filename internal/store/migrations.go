@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+
+	"github.com/szporwolik/cqops/internal/qso"
 )
 
 var migrations = []string{
@@ -94,6 +96,12 @@ var migrations = []string{
 	`ALTER TABLE qsos ADD COLUMN base_call TEXT DEFAULT ''`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_base_call ON qsos(base_call)`,
 
+	// Backfill base_call for existing rows (v0.8.14).
+	// Must run as a separate statement since SQLite doesn't support
+	// subqueries referencing the same table in UPDATE.
+	// We iterate in Go below with the post-migration hook.
+	// Marker: base_call_backfill is handled in backfillBaseCall().
+
 	// Dashboard performance indexes (v0.8.9):
 	// - country lookup for New DXCC / dupe detection
 	// - date+time+base_call for filtered recent QSO scanning
@@ -171,6 +179,46 @@ func Migrate(db *sql.DB) error {
 				continue
 			}
 			return fmt.Errorf("migration %d: %w", i, err)
+		}
+	}
+	// Backfill base_call for rows that have it empty (pre-v0.8.7 QSOs).
+	if err := backfillBaseCall(db); err != nil {
+		return fmt.Errorf("backfill base_call: %w", err)
+	}
+	return nil
+}
+
+// backfillBaseCall fills empty base_call columns for existing QSOs.
+func backfillBaseCall(db *sql.DB) error {
+	rows, err := db.Query(`SELECT id, call FROM qsos WHERE base_call = '' OR base_call IS NULL`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	var updates []struct {
+		id       int64
+		baseCall string
+	}
+	for rows.Next() {
+		var id int64
+		var call string
+		if err := rows.Scan(&id, &call); err != nil {
+			return err
+		}
+		bc := qso.DeriveBaseCall(call)
+		if bc != "" {
+			updates = append(updates, struct {
+				id       int64
+				baseCall string
+			}{id, bc})
+		}
+	}
+	rows.Close()
+
+	for _, u := range updates {
+		if _, err := db.Exec(`UPDATE qsos SET base_call = ? WHERE id = ?`, u.baseCall, u.id); err != nil {
+			return err
 		}
 	}
 	return nil

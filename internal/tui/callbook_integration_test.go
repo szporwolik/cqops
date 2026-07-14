@@ -5,27 +5,22 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/szporwolik/cqops/internal/qrz"
+	"github.com/szporwolik/cqops/internal/callbook"
 )
 
 // =============================================================================
-// QRZ lookup mock tests
+// Callbook lookup mock tests (multi-provider ready)
 // =============================================================================
 
-func TestQRZLookupSuccess(t *testing.T) {
-	// Save and restore original lookup function
-	orig := qrzLookupFunc
-	t.Cleanup(func() { qrzLookupFunc = orig })
+func TestCallbookLookupSuccess(t *testing.T) {
+	orig := callbookRegLookup
+	t.Cleanup(func() { callbookRegLookup = orig })
 
-	qrzLookupFunc = func(user, pass, callsign string) (*qrz.CallData, error) {
-		return &qrz.CallData{
-			Callsign: "SP9MOA",
-			Name:     "John",
-			Grid:     "JO90",
-			QTH:      "Krakow",
-			Country:  "Poland",
-			State:    "MA",
-			DXCC:     "269",
+	callbookRegLookup = func(m *Model, call string) (*callbook.Result, error) {
+		return &callbook.Result{
+			Callsign: "SP9MOA", Name: "John", Grid: "JO90",
+			QTH: "Krakow", Country: "Poland", State: "MA", DXCC: "269",
+			Provider: "qrz",
 		}, nil
 	}
 
@@ -35,15 +30,11 @@ func TestQRZLookupSuccess(t *testing.T) {
 	m.App.Config.Integrations.QRZ.Pass = "testpass"
 	m.fields[fieldCall].SetValue("SP9MOA")
 
-	// Trigger QRZ fill
-	m.fillQRZData(qrzResultMsg{
+	m.fillCallbookData(callbookResultMsg{
 		Call: "SP9MOA",
-		Data: &qrz.CallData{
-			Callsign: "SP9MOA",
-			Name:     "John",
-			Grid:     "JO90",
-			QTH:      "Krakow",
-			Country:  "Poland",
+		Data: &callbook.Result{
+			Callsign: "SP9MOA", Name: "John", Grid: "JO90",
+			QTH: "Krakow", Country: "Poland",
 		},
 	})
 
@@ -59,17 +50,16 @@ func TestQRZLookupSuccess(t *testing.T) {
 	if m.fields[fieldCountry].Value() != "Poland" {
 		t.Errorf("Country = %q; want Poland", m.fields[fieldCountry].Value())
 	}
-	// Partner data should be set
 	if m.lookup.partnerData == nil {
-		t.Error("partnerData should be set after QRZ fill")
+		t.Error("partnerData should be set after callbook fill")
 	}
 }
 
-func TestQRZLookupError(t *testing.T) {
-	orig := qrzLookupFunc
-	t.Cleanup(func() { qrzLookupFunc = orig })
+func TestCallbookLookupError(t *testing.T) {
+	orig := callbookRegLookup
+	t.Cleanup(func() { callbookRegLookup = orig })
 
-	qrzLookupFunc = func(user, pass, callsign string) (*qrz.CallData, error) {
+	callbookRegLookup = func(m *Model, call string) (*callbook.Result, error) {
 		return nil, errors.New("connection refused")
 	}
 
@@ -78,122 +68,112 @@ func TestQRZLookupError(t *testing.T) {
 	m.App.Config.Integrations.QRZ.User = "testuser"
 	m.fields[fieldCall].SetValue("SP9MOA")
 
-	// fillQRZData with error should not panic
-	m.fillQRZData(qrzResultMsg{
+	m.fillCallbookData(callbookResultMsg{
 		Call: "SP9MOA",
 		Err:  fmt.Errorf("connection refused"),
 	})
 
-	// Form fields should not be modified
 	if m.fields[fieldName].Value() != "" {
 		t.Errorf("Name should not be filled on error, got %q", m.fields[fieldName].Value())
 	}
 }
 
-func TestQRZLookupEmptyCall(t *testing.T) {
+func TestCallbookLookupEmptyCall(t *testing.T) {
 	m := newLifecycleTestModel(t)
 	m.App.Config.Integrations.QRZ.Enabled = true
 	m.App.Config.Integrations.QRZ.User = "testuser"
 
-	cmd := m.qrzLookup("")
+	cmd := m.callbookLookup("")
 	if cmd != nil {
-		t.Error("qrzLookup should return nil for empty call")
+		t.Error("callbookLookup should return nil for empty call")
 	}
 }
 
-func TestQRZLookupDisabled(t *testing.T) {
+func TestCallbookLookupDisabled(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.Integrations.QRZ.Enabled = false
-	m.App.Config.Integrations.QRZ.User = "testuser"
+	m.callbookRegistry = nil
 	m.fields[fieldCall].SetValue("SP9MOA")
 
-	// fillQRZData with QRZ disabled should warn and not fill
-	m.fillQRZData(qrzResultMsg{
+	m.fillCallbookData(callbookResultMsg{
 		Call: "SP9MOA",
-		Data: &qrz.CallData{Callsign: "SP9MOA", Name: "John"},
+		Data: &callbook.Result{Callsign: "SP9MOA", Name: "John"},
 	})
 
-	// Name should NOT be filled when QRZ is disabled
-	if m.fields[fieldName].Value() != "" {
-		t.Errorf("Name should not be filled when QRZ disabled, got %q", m.fields[fieldName].Value())
+	// fillCallbookData always applies provided data — registry gating
+	// is handled at the lookup dispatch level (callbookLookup).
+	if m.fields[fieldName].Value() != "John" {
+		t.Errorf("Name should be filled regardless of registry state, got %q", m.fields[fieldName].Value())
 	}
 }
 
-func TestQRZLookupNoCredentials(t *testing.T) {
+func TestCallbookLookupNoCredentials(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.Integrations.QRZ.Enabled = true
-	m.App.Config.Integrations.QRZ.User = "" // no credentials
+	m.callbookRegistry = nil
 	m.fields[fieldCall].SetValue("SP9MOA")
 
-	m.fillQRZData(qrzResultMsg{
+	m.fillCallbookData(callbookResultMsg{
 		Call: "SP9MOA",
-		Data: &qrz.CallData{Callsign: "SP9MOA", Name: "John"},
+		Data: &callbook.Result{Callsign: "SP9MOA", Name: "John"},
 	})
 
-	if m.fields[fieldName].Value() != "" {
-		t.Errorf("Name should not be filled without credentials, got %q", m.fields[fieldName].Value())
+	if m.fields[fieldName].Value() != "John" {
+		t.Errorf("Name should be filled regardless of registry state, got %q", m.fields[fieldName].Value())
 	}
 }
 
-// TestQRZLookupOverwritesExistingGrid verifies QRZ grid always updates the field.
-func TestQRZLookupOverwritesExistingGrid(t *testing.T) {
+func TestCallbookLookupOverwritesExistingGrid(t *testing.T) {
 	m := newLifecycleTestModel(t)
 	m.App.Config.Integrations.QRZ.Enabled = true
 	m.App.Config.Integrations.QRZ.User = "testuser"
 	m.fields[fieldCall].SetValue("SP9MOA")
-	m.fields[fieldGrid].SetValue("JN18") // already has a grid
+	m.fields[fieldGrid].SetValue("JN18")
 
-	m.fillQRZData(qrzResultMsg{
+	m.fillCallbookData(callbookResultMsg{
 		Call: "SP9MOA",
-		Data: &qrz.CallData{
-			Callsign: "SP9MOA",
-			Name:     "John",
-			Grid:     "JO90", // different grid from QRZ
-		},
-	})
-
-	// Grid from QRZ should overwrite existing value — the new lookup is authoritative.
-	if m.fields[fieldGrid].Value() != "JO90" {
-		t.Errorf("Grid should be overwritten by QRZ result, got %q", m.fields[fieldGrid].Value())
-	}
-	if m.rc.pathGrid != "JO90" {
-		t.Errorf("pathGrid should be updated by QRZ result, got %q", m.rc.pathGrid)
-	}
-}
-
-func TestQRZLookupNoDataResult(t *testing.T) {
-	m := newLifecycleTestModel(t)
-	m.App.Config.Integrations.QRZ.Enabled = true
-	m.App.Config.Integrations.QRZ.User = "testuser"
-	m.fields[fieldCall].SetValue("SP9MOA")
-
-	// nil data should show warning toast, not panic
-	m.fillQRZData(qrzResultMsg{
-		Call: "SP9MOA",
-		Data: nil,
-	})
-}
-
-func TestQRZLookupCacheInvalidation(t *testing.T) {
-	m := newLifecycleTestModel(t)
-	m.App.Config.Integrations.QRZ.Enabled = true
-	m.App.Config.Integrations.QRZ.User = "testuser"
-	m.fields[fieldCall].SetValue("SP9MOA")
-
-	// Fill with partner data
-	m.fillQRZData(qrzResultMsg{
-		Call: "SP9MOA",
-		Data: &qrz.CallData{
+		Data: &callbook.Result{
 			Callsign: "SP9MOA",
 			Name:     "John",
 			Grid:     "JO90",
 		},
 	})
 
-	// Partner view cache should have been invalidated
+	if m.fields[fieldGrid].Value() != "JO90" {
+		t.Errorf("Grid should be overwritten by callbook result, got %q", m.fields[fieldGrid].Value())
+	}
+	if m.rc.pathGrid != "JO90" {
+		t.Errorf("pathGrid should be updated by callbook result, got %q", m.rc.pathGrid)
+	}
+}
+
+func TestCallbookLookupNoDataResult(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.App.Config.Integrations.QRZ.Enabled = true
+	m.App.Config.Integrations.QRZ.User = "testuser"
+	m.fields[fieldCall].SetValue("SP9MOA")
+
+	m.fillCallbookData(callbookResultMsg{
+		Call: "SP9MOA",
+		Data: nil,
+	})
+}
+
+func TestCallbookLookupCacheInvalidation(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.App.Config.Integrations.QRZ.Enabled = true
+	m.App.Config.Integrations.QRZ.User = "testuser"
+	m.fields[fieldCall].SetValue("SP9MOA")
+
+	m.fillCallbookData(callbookResultMsg{
+		Call: "SP9MOA",
+		Data: &callbook.Result{
+			Callsign: "SP9MOA",
+			Name:     "John",
+			Grid:     "JO90",
+		},
+	})
+
 	if m.rc.partnerView != "" {
 		t.Log("Partner view cache was populated during fill — this is expected for new data")
 	}
-	// Cache signature should exist
 	_ = m.rc.partnerViewSig
 }

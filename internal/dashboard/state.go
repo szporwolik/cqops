@@ -215,6 +215,18 @@ type PartnerInfo struct {
 	Lon        float64 `json:"lon,omitempty"`
 	ImageURL   string  `json:"imageUrl,omitempty"`
 	Source     string  `json:"source,omitempty"` // "qrz", "wavelog", "form"
+
+	// CallbookProviders lists which providers contributed data for this
+	// callsign. Each badge is rendered as a link to the provider's
+	// callsign page (when URL is non-empty).
+	CallbookProviders []ProviderBadge `json:"callbookProviders,omitempty"`
+}
+
+// ProviderBadge identifies a callbook provider that contributed lookup
+// data, with an optional URL to the provider's callsign detail page.
+type ProviderBadge struct {
+	Name string `json:"name"`
+	URL  string `json:"url,omitempty"`
 }
 
 // DisplayConfig holds dashboard display settings pushed from server config.
@@ -231,6 +243,11 @@ type DisplayConfig struct {
 	AnimateActivePath bool   `json:"animateActivePath"`
 	Units             string `json:"units,omitempty"` // "metric" or "imperial"
 	Theme             string `json:"theme,omitempty"` // "bright" or "dark"
+
+	// InternetCallbook is the highest-priority online callbook provider.
+	// Callsigns in QSO tables link to this provider's callsign page.
+	InternetCallbookURL  string `json:"internetCallbookUrl,omitempty"`
+	InternetCallbookName string `json:"internetCallbookName,omitempty"`
 }
 
 // =============================================================================
@@ -547,7 +564,8 @@ func (s *State) SetPartner(p *PartnerInfo) {
 			p.QTH != prev.QTH ||
 			p.Country != prev.Country ||
 			p.Grid != prev.Grid ||
-			p.ImageURL != prev.ImageURL
+			p.ImageURL != prev.ImageURL ||
+			!providerBadgesEqual(p.CallbookProviders, prev.CallbookProviders)
 	}
 	if p != nil {
 		copy := *p
@@ -562,10 +580,28 @@ func (s *State) SetPartner(p *PartnerInfo) {
 	}
 }
 
-// SetDisplay updates the dashboard display config. No event needed
-// (only changes on server restart or config save).
+// SetDisplay updates the dashboard display config. Publishes when
+// the internet callbook provider changes (enabled/disabled at runtime).
 func (s *State) SetDisplay(d DisplayConfig) {
 	s.mu.Lock()
+	changed := s.snapshot.Display.InternetCallbookURL != d.InternetCallbookURL ||
+		s.snapshot.Display.InternetCallbookName != d.InternetCallbookName
 	s.snapshot.Display = d
 	s.mu.Unlock()
+	if changed {
+		s.hub.Publish(EventDisplay, d)
+	}
+}
+
+// providerBadgesEqual compares two ProviderBadge slices for equality.
+func providerBadgesEqual(a, b []ProviderBadge) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Name != b[i].Name || a[i].URL != b[i].URL {
+			return false
+		}
+	}
+	return true
 }

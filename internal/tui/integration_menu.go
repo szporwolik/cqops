@@ -15,7 +15,6 @@ import (
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/gps"
-	"github.com/szporwolik/cqops/internal/qrz"
 	"go.bug.st/serial"
 )
 
@@ -75,12 +74,13 @@ type IntegrationMenu struct {
 	aprsTestResult string
 	aprsOnline     bool // true when APRS client is connected (KISS or APRS-IS)
 
-	focus  int
-	done   bool
-	saved  bool
-	goBack bool
-	width  int
-	height int
+	focus      int
+	done       bool
+	saved      bool
+	goBack     bool
+	goCallbook bool
+	width      int
+	height     int
 
 	// saveError is set when Ctrl+S is blocked by validation.
 	// The parent reads it to show a toast, then clears it.
@@ -538,17 +538,6 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return im, nil
 				}
 			}
-			// Validate QRZ fields when QRZ is enabled.
-			if im.qrzEnabled {
-				if strings.TrimSpace(im.qrzUser.Value()) == "" {
-					im.SaveError = "QRZ username is required when QRZ is enabled"
-					return im, nil
-				}
-				if im.qrzPass.Value() == "" {
-					im.SaveError = "QRZ password is required when QRZ is enabled"
-					return im, nil
-				}
-			}
 			// Validate HTTP server fields when HTTP server is enabled.
 			if im.httpEnabled {
 				if strings.TrimSpace(im.httpAddr.Value()) == "" {
@@ -604,13 +593,6 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch im.focus {
 			case imDXCChk:
 				im.dxcEnabled = !im.dxcEnabled
-				if !im.isPositionVisible(im.focus) {
-					im.fixFocus()
-				}
-				im.autoScrollViewport()
-				return im, nil
-			case imQRZChk:
-				im.qrzEnabled = !im.qrzEnabled
 				if !im.isPositionVisible(im.focus) {
 					im.fixFocus()
 				}
@@ -717,24 +699,6 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			im.prev()
 			im.autoScrollViewport()
 		case "enter":
-			if im.focus == imQRZTest {
-				if !im.inetOnline {
-					im.qrzTestResult = "No internet connection"
-					return im, nil
-				}
-				user := strings.TrimSpace(im.qrzUser.Value())
-				pass := im.qrzPass.Value()
-				if user == "" || pass == "" {
-					im.qrzTestResult = "Username and password required"
-					return im, nil
-				}
-				im.qrzTesting = true
-				im.qrzTestResult = "Testing..."
-				return im, func() tea.Msg {
-					data, err := qrz.Lookup(user, pass, "SP9MOA")
-					return callbookTestMsg{ok: err == nil && data != nil, err: err}
-				}
-			}
 			if im.focus == imGPSTest {
 				switch im.gpsService {
 				case 0: // Serial
@@ -874,10 +838,6 @@ func (im *IntegrationMenu) forwardToFocused(msg tea.Msg) {
 		im.dxcPort, _ = im.dxcPort.Update(msg)
 	case imDXCLogin:
 		im.dxcLogin, _ = im.dxcLogin.Update(msg)
-	case imQRZUser:
-		im.qrzUser, _ = im.qrzUser.Update(msg)
-	case imQRZPass:
-		im.qrzPass, _ = im.qrzPass.Update(msg)
 	case imHTTPAddr:
 		im.httpAddr, _ = im.httpAddr.Update(msg)
 	case imHTTPPort:
@@ -933,12 +893,13 @@ func (im *IntegrationMenu) prev() {
 
 func (im *IntegrationMenu) isPositionVisible(pos int) bool {
 	switch pos {
-	case imDXCChk, imQRZChk, imHTTPChk, imGPSChk:
+	case imDXCChk, imHTTPChk, imGPSChk:
 		return true
 	case imDXCHost, imDXCPort, imDXCLogin:
 		return im.dxcEnabled
-	case imQRZUser, imQRZPass, imQRZTest:
-		return im.qrzEnabled
+	// QRZ positions are now dead — callbook is a top-level config menu.
+	case imQRZChk, imQRZUser, imQRZPass, imQRZTest:
+		return false
 	case imHTTPAddr, imHTTPPort, imHTTPTheme, imHTTPHdr1, imHTTPHdr2, imHTTPLogo, imHTTPQRLink, imHTTPEvt:
 		return im.httpEnabled
 	// GPS fields visibility depends on enabled + service type.
@@ -974,7 +935,7 @@ func (im *IntegrationMenu) fixFocus() {
 }
 
 func (im *IntegrationMenu) blurAll() {
-	blurTextinputs(&im.dxcHost, &im.dxcPort, &im.dxcLogin, &im.qrzUser, &im.qrzPass, &im.httpAddr, &im.httpPort, &im.httpHeader1, &im.httpHeader2, &im.httpClubLogo, &im.httpEvtStart, &im.gpsPort, &im.gpsdHost, &im.gpsdPort, &im.aprsServer, &im.aprsKISSHost, &im.aprsKISSPort, &im.aprsPort)
+	blurTextinputs(&im.dxcHost, &im.dxcPort, &im.dxcLogin, &im.httpAddr, &im.httpPort, &im.httpHeader1, &im.httpHeader2, &im.httpClubLogo, &im.httpEvtStart, &im.gpsPort, &im.gpsdHost, &im.gpsdPort, &im.aprsServer, &im.aprsKISSHost, &im.aprsKISSPort, &im.aprsPort)
 }
 func (im *IntegrationMenu) focusField() {
 	switch im.focus {
@@ -984,10 +945,6 @@ func (im *IntegrationMenu) focusField() {
 		im.dxcPort.Focus()
 	case imDXCLogin:
 		im.dxcLogin.Focus()
-	case imQRZUser:
-		im.qrzUser.Focus()
-	case imQRZPass:
-		im.qrzPass.Focus()
 	case imHTTPAddr:
 		im.httpAddr.Focus()
 	case imHTTPPort:
@@ -1113,57 +1070,6 @@ func (im *IntegrationMenu) View() tea.View {
 		b.WriteString(padOrTrunc(im.renderField(imDXCPort, "  Port:", &im.dxcPort, false), lineW))
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(im.renderField(imDXCLogin, "  Login:", &im.dxcLogin, false), lineW))
-	}
-
-	b.WriteString("\n")
-	b.WriteString(padOrTrunc("", lineW))
-	b.WriteString("\n")
-
-	// --- QRZ section ---
-	qrzCheckbox := "[ ]"
-	if im.qrzEnabled {
-		qrzCheckbox = "[x]"
-	}
-	qrzPrefix := "  "
-	qrzLabel := S.FormLabelWide.Align(lipgloss.Left).Render("QRZ.com:")
-	if im.focus == imQRZChk {
-		qrzPrefix = S.FormPrefixOn.Render("> ")
-		qrzLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("QRZ.com:")
-		qrzCheckbox = CursorStyle.Render(qrzCheckbox) + " " + DimStyle.Render("(Space)")
-	}
-	b.WriteString(padOrTrunc(
-		lipgloss.JoinHorizontal(lipgloss.Center, qrzPrefix, qrzLabel, " ", qrzCheckbox),
-		lineW))
-
-	if im.qrzEnabled {
-		b.WriteString("\n")
-		b.WriteString(padOrTrunc(im.renderField(imQRZUser, "  Username:", &im.qrzUser, false), lineW))
-		b.WriteString("\n")
-		b.WriteString(padOrTrunc(im.renderField(imQRZPass, "  Password:", &im.qrzPass, true), lineW))
-
-		// Test button
-		b.WriteString("\n")
-		btnText := "[ Test Connection ]"
-		var btnLine string
-		if !im.inetOnline {
-			btnLine = "    " + DimStyle.Render(btnText) + " " + DimStyle.Render("(offline)")
-		} else if im.focus == imQRZTest {
-			btnLine = S.FormPrefixOn.Render("> ") + CursorStyle.Render("  "+btnText)
-		} else {
-			btnLine = "    " + InputStyle.Render(btnText)
-		}
-		b.WriteString(padOrTrunc(btnLine, lineW))
-
-		if im.qrzTestResult != "" {
-			b.WriteString("\n    ")
-			if im.qrzTesting {
-				b.WriteString(DimStyle.Render(im.qrzTestResult))
-			} else if strings.HasPrefix(im.qrzTestResult, "OK") {
-				b.WriteString(SuccessStyle.Render(im.qrzTestResult))
-			} else {
-				b.WriteString(ErrorStyle.Render(im.qrzTestResult))
-			}
-		}
 	}
 
 	b.WriteString("\n")

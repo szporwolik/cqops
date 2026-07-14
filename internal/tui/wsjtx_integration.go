@@ -46,6 +46,22 @@ func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode
 		m.invalidatePartnerMapCache()
 		applog.Debug("WSJT-X: form cleared (calling CQ)")
 	}
+	// When WSJT-X goes idle (no decode, not transmitting), clear the
+	// form so the dashboard doesn't show a stale callsign. Fires once
+	// per idle transition via the lastDxCall guard.
+	if call == "" && !transmitting && m.wsjtx.lastDxCall != "" {
+		m.fields[fieldCall].SetValue("")
+		m.fields[fieldCountry].SetValue("")
+		m.fields[fieldName].SetValue("")
+		m.fields[fieldQTH].SetValue("")
+		m.fields[fieldGrid].SetValue("")
+		m.lookup.partnerData = nil
+		m.lookup.wlPrivateData = nil
+		m.lookup.wlLookupDone = false
+		m.rc.logStatsSig = ""
+		m.invalidatePartnerMapCache()
+		applog.Debug("WSJT-X: form cleared (idle)")
+	}
 	m.wsjtx.lastDxCall = call
 	if call != "" {
 		prevCall := qso.NormalizeCall(m.fields[fieldCall].Value())
@@ -62,11 +78,8 @@ func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode
 			m.rc.logStatsSig = ""
 			m.invalidatePartnerMapCache()
 			applog.InfoDetail("WSJT-X: switching DX call", fmt.Sprintf("%s \u2192 %s", prevCall, newCall))
-			if m.App.Config.Integrations.QRZ.Enabled && m.App.Config.Integrations.QRZ.User != "" {
-				applog.Info("QRZ: looking up " + call + "\u2026")
-				m.lookup.qrzNeed = true
-				m.lookup.qrzCall = newCall
-			}
+			m.lookup.qrzNeed = true
+			m.lookup.qrzCall = newCall
 			if m.App.Logbook.Wavelog != nil && m.App.Logbook.Wavelog.Enabled {
 				m.lookup.wlNeed = true
 				m.lookup.wlCall = newCall
@@ -225,15 +238,15 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 	qrzenabled := m.App.Config.Integrations.QRZ.Enabled && m.App.Config.Integrations.QRZ.User != ""
 	wl := m.App.Logbook.Wavelog
 	wlenabled := wl != nil && wl.Enabled && wl.StationProfileID != ""
-	if !qrzenabled && !wlenabled {
+	if !qrzenabled && !wlenabled && m.callbookRegistry == nil {
 		return nil // nothing to do
 	}
 	return func() tea.Msg {
-		// Step 1: enrich via QRZ (best-effort). Only when still online.
-		if qrzenabled && m.inetOnline {
-			data, err := qrzLookupFunc(m.App.Config.Integrations.QRZ.User, m.App.Config.Integrations.QRZ.Pass, call)
+		// Step 1: enrich via callbook providers (best-effort).
+		if m.callbookRegistry != nil && m.inetOnline {
+			data, err := callbookRegLookup(m, call)
 			if err != nil {
-				applog.Warn("WSJT-X: QRZ enrichment failed", "call", call, "error", err)
+				applog.Warn("WSJT-X: callbook enrichment failed", "call", call, "error", err)
 			} else if data != nil && data.Callsign != "" {
 				store.UpdateQSOEnrichment(m.App.DB, qsoID, store.EnrichmentData{
 					Name:       data.Name,
@@ -243,9 +256,9 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 					CQZone:     data.CQZone,
 					ITUZone:    data.ITUZone,
 				})
-				applog.Info("WSJT-X: QRZ enrichment applied", "call", call, "qso_id", qsoID)
+				applog.Info("WSJT-X: callbook enrichment applied", "call", call, "qso_id", qsoID)
 			} else {
-				applog.Debug("WSJT-X: QRZ returned no data", "call", call)
+				applog.Debug("WSJT-X: callbook returned no data", "call", call)
 			}
 		}
 

@@ -65,11 +65,15 @@ func (bs BroadcastStation) BroadcastBand() string {
 }
 
 type IntegrationsConfig struct {
-	DXC        DXCConfig        `yaml:"dxc,omitempty"`
-	QRZ        QRZConfig        `yaml:"qrz,omitempty"`
-	HTTPServer HTTPServerConfig `yaml:"http_server,omitempty"`
-	GPS        GPSConfig        `yaml:"gps,omitempty"`
-	APRS       APRSGlobalConfig `yaml:"aprs,omitempty"`
+	DXC             DXCConfig             `yaml:"dxc,omitempty"`
+	QRZ             QRZConfig             `yaml:"qrz,omitempty"`
+	LogbookCallbook LogbookCallbookConfig `yaml:"logbook_callbook,omitempty"`
+	WavelogCallbook WavelogCallbookConfig `yaml:"wavelog_callbook,omitempty"`
+	CTYCallbook     CTYCallbookConfig     `yaml:"cty_callbook,omitempty"`
+	Callbook        CallbookConfig        `yaml:"callbook,omitempty"`
+	HTTPServer      HTTPServerConfig      `yaml:"http_server,omitempty"`
+	GPS             GPSConfig             `yaml:"gps,omitempty"`
+	APRS            APRSGlobalConfig      `yaml:"aprs,omitempty"`
 
 	// Legacy key — migrated to APRS on load. Remove after v0.9.x.
 	APRSLegacy APRSGlobalConfig `yaml:"aprs_is,omitempty"`
@@ -104,6 +108,18 @@ func (c *Config) Normalize() {
 		if lb.Station.IARURegion == 0 {
 			lb.Station.IARURegion = 1
 			c.Logbooks[id] = lb
+		}
+	}
+
+	// Default Wavelog callbook to enabled for existing Wavelog users.
+	// Only applies when the user has not explicitly configured the Wavelog
+	// callbook settings (Priority == 0 indicates unset/fresh config).
+	if c.Integrations.WavelogCallbook.Priority == 0 {
+		for _, lb := range c.Logbooks {
+			if lb.Wavelog != nil && lb.Wavelog.Enabled {
+				c.Integrations.WavelogCallbook.Enabled = true
+				break
+			}
 		}
 	}
 }
@@ -163,9 +179,33 @@ type StateConfig struct {
 }
 
 type QRZConfig struct {
-	Enabled bool   `yaml:"enabled"`
-	User    string `yaml:"user,omitempty"`
-	Pass    string `yaml:"pass,omitempty"`
+	Enabled  bool   `yaml:"enabled"`
+	User     string `yaml:"user,omitempty"`
+	Pass     string `yaml:"pass,omitempty"`
+	Priority int    `yaml:"priority,omitempty"` // lookup order, 0..100; higher = tried first; default 50
+}
+
+// LogbookCallbookConfig enables searching past local QSOs as a callbook source.
+type LogbookCallbookConfig struct {
+	Enabled  bool `yaml:"enabled"`
+	Priority int  `yaml:"priority,omitempty"` // default 100 — tried before QRZ
+}
+
+// WavelogCallbookConfig enables Wavelog private lookup as a callbook source.
+type WavelogCallbookConfig struct {
+	Enabled  bool `yaml:"enabled"`
+	Priority int  `yaml:"priority,omitempty"` // default 10 — tried after QRZ
+}
+
+// CTYCallbookConfig enables CTY.DAT prefix lookup as a callbook source.
+type CTYCallbookConfig struct {
+	Enabled  bool `yaml:"enabled"`
+	Priority int  `yaml:"priority,omitempty"` // default 1 — ultimate fallback
+}
+
+// CallbookConfig holds general callbook lookup options.
+type CallbookConfig struct {
+	BaseCallFallback bool `yaml:"base_call_fallback"` // look up base call when suffix not found
 }
 
 // HTTPServerConfig holds the optional built-in HTTP server configuration.

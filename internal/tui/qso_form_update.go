@@ -37,10 +37,8 @@ func (m *Model) lookupCallCmd(call string) tea.Cmd {
 		return nil
 	}
 	var cmds []tea.Cmd
+	cmds = append(cmds, m.callbookLookup(call))
 	if !m.Offline && m.inetOnline {
-		if m.App.Config.Integrations.QRZ.Enabled && m.App.Config.Integrations.QRZ.User != "" {
-			cmds = append(cmds, m.qrzLookup(call))
-		}
 		wl := m.App.Logbook.Wavelog
 		if wl != nil && wl.Enabled && wl.APIKey != "" {
 			cmds = append(cmds, m.wlLookup(call))
@@ -547,6 +545,7 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 			m.lookup.qrzLookupCall = ""
 			m.lookup.wlLookupDone = false
 			m.lookup.wlLookupCall = ""
+			m.lookup.callbookToastCall = ""
 			m.dupeConfirmed = false
 			m.gridSource = gridSourceNone
 			m.screen = screenQSO
@@ -756,6 +755,7 @@ func (m *Model) fillFromDXCSpot() {
 	m.lookup.qrzLookupCall = ""
 	m.lookup.wlLookupDone = false
 	m.lookup.wlLookupCall = ""
+	m.lookup.callbookToastCall = ""
 	m.dupeConfirmed = false
 	m.gridSource = gridSourceNone
 	m.rc.pathCall = ""
@@ -934,6 +934,7 @@ func (m *Model) resetPartnerLookup() {
 		m.lookup.wlPrivateData = nil
 		m.lookup.wlLookupDone = false
 		m.lookup.wlLookupCall = ""
+		m.lookup.callbookToastCall = ""
 		m.lookup.wlDispatchTime = time.Time{}
 	}
 }

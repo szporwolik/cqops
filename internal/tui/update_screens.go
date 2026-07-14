@@ -190,8 +190,15 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 		if m.ui.integrationMenu.goBack {
 			m.screen = screenMainMenu
 		}
+		if m.ui.integrationMenu.goCallbook {
+			m.ui.callbookMenu = NewCallbookMenu(m.App.Config)
+			m.ui.callbookMenu.width = m.width
+			m.ui.callbookMenu.height = m.height
+			m.screen = screenCallbook
+			return m, cmd
+		}
 		if m.ui.integrationMenu.saved {
-			dxcE, dxcHost, dxcPort, dxcLogin, qrzE, qrzUser, qrzPass, httpE, httpAddr, httpPort, httpTheme, httpHdr1, httpHdr2, httpLogo, httpQRLink, httpEvtStart := m.ui.integrationMenu.Values()
+			dxcE, dxcHost, dxcPort, dxcLogin, _, _, _, httpE, httpAddr, httpPort, httpTheme, httpHdr1, httpHdr2, httpLogo, httpQRLink, httpEvtStart := m.ui.integrationMenu.Values()
 
 			// Restart the HTTP server when address, port, or enabled
 			// state actually change, OR when the server should be running
@@ -206,9 +213,7 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			m.App.Config.Integrations.DXC.Host = dxcHost
 			m.App.Config.Integrations.DXC.Port = dxcPort
 			m.App.Config.Integrations.DXC.Login = dxcLogin
-			m.App.Config.Integrations.QRZ.Enabled = qrzE
-			m.App.Config.Integrations.QRZ.User = qrzUser
-			m.App.Config.Integrations.QRZ.Pass = qrzPass
+			// QRZ config now owned by CallbookMenu; integration menu no longer writes it.
 			m.App.Config.Integrations.HTTPServer.Enabled = httpE
 			m.App.Config.Integrations.HTTPServer.Address = httpAddr
 			m.App.Config.Integrations.HTTPServer.Port = httpPort
@@ -388,6 +393,11 @@ func (m *Model) handleMainMenuUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.C
 			m.ui.integrationMenu.width = m.width
 			m.ui.integrationMenu.height = m.height
 			m.screen = screenIntegration
+		case "callbook":
+			m.ui.callbookMenu = NewCallbookMenu(m.App.Config)
+			m.ui.callbookMenu.width = m.width
+			m.ui.callbookMenu.height = m.height
+			m.screen = screenCallbook
 		case "notifications":
 			m.ui.notifMenu = NewNotificationsMenu(m.App.Config)
 			m.ui.notifMenu.width = m.width
@@ -397,6 +407,42 @@ func (m *Model) handleMainMenuUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.C
 	}
 	if m.ui.mainMenu.done {
 		m.screen = screenQSO
+	}
+	return m, cmd
+}
+
+func (m *Model) handleCallbookUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	m.ui.callbookMenu.width = m.width
+	m.ui.callbookMenu.height = m.height
+	m.ui.callbookMenu.inetOnline = m.inetOnline
+
+	// Clear previous save error.
+	if m.ui.callbookMenu.SaveError != "" {
+		m.toasts.Warn(m.ui.callbookMenu.SaveError)
+		m.ui.callbookMenu.SaveError = ""
+	}
+
+	_, menuCmd := m.ui.callbookMenu.Update(msg)
+	cmd = tea.Batch(cmd, menuCmd)
+
+	if m.ui.callbookMenu.done {
+		if m.ui.callbookMenu.goBack {
+			m.screen = screenMainMenu
+			m.ui.mainMenu = NewMainMenu()
+			m.ui.mainMenu.width = m.width
+			m.ui.mainMenu.height = m.height
+			return m, cmd
+		}
+		if m.ui.callbookMenu.saved {
+			m.ui.callbookMenu.ToConfig(m.App.Config)
+			m.callbookRegistry = buildCallbookRegistry(m.App)
+			m.saveConfig("Settings saved")
+		}
+		m.screen = screenMainMenu
+		m.ui.mainMenu = NewMainMenu()
+		m.ui.mainMenu.width = m.width
+		m.ui.mainMenu.height = m.height
+		return m, cmd
 	}
 	return m, cmd
 }

@@ -8,13 +8,11 @@ import (
 
 	"charm.land/bubbles/v2/help"
 	"charm.land/bubbles/v2/key"
-	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
-	"github.com/szporwolik/cqops/internal/qrz"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/version"
 	"github.com/szporwolik/cqops/internal/wavelog"
@@ -25,29 +23,22 @@ type wizardStep int
 const (
 	stepStation wizardStep = iota
 	stepRig
-	stepQRZ
 	stepTimezone
 	stepSummary
 	stepCount // sentinel
 )
 
 type Wizard struct {
-	App           *app.App
-	step          wizardStep
-	station       *StationForm
-	rigForm       *RigForm
-	qrzEnable     bool
-	qrzUser       textinput.Model
-	qrzPass       textinput.Model
-	qrzTesting    bool
-	qrzTestResult string
-	integFocus    int // 0=qrz cb, 1=qrz user, 2=qrz pass, 3=qrz test
-	tzIndex       int
-	toasts        *ToastQueue
-	width         int
-	height        int
-	Completed     bool // true only when full wizard finished
-	Offline       bool // when true, skip all network-dependent operations
+	App       *app.App
+	step      wizardStep
+	station   *StationForm
+	rigForm   *RigForm
+	tzIndex   int
+	toasts    *ToastQueue
+	width     int
+	height    int
+	Completed bool // true only when full wizard finished
+	Offline   bool // when true, skip all network-dependent operations
 
 	// Cached form box style — rebuilt only when width changes.
 	cachedFormBox  lipgloss.Style
@@ -62,18 +53,6 @@ type Wizard struct {
 }
 
 func NewWizard(a *app.App) *Wizard {
-	qrzUser := newTextinput()
-	qrzUser.CharLimit = 30
-	qrzUser.SetWidth(22)
-	qrzUser.Placeholder = "QRZ.com username"
-
-	qrzPass := newTextinput()
-	qrzPass.CharLimit = 40
-	qrzPass.SetWidth(22)
-	qrzPass.Placeholder = "QRZ.com password"
-	qrzPass.EchoMode = textinput.EchoPassword
-	qrzPass.EchoCharacter = '*'
-
 	applog.Info("Wizard started — first-run setup")
 	sf := NewStationForm("", "", "")
 	sf.HideGPSGrid = true // GPS Grid is not relevant during first-run setup
@@ -82,8 +61,6 @@ func NewWizard(a *app.App) *Wizard {
 		step:    stepStation,
 		station: sf,
 		rigForm: NewRigForm("Xiegu G90 (optional)", "HWEF 20.5 (optional)", "20"),
-		qrzUser: qrzUser,
-		qrzPass: qrzPass,
 		tzIndex: config.SystemTimezoneIndex(),
 		toasts:  NewToastQueue(),
 	}
@@ -147,21 +124,9 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			w.station.WlStationID.SetValue(fmt.Sprintf("%s — %s (%s) %s", s.ID, s.Callsign, s.Name, s.Gridsquare))
 		}
 
-	case callbookTestMsg:
-		w.qrzTesting = false
-		if msg.err != nil {
-			w.qrzTestResult = msg.err.Error()
-			w.toasts.Error(msg.err.Error())
-		} else if msg.ok {
-			w.qrzTestResult = "OK — QRZ.com connected"
-			w.toasts.Success("QRZ connection OK")
-		} else {
-			w.qrzTestResult = "QRZ test failed"
-		}
-
 	case tea.PasteMsg:
 		// Forward paste to the focused text input so clipboard paste works
-		// in the wizard (station form, rig form, and QRZ credentials).
+		// in the wizard (station form and rig form).
 		switch w.step {
 		case stepStation:
 			if cmd := w.station.HandlePaste(msg.Content); cmd != nil {
@@ -170,13 +135,6 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case stepRig:
 			if cmd := w.rigForm.HandlePaste(msg.Content); cmd != nil {
 				return w, nil
-			}
-		case stepQRZ:
-			switch w.integFocus {
-			case 1:
-				w.qrzUser, _ = w.qrzUser.Update(msg)
-			case 2:
-				w.qrzPass, _ = w.qrzPass.Update(msg)
 			}
 		}
 		return w, nil
@@ -301,90 +259,10 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 								return w, nil
 							}
 						}
-						w.step = stepQRZ
+						w.step = stepTimezone
 						applog.InfoDetail("Wizard: rig step done", fmt.Sprintf("rig=%s flrig=%v", rig, radioBackend == "flrig"))
 					}
 					return w, nil
-				}
-			case stepQRZ:
-				// Space toggles checkbox
-				if k.String() == " " || msg.Code == tea.KeySpace {
-					if w.integFocus == 0 {
-						w.qrzEnable = !w.qrzEnable
-					}
-					return w, nil
-				}
-				// Enter triggers Test button
-				if k.String() == "enter" && w.integFocus == 3 {
-					user := strings.TrimSpace(w.qrzUser.Value())
-					pass := w.qrzPass.Value()
-					if user == "" || pass == "" {
-						w.toasts.Warn("QRZ username and password required")
-						return w, nil
-					}
-					w.qrzTesting = true
-					w.qrzTestResult = "Testing…"
-					return w, func() tea.Msg {
-						_, err := qrz.Lookup(user, pass, "SP9MOA")
-						if err != nil {
-							return callbookTestMsg{ok: false, err: err}
-						}
-						return callbookTestMsg{ok: true}
-					}
-				}
-				// Ctrl+S advances
-				if k.String() == "ctrl+s" || k.String() == "\x13" {
-					if w.qrzEnable {
-						if strings.TrimSpace(w.qrzUser.Value()) == "" {
-							w.toasts.Warn("QRZ username is required when QRZ is enabled")
-							return w, nil
-						}
-						if w.qrzPass.Value() == "" {
-							w.toasts.Warn("QRZ password is required when QRZ is enabled")
-							return w, nil
-						}
-					}
-					w.step = stepTimezone
-					_, _, _, _, _, _, _, wlOn, _, _, _, _, _, _, _, _, _, _ := w.station.Values()
-					applog.InfoDetail("Wizard: QRZ step done", fmt.Sprintf("qrz=%v wavelog=%v", w.qrzEnable, wlOn))
-					return w, nil
-				}
-				// Tab / Down navigation
-				if k.String() == "tab" || msg.Code == tea.KeyDown || k.String() == "down" {
-					w.integFocus++
-					// Skip hidden QRZ sub-fields: wrap to QRZ checkbox
-					if !w.qrzEnable && w.integFocus >= 1 && w.integFocus <= 3 {
-						w.integFocus = 0
-					}
-					if w.integFocus > 3 {
-						w.integFocus = 0
-					}
-					w.updateIntegFocus()
-					return w, nil
-				}
-				// Shift+Tab / Up navigation
-				if msg.Code == tea.KeyUp || k.String() == "shift+tab" || k.String() == "up" {
-					w.integFocus--
-					// Skip hidden QRZ sub-fields going up: jump to QRZ checkbox
-					if !w.qrzEnable && w.integFocus >= 1 && w.integFocus <= 3 {
-						w.integFocus = 0
-					}
-					if w.integFocus < 0 {
-						if w.qrzEnable {
-							w.integFocus = 3
-						} else {
-							w.integFocus = 0
-						}
-					}
-					w.updateIntegFocus()
-					return w, nil
-				}
-				// Text input for focused fields
-				switch w.integFocus {
-				case 1:
-					w.qrzUser, _ = w.qrzUser.Update(msg)
-				case 2:
-					w.qrzPass, _ = w.qrzPass.Update(msg)
 				}
 			case stepTimezone:
 				if k.String() == "ctrl+s" || k.String() == "\x13" {
@@ -427,8 +305,6 @@ func (w *Wizard) View() tea.View {
 		content = w.viewStation()
 	case stepRig:
 		content = w.viewRig()
-	case stepQRZ:
-		content = w.viewQRZ()
 	case stepTimezone:
 		content = w.viewTimezone()
 	case stepSummary:
@@ -531,24 +407,12 @@ func (w *Wizard) stepIndicator() string {
 		name = "Station & Logbook"
 	case stepRig:
 		name = "Rig"
-	case stepQRZ:
-		name = "Integrations"
 	case stepTimezone:
 		name = "General"
 	case stepSummary:
 		name = "Summary"
 	}
 	return S.Title.Render(fmt.Sprintf("First time wizard — Step %d/%d — %s", current, total, name))
-}
-
-func (w *Wizard) updateIntegFocus() {
-	blurTextinputs(&w.qrzUser, &w.qrzPass)
-	switch w.integFocus {
-	case 1:
-		w.qrzUser.Focus()
-	case 2:
-		w.qrzPass.Focus()
-	}
 }
 
 // ── Step views ───────────────────────────────────────────────────
@@ -581,106 +445,6 @@ func (w *Wizard) viewRig() string {
 		key.NewBinding(key.WithKeys("f10"), key.WithHelp("F10", "Quit")),
 	)
 	return w.wizardLayout(body, help)
-}
-
-func (w *Wizard) viewQRZ() string {
-	var inner strings.Builder
-	availW := w.width
-	if availW < 40 {
-		availW = 80
-	}
-
-	// ── QRZ section ──
-	qrzCb := "[ ]"
-	if w.qrzEnable {
-		qrzCb = "[x]"
-	}
-	qrzPrefix := "  "
-	qrzLabel := S.FormLabelWide.Align(lipgloss.Left).Render("QRZ.com:")
-	if w.integFocus == 0 {
-		qrzPrefix = S.FormPrefixOn.Render("> ")
-		qrzLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("QRZ.com:")
-		qrzCb = CursorStyle.Render(qrzCb)
-	}
-	inner.WriteString(padOrTrunc(
-		lipgloss.JoinHorizontal(lipgloss.Center, qrzPrefix, qrzLabel, " ", qrzCb),
-		availW))
-	inner.WriteString("\n")
-
-	if w.qrzEnable {
-		inner.WriteString(renderIntegField("  Username:", &w.qrzUser, w.integFocus == 1, false, availW))
-		inner.WriteString(renderIntegField("  Password:", &w.qrzPass, w.integFocus == 2, true, availW))
-
-		// Test button — fixed padding so it never shifts on focus.
-		testBtn := "[ Test ]"
-		testPrefix := "    "
-		styledBtn := InputStyle.Render(testBtn)
-		if w.integFocus == 3 {
-			testPrefix = S.FormPrefixOn.Render("> ") + "  "
-			styledBtn = CursorStyle.Render(testBtn)
-		}
-		status := ""
-		if w.qrzTesting {
-			status = DimStyle.Render("Testing…")
-		} else if w.qrzTestResult != "" {
-			if strings.Contains(w.qrzTestResult, "OK") {
-				status = SuccessStyle.Render(w.qrzTestResult)
-			} else {
-				status = ErrorStyle.Render(w.qrzTestResult)
-			}
-		}
-		inner.WriteString(padOrTrunc(testPrefix+styledBtn+"  "+status, availW))
-		inner.WriteString("\n")
-	}
-
-	body := w.wizardFormBox().Render(inner.String())
-	help := wizHelp(
-		key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save & Next")),
-		key.NewBinding(key.WithKeys("space"), key.WithHelp("Space", "Toggle")),
-		key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Test")),
-		key.NewBinding(key.WithKeys("tab"), key.WithHelp("Tab", "Navigate")),
-		key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
-		key.NewBinding(key.WithKeys("f10"), key.WithHelp("F10", "Quit")),
-	)
-	return w.wizardLayout(body, help)
-}
-
-// renderIntegField renders a labelled textinput line for the integrations step.
-// Matches the pattern used by other forms: dynamic textinput width, truncation.
-func renderIntegField(label string, ti *textinput.Model, focused bool, masked bool, maxW int) string {
-	raw := strings.TrimSpace(ti.Value())
-
-	const labelW = 2 + 17 // prefix + FormLabelWide width
-	const maxVW = 40
-
-	prefix := "  "
-	lbl := S.FormLabelWide.Align(lipgloss.Left).Render(label)
-	vw := maxW - labelW - 1
-	if vw < 3 {
-		vw = 3
-	}
-	if vw > maxVW {
-		vw = maxVW
-	}
-
-	var val string
-	if focused {
-		prefix = S.FormPrefixOn.Render("> ")
-		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(label)
-		ti.SetWidth(vw)
-		if lipgloss.Width(raw) > vw {
-			ti.SetWidth(vw - 1)
-		}
-		ti.SetCursor(ti.Position())
-		val = ti.View()
-	} else if raw == "" {
-		val = DimStyle.Render("\u2014")
-	} else if masked {
-		val = ValueStyle.Render(truncateText(strings.Repeat("*", len(raw)), vw))
-	} else {
-		val = ValueStyle.Render(truncateText(raw, vw))
-	}
-	return padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val), maxW) + "\n"
 }
 
 func (w *Wizard) viewTimezone() string {
@@ -821,11 +585,8 @@ func (w *Wizard) saveConfig() error {
 		},
 	}
 
-	w.App.Config.Integrations.QRZ.Enabled = w.qrzEnable
-	if w.qrzEnable {
-		w.App.Config.Integrations.QRZ.User = strings.TrimSpace(w.qrzUser.Value())
-		w.App.Config.Integrations.QRZ.Pass = w.qrzPass.Value()
-	}
+	// Callbook providers (QRZ etc.) are configured post-wizard via the
+	// Integration → Callbook menu.
 
 	var wl *config.WavelogConfig
 	if wlEnabled && wlURL != "" && wlKey != "" {

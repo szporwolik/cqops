@@ -8,29 +8,156 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/ftl/hamradio/dxcc"
 	"github.com/ftl/hamradio/locator"
+	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
+	"github.com/szporwolik/cqops/internal/callbook"
 	"github.com/szporwolik/cqops/internal/qrz"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
 // =============================================================================
-// QRZ and Wavelog callbook lookup integration.
+// Callbook multi-provider lookup integration.
 // =============================================================================
 
-// qrzLookupFunc is the function used for QRZ lookups. It defaults to
-// qrz.Lookup but can be replaced in tests for mock-based verification.
-var qrzLookupFunc = qrz.Lookup
+// callbookRegLookup is the test seam for the callbook registry.
+var callbookRegLookup = func(m *Model, call string) (*callbook.Result, error) {
+	if m.callbookRegistry == nil {
+		applog.Debug("Callbook: no registry, skipping lookup", "call", call)
+		return nil, nil
+	}
+	applog.Debug("Callbook: lookup start", "call", call, "providers", m.callbookRegistry.Len())
+	data, err := m.callbookRegistry.Lookup(call)
+	if data != nil {
+		applog.Debug("Callbook: lookup ok", "call", call, "provider", data.Provider,
+			"name", data.Name, "grid", data.Grid, "country", data.Country, "qth", data.QTH)
+		// Base-call fallback: if the looked-up call is a suffix call
+		// (e.g. SP9MOA/P) and the result has no name (CTY-only backfill),
+		// also try the base call and merge richer data into the result.
+		if m.App.Config.Integrations.Callbook.BaseCallFallback {
+			base := qso.DeriveBaseCall(call)
+			if base != "" && !strings.EqualFold(base, call) && data.Name == "" {
+				applog.Debug("Callbook: suffix call has no name, trying base", "call", call, "base", base)
+				baseData, baseErr := m.callbookRegistry.Lookup(base)
+				if baseData != nil {
+					callbook.MergeInto(data, baseData)
+					applog.Debug("Callbook: base-call fallback merged", "base", base, "provider", baseData.Provider)
+					_ = baseErr
+				}
+			}
+		}
+		return data, nil
+	}
+	if err != nil {
+		applog.Debug("Callbook: lookup error", "call", call, "error", err)
+		return nil, err
+	}
+	// Base-call fallback: if SP9MOA/P was not found, try SP9MOA.
+	if m.App.Config.Integrations.Callbook.BaseCallFallback {
+		base := qso.DeriveBaseCall(call)
+		if base != "" && !strings.EqualFold(base, call) {
+			applog.Debug("Callbook: no result for suffix call, trying base", "call", call, "base", base)
+			data, err := m.callbookRegistry.Lookup(base)
+			if data != nil {
+				applog.Debug("Callbook: base-call fallback ok", "base", base, "provider", data.Provider)
+			} else {
+				applog.Debug("Callbook: base-call fallback no result", "base", base, "err", err)
+			}
+			return data, err
+		}
+	}
+	applog.Debug("Callbook: no result", "call", call)
+	return nil, nil
+}
 
-// maybeCheckQRZ returns a tea.Cmd to check QRZ connectivity once at
-// startup (first tick). Periodic re-checking is unnecessary — the
-// internet health check already monitors connectivity.
-func (m *Model) maybeCheckQRZ() tea.Cmd {
+// buildCallbookRegistry creates the provider registry from configuration.
+func buildCallbookRegistry(a *app.App) *callbook.Registry {
+	var providers []callbook.Provider
+
+	// Logbook provider — searches past local QSOs.
+	// Default priority 100 (tried before QRZ). Enabled by default.
+	lc := a.Config.Integrations.LogbookCallbook
+	if lc.Enabled || lc.Priority == 0 {
+		p := lc.Priority
+		if p == 0 {
+			p = 100 // default
+		}
+		if p < 0 {
+			p = 0
+		}
+		if p > 100 {
+			p = 100
+		}
+		if a.DB != nil {
+			providers = append(providers, NewLogbookCallbookProvider(a.DB, p))
+		}
+	}
+
+	// QRZ provider.
+	cfg := a.Config.Integrations.QRZ
+	if cfg.Enabled && cfg.User != "" {
+		p := cfg.Priority
+		if p == 0 {
+			p = 50
+		}
+		if p < 0 {
+			p = 0
+		}
+		if p > 100 {
+			p = 100
+		}
+		providers = append(providers, qrz.NewClientWithPriority(cfg.User, cfg.Pass, p))
+	}
+
+	// Wavelog provider — only when explicitly enabled and configured.
+	wc := a.Config.Integrations.WavelogCallbook
+	if wc.Enabled {
+		// Find any logbook with Wavelog configured.
+		var wlURL, wlAPIKey string
+		for _, lb := range a.Config.Logbooks {
+			if lb.Wavelog != nil && lb.Wavelog.Enabled && lb.Wavelog.URL != "" && lb.Wavelog.APIKey != "" {
+				wlURL = lb.Wavelog.URL
+				wlAPIKey = lb.Wavelog.APIKey
+				break
+			}
+		}
+		if wlURL != "" && wlAPIKey != "" {
+			p := wc.Priority
+			if p == 0 {
+				p = 10
+			}
+			if p < 0 {
+				p = 0
+			}
+			if p > 100 {
+				p = 100
+			}
+			providers = append(providers, NewWavelogCallbookProvider(wlURL, wlAPIKey, p))
+		}
+	}
+
+	// CTY.DAT prefix lookup — always-on fallback, runs last at priority 1.
+	// Fills country, grid, and CQ/ITU zone from the DXCC prefix database.
+	if a.DXCC != nil {
+		providers = append(providers, NewCTYProvider(a.DXCC, 1))
+	}
+
+	if len(providers) == 0 {
+		applog.Debug("Callbook: no providers configured")
+		return nil
+	}
+	applog.Debug("Callbook: registry built", "count", len(providers))
+	return callbook.NewRegistry(providers)
+}
+
+// maybeCheckCallbook returns a tea.Cmd to check callbook provider
+// connectivity at startup (first tick).
+func (m *Model) maybeCheckCallbook() tea.Cmd {
 	if m.Offline || !m.inetOnline {
 		m.lookup.qrzOnline = false
 		return nil
 	}
-	if !m.App.Config.Integrations.QRZ.Enabled {
+	if m.callbookRegistry == nil {
 		m.lookup.qrzOnline = false
 		return nil
 	}
@@ -38,33 +165,43 @@ func (m *Model) maybeCheckQRZ() tea.Cmd {
 		return nil
 	}
 	m.lookup.qrzForceCheck = false
-	return m.checkQRZCmd()
+	return m.checkCallbookCmd()
 }
 
-// checkQRZCmd returns a tea.Cmd that tests QRZ.com connectivity.
-func (m *Model) checkQRZCmd() tea.Cmd {
-	user := m.App.Config.Integrations.QRZ.User
-	pass := m.App.Config.Integrations.QRZ.Pass
+// callbookLookupCmd returns a tea.Cmd that performs a cascading callbook
+// lookup through all registered providers.
+func (m *Model) callbookLookupCmd(call string) tea.Cmd {
 	return func() tea.Msg {
-		err := qrz.TestConnection(user, pass)
-		return qrzStatusMsg{online: err == nil}
+		data, err := callbookRegLookup(m, call)
+		return callbookResultMsg{Call: call, Data: data, Err: err}
 	}
 }
 
-// qrzLookupCmd returns a tea.Cmd that performs a QRZ lookup.
-func (m *Model) qrzLookupCmd(call string) tea.Cmd {
+// checkCallbookCmd returns a tea.Cmd that tests connectivity for all
+// registered callbook providers.
+func (m *Model) checkCallbookCmd() tea.Cmd {
 	return func() tea.Msg {
-		data, err := qrzLookupFunc(m.App.Config.Integrations.QRZ.User, m.App.Config.Integrations.QRZ.Pass, call)
-		return qrzResultMsg{Call: call, Data: data, Err: err}
+		if m.callbookRegistry == nil {
+			return qrzStatusMsg{online: false}
+		}
+		// Report online if any provider is available.
+		// Logbook and CTY providers work locally; QRZ requires network.
+		online := true
+		if m.App.Config.Integrations.QRZ.Enabled {
+			err := qrz.TestConnection(m.App.Config.Integrations.QRZ.User, m.App.Config.Integrations.QRZ.Pass)
+			online = err == nil
+		}
+		return qrzStatusMsg{online: online}
 	}
 }
 
-// qrzLookup returns a tea.Cmd to look up a callsign via QRZ, with rate-limiting.
-func (m *Model) qrzLookup(call string) tea.Cmd {
+// callbookLookup returns a tea.Cmd to look up a callsign via all registered
+// callbook providers in priority order, with rate-limiting.
+func (m *Model) callbookLookup(call string) tea.Cmd {
 	if call == "" {
 		return nil
 	}
-	if m.Offline || !m.inetOnline {
+	if m.callbookRegistry == nil {
 		return nil
 	}
 	// Already completed for this call — no need to re-query.
@@ -76,8 +213,8 @@ func (m *Model) qrzLookup(call string) tea.Cmd {
 	}
 	m.lookup.qrzLast = time.Now()
 	m.lookup.qrzLastCall = call
-	applog.Info("QRZ: looking up", "call", call)
-	return m.qrzLookupCmd(call)
+	applog.Info("Callbook: looking up", "call", call)
+	return m.callbookLookupCmd(call)
 }
 
 // wlLookupCmd returns a tea.Cmd that performs a Wavelog private lookup.
@@ -125,8 +262,8 @@ func (m *Model) wlLookup(call string) tea.Cmd {
 	return m.wlLookupCmd(call, band, mode)
 }
 
-// fillQRZData fills the QSO form from QRZ lookup result data.
-func (m *Model) fillQRZData(msg qrzResultMsg) {
+// fillCallbookData fills the QSO form from callbook lookup result data.
+func (m *Model) fillCallbookData(msg callbookResultMsg) {
 	if msg.Call == "" {
 		return
 	}
@@ -136,23 +273,16 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 	}
 	m.lookup.qrzLookupDone = true
 	m.lookup.qrzLookupCall = strings.ToUpper(msg.Call)
-	if !m.App.Config.Integrations.QRZ.Enabled || m.App.Config.Integrations.QRZ.User == "" {
-		// QRZ not configured — silently skip. All callers guard before firing,
-		// this is a belt-and-suspenders check.
-		return
-	}
 	if msg.Err != nil {
-		m.toasts.Error("QRZ: " + msg.Err.Error())
+		m.toasts.Error("Callbook: " + msg.Err.Error())
 		m.clearQRZFields()
-		m.dxccAutoFill()
 		m.prefillContestExchange()
 		return
 	}
 	d := msg.Data
 	if d == nil || d.Callsign == "" {
-		m.toasts.Warn("QRZ.com: no data for " + msg.Call)
+		m.showCallbookToast(msg.Call) // show "no data" toast if everything is done
 		m.clearQRZFields()
-		m.dxccAutoFill()
 		m.prefillContestExchange()
 		return
 	}
@@ -173,17 +303,14 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 			applog.Debug("QRZ: grid rejected as fake/default", "grid", d.Grid)
 			grid = ""
 		}
-		// Only fill grid from QRZ if no higher-priority source has set it
+		// Only fill grid from callbook if no higher-priority source has set it
 		// (manual entry, SOTA, POTA, WWFF, or IOTA take precedence).
-		if grid != "" && (m.gridSource == gridSourceNone || m.gridSource == gridSourceQRZ) {
+		if grid != "" && (m.gridSource == gridSourceNone || m.gridSource == gridSourceCallbook) {
 			m.fields[fieldGrid].SetValue(formatLocator(grid))
 			m.rc.pathGrid = strings.ToUpper(formatLocator(grid))
-			m.gridSource = gridSourceQRZ
+			m.gridSource = gridSourceCallbook
 			m.invalidatePartnerMapCache()
-			applog.Debug("QRZ: filled partner grid", "grid", grid)
-		} else if grid == "" && m.gridSource == gridSourceNone {
-			// QRZ returned no usable grid — try DXCC country-based approximation.
-			m.dxccAutoFill()
+			applog.Debug("Callbook: filled partner grid", "grid", grid)
 		}
 	}
 	if d.QTH != "" {
@@ -193,15 +320,105 @@ func (m *Model) fillQRZData(msg qrzResultMsg) {
 		m.fields[fieldCountry].SetValue(d.Country)
 	}
 	m.autoFillRST()
-	m.toasts.Info("QRZ.com: " + d.Callsign + " " + d.Name)
 
-	// After QRZ filled what it could, fill remaining empty country/continent
-	// from DXCC prefix lookup if available.
-	m.dxccAutoFill()
+	// Show consolidated toast after all providers have reported in.
+	m.showCallbookToast(d.Callsign)
+
+	// Force immediate dashboard partner push so provider badges appear
+	// without waiting for the next throttled tick cycle.
+	m.forcePushDashboardPartner()
 
 	// Recalculate exchange fields — async lookup may have filled grid/zone
 	// data that contest exchange markers depend on.
 	m.prefillContestExchange()
+}
+
+// showCallbookToast shows a single consolidated toast listing all providers
+// that contributed data for the given callsign. It waits until both the
+// callbook registry lookup and the Wavelog private lookup have completed
+// (or are not applicable), then shows one toast. The toast is only shown
+// once per callsign to avoid duplicate notifications.
+func (m *Model) showCallbookToast(call string) {
+	if call == "" {
+		return
+	}
+	// Already shown for this call — suppress duplicate.
+	if m.lookup.callbookToastCall == call {
+		return
+	}
+	// Wait for both lookups to complete (or become not applicable).
+	if !m.lookupsCompleteForCall(call) {
+		return
+	}
+
+	m.lookup.callbookToastCall = call
+
+	// Collect provider names that contributed data.
+	var parts []string
+
+	// Providers from the callbook registry.
+	if m.lookup.partnerData != nil && strings.EqualFold(m.lookup.partnerData.Callsign, call) {
+		for _, p := range m.lookup.partnerData.Providers {
+			// Deduplicate (different providers may have the same name).
+			found := false
+			for _, existing := range parts {
+				if existing == p {
+					found = true
+					break
+				}
+			}
+			if !found {
+				parts = append(parts, p)
+			}
+		}
+	}
+
+	// Wavelog private lookup — only counts if the Wavelog callbook
+	// provider is enabled, returned data, and not already listed
+	// from the registry (avoid "Wavelog, Wavelog" duplicate).
+	if m.App.Config.Integrations.WavelogCallbook.Enabled && m.lookup.wlPrivateData != nil {
+		found := false
+		for _, p := range parts {
+			if p == "Wavelog" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			parts = append(parts, "Wavelog")
+		}
+	}
+
+	if len(parts) > 0 {
+		// Suppress toast when CTY.DAT is the only provider — it's an
+		// always-on fallback that silently fills country/grid.
+		if len(parts) == 1 && parts[0] == "CTY.DAT" {
+			return
+		}
+		// Build the list: "QRZ, Logbook, Wavelog"
+		list := ""
+		for i, p := range parts {
+			if i > 0 {
+				list += ", "
+			}
+			list += p
+		}
+		m.toasts.Info("Callbook: " + call + " — " + list)
+	} else if m.callbookRegistry == nil && !m.App.Config.Integrations.WavelogCallbook.Enabled {
+		// No providers available — show a one-time hint.
+		if !m.lookup.noProviderWarned {
+			m.lookup.noProviderWarned = true
+			ctyAvailable := m.App != nil && m.App.DXCC != nil && m.App.Config.General.UseCTY
+			if ctyAvailable {
+				m.toasts.Warn("Callbook: no providers configured — using CTY.DAT backfill (country + grid only)")
+			} else {
+				m.toasts.Warn("Callbook: no providers configured — enable QRZ, Wavelog, or Logbook in Callbook settings")
+			}
+		}
+	} else {
+		// Registry exists but no provider returned data for this call.
+		m.toasts.Warn("Callbook: " + call + " — no data")
+	}
 }
 
 // clearQRZFields clears the form fields that QRZ normally populates
@@ -292,14 +509,48 @@ func (m *Model) updateSCP() {
 }
 
 // fillWLData stores Wavelog private lookup result data.
-// When the result is for a stale callsign (user already moved on), we re-trigger
-// the lookup for the current form call instead of silently dropping — this
-// prevents the "WL lookup pending…" state from getting stuck indefinitely.
+//
+// Chain behaviour:
+//   - Normal (IsFallback=false): if the result is stale (user moved on),
+//     re-trigger lookup for the current form call. On success, fill the
+//     form. If the suffix result is sparse (no name or grid) and
+//     BaseCallFallback is enabled, immediately dispatch a second lookup
+//     for the base call (without suffix) with IsFallback=true.
+//   - Fallback (IsFallback=true): the result is from a base-call lookup
+//     triggered by a sparse suffix. Skip the stale check (the form still
+//     shows the suffix), verify the base matches, and fill the form.
 func (m *Model) fillWLData(msg wlResultMsg) tea.Cmd {
 	if msg.Call == "" {
 		return nil
 	}
 	formCall := qso.NormalizeCall(m.fields[fieldCall].Value())
+
+	// --- Fallback result (base-call lookup triggered by sparse suffix) ---
+	if msg.IsFallback {
+		if formCall == "" {
+			return nil
+		}
+		formBase := qso.DeriveBaseCall(formCall)
+		if !strings.EqualFold(formBase, msg.Call) {
+			// User moved to a different base call — drop.
+			return nil
+		}
+		if msg.Err != nil {
+			applog.Warn("Wavelog: base fallback error", "base", msg.Call, "error", msg.Err)
+			return nil
+		}
+		if msg.Data == nil {
+			return nil
+		}
+		applog.InfoDetail("Wavelog: base fallback OK", fmt.Sprintf("base=%s worked=%v confirmed=%v", msg.Call, msg.Data.Worked(), msg.Data.DXCCConfirmed()))
+		if m.App.Config.Integrations.WavelogCallbook.Enabled {
+			wlFillForm(m, msg.Data)
+		}
+		m.forcePushDashboardPartner()
+		return nil
+	}
+
+	// --- Normal (direct) result ---
 	if formCall != "" && formCall != strings.ToUpper(msg.Call) {
 		// Stale result — the user cycled away. Re-trigger lookup for the
 		// current form call so the pending state eventually resolves.
@@ -311,22 +562,100 @@ func (m *Model) fillWLData(msg wlResultMsg) tea.Cmd {
 		m.lookup.wlLookupDone = true
 		m.lookup.wlLookupCall = strings.ToUpper(msg.Call)
 		applog.Warn("Wavelog: lookup error", "call", msg.Call, "error", msg.Err)
-		m.toasts.Warn("Wavelog: " + msg.Err.Error())
+		m.showCallbookToast(msg.Call)
 		return nil
 	}
 	m.lookup.wlLookupDone = true
 	m.lookup.wlLookupCall = strings.ToUpper(msg.Call)
 	if msg.Data == nil {
+		m.showCallbookToast(msg.Call)
 		return nil
 	}
 	applog.InfoDetail("Wavelog: lookup OK", fmt.Sprintf("call=%s worked=%v confirmed=%v", msg.Call, msg.Data.Worked(), msg.Data.DXCCConfirmed()))
 	m.lookup.wlPrivateData = msg.Data
-	name := ""
-	if msg.Data.Name() != "" {
-		name = " " + msg.Data.Name()
+
+	if m.App.Config.Integrations.WavelogCallbook.Enabled {
+		wlFillForm(m, msg.Data)
 	}
-	m.toasts.Info("Wavelog: " + msg.Call + name)
+
+	// When the suffix result is sparse and BaseCallFallback is enabled,
+	// chain a second lookup for the base call (without suffix).
+	if m.App.Config.Integrations.Callbook.BaseCallFallback {
+		base := qso.DeriveBaseCall(msg.Call)
+		if base != "" && !strings.EqualFold(base, msg.Call) && msg.Data.Name() == "" && msg.Data.Grid() == "" {
+			applog.Debug("Wavelog: suffix sparse, chaining base lookup", "suffix", msg.Call, "base", base)
+			return m.wlFallbackLookup(base)
+		}
+	}
+
+	// Force immediate dashboard partner push so badges reflect Wavelog data.
+	m.forcePushDashboardPartner()
+
+	// Show consolidated toast listing all contributing providers.
+	m.showCallbookToast(msg.Call)
 	return nil
+}
+
+// wlFallbackLookup returns a tea.Cmd that performs a Wavelog private lookup
+// for the base call (without suffix/slash). The result carries IsFallback=true
+// so fillWLData can distinguish it from the original suffix lookup.
+func (m *Model) wlFallbackLookup(call string) tea.Cmd {
+	wl := m.App.Logbook.Wavelog
+	if wl == nil || !wl.Enabled || wl.URL == "" || wl.APIKey == "" {
+		return nil
+	}
+	if m.Offline || !m.inetOnline {
+		return nil
+	}
+	band := strings.TrimSpace(m.fields[fieldBand].Value())
+	mode := qso.NormalizeRigMode(m.fields[fieldMode].Value())
+	return func() tea.Msg {
+		data, err := wavelog.PrivateLookup(wl.URL, wl.APIKey, call, band, mode)
+		return wlResultMsg{Call: call, Data: data, Err: err, IsFallback: true}
+	}
+}
+
+// wlFillForm fills empty QSO form fields from Wavelog private lookup data.
+// Only writes fields that are currently blank — higher-priority providers
+// (QRZ, Logbook) in the callbook registry already ran first.
+// Grid is an exception: Wavelog's grid (actual station location) replaces
+// the rough center-point estimate from CTY/DXCC when available.
+func wlFillForm(m *Model, data *wavelog.PrivateLookupResult) {
+	if data == nil {
+		return
+	}
+
+	if strings.TrimSpace(m.fields[fieldName].Value()) == "" {
+		if n := data.Name(); n != "" {
+			m.fields[fieldName].SetValue(n)
+		}
+	}
+	if strings.TrimSpace(m.fields[fieldQTH].Value()) == "" {
+		if q := data.QTH(); q != "" {
+			m.fields[fieldQTH].SetValue(q)
+		}
+	}
+	// Grid: overwrite if currently blank OR if it came from the callbook
+	// (CTY center-point estimate) — Wavelog has the real station location.
+	if m.gridSource == gridSourceNone || m.gridSource == gridSourceCallbook {
+		if g := data.Grid(); len(g) >= 4 {
+			// Preserve full precision — Wavelog returns 6-char grids (e.g. JO91mn).
+			grid := strings.ToUpper(g)
+			if len(grid) > 6 {
+				grid = grid[:6]
+			}
+			m.fields[fieldGrid].SetValue(grid)
+			m.rc.pathGrid = grid
+			m.gridSource = gridSourceCallbook
+			m.invalidatePartnerMapCache()
+		}
+	}
+	if strings.TrimSpace(m.fields[fieldCountry].Value()) == "" {
+		if c := data.Country(); c != "" {
+			m.fields[fieldCountry].SetValue(c)
+		}
+	}
+	m.rc.formSig = ""
 }
 
 // lookupsCompleteForCall returns true when both QRZ and Wavelog lookups

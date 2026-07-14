@@ -32,7 +32,8 @@ func NewMainMenu() *MainMenu {
 			{"Operators", "Multi-operator callsign profiles"},
 			{"Rigs", "Name, model, antenna, flrig, WSJT-X"},
 			{"Contests", "Contest profiles, exchanges, serials"},
-			{"Integration", "DX Cluster, QRZ.com, GPS, HTTP"},
+			{"Integration", "DX Cluster, GPS, HTTP, APRS"},
+			{"Callbook", "Callsign lookup providers settings"},
 			{"Notifications", "Desktop alert preferences"},
 		},
 	}
@@ -62,6 +63,8 @@ func (m *MainMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case 5:
 				m.action = "integration"
 			case 6:
+				m.action = "callbook"
+			case 7:
 				m.action = "notifications"
 			}
 		case "up", "k":
@@ -76,6 +79,10 @@ func (m *MainMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.cursor++
 			}
+		case "home":
+			m.cursor = 0
+		case "end":
+			m.cursor = len(m.items) - 1
 		}
 	}
 	return m, nil

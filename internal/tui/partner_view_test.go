@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"charm.land/lipgloss/v2"
+	"github.com/szporwolik/cqops/internal/callbook"
 	"github.com/szporwolik/cqops/internal/config"
-	"github.com/szporwolik/cqops/internal/qrz"
 	"github.com/szporwolik/cqops/internal/store"
 )
 
@@ -16,7 +16,7 @@ func TestPartnerViewRender(t *testing.T) {
 	m.height = 30
 
 	// Set up partner data
-	m.lookup.partnerData = &qrz.CallData{
+	m.lookup.partnerData = &callbook.Result{
 		Callsign: "SP9MOA",
 		Name:     "John",
 		Grid:     "JO90",
@@ -53,7 +53,7 @@ func TestPartnerViewNoOwnGrid(t *testing.T) {
 	m.height = 30
 	m.App.Logbook.Station.Grid = ""
 
-	m.lookup.partnerData = &qrz.CallData{
+	m.lookup.partnerData = &callbook.Result{
 		Callsign: "SP9MOA",
 		Grid:     "JO90",
 	}
@@ -74,7 +74,7 @@ func TestPartnerViewMapCache(t *testing.T) {
 	m.App.Logbook.Station.Grid = "JO90"
 	m.App.Config.General.RenderMap = true
 
-	m.lookup.partnerData = &qrz.CallData{
+	m.lookup.partnerData = &callbook.Result{
 		Callsign: "SP9MOA",
 		Grid:     "JN18",
 	}
@@ -106,7 +106,7 @@ func TestPartnerViewMapCacheInvalidateOnResize(t *testing.T) {
 	m.height = 30
 	m.App.Logbook.Station.Grid = "JO90"
 	m.App.Config.General.RenderMap = true
-	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", Grid: "JN18"}
+	m.lookup.partnerData = &callbook.Result{Callsign: "SP9MOA", Grid: "JN18"}
 
 	m.viewPartner()
 	sig1 := m.rc.partnerViewSig
@@ -131,13 +131,13 @@ func TestPartnerViewMapCacheInvalidateOnPartnerChange(t *testing.T) {
 	m.height = 30
 	m.App.Logbook.Station.Grid = "JO90"
 	m.App.Config.General.RenderMap = true
-	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", Grid: "JN18"}
+	m.lookup.partnerData = &callbook.Result{Callsign: "SP9MOA", Grid: "JN18"}
 
 	m.viewPartner()
 	sig1 := m.rc.partnerViewSig
 
 	// Change partner
-	m.lookup.partnerData = &qrz.CallData{Callsign: "DJ7NT", Grid: "JO30"}
+	m.lookup.partnerData = &callbook.Result{Callsign: "DJ7NT", Grid: "JO30"}
 	m.invalidatePartnerMapCache()
 
 	m.viewPartner()
@@ -149,7 +149,7 @@ func TestPartnerViewMapCacheInvalidateOnPartnerChange(t *testing.T) {
 
 func TestPartnerViewRenderPartnerInfo(t *testing.T) {
 	m := newTestModel()
-	d := &qrz.CallData{
+	d := &callbook.Result{
 		Callsign: "SP9MOA",
 		Name:     "John",
 		Grid:     "JO90",
@@ -205,7 +205,7 @@ func TestPartnerViewNarrowWidth(t *testing.T) {
 	m := newTestModel()
 	m.width = 30
 	m.height = 20
-	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", Grid: "JO90"}
+	m.lookup.partnerData = &callbook.Result{Callsign: "SP9MOA", Grid: "JO90"}
 
 	view := m.viewPartner()
 	if view == "" {
@@ -262,7 +262,7 @@ func TestRenderLoTW(t *testing.T) {
 
 func TestRenderLogbookRowsWLFirst(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	d := &qrz.CallData{Callsign: "SP9MOA"}
+	d := &callbook.Result{Callsign: "SP9MOA"}
 
 	// No WL data — should fall back to local (all default false = new).
 	rows := m.renderLogbookRows(d, 40)
@@ -287,7 +287,7 @@ func TestRenderLogbookRowsWLFirst(t *testing.T) {
 
 func TestRenderLogbookRowsNewDXCC(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	d := &qrz.CallData{Callsign: "VK3A"}
+	d := &callbook.Result{Callsign: "VK3A"}
 
 	rows := m.renderLogbookRows(d, 55)
 
@@ -308,7 +308,7 @@ func TestPartnerViewCache(t *testing.T) {
 	m.width = 100
 	m.height = 30
 	m.App.Logbook.Station.Grid = "JO90"
-	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", Grid: "JO90"}
+	m.lookup.partnerData = &callbook.Result{Callsign: "SP9MOA", Grid: "JO90"}
 
 	// First render — builds and caches.
 	v1 := m.viewPartner()
@@ -346,7 +346,7 @@ func TestPhotoBox_HiddenWhenDisabled(t *testing.T) {
 	m.height = 50
 	m.App.Logbook.Station.Grid = "JO90"
 	m.App.Config.General.PictureAtQRZPane = false
-	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
+	m.lookup.partnerData = &callbook.Result{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
 
 	view := m.viewPartner()
 	if strings.Contains(view, "Photo") {
@@ -360,7 +360,7 @@ func TestPhotoBox_HiddenWhenNarrow(t *testing.T) {
 	m.height = 50
 	m.App.Logbook.Station.Grid = "JO90"
 	m.App.Config.General.PictureAtQRZPane = true
-	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
+	m.lookup.partnerData = &callbook.Result{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
 
 	view := m.viewPartner()
 	if strings.Contains(view, "Photo") {
@@ -374,7 +374,7 @@ func TestPhotoBox_HiddenWhenNoImageURL(t *testing.T) {
 	m.height = 50
 	m.App.Logbook.Station.Grid = "JO90"
 	m.App.Config.General.PictureAtQRZPane = true
-	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: ""}
+	m.lookup.partnerData = &callbook.Result{Callsign: "SP9MOA", ImageURL: ""}
 
 	view := m.viewPartner()
 	if strings.Contains(view, "Photo") {
@@ -388,7 +388,7 @@ func TestPhotoBox_ShowsLoadingWhenNoContent(t *testing.T) {
 	m.height = 50
 	m.App.Logbook.Station.Grid = "JO90"
 	m.App.Config.General.PictureAtQRZPane = true
-	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
+	m.lookup.partnerData = &callbook.Result{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
 
 	// partnerPicViewer has no content yet — should show "Loading…".
 	view := m.viewPartner()
@@ -406,7 +406,7 @@ func TestPhotoBox_AppearsOnWideScreen(t *testing.T) {
 	m.height = 50
 	m.App.Logbook.Station.Grid = "JO90"
 	m.App.Config.General.PictureAtQRZPane = true
-	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
+	m.lookup.partnerData = &callbook.Result{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
 
 	view := m.viewPartner()
 	if !strings.Contains(view, "Photo") {
@@ -420,7 +420,7 @@ func TestPhotoBox_CacheInvalidation(t *testing.T) {
 	m.height = 50
 	m.App.Logbook.Station.Grid = "JO90"
 	m.App.Config.General.PictureAtQRZPane = true
-	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
+	m.lookup.partnerData = &callbook.Result{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
 
 	// First render — caches with empty photo content.
 	v1 := m.viewPartner()
@@ -430,7 +430,7 @@ func TestPhotoBox_CacheInvalidation(t *testing.T) {
 
 	// Simulate photo loading by putting content in the viewer (same URL).
 	// The cache should miss because content hash changed.
-	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
+	m.lookup.partnerData = &callbook.Result{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
 	m.invalidatePartnerMapCache()
 	v2 := m.viewPartner()
 	// Both should render without panicking.
@@ -445,7 +445,7 @@ func TestPhotoBox_DimensionsStored(t *testing.T) {
 	m.height = 50
 	m.App.Logbook.Station.Grid = "JO90"
 	m.App.Config.General.PictureAtQRZPane = true
-	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
+	m.lookup.partnerData = &callbook.Result{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
 
 	m.viewPartner()
 
@@ -463,7 +463,7 @@ func TestPhotoBox_LastPartnerPicURLTracked(t *testing.T) {
 	m.height = 50
 	m.App.Logbook.Station.Grid = "JO90"
 	m.App.Config.General.PictureAtQRZPane = true
-	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
+	m.lookup.partnerData = &callbook.Result{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
 
 	m.viewPartner()
 
@@ -488,7 +488,7 @@ func TestPhotoBox_DoesNotAffectLayoutWhenDisabled(t *testing.T) {
 	m.height = 50
 	m.App.Logbook.Station.Grid = "JO90"
 	m.App.Config.General.PictureAtQRZPane = false
-	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
+	m.lookup.partnerData = &callbook.Result{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
 
 	viewWithPhoto := m.viewPartner()
 

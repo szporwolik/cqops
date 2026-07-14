@@ -21,8 +21,8 @@ import (
 	"github.com/gen2brain/beeep"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
+	"github.com/szporwolik/cqops/internal/callbook"
 	"github.com/szporwolik/cqops/internal/config"
-	"github.com/szporwolik/cqops/internal/qrz"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/wavelog"
@@ -34,13 +34,13 @@ type field int
 type gridSource string
 
 const (
-	gridSourceNone   gridSource = ""
-	gridSourceQRZ    gridSource = "QRZ.com"
-	gridSourceManual gridSource = "manual"
-	gridSourceSOTA   gridSource = "SOTA"
-	gridSourcePOTA   gridSource = "POTA"
-	gridSourceWWFF   gridSource = "WWFF"
-	gridSourceIOTA   gridSource = "IOTA"
+	gridSourceNone     gridSource = ""
+	gridSourceCallbook gridSource = "Callbook"
+	gridSourceManual   gridSource = "manual"
+	gridSourceSOTA     gridSource = "SOTA"
+	gridSourcePOTA     gridSource = "POTA"
+	gridSourceWWFF     gridSource = "WWFF"
+	gridSourceIOTA     gridSource = "IOTA"
 )
 
 const (
@@ -94,6 +94,7 @@ const (
 	screenMainMenu
 	screenConfig
 	screenIntegration
+	screenCallbook
 	screenChooser
 	screenRigEdit
 	screenContest
@@ -166,14 +167,15 @@ type Model struct {
 	// Render cache — avoids redundant layout, style, and view computation.
 	rc renderCache
 
-	lookup          lookupState
-	keepComment     bool   // "Keep Comment" checkbox — retains comment field content across QSOs
-	keepFocused     bool   // true when the Keep/Retain checkbox row has focus
-	keepSubFocus    int    // 0=Keep, 1=Retain — which checkbox in the row is active
-	retainForm      bool   // "Retain" checkbox — prevents form clearing after QSO save
-	dupeCacheKey    string // cache key for checkDupe result
-	dupeCacheResult bool   // cached outcome of last checkDupe
-	gridSource      gridSource
+	lookup           lookupState
+	callbookRegistry *callbook.Registry // ordered callbook providers; nil if none
+	keepComment      bool               // "Keep Comment" checkbox — retains comment field content across QSOs
+	keepFocused      bool               // true when the Keep/Retain checkbox row has focus
+	keepSubFocus     int                // 0=Keep, 1=Retain — which checkbox in the row is active
+	retainForm       bool               // "Retain" checkbox — prevents form clearing after QSO save
+	dupeCacheKey     string             // cache key for checkDupe result
+	dupeCacheResult  bool               // cached outcome of last checkDupe
+	gridSource       gridSource
 
 	keys           KeyMap
 	help           help.Model
@@ -185,9 +187,9 @@ type Model struct {
 }
 
 type tickMsg time.Time
-type qrzResultMsg struct {
+type callbookResultMsg struct {
 	Call string
-	Data *qrz.CallData
+	Data *callbook.Result
 	Err  error
 }
 
@@ -195,9 +197,10 @@ type qrzStatusMsg struct {
 	online bool
 }
 type wlResultMsg struct {
-	Call string
-	Data *wavelog.PrivateLookupResult
-	Err  error
+	Call       string
+	Data       *wavelog.PrivateLookupResult
+	Err        error
+	IsFallback bool // true when this is a base-call lookup triggered by a sparse suffix result
 }
 
 type dxcSpotLookupMsg struct {
@@ -246,6 +249,9 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	applog.SetDebugMode(a.Config.General.Debug)
 
 	m := &Model{App: a, qsos: initialQSOS, toasts: NewToastQueue(), dateTimeAuto: true, width: 80, height: 24}
+
+	// Build the callbook provider registry from config.
+	m.callbookRegistry = buildCallbookRegistry(a)
 
 	// Probe the terminal size at startup so the first render matches
 	// the real dimensions — avoids a visible resize flash on slow PCs.
@@ -824,6 +830,8 @@ func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleConfigUpdate(msg, cmd)
 	case screenIntegration:
 		return m.handleIntegrationUpdate(msg, cmd)
+	case screenCallbook:
+		return m.handleCallbookUpdate(msg, cmd)
 	case screenMainMenu:
 		return m.handleMainMenuUpdate(msg, cmd)
 	case screenPartner:
@@ -1088,6 +1096,8 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 		body = m.ui.configMenu.View().Content
 	case screenIntegration:
 		body = m.ui.integrationMenu.View().Content
+	case screenCallbook:
+		body = m.ui.callbookMenu.View().Content
 	case screenChooser:
 		body = m.ui.chooser.View().Content
 	case screenRigEdit:

@@ -12,7 +12,226 @@ import (
 	"time"
 
 	"github.com/szporwolik/cqops/internal/applog"
+	"github.com/szporwolik/cqops/internal/callbook"
 )
+
+// Client implements callbook.Provider for QRZ.com XML API.
+// It is safe for concurrent use.
+type Client struct {
+	user     string
+	pass     string
+	priority int
+	httpFn   func(string) ([]byte, error) // test seam
+
+	mu    sync.Mutex
+	key   string // cached session key
+	kUser string // user the cached key belongs to
+	kPass string // pass the cached key belongs to
+}
+
+// NewClient creates a QRZ.com callbook client.
+// It uses the package-level httpGetFn (the test seam) as its HTTP transport.
+func NewClient(user, pass string) *Client {
+	return &Client{user: user, pass: pass, priority: 50, httpFn: httpGetFn}
+}
+
+// NewClientWithPriority creates a QRZ.com client with explicit priority.
+func NewClientWithPriority(user, pass string, priority int) *Client {
+	return &Client{user: user, pass: pass, priority: priority, httpFn: httpGetFn}
+}
+
+// Name returns the provider identifier.
+func (c *Client) Name() string { return "QRZ.com" }
+
+// Priority returns the lookup priority (default 50).
+func (c *Client) Priority() int { return c.priority }
+
+// Lookup queries QRZ.com for a callsign. It returns nil, nil when the
+// callsign is not found (normal condition, not an error).
+func (c *Client) Lookup(callsign string) (*callbook.Result, error) {
+	if callsign == "" || c.user == "" {
+		return nil, nil
+	}
+	d, err := c.lookup(callsign)
+	if err != nil {
+		return nil, err
+	}
+	if d == nil {
+		return nil, nil
+	}
+	return &callbook.Result{
+		Callsign: d.Callsign, Name: d.Name, Grid: d.Grid, Country: d.Country,
+		QTH: d.QTH, State: d.State, Zip: d.Zip, County: d.County,
+		Class: d.Class, Email: d.Email, URL: d.URL,
+		Lat: d.Lat, Lon: d.Lon, DXCC: d.DXCC, CQZone: d.CQZone, ITUZone: d.ITUZone,
+		ImageURL: d.ImageURL, Provider: "qrz",
+	}, nil
+}
+
+// TestConnection validates QRZ credentials.
+func (c *Client) TestConnection() error {
+	return c.testConnection()
+}
+
+// lookup is the internal method returning the legacy CallData (shared with
+// the deprecated package-level Lookup function during migration).
+func (c *Client) lookup(callsign string) (*CallData, error) {
+	if callsign == "" || c.user == "" {
+		return nil, nil
+	}
+	// Reuse cached session key if credentials match.
+	c.mu.Lock()
+	key := c.key
+	kUser := c.kUser
+	kPass := c.kPass
+	c.mu.Unlock()
+
+	if key != "" && kUser == c.user && kPass == c.pass {
+		data, err := c.qrzLookup(key, callsign)
+		if err == nil {
+			return data, nil
+		}
+		applog.Debug("QRZ cached session failed, re-authenticating")
+		c.mu.Lock()
+		c.key = ""
+		c.mu.Unlock()
+	}
+	return c.qrzLoginLookup(callsign)
+}
+
+func (c *Client) testConnection() error {
+	applog.Debug("QRZ: testing connection")
+	if c.user == "" || c.pass == "" {
+		return fmt.Errorf("QRZ username and password required")
+	}
+	u := "https://xmldata.qrz.com/xml/current/?username=" + url.QueryEscape(c.user) + ";password=" + url.QueryEscape(c.pass) + ";agent=CQOps"
+	data, err := c.httpFn(u)
+	if err != nil {
+		applog.Error("QRZ: connection failed", "error", sanitizeQRError(err))
+		return fmt.Errorf("connection failed: %s", sanitizeQRError(err))
+	}
+	var authDB qrzDatabase
+	if err := xml.Unmarshal(data, &authDB); err != nil {
+		applog.Error("QRZ: invalid xml response", "error", err)
+		return fmt.Errorf("invalid response: %w", err)
+	}
+	if authDB.Session.Error != "" {
+		applog.Error("QRZ: auth error", "msg", authDB.Session.Error)
+		return fmt.Errorf("QRZ: %s", authDB.Session.Error)
+	}
+	if authDB.Session.Key == "" {
+		return fmt.Errorf("QRZ: no session key")
+	}
+	c.mu.Lock()
+	c.key = authDB.Session.Key
+	c.kUser = c.user
+	c.kPass = c.pass
+	c.mu.Unlock()
+	applog.InfoDetail("QRZ: connected", fmt.Sprintf("user=%s url=xmldata.qrz.com", c.user))
+	return nil
+}
+
+func (c *Client) qrzLookup(sessionKey, callsign string) (*CallData, error) {
+	u := "https://xmldata.qrz.com/xml/current/?s=" + url.QueryEscape(sessionKey) + ";callsign=" + url.QueryEscape(callsign)
+	data, err := c.httpFn(u)
+	if err != nil {
+		applog.Error("QRZ lookup failed", "error", err)
+		return nil, err
+	}
+	var db qrzDatabase
+	if err := xml.Unmarshal(data, &db); err != nil {
+		return nil, fmt.Errorf("qrz xml: %w", err)
+	}
+	if db.Session.Error != "" {
+		if strings.Contains(db.Session.Error, "Not found") {
+			applog.Info("QRZ: not found", "callsign", callsign)
+			return nil, nil
+		}
+		applog.Error("QRZ lookup error", "msg", db.Session.Error)
+		return nil, fmt.Errorf("QRZ: %s", db.Session.Error)
+	}
+	call := db.Callsign
+	if strings.TrimSpace(call.Call) == "" {
+		applog.Debug("QRZ no data", "callsign", callsign)
+		return nil, nil
+	}
+	applog.InfoDetail("QRZ lookup ok", fmt.Sprintf("%s — %s", call.Call, coalesce(call.Fname, call.Name)))
+	return &CallData{
+		Callsign: strings.TrimSpace(call.Call),
+		Name:     strings.TrimSpace(coalesce(call.Fname, call.Name)),
+		Grid:     strings.TrimSpace(call.Grid),
+		Country:  strings.TrimSpace(call.Country),
+		State:    strings.TrimSpace(call.State),
+		QTH:      strings.TrimSpace(call.Addr2),
+		Zip:      strings.TrimSpace(call.Zip),
+		County:   strings.TrimSpace(call.County),
+		Class:    strings.TrimSpace(call.Class),
+		Email:    strings.TrimSpace(call.Email),
+		URL:      strings.TrimSpace(call.URL),
+		Lat:      strings.TrimSpace(call.Lat),
+		Lon:      strings.TrimSpace(call.Lon),
+		DXCC:     strings.TrimSpace(call.DXCC),
+		CQZone:   strings.TrimSpace(call.CQZone),
+		ITUZone:  strings.TrimSpace(call.ITUZone),
+		ImageURL: strings.TrimSpace(call.Image),
+	}, nil
+}
+
+func (c *Client) qrzLoginLookup(callsign string) (*CallData, error) {
+	applog.Debug("QRZ lookup", "callsign", callsign)
+	u := "https://xmldata.qrz.com/xml/current/?username=" + url.QueryEscape(c.user) + ";password=" + url.QueryEscape(c.pass) + ";agent=CQOps"
+	data, err := c.httpFn(u)
+	if err != nil {
+		applog.Error("QRZ auth failed", "error", sanitizeQRError(err))
+		return nil, fmt.Errorf("QRZ: %s", sanitizeQRError(err))
+	}
+	var authDB qrzDatabase
+	if err := xml.Unmarshal(data, &authDB); err != nil {
+		return nil, err
+	}
+	if authDB.Session.Error != "" {
+		applog.Error("QRZ auth error", "msg", authDB.Session.Error)
+		return nil, fmt.Errorf("QRZ: %s", authDB.Session.Error)
+	}
+	if authDB.Session.Key == "" {
+		return nil, fmt.Errorf("QRZ: no session key")
+	}
+	c.mu.Lock()
+	c.key = authDB.Session.Key
+	c.kUser = c.user
+	c.kPass = c.pass
+	c.mu.Unlock()
+	return c.qrzLookup(authDB.Session.Key, callsign)
+}
+
+// ---------------------------------------------------------------------------
+// Legacy package-level API — delegates to a transient Client.
+// Prefer constructing a Client via NewClient and keeping it for the
+// lifetime of the connection.
+// ---------------------------------------------------------------------------
+
+// clientFor returns a transient Client for the legacy API. The session
+// cache is lost after the call because the Client is discarded.
+func clientFor(user, pass string) *Client {
+	return &Client{user: user, pass: pass, httpFn: httpGetFn}
+}
+
+// Lookup is the legacy package-level callbook lookup. New code should use
+// NewClient(user, pass).Lookup(callsign) instead.
+func Lookup(qrzUser, qrzPass, callsign string) (*CallData, error) {
+	return clientFor(qrzUser, qrzPass).lookup(callsign)
+}
+
+// TestConnection is the legacy package-level connection test.
+func TestConnection(user, pass string) error {
+	return clientFor(user, pass).testConnection()
+}
+
+// LookupResult is the package-level callbook lookup returning a
+// provider-neutral result. New code should prefer constructing a Client.
+func LookupResult(user, pass, callsign string) (*callbook.Result, error) {
+	return clientFor(user, pass).Lookup(callsign)
+}
 
 type CallData struct {
 	Callsign string
@@ -68,128 +287,9 @@ type qrzCall struct {
 
 var httpClient = &http.Client{Timeout: 10 * time.Second}
 
-// Session cache to avoid re-authenticating on every lookup.
-var (
-	cacheMu           sync.Mutex
-	cachedSessionKey  string
-	cachedSessionUser string
-	cachedSessionPass string
-)
-
-func Lookup(qrzUser, qrzPass, callsign string) (*CallData, error) {
-	if callsign == "" || qrzUser == "" {
-		return nil, nil
-	}
-
-	// Reuse cached session key if credentials match
-	cacheMu.Lock()
-	key := cachedSessionKey
-	user := cachedSessionUser
-	pass := cachedSessionPass
-	cacheMu.Unlock()
-
-	if key != "" && user == qrzUser && pass == qrzPass {
-		data, err := qrzLookup(key, callsign)
-		if err == nil {
-			return data, nil
-		}
-		// Session expired or failed — clear cache and fall through to re-auth
-		applog.Debug("QRZ cached session failed, re-authenticating")
-		cacheMu.Lock()
-		cachedSessionKey = ""
-		cacheMu.Unlock()
-	}
-
-	return qrzLoginLookup(qrzUser, qrzPass, callsign)
-}
-
-func qrzLookup(sessionKey, callsign string) (*CallData, error) {
-	u := "https://xmldata.qrz.com/xml/current/?s=" + url.QueryEscape(sessionKey) + ";callsign=" + url.QueryEscape(callsign)
-	data, err := httpGetFn(u)
-	if err != nil {
-		applog.Error("QRZ lookup failed", "error", err)
-		return nil, err
-	}
-
-	var db qrzDatabase
-	if err := xml.Unmarshal(data, &db); err != nil {
-		return nil, fmt.Errorf("qrz xml: %w", err)
-	}
-	if db.Session.Error != "" {
-		// "Not found" is a normal result, not an error
-		if strings.Contains(db.Session.Error, "Not found") {
-			applog.Info("QRZ: not found", "callsign", callsign)
-			return nil, nil
-		}
-		applog.Error("QRZ lookup error", "msg", db.Session.Error)
-		return nil, fmt.Errorf("QRZ: %s", db.Session.Error)
-	}
-
-	c := db.Callsign
-	if strings.TrimSpace(c.Call) == "" {
-		applog.Debug("QRZ no data", "callsign", callsign)
-		return nil, nil
-	}
-	applog.InfoDetail("QRZ lookup ok", fmt.Sprintf("%s — %s", c.Call, coalesce(c.Fname, c.Name)))
-	return &CallData{
-		Callsign: strings.TrimSpace(c.Call),
-		Name:     strings.TrimSpace(coalesce(c.Fname, c.Name)),
-		Grid:     strings.TrimSpace(c.Grid),
-		Country:  strings.TrimSpace(c.Country),
-		State:    strings.TrimSpace(c.State),
-		QTH:      strings.TrimSpace(c.Addr2),
-		Zip:      strings.TrimSpace(c.Zip),
-		County:   strings.TrimSpace(c.County),
-		Class:    strings.TrimSpace(c.Class),
-		Email:    strings.TrimSpace(c.Email),
-		URL:      strings.TrimSpace(c.URL),
-		Lat:      strings.TrimSpace(c.Lat),
-		Lon:      strings.TrimSpace(c.Lon),
-		DXCC:     strings.TrimSpace(c.DXCC),
-		CQZone:   strings.TrimSpace(c.CQZone),
-		ITUZone:  strings.TrimSpace(c.ITUZone),
-		ImageURL: strings.TrimSpace(c.Image),
-	}, nil
-}
-
-func qrzLoginLookup(user, pass, callsign string) (*CallData, error) {
-	applog.Debug("QRZ lookup", "callsign", callsign)
-	u := "https://xmldata.qrz.com/xml/current/?username=" + url.QueryEscape(user) + ";password=" + url.QueryEscape(pass) + ";agent=CQOps"
-	data, err := httpGetFn(u)
-	if err != nil {
-		applog.Error("QRZ auth failed", "error", sanitizeQRError(err))
-		return nil, fmt.Errorf("QRZ: %s", sanitizeQRError(err))
-	}
-
-	var authDB qrzDatabase
-	if err := xml.Unmarshal(data, &authDB); err != nil {
-		return nil, err
-	}
-	if authDB.Session.Error != "" {
-		applog.Error("QRZ auth error", "msg", authDB.Session.Error)
-		return nil, fmt.Errorf("QRZ: %s", authDB.Session.Error)
-	}
-	if authDB.Session.Key == "" {
-		return nil, fmt.Errorf("QRZ: no session key")
-	}
-
-	// Cache the session key
-	cacheMu.Lock()
-	cachedSessionKey = authDB.Session.Key
-	cachedSessionUser = user
-	cachedSessionPass = pass
-	cacheMu.Unlock()
-
-	return qrzLookup(authDB.Session.Key, callsign)
-}
-
-// sanitizeQRError strips the QRZ password from error messages before
-// they are logged or shown in toasts.  The HTTP client's error includes
-// the full request URL which embeds the password query parameter.
+// sanitizeQRError strips the QRZ password from error messages.
 func sanitizeQRError(err error) string {
 	msg := err.Error()
-	// Strip ";password=..." up to the next ";" or "?" or end-of-string.
-	// QRZ URLs use ";password=XXXX;agent=CQOps".
 	re := regexp.MustCompile(`;password=[^;&?]+`)
 	return re.ReplaceAllString(msg, ";password=****")
 }
@@ -208,8 +308,7 @@ func httpGet(u string) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
-// httpGetFn is the function used by Lookup and TestConnection to make HTTP
-// requests. Tests can replace it with a mock that uses httptest.Server.
+// httpGetFn is the test seam — replaceable with httptest.Server.
 var httpGetFn = httpGet
 
 func coalesce(a, b string) string {
@@ -217,41 +316,4 @@ func coalesce(a, b string) string {
 		return a
 	}
 	return b
-}
-
-// TestConnection validates that QRZ.com credentials are valid and the API is reachable.
-func TestConnection(user, pass string) error {
-	applog.Debug("QRZ: testing connection")
-	if user == "" || pass == "" {
-		return fmt.Errorf("QRZ username and password required")
-	}
-	u := "https://xmldata.qrz.com/xml/current/?username=" + url.QueryEscape(user) + ";password=" + url.QueryEscape(pass) + ";agent=CQOps"
-	data, err := httpGetFn(u)
-	if err != nil {
-		applog.Error("QRZ: connection failed", "error", sanitizeQRError(err))
-		return fmt.Errorf("connection failed: %s", sanitizeQRError(err))
-	}
-
-	var authDB qrzDatabase
-	if err := xml.Unmarshal(data, &authDB); err != nil {
-		applog.Error("QRZ: invalid xml response", "error", err)
-		return fmt.Errorf("invalid response: %w", err)
-	}
-	if authDB.Session.Error != "" {
-		applog.Error("QRZ: auth error", "msg", authDB.Session.Error)
-		return fmt.Errorf("QRZ: %s", authDB.Session.Error)
-	}
-	if authDB.Session.Key == "" {
-		return fmt.Errorf("QRZ: no session key")
-	}
-
-	// Cache the session key so subsequent lookups don't re-auth.
-	cacheMu.Lock()
-	cachedSessionKey = authDB.Session.Key
-	cachedSessionUser = user
-	cachedSessionPass = pass
-	cacheMu.Unlock()
-
-	applog.InfoDetail("QRZ: connected", fmt.Sprintf("user=%s url=xmldata.qrz.com", user))
-	return nil
 }

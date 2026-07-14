@@ -198,6 +198,24 @@ func (r *PrivateLookupResult) ConfirmedBand() bool { return r.IsTrue("call_confi
 // ConfirmedBandMode returns call_confirmed_band_mode.
 func (r *PrivateLookupResult) ConfirmedBandMode() bool { return r.IsTrue("call_confirmed_band_mode") }
 
+// Grid returns the gridsquare.
+func (r *PrivateLookupResult) Grid() string { return r.str("gridsquare") }
+
+// QTH returns the location (city/address).
+func (r *PrivateLookupResult) QTH() string { return r.str("location") }
+
+// Country returns the DXCC country name.
+func (r *PrivateLookupResult) Country() string { return r.str("dxcc") }
+
+// CQZone returns the DXCC CQ zone.
+func (r *PrivateLookupResult) CQZone() string { return r.str("dxcc_cqz") }
+
+// ITUZone returns the DXCC ITU zone.
+func (r *PrivateLookupResult) ITUZone() string { return r.str("dxcc_ituz") }
+
+// State returns the state.
+func (r *PrivateLookupResult) State() string { return r.str("state") }
+
 // PrivateLookup queries the Wavelog API for callsign confirmation/worked data.
 func PrivateLookup(baseURL, apiKey, callsign, band, mode string) (*PrivateLookupResult, error) {
 	if baseURL == "" || apiKey == "" || callsign == "" {

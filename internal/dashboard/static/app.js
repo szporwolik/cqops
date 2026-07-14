@@ -19,6 +19,17 @@ var heroOverview=$('hero-overview'), heroHeadline=$('hero-headline'), heroSublin
 var heroLabel=$('hero-label'),heroCall=$('hero-call'),heroBadges=$('hero-badges'),heroIdentity=$('hero-identity'),heroMeta=$('hero-meta');
 var stationFields=$('station-fields'), statsFields=$('stats-fields'), topqsosBody=$('topqsos-body');
 
+// ---- Internet callbook link (set via display config) ----
+var icbUrl=''; // URL template with {CALL} placeholder
+
+// callLink returns an HTML anchor (or just the callsign text) based on
+// whether an internet callbook provider is configured. The anchor inherits
+// all styling from its parent — no color, no underline, no decoration.
+function callLink(call){
+  if(!icbUrl||!call)return esc(call);
+  return '<a href=\"'+esc(icbUrl.replace('{CALL}',encodeURIComponent(call)))+'\" target=\"_blank\" rel=\"noopener\" style=\"color:inherit;text-decoration:none\">'+esc(call)+'</a>';
+}
+
 // ---- Data freshness timestamps ----
 var freshness={wx:null,psk:null,radar:null,aprs:null};
 function touchFreshness(key){freshness[key]=new Date();registerDataFreshness()}
@@ -187,6 +198,15 @@ function connectSSE(){
     D('sse','aprs',a? a.length:0);
     renderAPRSOnLocalMap(a);
   });
+  es.addEventListener('display',function(e){
+    var d=JSON.parse(e.data).payload;
+    if(d&&d.internetCallbookUrl){
+      icbUrl=d.internetCallbookUrl;
+      // Re-render tables so callsigns become clickable links.
+      renderRecentTable(null);
+      renderTopQSOs();
+    }
+  });
   es.addEventListener('heartbeat',function(){D('sse','heartbeat')});
   es.onopen=function(){sseReconnects=0;setSSEStatus('sse-connected');hideDisconnected();D('sse','connected ✓')};
   es.onerror=function(){sseReconnects++;setSSEStatus('sse-disconnected');es.close();
@@ -204,6 +224,7 @@ function renderAll(snap){
   if(!snap){D('renderAll','null snapshot, skipping');return}
   D('renderAll','start',{hasStation:!!snap.station,hasActive:!!(snap.activeQso&&snap.activeQso.call),today:snap.today? snap.today.length:0,recent:snap.recent? snap.recent.length:0});
   displayCfg=snap.display||{};
+  if(displayCfg.internetCallbookUrl) icbUrl=displayCfg.internetCallbookUrl;
   // Window title — show active logbook.
   if(snap.logbook&&snap.logbook.name){document.title='CQOps - '+snap.logbook.name;window._discLogbook=snap.logbook.name}
   // Theme — apply theme class to root element.
@@ -290,7 +311,7 @@ function renderAll(snap){
   if(snap.app&&snap.app.version){
     $('footer-text').innerHTML='CQOps Live v'+esc(snap.app.version)+' · <a href=\"https://cqops.com\">cqops.com</a>';
   }
-  $('footer-attrib').innerHTML='Map: <a href=\"https://leafletjs.com\" target=\"_blank\" rel=\"noopener\">Leaflet</a> · Tiles: <a href=\"https://openfreemap.org\" target=\"_blank\" rel=\"noopener\">OpenFreeMap</a> &copy; <a href=\"https://www.openmaptiles.org/\" target=\"_blank\" rel=\"noopener\">OpenMapTiles</a> Data from <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener\">OpenStreetMap</a> · Solar: <a href=\"https://www.hamqsl.com/solar.html\" target=\"_blank\" rel=\"noopener\">HamQSL</a> · Spots: <a href=\"https://pskreporter.info/\" target=\"_blank\" rel=\"noopener\">PSK Reporter</a> · Weather: <a href=\"https://open-meteo.com/\" target=\"_blank\" rel=\"noopener\">Open-Meteo</a> · Callbook: <a href=\"https://www.qrz.com\" target=\"_blank\" rel=\"noopener\">QRZ.com</a>'+
+  $('footer-attrib').innerHTML='Map: <a href=\"https://leafletjs.com\" target=\"_blank\" rel=\"noopener\">Leaflet</a> · Tiles: <a href=\"https://openfreemap.org\" target=\"_blank\" rel=\"noopener\">OpenFreeMap</a> &copy; <a href=\"https://www.openmaptiles.org/\" target=\"_blank\" rel=\"noopener\">OpenMapTiles</a> Data from <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener\">OpenStreetMap</a> · Solar: <a href=\"https://www.hamqsl.com/solar.html\" target=\"_blank\" rel=\"noopener\">HamQSL</a> · Spots: <a href=\"https://pskreporter.info/\" target=\"_blank\" rel=\"noopener\">PSK Reporter</a> · Weather: <a href=\"https://open-meteo.com/\" target=\"_blank\" rel=\"noopener\">Open-Meteo</a>'+
     (snap.dxc&&snap.dxc.connected?' · Cluster: <span style=\"color:var(--dim)\">'+esc(snap.dxc.host||'DX Cluster')+'</span>':'');
   D('renderAll','done');
 }
@@ -321,6 +342,28 @@ function renderHero(aq,p){
   else if(lastActiveFlags.isNewDxcc)addBadge('NEW DXCC','success');
   else if(lastActiveFlags.isNewCall)addBadge('NEW CALL','info');
   D('hero','render',{call:aq.call,band:aq.band,mode:aq.mode,dupe:aq.isDupe,newCall:aq.isNewCall,newDxcc:aq.isNewDxcc});
+  // Provider badges — clickable links to each callbook provider's callsign page.
+  var provDiv = $('hero-providers');
+  provDiv.innerHTML = '';
+  if (p && p.callbookProviders && p.callbookProviders.length) {
+    for (var i = 0; i < p.callbookProviders.length; i++) {
+      var pb = p.callbookProviders[i];
+      if (pb.url) {
+        var a = document.createElement('a');
+        a.className = 'badge provider-badge';
+        a.href = pb.url;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.textContent = pb.name;
+        provDiv.appendChild(a);
+      } else {
+        var s = document.createElement('span');
+        s.className = 'badge provider-badge';
+        s.textContent = pb.name;
+        provDiv.appendChild(s);
+      }
+    }
+  }
   // Photo
   if(p&&p.imageUrl){showHeroPhoto(p.imageUrl)}else{showHeroPlaceholder(p?p.call:aq.call)}
   // Identity line: merge partner data with form fields
@@ -508,7 +551,7 @@ function renderTopQSOs(){
     var isLongest=i===0&&r.km>0;
     var rowCls=isLongest?' class=\"tq-longest\"':'';
     return'<tr'+rowCls+'>'+
-      '<td>'+esc(r.call)+'</td>'+
+      '<td>'+callLink(r.call)+'</td>'+
       '<td><span class=\"recent-badge '+bandBadgeClass(r.band)+'\">'+esc(r.band)+'</span></td>'+
       '<td><span class=\"recent-badge '+modeBadgeClass(displayMode)+'\">'+esc(displayMode)+'</span></td>'+
       '<td>'+fmtDist(r.km)+'</td>'+
@@ -541,7 +584,7 @@ function renderRecentTable(qsos){
     var dist=formatDistDir(q.grid);
     var op=q.operator||ownStationCall;
     var opBadge=op?'<span class="recent-badge" style="'+opBadgeStyle(op)+'">'+esc(op)+'</span>':'';
-    return'<tr><td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.submode||q.mode,'mode')+'</td><td class="recent-op-col">'+opBadge+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td title="'+esc(q.country||'')+'"><span class="recent-badge country-badge">'+esc(ctry)+'</span></td></tr>';
+    return'<tr><td>'+utc+'</td><td><strong>'+callLink(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.submode||q.mode,'mode')+'</td><td class="recent-op-col">'+opBadge+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td title="'+esc(q.country||'')+'"><span class="recent-badge country-badge">'+esc(ctry)+'</span></td></tr>';
   }).join('');
 }
 function renderCellBadge(val,type){
@@ -555,7 +598,7 @@ function prependRecentRow(q){
   var row=document.createElement('tr');row.className='new-row';
   var op=q.operator||ownStationCall;
   var opBadge=op?'<span class="recent-badge" style="'+opBadgeStyle(op)+'">'+esc(op)+'</span>':'';
-  row.innerHTML='<td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.submode||q.mode,'mode')+'</td><td class="recent-op-col">'+opBadge+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td><span class="recent-badge country-badge">'+esc(q.country||'')+'</span></td>';
+  row.innerHTML='<td>'+utc+'</td><td><strong>'+callLink(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.submode||q.mode,'mode')+'</td><td class="recent-op-col">'+opBadge+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td><span class="recent-badge country-badge">'+esc(q.country||'')+'</span></td>';
   if(recentBody.firstChild)recentBody.insertBefore(row,recentBody.firstChild);else recentBody.appendChild(row);
   while(recentBody.children.length>7)recentBody.removeChild(recentBody.lastChild);
 }

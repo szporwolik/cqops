@@ -126,7 +126,7 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 	if c := m.maybeCheckWavelog(); c != nil {
 		cmds = append(cmds, c)
 	}
-	if c := m.maybeCheckQRZ(); c != nil {
+	if c := m.maybeCheckCallbook(); c != nil {
 		cmds = append(cmds, c)
 	}
 	if c := m.maybeFetchSolar(); c != nil {
@@ -169,7 +169,7 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			if c := m.maybeCheckWavelog(); c != nil {
 				cmds = append(cmds, c)
 			}
-			if c := m.maybeCheckQRZ(); c != nil {
+			if c := m.maybeCheckCallbook(); c != nil {
 				cmds = append(cmds, c)
 			}
 			if c := m.maybeFetchSolar(); c != nil {
@@ -386,17 +386,12 @@ func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
 			m.lookup.qrzNeed = false
 			return cmd, false
 		}
-		// Always fire DXC spot lookup when call changes, even if QRZ is disabled.
-		if !m.App.Config.Integrations.QRZ.Enabled || m.App.Config.Integrations.QRZ.User == "" {
-			m.lookup.qrzNeed = false
-			return tea.Batch(cmd, m.dxcSpotLookupCmd(call)), true
-		}
-		if c := m.qrzLookup(call); c != nil {
-			m.lookup.qrzNeed = false
+		m.lookup.qrzNeed = false
+		// Always dispatch callbook + DXC spot lookups, even without QRZ.
+		if c := m.callbookLookup(call); c != nil {
 			return tea.Batch(cmd, c, m.dxcSpotLookupCmd(call)), true
 		}
-		// qrzLookup rate-limited — leave qrzNeed to retry next tick.
-		// Fall through so wlNeed below can still fire on this tick.
+		return tea.Batch(cmd, m.dxcSpotLookupCmd(call)), true
 	}
 	if m.lookup.wlNeed {
 		call := m.lookup.wlCall
@@ -445,8 +440,8 @@ func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
 // QSO refresh). Extracted from Update() to keep the main loop manageable.
 func (m *Model) handleLookupResultMsg(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	switch r := msg.(type) {
-	case qrzResultMsg:
-		m.fillQRZData(r)
+	case callbookResultMsg:
+		m.fillCallbookData(r)
 		cmd = tea.Batch(cmd, m.updateFilteredTable())
 		m.contestAutoFocusExchRcvd()
 		if m.photo.partnerPicNeedLoad {

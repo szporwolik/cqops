@@ -6,7 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/szporwolik/cqops/internal/qrz"
+	"github.com/szporwolik/cqops/internal/callbook"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 )
@@ -187,7 +187,7 @@ func (m *Model) viewPartner() string {
 		maxInner = lbInner
 	}
 
-	cbBox := m.renderPartnerBox("Callbook"+m.qrzSuffix(), cbContent, cbW, maxInner)
+	cbBox := m.renderPartnerBox("Callbook"+m.callbookSuffix(), cbContent, cbW, maxInner)
 	lbBox := m.renderPartnerBox("Logbook", lbContent, lbW, maxInner)
 
 	var topRow string
@@ -197,7 +197,7 @@ func (m *Model) viewPartner() string {
 		if wlInner > maxInner {
 			maxInner = wlInner
 		}
-		cbBox = m.renderPartnerBox("Callbook"+m.qrzSuffix(), cbContent, cbW, maxInner)
+		cbBox = m.renderPartnerBox("Callbook"+m.callbookSuffix(), cbContent, cbW, maxInner)
 		lbBox = m.renderPartnerBox("Logbook", lbContent, lbW, maxInner)
 		wlBox := m.renderPartnerBox("Wavelog", wlContent, wlW, maxInner)
 		topRow = lipgloss.JoinHorizontal(lipgloss.Top, cbBox, lbBox, wlBox)
@@ -292,9 +292,9 @@ func (m *Model) viewPartner() string {
 
 // --- Box helpers ---
 
-func (m *Model) qrzSuffix() string {
+func (m *Model) callbookSuffix() string {
 	if m.lookup.partnerData != nil && m.App.Config.Integrations.QRZ.Enabled {
-		return " (QRZ.com)"
+		return " (Callbook)"
 	}
 	return ""
 }
@@ -330,7 +330,7 @@ func infoRow(label, value string, maxW int) string {
 
 // --- Callbook rows ---
 
-func (m *Model) renderCallbookRows(d *qrz.CallData, maxW int) string {
+func (m *Model) renderCallbookRows(d *callbook.Result, maxW int) string {
 	var rows []row
 	add := func(label, value string) {
 		if value != "" {
@@ -359,7 +359,7 @@ func (m *Model) renderCallbookRows(d *qrz.CallData, maxW int) string {
 	// Show the QSO form grid (which may differ from QRZ grid due to REF autofill)
 	// with its source, or fall back to QRZ grid.
 	formGrid := strings.TrimSpace(m.fields[fieldGrid].Value())
-	if formGrid != "" && m.gridSource != "" && m.gridSource != gridSourceQRZ {
+	if formGrid != "" && m.gridSource != "" && m.gridSource != gridSourceCallbook {
 		add("Grid", osc8Link("http://www.levinecentral.com/ham/grid_square.php?Grid="+formGrid, formGrid)+"  "+DimStyle.Render("("+string(m.gridSource)+")"))
 	} else if d.Grid != "" {
 		add("Grid", osc8Link("http://www.levinecentral.com/ham/grid_square.php?Grid="+d.Grid, d.Grid))
@@ -400,7 +400,7 @@ func (m *Model) renderCallbookRows(d *qrz.CallData, maxW int) string {
 
 // --- Logbook rows ---
 
-func (m *Model) renderLogbookRows(d *qrz.CallData, maxW int) string {
+func (m *Model) renderLogbookRows(d *callbook.Result, maxW int) string {
 	call := d.Callsign
 	band := strings.TrimSpace(m.fields[fieldBand].Value())
 	mode := strings.TrimSpace(m.fields[fieldMode].Value())
@@ -610,12 +610,12 @@ func renderLoTW(isMember bool, dimStyle, badStyle lipgloss.Style) string {
 
 // --- Form partner data ---
 
-func (m *Model) formPartnerData() *qrz.CallData {
+func (m *Model) formPartnerData() *callbook.Result {
 	call := qso.NormalizeCall(m.fields[fieldCall].Value())
 	if call == "" {
 		return nil
 	}
-	return &qrz.CallData{
+	return &callbook.Result{
 		Callsign: call,
 		Name:     strings.TrimSpace(m.fields[fieldName].Value()),
 		Grid:     strings.TrimSpace(m.fields[fieldGrid].Value()),
@@ -626,7 +626,7 @@ func (m *Model) formPartnerData() *qrz.CallData {
 
 // --- Map cache ---
 
-func (m *Model) getOrBuildMap(d *qrz.CallData, mapW, mapAvailH int) string {
+func (m *Model) getOrBuildMap(d *callbook.Result, mapW, mapAvailH int) string {
 	// RenderMap config toggle — if off, don't show map.
 	if !m.App.Config.General.RenderMap {
 		return ""

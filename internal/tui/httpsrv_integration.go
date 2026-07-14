@@ -259,10 +259,34 @@ func (m *Model) pushDashboardPartner(ds *dashboard.State, call string) {
 	fmt.Sscanf(d.Lon, "%f", &pi.Lon)
 	pi.ImageURL = d.ImageURL
 
+	// Build provider badges with URLs for external providers.
+	// CTY.DAT is an always-on offline fallback — do not show a badge.
+	if len(d.Providers) > 0 {
+		pi.CallbookProviders = make([]dashboard.ProviderBadge, 0, len(d.Providers))
+		seen := map[string]bool{}
+		for _, name := range d.Providers {
+			if name == "CTY.DAT" || seen[name] {
+				continue // skip always-on fallback and duplicates (base-call merge)
+			}
+			seen[name] = true
+			badge := dashboard.ProviderBadge{Name: name}
+			switch name {
+			case "QRZ.com":
+				badge.URL = "https://www.qrz.com/db/" + call
+			case "Wavelog":
+				if wl := m.App.Logbook.Wavelog; wl != nil && wl.URL != "" {
+					badge.URL = strings.TrimRight(wl.URL, "/")
+				}
+			}
+			pi.CallbookProviders = append(pi.CallbookProviders, badge)
+		}
+	}
+
 	// Skip push + debug log when nothing changed since last tick.
 	cur := cachedPartner{
 		Call: pi.Call, Name: pi.Name, QTH: pi.QTH,
 		Country: pi.Country, Grid: pi.Grid, ImageURL: pi.ImageURL,
+		Providers: strings.Join(d.Providers, ","),
 	}
 	if cur != lastPushedPartner {
 		lastPushedPartner = cur
@@ -274,6 +298,43 @@ func (m *Model) pushDashboardPartner(ds *dashboard.State, call string) {
 			"grid", pi.Grid,
 			"hasPhoto", pi.ImageURL != "")
 	}
+}
+
+// forcePushDashboardPartner pushes partner data to the dashboard immediately,
+// bypassing the normal tick-based throttling. Called from fillCallbookData
+// and fillWLData after lookup results arrive, so provider badges appear
+// on the dashboard without a 2-second delay.
+func (m *Model) forcePushDashboardPartner() {
+	if m.http.client == nil || !m.http.online {
+		return
+	}
+	call := qso.NormalizeCall(m.fields[fieldCall].Value())
+	if call == "" {
+		return
+	}
+	ds := m.http.client.State()
+	if ds == nil {
+		return
+	}
+	// No explicit throttle — pushDashboardPartner has its own change
+	// detection via cachedPartner. If the provider list grew (e.g.
+	// base-call fallback merged richer data), the push fires. If
+	// nothing changed, it's a no-op.
+	applog.Debug("dashboard: force-pushing partner", "call", call)
+	m.pushDashboardPartner(ds, call)
+}
+
+// internetCallbook returns the name and URL template of the highest-priority
+// online callbook provider (QRZ.com only — Wavelog is intentionally excluded
+// because its search URLs are instance-specific and not a public callsign
+// lookup). Returns empty strings if QRZ is not enabled or configured.
+func (m *Model) internetCallbook() (name, urlTemplate string) {
+	qrz := m.App.Config.Integrations.QRZ
+
+	if qrz.Enabled && qrz.User != "" {
+		return "QRZ.com", "https://www.qrz.com/db/{CALL}"
+	}
+	return "", ""
 }
 
 // lastDashboardPushTick throttles pushDashboardState to every 2 ticks (~2 s)
@@ -337,18 +398,21 @@ func (m *Model) pushDashboardFast() {
 
 	// --- Display config ---
 	cfg := m.App.Config.Integrations.HTTPServer
+	icName, icURL := m.internetCallbook()
 	ds.SetDisplay(dashboard.DisplayConfig{
-		Header1:          cfg.Header1,
-		Header2:          cfg.Header2,
-		ClubLogo:         clubLogoURL(cfg.ClubLogo),
-		QRLink:           cfg.QRLink,
-		MapTileURL:       cfg.MapTileURL,
-		MapAttrib:        cfg.MapAttrib,
-		DrawLines:        true,
-		MaxLines:         250,
-		HighlightLastQSO: true,
-		Units:            unitForDashboard(m.App.Config.General.Units),
-		Theme:            cfg.Theme,
+		Header1:              cfg.Header1,
+		Header2:              cfg.Header2,
+		ClubLogo:             clubLogoURL(cfg.ClubLogo),
+		QRLink:               cfg.QRLink,
+		MapTileURL:           cfg.MapTileURL,
+		MapAttrib:            cfg.MapAttrib,
+		DrawLines:            true,
+		MaxLines:             250,
+		HighlightLastQSO:     true,
+		Units:                unitForDashboard(m.App.Config.General.Units),
+		Theme:                cfg.Theme,
+		InternetCallbookName: icName,
+		InternetCallbookURL:  icURL,
 	})
 
 	// --- Station ---
@@ -580,6 +644,7 @@ var lastPushedAQSO cachedAQSO
 // lastPushedPartner caches the last partner fields pushed to the dashboard.
 type cachedPartner struct {
 	Call, Name, QTH, Country, Grid, ImageURL string
+	Providers                                string // comma-separated provider names
 }
 
 var lastPushedPartner cachedPartner
