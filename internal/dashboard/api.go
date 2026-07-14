@@ -284,6 +284,11 @@ func handleRadarProxy() http.HandlerFunc {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
+		// Prevent path traversal — reject paths containing "..".
+		if strings.Contains(path, "..") {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
 
 		req, err := http.NewRequestWithContext(r.Context(), r.Method, upstream+path, nil)
 		if err != nil {

@@ -430,12 +430,26 @@ type DupeCheckResult struct {
 // will be (false, &result) with the existing QSO's ref fields for comparison.
 func IsDuplicateQSO(db *sql.DB, call, band, mode, qsoDate string) (bool, *DupeCheckResult) {
 	var r DupeCheckResult
-	err := db.QueryRow(
-		`SELECT id, sota_ref, pota_ref, wwff_ref, iota FROM qsos
-		 WHERE call = ? AND band = ? AND mode = ? AND qso_date = ?
-		 LIMIT 1`,
-		call, band, mode, qsoDate,
-	).Scan(&r.ID, &r.SOTA, &r.POTA, &r.WWFF, &r.IOTA)
+	// Match by normalized call OR base_call (portable calls like DL/SP9MOA/P
+	// match the base SP9MOA). The normalised form is used first as it's indexed;
+	// the base_call fallback handles portable-to-base dupe detection.
+	baseCall := qso.DeriveBaseCall(call)
+	var err error
+	if baseCall != "" && baseCall != qso.NormalizeCall(call) {
+		err = db.QueryRow(
+			`SELECT id, sota_ref, pota_ref, wwff_ref, iota FROM qsos
+			 WHERE (call = ? OR base_call = ?) AND band = ? AND mode = ? AND qso_date = ?
+			 LIMIT 1`,
+			qso.NormalizeCall(call), baseCall, band, mode, qsoDate,
+		).Scan(&r.ID, &r.SOTA, &r.POTA, &r.WWFF, &r.IOTA)
+	} else {
+		err = db.QueryRow(
+			`SELECT id, sota_ref, pota_ref, wwff_ref, iota FROM qsos
+			 WHERE call = ? AND band = ? AND mode = ? AND qso_date = ?
+			 LIMIT 1`,
+			qso.NormalizeCall(call), band, mode, qsoDate,
+		).Scan(&r.ID, &r.SOTA, &r.POTA, &r.WWFF, &r.IOTA)
+	}
 	if err != nil {
 		return false, nil
 	}

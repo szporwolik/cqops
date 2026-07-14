@@ -49,7 +49,7 @@ func InsertPSKSpots(db *sql.DB, spots []PSKSpot) (int, error) {
 		}
 	}
 	if err := tx.Commit(); err != nil {
-		return inserted, fmt.Errorf("commit: %w", err)
+		return 0, fmt.Errorf("commit: %w", err)
 	}
 	return inserted, nil
 }

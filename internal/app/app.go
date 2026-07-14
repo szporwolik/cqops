@@ -44,6 +44,7 @@ type App struct {
 	pruneStopCh      chan struct{}         // stops the APRS cache pruning goroutine
 	beaconStopCh     chan struct{}         // stops the APRS beacon goroutine
 	aprsRestartTimer *time.Timer           // debounces rapid logbook switches for APRS restart
+	gpsMu            sync.RWMutex          // protects gpsGrid and gpsHasFix
 	gpsGrid          string                // last known GPS grid (set by TUI model)
 	gpsHasFix        bool                  // true when GPS has a valid fix
 	Offline          bool                  // when true, skip all network operations
@@ -759,8 +760,10 @@ func (a *App) StationSummary() string {
 
 // SetGPSGrid is called by the TUI model when GPS position updates.
 func (a *App) SetGPSGrid(grid string, hasFix bool) {
+	a.gpsMu.Lock()
 	a.gpsGrid = grid
 	a.gpsHasFix = hasFix
+	a.gpsMu.Unlock()
 }
 
 // EffectiveGrid returns the GPS-derived grid when GPS is enabled, has a fix,
@@ -769,10 +772,15 @@ func (a *App) SetGPSGrid(grid string, hasFix bool) {
 // (6, 8, or 10 chars) to avoid leaking more-accurate position data than
 // the user intended. Safe to call from any goroutine.
 func (a *App) EffectiveGrid() string {
+	a.gpsMu.RLock()
+	gpsGrid := a.gpsGrid
+	gpsHasFix := a.gpsHasFix
+	a.gpsMu.RUnlock()
+
 	var raw string
-	if a.Config.Integrations.GPS.Enabled && a.gpsHasFix && a.gpsGrid != "" &&
+	if a.Config.Integrations.GPS.Enabled && gpsHasFix && gpsGrid != "" &&
 		a.Logbook != nil && a.Logbook.Station.GPSGrid {
-		raw = a.gpsGrid
+		raw = gpsGrid
 	} else if a.Logbook != nil {
 		raw = strings.TrimSpace(strings.ToUpper(a.Logbook.Station.Grid))
 	}

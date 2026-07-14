@@ -1438,7 +1438,7 @@ func (m *Model) buildContestLine(boxW int) string {
 // cycleActiveContest rotates through all active contests (excluding None).
 // Persists the new active contest to config silently.
 func (m *Model) cycleActiveContest() {
-	if m.App == nil || m.App.Config == nil {
+	if m.App == nil || m.App.Config == nil || m.App.Logbook == nil {
 		return
 	}
 	ids := config.ActiveContestIDs(m.App.Config, m.App.LogbookName)
@@ -1501,6 +1501,9 @@ func (m *Model) activeOperatorCallsign() string {
 // cycleActiveOperator cycles the active operator for the current logbook
 // through: None → first operator → second → … → None.
 func (m *Model) cycleActiveOperator() {
+	if m.App == nil || m.App.Config == nil || m.App.Logbook == nil {
+		return
+	}
 	ids := config.SortedOperatorIDs(m.App.Config)
 	current := m.App.Logbook.ActiveOperator
 
