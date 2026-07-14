@@ -10,9 +10,9 @@
 [![docs](https://img.shields.io/badge/docs-cqops.com-1f6feb)](https://docs.cqops.com/)
 [![Cloudsmith](https://img.shields.io/badge/OSS%20hosting%20by-cloudsmith-blue?logo=cloudsmith&style=flat-square)](https://cloudsmith.com)
 
-A small, fast, offline-first amateur radio logger for the terminal - built for portable/field ops, SOTA/POTA activations, and club stations with rotating operators. Runs on Raspberry Pi, old laptops, or any low-power machine without a GUI, over SSH or a local terminal. Hot-swap operators and logbooks, log via WSJT-X auto-feed or keyboard, sync to Wavelog. GPS-aware - uses your receiver's position for the station grid automatically.
+A small, fast, offline-first amateur radio logger for the terminal — built for portable/field ops, SOTA/POTA activations, and club stations with rotating operators. Runs on Raspberry Pi, old laptops, or any low-power machine without a GUI, over SSH or a local terminal. Hot-swap operators and logbooks, log via WSJT-X auto-feed or keyboard, sync to Wavelog. GPS-aware — uses your receiver's position for the station grid automatically. Works fully offline with an embedded world map, graceful degradation, and `--offline` flag.
 
-> 📖 **Full documentation, installation guides, and translations at [docs.cqops.com](https://docs.cqops.com/)** — English, Polski, Deutsch, Español, 日本語, Français, Italiano.
+> 📖 **Full documentation, installation guides, and translations at [docs.cqops.com](https://docs.cqops.com/)** — English, Polski, Deutsch, Español, 日本語, Français, Italiano, Português (BR), Русский.
 
 ## Installation
 
@@ -62,7 +62,7 @@ Grab the latest binary, installer, or package from the [Releases](https://github
 - **Fast TUI logging** — three-column QSO form, dupe detection, form validation
 - **Multi-operator** — hot-swap operators and logbooks for club stations
 - **Rig control** — flrig and Hamlib rigctld, frequency/mode readback, spot-to-rig tuning
-- **QRZ callbook** — auto-fills name, QTH, grid, country
+- **Multi-provider callbook** — QRZ.com, HamQTH (free global), Callook.info (free US) with priority-based cascading and base-call fallback; auto-fills name, QTH, grid, country
 - **Wavelog sync** — upload, incremental download, per-logbook config
 - **Encrypted secrets** — AES-256-GCM, machine-tied, never plaintext
 - **DX Cluster & PSK Reporter** — live spots with band/mode/time filters
@@ -71,7 +71,7 @@ Grab the latest binary, installer, or package from the [Releases](https://github
 - **APRS KISS & KISS TCP**  — serial KISS TNC and KISS Server (Dire Wolf). 
 - **CQOps Live** — built-in browser dashboard with live map, QSO paths, stats, weather, band conditions, APRS. Great for Field Day displays or club station screens
 - **Contest logging** — exchange markers, auto serials, ADIF contest IDs
-- **Offline-first** — SQLite, cached reference data, `--offline` flag
+- **Offline-first** — SQLite, cached reference data, embedded world map, `--offline` flag, graceful no-internet degradation for dashboard, maps and weather
 - **ADIF 3.1.7** — full import/export, contest fields preserved
 - **Raspberry Pi ready** — Windows, Linux, macOS, ARM; runs over SSH
 - **Kitty terminal graphics** 🧪 — photo display via Kitty/Ghostty/WezTerm. Enable in Settings → General.
