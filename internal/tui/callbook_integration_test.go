@@ -331,6 +331,53 @@ func TestInternetCallbook_DefaultPriorities(t *testing.T) {
 	}
 }
 
+func TestInternetCallbook_CallookFallback(t *testing.T) {
+	// When neither QRZ nor HamQTH are configured, Callook.info
+	// should be the internet callbook link as last-resort fallback.
+	m := newLifecycleTestModel(t)
+	m.App.Config.Integrations.QRZ.Enabled = false
+	m.App.Config.Integrations.HamQTH.Enabled = false
+	m.App.Config.Integrations.Callook.Enabled = true
+
+	name, url := m.internetCallbook()
+	if name != "Callook.info" {
+		t.Errorf("name = %q, want Callook.info (fallback)", name)
+	}
+	if url != "https://callook.info/{CALL}" {
+		t.Errorf("url = %q", url)
+	}
+}
+
+func TestInternetCallbook_CallookNotFallbackWhenQRZPresent(t *testing.T) {
+	// Callook should NOT be used when QRZ is configured —
+	// QRZ is a higher-priority internet callbook.
+	m := newLifecycleTestModel(t)
+	m.App.Config.Integrations.QRZ.Enabled = true
+	m.App.Config.Integrations.QRZ.User = "test"
+	m.App.Config.Integrations.HamQTH.Enabled = false
+	m.App.Config.Integrations.Callook.Enabled = true
+
+	name, _ := m.internetCallbook()
+	if name != "QRZ.com" {
+		t.Errorf("name = %q, want QRZ.com (not Callook fallback)", name)
+	}
+}
+
+func TestInternetCallbook_AllDisabled(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.App.Config.Integrations.QRZ.Enabled = false
+	m.App.Config.Integrations.HamQTH.Enabled = false
+	m.App.Config.Integrations.Callook.Enabled = false
+
+	name, url := m.internetCallbook()
+	if name != "" {
+		t.Errorf("name = %q, want empty", name)
+	}
+	if url != "" {
+		t.Errorf("url = %q, want empty", url)
+	}
+}
+
 // =============================================================================
 // HamQTH callbook registry integration tests
 // =============================================================================

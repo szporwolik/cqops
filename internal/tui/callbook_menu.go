@@ -42,6 +42,10 @@ type CallbookMenu struct {
 	hamqthTesting    bool
 	hamqthTestResult string
 
+	// Callook fields
+	callookEnabled  bool
+	callookPriority textinput.Model
+
 	// Wavelog provider
 	wlEnabled    bool
 	wlConfigured bool // true only when a logbook has Wavelog configured
@@ -76,9 +80,11 @@ const (
 	cmHamQTHPass      = 10
 	cmHamQTHPriority  = 11
 	cmHamQTHTest      = 12
-	cmWavelogChk      = 13
-	cmWavelogPriority = 14
-	cmMax             = 15
+	cmCallookChk      = 13
+	cmCallookPriority = 14
+	cmWavelogChk      = 15
+	cmWavelogPriority = 16
+	cmMax             = 17
 )
 
 func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
@@ -144,6 +150,16 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 		hamqthPriority.SetValue("45")
 	}
 
+	// Callook.info provider (no auth required, US callsigns only).
+	callookPriority := newTextinput()
+	callookPriority.CharLimit = 5
+	callookPriority.SetWidth(6)
+	callookPriority.Placeholder = "40"
+	callookPriority.SetValue(strconv.Itoa(cfg.Integrations.Callook.Priority))
+	if cfg.Integrations.Callook.Priority == 0 {
+		callookPriority.SetValue("40")
+	}
+
 	// Default base-call fallback to true on first run (fresh config).
 	baseFallback := cfg.Integrations.Callbook.BaseCallFallback
 	if cfg.Integrations.LogbookCallbook.Priority == 0 && !cfg.Integrations.LogbookCallbook.Enabled {
@@ -183,6 +199,8 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 		hamqthUser:       hamqthUser,
 		hamqthPass:       hamqthPass,
 		hamqthPriority:   hamqthPriority,
+		callookEnabled:   cfg.Integrations.Callook.Enabled,
+		callookPriority:  callookPriority,
 		wlEnabled:        wlEnabled,
 		wlConfigured:     wlConfigured,
 		wlPriority:       wlPriority,
@@ -317,6 +335,10 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				cm.autoScrollViewport()
 				return cm, nil
+			case cmCallookChk:
+				cm.callookEnabled = !cm.callookEnabled
+				cm.autoScrollViewport()
+				return cm, nil
 			}
 			cm.forwardToFocused(msg)
 		case "tab", "down":
@@ -390,6 +412,8 @@ func (cm *CallbookMenu) forwardToFocused(msg tea.Msg) {
 		cm.hamqthPass, _ = cm.hamqthPass.Update(msg)
 	case cmHamQTHPriority:
 		cm.hamqthPriority, _ = cm.hamqthPriority.Update(msg)
+	case cmCallookPriority:
+		cm.callookPriority, _ = cm.callookPriority.Update(msg)
 	case cmWavelogPriority:
 		cm.wlPriority, _ = cm.wlPriority.Update(msg)
 	}
@@ -427,6 +451,8 @@ func (cm *CallbookMenu) isPositionVisible(pos int) bool {
 		return cm.qrzEnabled
 	case cmHamQTHUser, cmHamQTHPass, cmHamQTHPriority, cmHamQTHTest:
 		return cm.hamqthEnabled
+	case cmCallookPriority:
+		return cm.callookEnabled
 	case cmWavelogPriority:
 		return cm.wlEnabled && cm.wlConfigured
 	}
@@ -442,7 +468,8 @@ func (cm *CallbookMenu) fixFocus() {
 
 func (cm *CallbookMenu) blurAll() {
 	blurTextinputs(&cm.logPriority, &cm.qrzUser, &cm.qrzPass, &cm.qrzPriority,
-		&cm.hamqthUser, &cm.hamqthPass, &cm.hamqthPriority, &cm.wlPriority)
+		&cm.hamqthUser, &cm.hamqthPass, &cm.hamqthPriority,
+		&cm.callookPriority, &cm.wlPriority)
 }
 
 func (cm *CallbookMenu) focusField() {
@@ -461,6 +488,8 @@ func (cm *CallbookMenu) focusField() {
 		cm.hamqthPass.Focus()
 	case cmHamQTHPriority:
 		cm.hamqthPriority.Focus()
+	case cmCallookPriority:
+		cm.callookPriority.Focus()
 	case cmWavelogPriority:
 		cm.wlPriority.Focus()
 	}
@@ -567,7 +596,7 @@ func (cm *CallbookMenu) View() tea.View {
 	}
 	basePrefix := "  "
 	baseLabel := S.FormLabelWide.Align(lipgloss.Left).Render("Base call fallback:")
-	baseInfo := DimStyle.Render("(look up SP9MOA if SP9MOA/P not found)")
+	baseInfo := DimStyle.Render("(fallback to base callsign)")
 	if cm.focus == cmBaseCall {
 		basePrefix = S.FormPrefixOn.Render("> ")
 		baseLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("Base call fallback:")
@@ -588,7 +617,7 @@ func (cm *CallbookMenu) View() tea.View {
 	}
 	logPrefix := "  "
 	logLabel := S.FormLabelWide.Align(lipgloss.Left).Render("Logbook:")
-	logInfo := DimStyle.Render("(local search in past contacts)")
+	logInfo := DimStyle.Render("(local, searches previous contacts)")
 	if cm.focus == cmLogChk {
 		logPrefix = S.FormPrefixOn.Render("> ")
 		logLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("Logbook:")
@@ -615,7 +644,7 @@ func (cm *CallbookMenu) View() tea.View {
 	}
 	qrzPrefix := "  "
 	qrzLabel := S.FormLabelWide.Align(lipgloss.Left).Render("QRZ.com:")
-	qrzInfo := DimStyle.Render("(requires XML subscription)")
+	qrzInfo := DimStyle.Render("(paid, XML subscription required)")
 	if cm.focus == cmQRZChk {
 		qrzPrefix = S.FormPrefixOn.Render("> ")
 		qrzLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("QRZ.com:")
@@ -670,7 +699,7 @@ func (cm *CallbookMenu) View() tea.View {
 	}
 	hamqthPrefix := "  "
 	hamqthLabel := S.FormLabelWide.Align(lipgloss.Left).Render("HamQTH:")
-	hamqthInfo := DimStyle.Render("(free service)")
+	hamqthInfo := DimStyle.Render("(free, global callbook)")
 	if cm.focus == cmHamQTHChk {
 		hamqthPrefix = S.FormPrefixOn.Render("> ")
 		hamqthLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("HamQTH:")
@@ -718,6 +747,33 @@ func (cm *CallbookMenu) View() tea.View {
 	b.WriteString("\n")
 	b.WriteString("")
 
+	// --- Callook.info ---
+	callookCb := "[ ]"
+	if cm.callookEnabled {
+		callookCb = "[x]"
+	}
+	callookPrefix := "  "
+	callookLabel := S.FormLabelWide.Align(lipgloss.Left).Render("Callook.info:")
+	callookInfo := DimStyle.Render("(free, US callsigns only)")
+	if cm.focus == cmCallookChk {
+		callookPrefix = S.FormPrefixOn.Render("> ")
+		callookLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("Callook.info:")
+		callookCb = CursorStyle.Render(callookCb) + " " + DimStyle.Render("(Space)") + " " + callookInfo
+	} else {
+		callookCb = callookCb + " " + callookInfo
+	}
+	b.WriteString(padOrTrunc(
+		lipgloss.JoinHorizontal(lipgloss.Center, callookPrefix, callookLabel, " ", callookCb),
+		lineW))
+
+	if cm.callookEnabled {
+		b.WriteString("\n")
+		b.WriteString(padOrTrunc(cm.renderField(cmCallookPriority, "  Priority:", &cm.callookPriority, false), lineW))
+	}
+
+	b.WriteString("\n")
+	b.WriteString("")
+
 	// --- Wavelog ---
 	if cm.wlConfigured {
 		wlCb := "[ ]"
@@ -726,7 +782,7 @@ func (cm *CallbookMenu) View() tea.View {
 		}
 		wlPrefix := "  "
 		wlLabel := S.FormLabelWide.Align(lipgloss.Left).Render("Wavelog:")
-		wlInfo := DimStyle.Render("(requires Wavelog integration enabled per logbook)")
+		wlInfo := DimStyle.Render("(integration, must be enabled per logbook)")
 		if cm.focus == cmWavelogChk {
 			wlPrefix = S.FormPrefixOn.Render("> ")
 			wlLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("Wavelog:")
@@ -862,6 +918,15 @@ func (cm *CallbookMenu) ToConfig(cfg *config.Config) {
 		}
 	} else {
 		cfg.Integrations.HamQTH.Priority = 45
+	}
+	cfg.Integrations.Callook.Enabled = cm.callookEnabled
+	ps = strings.TrimSpace(cm.callookPriority.Value())
+	if ps != "" {
+		if p, err := strconv.Atoi(ps); err == nil {
+			cfg.Integrations.Callook.Priority = p
+		}
+	} else {
+		cfg.Integrations.Callook.Priority = 40
 	}
 	cfg.Integrations.WavelogCallbook.Enabled = cm.wlEnabled
 	ps = strings.TrimSpace(cm.wlPriority.Value())

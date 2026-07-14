@@ -68,6 +68,7 @@ type IntegrationsConfig struct {
 	DXC             DXCConfig             `yaml:"dxc,omitempty"`
 	QRZ             QRZConfig             `yaml:"qrz,omitempty"`
 	HamQTH          HamQTHConfig          `yaml:"hamqth,omitempty"`
+	Callook         CallookConfig         `yaml:"callook,omitempty"`
 	LogbookCallbook LogbookCallbookConfig `yaml:"logbook_callbook,omitempty"`
 	WavelogCallbook WavelogCallbookConfig `yaml:"wavelog_callbook,omitempty"`
 	CTYCallbook     CTYCallbookConfig     `yaml:"cty_callbook,omitempty"`
@@ -192,6 +193,12 @@ type HamQTHConfig struct {
 	User     string `yaml:"user,omitempty"`
 	Pass     string `yaml:"pass,omitempty"`
 	Priority int    `yaml:"priority,omitempty"` // lookup order, 0..100; higher = tried first; default 45
+}
+
+// CallookConfig holds settings for the Callook.info free US callbook service.
+type CallookConfig struct {
+	Enabled  bool `yaml:"enabled"`
+	Priority int  `yaml:"priority,omitempty"` // lookup order, 0..100; default 40
 }
 
 // LogbookCallbookConfig enables searching past local QSOs as a callbook source.

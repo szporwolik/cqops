@@ -11,6 +11,7 @@ import (
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/callbook"
+	"github.com/szporwolik/cqops/internal/callook"
 	"github.com/szporwolik/cqops/internal/hamqth"
 	"github.com/szporwolik/cqops/internal/qrzcom"
 	"github.com/szporwolik/cqops/internal/qso"
@@ -124,6 +125,22 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 			p = 100
 		}
 		providers = append(providers, hamqth.NewClientWithPriority(hqCfg.User, hqCfg.Pass, p))
+	}
+
+	// Callook.info provider — free US callsign database, no auth required.
+	coCfg := a.Config.Integrations.Callook
+	if coCfg.Enabled {
+		p := coCfg.Priority
+		if p == 0 {
+			p = 40
+		}
+		if p < 0 {
+			p = 0
+		}
+		if p > 100 {
+			p = 100
+		}
+		providers = append(providers, callook.NewClientWithPriority(p))
 	}
 
 	// Wavelog provider — only when explicitly enabled and configured.
