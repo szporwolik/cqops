@@ -252,6 +252,10 @@ type DisplayConfig struct {
 	// IsOnline is true when the TUI has internet access. When false, the
 	// dashboard hides QR codes and gracefully degrades map tiles.
 	IsOnline bool `json:"isOnline"`
+
+	// Debug enables verbose console logging in the browser when the TUI
+	// has debug mode enabled.
+	Debug bool `json:"debug,omitempty"`
 }
 
 // =============================================================================

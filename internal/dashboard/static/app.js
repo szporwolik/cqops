@@ -2,7 +2,7 @@
 (function(){
 'use strict';
 
-// ---- Debug: enable with ?debug=1 in the URL ----
+// ---- Debug: enable with ?debug=1 in the URL or via TUI debug mode ----
 var DEBUG=/[?&]debug=1(&|$)/.test(location.search);
 function D(tag,msg,data){
   if(!DEBUG)return;
@@ -10,7 +10,6 @@ function D(tag,msg,data){
   if(data!==undefined){console.log('%c['+ts+'] %c'+tag+'%c '+msg,'color:#888','color:#D00032;font-weight:700','color:inherit',data)}
   else{console.log('%c['+ts+'] %c'+tag+'%c '+msg,'color:#888','color:#D00032;font-weight:700','color:inherit')}
 }
-if(DEBUG){D('init','debug mode ON — open console (F12) for SSE/event traces');console.log('%cAdd ?debug=1 to URL for these logs','color:#B45309')}
 
 var $=function(id){return document.getElementById(id)};
 var app=$('app'), hdLogo=$('hd-logo'), hdLogoBox=$('hd-logo-box'), hdTitle=$('hd-title'), hdSubtitle=$('hd-subtitle');
@@ -206,9 +205,25 @@ function connectSSE(){
   });
   es.addEventListener('display',function(e){
     var d=JSON.parse(e.data).payload;
-    if(d&&d.internetCallbookUrl){
+    if(!d)return;
+    D('display','received',{isOnline:d.isOnline,hasCallbook:!!d.internetCallbookUrl,debug:d.debug});
+    // TUI debug mode — enable console logging even without ?debug=1.
+    if(d.debug&&!DEBUG){DEBUG=true;D('init','debug mode ON (from TUI) — open console (F12) for SSE/event traces')}
+    displayCfg=d;
+    // isOnline transition: false→true means internet just came up.
+    // Re-init map with tile CRS if it was created in offline mode.
+    var prevOnline=window._cqopsLastOnline;
+    var nowOnline=!!d.isOnline;
+    if(!prevOnline&&nowOnline){
+      D('display','isOnline false→true — re-initializing map with tiles');
+      if(typeof map!=='undefined'&&map&&map._cqopsOfflineCRS){
+        D('display','removing offline overlay, re-creating map');
+        removeOfflineOverlay();
+      }
+    }
+    window._cqopsLastOnline=nowOnline;
+    if(d.internetCallbookUrl){
       icbUrl=d.internetCallbookUrl;
-      // Re-render tables so callsigns become clickable links.
       renderRecentTable(null);
       renderTopQSOs();
     }
@@ -233,7 +248,8 @@ function renderAll(snap){
   // When internet becomes available after initial offline state,
   // re-init the map with proper tile CRS instead of the fallback map.
   var nowOnline=!!(displayCfg&&displayCfg.isOnline);
-  if(!window._cqopsLastOnline&&nowOnline&&typeof map!=='undefined'&&map._cqopsOfflineCRS){
+  if(!window._cqopsLastOnline&&nowOnline&&typeof map!=='undefined'&&map&&map._cqopsOfflineCRS){
+    D('renderAll','isOnline false→true during full render — removing offline map');
     removeOfflineOverlay();
   }
   window._cqopsLastOnline=nowOnline;
@@ -683,7 +699,8 @@ function initMap(cfg){
   // When offline, use EPSG:4326 (equirectangular) to match the embedded map image.
   // When online, default Web Mercator for MapLibre tiles.
   var mapOpts={zoomControl:false,attributionControl:false};
-  if(!cfg.isOnline)mapOpts.crs=L.CRS.EPSG4326;
+  if(!cfg.isOnline){mapOpts.crs=L.CRS.EPSG4326;D('initMap','offline CRS — using EPSG:4326 equirectangular')}
+  else{D('initMap','online — using default Web Mercator tiles')}
   map=L.map('map-container',mapOpts).setView([51,10],3);
   map._cqopsOfflineCRS=!cfg.isOnline;
   // Custom panes for layer ordering: radar below QSO paths, markers on top.

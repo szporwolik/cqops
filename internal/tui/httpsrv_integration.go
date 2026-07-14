@@ -447,6 +447,7 @@ func (m *Model) pushDashboardFast() {
 		InternetCallbookName: icName,
 		InternetCallbookURL:  icURL,
 		IsOnline:             m.inetOnline,
+		Debug:                m.App.Config.General.Debug,
 	})
 
 	// --- Station ---
