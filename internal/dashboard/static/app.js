@@ -230,6 +230,13 @@ function renderAll(snap){
   if(!snap){D('renderAll','null snapshot, skipping');return}
   D('renderAll','start',{hasStation:!!snap.station,hasActive:!!(snap.activeQso&&snap.activeQso.call),today:snap.today? snap.today.length:0,recent:snap.recent? snap.recent.length:0});
   displayCfg=snap.display||{};
+  // When internet becomes available after initial offline state,
+  // re-init the map with proper tile CRS instead of the fallback map.
+  var nowOnline=!!(displayCfg&&displayCfg.isOnline);
+  if(!window._cqopsLastOnline&&nowOnline&&typeof map!=='undefined'&&map._cqopsOfflineCRS){
+    removeOfflineOverlay();
+  }
+  window._cqopsLastOnline=nowOnline;
   if(displayCfg.internetCallbookUrl) icbUrl=displayCfg.internetCallbookUrl;
   // Window title — show active logbook.
   if(snap.logbook&&snap.logbook.name){document.title='CQOps - '+snap.logbook.name;window._discLogbook=snap.logbook.name}
