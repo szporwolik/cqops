@@ -1,7 +1,7 @@
 // Package callbook provides a neutral abstraction over amateur radio callbook
 // lookup providers (QRZ.com, HamQTH, Callook.info, etc.).
 //
-// Provider implementations live in their own packages (internal/qrz, etc.)
+// Provider implementations live in their own packages (internal/qrzcom, etc.)
 // and satisfy the callbook.Provider interface. The TUI layer works exclusively
 // with callbook.Result and never imports provider-specific types directly.
 //

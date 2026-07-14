@@ -338,8 +338,13 @@ func (m *Model) renderCallbookRows(d *callbook.Result, maxW int) string {
 		}
 	}
 	if d.Callsign != "" {
-		link := osc8Link("https://www.qrz.com/db/"+d.Callsign, S.Info.Render(d.Callsign))
-		add("Callsign", link)
+		_, icbURL := m.internetCallbook()
+		if icbURL != "" {
+			link := osc8Link(strings.Replace(icbURL, "{CALL}", d.Callsign, 1), S.Info.Render(d.Callsign))
+			add("Callsign", link)
+		} else {
+			add("Callsign", S.Info.Render(d.Callsign))
+		}
 	}
 	// Continent from DXCC prefix lookup — cached per callsign to avoid
 	// prefix-tree access on every partner-view frame.

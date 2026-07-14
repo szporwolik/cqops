@@ -136,8 +136,9 @@ const (
 )
 
 type callbookTestMsg struct {
-	ok  bool
-	err error
+	ok       bool
+	err      error
+	provider string // "qrz" or "hamqth"
 }
 
 type gpsTestMsg struct {
@@ -1667,6 +1668,34 @@ func friendlyQRZError(err error) string {
 		return "Cannot connect to QRZ.com - try again later"
 	}
 	return "QRZ lookup failed - " + msg
+}
+
+// friendlyHTestError shortens HamQTH test errors for display.
+func friendlyHTestError(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+
+	// Clean HamQTH-prefixed errors from our client.
+	if strings.HasPrefix(msg, "HamQTH:") {
+		return msg
+	}
+
+	// Hide raw XML/HTTP errors from the user.
+	if strings.Contains(msg, "expected element type") || strings.Contains(msg, "cannot unmarshal") {
+		return "HamQTH: unexpected server response — try again later"
+	}
+	if strings.Contains(msg, "no such host") {
+		return "Cannot reach HamQTH.com — check your internet connection"
+	}
+	if strings.Contains(msg, "timeout") || strings.Contains(msg, "Timeout") {
+		return "HamQTH timed out — try again later"
+	}
+	if strings.Contains(msg, "connection refused") {
+		return "Cannot connect to HamQTH — try again later"
+	}
+	return "HamQTH lookup failed — " + msg
 }
 
 // friendlyGPSError shortens verbose Go network errors for display in

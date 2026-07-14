@@ -160,6 +160,9 @@ func TestSaveAndLoad_RoundTrip(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.General.Timezone = "Europe/Warsaw"
 	cfg.Integrations.QRZ.User = "testuser"
+	cfg.Integrations.HamQTH.Enabled = true
+	cfg.Integrations.HamQTH.User = "hamtest"
+	cfg.Integrations.HamQTH.Priority = 60
 	cfg.State.ActiveLogbook = "default"
 	cfg.Logbooks["default"] = Logbook{
 		Name: "Test logbook",
@@ -206,6 +209,15 @@ func TestSaveAndLoad_RoundTrip(t *testing.T) {
 	}
 	if loaded.Integrations.QRZ.User != "testuser" {
 		t.Errorf("round-trip QRZ user: got %q", loaded.Integrations.QRZ.User)
+	}
+	if !loaded.Integrations.HamQTH.Enabled {
+		t.Error("round-trip: HamQTH should be enabled")
+	}
+	if loaded.Integrations.HamQTH.User != "hamtest" {
+		t.Errorf("round-trip HamQTH user: got %q", loaded.Integrations.HamQTH.User)
+	}
+	if loaded.Integrations.HamQTH.Priority != 60 {
+		t.Errorf("round-trip HamQTH priority: got %d", loaded.Integrations.HamQTH.Priority)
 	}
 
 	lb := loaded.Logbooks["default"]
@@ -916,6 +928,32 @@ func TestValidate_QRZRequiresUserAndPass(t *testing.T) {
 	cfg.Integrations.QRZ.Pass = "secret"
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("QRZ enabled with user+pass should pass: %v", err)
+	}
+}
+
+func TestValidate_HamQTHRequiresUserAndPass(t *testing.T) {
+	cfg := DefaultConfig()
+	lb := cfg.Logbooks[cfg.State.ActiveLogbook]
+	lb.Station.Callsign = "SP9MOA"
+	cfg.Logbooks[cfg.State.ActiveLogbook] = lb
+
+	cfg.Integrations.HamQTH.Enabled = true
+	cfg.Integrations.HamQTH.User = ""
+	cfg.Integrations.HamQTH.Pass = "secret"
+	if err := cfg.Validate(); err == nil {
+		t.Error("HamQTH enabled with empty user should fail")
+	}
+
+	cfg.Integrations.HamQTH.User = "user"
+	cfg.Integrations.HamQTH.Pass = ""
+	if err := cfg.Validate(); err == nil {
+		t.Error("HamQTH enabled with empty pass should fail")
+	}
+
+	cfg.Integrations.HamQTH.User = "user"
+	cfg.Integrations.HamQTH.Pass = "secret"
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("HamQTH enabled with user+pass should pass: %v", err)
 	}
 }
 

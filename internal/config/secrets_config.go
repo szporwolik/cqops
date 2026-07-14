@@ -7,8 +7,9 @@ import (
 
 // --- Secret key constants ---
 const (
-	secretQRZPass  = "qrz.pass"
-	secretDXCLogin = "dxc.login"
+	secretQRZPass    = "qrz.pass"
+	secretHamQTHPass = "hamqth.pass"
+	secretDXCLogin   = "dxc.login"
 )
 
 func wavelogSecretKey(logbookID string) string {
@@ -20,6 +21,7 @@ func wavelogSecretKey(logbookID string) string {
 // after YAML marshaling.
 type savedSecrets struct {
 	QRZPass     string
+	HamQTHPass  string
 	DXCLogin    string
 	WavelogKeys map[string]string // logbookID → apikey
 }
@@ -36,6 +38,13 @@ func (c *Config) extractAndSaveSecrets() {
 		saved.QRZPass = c.Integrations.QRZ.Pass
 		c.secrets.Set(secretQRZPass, c.Integrations.QRZ.Pass)
 		c.Integrations.QRZ.Pass = ""
+	}
+
+	// HamQTH password.
+	if c.Integrations.HamQTH.Pass != "" {
+		saved.HamQTHPass = c.Integrations.HamQTH.Pass
+		c.secrets.Set(secretHamQTHPass, c.Integrations.HamQTH.Pass)
+		c.Integrations.HamQTH.Pass = ""
 	}
 
 	// DXC login.
@@ -76,6 +85,9 @@ func (c *Config) restoreSecrets() {
 	if s.QRZPass != "" {
 		c.Integrations.QRZ.Pass = s.QRZPass
 	}
+	if s.HamQTHPass != "" {
+		c.Integrations.HamQTH.Pass = s.HamQTHPass
+	}
 	if s.DXCLogin != "" {
 		c.Integrations.DXC.Login = s.DXCLogin
 	}
@@ -113,6 +125,19 @@ func (c *Config) ApplySecrets() {
 	} else if c.Integrations.QRZ.Pass != "" {
 		// Plaintext exists but no store entry — first migration.
 		c.secrets.Set(secretQRZPass, c.Integrations.QRZ.Pass)
+	}
+
+	// HamQTH password.
+	if v, ok := c.secrets.Get(secretHamQTHPass); ok {
+		if c.Integrations.HamQTH.Pass != "" && c.Integrations.HamQTH.Pass != v {
+			c.secrets.Set(secretHamQTHPass, c.Integrations.HamQTH.Pass)
+			if err := c.secrets.Save(); err != nil {
+				fmt.Fprintf(os.Stderr, "CQOps: secrets save failed (hamqth migration): %v\n", err)
+			}
+		}
+		c.Integrations.HamQTH.Pass = v
+	} else if c.Integrations.HamQTH.Pass != "" {
+		c.secrets.Set(secretHamQTHPass, c.Integrations.HamQTH.Pass)
 	}
 
 	// DXC login.

@@ -10,7 +10,8 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
-	"github.com/szporwolik/cqops/internal/qrz"
+	"github.com/szporwolik/cqops/internal/hamqth"
+	"github.com/szporwolik/cqops/internal/qrzcom"
 )
 
 // CallbookMenu is a scrollable sub-menu for callbook provider settings.
@@ -32,6 +33,14 @@ type CallbookMenu struct {
 	qrzTesting    bool
 	qrzTestResult string
 	inetOnline    bool
+
+	// HamQTH fields
+	hamqthEnabled    bool
+	hamqthUser       textinput.Model
+	hamqthPass       textinput.Model
+	hamqthPriority   textinput.Model
+	hamqthTesting    bool
+	hamqthTestResult string
 
 	// Wavelog provider
 	wlEnabled    bool
@@ -62,9 +71,14 @@ const (
 	cmQRZPass         = 5
 	cmQRZPriority     = 6
 	cmQRZTest         = 7
-	cmWavelogChk      = 8
-	cmWavelogPriority = 9
-	cmMax             = 10
+	cmHamQTHChk       = 8
+	cmHamQTHUser      = 9
+	cmHamQTHPass      = 10
+	cmHamQTHPriority  = 11
+	cmHamQTHTest      = 12
+	cmWavelogChk      = 13
+	cmWavelogPriority = 14
+	cmMax             = 15
 )
 
 func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
@@ -106,6 +120,30 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 		qrzPriority.SetValue("50")
 	}
 
+	// HamQTH provider.
+	hamqthUser := newTextinput()
+	hamqthUser.CharLimit = 30
+	hamqthUser.SetWidth(28)
+	hamqthUser.Placeholder = "HamQTH username"
+	hamqthUser.SetValue(cfg.Integrations.HamQTH.User)
+
+	hamqthPass := newTextinput()
+	hamqthPass.CharLimit = 40
+	hamqthPass.SetWidth(28)
+	hamqthPass.Placeholder = "HamQTH password"
+	hamqthPass.EchoMode = textinput.EchoPassword
+	hamqthPass.EchoCharacter = '*'
+	hamqthPass.SetValue(cfg.Integrations.HamQTH.Pass)
+
+	hamqthPriority := newTextinput()
+	hamqthPriority.CharLimit = 5
+	hamqthPriority.SetWidth(6)
+	hamqthPriority.Placeholder = "45"
+	hamqthPriority.SetValue(strconv.Itoa(cfg.Integrations.HamQTH.Priority))
+	if cfg.Integrations.HamQTH.Priority == 0 {
+		hamqthPriority.SetValue("45")
+	}
+
 	// Default base-call fallback to true on first run (fresh config).
 	baseFallback := cfg.Integrations.Callbook.BaseCallFallback
 	if cfg.Integrations.LogbookCallbook.Priority == 0 && !cfg.Integrations.LogbookCallbook.Enabled {
@@ -141,6 +179,10 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 		qrzUser:          qrzUser,
 		qrzPass:          qrzPass,
 		qrzPriority:      qrzPriority,
+		hamqthEnabled:    cfg.Integrations.HamQTH.Enabled,
+		hamqthUser:       hamqthUser,
+		hamqthPass:       hamqthPass,
+		hamqthPriority:   hamqthPriority,
 		wlEnabled:        wlEnabled,
 		wlConfigured:     wlConfigured,
 		wlPriority:       wlPriority,
@@ -156,21 +198,35 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cm.width, cm.height = msg.Width, msg.Height
 
 	case callbookTestMsg:
-		cm.qrzTesting = false
-		if msg.err != nil {
-			cm.qrzTestResult = friendlyQRZError(msg.err)
-			applog.Error("QRZ test failed", "error", msg.err.Error())
-		} else if msg.ok {
-			cm.qrzTestResult = "OK - QRZ.com connected"
-			applog.Info("QRZ test OK")
+		if msg.provider == "hamqth" {
+			cm.hamqthTesting = false
+			if msg.err != nil {
+				cm.hamqthTestResult = friendlyHTestError(msg.err)
+				applog.Error("HamQTH test failed", "error", msg.err.Error())
+			} else if msg.ok {
+				cm.hamqthTestResult = "OK — HamQTH connected"
+				applog.Info("HamQTH test OK")
+			} else {
+				cm.hamqthTestResult = "Connected OK — OK1HRA not found (API works)"
+				applog.Warn("HamQTH test: no data returned")
+			}
 		} else {
-			cm.qrzTestResult = "No data returned"
-			applog.Warn("QRZ test: no data returned")
+			cm.qrzTesting = false
+			if msg.err != nil {
+				cm.qrzTestResult = friendlyQRZError(msg.err)
+				applog.Error("QRZ test failed", "error", msg.err.Error())
+			} else if msg.ok {
+				cm.qrzTestResult = "OK - QRZ.com connected"
+				applog.Info("QRZ test OK")
+			} else {
+				cm.qrzTestResult = "No data returned"
+				applog.Warn("QRZ test: no data returned")
+			}
 		}
 
 	case tea.KeyPressMsg:
 		k := msg.String()
-		if cm.qrzTesting {
+		if cm.qrzTesting || cm.hamqthTesting {
 			return cm, nil
 		}
 		switch k {
@@ -198,6 +254,24 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return cm, nil
 				}
 				ps := strings.TrimSpace(cm.qrzPriority.Value())
+				if ps != "" {
+					p, err := strconv.Atoi(ps)
+					if err != nil || p < 0 || p > 100 {
+						cm.SaveError = "Priority must be 0\u2013100"
+						return cm, nil
+					}
+				}
+			}
+			if cm.hamqthEnabled {
+				if strings.TrimSpace(cm.hamqthUser.Value()) == "" {
+					cm.SaveError = "HamQTH username is required when enabled"
+					return cm, nil
+				}
+				if cm.hamqthPass.Value() == "" {
+					cm.SaveError = "HamQTH password is required when enabled"
+					return cm, nil
+				}
+				ps := strings.TrimSpace(cm.hamqthPriority.Value())
 				if ps != "" {
 					p, err := strconv.Atoi(ps)
 					if err != nil || p < 0 || p > 100 {
@@ -236,6 +310,13 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				cm.autoScrollViewport()
 				return cm, nil
+			case cmHamQTHChk:
+				cm.hamqthEnabled = !cm.hamqthEnabled
+				if !cm.isPositionVisible(cm.focus) {
+					cm.fixFocus()
+				}
+				cm.autoScrollViewport()
+				return cm, nil
 			}
 			cm.forwardToFocused(msg)
 		case "tab", "down":
@@ -259,8 +340,26 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cm.qrzTesting = true
 				cm.qrzTestResult = "Testing..."
 				return cm, func() tea.Msg {
-					data, err := qrz.Lookup(user, pass, "SP9MOA")
-					return callbookTestMsg{ok: err == nil && data != nil, err: err}
+					data, err := qrzcom.Lookup(user, pass, "SP9MOA")
+					return callbookTestMsg{ok: err == nil && data != nil, err: err, provider: "qrz"}
+				}
+			}
+			if cm.focus == cmHamQTHTest {
+				if !cm.inetOnline {
+					cm.hamqthTestResult = "No internet connection"
+					return cm, nil
+				}
+				user := strings.TrimSpace(cm.hamqthUser.Value())
+				pass := cm.hamqthPass.Value()
+				if user == "" || pass == "" {
+					cm.hamqthTestResult = "Username and password required"
+					return cm, nil
+				}
+				cm.hamqthTesting = true
+				cm.hamqthTestResult = "Testing..."
+				return cm, func() tea.Msg {
+					data, err := hamqth.Lookup(user, pass, "OK1HRA")
+					return callbookTestMsg{ok: err == nil && data != nil, err: err, provider: "hamqth"}
 				}
 			}
 			cm.next()
@@ -285,6 +384,12 @@ func (cm *CallbookMenu) forwardToFocused(msg tea.Msg) {
 		cm.qrzPass, _ = cm.qrzPass.Update(msg)
 	case cmQRZPriority:
 		cm.qrzPriority, _ = cm.qrzPriority.Update(msg)
+	case cmHamQTHUser:
+		cm.hamqthUser, _ = cm.hamqthUser.Update(msg)
+	case cmHamQTHPass:
+		cm.hamqthPass, _ = cm.hamqthPass.Update(msg)
+	case cmHamQTHPriority:
+		cm.hamqthPriority, _ = cm.hamqthPriority.Update(msg)
 	case cmWavelogPriority:
 		cm.wlPriority, _ = cm.wlPriority.Update(msg)
 	}
@@ -314,12 +419,14 @@ func (cm *CallbookMenu) prev() {
 
 func (cm *CallbookMenu) isPositionVisible(pos int) bool {
 	switch pos {
-	case cmBaseCall, cmLogChk, cmQRZChk, cmWavelogChk:
+	case cmBaseCall, cmLogChk, cmQRZChk, cmHamQTHChk, cmWavelogChk:
 		return true
 	case cmLogPriority:
 		return cm.logEnabled
 	case cmQRZUser, cmQRZPass, cmQRZPriority, cmQRZTest:
 		return cm.qrzEnabled
+	case cmHamQTHUser, cmHamQTHPass, cmHamQTHPriority, cmHamQTHTest:
+		return cm.hamqthEnabled
 	case cmWavelogPriority:
 		return cm.wlEnabled && cm.wlConfigured
 	}
@@ -334,7 +441,8 @@ func (cm *CallbookMenu) fixFocus() {
 }
 
 func (cm *CallbookMenu) blurAll() {
-	blurTextinputs(&cm.logPriority, &cm.qrzUser, &cm.qrzPass, &cm.qrzPriority, &cm.wlPriority)
+	blurTextinputs(&cm.logPriority, &cm.qrzUser, &cm.qrzPass, &cm.qrzPriority,
+		&cm.hamqthUser, &cm.hamqthPass, &cm.hamqthPriority, &cm.wlPriority)
 }
 
 func (cm *CallbookMenu) focusField() {
@@ -347,6 +455,12 @@ func (cm *CallbookMenu) focusField() {
 		cm.qrzPass.Focus()
 	case cmQRZPriority:
 		cm.qrzPriority.Focus()
+	case cmHamQTHUser:
+		cm.hamqthUser.Focus()
+	case cmHamQTHPass:
+		cm.hamqthPass.Focus()
+	case cmHamQTHPriority:
+		cm.hamqthPriority.Focus()
 	case cmWavelogPriority:
 		cm.wlPriority.Focus()
 	}
@@ -549,6 +663,61 @@ func (cm *CallbookMenu) View() tea.View {
 	b.WriteString("\n")
 	b.WriteString("")
 
+	// --- HamQTH ---
+	hamqthCb := "[ ]"
+	if cm.hamqthEnabled {
+		hamqthCb = "[x]"
+	}
+	hamqthPrefix := "  "
+	hamqthLabel := S.FormLabelWide.Align(lipgloss.Left).Render("HamQTH:")
+	hamqthInfo := DimStyle.Render("(free service)")
+	if cm.focus == cmHamQTHChk {
+		hamqthPrefix = S.FormPrefixOn.Render("> ")
+		hamqthLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("HamQTH:")
+		hamqthCb = CursorStyle.Render(hamqthCb) + " " + DimStyle.Render("(Space)") + " " + hamqthInfo
+	} else {
+		hamqthCb = hamqthCb + " " + hamqthInfo
+	}
+	b.WriteString(padOrTrunc(
+		lipgloss.JoinHorizontal(lipgloss.Center, hamqthPrefix, hamqthLabel, " ", hamqthCb),
+		lineW))
+
+	if cm.hamqthEnabled {
+		b.WriteString("\n")
+		b.WriteString(padOrTrunc(cm.renderField(cmHamQTHUser, "  Username:", &cm.hamqthUser, false), lineW))
+		b.WriteString("\n")
+		b.WriteString(padOrTrunc(cm.renderField(cmHamQTHPass, "  Password:", &cm.hamqthPass, true), lineW))
+		b.WriteString("\n")
+		b.WriteString(padOrTrunc(cm.renderField(cmHamQTHPriority, "  Priority:", &cm.hamqthPriority, false), lineW))
+
+		// Test button
+		b.WriteString("\n")
+		btnText := "[ Test Connection ]"
+		var btnLine string
+		if !cm.inetOnline {
+			btnLine = "    " + DimStyle.Render(btnText) + " " + DimStyle.Render("(offline)")
+		} else if cm.focus == cmHamQTHTest {
+			btnLine = S.FormPrefixOn.Render("> ") + CursorStyle.Render("  "+btnText)
+		} else {
+			btnLine = "    " + InputStyle.Render(btnText)
+		}
+		b.WriteString(padOrTrunc(btnLine, lineW))
+
+		if cm.hamqthTestResult != "" {
+			b.WriteString("\n    ")
+			if cm.hamqthTesting {
+				b.WriteString(DimStyle.Render(cm.hamqthTestResult))
+			} else if strings.HasPrefix(cm.hamqthTestResult, "OK") {
+				b.WriteString(SuccessStyle.Render(cm.hamqthTestResult))
+			} else {
+				b.WriteString(ErrorStyle.Render(cm.hamqthTestResult))
+			}
+		}
+	}
+
+	b.WriteString("\n")
+	b.WriteString("")
+
 	// --- Wavelog ---
 	if cm.wlConfigured {
 		wlCb := "[ ]"
@@ -682,6 +851,17 @@ func (cm *CallbookMenu) ToConfig(cfg *config.Config) {
 		}
 	} else {
 		cfg.Integrations.QRZ.Priority = 50
+	}
+	cfg.Integrations.HamQTH.Enabled = cm.hamqthEnabled
+	cfg.Integrations.HamQTH.User = strings.TrimSpace(cm.hamqthUser.Value())
+	cfg.Integrations.HamQTH.Pass = cm.hamqthPass.Value()
+	ps = strings.TrimSpace(cm.hamqthPriority.Value())
+	if ps != "" {
+		if p, err := strconv.Atoi(ps); err == nil {
+			cfg.Integrations.HamQTH.Priority = p
+		}
+	} else {
+		cfg.Integrations.HamQTH.Priority = 45
 	}
 	cfg.Integrations.WavelogCallbook.Enabled = cm.wlEnabled
 	ps = strings.TrimSpace(cm.wlPriority.Value())

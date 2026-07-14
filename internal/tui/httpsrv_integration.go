@@ -273,6 +273,8 @@ func (m *Model) pushDashboardPartner(ds *dashboard.State, call string) {
 			switch name {
 			case "QRZ.com":
 				badge.URL = "https://www.qrz.com/db/" + call
+			case "HamQTH":
+				badge.URL = "https://www.hamqth.com/" + call
 			case "Wavelog":
 				if wl := m.App.Logbook.Wavelog; wl != nil && wl.URL != "" {
 					badge.URL = strings.TrimRight(wl.URL, "/")
@@ -325,12 +327,28 @@ func (m *Model) forcePushDashboardPartner() {
 }
 
 // internetCallbook returns the name and URL template of the highest-priority
-// online callbook provider (QRZ.com only — Wavelog is intentionally excluded
-// because its search URLs are instance-specific and not a public callsign
-// lookup). Returns empty strings if QRZ is not enabled or configured.
+// online callbook provider (QRZ.com or HamQTH — Wavelog is intentionally
+// excluded because its search URLs are instance-specific and not a public
+// callsign lookup). Returns empty strings if no provider is enabled.
 func (m *Model) internetCallbook() (name, urlTemplate string) {
 	qrz := m.App.Config.Integrations.QRZ
+	hamqth := m.App.Config.Integrations.HamQTH
 
+	// Prefer HamQTH if it has higher or equal priority (free, no subscription).
+	if hamqth.Enabled && hamqth.User != "" {
+		hqPri := hamqth.Priority
+		if hqPri == 0 {
+			hqPri = 45
+		}
+		qPri := qrz.Priority
+		if qPri == 0 {
+			qPri = 50
+		}
+		if qrz.Enabled && qrz.User != "" && qPri > hqPri {
+			return "QRZ.com", "https://www.qrz.com/db/{CALL}"
+		}
+		return "HamQTH", "https://www.hamqth.com/{CALL}"
+	}
 	if qrz.Enabled && qrz.User != "" {
 		return "QRZ.com", "https://www.qrz.com/db/{CALL}"
 	}
@@ -567,6 +585,12 @@ func (m *Model) pushDashboardFast() {
 				if aq.IsNewCall && aq.Country != "" {
 					aq.IsNewDXCC = !m.countryWorkedBefore(aq.Country)
 				}
+				applog.Debug("dashboard: stats queried",
+					"call", call, "qsoCount", stats.QSOCount,
+					"callWorked", stats.CallWorked, "newCall", aq.IsNewCall)
+			} else {
+				applog.Warn("dashboard: stats query failed",
+					"call", call, "error", err)
 			}
 			// Cache for reuse on later ticks when call hasn't changed.
 			lastActiveDupe = aq.IsDupe

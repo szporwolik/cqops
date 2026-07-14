@@ -177,3 +177,218 @@ func TestCallbookLookupCacheInvalidation(t *testing.T) {
 	}
 	_ = m.rc.partnerViewSig
 }
+
+// =============================================================================
+// internetCallbook priority tests
+// =============================================================================
+
+func TestInternetCallbook_NoneEnabled(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.App.Config.Integrations.QRZ.Enabled = false
+	m.App.Config.Integrations.HamQTH.Enabled = false
+
+	name, url := m.internetCallbook()
+	if name != "" {
+		t.Errorf("expected empty name, got %q", name)
+	}
+	if url != "" {
+		t.Errorf("expected empty url, got %q", url)
+	}
+}
+
+func TestInternetCallbook_QRZOnly(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.App.Config.Integrations.QRZ.Enabled = true
+	m.App.Config.Integrations.QRZ.User = "test"
+	m.App.Config.Integrations.QRZ.Priority = 50
+	m.App.Config.Integrations.HamQTH.Enabled = false
+
+	name, url := m.internetCallbook()
+	if name != "QRZ.com" {
+		t.Errorf("name = %q, want QRZ.com", name)
+	}
+	if url != "https://www.qrz.com/db/{CALL}" {
+		t.Errorf("url = %q, want https://www.qrz.com/db/{CALL}", url)
+	}
+}
+
+func TestInternetCallbook_HamQTHOnly(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.App.Config.Integrations.QRZ.Enabled = false
+	m.App.Config.Integrations.HamQTH.Enabled = true
+	m.App.Config.Integrations.HamQTH.User = "test"
+	m.App.Config.Integrations.HamQTH.Priority = 45
+
+	name, url := m.internetCallbook()
+	if name != "HamQTH" {
+		t.Errorf("name = %q, want HamQTH", name)
+	}
+	if url != "https://www.hamqth.com/{CALL}" {
+		t.Errorf("url = %q, want https://www.hamqth.com/{CALL}", url)
+	}
+}
+
+func TestInternetCallbook_QRZHigherPriority(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.App.Config.Integrations.QRZ.Enabled = true
+	m.App.Config.Integrations.QRZ.User = "test"
+	m.App.Config.Integrations.QRZ.Priority = 50
+	m.App.Config.Integrations.HamQTH.Enabled = true
+	m.App.Config.Integrations.HamQTH.User = "test"
+	m.App.Config.Integrations.HamQTH.Priority = 30
+
+	name, url := m.internetCallbook()
+	if name != "QRZ.com" {
+		t.Errorf("name = %q, want QRZ.com (QRZ has higher priority)", name)
+	}
+	if url != "https://www.qrz.com/db/{CALL}" {
+		t.Errorf("url = %q", url)
+	}
+}
+
+func TestInternetCallbook_HamQTHHigherPriority(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.App.Config.Integrations.QRZ.Enabled = true
+	m.App.Config.Integrations.QRZ.User = "test"
+	m.App.Config.Integrations.QRZ.Priority = 30
+	m.App.Config.Integrations.HamQTH.Enabled = true
+	m.App.Config.Integrations.HamQTH.User = "test"
+	m.App.Config.Integrations.HamQTH.Priority = 60
+
+	name, url := m.internetCallbook()
+	if name != "HamQTH" {
+		t.Errorf("name = %q, want HamQTH (HamQTH has higher priority)", name)
+	}
+	if url != "https://www.hamqth.com/{CALL}" {
+		t.Errorf("url = %q", url)
+	}
+}
+
+func TestInternetCallbook_EqualPriorityPrefersHamQTH(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.App.Config.Integrations.QRZ.Enabled = true
+	m.App.Config.Integrations.QRZ.User = "test"
+	m.App.Config.Integrations.QRZ.Priority = 50
+	m.App.Config.Integrations.HamQTH.Enabled = true
+	m.App.Config.Integrations.HamQTH.User = "test"
+	m.App.Config.Integrations.HamQTH.Priority = 50
+
+	name, url := m.internetCallbook()
+	if name != "HamQTH" {
+		t.Errorf("name = %q, want HamQTH (free service wins ties)", name)
+	}
+	if url != "https://www.hamqth.com/{CALL}" {
+		t.Errorf("url = %q", url)
+	}
+}
+
+func TestInternetCallbook_QRZEnabledButNoUser(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.App.Config.Integrations.QRZ.Enabled = true
+	m.App.Config.Integrations.QRZ.User = ""
+	m.App.Config.Integrations.QRZ.Priority = 50
+	m.App.Config.Integrations.HamQTH.Enabled = false
+
+	name, url := m.internetCallbook()
+	if name != "" {
+		t.Errorf("name = %q, want empty (QRZ has no user)", name)
+	}
+	if url != "" {
+		t.Errorf("url = %q, want empty", url)
+	}
+}
+
+func TestInternetCallbook_HamQTHEnabledButNoUser(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.App.Config.Integrations.QRZ.Enabled = false
+	m.App.Config.Integrations.HamQTH.Enabled = true
+	m.App.Config.Integrations.HamQTH.User = ""
+	m.App.Config.Integrations.HamQTH.Priority = 45
+
+	name, url := m.internetCallbook()
+	if name != "" {
+		t.Errorf("name = %q, want empty (HamQTH has no user)", name)
+	}
+	if url != "" {
+		t.Errorf("url = %q, want empty", url)
+	}
+}
+
+func TestInternetCallbook_DefaultPriorities(t *testing.T) {
+	// When both priorities are 0 (unset), defaults: QRZ=50, HamQTH=45.
+	// QRZ should win because 50 > 45.
+	m := newLifecycleTestModel(t)
+	m.App.Config.Integrations.QRZ.Enabled = true
+	m.App.Config.Integrations.QRZ.User = "test"
+	m.App.Config.Integrations.QRZ.Priority = 0
+	m.App.Config.Integrations.HamQTH.Enabled = true
+	m.App.Config.Integrations.HamQTH.User = "test"
+	m.App.Config.Integrations.HamQTH.Priority = 0
+
+	name, _ := m.internetCallbook()
+	if name != "QRZ.com" {
+		t.Errorf("name = %q, want QRZ.com (default 50 > default 45)", name)
+	}
+}
+
+// =============================================================================
+// HamQTH callbook registry integration tests
+// =============================================================================
+
+func TestBuildCallbookRegistry_IncludesHamQTH(t *testing.T) {
+	a := newChooserTestApp(t)
+
+	a.Config.Integrations.QRZ.Enabled = false
+	a.Config.Integrations.HamQTH.Enabled = true
+	a.Config.Integrations.HamQTH.User = "testuser"
+	a.Config.Integrations.HamQTH.Pass = "testpass"
+	a.Config.Integrations.HamQTH.Priority = 45
+
+	a.Config.Integrations.LogbookCallbook.Enabled = false
+	a.Config.Integrations.WavelogCallbook.Enabled = false
+
+	reg := buildCallbookRegistry(a)
+	if reg == nil {
+		t.Fatal("expected non-nil registry when HamQTH is enabled")
+	}
+	if reg.Len() != 2 {
+		// HamQTH + CTY (always-on)
+		t.Errorf("registry length = %d, want 2 (HamQTH + CTY)", reg.Len())
+	}
+}
+
+func TestBuildCallbookRegistry_HamQTHDisabled(t *testing.T) {
+	a := newChooserTestApp(t)
+
+	a.Config.Integrations.HamQTH.Enabled = false
+	a.Config.Integrations.QRZ.Enabled = false
+	a.Config.Integrations.LogbookCallbook.Enabled = false
+	a.Config.Integrations.WavelogCallbook.Enabled = false
+
+	reg := buildCallbookRegistry(a)
+	if reg == nil {
+		t.Fatal("expected non-nil registry (CTY is always-on)")
+	}
+	if reg.Len() != 1 {
+		t.Errorf("registry length = %d, want 1 (CTY only)", reg.Len())
+	}
+}
+
+func TestBuildCallbookRegistry_HamQTHNoUser(t *testing.T) {
+	a := newChooserTestApp(t)
+
+	a.Config.Integrations.HamQTH.Enabled = true
+	a.Config.Integrations.HamQTH.User = ""
+
+	a.Config.Integrations.QRZ.Enabled = false
+	a.Config.Integrations.LogbookCallbook.Enabled = false
+	a.Config.Integrations.WavelogCallbook.Enabled = false
+
+	reg := buildCallbookRegistry(a)
+	if reg == nil {
+		t.Fatal("expected non-nil registry")
+	}
+	if reg.Len() != 1 {
+		t.Errorf("registry length = %d, want 1 (CTY only, no HamQTH without user)", reg.Len())
+	}
+}

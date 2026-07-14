@@ -67,6 +67,7 @@ func (bs BroadcastStation) BroadcastBand() string {
 type IntegrationsConfig struct {
 	DXC             DXCConfig             `yaml:"dxc,omitempty"`
 	QRZ             QRZConfig             `yaml:"qrz,omitempty"`
+	HamQTH          HamQTHConfig          `yaml:"hamqth,omitempty"`
 	LogbookCallbook LogbookCallbookConfig `yaml:"logbook_callbook,omitempty"`
 	WavelogCallbook WavelogCallbookConfig `yaml:"wavelog_callbook,omitempty"`
 	CTYCallbook     CTYCallbookConfig     `yaml:"cty_callbook,omitempty"`
@@ -183,6 +184,14 @@ type QRZConfig struct {
 	User     string `yaml:"user,omitempty"`
 	Pass     string `yaml:"pass,omitempty"`
 	Priority int    `yaml:"priority,omitempty"` // lookup order, 0..100; higher = tried first; default 50
+}
+
+// HamQTHConfig holds settings for the HamQTH free callbook service.
+type HamQTHConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	User     string `yaml:"user,omitempty"`
+	Pass     string `yaml:"pass,omitempty"`
+	Priority int    `yaml:"priority,omitempty"` // lookup order, 0..100; higher = tried first; default 45
 }
 
 // LogbookCallbookConfig enables searching past local QSOs as a callbook source.
@@ -644,6 +653,16 @@ func (c *Config) Validate() error {
 		}
 		if strings.TrimSpace(c.Integrations.QRZ.Pass) == "" {
 			return fmt.Errorf("qrz.pass is required when qrz.enabled is true")
+		}
+	}
+
+	// --- HamQTH ---
+	if c.Integrations.HamQTH.Enabled {
+		if strings.TrimSpace(c.Integrations.HamQTH.User) == "" {
+			return fmt.Errorf("hamqth.user is required when hamqth.enabled is true")
+		}
+		if strings.TrimSpace(c.Integrations.HamQTH.Pass) == "" {
+			return fmt.Errorf("hamqth.pass is required when hamqth.enabled is true")
 		}
 	}
 

@@ -1,4 +1,4 @@
-package qrz
+package qrzcom
 
 import (
 	"encoding/xml"

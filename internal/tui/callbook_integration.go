@@ -11,7 +11,8 @@ import (
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/callbook"
-	"github.com/szporwolik/cqops/internal/qrz"
+	"github.com/szporwolik/cqops/internal/hamqth"
+	"github.com/szporwolik/cqops/internal/qrzcom"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
@@ -106,7 +107,23 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 		if p > 100 {
 			p = 100
 		}
-		providers = append(providers, qrz.NewClientWithPriority(cfg.User, cfg.Pass, p))
+		providers = append(providers, qrzcom.NewClientWithPriority(cfg.User, cfg.Pass, p))
+	}
+
+	// HamQTH provider — free callsign database.
+	hqCfg := a.Config.Integrations.HamQTH
+	if hqCfg.Enabled && hqCfg.User != "" {
+		p := hqCfg.Priority
+		if p == 0 {
+			p = 45
+		}
+		if p < 0 {
+			p = 0
+		}
+		if p > 100 {
+			p = 100
+		}
+		providers = append(providers, hamqth.NewClientWithPriority(hqCfg.User, hqCfg.Pass, p))
 	}
 
 	// Wavelog provider — only when explicitly enabled and configured.
@@ -188,7 +205,7 @@ func (m *Model) checkCallbookCmd() tea.Cmd {
 		// Logbook and CTY providers work locally; QRZ requires network.
 		online := true
 		if m.App.Config.Integrations.QRZ.Enabled {
-			err := qrz.TestConnection(m.App.Config.Integrations.QRZ.User, m.App.Config.Integrations.QRZ.Pass)
+			err := qrzcom.TestConnection(m.App.Config.Integrations.QRZ.User, m.App.Config.Integrations.QRZ.Pass)
 			online = err == nil
 		}
 		return qrzStatusMsg{online: online}
