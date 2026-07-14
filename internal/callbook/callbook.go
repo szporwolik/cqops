@@ -138,13 +138,6 @@ func (r *Registry) Lookup(callsign string) (*Result, error) {
 					"call", callsign)
 			}
 		}
-		// If all interesting fields are filled, we can stop early.
-		if merged.Name != "" && merged.Grid != "" && merged.Country != "" &&
-			merged.QTH != "" && merged.State != "" {
-			applog.Debug("Callbook: all key fields filled, stopping early",
-				"call", callsign, "providers_used", strings.Join(merged.Providers, ","))
-			break
-		}
 	}
 
 	if merged == nil {

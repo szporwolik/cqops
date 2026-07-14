@@ -194,6 +194,25 @@ func clubLogoURL(cfgURL string) string {
 	return "/logo.png" // embedded in binary — no internet required
 }
 
+// providerBadge returns a dashboard ProviderBadge with the correct URL
+// for the given provider name and callsign.
+func providerBadge(name, call string, lb *config.Logbook) dashboard.ProviderBadge {
+	badge := dashboard.ProviderBadge{Name: name}
+	switch name {
+	case "QRZ.com":
+		badge.URL = "https://www.qrz.com/db/" + call
+	case "HamQTH":
+		badge.URL = "https://www.hamqth.com/" + call
+	case "Callook.info":
+		badge.URL = "https://callook.info/" + call
+	case "Wavelog":
+		if lb != nil && lb.Wavelog != nil && lb.Wavelog.URL != "" {
+			badge.URL = strings.TrimRight(lb.Wavelog.URL, "/")
+		}
+	}
+	return badge
+}
+
 // unitForDashboard returns "imperial" or "metric" for the dashboard.
 func unitForDashboard(unit string) string {
 	if unit == "imperial" {
@@ -266,23 +285,10 @@ func (m *Model) pushDashboardPartner(ds *dashboard.State, call string) {
 		seen := map[string]bool{}
 		for _, name := range d.Providers {
 			if name == "CTY.DAT" || seen[name] {
-				continue // skip always-on fallback and duplicates (base-call merge)
+				continue
 			}
 			seen[name] = true
-			badge := dashboard.ProviderBadge{Name: name}
-			switch name {
-			case "QRZ.com":
-				badge.URL = "https://www.qrz.com/db/" + call
-			case "HamQTH":
-				badge.URL = "https://www.hamqth.com/" + call
-			case "Callook.info":
-				badge.URL = "https://callook.info/" + call
-			case "Wavelog":
-				if wl := m.App.Logbook.Wavelog; wl != nil && wl.URL != "" {
-					badge.URL = strings.TrimRight(wl.URL, "/")
-				}
-			}
-			pi.CallbookProviders = append(pi.CallbookProviders, badge)
+			pi.CallbookProviders = append(pi.CallbookProviders, providerBadge(name, call, m.App.Logbook))
 		}
 	}
 
