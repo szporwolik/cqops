@@ -14,14 +14,10 @@ import (
 	"github.com/szporwolik/cqops/internal/version"
 )
 
-// Default host/port values for rig and rotor backends.
+// Default host/port values for rotor backends.
 const (
-	DefaultFlrigHost  = "localhost"
-	DefaultFlrigPort  = "12345"
-	DefaultHamlibHost = "127.0.0.1"
-	DefaultHamlibPort = "4532"
-	DefaultRotorHost  = "127.0.0.1"
-	DefaultRotorPort  = "4533"
+	DefaultRotorHost = "127.0.0.1"
+	DefaultRotorPort = "4533"
 )
 
 type Config struct {
@@ -406,24 +402,6 @@ func (s Station) RigPower(rgs map[string]RigPreset) string {
 		return ""
 	}
 	return rp.Power
-}
-
-// RigFlrig returns the flrig settings from the referenced preset.
-func (s Station) RigFlrig(rgs map[string]RigPreset) (enabled bool, host, port string) {
-	rp, ok := s.Rig(rgs)
-	if !ok {
-		return false, DefaultFlrigHost, DefaultFlrigPort
-	}
-	return rp.RadioBackend == "flrig", rp.FlrigHost, rp.FlrigPort
-}
-
-// RigHamlib returns the hamlib settings from the referenced preset.
-func (s Station) RigHamlib(rgs map[string]RigPreset) (enabled bool, host, port string) {
-	rp, ok := s.Rig(rgs)
-	if !ok {
-		return false, DefaultHamlibHost, DefaultHamlibPort
-	}
-	return rp.RadioBackend == "hamlib", rp.HamlibRadioHost, rp.HamlibRadioPort
 }
 
 // RigRotor returns the rotor settings from the referenced preset.

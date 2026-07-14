@@ -2,6 +2,8 @@ package tui
 
 import (
 	"testing"
+
+	"github.com/szporwolik/cqops/internal/qso"
 )
 
 // =============================================================================
@@ -21,9 +23,9 @@ func TestStripNonDigits(t *testing.T) {
 		{"abc123def456", "123456"},
 	}
 	for _, tt := range tests {
-		got := stripNonDigits(tt.input)
+		got := qso.StripNonDigits(tt.input)
 		if got != tt.want {
-			t.Errorf("stripNonDigits(%q) = %q; want %q", tt.input, got, tt.want)
+			t.Errorf("StripNonDigits(%q) = %q; want %q", tt.input, got, tt.want)
 		}
 	}
 }
@@ -66,18 +68,5 @@ func TestFormatTime(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("formatTime(%q) = %q; want %q", tt.adif, got, tt.want)
 		}
-	}
-}
-
-// =============================================================================
-// tern
-// =============================================================================
-
-func TestTern(t *testing.T) {
-	if got := tern(true, "yes", "no"); got != "yes" {
-		t.Errorf("tern(true) = %q; want yes", got)
-	}
-	if got := tern(false, "yes", "no"); got != "no" {
-		t.Errorf("tern(false) = %q; want no", got)
 	}
 }

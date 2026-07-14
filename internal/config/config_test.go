@@ -417,33 +417,6 @@ func TestStationRigMethods(t *testing.T) {
 		}
 	})
 
-	t.Run("RigFlrig found", func(t *testing.T) {
-		s := Station{RigName: "g90"}
-		enabled, host, port := s.RigFlrig(rigs)
-		if !enabled {
-			t.Error("Flrig should be enabled")
-		}
-		if host != "localhost" {
-			t.Errorf("Flrig host: got %q", host)
-		}
-		if port != "12345" {
-			t.Errorf("Flrig port: got %q", port)
-		}
-	})
-
-	t.Run("RigFlrig defaults when not found", func(t *testing.T) {
-		s := Station{RigName: "nonexistent"}
-		enabled, host, port := s.RigFlrig(rigs)
-		if enabled {
-			t.Error("Flrig should default to disabled")
-		}
-		if host != "localhost" {
-			t.Errorf("Flrig host default: got %q", host)
-		}
-		if port != "12345" {
-			t.Errorf("Flrig port default: got %q", port)
-		}
-	})
 }
 
 // =============================================================================

@@ -52,11 +52,11 @@ func (m *Model) saveQSO() tea.Cmd {
 	qs.FreqRx = freqRx
 	qs.Mode, qs.RSTSent, qs.RSTRcvd = strings.ToUpper(m.fields[fieldMode].Value()), m.fields[fieldRSTSent].Value(), m.fields[fieldRSTRcvd].Value()
 	qs.Submode = strings.ToUpper(m.fields[fieldSubmode].Value())
-	qs.QSODate = stripNonDigits(m.fields[fieldDate].Value())
+	qs.QSODate = qso.StripNonDigits(m.fields[fieldDate].Value())
 	if qs.QSODate == "" {
 		qs.QSODate = time.Now().UTC().Format("20060102")
 	}
-	qs.TimeOn = stripNonDigits(m.fields[fieldTime].Value())
+	qs.TimeOn = qso.StripNonDigits(m.fields[fieldTime].Value())
 	// Pad to 6 digits (HHMMSS) if user didn't type seconds — DB expects full time.
 	if len(qs.TimeOn) == 4 {
 		qs.TimeOn += "00"
