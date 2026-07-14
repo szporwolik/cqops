@@ -446,6 +446,16 @@ func (m *Model) handleCallbookUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.C
 	_, menuCmd := m.ui.callbookMenu.Update(msg)
 	cmd = tea.Batch(cmd, menuCmd)
 
+	// Show test result toasts (set during Update above).
+	if m.ui.callbookMenu.TestToast != "" {
+		if strings.Contains(m.ui.callbookMenu.TestToast, "verified") || strings.Contains(m.ui.callbookMenu.TestToast, "connected") {
+			m.toasts.Success(m.ui.callbookMenu.TestToast)
+		} else {
+			m.toasts.Error(m.ui.callbookMenu.TestToast)
+		}
+		m.ui.callbookMenu.TestToast = ""
+	}
+
 	if m.ui.callbookMenu.done {
 		if m.ui.callbookMenu.goBack {
 			m.screen = screenMainMenu

@@ -232,7 +232,7 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cm.hamqthTesting = false
 			if msg.err != nil {
 				cm.hamqthTestResult = friendlyHTestError(msg.err)
-				cm.TestToast = "HamQTH: " + msg.err.Error()
+				cm.TestToast = friendlyHTestError(msg.err)
 				applog.Error("HamQTH test failed", "error", msg.err.Error())
 			} else if msg.ok {
 				cm.hamqthTestResult = "OK — HamQTH connected"
@@ -247,7 +247,7 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cm.qrzTesting = false
 			if msg.err != nil {
 				cm.qrzTestResult = friendlyQRZError(msg.err)
-				cm.TestToast = "QRZ: " + msg.err.Error()
+				cm.TestToast = friendlyQRZError(msg.err)
 				applog.Error("QRZ test failed", "error", msg.err.Error())
 			} else if msg.ok {
 				cm.qrzTestResult = "OK - QRZ.com connected"
