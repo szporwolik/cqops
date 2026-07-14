@@ -188,6 +188,13 @@ func (p *WavelogCallbookProvider) Lookup(callsign string) (*callbook.Result, err
 		State:    data.State(),
 		Provider: "wavelog",
 	}
+	// When the only fields are country/zone (DXCC prefix data already
+	// covered by CTY.DAT), treat this as "no meaningful data" — don't
+	// mislead the user with a Wavelog badge for bare prefix info.
+	if r.Name == "" && r.Grid == "" && r.QTH == "" {
+		applog.Debug("Wavelog provider: only DXCC data, skipping", "call", callsign)
+		return nil, nil
+	}
 	applog.Debug("Wavelog provider: returning data", "call", callsign,
 		"name", r.Name, "qth", r.QTH, "country", r.Country, "grid", r.Grid)
 	return r, nil
