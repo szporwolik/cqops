@@ -74,6 +74,9 @@ type IntegrationMenu struct {
 	aprsTestResult string
 	aprsOnline     bool // true when APRS client is connected (KISS or APRS-IS)
 
+	// aprsToast is set by APRS test handler; parent reads and shows toast, then clears.
+	aprsToast string
+
 	focus      int
 	done       bool
 	saved      bool
@@ -507,9 +510,11 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		im.aprsTesting = false
 		if msg.err != nil {
 			im.aprsTestResult = "Failed — " + msg.err.Error()
+			im.aprsToast = "APRS: " + msg.err.Error()
 			applog.Warn("APRS test failed", "error", msg.err.Error())
 		} else {
 			im.aprsTestResult = "OK — connection working"
+			im.aprsToast = "APRS: connection verified"
 			applog.Info("APRS test OK")
 		}
 
@@ -1047,6 +1052,34 @@ func (im *IntegrationMenu) View() tea.View {
 	if lineW < 36 {
 		lineW = 36
 	}
+	if lineW > partnerMapMaxW-4 {
+		lineW = partnerMapMaxW - 4
+	}
+
+	// --- Info box (same pattern as other config menus) ---
+	infoMaxW := lineW - 4
+	if infoMaxW < 30 {
+		infoMaxW = 30
+	}
+	infoText := "Integrations are the core of CQOps functionality. " +
+		"Enable or disable each service as needed — but use " +
+		"caution: some integrations (DX Cluster, APRS, GPS) " +
+		"can create additional CPU or network load, especially " +
+		"on low-end hardware or field setups."
+	infoLines := wrapLines(infoText, infoMaxW)
+	var infoContent strings.Builder
+	for i, line := range infoLines {
+		infoContent.WriteString(DimStyle.Render(line))
+		if i < len(infoLines)-1 {
+			infoContent.WriteString("\n")
+		}
+	}
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(P.Border)
+	infoBox := boxStyle.Render(infoContent.String())
+	b.WriteString(infoBox)
+	b.WriteString("\n")
 
 	// --- DXC section ---
 	dxcCheckbox := "[ ]"
@@ -1405,11 +1438,6 @@ func (im *IntegrationMenu) View() tea.View {
 			btnLine = "    " + InputStyle.Render(btnText)
 		}
 		b.WriteString(padOrTrunc(btnLine, lineW))
-
-		if im.aprsTestResult != "" {
-			b.WriteString("\n")
-			b.WriteString(padOrTrunc("    "+im.aprsTestResultStyled(), lineW))
-		}
 	}
 
 	// Build raw form body — header is rendered separately above the viewport.
@@ -1534,16 +1562,6 @@ func (im *IntegrationMenu) gpsTestResultStyled() string {
 		return SuccessStyle.Render(im.gpsTestResult)
 	}
 	return ErrorStyle.Render(im.gpsTestResult)
-}
-
-func (im *IntegrationMenu) aprsTestResultStyled() string {
-	if im.aprsTesting {
-		return DimStyle.Render(im.aprsTestResult)
-	}
-	if strings.HasPrefix(im.aprsTestResult, "OK") {
-		return SuccessStyle.Render(im.aprsTestResult)
-	}
-	return ErrorStyle.Render(im.aprsTestResult)
 }
 
 func (im *IntegrationMenu) gpsServiceName() string {

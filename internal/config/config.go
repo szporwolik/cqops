@@ -166,11 +166,11 @@ type GeneralConfig struct {
 }
 
 type NotificationsConfig struct {
-	Enabled       bool `yaml:"enabled"`
-	QSO           bool `yaml:"qso_logged"`
-	Wavelog       bool `yaml:"wavelog_sent"`
-	WavelogErrors bool `yaml:"wavelog_errors"`
-	BeepOnError   bool `yaml:"beep_on_error"`
+	Enabled     bool `yaml:"enabled"`
+	QSO         bool `yaml:"qso_logged"`
+	Wavelog     bool `yaml:"wavelog_sent"`
+	AllErrors   bool `yaml:"wavelog_errors"` // renamed from WavelogErrors
+	BeepOnError bool `yaml:"beep_on_error"`
 }
 
 type StateConfig struct {

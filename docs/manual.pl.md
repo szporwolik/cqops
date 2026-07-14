@@ -497,9 +497,12 @@ Konfiguracja zawodów obejmuje:
 |---|---|
 | `@rst` | Wysłany lub odebrany RST |
 | `@serial` | Automatycznie zwiększany numer seryjny |
-| `@call` | Twój znak wywoławczy |
-| `@grid` | Twój lokator |
-| `@name` | Nazwa operatora z profilu operatora |
+| `@cqz` | Strefa CQ stacji DX |
+| `@mycqz` | Twoja strefa CQ |
+| `@itu` | Strefa ITU stacji DX |
+| `@myitu` | Twoja strefa ITU |
+| `@grid` | Lokator stacji DX |
+| `@mygrid` | Twój lokator |
 
 Naciśnij **Ctrl+C**, aby przełączać aktywne zawody, albo wybierz je z menu **Contest** (**F7**). Pola wymiany pojawiają się automatycznie w **QSO form**, a numery seryjne są zwiększane automatycznie.
 

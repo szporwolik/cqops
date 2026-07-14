@@ -85,6 +85,7 @@ func (rc *RigChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			rc.form.blurAll()
 			rc.mode = rigChooserList
+			rc.lastListContent = "" // force viewport refresh
 			return rc, nil
 
 		case rc.mode == rigChooserConfirmDelete:
@@ -205,17 +206,42 @@ func (rc *RigChooser) viewList() string {
 		h = 24
 	}
 
+	contentW := w - 8
+	if contentW > partnerMapMaxW-8 {
+		contentW = partnerMapMaxW - 8
+	}
+	if contentW < 20 {
+		contentW = 20
+	}
+
+	// --- Info box (same pattern as other config menus) ---
+	infoMaxW := contentW - 4
+	if infoMaxW < 30 {
+		infoMaxW = 30
+	}
+	infoText := "Rigs can be configured separately for VHF/UHF " +
+		"and HF operation, or the same rig can be duplicated " +
+		"with different profiles — one for digital modes " +
+		"with CAT control, another for SSB without CAT, " +
+		"each pointing to different flrig or rigctld instances."
+	infoLines := wrapLines(infoText, infoMaxW)
+	var infoContent strings.Builder
+	for i, line := range infoLines {
+		infoContent.WriteString(DimStyle.Render(line))
+		if i < len(infoLines)-1 {
+			infoContent.WriteString("\n")
+		}
+	}
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(P.Border)
+	infoBox := boxStyle.Render(infoContent.String())
+	b.WriteString(infoBox)
+	b.WriteString("\n")
+
 	if len(rc.names) == 0 {
 		b.WriteString("No rigs configured.\n")
 	} else {
-		contentW := w - 8
-		if contentW > partnerMapMaxW-8 {
-			contentW = partnerMapMaxW - 8
-		}
-		if contentW < 20 {
-			contentW = 20
-		}
-
 		activeRig := rc.app.Logbook.Station.RigName
 		for i, id := range rc.names {
 			rp := rc.app.Config.Rigs[id]

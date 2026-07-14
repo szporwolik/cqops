@@ -497,9 +497,12 @@ La configurazione include:
 |---|---|
 | `@rst` | RST inviato o ricevuto |
 | `@serial` | Numero seriale incrementato automaticamente |
-| `@call` | Il tuo indicativo |
-| `@grid` | Il tuo grid locator |
-| `@name` | Operator name dal profilo operatore |
+| `@cqz` | Zona CQ della stazione DX |
+| `@mycqz` | La tua zona CQ |
+| `@itu` | Zona ITU della stazione DX |
+| `@myitu` | La tua zona ITU |
+| `@grid` | Grid della stazione DX |
+| `@mygrid` | Il tuo grid |
 
 Premi **Ctrl+C** per scorrere i contest attivi oppure selezionane uno dal menu **Contest** (**F7**). I campi di scambio compaiono automaticamente in **QSO form** e i numeri seriali vengono incrementati in automatico.
 

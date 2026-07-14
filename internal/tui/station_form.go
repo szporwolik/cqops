@@ -317,8 +317,6 @@ func (f *StationForm) NextInput() {
 		f.WlStationID.Blur()
 		f.wlBtnFocus = 1
 	case f.wlBtnFocus == 1:
-		f.wlBtnFocus = 2
-	case f.wlBtnFocus == 2:
 		f.wlBtnFocus = 0
 		if f.HideGPSGrid {
 			f.Name.Focus()
@@ -365,7 +363,7 @@ func (f *StationForm) PrevInput() {
 	case f.Name.Focused():
 		f.Name.Blur()
 		if f.HideGPSGrid {
-			f.wlBtnFocus = 2
+			f.wlBtnFocus = 1
 		} else if f.AprsEnabled {
 			f.aprsBtnFocus = 1
 		} else {
@@ -402,13 +400,11 @@ func (f *StationForm) PrevInput() {
 	case f.aprsCbFocus:
 		f.aprsCbFocus = false
 		if f.WlEnabled {
-			f.wlBtnFocus = 2
+			f.wlBtnFocus = 1
 		} else {
 			f.wlCbFocus = true
 		}
 	// Wavelog section — backwards.
-	case f.wlBtnFocus == 2:
-		f.wlBtnFocus = 1
 	case f.wlBtnFocus == 1:
 		f.wlBtnFocus = 0
 		f.WlStationID.Focus()
@@ -583,8 +579,11 @@ func (f *StationForm) SetWavelogValues(wl *config.WavelogConfig) {
 func (f *StationForm) APRSValues() *config.APRSConfig {
 	rad, _ := parseInt(f.AprsRadiusKm.Value())
 	iv, _ := parseInt(f.AprsIntervalMin.Value())
-	if iv < 1 {
-		iv = 1
+	if iv < 5 {
+		iv = 5
+	}
+	if iv > 180 {
+		iv = 180
 	}
 	return &config.APRSConfig{
 		Enabled:      f.AprsEnabled,
@@ -610,10 +609,10 @@ func (f *StationForm) SetAPRSValues(aprs *config.APRSConfig) {
 			f.AprsRadiusKm.SetValue("50")
 		}
 		f.AprsSendLoc = aprs.SendLocation
-		if aprs.IntervalMin >= 1 {
+		if aprs.IntervalMin >= 5 {
 			f.AprsIntervalMin.SetValue(fmt.Sprintf("%d", aprs.IntervalMin))
 		} else {
-			f.AprsIntervalMin.SetValue("1")
+			f.AprsIntervalMin.SetValue("15")
 		}
 		f.AprsSymbol.SetValue(aprs.Symbol)
 		f.AprsComment.SetValue(aprs.Comment)
@@ -623,7 +622,7 @@ func (f *StationForm) SetAPRSValues(aprs *config.APRSConfig) {
 		f.AprsPasscode.SetValue("")
 		f.AprsRadiusKm.SetValue("50")
 		f.AprsSendLoc = false
-		f.AprsIntervalMin.SetValue("1")
+		f.AprsIntervalMin.SetValue("15")
 		f.AprsSymbol.SetValue("/-")
 		f.AprsComment.SetValue("")
 	}
@@ -666,6 +665,7 @@ func (f *StationForm) View() tea.View {
 			gpsPrefix = S.FormPrefixOn.Render("> ")
 			gpsLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("Grid from GPS:")
 			gpsCb = CursorStyle.Render(gpsCb) + " " + DimStyle.Render("(Space)")
+			gpsCb += " " + DimStyle.Render("Auto-fill grid from GPS when available")
 		}
 		b.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, gpsPrefix, gpsLabel, " ", gpsCb), availW))
 		b.WriteString("\n")
@@ -774,10 +774,37 @@ func (f *StationForm) View() tea.View {
 		wlFields := []fieldDef{
 			{"  API URL:", &f.WlURL},
 			{"  API Key:", &f.WlKey},
-			{"  Station ID:", &f.WlStationID},
 		}
 		for _, field := range wlFields {
 			b.WriteString(f.renderFieldLine(field.label, field.ti, availW))
+		}
+
+		// Station ID — read-only, with (Space) hint and truncation.
+		{
+			const labelW = 2 + 17
+			raw := strings.TrimSpace(f.WlStationID.Value())
+			prefix := "  "
+			lbl := S.FormLabelWide.Align(lipgloss.Left).Render("  Station ID:")
+			// Reserve space for label + (Space) hint + safety margin.
+			reserved := labelW + 1 + len(" (Space)") + 5
+			maxVW := availW - reserved
+			if maxVW < 6 {
+				maxVW = 6
+			}
+			var val string
+			if f.WlStationID.Focused() {
+				prefix = S.FormPrefixOn.Render("> ")
+				lbl = S.FormFocusedWide.Align(lipgloss.Left).Render("  Station ID:")
+				val = CursorStyle.Render(truncateText(raw, maxVW)) + " " + DimStyle.Render("(Space)")
+			} else if raw == "" {
+				val = DimStyle.Render("\u2014")
+			} else {
+				val = ValueStyle.Render(truncateText(raw, maxVW))
+			}
+			b.WriteString(padOrTrunc(
+				lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val),
+				availW-5))
+			b.WriteString("\n")
 		}
 
 		// Button helper — fixed padding so buttons never shift on focus.
@@ -793,7 +820,6 @@ func (f *StationForm) View() tea.View {
 			b.WriteString("\n")
 		}
 		renderBtn(1, "[ Update ]", "fetch stations from Wavelog")
-		renderBtn(2, "[ Test ]", "verify connection and station")
 	}
 
 	// APRS section — hidden in wizard.
@@ -809,6 +835,7 @@ func (f *StationForm) View() tea.View {
 			aprsCbPrefix = S.FormPrefixOn.Render("> ")
 			aprsCbLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("APRS:")
 			aprsCheckbox = CursorStyle.Render(aprsCheckbox) + " " + DimStyle.Render("(Space)")
+			aprsCheckbox += " " + DimStyle.Render("Note: APRS must be enabled in the Integrations menu")
 		}
 		b.WriteString(padOrTrunc(
 			lipgloss.JoinHorizontal(lipgloss.Center, aprsCbPrefix, aprsCbLabel, " ", aprsCheckbox),
@@ -829,10 +856,10 @@ func (f *StationForm) View() tea.View {
 				locCheckbox = "[x]"
 			}
 			locPrefix := "  "
-			locLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  TX Beacon:")
+			locLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Send beacons:")
 			if f.aprsSendLocFocus {
 				locPrefix = S.FormPrefixOn.Render("> ")
-				locLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  TX Beacon:")
+				locLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Send beacons:")
 				locCheckbox = CursorStyle.Render(locCheckbox) + " " + DimStyle.Render("(Space)")
 			}
 			b.WriteString(padOrTrunc(
@@ -984,11 +1011,8 @@ func (f *StationForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 		return func() tea.Msg { return wlCycleStation{} }
 	}
 	if k.String() == "enter" {
-		switch f.wlBtnFocus {
-		case 1:
+		if f.wlBtnFocus == 1 {
 			return func() tea.Msg { return wlUpdateAction{} }
-		case 2:
-			return func() tea.Msg { return wlTestAction{} }
 		}
 		if f.aprsBtnFocus == 1 {
 			return func() tea.Msg { return aprsTestAction{} }

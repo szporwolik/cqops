@@ -153,72 +153,124 @@ func (gm *GeneralMenu) View() tea.View {
 
 	var b strings.Builder
 
+	// --- Info box (same pattern as callbook menu) ---
+	infoMaxW := boxW - 6
+	if infoMaxW < 30 {
+		infoMaxW = 30
+	}
+	if infoMaxW > partnerMapMaxW-10 {
+		infoMaxW = partnerMapMaxW - 10
+	}
+	infoText := "Match these settings to your hardware \u2014 " +
+		"partner map, grayline, and photo rendering " +
+		"can increase CPU load on low-end machines. " +
+		"Kitty graphics require a compatible terminal " +
+		"(Kitty, Ghostty, or WezTerm)."
+	infoLines := wrapLines(infoText, infoMaxW)
+	var infoContent strings.Builder
+	for i, line := range infoLines {
+		infoContent.WriteString(DimStyle.Render(line))
+		if i < len(infoLines)-1 {
+			infoContent.WriteString("\n")
+		}
+	}
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(P.Border)
+	infoBox := boxStyle.Render(infoContent.String())
+	b.WriteString(infoBox)
+	b.WriteString("\n")
+
 	// Row 0: Units — toggles Metric/Imperial on space.
 	unitVal := "Metric"
 	if gm.distanceUnit == "imperial" {
 		unitVal = "Imperial"
 	}
-	gm.renderSettingRow(&b, boxW, 0, "Units", unitVal)
+	unitHint := ""
+	if gm.cursor == 0 {
+		unitHint = "distance, speed, elevation"
+	}
+	gm.renderSettingRow(&b, boxW, 0, "Units", unitVal, unitHint)
 
 	// Row 1: Timezone — shows current value, cycles on space.
-	gm.renderSettingRow(&b, boxW, 1, "Timezone", gm.timezone)
+	tzHint := ""
+	if gm.cursor == 1 {
+		tzHint = "QSO date/time reference"
+	}
+	gm.renderSettingRow(&b, boxW, 1, "Timezone", gm.timezone, tzHint)
 
 	// Row 2-4: Checkbox options.
-	gm.renderCheckbox(&b, boxW, 2, "Render partner map", gm.renderMap)
-	gm.renderCheckbox(&b, boxW, 3, "Render grayline at partner map", gm.drawGrayline)
-	gm.renderCheckbox(&b, boxW, 4, "Render partner picture", gm.pictureAtQRZ)
-	gm.renderCheckbox(&b, boxW, 5, "Solar data next to QSO form", gm.solarAtQSO)
-	gm.renderCheckbox(&b, boxW, 6, "Use CTY.DAT country data", gm.useCTY)
-	gm.renderCheckbox(&b, boxW, 7, "Use Super Check Partial", gm.useSCP)
-	gm.renderCheckbox(&b, boxW, 8, "Use SOTA/POTA/IOTA database", gm.useRef)
-	gm.renderKittyCheckbox(&b, boxW, 9, "Kitty graphics", gm.kittyGraphics)
-	gm.renderCheckbox(&b, boxW, 10, "Debug Mode", gm.debugMode)
+	gm.renderCheckbox(&b, boxW, 2, "Render partner map", "Shows station on world map with bearing", gm.renderMap)
+	gm.renderCheckbox(&b, boxW, 3, "Render grayline at partner map", "Day/night terminator overlay", gm.drawGrayline)
+	gm.renderCheckbox(&b, boxW, 4, "Render partner picture", "Shows photo from callbook if available", gm.pictureAtQRZ)
+	gm.renderCheckbox(&b, boxW, 5, "Solar data next to QSO form", "SFI, A, K indices in QSO pane", gm.solarAtQSO)
+	gm.renderCheckbox(&b, boxW, 6, "Use CTY.DAT country data", "DXCC prefix database for country/zone", gm.useCTY)
+	gm.renderCheckbox(&b, boxW, 7, "Use Super Check Partial", "Callsign autocomplete from contest logs", gm.useSCP)
+	gm.renderCheckbox(&b, boxW, 8, "Use SOTA/POTA/IOTA database", "Reference lookup for awards", gm.useRef)
+	gm.renderKittyCheckbox(&b, boxW, 9, "Kitty graphics", "Experimental — requires Kitty, Ghostty, or WezTerm", gm.kittyGraphics)
+	gm.renderCheckbox(&b, boxW, 10, "Debug Mode", "Verbose logging for troubleshooting", gm.debugMode)
 
 	body := drawMenuWithHeader("Configuration \u2014 General Settings", b.String(), w)
 	return tea.NewView(fillBody(body, contentH))
 }
 
-func (gm *GeneralMenu) renderCheckbox(b *strings.Builder, boxW, cursor int, label string, checked bool) {
-	checkbox := "[ ]"
+func (gm *GeneralMenu) renderCheckbox(b *strings.Builder, boxW, cursor int, label, hint string, checked bool) {
+	cb := "[ ]"
 	if checked {
-		checkbox = "[x]"
+		cb = "[x]"
 	}
-	prefix := "  "
+	prefix := S.FormPrefixOff.Render("  ")
 	lbl := S.FormLabelGen.Align(lipgloss.Left).Render(label)
 	if gm.cursor == cursor {
 		prefix = S.FormPrefixOn.Render("> ")
 		lbl = S.FormFocusedGen.Align(lipgloss.Left).Render(label)
-		checkbox = CursorStyle.Render(checkbox) + " " + DimStyle.Render("(Space)")
+		cb = CursorStyle.Render(cb) + " " + DimStyle.Render("(Space)")
+		if hint != "" {
+			cb = cb + " " + DimStyle.Render(hint)
+		}
 	}
-	b.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", checkbox), boxW))
+	b.WriteString(padOrTrunc(
+		lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", cb),
+		boxW-5))
 	b.WriteString("\n")
 }
 
-func (gm *GeneralMenu) renderKittyCheckbox(b *strings.Builder, boxW, cursor int, label string, checked bool) {
-	checkbox := "[ ]"
+func (gm *GeneralMenu) renderKittyCheckbox(b *strings.Builder, boxW, cursor int, label, hint string, checked bool) {
+	cb := "[ ]"
 	if checked {
-		checkbox = "[x]"
+		cb = "[x]"
 	}
-	prefix := "  "
+	prefix := S.FormPrefixOff.Render("  ")
 	lbl := S.FormLabelGen.Align(lipgloss.Left).Render(label)
 	if gm.cursor == cursor {
 		prefix = S.FormPrefixOn.Render("> ")
 		lbl = S.FormFocusedGen.Align(lipgloss.Left).Render(label)
-		checkbox = CursorStyle.Render(checkbox) + " " + DimStyle.Render("(Space) \u2014 experimental")
+		cb = CursorStyle.Render(cb) + " " + DimStyle.Render("(Space)")
+		if hint != "" {
+			cb = cb + " " + DimStyle.Render(hint)
+		}
 	}
-	b.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", checkbox), boxW))
+	b.WriteString(padOrTrunc(
+		lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", cb),
+		boxW-5))
 	b.WriteString("\n")
 }
 
-func (gm *GeneralMenu) renderSettingRow(b *strings.Builder, boxW, cursor int, label, value string) {
-	prefix := "  "
+func (gm *GeneralMenu) renderSettingRow(b *strings.Builder, boxW, cursor int, label, value, hint string) {
+	prefix := S.FormPrefixOff.Render("  ")
 	lbl := S.FormLabelGen.Align(lipgloss.Left).Render(label)
 	val := ValueStyle.Render(value)
 	if gm.cursor == cursor {
 		prefix = S.FormPrefixOn.Render("> ")
 		lbl = S.FormFocusedGen.Align(lipgloss.Left).Render(label)
 		val = CursorStyle.Render(value) + " " + DimStyle.Render("(Space)")
+		if hint != "" {
+			val += " " + DimStyle.Render(hint)
+		}
 	}
-	b.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val), boxW))
+	// Start truncation 5 chars early as safety margin against ANSI-width miscalc.
+	b.WriteString(padOrTrunc(
+		lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val),
+		boxW-5))
 	b.WriteString("\n")
 }

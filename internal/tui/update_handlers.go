@@ -229,7 +229,7 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			} else {
 				m.toasts.Error(fmt.Sprintf("Wavelog: %s failed", r.call))
 			}
-			if n.Enabled && n.WavelogErrors {
+			if n.Enabled && n.AllErrors {
 				msg := fmt.Sprintf("QSO %s upload failed", r.call)
 				if r.err != nil {
 					msg = fmt.Sprintf("QSO %s: %s", r.call, r.err.Error())

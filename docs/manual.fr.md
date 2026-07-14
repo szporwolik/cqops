@@ -497,9 +497,12 @@ La configuration du concours comprend :
 |---|---|
 | `@rst` | RST envoyé ou reçu |
 | `@serial` | Numéro de série incrémenté automatiquement |
-| `@call` | Votre indicatif |
-| `@grid` | Votre grid locator |
-| `@name` | Operator name du profil opérateur |
+| `@cqz` | Zone CQ de la station DX |
+| `@mycqz` | Votre zone CQ |
+| `@itu` | Zone ITU de la station DX |
+| `@myitu` | Votre zone ITU |
+| `@grid` | Grid de la station DX |
+| `@mygrid` | Votre grid |
 
 Appuyez sur **Ctrl+C** pour parcourir les concours actifs ou sélectionnez-en un dans le menu **Contest** (**F7**). Les champs d’échange apparaissent automatiquement dans **QSO form** et les numéros de série s’incrémentent automatiquement.
 

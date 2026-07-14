@@ -497,9 +497,12 @@ La configuración incluye:
 |---|---|
 | `@rst` | RST enviado o recibido |
 | `@serial` | Número de serie que aumenta automáticamente |
-| `@call` | Su indicativo |
-| `@grid` | Su grid locator |
-| `@name` | Operator name del perfil de operador |
+| `@cqz` | Zona CQ de la estación DX |
+| `@mycqz` | Su zona CQ |
+| `@itu` | Zona ITU de la estación DX |
+| `@myitu` | Su zona ITU |
+| `@grid` | Grid de la estación DX |
+| `@mygrid` | Su grid |
 
 Pulse **Ctrl+C** para recorrer los concursos activos o seleccione uno en el menú **Contest** (**F7**). Los campos de intercambio aparecen automáticamente en **QSO form** y los números de serie aumentan de forma automática.
 

@@ -551,6 +551,9 @@ func (cm *CallbookMenu) View() tea.View {
 	if lineW < 36 {
 		lineW = 36
 	}
+	if lineW > partnerMapMaxW-4 {
+		lineW = partnerMapMaxW - 4
+	}
 
 	// Compute dimensions first.
 	boxW := w - 2
@@ -596,13 +599,10 @@ func (cm *CallbookMenu) View() tea.View {
 	}
 	basePrefix := "  "
 	baseLabel := S.FormLabelWide.Align(lipgloss.Left).Render("Base call fallback:")
-	baseInfo := DimStyle.Render("(fallback to base callsign)")
 	if cm.focus == cmBaseCall {
 		basePrefix = S.FormPrefixOn.Render("> ")
 		baseLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("Base call fallback:")
-		baseCb = CursorStyle.Render(baseCb) + " " + DimStyle.Render("(Space)") + " " + baseInfo
-	} else {
-		baseCb = baseCb + " " + baseInfo
+		baseCb = CursorStyle.Render(baseCb) + " " + DimStyle.Render("(Space)") + " " + DimStyle.Render("Fallback to base callsign")
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, basePrefix, baseLabel, " ", baseCb),
@@ -617,13 +617,10 @@ func (cm *CallbookMenu) View() tea.View {
 	}
 	logPrefix := "  "
 	logLabel := S.FormLabelWide.Align(lipgloss.Left).Render("Logbook:")
-	logInfo := DimStyle.Render("(local, searches previous contacts)")
 	if cm.focus == cmLogChk {
 		logPrefix = S.FormPrefixOn.Render("> ")
 		logLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("Logbook:")
-		logCb = CursorStyle.Render(logCb) + " " + DimStyle.Render("(Space)") + " " + logInfo
-	} else {
-		logCb = logCb + " " + logInfo
+		logCb = CursorStyle.Render(logCb) + " " + DimStyle.Render("(Space)") + " " + DimStyle.Render("Local, searches previous contacts")
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, logPrefix, logLabel, " ", logCb),
@@ -644,13 +641,10 @@ func (cm *CallbookMenu) View() tea.View {
 	}
 	qrzPrefix := "  "
 	qrzLabel := S.FormLabelWide.Align(lipgloss.Left).Render("QRZ.com:")
-	qrzInfo := DimStyle.Render("(paid, XML subscription required)")
 	if cm.focus == cmQRZChk {
 		qrzPrefix = S.FormPrefixOn.Render("> ")
 		qrzLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("QRZ.com:")
-		qrzCheckbox = CursorStyle.Render(qrzCheckbox) + " " + DimStyle.Render("(Space)") + " " + qrzInfo
-	} else {
-		qrzCheckbox = qrzCheckbox + " " + qrzInfo
+		qrzCheckbox = CursorStyle.Render(qrzCheckbox) + " " + DimStyle.Render("(Space)") + " " + DimStyle.Render("Paid, XML subscription required")
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, qrzPrefix, qrzLabel, " ", qrzCheckbox),
@@ -699,13 +693,10 @@ func (cm *CallbookMenu) View() tea.View {
 	}
 	hamqthPrefix := "  "
 	hamqthLabel := S.FormLabelWide.Align(lipgloss.Left).Render("HamQTH:")
-	hamqthInfo := DimStyle.Render("(free, global callbook)")
 	if cm.focus == cmHamQTHChk {
 		hamqthPrefix = S.FormPrefixOn.Render("> ")
 		hamqthLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("HamQTH:")
-		hamqthCb = CursorStyle.Render(hamqthCb) + " " + DimStyle.Render("(Space)") + " " + hamqthInfo
-	} else {
-		hamqthCb = hamqthCb + " " + hamqthInfo
+		hamqthCb = CursorStyle.Render(hamqthCb) + " " + DimStyle.Render("(Space)") + " " + DimStyle.Render("Free, global callbook")
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, hamqthPrefix, hamqthLabel, " ", hamqthCb),
@@ -754,13 +745,10 @@ func (cm *CallbookMenu) View() tea.View {
 	}
 	callookPrefix := "  "
 	callookLabel := S.FormLabelWide.Align(lipgloss.Left).Render("Callook.info:")
-	callookInfo := DimStyle.Render("(free, US callsigns only)")
 	if cm.focus == cmCallookChk {
 		callookPrefix = S.FormPrefixOn.Render("> ")
 		callookLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("Callook.info:")
-		callookCb = CursorStyle.Render(callookCb) + " " + DimStyle.Render("(Space)") + " " + callookInfo
-	} else {
-		callookCb = callookCb + " " + callookInfo
+		callookCb = CursorStyle.Render(callookCb) + " " + DimStyle.Render("(Space)") + " " + DimStyle.Render("Free, US callsigns only")
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, callookPrefix, callookLabel, " ", callookCb),
@@ -782,13 +770,10 @@ func (cm *CallbookMenu) View() tea.View {
 		}
 		wlPrefix := "  "
 		wlLabel := S.FormLabelWide.Align(lipgloss.Left).Render("Wavelog:")
-		wlInfo := DimStyle.Render("(integration, must be enabled per logbook)")
 		if cm.focus == cmWavelogChk {
 			wlPrefix = S.FormPrefixOn.Render("> ")
 			wlLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("Wavelog:")
-			wlCb = CursorStyle.Render(wlCb) + " " + DimStyle.Render("(Space)") + " " + wlInfo
-		} else {
-			wlCb = wlCb + " " + wlInfo
+			wlCb = CursorStyle.Render(wlCb) + " " + DimStyle.Render("(Space)") + " " + DimStyle.Render("Integration, must be enabled per logbook")
 		}
 		b.WriteString(padOrTrunc(
 			lipgloss.JoinHorizontal(lipgloss.Center, wlPrefix, wlLabel, " ", wlCb),
@@ -826,6 +811,10 @@ func (cm *CallbookMenu) View() tea.View {
 	}
 	header := S.Title.Width(boxW).Render("Configuration \u2014 Callbook")
 	vpContent := cm.vp.View()
+	if hint := scrollHint(cm.vp); hint != "" {
+		hintLine := DimStyle.Width(vpW).Render(hint)
+		vpContent = lipgloss.JoinVertical(lipgloss.Left, vpContent, hintLine)
+	}
 	box := menuBoxStyle.Width(boxW).Render(vpContent)
 	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, header, "", box))
 }

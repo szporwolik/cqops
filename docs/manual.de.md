@@ -497,9 +497,12 @@ Die Contest-Konfiguration umfasst:
 |---|---|
 | `@rst` | Gesendeter oder empfangener RST |
 | `@serial` | Automatisch hochzählende Seriennummer |
-| `@call` | Ihr Rufzeichen |
-| `@grid` | Ihr Grid locator |
-| `@name` | Operator name aus dem Operatorprofil |
+| `@cqz` | CQ-Zone der DX-Station |
+| `@mycqz` | Ihre CQ-Zone |
+| `@itu` | ITU-Zone der DX-Station |
+| `@myitu` | Ihre ITU-Zone |
+| `@grid` | Grid der DX-Station |
+| `@mygrid` | Ihr Grid |
 
 Drücken Sie **Ctrl+C**, um den aktiven Contest durchzuschalten, oder wählen Sie ihn im Menü **Contest** (**F7**) aus. Die Austauschfelder erscheinen automatisch in **QSO form**, und Seriennummern werden automatisch erhöht.
 

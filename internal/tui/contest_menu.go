@@ -156,7 +156,10 @@ func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				c.done = true
 				return c, nil
 			}
+			c.blurAll()
 			c.mode = contestList
+			c.lastListContent = "" // force viewport refresh
+			return c, nil
 
 		case c.mode == contestConfirmDelete:
 			if c.dialog != nil {
@@ -230,7 +233,9 @@ func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case k.String() == "ctrl+s":
 				return c, c.saveContest()
 			case k.String() == "esc":
+				c.blurAll()
 				c.mode = contestList
+				c.lastListContent = "" // force viewport refresh
 				return c, nil
 			case c.focus == 2 && (k.String() == " " || msg.Code == ' ' || k.String() == "enter"):
 				// Toggle In Use checkbox.
@@ -559,17 +564,41 @@ func (c *ContestChooser) viewList() string {
 			contentH = 3
 		}
 
+		contentW := w - 8
+		if contentW > partnerMapMaxW-8 {
+			contentW = partnerMapMaxW - 8
+		}
+		if contentW < 20 {
+			contentW = 20
+		}
+
+		// --- Info box (same pattern as other config menus) ---
+		infoMaxW := contentW - 4
+		if infoMaxW < 30 {
+			infoMaxW = 30
+		}
+		infoText := "Define contest profiles to switch between day-to-day " +
+			"operation and contesting. Mark completed or inactive " +
+			"contests as Not In Use — they won't appear in the " +
+			"cycle list, keeping your active contest roster clean."
+		infoLines := wrapLines(infoText, infoMaxW)
+		var infoContent strings.Builder
+		for i, line := range infoLines {
+			infoContent.WriteString(DimStyle.Render(line))
+			if i < len(infoLines)-1 {
+				infoContent.WriteString("\n")
+			}
+		}
+		boxStyle := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(P.Border)
+		infoBox := boxStyle.Render(infoContent.String())
+		b.WriteString(infoBox)
+		b.WriteString("\n")
+
 		if len(c.names) == 0 {
 			b.WriteString("No contests configured.\n")
 		} else {
-			contentW := w - 8
-			if contentW > partnerMapMaxW-8 {
-				contentW = partnerMapMaxW - 8
-			}
-			if contentW < 20 {
-				contentW = 20
-			}
-
 			for i, name := range c.names {
 				prefix := "  "
 				if i == c.cursor {
@@ -690,7 +719,7 @@ func (c *ContestChooser) viewForm() string {
 	b.WriteString("\n")
 
 	// In Use checkbox — just below Date.
-	c.renderCheckbox(&b, w, 2, "In use:", c.inUse)
+	c.renderCheckbox(&b, w, 2, "In use:", "Mark if the contest is still valid (not archived)", c.inUse)
 	b.WriteString("\n")
 
 	// Next QSO ID field.
@@ -722,11 +751,11 @@ func (c *ContestChooser) viewForm() string {
 		extra = contestIDDesc(cid)
 	}
 	line := lipgloss.JoinHorizontal(lipgloss.Center, "  ", cl.Render("Contest ADIF ID:"), cs.Render(c.contInput.View()))
-	if extra != "" {
-		line = line + " " + DimStyle.Render(extra)
-	}
 	if c.focus == 4 {
 		line = line + " " + DimStyle.Render("(PgUp/PgDn)")
+	}
+	if extra != "" {
+		line = line + " " + DimStyle.Render(extra)
 	}
 	maxW := c.width - 4
 	if maxW < 40 {
@@ -736,11 +765,11 @@ func (c *ContestChooser) viewForm() string {
 	b.WriteString("\n")
 
 	// Serial Exchange checkbox — before exchange prefill section.
-	c.renderCheckbox(&b, w, 5, "Serial Exchange:", c.serialExchange)
+	c.renderCheckbox(&b, w, 5, "Serial Exchange:", "", c.serialExchange)
 	b.WriteString("\n")
 
 	// Prefill Exchange Sent checkbox.
-	c.renderCheckbox(&b, w, 6, "Prefill Exchange Sent:", c.prefillExchange)
+	c.renderCheckbox(&b, w, 6, "Prefill Exchange Sent:", "", c.prefillExchange)
 
 	// Indented exchange sent field.
 	if c.prefillExchange {
@@ -750,7 +779,7 @@ func (c *ContestChooser) viewForm() string {
 
 	// Prefill Exchange Rcvd checkbox.
 	b.WriteString("\n")
-	c.renderCheckbox(&b, w, 8, "Prefill Exchange Rcvd:", c.prefillExchangeRcvd)
+	c.renderCheckbox(&b, w, 8, "Prefill Exchange Rcvd:", "", c.prefillExchangeRcvd)
 
 	// Indented exchange rcvd field.
 	if c.prefillExchangeRcvd {
@@ -760,25 +789,22 @@ func (c *ContestChooser) viewForm() string {
 
 	// Marker reference section — shown below the form fields.
 	b.WriteString("\n\n")
-	b.WriteString("  Exchange markers")
+	b.WriteString("  Exchange markers — see " + osc8Link("https://docs.cqops.com", "docs.cqops.com"))
 	b.WriteString("\n\n")
 
 	markers := [][2]string{
 		{"@rst", "RST sent or received"},
-		{"@serial", "Sent serial / rcvd serial placeholder"},
-		{"@cqz", "DX station CQ zone"},
-		{"@mycqz", "Your station CQ zone"},
-		{"@itu", "DX station ITU zone"},
-		{"@myitu", "Your station ITU zone"},
-		{"@grid", "DX station grid square"},
-		{"@mygrid", "Your station grid square"},
+		{"@serial", "Sent / received serial placeholder"},
+		{"@cqz / @mycqz", "DX / your CQ zone"},
+		{"@itu / @myitu", "DX / your ITU zone"},
+		{"@grid / @mygrid", "DX / your grid square"},
 	}
 
 	// Pre-built marker lines — avoids fmt.Sprintf on every frame.
 	for _, m := range markers {
 		b.WriteString("  ")
 		b.WriteString(m[0])
-		for i := len(m[0]); i < 12; i++ {
+		for i := len(m[0]); i < 22; i++ {
 			b.WriteByte(' ')
 		}
 		b.WriteString(DimStyle.Render(m[1]))
@@ -826,7 +852,7 @@ func (c *ContestChooser) viewForm() string {
 	return result
 }
 
-func (c *ContestChooser) renderCheckbox(b *strings.Builder, w, focusIdx int, label string, checked bool) {
+func (c *ContestChooser) renderCheckbox(b *strings.Builder, w, focusIdx int, label, hint string, checked bool) {
 	cb := "[ ]"
 	if checked {
 		cb = "[x]"
@@ -837,6 +863,9 @@ func (c *ContestChooser) renderCheckbox(b *strings.Builder, w, focusIdx int, lab
 		prefix = S.FormPrefixOn.Render("> ")
 		lbl = S.FormFocusedCtx.Align(lipgloss.Left).Render(label)
 		cb = CursorStyle.Render(cb) + " " + DimStyle.Render("(Space)")
+		if hint != "" {
+			cb = cb + " " + DimStyle.Render(hint)
+		}
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, cb),

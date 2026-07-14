@@ -582,8 +582,11 @@ func (a *App) startAPRSBeacon() {
 			}
 
 			intervalMin := aprsCfg.IntervalMin
-			if intervalMin < 1 {
-				intervalMin = 1
+			if intervalMin < 5 {
+				intervalMin = 5
+			}
+			if intervalMin > 180 {
+				intervalMin = 180
 			}
 			interval := time.Duration(intervalMin) * time.Minute
 

@@ -109,6 +109,7 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			c.wlStatus = msg.err.Error()
 			c.wlStations = nil
 			c.wlStationIdx = -1
+			c.toasts.Error("Wavelog: " + msg.err.Error())
 		} else {
 			c.wlStations = msg.stations
 			c.wlStationIdx = 0
@@ -122,6 +123,7 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			c.updateStationIDField()
 			c.wlStatus = fmt.Sprintf("OK — %d stations loaded — Space over Station ID to cycle", len(msg.stations))
+			c.toasts.Success(fmt.Sprintf("Wavelog: %d stations loaded", len(msg.stations)))
 		}
 
 	case wlTestMsg:
@@ -165,6 +167,7 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			c.station.BlurAll()
 			c.mode = chooserList
+			c.lastListContent = "" // force viewport refresh
 			return c, nil
 
 		case c.mode == chooserConfirmDelete:
@@ -302,17 +305,42 @@ func (c *LogbookChooser) viewList() string {
 		h = 24
 	}
 
+	contentW := w - 8
+	if contentW > partnerMapMaxW-8 {
+		contentW = partnerMapMaxW - 8
+	}
+	if contentW < 20 {
+		contentW = 20
+	}
+
+	// --- Info box (same pattern as callbook and general menus) ---
+	infoMaxW := contentW - 4
+	if infoMaxW < 30 {
+		infoMaxW = 30
+	}
+	infoText := "Logbooks keep contacts organised by location, " +
+		"operator, or context. Create separate logbooks for your " +
+		"home QTH, portable (/P) operations, club stations, " +
+		"contesting, or private logs \u2014 each with its own " +
+		"station details, callsign, and grid locator."
+	infoLines := wrapLines(infoText, infoMaxW)
+	var infoContent strings.Builder
+	for i, line := range infoLines {
+		infoContent.WriteString(DimStyle.Render(line))
+		if i < len(infoLines)-1 {
+			infoContent.WriteString("\n")
+		}
+	}
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(P.Border)
+	infoBox := boxStyle.Render(infoContent.String())
+	b.WriteString(infoBox)
+	b.WriteString("\n")
+
 	if len(c.names) == 0 {
 		b.WriteString("No logbooks configured.\n")
 	} else {
-		contentW := w - 8
-		if contentW > partnerMapMaxW-8 {
-			contentW = partnerMapMaxW - 8
-		}
-		if contentW < 20 {
-			contentW = 20
-		}
-
 		for i, id := range c.names {
 			lb := c.app.Config.Logbooks[id]
 			dn := config.LogbookDisplayName(&lb)
@@ -363,30 +391,6 @@ func (c *LogbookChooser) viewForm() string {
 
 	c.station.width = w - 6 // account for menu box border + padding
 	b.WriteString(c.station.View().Content)
-
-	// Wavelog status line below the form.
-	if c.station.WlEnabled && c.wlStatus != "" {
-		b.WriteString("\n    ")
-		if strings.HasPrefix(c.wlStatus, "OK") {
-			b.WriteString(SuccessStyle.Render(c.wlStatus))
-		} else if c.wlUpdating || c.wlTesting {
-			b.WriteString(DimStyle.Render(c.wlStatus))
-		} else {
-			b.WriteString(ErrorStyle.Render(c.wlStatus))
-		}
-	}
-
-	// APRS status line below the form.
-	if c.station.AprsEnabled && c.aprsStatus != "" {
-		b.WriteString("\n    ")
-		if strings.HasPrefix(c.aprsStatus, "OK") {
-			b.WriteString(SuccessStyle.Render(c.aprsStatus))
-		} else if c.aprsTesting {
-			b.WriteString(DimStyle.Render(c.aprsStatus))
-		} else {
-			b.WriteString(ErrorStyle.Render(c.aprsStatus))
-		}
-	}
 
 	// Use viewport for scrollable form body on small terminals.
 	boxW := w
@@ -591,8 +595,8 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 			c.toasts.Warn("APRS: callsign is required when APRS is enabled")
 			return nil
 		}
-		if aprs.IntervalMin < 1 {
-			c.toasts.Warn("APRS: interval must be at least 1 minute")
+		if aprs.IntervalMin < 5 || aprs.IntervalMin > 180 {
+			c.toasts.Warn("APRS: interval must be between 5 and 180 minutes")
 			return nil
 		}
 		if aprs.Symbol == "" {

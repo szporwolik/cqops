@@ -433,6 +433,7 @@ func TestContestIDGreenWhenValid(t *testing.T) {
 	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	cc.focus = 4
 	cc.contInput.SetValue("CQ-WPX-CW")
+	cc.width = 120 // wide enough to see description after (PgUp/PgDn)
 
 	view := cc.View()
 	content := view.Content

@@ -16,10 +16,10 @@ func DefaultConfig() *Config {
 			UseRef:           true,
 			Debug:            false,
 			Notifications: NotificationsConfig{
-				Enabled:       true,
-				QSO:           false,
-				Wavelog:       false,
-				WavelogErrors: true,
+				Enabled:   true,
+				QSO:       false,
+				Wavelog:   false,
+				AllErrors: true,
 			},
 		},
 		State: StateConfig{

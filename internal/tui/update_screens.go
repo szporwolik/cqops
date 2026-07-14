@@ -153,6 +153,17 @@ func (m *Model) handleNotificationsUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 	m.ui.notifMenu.height = m.height
 	_, notifCmd := m.ui.notifMenu.Update(msg)
 	cmd = tea.Batch(cmd, notifCmd)
+
+	// Show test result toasts.
+	if m.ui.notifMenu.statusMsg != "" {
+		if strings.Contains(m.ui.notifMenu.statusMsg, "failed") || strings.Contains(m.ui.notifMenu.statusMsg, "unavailable") {
+			m.toasts.Error(m.ui.notifMenu.statusMsg)
+		} else {
+			m.toasts.Success(m.ui.notifMenu.statusMsg)
+		}
+		m.ui.notifMenu.statusMsg = ""
+	}
+
 	if m.ui.notifMenu.done {
 		m.screen = screenQSO
 		if m.ui.notifMenu.goBack {
@@ -162,7 +173,7 @@ func (m *Model) handleNotificationsUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 			m.App.Config.General.Notifications.Enabled = m.ui.notifMenu.enabled
 			m.App.Config.General.Notifications.QSO = m.ui.notifMenu.qso
 			m.App.Config.General.Notifications.Wavelog = m.ui.notifMenu.wavelog
-			m.App.Config.General.Notifications.WavelogErrors = m.ui.notifMenu.wavelogErrors
+			m.App.Config.General.Notifications.AllErrors = m.ui.notifMenu.allErrors
 			m.App.Config.General.Notifications.BeepOnError = m.ui.notifMenu.beepOnError
 			m.applyBeepOnError()
 			m.saveConfig("Settings saved")
@@ -183,6 +194,16 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 	if m.ui.integrationMenu.SaveError != "" {
 		m.toasts.Error(m.ui.integrationMenu.SaveError)
 		m.ui.integrationMenu.SaveError = ""
+	}
+
+	// Show APRS test toasts.
+	if m.ui.integrationMenu.aprsToast != "" {
+		if strings.Contains(m.ui.integrationMenu.aprsToast, "connection verified") {
+			m.toasts.Success(m.ui.integrationMenu.aprsToast)
+		} else {
+			m.toasts.Error(m.ui.integrationMenu.aprsToast)
+		}
+		m.ui.integrationMenu.aprsToast = ""
 	}
 
 	if m.ui.integrationMenu.done {

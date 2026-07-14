@@ -488,9 +488,12 @@ Contest configuration includes:
 |---|---|
 | `@rst` | RST sent or received |
 | `@serial` | Auto-incrementing serial number |
-| `@call` | Your callsign |
-| `@grid` | Your grid locator |
-| `@name` | Operator name from the operator profile |
+| `@cqz` | DX station CQ zone |
+| `@mycqz` | Your CQ zone |
+| `@itu` | DX station ITU zone |
+| `@myitu` | Your ITU zone |
+| `@grid` | DX station grid square |
+| `@mygrid` | Your grid square |
 
 Press **Ctrl+C** to cycle the active contest, or select from the Contest menu (**F7**). The exchange fields appear automatically in the QSO form and serials auto-increment.
 
