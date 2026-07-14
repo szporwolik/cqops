@@ -675,8 +675,9 @@ function initMap(cfg){
   if(cfg.animateActivePath!==undefined)mapCfg.animateActivePath=!!cfg.animateActivePath;
   // When offline, use EPSG:4326 (equirectangular) to match the embedded map image.
   // When online, default Web Mercator for MapLibre tiles.
-  var crs=cfg.isOnline?undefined:L.CRS.EPSG4326;
-  map=L.map('map-container',{zoomControl:false,attributionControl:false,crs:crs}).setView([51,10],3);
+  var mapOpts={zoomControl:false,attributionControl:false};
+  if(!cfg.isOnline)mapOpts.crs=L.CRS.EPSG4326;
+  map=L.map('map-container',mapOpts).setView([51,10],3);
   map._cqopsOfflineCRS=!cfg.isOnline;
   // Custom panes for layer ordering: radar below QSO paths, markers on top.
   map.createPane('cqopsRadar');map.getPane('cqopsRadar').style.zIndex=350;map.getPane('cqopsRadar').style.pointerEvents='none';
