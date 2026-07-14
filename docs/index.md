@@ -13,6 +13,7 @@ Fast, terminal-first amateur radio logging — offline-first, QRP-ready, built f
 |---|---|---|
 | [&#x1f1ea;&#x1f1f8; Espa&ntilde;ol](manual.es.html) | [&#x1f1ef;&#x1f1f5; &#x65e5;&#x672c;&#x8a9e;](manual.ja.html) | [&#x1f1eb;&#x1f1f7; Fran&ccedil;ais](manual.fr.html) |
 | [&#x1f1ee;&#x1f1f9; Italiano](manual.it.html) | [&#x1f1e7;&#x1f1f7; Portugu&ecirc;s (BR)](manual.pt.html) | [&#x1f1f7;&#x1f1fa; &#x420;&#x443;&#x441;&#x441;&#x43a;&#x438;&#x439;](manual.ru.html) |
+| | [&#x1f1e8;&#x1f1f3; &#x4e2d;&#x6587; (&#x7b80;&#x4f53;)](manual.zh.html) | |
 
 ---
 

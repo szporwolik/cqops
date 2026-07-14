@@ -12,7 +12,7 @@
 
 A small, fast, offline-first amateur radio logger for the terminal — built for portable/field ops, SOTA/POTA activations, and club stations with rotating operators. Runs on Raspberry Pi, old laptops, or any low-power machine without a GUI, over SSH or a local terminal. Hot-swap operators and logbooks, log via WSJT-X auto-feed or keyboard, sync to Wavelog. GPS-aware — uses your receiver's position for the station grid automatically. Works fully offline with an embedded world map, graceful degradation, and `--offline` flag.
 
-> 📖 **Full documentation, installation guides, and translations at [docs.cqops.com](https://docs.cqops.com/)** — English, Polski, Deutsch, Español, 日本語, Français, Italiano, Português (BR), Русский.
+> 📖 **Full documentation, installation guides, and translations at [docs.cqops.com](https://docs.cqops.com/)** — English, Polski, Deutsch, Español, 日本語, Français, Italiano, Português (BR), Русский, 中文 (简体).
 
 ## Installation
 
