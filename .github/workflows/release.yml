@@ -93,14 +93,16 @@ jobs:
           echo "Binaries before UPX:"
           ls -lh build/
 
-      # - name: Compress with UPX
-      #   run: |
-      #     sudo apt-get update -qq && sudo apt-get install -y -qq upx-ucl
-      #     upx --best build/cqops-linux-amd64
-      #     upx --best build/cqops-linux-arm64
-      #     upx --best build/cqops-linux-armhf
-      #     echo "Binaries after UPX:"
-      #     ls -lh build/
+      - name: Compress with UPX
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq upx-ucl
+          upx --best build/cqops-linux-amd64
+          upx --best build/cqops-linux-arm64
+          upx --best build/cqops-linux-armhf
+          upx --best build/cqops-darwin-amd64
+          upx --best build/cqops-darwin-arm64
+          echo "Binaries after UPX:"
+          ls -lh build/
 
       - name: Package archives
         run: |
@@ -463,13 +465,12 @@ jobs:
           fi
 
   # ──────────────────────────────────────────────────────────────────────────
-  # WinGet update — submits an update PR to microsoft/winget-pkgs.
-  # Requires WINGET_GITHUB_TOKEN secret (classic PAT with public_repo scope).
-  # Gate: check inside steps (secrets not allowed in job-level if: condition).
+  # WinGet update — disabled until manifest is accepted.
   # ──────────────────────────────────────────────────────────────────────────
   publish-winget:
     runs-on: windows-latest
     needs: create-github-release
+    if: false
     steps:
       - name: Check token
         id: gate
