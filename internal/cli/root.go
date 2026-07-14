@@ -69,6 +69,8 @@ func Execute() error {
 	applog.Init()
 
 	applog.Info("══════════ CQOps STARTED ══════════", "v", version.ResolvedFull(), "built", version.ResolvedDate(), "utc", time.Now().UTC().Format("2006-01-02 15:04:05"))
+	cfgDir, _ := config.ConfigDir()
+	fmt.Fprintf(os.Stderr, "CQOps: %s starting - config %s\n", version.ResolvedFull(), cfgDir)
 	if offlineFlag {
 		applog.Info("Running in OFFLINE mode — all network connections skipped")
 	}

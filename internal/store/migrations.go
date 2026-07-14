@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/szporwolik/cqops/internal/qso"
@@ -167,6 +168,7 @@ var migrations = []string{
 // Migrate runs all migrations against the given database.
 // Existing columns/indexes are skipped (IF NOT EXISTS or error ignored).
 func Migrate(db *sql.DB) error {
+	fmt.Fprintln(os.Stderr, "CQOps: running database migrations...")
 	for i, m := range migrations {
 		if _, err := db.Exec(m); err != nil {
 			// ALTER TABLE ADD COLUMN fails if the column already exists.
@@ -182,9 +184,11 @@ func Migrate(db *sql.DB) error {
 		}
 	}
 	// Backfill base_call for rows that have it empty (pre-v0.8.7 QSOs).
+	fmt.Fprintln(os.Stderr, "CQOps: backfilling base_call...")
 	if err := backfillBaseCall(db); err != nil {
 		return fmt.Errorf("backfill base_call: %w", err)
 	}
+	fmt.Fprintln(os.Stderr, "CQOps: migrations complete.")
 	return nil
 }
 
