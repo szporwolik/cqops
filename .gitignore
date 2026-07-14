@@ -21,6 +21,7 @@ __debug_bin*
 Thumbs.db
 
 # Coverage
+coverage
 coverage.out
 coverage.html
 

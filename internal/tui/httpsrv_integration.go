@@ -988,11 +988,6 @@ func (m *Model) pushDashboardAPRS(ds *dashboard.State) {
 					view[i].Trail = dt
 					trailCount++
 				}
-				// Diagnostic: log trail status for SP9KSK-9 specifically.
-				if view[i].Callsign == "SP9KSK-9" {
-					t, has := trails[view[i].Callsign]
-					applog.Debug("dashboard: SP9KSK-9 trail", "hasTrail", has, "trailLen", len(t), "currentLat", fmt.Sprintf("%.5f", view[i].Lat), "currentLon", fmt.Sprintf("%.5f", view[i].Lon))
-				}
 			}
 		}
 		applog.Debug("dashboard: APRS trails attached", "stationsWithTrail", fmt.Sprintf("%d", trailCount), "totalStations", fmt.Sprintf("%d", len(view)))
