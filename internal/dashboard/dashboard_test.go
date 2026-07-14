@@ -249,6 +249,146 @@ func TestHandleSnapshot(t *testing.T) {
 	}
 }
 
+// ── DisplayConfig.IsOnline / offline map CRS tests ──────────────────────────
+
+func TestDisplayConfig_IsOnlineDefaultsToFalse(t *testing.T) {
+	hub := NewHub()
+	state := NewState(hub)
+
+	snap := state.Snapshot()
+	if snap.Display.IsOnline {
+		t.Error("IsOnline should default to false (safe offline CRS for embedded map)")
+	}
+}
+
+func TestDisplayConfig_IsOnlineSerializesAsJSON(t *testing.T) {
+	hub := NewHub()
+	state := NewState(hub)
+
+	// Online display config.
+	state.SetDisplay(DisplayConfig{
+		Header1:  "Test",
+		IsOnline: true,
+	})
+
+	snap := state.Snapshot()
+	if !snap.Display.IsOnline {
+		t.Fatal("expected IsOnline to be true after SetDisplay")
+	}
+
+	// Round-trip through JSON — the JS client reads this to decide CRS.
+	body, err := json.Marshal(snap)
+	if err != nil {
+		t.Fatalf("marshal snapshot: %v", err)
+	}
+	if !strings.Contains(string(body), `"isOnline":true`) {
+		t.Errorf("expected isOnline:true in JSON, got: %s", string(body))
+	}
+
+	// Toggle offline.
+	state.SetDisplay(DisplayConfig{
+		Header1:  "Test",
+		IsOnline: false,
+	})
+
+	snap2 := state.Snapshot()
+	if snap2.Display.IsOnline {
+		t.Fatal("expected IsOnline to be false after toggle")
+	}
+
+	body2, err := json.Marshal(snap2)
+	if err != nil {
+		t.Fatalf("marshal snapshot: %v", err)
+	}
+	if !strings.Contains(string(body2), `"isOnline":false`) {
+		t.Errorf("expected isOnline:false in JSON, got: %s", string(body2))
+	}
+}
+
+func TestDisplayConfig_IsOnlineRoundTripViaHTTP(t *testing.T) {
+	hub := NewHub()
+	state := NewState(hub)
+
+	state.SetDisplay(DisplayConfig{
+		Header1:  "CQOps",
+		IsOnline: true,
+	})
+	state.SetStation(StationInfo{Callsign: "SP9MOA", Locator: "JO90"})
+
+	mux := NewMux(state, hub)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/snapshot", nil)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var snap Snapshot
+	if err := json.Unmarshal(rec.Body.Bytes(), &snap); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if !snap.Display.IsOnline {
+		t.Error("IsOnline should be true via HTTP snapshot — JS CRS check uses this flag")
+	}
+
+	// Verify the full JSON path works for the JS client.
+	raw := rec.Body.String()
+	if !strings.Contains(raw, `"isOnline":true`) {
+		t.Error("HTTP snapshot missing isOnline:true — JS map init will select wrong CRS")
+	}
+
+	// Now switch to offline.
+	state.SetDisplay(DisplayConfig{
+		Header1:  "CQOps",
+		IsOnline: false,
+	})
+
+	rec2 := httptest.NewRecorder()
+	mux.ServeHTTP(rec2, req)
+
+	var snap2 Snapshot
+	if err := json.Unmarshal(rec2.Body.Bytes(), &snap2); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	if snap2.Display.IsOnline {
+		t.Error("IsOnline should be false — offline map with EPSG:4326 CRS expected")
+	}
+	raw2 := rec2.Body.String()
+	if !strings.Contains(raw2, `"isOnline":false`) {
+		t.Error("HTTP snapshot missing isOnline:false — JS will use wrong CRS for offline map")
+	}
+}
+
+func TestDisplayConfig_IsOnlineFalseDisablesQR(t *testing.T) {
+	// The JS condition `if(displayCfg.qrLink && displayCfg.isOnline)` hides
+	// QR codes when offline. Verify IsOnline serialises independently
+	// so the JS guard works.
+	hub := NewHub()
+	state := NewState(hub)
+
+	state.SetDisplay(DisplayConfig{
+		QRLink:   "https://example.com",
+		IsOnline: false,
+	})
+
+	snap := state.Snapshot()
+	body, err := json.Marshal(snap)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	// Both qrLink AND isOnline must be present and correctly valued.
+	s := string(body)
+	if !strings.Contains(s, `"qrLink":"https://example.com"`) {
+		t.Error("qrLink not serialised")
+	}
+	if !strings.Contains(s, `"isOnline":false`) {
+		t.Error("isOnline:false not serialised — JS QR guard will malfunction")
+	}
+}
+
 func TestHandleEvents_SendsInitialSnapshot(t *testing.T) {
 	state := NewState(NewHub())
 	state.SetStation(StationInfo{Callsign: "TEST"})
