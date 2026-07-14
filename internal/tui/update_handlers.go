@@ -156,6 +156,7 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			// Internet just came up — set the flag FIRST so the
 			// dispatch functions below don't bail out on !m.inetOnline.
 			m.inetOnline = true
+			m.offlineToastShown = false
 			m.lookup.wlForceCheck = true
 			m.lookup.qrzForceCheck = true
 			m.toasts.Success("Internet: connected")
@@ -179,8 +180,11 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 				return true, tea.Batch(cmds...)
 			}
 			return true, nil
-		} else if m.inetOnline && !bool(r) {
-			m.toasts.Warn("Internet: not available — working in offline mode")
+		} else if !bool(r) {
+			if !m.offlineToastShown {
+				m.offlineToastShown = true
+				m.toasts.Warn("Internet: not available — working in offline mode")
+			}
 		}
 		m.inetOnline = bool(r)
 		return true, nil

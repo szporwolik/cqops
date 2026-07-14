@@ -10,3 +10,9 @@ import _ "embed"
 //
 //go:embed map-earth.jpg
 var WorldMap []byte
+
+// Logo is the embedded CQOps logo (PNG, 256×256).
+// Served via /logo.png on the HTTP dashboard when no custom logo is set.
+//
+//go:embed other/gh-logo.png
+var Logo []byte

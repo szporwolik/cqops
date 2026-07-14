@@ -248,6 +248,10 @@ type DisplayConfig struct {
 	// Callsigns in QSO tables link to this provider's callsign page.
 	InternetCallbookURL  string `json:"internetCallbookUrl,omitempty"`
 	InternetCallbookName string `json:"internetCallbookName,omitempty"`
+
+	// IsOnline is true when the TUI has internet access. When false, the
+	// dashboard hides QR codes and gracefully degrades map tiles.
+	IsOnline bool `json:"isOnline"`
 }
 
 // =============================================================================

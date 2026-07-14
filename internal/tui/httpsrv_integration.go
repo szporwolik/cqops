@@ -191,7 +191,7 @@ func clubLogoURL(cfgURL string) string {
 	if cfgURL != "" {
 		return cfgURL
 	}
-	return "https://raw.githubusercontent.com/szporwolik/cqops/main/assets/other/gh-logo.png"
+	return "/logo.png" // embedded in binary — no internet required
 }
 
 // unitForDashboard returns "imperial" or "metric" for the dashboard.
@@ -440,6 +440,7 @@ func (m *Model) pushDashboardFast() {
 		Theme:                cfg.Theme,
 		InternetCallbookName: icName,
 		InternetCallbookURL:  icURL,
+		IsOnline:             m.inetOnline,
 	})
 
 	// --- Station ---

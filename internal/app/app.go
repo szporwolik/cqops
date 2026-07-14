@@ -46,6 +46,7 @@ type App struct {
 	aprsRestartTimer *time.Timer           // debounces rapid logbook switches for APRS restart
 	gpsGrid          string                // last known GPS grid (set by TUI model)
 	gpsHasFix        bool                  // true when GPS has a valid fix
+	Offline          bool                  // when true, skip all network operations
 
 	// lastWSJTX tracks the effective WSJT-X config last applied to the
 	// listener. Used to avoid unnecessary Stop/Start cycles when config
@@ -228,6 +229,10 @@ func (a *App) MaybeRestartWSJTX(enabled bool, host string, port int) {
 // Non-blocking — connection runs asynchronously.
 // Call SetAPRSStatusCallback to receive toast updates.
 func (a *App) MaybeRestartAPRS() {
+	if a.Offline {
+		applog.Debug("APRS: skipped — offline mode")
+		return
+	}
 	aprsGlobal := a.Config.Integrations.APRS
 	aprsCfg := a.Logbook.APRS
 	enabled := aprsGlobal.Enabled && aprsCfg != nil && aprsCfg.Enabled

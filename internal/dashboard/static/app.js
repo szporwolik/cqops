@@ -108,7 +108,13 @@ function scheduleDisconnected(){
     _discShown=true;
     _discTimer=setInterval(function(){
       var s=Math.floor((Date.now()-_discSince)/1000);
-      $('disconnected-timer').textContent=String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
+      var m=Math.floor(s/60),h=Math.floor(m/60),d=Math.floor(h/24);
+      h=h%24;m=m%60;s=s%60;
+      var txt;
+      if(d>0){txt=d+'d '+String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')}
+      else if(h>0){txt=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')}
+      else{txt=String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')}
+      $('disconnected-timer').textContent=txt;
     },1000);
   },8000);
 }
@@ -208,7 +214,7 @@ function connectSSE(){
     }
   });
   es.addEventListener('heartbeat',function(){D('sse','heartbeat')});
-  es.onopen=function(){sseReconnects=0;setSSEStatus('sse-connected');hideDisconnected();D('sse','connected ✓')};
+  es.onopen=function(){sseReconnects=0;setSSEStatus('sse-connected');hideDisconnected();removeOfflineOverlay();D('sse','connected ✓')};
   es.onerror=function(){sseReconnects++;setSSEStatus('sse-disconnected');es.close();
     D('sse','error — reconnect #'+sseReconnects+' in 3s');
     scheduleDisconnected();
@@ -245,9 +251,9 @@ function renderAll(snap){
   }
   // Display config
   if(displayCfg.clubLogo){hdLogo.src=displayCfg.clubLogo;hdLogoBox.style.display=''}else{hdLogoBox.style.display='none'}
-  // QR code — QuickChart API, only when config has qrLink set.
+  // QR code — QuickChart API, hidden when offline.
   var hdQR=$('hd-qr'),hdQRImg=$('hd-qr-img'),hdQRErr=$('hd-qr-err');
-  if(displayCfg.qrLink){
+  if(displayCfg.qrLink && displayCfg.isOnline){
     hdQRErr.style.display='none';hdQRImg.style.display='';
     hdQRImg.onload=function(){hdQRErr.style.display='none';hdQRImg.style.display=''};
     hdQRImg.onerror=function(){hdQRErr.style.display='';hdQRImg.style.display='none'};
@@ -667,7 +673,11 @@ function initMap(cfg){
   if(cfg.maxMarkers)mapCfg.maxMarkers=cfg.maxMarkers;
   if(cfg.highlightLastQSO!==undefined)mapCfg.highlightLastQSO=!!cfg.highlightLastQSO;
   if(cfg.animateActivePath!==undefined)mapCfg.animateActivePath=!!cfg.animateActivePath;
-  map=L.map('map-container',{zoomControl:false,attributionControl:false}).setView([51,10],3);
+  // When offline, use EPSG:4326 (equirectangular) to match the embedded map image.
+  // When online, default Web Mercator for MapLibre tiles.
+  var crs=cfg.isOnline?undefined:L.CRS.EPSG4326;
+  map=L.map('map-container',{zoomControl:false,attributionControl:false,crs:crs}).setView([51,10],3);
+  map._cqopsOfflineCRS=!cfg.isOnline;
   // Custom panes for layer ordering: radar below QSO paths, markers on top.
   map.createPane('cqopsRadar');map.getPane('cqopsRadar').style.zIndex=350;map.getPane('cqopsRadar').style.pointerEvents='none';
   map.createPane('cqopsGrayline');map.getPane('cqopsGrayline').style.zIndex=300;map.getPane('cqopsGrayline').style.pointerEvents='none';
@@ -675,8 +685,10 @@ function initMap(cfg){
   map.createPane('cqopsActive');map.getPane('cqopsActive').style.zIndex=460;map.getPane('cqopsActive').style.pointerEvents='none';
   map.createPane('cqopsMarker');map.getPane('cqopsMarker').style.zIndex=500;
   var style=styleUrlForTheme(cfg.mapTileUrl);
-  mainGL=L.maplibreGL({style:style,attributionControl:false}).addTo(map);
-  suppressMissingImages(mainGL);
+  if(typeof L.maplibreGL==='function'){
+    mainGL=L.maplibreGL({style:style,attributionControl:false}).addTo(map);
+    suppressMissingImages(mainGL);
+  }
   // Layer groups — each on its own pane for correct z-ordering above radar.
   qsoLineLayer=L.layerGroup([],{pane:'cqopsPath'}).addTo(map);
   lastQsoLayer=L.layerGroup([],{pane:'cqopsPath'}).addTo(map);
@@ -698,8 +710,26 @@ function initMap(cfg){
   })()
   // Grayline: always-on below radar.
   enableGrayline();
+  // Offline map fallback — uses equirectangular CRS (EPSG:4326) matching the
+  // embedded world map image. Removed when SSE reconnects and tiles load.
+  if(!cfg.isOnline){
+    if(!map._cqopsOffline){
+      map._cqopsOffline=L.imageOverlay('/api/map-earth',[[-90,-180],[90,180]],{opacity:0.9,pane:'cqopsRadar'}).addTo(map);
+    }
+  }
   // Radar: always enabled — no toggle button.
   enableRadarLayer();
+}
+
+// removeOfflineOverlay is called when SSE reconnects (internet restored).
+// If the map was created with offline CRS, destroy and re-init with tiles.
+function removeOfflineOverlay(){
+  if(!map)return;
+  if(map._cqopsOffline){map.removeLayer(map._cqopsOffline);map._cqopsOffline=null}
+  if(map._cqopsOfflineCRS){
+    map.remove();map=null;
+    // Re-init with online tiles on next renderAll.
+  }
 }
 
 // ---- Local map (station-centre, ~50 km view) ----
@@ -712,8 +742,10 @@ function initLocalMap(lat,lon){
   mapLocal=L.map('map-local-container',{zoomControl:false,attributionControl:false,maxZoom:18}).setView([lat,lon],11);
   mapLocal.createPane('cqopsRadar');mapLocal.getPane('cqopsRadar').style.zIndex=350;mapLocal.getPane('cqopsRadar').style.pointerEvents='none';
   mapLocal.createPane('cqopsGrayline');mapLocal.getPane('cqopsGrayline').style.zIndex=300;mapLocal.getPane('cqopsGrayline').style.pointerEvents='none';
-  localTiles=L.maplibreGL({style:styleUrlForTheme(mapCfg.mapTileUrl),attributionControl:false}).addTo(mapLocal);
-  suppressMissingImages(localTiles);
+  if(typeof L.maplibreGL==='function'){
+    localTiles=L.maplibreGL({style:styleUrlForTheme(mapCfg.mapTileUrl),attributionControl:false}).addTo(mapLocal);
+    suppressMissingImages(localTiles);
+  }
   // Station marker on local map — small, below APRS symbols.
   stationLocalMarker=L.circleMarker([lat,lon],{radius:5,color:qsoPathTheme().station,fillColor:qsoPathTheme().station,fillOpacity:0.85,weight:2.5,pane:'shadowPane',className:'local-station-dot'}).addTo(mapLocal);
   if(window.ResizeObserver){new ResizeObserver(function(){mapLocal.invalidateSize()}).observe(lc)}
@@ -923,7 +955,7 @@ async function fetchJsonWithTimeout(url,ms){
 
 async function enableRadarLayer(){
   if(radarEnabled||radarLoading||!map)return;
-  if(!navigator.onLine){return}
+  if(!navigator.onLine||!(displayCfg&&displayCfg.isOnline)){return}
   radarLoading=true;
   try{
     var meta=await fetchJsonWithTimeout('https://api.rainviewer.com/public/weather-maps.json',6000);
@@ -1374,19 +1406,20 @@ function wxDoFetch(){
 function wxStartInterval(){
   if(wxInterval)return;
   wxInterval=setInterval(function(){
-    if(navigator.onLine&&wxLat!=null&&wxLon!=null)wxDoFetch();
+    if(navigator.onLine&&displayCfg&&displayCfg.isOnline&&wxLat!=null&&wxLon!=null)wxDoFetch();
   },15*60*1000);
 }
 function wxUpdateVisibility(){
   if(!wxEl)wxEl=document.getElementById('wx-row');
   if(wxEl){
-    if(navigator.onLine)wxEl.style.display='';
+    if(navigator.onLine&&displayCfg&&displayCfg.isOnline)wxEl.style.display='';
     else{wxEl.style.display='none';wxEl.innerHTML=''}
   }
   if(map)map.invalidateSize();if(mapLocal)mapLocal.invalidateSize();
 }
 // Listen for online/offline events.
 window.addEventListener('online',function(){
+  if(!(displayCfg&&displayCfg.isOnline))return;
   wxUpdateVisibility();
   if(wxLat!=null&&wxLon!=null){wxLat=null;wxLon=null;wxDoFetch();wxStartInterval()}
 });

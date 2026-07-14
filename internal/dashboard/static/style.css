@@ -543,8 +543,9 @@ footer a:hover{text-decoration:underline}
   background:var(--page-bg);flex-direction:column;align-items:center;justify-content:center;gap:12px;
   font-family:system-ui,-apple-system,sans-serif;text-align:center}
 #disconnected-overlay.show{display:flex}
-#disconnected-icon{font-size:2.5rem;animation:disc-pulse 2s ease-in-out infinite}
-#disconnected-title{font-size:1.4rem;font-weight:700;color:var(--text);letter-spacing:0.5px}
+#disconnected-logo{animation:disc-pulse 2s ease-in-out infinite}
+#disconnected-logo img{width:80px;height:80px;object-fit:contain;border-radius:16px}
+#disconnected-title{font-size:1.4rem;font-weight:700;color:var(--text);letter-spacing:0.5px;margin-top:4px}
 #disconnected-timer{font-size:2.2rem;font-weight:300;color:var(--accent);font-variant-numeric:tabular-nums;letter-spacing:2px}
 #disconnected-sub{font-size:0.85rem;color:var(--text-secondary);margin-top:2px}
 #disconnected-note{font-size:0.72rem;color:var(--dim);margin-top:8px}

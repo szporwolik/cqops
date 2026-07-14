@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/szporwolik/cqops/assets"
 )
 
 // NewMux builds the HTTP handler tree for the dashboard.
@@ -43,6 +45,12 @@ func NewMux(state *State, hub *Hub) *http.ServeMux {
 	mux.HandleFunc("/api/aprs", handleAPRS(state))
 	mux.HandleFunc("/api/events", handleEvents(state, hub))
 	mux.HandleFunc("/healthz", handleHealthz())
+
+	// Embedded logo — served from binary, no internet required.
+	mux.HandleFunc("/logo.png", handleLogo())
+
+	// Embedded world map — offline fallback for Leaflet when tiles are unavailable.
+	mux.HandleFunc("/api/map-earth", handleMapEarth())
 
 	// Radar tile proxy — avoids CORS/ORB issues with RainViewer CDN.
 	mux.HandleFunc("/radar-proxy/", handleRadarProxy())
@@ -132,6 +140,25 @@ func handleHealthz() http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, `{"status":"ok"}`)
+	}
+}
+
+// handleLogo serves the embedded CQOps logo PNG from the binary.
+func handleLogo() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		w.Write(assets.Logo)
+	}
+}
+
+// handleMapEarth serves the embedded equirectangular world map JPEG for
+// offline Leaflet fallback when tile servers are unreachable.
+func handleMapEarth() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		w.Write(assets.WorldMap)
 	}
 }
 

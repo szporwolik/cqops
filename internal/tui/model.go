@@ -108,33 +108,34 @@ const (
 )
 
 type Model struct {
-	App            *app.App
-	screen         screenKind
-	fields         [fieldCount]textinput.Model
-	focus          field
-	qsos           []qso.QSO
-	toasts         *ToastQueue
-	err            error
-	width          int
-	height         int
-	quitting       bool
-	rig            rigState
-	rotor          rotorState
-	dateTimeAuto   bool
-	tickCount      int
-	inetOnline     bool
-	versionChecked bool // true after first GitHub version check
-	Offline        bool // when true, skip all network-dependent operations
-	wsjtx          wsjtxState
-	needRefresh    bool
-	dupe           bool // true when call/band/mode match an existing QSO today
-	dupeConfirmed  bool // true after first Enter on a dupe; second Enter proceeds
-	adifQ          adifQueue
-	ui             uiComponents
-	photo          photoState
-	mapView        *mapRenderer // embedded world map renderer
-	confirm        *DialogModel // active confirmation dialog (quit, etc.)
-	spotDialog     *SpotDialog  // active DX spot dialog
+	App               *app.App
+	screen            screenKind
+	fields            [fieldCount]textinput.Model
+	focus             field
+	qsos              []qso.QSO
+	toasts            *ToastQueue
+	err               error
+	width             int
+	height            int
+	quitting          bool
+	rig               rigState
+	rotor             rotorState
+	dateTimeAuto      bool
+	tickCount         int
+	inetOnline        bool
+	offlineToastShown bool // suppress repeated offline errors until internet returns
+	versionChecked    bool // true after first GitHub version check
+	Offline           bool // when true, skip all network-dependent operations
+	wsjtx             wsjtxState
+	needRefresh       bool
+	dupe              bool // true when call/band/mode match an existing QSO today
+	dupeConfirmed     bool // true after first Enter on a dupe; second Enter proceeds
+	adifQ             adifQueue
+	ui                uiComponents
+	photo             photoState
+	mapView           *mapRenderer // embedded world map renderer
+	confirm           *DialogModel // active confirmation dialog (quit, etc.)
+	spotDialog        *SpotDialog  // active DX spot dialog
 
 	// PSK Reporter.
 	psk pskState
@@ -389,11 +390,24 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	return m
 }
 
+// ShowOfflineToast displays a one-time warning that CQOps is running
+// in offline mode (--offline flag, no beep).
+func (m *Model) ShowOfflineToast() {
+	m.offlineToastShown = true
+	m.toasts.Warn("CQOps: working in offline mode — network skipped")
+}
+
 // applyBeepOnError wires the system beep to all ERROR-level log calls
 // when BeepOnError is enabled in the notifications config.
+// Beeps are suppressed when we've already warned about being offline.
 func (m *Model) applyBeepOnError() {
 	if m.App.Config.General.Notifications.BeepOnError && desktopAvailable() {
-		applog.SetBeepFunc(func() { beeep.Beep(beeep.DefaultFreq, beeep.DefaultDuration) })
+		applog.SetBeepFunc(func() {
+			if m.offlineToastShown {
+				return // already warned — suppress beep noise
+			}
+			beeep.Beep(beeep.DefaultFreq, beeep.DefaultDuration)
+		})
 	} else {
 		applog.SetBeepFunc(nil)
 	}
@@ -536,10 +550,17 @@ func (m *Model) Init() tea.Cmd {
 	// Start APRS-IS client if configured.
 	m.App.SetAPRSStatusCallback(func(connected bool, err error) {
 		if connected {
+			m.offlineToastShown = false
 			m.toasts.Success("APRS: connected")
 		} else if err != nil {
+			// Suppress when general offline toast already shown.
+			if m.offlineToastShown {
+				return
+			}
+			m.offlineToastShown = true
 			m.toasts.Warn("APRS: " + err.Error())
 		} else {
+			m.offlineToastShown = false
 			m.toasts.Info("APRS: stopped")
 		}
 	})

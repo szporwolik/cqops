@@ -129,6 +129,7 @@ func runTUI() error {
 	if config.IsFirstRun(a.Config) {
 		w := tui.NewWizard(a)
 		w.Offline = offlineFlag
+		a.Offline = offlineFlag
 		p := tea.NewProgram(w)
 		if _, err := p.Run(); err != nil {
 			return fmt.Errorf("wizard: %w", err)
@@ -169,6 +170,10 @@ func runTUI() error {
 
 	m := tui.New(a, qsos)
 	m.Offline = offlineFlag
+	a.Offline = offlineFlag
+	if offlineFlag {
+		m.ShowOfflineToast()
+	}
 	p := tea.NewProgram(m)
 
 	if _, err := p.Run(); err != nil {
