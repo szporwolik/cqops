@@ -1,5 +1,67 @@
 # Changelog
 
+## v0.9.0 — 2026-07-14
+
+> **Breaking change.** This release introduces `config_version: 1` and database `PRAGMA user_version = 1`. Config is auto-migrated on load (legacy keys → nested callbook structure). Database migrations are applied once and skipped on subsequent starts. No manual intervention required for upgrades from v0.8.7+; pre-v0.8.7 databases are re-backfilled automatically.
+
+### Config v1 — Nested Callbook & Legacy Migration
+- **Callbook group**: all callbook providers moved under `integrations.callbook:` (QRZ.com, HamQTH, Callook.info) with per-provider priority and credentials. The old flat keys (`QRZLegacy`, `qrzcom_callbook`, etc.) are auto-migrated on load.
+- **Config versioning**: `config_version: 1` written on save. Future migrators can branch on this field.
+- **Legacy key migration**: `picture_at_qrz_pane` → `picture_at_partner_pane`, `wavelog_sent` → `qso_sent`, `wavelog_errors` → `all_errors`. Old keys are silently upgraded.
+- **CTY.DAT always-on**: the prefix-to-DXCC lookup now runs unconditionally — removed from the General menu toggle. Always available as the ultimate callbook fallback.
+
+### Multi-Provider Callbook
+- **HamQTH**: free global callbook with name, QTH, grid, country, CQ/ITU zones, and DXCC. Requires a free account.
+- **Callook.info**: free US-focused callbook. No account needed — fast FCC lookups for US callsigns.
+- **Priority cascading**: providers are tried in configured priority order. When a higher-priority provider fails or is disabled, the next is queried automatically.
+- **Base-call fallback**: when enabled (default: on), CQOps also tries the base callsign (e.g. `SP9MOA` from `DL/SP9MOA/P`) if the full call returns no match from any provider.
+- **Callbook menu**: new `F9 → Callbook` top-level menu — separate from the Integration menu. Configure providers, test connections, set priorities.
+- **Wavelog lookup**: moved into the callbook pipeline as a provider with its own priority slot. Worked/confirmed status from Wavelog is merged with callbook data.
+
+### Offline Resilience
+- **Embedded world map**: a ~150 KB equirectangular map image is compiled into the binary. The dashboard falls back to it when internet is unavailable, using EPSG:4326 CRS for correct alignment.
+- **Graceful degradation**: dashboard tiles, weather, radar, and QR codes all degrade cleanly offline. No broken images, no JS errors.
+- **Offline toast suppression**: network-error toasts fire once on first detection, then go silent. Enables `--offline` for clean portable/field operation without notification spam.
+- **Beep suppression**: desktop notification sounds are suppressed when offline — no alert-spam during field ops.
+
+### Dashboard Overhaul
+- **Dark theme**: full dark mode with OpenFreeMap dark tiles, dark-themed CSS, and localStorage persistence (applied before first paint). Theme names `bright`, `dark`, `yl`, and `hivis`.
+- **Operator badges**: deterministic colour-hashed operator badges in the recent-QSOs table. Consistent colours per operator across sessions.
+- **QR link**: configurable QR code link in the dashboard header — defaults to `docs.cqops.com`.
+- **Top-QSOs table**: replaced the old definition list with a proper styled table matching the recent-QSOs column layout.
+- **Disconnected overlay**: logo + elapsed-time timer when SSE connection drops. Auto-recovers on reconnect, including CRS reset for tile maps.
+- **Mid-width responsive breakpoint**: stats panel and table columns adapt at intermediate widths (was missing between narrow and wide tiers).
+
+### Database — Schema Consolidation & Versioning
+- **Clean migrations**: all historical `ALTER TABLE` additions folded into the base `CREATE TABLE`. Removed the botched-migration recovery `DELETE` and startup messages to stderr. Migrations are silent and idempotent.
+- **Schema versioning**: uses SQLite `PRAGMA user_version` (currently `1`) — migrations are skipped when the database is already at the current version. Future schema changes can target specific version gaps without re-running already-applied work.
+- **DXCC column**: `dxcc` entity number added for remote stations (populated by callbook providers).
+
+### Security Hardening
+- **Dashboard default bind**: changed from `0.0.0.0` (all interfaces) to `127.0.0.1` (localhost only). Users who need LAN access must set the address explicitly — the safe default protects field operators on public networks.
+- **Radar proxy sanitization**: `/radar-proxy/` endpoint now rejects paths containing `..` — prevents path traversal to the upstream CDN.
+
+### Bug Fixes
+- **Portable dupe detection**: `IsDuplicateQSO` now matches on `base_call` in addition to exact `call` — logging `SP9MOA` after `DL/SP9MOA/P` on the same band/mode/date correctly shows `DUPE!`.
+- **Nil deref guards**: `cycleActiveContest()` and `cycleActiveOperator()` now check `m.App.Logbook != nil` before accessing logbook fields — prevents panic when the active logbook is unset.
+- **PSK spot count**: `InsertPSKSpots` now returns `0` (not the pre-commit tally) when `tx.Commit()` fails — the caller no longer receives a misleading count of unpersisted inserts.
+- **SSB submode**: force-corrected to `SSB` on frequency change to prevent stale submode values from carrying over between bands.
+- **APRS beacon clamp**: interval clamped to 5–180 minutes with save-time validation — out-of-range values no longer produce beacon storms or silent failures.
+- **ADIF STX_STRING/SRX_STRING**: now exports the exchange stripped of the RST prefix per ADIF spec (`STX=599` → `STX_STRING=001`, not `STX_STRING=599 001`).
+- **Help bar**: `operatorForm` cache key fixed for edit mode — switching between logbook list and operator editor no longer shows stale shortcuts.
+- **Wavelog lookup guard**: skips Wavelog result when only DXCC prefix data (not actual Wavelog worked/confirmed) was returned.
+
+### Translations
+- **9 languages**: English, Polski, Deutsch, Español, 日本語, Français, Italiano, **Português (BR)**, and **Русский**. All manuals updated with multi-provider callbook, offline map, and config restructure.
+- **Exchange markers**: all manuals corrected for the 8-template-marker set (`@rst`, `@serial`, `@cqz`, `@mycqz`, `@itu`, `@myitu`, `@grid`, `@mygrid`).
+
+### CI / Build
+- **UPX compression**: binaries are now compressed with `upx --best` in CI — Linux amd64/arm64/armhf and Darwin amd64/arm64. Typical 40–60% size reduction.
+- **Winget**: disabled until the manifest PR is accepted by Microsoft. Will re-enable as a fast-follow release.
+
+### Under the Hood
+- **~70 commits**, **~95 files changed**. Config auto-migration tested with real v0.8.x `config.yaml`. All 30 test packages pass. No new dependencies, no cgo, no runtime API changes for ADIF, Wavelog, WSJT-X, flrig, or rigctld backends.
+
 ## v0.8.13 — 2026-07-12
 
 ### Contest Statistics Panel

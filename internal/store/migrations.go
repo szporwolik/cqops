@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+
+	"github.com/szporwolik/cqops/internal/qso"
 )
 
 // migrations holds the ordered DDL statements that bring a new or existing
@@ -138,9 +140,34 @@ var migrations = []string{
 	`CREATE UNIQUE INDEX IF NOT EXISTS idx_psk_spots_uniq ON psk_spots(receiver_call, frequency, mode, flow_start)`,
 }
 
+// schemaVersion is the current database schema version. Bump this when
+// the schema changes in a way that requires data migration (new columns,
+// index rebuilds, backfills). DDL-only changes that use IF NOT EXISTS
+// don't require a bump — they're idempotent.
+//
+// Version history:
+//
+//	1 — v0.9.0  consolidated schema, base_call backfill, dxcc column
+const schemaVersion = 1
+
 // Migrate runs all migrations. Safe to call multiple times — every
-// statement uses IF NOT EXISTS guards.
+// statement uses IF NOT EXISTS guards, and PRAGMA user_version prevents
+// re-running migrations that have already been applied.
+//
+// The one-time base_call backfill runs on the first startup where any
+// row still has an empty base_call (covers direct upgrades from
+// pre-v0.8.7 databases).
 func Migrate(db *sql.DB) error {
+	var current int
+	if err := db.QueryRow(`PRAGMA user_version`).Scan(&current); err != nil {
+		return fmt.Errorf("read schema version: %w", err)
+	}
+
+	// Already at or above the current schema — nothing to do.
+	if current >= schemaVersion {
+		return nil
+	}
+
 	for i, m := range migrations {
 		if _, err := db.Exec(m); err != nil {
 			if strings.Contains(err.Error(), "duplicate column name") {
@@ -151,6 +178,49 @@ func Migrate(db *sql.DB) error {
 			}
 			return fmt.Errorf("migration %d: %w", i, err)
 		}
+	}
+
+	// One-time backfill: if any QSO row still has an empty base_call
+	// (direct upgrade from pre-v0.8.7 or first migration after schema
+	// consolidation), populate it now. Subsequent calls are skipped
+	// by the user_version guard above.
+	var pending int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE base_call = '' OR base_call IS NULL LIMIT 1`).Scan(&pending); err == nil && pending > 0 {
+		rows, err := db.Query(`SELECT id, call FROM qsos WHERE base_call = '' OR base_call IS NULL`)
+		if err != nil {
+			return fmt.Errorf("backfill query: %w", err)
+		}
+		defer rows.Close()
+
+		type update struct {
+			id int64
+			bc string
+		}
+		var updates []update
+		for rows.Next() {
+			var id int64
+			var call string
+			if err := rows.Scan(&id, &call); err != nil {
+				rows.Close()
+				return fmt.Errorf("backfill scan: %w", err)
+			}
+			if bc := qso.DeriveBaseCall(call); bc != "" {
+				updates = append(updates, update{id, bc})
+			}
+		}
+		if err := rows.Err(); err != nil {
+			return fmt.Errorf("backfill rows: %w", err)
+		}
+
+		for _, u := range updates {
+			if _, err := db.Exec(`UPDATE qsos SET base_call = ? WHERE id = ?`, u.bc, u.id); err != nil {
+				return fmt.Errorf("backfill update: %w", err)
+			}
+		}
+	}
+
+	if _, err := db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion)); err != nil {
+		return fmt.Errorf("write schema version: %w", err)
 	}
 	return nil
 }
