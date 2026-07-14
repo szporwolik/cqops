@@ -61,6 +61,9 @@ type CallbookMenu struct {
 	// saveError is set when Ctrl+S is blocked by validation.
 	SaveError string
 
+	// TestToast is set by QRZ/HamQTH test handlers; parent shows toast.
+	TestToast string
+
 	// Viewport for scrolling form content on small terminals.
 	vp              viewport.Model
 	lastBodyContent string
@@ -160,10 +163,19 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 		callookPriority.SetValue("40")
 	}
 
-	// Default base-call fallback to true on first run (fresh config).
+	// Default base-call fallback and Callook.info to enabled on fresh config.
+	// Use LogbookCallbook priority as a proxy for "callbook section never configured".
+	freshCallbook := cfg.Integrations.LogbookCallbook.Priority == 0 &&
+		cfg.Integrations.QRZ.Priority == 0 &&
+		cfg.Integrations.HamQTH.Priority == 0 &&
+		cfg.Integrations.Callook.Priority == 0
 	baseFallback := cfg.Integrations.Callbook.BaseCallFallback
-	if cfg.Integrations.LogbookCallbook.Priority == 0 && !cfg.Integrations.LogbookCallbook.Enabled {
+	if freshCallbook {
 		baseFallback = true
+	}
+	callookEnabled := cfg.Integrations.Callook.Enabled
+	if freshCallbook {
+		callookEnabled = true
 	}
 
 	// Wavelog callbook provider.
@@ -199,7 +211,7 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 		hamqthUser:       hamqthUser,
 		hamqthPass:       hamqthPass,
 		hamqthPriority:   hamqthPriority,
-		callookEnabled:   cfg.Integrations.Callook.Enabled,
+		callookEnabled:   callookEnabled,
 		callookPriority:  callookPriority,
 		wlEnabled:        wlEnabled,
 		wlConfigured:     wlConfigured,
@@ -220,24 +232,30 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cm.hamqthTesting = false
 			if msg.err != nil {
 				cm.hamqthTestResult = friendlyHTestError(msg.err)
+				cm.TestToast = "HamQTH: " + msg.err.Error()
 				applog.Error("HamQTH test failed", "error", msg.err.Error())
 			} else if msg.ok {
 				cm.hamqthTestResult = "OK — HamQTH connected"
+				cm.TestToast = "HamQTH: connection verified"
 				applog.Info("HamQTH test OK")
 			} else {
 				cm.hamqthTestResult = "Connected OK — OK1HRA not found (API works)"
+				cm.TestToast = "HamQTH: connected, but test lookup returned no data"
 				applog.Warn("HamQTH test: no data returned")
 			}
 		} else {
 			cm.qrzTesting = false
 			if msg.err != nil {
 				cm.qrzTestResult = friendlyQRZError(msg.err)
+				cm.TestToast = "QRZ: " + msg.err.Error()
 				applog.Error("QRZ test failed", "error", msg.err.Error())
 			} else if msg.ok {
 				cm.qrzTestResult = "OK - QRZ.com connected"
+				cm.TestToast = "QRZ: connection verified"
 				applog.Info("QRZ test OK")
 			} else {
 				cm.qrzTestResult = "No data returned"
+				cm.TestToast = "QRZ: connected, but lookup returned no data"
 				applog.Warn("QRZ test: no data returned")
 			}
 		}
@@ -670,17 +688,6 @@ func (cm *CallbookMenu) View() tea.View {
 			btnLine = "    " + InputStyle.Render(btnText)
 		}
 		b.WriteString(padOrTrunc(btnLine, lineW))
-
-		if cm.qrzTestResult != "" {
-			b.WriteString("\n    ")
-			if cm.qrzTesting {
-				b.WriteString(DimStyle.Render(cm.qrzTestResult))
-			} else if strings.HasPrefix(cm.qrzTestResult, "OK") {
-				b.WriteString(SuccessStyle.Render(cm.qrzTestResult))
-			} else {
-				b.WriteString(ErrorStyle.Render(cm.qrzTestResult))
-			}
-		}
 	}
 
 	b.WriteString("\n")
@@ -722,17 +729,6 @@ func (cm *CallbookMenu) View() tea.View {
 			btnLine = "    " + InputStyle.Render(btnText)
 		}
 		b.WriteString(padOrTrunc(btnLine, lineW))
-
-		if cm.hamqthTestResult != "" {
-			b.WriteString("\n    ")
-			if cm.hamqthTesting {
-				b.WriteString(DimStyle.Render(cm.hamqthTestResult))
-			} else if strings.HasPrefix(cm.hamqthTestResult, "OK") {
-				b.WriteString(SuccessStyle.Render(cm.hamqthTestResult))
-			} else {
-				b.WriteString(ErrorStyle.Render(cm.hamqthTestResult))
-			}
-		}
 	}
 
 	b.WriteString("\n")

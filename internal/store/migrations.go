@@ -214,6 +214,10 @@ func backfillBaseCall(db *sql.DB) error {
 			}{id, bc})
 		}
 	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
 	rows.Close()
 
 	for _, u := range updates {

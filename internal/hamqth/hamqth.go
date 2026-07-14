@@ -113,7 +113,7 @@ func (c *Client) Lookup(callsign string) (*callbook.Result, error) {
 	}
 	// HamQTH returns relative image paths (e.g. "user_img/SP9SPM/img.jpg")
 	// or full URLs. Normalize to absolute URLs for the photo viewer.
-	imgURL := normalizeImageURL(d.Picture, callsign)
+	imgURL := normalizeImageURL(d.Picture)
 
 	return &callbook.Result{
 		Callsign: d.Callsign, Name: d.Name, Grid: d.Grid,
@@ -127,7 +127,7 @@ func (c *Client) Lookup(callsign string) (*callbook.Result, error) {
 // normalizeImageURL converts a HamQTH image path to an absolute URL.
 // HamQTH may return relative paths like "user_img/OK2CQR/OK2CQR.jpg"
 // or full URLs. Empty/blank input returns empty string.
-func normalizeImageURL(raw, callsign string) string {
+func normalizeImageURL(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return ""

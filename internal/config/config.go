@@ -66,8 +66,8 @@ func (bs BroadcastStation) BroadcastBand() string {
 
 type IntegrationsConfig struct {
 	DXC             DXCConfig             `yaml:"dxc,omitempty"`
-	QRZ             QRZConfig             `yaml:"qrz,omitempty"`
-	HamQTH          HamQTHConfig          `yaml:"hamqth,omitempty"`
+	QRZ             QRZConfig             `yaml:"qrzcom_callbook,omitempty"`
+	HamQTH          HamQTHConfig          `yaml:"hamqth_callbook,omitempty"`
 	Callook         CallookConfig         `yaml:"callook,omitempty"`
 	LogbookCallbook LogbookCallbookConfig `yaml:"logbook_callbook,omitempty"`
 	WavelogCallbook WavelogCallbookConfig `yaml:"wavelog_callbook,omitempty"`
@@ -656,20 +656,20 @@ func (c *Config) Validate() error {
 	// --- QRZ ---
 	if c.Integrations.QRZ.Enabled {
 		if strings.TrimSpace(c.Integrations.QRZ.User) == "" {
-			return fmt.Errorf("qrz.user is required when qrz.enabled is true")
+			return fmt.Errorf("qrzcom_callbook.user is required when qrzcom_callbook.enabled is true")
 		}
 		if strings.TrimSpace(c.Integrations.QRZ.Pass) == "" {
-			return fmt.Errorf("qrz.pass is required when qrz.enabled is true")
+			return fmt.Errorf("qrzcom_callbook.pass is required when qrzcom_callbook.enabled is true")
 		}
 	}
 
 	// --- HamQTH ---
 	if c.Integrations.HamQTH.Enabled {
 		if strings.TrimSpace(c.Integrations.HamQTH.User) == "" {
-			return fmt.Errorf("hamqth.user is required when hamqth.enabled is true")
+			return fmt.Errorf("hamqth_callbook.user is required when hamqth_callbook.enabled is true")
 		}
 		if strings.TrimSpace(c.Integrations.HamQTH.Pass) == "" {
-			return fmt.Errorf("hamqth.pass is required when hamqth.enabled is true")
+			return fmt.Errorf("hamqth_callbook.pass is required when hamqth_callbook.enabled is true")
 		}
 	}
 

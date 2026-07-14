@@ -789,7 +789,8 @@ func (c *ContestChooser) viewForm() string {
 
 	// Marker reference section — shown below the form fields.
 	b.WriteString("\n\n")
-	b.WriteString("  Exchange markers — see " + osc8Link("https://docs.cqops.com", "docs.cqops.com"))
+	markerLink := "  Exchange markers — see " + osc8Link("https://docs.cqops.com", "docs.cqops.com")
+	b.WriteString(markerLink)
 	b.WriteString("\n\n")
 
 	markers := [][2]string{

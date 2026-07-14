@@ -16,7 +16,6 @@ type GeneralMenu struct {
 	drawGrayline  bool
 	pictureAtQRZ  bool
 	solarAtQSO    bool
-	useCTY        bool
 	useSCP        bool
 	useRef        bool
 	debugMode     bool
@@ -53,7 +52,6 @@ func NewGeneralMenu(cfg *config.Config) *GeneralMenu {
 		drawGrayline:  cfg.General.DrawGrayline,
 		pictureAtQRZ:  cfg.General.PictureAtQRZPane,
 		solarAtQSO:    cfg.General.SolarAtQSOPane,
-		useCTY:        cfg.General.UseCTY,
 		useSCP:        cfg.General.UseSCP,
 		useRef:        cfg.General.UseRef,
 		debugMode:     cfg.General.Debug,
@@ -112,14 +110,12 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case 5:
 				gm.solarAtQSO = !gm.solarAtQSO
 			case 6:
-				gm.useCTY = !gm.useCTY
-			case 7:
 				gm.useSCP = !gm.useSCP
-			case 8:
+			case 7:
 				gm.useRef = !gm.useRef
-			case 9:
+			case 8:
 				gm.kittyGraphics = !gm.kittyGraphics
-			case 10:
+			case 9:
 				gm.debugMode = !gm.debugMode
 			}
 		case "enter":
@@ -204,11 +200,10 @@ func (gm *GeneralMenu) View() tea.View {
 	gm.renderCheckbox(&b, boxW, 3, "Render grayline at partner map", "Day/night terminator overlay", gm.drawGrayline)
 	gm.renderCheckbox(&b, boxW, 4, "Render partner picture", "Shows photo from callbook if available", gm.pictureAtQRZ)
 	gm.renderCheckbox(&b, boxW, 5, "Solar data next to QSO form", "SFI, A, K indices in QSO pane", gm.solarAtQSO)
-	gm.renderCheckbox(&b, boxW, 6, "Use CTY.DAT country data", "DXCC prefix database for country/zone", gm.useCTY)
-	gm.renderCheckbox(&b, boxW, 7, "Use Super Check Partial", "Callsign autocomplete from contest logs", gm.useSCP)
-	gm.renderCheckbox(&b, boxW, 8, "Use SOTA/POTA/IOTA database", "Reference lookup for awards", gm.useRef)
-	gm.renderKittyCheckbox(&b, boxW, 9, "Kitty graphics", "Experimental — requires Kitty, Ghostty, or WezTerm", gm.kittyGraphics)
-	gm.renderCheckbox(&b, boxW, 10, "Debug Mode", "Verbose logging for troubleshooting", gm.debugMode)
+	gm.renderCheckbox(&b, boxW, 6, "Use Super Check Partial", "Callsign autocomplete from contest logs", gm.useSCP)
+	gm.renderCheckbox(&b, boxW, 7, "Use SOTA/POTA/IOTA database", "Reference lookup for awards", gm.useRef)
+	gm.renderKittyCheckbox(&b, boxW, 8, "Kitty graphics", "Experimental — requires Kitty, Ghostty, or WezTerm", gm.kittyGraphics)
+	gm.renderCheckbox(&b, boxW, 9, "Debug Mode", "Verbose logging for troubleshooting", gm.debugMode)
 
 	body := drawMenuWithHeader("Configuration \u2014 General Settings", b.String(), w)
 	return tea.NewView(fillBody(body, contentH))
