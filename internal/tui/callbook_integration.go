@@ -78,7 +78,7 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 
 	// Logbook provider — searches past local QSOs.
 	// Default priority 100 (tried before QRZ). Enabled by default.
-	lc := a.Config.Integrations.LogbookCallbook
+	lc := a.Config.Integrations.Callbook.Logbook
 	if lc.Enabled || lc.Priority == 0 {
 		p := lc.Priority
 		if p == 0 {
@@ -96,7 +96,7 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 	}
 
 	// QRZ provider.
-	cfg := a.Config.Integrations.QRZ
+	cfg := a.Config.Integrations.Callbook.QRZ
 	if cfg.Enabled && cfg.User != "" {
 		p := cfg.Priority
 		if p == 0 {
@@ -112,7 +112,7 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 	}
 
 	// HamQTH provider — free callsign database.
-	hqCfg := a.Config.Integrations.HamQTH
+	hqCfg := a.Config.Integrations.Callbook.HamQTH
 	if hqCfg.Enabled && hqCfg.User != "" {
 		p := hqCfg.Priority
 		if p == 0 {
@@ -128,7 +128,7 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 	}
 
 	// Callook.info provider — free US callsign database, no auth required.
-	coCfg := a.Config.Integrations.Callook
+	coCfg := a.Config.Integrations.Callbook.Callook
 	if coCfg.Enabled {
 		p := coCfg.Priority
 		if p == 0 {
@@ -144,7 +144,7 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 	}
 
 	// Wavelog provider — only when explicitly enabled and configured.
-	wc := a.Config.Integrations.WavelogCallbook
+	wc := a.Config.Integrations.Callbook.Wavelog
 	if wc.Enabled {
 		// Find any logbook with Wavelog configured.
 		var wlURL, wlAPIKey string
@@ -221,8 +221,8 @@ func (m *Model) checkCallbookCmd() tea.Cmd {
 		// Report online if any provider is available.
 		// Logbook and CTY providers work locally; QRZ requires network.
 		online := true
-		if m.App.Config.Integrations.QRZ.Enabled {
-			err := qrzcom.TestConnection(m.App.Config.Integrations.QRZ.User, m.App.Config.Integrations.QRZ.Pass)
+		if m.App.Config.Integrations.Callbook.QRZ.Enabled {
+			err := qrzcom.TestConnection(m.App.Config.Integrations.Callbook.QRZ.User, m.App.Config.Integrations.Callbook.QRZ.Pass)
 			online = err == nil
 		}
 		return qrzStatusMsg{online: online}
@@ -410,7 +410,7 @@ func (m *Model) showCallbookToast(call string) {
 	// Wavelog private lookup — only counts if the Wavelog callbook
 	// provider is enabled, returned data, and not already listed
 	// from the registry (avoid "Wavelog, Wavelog" duplicate).
-	if m.App.Config.Integrations.WavelogCallbook.Enabled && m.lookup.wlPrivateData != nil {
+	if m.App.Config.Integrations.Callbook.Wavelog.Enabled && m.lookup.wlPrivateData != nil {
 		found := false
 		for _, p := range parts {
 			if p == "Wavelog" {
@@ -438,7 +438,7 @@ func (m *Model) showCallbookToast(call string) {
 			list += p
 		}
 		m.toasts.Info("Callbook: " + call + " — " + list)
-	} else if m.callbookRegistry == nil && !m.App.Config.Integrations.WavelogCallbook.Enabled {
+	} else if m.callbookRegistry == nil && !m.App.Config.Integrations.Callbook.Wavelog.Enabled {
 		// No providers available — show a one-time hint.
 		if !m.lookup.noProviderWarned {
 			m.lookup.noProviderWarned = true
@@ -577,7 +577,7 @@ func (m *Model) fillWLData(msg wlResultMsg) tea.Cmd {
 			return nil
 		}
 		applog.InfoDetail("Wavelog: base fallback OK", fmt.Sprintf("base=%s worked=%v confirmed=%v", msg.Call, msg.Data.Worked(), msg.Data.DXCCConfirmed()))
-		if m.App.Config.Integrations.WavelogCallbook.Enabled {
+		if m.App.Config.Integrations.Callbook.Wavelog.Enabled {
 			wlFillForm(m, msg.Data)
 		}
 		m.forcePushDashboardPartner()
@@ -608,7 +608,7 @@ func (m *Model) fillWLData(msg wlResultMsg) tea.Cmd {
 	applog.InfoDetail("Wavelog: lookup OK", fmt.Sprintf("call=%s worked=%v confirmed=%v", msg.Call, msg.Data.Worked(), msg.Data.DXCCConfirmed()))
 	m.lookup.wlPrivateData = msg.Data
 
-	if m.App.Config.Integrations.WavelogCallbook.Enabled {
+	if m.App.Config.Integrations.Callbook.Wavelog.Enabled {
 		wlFillForm(m, msg.Data)
 	}
 
@@ -700,7 +700,7 @@ func (m *Model) lookupsCompleteForCall(call string) bool {
 	}
 
 	// QRZ: complete if disabled, offline, or lookup done for this exact call.
-	qrzEnabled := m.App.Config.Integrations.QRZ.Enabled && m.App.Config.Integrations.QRZ.User != ""
+	qrzEnabled := m.App.Config.Integrations.Callbook.QRZ.Enabled && m.App.Config.Integrations.Callbook.QRZ.User != ""
 	qrzDone := !qrzEnabled || m.Offline || !m.inetOnline || (m.lookup.qrzLookupDone && m.lookup.qrzLookupCall == call)
 
 	// Wavelog: complete if disabled, offline, or a lookup attempt returned.

@@ -97,11 +97,11 @@ func (m *Model) viewPartner() string {
 	}
 	fmt.Fprintf(&sigB, "wldone=%v|wlband=%s|wlmode=%s|qrz=%v|wlcfg=%v|rmap=%v|gray=%v|picpane=%v",
 		m.lookup.wlLookupDone, m.lookup.wlLastBand, m.lookup.wlLastMode,
-		m.App.Config.Integrations.QRZ.Enabled,
+		m.App.Config.Integrations.Callbook.QRZ.Enabled,
 		m.App.Logbook.Wavelog != nil && m.App.Logbook.Wavelog.Enabled,
 		m.App.Config.General.RenderMap,
 		m.App.Config.General.DrawGrayline,
-		m.App.Config.General.PictureAtQRZPane)
+		m.App.Config.General.PictureAtPartnerPane)
 	fmt.Fprintf(&sigB, "|fmgrid=%s|gridsrc=%s", m.fields[fieldGrid].Value(), m.gridSource)
 	// Kitty map readiness — bust cache when the real Kitty grid
 	// replaces the glyph fallback so the map switches quality.
@@ -139,7 +139,7 @@ func (m *Model) viewPartner() string {
 		m.App.Logbook.Wavelog.URL != "" && m.App.Logbook.Wavelog.APIKey != ""
 
 	// Inline partner photo — right-side column on wide screens (≥180 cols).
-	showPhoto := m.width >= 180 && m.App.Config.General.PictureAtQRZPane &&
+	showPhoto := m.width >= 180 && m.App.Config.General.PictureAtPartnerPane &&
 		d != nil && d.ImageURL != ""
 	if showPhoto && d.ImageURL != m.photo.partnerPicURL {
 		m.photo.partnerPicURL = d.ImageURL
@@ -293,7 +293,7 @@ func (m *Model) viewPartner() string {
 // --- Box helpers ---
 
 func (m *Model) callbookSuffix() string {
-	if m.lookup.partnerData != nil && m.App.Config.Integrations.QRZ.Enabled {
+	if m.lookup.partnerData != nil && m.App.Config.Integrations.Callbook.QRZ.Enabled {
 		return " (Callbook)"
 	}
 	return ""

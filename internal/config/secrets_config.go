@@ -34,17 +34,17 @@ func (c *Config) extractAndSaveSecrets() {
 	saved.WavelogKeys = make(map[string]string)
 
 	// QRZ password.
-	if c.Integrations.QRZ.Pass != "" {
-		saved.QRZPass = c.Integrations.QRZ.Pass
-		c.secrets.Set(secretQRZPass, c.Integrations.QRZ.Pass)
-		c.Integrations.QRZ.Pass = ""
+	if c.Integrations.Callbook.QRZ.Pass != "" {
+		saved.QRZPass = c.Integrations.Callbook.QRZ.Pass
+		c.secrets.Set(secretQRZPass, c.Integrations.Callbook.QRZ.Pass)
+		c.Integrations.Callbook.QRZ.Pass = ""
 	}
 
 	// HamQTH password.
-	if c.Integrations.HamQTH.Pass != "" {
-		saved.HamQTHPass = c.Integrations.HamQTH.Pass
-		c.secrets.Set(secretHamQTHPass, c.Integrations.HamQTH.Pass)
-		c.Integrations.HamQTH.Pass = ""
+	if c.Integrations.Callbook.HamQTH.Pass != "" {
+		saved.HamQTHPass = c.Integrations.Callbook.HamQTH.Pass
+		c.secrets.Set(secretHamQTHPass, c.Integrations.Callbook.HamQTH.Pass)
+		c.Integrations.Callbook.HamQTH.Pass = ""
 	}
 
 	// DXC login.
@@ -83,10 +83,10 @@ func (c *Config) restoreSecrets() {
 	c.savedSecrets = nil
 
 	if s.QRZPass != "" {
-		c.Integrations.QRZ.Pass = s.QRZPass
+		c.Integrations.Callbook.QRZ.Pass = s.QRZPass
 	}
 	if s.HamQTHPass != "" {
-		c.Integrations.HamQTH.Pass = s.HamQTHPass
+		c.Integrations.Callbook.HamQTH.Pass = s.HamQTHPass
 	}
 	if s.DXCLogin != "" {
 		c.Integrations.DXC.Login = s.DXCLogin
@@ -114,30 +114,30 @@ func (c *Config) ApplySecrets() {
 
 	// QRZ password.
 	if v, ok := c.secrets.Get(secretQRZPass); ok {
-		if c.Integrations.QRZ.Pass != "" && c.Integrations.QRZ.Pass != v {
+		if c.Integrations.Callbook.QRZ.Pass != "" && c.Integrations.Callbook.QRZ.Pass != v {
 			// Plaintext value differs — migrate it.
-			c.secrets.Set(secretQRZPass, c.Integrations.QRZ.Pass)
+			c.secrets.Set(secretQRZPass, c.Integrations.Callbook.QRZ.Pass)
 			if err := c.secrets.Save(); err != nil {
 				fmt.Fprintf(os.Stderr, "CQOps: secrets save failed (qrz migration): %v\n", err)
 			}
 		}
-		c.Integrations.QRZ.Pass = v
-	} else if c.Integrations.QRZ.Pass != "" {
+		c.Integrations.Callbook.QRZ.Pass = v
+	} else if c.Integrations.Callbook.QRZ.Pass != "" {
 		// Plaintext exists but no store entry — first migration.
-		c.secrets.Set(secretQRZPass, c.Integrations.QRZ.Pass)
+		c.secrets.Set(secretQRZPass, c.Integrations.Callbook.QRZ.Pass)
 	}
 
 	// HamQTH password.
 	if v, ok := c.secrets.Get(secretHamQTHPass); ok {
-		if c.Integrations.HamQTH.Pass != "" && c.Integrations.HamQTH.Pass != v {
-			c.secrets.Set(secretHamQTHPass, c.Integrations.HamQTH.Pass)
+		if c.Integrations.Callbook.HamQTH.Pass != "" && c.Integrations.Callbook.HamQTH.Pass != v {
+			c.secrets.Set(secretHamQTHPass, c.Integrations.Callbook.HamQTH.Pass)
 			if err := c.secrets.Save(); err != nil {
 				fmt.Fprintf(os.Stderr, "CQOps: secrets save failed (hamqth migration): %v\n", err)
 			}
 		}
-		c.Integrations.HamQTH.Pass = v
-	} else if c.Integrations.HamQTH.Pass != "" {
-		c.secrets.Set(secretHamQTHPass, c.Integrations.HamQTH.Pass)
+		c.Integrations.Callbook.HamQTH.Pass = v
+	} else if c.Integrations.Callbook.HamQTH.Pass != "" {
+		c.secrets.Set(secretHamQTHPass, c.Integrations.Callbook.HamQTH.Pass)
 	}
 
 	// DXC login.

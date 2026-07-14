@@ -95,14 +95,14 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 	logPriority.CharLimit = 5
 	logPriority.SetWidth(6)
 	logPriority.Placeholder = "100"
-	if cfg.Integrations.LogbookCallbook.Priority != 0 {
-		logPriority.SetValue(strconv.Itoa(cfg.Integrations.LogbookCallbook.Priority))
+	if cfg.Integrations.Callbook.Logbook.Priority != 0 {
+		logPriority.SetValue(strconv.Itoa(cfg.Integrations.Callbook.Logbook.Priority))
 	} else {
 		logPriority.SetValue("100") // default: tried before online providers
 	}
-	logEnabled := cfg.Integrations.LogbookCallbook.Enabled
+	logEnabled := cfg.Integrations.Callbook.Logbook.Enabled
 	// Default to enabled on first run (Priority=0 means never configured).
-	if !logEnabled && cfg.Integrations.LogbookCallbook.Priority == 0 {
+	if !logEnabled && cfg.Integrations.Callbook.Logbook.Priority == 0 {
 		logEnabled = true
 	}
 
@@ -110,7 +110,7 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 	qrzUser.CharLimit = 30
 	qrzUser.SetWidth(28)
 	qrzUser.Placeholder = "QRZ.com username"
-	qrzUser.SetValue(cfg.Integrations.QRZ.User)
+	qrzUser.SetValue(cfg.Integrations.Callbook.QRZ.User)
 
 	qrzPass := newTextinput()
 	qrzPass.CharLimit = 40
@@ -118,14 +118,14 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 	qrzPass.Placeholder = "QRZ.com password"
 	qrzPass.EchoMode = textinput.EchoPassword
 	qrzPass.EchoCharacter = '*'
-	qrzPass.SetValue(cfg.Integrations.QRZ.Pass)
+	qrzPass.SetValue(cfg.Integrations.Callbook.QRZ.Pass)
 
 	qrzPriority := newTextinput()
 	qrzPriority.CharLimit = 5
 	qrzPriority.SetWidth(6)
 	qrzPriority.Placeholder = "50"
-	qrzPriority.SetValue(strconv.Itoa(cfg.Integrations.QRZ.Priority))
-	if cfg.Integrations.QRZ.Priority == 0 {
+	qrzPriority.SetValue(strconv.Itoa(cfg.Integrations.Callbook.QRZ.Priority))
+	if cfg.Integrations.Callbook.QRZ.Priority == 0 {
 		qrzPriority.SetValue("50")
 	}
 
@@ -134,7 +134,7 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 	hamqthUser.CharLimit = 30
 	hamqthUser.SetWidth(28)
 	hamqthUser.Placeholder = "HamQTH username"
-	hamqthUser.SetValue(cfg.Integrations.HamQTH.User)
+	hamqthUser.SetValue(cfg.Integrations.Callbook.HamQTH.User)
 
 	hamqthPass := newTextinput()
 	hamqthPass.CharLimit = 40
@@ -142,14 +142,14 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 	hamqthPass.Placeholder = "HamQTH password"
 	hamqthPass.EchoMode = textinput.EchoPassword
 	hamqthPass.EchoCharacter = '*'
-	hamqthPass.SetValue(cfg.Integrations.HamQTH.Pass)
+	hamqthPass.SetValue(cfg.Integrations.Callbook.HamQTH.Pass)
 
 	hamqthPriority := newTextinput()
 	hamqthPriority.CharLimit = 5
 	hamqthPriority.SetWidth(6)
 	hamqthPriority.Placeholder = "45"
-	hamqthPriority.SetValue(strconv.Itoa(cfg.Integrations.HamQTH.Priority))
-	if cfg.Integrations.HamQTH.Priority == 0 {
+	hamqthPriority.SetValue(strconv.Itoa(cfg.Integrations.Callbook.HamQTH.Priority))
+	if cfg.Integrations.Callbook.HamQTH.Priority == 0 {
 		hamqthPriority.SetValue("45")
 	}
 
@@ -158,22 +158,22 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 	callookPriority.CharLimit = 5
 	callookPriority.SetWidth(6)
 	callookPriority.Placeholder = "40"
-	callookPriority.SetValue(strconv.Itoa(cfg.Integrations.Callook.Priority))
-	if cfg.Integrations.Callook.Priority == 0 {
+	callookPriority.SetValue(strconv.Itoa(cfg.Integrations.Callbook.Callook.Priority))
+	if cfg.Integrations.Callbook.Callook.Priority == 0 {
 		callookPriority.SetValue("40")
 	}
 
 	// Default base-call fallback and Callook.info to enabled on fresh config.
 	// Use LogbookCallbook priority as a proxy for "callbook section never configured".
-	freshCallbook := cfg.Integrations.LogbookCallbook.Priority == 0 &&
-		cfg.Integrations.QRZ.Priority == 0 &&
-		cfg.Integrations.HamQTH.Priority == 0 &&
-		cfg.Integrations.Callook.Priority == 0
+	freshCallbook := cfg.Integrations.Callbook.Logbook.Priority == 0 &&
+		cfg.Integrations.Callbook.QRZ.Priority == 0 &&
+		cfg.Integrations.Callbook.HamQTH.Priority == 0 &&
+		cfg.Integrations.Callbook.Callook.Priority == 0
 	baseFallback := cfg.Integrations.Callbook.BaseCallFallback
 	if freshCallbook {
 		baseFallback = true
 	}
-	callookEnabled := cfg.Integrations.Callook.Enabled
+	callookEnabled := cfg.Integrations.Callbook.Callook.Enabled
 	if freshCallbook {
 		callookEnabled = true
 	}
@@ -183,11 +183,11 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 	wlPriority.CharLimit = 5
 	wlPriority.SetWidth(6)
 	wlPriority.Placeholder = "10"
-	wlPriority.SetValue(strconv.Itoa(cfg.Integrations.WavelogCallbook.Priority))
-	if cfg.Integrations.WavelogCallbook.Priority == 0 {
+	wlPriority.SetValue(strconv.Itoa(cfg.Integrations.Callbook.Wavelog.Priority))
+	if cfg.Integrations.Callbook.Wavelog.Priority == 0 {
 		wlPriority.SetValue("10")
 	}
-	wlEnabled := cfg.Integrations.WavelogCallbook.Enabled
+	wlEnabled := cfg.Integrations.Callbook.Wavelog.Enabled
 	wlConfigured := false
 	for _, lb := range cfg.Logbooks {
 		if lb.Wavelog != nil && lb.Wavelog.Enabled && lb.Wavelog.URL != "" && lb.Wavelog.APIKey != "" {
@@ -203,11 +203,11 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 		baseCallFallback: baseFallback,
 		logEnabled:       logEnabled,
 		logPriority:      logPriority,
-		qrzEnabled:       cfg.Integrations.QRZ.Enabled,
+		qrzEnabled:       cfg.Integrations.Callbook.QRZ.Enabled,
 		qrzUser:          qrzUser,
 		qrzPass:          qrzPass,
 		qrzPriority:      qrzPriority,
-		hamqthEnabled:    cfg.Integrations.HamQTH.Enabled,
+		hamqthEnabled:    cfg.Integrations.Callbook.HamQTH.Enabled,
 		hamqthUser:       hamqthUser,
 		hamqthPass:       hamqthPass,
 		hamqthPriority:   hamqthPriority,
@@ -875,51 +875,51 @@ func wrapLines(text string, maxW int) []string {
 // ToConfig writes the callbook menu state back into the config.
 func (cm *CallbookMenu) ToConfig(cfg *config.Config) {
 	cfg.Integrations.Callbook.BaseCallFallback = cm.baseCallFallback
-	cfg.Integrations.LogbookCallbook.Enabled = cm.logEnabled
+	cfg.Integrations.Callbook.Logbook.Enabled = cm.logEnabled
 	ps := strings.TrimSpace(cm.logPriority.Value())
 	if ps != "" {
 		if p, err := strconv.Atoi(ps); err == nil {
-			cfg.Integrations.LogbookCallbook.Priority = p
+			cfg.Integrations.Callbook.Logbook.Priority = p
 		}
 	}
-	cfg.Integrations.QRZ.Enabled = cm.qrzEnabled
-	cfg.Integrations.QRZ.User = strings.TrimSpace(cm.qrzUser.Value())
-	cfg.Integrations.QRZ.Pass = cm.qrzPass.Value()
+	cfg.Integrations.Callbook.QRZ.Enabled = cm.qrzEnabled
+	cfg.Integrations.Callbook.QRZ.User = strings.TrimSpace(cm.qrzUser.Value())
+	cfg.Integrations.Callbook.QRZ.Pass = cm.qrzPass.Value()
 	ps = strings.TrimSpace(cm.qrzPriority.Value())
 	if ps != "" {
 		if p, err := strconv.Atoi(ps); err == nil {
-			cfg.Integrations.QRZ.Priority = p
+			cfg.Integrations.Callbook.QRZ.Priority = p
 		}
 	} else {
-		cfg.Integrations.QRZ.Priority = 50
+		cfg.Integrations.Callbook.QRZ.Priority = 50
 	}
-	cfg.Integrations.HamQTH.Enabled = cm.hamqthEnabled
-	cfg.Integrations.HamQTH.User = strings.TrimSpace(cm.hamqthUser.Value())
-	cfg.Integrations.HamQTH.Pass = cm.hamqthPass.Value()
+	cfg.Integrations.Callbook.HamQTH.Enabled = cm.hamqthEnabled
+	cfg.Integrations.Callbook.HamQTH.User = strings.TrimSpace(cm.hamqthUser.Value())
+	cfg.Integrations.Callbook.HamQTH.Pass = cm.hamqthPass.Value()
 	ps = strings.TrimSpace(cm.hamqthPriority.Value())
 	if ps != "" {
 		if p, err := strconv.Atoi(ps); err == nil {
-			cfg.Integrations.HamQTH.Priority = p
+			cfg.Integrations.Callbook.HamQTH.Priority = p
 		}
 	} else {
-		cfg.Integrations.HamQTH.Priority = 45
+		cfg.Integrations.Callbook.HamQTH.Priority = 45
 	}
-	cfg.Integrations.Callook.Enabled = cm.callookEnabled
+	cfg.Integrations.Callbook.Callook.Enabled = cm.callookEnabled
 	ps = strings.TrimSpace(cm.callookPriority.Value())
 	if ps != "" {
 		if p, err := strconv.Atoi(ps); err == nil {
-			cfg.Integrations.Callook.Priority = p
+			cfg.Integrations.Callbook.Callook.Priority = p
 		}
 	} else {
-		cfg.Integrations.Callook.Priority = 40
+		cfg.Integrations.Callbook.Callook.Priority = 40
 	}
-	cfg.Integrations.WavelogCallbook.Enabled = cm.wlEnabled
+	cfg.Integrations.Callbook.Wavelog.Enabled = cm.wlEnabled
 	ps = strings.TrimSpace(cm.wlPriority.Value())
 	if ps != "" {
 		if p, err := strconv.Atoi(ps); err == nil {
-			cfg.Integrations.WavelogCallbook.Priority = p
+			cfg.Integrations.Callbook.Wavelog.Priority = p
 		}
 	} else {
-		cfg.Integrations.WavelogCallbook.Priority = 10
+		cfg.Integrations.Callbook.Wavelog.Priority = 10
 	}
 }

@@ -25,6 +25,7 @@ const (
 )
 
 type Config struct {
+	ConfigVersion     int                  `yaml:"config_version,omitempty"`
 	General           GeneralConfig        `yaml:"general"`
 	State             StateConfig          `yaml:"state"`
 	Integrations      IntegrationsConfig   `yaml:"integrations,omitempty"`
@@ -65,20 +66,33 @@ func (bs BroadcastStation) BroadcastBand() string {
 }
 
 type IntegrationsConfig struct {
-	DXC             DXCConfig             `yaml:"dxc,omitempty"`
-	QRZ             QRZConfig             `yaml:"qrzcom_callbook,omitempty"`
-	HamQTH          HamQTHConfig          `yaml:"hamqth_callbook,omitempty"`
-	Callook         CallookConfig         `yaml:"callook,omitempty"`
-	LogbookCallbook LogbookCallbookConfig `yaml:"logbook_callbook,omitempty"`
-	WavelogCallbook WavelogCallbookConfig `yaml:"wavelog_callbook,omitempty"`
-	CTYCallbook     CTYCallbookConfig     `yaml:"cty_callbook,omitempty"`
-	Callbook        CallbookConfig        `yaml:"callbook,omitempty"`
-	HTTPServer      HTTPServerConfig      `yaml:"http_server,omitempty"`
-	GPS             GPSConfig             `yaml:"gps,omitempty"`
-	APRS            APRSGlobalConfig      `yaml:"aprs,omitempty"`
+	DXC        DXCConfig        `yaml:"dxc,omitempty"`
+	Callbook   CallbookGroup    `yaml:"callbook,omitempty"`
+	HTTPServer HTTPServerConfig `yaml:"http_server,omitempty"`
+	GPS        GPSConfig        `yaml:"gps,omitempty"`
+	APRS       APRSGlobalConfig `yaml:"aprs,omitempty"`
+
+	// Legacy flat keys — migrated to Callbook.* on load.
+	QRZLegacy             QRZConfig             `yaml:"qrzcom_callbook,omitempty"`
+	HamQTHLegacy          HamQTHConfig          `yaml:"hamqth_callbook,omitempty"`
+	CallookLegacy         CallookConfig         `yaml:"callook,omitempty"`
+	LogbookCallbookLegacy LogbookCallbookConfig `yaml:"logbook_callbook,omitempty"`
+	WavelogCallbookLegacy WavelogCallbookConfig `yaml:"wavelog_callbook,omitempty"`
+	CTYCallbookLegacy     CTYCallbookConfig     `yaml:"cty_callbook,omitempty"`
 
 	// Legacy key — migrated to APRS on load. Remove after v0.9.x.
 	APRSLegacy APRSGlobalConfig `yaml:"aprs_is,omitempty"`
+}
+
+// CallbookGroup nests all callbook provider configs under integrations.callbook.
+type CallbookGroup struct {
+	QRZ              QRZConfig             `yaml:"qrzcom,omitempty"`
+	HamQTH           HamQTHConfig          `yaml:"hamqth,omitempty"`
+	Callook          CallookConfig         `yaml:"callook,omitempty"`
+	Logbook          LogbookCallbookConfig `yaml:"local,omitempty"`
+	Wavelog          WavelogCallbookConfig `yaml:"wavelog,omitempty"`
+	CTY              CTYCallbookConfig     `yaml:"cty,omitempty"`
+	BaseCallFallback bool                  `yaml:"base_call_fallback"`
 }
 
 // Normalize migrates legacy config keys and values to their current names.
@@ -89,6 +103,51 @@ func (c *Config) Normalize() {
 		c.Integrations.APRS = c.Integrations.APRSLegacy
 		c.Integrations.APRSLegacy = APRSGlobalConfig{}
 	}
+
+	// Migrate flat callbook providers → nested callbook.* (v0.10).
+	cb := &c.Integrations.Callbook
+	if c.Integrations.QRZLegacy.Enabled || c.Integrations.QRZLegacy.User != "" {
+		cb.QRZ = c.Integrations.QRZLegacy
+		c.Integrations.QRZLegacy = QRZConfig{}
+	}
+	if c.Integrations.HamQTHLegacy.Enabled || c.Integrations.HamQTHLegacy.User != "" {
+		cb.HamQTH = c.Integrations.HamQTHLegacy
+		c.Integrations.HamQTHLegacy = HamQTHConfig{}
+	}
+	if c.Integrations.CallookLegacy.Enabled || c.Integrations.CallookLegacy.Priority != 0 {
+		cb.Callook = c.Integrations.CallookLegacy
+		c.Integrations.CallookLegacy = CallookConfig{}
+	}
+	if c.Integrations.LogbookCallbookLegacy.Enabled || c.Integrations.LogbookCallbookLegacy.Priority != 0 {
+		cb.Logbook = c.Integrations.LogbookCallbookLegacy
+		c.Integrations.LogbookCallbookLegacy = LogbookCallbookConfig{}
+	}
+	if c.Integrations.WavelogCallbookLegacy.Enabled || c.Integrations.WavelogCallbookLegacy.Priority != 0 {
+		cb.Wavelog = c.Integrations.WavelogCallbookLegacy
+		c.Integrations.WavelogCallbookLegacy = WavelogCallbookConfig{}
+	}
+	if c.Integrations.CTYCallbookLegacy.Enabled || c.Integrations.CTYCallbookLegacy.Priority != 0 {
+		cb.CTY = c.Integrations.CTYCallbookLegacy
+		c.Integrations.CTYCallbookLegacy = CTYCallbookConfig{}
+	}
+
+	// Migrate picture_at_qrz_pane → picture_at_partner_pane.
+	if c.General.PictureAtQRZLegacy && !c.General.PictureAtPartnerPane {
+		c.General.PictureAtPartnerPane = true
+	}
+	c.General.PictureAtQRZLegacy = false
+
+	// Migrate wavelog_sent → qso_sent.
+	if c.General.Notifications.QSOSentLegacy && !c.General.Notifications.QSOSent {
+		c.General.Notifications.QSOSent = true
+	}
+	c.General.Notifications.QSOSentLegacy = false
+
+	// Migrate wavelog_errors → all_errors.
+	if c.General.Notifications.AllErrorsLegacy && !c.General.Notifications.AllErrors {
+		c.General.Notifications.AllErrors = true
+	}
+	c.General.Notifications.AllErrorsLegacy = false
 
 	// Legacy key: distance_unit → units
 	if c.General.Units == "" && c.General.UnitsLegacy != "" {
@@ -116,10 +175,10 @@ func (c *Config) Normalize() {
 	// Default Wavelog callbook to enabled for existing Wavelog users.
 	// Only applies when the user has not explicitly configured the Wavelog
 	// callbook settings (Priority == 0 indicates unset/fresh config).
-	if c.Integrations.WavelogCallbook.Priority == 0 {
+	if c.Integrations.Callbook.Wavelog.Priority == 0 {
 		for _, lb := range c.Logbooks {
 			if lb.Wavelog != nil && lb.Wavelog.Enabled {
-				c.Integrations.WavelogCallbook.Enabled = true
+				c.Integrations.Callbook.Wavelog.Enabled = true
 				break
 			}
 		}
@@ -150,27 +209,30 @@ type DXCConfig struct {
 }
 
 type GeneralConfig struct {
-	Timezone         string              `yaml:"timezone"`
-	Units            string              `yaml:"units,omitempty"`         // "metric" or "imperial"
-	UnitsLegacy      string              `yaml:"distance_unit,omitempty"` // legacy key, migrated on load
-	RenderMap        bool                `yaml:"render_map,omitempty"`
-	DrawGrayline     bool                `yaml:"draw_grayline,omitempty"`
-	PictureAtQRZPane bool                `yaml:"picture_at_qrz_pane,omitempty"`
-	SolarAtQSOPane   bool                `yaml:"solar_at_qso_pane,omitempty"`
-	UseCTY           bool                `yaml:"use_cty,omitempty"`        // CTY.DAT DXCC country file
-	UseSCP           bool                `yaml:"use_scp,omitempty"`        // Super Check Partial callsign database
-	UseRef           bool                `yaml:"use_ref,omitempty"`        // REF database
-	Debug            bool                `yaml:"debug,omitempty"`          // verbose debug logging
-	KittyGraphics    bool                `yaml:"kitty_graphics,omitempty"` // experimental Kitty terminal graphics
-	Notifications    NotificationsConfig `yaml:"notifications"`
+	Timezone             string              `yaml:"timezone"`
+	Units                string              `yaml:"units,omitempty"`         // "metric" or "imperial"
+	UnitsLegacy          string              `yaml:"distance_unit,omitempty"` // legacy key, migrated on load
+	RenderMap            bool                `yaml:"render_map,omitempty"`
+	DrawGrayline         bool                `yaml:"draw_grayline,omitempty"`
+	PictureAtPartnerPane bool                `yaml:"picture_at_partner_pane,omitempty"`
+	PictureAtQRZLegacy   bool                `yaml:"picture_at_qrz_pane,omitempty"` // migrated on load
+	SolarAtQSOPane       bool                `yaml:"solar_at_qso_pane,omitempty"`
+	UseCTY               bool                `yaml:"use_cty,omitempty"`        // CTY.DAT DXCC country file
+	UseSCP               bool                `yaml:"use_scp,omitempty"`        // Super Check Partial callsign database
+	UseRef               bool                `yaml:"use_ref,omitempty"`        // REF database
+	Debug                bool                `yaml:"debug,omitempty"`          // verbose debug logging
+	KittyGraphics        bool                `yaml:"kitty_graphics,omitempty"` // experimental Kitty terminal graphics
+	Notifications        NotificationsConfig `yaml:"notifications"`
 }
 
 type NotificationsConfig struct {
-	Enabled     bool `yaml:"enabled"`
-	QSO         bool `yaml:"qso_logged"`
-	Wavelog     bool `yaml:"wavelog_sent"`
-	AllErrors   bool `yaml:"wavelog_errors"` // renamed from WavelogErrors
-	BeepOnError bool `yaml:"beep_on_error"`
+	Enabled         bool `yaml:"enabled"`
+	QSOSentLegacy   bool `yaml:"wavelog_sent,omitempty"` // migrated → qso_sent
+	QSO             bool `yaml:"qso_logged,omitempty"`
+	QSOSent         bool `yaml:"qso_sent,omitempty"`
+	AllErrorsLegacy bool `yaml:"wavelog_errors,omitempty"` // migrated → all_errors
+	AllErrors       bool `yaml:"all_errors,omitempty"`
+	BeepOnError     bool `yaml:"beep_on_error,omitempty"`
 }
 
 type StateConfig struct {
@@ -217,11 +279,6 @@ type WavelogCallbookConfig struct {
 type CTYCallbookConfig struct {
 	Enabled  bool `yaml:"enabled"`
 	Priority int  `yaml:"priority,omitempty"` // default 1 — ultimate fallback
-}
-
-// CallbookConfig holds general callbook lookup options.
-type CallbookConfig struct {
-	BaseCallFallback bool `yaml:"base_call_fallback"` // look up base call when suffix not found
 }
 
 // HTTPServerConfig holds the optional built-in HTTP server configuration.
@@ -468,6 +525,7 @@ func Load(path string) (*Config, error) {
 // persisted to the encrypted store before the YAML is written.
 func Save(path string, cfg *Config) error {
 	cfg.State.Version = version.Resolved()
+	cfg.ConfigVersion = 1 // current config format version
 
 	// Extract and persist secrets before marshaling.
 	if cfg.secrets != nil {
@@ -654,22 +712,22 @@ func (c *Config) Validate() error {
 	}
 
 	// --- QRZ ---
-	if c.Integrations.QRZ.Enabled {
-		if strings.TrimSpace(c.Integrations.QRZ.User) == "" {
-			return fmt.Errorf("qrzcom_callbook.user is required when qrzcom_callbook.enabled is true")
+	if c.Integrations.Callbook.QRZ.Enabled {
+		if strings.TrimSpace(c.Integrations.Callbook.QRZ.User) == "" {
+			return fmt.Errorf("callbook.qrzcom.user is required when callbook.qrzcom.enabled is true")
 		}
-		if strings.TrimSpace(c.Integrations.QRZ.Pass) == "" {
-			return fmt.Errorf("qrzcom_callbook.pass is required when qrzcom_callbook.enabled is true")
+		if strings.TrimSpace(c.Integrations.Callbook.QRZ.Pass) == "" {
+			return fmt.Errorf("callbook.qrzcom.pass is required when callbook.qrzcom.enabled is true")
 		}
 	}
 
 	// --- HamQTH ---
-	if c.Integrations.HamQTH.Enabled {
-		if strings.TrimSpace(c.Integrations.HamQTH.User) == "" {
-			return fmt.Errorf("hamqth_callbook.user is required when hamqth_callbook.enabled is true")
+	if c.Integrations.Callbook.HamQTH.Enabled {
+		if strings.TrimSpace(c.Integrations.Callbook.HamQTH.User) == "" {
+			return fmt.Errorf("callbook.hamqth.user is required when callbook.hamqth.enabled is true")
 		}
-		if strings.TrimSpace(c.Integrations.HamQTH.Pass) == "" {
-			return fmt.Errorf("hamqth_callbook.pass is required when hamqth_callbook.enabled is true")
+		if strings.TrimSpace(c.Integrations.Callbook.HamQTH.Pass) == "" {
+			return fmt.Errorf("callbook.hamqth.pass is required when callbook.hamqth.enabled is true")
 		}
 	}
 

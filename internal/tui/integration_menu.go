@@ -234,7 +234,7 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 	qrzUser.CharLimit = 30
 	qrzUser.SetWidth(28)
 	qrzUser.Placeholder = "QRZ.com username"
-	qrzUser.SetValue(cfg.Integrations.QRZ.User)
+	qrzUser.SetValue(cfg.Integrations.Callbook.QRZ.User)
 
 	qrzPass := newTextinput()
 	qrzPass.CharLimit = 40
@@ -242,7 +242,7 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 	qrzPass.Placeholder = "QRZ.com password"
 	qrzPass.EchoMode = textinput.EchoPassword
 	qrzPass.EchoCharacter = '*'
-	qrzPass.SetValue(cfg.Integrations.QRZ.Pass)
+	qrzPass.SetValue(cfg.Integrations.Callbook.QRZ.Pass)
 
 	httpAddr := newTextinput()
 	httpAddr.CharLimit = 40
@@ -437,7 +437,7 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 		dxcHost:          dxcHost,
 		dxcPort:          dxcPort,
 		dxcLogin:         dxcLogin,
-		qrzEnabled:       cfg.Integrations.QRZ.Enabled,
+		qrzEnabled:       cfg.Integrations.Callbook.QRZ.Enabled,
 		qrzUser:          qrzUser,
 		qrzPass:          qrzPass,
 		httpEnabled:      cfg.Integrations.HTTPServer.Enabled,

@@ -7,18 +7,18 @@ func DefaultConfig() *Config {
 
 	return &Config{
 		General: GeneralConfig{
-			Timezone:         tz,
-			Units:            "metric",
-			PictureAtQRZPane: false,
-			SolarAtQSOPane:   true,
-			UseCTY:           true,
-			UseSCP:           true,
-			UseRef:           true,
-			Debug:            false,
+			Timezone:             tz,
+			Units:                "metric",
+			PictureAtPartnerPane: false,
+			SolarAtQSOPane:       true,
+			UseCTY:               true,
+			UseSCP:               true,
+			UseRef:               true,
+			Debug:                false,
 			Notifications: NotificationsConfig{
 				Enabled:   true,
 				QSO:       false,
-				Wavelog:   false,
+				QSOSent:   false,
 				AllErrors: true,
 			},
 		},

@@ -146,8 +146,8 @@ func TestFlrigResult_ZeroValuesNoPanic(t *testing.T) {
 
 func TestQRZResult_Success(t *testing.T) {
 	m := newTestModel()
-	m.App.Config.Integrations.QRZ.Enabled = true
-	m.App.Config.Integrations.QRZ.User = "testuser"
+	m.App.Config.Integrations.Callbook.QRZ.Enabled = true
+	m.App.Config.Integrations.Callbook.QRZ.User = "testuser"
 	m.fields[fieldCall].SetValue("SP9XXX")
 	msg := callbookResultMsg{
 		Call: "SP9XXX",
@@ -352,8 +352,8 @@ func TestHandlePendingRequests_QRZNeedWithCall(t *testing.T) {
 	m.inetOnline = true
 	m.lookup.qrzNeed = true
 	m.lookup.qrzCall = "SP9XXX"
-	m.App.Config.Integrations.QRZ.Enabled = true
-	m.App.Config.Integrations.QRZ.User = "testuser"
+	m.App.Config.Integrations.Callbook.QRZ.Enabled = true
+	m.App.Config.Integrations.Callbook.QRZ.User = "testuser"
 	// Set up a registry so callbookLookup doesn't bail out early.
 	m.callbookRegistry = callbook.NewRegistry(nil) // non-nil but empty; mock handles it
 
@@ -373,7 +373,7 @@ func TestHandlePendingRequests_QRZNeedDisabled(t *testing.T) {
 	m := newTestModel()
 	m.lookup.qrzNeed = true
 	m.lookup.qrzCall = "SP9XXX"
-	m.App.Config.Integrations.QRZ.Enabled = false
+	m.App.Config.Integrations.Callbook.QRZ.Enabled = false
 	cmd, handled := m.handlePendingRequests(nil)
 	if !handled {
 		t.Error("handlePendingRequests should handle disabled QRZ (triggers DXC lookup)")

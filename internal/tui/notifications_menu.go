@@ -37,7 +37,7 @@ func NewNotificationsMenu(cfg *config.Config) *NotificationsMenu {
 	return &NotificationsMenu{
 		enabled:     n.Enabled,
 		qso:         n.QSO,
-		wavelog:     n.Wavelog,
+		wavelog:     n.QSOSent,
 		allErrors:   n.AllErrors,
 		beepOnError: n.BeepOnError,
 	}

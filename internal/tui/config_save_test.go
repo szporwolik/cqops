@@ -36,7 +36,7 @@ func newSaveTestModel(t *testing.T) *Model {
 			},
 		},
 	}
-	cfg.Integrations.QRZ.Enabled = false
+	cfg.Integrations.Callbook.QRZ.Enabled = false
 
 	a := &app.App{
 		Config:     cfg,
@@ -71,9 +71,9 @@ func setWavelog(cfg *config.Config, url, key string) {
 }
 
 func setQRZ(cfg *config.Config, user, pass string) {
-	cfg.Integrations.QRZ.Enabled = true
-	cfg.Integrations.QRZ.User = user
-	cfg.Integrations.QRZ.Pass = pass
+	cfg.Integrations.Callbook.QRZ.Enabled = true
+	cfg.Integrations.Callbook.QRZ.User = user
+	cfg.Integrations.Callbook.QRZ.Pass = pass
 }
 
 // =============================================================================
@@ -142,7 +142,7 @@ func testSaveConfigBlocked(t *testing.T, cfgSetup func(*config.Config), desc str
 			Station: config.Station{Callsign: "SP9MOA", Grid: "JO90"},
 		},
 	}
-	cfg.Integrations.QRZ.Enabled = false
+	cfg.Integrations.Callbook.QRZ.Enabled = false
 
 	cfgSetup(cfg)
 

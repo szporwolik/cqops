@@ -108,7 +108,7 @@ func (m *Model) handleConfigUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd
 			m.App.Config.General.Timezone = m.ui.configMenu.timezone
 			m.App.Config.General.RenderMap = m.ui.configMenu.renderMap
 			m.App.Config.General.DrawGrayline = m.ui.configMenu.drawGrayline
-			m.App.Config.General.PictureAtQRZPane = m.ui.configMenu.pictureAtQRZ
+			m.App.Config.General.PictureAtPartnerPane = m.ui.configMenu.pictureAtQRZ
 			m.App.Config.General.SolarAtQSOPane = m.ui.configMenu.solarAtQSO
 			m.App.Config.General.UseCTY = true // always on
 			m.App.Config.General.UseSCP = m.ui.configMenu.useSCP
@@ -172,7 +172,7 @@ func (m *Model) handleNotificationsUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 		if m.ui.notifMenu.saved {
 			m.App.Config.General.Notifications.Enabled = m.ui.notifMenu.enabled
 			m.App.Config.General.Notifications.QSO = m.ui.notifMenu.qso
-			m.App.Config.General.Notifications.Wavelog = m.ui.notifMenu.wavelog
+			m.App.Config.General.Notifications.QSOSent = m.ui.notifMenu.wavelog
 			m.App.Config.General.Notifications.AllErrors = m.ui.notifMenu.allErrors
 			m.App.Config.General.Notifications.BeepOnError = m.ui.notifMenu.beepOnError
 			m.applyBeepOnError()

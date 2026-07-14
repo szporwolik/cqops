@@ -21,7 +21,7 @@ func newTestWizard(t *testing.T, callsign, locator string) *Wizard {
 
 	cfg := config.DefaultConfig()
 	cfg.General.Timezone = "UTC"
-	cfg.Integrations.QRZ.Enabled = false
+	cfg.Integrations.Callbook.QRZ.Enabled = false
 
 	a := &app.App{
 		Config:     cfg,

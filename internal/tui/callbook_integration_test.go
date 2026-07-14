@@ -25,9 +25,9 @@ func TestCallbookLookupSuccess(t *testing.T) {
 	}
 
 	m := newLifecycleTestModel(t)
-	m.App.Config.Integrations.QRZ.Enabled = true
-	m.App.Config.Integrations.QRZ.User = "testuser"
-	m.App.Config.Integrations.QRZ.Pass = "testpass"
+	m.App.Config.Integrations.Callbook.QRZ.Enabled = true
+	m.App.Config.Integrations.Callbook.QRZ.User = "testuser"
+	m.App.Config.Integrations.Callbook.QRZ.Pass = "testpass"
 	m.fields[fieldCall].SetValue("SP9MOA")
 
 	m.fillCallbookData(callbookResultMsg{
@@ -64,8 +64,8 @@ func TestCallbookLookupError(t *testing.T) {
 	}
 
 	m := newLifecycleTestModel(t)
-	m.App.Config.Integrations.QRZ.Enabled = true
-	m.App.Config.Integrations.QRZ.User = "testuser"
+	m.App.Config.Integrations.Callbook.QRZ.Enabled = true
+	m.App.Config.Integrations.Callbook.QRZ.User = "testuser"
 	m.fields[fieldCall].SetValue("SP9MOA")
 
 	m.fillCallbookData(callbookResultMsg{
@@ -80,8 +80,8 @@ func TestCallbookLookupError(t *testing.T) {
 
 func TestCallbookLookupEmptyCall(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.Integrations.QRZ.Enabled = true
-	m.App.Config.Integrations.QRZ.User = "testuser"
+	m.App.Config.Integrations.Callbook.QRZ.Enabled = true
+	m.App.Config.Integrations.Callbook.QRZ.User = "testuser"
 
 	cmd := m.callbookLookup("")
 	if cmd != nil {
@@ -123,8 +123,8 @@ func TestCallbookLookupNoCredentials(t *testing.T) {
 
 func TestCallbookLookupOverwritesExistingGrid(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.Integrations.QRZ.Enabled = true
-	m.App.Config.Integrations.QRZ.User = "testuser"
+	m.App.Config.Integrations.Callbook.QRZ.Enabled = true
+	m.App.Config.Integrations.Callbook.QRZ.User = "testuser"
 	m.fields[fieldCall].SetValue("SP9MOA")
 	m.fields[fieldGrid].SetValue("JN18")
 
@@ -147,8 +147,8 @@ func TestCallbookLookupOverwritesExistingGrid(t *testing.T) {
 
 func TestCallbookLookupNoDataResult(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.Integrations.QRZ.Enabled = true
-	m.App.Config.Integrations.QRZ.User = "testuser"
+	m.App.Config.Integrations.Callbook.QRZ.Enabled = true
+	m.App.Config.Integrations.Callbook.QRZ.User = "testuser"
 	m.fields[fieldCall].SetValue("SP9MOA")
 
 	m.fillCallbookData(callbookResultMsg{
@@ -159,8 +159,8 @@ func TestCallbookLookupNoDataResult(t *testing.T) {
 
 func TestCallbookLookupCacheInvalidation(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.Integrations.QRZ.Enabled = true
-	m.App.Config.Integrations.QRZ.User = "testuser"
+	m.App.Config.Integrations.Callbook.QRZ.Enabled = true
+	m.App.Config.Integrations.Callbook.QRZ.User = "testuser"
 	m.fields[fieldCall].SetValue("SP9MOA")
 
 	m.fillCallbookData(callbookResultMsg{
@@ -184,8 +184,8 @@ func TestCallbookLookupCacheInvalidation(t *testing.T) {
 
 func TestInternetCallbook_NoneEnabled(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.Integrations.QRZ.Enabled = false
-	m.App.Config.Integrations.HamQTH.Enabled = false
+	m.App.Config.Integrations.Callbook.QRZ.Enabled = false
+	m.App.Config.Integrations.Callbook.HamQTH.Enabled = false
 
 	name, url := m.internetCallbook()
 	if name != "" {
@@ -198,10 +198,10 @@ func TestInternetCallbook_NoneEnabled(t *testing.T) {
 
 func TestInternetCallbook_QRZOnly(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.Integrations.QRZ.Enabled = true
-	m.App.Config.Integrations.QRZ.User = "test"
-	m.App.Config.Integrations.QRZ.Priority = 50
-	m.App.Config.Integrations.HamQTH.Enabled = false
+	m.App.Config.Integrations.Callbook.QRZ.Enabled = true
+	m.App.Config.Integrations.Callbook.QRZ.User = "test"
+	m.App.Config.Integrations.Callbook.QRZ.Priority = 50
+	m.App.Config.Integrations.Callbook.HamQTH.Enabled = false
 
 	name, url := m.internetCallbook()
 	if name != "QRZ.com" {
@@ -214,10 +214,10 @@ func TestInternetCallbook_QRZOnly(t *testing.T) {
 
 func TestInternetCallbook_HamQTHOnly(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.Integrations.QRZ.Enabled = false
-	m.App.Config.Integrations.HamQTH.Enabled = true
-	m.App.Config.Integrations.HamQTH.User = "test"
-	m.App.Config.Integrations.HamQTH.Priority = 45
+	m.App.Config.Integrations.Callbook.QRZ.Enabled = false
+	m.App.Config.Integrations.Callbook.HamQTH.Enabled = true
+	m.App.Config.Integrations.Callbook.HamQTH.User = "test"
+	m.App.Config.Integrations.Callbook.HamQTH.Priority = 45
 
 	name, url := m.internetCallbook()
 	if name != "HamQTH" {
@@ -230,12 +230,12 @@ func TestInternetCallbook_HamQTHOnly(t *testing.T) {
 
 func TestInternetCallbook_QRZHigherPriority(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.Integrations.QRZ.Enabled = true
-	m.App.Config.Integrations.QRZ.User = "test"
-	m.App.Config.Integrations.QRZ.Priority = 50
-	m.App.Config.Integrations.HamQTH.Enabled = true
-	m.App.Config.Integrations.HamQTH.User = "test"
-	m.App.Config.Integrations.HamQTH.Priority = 30
+	m.App.Config.Integrations.Callbook.QRZ.Enabled = true
+	m.App.Config.Integrations.Callbook.QRZ.User = "test"
+	m.App.Config.Integrations.Callbook.QRZ.Priority = 50
+	m.App.Config.Integrations.Callbook.HamQTH.Enabled = true
+	m.App.Config.Integrations.Callbook.HamQTH.User = "test"
+	m.App.Config.Integrations.Callbook.HamQTH.Priority = 30
 
 	name, url := m.internetCallbook()
 	if name != "QRZ.com" {
@@ -248,12 +248,12 @@ func TestInternetCallbook_QRZHigherPriority(t *testing.T) {
 
 func TestInternetCallbook_HamQTHHigherPriority(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.Integrations.QRZ.Enabled = true
-	m.App.Config.Integrations.QRZ.User = "test"
-	m.App.Config.Integrations.QRZ.Priority = 30
-	m.App.Config.Integrations.HamQTH.Enabled = true
-	m.App.Config.Integrations.HamQTH.User = "test"
-	m.App.Config.Integrations.HamQTH.Priority = 60
+	m.App.Config.Integrations.Callbook.QRZ.Enabled = true
+	m.App.Config.Integrations.Callbook.QRZ.User = "test"
+	m.App.Config.Integrations.Callbook.QRZ.Priority = 30
+	m.App.Config.Integrations.Callbook.HamQTH.Enabled = true
+	m.App.Config.Integrations.Callbook.HamQTH.User = "test"
+	m.App.Config.Integrations.Callbook.HamQTH.Priority = 60
 
 	name, url := m.internetCallbook()
 	if name != "HamQTH" {
@@ -266,12 +266,12 @@ func TestInternetCallbook_HamQTHHigherPriority(t *testing.T) {
 
 func TestInternetCallbook_EqualPriorityPrefersHamQTH(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.Integrations.QRZ.Enabled = true
-	m.App.Config.Integrations.QRZ.User = "test"
-	m.App.Config.Integrations.QRZ.Priority = 50
-	m.App.Config.Integrations.HamQTH.Enabled = true
-	m.App.Config.Integrations.HamQTH.User = "test"
-	m.App.Config.Integrations.HamQTH.Priority = 50
+	m.App.Config.Integrations.Callbook.QRZ.Enabled = true
+	m.App.Config.Integrations.Callbook.QRZ.User = "test"
+	m.App.Config.Integrations.Callbook.QRZ.Priority = 50
+	m.App.Config.Integrations.Callbook.HamQTH.Enabled = true
+	m.App.Config.Integrations.Callbook.HamQTH.User = "test"
+	m.App.Config.Integrations.Callbook.HamQTH.Priority = 50
 
 	name, url := m.internetCallbook()
 	if name != "HamQTH" {
@@ -284,10 +284,10 @@ func TestInternetCallbook_EqualPriorityPrefersHamQTH(t *testing.T) {
 
 func TestInternetCallbook_QRZEnabledButNoUser(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.Integrations.QRZ.Enabled = true
-	m.App.Config.Integrations.QRZ.User = ""
-	m.App.Config.Integrations.QRZ.Priority = 50
-	m.App.Config.Integrations.HamQTH.Enabled = false
+	m.App.Config.Integrations.Callbook.QRZ.Enabled = true
+	m.App.Config.Integrations.Callbook.QRZ.User = ""
+	m.App.Config.Integrations.Callbook.QRZ.Priority = 50
+	m.App.Config.Integrations.Callbook.HamQTH.Enabled = false
 
 	name, url := m.internetCallbook()
 	if name != "" {
@@ -300,10 +300,10 @@ func TestInternetCallbook_QRZEnabledButNoUser(t *testing.T) {
 
 func TestInternetCallbook_HamQTHEnabledButNoUser(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.Integrations.QRZ.Enabled = false
-	m.App.Config.Integrations.HamQTH.Enabled = true
-	m.App.Config.Integrations.HamQTH.User = ""
-	m.App.Config.Integrations.HamQTH.Priority = 45
+	m.App.Config.Integrations.Callbook.QRZ.Enabled = false
+	m.App.Config.Integrations.Callbook.HamQTH.Enabled = true
+	m.App.Config.Integrations.Callbook.HamQTH.User = ""
+	m.App.Config.Integrations.Callbook.HamQTH.Priority = 45
 
 	name, url := m.internetCallbook()
 	if name != "" {
@@ -318,12 +318,12 @@ func TestInternetCallbook_DefaultPriorities(t *testing.T) {
 	// When both priorities are 0 (unset), defaults: QRZ=50, HamQTH=45.
 	// QRZ should win because 50 > 45.
 	m := newLifecycleTestModel(t)
-	m.App.Config.Integrations.QRZ.Enabled = true
-	m.App.Config.Integrations.QRZ.User = "test"
-	m.App.Config.Integrations.QRZ.Priority = 0
-	m.App.Config.Integrations.HamQTH.Enabled = true
-	m.App.Config.Integrations.HamQTH.User = "test"
-	m.App.Config.Integrations.HamQTH.Priority = 0
+	m.App.Config.Integrations.Callbook.QRZ.Enabled = true
+	m.App.Config.Integrations.Callbook.QRZ.User = "test"
+	m.App.Config.Integrations.Callbook.QRZ.Priority = 0
+	m.App.Config.Integrations.Callbook.HamQTH.Enabled = true
+	m.App.Config.Integrations.Callbook.HamQTH.User = "test"
+	m.App.Config.Integrations.Callbook.HamQTH.Priority = 0
 
 	name, _ := m.internetCallbook()
 	if name != "QRZ.com" {
@@ -335,9 +335,9 @@ func TestInternetCallbook_CallookFallback(t *testing.T) {
 	// When neither QRZ nor HamQTH are configured, Callook.info
 	// should be the internet callbook link as last-resort fallback.
 	m := newLifecycleTestModel(t)
-	m.App.Config.Integrations.QRZ.Enabled = false
-	m.App.Config.Integrations.HamQTH.Enabled = false
-	m.App.Config.Integrations.Callook.Enabled = true
+	m.App.Config.Integrations.Callbook.QRZ.Enabled = false
+	m.App.Config.Integrations.Callbook.HamQTH.Enabled = false
+	m.App.Config.Integrations.Callbook.Callook.Enabled = true
 
 	name, url := m.internetCallbook()
 	if name != "Callook.info" {
@@ -352,10 +352,10 @@ func TestInternetCallbook_CallookNotFallbackWhenQRZPresent(t *testing.T) {
 	// Callook should NOT be used when QRZ is configured —
 	// QRZ is a higher-priority internet callbook.
 	m := newLifecycleTestModel(t)
-	m.App.Config.Integrations.QRZ.Enabled = true
-	m.App.Config.Integrations.QRZ.User = "test"
-	m.App.Config.Integrations.HamQTH.Enabled = false
-	m.App.Config.Integrations.Callook.Enabled = true
+	m.App.Config.Integrations.Callbook.QRZ.Enabled = true
+	m.App.Config.Integrations.Callbook.QRZ.User = "test"
+	m.App.Config.Integrations.Callbook.HamQTH.Enabled = false
+	m.App.Config.Integrations.Callbook.Callook.Enabled = true
 
 	name, _ := m.internetCallbook()
 	if name != "QRZ.com" {
@@ -365,9 +365,9 @@ func TestInternetCallbook_CallookNotFallbackWhenQRZPresent(t *testing.T) {
 
 func TestInternetCallbook_AllDisabled(t *testing.T) {
 	m := newLifecycleTestModel(t)
-	m.App.Config.Integrations.QRZ.Enabled = false
-	m.App.Config.Integrations.HamQTH.Enabled = false
-	m.App.Config.Integrations.Callook.Enabled = false
+	m.App.Config.Integrations.Callbook.QRZ.Enabled = false
+	m.App.Config.Integrations.Callbook.HamQTH.Enabled = false
+	m.App.Config.Integrations.Callbook.Callook.Enabled = false
 
 	name, url := m.internetCallbook()
 	if name != "" {
@@ -385,14 +385,14 @@ func TestInternetCallbook_AllDisabled(t *testing.T) {
 func TestBuildCallbookRegistry_IncludesHamQTH(t *testing.T) {
 	a := newChooserTestApp(t)
 
-	a.Config.Integrations.QRZ.Enabled = false
-	a.Config.Integrations.HamQTH.Enabled = true
-	a.Config.Integrations.HamQTH.User = "testuser"
-	a.Config.Integrations.HamQTH.Pass = "testpass"
-	a.Config.Integrations.HamQTH.Priority = 45
+	a.Config.Integrations.Callbook.QRZ.Enabled = false
+	a.Config.Integrations.Callbook.HamQTH.Enabled = true
+	a.Config.Integrations.Callbook.HamQTH.User = "testuser"
+	a.Config.Integrations.Callbook.HamQTH.Pass = "testpass"
+	a.Config.Integrations.Callbook.HamQTH.Priority = 45
 
-	a.Config.Integrations.LogbookCallbook.Enabled = false
-	a.Config.Integrations.WavelogCallbook.Enabled = false
+	a.Config.Integrations.Callbook.Logbook.Enabled = false
+	a.Config.Integrations.Callbook.Wavelog.Enabled = false
 
 	reg := buildCallbookRegistry(a)
 	if reg == nil {
@@ -407,10 +407,10 @@ func TestBuildCallbookRegistry_IncludesHamQTH(t *testing.T) {
 func TestBuildCallbookRegistry_HamQTHDisabled(t *testing.T) {
 	a := newChooserTestApp(t)
 
-	a.Config.Integrations.HamQTH.Enabled = false
-	a.Config.Integrations.QRZ.Enabled = false
-	a.Config.Integrations.LogbookCallbook.Enabled = false
-	a.Config.Integrations.WavelogCallbook.Enabled = false
+	a.Config.Integrations.Callbook.HamQTH.Enabled = false
+	a.Config.Integrations.Callbook.QRZ.Enabled = false
+	a.Config.Integrations.Callbook.Logbook.Enabled = false
+	a.Config.Integrations.Callbook.Wavelog.Enabled = false
 
 	reg := buildCallbookRegistry(a)
 	if reg == nil {
@@ -424,12 +424,12 @@ func TestBuildCallbookRegistry_HamQTHDisabled(t *testing.T) {
 func TestBuildCallbookRegistry_HamQTHNoUser(t *testing.T) {
 	a := newChooserTestApp(t)
 
-	a.Config.Integrations.HamQTH.Enabled = true
-	a.Config.Integrations.HamQTH.User = ""
+	a.Config.Integrations.Callbook.HamQTH.Enabled = true
+	a.Config.Integrations.Callbook.HamQTH.User = ""
 
-	a.Config.Integrations.QRZ.Enabled = false
-	a.Config.Integrations.LogbookCallbook.Enabled = false
-	a.Config.Integrations.WavelogCallbook.Enabled = false
+	a.Config.Integrations.Callbook.QRZ.Enabled = false
+	a.Config.Integrations.Callbook.Logbook.Enabled = false
+	a.Config.Integrations.Callbook.Wavelog.Enabled = false
 
 	reg := buildCallbookRegistry(a)
 	if reg == nil {

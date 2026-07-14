@@ -50,7 +50,7 @@ func NewGeneralMenu(cfg *config.Config) *GeneralMenu {
 		tzIndex:       tzIdx,
 		renderMap:     cfg.General.RenderMap,
 		drawGrayline:  cfg.General.DrawGrayline,
-		pictureAtQRZ:  cfg.General.PictureAtQRZPane,
+		pictureAtQRZ:  cfg.General.PictureAtPartnerPane,
 		solarAtQSO:    cfg.General.SolarAtQSOPane,
 		useSCP:        cfg.General.UseSCP,
 		useRef:        cfg.General.UseRef,

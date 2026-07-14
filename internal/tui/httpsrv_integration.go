@@ -335,9 +335,9 @@ func (m *Model) forcePushDashboardPartner() {
 // when no other internet callbook is configured (US callsigns only).
 // Returns empty strings if no provider is enabled.
 func (m *Model) internetCallbook() (name, urlTemplate string) {
-	qrz := m.App.Config.Integrations.QRZ
-	hamqth := m.App.Config.Integrations.HamQTH
-	callook := m.App.Config.Integrations.Callook
+	qrz := m.App.Config.Integrations.Callbook.QRZ
+	hamqth := m.App.Config.Integrations.Callbook.HamQTH
+	callook := m.App.Config.Integrations.Callbook.Callook
 
 	// Prefer HamQTH if it has higher or equal priority (free, no subscription).
 	if hamqth.Enabled && hamqth.User != "" {

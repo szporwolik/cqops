@@ -345,12 +345,12 @@ func TestPhotoBox_HiddenWhenDisabled(t *testing.T) {
 	m.width = 200
 	m.height = 50
 	m.App.Logbook.Station.Grid = "JO90"
-	m.App.Config.General.PictureAtQRZPane = false
+	m.App.Config.General.PictureAtPartnerPane = false
 	m.lookup.partnerData = &callbook.Result{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
 
 	view := m.viewPartner()
 	if strings.Contains(view, "Photo") {
-		t.Error("Photo box should NOT appear when PictureAtQRZPane is disabled")
+		t.Error("Photo box should NOT appear when PictureAtPartnerPane is disabled")
 	}
 }
 
@@ -359,7 +359,7 @@ func TestPhotoBox_HiddenWhenNarrow(t *testing.T) {
 	m.width = 120
 	m.height = 50
 	m.App.Logbook.Station.Grid = "JO90"
-	m.App.Config.General.PictureAtQRZPane = true
+	m.App.Config.General.PictureAtPartnerPane = true
 	m.lookup.partnerData = &callbook.Result{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
 
 	view := m.viewPartner()
@@ -373,7 +373,7 @@ func TestPhotoBox_HiddenWhenNoImageURL(t *testing.T) {
 	m.width = 200
 	m.height = 50
 	m.App.Logbook.Station.Grid = "JO90"
-	m.App.Config.General.PictureAtQRZPane = true
+	m.App.Config.General.PictureAtPartnerPane = true
 	m.lookup.partnerData = &callbook.Result{Callsign: "SP9MOA", ImageURL: ""}
 
 	view := m.viewPartner()
@@ -387,7 +387,7 @@ func TestPhotoBox_ShowsLoadingWhenNoContent(t *testing.T) {
 	m.width = 200
 	m.height = 50
 	m.App.Logbook.Station.Grid = "JO90"
-	m.App.Config.General.PictureAtQRZPane = true
+	m.App.Config.General.PictureAtPartnerPane = true
 	m.lookup.partnerData = &callbook.Result{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
 
 	// partnerPicViewer has no content yet — should show "Loading…".
@@ -405,7 +405,7 @@ func TestPhotoBox_AppearsOnWideScreen(t *testing.T) {
 	m.width = 200
 	m.height = 50
 	m.App.Logbook.Station.Grid = "JO90"
-	m.App.Config.General.PictureAtQRZPane = true
+	m.App.Config.General.PictureAtPartnerPane = true
 	m.lookup.partnerData = &callbook.Result{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
 
 	view := m.viewPartner()
@@ -419,7 +419,7 @@ func TestPhotoBox_CacheInvalidation(t *testing.T) {
 	m.width = 200
 	m.height = 50
 	m.App.Logbook.Station.Grid = "JO90"
-	m.App.Config.General.PictureAtQRZPane = true
+	m.App.Config.General.PictureAtPartnerPane = true
 	m.lookup.partnerData = &callbook.Result{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
 
 	// First render — caches with empty photo content.
@@ -444,7 +444,7 @@ func TestPhotoBox_DimensionsStored(t *testing.T) {
 	m.width = 200
 	m.height = 50
 	m.App.Logbook.Station.Grid = "JO90"
-	m.App.Config.General.PictureAtQRZPane = true
+	m.App.Config.General.PictureAtPartnerPane = true
 	m.lookup.partnerData = &callbook.Result{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
 
 	m.viewPartner()
@@ -462,7 +462,7 @@ func TestPhotoBox_LastPartnerPicURLTracked(t *testing.T) {
 	m.width = 200
 	m.height = 50
 	m.App.Logbook.Station.Grid = "JO90"
-	m.App.Config.General.PictureAtQRZPane = true
+	m.App.Config.General.PictureAtPartnerPane = true
 	m.lookup.partnerData = &callbook.Result{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
 
 	m.viewPartner()
@@ -487,13 +487,13 @@ func TestPhotoBox_DoesNotAffectLayoutWhenDisabled(t *testing.T) {
 	m.width = 200
 	m.height = 50
 	m.App.Logbook.Station.Grid = "JO90"
-	m.App.Config.General.PictureAtQRZPane = false
+	m.App.Config.General.PictureAtPartnerPane = false
 	m.lookup.partnerData = &callbook.Result{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
 
 	viewWithPhoto := m.viewPartner()
 
 	// Render without photo feature at all.
-	m.App.Config.General.PictureAtQRZPane = false
+	m.App.Config.General.PictureAtPartnerPane = false
 	m.invalidatePartnerMapCache()
 	viewWithoutPhoto := m.viewPartner()
 

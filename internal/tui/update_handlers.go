@@ -218,7 +218,7 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 				m.toasts.Success(fmt.Sprintf("Wavelog: %s already present", r.call))
 			} else {
 				m.toasts.Success(fmt.Sprintf("Wavelog: %s sent", r.call))
-				if n.Enabled && n.Wavelog {
+				if n.Enabled && n.QSOSent {
 					applog.Info("Sending Wavelog success notification", "call", r.call)
 					if desktopAvailable() {
 						if err := beeep.Notify("CQOps — Wavelog", fmt.Sprintf("QSO %s sent to Wavelog", r.call), ""); err != nil {
@@ -383,8 +383,8 @@ func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
 		call := m.lookup.qrzCall
 		applog.Debug("DXC: handlePendingRequests qrzNeed",
 			"call", call,
-			"qrzEnabled", m.App.Config.Integrations.QRZ.Enabled,
-			"qrzUser", m.App.Config.Integrations.QRZ.User != "",
+			"qrzEnabled", m.App.Config.Integrations.Callbook.QRZ.Enabled,
+			"qrzUser", m.App.Config.Integrations.Callbook.QRZ.User != "",
 		)
 		if call == "" {
 			m.lookup.qrzNeed = false

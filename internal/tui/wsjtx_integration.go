@@ -235,7 +235,7 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 	if call == "" || !m.inetOnline {
 		return nil
 	}
-	qrzenabled := m.App.Config.Integrations.QRZ.Enabled && m.App.Config.Integrations.QRZ.User != ""
+	qrzenabled := m.App.Config.Integrations.Callbook.QRZ.Enabled && m.App.Config.Integrations.Callbook.QRZ.User != ""
 	wl := m.App.Logbook.Wavelog
 	wlenabled := wl != nil && wl.Enabled && wl.StationProfileID != ""
 	if !qrzenabled && !wlenabled && m.callbookRegistry == nil {
