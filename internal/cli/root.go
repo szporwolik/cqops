@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -214,7 +213,7 @@ func resetConfig() error {
 	fmt.Printf("Cache dir:  %s\n", cacheDir)
 	fmt.Println("")
 
-	if !promptYN("Proceed with reset?") {
+	if !app.PromptYN("Proceed with reset?") {
 		fmt.Println("Reset cancelled.")
 		return nil
 	}
@@ -290,7 +289,7 @@ func resetCache() error {
 	fmt.Printf("Cache dir: %s\n", cacheDir)
 	fmt.Println("")
 
-	if !promptYN("Proceed with cache reset?") {
+	if !app.PromptYN("Proceed with cache reset?") {
 		fmt.Println("Reset cancelled.")
 		return nil
 	}
@@ -317,15 +316,4 @@ func resetCache() error {
 	fmt.Println(".")
 
 	return nil
-}
-
-func promptYN(prompt string) bool {
-	fmt.Fprintf(os.Stderr, "%s [y/N]: ", prompt)
-	reader := bufio.NewReader(os.Stdin)
-	line, err := reader.ReadString('\n')
-	if err != nil {
-		return false
-	}
-	line = strings.TrimSpace(strings.ToLower(line))
-	return line == "y" || line == "yes"
 }

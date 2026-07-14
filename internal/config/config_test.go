@@ -1097,7 +1097,7 @@ func TestValidate_RigFlrigPort(t *testing.T) {
 	cfg.Rigs["test-rig"] = RigPreset{
 		ID:           "test-rig",
 		Model:        "FT-891",
-		FlrigEnabled: true,
+		RadioBackend: "flrig",
 		FlrigHost:    "localhost",
 		FlrigPort:    "abc",
 	}
@@ -1108,7 +1108,7 @@ func TestValidate_RigFlrigPort(t *testing.T) {
 	cfg.Rigs["test-rig"] = RigPreset{
 		ID:           "test-rig",
 		Model:        "FT-891",
-		FlrigEnabled: true,
+		RadioBackend: "flrig",
 		FlrigHost:    "localhost",
 		FlrigPort:    "12345",
 	}

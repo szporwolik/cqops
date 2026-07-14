@@ -14,7 +14,7 @@ import (
 	"github.com/szporwolik/cqops/internal/applog"
 )
 
-type Event struct {
+type event struct {
 	Msg     interface{}
 	RawADIF string
 }
@@ -23,8 +23,8 @@ type Listener struct {
 	mu         sync.Mutex
 	server     *wsjtx.Server
 	active     bool
-	generation uint64     // incremented on each Start; used to reject stale callbacks
-	Events     chan Event // exported for external consumers; not drained by CQOps internally
+	generation uint64 // incremented on each Start; used to reject stale callbacks
+	Events     chan event
 	stop       chan struct{}
 	wg         sync.WaitGroup
 	OnADIF     func(string)
@@ -33,7 +33,7 @@ type Listener struct {
 
 func NewListener() *Listener {
 	return &Listener{
-		Events: make(chan Event, 2048),
+		Events: make(chan event, 2048),
 	}
 }
 

@@ -420,8 +420,6 @@ type RigPreset struct {
 	Antenna         string `yaml:"antenna"`
 	Power           string `yaml:"power"`
 	RadioBackend    string `yaml:"radio_backend,omitempty"` // "" | "flrig" | "hamlib"
-	Backend         string `yaml:"backend,omitempty"`       // DEPRECATED: migrated to RadioBackend in Load() — remove after v1.0
-	FlrigEnabled    bool   `yaml:"flrig_enabled,omitempty"` // DEPRECATED: migrated to RadioBackend in Load() — remove after v1.0
 	FlrigHost       string `yaml:"flrig_host,omitempty"`
 	FlrigPort       string `yaml:"flrig_port,omitempty"`
 	HamlibRadioHost string `yaml:"hamlib_radio_host,omitempty"`
@@ -477,21 +475,6 @@ func Load(path string) (*Config, error) {
 
 	// Migrate legacy config keys to current names.
 	cfg.Normalize()
-
-	// Backward compat: migrate old backend → radio_backend, FlrigEnabled → RadioBackend.
-	for id, rp := range cfg.Rigs {
-		if rp.RadioBackend == "" && rp.Backend != "" {
-			fmt.Fprintf(os.Stderr, "CQOps: rig %s uses deprecated 'backend' field — please update to 'radio_backend'\n", id)
-			rp.RadioBackend = rp.Backend
-			rp.Backend = ""
-		}
-		if rp.RadioBackend == "" && rp.FlrigEnabled {
-			rp.RadioBackend = "flrig"
-		}
-		rp.FlrigEnabled = false // no longer the source of truth
-		rp.Backend = ""         // clear old key
-		cfg.Rigs[id] = rp
-	}
 
 	cfg.BroadcastStations = DefaultBroadcastStations()
 
@@ -748,7 +731,7 @@ func (c *Config) Validate() error {
 		if strings.TrimSpace(id) == "" {
 			return fmt.Errorf("rig entry with empty id")
 		}
-		if rig.RadioBackend == "flrig" || rig.FlrigEnabled {
+		if rig.RadioBackend == "flrig" {
 			if strings.TrimSpace(rig.FlrigHost) == "" {
 				return fmt.Errorf("rig %q: flrig_host is required when radio_backend=flrig", id)
 			}

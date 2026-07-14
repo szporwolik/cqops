@@ -30,7 +30,7 @@ func acquireLock(dir string) (*lockFile, error) {
 					return nil, fmt.Errorf("another CQOps instance is already running (PID %d)", oldPID)
 				}
 				// Stale lock from a crashed process — ask the user.
-				if !promptYN(fmt.Sprintf("Stale lock from PID %d found. Delete it?", oldPID)) {
+				if !PromptYN(fmt.Sprintf("Stale lock from PID %d found. Delete it?", oldPID)) {
 					return nil, fmt.Errorf("lock file exists (%s) — remove it manually or restart", path)
 				}
 				os.Remove(path)
@@ -46,7 +46,7 @@ func acquireLock(dir string) (*lockFile, error) {
 	return &lockFile{path: path}, nil
 }
 
-func promptYN(prompt string) bool {
+func PromptYN(prompt string) bool {
 	fmt.Fprintf(os.Stderr, "%s [y/N]: ", prompt)
 	reader := bufio.NewReader(os.Stdin)
 	line, err := reader.ReadString('\n')

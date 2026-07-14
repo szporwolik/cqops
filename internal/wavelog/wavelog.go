@@ -29,12 +29,6 @@ type StationProfile struct {
 	Active     string `json:"station_active"`
 }
 
-// VersionResponse from api/version.
-type VersionResponse struct {
-	Status  string `json:"status"`
-	Version string `json:"version"`
-}
-
 // TestConnection validates that the Wavelog API URL and key are reachable.
 func TestConnection(baseURL, apiKey string) error {
 	applog.Debug("Wavelog: testing connection")
@@ -69,7 +63,10 @@ func TestConnection(baseURL, apiKey string) error {
 		return FriendlyError(fmt.Errorf("HTTP %d", resp.StatusCode))
 	}
 
-	var vr VersionResponse
+	var vr struct {
+		Status  string `json:"status"`
+		Version string `json:"version"`
+	}
 	if err := json.Unmarshal(respBody, &vr); err != nil {
 		applog.Error("Wavelog: invalid version response", "error", err)
 		return fmt.Errorf("invalid response: %w", err)
@@ -301,12 +298,6 @@ func TestStation(baseURL, apiKey, stationID string) error {
 
 	applog.InfoDetail("Wavelog: station test OK", fmt.Sprintf("station_id=%s", stationID))
 	return nil
-}
-
-// PostQSO uploads a QSO in ADIF format to Wavelog.
-func PostQSO(baseURL, apiKey, stationID, adifStr string) error {
-	_, err := PostQSOWithResult(baseURL, apiKey, stationID, adifStr)
-	return err
 }
 
 // QSOUploadResult carries structured info about a Wavelog upload response.
