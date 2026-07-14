@@ -4,7 +4,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/szporwolik/cqops/internal/qrz"
+	"github.com/szporwolik/cqops/internal/callbook"
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
@@ -32,7 +32,7 @@ type lookupState struct {
 	wlLastCall     string
 
 	// Partner/callbook display data.
-	partnerData    *qrz.CallData
+	partnerData    *callbook.Result
 	qrzLookupDone  bool
 	qrzLookupCall  string // call the QRZ done flag is for
 	wlPrivateData  *wavelog.PrivateLookupResult
@@ -41,6 +41,13 @@ type lookupState struct {
 	wlLastBand     string
 	wlLastMode     string
 	wlDispatchTime time.Time // last time a WL lookup was dispatched; for timeout
+
+	// Consolidated callbook toast: shown once per call after all lookups complete.
+	callbookToastCall string // call for which the consolidated toast was already shown
+
+	// noProviderWarned suppresses repeated "no callbook provider configured"
+	// warnings during a session.
+	noProviderWarned bool
 
 	// pendingLookupCmd is set by onFieldExit when the call field is left
 	// via Tab/arrows. handleFormKey batches it so lookups fire immediately.

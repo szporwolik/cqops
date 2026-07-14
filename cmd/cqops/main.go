@@ -38,6 +38,7 @@ func main() {
 		pauseIfTerminal()
 		os.Exit(1)
 	}
+	fmt.Fprintln(os.Stderr, "CQOps: finished.")
 }
 
 // pauseIfTerminal waits for Enter when launched directly (not from an

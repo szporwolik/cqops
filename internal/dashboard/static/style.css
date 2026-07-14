@@ -1,22 +1,42 @@
-/* CQOps Live — Blue Onyx Field Day dashboard, two-mode layout */
+/* CQOps Live — Dashboard stylesheet with CSS custom property theming.
+   To create a dark theme, override the variables in :root.dark below.
+   Do NOT change any selectors, layouts, or media queries. */
+
+/* ───────────────────────────────────────────────────────────────────
+   Theme: Bright (default)
+   ─────────────────────────────────────────────────────────────────── */
 :root {
-  --page-bg:#E2E8F2; --page-bg-soft:#EDF2F9; --page-bg-onyx:#D5DEE9;
-  --surface:#FFFFFF; --surface-soft:#FAFCFF; --surface-blue:#F2F6FD;
-  --border:rgba(100,120,150,0.35); --border-strong:rgba(80,100,135,0.50);
-  --shadow:rgba(15,31,51,0.12); --shadow-soft:rgba(15,31,51,0.06);
+  /* Page & surfaces */
+  --page-bg:#DDE4F0; --page-bg-soft:#E8EFF7; --page-bg-onyx:#D0D9E8;
+  --surface:#FFFFFF; --surface-soft:#F8FAFE; --surface-blue:#F0F4FC;
+  /* Borders & shadows */
+  --border:rgba(80,100,130,0.22); --border-strong:rgba(60,80,115,0.38);
+  --shadow:rgba(15,31,51,0.10); --shadow-soft:rgba(15,31,51,0.05);
+  /* Text */
   --text:#07111F; --text-secondary:#263A52; --dim:#58708C; --dim-soft:#70849B;
+  /* Accent (red) — reserved for alerts, active state, critical live data */
   --accent:#D00032; --accent-dark:#A00026; --accent-soft:#FFE3EA; --accent-xsoft:#FFF2F5;
+  /* Blue */
   --blue:#005BBB; --blue-dark:#003F88; --blue-deep:#123E6F; --blue-soft:#DDEBFF; --blue-xsoft:#EEF6FF;
+  /* Cyan */
   --cyan:#007C91; --cyan-soft:#DDF6FA;
+  /* Status */
   --success:#007A3D; --warn:#B45309; --offline:#C1121F;
+  /* Map markers */
   --station-marker:#007A3D; --qso-marker:#0067C5;
   --active-path:#D00032; --last-qso:#D00032; --old-path:rgba(0,91,187,0.30);
-  --table-border:rgba(110,135,160,0.25); --table-alt:#F4F7FC; --table-hover:#E6EEF8;
+  /* Table */
+  --table-border:rgba(90,115,145,0.18); --table-alt:#F5F8FC; --table-hover:#EAF0F8;
+  /* Body gradient stops */
+  --body-grad-1:rgba(208,0,50,0.035); --body-grad-2:rgba(0,91,187,0.055);
+  --body-grad-3:#EAF0F7; --body-grad-4:#DBE3EF; --body-grad-5:#CAD4E4;
+
+  /* ── Layout (not themed) ── */
   --card-radius:8px; --gap:10px;
-  --logo-w:140px; --logo-h:84px; --photo-w:100px; --photo-h:100px;
-  --active-photo-w:160px; --active-photo-h:160px;
+  --logo-w:140px; --logo-h:84px;
   --base-font:15px;
-  /* ── Ham band colors (bg + text for badges/pills) ── */
+
+  /* ── Ham band badge colors ── */
   --b160m-bg:rgba(139,0,0,0.22);   --b160m-fg:#8B0000;
   --b80m-bg:rgba(192,57,43,0.22);  --b80m-fg:#C0392B;
   --b60m-bg:rgba(180,130,30,0.22); --b60m-fg:#B4821E;
@@ -30,20 +50,217 @@
   --b6m-bg:rgba(106,27,154,0.22);  --b6m-fg:#6A1B9A;
   --b4m-bg:rgba(74,20,140,0.22);   --b4m-fg:#4A148C;
   --b2m-bg:rgba(40,53,147,0.22);   --b2m-fg:#283593;
-  --b70cm-bg:rgba(84,110,122,0.22);--b70m-fg:#546E7A;
-  --b23cm-bg:rgba(69,90,100,0.22); --b23m-fg:#455A64;
-  --b13cm-bg:rgba(96,96,96,0.22);  --b13m-fg:#606060;
+  --b70cm-bg:rgba(84,110,122,0.22);--b70cm-fg:#546E7A;
+  --b23cm-bg:rgba(69,90,100,0.22); --b23cm-fg:#455A64;
+  --b13cm-bg:rgba(96,96,96,0.22);  --b13cm-fg:#606060;
   --b9cm-bg:rgba(80,80,80,0.22);   --b9cm-fg:#505050;
   --b6cm-bg:rgba(72,72,72,0.22);   --b6cm-fg:#484848;
   --b3cm-bg:rgba(64,64,64,0.22);   --b3cm-fg:#404040;
   --b1cm-bg:rgba(56,56,56,0.22);   --b1cm-fg:#383838;
   --b-other-bg:rgba(100,110,130,0.18); --b-other-fg:#54647A;
-  /* ── Mode group colors ── */
+
+  /* ── Mode badge colors ── */
   --mode-cw-bg:rgba(198,40,40,0.22);    --mode-cw-fg:#C62828;
   --mode-phone-bg:rgba(21,101,192,0.22);--mode-phone-fg:#1565C0;
   --mode-digi-bg:rgba(46,125,50,0.22);  --mode-digi-fg:#2E7D32;
   --mode-other-bg:rgba(96,100,110,0.18);--mode-other-fg:#54647A;
 }
+
+/* ───────────────────────────────────────────────────────────────────
+   Theme: Dark — "CQOps RF Console"
+   Graphite chassis, cyan phosphor telemetry, blue data, red TX/alarm,
+   green RX/online. Professional radio console aesthetic.
+   ─────────────────────────────────────────────────────────────────── */
+:root.dark {
+  color-scheme: dark;
+  /* Page & surfaces — layered depth */
+  --page-bg:#06090E; --page-bg-soft:#0A0F16; --page-bg-onyx:#030508;
+  --surface:#0E141D; --surface-soft:#131A24; --surface-blue:#0B1622;
+  /* Borders & shadows — blue-grey, restrained */
+  --border:rgba(90,120,155,0.18); --border-strong:rgba(80,110,145,0.36);
+  --shadow:rgba(0,0,0,0.78); --shadow-soft:rgba(0,0,0,0.42);
+  /* Text */
+  --text:#EAF4FF; --text-secondary:#B5C6D8; --dim:#71869A; --dim-soft:#8FA2B5;
+  /* Accent — TX / critical / active */
+  --accent:#FF3B5C; --accent-dark:#C91F43; --accent-soft:rgba(255,59,92,0.18); --accent-xsoft:rgba(255,59,92,0.08);
+  /* Blue — navigation / QSO / primary data */
+  --blue:#4FA3FF; --blue-dark:#287ACA; --blue-deep:#82C7FF; --blue-soft:rgba(79,163,255,0.18); --blue-xsoft:rgba(79,163,255,0.08);
+  /* Cyan — telemetry / instruments / RF indicators */
+  --cyan:#35DDE7; --cyan-soft:rgba(53,221,231,0.16);
+  /* Status */
+  --success:#4FE39A; --warn:#FFB454; --offline:#FF5966;
+  /* Map markers */
+  --station-marker:#50E3A4; --qso-marker:#55AEFF;
+  --active-path:#FF405F; --last-qso:#FF405F; --old-path:rgba(79,163,255,0.34);
+  /* Table */
+  --table-border:rgba(100,130,160,0.13); --table-alt:#111822; --table-hover:#172330;
+  /* Body gradient */
+  --body-grad-1:rgba(255,44,83,0.055); --body-grad-2:rgba(30,199,222,0.075);
+  --body-grad-3:#06090E; --body-grad-4:#0A1016; --body-grad-5:#0D151E;
+
+  /* ── Ham band badge colors ── */
+  --b160m-bg:rgba(255,70,82,0.16); --b160m-fg:#FF6874;
+  --b80m-bg:rgba(255,100,74,0.16); --b80m-fg:#FF8066;
+  --b60m-bg:rgba(255,164,62,0.16); --b60m-fg:#FFB25A;
+  --b40m-bg:rgba(255,132,52,0.17); --b40m-fg:#FF984D;
+  --b30m-bg:rgba(238,186,58,0.17); --b30m-fg:#F1C75B;
+  --b20m-bg:rgba(62,154,255,0.18); --b20m-fg:#65B1FF;
+  --b17m-bg:rgba(43,213,203,0.17); --b17m-fg:#52E1D8;
+  --b15m-bg:rgba(69,218,132,0.17); --b15m-fg:#5FE39A;
+  --b12m-bg:rgba(140,216,78,0.17); --b12m-fg:#9BE466;
+  --b10m-bg:rgba(32,206,224,0.18); --b10m-fg:#42DCE9;
+  --b6m-bg:rgba(188,107,255,0.18); --b6m-fg:#CB83FF;
+  --b4m-bg:rgba(157,110,255,0.18); --b4m-fg:#B28AFF;
+  --b2m-bg:rgba(103,127,255,0.19); --b2m-fg:#8599FF;
+  --b70cm-bg:rgba(72,196,230,0.16); --b70cm-fg:#61CDEB;
+  --b23cm-bg:rgba(104,177,205,0.16); --b23cm-fg:#7BC1DB;
+  --b13cm-bg:rgba(155,169,185,0.15); --b13cm-fg:#A8B8C8;
+  --b9cm-bg:rgba(141,159,178,0.15); --b9cm-fg:#9DADBF;
+  --b6cm-bg:rgba(128,148,168,0.15); --b6cm-fg:#90A3B7;
+  --b3cm-bg:rgba(116,138,159,0.15); --b3cm-fg:#8498AC;
+  --b1cm-bg:rgba(103,126,148,0.15); --b1cm-fg:#788DA2;
+  --b-other-bg:rgba(113,134,154,0.14); --b-other-fg:#8FA2B5;
+
+  /* ── Mode badge colors ── */
+  --mode-cw-bg:rgba(255,176,70,0.18); --mode-cw-fg:#FFC067;
+  --mode-phone-bg:rgba(75,163,255,0.18); --mode-phone-fg:#69B5FF;
+  --mode-digi-bg:rgba(71,225,153,0.18); --mode-digi-fg:#64E6A7;
+  --mode-other-bg:rgba(148,166,185,0.14); --mode-other-fg:#A0B0C0;
+}
+/* ───────────────────────────────────────────────────────────────────
+   Theme: YL Orchid Luxe — bold feminine palette.
+   Orchid, fuchsia, plum, pearl rose, cool teal.
+   ─────────────────────────────────────────────────────────────────── */
+:root.yl {
+  color-scheme: light;
+  /* Page & surfaces — pearl-blush depth */
+  --page-bg:#F5E9F3; --page-bg-soft:#FBF6FA; --page-bg-onyx:#E5D3E2;
+  --surface:#FFFDFE; --surface-soft:#FCF7FA; --surface-blue:#F3EDF9;
+  /* Borders & shadows — mauve, soft rose-plum */
+  --border:rgba(115,68,105,0.22); --border-strong:rgba(105,55,95,0.40);
+  --shadow:rgba(73,35,68,0.15); --shadow-soft:rgba(73,35,68,0.07);
+  /* Text */
+  --text:#241522; --text-secondary:#4F3A4B; --dim:#705C6C; --dim-soft:#806D7D;
+  /* Accent — orchid raspberry */
+  --accent:#C12678; --accent-dark:#941B59; --accent-soft:#F6D8E8; --accent-xsoft:#FDF0F7;
+  /* Blue — premium orchid violet */
+  --blue:#7650B8; --blue-dark:#5B3C91; --blue-deep:#44306F; --blue-soft:#E9E0F5; --blue-xsoft:#F5F0FA;
+  /* Cyan — mineral teal */
+  --cyan:#167E79; --cyan-soft:#D9EEEC;
+  /* Status */
+  --success:#207A5D; --warn:#9D5F00; --offline:#C72A5A;
+  /* Map markers */
+  --station-marker:#207A5D; --qso-marker:#7650B8;
+  --active-path:#C12678; --last-qso:#8E34A8; --old-path:rgba(118,80,184,0.34);
+  /* Table */
+  --table-border:rgba(125,80,116,0.20); --table-alt:#FAF2F8; --table-hover:#F2E4EF;
+  /* Body gradient */
+  --body-grad-1:rgba(193,38,120,0.10); --body-grad-2:rgba(118,80,184,0.10);
+  --body-grad-3:#FBF4F9; --body-grad-4:#F0E3ED; --body-grad-5:#E4D2E1;
+
+  /* ── Ham band badge colors ── */
+  --b160m-bg:rgba(141,23,79,0.16); --b160m-fg:#8D174F;
+  --b80m-bg:rgba(173,40,94,0.16);  --b80m-fg:#AD285E;
+  --b60m-bg:rgba(124,89,0,0.16);   --b60m-fg:#7C5900;
+  --b40m-bg:rgba(155,64,53,0.16);  --b40m-fg:#9B4035;
+  --b30m-bg:rgba(128,97,0,0.16);   --b30m-fg:#806100;
+  --b20m-bg:rgba(107,67,177,0.16); --b20m-fg:#6B43B1;
+  --b17m-bg:rgba(17,107,103,0.16); --b17m-fg:#116B67;
+  --b15m-bg:rgba(28,105,76,0.16);  --b15m-fg:#1C694C;
+  --b12m-bg:rgba(77,102,25,0.16);  --b12m-fg:#4D6619;
+  --b10m-bg:rgba(8,102,117,0.16);  --b10m-fg:#086675;
+  --b6m-bg:rgba(142,52,168,0.16);  --b6m-fg:#8E34A8;
+  --b4m-bg:rgba(104,67,163,0.16);  --b4m-fg:#6843A3;
+  --b2m-bg:rgba(77,88,167,0.16);   --b2m-fg:#4D58A7;
+  --b70cm-bg:rgba(52,101,116,0.16);--b70cm-fg:#346574;
+  --b23cm-bg:rgba(82,101,113,0.16);--b23cm-fg:#526571;
+  --b13cm-bg:rgba(100,90,98,0.15); --b13cm-fg:#645A62;
+  --b9cm-bg:rgba(92,84,91,0.15);   --b9cm-fg:#5C545B;
+  --b6cm-bg:rgba(84,78,84,0.15);   --b6cm-fg:#544E54;
+  --b3cm-bg:rgba(76,72,77,0.15);   --b3cm-fg:#4C484D;
+  --b1cm-bg:rgba(68,66,70,0.15);   --b1cm-fg:#444246;
+  --b-other-bg:rgba(105,90,102,0.14);--b-other-fg:#695A66;
+
+  /* ── Mode badge colors ── */
+  --mode-cw-bg:rgba(158,29,97,0.16);    --mode-cw-fg:#9E1D61;
+  --mode-phone-bg:rgba(107,67,177,0.16);--mode-phone-fg:#6B43B1;
+  --mode-digi-bg:rgba(17,107,103,0.16); --mode-digi-fg:#116B67;
+  --mode-other-bg:rgba(94,82,96,0.14);  --mode-other-fg:#5E5260;
+}
+/* ── YL Orchid Luxe accessibility ── */
+.yl :focus-visible{outline:3px solid #C12678;outline-offset:3px}
+/* ───────────────────────────────────────────────────────────────────
+   Theme: HighVis — premium accessibility, color-blind safe.
+   True black, white text, signal yellow accent, mint/magenta status.
+   ─────────────────────────────────────────────────────────────────── */
+:root.hivis {
+  color-scheme: dark;
+  /* Page & surfaces — black base, charcoal cards for depth */
+  --page-bg:#000000; --page-bg-soft:#030506; --page-bg-onyx:#000000;
+  --surface:#080B10; --surface-soft:#0E1219; --surface-blue:#06141E;
+  /* Borders & shadows — clean, accessible contrast */
+  --border:rgba(255,255,255,0.30); --border-strong:rgba(255,255,255,0.64);
+  --shadow:rgba(0,0,0,0.95); --shadow-soft:rgba(0,0,0,0.60);
+  /* Text */
+  --text:#FFFFFF; --text-secondary:#F2F5F7; --dim:#CBD4DD; --dim-soft:#B4C0CB;
+  /* Accent — signal yellow */
+  --accent:#FFD400; --accent-dark:#E4B900; --accent-soft:rgba(255,212,0,0.24); --accent-xsoft:rgba(255,212,0,0.10);
+  /* Blue */
+  --blue:#72BCFF; --blue-dark:#2C91EC; --blue-deep:#B4DCFF; --blue-soft:rgba(114,188,255,0.24); --blue-xsoft:rgba(114,188,255,0.10);
+  /* Cyan */
+  --cyan:#55F3E8; --cyan-soft:rgba(85,243,232,0.20);
+  /* Status — mint / yellow / magenta */
+  --success:#63F7C8; --warn:#FFD400; --offline:#FF5CA8;
+  /* Map markers */
+  --station-marker:#63F7C8; --qso-marker:#72BCFF;
+  --active-path:#FFD400; --last-qso:#FF5CA8; --old-path:rgba(114,188,255,0.44);
+  /* Table */
+  --table-border:rgba(255,255,255,0.28); --table-alt:#0D1116; --table-hover:#17232D;
+  /* Body gradient */
+  --body-grad-1:rgba(255,212,0,0.055); --body-grad-2:rgba(85,243,232,0.050);
+  --body-grad-3:#000000; --body-grad-4:#040608; --body-grad-5:#080D12;
+
+  /* ── Ham band badge colors ── */
+  --b160m-bg:rgba(255,92,168,0.24); --b160m-fg:#FF83BD;
+  --b80m-bg:rgba(255,126,95,0.24);  --b80m-fg:#FF967D;
+  --b60m-bg:rgba(255,209,102,0.24); --b60m-fg:#FFD166;
+  --b40m-bg:rgba(255,159,67,0.24);  --b40m-fg:#FF9F43;
+  --b30m-bg:rgba(255,224,102,0.24); --b30m-fg:#FFE066;
+  --b20m-bg:rgba(114,188,255,0.24); --b20m-fg:#72BCFF;
+  --b17m-bg:rgba(85,243,232,0.22);  --b17m-fg:#55F3E8;
+  --b15m-bg:rgba(99,247,200,0.22);  --b15m-fg:#63F7C8;
+  --b12m-bg:rgba(192,255,105,0.22); --b12m-fg:#C0FF69;
+  --b10m-bg:rgba(78,226,255,0.22);  --b10m-fg:#4EE2FF;
+  --b6m-bg:rgba(221,139,255,0.22);  --b6m-fg:#DD8BFF;
+  --b4m-bg:rgba(190,162,255,0.22);  --b4m-fg:#BEA2FF;
+  --b2m-bg:rgba(143,174,255,0.23);  --b2m-fg:#8FAEFF;
+  --b70cm-bg:rgba(103,216,255,0.22);--b70cm-fg:#67D8FF;
+  --b23cm-bg:rgba(176,229,242,0.20);--b23cm-fg:#B0E5F2;
+  --b13cm-bg:rgba(200,200,205,0.18);--b13cm-fg:#C8C8CD;
+  --b9cm-bg:rgba(185,185,190,0.18); --b9cm-fg:#B9B9BE;
+  --b6cm-bg:rgba(170,170,175,0.18); --b6cm-fg:#AAAAB0;
+  --b3cm-bg:rgba(155,155,160,0.18); --b3cm-fg:#9B9BA0;
+  --b1cm-bg:rgba(140,140,145,0.18); --b1cm-fg:#8C8C91;
+  --b-other-bg:rgba(190,195,200,0.16);--b-other-fg:#CFD4D9;
+
+  /* ── Mode badge colors ── */
+  --mode-cw-bg:rgba(255,209,102,0.24);    --mode-cw-fg:#FFD166;
+  --mode-phone-bg:rgba(114,188,255,0.24); --mode-phone-fg:#72BCFF;
+  --mode-digi-bg:rgba(99,247,200,0.22);   --mode-digi-fg:#63F7C8;
+  --mode-other-bg:rgba(227,232,239,0.18); --mode-other-fg:#E3E8EF;
+}
+/* ── HighVis accessibility extras ── */
+.hivis :focus-visible{outline:3px solid #FFD400;outline-offset:3px}
+.hivis .sse-connected::before{content:"✓ ";font-weight:700}
+.hivis .sse-connecting::before{content:"▲ ";font-weight:700}
+.hivis .sse-disconnected::before{content:"✕ ";font-weight:700}
+/* ── Theme-scoped refinements ── */
+/* Dark: subtle top-edge highlight on cards */
+.dark .panel{box-shadow:0 2px 8px var(--shadow),inset 0 1px 0 rgba(255,255,255,0.035),inset 0 0 0 1px var(--surface-soft)}
+/* YL Orchid: stronger plum headings */
+.yl h2,.yl .extra-title{color:#4F2D5A}
+/* HighVis: stronger panel borders */
+.hivis .panel{border-width:1.5px}
 /* ── Band badge colors — one class per amateur band ── */
 /* Fallback first: lower specificity so explicit bands override it. */
 .band-badge[class*="band-"],.badge[class*="band-"]{background:var(--b-other-bg);color:var(--b-other-fg)}
@@ -74,14 +291,14 @@
 .mode-badge.mode-other,.badge.mode-other{background:var(--mode-other-bg);color:var(--mode-other-fg)}
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:system-ui,-apple-system,sans-serif;background:
-    radial-gradient(circle at 12% 8%,rgba(208,0,50,0.04),transparent 28%),
-    radial-gradient(circle at 80% 5%,rgba(0,91,187,0.06),transparent 34%),
-    linear-gradient(135deg,#EDF1F7 0%,#DEE6F0 48%,#CDD7E5 100%);
+    radial-gradient(circle at 12% 8%,var(--body-grad-1),transparent 28%),
+    radial-gradient(circle at 80% 5%,var(--body-grad-2),transparent 34%),
+    linear-gradient(135deg,var(--body-grad-3) 0%,var(--body-grad-4) 48%,var(--body-grad-5) 100%);
   color:var(--text);line-height:1.4;position:relative;overflow-x:hidden;font-size:var(--base-font)}
 #app{max-width:1360px;margin:0 auto;padding:0 16px 8px 16px;display:flex;flex-direction:column;min-height:100vh;position:relative}
 
 /* ── header ── */
-#header{display:flex;align-items:flex-start;gap:16px;padding:10px 0 4px 0;border-bottom:1.5px solid rgba(208,0,50,0.45);margin-bottom:6px}
+#header{display:flex;align-items:flex-start;gap:16px;padding:10px 0 4px 0;border-bottom:1.5px solid var(--accent);margin-bottom:6px}
 #hd-logo-box{width:var(--logo-w);height:var(--logo-h);flex-shrink:0;display:flex;align-items:center;justify-content:center}
 #hd-logo{max-width:100%;max-height:100%;object-fit:contain}
 #hd-text{flex:1;min-width:0}
@@ -94,9 +311,14 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #hd-clock-utc{color:var(--blue-dark);font-weight:600;font-size:0.85rem;font-variant-numeric:tabular-nums}
 #hd-sse-status{font-size:0.72rem;font-weight:600}
 .sse-connected{color:var(--success)}.sse-connecting{color:var(--warn)}.sse-disconnected{color:var(--offline)}
+.sse-connected::before{content:"● "}.sse-connecting::before{content:"● "}.sse-disconnected::before{content:"● "}
 #hd-sun{font-size:0.72rem;color:var(--dim);white-space:nowrap;display:flex;align-items:center;gap:6px}
 #hd-sun .sun-icon{font-size:1.1rem;line-height:1}
 #hd-sun:empty{display:none}
+/* ── QR code in header ── */
+#hd-qr{flex-shrink:0;margin-left:auto;display:flex;align-items:flex-start}
+#hd-qr-img{width:80px;height:80px;border-radius:5px;background:#fff;box-shadow:0 2px 8px var(--shadow)}
+#hd-qr-err{font-size:0.6rem;color:var(--offline);text-align:center}
 
 /* ── weather row (header extension, below clock) ── */
 #wx-row{display:flex;align-items:center;justify-content:center;gap:6px 14px;flex-wrap:nowrap;padding:4px 0 6px 0;font-size:0.78rem;color:var(--text-secondary);margin-bottom:0;overflow:hidden}
@@ -110,10 +332,11 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #wx-row .wx-rain{font-size:0.7rem;color:var(--blue)}
 /* Progressive hide: drop 2-3 slots per step so the row always fits without overflow.
    Sun-icon tracks wx-icon size. */
-@media(max-width:1080px){#wx-row{gap:5px 10px}#wx-row .wx-slot:nth-child(n+8){display:none}#hd-sun .sun-icon{font-size:1.08rem}}
-@media(max-width:800px){#wx-row{gap:4px 7px;font-size:0.74rem}#wx-row .wx-slot:nth-child(n+5){display:none}#wx-row .wx-rain{display:none}#hd-sun .sun-icon{font-size:1.02rem}}
-@media(max-width:600px){#wx-row{gap:4px 6px;font-size:0.7rem}#wx-row .wx-slot:nth-child(n+3){display:none}#wx-row .wx-wind{display:none}#hd-sun .sun-icon{font-size:0.98rem}}
-@media(max-width:420px){#wx-row{gap:3px 5px;font-size:0.65rem}#wx-row .wx-slot:nth-child(n+2){display:none}#wx-row .wx-label{display:none}#wx-row .wx-icon{font-size:1rem}#hd-sun .sun-icon{font-size:0.9rem}}
+@media(max-width:1300px){#wx-row{gap:5px 10px}#wx-row .wx-slot:nth-child(n+8){display:none}#hd-sun .sun-icon{font-size:1.08rem}}
+@media(max-width:1100px){#wx-row{gap:4px 8px}#wx-row .wx-slot:nth-child(n+6){display:none}#hd-sun .sun-icon{font-size:1.05rem}}
+@media(max-width:900px){#wx-row{gap:4px 7px;font-size:0.74rem}#wx-row .wx-slot:nth-child(n+5){display:none}#wx-row .wx-rain{display:none}#hd-sun .sun-icon{font-size:1.02rem}}
+@media(max-width:700px){#wx-row{gap:4px 6px;font-size:0.7rem}#wx-row .wx-slot:nth-child(n+4){display:none}#hd-sun .sun-icon{font-size:0.98rem}}
+@media(max-width:500px){#wx-row{gap:3px 5px;font-size:0.65rem}#wx-row .wx-slot:nth-child(n+3){display:none}#wx-row .wx-label{display:none}#wx-row .wx-icon{font-size:1rem}#hd-sun .sun-icon{font-size:0.9rem}}
 /* Weather icon animations — subtle, no perf impact. */
 #wx-row .wx-icon{will-change:transform,opacity}
 .wx-anim-sun{animation:wx-sun 3s ease-in-out infinite}
@@ -141,7 +364,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #hero-status{font-size:1rem;color:var(--success);font-weight:700}
 #hero-promo{font-size:0.95rem;color:var(--dim);font-style:italic;margin-top:4px}
 #hero-promo:empty{display:none}
-.mode-active #hero{background:radial-gradient(circle at 12% 50%,rgba(0,91,187,0.10),transparent 35%),radial-gradient(circle at 85% 40%,rgba(208,0,50,0.06),transparent 30%),linear-gradient(105deg,#FFFFFF 0%,#F8FAFF 40%,var(--blue-xsoft) 100%);border:none;border-radius:10px;padding:0 20px 0 0;margin:10px 0;box-shadow:0 8px 24px var(--shadow-soft),0 1px 0 rgba(255,255,255,0.8) inset}
+.mode-active #hero{background:radial-gradient(circle at 12% 50%,var(--blue-soft),transparent 35%),radial-gradient(circle at 85% 40%,var(--accent-xsoft),transparent 30%),linear-gradient(105deg,var(--surface) 0%,var(--surface-soft) 40%,var(--blue-xsoft) 100%);border:none;border-radius:10px;padding:0 20px 0 0;margin:10px 0;box-shadow:0 8px 24px var(--shadow-soft),inset 0 1px 0 var(--surface-soft)}
 .mode-active #hero-overview{display:none}
 .mode-active #hero-active{display:flex;align-items:stretch;gap:0;min-height:clamp(100px,12vw,160px)}
 /* photo box — stretches to match hero content height, min-height ensures decent size */
@@ -168,7 +391,8 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 @keyframes hero-glow{0%,100%{text-shadow:0 0 8px transparent}50%{text-shadow:0 0 28px var(--accent)}}
 @keyframes hero-breathe{0%,100%{opacity:0.7}50%{opacity:1}}
 #hero-badges{display:inline-flex;flex-wrap:wrap;gap:6px}
-#hero-badges .badge{display:inline-block;background:var(--accent);color:#fff;padding:3px 10px;border-radius:4px;font-size:0.85rem;font-weight:600;margin:0 3px 3px 0}
+#hero-badges .badge{display:inline-block;padding:3px 10px;border-radius:4px;font-size:0.85rem;font-weight:600;margin:0 3px 3px 0}
+#hero-badges .badge:not(.band-badge):not(.mode-badge){background:var(--accent);color:#fff}
 #hero-badges .badge.info{background:var(--blue-soft);color:var(--blue-dark);border:1px solid var(--border)}
 #hero-badges .badge.dupe{background:var(--warn);color:#fff}
 #hero-badges .badge.success{background:var(--success);color:#fff}
@@ -177,6 +401,10 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #hero-identity:empty{visibility:hidden}
 #hero-refs{font-size:0.85rem;color:var(--success);font-weight:600;line-height:1.3;min-height:1.3em}
 #hero-refs:empty{visibility:hidden}
+#hero-providers{display:inline-flex;flex-wrap:wrap;gap:3px;margin-top:2px;min-height:0}
+#hero-providers:empty{display:none}
+#hero-providers .provider-badge{display:inline-block;padding:1px 6px;border-radius:3px;font-weight:600;font-size:0.7rem;line-height:1.4;background:var(--blue-soft);color:var(--blue-dark);text-decoration:none;transition:opacity 0.15s}
+#hero-providers .provider-badge[href]:hover{opacity:0.75}
 #hero-meta{font-size:0.8rem;color:var(--dim);min-height:1em}
 #hero-meta:empty{visibility:hidden}
 /* Weather box — right side of hero, clean inline display. */
@@ -212,32 +440,43 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 /* APRS range circle — dashed, visible above tiles */
 .aprs-range-circle{stroke-dasharray:10 6!important;pointer-events:none}
 /* recent panel as bottom-row card */
-.panel-recent{flex:2.11;display:flex;flex-direction:column}
+#recent-panel{display:flex;flex-direction:column}
 #recent-panel h2{font-size:0.85rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:4px;flex-shrink:0}
 #recent-table-wrap{overflow-y:auto;flex:1;max-height:320px}
 #recent-table{width:100%;border-collapse:collapse;font-size:0.85rem;table-layout:fixed}
 #recent-table th{text-align:left;color:var(--text-secondary);font-weight:600;padding:4px 6px;border-bottom:1.5px solid var(--border-strong);white-space:nowrap;position:sticky;top:0;background:var(--surface);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.3px}
-#recent-table th:nth-child(1){width:10%} /* UTC */
-#recent-table th:nth-child(2){width:18%} /* Call */
-#recent-table th:nth-child(3){width:9%}  /* Band */
-#recent-table th:nth-child(4){width:9%}  /* Mode */
+#recent-table th:nth-child(1){width:7%}  /* UTC */
+#recent-table th:nth-child(2){width:22%} /* Call */
+#recent-table th:nth-child(3){width:8%}  /* Band */
+#recent-table th:nth-child(4){width:8%}  /* Mode */
 /* Op column (5th) hidden by default, shown at FullHD+. */
 .recent-op-col{display:none}
-#recent-table th:nth-child(6){width:13%} /* RST */
-#recent-table th:nth-child(7){width:21%} /* Dist/Dir */
-#recent-table th:nth-child(8){width:20%} /* Country */
+#recent-table th:nth-child(6){width:8%}  /* RST */
+#recent-table th:nth-child(7){width:18%} /* Dist/Dir */
+#recent-table th:nth-child(8){width:29%} /* Country */
 #recent-table td{padding:4px 6px;border-bottom:1px solid var(--table-border);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-size:0.85rem;line-height:1.4}
 #recent-table td:nth-child(2){font-weight:700;font-size:0.9rem}
 #recent-table td strong{color:var(--text)}
 #recent-table tbody tr:nth-child(even){background:var(--table-alt)}
-/* Top QSOs alternating row colors — match Recent QSOs table. */
-#topqsos-fields dt{font-weight:700;font-size:0.9rem;color:var(--text)}
-/* Top QSOs alternating row colors — match Recent QSOs table. */
-#topqsos-fields dt:nth-of-type(even),#topqsos-fields dd:nth-of-type(even){background:var(--table-alt)}
+/* Top QSOs table — exact match of Recent QSOs formatting */
+#topqsos-panel{display:flex;flex-direction:column}
+#topqsos-panel h2{font-size:0.85rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:4px;flex-shrink:0}
+#topqsos-table-wrap{overflow-y:auto;flex:1;max-height:320px}
+#topqsos-table{width:100%;border-collapse:collapse;font-size:0.85rem;table-layout:fixed}
+#topqsos-table th{text-align:left;color:var(--text-secondary);font-weight:600;padding:4px 6px;border-bottom:1.5px solid var(--border-strong);white-space:nowrap;position:sticky;top:0;background:var(--surface);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.3px}
+#topqsos-table td{padding:4px 6px;border-bottom:1px solid var(--table-border);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-size:0.85rem;line-height:1.4}
+#topqsos-table td:first-child{font-weight:700;font-size:0.9rem}
+#topqsos-table tbody tr:nth-child(even){background:var(--table-alt)}
+#topqsos-table th:nth-child(1){width:28%} /* Call */
+#topqsos-table th:nth-child(2){width:14%} /* Band */
+#topqsos-table th:nth-child(3){width:14%} /* Mode */
+#topqsos-table th:nth-child(4){width:20%} /* Dist */
+#topqsos-table th:nth-child(5){width:24%} /* Country */
 #recent-table tbody tr.new-row{animation:flash 1.2s ease-out}
 @keyframes flash{from{background:var(--blue-soft);color:var(--blue-dark)}to{background:transparent;color:inherit}}
 /* Recent QSOs badge pills for band/mode cells. */
 .recent-badge{display:inline-block;padding:1px 5px;border-radius:3px;font-weight:600;font-size:0.7rem;line-height:1.4}
+.recent-badge.country-badge{background:rgba(0,122,61,0.16);color:var(--success);font-weight:500;font-size:0.8rem}
 
 /* ── extra module styles: band conditions, session summary ── */
 .band-cond-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px 14px;font-size:0.76rem;line-height:1.5;align-items:center;justify-items:start}
@@ -254,36 +493,33 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 .freshness-grid{display:flex;flex-wrap:wrap;justify-content:center;gap:3px 10px;font-size:0.78rem;color:var(--text-secondary);line-height:1.5}
 .fr-row{white-space:nowrap}
 .fr-label{font-weight:600;color:var(--dim);font-size:0.72rem;text-transform:uppercase;letter-spacing:0.3px}
-/* ── Top QSOs badges ── */
-.tq-badge{display:inline-block;padding:0 5px;border-radius:3px;font-size:0.7rem;font-weight:600;margin-left:2px}
-.tq-dist{color:var(--dim);font-size:0.82rem}
-.tq-country{color:var(--success);font-size:0.78rem;font-weight:500}
+/* ── Top QSOs longest row highlight ── */
 .tq-longest{color:var(--accent);font-weight:700}
-.tq-longest strong{color:var(--accent)}
-.tq-op{color:var(--dim-soft);font-size:0.72rem}
+.tq-longest td{color:var(--accent)}
 /* ── Stats panel badges ── */
 .stat-badge{display:inline-block;padding:1px 6px;border-radius:3px;font-weight:600;font-size:0.7rem;margin-left:3px;vertical-align:middle}
-.stat-badge-op{background:rgba(90,55,160,0.18);color:var(--dim);font-weight:500}
+.stat-badge-op{font-weight:500}
 .stat-op-count{font-weight:700;color:var(--text);margin-right:2px;font-size:inherit}
 .stat-op-more{font-size:0.72rem;color:var(--dim);margin-left:2px;vertical-align:middle}
-/* Operator badge in station panel gets accent styling. */
-#sf-Operator .stat-badge-op{background:var(--accent-soft, rgba(0,91,187,0.22));color:var(--accent, #005bbb);font-size:0.78rem;padding:2px 8px;font-weight:600}
+.rate-badge{background:var(--blue-soft);color:var(--blue-dark);font-weight:600}
+/* Operator badge in station panel. */
+#sf-Operator .stat-badge-op{font-size:0.78rem;padding:2px 8px;font-weight:600}
 .panel dd .stat-badge:first-child{margin-left:0}
 /* ── bottom row cards ── */
-main{display:flex;gap:10px;margin-bottom:10px;flex:0 0 auto;max-height:30vh;overflow-y:auto}
+main{display:grid;grid-template-columns:minmax(290px,0.9fr) minmax(270px,0.85fr) minmax(380px,1.15fr) minmax(680px,2.2fr);gap:14px;margin-bottom:10px;max-height:30vh;overflow-y:auto}
 .mode-active main{opacity:0.85}
-.panel{flex:1;background:var(--surface);border-radius:var(--card-radius);padding:10px 14px;min-width:0;border:1px solid var(--border);box-shadow:0 2px 8px var(--shadow),0 0 0 1px rgba(255,255,255,0.5) inset}
-.panel-narrow{flex:0.40}
-.panel-topqsos{flex:0.58}
+.panel{background:var(--surface);border-radius:var(--card-radius);padding:10px 14px;min-width:0;border:1px solid var(--border);box-shadow:0 2px 8px var(--shadow),inset 0 0 0 1px var(--surface-soft)}
+.panel-narrow{min-width:0}
+.panel-topqsos{min-width:0}
 .panel h2{font-size:0.85rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:6px}
-.panel dl{display:grid;grid-template-columns:auto 1fr;gap:2px 8px}
+.panel dl{display:grid;grid-template-columns:minmax(0,auto) 1fr;gap:2px 8px;min-width:0;overflow:hidden}
 .panel dt{color:var(--dim);font-size:0.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .panel dd{font-size:0.9rem;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #stats-fields dd{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .panel dd strong{color:var(--text)}
 .status-on{color:var(--success)}.status-off{color:var(--offline)}
 
-footer{text-align:center;color:var(--dim);font-size:0.75rem;padding:6px;margin-top:auto}
+footer{text-align:center;color:var(--dim);font-size:0.75rem;padding:6px;margin-top:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 footer a{color:var(--blue);text-decoration:none}
 footer a:hover{text-decoration:underline}
 .footer-rainviewer{display:none}
@@ -302,6 +538,21 @@ footer a:hover{text-decoration:underline}
 
 .partner-dot{animation:pulse-partner 1.4s ease-in-out infinite}
 @keyframes pulse-partner{0%,100%{opacity:0.35;stroke-width:2}50%{opacity:1;stroke-width:4}}
+/* ── Disconnected overlay ── */
+#disconnected-overlay{display:none;position:fixed;inset:0;z-index:10000;
+  background:var(--page-bg);flex-direction:column;align-items:center;justify-content:center;gap:12px;
+  font-family:system-ui,-apple-system,sans-serif;text-align:center}
+#disconnected-overlay.show{display:flex}
+#disconnected-logo{animation:disc-pulse 2s ease-in-out infinite}
+#disconnected-logo img{width:80px;height:80px;object-fit:contain;border-radius:16px}
+#disconnected-title{font-size:1.4rem;font-weight:700;color:var(--text);letter-spacing:0.5px;margin-top:4px}
+#disconnected-timer{font-size:2.2rem;font-weight:300;color:var(--accent);font-variant-numeric:tabular-nums;letter-spacing:2px}
+#disconnected-sub{font-size:0.85rem;color:var(--text-secondary);margin-top:2px}
+#disconnected-note{font-size:0.72rem;color:var(--dim);margin-top:8px}
+@keyframes disc-pulse{0%,100%{opacity:0.4}50%{opacity:1}}
+.mode-active .station-dot{animation:pulse-station 1.6s ease-in-out infinite}
+@keyframes pulse-station{0%,100%{opacity:0.85;fill-opacity:0.85}50%{opacity:1;fill-opacity:1}}
+.local-station-dot{animation:pulse-station 1.6s ease-in-out infinite}
 
 /* ── QSO logged toast ── */
 #qso-toast{
@@ -332,6 +583,7 @@ footer a:hover{text-decoration:underline}
   #hero-call{font-size:clamp(22px,4vw,44px)}
   #hero-photo-box{width:clamp(120px,18vw,200px)}
   #hero-badges .badge{font-size:0.65rem;padding:1px 6px}
+  #hero-providers .provider-badge{font-size:0.6rem;padding:1px 4px}
   #hero-identity{font-size:0.72rem}
   #hero-refs{font-size:0.65rem}
   #hero-label{font-size:0.65rem}
@@ -341,6 +593,7 @@ footer a:hover{text-decoration:underline}
   main{gap:4px;margin-bottom:2px}
   .panel{padding:4px 8px}
   #recent-table-wrap{max-height:150px}
+  #topqsos-table-wrap{max-height:150px}
   .panel h2{margin-bottom:1px;font-size:0.66rem}
   .panel dt{font-size:0.64rem}
   .panel dd{font-size:0.72rem}
@@ -360,9 +613,21 @@ footer a:hover{text-decoration:underline}
   main{gap:2px;margin-bottom:1px}
   .panel{padding:2px 5px}
   #recent-table-wrap{max-height:80px}
+  #topqsos-table-wrap{max-height:80px}
   .panel h2{font-size:0.56rem;margin-bottom:1px}
   .panel dt,.panel dd{font-size:0.56rem}
   footer{padding:1px;font-size:0.5rem}
+}
+
+/* ── responsive: mid-width — hide stats panel, 3-column grid ── */
+@media(max-width:1350px){
+  #stats-panel{display:none}
+  main{grid-template-columns:minmax(280px,1fr) minmax(400px,1.2fr) minmax(540px,2.5fr);gap:10px}
+  #recent-table th:nth-child(1){width:8%}
+  #recent-table th:nth-child(2){width:22%}
+  #recent-table th:nth-child(6){width:8%}
+  #recent-table th:nth-child(7){width:17%}
+  #recent-table th:nth-child(8){width:27%}
 }
 
 /* ── responsive: narrow screens — fewer, more aggressive steps ── */
@@ -380,13 +645,14 @@ footer a:hover{text-decoration:underline}
   #hero-identity{font-size:0.85rem}
   #hero-photo-box{width:clamp(140px,26vw,220px)}
   #hero-badges .badge{font-size:0.72rem;padding:2px 8px}
+  #hero-providers .provider-badge{font-size:0.65rem;padding:1px 5px}
   #map-table-row{flex-direction:column;gap:6px;min-height:280px;margin-bottom:6px}
   #map-local-right{gap:6px}
   #map-local-panel{min-height:160px}
   #recent-table{font-size:0.7rem}
   #recent-table th,#recent-table td{padding:1px 3px}
-  main{flex-wrap:wrap;gap:6px}
-  .panel{flex:1 1 45%;min-width:140px;padding:6px 8px}
+  main{grid-template-columns:1fr 1fr;gap:6px}
+  .panel{padding:6px 8px}
   .panel h2{font-size:0.72rem;margin-bottom:3px}
   .panel dt{font-size:0.68rem}
   .panel dd{font-size:0.75rem}
@@ -404,8 +670,8 @@ footer a:hover{text-decoration:underline}
   #map-table-row{flex-direction:column;gap:4px;min-height:220px;margin-bottom:4px}
   #map-local-right{gap:4px}
   #map-local-panel{min-height:140px}
-  main{flex-direction:column;gap:4px}
-  .panel{flex:1 1 100%}
+  main{grid-template-columns:1fr;gap:4px}
+  .panel{padding:4px 6px}
 }
 
 /* ── Full HD / TV display polish (1920×1080+) ── */
@@ -421,9 +687,9 @@ footer a:hover{text-decoration:underline}
   #hd-sun .sun-icon{font-size:1.2rem}
   /* ── active hero: premium broadcast background ── */
   .mode-active #hero{background:
-    radial-gradient(circle at 18% 45%,rgba(0,91,187,0.10),transparent 34%),
-    radial-gradient(circle at 82% 38%,rgba(208,0,50,0.06),transparent 30%),
-    linear-gradient(110deg,#FFFFFF 0%,#F7FAFF 48%,#EEF5FF 100%);
+    radial-gradient(circle at 18% 45%,var(--blue-soft),transparent 34%),
+    radial-gradient(circle at 82% 38%,var(--accent-xsoft),transparent 30%),
+    linear-gradient(110deg,var(--surface) 0%,var(--surface-soft) 48%,var(--blue-xsoft) 100%);
     padding:0 24px 0 0;min-height:auto}
   .mode-active #hero-active{min-height:80px}
   #hero-call{font-size:clamp(36px,4vw,60px)}
@@ -431,6 +697,7 @@ footer a:hover{text-decoration:underline}
   #hero-identity{font-size:0.95rem}
   #hero-label{font-size:0.85rem}
   #hero-badges .badge{font-size:0.85rem;padding:4px 12px}
+  #hero-providers .provider-badge{font-size:0.7rem;padding:1px 6px}
   #hero-wx-icon{font-size:2.8rem}
   #hero-wx-temp{font-size:2rem}
   #wx-row{font-size:0.88rem;gap:6px 22px;padding:6px 0}
@@ -450,22 +717,97 @@ footer a:hover{text-decoration:underline}
   .panel h2{font-size:0.85rem}
   /* Show Operator column at FullHD+. */
   .recent-op-col{display:table-cell}
-  #recent-table th:nth-child(1){width:9%}  /* UTC */
-  #recent-table th:nth-child(2){width:17%} /* Call */
+  #recent-table th:nth-child(1){width:7%}  /* UTC */
+  #recent-table th:nth-child(2){width:16%} /* Call */
   #recent-table th:nth-child(3){width:8%}  /* Band */
   #recent-table th:nth-child(4){width:8%}  /* Mode */
-  #recent-table th:nth-child(5){width:8%}  /* Op */
-  #recent-table th:nth-child(6){width:9%}  /* RST */
-  #recent-table th:nth-child(7){width:19%} /* Dist/Dir */
-  #recent-table th:nth-child(8){width:22%} /* Country */
-}
-  .panel{padding:14px 20px}
-  .panel h2{font-size:0.9rem;margin-bottom:6px}
-  .panel dt{font-size:0.86rem}
-  .panel dd{font-size:0.94rem}
-  #recent-table-wrap{max-height:320px}
-  #recent-table{font-size:0.85rem}
-  #recent-table th,#recent-table td{padding:3px 6px}
-  /* footer */
+  #recent-table th:nth-child(5){width:10%} /* Op */
+  #recent-table th:nth-child(6){width:8%}  /* RST */
+  #recent-table th:nth-child(7){width:17%} /* Dist/Dir */
+  #recent-table th:nth-child(8){width:26%} /* Country */
+  #topqsos-table{font-size:0.88rem}
+  #topqsos-table th,#topqsos-table td{padding:3px 6px}
+  #topqsos-table-wrap{max-height:320px}
   footer{padding:8px;font-size:0.8rem}
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   Dark theme — technical enhancements (CQOps RF Console)
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* Panel glow — subtle backlight on dark surfaces. */
+:root.dark .panel,
+:root.dark .card {
+  border:1px solid var(--border);
+  background:
+    linear-gradient(145deg,rgba(255,255,255,0.022),transparent 42%),
+    var(--surface);
+  box-shadow:
+    0 14px 38px var(--shadow-soft),
+    inset 0 1px 0 rgba(255,255,255,0.035),
+    inset 0 0 24px rgba(40,130,190,0.025);
+}
+/* Active hero: keep its gradient, just enhance the shadow in dark mode. */
+:root.dark .mode-active #hero {
+  box-shadow:
+    0 14px 38px var(--shadow-soft),
+    inset 0 1px 0 rgba(255,255,255,0.035),
+    inset 0 0 24px rgba(40,130,190,0.025);
+}
+:root.dark .panel:hover,
+:root.dark .card:hover {
+  border-color:var(--border-strong);
+}
+
+/* Header diamond — instrument-style markers. */
+:root.dark .panel-title::before,
+:root.dark .widget-title::before,
+:root.dark h2::before,
+:root.dark h3::before {
+  content:"◆";
+  margin-right:0.55rem;
+  color:var(--cyan);
+  font-size:0.65em;
+  filter:drop-shadow(0 0 5px rgba(53,221,231,0.4));
+}
+:root.dark .panel-title,
+:root.dark .widget-title,
+:root.dark h2,
+:root.dark h3 {
+  color:var(--text);
+  letter-spacing:0.075em;
+  text-transform:uppercase;
+  text-shadow:0 0 14px rgba(53,221,231,0.10);
+}
+
+/* Technical grid — barely visible, non-fatiguing. */
+:root.dark body {
+  background:
+    radial-gradient(circle at 15% 0%,var(--body-grad-1),transparent 34%),
+    radial-gradient(circle at 85% 5%,var(--body-grad-2),transparent 38%),
+    linear-gradient(rgba(78,160,210,0.022) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(78,160,210,0.022) 1px,transparent 1px),
+    linear-gradient(150deg,var(--body-grad-3),var(--body-grad-4) 55%,var(--body-grad-5));
+  background-size:auto,auto,32px 32px,32px 32px,auto;
+  color:var(--text);
+}
+
+/* Status glow — only active data, TX/RX, alarms. */
+:root.dark .status-online,
+:root.dark .status-rx,
+:root.dark .sse-connected {
+  color:var(--success);
+  text-shadow:0 0 10px rgba(79,227,154,0.35);
+}
+:root.dark .status-tx,
+:root.dark .status-critical,
+:root.dark .status-active {
+  color:var(--accent);
+  text-shadow:0 0 12px rgba(255,59,92,0.42);
+}
+:root.dark .status-warning,
+:root.dark .sse-connecting {
+  color:var(--warn);
+  text-shadow:0 0 10px rgba(255,180,84,0.28);
+}
+

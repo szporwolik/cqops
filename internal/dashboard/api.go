@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/szporwolik/cqops/assets"
 )
 
 // NewMux builds the HTTP handler tree for the dashboard.
@@ -43,6 +45,12 @@ func NewMux(state *State, hub *Hub) *http.ServeMux {
 	mux.HandleFunc("/api/aprs", handleAPRS(state))
 	mux.HandleFunc("/api/events", handleEvents(state, hub))
 	mux.HandleFunc("/healthz", handleHealthz())
+
+	// Embedded logo — served from binary, no internet required.
+	mux.HandleFunc("/logo.png", handleLogo())
+
+	// Embedded world map — offline fallback for Leaflet when tiles are unavailable.
+	mux.HandleFunc("/api/map-earth", handleMapEarth())
 
 	// Radar tile proxy — avoids CORS/ORB issues with RainViewer CDN.
 	mux.HandleFunc("/radar-proxy/", handleRadarProxy())
@@ -132,6 +140,25 @@ func handleHealthz() http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, `{"status":"ok"}`)
+	}
+}
+
+// handleLogo serves the embedded CQOps logo PNG from the binary.
+func handleLogo() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		w.Write(assets.Logo)
+	}
+}
+
+// handleMapEarth serves the embedded equirectangular world map JPEG for
+// offline Leaflet fallback when tile servers are unreachable.
+func handleMapEarth() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		w.Write(assets.WorldMap)
 	}
 }
 
@@ -231,7 +258,7 @@ func serveStaticFile(embedPath, contentType string) http.HandlerFunc {
 			return
 		}
 		w.Header().Set("Content-Type", contentType)
-		w.Header().Set("Cache-Control", "public, max-age=3600")
+		w.Header().Set("Cache-Control", "no-cache")
 		w.WriteHeader(http.StatusOK)
 		w.Write(data)
 	}
@@ -254,6 +281,11 @@ func handleRadarProxy() http.HandlerFunc {
 
 		path := strings.TrimPrefix(r.URL.Path, "/radar-proxy")
 		if path == r.URL.Path || path == "" || path == "/" {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		// Prevent path traversal — reject paths containing "..".
+		if strings.Contains(path, "..") {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}

@@ -33,6 +33,7 @@ const (
 	EventPartner    EventType = "partner"
 	EventToday      EventType = "today"
 	EventAPRS       EventType = "aprs"
+	EventDisplay    EventType = "display"
 	EventHeartbeat  EventType = "heartbeat"
 )
 

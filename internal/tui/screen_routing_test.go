@@ -5,7 +5,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/szporwolik/cqops/internal/qrz"
+	"github.com/szporwolik/cqops/internal/callbook"
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
@@ -146,14 +146,14 @@ func TestFlrigResult_ZeroValuesNoPanic(t *testing.T) {
 
 func TestQRZResult_Success(t *testing.T) {
 	m := newTestModel()
-	m.App.Config.Integrations.QRZ.Enabled = true
-	m.App.Config.Integrations.QRZ.User = "testuser"
+	m.App.Config.Integrations.Callbook.QRZ.Enabled = true
+	m.App.Config.Integrations.Callbook.QRZ.User = "testuser"
 	m.fields[fieldCall].SetValue("SP9XXX")
-	msg := qrzResultMsg{
+	msg := callbookResultMsg{
 		Call: "SP9XXX",
-		Data: &qrz.CallData{Callsign: "SP9XXX", Name: "Test", Grid: "JO90"},
+		Data: &callbook.Result{Callsign: "SP9XXX", Name: "Test", Grid: "JO90"},
 	}
-	m.fillQRZData(msg)
+	m.fillCallbookData(msg)
 	if m.lookup.partnerData == nil {
 		t.Fatal("partnerData should be set")
 	}
@@ -164,8 +164,8 @@ func TestQRZResult_Success(t *testing.T) {
 
 func TestQRZResult_NilDataNoPanic(t *testing.T) {
 	m := newTestModel()
-	msg := qrzResultMsg{Call: "SP9XXX"}
-	m.fillQRZData(msg)
+	msg := callbookResultMsg{Call: "SP9XXX"}
+	m.fillCallbookData(msg)
 }
 
 // =============================================================================
@@ -306,7 +306,7 @@ func TestApplyWSJTXStatus_NewCall(t *testing.T) {
 func TestApplyWSJTXStatus_SameCallPreservesPartner(t *testing.T) {
 	m := newTestModel()
 	m.fields[fieldCall].SetValue("SP9XXX")
-	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9XXX", Name: "Test"}
+	m.lookup.partnerData = &callbook.Result{Callsign: "SP9XXX", Name: "Test"}
 	m.applyWSJTXStatus("SP9XXX", "", 0, "", "", "", "", false)
 	if m.lookup.partnerData == nil {
 		t.Error("partnerData should be preserved when same call")
@@ -316,7 +316,7 @@ func TestApplyWSJTXStatus_SameCallPreservesPartner(t *testing.T) {
 func TestApplyWSJTXStatus_EmptyCallPreservesState(t *testing.T) {
 	m := newTestModel()
 	m.fields[fieldCall].SetValue("SP9XXX")
-	m.lookup.partnerData = &qrz.CallData{Callsign: "SP9XXX", Name: "Test"}
+	m.lookup.partnerData = &callbook.Result{Callsign: "SP9XXX", Name: "Test"}
 	m.applyWSJTXStatus("", "", 0, "", "", "", "", false)
 	if m.fields[fieldCall].Value() != "SP9XXX" {
 		t.Errorf("call field should be preserved, got %q", m.fields[fieldCall].Value())
@@ -342,12 +342,21 @@ func TestHandlePendingRequests_NoPending(t *testing.T) {
 }
 
 func TestHandlePendingRequests_QRZNeedWithCall(t *testing.T) {
+	orig := callbookRegLookup
+	t.Cleanup(func() { callbookRegLookup = orig })
+	callbookRegLookup = func(m *Model, call string) (*callbook.Result, error) {
+		return &callbook.Result{Callsign: "SP9XXX", Provider: "test"}, nil
+	}
+
 	m := newTestModel()
 	m.inetOnline = true
 	m.lookup.qrzNeed = true
 	m.lookup.qrzCall = "SP9XXX"
-	m.App.Config.Integrations.QRZ.Enabled = true
-	m.App.Config.Integrations.QRZ.User = "testuser"
+	m.App.Config.Integrations.Callbook.QRZ.Enabled = true
+	m.App.Config.Integrations.Callbook.QRZ.User = "testuser"
+	// Set up a registry so callbookLookup doesn't bail out early.
+	m.callbookRegistry = callbook.NewRegistry(nil) // non-nil but empty; mock handles it
+
 	cmd, handled := m.handlePendingRequests(nil)
 	if !handled {
 		t.Error("handlePendingRequests with qrzNeed should be handled")
@@ -364,7 +373,7 @@ func TestHandlePendingRequests_QRZNeedDisabled(t *testing.T) {
 	m := newTestModel()
 	m.lookup.qrzNeed = true
 	m.lookup.qrzCall = "SP9XXX"
-	m.App.Config.Integrations.QRZ.Enabled = false
+	m.App.Config.Integrations.Callbook.QRZ.Enabled = false
 	cmd, handled := m.handlePendingRequests(nil)
 	if !handled {
 		t.Error("handlePendingRequests should handle disabled QRZ (triggers DXC lookup)")

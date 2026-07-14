@@ -642,5 +642,8 @@ func EnsureColumns(db *sql.DB) []string {
 		}
 		cols = append(cols, name)
 	}
+	if err := rows.Err(); err != nil {
+		return cols
+	}
 	return cols
 }

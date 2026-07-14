@@ -108,9 +108,9 @@ func (m *Model) handleConfigUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd
 			m.App.Config.General.Timezone = m.ui.configMenu.timezone
 			m.App.Config.General.RenderMap = m.ui.configMenu.renderMap
 			m.App.Config.General.DrawGrayline = m.ui.configMenu.drawGrayline
-			m.App.Config.General.PictureAtQRZPane = m.ui.configMenu.pictureAtQRZ
+			m.App.Config.General.PictureAtPartnerPane = m.ui.configMenu.pictureAtQRZ
 			m.App.Config.General.SolarAtQSOPane = m.ui.configMenu.solarAtQSO
-			m.App.Config.General.UseCTY = m.ui.configMenu.useCTY
+			m.App.Config.General.UseCTY = true // always on
 			m.App.Config.General.UseSCP = m.ui.configMenu.useSCP
 			m.App.Config.General.UseRef = m.ui.configMenu.useRef
 			m.App.Config.General.Debug = m.ui.configMenu.debugMode
@@ -153,6 +153,17 @@ func (m *Model) handleNotificationsUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 	m.ui.notifMenu.height = m.height
 	_, notifCmd := m.ui.notifMenu.Update(msg)
 	cmd = tea.Batch(cmd, notifCmd)
+
+	// Show test result toasts.
+	if m.ui.notifMenu.statusMsg != "" {
+		if strings.Contains(m.ui.notifMenu.statusMsg, "failed") || strings.Contains(m.ui.notifMenu.statusMsg, "unavailable") {
+			m.toasts.Error(m.ui.notifMenu.statusMsg)
+		} else {
+			m.toasts.Success(m.ui.notifMenu.statusMsg)
+		}
+		m.ui.notifMenu.statusMsg = ""
+	}
+
 	if m.ui.notifMenu.done {
 		m.screen = screenQSO
 		if m.ui.notifMenu.goBack {
@@ -161,8 +172,8 @@ func (m *Model) handleNotificationsUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 		if m.ui.notifMenu.saved {
 			m.App.Config.General.Notifications.Enabled = m.ui.notifMenu.enabled
 			m.App.Config.General.Notifications.QSO = m.ui.notifMenu.qso
-			m.App.Config.General.Notifications.Wavelog = m.ui.notifMenu.wavelog
-			m.App.Config.General.Notifications.WavelogErrors = m.ui.notifMenu.wavelogErrors
+			m.App.Config.General.Notifications.QSOSent = m.ui.notifMenu.wavelog
+			m.App.Config.General.Notifications.AllErrors = m.ui.notifMenu.allErrors
 			m.App.Config.General.Notifications.BeepOnError = m.ui.notifMenu.beepOnError
 			m.applyBeepOnError()
 			m.saveConfig("Settings saved")
@@ -185,13 +196,30 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 		m.ui.integrationMenu.SaveError = ""
 	}
 
+	// Show APRS test toasts.
+	if m.ui.integrationMenu.aprsToast != "" {
+		if strings.Contains(m.ui.integrationMenu.aprsToast, "connection verified") {
+			m.toasts.Success(m.ui.integrationMenu.aprsToast)
+		} else {
+			m.toasts.Error(m.ui.integrationMenu.aprsToast)
+		}
+		m.ui.integrationMenu.aprsToast = ""
+	}
+
 	if m.ui.integrationMenu.done {
 		m.screen = screenQSO
 		if m.ui.integrationMenu.goBack {
 			m.screen = screenMainMenu
 		}
+		if m.ui.integrationMenu.goCallbook {
+			m.ui.callbookMenu = NewCallbookMenu(m.App.Config)
+			m.ui.callbookMenu.width = m.width
+			m.ui.callbookMenu.height = m.height
+			m.screen = screenCallbook
+			return m, cmd
+		}
 		if m.ui.integrationMenu.saved {
-			dxcE, dxcHost, dxcPort, dxcLogin, qrzE, qrzUser, qrzPass, httpE, httpAddr, httpPort, httpHdr1, httpHdr2, httpLogo, httpEvtStart := m.ui.integrationMenu.Values()
+			dxcE, dxcHost, dxcPort, dxcLogin, _, _, _, httpE, httpAddr, httpPort, httpTheme, httpHdr1, httpHdr2, httpLogo, httpQRLink, httpEvtStart := m.ui.integrationMenu.Values()
 
 			// Restart the HTTP server when address, port, or enabled
 			// state actually change, OR when the server should be running
@@ -206,15 +234,15 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			m.App.Config.Integrations.DXC.Host = dxcHost
 			m.App.Config.Integrations.DXC.Port = dxcPort
 			m.App.Config.Integrations.DXC.Login = dxcLogin
-			m.App.Config.Integrations.QRZ.Enabled = qrzE
-			m.App.Config.Integrations.QRZ.User = qrzUser
-			m.App.Config.Integrations.QRZ.Pass = qrzPass
+			// QRZ config now owned by CallbookMenu; integration menu no longer writes it.
 			m.App.Config.Integrations.HTTPServer.Enabled = httpE
 			m.App.Config.Integrations.HTTPServer.Address = httpAddr
 			m.App.Config.Integrations.HTTPServer.Port = httpPort
+			m.App.Config.Integrations.HTTPServer.Theme = httpTheme
 			m.App.Config.Integrations.HTTPServer.Header1 = httpHdr1
 			m.App.Config.Integrations.HTTPServer.Header2 = httpHdr2
 			m.App.Config.Integrations.HTTPServer.ClubLogo = httpLogo
+			m.App.Config.Integrations.HTTPServer.QRLink = httpQRLink
 			m.App.Config.Integrations.HTTPServer.EventStart = httpEvtStart
 
 			// GPS integration.
@@ -257,6 +285,12 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			m.resetDXC()
 			if needHTTPRestart {
 				m.restartHTTPServer()
+			}
+			// Push dashboard state immediately when server is online
+			// so theme and header changes appear without waiting for
+			// the next 2-second tick throttle.
+			if m.http.online && m.http.client != nil {
+				m.pushDashboardState()
 			}
 			// GPS: start, stop, or restart based on config changes.
 			gpsNowEnabled := m.App.Config.Integrations.GPS.Enabled
@@ -380,6 +414,11 @@ func (m *Model) handleMainMenuUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.C
 			m.ui.integrationMenu.width = m.width
 			m.ui.integrationMenu.height = m.height
 			m.screen = screenIntegration
+		case "callbook":
+			m.ui.callbookMenu = NewCallbookMenu(m.App.Config)
+			m.ui.callbookMenu.width = m.width
+			m.ui.callbookMenu.height = m.height
+			m.screen = screenCallbook
 		case "notifications":
 			m.ui.notifMenu = NewNotificationsMenu(m.App.Config)
 			m.ui.notifMenu.width = m.width
@@ -389,6 +428,52 @@ func (m *Model) handleMainMenuUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.C
 	}
 	if m.ui.mainMenu.done {
 		m.screen = screenQSO
+	}
+	return m, cmd
+}
+
+func (m *Model) handleCallbookUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
+	m.ui.callbookMenu.width = m.width
+	m.ui.callbookMenu.height = m.height
+	m.ui.callbookMenu.inetOnline = m.inetOnline
+
+	// Clear previous save error.
+	if m.ui.callbookMenu.SaveError != "" {
+		m.toasts.Warn(m.ui.callbookMenu.SaveError)
+		m.ui.callbookMenu.SaveError = ""
+	}
+
+	_, menuCmd := m.ui.callbookMenu.Update(msg)
+	cmd = tea.Batch(cmd, menuCmd)
+
+	// Show test result toasts (set during Update above).
+	if m.ui.callbookMenu.TestToast != "" {
+		if strings.Contains(m.ui.callbookMenu.TestToast, "verified") || strings.Contains(m.ui.callbookMenu.TestToast, "connected") {
+			m.toasts.Success(m.ui.callbookMenu.TestToast)
+		} else {
+			m.toasts.Error(m.ui.callbookMenu.TestToast)
+		}
+		m.ui.callbookMenu.TestToast = ""
+	}
+
+	if m.ui.callbookMenu.done {
+		if m.ui.callbookMenu.goBack {
+			m.screen = screenMainMenu
+			m.ui.mainMenu = NewMainMenu()
+			m.ui.mainMenu.width = m.width
+			m.ui.mainMenu.height = m.height
+			return m, cmd
+		}
+		if m.ui.callbookMenu.saved {
+			m.ui.callbookMenu.ToConfig(m.App.Config)
+			m.callbookRegistry = buildCallbookRegistry(m.App)
+			m.saveConfig("Settings saved")
+		}
+		m.screen = screenMainMenu
+		m.ui.mainMenu = NewMainMenu()
+		m.ui.mainMenu.width = m.width
+		m.ui.mainMenu.height = m.height
+		return m, cmd
 	}
 	return m, cmd
 }

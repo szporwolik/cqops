@@ -216,7 +216,7 @@ func (m *Model) handleBPLUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 // renderBPLContent applies scroll, cursor clamping, and cursor highlight
 // to a full list of lines, returning the visible window as a string.
 func (m *Model) renderBPLContent(lines []string) string {
-	maxVisible := contentHeight(m.height) - 7
+	maxVisible := contentHeight(m.height) - 5
 	if maxVisible < 3 {
 		maxVisible = 3
 	}
@@ -257,7 +257,14 @@ func (m *Model) renderBPLContent(lines []string) string {
 	if end > len(lines) {
 		end = len(lines)
 	}
+	moreAbove := m.bpl.scroll > 0
+	moreBelow := end < len(lines)
+
 	var b strings.Builder
+	if moreAbove {
+		b.WriteString(DimStyle.Render("  ▲ more above"))
+		b.WriteByte('\n')
+	}
 	cursorLine := m.bpl.cursor - m.bpl.scroll
 	for i := m.bpl.scroll; i < end; i++ {
 		if i-m.bpl.scroll == cursorLine {
@@ -270,6 +277,10 @@ func (m *Model) renderBPLContent(lines []string) string {
 		if i < end-1 {
 			b.WriteByte('\n')
 		}
+	}
+	if moreBelow {
+		b.WriteByte('\n')
+		b.WriteString(DimStyle.Render("  ▼ more below"))
 	}
 	return b.String()
 }
@@ -533,7 +544,7 @@ func (m *Model) viewBPLCB(region int) []string {
 	}
 
 	if cbProfile != nil {
-		lines = append(lines, S.Error.Render("NOT A HAM BAND")+" — "+cbProfile.Label)
+		lines = append(lines, S.Warning.Render("NOT A HAM BAND")+" — "+cbProfile.Label)
 		lines = append(lines, DimStyle.Render(fmt.Sprintf("%s–%s MHz  %s  %s", cbProfile.RangeLo, cbProfile.RangeHi, cbProfile.Mod, cbProfile.Note)))
 		lines = append(lines, "")
 		// Single-column layout — each channel on its own line for cursor navigation/tuning.
@@ -554,7 +565,7 @@ func (m *Model) viewBPLCB(region int) []string {
 		// UHF CB for R3.
 		for _, p := range profiles {
 			if p.ID == "CB_UHF_AU" {
-				lines = append(lines, S.Error.Render("NOT A HAM BAND")+" — "+p.Label)
+				lines = append(lines, S.Warning.Render("NOT A HAM BAND")+" — "+p.Label)
 				lines = append(lines, DimStyle.Render(fmt.Sprintf("%s–%s MHz  %s  %s", p.RangeLo, p.RangeHi, p.Mod, p.Note)))
 			}
 		}

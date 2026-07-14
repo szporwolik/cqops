@@ -60,15 +60,18 @@ func renderScrollableMenu(headerTitle string, content string, vp *viewport.Model
 		vp.SetContent(content)
 		*lastContent = content
 	}
-	if vp.PastBottom() {
-		vp.SetYOffset(vp.TotalLineCount() - vp.VisibleLineCount())
+	// Clamp Y offset manually — viewport.PastBottom() can be off by one.
+	if total := vp.TotalLineCount(); total > 0 {
+		vis := vp.VisibleLineCount()
+		if vis > 0 && vp.YOffset()+vis > total {
+			vp.SetYOffset(total - vis)
+		}
 	}
 	vpContent := vp.View()
-	hintLine := DimStyle.Width(vpW).Render(scrollHint(*vp))
-	if hintLine == "" {
-		hintLine = strings.Repeat(" ", vpW)
+	if hint := scrollHint(*vp); hint != "" {
+		hintLine := DimStyle.Width(vpW).Render(hint)
+		vpContent = lipgloss.JoinVertical(lipgloss.Left, vpContent, hintLine)
 	}
-	vpContent = lipgloss.JoinVertical(lipgloss.Left, vpContent, hintLine)
 	box := menuBoxStyle.Width(boxW).Render(vpContent)
 	return lipgloss.JoinVertical(lipgloss.Left, header, "", box)
 }
@@ -90,12 +93,22 @@ func scrollVpToLine(vp *viewport.Model, line int) {
 	if visible <= 0 {
 		return
 	}
+	total := vp.TotalLineCount()
 	top := vp.YOffset()
 	bottom := top + visible - 1
 	if line < top {
 		vp.SetYOffset(line)
 	} else if line > bottom {
-		vp.SetYOffset(line - visible + 1)
+		newYOff := line - visible + 1
+		// When near the bottom, snap to show the last page of content
+		// instead of leaving a few lines hidden below the focused field.
+		if line >= total-visible {
+			newYOff = total - visible
+		}
+		if newYOff < 0 {
+			newYOff = 0
+		}
+		vp.SetYOffset(newYOff)
 	}
 }
 
@@ -146,11 +159,14 @@ func padOrTrunc(s string, w int) string {
 func scrollHint(vp viewport.Model) string {
 	total := vp.TotalLineCount()
 	visible := vp.VisibleLineCount()
-	if total <= visible || total == 0 {
+	if total <= visible || total == 0 || visible == 0 {
 		return ""
 	}
-	atTop := vp.AtTop()
-	atBottom := vp.AtBottom()
+	// Compute position ourselves — viewport.AtBottom() can be off by one
+	// after SetContent due to trailing newlines or padding.
+	yOff := vp.YOffset()
+	atTop := yOff <= 0
+	atBottom := yOff+visible >= total
 	switch {
 	case atTop && !atBottom:
 		return "  ▼ more below"

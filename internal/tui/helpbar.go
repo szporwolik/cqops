@@ -10,7 +10,13 @@ import (
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/lipgloss/v2"
+
+	"github.com/szporwolik/cqops/internal/version"
 )
+
+func dimVersion() string {
+	return DimStyle.Render("v" + version.ResolvedFull())
+}
 
 // Pre-allocated confirm dialog key bindings — reused across all confirm screens.
 var confirmBindings = []key.Binding{
@@ -50,6 +56,7 @@ func (m *Model) helpView() string {
 	rigForm := 0
 	contestForm := 0
 	contestConfirm := 0
+	operatorForm := 0
 	if m.confirm != nil {
 		conf = 1
 	}
@@ -74,6 +81,9 @@ func (m *Model) helpView() string {
 	if m.ui.contestChooser != nil && m.ui.contestChooser.mode == contestConfirmDelete {
 		contestConfirm = 1
 	}
+	if m.ui.operatorChooser != nil && (m.ui.operatorChooser.mode == operatorEdit || m.ui.operatorChooser.mode == operatorCreate) {
+		operatorForm = 1
+	}
 	if m.ui.rigChooser != nil && m.ui.rigChooser.dialog != nil {
 		conf = 1
 	}
@@ -88,7 +98,7 @@ func (m *Model) helpView() string {
 	if m.ui.logbookEditor != nil && m.ui.logbookEditor.IsImporting() {
 		importing = 1
 	}
-	sig := m.buildHelpSig(m.screen, conf, spot, editing, chooserForm, rigForm, contestForm, contestConfirm, exporting, importing, suffix)
+	sig := m.buildHelpSig(m.screen, conf, spot, editing, chooserForm, rigForm, contestForm, contestConfirm, operatorForm, exporting, importing, suffix)
 	if m.rc.helpSig == sig && m.rc.helpView != "" {
 		return m.rc.helpView
 	}
@@ -200,7 +210,7 @@ func (m *Model) helpView() string {
 
 // buildHelpSig builds the help-bar cache key using strings.Builder to avoid
 // fmt.Sprintf allocation on every frame.
-func (m *Model) buildHelpSig(screen screenKind, conf, spot, editing, chooserForm, rigForm, contestForm, contestConfirm, exporting, importing int, suffix string) string {
+func (m *Model) buildHelpSig(screen screenKind, conf, spot, editing, chooserForm, rigForm, contestForm, contestConfirm, operatorForm, exporting, importing int, suffix string) string {
 	var b strings.Builder
 	b.WriteString(strconv.Itoa(int(screen)))
 	b.WriteByte('|')
@@ -219,6 +229,8 @@ func (m *Model) buildHelpSig(screen screenKind, conf, spot, editing, chooserForm
 	b.WriteString(strconv.Itoa(contestForm))
 	b.WriteByte('|')
 	b.WriteString(strconv.Itoa(contestConfirm))
+	b.WriteByte('|')
+	b.WriteString(strconv.Itoa(operatorForm))
 	b.WriteByte('|')
 	b.WriteString(strconv.Itoa(exporting))
 	b.WriteByte('|')
@@ -277,6 +289,12 @@ func (m *Model) helpSuffix() string {
 	}
 	m.rc.helpSuffixSig = sig
 	m.rc.helpSuffix = m.buildHelpSuffix()
+	ver := dimVersion()
+	if m.rc.helpSuffix != "" {
+		m.rc.helpSuffix = ver + "  " + m.rc.helpSuffix
+	} else {
+		m.rc.helpSuffix = ver
+	}
 	return m.rc.helpSuffix
 }
 
@@ -377,16 +395,7 @@ func (m *Model) buildHelpSuffix() string {
 		return fmt.Sprintf("Result %d/%d  Page %d/%d", m.ref.cursor+1, total, page, totalPages)
 	}
 	if m.screen == screenBPL {
-		total := m.bplRowCount()
-		if total > 0 {
-			tableH := bplTableHeight(m.height)
-			page := m.bpl.cursor/tableH + 1
-			totalPages := (total + tableH - 1) / tableH
-			if totalPages < 1 {
-				totalPages = 1
-			}
-			return fmt.Sprintf("Line %d/%d  Page %d/%d", m.bpl.cursor+1, total, page, totalPages)
-		}
+		return ""
 	}
 	if m.screen == screenDXC {
 		return ""

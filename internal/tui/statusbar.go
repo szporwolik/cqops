@@ -6,7 +6,6 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/config"
-	"github.com/szporwolik/cqops/internal/version"
 )
 
 // headerView renders the top status bar with callsign, logbook name,
@@ -40,7 +39,8 @@ func (m *Model) headerView() string {
 	}
 
 	leftParts := []string{
-		S.StatusApp.Render(" CQOps v" + version.Resolved() + " "),
+		S.StatusApp.Render(" CQOps "),
+		" ",
 		S.StatusLabel.Render("Log"),
 		" " + S.StatusValue.Render(truncateText(logName, 16)) + " ",
 		S.StatusLabel.Render("Rig"),
@@ -58,13 +58,7 @@ func (m *Model) headerView() string {
 	// Build right side first so we know how much width remains for MSG.
 	var rightParts []string
 
-	rightParts = append(rightParts, statusDotStyled(m.inetOnline, "Net", m.Offline))
-	if m.App.Config.Integrations.HTTPServer.Enabled {
-		rightParts = append(rightParts, statusDotStyled(m.http.online, "HTTP"))
-	}
-	if hasRig && rp.WsjtxEnabled {
-		rightParts = append(rightParts, statusDotStyled(m.wsjtx.online, "WSJT"))
-	}
+	// Core: Rig — fundamental, can't operate without frequency data.
 	if hasRig && rp.RadioBackend != "" {
 		rigLabel := "Rig"
 		switch rp.RadioBackend {
@@ -79,16 +73,27 @@ func (m *Model) headerView() string {
 			rightParts = append(rightParts, statusDotStyled(m.rig.connected, rigLabel))
 		}
 	}
-	if hasRig && rp.RotorBackend == "hamlib" {
-		rightParts = append(rightParts, statusDotStyled(m.rotor.connected, "Rotator"))
+
+	// Core: Net — internet required for callbook, spots, Wavelog.
+	rightParts = append(rightParts, statusDotStyled(m.inetOnline, "Net", m.Offline))
+
+	// Digital: WSJT-X.
+	if hasRig && rp.WsjtxEnabled {
+		rightParts = append(rightParts, statusDotStyled(m.wsjtx.online, "WSJT"))
 	}
+
+	// Spots: DX Cluster.
 	if m.App.Config.Integrations.DXC.Enabled {
 		rightParts = append(rightParts, statusDotStyled(m.dxc.online, "DXC", m.Offline))
 	}
+
+	// Logging: Wavelog cloud sync.
 	wl := m.App.Logbook.Wavelog
 	if wl != nil && wl.Enabled {
 		rightParts = append(rightParts, statusDotStyled(m.lookup.wlOnline, "WL", m.Offline))
 	}
+
+	// Position: APRS.
 	if m.App.Config.Integrations.APRS.Enabled {
 		aprsCfg := m.App.Logbook.APRS
 		if aprsCfg != nil && aprsCfg.Enabled {
@@ -100,7 +105,13 @@ func (m *Model) headerView() string {
 			rightParts = append(rightParts, statusDotStyled(online, label, m.Offline))
 		}
 	}
-	// GPS — red when disconnected, yellow when connected but no fix, white when fix acquired.
+
+	// Hardware: Rotator — optional, many stations don't have one.
+	if hasRig && rp.RotorBackend == "hamlib" {
+		rightParts = append(rightParts, statusDotStyled(m.rotor.connected, "Rotator"))
+	}
+
+	// Hardware: GPS — auxiliary position source.
 	if m.App.Config.Integrations.GPS.Enabled {
 		switch {
 		case m.gps.online && m.gps.hasFix:
@@ -111,8 +122,13 @@ func (m *Model) headerView() string {
 			rightParts = append(rightParts, statusDotOffStyle.Render("GPS")+" ")
 		}
 	}
+
+	// Auxiliary: HTTP dashboard — web interface, lowest priority.
+	if m.App.Config.Integrations.HTTPServer.Enabled {
+		rightParts = append(rightParts, statusDotStyled(m.http.online, "HTTP"))
+	}
 	rightParts = append(rightParts,
-		S.StatusTime.Render(now.Format("15:04")+"L  "+utc.Format("1504")+"Z"),
+		S.StatusTime.Render(now.Format("15:04")+"L "+utc.Format("1504")+"Z"),
 	)
 
 	right := lipgloss.JoinHorizontal(lipgloss.Top, rightParts...)

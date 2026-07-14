@@ -587,7 +587,7 @@ func TestListQSOsPage_ContestFilter(t *testing.T) {
 	mustInsertQSO(t, db, &qso.QSO{Call: "D4", QSODate: "20240504", TimeOn: "150000", Band: "10m", Mode: "SSB"})
 
 	// Page filtered by c1 — should return 2 rows.
-	qsos, err := ListQSOsPage(db, 10, 0, "c1")
+	qsos, err := ListQSOsPage(db, 10, 0, "c1", false)
 	if err != nil {
 		t.Fatalf("ListQSOsPage(c1): %v", err)
 	}
@@ -601,7 +601,7 @@ func TestListQSOsPage_ContestFilter(t *testing.T) {
 	}
 
 	// Page filtered by c2 — should return 1 row.
-	qsos, err = ListQSOsPage(db, 10, 0, "c2")
+	qsos, err = ListQSOsPage(db, 10, 0, "c2", false)
 	if err != nil {
 		t.Fatalf("ListQSOsPage(c2): %v", err)
 	}
@@ -613,7 +613,7 @@ func TestListQSOsPage_ContestFilter(t *testing.T) {
 	}
 
 	// Page with empty contestID (no filter) — should return all 4.
-	qsos, err = ListQSOsPage(db, 10, 0, "")
+	qsos, err = ListQSOsPage(db, 10, 0, "", false)
 	if err != nil {
 		t.Fatalf("ListQSOsPage(all): %v", err)
 	}
@@ -633,7 +633,7 @@ func TestListQSOsPage_ContestFilterPagination(t *testing.T) {
 	mustInsertQSO(t, db, &qso.QSO{Call: "X2", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB"})
 
 	// Page 1 of c1 — limit 2, offset 0.
-	qsos, err := ListQSOsPage(db, 2, 0, "c1")
+	qsos, err := ListQSOsPage(db, 2, 0, "c1", false)
 	if err != nil {
 		t.Fatalf("ListQSOsPage(c1, limit 2): %v", err)
 	}
@@ -642,7 +642,7 @@ func TestListQSOsPage_ContestFilterPagination(t *testing.T) {
 	}
 
 	// Page 2 of c1 — limit 2, offset 2. Should return 1 remaining.
-	qsos, err = ListQSOsPage(db, 2, 2, "c1")
+	qsos, err = ListQSOsPage(db, 2, 2, "c1", false)
 	if err != nil {
 		t.Fatalf("ListQSOsPage(c1, offset 2): %v", err)
 	}

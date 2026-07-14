@@ -7,6 +7,7 @@ import (
 	"charm.land/bubbles/v2/filepicker"
 	"charm.land/bubbles/v2/table"
 	"charm.land/bubbles/v2/textinput"
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/qso"
@@ -83,9 +84,9 @@ const (
 	qefSRX
 	qefSTXString
 	qefSRXString
-	qefContestID
 	qefWLStatus // non-focusable read-only
-	qefSource   // non-focusable read-only — last real field
+	qefSource   // non-focusable read-only
+	qefContestID
 	qefCount
 )
 
@@ -100,9 +101,10 @@ var qefLabels = []string{
 	"IOTA", "SOTA Ref", "POTA Ref", "WWFF Ref", "SIG", "SIG Info",
 	"My SOTA", "My POTA", "My WWFF",
 	"CQ Zone", "ITU Zone",
-	"Exch Sent", "Exch Rcvd", "STX", "SRX", "STX String", "SRX String", "Contest ID",
+	"Exch Sent", "Exch Rcvd", "STX", "SRX", "STX String", "SRX String",
 	"WL Upload (RO)",
 	"Source (RO)",
+	"Contest ID",
 }
 
 type LogbookEditor struct {
@@ -179,12 +181,16 @@ type LogbookEditor struct {
 
 	// Cached dialog table style — avoids lipgloss.NewStyle() every frame.
 	cachedTablePartStyle lipgloss.Style
-	cachedTablePartW     int
-	cachedTablePartH     int
+	// Pre-formatted row cache — avoids re-formatting every cell on every
+	// buildTable() call. Cleared on loadPage, resize, or contest change.
+	formattedRows    []table.Row
+	formattedNames   []string
+	formattedWidth   int
+	cachedTablePartH int
 
-	// Cached edit form column style — rebuilt only on colW change.
-	cachedEditColStyle lipgloss.Style
-	cachedEditColW     int
+	// Edit form scrolling — viewport for long single-column form.
+	editVP          viewport.Model
+	lastEditContent string
 
 	// File export.
 	filePicker filepicker.Model
@@ -273,6 +279,7 @@ func (le *LogbookEditor) Init() tea.Cmd {
 
 func (le *LogbookEditor) SetQSOS(qsos []qso.QSO) {
 	le.qsos = qsos
+	le.formattedRows = nil
 	le.cachedSig = "" // invalidate view cache
 	le.buildTable()
 }
@@ -299,6 +306,8 @@ func (le *LogbookEditor) SetContestMode(v bool) {
 	}
 	le.contest = v
 	le.built = false
+	le.formattedNames = nil
+	le.formattedRows = nil
 	le.cachedSig = ""
 }
 
@@ -310,6 +319,8 @@ func (le *LogbookEditor) SetMultiOp(v bool) {
 	}
 	le.multiOp = v
 	le.built = false
+	le.formattedNames = nil
+	le.formattedRows = nil
 	le.cachedSig = ""
 }
 
@@ -349,6 +360,11 @@ func (le *LogbookEditor) loadPage() {
 		le.qsos = qsos
 		le.totalCount = total
 	}
+
+	// Pre-format row cells once per page load — buildTable() reuses this
+	// cache instead of calling editorColValue() for every cell on every
+	// frame. Invalidated on resize (formattedWidth mismatch) or page change.
+	le.formattedRows = nil
 	le.cachedSig = ""
 	le.buildTable()
 }

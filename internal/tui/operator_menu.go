@@ -6,6 +6,7 @@ import (
 
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
@@ -365,6 +366,32 @@ func (oc *OperatorChooser) viewList() string {
 	if contentW < 20 {
 		contentW = 20
 	}
+
+	// --- Info box (same pattern as callbook, general, and logbook menus) ---
+	infoMaxW := contentW - 4
+	if infoMaxW < 30 {
+		infoMaxW = 30
+	}
+	infoText := "Operators can be assigned to any logbook in this " +
+		"instance and switched quickly during operation. " +
+		"Using proper operator profiles is recommended for " +
+		"multi-operator setups, club stations, and shared " +
+		"installations — each operator keeps their own " +
+		"callsign and can be changed with a single key."
+	infoLines := wrapLines(infoText, infoMaxW)
+	var infoContent strings.Builder
+	for i, line := range infoLines {
+		infoContent.WriteString(DimStyle.Render(line))
+		if i < len(infoLines)-1 {
+			infoContent.WriteString("\n")
+		}
+	}
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(P.Border)
+	infoBox := boxStyle.Render(infoContent.String())
+	b.WriteString(infoBox)
+	b.WriteString("\n")
 
 	activeOp := oc.app.Logbook.ActiveOperator
 

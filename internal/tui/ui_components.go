@@ -9,6 +9,7 @@ type uiComponents struct {
 	operatorChooser *OperatorChooser
 	configMenu      *GeneralMenu
 	integrationMenu *IntegrationMenu
+	callbookMenu    *CallbookMenu
 	notifMenu       *NotificationsMenu
 	mainMenu        *MainMenu
 	logViewer       *LogViewer

@@ -126,7 +126,7 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 	if c := m.maybeCheckWavelog(); c != nil {
 		cmds = append(cmds, c)
 	}
-	if c := m.maybeCheckQRZ(); c != nil {
+	if c := m.maybeCheckCallbook(); c != nil {
 		cmds = append(cmds, c)
 	}
 	if c := m.maybeFetchSolar(); c != nil {
@@ -156,6 +156,7 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			// Internet just came up — set the flag FIRST so the
 			// dispatch functions below don't bail out on !m.inetOnline.
 			m.inetOnline = true
+			m.offlineToastShown = false
 			m.lookup.wlForceCheck = true
 			m.lookup.qrzForceCheck = true
 			m.toasts.Success("Internet: connected")
@@ -169,7 +170,7 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			if c := m.maybeCheckWavelog(); c != nil {
 				cmds = append(cmds, c)
 			}
-			if c := m.maybeCheckQRZ(); c != nil {
+			if c := m.maybeCheckCallbook(); c != nil {
 				cmds = append(cmds, c)
 			}
 			if c := m.maybeFetchSolar(); c != nil {
@@ -179,8 +180,11 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 				return true, tea.Batch(cmds...)
 			}
 			return true, nil
-		} else if m.inetOnline && !bool(r) {
-			m.toasts.Warn("Internet: not available — working in offline mode")
+		} else if !bool(r) {
+			if !m.offlineToastShown {
+				m.offlineToastShown = true
+				m.toasts.Warn("Internet: not available — working in offline mode")
+			}
 		}
 		m.inetOnline = bool(r)
 		return true, nil
@@ -214,7 +218,7 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 				m.toasts.Success(fmt.Sprintf("Wavelog: %s already present", r.call))
 			} else {
 				m.toasts.Success(fmt.Sprintf("Wavelog: %s sent", r.call))
-				if n.Enabled && n.Wavelog {
+				if n.Enabled && n.QSOSent {
 					applog.Info("Sending Wavelog success notification", "call", r.call)
 					if desktopAvailable() {
 						if err := beeep.Notify("CQOps — Wavelog", fmt.Sprintf("QSO %s sent to Wavelog", r.call), ""); err != nil {
@@ -229,7 +233,7 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			} else {
 				m.toasts.Error(fmt.Sprintf("Wavelog: %s failed", r.call))
 			}
-			if n.Enabled && n.WavelogErrors {
+			if n.Enabled && n.AllErrors {
 				msg := fmt.Sprintf("QSO %s upload failed", r.call)
 				if r.err != nil {
 					msg = fmt.Sprintf("QSO %s: %s", r.call, r.err.Error())
@@ -260,7 +264,9 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 		if r.online {
 			m.http.online = true
 			m.http.err = nil
-			// Push initial state NOW so the next SSE snapshot has data.
+			// Push initial state NOW — bypass throttle so first SSE snapshot has full data.
+			lastDashboardPushTick = -10
+			lastFastTick = -1
 			m.pushDashboardState()
 			if m.http.client != nil {
 				m.toasts.Success("HTTP server: listening on " + m.http.client.Addr())
@@ -377,24 +383,19 @@ func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
 		call := m.lookup.qrzCall
 		applog.Debug("DXC: handlePendingRequests qrzNeed",
 			"call", call,
-			"qrzEnabled", m.App.Config.Integrations.QRZ.Enabled,
-			"qrzUser", m.App.Config.Integrations.QRZ.User != "",
+			"qrzEnabled", m.App.Config.Integrations.Callbook.QRZ.Enabled,
+			"qrzUser", m.App.Config.Integrations.Callbook.QRZ.User != "",
 		)
 		if call == "" {
 			m.lookup.qrzNeed = false
 			return cmd, false
 		}
-		// Always fire DXC spot lookup when call changes, even if QRZ is disabled.
-		if !m.App.Config.Integrations.QRZ.Enabled || m.App.Config.Integrations.QRZ.User == "" {
-			m.lookup.qrzNeed = false
-			return tea.Batch(cmd, m.dxcSpotLookupCmd(call)), true
-		}
-		if c := m.qrzLookup(call); c != nil {
-			m.lookup.qrzNeed = false
+		m.lookup.qrzNeed = false
+		// Always dispatch callbook + DXC spot lookups, even without QRZ.
+		if c := m.callbookLookup(call); c != nil {
 			return tea.Batch(cmd, c, m.dxcSpotLookupCmd(call)), true
 		}
-		// qrzLookup rate-limited — leave qrzNeed to retry next tick.
-		// Fall through so wlNeed below can still fire on this tick.
+		return tea.Batch(cmd, m.dxcSpotLookupCmd(call)), true
 	}
 	if m.lookup.wlNeed {
 		call := m.lookup.wlCall
@@ -443,8 +444,8 @@ func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
 // QSO refresh). Extracted from Update() to keep the main loop manageable.
 func (m *Model) handleLookupResultMsg(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	switch r := msg.(type) {
-	case qrzResultMsg:
-		m.fillQRZData(r)
+	case callbookResultMsg:
+		m.fillCallbookData(r)
 		cmd = tea.Batch(cmd, m.updateFilteredTable())
 		m.contestAutoFocusExchRcvd()
 		if m.photo.partnerPicNeedLoad {

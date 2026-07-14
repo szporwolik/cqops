@@ -17,7 +17,18 @@ var app=$('app'), hdLogo=$('hd-logo'), hdLogoBox=$('hd-logo-box'), hdTitle=$('hd
 var hdClockLocal=$('hd-clock-local'), hdClockUtc=$('hd-clock-utc'), hdSSE=$('hd-sse-status');
 var heroOverview=$('hero-overview'), heroHeadline=$('hero-headline'), heroSubline=$('hero-subline'), heroStatus=$('hero-status'), heroPromo=$('hero-promo');
 var heroLabel=$('hero-label'),heroCall=$('hero-call'),heroBadges=$('hero-badges'),heroIdentity=$('hero-identity'),heroMeta=$('hero-meta');
-var stationFields=$('station-fields'), statsFields=$('stats-fields'), topqsosFields=$('topqsos-fields');
+var stationFields=$('station-fields'), statsFields=$('stats-fields'), topqsosBody=$('topqsos-body');
+
+// ---- Internet callbook link (set via display config) ----
+var icbUrl=''; // URL template with {CALL} placeholder
+
+// callLink returns an HTML anchor (or just the callsign text) based on
+// whether an internet callbook provider is configured. The anchor inherits
+// all styling from its parent — no color, no underline, no decoration.
+function callLink(call){
+  if(!icbUrl||!call)return esc(call);
+  return '<a href=\"'+esc(icbUrl.replace('{CALL}',encodeURIComponent(call)))+'\" target=\"_blank\" rel=\"noopener\" style=\"color:inherit;text-decoration:none\">'+esc(call)+'</a>';
+}
 
 // ---- Data freshness timestamps ----
 var freshness={wx:null,psk:null,radar:null,aprs:null};
@@ -41,8 +52,8 @@ function registerDataFreshness(){
 var recentBody=$('recent-body');
 var mapContainer=$('map-container');
 
-var es=null, map=null;
-var ownStationLat=null,ownStationLon=null;
+var es=null, map=null, mainGL=null;
+var ownStationLat=null,ownStationLon=null,ownStationCall='';
 var todayQsos=[], displayCfg={};
 
 // ---- Clocks ----
@@ -85,6 +96,36 @@ function switchToActive(){D('state','active');setState(true)}
 var sseReconnects=0;
 function setSSEStatus(cls){hdSSE.className=cls;hdSSE.textContent=cls==='sse-connected'?'Online':cls==='sse-connecting'?'Connecting':'Offline'}
 
+// ---- Disconnected overlay ----
+var _discTimer=null,_discSince=null,_discTimeout=null,_discShown=false;
+function scheduleDisconnected(){
+  if(_discTimeout)return;
+  _discSince=Date.now();
+  var sub=$('disconnected-sub'),host=location.host;
+  sub.textContent=host+' · '+(window._discLogbook||'');
+  _discTimeout=setTimeout(function(){
+    $('disconnected-overlay').classList.add('show');
+    _discShown=true;
+    _discTimer=setInterval(function(){
+      var s=Math.floor((Date.now()-_discSince)/1000);
+      var m=Math.floor(s/60),h=Math.floor(m/60),d=Math.floor(h/24);
+      h=h%24;m=m%60;s=s%60;
+      var txt;
+      if(d>0){txt=d+'d '+String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')}
+      else if(h>0){txt=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')}
+      else{txt=String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')}
+      $('disconnected-timer').textContent=txt;
+    },1000);
+  },8000);
+}
+function hideDisconnected(){
+  if(_discTimeout){clearTimeout(_discTimeout);_discTimeout=null}
+  if(_discTimer){clearInterval(_discTimer);_discTimer=null}
+  _discSince=null;
+  $('disconnected-overlay').classList.remove('show');
+  if(_discShown){_discShown=false;setTimeout(function(){location.reload()},600)}
+}
+
 function connectSSE(){
   if(es)es.close();setSSEStatus('sse-connecting');
   D('sse','connecting…');
@@ -126,10 +167,12 @@ function connectSSE(){
   });
   es.addEventListener('operator',function(e){var o=JSON.parse(e.data).payload;
     D('sse','operator',o.callsign);
-    updateStationField('Operator',(o.callsign||'—')+(o.name?' ('+o.name+')':''))
+    var opVal=o.callsign||ownStationCall;
+    updateStationField('Operator',opVal?opBadgeHTML(opVal,o.name):'—')
   });
   es.addEventListener('logbook',function(e){var lb=JSON.parse(e.data).payload;
     D('sse','logbook',lb.name);
+    if(lb&&lb.name){document.title='CQOps - '+lb.name;window._discLogbook=lb.name}
     updateStationField('Logbook',lb.name)
   });
   es.addEventListener('partner',function(e){var p=JSON.parse(e.data).payload;
@@ -161,10 +204,20 @@ function connectSSE(){
     D('sse','aprs',a? a.length:0);
     renderAPRSOnLocalMap(a);
   });
+  es.addEventListener('display',function(e){
+    var d=JSON.parse(e.data).payload;
+    if(d&&d.internetCallbookUrl){
+      icbUrl=d.internetCallbookUrl;
+      // Re-render tables so callsigns become clickable links.
+      renderRecentTable(null);
+      renderTopQSOs();
+    }
+  });
   es.addEventListener('heartbeat',function(){D('sse','heartbeat')});
-  es.onopen=function(){sseReconnects=0;setSSEStatus('sse-connected');D('sse','connected ✓')};
+  es.onopen=function(){sseReconnects=0;setSSEStatus('sse-connected');hideDisconnected();removeOfflineOverlay();D('sse','connected ✓')};
   es.onerror=function(){sseReconnects++;setSSEStatus('sse-disconnected');es.close();
     D('sse','error — reconnect #'+sseReconnects+' in 3s');
+    scheduleDisconnected();
     setTimeout(function(){
       D('sse','fetching /api/snapshot fallback…');
       fetch('/api/snapshot').then(function(r){return r.json()}).then(renderAll).catch(function(){});connectSSE()
@@ -177,21 +230,52 @@ function renderAll(snap){
   if(!snap){D('renderAll','null snapshot, skipping');return}
   D('renderAll','start',{hasStation:!!snap.station,hasActive:!!(snap.activeQso&&snap.activeQso.call),today:snap.today? snap.today.length:0,recent:snap.recent? snap.recent.length:0});
   displayCfg=snap.display||{};
+  if(displayCfg.internetCallbookUrl) icbUrl=displayCfg.internetCallbookUrl;
+  // Window title — show active logbook.
+  if(snap.logbook&&snap.logbook.name){document.title='CQOps - '+snap.logbook.name;window._discLogbook=snap.logbook.name}
+  // Theme — apply theme class to root element.
+  var wasDark=document.documentElement.classList.contains('dark');
+  var theme=displayCfg.theme;
+  if(!theme){try{theme=localStorage.getItem('cqops-theme')}catch(e){}}
+  // Remove any previous theme class, then add the active one (except 'bright' = default).
+  document.documentElement.classList.remove('dark','yl','hivis');
+  if(theme&&theme!=='bright')document.documentElement.classList.add(theme);
+  var isDark=document.documentElement.classList.contains('dark');
+  // Persist theme so next load applies before first paint.
+  try{localStorage.setItem('cqops-theme',theme||'bright')}catch(e){}
+  // Update tile layers if theme changed and maps are already live.
+  if(wasDark!==isDark){
+    var newStyle=styleUrlForTheme(displayCfg.mapTileUrl);
+    if(mainGL)mainGL.getMaplibreMap().setStyle(newStyle);
+    if(localTiles)localTiles.getMaplibreMap().setStyle(styleUrlForTheme(mapCfg.mapTileUrl));
+  }
   // Display config
   if(displayCfg.clubLogo){hdLogo.src=displayCfg.clubLogo;hdLogoBox.style.display=''}else{hdLogoBox.style.display='none'}
+  // QR code — QuickChart API, hidden when offline.
+  var hdQR=$('hd-qr'),hdQRImg=$('hd-qr-img'),hdQRErr=$('hd-qr-err');
+  if(displayCfg.qrLink && displayCfg.isOnline){
+    hdQRErr.style.display='none';hdQRImg.style.display='';
+    hdQRImg.onload=function(){hdQRErr.style.display='none';hdQRImg.style.display=''};
+    hdQRImg.onerror=function(){hdQRErr.style.display='';hdQRImg.style.display='none'};
+    hdQRImg.src='https://quickchart.io/qr?text='+encodeURIComponent(displayCfg.qrLink)+'&size=80&margin=1&format=svg&ecLevel=M&dark=111827&light=ffffff';
+    hdQR.style.display='';
+  }
   if(displayCfg.header1){hdTitle.textContent=displayCfg.header1;heroHeadline.textContent=displayCfg.header1}
   else{hdTitle.textContent='CQOps Live';heroHeadline.textContent='CQOps Live'}
   hdSubtitle.textContent=displayCfg.header2||'Fast, portable ham radio logger';heroSubline.textContent=displayCfg.header2||'';
   // Marketing/PR line in hero when no custom header2 is configured.
   heroPromo.textContent=displayCfg.header2?'':'Powered by CQOps &mdash; cqops.com';
   // Station
-  if(snap.station&&snap.station.lat&&snap.station.lon){
+  if(snap.station){
+    if(snap.station.callsign)ownStationCall=snap.station.callsign;
+    if(snap.station.lat&&snap.station.lon){
     ownStationLat=snap.station.lat;ownStationLon=snap.station.lon;
     initLocalMap(ownStationLat,ownStationLon);
     recentreLocalMap(ownStationLat,ownStationLon);
     updateAprsCircle(ownStationLat,ownStationLon,snap.station.aprsRadiusKm||0);
     fetchWeather(snap.station.lat,snap.station.lon);
     fetchSunTimes(snap.station.lat,snap.station.lon);
+    }
   }
   renderStation(snap.station,snap.operator,snap.logbook,snap.rig,snap.wsjtx);
   // Active QSO
@@ -205,7 +289,8 @@ function renderAll(snap){
   if(snap.psk&&snap.psk.total>0){registerPSKModule(snap.psk)}
   updateExtraBox();
   // APRS stations on local map
-  if(snap.aprs)renderAPRSOnLocalMap(snap.aprs);
+  if(snap.aprs&&snap.aprs.length){renderAPRSOnLocalMap(snap.aprs)}
+  else if(aprsMarkerLayer){aprsMarkerLayer.clearLayers()}
   // Map
   D('renderAll','init map…');
   initMap(Object.assign({},displayCfg,{drawLines:displayCfg.drawLines!==false,maxLines:displayCfg.maxLines||250,highlightLastQSO:displayCfg.highlightLastQSO!==false,animateActivePath:!!displayCfg.animateActivePath}));
@@ -230,9 +315,9 @@ function renderAll(snap){
   }).catch(function(e){D('fetch','/api/today ERR',''+e)});
   // Footer: version + map attributions.
   if(snap.app&&snap.app.version){
-    $('footer-text').innerHTML='CQOps Live v'+esc(snap.app.version)+' · <a href=\"https://cqops.com\" style=\"color:var(--accent)\">cqops.com</a>';
+    $('footer-text').innerHTML='CQOps Live v'+esc(snap.app.version)+' · <a href=\"https://cqops.com\">cqops.com</a>';
   }
-  $('footer-attrib').innerHTML='Map: <a href=\"https://leafletjs.com\" target=\"_blank\" rel=\"noopener\">Leaflet</a> · Tiles: <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener\">&copy; OpenStreetMap</a> · Solar: <a href=\"https://www.hamqsl.com/solar.html\" target=\"_blank\" rel=\"noopener\">HamQSL</a> · Spots: <a href=\"https://pskreporter.info/\" target=\"_blank\" rel=\"noopener\">PSK Reporter</a> · Weather: <a href=\"https://open-meteo.com/\" target=\"_blank\" rel=\"noopener\">Open-Meteo</a> · Callbook: <a href=\"https://www.qrz.com\" target=\"_blank\" rel=\"noopener\">QRZ.com</a>'+
+  $('footer-attrib').innerHTML='Map: <a href=\"https://leafletjs.com\" target=\"_blank\" rel=\"noopener\">Leaflet</a> · Tiles: <a href=\"https://openfreemap.org\" target=\"_blank\" rel=\"noopener\">OpenFreeMap</a> &copy; <a href=\"https://www.openmaptiles.org/\" target=\"_blank\" rel=\"noopener\">OpenMapTiles</a> Data from <a href=\"https://www.openstreetmap.org/copyright\" target=\"_blank\" rel=\"noopener\">OpenStreetMap</a> · Solar: <a href=\"https://www.hamqsl.com/solar.html\" target=\"_blank\" rel=\"noopener\">HamQSL</a> · Spots: <a href=\"https://pskreporter.info/\" target=\"_blank\" rel=\"noopener\">PSK Reporter</a> · Weather: <a href=\"https://open-meteo.com/\" target=\"_blank\" rel=\"noopener\">Open-Meteo</a>'+
     (snap.dxc&&snap.dxc.connected?' · Cluster: <span style=\"color:var(--dim)\">'+esc(snap.dxc.host||'DX Cluster')+'</span>':'');
   D('renderAll','done');
 }
@@ -263,6 +348,28 @@ function renderHero(aq,p){
   else if(lastActiveFlags.isNewDxcc)addBadge('NEW DXCC','success');
   else if(lastActiveFlags.isNewCall)addBadge('NEW CALL','info');
   D('hero','render',{call:aq.call,band:aq.band,mode:aq.mode,dupe:aq.isDupe,newCall:aq.isNewCall,newDxcc:aq.isNewDxcc});
+  // Provider badges — clickable links to each callbook provider's callsign page.
+  var provDiv = $('hero-providers');
+  provDiv.innerHTML = '';
+  if (p && p.callbookProviders && p.callbookProviders.length) {
+    for (var i = 0; i < p.callbookProviders.length; i++) {
+      var pb = p.callbookProviders[i];
+      if (pb.url) {
+        var a = document.createElement('a');
+        a.className = 'badge provider-badge';
+        a.href = pb.url;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.textContent = pb.name;
+        provDiv.appendChild(a);
+      } else {
+        var s = document.createElement('span');
+        s.className = 'badge provider-badge';
+        s.textContent = pb.name;
+        provDiv.appendChild(s);
+      }
+    }
+  }
   // Photo
   if(p&&p.imageUrl){showHeroPhoto(p.imageUrl)}else{showHeroPlaceholder(p?p.call:aq.call)}
   // Identity line: merge partner data with form fields
@@ -329,10 +436,24 @@ function showHeroPlaceholder(call){
 }
 function hideHeroPhoto(){$('hero-photo').style.display='none';$('hero-placeholder').style.display='none';$('hero-photo-box').style.display='none'}
 
+// ---- Operator badge helpers ----
+function opBadgeStyle(call){
+  if(!call)return'';
+  var h=0,i;for(i=0;i<call.length;i++)h=(h*31+call.charCodeAt(i))&0xffff;
+  var dark=document.documentElement.classList.contains('dark')||document.documentElement.classList.contains('hivis');
+  if(dark)return'background:hsl('+(h%360)+',30%,18%);color:hsl('+(h%360)+',55%,82%);border:1px solid hsl('+(h%360)+',22%,28%)';
+  return'background:hsl('+(h%360)+',45%,88%);color:hsl('+(h%360)+',50%,32%);border:1px solid hsl('+(h%360)+',40%,78%)';
+}
+function opBadgeHTML(call,name){
+  if(!call)return'';
+  return'<span class=\"stat-badge stat-badge-op\" style=\"'+opBadgeStyle(call)+'\">'+esc(call)+(name?' '+esc(name):'')+'</span>';
+}
+
 // ---- Station panel ----
 function renderStation(st,op,lb,rig,wsjtx){
   if(!st)return;op=op||{};lb=lb||{};rig=rig||{};wsjtx=wsjtx||{};
-  var opHtml=op.callsign?'<span class=\"stat-badge stat-badge-op\">'+esc(op.callsign)+(op.name?' '+esc(op.name):'')+'</span>':'—';
+  var opCall=op.callsign||st.callsign;
+  var opHtml=opCall?opBadgeHTML(opCall,op.name):'—';
   var rigDot=rig.connected?'<span class=\"status-on\">●</span> Connected':'<span class=\"status-off\">○</span> Disconnected';
   var wsjtxDot=wsjtx.connected?'<span class=\"status-on\">●</span> Online':'<span class=\"status-off\">○</span> Offline';
   var freqHtml=rig.frequency?esc(rig.frequency)+(rig.band?' <span class=\"stat-badge '+bandBadgeClass(rig.band)+'\">'+esc(rig.band)+'</span>':'')+(rig.mode?' <span class=\"stat-badge '+modeBadgeClass(rig.mode)+'\">'+esc(rig.mode)+'</span>':'')+(rig.submode?' <span class=\"stat-badge '+modeBadgeClass(rig.submode)+'\">'+esc(rig.submode)+'</span>':''):'—';
@@ -383,24 +504,24 @@ function renderStats(st,todayBuf){
   buf.forEach(function(q){
     if(q.band)bandFreq[q.band]=(bandFreq[q.band]||0)+1;
     if(q.mode){var dm=q.submode||q.mode;modeFreq[dm]=(modeFreq[dm]||0)+1;}
-    if(q.operator)opFreq[q.operator]=(opFreq[q.operator]||0)+1;
+    if(q.operator||ownStationCall){var o=q.operator||ownStationCall;opFreq[o]=(opFreq[o]||0)+1;}
   });
   var bandList=Object.keys(bandFreq).sort(function(a,b){return _bandRank(a)-_bandRank(b)||bandFreq[b]-bandFreq[a]});
   var modeList=Object.keys(modeFreq).sort(function(a,b){return modeFreq[b]-modeFreq[a]});
   var opList=Object.keys(opFreq).sort(function(a,b){return opFreq[b]-opFreq[a]});
   // Render fields — bands/modes as badges, operators as count+top-3.
   var rate5=st.rate5m||0,rate15=st.rate15m||0,rate60=st.rate60m||0;
-  var opsTotal=st.operators||opList.length;
+  var opsTotal=st.operators||opList.length||(ownStationCall?1:0);
   statsFields.innerHTML=[
     ['QSOs',qsosToday||0],
-    ['Operators','<span class="stat-op-count">'+esc(String(opsTotal))+'</span>'+opList.slice(0,3).map(function(o){return'<span class="stat-badge stat-badge-op">'+esc(o)+'</span>'}).join('')+(opList.length>3?'<span class="stat-op-more">…</span>':'')],
+    ['Operators','<span class="stat-op-count">'+esc(String(opsTotal))+'</span>'+opList.slice(0,3).map(function(o){return'<span class="stat-badge stat-badge-op" style="'+opBadgeStyle(o)+'">'+esc(o)+'</span>'}).join('')+(opList.length>3?'<span class="stat-op-more">…</span>':'')],
     ['Unique calls',st.uniqueCalls||0],
     ['DXCC',st.dxcc||0],
     ['Grids',st.grids||0],
     ['Bands',bandList.length?bandList.map(function(b){return'<span class="stat-badge '+bandBadgeClass(b)+'">'+esc(b)+'</span>'}).join(''):(st.bands||'—')],
     ['Modes',modeList.length?modeList.map(function(m){return'<span class="stat-badge '+modeBadgeClass(m)+'">'+esc(m)+'</span>'}).join(''):(st.modes||'—')],
     ['Longest',longestKm?fmtDist(longestKm):'—'],
-    ['Rate (5m / 15m / 1h)',rate5+' / '+rate15+' / '+rate60]
+    ['QSO rate','<span class=\"stat-badge rate-badge\">5m '+rate5+'</span> <span class=\"stat-badge rate-badge\">15m '+rate15+'</span> <span class=\"stat-badge rate-badge\">1h '+rate60+'</span>']
   ].map(function(r){return'<dt>'+r[0]+'</dt><dd>'+r[1]+'</dd>'}).join('');
   renderTopQSOs();
 }
@@ -426,24 +547,23 @@ function registerSessionSummary(qsos,dxcc,grids,longestKm,rate){
 
 // ---- Top QSOs (by distance in today's buffer) ----
 function renderTopQSOs(){
-  if(!todayQsos.length||ownStationLat==null){topqsosFields.innerHTML='<dt style=\"color:var(--dim)\">—</dt>';return}
+  if(!todayQsos.length||ownStationLat==null){topqsosBody.innerHTML='<tr><td colspan=\"5\" style=\"color:var(--dim)\">—</td></tr>';return}
   var ranked=todayQsos.map(function(q){
-    return{call:q.call||'?',grid:q.grid,band:q.band||'',mode:q.mode||'',submode:q.submode||'',country:q.country||'',operator:q.operator||'',km:distKm(q.grid)};
-  }).sort(function(a,b){return b.km-a.km}).slice(0,9);
-  var longest=ranked[0];
-  topqsosFields.innerHTML=ranked.map(function(r,i){
-    var countryText=r.country?r.country.replace(/^The\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Federal Republic Of\s+/,'').trim().substring(0,20):'';
+    return{call:q.call||'?',grid:q.grid,band:q.band||'',mode:q.mode||'',submode:q.submode||'',country:q.country||'',km:distKm(q.grid)};
+  }).sort(function(a,b){return b.km-a.km}).slice(0,7);
+  topqsosBody.innerHTML=ranked.map(function(r,i){
+    var countryText=r.country?r.country.replace(/^The\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Federal Republic Of\s+/,'').trim().substring(0,22):'';
     var displayMode=r.submode||r.mode;
-    var badge='<span class=\"tq-badge '+bandBadgeClass(r.band)+'\">'+esc(r.band)+'</span><span class=\"tq-badge '+modeBadgeClass(displayMode)+'\">'+esc(displayMode)+'</span>';
-    var distPart='<span class=\"tq-dist\">'+fmtDist(r.km)+'</span>';
     var isLongest=i===0&&r.km>0;
-    var cls=isLongest?' class=\"tq-longest\"':'';
-    // Order: callsign distance band mode operator country
-    var parts=[distPart,badge];
-    if(r.operator)parts.push('<span class=\"tq-op\">'+esc(r.operator)+'</span>');
-    if(countryText)parts.push('<span class=\"tq-country\">'+esc(countryText)+'</span>');
-    return'<dt'+cls+'>'+esc(r.call)+'</dt><dd'+cls+'>'+parts.join(' ')+'</dd>';
-  }).join('')||'<dt style=\"color:var(--dim)\">—</dt>';
+    var rowCls=isLongest?' class=\"tq-longest\"':'';
+    return'<tr'+rowCls+'>'+
+      '<td>'+callLink(r.call)+'</td>'+
+      '<td><span class=\"recent-badge '+bandBadgeClass(r.band)+'\">'+esc(r.band)+'</span></td>'+
+      '<td><span class=\"recent-badge '+modeBadgeClass(displayMode)+'\">'+esc(displayMode)+'</span></td>'+
+      '<td>'+fmtDist(r.km)+'</td>'+
+      '<td><span class="recent-badge country-badge">'+esc(countryText)+'</span></td>'+
+      '</tr>';
+  }).join('')||'<tr><td colspan=\"5\" style=\"color:var(--dim)\">—</td></tr>';
 }
 
 // ---- Distance helpers ----
@@ -457,7 +577,7 @@ function formatDistDir(grid){
   var ll=gridToLatLon(grid);
   var deg=bearingDeg(ownStationLat,ownStationLon,ll[0],ll[1]);
   var dirs=['N','NE','E','SE','S','SW','W','NW'];
-  return Math.round(km)+' km '+dirs[Math.round(deg/45)%8];
+  return fmtDist(km)+' '+dirs[Math.round(deg/45)%8];
 }
 
 // ---- Recent QSOs table ----
@@ -468,7 +588,9 @@ function renderRecentTable(qsos){
     var utc=q.timeUtc?q.timeUtc.slice(11,16).replace(':','')+'Z':'';
     var ctry=(q.country||'').replace(/^The\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Federal Republic Of\s+/,'').trim().substring(0,22);
     var dist=formatDistDir(q.grid);
-    return'<tr><td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.submode||q.mode,'mode')+'</td><td class="recent-op-col">'+esc(q.operator||'')+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td title="'+esc(q.country||'')+'">'+esc(ctry)+'</td></tr>';
+    var op=q.operator||ownStationCall;
+    var opBadge=op?'<span class="recent-badge" style="'+opBadgeStyle(op)+'">'+esc(op)+'</span>':'';
+    return'<tr><td>'+utc+'</td><td><strong>'+callLink(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.submode||q.mode,'mode')+'</td><td class="recent-op-col">'+opBadge+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td title="'+esc(q.country||'')+'"><span class="recent-badge country-badge">'+esc(ctry)+'</span></td></tr>';
   }).join('');
 }
 function renderCellBadge(val,type){
@@ -480,7 +602,9 @@ function prependRecentRow(q){
   var utc=q.timeUtc?q.timeUtc.slice(11,16).replace(':','')+'Z':'';
   var dist=formatDistDir(q.grid);
   var row=document.createElement('tr');row.className='new-row';
-  row.innerHTML='<td>'+utc+'</td><td><strong>'+esc(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.submode||q.mode,'mode')+'</td><td class="recent-op-col">'+esc(q.operator||'')+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td>'+esc(q.country||'')+'</td>';
+  var op=q.operator||ownStationCall;
+  var opBadge=op?'<span class="recent-badge" style="'+opBadgeStyle(op)+'">'+esc(op)+'</span>':'';
+  row.innerHTML='<td>'+utc+'</td><td><strong>'+callLink(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.submode||q.mode,'mode')+'</td><td class="recent-op-col">'+opBadge+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td><span class="recent-badge country-badge">'+esc(q.country||'')+'</span></td>';
   if(recentBody.firstChild)recentBody.insertBefore(row,recentBody.firstChild);else recentBody.appendChild(row);
   while(recentBody.children.length>7)recentBody.removeChild(recentBody.lastChild);
 }
@@ -489,6 +613,54 @@ function prependRecentRow(q){
 function appendTodayQSO(q){todayQsos.unshift(q);if(todayQsos.length>500)todayQsos.length=500}
 
 // ---- Map (Leaflet with great-circle paths) ----
+// ---- Map style helpers (OpenFreeMap via MapLibre GL, theme-aware) ----
+function suppressMissingImages(glLayer){
+  var m=glLayer.getMaplibreMap();
+  if(!m)return;
+  m.on('styleimagemissing',function(e){
+    m.addImage(e.id,{width:1,height:1,data:new Uint8ClampedArray([0,0,0,0])});
+  });
+}
+function styleUrlForTheme(customUrl){
+  if(customUrl)return customUrl;
+  var root=document.documentElement.classList;
+  if(root.contains('dark'))return'https://tiles.openfreemap.org/styles/fiord';
+  if(root.contains('hivis'))return'https://tiles.openfreemap.org/styles/positron';
+  return'https://tiles.openfreemap.org/styles/bright';
+}
+function qsoPathTheme(){
+  var root=document.documentElement.classList;
+  if(root.contains('hivis')) return{
+    active:{main:'#FFD400',mainW:2.7,u:'#000000',uW:4,uOpacity:0.92,dash:null},
+    last:  {main:'#FFD400',mainW:2.7,u:'#000000',uW:4,uOpacity:0.92,dash:null},
+    past:  {main:'#35E6F2',mainW:2.2,u:'#000000',uW:3.2,uOpacity:0.88,dash:null},
+    marker:'#72BCFF',markerActive:'#FFD400',station:'#63F7C8'
+  };
+  if(root.contains('dark')) return{
+    active:{main:'#FF405F',mainW:2.6,u:'rgba(0,0,0,0.58)',uW:3.1},
+    last:  {main:'#E7A21A',mainW:1.8,u:'rgba(0,0,0,0.58)',uW:3.1},
+    past:  {main:'#E7A21A',mainW:1.8,u:'rgba(0,0,0,0.58)',uW:3.1,opacity:0.55},
+    marker:'#55AEFF',markerActive:'#FF405F',station:'#50E3A4'
+  };
+  if(root.contains('yl')) return{
+    active:{main:'#C12678',mainW:2.5,u:'rgba(255,255,255,0.74)',uW:3},
+    last:  {main:'#7844B6',mainW:1.9,u:'rgba(255,255,255,0.74)',uW:3},
+    past:  {main:'#7844B6',mainW:1.9,u:'rgba(255,255,255,0.74)',uW:3,opacity:0.50},
+    marker:'#7650B8',markerActive:'#C12678',station:'#207A5D'
+  };
+  // Bright (default)
+  return{
+    active:{main:'#D00032',mainW:2.6,u:'rgba(255,255,255,0.74)',uW:2.8},
+    last:  {main:'#0875C9',mainW:1.9,u:'rgba(255,255,255,0.74)',uW:2.8},
+    past:  {main:'#0875C9',mainW:1.9,u:'rgba(255,255,255,0.74)',uW:2.8,opacity:0.50},
+    marker:'#0875C9',markerActive:'#D00032',station:'#007A3D'
+  };
+}
+function addDualPolyline(layer,pts,cfg){
+  if(cfg.uW>0)layer.addLayer(L.polyline(pts,{color:cfg.u,weight:cfg.uW,opacity:cfg.uOpacity||1,lineCap:'round',lineJoin:'round'}));
+  layer.addLayer(L.polyline(pts,{color:cfg.main,weight:cfg.mainW,opacity:cfg.opacity||0.9,lineCap:'round',lineJoin:'round',dashArray:cfg.dash||null,className:cfg.className||''}));
+}
+
 var mapCfg={drawLines:true,maxLines:150,maxMarkers:200,highlightLastQSO:true,animateActivePath:false};
 var stationLayer=null,qsoMarkerLayer=null,qsoLineLayer=null,lastQsoLayer=null,activeQsoLayer=null;
 var lastQso=null,activeGrid=null;
@@ -501,15 +673,23 @@ function initMap(cfg){
   if(cfg.maxMarkers)mapCfg.maxMarkers=cfg.maxMarkers;
   if(cfg.highlightLastQSO!==undefined)mapCfg.highlightLastQSO=!!cfg.highlightLastQSO;
   if(cfg.animateActivePath!==undefined)mapCfg.animateActivePath=!!cfg.animateActivePath;
-  map=L.map('map-container',{zoomControl:false,attributionControl:false}).setView([51,10],3);
+  // When offline, use EPSG:4326 (equirectangular) to match the embedded map image.
+  // When online, default Web Mercator for MapLibre tiles.
+  var mapOpts={zoomControl:false,attributionControl:false};
+  if(!cfg.isOnline)mapOpts.crs=L.CRS.EPSG4326;
+  map=L.map('map-container',mapOpts).setView([51,10],3);
+  map._cqopsOfflineCRS=!cfg.isOnline;
   // Custom panes for layer ordering: radar below QSO paths, markers on top.
   map.createPane('cqopsRadar');map.getPane('cqopsRadar').style.zIndex=350;map.getPane('cqopsRadar').style.pointerEvents='none';
   map.createPane('cqopsGrayline');map.getPane('cqopsGrayline').style.zIndex=300;map.getPane('cqopsGrayline').style.pointerEvents='none';
   map.createPane('cqopsPath');map.getPane('cqopsPath').style.zIndex=430;map.getPane('cqopsPath').style.pointerEvents='none';
   map.createPane('cqopsActive');map.getPane('cqopsActive').style.zIndex=460;map.getPane('cqopsActive').style.pointerEvents='none';
   map.createPane('cqopsMarker');map.getPane('cqopsMarker').style.zIndex=500;
-  var tiles=L.tileLayer(cfg.mapTileUrl||'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:cfg.mapAttrib||'&copy; OpenStreetMap'}).addTo(map);
-  tiles.on('tileerror',function(e){e.tile.style.display='none'});
+  var style=styleUrlForTheme(cfg.mapTileUrl);
+  if(typeof L.maplibreGL==='function'){
+    mainGL=L.maplibreGL({style:style,attributionControl:false}).addTo(map);
+    suppressMissingImages(mainGL);
+  }
   // Layer groups — each on its own pane for correct z-ordering above radar.
   qsoLineLayer=L.layerGroup([],{pane:'cqopsPath'}).addTo(map);
   lastQsoLayer=L.layerGroup([],{pane:'cqopsPath'}).addTo(map);
@@ -531,8 +711,26 @@ function initMap(cfg){
   })()
   // Grayline: always-on below radar.
   enableGrayline();
+  // Offline map fallback — uses equirectangular CRS (EPSG:4326) matching the
+  // embedded world map image. Removed when SSE reconnects and tiles load.
+  if(!cfg.isOnline){
+    if(!map._cqopsOffline){
+      map._cqopsOffline=L.imageOverlay('/api/map-earth',[[-90,-180],[90,180]],{opacity:0.9,pane:'cqopsRadar'}).addTo(map);
+    }
+  }
   // Radar: always enabled — no toggle button.
   enableRadarLayer();
+}
+
+// removeOfflineOverlay is called when SSE reconnects (internet restored).
+// If the map was created with offline CRS, destroy and re-init with tiles.
+function removeOfflineOverlay(){
+  if(!map)return;
+  if(map._cqopsOffline){map.removeLayer(map._cqopsOffline);map._cqopsOffline=null}
+  if(map._cqopsOfflineCRS){
+    map.remove();map=null;
+    // Re-init with online tiles on next renderAll.
+  }
 }
 
 // ---- Local map (station-centre, ~50 km view) ----
@@ -542,13 +740,15 @@ function initLocalMap(lat,lon){
   if(mapLocal)return;
   var lc=document.getElementById('map-local-container');
   if(!lc)return;
-  mapLocal=L.map('map-local-container',{zoomControl:false,attributionControl:false}).setView([lat,lon],11);
+  mapLocal=L.map('map-local-container',{zoomControl:false,attributionControl:false,maxZoom:18}).setView([lat,lon],11);
   mapLocal.createPane('cqopsRadar');mapLocal.getPane('cqopsRadar').style.zIndex=350;mapLocal.getPane('cqopsRadar').style.pointerEvents='none';
   mapLocal.createPane('cqopsGrayline');mapLocal.getPane('cqopsGrayline').style.zIndex=300;mapLocal.getPane('cqopsGrayline').style.pointerEvents='none';
-  localTiles=L.tileLayer(mapCfg.mapTileUrl||'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(mapLocal);
-  localTiles.on('tileerror',function(e){e.tile.style.display='none'});
+  if(typeof L.maplibreGL==='function'){
+    localTiles=L.maplibreGL({style:styleUrlForTheme(mapCfg.mapTileUrl),attributionControl:false}).addTo(mapLocal);
+    suppressMissingImages(localTiles);
+  }
   // Station marker on local map — small, below APRS symbols.
-  stationLocalMarker=L.circleMarker([lat,lon],{radius:5,color:'#007A3D',fillColor:'#007A3D',fillOpacity:0.85,weight:2.5,pane:'shadowPane'}).addTo(mapLocal);
+  stationLocalMarker=L.circleMarker([lat,lon],{radius:5,color:qsoPathTheme().station,fillColor:qsoPathTheme().station,fillOpacity:0.85,weight:2.5,pane:'shadowPane',className:'local-station-dot'}).addTo(mapLocal);
   if(window.ResizeObserver){new ResizeObserver(function(){mapLocal.invalidateSize()}).observe(lc)}
   (function pollLocalSize(){
     if(lc.clientHeight>0){
@@ -756,7 +956,7 @@ async function fetchJsonWithTimeout(url,ms){
 
 async function enableRadarLayer(){
   if(radarEnabled||radarLoading||!map)return;
-  if(!navigator.onLine){return}
+  if(!navigator.onLine||!(displayCfg&&displayCfg.isOnline)){return}
   radarLoading=true;
   try{
     var meta=await fetchJsonWithTimeout('https://api.rainviewer.com/public/weather-maps.json',6000);
@@ -962,14 +1162,19 @@ function renderAPRSOnLocalMap(stations){
 }
 
 function _renderAprsMarker(s,bounds){
+  var ago=Math.round((Date.now()-new Date(s.lastHeard).getTime())/60000);
+  // Fade linearly between 30 and 60 minutes; skip entirely if older.
+  var fade=1;
+  if(ago>30){fade=Math.max(0,(60-ago)/30)}
+  if(fade<=0)return;
   var popup=(s.callsign||'?')+'<br>APRS';
   if(s.comment)popup+='<br>'+esc(s.comment);
-  var ago=Math.round((Date.now()-new Date(s.lastHeard).getTime())/60000);
   popup+='<br>'+ago+' min ago';
   if(s.course)popup+='<br>Course: '+s.course+'°';
   if(s.speedKmH)popup+='<br>'+fmtWind(s.speedKmH);
   var m=_aprMarker(s);
   m.bindPopup(popup);
+  if(fade<1)m.setOpacity(fade);
   aprsMarkerLayer.addLayer(m);
   bounds.push([s.lat,s.lon]);
   // Draw position trail if station has historic points.
@@ -978,16 +1183,13 @@ function _renderAprsMarker(s,bounds){
     s.trail.forEach(function(p){
       pts.push([p.lat,p.lon]);
     });
-    // Add current position as the trail endpoint.
     pts.push([s.lat,s.lon]);
-    // Blue trail line (apr s.fi style).
-    L.polyline(pts,{color:'#1565C0',weight:3,opacity:0.75}).addTo(aprsMarkerLayer);
-    // Red dots at historic positions, older = smaller + more transparent.
+    L.polyline(pts,{color:'#1565C0',weight:3,opacity:0.75*fade}).addTo(aprsMarkerLayer);
     s.trail.forEach(function(p,i){
       var frac=i/s.trail.length;
       var r=3+frac*2;
-      var o=0.45+frac*0.40;
-      L.circleMarker([p.lat,p.lon],{radius:r,color:'#C62828',fillColor:'#C62828',fillOpacity:o,weight:1}).addTo(aprsMarkerLayer);
+      var o=(0.45+frac*0.40)*fade;
+      if(o>0.02)L.circleMarker([p.lat,p.lon],{radius:r,color:'#C62828',fillColor:'#C62828',fillOpacity:o,weight:1}).addTo(aprsMarkerLayer);
     });
   }
 }
@@ -999,10 +1201,11 @@ function updateMapFromToday(){
   // Clear all layers
   stationLayer.clearLayers();qsoMarkerLayer.clearLayers();qsoLineLayer.clearLayers();lastQsoLayer.clearLayers();activeQsoLayer.clearLayers();
   var bounds=[],hasStation=false;
+  var pt=qsoPathTheme();
 
   // ---- Station marker ----
   if(ownStationLat!=null&&ownStationLon!=null){
-    var sm=L.circleMarker([ownStationLat,ownStationLon],{radius:9,color:'#007A3D',fillColor:'#007A3D',fillOpacity:0.85,weight:2.5});
+    var sm=L.circleMarker([ownStationLat,ownStationLon],{radius:9,color:pt.station,fillColor:pt.station,fillOpacity:0.85,weight:2.5,className:'station-dot'});
     stationLayer.addLayer(sm);bounds.push([ownStationLat,ownStationLon]);hasStation=true;
   }
 
@@ -1021,7 +1224,7 @@ function updateMapFromToday(){
       // Marker
       var isLast=(i===lastQsoIdx&&mapCfg.highlightLastQSO),isActive=(activeGrid&&q.grid&&q.grid.toUpperCase()===activeGrid.toUpperCase());
       var mr=isActive?7:isLast?5.5:4;
-      var mc=isActive?'#D00032':isLast?'#0080FF':'#0080FF';
+      var mc=isActive?pt.markerActive:isLast?pt.marker:pt.marker;
       var mf=isActive?1:isLast?0.9:0.8;
       var mk=L.circleMarker([lat,lon],{radius:mr,color:mc,fillColor:mc,fillOpacity:mf,weight:isActive?3:2,opacity:0.95});
       var popup=(q.call||'')+'<br>'+(q.band||'')+' '+(q.mode||'')+'<br>'+(q.grid||'');
@@ -1037,15 +1240,12 @@ function updateMapFromToday(){
         // Include great-circle midpoint in bounds so the arc stays visible.
         bounds.push(pts[16]);
         if(isActive){
-          // Active QSO: prominent dashed line with animated dash offset.
-          var alOpt={color:'#D00032',weight:4,opacity:0.9,dashArray:'12 8',className:'active-path-anim'};
-          activeQsoLayer.addLayer(L.polyline(pts,alOpt));
+          var ac=pt.active;if(ac.dash!==null){ac.dash='12 8';ac.className='active-path-anim';}
+          addDualPolyline(activeQsoLayer,pts,ac);
         }else if(isLast&&mapCfg.highlightLastQSO){
-          // Last QSO: blue, thicker, more opaque.
-          lastQsoLayer.addLayer(L.polyline(pts,{color:'#0080FF',weight:3,opacity:0.85}));
+          addDualPolyline(lastQsoLayer,pts,pt.last);
         }else{
-          // Older QSO: visible above radar.
-          qsoLineLayer.addLayer(L.polyline(pts,{color:'#0080FF',weight:1.8,opacity:0.50}));
+          addDualPolyline(qsoLineLayer,pts,pt.past);
         }
         drawn++;
       }
@@ -1057,7 +1257,7 @@ function updateMapFromToday(){
     todayQsos.forEach(function(q){
       if(markersDrawn>=maxMarkers)return;
       var ll=getQsoLatLon(q);if(!ll)return;
-      var mk=L.circleMarker(ll,{radius:4,color:'#0080FF',fillColor:'#0080FF',fillOpacity:0.8,weight:2,opacity:0.95});
+      var mk=L.circleMarker(ll,{radius:4,color:pt.marker,fillColor:pt.marker,fillOpacity:0.8,weight:2,opacity:0.95});
       mk.bindTooltip(q.call||'',{direction:'top'});
       qsoMarkerLayer.addLayer(mk);bounds.push(ll);
       markersDrawn++;
@@ -1068,9 +1268,10 @@ function updateMapFromToday(){
   if(activeGrid&&ownStationLat!==null){
     var al=gridToLatLon(activeGrid);if(al[0]){
       var actPts=greatCirclePoints(ownStationLat,ownStationLon,al[0],al[1],48);
-      activeQsoLayer.addLayer(L.polyline(actPts,{color:'#D00032',weight:4,opacity:0.9,dashArray:'12 8',className:'active-path-anim'}));
+      var ac=pt.active;ac.dash='12 8';ac.className='active-path-anim';
+      addDualPolyline(activeQsoLayer,actPts,ac);
       // Partner location marker — pulsing dot at the far end of the active line.
-      activeQsoLayer.addLayer(L.circleMarker(al,{radius:7,color:'#D00032',fillColor:'#D00032',fillOpacity:0.35,weight:2.5,className:'partner-dot'}));
+      activeQsoLayer.addLayer(L.circleMarker(al,{radius:7,color:pt.active.main,fillColor:pt.active.main,fillOpacity:0.35,weight:2.5,className:'partner-dot'}));
       // Include great-circle midpoint so arc stays in bounds.
       bounds.push(actPts[24]);
       bounds.push(al);
@@ -1206,19 +1407,20 @@ function wxDoFetch(){
 function wxStartInterval(){
   if(wxInterval)return;
   wxInterval=setInterval(function(){
-    if(navigator.onLine&&wxLat!=null&&wxLon!=null)wxDoFetch();
+    if(navigator.onLine&&displayCfg&&displayCfg.isOnline&&wxLat!=null&&wxLon!=null)wxDoFetch();
   },15*60*1000);
 }
 function wxUpdateVisibility(){
   if(!wxEl)wxEl=document.getElementById('wx-row');
   if(wxEl){
-    if(navigator.onLine)wxEl.style.display='';
+    if(navigator.onLine&&displayCfg&&displayCfg.isOnline)wxEl.style.display='';
     else{wxEl.style.display='none';wxEl.innerHTML=''}
   }
   if(map)map.invalidateSize();if(mapLocal)mapLocal.invalidateSize();
 }
 // Listen for online/offline events.
 window.addEventListener('online',function(){
+  if(!(displayCfg&&displayCfg.isOnline))return;
   wxUpdateVisibility();
   if(wxLat!=null&&wxLon!=null){wxLat=null;wxLon=null;wxDoFetch();wxStartInterval()}
 });
@@ -1365,14 +1567,5 @@ fetch('/api/snapshot').then(function(r){return r.json()}).then(function(snap){
   renderAll(snap);
 }).catch(function(e){D('fetch','/api/snapshot ERR',''+e)});
 connectSSE();
-
-// ---- Auto-reload every 5 minutes (silent safety net) ----
-// If SSE silently breaks or the tab goes stale, a periodic reload
-// ensures the display stays fresh. Preserves ?debug=1 and restores
-// the correct state from the server snapshot.
-setTimeout(function(){
-  D('reload','5-minute auto-reload triggered');
-  location.reload();
-},300000);
 
 })();

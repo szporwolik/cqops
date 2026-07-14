@@ -346,7 +346,7 @@ func (m *Model) viewPSKReporter() string {
 		tableContent = m.buildPSKTable(filtered, tableW-6, fixedRows)
 	}
 	tableBox := m.renderPartnerBox(
-		fmt.Sprintf("Heard by (%d)", len(filtered)),
+		fmt.Sprintf("Heard by %d stations", len(filtered)),
 		tableContent, tableW, 0)
 
 	// Build filters box.

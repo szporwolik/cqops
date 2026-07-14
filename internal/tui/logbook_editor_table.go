@@ -75,35 +75,44 @@ func (le *LogbookEditor) buildTable() {
 		bodyW = 20
 	}
 
-	// Select tiers — contest-aware and multi-operator-aware.
+	// Reuse cached tier selection and column layout when width hasn't
+	// changed and contest/multiOp flags are stable. On low-end hardware
+	// this avoids recomputing column widths on every cursor move.
 	tiers := editorColTiers
 	if le.contest {
 		tiers = editorColTiersContest
 	}
 	var names []string
-	for i := len(tiers) - 1; i >= 0; i-- {
-		total := 0
-		for _, n := range tiers[i].names {
-			total += qsoAllCols[n].minWidth
-		}
-		total += len(tiers[i].names) - 1
-		if total <= bodyW {
-			names = tiers[i].names
-			break
-		}
-	}
-	if len(names) == 0 && len(tiers) > 0 {
-		names = tiers[0].names
-	}
-
-	// Multi-operator: swap Grid for Operator.
-	if le.multiOp {
-		for i, n := range names {
-			if n == "Grid" {
-				names[i] = "Operator"
+	if le.formattedNames != nil && le.formattedWidth == bodyW {
+		names = le.formattedNames
+	} else {
+		for i := len(tiers) - 1; i >= 0; i-- {
+			total := 0
+			for _, n := range tiers[i].names {
+				total += qsoAllCols[n].minWidth
+			}
+			total += len(tiers[i].names) - 1
+			if total <= bodyW {
+				names = tiers[i].names
 				break
 			}
 		}
+		if len(names) == 0 && len(tiers) > 0 {
+			names = tiers[0].names
+		}
+
+		// Multi-operator: swap Grid for Operator.
+		if le.multiOp {
+			for i, n := range names {
+				if n == "Grid" {
+					names[i] = "Operator"
+					break
+				}
+			}
+		}
+		le.formattedNames = names
+		le.formattedWidth = bodyW
+		le.formattedRows = nil // invalidate row cache on tier change
 	}
 
 	// Build columns from shared qsoAllCols registry.
@@ -179,14 +188,21 @@ func (le *LogbookEditor) buildTable() {
 		}
 	}
 
-	// Build rows from shared column registry.
+	// Build rows — reuse pre-formatted cache when available.
 	var trimmedRows []table.Row
-	for _, q := range le.qsos {
-		var row table.Row
-		for _, n := range names {
-			row = append(row, editorColValue(n, &q))
+	if le.formattedRows != nil && len(le.formattedRows) == len(le.qsos) {
+		trimmedRows = le.formattedRows
+	} else {
+		// Pre-allocate for the page.
+		trimmedRows = make([]table.Row, 0, len(le.qsos))
+		for _, q := range le.qsos {
+			row := make(table.Row, len(names))
+			for j, n := range names {
+				row[j] = editorColValue(n, &q)
+			}
+			trimmedRows = append(trimmedRows, row)
 		}
-		trimmedRows = append(trimmedRows, row)
+		le.formattedRows = trimmedRows
 	}
 	t := table.New(
 		table.WithColumns(cols),

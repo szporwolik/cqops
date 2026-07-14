@@ -2,6 +2,7 @@
 set -euo pipefail
 
 VERSION=$(cat VERSION)
+COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "")
 BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 BUILD_DIR="build"
 mkdir -p "$BUILD_DIR"
@@ -22,7 +23,7 @@ if command -v go-winres &>/dev/null; then
   (cd winres && go-winres make)
 fi
 
-LDFLAGS="-s -w -X github.com/szporwolik/cqops/internal/version.Version=${VERSION} -X github.com/szporwolik/cqops/internal/version.BuildDate=${BUILD_DATE}"
+LDFLAGS="-s -w -X github.com/szporwolik/cqops/internal/version.Version=${VERSION} -X github.com/szporwolik/cqops/internal/version.Commit=${COMMIT} -X github.com/szporwolik/cqops/internal/version.BuildDate=${BUILD_DATE}"
 
 targets=(
   "windows amd64 .exe"

@@ -489,7 +489,7 @@ var qsoAllCols = map[string]struct {
 	"SIG":      {"SIG", 5, func(q *qso.QSO) string { return q.SIG }},
 	"ExchSent": {"Snt", 6, func(q *qso.QSO) string { return q.ExchSent }},
 	"ExchRcvd": {"Rcv", 6, func(q *qso.QSO) string { return q.ExchRcvd }},
-	"Contest": {"Contest", 10, func(q *qso.QSO) string {
+	"Contest": {"Contest", 12, func(q *qso.QSO) string {
 		if q.ContestADIFID != "" {
 			return q.ContestADIFID
 		}

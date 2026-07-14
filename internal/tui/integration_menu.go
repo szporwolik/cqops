@@ -15,7 +15,6 @@ import (
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/gps"
-	"github.com/szporwolik/cqops/internal/qrz"
 	"go.bug.st/serial"
 )
 
@@ -36,11 +35,13 @@ type IntegrationMenu struct {
 
 	// HTTP Server
 	httpEnabled  bool
+	httpTheme    int // 0=Bright, 1=Dark, 2=Orchid(YL), 3=HighVis
 	httpAddr     textinput.Model
 	httpPort     textinput.Model
 	httpHeader1  textinput.Model
 	httpHeader2  textinput.Model
 	httpClubLogo textinput.Model
+	httpQRLink   textinput.Model
 	httpEvtStart textinput.Model
 
 	// GPS
@@ -73,12 +74,16 @@ type IntegrationMenu struct {
 	aprsTestResult string
 	aprsOnline     bool // true when APRS client is connected (KISS or APRS-IS)
 
-	focus  int
-	done   bool
-	saved  bool
-	goBack bool
-	width  int
-	height int
+	// aprsToast is set by APRS test handler; parent reads and shows toast, then clears.
+	aprsToast string
+
+	focus      int
+	done       bool
+	saved      bool
+	goBack     bool
+	goCallbook bool
+	width      int
+	height     int
 
 	// saveError is set when Ctrl+S is blocked by validation.
 	// The parent reads it to show a toast, then clears it.
@@ -101,39 +106,42 @@ const (
 	imHTTPChk      = 8
 	imHTTPAddr     = 9
 	imHTTPPort     = 10
-	imHTTPHdr1     = 11
-	imHTTPHdr2     = 12
-	imHTTPLogo     = 13
-	imHTTPEvt      = 14
-	imGPSChk       = 15
-	imGPSSvc       = 16 // service type: None / Serial / GPSD
-	imGPSGridPrec  = 17 // grid precision: 10 / 8 / 6
-	imGPSPort      = 18 // serial port
-	imGPSBaud      = 19 // baud rate
-	imGPSDTR       = 20 // DTR
-	imGPSRTS       = 21 // RTS
-	imGPSDHost     = 22 // GPSD host
-	imGPSDPort     = 23 // GPSD port
-	imGPSTest      = 24 // test button
-	imAPRSChk      = 25
-	imAPRSSvc      = 26 // service type: APRS-IS / KISS / KISS Server
-	imAPRSServer   = 27 // APRS-IS server host:port
-	imAPRSKISSHost = 28 // KISS Server TCP host
-	imAPRSKISSPort = 29 // KISS Server TCP port
-	imAPRSPort     = 30 // KISS serial port
-	imAPRSBaud     = 31 // KISS baud rate
-	imAPRSData     = 32 // KISS data bits
-	imAPRSParity   = 33 // KISS parity
-	imAPRSStop     = 34 // KISS stop bits
-	imAPRSDTR      = 35 // KISS DTR
-	imAPRSRTS      = 36 // KISS RTS
-	imAPRSTest     = 37 // test button
-	imMax          = 38
+	imHTTPTheme    = 11
+	imHTTPHdr1     = 12
+	imHTTPHdr2     = 13
+	imHTTPLogo     = 14
+	imHTTPQRLink   = 15
+	imHTTPEvt      = 16
+	imGPSChk       = 17
+	imGPSSvc       = 18 // service type: None / Serial / GPSD
+	imGPSGridPrec  = 19 // grid precision: 10 / 8 / 6
+	imGPSPort      = 20 // serial port
+	imGPSBaud      = 21 // baud rate
+	imGPSDTR       = 22 // DTR
+	imGPSRTS       = 23 // RTS
+	imGPSDHost     = 24 // GPSD host
+	imGPSDPort     = 25 // GPSD port
+	imGPSTest      = 26 // test button
+	imAPRSChk      = 27
+	imAPRSSvc      = 28 // service type: APRS-IS / KISS / KISS Server
+	imAPRSServer   = 29 // APRS-IS server host:port
+	imAPRSKISSHost = 30 // KISS Server TCP host
+	imAPRSKISSPort = 31 // KISS Server TCP port
+	imAPRSPort     = 32 // KISS serial port
+	imAPRSBaud     = 33 // KISS baud rate
+	imAPRSData     = 34 // KISS data bits
+	imAPRSParity   = 35 // KISS parity
+	imAPRSStop     = 36 // KISS stop bits
+	imAPRSDTR      = 37 // KISS DTR
+	imAPRSRTS      = 38 // KISS RTS
+	imAPRSTest     = 39 // test button
+	imMax          = 40
 )
 
 type callbookTestMsg struct {
-	ok  bool
-	err error
+	ok       bool
+	err      error
+	provider string // "qrz" or "hamqth"
 }
 
 type gpsTestMsg struct {
@@ -226,7 +234,7 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 	qrzUser.CharLimit = 30
 	qrzUser.SetWidth(28)
 	qrzUser.Placeholder = "QRZ.com username"
-	qrzUser.SetValue(cfg.Integrations.QRZ.User)
+	qrzUser.SetValue(cfg.Integrations.Callbook.QRZ.User)
 
 	qrzPass := newTextinput()
 	qrzPass.CharLimit = 40
@@ -234,7 +242,7 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 	qrzPass.Placeholder = "QRZ.com password"
 	qrzPass.EchoMode = textinput.EchoPassword
 	qrzPass.EchoCharacter = '*'
-	qrzPass.SetValue(cfg.Integrations.QRZ.Pass)
+	qrzPass.SetValue(cfg.Integrations.Callbook.QRZ.Pass)
 
 	httpAddr := newTextinput()
 	httpAddr.CharLimit = 40
@@ -280,12 +288,30 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 		httpClubLogo.SetValue(cfg.Integrations.HTTPServer.ClubLogo)
 	}
 
+	httpQRLink := newTextinput()
+	httpQRLink.CharLimit = 70
+	httpQRLink.SetWidth(28)
+	httpQRLink.Placeholder = "https://cqops.com (default)"
+	if cfg.Integrations.HTTPServer.QRLink != "" {
+		httpQRLink.SetValue(cfg.Integrations.HTTPServer.QRLink)
+	}
+
 	httpEvtStart := newTextinput()
 	httpEvtStart.CharLimit = 10
 	httpEvtStart.SetWidth(28)
 	httpEvtStart.Placeholder = "YYYY-MM-DD (optional)"
 	if cfg.Integrations.HTTPServer.EventStart != "" {
 		httpEvtStart.SetValue(cfg.Integrations.HTTPServer.EventStart)
+	}
+
+	httpTheme := 0 // Bright
+	switch cfg.Integrations.HTTPServer.Theme {
+	case "dark":
+		httpTheme = 1
+	case "yl":
+		httpTheme = 2
+	case "hivis":
+		httpTheme = 3
 	}
 
 	// GPS
@@ -411,15 +437,17 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 		dxcHost:          dxcHost,
 		dxcPort:          dxcPort,
 		dxcLogin:         dxcLogin,
-		qrzEnabled:       cfg.Integrations.QRZ.Enabled,
+		qrzEnabled:       cfg.Integrations.Callbook.QRZ.Enabled,
 		qrzUser:          qrzUser,
 		qrzPass:          qrzPass,
 		httpEnabled:      cfg.Integrations.HTTPServer.Enabled,
+		httpTheme:        httpTheme,
 		httpAddr:         httpAddr,
 		httpPort:         httpPort,
 		httpHeader1:      httpHeader1,
 		httpHeader2:      httpHeader2,
 		httpClubLogo:     httpClubLogo,
+		httpQRLink:       httpQRLink,
 		httpEvtStart:     httpEvtStart,
 		gpsEnabled:       cfg.Integrations.GPS.Enabled,
 		gpsService:       gpsSvc,
@@ -482,9 +510,11 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		im.aprsTesting = false
 		if msg.err != nil {
 			im.aprsTestResult = "Failed — " + msg.err.Error()
+			im.aprsToast = "APRS: " + msg.err.Error()
 			applog.Warn("APRS test failed", "error", msg.err.Error())
 		} else {
 			im.aprsTestResult = "OK — connection working"
+			im.aprsToast = "APRS: connection verified"
 			applog.Info("APRS test OK")
 		}
 
@@ -511,17 +541,6 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				if strings.TrimSpace(im.dxcLogin.Value()) == "" {
 					im.SaveError = "DXC login (callsign) is required when DXC is enabled"
-					return im, nil
-				}
-			}
-			// Validate QRZ fields when QRZ is enabled.
-			if im.qrzEnabled {
-				if strings.TrimSpace(im.qrzUser.Value()) == "" {
-					im.SaveError = "QRZ username is required when QRZ is enabled"
-					return im, nil
-				}
-				if im.qrzPass.Value() == "" {
-					im.SaveError = "QRZ password is required when QRZ is enabled"
 					return im, nil
 				}
 			}
@@ -585,19 +604,15 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				im.autoScrollViewport()
 				return im, nil
-			case imQRZChk:
-				im.qrzEnabled = !im.qrzEnabled
-				if !im.isPositionVisible(im.focus) {
-					im.fixFocus()
-				}
-				im.autoScrollViewport()
-				return im, nil
 			case imHTTPChk:
 				im.httpEnabled = !im.httpEnabled
 				if !im.isPositionVisible(im.focus) {
 					im.fixFocus()
 				}
 				im.autoScrollViewport()
+				return im, nil
+			case imHTTPTheme:
+				im.httpTheme = (im.httpTheme + 1) % 4
 				return im, nil
 			case imGPSChk:
 				im.gpsEnabled = !im.gpsEnabled
@@ -690,24 +705,6 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			im.prev()
 			im.autoScrollViewport()
 		case "enter":
-			if im.focus == imQRZTest {
-				if !im.inetOnline {
-					im.qrzTestResult = "No internet connection"
-					return im, nil
-				}
-				user := strings.TrimSpace(im.qrzUser.Value())
-				pass := im.qrzPass.Value()
-				if user == "" || pass == "" {
-					im.qrzTestResult = "Username and password required"
-					return im, nil
-				}
-				im.qrzTesting = true
-				im.qrzTestResult = "Testing..."
-				return im, func() tea.Msg {
-					data, err := qrz.Lookup(user, pass, "SP9MOA")
-					return callbookTestMsg{ok: err == nil && data != nil, err: err}
-				}
-			}
 			if im.focus == imGPSTest {
 				switch im.gpsService {
 				case 0: // Serial
@@ -847,10 +844,6 @@ func (im *IntegrationMenu) forwardToFocused(msg tea.Msg) {
 		im.dxcPort, _ = im.dxcPort.Update(msg)
 	case imDXCLogin:
 		im.dxcLogin, _ = im.dxcLogin.Update(msg)
-	case imQRZUser:
-		im.qrzUser, _ = im.qrzUser.Update(msg)
-	case imQRZPass:
-		im.qrzPass, _ = im.qrzPass.Update(msg)
 	case imHTTPAddr:
 		im.httpAddr, _ = im.httpAddr.Update(msg)
 	case imHTTPPort:
@@ -861,6 +854,8 @@ func (im *IntegrationMenu) forwardToFocused(msg tea.Msg) {
 		im.httpHeader2, _ = im.httpHeader2.Update(msg)
 	case imHTTPLogo:
 		im.httpClubLogo, _ = im.httpClubLogo.Update(msg)
+	case imHTTPQRLink:
+		im.httpQRLink, _ = im.httpQRLink.Update(msg)
 	case imHTTPEvt:
 		im.httpEvtStart, _ = im.httpEvtStart.Update(msg)
 	case imGPSPort:
@@ -904,13 +899,14 @@ func (im *IntegrationMenu) prev() {
 
 func (im *IntegrationMenu) isPositionVisible(pos int) bool {
 	switch pos {
-	case imDXCChk, imQRZChk, imHTTPChk, imGPSChk:
+	case imDXCChk, imHTTPChk, imGPSChk:
 		return true
 	case imDXCHost, imDXCPort, imDXCLogin:
 		return im.dxcEnabled
-	case imQRZUser, imQRZPass, imQRZTest:
-		return im.qrzEnabled
-	case imHTTPAddr, imHTTPPort, imHTTPHdr1, imHTTPHdr2, imHTTPLogo, imHTTPEvt:
+	// QRZ positions are now dead — callbook is a top-level config menu.
+	case imQRZChk, imQRZUser, imQRZPass, imQRZTest:
+		return false
+	case imHTTPAddr, imHTTPPort, imHTTPTheme, imHTTPHdr1, imHTTPHdr2, imHTTPLogo, imHTTPQRLink, imHTTPEvt:
 		return im.httpEnabled
 	// GPS fields visibility depends on enabled + service type.
 	case imGPSSvc, imGPSGridPrec:
@@ -945,7 +941,7 @@ func (im *IntegrationMenu) fixFocus() {
 }
 
 func (im *IntegrationMenu) blurAll() {
-	blurTextinputs(&im.dxcHost, &im.dxcPort, &im.dxcLogin, &im.qrzUser, &im.qrzPass, &im.httpAddr, &im.httpPort, &im.httpHeader1, &im.httpHeader2, &im.httpClubLogo, &im.httpEvtStart, &im.gpsPort, &im.gpsdHost, &im.gpsdPort, &im.aprsServer, &im.aprsKISSHost, &im.aprsKISSPort, &im.aprsPort)
+	blurTextinputs(&im.dxcHost, &im.dxcPort, &im.dxcLogin, &im.httpAddr, &im.httpPort, &im.httpHeader1, &im.httpHeader2, &im.httpClubLogo, &im.httpEvtStart, &im.gpsPort, &im.gpsdHost, &im.gpsdPort, &im.aprsServer, &im.aprsKISSHost, &im.aprsKISSPort, &im.aprsPort)
 }
 func (im *IntegrationMenu) focusField() {
 	switch im.focus {
@@ -955,10 +951,6 @@ func (im *IntegrationMenu) focusField() {
 		im.dxcPort.Focus()
 	case imDXCLogin:
 		im.dxcLogin.Focus()
-	case imQRZUser:
-		im.qrzUser.Focus()
-	case imQRZPass:
-		im.qrzPass.Focus()
 	case imHTTPAddr:
 		im.httpAddr.Focus()
 	case imHTTPPort:
@@ -969,6 +961,8 @@ func (im *IntegrationMenu) focusField() {
 		im.httpHeader2.Focus()
 	case imHTTPLogo:
 		im.httpClubLogo.Focus()
+	case imHTTPQRLink:
+		im.httpQRLink.Focus()
 	case imHTTPEvt:
 		im.httpEvtStart.Focus()
 	case imGPSPort:
@@ -1058,6 +1052,34 @@ func (im *IntegrationMenu) View() tea.View {
 	if lineW < 36 {
 		lineW = 36
 	}
+	if lineW > partnerMapMaxW-4 {
+		lineW = partnerMapMaxW - 4
+	}
+
+	// --- Info box (same pattern as other config menus) ---
+	infoMaxW := lineW - 4
+	if infoMaxW < 30 {
+		infoMaxW = 30
+	}
+	infoText := "Integrations are the core of CQOps functionality. " +
+		"Enable or disable each service as needed — but use " +
+		"caution: some integrations (DX Cluster, APRS, GPS) " +
+		"can create additional CPU or network load, especially " +
+		"on low-end hardware or field setups."
+	infoLines := wrapLines(infoText, infoMaxW)
+	var infoContent strings.Builder
+	for i, line := range infoLines {
+		infoContent.WriteString(DimStyle.Render(line))
+		if i < len(infoLines)-1 {
+			infoContent.WriteString("\n")
+		}
+	}
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(P.Border)
+	infoBox := boxStyle.Render(infoContent.String())
+	b.WriteString(infoBox)
+	b.WriteString("\n")
 
 	// --- DXC section ---
 	dxcCheckbox := "[ ]"
@@ -1088,57 +1110,6 @@ func (im *IntegrationMenu) View() tea.View {
 	b.WriteString(padOrTrunc("", lineW))
 	b.WriteString("\n")
 
-	// --- QRZ section ---
-	qrzCheckbox := "[ ]"
-	if im.qrzEnabled {
-		qrzCheckbox = "[x]"
-	}
-	qrzPrefix := "  "
-	qrzLabel := S.FormLabelWide.Align(lipgloss.Left).Render("QRZ.com:")
-	if im.focus == imQRZChk {
-		qrzPrefix = S.FormPrefixOn.Render("> ")
-		qrzLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("QRZ.com:")
-		qrzCheckbox = CursorStyle.Render(qrzCheckbox) + " " + DimStyle.Render("(Space)")
-	}
-	b.WriteString(padOrTrunc(
-		lipgloss.JoinHorizontal(lipgloss.Center, qrzPrefix, qrzLabel, " ", qrzCheckbox),
-		lineW))
-
-	if im.qrzEnabled {
-		b.WriteString("\n")
-		b.WriteString(padOrTrunc(im.renderField(imQRZUser, "  Username:", &im.qrzUser, false), lineW))
-		b.WriteString("\n")
-		b.WriteString(padOrTrunc(im.renderField(imQRZPass, "  Password:", &im.qrzPass, true), lineW))
-
-		// Test button
-		b.WriteString("\n")
-		btnText := "[ Test Connection ]"
-		var btnLine string
-		if !im.inetOnline {
-			btnLine = "    " + DimStyle.Render(btnText) + " " + DimStyle.Render("(offline)")
-		} else if im.focus == imQRZTest {
-			btnLine = S.FormPrefixOn.Render("> ") + CursorStyle.Render("  "+btnText)
-		} else {
-			btnLine = "    " + InputStyle.Render(btnText)
-		}
-		b.WriteString(padOrTrunc(btnLine, lineW))
-
-		if im.qrzTestResult != "" {
-			b.WriteString("\n    ")
-			if im.qrzTesting {
-				b.WriteString(DimStyle.Render(im.qrzTestResult))
-			} else if strings.HasPrefix(im.qrzTestResult, "OK") {
-				b.WriteString(SuccessStyle.Render(im.qrzTestResult))
-			} else {
-				b.WriteString(ErrorStyle.Render(im.qrzTestResult))
-			}
-		}
-	}
-
-	b.WriteString("\n")
-	b.WriteString(padOrTrunc("", lineW))
-	b.WriteString("\n")
-
 	// --- HTTP Server section ---
 	httpCheckbox := "[ ]"
 	if im.httpEnabled {
@@ -1161,11 +1132,15 @@ func (im *IntegrationMenu) View() tea.View {
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(im.renderField(imHTTPPort, "  Port:", &im.httpPort, false), lineW))
 		b.WriteString("\n")
+		b.WriteString(padOrTrunc(im.renderTheme(), lineW))
+		b.WriteString("\n")
 		b.WriteString(padOrTrunc(im.renderField(imHTTPHdr1, "  Header 1 (opt):", &im.httpHeader1, false), lineW))
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(im.renderField(imHTTPHdr2, "  Header 2 (opt):", &im.httpHeader2, false), lineW))
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(im.renderField(imHTTPLogo, "  Logo URL (opt):", &im.httpClubLogo, false), lineW))
+		b.WriteString("\n")
+		b.WriteString(padOrTrunc(im.renderField(imHTTPQRLink, "  QR Link (opt):", &im.httpQRLink, false), lineW))
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(im.renderField(imHTTPEvt, "  Event Start (opt):", &im.httpEvtStart, false), lineW))
 	}
@@ -1463,11 +1438,6 @@ func (im *IntegrationMenu) View() tea.View {
 			btnLine = "    " + InputStyle.Render(btnText)
 		}
 		b.WriteString(padOrTrunc(btnLine, lineW))
-
-		if im.aprsTestResult != "" {
-			b.WriteString("\n")
-			b.WriteString(padOrTrunc("    "+im.aprsTestResultStyled(), lineW))
-		}
 	}
 
 	// Build raw form body — header is rendered separately above the viewport.
@@ -1537,8 +1507,23 @@ func (im *IntegrationMenu) renderField(focusIdx int, label string, ti *textinput
 	return lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)
 }
 
+func (im *IntegrationMenu) renderTheme() string {
+	prefix := "  "
+	lbl := S.FormLabelWide.Align(lipgloss.Left).Render("  Theme:")
+	if im.focus == imHTTPTheme {
+		prefix = S.FormPrefixOn.Render("> ")
+		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render("  Theme:")
+	}
+	themeNames := []string{"Bright", "Dark", "Orchid", "HighVis"}
+	val := ValueStyle.Render(themeNames[im.httpTheme])
+	if im.focus == imHTTPTheme {
+		val = CursorStyle.Render(val) + " " + DimStyle.Render("(Space)")
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)
+}
+
 // Values returns DXC, QRZ, and HTTP server config values.
-func (im *IntegrationMenu) Values() (dxcEnabled bool, dxcHost, dxcPort, dxcLogin string, qrzEnabled bool, qrzUser, qrzPass string, httpEnabled bool, httpAddr, httpPort, httpHdr1, httpHdr2, httpLogo, httpEvtStart string) {
+func (im *IntegrationMenu) Values() (dxcEnabled bool, dxcHost, dxcPort, dxcLogin string, qrzEnabled bool, qrzUser, qrzPass string, httpEnabled bool, httpAddr, httpPort, httpTheme string, httpHdr1, httpHdr2, httpLogo, httpQRLink, httpEvtStart string) {
 	return im.dxcEnabled,
 		strings.TrimSpace(im.dxcHost.Value()),
 		strings.TrimSpace(im.dxcPort.Value()),
@@ -1549,9 +1534,22 @@ func (im *IntegrationMenu) Values() (dxcEnabled bool, dxcHost, dxcPort, dxcLogin
 		im.httpEnabled,
 		strings.TrimSpace(im.httpAddr.Value()),
 		strings.TrimSpace(im.httpPort.Value()),
+		func() string {
+			switch im.httpTheme {
+			case 1:
+				return "dark"
+			case 2:
+				return "yl"
+			case 3:
+				return "hivis"
+			default:
+				return "bright"
+			}
+		}(),
 		strings.TrimSpace(im.httpHeader1.Value()),
 		strings.TrimSpace(im.httpHeader2.Value()),
 		strings.TrimSpace(im.httpClubLogo.Value()),
+		strings.TrimSpace(im.httpQRLink.Value()),
 		strings.TrimSpace(im.httpEvtStart.Value())
 }
 
@@ -1564,16 +1562,6 @@ func (im *IntegrationMenu) gpsTestResultStyled() string {
 		return SuccessStyle.Render(im.gpsTestResult)
 	}
 	return ErrorStyle.Render(im.gpsTestResult)
-}
-
-func (im *IntegrationMenu) aprsTestResultStyled() string {
-	if im.aprsTesting {
-		return DimStyle.Render(im.aprsTestResult)
-	}
-	if strings.HasPrefix(im.aprsTestResult, "OK") {
-		return SuccessStyle.Render(im.aprsTestResult)
-	}
-	return ErrorStyle.Render(im.aprsTestResult)
 }
 
 func (im *IntegrationMenu) gpsServiceName() string {
@@ -1698,6 +1686,34 @@ func friendlyQRZError(err error) string {
 		return "Cannot connect to QRZ.com - try again later"
 	}
 	return "QRZ lookup failed - " + msg
+}
+
+// friendlyHTestError shortens HamQTH test errors for display.
+func friendlyHTestError(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+
+	// Clean HamQTH-prefixed errors from our client.
+	if strings.HasPrefix(msg, "HamQTH:") {
+		return msg
+	}
+
+	// Hide raw XML/HTTP errors from the user.
+	if strings.Contains(msg, "expected element type") || strings.Contains(msg, "cannot unmarshal") {
+		return "HamQTH: unexpected server response — try again later"
+	}
+	if strings.Contains(msg, "no such host") {
+		return "Cannot reach HamQTH.com — check your internet connection"
+	}
+	if strings.Contains(msg, "timeout") || strings.Contains(msg, "Timeout") {
+		return "HamQTH timed out — try again later"
+	}
+	if strings.Contains(msg, "connection refused") {
+		return "Cannot connect to HamQTH — try again later"
+	}
+	return "HamQTH lookup failed — " + msg
 }
 
 // friendlyGPSError shortens verbose Go network errors for display in

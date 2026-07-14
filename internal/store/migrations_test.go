@@ -48,6 +48,9 @@ func TestMigrationsApplyCleanly(t *testing.T) {
 			foundBaseCall = true
 		}
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows iteration: %v", err)
+	}
 	if !foundBaseCall {
 		t.Error("base_call column not found in qsos table — migration may have been skipped")
 	}

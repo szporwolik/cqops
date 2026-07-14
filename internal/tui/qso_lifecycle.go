@@ -79,10 +79,14 @@ func (m *Model) saveQSO() tea.Cmd {
 	// fall back to the full exchange if the RST is not a prefix match.
 	qs.STXString = qso.StripRSTPrefix(qs.ExchSent, qs.RSTSent)
 	qs.SRXString = qso.StripRSTPrefix(qs.ExchRcvd, qs.RSTRcvd)
-	// STX/SRX are the last integer in the exchange (the serial).
-	// ParseSerial returns 0 when no integer is found (normal QSOs, non-serial contests).
-	qs.STX = qso.ParseSerial(qs.ExchSent)
-	qs.SRX = qso.ParseSerial(qs.ExchRcvd)
+	// STX/SRX: integer serial numbers. Only populate when the active
+	// contest uses serial exchange (e.g. CQ WW, ARRL DX). For IARU-HF,
+	// field-day, and other non-serial contests the numeric fields must
+	// remain 0 so they are omitted from ADIF export.
+	if ct, ok := m.App.Config.Contests[m.App.Logbook.ActiveContest]; ok && ct.SerialExchange {
+		qs.STX = qso.ParseSerial(qs.ExchSent)
+		qs.SRX = qso.ParseSerial(qs.ExchRcvd)
+	}
 	station := qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
 		Operator:        m.activeOperatorCallsign(),
@@ -108,6 +112,12 @@ func (m *Model) saveQSO() tea.Cmd {
 		if p := m.dxccLookup(qs.Call); p != nil {
 			qs.CQZone = fmt.Sprintf("%d", p.CQZone)
 			qs.ITUZone = fmt.Sprintf("%d", p.ITUZone)
+		}
+	}
+	// Enrich DXCC entity number from QRZ lookup when available.
+	if m.lookup.partnerData != nil && strings.EqualFold(m.lookup.partnerData.Callsign, qs.Call) {
+		if m.lookup.partnerData.DXCC != "" {
+			qs.DXCC = m.lookup.partnerData.DXCC
 		}
 	}
 	qso.ApplyStationDefaults(qs, station)

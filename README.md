@@ -10,21 +10,21 @@
 [![docs](https://img.shields.io/badge/docs-cqops.com-1f6feb)](https://docs.cqops.com/)
 [![Cloudsmith](https://img.shields.io/badge/OSS%20hosting%20by-cloudsmith-blue?logo=cloudsmith&style=flat-square)](https://cloudsmith.com)
 
-A small, fast, offline-first amateur radio logger for the terminal - built for portable/field ops, SOTA/POTA activations, and club stations with rotating operators. Runs on Raspberry Pi, old laptops, or any low-power machine without a GUI, over SSH or a local terminal. Hot-swap operators and logbooks, log via WSJT-X auto-feed or keyboard, sync to Wavelog. GPS-aware - uses your receiver's position for the station grid automatically.
+A small, fast, offline-first amateur radio logger for the terminal — built for portable/field ops, SOTA/POTA activations, and club stations with rotating operators. Runs on Raspberry Pi, old laptops, or any low-power machine without a GUI, over SSH or a local terminal. Hot-swap operators and logbooks, log via WSJT-X auto-feed or keyboard, sync to Wavelog. GPS-aware — uses your receiver's position for the station grid automatically. Works fully offline with an embedded world map, graceful degradation, and `--offline` flag.
 
-> 📖 **Full documentation, installation guides, and translations at [docs.cqops.com](https://docs.cqops.com/)** — English, Polski, Deutsch, Español, 日本語, Français, Italiano.
+> 📖 **Full documentation, installation guides, and translations at [docs.cqops.com](https://docs.cqops.com/)** — English, Polski, Deutsch, Español, 日本語, Français, Italiano, Português (BR), Русский.
 
 ## Installation
 
 ### Windows
 
 ```powershell
-winget install --exact --id SzymonPorwolik.CQOps
+winget install cqops
 ```
 
 Update:
 ```powershell
-winget upgrade --exact --id SzymonPorwolik.CQOps
+winget upgrade cqops
 ```
 
 > WinGet installation pending initial package acceptance at [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs). Until then, use the portable ZIP or NSIS installer from [Releases](https://github.com/szporwolik/cqops/releases).
@@ -62,7 +62,7 @@ Grab the latest binary, installer, or package from the [Releases](https://github
 - **Fast TUI logging** — three-column QSO form, dupe detection, form validation
 - **Multi-operator** — hot-swap operators and logbooks for club stations
 - **Rig control** — flrig and Hamlib rigctld, frequency/mode readback, spot-to-rig tuning
-- **QRZ callbook** — auto-fills name, QTH, grid, country
+- **Multi-provider callbook** — QRZ.com, HamQTH (free global), Callook.info (free US) with priority-based cascading and base-call fallback; auto-fills name, QTH, grid, country
 - **Wavelog sync** — upload, incremental download, per-logbook config
 - **Encrypted secrets** — AES-256-GCM, machine-tied, never plaintext
 - **DX Cluster & PSK Reporter** — live spots with band/mode/time filters
@@ -71,7 +71,7 @@ Grab the latest binary, installer, or package from the [Releases](https://github
 - **APRS KISS & KISS TCP**  — serial KISS TNC and KISS Server (Dire Wolf). 
 - **CQOps Live** — built-in browser dashboard with live map, QSO paths, stats, weather, band conditions, APRS. Great for Field Day displays or club station screens
 - **Contest logging** — exchange markers, auto serials, ADIF contest IDs
-- **Offline-first** — SQLite, cached reference data, `--offline` flag
+- **Offline-first** — SQLite, cached reference data, embedded world map, `--offline` flag, graceful no-internet degradation for dashboard, maps and weather
 - **ADIF 3.1.7** — full import/export, contest fields preserved
 - **Raspberry Pi ready** — Windows, Linux, macOS, ARM; runs over SSH
 - **Kitty terminal graphics** 🧪 — photo display via Kitty/Ghostty/WezTerm. Enable in Settings → General.
@@ -201,7 +201,8 @@ Full usage guide, workflows, and keyboard shortcuts are in the [documentation](h
 - [Open-Meteo](https://open-meteo.com/) — Free weather forecast API (CC BY 4.0), fetched browser-side for the CQOps Live dashboard weather row
 
 *CQOps Live dashboard — map tiles, weather radar, weather forecast, Leaflet:*
-- Map tiles: [OpenStreetMap](https://www.openstreetmap.org/copyright) — © OpenStreetMap contributors (ODbL).
+- Map tiles: [OpenFreeMap](https://openfreemap.org/) — © [OpenMapTiles](https://www.openmaptiles.org/) Data from [OpenStreetMap](https://www.openstreetmap.org/copyright) (ODbL). Styles: Bright (light theme), Fiord (dark theme).
+- Map rendering: [MapLibre GL JS](https://github.com/maplibre/maplibre-gl) (BSD-3) + [MapLibre GL Leaflet](https://github.com/maplibre/maplibre-gl-leaflet) (ISC), loaded from CDN.
 - Weather radar overlay: [RainViewer](https://www.rainviewer.com/) public API (browser-side, optional, offline-safe). Attribution displayed on-map and in footer.
 - Weather forecast row: [Open-Meteo](https://open-meteo.com/) free API (browser-side, no key required, offline-safe: hidden when disconnected). Attribution in footer. See `licenses/OPEN-METEO-CC-BY-4.0.txt`.
 - Leaflet 1.9.4 bundled under BSD-2. See `licenses/LEAFLET-BSD2-LICENSE`.

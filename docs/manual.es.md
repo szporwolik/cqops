@@ -43,13 +43,13 @@ CQOps se basa en la introducción rápida de QSO, el almacenamiento local y una 
 ### Ideas principales
 
 - **Operación orientada al terminal** — optimizada para el uso con teclado.
-- **Registro offline-first** — el registro local de QSO funciona sin acceso a Internet.
+- **Registro offline-first** — el registro local de QSO funciona sin acceso a Internet. Incluye un mapa mundial incrustado para el dashboard que funciona completamente offline.
 - **Bajo consumo** — adecuado para sistemas de la clase Raspberry Pi, portátiles antiguos y ordenadores de estación compartidos.
 - **Diseño portátil** — distribuido como un único binario de Go.
 - **Varios libros de guardia** — útil para registros personales, portátiles, de concursos y de club.
 - **Varios operadores** — útil para flujos de trabajo hot-seat y estaciones de club compartidas.
 - **Varios equipos** — cada preset de equipo puede conservar sus propios ajustes de backend y WSJT-X.
-- **Integraciones opcionales** — QRZ.com, Wavelog, DX Cluster, PSK Reporter, GPS, APRS, control del equipo, control del rotor, datos solares y el CQOps Live dashboard para navegador.
+- **Integraciones opcionales** — Callbook multiproveedor (QRZ.com, HamQTH, Callook.info), Wavelog, DX Cluster, PSK Reporter, GPS, APRS, control del equipo, control del rotor, datos solares y el CQOps Live dashboard para navegador.
 
 El registro local no requiere acceso a Internet. Las funciones de red se omiten en el modo `--offline`.
 
@@ -167,7 +167,7 @@ En el primer inicio, CQOps abre el asistente de configuración. Para el registro
 |---|---|
 | Station & Logbook | Libro de guardia inicial, indicativo de estación, operador, grid locator, referencias y zonas opcionales, y Wavelog URL/API/station profile ID |
 | Rig | Preset del equipo, modelo, antena, potencia, backend, rotor opcional y ajustes UDP de WSJT-X opcionales |
-| Integrations | Ajustes de búsqueda de QRZ.com |
+| Integrations | Configuración de búsqueda del callbook (QRZ.com, HamQTH, Callook.info) |
 | General | Zona horaria IANA |
 | Summary | Revisar y guardar |
 
@@ -374,7 +374,7 @@ CQOps puede rellenar campos desde estas fuentes:
 | Fuente | Campos |
 |---|---|
 | flrig / Hamlib | Frequency, Freq RX si hay split, Mode, Submode |
-| QRZ.com | Name, QTH, Grid, Country, CQ zone, ITU zone, DXCC, Continent |
+| Callbook (QRZ.com / HamQTH / Callook.info) | Name, QTH, Grid, Country, CQ zone, ITU zone, DXCC, Continent |
 | Base de datos REF | Referencias SOTA, POTA, WWFF e IOTA |
 | Wavelog lookup | Estado worked/confirmed cuando está configurado |
 | Datos DXCC/prefijos | Datos relacionados con el prefijo y el país |
@@ -497,9 +497,12 @@ La configuración incluye:
 |---|---|
 | `@rst` | RST enviado o recibido |
 | `@serial` | Número de serie que aumenta automáticamente |
-| `@call` | Su indicativo |
-| `@grid` | Su grid locator |
-| `@name` | Operator name del perfil de operador |
+| `@cqz` | Zona CQ de la estación DX |
+| `@mycqz` | Su zona CQ |
+| `@itu` | Zona ITU de la estación DX |
+| `@myitu` | Su zona ITU |
+| `@grid` | Grid de la estación DX |
+| `@mygrid` | Su grid |
 
 Pulse **Ctrl+C** para recorrer los concursos activos o seleccione uno en el menú **Contest** (**F7**). Los campos de intercambio aparecen automáticamente en **QSO form** y los números de serie aumentan de forma automática.
 
@@ -636,9 +639,22 @@ Una frecuencia seleccionada se puede usar para sintonizar el equipo activo. Los 
 
 Todas las integraciones son opcionales. El registro local funciona sin ellas.
 
-### QRZ.com
+### Callbook (QRZ.com, HamQTH, Callook.info)
 
-La búsqueda en QRZ.com requiere acceso a Internet y una suscripción QRZ XML.
+CQOps admite múltiples proveedores de callbook con cascada basada en prioridad.
+Al pulsar **Ins** en el formulario QSO, los proveedores se consultan en orden
+hasta que uno devuelve un resultado:
+
+1. **QRZ.com** — requiere Internet y una suscripción QRZ XML. Datos más completos.
+2. **HamQTH** — servicio global gratuito. Buena cobertura, requiere cuenta gratuita.
+3. **Callook.info** — servicio gratuito centrado en EE.UU. Sin cuenta, consultas FCC rápidas.
+
+Si un proveedor de mayor prioridad falla o está desactivado, se prueba el siguiente.
+Cuando **Base call fallback** está activado (predeterminado: sí), CQOps también
+prueba el indicativo base (sin prefijo ni sufijo) si el indicativo completo no
+devuelve resultados.
+
+Active y configure los proveedores en **F9 → Callbook**.
 
 En **QSO form**, pulse **Ins** para rellenar campos del callbook como:
 
@@ -1049,13 +1065,14 @@ Pulse **F9** para abrir el menú principal y seleccione:
 
 | Menu | Configures |
 |---|---|
-| General | Units, timezone, partner map/picture, solar panel, fuentes de CTY.DAT/SCP/REF, Kitty Graphics, Debug mode |
+| General | Units, timezone, partner map/picture, solar panel, fuentes de SCP/REF, Kitty Graphics, Debug mode |
 | Logbooks | Station callsign, grid, references, CQ/ITU zones, IARU region, GPS grid; Wavelog por libro (URL, API key, station profile); APRS por libro (callsign, symbol, beacon, range) |
 | Operators | Perfiles de operator callsign y operator name para estaciones multioperador |
 | Rigs | Presets de equipo: model, antenna, power, backend (None/flrig/Hamlib), rotor, WSJT-X UDP |
 | Contests | Perfiles de concurso: name, date, ADIF contest ID, exchange templates, starting serial number |
-| Integration | DX Cluster (host, port, login), QRZ.com (username, password), HTTP Server del dashboard (address, port, branding), GPS service (serial/GPSD, grid precision) |
-| Notifications | QSO saved alerts, Wavelog upload status, dupe beep, error sounds |
+| Integration | DX Cluster (host, port, login), HTTP Server del dashboard (address, port, branding), GPS service (serial/GPSD, grid precision) |
+| Callbook | Proveedores QRZ.com, HamQTH, Callook.info; orden de prioridad, base-call fallback, Wavelog lookup |
+| Notifications | QSO saved alerts, Wavelog QSO sent status, dupe beep, error sounds |
 
 ### Multi-logbook
 
@@ -1145,7 +1162,7 @@ Si `secrets.enc` está dañado, CQOps se inicia con una advertencia y solicita q
 | ↑ / ↓ | Move within column |
 | Enter | Save QSO, with duplicate confirmation if needed |
 | Del | Clear all form fields |
-| Ins | Lookup: QRZ, Wavelog, DXCC, and duplicate check |
+| Ins | Lookup: Callbook, Wavelog, DXCC, and duplicate check |
 | PgUp / PgDn | Cycle band, mode, or submode |
 | Ctrl+S | Send DX spot from filled form |
 | Ctrl+P | Fill call from nearest DXC spot |

@@ -9,6 +9,9 @@ import (
 
 var Version = "dev"
 
+// Commit is the git commit hash, embedded at compile time via -X ldflags.
+var Commit = ""
+
 // BuildDate is embedded at compile time via -X ldflags.
 // When empty, the binary's modification time is used as fallback.
 var BuildDate = ""
@@ -23,6 +26,15 @@ func Resolved() string {
 		return v
 	}
 	return "dev"
+}
+
+// ResolvedFull returns version with optional commit hash.
+func ResolvedFull() string {
+	v := Resolved()
+	if Commit != "" {
+		v += "-" + Commit
+	}
+	return v
 }
 
 // ResolvedDate returns the embedded build date, or falls back to the binary's

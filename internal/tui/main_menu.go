@@ -27,13 +27,14 @@ type MainMenu struct {
 func NewMainMenu() *MainMenu {
 	return &MainMenu{
 		items: []menuItem{
-			{"General", "Display, timezone, data sources, debug"},
-			{"Logbooks", "Station name, callsign, grid, Wavelog"},
+			{"General", "Units, timezone, map, solar data, debug"},
+			{"Logbooks", "Callsign, grid, Wavelog, APRS per logbook"},
 			{"Operators", "Multi-operator callsign profiles"},
-			{"Rigs", "Name, model, antenna, flrig, WSJT-X"},
+			{"Rigs", "flrig, rigctld, WSJT-X, antenna"},
 			{"Contests", "Contest profiles, exchanges, serials"},
-			{"Integration", "DX Cluster, QRZ.com, GPS, HTTP"},
-			{"Notifications", "Desktop alert preferences"},
+			{"Integration", "DX Cluster, GPS, HTTP dashboard, APRS"},
+			{"Callbook", "QRZ, HamQTH, Callook, Wavelog lookup"},
+			{"Notifications", "Desktop alert sound, popup"},
 		},
 	}
 }
@@ -62,6 +63,8 @@ func (m *MainMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case 5:
 				m.action = "integration"
 			case 6:
+				m.action = "callbook"
+			case 7:
 				m.action = "notifications"
 			}
 		case "up", "k":
@@ -76,6 +79,10 @@ func (m *MainMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.cursor++
 			}
+		case "home":
+			m.cursor = 0
+		case "end":
+			m.cursor = len(m.items) - 1
 		}
 	}
 	return m, nil
@@ -104,12 +111,40 @@ func (m *MainMenu) View() tea.View {
 	if boxW < 40 {
 		boxW = 40
 	}
+	if boxW > partnerMapMaxW {
+		boxW = partnerMapMaxW
+	}
 
 	showDesc := w >= 60
 	// Fixed label column so descriptions align vertically.
 	const labelW = 13
 
+	// --- Info box (same pattern as other config menus) ---
+	infoMaxW := boxW - 6
+	if infoMaxW < 30 {
+		infoMaxW = 30
+	}
+	infoText := "CQOps is designed to work out of the box " +
+		"with sensible defaults for most setups. " +
+		"Need more help? See " +
+		osc8Link("https://docs.cqops.com", "docs.cqops.com") +
+		" for the full documentation."
+	infoLines := wrapLines(infoText, infoMaxW)
+	var infoContent strings.Builder
+	for i, line := range infoLines {
+		infoContent.WriteString(DimStyle.Render(line))
+		if i < len(infoLines)-1 {
+			infoContent.WriteString("\n")
+		}
+	}
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(P.Border)
+	infoBox := boxStyle.Render(infoContent.String())
+
 	var b strings.Builder
+	b.WriteString(infoBox)
+	b.WriteString("\n")
 	for i, item := range m.items {
 		prefix := "  "
 		label := item.label

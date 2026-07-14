@@ -1,4 +1,4 @@
-package qrz
+package qrzcom
 
 import (
 	"encoding/xml"
@@ -122,17 +122,17 @@ func TestCoalesce_NameFallback(t *testing.T) {
 }
 
 // =============================================================================
-// Session cache — concurrent access safety
+// Session cache — concurrent access safety (Client-based).
 // =============================================================================
 
-func TestSessionCache_Concurrent(t *testing.T) {
-	// Verify cacheMu is properly used — no deadlocks with concurrent access.
+func TestClientSessionCache_Concurrent(t *testing.T) {
+	c := NewClient("user", "pass")
 	done := make(chan bool)
 	for i := 0; i < 10; i++ {
 		go func() {
-			cacheMu.Lock()
-			_ = cachedSessionKey
-			cacheMu.Unlock()
+			c.mu.Lock()
+			_ = c.key
+			c.mu.Unlock()
 			done <- true
 		}()
 	}
@@ -143,18 +143,16 @@ func TestSessionCache_Concurrent(t *testing.T) {
 
 // =============================================================================
 // Lookup integration tests — uses httptest.Server via httpGetFn seam.
+// These now use Client directly instead of the deprecated package-level API.
 // =============================================================================
 
 func TestLookup_Success(t *testing.T) {
-	// First request is auth (has username param), second is lookup (has s= param).
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/xml")
 		q := r.URL.RawQuery
 		if strings.Contains(q, "username=") {
-			// Auth request — return a valid session key.
 			xml.NewEncoder(w).Encode(qrzDatabase{Session: qrzKey{Key: "testkey"}})
 		} else {
-			// Lookup request — return call data.
 			xml.NewEncoder(w).Encode(qrzDatabase{
 				Session:  qrzKey{Key: "testkey"},
 				Callsign: qrzCall{Call: "SP9ABC", Fname: "Jan", Grid: "JO90", Country: "Poland", Addr2: "Krakow", DXCC: "269", CQZone: "15", ITUZone: "28", Image: "https://example.com/photo.jpg"},
@@ -167,9 +165,8 @@ func TestLookup_Success(t *testing.T) {
 	httpGetFn = rewriteURL(srv.URL)
 	defer func() { httpGetFn = orig }()
 
-	clearSessionCache()
-
-	data, err := Lookup("user", "pass", "SP9ABC")
+	c := NewClient("user", "pass")
+	data, err := c.Lookup("SP9ABC")
 	if err != nil {
 		t.Fatalf("Lookup failed: %v", err)
 	}
@@ -203,18 +200,18 @@ func TestLookup_Success(t *testing.T) {
 	if data.ImageURL != "https://example.com/photo.jpg" {
 		t.Errorf("imageURL = %q", data.ImageURL)
 	}
+	if data.Provider != "qrz" {
+		t.Errorf("provider = %q, want qrz", data.Provider)
+	}
 }
 
 func TestLookup_NotFound(t *testing.T) {
-	// First request is auth (has username param), second is lookup (has s= param).
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/xml")
 		q := r.URL.RawQuery
 		if strings.Contains(q, "username=") {
-			// Auth request — return a valid session key.
 			xml.NewEncoder(w).Encode(qrzDatabase{Session: qrzKey{Key: "testkey"}})
 		} else {
-			// Lookup request — return "not found".
 			xml.NewEncoder(w).Encode(qrzDatabase{Session: qrzKey{Key: "testkey", Error: "Not found: SP9XYZ"}})
 		}
 	}))
@@ -224,9 +221,8 @@ func TestLookup_NotFound(t *testing.T) {
 	httpGetFn = rewriteURL(srv.URL)
 	defer func() { httpGetFn = orig }()
 
-	clearSessionCache()
-
-	data, err := Lookup("user", "pass", "SP9XYZ")
+	c := NewClient("user", "pass")
+	data, err := c.Lookup("SP9XYZ")
 	if err != nil {
 		t.Fatalf("Lookup failed: %v", err)
 	}
@@ -238,7 +234,6 @@ func TestLookup_NotFound(t *testing.T) {
 func TestLookup_AuthError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/xml")
-		// Auth request always returns error.
 		xml.NewEncoder(w).Encode(qrzDatabase{Session: qrzKey{Error: "Invalid username or password"}})
 	}))
 	defer srv.Close()
@@ -247,9 +242,8 @@ func TestLookup_AuthError(t *testing.T) {
 	httpGetFn = rewriteURL(srv.URL)
 	defer func() { httpGetFn = orig }()
 
-	clearSessionCache()
-
-	data, err := Lookup("baduser", "badpass", "SP9ABC")
+	c := NewClient("baduser", "badpass")
+	data, err := c.Lookup("SP9ABC")
 	if err == nil {
 		t.Error("expected error for bad credentials")
 	}
@@ -259,7 +253,8 @@ func TestLookup_AuthError(t *testing.T) {
 }
 
 func TestLookup_EmptyCall(t *testing.T) {
-	data, err := Lookup("user", "pass", "")
+	c := NewClient("user", "pass")
+	data, err := c.Lookup("")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -269,7 +264,8 @@ func TestLookup_EmptyCall(t *testing.T) {
 }
 
 func TestLookup_EmptyUser(t *testing.T) {
-	data, err := Lookup("", "pass", "SP9ABC")
+	c := NewClient("", "pass")
+	data, err := c.Lookup("SP9ABC")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -289,9 +285,8 @@ func TestLookup_MalformedXML(t *testing.T) {
 	httpGetFn = rewriteURL(srv.URL)
 	defer func() { httpGetFn = orig }()
 
-	clearSessionCache()
-
-	_, err := Lookup("user", "pass", "SP9ABC")
+	c := NewClient("user", "pass")
+	_, err := c.Lookup("SP9ABC")
 	if err == nil {
 		t.Error("expected error for malformed XML")
 	}
@@ -314,17 +309,17 @@ func TestLookup_SessionReuse(t *testing.T) {
 	httpGetFn = rewriteURL(srv.URL)
 	defer func() { httpGetFn = orig }()
 
-	clearSessionCache()
+	c := NewClient("user", "pass")
 
 	// First call: should authenticate + lookup (2 HTTP calls).
-	data, err := Lookup("user", "pass", "SP9ABC")
+	data, err := c.Lookup("SP9ABC")
 	if err != nil || data == nil {
 		t.Fatalf("first lookup failed: %v", err)
 	}
 
 	// Second call: should use cached session (1 HTTP call).
 	callCount = 0
-	data, err = Lookup("user", "pass", "SP9ABC")
+	data, err = c.Lookup("SP9ABC")
 	if err != nil || data == nil {
 		t.Fatalf("second lookup failed: %v", err)
 	}
@@ -344,13 +339,15 @@ func TestTestConnection_Success(t *testing.T) {
 	httpGetFn = rewriteURL(srv.URL)
 	defer func() { httpGetFn = orig }()
 
-	if err := TestConnection("user", "pass"); err != nil {
+	c := NewClient("user", "pass")
+	if err := c.TestConnection(); err != nil {
 		t.Errorf("TestConnection failed: %v", err)
 	}
 }
 
 func TestTestConnection_EmptyCreds(t *testing.T) {
-	if err := TestConnection("", ""); err == nil {
+	c := NewClient("", "")
+	if err := c.TestConnection(); err == nil {
 		t.Error("expected error for empty credentials")
 	}
 }
@@ -366,13 +363,95 @@ func TestTestConnection_AuthFailure(t *testing.T) {
 	httpGetFn = rewriteURL(srv.URL)
 	defer func() { httpGetFn = orig }()
 
-	if err := TestConnection("user", "wrongpass"); err == nil {
+	c := NewClient("user", "wrongpass")
+	if err := c.TestConnection(); err == nil {
 		t.Error("expected error for bad auth")
 	}
 }
 
 // =============================================================================
-// Test helpers for Lookup integration tests
+// Legacy package-level API (deprecated, kept for backward compatibility).
+// =============================================================================
+
+func TestLegacyLookup_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		q := r.URL.RawQuery
+		if strings.Contains(q, "username=") {
+			xml.NewEncoder(w).Encode(qrzDatabase{Session: qrzKey{Key: "testkey"}})
+		} else {
+			xml.NewEncoder(w).Encode(qrzDatabase{
+				Session:  qrzKey{Key: "testkey"},
+				Callsign: qrzCall{Call: "SP9ABC", Fname: "Jan", Grid: "JO90", Country: "Poland"},
+			})
+		}
+	}))
+	defer srv.Close()
+
+	orig := httpGetFn
+	httpGetFn = rewriteURL(srv.URL)
+	defer func() { httpGetFn = orig }()
+
+	// Legacy package-level Lookup returns *CallData.
+	data, err := Lookup("user", "pass", "SP9ABC")
+	if err != nil {
+		t.Fatalf("Legacy Lookup failed: %v", err)
+	}
+	if data == nil || data.Callsign != "SP9ABC" {
+		t.Error("legacy Lookup returned wrong data")
+	}
+}
+
+func TestLegacyLookupResult_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		q := r.URL.RawQuery
+		if strings.Contains(q, "username=") {
+			xml.NewEncoder(w).Encode(qrzDatabase{Session: qrzKey{Key: "testkey"}})
+		} else {
+			xml.NewEncoder(w).Encode(qrzDatabase{
+				Session:  qrzKey{Key: "testkey"},
+				Callsign: qrzCall{Call: "SP9ABC", Fname: "Jan", Grid: "JO90", Country: "Poland"},
+			})
+		}
+	}))
+	defer srv.Close()
+
+	orig := httpGetFn
+	httpGetFn = rewriteURL(srv.URL)
+	defer func() { httpGetFn = orig }()
+
+	// LookupResult returns the provider-neutral *callbook.Result.
+	data, err := LookupResult("user", "pass", "SP9ABC")
+	if err != nil {
+		t.Fatalf("LookupResult failed: %v", err)
+	}
+	if data == nil || data.Callsign != "SP9ABC" {
+		t.Error("LookupResult returned wrong data")
+	}
+	if data.Provider != "qrz" {
+		t.Errorf("provider = %q, want qrz", data.Provider)
+	}
+}
+
+func TestLegacyTestConnection_Success(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		xml.NewEncoder(w).Encode(qrzDatabase{Session: qrzKey{Key: "testkey"}})
+	}))
+	defer srv.Close()
+
+	orig := httpGetFn
+	httpGetFn = rewriteURL(srv.URL)
+	defer func() { httpGetFn = orig }()
+
+	if err := TestConnection("user", "pass"); err != nil {
+		t.Errorf("Legacy TestConnection failed: %v", err)
+	}
+}
+
+// =============================================================================
+// Test helpers
 // =============================================================================
 
 func rewriteURL(baseURL string) func(string) ([]byte, error) {
@@ -384,12 +463,4 @@ func rewriteURL(baseURL string) func(string) ([]byte, error) {
 		newURL := baseURL + "/xml/current/" + origURL[idx:]
 		return httpGet(newURL)
 	}
-}
-
-func clearSessionCache() {
-	cacheMu.Lock()
-	cachedSessionKey = ""
-	cachedSessionUser = ""
-	cachedSessionPass = ""
-	cacheMu.Unlock()
 }

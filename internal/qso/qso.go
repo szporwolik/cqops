@@ -50,6 +50,7 @@ type QSO struct {
 	SRXString       string // contest QSO received exchange
 	CQZone          string // DXCC CQ zone (1-40), enriched from CTY.DAT or QRZ
 	ITUZone         string // DXCC ITU zone (1-90), enriched from CTY.DAT or QRZ
+	DXCC            string // DXCC entity number (e.g. "269" for Poland), from QRZ
 	MyCQZone        string // station CQ zone (1-40), from logbook station config
 	MyITUZone       string // station ITU zone (1-90), from logbook station config
 	MyDXCC          string // station DXCC entity number, from logbook station config

@@ -11,22 +11,22 @@ import (
 )
 
 type NotificationsMenu struct {
-	enabled       bool
-	qso           bool
-	wavelog       bool
-	wavelogErrors bool
-	beepOnError   bool
-	cursor        int
-	done          bool
-	saved         bool
-	goBack        bool
-	width         int
-	height        int
+	enabled     bool
+	qso         bool
+	wavelog     bool
+	allErrors   bool
+	beepOnError bool
+	cursor      int
+	done        bool
+	saved       bool
+	goBack      bool
+	width       int
+	height      int
 
 	cachedClipStyle lipgloss.Style
 	cachedClipH     int
 
-	// statusMsg is shown in the view, cleared on next keypress.
+	// statusMsg is set by test actions; parent reads and shows toast, then clears.
 	statusMsg string
 }
 
@@ -35,11 +35,11 @@ const notifItemCount = 7 // 5 checkboxes + 2 buttons
 func NewNotificationsMenu(cfg *config.Config) *NotificationsMenu {
 	n := cfg.General.Notifications
 	return &NotificationsMenu{
-		enabled:       n.Enabled,
-		qso:           n.QSO,
-		wavelog:       n.Wavelog,
-		wavelogErrors: n.WavelogErrors,
-		beepOnError:   n.BeepOnError,
+		enabled:     n.Enabled,
+		qso:         n.QSO,
+		wavelog:     n.QSOSent,
+		allErrors:   n.AllErrors,
+		beepOnError: n.BeepOnError,
 	}
 }
 
@@ -86,14 +86,14 @@ func (nm *NotificationsMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case 3:
 				if nm.enabled {
-					nm.wavelogErrors = !nm.wavelogErrors
+					nm.allErrors = !nm.allErrors
 				}
-			case 4:
+			case 5:
 				nm.beepOnError = !nm.beepOnError
 			}
 		case "enter":
 			switch nm.cursor {
-			case 5:
+			case 4:
 				nm.sendTestNotification()
 			case 6:
 				nm.sendTestBeep()
@@ -156,19 +156,43 @@ func (nm *NotificationsMenu) View() tea.View {
 	if boxW < 56 {
 		boxW = 56
 	}
+	if boxW > partnerMapMaxW {
+		boxW = partnerMapMaxW
+	}
+
+	// --- Info box (same pattern as other config menus) ---
+	infoMaxW := boxW - 6
+	if infoMaxW < 30 {
+		infoMaxW = 30
+	}
+	infoText := "Notifications keep you informed about ongoing " +
+		"activity and errors without watching the screen. " +
+		"A beep on critical errors is recommended for " +
+		"unattended operation or field use."
+	infoLines := wrapLines(infoText, infoMaxW)
+	var infoContent strings.Builder
+	for i, line := range infoLines {
+		infoContent.WriteString(DimStyle.Render(line))
+		if i < len(infoLines)-1 {
+			infoContent.WriteString("\n")
+		}
+	}
+	boxStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(P.Border)
+	infoBox := boxStyle.Render(infoContent.String())
 
 	var b strings.Builder
+	b.WriteString(infoBox)
+	b.WriteString("\n")
 
 	// Row 0: master toggle
 	nm.renderCheckbox(&b, boxW, 0, "System notifications", nm.enabled, false)
 
 	// Sub-options — dimmed when master is off, indented.
 	nm.renderCheckbox(&b, boxW, 1, "  Notify when QSO logged", nm.qso && nm.enabled, !nm.enabled)
-	nm.renderCheckbox(&b, boxW, 2, "  Notify when sent to Wavelog", nm.wavelog && nm.enabled, !nm.enabled)
-	nm.renderCheckbox(&b, boxW, 3, "  Notify on Wavelog errors", nm.wavelogErrors && nm.enabled, !nm.enabled)
-
-	// Row 4: Beep on errors — same indent as sub-options.
-	nm.renderCheckbox(&b, boxW, 4, "  Beep on all errors", nm.beepOnError, false)
+	nm.renderCheckbox(&b, boxW, 2, "  Notify when QSO sent", nm.wavelog && nm.enabled, !nm.enabled)
+	nm.renderCheckbox(&b, boxW, 3, "  Notify on all errors", nm.allErrors && nm.enabled, !nm.enabled)
 
 	// Button helper — keeps fixed padding so buttons never shift on focus.
 	renderBtn := func(idx int, text string) {
@@ -183,21 +207,14 @@ func (nm *NotificationsMenu) View() tea.View {
 		b.WriteString("\n")
 	}
 
-	// Row 5: Test notification button
-	renderBtn(5, "[ Test notification ]")
+	// Row 4: Test notification button (before Beep on errors).
+	renderBtn(4, "[ Test notification ]")
 
-	// Row 6: Test beep button
+	// Row 5: Beep on errors.
+	nm.renderCheckbox(&b, boxW, 5, "  Beep on all errors", nm.beepOnError, false)
+
+	// Row 6: Test beep button.
 	renderBtn(6, "[ Test beep ]")
-
-	// Status lines shown below the buttons.
-	if !desktopAvailable() {
-		b.WriteString("\n")
-		b.WriteString(S.ToastWarning.Render("  ⚠ Desktop notifications unavailable — no GUI/D-Bus session detected"))
-	}
-	if nm.statusMsg != "" {
-		b.WriteString("\n")
-		b.WriteString(S.ToastInfo.Render("  " + nm.statusMsg))
-	}
 
 	body := drawMenuWithHeader("Configuration \u2014 Notifications", b.String(), w)
 	if nm.cachedClipH != contentH {

@@ -52,9 +52,11 @@ type editorMsg struct {
 func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		le.width = msg.Width
-		le.height = msg.Height
-		le.buildTable()
+		if msg.Width != le.width || msg.Height != le.height {
+			le.width = msg.Width
+			le.height = msg.Height
+			le.buildTable()
+		}
 
 	case editorMsg:
 		// Batch download/import/export progress — only when a download is actually active.
@@ -293,10 +295,15 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return le, le.doSave()
 			case "esc", "f6":
 				le.mode = edModeList
+			case "pgup", "pgdown", "home", "end":
+				le.editVP, _ = le.editVP.Update(msg)
+				return le, nil
 			case "tab", "down":
 				le.nextField()
+				scrollVpToLine(&le.editVP, int(le.focus))
 			case "shift+tab", "up":
 				le.prevField()
+				scrollVpToLine(&le.editVP, int(le.focus))
 			default:
 				if le.focus != qefWLStatus && le.focus != qefSource {
 					le.fields[le.focus], _ = le.fields[le.focus].Update(msg)
@@ -999,7 +1006,7 @@ func (le *LogbookEditor) runExport(path string) {
 		if offset+limit > total {
 			limit = total - offset
 		}
-		qsos, err := store.ListQSOsPage(db, limit, offset, le.contestID)
+		qsos, err := store.ListQSOsPage(db, limit, offset, le.contestID, le.contestID != "")
 		if err != nil {
 			applog.Error("ADIF export: failed to list QSOs", "offset", offset, "error", err)
 			msgCh <- editorMsg{dlErr: "database read error: " + err.Error()}
