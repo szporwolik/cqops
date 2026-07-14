@@ -191,7 +191,7 @@ jobs:
   # ──────────────────────────────────────────────────────────────────────────
   build-installer:
     runs-on: windows-latest
-    needs: build-unix
+    needs: [build-unix, validate-version]
     steps:
       - uses: actions/checkout@v4
 
