@@ -397,7 +397,7 @@ var lastActiveFlags={},lastActiveQso=null,lastPartner=null;
 
 // ---- Integrated active panel (hero + partner merged) ----
 function renderHero(aq,p){
-  if(!aq||!aq.call){heroCall.textContent='';heroBadges.innerHTML='';heroIdentity.textContent='';heroMeta.textContent='';hideHeroPhoto();lastActiveFlags={};lastActiveQso=null;clearContactWeather();D('hero','cleared');return}
+  if(!aq||!aq.call){heroCall.textContent='';heroBadges.innerHTML='';heroIdentity.textContent='';heroMeta.textContent='';hideHeroPhoto();lastActiveFlags={};lastActiveQso=null;clearContactWeather();updatePartnerLocalTime('');D('hero','cleared');return}
   // Merge with cached active QSO: caller may pass {call:…} only (partner event).
   // Preserve band/mode/flags from cached full QSO when available.
   if(aq.band||aq.isDupe!==undefined){lastActiveQso=aq}
@@ -494,8 +494,26 @@ function buildIdentityLine(aq,p){
     var dirs=['N','NE','E','SE','S','SW','W','NW'];dist=Math.round(km)+' km '+dirs[Math.round(deg/45)%8];parts.push(dist);
   }
   heroIdentity.textContent=parts.join(' \u2022 ');
+  // Partner local time — rough offset from longitude (lon° / 15 = UTC±h).
+  updatePartnerLocalTime(grid||(p&&p.grid)||'');
   return dist;
 }
+function updatePartnerLocalTime(grid){
+  var el=document.getElementById('hero-partner-time');if(!el)return;
+  var box=document.getElementById('hero-weather-box');if(!box)return;
+  if(!grid||!navigator.onLine){el.textContent='';box.classList.remove('visible');return}
+  var ll=window._partnerGridLL||gridToLatLon(grid);
+  window._partnerGridLL=ll;
+  if(!ll[0]){el.textContent='';box.classList.remove('visible');return}
+  var now=new Date();
+  var off=Math.round(ll[1]/15);
+  var h=(now.getUTCHours()+off+24)%24;
+  var m=now.getUTCMinutes();
+  el.textContent=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+' L'+(off?(' (UTC'+(off>=0?'+':'')+off+')'):'');
+  box.classList.add('visible');
+}
+// Refresh partner clock every 30 s so it stays current.
+setInterval(function(){updatePartnerLocalTime(window._partnerGridLL||'')},30000);
 
 function showHeroPhoto(url){
   var img=$('hero-photo');img.style.display='';img.src=url;
@@ -1575,7 +1593,7 @@ window.addEventListener('online',function(){
   wxUpdateVisibility();
   if(wxLat!=null&&wxLon!=null){wxLat=null;wxLon=null;wxDoFetch();wxStartInterval()}
 });
-window.addEventListener('offline',function(){wxUpdateVisibility();clearContactWeather()});
+window.addEventListener('offline',function(){wxUpdateVisibility();clearContactWeather();updatePartnerLocalTime('')});
 function renderWeather(d){
   if(!wxEl)wxEl=document.getElementById('wx-row');
   if(!wxEl||!navigator.onLine){wxUpdateVisibility();return}
@@ -1633,12 +1651,13 @@ function renderContactWeather(d){
   document.getElementById('hero-wx-icon').innerHTML='<span class="'+wxAnimClass(c.weather_code||0)+'">'+weatherIcon(c.weather_code||0,c.is_day)+'</span>';
   document.getElementById('hero-wx-temp').textContent=fmtTemp(c.temperature_2m);
   document.getElementById('hero-wx-wind').textContent=c.wind_speed_10m!=null?fmtWind(c.wind_speed_10m)+' '+windArrow(c.wind_direction_10m||0):'';
-  hwb.classList.add('visible');
   if(map)map.invalidateSize();if(mapLocal)mapLocal.invalidateSize();
 }
 function clearContactWeather(){
   _contactWxGrid=null;
-  var hwb=document.getElementById('hero-weather-box');if(hwb)hwb.classList.remove('visible');
+  document.getElementById('hero-wx-icon').innerHTML='';
+  document.getElementById('hero-wx-temp').textContent='';
+  document.getElementById('hero-wx-wind').textContent='';
   if(map)map.invalidateSize();if(mapLocal)mapLocal.invalidateSize();
 }
 

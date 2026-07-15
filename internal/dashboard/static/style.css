@@ -407,7 +407,11 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #hero-providers .provider-badge[href]:hover{opacity:0.75}
 #hero-meta{font-size:0.8rem;color:var(--dim);min-height:1em}
 #hero-meta:empty{visibility:hidden}
-/* Weather box — right side of hero, clean inline display. */
+/* Weather box — right side of hero, everything centered inside. */
+#hero-partner-time{
+  font-size:0.85rem;color:var(--text-secondary);text-align:center;line-height:1.2
+}
+#hero-partner-time:empty{display:none}
 #hero-weather-box{
   display:none;flex-direction:column;align-items:center;justify-content:center;gap:2px;
   flex:0 0 auto;padding:0 8px;text-align:center
