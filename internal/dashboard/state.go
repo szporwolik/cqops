@@ -207,6 +207,7 @@ type PartnerInfo struct {
 	Call       string  `json:"call,omitempty"`
 	Name       string  `json:"name,omitempty"`
 	QTH        string  `json:"qth,omitempty"`
+	State      string  `json:"state,omitempty"`
 	Country    string  `json:"country,omitempty"`
 	Continent  string  `json:"continent,omitempty"`
 	Grid       string  `json:"grid,omitempty"`

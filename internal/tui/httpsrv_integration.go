@@ -273,6 +273,7 @@ func (m *Model) pushDashboardPartner(ds *dashboard.State, call string) {
 	d := m.lookup.partnerData
 	pi.Name = d.Name
 	pi.QTH = d.QTH
+	pi.State = d.State
 	pi.Country = d.Country
 	pi.Grid = d.Grid
 	fmt.Sscanf(d.Lat, "%f", &pi.Lat)
@@ -295,7 +296,7 @@ func (m *Model) pushDashboardPartner(ds *dashboard.State, call string) {
 
 	// Skip push + debug log when nothing changed since last tick.
 	cur := cachedPartner{
-		Call: pi.Call, Name: pi.Name, QTH: pi.QTH,
+		Call: pi.Call, Name: pi.Name, QTH: pi.QTH, State: pi.State,
 		Country: pi.Country, Grid: pi.Grid, ImageURL: pi.ImageURL,
 		Providers: strings.Join(d.Providers, ","),
 	}
@@ -685,8 +686,8 @@ var lastPushedAQSO cachedAQSO
 
 // lastPushedPartner caches the last partner fields pushed to the dashboard.
 type cachedPartner struct {
-	Call, Name, QTH, Country, Grid, ImageURL string
-	Providers                                string // comma-separated provider names
+	Call, Name, QTH, State, Country, Grid, ImageURL string
+	Providers                                       string // comma-separated provider names
 }
 
 var lastPushedPartner cachedPartner

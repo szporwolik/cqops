@@ -480,10 +480,12 @@ function buildIdentityLine(aq,p){
   // beats the QRZ/country grid.
   var name=(p&&p.name)||(aq&&aq.name)||'';
   var qth=(p&&p.qth)||(aq&&aq.qth)||'';
+  var state=(p&&p.state)||(aq&&aq.state)||'';
   var country=(p&&p.country)||(aq&&aq.country)||'';
   var grid=(aq&&aq.grid)||(p&&p.grid)||'';
   var parts=[],dist='';
-  if(name)parts.push(name);if(qth)parts.push(qth);
+  if(name)parts.push(name);
+  if(qth)parts.push(qth+(state?' ('+esc(state)+')':''));
   if(country){var c=country,cont=guessContinent(c);if(cont)c+=' ('+cont+')';parts.push(c)}
   if(grid)parts.push(grid);
   // Distance from own station to partner grid
