@@ -288,6 +288,11 @@ type State struct {
 func NewState(hub *Hub) *State {
 	return &State{
 		hub: hub,
+		snapshot: Snapshot{
+			Display: DisplayConfig{
+				IsOnline: true, // optimistic — corrected to false by first internet check if needed
+			},
+		},
 	}
 }
 
@@ -593,7 +598,9 @@ func (s *State) SetPartner(p *PartnerInfo) {
 func (s *State) SetDisplay(d DisplayConfig) {
 	s.mu.Lock()
 	changed := s.snapshot.Display.InternetCallbookURL != d.InternetCallbookURL ||
-		s.snapshot.Display.InternetCallbookName != d.InternetCallbookName
+		s.snapshot.Display.InternetCallbookName != d.InternetCallbookName ||
+		s.snapshot.Display.IsOnline != d.IsOnline ||
+		s.snapshot.Display.Debug != d.Debug
 	s.snapshot.Display = d
 	s.mu.Unlock()
 	if changed {

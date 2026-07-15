@@ -206,10 +206,9 @@ function connectSSE(){
   es.addEventListener('display',function(e){
     var d=JSON.parse(e.data).payload;
     if(!d)return;
+    // Enable debug BEFORE any D() call — TUI debug mode OR URL param.
+    if(d.debug&&!DEBUG){DEBUG=true;D('init','debug mode ON (from TUI) — open console (F12) for traces')}
     D('display','received',{isOnline:d.isOnline,hasCallbook:!!d.internetCallbookUrl,debug:d.debug});
-    // TUI debug mode — enable console logging even without ?debug=1.
-    if(d.debug&&!DEBUG){DEBUG=true;D('init','debug mode ON (from TUI) — open console (F12) for SSE/event traces')}
-    displayCfg=d;
     // isOnline transition: false→true means internet just came up.
     // Re-init map with tile CRS if it was created in offline mode.
     var prevOnline=window._cqopsLastOnline;
@@ -219,8 +218,14 @@ function connectSSE(){
       if(typeof map!=='undefined'&&map&&map._cqopsOfflineCRS){
         D('display','removing offline overlay, re-creating map');
         removeOfflineOverlay();
+        // After removeOfflineOverlay() sets map=null, re-init.
+        // Use current displayCfg with the updated isOnline flag.
+        setTimeout(function(){initMap(Object.assign({},d,{drawLines:displayCfg.drawLines!==false,maxLines:displayCfg.maxLines||250,highlightLastQSO:displayCfg.highlightLastQSO!==false,animateActivePath:!!displayCfg.animateActivePath}))},50);
+      }else{
+        D('display','map not in offline CRS mode (map='+(typeof map)+', _cqopsOfflineCRS='+(map&&map._cqopsOfflineCRS)+')');
       }
     }
+    displayCfg=d;
     window._cqopsLastOnline=nowOnline;
     if(d.internetCallbookUrl){
       icbUrl=d.internetCallbookUrl;
@@ -245,6 +250,9 @@ function renderAll(snap){
   if(!snap){D('renderAll','null snapshot, skipping');return}
   D('renderAll','start',{hasStation:!!snap.station,hasActive:!!(snap.activeQso&&snap.activeQso.call),today:snap.today? snap.today.length:0,recent:snap.recent? snap.recent.length:0});
   displayCfg=snap.display||{};
+  // Enable debug from snapshot (before any display event) — covers
+  // offline startup where the display event may not fire immediately.
+  if(displayCfg.debug&&!DEBUG){DEBUG=true;D('init','debug mode ON (from snapshot) — open console (F12) for traces')}
   // When internet becomes available after initial offline state,
   // re-init the map with proper tile CRS instead of the fallback map.
   var nowOnline=!!(displayCfg&&displayCfg.isOnline);
