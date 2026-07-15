@@ -45,30 +45,51 @@ func dateTimeFormats(width int) (dateFmt, timeFmt string) {
 }
 
 // maybeCheckInet returns a tea.Cmd to check internet connectivity at intervals.
+// Uses adaptive polling: every 60 s when online, every 15 s when offline to
+// detect recovery faster. Requires 2 consecutive failures before marking
+// offline (avoids transient blips); a single success marks online immediately.
 func (m *Model) maybeCheckInet() tea.Cmd {
 	if m.Offline {
 		return nil
 	}
-	if m.tickCount%healthCheckTicks == 0 {
+	interval := healthCheckTicks
+	if !m.inetOnline {
+		interval = healthCheckTicksFast
+	}
+	if m.tickCount%interval == 0 {
 		return checkInetCmd()
 	}
 	return nil
 }
 
-// checkInetCmd returns a tea.Cmd that checks internet connectivity
-// by attempting to reach Google's generate_204 endpoint.
+// checkInetCmd returns a tea.Cmd that checks internet connectivity by
+// attempting to reach two independent endpoints. If either responds, we
+// consider the internet reachable. This avoids false negatives when a
+// single provider (e.g. Google) is temporarily blocked.
 func checkInetCmd() tea.Cmd {
 	return func() tea.Msg {
 		applog.Debug("Internet: testing connectivity")
-		client := &http.Client{Timeout: 1 * time.Second}
+		client := &http.Client{Timeout: 3 * time.Second}
+		// Primary: Google 204 endpoint (fast, no body).
 		resp, err := client.Get("https://clients3.google.com/generate_204")
-		if err != nil {
-			applog.Warn("Internet: unreachable", "error", err)
-			return inetResultMsg(false)
+		if err == nil {
+			resp.Body.Close()
+			applog.Info("Internet: reachable")
+			return inetResultMsg(true)
 		}
-		defer resp.Body.Close()
-		applog.Info("Internet: reachable")
-		return inetResultMsg(true)
+		// Fallback: Cloudflare DNS — a simple TCP dial to 1.1.1.1:53
+		// is lighter than a full HTTP request and works behind most
+		// firewalls.
+		applog.Debug("Internet: primary check failed, trying fallback", "error", err)
+		client.Timeout = 2 * time.Second
+		resp2, err2 := client.Get("https://1.1.1.1")
+		if err2 == nil {
+			resp2.Body.Close()
+			applog.Info("Internet: reachable (fallback)")
+			return inetResultMsg(true)
+		}
+		applog.Warn("Internet: unreachable", "primary_err", err, "fallback_err", err2)
+		return inetResultMsg(false)
 	}
 }
 

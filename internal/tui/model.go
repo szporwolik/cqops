@@ -44,9 +44,10 @@ const (
 )
 
 const (
-	healthCheckTicks  = 60                      // ticks between health checks (1 min)
-	rigStatusTimeout  = 1500 * time.Millisecond // context timeout for rig status
-	rigDefaultTimeout = 1000                    // default rig poll timeout (ms)
+	healthCheckTicks     = 60                      // ticks between health checks when online (1 min)
+	healthCheckTicksFast = 15                      // ticks between health checks when offline (15 s)
+	rigStatusTimeout     = 1500 * time.Millisecond // context timeout for rig status
+	rigDefaultTimeout    = 1000                    // default rig poll timeout (ms)
 )
 
 const (
@@ -123,6 +124,7 @@ type Model struct {
 	dateTimeAuto      bool
 	tickCount         int
 	inetOnline        bool
+	inetFailStreak    int  // consecutive failed health checks; ≥2 = offline
 	offlineToastShown bool // suppress repeated offline errors until internet returns
 	versionChecked    bool // true after first GitHub version check
 	Offline           bool // when true, skip all network-dependent operations

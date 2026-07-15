@@ -152,53 +152,61 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 	switch r := msg.(type) {
 	case inetResultMsg:
-		if !m.inetOnline && bool(r) {
-			// Internet just came up — set the flag FIRST so the
-			// dispatch functions below don't bail out on !m.inetOnline.
+		if bool(r) {
+			// Internet reachable — reset streak and mark online immediately.
+			prevOnline := m.inetOnline
 			m.inetOnline = true
-			m.offlineToastShown = false
-			m.lookup.wlForceCheck = true
-			m.lookup.qrzForceCheck = true
-			m.toasts.Success("Internet: connected")
-			// Push dashboard immediately so the map switches from
-			// offline CRS to tiled Web Mercator without waiting
-			// for the next throttled tick cycle.
-			lastDashboardPushTick = 0
-			lastFastTick = 0
-			m.pushDashboardState()
-			var cmds []tea.Cmd
-			if c := m.maybeDXC(); c != nil {
-				cmds = append(cmds, c)
-			}
-			if c := m.maybeHTTP(); c != nil {
-				cmds = append(cmds, c)
-			}
-			if c := m.maybeCheckWavelog(); c != nil {
-				cmds = append(cmds, c)
-			}
-			if c := m.maybeCheckCallbook(); c != nil {
-				cmds = append(cmds, c)
-			}
-			if c := m.maybeFetchSolar(); c != nil {
-				cmds = append(cmds, c)
-			}
-			if len(cmds) > 0 {
-				return true, tea.Batch(cmds...)
+			m.App.InetOnline = true
+			m.inetFailStreak = 0
+			if !prevOnline {
+				// Just came back — dispatch all network services.
+				m.offlineToastShown = false
+				m.lookup.wlForceCheck = true
+				m.lookup.qrzForceCheck = true
+				m.toasts.Success("Internet: connected")
+				// Push dashboard immediately so the map switches from
+				// offline CRS to tiled Web Mercator.
+				lastDashboardPushTick = 0
+				lastFastTick = 0
+				m.pushDashboardState()
+				var cmds []tea.Cmd
+				if c := m.maybeDXC(); c != nil {
+					cmds = append(cmds, c)
+				}
+				if c := m.maybeHTTP(); c != nil {
+					cmds = append(cmds, c)
+				}
+				if c := m.maybeCheckWavelog(); c != nil {
+					cmds = append(cmds, c)
+				}
+				if c := m.maybeCheckCallbook(); c != nil {
+					cmds = append(cmds, c)
+				}
+				if c := m.maybeFetchSolar(); c != nil {
+					cmds = append(cmds, c)
+				}
+				if len(cmds) > 0 {
+					return true, tea.Batch(cmds...)
+				}
 			}
 			return true, nil
-		} else if !bool(r) {
+		}
+		// Internet unreachable — require 2 consecutive failures before
+		// marking offline. A single transient blip is ignored.
+		m.inetFailStreak++
+		if m.inetFailStreak >= 2 && m.inetOnline {
+			m.inetOnline = false
+			m.App.InetOnline = false
 			if !m.offlineToastShown {
 				m.offlineToastShown = true
 				m.toasts.Warn("Internet: not available — working in offline mode")
 			}
 			// Push dashboard immediately so the map switches from
-			// tiled Web Mercator to offline equirectangular fallback
-			// without waiting for the next throttled tick cycle.
+			// tiled Web Mercator to offline equirectangular fallback.
 			lastDashboardPushTick = 0
 			lastFastTick = 0
 			m.pushDashboardState()
 		}
-		m.inetOnline = bool(r)
 		return true, nil
 	case versionCheckMsg:
 		if r.latest != "" {

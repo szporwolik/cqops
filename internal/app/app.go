@@ -48,6 +48,7 @@ type App struct {
 	gpsGrid          string                // last known GPS grid (set by TUI model)
 	gpsHasFix        bool                  // true when GPS has a valid fix
 	Offline          bool                  // when true, skip all network operations
+	InetOnline       bool                  // true when internet connectivity check succeeded
 
 	// lastWSJTX tracks the effective WSJT-X config last applied to the
 	// listener. Used to avoid unnecessary Stop/Start cycles when config
@@ -230,14 +231,13 @@ func (a *App) MaybeRestartWSJTX(enabled bool, host string, port int) {
 // Non-blocking — connection runs asynchronously.
 // Call SetAPRSStatusCallback to receive toast updates.
 func (a *App) MaybeRestartAPRS() {
-	if a.Offline {
-		applog.Debug("APRS: skipped — offline mode")
-		return
-	}
 	aprsGlobal := a.Config.Integrations.APRS
 	aprsCfg := a.Logbook.APRS
 	enabled := aprsGlobal.Enabled && aprsCfg != nil && aprsCfg.Enabled
 
+	// Always allow stopping — the client must be cleaned up even when
+	// offline. Only block the START path when internet is unavailable
+	// or --offline mode is active.
 	if !enabled {
 		a.stopAPRSPruner()
 		a.stopAPRSBeacon()
@@ -253,6 +253,13 @@ func (a *App) MaybeRestartAPRS() {
 			a.APRSCache.Close()
 			a.APRSCache = nil
 		}
+		return
+	}
+
+	// APRS is enabled — but don't start the network client if we're
+	// known to be offline (--offline flag or failed health checks).
+	if a.Offline || !a.InetOnline {
+		applog.Debug("APRS: start skipped — offline", "forced", a.Offline, "inet", a.InetOnline)
 		return
 	}
 

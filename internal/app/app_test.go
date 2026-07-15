@@ -173,8 +173,9 @@ func TestMaybeRestartAPRS_DisabledByDefault(t *testing.T) {
 func TestMaybeRestartAPRS_StopsExistingClient(t *testing.T) {
 	cfg := config.DefaultConfig()
 	a := &App{
-		Config:  cfg,
-		Logbook: &config.Logbook{},
+		Config:     cfg,
+		Logbook:    &config.Logbook{},
+		InetOnline: true,
 	}
 	// Simulate a running KISS server client by creating one manually.
 	kc := aprs.NewKISSServerClient("127.0.0.1:1")
