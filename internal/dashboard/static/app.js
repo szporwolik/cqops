@@ -236,7 +236,13 @@ function connectSSE(){
         // Use current displayCfg with the updated isOnline flag.
         // Set a flag so renderAll doesn't double-init.
         window._mapReinitPending=true;
-        setTimeout(function(){window._mapReinitPending=false;initMap(Object.assign({},d,{drawLines:displayCfg.drawLines!==false,maxLines:displayCfg.maxLines||250,highlightLastQSO:displayCfg.highlightLastQSO!==false,animateActivePath:!!displayCfg.animateActivePath}))},50);
+        setTimeout(function(){
+          window._mapReinitPending=false;
+          initMap(Object.assign({},d,{drawLines:displayCfg.drawLines!==false,maxLines:displayCfg.maxLines||250,highlightLastQSO:displayCfg.highlightLastQSO!==false,animateActivePath:!!displayCfg.animateActivePath}));
+          // After map creation, invalidate twice to ensure MapLibre GL
+          // tiles load — the container may not have settled yet.
+          if(map){setTimeout(function(){map.invalidateSize()},200);setTimeout(function(){map.invalidateSize()},600);}
+        },100);
       }else{
         D('display','map not in offline CRS mode (map='+(typeof map)+', _cqopsOfflineCRS='+(map&&map._cqopsOfflineCRS)+')');
       }

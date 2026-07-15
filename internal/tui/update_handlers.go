@@ -160,6 +160,12 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			m.lookup.wlForceCheck = true
 			m.lookup.qrzForceCheck = true
 			m.toasts.Success("Internet: connected")
+			// Push dashboard immediately so the map switches from
+			// offline CRS to tiled Web Mercator without waiting
+			// for the next throttled tick cycle.
+			lastDashboardPushTick = 0
+			lastFastTick = 0
+			m.pushDashboardState()
 			var cmds []tea.Cmd
 			if c := m.maybeDXC(); c != nil {
 				cmds = append(cmds, c)
