@@ -313,13 +313,9 @@ func (m *Model) stationProfile() []string {
 	s := m.App.Logbook.Station
 	var parts []string
 	if rig := s.RigModel(m.App.Config.Rigs); rig != "" {
-		part := "Rig "
-		if rp, ok := m.App.Config.Rigs[s.RigName]; ok && rp.Name != "" {
-			part += rp.Name + " - "
-		}
-		part += rig
+		part := rig
 		if ant := s.RigAntenna(m.App.Config.Rigs); ant != "" {
-			part += "/" + ant
+			part += " / " + ant
 		}
 		parts = append(parts, part)
 	}
