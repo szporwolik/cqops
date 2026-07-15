@@ -43,8 +43,6 @@ func (m *Model) headerView() string {
 		" ",
 		S.StatusLabel.Render("Log"),
 		" " + S.StatusValue.Render(truncateText(logName, 16)) + " ",
-		S.StatusLabel.Render("Rig"),
-		" " + S.StatusValue.Render(truncateText(rigName, 8)) + " ",
 		S.StatusLabel.Render("Call"),
 		" " + S.StatusValue.Render(truncateText(callsign, 14)) + " ",
 	}
@@ -54,6 +52,10 @@ func (m *Model) headerView() string {
 			" "+S.StatusValue.Render(truncateText(op, 24))+" ",
 		)
 	}
+	leftParts = append(leftParts,
+		S.StatusLabel.Render("Rig"),
+		" "+S.StatusValue.Render(truncateText(rigName, 8))+" ",
+	)
 
 	// Build right side first so we know how much width remains for MSG.
 	var rightParts []string
