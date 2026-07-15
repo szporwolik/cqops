@@ -251,7 +251,8 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	// already set it, but config value takes precedence).
 	applog.SetDebugMode(a.Config.General.Debug)
 
-	m := &Model{App: a, qsos: initialQSOS, toasts: NewToastQueue(), dateTimeAuto: true, width: 80, height: 24}
+	m := &Model{App: a, qsos: initialQSOS, toasts: NewToastQueue(), dateTimeAuto: true, width: 80, height: 24, inetOnline: true}
+	a.InetOnline = true // sync with model — assume online until first health check
 
 	// Build the callbook provider registry from config.
 	m.callbookRegistry = buildCallbookRegistry(a)
@@ -405,8 +406,11 @@ func (m *Model) ShowOfflineToast() {
 func (m *Model) applyBeepOnError() {
 	if m.App.Config.General.Notifications.BeepOnError && desktopAvailable() {
 		applog.SetBeepFunc(func() {
-			if m.offlineToastShown {
-				return // already warned — suppress beep noise
+			// Suppress when we know the network is down — service
+			// errors are expected and would produce a storm of beeps
+			// on every callsign keystroke.
+			if !m.inetOnline || m.offlineToastShown {
+				return
 			}
 			beeep.Beep(beeep.DefaultFreq, beeep.DefaultDuration)
 		})

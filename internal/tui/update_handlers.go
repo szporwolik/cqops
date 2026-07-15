@@ -169,6 +169,8 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 				lastDashboardPushTick = 0
 				lastFastTick = 0
 				m.pushDashboardState()
+				// Restart APRS — it was stopped when we went offline.
+				m.App.MaybeRestartAPRS()
 				var cmds []tea.Cmd
 				if c := m.maybeDXC(); c != nil {
 					cmds = append(cmds, c)
@@ -183,6 +185,9 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 					cmds = append(cmds, c)
 				}
 				if c := m.maybeFetchSolar(); c != nil {
+					cmds = append(cmds, c)
+				}
+				if c := m.maybeCheckVersion(); c != nil {
 					cmds = append(cmds, c)
 				}
 				if len(cmds) > 0 {
