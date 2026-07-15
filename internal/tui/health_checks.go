@@ -45,15 +45,17 @@ func dateTimeFormats(width int) (dateFmt, timeFmt string) {
 }
 
 // maybeCheckInet returns a tea.Cmd to check internet connectivity at intervals.
-// Uses adaptive polling: every 60 s when online, every 15 s when offline to
-// detect recovery faster. Requires 2 consecutive failures before marking
-// offline (avoids transient blips); a single success marks online immediately.
+// Uses adaptive polling: every 60 s when online AND confirmed, every 15 s when
+// offline or before the first successful confirmation. This avoids a long wait
+// on cold start when the first check fails transiently (WiFi still connecting,
+// DNS not ready). Requires 2 consecutive failures before marking offline
+// (avoids transient blips); a single success marks online immediately.
 func (m *Model) maybeCheckInet() tea.Cmd {
 	if m.Offline {
 		return nil
 	}
 	interval := healthCheckTicks
-	if !m.inetOnline {
+	if !m.inetOnline || !m.inetConfirmed {
 		interval = healthCheckTicksFast
 	}
 	if m.tickCount%interval == 0 {
@@ -91,6 +93,31 @@ func checkInetCmd() tea.Cmd {
 		applog.Warn("Internet: unreachable", "primary_err", err, "fallback_err", err2)
 		return inetResultMsg(false)
 	}
+}
+
+// isNetworkError returns true when err indicates a definitive network-layer
+// failure (DNS resolution, routing) rather than an application-level issue.
+// Used by service failure handlers (DXC, APRS) to decide whether to fire
+// an immediate health check instead of waiting for the scheduled poll.
+func isNetworkError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "no such host") ||
+		strings.Contains(s, "network is unreachable")
+}
+
+// noteNetworkError is called when a network-dependent service (DXC, APRS)
+// fails with a hard network error.  It sets a flag so that the next tick
+// dispatches an immediate health check, avoiding the up-to-60 s delay
+// of the normal polling cycle.  The health-check streak logic is unchanged
+// — two consecutive failures are still required before marking offline.
+func (m *Model) noteNetworkError() {
+	if !m.inetOnline {
+		return // already offline; nothing to accelerate
+	}
+	m.triggerRapidCheck = true
 }
 
 // =============================================================================

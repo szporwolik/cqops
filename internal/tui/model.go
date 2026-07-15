@@ -124,8 +124,10 @@ type Model struct {
 	dateTimeAuto      bool
 	tickCount         int
 	inetOnline        bool
+	inetConfirmed     bool // true after first successful health check
 	inetFailStreak    int  // consecutive failed health checks; ≥2 = offline
 	offlineToastShown bool // suppress repeated offline errors until internet returns
+	triggerRapidCheck bool // set by DXC/APRS failures to fire an immediate health check
 	versionChecked    bool // true after first GitHub version check
 	Offline           bool // when true, skip all network-dependent operations
 	wsjtx             wsjtxState
@@ -559,6 +561,13 @@ func (m *Model) Init() tea.Cmd {
 			m.offlineToastShown = false
 			m.toasts.Success("APRS: connected")
 		} else if err != nil {
+			// When the failure looks like a network-layer issue
+			// (DNS), flag an immediate health check so we detect
+			// internet outages in seconds rather than waiting
+			// for the 60 s poll cycle.
+			if isNetworkError(err) {
+				m.noteNetworkError()
+			}
 			// Suppress when general offline toast already shown.
 			if m.offlineToastShown {
 				return

@@ -344,7 +344,10 @@ func (m *Model) storeDXCSpotsCmd(spots []dxc.Spot) tea.Cmd {
 }
 
 // handleDXCStatus processes a connection state change.
-func (m *Model) handleDXCStatus(msg dxcStatusMsg) {
+// Returns a tea.Cmd to fire an immediate health check when the failure
+// looks like a network-layer issue (DNS), so we detect internet outages
+// in seconds instead of waiting for the 60 s poll cycle.
+func (m *Model) handleDXCStatus(msg dxcStatusMsg) tea.Cmd {
 	m.dxc.connecting = false
 	if msg.online {
 		m.dxc.online = true
@@ -360,23 +363,30 @@ func (m *Model) handleDXCStatus(msg dxcStatusMsg) {
 				Host:      cfg.Host + ":" + cfg.Port,
 			})
 		}
-	} else {
-		m.dxc.online = false
-		m.dxc.client = nil
-		m.rc.status = ""
-		// Redirect to QSO form if the user is viewing the DXC tab.
-		if m.screen == screenDXC {
-			m.screen = screenQSO
-		}
-		if m.dxc.reconnectIdx < len(dxcReconnectDelays)-1 {
-			m.dxc.reconnectIdx++
-		}
-		applog.Warn("DXC: connection failed",
-			"attempt", m.dxc.reconnectIdx+1,
-			"error", msg.err,
-		)
-		m.toasts.Warn("DXC: connection failed — retrying")
+		return nil
 	}
+	m.dxc.online = false
+	m.dxc.client = nil
+	m.rc.status = ""
+	// Redirect to QSO form if the user is viewing the DXC tab.
+	if m.screen == screenDXC {
+		m.screen = screenQSO
+	}
+	if m.dxc.reconnectIdx < len(dxcReconnectDelays)-1 {
+		m.dxc.reconnectIdx++
+	}
+	applog.Warn("DXC: connection failed",
+		"attempt", m.dxc.reconnectIdx+1,
+		"error", msg.err,
+	)
+	m.toasts.Warn("DXC: connection failed — retrying")
+	// When the failure looks like DNS or routing is dead, fire an
+	// immediate health check instead of waiting for the poll timer.
+	if isNetworkError(msg.err) {
+		m.noteNetworkError()
+		return checkInetCmd()
+	}
+	return nil
 }
 
 // resetDXC stops any active connection and resets reconnect state.

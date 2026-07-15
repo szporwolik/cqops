@@ -111,6 +111,15 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 	// Consolidate periodic commands — only batch non-nil commands to reduce
 	// closure allocation and tea.Batch overhead on low-end hardware.
 	cmds := []tea.Cmd{tickCmd()}
+	// Rapid internet check triggered by a network service (DXC, APRS)
+	// failing with a hard network error. Fires an immediate health check
+	// instead of waiting up to 60 s for the next scheduled poll.
+	if m.triggerRapidCheck {
+		m.triggerRapidCheck = false
+		if m.inetOnline {
+			cmds = append(cmds, checkInetCmd())
+		}
+	}
 	if c := m.maybeCheckInet(); c != nil {
 		cmds = append(cmds, c)
 	}
@@ -156,6 +165,7 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			// Internet reachable — reset streak and mark online immediately.
 			prevOnline := m.inetOnline
 			m.inetOnline = true
+			m.inetConfirmed = true
 			m.App.InetOnline = true
 			m.inetFailStreak = 0
 			if !prevOnline {
@@ -164,14 +174,18 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 				m.lookup.wlForceCheck = true
 				m.lookup.qrzForceCheck = true
 				m.toasts.Success("Internet: connected")
-				// Push dashboard immediately so the map switches from
-				// offline CRS to tiled Web Mercator.
-				lastDashboardPushTick = 0
-				lastFastTick = 0
-				m.pushDashboardState()
+				// Push every panel immediately so the dashboard gets fresh
+				// QSO data alongside the online map switch. Resets all
+				// throttles and fingerprints — unlike pushDashboardState(),
+				// which may skip today/recent/APRS due to rate limits.
+				m.forcePushDashboardAll()
 				// Restart APRS — it was stopped when we went offline.
 				m.App.MaybeRestartAPRS()
 				var cmds []tea.Cmd
+				// Make DXC reconnect immediately — reset its internal retry
+				// backoff so it doesn't wait for its own delay cycle.
+				m.dxc.lastAttempt = time.Time{}
+				m.dxc.reconnectIdx = 0
 				if c := m.maybeDXC(); c != nil {
 					cmds = append(cmds, c)
 				}
@@ -185,9 +199,6 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 					cmds = append(cmds, c)
 				}
 				if c := m.maybeFetchSolar(); c != nil {
-					cmds = append(cmds, c)
-				}
-				if c := m.maybeCheckVersion(); c != nil {
 					cmds = append(cmds, c)
 				}
 				if len(cmds) > 0 {
@@ -386,8 +397,7 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 		m.handleSolarResult(r)
 		return true, nil
 	case dxcStatusMsg:
-		m.handleDXCStatus(r)
-		return true, nil
+		return true, m.handleDXCStatus(r)
 	}
 	return false, nil
 }

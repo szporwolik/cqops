@@ -447,7 +447,7 @@ func (m *Model) pushDashboardFast() {
 		Theme:                cfg.Theme,
 		InternetCallbookName: icName,
 		InternetCallbookURL:  icURL,
-		IsOnline:             m.inetOnline,
+		IsOnline:             m.inetOnline && m.inetConfirmed,
 		Debug:                m.App.Config.General.Debug,
 	})
 
