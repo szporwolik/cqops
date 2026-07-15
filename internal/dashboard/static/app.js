@@ -1509,8 +1509,8 @@ function guessContinent(c){
   var as='Japan|China|India|South Korea|Thailand|Indonesia|Philippines|Asiatic Russia|Malaysia|Singapore|Vietnam|Taiwan'.split('|');
   var oc='Australia|New Zealand|Fiji|Papua New Guinea'.split('|');
   var af='South Africa|Kenya|Nigeria|Ghana|Egypt|Morocco|Tunisia|Algeria'.split('|');
-  if(eu.indexOf(c)>=0)return'Europe';if(na.indexOf(c)>=0)return'North America';if(sa.indexOf(c)>=0)return'South America';
-  if(as.indexOf(c)>=0)return'Asia';if(oc.indexOf(c)>=0)return'Oceania';if(af.indexOf(c)>=0)return'Africa';return'';
+  if(eu.indexOf(c)>=0)return'EU';if(na.indexOf(c)>=0)return'NA';if(sa.indexOf(c)>=0)return'SA';
+  if(as.indexOf(c)>=0)return'AS';if(oc.indexOf(c)>=0)return'OC';if(af.indexOf(c)>=0)return'AF';return'';
 }
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 // ---- Centralized band / mode styling ----
