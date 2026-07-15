@@ -525,6 +525,23 @@ func (m *Model) formPathRow(width int) string {
 		} else {
 			result = pathInfoStyle.Width(width).Align(lipgloss.Right).Render(rotorLine)
 		}
+	} else if left != "" {
+		// Path shown, no rotor — fill empty right side with station
+		// profile (radio/antenna · grid) right-aligned.
+		profile := strings.Join(m.stationProfile(), "  \u00b7  ")
+		if profile != "" {
+			profileW := lipgloss.Width(profile)
+			leftW := width - profileW - 2
+			if leftW >= 20 {
+				leftStyled := pathInfoStyle.Width(leftW).Align(lipgloss.Left).Render(left)
+				rightStyled := pathMutedStyle.Render(profile)
+				result = lipgloss.JoinHorizontal(lipgloss.Center, leftStyled, "  ", rightStyled)
+			} else {
+				result = left
+			}
+		} else {
+			result = left
+		}
 	} else {
 		result = left
 	}
