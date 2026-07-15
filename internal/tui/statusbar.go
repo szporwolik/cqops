@@ -156,7 +156,7 @@ func (m *Model) headerView() string {
 
 	// Hardware: Rotator — optional, many stations don't have one.
 	if hasRig && rp.RotorBackend == "hamlib" {
-		rightParts = append(rightParts, statusDotStyled(m.rotor.connected, "Rotator"))
+		rightParts = append(rightParts, statusDotStyled(m.rotor.connected, "ROT"))
 	}
 
 	// Hardware: GPS — auxiliary position source.
