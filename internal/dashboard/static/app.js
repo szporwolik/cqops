@@ -223,28 +223,39 @@ function connectSSE(){
     // Enable debug BEFORE any D() call — TUI debug mode OR URL param.
     if(d.debug&&!DEBUG){DEBUG=true;D('init','debug mode ON (from TUI) — open console (F12) for traces')}
     D('display','received',{isOnline:d.isOnline,hasCallbook:!!d.internetCallbookUrl,debug:d.debug});
-    // isOnline transition: false→true means internet just came up.
-    // Re-init map with tile CRS if it was created in offline mode.
     var prevOnline=window._cqopsLastOnline;
     var nowOnline=!!d.isOnline;
     if(!prevOnline&&nowOnline){
+      // false→true: internet just came up — re-init with tiled Web Mercator.
       D('display','isOnline false→true — re-initializing map with tiles');
       if(typeof map!=='undefined'&&map&&map._cqopsOfflineCRS){
         D('display','removing offline overlay, re-creating map');
         removeOfflineOverlay();
-        // After removeOfflineOverlay() sets map=null, re-init.
-        // Use current displayCfg with the updated isOnline flag.
-        // Set a flag so renderAll doesn't double-init.
         window._mapReinitPending=true;
         setTimeout(function(){
           window._mapReinitPending=false;
           initMap(Object.assign({},d,{drawLines:displayCfg.drawLines!==false,maxLines:displayCfg.maxLines||250,highlightLastQSO:displayCfg.highlightLastQSO!==false,animateActivePath:!!displayCfg.animateActivePath}));
-          // After map creation, invalidate twice to ensure MapLibre GL
-          // tiles load — the container may not have settled yet.
           if(map){setTimeout(function(){map.invalidateSize()},200);setTimeout(function(){map.invalidateSize()},600);}
         },100);
       }else{
         D('display','map not in offline CRS mode (map='+(typeof map)+', _cqopsOfflineCRS='+(map&&map._cqopsOfflineCRS)+')');
+      }
+    }else if(prevOnline&&!nowOnline){
+      // true→false: internet just went down — switch to offline CRS with
+      // the embedded world map image so the map stays usable.
+      D('display','isOnline true→false — switching to offline map');
+      if(typeof map!=='undefined'&&map&&!map._cqopsOfflineCRS){
+        D('display','removing online map, re-creating with offline CRS');
+        // Destroy the online map (clean up MapLibre GL / WebGL context).
+        _mapPollActive=false;
+        if(_mapResizeObserver){_mapResizeObserver.disconnect();_mapResizeObserver=null}
+        if(map){map.remove();map=null}
+        // Re-init with offline equirectangular + world map image.
+        window._mapReinitPending=true;
+        setTimeout(function(){
+          window._mapReinitPending=false;
+          initMap(Object.assign({},d,{drawLines:displayCfg.drawLines!==false,maxLines:displayCfg.maxLines||250,highlightLastQSO:displayCfg.highlightLastQSO!==false,animateActivePath:!!displayCfg.animateActivePath,isOnline:false}));
+        },100);
       }
     }
     displayCfg=d;

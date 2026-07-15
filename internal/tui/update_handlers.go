@@ -191,6 +191,12 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 				m.offlineToastShown = true
 				m.toasts.Warn("Internet: not available — working in offline mode")
 			}
+			// Push dashboard immediately so the map switches from
+			// tiled Web Mercator to offline equirectangular fallback
+			// without waiting for the next throttled tick cycle.
+			lastDashboardPushTick = 0
+			lastFastTick = 0
+			m.pushDashboardState()
 		}
 		m.inetOnline = bool(r)
 		return true, nil
