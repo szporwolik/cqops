@@ -741,19 +741,33 @@ var _mapResizeObserver=null,_mapPollActive=false;
 // weren't loaded at page start (e.g. the page opened while offline and
 // the CDN <script> tags failed). Calls cb() when ready — immediately if
 // L.maplibreGL is already available, or after injection + load.
+// Scripts are loaded sequentially (maplibre-gl.js first, then the
+// Leaflet binding) to prevent the binding from executing before the
+// core library defines its global (maplibregl).
 function _ensureMapLibreGL(cb){
   if(typeof L!=='undefined'&&typeof L.maplibreGL==='function'){cb();return}
   D('initMap','MapLibre GL not loaded — injecting CDN scripts');
   var s1=document.createElement('script');
   s1.src='https://unpkg.com/maplibre-gl/dist/maplibre-gl.js';
-  var s2=document.createElement('script');
-  s2.src='https://unpkg.com/@maplibre/maplibre-gl-leaflet/leaflet-maplibre-gl.js';
-  var done=0;
-  function check(){done++;if(done===2){D('initMap','MapLibre GL scripts '+((typeof L!=='undefined'&&typeof L.maplibreGL==='function')?'loaded ✓':'failed — proceeding without tiles'));cb()}}
-  s1.onload=check;s1.onerror=check;
-  s2.onload=check;s2.onerror=check;
+  s1.onload=function(){
+    // Core library loaded — now safe to load the Leaflet binding.
+    var s2=document.createElement('script');
+    s2.src='https://unpkg.com/@maplibre/maplibre-gl-leaflet/leaflet-maplibre-gl.js';
+    s2.onload=function(){
+      D('initMap','MapLibre GL scripts loaded \u2713');
+      cb();
+    };
+    s2.onerror=function(){
+      D('initMap','MapLibre GL Leaflet binding failed — proceeding without tiles');
+      cb();
+    };
+    document.head.appendChild(s2);
+  };
+  s1.onerror=function(){
+    D('initMap','MapLibre GL core library failed — proceeding without tiles');
+    cb();
+  };
   document.head.appendChild(s1);
-  document.head.appendChild(s2);
 }
 
 // _refreshQR loads the QR code image from QuickChart. Resets src to empty

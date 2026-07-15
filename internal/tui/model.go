@@ -126,7 +126,8 @@ type Model struct {
 	inetOnline        bool
 	inetConfirmed     bool // true after first successful health check
 	inetFailStreak    int  // consecutive failed health checks; ≥2 = offline
-	offlineToastShown bool // suppress repeated offline errors until internet returns
+	offlineToastShown bool // suppress repeated internet-down toasts
+	aprsToastShown    bool // suppress repeated APRS failure toasts during reconnect loops
 	triggerRapidCheck bool // set by DXC/APRS failures to fire an immediate health check
 	versionChecked    bool // true after first GitHub version check
 	Offline           bool // when true, skip all network-dependent operations
@@ -558,7 +559,7 @@ func (m *Model) Init() tea.Cmd {
 	// Start APRS-IS client if configured.
 	m.App.SetAPRSStatusCallback(func(connected bool, err error) {
 		if connected {
-			m.offlineToastShown = false
+			m.aprsToastShown = false
 			m.toasts.Success("APRS: connected")
 		} else if err != nil {
 			// When the failure looks like a network-layer issue
@@ -568,14 +569,15 @@ func (m *Model) Init() tea.Cmd {
 			if isNetworkError(err) {
 				m.noteNetworkError()
 			}
-			// Suppress when general offline toast already shown.
-			if m.offlineToastShown {
+			// Suppress duplicate APRS failure toasts during
+			// reconnect loops — one is enough.
+			if m.aprsToastShown {
 				return
 			}
-			m.offlineToastShown = true
+			m.aprsToastShown = true
 			m.toasts.Warn("APRS: " + err.Error())
 		} else {
-			m.offlineToastShown = false
+			m.aprsToastShown = false
 			m.toasts.Info("APRS: stopped")
 		}
 	})
