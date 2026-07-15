@@ -1375,7 +1375,7 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 	if m.callRecentQSOs.IsFiltered() {
 		callQSOs := m.callRecentQSOs.ActiveQSOs()
 		if len(callQSOs) > 0 {
-			callRows := len(callQSOs) + 2 // rows + header
+			callRows := len(callQSOs) + 2 // header + data + padding for border
 			if callRows > tableH/2 {
 				callRows = tableH / 2
 			}
@@ -1408,9 +1408,26 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 	}
 	if callQSOPart != "" {
 		parts = append(parts, callQSOPart)
+		parts = append(parts, "") // separator — may produce >1 blank row; collapsed below
 	}
 	parts = append(parts, m.recentQSOs.View())
-	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+	result := lipgloss.JoinVertical(lipgloss.Left, parts...)
+	// The bubbles table pads its viewport to a fixed height with blank
+	// rows, and the separator above adds another.  Instead of trying to
+	// predict the exact padding, simply collapse all runs of 2+ visually
+	// empty lines into a single empty line.
+	lines := strings.Split(result, "\n")
+	cleaned := lines[:0]
+	prevEmpty := false
+	for _, l := range lines {
+		empty := stripANSI(l) == "" || strings.TrimSpace(l) == ""
+		if empty && prevEmpty {
+			continue // collapse consecutive blanks
+		}
+		cleaned = append(cleaned, l)
+		prevEmpty = empty
+	}
+	return strings.Join(cleaned, "\n")
 }
 
 // buildContestLine returns the contest info line for the QSO screen, or "" if
