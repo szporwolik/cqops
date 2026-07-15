@@ -1446,12 +1446,17 @@ func (m *Model) buildContestLine(boxW int) string {
 		m.rc.contestLineSig = ""
 		return ""
 	}
+	// Keep stats current — computeIfStale is a no-op when fresh (<5 s).
+	m.contest.computeIfStale(m.App.DB, id, ct.Name)
 	sig := id + "|" + strconv.Itoa(ct.NextQSO) + "|" + strconv.Itoa(m.contest.TotalQSOs) + "|" + strconv.FormatInt(time.Now().UTC().Unix()/10, 10) + "|" + strconv.Itoa(boxW) + "|" + strconv.FormatInt(int64(m.contest.OnAir.Seconds()), 10)
 	if m.rc.contestLineSig == sig && m.rc.contestLine != "" {
 		return m.rc.contestLine
 	}
 	m.rc.contestLineSig = sig
-	since := formatDurationShort(time.Now().UTC().Sub(m.contest.LastQSO))
+	since := "—"
+	if !m.contest.LastQSO.IsZero() {
+		since = formatDurationShort(time.Now().UTC().Sub(m.contest.LastQSO)) + " ago"
+	}
 	first := ""
 	if !m.contest.FirstQSO.IsZero() && boxW >= 120 {
 		first = "  Started " + m.contest.FirstQSO.Format("15:04")
@@ -1464,7 +1469,7 @@ func (m *Model) buildContestLine(boxW int) string {
 	if ct.Name != "" && ct.Name != ct.ContestID && boxW >= 100 {
 		namePart = " \u00b7 " + ct.Name
 	}
-	m.rc.contestLine = fmt.Sprintf(" %s%s   %d QSOs%s   Last %s ago   Next #%d%s",
+	m.rc.contestLine = fmt.Sprintf(" %s%s   %d QSOs%s   Last %s   Next #%d%s",
 		ct.ContestID, namePart, m.contest.TotalQSOs, first, since, ct.NextQSO, onAir)
 	return m.rc.contestLine
 }

@@ -151,12 +151,16 @@ func formatDurationShort(d time.Duration) string {
 	if d < 0 {
 		d = 0
 	}
-	h := int(d.Hours())
+	days := int(d.Hours()) / 24
+	h := int(d.Hours()) % 24
 	m := int(d.Minutes()) % 60
+	if days > 0 {
+		return fmt.Sprintf("%dd %02d:%02d", days, h, m)
+	}
 	if h > 0 {
 		return fmt.Sprintf("%d:%02d", h, m)
 	}
-	return fmt.Sprintf("%d", m)
+	return fmt.Sprintf("%dm", m)
 }
 
 func bucketQSOsByMinute(qsos []qso.QSO, numBuckets int, now time.Time) []float64 {
