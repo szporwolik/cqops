@@ -752,6 +752,7 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 	if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
 		if key.Matches(keyMsg, m.keys.CycleContest) && !m.ui.logbookEditor.IsEditing() {
 			m.cycleActiveContest()
+			m.forcePushDashboardAll()
 			// Refresh the editor's contest filter.
 			if m.App.Logbook.ActiveContest != "" {
 				ct := m.App.Config.Contests[m.App.Logbook.ActiveContest]

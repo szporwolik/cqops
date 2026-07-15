@@ -723,6 +723,28 @@ func (m *Model) invalidateDashboardFlags() {
 	lastPushedAQSO = cachedAQSO{}
 }
 
+// forcePushDashboardAll clears all dashboard throttle and fingerprint caches
+// then force-pushes every panel. Call after logbook/rig/operator/contest
+// changes so the dashboard website reflects the new state immediately
+// instead of waiting for the next throttled tick cycle.
+func (m *Model) forcePushDashboardAll() {
+	// Clear throttle/cache state so pushDashboardState runs every panel.
+	lastDashboardPushTick = 0
+	lastFastTick = 0
+	lastTodayPush = time.Time{}
+	lastAPRSPush = time.Time{}
+	lastTodayIDs = nil
+	lastRecentIDs = nil
+	pushDashboardLastCall = ""
+	lastPushedAQSO = cachedAQSO{}
+	lastActiveDupe = false
+	lastActiveNewCall = false
+	lastActiveNewDXCC = false
+	lastPushedPartner = cachedPartner{}
+	partnerEmpty = false
+	m.pushDashboardState()
+}
+
 func idsEqual(a, b []int64) bool {
 	if len(a) != len(b) {
 		return false

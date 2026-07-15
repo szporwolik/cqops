@@ -391,10 +391,12 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 
 	case msg.String() == "ctrl+c":
 		m.cycleActiveContest()
+		m.forcePushDashboardAll()
 		return m.refreshQSOS(), true
 
 	case msg.String() == "ctrl+o":
 		m.cycleActiveOperator()
+		m.forcePushDashboardAll()
 		return nil, true
 
 	case msg.String() == "ctrl+p":

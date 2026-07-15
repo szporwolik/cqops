@@ -66,6 +66,9 @@ func (m *Model) cycleLogbook() tea.Cmd {
 			return nil
 		})
 	}
+	// Force-push all dashboard panels so the website reflects the new
+	// logbook immediately — not on the next 5 s throttle cycle.
+	m.forcePushDashboardAll()
 	return tea.Batch(cmds...)
 }
 
@@ -111,6 +114,8 @@ func (m *Model) cycleRig() tea.Cmd {
 	m.refreshRigClient()   // reconnect/disconnect for the new rig
 	m.refreshRotorClient() // rotor may have changed too
 	m.App.MaybeRestartWSJTX(rp.WsjtxEnabled, rp.WsjtxUDPHost, rp.WsjtxUDPPort)
+	// Push rig change to dashboard website immediately.
+	m.forcePushDashboardAll()
 	return nil
 }
 
