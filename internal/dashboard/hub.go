@@ -25,10 +25,12 @@ func NewHub() *Hub {
 	}
 }
 
-// Subscribe creates a new buffered channel (cap 16) and registers it.
+// Subscribe creates a new buffered channel (cap 128) and registers it.
 // The caller is responsible for calling Unsubscribe when done.
+// Buffer is sized to handle rapid logbook cycling (~13 events/switch ×
+// several switches) without dropping the critical 'today' map-data event.
 func (h *Hub) Subscribe() chan Event {
-	ch := make(chan Event, 16)
+	ch := make(chan Event, 128)
 	h.mu.Lock()
 	h.subscribers[ch] = struct{}{}
 	h.rebuildCacheLocked()

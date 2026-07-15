@@ -779,6 +779,11 @@ function initMap(cfg){
   }
   // Radar: always enabled — no toggle button.
   enableRadarLayer();
+  // If QSO data arrived while the map was being created (cold start
+  // or offline→online transition), render it now. Without this, the
+  // 'today' SSE event may have called updateMapFromToday() when map
+  // was null — the data was saved into todayQsos but never drawn.
+  if(todayQsos&&todayQsos.length)updateMapFromToday();
 }
 
 // removeOfflineOverlay is called when SSE reconnects (internet restored).
@@ -1351,6 +1356,7 @@ function updateMapFromToday(){
 
   // Fit bounds — but don't override active-QSO focus set by focusMapOnGrid.
   if(bounds.length>1&&!activeGrid)map.flyToBounds(bounds,{padding:[50,50],maxZoom:18});
+  else if(hasStation&&ownStationLat!=null)map.flyTo([ownStationLat,ownStationLon],6);
   else if(!hasStation)map.flyTo([51,10],2);
 }
 
