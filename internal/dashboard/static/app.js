@@ -502,7 +502,9 @@ function updatePartnerLocalTime(grid){
   var el=document.getElementById('hero-partner-time');if(!el)return;
   var box=document.getElementById('hero-weather-box');if(!box)return;
   if(!grid||!navigator.onLine){el.textContent='';box.classList.remove('visible');return}
-  var ll=window._partnerGridLL||gridToLatLon(grid);
+  // Always compute fresh from the passed grid.
+  window._partnerTimeGrid=grid;
+  var ll=gridToLatLon(grid);
   window._partnerGridLL=ll;
   if(!ll[0]){el.textContent='';box.classList.remove('visible');return}
   var now=new Date();
@@ -513,7 +515,7 @@ function updatePartnerLocalTime(grid){
   box.classList.add('visible');
 }
 // Refresh partner clock every 30 s so it stays current.
-setInterval(function(){updatePartnerLocalTime(window._partnerGridLL||'')},30000);
+setInterval(function(){updatePartnerLocalTime(window._partnerTimeGrid||'')},30000);
 
 function showHeroPhoto(url){
   var img=$('hero-photo');img.style.display='';img.src=url;

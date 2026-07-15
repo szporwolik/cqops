@@ -176,7 +176,7 @@ func (m *Model) viewPartner() string {
 		wlW = 20
 	}
 
-	cbContent := m.renderCallbookRows(d, cbW-4)
+	cbContent := m.renderCallbookRows(d, cbW-4, 0) // 0 = no height limit
 	lbContent := m.renderLogbookRows(d, lbW-4)
 
 	// Compute max inner height (header + content lines), then pad all.
@@ -293,10 +293,111 @@ func (m *Model) viewPartner() string {
 // --- Box helpers ---
 
 func (m *Model) callbookSuffix() string {
-	if m.lookup.partnerData != nil && m.App.Config.Integrations.Callbook.QRZ.Enabled {
-		return " (Callbook)"
+	if m.lookup.partnerData == nil {
+		return ""
 	}
-	return ""
+	providers := m.lookup.partnerData.Providers
+	call := m.lookup.partnerData.Callsign
+	if len(providers) == 0 || call == "" {
+		return ""
+	}
+	seen := map[string]bool{}
+	var links []string
+	for _, name := range providers {
+		if name == "CTY.DAT" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		url := providerURLByName(name, call)
+		if url != "" {
+			links = append(links, osc8Link(url, name))
+		} else {
+			links = append(links, name)
+		}
+	}
+	if len(links) == 0 {
+		return ""
+	}
+	return " \u00b7 " + strings.Join(links, " \u00b7 ")
+}
+
+// checkMark returns a checkmark symbol, falling back to ASCII "Y"
+// on bare TTYs and terminals without Unicode support (same approach
+// as the toast renderer).
+func checkMark() string {
+	if isTTYWithoutDisplay() {
+		return "Y"
+	}
+	return "\u2713"
+}
+
+// callbookAnyEnabled returns true when at least one online callbook
+// provider (QRZ, HamQTH, or Callook) is configured and enabled.
+func (m *Model) callbookAnyEnabled() bool {
+	cb := m.App.Config.Integrations.Callbook
+	return (cb.QRZ.Enabled && cb.QRZ.User != "") ||
+		(cb.HamQTH.Enabled && cb.HamQTH.User != "") ||
+		cb.Callook.Enabled
+}
+
+// resolveClass maps callbook licence class codes to human-readable labels.
+func resolveClass(cls string) string {
+	// Normalize common FCC/QRZ class codes.
+	switch strings.ToUpper(strings.TrimSpace(cls)) {
+	case "E", "EXTRA":
+		return "Extra"
+	case "G", "GENERAL":
+		return "General"
+	case "T", "TECHNICIAN":
+		return "Technician"
+	case "A", "ADVANCED":
+		return "Advanced"
+	case "N", "NOVICE":
+		return "Novice"
+	case "C", "CLUB":
+		return "Club"
+	case "I", "1":
+		return "Class I"
+	case "II", "2":
+		return "Class II"
+	case "III", "3":
+		return "Class III"
+	default:
+		return cls // pass through unknown codes as-is
+	}
+}
+
+func providerDisplayName(p string) string {
+	switch p {
+	case "qrz":
+		return "QRZ.com"
+	case "hamqth":
+		return "HamQTH"
+	case "callook":
+		return "Callook.info"
+	case "wavelog":
+		return "Wavelog"
+	case "logbook":
+		return "Local Logbook"
+	case "cty":
+		return "CTY.DAT"
+	default:
+		return ""
+	}
+}
+
+// providerURLByName maps a provider's display name to its callsign-lookup URL.
+func providerURLByName(name, call string) string {
+	switch name {
+	case "QRZ.com":
+		return "https://www.qrz.com/db/" + call
+	case "HamQTH":
+		return "https://www.hamqth.com/" + call
+	case "Callook.info":
+		return "https://callook.info/" + call
+	default:
+		return ""
+	}
 }
 
 // renderPartnerBox wraps header+content in a bordered box. Content is padded
@@ -330,77 +431,293 @@ func infoRow(label, value string, maxW int) string {
 
 // --- Callbook rows ---
 
-func (m *Model) renderCallbookRows(d *callbook.Result, maxW int) string {
-	var rows []row
-	add := func(label, value string) {
-		if value != "" {
-			rows = append(rows, row{label, value})
-		}
-	}
-	if d.Callsign != "" {
-		_, icbURL := m.internetCallbook()
-		if icbURL != "" {
-			link := osc8Link(strings.Replace(icbURL, "{CALL}", d.Callsign, 1), S.Info.Render(d.Callsign))
-			add("Callsign", link)
-		} else {
-			add("Callsign", S.Info.Render(d.Callsign))
-		}
-	}
-	// Continent from DXCC prefix lookup — cached per callsign to avoid
-	// prefix-tree access on every partner-view frame.
-	if d.Callsign != "" {
-		if d.Callsign != m.rc.dxccContCall {
-			m.rc.dxccContCall = d.Callsign
-			m.rc.dxccContValue = ""
-			if p := m.dxccLookup(d.Callsign); p != nil && p.Continent != "" {
-				m.rc.dxccContValue = p.Continent
-			}
-		}
-		if m.rc.dxccContValue != "" {
-			add("Continent", continentName(m.rc.dxccContValue))
-		}
-	}
-	add("Name", d.Name)
-	// Show the QSO form grid (which may differ from QRZ grid due to REF autofill)
-	// with its source, or fall back to QRZ grid.
-	formGrid := strings.TrimSpace(m.fields[fieldGrid].Value())
-	if formGrid != "" && m.gridSource != "" && m.gridSource != gridSourceCallbook {
-		add("Grid", osc8Link("http://www.levinecentral.com/ham/grid_square.php?Grid="+formGrid, formGrid)+"  "+DimStyle.Render("("+string(m.gridSource)+")"))
-	} else if d.Grid != "" {
-		add("Grid", osc8Link("http://www.levinecentral.com/ham/grid_square.php?Grid="+d.Grid, d.Grid))
-	} else if formGrid != "" {
-		add("Grid", formGrid)
-	} else {
-		add("Grid", "")
-	}
-	add("QTH", d.QTH)
-	add("Country", d.Country)
-	add("State", d.State)
-	add("County", d.County)
-	add("Zip", d.Zip)
-	add("Class", d.Class)
-	if d.Email != "" {
-		add("Email", osc8Link("mailto:"+d.Email, d.Email))
-	} else {
-		add("Email", "")
-	}
-	add("URL", d.URL)
-	if d.Lat != "" || d.Lon != "" {
-		coordText := strings.TrimSpace(d.Lat + " " + d.Lon)
-		coordURL := fmt.Sprintf("https://geohack.toolforge.org/geohack.php?params=%s_N_%s_E_type:town", d.Lat, d.Lon)
-		add("Coordinates", osc8Link(coordURL, coordText))
-	}
-	add("DXCC", d.DXCC)
-	add("CQ Zone", d.CQZone)
-	add("ITU Zone", d.ITUZone)
-	if len(rows) == 0 {
+// renderCallbookRows builds a compact callbook display with merged fields.
+// Fields are combined into fewer rows so the panel uses vertical space
+// efficiently.  When maxH > 0, rows beyond the limit are omitted by
+// priority (Contact < Refs < Licence < Also < Locator details).
+// Call, Name, QTH, Entity, and Locator grid are never omitted.
+func (m *Model) renderCallbookRows(d *callbook.Result, maxW int, maxH int) string {
+	if d == nil || d.Callsign == "" {
 		return ""
 	}
+
+	// Resolve continent from DXCC prefix lookup (cached per callsign).
+	var cont string
+	if d.Callsign != m.rc.dxccContCall {
+		m.rc.dxccContCall = d.Callsign
+		m.rc.dxccContValue = ""
+		if p := m.dxccLookup(d.Callsign); p != nil && p.Continent != "" {
+			m.rc.dxccContValue = p.Continent
+		}
+	}
+	if m.rc.dxccContValue != "" {
+		cont = m.rc.dxccContValue
+	}
+
+	// Grid resolution: prefer QSO-form grid when sourced from REF/SOTA/etc.
+	formGrid := strings.TrimSpace(m.fields[fieldGrid].Value())
+	grid := d.Grid
+	gridFromForm := formGrid != "" && m.gridSource != "" && m.gridSource != gridSourceCallbook
+	if gridFromForm {
+		grid = formGrid
+	}
+
+	// Format coordinates compactly: 50.03309°N 20.22108°E
+	var coord string
+	if d.Lat != "" || d.Lon != "" {
+		coord = formatCoord(d.Lat, "N", "S") + " " + formatCoord(d.Lon, "E", "W")
+	}
+
+	// Resolve state code → name when possible.
+	stateName := resolveStateName(d.State, d.Country)
+
+	labelW := 9
+	valW := maxW - labelW - 1
+	if valW < 3 {
+		valW = 3
+	}
+
+	// Build candidate rows in priority order.  Each row has a priority;
+	// when maxH is set, lower-priority rows are dropped first.
+	type cand struct {
+		label    string
+		value    string
+		priority int // lower = keep first
+	}
+	var candidates []cand
+	add := func(label, value string, prio int) {
+		if value == "" {
+			return
+		}
+		candidates = append(candidates, cand{label, value, prio})
+	}
+
+	// Priority 0-9: essential fields (never omitted).
+	// Callsign as a clickable link to the main internet callbook.
+	_, icbURL := m.internetCallbook()
+	callVal := S.Info.Render(d.Callsign)
+	if icbURL != "" {
+		callVal = osc8Link(strings.Replace(icbURL, "{CALL}", d.Callsign, 1), callVal)
+	}
+	if d.Class != "" {
+		cls := resolveClass(d.Class)
+		if cls != "" {
+			callVal += "  " + DimStyle.Render("\u00b7 "+cls)
+		}
+	}
+	add("Call", callVal, 0)
+
+	if d.Name != "" {
+		add("Name", d.Name, 1)
+	}
+
+	var qthParts []string
+	if d.QTH != "" {
+		qthParts = append(qthParts, d.QTH)
+	}
+	if stateName != "" {
+		qthParts = append(qthParts, stateName)
+	} else if d.State != "" {
+		qthParts = append(qthParts, d.State)
+	}
+	if d.Zip != "" {
+		qthParts = append(qthParts, d.Zip)
+	}
+	add("QTH", strings.Join(qthParts, " \u00b7 "), 2)
+
+	var entParts []string
+	if d.Country != "" {
+		entParts = append(entParts, d.Country)
+	}
+	if cont != "" {
+		entParts = append(entParts, cont)
+	}
+	if d.DXCC != "" {
+		entParts = append(entParts, "DXCC "+d.DXCC)
+	}
+	add("Entity", strings.Join(entParts, " \u00b7 "), 3)
+
+	var locParts []string
+	if grid != "" {
+		g := grid
+		if gridFromForm {
+			g += "  " + DimStyle.Render("("+string(m.gridSource)+")")
+		}
+		locParts = append(locParts, g)
+	}
+	if coord != "" {
+		locParts = append(locParts, coord)
+	}
+	add("Locator", strings.Join(locParts, " \u00b7 "), 4)
+
+	// Priority 10-19: QSL (high operational value, keep when possible).
+	var qslParts []string
+	ck := checkMark()
+	if d.LoTW {
+		qslParts = append(qslParts, "LoTW "+ck)
+	}
+	if d.EQSL {
+		qslParts = append(qslParts, "eQSL "+ck)
+	}
+	if d.QSLManager != "" {
+		qslParts = append(qslParts, "via "+d.QSLManager)
+	}
+	add("QSL", strings.Join(qslParts, " \u00b7 "), 10)
+
+	// Priority 20-29: References.
+	var refParts []string
+	if d.CQZone != "" {
+		refParts = append(refParts, "CQ "+d.CQZone)
+	}
+	if d.ITUZone != "" {
+		refParts = append(refParts, "ITU "+d.ITUZone)
+	}
+	// TODO: append IOTA, DOK, P-OT, county, oblast from extended fields
+	add("Refs", strings.Join(refParts, " \u00b7 "), 20)
+
+	// Priority 30-39: Previous calls / aliases.
+	// TODO: populate from d.PreviousCalls, d.Aliases
+	add("Also", "", 30)
+
+	// Priority 40-49: Licence.
+	// TODO: populate from d.LicenceStatus, d.LicenceExpires
+	add("Licence", "", 40)
+
+	// Priority 50-59: Contact (lowest priority).
+	var contactParts []string
+	if d.Email != "" {
+		contactParts = append(contactParts, osc8Link("mailto:"+d.Email, d.Email))
+	}
+	if d.URL != "" {
+		contactParts = append(contactParts, d.URL)
+	}
+	add("Contact", strings.Join(contactParts, " \u00b7 "), 50)
+
+	// Filter by height if maxH is set.
+	if maxH > 0 && len(candidates) > maxH {
+		// Sort by priority (lower = keep first), keep top maxH.
+		// Since candidates are already in priority order, just truncate.
+		candidates = candidates[:maxH]
+	}
+
+	// Render rows with segment-aware width handling.
 	var lines []string
-	for _, r := range rows {
-		lines = append(lines, infoRow(r.label, r.value, maxW))
+	for _, c := range candidates {
+		lbl := S.FormLabel.Align(lipgloss.Right).Width(labelW).Render(c.label)
+
+		// For Name, allow 2 lines when value is long.
+		if c.label == "Name" {
+			nameStyle := ValueStyle.Width(valW).MaxWidth(valW)
+			if lipgloss.Width(c.value) <= valW {
+				lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Center, lbl, " ",
+					nameStyle.Inline(true).Render(c.value)))
+			} else {
+				lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Center, lbl, " ",
+					nameStyle.Render(truncateText(c.value, valW*2))))
+			}
+			continue
+		}
+
+		// For multi-segment rows (QTH, Entity, Locator, Refs, Contact),
+		// remove trailing segments before truncating the entire line.
+		val := fitSegments(c.value, valW)
+		valStyled := ValueStyle.Width(valW).MaxWidth(valW).Inline(true).Render(val)
+		lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Center, lbl, " ", valStyled))
+	}
+
+	if len(lines) == 0 {
+		return ""
 	}
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+}
+
+// fitSegments truncates a " · "-separated value by removing trailing
+// segments until it fits within maxW cells.  Dangling separators and
+// trailing whitespace are stripped.  If even the first segment doesn't
+// fit, it is truncated with "…".
+func fitSegments(value string, maxW int) string {
+	if maxW <= 0 {
+		return ""
+	}
+	if lipgloss.Width(value) <= maxW {
+		return value
+	}
+	parts := strings.Split(value, " \u00b7 ")
+	for len(parts) > 1 {
+		parts = parts[:len(parts)-1]
+		candidate := strings.Join(parts, " \u00b7 ")
+		if lipgloss.Width(candidate) <= maxW {
+			return candidate
+		}
+	}
+	// Only one segment left — truncate with "…".
+	return truncateText(parts[0], maxW)
+}
+
+// resolveStateName maps a state/province code to its human-readable name
+// when a known mapping exists for the given country.
+func resolveStateName(code, country string) string {
+	if code == "" {
+		return ""
+	}
+	if len(code) > 3 {
+		return code // already a full name (e.g. "California")
+	}
+	up := strings.ToUpper(code)
+	// Scope by country to avoid clashes (MA = Massachusetts vs Małopolskie).
+	isUS := country == "United States" || country == "USA" || country == "United States of America"
+	isCA := country == "Canada"
+	if isUS || isCA {
+		if name, ok := stateCodeToName[up]; ok {
+			return name
+		}
+	}
+	// For other countries, return the code as-is — most non-US/CA codes
+	// are voivodeships, regions, or provinces without universal mappings.
+	return code
+}
+
+// stateCodeToName maps known ADIF/QRZ state codes to readable names.
+var stateCodeToName = map[string]string{
+	"AL": "Alabama", "AK": "Alaska", "AZ": "Arizona", "AR": "Arkansas",
+	"CA": "California", "CO": "Colorado", "CT": "Connecticut", "DE": "Delaware",
+	"FL": "Florida", "GA": "Georgia", "HI": "Hawaii", "ID": "Idaho",
+	"IL": "Illinois", "IN": "Indiana", "IA": "Iowa", "KS": "Kansas",
+	"KY": "Kentucky", "LA": "Louisiana", "ME": "Maine", "MD": "Maryland",
+	"MA": "Massachusetts", "MI": "Michigan", "MN": "Minnesota", "MS": "Mississippi",
+	"MO": "Missouri", "MT": "Montana", "NE": "Nebraska", "NV": "Nevada",
+	"NH": "New Hampshire", "NJ": "New Jersey", "NM": "New Mexico", "NY": "New York",
+	"NC": "North Carolina", "ND": "North Dakota", "OH": "Ohio", "OK": "Oklahoma",
+	"OR": "Oregon", "PA": "Pennsylvania", "RI": "Rhode Island", "SC": "South Carolina",
+	"SD": "South Dakota", "TN": "Tennessee", "TX": "Texas", "UT": "Utah",
+	"VT": "Vermont", "VA": "Virginia", "WA": "Washington", "WV": "West Virginia",
+	"WI": "Wisconsin", "WY": "Wyoming",
+	// Canadian provinces
+	"AB": "Alberta", "BC": "British Columbia", "MB": "Manitoba",
+	"NB": "New Brunswick", "NL": "Newfoundland and Labrador",
+	"NS": "Nova Scotia", "NT": "Northwest Territories", "NU": "Nunavut",
+	"ON": "Ontario", "PE": "Prince Edward Island", "QC": "Quebec",
+	"SK": "Saskatchewan", "YT": "Yukon",
+}
+
+// formatCoord converts a decimal-degree string (e.g. "50.03309") with
+// hemisphere suffixes to a compact coordinate: 50.03309°N.
+func formatCoord(val, posSuffix, negSuffix string) string {
+	if val == "" {
+		return ""
+	}
+	v := strings.TrimSpace(val)
+	// Parse as float.
+	var f float64
+	if _, err := fmt.Sscanf(v, "%f", &f); err != nil {
+		return v // non-numeric, return as-is
+	}
+	suffix := posSuffix
+	if f < 0 {
+		suffix = negSuffix
+		f = -f
+	}
+	return fmt.Sprintf("%.5f\u00b0%s", f, suffix)
 }
 
 // --- Logbook rows ---

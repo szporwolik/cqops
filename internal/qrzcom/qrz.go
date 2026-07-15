@@ -64,7 +64,8 @@ func (c *Client) Lookup(callsign string) (*callbook.Result, error) {
 		QTH: d.QTH, State: d.State, Zip: d.Zip, County: d.County,
 		Class: d.Class, Email: d.Email, URL: d.URL,
 		Lat: d.Lat, Lon: d.Lon, DXCC: d.DXCC, CQZone: d.CQZone, ITUZone: d.ITUZone,
-		ImageURL: d.ImageURL, Provider: "qrz",
+		ImageURL: d.ImageURL, LoTW: d.LoTW, EQSL: d.EQSL, QSLManager: d.QSLManager,
+		Provider: "qrz",
 	}, nil
 }
 
@@ -157,23 +158,26 @@ func (c *Client) qrzLookup(sessionKey, callsign string) (*CallData, error) {
 	}
 	applog.InfoDetail("QRZ lookup ok", fmt.Sprintf("%s — %s", call.Call, coalesce(call.Fname, call.Name)))
 	return &CallData{
-		Callsign: strings.TrimSpace(call.Call),
-		Name:     strings.TrimSpace(coalesce(call.Fname, call.Name)),
-		Grid:     strings.TrimSpace(call.Grid),
-		Country:  strings.TrimSpace(call.Country),
-		State:    strings.TrimSpace(call.State),
-		QTH:      strings.TrimSpace(call.Addr2),
-		Zip:      strings.TrimSpace(call.Zip),
-		County:   strings.TrimSpace(call.County),
-		Class:    strings.TrimSpace(call.Class),
-		Email:    strings.TrimSpace(call.Email),
-		URL:      strings.TrimSpace(call.URL),
-		Lat:      strings.TrimSpace(call.Lat),
-		Lon:      strings.TrimSpace(call.Lon),
-		DXCC:     strings.TrimSpace(call.DXCC),
-		CQZone:   strings.TrimSpace(call.CQZone),
-		ITUZone:  strings.TrimSpace(call.ITUZone),
-		ImageURL: strings.TrimSpace(call.Image),
+		Callsign:   strings.TrimSpace(call.Call),
+		Name:       strings.TrimSpace(coalesce(call.Fname, call.Name)),
+		Grid:       strings.TrimSpace(call.Grid),
+		Country:    strings.TrimSpace(call.Country),
+		State:      strings.TrimSpace(call.State),
+		QTH:        strings.TrimSpace(call.Addr2),
+		Zip:        strings.TrimSpace(call.Zip),
+		County:     strings.TrimSpace(call.County),
+		Class:      strings.TrimSpace(call.Class),
+		Email:      strings.TrimSpace(call.Email),
+		URL:        strings.TrimSpace(call.URL),
+		Lat:        strings.TrimSpace(call.Lat),
+		Lon:        strings.TrimSpace(call.Lon),
+		DXCC:       strings.TrimSpace(call.DXCC),
+		CQZone:     strings.TrimSpace(call.CQZone),
+		ITUZone:    strings.TrimSpace(call.ITUZone),
+		ImageURL:   strings.TrimSpace(call.Image),
+		LoTW:       strings.TrimSpace(call.LoTW) == "1",
+		EQSL:       strings.TrimSpace(call.EQSL) == "1",
+		QSLManager: strings.TrimSpace(call.QSLMgr),
 	}, nil
 }
 
@@ -234,23 +238,26 @@ func LookupResult(user, pass, callsign string) (*callbook.Result, error) {
 }
 
 type CallData struct {
-	Callsign string
-	Name     string
-	Grid     string
-	Country  string
-	QTH      string
-	State    string
-	Zip      string
-	County   string
-	Class    string
-	Email    string
-	URL      string
-	Lat      string
-	Lon      string
-	DXCC     string
-	CQZone   string
-	ITUZone  string
-	ImageURL string
+	Callsign   string
+	Name       string
+	Grid       string
+	Country    string
+	QTH        string
+	State      string
+	Zip        string
+	County     string
+	Class      string
+	Email      string
+	URL        string
+	Lat        string
+	Lon        string
+	DXCC       string
+	CQZone     string
+	ITUZone    string
+	ImageURL   string
+	LoTW       bool
+	EQSL       bool
+	QSLManager string
 }
 
 type qrzDatabase struct {
@@ -283,6 +290,9 @@ type qrzCall struct {
 	CQZone  string `xml:"ccol"`
 	ITUZone string `xml:"wcol"`
 	Image   string `xml:"image"`
+	LoTW    string `xml:"lotw"`
+	EQSL    string `xml:"eqsl"`
+	QSLMgr  string `xml:"qslmgr"`
 }
 
 var httpClient = &http.Client{Timeout: 10 * time.Second}

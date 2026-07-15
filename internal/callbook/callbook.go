@@ -22,25 +22,29 @@ import (
 // It mirrors the fields historically returned by QRZ.com but adds a Provider
 // field to identify which callbook source produced the data.
 type Result struct {
-	Callsign  string
-	Name      string
-	Grid      string
-	Country   string
-	QTH       string
-	State     string
-	Zip       string
-	County    string
-	Class     string
-	Email     string
-	URL       string
-	Lat       string
-	Lon       string
-	DXCC      string
-	CQZone    string
-	ITUZone   string
-	ImageURL  string
-	Provider  string   // e.g. "qrz", "hamqth", "callook" — primary source
-	Providers []string // all providers that contributed data (for UI feedback)
+	Callsign string
+	Name     string
+	Grid     string
+	Country  string
+	QTH      string
+	State    string
+	Zip      string
+	County   string
+	Class    string
+	Email    string
+	URL      string
+	Lat      string
+	Lon      string
+	DXCC     string
+	CQZone   string
+	ITUZone  string
+	ImageURL string
+	// QSL information.
+	LoTW       bool     // LoTW member
+	EQSL       bool     // eQSL member
+	QSLManager string   // QSL manager callsign
+	Provider   string   // e.g. "qrz", "hamqth", "callook" — primary source
+	Providers  []string // all providers that contributed data (for UI feedback)
 }
 
 // Provider is the interface that every callbook lookup service must satisfy.
