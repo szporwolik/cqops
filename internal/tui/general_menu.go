@@ -79,13 +79,13 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if gm.cursor > 0 {
 				gm.cursor--
 			} else {
-				gm.cursor = 10
+				gm.cursor = 9 // Debug mode (last item)
 			}
 		case "down", "j":
-			if gm.cursor < 10 {
+			if gm.cursor < 9 {
 				gm.cursor++
 			} else {
-				gm.cursor = 0
+				gm.cursor = 0 // Units (first item)
 			}
 		case " ", "space":
 			switch gm.cursor {
