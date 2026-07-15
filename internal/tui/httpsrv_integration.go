@@ -464,8 +464,8 @@ func (m *Model) pushDashboardFast() {
 	}
 	if hasRig {
 		stationInfo.Radio = rp.Name
-		if rp.Model != "" {
-			stationInfo.Radio = rp.Model
+		if rp.Model != "" && rp.Model != rp.Name {
+			stationInfo.Radio = rp.Name + " (" + rp.Model + ")"
 		}
 		stationInfo.Antenna = rp.Antenna
 	}

@@ -516,7 +516,7 @@ function opBadgeStyle(call){
 }
 function opBadgeHTML(call,name){
   if(!call)return'';
-  return'<span class=\"stat-badge stat-badge-op\" style=\"'+opBadgeStyle(call)+'\">'+esc(call)+(name?' '+esc(name):'')+'</span>';
+  return'<span class=\"stat-badge stat-badge-op\" style=\"'+opBadgeStyle(call)+'\">'+esc(call)+(name?' ('+esc(name)+')':'')+'</span>';
 }
 
 // ---- Station panel ----
