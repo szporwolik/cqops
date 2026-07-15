@@ -533,11 +533,15 @@ func (m *Model) handleRotorKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.toasts.Info(fmt.Sprintf("Rotator: turning to %.0f\u00b0", bearing))
 		return m.rotorSetPositionCmd(az, math.Round(m.rotor.elevation)), true
 
-	case "ctrl+f1", "alt+/":
+	case "alt+/":
 		if m.rotor.client == nil {
 			return nil, false
 		}
 		applog.Debug("rotor: stop", "key", msg.String())
+		m.toasts.Info("Rotator: stopped")
+		m.rotor.targetAz = 0
+		m.rotor.targetEl = 0
+		m.rc.status = ""
 		client := m.rotor.client
 		return func() tea.Msg {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)

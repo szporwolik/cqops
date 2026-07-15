@@ -132,8 +132,8 @@ func DefaultKeyMap() KeyMap {
 			key.WithHelp("Alt+\\", "→ Path"),
 		),
 		RotorStop: key.NewBinding(
-			key.WithKeys("ctrl+f1", "alt+/"),
-			key.WithHelp("Ctrl+F1/Alt+/", "Stop"),
+			key.WithKeys("alt+/"),
+			key.WithHelp("Alt+/", "Stop"),
 		),
 		Retain: key.NewBinding(
 			key.WithKeys(),
