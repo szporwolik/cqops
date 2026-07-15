@@ -140,6 +140,7 @@ type QSOView struct {
 	RSTSent     string    `json:"rstSent,omitempty"`
 	RSTRcvd     string    `json:"rstRcvd,omitempty"`
 	Grid        string    `json:"grid,omitempty"`
+	MyGrid      string    `json:"myGrid,omitempty"`
 	Country     string    `json:"country,omitempty"`
 	DXCC        int       `json:"dxcc,omitempty"`
 	Operator    string    `json:"operator,omitempty"`

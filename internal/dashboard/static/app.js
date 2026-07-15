@@ -171,7 +171,18 @@ function connectSSE(){
   });
   es.addEventListener('logbook',function(e){var lb=JSON.parse(e.data).payload;
     D('sse','logbook',lb.name);
-    if(lb&&lb.name){document.title='CQOps - '+lb.name;window._discLogbook=lb.name}
+    if(lb&&lb.name){
+      document.title='CQOps - '+lb.name;window._discLogbook=lb.name;
+      // Force the next today event to be accepted regardless of count.
+      window._cqopsLiveLogbook=lb.name;
+      // Immediately clear today QSOs so the map shows empty until the
+      // fresh today event arrives — prevents stale markers from the
+      // previous logbook.
+      if(window._cqopsLastTodayLogbook&&window._cqopsLastTodayLogbook!==lb.name){
+        todayQsos=[];updateMapFromToday();renderStats(null,[]);renderTopQSOs();
+        window._cqopsLastTodayLogbook=lb.name;
+      }
+    }
     updateStationField('Logbook',lb.name)
   });
   es.addEventListener('partner',function(e){var p=JSON.parse(e.data).payload;
@@ -193,10 +204,13 @@ function connectSSE(){
   es.addEventListener('today',function(e){
     var t=JSON.parse(e.data).payload;
     D('sse','today',t? t.length:0);
-    // Only replace if the server has at least as many QSOs as we already
-    // have — prevents the map from flickering down to 1 QSO right after
-    // logging, before the server catches up.
-    if(t&&t.length>=todayQsos.length){todayQsos=t;updateMapFromToday();renderStats(null,todayQsos)}
+    // Only guard against fewer results when we're still on the SAME
+    // logbook — a fresh QSO may briefly see fewer QSOs than the
+    // previous push. When the logbook changes, always replace.
+    if(!t)return;
+    if(window._cqopsLiveLogbook===window._cqopsLastTodayLogbook&&t.length<todayQsos.length)return;
+    window._cqopsLastTodayLogbook=window._cqopsLiveLogbook;
+    todayQsos=t;updateMapFromToday();renderStats(null,todayQsos);
   });
   es.addEventListener('aprs',function(e){
     var a=JSON.parse(e.data).payload;
@@ -220,7 +234,9 @@ function connectSSE(){
         removeOfflineOverlay();
         // After removeOfflineOverlay() sets map=null, re-init.
         // Use current displayCfg with the updated isOnline flag.
-        setTimeout(function(){initMap(Object.assign({},d,{drawLines:displayCfg.drawLines!==false,maxLines:displayCfg.maxLines||250,highlightLastQSO:displayCfg.highlightLastQSO!==false,animateActivePath:!!displayCfg.animateActivePath}))},50);
+        // Set a flag so renderAll doesn't double-init.
+        window._mapReinitPending=true;
+        setTimeout(function(){window._mapReinitPending=false;initMap(Object.assign({},d,{drawLines:displayCfg.drawLines!==false,maxLines:displayCfg.maxLines||250,highlightLastQSO:displayCfg.highlightLastQSO!==false,animateActivePath:!!displayCfg.animateActivePath}))},50);
       }else{
         D('display','map not in offline CRS mode (map='+(typeof map)+', _cqopsOfflineCRS='+(map&&map._cqopsOfflineCRS)+')');
       }
@@ -263,7 +279,7 @@ function renderAll(snap){
   window._cqopsLastOnline=nowOnline;
   if(displayCfg.internetCallbookUrl) icbUrl=displayCfg.internetCallbookUrl;
   // Window title — show active logbook.
-  if(snap.logbook&&snap.logbook.name){document.title='CQOps - '+snap.logbook.name;window._discLogbook=snap.logbook.name}
+  if(snap.logbook&&snap.logbook.name){document.title='CQOps - '+snap.logbook.name;window._discLogbook=snap.logbook.name;window._cqopsLiveLogbook=snap.logbook.name;window._cqopsLastTodayLogbook=snap.logbook.name}
   // Theme — apply theme class to root element.
   var wasDark=document.documentElement.classList.contains('dark');
   var theme=displayCfg.theme;
@@ -323,8 +339,12 @@ function renderAll(snap){
   if(snap.aprs&&snap.aprs.length){renderAPRSOnLocalMap(snap.aprs)}
   else if(aprsMarkerLayer){aprsMarkerLayer.clearLayers()}
   // Map
-  D('renderAll','init map…');
-  initMap(Object.assign({},displayCfg,{drawLines:displayCfg.drawLines!==false,maxLines:displayCfg.maxLines||250,highlightLastQSO:displayCfg.highlightLastQSO!==false,animateActivePath:!!displayCfg.animateActivePath}));
+  if(!window._mapReinitPending){
+    D('renderAll','init map…');
+    initMap(Object.assign({},displayCfg,{drawLines:displayCfg.drawLines!==false,maxLines:displayCfg.maxLines||250,highlightLastQSO:displayCfg.highlightLastQSO!==false,animateActivePath:!!displayCfg.animateActivePath}));
+  } else {
+    D('renderAll','map reinit pending, skipping initMap');
+  }
   // Init today QSOs — prefer today list, but fall back to recent
   // when today has fewer entries (midnight crossing, event just started).
   var tLen=snap.today? snap.today.length:0,rLen=snap.recent? snap.recent.length:0;
@@ -696,6 +716,7 @@ var mapCfg={drawLines:true,maxLines:150,maxMarkers:200,highlightLastQSO:true,ani
 var stationLayer=null,qsoMarkerLayer=null,qsoLineLayer=null,lastQsoLayer=null,activeQsoLayer=null;
 var lastQso=null,activeGrid=null;
 var mapLocal=null,stationLocalMarker=null,localTiles=null;
+var _mapResizeObserver=null,_mapPollActive=false;
 
 function initMap(cfg){
   if(map)return;
@@ -729,14 +750,20 @@ function initMap(cfg){
   qsoMarkerLayer=L.layerGroup([],{pane:'cqopsMarker'}).addTo(map);
   stationLayer=L.layerGroup([],{pane:'cqopsMarker'}).addTo(map);
   // Keep Leaflet in sync with container size changes (hero toggle, resize, etc.).
-  if(window.ResizeObserver){new ResizeObserver(function(){map.invalidateSize()}).observe(mapContainer)}
+  if(window.ResizeObserver){
+    if(_mapResizeObserver)_mapResizeObserver.disconnect();
+    _mapResizeObserver=new ResizeObserver(function(){if(map)map.invalidateSize()});
+    _mapResizeObserver.observe(mapContainer);
+  }
   // Firefox / narrow screens: the flex container may not have its final
   // computed height when Leaflet initializes. Invalidate immediately once
   // the container has height, then again after layout settles.
+  _mapPollActive=true;
   (function pollMapSize(){
+    if(!_mapPollActive||!map)return;
     if(mapContainer.clientHeight>0){
       map.invalidateSize();
-      setTimeout(function(){map.invalidateSize();updateExtraBox()},150);
+      setTimeout(function(){if(map)map.invalidateSize();updateExtraBox()},150);
       return
     }
     requestAnimationFrame(pollMapSize)
@@ -760,6 +787,10 @@ function removeOfflineOverlay(){
   if(!map)return;
   if(map._cqopsOffline){map.removeLayer(map._cqopsOffline);map._cqopsOffline=null}
   if(map._cqopsOfflineCRS){
+    // Disconnect observers that reference the old map instance before
+    // destroying it — prevents "map is null" crashes in stale callbacks.
+    _mapPollActive=false;
+    if(_mapResizeObserver){_mapResizeObserver.disconnect();_mapResizeObserver=null}
     map.remove();map=null;
     // Re-init with online tiles on next renderAll.
   }
@@ -1268,7 +1299,15 @@ function updateMapFromToday(){
 
       // Lines — only if within limit
       if(drawn<maxLines){
-        var pts=greatCirclePoints(ownStationLat,ownStationLon,lat,lon,32);
+        // Per-QSO starting point: use the operator's grid at QSO time
+        // (myGrid) when available. Falls back to the current station
+        // position for QSOs logged before this feature was added.
+        var startLat=ownStationLat,startLon=ownStationLon;
+        if(q.myGrid){
+          var myLL=gridToLatLon(q.myGrid);
+          if(myLL&&myLL[0]){startLat=myLL[0];startLon=myLL[1];}
+        }
+        var pts=greatCirclePoints(startLat,startLon,lat,lon,32);
         // Include great-circle midpoint in bounds so the arc stays visible.
         bounds.push(pts[16]);
         if(isActive){

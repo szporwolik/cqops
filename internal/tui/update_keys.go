@@ -391,12 +391,22 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 
 	case msg.String() == "ctrl+c":
 		m.cycleActiveContest()
-		m.forcePushDashboardAll()
+		// Contest change may affect dupe detection and form fields,
+		// but doesn't change today/recent QSOs in the dashboard.
+		// Push fast so the active QSO flags recompute.
+		if m.http.online {
+			lastFastTick = 0
+			m.pushDashboardFast()
+		}
 		return m.refreshQSOS(), true
 
 	case msg.String() == "ctrl+o":
 		m.cycleActiveOperator()
-		m.forcePushDashboardAll()
+		// Operator change only affects the operator field — light push.
+		if m.http.online {
+			lastFastTick = 0
+			m.pushDashboardFast()
+		}
 		return nil, true
 
 	case msg.String() == "ctrl+p":

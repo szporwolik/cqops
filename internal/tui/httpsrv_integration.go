@@ -165,6 +165,7 @@ func (m *Model) pushLoggedQSOToDashboard(qs *qso.QSO) {
 		RSTSent:   qs.RSTSent,
 		RSTRcvd:   qs.RSTRcvd,
 		Grid:      qs.GridSquare,
+		MyGrid:    qs.MyGridSquare,
 		Country:   qs.Country,
 		Operator:  qs.Operator,
 	}
@@ -724,17 +725,20 @@ func (m *Model) invalidateDashboardFlags() {
 }
 
 // forcePushDashboardAll clears all dashboard throttle and fingerprint caches
-// then force-pushes every panel. Call after logbook/rig/operator/contest
-// changes so the dashboard website reflects the new state immediately
-// instead of waiting for the next throttled tick cycle.
+// then force-pushes every panel. Call after a logbook switch (Ctrl+L) so the
+// dashboard website reflects the new database immediately instead of waiting
+// for the next throttled tick cycle. For lighter changes (rig, operator,
+// contest), use pushDashboardFast() directly — it avoids expensive DB queries.
 func (m *Model) forcePushDashboardAll() {
 	// Clear throttle/cache state so pushDashboardState runs every panel.
 	lastDashboardPushTick = 0
 	lastFastTick = 0
 	lastTodayPush = time.Time{}
 	lastAPRSPush = time.Time{}
-	lastTodayIDs = nil
-	lastRecentIDs = nil
+	// Use sentinel values instead of nil so that an empty result (0 QSOs
+	// in a fresh logbook) does not "match" the cleared cache via idsEqual.
+	lastTodayIDs = []int64{-1}
+	lastRecentIDs = []int64{-1}
 	pushDashboardLastCall = ""
 	lastPushedAQSO = cachedAQSO{}
 	lastActiveDupe = false
@@ -831,6 +835,7 @@ func (m *Model) pushDashboardRecent(ds *dashboard.State) {
 			RSTSent:   q.RSTSent,
 			RSTRcvd:   q.RSTRcvd,
 			Grid:      q.GridSquare,
+			MyGrid:    q.MyGridSquare,
 			Country:   q.Country,
 			Operator:  q.Operator,
 		}
@@ -911,6 +916,7 @@ func (m *Model) pushDashboardToday(ds *dashboard.State) {
 			RSTSent:   qs.RSTSent,
 			RSTRcvd:   qs.RSTRcvd,
 			Grid:      qs.GridSquare,
+			MyGrid:    qs.MyGridSquare,
 			Country:   qs.Country,
 			Operator:  qs.Operator,
 		}

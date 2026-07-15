@@ -114,8 +114,11 @@ func (m *Model) cycleRig() tea.Cmd {
 	m.refreshRigClient()   // reconnect/disconnect for the new rig
 	m.refreshRotorClient() // rotor may have changed too
 	m.App.MaybeRestartWSJTX(rp.WsjtxEnabled, rp.WsjtxUDPHost, rp.WsjtxUDPPort)
-	// Push rig change to dashboard website immediately.
-	m.forcePushDashboardAll()
+	// Push rig/station change to dashboard — light, no DB queries.
+	if m.http.online {
+		lastFastTick = 0
+		m.pushDashboardFast()
+	}
 	return nil
 }
 
