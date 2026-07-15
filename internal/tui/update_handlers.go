@@ -327,7 +327,9 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 				})
 			}
 			if n, err := store.InsertPSKSpots(m.App.DB, spots); err != nil {
-				applog.Warn("PSK Reporter: DB insert failed", "error", err)
+				if !strings.Contains(err.Error(), "database is closed") {
+					applog.Warn("PSK Reporter: DB insert failed", "error", err)
+				}
 			} else if n > 0 {
 				applog.Info("PSK Reporter: new spots stored", "count", n)
 			}

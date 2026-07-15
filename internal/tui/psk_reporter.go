@@ -45,8 +45,14 @@ type pskSpotsLoadedMsg struct {
 func (m *Model) loadPSKSpotsCmd(call string, cutoff int64, spotKey string) tea.Cmd {
 	db := m.App.DB
 	return func() tea.Msg {
+		if db == nil {
+			return pskSpotsLoadedMsg{spotKey: spotKey}
+		}
 		rawSpots, err := store.QueryPSKSpots(db, call, cutoff)
 		if err != nil {
+			if strings.Contains(err.Error(), "database is closed") {
+				return pskSpotsLoadedMsg{spotKey: spotKey}
+			}
 			return pskSpotsLoadedMsg{spotKey: spotKey, err: err}
 		}
 		spots := make([]psk.Report, len(rawSpots))

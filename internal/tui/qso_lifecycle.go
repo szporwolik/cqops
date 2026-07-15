@@ -175,13 +175,21 @@ func (m *Model) saveQSO() tea.Cmd {
 // refreshQSOS reloads the QSO list from the store, updates the RecentQSOs component,
 // and re-applies any active filter. Returns a non-nil message to trigger a re-render.
 func (m *Model) refreshQSOS() tea.Cmd {
+	db := m.App.DB // capture before async execution — logbook cycle may swap it
+	contest := m.App.Logbook.ActiveContest
 	return func() tea.Msg {
+		if db == nil {
+			return qsoRefreshedMsg{qsos: nil, err: nil}
+		}
 		var qsos []qso.QSO
 		var err error
 		for attempt := 0; attempt < 2; attempt++ {
-			qsos, err = store.ListQSOs(m.App.DB, 500, m.App.Logbook.ActiveContest)
+			qsos, err = store.ListQSOs(db, 500, contest)
 			if err == nil {
 				break
+			}
+			if strings.Contains(err.Error(), "database is closed") {
+				return qsoRefreshedMsg{qsos: nil, err: nil}
 			}
 			if !strings.Contains(err.Error(), "database is locked") {
 				break

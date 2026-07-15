@@ -823,10 +823,17 @@ func (m *Model) pushDashboardRecent(ds *dashboard.State) {
 // loadRecentFromDate loads up to <limit> QSOs with qso_date >= date,
 // ordered newest-first.
 func (m *Model) loadRecentFromDate(date string, limit int) ([]qso.QSO, error) {
+	if m.App.DB == nil {
+		return nil, nil
+	}
 	return store.ListQSOsFromDate(m.App.DB, date, limit)
 }
 
 func (m *Model) pushDashboardToday(ds *dashboard.State) {
+	db := m.App.DB
+	if db == nil {
+		return
+	}
 	now := time.Now().UTC()
 	today := now.Format("20060102")
 
@@ -841,14 +848,16 @@ func (m *Model) pushDashboardToday(ds *dashboard.State) {
 	}
 
 	// Load QSOs from minDate through today (capped at 5000).
-	qsos, err := store.ListQSOsFromDate(m.App.DB, minDate, 5000)
+	qsos, err := store.ListQSOsFromDate(db, minDate, 5000)
 	if err != nil {
-		applog.Debug("dashboard: cannot load QSOs from date", "minDate", minDate, "error", err)
+		if !strings.Contains(err.Error(), "database is closed") {
+			applog.Debug("dashboard: cannot load QSOs from date", "minDate", minDate, "error", err)
+		}
 		return
 	}
 	// If today has very few QSOs (midnight crossing), also include yesterday.
 	if len(qsos) < 5 && minDate == today && yesterday > minDate {
-		yQsos, yErr := store.ListQSOsFromDate(m.App.DB, yesterday, 5000)
+		yQsos, yErr := store.ListQSOsFromDate(db, yesterday, 5000)
 		if yErr == nil {
 			qsos = append(yQsos, qsos...)
 		}
