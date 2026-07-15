@@ -240,7 +240,7 @@ func (m *Model) viewPartner() string {
 				picRaw = DimStyle.Render("Loading\u2026")
 			}
 		}
-		picContentH := leftH - 1 // header only (no border)
+		picContentH := leftH // no header — all space for the image
 		if picContentH < 1 {
 			picContentH = 1
 		}
@@ -251,8 +251,7 @@ func (m *Model) viewPartner() string {
 		for len(picLines) < picContentH {
 			picLines = append(picLines, "")
 		}
-		header := S.Label.Width(photoW - 4).MaxWidth(photoW - 4).Inline(true).Render("Photo")
-		inner := lipgloss.JoinVertical(lipgloss.Left, header, strings.Join(picLines, "\n"))
+		inner := strings.Join(picLines, "\n")
 		// Use plain padding (no border, no lipgloss.Border()) — ANSI
 		// sequences from Border() offset the Kitty placeholder's grid
 		// position, shifting the image right.
