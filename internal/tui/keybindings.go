@@ -299,7 +299,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 				key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Scroll")),
 				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit QSO")),
 				key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
-				key.NewBinding(key.WithKeys("p"), key.WithHelp("P", "Purge")),
+				key.NewBinding(key.WithKeys("ctrl+p"), key.WithHelp("Ctrl+P", "Purge")),
 				key.NewBinding(key.WithKeys("ctrl+e"), key.WithHelp("Ctrl+E", "Export")),
 				key.NewBinding(key.WithKeys("ctrl+i"), key.WithHelp("Ctrl+I", "Import")),
 				m.keys.CycleContest,
@@ -307,8 +307,8 @@ func (m *Model) ActiveBindings() []key.Binding {
 			wl := m.App.Logbook.Wavelog
 			if wl != nil && wl.Enabled {
 				bindings = append(bindings,
-					key.NewBinding(key.WithKeys("w"), key.WithHelp("W", "WL upload")),
-					key.NewBinding(key.WithKeys("ctrl+w"), key.WithHelp("Ctrl+W", "WL download")),
+					key.NewBinding(key.WithKeys("ctrl+w"), key.WithHelp("Ctrl+W", "WL upload")),
+					key.NewBinding(key.WithKeys("alt+w"), key.WithHelp("Alt+W", "WL download")),
 				)
 			}
 		}

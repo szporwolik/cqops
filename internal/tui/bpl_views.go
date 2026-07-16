@@ -336,7 +336,7 @@ func (m *Model) viewBPL(l Layout) string {
 		}
 	}
 	tabBar := strings.Join(tabParts, " "+S.TabSeparator.Render("│")+" ")
-	header := S.Title.Width(w).Render("Bandplan Iaru Region " + fmt.Sprintf("%d", region))
+	header := S.Title.Width(w).Render("Bandplan \u2014 IARU Region " + fmt.Sprintf("%d", region))
 
 	// Render tab content — each sub-view returns full line list, renderBPLContent handles scroll/cursor.
 	// Pre-built line lists are cached per tab+region so switching tabs doesn't rebuild.
