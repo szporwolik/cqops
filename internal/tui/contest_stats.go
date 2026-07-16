@@ -3,6 +3,7 @@ package tui
 import (
 	"database/sql"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -151,16 +152,16 @@ func formatDurationShort(d time.Duration) string {
 	if d < 0 {
 		d = 0
 	}
-	days := int(d.Hours()) / 24
-	h := int(d.Hours()) % 24
-	m := int(d.Minutes()) % 60
-	if days > 0 {
-		return fmt.Sprintf("%dd %02d:%02d", days, h, m)
+	totalMin := int(d.Minutes())
+	if totalMin < 1 {
+		return "0"
 	}
-	if h > 0 {
-		return fmt.Sprintf("%d:%02d", h, m)
+	if totalMin < 60 {
+		return strconv.Itoa(totalMin)
 	}
-	return fmt.Sprintf("%dm", m)
+	totalH := int(d.Hours())
+	m := totalMin % 60
+	return fmt.Sprintf("%d:%02d", totalH, m)
 }
 
 func bucketQSOsByMinute(qsos []qso.QSO, numBuckets int, now time.Time) []float64 {
