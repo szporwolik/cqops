@@ -283,6 +283,24 @@ func (m *Model) helpSuffix() string {
 	}
 	sb.WriteByte('|')
 	sb.WriteString(strconv.Itoa(len(m.ref.rows)))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(m.ref.cursor))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(m.ref.scroll))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(m.bpl.cursor))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(m.bpl.scroll))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(len(m.bpl.cachedLines)))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(len(m.dxc.cachedSpots)))
+	sb.WriteByte('|')
+	if m.dxc.tableReady {
+		sb.WriteString(strconv.Itoa(m.dxc.table.Cursor()))
+	} else {
+		sb.WriteByte('0')
+	}
 	sig := sb.String()
 	if m.rc.helpSuffixSig == sig && m.rc.helpSuffix != "" {
 		return m.rc.helpSuffix
@@ -383,7 +401,7 @@ func (m *Model) buildHelpSuffix() string {
 	}
 	if m.screen == screenRef && m.ref.searched && len(m.ref.rows) > 0 {
 		total := len(m.ref.rows)
-		tableH := contentHeight(m.height) - 2
+		tableH := contentHeight(m.height) - 5
 		if tableH < 1 {
 			tableH = 1
 		}
@@ -395,9 +413,36 @@ func (m *Model) buildHelpSuffix() string {
 		return fmt.Sprintf("Result %d/%d  Page %d/%d", m.ref.cursor+1, total, page, totalPages)
 	}
 	if m.screen == screenBPL {
+		lines := len(m.bplScrollLines())
+		if lines > 0 {
+			visible := contentHeight(m.height) - 5
+			if visible < 1 {
+				visible = 1
+			}
+			page := m.bpl.cursor/visible + 1
+			totalPages := (lines + visible - 1) / visible
+			if totalPages < 1 {
+				totalPages = 1
+			}
+			return fmt.Sprintf("Row %d/%d  Page %d/%d", m.bpl.cursor+1, lines, page, totalPages)
+		}
 		return ""
 	}
 	if m.screen == screenDXC {
+		if m.dxc.tableReady && len(m.dxc.cachedSpots) > 0 {
+			total := len(m.dxc.cachedSpots)
+			cursor := m.dxc.table.Cursor() + 1
+			tableH := m.height - 8
+			if tableH < 1 {
+				tableH = 1
+			}
+			page := cursor/tableH + 1
+			totalPages := (total + tableH - 1) / tableH
+			if totalPages < 1 {
+				totalPages = 1
+			}
+			return fmt.Sprintf("Spot %d/%d  Page %d/%d", cursor, total, page, totalPages)
+		}
 		return ""
 	}
 	return ""

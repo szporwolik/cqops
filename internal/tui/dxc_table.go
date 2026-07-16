@@ -116,7 +116,7 @@ func (m *Model) buildDXCTable() {
 	if h < 10 {
 		h = 24
 	}
-	tableH := h - 6
+	tableH := h - 8
 	if tableH < 5 {
 		tableH = 5
 	}
@@ -317,8 +317,12 @@ func (m *Model) dxcView() string {
 
 	contentH := contentHeight(h)
 
-	// Cache filter info line — only rebuild when width or filters change.
-	if m.dxc.cachedFilterInfo == "" || m.dxc.cachedFilterW != bodyW {
+	// Title header — same style as bandplan and config screens.
+	header := S.Title.Width(w).Render("DX Cluster Spots")
+
+	// Filter line — rebuild only when width, filters, or spot count change.
+	filterSig := fmt.Sprintf("%d|%s|%d|%s|%s|%d|%t", bodyW, m.dxc.bandFilter, m.dxc.timeFilter, m.dxc.contFilter, m.dxc.modeFilter, m.dxc.spotCount, bodyW >= 48)
+	if m.dxc.cachedFilterInfo == "" || m.dxc.cachedFilterSig != filterSig {
 		timeVal := "all"
 		if m.dxc.timeFilter > 0 {
 			timeVal = fmt.Sprintf("%dm", m.dxc.timeFilter)
@@ -335,26 +339,47 @@ func (m *Model) dxcView() string {
 		if m.dxc.modeFilter != "" {
 			modeVal = m.dxc.modeFilter
 		}
-		m.dxc.cachedFilterInfo = " " + DimStyle.Render("Filters:") + " " +
-			DimStyle.Render("Sp Cont") + " " + ValueStyle.Render(contVal) +
-			" " + DimStyle.Render("|") + " " +
-			DimStyle.Render("Mode") + " " + ValueStyle.Render(modeVal) +
-			" " + DimStyle.Render("|") + " " +
-			DimStyle.Render("Band") + " " + ValueStyle.Render(bandVal) +
-			" " + DimStyle.Render("|") + " " +
-			DimStyle.Render("Time") + " " + ValueStyle.Render(timeVal) +
-			" " + DimStyle.Render("|") + " " +
-			DimStyle.Render("Spots") + " " + ValueStyle.Render(fmt.Sprintf("%d", m.dxc.spotCount))
-		m.dxc.cachedFilterW = bodyW
-	}
-	if m.dxc.cachedSpacerStyleW != bodyW {
-		m.dxc.cachedSpacerStyle = lipgloss.NewStyle().Width(bodyW).MaxWidth(bodyW)
-		m.dxc.cachedSpacerStyleW = bodyW
-	}
-	spacer := m.dxc.cachedSpacerStyle.Render(m.dxc.cachedFilterInfo)
 
-	tablePart := m.dxc.cachedSpacerStyle.
-		Height(contentH - 1).
+		addPart := func(label, value string, active bool) string {
+			v := ValueStyle.Render(value)
+			if active {
+				v = S.Info.Render(value)
+			}
+			return DimStyle.Render(label) + " " + v
+		}
+		// Build two versions: compact (no hints) and full (with key hints).
+		// Use the compact version when the full line would exceed bodyW.
+		sep := "  " + DimStyle.Render("\u00b7") + "  "
+		compactParts := []string{
+			addPart("de Cont", contVal, m.dxc.contFilter != ""),
+			addPart("Mode", modeVal, m.dxc.modeFilter != ""),
+			addPart("Band", bandVal, m.dxc.bandFilter != ""),
+			addPart("Time", timeVal, m.dxc.timeFilter > 0),
+			DimStyle.Render("Spots") + " " + ValueStyle.Render(strconv.Itoa(m.dxc.spotCount)),
+		}
+		compact := " " + strings.Join(compactParts, sep)
+
+		hintParts := []string{
+			addPart("de Cont", contVal, m.dxc.contFilter != "") + "  " + DimStyle.Render("(\\)"),
+			addPart("Mode", modeVal, m.dxc.modeFilter != "") + "  " + DimStyle.Render("(Ins)"),
+			addPart("Band", bandVal, m.dxc.bandFilter != "") + "  " + DimStyle.Render("(Home)"),
+			addPart("Time", timeVal, m.dxc.timeFilter > 0) + "  " + DimStyle.Render("(PgUp)"),
+			DimStyle.Render("Spots") + " " + ValueStyle.Render(strconv.Itoa(m.dxc.spotCount)) + "  " + DimStyle.Render("(Bksp clear)"),
+		}
+		hinted := " " + strings.Join(hintParts, sep)
+
+		if lipgloss.Width(hinted) <= bodyW {
+			m.dxc.cachedFilterInfo = hinted
+		} else {
+			m.dxc.cachedFilterInfo = compact
+		}
+		m.dxc.cachedFilterSig = filterSig
+	}
+	spacer := lipgloss.NewStyle().Width(bodyW).MaxWidth(bodyW).Render(m.dxc.cachedFilterInfo)
+
+	tablePart := lipgloss.NewStyle().
+		Width(bodyW).MaxWidth(bodyW).
+		Height(contentH - 3).
 		Render(m.dxc.table.View())
-	return lipgloss.JoinVertical(lipgloss.Left, spacer, tablePart)
+	return header + "\n" + spacer + "\n\n" + tablePart
 }

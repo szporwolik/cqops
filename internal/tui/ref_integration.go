@@ -171,7 +171,7 @@ func (m *Model) handleRefUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 
 		case "up", "down", "pgup", "pgdown":
 			if m.ref.searched && len(m.ref.rows) > 0 {
-				tableH := (contentHeight(m.height) - 4)
+				tableH := (contentHeight(m.height) - 5)
 				if tableH < 3 {
 					tableH = 3
 				}
@@ -279,8 +279,9 @@ func (m *Model) viewRef() string {
 			if bodyW < 30 {
 				bodyW = 30
 			}
-			// Reserve one line for the scroll indicator below the table.
-			tableH := ch - 4
+			// Reserve two lines: one empty separator above, one scroll
+			// indicator below the table.
+			tableH := ch - 5
 			if tableH < 3 {
 				tableH = 3
 			}
@@ -372,25 +373,14 @@ func (m *Model) viewRef() string {
 				m.ref.cachedTableCursor = m.ref.cursor
 				b.WriteString(m.ref.cachedTableView)
 			}
-
-			// Scroll indicator line.
-			first := m.ref.scroll + 1
-			last := m.ref.scroll + tableH
-			if last > total {
-				last = total
-			}
-			hint := fmt.Sprintf("Row %d\u2013%d of %d", first, last, total)
-			if total > tableH {
-				hint += " · ↑↓ PgUp PgDn"
-			}
-			b.WriteString("\n")
-			b.WriteString(DimStyle.Width(w).Align(lipgloss.Right).Render(hint))
 		}
 	} else {
 		b.WriteString(DimStyle.Width(w).Align(lipgloss.Center).Render("Enter a reference or name to search"))
 	}
 
-	return fillBody(b.String(), ch)
+	// Return raw content — buildBodyForScreen handles height clamping/padding
+	// so the scroll indicator sits at the true bottom of the content area.
+	return b.String()
 }
 
 // buildRefNamesLine resolves the SOTA/POTA/WWFF/IOTA form field references

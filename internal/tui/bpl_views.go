@@ -212,6 +212,10 @@ func (m *Model) handleBPLUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// bplScrollLines returns the current pre-built line list for the active
+// bandplan tab, used by the help bar to show scroll position.
+func (m *Model) bplScrollLines() []string { return m.bpl.cachedLines }
+
 // renderBPLContent applies scroll, cursor clamping, and cursor highlight
 // to a full list of lines, returning the visible window as a string.
 func (m *Model) renderBPLContent(lines []string) string {
@@ -257,7 +261,6 @@ func (m *Model) renderBPLContent(lines []string) string {
 		end = len(lines)
 	}
 	moreAbove := m.bpl.scroll > 0
-	moreBelow := end < len(lines)
 
 	var b strings.Builder
 	if moreAbove {
@@ -276,10 +279,6 @@ func (m *Model) renderBPLContent(lines []string) string {
 		if i < end-1 {
 			b.WriteByte('\n')
 		}
-	}
-	if moreBelow {
-		b.WriteByte('\n')
-		b.WriteString(DimStyle.Render("  ▼ more below"))
 	}
 	return b.String()
 }
