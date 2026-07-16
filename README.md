@@ -62,7 +62,7 @@ Grab the latest binary, installer, or package from the [Releases](https://github
 - **Fast TUI logging** — three-column QSO form, dupe detection, form validation
 - **Multi-operator** — hot-swap operators and logbooks for club stations
 - **Rig control** — flrig and Hamlib rigctld, frequency/mode readback, spot-to-rig tuning
-- **Multi-provider callbook** — QRZ.com, HamQTH (free global), Callook.info (free US) with priority-based cascading and base-call fallback; auto-fills name, QTH, grid, country
+- **Multi-provider callbook** — QRZ.com, HamQTH (free global), QRZ.RU (free, RU/surrounding), Callook.info (free US) with priority-based cascading and base-call fallback; auto-fills name, QTH, grid, country
 - **Wavelog sync** — upload, incremental download, per-logbook config
 - **Encrypted secrets** — AES-256-GCM, machine-tied, never plaintext
 - **DX Cluster & PSK Reporter** — live spots with band/mode/time filters
@@ -98,6 +98,7 @@ flowchart LR
     end
     subgraph Internet["Internet (optional)"]
         qrz["QRZ.com"]
+        qrzru["QRZ.RU"]
         dxc["DX Cluster"]
         psk["PSK Reporter"]
         solar["Solar Data"]
