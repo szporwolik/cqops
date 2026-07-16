@@ -896,6 +896,9 @@ func (m *Model) buildWorkedPanelLayout(d *callbook.Result, maxW int) workedPanel
 		return " · " + workedMuted.Render("worked")
 	}
 	isNewForCall := func() (bool, bool) {
+		if wl != nil {
+			return !wl.Worked(), true
+		}
 		return !s.CallWorked, true
 	}
 
@@ -943,14 +946,14 @@ func (m *Model) buildWorkedPanelLayout(d *callbook.Result, maxW int) workedPanel
 		leftRows = append(leftRows, workedRow{"Mode", pendDash})
 	}
 	if band != "" && mode != "" {
-		bmNew, bmKnown := false, false
+		bmNew, bmKnown := false, true
 		if wl != nil {
 			bmNew, bmKnown = !wl.WorkedBandMode(), true
+		} else {
+			bmNew, bmKnown = !s.CallOnMode && !s.CallOnBand, true
 		}
-		if bmKnown {
-			bmVal := valStyle.Render(band + " " + mode)
-			leftRows = append(leftRows, workedRow{"Band+Mode", bmVal + state(bmNew, bmKnown)})
-		}
+		bmVal := valStyle.Render(band + " " + mode)
+		leftRows = append(leftRows, workedRow{"Band+Mode", bmVal + state(bmNew, bmKnown)})
 	}
 
 	var rightRows []workedRow
