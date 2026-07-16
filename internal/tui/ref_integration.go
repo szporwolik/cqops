@@ -171,7 +171,7 @@ func (m *Model) handleRefUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 
 		case "up", "down", "pgup", "pgdown":
 			if m.ref.searched && len(m.ref.rows) > 0 {
-				tableH := (contentHeight(m.height) - 2)
+				tableH := (contentHeight(m.height) - 4)
 				if tableH < 3 {
 					tableH = 3
 				}
@@ -269,6 +269,9 @@ func (m *Model) viewRef() string {
 	b.WriteString("\n")
 
 	if m.ref.searched {
+		// Empty separator row between search line and results.
+		b.WriteString("\n")
+
 		if len(m.ref.rows) == 0 {
 			b.WriteString(DimStyle.Width(w).Align(lipgloss.Center).Render("No matches found"))
 		} else {
@@ -276,7 +279,8 @@ func (m *Model) viewRef() string {
 			if bodyW < 30 {
 				bodyW = 30
 			}
-			tableH := ch - 2
+			// Reserve one line for the scroll indicator below the table.
+			tableH := ch - 4
 			if tableH < 3 {
 				tableH = 3
 			}
@@ -368,6 +372,19 @@ func (m *Model) viewRef() string {
 				m.ref.cachedTableCursor = m.ref.cursor
 				b.WriteString(m.ref.cachedTableView)
 			}
+
+			// Scroll indicator line.
+			first := m.ref.scroll + 1
+			last := m.ref.scroll + tableH
+			if last > total {
+				last = total
+			}
+			hint := fmt.Sprintf("Row %d\u2013%d of %d", first, last, total)
+			if total > tableH {
+				hint += " · ↑↓ PgUp PgDn"
+			}
+			b.WriteString("\n")
+			b.WriteString(DimStyle.Width(w).Align(lipgloss.Right).Render(hint))
 		}
 	} else {
 		b.WriteString(DimStyle.Width(w).Align(lipgloss.Center).Render("Enter a reference or name to search"))
