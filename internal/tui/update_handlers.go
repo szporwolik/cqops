@@ -108,6 +108,14 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 		cmd = tea.Batch(cmd, m.loadPSKSpotsCmd(
 			m.psk.pendingCall, m.psk.pendingCutoff, m.psk.pendingSpotKey))
 	}
+	// Poll GPS every 60 ticks (~60 s).  GPS position changes slowly; a
+	// faster poll wastes CPU on low-end hardware without improving accuracy.
+	if m.tickCount%60 == 0 {
+		if gpsCmd := m.handleGPSTick(); gpsCmd != nil {
+			cmd = tea.Batch(cmd, gpsCmd)
+		}
+	}
+
 	// Consolidate periodic commands — only batch non-nil commands to reduce
 	// closure allocation and tea.Batch overhead on low-end hardware.
 	cmds := []tea.Cmd{tickCmd()}
@@ -349,8 +357,7 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			m.rig.name = r.name
 		}
 		return true, nil
-	case gpsTickMsg:
-		return true, m.handleGPSTick()
+
 	case pskFetchMsg:
 		m.psk.fetching = false
 		if r.err != nil {

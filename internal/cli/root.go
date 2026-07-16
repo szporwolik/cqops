@@ -190,7 +190,7 @@ func runTUI() error {
 	if offlineFlag {
 		m.ShowOfflineToast()
 	}
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m, tea.WithFPS(20))
 
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("tui: %w", err)
