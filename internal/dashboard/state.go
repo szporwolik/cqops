@@ -282,6 +282,8 @@ type State struct {
 	lastDXC        DXCInfo
 	lastPSK        PSKInfo
 	lastActiveCall string
+	lastOperator   OperatorInfo
+	lastLogbook    LogbookInfo
 
 	// Session counter — incremented on AddLoggedQSO.
 	sessionQSOs int
@@ -326,26 +328,34 @@ func (s *State) SetStation(info StationInfo) {
 	}
 }
 
-// SetOperator updates operator info and publishes if it changed.
+// SetOperator updates operator info and publishes when changed.
 func (s *State) SetOperator(info OperatorInfo) {
 	s.mu.Lock()
-	s.snapshot.Operator = info
-	s.snapshot.UpdatedAt = timeNow()
+	changed := info != s.lastOperator
+	s.lastOperator = info
+	if changed {
+		s.snapshot.Operator = info
+		s.snapshot.UpdatedAt = timeNow()
+	}
 	s.mu.Unlock()
-	// Always publish — cheap, called ≤1×/tick, and change detection
-	// would block the initial fill when the SSE handshake beats the
-	// first pushDashboardFast call.
-	s.hub.Publish(EventOperator, info)
+	if changed {
+		s.hub.Publish(EventOperator, info)
+	}
 }
 
-// SetLogbook updates logbook info and publishes if it changed.
+// SetLogbook updates logbook info and publishes when changed.
 func (s *State) SetLogbook(info LogbookInfo) {
 	s.mu.Lock()
-	s.snapshot.Logbook = info
-	s.snapshot.UpdatedAt = timeNow()
+	changed := info != s.lastLogbook
+	s.lastLogbook = info
+	if changed {
+		s.snapshot.Logbook = info
+		s.snapshot.UpdatedAt = timeNow()
+	}
 	s.mu.Unlock()
-	// Always publish — see SetOperator for rationale.
-	s.hub.Publish(EventLogbook, info)
+	if changed {
+		s.hub.Publish(EventLogbook, info)
+	}
 }
 
 // SetRig updates rig info and publishes only when meaningful fields change.
