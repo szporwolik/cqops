@@ -6,6 +6,8 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/ftl/hamradio/latlon"
+	"github.com/ftl/hamradio/locator"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/callbook"
@@ -363,6 +365,20 @@ func (m *Model) fillCallbookData(msg callbookResultMsg) {
 	if d.Country != "" {
 		m.fields[fieldCountry].SetValue(d.Country)
 	}
+
+	// Fallback grid from Big CTY coordinates when no callbook grid/latlon
+	// is available. Runs at low priority — real callbook data wins.
+	if strings.TrimSpace(m.fields[fieldGrid].Value()) == "" && m.App.BigCTY != nil {
+		if e := m.App.BigCTY.Find(d.Callsign); e != nil && e.Lat != 0 && e.Lon != 0 {
+			ll := latlon.NewLatLon(latlon.Latitude(e.Lat), latlon.Longitude(e.Lon))
+			grid := locator.LatLonToLocator(ll, 4)
+			gridStr := strings.TrimRight(string(grid[:]), "\x00")
+			if len(gridStr) >= 4 {
+				m.fields[fieldGrid].SetValue(strings.ToUpper(gridStr[:4]))
+			}
+		}
+	}
+
 	m.autoFillRST()
 
 	// Show consolidated toast after all providers have reported in.
