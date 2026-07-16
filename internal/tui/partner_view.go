@@ -969,13 +969,17 @@ func (m *Model) buildWorkedPanelLayout(d *callbook.Result, maxW int) workedPanel
 
 	// Pick the most specific scope for distribution rows (Bands/Modes/Grids).
 	var scopeHist store.ScopeHistory
+	var scopePrefix string
 	switch {
 	case callHasQSOs:
 		scopeHist = ws.CallHistory
+		scopePrefix = "Call "
 	case hasDXCCHistory:
 		scopeHist = ws.DXCCHistory
+		scopePrefix = "DXCC "
 	case hasGridHistory:
 		scopeHist = ws.GridHistory
+		scopePrefix = "Grid "
 	}
 
 	if !callHasQSOs {
@@ -1021,13 +1025,13 @@ func (m *Model) buildWorkedPanelLayout(d *callbook.Result, maxW int) workedPanel
 
 	var fullWidthRows []workedRow
 	if len(scopeHist.BandCounts) > 0 {
-		fullWidthRows = append(fullWidthRows, workedRow{"Bands", formatCountList(scopeHist.BandCounts)})
+		fullWidthRows = append(fullWidthRows, workedRow{scopePrefix + "Bands", formatCountList(scopeHist.BandCounts)})
 	}
 	if len(scopeHist.ModeCounts) > 0 {
-		fullWidthRows = append(fullWidthRows, workedRow{"Modes", formatCountList(scopeHist.ModeCounts)})
+		fullWidthRows = append(fullWidthRows, workedRow{scopePrefix + "Modes", formatCountList(scopeHist.ModeCounts)})
 	}
 	if len(scopeHist.GridCounts) > 0 && !callHasQSOs {
-		fullWidthRows = append(fullWidthRows, workedRow{"Grids", formatCountList(scopeHist.GridCounts)})
+		fullWidthRows = append(fullWidthRows, workedRow{scopePrefix + "Grids", formatCountList(scopeHist.GridCounts)})
 	}
 
 	leftHeading := muted.Render("Current QSO")
