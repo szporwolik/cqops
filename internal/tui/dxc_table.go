@@ -212,39 +212,64 @@ func (m *Model) buildDXCTable() {
 	spots := m.dxcFilteredSpots()
 	m.dxc.spotCount = len(spots)
 
-	// Dupe set: a single batch query computes which (call,band,mode)
-	// triples have already been worked today (or within the active
-	// contest). Checked per row — zero per-spot DB queries.
-	// Cache valid as long as logbook and contest haven't changed.
+	// Dupe set: per-day/contest. DXCC worked sets: all-time, rebuilt on
+	// logbook change only. All cached per table rebuild — zero per-spot DB.
 	logbook := m.App.LogbookName
 	contest := m.App.Logbook.ActiveContest
+	dateStr := time.Now().UTC().Format("20060102")
 	if m.dxc.dupeSet == nil || m.dxc.dupeSetLogbook != logbook || m.dxc.dupeSetContest != contest {
-		dateStr := time.Now().UTC().Format("20060102")
 		if ds, err := store.DXCDupeSet(m.App.DB, dateStr, contest); err == nil {
 			m.dxc.dupeSet = ds
 			m.dxc.dupeSetLogbook = logbook
 			m.dxc.dupeSetContest = contest
 		}
 	}
-
-	filtered := m.dxc.bandFilter != "" || m.dxc.modeFilter != "" || m.dxc.contFilter != ""
+	if m.dxc.dxccBandSet == nil || m.dxc.dxccSetLogbook != logbook {
+		if db, dmb, err := store.DXCDXCCWorkedSets(m.App.DB); err == nil {
+			m.dxc.dxccBandSet = db
+			m.dxc.dxccBandModeSet = dmb
+			m.dxc.dxccSetLogbook = logbook
+		}
+	}
 
 	var rows []table.Row
 	for _, s := range spots {
 		s := s
+		// Determine spot highlight: new DXCC > new band > new mode > normal.
+		spotTag := "" // "N" for new, "" for normal
+		spotStyle := S.Dim
+		if m.dxc.dxccBandSet != nil && s.DXCC != "" {
+			dxcc := strings.TrimSpace(s.DXCC)
+			band := qso.NormalizeBand(s.Band)
+			mode := qso.NormalizeRigMode(s.Mode)
+			bk := dxcc + "|" + band
+			bmk := bk + "|" + mode
+			if !m.dxc.dxccBandSet[bk] {
+				spotTag = "N "
+				spotStyle = S.Info
+			} else if !m.dxc.dxccBandModeSet[bmk] {
+				spotTag = "N "
+				spotStyle = S.Info
+			}
+		}
+
 		var row table.Row
 		for _, n := range names {
 			v := dxcColValue(n, &s)
 			if v == "" {
 				v = "\u2014"
 			}
-			// Prefix dupe calls with "D " and dim the whole cell
-			// so already-worked spots are instantly distinguishable
-			// from new ones in the cluster list.
-			if n == "DX Call" && m.dxc.dupeSet != nil {
-				key := qso.NormalizeCall(s.DXCall) + "|" + qso.NormalizeBand(s.Band) + "|" + qso.NormalizeRigMode(s.Mode)
-				if m.dxc.dupeSet[key] {
-					v = S.Dim.Render("D " + v)
+			if n == "DX Call" {
+				// Dupe: dim and prefix "D ".
+				if m.dxc.dupeSet != nil {
+					key := qso.NormalizeCall(s.DXCall) + "|" + qso.NormalizeBand(s.Band) + "|" + qso.NormalizeRigMode(s.Mode)
+					if m.dxc.dupeSet[key] {
+						v = S.Dim.Render("D " + v)
+					} else if spotTag != "" {
+						v = spotStyle.Render(spotTag + v)
+					}
+				} else if spotTag != "" {
+					v = spotStyle.Render(spotTag + v)
 				}
 			}
 			row = append(row, v)
@@ -265,7 +290,7 @@ func (m *Model) buildDXCTable() {
 		BorderBottom(true).
 		Bold(false).
 		Foreground(P.Text)
-	if filtered {
+	if hasFilter := m.dxc.bandFilter != "" || m.dxc.modeFilter != "" || m.dxc.contFilter != ""; hasFilter {
 		sty.Header = sty.Header.Foreground(P.Cursor)
 	}
 	t.SetStyles(sty)

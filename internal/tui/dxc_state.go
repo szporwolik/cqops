@@ -67,4 +67,9 @@ type dxcState struct {
 	dupeSet        map[string]bool
 	dupeSetLogbook string // logbook name at time of computation
 	dupeSetContest string // contest ID at time of computation
+
+	// DXCC worked sets for spot highlighting (new DXCC / new band / new mode).
+	dxccBandSet     map[string]bool // "230|20m"
+	dxccBandModeSet map[string]bool // "230|20m|FT8"
+	dxccSetLogbook  string          // logbook name at time of computation
 }

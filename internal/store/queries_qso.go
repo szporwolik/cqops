@@ -510,6 +510,42 @@ func WorkedCallsInContest(db *sql.DB, contestID, band string) (map[string]bool, 
 // inside contests it spans the entire contest (48h+). Key format is
 // "CALL|BAND|MODE" — the caller checks each spot's (call,band,mode)
 // against this set with zero per-spot DB queries.
+
+// DXCDXCCWorkedSets returns two maps for DXC spot highlighting:
+//   - dxccBand: map["230|20m"]bool — DXCC+Band already worked (all-time).
+//   - dxccBandMode: map["230|20m|FT8"]bool — DXCC+Band+Mode already worked (all-time).
+//
+// Used to colour new-DXCC/new-band/new-mode spots blue in the DXC table.
+// Scoped to the entire logbook — rebuilt on logbook/profile change, not per-day.
+// Runs as a single query per table rebuild with zero per-spot DB queries.
+func DXCDXCCWorkedSets(db *sql.DB) (dxccBand, dxccBandMode map[string]bool, err error) {
+	rows, err := db.Query(`SELECT DISTINCT dxcc, band, mode FROM qsos WHERE dxcc != ''`)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	dxccBand = make(map[string]bool, 256)
+	dxccBandMode = make(map[string]bool, 256)
+	for rows.Next() {
+		var dxcc, band, mode string
+		if err := rows.Scan(&dxcc, &band, &mode); err != nil {
+			continue
+		}
+		dxcc = strings.TrimSpace(dxcc)
+		band = strings.TrimSpace(band)
+		mode = strings.TrimSpace(mode)
+		if dxcc == "" {
+			continue
+		}
+		bk := dxcc + "|" + band
+		dxccBand[bk] = true
+		if mode != "" {
+			dxccBandMode[bk+"|"+mode] = true
+		}
+	}
+	return dxccBand, dxccBandMode, rows.Err()
+}
 func DXCDupeSet(db *sql.DB, qsoDate, contestID string) (map[string]bool, error) {
 	var (
 		rows *sql.Rows
