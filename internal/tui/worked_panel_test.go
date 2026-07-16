@@ -148,11 +148,11 @@ func TestWorkedPanel_DXCCRowIsCompact(t *testing.T) {
 		Country:  "United States",
 	}
 	view := m.renderWorkedPanel(d, 80)
-	if !strings.Contains(view, "United States · 291") {
-		t.Fatalf("expected compact DXCC value, got %q", view)
+	if !strings.Contains(view, "United States") || !strings.Contains(view, "worked") {
+		t.Fatalf("expected DXCC row with country and state, got %q", view)
 	}
-	if strings.Contains(view, "United States · 291 · worked") {
-		t.Fatalf("did not expect duplicated worked state in DXCC row, got %q", view)
+	if strings.Contains(view, " · 291") {
+		t.Fatalf("did not expect DXCC number in row, got %q", view)
 	}
 }
 
