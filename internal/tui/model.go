@@ -1026,7 +1026,10 @@ func (m *Model) View() tea.View {
 	}
 	addRow(body)
 	addRow(m.rc.help)
-	mainView := lipgloss.JoinVertical(lipgloss.Left, mainParts...)
+	// Left-aligned vertical join without backgrounds is equivalent to
+	// newline concatenation. Avoids the Lip Gloss line-measurement pass
+	// (getLines → StringWidth → grapheme cluster) on every frame.
+	mainView := strings.Join(mainParts, "\n")
 
 	// Composite confirm dialog as a centered overlay if active
 	if m.confirm != nil {
