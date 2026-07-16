@@ -97,8 +97,7 @@ flowchart LR
         opN["Operator N"]
     end
     subgraph Internet["Internet (optional)"]
-        qrz["QRZ.com"]
-        qrzru["QRZ.RU"]
+        callbooks["Internet callbooks"]
         dxc["DX Cluster"]
         psk["PSK Reporter"]
         solar["Solar Data"]
