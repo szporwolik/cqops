@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -12,10 +13,10 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"github.com/ftl/hamradio/bandplan"
-	"github.com/ftl/hamradio/dxcc"
 	"github.com/ftl/hamradio/scp"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/ctybig"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/ref"
 )
@@ -328,19 +329,26 @@ func (m *Model) reloadDataFiles() {
 		return
 	}
 
-	if m.App.Config.General.UseCTY && m.App.DXCC == nil {
-		ctyPath := filepath.Join(cacheDir, "cty.dat")
-		if _, statErr := os.Stat(ctyPath); os.IsNotExist(statErr) {
-			applog.Info("DXCC: downloading on first enable")
-			if dlErr := dxcc.Download(dxcc.DefaultURL, ctyPath); dlErr != nil {
-				applog.Warn("DXCC: download failed", "error", dlErr.Error())
+	if m.App.Config.General.UseCTY && m.App.BigCTY == nil {
+		csvFile := filepath.Join(cacheDir, "cty.csv")
+		if data, err := os.ReadFile(csvFile); err == nil && len(data) > 0 {
+			if db, err := ctybig.ParseCSV(bytes.NewReader(data)); err == nil {
+				m.App.BigCTY = db
+				applog.Info("DXCC: Big CTY loaded from cache on demand", "entries", db.Prefixes())
 			}
-		}
-		if prefixes, loadErr := dxcc.LoadLocal(ctyPath); loadErr == nil {
-			m.App.DXCC = prefixes
-			applog.Info("DXCC: prefix data loaded on demand")
-		} else {
-			applog.Info("DXCC: no cached data yet — will fetch when online")
+		} else if _, statErr := os.Stat(csvFile); os.IsNotExist(statErr) {
+			if url := findBigCTYURL(); url != "" {
+				applog.Info("DXCC: downloading Big CTY on first enable", "url", url)
+				bf, dlErr := downloadBigCTY(url)
+				if dlErr != nil {
+					applog.Warn("DXCC: Big CTY download failed", "error", dlErr.Error())
+				} else if len(bf.ctyCSV) > 0 {
+					os.WriteFile(csvFile, bf.ctyCSV, 0644)
+					if db, err := ctybig.ParseCSV(bytes.NewReader(bf.ctyCSV)); err == nil {
+						m.App.BigCTY = db
+					}
+				}
+			}
 		}
 	}
 
@@ -753,7 +761,6 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 		if key.Matches(keyMsg, m.keys.CycleContest) && !m.ui.logbookEditor.IsEditing() {
 			m.cycleActiveContest()
 			if m.http.online {
-				lastFastTick = 0
 				m.pushDashboardFast()
 			}
 			// Refresh the editor's contest filter.
@@ -904,10 +911,6 @@ type bplState struct {
 	// on every tab switch or resize. Only rebuild when tab or region changes.
 	cachedLines    []string
 	cachedLinesKey string // "tab|region|search"
-
-	// Cached row count — avoids rebuilding full band plan just to count rows.
-	cachedRowCount  int
-	cachedRowRegion int
 
 	// Tune state.
 	tuneCancel context.CancelFunc // cancels previous in-flight BPL tune

@@ -1679,7 +1679,7 @@ func (m *Model) resolveExchangeMarkers(tmpl, direction string, nextQSO int) stri
 
 	// @cqz / @itu / @grid — from the QSO form or DXCC lookup.
 	call := strings.TrimSpace(m.fields[fieldCall].Value())
-	if call != "" && m.App != nil && m.App.DXCC != nil && m.App.Config.General.UseCTY {
+	if call != "" && m.App != nil && m.App.BigCTY != nil && m.App.Config.General.UseCTY {
 		if p := m.dxccLookup(call); p != nil {
 			rep["@cqz"] = fmt.Sprintf("%d", int(p.CQZone))
 			rep["@itu"] = fmt.Sprintf("%d", int(p.ITUZone))

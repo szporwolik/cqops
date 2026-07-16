@@ -147,6 +147,15 @@ func TestPartnerViewMapCacheInvalidateOnPartnerChange(t *testing.T) {
 	}
 }
 
+func TestPartnerContentWrapSkipsStylingForKittyContent(t *testing.T) {
+	content := "kitty-frame"
+
+	got := renderPartnerPaneContent(content, 20, true)
+	if got != content {
+		t.Fatalf("expected raw content when Kitty graphics is active, got %q", got)
+	}
+}
+
 func TestRenderCallbookRows(t *testing.T) {
 	tests := []struct {
 		name string
@@ -279,6 +288,26 @@ func TestRenderCallbookRows(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestRenderCallbookRows_ForeignPrefixUsesOperatingZones(t *testing.T) {
+	m := newTestModel()
+	m.App.Config.General.UseCTY = true
+	m.lookup.partnerData = &callbook.Result{
+		Callsign: "9A/SP9SPM/P",
+		Country:  "Poland",
+		DXCC:     "269",
+		CQZone:   "15",
+		ITUZone:  "28",
+	}
+
+	info := m.renderCallbookRows(m.lookup.partnerData, 70, 0)
+	if !strings.Contains(info, "CQ 15") {
+		t.Fatalf("expected CQ zone from operating prefix, got %q", info)
+	}
+	if !strings.Contains(info, "ITU 28") {
+		t.Fatalf("expected ITU zone from operating prefix, got %q", info)
 	}
 }
 

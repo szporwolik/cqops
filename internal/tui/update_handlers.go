@@ -147,6 +147,15 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 	if c := m.maybeHTTP(); c != nil {
 		cmds = append(cmds, c)
 	}
+	// Periodic DXCC backfill — catch any QSOs that escaped enrichment
+	// (legacy imports, ADIF loads, Wavelog downloads before Big CTY was
+	// available). Runs every 30 ticks (~30 s), processes 50 rows max.
+	if m.App.BigCTY != nil && m.App.DB != nil && m.tickCount%30 == 0 {
+		n, _ := backfillMissingDXCCLimit(m.App.DB, m.App.BigCTY, 50)
+		if n > 0 {
+			applog.Debug("DXCC: periodic backfill updated", "count", n)
+		}
+	}
 	// Push current state to the dashboard (cheap — early-exits if unchanged).
 	m.pushDashboardState()
 	if cmd != nil {
@@ -220,7 +229,6 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			// Push dashboard immediately so the map switches from
 			// tiled Web Mercator to offline equirectangular fallback.
 			lastDashboardPushTick = 0
-			lastFastTick = 0
 			m.pushDashboardState()
 		}
 		return true, nil
@@ -302,7 +310,6 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			m.http.err = nil
 			// Push initial state NOW — bypass throttle so first SSE snapshot has full data.
 			lastDashboardPushTick = -10
-			lastFastTick = -1
 			m.pushDashboardState()
 			if m.http.client != nil {
 				m.toasts.Success("HTTP server: listening on " + m.http.client.Addr())

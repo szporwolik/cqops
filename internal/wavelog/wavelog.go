@@ -198,6 +198,12 @@ func (r *PrivateLookupResult) ConfirmedBandMode() bool { return r.IsTrue("call_c
 // Grid returns the gridsquare.
 func (r *PrivateLookupResult) Grid() string { return r.str("gridsquare") }
 
+// DXCCID returns the numeric DXCC entity ID (e.g. "497" for Croatia).
+func (r *PrivateLookupResult) DXCCID() string { return r.str("dxcc_id") }
+
+// DXCCName returns the DXCC entity name (e.g. "CROATIA").
+func (r *PrivateLookupResult) DXCCName() string { return r.str("dxcc") }
+
 // QTH returns the location (city/address).
 func (r *PrivateLookupResult) QTH() string { return r.str("location") }
 

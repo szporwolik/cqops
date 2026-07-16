@@ -6,12 +6,13 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/ftl/hamradio/dxcc"
+	"github.com/ftl/hamradio/latlon"
 	"github.com/ftl/hamradio/locator"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/callbook"
 	"github.com/szporwolik/cqops/internal/callook"
+	"github.com/szporwolik/cqops/internal/ctybig"
 	"github.com/szporwolik/cqops/internal/hamqth"
 	"github.com/szporwolik/cqops/internal/qrzcom"
 	"github.com/szporwolik/cqops/internal/qso"
@@ -172,8 +173,8 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 
 	// CTY.DAT prefix lookup — always-on fallback, runs last at priority 1.
 	// Fills country, grid, and CQ/ITU zone from the DXCC prefix database.
-	if a.DXCC != nil {
-		providers = append(providers, NewCTYProvider(a.DXCC, 1))
+	if a.BigCTY != nil {
+		providers = append(providers, NewCTYProvider(a.BigCTY, 1))
 	}
 
 	if len(providers) == 0 {
@@ -322,6 +323,17 @@ func (m *Model) fillCallbookData(msg callbookResultMsg) {
 	}
 	m.lookup.partnerData = d
 	m.invalidatePartnerMapCache()
+
+	// When the call has a foreign operating prefix (e.g. 9A/SP9SPM/P),
+	// QTH/Lat/Lon/State from the callbook describe the operator's HOME
+	// location, not the operating location. Clear them so the dashboard
+	// and form show the operating entity instead.
+	if qso.ParseCallsign(d.Callsign).HasForeignPrefix() {
+		d.QTH = ""
+		d.Lat = ""
+		d.Lon = ""
+		d.State = ""
+	}
 	m.rc.helpSig = "" // force help bar refresh (may now show F2 Photo)
 	if d.ImageURL != "" && d.ImageURL != m.photo.partnerPicURL {
 		m.photo.partnerPicURL = d.ImageURL
@@ -442,7 +454,7 @@ func (m *Model) showCallbookToast(call string) {
 		// No providers available — show a one-time hint.
 		if !m.lookup.noProviderWarned {
 			m.lookup.noProviderWarned = true
-			ctyAvailable := m.App != nil && m.App.DXCC != nil && m.App.Config.General.UseCTY
+			ctyAvailable := m.App != nil && m.App.BigCTY != nil && m.App.Config.General.UseCTY
 			if ctyAvailable {
 				m.toasts.Warn("Callbook: no providers configured — using CTY.DAT backfill (country + grid only)")
 			} else {
@@ -466,24 +478,20 @@ func (m *Model) clearQRZFields() {
 	m.rc.formSig = ""
 }
 
-// dxccLookup returns the DXCC prefix entry for a callsign, or nil if not found.
-func (m *Model) dxccLookup(call string) *dxcc.Prefix {
-	if m.App == nil || m.App.DXCC == nil || call == "" {
+// dxccLookup returns the Big CTY entry for a callsign, or nil if not found.
+func (m *Model) dxccLookup(call string) *ctybig.Entry {
+	if m.App == nil || m.App.BigCTY == nil || call == "" {
 		return nil
 	}
 	if !m.App.Config.General.UseCTY {
 		return nil
 	}
-	matches, ok := m.App.DXCC.Find(call)
-	if !ok || len(matches) == 0 {
-		return nil
-	}
-	return &matches[0]
+	return m.App.BigCTY.Find(call)
 }
 
 // dxccAutoFill fills empty QSO form country and grid locator from DXCC.
 func (m *Model) dxccAutoFill() {
-	if m.App == nil || m.App.DXCC == nil || !m.App.Config.General.UseCTY {
+	if m.App == nil || m.App.BigCTY == nil || !m.App.Config.General.UseCTY {
 		return
 	}
 	call := strings.TrimSpace(m.fields[fieldCall].Value())
@@ -492,7 +500,7 @@ func (m *Model) dxccAutoFill() {
 	}
 	p := m.dxccLookup(call)
 	if p == nil {
-		applog.Debug("DXCC: dxccAutoFill no match", "call", call, "dxccLoaded", m.App != nil && m.App.DXCC != nil)
+		applog.Debug("DXCC: dxccAutoFill no match", "call", call)
 		return
 	}
 	if p.Name != "" && strings.TrimSpace(m.fields[fieldCountry].Value()) == "" {
@@ -501,7 +509,8 @@ func (m *Model) dxccAutoFill() {
 	}
 	// Derive approximate grid locator from the DXCC entity's center coordinates.
 	if strings.TrimSpace(m.fields[fieldGrid].Value()) == "" {
-		grid := locator.LatLonToLocator(p.LatLon, 4)
+		ll := latlon.NewLatLon(latlon.Latitude(p.Lat), latlon.Longitude(p.Lon))
+		grid := locator.LatLonToLocator(ll, 4)
 		gridStr := strings.TrimRight(string(grid[:]), "\x00")
 		if len(gridStr) >= 4 {
 			m.fields[fieldGrid].SetValue(strings.ToUpper(gridStr[:4]))
@@ -659,12 +668,17 @@ func wlFillForm(m *Model, data *wavelog.PrivateLookupResult) {
 		return
 	}
 
+	// Detect foreign prefix on the current form call so we don't fill
+	// the operator's home QTH into a foreign-prefix operating session.
+	formCall := qso.NormalizeCall(m.fields[fieldCall].Value())
+	foreignPrefix := qso.ParseCallsign(formCall).HasForeignPrefix()
+
 	if strings.TrimSpace(m.fields[fieldName].Value()) == "" {
 		if n := data.Name(); n != "" {
 			m.fields[fieldName].SetValue(n)
 		}
 	}
-	if strings.TrimSpace(m.fields[fieldQTH].Value()) == "" {
+	if !foreignPrefix && strings.TrimSpace(m.fields[fieldQTH].Value()) == "" {
 		if q := data.QTH(); q != "" {
 			m.fields[fieldQTH].SetValue(q)
 		}

@@ -107,11 +107,18 @@ func (m *Model) saveQSO() tea.Cmd {
 		qs.Distance = gridDistanceKm(station.MyGridSquare, qs.GridSquare)
 		qs.Bearing = gridBearingDeg(station.MyGridSquare, qs.GridSquare)
 	}
-	// Enrich CQ/ITU zone from DXCC prefix lookup (CTY.DAT).
-	if m.App.Config.General.UseCTY && m.App.DXCC != nil {
+	// Enrich CQ/ITU zone and DXCC from Big CTY prefix lookup.
+	if m.App.Config.General.UseCTY && m.App.BigCTY != nil {
 		if p := m.dxccLookup(qs.Call); p != nil {
-			qs.CQZone = fmt.Sprintf("%d", p.CQZone)
-			qs.ITUZone = fmt.Sprintf("%d", p.ITUZone)
+			if qs.CQZone == "" {
+				qs.CQZone = fmt.Sprintf("%d", p.CQZone)
+			}
+			if qs.ITUZone == "" {
+				qs.ITUZone = fmt.Sprintf("%d", p.ITUZone)
+			}
+			if qs.DXCC == "" && p.DXCC > 0 {
+				qs.DXCC = fmt.Sprintf("%d", p.DXCC)
+			}
 		}
 	}
 	// Enrich DXCC entity number from QRZ lookup when available.

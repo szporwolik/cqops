@@ -280,6 +280,13 @@ func (m *Model) pushDashboardPartner(ds *dashboard.State, call string) {
 	fmt.Sscanf(d.Lon, "%f", &pi.Lon)
 	pi.ImageURL = d.ImageURL
 
+	// Resolve timezone offset from Big CTY (if available).
+	if m.App.BigCTY != nil {
+		if e := m.App.BigCTY.Find(call); e != nil {
+			pi.TZOffset = e.TZOffset
+		}
+	}
+
 	// Build provider badges with URLs for external providers.
 	// CTY.DAT is an always-on offline fallback — do not show a badge.
 	if len(d.Providers) > 0 {
@@ -299,6 +306,7 @@ func (m *Model) pushDashboardPartner(ds *dashboard.State, call string) {
 		Call: pi.Call, Name: pi.Name, QTH: pi.QTH, State: pi.State,
 		Country: pi.Country, Grid: pi.Grid, ImageURL: pi.ImageURL,
 		Providers: strings.Join(d.Providers, ","),
+		TZOffset:  pi.TZOffset,
 	}
 	if cur != lastPushedPartner {
 		lastPushedPartner = cur
@@ -416,16 +424,12 @@ func (m *Model) pushDashboardState() {
 
 // pushDashboardFast pushes only the light-weight, change-detected parts:
 // app, display, station, operator, logbook, rig, WSJT-X, active QSO, partner.
-// No DB queries for today/recent QSOs. Guarded by lastFastTick to avoid
-// duplicate work when called from both handleTick and applyRigPoll.
+// No DB queries for today/recent QSOs. Each Set* call on the dashboard state
+// performs its own change detection, so no external guard is needed.
 func (m *Model) pushDashboardFast() {
 	if m.http.client == nil || !m.http.online {
 		return
 	}
-	if m.tickCount == lastFastTick {
-		return
-	}
-	lastFastTick = m.tickCount
 	ds := m.http.client.State()
 
 	// --- App ---
@@ -688,6 +692,7 @@ var lastPushedAQSO cachedAQSO
 type cachedPartner struct {
 	Call, Name, QTH, State, Country, Grid, ImageURL string
 	Providers                                       string // comma-separated provider names
+	TZOffset                                        float64
 }
 
 var lastPushedPartner cachedPartner
@@ -705,10 +710,6 @@ func (m *Model) forcePushDashboardRecent(ds *dashboard.State) {
 	lastRecentIDs = nil
 	m.pushDashboardRecent(ds)
 }
-
-// lastFastTick prevents pushDashboardFast from being called
-// redundantly from both handleTick and applyRigPoll within the same tick.
-var lastFastTick int
 
 // lastTodayIDs holds the last pushed today QSO ID list for change detection.
 var lastTodayIDs []int64
@@ -733,7 +734,6 @@ func (m *Model) invalidateDashboardFlags() {
 func (m *Model) forcePushDashboardAll() {
 	// Clear throttle/cache state so pushDashboardState runs every panel.
 	lastDashboardPushTick = 0
-	lastFastTick = 0
 	lastTodayPush = time.Time{}
 	lastAPRSPush = time.Time{}
 	// Use sentinel values instead of nil so that an empty result (0 QSOs
@@ -799,8 +799,31 @@ func (m *Model) pushDashboardRecent(ds *dashboard.State) {
 		qsos, err = m.loadRecentFromDate(eventStart, limit)
 	} else {
 		// No event start: show today's QSOs (matches map/stats logic).
-		today := time.Now().UTC().Format("20060102")
+		now := time.Now().UTC()
+		today := now.Format("20060102")
+		yesterday := now.Add(-24 * time.Hour).Format("20060102")
 		qsos, err = m.loadRecentFromDate(today, limit)
+		// Midnight-crossing guard: if the new UTC day has very few QSOs,
+		// also include yesterday so the recent table doesn't clear out
+		// at 00:00. This matches the guard in pushDashboardToday.
+		if err == nil && len(qsos) < 5 {
+			yQsos, yErr := m.loadRecentFromDate(yesterday, limit)
+			if yErr == nil {
+				// Deduplicate by ID (a QSO cannot span two dates, but
+				// be safe against clock skew or duplicate DB rows).
+				seen := make(map[int64]bool, limit*2)
+				for _, q := range qsos {
+					seen[q.ID] = true
+				}
+				for _, q := range yQsos {
+					if seen[q.ID] {
+						continue
+					}
+					seen[q.ID] = true
+					qsos = append(qsos, q)
+				}
+			}
+		}
 	}
 	if err != nil {
 		applog.Debug("dashboard: cannot load recent QSOs", "error", err)

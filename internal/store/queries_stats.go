@@ -161,11 +161,13 @@ func GetWorkedSummary(db *sql.DB, call, grid4, dxcc, countryName string) (Worked
 	}
 
 	if dxcc != "" {
-		// Match by DXCC entity number when populated, fall back to
-		// country name for older QSOs without the dxcc column.
+		// Match by DXCC entity number when populated. Fall back to
+		// case-insensitive country name for QSOs without the dxcc
+		// column — covers "United States" / "UNITED STATES" / "united states"
+		// and prefix variants like "United States of America".
 		ws.DXCCHistory, err = scopeStats(db,
-			"dxcc = ? OR (dxcc = '' AND country = ?)",
-			dxcc, countryName)
+			"dxcc = ? OR LOWER(country) = LOWER(?) OR LOWER(country) LIKE LOWER(?)",
+			dxcc, countryName, countryName+"%")
 		if err != nil {
 			return ws, fmt.Errorf("dxcc history: %w", err)
 		}

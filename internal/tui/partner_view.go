@@ -10,7 +10,6 @@ import (
 	"github.com/szporwolik/cqops/internal/callbook"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
-	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
 const partnerMapMaxW = 140 // also used as max page width for QSO form consistency
@@ -60,6 +59,18 @@ func renderFlagStatus(isNew, known bool, newStyle, oldStyle lipgloss.Style) stri
 		return newStyle.Render("Y")
 	}
 	return oldStyle.Render("N")
+}
+
+func hasTerminalGraphics(content string) bool {
+	return strings.Contains(content, "\x1b_G") || strings.Contains(content, "\x1b]1337;") || strings.Contains(content, "\x1b]1338;")
+}
+
+func renderPartnerPaneContent(content string, boxW int, preserveGraphics bool) string {
+	trimmed := strings.TrimRight(content, "\n")
+	if preserveGraphics {
+		return trimmed
+	}
+	return menuBoxStyle.Width(boxW).Render(trimmed)
 }
 
 func (m *Model) viewPartner() string {
@@ -199,7 +210,9 @@ func (m *Model) viewPartner() string {
 		}
 		mapBox := m.getOrBuildMap(d, contentW, mapAvailH)
 		if mapBox != "" {
-			mapBox = lipgloss.PlaceHorizontal(leftW, lipgloss.Center, mapBox)
+			if !hasTerminalGraphics(mapBox) {
+				mapBox = lipgloss.PlaceHorizontal(leftW, lipgloss.Center, mapBox)
+			}
 			leftCol = lipgloss.JoinVertical(lipgloss.Left, topRow, mapBox)
 		} else {
 			leftCol = topRow
@@ -232,10 +245,10 @@ func (m *Model) viewPartner() string {
 			picLines = append(picLines, "")
 		}
 		inner := strings.Join(picLines, "\n")
-		// Use plain padding (no border, no lipgloss.Border()) — ANSI
-		// sequences from Border() offset the Kitty placeholder's grid
-		// position, shifting the image right.
-		picBox := menuBoxStyle.Width(photoW + 1).Render(inner)
+		// Preserve raw terminal-graphics content when Kitty is active so the
+		// picture model's placement stays stable. Normal text still uses the
+		// shared menu box wrapper.
+		picBox := renderPartnerPaneContent(inner, photoW+1, hasTerminalGraphics(picRaw))
 		// Pad the shorter column with newlines instead of using
 		// lipgloss.Place, which wraps content in ANSI escapes
 		// that can shift Kitty virtual image placement.
@@ -336,42 +349,6 @@ func checkMark() string {
 	return "\u2713"
 }
 
-// dotSep returns the field separator " · " on Unicode terminals, and
-// a safe ASCII alternative " : " on bare TTYs. Unlike U+2713 (checkmark),
-// U+00B7 (middle dot) is Latin-1 and works on virtually all terminals,
-// but we match the existing fallback pattern for consistency.
-func dotSep() string {
-	if isTTYWithoutDisplay() {
-		return " : "
-	}
-	return " \u00b7 "
-}
-
-// emDash returns "—" on Unicode terminals and "--" on bare TTYs.
-func emDash() string {
-	if isTTYWithoutDisplay() {
-		return "--"
-	}
-	return "\u2014"
-}
-
-// ellipsis returns "…" on Unicode terminals and "..." on bare TTYs.
-func ellipsis() string {
-	if isTTYWithoutDisplay() {
-		return "..."
-	}
-	return "\u2026"
-}
-
-// callbookAnyEnabled returns true when at least one online callbook
-// provider (QRZ, HamQTH, or Callook) is configured and enabled.
-func (m *Model) callbookAnyEnabled() bool {
-	cb := m.App.Config.Integrations.Callbook
-	return (cb.QRZ.Enabled && cb.QRZ.User != "") ||
-		(cb.HamQTH.Enabled && cb.HamQTH.User != "") ||
-		cb.Callook.Enabled
-}
-
 // resolveClass maps callbook licence class codes to human-readable labels.
 func resolveClass(cls string) string {
 	// Normalize common FCC/QRZ class codes.
@@ -396,25 +373,6 @@ func resolveClass(cls string) string {
 		return "Class III"
 	default:
 		return cls // pass through unknown codes as-is
-	}
-}
-
-func providerDisplayName(p string) string {
-	switch p {
-	case "qrz":
-		return "QRZ.com"
-	case "hamqth":
-		return "HamQTH"
-	case "callook":
-		return "Callook.info"
-	case "wavelog":
-		return "Wavelog"
-	case "logbook":
-		return "Local Logbook"
-	case "cty":
-		return "CTY.DAT"
-	default:
-		return ""
 	}
 }
 
@@ -447,18 +405,6 @@ func (m *Model) renderPartnerBox(title, content string, boxW, maxInner int) stri
 		inner = sb.String()
 	}
 	return drawBorderedBox(inner, boxW)
-}
-
-func infoRow(label, value string, maxW int) string {
-	lbl := S.FormLabel.Align(lipgloss.Right).Render(label)
-	valW := maxW - 12
-	if valW < 3 {
-		valW = 3
-	}
-	// Let Lip Gloss handle clipping via MaxWidth+Inline — never manually
-	// truncate a value that may contain OSC-8 hyperlink ANSI sequences.
-	val := ValueStyle.Width(valW).MaxWidth(valW).Inline(true).Render(value)
-	return lipgloss.JoinHorizontal(lipgloss.Center, lbl, " ", val)
 }
 
 // --- Callbook rows ---
@@ -564,7 +510,10 @@ func (m *Model) renderCallbookRows(d *callbook.Result, maxW int, maxH int) strin
 	if cont != "" {
 		entParts = append(entParts, cont)
 	}
-	if d.DXCC != "" {
+	// When the call has a foreign operating prefix, d.DXCC is the
+	// HOME entity (from HamQTH base-fallback), not the operating
+	// entity. Skip it — the worked panel resolves the real DXCC.
+	if d.DXCC != "" && !qso.ParseCallsign(d.Callsign).HasForeignPrefix() {
 		entParts = append(entParts, "DXCC "+d.DXCC)
 	}
 	add("Entity", strings.Join(entParts, " \u00b7 "), 3)
@@ -598,11 +547,24 @@ func (m *Model) renderCallbookRows(d *callbook.Result, maxW int, maxH int) strin
 
 	// Priority 20-29: References.
 	var refParts []string
-	if d.CQZone != "" {
-		refParts = append(refParts, "CQ "+d.CQZone)
+	cqZone := d.CQZone
+	ituZone := d.ITUZone
+	parsed := qso.ParseCallsign(d.Callsign)
+	if parsed.HasForeignPrefix() {
+		if p := m.dxccLookup(parsed.OperatingPrefix); p != nil {
+			if p.CQZone != 0 {
+				cqZone = strconv.Itoa(int(p.CQZone))
+			}
+			if p.ITUZone != 0 {
+				ituZone = strconv.Itoa(int(p.ITUZone))
+			}
+		}
 	}
-	if d.ITUZone != "" {
-		refParts = append(refParts, "ITU "+d.ITUZone)
+	if cqZone != "" {
+		refParts = append(refParts, "CQ "+cqZone)
+	}
+	if ituZone != "" {
+		refParts = append(refParts, "ITU "+ituZone)
 	}
 	// TODO: append IOTA, DOK, P-OT, county, oblast from extended fields
 	add("Refs", strings.Join(refParts, " \u00b7 "), 20)
@@ -772,13 +734,96 @@ func (m *Model) workedTitle() string {
 	return "Worked \u00b7 Local"
 }
 
+type workedRow struct {
+	label string
+	value string
+}
+
+type workedPanelLayout struct {
+	TwoColumns    bool
+	LeftHeading   string
+	RightHeading  string
+	LeftRows      []workedRow
+	RightRows     []workedRow
+	FullWidthRows []workedRow
+	LeftWidth     int
+	RightWidth    int
+	Gap           int
+	HistoryScope  historyLabel
+}
+
 // renderWorkedPanel builds a unified worked-status panel. The left side
 // shows newness (call, band, mode, DXCC, grid) with inline values. The
-// right side shows the best available history: per-call, per-grid, or
-// per-DXCC statistics.
+// upper right side shows the best available history scope, while the lower
+// section renders full-width distributions for that same scope.
 func (m *Model) renderWorkedPanel(d *callbook.Result, maxW int) string {
 	if d == nil || d.Callsign == "" {
 		return DimStyle.Render("Enter a callsign to check worked status")
+	}
+
+	layout := m.buildWorkedPanelLayout(d, maxW)
+	if layout.TwoColumns {
+		var lines []string
+		leftLines := []string{layout.LeftHeading}
+		rightLines := []string{layout.RightHeading}
+		for _, r := range layout.LeftRows {
+			leftLines = append(leftLines, renderWorkedPanelRow(r.label, r.value, layout.LeftWidth, 10))
+		}
+		for _, r := range layout.RightRows {
+			rightLines = append(rightLines, renderWorkedPanelRow(r.label, r.value, layout.RightWidth, 10))
+		}
+		for len(leftLines) < len(rightLines) {
+			leftLines = append(leftLines, "")
+		}
+		for len(rightLines) < len(leftLines) {
+			rightLines = append(rightLines, "")
+		}
+		for i := range leftLines {
+			if leftLines[i] == "" && rightLines[i] == "" {
+				lines = append(lines, "")
+			} else {
+				lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Top,
+					lipgloss.NewStyle().Width(layout.LeftWidth).Render(leftLines[i]),
+					strings.Repeat(" ", layout.Gap),
+					lipgloss.NewStyle().Width(layout.RightWidth).Render(rightLines[i])))
+			}
+		}
+		if len(layout.FullWidthRows) > 0 {
+			if len(lines) > 0 && len(lines[len(lines)-1]) > 0 {
+				lines = append(lines, "")
+			}
+			for _, r := range layout.FullWidthRows {
+				lines = append(lines, renderWorkedPanelRow(r.label, r.value, maxW, 10))
+			}
+		}
+		return lipgloss.JoinVertical(lipgloss.Left, lines...)
+	}
+
+	lines := []string{layout.LeftHeading}
+	for _, r := range layout.LeftRows {
+		lines = append(lines, renderWorkedPanelRow(r.label, r.value, maxW, 10))
+	}
+	if layout.RightHeading != "" {
+		lines = append(lines, "")
+		lines = append(lines, layout.RightHeading)
+		for _, r := range layout.RightRows {
+			lines = append(lines, renderWorkedPanelRow(r.label, r.value, maxW, 10))
+		}
+	}
+	if len(layout.FullWidthRows) > 0 {
+		if len(lines) > 0 && len(lines[len(lines)-1]) > 0 {
+			lines = append(lines, "")
+		}
+		for _, r := range layout.FullWidthRows {
+			lines = append(lines, renderWorkedPanelRow(r.label, r.value, maxW, 10))
+		}
+	}
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+}
+
+func (m *Model) buildWorkedPanelLayout(d *callbook.Result, maxW int) workedPanelLayout {
+	if d == nil || d.Callsign == "" {
+		return workedPanelLayout{}
 	}
 
 	call := d.Callsign
@@ -787,7 +832,33 @@ func (m *Model) renderWorkedPanel(d *callbook.Result, maxW int) string {
 	s := m.rc.logStats
 	wl := m.lookup.wlPrivateData
 
-	// Resolve grid from callbook (prefer form grid when sourced externally).
+	parsed := qso.ParseCallsign(call)
+	opEntity := d.Country
+	opDXCC := d.DXCC
+	if parsed.HasForeignPrefix() {
+		if m.App != nil && m.App.BigCTY != nil && parsed.OperatingPrefix != "" {
+			if p := m.dxccLookup(parsed.OperatingPrefix); p != nil {
+				parsed.OperatingEntity = p.Name
+				parsed.OperatingContinent = p.Continent
+				parsed.OperatingCQZone = int(p.CQZone)
+				parsed.OperatingITUZone = int(p.ITUZone)
+				opEntity = p.Name
+			}
+		}
+		if wl != nil && wl.DXCCID() != "" {
+			opDXCC = wl.DXCCID()
+		} else if m.App.DB != nil && opEntity != "" {
+			var dbDXCC string
+			_ = m.App.DB.QueryRow(
+				`SELECT dxcc FROM qsos WHERE country = ? AND dxcc != '' LIMIT 1`,
+				opEntity,
+			).Scan(&dbDXCC)
+			if dbDXCC != "" {
+				opDXCC = dbDXCC
+			}
+		}
+	}
+
 	grid := d.Grid
 	formGrid := strings.TrimSpace(m.fields[fieldGrid].Value())
 	if formGrid != "" && m.gridSource != "" && m.gridSource != gridSourceCallbook {
@@ -797,42 +868,33 @@ func (m *Model) renderWorkedPanel(d *callbook.Result, maxW int) string {
 	if len(grid) >= 4 {
 		grid4 = strings.ToUpper(grid[:4])
 	}
+	if opEntity == "" {
+		opEntity = d.Country
+	}
 
-	// DXCC entity from callbook result.
-	dxcc := d.DXCC
-
-	// Compute scope histories (cached by sig in viewPartner, so these DB
-	// calls only fire on actual input changes).
 	var ws store.WorkedSummary
 	if m.App.DB != nil && call != "" {
 		var err error
-		ws, err = store.GetWorkedSummary(m.App.DB, call, grid4, dxcc, d.Country)
+		ws, err = store.GetWorkedSummary(m.App.DB, call, grid4, opDXCC, opEntity)
 		if err != nil {
-			ws = store.WorkedSummary{} // empty on error
+			ws = store.WorkedSummary{}
 		}
 	}
 
-	// ── Helpers ────────────────────────────────────────────────────────
-
-	acc := S.Info                         // accent for NEW
-	workedMuted := DimStyle               // dim for "worked"
-	muted := S.Dim                        // muted text
-	valStyle := ValueStyle                // normal value
-	pendDash := DimStyle.Render("\u2014") // compact missing-input placeholder
-
-	// state renders a compact " · STATE" suffix.
-	// NEW gets strong emphasis; worked is deliberately quieter.
+	acc := S.Info
+	workedMuted := DimStyle
+	muted := S.Dim
+	valStyle := ValueStyle
+	pendDash := DimStyle.Render("—")
 	state := func(isNew, known bool) string {
 		if !known {
-			return " \u00b7 " + muted.Render("unknown")
+			return " · " + muted.Render("unknown")
 		}
 		if isNew {
-			return " \u00b7 " + acc.Render("NEW")
+			return " · " + acc.Render("NEW")
 		}
-		return " \u00b7 " + workedMuted.Render("worked")
+		return " · " + workedMuted.Render("worked")
 	}
-
-	// isNewForCall combines Wavelog + local to determine if the call is new.
 	isNewForCall := func() (bool, bool) {
 		if wl != nil {
 			return !wl.Worked(), true
@@ -840,52 +902,31 @@ func (m *Model) renderWorkedPanel(d *callbook.Result, maxW int) string {
 		return !s.CallWorked, true
 	}
 
-	twoCol := maxW >= 58
-	lblW := 10
-
-	row := func(label, value string, w int) string {
-		lbl := muted.Align(lipgloss.Right).Width(lblW).Render(label)
-		valW := w - lblW - 1
-		if valW < 3 {
-			valW = 3
-		}
-		val := valStyle.MaxWidth(valW).Inline(true).Render(value)
-		return lbl + " " + val
-	}
-
-	// ── Left column: newness rows ──────────────────────────────────────
-	// Resolved information (Call, DXCC, Grid) comes before missing-input
-	// placeholders (Band, Mode) so the panel stays useful when the form
-	// is incomplete.
-
-	type nRow struct{ label, value string }
-	var nn []nRow
-
-	// Call
+	var leftRows []workedRow
 	callNew, callKnown := isNewForCall()
-	callVal := acc.Render(call) + state(callNew, callKnown)
-	nn = append(nn, nRow{"Call", callVal})
-
-	// DXCC — resolved, show early.
-	if dxcc != "" {
-		dxccNew, dxccKnown := false, false
-		if wl != nil {
-			dxccNew, dxccKnown = !wl.DXCCConfirmed(), true
-		}
-		if !dxccKnown {
-			dxccKnown = true
-			dxccNew = ws.DXCCHistory.QSOCount == 0
-		}
-		nn = append(nn, nRow{"DXCC", valStyle.Render(dxcc) + state(dxccNew, dxccKnown)})
+	leftRows = append(leftRows, workedRow{"Call", acc.Render(call) + state(callNew, callKnown)})
+	if parsed.BaseCall != "" && !strings.EqualFold(parsed.BaseCall, call) {
+		leftRows = append(leftRows, workedRow{"Base", valStyle.Render(parsed.BaseCall)})
 	}
-
-	// Grid — resolved, show early.
+	if opEntity != "" || opDXCC != "" {
+		dxccNew, dxccKnown := false, true
+		if wl != nil && wl.DXCCConfirmed() {
+			dxccNew, dxccKnown = false, true
+		} else if ws.DXCCHistory.QSOCount > 0 {
+			dxccNew, dxccKnown = false, true
+		} else {
+			dxccNew, dxccKnown = true, true
+		}
+		label := opEntity
+		if label == "" {
+			label = opDXCC
+		}
+		leftRows = append(leftRows, workedRow{"DXCC", valStyle.Render(label) + state(dxccNew, dxccKnown)})
+	}
 	if grid4 != "" {
 		gridNew := ws.GridHistory.QSOCount == 0
-		nn = append(nn, nRow{"Grid", valStyle.Render(grid4) + state(gridNew, true)})
+		leftRows = append(leftRows, workedRow{"Grid", valStyle.Render(grid4) + state(gridNew, true)})
 	}
-
-	// Band — pending when unknown.
 	if band != "" {
 		bNew, bKnown := false, true
 		if wl != nil {
@@ -893,21 +934,17 @@ func (m *Model) renderWorkedPanel(d *callbook.Result, maxW int) string {
 		} else {
 			bNew, bKnown = !s.CallOnBand, true
 		}
-		nn = append(nn, nRow{"Band", valStyle.Render(band) + state(bNew, bKnown)})
+		leftRows = append(leftRows, workedRow{"Band", valStyle.Render(band) + state(bNew, bKnown)})
 	} else {
-		nn = append(nn, nRow{"Band", pendDash})
+		leftRows = append(leftRows, workedRow{"Band", pendDash})
 	}
-
-	// Mode — pending when unknown.
 	if mode != "" {
 		mNew, mKnown := false, true
 		mNew, mKnown = !s.CallOnMode, true
-		nn = append(nn, nRow{"Mode", valStyle.Render(mode) + state(mNew, mKnown)})
+		leftRows = append(leftRows, workedRow{"Mode", valStyle.Render(mode) + state(mNew, mKnown)})
 	} else {
-		nn = append(nn, nRow{"Mode", pendDash})
+		leftRows = append(leftRows, workedRow{"Mode", pendDash})
 	}
-
-	// Band+Mode — only when both are known.
 	if band != "" && mode != "" {
 		bmNew, bmKnown := false, false
 		if wl != nil {
@@ -915,137 +952,134 @@ func (m *Model) renderWorkedPanel(d *callbook.Result, maxW int) string {
 		}
 		if bmKnown {
 			bmVal := valStyle.Render(band + " " + mode)
-			nn = append(nn, nRow{"Band+Mode", bmVal + state(bmNew, bmKnown)})
+			leftRows = append(leftRows, workedRow{"Band+Mode", bmVal + state(bmNew, bmKnown)})
 		}
 	}
 
-	// ── Right column: history (best available scope) ───────────────────
-
-	type hRow struct{ label, value string }
-	var hist []hRow
+	var rightRows []workedRow
 	addH := func(l, v string) {
 		if v != "" {
-			hist = append(hist, hRow{l, v})
+			rightRows = append(rightRows, workedRow{l, v})
 		}
 	}
-
 	callHasQSOs := ws.CallHistory.QSOCount > 0
+	hasDXCCHistory := ws.DXCCHistory.QSOCount > 0
+	hasGridHistory := ws.GridHistory.QSOCount > 0 && grid4 != ""
+	scopeHead := "History"
+
+	// Pick the most specific scope for distribution rows (Bands/Modes/Grids).
+	var scopeHist store.ScopeHistory
+	switch {
+	case callHasQSOs:
+		scopeHist = ws.CallHistory
+	case hasDXCCHistory:
+		scopeHist = ws.DXCCHistory
+	case hasGridHistory:
+		scopeHist = ws.GridHistory
+	}
 
 	if !callHasQSOs {
-		// Call is new — show first-contact indicator.
-		if callKnown {
-			addH("QSOs", "0 \u00b7 "+muted.Render("first contact"))
-		} else {
-			addH("QSOs", "0 \u00b7 "+muted.Render("unknown"))
+		qsoLabel := "QSOs"
+		if hasDXCCHistory || hasGridHistory {
+			qsoLabel = "Call QSOs"
 		}
-
-		// Contextual DXCC history — only when there is positive data.
+		if callKnown {
+			addH(qsoLabel, "0 · "+muted.Render("first contact"))
+		} else {
+			addH(qsoLabel, "0 · "+muted.Render("unknown"))
+		}
 		if ws.DXCCHistory.QSOCount > 0 {
-			dinfo := fmt.Sprintf("%d QSOs \u00b7 %d bands",
+			dinfo := fmt.Sprintf("%d QSOs · %d bands",
 				ws.DXCCHistory.QSOCount, ws.DXCCHistory.UniqueBands)
 			addH("DXCC log", dinfo)
 			if ws.DXCCHistory.LastQSO != nil {
 				lq := ws.DXCCHistory.LastQSO
 				last := lq.Date
 				if lq.Band != "" {
-					last += " \u00b7 " + lq.Band
+					last += " · " + lq.Band
 					if lq.Mode != "" {
 						last += " " + lq.Mode
 					}
 				}
 				addH("Last DXCC", last)
 			}
-			addH("Bands", formatCountList(ws.DXCCHistory.BandCounts))
-			addH("Modes", formatCountList(ws.DXCCHistory.ModeCounts))
 		}
-		// No zero-DXCC or zero-grid filler — the left column already
-		// shows DXCC/Grid status; redundant zeros add noise.
 	} else {
-		// Call has QSOs — show call-specific history.
 		addH("QSOs", strconv.Itoa(ws.CallHistory.QSOCount))
 		if ws.CallHistory.LastQSO != nil {
 			lq := ws.CallHistory.LastQSO
 			last := lq.Date
 			if lq.Band != "" {
-				last += " \u00b7 " + lq.Band
+				last += " · " + lq.Band
 				if lq.Mode != "" {
 					last += " " + lq.Mode
 				}
 			}
 			addH("Last", last)
 		}
-		addH("Bands", formatCountList(ws.CallHistory.BandCounts))
-		addH("Modes", formatCountList(ws.CallHistory.ModeCounts))
-		if len(ws.CallHistory.GridCounts) > 0 {
-			addH("Grids", formatCountList(ws.CallHistory.GridCounts))
-		}
 	}
 
-	// ── Render ─────────────────────────────────────────────────────────
-
-	var lines []string
-
-	if twoCol {
-		leftW := maxW*45/100 - 2
-		rightW := maxW - leftW - 2
-		var leftLines, rightLines []string
-
-		for _, r := range nn {
-			leftLines = append(leftLines, row(r.label, r.value, leftW))
-		}
-		for _, r := range hist {
-			rightLines = append(rightLines, row(r.label, r.value, rightW))
-		}
-
-		// Pad shorter column.
-		for len(leftLines) < len(rightLines) {
-			leftLines = append(leftLines, "")
-		}
-		for len(rightLines) < len(leftLines) {
-			rightLines = append(rightLines, "")
-		}
-
-		for i := range leftLines {
-			if leftLines[i] == "" && rightLines[i] == "" {
-				lines = append(lines, "")
-			} else {
-				lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Top,
-					lipgloss.NewStyle().Width(leftW).Render(leftLines[i]),
-					"  ",
-					lipgloss.NewStyle().Width(rightW).Render(rightLines[i])))
-			}
-		}
-	} else if maxW < 35 {
-		// Very short panel — compact one-liner summary.
-		callNew, callKnown := isNewForCall()
-		compact := acc.Render(call) + state(callNew, callKnown)
-		if grid4 != "" {
-			gridNew := ws.GridHistory.QSOCount == 0
-			compact += " \u00b7 " + "Grid " + grid4 + state(gridNew, true)
-		}
-		if dxcc != "" {
-			dxccNew := ws.DXCCHistory.QSOCount == 0
-			compact += " \u00b7 " + "DXCC " + dxcc + state(dxccNew, true)
-		}
-		lines = append(lines, compact)
-		if ws.DXCCHistory.QSOCount > 0 {
-			lines = append(lines, muted.Render(fmt.Sprintf("DXCC: %d QSOs \u00b7 %d bands \u00b7 %d modes",
-				ws.DXCCHistory.QSOCount, ws.DXCCHistory.UniqueBands, ws.DXCCHistory.UniqueModes)))
-		}
-	} else {
-		// Stacked layout with section headings (narrow but not tiny).
-		lines = append(lines, muted.Render("Status"))
-		for _, r := range nn {
-			lines = append(lines, row(r.label, r.value, maxW))
-		}
-		lines = append(lines, "")
-		lines = append(lines, muted.Render("History"))
-		for _, r := range hist {
-			lines = append(lines, row(r.label, r.value, maxW))
-		}
+	var fullWidthRows []workedRow
+	if len(scopeHist.BandCounts) > 0 {
+		fullWidthRows = append(fullWidthRows, workedRow{"Bands", formatCountList(scopeHist.BandCounts)})
+	}
+	if len(scopeHist.ModeCounts) > 0 {
+		fullWidthRows = append(fullWidthRows, workedRow{"Modes", formatCountList(scopeHist.ModeCounts)})
+	}
+	if len(scopeHist.GridCounts) > 0 && !callHasQSOs {
+		fullWidthRows = append(fullWidthRows, workedRow{"Grids", formatCountList(scopeHist.GridCounts)})
 	}
 
-	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+	leftHeading := muted.Render("Current QSO")
+	rightHeading := muted.Render(scopeHead)
+	if maxW < 58 {
+		leftHeading = muted.Render("Status")
+	}
+
+	layout := workedPanelLayout{
+		TwoColumns:    maxW >= 58,
+		LeftHeading:   leftHeading,
+		RightHeading:  rightHeading,
+		LeftRows:      leftRows,
+		RightRows:     rightRows,
+		FullWidthRows: fullWidthRows,
+		LeftWidth:     maxW*45/100 - 2,
+		RightWidth:    maxW - (maxW*45/100 - 2) - 2,
+		Gap:           2,
+		HistoryScope:  historyLabel("call"),
+	}
+	if len(scopeHist.BandCounts) == 0 && len(scopeHist.ModeCounts) == 0 && len(scopeHist.GridCounts) == 0 {
+		layout.HistoryScope = ""
+	}
+	if callHasQSOs {
+		layout.HistoryScope = "call"
+	} else if ws.DXCCHistory.QSOCount > 0 {
+		layout.HistoryScope = "dxcc"
+	} else if ws.GridHistory.QSOCount > 0 && grid4 != "" {
+		layout.HistoryScope = "grid"
+	}
+	if layout.LeftWidth < 20 {
+		layout.LeftWidth = maxW - 2
+		layout.RightWidth = 0
+		layout.TwoColumns = false
+	}
+	if layout.RightWidth < 20 {
+		layout.RightWidth = maxW - 2
+	}
+	return layout
+}
+
+func renderWorkedPanelRow(label, value string, width, labelWidth int) string {
+	if width <= 0 {
+		return ""
+	}
+	lbl := S.Dim.Align(lipgloss.Right).Width(labelWidth).Render(label)
+	valW := width - labelWidth - 1
+	if valW < 3 {
+		valW = 3
+	}
+	val := ValueStyle.MaxWidth(valW).Inline(true).Render(value)
+	return lbl + " " + val
 }
 
 // historyLabel describes which scope is being shown.
@@ -1085,22 +1119,6 @@ func formatCountList(items []store.CountItem) string {
 		parts = append(parts, it.Value+"\u00d7"+strconv.Itoa(it.Count))
 	}
 	return strings.Join(parts, " \u00b7 ")
-}
-
-// --- safe accessors for wavelog.PrivateLookupResult (used by renderLogbookRows) ---
-
-func safeWorked(r *wavelog.PrivateLookupResult) bool {
-	if r == nil {
-		return false
-	}
-	return r.Worked()
-}
-
-func safeWorkedBand(r *wavelog.PrivateLookupResult) bool {
-	if r == nil {
-		return false
-	}
-	return r.WorkedBand()
 }
 
 // --- Logbook rows (kept for backward compat — unused by new layout) ---

@@ -125,7 +125,34 @@ func TestWorkedPanel_WorkedCall(t *testing.T) {
 		t.Error("missing grid in output")
 	}
 	if !strings.Contains(view, "291") {
-		t.Error("missing DXCC entity in output")
+		// Entity row now shows "United States · 291" — both parts needed.
+		if !strings.Contains(view, "United States") {
+			t.Error("missing DXCC entity in output")
+		}
+	}
+}
+
+func TestWorkedPanel_DXCCRowIsCompact(t *testing.T) {
+	m, db := newWorkedPanelTestModel(t)
+	m.fields[fieldCall].SetValue("KI6NAZ")
+	m.fields[fieldBand].SetValue("20m")
+	m.fields[fieldMode].SetValue("FT8")
+
+	stats, _ := store.GetLogbookStats(db, "KI6NAZ", "20m", "FT8")
+	m.rc.logStats = stats
+
+	d := &callbook.Result{
+		Callsign: "KI6NAZ",
+		DXCC:     "291",
+		Grid:     "DM03xu",
+		Country:  "United States",
+	}
+	view := m.renderWorkedPanel(d, 80)
+	if !strings.Contains(view, "United States · 291") {
+		t.Fatalf("expected compact DXCC value, got %q", view)
+	}
+	if strings.Contains(view, "United States · 291 · worked") {
+		t.Fatalf("did not expect duplicated worked state in DXCC row, got %q", view)
 	}
 }
 
@@ -331,6 +358,54 @@ func TestWorkedTitle_NoWavelog(t *testing.T) {
 	}
 }
 
+func TestBuildWorkedPanelLayout_FullWidthRows(t *testing.T) {
+	m, db := newWorkedPanelTestModel(t)
+	m.fields[fieldCall].SetValue("KI6NAZ")
+	m.fields[fieldBand].SetValue("20m")
+	m.fields[fieldMode].SetValue("FT8")
+
+	stats, _ := store.GetLogbookStats(db, "KI6NAZ", "20m", "FT8")
+	m.rc.logStats = stats
+
+	d := &callbook.Result{Callsign: "KI6NAZ", DXCC: "291", Grid: "DM03xu", Country: "United States"}
+	layout := m.buildWorkedPanelLayout(d, 100)
+
+	if !layout.TwoColumns {
+		t.Fatal("expected wide two-column layout")
+	}
+	if len(layout.FullWidthRows) == 0 {
+		t.Fatal("expected full-width distribution rows")
+	}
+	if got := layout.FullWidthRows[0].label; got != "Bands" {
+		t.Fatalf("expected first full-width row Bands, got %q", got)
+	}
+	if got := layout.FullWidthRows[1].label; got != "Modes" {
+		t.Fatalf("expected second full-width row Modes, got %q", got)
+	}
+	if layout.HistoryScope != "call" {
+		t.Fatalf("expected call-history scope, got %q", layout.HistoryScope)
+	}
+}
+
+func TestBuildWorkedPanelLayout_DXCCScope(t *testing.T) {
+	m, db := newWorkedPanelTestModel(t)
+	m.fields[fieldCall].SetValue("XX0XXX")
+	m.fields[fieldBand].SetValue("20m")
+	m.fields[fieldMode].SetValue("FT8")
+
+	stats, _ := store.GetLogbookStats(db, "XX0XXX", "20m", "FT8")
+	m.rc.logStats = stats
+
+	d := &callbook.Result{Callsign: "XX0XXX", DXCC: "291", Grid: "ZZ99", Country: "United States"}
+	layout := m.buildWorkedPanelLayout(d, 100)
+	if layout.HistoryScope != "dxcc" {
+		t.Fatalf("expected dxcc-history scope, got %q", layout.HistoryScope)
+	}
+	if len(layout.FullWidthRows) == 0 {
+		t.Fatal("expected full-width rows for DXCC history")
+	}
+}
+
 func TestFormatCountList(t *testing.T) {
 	items := []store.CountItem{
 		{Value: "20m", Count: 74},
@@ -438,11 +513,9 @@ func TestWorkedPanel_TwoColumnLayout(t *testing.T) {
 		t.Fatal("renderWorkedPanel returned empty")
 	}
 	if strings.Contains(view, "Status") {
-		t.Error("two-col layout should not have 'Status' heading")
+		t.Error("two-col layout should not have 'Status' heading (stacked-only)")
 	}
-	if strings.Contains(view, "History") {
-		t.Error("two-col layout should not have 'History' heading")
-	}
+	// "History · Call ..." scope heading is expected in two-col mode now.
 }
 
 func TestWorkedPanel_StackedLayout(t *testing.T) {

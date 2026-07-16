@@ -1,19 +1,21 @@
 package app
 
 import (
+	"bytes"
 	"database/sql"
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/ftl/hamradio/dxcc"
 	"github.com/ftl/hamradio/scp"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/aprs"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/ctybig"
 	"github.com/szporwolik/cqops/internal/geo"
 	"github.com/szporwolik/cqops/internal/ref"
 	"github.com/szporwolik/cqops/internal/secrets"
@@ -31,7 +33,7 @@ type App struct {
 	DBPath           string
 	WSJTX            *wsjtx.Listener
 	WSJTXUpdated     chan struct{}
-	DXCC             *dxcc.Prefixes // in-memory DXCC prefix→country lookup
+	BigCTY           *ctybig.DB     // Big CTY prefix lookup with DXCC entity numbers (from cty.csv)
 	SCP              *scp.Database  // in-memory Super Check Partial database
 	RefDB            *ref.DB        // reference database (SOTA/POTA/WWFF)
 	Secrets          *secrets.Store // encrypted secrets (passwords, API keys)
@@ -124,12 +126,14 @@ func Init() (*App, error) {
 		go func() {
 			defer wg.Done()
 			cacheDir, _ := config.CacheDir()
-			ctyPath := filepath.Join(cacheDir, "cty.dat")
-			if prefixes, err := dxcc.LoadLocal(ctyPath); err == nil {
-				app.DXCC = prefixes
-				applog.Info("DXCC: prefix data loaded from cache")
+			csvPath := filepath.Join(cacheDir, "cty.csv")
+			if data, err := os.ReadFile(csvPath); err == nil && len(data) > 0 {
+				if db, err := ctybig.ParseCSV(bytes.NewReader(data)); err == nil {
+					app.BigCTY = db
+					applog.Info("DXCC: Big CTY loaded from cache", "entries", db.Prefixes())
+				}
 			} else {
-				applog.Info("DXCC: no cached data yet — will fetch when online")
+				applog.Info("DXCC: no cached Big CTY yet — will fetch when online")
 			}
 		}()
 	}

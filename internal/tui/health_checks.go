@@ -1,22 +1,172 @@
 package tui
 
 import (
+	"archive/zip"
+	"bytes"
+	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/ftl/hamradio/dxcc"
 	"github.com/ftl/hamradio/scp"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/ctybig"
 	"github.com/szporwolik/cqops/internal/ref"
 	"github.com/szporwolik/cqops/internal/version"
 )
+
+// bigCTYCatalog is the page listing all Big CTY releases.
+const bigCTYCatalog = "https://www.country-files.com/category/big-cty/"
+
+// bigCTYZipRe extracts the first Big CTY ZIP download URL from the catalog page.
+var bigCTYZipRe = regexp.MustCompile(`https://www\.country-files\.com/bigcty/download/\d{4}/bigcty-\d{8}\.zip`)
+
+// findBigCTYURL fetches the Big CTY catalog page and returns the latest
+// ZIP download URL. Returns empty string on any error.
+func findBigCTYURL() string {
+	resp, err := http.Get(bigCTYCatalog)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
+	if err != nil {
+		return ""
+	}
+	return bigCTYZipRe.FindString(string(body))
+}
+
+// bigCTYFiles holds the extracted Big CTY CSV data.
+type bigCTYFiles struct {
+	ctyCSV []byte
+}
+
+// downloadBigCTY downloads the Big CTY ZIP from url and extracts cty.csv.
+func downloadBigCTY(url string) (*bigCTYFiles, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("download bigcty: %w", err)
+	}
+	defer resp.Body.Close()
+
+	zipBytes, err := io.ReadAll(io.LimitReader(resp.Body, 32*1024*1024))
+	if err != nil {
+		return nil, fmt.Errorf("read bigcty zip: %w", err)
+	}
+
+	zr, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
+	if err != nil {
+		return nil, fmt.Errorf("open bigcty zip: %w", err)
+	}
+
+	var bf bigCTYFiles
+	for _, f := range zr.File {
+		if !strings.EqualFold(f.Name, "cty.csv") {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			continue
+		}
+		data, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			continue
+		}
+		bf.ctyCSV = data
+		break
+	}
+	if len(bf.ctyCSV) == 0 {
+		return nil, fmt.Errorf("cty.csv not found in bigcty zip")
+	}
+	return &bf, nil
+}
+
+// bigCTYDateRe extracts the YYYYMMDD date embedded in the Big CTY filename.
+var bigCTYDateRe = regexp.MustCompile(`bigcty-(\d{8})\.zip`)
+
+// isBigCTYNewer returns true when the remote Big CTY at url is newer than
+// the local file at path. The URL embeds a date (bigcty-YYYYMMDD.zip);
+// if the date cannot be extracted we conservatively return true so a
+// download is attempted.
+func isBigCTYNewer(url, localPath string) (bool, error) {
+	m := bigCTYDateRe.FindStringSubmatch(url)
+	if len(m) < 2 {
+		return true, nil // can't determine date — try download
+	}
+	remoteDate, err := time.Parse("20060102", m[1])
+	if err != nil {
+		return true, nil
+	}
+	info, err := os.Stat(localPath)
+	if err != nil {
+		return true, nil
+	}
+	return remoteDate.After(info.ModTime()), nil
+}
+
+// backfillMissingDXCC scans the QSO table for rows with an empty dxcc
+// column and fills them using the Big CTY prefix lookup. Processes at
+// most maxRows per call (0 = unlimited). Returns the number of QSOs updated.
+func backfillMissingDXCC(database *sql.DB, bdb *ctybig.DB) (int, error) {
+	return backfillMissingDXCCLimit(database, bdb, 0)
+}
+
+// backfillMissingDXCCLimit is the implementation with a row limit.
+func backfillMissingDXCCLimit(database *sql.DB, bdb *ctybig.DB, maxRows int) (int, error) {
+	if database == nil || bdb == nil {
+		return 0, nil
+	}
+
+	query := `SELECT id, call FROM qsos WHERE COALESCE(dxcc,'') = ''`
+	if maxRows > 0 {
+		query += fmt.Sprintf(" LIMIT %d", maxRows)
+	}
+	rows, err := database.Query(query)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+
+	type update struct {
+		id   int64
+		dxcc int
+	}
+	var updates []update
+	for rows.Next() {
+		var id int64
+		var call string
+		if err := rows.Scan(&id, &call); err != nil {
+			continue
+		}
+		e := bdb.Find(call)
+		if e != nil && e.DXCC > 0 {
+			updates = append(updates, update{id: id, dxcc: e.DXCC})
+		}
+	}
+	rows.Close()
+
+	count := 0
+	if err := rows.Err(); err != nil {
+		return count, err
+	}
+	for _, u := range updates {
+		_, err := database.Exec(`UPDATE qsos SET dxcc = ? WHERE id = ?`,
+			fmt.Sprintf("%d", u.dxcc), u.id)
+		if err == nil {
+			count++
+		}
+	}
+	return count, nil
+}
 
 // =============================================================================
 // Health checks — periodic internet connectivity and date/time management.
@@ -242,20 +392,47 @@ func (m *Model) maybeRefreshDataFiles() tea.Cmd {
 		}
 
 		if m.App.Config.General.UseCTY {
-			localFile := filepath.Join(cacheDir, "cty.dat")
-			if _, statErr := os.Stat(localFile); os.IsNotExist(statErr) {
-				applog.Info("DXCC: downloading on first run")
-				if dlErr := dxcc.Download(dxcc.DefaultURL, localFile); dlErr != nil {
-					applog.Warn("DXCC: download failed", "error", dlErr.Error())
-				} else if prefixes, loadErr := dxcc.LoadLocal(localFile); loadErr == nil {
-					m.App.DXCC = prefixes
-					applog.Info("DXCC: prefix data loaded after download")
+			csvFile := filepath.Join(cacheDir, "cty.csv")
+
+			// Load cached CSV on startup when present but not yet in memory.
+			if m.App.BigCTY == nil {
+				if data, err := os.ReadFile(csvFile); err == nil && len(data) > 0 {
+					if db, err := ctybig.ParseCSV(bytes.NewReader(data)); err == nil {
+						m.App.BigCTY = db
+						applog.Info("DXCC: Big CTY loaded from cache", "entries", db.Prefixes())
+					}
 				}
-			} else {
-				if updated, _ := dxcc.Update(dxcc.DefaultURL, localFile); updated {
-					if prefixes, loadErr := dxcc.LoadLocal(localFile); loadErr == nil {
-						m.App.DXCC = prefixes
-						applog.Info("DXCC: prefix data updated")
+			}
+
+			needDownload := false
+			if _, statErr := os.Stat(csvFile); os.IsNotExist(statErr) {
+				needDownload = true
+			} else if url := findBigCTYURL(); url != "" {
+				if newer, _ := isBigCTYNewer(url, csvFile); newer {
+					needDownload = true
+				}
+			}
+
+			if needDownload {
+				if url := findBigCTYURL(); url != "" {
+					applog.Info("DXCC: downloading Big CTY", "url", url)
+					bf, dlErr := downloadBigCTY(url)
+					if dlErr != nil {
+						applog.Warn("DXCC: Big CTY download failed", "error", dlErr.Error())
+					} else if len(bf.ctyCSV) > 0 {
+						// Save cty.csv to cache so update checks work.
+						os.WriteFile(csvFile, bf.ctyCSV, 0644)
+						if db, err := ctybig.ParseCSV(bytes.NewReader(bf.ctyCSV)); err == nil {
+							m.App.BigCTY = db
+							applog.Info("DXCC: Big CTY CSV loaded", "entries", db.Prefixes())
+						}
+						// Backfill missing dxcc values in the QSO table.
+						if m.App.BigCTY != nil && m.App.DB != nil {
+							n, _ := backfillMissingDXCC(m.App.DB, m.App.BigCTY)
+							if n > 0 {
+								applog.Info("DXCC: backfilled missing dxcc", "count", n)
+							}
+						}
 					}
 				}
 			}

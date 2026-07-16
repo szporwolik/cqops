@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"charm.land/bubbles/v2/table"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/ftl/hamradio"
@@ -759,24 +758,6 @@ func severityStyle(kind string) lipgloss.Style {
 	}
 }
 
-// bplRowCount returns the total number of rows in the band plan table.
-// Result is cached per region since the band plan data is static.
-func (m *Model) bplRowCount() int {
-	region := 1
-	if m.App != nil && m.App.Logbook != nil {
-		r := m.App.Logbook.Station.IARURegion
-		if r >= 1 && r <= 3 {
-			region = r
-		}
-	}
-	if m.bpl.cachedRowCount > 0 && m.bpl.cachedRowRegion == region {
-		return m.bpl.cachedRowCount
-	}
-	m.bpl.cachedRowCount = len(bplRows(region))
-	m.bpl.cachedRowRegion = region
-	return m.bpl.cachedRowCount
-}
-
 // viewBPLPORT renders the Portable/SOTA/POTA suggested starting areas tab.
 // These are NOT official channels — see disclaimer in the tab heading.
 func (m *Model) viewBPLPORT(region int) []string {
@@ -820,15 +801,6 @@ func (m *Model) viewBPLPORT(region int) []string {
 		}
 	}
 	return lines
-}
-
-// bplTableHeight returns the available table height for the band plan.
-func bplTableHeight(termH int) int {
-	h := contentHeight(termH) - 2
-	if h < 3 {
-		h = 3
-	}
-	return h
 }
 
 // bplForRegion returns the bandplan for the given IARU region.
@@ -1194,197 +1166,3 @@ func (m *Model) writePORTMarkdownRows(b *strings.Builder, region int) {
 	}
 	b.WriteString("\n")
 }
-
-// bplRows builds all table rows for the BPL page (HF + VHF + non-ham + BRC).
-// This is shared between viewBPL (TUI) and buildBPLText (export) so the export
-// matches exactly what is shown on F7.
-func bplRows(region int) []table.Row {
-	bp := bplForRegion(region)
-
-	var rows []table.Row
-
-	// --- HF bandplan ---
-	for _, name := range bandOrder {
-		b, ok := bp[name]
-		if !ok {
-			continue
-		}
-		rows = append(rows, table.Row{
-			string(b.Name),
-			bplFreqStr(b.From), bplFreqStr(b.To),
-			"", "", "", "",
-		})
-		for _, p := range b.Portions {
-			rows = append(rows, table.Row{
-				"",
-				"", "",
-				string(p.Mode),
-				bplFreqStr(p.From), bplFreqStr(p.To),
-				bplBwStr(p.MaxBandwidth),
-			})
-		}
-		if emcom, ok := emcomFreqs[region]; ok {
-			if freq, ok := emcom[name]; ok {
-				rows = append(rows, table.Row{"", "", "", "EMCOM", freq, "", ""})
-			}
-		}
-		if qrps, ok := qrpFreqs[region]; ok {
-			if entries, ok := qrps[name]; ok {
-				for _, e := range entries {
-					rows = append(rows, table.Row{"", "", "", e.Mode, e.Freq, "", ""})
-				}
-			}
-		}
-		if sstv, ok := sstvFreqs[region]; ok {
-			if freq, ok := sstv[name]; ok {
-				rows = append(rows, table.Row{"", "", "", "SSTV", freq, "", ""})
-			}
-		}
-		if freq, ok := ibpFreqs[name]; ok {
-			rows = append(rows, table.Row{"", "", "", "IBP", freq, "", ""})
-		}
-		if freq, ok := qrsFreqs[name]; ok {
-			rows = append(rows, table.Row{"", "", "", "QRS", freq, "", ""})
-		}
-		if avoids, ok := dxAvoidFreqs[region]; ok {
-			if entries, ok := avoids[name]; ok {
-				for _, e := range entries {
-					rows = append(rows, table.Row{"", "", "", "AVOID", e.Freq, "", e.Name})
-				}
-			}
-		}
-	}
-
-	// --- VHF/UHF overview (10m/6m/4m) ---
-	if vhf, ok := vhfCalling[region]; ok {
-		for _, v := range vhf {
-			if v.Band != "" {
-				rows = append(rows, table.Row{v.Band, v.FromMHz, v.ToMHz, "", "", "", v.Note})
-			} else {
-				rows = append(rows, table.Row{"", "", "", v.Mode, v.Freq, "", v.Note})
-			}
-		}
-	}
-
-	// --- Detailed 2m bandplan ---
-	if segs, ok := vhf2mSeeds[region]; ok {
-		for _, s := range segs {
-			if s.Band != "" {
-				rows = append(rows, table.Row{s.Band, s.FromMHz, s.ToMHz, s.Kind, "", "", s.Note})
-			} else if s.ToMHz != "" {
-				rows = append(rows, table.Row{"", s.FromMHz, s.ToMHz, s.Kind, s.Freq, "", s.Note})
-			} else {
-				rows = append(rows, table.Row{"", "", "", s.Kind, s.Freq, "", s.Note})
-			}
-		}
-	}
-
-	// --- Detailed 70cm bandplan ---
-	if segs, ok := vhf70cmSeeds[region]; ok {
-		for _, s := range segs {
-			if s.Band != "" {
-				rows = append(rows, table.Row{s.Band, s.FromMHz, s.ToMHz, s.Kind, "", "", s.Note})
-			} else if s.ToMHz != "" {
-				rows = append(rows, table.Row{"", s.FromMHz, s.ToMHz, s.Kind, s.Freq, "", s.Note})
-			} else {
-				rows = append(rows, table.Row{"", "", "", s.Kind, s.Freq, "", s.Note})
-			}
-		}
-	}
-
-	// --- R3 APRS country frequencies ---
-	if region == 3 {
-		for _, s := range r3APRSKnown {
-			rows = append(rows, table.Row{"", "", "", s.Kind, s.Freq, "", s.Note})
-		}
-	}
-
-	warnStyle := S.Error
-
-	// --- Non-amateur service profiles ---
-	for _, p := range nonHamProfiles(region) {
-		rows = append(rows, table.Row{"", "", "", "", "", "", ""})
-		rows = append(rows, table.Row{
-			"", "", "",
-			warnStyle.Render("NOT A HAM BAND"),
-			warnStyle.Render(p.Label), "", p.Note,
-		})
-		rows = append(rows, table.Row{p.ID, p.RangeLo, p.RangeHi, p.Mod, "", "", ""})
-		switch p.ID {
-		case "CB_CEPT_EU", "CB_FCC_US", "CB_HF_AU":
-			for _, ch := range cbChannels {
-				rows = append(rows, table.Row{
-					fmt.Sprintf("Ch %d", ch.Ch), "", "", "", ch.Freq, "", ch.Tag,
-				})
-			}
-		case "CB_UHF_AU":
-			rows = append(rows, table.Row{"", "", "", "", "476.425–477.4125", "", "80 ch FM (country-specific)"})
-		case "PMR446_ANALOG":
-			for _, ch := range pmr446Analog {
-				rows = append(rows, table.Row{fmt.Sprintf("Ch %d", ch.Ch), "", "", "FM", ch.Freq, "", ""})
-			}
-		case "PMR446_DIGITAL":
-			rows = append(rows, table.Row{"", "", "", "", "446.000–446.200", "", "DMR Tier I / dPMR446; 32×6.25 kHz ch"})
-		case "FRS_GMRS":
-			for _, ch := range frsGmrsChannels {
-				svc := ""
-				if ch.FRS && ch.GMRS {
-					svc = "FRS+GMRS"
-				} else if ch.FRS {
-					svc = "FRS"
-				} else if ch.GMRS {
-					svc = "GMRS"
-				}
-				note := ch.Tag
-				if ch.RptIn != "" {
-					if note != "" {
-						note += " "
-					}
-					note += "RPT+" + ch.RptIn
-				}
-				rows = append(rows, table.Row{
-					fmt.Sprintf("Ch %d", ch.Ch), "", "", svc, ch.Freq, "", note,
-				})
-			}
-		}
-	}
-
-	// --- Broadcast presets (BRC) ---
-	if bcasts := bcastPresetsAll(); len(bcasts) > 0 {
-		rows = append(rows, table.Row{"", "", "", "", "", "", ""})
-		rows = append(rows, table.Row{
-			"", "", "",
-			warnStyle.Render("BROADCAST ONLY"),
-			"", "", "Receive-only reference; seasonal schedules",
-		})
-		rows = append(rows, table.Row{"Band", "Freq MHz", "", "BRC", "Station", "", "Area / note"})
-		for _, bc := range bcasts {
-			prio := "P2"
-			if bc.Priority == 1 {
-				prio = "P1"
-			}
-			note := bc.Area
-			switch bc.Reliability {
-			case "seasonal":
-				note += "  [seasonal]"
-			case "check_status":
-				note += "  [check status]"
-			}
-			if bc.Note != "" {
-				note += "  " + bc.Note
-			}
-			rows = append(rows, table.Row{
-				bc.Band,
-				fmt.Sprintf("%.3f", float64(bc.FreqKHz)/1000.0), "",
-				"BRC " + prio,
-				bc.Station, "", note,
-			})
-		}
-	}
-
-	return rows
-}
-
-// =============================================================================
-// end BPL views
-// =============================================================================

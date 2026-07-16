@@ -210,7 +210,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		// Set default continent filter from station config on first open.
 		// Fall back to DXCC prefix lookup of own callsign if not configured.
 		cont := m.App.Logbook.Station.Continent
-		if cont == "" && m.App.DXCC != nil {
+		if cont == "" && m.App.BigCTY != nil {
 			if p := m.dxccLookup(m.App.Logbook.Station.Callsign); p != nil && p.Continent != "" {
 				cont = p.Continent
 			}
@@ -395,7 +395,6 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		// but doesn't change today/recent QSOs in the dashboard.
 		// Push fast so the active QSO flags recompute.
 		if m.http.online {
-			lastFastTick = 0
 			m.pushDashboardFast()
 		}
 		return m.refreshQSOS(), true
@@ -404,7 +403,6 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.cycleActiveOperator()
 		// Operator change only affects the operator field — light push.
 		if m.http.online {
-			lastFastTick = 0
 			m.pushDashboardFast()
 		}
 		return nil, true

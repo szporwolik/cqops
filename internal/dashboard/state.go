@@ -215,6 +215,7 @@ type PartnerInfo struct {
 	Bearing    float64 `json:"bearing,omitempty"`
 	Lat        float64 `json:"lat,omitempty"`
 	Lon        float64 `json:"lon,omitempty"`
+	TZOffset   float64 `json:"tzOffset,omitempty"` // timezone offset from UTC (from Big CTY)
 	ImageURL   string  `json:"imageUrl,omitempty"`
 	Source     string  `json:"source,omitempty"` // "qrz", "wavelog", "form"
 
@@ -351,6 +352,7 @@ func (s *State) SetLogbook(info LogbookInfo) {
 func (s *State) SetRig(info RigInfo) {
 	s.mu.Lock()
 	changed := info.Connected != s.lastRig.Connected ||
+		info.Enabled != s.lastRig.Enabled ||
 		info.FrequencyHz != s.lastRig.FrequencyHz ||
 		info.Mode != s.lastRig.Mode ||
 		info.Band != s.lastRig.Band

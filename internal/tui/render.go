@@ -217,16 +217,6 @@ func newTextinput() textinput.Model {
 	return ti
 }
 
-// trimTrailingBlankLines removes all trailing newline-delimited empty
-// lines from s. Used to strip padding rows from table View() output so
-// we can control the exact gap between stacked tables.
-func trimTrailingBlankLines(s string) string {
-	for strings.HasSuffix(s, "\n") {
-		s = s[:len(s)-1]
-	}
-	return s
-}
-
 // truncateText truncates s to maxW visual cells, appending "…" if needed.
 // ANSI escape sequences (e.g. \x1b[38;5;212m) are skipped and don't count
 // toward the visual width.

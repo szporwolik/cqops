@@ -81,13 +81,13 @@ func (m *Model) sendSpotCmd(call string, freqKhz float64, comment string) tea.Cm
 			Spotter:    m.App.Logbook.Station.Callsign,
 			ReceivedAt: now,
 		}
-		if prefixes := m.App.DXCC; prefixes != nil {
-			if mx, ok := prefixes.Find(call); ok && len(mx) > 0 {
-				spot.DXCont = mx[0].Continent
-				spot.DXCC = mx[0].Name
+		if cty := m.App.BigCTY; cty != nil {
+			if e := cty.Find(call); e != nil {
+				spot.DXCont = e.Continent
+				spot.DXCC = e.Name
 			}
-			if mx, ok := prefixes.Find(spot.Spotter); ok && len(mx) > 0 {
-				spot.SpotCont = mx[0].Continent
+			if e := cty.Find(spot.Spotter); e != nil {
+				spot.SpotCont = e.Continent
 			}
 		}
 		if _, err := store.InsertDXCSpots(db, []store.DXCSpot{spot}); err != nil {
@@ -239,7 +239,7 @@ done:
 
 func (m *Model) storeDXCSpotsCmd(spots []dxc.Spot) tea.Cmd {
 	db := m.App.DB
-	prefixes := m.App.DXCC // may be nil if DXCC failed to load
+	cty := m.App.BigCTY // may be nil if Big CTY failed to load
 	return func() tea.Msg {
 		// Silently drop spots when DB has been closed (logbook cycle).
 		if db == nil {
@@ -264,13 +264,13 @@ func (m *Model) storeDXCSpotsCmd(spots []dxc.Spot) tea.Cmd {
 				ReceivedAt: now,
 			}
 			// Compute continents from DXCC prefix lookup.
-			if prefixes != nil {
-				if m, ok := prefixes.Find(s.DXCall); ok && len(m) > 0 {
-					spot.DXCont = m[0].Continent
-					spot.DXCC = m[0].Name
+			if cty != nil {
+				if e := cty.Find(s.DXCall); e != nil {
+					spot.DXCont = e.Continent
+					spot.DXCC = e.Name
 				}
-				if m, ok := prefixes.Find(s.Spotter); ok && len(m) > 0 {
-					spot.SpotCont = m[0].Continent
+				if e := cty.Find(s.Spotter); e != nil {
+					spot.SpotCont = e.Continent
 				}
 			}
 			dbSpots = append(dbSpots, spot)

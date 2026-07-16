@@ -45,6 +45,11 @@ type Result struct {
 	QSLManager string   // QSL manager callsign
 	Provider   string   // e.g. "qrz", "hamqth", "callook" — primary source
 	Providers  []string // all providers that contributed data (for UI feedback)
+
+	// FromBaseFallback is true when this result was obtained by looking up
+	// a base callsign instead of the original call. Entity fields (Country,
+	// DXCC, Grid) may reflect the home location, not the operating location.
+	FromBaseFallback bool
 }
 
 // Provider is the interface that every callbook lookup service must satisfy.
@@ -130,10 +135,25 @@ func (r *Registry) Lookup(callsign string) (*Result, error) {
 				applog.Debug("Callbook: provider base-call error", "provider", p.Name(), "base", baseCall, "error", err.Error())
 				continue
 			}
+			if data != nil {
+				// Mark this result as coming from a base-call fallback.
+				// Entity fields (Country, DXCC, Grid) describe the home
+				// location, not the operating location. Clear them so
+				// CTY.DAT prefix resolution can supply the correct
+				// operating entity.
+				data.FromBaseFallback = true
+			}
 		}
 		if data == nil || data.Callsign == "" {
 			applog.Debug("Callbook: provider no data", "provider", p.Name(), "call", callsign)
 			continue
+		}
+		// If the provider returned a different callsign than requested,
+		// it performed an internal base-call fallback (e.g. HamQTH
+		// returning SP9SPM for 9A/SP9SPM/P). Entity fields may describe
+		// the home location, not the operating location.
+		if !strings.EqualFold(data.Callsign, callsign) {
+			data.FromBaseFallback = true
 		}
 		// Record this provider as a contributor.
 		data.Providers = append(data.Providers, p.Name())
@@ -208,15 +228,21 @@ func mergeInto(dst, src *Result) string {
 	dst.Providers = append(dst.Providers, src.Providers...)
 	var filled []string
 
+	// When the baseline came from a base-call fallback, its entity fields
+	// (Country, DXCC, Grid, zones) describe the HOME location, not the
+	// operating location. Allow subsequent providers (especially CTY.DAT)
+	// to overwrite these fields with the correct operating entity.
+	overrideEntity := dst.FromBaseFallback
+
 	if dst.Name == "" && src.Name != "" {
 		dst.Name = src.Name
 		filled = append(filled, "name")
 	}
-	if dst.Grid == "" && src.Grid != "" {
+	if (dst.Grid == "" || overrideEntity) && src.Grid != "" {
 		dst.Grid = src.Grid
 		filled = append(filled, "grid")
 	}
-	if dst.Country == "" && src.Country != "" {
+	if (dst.Country == "" || overrideEntity) && src.Country != "" {
 		dst.Country = src.Country
 		filled = append(filled, "country")
 	}
@@ -248,23 +274,23 @@ func mergeInto(dst, src *Result) string {
 		dst.URL = src.URL
 		filled = append(filled, "url")
 	}
-	if dst.Lat == "" && src.Lat != "" {
+	if (dst.Lat == "" || overrideEntity) && src.Lat != "" {
 		dst.Lat = src.Lat
 		filled = append(filled, "lat")
 	}
-	if dst.Lon == "" && src.Lon != "" {
+	if (dst.Lon == "" || overrideEntity) && src.Lon != "" {
 		dst.Lon = src.Lon
 		filled = append(filled, "lon")
 	}
-	if dst.DXCC == "" && src.DXCC != "" {
+	if (dst.DXCC == "" || overrideEntity) && src.DXCC != "" {
 		dst.DXCC = src.DXCC
 		filled = append(filled, "dxcc")
 	}
-	if dst.CQZone == "" && src.CQZone != "" {
+	if (dst.CQZone == "" || overrideEntity) && src.CQZone != "" {
 		dst.CQZone = src.CQZone
 		filled = append(filled, "cq")
 	}
-	if dst.ITUZone == "" && src.ITUZone != "" {
+	if (dst.ITUZone == "" || overrideEntity) && src.ITUZone != "" {
 		dst.ITUZone = src.ITUZone
 		filled = append(filled, "itu")
 	}
@@ -273,6 +299,13 @@ func mergeInto(dst, src *Result) string {
 		filled = append(filled, "image")
 	}
 	// Provider stays as the first provider that returned data.
+
+	// Once entity fields have been corrected by a subsequent provider
+	// (e.g. CTY.DAT), clear the base-fallback flag so further merges
+	// don't keep overriding.
+	if overrideEntity && filled != nil {
+		dst.FromBaseFallback = false
+	}
 
 	return strings.Join(filled, ",")
 }

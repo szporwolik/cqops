@@ -494,28 +494,35 @@ function buildIdentityLine(aq,p){
     var dirs=['N','NE','E','SE','S','SW','W','NW'];dist=Math.round(km)+' km '+dirs[Math.round(deg/45)%8];parts.push(dist);
   }
   heroIdentity.textContent=parts.join(' \u2022 ');
-  // Partner local time — rough offset from longitude (lon° / 15 = UTC±h).
-  updatePartnerLocalTime(grid||(p&&p.grid)||'');
+  // Partner local time — use Big CTY TZOffset when available, fall back to longitude.
+  updatePartnerLocalTime(grid||(p&&p.grid)||'', p&&p.tzOffset);
   return dist;
 }
-function updatePartnerLocalTime(grid){
+function updatePartnerLocalTime(grid,tzOffset){
   var el=document.getElementById('hero-partner-time');if(!el)return;
   var box=document.getElementById('hero-weather-box');if(!box)return;
-  if(!grid||!navigator.onLine){el.textContent='';box.classList.remove('visible');return}
-  // Always compute fresh from the passed grid.
-  window._partnerTimeGrid=grid;
-  var ll=gridToLatLon(grid);
-  window._partnerGridLL=ll;
-  if(!ll[0]){el.textContent='';box.classList.remove('visible');return}
+  if(!navigator.onLine){el.textContent='';box.classList.remove('visible');return}
+  // Use Big CTY timezone offset when available; fall back to
+  // longitude-based approximation (15° per hour).
   var now=new Date();
-  var off=Math.round(ll[1]/15);
+  var off;
+  if(typeof tzOffset==='number'){
+    window._partnerTZOffset=tzOffset;
+    off=-tzOffset; // Big CTY: positive = west of UTC, JS wants east-positive
+  }else if(grid){
+    var ll=gridToLatLon(grid);
+    if(!ll[0]){el.textContent='';box.classList.remove('visible');return}
+    off=Math.round(ll[1]/15);
+  }else{
+    el.textContent='';box.classList.remove('visible');return;
+  }
   var h=(now.getUTCHours()+off+24)%24;
   var m=now.getUTCMinutes();
   el.textContent=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+' L'+(off?(' (UTC'+(off>=0?'+':'')+off+')'):'');
   box.classList.add('visible');
 }
 // Refresh partner clock every 30 s so it stays current.
-setInterval(function(){updatePartnerLocalTime(window._partnerTimeGrid||'')},30000);
+setInterval(function(){updatePartnerLocalTime(window._partnerTimeGrid||'',window._partnerTZOffset)},30000);
 
 function showHeroPhoto(url){
   var img=$('hero-photo');img.style.display='';img.src=url;

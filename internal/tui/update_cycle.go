@@ -116,7 +116,6 @@ func (m *Model) cycleRig() tea.Cmd {
 	m.App.MaybeRestartWSJTX(rp.WsjtxEnabled, rp.WsjtxUDPHost, rp.WsjtxUDPPort)
 	// Push rig/station change to dashboard — light, no DB queries.
 	if m.http.online {
-		lastFastTick = 0
 		m.pushDashboardFast()
 	}
 	return nil

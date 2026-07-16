@@ -62,7 +62,7 @@ func stripCredentials(raw string) string {
 		raw = raw[:idx]
 	}
 	if idx := strings.Index(raw, "?"); idx != -1 {
-		if idx < len(raw) && (strings.Index(raw, "/") == -1 || strings.Index(raw, "/") > idx) {
+		if idx < len(raw) && (!strings.Contains(raw, "/") || strings.Index(raw, "/") > idx) {
 			raw = raw[:idx]
 		}
 	}
