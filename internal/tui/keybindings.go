@@ -307,8 +307,8 @@ func (m *Model) ActiveBindings() []key.Binding {
 			wl := m.App.Logbook.Wavelog
 			if wl != nil && wl.Enabled {
 				bindings = append(bindings,
-					key.NewBinding(key.WithKeys("ctrl+w"), key.WithHelp("Ctrl+W", "WL upload")),
-					key.NewBinding(key.WithKeys("alt+w"), key.WithHelp("Alt+W", "WL download")),
+					key.NewBinding(key.WithKeys("ctrl+w"), key.WithHelp("Ctrl+W", "Wavelog upload")),
+					key.NewBinding(key.WithKeys("alt+w"), key.WithHelp("Alt+W", "Wavelog download")),
 				)
 			}
 		}
