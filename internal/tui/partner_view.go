@@ -326,6 +326,8 @@ func shortProviderName(name string) string {
 		return "Local"
 	case "QRZ.com":
 		return "QRZ.com"
+	case "QRZ.RU":
+		return "QRZ.RU"
 	case "HamQTH":
 		return "HamQTH"
 	case "Callook.info":
@@ -381,6 +383,8 @@ func providerURLByName(name, call string) string {
 	switch name {
 	case "QRZ.com":
 		return "https://www.qrz.com/db/" + call
+	case "QRZ.RU":
+		return "https://www.qrz.ru/db/" + call
 	case "HamQTH":
 		return "https://www.hamqth.com/" + call
 	case "Callook.info":

@@ -72,6 +72,7 @@ type IntegrationsConfig struct {
 	QRZLegacy             QRZConfig             `yaml:"qrzcom_callbook,omitempty"`
 	HamQTHLegacy          HamQTHConfig          `yaml:"hamqth_callbook,omitempty"`
 	CallookLegacy         CallookConfig         `yaml:"callook,omitempty"`
+	QRZRuLegacy           QRZRuConfig           `yaml:"qrzru_callbook,omitempty"`
 	LogbookCallbookLegacy LogbookCallbookConfig `yaml:"logbook_callbook,omitempty"`
 	WavelogCallbookLegacy WavelogCallbookConfig `yaml:"wavelog_callbook,omitempty"`
 	CTYCallbookLegacy     CTYCallbookConfig     `yaml:"cty_callbook,omitempty"`
@@ -85,6 +86,7 @@ type CallbookGroup struct {
 	QRZ              QRZConfig             `yaml:"qrzcom,omitempty"`
 	HamQTH           HamQTHConfig          `yaml:"hamqth,omitempty"`
 	Callook          CallookConfig         `yaml:"callook,omitempty"`
+	QRZRu            QRZRuConfig           `yaml:"qrzru,omitempty"`
 	Logbook          LogbookCallbookConfig `yaml:"local,omitempty"`
 	Wavelog          WavelogCallbookConfig `yaml:"wavelog,omitempty"`
 	CTY              CTYCallbookConfig     `yaml:"cty,omitempty"`
@@ -113,6 +115,10 @@ func (c *Config) Normalize() {
 	if c.Integrations.CallookLegacy.Enabled || c.Integrations.CallookLegacy.Priority != 0 {
 		cb.Callook = c.Integrations.CallookLegacy
 		c.Integrations.CallookLegacy = CallookConfig{}
+	}
+	if c.Integrations.QRZRuLegacy.Enabled || c.Integrations.QRZRuLegacy.User != "" {
+		cb.QRZRu = c.Integrations.QRZRuLegacy
+		c.Integrations.QRZRuLegacy = QRZRuConfig{}
 	}
 	if c.Integrations.LogbookCallbookLegacy.Enabled || c.Integrations.LogbookCallbookLegacy.Priority != 0 {
 		cb.Logbook = c.Integrations.LogbookCallbookLegacy
@@ -256,7 +262,15 @@ type HamQTHConfig struct {
 // CallookConfig holds settings for the Callook.info free US callbook service.
 type CallookConfig struct {
 	Enabled  bool `yaml:"enabled"`
-	Priority int  `yaml:"priority,omitempty"` // lookup order, 0..100; default 40
+	Priority int  `yaml:"priority,omitempty"` // lookup order, 0..100; default 30
+}
+
+// QRZRuConfig holds settings for the QRZ.RU free callbook service.
+type QRZRuConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	User     string `yaml:"user,omitempty"`     // API login (from QRZ.RU personal cabinet)
+	Pass     string `yaml:"pass,omitempty"`     // API password
+	Priority int    `yaml:"priority,omitempty"` // lookup order, 0..100; default 35
 }
 
 // LogbookCallbookConfig enables searching past local QSOs as a callbook source.

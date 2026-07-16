@@ -15,6 +15,7 @@ import (
 	"github.com/szporwolik/cqops/internal/ctybig"
 	"github.com/szporwolik/cqops/internal/hamqth"
 	"github.com/szporwolik/cqops/internal/qrzcom"
+	"github.com/szporwolik/cqops/internal/qrzru"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
@@ -133,7 +134,7 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 	if coCfg.Enabled {
 		p := coCfg.Priority
 		if p == 0 {
-			p = 40
+			p = 30
 		}
 		if p < 0 {
 			p = 0
@@ -142,6 +143,22 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 			p = 100
 		}
 		providers = append(providers, callook.NewClientWithPriority(p))
+	}
+
+	// QRZ.RU provider — free callbook focused on Russia and surrounding countries.
+	ruCfg := a.Config.Integrations.Callbook.QRZRu
+	if ruCfg.Enabled && ruCfg.User != "" {
+		p := ruCfg.Priority
+		if p == 0 {
+			p = 35
+		}
+		if p < 0 {
+			p = 0
+		}
+		if p > 100 {
+			p = 100
+		}
+		providers = append(providers, qrzru.NewClientWithPriority(ruCfg.User, ruCfg.Pass, p))
 	}
 
 	// Wavelog provider — only when explicitly enabled and configured.

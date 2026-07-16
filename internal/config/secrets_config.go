@@ -9,6 +9,7 @@ import (
 const (
 	secretQRZPass    = "qrz.pass"
 	secretHamQTHPass = "hamqth.pass"
+	secretQRZRuPass  = "qrzru.pass"
 	secretDXCLogin   = "dxc.login"
 )
 
@@ -22,6 +23,7 @@ func wavelogSecretKey(logbookID string) string {
 type savedSecrets struct {
 	QRZPass     string
 	HamQTHPass  string
+	QRZRuPass   string
 	DXCLogin    string
 	WavelogKeys map[string]string // logbookID → apikey
 }
@@ -45,6 +47,13 @@ func (c *Config) extractAndSaveSecrets() {
 		saved.HamQTHPass = c.Integrations.Callbook.HamQTH.Pass
 		c.secrets.Set(secretHamQTHPass, c.Integrations.Callbook.HamQTH.Pass)
 		c.Integrations.Callbook.HamQTH.Pass = ""
+	}
+
+	// QRZ.ru password.
+	if c.Integrations.Callbook.QRZRu.Pass != "" {
+		saved.QRZRuPass = c.Integrations.Callbook.QRZRu.Pass
+		c.secrets.Set(secretQRZRuPass, c.Integrations.Callbook.QRZRu.Pass)
+		c.Integrations.Callbook.QRZRu.Pass = ""
 	}
 
 	// DXC login.
@@ -87,6 +96,9 @@ func (c *Config) restoreSecrets() {
 	}
 	if s.HamQTHPass != "" {
 		c.Integrations.Callbook.HamQTH.Pass = s.HamQTHPass
+	}
+	if s.QRZRuPass != "" {
+		c.Integrations.Callbook.QRZRu.Pass = s.QRZRuPass
 	}
 	if s.DXCLogin != "" {
 		c.Integrations.DXC.Login = s.DXCLogin
@@ -138,6 +150,19 @@ func (c *Config) ApplySecrets() {
 		c.Integrations.Callbook.HamQTH.Pass = v
 	} else if c.Integrations.Callbook.HamQTH.Pass != "" {
 		c.secrets.Set(secretHamQTHPass, c.Integrations.Callbook.HamQTH.Pass)
+	}
+
+	// QRZ.ru password.
+	if v, ok := c.secrets.Get(secretQRZRuPass); ok {
+		if c.Integrations.Callbook.QRZRu.Pass != "" && c.Integrations.Callbook.QRZRu.Pass != v {
+			c.secrets.Set(secretQRZRuPass, c.Integrations.Callbook.QRZRu.Pass)
+			if err := c.secrets.Save(); err != nil {
+				fmt.Fprintf(os.Stderr, "CQOps: secrets save failed (qrzru migration): %v\n", err)
+			}
+		}
+		c.Integrations.Callbook.QRZRu.Pass = v
+	} else if c.Integrations.Callbook.QRZRu.Pass != "" {
+		c.secrets.Set(secretQRZRuPass, c.Integrations.Callbook.QRZRu.Pass)
 	}
 
 	// DXC login.

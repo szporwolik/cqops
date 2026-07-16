@@ -202,6 +202,8 @@ func providerBadge(name, call string, lb *config.Logbook) dashboard.ProviderBadg
 	switch name {
 	case "QRZ.com":
 		badge.URL = "https://www.qrz.com/db/" + call
+	case "QRZ.RU":
+		badge.URL = "https://www.qrz.ru/db/" + call
 	case "HamQTH":
 		badge.URL = "https://www.hamqth.com/" + call
 	case "Callook.info":
@@ -345,13 +347,14 @@ func (m *Model) forcePushDashboardPartner() {
 }
 
 // internetCallbook returns the name and URL template of the highest-priority
-// online callbook provider (QRZ.com, HamQTH, or Callook.info — Wavelog is
+// online callbook provider (QRZ.com, QRZ.RU, HamQTH, or Callook.info — Wavelog is
 // intentionally excluded because its search URLs are instance-specific and not
 // a public callsign lookup). Callook.info is used only as a last-resort fallback
 // when no other internet callbook is configured (US callsigns only).
 // Returns empty strings if no provider is enabled.
 func (m *Model) internetCallbook() (name, urlTemplate string) {
 	qrz := m.App.Config.Integrations.Callbook.QRZ
+	qrzru := m.App.Config.Integrations.Callbook.QRZRu
 	hamqth := m.App.Config.Integrations.Callbook.HamQTH
 	callook := m.App.Config.Integrations.Callbook.Callook
 
@@ -365,13 +368,23 @@ func (m *Model) internetCallbook() (name, urlTemplate string) {
 		if qPri == 0 {
 			qPri = 50
 		}
+		rPri := qrzru.Priority
+		if rPri == 0 {
+			rPri = 35
+		}
 		if qrz.Enabled && qrz.User != "" && qPri > hqPri {
 			return "QRZ.com", "https://www.qrz.com/db/{CALL}"
+		}
+		if qrzru.Enabled && qrzru.User != "" && rPri > hqPri {
+			return "QRZ.RU", "https://www.qrz.ru/db/{CALL}"
 		}
 		return "HamQTH", "https://www.hamqth.com/{CALL}"
 	}
 	if qrz.Enabled && qrz.User != "" {
 		return "QRZ.com", "https://www.qrz.com/db/{CALL}"
+	}
+	if qrzru.Enabled && qrzru.User != "" {
+		return "QRZ.RU", "https://www.qrz.ru/db/{CALL}"
 	}
 	// Callook.info as last-resort fallback — free, no auth, US callsigns only.
 	if callook.Enabled {
