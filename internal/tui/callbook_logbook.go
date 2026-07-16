@@ -174,7 +174,7 @@ func (p *WavelogCallbookProvider) Lookup(callsign string) (*callbook.Result, err
 	}
 	applog.Debug("Wavelog provider: looking up", "call", callsign)
 	// No band/mode — we just want name/QTH/grid/country/zones.
-	data, err := wavelog.PrivateLookup(p.url, p.apiKey, callsign, "", "")
+	data, err := wavelog.PrivateLookup(p.url, p.apiKey, callsign, "", "", "")
 	if err != nil {
 		applog.Debug("Wavelog provider: lookup failed", "call", callsign, "error", err)
 		return nil, err

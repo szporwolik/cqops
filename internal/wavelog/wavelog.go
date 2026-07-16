@@ -220,14 +220,15 @@ func (r *PrivateLookupResult) ITUZone() string { return r.str("dxcc_ituz") }
 func (r *PrivateLookupResult) State() string { return r.str("state") }
 
 // PrivateLookup queries the Wavelog API for callsign confirmation/worked data.
-func PrivateLookup(baseURL, apiKey, callsign, band, mode string) (*PrivateLookupResult, error) {
+// Optional stationProfileID scopes the lookup to a specific station profile.
+func PrivateLookup(baseURL, apiKey, callsign, band, mode, stationProfileID string) (*PrivateLookupResult, error) {
 	if baseURL == "" || apiKey == "" || callsign == "" {
 		return nil, nil
 	}
 	baseURL = strings.TrimRight(baseURL, "/")
 	url := baseURL + "/api/private_lookup"
 
-	payload := map[string]string{
+	payload := map[string]interface{}{
 		"key":      apiKey,
 		"callsign": callsign,
 	}
@@ -236,6 +237,9 @@ func PrivateLookup(baseURL, apiKey, callsign, band, mode string) (*PrivateLookup
 	}
 	if mode != "" {
 		payload["mode"] = mode
+	}
+	if stationProfileID != "" {
+		payload["station_ids"] = []string{stationProfileID}
 	}
 
 	body, err := json.Marshal(payload)

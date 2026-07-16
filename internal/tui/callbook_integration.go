@@ -260,6 +260,7 @@ func (m *Model) wlLookupCmd(call, band, mode string) tea.Cmd {
 			wl.URL,
 			wl.APIKey,
 			call, band, mode,
+			wl.StationProfileID,
 		)
 		return wlResultMsg{Call: call, Data: data, Err: err}
 	}
@@ -657,7 +658,7 @@ func (m *Model) wlFallbackLookup(call string) tea.Cmd {
 	band := strings.TrimSpace(m.fields[fieldBand].Value())
 	mode := qso.NormalizeRigMode(m.fields[fieldMode].Value())
 	return func() tea.Msg {
-		data, err := wavelog.PrivateLookup(wl.URL, wl.APIKey, call, band, mode)
+		data, err := wavelog.PrivateLookup(wl.URL, wl.APIKey, call, band, mode, wl.StationProfileID)
 		return wlResultMsg{Call: call, Data: data, Err: err, IsFallback: true}
 	}
 }
