@@ -1171,16 +1171,6 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 		clamped = m.rc.bodyClipStyle.Render(body)
 	}
 	result := fillBody(clamped, l.ContentH)
-	// Bandplan disclaimer always the last content row, directly above the
-	// help bar — replace the trailing padding line.
-	if m.screen == screenBPL && l.ContentH > 0 {
-		lines := strings.Split(result, "\n")
-		if len(lines) > 0 {
-			lines[len(lines)-1] = DimStyle.Width(l.TerminalW).Render(
-				" Listen first. Check national rules. VHF/UHF often needs country/local overrides.")
-		}
-		result = strings.Join(lines, "\n")
-	}
 	return result
 }
 

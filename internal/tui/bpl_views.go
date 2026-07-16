@@ -219,7 +219,7 @@ func (m *Model) bplScrollLines() []string { return m.bpl.cachedLines }
 // renderBPLContent applies scroll, cursor clamping, and cursor highlight
 // to a full list of lines, returning the visible window as a string.
 func (m *Model) renderBPLContent(lines []string) string {
-	maxVisible := contentHeight(m.height) - 5
+	maxVisible := contentHeight(m.height) - 4
 	if maxVisible < 3 {
 		maxVisible = 3
 	}

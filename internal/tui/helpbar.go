@@ -415,7 +415,7 @@ func (m *Model) buildHelpSuffix() string {
 	if m.screen == screenBPL {
 		lines := len(m.bplScrollLines())
 		if lines > 0 {
-			visible := contentHeight(m.height) - 5
+			visible := contentHeight(m.height) - 4
 			if visible < 1 {
 				visible = 1
 			}
