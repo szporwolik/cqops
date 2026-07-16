@@ -36,6 +36,7 @@ type IntegrationMenu struct {
 	// HTTP Server
 	httpEnabled  bool
 	httpTheme    int // 0=Bright, 1=Dark, 2=Orchid(YL), 3=HighVis
+	httpAddrIdx  int // 0=localhost, 1=0.0.0.0
 	httpAddr     textinput.Model
 	httpPort     textinput.Model
 	httpHeader1  textinput.Model
@@ -248,10 +249,19 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 	httpAddr.CharLimit = 40
 	httpAddr.SetWidth(28)
 	httpAddr.Placeholder = "0.0.0.0"
-	if cfg.Integrations.HTTPServer.Address != "" {
-		httpAddr.SetValue(cfg.Integrations.HTTPServer.Address)
-	} else {
+	// Map existing config to index: localhost/127.0.0.1 → 0, 0.0.0.0 → 1.
+	httpAddrIdx := 0
+	addr := cfg.Integrations.HTTPServer.Address
+	switch {
+	case addr == "" || addr == "localhost" || addr == "127.0.0.1":
+		httpAddrIdx = 0
+		httpAddr.SetValue("localhost")
+	case addr == "0.0.0.0":
+		httpAddrIdx = 1
 		httpAddr.SetValue("0.0.0.0")
+	default:
+		httpAddrIdx = 1 // treat unknown as network
+		httpAddr.SetValue(addr)
 	}
 
 	httpPort := newTextinput()
@@ -442,6 +452,7 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 		qrzPass:          qrzPass,
 		httpEnabled:      cfg.Integrations.HTTPServer.Enabled,
 		httpTheme:        httpTheme,
+		httpAddrIdx:      httpAddrIdx,
 		httpAddr:         httpAddr,
 		httpPort:         httpPort,
 		httpHeader1:      httpHeader1,
@@ -546,10 +557,6 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// Validate HTTP server fields when HTTP server is enabled.
 			if im.httpEnabled {
-				if strings.TrimSpace(im.httpAddr.Value()) == "" {
-					im.SaveError = "HTTP server address is required when HTTP server is enabled"
-					return im, nil
-				}
 				if strings.TrimSpace(im.httpPort.Value()) == "" {
 					im.SaveError = "HTTP server port is required when HTTP server is enabled"
 					return im, nil
@@ -610,6 +617,14 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					im.fixFocus()
 				}
 				im.autoScrollViewport()
+				return im, nil
+			case imHTTPAddr:
+				im.httpAddrIdx = (im.httpAddrIdx + 1) % 2
+				if im.httpAddrIdx == 0 {
+					im.httpAddr.SetValue("localhost")
+				} else {
+					im.httpAddr.SetValue("0.0.0.0")
+				}
 				return im, nil
 			case imHTTPTheme:
 				im.httpTheme = (im.httpTheme + 1) % 4
@@ -685,8 +700,6 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				im.qrzUser, _ = im.qrzUser.Update(msg)
 			case imQRZPass:
 				im.qrzPass, _ = im.qrzPass.Update(msg)
-			case imHTTPAddr:
-				im.httpAddr, _ = im.httpAddr.Update(msg)
 			case imHTTPPort:
 				im.httpPort, _ = im.httpPort.Update(msg)
 			case imHTTPHdr1:
@@ -844,8 +857,6 @@ func (im *IntegrationMenu) forwardToFocused(msg tea.Msg) {
 		im.dxcPort, _ = im.dxcPort.Update(msg)
 	case imDXCLogin:
 		im.dxcLogin, _ = im.dxcLogin.Update(msg)
-	case imHTTPAddr:
-		im.httpAddr, _ = im.httpAddr.Update(msg)
 	case imHTTPPort:
 		im.httpPort, _ = im.httpPort.Update(msg)
 	case imHTTPHdr1:
@@ -941,7 +952,7 @@ func (im *IntegrationMenu) fixFocus() {
 }
 
 func (im *IntegrationMenu) blurAll() {
-	blurTextinputs(&im.dxcHost, &im.dxcPort, &im.dxcLogin, &im.httpAddr, &im.httpPort, &im.httpHeader1, &im.httpHeader2, &im.httpClubLogo, &im.httpEvtStart, &im.gpsPort, &im.gpsdHost, &im.gpsdPort, &im.aprsServer, &im.aprsKISSHost, &im.aprsKISSPort, &im.aprsPort)
+	blurTextinputs(&im.dxcHost, &im.dxcPort, &im.dxcLogin, &im.httpPort, &im.httpHeader1, &im.httpHeader2, &im.httpClubLogo, &im.httpEvtStart, &im.gpsPort, &im.gpsdHost, &im.gpsdPort, &im.aprsServer, &im.aprsKISSHost, &im.aprsKISSPort, &im.aprsPort)
 }
 func (im *IntegrationMenu) focusField() {
 	switch im.focus {
@@ -951,8 +962,6 @@ func (im *IntegrationMenu) focusField() {
 		im.dxcPort.Focus()
 	case imDXCLogin:
 		im.dxcLogin.Focus()
-	case imHTTPAddr:
-		im.httpAddr.Focus()
 	case imHTTPPort:
 		im.httpPort.Focus()
 	case imHTTPHdr1:
@@ -1128,7 +1137,17 @@ func (im *IntegrationMenu) View() tea.View {
 
 	if im.httpEnabled {
 		b.WriteString("\n")
-		b.WriteString(padOrTrunc(im.renderField(imHTTPAddr, "  Address:", &im.httpAddr, false), lineW))
+		// Access: cycle between "This PC only" / "Local network".
+		addrLabels := []string{"This PC only", "Local network"}
+		addrVal := ValueStyle.Render(addrLabels[im.httpAddrIdx])
+		addrLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Access:")
+		if im.focus == imHTTPAddr {
+			addrLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Access:")
+			addrVal = CursorStyle.Render(addrLabels[im.httpAddrIdx]) + " " + DimStyle.Render("(Space)")
+		}
+		b.WriteString(padOrTrunc(
+			lipgloss.JoinHorizontal(lipgloss.Center, "  ", addrLabel, " ", addrVal),
+			lineW))
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(im.renderField(imHTTPPort, "  Port:", &im.httpPort, false), lineW))
 		b.WriteString("\n")
