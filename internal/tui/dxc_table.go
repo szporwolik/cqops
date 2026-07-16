@@ -374,7 +374,7 @@ func (m *Model) dxcView() string {
 		}
 		// Build two versions: compact (no hints) and full (with key hints).
 		// Use the compact version when the full line would exceed bodyW.
-		sep := "  " + DimStyle.Render("\u00b7") + "  "
+		sep := "  " + DimStyle.Render(middot()) + "  "
 		compactParts := []string{
 			addPart("de Cont", contVal, m.dxc.contFilter != ""),
 			addPart("Mode", modeVal, m.dxc.modeFilter != ""),

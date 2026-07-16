@@ -401,7 +401,7 @@ func (m *Model) buildHelpSuffix() string {
 	}
 	if m.screen == screenRef && m.ref.searched && len(m.ref.rows) > 0 {
 		total := len(m.ref.rows)
-		tableH := contentHeight(m.height) - 5
+		tableH := contentHeight(m.height) - 6
 		if tableH < 1 {
 			tableH = 1
 		}

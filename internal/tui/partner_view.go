@@ -351,6 +351,15 @@ func checkMark() string {
 	return "\u2713"
 }
 
+// middot returns a middle-dot separator, falling back to "-" on bare TTYs
+// and terminals without Unicode support.
+func middot() string {
+	if isTTYWithoutDisplay() {
+		return "-"
+	}
+	return "\u00b7"
+}
+
 // resolveClass maps callbook licence class codes to human-readable labels.
 func resolveClass(cls string) string {
 	// Normalize common FCC/QRZ class codes.
