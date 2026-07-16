@@ -880,11 +880,9 @@ function initMap(cfg){
   }
   // Radar: always enabled — no toggle button.
   enableRadarLayer();
-  // If QSO data arrived while the map was being created (cold start
-  // or offline→online transition), render it now. Without this, the
-  // 'today' SSE event may have called updateMapFromToday() when map
-  // was null — the data was saved into todayQsos but never drawn.
-  if(todayQsos&&todayQsos.length)updateMapFromToday();
+  // Render any QSO data that arrived before the map was ready.
+  // Also render when there are zero QSOs — station marker must always appear.
+  updateMapFromToday();
 }
 
 // removeOfflineOverlay is called when SSE reconnects (internet restored).
