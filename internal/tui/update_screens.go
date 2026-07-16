@@ -848,6 +848,14 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 			// Download finished — editor's Update already set wlDownloadCount/Dupes.
 			if !em.dlAborted && em.dlCount > 0 {
 				m.needRefresh = true
+				// Full DXCC backfill after bulk import — the periodic
+				// 50-row sweep is too slow for 10K+ QSO downloads.
+				if m.App.BigCTY != nil && m.App.DB != nil {
+					n, err := backfillMissingDXCCLimit(m.App.DB, m.App.BigCTY, 0)
+					if err == nil && n > 0 {
+						applog.Info("DXCC: post-download backfill complete", "count", n)
+					}
+				}
 			}
 		} else if em.dlErr != "" {
 			m.ui.logbookEditor.wlDownloadErr = em.dlErr
