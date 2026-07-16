@@ -40,6 +40,7 @@ func (m *Model) cycleLogbook() tea.Cmd {
 	m.rc.status = ""
 	m.invalidatePartnerMapCache()
 	m.rc.logStatsSig = ""
+	m.rc.workedSummarySig = ""
 	m.rc.pathSig = ""
 	m.rc.pathLine = ""
 	m.lookup.wlPrivateData = nil // WL data is logbook-specific

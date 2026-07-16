@@ -639,6 +639,7 @@ func (m *Model) commitAndLookup() tea.Cmd {
 	m.checkDupe()
 	m.rc.pathSig = "" // invalidate cache to show DUPE badge
 	m.rc.logStatsSig = ""
+	m.rc.workedSummarySig = ""
 	return m.lookupCallCmd(call)
 }
 

@@ -887,10 +887,20 @@ func (m *Model) buildWorkedPanelLayout(d *callbook.Result, maxW int) workedPanel
 
 	var ws store.WorkedSummary
 	if m.App.DB != nil && call != "" {
-		var err error
-		ws, err = store.GetWorkedSummary(m.App.DB, call, grid4, opDXCC, opEntity)
-		if err != nil {
-			ws = store.WorkedSummary{}
+		// Cache GetWorkedSummary — it runs 15+ SQL queries and was
+		// consuming 17.7% CPU by re-running on every frame.  Only
+		// recompute when call, grid4, opDXCC or opEntity change.
+		wsKey := call + "|" + grid4 + "|" + opDXCC + "|" + opEntity
+		if m.rc.workedSummarySig == wsKey {
+			ws = m.rc.workedSummary
+		} else {
+			var err error
+			ws, err = store.GetWorkedSummary(m.App.DB, call, grid4, opDXCC, opEntity)
+			if err != nil {
+				ws = store.WorkedSummary{}
+			}
+			m.rc.workedSummary = ws
+			m.rc.workedSummarySig = wsKey
 		}
 	}
 
