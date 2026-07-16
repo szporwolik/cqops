@@ -87,8 +87,8 @@ func ListQSOs(db *sql.DB, limit int, contestID string) ([]qso.QSO, error) {
 		FROM qsos`
 	var args []any
 	if contestID != "" {
-		query += ` WHERE contest_id = ?`
-		args = append(args, contestID)
+		query += ` WHERE contest_id = ? OR contest_adif_id = ?`
+		args = append(args, contestID, contestID)
 	}
 	query += ` ORDER BY qso_date DESC, time_on DESC, id DESC`
 	var rows *sql.Rows
@@ -141,9 +141,9 @@ func ListQSOs(db *sql.DB, limit int, contestID string) ([]qso.QSO, error) {
 // exchange when working the same station on another band/mode.
 func LastContestExchange(db *sql.DB, call, contestID string) (exchRcvd, rstRcvd, exchSent string, err error) {
 	query := `SELECT exch_rcvd, rst_rcvd, exch_sent FROM qsos
-		WHERE call = ? AND contest_id = ?
+		WHERE call = ? AND (contest_id = ? OR contest_adif_id = ?)
 		ORDER BY qso_date DESC, time_on DESC LIMIT 1`
-	err = db.QueryRow(query, call, contestID).Scan(&exchRcvd, &rstRcvd, &exchSent)
+	err = db.QueryRow(query, call, contestID, contestID).Scan(&exchRcvd, &rstRcvd, &exchSent)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -168,8 +168,8 @@ func ListQSOsPageWithCount(db *sql.DB, limit, offset int, contestID string) ([]q
 		FROM qsos`
 	var args []any
 	if contestID != "" {
-		query += ` WHERE contest_id = ?`
-		args = append(args, contestID)
+		query += ` WHERE contest_id = ? OR contest_adif_id = ?`
+		args = append(args, contestID, contestID)
 	}
 	query += `
 		ORDER BY qso_date DESC, time_on DESC, id DESC
@@ -235,8 +235,8 @@ func ListQSOsPage(db *sql.DB, limit, offset int, contestID string, orderAsc bool
 		FROM qsos`
 	var args []any
 	if contestID != "" {
-		query += ` WHERE contest_id = ?`
-		args = append(args, contestID)
+		query += ` WHERE contest_id = ? OR contest_adif_id = ?`
+		args = append(args, contestID, contestID)
 	}
 	query += `
 		ORDER BY qso_date `
@@ -486,8 +486,8 @@ func WorkedCallsOnBandDate(db *sql.DB, band, qsoDate string) (map[string]bool, e
 // dates, so the date filter from WorkedCallsOnBandDate is insufficient).
 func WorkedCallsInContest(db *sql.DB, contestID, band string) (map[string]bool, error) {
 	rows, err := db.Query(
-		`SELECT DISTINCT call, mode FROM qsos WHERE contest_id = ? AND band = ?`,
-		contestID, band,
+		`SELECT DISTINCT call, mode FROM qsos WHERE (contest_id = ? OR contest_adif_id = ?) AND band = ?`,
+		contestID, contestID, band,
 	)
 	if err != nil {
 		return nil, err
@@ -553,8 +553,8 @@ func DXCDupeSet(db *sql.DB, qsoDate, contestID string) (map[string]bool, error) 
 	)
 	if contestID != "" {
 		rows, err = db.Query(
-			`SELECT DISTINCT call, band, mode FROM qsos WHERE contest_id = ?`,
-			contestID,
+			`SELECT DISTINCT call, band, mode FROM qsos WHERE contest_id = ? OR contest_adif_id = ?`,
+			contestID, contestID,
 		)
 	} else {
 		rows, err = db.Query(
