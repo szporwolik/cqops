@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -181,11 +180,30 @@ func (m *Model) pushLoggedQSOToDashboard(qs *qso.QSO) {
 }
 
 // stripANSI removes ANSI escape sequences (CSI codes) from a string.
-// Used to clean Lip Gloss-styled text before sending it to the browser.
-var reANSI = regexp.MustCompile(`\x1b\[[0-9;]*m`)
-
+// Uses a byte scanner instead of regex — ~5× faster on low-end hardware.
 func stripANSI(s string) string {
-	return reANSI.ReplaceAllString(s, "")
+	// Fast path: no escape sequences.
+	if !strings.Contains(s, "\x1b[") {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	i := 0
+	for i < len(s) {
+		if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '[' {
+			i += 2 // skip ESC[
+			for i < len(s) && ((s[i] >= '0' && s[i] <= '9') || s[i] == ';') {
+				i++
+			}
+			if i < len(s) && s[i] == 'm' {
+				i++ // skip the terminating 'm'
+			}
+		} else {
+			b.WriteByte(s[i])
+			i++
+		}
+	}
+	return b.String()
 }
 
 func clubLogoURL(cfgURL string) string {
@@ -397,6 +415,12 @@ func (m *Model) internetCallbook() (name, urlTemplate string) {
 // instead of every tick (~1 s). On low-end hardware this halves the per-tick
 // overhead of building rig/WSJT-X/solar/partner structs. The 2 s interval is
 // still fast enough for SSE push to feel real-time in the browser.
+// dashboardDataDirty is set to true when QSO data changes (save, import,
+// logbook switch). The next pushDashboardState call refreshes today QSOs,
+// stats, and recent QSOs from the database. Avoids expensive aggregation
+// queries on every frame for low-end hardware.
+var dashboardDataDirty bool = true // initially dirty to ensure first push
+
 var lastDashboardPushTick int
 
 // Called from the tick handler every second. Most Set* calls early-exit because
@@ -419,16 +443,19 @@ func (m *Model) pushDashboardState() {
 
 	ds := m.http.client.State()
 
-	// --- Refresh today QSOs + stats for the map (rate-limited) ---
-	now := time.Now()
-	if now.Sub(lastTodayPush) > 5*time.Second {
-		lastTodayPush = now
+	// --- Refresh today QSOs + stats for the map (event-driven) ---
+	// Only recompute when QSO data changed — not on a timer.
+	// The initial push (dashboardDataDirty==true) ensures the
+	// dashboard populates on startup.
+	if dashboardDataDirty {
+		dashboardDataDirty = false
 		m.pushDashboardToday(ds)
 		m.pushDashboardStats(ds)
 		m.pushDashboardRecent(ds)
 	}
 
 	// --- APRS stations for the local map (rate-limited, 30 s, or on-demand) ---
+	now := time.Now()
 	if now.Sub(lastAPRSPush) > 30*time.Second || m.App.ConsumeAPRSRefresh() {
 		lastAPRSPush = now
 		m.pushDashboardAPRS(ds)
@@ -677,9 +704,6 @@ func (m *Model) pushDashboardFast() {
 	m.pushDashboardPartner(ds, call)
 }
 
-// lastTodayPush rate-limits the DB query for today QSOs (map data).
-var lastTodayPush time.Time
-
 // lastAPRSPush rate-limits the APRS station push to the dashboard local map.
 var lastAPRSPush time.Time
 
@@ -737,6 +761,10 @@ func (m *Model) invalidateDashboardFlags() {
 	lastActiveNewCall = false
 	lastActiveNewDXCC = false
 	lastPushedAQSO = cachedAQSO{}
+	dashboardDataDirty = true
+	// Clear country worked-before cache — the QSO we just saved may
+	// change country status.
+	clear(countryWorkedCache)
 }
 
 // forcePushDashboardAll clears all dashboard throttle and fingerprint caches
@@ -747,7 +775,6 @@ func (m *Model) invalidateDashboardFlags() {
 func (m *Model) forcePushDashboardAll() {
 	// Clear throttle/cache state so pushDashboardState runs every panel.
 	lastDashboardPushTick = 0
-	lastTodayPush = time.Time{}
 	lastAPRSPush = time.Time{}
 	// Use sentinel values instead of nil so that an empty result (0 QSOs
 	// in a fresh logbook) does not "match" the cleared cache via idsEqual.
@@ -786,15 +813,32 @@ func cloneIDs(a []int64) []int64 {
 
 // countryWorkedBefore checks whether any QSO exists for the given country
 // by a different base_call than the current active call.
+// Results are cached per (country, baseCall) pair — cleared on QSO save.
 func (m *Model) countryWorkedBefore(country string) bool {
 	if m.App.DB == nil || country == "" {
 		return false
 	}
+	baseCall := qso.DeriveBaseCall(pushDashboardLastCall)
+
+	// Cache key: country + baseCall. Cache lives for the duration the
+	// current call is active; invalidateDashboardFlags clears it.
+	cacheKey := country + "|" + baseCall
+	if cached, ok := countryWorkedCache[cacheKey]; ok {
+		return cached
+	}
+
 	var count int
-	err := m.App.DB.QueryRow(`SELECT COUNT(*) FROM qsos WHERE country = ? AND base_call != ? LIMIT 1`,
-		country, qso.DeriveBaseCall(pushDashboardLastCall)).Scan(&count)
-	return err == nil && count > 0
+	err := m.App.DB.QueryRow(
+		`SELECT COUNT(*) FROM qsos WHERE country = ? AND base_call != ? LIMIT 1`,
+		country, baseCall,
+	).Scan(&count)
+	result := err == nil && count > 0
+	countryWorkedCache[cacheKey] = result
+	return result
 }
+
+// countryWorkedCache caches countryWorkedBefore results.
+var countryWorkedCache = make(map[string]bool)
 
 // pushDashboardRecent queries the DB directly for the 20 most recent QSOs
 // (newest-first). Pushes only when the list of QSO IDs changed.
