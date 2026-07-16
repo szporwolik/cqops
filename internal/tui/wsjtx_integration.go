@@ -255,6 +255,7 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 					GridSquare: data.Grid,
 					CQZone:     data.CQZone,
 					ITUZone:    data.ITUZone,
+					DXCC:       data.DXCC,
 				})
 				applog.Info("WSJT-X: callbook enrichment applied", "call", call, "qso_id", qsoID)
 			} else {

@@ -679,13 +679,14 @@ type EnrichmentData struct {
 	IOTA       string
 	CQZone     string
 	ITUZone    string
+	DXCC       string
 }
 
 // UpdateQSOEnrichment applies callbook enrichment to a QSO.
 // Only fields that are currently empty in the database are updated —
 // existing data is never overwritten by enrichment.
 func UpdateQSOEnrichment(db *sql.DB, qsoID int64, e EnrichmentData) {
-	if e.Name == "" && e.QTH == "" && e.Country == "" && e.GridSquare == "" && e.IOTA == "" && e.CQZone == "" && e.ITUZone == "" {
+	if e.Name == "" && e.QTH == "" && e.Country == "" && e.GridSquare == "" && e.IOTA == "" && e.CQZone == "" && e.ITUZone == "" && e.DXCC == "" {
 		return
 	}
 
@@ -719,6 +720,10 @@ func UpdateQSOEnrichment(db *sql.DB, qsoID int64, e EnrichmentData) {
 	if e.ITUZone != "" {
 		sets = append(sets, "itu_zone = CASE WHEN COALESCE(itu_zone,'') = '' THEN ? ELSE itu_zone END")
 		args = append(args, e.ITUZone)
+	}
+	if e.DXCC != "" {
+		sets = append(sets, "dxcc = CASE WHEN COALESCE(dxcc,'') = '' THEN ? ELSE dxcc END")
+		args = append(args, e.DXCC)
 	}
 
 	if len(sets) == 0 {

@@ -97,6 +97,8 @@ var migrations = []string{
 
 	`CREATE INDEX IF NOT EXISTS idx_qsos_country ON qsos(country)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_country_base ON qsos(country, base_call)`,
+	`CREATE INDEX IF NOT EXISTS idx_qsos_dxcc ON qsos(dxcc)`,
+	`CREATE INDEX IF NOT EXISTS idx_qsos_submode ON qsos(submode)`,
 
 	`CREATE INDEX IF NOT EXISTS idx_qsos_base_call ON qsos(base_call)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_date_time_call ON qsos(qso_date, time_on, base_call)`,

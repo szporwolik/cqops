@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
@@ -9,6 +10,7 @@ import (
 	"github.com/szporwolik/cqops/internal/callbook"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
+	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
 const partnerMapMaxW = 140 // also used as max page width for QSO form consistency
@@ -134,10 +136,6 @@ func (m *Model) viewPartner() string {
 		totalW = w - 2
 	}
 
-	// Detect Wavelog availability — when not configured, hide the box and split 50:50.
-	wlEnabled := m.App.Logbook.Wavelog != nil && m.App.Logbook.Wavelog.Enabled &&
-		m.App.Logbook.Wavelog.URL != "" && m.App.Logbook.Wavelog.APIKey != ""
-
 	// Inline partner photo — right-side column on wide screens (≥180 cols).
 	showPhoto := m.width >= 180 && m.App.Config.General.PictureAtPartnerPane &&
 		d != nil && d.ImageURL != ""
@@ -156,53 +154,35 @@ func (m *Model) viewPartner() string {
 		}
 	}
 
-	var cbW, lbW, wlW int
-	if wlEnabled {
-		cbW = leftW * 40 / 100
-		lbW = leftW * 28 / 100
-		wlW = leftW - cbW - lbW
-	} else {
-		cbW = leftW * 50 / 100
-		lbW = leftW - cbW
-		wlW = 0
-	}
+	// Two-panel layout: Callbook (40%) + Worked (60%).
+	cbW := leftW * 40 / 100
+	wkW := leftW - cbW
 	if cbW < 20 {
 		cbW = leftW
+		wkW = 0
 	}
-	if lbW < 15 {
-		lbW = 20
-	}
-	if wlW > 0 && wlW < 12 {
-		wlW = 20
+	if wkW < 25 {
+		wkW = 25
 	}
 
-	cbContent := m.renderCallbookRows(d, cbW-4, 0) // 0 = no height limit
-	lbContent := m.renderLogbookRows(d, lbW-4)
+	cbContent := m.renderCallbookRows(d, cbW-4, 0)
+	wkContent := m.renderWorkedPanel(d, wkW-4)
 
-	// Compute max inner height (header + content lines), then pad all.
 	cbInner := lipgloss.Height(cbContent) + 1
-	lbInner := lipgloss.Height(lbContent) + 1
+	wkInner := lipgloss.Height(wkContent) + 1
 	maxInner := cbInner
-	if lbInner > maxInner {
-		maxInner = lbInner
+	if wkInner > maxInner {
+		maxInner = wkInner
 	}
 
 	cbBox := m.renderPartnerBox("Callbook"+m.callbookSuffix(), cbContent, cbW, maxInner)
-	lbBox := m.renderPartnerBox("Logbook", lbContent, lbW, maxInner)
-
+	wkTitle := m.workedTitle()
+	wkBox := m.renderPartnerBox(wkTitle, wkContent, wkW, maxInner)
 	var topRow string
-	if wlEnabled {
-		wlContent := m.renderWLInfo(wlW - 4)
-		wlInner := lipgloss.Height(wlContent) + 1
-		if wlInner > maxInner {
-			maxInner = wlInner
-		}
-		cbBox = m.renderPartnerBox("Callbook"+m.callbookSuffix(), cbContent, cbW, maxInner)
-		lbBox = m.renderPartnerBox("Logbook", lbContent, lbW, maxInner)
-		wlBox := m.renderPartnerBox("Wavelog", wlContent, wlW, maxInner)
-		topRow = lipgloss.JoinHorizontal(lipgloss.Top, cbBox, lbBox, wlBox)
+	if wkW > 0 {
+		topRow = lipgloss.JoinHorizontal(lipgloss.Top, cbBox, wkBox)
 	} else {
-		topRow = lipgloss.JoinHorizontal(lipgloss.Top, cbBox, lbBox)
+		topRow = cbBox
 	}
 
 	// Build left column: topRow + map (if enabled).
@@ -303,7 +283,7 @@ func (m *Model) callbookSuffix() string {
 	seen := map[string]bool{}
 	var links []string
 	for _, name := range providers {
-		if name == "CTY.DAT" || seen[name] {
+		if seen[name] {
 			continue
 		}
 		seen[name] = true
@@ -317,7 +297,7 @@ func (m *Model) callbookSuffix() string {
 	if len(links) == 0 {
 		return ""
 	}
-	return " \u00b7 " + strings.Join(links, " \u00b7 ")
+	return " \u00b7 " + strings.Join(links, " + ")
 }
 
 // checkMark returns a checkmark symbol, falling back to ASCII "Y"
@@ -328,6 +308,33 @@ func checkMark() string {
 		return "Y"
 	}
 	return "\u2713"
+}
+
+// dotSep returns the field separator " · " on Unicode terminals, and
+// a safe ASCII alternative " : " on bare TTYs. Unlike U+2713 (checkmark),
+// U+00B7 (middle dot) is Latin-1 and works on virtually all terminals,
+// but we match the existing fallback pattern for consistency.
+func dotSep() string {
+	if isTTYWithoutDisplay() {
+		return " : "
+	}
+	return " \u00b7 "
+}
+
+// emDash returns "—" on Unicode terminals and "--" on bare TTYs.
+func emDash() string {
+	if isTTYWithoutDisplay() {
+		return "--"
+	}
+	return "\u2014"
+}
+
+// ellipsis returns "…" on Unicode terminals and "..." on bare TTYs.
+func ellipsis() string {
+	if isTTYWithoutDisplay() {
+		return "..."
+	}
+	return "\u2026"
 }
 
 // callbookAnyEnabled returns true when at least one online callbook
@@ -719,7 +726,389 @@ func formatCoord(val, posSuffix, negSuffix string) string {
 	return fmt.Sprintf("%.5f\u00b0%s", f, suffix)
 }
 
-// --- Logbook rows ---
+// --- Worked panel (unified Logbook + remote sources) ---
+
+// workedTitle returns the panel title with compact source names.
+// The remote source name is rendered as a clickable OSC8 hyperlink
+// to the Wavelog instance main page.
+func (m *Model) workedTitle() string {
+	lb := m.App.Logbook
+	wl := lb.Wavelog
+	hasWl := wl != nil && wl.Enabled && wl.URL != "" && wl.APIKey != ""
+	if hasWl {
+		src := CompactSourceName("", wl.URL)
+		if src != "" {
+			// Link to the Wavelog base URL (strip trailing path).
+			baseURL := strings.TrimRight(wl.URL, "/")
+			return "Worked \u00b7 Local + " + osc8Link(baseURL, src)
+		}
+	}
+	return "Worked \u00b7 Local"
+}
+
+// renderWorkedPanel builds a unified worked-status panel. The left side
+// shows newness (call, band, mode, DXCC, grid) with inline values. The
+// right side shows the best available history: per-call, per-grid, or
+// per-DXCC statistics.
+func (m *Model) renderWorkedPanel(d *callbook.Result, maxW int) string {
+	if d == nil || d.Callsign == "" {
+		return DimStyle.Render("Enter a callsign to check worked status")
+	}
+
+	call := d.Callsign
+	band := strings.TrimSpace(m.fields[fieldBand].Value())
+	mode := strings.TrimSpace(m.fields[fieldMode].Value())
+	s := m.rc.logStats
+	wl := m.lookup.wlPrivateData
+
+	// Resolve grid from callbook (prefer form grid when sourced externally).
+	grid := d.Grid
+	formGrid := strings.TrimSpace(m.fields[fieldGrid].Value())
+	if formGrid != "" && m.gridSource != "" && m.gridSource != gridSourceCallbook {
+		grid = formGrid
+	}
+	grid4 := ""
+	if len(grid) >= 4 {
+		grid4 = strings.ToUpper(grid[:4])
+	}
+
+	// DXCC entity from callbook result.
+	dxcc := d.DXCC
+
+	// Compute scope histories (cached by sig in viewPartner, so these DB
+	// calls only fire on actual input changes).
+	var ws store.WorkedSummary
+	if m.App.DB != nil && call != "" {
+		var err error
+		ws, err = store.GetWorkedSummary(m.App.DB, call, grid4, dxcc, d.Country)
+		if err != nil {
+			ws = store.WorkedSummary{} // empty on error
+		}
+	}
+
+	// ── Helpers ────────────────────────────────────────────────────────
+
+	acc := S.Info                         // accent for NEW
+	worked := DimStyle                    // dim for WORKED
+	muted := S.Dim                        // muted text (no width constraint — S.FormLabel has Width(11))
+	valStyle := ValueStyle                // normal value
+	pendDash := DimStyle.Render("\u2014") // compact missing-input placeholder
+
+	// state renders a compact " · STATE" suffix.
+	state := func(isNew, known bool) string {
+		if !known {
+			return " \u00b7 " + muted.Render("checking\u2026")
+		}
+		if isNew {
+			return " \u00b7 " + acc.Render("NEW")
+		}
+		return " \u00b7 " + worked.Render("WORKED")
+	}
+
+	// isNewForCall combines Wavelog + local to determine if the call is new.
+	isNewForCall := func() (bool, bool) {
+		if wl != nil {
+			return !wl.Worked(), true
+		}
+		return !s.CallWorked, true
+	}
+
+	twoCol := maxW >= 58
+	lblW := 10
+
+	row := func(label, value string, w int) string {
+		lbl := muted.Align(lipgloss.Right).Width(lblW).Render(label)
+		valW := w - lblW - 1
+		if valW < 3 {
+			valW = 3
+		}
+		val := valStyle.MaxWidth(valW).Inline(true).Render(value)
+		return lbl + " " + val
+	}
+
+	// ── Left column: newness rows ──────────────────────────────────────
+
+	type nRow struct{ label, value string }
+	var nn []nRow
+
+	// Call
+	callNew, callKnown := isNewForCall()
+	callVal := acc.Render(call) + state(callNew, callKnown)
+	nn = append(nn, nRow{"Call", callVal})
+
+	// Band
+	if band != "" {
+		bNew, bKnown := false, true
+		if wl != nil {
+			bNew, bKnown = !wl.WorkedBand(), true
+		} else {
+			bNew, bKnown = !s.CallOnBand, true
+		}
+		nn = append(nn, nRow{"Band", valStyle.Render(band) + state(bNew, bKnown)})
+	} else {
+		nn = append(nn, nRow{"Band", pendDash})
+	}
+
+	// Mode
+	if mode != "" {
+		mNew, mKnown := false, true
+		// Wavelog has no mode-only field — use local only.
+		mNew, mKnown = !s.CallOnMode, true
+		nn = append(nn, nRow{"Mode", valStyle.Render(mode) + state(mNew, mKnown)})
+	} else {
+		nn = append(nn, nRow{"Mode", pendDash})
+	}
+
+	// Band+Mode — only when both are known.
+	if band != "" && mode != "" {
+		bmNew, bmKnown := false, false
+		if wl != nil {
+			bmNew, bmKnown = !wl.WorkedBandMode(), true
+		}
+		if bmKnown {
+			bmVal := valStyle.Render(band + " " + mode)
+			nn = append(nn, nRow{"Band+Mode", bmVal + state(bmNew, bmKnown)})
+		}
+	}
+
+	// DXCC
+	var dxccConfirmed bool // true when we know DXCC is definitely worked
+	if dxcc != "" {
+		dxccNew, dxccKnown := false, false
+		if wl != nil {
+			dxccNew, dxccKnown = !wl.DXCCConfirmed(), true
+			if !dxccNew && dxccKnown {
+				dxccConfirmed = true // Wavelog confirms DXCC is worked
+			}
+		}
+		if !dxccKnown {
+			// No WL data — use local history.
+			dxccKnown = true
+			dxccNew = ws.DXCCHistory.QSOCount == 0
+			if !dxccNew {
+				dxccConfirmed = true // local DB confirms DXCC is worked
+			}
+		}
+		nn = append(nn, nRow{"DXCC", valStyle.Render(dxcc) + state(dxccNew, dxccKnown)})
+	}
+
+	// Grid
+	if grid4 != "" {
+		gridNew := ws.GridHistory.QSOCount == 0
+		nn = append(nn, nRow{"Grid", valStyle.Render(grid4) + state(gridNew, true)})
+	}
+
+	// ── Right column: history (best available scope) ───────────────────
+
+	type hRow struct{ label, value string }
+	var hist []hRow
+	addH := func(l, v string) {
+		if v != "" {
+			hist = append(hist, hRow{l, v})
+		}
+	}
+
+	callHasQSOs := ws.CallHistory.QSOCount > 0
+	dbAvailable := m.App.DB != nil
+
+	if !callHasQSOs {
+		// Call is new — show first-contact indicator.
+		if callKnown {
+			addH("QSOs", "0 \u00b7 "+muted.Render("first contact"))
+		} else {
+			addH("QSOs", "0 \u00b7 "+muted.Render("checking\u2026"))
+		}
+
+		// DXCC fallback when call is new.
+		if ws.DXCCHistory.QSOCount > 0 {
+			dinfo := fmt.Sprintf("%d QSOs \u00b7 %d bands \u00b7 %d modes",
+				ws.DXCCHistory.QSOCount, ws.DXCCHistory.UniqueBands, ws.DXCCHistory.UniqueModes)
+			addH("DXCC log", dinfo)
+			if ws.DXCCHistory.LastQSO != nil {
+				lq := ws.DXCCHistory.LastQSO
+				last := lq.Date
+				if lq.Band != "" {
+					last += " \u00b7 " + lq.Band
+					if lq.Mode != "" {
+						last += " " + lq.Mode
+					}
+				}
+				addH("Last DXCC", last)
+			}
+			addH("Bands", formatCountList(ws.DXCCHistory.BandCounts))
+			addH("Modes", formatCountList(ws.DXCCHistory.ModeCounts))
+		} else if dxcc != "" && dxccConfirmed {
+			// Wavelog or local DB confirms DXCC is worked, but local DB
+			// has no QSOs yet for this entity.
+			addH("DXCC log", muted.Render("summary unavailable"))
+		} else if dxcc != "" && dbAvailable {
+			addH("DXCC log", "0 \u00b7 "+acc.Render("new entity"))
+		} else if dxcc != "" && !dbAvailable {
+			addH("DXCC log", muted.Render("summary unavailable"))
+		}
+
+		// Grid fallback (only when DXCC log didn't already cover it).
+		if grid4 != "" && ws.GridHistory.QSOCount > 0 && ws.DXCCHistory.QSOCount == 0 {
+			addH("Grid log", fmt.Sprintf("%d QSOs \u00b7 %d calls",
+				ws.GridHistory.QSOCount, ws.GridHistory.UniqueCalls))
+			if ws.GridHistory.LastQSO != nil {
+				lq := ws.GridHistory.LastQSO
+				last := lq.Date
+				if lq.Band != "" {
+					last += " \u00b7 " + lq.Band
+					if lq.Mode != "" {
+						last += " " + lq.Mode
+					}
+				}
+				addH("Last grid", last)
+			}
+		} else if grid4 != "" && ws.GridHistory.QSOCount == 0 && ws.DXCCHistory.QSOCount == 0 && dbAvailable {
+			addH("Grid log", "0 \u00b7 "+acc.Render("new grid"))
+		}
+	} else {
+		// Call has QSOs — show call-specific history.
+		addH("QSOs", strconv.Itoa(ws.CallHistory.QSOCount))
+		if ws.CallHistory.LastQSO != nil {
+			lq := ws.CallHistory.LastQSO
+			last := lq.Date
+			if lq.Band != "" {
+				last += " \u00b7 " + lq.Band
+				if lq.Mode != "" {
+					last += " " + lq.Mode
+				}
+			}
+			addH("Last", last)
+		}
+		addH("Bands", formatCountList(ws.CallHistory.BandCounts))
+		addH("Modes", formatCountList(ws.CallHistory.ModeCounts))
+		if len(ws.CallHistory.GridCounts) > 0 {
+			addH("Grids", formatCountList(ws.CallHistory.GridCounts))
+		}
+	}
+
+	// ── Render ─────────────────────────────────────────────────────────
+
+	var lines []string
+
+	if twoCol {
+		leftW := maxW*45/100 - 2
+		rightW := maxW - leftW - 2
+		var leftLines, rightLines []string
+
+		for _, r := range nn {
+			leftLines = append(leftLines, row(r.label, r.value, leftW))
+		}
+		for _, r := range hist {
+			rightLines = append(rightLines, row(r.label, r.value, rightW))
+		}
+
+		// Pad shorter column.
+		for len(leftLines) < len(rightLines) {
+			leftLines = append(leftLines, "")
+		}
+		for len(rightLines) < len(leftLines) {
+			rightLines = append(rightLines, "")
+		}
+
+		for i := range leftLines {
+			if leftLines[i] == "" && rightLines[i] == "" {
+				lines = append(lines, "")
+			} else {
+				lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Top,
+					lipgloss.NewStyle().Width(leftW).Render(leftLines[i]),
+					"  ",
+					lipgloss.NewStyle().Width(rightW).Render(rightLines[i])))
+			}
+		}
+	} else if maxW < 35 {
+		// Very short panel — compact one-liner summary.
+		callNew, callKnown := isNewForCall()
+		compact := acc.Render(call) + state(callNew, callKnown)
+		if grid4 != "" {
+			gridNew := ws.GridHistory.QSOCount == 0
+			compact += " \u00b7 " + "Grid " + grid4 + state(gridNew, true)
+		}
+		if dxcc != "" {
+			dxccNew := ws.DXCCHistory.QSOCount == 0
+			compact += " \u00b7 " + "DXCC " + dxcc + state(dxccNew, true)
+		}
+		lines = append(lines, compact)
+		if ws.DXCCHistory.QSOCount > 0 {
+			lines = append(lines, muted.Render(fmt.Sprintf("DXCC: %d QSOs \u00b7 %d bands \u00b7 %d modes",
+				ws.DXCCHistory.QSOCount, ws.DXCCHistory.UniqueBands, ws.DXCCHistory.UniqueModes)))
+		}
+	} else {
+		// Stacked layout with section headings (narrow but not tiny).
+		lines = append(lines, muted.Render("Status"))
+		for _, r := range nn {
+			lines = append(lines, row(r.label, r.value, maxW))
+		}
+		lines = append(lines, "")
+		lines = append(lines, muted.Render("History"))
+		for _, r := range hist {
+			lines = append(lines, row(r.label, r.value, maxW))
+		}
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, lines...)
+}
+
+// historyLabel describes which scope is being shown.
+type historyLabel string
+
+// selectHistoryScope picks the most useful history: call → grid → DXCC.
+func selectHistoryScope(ws store.WorkedSummary) struct {
+	scope historyLabel
+} {
+	if ws.CallHistory.QSOCount > 0 {
+		return struct{ scope historyLabel }{scope: "call"}
+	}
+	if ws.GridHistory.QSOCount > 0 && ws.GridHistory.UniqueCalls > 1 {
+		return struct{ scope historyLabel }{scope: "grid"}
+	}
+	if ws.DXCCHistory.QSOCount > 0 {
+		return struct{ scope historyLabel }{scope: "dxcc"}
+	}
+	return struct{ scope historyLabel }{}
+}
+
+// formatCountList renders a slice of CountItem as "80m×7 · 40m×3 · +2".
+// Items beyond the available width are replaced by a "+N" overflow token.
+func formatCountList(items []store.CountItem) string {
+	if len(items) == 0 {
+		return ""
+	}
+	// Show up to 4 items; rest become "+N".
+	limit := 4
+	var parts []string
+	for i, it := range items {
+		if i >= limit {
+			remaining := len(items) - i
+			parts = append(parts, "+"+strconv.Itoa(remaining))
+			break
+		}
+		parts = append(parts, it.Value+"\u00d7"+strconv.Itoa(it.Count))
+	}
+	return strings.Join(parts, " \u00b7 ")
+}
+
+// --- safe accessors for wavelog.PrivateLookupResult (used by renderLogbookRows) ---
+
+func safeWorked(r *wavelog.PrivateLookupResult) bool {
+	if r == nil {
+		return false
+	}
+	return r.Worked()
+}
+
+func safeWorkedBand(r *wavelog.PrivateLookupResult) bool {
+	if r == nil {
+		return false
+	}
+	return r.WorkedBand()
+}
+
+// --- Logbook rows (kept for backward compat — unused by new layout) ---
 
 func (m *Model) renderLogbookRows(d *callbook.Result, maxW int) string {
 	call := d.Callsign

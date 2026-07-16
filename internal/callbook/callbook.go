@@ -118,6 +118,19 @@ func (r *Registry) Lookup(callsign string) (*Result, error) {
 			applog.Debug("Callbook: provider error", "provider", p.Name(), "call", callsign, "error", err.Error())
 			continue
 		}
+		// Base-call fallback: when a suffixed call (e.g. KI6NAZ/P) is not
+		// found, retry with the base callsign. Providers that already
+		// handle this internally (HamQTH, Wavelog) succeed on the first
+		// lookup so the retry is never called for them.
+		baseCall := baseCallForFallback(callsign)
+		if (data == nil || data.Callsign == "") && baseCall != "" {
+			data, err = p.Lookup(baseCall)
+			if err != nil {
+				lastErr = err
+				applog.Debug("Callbook: provider base-call error", "provider", p.Name(), "base", baseCall, "error", err.Error())
+				continue
+			}
+		}
 		if data == nil || data.Callsign == "" {
 			applog.Debug("Callbook: provider no data", "provider", p.Name(), "call", callsign)
 			continue
@@ -156,9 +169,29 @@ func (r *Registry) Lookup(callsign string) (*Result, error) {
 		return nil, nil
 	}
 
+	// Providers may return the callsign in lowercase or strip suffixes.
+	// Always use the original requested callsign, normalized to uppercase.
+	merged.Callsign = strings.ToUpper(strings.TrimSpace(callsign))
+
 	applog.Debug("Callbook: lookup complete", "call", callsign,
 		"providers", strings.Join(merged.Providers, ","), "result", resultFields(merged))
 	return merged, nil
+}
+
+// baseCallForFallback strips common portable suffixes (/P, /M, /MM, /AM,
+// /QRP, /A, /R, and US area numbers /1–/9) from a callsign. Returns empty
+// string if the callsign has no such suffix. Used for provider base-call
+// fallback when the suffixed form is not found.
+func baseCallForFallback(callsign string) string {
+	if idx := strings.LastIndexByte(callsign, '/'); idx != -1 && idx < len(callsign)-1 {
+		suffix := strings.ToUpper(callsign[idx+1:])
+		switch suffix {
+		case "P", "M", "MM", "AM", "QRP", "A", "R",
+			"0", "1", "2", "3", "4", "5", "6", "7", "8", "9":
+			return callsign[:idx]
+		}
+	}
+	return ""
 }
 
 // MergeInto fills blank fields in dst with values from src.
