@@ -896,9 +896,6 @@ func (m *Model) buildWorkedPanelLayout(d *callbook.Result, maxW int) workedPanel
 		return " · " + workedMuted.Render("worked")
 	}
 	isNewForCall := func() (bool, bool) {
-		if wl != nil {
-			return !wl.Worked(), true
-		}
 		return !s.CallWorked, true
 	}
 
