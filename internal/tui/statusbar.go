@@ -29,7 +29,7 @@ func (m *Model) headerView() string {
 	op := m.App.Logbook.ActiveOperator
 	if op != "" {
 		if opCfg, ok := m.App.Config.Operators[op]; ok {
-			op = config.OperatorDisplayName(&opCfg)
+			op = opCfg.Callsign
 		}
 	}
 
