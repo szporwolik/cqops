@@ -478,9 +478,11 @@ function buildIdentityLine(aq,p){
   // Merge partner data with form fields — partner wins when both present,
   // except for grid: the QSO form grid (manual entry or reference-derived)
   // beats the QRZ/country grid.
+  // aq.state is QSO lifecycle status ("editing"/"logged"), NOT a
+  // geographical state — never use it in the identity line.
   var name=(p&&p.name)||(aq&&aq.name)||'';
   var qth=(p&&p.qth)||(aq&&aq.qth)||'';
-  var state=(p&&p.state)||(aq&&aq.state)||'';
+  var state=(p&&p.state)||'';
   var country=(p&&p.country)||(aq&&aq.country)||'';
   var grid=(aq&&aq.grid)||(p&&p.grid)||'';
   var parts=[],dist='';
