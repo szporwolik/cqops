@@ -301,6 +301,10 @@ func (m *Model) helpSuffix() string {
 	} else {
 		sb.WriteByte('0')
 	}
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(len(m.psk.spots)))
+	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(m.psk.selected))
 	sig := sb.String()
 	if m.rc.helpSuffixSig == sig && m.rc.helpSuffix != "" {
 		return m.rc.helpSuffix
@@ -444,6 +448,23 @@ func (m *Model) buildHelpSuffix() string {
 			return fmt.Sprintf("Spot %d/%d  Page %d/%d", cursor, total, page, totalPages)
 		}
 		return ""
+	}
+	if m.screen == screenPSKReporter && len(m.psk.spots) > 0 {
+		total := len(m.psk.spots)
+		pos := m.psk.selected + 1
+		if pos > total {
+			pos = total
+		}
+		visible := contentHeight(m.height) - 3
+		if visible < 1 {
+			visible = 1
+		}
+		page := pos/visible + 1
+		totalPages := (total + visible - 1) / visible
+		if totalPages < 1 {
+			totalPages = 1
+		}
+		return fmt.Sprintf("Spot %d/%d  Page %d/%d", pos, total, page, totalPages)
 	}
 	return ""
 }
