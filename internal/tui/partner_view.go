@@ -289,15 +289,41 @@ func (m *Model) callbookSuffix() string {
 		seen[name] = true
 		url := providerURLByName(name, call)
 		if url != "" {
-			links = append(links, osc8Link(url, name))
+			links = append(links, osc8Link(url, shortProviderName(name)))
 		} else {
-			links = append(links, name)
+			links = append(links, shortProviderName(name))
 		}
 	}
 	if len(links) == 0 {
 		return ""
 	}
-	return " \u00b7 " + strings.Join(links, " + ")
+	// Show primary provider + count of additional sources.
+	primary := links[0]
+	extra := len(links) - 1
+	if extra > 0 {
+		return " \u00b7 " + primary + " +" + strconv.Itoa(extra)
+	}
+	return " \u00b7 " + primary
+}
+
+// shortProviderName returns a compact display name for a provider.
+func shortProviderName(name string) string {
+	switch name {
+	case "Local Logbook":
+		return "Local"
+	case "QRZ.com":
+		return "QRZ.com"
+	case "HamQTH":
+		return "HamQTH"
+	case "Callook.info":
+		return "Callook"
+	case "Wavelog":
+		return "Wavelog"
+	case "CTY.DAT":
+		return "CTY.DAT"
+	default:
+		return name
+	}
 }
 
 // checkMark returns a checkmark symbol, falling back to ASCII "Y"
@@ -477,7 +503,7 @@ func (m *Model) renderCallbookRows(d *callbook.Result, maxW int, maxH int) strin
 	// Resolve state code → name when possible.
 	stateName := resolveStateName(d.State, d.Country)
 
-	labelW := 9
+	labelW := 8
 	valW := maxW - labelW - 1
 	if valW < 3 {
 		valW = 3
@@ -789,20 +815,21 @@ func (m *Model) renderWorkedPanel(d *callbook.Result, maxW int) string {
 	// ── Helpers ────────────────────────────────────────────────────────
 
 	acc := S.Info                         // accent for NEW
-	worked := DimStyle                    // dim for WORKED
-	muted := S.Dim                        // muted text (no width constraint — S.FormLabel has Width(11))
+	workedMuted := DimStyle               // dim for "worked"
+	muted := S.Dim                        // muted text
 	valStyle := ValueStyle                // normal value
 	pendDash := DimStyle.Render("\u2014") // compact missing-input placeholder
 
 	// state renders a compact " · STATE" suffix.
+	// NEW gets strong emphasis; worked is deliberately quieter.
 	state := func(isNew, known bool) string {
 		if !known {
-			return " \u00b7 " + muted.Render("checking\u2026")
+			return " \u00b7 " + muted.Render("unknown")
 		}
 		if isNew {
 			return " \u00b7 " + acc.Render("NEW")
 		}
-		return " \u00b7 " + worked.Render("WORKED")
+		return " \u00b7 " + workedMuted.Render("worked")
 	}
 
 	// isNewForCall combines Wavelog + local to determine if the call is new.
@@ -827,6 +854,9 @@ func (m *Model) renderWorkedPanel(d *callbook.Result, maxW int) string {
 	}
 
 	// ── Left column: newness rows ──────────────────────────────────────
+	// Resolved information (Call, DXCC, Grid) comes before missing-input
+	// placeholders (Band, Mode) so the panel stays useful when the form
+	// is incomplete.
 
 	type nRow struct{ label, value string }
 	var nn []nRow
@@ -836,7 +866,26 @@ func (m *Model) renderWorkedPanel(d *callbook.Result, maxW int) string {
 	callVal := acc.Render(call) + state(callNew, callKnown)
 	nn = append(nn, nRow{"Call", callVal})
 
-	// Band
+	// DXCC — resolved, show early.
+	if dxcc != "" {
+		dxccNew, dxccKnown := false, false
+		if wl != nil {
+			dxccNew, dxccKnown = !wl.DXCCConfirmed(), true
+		}
+		if !dxccKnown {
+			dxccKnown = true
+			dxccNew = ws.DXCCHistory.QSOCount == 0
+		}
+		nn = append(nn, nRow{"DXCC", valStyle.Render(dxcc) + state(dxccNew, dxccKnown)})
+	}
+
+	// Grid — resolved, show early.
+	if grid4 != "" {
+		gridNew := ws.GridHistory.QSOCount == 0
+		nn = append(nn, nRow{"Grid", valStyle.Render(grid4) + state(gridNew, true)})
+	}
+
+	// Band — pending when unknown.
 	if band != "" {
 		bNew, bKnown := false, true
 		if wl != nil {
@@ -849,10 +898,9 @@ func (m *Model) renderWorkedPanel(d *callbook.Result, maxW int) string {
 		nn = append(nn, nRow{"Band", pendDash})
 	}
 
-	// Mode
+	// Mode — pending when unknown.
 	if mode != "" {
 		mNew, mKnown := false, true
-		// Wavelog has no mode-only field — use local only.
 		mNew, mKnown = !s.CallOnMode, true
 		nn = append(nn, nRow{"Mode", valStyle.Render(mode) + state(mNew, mKnown)})
 	} else {
@@ -871,33 +919,6 @@ func (m *Model) renderWorkedPanel(d *callbook.Result, maxW int) string {
 		}
 	}
 
-	// DXCC
-	var dxccConfirmed bool // true when we know DXCC is definitely worked
-	if dxcc != "" {
-		dxccNew, dxccKnown := false, false
-		if wl != nil {
-			dxccNew, dxccKnown = !wl.DXCCConfirmed(), true
-			if !dxccNew && dxccKnown {
-				dxccConfirmed = true // Wavelog confirms DXCC is worked
-			}
-		}
-		if !dxccKnown {
-			// No WL data — use local history.
-			dxccKnown = true
-			dxccNew = ws.DXCCHistory.QSOCount == 0
-			if !dxccNew {
-				dxccConfirmed = true // local DB confirms DXCC is worked
-			}
-		}
-		nn = append(nn, nRow{"DXCC", valStyle.Render(dxcc) + state(dxccNew, dxccKnown)})
-	}
-
-	// Grid
-	if grid4 != "" {
-		gridNew := ws.GridHistory.QSOCount == 0
-		nn = append(nn, nRow{"Grid", valStyle.Render(grid4) + state(gridNew, true)})
-	}
-
 	// ── Right column: history (best available scope) ───────────────────
 
 	type hRow struct{ label, value string }
@@ -909,20 +930,19 @@ func (m *Model) renderWorkedPanel(d *callbook.Result, maxW int) string {
 	}
 
 	callHasQSOs := ws.CallHistory.QSOCount > 0
-	dbAvailable := m.App.DB != nil
 
 	if !callHasQSOs {
 		// Call is new — show first-contact indicator.
 		if callKnown {
 			addH("QSOs", "0 \u00b7 "+muted.Render("first contact"))
 		} else {
-			addH("QSOs", "0 \u00b7 "+muted.Render("checking\u2026"))
+			addH("QSOs", "0 \u00b7 "+muted.Render("unknown"))
 		}
 
-		// DXCC fallback when call is new.
+		// Contextual DXCC history — only when there is positive data.
 		if ws.DXCCHistory.QSOCount > 0 {
-			dinfo := fmt.Sprintf("%d QSOs \u00b7 %d bands \u00b7 %d modes",
-				ws.DXCCHistory.QSOCount, ws.DXCCHistory.UniqueBands, ws.DXCCHistory.UniqueModes)
+			dinfo := fmt.Sprintf("%d QSOs \u00b7 %d bands",
+				ws.DXCCHistory.QSOCount, ws.DXCCHistory.UniqueBands)
 			addH("DXCC log", dinfo)
 			if ws.DXCCHistory.LastQSO != nil {
 				lq := ws.DXCCHistory.LastQSO
@@ -937,34 +957,9 @@ func (m *Model) renderWorkedPanel(d *callbook.Result, maxW int) string {
 			}
 			addH("Bands", formatCountList(ws.DXCCHistory.BandCounts))
 			addH("Modes", formatCountList(ws.DXCCHistory.ModeCounts))
-		} else if dxcc != "" && dxccConfirmed {
-			// Wavelog or local DB confirms DXCC is worked, but local DB
-			// has no QSOs yet for this entity.
-			addH("DXCC log", muted.Render("summary unavailable"))
-		} else if dxcc != "" && dbAvailable {
-			addH("DXCC log", "0 \u00b7 "+acc.Render("new entity"))
-		} else if dxcc != "" && !dbAvailable {
-			addH("DXCC log", muted.Render("summary unavailable"))
 		}
-
-		// Grid fallback (only when DXCC log didn't already cover it).
-		if grid4 != "" && ws.GridHistory.QSOCount > 0 && ws.DXCCHistory.QSOCount == 0 {
-			addH("Grid log", fmt.Sprintf("%d QSOs \u00b7 %d calls",
-				ws.GridHistory.QSOCount, ws.GridHistory.UniqueCalls))
-			if ws.GridHistory.LastQSO != nil {
-				lq := ws.GridHistory.LastQSO
-				last := lq.Date
-				if lq.Band != "" {
-					last += " \u00b7 " + lq.Band
-					if lq.Mode != "" {
-						last += " " + lq.Mode
-					}
-				}
-				addH("Last grid", last)
-			}
-		} else if grid4 != "" && ws.GridHistory.QSOCount == 0 && ws.DXCCHistory.QSOCount == 0 && dbAvailable {
-			addH("Grid log", "0 \u00b7 "+acc.Render("new grid"))
-		}
+		// No zero-DXCC or zero-grid filler — the left column already
+		// shows DXCC/Grid status; redundant zeros add noise.
 	} else {
 		// Call has QSOs — show call-specific history.
 		addH("QSOs", strconv.Itoa(ws.CallHistory.QSOCount))

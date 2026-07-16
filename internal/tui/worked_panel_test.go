@@ -112,8 +112,8 @@ func TestWorkedPanel_WorkedCall(t *testing.T) {
 	if !strings.Contains(view, "KI6NAZ") {
 		t.Error("missing callsign in output")
 	}
-	if !strings.Contains(view, "WORKED") {
-		t.Error("expected WORKED for known call")
+	if !strings.Contains(view, "worked") {
+		t.Error("expected worked for known call")
 	}
 	if !strings.Contains(view, "20m") {
 		t.Error("missing band in output")
@@ -204,8 +204,8 @@ func TestWorkedPanel_NewCall_WorkedDXCC(t *testing.T) {
 	if !strings.Contains(view, "DXCC log") {
 		t.Error("expected DXCC log fallback for worked entity")
 	}
-	if !strings.Contains(view, "WORKED") {
-		t.Error("DXCC row should show WORKED")
+	if !strings.Contains(view, "worked") {
+		t.Error("DXCC row should show worked")
 	}
 }
 
@@ -514,11 +514,23 @@ func TestWorkedPanel_NewDXCCHistory(t *testing.T) {
 		Country:  "Testland",
 	}
 	view := m.renderWorkedPanel(d, 60)
-	if !strings.Contains(view, "new entity") {
-		t.Error("expected 'new entity' for new DXCC")
+	// Left column should show DXCC and Grid as NEW — no zero-filler on right.
+	if !strings.Contains(view, "999") {
+		t.Error("expected DXCC 999 in output")
 	}
-	if !strings.Contains(view, "new grid") {
-		t.Error("expected 'new grid' for new grid")
+	if !strings.Contains(view, "ZZ99") {
+		t.Error("expected grid ZZ99 in output")
+	}
+	if !strings.Contains(view, "first contact") {
+		t.Error("expected first contact for new call")
+	}
+	// "new entity" and "new grid" text should NOT appear — left column
+	// already communicates newness; zero-filler is removed.
+	if strings.Contains(view, "new entity") {
+		t.Error("should not show 'new entity' zero-filler")
+	}
+	if strings.Contains(view, "new grid") {
+		t.Error("should not show 'new grid' zero-filler")
 	}
 }
 
