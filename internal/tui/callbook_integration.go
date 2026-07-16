@@ -6,8 +6,6 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/ftl/hamradio/latlon"
-	"github.com/ftl/hamradio/locator"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/callbook"
@@ -506,16 +504,6 @@ func (m *Model) dxccAutoFill() {
 	if p.Name != "" && strings.TrimSpace(m.fields[fieldCountry].Value()) == "" {
 		m.fields[fieldCountry].SetValue(p.Name)
 		applog.Debug("DXCC: dxccAutoFill country", "call", call, "country", p.Name)
-	}
-	// Derive approximate grid locator from the DXCC entity's center coordinates.
-	if strings.TrimSpace(m.fields[fieldGrid].Value()) == "" {
-		ll := latlon.NewLatLon(latlon.Latitude(p.Lat), latlon.Longitude(p.Lon))
-		grid := locator.LatLonToLocator(ll, 4)
-		gridStr := strings.TrimRight(string(grid[:]), "\x00")
-		if len(gridStr) >= 4 {
-			m.fields[fieldGrid].SetValue(strings.ToUpper(gridStr[:4]))
-			applog.Debug("DXCC: dxccAutoFill grid", "call", call, "grid", strings.ToUpper(gridStr[:4]))
-		}
 	}
 	// Invalidate form render cache — the field values changed but the
 	// signature-based cache may not detect it synchronously in all paths.
