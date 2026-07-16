@@ -207,6 +207,36 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return le.handleFilePickerUpdate(msg)
 		}
 
+		// In list mode, forward non-navigation keys to search input.
+		// Navigation keys (up/down/pgup/pgdn/home/end) still go to the table.
+		if le.mode == edModeList {
+			switch k {
+			case "backspace":
+				if le.searchQuery != "" {
+					le.searchInput.SetValue("")
+					le.searchQuery = ""
+					le.applySearchFilter()
+				}
+				return le, nil
+			case "up", "down", "left", "right", "home", "end",
+				"k", "j", "h", "l",
+				"pgup", "pgdown",
+				"esc", "f8",
+				"delete", "e", "enter", "p", "w",
+				"ctrl+w", "ctrl+e", "ctrl+i", "tab":
+				// Navigation and action keys — handled below.
+			default:
+				// Forward to search input.
+				prev := le.searchInput.Value()
+				le.searchInput, _ = le.searchInput.Update(msg)
+				if le.searchInput.Value() != prev {
+					le.searchQuery = strings.TrimSpace(le.searchInput.Value())
+					le.applySearchFilter()
+				}
+				return le, nil
+			}
+		}
+
 		// Download progress — route keys to the dialog (Abort button).
 		if le.dlActive && le.dialog != nil {
 			updated, _ := le.dialog.Update(msg)

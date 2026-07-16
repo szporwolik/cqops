@@ -3,6 +3,7 @@ package tui
 import (
 	"database/sql"
 	"os"
+	"strings"
 
 	"charm.land/bubbles/v2/filepicker"
 	"charm.land/bubbles/v2/table"
@@ -192,6 +193,10 @@ type LogbookEditor struct {
 	editVP          viewport.Model
 	lastEditContent string
 
+	// Search / filter.
+	searchInput textinput.Model
+	searchQuery string
+
 	// File export.
 	filePicker filepicker.Model
 	exportPath string
@@ -267,6 +272,11 @@ func NewLogbookEditor(cfg LogbookEditorConfig) *LogbookEditor {
 		}
 		le.fields[i] = ti
 	}
+	// Search input — for filtering by country or callsign.
+	si := newTextinput()
+	si.Placeholder = "type country or callsign…"
+	si.CharLimit = 40
+	le.searchInput = si
 	return le
 }
 
@@ -335,7 +345,7 @@ func (le *LogbookEditor) loadPage() {
 		h = 24
 	}
 	// pageSize = data rows visible = tableH - 1 header row.
-	le.pageSize = h - 7
+	le.pageSize = h - 9
 	if le.pageSize < 5 {
 		le.pageSize = 5
 	}
@@ -373,6 +383,32 @@ func (le *LogbookEditor) loadPage() {
 func (le *LogbookEditor) isDownloadActive() bool {
 	return le.dlActive
 }
+
+// applySearchFilter filters the current page's QSOs client-side by the
+// search query (case-insensitive match on country or callsign).
+func (le *LogbookEditor) applySearchFilter() {
+	if le.searchQuery == "" {
+		le.loadPage()
+		return
+	}
+	// Re-fetch all QSOs for the current contest, then filter client-side.
+	// We reload the page unfiltered first so the table always has the full
+	// dataset to filter from.
+	le.loadPage()
+	q := strings.ToLower(le.searchQuery)
+	var filtered []qso.QSO
+	for _, qso := range le.qsos {
+		if strings.Contains(strings.ToLower(qso.Country), q) ||
+			strings.Contains(strings.ToLower(qso.Call), q) ||
+			strings.Contains(strings.ToLower(qso.Name), q) {
+			filtered = append(filtered, qso)
+		}
+	}
+	le.qsos = filtered
+	le.totalCount = len(filtered)
+	le.buildTable()
+}
+
 func (le *LogbookEditor) totalPages() int {
 	if le.pageSize < 1 || le.totalCount < 1 {
 		return 1
