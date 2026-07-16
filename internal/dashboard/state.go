@@ -140,6 +140,7 @@ type QSOView struct {
 	RSTSent     string    `json:"rstSent,omitempty"`
 	RSTRcvd     string    `json:"rstRcvd,omitempty"`
 	Grid        string    `json:"grid,omitempty"`
+	MyGrid      string    `json:"myGrid,omitempty"`
 	Country     string    `json:"country,omitempty"`
 	DXCC        int       `json:"dxcc,omitempty"`
 	Operator    string    `json:"operator,omitempty"`
@@ -206,6 +207,7 @@ type PartnerInfo struct {
 	Call       string  `json:"call,omitempty"`
 	Name       string  `json:"name,omitempty"`
 	QTH        string  `json:"qth,omitempty"`
+	State      string  `json:"state,omitempty"`
 	Country    string  `json:"country,omitempty"`
 	Continent  string  `json:"continent,omitempty"`
 	Grid       string  `json:"grid,omitempty"`
@@ -213,6 +215,7 @@ type PartnerInfo struct {
 	Bearing    float64 `json:"bearing,omitempty"`
 	Lat        float64 `json:"lat,omitempty"`
 	Lon        float64 `json:"lon,omitempty"`
+	TZOffset   float64 `json:"tzOffset,omitempty"` // timezone offset from UTC (from Big CTY)
 	ImageURL   string  `json:"imageUrl,omitempty"`
 	Source     string  `json:"source,omitempty"` // "qrz", "wavelog", "form"
 
@@ -252,6 +255,10 @@ type DisplayConfig struct {
 	// IsOnline is true when the TUI has internet access. When false, the
 	// dashboard hides QR codes and gracefully degrades map tiles.
 	IsOnline bool `json:"isOnline"`
+
+	// Debug enables verbose console logging in the browser when the TUI
+	// has debug mode enabled.
+	Debug bool `json:"debug,omitempty"`
 }
 
 // =============================================================================
@@ -275,6 +282,8 @@ type State struct {
 	lastDXC        DXCInfo
 	lastPSK        PSKInfo
 	lastActiveCall string
+	lastOperator   OperatorInfo
+	lastLogbook    LogbookInfo
 
 	// Session counter — incremented on AddLoggedQSO.
 	sessionQSOs int
@@ -284,6 +293,11 @@ type State struct {
 func NewState(hub *Hub) *State {
 	return &State{
 		hub: hub,
+		snapshot: Snapshot{
+			Display: DisplayConfig{
+				IsOnline: true, // optimistic — corrected to false by first internet check if needed
+			},
+		},
 	}
 }
 
@@ -314,32 +328,41 @@ func (s *State) SetStation(info StationInfo) {
 	}
 }
 
-// SetOperator updates operator info and publishes if it changed.
+// SetOperator updates operator info and publishes when changed.
 func (s *State) SetOperator(info OperatorInfo) {
 	s.mu.Lock()
-	s.snapshot.Operator = info
-	s.snapshot.UpdatedAt = timeNow()
+	changed := info != s.lastOperator
+	s.lastOperator = info
+	if changed {
+		s.snapshot.Operator = info
+		s.snapshot.UpdatedAt = timeNow()
+	}
 	s.mu.Unlock()
-	// Always publish — cheap, called ≤1×/tick, and change detection
-	// would block the initial fill when the SSE handshake beats the
-	// first pushDashboardFast call.
-	s.hub.Publish(EventOperator, info)
+	if changed {
+		s.hub.Publish(EventOperator, info)
+	}
 }
 
-// SetLogbook updates logbook info and publishes if it changed.
+// SetLogbook updates logbook info and publishes when changed.
 func (s *State) SetLogbook(info LogbookInfo) {
 	s.mu.Lock()
-	s.snapshot.Logbook = info
-	s.snapshot.UpdatedAt = timeNow()
+	changed := info != s.lastLogbook
+	s.lastLogbook = info
+	if changed {
+		s.snapshot.Logbook = info
+		s.snapshot.UpdatedAt = timeNow()
+	}
 	s.mu.Unlock()
-	// Always publish — see SetOperator for rationale.
-	s.hub.Publish(EventLogbook, info)
+	if changed {
+		s.hub.Publish(EventLogbook, info)
+	}
 }
 
 // SetRig updates rig info and publishes only when meaningful fields change.
 func (s *State) SetRig(info RigInfo) {
 	s.mu.Lock()
 	changed := info.Connected != s.lastRig.Connected ||
+		info.Enabled != s.lastRig.Enabled ||
 		info.FrequencyHz != s.lastRig.FrequencyHz ||
 		info.Mode != s.lastRig.Mode ||
 		info.Band != s.lastRig.Band
@@ -589,7 +612,9 @@ func (s *State) SetPartner(p *PartnerInfo) {
 func (s *State) SetDisplay(d DisplayConfig) {
 	s.mu.Lock()
 	changed := s.snapshot.Display.InternetCallbookURL != d.InternetCallbookURL ||
-		s.snapshot.Display.InternetCallbookName != d.InternetCallbookName
+		s.snapshot.Display.InternetCallbookName != d.InternetCallbookName ||
+		s.snapshot.Display.IsOnline != d.IsOnline ||
+		s.snapshot.Display.Debug != d.Debug
 	s.snapshot.Display = d
 	s.mu.Unlock()
 	if changed {

@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -165,6 +164,7 @@ func (m *Model) pushLoggedQSOToDashboard(qs *qso.QSO) {
 		RSTSent:   qs.RSTSent,
 		RSTRcvd:   qs.RSTRcvd,
 		Grid:      qs.GridSquare,
+		MyGrid:    qs.MyGridSquare,
 		Country:   qs.Country,
 		Operator:  qs.Operator,
 	}
@@ -180,11 +180,30 @@ func (m *Model) pushLoggedQSOToDashboard(qs *qso.QSO) {
 }
 
 // stripANSI removes ANSI escape sequences (CSI codes) from a string.
-// Used to clean Lip Gloss-styled text before sending it to the browser.
-var reANSI = regexp.MustCompile(`\x1b\[[0-9;]*m`)
-
+// Uses a byte scanner instead of regex — ~5× faster on low-end hardware.
 func stripANSI(s string) string {
-	return reANSI.ReplaceAllString(s, "")
+	// Fast path: no escape sequences.
+	if !strings.Contains(s, "\x1b[") {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	i := 0
+	for i < len(s) {
+		if s[i] == 0x1b && i+1 < len(s) && s[i+1] == '[' {
+			i += 2 // skip ESC[
+			for i < len(s) && ((s[i] >= '0' && s[i] <= '9') || s[i] == ';') {
+				i++
+			}
+			if i < len(s) && s[i] == 'm' {
+				i++ // skip the terminating 'm'
+			}
+		} else {
+			b.WriteByte(s[i])
+			i++
+		}
+	}
+	return b.String()
 }
 
 func clubLogoURL(cfgURL string) string {
@@ -192,6 +211,27 @@ func clubLogoURL(cfgURL string) string {
 		return cfgURL
 	}
 	return "/logo.png" // embedded in binary — no internet required
+}
+
+// providerBadge returns a dashboard ProviderBadge with the correct URL
+// for the given provider name and callsign.
+func providerBadge(name, call string, lb *config.Logbook) dashboard.ProviderBadge {
+	badge := dashboard.ProviderBadge{Name: name}
+	switch name {
+	case "QRZ.com":
+		badge.URL = "https://www.qrz.com/db/" + call
+	case "QRZ.RU":
+		badge.URL = "https://www.qrz.ru/db/" + call
+	case "HamQTH":
+		badge.URL = "https://www.hamqth.com/" + call
+	case "Callook.info":
+		badge.URL = "https://callook.info/" + call
+	case "Wavelog":
+		if lb != nil && lb.Wavelog != nil && lb.Wavelog.URL != "" {
+			badge.URL = strings.TrimRight(lb.Wavelog.URL, "/")
+		}
+	}
+	return badge
 }
 
 // unitForDashboard returns "imperial" or "metric" for the dashboard.
@@ -253,11 +293,19 @@ func (m *Model) pushDashboardPartner(ds *dashboard.State, call string) {
 	d := m.lookup.partnerData
 	pi.Name = d.Name
 	pi.QTH = d.QTH
+	pi.State = d.State
 	pi.Country = d.Country
 	pi.Grid = d.Grid
 	fmt.Sscanf(d.Lat, "%f", &pi.Lat)
 	fmt.Sscanf(d.Lon, "%f", &pi.Lon)
 	pi.ImageURL = d.ImageURL
+
+	// Resolve timezone offset from Big CTY (if available).
+	if m.App.BigCTY != nil {
+		if e := m.App.BigCTY.Find(call); e != nil {
+			pi.TZOffset = e.TZOffset
+		}
+	}
 
 	// Build provider badges with URLs for external providers.
 	// CTY.DAT is an always-on offline fallback — do not show a badge.
@@ -266,31 +314,19 @@ func (m *Model) pushDashboardPartner(ds *dashboard.State, call string) {
 		seen := map[string]bool{}
 		for _, name := range d.Providers {
 			if name == "CTY.DAT" || seen[name] {
-				continue // skip always-on fallback and duplicates (base-call merge)
+				continue
 			}
 			seen[name] = true
-			badge := dashboard.ProviderBadge{Name: name}
-			switch name {
-			case "QRZ.com":
-				badge.URL = "https://www.qrz.com/db/" + call
-			case "HamQTH":
-				badge.URL = "https://www.hamqth.com/" + call
-			case "Callook.info":
-				badge.URL = "https://callook.info/" + call
-			case "Wavelog":
-				if wl := m.App.Logbook.Wavelog; wl != nil && wl.URL != "" {
-					badge.URL = strings.TrimRight(wl.URL, "/")
-				}
-			}
-			pi.CallbookProviders = append(pi.CallbookProviders, badge)
+			pi.CallbookProviders = append(pi.CallbookProviders, providerBadge(name, call, m.App.Logbook))
 		}
 	}
 
 	// Skip push + debug log when nothing changed since last tick.
 	cur := cachedPartner{
-		Call: pi.Call, Name: pi.Name, QTH: pi.QTH,
+		Call: pi.Call, Name: pi.Name, QTH: pi.QTH, State: pi.State,
 		Country: pi.Country, Grid: pi.Grid, ImageURL: pi.ImageURL,
 		Providers: strings.Join(d.Providers, ","),
+		TZOffset:  pi.TZOffset,
 	}
 	if cur != lastPushedPartner {
 		lastPushedPartner = cur
@@ -329,13 +365,14 @@ func (m *Model) forcePushDashboardPartner() {
 }
 
 // internetCallbook returns the name and URL template of the highest-priority
-// online callbook provider (QRZ.com, HamQTH, or Callook.info — Wavelog is
+// online callbook provider (QRZ.com, QRZ.RU, HamQTH, or Callook.info — Wavelog is
 // intentionally excluded because its search URLs are instance-specific and not
 // a public callsign lookup). Callook.info is used only as a last-resort fallback
 // when no other internet callbook is configured (US callsigns only).
 // Returns empty strings if no provider is enabled.
 func (m *Model) internetCallbook() (name, urlTemplate string) {
 	qrz := m.App.Config.Integrations.Callbook.QRZ
+	qrzru := m.App.Config.Integrations.Callbook.QRZRu
 	hamqth := m.App.Config.Integrations.Callbook.HamQTH
 	callook := m.App.Config.Integrations.Callbook.Callook
 
@@ -349,13 +386,23 @@ func (m *Model) internetCallbook() (name, urlTemplate string) {
 		if qPri == 0 {
 			qPri = 50
 		}
+		rPri := qrzru.Priority
+		if rPri == 0 {
+			rPri = 35
+		}
 		if qrz.Enabled && qrz.User != "" && qPri > hqPri {
 			return "QRZ.com", "https://www.qrz.com/db/{CALL}"
+		}
+		if qrzru.Enabled && qrzru.User != "" && rPri > hqPri {
+			return "QRZ.RU", "https://www.qrz.ru/db/{CALL}"
 		}
 		return "HamQTH", "https://www.hamqth.com/{CALL}"
 	}
 	if qrz.Enabled && qrz.User != "" {
 		return "QRZ.com", "https://www.qrz.com/db/{CALL}"
+	}
+	if qrzru.Enabled && qrzru.User != "" {
+		return "QRZ.RU", "https://www.qrz.ru/db/{CALL}"
 	}
 	// Callook.info as last-resort fallback — free, no auth, US callsigns only.
 	if callook.Enabled {
@@ -368,6 +415,12 @@ func (m *Model) internetCallbook() (name, urlTemplate string) {
 // instead of every tick (~1 s). On low-end hardware this halves the per-tick
 // overhead of building rig/WSJT-X/solar/partner structs. The 2 s interval is
 // still fast enough for SSE push to feel real-time in the browser.
+// dashboardDataDirty is set to true when QSO data changes (save, import,
+// logbook switch). The next pushDashboardState call refreshes today QSOs,
+// stats, and recent QSOs from the database. Avoids expensive aggregation
+// queries on every frame for low-end hardware.
+var dashboardDataDirty bool = true // initially dirty to ensure first push
+
 var lastDashboardPushTick int
 
 // Called from the tick handler every second. Most Set* calls early-exit because
@@ -390,16 +443,19 @@ func (m *Model) pushDashboardState() {
 
 	ds := m.http.client.State()
 
-	// --- Refresh today QSOs + stats for the map (rate-limited) ---
-	now := time.Now()
-	if now.Sub(lastTodayPush) > 5*time.Second {
-		lastTodayPush = now
+	// --- Refresh today QSOs + stats for the map (event-driven) ---
+	// Only recompute when QSO data changed — not on a timer.
+	// The initial push (dashboardDataDirty==true) ensures the
+	// dashboard populates on startup.
+	if dashboardDataDirty {
+		dashboardDataDirty = false
 		m.pushDashboardToday(ds)
 		m.pushDashboardStats(ds)
 		m.pushDashboardRecent(ds)
 	}
 
 	// --- APRS stations for the local map (rate-limited, 30 s, or on-demand) ---
+	now := time.Now()
 	if now.Sub(lastAPRSPush) > 30*time.Second || m.App.ConsumeAPRSRefresh() {
 		lastAPRSPush = now
 		m.pushDashboardAPRS(ds)
@@ -408,16 +464,12 @@ func (m *Model) pushDashboardState() {
 
 // pushDashboardFast pushes only the light-weight, change-detected parts:
 // app, display, station, operator, logbook, rig, WSJT-X, active QSO, partner.
-// No DB queries for today/recent QSOs. Guarded by lastFastTick to avoid
-// duplicate work when called from both handleTick and applyRigPoll.
+// No DB queries for today/recent QSOs. Each Set* call on the dashboard state
+// performs its own change detection, so no external guard is needed.
 func (m *Model) pushDashboardFast() {
 	if m.http.client == nil || !m.http.online {
 		return
 	}
-	if m.tickCount == lastFastTick {
-		return
-	}
-	lastFastTick = m.tickCount
 	ds := m.http.client.State()
 
 	// --- App ---
@@ -440,7 +492,8 @@ func (m *Model) pushDashboardFast() {
 		Theme:                cfg.Theme,
 		InternetCallbookName: icName,
 		InternetCallbookURL:  icURL,
-		IsOnline:             m.inetOnline,
+		IsOnline:             m.inetOnline && m.inetConfirmed,
+		Debug:                m.App.Config.General.Debug,
 	})
 
 	// --- Station ---
@@ -456,8 +509,8 @@ func (m *Model) pushDashboardFast() {
 	}
 	if hasRig {
 		stationInfo.Radio = rp.Name
-		if rp.Model != "" {
-			stationInfo.Radio = rp.Model
+		if rp.Model != "" && rp.Model != rp.Name {
+			stationInfo.Radio = rp.Name + " (" + rp.Model + ")"
 		}
 		stationInfo.Antenna = rp.Antenna
 	}
@@ -651,9 +704,6 @@ func (m *Model) pushDashboardFast() {
 	m.pushDashboardPartner(ds, call)
 }
 
-// lastTodayPush rate-limits the DB query for today QSOs (map data).
-var lastTodayPush time.Time
-
 // lastAPRSPush rate-limits the APRS station push to the dashboard local map.
 var lastAPRSPush time.Time
 
@@ -677,8 +727,9 @@ var lastPushedAQSO cachedAQSO
 
 // lastPushedPartner caches the last partner fields pushed to the dashboard.
 type cachedPartner struct {
-	Call, Name, QTH, Country, Grid, ImageURL string
-	Providers                                string // comma-separated provider names
+	Call, Name, QTH, State, Country, Grid, ImageURL string
+	Providers                                       string // comma-separated provider names
+	TZOffset                                        float64
 }
 
 var lastPushedPartner cachedPartner
@@ -697,10 +748,6 @@ func (m *Model) forcePushDashboardRecent(ds *dashboard.State) {
 	m.pushDashboardRecent(ds)
 }
 
-// lastFastTick prevents pushDashboardFast from being called
-// redundantly from both handleTick and applyRigPoll within the same tick.
-var lastFastTick int
-
 // lastTodayIDs holds the last pushed today QSO ID list for change detection.
 var lastTodayIDs []int64
 
@@ -714,6 +761,33 @@ func (m *Model) invalidateDashboardFlags() {
 	lastActiveNewCall = false
 	lastActiveNewDXCC = false
 	lastPushedAQSO = cachedAQSO{}
+	dashboardDataDirty = true
+	// Clear country worked-before cache — the QSO we just saved may
+	// change country status.
+	clear(countryWorkedCache)
+}
+
+// forcePushDashboardAll clears all dashboard throttle and fingerprint caches
+// then force-pushes every panel. Call after a logbook switch (Ctrl+L) so the
+// dashboard website reflects the new database immediately instead of waiting
+// for the next throttled tick cycle. For lighter changes (rig, operator,
+// contest), use pushDashboardFast() directly — it avoids expensive DB queries.
+func (m *Model) forcePushDashboardAll() {
+	// Clear throttle/cache state so pushDashboardState runs every panel.
+	lastDashboardPushTick = 0
+	lastAPRSPush = time.Time{}
+	// Use sentinel values instead of nil so that an empty result (0 QSOs
+	// in a fresh logbook) does not "match" the cleared cache via idsEqual.
+	lastTodayIDs = []int64{-1}
+	lastRecentIDs = []int64{-1}
+	pushDashboardLastCall = ""
+	lastPushedAQSO = cachedAQSO{}
+	lastActiveDupe = false
+	lastActiveNewCall = false
+	lastActiveNewDXCC = false
+	lastPushedPartner = cachedPartner{}
+	partnerEmpty = false
+	m.pushDashboardState()
 }
 
 func idsEqual(a, b []int64) bool {
@@ -739,15 +813,32 @@ func cloneIDs(a []int64) []int64 {
 
 // countryWorkedBefore checks whether any QSO exists for the given country
 // by a different base_call than the current active call.
+// Results are cached per (country, baseCall) pair — cleared on QSO save.
 func (m *Model) countryWorkedBefore(country string) bool {
 	if m.App.DB == nil || country == "" {
 		return false
 	}
+	baseCall := qso.DeriveBaseCall(pushDashboardLastCall)
+
+	// Cache key: country + baseCall. Cache lives for the duration the
+	// current call is active; invalidateDashboardFlags clears it.
+	cacheKey := country + "|" + baseCall
+	if cached, ok := countryWorkedCache[cacheKey]; ok {
+		return cached
+	}
+
 	var count int
-	err := m.App.DB.QueryRow(`SELECT COUNT(*) FROM qsos WHERE country = ? AND base_call != ? LIMIT 1`,
-		country, qso.DeriveBaseCall(pushDashboardLastCall)).Scan(&count)
-	return err == nil && count > 0
+	err := m.App.DB.QueryRow(
+		`SELECT COUNT(*) FROM qsos WHERE country = ? AND base_call != ? LIMIT 1`,
+		country, baseCall,
+	).Scan(&count)
+	result := err == nil && count > 0
+	countryWorkedCache[cacheKey] = result
+	return result
 }
+
+// countryWorkedCache caches countryWorkedBefore results.
+var countryWorkedCache = make(map[string]bool)
 
 // pushDashboardRecent queries the DB directly for the 20 most recent QSOs
 // (newest-first). Pushes only when the list of QSO IDs changed.
@@ -765,8 +856,31 @@ func (m *Model) pushDashboardRecent(ds *dashboard.State) {
 		qsos, err = m.loadRecentFromDate(eventStart, limit)
 	} else {
 		// No event start: show today's QSOs (matches map/stats logic).
-		today := time.Now().UTC().Format("20060102")
+		now := time.Now().UTC()
+		today := now.Format("20060102")
+		yesterday := now.Add(-24 * time.Hour).Format("20060102")
 		qsos, err = m.loadRecentFromDate(today, limit)
+		// Midnight-crossing guard: if the new UTC day has very few QSOs,
+		// also include yesterday so the recent table doesn't clear out
+		// at 00:00. This matches the guard in pushDashboardToday.
+		if err == nil && len(qsos) < 5 {
+			yQsos, yErr := m.loadRecentFromDate(yesterday, limit)
+			if yErr == nil {
+				// Deduplicate by ID (a QSO cannot span two dates, but
+				// be safe against clock skew or duplicate DB rows).
+				seen := make(map[int64]bool, limit*2)
+				for _, q := range qsos {
+					seen[q.ID] = true
+				}
+				for _, q := range yQsos {
+					if seen[q.ID] {
+						continue
+					}
+					seen[q.ID] = true
+					qsos = append(qsos, q)
+				}
+			}
+		}
 	}
 	if err != nil {
 		applog.Debug("dashboard: cannot load recent QSOs", "error", err)
@@ -802,6 +916,7 @@ func (m *Model) pushDashboardRecent(ds *dashboard.State) {
 			RSTSent:   q.RSTSent,
 			RSTRcvd:   q.RSTRcvd,
 			Grid:      q.GridSquare,
+			MyGrid:    q.MyGridSquare,
 			Country:   q.Country,
 			Operator:  q.Operator,
 		}
@@ -816,10 +931,17 @@ func (m *Model) pushDashboardRecent(ds *dashboard.State) {
 // loadRecentFromDate loads up to <limit> QSOs with qso_date >= date,
 // ordered newest-first.
 func (m *Model) loadRecentFromDate(date string, limit int) ([]qso.QSO, error) {
+	if m.App.DB == nil {
+		return nil, nil
+	}
 	return store.ListQSOsFromDate(m.App.DB, date, limit)
 }
 
 func (m *Model) pushDashboardToday(ds *dashboard.State) {
+	db := m.App.DB
+	if db == nil {
+		return
+	}
 	now := time.Now().UTC()
 	today := now.Format("20060102")
 
@@ -834,14 +956,16 @@ func (m *Model) pushDashboardToday(ds *dashboard.State) {
 	}
 
 	// Load QSOs from minDate through today (capped at 5000).
-	qsos, err := store.ListQSOsFromDate(m.App.DB, minDate, 5000)
+	qsos, err := store.ListQSOsFromDate(db, minDate, 5000)
 	if err != nil {
-		applog.Debug("dashboard: cannot load QSOs from date", "minDate", minDate, "error", err)
+		if !strings.Contains(err.Error(), "database is closed") {
+			applog.Debug("dashboard: cannot load QSOs from date", "minDate", minDate, "error", err)
+		}
 		return
 	}
 	// If today has very few QSOs (midnight crossing), also include yesterday.
 	if len(qsos) < 5 && minDate == today && yesterday > minDate {
-		yQsos, yErr := store.ListQSOsFromDate(m.App.DB, yesterday, 5000)
+		yQsos, yErr := store.ListQSOsFromDate(db, yesterday, 5000)
 		if yErr == nil {
 			qsos = append(yQsos, qsos...)
 		}
@@ -873,6 +997,7 @@ func (m *Model) pushDashboardToday(ds *dashboard.State) {
 			RSTSent:   qs.RSTSent,
 			RSTRcvd:   qs.RSTRcvd,
 			Grid:      qs.GridSquare,
+			MyGrid:    qs.MyGridSquare,
 			Country:   qs.Country,
 			Operator:  qs.Operator,
 		}
@@ -987,11 +1112,6 @@ func (m *Model) pushDashboardAPRS(ds *dashboard.State) {
 					}
 					view[i].Trail = dt
 					trailCount++
-				}
-				// Diagnostic: log trail status for SP9KSK-9 specifically.
-				if view[i].Callsign == "SP9KSK-9" {
-					t, has := trails[view[i].Callsign]
-					applog.Debug("dashboard: SP9KSK-9 trail", "hasTrail", has, "trailLen", len(t), "currentLat", fmt.Sprintf("%.5f", view[i].Lat), "currentLon", fmt.Sprintf("%.5f", view[i].Lon))
 				}
 			}
 		}

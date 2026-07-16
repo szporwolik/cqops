@@ -66,7 +66,7 @@ func (le *LogbookEditor) buildTable() {
 	if h < 10 {
 		h = 24
 	}
-	tableH := h - 6
+	tableH := h - 8
 	if tableH < 5 {
 		tableH = 5
 	}
@@ -212,11 +212,15 @@ func (le *LogbookEditor) buildTable() {
 		table.WithWidth(bodyW),
 	)
 	s := table.DefaultStyles()
+	hdrFg := P.Text
+	if le.searchQuery != "" {
+		hdrFg = P.Cursor // pinkish accent when filtering
+	}
 	s.Header = s.Header.
 		BorderForeground(P.TextDim).
 		BorderBottom(true).
 		Bold(false).
-		Foreground(P.Text)
+		Foreground(hdrFg)
 	t.SetStyles(s)
 	t.Focus()
 	le.table = t

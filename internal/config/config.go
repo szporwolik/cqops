@@ -14,14 +14,10 @@ import (
 	"github.com/szporwolik/cqops/internal/version"
 )
 
-// Default host/port values for rig and rotor backends.
+// Default host/port values for rotor backends.
 const (
-	DefaultFlrigHost  = "localhost"
-	DefaultFlrigPort  = "12345"
-	DefaultHamlibHost = "127.0.0.1"
-	DefaultHamlibPort = "4532"
-	DefaultRotorHost  = "127.0.0.1"
-	DefaultRotorPort  = "4533"
+	DefaultRotorHost = "127.0.0.1"
+	DefaultRotorPort = "4533"
 )
 
 type Config struct {
@@ -76,6 +72,7 @@ type IntegrationsConfig struct {
 	QRZLegacy             QRZConfig             `yaml:"qrzcom_callbook,omitempty"`
 	HamQTHLegacy          HamQTHConfig          `yaml:"hamqth_callbook,omitempty"`
 	CallookLegacy         CallookConfig         `yaml:"callook,omitempty"`
+	QRZRuLegacy           QRZRuConfig           `yaml:"qrzru_callbook,omitempty"`
 	LogbookCallbookLegacy LogbookCallbookConfig `yaml:"logbook_callbook,omitempty"`
 	WavelogCallbookLegacy WavelogCallbookConfig `yaml:"wavelog_callbook,omitempty"`
 	CTYCallbookLegacy     CTYCallbookConfig     `yaml:"cty_callbook,omitempty"`
@@ -89,6 +86,7 @@ type CallbookGroup struct {
 	QRZ              QRZConfig             `yaml:"qrzcom,omitempty"`
 	HamQTH           HamQTHConfig          `yaml:"hamqth,omitempty"`
 	Callook          CallookConfig         `yaml:"callook,omitempty"`
+	QRZRu            QRZRuConfig           `yaml:"qrzru,omitempty"`
 	Logbook          LogbookCallbookConfig `yaml:"local,omitempty"`
 	Wavelog          WavelogCallbookConfig `yaml:"wavelog,omitempty"`
 	CTY              CTYCallbookConfig     `yaml:"cty,omitempty"`
@@ -117,6 +115,10 @@ func (c *Config) Normalize() {
 	if c.Integrations.CallookLegacy.Enabled || c.Integrations.CallookLegacy.Priority != 0 {
 		cb.Callook = c.Integrations.CallookLegacy
 		c.Integrations.CallookLegacy = CallookConfig{}
+	}
+	if c.Integrations.QRZRuLegacy.Enabled || c.Integrations.QRZRuLegacy.User != "" {
+		cb.QRZRu = c.Integrations.QRZRuLegacy
+		c.Integrations.QRZRuLegacy = QRZRuConfig{}
 	}
 	if c.Integrations.LogbookCallbookLegacy.Enabled || c.Integrations.LogbookCallbookLegacy.Priority != 0 {
 		cb.Logbook = c.Integrations.LogbookCallbookLegacy
@@ -260,7 +262,15 @@ type HamQTHConfig struct {
 // CallookConfig holds settings for the Callook.info free US callbook service.
 type CallookConfig struct {
 	Enabled  bool `yaml:"enabled"`
-	Priority int  `yaml:"priority,omitempty"` // lookup order, 0..100; default 40
+	Priority int  `yaml:"priority,omitempty"` // lookup order, 0..100; default 30
+}
+
+// QRZRuConfig holds settings for the QRZ.RU free callbook service.
+type QRZRuConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	User     string `yaml:"user,omitempty"`     // API login (from QRZ.RU personal cabinet)
+	Pass     string `yaml:"pass,omitempty"`     // API password
+	Priority int    `yaml:"priority,omitempty"` // lookup order, 0..100; default 35
 }
 
 // LogbookCallbookConfig enables searching past local QSOs as a callbook source.
@@ -408,24 +418,6 @@ func (s Station) RigPower(rgs map[string]RigPreset) string {
 	return rp.Power
 }
 
-// RigFlrig returns the flrig settings from the referenced preset.
-func (s Station) RigFlrig(rgs map[string]RigPreset) (enabled bool, host, port string) {
-	rp, ok := s.Rig(rgs)
-	if !ok {
-		return false, DefaultFlrigHost, DefaultFlrigPort
-	}
-	return rp.RadioBackend == "flrig", rp.FlrigHost, rp.FlrigPort
-}
-
-// RigHamlib returns the hamlib settings from the referenced preset.
-func (s Station) RigHamlib(rgs map[string]RigPreset) (enabled bool, host, port string) {
-	rp, ok := s.Rig(rgs)
-	if !ok {
-		return false, DefaultHamlibHost, DefaultHamlibPort
-	}
-	return rp.RadioBackend == "hamlib", rp.HamlibRadioHost, rp.HamlibRadioPort
-}
-
 // RigRotor returns the rotor settings from the referenced preset.
 func (s Station) RigRotor(rgs map[string]RigPreset) (enabled bool, host, port string) {
 	rp, ok := s.Rig(rgs)
@@ -442,8 +434,6 @@ type RigPreset struct {
 	Antenna         string `yaml:"antenna"`
 	Power           string `yaml:"power"`
 	RadioBackend    string `yaml:"radio_backend,omitempty"` // "" | "flrig" | "hamlib"
-	Backend         string `yaml:"backend,omitempty"`       // DEPRECATED: migrated to RadioBackend in Load() — remove after v1.0
-	FlrigEnabled    bool   `yaml:"flrig_enabled,omitempty"` // DEPRECATED: migrated to RadioBackend in Load() — remove after v1.0
 	FlrigHost       string `yaml:"flrig_host,omitempty"`
 	FlrigPort       string `yaml:"flrig_port,omitempty"`
 	HamlibRadioHost string `yaml:"hamlib_radio_host,omitempty"`
@@ -499,21 +489,6 @@ func Load(path string) (*Config, error) {
 
 	// Migrate legacy config keys to current names.
 	cfg.Normalize()
-
-	// Backward compat: migrate old backend → radio_backend, FlrigEnabled → RadioBackend.
-	for id, rp := range cfg.Rigs {
-		if rp.RadioBackend == "" && rp.Backend != "" {
-			fmt.Fprintf(os.Stderr, "CQOps: rig %s uses deprecated 'backend' field — please update to 'radio_backend'\n", id)
-			rp.RadioBackend = rp.Backend
-			rp.Backend = ""
-		}
-		if rp.RadioBackend == "" && rp.FlrigEnabled {
-			rp.RadioBackend = "flrig"
-		}
-		rp.FlrigEnabled = false // no longer the source of truth
-		rp.Backend = ""         // clear old key
-		cfg.Rigs[id] = rp
-	}
 
 	cfg.BroadcastStations = DefaultBroadcastStations()
 
@@ -770,7 +745,7 @@ func (c *Config) Validate() error {
 		if strings.TrimSpace(id) == "" {
 			return fmt.Errorf("rig entry with empty id")
 		}
-		if rig.RadioBackend == "flrig" || rig.FlrigEnabled {
+		if rig.RadioBackend == "flrig" {
 			if strings.TrimSpace(rig.FlrigHost) == "" {
 				return fmt.Errorf("rig %q: flrig_host is required when radio_backend=flrig", id)
 			}

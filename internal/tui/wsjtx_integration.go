@@ -255,6 +255,7 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 					GridSquare: data.Grid,
 					CQZone:     data.CQZone,
 					ITUZone:    data.ITUZone,
+					DXCC:       data.DXCC,
 				})
 				applog.Info("WSJT-X: callbook enrichment applied", "call", call, "qso_id", qsoID)
 			} else {
@@ -262,8 +263,8 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 			}
 		}
 
-		// Step 1b: enrich Country, CQ/ITU zone from DXCC if not already filled by QRZ.
-		if m.App.Config.General.UseCTY && m.App.DXCC != nil {
+		// Step 1b: enrich Country, CQ/ITU zone, and DXCC from Big CTY.
+		if m.App.Config.General.UseCTY && m.App.BigCTY != nil {
 			qs, _ := store.GetQSOByID(m.App.DB, qsoID)
 			if qs != nil {
 				if p := m.dxccLookup(call); p != nil {
@@ -281,9 +282,13 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 						ed.ITUZone = fmt.Sprintf("%d", p.ITUZone)
 						need = true
 					}
+					if qs.DXCC == "" && p.DXCC > 0 {
+						ed.DXCC = fmt.Sprintf("%d", p.DXCC)
+						need = true
+					}
 					if need {
 						store.UpdateQSOEnrichment(m.App.DB, qsoID, ed)
-						applog.Debug("DXCC: filled from prefix", "call", call, "country", ed.Country, "cqz", ed.CQZone, "ituz", ed.ITUZone)
+						applog.Debug("WSJT-X: Big CTY enrichment", "call", call, "country", ed.Country, "dxcc", ed.DXCC)
 					}
 				}
 			}

@@ -171,7 +171,7 @@ func (m *Model) handleRefUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 
 		case "up", "down", "pgup", "pgdown":
 			if m.ref.searched && len(m.ref.rows) > 0 {
-				tableH := (contentHeight(m.height) - 2)
+				tableH := (contentHeight(m.height) - 6)
 				if tableH < 3 {
 					tableH = 3
 				}
@@ -262,6 +262,10 @@ func (m *Model) viewRef() string {
 
 	var b strings.Builder
 
+	// Title header — same style as bandplan and DXC.
+	b.WriteString(S.Title.Width(w).Render("References \u2014 SOTA " + middot() + " POTA " + middot() + " WWFF " + middot() + " IOTA"))
+	b.WriteString("\n")
+
 	searchLabel := S.FormLabel.Render("Search: ")
 	inputView := m.ref.input.View()
 	searchRow := lipgloss.JoinHorizontal(lipgloss.Top, " ", searchLabel, inputView)
@@ -269,6 +273,9 @@ func (m *Model) viewRef() string {
 	b.WriteString("\n")
 
 	if m.ref.searched {
+		// Empty separator row between search line and results.
+		b.WriteString("\n")
+
 		if len(m.ref.rows) == 0 {
 			b.WriteString(DimStyle.Width(w).Align(lipgloss.Center).Render("No matches found"))
 		} else {
@@ -276,7 +283,9 @@ func (m *Model) viewRef() string {
 			if bodyW < 30 {
 				bodyW = 30
 			}
-			tableH := ch - 2
+			// Reserve lines: title (1) + search (1) +
+			// separator (1) + scroll indicator (1) = 4 non-table rows.
+			tableH := ch - 6
 			if tableH < 3 {
 				tableH = 3
 			}
@@ -373,7 +382,9 @@ func (m *Model) viewRef() string {
 		b.WriteString(DimStyle.Width(w).Align(lipgloss.Center).Render("Enter a reference or name to search"))
 	}
 
-	return fillBody(b.String(), ch)
+	// Return raw content — buildBodyForScreen handles height clamping/padding
+	// so the scroll indicator sits at the true bottom of the content area.
+	return b.String()
 }
 
 // buildRefNamesLine resolves the SOTA/POTA/WWFF/IOTA form field references

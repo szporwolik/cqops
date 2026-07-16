@@ -219,7 +219,7 @@ func (le *LogbookEditor) View() tea.View {
 			le.buildTable()
 		}
 		// Cache the rendered table — large QSO sets are paginated.
-		// Invalidate when QSO data, page, dimensions, or cursor change.
+		// Invalidate when QSO data, page, dimensions, cursor, or search change.
 		var sb strings.Builder
 		sb.WriteString(strconv.Itoa(le.width))
 		sb.WriteByte('|')
@@ -232,14 +232,20 @@ func (le *LogbookEditor) View() tea.View {
 		sb.WriteString(strconv.Itoa(le.table.Cursor()))
 		sb.WriteByte('|')
 		sb.WriteString(le.contestID)
+		sb.WriteByte('|')
+		sb.WriteString(le.searchQuery)
 		sig := sb.String()
 		if le.cachedSig == sig && le.cachedView != "" {
 			return tea.NewView(le.cachedView)
 		}
 		contentH := contentHeight(le.height)
 
-		// Contest info line — warning-colored row when contest is active.
+		// Title header — same style as bandplan and DXC.
 		var headerLines []string
+		headerLines = append(headerLines, S.Title.Width(bodyW).Render("Logbook"))
+		contentH--
+
+		// Contest info line.
 		if le.contestID != "" {
 			contestLine := S.Warning.Render(fmt.Sprintf(" Contest: %s   Contest ID: %s",
 				le.contestName, le.contestAdifID))
@@ -248,8 +254,20 @@ func (le *LogbookEditor) View() tea.View {
 				le.cachedSpacerStyleW = bodyW
 			}
 			headerLines = append(headerLines, le.cachedSpacerStyle.Render(contestLine))
-			contentH-- // consume one row for the contest info line
+			contentH--
 		}
+
+		// Search row — REF-style. Always focused in list mode.
+		le.searchInput.Focus()
+		le.searchInput.SetWidth(bodyW - 11)
+		searchLabel := S.FormLabel.Render("Search: ")
+		searchRow := lipgloss.JoinHorizontal(lipgloss.Top, " ", searchLabel, le.searchInput.View())
+		if le.cachedSpacerStyleW != bodyW {
+			le.cachedSpacerStyle = lipgloss.NewStyle().Width(bodyW)
+			le.cachedSpacerStyleW = bodyW
+		}
+		headerLines = append(headerLines, le.cachedSpacerStyle.Render(searchRow))
+		contentH--
 
 		// Spacer row + table.
 		if le.cachedSpacerStyleW != bodyW {

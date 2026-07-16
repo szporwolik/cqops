@@ -28,11 +28,13 @@ type ToastQueue struct {
 	items    []Toast
 	lastMsg  string
 	lastTime time.Time
+	lastPush time.Time // global rate limiter: min interval between any toasts
 }
 
 const toastMaxAge = 5 * time.Second
 const toastMaxItems = 20
-const toastDedupWindow = 2 * time.Second // suppress identical messages within this window
+const toastDedupWindow = 2 * time.Second        // suppress identical messages within this window
+const toastMinInterval = 500 * time.Millisecond // rate limit: at most one toast per half second
 
 func NewToastQueue() *ToastQueue {
 	return &ToastQueue{}
@@ -48,8 +50,14 @@ func (tq *ToastQueue) Push(level ToastLevel, msg string) {
 		tq.mu.Unlock()
 		return
 	}
+	// Rate limit: at most one toast per minimum interval.
+	if time.Since(tq.lastPush) < toastMinInterval {
+		tq.mu.Unlock()
+		return
+	}
 	tq.lastMsg = msg
 	tq.lastTime = time.Now()
+	tq.lastPush = tq.lastTime
 	tq.items = append(tq.items, Toast{
 		Level:   level,
 		Message: msg,

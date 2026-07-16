@@ -188,11 +188,6 @@ func (mr *mapRenderer) renderKitty(ownLat, ownLon, partnerLat, partnerLon float6
 		mapH = mapAvailH
 		mapW = int(float64(mapH) * 2 * mapAspect)
 	}
-	const maxH = 30
-	if mapH > maxH {
-		mapH = maxH
-		mapW = int(float64(mapH) * 2 * mapAspect)
-	}
 	if mapW < 20 {
 		mapW = 20
 	}
@@ -319,11 +314,6 @@ func (mr *mapRenderer) BaseImageRGBA(mapW, mapAvailH int, drawGrayline bool) (*i
 	}
 	if mapH > mapAvailH {
 		mapH = mapAvailH
-		mapW = int(float64(mapH) * 2 * mapAspect)
-	}
-	const maxH = 30
-	if mapH > maxH {
-		mapH = maxH
 		mapW = int(float64(mapH) * 2 * mapAspect)
 	}
 	if mapW < 20 {
@@ -507,14 +497,6 @@ func (mr *mapRenderer) renderBase(mapW, mapAvailH int, drawGrayline bool) string
 	if mapH > mapAvailH {
 		mapH = mapAvailH
 		mapW = int(float64(mapH) * 2 * mapAspect)
-	}
-	const maxH = 30
-	if mapH > maxH {
-		mapH = maxH
-		mapW = int(float64(mapH) * 2 * mapAspect)
-	}
-	if mapW < 20 {
-		mapW = 20
 	}
 
 	// Grayline slot: 5-minute bucket.

@@ -112,14 +112,6 @@ func scrollVpToLine(vp *viewport.Model, line int) {
 	}
 }
 
-// tern is a simple ternary for strings.
-func tern(cond bool, t, f string) string {
-	if cond {
-		return t
-	}
-	return f
-}
-
 // =============================================================================
 // Shared form-field rendering — used by QSO form and all config menus.
 // =============================================================================
@@ -180,16 +172,6 @@ func scrollHint(vp viewport.Model) string {
 }
 
 // --- standalone utilities ---
-
-func stripNonDigits(s string) string {
-	var b strings.Builder
-	for _, r := range s {
-		if r >= '0' && r <= '9' {
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
 
 func formatDate(adif string) string {
 	if len(adif) < 8 {

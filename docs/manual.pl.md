@@ -49,7 +49,7 @@ CQOps opiera się na szybkim wprowadzaniu QSO, lokalnym zapisie danych i praktyc
 - **Wiele logów** — przydatne dla logów osobistych, terenowych, zawodów i stacji klubowych.
 - **Wielu operatorów** — rozwiązanie przydatne przy zmianowej pracy operatorów i na współdzielonych stacjach klubowych.
 - **Wiele radiostacji** — każdy preset radiostacji może przechowywać własny backend oraz ustawienia WSJT-X.
-- **Opcjonalne integracje** — Multi-provider callbook (QRZ.com, HamQTH, Callook.info), Wavelog, DX Cluster, PSK Reporter, GPS, APRS, sterowanie radiostacją, sterowanie rotorem, dane solarne oraz przeglądarkowy CQOps Live dashboard.
+- **Opcjonalne integracje** — Multi-provider callbook (QRZ.com, HamQTH, QRZ.RU, Callook.info), Wavelog, DX Cluster, PSK Reporter, GPS, APRS, sterowanie radiostacją, sterowanie rotorem, dane solarne oraz przeglądarkowy CQOps Live dashboard.
 
 Lokalne logowanie nie wymaga internetu. Funkcje sieciowe są pomijane w trybie `--offline`.
 
@@ -167,7 +167,7 @@ Przy pierwszym uruchomieniu CQOps otwiera kreator konfiguracji. Do lokalnego log
 |---|---|
 | Station & Logbook | Początkowy log, znak stacji, operator, lokator, opcjonalne referencje i strefy oraz URL/API/station profile ID Wavelog |
 | Rig | Preset radiostacji, model, antena, moc, backend, opcjonalny rotor i opcjonalne ustawienia UDP WSJT-X |
-| Integrations | Ustawienia wyszukiwania callbooka (QRZ.com, HamQTH, Callook.info) |
+| Integrations | Ustawienia wyszukiwania callbooka (QRZ.com, HamQTH, QRZ.RU, Callook.info) |
 | General | Strefa czasowa IANA |
 | Summary | Przegląd i zapis ustawień |
 
@@ -374,7 +374,7 @@ CQOps może uzupełniać pola z następujących źródeł:
 | Źródło | Pola |
 |---|---|
 | flrig / Hamlib | Frequency, Freq RX przy pracy split, Mode, Submode |
-| Callbook (QRZ.com / HamQTH / Callook.info) | Name, QTH, Grid, Country, CQ zone, ITU zone, DXCC, Continent |
+| Callbook (QRZ.com / HamQTH / QRZ.RU / Callook.info) | Name, QTH, Grid, Country, CQ zone, ITU zone, DXCC, Continent, zdjęcie |
 | Baza REF | Referencje SOTA, POTA, WWFF, IOTA |
 | Wavelog lookup | Status worked/confirmed, jeżeli skonfigurowano |
 | Dane DXCC/prefiksów | Prefiks i dane kraju |
@@ -639,7 +639,7 @@ Wybranej częstotliwości można użyć do dostrojenia aktywnej radiostacji. Dan
 
 Wszystkie integracje są opcjonalne. Lokalne logowanie działa bez nich.
 
-### Callbook (QRZ.com, HamQTH, Callook.info)
+### Callbook (QRZ.com, HamQTH, QRZ.RU, Callook.info)
 
 CQOps obsługuje wielu dostawców callbooka z kaskadowaniem według priorytetu.
 Po naciśnięciu **Ins** w formularzu QSO, dostawcy są odpytywani w kolejności,
@@ -647,7 +647,8 @@ aż jeden z nich zwróci wynik:
 
 1. **QRZ.com** — wymaga internetu i subskrypcji QRZ XML. Najbardziej kompletne dane.
 2. **HamQTH** — darmowy serwis globalny. Dobry zasięg, wymaga darmowego konta.
-3. **Callook.info** — darmowy serwis dla USA. Nie wymaga konta, szybkie wyszukiwanie FCC.
+3. **QRZ.RU** — darmowy serwis skupiony na Rosji i okolicznych krajach. Wymaga loginu API. Zwraca imię, QTH, grid, lat/lon, klasę, status LoTW/eQSL i zdjęcie.
+4. **Callook.info** — darmowy serwis dla USA. Nie wymaga konta, szybkie wyszukiwanie FCC.
 
 Jeśli dostawca o wyższym priorytecie zawiedzie lub jest wyłączony, następny jest
 próbowany. Gdy **Base call fallback** jest włączone (domyślnie: tak), CQOps
@@ -1071,7 +1072,7 @@ Naciśnij **F9**, aby otworzyć menu główne, a następnie wybierz:
 | Rigs | Presety radiostacji: model, antenna, power, backend (None/flrig/Hamlib), rotor, WSJT-X UDP |
 | Contests | Profile zawodów: name, date, ADIF contest ID, exchange templates, starting serial number |
 | Integration | DX Cluster (host, port, login), HTTP Server dashboardu (address, port, branding), GPS service (serial/GPSD, grid precision) |
-| Callbook | Dostawcy QRZ.com, HamQTH, Callook.info; kolejność priorytetów, base-call fallback, Wavelog lookup |
+| Callbook | Dostawcy QRZ.com, HamQTH, QRZ.RU, Callook.info; kolejność priorytetów, base-call fallback, Wavelog lookup |
 | Notifications | QSO saved alerts, Wavelog QSO sent status, dupe beep, error sounds |
 
 ### Multi-logbook

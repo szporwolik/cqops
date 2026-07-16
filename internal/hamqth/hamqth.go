@@ -115,6 +115,13 @@ func (c *Client) Lookup(callsign string) (*callbook.Result, error) {
 	// or full URLs. Normalize to absolute URLs for the photo viewer.
 	imgURL := normalizeImageURL(d.Picture)
 
+	// HamQTH returns default placeholder images (e.g. paddle_and_notebook.jpg)
+	// when the operator has no photo.  Treat those as "no image" so lower-
+	// priority callbooks (QRZ, Callook) can supply a real photo instead.
+	if isHamQTHDefaultImage(imgURL) {
+		imgURL = ""
+	}
+
 	return &callbook.Result{
 		Callsign: d.Callsign, Name: d.Name, Grid: d.Grid,
 		Country: d.Country, QTH: d.QTH,
@@ -137,6 +144,13 @@ func normalizeImageURL(raw string) string {
 	}
 	// Relative path — prepend HamQTH base URL.
 	return "https://www.hamqth.com/" + strings.TrimLeft(raw, "/")
+}
+
+// isHamQTHDefaultImage returns true when url is a HamQTH default placeholder
+// image (e.g. paddle_and_notebook.jpg).  Detected by the /images/default/
+// path prefix — host-agnostic to handle mirrors and protocol variants.
+func isHamQTHDefaultImage(url string) bool {
+	return strings.Contains(url, "/images/default/")
 }
 
 // TestConnection validates HamQTH credentials and obtains a session.

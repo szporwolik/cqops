@@ -310,3 +310,107 @@ func TestXMLUnmarshalFull(t *testing.T) {
 		t.Errorf("Lon = %q", sd.Lon)
 	}
 }
+
+func TestNormalizeImageURL_Empty(t *testing.T) {
+	if got := normalizeImageURL(""); got != "" {
+		t.Errorf("expected empty, got %q", got)
+	}
+	if got := normalizeImageURL("   "); got != "" {
+		t.Errorf("expected empty for whitespace, got %q", got)
+	}
+}
+
+func TestNormalizeImageURL_FullURL(t *testing.T) {
+	url := "https://www.hamqth.com/user_img/SP9MOA/photo.jpg"
+	if got := normalizeImageURL(url); got != url {
+		t.Errorf("expected unchanged, got %q", got)
+	}
+	httpURL := "http://www.hamqth.com/user_img/SP9MOA/photo.jpg"
+	if got := normalizeImageURL(httpURL); got != httpURL {
+		t.Errorf("expected http unchanged, got %q", got)
+	}
+}
+
+func TestNormalizeImageURL_RelativePath(t *testing.T) {
+	got := normalizeImageURL("user_img/SP9MOA/img.jpg")
+	want := "https://www.hamqth.com/user_img/SP9MOA/img.jpg"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestIsHamQTHDefaultImage(t *testing.T) {
+	tests := []struct {
+		url  string
+		want bool
+	}{
+		{"https://www.hamqth.com/images/default/paddle_and_notebook.jpg", true},
+		{"http://www.hamqth.com/images/default/antenna.jpg", true},
+		{"https://cdn.hamqth.com/images/default/paddle_and_notebook.jpg", true},
+		{"https://www.hamqth.com/user_img/SP9MOA/photo.jpg", false},
+		{"", false},
+		{"https://www.qrz.com/images/photo.jpg", false},
+	}
+	for _, tt := range tests {
+		got := isHamQTHDefaultImage(tt.url)
+		if got != tt.want {
+			t.Errorf("isHamQTHDefaultImage(%q) = %v, want %v", tt.url, got, tt.want)
+		}
+	}
+}
+
+func TestLookup_StripsDefaultImage(t *testing.T) {
+	restore := SetHTTPFn(func(rawURL string) ([]byte, error) {
+		return []byte(`<HamQTH><search>
+			<callsign>SP9MOA</callsign>
+			<nick>John</nick>
+			<picture>https://www.hamqth.com/images/default/paddle_and_notebook.jpg</picture>
+		</search></HamQTH>`), nil
+	})
+	defer restore()
+
+	c := NewClient("user", "pass")
+	c.sID = "s"
+	c.sUser = "user"
+	c.sPass = "pass"
+	c.sAt = time.Now()
+
+	res, err := c.Lookup("SP9MOA")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if res.ImageURL != "" {
+		t.Errorf("expected empty ImageURL for default placeholder, got %q", res.ImageURL)
+	}
+}
+
+func TestLookup_KeepsRealImage(t *testing.T) {
+	restore := SetHTTPFn(func(rawURL string) ([]byte, error) {
+		return []byte(`<HamQTH><search>
+			<callsign>SP9MOA</callsign>
+			<nick>John</nick>
+			<picture>https://www.hamqth.com/user_img/SP9MOA/photo.jpg</picture>
+		</search></HamQTH>`), nil
+	})
+	defer restore()
+
+	c := NewClient("user", "pass")
+	c.sID = "s"
+	c.sUser = "user"
+	c.sPass = "pass"
+	c.sAt = time.Now()
+
+	res, err := c.Lookup("SP9MOA")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if res == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if res.ImageURL != "https://www.hamqth.com/user_img/SP9MOA/photo.jpg" {
+		t.Errorf("expected real image URL, got %q", res.ImageURL)
+	}
+}

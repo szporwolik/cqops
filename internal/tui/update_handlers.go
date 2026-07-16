@@ -108,9 +108,26 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 		cmd = tea.Batch(cmd, m.loadPSKSpotsCmd(
 			m.psk.pendingCall, m.psk.pendingCutoff, m.psk.pendingSpotKey))
 	}
+	// Poll GPS every 60 ticks (~60 s).  GPS position changes slowly; a
+	// faster poll wastes CPU on low-end hardware without improving accuracy.
+	if m.tickCount%60 == 0 {
+		if gpsCmd := m.handleGPSTick(); gpsCmd != nil {
+			cmd = tea.Batch(cmd, gpsCmd)
+		}
+	}
+
 	// Consolidate periodic commands — only batch non-nil commands to reduce
 	// closure allocation and tea.Batch overhead on low-end hardware.
 	cmds := []tea.Cmd{tickCmd()}
+	// Rapid internet check triggered by a network service (DXC, APRS)
+	// failing with a hard network error. Fires an immediate health check
+	// instead of waiting up to 60 s for the next scheduled poll.
+	if m.triggerRapidCheck {
+		m.triggerRapidCheck = false
+		if m.inetOnline {
+			cmds = append(cmds, checkInetCmd())
+		}
+	}
 	if c := m.maybeCheckInet(); c != nil {
 		cmds = append(cmds, c)
 	}
@@ -138,6 +155,15 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 	if c := m.maybeHTTP(); c != nil {
 		cmds = append(cmds, c)
 	}
+	// Periodic DXCC backfill — catch any QSOs that escaped enrichment
+	// (legacy imports, ADIF loads, Wavelog downloads before Big CTY was
+	// available). Runs every 30 ticks (~30 s), processes 50 rows max.
+	if m.App.BigCTY != nil && m.App.DB != nil && m.tickCount%30 == 0 {
+		n, _ := backfillMissingDXCCLimit(m.App.DB, m.App.BigCTY, 50)
+		if n > 0 {
+			applog.Debug("DXCC: periodic backfill updated", "count", n)
+		}
+	}
 	// Push current state to the dashboard (cheap — early-exits if unchanged).
 	m.pushDashboardState()
 	if cmd != nil {
@@ -152,41 +178,67 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 	switch r := msg.(type) {
 	case inetResultMsg:
-		if !m.inetOnline && bool(r) {
-			// Internet just came up — set the flag FIRST so the
-			// dispatch functions below don't bail out on !m.inetOnline.
+		if bool(r) {
+			// Internet reachable — reset streak and mark online immediately.
+			prevOnline := m.inetOnline
 			m.inetOnline = true
-			m.offlineToastShown = false
-			m.lookup.wlForceCheck = true
-			m.lookup.qrzForceCheck = true
-			m.toasts.Success("Internet: connected")
-			var cmds []tea.Cmd
-			if c := m.maybeDXC(); c != nil {
-				cmds = append(cmds, c)
-			}
-			if c := m.maybeHTTP(); c != nil {
-				cmds = append(cmds, c)
-			}
-			if c := m.maybeCheckWavelog(); c != nil {
-				cmds = append(cmds, c)
-			}
-			if c := m.maybeCheckCallbook(); c != nil {
-				cmds = append(cmds, c)
-			}
-			if c := m.maybeFetchSolar(); c != nil {
-				cmds = append(cmds, c)
-			}
-			if len(cmds) > 0 {
-				return true, tea.Batch(cmds...)
+			m.inetConfirmed = true
+			m.App.InetOnline = true
+			m.inetFailStreak = 0
+			if !prevOnline {
+				// Just came back — dispatch all network services.
+				m.offlineToastShown = false
+				m.lookup.wlForceCheck = true
+				m.lookup.qrzForceCheck = true
+				m.toasts.Success("Internet: connected")
+				// Push every panel immediately so the dashboard gets fresh
+				// QSO data alongside the online map switch. Resets all
+				// throttles and fingerprints — unlike pushDashboardState(),
+				// which may skip today/recent/APRS due to rate limits.
+				m.forcePushDashboardAll()
+				// Restart APRS — it was stopped when we went offline.
+				m.App.MaybeRestartAPRS()
+				var cmds []tea.Cmd
+				// Make DXC reconnect immediately — reset its internal retry
+				// backoff so it doesn't wait for its own delay cycle.
+				m.dxc.lastAttempt = time.Time{}
+				m.dxc.reconnectIdx = 0
+				if c := m.maybeDXC(); c != nil {
+					cmds = append(cmds, c)
+				}
+				if c := m.maybeHTTP(); c != nil {
+					cmds = append(cmds, c)
+				}
+				if c := m.maybeCheckWavelog(); c != nil {
+					cmds = append(cmds, c)
+				}
+				if c := m.maybeCheckCallbook(); c != nil {
+					cmds = append(cmds, c)
+				}
+				if c := m.maybeFetchSolar(); c != nil {
+					cmds = append(cmds, c)
+				}
+				if len(cmds) > 0 {
+					return true, tea.Batch(cmds...)
+				}
 			}
 			return true, nil
-		} else if !bool(r) {
+		}
+		// Internet unreachable — require 2 consecutive failures before
+		// marking offline. A single transient blip is ignored.
+		m.inetFailStreak++
+		if m.inetFailStreak >= 2 && m.inetOnline {
+			m.inetOnline = false
+			m.App.InetOnline = false
 			if !m.offlineToastShown {
 				m.offlineToastShown = true
 				m.toasts.Warn("Internet: not available — working in offline mode")
 			}
+			// Push dashboard immediately so the map switches from
+			// tiled Web Mercator to offline equirectangular fallback.
+			lastDashboardPushTick = 0
+			m.pushDashboardState()
 		}
-		m.inetOnline = bool(r)
 		return true, nil
 	case versionCheckMsg:
 		if r.latest != "" {
@@ -266,7 +318,6 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			m.http.err = nil
 			// Push initial state NOW — bypass throttle so first SSE snapshot has full data.
 			lastDashboardPushTick = -10
-			lastFastTick = -1
 			m.pushDashboardState()
 			if m.http.client != nil {
 				m.toasts.Success("HTTP server: listening on " + m.http.client.Addr())
@@ -306,8 +357,7 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			m.rig.name = r.name
 		}
 		return true, nil
-	case gpsTickMsg:
-		return true, m.handleGPSTick()
+
 	case pskFetchMsg:
 		m.psk.fetching = false
 		if r.err != nil {
@@ -327,7 +377,9 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 				})
 			}
 			if n, err := store.InsertPSKSpots(m.App.DB, spots); err != nil {
-				applog.Warn("PSK Reporter: DB insert failed", "error", err)
+				if !strings.Contains(err.Error(), "database is closed") {
+					applog.Warn("PSK Reporter: DB insert failed", "error", err)
+				}
 			} else if n > 0 {
 				applog.Info("PSK Reporter: new spots stored", "count", n)
 			}
@@ -359,8 +411,7 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 		m.handleSolarResult(r)
 		return true, nil
 	case dxcStatusMsg:
-		m.handleDXCStatus(r)
-		return true, nil
+		return true, m.handleDXCStatus(r)
 	}
 	return false, nil
 }

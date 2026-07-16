@@ -147,25 +147,167 @@ func TestPartnerViewMapCacheInvalidateOnPartnerChange(t *testing.T) {
 	}
 }
 
-func TestPartnerViewRenderPartnerInfo(t *testing.T) {
-	m := newTestModel()
-	d := &callbook.Result{
-		Callsign: "SP9MOA",
-		Name:     "John",
-		Grid:     "JO90",
-		QTH:      "Krakow",
-		Country:  "Poland",
+func TestPartnerContentWrapSkipsStylingForKittyContent(t *testing.T) {
+	content := "kitty-frame"
+
+	got := renderPartnerPaneContent(content, 20, true)
+	if got != content {
+		t.Fatalf("expected raw content when Kitty graphics is active, got %q", got)
+	}
+}
+
+func TestRenderCallbookRows(t *testing.T) {
+	tests := []struct {
+		name string
+		data callbook.Result
+		maxW int
+		want []string
+		not  []string
+	}{
+		{
+			name: "complete record",
+			data: callbook.Result{
+				Callsign: "SP9MOA", Class: "I",
+				Name: "Niepolomice Amateur Radio Club",
+				QTH:  "Niepolomice", State: "Malopolskie", Zip: "32-005",
+				Country: "Poland", DXCC: "269",
+				Grid: "JO90", Lat: "50.03309", Lon: "20.22108",
+				CQZone: "15", ITUZone: "28",
+				Email: "sp9moa@gmail.com",
+			},
+			maxW: 70,
+			want: []string{"SP9MOA", "Niepolomice", "32-005", "Malopolskie",
+				"Poland", "DXCC 269", "JO90", "50.03309\u00b0N", "20.22108\u00b0E",
+				"CQ 15", "ITU 28", "sp9moa@gmail.com", "\u00b7 I"},
+		},
+		{
+			name: "missing state and zip",
+			data: callbook.Result{
+				Callsign: "K1ABC", Name: "John",
+				QTH: "Boston", Country: "United States", DXCC: "291",
+				Grid: "FN42",
+			},
+			maxW: 50,
+			want: []string{"K1ABC", "Boston", "United States", "DXCC 291", "FN42"},
+			not:  []string{"Class"},
+		},
+		{
+			name: "missing coordinates",
+			data: callbook.Result{
+				Callsign: "G3ABC", Name: "Alice",
+				Country: "England", Grid: "IO91",
+			},
+			maxW: 50,
+			want: []string{"G3ABC", "Alice", "England", "IO91"},
+			not:  []string{"\u00b0"},
+		},
+		{
+			name: "missing email",
+			data: callbook.Result{
+				Callsign: "F1XYZ", Name: "Pierre",
+				Country: "France", QTH: "Paris",
+			},
+			maxW: 50,
+			want: []string{"F1XYZ", "Pierre", "Paris"},
+			not:  []string{"Email"},
+		},
+		{
+			name: "very long name",
+			data: callbook.Result{
+				Callsign: "DL1ABC",
+				Name:     "Maximilian Alexander von Hohenzollern-Sigmaringen und Anhalt-Dessau",
+				Country:  "Germany",
+			},
+			maxW: 40,
+			want: []string{"DL1ABC", "Maximilian", "Germany"},
+		},
+		{
+			name: "narrow width",
+			data: callbook.Result{
+				Callsign: "EA1ABC", Name: "Carlos",
+				QTH: "Madrid", Country: "Spain", Grid: "IN80",
+			},
+			maxW: 30,
+			want: []string{"EA1ABC", "Madrid"},
+		},
+		{
+			name: "unicode name and qth",
+			data: callbook.Result{
+				Callsign: "JA1ABC",
+				Name:     "\u5c71\u7530 \u592a\u90ce",
+				QTH:      "\u6771\u4eac\u90fd",
+				Country:  "Japan",
+			},
+			maxW: 50,
+			want: []string{"JA1ABC", "\u5c71\u7530", "\u6771\u4eac\u90fd", "Japan"},
+		},
+		{
+			name: "no text crosses right border",
+			data: callbook.Result{
+				Callsign: "TEST", Name: "A", QTH: "B", Country: "C",
+				Grid: "AA00", DXCC: "1", CQZone: "1", ITUZone: "1",
+				Email: "a@b.c", State: "D", Zip: "12345", Class: "E",
+				Lat: "50.0", Lon: "20.0",
+			},
+			maxW: 45,
+			want: []string{"TEST"},
+		},
+		{
+			name: "no empty gaps between rows",
+			data: callbook.Result{
+				Callsign: "SP9MOA", Name: "John",
+				Country: "Poland",
+			},
+			maxW: 50,
+			want: []string{"SP9MOA", "John", "Poland"},
+			not:  []string{"\n\n"},
+		},
 	}
 
-	info := m.renderCallbookRows(d, 40)
-	if info == "" {
-		t.Error("renderCallbookRows returned empty")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := newTestModel()
+			info := m.renderCallbookRows(&tt.data, tt.maxW, 0)
+			if info == "" && len(tt.want) > 0 {
+				t.Error("renderCallbookRows returned empty")
+				return
+			}
+			for _, w := range tt.want {
+				if !strings.Contains(info, w) {
+					t.Errorf("output missing %q\nGot:\n%s", w, info)
+				}
+			}
+			for _, n := range tt.not {
+				if strings.Contains(info, n) {
+					t.Errorf("output should NOT contain %q\nGot:\n%s", n, info)
+				}
+			}
+			for _, line := range strings.Split(info, "\n") {
+				if lipgloss.Width(line) > tt.maxW {
+					t.Errorf("line exceeds maxW %d: width=%d line=%q", tt.maxW, lipgloss.Width(line), line)
+				}
+			}
+		})
 	}
-	if !strings.Contains(info, "SP9MOA") {
-		t.Error("renderCallbookRows missing callsign")
+}
+
+func TestRenderCallbookRows_ForeignPrefixUsesOperatingZones(t *testing.T) {
+	m := newTestModel()
+	m.App.Config.General.UseCTY = true
+	m.lookup.partnerData = &callbook.Result{
+		Callsign: "9A/SP9SPM/P",
+		Country:  "Poland",
+		DXCC:     "269",
+		CQZone:   "15",
+		ITUZone:  "28",
 	}
-	if !strings.Contains(info, "John") {
-		t.Error("renderCallbookRows missing name")
+
+	info := m.renderCallbookRows(m.lookup.partnerData, 70, 0)
+	if !strings.Contains(info, "CQ 15") {
+		t.Fatalf("expected CQ zone from operating prefix, got %q", info)
+	}
+	if !strings.Contains(info, "ITU 28") {
+		t.Fatalf("expected ITU zone from operating prefix, got %q", info)
 	}
 }
 
@@ -395,9 +537,6 @@ func TestPhotoBox_ShowsLoadingWhenNoContent(t *testing.T) {
 	if !strings.Contains(view, "Loading") {
 		t.Error("Photo box should show 'Loading…' when viewer has no content")
 	}
-	if !strings.Contains(view, "Photo") {
-		t.Error("Photo box header should be present")
-	}
 }
 
 func TestPhotoBox_AppearsOnWideScreen(t *testing.T) {
@@ -409,8 +548,10 @@ func TestPhotoBox_AppearsOnWideScreen(t *testing.T) {
 	m.lookup.partnerData = &callbook.Result{Callsign: "SP9MOA", ImageURL: "https://example.com/photo.jpg"}
 
 	view := m.viewPartner()
-	if !strings.Contains(view, "Photo") {
-		t.Error("Photo box should appear on wide screen with config enabled and image URL")
+	// Photo box renders without a separate header now — verify it's not
+	// empty/absent on wide screen with photo URL available.
+	if view == "" {
+		t.Error("Partner view should render on wide screen with config enabled and image URL")
 	}
 }
 

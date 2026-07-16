@@ -12,6 +12,7 @@ import (
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/hamqth"
 	"github.com/szporwolik/cqops/internal/qrzcom"
+	"github.com/szporwolik/cqops/internal/qrzru"
 )
 
 // CallbookMenu is a scrollable sub-menu for callbook provider settings.
@@ -45,6 +46,14 @@ type CallbookMenu struct {
 	// Callook fields
 	callookEnabled  bool
 	callookPriority textinput.Model
+
+	// QRZ.RU fields
+	qrzruEnabled    bool
+	qrzruUser       textinput.Model
+	qrzruPass       textinput.Model
+	qrzruPriority   textinput.Model
+	qrzruTesting    bool
+	qrzruTestResult string
 
 	// Wavelog provider
 	wlEnabled    bool
@@ -85,9 +94,14 @@ const (
 	cmHamQTHTest      = 12
 	cmCallookChk      = 13
 	cmCallookPriority = 14
-	cmWavelogChk      = 15
-	cmWavelogPriority = 16
-	cmMax             = 17
+	cmQRZRuChk        = 15
+	cmQRZRuUser       = 16
+	cmQRZRuPass       = 17
+	cmQRZRuPriority   = 18
+	cmQRZRuTest       = 19
+	cmWavelogChk      = 20
+	cmWavelogPriority = 21
+	cmMax             = 22
 )
 
 func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
@@ -157,10 +171,34 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 	callookPriority := newTextinput()
 	callookPriority.CharLimit = 5
 	callookPriority.SetWidth(6)
-	callookPriority.Placeholder = "40"
+	callookPriority.Placeholder = "30"
 	callookPriority.SetValue(strconv.Itoa(cfg.Integrations.Callbook.Callook.Priority))
 	if cfg.Integrations.Callbook.Callook.Priority == 0 {
-		callookPriority.SetValue("40")
+		callookPriority.SetValue("30")
+	}
+
+	// QRZ.RU provider (free, RU and surrounding countries).
+	qrzruUser := newTextinput()
+	qrzruUser.CharLimit = 30
+	qrzruUser.SetWidth(28)
+	qrzruUser.Placeholder = "QRZ.ru API login"
+	qrzruUser.SetValue(cfg.Integrations.Callbook.QRZRu.User)
+
+	qrzruPass := newTextinput()
+	qrzruPass.CharLimit = 40
+	qrzruPass.SetWidth(28)
+	qrzruPass.Placeholder = "QRZ.ru API password"
+	qrzruPass.EchoMode = textinput.EchoPassword
+	qrzruPass.EchoCharacter = '*'
+	qrzruPass.SetValue(cfg.Integrations.Callbook.QRZRu.Pass)
+
+	qrzruPriority := newTextinput()
+	qrzruPriority.CharLimit = 5
+	qrzruPriority.SetWidth(6)
+	qrzruPriority.Placeholder = "35"
+	qrzruPriority.SetValue(strconv.Itoa(cfg.Integrations.Callbook.QRZRu.Priority))
+	if cfg.Integrations.Callbook.QRZRu.Priority == 0 {
+		qrzruPriority.SetValue("35")
 	}
 
 	// Default base-call fallback and Callook.info to enabled on fresh config.
@@ -168,7 +206,8 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 	freshCallbook := cfg.Integrations.Callbook.Logbook.Priority == 0 &&
 		cfg.Integrations.Callbook.QRZ.Priority == 0 &&
 		cfg.Integrations.Callbook.HamQTH.Priority == 0 &&
-		cfg.Integrations.Callbook.Callook.Priority == 0
+		cfg.Integrations.Callbook.Callook.Priority == 0 &&
+		cfg.Integrations.Callbook.QRZRu.Priority == 0
 	baseFallback := cfg.Integrations.Callbook.BaseCallFallback
 	if freshCallbook {
 		baseFallback = true
@@ -213,6 +252,10 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 		hamqthPriority:   hamqthPriority,
 		callookEnabled:   callookEnabled,
 		callookPriority:  callookPriority,
+		qrzruEnabled:     cfg.Integrations.Callbook.QRZRu.Enabled,
+		qrzruUser:        qrzruUser,
+		qrzruPass:        qrzruPass,
+		qrzruPriority:    qrzruPriority,
 		wlEnabled:        wlEnabled,
 		wlConfigured:     wlConfigured,
 		wlPriority:       wlPriority,
@@ -243,6 +286,21 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cm.TestToast = "HamQTH: connected, but test lookup returned no data"
 				applog.Warn("HamQTH test: no data returned")
 			}
+		} else if msg.provider == "qrzru" {
+			cm.qrzruTesting = false
+			if msg.err != nil {
+				cm.qrzruTestResult = friendlyQRZError(msg.err)
+				cm.TestToast = friendlyQRZError(msg.err)
+				applog.Error("QRZ.RU test failed", "error", msg.err.Error())
+			} else if msg.ok {
+				cm.qrzruTestResult = "OK — QRZ.RU connected"
+				cm.TestToast = "QRZ.RU: connection verified"
+				applog.Info("QRZ.RU test OK")
+			} else {
+				cm.qrzruTestResult = "No data returned"
+				cm.TestToast = "QRZ.RU: connected, but lookup returned no data"
+				applog.Warn("QRZ.RU test: no data returned")
+			}
 		} else {
 			cm.qrzTesting = false
 			if msg.err != nil {
@@ -262,7 +320,7 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyPressMsg:
 		k := msg.String()
-		if cm.qrzTesting || cm.hamqthTesting {
+		if cm.qrzTesting || cm.hamqthTesting || cm.qrzruTesting {
 			return cm, nil
 		}
 		switch k {
@@ -316,6 +374,24 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
+			if cm.qrzruEnabled {
+				if strings.TrimSpace(cm.qrzruUser.Value()) == "" {
+					cm.SaveError = "QRZ.RU API login is required when enabled"
+					return cm, nil
+				}
+				if cm.qrzruPass.Value() == "" {
+					cm.SaveError = "QRZ.RU API password is required when enabled"
+					return cm, nil
+				}
+				ps := strings.TrimSpace(cm.qrzruPriority.Value())
+				if ps != "" {
+					p, err := strconv.Atoi(ps)
+					if err != nil || p < 0 || p > 100 {
+						cm.SaveError = "Priority must be 0\u2013100"
+						return cm, nil
+					}
+				}
+			}
 			cm.done = true
 			cm.saved = true
 			return cm, nil
@@ -355,6 +431,13 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return cm, nil
 			case cmCallookChk:
 				cm.callookEnabled = !cm.callookEnabled
+				cm.autoScrollViewport()
+				return cm, nil
+			case cmQRZRuChk:
+				cm.qrzruEnabled = !cm.qrzruEnabled
+				if !cm.isPositionVisible(cm.focus) {
+					cm.fixFocus()
+				}
 				cm.autoScrollViewport()
 				return cm, nil
 			}
@@ -402,6 +485,25 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return callbookTestMsg{ok: err == nil && data != nil, err: err, provider: "hamqth"}
 				}
 			}
+			if cm.focus == cmQRZRuTest {
+				if !cm.inetOnline {
+					cm.qrzruTestResult = "No internet connection"
+					return cm, nil
+				}
+				user := strings.TrimSpace(cm.qrzruUser.Value())
+				pass := cm.qrzruPass.Value()
+				if user == "" || pass == "" {
+					cm.qrzruTestResult = "API login and password required"
+					return cm, nil
+				}
+				cm.qrzruTesting = true
+				cm.qrzruTestResult = "Testing..."
+				return cm, func() tea.Msg {
+					client := qrzru.NewClientWithPriority(user, pass, 35)
+					data, err := client.Lookup("RA3ZZ")
+					return callbookTestMsg{ok: err == nil && data != nil, err: err, provider: "qrzru"}
+				}
+			}
 			cm.next()
 			cm.autoScrollViewport()
 		default:
@@ -432,6 +534,12 @@ func (cm *CallbookMenu) forwardToFocused(msg tea.Msg) {
 		cm.hamqthPriority, _ = cm.hamqthPriority.Update(msg)
 	case cmCallookPriority:
 		cm.callookPriority, _ = cm.callookPriority.Update(msg)
+	case cmQRZRuUser:
+		cm.qrzruUser, _ = cm.qrzruUser.Update(msg)
+	case cmQRZRuPass:
+		cm.qrzruPass, _ = cm.qrzruPass.Update(msg)
+	case cmQRZRuPriority:
+		cm.qrzruPriority, _ = cm.qrzruPriority.Update(msg)
 	case cmWavelogPriority:
 		cm.wlPriority, _ = cm.wlPriority.Update(msg)
 	}
@@ -461,7 +569,7 @@ func (cm *CallbookMenu) prev() {
 
 func (cm *CallbookMenu) isPositionVisible(pos int) bool {
 	switch pos {
-	case cmBaseCall, cmLogChk, cmQRZChk, cmHamQTHChk, cmWavelogChk:
+	case cmBaseCall, cmLogChk, cmQRZChk, cmHamQTHChk, cmQRZRuChk, cmWavelogChk:
 		return true
 	case cmLogPriority:
 		return cm.logEnabled
@@ -471,6 +579,8 @@ func (cm *CallbookMenu) isPositionVisible(pos int) bool {
 		return cm.hamqthEnabled
 	case cmCallookPriority:
 		return cm.callookEnabled
+	case cmQRZRuUser, cmQRZRuPass, cmQRZRuPriority, cmQRZRuTest:
+		return cm.qrzruEnabled
 	case cmWavelogPriority:
 		return cm.wlEnabled && cm.wlConfigured
 	}
@@ -487,7 +597,8 @@ func (cm *CallbookMenu) fixFocus() {
 func (cm *CallbookMenu) blurAll() {
 	blurTextinputs(&cm.logPriority, &cm.qrzUser, &cm.qrzPass, &cm.qrzPriority,
 		&cm.hamqthUser, &cm.hamqthPass, &cm.hamqthPriority,
-		&cm.callookPriority, &cm.wlPriority)
+		&cm.callookPriority, &cm.qrzruUser, &cm.qrzruPass, &cm.qrzruPriority,
+		&cm.wlPriority)
 }
 
 func (cm *CallbookMenu) focusField() {
@@ -508,6 +619,12 @@ func (cm *CallbookMenu) focusField() {
 		cm.hamqthPriority.Focus()
 	case cmCallookPriority:
 		cm.callookPriority.Focus()
+	case cmQRZRuUser:
+		cm.qrzruUser.Focus()
+	case cmQRZRuPass:
+		cm.qrzruPass.Focus()
+	case cmQRZRuPriority:
+		cm.qrzruPriority.Focus()
 	case cmWavelogPriority:
 		cm.wlPriority.Focus()
 	}
@@ -758,6 +875,47 @@ func (cm *CallbookMenu) View() tea.View {
 	b.WriteString("\n")
 	b.WriteString("")
 
+	// --- QRZ.RU ---
+	qrzruCb := "[ ]"
+	if cm.qrzruEnabled {
+		qrzruCb = "[x]"
+	}
+	qrzruPrefix := "  "
+	qrzruLabel := S.FormLabelWide.Align(lipgloss.Left).Render("QRZ.RU:")
+	if cm.focus == cmQRZRuChk {
+		qrzruPrefix = S.FormPrefixOn.Render("> ")
+		qrzruLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("QRZ.RU:")
+		qrzruCb = CursorStyle.Render(qrzruCb) + " " + DimStyle.Render("(Space)") + " " + DimStyle.Render("Free, RU and surrounding countries")
+	}
+	b.WriteString(padOrTrunc(
+		lipgloss.JoinHorizontal(lipgloss.Center, qrzruPrefix, qrzruLabel, " ", qrzruCb),
+		lineW))
+
+	if cm.qrzruEnabled {
+		b.WriteString("\n")
+		b.WriteString(padOrTrunc(cm.renderField(cmQRZRuUser, "  API login:", &cm.qrzruUser, false), lineW))
+		b.WriteString("\n")
+		b.WriteString(padOrTrunc(cm.renderField(cmQRZRuPass, "  API password:", &cm.qrzruPass, true), lineW))
+		b.WriteString("\n")
+		b.WriteString(padOrTrunc(cm.renderField(cmQRZRuPriority, "  Priority:", &cm.qrzruPriority, false), lineW))
+
+		// Test button
+		b.WriteString("\n")
+		btnText := "[ Test Connection ]"
+		var btnLine string
+		if !cm.inetOnline {
+			btnLine = "    " + DimStyle.Render(btnText) + " " + DimStyle.Render("(offline)")
+		} else if cm.focus == cmQRZRuTest {
+			btnLine = S.FormPrefixOn.Render("> ") + CursorStyle.Render("  "+btnText)
+		} else {
+			btnLine = "    " + InputStyle.Render(btnText)
+		}
+		b.WriteString(padOrTrunc(btnLine, lineW))
+	}
+
+	b.WriteString("\n")
+	b.WriteString("")
+
 	// --- Wavelog ---
 	if cm.wlConfigured {
 		wlCb := "[ ]"
@@ -911,7 +1069,18 @@ func (cm *CallbookMenu) ToConfig(cfg *config.Config) {
 			cfg.Integrations.Callbook.Callook.Priority = p
 		}
 	} else {
-		cfg.Integrations.Callbook.Callook.Priority = 40
+		cfg.Integrations.Callbook.Callook.Priority = 30
+	}
+	cfg.Integrations.Callbook.QRZRu.Enabled = cm.qrzruEnabled
+	cfg.Integrations.Callbook.QRZRu.User = strings.TrimSpace(cm.qrzruUser.Value())
+	cfg.Integrations.Callbook.QRZRu.Pass = cm.qrzruPass.Value()
+	ps = strings.TrimSpace(cm.qrzruPriority.Value())
+	if ps != "" {
+		if p, err := strconv.Atoi(ps); err == nil {
+			cfg.Integrations.Callbook.QRZRu.Priority = p
+		}
+	} else {
+		cfg.Integrations.Callbook.QRZRu.Priority = 35
 	}
 	cfg.Integrations.Callbook.Wavelog.Enabled = cm.wlEnabled
 	ps = strings.TrimSpace(cm.wlPriority.Value())

@@ -62,6 +62,14 @@ type renderCache struct {
 	logStatsFetchBand string
 	logStatsFetchMode string
 
+	// Worked panel summary cache (call + grid + DXCC statistics).
+	workedSummary           store.WorkedSummary
+	workedSummarySig        string
+	workedSummaryNeedFetch  bool
+	workedSummaryFetchCall  string
+	workedSummaryFetchGrid4 string
+	workedSummaryFetchDXCC  string
+
 	// DXCC continent cache — avoids prefix-tree lookup on every partner-view frame.
 	dxccContCall  string
 	dxccContValue string

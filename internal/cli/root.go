@@ -1,8 +1,9 @@
 package cli
 
 import (
-	"bufio"
 	"fmt"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -21,6 +22,7 @@ import (
 
 var offlineFlag bool
 var debugFlag bool
+var pprofFlag bool
 var versionFlag bool
 var resetConfigFlag bool
 var resetCacheFlag bool
@@ -29,6 +31,7 @@ var helpFlag bool
 func init() {
 	rootCmd.PersistentFlags().BoolVarP(&offlineFlag, "offline", "o", false, "Run in offline mode (skip all network checks)")
 	rootCmd.PersistentFlags().BoolVarP(&debugFlag, "debug", "d", false, "Enable debug logging")
+	rootCmd.PersistentFlags().BoolVar(&pprofFlag, "pprof", false, "Start pprof HTTP server on 127.0.0.1:6060")
 	rootCmd.PersistentFlags().BoolVarP(&versionFlag, "version", "v", false, "Print CQOps version and exit")
 	rootCmd.PersistentFlags().BoolVar(&resetConfigFlag, "reset-config", false, "Reset all configuration, secrets, databases, cache, and lock file")
 	rootCmd.PersistentFlags().BoolVar(&resetCacheFlag, "reset-cache", false, "Reset cached data only (solar, DXCC, REF, APRS)")
@@ -108,6 +111,19 @@ func Execute() error {
 }
 
 func runTUI() error {
+	// Start pprof HTTP server on 127.0.0.1:6060 when --pprof is set.
+	// Exposes /debug/pprof/ for CPU, heap, goroutine, mutex, and block
+	// profiling. Only listens on localhost — never expose publicly.
+	if pprofFlag {
+		go func() {
+			addr := "127.0.0.1:6060"
+			applog.Info("pprof: listening", "addr", addr)
+			if err := http.ListenAndServe(addr, nil); err != nil {
+				applog.Warn("pprof: stopped", "error", err)
+			}
+		}()
+	}
+
 	// The Linux console sets TERM=linux, which lacks proper colour and
 	// key-sequence support.  Override to xterm-256color — the kernel's
 	// console driver supports it natively and Bubble Tea needs it.
@@ -174,7 +190,7 @@ func runTUI() error {
 	if offlineFlag {
 		m.ShowOfflineToast()
 	}
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m, tea.WithFPS(20))
 
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("tui: %w", err)
@@ -214,7 +230,7 @@ func resetConfig() error {
 	fmt.Printf("Cache dir:  %s\n", cacheDir)
 	fmt.Println("")
 
-	if !promptYN("Proceed with reset?") {
+	if !app.PromptYN("Proceed with reset?") {
 		fmt.Println("Reset cancelled.")
 		return nil
 	}
@@ -290,7 +306,7 @@ func resetCache() error {
 	fmt.Printf("Cache dir: %s\n", cacheDir)
 	fmt.Println("")
 
-	if !promptYN("Proceed with cache reset?") {
+	if !app.PromptYN("Proceed with cache reset?") {
 		fmt.Println("Reset cancelled.")
 		return nil
 	}
@@ -317,15 +333,4 @@ func resetCache() error {
 	fmt.Println(".")
 
 	return nil
-}
-
-func promptYN(prompt string) bool {
-	fmt.Fprintf(os.Stderr, "%s [y/N]: ", prompt)
-	reader := bufio.NewReader(os.Stdin)
-	line, err := reader.ReadString('\n')
-	if err != nil {
-		return false
-	}
-	line = strings.TrimSpace(strings.ToLower(line))
-	return line == "y" || line == "yes"
 }
