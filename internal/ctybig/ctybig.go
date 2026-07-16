@@ -156,7 +156,10 @@ func parseLine(line string) (*Entry, string, error) {
 	e.CQZone, _ = strconv.Atoi(strings.TrimSpace(parts[4]))
 	e.ITUZone, _ = strconv.Atoi(strings.TrimSpace(parts[5]))
 	e.Lat, _ = strconv.ParseFloat(strings.TrimSpace(parts[6]), 64)
+	// CTY.DAT convention: positive longitude = West.
+	// Negate to standard geographic: positive = East.
 	e.Lon, _ = strconv.ParseFloat(strings.TrimSpace(parts[7]), 64)
+	e.Lon = -e.Lon
 	e.TZOffset, _ = strconv.ParseFloat(strings.TrimSpace(parts[8]), 64)
 
 	return e, parts[9], nil

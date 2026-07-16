@@ -5,8 +5,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ftl/hamradio/latlon"
-	"github.com/ftl/hamradio/locator"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/callbook"
 	"github.com/szporwolik/cqops/internal/ctybig"
@@ -130,15 +128,7 @@ func (p *CTYProvider) Lookup(callsign string) (*callbook.Result, error) {
 	if e.ITUZone != 0 {
 		r.ITUZone = strconv.Itoa(e.ITUZone)
 	}
-	if e.Lat != 0 || e.Lon != 0 {
-		ll := latlon.NewLatLon(latlon.Latitude(e.Lat), latlon.Longitude(e.Lon))
-		grid := locator.LatLonToLocator(ll, 4)
-		gridStr := strings.TrimRight(string(grid[:]), "\x00")
-		if len(gridStr) >= 4 {
-			r.Grid = strings.ToUpper(gridStr[:4])
-		}
-	}
-	applog.Debug("CTY: enriched from prefix DB", "call", callsign, "country", r.Country, "grid", r.Grid)
+	applog.Debug("CTY: enriched from prefix DB", "call", callsign, "country", r.Country, "dxcc", r.DXCC)
 	return r, nil
 }
 
