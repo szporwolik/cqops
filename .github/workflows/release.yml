@@ -455,6 +455,18 @@ jobs:
           sha256sums=('${SHA256}')
           package() {
               install -Dm755 cqops-linux-amd64 "\${pkgdir}/usr/bin/cqops"
+              install -Dm644 /dev/stdin "\${pkgdir}/usr/share/applications/cqops.desktop" << 'DESKTOP'
+          [Desktop Entry]
+          Name=CQOps
+          Comment=Fast, minimal Go TUI ham radio logger
+          Exec=cqops
+          Terminal=true
+          Type=Application
+          Categories=HamRadio;Utility;Network;
+          Keywords=ham;radio;logging;qso;adif;wsjtx;dx;contest;sota;pota;wwff;iota;wavelog;qrz;dxcc;flrig;hamlib;
+          Icon=utilities-terminal
+          StartupNotify=true
+          DESKTOP
           }
           EOF
 
