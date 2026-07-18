@@ -431,15 +431,17 @@ jobs:
           set -euo pipefail
           V="$VERSION"
 
-          # Download the amd64 tarball and compute its SHA-256.
+          # Download the amd64 tarball and the SVG icon; compute SHA-256.
           TARBALL="cqops-linux-amd64.tar.gz"
           URL="https://github.com/szporwolik/cqops/releases/download/v${V}/${TARBALL}"
           curl -sSLo "/tmp/${TARBALL}" "$URL"
           SHA256=$(sha256sum "/tmp/${TARBALL}" | awk '{print $1}')
           rm "/tmp/${TARBALL}"
 
-          # Write PKGBUILD.  Downloads the pre-built tarball from GitHub
-          # Releases — no compilation needed (hence "cqops-bin").
+          ICON_URL="https://raw.githubusercontent.com/szporwolik/cqops/v${V}/assets/cqops-icon.svg"
+
+          # Write PKGBUILD.  Downloads the pre-built tarball and icon from
+          # GitHub — no compilation needed (hence "cqops-bin").
           cat > PKGBUILD << EOF
           # Maintainer: Szymon Porwolik <szporwolik@users.noreply.github.com>
           pkgname=cqops-bin
@@ -451,10 +453,13 @@ jobs:
           license=('Apache-2.0')
           provides=('cqops')
           conflicts=('cqops')
-          source=("cqops-\${pkgver}-amd64.tar.gz::${URL}")
-          sha256sums=('${SHA256}')
+          source=("cqops-\${pkgver}-amd64.tar.gz::${URL}"
+                  "cqops.svg::${ICON_URL}")
+          sha256sums=('${SHA256}'
+                      'SKIP')
           package() {
               install -Dm755 cqops-linux-amd64 "\${pkgdir}/usr/bin/cqops"
+              install -Dm644 cqops.svg "\${pkgdir}/usr/share/icons/hicolor/scalable/apps/cqops.svg"
               install -Dm644 /dev/stdin "\${pkgdir}/usr/share/applications/cqops.desktop" << 'DESKTOP'
           [Desktop Entry]
           Name=CQOps
@@ -481,7 +486,9 @@ jobs:
           	arch = x86_64
           	license = Apache-2.0
           	source = cqops-${V}-amd64.tar.gz::${URL}
+          	source = cqops.svg::${ICON_URL}
           	sha256sums = ${SHA256}
+          	sha256sums = SKIP
           	provides = cqops
           	conflicts = cqops
 
