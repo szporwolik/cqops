@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.9.2 — 2026-07-18
+
+> **Maintenance release.** New packaging target and distribution polish — no application code changes from v0.9.1.
+
+### Arch Linux / AUR
+- **`cqops-bin` published on AUR**: Arch, Manjaro, CachyOS, and other Arch-based distros can now install via `yay -S cqops-bin`. PKGBUILD downloads the pre-built binary from GitHub Releases — no compilation needed.
+- **Automated updates**: the release workflow now pushes PKGBUILD and `.SRCINFO` updates to AUR on every release, keeping `pkgver` and `sha256sums` in sync automatically.
+- **AUR badge**: version shield added to README header alongside Cloudsmith.
+
+### Distribution
+- **README**: added installation section for Arch Linux, Manjaro, and CachyOS with AUR instructions.
+- **Release workflow**: AUR publish job fixed — switched from `.deb` extraction to `.tar.gz`, added `.SRCINFO` generation, and configured `git` identity for automated commits.
+
+### Under the Hood
+- **~5 commits**, **2 files changed**. No config or database migration needed from v0.9.1. Same binary — only packaging and docs updated.
+
 ## v0.9.1 — 2026-07-16
 
 > **Performance release.** CPU usage on low-end hardware (Raspberry Pi, old laptops, portable field setups) dropped from ~107% to ~13% — a 92% reduction.
