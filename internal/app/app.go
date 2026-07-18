@@ -1,19 +1,21 @@
 package app
 
 import (
+	"bytes"
 	"database/sql"
 	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/ftl/hamradio/dxcc"
 	"github.com/ftl/hamradio/scp"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/aprs"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/ctybig"
 	"github.com/szporwolik/cqops/internal/geo"
 	"github.com/szporwolik/cqops/internal/ref"
 	"github.com/szporwolik/cqops/internal/secrets"
@@ -31,7 +33,7 @@ type App struct {
 	DBPath           string
 	WSJTX            *wsjtx.Listener
 	WSJTXUpdated     chan struct{}
-	DXCC             *dxcc.Prefixes // in-memory DXCC prefix→country lookup
+	BigCTY           *ctybig.DB     // Big CTY prefix lookup with DXCC entity numbers (from cty.csv)
 	SCP              *scp.Database  // in-memory Super Check Partial database
 	RefDB            *ref.DB        // reference database (SOTA/POTA/WWFF)
 	Secrets          *secrets.Store // encrypted secrets (passwords, API keys)
@@ -48,6 +50,7 @@ type App struct {
 	gpsGrid          string                // last known GPS grid (set by TUI model)
 	gpsHasFix        bool                  // true when GPS has a valid fix
 	Offline          bool                  // when true, skip all network operations
+	InetOnline       bool                  // true when internet connectivity check succeeded
 
 	// lastWSJTX tracks the effective WSJT-X config last applied to the
 	// listener. Used to avoid unnecessary Stop/Start cycles when config
@@ -123,12 +126,14 @@ func Init() (*App, error) {
 		go func() {
 			defer wg.Done()
 			cacheDir, _ := config.CacheDir()
-			ctyPath := filepath.Join(cacheDir, "cty.dat")
-			if prefixes, err := dxcc.LoadLocal(ctyPath); err == nil {
-				app.DXCC = prefixes
-				applog.Info("DXCC: prefix data loaded from cache")
+			csvPath := filepath.Join(cacheDir, "cty.csv")
+			if data, err := os.ReadFile(csvPath); err == nil && len(data) > 0 {
+				if db, err := ctybig.ParseCSV(bytes.NewReader(data)); err == nil {
+					app.BigCTY = db
+					applog.Info("DXCC: Big CTY loaded from cache", "entries", db.Prefixes())
+				}
 			} else {
-				applog.Info("DXCC: no cached data yet — will fetch when online")
+				applog.Info("DXCC: no cached Big CTY yet — will fetch when online")
 			}
 		}()
 	}
@@ -230,14 +235,13 @@ func (a *App) MaybeRestartWSJTX(enabled bool, host string, port int) {
 // Non-blocking — connection runs asynchronously.
 // Call SetAPRSStatusCallback to receive toast updates.
 func (a *App) MaybeRestartAPRS() {
-	if a.Offline {
-		applog.Debug("APRS: skipped — offline mode")
-		return
-	}
 	aprsGlobal := a.Config.Integrations.APRS
 	aprsCfg := a.Logbook.APRS
 	enabled := aprsGlobal.Enabled && aprsCfg != nil && aprsCfg.Enabled
 
+	// Always allow stopping — the client must be cleaned up even when
+	// offline. Only block the START path when internet is unavailable
+	// or --offline mode is active.
 	if !enabled {
 		a.stopAPRSPruner()
 		a.stopAPRSBeacon()
@@ -253,6 +257,13 @@ func (a *App) MaybeRestartAPRS() {
 			a.APRSCache.Close()
 			a.APRSCache = nil
 		}
+		return
+	}
+
+	// APRS is enabled — but don't start the network client if we're
+	// known to be offline (--offline flag or failed health checks).
+	if a.Offline || !a.InetOnline {
+		applog.Debug("APRS: start skipped — offline", "forced", a.Offline, "inet", a.InetOnline)
 		return
 	}
 

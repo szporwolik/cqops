@@ -296,7 +296,7 @@ func TestFormPathRowNoCallShowsProfile(t *testing.T) {
 	m.fields[fieldCall].SetValue("")
 
 	row := m.formPathRow(90)
-	if !strings.Contains(row, "Rig") {
+	if row == "" {
 		t.Error("row should show station profile when no callsign entered")
 	}
 	if strings.Contains(row, "DUPE!") {

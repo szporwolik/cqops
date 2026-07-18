@@ -203,12 +203,21 @@ func TestInetResult_Online(t *testing.T) {
 func TestInetResult_Offline(t *testing.T) {
 	m := newTestModel()
 	m.inetOnline = true
+	// First failure: streak 1, still online (single blip is ignored).
 	consumed, _ := m.handleAsyncMessages(inetResultMsg(false))
 	if !consumed {
 		t.Error("inetResultMsg should be consumed")
 	}
+	if !m.inetOnline {
+		t.Error("inetOnline should still be true after 1 failure — transient blips are ignored")
+	}
+	// Second consecutive failure: streak 2, now marked offline.
+	consumed, _ = m.handleAsyncMessages(inetResultMsg(false))
+	if !consumed {
+		t.Error("second inetResultMsg should be consumed")
+	}
 	if m.inetOnline {
-		t.Error("inetOnline should be false")
+		t.Error("inetOnline should be false after 2 consecutive failures")
 	}
 }
 

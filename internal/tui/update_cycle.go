@@ -40,6 +40,7 @@ func (m *Model) cycleLogbook() tea.Cmd {
 	m.rc.status = ""
 	m.invalidatePartnerMapCache()
 	m.rc.logStatsSig = ""
+	m.rc.workedSummarySig = ""
 	m.rc.pathSig = ""
 	m.rc.pathLine = ""
 	m.lookup.wlPrivateData = nil // WL data is logbook-specific
@@ -66,6 +67,9 @@ func (m *Model) cycleLogbook() tea.Cmd {
 			return nil
 		})
 	}
+	// Force-push all dashboard panels so the website reflects the new
+	// logbook immediately — not on the next 5 s throttle cycle.
+	m.forcePushDashboardAll()
 	return tea.Batch(cmds...)
 }
 
@@ -111,6 +115,10 @@ func (m *Model) cycleRig() tea.Cmd {
 	m.refreshRigClient()   // reconnect/disconnect for the new rig
 	m.refreshRotorClient() // rotor may have changed too
 	m.App.MaybeRestartWSJTX(rp.WsjtxEnabled, rp.WsjtxUDPHost, rp.WsjtxUDPPort)
+	// Push rig/station change to dashboard — light, no DB queries.
+	if m.http.online {
+		m.pushDashboardFast()
+	}
 	return nil
 }
 

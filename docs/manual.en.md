@@ -48,7 +48,7 @@ CQOps is built around fast QSO entry, local-first logging, and practical field o
 - **Multiple logbooks** — useful for personal, portable, contest, and club logs.
 - **Multiple operators** — useful for hot-seat and shared club station workflows.
 - **Multiple rigs** — each rig preset can keep its own backend and WSJT-X settings.
-- **Optional integrations** — Multi-provider callbook (QRZ.com, HamQTH, Callook.info), Wavelog, DX Cluster, PSK Reporter, GPS, APRS, rig control, rotor control, solar data, and the CQOps Live browser dashboard.
+- **Optional integrations** — Multi-provider callbook (QRZ.com, HamQTH, QRZ.RU, Callook.info), Wavelog, DX Cluster, PSK Reporter, GPS, APRS, rig control, rotor control, solar data, and the CQOps Live browser dashboard.
 
 Local logging does not require internet access. Network features are skipped in `--offline` mode.
 
@@ -194,7 +194,7 @@ On first launch, CQOps opens the setup wizard. Only the essential station inform
 |---|---|
 | Station & Logbook | Initial logbook, station callsign, operator, grid locator, optional references and zones, Wavelog URL/API/station profile ID |
 | Rig | Rig preset, model, antenna, power, backend, optional rotor, optional WSJT-X UDP settings |
-| Integrations | Callbook lookup settings (QRZ.com, HamQTH, Callook.info) |
+| Integrations | Callbook lookup settings (QRZ.com, HamQTH, QRZ.RU, Callook.info) |
 | General | IANA timezone |
 | Summary | Review and save |
 
@@ -397,7 +397,7 @@ CQOps can fill fields from:
 | Source | Fields |
 |---|---|
 | flrig / Hamlib | Frequency, Freq RX if split, mode, submode |
-| Callbook (QRZ.com / HamQTH / Callook.info) | Name, QTH, grid, country, CQ zone, ITU zone, DXCC, continent |
+| Callbook (QRZ.com / HamQTH / QRZ.RU / Callook.info) | Name, QTH, grid, country, CQ zone, ITU zone, DXCC, continent, photo |
 | REF database | SOTA, POTA, WWFF, IOTA references |
 | Wavelog lookup | Worked/confirmed status when configured |
 | DXCC/prefix data | Prefix and country-related data |
@@ -653,7 +653,7 @@ A selected frequency can be used to tune the active rig. Band plan data can also
 
 All integrations are optional. Local logging works without them.
 
-### Callbook (QRZ.com, HamQTH, Callook.info)
+### Callbook (QRZ.com, HamQTH, QRZ.RU, Callook.info)
 
 CQOps supports multiple callbook providers with priority-based cascading.
 When you press **Ins** on the QSO form, providers are queried in order until
@@ -661,7 +661,8 @@ one returns a result:
 
 1. **QRZ.com** — requires internet and a QRZ XML subscription. Most comprehensive data.
 2. **HamQTH** — free global service. Good coverage, requires a free account.
-3. **Callook.info** — free US-focused service. No account needed, fast FCC lookups.
+3. **QRZ.RU** — free service focused on Russia and surrounding countries. Requires API login (separate from website credentials). Returns name, QTH, grid, lat/lon, class, LoTW/eQSL status, and photo.
+4. **Callook.info** — free US-focused service. No account needed, fast FCC lookups.
 
 If higher-priority providers fail or are disabled, the next provider is tried.
 When **Base call fallback** is enabled (default: on), CQOps also tries the
@@ -1114,7 +1115,7 @@ Press **F9** to open the main menu, then select:
 | Rigs | Rig presets: model, antenna, power, backend (None/flrig/Hamlib), rotor, WSJT-X UDP |
 | Contests | Contest profiles: name, date, ADIF contest ID, exchange templates, starting serial number |
 | Integration | DX Cluster, HTTP server for dashboard, GPS, APRS, Solar, PSK Reporter |
-| Callbook | QRZ.com, HamQTH, Callook.info providers; priority ordering, base-call fallback, Wavelog lookup |
+| Callbook | QRZ.com, HamQTH, QRZ.RU, Callook.info providers; priority ordering, base-call fallback, Wavelog lookup |
 | Notifications | QSO saved alerts, Wavelog QSO sent status, dupe beep, error sounds |
 
 ### Multi-logbook

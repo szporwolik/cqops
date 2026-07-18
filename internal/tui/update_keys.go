@@ -210,7 +210,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		// Set default continent filter from station config on first open.
 		// Fall back to DXCC prefix lookup of own callsign if not configured.
 		cont := m.App.Logbook.Station.Continent
-		if cont == "" && m.App.DXCC != nil {
+		if cont == "" && m.App.BigCTY != nil {
 			if p := m.dxccLookup(m.App.Logbook.Station.Callsign); p != nil && p.Continent != "" {
 				cont = p.Continent
 			}
@@ -391,10 +391,20 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 
 	case msg.String() == "ctrl+c":
 		m.cycleActiveContest()
+		// Contest change may affect dupe detection and form fields,
+		// but doesn't change today/recent QSOs in the dashboard.
+		// Push fast so the active QSO flags recompute.
+		if m.http.online {
+			m.pushDashboardFast()
+		}
 		return m.refreshQSOS(), true
 
 	case msg.String() == "ctrl+o":
 		m.cycleActiveOperator()
+		// Operator change only affects the operator field — light push.
+		if m.http.online {
+			m.pushDashboardFast()
+		}
 		return nil, true
 
 	case msg.String() == "ctrl+p":
@@ -521,11 +531,15 @@ func (m *Model) handleRotorKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.toasts.Info(fmt.Sprintf("Rotator: turning to %.0f\u00b0", bearing))
 		return m.rotorSetPositionCmd(az, math.Round(m.rotor.elevation)), true
 
-	case "ctrl+f1", "alt+/":
+	case "alt+/":
 		if m.rotor.client == nil {
 			return nil, false
 		}
 		applog.Debug("rotor: stop", "key", msg.String())
+		m.toasts.Info("Rotator: stopped")
+		m.rotor.targetAz = 0
+		m.rotor.targetEl = 0
+		m.rc.status = ""
 		client := m.rotor.client
 		return func() tea.Msg {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)

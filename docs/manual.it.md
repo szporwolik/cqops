@@ -49,7 +49,7 @@ CQOps è basato sull’inserimento rapido dei QSO, sul salvataggio locale dei da
 - **Più logbook** — utile per log personali, portatili, contest e di club.
 - **Più operatori** — utile per flussi hot-seat e stazioni di club condivise.
 - **Più apparati** — ogni preset dell’apparato può conservare impostazioni proprie per backend e WSJT-X.
-- **Integrazioni facoltative** — Callbook multi-fornitore (QRZ.com, HamQTH, Callook.info), Wavelog, DX Cluster, PSK Reporter, GPS, APRS, controllo dell’apparato, controllo del rotore, dati solari e CQOps Live dashboard nel browser.
+- **Integrazioni facoltative** — Callbook multi-fornitore (QRZ.com, HamQTH, QRZ.RU, Callook.info), Wavelog, DX Cluster, PSK Reporter, GPS, APRS, controllo dell'apparato, controllo del rotore, dati solari e CQOps Live dashboard nel browser.
 
 La registrazione locale non richiede Internet. Le funzioni di rete vengono ignorate in modalità `--offline`.
 
@@ -196,7 +196,7 @@ Al primo avvio, CQOps apre la procedura guidata di configurazione. Per la regist
 |---|---|
 | Station & Logbook | Logbook iniziale, indicativo di stazione, operatore, grid locator, referenze e zone facoltative, Wavelog URL/API/station profile ID |
 | Rig | Preset dell’apparato, modello, antenna, potenza, backend, rotore facoltativo e impostazioni UDP WSJT-X facoltative |
-| Integrations | Impostazioni di ricerca del callbook (QRZ.com, HamQTH, Callook.info) |
+| Integrations | Impostazioni di ricerca del callbook (QRZ.com, HamQTH, QRZ.RU, Callook.info) |
 | General | Fuso orario IANA |
 | Summary | Revisione e salvataggio |
 
@@ -403,7 +403,7 @@ CQOps può compilare i campi dalle seguenti fonti:
 | Fonte | Campi |
 |---|---|
 | flrig / Hamlib | Frequency, Freq RX in split, Mode, Submode |
-| Callbook (QRZ.com / HamQTH / Callook.info) | Name, QTH, Grid, Country, CQ zone, ITU zone, DXCC, Continent |
+| Callbook (QRZ.com / HamQTH / QRZ.RU / Callook.info) | Name, QTH, Grid, Country, CQ zone, ITU zone, DXCC, Continent, foto |
 | Database REF | Referenze SOTA, POTA, WWFF e IOTA |
 | Wavelog lookup | Stato worked/confirmed quando configurato |
 | Dati DXCC/prefissi | Informazioni relative al prefisso e al Paese |
@@ -668,7 +668,7 @@ La frequenza selezionata può essere usata per sintonizzare l’apparato attivo.
 
 Tutte le integrazioni sono facoltative. La registrazione locale funziona senza di esse.
 
-### Callbook (QRZ.com, HamQTH, Callook.info)
+### Callbook (QRZ.com, HamQTH, QRZ.RU, Callook.info)
 
 CQOps supporta più fornitori di callbook con cascata basata sulla priorità.
 Quando premi **Ins** nel modulo QSO, i fornitori vengono interrogati in ordine
@@ -676,7 +676,8 @@ finché uno restituisce un risultato:
 
 1. **QRZ.com** — richiede Internet e un abbonamento QRZ XML. Dati più completi.
 2. **HamQTH** — servizio globale gratuito. Buona copertura, richiede un account gratuito.
-3. **Callook.info** — servizio gratuito incentrato sugli USA. Nessun account richiesto, ricerche FCC veloci.
+3. **QRZ.RU** — servizio gratuito incentrato su Russia e paesi limitrofi. Richiede login API. Fornisce nome, QTH, grid, lat/lon, classe, stato LoTW/eQSL e foto.
+4. **Callook.info** — servizio gratuito incentrato sugli USA. Nessun account richiesto, ricerche FCC veloci.
 
 Se un fornitore con priorità più alta fallisce o è disabilitato, viene provato
 quello successivo. Quando **Base call fallback** è abilitato (predefinito: sì),
@@ -1100,7 +1101,7 @@ Premi **F9** per aprire il menu principale, quindi seleziona:
 | Rigs | Preset degli apparati: model, antenna, power, backend (None/flrig/Hamlib), rotor, WSJT-X UDP |
 | Contests | Profili contest: name, date, ADIF contest ID, exchange templates, starting serial number |
 | Integration | DX Cluster (host, port, login), HTTP Server del dashboard (address, port, branding), GPS service (serial/GPSD, grid precision) |
-| Callbook | Fornitori QRZ.com, HamQTH, Callook.info; ordine di priorità, base-call fallback, Wavelog lookup |
+| Callbook | Fornitori QRZ.com, HamQTH, QRZ.RU, Callook.info; ordine di priorità, base-call fallback, Wavelog lookup |
 | Notifications | QSO saved alerts, Wavelog QSO sent status, dupe beep, error sounds |
 
 ### Multi-logbook

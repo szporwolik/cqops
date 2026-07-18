@@ -45,8 +45,14 @@ type pskSpotsLoadedMsg struct {
 func (m *Model) loadPSKSpotsCmd(call string, cutoff int64, spotKey string) tea.Cmd {
 	db := m.App.DB
 	return func() tea.Msg {
+		if db == nil {
+			return pskSpotsLoadedMsg{spotKey: spotKey}
+		}
 		rawSpots, err := store.QueryPSKSpots(db, call, cutoff)
 		if err != nil {
+			if strings.Contains(err.Error(), "database is closed") {
+				return pskSpotsLoadedMsg{spotKey: spotKey}
+			}
 			return pskSpotsLoadedMsg{spotKey: spotKey, err: err}
 		}
 		spots := make([]psk.Report, len(rawSpots))
@@ -155,6 +161,7 @@ func pskTableRow(r psk.Report, callW, gridW, freqW, snrW, modeW int) string {
 
 	// Manual padding via strings.Builder — avoids fmt.Sprintf allocation.
 	var sb strings.Builder
+	sb.WriteByte(' ') // leading indent
 	padRight(&sb, call, callW)
 	sb.WriteByte(' ')
 	padRight(&sb, loc, gridW)
@@ -317,19 +324,51 @@ func (m *Model) viewPSKReporter() string {
 		totalW = w - 2
 	}
 
-	// Two boxes side by side: table (70%) + filters (30%).
-	tableW := totalW * 70 / 100
-	filtW := totalW - tableW
-	if filtW < 20 {
-		filtW = 20
-		tableW = totalW - filtW
+	// --- Header + filter bar (DXC-style) ---
+	header := S.Title.Width(w).Render("PSK Reporter")
+	timeLabel := fmt.Sprintf("%dm", m.psk.filterMins)
+	bandLabel := "all"
+	if m.psk.bandFilter != "" {
+		bandLabel = m.psk.bandFilter
+	}
+	modeLabel := "all"
+	if m.psk.modeFilter != "" {
+		modeLabel = m.psk.modeFilter
+	}
+	filterLine := " " +
+		DimStyle.Render("Mode") + " " + ValueStyle.Render(modeLabel) + "  " + DimStyle.Render("(Ins/Del)") +
+		"  " + DimStyle.Render(middot()) + "  " +
+		DimStyle.Render("Band") + " " + ValueStyle.Render(bandLabel) + "  " + DimStyle.Render("(Home/End)") +
+		"  " + DimStyle.Render(middot()) + "  " +
+		DimStyle.Render("Time") + " " + ValueStyle.Render(timeLabel) + "  " + DimStyle.Render("(PgUp/Dn)") +
+		"  " + DimStyle.Render(middot()) + "  " +
+		DimStyle.Render("Spots") + " " + ValueStyle.Render(strconv.Itoa(len(filtered))) + "  " + DimStyle.Render("(Bksp clear)")
+	filterBar := lipgloss.NewStyle().Width(totalW).MaxWidth(totalW).Render(filterLine)
+
+	// --- Side-by-side: spots left, map right ---
+	mapW := 0
+	if m.App.Config.General.RenderMap && m.mapView != nil {
+		mapW = totalW * 28 / 100 // ~28% for map
+		if mapW < 22 {
+			mapW = 22
+		}
+	}
+	spotsW := totalW - mapW
+	if mapW > 0 {
+		spotsW-- // gap between spots and map
+	}
+	if spotsW < 30 {
+		spotsW = totalW
+		mapW = 0
 	}
 
-	// Build table content — always 5 visible rows for consistent layout.
-	const fixedRows = 5
-	var tableContent string
+	spotsH := contentHeight(m.height) - 3 // header + filter + empty row
+	if spotsH < 5 {
+		spotsH = 5
+	}
+
+	var spotsContent string
 	if len(filtered) == 0 {
-		// Show status inside the table box to avoid layout shift.
 		var msg string
 		if m.psk.fetching {
 			msg = fmt.Sprintf("Fetching PSK Reporter data for %s\u2026", call)
@@ -338,68 +377,40 @@ func (m *Model) viewPSKReporter() string {
 		} else {
 			msg = fmt.Sprintf("Nobody heard %s in the last %d minutes", call, m.psk.filterMins)
 		}
-		tableContent = DimStyle.Render(msg)
-		for i := 1; i < 7; i++ {
-			tableContent += "\n"
-		}
+		spotsContent = DimStyle.Width(spotsW).Align(lipgloss.Center).Render(msg)
 	} else {
-		tableContent = m.buildPSKTable(filtered, tableW-6, fixedRows)
+		spotsContent = m.buildPSKTable(filtered, spotsW-2, spotsH)
 	}
-	tableBox := m.renderPartnerBox(
-		fmt.Sprintf("Heard by %d stations", len(filtered)),
-		tableContent, tableW, 0)
 
-	// Build filters box.
-	filtContent := m.buildPSKFilters(filtW - 6)
-	filtBox := m.renderPartnerBox("Filters", filtContent, filtW, 0)
+	// Measure natural spots width and fill remaining space with map.
+	spotsNatW := lipgloss.Width(spotsContent)
+	if spotsNatW < 30 {
+		spotsNatW = 30
+	}
 
-	// Equalize heights.
-	th := lipgloss.Height(tableBox)
-	fh := lipgloss.Height(filtBox)
-	maxH := th
-	if fh > maxH {
-		maxH = fh
-	}
-	if th < maxH {
-		tableBox += strings.Repeat("\n", maxH-th)
-	}
-	if fh < maxH {
-		filtBox += strings.Repeat("\n", maxH-fh)
-	}
-	topRow := lipgloss.JoinHorizontal(lipgloss.Top, tableBox, filtBox)
-
-	var block string
-	if m.App.Config.General.RenderMap && m.mapView != nil {
-		mapW := totalW
-		topH := lipgloss.Height(topRow)
-		mapAvailH := contentHeight(m.height) - topH - 1 // -1 for legend line
-		if mapAvailH < 3 {
-			mapAvailH = 3
+	var sideBySide string
+	if mapW > 0 && len(filtered) > 0 {
+		actualMapW := totalW - spotsNatW - 1 // 1-char gap
+		if actualMapW < 15 {
+			actualMapW = 15
 		}
-		contentW := mapW - 4
-		if contentW < 20 {
-			contentW = mapW
-		}
-
-		var mapBox string
-		if len(filtered) > 0 {
-			mapBox = m.buildPSKMap(filtered, contentW, mapAvailH)
-		} else {
-			mapBox = m.buildPSKMap(nil, contentW, mapAvailH)
-		}
+		mapAvailH := spotsH
+		mapBox := m.buildPSKMap(filtered, actualMapW, mapAvailH)
 		if mapBox != "" {
-			mapBox = lipgloss.PlaceHorizontal(mapW, lipgloss.Center, mapBox)
-			block = lipgloss.JoinVertical(lipgloss.Left, topRow, mapBox)
+			mapBox = lipgloss.PlaceHorizontal(actualMapW, lipgloss.Center, mapBox)
+			sideBySide = lipgloss.JoinHorizontal(lipgloss.Top,
+				spotsContent,
+				lipgloss.NewStyle().Width(1).Render(" "),
+				mapBox,
+			)
 		} else {
-			block = topRow
+			sideBySide = spotsContent
 		}
 	} else {
-		block = topRow
+		sideBySide = spotsContent
 	}
 
-	if w > totalW+2 {
-		block = PartnerBlock.Width(w).Render(block)
-	}
+	block := header + "\n" + filterBar + "\n\n" + sideBySide
 
 	// Clamp to content height so the help bar never gets pushed off-screen.
 	ch := contentHeight(m.height)
@@ -425,8 +436,8 @@ func (m *Model) buildPSKTable(reports []psk.Report, maxW, visibleRows int) strin
 	snrW := 4
 	modeW := 6
 
-	header := pskHeaderStyle.Width(maxW).MaxWidth(maxW).Inline(true).Render(
-		fmt.Sprintf("%-*s %-*s %*s %*s %-*s %s",
+	header := pskHeaderStyle.Inline(true).Render(
+		fmt.Sprintf(" %-*s %-*s %*s %*s %-*s %s",
 			callW, "Call", gridW, "Grid", freqW, "Freq", snrW, "SNR", modeW, "Mode", "Age"))
 	var lines []string
 	lines = append(lines, header)
@@ -477,16 +488,7 @@ func (m *Model) buildPSKTable(reports []psk.Report, maxW, visibleRows int) strin
 		lines = append(lines, "")
 	}
 
-	// Force each line to exactly maxW width so the table fills the box.
-	// Use a cached style — rebuilt only when maxW changes.
-	if m.psk.tableRowStyleW != maxW {
-		m.psk.tableRowStyle = lipgloss.NewStyle().Width(maxW).MaxWidth(maxW).Inline(true)
-		m.psk.tableRowStyleW = maxW
-	}
-	for i, l := range lines {
-		lines[i] = m.psk.tableRowStyle.Render(l)
-	}
-
+	// Return at natural width — no forced padding.
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
@@ -646,7 +648,7 @@ func (m *Model) buildPSKMap(reports []psk.Report, mapW, mapAvailH int) string {
 	}
 
 	legend := pskLegend()
-	lines = append(lines, legend)
+	lines = append(lines, lipgloss.PlaceHorizontal(actualW, lipgloss.Center, legend))
 	result := strings.Join(lines, "\n")
 	// Only cache when kitty is off; when kitty is on but the frame
 	// hasn't arrived yet, skip the cache so the kitty path can
@@ -701,7 +703,7 @@ func (m *Model) buildPSKMapKitty(reports []psk.Report, ownLat, ownLon float64, m
 	}
 
 	legend := pskLegend()
-	result := kittyOut + "\n" + legend
+	result := kittyOut + "\n" + lipgloss.PlaceHorizontal(mapW, lipgloss.Center, legend)
 	m.psk.mapView = result
 	m.psk.mapSig = mapSig
 	return result

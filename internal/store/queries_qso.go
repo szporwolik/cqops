@@ -87,8 +87,8 @@ func ListQSOs(db *sql.DB, limit int, contestID string) ([]qso.QSO, error) {
 		FROM qsos`
 	var args []any
 	if contestID != "" {
-		query += ` WHERE contest_id = ?`
-		args = append(args, contestID)
+		query += ` WHERE contest_id = ? OR contest_adif_id = ?`
+		args = append(args, contestID, contestID)
 	}
 	query += ` ORDER BY qso_date DESC, time_on DESC, id DESC`
 	var rows *sql.Rows
@@ -141,9 +141,9 @@ func ListQSOs(db *sql.DB, limit int, contestID string) ([]qso.QSO, error) {
 // exchange when working the same station on another band/mode.
 func LastContestExchange(db *sql.DB, call, contestID string) (exchRcvd, rstRcvd, exchSent string, err error) {
 	query := `SELECT exch_rcvd, rst_rcvd, exch_sent FROM qsos
-		WHERE call = ? AND contest_id = ?
+		WHERE call = ? AND (contest_id = ? OR contest_adif_id = ?)
 		ORDER BY qso_date DESC, time_on DESC LIMIT 1`
-	err = db.QueryRow(query, call, contestID).Scan(&exchRcvd, &rstRcvd, &exchSent)
+	err = db.QueryRow(query, call, contestID, contestID).Scan(&exchRcvd, &rstRcvd, &exchSent)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -168,8 +168,8 @@ func ListQSOsPageWithCount(db *sql.DB, limit, offset int, contestID string) ([]q
 		FROM qsos`
 	var args []any
 	if contestID != "" {
-		query += ` WHERE contest_id = ?`
-		args = append(args, contestID)
+		query += ` WHERE contest_id = ? OR contest_adif_id = ?`
+		args = append(args, contestID, contestID)
 	}
 	query += `
 		ORDER BY qso_date DESC, time_on DESC, id DESC
@@ -235,8 +235,8 @@ func ListQSOsPage(db *sql.DB, limit, offset int, contestID string, orderAsc bool
 		FROM qsos`
 	var args []any
 	if contestID != "" {
-		query += ` WHERE contest_id = ?`
-		args = append(args, contestID)
+		query += ` WHERE contest_id = ? OR contest_adif_id = ?`
+		args = append(args, contestID, contestID)
 	}
 	query += `
 		ORDER BY qso_date `
@@ -486,8 +486,8 @@ func WorkedCallsOnBandDate(db *sql.DB, band, qsoDate string) (map[string]bool, e
 // dates, so the date filter from WorkedCallsOnBandDate is insufficient).
 func WorkedCallsInContest(db *sql.DB, contestID, band string) (map[string]bool, error) {
 	rows, err := db.Query(
-		`SELECT DISTINCT call, mode FROM qsos WHERE contest_id = ? AND band = ?`,
-		contestID, band,
+		`SELECT DISTINCT call, mode FROM qsos WHERE (contest_id = ? OR contest_adif_id = ?) AND band = ?`,
+		contestID, contestID, band,
 	)
 	if err != nil {
 		return nil, err
@@ -510,6 +510,42 @@ func WorkedCallsInContest(db *sql.DB, contestID, band string) (map[string]bool, 
 // inside contests it spans the entire contest (48h+). Key format is
 // "CALL|BAND|MODE" — the caller checks each spot's (call,band,mode)
 // against this set with zero per-spot DB queries.
+
+// DXCDXCCWorkedSets returns two maps for DXC spot highlighting:
+//   - dxccBand: map["230|20m"]bool — DXCC+Band already worked (all-time).
+//   - dxccBandMode: map["230|20m|FT8"]bool — DXCC+Band+Mode already worked (all-time).
+//
+// Used to colour new-DXCC/new-band/new-mode spots blue in the DXC table.
+// Scoped to the entire logbook — rebuilt on logbook/profile change, not per-day.
+// Runs as a single query per table rebuild with zero per-spot DB queries.
+func DXCDXCCWorkedSets(db *sql.DB) (dxccBand, dxccBandMode map[string]bool, err error) {
+	rows, err := db.Query(`SELECT DISTINCT dxcc, band, mode FROM qsos WHERE dxcc != ''`)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+
+	dxccBand = make(map[string]bool, 256)
+	dxccBandMode = make(map[string]bool, 256)
+	for rows.Next() {
+		var dxcc, band, mode string
+		if err := rows.Scan(&dxcc, &band, &mode); err != nil {
+			continue
+		}
+		dxcc = strings.TrimSpace(dxcc)
+		band = strings.TrimSpace(band)
+		mode = strings.TrimSpace(mode)
+		if dxcc == "" {
+			continue
+		}
+		bk := dxcc + "|" + band
+		dxccBand[bk] = true
+		if mode != "" {
+			dxccBandMode[bk+"|"+mode] = true
+		}
+	}
+	return dxccBand, dxccBandMode, rows.Err()
+}
 func DXCDupeSet(db *sql.DB, qsoDate, contestID string) (map[string]bool, error) {
 	var (
 		rows *sql.Rows
@@ -517,8 +553,8 @@ func DXCDupeSet(db *sql.DB, qsoDate, contestID string) (map[string]bool, error) 
 	)
 	if contestID != "" {
 		rows, err = db.Query(
-			`SELECT DISTINCT call, band, mode FROM qsos WHERE contest_id = ?`,
-			contestID,
+			`SELECT DISTINCT call, band, mode FROM qsos WHERE contest_id = ? OR contest_adif_id = ?`,
+			contestID, contestID,
 		)
 	} else {
 		rows, err = db.Query(
@@ -679,13 +715,14 @@ type EnrichmentData struct {
 	IOTA       string
 	CQZone     string
 	ITUZone    string
+	DXCC       string
 }
 
 // UpdateQSOEnrichment applies callbook enrichment to a QSO.
 // Only fields that are currently empty in the database are updated —
 // existing data is never overwritten by enrichment.
 func UpdateQSOEnrichment(db *sql.DB, qsoID int64, e EnrichmentData) {
-	if e.Name == "" && e.QTH == "" && e.Country == "" && e.GridSquare == "" && e.IOTA == "" && e.CQZone == "" && e.ITUZone == "" {
+	if e.Name == "" && e.QTH == "" && e.Country == "" && e.GridSquare == "" && e.IOTA == "" && e.CQZone == "" && e.ITUZone == "" && e.DXCC == "" {
 		return
 	}
 
@@ -719,6 +756,10 @@ func UpdateQSOEnrichment(db *sql.DB, qsoID int64, e EnrichmentData) {
 	if e.ITUZone != "" {
 		sets = append(sets, "itu_zone = CASE WHEN COALESCE(itu_zone,'') = '' THEN ? ELSE itu_zone END")
 		args = append(args, e.ITUZone)
+	}
+	if e.DXCC != "" {
+		sets = append(sets, "dxcc = CASE WHEN COALESCE(dxcc,'') = '' THEN ? ELSE dxcc END")
+		args = append(args, e.DXCC)
 	}
 
 	if len(sets) == 0 {

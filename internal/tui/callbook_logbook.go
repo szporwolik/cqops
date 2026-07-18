@@ -5,10 +5,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ftl/hamradio/dxcc"
+	"github.com/ftl/hamradio/latlon"
 	"github.com/ftl/hamradio/locator"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/callbook"
+	"github.com/szporwolik/cqops/internal/ctybig"
 	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
@@ -89,15 +90,15 @@ func (p *LogbookCallbookProvider) Lookup(callsign string) (*callbook.Result, err
 	}, nil
 }
 
-// CTYProvider uses the CTY.DAT DXCC prefix database to enrich callsigns.
+// CTYProvider uses the Big CTY DXCC prefix database to enrich callsigns.
 type CTYProvider struct {
-	prefixes *dxcc.Prefixes
+	db       *ctybig.DB
 	priority int
 }
 
-// NewCTYProvider creates a provider backed by the CTY.DAT prefix database.
-func NewCTYProvider(prefixes *dxcc.Prefixes, priority int) *CTYProvider {
-	return &CTYProvider{prefixes: prefixes, priority: priority}
+// NewCTYProvider creates a provider backed by the Big CTY prefix database.
+func NewCTYProvider(db *ctybig.DB, priority int) *CTYProvider {
+	return &CTYProvider{db: db, priority: priority}
 }
 
 func (p *CTYProvider) Name() string          { return "CTY.DAT" }
@@ -105,36 +106,41 @@ func (p *CTYProvider) Priority() int         { return p.priority }
 func (p *CTYProvider) TestConnection() error { return nil }
 
 func (p *CTYProvider) Lookup(callsign string) (*callbook.Result, error) {
-	if p.prefixes == nil || callsign == "" {
+	if p.db == nil || callsign == "" {
 		return nil, nil
 	}
-	matches, ok := p.prefixes.Find(callsign)
-	if !ok || len(matches) == 0 {
+	e := p.db.Find(callsign)
+	if e == nil {
 		applog.Debug("CTY provider: no prefix match", "call", callsign)
 		return nil, nil
 	}
-	m := matches[0]
 	applog.Debug("CTY provider: matched prefix", "call", callsign,
-		"prefix", m.PrimaryPrefix, "country", m.Name, "cq", int(m.CQZone), "itu", int(m.ITUZone))
+		"country", e.Name, "cq", e.CQZone, "itu", e.ITUZone)
 	r := &callbook.Result{
 		Callsign: callsign,
-		Country:  strings.TrimSpace(m.Name),
+		Country:  strings.TrimSpace(e.Name),
 		Provider: "cty",
 	}
-	if m.CQZone != 0 {
-		r.CQZone = strconv.Itoa(int(m.CQZone))
+	if e.DXCC > 0 {
+		r.DXCC = strconv.Itoa(e.DXCC)
 	}
-	if m.ITUZone != 0 {
-		r.ITUZone = strconv.Itoa(int(m.ITUZone))
+	if e.CQZone != 0 {
+		r.CQZone = strconv.Itoa(e.CQZone)
 	}
-	if m.LatLon.Lat != 0 || m.LatLon.Lon != 0 {
-		grid := locator.LatLonToLocator(m.LatLon, 4)
+	if e.ITUZone != 0 {
+		r.ITUZone = strconv.Itoa(e.ITUZone)
+	}
+	// Grid from Big CTY coordinates — lower priority than QRZ/HamQTH,
+	// but provides a reasonable fallback when no callbook data is available.
+	if e.Lat != 0 || e.Lon != 0 {
+		ll := latlon.NewLatLon(latlon.Latitude(e.Lat), latlon.Longitude(e.Lon))
+		grid := locator.LatLonToLocator(ll, 4)
 		gridStr := strings.TrimRight(string(grid[:]), "\x00")
 		if len(gridStr) >= 4 {
 			r.Grid = strings.ToUpper(gridStr[:4])
 		}
 	}
-	applog.Debug("CTY: enriched from prefix DB", "call", callsign, "country", r.Country, "grid", r.Grid)
+	applog.Debug("CTY: enriched from prefix DB", "call", callsign, "country", r.Country, "dxcc", r.DXCC, "grid", r.Grid)
 	return r, nil
 }
 
@@ -168,7 +174,7 @@ func (p *WavelogCallbookProvider) Lookup(callsign string) (*callbook.Result, err
 	}
 	applog.Debug("Wavelog provider: looking up", "call", callsign)
 	// No band/mode — we just want name/QTH/grid/country/zones.
-	data, err := wavelog.PrivateLookup(p.url, p.apiKey, callsign, "", "")
+	data, err := wavelog.PrivateLookup(p.url, p.apiKey, callsign, "", "", "")
 	if err != nil {
 		applog.Debug("Wavelog provider: lookup failed", "call", callsign, "error", err)
 		return nil, err

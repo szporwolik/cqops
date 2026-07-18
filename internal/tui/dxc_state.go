@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"charm.land/bubbles/v2/table"
-	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/dxc"
 	"github.com/szporwolik/cqops/internal/store"
 )
@@ -56,11 +55,7 @@ type dxcState struct {
 
 	// Render cache for filter info line — rebuilt only when filters change.
 	cachedFilterInfo string
-	cachedFilterW    int
-
-	// Cached spacer + table wrapper styles — rebuilt only on width change.
-	cachedSpacerStyle  lipgloss.Style
-	cachedSpacerStyleW int
+	cachedFilterSig  string
 
 	// Path line state — caches matched spots for Ctrl+P cycling.
 	pathSpots   []store.DXCSpot // spots at/near current frequency (from dxcPathLine)
@@ -72,4 +67,9 @@ type dxcState struct {
 	dupeSet        map[string]bool
 	dupeSetLogbook string // logbook name at time of computation
 	dupeSetContest string // contest ID at time of computation
+
+	// DXCC worked sets for spot highlighting (new DXCC / new band / new mode).
+	dxccBandSet     map[string]bool // "230|20m"
+	dxccBandModeSet map[string]bool // "230|20m|FT8"
+	dxccSetLogbook  string          // logbook name at time of computation
 }

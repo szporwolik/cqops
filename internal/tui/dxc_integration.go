@@ -34,6 +34,7 @@ type dxcSpotsStoredMsg struct {
 // sendSpotCmd sends a DX spot to the connected cluster and stores it locally
 // so it appears immediately in the DXC table even if the cluster doesn't echo.
 func (m *Model) sendSpotCmd(call string, freqKhz float64, comment string) tea.Cmd {
+	db := m.App.DB
 	return func() tea.Msg {
 		if m.dxc.client == nil || !m.dxc.online {
 			m.toasts.Warn("DXC: not connected — cannot send spot")
@@ -61,6 +62,12 @@ func (m *Model) sendSpotCmd(call string, freqKhz float64, comment string) tea.Cm
 			m.toasts.Warn("DXC: " + rsp)
 		}
 
+		// If DB was closed (logbook cycle), silently drop local store.
+		if db == nil {
+			applog.Debug("DXC: skip local spot store — db nil")
+			return dxcSpotsStoredMsg{calls: []string{call}, newSpots: nil}
+		}
+
 		// Also store locally so it shows up in the DXC table immediately.
 		now := time.Now().UTC().Unix()
 		mode := deriveSpotMode(comment, freqKhz/1000)
@@ -74,16 +81,16 @@ func (m *Model) sendSpotCmd(call string, freqKhz float64, comment string) tea.Cm
 			Spotter:    m.App.Logbook.Station.Callsign,
 			ReceivedAt: now,
 		}
-		if prefixes := m.App.DXCC; prefixes != nil {
-			if mx, ok := prefixes.Find(call); ok && len(mx) > 0 {
-				spot.DXCont = mx[0].Continent
-				spot.DXCC = mx[0].Name
+		if cty := m.App.BigCTY; cty != nil {
+			if e := cty.Find(call); e != nil {
+				spot.DXCont = e.Continent
+				spot.DXCC = e.Name
 			}
-			if mx, ok := prefixes.Find(spot.Spotter); ok && len(mx) > 0 {
-				spot.SpotCont = mx[0].Continent
+			if e := cty.Find(spot.Spotter); e != nil {
+				spot.SpotCont = e.Continent
 			}
 		}
-		if _, err := store.InsertDXCSpots(m.App.DB, []store.DXCSpot{spot}); err != nil {
+		if _, err := store.InsertDXCSpots(db, []store.DXCSpot{spot}); err != nil {
 			applog.Warn("DXC: local spot store failed", "error", err)
 		}
 
@@ -232,8 +239,12 @@ done:
 
 func (m *Model) storeDXCSpotsCmd(spots []dxc.Spot) tea.Cmd {
 	db := m.App.DB
-	prefixes := m.App.DXCC // may be nil if DXCC failed to load
+	cty := m.App.BigCTY // may be nil if Big CTY failed to load
 	return func() tea.Msg {
+		// Silently drop spots when DB has been closed (logbook cycle).
+		if db == nil {
+			return nil
+		}
 		var dbSpots []store.DXCSpot
 		now := time.Now().UTC().Unix()
 		for _, s := range spots {
@@ -253,13 +264,13 @@ func (m *Model) storeDXCSpotsCmd(spots []dxc.Spot) tea.Cmd {
 				ReceivedAt: now,
 			}
 			// Compute continents from DXCC prefix lookup.
-			if prefixes != nil {
-				if m, ok := prefixes.Find(s.DXCall); ok && len(m) > 0 {
-					spot.DXCont = m[0].Continent
-					spot.DXCC = m[0].Name
+			if cty != nil {
+				if e := cty.Find(s.DXCall); e != nil {
+					spot.DXCont = e.Continent
+					spot.DXCC = e.Name
 				}
-				if m, ok := prefixes.Find(s.Spotter); ok && len(m) > 0 {
-					spot.SpotCont = m[0].Continent
+				if e := cty.Find(s.Spotter); e != nil {
+					spot.SpotCont = e.Continent
 				}
 			}
 			dbSpots = append(dbSpots, spot)
@@ -273,6 +284,9 @@ func (m *Model) storeDXCSpotsCmd(spots []dxc.Spot) tea.Cmd {
 			n, err = store.InsertDXCSpots(db, dbSpots)
 			if err == nil {
 				break
+			}
+			if strings.Contains(err.Error(), "database is closed") {
+				return nil
 			}
 			if !strings.Contains(err.Error(), "database is locked") {
 				break
@@ -330,7 +344,10 @@ func (m *Model) storeDXCSpotsCmd(spots []dxc.Spot) tea.Cmd {
 }
 
 // handleDXCStatus processes a connection state change.
-func (m *Model) handleDXCStatus(msg dxcStatusMsg) {
+// Returns a tea.Cmd to fire an immediate health check when the failure
+// looks like a network-layer issue (DNS), so we detect internet outages
+// in seconds instead of waiting for the 60 s poll cycle.
+func (m *Model) handleDXCStatus(msg dxcStatusMsg) tea.Cmd {
 	m.dxc.connecting = false
 	if msg.online {
 		m.dxc.online = true
@@ -346,23 +363,30 @@ func (m *Model) handleDXCStatus(msg dxcStatusMsg) {
 				Host:      cfg.Host + ":" + cfg.Port,
 			})
 		}
-	} else {
-		m.dxc.online = false
-		m.dxc.client = nil
-		m.rc.status = ""
-		// Redirect to QSO form if the user is viewing the DXC tab.
-		if m.screen == screenDXC {
-			m.screen = screenQSO
-		}
-		if m.dxc.reconnectIdx < len(dxcReconnectDelays)-1 {
-			m.dxc.reconnectIdx++
-		}
-		applog.Warn("DXC: connection failed",
-			"attempt", m.dxc.reconnectIdx+1,
-			"error", msg.err,
-		)
-		m.toasts.Warn("DXC: connection failed — retrying")
+		return nil
 	}
+	m.dxc.online = false
+	m.dxc.client = nil
+	m.rc.status = ""
+	// Redirect to QSO form if the user is viewing the DXC tab.
+	if m.screen == screenDXC {
+		m.screen = screenQSO
+	}
+	if m.dxc.reconnectIdx < len(dxcReconnectDelays)-1 {
+		m.dxc.reconnectIdx++
+	}
+	applog.Warn("DXC: connection failed",
+		"attempt", m.dxc.reconnectIdx+1,
+		"error", msg.err,
+	)
+	m.toasts.Warn("DXC: connection failed — retrying")
+	// When the failure looks like DNS or routing is dead, fire an
+	// immediate health check instead of waiting for the poll timer.
+	if isNetworkError(msg.err) {
+		m.noteNetworkError()
+		return checkInetCmd()
+	}
+	return nil
 }
 
 // resetDXC stops any active connection and resets reconnect state.

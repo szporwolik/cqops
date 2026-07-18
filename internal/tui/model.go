@@ -44,9 +44,10 @@ const (
 )
 
 const (
-	healthCheckTicks  = 60                      // ticks between health checks (1 min)
-	rigStatusTimeout  = 1500 * time.Millisecond // context timeout for rig status
-	rigDefaultTimeout = 1000                    // default rig poll timeout (ms)
+	healthCheckTicks     = 60                      // ticks between health checks when online (1 min)
+	healthCheckTicksFast = 15                      // ticks between health checks when offline (15 s)
+	rigStatusTimeout     = 1500 * time.Millisecond // context timeout for rig status
+	rigDefaultTimeout    = 1000                    // default rig poll timeout (ms)
 )
 
 const (
@@ -123,7 +124,11 @@ type Model struct {
 	dateTimeAuto      bool
 	tickCount         int
 	inetOnline        bool
-	offlineToastShown bool // suppress repeated offline errors until internet returns
+	inetConfirmed     bool // true after first successful health check
+	inetFailStreak    int  // consecutive failed health checks; ≥2 = offline
+	offlineToastShown bool // suppress repeated internet-down toasts
+	aprsToastShown    bool // suppress repeated APRS failure toasts during reconnect loops
+	triggerRapidCheck bool // set by DXC/APRS failures to fire an immediate health check
 	versionChecked    bool // true after first GitHub version check
 	Offline           bool // when true, skip all network-dependent operations
 	wsjtx             wsjtxState
@@ -249,7 +254,8 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	// already set it, but config value takes precedence).
 	applog.SetDebugMode(a.Config.General.Debug)
 
-	m := &Model{App: a, qsos: initialQSOS, toasts: NewToastQueue(), dateTimeAuto: true, width: 80, height: 24}
+	m := &Model{App: a, qsos: initialQSOS, toasts: NewToastQueue(), dateTimeAuto: true, width: 80, height: 24, inetOnline: true}
+	a.InetOnline = true // sync with model — assume online until first health check
 
 	// Build the callbook provider registry from config.
 	m.callbookRegistry = buildCallbookRegistry(a)
@@ -403,8 +409,11 @@ func (m *Model) ShowOfflineToast() {
 func (m *Model) applyBeepOnError() {
 	if m.App.Config.General.Notifications.BeepOnError && desktopAvailable() {
 		applog.SetBeepFunc(func() {
-			if m.offlineToastShown {
-				return // already warned — suppress beep noise
+			// Suppress when we know the network is down — service
+			// errors are expected and would produce a storm of beeps
+			// on every callsign keystroke.
+			if !m.inetOnline || m.offlineToastShown {
+				return
 			}
 			beeep.Beep(beeep.DefaultFreq, beeep.DefaultDuration)
 		})
@@ -550,17 +559,25 @@ func (m *Model) Init() tea.Cmd {
 	// Start APRS-IS client if configured.
 	m.App.SetAPRSStatusCallback(func(connected bool, err error) {
 		if connected {
-			m.offlineToastShown = false
+			m.aprsToastShown = false
 			m.toasts.Success("APRS: connected")
 		} else if err != nil {
-			// Suppress when general offline toast already shown.
-			if m.offlineToastShown {
+			// When the failure looks like a network-layer issue
+			// (DNS), flag an immediate health check so we detect
+			// internet outages in seconds rather than waiting
+			// for the 60 s poll cycle.
+			if isNetworkError(err) {
+				m.noteNetworkError()
+			}
+			// Suppress duplicate APRS failure toasts during
+			// reconnect loops — one is enough.
+			if m.aprsToastShown {
 				return
 			}
-			m.offlineToastShown = true
+			m.aprsToastShown = true
 			m.toasts.Warn("APRS: " + err.Error())
 		} else {
-			m.offlineToastShown = false
+			m.aprsToastShown = false
 			m.toasts.Info("APRS: stopped")
 		}
 	})
@@ -1009,7 +1026,10 @@ func (m *Model) View() tea.View {
 	}
 	addRow(body)
 	addRow(m.rc.help)
-	mainView := lipgloss.JoinVertical(lipgloss.Left, mainParts...)
+	// Left-aligned vertical join without backgrounds is equivalent to
+	// newline concatenation. Avoids the Lip Gloss line-measurement pass
+	// (getLines → StringWidth → grapheme cluster) on every frame.
+	mainView := strings.Join(mainParts, "\n")
 
 	// Composite confirm dialog as a centered overlay if active
 	if m.confirm != nil {
@@ -1154,16 +1174,6 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 		clamped = m.rc.bodyClipStyle.Render(body)
 	}
 	result := fillBody(clamped, l.ContentH)
-	// Bandplan disclaimer always the last content row, directly above the
-	// help bar — replace the trailing padding line.
-	if m.screen == screenBPL && l.ContentH > 0 {
-		lines := strings.Split(result, "\n")
-		if len(lines) > 0 {
-			lines[len(lines)-1] = DimStyle.Width(l.TerminalW).Render(
-				" Listen first. Check national rules. VHF/UHF often needs country/local overrides.")
-		}
-		result = strings.Join(lines, "\n")
-	}
 	return result
 }
 
@@ -1358,7 +1368,7 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 	if m.callRecentQSOs.IsFiltered() {
 		callQSOs := m.callRecentQSOs.ActiveQSOs()
 		if len(callQSOs) > 0 {
-			callRows := len(callQSOs) + 2 // rows + header
+			callRows := len(callQSOs) + 2 // header + data + padding for border
 			if callRows > tableH/2 {
 				callRows = tableH / 2
 			}
@@ -1391,9 +1401,26 @@ func (m *Model) buildQSOFormWithLayout(l Layout) string {
 	}
 	if callQSOPart != "" {
 		parts = append(parts, callQSOPart)
+		parts = append(parts, "") // separator — may produce >1 blank row; collapsed below
 	}
 	parts = append(parts, m.recentQSOs.View())
-	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+	result := lipgloss.JoinVertical(lipgloss.Left, parts...)
+	// The bubbles table pads its viewport to a fixed height with blank
+	// rows, and the separator above adds another.  Instead of trying to
+	// predict the exact padding, simply collapse all runs of 2+ visually
+	// empty lines into a single empty line.
+	lines := strings.Split(result, "\n")
+	cleaned := lines[:0]
+	prevEmpty := false
+	for _, l := range lines {
+		empty := stripANSI(l) == "" || strings.TrimSpace(l) == ""
+		if empty && prevEmpty {
+			continue // collapse consecutive blanks
+		}
+		cleaned = append(cleaned, l)
+		prevEmpty = empty
+	}
+	return strings.Join(cleaned, "\n")
 }
 
 // buildContestLine returns the contest info line for the QSO screen, or "" if
@@ -1412,12 +1439,17 @@ func (m *Model) buildContestLine(boxW int) string {
 		m.rc.contestLineSig = ""
 		return ""
 	}
+	// Keep stats current — computeIfStale is a no-op when fresh (<5 s).
+	m.contest.computeIfStale(m.App.DB, id, ct.Name)
 	sig := id + "|" + strconv.Itoa(ct.NextQSO) + "|" + strconv.Itoa(m.contest.TotalQSOs) + "|" + strconv.FormatInt(time.Now().UTC().Unix()/10, 10) + "|" + strconv.Itoa(boxW) + "|" + strconv.FormatInt(int64(m.contest.OnAir.Seconds()), 10)
 	if m.rc.contestLineSig == sig && m.rc.contestLine != "" {
 		return m.rc.contestLine
 	}
 	m.rc.contestLineSig = sig
-	since := formatDurationShort(time.Now().UTC().Sub(m.contest.LastQSO))
+	since := "—"
+	if !m.contest.LastQSO.IsZero() {
+		since = formatDurationShort(time.Now().UTC().Sub(m.contest.LastQSO)) + " ago"
+	}
 	first := ""
 	if !m.contest.FirstQSO.IsZero() && boxW >= 120 {
 		first = "  Started " + m.contest.FirstQSO.Format("15:04")
@@ -1430,7 +1462,7 @@ func (m *Model) buildContestLine(boxW int) string {
 	if ct.Name != "" && ct.Name != ct.ContestID && boxW >= 100 {
 		namePart = " \u00b7 " + ct.Name
 	}
-	m.rc.contestLine = fmt.Sprintf(" %s%s   %d QSOs%s   Last %s ago   Next #%d%s",
+	m.rc.contestLine = fmt.Sprintf(" %s%s   %d QSOs%s   Last %s   Next #%d%s",
 		ct.ContestID, namePart, m.contest.TotalQSOs, first, since, ct.NextQSO, onAir)
 	return m.rc.contestLine
 }
@@ -1640,7 +1672,7 @@ func (m *Model) resolveExchangeMarkers(tmpl, direction string, nextQSO int) stri
 
 	// @cqz / @itu / @grid — from the QSO form or DXCC lookup.
 	call := strings.TrimSpace(m.fields[fieldCall].Value())
-	if call != "" && m.App != nil && m.App.DXCC != nil && m.App.Config.General.UseCTY {
+	if call != "" && m.App != nil && m.App.BigCTY != nil && m.App.Config.General.UseCTY {
 		if p := m.dxccLookup(call); p != nil {
 			rep["@cqz"] = fmt.Sprintf("%d", int(p.CQZone))
 			rep["@itu"] = fmt.Sprintf("%d", int(p.ITUZone))

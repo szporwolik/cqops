@@ -97,6 +97,8 @@ var migrations = []string{
 
 	`CREATE INDEX IF NOT EXISTS idx_qsos_country ON qsos(country)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_country_base ON qsos(country, base_call)`,
+	`CREATE INDEX IF NOT EXISTS idx_qsos_dxcc ON qsos(dxcc)`,
+	`CREATE INDEX IF NOT EXISTS idx_qsos_submode ON qsos(submode)`,
 
 	`CREATE INDEX IF NOT EXISTS idx_qsos_base_call ON qsos(base_call)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_date_time_call ON qsos(qso_date, time_on, base_call)`,
@@ -154,6 +156,10 @@ const schemaVersion = 1
 // statement uses IF NOT EXISTS guards, and PRAGMA user_version prevents
 // re-running migrations that have already been applied.
 //
+// Column additions for schema version 1 (dxcc) are applied unconditionally
+// because CREATE TABLE IF NOT EXISTS won't add columns to tables that
+// already existed before the column was introduced.
+//
 // The one-time base_call backfill runs on the first startup where any
 // row still has an empty base_call (covers direct upgrades from
 // pre-v0.8.7 databases).
@@ -163,8 +169,19 @@ func Migrate(db *sql.DB) error {
 		return fmt.Errorf("read schema version: %w", err)
 	}
 
-	// Already at or above the current schema — nothing to do.
+	// Unconditional column additions — these must run even when
+	// user_version is already at the current schema because
+	// CREATE TABLE IF NOT EXISTS won't add columns to existing tables.
+	// ALTER TABLE ADD COLUMN is idempotent — SQLite ignores duplicates.
+	//
+	// Must run AFTER DDL migrations (the tables must exist first).
+
+	// Already at or above the current schema — nothing to do for DDL.
 	if current >= schemaVersion {
+		// Still run column additions for existing databases.
+		if err := migrateAddColumn(db, "qsos", "dxcc", "TEXT DEFAULT ''"); err != nil {
+			return fmt.Errorf("add column dxcc: %w", err)
+		}
 		return nil
 	}
 
@@ -178,6 +195,12 @@ func Migrate(db *sql.DB) error {
 			}
 			return fmt.Errorf("migration %d: %w", i, err)
 		}
+	}
+
+	// Add columns that may be missing from upgraded databases.
+	// Safe after CREATE TABLE — the table exists by now.
+	if err := migrateAddColumn(db, "qsos", "dxcc", "TEXT DEFAULT ''"); err != nil {
+		return fmt.Errorf("add column dxcc: %w", err)
 	}
 
 	// One-time backfill: if any QSO row still has an empty base_call
@@ -223,4 +246,15 @@ func Migrate(db *sql.DB) error {
 		return fmt.Errorf("write schema version: %w", err)
 	}
 	return nil
+}
+
+// migrateAddColumn adds a column to a table if it doesn't already exist.
+// Uses ALTER TABLE ADD COLUMN with error suppression for the "duplicate
+// column name" case — SQLite's ALTER TABLE is idempotent this way.
+func migrateAddColumn(db *sql.DB, table, column, colType string) error {
+	_, err := db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, table, column, colType))
+	if err != nil && strings.Contains(err.Error(), "duplicate column name") {
+		return nil // already exists — no-op
+	}
+	return err
 }

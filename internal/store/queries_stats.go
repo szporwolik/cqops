@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/szporwolik/cqops/internal/qso"
@@ -95,7 +96,199 @@ func GetLogbookStats(db *sql.DB, call, band, mode string) (LogbookStats, error) 
 	return s, nil
 }
 
-// DashboardStats holds aggregate statistics for the CQOps Live dashboard.
+// ── Worked panel statistics ────────────────────────────────────────────────
+
+// CountItem pairs a label with an integer count for band/mode/grid lists.
+type CountItem struct {
+	Value string
+	Count int
+}
+
+// QSOBrief holds minimal identifying fields for a single QSO, used for
+// first/last QSO display.
+type QSOBrief struct {
+	Date string // YYYY-MM-DD
+	Time string // HHMMSS
+	Band string
+	Mode string
+}
+
+// ScopeHistory holds aggregate statistics for a particular scope
+// (callsign, 4-char grid, or DXCC entity).
+type ScopeHistory struct {
+	QSOCount    int
+	UniqueCalls int
+	UniqueBands int
+	UniqueModes int
+	FirstQSO    *QSOBrief
+	LastQSO     *QSOBrief
+	BandCounts  []CountItem
+	ModeCounts  []CountItem
+	GridCounts  []CountItem
+}
+
+// WorkedSummary collects call, grid, and DXCC scoped histories.
+type WorkedSummary struct {
+	CallHistory ScopeHistory
+	GridHistory ScopeHistory
+	DXCCHistory ScopeHistory
+}
+
+// GetWorkedSummary computes per-call, per-grid, and per-DXCC statistics
+// for the given logbook. Callers should pass a non-empty callsign to
+// resolve base_call. When grid4 is empty or <4 chars, GridHistory is left
+// zero. When dxcc is empty, DXCCHistory is left zero.
+// countryName is used as a fallback when the dxcc entity number column
+// is empty (existing QSOs imported before the dxcc column was populated).
+func GetWorkedSummary(db *sql.DB, call, grid4, dxcc, countryName string) (WorkedSummary, error) {
+	var ws WorkedSummary
+	var err error
+
+	baseCall := qso.DeriveBaseCall(call)
+	if baseCall != "" {
+		ws.CallHistory, err = scopeStats(db, "base_call = ?", baseCall)
+		if err != nil {
+			return ws, fmt.Errorf("call history: %w", err)
+		}
+	}
+
+	if len(grid4) >= 4 {
+		grid4 = strings.ToUpper(grid4[:4])
+		ws.GridHistory, err = scopeStats(db, "gridsquare LIKE ?", grid4+"%")
+		if err != nil {
+			return ws, fmt.Errorf("grid history: %w", err)
+		}
+	}
+
+	if dxcc != "" {
+		// Match by DXCC entity number when populated. Fall back to
+		// case-insensitive country name for QSOs without the dxcc
+		// column — covers "United States" / "UNITED STATES" / "united states"
+		// and prefix variants like "United States of America".
+		ws.DXCCHistory, err = scopeStats(db,
+			"dxcc = ? OR LOWER(country) = LOWER(?) OR LOWER(country) LIKE LOWER(?)",
+			dxcc, countryName, countryName+"%")
+		if err != nil {
+			return ws, fmt.Errorf("dxcc history: %w", err)
+		}
+	}
+
+	return ws, nil
+}
+
+// scopeStats computes aggregate history for a single scope (call, grid,
+// or DXCC). The whereClause is a SQL fragment and args provides bind values.
+func scopeStats(db *sql.DB, whereClause string, args ...any) (ScopeHistory, error) {
+	var sh ScopeHistory
+
+	// ── Core aggregations ──────────────────────────────────────────────
+	err := db.QueryRow(
+		`SELECT
+			COUNT(*),
+			COUNT(DISTINCT base_call),
+			COUNT(DISTINCT band),
+			COUNT(DISTINCT CASE WHEN submode != '' THEN submode ELSE mode END)
+		FROM qsos WHERE `+whereClause,
+		args...,
+	).Scan(
+		&sh.QSOCount,
+		&sh.UniqueCalls,
+		&sh.UniqueBands,
+		&sh.UniqueModes,
+	)
+	if err != nil {
+		return sh, err
+	}
+
+	// ── First and last QSO ──────────────────────────────────────────
+	sh.FirstQSO = queryQSOBrief(db, whereClause, "ASC", args...)
+	sh.LastQSO = queryQSOBrief(db, whereClause, "DESC", args...)
+
+	// ── Band, mode, grid counts ────────────────────────────────────────
+	sh.BandCounts, err = countGroup(db, "band", whereClause, args, 6)
+	if err != nil {
+		return sh, fmt.Errorf("band counts: %w", err)
+	}
+
+	sh.ModeCounts, err = countGroup(db,
+		"CASE WHEN submode != '' THEN submode ELSE mode END",
+		whereClause, args, 4)
+	if err != nil {
+		return sh, fmt.Errorf("mode counts: %w", err)
+	}
+
+	sh.GridCounts, err = countGroup(db,
+		"UPPER(SUBSTR(gridsquare, 1, 4))",
+		whereClause+" AND gridsquare != ''", args, 4)
+	if err != nil {
+		return sh, fmt.Errorf("grid counts: %w", err)
+	}
+
+	return sh, nil
+}
+
+// queryQSOBrief returns the first or last QSO matching the given clause.
+func queryQSOBrief(db *sql.DB, whereClause string, order string, args ...any) *QSOBrief {
+	var date, time, band, mode string
+	err := db.QueryRow(
+		`SELECT qso_date, time_on, band,
+			CASE WHEN submode != '' THEN submode ELSE mode END
+		FROM qsos WHERE `+whereClause+`
+		ORDER BY qso_date `+order+`, time_on `+order+`
+		LIMIT 1`,
+		args...,
+	).Scan(&date, &time, &band, &mode)
+	if err != nil || date == "" {
+		return nil
+	}
+	return &QSOBrief{
+		Date: dateCompact(date),
+		Time: time,
+		Band: band,
+		Mode: mode,
+	}
+}
+
+// countGroup returns a deduplicated, count-ordered list of (value, count)
+// pairs for the given expression (e.g. "band", "mode", or a CASE).
+func countGroup(db *sql.DB, expr, whereClause string, args []any, limit int) ([]CountItem, error) {
+	query := `SELECT ` + expr + `, COUNT(*) AS cnt
+		FROM qsos
+		WHERE ` + whereClause + `
+		GROUP BY ` + expr + `
+		ORDER BY cnt DESC
+		LIMIT ?`
+	allArgs := append(args, limit)
+	rows, err := db.Query(query, allArgs...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []CountItem
+	for rows.Next() {
+		var val string
+		var cnt int
+		if err := rows.Scan(&val, &cnt); err != nil {
+			return items, err
+		}
+		if val == "" {
+			continue
+		}
+		items = append(items, CountItem{Value: val, Count: cnt})
+	}
+	return items, rows.Err()
+}
+
+// dateCompact turns YYYYMMDD into YYYY-MM-DD.
+func dateCompact(d string) string {
+	if len(d) == 8 {
+		return d[0:4] + "-" + d[4:6] + "-" + d[6:8]
+	}
+	return d
+}
+
+// ── Dashboard ──────────────────────────────────────────────────────────────
 type DashboardStats struct {
 	QSOsToday   int
 	Operators   int

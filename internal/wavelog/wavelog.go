@@ -29,12 +29,6 @@ type StationProfile struct {
 	Active     string `json:"station_active"`
 }
 
-// VersionResponse from api/version.
-type VersionResponse struct {
-	Status  string `json:"status"`
-	Version string `json:"version"`
-}
-
 // TestConnection validates that the Wavelog API URL and key are reachable.
 func TestConnection(baseURL, apiKey string) error {
 	applog.Debug("Wavelog: testing connection")
@@ -69,7 +63,10 @@ func TestConnection(baseURL, apiKey string) error {
 		return FriendlyError(fmt.Errorf("HTTP %d", resp.StatusCode))
 	}
 
-	var vr VersionResponse
+	var vr struct {
+		Status  string `json:"status"`
+		Version string `json:"version"`
+	}
 	if err := json.Unmarshal(respBody, &vr); err != nil {
 		applog.Error("Wavelog: invalid version response", "error", err)
 		return fmt.Errorf("invalid response: %w", err)
@@ -201,6 +198,12 @@ func (r *PrivateLookupResult) ConfirmedBandMode() bool { return r.IsTrue("call_c
 // Grid returns the gridsquare.
 func (r *PrivateLookupResult) Grid() string { return r.str("gridsquare") }
 
+// DXCCID returns the numeric DXCC entity ID (e.g. "497" for Croatia).
+func (r *PrivateLookupResult) DXCCID() string { return r.str("dxcc_id") }
+
+// DXCCName returns the DXCC entity name (e.g. "CROATIA").
+func (r *PrivateLookupResult) DXCCName() string { return r.str("dxcc") }
+
 // QTH returns the location (city/address).
 func (r *PrivateLookupResult) QTH() string { return r.str("location") }
 
@@ -217,14 +220,15 @@ func (r *PrivateLookupResult) ITUZone() string { return r.str("dxcc_ituz") }
 func (r *PrivateLookupResult) State() string { return r.str("state") }
 
 // PrivateLookup queries the Wavelog API for callsign confirmation/worked data.
-func PrivateLookup(baseURL, apiKey, callsign, band, mode string) (*PrivateLookupResult, error) {
+// Optional stationProfileID scopes the lookup to a specific station profile.
+func PrivateLookup(baseURL, apiKey, callsign, band, mode, stationProfileID string) (*PrivateLookupResult, error) {
 	if baseURL == "" || apiKey == "" || callsign == "" {
 		return nil, nil
 	}
 	baseURL = strings.TrimRight(baseURL, "/")
 	url := baseURL + "/api/private_lookup"
 
-	payload := map[string]string{
+	payload := map[string]interface{}{
 		"key":      apiKey,
 		"callsign": callsign,
 	}
@@ -233,6 +237,9 @@ func PrivateLookup(baseURL, apiKey, callsign, band, mode string) (*PrivateLookup
 	}
 	if mode != "" {
 		payload["mode"] = mode
+	}
+	if stationProfileID != "" {
+		payload["station_ids"] = []string{stationProfileID}
 	}
 
 	body, err := json.Marshal(payload)
@@ -301,12 +308,6 @@ func TestStation(baseURL, apiKey, stationID string) error {
 
 	applog.InfoDetail("Wavelog: station test OK", fmt.Sprintf("station_id=%s", stationID))
 	return nil
-}
-
-// PostQSO uploads a QSO in ADIF format to Wavelog.
-func PostQSO(baseURL, apiKey, stationID, adifStr string) error {
-	_, err := PostQSOWithResult(baseURL, apiKey, stationID, adifStr)
-	return err
 }
 
 // QSOUploadResult carries structured info about a Wavelog upload response.

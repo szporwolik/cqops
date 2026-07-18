@@ -207,6 +207,36 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return le.handleFilePickerUpdate(msg)
 		}
 
+		// In list mode, forward non-navigation keys to search input.
+		// Navigation keys (up/down/pgup/pgdn/home/end) still go to the table.
+		if le.mode == edModeList {
+			switch k {
+			case "backspace":
+				if le.searchQuery != "" {
+					le.searchInput.SetValue("")
+					le.searchQuery = ""
+					le.applySearchFilter()
+				}
+				return le, nil
+			case "up", "down", "left", "right", "home", "end",
+				"k", "j",
+				"pgup", "pgdown",
+				"esc", "f8",
+				"delete", "enter",
+				"ctrl+w", "alt+w", "ctrl+e", "ctrl+p", "ctrl+i", "tab":
+				// Navigation and action keys — handled below.
+			default:
+				// Forward to search input.
+				prev := le.searchInput.Value()
+				le.searchInput, _ = le.searchInput.Update(msg)
+				if le.searchInput.Value() != prev {
+					le.searchQuery = strings.TrimSpace(le.searchInput.Value())
+					le.applySearchFilter()
+				}
+				return le, nil
+			}
+		}
+
 		// Download progress — route keys to the dialog (Abort button).
 		if le.dlActive && le.dialog != nil {
 			updated, _ := le.dialog.Update(msg)
@@ -320,7 +350,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			le.goToPage(le.currentPage - 1)
 		case "pgdown":
 			le.goToPage(le.currentPage + 1)
-		case "up", "down", "left", "right", "home", "end", "k", "j", "h", "l":
+		case "up", "down", "left", "right", "home", "end", "k", "j":
 			// Before passing to table, check for page boundary overflow.
 			cursor := le.table.Cursor()
 			if k == "down" || k == "j" {
@@ -347,7 +377,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				le.dialog = nil
 				le.mode = edModeConfirmDelete
 			}
-		case "w":
+		case "ctrl+w":
 			if le.Offline {
 				return le, func() tea.Msg { return editorMsg{toastWarn: "Network not available — cannot upload to Wavelog"} }
 			}
@@ -379,7 +409,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				le.dialog = nil
 				le.mode = edModeConfirmWLSend
 			}
-		case "ctrl+w":
+		case "alt+w":
 			if le.Offline {
 				return le, func() tea.Msg { return editorMsg{toastWarn: "Network not available — cannot download from Wavelog"} }
 			}
@@ -392,7 +422,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				le.dialog = nil
 				le.mode = edModeConfirmWLDownload
 			}
-		case "e", "enter":
+		case "enter":
 			if len(le.qsos) > 0 {
 				idx := le.table.Cursor()
 				if idx >= len(le.qsos) {
@@ -405,7 +435,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				le.fields[le.focus].Focus()
 				le.mode = edModeEdit
 			}
-		case "p":
+		case "ctrl+p":
 			le.dialog = nil
 			le.mode = edModeConfirmPurge
 		case "ctrl+e":

@@ -29,7 +29,7 @@ func (m *Model) headerView() string {
 	op := m.App.Logbook.ActiveOperator
 	if op != "" {
 		if opCfg, ok := m.App.Config.Operators[op]; ok {
-			op = config.OperatorDisplayName(&opCfg)
+			op = opCfg.Callsign
 		}
 	}
 
@@ -38,22 +38,70 @@ func (m *Model) headerView() string {
 		rigName = rp.Name
 	}
 
+	// Compact display: merge labels when values are identical.
+	// e.g. Log/Call SP9SPM instead of Log Priv Call SP9SPM.
 	leftParts := []string{
 		S.StatusApp.Render(" CQOps "),
 		" ",
-		S.StatusLabel.Render("Log"),
-		" " + S.StatusValue.Render(truncateText(logName, 16)) + " ",
-		S.StatusLabel.Render("Rig"),
-		" " + S.StatusValue.Render(truncateText(rigName, 8)) + " ",
-		S.StatusLabel.Render("Call"),
-		" " + S.StatusValue.Render(truncateText(callsign, 14)) + " ",
 	}
-	if op != "" {
+	logEqCall := strings.EqualFold(logName, callsign)
+	callEqOp := op != "" && strings.EqualFold(callsign, op)
+	logEqOp := op != "" && strings.EqualFold(logName, op)
+
+	switch {
+	case logEqCall && callEqOp:
+		// All three identical: Log/Call/Op VALUE
 		leftParts = append(leftParts,
-			S.StatusLabel.Render("Op"),
-			" "+S.StatusValue.Render(truncateText(op, 24))+" ",
+			S.StatusLabel.Render("Log/Call/Op"),
+			" "+S.StatusValue.Render(truncateText(callsign, 20))+" ",
 		)
+	case logEqCall:
+		// Log == Call, Op different: Log/Call VALUE Op OP
+		leftParts = append(leftParts,
+			S.StatusLabel.Render("Log/Call"),
+			" "+S.StatusValue.Render(truncateText(callsign, 16))+" ",
+		)
+		if op != "" {
+			leftParts = append(leftParts,
+				S.StatusLabel.Render("Op"),
+				" "+S.StatusValue.Render(truncateText(op, 24))+" ",
+			)
+		}
+	case callEqOp:
+		// Call == Op, Log different: Log LOG Call/Op VALUE
+		leftParts = append(leftParts,
+			S.StatusLabel.Render("Log"),
+			" "+S.StatusValue.Render(truncateText(logName, 16))+" ",
+			S.StatusLabel.Render("Call/Op"),
+			" "+S.StatusValue.Render(truncateText(callsign, 20))+" ",
+		)
+	case logEqOp:
+		// Log == Op, Call different: Log/Op VALUE Call CALL
+		leftParts = append(leftParts,
+			S.StatusLabel.Render("Log/Op"),
+			" "+S.StatusValue.Render(truncateText(logName, 16))+" ",
+			S.StatusLabel.Render("Call"),
+			" "+S.StatusValue.Render(truncateText(callsign, 14))+" ",
+		)
+	default:
+		// All distinct: Log LOG Call CALL [Op OP]
+		leftParts = append(leftParts,
+			S.StatusLabel.Render("Log"),
+			" "+S.StatusValue.Render(truncateText(logName, 16))+" ",
+			S.StatusLabel.Render("Call"),
+			" "+S.StatusValue.Render(truncateText(callsign, 14))+" ",
+		)
+		if op != "" {
+			leftParts = append(leftParts,
+				S.StatusLabel.Render("Op"),
+				" "+S.StatusValue.Render(truncateText(op, 24))+" ",
+			)
+		}
 	}
+	leftParts = append(leftParts,
+		S.StatusLabel.Render("Rig"),
+		" "+S.StatusValue.Render(truncateText(rigName, 8))+" ",
+	)
 
 	// Build right side first so we know how much width remains for MSG.
 	var rightParts []string
@@ -108,7 +156,7 @@ func (m *Model) headerView() string {
 
 	// Hardware: Rotator — optional, many stations don't have one.
 	if hasRig && rp.RotorBackend == "hamlib" {
-		rightParts = append(rightParts, statusDotStyled(m.rotor.connected, "Rotator"))
+		rightParts = append(rightParts, statusDotStyled(m.rotor.connected, "ROT"))
 	}
 
 	// Hardware: GPS — auxiliary position source.

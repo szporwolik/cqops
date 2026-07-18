@@ -2,7 +2,7 @@
 (function(){
 'use strict';
 
-// ---- Debug: enable with ?debug=1 in the URL ----
+// ---- Debug: enable with ?debug=1 in the URL or via TUI debug mode ----
 var DEBUG=/[?&]debug=1(&|$)/.test(location.search);
 function D(tag,msg,data){
   if(!DEBUG)return;
@@ -10,7 +10,6 @@ function D(tag,msg,data){
   if(data!==undefined){console.log('%c['+ts+'] %c'+tag+'%c '+msg,'color:#888','color:#D00032;font-weight:700','color:inherit',data)}
   else{console.log('%c['+ts+'] %c'+tag+'%c '+msg,'color:#888','color:#D00032;font-weight:700','color:inherit')}
 }
-if(DEBUG){D('init','debug mode ON — open console (F12) for SSE/event traces');console.log('%cAdd ?debug=1 to URL for these logs','color:#B45309')}
 
 var $=function(id){return document.getElementById(id)};
 var app=$('app'), hdLogo=$('hd-logo'), hdLogoBox=$('hd-logo-box'), hdTitle=$('hd-title'), hdSubtitle=$('hd-subtitle');
@@ -172,7 +171,18 @@ function connectSSE(){
   });
   es.addEventListener('logbook',function(e){var lb=JSON.parse(e.data).payload;
     D('sse','logbook',lb.name);
-    if(lb&&lb.name){document.title='CQOps - '+lb.name;window._discLogbook=lb.name}
+    if(lb&&lb.name){
+      document.title='CQOps - '+lb.name;window._discLogbook=lb.name;
+      // Force the next today event to be accepted regardless of count.
+      window._cqopsLiveLogbook=lb.name;
+      // Immediately clear today QSOs so the map shows empty until the
+      // fresh today event arrives — prevents stale markers from the
+      // previous logbook.
+      if(window._cqopsLastTodayLogbook&&window._cqopsLastTodayLogbook!==lb.name){
+        todayQsos=[];updateMapFromToday();renderStats(null,[]);renderTopQSOs();
+        window._cqopsLastTodayLogbook=lb.name;
+      }
+    }
     updateStationField('Logbook',lb.name)
   });
   es.addEventListener('partner',function(e){var p=JSON.parse(e.data).payload;
@@ -194,10 +204,13 @@ function connectSSE(){
   es.addEventListener('today',function(e){
     var t=JSON.parse(e.data).payload;
     D('sse','today',t? t.length:0);
-    // Only replace if the server has at least as many QSOs as we already
-    // have — prevents the map from flickering down to 1 QSO right after
-    // logging, before the server catches up.
-    if(t&&t.length>=todayQsos.length){todayQsos=t;updateMapFromToday();renderStats(null,todayQsos)}
+    // Only guard against fewer results when we're still on the SAME
+    // logbook — a fresh QSO may briefly see fewer QSOs than the
+    // previous push. When the logbook changes, always replace.
+    if(!t)return;
+    if(window._cqopsLiveLogbook===window._cqopsLastTodayLogbook&&t.length<todayQsos.length)return;
+    window._cqopsLastTodayLogbook=window._cqopsLiveLogbook;
+    todayQsos=t;updateMapFromToday();renderStats(null,todayQsos);
   });
   es.addEventListener('aprs',function(e){
     var a=JSON.parse(e.data).payload;
@@ -206,9 +219,56 @@ function connectSSE(){
   });
   es.addEventListener('display',function(e){
     var d=JSON.parse(e.data).payload;
-    if(d&&d.internetCallbookUrl){
+    if(!d)return;
+    // Enable debug BEFORE any D() call — TUI debug mode OR URL param.
+    if(d.debug&&!DEBUG){DEBUG=true;D('init','debug mode ON (from TUI) — open console (F12) for traces')}
+    D('display','received',{isOnline:d.isOnline,hasCallbook:!!d.internetCallbookUrl,debug:d.debug});
+    var prevOnline=window._cqopsLastOnline;
+    var nowOnline=!!d.isOnline;
+    if(!prevOnline&&nowOnline){
+      // false→true: internet just came up — re-init with tiled Web Mercator.
+      D('display','isOnline false→true — re-initializing map with tiles');
+      // Refresh QR code immediately — don't wait for the next renderAll.
+      _refreshQR(d);
+      if(typeof map!=='undefined'&&map&&map._cqopsOfflineCRS){
+        D('display','removing offline overlay, re-creating map');
+        removeOfflineOverlay();
+        window._mapReinitPending=true;
+        // MapLibre GL scripts may not have loaded while the page was
+        // offline (CDN scripts failed). Inject them dynamically before
+        // creating the tiled map, otherwise initMap silently skips tiles.
+        _ensureMapLibreGL(function(){
+          window._mapReinitPending=false;
+          initMap(Object.assign({},d,{drawLines:displayCfg.drawLines!==false,maxLines:displayCfg.maxLines||250,highlightLastQSO:displayCfg.highlightLastQSO!==false,animateActivePath:!!displayCfg.animateActivePath}));
+          if(map){setTimeout(function(){map.invalidateSize()},200);setTimeout(function(){map.invalidateSize()},600);}
+        });
+      }else{
+        D('display','map not in offline CRS mode (map='+(typeof map)+', _cqopsOfflineCRS='+(map&&map._cqopsOfflineCRS)+')');
+      }
+    }else if(prevOnline&&!nowOnline){
+      // true→false: internet just went down — switch to offline CRS with
+      // the embedded world map image so the map stays usable.
+      D('display','isOnline true→false — switching to offline map');
+      // Hide QR immediately — QuickChart is unreachable while offline.
+      _refreshQR(d);
+      if(typeof map!=='undefined'&&map&&!map._cqopsOfflineCRS){
+        D('display','removing online map, re-creating with offline CRS');
+        // Destroy the online map (clean up MapLibre GL / WebGL context).
+        _mapPollActive=false;
+        if(_mapResizeObserver){_mapResizeObserver.disconnect();_mapResizeObserver=null}
+        if(map){map.remove();map=null}
+        // Re-init with offline equirectangular + world map image.
+        window._mapReinitPending=true;
+        setTimeout(function(){
+          window._mapReinitPending=false;
+          initMap(Object.assign({},d,{drawLines:displayCfg.drawLines!==false,maxLines:displayCfg.maxLines||250,highlightLastQSO:displayCfg.highlightLastQSO!==false,animateActivePath:!!displayCfg.animateActivePath,isOnline:false}));
+        },100);
+      }
+    }
+    displayCfg=d;
+    window._cqopsLastOnline=nowOnline;
+    if(d.internetCallbookUrl){
       icbUrl=d.internetCallbookUrl;
-      // Re-render tables so callsigns become clickable links.
       renderRecentTable(null);
       renderTopQSOs();
     }
@@ -230,9 +290,20 @@ function renderAll(snap){
   if(!snap){D('renderAll','null snapshot, skipping');return}
   D('renderAll','start',{hasStation:!!snap.station,hasActive:!!(snap.activeQso&&snap.activeQso.call),today:snap.today? snap.today.length:0,recent:snap.recent? snap.recent.length:0});
   displayCfg=snap.display||{};
+  // Enable debug from snapshot (before any display event) — covers
+  // offline startup where the display event may not fire immediately.
+  if(displayCfg.debug&&!DEBUG){DEBUG=true;D('init','debug mode ON (from snapshot) — open console (F12) for traces')}
+  // When internet becomes available after initial offline state,
+  // re-init the map with proper tile CRS instead of the fallback map.
+  var nowOnline=!!(displayCfg&&displayCfg.isOnline);
+  if(!window._cqopsLastOnline&&nowOnline&&typeof map!=='undefined'&&map&&map._cqopsOfflineCRS){
+    D('renderAll','isOnline false→true during full render — removing offline map');
+    removeOfflineOverlay();
+  }
+  window._cqopsLastOnline=nowOnline;
   if(displayCfg.internetCallbookUrl) icbUrl=displayCfg.internetCallbookUrl;
   // Window title — show active logbook.
-  if(snap.logbook&&snap.logbook.name){document.title='CQOps - '+snap.logbook.name;window._discLogbook=snap.logbook.name}
+  if(snap.logbook&&snap.logbook.name){document.title='CQOps - '+snap.logbook.name;window._discLogbook=snap.logbook.name;window._cqopsLiveLogbook=snap.logbook.name;window._cqopsLastTodayLogbook=snap.logbook.name}
   // Theme — apply theme class to root element.
   var wasDark=document.documentElement.classList.contains('dark');
   var theme=displayCfg.theme;
@@ -252,14 +323,7 @@ function renderAll(snap){
   // Display config
   if(displayCfg.clubLogo){hdLogo.src=displayCfg.clubLogo;hdLogoBox.style.display=''}else{hdLogoBox.style.display='none'}
   // QR code — QuickChart API, hidden when offline.
-  var hdQR=$('hd-qr'),hdQRImg=$('hd-qr-img'),hdQRErr=$('hd-qr-err');
-  if(displayCfg.qrLink && displayCfg.isOnline){
-    hdQRErr.style.display='none';hdQRImg.style.display='';
-    hdQRImg.onload=function(){hdQRErr.style.display='none';hdQRImg.style.display=''};
-    hdQRImg.onerror=function(){hdQRErr.style.display='';hdQRImg.style.display='none'};
-    hdQRImg.src='https://quickchart.io/qr?text='+encodeURIComponent(displayCfg.qrLink)+'&size=80&margin=1&format=svg&ecLevel=M&dark=111827&light=ffffff';
-    hdQR.style.display='';
-  }
+  _refreshQR(displayCfg);
   if(displayCfg.header1){hdTitle.textContent=displayCfg.header1;heroHeadline.textContent=displayCfg.header1}
   else{hdTitle.textContent='CQOps Live';heroHeadline.textContent='CQOps Live'}
   hdSubtitle.textContent=displayCfg.header2||'Fast, portable ham radio logger';heroSubline.textContent=displayCfg.header2||'';
@@ -292,8 +356,14 @@ function renderAll(snap){
   if(snap.aprs&&snap.aprs.length){renderAPRSOnLocalMap(snap.aprs)}
   else if(aprsMarkerLayer){aprsMarkerLayer.clearLayers()}
   // Map
-  D('renderAll','init map…');
-  initMap(Object.assign({},displayCfg,{drawLines:displayCfg.drawLines!==false,maxLines:displayCfg.maxLines||250,highlightLastQSO:displayCfg.highlightLastQSO!==false,animateActivePath:!!displayCfg.animateActivePath}));
+  if(!window._mapReinitPending){
+    D('renderAll','init map…');
+    _ensureMapLibreGL(function(){
+      initMap(Object.assign({},displayCfg,{drawLines:displayCfg.drawLines!==false,maxLines:displayCfg.maxLines||250,highlightLastQSO:displayCfg.highlightLastQSO!==false,animateActivePath:!!displayCfg.animateActivePath}));
+    });
+  } else {
+    D('renderAll','map reinit pending, skipping initMap');
+  }
   // Init today QSOs — prefer today list, but fall back to recent
   // when today has fewer entries (midnight crossing, event just started).
   var tLen=snap.today? snap.today.length:0,rLen=snap.recent? snap.recent.length:0;
@@ -327,7 +397,7 @@ var lastActiveFlags={},lastActiveQso=null,lastPartner=null;
 
 // ---- Integrated active panel (hero + partner merged) ----
 function renderHero(aq,p){
-  if(!aq||!aq.call){heroCall.textContent='';heroBadges.innerHTML='';heroIdentity.textContent='';heroMeta.textContent='';hideHeroPhoto();lastActiveFlags={};lastActiveQso=null;clearContactWeather();D('hero','cleared');return}
+  if(!aq||!aq.call){heroCall.textContent='';heroBadges.innerHTML='';heroIdentity.textContent='';heroMeta.textContent='';hideHeroPhoto();lastActiveFlags={};lastActiveQso=null;clearContactWeather();updatePartnerLocalTime('');D('hero','cleared');return}
   // Merge with cached active QSO: caller may pass {call:…} only (partner event).
   // Preserve band/mode/flags from cached full QSO when available.
   if(aq.band||aq.isDupe!==undefined){lastActiveQso=aq}
@@ -408,12 +478,16 @@ function buildIdentityLine(aq,p){
   // Merge partner data with form fields — partner wins when both present,
   // except for grid: the QSO form grid (manual entry or reference-derived)
   // beats the QRZ/country grid.
+  // aq.state is QSO lifecycle status ("editing"/"logged"), NOT a
+  // geographical state — never use it in the identity line.
   var name=(p&&p.name)||(aq&&aq.name)||'';
   var qth=(p&&p.qth)||(aq&&aq.qth)||'';
+  var state=(p&&p.state)||'';
   var country=(p&&p.country)||(aq&&aq.country)||'';
   var grid=(aq&&aq.grid)||(p&&p.grid)||'';
   var parts=[],dist='';
-  if(name)parts.push(name);if(qth)parts.push(qth);
+  if(name)parts.push(name);
+  if(qth)parts.push(qth+(state?' ('+esc(state)+')':''));
   if(country){var c=country,cont=guessContinent(c);if(cont)c+=' ('+cont+')';parts.push(c)}
   if(grid)parts.push(grid);
   // Distance from own station to partner grid
@@ -422,8 +496,35 @@ function buildIdentityLine(aq,p){
     var dirs=['N','NE','E','SE','S','SW','W','NW'];dist=Math.round(km)+' km '+dirs[Math.round(deg/45)%8];parts.push(dist);
   }
   heroIdentity.textContent=parts.join(' \u2022 ');
+  // Partner local time — use Big CTY TZOffset when available, fall back to longitude.
+  updatePartnerLocalTime(grid||(p&&p.grid)||'', p&&p.tzOffset);
   return dist;
 }
+function updatePartnerLocalTime(grid,tzOffset){
+  var el=document.getElementById('hero-partner-time');if(!el)return;
+  var box=document.getElementById('hero-weather-box');if(!box)return;
+  if(!navigator.onLine){el.textContent='';box.classList.remove('visible');return}
+  // Use Big CTY timezone offset when available; fall back to
+  // longitude-based approximation (15° per hour).
+  var now=new Date();
+  var off;
+  if(typeof tzOffset==='number'){
+    window._partnerTZOffset=tzOffset;
+    off=-tzOffset; // Big CTY: positive = west of UTC, JS wants east-positive
+  }else if(grid){
+    var ll=gridToLatLon(grid);
+    if(!ll[0]){el.textContent='';box.classList.remove('visible');return}
+    off=Math.round(ll[1]/15);
+  }else{
+    el.textContent='';box.classList.remove('visible');return;
+  }
+  var h=(now.getUTCHours()+off+24)%24;
+  var m=now.getUTCMinutes();
+  el.textContent=String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+' L'+(off?(' (UTC'+(off>=0?'+':'')+off+')'):'');
+  box.classList.add('visible');
+}
+// Refresh partner clock every 30 s so it stays current.
+setInterval(function(){updatePartnerLocalTime(window._partnerTimeGrid||'',window._partnerTZOffset)},30000);
 
 function showHeroPhoto(url){
   var img=$('hero-photo');img.style.display='';img.src=url;
@@ -446,7 +547,7 @@ function opBadgeStyle(call){
 }
 function opBadgeHTML(call,name){
   if(!call)return'';
-  return'<span class=\"stat-badge stat-badge-op\" style=\"'+opBadgeStyle(call)+'\">'+esc(call)+(name?' '+esc(name):'')+'</span>';
+  return'<span class=\"stat-badge stat-badge-op\" style=\"'+opBadgeStyle(call)+'\">'+esc(call)+(name?' ('+esc(name)+')':'')+'</span>';
 }
 
 // ---- Station panel ----
@@ -665,6 +766,60 @@ var mapCfg={drawLines:true,maxLines:150,maxMarkers:200,highlightLastQSO:true,ani
 var stationLayer=null,qsoMarkerLayer=null,qsoLineLayer=null,lastQsoLayer=null,activeQsoLayer=null;
 var lastQso=null,activeGrid=null;
 var mapLocal=null,stationLocalMarker=null,localTiles=null;
+var _mapResizeObserver=null,_mapPollActive=false;
+
+// _ensureMapLibreGL loads the MapLibre GL scripts dynamically if they
+// weren't loaded at page start (e.g. the page opened while offline and
+// the CDN <script> tags failed). Calls cb() when ready — immediately if
+// L.maplibreGL is already available, or after injection + load.
+// Scripts are loaded sequentially (maplibre-gl.js first, then the
+// Leaflet binding) to prevent the binding from executing before the
+// core library defines its global (maplibregl).
+function _ensureMapLibreGL(cb){
+  if(typeof L!=='undefined'&&typeof L.maplibreGL==='function'){cb();return}
+  D('initMap','MapLibre GL not loaded — injecting CDN scripts');
+  var s1=document.createElement('script');
+  s1.src='https://unpkg.com/maplibre-gl/dist/maplibre-gl.js';
+  s1.onload=function(){
+    // Core library loaded — now safe to load the Leaflet binding.
+    var s2=document.createElement('script');
+    s2.src='https://unpkg.com/@maplibre/maplibre-gl-leaflet/leaflet-maplibre-gl.js';
+    s2.onload=function(){
+      D('initMap','MapLibre GL scripts loaded \u2713');
+      cb();
+    };
+    s2.onerror=function(){
+      D('initMap','MapLibre GL Leaflet binding failed — proceeding without tiles');
+      cb();
+    };
+    document.head.appendChild(s2);
+  };
+  s1.onerror=function(){
+    D('initMap','MapLibre GL core library failed — proceeding without tiles');
+    cb();
+  };
+  document.head.appendChild(s1);
+}
+
+// _refreshQR loads the QR code image from QuickChart. Resets src to empty
+// first to force a fresh fetch even when the browser cached a previous
+// failure (e.g. the image was requested while offline). Hidden when
+// offline or when no qrLink is configured.
+function _refreshQR(cfg){
+  var hdQR=$('hd-qr'),hdQRImg=$('hd-qr-img'),hdQRErr=$('hd-qr-err');
+  if(cfg.qrLink && cfg.isOnline){
+    hdQRErr.style.display='none';hdQRImg.style.display='';
+    hdQRImg.onload=function(){hdQRErr.style.display='none';hdQRImg.style.display=''};
+    hdQRImg.onerror=function(){hdQRErr.style.display='';hdQRImg.style.display='none'};
+    hdQRImg.src='';
+    hdQRImg.src='https://quickchart.io/qr?text='+encodeURIComponent(cfg.qrLink)+'&size=80&margin=1&format=svg&ecLevel=M&dark=111827&light=ffffff&_='+Date.now();
+    hdQR.style.display='';
+  } else {
+    // Offline or no QR link configured — hide the QR panel.
+    hdQR.style.display='none';
+    hdQRImg.src='';
+  }
+}
 
 function initMap(cfg){
   if(map)return;
@@ -676,7 +831,8 @@ function initMap(cfg){
   // When offline, use EPSG:4326 (equirectangular) to match the embedded map image.
   // When online, default Web Mercator for MapLibre tiles.
   var mapOpts={zoomControl:false,attributionControl:false};
-  if(!cfg.isOnline)mapOpts.crs=L.CRS.EPSG4326;
+  if(!cfg.isOnline){mapOpts.crs=L.CRS.EPSG4326;D('initMap','offline CRS — using EPSG:4326 equirectangular')}
+  else{D('initMap','online — using default Web Mercator tiles')}
   map=L.map('map-container',mapOpts).setView([51,10],3);
   map._cqopsOfflineCRS=!cfg.isOnline;
   // Custom panes for layer ordering: radar below QSO paths, markers on top.
@@ -697,14 +853,20 @@ function initMap(cfg){
   qsoMarkerLayer=L.layerGroup([],{pane:'cqopsMarker'}).addTo(map);
   stationLayer=L.layerGroup([],{pane:'cqopsMarker'}).addTo(map);
   // Keep Leaflet in sync with container size changes (hero toggle, resize, etc.).
-  if(window.ResizeObserver){new ResizeObserver(function(){map.invalidateSize()}).observe(mapContainer)}
+  if(window.ResizeObserver){
+    if(_mapResizeObserver)_mapResizeObserver.disconnect();
+    _mapResizeObserver=new ResizeObserver(function(){if(map)map.invalidateSize()});
+    _mapResizeObserver.observe(mapContainer);
+  }
   // Firefox / narrow screens: the flex container may not have its final
   // computed height when Leaflet initializes. Invalidate immediately once
   // the container has height, then again after layout settles.
+  _mapPollActive=true;
   (function pollMapSize(){
+    if(!_mapPollActive||!map)return;
     if(mapContainer.clientHeight>0){
       map.invalidateSize();
-      setTimeout(function(){map.invalidateSize();updateExtraBox()},150);
+      setTimeout(function(){if(map)map.invalidateSize();updateExtraBox()},150);
       return
     }
     requestAnimationFrame(pollMapSize)
@@ -720,6 +882,9 @@ function initMap(cfg){
   }
   // Radar: always enabled — no toggle button.
   enableRadarLayer();
+  // Render any QSO data that arrived before the map was ready.
+  // Also render when there are zero QSOs — station marker must always appear.
+  updateMapFromToday();
 }
 
 // removeOfflineOverlay is called when SSE reconnects (internet restored).
@@ -728,6 +893,10 @@ function removeOfflineOverlay(){
   if(!map)return;
   if(map._cqopsOffline){map.removeLayer(map._cqopsOffline);map._cqopsOffline=null}
   if(map._cqopsOfflineCRS){
+    // Disconnect observers that reference the old map instance before
+    // destroying it — prevents "map is null" crashes in stale callbacks.
+    _mapPollActive=false;
+    if(_mapResizeObserver){_mapResizeObserver.disconnect();_mapResizeObserver=null}
     map.remove();map=null;
     // Re-init with online tiles on next renderAll.
   }
@@ -1236,7 +1405,15 @@ function updateMapFromToday(){
 
       // Lines — only if within limit
       if(drawn<maxLines){
-        var pts=greatCirclePoints(ownStationLat,ownStationLon,lat,lon,32);
+        // Per-QSO starting point: use the operator's grid at QSO time
+        // (myGrid) when available. Falls back to the current station
+        // position for QSOs logged before this feature was added.
+        var startLat=ownStationLat,startLon=ownStationLon;
+        if(q.myGrid){
+          var myLL=gridToLatLon(q.myGrid);
+          if(myLL&&myLL[0]){startLat=myLL[0];startLon=myLL[1];}
+        }
+        var pts=greatCirclePoints(startLat,startLon,lat,lon,32);
         // Include great-circle midpoint in bounds so the arc stays visible.
         bounds.push(pts[16]);
         if(isActive){
@@ -1280,6 +1457,7 @@ function updateMapFromToday(){
 
   // Fit bounds — but don't override active-QSO focus set by focusMapOnGrid.
   if(bounds.length>1&&!activeGrid)map.flyToBounds(bounds,{padding:[50,50],maxZoom:18});
+  else if(hasStation&&ownStationLat!=null)map.flyTo([ownStationLat,ownStationLon],6);
   else if(!hasStation)map.flyTo([51,10],2);
 }
 
@@ -1360,8 +1538,8 @@ function guessContinent(c){
   var as='Japan|China|India|South Korea|Thailand|Indonesia|Philippines|Asiatic Russia|Malaysia|Singapore|Vietnam|Taiwan'.split('|');
   var oc='Australia|New Zealand|Fiji|Papua New Guinea'.split('|');
   var af='South Africa|Kenya|Nigeria|Ghana|Egypt|Morocco|Tunisia|Algeria'.split('|');
-  if(eu.indexOf(c)>=0)return'Europe';if(na.indexOf(c)>=0)return'North America';if(sa.indexOf(c)>=0)return'South America';
-  if(as.indexOf(c)>=0)return'Asia';if(oc.indexOf(c)>=0)return'Oceania';if(af.indexOf(c)>=0)return'Africa';return'';
+  if(eu.indexOf(c)>=0)return'EU';if(na.indexOf(c)>=0)return'NA';if(sa.indexOf(c)>=0)return'SA';
+  if(as.indexOf(c)>=0)return'AS';if(oc.indexOf(c)>=0)return'OC';if(af.indexOf(c)>=0)return'AF';return'';
 }
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 // ---- Centralized band / mode styling ----
@@ -1424,7 +1602,7 @@ window.addEventListener('online',function(){
   wxUpdateVisibility();
   if(wxLat!=null&&wxLon!=null){wxLat=null;wxLon=null;wxDoFetch();wxStartInterval()}
 });
-window.addEventListener('offline',function(){wxUpdateVisibility();clearContactWeather()});
+window.addEventListener('offline',function(){wxUpdateVisibility();clearContactWeather();updatePartnerLocalTime('')});
 function renderWeather(d){
   if(!wxEl)wxEl=document.getElementById('wx-row');
   if(!wxEl||!navigator.onLine){wxUpdateVisibility();return}
@@ -1482,12 +1660,13 @@ function renderContactWeather(d){
   document.getElementById('hero-wx-icon').innerHTML='<span class="'+wxAnimClass(c.weather_code||0)+'">'+weatherIcon(c.weather_code||0,c.is_day)+'</span>';
   document.getElementById('hero-wx-temp').textContent=fmtTemp(c.temperature_2m);
   document.getElementById('hero-wx-wind').textContent=c.wind_speed_10m!=null?fmtWind(c.wind_speed_10m)+' '+windArrow(c.wind_direction_10m||0):'';
-  hwb.classList.add('visible');
   if(map)map.invalidateSize();if(mapLocal)mapLocal.invalidateSize();
 }
 function clearContactWeather(){
   _contactWxGrid=null;
-  var hwb=document.getElementById('hero-weather-box');if(hwb)hwb.classList.remove('visible');
+  document.getElementById('hero-wx-icon').innerHTML='';
+  document.getElementById('hero-wx-temp').textContent='';
+  document.getElementById('hero-wx-wind').textContent='';
   if(map)map.invalidateSize();if(mapLocal)mapLocal.invalidateSize();
 }
 

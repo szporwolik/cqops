@@ -1,5 +1,65 @@
 # Changelog
 
+## v0.9.2 — 2026-07-18
+
+> **Maintenance release.** New packaging target and distribution polish — no application code changes from v0.9.1.
+
+### Arch Linux / AUR
+- **`cqops-bin` published on AUR**: Arch, Manjaro, CachyOS, and other Arch-based distros can now install via `yay -S cqops-bin`. PKGBUILD downloads the pre-built binary from GitHub Releases — no compilation needed.
+- **Automated updates**: the release workflow now pushes PKGBUILD and `.SRCINFO` updates to AUR on every release, keeping `pkgver` and `sha256sums` in sync automatically.
+- **AUR badge**: version shield added to README header alongside Cloudsmith.
+
+### Distribution
+- **README**: added installation section for Arch Linux, Manjaro, and CachyOS with AUR instructions.
+- **Release workflow**: AUR publish job fixed — switched from `.deb` extraction to `.tar.gz`, added `.SRCINFO` generation, and configured `git` identity for automated commits.
+
+### Under the Hood
+- **~5 commits**, **2 files changed**. No config or database migration needed from v0.9.1. Same binary — only packaging and docs updated.
+
+## v0.9.1 — 2026-07-16
+
+> **Performance release.** CPU usage on low-end hardware (Raspberry Pi, old laptops, portable field setups) dropped from ~107% to ~13% — a 92% reduction.
+
+### Performance — Potato PC Optimizations
+- **FPS cap**: renderer limited to 20 FPS via `tea.WithFPS(20)`. CQOps is tick-driven at 1 Hz — higher frame rates provide no visual benefit but waste CPU on low-end hardware.
+- **GPS polling merged**: GPS position now polls every 60 seconds inside the main tick instead of running a separate 1-second ticker. Eliminates one full Update→View cycle per second.
+- **Dashboard stats event-driven**: today QSOs, aggregate stats, and recent QSOs are now recomputed only when a QSO is saved, logbook changes, or data is imported — not on a 5-second timer. Avoids 4 expensive COUNT/DISTINCT aggregation queries every 5 seconds.
+- **WorkedSummary cache**: `GetWorkedSummary()` (16 SQL queries) was running inside `View()` on every frame. Now cached with a `call|grid|DXCC|country` key and only recomputed when inputs change. `viewPartner` CPU dropped from 16.68% to 2.61%.
+- **stripANSI rewrite**: regex-based ANSI escape stripping replaced with a byte scanner including a fast-path for strings without escape sequences. Removes the `regexp` import from the dashboard push path. ~5× faster on low-end CPUs.
+- **countryWorkedBefore cache**: per-country `COUNT(*)` query now cached per `(country, baseCall)` pair. Cleared on QSO save.
+- **View() JoinVertical → plain newline**: the main view compositing (status + tabs + body + help) now uses `strings.Join` instead of `lipgloss.JoinVertical`. Avoids the Lip Gloss line-measurement pass on every frame.
+- **Profiling**: new `--pprof` flag starts a `net/http/pprof` server on `127.0.0.1:6060` for CPU, heap, goroutine, mutex, and block profiling. Zero overhead when not used.
+
+### New Callbook Provider — QRZ.RU
+- **QRZ.RU**: free global callbook with name, QTH, grid, DXCC, and photo. Russian-hosted; good coverage for Eastern European and Asian callsigns. Config, secrets, menu integration, and dashboard support included.
+- **HamQTH default images**: placeholder images from `hamqth.com/images/default/` (e.g. `paddle_and_notebook.jpg`) are now treated as "no image" so lower-priority callbooks (QRZ, Callook) can supply real photos. Genuine HamQTH operator photos pass through unchanged.
+
+### UI Polish
+- **Compact status bar**: operator callsign shown without parenthetical name (`Op SP9SPM` instead of `Op SP9SPM (Szymon)`). Log/Call/Op labels merged when values are identical — e.g. `Log/Call/Op SP9SPM` instead of three separate fields. Rig name shown when model differs from operator.
+- **Partner identity line**: US state (short codes), short continent names, and local time for DX stations.
+- **Worked panel**: distribution labels prefixed with scope (`Call Bands`, `DXCC Modes`, `Grid Grids`). Local logbook and Wavelog data merged into a single unified panel with compact row format.
+- **DXC table**: new DXCC, band, and mode cells highlighted with color when they're new for the operator.
+- **Scroll indicators**: BPL, DXC, and REF views now show `▲ more above` / `▼ more below` hints when content overflows.
+- **REF view**: title header, scroll indicator, and proper table height constants added.
+- **Logbook editor**: new search-by-call, country, and name filter bar.
+- **PSK Reporter**: side-by-side layout replaced with DXC-style filter bar and full-width map.
+
+### Fixes
+- **Wavelog download key**: changed from `Ctrl+W` to `Alt+W` to avoid conflict with the `Ctrl+W` close-tab shortcut in terminal multiplexers.
+- **Contest QSO matching**: all contest-related queries now match by `contest_adif_id` — fixes edge cases where QSOs from different contests with the same callsign were incorrectly cross-matched.
+- **Big CTY**: longitude sign convention corrected (west positive → negative). Redundant DXCC grid auto-fill removed. DXCC lookup migrated from `cty.dat` binary format to Big CTY CSV with ADIF entity numbers. Full DXCC backfill after bulk Wavelog download.
+- **Map**: station marker always renders on initial load. Map height cap removed — fills available space on tall terminals. Tile CRS correctly re-initialized on internet restore.
+- **Dashboard**: SSE subscriber buffer increased from 16 to 128 to prevent event loss. Redundant operator/logbook SSE events suppressed. Force-push on reconnect and logbook/rig/contest/operator toggle. Debug mode propagated from TUI.
+- **Internet detection**: adaptive polling with debounced offline detection; toast spam suppressed after first disconnect.
+- **Help bar**: `operatorForm` cache key fixed for edit mode. `WL` abbreviation expanded to `Wavelog`.
+- **Rotor**: `Ctrl+F1` stop binding removed; status dot resets correctly on stop.
+- **Contest duration**: format simplified to minutes or `H:MM` — seconds dropped.
+- **HTTP dashboard**: address text input replaced with a toggle (`127.0.0.1` / `0.0.0.0` / custom).
+- **Station info**: `stripNonDigits` moved to `qso` package. Flrig/hamlib defaults and unused helpers removed. GeneralMenu cursor index fixed for 10-item list.
+
+### Under the Hood
+- **~70 commits**, **~45 files changed**. All 30 test packages pass. No new dependencies, zero cgo. Backward-compatible — no config or database migration needed from v0.9.0.
+
 ## v0.9.0 — 2026-07-14
 
 > **Breaking change.** This release introduces `config_version: 1` and database `PRAGMA user_version = 1`. Config is auto-migrated on load (legacy keys → nested callbook structure). Database migrations are applied once and skipped on subsequent starts. No manual intervention required for upgrades from v0.8.7+; pre-v0.8.7 databases are re-backfilled automatically.

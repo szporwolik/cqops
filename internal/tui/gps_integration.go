@@ -81,7 +81,7 @@ func (m *Model) startGPSD(cfg config.GPSConfig) tea.Cmd {
 		m.toasts.Error("GPS: cannot connect to GPSD")
 		m.gps.reader.Close()
 		m.gps.reader = nil
-		return m.pollGPS()
+		return nil
 	}
 
 	m.gps.client = gps.NewClient(m.gps.reader)
@@ -98,7 +98,7 @@ func (m *Model) startGPSD(cfg config.GPSConfig) tea.Cmd {
 		"port", port,
 	)
 	m.toasts.Success("GPS: connecting to GPSD")
-	return m.pollGPS()
+	return nil
 }
 
 func (m *Model) startGPSSerial(cfg config.GPSConfig) tea.Cmd {
@@ -122,7 +122,7 @@ func (m *Model) startGPSSerial(cfg config.GPSConfig) tea.Cmd {
 		m.toasts.Error("GPS: cannot open " + cfg.Port)
 		m.gps.reader.Close()
 		m.gps.reader = nil
-		return m.pollGPS()
+		return nil
 	}
 
 	m.gps.client = gps.NewClient(m.gps.reader)
@@ -139,7 +139,7 @@ func (m *Model) startGPSSerial(cfg config.GPSConfig) tea.Cmd {
 		"baud", fmt.Sprintf("%d", cfg.BaudRate),
 	)
 	m.toasts.Success("GPS: connecting to " + cfg.Port)
-	return m.pollGPS()
+	return nil
 }
 
 // stopGPS closes the serial port and stops the GPS client.
@@ -194,14 +194,8 @@ func (m *Model) restoreGPSGridOverride() {
 	m.gps.originalStationGrid = ""
 }
 
-// pollGPS returns a tea.Cmd that checks the GPS position and schedules
-// the next poll.
-func (m *Model) pollGPS() tea.Cmd {
-	return tea.Tick(time.Second, func(t time.Time) tea.Msg {
-		return gpsTickMsg{}
-	})
-}
-
+// GPS position is now polled from the main 1 s tick (every 60 ticks ≈ 60 s)
+// instead of a separate 1 s ticker.  See handleTick in update_handlers.go.
 type gpsTickMsg struct{}
 
 // handleGPSTick reads the latest position from the GPS client and
@@ -307,12 +301,13 @@ func (m *Model) handleGPSTick() tea.Cmd {
 		m.pushDashboardState()
 	}
 
-	// Reconnect logic — fixed 60s retry interval.
+	// Reconnect logic — fixed 60s retry interval. The main 60 s
+	// GPS poll will retry on the next cycle.
 	if !m.gps.online {
 		return m.scheduleOrReconnect()
 	}
 
-	return m.pollGPS()
+	return nil
 }
 
 // scheduleOrReconnect either sets up a reconnect timer or fires a
@@ -336,7 +331,7 @@ func (m *Model) scheduleOrReconnect() tea.Cmd {
 		m.toasts.Info("GPS: reconnecting…")
 		return m.startGPS()
 	}
-	return m.pollGPS()
+	return nil
 }
 
 // gpsReconnectDelay returns a fixed 60s retry interval.

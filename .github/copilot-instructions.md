@@ -381,3 +381,436 @@ Before finishing any substantial change:
 8. Summarize what changed and what was intentionally left unchanged.
 
 The default goal is: working, fast, minimal, tested, idiomatic Bubble Tea v2 code.
+
+## Compact missing-input presentation
+
+When band or mode are not yet entered in the QSO form, render:
+
+```
+Band       —
+Mode       —
+```
+
+Do not add verbose instructional text such as `awaiting frequency` or `set frequency`. The field labels already communicate what is missing.
+
+Do not show `Band + mode`, `DXCC + band`, or `DXCC + mode` combination rows until the required QSO fields are available.
+
+For the current state without band/mode, render:
+
+```
+Call       KI6NAZ · NEW             QSOs       0 · first contact
+DXCC       291 · WORKED             DXCC log   summary unavailable
+Grid       DM03 · NEW
+Band       —
+Mode       —
+```
+
+When band and mode become available:
+
+```
+Call       KI6NAZ · NEW             QSOs       0 · first contact
+Band       20m · NEW                DXCC log   248 QSOs · 9 bands · 5 modes
+Mode       FT8 · NEW                Last DXCC  2026-07-11 · 20m FT8
+Band+Mode  20m FT8 · NEW            Bands      20m×74 · 40m×52 · +7
+DXCC       291 · WORKED             Modes      FT8×96 · SSB×71 · +3
+Grid       DM03 · NEW
+```
+
+Do not add explanatory text after an em dash merely to fill unused space.
+
+## Local worked-DXCC index
+
+Create a fast local worked-status index so CQOps does not need to query or scan Wavelog, ADIF files, or the complete QSO table every time the operator enters a callsign.
+
+The local CQOps database must become the primary fast source for:
+
+- worked DXCC,
+- worked DXCC on band,
+- worked DXCC on mode,
+- worked DXCC on band + mode,
+- worked grid,
+- worked call,
+- call history statistics,
+- DXCC history statistics.
+
+Remote systems remain synchronization sources, not mandatory real-time dependencies for every lookup.
+
+The index must be updated from:
+
+- Wavelog ADIF download or synchronization,
+- manually entered QSOs,
+- WSJT-X logged QSOs,
+- ADIF imports,
+- future supported digital-mode integrations,
+- QSO edits,
+- QSO deletions,
+- logbook or station-profile changes.
+
+### Architecture
+
+Keep the normalized local QSO table as the source of truth.
+
+Build one or more materialized summary/index tables for fast worked-status queries. Do not treat the summary table as the only copy of QSO data.
+
+Suggested tables:
+
+```
+worked_dxcc
+worked_call
+worked_grid
+```
+
+A possible `worked_dxcc` schema:
+
+```sql
+CREATE TABLE worked_dxcc (
+    station_profile_id   INTEGER NOT NULL,
+    logbook_id           INTEGER NOT NULL,
+
+    dxcc                  INTEGER NOT NULL,
+    band                  TEXT NOT NULL DEFAULT '',
+    mode                  TEXT NOT NULL DEFAULT '',
+    submode               TEXT NOT NULL DEFAULT '',
+
+    qso_count             INTEGER NOT NULL DEFAULT 0,
+    first_qso_utc         TEXT,
+    last_qso_utc          TEXT,
+
+    confirmed_count       INTEGER NOT NULL DEFAULT 0,
+
+    data_quality          INTEGER NOT NULL DEFAULT 0,
+    is_complete           INTEGER NOT NULL DEFAULT 0,
+    source_mask           INTEGER NOT NULL DEFAULT 0,
+
+    updated_at            TEXT NOT NULL,
+
+    PRIMARY KEY (
+        station_profile_id,
+        logbook_id,
+        dxcc,
+        band,
+        mode,
+        submode
+    )
+);
+```
+
+The exact schema may be adjusted to the existing CQOps database design, but it must support indexed lookups for:
+
+- DXCC only,
+- DXCC + band,
+- DXCC + mode/submode,
+- DXCC + band + mode/submode.
+
+Add appropriate indexes only after checking existing schema and query plans.
+
+### Aggregation levels
+
+Store or efficiently derive these aggregation levels:
+
+1. DXCC
+2. DXCC + band
+3. DXCC + canonical mode/submode
+4. DXCC + band + canonical mode/submode
+
+Do not require a scan of all QSOs to answer:
+
+```
+Is DXCC 291 worked?
+Is DXCC 291 worked on 20m?
+Is DXCC 291 worked using FT8?
+Is DXCC 291 worked on 20m FT8?
+```
+
+Equivalent fast local indexes should exist for:
+
+- normalized callsign,
+- normalized four-character grid.
+
+### Incremental updates
+
+Update the index incrementally whenever a QSO is:
+
+- created manually,
+- accepted from WSJT-X,
+- imported from ADIF,
+- downloaded from a remote logbook,
+- edited,
+- deleted,
+- moved between logbooks or station profiles.
+
+For insertion:
+
+1. normalize the QSO,
+2. resolve available DXCC, band, mode and grid data,
+3. update relevant aggregate rows,
+4. update count, first QSO and last QSO,
+5. retain source and data-quality metadata.
+
+For deletion or edits:
+
+- decrement or rebuild only the affected aggregate keys,
+- recalculate first/last timestamps when the removed QSO was an edge record,
+- never allow negative counts,
+- remove aggregate rows whose count becomes zero.
+
+Use transactions so the QSO table and worked indexes cannot become inconsistent.
+
+### Bulk synchronization and ADIF imports
+
+For large Wavelog downloads or ADIF imports:
+
+- do not update every summary row with an expensive independent query,
+- import normalized QSOs in a transaction,
+- collect affected keys,
+- update aggregates in batches,
+- or rebuild the affected logbook index with grouped SQL.
+
+Provide a rebuild operation:
+
+```
+RebuildWorkedIndex(logbookID, stationProfileID)
+```
+
+Use it after:
+
+- initial database migration,
+- complete Wavelog synchronization,
+- large ADIF import,
+- detected inconsistency,
+- normalization-rule changes.
+
+The rebuild must be deterministic and safe to run repeatedly.
+
+### Partial and incomplete QSO data
+
+Imported QSOs may not contain complete information.
+
+Handle incomplete data conservatively.
+
+#### DXCC resolution
+
+Use this priority:
+
+1. valid DXCC value stored in the QSO,
+2. reliable imported provider DXCC value,
+3. deterministic callsign-prefix resolution,
+4. cached callbook result with known provenance,
+5. unresolved.
+
+Do not guess DXCC from country text alone when the value is ambiguous.
+
+Store how DXCC was resolved, for example:
+
+```
+explicit
+imported
+prefix
+callbook
+unknown
+```
+
+A QSO with unresolved DXCC must remain in the normal QSO log but must not be inserted into a specific worked-DXCC row.
+
+#### Band resolution
+
+Use:
+
+1. valid ADIF band,
+2. derive band from valid frequency,
+3. unresolved.
+
+Do not invent a band when both values are absent or inconsistent.
+
+#### Mode resolution
+
+Use CQOps canonical mode/submode normalization.
+
+Examples:
+
+- `MFSK + FT8` becomes canonical `FT8`,
+- `MFSK + FT4` becomes canonical `FT4`,
+- preserve meaningful submode distinctions,
+- avoid counting the same QSO simultaneously as unrelated modes.
+
+If mode is unknown, the QSO may still contribute to:
+
+- worked DXCC,
+- worked DXCC + band,
+
+but not to mode-specific aggregates.
+
+#### Grid resolution
+
+Normalize valid Maidenhead locators.
+
+For worked-grid status, use the configured precision, defaulting to four characters:
+
+```
+DM03xu -> DM03
+```
+
+Invalid or missing grids must not contribute to worked-grid aggregates.
+
+### Data coverage and confidence
+
+The absence of an aggregate row does not always prove that an entity is new.
+
+Track local log coverage so CQOps can distinguish:
+
+- definitely worked,
+- definitely new within a complete log,
+- unknown because local data is incomplete.
+
+Suggested coverage metadata:
+
+```go
+type LogCoverage struct {
+    LogbookID             int64
+    StationProfileID      int64
+    LastFullSyncAt        *time.Time
+    LastIncrementalSyncAt *time.Time
+    FullSyncCompleted     bool
+    ImportedQSOCount      int
+    UnresolvedDXCCCount   int
+    MissingBandCount      int
+    MissingModeCount      int
+    SourceErrors          []string
+}
+```
+
+Worked-state rules:
+
+- if a matching aggregate exists with `qso_count > 0`:
+  return `WORKED`
+- if no aggregate exists and local coverage is known complete:
+  return `NEW`
+- if no aggregate exists but coverage is partial, stale, failed or unknown:
+  return `UNKNOWN`
+
+Never report `NEW` only because:
+
+- Wavelog synchronization failed,
+- only part of an ADIF file was imported,
+- the local database has not completed its first full synchronization,
+- many relevant QSOs have unresolved DXCC values.
+
+A positive `WORKED` result remains valid even with incomplete coverage.
+
+### Local-first query strategy
+
+Use this lookup order:
+
+1. local worked index,
+2. local normalized QSO data if verification is required,
+3. remote source only when local coverage is incomplete or a refresh was explicitly requested.
+
+The normal logging-screen lookup must not depend on live Wavelog response time.
+
+Expected behaviour:
+
+- local index result appears immediately,
+- remote synchronization may later improve statistics,
+- stale asynchronous results must not overwrite a newer callsign lookup.
+
+### Source provenance
+
+Every imported or synchronized QSO should preserve provenance:
+
+- local manual,
+- WSJT-X,
+- ADIF import,
+- remote logbook instance,
+- other integration.
+
+A duplicate QSO present locally and remotely must count once in merged statistics.
+
+Do not identify duplicates solely by source.
+
+Use the existing CQOps QSO identity/deduplication rules based on normalized:
+
+- station profile,
+- contacted callsign,
+- UTC timestamp with appropriate tolerance,
+- band,
+- mode/submode,
+- frequency where available.
+
+### Consistency checking
+
+Add an inexpensive consistency mechanism.
+
+Examples:
+
+- aggregate QSO counts cannot be negative,
+- `WORKED` cannot coexist with confirmed-empty history,
+- aggregate first timestamp must not be later than last timestamp,
+- aggregate rows must reference an existing logbook and station profile.
+
+Optionally store an index schema/version number.
+
+When normalization or aggregation rules change, mark the index for rebuild.
+
+### UI integration
+
+The `Worked` panel should primarily use the local index.
+
+Do not mention implementation details such as `worked_dxcc` in the UI.
+
+The source title may remain:
+
+```
+Worked · Local + qso.cqops.com
+```
+
+But the operator-facing result should appear immediately from local data.
+
+If remote synchronization is incomplete, show a subtle source warning only when it affects certainty.
+
+Examples:
+
+```
+DXCC       291 · WORKED
+```
+
+or:
+
+```
+DXCC       291 · UNKNOWN
+```
+
+Do not show `NEW` when local coverage is incomplete.
+
+## Required tests for worked-DXCC index
+
+Add tests for:
+
+- full ADIF import builds worked-DXCC index,
+- Wavelog full synchronization rebuilds the index,
+- incremental remote synchronization updates only affected keys,
+- manually logged QSO updates the index,
+- WSJT-X QSO updates the index,
+- QSO edit moves counts between aggregates,
+- QSO deletion removes or updates aggregates,
+- first and last QSO recalculation,
+- duplicate local and remote QSO counts once,
+- explicit DXCC value,
+- prefix-derived DXCC,
+- unresolved DXCC,
+- band derived from frequency,
+- missing band and frequency,
+- canonical FT8 and FT4 normalization,
+- missing mode still updates non-mode aggregates,
+- six-character grid reduced to configured precision,
+- missing or invalid grid,
+- complete coverage with no match returns `NEW`,
+- incomplete coverage with no match returns `UNKNOWN`,
+- incomplete coverage with a match returns `WORKED`,
+- failed synchronization never creates false `NEW`,
+- index rebuild is idempotent,
+- transaction rollback leaves QSO and index consistent,
+- no negative aggregate counts,
+- `Band —` and `Mode —` render without verbose guidance,
+- no empty combination rows before band/mode are available.
+
+The result should provide instant local worked-DXCC checks while remaining honest when imported or synchronized log data is incomplete.

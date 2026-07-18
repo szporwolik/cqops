@@ -52,11 +52,11 @@ func (m *Model) saveQSO() tea.Cmd {
 	qs.FreqRx = freqRx
 	qs.Mode, qs.RSTSent, qs.RSTRcvd = strings.ToUpper(m.fields[fieldMode].Value()), m.fields[fieldRSTSent].Value(), m.fields[fieldRSTRcvd].Value()
 	qs.Submode = strings.ToUpper(m.fields[fieldSubmode].Value())
-	qs.QSODate = stripNonDigits(m.fields[fieldDate].Value())
+	qs.QSODate = qso.StripNonDigits(m.fields[fieldDate].Value())
 	if qs.QSODate == "" {
 		qs.QSODate = time.Now().UTC().Format("20060102")
 	}
-	qs.TimeOn = stripNonDigits(m.fields[fieldTime].Value())
+	qs.TimeOn = qso.StripNonDigits(m.fields[fieldTime].Value())
 	// Pad to 6 digits (HHMMSS) if user didn't type seconds — DB expects full time.
 	if len(qs.TimeOn) == 4 {
 		qs.TimeOn += "00"
@@ -107,11 +107,18 @@ func (m *Model) saveQSO() tea.Cmd {
 		qs.Distance = gridDistanceKm(station.MyGridSquare, qs.GridSquare)
 		qs.Bearing = gridBearingDeg(station.MyGridSquare, qs.GridSquare)
 	}
-	// Enrich CQ/ITU zone from DXCC prefix lookup (CTY.DAT).
-	if m.App.Config.General.UseCTY && m.App.DXCC != nil {
+	// Enrich CQ/ITU zone and DXCC from Big CTY prefix lookup.
+	if m.App.Config.General.UseCTY && m.App.BigCTY != nil {
 		if p := m.dxccLookup(qs.Call); p != nil {
-			qs.CQZone = fmt.Sprintf("%d", p.CQZone)
-			qs.ITUZone = fmt.Sprintf("%d", p.ITUZone)
+			if qs.CQZone == "" {
+				qs.CQZone = fmt.Sprintf("%d", p.CQZone)
+			}
+			if qs.ITUZone == "" {
+				qs.ITUZone = fmt.Sprintf("%d", p.ITUZone)
+			}
+			if qs.DXCC == "" && p.DXCC > 0 {
+				qs.DXCC = fmt.Sprintf("%d", p.DXCC)
+			}
 		}
 	}
 	// Enrich DXCC entity number from QRZ lookup when available.
@@ -175,13 +182,21 @@ func (m *Model) saveQSO() tea.Cmd {
 // refreshQSOS reloads the QSO list from the store, updates the RecentQSOs component,
 // and re-applies any active filter. Returns a non-nil message to trigger a re-render.
 func (m *Model) refreshQSOS() tea.Cmd {
+	db := m.App.DB // capture before async execution — logbook cycle may swap it
+	contest := m.App.Logbook.ActiveContest
 	return func() tea.Msg {
+		if db == nil {
+			return qsoRefreshedMsg{qsos: nil, err: nil}
+		}
 		var qsos []qso.QSO
 		var err error
 		for attempt := 0; attempt < 2; attempt++ {
-			qsos, err = store.ListQSOs(m.App.DB, 500, m.App.Logbook.ActiveContest)
+			qsos, err = store.ListQSOs(db, 500, contest)
 			if err == nil {
 				break
+			}
+			if strings.Contains(err.Error(), "database is closed") {
+				return qsoRefreshedMsg{qsos: nil, err: nil}
 			}
 			if !strings.Contains(err.Error(), "database is locked") {
 				break

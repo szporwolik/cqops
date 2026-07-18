@@ -251,13 +251,13 @@ func TestHandleSnapshot(t *testing.T) {
 
 // ── DisplayConfig.IsOnline / offline map CRS tests ──────────────────────────
 
-func TestDisplayConfig_IsOnlineDefaultsToFalse(t *testing.T) {
+func TestDisplayConfig_IsOnlineDefaultsToTrue(t *testing.T) {
 	hub := NewHub()
 	state := NewState(hub)
 
 	snap := state.Snapshot()
-	if snap.Display.IsOnline {
-		t.Error("IsOnline should default to false (safe offline CRS for embedded map)")
+	if !snap.Display.IsOnline {
+		t.Error("IsOnline should default to true (optimistic — tiles load immediately, corrected on first internet check)")
 	}
 }
 

@@ -386,10 +386,6 @@ func (rc *RigChooser) startEdit(id string) {
 	case "flrig":
 		backendIdx = 2
 	}
-	// Fallback: pre-backend configs with FlrigEnabled.
-	if backendIdx == 0 && rp.FlrigEnabled {
-		backendIdx = 2
-	}
 	host, port := rp.HamlibRadioHost, rp.HamlibRadioPort
 	if backendIdx == 2 {
 		host, port = rp.FlrigHost, rp.FlrigPort
