@@ -97,7 +97,17 @@ Veja todas as versões:
 
 
 <a id="linux--debian--ubuntu"></a>
-### Linux — Debian / Ubuntu
+### Linux — Debian / Ubuntu / Pop!_OS / Linux Mint
+
+Adicione o repositório Cloudsmith APT e instale:
+
+```bash
+curl -1sLf 'https://dl.cloudsmith.io/public/szporwolik/cqops/setup.deb.sh' | sudo -E bash
+sudo apt update
+sudo apt install cqops
+```
+
+Ou baixe o `.deb` diretamente:
 
 | Arquitetura | Link | Use em |
 |---|---|---|
@@ -110,6 +120,25 @@ Instale o pacote baixado:
 ```bash
 sudo dpkg -i cqops_*.deb
 ```
+
+### Linux — Fedora / RHEL / Rocky / AlmaLinux
+
+Adicione o repositório Cloudsmith RPM e instale:
+
+```bash
+curl -1sLf 'https://dl.cloudsmith.io/public/szporwolik/cqops/setup.rpm.sh' | sudo -E bash
+sudo dnf install cqops
+```
+
+### Linux — Arch / Manjaro / CachyOS
+
+Instale do AUR com qualquer helper AUR:
+
+```bash
+yay -S cqops-bin
+```
+
+Também disponível via `paru`, `pacaur`, `aura` ou `makepkg` manual. PKGBUILD em [aur.archlinux.org/packages/cqops-bin](https://aur.archlinux.org/packages/cqops-bin).
 
 <a id="linux--portable-tarball"></a>
 ### Linux — arquivo Tarball portátil

@@ -90,7 +90,17 @@ Ver todas las versiones:
 | Instalador | [cqops-setup.exe](https://github.com/szporwolik/cqops/releases/latest/download/cqops-setup.exe) | Recomendado para la mayoría de usuarios. Añade CQOps al menú Inicio y a PATH. |
 | ZIP portátil | [cqops-windows-portable.zip](https://github.com/szporwolik/cqops/releases/latest/download/cqops-windows-portable.zip) | Extraer y ejecutar sin instalar. |
 
-### Linux — Debian / Ubuntu
+### Linux — Debian / Ubuntu / Pop!_OS / Linux Mint
+
+Añade el repositorio Cloudsmith APT e instala:
+
+```bash
+curl -1sLf 'https://dl.cloudsmith.io/public/szporwolik/cqops/setup.deb.sh' | sudo -E bash
+sudo apt update
+sudo apt install cqops
+```
+
+O descarga el `.deb` directamente:
 
 | Arquitectura | Enlace | Uso |
 |---|---|---|
@@ -103,6 +113,25 @@ Instale el paquete descargado:
 ```bash
 sudo dpkg -i cqops_*.deb
 ```
+
+### Linux — Fedora / RHEL / Rocky / AlmaLinux
+
+Añade el repositorio Cloudsmith RPM e instala:
+
+```bash
+curl -1sLf 'https://dl.cloudsmith.io/public/szporwolik/cqops/setup.rpm.sh' | sudo -E bash
+sudo dnf install cqops
+```
+
+### Linux — Arch / Manjaro / CachyOS
+
+Instala desde AUR con cualquier helper AUR:
+
+```bash
+yay -S cqops-bin
+```
+
+También disponible vía `paru`, `pacaur`, `aura` o `makepkg` manual. PKGBUILD en [aur.archlinux.org/packages/cqops-bin](https://aur.archlinux.org/packages/cqops-bin).
 
 ### Linux — archivo Tarball portátil
 

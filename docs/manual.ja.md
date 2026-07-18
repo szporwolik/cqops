@@ -90,7 +90,17 @@ field day や公開イベントでは、**CQOps Live dashboard** を使用して
 | インストーラー | [cqops-setup.exe](https://github.com/szporwolik/cqops/releases/latest/download/cqops-setup.exe) | ほとんどのユーザーに推奨。CQOps を Start Menu と PATH に追加します。 |
 | ポータブル ZIP | [cqops-windows-portable.zip](https://github.com/szporwolik/cqops/releases/latest/download/cqops-windows-portable.zip) | 展開して、インストールせずに実行します。 |
 
-### Linux — Debian / Ubuntu
+### Linux — Debian / Ubuntu / Pop!_OS / Linux Mint
+
+Cloudsmith APTリポジトリを追加してインストール:
+
+```bash
+curl -1sLf 'https://dl.cloudsmith.io/public/szporwolik/cqops/setup.deb.sh' | sudo -E bash
+sudo apt update
+sudo apt install cqops
+```
+
+または `.deb` を直接ダウンロード:
 
 | アーキテクチャ | リンク | 対象 |
 |---|---|---|
@@ -103,6 +113,25 @@ field day や公開イベントでは、**CQOps Live dashboard** を使用して
 ```bash
 sudo dpkg -i cqops_*.deb
 ```
+
+### Linux — Fedora / RHEL / Rocky / AlmaLinux
+
+Cloudsmith RPMリポジトリを追加してインストール:
+
+```bash
+curl -1sLf 'https://dl.cloudsmith.io/public/szporwolik/cqops/setup.rpm.sh' | sudo -E bash
+sudo dnf install cqops
+```
+
+### Linux — Arch / Manjaro / CachyOS
+
+AURヘルパーでAURからインストール:
+
+```bash
+yay -S cqops-bin
+```
+
+`paru`、`pacaur`、`aura`、または手動 `makepkg` でも利用可能。PKGBUILD: [aur.archlinux.org/packages/cqops-bin](https://aur.archlinux.org/packages/cqops-bin)。
 
 ### Linux — ポータブル Tarball
 

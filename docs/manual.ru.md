@@ -97,7 +97,17 @@ CQOps создавался с учетом потребностей радиок
 
 
 <a id="linux--debian--ubuntu"></a>
-### Linux — Debian / Ubuntu
+### Linux — Debian / Ubuntu / Pop!_OS / Linux Mint
+
+Добавьте репозиторий Cloudsmith APT и установите:
+
+```bash
+curl -1sLf 'https://dl.cloudsmith.io/public/szporwolik/cqops/setup.deb.sh' | sudo -E bash
+sudo apt update
+sudo apt install cqops
+```
+
+Или скачайте `.deb` напрямую:
 
 | Архитектура | Ссылка | Для каких систем |
 |---|---|---|
@@ -110,6 +120,25 @@ CQOps создавался с учетом потребностей радиок
 ```bash
 sudo dpkg -i cqops_*.deb
 ```
+
+### Linux — Fedora / RHEL / Rocky / AlmaLinux
+
+Добавьте репозиторий Cloudsmith RPM и установите:
+
+```bash
+curl -1sLf 'https://dl.cloudsmith.io/public/szporwolik/cqops/setup.rpm.sh' | sudo -E bash
+sudo dnf install cqops
+```
+
+### Linux — Arch / Manjaro / CachyOS
+
+Установите из AUR с помощью любого AUR-хелпера:
+
+```bash
+yay -S cqops-bin
+```
+
+Также доступно через `paru`, `pacaur`, `aura` или ручной `makepkg`. PKGBUILD на [aur.archlinux.org/packages/cqops-bin](https://aur.archlinux.org/packages/cqops-bin).
 
 <a id="linux--portable-tarball"></a>
 ### Linux — переносимый архив Tarball
