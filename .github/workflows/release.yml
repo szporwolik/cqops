@@ -398,69 +398,110 @@ jobs:
           echo "- Setup RPM: \`curl -1sLf 'https://dl.cloudsmith.io/public/${NAMESPACE}/${REPO}/setup.rpm.sh' | sudo -E bash\`" >> $GITHUB_STEP_SUMMARY
 
   # ──────────────────────────────────────────────────────────────────────────
-  # Publish AUR package (cqops-bin) — disabled until AUR setup complete
+  # Publish AUR package (cqops-bin)
   # ──────────────────────────────────────────────────────────────────────────
   publish-aur:
     runs-on: ubuntu-latest
     needs: create-github-release
-    if: false
+    if: true
     steps:
+      - name: Check AUR secret
+        id: gate
+        env:
+          KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY || '' }}
+        run: |
+          if [ -z "$KEY" ]; then
+            echo "AUR_SSH_PRIVATE_KEY not set — skipping AUR publish."
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Read version
+        if: steps.gate.outputs.skip != 'true'
         id: meta
         run: echo "version=${{ needs.create-github-release.outputs.version }}" >> $GITHUB_OUTPUT
 
       - name: Generate and push PKGBUILD
+        if: steps.gate.outputs.skip != 'true'
         env:
           VERSION: ${{ steps.meta.outputs.version }}
+          AUR_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           V="$VERSION"
-          URL="https://github.com/szporwolik/cqops/releases/download/v${V}/cqops_${V}_amd64.deb"
-          curl -sSLo /tmp/cqops.deb "$URL"
-          SHA256=$(sha256sum /tmp/cqops.deb | awk '{print $1}')
-          rm /tmp/cqops.deb
-          mkdir -p aur-dist
-          cat > aur-dist/PKGBUILD << 'EOF'
+
+          # Download the amd64 tarball and compute its SHA-256.
+          TARBALL="cqops-linux-amd64.tar.gz"
+          URL="https://github.com/szporwolik/cqops/releases/download/v${V}/${TARBALL}"
+          curl -sSLo "/tmp/${TARBALL}" "$URL"
+          SHA256=$(sha256sum "/tmp/${TARBALL}" | awk '{print $1}')
+          rm "/tmp/${TARBALL}"
+
+          # Write PKGBUILD.  Downloads the pre-built tarball from GitHub
+          # Releases — no compilation needed (hence "cqops-bin").
+          cat > PKGBUILD << EOF
           # Maintainer: Szymon Porwolik <szporwolik@users.noreply.github.com>
           pkgname=cqops-bin
-          pkgver=__VERSION__
+          pkgver=${V}
           pkgrel=1
-          pkgdesc="A small, fast, offline-first amateur radio logger for the terminal"
+          pkgdesc="Fast, minimal Go TUI ham radio logger"
           arch=('x86_64')
           url="https://github.com/szporwolik/cqops"
           license=('Apache-2.0')
           provides=('cqops')
           conflicts=('cqops')
-          source=("cqops-__VERSION__.deb::https://github.com/szporwolik/cqops/releases/download/v__VERSION__/cqops___VERSION___amd64.deb")
-          sha256sums=('__SHA256__')
-          install=cqops-bin.install
-          package() { bsdtar -xf "cqops-__VERSION__.deb"; tar -xf data.tar.xz -C "${pkgdir}"; }
+          source=("cqops-\${pkgver}-amd64.tar.gz::${URL}")
+          sha256sums=('${SHA256}')
+          package() {
+              install -Dm755 cqops-linux-amd64 "\${pkgdir}/usr/bin/cqops"
+          }
           EOF
-          sed -i "s/__VERSION__/${V}/g; s/__SHA256__/${SHA256}/g" aur-dist/PKGBUILD
-          cat > aur-dist/cqops-bin.install << 'EOF'
-          post_install() { echo "CQOps installed. Run 'cqops' to start."; }
-          EOF
+
+          # Generate .SRCINFO (required by AUR).  Written manually because
+          # makepkg is not available on Ubuntu CI runners.
+          cat > .SRCINFO << EOF2
+          pkgbase = cqops-bin
+          	pkgdesc = Fast, minimal Go TUI ham radio logger
+          	pkgver = ${V}
+          	pkgrel = 1
+          	url = https://github.com/szporwolik/cqops
+          	arch = x86_64
+          	license = Apache-2.0
+          	source = cqops-${V}-amd64.tar.gz::${URL}
+          	sha256sums = ${SHA256}
+          	provides = cqops
+          	conflicts = cqops
+
+          pkgname = cqops-bin
+          EOF2
+
+          # Setup SSH for aur.archlinux.org.
           mkdir -p ~/.ssh
-          echo "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/aur_key
+          echo "$AUR_KEY" > ~/.ssh/aur_key
           chmod 600 ~/.ssh/aur_key
-          ssh-keyscan aur.archlinux.org > ~/.ssh/aur_known_hosts 2>/dev/null
-          cat > ~/.ssh/config << 'EOF'
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
+          cat > ~/.ssh/config << 'SSHCFG'
           Host aur.archlinux.org
             IdentityFile ~/.ssh/aur_key
             User aur
             StrictHostKeyChecking yes
-            UserKnownHostsFile ~/.ssh/aur_known_hosts
-          EOF
-          cd aur-dist
-          git clone ssh://aur@aur.archlinux.org/cqops-bin.git aur-repo 2>/dev/null || true
-          if [ -d aur-repo/.git ]; then
-            cp PKGBUILD cqops-bin.install aur-repo/
-            cd aur-repo
-            git add PKGBUILD cqops-bin.install
-            if git diff --cached --quiet; then echo "AUR: no changes."; exit 0; fi
-            git commit -m "Update to ${V}"
-            git push
+          SSHCFG
+
+          # Clone AUR repo, update files, commit and push.
+          git clone ssh://aur@aur.archlinux.org/cqops-bin.git aur-repo
+          cp PKGBUILD .SRCINFO aur-repo/
+          cd aur-repo
+          git config user.name  "cqops-bot"
+          git config user.email "szporwolik@users.noreply.github.com"
+          git add PKGBUILD .SRCINFO
+          if git diff --cached --quiet; then
+            echo "AUR: no changes — already at ${V}."
+            exit 0
           fi
+          git commit -m "Update to ${V}"
+          git push
+          echo "AUR: published cqops-bin ${V}"
 
   # ──────────────────────────────────────────────────────────────────────────
   # WinGet update — disabled until manifest is accepted.
