@@ -9,6 +9,7 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
 [![docs](https://img.shields.io/badge/docs-cqops.com-1f6feb)](https://docs.cqops.com/)
 [![Cloudsmith](https://img.shields.io/badge/OSS%20hosting%20by-cloudsmith-blue?logo=cloudsmith&style=flat-square)](https://cloudsmith.com)
+[![AUR](https://img.shields.io/aur/version/cqops-bin?label=AUR&color=1793d1&style=flat-square)](https://aur.archlinux.org/packages/cqops-bin)
 
 A small, fast, offline-first amateur radio logger for the terminal — built for portable/field ops, SOTA/POTA activations, and club stations with rotating operators. Runs on Raspberry Pi, old laptops, or any low-power machine without a GUI, over SSH or a local terminal. Hot-swap operators and logbooks, log via WSJT-X auto-feed or keyboard, sync to Wavelog. GPS-aware — uses your receiver's position for the station grid automatically. Works fully offline with an embedded world map, graceful degradation, and `--offline` flag.
 
@@ -43,6 +44,14 @@ sudo apt install cqops
 curl -1sLf 'https://dl.cloudsmith.io/public/szporwolik/cqops/setup.rpm.sh' | sudo -E bash
 sudo dnf install cqops
 ```
+
+### Arch Linux, Manjaro, CachyOS
+
+```bash
+yay -S cqops-bin
+```
+
+Also available via `paru`, `pacaur`, or any AUR helper. PKGBUILD at [aur.archlinux.org/packages/cqops-bin](https://aur.archlinux.org/packages/cqops-bin).
 
 ### Go (universal)
 
