@@ -357,14 +357,14 @@ jobs:
           for f in "$BASE"/cqops_"${VERSION}"_*.deb; do
             [ -f "$f" ] || continue
             echo "Uploading $f ..."
-            cloudsmith push deb "$REPO_PATH/any-distro/any-version" "$f" --no-republish
+            cloudsmith push deb "$REPO_PATH/any-distro/any-version" "$f" --republish
           done
 
           # Upload RPMs
           for f in "$BASE"/cqops-"${VERSION}"-1.*.rpm; do
             [ -f "$f" ] || continue
             echo "Uploading $f ..."
-            cloudsmith push rpm "$REPO_PATH/any-distro/any-version" "$f" --no-republish
+            cloudsmith push rpm "$REPO_PATH/any-distro/any-version" "$f" --republish
           done
 
           echo "Cloudsmith upload complete."
