@@ -125,13 +125,17 @@ sudo dnf install cqops
 
 ### Linux — Arch / Manjaro / CachyOS
 
-Zainstaluj z AUR za pomocą dowolnego helpera AUR:
+Zainstaluj z AUR:
 
 ```bash
+# CachyOS (domyślnie używa paru)
+paru -S cqops-bin
+
+# Arch / Manjaro
 yay -S cqops-bin
 ```
 
-Dostępne również przez `paru`, `pacaur`, `aura` lub ręczne `makepkg`. PKGBUILD na [aur.archlinux.org/packages/cqops-bin](https://aur.archlinux.org/packages/cqops-bin).
+Dostępne również przez `pacaur`, `aura` lub ręczne `makepkg`. PKGBUILD na [aur.archlinux.org/packages/cqops-bin](https://aur.archlinux.org/packages/cqops-bin).
 
 ### Linux — przenośne archiwum Tarball
 
