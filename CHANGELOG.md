@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.9.3 — 2026-07-21
+
+> **Polish release.** First-run wizard improvements, secret masking, navigation fixes, and AUR packaging complete.
+
+### First-Run Wizard
+- **Enter = save & next**: Enter now works as Ctrl+S in all wizard steps (Station, Rig, General, Summary). Wizard header shows `[Enter — save & next]` hint.
+- **Operator field removed**: the wizard no longer shows the operator selector — operators don't exist yet during first-run setup.
+- **Navigation fixes**: Tab/Shift+Tab now correctly wraps between fields. Fixed rig name field not receiving focus (missing `case rigFieldName` in `focusField()`). Fixed off-screen navigation when Wavelog or WSJT-X is disabled.
+
+### Security — Secret Masking
+- **Wavelog API key**: now masked as `***` in the station config form. Shows plaintext only when the field is focused for editing. Same for APRS passcode.
+- **Masking logic**: secrets are masked on blur, revealed on focus, and re-masked before save. The underlying `secrets.enc` encryption was already in place — this change only affects UI display.
+
+### UI Polish
+- **Rotator hint**: the "Experimental feature — use with caution" text is now hidden on terminals narrower than 85 columns — no more wrapping.
+- **AUR PKGBUILD**: now includes SVG app icon and `.desktop` entry so CQOps appears in the application menu with the proper icon on Arch-based systems.
+
+### Under the Hood
+- **~10 commits**, **5 files changed**. No config or database migration needed from v0.9.2.
+
 ## v0.9.2 — 2026-07-18
 
 > **Maintenance release.** New packaging target and distribution polish — no application code changes from v0.9.1.

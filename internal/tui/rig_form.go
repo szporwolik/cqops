@@ -170,7 +170,7 @@ func (f *RigForm) NextInput() {
 		next = rigFieldWsjtx // skip rotor host/port, jump to WSJT-X
 	}
 	if !f.WsjtxEnabled && next == rigFieldWsjtxHost {
-		next = rigFieldRig // skip wsjtx host/port, wrap to start
+		next = rigFieldName // skip wsjtx host/port, wrap to first field
 	}
 	f.focus = next
 	f.focusField()
@@ -198,6 +198,8 @@ func (f *RigForm) blurAll() {
 
 func (f *RigForm) focusField() {
 	switch f.focus {
+	case rigFieldName:
+		f.Name.Focus()
 	case rigFieldRig:
 		f.Rig.Focus()
 	case rigFieldAntenna:
@@ -439,7 +441,11 @@ func (f *RigForm) View() tea.View {
 	if f.focus == rigFieldRotor {
 		roPrefix = S.FormPrefixOn.Render("> ")
 		roLbl = S.FormFocusedWide.Align(lipgloss.Left).Render("Rotator control:")
-		rotorLabel = CursorStyle.Render(rotorLabel) + " " + DimStyle.Render("(Space)") + " " + DimStyle.Render("Experimental feature — use with caution")
+		rotorLabel = CursorStyle.Render(rotorLabel) + " " + DimStyle.Render("(Space)")
+		// Only show the long hint when there's room — never wrap.
+		if availW >= 85 {
+			rotorLabel += " " + DimStyle.Render("Experimental feature — use with caution")
+		}
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, roPrefix, roLbl, " ", rotorLabel),
@@ -517,7 +523,7 @@ func (f *RigForm) HandlePaste(content string) tea.Cmd {
 func (f *RigForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 	k := msg
 
-	if k.String() == "ctrl+s" || k.String() == "\x13" {
+	if k.String() == "ctrl+s" || k.String() == "\x13" || k.String() == "enter" {
 		return func() tea.Msg { return enterOnLastFieldMsg{} }
 	}
 
