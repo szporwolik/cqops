@@ -266,7 +266,7 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return w, nil
 				}
 			case stepTimezone:
-			if k.String() == "ctrl+s" || k.String() == "\x13" || k.String() == "enter" {
+				if k.String() == "ctrl+s" || k.String() == "\x13" || k.String() == "enter" {
 					w.step = stepSummary
 					applog.InfoDetail("Wizard: timezone step done", fmt.Sprintf("tz=%s", config.Timezones[w.tzIndex]))
 					return w, nil
@@ -282,7 +282,7 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			case stepSummary:
-			if k.String() == "ctrl+s" || k.String() == "\x13" || k.String() == "enter" {
+				if k.String() == "ctrl+s" || k.String() == "\x13" || k.String() == "enter" {
 					return w, w.handleEnter()
 				}
 			}

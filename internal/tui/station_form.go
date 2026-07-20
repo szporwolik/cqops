@@ -718,29 +718,29 @@ func (f *StationForm) View() tea.View {
 	// Operator selector — Space-toggleable, like Continent/IARU.
 	// Hidden when HideOperator is set (e.g. wizard — operators don't exist yet).
 	if !f.HideOperator {
-	opLabel := "Operator (opt):"
-	var opVal string
-	if f.opIdx >= 0 && f.opIdx < len(f.operators) {
-		opVal = config.OperatorDisplayName(&f.operators[f.opIdx])
-	} else {
-		opVal = DimStyle.Render("None")
-	}
-	opPrefix := "  "
-	opLbl := S.FormLabelWide.Align(lipgloss.Left).Render(opLabel)
-	displayVal := ValueStyle.Render(opVal)
-	if f.opFocus {
-		opPrefix = S.FormPrefixOn.Render("> ")
-		opLbl = S.FormFocusedWide.Align(lipgloss.Left).Render(opLabel)
-		if f.opIdx >= 0 {
-			displayVal = CursorStyle.Render(opVal) + " " + DimStyle.Render("(Space)")
+		opLabel := "Operator (opt):"
+		var opVal string
+		if f.opIdx >= 0 && f.opIdx < len(f.operators) {
+			opVal = config.OperatorDisplayName(&f.operators[f.opIdx])
 		} else {
-			displayVal = CursorStyle.Render(DimStyle.Render("None")) + " " + DimStyle.Render("(Space)")
+			opVal = DimStyle.Render("None")
 		}
-	}
-	b.WriteString(padOrTrunc(
-		lipgloss.JoinHorizontal(lipgloss.Center, opPrefix, opLbl, " ", displayVal),
-		availW))
-	b.WriteString("\n")
+		opPrefix := "  "
+		opLbl := S.FormLabelWide.Align(lipgloss.Left).Render(opLabel)
+		displayVal := ValueStyle.Render(opVal)
+		if f.opFocus {
+			opPrefix = S.FormPrefixOn.Render("> ")
+			opLbl = S.FormFocusedWide.Align(lipgloss.Left).Render(opLabel)
+			if f.opIdx >= 0 {
+				displayVal = CursorStyle.Render(opVal) + " " + DimStyle.Render("(Space)")
+			} else {
+				displayVal = CursorStyle.Render(DimStyle.Render("None")) + " " + DimStyle.Render("(Space)")
+			}
+		}
+		b.WriteString(padOrTrunc(
+			lipgloss.JoinHorizontal(lipgloss.Center, opPrefix, opLbl, " ", displayVal),
+			availW))
+		b.WriteString("\n")
 	}
 
 	// Remaining text fields.
