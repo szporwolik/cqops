@@ -284,6 +284,12 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			applog.Info("Integration config saved, restarting services")
 
 			m.resetDXC()
+			if dxcE {
+				// Immediately reconnect DXC — not just on the next tick.
+				if c := m.maybeDXC(); c != nil {
+					cmd = tea.Batch(cmd, c)
+				}
+			}
 			if needHTTPRestart {
 				m.restartHTTPServer()
 			}
