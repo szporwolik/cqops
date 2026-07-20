@@ -515,6 +515,9 @@ func (c *LogbookChooser) refreshNames() {
 func (c *LogbookChooser) startCreate() {
 	c.mode = chooserCreate
 	c.station.SetValues("", "", "", "", "", "", "", 1, 0, 0, 0, "", "", "EU")
+	c.station.SetWavelogValues(nil)
+	c.station.SetAPRSValues(nil)
+	c.station.GPSGrid = false
 	c.station.SetOperators(config.OperatorSlice(c.app.Config))
 	c.station.BlurAll()
 	c.station.Name.Focus()
