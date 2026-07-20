@@ -441,7 +441,11 @@ func (f *RigForm) View() tea.View {
 	if f.focus == rigFieldRotor {
 		roPrefix = S.FormPrefixOn.Render("> ")
 		roLbl = S.FormFocusedWide.Align(lipgloss.Left).Render("Rotator control:")
-		rotorLabel = CursorStyle.Render(rotorLabel) + " " + DimStyle.Render("(Space)") + " " + DimStyle.Render("Experimental feature — use with caution")
+		rotorLabel = CursorStyle.Render(rotorLabel) + " " + DimStyle.Render("(Space)")
+		// Only show the long hint when there's room — never wrap.
+		if availW >= 85 {
+			rotorLabel += " " + DimStyle.Render("Experimental feature — use with caution")
+		}
 	}
 	b.WriteString(padOrTrunc(
 		lipgloss.JoinHorizontal(lipgloss.Center, roPrefix, roLbl, " ", rotorLabel),
