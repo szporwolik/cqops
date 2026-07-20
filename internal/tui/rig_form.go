@@ -198,6 +198,8 @@ func (f *RigForm) blurAll() {
 
 func (f *RigForm) focusField() {
 	switch f.focus {
+	case rigFieldName:
+		f.Name.Focus()
 	case rigFieldRig:
 		f.Rig.Focus()
 	case rigFieldAntenna:
