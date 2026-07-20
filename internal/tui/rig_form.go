@@ -170,7 +170,7 @@ func (f *RigForm) NextInput() {
 		next = rigFieldWsjtx // skip rotor host/port, jump to WSJT-X
 	}
 	if !f.WsjtxEnabled && next == rigFieldWsjtxHost {
-		next = rigFieldRig // skip wsjtx host/port, wrap to start
+		next = rigFieldName // skip wsjtx host/port, wrap to first field
 	}
 	f.focus = next
 	f.focusField()

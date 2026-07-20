@@ -100,11 +100,13 @@ func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder strin
 
 	wu := mkTI(80, 28, "https://log.example.com")
 	wk := mkTI(64, 28, "Wavelog API key")
+	wk.EchoMode = textinput.EchoPassword
 	ws := mkTI(80, 60, "press Update to fetch")
 
 	// APRS defaults.
 	asrv := mkTI(60, 28, "euro.aprs2.net:14580")
 	apc := mkTI(20, 28, "APRS passcode")
+	apc.EchoMode = textinput.EchoPassword
 	arad := mkTI(5, 28, "50")
 	acall := mkTI(12, 28, "N0CALL-10")
 	aint := mkTI(3, 28, "15")
@@ -251,6 +253,7 @@ func (f *StationForm) Update(msg tea.KeyPressMsg) {
 }
 
 func (f *StationForm) NextInput() {
+	f.maskSecretFields()
 	switch {
 	case f.Name.Focused():
 		f.Name.Blur()
@@ -361,14 +364,20 @@ func (f *StationForm) NextInput() {
 		f.aprsBtnFocus = 0
 		f.Name.Focus()
 	}
+	f.unmaskSecretsOnFocus()
 }
 
 func (f *StationForm) PrevInput() {
+	f.maskSecretFields()
 	switch {
 	case f.Name.Focused():
 		f.Name.Blur()
 		if f.HideGPSGrid {
-			f.wlBtnFocus = 1
+			if f.WlEnabled {
+				f.wlBtnFocus = 1
+			} else {
+				f.wlCbFocus = true
+			}
 		} else if f.AprsEnabled {
 			f.aprsBtnFocus = 1
 		} else {
@@ -473,6 +482,7 @@ func (f *StationForm) PrevInput() {
 		f.WlStationID.Blur()
 		f.WlKey.Focus()
 	}
+	f.unmaskSecretsOnFocus()
 }
 
 func (f *StationForm) OnLastField() bool {
@@ -480,6 +490,9 @@ func (f *StationForm) OnLastField() bool {
 }
 
 func (f *StationForm) BlurAll() {
+	f.WlKey.EchoMode = textinput.EchoPassword // mask secret when leaving
+	f.WlKey.EchoMode = textinput.EchoPassword
+	f.AprsPasscode.EchoMode = textinput.EchoPassword
 	blurTextinputs(&f.Name, &f.Callsign, &f.Operator, &f.Locator, &f.SOTARef, &f.POTARef, &f.WWFFRef,
 		&f.CQZone, &f.ITUZone, &f.DXCC, &f.SIG, &f.SIGInfo,
 		&f.WlURL, &f.WlKey, &f.WlStationID,
@@ -493,6 +506,25 @@ func (f *StationForm) BlurAll() {
 	f.opFocus = false
 	f.wlBtnFocus = 0
 	f.aprsBtnFocus = 0
+}
+
+// unmaskSecretsOnFocus sets EchoNormal on any secret textinput that currently
+// has focus — call this after every NextInput/PrevInput to show secrets when
+// the user is actively editing them.
+func (f *StationForm) unmaskSecretsOnFocus() {
+	if f.WlKey.Focused() {
+		f.WlKey.EchoMode = textinput.EchoNormal
+	}
+	if f.AprsPasscode.Focused() {
+		f.AprsPasscode.EchoMode = textinput.EchoNormal
+	}
+}
+
+// maskSecretFields sets EchoPassword on all secret fields — call before
+// navigation so moving away from a secret field masks it immediately.
+func (f *StationForm) maskSecretFields() {
+	f.WlKey.EchoMode = textinput.EchoPassword
+	f.AprsPasscode.EchoMode = textinput.EchoPassword
 }
 
 func (f *StationForm) Values() (name, callsign, operator, locator, sotaRef, potaRef, wwffRef string,
@@ -936,6 +968,8 @@ func (f *StationForm) renderFieldLine(label string, ti *textinput.Model, availW 
 		val = ti.View()
 	} else if raw == "" {
 		val = DimStyle.Render("\u2014")
+	} else if ti.EchoMode == textinput.EchoPassword {
+		val = ValueStyle.Render(strings.Repeat("*", len(raw)))
 	} else {
 		val = ValueStyle.Render(truncateText(raw, vw))
 	}
@@ -1001,11 +1035,13 @@ func (f *StationForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 				return func() tea.Msg { return aprsTestAction{} }
 			}
 		}
+		f.maskSecretFields() // hide secrets before saving/advancing
 		return func() tea.Msg { return enterOnLastFieldMsg{} }
 	}
 	if k.String() == " " || k.String() == "space" {
 		if f.wlCbFocus {
 			f.WlEnabled = !f.WlEnabled
+			f.maskSecretFields()
 			if f.WlEnabled {
 				return func() tea.Msg { return scrollFormToEnd{} }
 			}
@@ -1013,6 +1049,7 @@ func (f *StationForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		if f.aprsCbFocus {
 			f.AprsEnabled = !f.AprsEnabled
+			f.maskSecretFields()
 			if f.AprsEnabled {
 				return func() tea.Msg { return scrollFormToEnd{} }
 			}
