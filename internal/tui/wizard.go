@@ -55,7 +55,8 @@ type Wizard struct {
 func NewWizard(a *app.App) *Wizard {
 	applog.Info("Wizard started — first-run setup")
 	sf := NewStationForm("", "", "")
-	sf.HideGPSGrid = true // GPS Grid is not relevant during first-run setup
+	sf.HideGPSGrid = true  // GPS Grid is not relevant during first-run setup
+	sf.HideOperator = true // operators don't exist yet during first-run wizard
 	return &Wizard{
 		App:     a,
 		step:    stepStation,
@@ -265,7 +266,7 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return w, nil
 				}
 			case stepTimezone:
-				if k.String() == "ctrl+s" || k.String() == "\x13" {
+			if k.String() == "ctrl+s" || k.String() == "\x13" || k.String() == "enter" {
 					w.step = stepSummary
 					applog.InfoDetail("Wizard: timezone step done", fmt.Sprintf("tz=%s", config.Timezones[w.tzIndex]))
 					return w, nil
@@ -281,7 +282,7 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			case stepSummary:
-				if k.String() == "ctrl+s" || k.String() == "\x13" {
+			if k.String() == "ctrl+s" || k.String() == "\x13" || k.String() == "enter" {
 					return w, w.handleEnter()
 				}
 			}
@@ -412,7 +413,8 @@ func (w *Wizard) stepIndicator() string {
 	case stepSummary:
 		name = "Summary"
 	}
-	return S.Title.Render(fmt.Sprintf("First time wizard — Step %d/%d — %s", current, total, name))
+	return S.Title.Render(fmt.Sprintf("First time wizard — Step %d/%d — %s", current, total, name)) +
+		"  " + DimStyle.Render("[Enter — save & next]")
 }
 
 // ── Step views ───────────────────────────────────────────────────

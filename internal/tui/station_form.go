@@ -54,6 +54,7 @@ type StationForm struct {
 	GPSGrid      bool
 	gpsGridFocus bool
 	HideGPSGrid  bool // set true to hide checkbox (e.g. in wizard)
+	HideOperator bool // set true to hide operator selector (e.g. in wizard)
 
 	// Operator cycling (Space-toggleable, like Continent/IARU).
 	operators []config.Operator
@@ -275,7 +276,11 @@ func (f *StationForm) NextInput() {
 		f.contFocus = true
 	case f.contFocus:
 		f.contFocus = false
-		f.opFocus = true
+		if f.HideOperator {
+			f.SOTARef.Focus()
+		} else {
+			f.opFocus = true
+		}
 	case f.SOTARef.Focused():
 		f.SOTARef.Blur()
 		f.POTARef.Focus()
@@ -416,7 +421,11 @@ func (f *StationForm) PrevInput() {
 		f.Callsign.Focus()
 	case f.SOTARef.Focused():
 		f.SOTARef.Blur()
-		f.opFocus = true
+		if f.HideOperator {
+			f.contFocus = true
+		} else {
+			f.opFocus = true
+		}
 	case f.POTARef.Focused():
 		f.POTARef.Blur()
 		f.SOTARef.Focus()
@@ -707,6 +716,8 @@ func (f *StationForm) View() tea.View {
 	b.WriteString("\n")
 
 	// Operator selector — Space-toggleable, like Continent/IARU.
+	// Hidden when HideOperator is set (e.g. wizard — operators don't exist yet).
+	if !f.HideOperator {
 	opLabel := "Operator (opt):"
 	var opVal string
 	if f.opIdx >= 0 && f.opIdx < len(f.operators) {
@@ -730,6 +741,7 @@ func (f *StationForm) View() tea.View {
 		lipgloss.JoinHorizontal(lipgloss.Center, opPrefix, opLbl, " ", displayVal),
 		availW))
 	b.WriteString("\n")
+	}
 
 	// Remaining text fields.
 	remFields := []fieldDef{
@@ -979,7 +991,16 @@ func (f *StationForm) HandlePaste(content string) tea.Cmd {
 
 func (f *StationForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 	k := msg
-	if k.String() == "ctrl+s" || k.String() == "\x13" {
+	if k.String() == "ctrl+s" || k.String() == "\x13" || k.String() == "enter" {
+		// Enter on active buttons triggers the button, not save-and-next.
+		if k.String() == "enter" {
+			if f.wlBtnFocus == 1 {
+				return func() tea.Msg { return wlUpdateAction{} }
+			}
+			if f.aprsBtnFocus == 1 {
+				return func() tea.Msg { return aprsTestAction{} }
+			}
+		}
 		return func() tea.Msg { return enterOnLastFieldMsg{} }
 	}
 	if k.String() == " " || k.String() == "space" {
@@ -1009,14 +1030,6 @@ func (f *StationForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 	// Space on Station ID field cycles through fetched stations.
 	if (k.String() == " " || k.String() == "space") && f.WlStationID.Focused() {
 		return func() tea.Msg { return wlCycleStation{} }
-	}
-	if k.String() == "enter" {
-		if f.wlBtnFocus == 1 {
-			return func() tea.Msg { return wlUpdateAction{} }
-		}
-		if f.aprsBtnFocus == 1 {
-			return func() tea.Msg { return aprsTestAction{} }
-		}
 	}
 	if k.String() == "tab" || msg.Code == tea.KeyDown {
 		f.NextInput()

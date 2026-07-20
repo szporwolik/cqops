@@ -517,7 +517,7 @@ func (f *RigForm) HandlePaste(content string) tea.Cmd {
 func (f *RigForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 	k := msg
 
-	if k.String() == "ctrl+s" || k.String() == "\x13" {
+	if k.String() == "ctrl+s" || k.String() == "\x13" || k.String() == "enter" {
 		return func() tea.Msg { return enterOnLastFieldMsg{} }
 	}
 
