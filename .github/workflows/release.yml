@@ -494,14 +494,14 @@ jobs:
           	url = https://github.com/szporwolik/cqops
           	arch = x86_64
           	license = Apache-2.0
-          	source = cqops-${V}-amd64.tar.gz::${URL}
+          	provides = cqops
+          	conflicts = cqops
+          	source = cqops-\${pkgver}-amd64.tar.gz::${URL}
           	source = cqops.svg::${ICON_URL}
           	source = cqops.desktop::${DESKTOP_URL}
           	sha256sums = ${TARBALL_SHA256}
           	sha256sums = ${ICON_SHA256}
           	sha256sums = ${DESKTOP_SHA256}
-          	provides = cqops
-          	conflicts = cqops
 
           pkgname = cqops-bin
           EOF2
