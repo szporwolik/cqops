@@ -150,7 +150,7 @@ func bplLineFreqMode(line string) (int64, string) {
 	} else if strings.Contains(lineUpper, "RPT") {
 		// Repeater — FM for output/repeater frequencies.
 		mode = "FM"
-	} else if strings.Contains(lineUpper, "SAT") {
+	} else if wordContains(lineUpper, "SAT") {
 		mode = "FM"
 	} else if strings.Contains(lineUpper, "BCN") {
 		mode = "CW"
