@@ -440,8 +440,12 @@ jobs:
 
           ICON_URL="https://raw.githubusercontent.com/szporwolik/cqops/v${V}/assets/cqops-icon.svg"
 
-          # Download the canonical .desktop file and compute its SHA-256
-          # so the AUR package has integrity verification — not SKIP.
+          # Download the icon and compute SHA-256 for AUR integrity.
+          curl -sSLo "/tmp/cqops-icon.svg" "$ICON_URL"
+          ICON_SHA256=$(sha256sum "/tmp/cqops-icon.svg" | awk '{print $1}')
+          rm "/tmp/cqops-icon.svg"
+
+          # Download the canonical .desktop file and compute its SHA-256.
           DESKTOP_URL="https://raw.githubusercontent.com/szporwolik/cqops/v${V}/installer/cqops.desktop"
           curl -sSLo "/tmp/cqops.desktop" "$DESKTOP_URL"
           DESKTOP_SHA256=$(sha256sum "/tmp/cqops.desktop" | awk '{print $1}')
@@ -470,7 +474,7 @@ jobs:
                   "cqops.svg::${ICON_URL}"
                   "cqops.desktop::${DESKTOP_URL}")
           sha256sums=('${TARBALL_SHA256}'
-                      'SKIP'
+                      '${ICON_SHA256}'
                       '${DESKTOP_SHA256}')
           package() {
               install -Dm755 cqops-linux-amd64 "\${pkgdir}/usr/bin/cqops"
@@ -494,7 +498,7 @@ jobs:
           	source = cqops.svg::${ICON_URL}
           	source = cqops.desktop::${DESKTOP_URL}
           	sha256sums = ${TARBALL_SHA256}
-          	sha256sums = SKIP
+          	sha256sums = ${ICON_SHA256}
           	sha256sums = ${DESKTOP_SHA256}
           	provides = cqops
           	conflicts = cqops
