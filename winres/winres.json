@@ -13,7 +13,7 @@
           "name": "CQOps",
           "version": "0.8.13.0"
         },
-        "description": "A small, fast, offline-first amateur radio logger for the terminal — built for portable/field ops, SOTA/POTA activations, and club stations. Hot-swap operators, sync to Wavelog, GPS-aware with APRS.",
+        "description": "Fast, offline-first amateur radio logger for the terminal — portable ops, SOTA/POTA, contests, and club stations. WSJT-X, Wavelog, GPS, APRS, and a built-in browser dashboard.",
         "minimum-os": "win7",
         "execution-level": "as invoker",
         "ui-access": false,

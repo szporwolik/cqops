@@ -48,8 +48,8 @@ var versionCmd = &cobra.Command{
 
 var rootCmd = &cobra.Command{
 	Use:   "cqops",
-	Short: "CQOps - Ham Radio Logger (TUI)",
-	Long: `CQOps is a cross-platform amateur radio logging tool.
+	Short: "CQOps — Amateur Radio Logger",
+	Long: `CQOps is a fast, offline-first amateur radio logger for the terminal.
 
 Run without arguments to start the interactive TUI.`,
 	CompletionOptions: cobra.CompletionOptions{

@@ -447,7 +447,7 @@ jobs:
           pkgname=cqops-bin
           pkgver=${V}
           pkgrel=1
-          pkgdesc="Fast, minimal Go TUI ham radio logger"
+          pkgdesc="Fast, offline-first amateur radio logger for the terminal"
           arch=('x86_64')
           url="https://github.com/szporwolik/cqops"
           license=('Apache-2.0')
@@ -463,13 +463,13 @@ jobs:
               install -Dm644 /dev/stdin "\${pkgdir}/usr/share/applications/cqops.desktop" << 'DESKTOP'
           [Desktop Entry]
           Name=CQOps
-          Comment=Fast, minimal Go TUI ham radio logger
+          Comment=Fast, offline-first amateur radio logging for the terminal
           Exec=cqops
           Terminal=true
           Type=Application
           Categories=HamRadio;Utility;Network;
           Keywords=ham;radio;logging;qso;adif;wsjtx;dx;contest;sota;pota;wwff;iota;wavelog;qrz;dxcc;flrig;hamlib;
-          Icon=utilities-terminal
+          Icon=cqops
           StartupNotify=true
           DESKTOP
           }
@@ -479,7 +479,7 @@ jobs:
           # makepkg is not available on Ubuntu CI runners.
           cat > .SRCINFO << EOF2
           pkgbase = cqops-bin
-          	pkgdesc = Fast, minimal Go TUI ham radio logger
+          	pkgdesc = Fast, offline-first amateur radio logger for the terminal
           	pkgver = ${V}
           	pkgrel = 1
           	url = https://github.com/szporwolik/cqops
