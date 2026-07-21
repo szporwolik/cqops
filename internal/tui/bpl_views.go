@@ -821,7 +821,7 @@ type bplExportMsg struct {
 }
 
 // exportBPL writes the full band plan as a Markdown document to cqops_bandplan.md
-// in the CQOPS config directory, overwriting any existing file.
+// in the CQOps config directory, overwriting any existing file.
 func (m *Model) exportBPL() tea.Cmd {
 	return func() tea.Msg {
 		region := 1
