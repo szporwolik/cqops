@@ -37,6 +37,7 @@ type dxcState struct {
 	tuneCancel   func()          // cancel previous tune command if running
 	cachedSpots  []store.DXCSpot // cached result of last filteredSpots() call
 	cachedRaw    []store.DXCSpot // raw unfiltered spots; new spots appended here
+	rawGen       int             // incremented on every cachedRaw change; busts dxcPathLine cache
 
 	// Filter state at time of cache — used to detect staleness.
 	cachedBandFilter string

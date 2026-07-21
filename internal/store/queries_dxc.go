@@ -85,6 +85,28 @@ func QueryDXCSpots(db *sql.DB) ([]DXCSpot, error) {
 	return spots, rows.Err()
 }
 
+// QueryDXCSpotsByBand returns spots for the given band not older than
+// maxAgeSec seconds, ordered by frequency ascending for the dxcPathLine.
+// Uses the idx_dxc_spots_band_time composite index.
+func QueryDXCSpotsByBand(db *sql.DB, band string, maxAgeSec int64) ([]DXCSpot, error) {
+	cutoff := time.Now().UTC().Unix() - maxAgeSec
+	rows, err := db.Query(`SELECT id, dx_call, frequency, band, mode, mode_cat, comment, spotter, dx_cont, dxcc, spot_cont, received_at
+		FROM dxc_spots WHERE band = ? AND received_at > ? ORDER BY frequency ASC LIMIT 200`, band, cutoff)
+	if err != nil {
+		return nil, fmt.Errorf("query dxc_spots by band: %w", err)
+	}
+	defer rows.Close()
+	var spots = make([]DXCSpot, 0, 200)
+	for rows.Next() {
+		var s DXCSpot
+		if err := rows.Scan(&s.ID, &s.DXCall, &s.Frequency, &s.Band, &s.Mode, &s.ModeCat, &s.Comment, &s.Spotter, &s.DXCont, &s.DXCC, &s.SpotCont, &s.ReceivedAt); err != nil {
+			return spots, fmt.Errorf("scan dxc_spot: %w", err)
+		}
+		spots = append(spots, s)
+	}
+	return spots, rows.Err()
+}
+
 // QueryDXCSpotByCall returns the most recent DXC spot for a given callsign, if any.
 func QueryDXCSpotByCall(db *sql.DB, call string) (*DXCSpot, error) {
 	var s DXCSpot

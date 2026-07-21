@@ -30,6 +30,7 @@ func (m *Model) dxcFilteredSpots() []store.DXCSpot {
 	// Keep raw copy for in-memory append on new spots (avoids DB re-query).
 	m.dxc.cachedRaw = make([]store.DXCSpot, len(spots))
 	copy(m.dxc.cachedRaw, spots)
+	m.dxc.rawGen++
 
 	// Populate band and continent filter caches from the raw query result
 	// so dxcAvailableBands/Continents don't need their own DB scan.
@@ -196,13 +197,17 @@ func (m *Model) dxcContChoices() []string {
 
 // spotModeCategory maps an individual spot mode to a filter category.
 // Categories: CW, DIGI (digital), PHONE (voice).
+// Handles both raw rig strings (hamlib, flrig) and normalized ADIF tokens.
 func spotModeCategory(mode string) string {
 	switch strings.ToUpper(mode) {
-	case "CW", "CW-L", "CW-U", "CWL", "CWU", "CW-R":
+	case "CW", "CW-L", "CW-U", "CWL", "CWU", "CW-R", "CWR":
 		return "CW"
-	case "FT8", "FT4", "FT2", "RTTY", "PSK", "JT65", "JT9", "MSK144", "FSK", "DATA", "DATA-U", "DATA-L", "DATA-FM":
+	case "FT8", "FT4", "FT2", "RTTY", "RTTYR", "PSK", "JT65", "JT9",
+		"MSK144", "FSK", "DATA", "DATA-U", "DATA-L", "DATA-FM",
+		"PKT", "PKTUSB", "PKTLSB", "PKTFM", "PKT-U", "PKT-L", "PKT-FM",
+		"MFSK", "DIGITALVOICE":
 		return "DIGI"
-	case "USB", "LSB", "AM", "FM":
+	case "USB", "LSB", "SSB", "AM", "FM", "FMN", "WFM":
 		return "PHONE"
 	default:
 		return ""

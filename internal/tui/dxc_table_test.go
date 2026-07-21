@@ -32,7 +32,7 @@ func TestSpotModeCategory_DIGI(t *testing.T) {
 }
 
 func TestSpotModeCategory_PHONE(t *testing.T) {
-	for _, m := range []string{"USB", "LSB", "AM", "FM"} {
+	for _, m := range []string{"USB", "LSB", "SSB", "AM", "FM"} {
 		if got := spotModeCategory(m); got != "PHONE" {
 			t.Errorf("spotModeCategory(%q) = %q, want PHONE", m, got)
 		}
@@ -40,7 +40,7 @@ func TestSpotModeCategory_PHONE(t *testing.T) {
 }
 
 func TestSpotModeCategory_Unknown(t *testing.T) {
-	for _, m := range []string{"", "BOGUS", "SSB", "DATA-FM-DEEP"} {
+	for _, m := range []string{"", "BOGUS", "DATA-FM-DEEP"} {
 		if got := spotModeCategory(m); got != "" {
 			t.Errorf("spotModeCategory(%q) = %q, want empty", m, got)
 		}

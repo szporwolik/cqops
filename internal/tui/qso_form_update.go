@@ -750,6 +750,15 @@ func (m *Model) fillFromDXCSpot() {
 	m.fields[fieldCountry].SetValue("")
 	m.fields[fieldRSTSent].SetValue("")
 	m.fields[fieldRSTRcvd].SetValue("")
+	// Also clear references — parseSpotCommentForRefs only fills empty fields,
+	// so stale refs from a previous spot would persist otherwise.
+	m.fields[fieldSOTA].SetValue("")
+	m.fields[fieldPOTA].SetValue("")
+	m.fields[fieldWWFF].SetValue("")
+	m.fields[fieldIOTA].SetValue("")
+	// Parse the spot comment for SOTA/POTA/WWFF/IOTA references.
+	m.parseSpotCommentForRefs(s.Comment)
+	m.ref.refNamesDirty = true
 	m.lookup.partnerData = nil
 	m.lookup.wlPrivateData = nil
 	m.lookup.qrzLookupDone = false
