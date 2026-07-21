@@ -154,7 +154,7 @@ jobs:
           	license = Apache-2.0
           	provides = cqops
           	conflicts = cqops
-          	source = cqops-\${pkgver}-amd64.tar.gz::__URL__
+          	source = cqops-${pkgver}-amd64.tar.gz::__URL__
           	source = cqops.svg::__ICON_URL__
           	source = cqops.desktop::__DESKTOP_URL__
           	sha256sums = SKIP
