@@ -156,7 +156,7 @@ Section "Install"
 
   ; Registry — uninstall info (Control Panel).
   WriteRegStr HKLM "${REG_UNINST}" "DisplayName" \
-    "${PRODUCT_NAME} — Amateur Radio Logger"
+    "${PRODUCT_NAME}"
   WriteRegStr HKLM "${REG_UNINST}" "UninstallString" \
     '"$INSTDIR\uninstall.exe"'
   WriteRegStr HKLM "${REG_UNINST}" "QuietUninstallString" \

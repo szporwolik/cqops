@@ -1,0 +1,54 @@
+name: Branding Validation
+
+on:
+  push:
+    branches: [dev, main]
+    paths:
+      - 'scripts/branding.sh'
+      - 'scripts/validate-branding.sh'
+      - 'nfpm.yaml'
+      - 'installer/cqops.desktop'
+      - 'installer/cqops.nsi'
+      - 'winres/winres.json'
+      - 'internal/cli/root.go'
+      - 'README.md'
+      - '.github/workflows/release.yml'
+      - 'docs/**'
+  pull_request:
+    paths:
+      - 'scripts/branding.sh'
+      - 'scripts/validate-branding.sh'
+      - 'nfpm.yaml'
+      - 'installer/cqops.desktop'
+      - 'installer/cqops.nsi'
+      - 'winres/winres.json'
+      - 'internal/cli/root.go'
+      - 'README.md'
+      - '.github/workflows/release.yml'
+      - 'docs/**'
+  workflow_dispatch:
+
+jobs:
+  validate-branding:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Shell syntax check
+        run: |
+          bash -n scripts/branding.sh
+          bash -n scripts/validate-branding.sh
+
+      - name: ShellCheck
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          shellcheck scripts/branding.sh scripts/validate-branding.sh
+
+      - name: Validate branding
+        run: ./scripts/validate-branding.sh
+
+      - name: Desktop file validation
+        run: |
+          sudo apt-get install -y -qq desktop-file-utils
+          desktop-file-validate installer/cqops.desktop
+          echo "Desktop file validation passed."

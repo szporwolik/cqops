@@ -440,46 +440,45 @@ jobs:
 
           ICON_URL="https://raw.githubusercontent.com/szporwolik/cqops/v${V}/assets/cqops-icon.svg"
 
-          # Write PKGBUILD.  Downloads the pre-built tarball and icon from
-          # GitHub — no compilation needed (hence "cqops-bin").
+          # Use shared metadata variable — prevents pkgdesc drift between
+          # PKGBUILD and .SRCINFO (makepkg not available on Ubuntu runner).
+          AUR_PKGDESC="Fast, offline-first amateur radio logger for the terminal"
+          DESKTOP_URL="https://raw.githubusercontent.com/szporwolik/cqops/v${V}/installer/cqops.desktop"
+
+          # Write PKGBUILD.  Downloads the pre-built tarball, icon, and
+          # canonical .desktop file from GitHub — no compilation needed
+          # (hence "cqops-bin"). The desktop file is the same one used
+          # for DEB/RPM packaging, avoiding duplicated maintenance.
           cat > PKGBUILD << EOF
           # Maintainer: Szymon Porwolik <szporwolik@users.noreply.github.com>
           pkgname=cqops-bin
           pkgver=${V}
           pkgrel=1
-          pkgdesc="Fast, offline-first amateur radio logger for the terminal"
+          pkgdesc="${AUR_PKGDESC}"
           arch=('x86_64')
           url="https://github.com/szporwolik/cqops"
           license=('Apache-2.0')
           provides=('cqops')
           conflicts=('cqops')
           source=("cqops-\${pkgver}-amd64.tar.gz::${URL}"
-                  "cqops.svg::${ICON_URL}")
+                  "cqops.svg::${ICON_URL}"
+                  "cqops.desktop::${DESKTOP_URL}")
           sha256sums=('${SHA256}'
+                      'SKIP'
                       'SKIP')
           package() {
               install -Dm755 cqops-linux-amd64 "\${pkgdir}/usr/bin/cqops"
               install -Dm644 cqops.svg "\${pkgdir}/usr/share/icons/hicolor/scalable/apps/cqops.svg"
-              install -Dm644 /dev/stdin "\${pkgdir}/usr/share/applications/cqops.desktop" << 'DESKTOP'
-          [Desktop Entry]
-          Name=CQOps
-          Comment=Fast, offline-first amateur radio logging for the terminal
-          Exec=cqops
-          Terminal=true
-          Type=Application
-          Categories=HamRadio;Utility;Network;
-          Keywords=ham;radio;logging;qso;adif;wsjtx;dx;contest;sota;pota;wwff;iota;wavelog;qrz;dxcc;flrig;hamlib;
-          Icon=cqops
-          StartupNotify=true
-          DESKTOP
+              install -Dm644 cqops.desktop "\${pkgdir}/usr/share/applications/cqops.desktop"
           }
           EOF
 
           # Generate .SRCINFO (required by AUR).  Written manually because
-          # makepkg is not available on Ubuntu CI runners.
+          # makepkg is not available on Ubuntu CI runners.  Uses the same
+          # AUR_PKGDESC variable as PKGBUILD to prevent drift.
           cat > .SRCINFO << EOF2
           pkgbase = cqops-bin
-          	pkgdesc = Fast, offline-first amateur radio logger for the terminal
+          	pkgdesc = ${AUR_PKGDESC}
           	pkgver = ${V}
           	pkgrel = 1
           	url = https://github.com/szporwolik/cqops
@@ -487,7 +486,9 @@ jobs:
           	license = Apache-2.0
           	source = cqops-${V}-amd64.tar.gz::${URL}
           	source = cqops.svg::${ICON_URL}
+          	source = cqops.desktop::${DESKTOP_URL}
           	sha256sums = ${SHA256}
+          	sha256sums = SKIP
           	sha256sums = SKIP
           	provides = cqops
           	conflicts = cqops
@@ -569,7 +570,7 @@ jobs:
   prune-releases:
     runs-on: ubuntu-latest
     needs: create-github-release
-    if: always() && needs.create-github-release.result == 'success'
+    if: false  # disabled — re-enable when ready to auto-prune old releases
     permissions:
       contents: write
     steps:

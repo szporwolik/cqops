@@ -41,8 +41,8 @@
         "info": {
           "0409": {
             "Comments": "",
-            "CompanyName": "szporwolik",
-            "FileDescription": "CQOps - Fast, offline-first ham radio logger",
+            "CompanyName": "Szymon Porwolik",
+            "FileDescription": "CQOps — Amateur Radio Logger",
             "FileVersion": "0.8.13",
             "InternalName": "cqops",
             "LegalCopyright": "Licensed under Apache 2.0",

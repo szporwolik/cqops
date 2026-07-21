@@ -9,4 +9,3 @@ Terminal=true
 Categories=HamRadio;Utility;Network;
 Keywords=ham radio;amateur radio;logger;logging;SOTA;POTA;contest;APRS;WSJT-X;Wavelog;
 StartupNotify=false
-MimeType=application/x-adif;text/x-adif;

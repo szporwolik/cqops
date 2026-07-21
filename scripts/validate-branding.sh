@@ -1,98 +1,118 @@
 #!/usr/bin/env bash
-# CQOps branding validation — checks that all packaging channels use
-# consistent descriptions, icon references, and product naming.
+# CQOps branding validation — must be run from repo root or via absolute path.
+# Sources branding.sh for canonical values, then checks all packaging surfaces.
 #
-# Usage: bash scripts/validate-branding.sh
+# Usage: ./scripts/validate-branding.sh
+#        bash scripts/validate-branding.sh
 # Exit 0 = clean, exit 1 = violations found.
 
 set -euo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SCRIPT_DIR="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 VIOLATIONS=0
 
-red() { printf '\033[31m%s\033[0m\n' "$*"; }
+# Source canonical branding values.
+# shellcheck source=/dev/null
+. "$ROOT/scripts/branding.sh"
+
+red()   { printf '\033[31m%s\033[0m\n' "$*"; }
 green() { printf '\033[32m%s\033[0m\n' "$*"; }
 
-check_not_contains() {
-	local file="$1" pattern="$2" label="$3"
-	if grep -q "$pattern" "$file" 2>/dev/null; then
-		red "  FAIL: $label in $file"
-		VIOLATIONS=$((VIOLATIONS + 1))
-	fi
+fail() {
+	red "  FAIL [$1]: $2"
+	VIOLATIONS=$((VIOLATIONS + 1))
 }
 
 check_contains() {
 	local file="$1" pattern="$2" label="$3"
-	if ! grep -q "$pattern" "$file" 2>/dev/null; then
-		red "  MISSING: $label in $file"
-		VIOLATIONS=$((VIOLATIONS + 1))
+	if ! grep -qF "$pattern" "$file" 2>/dev/null; then
+		fail "$label" "expected '$pattern' not found in $file"
+	fi
+}
+
+check_not_contains() {
+	local file="$1" pattern="$2" label="$3"
+	if grep -qF "$pattern" "$file" 2>/dev/null; then
+		fail "$label" "forbidden '$pattern' found in $file"
 	fi
 }
 
 echo "=== CQOps Branding Validation ==="
+echo "ROOT: $ROOT"
 echo ""
 
-# 1. No stale "Fast, minimal Go TUI" branding (except changelogs / copilot-instructions).
+# ── 1. Stale branding strings ──────────────────────────────────────────
 echo "[1] Stale 'Fast, minimal Go TUI' branding..."
-for f in $(grep -rl "Fast, minimal Go TUI" "$ROOT" --include='*.yaml' --include='*.yml' --include='*.json' --include='*.desktop' --include='*.nsi' --include='*.md' --include='*.go' 2>/dev/null); do
+while IFS= read -r f; do
 	case "$f" in
-		*CHANGELOG.md|*copilot-instructions.md|*branding.sh|*validate-branding.sh)
-			;; # allowed — historical/changelog or AI instructions
+		*CHANGELOG.md|*copilot-instructions.md|*branding.sh|*validate-branding.sh) ;;
+		*) fail "stale-string" "$f contains 'Fast, minimal Go TUI'" ;;
+	esac
+done < <(grep -rlF "Fast, minimal Go TUI" "$ROOT" \
+	--include='*.yaml' --include='*.yml' --include='*.json' \
+	--include='*.desktop' --include='*.nsi' --include='*.go' 2>/dev/null || true)
+echo ""
+
+# ── 2. No generic icon fallbacks ───────────────────────────────────────
+echo "[2] Generic icon fallbacks..."
+while IFS= read -r f; do
+	fail "generic-icon" "$f uses utilities-terminal or generic icon"
+done < <(grep -rlF 'Icon=utilities-terminal' "$ROOT" \
+	--include='*.desktop' --include='*.yml' --include='*.yaml' 2>/dev/null || true)
+echo ""
+
+# ── 3. Desktop files use canonical values ──────────────────────────────
+echo "[3] Desktop file consistency..."
+check_contains "$ROOT/installer/cqops.desktop" "Icon=$CQOPS_ICON_NAME" "desktop-Icon"
+check_contains "$ROOT/installer/cqops.desktop" "Name=$CQOPS_PRODUCT_NAME" "desktop-Name"
+check_contains "$ROOT/installer/cqops.desktop" "GenericName=$CQOPS_DESKTOP_GENERIC_NAME" "desktop-GenericName"
+check_contains "$ROOT/installer/cqops.desktop" "Comment=$CQOPS_DESKTOP_COMMENT" "desktop-Comment"
+check_contains "$ROOT/installer/cqops.desktop" "Terminal=true" "desktop-Terminal"
+check_contains "$ROOT/installer/cqops.desktop" "StartupNotify=false" "desktop-StartupNotify"
+# AUR inline desktop
+check_contains "$ROOT/.github/workflows/release.yml" "Icon=$CQOPS_ICON_NAME" "AUR-desktop-Icon"
+check_contains "$ROOT/.github/workflows/release.yml" "Name=$CQOPS_PRODUCT_NAME" "AUR-desktop-Name"
+echo ""
+
+# ── 4. Package descriptions ────────────────────────────────────────────
+echo "[4] Package descriptions..."
+check_contains "$ROOT/.github/workflows/release.yml" "$CQOPS_AUR_PKGDESC" "AUR-pkgdesc"
+check_contains "$ROOT/nfpm.yaml" "fast, offline-first amateur radio logger" "nfpm-description"
+echo ""
+
+# ── 5. README ──────────────────────────────────────────────────────────
+echo "[5] README branding..."
+check_contains "$ROOT/README.md" "$CQOPS_TAGLINE" "README-tagline"
+echo ""
+
+# ── 6. CLI ─────────────────────────────────────────────────────────────
+echo "[6] CLI help text..."
+check_contains "$ROOT/internal/cli/root.go" "$CQOPS_PRODUCT_NAME" "CLI-product-name"
+echo ""
+
+# ── 7. NSIS ────────────────────────────────────────────────────────────
+echo "[7] NSIS installer..."
+check_contains "$ROOT/installer/cqops.nsi" "$CQOPS_WIN_INSTALLED_NAME" "NSIS-product-name"
+echo ""
+
+# ── 8. Product name casing ─────────────────────────────────────────────
+echo "[8] No incorrect product-name casing..."
+while IFS= read -r f; do
+	case "$f" in
+		*CHANGELOG.md|*branding.sh|*validate-branding.sh|*README.md) ;;
+		*go.sum|*go.mod|*.syso|*.ico|*.png|*.jpg|*.svg) ;;
 		*)
-			check_not_contains "$f" "Fast, minimal Go TUI" "stale 'Fast, minimal Go TUI'"
+			fail "bad-casing" "$f contains 'CQOPS' or 'CqOps' — use 'CQOps' or 'cqops'"
 			;;
 	esac
-done
-echo ""
-
-# 2. No generic terminal icon in .desktop files.
-echo "[2] Generic icon fallbacks..."
-for f in $(grep -rl "Icon=utilities-terminal\|Icon=terminal\|Icon=application-x-executable" "$ROOT" --include='*.desktop' --include='*.yml' --include='*.yaml' 2>/dev/null); do
-	check_not_contains "$f" "Icon=utilities-terminal\|Icon=terminal\|Icon=application-x-executable" "generic icon"
-done
-echo ""
-
-# 3. Desktop files must use Icon=cqops and Name=CQOps.
-echo "[3] Desktop file consistency..."
-for f in $(find "$ROOT" -name '*.desktop' 2>/dev/null); do
-	check_contains "$f" "Icon=cqops" "Icon=cqops"
-	check_contains "$f" "Name=CQOps" "Name=CQOps"
-done
-# Also check inline .desktop in release.yml.
-check_contains "$ROOT/.github/workflows/release.yml" "Icon=cqops" "Icon=cqops in AUR inline .desktop"
-check_contains "$ROOT/.github/workflows/release.yml" "Name=CQOps" "Name=CQOps in AUR inline .desktop"
-echo ""
-
-# 4. Package descriptions should use canonical short description or similar.
-echo "[4] Package description consistency..."
-check_contains "$ROOT/.github/workflows/release.yml" "Fast, offline-first amateur radio logger" "canonical description in AUR pkgdesc"
-check_contains "$ROOT/nfpm.yaml" "fast, offline-first amateur radio logger" "canonical description in nfpm"
-echo ""
-
-# 5. No hardcoded stale version in winres.json.
-echo "[5] Windows version metadata..."
-check_not_contains "$ROOT/winres/winres.json" '"version": "0\.[0-9]' "hardcoded version in winres.json"
-echo ""
-
-# 6. NSIS DisplayName uses canonical format.
-echo "[6] NSIS installer metadata..."
-check_contains "$ROOT/installer/cqops.nsi" "CQOps" "product name in NSIS"
-check_contains "$ROOT/installer/cqops.nsi" "PRODUCT_PUBLISHER" "publisher field in NSIS"
-echo ""
-
-# 7. CLI help text.
-echo "[7] CLI help text..."
-check_contains "$ROOT/internal/cli/root.go" "CQOps" "product name in CLI"
-echo ""
-
-# 8. README tagline.
-echo "[8] README branding..."
-check_contains "$ROOT/README.md" "Less clicking. More radio." "tagline in README"
-check_contains "$ROOT/README.md" "fast, offline-first amateur radio logger" "canonical description in README"
+done < <(grep -rlE '\bCQOPS\b|\bCqOps\b' "$ROOT" \
+	--include='*.go' --include='*.yaml' --include='*.yml' --include='*.json' \
+	--include='*.desktop' --include='*.nsi' --include='*.md' 2>/dev/null || true)
 echo ""
 
 echo "=== Result ==="
-if [ $VIOLATIONS -eq 0 ]; then
-	green "All branding checks passed."
+if [ "$VIOLATIONS" -eq 0 ]; then
+	green "All branding checks passed ($VIOLATIONS violations)."
 	exit 0
 else
 	red "$VIOLATIONS branding violation(s) found."
