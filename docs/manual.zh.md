@@ -1064,7 +1064,7 @@ CQOps Live 通过 Server-Sent Events（SSE）更新，无需刷新页面。
 | 字段 | 说明 |
 |---|---|
 | Header 1 | 页面标题和主视觉区域中显示的主标题。未设置时使用 “CQOps Live”。 |
-| Header 2 | 标题下方的副标题。未设置时使用 “Fast, portable ham radio logger”。 |
+| Header 2 | 标题下方的副标题。未设置时使用 “Less clicking. More radio.”。 |
 | Logo URL | 显示在左上角的公开可访问图片 URL。未设置时使用 CQOps 标志。 |
 | Event Start | `YYYY-MM-DD` 格式的日期。统计和 QSO 列表仅显示从该日期开始的数据。 |
 

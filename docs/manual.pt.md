@@ -1149,7 +1149,7 @@ No formulário da integração HTTP Server, você pode configurar:
 | Campo | Descrição |
 |---|---|
 | Header 1 | Título principal mostrado no cabeçalho e na área de destaque da página. Usa “CQOps Live” como fallback. |
-| Header 2 | Subtítulo abaixo do título. Usa “Fast, portable ham radio logger” como fallback. |
+| Header 2 | Subtítulo abaixo do título. Usa “Less clicking. More radio.” como fallback. |
 | Logo URL | URL de uma imagem acessível publicamente, mostrada no canto superior esquerdo. Usa o logotipo do CQOps como fallback. |
 | Event Start | Data no formato `YYYY-MM-DD`. Filtra estatísticas e listas de QSOs a partir dessa data. |
 
