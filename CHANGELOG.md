@@ -2,7 +2,17 @@
 
 ## v0.9.4 — 2026-07-21
 
-> **DXC path line + dashboard polish.** Smart spot filtering, DXCC badge fix, hamlib mode recognition, and band plan tune fix.
+> **DXC path line, branding consistency, and dashboard polish.** Smart spot filtering, DXCC badge fix, hamlib mode recognition, band plan tune fix, and unified product identity across all packaging channels.
+
+### Cross-Platform Branding Consistency
+- **Unified product identity**: all package descriptions, desktop entries, AUR metadata, Windows installer, executable resources, README, CLI help, dashboard headers, documentation, and CI tooling now share a single canonical branding source (`scripts/branding.sh`) with automated validation (`scripts/validate-branding.sh`).
+- **Tagline**: *"Less clicking. More radio."* now appears in README, dashboard, and all 10 manual translations.
+- **Descriptions**: replaced implementation-centric *"Fast, minimal Go TUI ham radio logger"* with the canonical *"Fast, offline-first amateur radio logger for the terminal"* across all channels.
+- **Icon fix**: AUR `.desktop` entry now uses `Icon=cqops` instead of the generic `Icon=utilities-terminal`. Desktop file simplified to `Categories=Network;HamRadio;`.
+- **Windows metadata**: `FileDescription`, `CompanyName`, `LegalCopyright`, and `ProductVersion` corrected in both `winres.json` and compiled `.syso` resources. `.syso` determinism verified in CI.
+- **AUR improvements**: PKGBUILD and `.SRCINFO` share a single `pkgdesc` variable to prevent drift. Canonical `.desktop` file sourced from the tagged release instead of a duplicated inline heredoc. Real SHA-256 checksum for the desktop file.
+- **CI validation**: new `branding-check.yml` workflow (6 jobs) — ShellCheck + branding validation, DEB/RPM build + inspection, Arch `makepkg --printsrcinfo`, `CGO_ENABLED=1 go test -race`, NSIS compilation + metadata assertions, `.syso` determinism.
+- **9-language docs**: dashboard Header 2 fallback updated to the tagline in all manual translations. Non-English introductory paragraphs preserved (awaiting native-speaker translation pass).
 
 ### DXC Path Line — Smart Filtering
 - **Same-continent filter**: spots above the QSO form now default to showing only spots heard from the same continent as the station (`SpotCont` matches configured `Continent`). Cascading fallback if no matches.
@@ -26,7 +36,7 @@
 - **Code cleanup**: removed dead `gpsTickMsg` type, converted callbook test handler to tagged switch, marked unused parameter.
 
 ### Under the Hood
-- **~15 commits**, **~12 files changed**. New DB index added (idempotent `CREATE INDEX IF NOT EXISTS`). No config migration needed from v0.9.2/v0.9.3.
+- **~25 commits**, **~27 files changed**. New DB index added (idempotent `CREATE INDEX IF NOT EXISTS`). New CI workflow for cross-platform branding/packaging validation. No config migration needed from v0.9.2/v0.9.3.
 
 ## v0.9.3 — 2026-07-21
 
