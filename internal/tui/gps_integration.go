@@ -194,10 +194,6 @@ func (m *Model) restoreGPSGridOverride() {
 	m.gps.originalStationGrid = ""
 }
 
-// GPS position is now polled from the main 1 s tick (every 60 ticks ≈ 60 s)
-// instead of a separate 1 s ticker.  See handleTick in update_handlers.go.
-type gpsTickMsg struct{}
-
 // handleGPSTick reads the latest position from the GPS client and
 // updates the status bar, toasts, and other state. Handles disconnect
 // detection and auto-reconnect.
