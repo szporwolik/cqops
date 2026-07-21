@@ -1,34 +1,13 @@
-name: Branding Validation
+name: Branding & Packaging Validation
 
 on:
   push:
     branches: [dev, main]
-    paths:
-      - 'scripts/branding.sh'
-      - 'scripts/validate-branding.sh'
-      - 'nfpm.yaml'
-      - 'installer/cqops.desktop'
-      - 'installer/cqops.nsi'
-      - 'winres/winres.json'
-      - 'internal/cli/root.go'
-      - 'README.md'
-      - '.github/workflows/release.yml'
-      - 'docs/**'
   pull_request:
-    paths:
-      - 'scripts/branding.sh'
-      - 'scripts/validate-branding.sh'
-      - 'nfpm.yaml'
-      - 'installer/cqops.desktop'
-      - 'installer/cqops.nsi'
-      - 'winres/winres.json'
-      - 'internal/cli/root.go'
-      - 'README.md'
-      - '.github/workflows/release.yml'
-      - 'docs/**'
   workflow_dispatch:
 
 jobs:
+  # ── Shell + branding validation ───────────────────────────────────────
   validate-branding:
     runs-on: ubuntu-latest
     steps:
@@ -51,4 +30,244 @@ jobs:
         run: |
           sudo apt-get install -y -qq desktop-file-utils
           desktop-file-validate installer/cqops.desktop
-          echo "Desktop file validation passed."
+
+  # ── Linux package build + inspection ──────────────────────────────────
+  validate-packages:
+    runs-on: ubuntu-latest
+    needs: validate-branding
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.26' }
+
+      - name: Install nfpm
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.41.3
+
+      - name: Build Linux binary (amd64)
+        run: |
+          CGO_ENABLED=0 go build -ldflags="-s -w" -o build/cqops-linux-amd64 ./cmd/cqops/
+
+      - name: Build DEB package
+        run: |
+          V=$(cat VERSION)
+          sed -e "s/__VERSION__/${V}/g" -e "s/__ARCH__/amd64/g" nfpm.yaml > /tmp/nfpm-deb.yaml
+          nfpm package -f /tmp/nfpm-deb.yaml -p deb -t /tmp/ --packager deb --target /tmp/cqops_${V}_amd64.deb
+
+      - name: Inspect DEB
+        run: |
+          V=$(cat VERSION)
+          echo "=== DEB metadata ==="
+          dpkg-deb --info /tmp/cqops_${V}_amd64.deb
+          echo "=== DEB contents ==="
+          dpkg-deb --contents /tmp/cqops_${V}_amd64.deb
+          echo "=== Checking for banned files ==="
+          if dpkg-deb --contents /tmp/cqops_${V}_amd64.deb | grep -qE 'branding\.sh|validate-branding\.sh'; then
+            echo "FAIL: branding scripts found in DEB package"
+            exit 1
+          fi
+          echo "=== Checking required files ==="
+          for f in /usr/bin/cqops /usr/share/applications/cqops.desktop /usr/share/icons/hicolor/scalable/apps/cqops.svg; do
+            if ! dpkg-deb --contents /tmp/cqops_${V}_amd64.deb | grep -qF "$f"; then
+              echo "FAIL: missing $f in DEB package"
+              exit 1
+            fi
+          done
+          echo "DEB package OK."
+
+      - name: Build RPM package
+        run: |
+          V=$(cat VERSION)
+          sed -e "s/__VERSION__/${V}/g" -e "s/__ARCH__/amd64/g" nfpm.yaml > /tmp/nfpm-rpm.yaml
+          nfpm package -f /tmp/nfpm-rpm.yaml -p rpm -t /tmp/ --packager rpm --target /tmp/cqops-${V}-1.x86_64.rpm
+
+      - name: Inspect RPM
+        run: |
+          sudo apt-get install -y -qq rpm 2>/dev/null || true
+          V=$(cat VERSION)
+          echo "=== RPM metadata ==="
+          rpm -qip /tmp/cqops-${V}-1.x86_64.rpm 2>/dev/null || echo "(rpm tool limited on Ubuntu — metadata not extractable)"
+          echo "=== RPM contents ==="
+          rpm -qpl /tmp/cqops-${V}-1.x86_64.rpm 2>/dev/null || echo "(rpm tool limited on Ubuntu)"
+          echo "RPM build succeeded."
+
+  # ── AUR PKGBUILD validation (Arch container, non-root) ──────────────
+  validate-aur:
+    runs-on: ubuntu-latest
+    needs: validate-branding
+    container:
+      image: archlinux:latest
+      options: --user root
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create non-root build user (makepkg refuses root)
+        run: |
+          pacman -Syu --noconfirm base-devel sudo 2>/dev/null || true
+          useradd -m builder && echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          chown -R builder:builder .
+
+      - name: Generate and validate PKGBUILD
+        shell: bash
+        run: |
+          set -euo pipefail
+          V=$(cat VERSION)
+          # Reproduce the exact PKGBUILD generation from release.yml
+          URL="https://github.com/szporwolik/cqops/releases/download/v${V}/cqops-linux-amd64.tar.gz"
+          ICON_URL="https://raw.githubusercontent.com/szporwolik/cqops/v${V}/assets/cqops-icon.svg"
+          DESKTOP_URL="https://raw.githubusercontent.com/szporwolik/cqops/v${V}/installer/cqops.desktop"
+          cat > /tmp/PKGBUILD << 'PKGEOF'
+          pkgname=cqops-bin
+          pkgver=__VERSION__
+          pkgrel=1
+          pkgdesc="Fast, offline-first amateur radio logger for the terminal"
+          arch=('x86_64')
+          url="https://github.com/szporwolik/cqops"
+          license=('Apache-2.0')
+          provides=('cqops')
+          conflicts=('cqops')
+          source=("cqops-\${pkgver}-amd64.tar.gz::__URL__"
+                  "cqops.svg::__ICON_URL__"
+                  "cqops.desktop::__DESKTOP_URL__")
+          sha256sums=('SKIP' 'SKIP' 'SKIP')
+          package() {
+              install -Dm755 cqops-linux-amd64 "\${pkgdir}/usr/bin/cqops"
+              install -Dm644 cqops.svg "\${pkgdir}/usr/share/icons/hicolor/scalable/apps/cqops.svg"
+              install -Dm644 cqops.desktop "\${pkgdir}/usr/share/applications/cqops.desktop"
+          }
+          PKGEOF
+          sed -e "s/__VERSION__/${V}/g" \
+              -e "s|__URL__|${URL}|g" \
+              -e "s|__ICON_URL__|${ICON_URL}|g" \
+              -e "s|__DESKTOP_URL__|${DESKTOP_URL}|g" \
+              /tmp/PKGBUILD > /tmp/PKGBUILD.final
+          mv /tmp/PKGBUILD.final /tmp/PKGBUILD
+
+          # Also generate .SRCINFO the same way release.yml does
+          cat > /tmp/.SRCINFO << 'SRCEOF'
+          pkgbase = cqops-bin
+          	pkgdesc = __PKGDESC__
+          	pkgver = __VERSION__
+          	pkgrel = 1
+          	url = https://github.com/szporwolik/cqops
+          	arch = x86_64
+          	license = Apache-2.0
+          	source = cqops-__VERSION__-amd64.tar.gz::__URL__
+          	source = cqops.svg::__ICON_URL__
+          	source = cqops.desktop::__DESKTOP_URL__
+          	sha256sums = SKIP
+          	sha256sums = SKIP
+          	sha256sums = SKIP
+          	provides = cqops
+          	conflicts = cqops
+
+          pkgname = cqops-bin
+          SRCEOF
+          AUR_PKGDESC="Fast, offline-first amateur radio logger for the terminal"
+          sed -e "s/__PKGDESC__/${AUR_PKGDESC}/g" \
+              -e "s/__VERSION__/${V}/g" \
+              -e "s|__URL__|${URL}|g" \
+              -e "s|__ICON_URL__|${ICON_URL}|g" \
+              -e "s|__DESKTOP_URL__|${DESKTOP_URL}|g" \
+              /tmp/.SRCINFO > /tmp/.SRCINFO.final
+          mv /tmp/.SRCINFO.final /tmp/.SRCINFO
+
+      - name: Run makepkg --printsrcinfo as non-root
+        shell: bash
+        run: |
+          su builder -c "cd /tmp && makepkg --printsrcinfo > /tmp/generated.SRCINFO"
+          echo "=== Generated .SRCINFO ==="
+          cat /tmp/generated.SRCINFO
+          echo "=== Diff against release-generated .SRCINFO ==="
+          diff -u /tmp/.SRCINFO /tmp/generated.SRCINFO && echo "SRCINFO matches — no drift."
+
+  # ── .syso determinism check ───────────────────────────────────────────
+  validate-syso:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.26' }
+
+      - name: Install go-winres
+        run: go install github.com/tc-hib/go-winres@v0.3.3
+
+      - name: Regenerate and compare .syso
+        shell: pwsh
+        run: |
+          $V = Get-Content VERSION
+          Push-Location winres
+          go-winres make --product-version $V --file-version $V --in winres.json --out ../cmd/cqops/rsrc
+          Pop-Location
+          # Check if regeneration changed anything
+          $diff = git diff -- cmd/cqops/rsrc_windows_amd64.syso cmd/cqops/rsrc_windows_386.syso
+          if ($diff) {
+            Write-Error ".syso files are out of date — regenerate with: go-winres make"
+            git diff --stat -- cmd/cqops/
+            exit 1
+          }
+          Write-Host ".syso files are up to date."
+
+  # ── Race detector tests (CGO required) ────────────────────────────────
+  test-race:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.26' }
+
+      - name: Install C compiler
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq gcc
+
+      - name: Race detector tests
+        run: CGO_ENABLED=1 go test -race ./... -timeout 300s
+
+  # ── Windows NSIS compilation ──────────────────────────────────────────
+  validate-nsis:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.26' }
+
+      - name: Build Windows exe
+        run: |
+          $V = Get-Content VERSION
+          go build -ldflags="-s -w" -o build/cqops-windows-amd64.exe ./cmd/cqops/
+
+      - name: Install NSIS
+        run: choco install nsis -y --no-progress
+
+      - name: Compile NSIS installer
+        run: |
+          $V = Get-Content VERSION
+          $makensis = 'C:\Program Files (x86)\NSIS\makensis.exe'
+          if (-not (Test-Path $makensis)) { $makensis = (Get-Command makensis -ErrorAction SilentlyContinue).Source }
+          if (-not $makensis) { throw "makensis not found" }
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          & $makensis /DVERSION=$V /DROOT=$PWD installer/cqops.nsi
+          if ($LASTEXITCODE -ne 0) { throw "NSIS compilation failed" }
+          Write-Host "NSIS installer built successfully."
+
+      - name: Verify exe metadata
+        run: |
+          $info = (Get-Item build/cqops-windows-amd64.exe).VersionInfo
+          $err = $false
+          function check($field, $expected) {
+            $actual = $info.$field
+            if ($actual -ne $expected) {
+              Write-Host "FAIL: $field = '$actual', expected '$expected'"
+              $script:err = $true
+            } else {
+              Write-Host "OK: $field = '$actual'"
+            }
+          }
+          check ProductName      'CQOps'
+          check FileDescription  'CQOps — Amateur Radio Logger'
+          check CompanyName      'Szymon Porwolik'
+          check InternalName     'cqops'
+          check OriginalFilename 'cqops.exe'
+          check ProductVersion   (Get-Content VERSION)
+          check FileVersion      (Get-Content VERSION)
+          check LegalCopyright   'Copyright © 2026 Szymon Porwolik'
+          if ($err) { throw "VersionInfo assertions failed" }
+          Write-Host "All VersionInfo assertions passed."

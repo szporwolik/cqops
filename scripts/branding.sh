@@ -27,7 +27,7 @@ CQOPS_FULL_DESC="CQOps is a fast, offline-first amateur radio logger for the ter
 # ── Desktop entry ─────────────────────────────────────────────────────────
 CQOPS_DESKTOP_COMMENT="Fast, offline-first amateur radio logging for the terminal"
 CQOPS_DESKTOP_GENERIC_NAME="Amateur Radio Logger"
-CQOPS_DESKTOP_CATEGORIES="HamRadio;Utility;Network;"
+CQOPS_DESKTOP_CATEGORIES="Network;HamRadio;"
 CQOPS_DESKTOP_KEYWORDS="ham radio;amateur radio;logger;logging;SOTA;POTA;contest;APRS;WSJT-X;Wavelog;"
 
 # ── Windows metadata ──────────────────────────────────────────────────────

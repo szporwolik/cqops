@@ -6,6 +6,6 @@ Comment=Fast, offline-first amateur radio logging for the terminal
 Exec=cqops
 Icon=cqops
 Terminal=true
-Categories=HamRadio;Utility;Network;
+Categories=Network;HamRadio;
 Keywords=ham radio;amateur radio;logger;logging;SOTA;POTA;contest;APRS;WSJT-X;Wavelog;
 StartupNotify=false
