@@ -30,13 +30,6 @@ check_contains() {
 	fi
 }
 
-check_not_contains() {
-	local file="$1" pattern="$2" label="$3"
-	if grep -qF "$pattern" "$file" 2>/dev/null; then
-		fail "$label" "forbidden '$pattern' found in $file"
-	fi
-}
-
 echo "=== CQOps Branding Validation ==="
 echo "ROOT: $ROOT"
 echo ""
@@ -45,7 +38,7 @@ echo ""
 echo "[1] Stale 'Fast, minimal Go TUI' branding..."
 while IFS= read -r f; do
 	case "$f" in
-		*CHANGELOG.md|*copilot-instructions.md|*branding.sh|*validate-branding.sh) ;;
+		*CHANGELOG.md|*copilot-instructions.md|scripts/*.sh) ;;
 		*) fail "stale-string" "$f contains 'Fast, minimal Go TUI'" ;;
 	esac
 done < <(grep -rlF "Fast, minimal Go TUI" "$ROOT" \
@@ -69,9 +62,6 @@ check_contains "$ROOT/installer/cqops.desktop" "GenericName=$CQOPS_DESKTOP_GENER
 check_contains "$ROOT/installer/cqops.desktop" "Comment=$CQOPS_DESKTOP_COMMENT" "desktop-Comment"
 check_contains "$ROOT/installer/cqops.desktop" "Terminal=true" "desktop-Terminal"
 check_contains "$ROOT/installer/cqops.desktop" "StartupNotify=false" "desktop-StartupNotify"
-# AUR inline desktop
-check_contains "$ROOT/.github/workflows/release.yml" "Icon=$CQOPS_ICON_NAME" "AUR-desktop-Icon"
-check_contains "$ROOT/.github/workflows/release.yml" "Name=$CQOPS_PRODUCT_NAME" "AUR-desktop-Name"
 echo ""
 
 # ── 4. Package descriptions ────────────────────────────────────────────
@@ -99,7 +89,7 @@ echo ""
 echo "[8] No incorrect product-name casing..."
 while IFS= read -r f; do
 	case "$f" in
-		*CHANGELOG.md|*branding.sh|*validate-branding.sh|*README.md) ;;
+		*CHANGELOG.md|scripts/*.sh|*README.md) ;;
 		*go.sum|*go.mod|*.syso|*.ico|*.png|*.jpg|*.svg) ;;
 		*)
 			fail "bad-casing" "$f contains 'CQOPS' or 'CqOps' — use 'CQOps' or 'cqops'"

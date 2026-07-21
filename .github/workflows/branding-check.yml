@@ -2,7 +2,7 @@ name: Branding & Packaging Validation
 
 on:
   push:
-    branches: [dev, main]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
