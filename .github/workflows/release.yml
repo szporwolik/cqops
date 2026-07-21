@@ -431,24 +431,30 @@ jobs:
           set -euo pipefail
           V="$VERSION"
 
-          # Download the amd64 tarball and the SVG icon; compute SHA-256.
+          # Download the amd64 tarball and compute SHA-256.
           TARBALL="cqops-linux-amd64.tar.gz"
           URL="https://github.com/szporwolik/cqops/releases/download/v${V}/${TARBALL}"
           curl -sSLo "/tmp/${TARBALL}" "$URL"
-          SHA256=$(sha256sum "/tmp/${TARBALL}" | awk '{print $1}')
+          TARBALL_SHA256=$(sha256sum "/tmp/${TARBALL}" | awk '{print $1}')
           rm "/tmp/${TARBALL}"
 
           ICON_URL="https://raw.githubusercontent.com/szporwolik/cqops/v${V}/assets/cqops-icon.svg"
 
-          # Use shared metadata variable — prevents pkgdesc drift between
-          # PKGBUILD and .SRCINFO (makepkg not available on Ubuntu runner).
-          AUR_PKGDESC="Fast, offline-first amateur radio logger for the terminal"
+          # Download the canonical .desktop file and compute its SHA-256
+          # so the AUR package has integrity verification — not SKIP.
           DESKTOP_URL="https://raw.githubusercontent.com/szporwolik/cqops/v${V}/installer/cqops.desktop"
+          curl -sSLo "/tmp/cqops.desktop" "$DESKTOP_URL"
+          DESKTOP_SHA256=$(sha256sum "/tmp/cqops.desktop" | awk '{print $1}')
+          rm "/tmp/cqops.desktop"
+
+          # Shared metadata — prevents drift between PKGBUILD and .SRCINFO.
+          AUR_PKGDESC="Fast, offline-first amateur radio logger for the terminal"
 
           # Write PKGBUILD.  Downloads the pre-built tarball, icon, and
           # canonical .desktop file from GitHub — no compilation needed
           # (hence "cqops-bin"). The desktop file is the same one used
           # for DEB/RPM packaging, avoiding duplicated maintenance.
+          # SHA-256 sums are computed above for integrity verification.
           cat > PKGBUILD << EOF
           # Maintainer: Szymon Porwolik <szporwolik@users.noreply.github.com>
           pkgname=cqops-bin
@@ -463,9 +469,9 @@ jobs:
           source=("cqops-\${pkgver}-amd64.tar.gz::${URL}"
                   "cqops.svg::${ICON_URL}"
                   "cqops.desktop::${DESKTOP_URL}")
-          sha256sums=('${SHA256}'
+          sha256sums=('${TARBALL_SHA256}'
                       'SKIP'
-                      'SKIP')
+                      '${DESKTOP_SHA256}')
           package() {
               install -Dm755 cqops-linux-amd64 "\${pkgdir}/usr/bin/cqops"
               install -Dm644 cqops.svg "\${pkgdir}/usr/share/icons/hicolor/scalable/apps/cqops.svg"
@@ -487,9 +493,9 @@ jobs:
           	source = cqops-${V}-amd64.tar.gz::${URL}
           	source = cqops.svg::${ICON_URL}
           	source = cqops.desktop::${DESKTOP_URL}
-          	sha256sums = ${SHA256}
+          	sha256sums = ${TARBALL_SHA256}
           	sha256sums = SKIP
-          	sha256sums = SKIP
+          	sha256sums = ${DESKTOP_SHA256}
           	provides = cqops
           	conflicts = cqops
 
