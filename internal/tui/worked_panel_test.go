@@ -376,11 +376,11 @@ func TestBuildWorkedPanelLayout_FullWidthRows(t *testing.T) {
 	if len(layout.FullWidthRows) == 0 {
 		t.Fatal("expected full-width distribution rows")
 	}
-	if got := layout.FullWidthRows[0].label; got != "Bands" {
-		t.Fatalf("expected first full-width row Bands, got %q", got)
+	if got := layout.FullWidthRows[0].label; got != "Call Bands" {
+		t.Fatalf("expected first full-width row Call Bands, got %q", got)
 	}
-	if got := layout.FullWidthRows[1].label; got != "Modes" {
-		t.Fatalf("expected second full-width row Modes, got %q", got)
+	if got := layout.FullWidthRows[1].label; got != "Call Modes" {
+		t.Fatalf("expected second full-width row Call Modes, got %q", got)
 	}
 	if layout.HistoryScope != "call" {
 		t.Fatalf("expected call-history scope, got %q", layout.HistoryScope)
@@ -587,9 +587,9 @@ func TestWorkedPanel_NewDXCCHistory(t *testing.T) {
 		Country:  "Testland",
 	}
 	view := m.renderWorkedPanel(d, 60)
-	// Left column should show DXCC and Grid as NEW — no zero-filler on right.
-	if !strings.Contains(view, "999") {
-		t.Error("expected DXCC 999 in output")
+	// Left column should show DXCC country name (Testland) and grid as NEW.
+	if !strings.Contains(view, "Testland") {
+		t.Error("expected DXCC country Testland in output")
 	}
 	if !strings.Contains(view, "ZZ99") {
 		t.Error("expected grid ZZ99 in output")
