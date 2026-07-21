@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.9.4 — 2026-07-21
+
+> **DXC path line + dashboard polish.** Smart spot filtering, DXCC badge fix, hamlib mode recognition, and band plan tune fix.
+
+### DXC Path Line — Smart Filtering
+- **Same-continent filter**: spots above the QSO form now default to showing only spots heard from the same continent as the station (`SpotCont` matches configured `Continent`). Cascading fallback if no matches.
+- **Same-mode filter**: spots are filtered by mode category — `CW`, `DIGI` (FT8/FT4/RTTY/PKT), or `PHONE` (SSB/AM/FM). Switches automatically when you change mode on the radio.
+- **15-minute time window**: spots older than 15 minutes are excluded by default. Falls back to time-only if continent+mode filters produce no results.
+- **Cache invalidation**: added generation counter (`rawGen`) so the line redraws immediately when new spots arrive, even when the 600-spot buffer is full.
+- **Ctrl+P reference auto-fill**: cycling through on-frequency spots now parses the spot comment for SOTA/POTA/WWFF/IOTA references and auto-fills the QSO form.
+- **DB index**: new composite index `idx_dxc_spots_band_time` on `dxc_spots(band, received_at)` for efficient band+time queries.
+
+### Dashboard — New DXCC Badge Fix
+- **Case-insensitive DXCC matching**: `countryWorkedBefore` now uses the same multi-strategy matching as the F2 partner page — DXCC entity number, case-insensitive country name, and prefix LIKE matching. Fixes "New DXCC" badge incorrectly showing when the DXCC was already worked but stored under a different country name casing (e.g. `SAUDI ARABIA` from Wavelog vs `Saudi Arabia` from QRZ).
+
+### Mode & Rig Compatibility
+- **Hamlib mode recognition**: `spotModeCategory` now recognizes `PKTUSB`, `PKTLSB`, `CWR`, `RTTYR`, `FMN`, `WFM`, `SSB`, and `PKT` variants — fixes mode filtering being silently disabled when the rig reports hamlib-specific mode names.
+- **Rig mode normalization**: `rigModeMap` now maps `PKTUSB`/`PKTLSB`/`PKTFM` → `PKT` and `FMN` → `FM`.
+
+### Fixes
+- **Band plan SAT false positive**: tuning a broadcast station (e.g. "Radio Antena Satelor") no longer incorrectly selects FM mode. Satellite detection now uses word-boundary matching.
+- **Default continent**: logbooks without an explicit `continent` field now default to `EU`, so the DXC path line continent filter works on upgraded configs.
+- **Test suite**: two stale tests fixed. All 32 test packages pass.
+- **Code cleanup**: removed dead `gpsTickMsg` type, converted callbook test handler to tagged switch, marked unused parameter.
+
+### Under the Hood
+- **~15 commits**, **~12 files changed**. New DB index added (idempotent `CREATE INDEX IF NOT EXISTS`). No config migration needed from v0.9.2/v0.9.3.
+
 ## v0.9.3 — 2026-07-21
 
 > **Polish release.** First-run wizard improvements, secret masking, navigation fixes, and AUR packaging complete.
