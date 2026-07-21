@@ -1,5 +1,5 @@
 # Copilot Instructions for CQOps
-CQOps is a fast, minimal Go TUI ham radio logger built with Bubble Tea v2, Bubbles, and Lip Gloss.
+CQOps is a fast, offline-first amateur radio logger for the terminal, built with Bubble Tea v2, Bubbles, and Lip Gloss.
 
 The application targets normal desktops but must also stay usable on low-end machines, Raspberry Pi-class devices, small portable screens, and field/portable ham radio setups. Prefer simple, fast, maintainable code over clever abstractions.
 

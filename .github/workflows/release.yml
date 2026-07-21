@@ -431,66 +431,77 @@ jobs:
           set -euo pipefail
           V="$VERSION"
 
-          # Download the amd64 tarball and the SVG icon; compute SHA-256.
+          # Download the amd64 tarball and compute SHA-256.
           TARBALL="cqops-linux-amd64.tar.gz"
           URL="https://github.com/szporwolik/cqops/releases/download/v${V}/${TARBALL}"
           curl -sSLo "/tmp/${TARBALL}" "$URL"
-          SHA256=$(sha256sum "/tmp/${TARBALL}" | awk '{print $1}')
+          TARBALL_SHA256=$(sha256sum "/tmp/${TARBALL}" | awk '{print $1}')
           rm "/tmp/${TARBALL}"
 
           ICON_URL="https://raw.githubusercontent.com/szporwolik/cqops/v${V}/assets/cqops-icon.svg"
 
-          # Write PKGBUILD.  Downloads the pre-built tarball and icon from
-          # GitHub — no compilation needed (hence "cqops-bin").
+          # Download the icon and compute SHA-256 for AUR integrity.
+          curl -sSLo "/tmp/cqops-icon.svg" "$ICON_URL"
+          ICON_SHA256=$(sha256sum "/tmp/cqops-icon.svg" | awk '{print $1}')
+          rm "/tmp/cqops-icon.svg"
+
+          # Download the canonical .desktop file and compute its SHA-256.
+          DESKTOP_URL="https://raw.githubusercontent.com/szporwolik/cqops/v${V}/installer/cqops.desktop"
+          curl -sSLo "/tmp/cqops.desktop" "$DESKTOP_URL"
+          DESKTOP_SHA256=$(sha256sum "/tmp/cqops.desktop" | awk '{print $1}')
+          rm "/tmp/cqops.desktop"
+
+          # Shared metadata — prevents drift between PKGBUILD and .SRCINFO.
+          AUR_PKGDESC="Fast, offline-first amateur radio logger for the terminal"
+
+          # Write PKGBUILD.  Downloads the pre-built tarball, icon, and
+          # canonical .desktop file from GitHub — no compilation needed
+          # (hence "cqops-bin"). The desktop file is the same one used
+          # for DEB/RPM packaging, avoiding duplicated maintenance.
+          # SHA-256 sums are computed above for integrity verification.
           cat > PKGBUILD << EOF
           # Maintainer: Szymon Porwolik <szporwolik@users.noreply.github.com>
           pkgname=cqops-bin
           pkgver=${V}
           pkgrel=1
-          pkgdesc="Fast, minimal Go TUI ham radio logger"
+          pkgdesc="${AUR_PKGDESC}"
           arch=('x86_64')
           url="https://github.com/szporwolik/cqops"
           license=('Apache-2.0')
           provides=('cqops')
           conflicts=('cqops')
           source=("cqops-\${pkgver}-amd64.tar.gz::${URL}"
-                  "cqops.svg::${ICON_URL}")
-          sha256sums=('${SHA256}'
-                      'SKIP')
+                  "cqops.svg::${ICON_URL}"
+                  "cqops.desktop::${DESKTOP_URL}")
+          sha256sums=('${TARBALL_SHA256}'
+                      '${ICON_SHA256}'
+                      '${DESKTOP_SHA256}')
           package() {
               install -Dm755 cqops-linux-amd64 "\${pkgdir}/usr/bin/cqops"
               install -Dm644 cqops.svg "\${pkgdir}/usr/share/icons/hicolor/scalable/apps/cqops.svg"
-              install -Dm644 /dev/stdin "\${pkgdir}/usr/share/applications/cqops.desktop" << 'DESKTOP'
-          [Desktop Entry]
-          Name=CQOps
-          Comment=Fast, minimal Go TUI ham radio logger
-          Exec=cqops
-          Terminal=true
-          Type=Application
-          Categories=HamRadio;Utility;Network;
-          Keywords=ham;radio;logging;qso;adif;wsjtx;dx;contest;sota;pota;wwff;iota;wavelog;qrz;dxcc;flrig;hamlib;
-          Icon=utilities-terminal
-          StartupNotify=true
-          DESKTOP
+              install -Dm644 cqops.desktop "\${pkgdir}/usr/share/applications/cqops.desktop"
           }
           EOF
 
           # Generate .SRCINFO (required by AUR).  Written manually because
-          # makepkg is not available on Ubuntu CI runners.
+          # makepkg is not available on Ubuntu CI runners.  Uses the same
+          # AUR_PKGDESC variable as PKGBUILD to prevent drift.
           cat > .SRCINFO << EOF2
           pkgbase = cqops-bin
-          	pkgdesc = Fast, minimal Go TUI ham radio logger
+          	pkgdesc = ${AUR_PKGDESC}
           	pkgver = ${V}
           	pkgrel = 1
           	url = https://github.com/szporwolik/cqops
           	arch = x86_64
           	license = Apache-2.0
-          	source = cqops-${V}-amd64.tar.gz::${URL}
-          	source = cqops.svg::${ICON_URL}
-          	sha256sums = ${SHA256}
-          	sha256sums = SKIP
           	provides = cqops
           	conflicts = cqops
+          	source = cqops-\${pkgver}-amd64.tar.gz::${URL}
+          	source = cqops.svg::${ICON_URL}
+          	source = cqops.desktop::${DESKTOP_URL}
+          	sha256sums = ${TARBALL_SHA256}
+          	sha256sums = ${ICON_SHA256}
+          	sha256sums = ${DESKTOP_SHA256}
 
           pkgname = cqops-bin
           EOF2
@@ -569,7 +580,7 @@ jobs:
   prune-releases:
     runs-on: ubuntu-latest
     needs: create-github-release
-    if: always() && needs.create-github-release.result == 'success'
+    if: false  # disabled — re-enable when ready to auto-prune old releases
     permissions:
       contents: write
     steps:

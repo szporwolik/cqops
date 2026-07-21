@@ -1,11 +1,11 @@
 ---
 title: CQOps User Manual
-description: User guide for installing, configuring, and using CQOps — a fast, terminal-first amateur radio logger
+description: User guide for installing, configuring, and using CQOps — a fast, offline-first amateur radio logger
 ---
 
 # CQOps User Manual
 
-CQOps is a fast, terminal-first amateur radio logger for operators who want reliable keyboard logging with low system overhead. It is designed for shack use, portable operation, club stations, field days, and machines such as Raspberry Pi-class devices or older laptops.
+CQOps is a fast, offline-first amateur radio logger for the terminal, built for portable and field operations, SOTA/POTA activations, contests, and club stations. It is designed for shack use, portable operation, club stations, field days, and machines such as Raspberry Pi-class devices or older laptops.
 
 CQOps always saves QSOs locally first. Internet-based integrations are optional.
 
@@ -1086,7 +1086,7 @@ In the HTTP Server integration form, you can configure:
 | Field | Description |
 |---|---|
 | Header 1 | Main title shown in the page header and hero area. Falls back to “CQOps Live”. |
-| Header 2 | Subtitle below the title. Falls back to “Fast, portable ham radio logger”. |
+| Header 2 | Subtitle below the title. Falls back to “Less clicking. More radio.”. |
 | Logo URL | Publicly accessible image URL shown in the top-left corner. Falls back to the CQOps logo. |
 | Event Start | Date in `YYYY-MM-DD` format. Filters stats and QSO lists from that date onward. |
 

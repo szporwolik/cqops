@@ -11,7 +11,9 @@
 [![Cloudsmith](https://img.shields.io/badge/OSS%20hosting%20by-cloudsmith-blue?logo=cloudsmith&style=flat-square)](https://cloudsmith.com)
 [![AUR](https://img.shields.io/aur/version/cqops-bin?label=AUR&color=1793d1&style=flat-square)](https://aur.archlinux.org/packages/cqops-bin)
 
-A small, fast, offline-first amateur radio logger for the terminal — built for portable/field ops, SOTA/POTA activations, and club stations with rotating operators. Runs on Raspberry Pi, old laptops, or any low-power machine without a GUI, over SSH or a local terminal. Hot-swap operators and logbooks, log via WSJT-X auto-feed or keyboard, sync to Wavelog. GPS-aware — uses your receiver's position for the station grid automatically. Works fully offline with an embedded world map, graceful degradation, and `--offline` flag.
+**Less clicking. More radio.**
+
+CQOps is a fast, offline-first amateur radio logger for the terminal, built for portable and field operations, SOTA/POTA activations, contests, and club stations with rotating operators. Log contacts manually or automatically through WSJT-X, switch operators and logbooks instantly, synchronize with Wavelog, and use GPS-aware station positioning with APRS support and a built-in browser dashboard. CQOps runs on Raspberry Pi, older laptops, low-power computers, local terminals, and remote systems over SSH.
 
 > 📖 **Full documentation, installation guides, and translations at [docs.cqops.com](https://docs.cqops.com/)** — English, Polski, Deutsch, Español, 日本語, Français, Italiano, Português (BR), Русский, 中文 (简体).
 

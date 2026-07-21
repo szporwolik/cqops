@@ -594,11 +594,14 @@ func (m *Model) dxcPathLine(width int) string {
 	// freqKhz is in MHz from the form; convert to kHz for comparison.
 	curKhz := freqKhz * 1000
 
-	// Build cache signature: frequency + spot count + width + rig identity.
+	// Build cache signature: frequency + spot count + width + rig identity
+	// + continent + mode (these affect the smart filter).
+	modeCat := spotModeCategory(strings.TrimSpace(m.fields[fieldMode].Value()))
+	stationCont := m.App.Logbook.Station.Continent
 	var sigB strings.Builder
-	fmt.Fprintf(&sigB, "%.3f|%d|%d|%s|%s|%s|%s", freqKhz, len(m.dxc.cachedRaw), width,
+	fmt.Fprintf(&sigB, "%.3f|%d|%d|%s|%s|%s|%s|%s|%s", freqKhz, m.dxc.rawGen, width,
 		m.App.Logbook.Station.RigName, m.App.Logbook.Station.RigPower(m.App.Config.Rigs),
-		m.App.LogbookName, m.App.Logbook.ActiveContest)
+		m.App.LogbookName, m.App.Logbook.ActiveContest, stationCont, modeCat)
 	sig := sigB.String()
 	if m.rc.dxcPathSig == sig && m.rc.dxcPathLine != "" {
 		return m.rc.dxcPathLine
@@ -619,17 +622,52 @@ func (m *Model) dxcPathLine(width int) string {
 			spots = append(spots, s)
 		}
 	}
-	// Also check DB-fresh spots: cachedRaw may be empty if no new spots arrived.
+	// DB fallback: cachedRaw may be empty on startup before the first spots
+	// arrive. Use the band+time-filtered query (idx_dxc_spots_band_time)
+	// so SQLite does the heavy lifting — returns only recent spots on the
+	// current band, already sorted by frequency.
 	if len(spots) == 0 && m.App.DB != nil {
-		dbSpots, err := store.QueryDXCSpots(m.App.DB)
+		dbSpots, err := store.QueryDXCSpotsByBand(m.App.DB, band, 900)
 		if err == nil {
-			for _, s := range dbSpots {
-				if s.Frequency >= lo*1000 && s.Frequency <= hi*1000 && s.Frequency > 0 {
-					spots = append(spots, s)
-				}
-			}
+			spots = dbSpots
 		}
 	}
+	// ── Smart filtering ────────────────────────────────────────────────
+	// Default behaviour: show spots from the same continent, same mode
+	// category (DIGI/PHONE/CW), and no older than 15 minutes. Filters
+	// are applied with fallback: if filtering removes everything we
+	// relax them one by one instead of showing an empty line.
+	now := time.Now().UTC().Unix()
+	applyFilters := func(spots []store.DXCSpot, cont, mc string, maxAgeSec int64) []store.DXCSpot {
+		filtered := make([]store.DXCSpot, 0, len(spots))
+		for _, s := range spots {
+			if cont != "" && s.SpotCont != "" && s.SpotCont != cont {
+				continue
+			}
+			if mc != "" && s.ModeCat != "" && s.ModeCat != mc {
+				continue
+			}
+			if maxAgeSec > 0 && s.ReceivedAt > 0 && now-s.ReceivedAt > maxAgeSec {
+				continue
+			}
+			filtered = append(filtered, s)
+		}
+		return filtered
+	}
+	// Try full filter (continent + mode + time).
+	filtered := applyFilters(spots, stationCont, modeCat, 900)
+	if len(filtered) == 0 {
+		// Fallback 1: drop continent, keep mode + time.
+		filtered = applyFilters(spots, "", modeCat, 900)
+	}
+	if len(filtered) == 0 {
+		// Fallback 2: drop mode, keep time only.
+		filtered = applyFilters(spots, "", "", 900)
+	}
+	if len(filtered) > 0 {
+		spots = filtered
+	}
+
 	if len(spots) == 0 {
 		m.rc.dxcPathSig = sig
 		m.rc.dxcPathLine = ""

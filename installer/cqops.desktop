@@ -1,11 +1,11 @@
 [Desktop Entry]
-Name=CQOps
-Comment=A small, fast, offline-first ham radio logger for the terminal — portable ops, SOTA/POTA, club stations, contest logging, APRS, GPS, and a built-in browser dashboard
-Exec=cqops
-Terminal=true
 Type=Application
-Categories=HamRadio;Utility;Network;
-Keywords=ham;radio;logging;qso;adif;wsjtx;dx;contest;sota;pota;wwff;iota;wavelog;qrz;dxcc;flrig;hamlib;
+Name=CQOps
+GenericName=Amateur Radio Logger
+Comment=Fast, offline-first amateur radio logging for the terminal
+Exec=cqops
 Icon=cqops
-StartupNotify=true
-MimeType=application/x-adif;text/x-adif;
+Terminal=true
+Categories=Network;HamRadio;
+Keywords=ham radio;amateur radio;logger;logging;SOTA;POTA;contest;APRS;WSJT-X;Wavelog;
+StartupNotify=false

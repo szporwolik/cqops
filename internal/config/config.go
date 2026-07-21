@@ -172,6 +172,12 @@ func (c *Config) Normalize() {
 			lb.Station.IARURegion = 1
 			c.Logbooks[id] = lb
 		}
+		// Default continent to "EU" for logbooks that don't have it set —
+		// used by the DXC path line continent filter above the QSO form.
+		if lb.Station.Continent == "" {
+			lb.Station.Continent = "EU"
+			c.Logbooks[id] = lb
+		}
 	}
 
 	// Default Wavelog callbook to enabled for existing Wavelog users.

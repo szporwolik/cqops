@@ -125,6 +125,9 @@ var migrations = []string{
 	)`,
 	`CREATE INDEX IF NOT EXISTS idx_dxc_spots_received ON dxc_spots(received_at)`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS idx_dxc_spots_call ON dxc_spots(dx_call)`,
+	// Composite index for band + time queries — used by the DXC path line
+	// above the QSO form to efficiently fetch recent spots on the current band.
+	`CREATE INDEX IF NOT EXISTS idx_dxc_spots_band_time ON dxc_spots(band, received_at)`,
 
 	// ── psk_spots — PSK Reporter spot cache ──────────────────────────────────
 	`CREATE TABLE IF NOT EXISTS psk_spots (

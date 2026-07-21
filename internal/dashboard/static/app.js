@@ -326,7 +326,7 @@ function renderAll(snap){
   _refreshQR(displayCfg);
   if(displayCfg.header1){hdTitle.textContent=displayCfg.header1;heroHeadline.textContent=displayCfg.header1}
   else{hdTitle.textContent='CQOps Live';heroHeadline.textContent='CQOps Live'}
-  hdSubtitle.textContent=displayCfg.header2||'Fast, portable ham radio logger';heroSubline.textContent=displayCfg.header2||'';
+  hdSubtitle.textContent=displayCfg.header2||'Less clicking. More radio.';heroSubline.textContent=displayCfg.header2||'';
   // Marketing/PR line in hero when no custom header2 is configured.
   heroPromo.textContent=displayCfg.header2?'':'Powered by CQOps &mdash; cqops.com';
   // Station

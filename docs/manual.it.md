@@ -1071,7 +1071,7 @@ Nel modulo di integrazione **HTTP Server** puoi configurare:
 | Field | Description |
 |---|---|
 | Header 1 | Titolo principale nell’intestazione della pagina e nell’area hero. Usa «CQOps Live» come valore di riserva. |
-| Header 2 | Sottotitolo sotto il titolo. Usa «Fast, portable ham radio logger» come valore di riserva. |
+| Header 2 | Sottotitolo sotto il titolo. Usa "Less clicking. More radio." come valore di riserva. |
 | Logo URL | URL pubblico dell’immagine mostrata in alto a sinistra. Usa il logo CQOps come valore di riserva. |
 | Event Start | Data in formato `YYYY-MM-DD`. Filtra statistiche ed elenchi QSO a partire da quella data. |
 

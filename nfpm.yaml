@@ -12,12 +12,13 @@ section: "hamradio"
 priority: "optional"
 maintainer: "Szymon Porwolik <szporwolik@users.noreply.github.com>"
 description: |
-  A small, fast, offline-first amateur radio logger for the terminal —
-  built for portable/field ops, SOTA/POTA activations, and club stations
-  with rotating operators. Hot-swap operators and logbooks, log via
-  WSJT-X auto-feed or keyboard, sync to Wavelog. GPS-aware with APRS
-  beaconing and a built-in browser dashboard. Runs on Raspberry Pi,
-  old laptops, or any low-power machine over SSH or a local terminal.
+  CQOps is a fast, offline-first amateur radio logger for the terminal, built
+  for portable and field operations, SOTA/POTA activations, contests, and club
+  stations with rotating operators. Log contacts manually or automatically
+  through WSJT-X, switch operators and logbooks instantly, synchronize with
+  Wavelog, and use GPS-aware station positioning with APRS support and a
+  built-in browser dashboard. CQOps runs on Raspberry Pi, older laptops,
+  low-power computers, local terminals, and remote systems over SSH.
 vendor: "Szymon Porwolik"
 homepage: "https://github.com/szporwolik/cqops"
 license: "Apache-2.0"

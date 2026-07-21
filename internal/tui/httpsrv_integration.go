@@ -812,26 +812,53 @@ func cloneIDs(a []int64) []int64 {
 }
 
 // countryWorkedBefore checks whether any QSO exists for the given country
-// by a different base_call than the current active call.
-// Results are cached per (country, baseCall) pair — cleared on QSO save.
+// (or its DXCC entity number) by any call, including the current active call.
+// Results are cached per (country, dxcc, baseCall) pair — cleared on QSO save.
+//
+// Matching uses the same strategy as GetWorkedSummary for consistency:
+//
+//	dxcc = ? OR LOWER(country) = LOWER(?) OR LOWER(country) LIKE LOWER(?)
+//
+// This covers exact DXCC entity number matches, case-insensitive country name
+// matches, and prefix variants (e.g. "United States" vs "United States of America").
 func (m *Model) countryWorkedBefore(country string) bool {
 	if m.App.DB == nil || country == "" {
 		return false
 	}
+
+	// Resolve the DXCC entity number from Big CTY for the active call.
+	// This is the most reliable matching key — country names can vary
+	// between import sources (e.g. "USA" vs "United States").
+	dxcc := ""
+	if p := m.dxccLookup(pushDashboardLastCall); p != nil {
+		dxcc = fmt.Sprintf("%d", p.DXCC)
+	}
+
 	baseCall := qso.DeriveBaseCall(pushDashboardLastCall)
 
-	// Cache key: country + baseCall. Cache lives for the duration the
-	// current call is active; invalidateDashboardFlags clears it.
-	cacheKey := country + "|" + baseCall
+	// Cache key includes all matching inputs to avoid stale results
+	// when the caller's country or DXCC resolution changes.
+	cacheKey := country + "|" + dxcc + "|" + baseCall
 	if cached, ok := countryWorkedCache[cacheKey]; ok {
 		return cached
 	}
 
+	// Match by DXCC entity number when available, then fall back to
+	// case-insensitive country name (exact and prefix). Identical to the
+	// strategy used by store.GetWorkedSummary for the F2 partner page.
 	var count int
-	err := m.App.DB.QueryRow(
-		`SELECT COUNT(*) FROM qsos WHERE country = ? AND base_call != ? LIMIT 1`,
-		country, baseCall,
-	).Scan(&count)
+	var err error
+	if dxcc != "" {
+		err = m.App.DB.QueryRow(
+			`SELECT COUNT(*) FROM qsos WHERE (dxcc = ? OR LOWER(country) = LOWER(?) OR LOWER(country) LIKE LOWER(?)) AND base_call != ? LIMIT 1`,
+			dxcc, country, country+"%", baseCall,
+		).Scan(&count)
+	} else {
+		err = m.App.DB.QueryRow(
+			`SELECT COUNT(*) FROM qsos WHERE (LOWER(country) = LOWER(?) OR LOWER(country) LIKE LOWER(?)) AND base_call != ? LIMIT 1`,
+			country, country+"%", baseCall,
+		).Scan(&count)
+	}
 	result := err == nil && count > 0
 	countryWorkedCache[cacheKey] = result
 	return result

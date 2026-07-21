@@ -1,9 +1,9 @@
 ---
 title: CQOps Documentation
-description: Fast, terminal-first amateur radio logger — offline-first, QRP-ready, built for portable ops, club stations, and hot-seat logging
+description: Fast, offline-first amateur radio logger for the terminal — portable ops, SOTA/POTA, contests, club stations, and field operations
 ---
 
-Fast, terminal-first amateur radio logging — offline-first, QRP-ready, built for portable ops, club stations, and hot-seat logging. Runs on Windows, Linux, macOS, and Raspberry Pi.
+Fast, offline-first amateur radio logger for the terminal — portable ops, SOTA/POTA, contests, club stations, and field operations. Runs on Windows, Linux, macOS, and Raspberry Pi.
 
 ---
 

@@ -271,7 +271,8 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cm.width, cm.height = msg.Width, msg.Height
 
 	case callbookTestMsg:
-		if msg.provider == "hamqth" {
+		switch msg.provider {
+		case "hamqth":
 			cm.hamqthTesting = false
 			if msg.err != nil {
 				cm.hamqthTestResult = friendlyHTestError(msg.err)
@@ -286,7 +287,7 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cm.TestToast = "HamQTH: connected, but test lookup returned no data"
 				applog.Warn("HamQTH test: no data returned")
 			}
-		} else if msg.provider == "qrzru" {
+		case "qrzru":
 			cm.qrzruTesting = false
 			if msg.err != nil {
 				cm.qrzruTestResult = friendlyQRZError(msg.err)
@@ -301,7 +302,7 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cm.TestToast = "QRZ.RU: connected, but lookup returned no data"
 				applog.Warn("QRZ.RU test: no data returned")
 			}
-		} else {
+		default:
 			cm.qrzTesting = false
 			if msg.err != nil {
 				cm.qrzTestResult = friendlyQRZError(msg.err)

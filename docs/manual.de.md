@@ -1072,7 +1072,7 @@ Im Integrationsformular **HTTP Server** können Sie Folgendes konfigurieren:
 | Field | Description |
 |---|---|
 | Header 1 | Haupttitel im Seitenkopf und im Hero-Bereich. Fällt auf „CQOps Live“ zurück. |
-| Header 2 | Untertitel unter dem Titel. Fällt auf „Fast, portable ham radio logger“ zurück. |
+| Header 2 | Untertitel unter dem Titel. Fällt auf „Less clicking. More radio.“ zurück. |
 | Logo URL | Öffentlich erreichbare Bild-URL oben links. Fällt auf das CQOps-Logo zurück. |
 | Event Start | Datum im Format `YYYY-MM-DD`. Filtert Statistiken und QSO-Listen ab diesem Datum. |
 
