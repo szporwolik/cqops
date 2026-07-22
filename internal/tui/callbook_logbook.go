@@ -189,6 +189,7 @@ func (p *WavelogCallbookProvider) Lookup(callsign string) (*callbook.Result, err
 		QTH:      data.QTH(),
 		Country:  data.Country(),
 		Grid:     data.Grid(),
+		DXCC:     data.DXCCID(),
 		CQZone:   data.CQZone(),
 		ITUZone:  data.ITUZone(),
 		State:    data.State(),

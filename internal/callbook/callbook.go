@@ -228,10 +228,13 @@ func mergeInto(dst, src *Result) string {
 	dst.Providers = append(dst.Providers, src.Providers...)
 	var filled []string
 
-	// When the baseline came from a base-call fallback, its entity fields
-	// (Country, DXCC, Grid, zones) describe the HOME location, not the
-	// operating location. Allow subsequent providers (especially CTY.DAT)
-	// to overwrite these fields with the correct operating entity.
+	// When the baseline came from a base-call fallback (e.g. QRZ returning
+	// a different callsign than requested), entity fields (Country, DXCC,
+	// Grid, zones, lat/lon) describe the HOME location, not the operating
+	// location. Allow ALL subsequent providers to overwrite these fields.
+	// The flag persists throughout the merge chain so that every provider
+	// gets a chance to contribute correct entity data — not just the first
+	// one after the fallback provider.
 	overrideEntity := dst.FromBaseFallback
 
 	if dst.Name == "" && src.Name != "" {
@@ -299,13 +302,6 @@ func mergeInto(dst, src *Result) string {
 		filled = append(filled, "image")
 	}
 	// Provider stays as the first provider that returned data.
-
-	// Once entity fields have been corrected by a subsequent provider
-	// (e.g. CTY.DAT), clear the base-fallback flag so further merges
-	// don't keep overriding.
-	if overrideEntity && filled != nil {
-		dst.FromBaseFallback = false
-	}
 
 	return strings.Join(filled, ",")
 }
