@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.9.5 — 2026-07-22
+
+> **Dashboard map fix.** Switched MapLibre GL CDN from unpkg to jsDelivr — unpkg.com serves JavaScript with MIME `text/plain`, which browsers block under `X-Content-Type-Options: nosniff`. Also fixed a version compatibility gap between `maplibre-gl` and the Leaflet binding.
+
+### Dashboard
+- **CDN switch**: `unpkg.com` → `cdn.jsdelivr.net` for `maplibre-gl.js`, `maplibre-gl.css`, and `leaflet-maplibre-gl.js`. jsDelivr reliably serves correct `application/javascript` MIME types.
+- **Pinned versions**: `maplibre-gl@5.24.0` and `@maplibre/maplibre-gl-leaflet@0.1.3` — the previous `0.0.22` binding only supported `maplibre-gl` up to 4.x, causing `maplibregl` to be undefined when paired with 5.x.
+- **CSP updated**: `Content-Security-Policy` headers now allow `https://cdn.jsdelivr.net` (replaced `https://unpkg.com`) for `script-src`, `style-src`, and `worker-src`.
+
+### Under the Hood
+- **~4 files changed**. No config or database migration needed from v0.9.4.
+
 ## v0.9.4 — 2026-07-21
 
 > **DXC path line, branding consistency, and dashboard polish.** Smart spot filtering, DXCC badge fix, hamlib mode recognition, band plan tune fix, and unified product identity across all packaging channels.

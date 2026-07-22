@@ -11,6 +11,10 @@ all: build
 
 build:
 	@mkdir -p $(BUILD_DIR)
+	@# Regenerate Windows .syso resources if go-winres is available
+	@if command -v go-winres >/dev/null 2>&1; then \
+		cd winres && go-winres make --product-version $(VERSION) --file-version $(VERSION) --in winres.json --out ../cmd/cqops/rsrc && cd ..; \
+	fi
 	go build -ldflags "$(LDFLAGS)" -o $(BIN) ./cmd/cqops/
 	@echo "Built $(BIN) $(VERSION)"
 

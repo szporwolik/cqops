@@ -779,11 +779,11 @@ function _ensureMapLibreGL(cb){
   if(typeof L!=='undefined'&&typeof L.maplibreGL==='function'){cb();return}
   D('initMap','MapLibre GL not loaded — injecting CDN scripts');
   var s1=document.createElement('script');
-  s1.src='https://unpkg.com/maplibre-gl/dist/maplibre-gl.js';
+  s1.src='https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.js';
   s1.onload=function(){
     // Core library loaded — now safe to load the Leaflet binding.
     var s2=document.createElement('script');
-    s2.src='https://unpkg.com/@maplibre/maplibre-gl-leaflet/leaflet-maplibre-gl.js';
+    s2.src='https://cdn.jsdelivr.net/npm/@maplibre/maplibre-gl-leaflet@0.1.3/leaflet-maplibre-gl.js';
     s2.onload=function(){
       D('initMap','MapLibre GL scripts loaded \u2713');
       cb();
