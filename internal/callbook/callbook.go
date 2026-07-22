@@ -237,7 +237,7 @@ func mergeInto(dst, src *Result) string {
 	// one after the fallback provider.
 	overrideEntity := dst.FromBaseFallback
 
-	if dst.Name == "" && src.Name != "" {
+	if (dst.Name == "" || overrideEntity) && src.Name != "" {
 		dst.Name = src.Name
 		filled = append(filled, "name")
 	}
@@ -249,7 +249,7 @@ func mergeInto(dst, src *Result) string {
 		dst.Country = src.Country
 		filled = append(filled, "country")
 	}
-	if dst.QTH == "" && src.QTH != "" {
+	if (dst.QTH == "" || overrideEntity) && src.QTH != "" {
 		dst.QTH = src.QTH
 		filled = append(filled, "qth")
 	}
