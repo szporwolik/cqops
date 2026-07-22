@@ -145,11 +145,11 @@ func securityHeaders(next http.Handler) http.Handler {
 		// or weather APIs, adjust img-src and connect-src accordingly.
 		w.Header().Set("Content-Security-Policy",
 			"default-src 'self'; "+
-		"script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "+
-			"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "+
-			"img-src 'self' data: https:; "+
-			"connect-src 'self' https:; "+
-			"worker-src 'self' blob: https://cdn.jsdelivr.net; "+
+				"script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "+
+				"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "+
+				"img-src 'self' data: https:; "+
+				"connect-src 'self' https:; "+
+				"worker-src 'self' blob: https://cdn.jsdelivr.net; "+
 				"font-src 'self'")
 		next.ServeHTTP(w, r)
 	})
