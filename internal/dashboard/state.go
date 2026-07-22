@@ -309,6 +309,20 @@ func (s *State) Snapshot() Snapshot {
 	return s.snapshot
 }
 
+// SeedStatic sets the initial snapshot fields that don't change during a
+// CQOps session (station, logbook). Call before the HTTP server starts
+// accepting connections so the very first /api/snapshot has real data,
+// not empty placeholders that render as em dashes in the browser.
+func (s *State) SeedStatic(station StationInfo, logbook LogbookInfo) {
+	s.mu.Lock()
+	s.snapshot.Station = station
+	s.snapshot.Logbook = logbook
+	// Seed last-seen fingerprints so the first Set* calls
+	// detect no change and skip redundant SSE events.
+	s.lastLogbook = logbook
+	s.mu.Unlock()
+}
+
 // SetApp sets the application metadata. No event is published.
 func (s *State) SetApp(name, version string) {
 	s.mu.Lock()
