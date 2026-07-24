@@ -12,6 +12,7 @@ import (
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/aprs"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
@@ -50,6 +51,9 @@ type LogbookChooser struct {
 	lastFormContent string
 	lastListContent string
 
+	// Pre-fetched QSO counts per logbook (populated on init).
+	qsoCounts map[string]int
+
 	// APRS async state.
 	aprsTesting bool
 	aprsStatus  string
@@ -69,6 +73,11 @@ type aprsTestMsg struct {
 	err error
 }
 
+// qsoCountsMsg carries per-logbook QSO counts for the list display.
+type qsoCountsMsg struct {
+	counts map[string]int // logbook ID → QSO count
+}
+
 func NewLogbookChooser(a *app.App, tq *ToastQueue) *LogbookChooser {
 	names := config.SortedLogbookIDs(a.Config)
 
@@ -82,19 +91,37 @@ func NewLogbookChooser(a *app.App, tq *ToastQueue) *LogbookChooser {
 	}
 
 	return &LogbookChooser{
-		app:     a,
-		mode:    chooserList,
-		names:   names,
-		cursor:  cursor,
-		station: NewStationForm("CALLSIGN", "operator", "GRID"),
-		toasts:  tq,
-		vp:      viewport.New(viewport.WithWidth(80), viewport.WithHeight(20)),
+		app:       a,
+		mode:      chooserList,
+		names:     names,
+		cursor:    cursor,
+		station:   NewStationForm("CALLSIGN", "operator", "GRID"),
+		toasts:    tq,
+		vp:        viewport.New(viewport.WithWidth(80), viewport.WithHeight(20)),
+		qsoCounts: make(map[string]int),
 	}
 }
 
 func (c *LogbookChooser) Init() tea.Cmd {
 	c.vp.FillHeight = true
-	return nil
+	return func() tea.Msg {
+		counts := make(map[string]int)
+		for id, lb := range c.app.Config.Logbooks {
+			dbPath, err := config.DBPath(id, &lb)
+			if err != nil {
+				continue
+			}
+			db, err := store.Open(dbPath)
+			if err != nil {
+				continue
+			}
+			var n int
+			_ = db.QueryRow(`SELECT COUNT(*) FROM qsos`).Scan(&n)
+			db.Close()
+			counts[id] = n
+		}
+		return qsoCountsMsg{counts: counts}
+	}
 }
 
 func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -136,6 +163,11 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			c.toasts.Success("Wavelog: connection verified")
 		}
 		c.scrollViewportToEnd()
+
+	case qsoCountsMsg:
+		if msg.counts != nil {
+			c.qsoCounts = msg.counts
+		}
 
 	case aprsTestMsg:
 		c.aprsTesting = false
@@ -353,6 +385,14 @@ func (c *LogbookChooser) viewList() string {
 			// Truncate/pad raw values to fixed column widths before styling.
 			nameVal := padOrTrunc(dn, 24)
 			callVal := padOrTrunc(call, 12)
+			gridVal := grid
+			if grid == "" {
+				gridVal = "—"
+			}
+			countStr := ""
+			if n, ok := c.qsoCounts[id]; ok {
+				countStr = DimStyle.Render(fmt.Sprintf("  %d QSOs", n))
+			}
 
 			prefix := "  "
 			activeBadge := padOrTrunc("[      ]", 10)
@@ -364,10 +404,10 @@ func (c *LogbookChooser) viewList() string {
 				prefix = S.FormPrefixOn.Render("> ")
 				nameVal = CursorStyle.Render(nameVal)
 				callVal = CursorStyle.Render(callVal)
-				grid = CursorStyle.Render(grid)
+				gridVal = CursorStyle.Render(gridVal)
 			}
 
-			line := prefix + activeBadge + nameVal + callVal + grid
+			line := prefix + activeBadge + nameVal + callVal + gridVal + countStr
 			b.WriteString(padOrTrunc(line, contentW))
 			if i < len(c.names)-1 {
 				b.WriteString("\n")
@@ -646,6 +686,7 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 		c.app.Logbook = &lb
 
 		c.names = append(c.names, id)
+		c.qsoCounts[id] = 0 // new logbook starts empty
 		savedName = cs
 
 		// Open the new logbook's database and switch to it.
@@ -739,6 +780,7 @@ func (c *LogbookChooser) deleteLogbook() tea.Cmd {
 	dbPath, _ := config.DBPath(id, &lb)
 
 	delete(c.app.Config.Logbooks, id)
+	delete(c.qsoCounts, id)
 
 	for i, n := range c.names {
 		if n == id {

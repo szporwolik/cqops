@@ -420,6 +420,7 @@ func (m *Model) handleMainMenuUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.C
 			m.ui.chooser.width = m.width
 			m.ui.chooser.height = m.height
 			m.screen = screenChooser
+			cmd = tea.Batch(cmd, m.ui.chooser.Init())
 		case "rig":
 			m.ui.rigChooser = NewRigChooser(m.App, m.toasts)
 			m.ui.rigChooser.width = m.width
