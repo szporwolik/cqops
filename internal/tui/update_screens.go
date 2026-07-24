@@ -38,10 +38,22 @@ func (m *Model) handleChooserUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 		m.lookup.wlForceCheck = true
 		m.needRefresh = true
 	}
-	// Logbook was switched via Enter in the chooser — force WL check.
+	// Logbook was switched via Enter in the chooser — force WL check and
+	// immediately refresh QSOs (mirrors cycleLogbook behaviour).
 	if _, ok := msg.(logbookSwitchedMsg); ok {
+		m.lookup.wlPrivateData = nil // WL data is logbook-specific
 		m.lookup.wlForceCheck = true
 		m.needRefresh = true
+		m.invalidatePartnerMapCache()
+		m.rc.logStatsSig = ""
+		m.rc.workedSummarySig = ""
+		m.rc.pathSig = ""
+		m.rc.pathLine = ""
+		// Recheck dupe and new-call status against the new logbook.
+		if strings.TrimSpace(m.fields[fieldCall].Value()) != "" {
+			m.checkDupe()
+		}
+		cmd = tea.Batch(cmd, m.refreshQSOS())
 	}
 	return m, cmd
 }
