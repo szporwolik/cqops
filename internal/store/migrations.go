@@ -108,6 +108,10 @@ var migrations = []string{
 	`CREATE INDEX IF NOT EXISTS idx_qsos_contest_call_band_mode ON qsos(contest_id, call, band, mode)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_contest_date_time ON qsos(contest_id, qso_date DESC, time_on DESC)`,
 
+	// ── schema v2: composite indexes for dupe-check and dedup queries ───────
+	`CREATE INDEX IF NOT EXISTS idx_qsos_call_band_mode_date ON qsos(call, band, mode, qso_date)`,
+	`CREATE INDEX IF NOT EXISTS idx_qsos_base_call_band_mode_date ON qsos(base_call, band, mode, qso_date)`,
+
 	// ── dxc_spots — DX Cluster spot cache ────────────────────────────────────
 	`CREATE TABLE IF NOT EXISTS dxc_spots (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -153,7 +157,7 @@ var migrations = []string{
 // Version history:
 //
 //	1 — v0.9.0  consolidated schema, base_call backfill, dxcc column
-const schemaVersion = 1
+const schemaVersion = 2
 
 // Migrate runs all migrations. Safe to call multiple times — every
 // statement uses IF NOT EXISTS guards, and PRAGMA user_version prevents

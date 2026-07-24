@@ -327,6 +327,15 @@ func (m *Model) stationProfile() []string {
 		}
 		parts = append(parts, label)
 	}
+	// Append logbook-wide QSO stats when available. Today count only
+	// shown when non-zero (caller decides whether the full line fits).
+	if m.rc.logbookTotal > 0 {
+		stat := fmt.Sprintf("%d QSOs", m.rc.logbookTotal)
+		if m.rc.logbookToday > 0 {
+			stat += fmt.Sprintf(" \u00b7 %d today", m.rc.logbookToday)
+		}
+		parts = append(parts, stat)
+	}
 	if s.Callsign != "" && len(parts) == 0 {
 		parts = append(parts, s.Callsign)
 	}
@@ -454,7 +463,7 @@ func (m *Model) formPathRow(width int) string {
 		badges = append(badges, newStyle.Render(bannerNewDXCC))
 	}
 
-	// Build cache key: grids + distance + stats + WL + dupe.
+	// Build cache key: grids + distance + stats + WL + dupe + today (for today count).
 	var wlSigB strings.Builder
 	wlSigB.WriteString("WL:")
 	if m.lookup.wlPrivateData != nil {
@@ -476,6 +485,8 @@ func (m *Model) formPathRow(width int) string {
 	sigB.WriteString(wlSig)
 	sigB.WriteByte('|')
 	sigB.WriteString(strconv.FormatBool(m.dupe))
+	sigB.WriteByte('|')
+	sigB.WriteString(time.Now().UTC().Format("20060102")) // bust cache at midnight
 	// Include rotor state so target arrows update immediately.
 	if m.rotor.connected {
 		sigB.WriteString("|rotor:")
@@ -527,7 +538,7 @@ func (m *Model) formPathRow(width int) string {
 		}
 	} else if left != "" {
 		// Path shown, no rotor — fill empty right side with station
-		// profile (radio/antenna · grid) right-aligned.
+		// profile (radio/antenna · grid · QSO stats) right-aligned.
 		profile := strings.Join(m.stationProfile(), "  \u00b7  ")
 		if profile != "" {
 			profileW := lipgloss.Width(profile)

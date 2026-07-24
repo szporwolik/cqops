@@ -102,6 +102,15 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 		cmd = tea.Batch(cmd, m.fetchLogbookStatsCmd(
 			m.rc.logStatsFetchCall, m.rc.logStatsFetchBand, m.rc.logStatsFetchMode))
 	}
+	// Refresh logbook-wide counts once per tick (total QSOs, today's QSOs).
+	// Also refreshes at midnight when the date rolls over.
+	if m.App.DB != nil {
+		today := time.Now().UTC().Format("20060102")
+		if m.rc.logbookStatsDate != today {
+			m.rc.logbookStatsDate = today
+			m.rc.logbookTotal, m.rc.logbookToday = store.LogbookCounts(m.App.DB, today)
+		}
+	}
 	// Dispatch async PSK spot DB load if a View() cache miss was recorded.
 	if m.psk.needDBLoad && m.App.DB != nil {
 		m.psk.needDBLoad = false
