@@ -119,7 +119,9 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 	}
 	// Poll GPS every 60 ticks (~60 s).  GPS position changes slowly; a
 	// faster poll wastes CPU on low-end hardware without improving accuracy.
-	if m.tickCount%60 == 0 {
+	// Also poll on the first tick so the status bar reflects the actual
+	// connection state immediately after startup.
+	if m.tickCount == 1 || m.tickCount%60 == 0 {
 		if gpsCmd := m.handleGPSTick(); gpsCmd != nil {
 			cmd = tea.Batch(cmd, gpsCmd)
 		}

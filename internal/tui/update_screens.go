@@ -219,6 +219,15 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 		m.ui.integrationMenu.aprsToast = ""
 	}
 
+	// GPS test succeeded — immediately poll GPS state so the status
+	// bar reflects the connection without waiting for the periodic tick.
+	if m.ui.integrationMenu.gpsNeedsPoll {
+		m.ui.integrationMenu.gpsNeedsPoll = false
+		if gpsCmd := m.handleGPSTick(); gpsCmd != nil {
+			cmd = tea.Batch(cmd, gpsCmd)
+		}
+	}
+
 	if m.ui.integrationMenu.done {
 		m.screen = screenQSO
 		if m.ui.integrationMenu.goBack {
@@ -318,6 +327,11 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			switch {
 			case gpsNowEnabled && (!gpsWasEnabled || gpsServiceChanged):
 				cmd = tea.Batch(cmd, m.startGPS())
+				// Immediately poll GPS state so the status bar updates
+				// without waiting up to 60 s for the next periodic tick.
+				if gpsCmd := m.handleGPSTick(); gpsCmd != nil {
+					cmd = tea.Batch(cmd, gpsCmd)
+				}
 			case !gpsNowEnabled && gpsWasEnabled:
 				m.stopGPS()
 			}
