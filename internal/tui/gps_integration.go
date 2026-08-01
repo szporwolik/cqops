@@ -283,6 +283,10 @@ func (m *Model) handleGPSTick() tea.Cmd {
 		)
 		// Apply GPS grid override when GPSGrid flag is set.
 		m.applyGPSGridOverride()
+		// Restart APRS so the range filter and beacon position are
+		// rebuilt with the actual GPS location instead of the static
+		// configured grid.
+		m.App.MaybeRestartAPRS()
 	}
 	if prevFix && !m.gps.hasFix {
 		m.gps.didToastFix = false // allow re-toast on next fix
