@@ -119,6 +119,11 @@ func (m *Model) uploadADIFToWavelog(adifStr string, qID int64, call string) tea.
 // Returns ok=true on success or duplicate, ok=false on failure.
 // isDup is true when the QSO was already present on Wavelog.
 func postQSO(url, key, sid, adifStr string, qID int64, call string, db *sql.DB) (ok bool, isDup bool, err error) {
+	// Strip MY_GRIDSQUARE from the ADIF before uploading. Wavelog always
+	// uses the station profile's grid for distance calculation (see Api.php
+	// qso function). Sending a different grid can cause QSO rejection.
+	adifStr = stripMyGridsquare(adifStr)
+
 	applog.InfoDetail("Wavelog: uploading QSO", fmt.Sprintf("qso_id=%d call=%s", qID, call))
 	result, err := wavelog.PostQSOWithResult(url, key, sid, adifStr)
 	if err != nil {
@@ -155,6 +160,55 @@ type wlUploadResultMsg struct {
 	ok    bool
 	isDup bool
 	err   error
+}
+
+// stripMyGridsquare removes the MY_GRIDSQUARE field from an ADIF string.
+// Wavelog always uses the station profile's grid for distance calculation
+// (see Api.php qso function) — sending a different grid risks QSO rejection.
+// The local SQLite DB retains the actual operating grid.
+func stripMyGridsquare(adif string) string {
+	// Match <MY_GRIDSQUARE:N>value where N is the field length.
+	// Use a simple loop to strip all occurrences.
+	for {
+		start := 0
+		// Find <MY_GRIDSQUARE or <my_gridsquare (case-insensitive)
+		lower := strings.ToLower(adif)
+		idx := -1
+		for _, tag := range []string{"<my_gridsquare:", "<my_gridsquare "} {
+			if i := strings.Index(lower[start:], tag); i >= 0 {
+				idx = start + i
+				break
+			}
+		}
+		if idx < 0 {
+			break
+		}
+		// Find the closing >
+		end := strings.IndexByte(adif[idx:], '>')
+		if end < 0 {
+			break
+		}
+		end += idx
+		// The value after > has N characters where N is the field length.
+		// Parse the length from <MY_GRIDSQUARE:N>
+		lenStart := strings.IndexByte(adif[idx:], ':') + idx + 1
+		if lenStart <= idx {
+			break
+		}
+		lenEnd := end
+		if spaceIdx := strings.IndexAny(adif[lenStart:end], " >"); spaceIdx >= 0 {
+			lenEnd = lenStart + spaceIdx
+		}
+		fieldLen := 0
+		fmt.Sscanf(adif[lenStart:lenEnd], "%d", &fieldLen)
+		// Remove from <MY_GRIDSQUARE...> through the N value chars.
+		cutEnd := end + 1 + fieldLen
+		if cutEnd > len(adif) {
+			cutEnd = len(adif)
+		}
+		adif = adif[:idx] + adif[cutEnd:]
+	}
+	return adif
 }
 
 // wsjtxEnrichDoneMsg signals that WSJT-X QRZ enrichment has completed
