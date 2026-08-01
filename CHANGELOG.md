@@ -1,5 +1,39 @@
 # Changelog
 
+## v0.9.6 — 2026-08-01
+
+> **Reliability & polish.** GPS status bar responsiveness, Wavelog download UX fixes, logbook QSO counts, DB perf, and CI tuning.
+
+### GPS — Status Bar Responsiveness
+- **Immediate first-tick poll**: GPS status bar now reflects the real fix state within 1 second of startup instead of waiting up to 60 seconds for the first periodic poll.
+- **Instant update after config save**: enabling GPS from the integration menu and saving immediately polls the GPS client — no 60-second delay for the indicator to turn green.
+- **Test button feedback**: a successful GPS test now triggers an immediate status bar refresh, turning the indicator green right away when a fix is present.
+- **APRS range filter**: the APRS-IS connection now uses `EffectiveGrid()` (GPS-derived position when available) for the range filter instead of the static configured grid. Dashboard map now shows stations near your actual GPS location.
+
+### Wavelog Download
+- **Race condition fix**: the "Downloaded 0 QSOs" dialog after fast downloads is fixed. The render now falls back to the live progress counter (`dlCurrent`) when the done handler hasn't fired yet — matching the existing ADIF import/export pattern.
+- **Log spam eliminated**: individual duplicate QSO detections moved from `WARN` to `DEBUG` level (10,708 lines → 0 at WARN). Message reworded from misleading "already imported this session" to accurate "already in local logbook". Final summary line (`inserted=3 dupes=10708`) still reports totals at INFO.
+
+### UI — QSO Counts
+- **Station profile line**: the info row between the QSO form and recent QSOs now shows logbook-wide counts — `"IC-7300 / HF9V · Grid KO00ca · 123 QSOs · 5 today"`. Today count only appears when non-zero and there's space. Counts rebuild automatically on QSO save, WSJT-X log, and logbook switch.
+- **Configuration → Logbooks**: each logbook now shows its QSO count in the list (`"1661 QSOs"`, `"21 QSOs"`). Counts are fetched asynchronously when the screen opens.
+
+### Config Menu — Logbook Switch
+- **Immediate QSO refresh**: switching the active logbook via the config menu now immediately reloads the recent QSOs table and partner info caches — matching the hotkey (`Ctrl+L`) behavior. Previously the refresh was deferred and could miss on certain screen transitions.
+
+### Database
+- **Composite indexes**: added `(call, band, mode, qso_date)` and `(base_call, band, mode, qso_date)` for the dupe-check query that fires on every QSO form field change. Replaces 4 separate index lookups with a single B-tree seek.
+- Schema version bumped to 2 (idempotent — indexes use `CREATE INDEX IF NOT EXISTS`).
+
+### CI — Branding Validation Relaxed
+- **ShellCheck**: severity lowered to `--severity=warning` — style nits (SC2034, SC2155) no longer fail the build.
+- **`.syso` determinism**: changed from hard error to warning — `go-winres` output is not strictly byte-identical across versions.
+- **AUR PKGBUILD**: exact `diff -u` replaced with per-field key comparison — tolerant of `makepkg` formatting differences between Arch versions.
+- **Casing check**: exclusions expanded to `go.sum`, `go.mod`, `third_party/`, `licenses/`.
+
+### Under the Hood
+- **~12 commits**, **~11 files changed**. No config migration needed from v0.9.5. Database migration adds 2 indexes (idempotent).
+
 ## v0.9.5 — 2026-07-22
 
 > **Dashboard map fix.** Switched MapLibre GL CDN from unpkg to jsDelivr — unpkg.com serves JavaScript with MIME `text/plain`, which browsers block under `X-Content-Type-Options: nosniff`. Also fixed a version compatibility gap between `maplibre-gl` and the Leaflet binding.
