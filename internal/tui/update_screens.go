@@ -38,10 +38,22 @@ func (m *Model) handleChooserUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 		m.lookup.wlForceCheck = true
 		m.needRefresh = true
 	}
-	// Logbook was switched via Enter in the chooser — force WL check.
+	// Logbook was switched via Enter in the chooser — force WL check and
+	// immediately refresh QSOs (mirrors cycleLogbook behaviour).
 	if _, ok := msg.(logbookSwitchedMsg); ok {
+		m.lookup.wlPrivateData = nil // WL data is logbook-specific
 		m.lookup.wlForceCheck = true
 		m.needRefresh = true
+		m.invalidatePartnerMapCache()
+		m.rc.logStatsSig = ""
+		m.rc.workedSummarySig = ""
+		m.rc.pathSig = ""
+		m.rc.pathLine = ""
+		// Recheck dupe and new-call status against the new logbook.
+		if strings.TrimSpace(m.fields[fieldCall].Value()) != "" {
+			m.checkDupe()
+		}
+		cmd = tea.Batch(cmd, m.refreshQSOS())
 	}
 	return m, cmd
 }
@@ -207,6 +219,15 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 		m.ui.integrationMenu.aprsToast = ""
 	}
 
+	// GPS test succeeded — immediately poll GPS state so the status
+	// bar reflects the connection without waiting for the periodic tick.
+	if m.ui.integrationMenu.gpsNeedsPoll {
+		m.ui.integrationMenu.gpsNeedsPoll = false
+		if gpsCmd := m.handleGPSTick(); gpsCmd != nil {
+			cmd = tea.Batch(cmd, gpsCmd)
+		}
+	}
+
 	if m.ui.integrationMenu.done {
 		m.screen = screenQSO
 		if m.ui.integrationMenu.goBack {
@@ -306,6 +327,11 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			switch {
 			case gpsNowEnabled && (!gpsWasEnabled || gpsServiceChanged):
 				cmd = tea.Batch(cmd, m.startGPS())
+				// Immediately poll GPS state so the status bar updates
+				// without waiting up to 60 s for the next periodic tick.
+				if gpsCmd := m.handleGPSTick(); gpsCmd != nil {
+					cmd = tea.Batch(cmd, gpsCmd)
+				}
 			case !gpsNowEnabled && gpsWasEnabled:
 				m.stopGPS()
 			}
@@ -408,6 +434,7 @@ func (m *Model) handleMainMenuUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.C
 			m.ui.chooser.width = m.width
 			m.ui.chooser.height = m.height
 			m.screen = screenChooser
+			cmd = tea.Batch(cmd, m.ui.chooser.Init())
 		case "rig":
 			m.ui.rigChooser = NewRigChooser(m.App, m.toasts)
 			m.ui.rigChooser.width = m.width

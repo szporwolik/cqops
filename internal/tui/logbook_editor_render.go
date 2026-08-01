@@ -72,8 +72,12 @@ func (le *LogbookEditor) View() tea.View {
 	case edModeWLDownloading:
 		if !le.dlActive {
 			// Download already completed but mode not yet advanced — show results.
-			le.mode = edModeList
-			le.dialog = nil
+			// Carry the live progress counter into the result; the done handler
+			// may not have run yet (channel close vs message ordering).
+			if le.wlDownloadCount == 0 {
+				le.wlDownloadCount = le.dlCurrent
+			}
+			le.mode = edModeWLDownloadResult
 		} else {
 			msg := "Downloading from Wavelog…"
 			if le.dlCurrent > 0 && le.dlTotal > 0 {

@@ -351,6 +351,55 @@ func TestImportResultRender_FallbackFromProgress(t *testing.T) {
 	}
 }
 
+// TestWLDownloadResultRender_FallbackFromProgress verifies the fix for the
+// "Downloaded 0" bug: when the render transitions from WLDownloading→result
+// before the done handler fires, dlCurrent is used as fallback.
+func TestWLDownloadResultRender_FallbackFromProgress(t *testing.T) {
+	le := NewLogbookEditor(LogbookEditorConfig{DB: nil, WLURL: "", WLKey: "", WLStationID: "", WLLastFetchedID: 0, StationOperator: "OP", StationGrid: "JO90", StationCall: ""})
+	le.mode = edModeWLDownloading
+	le.dlActive = false    // simulate completed but done handler not yet run
+	le.dlCurrent = 21      // live progress counter
+	le.wlDownloadCount = 0 // not yet set by done handler
+	le.dlTotal = 21
+	le.width = 120
+	le.height = 30
+
+	// View() transitions to edModeWLDownloadResult and uses dlCurrent as fallback.
+	_ = fmt.Sprint(le.View())
+
+	if le.mode != edModeWLDownloadResult {
+		t.Errorf("mode should transition to edModeWLDownloadResult, got %v", le.mode)
+	}
+	if le.wlDownloadCount != 21 {
+		t.Errorf("wlDownloadCount should fallback to dlCurrent (21), got %d", le.wlDownloadCount)
+	}
+
+	// On the NEXT View() call, the result dialog renders with the correct count.
+	view := fmt.Sprint(le.View())
+	if !strings.Contains(view, "Downloaded 21 QSOs") {
+		t.Error("second View() should show 21 from fallback")
+	}
+}
+
+// TestWLDownloadResultRender_FallbackFromProgress_KeepsExistingCount verifies
+// the fallback does NOT overwrite an already-set count (done handler ran first).
+func TestWLDownloadResultRender_FallbackFromProgress_KeepsExistingCount(t *testing.T) {
+	le := NewLogbookEditor(LogbookEditorConfig{DB: nil, WLURL: "", WLKey: "", WLStationID: "", WLLastFetchedID: 0, StationOperator: "OP", StationGrid: "JO90", StationCall: ""})
+	le.mode = edModeWLDownloading
+	le.dlActive = false
+	le.dlCurrent = 21
+	le.wlDownloadCount = 5 // already set by done handler
+	le.dlTotal = 21
+	le.width = 120
+	le.height = 30
+
+	_ = fmt.Sprint(le.View())
+
+	if le.wlDownloadCount != 5 {
+		t.Errorf("wlDownloadCount should keep already-set value (5), got %d", le.wlDownloadCount)
+	}
+}
+
 // =============================================================================
 // ADIF export result screen render tests
 // =============================================================================

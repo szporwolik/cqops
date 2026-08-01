@@ -57,6 +57,7 @@ type IntegrationMenu struct {
 	gpsdPort         textinput.Model
 	gpsTesting       bool
 	gpsTestResult    string
+	gpsNeedsPoll     bool // set when test passes — main model picks it up
 
 	// APRS
 	aprsEnabled    bool
@@ -512,6 +513,7 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			applog.Warn("GPS test failed", "error", msg.err.Error())
 		} else if msg.ok {
 			im.gpsTestResult = "OK — GPS responding"
+			im.gpsNeedsPoll = true // signal main model to refresh status bar
 			applog.Info("GPS test OK")
 		} else {
 			im.gpsTestResult = "No data received"

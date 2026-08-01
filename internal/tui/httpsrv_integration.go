@@ -95,9 +95,32 @@ func (m *Model) maybeHTTP() tea.Cmd {
 		port = "8073"
 	}
 
+	// Capture initial data to seed the dashboard snapshot before the
+	// HTTP listener starts — closes the race where a browser could
+	// fetch /api/snapshot and see empty fields rendered as em dashes.
+	seedStation := dashboard.StationInfo{}
+	if m.App.Logbook != nil {
+		st := m.App.Logbook.Station
+		seedStation.Callsign = st.Callsign
+		rp, hasRig := m.App.Config.Rigs[st.RigName]
+		if hasRig {
+			seedStation.Radio = rp.Name
+			if rp.Model != "" && rp.Model != rp.Name {
+				seedStation.Radio = rp.Name + " (" + rp.Model + ")"
+			}
+			seedStation.Antenna = rp.Antenna
+		}
+	}
+	seedLogbook := dashboard.LogbookInfo{}
+	if m.App.Logbook != nil {
+		seedLogbook.Name = config.LogbookDisplayName(m.App.Logbook)
+	}
+
 	return func() tea.Msg {
 		applog.Info("HTTP server: starting", "addr", addr, "port", port)
 		client := dashboard.New(addr, port)
+		// Seed the snapshot so the very first /api/snapshot has real data.
+		client.State().SeedStatic(seedStation, seedLogbook)
 		client.Start()
 
 		// Wait for initial status.

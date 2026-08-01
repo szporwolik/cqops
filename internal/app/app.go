@@ -409,9 +409,10 @@ func (a *App) MaybeRestartAPRS() {
 	}
 
 	// Build range filter from station position.
+	// Prefer GPS-derived grid when available, fall back to configured grid.
 	var filter string
 	if aprsCfg.RadiusKm > 0 {
-		g := a.Logbook.Station.Grid
+		g := a.EffectiveGrid()
 		if g != "" {
 			lat, lon, err := geo.GridToLatLon(g)
 			if err == nil {

@@ -181,9 +181,11 @@ func (m *Model) saveQSO() tea.Cmd {
 
 // refreshQSOS reloads the QSO list from the store, updates the RecentQSOs component,
 // and re-applies any active filter. Returns a non-nil message to trigger a re-render.
+// Also busts the logbook-wide counts cache so the profile line picks up new QSOs.
 func (m *Model) refreshQSOS() tea.Cmd {
 	db := m.App.DB // capture before async execution — logbook cycle may swap it
 	contest := m.App.Logbook.ActiveContest
+	m.rc.logbookStatsDate = "" // force re-fetch on next tick
 	return func() tea.Msg {
 		if db == nil {
 			return qsoRefreshedMsg{qsos: nil, err: nil}

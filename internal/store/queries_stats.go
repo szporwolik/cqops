@@ -49,12 +49,21 @@ func CountQSOsForContest(db *sql.DB, contestID string) (QSOCounts, error) {
 	return c, nil
 }
 
+// LogbookCounts returns total QSOs and today's QSO count for the entire
+// logbook. today is the UTC date in YYYYMMDD format.
+func LogbookCounts(db *sql.DB, today string) (total, todayCount int) {
+	_ = db.QueryRow(`SELECT COUNT(*) FROM qsos`).Scan(&total)
+	_ = db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE qso_date = ?`, today).Scan(&todayCount)
+	return
+}
+
 // LogbookStats holds per-call aggregate statistics from the local logbook.
 type LogbookStats struct {
 	CallWorked  bool
 	CallOnBand  bool
 	CallOnMode  bool
 	QSOCount    int
+	TodayCount  int
 	LastQSODate string // YYYY-MM-DD or empty
 }
 
@@ -64,10 +73,10 @@ type LogbookStats struct {
 func GetLogbookStats(db *sql.DB, call, band, mode string) (LogbookStats, error) {
 	var s LogbookStats
 	baseCall := qso.DeriveBaseCall(call)
+	today := time.Now().UTC().Format("20060102")
 
-	// Single query: COUNT total, SUM for band/mode matches, MAX for last date.
-	// All four aggregations run in one table scan over the matching rows.
-	// When band/mode is empty, the SUM returns 0 (no rows match ''=band).
+	// Single query: COUNT total, SUM for band/mode/today matches, MAX for last date.
+	// All five aggregations run in one table scan over the matching rows.
 	var onBandCount, onModeCount int
 	var lastDate string
 	err := db.QueryRow(
@@ -75,13 +84,15 @@ func GetLogbookStats(db *sql.DB, call, band, mode string) (LogbookStats, error) 
 			COUNT(*),
 			COALESCE(SUM(CASE WHEN ? = '' THEN 0 WHEN band = ? THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN ? = '' THEN 0 WHEN mode = ? THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN qso_date = ? THEN 1 ELSE 0 END), 0),
 			COALESCE(MAX(qso_date), '')
 		FROM qsos
 		WHERE base_call = ?`,
 		band, band,
 		mode, mode,
+		today,
 		baseCall,
-	).Scan(&s.QSOCount, &onBandCount, &onModeCount, &lastDate)
+	).Scan(&s.QSOCount, &onBandCount, &onModeCount, &s.TodayCount, &lastDate)
 	if err != nil {
 		return s, fmt.Errorf("logbook stats: %w", err)
 	}

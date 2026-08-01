@@ -70,6 +70,12 @@ type renderCache struct {
 	workedSummaryFetchGrid4 string
 	workedSummaryFetchDXCC  string
 
+	// Logbook-wide counts (total QSOs, today's QSOs). Updated on tick
+	// and invalidated on QSO save / logbook switch / midnight.
+	logbookTotal     int
+	logbookToday     int
+	logbookStatsDate string // YYYYMMDD; when stale, re-fetch on next tick
+
 	// DXCC continent cache — avoids prefix-tree lookup on every partner-view frame.
 	dxccContCall  string
 	dxccContValue string

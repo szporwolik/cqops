@@ -89,8 +89,7 @@ echo ""
 echo "[8] No incorrect product-name casing..."
 while IFS= read -r f; do
 	case "$f" in
-		*CHANGELOG.md|scripts/*.sh|*README.md) ;;
-		*go.sum|*go.mod|*.syso|*.ico|*.png|*.jpg|*.svg) ;;
+		*CHANGELOG.md|scripts/*.sh|*README.md|go.sum|go.mod|third_party/*|licenses/*|*.syso|*.ico|*.png|*.jpg|*.svg) ;;
 		*)
 			fail "bad-casing" "$f contains 'CQOPS' or 'CqOps' — use 'CQOps' or 'cqops'"
 			;;
