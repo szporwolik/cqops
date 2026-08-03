@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.9.7 — 2026-08-03
+
+> **GPS & APRS polish.** Faster GPS feedback, APRS now uses a live GPS-derived position when available, and batch uploads no longer hit the wrong canonical path.
+
+### GPS & APRS
+- **Immediate GPS polling**: the GPS status bar now refreshes right away on startup and after integration settings changes, so the live fix state appears without waiting for the next periodic poll.
+- **Live APRS position**: APRS restarts with the current GPS-derived position as soon as a fix is acquired, and the APRS range filter now uses that live grid when available.
+- **Batch upload path fix**: the batch upload flow no longer carries `MY_GRIDSQUARE` into the canonical upload path, avoiding mismatched routing.
+
+### Under the Hood
+- **~3 commits**, **~3 files changed**. No config or database migration needed from v0.9.6.
+
 ## v0.9.6 — 2026-08-01
 
 > **Reliability & polish.** GPS status bar responsiveness, Wavelog download UX fixes, logbook QSO counts, DB perf, and CI tuning.

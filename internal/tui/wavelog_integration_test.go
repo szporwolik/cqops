@@ -991,6 +991,52 @@ func TestWavelogUpload_APINotExposedInLogs(t *testing.T) {
 }
 
 // =============================================================================
+// stripMyGridsquare tests
+// =============================================================================
+
+func TestStripMyGridsquare(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "no grid field",
+			input: "<CALL:6>SP9MOA<BAND:3>20m<EOR>",
+			want:  "<CALL:6>SP9MOA<BAND:3>20m<EOR>",
+		},
+		{
+			name:  "strips MY_GRIDSQUARE",
+			input: "<CALL:6>SP9MOA<MY_GRIDSQUARE:6>JO90FA<BAND:3>20m<EOR>",
+			want:  "<CALL:6>SP9MOA<BAND:3>20m<EOR>",
+		},
+		{
+			name:  "strips lowercase",
+			input: "<CALL:6>SP9MOA<my_gridsquare:6>JO90FA<BAND:3>20m<EOR>",
+			want:  "<CALL:6>SP9MOA<BAND:3>20m<EOR>",
+		},
+		{
+			name:  "strips with trailing space",
+			input: "<CALL:6>SP9MOA<MY_GRIDSQUARE:6 >JO90FA<BAND:3>20m<EOR>",
+			want:  "<CALL:6>SP9MOA<BAND:3>20m<EOR>",
+		},
+		{
+			name:  "preserves other MY_ fields",
+			input: "<CALL:6>SP9MOA<MY_CITY:4>Krak<MY_GRIDSQUARE:6>JO90FA<BAND:3>20m<EOR>",
+			want:  "<CALL:6>SP9MOA<MY_CITY:4>Krak<BAND:3>20m<EOR>",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := stripMyGridsquare(tt.input)
+			if got != tt.want {
+				t.Errorf("stripMyGridsquare(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+// =============================================================================
 // Pass 15 — Wavelog FetchContacts (download) tests with httptest.Server
 // =============================================================================
 

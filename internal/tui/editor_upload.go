@@ -182,7 +182,8 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 
 			applog.InfoDetail("Wavelog: batch upload chunk", fmt.Sprintf("count=%d total=%d/%d", len(chunk), end, len(unsent)))
 
-			result, err := wavelog.PostQSOWithResult(url, key, sid, adifStr)
+			// Strip MY_GRIDSQUARE — Wavelog uses the station profile grid.
+			result, err := wavelog.PostQSOWithResult(url, key, sid, stripMyGridsquare(adifStr))
 			if err != nil {
 				errStr := strings.ToLower(err.Error())
 				if strings.Contains(errStr, "duplicate") {
