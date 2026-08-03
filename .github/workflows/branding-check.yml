@@ -5,6 +5,8 @@ on:
     branches: [main, dev]
   pull_request:
     branches: [main, dev]
+  release:
+    types: [published]
   workflow_dispatch:
 
 jobs:
@@ -237,6 +239,7 @@ jobs:
 
   # ── Windows NSIS compilation ──────────────────────────────────────────
   validate-nsis:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'release' || startsWith(github.ref, 'refs/tags/')
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -246,7 +249,7 @@ jobs:
       - name: Build Windows exe
         run: |
           $V = Get-Content VERSION
-          go build -ldflags="-s -w" -o build/cqops-windows-amd64.exe ./cmd/cqops/
+          go build -ldflags="-s -w -X github.com/szporwolik/cqops/internal/version.Version=$V" -o build/cqops-windows-amd64.exe ./cmd/cqops/
 
       - name: Install NSIS
         run: choco install nsis -y --no-progress
