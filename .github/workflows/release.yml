@@ -596,26 +596,17 @@ jobs:
         env:
           VERSION: ${{ steps.meta.outputs.version }}
         run: |
-          $wingetCreate = "$env:TEMP\wingetcreate.exe"
-          Write-Host "Downloading WingetCreate standalone executable..."
-          Invoke-WebRequest -Uri "https://aka.ms/wingetcreate/latest" -OutFile $wingetCreate
+          $ErrorActionPreference = 'Stop'
+          dotnet tool install --global Microsoft.WingetCreateCLI --version 1.12.13.0
 
-          if (-not (Test-Path $wingetCreate)) {
-            throw "wingetcreate.exe could not be downloaded"
-          }
+          $installerUrl = "https://github.com/szporwolik/cqops/releases/download/v$env:VERSION/cqops-setup.exe"
+          Write-Host "Submitting CQOps $env:VERSION to WinGet via $installerUrl"
 
-          New-Item -ItemType Directory -Force -Path manifests | Out-Null
-
-          & $wingetCreate update SzymonPorwolik.CQOps `
+          wingetcreate update SzymonPorwolik.CQOps `
             --version $env:VERSION `
-            --urls "https://github.com/szporwolik/cqops/releases/download/v$env:VERSION/cqops-setup.exe|x64|machine" `
-            --out manifests
-
-      - uses: actions/upload-artifact@v4
-        if: steps.gate.outputs.skip != 'true'
-        with:
-          name: winget-manifests
-          path: manifests/**
+            --urls $installerUrl `
+            --token $env:WINGET_TOKEN `
+            --submit
 
   # ──────────────────────────────────────────────────────────────────────────
   # Final cleanup: keep only 3 most recent GitHub releases
