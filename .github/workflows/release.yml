@@ -540,8 +540,8 @@ jobs:
           clone_status=$?
           set -e
           if [ "$clone_status" -ne 0 ]; then
-            echo "AUR: clone failed — skipping publish due to temporary AUR outage."
-            exit 0
+            echo "::warning::AUR: clone failed — skipping publish due to temporary AUR outage."
+            exit 1
           fi
 
           cp PKGBUILD .SRCINFO aur-repo/
@@ -554,12 +554,12 @@ jobs:
             exit 0
           fi
           if ! git commit -m "Update to ${V}"; then
-            echo "AUR: commit failed — skipping publish due to temporary AUR outage."
-            exit 0
+            echo "::warning::AUR: commit failed — skipping publish due to temporary AUR outage."
+            exit 1
           fi
           if ! git push; then
-            echo "AUR: push failed — skipping publish due to temporary AUR outage."
-            exit 0
+            echo "::warning::AUR: push failed — skipping publish due to temporary AUR outage."
+            exit 1
           fi
           echo "AUR: published cqops-bin ${V}"
 
