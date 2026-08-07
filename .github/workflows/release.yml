@@ -298,6 +298,21 @@ jobs:
           echo "Release notes:"
           cat "$NOTES"
 
+      - name: Replace existing release if present
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          tag="v${VERSION}"
+          if gh release view "$tag" &>/dev/null; then
+            echo "Release $tag already exists — deleting it first"
+            gh release delete "$tag" --yes --cleanup-tag || true
+          fi
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null 2>&1; then
+            git tag -d "$tag" || true
+          fi
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
@@ -519,7 +534,11 @@ jobs:
           SSHCFG
 
           # Clone AUR repo, update files, commit and push.
-          git clone ssh://aur@aur.archlinux.org/cqops-bin.git aur-repo
+          if ! git clone ssh://aur@aur.archlinux.org/cqops-bin.git aur-repo; then
+            echo "AUR: clone failed — skipping publish due to temporary AUR outage."
+            exit 0
+          fi
+
           cp PKGBUILD .SRCINFO aur-repo/
           cd aur-repo
           git config user.name  "cqops-bot"
@@ -529,8 +548,14 @@ jobs:
             echo "AUR: no changes — already at ${V}."
             exit 0
           fi
-          git commit -m "Update to ${V}"
-          git push
+          if ! git commit -m "Update to ${V}"; then
+            echo "AUR: commit failed — skipping publish due to temporary AUR outage."
+            exit 0
+          fi
+          if ! git push; then
+            echo "AUR: push failed — skipping publish due to temporary AUR outage."
+            exit 0
+          fi
           echo "AUR: published cqops-bin ${V}"
 
   # ──────────────────────────────────────────────────────────────────────────
@@ -539,7 +564,11 @@ jobs:
   publish-winget:
     runs-on: windows-latest
     needs: create-github-release
+<<<<<<< HEAD
     if: ${{ !cancelled() }}
+=======
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'release' || startsWith(github.ref, 'refs/tags/') }}
+>>>>>>> 1dbc94f (ci: replace existing release on rerun)
     steps:
       - name: Check token
         id: gate
@@ -567,7 +596,24 @@ jobs:
           VERSION: ${{ steps.meta.outputs.version }}
           WINGET_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
         run: |
-          dotnet tool install --global Microsoft.WingetCreateCLI --version 1.12.8.0
+          $toolsDir = Join-Path $env:USERPROFILE ".dotnet\tools"
+          $env:Path = "$toolsDir;$env:Path"
+
+          try {
+            dotnet tool install --global Microsoft.WingetCreateCLI --ignore-failed-sources
+          } catch {
+            Write-Warning "dotnet tool install failed: $($_.Exception.Message)"
+          }
+
+          if (-not (Get-Command wingetcreate -ErrorAction SilentlyContinue)) {
+            Write-Host "Installing wingetcreate via winget fallback..."
+            winget install --id Microsoft.WingetCreateCLI --source winget --accept-source-agreements --accept-package-agreements --silent
+          }
+
+          if (-not (Get-Command wingetcreate -ErrorAction SilentlyContinue)) {
+            throw "wingetcreate could not be installed or found on PATH"
+          }
+
           wingetcreate update SzymonPorwolik.CQOps `
             --version $env:VERSION `
             --urls "https://github.com/szporwolik/cqops/releases/download/v$env:VERSION/cqops-setup.exe" `
