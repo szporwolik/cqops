@@ -608,6 +608,8 @@ jobs:
           & $wingetCreate update SzymonPorwolik.CQOps `
             --version $env:VERSION `
             --urls "https://github.com/szporwolik/cqops/releases/download/v$env:VERSION/cqops-setup.exe" `
+            --architecture x64 `
+            --scope machine `
             --token $env:WINGET_TOKEN `
             --submit
 
