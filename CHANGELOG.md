@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.9.8 — 2026-08-07
+
+> **Maintenance release.** First public publish to WinGet, with release automation kept in sync for the Windows installer and packaging flow.
+
+### Distribution
+- **WinGet publishing enabled**: CQOps is now submitted to WinGet as part of the release workflow, so the Windows package can be published automatically once the release is cut.
+- **Installer flow aligned**: the release pipeline now uses the same Windows installer artifact for both GitHub Releases and WinGet submission.
+
+### Under the Hood
+- **Maintenance update**. No config or database migration needed from v0.9.7.
+
 ## v0.9.7 — 2026-08-03
 
 > **GPS & APRS polish.** Faster GPS feedback, APRS now uses a live GPS-derived position when available, and batch uploads no longer hit the wrong canonical path.
