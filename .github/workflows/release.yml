@@ -590,21 +590,29 @@ jobs:
         shell: bash
         run: echo "version=${{ needs.create-github-release.outputs.version }}" >> $GITHUB_OUTPUT
 
-      - name: Generate WinGet manifests
+      - name: Submit WinGet update
         if: steps.gate.outputs.skip != 'true'
         shell: powershell
         env:
           VERSION: ${{ steps.meta.outputs.version }}
+          WINGET_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
         run: |
           $ErrorActionPreference = 'Stop'
-          dotnet tool install --global Microsoft.WingetCreateCLI --version 1.12.13.0
+
+          # Download the standalone WingetCreate exe (official CI/CD approach).
+          $wingetCreate = "$env:RUNNER_TEMP\wingetcreate.exe"
+          Invoke-WebRequest -Uri "https://aka.ms/wingetcreate/latest" -OutFile $wingetCreate
+
+          if (-not (Test-Path $wingetCreate)) {
+            throw "wingetcreate.exe download failed"
+          }
 
           $installerUrl = "https://github.com/szporwolik/cqops/releases/download/v$env:VERSION/cqops-setup.exe"
           Write-Host "Submitting CQOps $env:VERSION to WinGet via $installerUrl"
 
-          wingetcreate update SzymonPorwolik.CQOps `
+          & $wingetCreate update SzymonPorwolik.CQOps `
             --version $env:VERSION `
-            --urls $installerUrl `
+            --urls "$installerUrl|x64|machine" `
             --token $env:WINGET_TOKEN `
             --submit
 
