@@ -570,7 +570,6 @@ jobs:
     runs-on: windows-latest
     needs: create-github-release
     if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || github.event_name == 'release' || startsWith(github.ref, 'refs/tags/')) }}
-    continue-on-error: true
     steps:
       - name: Check token
         id: gate
@@ -598,39 +597,41 @@ jobs:
           VERSION: ${{ steps.meta.outputs.version }}
           WINGET_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
         run: |
-          $toolsDir = Join-Path $env:USERPROFILE ".dotnet\tools"
-          $env:Path = "$toolsDir;$env:Path"
+          $candidatePaths = @(
+            "$env:USERPROFILE\.dotnet\tools\wingetcreate.exe",
+            "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Microsoft.WingetCreate\wingetcreate.exe",
+            "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Microsoft.WingetCreateCLI\wingetcreate.exe"
+          )
 
-          try {
-            dotnet tool install --global Microsoft.WingetCreateCLI --ignore-failed-sources --version 1.12.8.0
-          } catch {
-            Write-Warning "dotnet tool install failed: $($_.Exception.Message)"
-          }
-
-          if (-not (Get-Command wingetcreate -ErrorAction SilentlyContinue)) {
-            Write-Host "Installing wingetcreate via winget fallback..."
-            try {
-              winget install --id Microsoft.WingetCreateCLI --source winget --accept-source-agreements --accept-package-agreements --silent
-            } catch {
-              Write-Warning "winget fallback failed: $($_.Exception.Message)"
+          $wingetCreate = $null
+          foreach ($path in $candidatePaths) {
+            if (Test-Path $path) {
+              $wingetCreate = $path
+              break
             }
           }
 
-          if (-not (Get-Command wingetcreate -ErrorAction SilentlyContinue)) {
-            Write-Warning "wingetcreate could not be installed or found on PATH; skipping WinGet submission."
-            exit 0
+          if (-not $wingetCreate) {
+            Write-Host "Installing wingetcreate via winget..."
+            winget install --id Microsoft.WingetCreate --source winget --accept-source-agreements --accept-package-agreements --silent
+
+            foreach ($path in $candidatePaths) {
+              if (Test-Path $path) {
+                $wingetCreate = $path
+                break
+              }
+            }
           }
 
-          try {
-            wingetcreate update SzymonPorwolik.CQOps `
-              --version $env:VERSION `
-              --urls "https://github.com/szporwolik/cqops/releases/download/v$env:VERSION/cqops-setup.exe" `
-              --token $env:WINGET_TOKEN `
-              --submit
-          } catch {
-            Write-Warning "WinGet submission failed: $($_.Exception.Message)"
-            exit 0
+          if (-not $wingetCreate) {
+            throw "wingetcreate could not be installed or found on the runner"
           }
+
+          & $wingetCreate update SzymonPorwolik.CQOps `
+            --version $env:VERSION `
+            --urls "https://github.com/szporwolik/cqops/releases/download/v$env:VERSION/cqops-setup.exe" `
+            --token $env:WINGET_TOKEN `
+            --submit
 
   # ──────────────────────────────────────────────────────────────────────────
   # Final cleanup: keep only 3 most recent GitHub releases
