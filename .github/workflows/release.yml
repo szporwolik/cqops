@@ -567,10 +567,15 @@ jobs:
           VERSION: ${{ steps.meta.outputs.version }}
           WINGET_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
         run: |
-          dotnet tool install --global Microsoft.WingetCreateCLI --version 1.12.8.0
+          $ErrorActionPreference = 'Stop'
+          dotnet tool install --global Microsoft.WingetCreateCLI --version 1.12.13.0
+
+          $installerUrl = "https://github.com/szporwolik/cqops/releases/download/v$env:VERSION/cqops-setup.exe"
+          Write-Host "Submitting CQOps $env:VERSION to WinGet via $installerUrl"
+
           wingetcreate update SzymonPorwolik.CQOps `
             --version $env:VERSION `
-            --urls "https://github.com/szporwolik/cqops/releases/download/v$env:VERSION/cqops-setup.exe" `
+            --urls $installerUrl `
             --token $env:WINGET_TOKEN `
             --submit
 
