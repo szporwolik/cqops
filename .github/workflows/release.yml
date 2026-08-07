@@ -590,6 +590,68 @@ jobs:
           name: winget-manifests
           path: manifests/**
 
+      - name: Submit WinGet PR via gh CLI
+        if: steps.gate.outputs.skip != 'true'
+        shell: bash
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          GH_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          V="$VERSION"
+          FORK="szporwolik/winget-pkgs"
+
+          echo "==> Ensuring fork of microsoft/winget-pkgs exists..."
+          if ! gh api "repos/$FORK" --silent 2>/dev/null; then
+            echo "Creating fork..."
+            gh repo fork microsoft/winget-pkgs --clone=false --yes
+            # GitHub fork creation is async — wait for it.
+            for i in $(seq 1 12); do
+              sleep 5
+              if gh api "repos/$FORK" --silent 2>/dev/null; then
+                echo "Fork ready."
+                break
+              fi
+              echo "Waiting for fork... ($i)"
+            done
+          else
+            echo "Fork already exists."
+          fi
+
+          echo "==> Cloning fork (shallow)..."
+          git clone --depth 1 --filter=blob:none \
+            "https://github.com/$FORK.git" winget-pkgs
+
+          echo "==> Copying manifests..."
+          mkdir -p winget-pkgs/manifests
+          cp -r manifests/s winget-pkgs/manifests/
+
+          cd winget-pkgs
+          git config user.name  "cqops-bot"
+          git config user.email "szporwolik@users.noreply.github.com"
+
+          BRANCH="cqops-${V}"
+          git checkout -b "$BRANCH"
+          git add manifests/
+
+          if git diff --cached --quiet; then
+            echo "No changes — CQOps ${V} already in winget-pkgs."
+            exit 0
+          fi
+
+          git commit -m "Update: SzymonPorwolik.CQOps version ${V}"
+          git push origin "$BRANCH"
+
+          echo "==> Creating pull request..."
+          gh pr create \
+            --repo microsoft/winget-pkgs \
+            --base master \
+            --head "szporwolik:${BRANCH}" \
+            --title "Update: SzymonPorwolik.CQOps version ${V}" \
+            --body "Automated update by [CQOps](https://github.com/szporwolik/cqops) release workflow v${V}."
+
+          echo "==> WinGet PR submitted for CQOps ${V}"
+
   # ──────────────────────────────────────────────────────────────────────────
   # Final cleanup: keep only 3 most recent GitHub releases
   # ──────────────────────────────────────────────────────────────────────────
