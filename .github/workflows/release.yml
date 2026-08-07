@@ -590,12 +590,11 @@ jobs:
         shell: bash
         run: echo "version=${{ needs.create-github-release.outputs.version }}" >> $GITHUB_OUTPUT
 
-      - name: Submit WinGet update
+      - name: Generate WinGet manifests
         if: steps.gate.outputs.skip != 'true'
         shell: powershell
         env:
           VERSION: ${{ steps.meta.outputs.version }}
-          WINGET_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
         run: |
           $wingetCreate = "$env:TEMP\wingetcreate.exe"
           Write-Host "Downloading WingetCreate standalone executable..."
@@ -605,11 +604,18 @@ jobs:
             throw "wingetcreate.exe could not be downloaded"
           }
 
+          New-Item -ItemType Directory -Force -Path manifests | Out-Null
+
           & $wingetCreate update SzymonPorwolik.CQOps `
             --version $env:VERSION `
             --urls "https://github.com/szporwolik/cqops/releases/download/v$env:VERSION/cqops-setup.exe|x64|machine" `
-            --token $env:WINGET_TOKEN `
-            --submit
+            --out manifests
+
+      - uses: actions/upload-artifact@v4
+        if: steps.gate.outputs.skip != 'true'
+        with:
+          name: winget-manifests
+          path: manifests/**
 
   # ──────────────────────────────────────────────────────────────────────────
   # Final cleanup: keep only 3 most recent GitHub releases
