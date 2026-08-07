@@ -597,61 +597,12 @@ jobs:
           VERSION: ${{ steps.meta.outputs.version }}
           WINGET_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
         run: |
-          $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
+          $wingetCreate = "$env:TEMP\wingetcreate.exe"
+          Write-Host "Downloading WingetCreate standalone executable..."
+          Invoke-WebRequest -Uri "https://aka.ms/wingetcreate/latest" -OutFile $wingetCreate
 
-          $candidatePaths = @(
-            "$env:USERPROFILE\.dotnet\tools\wingetcreate.exe",
-            "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Microsoft.WingetCreate\wingetcreate.exe",
-            "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\Microsoft.WingetCreateCLI\wingetcreate.exe",
-            "$env:LOCALAPPDATA\Microsoft\WinGet\Links\wingetcreate.exe",
-            "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\wingetcreate.exe"
-          )
-
-          $wingetCreate = $null
-          foreach ($path in $candidatePaths) {
-            if (Test-Path $path) {
-              $wingetCreate = $path
-              break
-            }
-          }
-
-          if (-not $wingetCreate) {
-            $cmd = Get-Command wingetcreate.exe -ErrorAction SilentlyContinue
-            if ($cmd) {
-              $wingetCreate = $cmd.Source
-            }
-          }
-
-          if (-not $wingetCreate) {
-            Write-Host "Installing wingetcreate via winget..."
-            winget install --id Microsoft.WingetCreate --source winget --accept-source-agreements --accept-package-agreements --silent --disable-interactivity
-
-            $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
-            $cmd = Get-Command wingetcreate.exe -ErrorAction SilentlyContinue
-            if ($cmd) {
-              $wingetCreate = $cmd.Source
-            }
-
-            if (-not $wingetCreate) {
-              foreach ($root in @(
-                "$env:LOCALAPPDATA\Microsoft\WinGet\Packages",
-                "$env:LOCALAPPDATA\Microsoft\WinGet\Links",
-                "$env:ProgramFiles\WindowsApps",
-                "$env:ProgramFiles(x86)\WindowsApps"
-              )) {
-                if (Test-Path $root) {
-                  $found = Get-ChildItem $root -Recurse -Filter wingetcreate.exe -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName
-                  if ($found) {
-                    $wingetCreate = $found
-                    break
-                  }
-                }
-              }
-            }
-          }
-
-          if (-not $wingetCreate) {
-            throw "wingetcreate could not be installed or found on the runner"
+          if (-not (Test-Path $wingetCreate)) {
+            throw "wingetcreate.exe could not be downloaded"
           }
 
           & $wingetCreate update SzymonPorwolik.CQOps `
