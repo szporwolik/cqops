@@ -564,123 +564,94 @@ jobs:
           echo "AUR: published cqops-bin ${V}"
 
   # ──────────────────────────────────────────────────────────────────────────
-  # WinGet publication
+  # Publish WinGet update
   # ──────────────────────────────────────────────────────────────────────────
   publish-winget:
+    name: Publish WinGet update
     runs-on: windows-latest
     needs: create-github-release
     if: ${{ !cancelled() && (github.event_name == 'workflow_dispatch' || github.event_name == 'release' || startsWith(github.ref, 'refs/tags/')) }}
+    continue-on-error: true
+    permissions:
+      contents: read
     steps:
-      - name: Check token
+      - name: Check WinGet token
         id: gate
-        shell: bash
+        shell: pwsh
         env:
           TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
         run: |
-          if [ -z "$TOKEN" ]; then
-            echo "WINGET_GITHUB_TOKEN not set — skipping WinGet submission."
-            echo "skip=true" >> $GITHUB_OUTPUT
-          else
-            echo "skip=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Read version
-        if: steps.gate.outputs.skip != 'true'
-        id: meta
-        shell: bash
-        run: echo "version=${{ needs.create-github-release.outputs.version }}" >> $GITHUB_OUTPUT
-
-      - name: Generate WinGet manifests
-        if: steps.gate.outputs.skip != 'true'
-        shell: powershell
-        env:
-          VERSION: ${{ steps.meta.outputs.version }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-
-          # Download the standalone WingetCreate exe (official CI/CD approach).
-          $wingetCreate = "$env:RUNNER_TEMP\wingetcreate.exe"
-          Invoke-WebRequest -Uri "https://aka.ms/wingetcreate/latest" -OutFile $wingetCreate
-
-          if (-not (Test-Path $wingetCreate)) {
-            throw "wingetcreate.exe download failed"
+          if ([string]::IsNullOrWhiteSpace($env:TOKEN)) {
+            Write-Warning "WINGET_GITHUB_TOKEN not set — skipping WinGet publication."
+            "skip=true" >> $env:GITHUB_OUTPUT
+          } else {
+            "skip=false" >> $env:GITHUB_OUTPUT
           }
 
-          $installerUrl = "https://github.com/szporwolik/cqops/releases/download/v$env:VERSION/cqops-setup.exe"
-          Write-Host "Generating WinGet manifests for CQOps $env:VERSION"
+      - name: Set up .NET
+        if: steps.gate.outputs.skip != 'true'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '6.0.x'
+
+      - name: Download WingetCreate
+        if: steps.gate.outputs.skip != 'true'
+        id: wingetcreate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = Join-Path $env:RUNNER_TEMP 'wingetcreate.exe'
+          Invoke-WebRequest `
+            -Uri 'https://aka.ms/wingetcreate/latest' `
+            -OutFile $path
+          if (-not (Test-Path $path)) {
+            throw 'WingetCreate download failed.'
+          }
+          Write-Host "WingetCreate: $path"
+          "path=$path" >> $env:GITHUB_OUTPUT
+
+      - name: Submit WinGet update
+        if: steps.gate.outputs.skip != 'true'
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.create-github-release.outputs.version }}
+          WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = $env:VERSION.TrimStart('v')
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw 'Release version is empty.'
+          }
+
+          $installerUrl = "https://github.com/szporwolik/cqops/releases/download/v${version}/cqops-setup.exe"
+          $releaseNotesUrl = "https://github.com/szporwolik/cqops/releases/tag/v${version}"
+
+          $wingetCreate = '${{ steps.wingetcreate.outputs.path }}'
+          Write-Host "Publishing CQOps $version to WinGet"
+          Write-Host "Installer: $installerUrl"
+          Write-Host "Release:   $releaseNotesUrl"
 
           & $wingetCreate update SzymonPorwolik.CQOps `
-            --version $env:VERSION `
-            --urls "$installerUrl|x64|machine" `
-            --out manifests
+            --version $version `
+            --urls "${installerUrl}|x64|machine" `
+            --release-notes-url $releaseNotesUrl `
+            --submit `
+            --no-open
 
-      - uses: actions/upload-artifact@v4
-        if: steps.gate.outputs.skip != 'true'
+          if ($LASTEXITCODE -ne 0) {
+            throw "WingetCreate failed with exit code $LASTEXITCODE"
+          }
+
+          Write-Host "WinGet submission completed for CQOps $version"
+
+      - name: Save generated WinGet manifests
+        if: steps.gate.outputs.skip != 'true' && always()
+        uses: actions/upload-artifact@v4
         with:
-          name: winget-manifests
+          name: winget-manifests-${{ needs.create-github-release.outputs.version }}
           path: manifests/**
-
-      - name: Submit WinGet PR via gh CLI
-        if: steps.gate.outputs.skip != 'true'
-        shell: bash
-        env:
-          VERSION: ${{ steps.meta.outputs.version }}
-          GH_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          V="$VERSION"
-          FORK="szporwolik/winget-pkgs"
-
-          echo "==> Ensuring fork of microsoft/winget-pkgs exists..."
-          if ! gh api "repos/$FORK" --silent 2>/dev/null; then
-            echo "Creating fork..."
-            gh repo fork microsoft/winget-pkgs --clone=false --yes
-            # GitHub fork creation is async — wait for it.
-            for i in $(seq 1 12); do
-              sleep 5
-              if gh api "repos/$FORK" --silent 2>/dev/null; then
-                echo "Fork ready."
-                break
-              fi
-              echo "Waiting for fork... ($i)"
-            done
-          else
-            echo "Fork already exists."
-          fi
-
-          echo "==> Cloning fork (shallow)..."
-          git clone --depth 1 --filter=blob:none \
-            "https://github.com/$FORK.git" winget-pkgs
-
-          echo "==> Copying manifests..."
-          mkdir -p winget-pkgs/manifests
-          cp -r manifests/s winget-pkgs/manifests/
-
-          cd winget-pkgs
-          git config user.name  "cqops-bot"
-          git config user.email "szporwolik@users.noreply.github.com"
-
-          BRANCH="cqops-${V}"
-          git checkout -b "$BRANCH"
-          git add manifests/
-
-          if git diff --cached --quiet; then
-            echo "No changes — CQOps ${V} already in winget-pkgs."
-            exit 0
-          fi
-
-          git commit -m "Update: SzymonPorwolik.CQOps version ${V}"
-          git push origin "$BRANCH"
-
-          echo "==> Creating pull request..."
-          gh pr create \
-            --repo microsoft/winget-pkgs \
-            --base master \
-            --head "szporwolik:${BRANCH}" \
-            --title "Update: SzymonPorwolik.CQOps version ${V}" \
-            --body "Automated update by [CQOps](https://github.com/szporwolik/cqops) release workflow v${V}."
-
-          echo "==> WinGet PR submitted for CQOps ${V}"
+          if-no-files-found: ignore
+          retention-days: 14
 
   # ──────────────────────────────────────────────────────────────────────────
   # Final cleanup: keep only 3 most recent GitHub releases
