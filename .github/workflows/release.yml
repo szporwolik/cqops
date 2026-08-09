@@ -595,12 +595,11 @@ jobs:
           }
           Write-Host "WinGet fork synchronized."
 
-      - name: Submit WinGet update
+      - name: Generate WinGet manifests
         if: steps.gate.outputs.skip != 'true'
         shell: pwsh
         env:
           VERSION: ${{ needs.create-github-release.outputs.version }}
-          WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
         run: |
           $ErrorActionPreference = 'Stop'
           $version = $env:VERSION.TrimStart('v')
@@ -612,22 +611,72 @@ jobs:
           $releaseNotesUrl = "https://github.com/szporwolik/cqops/releases/tag/v${version}"
 
           $wingetCreate = '${{ steps.wingetcreate.outputs.path }}'
-          Write-Host "Publishing CQOps $version to WinGet"
-          Write-Host "Installer: $installerUrl"
-          Write-Host "Release:   $releaseNotesUrl"
+          Write-Host "Generating WinGet manifests for CQOps $version"
 
           & $wingetCreate update SzymonPorwolik.CQOps `
             --version $version `
             --urls "${installerUrl}|x64|machine" `
             --release-notes-url $releaseNotesUrl `
-            --submit `
-            --no-open
+            --out manifests
 
           if ($LASTEXITCODE -ne 0) {
             throw "WingetCreate failed with exit code $LASTEXITCODE"
           }
 
-          Write-Host "WinGet submission completed for CQOps $version"
+          # WingetCreate auto-fills ReleaseNotesUrl but NOT the ReleaseNotes
+          # text body, which the winget-pkgs validation now requires.  Patch
+          # the generated locale manifest to add a short ReleaseNotes entry.
+          $localeFile = Get-ChildItem -Path manifests -Recurse -Filter '*.locale.en-US.yaml' | Select-Object -First 1
+          if (-not $localeFile) {
+            throw 'Locale manifest not found after generation'
+          }
+          $releaseNotes = "CQOps v${version} — maintenance release.`nSee ${releaseNotesUrl} for details."
+          Add-Content -Path $localeFile.FullName -Value "ReleaseNotes: ${releaseNotes}"
+          Write-Host "Patched ReleaseNotes in $($localeFile.FullName)"
+
+      - name: Submit WinGet PR
+        if: steps.gate.outputs.skip != 'true'
+        shell: bash
+        env:
+          VERSION: ${{ needs.create-github-release.outputs.version }}
+          GH_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          V="$(echo "$VERSION" | sed 's/^v//')"
+          FORK="szporwolik/winget-pkgs"
+          BRANCH="cqops-${V}"
+
+          echo "==> Cloning fork (shallow)..."
+          git clone --depth 1 --filter=blob:none \
+            "https://github.com/${FORK}.git" winget-pkgs
+
+          echo "==> Copying manifests..."
+          mkdir -p winget-pkgs/manifests
+          cp -r manifests/s winget-pkgs/manifests/
+
+          cd winget-pkgs
+          git config user.name  "cqops-bot"
+          git config user.email "szporwolik@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add manifests/
+
+          if git diff --cached --quiet; then
+            echo "No changes — CQOps ${V} already in winget-pkgs."
+            exit 0
+          fi
+
+          git commit -m "Update: SzymonPorwolik.CQOps version ${V}"
+          git push origin "$BRANCH"
+
+          echo "==> Creating pull request..."
+          gh pr create \
+            --repo microsoft/winget-pkgs \
+            --base master \
+            --head "szporwolik:${BRANCH}" \
+            --title "Update: SzymonPorwolik.CQOps version ${V}" \
+            --body "Automated update by [CQOps](https://github.com/szporwolik/cqops) release workflow v${V}."
+
+          echo "==> WinGet PR submitted for CQOps ${V}"
 
       - name: Save generated WinGet manifests
         if: steps.gate.outputs.skip != 'true' && always()
