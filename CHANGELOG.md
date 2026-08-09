@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.9.10 — 2026-08-09
+
+> **Configurable rig poll, log hygiene, and UI fixes.** Hamlib/flrig poll interval is now configurable per rig, application logs are quieter and safer, and several menu navigation/viewport refresh regressions are resolved.
+
+### Rig Control
+- **Configurable poll interval**: `poll_interval_s` (1–60 s, default 1) added to each rig preset. Adjust via Rig menu → Edit Rig, visible when a radio backend (Hamlib or Flrig) is selected. A warning toast appears if the value is clamped to the valid range.
+- **Backoff summary**: a single summary line is logged after repeated hamlib connection retries instead of one log line per failed attempt.
+
+### Log Hygiene
+- **Duplicate QSO log removed**: Wavelog duplicate-skip no longer emits a DEBUG log per QSO; the existing summary line already counts skipped QSOs.
+- **Wavelog raw JSON body removed**: the `private_lookup` raw response body is no longer logged (callers provide their own context).
+- **Email redacted**: callbook provider data logs now show `email=***` instead of the actual email address.
+- **Structured toast logging**: toast log lines use `msg="toast" text="..."` instead of plain concatenation.
+- **GPS connection failure**: GPSD unreachable toast is now a warning (yellow) instead of an error (red).
+
+### UI Fixes
+- **Menu viewport refresh**: fixed stale rendering after Ctrl+S/Enter save in Rig, Logbook, and Operator menus — the viewport now properly refreshes when returning to list view and when re-entering edit forms.
+- **Callbook toast shortened**: multi-provider toast now shows `"Callbook: CALL — PrimaryProvider +N more"` instead of listing every provider.
+
+### Under the Hood
+- **No config or database migration needed** from v0.9.9. New `poll_interval_s` field defaults to 1 when absent.
+
 ## v0.9.9 — 2026-08-09
 
 > **Logbook flexibility, GPS grid fix, and WinGet CI hardening.** Multiple logbooks can now share the same callsign, the GPS-derived grid updates immediately on the path line, and the WinGet release automation has been hardened for reliable PR submission.
