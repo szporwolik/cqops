@@ -498,6 +498,17 @@ func (m *Model) formPathRow(width int) string {
 		sigB.WriteByte(',')
 		sigB.WriteString(strconv.FormatFloat(m.rotor.targetEl, 'f', 0, 64))
 	}
+	// Include GPS state so the path line updates when a GPS fix is
+	// acquired or the grid precision changes — the effective grid
+	// and "(GPS)" suffix can change independently of Station.Grid.
+	sigB.WriteString("|gps:")
+	sigB.WriteString(strconv.FormatBool(m.App.Config.Integrations.GPS.Enabled))
+	sigB.WriteByte(',')
+	sigB.WriteString(strconv.FormatBool(m.gps.hasFix))
+	sigB.WriteByte(',')
+	sigB.WriteString(m.gps.lastGrid)
+	sigB.WriteByte(',')
+	sigB.WriteString(strconv.FormatBool(m.App.Logbook.Station.GPSGrid))
 	sig := sigB.String()
 
 	if m.rc.pathSig == sig && m.rc.pathLine != "" {

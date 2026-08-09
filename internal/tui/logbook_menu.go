@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"charm.land/bubbles/v2/viewport"
@@ -649,12 +650,21 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 
 	var savedName string
 	if c.mode == chooserCreate {
-		// Check for duplicate by callsign.
-		if _, _, found := config.FindLogbookByCallsign(c.app.Config, cs); found {
-			c.toasts.Warn("Logbook with callsign " + cs + " already exists")
-			return nil
-		}
+		// Build a collision-safe logbook ID.
+		// The first logbook for a given callsign keeps the simple
+		// callsign-derived ID (backward compatible).  Additional
+		// logbooks with the same callsign include the logbook name
+		// in the seed; if that still collides (same callsign + same
+		// name), a numeric suffix guarantees uniqueness.
 		id := config.NewID(cs)
+		if _, exists := c.app.Config.Logbooks[id]; exists {
+			c.toasts.Info("Note: another logbook with callsign " + cs + " already exists")
+			seed := cs + "|" + nm
+			id = config.NewID(seed)
+			for i := 2; c.app.Config.Logbooks[id].ID != ""; i++ {
+				id = config.NewID(seed + "|" + strconv.Itoa(i))
+			}
+		}
 		prevRigName := c.app.Logbook.Station.RigName
 		c.app.Config.Logbooks[id] = config.Logbook{
 			ID:             id,
