@@ -621,15 +621,6 @@ jobs:
             throw "WingetCreate failed with exit code $LASTEXITCODE"
           }
 
-          Write-Host "==> Patching ReleaseNotes into locale manifest"
-          $localeFile = Get-ChildItem -Path manifests -Recurse -Filter '*.locale.en-US.yaml' | Select-Object -First 1
-          if (-not $localeFile) {
-            throw 'Locale manifest not found after generation'
-          }
-          $releaseNotes = "CQOps v${version} — maintenance release.`nSee ${releaseNotesUrl} for details."
-          Add-Content -Path $localeFile.FullName -Value "ReleaseNotes: ${releaseNotes}"
-          Write-Host "Patched ReleaseNotes in $($localeFile.FullName)"
-
           Write-Host "==> Submitting PR to winget-pkgs"
           $branch = "cqops-${version}"
 
