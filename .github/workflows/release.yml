@@ -595,11 +595,12 @@ jobs:
           }
           Write-Host "WinGet fork synchronized."
 
-      - name: Generate WinGet manifests
+      - name: Submit WinGet update
         if: steps.gate.outputs.skip != 'true'
         shell: pwsh
         env:
           VERSION: ${{ needs.create-github-release.outputs.version }}
+          GH_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
         run: |
           $ErrorActionPreference = 'Stop'
           $version = $env:VERSION.TrimStart('v')
@@ -609,7 +610,8 @@ jobs:
           $installerUrl = "https://github.com/szporwolik/cqops/releases/download/v${version}/cqops-setup.exe"
           $releaseNotesUrl = "https://github.com/szporwolik/cqops/releases/tag/v${version}"
           $wingetCreate = '${{ steps.wingetcreate.outputs.path }}'
-          Write-Host "Generating WinGet manifests for CQOps $version"
+
+          Write-Host "==> Generating WinGet manifests for CQOps $version"
           & $wingetCreate update SzymonPorwolik.CQOps `
             --version $version `
             --urls "${installerUrl}|x64|machine" `
@@ -618,8 +620,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw "WingetCreate failed with exit code $LASTEXITCODE"
           }
-          # WingetCreate auto-fills ReleaseNotesUrl but NOT ReleaseNotes
-          # text body. Patch the generated locale manifest to add it.
+
+          Write-Host "==> Patching ReleaseNotes into locale manifest"
           $localeFile = Get-ChildItem -Path manifests -Recurse -Filter '*.locale.en-US.yaml' | Select-Object -First 1
           if (-not $localeFile) {
             throw 'Locale manifest not found after generation'
@@ -628,42 +630,34 @@ jobs:
           Add-Content -Path $localeFile.FullName -Value "ReleaseNotes: ${releaseNotes}"
           Write-Host "Patched ReleaseNotes in $($localeFile.FullName)"
 
-      - name: Submit WinGet PR
-        if: steps.gate.outputs.skip != 'true'
-        shell: bash
-        env:
-          VERSION: ${{ needs.create-github-release.outputs.version }}
-          GH_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          V="$(echo "$VERSION" | sed 's/^v//')"
-          FORK="szporwolik/winget-pkgs"
-          BRANCH="cqops-${V}"
-          echo "==> Cloning fork (shallow)..."
-          git clone --depth 1 --filter=blob:none \
-            "https://github.com/${FORK}.git" winget-pkgs
-          echo "==> Copying manifests..."
-          mkdir -p winget-pkgs/manifests
-          cp -r manifests/s winget-pkgs/manifests/
-          cd winget-pkgs
-          git config user.name  "cqops-bot"
-          git config user.email "szporwolik@users.noreply.github.com"
-          git checkout -b "$BRANCH"
-          git add manifests/
-          if git diff --cached --quiet; then
-            echo "No changes — CQOps ${V} already in winget-pkgs."
-            exit 0
-          fi
-          git commit -m "Update: SzymonPorwolik.CQOps version ${V}"
-          git push origin "$BRANCH"
-          echo "==> Creating pull request..."
-          gh pr create \
-            --repo microsoft/winget-pkgs \
-            --base master \
-            --head "szporwolik:${BRANCH}" \
-            --title "Update: SzymonPorwolik.CQOps version ${V}" \
-            --body "Automated update by [CQOps](https://github.com/szporwolik/cqops) release workflow v${V}."
-          echo "==> WinGet PR submitted for CQOps ${V}"
+          Write-Host "==> Submitting PR to winget-pkgs via gh CLI"
+          $branch = "cqops-${version}"
+          $forkDir = 'winget-pkgs'
+          $masterSha = (gh api repos/szporwolik/winget-pkgs/git/refs/heads/master --jq '.object.sha')
+          Write-Host "Fork master SHA: ${masterSha}"
+
+          New-Item -ItemType Directory -Force -Path $forkDir | Out-Null
+          Push-Location $forkDir
+          git init
+          git config user.name  'cqops-bot'
+          git config user.email 'szporwolik@users.noreply.github.com'
+          New-Item -ItemType Directory -Force -Path manifests | Out-Null
+          Copy-Item -Recurse -Force ..\manifests\s manifests\
+          git add manifests\
+          $tree = (git write-tree).Trim()
+          $commit = (git commit-tree -m "Update: SzymonPorwolik.CQOps version ${version}" -p $masterSha $tree).Trim()
+          Write-Host "Commit: ${commit}"
+          git push "https://cqops-bot:${env:GH_TOKEN}@github.com/szporwolik/winget-pkgs.git" "${commit}:refs/heads/${branch}"
+          Pop-Location
+
+          gh pr create `
+            --repo microsoft/winget-pkgs `
+            --base master `
+            --head "szporwolik:${branch}" `
+            --title "Update: SzymonPorwolik.CQOps version ${version}" `
+            --body "Automated update by [CQOps](https://github.com/szporwolik/cqops) release workflow v${version}."
+
+          Write-Host "==> WinGet PR submitted for CQOps $version"
 
       - name: Save generated WinGet manifests
         if: steps.gate.outputs.skip != 'true' && always()
