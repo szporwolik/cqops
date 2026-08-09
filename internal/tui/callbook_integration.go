@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -473,15 +474,11 @@ func (m *Model) showCallbookToast(call string) {
 		if len(parts) == 1 && parts[0] == "CTY.DAT" {
 			return
 		}
-		// Build the list: "QRZ, Logbook, Wavelog"
-		list := ""
-		for i, p := range parts {
-			if i > 0 {
-				list += ", "
-			}
-			list += p
+		if len(parts) > 1 {
+			m.toasts.Info("Callbook: " + call + " — " + parts[0] + " +" + strconv.Itoa(len(parts)-1) + " more")
+		} else {
+			m.toasts.Info("Callbook: " + call + " — " + parts[0])
 		}
-		m.toasts.Info("Callbook: " + call + " — " + list)
 	} else if m.callbookRegistry == nil && !m.App.Config.Integrations.Callbook.Wavelog.Enabled {
 		// No providers available — show a one-time hint.
 		if !m.lookup.noProviderWarned {

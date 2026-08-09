@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -19,6 +20,7 @@ const (
 	rigFieldBackend
 	rigFieldBackendHost
 	rigFieldBackendPort
+	rigFieldPollInterval
 	rigFieldRotor
 	rigFieldRotorHost
 	rigFieldRotorPort
@@ -57,7 +59,8 @@ type RigForm struct {
 	BackendIdx   int // 0=None, 1=Hamlib, 2=Flrig
 	BackendHost  textinput.Model
 	BackendPort  textinput.Model
-	RotorIdx     int // 0=None, 1=Hamlib
+	PollInterval textinput.Model // poll interval in seconds
+	RotorIdx     int             // 0=None, 1=Hamlib
 	RotorHost    textinput.Model
 	RotorPort    textinput.Model
 	WsjtxEnabled bool
@@ -119,18 +122,24 @@ func NewRigForm(rigPlaceholder, antennaPlaceholder, powerPlaceholder string) *Ri
 	rp.SetWidth(28)
 	rp.Placeholder = "4533"
 
+	pi := newTextinput()
+	pi.CharLimit = 3
+	pi.SetWidth(28)
+	pi.Placeholder = "1"
+
 	rf := &RigForm{
-		Name:        nm,
-		Rig:         ri,
-		Antenna:     an,
-		Power:       pw,
-		BackendHost: bh,
-		BackendPort: bp,
-		RotorHost:   rh,
-		RotorPort:   rp,
-		WsjtxHost:   wh,
-		WsjtxPort:   wp,
-		focus:       rigFieldName,
+		Name:         nm,
+		Rig:          ri,
+		Antenna:      an,
+		Power:        pw,
+		BackendHost:  bh,
+		BackendPort:  bp,
+		PollInterval: pi,
+		RotorHost:    rh,
+		RotorPort:    rp,
+		WsjtxHost:    wh,
+		WsjtxPort:    wp,
+		focus:        rigFieldName,
 	}
 	return rf
 }
@@ -149,6 +158,8 @@ func (f *RigForm) Update(msg tea.KeyPressMsg) {
 		f.BackendHost, _ = f.BackendHost.Update(msg)
 	case rigFieldBackendPort:
 		f.BackendPort, _ = f.BackendPort.Update(msg)
+	case rigFieldPollInterval:
+		f.PollInterval, _ = f.PollInterval.Update(msg)
 	case rigFieldRotorHost:
 		f.RotorHost, _ = f.RotorHost.Update(msg)
 	case rigFieldRotorPort:
@@ -163,8 +174,10 @@ func (f *RigForm) Update(msg tea.KeyPressMsg) {
 func (f *RigForm) NextInput() {
 	f.blurAll()
 	next := rigFormField(wrapNext(int(f.focus), int(rigFieldEnd)))
-	if f.BackendIdx == 0 && next == rigFieldBackendHost {
-		next = rigFieldRotor // skip radio host/port, jump to rotor
+	if f.BackendIdx == 0 {
+		if next >= rigFieldBackendHost && next <= rigFieldPollInterval {
+			next = rigFieldRotor // skip radio host/port/poll, jump to rotor
+		}
 	}
 	if f.RotorIdx == 0 && next == rigFieldRotorHost {
 		next = rigFieldWsjtx // skip rotor host/port, jump to WSJT-X
@@ -185,7 +198,7 @@ func (f *RigForm) PrevInput() {
 	if f.RotorIdx == 0 && (prev == rigFieldRotorPort || prev == rigFieldRotorHost) {
 		prev = rigFieldRotor
 	}
-	if f.BackendIdx == 0 && (prev == rigFieldBackendPort || prev == rigFieldBackendHost) {
+	if f.BackendIdx == 0 && (prev >= rigFieldBackendHost && prev <= rigFieldPollInterval) {
 		prev = rigFieldBackend
 	}
 	f.focus = prev
@@ -193,7 +206,12 @@ func (f *RigForm) PrevInput() {
 }
 
 func (f *RigForm) blurAll() {
-	blurTextinputs(&f.Name, &f.Rig, &f.Antenna, &f.Power, &f.BackendHost, &f.BackendPort, &f.RotorHost, &f.RotorPort, &f.WsjtxHost, &f.WsjtxPort)
+	blurTextinputs(&f.Name, &f.Rig, &f.Antenna, &f.Power, &f.BackendHost, &f.BackendPort, &f.PollInterval, &f.RotorHost, &f.RotorPort, &f.WsjtxHost, &f.WsjtxPort)
+	// Clean up poll interval on blur: strip non-digits, default empty to "1".
+	// Full range clamping (1–60) happens in PollIntervalSec() on save.
+	if v := strings.TrimSpace(f.PollInterval.Value()); v == "" {
+		f.PollInterval.SetValue("1")
+	}
 }
 
 func (f *RigForm) focusField() {
@@ -210,6 +228,8 @@ func (f *RigForm) focusField() {
 		f.BackendHost.Focus()
 	case rigFieldBackendPort:
 		f.BackendPort.Focus()
+	case rigFieldPollInterval:
+		f.PollInterval.Focus()
 	case rigFieldRotorHost:
 		f.RotorHost.Focus()
 	case rigFieldRotorPort:
@@ -229,7 +249,7 @@ func (f *RigForm) OnLastField() bool {
 		return f.focus == rigFieldRotorPort
 	}
 	if f.BackendIdx != 0 {
-		return f.focus == rigFieldBackendPort
+		return f.focus == rigFieldPollInterval
 	}
 	return f.focus == rigFieldWsjtx
 }
@@ -288,7 +308,36 @@ func (f *RigForm) SetRotor(idx int, host, port string) {
 	}
 }
 
-// RotorValues returns the selected rotor backend and host/port.
+// PollIntervalSec returns the poll interval in seconds, defaulting to 1.
+func (f *RigForm) PollIntervalSec() int {
+	v, _ := f.normalizePollInterval()
+	return v
+}
+
+// normalizePollInterval reads the raw input and returns the clamped value
+// along with whether any adjustment was needed.
+func (f *RigForm) normalizePollInterval() (int, bool) {
+	s := strings.TrimSpace(f.PollInterval.Value())
+	if s == "" || s == "1" {
+		return 1, false
+	}
+	v, err := strconv.Atoi(s)
+	if err != nil || v < 1 {
+		return 1, true
+	}
+	if v > 60 {
+		return 60, true
+	}
+	return v, false
+}
+
+// SetPollInterval sets the poll interval field value.
+func (f *RigForm) SetPollInterval(sec int) {
+	if sec <= 0 {
+		sec = 1
+	}
+	f.PollInterval.SetValue(strconv.Itoa(sec))
+}
 func (f *RigForm) RotorValues() (backend string, host, port string) {
 	host = strings.TrimSpace(f.RotorHost.Value())
 	port = strings.TrimSpace(f.RotorPort.Value())
@@ -430,6 +479,8 @@ func (f *RigForm) View() tea.View {
 		b.WriteString(padOrTrunc(renderField(hostLabel, &f.BackendHost, f.focus == rigFieldBackendHost), availW))
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(renderField(portLabel, &f.BackendPort, f.focus == rigFieldBackendPort), availW))
+		b.WriteString("\n")
+		b.WriteString(padOrTrunc(renderField("  Poll (s):", &f.PollInterval, f.focus == rigFieldPollInterval), availW))
 	}
 
 	b.WriteString("\n")
@@ -506,6 +557,8 @@ func (f *RigForm) HandlePaste(content string) tea.Cmd {
 		f.BackendHost, _ = f.BackendHost.Update(msg)
 	case rigFieldBackendPort:
 		f.BackendPort, _ = f.BackendPort.Update(msg)
+	case rigFieldPollInterval:
+		f.PollInterval, _ = f.PollInterval.Update(msg)
 	case rigFieldRotorHost:
 		f.RotorHost, _ = f.RotorHost.Update(msg)
 	case rigFieldRotorPort:
@@ -568,6 +621,22 @@ func (f *RigForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 		f.PrevInput()
 		return nil
 	}
+
+	// Poll interval: only accept digits, backspace, delete, and arrows.
+	if f.focus == rigFieldPollInterval {
+		s := k.String()
+		if len(s) == 1 && s[0] >= '0' && s[0] <= '9' {
+			f.Update(msg)
+		}
+		// Navigation/editing keys pass through to textinput.
+		if msg.Code == tea.KeyBackspace || msg.Code == tea.KeyDelete ||
+			msg.Code == tea.KeyLeft || msg.Code == tea.KeyRight ||
+			msg.Code == tea.KeyHome || msg.Code == tea.KeyEnd {
+			f.Update(msg)
+		}
+		return nil
+	}
+
 	f.Update(msg)
 	return nil
 }

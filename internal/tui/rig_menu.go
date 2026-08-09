@@ -365,6 +365,7 @@ func (rc *RigChooser) refreshNames() {
 
 func (rc *RigChooser) startCreate() {
 	rc.mode = rigChooserCreate
+	rc.lastFormContent = "" // force viewport refresh on mode switch
 	rc.form.SetValues("", "", "", "")
 	rc.form.SetBackend(0, "", "")
 	rc.form.SetRotor(0, "", "")
@@ -378,6 +379,7 @@ func (rc *RigChooser) startEdit(id string) {
 	rp := rc.app.Config.Rigs[id]
 	rc.mode = rigChooserEdit
 	rc.editing = id
+	rc.lastFormContent = "" // force viewport refresh on mode switch
 	rc.form.SetValues(rp.Name, rp.Model, rp.Antenna, rp.Power)
 	backendIdx := 0
 	switch rp.RadioBackend {
@@ -397,6 +399,7 @@ func (rc *RigChooser) startEdit(id string) {
 	}
 	rc.form.SetRotor(rotorIdx, rp.RotorHamlibHost, rp.RotorHamlibPort)
 	rc.form.SetWsjtx(rp.WsjtxEnabled, rp.WsjtxUDPHost, fmt.Sprintf("%d", rp.WsjtxUDPPort))
+	rc.form.SetPollInterval(rp.PollIntervalS)
 	rc.form.blurAll()
 	rc.form.Name.Focus()
 }
@@ -468,6 +471,7 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 		if rc.app.Config.Rigs == nil {
 			rc.app.Config.Rigs = make(map[string]config.RigPreset)
 		}
+		pollInterval, clamped := rc.form.normalizePollInterval()
 		rc.app.Config.Rigs[id] = config.RigPreset{
 			ID:              id,
 			Name:            nm,
@@ -479,6 +483,7 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 			FlrigPort:       flrigPort,
 			HamlibRadioHost: hamlibHost,
 			HamlibRadioPort: hamlibPort,
+			PollIntervalS:   pollInterval,
 			RotorBackend:    rotorBackend,
 			RotorHamlibHost: rotorHost,
 			RotorHamlibPort: rotorPort,
@@ -488,6 +493,9 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 		}
 		rc.names = append(rc.names, id)
 		savedName = rig
+		if clamped {
+			rc.toasts.Warn("Poll interval adjusted to " + strconv.Itoa(pollInterval) + "s (valid range: 1–60)")
+		}
 	} else {
 		id := rc.editing
 		rp := rc.app.Config.Rigs[id]
@@ -500,6 +508,8 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 		rp.FlrigPort = flrigPort
 		rp.HamlibRadioHost = hamlibHost
 		rp.HamlibRadioPort = hamlibPort
+		pollInterval, clamped := rc.form.normalizePollInterval()
+		rp.PollIntervalS = pollInterval
 		rp.RotorBackend = rotorBackend
 		rp.RotorHamlibHost = rotorHost
 		rp.RotorHamlibPort = rotorPort
@@ -508,10 +518,14 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 		rp.WsjtxUDPPort = wsjtxPort
 		rc.app.Config.Rigs[id] = rp
 		savedName = rig
+		if clamped {
+			rc.toasts.Warn("Poll interval adjusted to " + strconv.Itoa(pollInterval) + "s (valid range: 1–60)")
+		}
 	}
 
 	rc.mode = rigChooserList
 	rc.form.blurAll()
+	rc.lastListContent = "" // force viewport refresh
 	rc.needsRefresh = true
 	if err := config.Save(rc.app.ConfigPath, rc.app.Config); err != nil {
 		rc.toasts.Error("Save " + savedName + " failed: " + err.Error())

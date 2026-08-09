@@ -78,7 +78,7 @@ func (m *Model) startGPSD(cfg config.GPSConfig) tea.Cmd {
 	// Synchronously verify the server is reachable.
 	if err := m.gps.reader.TryOpen(); err != nil {
 		applog.Warn("GPS: cannot connect to GPSD", "addr", net.JoinHostPort(host, port), "error", err.Error())
-		m.toasts.Error("GPS: cannot connect to GPSD")
+		m.toasts.Warn("GPS: cannot connect to GPSD")
 		m.gps.reader.Close()
 		m.gps.reader = nil
 		return nil

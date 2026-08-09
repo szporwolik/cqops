@@ -555,6 +555,7 @@ func (c *LogbookChooser) refreshNames() {
 
 func (c *LogbookChooser) startCreate() {
 	c.mode = chooserCreate
+	c.lastFormContent = "" // force viewport refresh on mode switch
 	c.station.SetValues("", "", "", "", "", "", "", 1, 0, 0, 0, "", "", "EU")
 	c.station.SetWavelogValues(nil)
 	c.station.SetAPRSValues(nil)
@@ -568,6 +569,7 @@ func (c *LogbookChooser) startCreate() {
 func (c *LogbookChooser) startEdit(id string) {
 	lb := c.app.Config.Logbooks[id]
 	c.mode = chooserEdit
+	c.lastFormContent = "" // force viewport refresh on mode switch
 	c.editing = id
 	// Resolve active operator to callsign for the form selector.
 	opCallsign := ""
@@ -707,6 +709,7 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 
 		c.mode = chooserList
 		c.station.BlurAll()
+		c.lastListContent = "" // force viewport refresh
 		if err := config.Save(c.app.ConfigPath, c.app.Config); err != nil {
 			c.toasts.Error("Save " + savedName + " failed: " + err.Error())
 			return nil
@@ -745,6 +748,7 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 
 	c.mode = chooserList
 	c.station.BlurAll()
+	c.lastListContent = "" // force viewport refresh
 	if err := config.Save(c.app.ConfigPath, c.app.Config); err != nil {
 		c.toasts.Error("Save " + savedName + " failed: " + err.Error())
 		return nil

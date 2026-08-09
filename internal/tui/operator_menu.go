@@ -121,6 +121,7 @@ func (oc *OperatorChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			oc.form.BlurAll()
 			oc.mode = operatorList
+			oc.lastListContent = "" // force viewport refresh
 			return oc, nil
 
 		case oc.mode == operatorConfirmDelete:
@@ -287,6 +288,7 @@ func (oc *OperatorChooser) saveForm() tea.Cmd {
 
 	oc.mode = operatorList
 	oc.form.BlurAll()
+	oc.lastListContent = "" // force viewport refresh
 	oc.refreshIDs()
 
 	if err := config.Save(oc.app.ConfigPath, oc.app.Config); err != nil {
