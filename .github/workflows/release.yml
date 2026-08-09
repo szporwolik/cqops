@@ -606,26 +606,20 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($version)) {
             throw 'Release version is empty.'
           }
-
           $installerUrl = "https://github.com/szporwolik/cqops/releases/download/v${version}/cqops-setup.exe"
           $releaseNotesUrl = "https://github.com/szporwolik/cqops/releases/tag/v${version}"
-
           $wingetCreate = '${{ steps.wingetcreate.outputs.path }}'
           Write-Host "Generating WinGet manifests for CQOps $version"
-
           & $wingetCreate update SzymonPorwolik.CQOps `
             --version $version `
             --urls "${installerUrl}|x64|machine" `
             --release-notes-url $releaseNotesUrl `
             --out manifests
-
           if ($LASTEXITCODE -ne 0) {
             throw "WingetCreate failed with exit code $LASTEXITCODE"
           }
-
-          # WingetCreate auto-fills ReleaseNotesUrl but NOT the ReleaseNotes
-          # text body, which the winget-pkgs validation now requires.  Patch
-          # the generated locale manifest to add a short ReleaseNotes entry.
+          # WingetCreate auto-fills ReleaseNotesUrl but NOT ReleaseNotes
+          # text body. Patch the generated locale manifest to add it.
           $localeFile = Get-ChildItem -Path manifests -Recurse -Filter '*.locale.en-US.yaml' | Select-Object -First 1
           if (-not $localeFile) {
             throw 'Locale manifest not found after generation'
@@ -645,29 +639,23 @@ jobs:
           V="$(echo "$VERSION" | sed 's/^v//')"
           FORK="szporwolik/winget-pkgs"
           BRANCH="cqops-${V}"
-
           echo "==> Cloning fork (shallow)..."
           git clone --depth 1 --filter=blob:none \
             "https://github.com/${FORK}.git" winget-pkgs
-
           echo "==> Copying manifests..."
           mkdir -p winget-pkgs/manifests
           cp -r manifests/s winget-pkgs/manifests/
-
           cd winget-pkgs
           git config user.name  "cqops-bot"
           git config user.email "szporwolik@users.noreply.github.com"
           git checkout -b "$BRANCH"
           git add manifests/
-
           if git diff --cached --quiet; then
             echo "No changes — CQOps ${V} already in winget-pkgs."
             exit 0
           fi
-
           git commit -m "Update: SzymonPorwolik.CQOps version ${V}"
           git push origin "$BRANCH"
-
           echo "==> Creating pull request..."
           gh pr create \
             --repo microsoft/winget-pkgs \
@@ -675,7 +663,6 @@ jobs:
             --head "szporwolik:${BRANCH}" \
             --title "Update: SzymonPorwolik.CQOps version ${V}" \
             --body "Automated update by [CQOps](https://github.com/szporwolik/cqops) release workflow v${V}."
-
           echo "==> WinGet PR submitted for CQOps ${V}"
 
       - name: Save generated WinGet manifests
