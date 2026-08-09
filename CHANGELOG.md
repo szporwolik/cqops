@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.9.9 — 2026-08-09
+
+> **Logbook flexibility, GPS grid fix, and WinGet CI hardening.** Multiple logbooks can now share the same callsign, the GPS-derived grid updates immediately on the path line, and the WinGet release automation has been hardened for reliable PR submission.
+
+### Logbooks
+- **Same-callsign logbooks allowed**: you can now create multiple logbooks with the same station callsign (e.g. "SP9SPM Home" and "SP9SPM Portable"). The logbook ID uses a collision-safe scheme that includes the logbook name; existing single-callsign logbooks keep their original IDs. No config or database migration needed.
+
+### GPS
+- **Path line cache fix**: the station info line now updates immediately when GPS acquires a fix or refines the grid precision. Previously the render cache used only the static `Station.Grid` field, so a GPS grid update (e.g. 6-char → 10-char) would not appear until a restart or unrelated cache bust.
+
+### WinGet CI
+- **Fork sync**: the release workflow now fast-forwards the `szporwolik/winget-pkgs` fork before submission, preventing the ~11k commit backlog from causing silent submission failures.
+- **ReleaseNotes patch**: the generated WinGet manifest is now patched to include the `ReleaseNotes` text field required by winget-pkgs validation.
+- **Reliable PR submission**: switched from `wingetcreate --submit` (which had intermittent GitHub connectivity issues from the runner) to a split generate + `gh` CLI PR workflow.
+
+### Under the Hood
+- **No config or database migration needed** from v0.9.8.
+
 ## v0.9.8 — 2026-08-07
 
 > **Maintenance release.** First public publish to WinGet, with release automation kept in sync for the Windows installer and packaging flow.
