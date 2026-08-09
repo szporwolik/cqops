@@ -566,6 +566,7 @@ func (w *Wizard) saveConfig() error {
 		hamlibHost, hamlibPort = radioBackendHost, radioBackendPort
 	}
 
+	pollInterval, clamped := w.rigForm.normalizePollInterval()
 	w.App.Config.Rigs = map[string]config.RigPreset{
 		rigID: {
 			ID:              rigID,
@@ -578,6 +579,7 @@ func (w *Wizard) saveConfig() error {
 			FlrigPort:       flrigPort,
 			HamlibRadioHost: hamlibHost,
 			HamlibRadioPort: hamlibPort,
+			PollIntervalS:   pollInterval,
 			RotorBackend:    rotorBackend,
 			RotorHamlibHost: rotorHost,
 			RotorHamlibPort: rotorPort,
@@ -585,6 +587,9 @@ func (w *Wizard) saveConfig() error {
 			WsjtxUDPHost:    wsjtxHost,
 			WsjtxUDPPort:    wsjtxPort,
 		},
+	}
+	if clamped {
+		w.toasts.Warn("Poll interval adjusted to " + strconv.Itoa(pollInterval) + "s (valid range: 1–60)")
 	}
 
 	// Callbook providers (QRZ etc.) are configured post-wizard via the

@@ -328,7 +328,7 @@ func resultFields(r *Result) string {
 	add("zip", r.Zip)
 	add("county", r.County)
 	add("class", r.Class)
-	add("email", r.Email)
+	add("email", "***")
 	add("url", r.URL)
 	add("lat", r.Lat)
 	add("lon", r.Lon)

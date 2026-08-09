@@ -262,8 +262,6 @@ func PrivateLookup(baseURL, apiKey, callsign, band, mode, stationProfileID strin
 		return nil, FriendlyError(fmt.Errorf("HTTP %d", resp.StatusCode))
 	}
 
-	applog.Debug("Wavelog: private_lookup raw response", "body", strings.TrimSpace(string(respBody)))
-
 	var raw map[string]interface{}
 	if err := json.Unmarshal(respBody, &raw); err != nil {
 		return nil, fmt.Errorf("parse response: %w", err)

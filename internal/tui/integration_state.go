@@ -24,6 +24,10 @@ type rigState struct {
 	name          string    // rig model name from rig backend (e.g. "FT-DX10")
 	vfoWarned     bool      // suppress repeated VFO-mode toasts on reconnect loops
 	backendWarned bool      // suppress repeated "backend not configured" debug logs
+
+	// Connection attempt tracking for summary-on-reconnect.
+	connectAttempts int       // consecutive failed poll attempts since last disconnect
+	connectStart    time.Time // first failed attempt timestamp in the current cycle
 }
 
 // rotorState holds polled rotor data and the rotor backend client.

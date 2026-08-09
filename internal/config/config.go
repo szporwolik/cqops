@@ -444,7 +444,8 @@ type RigPreset struct {
 	FlrigPort       string `yaml:"flrig_port,omitempty"`
 	HamlibRadioHost string `yaml:"hamlib_radio_host,omitempty"`
 	HamlibRadioPort string `yaml:"hamlib_radio_port,omitempty"`
-	RotorBackend    string `yaml:"rotor_backend,omitempty"` // "" | "hamlib"
+	PollIntervalS   int    `yaml:"poll_interval_s,omitempty"` // poll interval in seconds (default 1)
+	RotorBackend    string `yaml:"rotor_backend,omitempty"`   // "" | "hamlib"
 	RotorHamlibHost string `yaml:"rotor_hamlib_host,omitempty"`
 	RotorHamlibPort string `yaml:"rotor_hamlib_port,omitempty"`
 	WsjtxEnabled    bool   `yaml:"wsjtx_enabled,omitempty"`

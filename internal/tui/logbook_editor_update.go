@@ -760,8 +760,6 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 		}
 
 		if existingID := store.FindQSOByKey(db, qs.Call, qs.Band, qs.Mode, qs.QSODate, qs.TimeOn); existingID != 0 {
-			applog.Debug("Wavelog: duplicate QSO — already in local logbook",
-				"local_id", existingID, "call", qs.Call, "band", qs.Band, "date", qs.QSODate)
 			dupes++
 			continue
 		}

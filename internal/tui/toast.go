@@ -69,14 +69,14 @@ func (tq *ToastQueue) Push(level ToastLevel, msg string) {
 	}
 	tq.mu.Unlock()
 
-	// Also log every toast
+	// Also log every toast.
 	switch level {
 	case ToastInfo, ToastSuccess:
-		applog.Info("toast: " + msg)
+		applog.Info("toast", "text", msg)
 	case ToastWarning:
-		applog.Warn("toast: " + msg)
+		applog.Warn("toast", "text", msg)
 	case ToastError:
-		applog.Error("toast: " + msg)
+		applog.Error("toast", "text", msg)
 	}
 }
 

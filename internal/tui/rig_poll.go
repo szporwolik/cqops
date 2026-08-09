@@ -194,7 +194,13 @@ type rigPowerMsg struct {
 // When disconnected, back off to every 10 ticks (~10s) to avoid
 // flooding rigctld with rapid connect/drop cycles.
 func (m *Model) pollRig() tea.Cmd {
-	pollInterval := 1 // fast-poll interval in ticks (~1 s)
+	// Connected poll interval from config (default 1 s).
+	pollInterval := 1
+	if m.App != nil && m.App.Logbook != nil {
+		if rp, ok := m.App.Config.Rigs[m.App.Logbook.Station.RigName]; ok && rp.PollIntervalS > 0 {
+			pollInterval = rp.PollIntervalS
+		}
+	}
 	if !m.rig.connected {
 		pollInterval = 10 // back off when disconnected (~10 s)
 		// flrig runs on localhost — shorter retry is safe.
@@ -270,7 +276,11 @@ func (m *Model) applyRigPoll(r rigPollMsg) tea.Cmd {
 			m.rc.status = ""
 		}
 		if r.err != "" && !m.rig.connected {
-			applog.Warn("rig: connect failed", "err", r.err)
+			if m.rig.connectAttempts == 0 {
+				m.rig.connectStart = time.Now()
+			}
+			m.rig.connectAttempts++
+			applog.Warn("rig: connect failed", "err", r.err, "attempt", m.rig.connectAttempts)
 		}
 		m.rig.connected = false
 		// Clear modes and name on disconnect so they are re-fetched when rig comes back.
@@ -283,7 +293,15 @@ func (m *Model) applyRigPoll(r rigPollMsg) tea.Cmd {
 		// Connected — notify user once per session.
 		if !m.rig.vfoWarned {
 			m.rig.vfoWarned = true
-			applog.Info("rig: poll connected", "backend", "flrig")
+			// Log summary if we had prior failures.
+			if m.rig.connectAttempts > 0 {
+				elapsed := time.Since(m.rig.connectStart).Round(time.Second)
+				applog.Info("rig: poll connected", "backend", "hamlib",
+					"attempts", m.rig.connectAttempts+1, "elapsed", elapsed.String())
+			} else {
+				applog.Info("rig: poll connected", "backend", "flrig")
+			}
+			m.rig.connectAttempts = 0
 			if _, ok := m.rig.client.(*hamlib.Client); ok {
 				m.toasts.Success("Hamlib: connected")
 			} else {
