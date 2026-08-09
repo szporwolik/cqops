@@ -617,13 +617,22 @@ jobs:
           GH_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
         run: |
           $ErrorActionPreference = 'Stop'
-          Write-Host "Syncing szporwolik/winget-pkgs with microsoft/winget-pkgs..."
-          gh repo sync szporwolik/winget-pkgs `
-            --source microsoft/winget-pkgs `
-            --branch master
-          if ($LASTEXITCODE -ne 0) {
-            throw "Failed to sync winget-pkgs fork"
+          Write-Host "Fast-forwarding szporwolik/winget-pkgs to match upstream..."
+
+          $upstream = gh api repos/microsoft/winget-pkgs/git/refs/heads/master --jq '.object.sha'
+          $fork    = gh api repos/szporwolik/winget-pkgs/git/refs/heads/master --jq '.object.sha'
+
+          if ($upstream -eq $fork) {
+            Write-Host "Fork already up to date."
+            exit 0
           }
+
+          Write-Host "Updating fork from $($fork.Substring(0,7)) to $($upstream.Substring(0,7))..."
+          gh api repos/szporwolik/winget-pkgs/git/refs/heads/master `
+            --method PATCH `
+            -f sha="$upstream" `
+            -f force=false | Out-Null
+
           Write-Host "WinGet fork synchronized."
 
       - name: Submit WinGet update
