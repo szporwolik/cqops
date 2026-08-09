@@ -610,6 +610,22 @@ jobs:
           Write-Host "WingetCreate: $path"
           "path=$path" >> $env:GITHUB_OUTPUT
 
+      - name: Sync WinGet fork
+        if: steps.gate.outputs.skip != 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Write-Host "Syncing szporwolik/winget-pkgs with microsoft/winget-pkgs..."
+          gh repo sync szporwolik/winget-pkgs `
+            --source microsoft/winget-pkgs `
+            --branch master
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to sync winget-pkgs fork"
+          }
+          Write-Host "WinGet fork synchronized."
+
       - name: Submit WinGet update
         if: steps.gate.outputs.skip != 'true'
         shell: pwsh
