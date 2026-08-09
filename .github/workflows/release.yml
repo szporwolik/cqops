@@ -630,24 +630,29 @@ jobs:
           Add-Content -Path $localeFile.FullName -Value "ReleaseNotes: ${releaseNotes}"
           Write-Host "Patched ReleaseNotes in $($localeFile.FullName)"
 
-          Write-Host "==> Submitting PR to winget-pkgs via gh CLI"
+          Write-Host "==> Submitting PR to winget-pkgs"
           $branch = "cqops-${version}"
-          $forkDir = 'winget-pkgs'
+
+          # Fetch only the fork master commit object (no tree/blob download).
+          $forkUrl = "https://github.com/szporwolik/winget-pkgs.git"
           $masterSha = (gh api repos/szporwolik/winget-pkgs/git/refs/heads/master --jq '.object.sha')
           Write-Host "Fork master SHA: ${masterSha}"
 
+          $forkDir = 'winget-pkgs'
           New-Item -ItemType Directory -Force -Path $forkDir | Out-Null
           Push-Location $forkDir
           git init
           git config user.name  'cqops-bot'
           git config user.email 'szporwolik@users.noreply.github.com'
+          git remote add origin $forkUrl
+          git fetch --depth 1 origin $masterSha
+          git checkout -b $branch FETCH_HEAD
+
           New-Item -ItemType Directory -Force -Path manifests | Out-Null
           Copy-Item -Recurse -Force ..\manifests\s manifests\
           git add manifests\
-          $tree = (git write-tree).Trim()
-          $commit = (git commit-tree -m "Update: SzymonPorwolik.CQOps version ${version}" -p $masterSha $tree).Trim()
-          Write-Host "Commit: ${commit}"
-          git push "https://cqops-bot:${env:GH_TOKEN}@github.com/szporwolik/winget-pkgs.git" "${commit}:refs/heads/${branch}"
+          git commit -m "Update: SzymonPorwolik.CQOps version ${version}"
+          git push origin $branch
           Pop-Location
 
           gh pr create `
