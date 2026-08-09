@@ -634,7 +634,7 @@ jobs:
           $branch = "cqops-${version}"
 
           # Fetch only the fork master commit object (no tree/blob download).
-          $forkUrl = "https://github.com/szporwolik/winget-pkgs.git"
+          $forkUrl = "https://cqops-bot:${env:GH_TOKEN}@github.com/szporwolik/winget-pkgs.git"
           $masterSha = (gh api repos/szporwolik/winget-pkgs/git/refs/heads/master --jq '.object.sha')
           Write-Host "Fork master SHA: ${masterSha}"
 
