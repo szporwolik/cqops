@@ -6,6 +6,13 @@ $BUILD_DATE = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
 $BUILD_DIR = "build"
 New-Item -ItemType Directory -Force -Path $BUILD_DIR | Out-Null
 
+# Ensure Go is on PATH (VS Code task shells can start before Go was installed/registered).
+if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
+    foreach ($p in @("$env:ProgramFiles\Go\bin", "${env:ProgramFiles(x86)}\Go\bin", "$env:LOCALAPPDATA\Programs\Go\bin", "$env:USERPROFILE\go\bin", "$env:USERPROFILE\scoop\apps\go\current\bin")) {
+        if (Test-Path (Join-Path $p 'go.exe')) { $env:Path = "$p;$env:Path"; break }
+    }
+}
+
 # Patch winres.json with current version before Windows builds
 $winres = Get-Content winres\winres.json -Raw | ConvertFrom-Json
 $ver4 = "$VERSION.0"
