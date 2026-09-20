@@ -616,6 +616,39 @@ func TestAPRSRadarRows_TypeMarkers(t *testing.T) {
 	}
 }
 
+// An active distance filter zooms the radar: the outer ring and the
+// caption reflect the filter radius instead of a fixed 10 km floor.
+func TestAPRSRadarRows_DistanceFilterScales(t *testing.T) {
+	m := newTestModel()
+	m.aprsPane.stations = []aprsStation{
+		{rec: aprs.StationRecord{Callsign: "NEAR"}, distKm: 0.9, bearing: 90},
+		{rec: aprs.StationRecord{Callsign: "FAR"}, distKm: 9, bearing: 270},
+	}
+	caption := func() string {
+		rows := m.aprsRadarRows(&m.aprsPane, 21, 10)
+		return stripANSI(rows[len(rows)-1])
+	}
+
+	m.aprsPane.distFilter = 1
+	if got := caption(); !strings.Contains(got, "~ 1 km") {
+		t.Errorf("caption should reflect the 1 km filter: %q", got)
+	}
+	m.aprsPane.distFilter = 5
+	if got := caption(); !strings.Contains(got, "~ 5 km") {
+		t.Errorf("caption should reflect the 5 km filter: %q", got)
+	}
+	// No filter — scale covers the farthest station, at least 10 km.
+	m.aprsPane.distFilter = 0
+	if got := caption(); !strings.Contains(got, "~ 10 km") {
+		t.Errorf("no filter should keep the 10 km floor: %q", got)
+	}
+	// A filter wider than the visible stations must not upscale the radar.
+	m.aprsPane.distFilter = 100
+	if got := caption(); !strings.Contains(got, "~ 10 km") {
+		t.Errorf("wide filter should not upscale: %q", got)
+	}
+}
+
 func TestAPRSRadarRows_TooSmall(t *testing.T) {
 	m := newTestModel()
 	if rows := m.aprsRadarRows(&m.aprsPane, 8, 4); len(rows) != 0 {

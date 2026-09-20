@@ -884,12 +884,18 @@ func (m *Model) aprsRadarRows(st *aprsPaneState, w, h int) []string {
 		return nil
 	}
 
-	// Range covers all visible stations, at least 10 km.
+	// Range covers all visible stations, at least 10 km. An active
+	// distance filter zooms the radar in: the outer ring equals the
+	// filter radius, so the 1/5/10 km steps change the scale. A filter
+	// wider than the visible stations never upscales the radar.
 	maxDist := 10.0
 	for i := range st.stations {
 		if st.stations[i].distKm > maxDist {
 			maxDist = st.stations[i].distKm
 		}
+	}
+	if st.distFilter > 0 && float64(st.distFilter) < maxDist {
+		maxDist = float64(st.distFilter)
 	}
 
 	grid := make([][]rune, innerH)
