@@ -425,6 +425,44 @@ func TestUpdateDXCSelectedCall_NotReady(t *testing.T) {
 	}
 }
 
+// TestDXCTable_RowHighlightSpansFullRow verifies that marker prefixes
+// ("N " / "D ") in the DX Call column are plain text. ANSI styles inside
+// table cells emit an SGR reset that cancels the selected-row highlight
+// for every cell after the call.
+func TestDXCTable_RowHighlightSpansFullRow(t *testing.T) {
+	spots := []store.DXCSpot{
+		{ReceivedAt: time.Now().Unix(), Frequency: 7030, Band: "40m", Mode: "FT8",
+			DXCall: "SP9CJM/P", Spotter: "HF100PKP", DXCC: "269", Comment: "test comment"},
+	}
+	m := newDXCBandFilterModel(t, spots)
+	m.width = 100
+	m.height = 24
+	m.buildDXCTable()
+
+	v := m.dxc.table.View()
+	var cursorLine string
+	for _, l := range strings.Split(v, "\n") {
+		if strings.Contains(l, "SP9CJM") {
+			cursorLine = l
+			break
+		}
+	}
+	if cursorLine == "" {
+		t.Fatalf("cursor row not found in table view:\n%s", v)
+	}
+	// Exactly one style pair: the outer Selected style wraps the whole
+	// row, so the highlight reaches the spotter and comment columns.
+	if n := strings.Count(cursorLine, "\x1b["); n != 2 {
+		t.Errorf("cursor row has %d ANSI sequences, want 2 (one wrapping style):\n%q", n, cursorLine)
+	}
+	if !strings.Contains(cursorLine, "N SP9CJM/P") {
+		t.Errorf("new-spot marker missing or styled:\n%q", cursorLine)
+	}
+	if !strings.Contains(cursorLine, "test comment") {
+		t.Errorf("comment column missing from cursor row:\n%q", cursorLine)
+	}
+}
+
 // =============================================================================
 // DXC key/state-transition tests
 // =============================================================================
