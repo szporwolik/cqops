@@ -253,7 +253,7 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			c.vp, _ = c.vp.Update(msg)
 			return c, nil
 
-		case c.mode == chooserList && (msg.Code == tea.KeyUp || k.String() == "up" || k.String() == "k"):
+		case c.mode == chooserList && (msg.Code == tea.KeyUp || k.String() == "up"):
 			if c.cursor == 0 {
 				c.cursor = len(c.names) - 1
 			} else {
@@ -261,7 +261,7 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			scrollVpToLine(&c.vp, c.cursor)
 
-		case c.mode == chooserList && (msg.Code == tea.KeyDown || k.String() == "down" || k.String() == "j"):
+		case c.mode == chooserList && (msg.Code == tea.KeyDown || k.String() == "down"):
 			if c.cursor == len(c.names)-1 {
 				c.cursor = 0
 			} else {

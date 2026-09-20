@@ -60,13 +60,13 @@ func (nm *NotificationsMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			nm.done = true
 			nm.saved = true
 			return nm, nil
-		case "up", "k":
+		case "up":
 			if nm.cursor == 0 {
 				nm.cursor = notifItemCount - 1
 			} else {
 				nm.cursor--
 			}
-		case "down", "j":
+		case "down":
 			if nm.cursor == notifItemCount-1 {
 				nm.cursor = 0
 			} else {

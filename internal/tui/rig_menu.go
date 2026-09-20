@@ -143,7 +143,7 @@ func (rc *RigChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			rc.vp, _ = rc.vp.Update(msg)
 			return rc, nil
 
-		case rc.mode == rigChooserList && (msg.Code == tea.KeyUp || k.String() == "up" || k.String() == "k"):
+		case rc.mode == rigChooserList && (msg.Code == tea.KeyUp || k.String() == "up"):
 			if rc.cursor == 0 {
 				rc.cursor = len(rc.names) - 1
 			} else {
@@ -151,7 +151,7 @@ func (rc *RigChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			scrollVpToLine(&rc.vp, rc.cursor)
 
-		case rc.mode == rigChooserList && (msg.Code == tea.KeyDown || k.String() == "down" || k.String() == "j"):
+		case rc.mode == rigChooserList && (msg.Code == tea.KeyDown || k.String() == "down"):
 			if rc.cursor == len(rc.names)-1 {
 				rc.cursor = 0
 			} else {

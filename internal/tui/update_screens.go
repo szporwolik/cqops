@@ -668,12 +668,12 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			// Cycle mode filter forward — same model as the DXC pane.
 			m.pskCycleMode(1)
 			return m, cmd
-		case "up", "k":
+		case "up":
 			if m.psk.selected > 0 {
 				m.psk.selected--
 			}
 			return m, cmd
-		case "down", "j":
+		case "down":
 			m.psk.selected++
 			return m, cmd
 		case "backspace":

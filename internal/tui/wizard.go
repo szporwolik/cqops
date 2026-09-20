@@ -271,12 +271,12 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					applog.InfoDetail("Wizard: timezone step done", fmt.Sprintf("tz=%s", config.Timezones[w.tzIndex]))
 					return w, nil
 				}
-				if msg.Code == tea.KeyUp || k.String() == "up" || k.String() == "k" {
+				if msg.Code == tea.KeyUp || k.String() == "up" {
 					if w.tzIndex > 0 {
 						w.tzIndex--
 					}
 				}
-				if msg.Code == tea.KeyDown || k.String() == "down" || k.String() == "j" {
+				if msg.Code == tea.KeyDown || k.String() == "down" {
 					if w.tzIndex < len(config.Timezones)-1 {
 						w.tzIndex++
 					}

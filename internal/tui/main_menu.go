@@ -55,13 +55,13 @@ func (m *MainMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "1", "2", "3", "4", "5", "6", "7", "8":
 			// Digit quick-select — F9 menu, then 1-8.
 			m.setAction(int(msg.String()[0] - '1'))
-		case "up", "k":
+		case "up":
 			if m.cursor == 0 {
 				m.cursor = len(m.items) - 1
 			} else {
 				m.cursor--
 			}
-		case "down", "j":
+		case "down":
 			if m.cursor == len(m.items)-1 {
 				m.cursor = 0
 			} else {

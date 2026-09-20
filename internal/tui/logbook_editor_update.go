@@ -219,7 +219,6 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return le, nil
 			case "up", "down", "left", "right", "home", "end",
-				"k", "j",
 				"pgup", "pgdown",
 				"esc", "f8",
 				"delete", "enter",
@@ -353,16 +352,16 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			le.goToPage(le.currentPage - 1)
 		case "pgdown":
 			le.goToPage(le.currentPage + 1)
-		case "up", "down", "left", "right", "home", "end", "k", "j":
+		case "up", "down", "left", "right", "home", "end":
 			// Before passing to table, check for page boundary overflow.
 			cursor := le.table.Cursor()
-			if k == "down" || k == "j" {
+			if k == "down" {
 				if cursor >= len(le.qsos)-1 && le.currentPage < le.totalPages() {
 					le.goToPage(le.currentPage + 1)
 					return le, nil
 				}
 			}
-			if k == "up" || k == "k" {
+			if k == "up" {
 				if cursor <= 0 && le.currentPage > 1 {
 					le.goToPage(le.currentPage - 1)
 					// Set cursor to last row of the new page.
