@@ -457,6 +457,25 @@ func TestAPRSBeaconShortcut(t *testing.T) {
 	}
 }
 
+func TestAPRSAgeAgo(t *testing.T) {
+	now := time.Now()
+	cases := []struct {
+		name string
+		at   time.Time
+		want string
+	}{
+		{"seconds", now.Add(-7 * time.Second), "less than a minute ago"},
+		{"zero", now, "less than a minute ago"},
+		{"minutes", now.Add(-5 * time.Minute), "5m ago"},
+		{"hours", now.Add(-3 * time.Hour), "3.0h ago"},
+	}
+	for _, c := range cases {
+		if got := aprsAgeAgo(c.at); got != c.want {
+			t.Errorf("%s: aprsAgeAgo = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
 func TestAPRSRadarRows(t *testing.T) {
 	m := newTestModel()
 	// Four stations at the cardinal points, two stacked on top of each other.

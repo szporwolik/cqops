@@ -841,7 +841,7 @@ func (m *Model) aprsStatusRows(detailW int) []string {
 	last := "never"
 	if cfg.LastBeaconAt != "" {
 		if t, err := time.Parse(time.RFC3339, cfg.LastBeaconAt); err == nil {
-			last = t.UTC().Format("15:04Z") + " (" + aprsAge(t) + " ago)"
+			last = t.UTC().Format("15:04Z") + " (" + aprsAgeAgo(t) + ")"
 		}
 	}
 	rows = append(rows, row("Last TX", last))
@@ -1122,7 +1122,7 @@ func (m *Model) aprsDetailRows(sel *aprsStation, detailW int) []string {
 			S.StatusValue.Render(truncateText(comment, innerW-8))), innerW))
 	}
 	// Last heard and source share one compact row, last heard first.
-	last := s.LastHeard.UTC().Format("15:04Z") + " (" + aprsAge(s.LastHeard) + " ago)"
+	last := s.LastHeard.UTC().Format("15:04Z") + " (" + aprsAgeAgo(s.LastHeard) + ")"
 	if s.Source != "" {
 		last += " \u00b7 " + s.Source
 	}
@@ -1130,6 +1130,15 @@ func (m *Model) aprsDetailRows(sel *aprsStation, detailW int) []string {
 		S.StatusLabel.Render("Last"),
 		S.StatusValue.Render(truncateText(last, innerW-6))), innerW))
 	return rows
+}
+
+// aprsAgeAgo formats a timestamp as "… ago" for detail lines. Sub-minute
+// ages read "less than a minute ago" instead of a jumpy seconds counter.
+func aprsAgeAgo(t time.Time) string {
+	if d := time.Since(t); d < time.Minute {
+		return "less than a minute ago"
+	}
+	return aprsAge(t) + " ago"
 }
 
 // aprsAge formats a timestamp as a compact human-readable age ("45s",
