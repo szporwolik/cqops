@@ -1023,3 +1023,61 @@ func TestCheckDupe_ClearedOnFormReset(t *testing.T) {
 		t.Error("dupe should be false after clearForm")
 	}
 }
+
+// TestPendingQSORefreshNotDropped reproduces the empty recent-QSOs bug: when
+// needRefresh fires while nothing else is pending, the Update loop silently
+// discarded the deferred refresh command — the QSO list stayed stale until
+// the app restarted.
+func TestPendingQSORefreshNotDropped(t *testing.T) {
+	m := newLifecycleTestModel(t)
+
+	if _, err := store.InsertQSO(m.App.DB, &qso.QSO{
+		Call: "SP9MOA", Band: "20m", Mode: "SSB", QSODate: "20240920",
+		TimeOn: "120000", RSTSent: "59", RSTRcvd: "59",
+	}); err != nil {
+		t.Fatalf("InsertQSO: %v", err)
+	}
+
+	m.needRefresh = true
+	m.screen = screenQSO
+
+	upd, cmd := m.Update(tea.WindowSizeMsg{Width: 100, Height: 40})
+	_ = upd
+	if cmd == nil {
+		t.Fatal("Update must return the deferred refresh command")
+	}
+
+	msg := execCmd(cmd)
+	var refreshed qsoRefreshedMsg
+	switch mm := msg.(type) {
+	case qsoRefreshedMsg:
+		refreshed = mm
+	case tea.BatchMsg:
+		for _, sub := range mm {
+			if r, ok := sub().(qsoRefreshedMsg); ok {
+				refreshed = r
+			}
+		}
+	}
+	if refreshed.qsos == nil {
+		t.Fatalf("refresh command produced no qsoRefreshedMsg (msg=%T)", msg)
+	}
+	// Apply the result like the runtime would.
+	if _, _ = m.Update(refreshed); len(m.qsos) != 1 || m.qsos[0].Call != "SP9MOA" {
+		t.Fatalf("m.qsos = %d rows, want 1 SP9MOA", len(m.qsos))
+	}
+}
+
+// TestBulkImportMarksDashboardDirty verifies the HTTP dashboard's recent/today
+// panels are re-pushed after a Wavelog download or ADIF import.
+func TestBulkImportMarksDashboardDirty(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.ui.logbookEditor = NewLogbookEditor(LogbookEditorConfig{DB: m.App.DB})
+	dashboardDataDirty = false
+	t.Cleanup(func() { dashboardDataDirty = true })
+
+	m.handleEditorSideEffects(editorMsg{dlDone: true, dlCount: 5, dlLastID: 10})
+	if !dashboardDataDirty {
+		t.Error("bulk import must mark the dashboard data dirty")
+	}
+}

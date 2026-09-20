@@ -809,6 +809,7 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 			default:
 				m.toasts.Success(fmt.Sprintf("QSO %s from %s deleted", em.delCall, em.delDate))
 			}
+			m.invalidateDashboardFlags()
 			refreshCmd = m.refreshQSOS()
 		}
 		if em.wlFetchQSOID != 0 {
@@ -833,6 +834,7 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 			default:
 				m.toasts.Success(fmt.Sprintf("QSO %s from %s saved", em.saveCall, em.saveDate))
 			}
+			m.invalidateDashboardFlags()
 			refreshCmd = m.refreshQSOS()
 		}
 		if em.purged {
@@ -840,6 +842,7 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 			m.ui.logbookEditor.wlLastFetchedID = 0
 			m.ui.logbookEditor.needsReload = true
 			refreshCmd = m.refreshQSOS()
+			m.invalidateDashboardFlags()
 			if m.App.Logbook.Wavelog != nil {
 				m.App.Logbook.Wavelog.LastFetchedID = 0
 				if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
@@ -895,7 +898,9 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 // the editor mid-operation.
 func (m *Model) handleEditorSideEffects(em editorMsg) tea.Cmd {
 	if em.dlDone && !em.dlAborted && em.dlErr == "" {
-		m.ui.logbookEditor.wlLastFetchedID = em.dlLastID
+		if m.ui.logbookEditor != nil {
+			m.ui.logbookEditor.wlLastFetchedID = em.dlLastID
+		}
 		if m.App.Logbook.Wavelog != nil {
 			m.App.Logbook.Wavelog.LastFetchedID = em.dlLastID
 			if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
@@ -907,6 +912,10 @@ func (m *Model) handleEditorSideEffects(em editorMsg) tea.Cmd {
 		// Download/import finished — the editor already recorded counts.
 		if !em.dlAborted && em.dlCount > 0 {
 			m.needRefresh = true
+			// The dashboard's recent/today/stats panels are pushed from
+			// change-detected caches — mark them dirty so the next push
+			// reflects the freshly imported rows.
+			m.invalidateDashboardFlags()
 			applog.Info("Wavelog: bulk import finished — QSO list refresh pending",
 				"inserted", em.dlCount, "dupes", em.dlDupes, "last_id", em.dlLastID)
 			// Full DXCC backfill after bulk import — the periodic

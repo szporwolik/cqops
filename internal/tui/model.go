@@ -871,9 +871,14 @@ func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Deferred pending requests (QRZ lookup, WL lookup, QSO refresh) —
 	// must run before screen-specific routing so they work regardless of
 	// which screen is active.
-	if pendingCmd, handled := m.handlePendingRequests(cmd); handled {
+	pendingCmd, handled := m.handlePendingRequests(cmd)
+	if handled {
 		return m, pendingCmd
 	}
+	// Even when nothing was handled, the returned cmd may have been
+	// augmented with a deferred QSO refresh — keep it instead of losing
+	// the refresh command (the flag was already consumed).
+	cmd = pendingCmd
 
 	// Wavelog download / ADIF import / export keep their message pump
 	// alive even when the user switches to another screen mid-operation.
