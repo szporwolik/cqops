@@ -772,10 +772,15 @@ func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Non-key messages fall through for tick / rig poll / async processing.
 	}
 
-	// Active confirmation dialog — highest priority, blocks everything else
+	// Active confirmation dialog — blocks key input while open, but lets
+	// ticks and async messages through so housekeeping (toast expiry,
+	// clock, GPS) keeps running — same policy as the spot dialog below.
+	// A tick that arrives while the dialog is open must still re-arm the
+	// tick chain, otherwise toasts would stick on screen forever after
+	// the dialog closes.
 	if m.confirm != nil {
-		if _, ok := msg.(tea.KeyPressMsg); ok {
-			updated, _ := m.confirm.Update(msg)
+		if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
+			updated, _ := m.confirm.Update(keyMsg)
 			d, ok := updated.(DialogModel)
 			if !ok {
 				return m, cmd
@@ -788,8 +793,9 @@ func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.confirm = nil
 			}
+			return m, cmd
 		}
-		return m, cmd
+		// Non-key messages fall through for tick / toast expiry / async processing.
 	}
 
 	// Tick processing
