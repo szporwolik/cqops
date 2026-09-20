@@ -322,7 +322,10 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if le.mode == edModeEdit {
 			switch k {
 			case "enter":
-				return le, le.doSave()
+				// Enter opens the save confirmation — same dialog flow
+				// as deleting a QSO.
+				le.mode = edModeConfirmSave
+				return le, nil
 			case "esc":
 				le.mode = edModeList
 			case "pgup", "pgdown", "home", "end":
@@ -607,6 +610,11 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 			}
 			return editorMsg{purged: true, err: err}
 		}
+	case edModeConfirmSave:
+		// Keep the edit form visible until the async save result arrives;
+		// the editorMsg{saved} handler switches back to the list.
+		le.mode = edModeEdit
+		return le.doSave()
 	case edModeConfirmDelete:
 		q := le.qsos[le.table.Cursor()]
 		call := q.Call

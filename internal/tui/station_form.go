@@ -1008,15 +1008,13 @@ func (f *StationForm) HandlePaste(content string) tea.Cmd {
 
 func (f *StationForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 	k := msg
-	if k.String() == "ctrl+s" || k.String() == "\x13" || k.String() == "enter" {
-		// Enter on active buttons triggers the button, not save-and-next.
-		if k.String() == "enter" {
-			if f.wlBtnFocus == 1 {
-				return func() tea.Msg { return wlUpdateAction{} }
-			}
-			if f.aprsBtnFocus == 1 {
-				return func() tea.Msg { return aprsTestAction{} }
-			}
+	if k.String() == "enter" {
+		// Enter on active buttons triggers the button, not save.
+		if f.wlBtnFocus == 1 {
+			return func() tea.Msg { return wlUpdateAction{} }
+		}
+		if f.aprsBtnFocus == 1 {
+			return func() tea.Msg { return aprsTestAction{} }
 		}
 		f.maskSecretFields() // hide secrets before saving/advancing
 		return func() tea.Msg { return enterOnLastFieldMsg{} }

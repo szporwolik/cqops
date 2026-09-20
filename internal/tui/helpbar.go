@@ -527,14 +527,14 @@ func (m *Model) minimalBarBindings() []key.Binding {
 		return []key.Binding{h, key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")), e, q}
 	case screenChooser:
 		if m.ui.chooser != nil && (m.ui.chooser.mode == chooserEdit || m.ui.chooser.mode == chooserCreate) {
-			return []key.Binding{h, key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")), e, q}
+			return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")), e, q}
 		}
 		// List mode: Enter Edit is core; Create/Delete/Activate stay
 		// behind the ? overlay.
 		return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit")), e, q}
 	case screenRigEdit:
 		if m.ui.rigChooser != nil && (m.ui.rigChooser.mode == rigChooserEdit || m.ui.rigChooser.mode == rigChooserCreate) {
-			return []key.Binding{h, key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")), e, q}
+			return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")), e, q}
 		}
 		return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit")), e, q}
 	case screenContest:

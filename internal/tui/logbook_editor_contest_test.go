@@ -223,6 +223,12 @@ func TestLogbookEditor_CycleContestKeyHandling(t *testing.T) {
 
 // Test that help bindings include Ctrl+C on log editor list mode.
 func TestActiveBindings_LogEditorIncludesCycleContest(t *testing.T) {
+	m := newTestModel()
+	m.screen = screenLogbookEditor
+	m.ui.logbookEditor = NewLogbookEditor(LogbookEditorConfig{DB: nil, WLURL: "", WLKey: "", WLStationID: "", WLLastFetchedID: 0, StationOperator: "OP", StationGrid: "JO90", StationCall: ""})
+	m.ui.logbookEditor.width = 80
+	m.ui.logbookEditor.height = 24
+	m.keys = DefaultKeyMap()
 
 	bindings := m.ActiveBindings()
 
@@ -230,6 +236,68 @@ func TestActiveBindings_LogEditorIncludesCycleContest(t *testing.T) {
 	helpText := m.help.ShortHelpView(bindings)
 	if helpText == "" || !strings.Contains(helpText, "Contest") {
 		t.Error("ActiveBindings help should include 'Contest' for Ctrl+C on logbook editor screen")
+	}
+}
+
+// TestLogbookEditor_EnterSavesInEditMode: Enter opens the save confirmation
+// dialog (same flow as delete); confirming saves the QSO. Ctrl+S does nothing.
+func TestLogbookEditor_EnterSavesInEditMode(t *testing.T) {
+	le := newEditorWithDB(t)
+	le.mode = edModeEdit
+	le.editing = &qso.QSO{ID: 1, Call: "A", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB"}
+	le.focus = qefCall
+
+	// First Enter opens the confirmation dialog.
+	upd, cmd := le.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	le = upd.(*LogbookEditor)
+	if cmd != nil {
+		t.Fatal("Enter should only open the confirmation dialog, not save yet")
+	}
+	if le.mode != edModeConfirmSave {
+		t.Fatalf("mode = %v, want edModeConfirmSave", le.mode)
+	}
+
+	// Render materializes the dialog, like the real View pass between keys.
+	le.View()
+
+	// Second Enter confirms the default Save option.
+	upd, cmd = le.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	le = upd.(*LogbookEditor)
+	if cmd == nil {
+		t.Fatal("confirming should trigger save")
+	}
+	msg := cmd()
+	if em, ok := msg.(editorMsg); !ok || em.saved == 0 {
+		t.Errorf("expected editorMsg with saved ID, got %#v", msg)
+	}
+
+	// Ctrl+S must not save in edit mode.
+	le.mode = edModeEdit
+	_, cmd2 := le.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+	if cmd2 != nil {
+		t.Error("Ctrl+S should not save in edit mode")
+	}
+}
+
+// TestLogbookEditor_SaveDialogCancelReturnsToList: cancelling the save
+// confirmation drops the dialog and returns to the list.
+func TestLogbookEditor_SaveDialogCancelReturnsToList(t *testing.T) {
+	le := newEditorWithDB(t)
+	le.mode = edModeEdit
+	le.editing = &qso.QSO{ID: 1, Call: "A", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB"}
+
+	upd, _ := le.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	le = upd.(*LogbookEditor)
+	le.View() // materialize dialog
+
+	// Esc cancels the dialog — back to the list.
+	upd, cmd := le.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	le = upd.(*LogbookEditor)
+	if cmd != nil {
+		t.Error("cancel should not return a command")
+	}
+	if le.mode != edModeList {
+		t.Errorf("mode = %v, want edModeList after cancel", le.mode)
 	}
 }
 

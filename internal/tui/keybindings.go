@@ -328,7 +328,6 @@ func (m *Model) ActiveBindings() []key.Binding {
 				key.NewBinding(key.WithKeys("tab", "down", "shift+tab", "up"), key.WithHelp("↑↓", "Navigate")),
 				key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle")),
 				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Accept")),
-				key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 			)
 		} else {
@@ -347,7 +346,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("tab", "down", "shift+tab", "up"), key.WithHelp("↑↓", "Navigate")),
 				key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle")),
-				key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
+				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")),
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 			)
 		} else {

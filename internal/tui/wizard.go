@@ -266,7 +266,7 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return w, nil
 				}
 			case stepTimezone:
-				if k.String() == "ctrl+s" || k.String() == "\x13" || k.String() == "enter" {
+				if k.String() == "enter" {
 					w.step = stepSummary
 					applog.InfoDetail("Wizard: timezone step done", fmt.Sprintf("tz=%s", config.Timezones[w.tzIndex]))
 					return w, nil
@@ -282,7 +282,7 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			case stepSummary:
-				if k.String() == "ctrl+s" || k.String() == "\x13" || k.String() == "enter" {
+				if k.String() == "enter" {
 					return w, w.handleEnter()
 				}
 			}
@@ -428,7 +428,7 @@ func (w *Wizard) viewStation() string {
 	w.station.width = w.width
 	body := w.wizardFormBox().Render(w.station.View().Content)
 	help := wizHelp(
-		key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save & Next")),
+		key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save & Next")),
 		key.NewBinding(key.WithKeys("tab"), key.WithHelp("Tab", "Navigate")),
 		key.NewBinding(key.WithKeys("space"), key.WithHelp("Space", "Toggle")),
 		key.NewBinding(key.WithKeys("f10"), key.WithHelp("F10", "Quit")),
@@ -440,7 +440,7 @@ func (w *Wizard) viewRig() string {
 	w.rigForm.width = w.width
 	body := w.wizardFormBox().Render(w.rigForm.View().Content)
 	help := wizHelp(
-		key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save & Next")),
+		key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save & Next")),
 		key.NewBinding(key.WithKeys("space"), key.WithHelp("Space", "Toggle flrig")),
 		key.NewBinding(key.WithKeys("↑/↓", "tab"), key.WithHelp("↑↓/Tab", "Navigate")),
 		key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
@@ -487,7 +487,7 @@ func (w *Wizard) viewTimezone() string {
 
 	body := w.wizardFormBox().Render(inner.String())
 	help := wizHelp(
-		key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save & Next")),
+		key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save & Next")),
 		key.NewBinding(key.WithKeys("↑↓"), key.WithHelp("↑↓", "Choose")),
 		key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 		key.NewBinding(key.WithKeys("f10"), key.WithHelp("F10", "Quit")),
@@ -505,13 +505,13 @@ func (w *Wizard) viewSummary() string {
 		LabelStyle.Render("starting the program to set additional options and"),
 		LabelStyle.Render("enable new features."),
 		"",
-		S.WizardAccent.Render("Press Ctrl+S to generate the configuration"),
+		S.WizardAccent.Render("Press Enter to generate the configuration"),
 		S.WizardAccent.Render("file and start the program."),
 	)
 
 	body := w.wizardFormBox().Render(inner)
 	help := wizHelp(
-		key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save & Start")),
+		key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save & Start")),
 		key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 		key.NewBinding(key.WithKeys("f10"), key.WithHelp("F10", "Quit")),
 	)

@@ -23,6 +23,7 @@ const (
 	edModeConfirmPurge
 	edModeConfirmWLSend
 	edModeConfirmNormalize
+	edModeConfirmSave
 	edModeConfirmWLDownload
 	edModeWLDownloading
 	edModeWLDownloadResult
@@ -462,7 +463,7 @@ func (le *LogbookEditor) FilePicker() filepicker.Model { return le.filePicker }
 func (le *LogbookEditor) isModalMode() bool {
 	switch le.mode {
 	case edModeConfirmDelete, edModeConfirmPurge, edModeConfirmWLSend, edModeConfirmWLDownload,
-		edModeConfirmNormalize, edModeWLDownloading, edModeWLDownloadResult,
+		edModeConfirmNormalize, edModeConfirmSave, edModeWLDownloading, edModeWLDownloadResult,
 		edModeExporting, edModeExportResult,
 		edModeImporting, edModeImportResult:
 		return true
