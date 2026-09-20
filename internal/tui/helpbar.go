@@ -402,6 +402,9 @@ func (m *Model) buildHelpSuffix() string {
 		cursor := le.table.Cursor()
 		total := le.totalCount
 		if total > 0 {
+			if le.searchQuery != "" {
+				return fmt.Sprintf("Search %d/%d", cursor+1, total)
+			}
 			globalPos := (le.currentPage-1)*le.pageSize + cursor + 1
 			pageInfo := fmt.Sprintf("Page %d/%d", le.currentPage, le.totalPages())
 			return fmt.Sprintf("QSO %d/%d  %s", globalPos, total, pageInfo)

@@ -3,7 +3,6 @@ package tui
 import (
 	"database/sql"
 	"os"
-	"strings"
 
 	"charm.land/bubbles/v2/filepicker"
 	"charm.land/bubbles/v2/table"
@@ -11,6 +10,7 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 )
@@ -340,6 +340,11 @@ func (le *LogbookEditor) loadPage() {
 	if le.db == nil {
 		return
 	}
+	// During an active search the table shows the whole-logbook result set;
+	// page loads (resize, page keys) must not blow it away.
+	if le.searchQuery != "" {
+		return
+	}
 	// Determine page size from current terminal height.
 	h := le.height
 	if h < 10 {
@@ -385,28 +390,26 @@ func (le *LogbookEditor) isDownloadActive() bool {
 	return le.dlActive
 }
 
-// applySearchFilter filters the current page's QSOs client-side by the
-// search query (case-insensitive match on country or callsign).
+// applySearchFilter searches the whole logbook (not just the current page)
+// for the search query: case-insensitive match on callsign, name, or
+// country, optionally scoped to the active contest filter.
 func (le *LogbookEditor) applySearchFilter() {
 	if le.searchQuery == "" {
 		le.loadPage()
 		return
 	}
-	// Re-fetch all QSOs for the current contest, then filter client-side.
-	// We reload the page unfiltered first so the table always has the full
-	// dataset to filter from.
-	le.loadPage()
-	q := strings.ToLower(le.searchQuery)
-	var filtered []qso.QSO
-	for _, qso := range le.qsos {
-		if strings.Contains(strings.ToLower(qso.Country), q) ||
-			strings.Contains(strings.ToLower(qso.Call), q) ||
-			strings.Contains(strings.ToLower(qso.Name), q) {
-			filtered = append(filtered, qso)
-		}
+	if le.db == nil {
+		return
 	}
-	le.qsos = filtered
-	le.totalCount = len(filtered)
+	qsos, err := store.SearchQSOs(le.db, le.searchQuery, le.contestID, 500)
+	if err != nil {
+		applog.Error("LogbookEditor: search failed", "error", err)
+		return
+	}
+	le.qsos = qsos
+	le.totalCount = len(qsos)
+	le.formattedRows = nil
+	le.cachedSig = ""
 	le.buildTable()
 }
 
