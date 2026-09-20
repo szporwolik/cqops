@@ -283,6 +283,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 				key.NewBinding(key.WithKeys("ctrl+e"), key.WithHelp("Ctrl+E", "Export")),
 				key.NewBinding(key.WithKeys("ctrl+i"), key.WithHelp("Ctrl+I", "Import")),
 				key.NewBinding(key.WithKeys("backspace"), key.WithHelp("Bksp", "Clear search")),
+				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 				m.keys.CycleContest,
 			)
 			wl := m.App.Logbook.Wavelog
@@ -390,10 +391,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 			)
 		} else if m.ui.contestChooser != nil && m.ui.contestChooser.mode == contestConfirmDelete {
-			bindings = append(bindings,
-				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Confirm")),
-				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Cancel")),
-			)
+			bindings = append(bindings, confirmBindings...)
 		} else {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
