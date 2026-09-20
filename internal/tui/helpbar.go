@@ -511,7 +511,7 @@ func (m *Model) minimalBarBindings() []key.Binding {
 		}
 		return []key.Binding{h, e, q}
 	case screenDXC:
-		return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "QSO+Tune")), e, q}
+		return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "QSO")), e, q}
 	case screenLogbookEditor:
 		if m.ui.logbookEditor != nil && m.ui.logbookEditor.IsEditing() {
 			return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")), e, q}
@@ -553,12 +553,12 @@ func (m *Model) minimalBarBindings() []key.Binding {
 		return []key.Binding{h, e, q}
 	case screenRef:
 		if m.ref.searched && len(m.ref.rows) > 0 {
-			return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Commit")), e, q}
+			return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "QSO")), e, q}
 		}
 		return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Search")), e, q}
 	case screenBPL:
 		if m.rig.connected && !m.wsjtx.online {
-			return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Tune")), e, q}
+			return []key.Binding{h, key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("Enter/Spc", "Tune")), e, q}
 		}
 		return []key.Binding{h, key.NewBinding(key.WithKeys("left", "right"), key.WithHelp("←→", "Tabs")), e, q}
 	case screenAPRS:

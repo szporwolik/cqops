@@ -637,6 +637,11 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			im.saved = true
 			return im, nil
 		case " ", "space":
+			// Space triggers Test buttons in parallel with Enter.
+			if im.focus == imGPSTest || im.focus == imAPRSTest {
+				m2, c := im.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+				return m2.(*IntegrationMenu), c
+			}
 			switch im.focus {
 			case imDXCChk:
 				im.dxcEnabled = !im.dxcEnabled

@@ -1020,6 +1020,13 @@ func (f *StationForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 		return func() tea.Msg { return enterOnLastFieldMsg{} }
 	}
 	if k.String() == " " || k.String() == "space" {
+		// Space triggers buttons in parallel with Enter.
+		if f.wlBtnFocus == 1 {
+			return func() tea.Msg { return wlUpdateAction{} }
+		}
+		if f.aprsBtnFocus == 1 {
+			return func() tea.Msg { return aprsTestAction{} }
+		}
 		if f.wlCbFocus {
 			f.WlEnabled = !f.WlEnabled
 			f.maskSecretFields()

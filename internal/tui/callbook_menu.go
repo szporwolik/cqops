@@ -397,6 +397,11 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cm.saved = true
 			return cm, nil
 		case " ", "space":
+			// Space triggers Test buttons in parallel with Enter.
+			if cm.focus == cmQRZTest || cm.focus == cmHamQTHTest || cm.focus == cmQRZRuTest {
+				m2, c := cm.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+				return m2.(*CallbookMenu), c
+			}
 			switch cm.focus {
 			case cmBaseCall:
 				cm.baseCallFallback = !cm.baseCallFallback
