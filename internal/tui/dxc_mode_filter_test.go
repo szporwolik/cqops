@@ -16,7 +16,7 @@ import (
 // spot data. No real DX Cluster connection.
 
 // =============================================================================
-// Mode filter cycling — forward (Insert key)
+// Mode filter cycling — forward (m key)
 // =============================================================================
 
 func TestDXCModeFilter_CycleForward(t *testing.T) {
@@ -30,60 +30,28 @@ func TestDXCModeFilter_CycleForward(t *testing.T) {
 		t.Fatalf("initial modeFilter = %q, want \"\"", m.dxc.modeFilter)
 	}
 
-	// Insert → CW.
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyInsert}, nil)
+	// m → CW.
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 'm', Text: "m"}, nil)
 	if m.dxc.modeFilter != "CW" {
-		t.Errorf("1st Insert: modeFilter = %q, want CW", m.dxc.modeFilter)
+		t.Errorf("1st m: modeFilter = %q, want CW", m.dxc.modeFilter)
 	}
 
-	// Insert → DIGI.
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyInsert}, nil)
+	// m → DIGI.
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 'm', Text: "m"}, nil)
 	if m.dxc.modeFilter != "DIGI" {
-		t.Errorf("2nd Insert: modeFilter = %q, want DIGI", m.dxc.modeFilter)
+		t.Errorf("2nd m: modeFilter = %q, want DIGI", m.dxc.modeFilter)
 	}
 
-	// Insert → PHONE.
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyInsert}, nil)
+	// m → PHONE.
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 'm', Text: "m"}, nil)
 	if m.dxc.modeFilter != "PHONE" {
-		t.Errorf("3rd Insert: modeFilter = %q, want PHONE", m.dxc.modeFilter)
+		t.Errorf("3rd m: modeFilter = %q, want PHONE", m.dxc.modeFilter)
 	}
 
-	// Insert → "" (wraparound back to all).
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyInsert}, nil)
+	// m → "" (wraparound back to all).
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 'm', Text: "m"}, nil)
 	if m.dxc.modeFilter != "" {
-		t.Errorf("4th Insert (wrap): modeFilter = %q, want \"\"", m.dxc.modeFilter)
-	}
-}
-
-// =============================================================================
-// Mode filter cycling — backward (Delete key)
-// =============================================================================
-
-func TestDXCModeFilter_CycleBackward(t *testing.T) {
-	m := newDXCBandFilterModel(t, nil)
-
-	// Delete from "" wraps to PHONE.
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyDelete}, nil)
-	if m.dxc.modeFilter != "PHONE" {
-		t.Errorf("1st Delete (from \"\"): modeFilter = %q, want PHONE", m.dxc.modeFilter)
-	}
-
-	// Delete → DIGI.
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyDelete}, nil)
-	if m.dxc.modeFilter != "DIGI" {
-		t.Errorf("2nd Delete: modeFilter = %q, want DIGI", m.dxc.modeFilter)
-	}
-
-	// Delete → CW.
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyDelete}, nil)
-	if m.dxc.modeFilter != "CW" {
-		t.Errorf("3rd Delete: modeFilter = %q, want CW", m.dxc.modeFilter)
-	}
-
-	// Delete → "".
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyDelete}, nil)
-	if m.dxc.modeFilter != "" {
-		t.Errorf("4th Delete: modeFilter = %q, want \"\"", m.dxc.modeFilter)
+		t.Errorf("4th m (wrap): modeFilter = %q, want \"\"", m.dxc.modeFilter)
 	}
 }
 
@@ -121,7 +89,7 @@ func TestDXCModeFilter_ForcesTableRebuild(t *testing.T) {
 	m := newDXCBandFilterModel(t, spots)
 	m.dxc.tableReady = true
 
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyInsert}, nil)
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 'm', Text: "m"}, nil)
 	if m.dxc.tableReady {
 		t.Error("mode filter change should set tableReady=false")
 	}
@@ -333,21 +301,10 @@ func TestDXCModeFilter_EmptySpotsNoPanic(t *testing.T) {
 func TestDXCModeFilter_CycleForwardEmptyDB(t *testing.T) {
 	m := newDXCBandFilterModel(t, nil)
 	for i := 0; i < 10; i++ {
-		_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyInsert}, nil)
+		_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 'm', Text: "m"}, nil)
 	}
-	// After 10 cycles: Insert cycles through 4 choices → index 2 (DIGI).
+	// After 10 cycles through 4 choices → index 2 (DIGI).
 	if m.dxc.modeFilter != "DIGI" {
-		t.Errorf("after 10 Insert cycles: modeFilter = %q, want DIGI", m.dxc.modeFilter)
-	}
-}
-
-func TestDXCModeFilter_CycleBackwardEmptyDB(t *testing.T) {
-	m := newDXCBandFilterModel(t, nil)
-	for i := 0; i < 10; i++ {
-		_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyDelete}, nil)
-	}
-	// After 10 Delete cycles through 4 choices → index 2 (DIGI).
-	if m.dxc.modeFilter != "DIGI" {
-		t.Errorf("after 10 Delete cycles: modeFilter = %q, want DIGI", m.dxc.modeFilter)
+		t.Errorf("after 10 cycles: modeFilter = %q, want DIGI", m.dxc.modeFilter)
 	}
 }

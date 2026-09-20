@@ -22,40 +22,28 @@ func (m *Model) handleDXCUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			m.screen = screenQSO
 			return m, cmd
 
-		case "pgup":
-			// Cycle time window forward — skip if same value.
+		case "t":
+			// Cycle the time window forward.
 			next := (m.dxc.timeIdx + 1) % len(dxcTimeWindows)
-			if m.dxc.timeIdx == next {
-				return m, cmd
+			if m.dxc.timeIdx != next {
+				m.dxc.timeIdx = next
+				m.dxc.timeFilter = dxcTimeWindows[m.dxc.timeIdx]
+				m.dxc.tableReady = false
 			}
-			m.dxc.timeIdx = next
-			m.dxc.timeFilter = dxcTimeWindows[m.dxc.timeIdx]
-			m.dxc.tableReady = false
 			return m, cmd
 
-		case "pgdown":
-			// Cycle time window backward.
-			next := m.dxc.timeIdx - 1
-			if next < 0 {
-				next = len(dxcTimeWindows) - 1
-			}
-			if m.dxc.timeIdx == next {
-				return m, cmd
-			}
-			m.dxc.timeIdx = next
-			m.dxc.timeFilter = dxcTimeWindows[m.dxc.timeIdx]
-			m.dxc.tableReady = false
-			return m, cmd
-
-		case "home":
+		case "b":
+			// Cycle the band filter forward.
 			m.dxcCycleFilter(&m.dxc.bandIdx, &m.dxc.bandFilter, m.dxcBandChoices())
 			return m, cmd
 
-		case "end":
-			m.dxcCycleFilterBack(&m.dxc.bandIdx, &m.dxc.bandFilter, m.dxcBandChoices())
+		case "m":
+			// Cycle the mode filter forward.
+			m.dxcCycleFilter(&m.dxc.modeIdx, &m.dxc.modeFilter, dxcFilterChoices(m.dxcAvailableModes()))
 			return m, cmd
 
-		case `\`:
+		case "c":
+			// Cycle the spotter continent filter forward.
 			m.dxcCycleFilter(&m.dxc.contIdx, &m.dxc.contFilter, m.dxcContChoices())
 			return m, cmd
 
@@ -64,14 +52,6 @@ func (m *Model) handleDXCUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			lookupCmd := m.dxcFillFromSelected()
 			cmd = tea.Batch(cmd, m.dxcTuneCmd(), lookupCmd)
 			m.screen = screenQSO
-			return m, cmd
-
-		case "insert":
-			m.dxcCycleFilter(&m.dxc.modeIdx, &m.dxc.modeFilter, dxcFilterChoices(m.dxcAvailableModes()))
-			return m, cmd
-
-		case "delete":
-			m.dxcCycleFilterBack(&m.dxc.modeIdx, &m.dxc.modeFilter, dxcFilterChoices(m.dxcAvailableModes()))
 			return m, cmd
 
 		case "backspace":
@@ -121,22 +101,6 @@ func (m *Model) dxcCycleFilter(idx *int, filter *string, opts []string) {
 		return
 	}
 	next := (*idx + 1) % len(opts)
-	if *idx != next {
-		*idx = next
-		*filter = opts[*idx]
-		m.dxc.tableReady = false
-	}
-}
-
-// dxcCycleFilterBack decrements *idx to the previous choice in opts.
-func (m *Model) dxcCycleFilterBack(idx *int, filter *string, opts []string) {
-	if len(opts) == 0 {
-		return
-	}
-	next := *idx - 1
-	if next < 0 {
-		next = len(opts) - 1
-	}
 	if *idx != next {
 		*idx = next
 		*filter = opts[*idx]

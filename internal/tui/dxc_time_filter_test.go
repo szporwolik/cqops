@@ -21,7 +21,7 @@ import (
 var testNow = func() time.Time { return time.Now().UTC() }
 
 // =============================================================================
-// Time filter cycling — forward (PgUp)
+// Time filter cycling — forward (t)
 // =============================================================================
 
 func TestDXCTimeFilter_CycleForward(t *testing.T) {
@@ -35,73 +35,67 @@ func TestDXCTimeFilter_CycleForward(t *testing.T) {
 		t.Fatalf("initial timeFilter = %d, want 0", m.dxc.timeFilter)
 	}
 
-	// PgUp → 60m.
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyPgUp}, nil)
+	// t → 60m.
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 't', Text: "t"}, nil)
 	if m.dxc.timeFilter != 60 {
-		t.Errorf("1st PgUp: timeFilter = %d, want 60", m.dxc.timeFilter)
+		t.Errorf("1st t: timeFilter = %d, want 60", m.dxc.timeFilter)
 	}
 
-	// PgUp → 30m.
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyPgUp}, nil)
+	// t → 30m.
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 't', Text: "t"}, nil)
 	if m.dxc.timeFilter != 30 {
-		t.Errorf("2nd PgUp: timeFilter = %d, want 30", m.dxc.timeFilter)
+		t.Errorf("2nd t: timeFilter = %d, want 30", m.dxc.timeFilter)
 	}
 
-	// PgUp → 15m.
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyPgUp}, nil)
+	// t → 15m.
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 't', Text: "t"}, nil)
 	if m.dxc.timeFilter != 15 {
-		t.Errorf("3rd PgUp: timeFilter = %d, want 15", m.dxc.timeFilter)
+		t.Errorf("3rd t: timeFilter = %d, want 15", m.dxc.timeFilter)
 	}
 
-	// PgUp → 10m.
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyPgUp}, nil)
+	// t → 10m.
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 't', Text: "t"}, nil)
 	if m.dxc.timeFilter != 10 {
-		t.Errorf("4th PgUp: timeFilter = %d, want 10", m.dxc.timeFilter)
+		t.Errorf("4th t: timeFilter = %d, want 10", m.dxc.timeFilter)
 	}
 
-	// PgUp → 5m.
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyPgUp}, nil)
+	// t → 5m.
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 't', Text: "t"}, nil)
 	if m.dxc.timeFilter != 5 {
-		t.Errorf("5th PgUp: timeFilter = %d, want 5", m.dxc.timeFilter)
+		t.Errorf("5th t: timeFilter = %d, want 5", m.dxc.timeFilter)
 	}
 
-	// PgUp → 0 (wraparound back to "all").
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyPgUp}, nil)
+	// t → 0 (wraparound back to "all").
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 't', Text: "t"}, nil)
 	if m.dxc.timeFilter != 0 {
-		t.Errorf("6th PgUp (wrap): timeFilter = %d, want 0", m.dxc.timeFilter)
+		t.Errorf("6th t (wrap): timeFilter = %d, want 0", m.dxc.timeFilter)
 	}
 }
 
 // =============================================================================
-// Time filter cycling — backward (PgDown)
+// PgUp/PgDn now navigate the table — they must not touch the time filter
 // =============================================================================
 
-func TestDXCTimeFilter_CycleBackward(t *testing.T) {
+func TestDXCTimeFilter_NavigationKeysDoNotFilter(t *testing.T) {
 	spots := []store.DXCSpot{
 		{DXCall: "SP9AAA", Frequency: 14250000, Band: "20m", Mode: "SSB", ReceivedAt: nowUnix()},
 	}
 	m := newDXCBandFilterModel(t, spots)
+	m.dxc.tableReady = true
 
-	// Start: timeFilter=0. PgDown wraps to last element → 5m.
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyPgDown}, nil)
-	if m.dxc.timeFilter != 5 {
-		t.Errorf("1st PgDown (from 0): timeFilter = %d, want 5", m.dxc.timeFilter)
+	for _, k := range []tea.KeyPressMsg{
+		{Code: tea.KeyPgUp},
+		{Code: tea.KeyPgDown},
+		{Code: tea.KeyHome},
+		{Code: tea.KeyEnd},
+	} {
+		_, _ = m.handleDXCUpdate(k, nil)
 	}
-
-	// PgDown → 10m.
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyPgDown}, nil)
-	if m.dxc.timeFilter != 10 {
-		t.Errorf("2nd PgDown: timeFilter = %d, want 10", m.dxc.timeFilter)
-	}
-
-	// PgDown → 15m, 30m, 60m, 0.
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyPgDown}, nil) // 15
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyPgDown}, nil) // 30
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyPgDown}, nil) // 60
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyPgDown}, nil) // 0
-
 	if m.dxc.timeFilter != 0 {
-		t.Errorf("after full backward cycle: timeFilter = %d, want 0", m.dxc.timeFilter)
+		t.Errorf("navigation keys changed timeFilter: %d", m.dxc.timeFilter)
+	}
+	if m.dxc.bandFilter != "" {
+		t.Errorf("navigation keys changed bandFilter: %q", m.dxc.bandFilter)
 	}
 }
 
@@ -139,7 +133,7 @@ func TestDXCTimeFilter_ForcesTableRebuild(t *testing.T) {
 	m := newDXCBandFilterModel(t, spots)
 	m.dxc.tableReady = true
 
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyPgUp}, nil)
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 't', Text: "t"}, nil)
 	if m.dxc.tableReady {
 		t.Error("time filter change should set tableReady=false")
 	}
@@ -387,14 +381,14 @@ func TestDXCTimeFilter_TableNotReadyAfterCycle(t *testing.T) {
 	m := newDXCBandFilterModel(t, spots)
 	m.dxc.tableReady = true
 
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyPgUp}, nil)
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 't', Text: "t"}, nil)
 	if m.dxc.tableReady {
 		t.Error("time filter change should set tableReady=false")
 	}
 }
 
 // =============================================================================
-// PgUp/PgDown cycling with empty DB — safety
+// Time filter cycling with empty DB — safety
 // =============================================================================
 
 func TestDXCTimeFilter_CycleForwardEmptyDB(t *testing.T) {
@@ -402,21 +396,10 @@ func TestDXCTimeFilter_CycleForwardEmptyDB(t *testing.T) {
 
 	// Should not panic when cycling through time windows with no spots.
 	for i := 0; i < 10; i++ {
-		_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyPgUp}, nil)
+		_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 't', Text: "t"}, nil)
 	}
 	// State should have cycled.
 	if m.dxc.timeFilter < 0 || m.dxc.timeFilter > 60 {
 		t.Errorf("timeFilter %d out of range after cycling", m.dxc.timeFilter)
-	}
-}
-
-func TestDXCTimeFilter_CycleBackwardEmptyDB(t *testing.T) {
-	m := newDXCBandFilterModel(t, nil)
-
-	for i := 0; i < 10; i++ {
-		_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyPgDown}, nil)
-	}
-	if m.dxc.timeFilter < 0 || m.dxc.timeFilter > 60 {
-		t.Errorf("timeFilter %d out of range after backward cycling", m.dxc.timeFilter)
 	}
 }

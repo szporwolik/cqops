@@ -1249,15 +1249,14 @@ Se `secrets.enc` è danneggiato, CQOps si avvia con un avviso e richiede di inse
 | Key | Action |
 |---|---|
 | ↑ / ↓ | Navigate spots |
+| PgUp / PgDn | Previous or next page |
+| Home / End | First or last spot |
 | Enter | Fill QSO form, tune rig, and return to QSO |
 | Space | Tune rig to selected spot and stay on DX Cluster |
-| Home | Cycle band filter forward |
-| End | Cycle band filter backward |
-| `\` | Cycle spotter continent filter |
-| Ins | Cycle mode filter forward |
-| Del | Cycle mode filter backward |
-| PgUp | Cycle time filter forward |
-| PgDn | Cycle time filter backward |
+| b | Cycle band filter |
+| c | Cycle spotter continent filter |
+| m | Cycle mode filter |
+| t | Cycle time filter |
 | Backspace | Clear all filters |
 | Esc / F4 | Return to QSO form |
 

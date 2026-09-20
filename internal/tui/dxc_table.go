@@ -383,10 +383,10 @@ func (m *Model) dxcView() string {
 		compact := " " + strings.Join(compactParts, sep)
 
 		hintParts := []string{
-			addPart("de Cont", contVal, m.dxc.contFilter != "") + "  " + DimStyle.Render("(\\)"),
-			addPart("Mode", modeVal, m.dxc.modeFilter != "") + "  " + DimStyle.Render("(Ins)"),
-			addPart("Band", bandVal, m.dxc.bandFilter != "") + "  " + DimStyle.Render("(Home)"),
-			addPart("Time", timeVal, m.dxc.timeFilter > 0) + "  " + DimStyle.Render("(PgUp)"),
+			addPart("de Cont", contVal, m.dxc.contFilter != "") + "  " + DimStyle.Render("(c)"),
+			addPart("Mode", modeVal, m.dxc.modeFilter != "") + "  " + DimStyle.Render("(m)"),
+			addPart("Band", bandVal, m.dxc.bandFilter != "") + "  " + DimStyle.Render("(b)"),
+			addPart("Time", timeVal, m.dxc.timeFilter > 0) + "  " + DimStyle.Render("(t)"),
 			DimStyle.Render("Spots") + " " + ValueStyle.Render(strconv.Itoa(m.dxc.spotCount)) + "  " + DimStyle.Render("(Bksp clear)"),
 		}
 		hinted := " " + strings.Join(hintParts, sep)
