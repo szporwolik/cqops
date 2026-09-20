@@ -1001,14 +1001,12 @@ func (m *Model) aprsRadarRows(st *aprsPaneState, w, h int) []string {
 		rows = append(rows, b.String())
 	}
 
-	// Bottom range caption: the own grid names what sits at the center,
+	// Bottom range caption: the exact grid sent to APRS (full configured
+	// precision, GPS-derived when active) names what sits at the center,
 	// and the selected station's callsign, bearing, and distance on the
 	// right restore azimuth context at a glance.
 	caption := fmt.Sprintf(" ~ %.0f km", maxDist)
 	if g := m.effectiveGrid(); g != "" {
-		if len(g) > 4 {
-			g = g[:4]
-		}
 		caption += " \u00b7 " + g
 	}
 	if sel := m.aprsPaneSel(); sel != nil {

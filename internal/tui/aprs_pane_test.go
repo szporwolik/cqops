@@ -496,6 +496,20 @@ func TestAPRSRadarRows(t *testing.T) {
 	}
 }
 
+func TestAPRSRadarRows_CaptionFullGrid(t *testing.T) {
+	m := newTestModel()
+	m.App.Logbook.Station.Grid = "JO90AB"
+	m.aprsPane.stations = []aprsStation{
+		{rec: aprs.StationRecord{Callsign: "E1"}, distKm: 8, bearing: 90},
+	}
+	m.aprsPane.sel = 0
+	rows := m.aprsRadarRows(&m.aprsPane, 30, 10)
+	caption := stripANSI(rows[len(rows)-1])
+	if !strings.Contains(caption, "JO90AB") {
+		t.Errorf("caption should show the exact grid sent to APRS:\n%s", caption)
+	}
+}
+
 func TestAPRSRadarRows_CaptionBearing(t *testing.T) {
 	m := newTestModel()
 	m.aprsPane.stations = []aprsStation{
