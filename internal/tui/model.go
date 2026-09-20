@@ -1045,8 +1045,6 @@ func (m *Model) View() tea.View {
 	m.rc.status = m.renderStatusBar()
 	// Tab bar depends on partner data / call field / connectivity — cached.
 	m.rc.tabs = m.renderTabBar()
-	// Help bar has dynamic suffix (QSO counter, scroll info) — cached.
-	m.rc.help = m.renderHelpBar()
 
 	var mainParts []string
 	addRow := func(s string) {
@@ -1061,6 +1059,13 @@ func (m *Model) View() tea.View {
 	if body == "" {
 		body = DimStyle.Render("\u2014")
 	}
+	// Help bar has a dynamic suffix (QSO counter, scroll info) and is cached.
+	// Compute it AFTER the body: lazy screen rebuilds (e.g. the DXC spot
+	// table rebuilding after a spot batch arrives) happen inside
+	// buildBodyForScreen, and the suffix must reflect the rebuilt state in
+	// the same frame — computing it before the body left the spot/page
+	// status blank for one frame on every DXC spot batch.
+	m.rc.help = m.renderHelpBar()
 	addRow(body)
 	addRow(m.rc.help)
 	// Left-aligned vertical join without backgrounds is equivalent to
