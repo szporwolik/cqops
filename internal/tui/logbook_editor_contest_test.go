@@ -223,12 +223,6 @@ func TestLogbookEditor_CycleContestKeyHandling(t *testing.T) {
 
 // Test that help bindings include Ctrl+C on log editor list mode.
 func TestActiveBindings_LogEditorIncludesCycleContest(t *testing.T) {
-	m := newTestModel()
-	m.screen = screenLogbookEditor
-	m.ui.logbookEditor = NewLogbookEditor(LogbookEditorConfig{DB: nil, WLURL: "", WLKey: "", WLStationID: "", WLLastFetchedID: 0, StationOperator: "OP", StationGrid: "JO90", StationCall: ""})
-	m.ui.logbookEditor.width = 80
-	m.ui.logbookEditor.height = 24
-	m.keys = DefaultKeyMap()
 
 	bindings := m.ActiveBindings()
 
