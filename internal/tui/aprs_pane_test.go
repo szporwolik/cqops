@@ -471,12 +471,17 @@ func TestAPRSRadarRows(t *testing.T) {
 	for i, r := range rows {
 		plain[i] = stripANSI(r)
 	}
-	// Cardinal labels around the radar restore azimuth context.
+	// Cardinal labels around the radar restore azimuth context. W / E hug
+	// the ring (rh=6): one cell left of it at box 3, one cell right at 17.
 	if plain[0][10] != 'N' || plain[8][10] != 'S' {
 		t.Errorf("N/S labels misaligned:\n%s", strings.Join(plain, "\n"))
 	}
-	if plain[4][0] != 'W' || plain[4][20] != 'E' {
+	if plain[4][3] != 'W' || plain[4][17] != 'E' {
 		t.Errorf("W/E labels misaligned:\n%s", strings.Join(plain, "\n"))
+	}
+	// No floating labels at the box edges.
+	if plain[4][0] != ' ' || plain[4][20] != ' ' {
+		t.Errorf("W/E labels should not float at the box edges:\n%s", strings.Join(plain, "\n"))
 	}
 	// Roundness: same distance renders 5 cells east/west of center but
 	// only 2 rows north/south (terminal cells are ~2:1).
@@ -533,6 +538,27 @@ func TestAPRSRadarRows_Minimal(t *testing.T) {
 	m := newTestModel()
 	if rows := m.aprsRadarRows(&m.aprsPane, 10, 8); len(rows) != 8 {
 		t.Errorf("minimal box should render a radar, got %v", rows)
+	}
+}
+
+// In a wide box the ring does not reach the sides — W / E must hug the
+// ring instead of floating at the box edges.
+func TestAPRSRadarRows_WideLabelsHugRing(t *testing.T) {
+	m := newTestModel()
+	m.aprsPane.stations = []aprsStation{
+		{rec: aprs.StationRecord{Callsign: "E1"}, distKm: 8, bearing: 90},
+	}
+	// 41x10: innerW=39, cx=19, innerH=7, cy=3, rh=6.
+	rows := m.aprsRadarRows(&m.aprsPane, 41, 10)
+	plain := make([]string, len(rows))
+	for i, r := range rows {
+		plain[i] = stripANSI(r)
+	}
+	if plain[4][13] != 'W' || plain[4][27] != 'E' {
+		t.Errorf("W/E labels should hug the ring (13/27), got:\n%s", strings.Join(plain, "\n"))
+	}
+	if plain[4][0] != ' ' || plain[4][40] != ' ' {
+		t.Errorf("W/E labels should not float at the box edges:\n%s", strings.Join(plain, "\n"))
 	}
 }
 
@@ -839,5 +865,68 @@ func TestAPRSPaneView_Narrow(t *testing.T) {
 	lines := strings.Split(v, "\n")
 	if len(lines) > lay.ContentH {
 		t.Errorf("narrow view overflow: %d lines > ContentH %d", len(lines), lay.ContentH)
+	}
+}
+
+func TestAPRSPaneView_Borders(t *testing.T) {
+	lay := Layout{TerminalW: 100, ContentW: 98, ContentH: 20}
+
+	m := newTestModel()
+	m.App.APRSCache = newTestAPRSCache(t, []aprs.StationRecord{
+		testAPRSRecord("SP9XYZ", 0.005, 0),
+	})
+	m.aprsPaneRefresh()
+	m.aprsPaneSelect(0)
+	v := m.viewAPRS(lay)
+	// Both columns are wrapped in rounded border boxes.
+	for _, want := range []string{"\u256d", "\u256e", "\u2570", "\u256f", "\u2502"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("bordered view missing %q", want)
+		}
+	}
+}
+
+// With a selection the right column holds two stacked boxes: the own
+// status on top and the selected contact + radar below it.
+func TestAPRSPaneView_TwoRightBoxes(t *testing.T) {
+	lay := Layout{TerminalW: 100, ContentW: 98, ContentH: 24}
+
+	m := newTestModel()
+	m.App.APRSCache = newTestAPRSCache(t, []aprs.StationRecord{
+		testAPRSRecord("SP9XYZ", 0.005, 0),
+	})
+	m.aprsPaneRefresh()
+	m.aprsPaneSelect(0)
+	plain := stripANSI(m.viewAPRS(lay))
+
+	// Three boxes in total: station table, status, contact.
+	if n := strings.Count(plain, "\u256d"); n != 3 {
+		t.Errorf("box tops = %d, want 3 (table, status, contact)", n)
+	}
+	if n := strings.Count(plain, "\u2570"); n != 3 {
+		t.Errorf("box bottoms = %d, want 3 (table, status, contact)", n)
+	}
+
+	// Status and contact content live in different boxes: the status box
+	// must close before the contact box opens.
+	lines := strings.Split(plain, "\n")
+	statusDone, contactOpen := false, false
+	seenTransmitting := false
+	for _, l := range lines {
+		if strings.Contains(l, "transmitting.") {
+			seenTransmitting = true
+		}
+		if seenTransmitting && strings.Contains(l, "\u2570") {
+			statusDone = true
+		}
+		if strings.Contains(l, "Call SP9XYZ") {
+			if !statusDone {
+				t.Error("contact box opens before the status box closed")
+			}
+			contactOpen = true
+		}
+	}
+	if !contactOpen {
+		t.Error("contact box content missing")
 	}
 }

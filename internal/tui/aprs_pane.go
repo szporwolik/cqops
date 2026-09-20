@@ -494,7 +494,7 @@ func (m *Model) aprsFilterLine(w int) string {
 }
 
 // viewAPRS renders the F3 APRS pane: a DXC-style station table on the left
-// and a plain detail panel on the right (no borders).
+// and a detail panel on the right, both in rounded border boxes.
 func (m *Model) viewAPRS(l Layout) string {
 	st := &m.aprsPane
 	w := l.TerminalW
@@ -534,74 +534,88 @@ func (m *Model) viewAPRS(l Layout) string {
 		return b.String() + m.aprsEmptyLayout("No stations match the current filters", l)
 	}
 
-	// Split: table ~45% left, details ~55% right.
-	cw := l.ContentW
-	if cw < 40 {
-		cw = 40
-	}
-	listW := cw * 45 / 100
-	if listW < 40 {
-		listW = 40
-	}
-	if listW > 46 {
-		listW = 46
-	}
-	detailW := cw - listW - 2
-	if detailW < 20 {
-		detailW = 20
-	}
+	listW, detailW := aprsSplit(l.ContentW)
 
 	tableH := ch - 3 // title + filter line + spacer
 	if tableH < 3 {
 		tableH = 3
 	}
-	if !st.tableReady || st.builtW != listW || st.builtH != tableH {
-		m.buildAPRSTable(listW, tableH)
+	// Border boxes cost 4 cells of width (2 border + 2 padding) and 2 rows
+	// of height — the table is built for the inner area.
+	tableInnerW := listW - 4
+	if tableInnerW < 40 {
+		tableInnerW = 40
+	}
+	tableInnerH := tableH - 2
+	if tableInnerH < 3 {
+		tableInnerH = 3
+	}
+	if !st.tableReady || st.builtW != tableInnerW || st.builtH != tableInnerH {
+		m.buildAPRSTable(tableInnerW, tableInnerH)
 		m.aprsSyncSelection()
 	}
 
-	tablePart := lipgloss.NewStyle().
-		Width(listW).MaxWidth(listW).
-		Height(tableH).
-		Render(st.table.View())
+	tablePart := borderBoxStyle.Width(listW).Height(tableH).Render(st.table.View())
+	// The right column builds its own bordered boxes (own status on top,
+	// selected contact + radar below) to exactly tableH rows.
 	detailPart := m.aprsRightPanel(st, detailW, tableH)
 	return b.String() + lipgloss.JoinHorizontal(lipgloss.Top, tablePart, "  ", detailPart)
 }
 
-// aprsEmptyLayout renders the empty-state layout: the message fills the
-// left list area while the own-station status panel stays visible on the
-// right, so the operator's TX status is never hidden.
-func (m *Model) aprsEmptyLayout(msg string, l Layout) string {
-	cw := l.ContentW
+// aprsSplit computes the list/detail column widths for a given content
+// width. Both columns are rendered inside rounded border boxes (4 cells
+// each) with a 2-cell gutter between them.
+func aprsSplit(cw int) (int, int) {
 	if cw < 40 {
 		cw = 40
 	}
-	listW := cw * 45 / 100
-	if listW < 40 {
-		listW = 40
+	splitW := cw - 10 // two border boxes + gutter
+	if splitW < 40 {
+		splitW = 40
 	}
-	if listW > 46 {
-		listW = 46
+	listW := splitW * 45 / 100
+	if listW < 44 {
+		listW = 44
 	}
-	detailW := cw - listW - 2
-	if detailW < 20 {
-		detailW = 20
+	if listW > 52 {
+		listW = 52
 	}
+	detailW := splitW - listW
+	if detailW < 24 {
+		detailW = 24
+	}
+	return listW, detailW
+}
+
+// aprsEmptyLayout renders the empty-state layout: the message fills the
+// left bordered list box while the own-station status panel stays visible
+// on the right, so the operator's TX status is never hidden.
+func (m *Model) aprsEmptyLayout(msg string, l Layout) string {
+	listW, detailW := aprsSplit(l.ContentW)
 	tableH := l.ContentH - 3 // title + filter line + spacer
 	if tableH < 3 {
 		tableH = 3
 	}
-	left := fillBody(DimStyle.Width(listW).Align(lipgloss.Center).Render(msg), tableH)
-	return lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", m.aprsOwnPanel(detailW, tableH))
+	innerH := tableH - 2
+	if innerH < 1 {
+		innerH = 1
+	}
+	left := fillBody(DimStyle.Width(listW-4).Align(lipgloss.Center).Render(msg), innerH)
+	leftBox := borderBoxStyle.Width(listW).Height(tableH).Render(left)
+	rightBox := m.aprsOwnPanel(detailW, tableH)
+	return lipgloss.JoinHorizontal(lipgloss.Top, leftBox, "  ", rightBox)
 }
 
 // aprsOwnPanel renders the right column when there is no selection: the
-// own-station status block alone, padded to the panel height.
+// own-station status block in a single bordered box padded to the full
+// panel height.
 func (m *Model) aprsOwnPanel(detailW, h int) string {
 	if h < 3 {
 		h = 3
 	}
-	return fillBody(strings.Join(m.aprsStatusRows(detailW), "\n"), h)
+	panelW := detailW - 2 // content width convention: rows render to panelW-2
+	content := fillBody(strings.Join(m.aprsStatusRows(panelW), "\n"), h-2)
+	return borderBoxStyle.Width(detailW).Height(h).Render(content)
 }
 
 // buildAPRSTable constructs the bubbles/table for nearby stations — same
@@ -702,12 +716,12 @@ func (m *Model) aprsSyncSelection() {
 	st.detailSig = ""
 }
 
-// aprsRightPanel builds the right column: a compact own-station APRS status
-// block (receive-only notice or beacon summary) followed by the selected
-// station's details.
+// aprsRightPanel builds the right column as two stacked bordered boxes:
+// the own-station APRS status box on top, then a box with the selected
+// station's details and the radar filling the remaining height.
 func (m *Model) aprsRightPanel(st *aprsPaneState, detailW, h int) string {
-	if h < 3 {
-		h = 3
+	if h < 6 {
+		h = 6
 	}
 	sel := m.aprsPaneSel()
 	if sel == nil {
@@ -719,25 +733,35 @@ func (m *Model) aprsRightPanel(st *aprsPaneState, detailW, h int) string {
 		return st.detailView
 	}
 
-	var rows []string
-	rows = append(rows, m.aprsStatusRows(detailW)...)
-	rows = append(rows, "")
-	rows = append(rows, m.aprsDetailRows(sel, detailW)...)
+	panelW := detailW - 2 // rows render to panelW-2, matching the box content width
+	statusBox := borderBoxStyle.Width(detailW).
+		Render(strings.Join(m.aprsStatusRows(panelW), "\n"))
 
-	// Radar uses whatever space remains after status + details.
-	radarH := h - len(rows) - 1
+	// Contact box gets everything below the status box minus one gap row.
+	contactH := h - lipgloss.Height(statusBox) - 1
+	if contactH < 4 {
+		contactH = 4
+	}
+
+	var rows []string
+	rows = append(rows, m.aprsDetailRows(sel, panelW)...)
+
+	// Radar uses whatever space remains inside the contact box.
+	radarH := contactH - 2 - len(rows) - 1
 	if radarH >= 8 {
 		rows = append(rows, "")
-		if radar := m.aprsRadarRows(st, detailW-2, radarH); len(radar) > 0 {
+		if radar := m.aprsRadarRows(st, panelW-2, radarH); len(radar) > 0 {
 			rows = append(rows, radar...)
 		}
 	}
 
-	content := strings.Join(rows, "\n")
-	content = fillBody(content, h)
-	st.detailView = content
+	content := fillBody(strings.Join(rows, "\n"), contactH-2)
+	contactBox := borderBoxStyle.Width(detailW).Height(contactH).Render(content)
+
+	joined := lipgloss.JoinVertical(lipgloss.Left, statusBox, "", contactBox)
+	st.detailView = joined
 	st.detailSig = sig
-	return content
+	return joined
 }
 
 // aprsTXStatusSig captures the own-beacon state that affects the status
@@ -769,8 +793,11 @@ func (m *Model) aprsStatusRows(detailW int) []string {
 
 	cfg := m.App.Logbook.APRS
 	if cfg == nil || !cfg.Enabled || !cfg.SendLocation {
+		headline := S.StatusLabel.Render("You are in") + " " +
+			statusDotWarnStyle.Render("APRS-RX") + " " +
+			S.StatusLabel.Render("mode")
 		return []string{
-			S.StatusLabel.Render("You are in") + " " + statusDotWarnStyle.Render("APRS-RX") + " " + S.StatusLabel.Render("mode"),
+			padOrTrunc(headline, innerW),
 			DimStyle.Render(padOrTrunc("Receive-only \u2014 you are not", innerW)),
 			DimStyle.Render(padOrTrunc("transmitting.", innerW)),
 		}
@@ -948,37 +975,53 @@ func (m *Model) aprsRadarRows(st *aprsPaneState, w, h int) []string {
 		grid[key[1]][key[0]] = ch
 	}
 
-	// Assemble the box: N / S rows above and below, W / E columns at the
-	// sides, all aligned with the radar center.
+	// W / E hug the ring instead of the box edges — in wide boxes the ring
+	// does not reach the sides and edge labels would float far away from
+	// the compass.
+	wPos := cx - int(rh)
+	if wPos < 0 {
+		wPos = 0
+	}
+	ePos := cx + int(rh) + 2
+	if ePos > w-1 {
+		ePos = w - 1
+	}
+
+	// Assemble the box: N / S rows above and below, W / E right next to
+	// the ring on the center row, all aligned with the radar center.
 	rows := make([]string, 0, gridH+1)
 	centerCol := cx + 1
 	centerRow := cy + 1
 	for y := 0; y < gridH; y++ {
 		var b strings.Builder
 		for x := 0; x < w; x++ {
+			key := [2]int{x - 1, y - 1}
+			// A station cell at the label position wins — the marker is
+			// more useful than the compass letter.
+			wLabel := y == centerRow && x == wPos && cells[key] == nil
+			eLabel := y == centerRow && x == ePos && cells[key] == nil
 			var ch rune
 			switch {
 			case y == 0 && x == centerCol:
 				ch = 'N'
 			case y == gridH-1 && x == centerCol:
 				ch = 'S'
-			case y == centerRow && x == 0:
+			case wLabel:
 				ch = 'W'
-			case y == centerRow && x == w-1:
+			case eLabel:
 				ch = 'E'
 			case x >= 1 && x <= innerW && y >= 1 && y <= innerH:
 				ch = grid[y-1][x-1]
 			default:
 				ch = ' '
 			}
-			key := [2]int{x - 1, y - 1}
 			isSel := key == selKey && cells[key] != nil && cells[key].sel
 			// Cardinal labels are identified by position, not character —
 			// station type markers E/W are also single letters and must
 			// keep the value style.
 			isCardinal := (y == 0 && x == centerCol) ||
 				(y == gridH-1 && x == centerCol) ||
-				(y == centerRow && (x == 0 || x == w-1))
+				wLabel || eLabel
 			switch {
 			case ch == ' ':
 				b.WriteByte(' ')

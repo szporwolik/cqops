@@ -448,20 +448,22 @@ func (m *Model) viewBPLHAM(region int) []string {
 	return lines
 }
 
-// viewBPLVHF renders the VHF/UHF band plan (6m/4m/2m/70cm).
+// viewBPLVHF renders the VHF/UHF band plan (4m/6m/2m/70cm) with aligned
+// columns: frequency or range, mode tag, and note. Band headers group the
+// segments; single frequencies are bright (tunable), ranges are dim.
 func (m *Model) viewBPLVHF(region int) []string {
 	var lines []string
 
-	// 6m and 4m overview from vhfCalling.
+	// 4m and 6m overview from vhfCalling.
 	if vhf, ok := vhfCalling[region]; ok {
 		for _, v := range vhf {
 			if v.Band != "" {
-				// Band range header — dimmed, not tunable.
-				lines = append(lines, DimStyle.Render(fmt.Sprintf("%s %s–%s", v.Band, v.FromMHz, v.ToMHz)))
+				if len(lines) > 0 {
+					lines = append(lines, "")
+				}
+				lines = append(lines, DimStyle.Render(fmt.Sprintf("%-4s %s\u2013%s", v.Band, v.FromMHz, v.ToMHz)))
 			} else {
-				// Single frequency — bright, tunable.
-				tag := shortModeTag(v.Mode)
-				lines = append(lines, fmt.Sprintf("  %s MHz  %s %s", v.Freq, tag, v.Note))
+				lines = append(lines, fmt.Sprintf("  %-17s %-4s %s", v.Freq+" MHz", shortModeTag(v.Mode), v.Note))
 			}
 		}
 	}
@@ -469,62 +471,55 @@ func (m *Model) viewBPLVHF(region int) []string {
 	// 2m detailed.
 	if segs, ok := vhf2mSeeds[region]; ok {
 		lines = append(lines, "")
-		for _, s := range segs {
-			if s.Band != "" {
-				// Band range header — dimmed.
-				lines = append(lines, DimStyle.Render(fmt.Sprintf("%s %s–%s  %s", s.Band, s.FromMHz, s.ToMHz, s.Note)))
-			} else if s.ToMHz != "" {
-				// Frequency range entry — dimmed, not a single tunable freq.
-				freq := s.Freq
-				if freq != "" {
-					freq = " CoA " + freq
-				}
-				lines = append(lines, DimStyle.Render(fmt.Sprintf("  %s–%s %s%s  %s", s.FromMHz, s.ToMHz, s.Kind, freq, s.Note)))
-			} else {
-				// Single frequency — bright, tunable. Use severity for special kinds.
-				sty := severityStyle(s.Kind)
-				note := s.Note
-				if s.Kind == "LRA" {
-					note += " (country-specific)"
-				}
-				lines = append(lines, sty.Render(fmt.Sprintf("  %s MHz  %s %s", s.Freq, s.Kind, note)))
-			}
-		}
+		lines = append(lines, m.vhfSegLines(segs)...)
 	}
 
 	// 70cm detailed.
 	if segs, ok := vhf70cmSeeds[region]; ok {
 		lines = append(lines, "")
-		for _, s := range segs {
-			if s.Band != "" {
-				// Band range header — dimmed.
-				lines = append(lines, DimStyle.Render(fmt.Sprintf("%s %s–%s  %s", s.Band, s.FromMHz, s.ToMHz, s.Note)))
-			} else if s.ToMHz != "" {
-				// Frequency range entry — dimmed, not a single tunable freq.
-				freq := s.Freq
-				if freq != "" {
-					freq = " CoA " + freq
-				}
-				lines = append(lines, DimStyle.Render(fmt.Sprintf("  %s–%s %s%s  %s", s.FromMHz, s.ToMHz, s.Kind, freq, s.Note)))
-			} else {
-				// Single frequency — bright, tunable. Use severity for special kinds.
-				sty := severityStyle(s.Kind)
-				note := s.Note
-				if s.Kind == "LRA" {
-					note += " (country-specific)"
-				}
-				lines = append(lines, sty.Render(fmt.Sprintf("  %s MHz  %s %s", s.Freq, s.Kind, note)))
-			}
-		}
+		lines = append(lines, m.vhfSegLines(segs)...)
 	}
 
-	// R3 APRS.
+	// R3 APRS — country-specific, not a global standard.
 	if region == 3 {
 		lines = append(lines, "")
-		lines = append(lines, "R3 APRS (country-specific):")
+		lines = append(lines, DimStyle.Render("R3 APRS (country-specific)"))
 		for _, s := range r3APRSKnown {
-			lines = append(lines, DimStyle.Render(fmt.Sprintf("  %s MHz  %s %s", s.Freq, s.Kind, s.Note)))
+			lines = append(lines, DimStyle.Render(fmt.Sprintf("  %-17s %-4s %s", s.Freq+" MHz", s.Kind, s.Note)))
 		}
+	}
+	return lines
+}
+
+// vhfSegLines renders 2m/70cm segment rows with aligned columns: the band
+// header first, then range rows (dim, not tunable) and single-frequency
+// rows (bright, tunable). Range rows carry their calling frequency as
+// "CoA" in the note when known.
+func (m *Model) vhfSegLines(segs []vhfSeg) []string {
+	var lines []string
+	for _, s := range segs {
+		if s.Band != "" {
+			note := s.Note
+			if note != "" {
+				note = "  " + note
+			}
+			lines = append(lines, DimStyle.Render(fmt.Sprintf("%-4s %s\u2013%s%s", s.Band, s.FromMHz, s.ToMHz, note)))
+			continue
+		}
+		note := s.Note
+		if s.ToMHz != "" {
+			// Frequency range entry — dim, not a single tunable frequency.
+			if s.Freq != "" {
+				note += " \u00b7 CoA " + s.Freq
+			}
+			lines = append(lines, DimStyle.Render(fmt.Sprintf("  %-17s %-4s %s", s.FromMHz+"\u2013"+s.ToMHz, s.Kind, note)))
+			continue
+		}
+		// Single frequency — bright, tunable. Special kinds get severity.
+		if s.Kind == "LRA" && !strings.Contains(note, "country") {
+			note += " (country-specific)"
+		}
+		lines = append(lines, severityStyle(s.Kind).Render(fmt.Sprintf("  %-17s %-4s %s", s.Freq+" MHz", s.Kind, note)))
 	}
 	return lines
 }
@@ -696,7 +691,6 @@ func (m *Model) viewBPLBRC() []string {
 	var lines []string
 	bcasts := m.bcastPresetsForBRC()
 	lines = append(lines, S.Warning.Render("BROADCAST ONLY - receive-only reference"))
-	lines = append(lines, DimStyle.Render("SW schedules are seasonal; check HFCC/EiBi for current data."))
 	lines = append(lines, "")
 
 	for _, br := range bcBandRanges {
@@ -718,7 +712,7 @@ func (m *Model) viewBPLBRC() []string {
 	return lines
 }
 
-// shortModeTag returns a compact 3-letter tag for a mode string.
+// shortModeTag returns a compact tag for a mode string.
 func shortModeTag(mode string) string {
 	switch mode {
 	case "CW":
@@ -727,6 +721,8 @@ func shortModeTag(mode string) string {
 		return "DIG"
 	case "Phone", "PHONE", "SSB":
 		return "PHN"
+	case "Call", "CALL":
+		return "CALL"
 	default:
 		if len(mode) > 3 {
 			return mode[:3]
@@ -766,8 +762,7 @@ func (m *Model) viewBPLPORT(region int) []string {
 	}
 
 	var lines []string
-	lines = append(lines, S.Warning.Render("NOT official channels — suggested portable QRP/SOTA/POTA starting areas only"))
-	lines = append(lines, S.Warning.Render("Check bandplan + licence rules. Listen first, ask QRL, self-spot exact frequency."))
+	lines = append(lines, S.Warning.Render("Suggested portable QRP/SOTA/POTA starting areas only"))
 	lines = append(lines, "")
 
 	for _, p := range presets {
@@ -883,7 +878,7 @@ func (m *Model) buildBPLMarkdown(region int) string {
 
 	// Portable/SOTA section.
 	b.WriteString("\n## Portable SOTA/POTA Starting Areas\n\n")
-	b.WriteString("> NOT official channels — suggested starting areas. Check bandplan + licence rules. Listen first, ask QRL, self-spot exact frequency.\n\n")
+	b.WriteString("> Suggested portable QRP/SOTA/POTA starting areas only\n\n")
 	m.writePORTMarkdownRows(&b, region)
 
 	// Footer with version and timestamp.
