@@ -617,13 +617,14 @@ func (m *Model) dxcPathLine(width int) string {
 	curKhz := freqKhz * 1000
 
 	// Build cache signature: frequency + spot count + width + rig identity
-	// + continent + mode (these affect the smart filter).
+	// + continent + mode + active pane continent filter (all affect the
+	// smart filter below).
 	modeCat := spotModeCategory(strings.TrimSpace(m.fields[fieldMode].Value()))
 	stationCont := m.App.Logbook.Station.Continent
 	var sigB strings.Builder
-	fmt.Fprintf(&sigB, "%.3f|%d|%d|%s|%s|%s|%s|%s|%s", freqKhz, m.dxc.rawGen, width,
+	fmt.Fprintf(&sigB, "%.3f|%d|%d|%s|%s|%s|%s|%s|%s|%s", freqKhz, m.dxc.rawGen, width,
 		m.App.Logbook.Station.RigName, m.App.Logbook.Station.RigPower(m.App.Config.Rigs),
-		m.App.LogbookName, m.App.Logbook.ActiveContest, stationCont, modeCat)
+		m.App.LogbookName, m.App.Logbook.ActiveContest, stationCont, modeCat, m.dxc.contFilter)
 	sig := sigB.String()
 	if m.rc.dxcPathSig == sig && m.rc.dxcPathLine != "" {
 		return m.rc.dxcPathLine
@@ -654,13 +655,19 @@ func (m *Model) dxcPathLine(width int) string {
 			spots = dbSpots
 		}
 	}
-	// ── Smart filtering ────────────────────────────────────────────────
-	// Default behaviour: show spots from the same continent, same mode
-	// category (DIGI/PHONE/CW), and no older than 15 minutes. Filters
-	// are applied with fallback: if filtering removes everything we
-	// relax them one by one instead of showing an empty line.
+	// ── Smart filtering ────────────────────────────────────────────────────
+	// Default behaviour: show spots from the same continent (the DXC pane's
+	// explicit continent filter wins over the station continent), same mode
+	// category (DIGI/PHONE/CW), and no older than 15 minutes. The continent
+	// filter is STRICT — it is never silently relaxed, so spots from other
+	// continents cannot leak into the form. Only the mode category and the
+	// age window are relaxed as fallbacks to avoid an empty line.
 	now := time.Now().UTC().Unix()
-	applyFilters := func(spots []store.DXCSpot, cont, mc string, maxAgeSec int64) []store.DXCSpot {
+	cont := m.dxc.contFilter
+	if cont == "" {
+		cont = stationCont
+	}
+	applyFilters := func(spots []store.DXCSpot, mc string, maxAgeSec int64) []store.DXCSpot {
 		filtered := make([]store.DXCSpot, 0, len(spots))
 		for _, s := range spots {
 			if cont != "" && s.SpotCont != "" && s.SpotCont != cont {
@@ -677,17 +684,23 @@ func (m *Model) dxcPathLine(width int) string {
 		return filtered
 	}
 	// Try full filter (continent + mode + time).
-	filtered := applyFilters(spots, stationCont, modeCat, 900)
+	filtered := applyFilters(spots, modeCat, 900)
 	if len(filtered) == 0 {
-		// Fallback 1: drop continent, keep mode + time.
-		filtered = applyFilters(spots, "", modeCat, 900)
+		// Fallback 1: drop mode, keep continent + time.
+		filtered = applyFilters(spots, "", 900)
 	}
 	if len(filtered) == 0 {
-		// Fallback 2: drop mode, keep time only.
-		filtered = applyFilters(spots, "", "", 900)
+		// Fallback 2: keep continent, extend the age window to 30 minutes.
+		filtered = applyFilters(spots, "", 1800)
 	}
 	if len(filtered) > 0 {
 		spots = filtered
+	} else {
+		// Nothing on this continent at all — keep the line empty rather
+		// than leaking spots from other continents.
+		m.rc.dxcPathSig = sig
+		m.rc.dxcPathLine = ""
+		return ""
 	}
 
 	if len(spots) == 0 {
