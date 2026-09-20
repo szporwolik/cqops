@@ -43,6 +43,8 @@ const (
 	gridSourcePOTA     gridSource = "POTA"
 	gridSourceWWFF     gridSource = "WWFF"
 	gridSourceIOTA     gridSource = "IOTA"
+	gridSourceWSJTX    gridSource = "WSJT-X"
+	gridSourceREF      gridSource = "REF" // ref-composed QTH source
 )
 
 const (
@@ -188,6 +190,7 @@ type Model struct {
 	dupeCacheKey     string             // cache key for checkDupe result
 	dupeCacheResult  bool               // cached outcome of last checkDupe
 	gridSource       gridSource
+	qthSource        gridSource // origin of the QTH field value (same precedence as grid)
 
 	keys           KeyMap
 	help           help.Model
