@@ -44,6 +44,9 @@ type IntegrationMenu struct {
 	httpClubLogo textinput.Model
 	httpQRLink   textinput.Model
 	httpEvtStart textinput.Model
+	httpTLS      bool // serve HTTPS; empty cert/key = auto self-signed
+	httpTLSCert  textinput.Model
+	httpTLSKey   textinput.Model
 
 	// GPS
 	gpsEnabled       bool
@@ -109,35 +112,38 @@ const (
 	imHTTPAddr     = 9
 	imHTTPPort     = 10
 	imHTTPTheme    = 11
-	imHTTPHdr1     = 12
-	imHTTPHdr2     = 13
-	imHTTPLogo     = 14
-	imHTTPQRLink   = 15
-	imHTTPEvt      = 16
-	imGPSChk       = 17
-	imGPSSvc       = 18 // service type: None / Serial / GPSD
-	imGPSGridPrec  = 19 // grid precision: 10 / 8 / 6
-	imGPSPort      = 20 // serial port
-	imGPSBaud      = 21 // baud rate
-	imGPSDTR       = 22 // DTR
-	imGPSRTS       = 23 // RTS
-	imGPSDHost     = 24 // GPSD host
-	imGPSDPort     = 25 // GPSD port
-	imGPSTest      = 26 // test button
-	imAPRSChk      = 27
-	imAPRSSvc      = 28 // service type: APRS-IS / KISS / KISS Server
-	imAPRSServer   = 29 // APRS-IS server host:port
-	imAPRSKISSHost = 30 // KISS Server TCP host
-	imAPRSKISSPort = 31 // KISS Server TCP port
-	imAPRSPort     = 32 // KISS serial port
-	imAPRSBaud     = 33 // KISS baud rate
-	imAPRSData     = 34 // KISS data bits
-	imAPRSParity   = 35 // KISS parity
-	imAPRSStop     = 36 // KISS stop bits
-	imAPRSDTR      = 37 // KISS DTR
-	imAPRSRTS      = 38 // KISS RTS
-	imAPRSTest     = 39 // test button
-	imMax          = 40
+	imHTTPTLS      = 12
+	imHTTPTLSCert  = 13
+	imHTTPTLSKey   = 14
+	imHTTPHdr1     = 15
+	imHTTPHdr2     = 16
+	imHTTPLogo     = 17
+	imHTTPQRLink   = 18
+	imHTTPEvt      = 19
+	imGPSChk       = 20
+	imGPSSvc       = 21 // service type: None / Serial / GPSD
+	imGPSGridPrec  = 22 // grid precision: 10 / 8 / 6
+	imGPSPort      = 23 // serial port
+	imGPSBaud      = 24 // baud rate
+	imGPSDTR       = 25 // DTR
+	imGPSRTS       = 26 // RTS
+	imGPSDHost     = 27 // GPSD host
+	imGPSDPort     = 28 // GPSD port
+	imGPSTest      = 29 // test button
+	imAPRSChk      = 30
+	imAPRSSvc      = 31 // service type: APRS-IS / KISS / KISS Server
+	imAPRSServer   = 32 // APRS-IS server host:port
+	imAPRSKISSHost = 33 // KISS Server TCP host
+	imAPRSKISSPort = 34 // KISS Server TCP port
+	imAPRSPort     = 35 // KISS serial port
+	imAPRSBaud     = 36 // KISS baud rate
+	imAPRSData     = 37 // KISS data bits
+	imAPRSParity   = 38 // KISS parity
+	imAPRSStop     = 39 // KISS stop bits
+	imAPRSDTR      = 40 // KISS DTR
+	imAPRSRTS      = 41 // KISS RTS
+	imAPRSTest     = 42 // test button
+	imMax          = 43
 )
 
 type callbookTestMsg struct {
@@ -315,6 +321,22 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 		httpEvtStart.SetValue(cfg.Integrations.HTTPServer.EventStart)
 	}
 
+	httpTLSCert := newTextinput()
+	httpTLSCert.CharLimit = 200
+	httpTLSCert.SetWidth(28)
+	httpTLSCert.Placeholder = "auto (self-signed)"
+	if cfg.Integrations.HTTPServer.TLSCert != "" {
+		httpTLSCert.SetValue(cfg.Integrations.HTTPServer.TLSCert)
+	}
+
+	httpTLSKey := newTextinput()
+	httpTLSKey.CharLimit = 200
+	httpTLSKey.SetWidth(28)
+	httpTLSKey.Placeholder = "auto (self-signed)"
+	if cfg.Integrations.HTTPServer.TLSKey != "" {
+		httpTLSKey.SetValue(cfg.Integrations.HTTPServer.TLSKey)
+	}
+
 	httpTheme := 0 // Bright
 	switch cfg.Integrations.HTTPServer.Theme {
 	case "dark":
@@ -461,6 +483,9 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 		httpClubLogo:     httpClubLogo,
 		httpQRLink:       httpQRLink,
 		httpEvtStart:     httpEvtStart,
+		httpTLS:          cfg.Integrations.HTTPServer.TLSEnabled,
+		httpTLSCert:      httpTLSCert,
+		httpTLSKey:       httpTLSKey,
 		gpsEnabled:       cfg.Integrations.GPS.Enabled,
 		gpsService:       gpsSvc,
 		gpsGridPrecision: gridPrec,
@@ -570,6 +595,13 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return im, nil
 					}
 				}
+				// TLS certificate and key must be configured together.
+				cert := strings.TrimSpace(im.httpTLSCert.Value())
+				key := strings.TrimSpace(im.httpTLSKey.Value())
+				if (cert == "") != (key == "") {
+					im.SaveError = "TLS certificate and key paths must be set together (or both empty for auto self-signed)"
+					return im, nil
+				}
 			}
 			// Validate GPS fields when GPS is enabled.
 			if im.gpsEnabled {
@@ -630,6 +662,13 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return im, nil
 			case imHTTPTheme:
 				im.httpTheme = (im.httpTheme + 1) % 4
+				return im, nil
+			case imHTTPTLS:
+				im.httpTLS = !im.httpTLS
+				if !im.isPositionVisible(im.focus) {
+					im.fixFocus()
+				}
+				im.autoScrollViewport()
 				return im, nil
 			case imGPSChk:
 				im.gpsEnabled = !im.gpsEnabled
@@ -710,6 +749,10 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				im.httpHeader2, _ = im.httpHeader2.Update(msg)
 			case imHTTPLogo:
 				im.httpClubLogo, _ = im.httpClubLogo.Update(msg)
+			case imHTTPTLSCert:
+				im.httpTLSCert, _ = im.httpTLSCert.Update(msg)
+			case imHTTPTLSKey:
+				im.httpTLSKey, _ = im.httpTLSKey.Update(msg)
 			case imGPSPort:
 				im.gpsPort, _ = im.gpsPort.Update(msg)
 			}
@@ -871,6 +914,10 @@ func (im *IntegrationMenu) forwardToFocused(msg tea.Msg) {
 		im.httpQRLink, _ = im.httpQRLink.Update(msg)
 	case imHTTPEvt:
 		im.httpEvtStart, _ = im.httpEvtStart.Update(msg)
+	case imHTTPTLSCert:
+		im.httpTLSCert, _ = im.httpTLSCert.Update(msg)
+	case imHTTPTLSKey:
+		im.httpTLSKey, _ = im.httpTLSKey.Update(msg)
 	case imGPSPort:
 		im.gpsPort, _ = im.gpsPort.Update(msg)
 	case imGPSDHost:
@@ -921,6 +968,10 @@ func (im *IntegrationMenu) isPositionVisible(pos int) bool {
 		return false
 	case imHTTPAddr, imHTTPPort, imHTTPTheme, imHTTPHdr1, imHTTPHdr2, imHTTPLogo, imHTTPQRLink, imHTTPEvt:
 		return im.httpEnabled
+	case imHTTPTLS:
+		return im.httpEnabled
+	case imHTTPTLSCert, imHTTPTLSKey:
+		return im.httpEnabled && im.httpTLS
 	// GPS fields visibility depends on enabled + service type.
 	case imGPSSvc, imGPSGridPrec:
 		return im.gpsEnabled
@@ -954,7 +1005,7 @@ func (im *IntegrationMenu) fixFocus() {
 }
 
 func (im *IntegrationMenu) blurAll() {
-	blurTextinputs(&im.dxcHost, &im.dxcPort, &im.dxcLogin, &im.httpPort, &im.httpHeader1, &im.httpHeader2, &im.httpClubLogo, &im.httpEvtStart, &im.gpsPort, &im.gpsdHost, &im.gpsdPort, &im.aprsServer, &im.aprsKISSHost, &im.aprsKISSPort, &im.aprsPort)
+	blurTextinputs(&im.dxcHost, &im.dxcPort, &im.dxcLogin, &im.httpPort, &im.httpHeader1, &im.httpHeader2, &im.httpClubLogo, &im.httpEvtStart, &im.httpTLSCert, &im.httpTLSKey, &im.gpsPort, &im.gpsdHost, &im.gpsdPort, &im.aprsServer, &im.aprsKISSHost, &im.aprsKISSPort, &im.aprsPort)
 }
 func (im *IntegrationMenu) focusField() {
 	switch im.focus {
@@ -976,6 +1027,10 @@ func (im *IntegrationMenu) focusField() {
 		im.httpQRLink.Focus()
 	case imHTTPEvt:
 		im.httpEvtStart.Focus()
+	case imHTTPTLSCert:
+		im.httpTLSCert.Focus()
+	case imHTTPTLSKey:
+		im.httpTLSKey.Focus()
 	case imGPSPort:
 		im.gpsPort.Focus()
 	case imGPSDHost:
@@ -1155,6 +1210,25 @@ func (im *IntegrationMenu) View() tea.View {
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(im.renderTheme(), lineW))
 		b.WriteString("\n")
+		tlsCheckbox := "[ ]"
+		if im.httpTLS {
+			tlsCheckbox = "[x]"
+		}
+		tlsLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  HTTPS (TLS):")
+		if im.focus == imHTTPTLS {
+			tlsLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  HTTPS (TLS):")
+			tlsCheckbox = CursorStyle.Render(tlsCheckbox) + " " + DimStyle.Render("(Space)")
+		}
+		b.WriteString(padOrTrunc(
+			lipgloss.JoinHorizontal(lipgloss.Center, "  ", tlsLabel, " ", tlsCheckbox),
+			lineW))
+		b.WriteString("\n")
+		if im.httpTLS {
+			b.WriteString(padOrTrunc(im.renderField(imHTTPTLSCert, "  TLS Cert (opt):", &im.httpTLSCert, false), lineW))
+			b.WriteString("\n")
+			b.WriteString(padOrTrunc(im.renderField(imHTTPTLSKey, "  TLS Key (opt):", &im.httpTLSKey, false), lineW))
+			b.WriteString("\n")
+		}
 		b.WriteString(padOrTrunc(im.renderField(imHTTPHdr1, "  Header 1 (opt):", &im.httpHeader1, false), lineW))
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(im.renderField(imHTTPHdr2, "  Header 2 (opt):", &im.httpHeader2, false), lineW))
@@ -1544,7 +1618,7 @@ func (im *IntegrationMenu) renderTheme() string {
 }
 
 // Values returns DXC, QRZ, and HTTP server config values.
-func (im *IntegrationMenu) Values() (dxcEnabled bool, dxcHost, dxcPort, dxcLogin string, qrzEnabled bool, qrzUser, qrzPass string, httpEnabled bool, httpAddr, httpPort, httpTheme string, httpHdr1, httpHdr2, httpLogo, httpQRLink, httpEvtStart string) {
+func (im *IntegrationMenu) Values() (dxcEnabled bool, dxcHost, dxcPort, dxcLogin string, qrzEnabled bool, qrzUser, qrzPass string, httpEnabled bool, httpAddr, httpPort, httpTheme string, httpHdr1, httpHdr2, httpLogo, httpQRLink, httpEvtStart string, httpTLS bool, httpTLSCert, httpTLSKey string) {
 	return im.dxcEnabled,
 		strings.TrimSpace(im.dxcHost.Value()),
 		strings.TrimSpace(im.dxcPort.Value()),
@@ -1571,7 +1645,10 @@ func (im *IntegrationMenu) Values() (dxcEnabled bool, dxcHost, dxcPort, dxcLogin
 		strings.TrimSpace(im.httpHeader2.Value()),
 		strings.TrimSpace(im.httpClubLogo.Value()),
 		strings.TrimSpace(im.httpQRLink.Value()),
-		strings.TrimSpace(im.httpEvtStart.Value())
+		strings.TrimSpace(im.httpEvtStart.Value()),
+		im.httpTLS,
+		strings.TrimSpace(im.httpTLSCert.Value()),
+		strings.TrimSpace(im.httpTLSKey.Value())
 }
 
 // gpsTestResultStyled returns the GPS test result with appropriate styling.

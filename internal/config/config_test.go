@@ -149,6 +149,35 @@ func TestDefaultConfig_Validate(t *testing.T) {
 	}
 }
 
+func TestValidate_HTTPTLSCertAndKeyPair(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Integrations.HTTPServer.Enabled = true
+	cfg.Integrations.HTTPServer.TLSEnabled = true
+	cfg.Integrations.HTTPServer.TLSCert = "/tmp/cert.pem"
+
+	if err := cfg.Validate(); err == nil {
+		t.Error("tls_cert without tls_key should fail Validate")
+	}
+
+	cfg.Integrations.HTTPServer.TLSCert = ""
+	cfg.Integrations.HTTPServer.TLSKey = "/tmp/key.pem"
+	if err := cfg.Validate(); err == nil {
+		t.Error("tls_key without tls_cert should fail Validate")
+	}
+
+	cfg.Integrations.HTTPServer.TLSCert = "/tmp/cert.pem"
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("tls_cert+tls_key should pass Validate: %v", err)
+	}
+
+	// Empty pair (auto self-signed) must stay valid.
+	cfg.Integrations.HTTPServer.TLSCert = ""
+	cfg.Integrations.HTTPServer.TLSKey = ""
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("empty cert/key (auto self-signed) should pass Validate: %v", err)
+	}
+}
+
 // =============================================================================
 // Load / Save round-trip tests
 // =============================================================================

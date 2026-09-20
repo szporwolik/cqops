@@ -81,7 +81,7 @@ func TestIntegrationMenu_HTTPThemeValues(t *testing.T) {
 	im.focus = imHTTPTheme
 
 	// Default → Bright
-	_, _, _, _, _, _, _, _, _, _, theme, _, _, _, _, _ := im.Values()
+	_, _, _, _, _, _, _, _, _, _, theme, _, _, _, _, _, _, _, _ := im.Values()
 	if theme != "bright" {
 		t.Errorf("Values() theme = %q, want 'bright'", theme)
 	}
@@ -89,7 +89,7 @@ func TestIntegrationMenu_HTTPThemeValues(t *testing.T) {
 	// Space → Dark
 	m, _ := im.Update(tea.KeyPressMsg{Code: tea.KeySpace})
 	im = m.(*IntegrationMenu)
-	_, _, _, _, _, _, _, _, _, _, theme, _, _, _, _, _ = im.Values()
+	_, _, _, _, _, _, _, _, _, _, theme, _, _, _, _, _, _, _, _ = im.Values()
 	if theme != "dark" {
 		t.Errorf("Values() theme = %q, want 'dark'", theme)
 	}
@@ -97,7 +97,7 @@ func TestIntegrationMenu_HTTPThemeValues(t *testing.T) {
 	// Space → Orchid (yl)
 	m, _ = im.Update(tea.KeyPressMsg{Code: tea.KeySpace})
 	im = m.(*IntegrationMenu)
-	_, _, _, _, _, _, _, _, _, _, theme, _, _, _, _, _ = im.Values()
+	_, _, _, _, _, _, _, _, _, _, theme, _, _, _, _, _, _, _, _ = im.Values()
 	if theme != "yl" {
 		t.Errorf("Values() theme = %q, want 'yl' (Orchid)", theme)
 	}
@@ -105,7 +105,7 @@ func TestIntegrationMenu_HTTPThemeValues(t *testing.T) {
 	// Space → HighVis
 	m, _ = im.Update(tea.KeyPressMsg{Code: tea.KeySpace})
 	im = m.(*IntegrationMenu)
-	_, _, _, _, _, _, _, _, _, _, theme, _, _, _, _, _ = im.Values()
+	_, _, _, _, _, _, _, _, _, _, theme, _, _, _, _, _, _, _, _ = im.Values()
 	if theme != "hivis" {
 		t.Errorf("Values() theme = %q, want 'hivis'", theme)
 	}
@@ -132,7 +132,6 @@ func TestIntegrationMenu_HTTPThemeHighVisFromConfig(t *testing.T) {
 		"default": {Name: "Default", Station: config.Station{Callsign: "SP9MOA", Grid: "KO00"}},
 	}
 	cfg.Integrations.HTTPServer.Theme = "hivis"
-
 	im := NewIntegrationMenu(cfg)
 	if im.httpTheme != 3 {
 		t.Errorf("theme from config 'hivis' = %d, want 3 (HighVis)", im.httpTheme)
@@ -184,5 +183,106 @@ func TestIntegrationMenu_HTTPThemeRender(t *testing.T) {
 	}
 	if !strings.Contains(content, "Bright") {
 		t.Error("view should contain 'Bright'")
+	}
+}
+
+func TestIntegrationMenu_HTTPTLSToggle(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.State.ActiveLogbook = "default"
+	cfg.Logbooks = map[string]config.Logbook{
+		"default": {Name: "Default", Station: config.Station{Callsign: "SP9MOA", Grid: "KO00"}},
+	}
+	cfg.Integrations.HTTPServer.Enabled = true
+
+	im := NewIntegrationMenu(cfg)
+	im.focus = imHTTPTLS
+	if im.httpTLS {
+		t.Fatal("TLS should default to off")
+	}
+
+	m, _ := im.Update(tea.KeyPressMsg{Code: tea.KeySpace})
+	im = m.(*IntegrationMenu)
+	if !im.httpTLS {
+		t.Fatal("Space should enable TLS")
+	}
+
+	_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, tlsOn, _, _ := im.Values()
+	if !tlsOn {
+		t.Error("Values() httpTLS = false, want true after toggle")
+	}
+
+	// Toggling off again.
+	m, _ = im.Update(tea.KeyPressMsg{Code: tea.KeySpace})
+	im = m.(*IntegrationMenu)
+	if im.httpTLS {
+		t.Error("second Space should disable TLS")
+	}
+}
+
+func TestIntegrationMenu_HTTPTLSCertKeyPairValidation(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.State.ActiveLogbook = "default"
+	cfg.Logbooks = map[string]config.Logbook{
+		"default": {Name: "Default", Station: config.Station{Callsign: "SP9MOA", Grid: "KO00"}},
+	}
+	cfg.Integrations.HTTPServer.Enabled = true
+	cfg.Integrations.HTTPServer.TLSEnabled = true
+
+	im := NewIntegrationMenu(cfg)
+	im.httpTLS = true
+	im.httpTLSCert.SetValue("/tmp/cert.pem")
+
+	im.focus = imHTTPPort
+	_, _ = im.Update(tea.KeyPressMsg{Text: "\x13"})
+	if im.SaveError == "" {
+		t.Error("save with cert but no key should set SaveError")
+	}
+
+	// SaveError is cleared by the parent after showing the toast; reset it
+	// here so it doesn't mask the second save.
+	im.SaveError = ""
+	im.httpTLSKey.SetValue("/tmp/key.pem")
+	_, _ = im.Update(tea.KeyPressMsg{Text: "\x13"})
+	if !im.saved {
+		t.Errorf("save with cert+key should succeed, SaveError = %q", im.SaveError)
+	}
+}
+
+// TestIntegrationMenu_HTTPTLSFocusOrder: the TLS row is rendered right
+// after Theme, so tabbing down from Theme must land on it — the focus
+// index order must match the visual row order.
+func TestIntegrationMenu_HTTPTLSFocusOrder(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.State.ActiveLogbook = "default"
+	cfg.Logbooks = map[string]config.Logbook{
+		"default": {Name: "Default", Station: config.Station{Callsign: "SP9MOA", Grid: "KO00"}},
+	}
+	cfg.Integrations.HTTPServer.Enabled = true
+
+	im := NewIntegrationMenu(cfg)
+	im.focus = imHTTPTheme
+
+	m, _ := im.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	im = m.(*IntegrationMenu)
+	if im.focus != imHTTPTLS {
+		t.Errorf("tab from Theme landed on focus %d, want imHTTPTLS (%d)", im.focus, imHTTPTLS)
+	}
+
+	// With TLS off, the cert/key rows are hidden — tabbing must skip them.
+	m, _ = im.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	im = m.(*IntegrationMenu)
+	if im.focus != imHTTPHdr1 {
+		t.Errorf("tab from TLS (disabled) landed on focus %d, want imHTTPHdr1 (%d)", im.focus, imHTTPHdr1)
+	}
+
+	// Next tab reaches the cert field (TLS enabled for the sub-fields).
+	im.focus = imHTTPTLS
+	m, _ = im.Update(tea.KeyPressMsg{Code: tea.KeySpace}) // enable TLS
+	im = m.(*IntegrationMenu)
+	im.focus = imHTTPTLS
+	m, _ = im.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	im = m.(*IntegrationMenu)
+	if im.focus != imHTTPTLSCert {
+		t.Errorf("tab from TLS landed on focus %d, want imHTTPTLSCert (%d)", im.focus, imHTTPTLSCert)
 	}
 }

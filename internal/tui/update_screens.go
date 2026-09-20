@@ -241,15 +241,18 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			return m, cmd
 		}
 		if m.ui.integrationMenu.saved {
-			dxcE, dxcHost, dxcPort, dxcLogin, _, _, _, httpE, httpAddr, httpPort, httpTheme, httpHdr1, httpHdr2, httpLogo, httpQRLink, httpEvtStart := m.ui.integrationMenu.Values()
+			dxcE, dxcHost, dxcPort, dxcLogin, _, _, _, httpE, httpAddr, httpPort, httpTheme, httpHdr1, httpHdr2, httpLogo, httpQRLink, httpEvtStart, httpTLS, httpTLSCert, httpTLSKey := m.ui.integrationMenu.Values()
 
-			// Restart the HTTP server when address, port, or enabled
+			// Restart the HTTP server when address, port, TLS, or enabled
 			// state actually change, OR when the server should be running
 			// but isn't (silent crash recovery). Header/logo changes are
 			// picked up by pushDashboardState — no restart needed.
 			needHTTPRestart := httpE != m.App.Config.Integrations.HTTPServer.Enabled ||
 				httpAddr != m.App.Config.Integrations.HTTPServer.Address ||
 				httpPort != m.App.Config.Integrations.HTTPServer.Port ||
+				httpTLS != m.App.Config.Integrations.HTTPServer.TLSEnabled ||
+				httpTLSCert != m.App.Config.Integrations.HTTPServer.TLSCert ||
+				httpTLSKey != m.App.Config.Integrations.HTTPServer.TLSKey ||
 				(httpE && !m.http.online)
 
 			m.App.Config.Integrations.DXC.Enabled = dxcE
@@ -266,6 +269,9 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			m.App.Config.Integrations.HTTPServer.ClubLogo = httpLogo
 			m.App.Config.Integrations.HTTPServer.QRLink = httpQRLink
 			m.App.Config.Integrations.HTTPServer.EventStart = httpEvtStart
+			m.App.Config.Integrations.HTTPServer.TLSEnabled = httpTLS
+			m.App.Config.Integrations.HTTPServer.TLSCert = httpTLSCert
+			m.App.Config.Integrations.HTTPServer.TLSKey = httpTLSKey
 
 			// GPS integration.
 			gpsWasEnabled := m.App.Config.Integrations.GPS.Enabled

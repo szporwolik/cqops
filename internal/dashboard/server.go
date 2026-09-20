@@ -2,8 +2,11 @@ package dashboard
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"net"
 	"net/http"
 	"sync"
@@ -21,19 +24,30 @@ type Server struct {
 	hub    *Hub
 	status chan bool
 
+	tlsCert string // PEM certificate path; empty = plain HTTP
+	tlsKey  string // PEM private key path
+
 	mu  sync.Mutex // guards err and http
 	err error
 }
 
 // New creates a Server that will listen on the given address and port once
-// Start is called.
+// Start is called, serving plain HTTP.
 func New(address, port string) *Server {
+	return NewWithTLS(address, port, "", "")
+}
+
+// NewWithTLS creates a Server like New, but serves HTTPS when both certFile
+// and keyFile are non-empty (PEM-encoded certificate and private key).
+func NewWithTLS(address, port, certFile, keyFile string) *Server {
 	hub := NewHub()
 	return &Server{
-		addr:   net.JoinHostPort(address, port),
-		state:  NewState(hub),
-		hub:    hub,
-		status: make(chan bool, 4),
+		addr:    net.JoinHostPort(address, port),
+		state:   NewState(hub),
+		hub:     hub,
+		status:  make(chan bool, 4),
+		tlsCert: certFile,
+		tlsKey:  keyFile,
 	}
 }
 
@@ -60,12 +74,35 @@ func (s *Server) Start() {
 	mux := NewMux(s.state, s.hub)
 	handler := securityHeaders(mux)
 
+	// TLS mode: plain-HTTP requests on the same port are redirected to
+	// the https:// URL instead of failing with a TLS handshake error.
+	var tlsConfig *tls.Config
+	if s.tlsCert != "" && s.tlsKey != "" {
+		cert, err := tls.LoadX509KeyPair(s.tlsCert, s.tlsKey)
+		if err != nil {
+			applog.Error("dashboard: cannot load TLS certificate", "cert", s.tlsCert, "key", s.tlsKey, "error", err)
+			s.mu.Lock()
+			s.err = err
+			s.mu.Unlock()
+			s.status <- false
+			return
+		}
+		tlsConfig = &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			MinVersion:   tls.VersionTLS12,
+		}
+		handler = securityHeaders(redirectToHTTPS(mux))
+	}
+
 	srv := &http.Server{
 		Addr:         s.addr,
 		Handler:      handler,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 0, // disabled — SSE streams never finish writing
 		IdleTimeout:  120 * time.Second,
+		// Handshake noise from scanners/garbage clients must not reach
+		// stderr — the TUI owns the terminal.
+		ErrorLog: log.New(io.Discard, "dashboard: ", 0),
 	}
 
 	s.mu.Lock()
@@ -84,8 +121,15 @@ func (s *Server) Start() {
 			return
 		}
 		s.status <- true
-		applog.Info("dashboard: listening", "addr", s.addr, "url", fmt.Sprintf("http://%s", s.addr))
+		scheme := "http"
+		if s.tlsCert != "" && s.tlsKey != "" {
+			scheme = "https"
+		}
+		applog.Info("dashboard: listening", "addr", s.addr, "url", fmt.Sprintf("%s://%s", scheme, s.addr))
 
+		if tlsConfig != nil {
+			ln = newHybridListener(ln, tlsConfig)
+		}
 		err = srv.Serve(ln)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			applog.Error("dashboard: serve error", "addr", s.addr, "error", err)

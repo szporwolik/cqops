@@ -182,7 +182,11 @@ func (m *Model) headerView() string {
 
 	// Auxiliary: HTTP dashboard — web interface, lowest priority.
 	if m.App.Config.Integrations.HTTPServer.Enabled {
-		rightParts = append(rightParts, statusDotStyled(m.http.online, "HTTP"))
+		label := "HTTP"
+		if m.App.Config.Integrations.HTTPServer.TLSEnabled {
+			label = "HTTPS"
+		}
+		rightParts = append(rightParts, statusDotStyled(m.http.online, label))
 	}
 	rightParts = append(rightParts,
 		S.StatusTime.Render(now.Format("15:04")+"L "+utc.Format("1504")+"Z"),
