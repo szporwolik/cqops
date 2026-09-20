@@ -37,16 +37,22 @@ func newLifecycleTestModel(t *testing.T) *Model {
 	}
 	t.Cleanup(func() { db.Close() })
 
+	// Mirror production semantics: App.Logbook is a copy of the config map
+	// entry that shares the Wavelog pointer, so runtime mutations survive
+	// config.Save. The download-persistence test depends on this sharing.
+	wlc := &config.WavelogConfig{}
+	lb := config.Logbook{
+		Station: config.Station{
+			Callsign: "SP9MOA",
+			Grid:     "JO90",
+			RigName:  "default",
+		},
+		Wavelog: wlc,
+	}
 	cfg := &config.Config{
 		General: config.GeneralConfig{Units: "metric", RenderMap: true},
 		Logbooks: map[string]config.Logbook{
-			"test": {
-				Station: config.Station{
-					Callsign: "SP9MOA",
-					Grid:     "JO90",
-					RigName:  "default",
-				},
-			},
+			"test": lb,
 		},
 		Rigs: map[string]config.RigPreset{
 			"default": {Model: "FT-891", Antenna: "Dipole", Power: "100"},
@@ -58,7 +64,7 @@ func newLifecycleTestModel(t *testing.T) *Model {
 		Config:      cfg,
 		ConfigPath:  "", // no config file
 		LogbookName: "test",
-		Logbook:     &config.Logbook{Station: config.Station{Callsign: "SP9MOA", Grid: "JO90", RigName: "default"}, Wavelog: &config.WavelogConfig{}},
+		Logbook:     &lb,
 		DB:          db,
 		DBPath:      dbPath,
 	}

@@ -868,32 +868,9 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 			m.ui.logbookEditor.wlSkipped = 0
 			m.ui.logbookEditor.wlSkipDetail = ""
 		}
-		if em.dlDone && !em.dlAborted && em.dlErr == "" {
-			m.ui.logbookEditor.wlLastFetchedID = em.dlLastID
-			if m.App.Logbook.Wavelog != nil {
-				m.App.Logbook.Wavelog.LastFetchedID = em.dlLastID
-				if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
-					applog.Warn("Failed to persist Wavelog last_fetched_id", "error", err)
-				}
-			}
-		}
-		if em.dlDone {
-			// Download finished — editor's Update already set wlDownloadCount/Dupes.
-			if !em.dlAborted && em.dlCount > 0 {
-				m.needRefresh = true
-				// Full DXCC backfill after bulk import — the periodic
-				// 50-row sweep is too slow for 10K+ QSO downloads.
-				if m.App.BigCTY != nil && m.App.DB != nil {
-					n, err := backfillMissingDXCCLimit(m.App.DB, m.App.BigCTY, 0)
-					if err == nil && n > 0 {
-						applog.Info("DXCC: post-download backfill complete", "count", n)
-					}
-				}
-			}
-		} else if em.dlErr != "" {
-			m.ui.logbookEditor.wlDownloadErr = em.dlErr
-			m.ui.logbookEditor.mode = edModeWLDownloadResult
-		}
+		// Download/import completion side effects (last_fetched_id
+		// persistence, QSO refresh flag, DXCC backfill, early errors).
+		m.handleEditorSideEffects(em)
 	}
 	if m.ui.logbookEditor.needsReload {
 		m.ui.logbookEditor.needsReload = false
@@ -905,6 +882,44 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 		m.needRefresh = true
 	}
 	return m, tea.Batch(cmd, editorCmd, refreshCmd)
+}
+
+// handleEditorSideEffects applies model-level side effects of download /
+// import / export editor messages: persisting Wavelog's last_fetched_id,
+// flagging a QSO refresh, running the post-import DXCC backfill, and
+// surfacing early download errors. Used by both the editor-screen handler
+// and the global pump that keeps downloads flowing after the user leaves
+// the editor mid-operation.
+func (m *Model) handleEditorSideEffects(em editorMsg) tea.Cmd {
+	if em.dlDone && !em.dlAborted && em.dlErr == "" {
+		m.ui.logbookEditor.wlLastFetchedID = em.dlLastID
+		if m.App.Logbook.Wavelog != nil {
+			m.App.Logbook.Wavelog.LastFetchedID = em.dlLastID
+			if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
+				applog.Warn("Failed to persist Wavelog last_fetched_id", "error", err)
+			}
+		}
+	}
+	if em.dlDone {
+		// Download/import finished — the editor already recorded counts.
+		if !em.dlAborted && em.dlCount > 0 {
+			m.needRefresh = true
+			applog.Info("Wavelog: bulk import finished — QSO list refresh pending",
+				"inserted", em.dlCount, "dupes", em.dlDupes, "last_id", em.dlLastID)
+			// Full DXCC backfill after bulk import — the periodic
+			// 50-row sweep is too slow for 10K+ QSO downloads.
+			if m.App.BigCTY != nil && m.App.DB != nil {
+				n, err := backfillMissingDXCCLimit(m.App.DB, m.App.BigCTY, 0)
+				if err == nil && n > 0 {
+					applog.Info("DXCC: post-download backfill complete", "count", n)
+				}
+			}
+		}
+	} else if em.dlErr != "" {
+		m.ui.logbookEditor.wlDownloadErr = em.dlErr
+		m.ui.logbookEditor.mode = edModeWLDownloadResult
+	}
+	return nil
 }
 
 func (m *Model) handleLogViewUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {

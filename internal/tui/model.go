@@ -869,6 +869,26 @@ func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, pendingCmd
 	}
 
+	// Wavelog download / ADIF import / export keep their message pump
+	// alive even when the user switches to another screen mid-operation.
+	// Without this the read-loop stops, the final "done" message is
+	// dropped, and the QSO page never refreshes after the download.
+	if _, ok := msg.(editorMsg); ok && m.screen != screenLogbookEditor {
+		le := m.ui.logbookEditor
+		if le != nil && le.isDownloadActive() {
+			sub, subCmd := le.Update(msg)
+			if next, ok := sub.(*LogbookEditor); ok {
+				m.ui.logbookEditor = next
+			}
+			if subCmd != nil {
+				cmd = tea.Batch(cmd, subCmd)
+			}
+			if em, ok := msg.(editorMsg); ok {
+				cmd = tea.Batch(cmd, m.handleEditorSideEffects(em))
+			}
+		}
+	}
+
 	// Screen-specific routing
 	switch m.screen {
 	case screenChooser:

@@ -614,19 +614,28 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 		return nil
 	}
 
-	// Build Wavelog config from form.
+	// Build Wavelog config from form. When editing, preserve the
+	// incremental-download cursor so saving the logbook does not reset
+	// the next Wavelog download back to the beginning.
 	var wl *config.WavelogConfig
 	if wlEnabled {
 		if wlStationID == "" {
 			c.toasts.Warn("Wavelog enabled but Station ID not set — press Update to fetch")
 			return nil
 		}
-		if wlURL != "" && wlKey != "" {
-			wl = &config.WavelogConfig{
-				Enabled:          wlEnabled,
-				URL:              wlURL,
-				APIKey:           wlKey,
-				StationProfileID: wlStationID,
+		if wlURL == "" || wlKey == "" {
+			c.toasts.Warn("Wavelog URL and API key are required when enabled")
+			return nil
+		}
+		wl = &config.WavelogConfig{
+			Enabled:          wlEnabled,
+			URL:              wlURL,
+			APIKey:           wlKey,
+			StationProfileID: wlStationID,
+		}
+		if c.mode == chooserEdit {
+			if prev := c.app.Config.Logbooks[c.editing].Wavelog; prev != nil {
+				wl.LastFetchedID = prev.LastFetchedID
 			}
 		}
 	}
