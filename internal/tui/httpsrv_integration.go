@@ -2,6 +2,9 @@ package tui
 
 import (
 	"fmt"
+	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -95,6 +98,26 @@ func (m *Model) maybeHTTP() tea.Cmd {
 		port = "8073"
 	}
 
+	// Resolve TLS certificate paths. When TLS is enabled without an
+	// explicit pair, a self-signed certificate covering loopback + LAN
+	// addresses is generated in the cache directory on first start.
+	tlsCert, tlsKey := "", ""
+	autoCert := false
+	if cfg.TLSEnabled {
+		tlsCert = strings.TrimSpace(cfg.TLSCert)
+		tlsKey = strings.TrimSpace(cfg.TLSKey)
+		if tlsCert == "" || tlsKey == "" {
+			cacheDir, err := config.CacheDir()
+			if err != nil {
+				applog.Error("HTTP server: cannot resolve cache dir for TLS cert", "error", err)
+			} else {
+				autoCert = true
+				tlsCert = filepath.Join(cacheDir, "dashboard-cert.pem")
+				tlsKey = filepath.Join(cacheDir, "dashboard-key.pem")
+			}
+		}
+	}
+
 	// Capture initial data to seed the dashboard snapshot before the
 	// HTTP listener starts — closes the race where a browser could
 	// fetch /api/snapshot and see empty fields rendered as em dashes.
@@ -117,8 +140,15 @@ func (m *Model) maybeHTTP() tea.Cmd {
 	}
 
 	return func() tea.Msg {
-		applog.Info("HTTP server: starting", "addr", addr, "port", port)
-		client := dashboard.New(addr, port)
+		if tlsCert != "" {
+			if err := ensureDashboardCert(tlsCert, tlsKey, addr, autoCert); err != nil {
+				applog.Error("HTTP server: TLS unavailable, falling back to HTTP", "error", err)
+				tlsCert = ""
+				tlsKey = ""
+			}
+		}
+		applog.Info("HTTP server: starting", "addr", addr, "port", port, "tls", tlsCert != "")
+		client := dashboard.NewWithTLS(addr, port, tlsCert, tlsKey)
 		// Seed the snapshot so the very first /api/snapshot has real data.
 		client.State().SeedStatic(seedStation, seedLogbook)
 		client.Start()
@@ -149,6 +179,67 @@ type httpBindError struct {
 
 func (e *httpBindError) Error() string {
 	return "cannot bind " + e.addr + " — port in use or address unavailable"
+}
+
+// ensureDashboardCert makes sure the TLS certificate pair is usable before
+// the server starts. For auto-generated pairs it (re)creates the
+// certificate when either file is missing; for user-configured pairs it
+// only checks that both files exist.
+func ensureDashboardCert(tlsCert, tlsKey, addr string, auto bool) error {
+	if !auto {
+		if _, err := os.Stat(tlsCert); err != nil {
+			return fmt.Errorf("tls_cert not found: %w", err)
+		}
+		if _, err := os.Stat(tlsKey); err != nil {
+			return fmt.Errorf("tls_key not found: %w", err)
+		}
+		return nil
+	}
+	if _, err := os.Stat(tlsCert); err == nil {
+		if _, err := os.Stat(tlsKey); err == nil {
+			return nil // reuse the existing self-signed pair
+		}
+	}
+	if err := dashboard.GenerateSelfSignedCert(tlsCert, tlsKey, dashboardTLSHosts(addr)); err != nil {
+		return fmt.Errorf("self-signed cert generation failed: %w", err)
+	}
+	applog.Info("HTTP server: self-signed TLS certificate generated", "cert", tlsCert)
+	return nil
+}
+
+// dashboardTLSHosts collects the addresses embedded as SANs in the
+// auto-generated certificate: loopback names plus every non-loopback IPv4
+// assigned to this machine, so browsers on the LAN match the certificate
+// when they reach the dashboard by IP. Note: the certificate remains
+// self-signed, so browsers still show the standard warning on first use.
+func dashboardTLSHosts(addr string) []string {
+	hosts := []string{"localhost", "127.0.0.1", "::1"}
+	if addr != "" && addr != "localhost" && addr != "0.0.0.0" && addr != "127.0.0.1" {
+		hosts = append(hosts, addr)
+	}
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return hosts
+	}
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, a := range addrs {
+			ip, _, err := net.ParseCIDR(a.String())
+			if err != nil {
+				ip = net.ParseIP(a.String())
+			}
+			if ip4 := ip.To4(); ip4 != nil {
+				hosts = append(hosts, ip4.String())
+			}
+		}
+	}
+	return hosts
 }
 
 // restartHTTPServer schedules a server restart on the next tick.

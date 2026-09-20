@@ -310,6 +310,9 @@ type HTTPServerConfig struct {
 	EventStart string `yaml:"event_start,omitempty"`  // YYYY-MM-DD, filter stats from this date
 	MapTileURL string `yaml:"map_tile_url,omitempty"` // Leaflet tile server URL
 	MapAttrib  string `yaml:"map_attrib,omitempty"`   // tile attribution text
+	TLSEnabled bool   `yaml:"tls_enabled,omitempty"`  // serve HTTPS instead of HTTP
+	TLSCert    string `yaml:"tls_cert,omitempty"`     // PEM cert path; empty = auto self-signed
+	TLSKey     string `yaml:"tls_key,omitempty"`      // PEM key path; empty = auto self-signed
 }
 
 // GPSConfig holds GPS receiver serial port configuration.
@@ -690,6 +693,11 @@ func (c *Config) Validate() error {
 			if p, err := strconv.Atoi(c.Integrations.HTTPServer.Port); err != nil || p < 1 || p > 65535 {
 				return fmt.Errorf("http_server.port must be 1-65535, got %q", c.Integrations.HTTPServer.Port)
 			}
+		}
+		cert := strings.TrimSpace(c.Integrations.HTTPServer.TLSCert)
+		key := strings.TrimSpace(c.Integrations.HTTPServer.TLSKey)
+		if (cert == "") != (key == "") {
+			return fmt.Errorf("http_server.tls_cert and http_server.tls_key must be set together")
 		}
 	}
 

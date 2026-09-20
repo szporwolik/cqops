@@ -241,15 +241,18 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			return m, cmd
 		}
 		if m.ui.integrationMenu.saved {
-			dxcE, dxcHost, dxcPort, dxcLogin, _, _, _, httpE, httpAddr, httpPort, httpTheme, httpHdr1, httpHdr2, httpLogo, httpQRLink, httpEvtStart := m.ui.integrationMenu.Values()
+			dxcE, dxcHost, dxcPort, dxcLogin, _, _, _, httpE, httpAddr, httpPort, httpTheme, httpHdr1, httpHdr2, httpLogo, httpQRLink, httpEvtStart, httpTLS, httpTLSCert, httpTLSKey := m.ui.integrationMenu.Values()
 
-			// Restart the HTTP server when address, port, or enabled
+			// Restart the HTTP server when address, port, TLS, or enabled
 			// state actually change, OR when the server should be running
 			// but isn't (silent crash recovery). Header/logo changes are
 			// picked up by pushDashboardState — no restart needed.
 			needHTTPRestart := httpE != m.App.Config.Integrations.HTTPServer.Enabled ||
 				httpAddr != m.App.Config.Integrations.HTTPServer.Address ||
 				httpPort != m.App.Config.Integrations.HTTPServer.Port ||
+				httpTLS != m.App.Config.Integrations.HTTPServer.TLSEnabled ||
+				httpTLSCert != m.App.Config.Integrations.HTTPServer.TLSCert ||
+				httpTLSKey != m.App.Config.Integrations.HTTPServer.TLSKey ||
 				(httpE && !m.http.online)
 
 			m.App.Config.Integrations.DXC.Enabled = dxcE
@@ -266,6 +269,9 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			m.App.Config.Integrations.HTTPServer.ClubLogo = httpLogo
 			m.App.Config.Integrations.HTTPServer.QRLink = httpQRLink
 			m.App.Config.Integrations.HTTPServer.EventStart = httpEvtStart
+			m.App.Config.Integrations.HTTPServer.TLSEnabled = httpTLS
+			m.App.Config.Integrations.HTTPServer.TLSCert = httpTLSCert
+			m.App.Config.Integrations.HTTPServer.TLSKey = httpTLSKey
 
 			// GPS integration.
 			gpsWasEnabled := m.App.Config.Integrations.GPS.Enabled
@@ -561,12 +567,6 @@ func (m *Model) handlePartnerUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 			m.photo.partnerPicURL = ""
 			m.photo.partnerPicNeedLoad = false
 			return m, cmd
-		case "f7":
-			m.ui.mainMenu = NewMainMenu()
-			m.ui.mainMenu.width = m.width
-			m.ui.mainMenu.height = m.height
-			m.screen = screenMainMenu
-			return m, cmd
 		}
 	}
 	return m, cmd
@@ -620,23 +620,30 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 		case "f1", "esc":
 			m.screen = screenQSO
 			return m, cmd
-		case "f5":
-			// Refresh PSK data via async command — never block UI.
-			if !m.psk.fetching && m.inetOnline {
-				m.psk.fetching = true
-				m.toasts.Info("PSK Reporter: fetching\u2026")
-				return m, m.pskFetchCmd()
+		case "t":
+			// Cycle time filter forward — same model as the DXC pane.
+			cur := -1
+			for i, s := range pskFilterSteps {
+				if s == m.psk.filterMins {
+					cur = i
+					break
+				}
 			}
+			if cur >= 0 {
+				next := cur + 1
+				if next >= len(pskFilterSteps) {
+					next = 0
+				}
+				m.psk.filterMins = pskFilterSteps[next]
+			}
+			m.pskResetCaches()
+			m.toasts.Info(fmt.Sprintf("PSK Reporter: last %d min", m.psk.filterMins))
 			return m, cmd
-		case "home", "end":
-			// Cycle through band filters — only bands with spots.
+		case "b":
+			// Cycle band filter forward — same model as the DXC pane.
 			bands := m.pskAvailableBands()
 			if len(bands) == 0 {
 				return m, cmd
-			}
-			dir := 1
-			if msg.String() == "end" {
-				dir = -1
 			}
 			cur := -1
 			for i, b := range bands {
@@ -645,12 +652,9 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 					break
 				}
 			}
-			next := cur + dir
+			next := cur + 1
 			if next >= len(bands) {
 				next = 0
-			}
-			if next < 0 {
-				next = len(bands) - 1
 			}
 			m.psk.bandFilter = bands[next]
 			m.pskResetCaches()
@@ -660,45 +664,17 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			}
 			m.toasts.Info(fmt.Sprintf("PSK Reporter: %s", label))
 			return m, cmd
-		case "pgup", "pgdown":
-			// Cycle time filter.
-			dir := 1
-			if msg.String() == "pgup" {
-				dir = -1
-			}
-			cur := -1
-			for i, s := range pskFilterSteps {
-				if s == m.psk.filterMins {
-					cur = i
-					break
-				}
-			}
-			if cur >= 0 {
-				next := cur + dir
-				if next >= len(pskFilterSteps) {
-					next = 0
-				}
-				if next < 0 {
-					next = len(pskFilterSteps) - 1
-				}
-				m.psk.filterMins = pskFilterSteps[next]
-			}
-			m.pskResetCaches()
-			m.toasts.Info(fmt.Sprintf("PSK Reporter: last %d min", m.psk.filterMins))
+		case "m":
+			// Cycle mode filter forward — same model as the DXC pane.
+			m.pskCycleMode(1)
 			return m, cmd
-		case "up", "k":
+		case "up":
 			if m.psk.selected > 0 {
 				m.psk.selected--
 			}
 			return m, cmd
-		case "down", "j":
+		case "down":
 			m.psk.selected++
-			return m, cmd
-		case "insert":
-			m.pskCycleMode(1)
-			return m, cmd
-		case "delete":
-			m.pskCycleMode(-1)
 			return m, cmd
 		case "backspace":
 			// Clear all filters.
@@ -868,32 +844,9 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 			m.ui.logbookEditor.wlSkipped = 0
 			m.ui.logbookEditor.wlSkipDetail = ""
 		}
-		if em.dlDone && !em.dlAborted && em.dlErr == "" {
-			m.ui.logbookEditor.wlLastFetchedID = em.dlLastID
-			if m.App.Logbook.Wavelog != nil {
-				m.App.Logbook.Wavelog.LastFetchedID = em.dlLastID
-				if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
-					applog.Warn("Failed to persist Wavelog last_fetched_id", "error", err)
-				}
-			}
-		}
-		if em.dlDone {
-			// Download finished — editor's Update already set wlDownloadCount/Dupes.
-			if !em.dlAborted && em.dlCount > 0 {
-				m.needRefresh = true
-				// Full DXCC backfill after bulk import — the periodic
-				// 50-row sweep is too slow for 10K+ QSO downloads.
-				if m.App.BigCTY != nil && m.App.DB != nil {
-					n, err := backfillMissingDXCCLimit(m.App.DB, m.App.BigCTY, 0)
-					if err == nil && n > 0 {
-						applog.Info("DXCC: post-download backfill complete", "count", n)
-					}
-				}
-			}
-		} else if em.dlErr != "" {
-			m.ui.logbookEditor.wlDownloadErr = em.dlErr
-			m.ui.logbookEditor.mode = edModeWLDownloadResult
-		}
+		// Download/import completion side effects (last_fetched_id
+		// persistence, QSO refresh flag, DXCC backfill, early errors).
+		m.handleEditorSideEffects(em)
 	}
 	if m.ui.logbookEditor.needsReload {
 		m.ui.logbookEditor.needsReload = false
@@ -905,6 +858,44 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 		m.needRefresh = true
 	}
 	return m, tea.Batch(cmd, editorCmd, refreshCmd)
+}
+
+// handleEditorSideEffects applies model-level side effects of download /
+// import / export editor messages: persisting Wavelog's last_fetched_id,
+// flagging a QSO refresh, running the post-import DXCC backfill, and
+// surfacing early download errors. Used by both the editor-screen handler
+// and the global pump that keeps downloads flowing after the user leaves
+// the editor mid-operation.
+func (m *Model) handleEditorSideEffects(em editorMsg) tea.Cmd {
+	if em.dlDone && !em.dlAborted && em.dlErr == "" {
+		m.ui.logbookEditor.wlLastFetchedID = em.dlLastID
+		if m.App.Logbook.Wavelog != nil {
+			m.App.Logbook.Wavelog.LastFetchedID = em.dlLastID
+			if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
+				applog.Warn("Failed to persist Wavelog last_fetched_id", "error", err)
+			}
+		}
+	}
+	if em.dlDone {
+		// Download/import finished — the editor already recorded counts.
+		if !em.dlAborted && em.dlCount > 0 {
+			m.needRefresh = true
+			applog.Info("Wavelog: bulk import finished — QSO list refresh pending",
+				"inserted", em.dlCount, "dupes", em.dlDupes, "last_id", em.dlLastID)
+			// Full DXCC backfill after bulk import — the periodic
+			// 50-row sweep is too slow for 10K+ QSO downloads.
+			if m.App.BigCTY != nil && m.App.DB != nil {
+				n, err := backfillMissingDXCCLimit(m.App.DB, m.App.BigCTY, 0)
+				if err == nil && n > 0 {
+					applog.Info("DXCC: post-download backfill complete", "count", n)
+				}
+			}
+		}
+	} else if em.dlErr != "" {
+		m.ui.logbookEditor.wlDownloadErr = em.dlErr
+		m.ui.logbookEditor.mode = edModeWLDownloadResult
+	}
+	return nil
 }
 
 func (m *Model) handleLogViewUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
@@ -1140,17 +1131,17 @@ var vhfCalling = map[int][]vhfCall{
 		{Band: "", Freq: "70.200", Mode: "CALL", Note: "CW/SSB calling"},
 		{Band: "", Freq: "70.450", Mode: "CALL", Note: "FM calling"},
 		{Band: "6m", FromMHz: "50.000", ToMHz: "52.000"},
-		{Band: "", Freq: "50.110", Mode: "DX", Note: "Intercontinental DX calling"},
+		{Band: "", Freq: "50.110", Mode: "DX", Note: "Intercontinental calling"},
 		{Band: "", Freq: "50.150", Mode: "CALL", Note: "SSB centre/calling"},
 	},
 	2: { // Region 2 — Americas
 		{Band: "6m", FromMHz: "50.000", ToMHz: "54.000"},
-		{Band: "", Freq: "50.110", Mode: "DX", Note: "Intercontinental DX calling"},
+		{Band: "", Freq: "50.110", Mode: "DX", Note: "Intercontinental calling"},
 		{Band: "", Freq: "50.125", Mode: "CALL", Note: "SSB calling"},
 	},
 	3: { // Region 3 — Asia-Pacific
 		{Band: "6m", FromMHz: "50.000", ToMHz: "54.000"},
-		{Band: "", Freq: "50.110", Mode: "DX", Note: "Intercontinental DX calling"},
+		{Band: "", Freq: "50.110", Mode: "DX", Note: "Intercontinental calling"},
 		{Band: "", Freq: "50.150", Mode: "CALL", Note: "SSB centre/calling"},
 	},
 }
@@ -1169,14 +1160,14 @@ type vhfSeg struct {
 // vhf2mSeeds holds detailed 2m bandplan seeds per IARU region.
 var vhf2mSeeds = map[int][]vhfSeg{
 	1: { // Region 1 — 144.000–146.000 MHz
-		{Band: "2m", Kind: "RNG", FromMHz: "144.000", ToMHz: "146.000", Note: "FM 12.5 kHz; rpt shift −600 kHz"},
+		{Band: "2m", Kind: "RNG", FromMHz: "144.000", ToMHz: "146.000", Note: "FM 12.5 kHz; repeater shift −600 kHz"},
 		{Kind: "SAT", FromMHz: "144.000", ToMHz: "144.025", Note: "satellite downlink"},
 		{Kind: "SSB", FromMHz: "144.025", ToMHz: "144.100", Freq: "144.050", Note: "CW/weak signal; CW calling"},
 		{Kind: "SSB", FromMHz: "144.100", ToMHz: "144.150", Note: "MGM/CW, EME/weak signal"},
-		{Kind: "SSB", FromMHz: "144.150", ToMHz: "144.400", Freq: "144.300", Note: "SSB/CW/MGM weak signal; SSB CoA"},
+		{Kind: "SSB", FromMHz: "144.150", ToMHz: "144.400", Freq: "144.300", Note: "SSB/CW/MGM weak signal"},
 		{Kind: "BCN", FromMHz: "144.400", ToMHz: "144.490", Note: "beacons"},
-		{Kind: "IMG", Freq: "144.500", Note: "SSTV/image CoA"},
-		{Kind: "DIG", Freq: "144.600", Note: "data/MGM CoA"},
+		{Kind: "IMG", Freq: "144.500", Note: "SSTV/image"},
+		{Kind: "DIG", Freq: "144.600", Note: "data/MGM"},
 		{Kind: "DIG", FromMHz: "144.794", ToMHz: "144.9625", Note: "digital communications"},
 		{Kind: "APR", Freq: "144.800", Note: "APRS Europe / R1 common"},
 		{Kind: "RPT", FromMHz: "144.975", ToMHz: "145.194", Note: "repeater inputs"},
@@ -1187,12 +1178,12 @@ var vhf2mSeeds = map[int][]vhfSeg{
 		{Kind: "SAT", FromMHz: "145.800", ToMHz: "146.000", Note: "satellite exclusive"},
 	},
 	2: { // Region 2 — 144.000–148.000 MHz
-		{Band: "2m", Kind: "RNG", FromMHz: "144.000", ToMHz: "148.000", Note: "FM 15/20 kHz typ; rpt ±600 kHz; local overrides vary"},
+		{Band: "2m", Kind: "RNG", FromMHz: "144.000", ToMHz: "148.000", Note: "FM 15/20 kHz; repeater shift ±600 kHz; local overrides vary"},
 		{Kind: "SAT", FromMHz: "144.000", ToMHz: "144.025", Note: "satellite"},
 		{Kind: "SSB", FromMHz: "144.000", ToMHz: "144.150", Note: "CW/MGM/EME/weak signal"},
 		{Kind: "SSB", FromMHz: "144.180", ToMHz: "144.275", Freq: "144.200", Note: "weak signal; SSB/CW exclusive calling"},
-		{Kind: "SSB", FromMHz: "144.300", ToMHz: "144.360", Freq: "144.300", Note: "SSB/CW calling"},
-		{Kind: "APR", FromMHz: "144.360", ToMHz: "144.400", Freq: "144.390", Note: "digital/APRS CoA"},
+		{Kind: "SSB", FromMHz: "144.300", ToMHz: "144.360", Note: "SSB/CW calling"},
+		{Kind: "APR", FromMHz: "144.360", ToMHz: "144.400", Freq: "144.390", Note: "digital/APRS"},
 		{Kind: "BCN", FromMHz: "144.400", ToMHz: "144.500", Note: "beacons/ACDS"},
 		{Kind: "RPT", FromMHz: "144.600", ToMHz: "144.900", Note: "repeater inputs, output +600 kHz"},
 		{Kind: "RPT", FromMHz: "145.200", ToMHz: "145.500", Note: "repeater outputs, input −600 kHz"},
@@ -1207,7 +1198,7 @@ var vhf2mSeeds = map[int][]vhfSeg{
 		{Band: "2m", Kind: "RNG", FromMHz: "144.000", ToMHz: "148.000", Note: "less channelized; national rules apply"},
 		{Kind: "DIG", FromMHz: "144.000", ToMHz: "144.025", Note: "narrowband/digimodes; satellite caution"},
 		{Kind: "SSB", FromMHz: "144.025", ToMHz: "144.035", Note: "EME/weak signal"},
-		{Kind: "ALL", FromMHz: "144.035", ToMHz: "145.800", Freq: "144.100", Note: "all modes; suggested DX calling 144.100"},
+		{Kind: "ALL", FromMHz: "144.035", ToMHz: "145.800", Freq: "144.100", Note: "all modes; suggested DX calling"},
 		{Kind: "APR", Freq: "144.390", Note: "APRS used by several R3 societies"},
 		{Kind: "APR", Freq: "144.640", Note: "APRS used by several R3 societies"},
 		{Kind: "APR", Freq: "144.800", Note: "APRS suggested spot frequency"},
@@ -1220,13 +1211,13 @@ var vhf2mSeeds = map[int][]vhfSeg{
 // vhf70cmSeeds holds detailed 70cm bandplan seeds per IARU region.
 var vhf70cmSeeds = map[int][]vhfSeg{
 	1: { // Region 1 — 430.000–440.000 MHz
-		{Band: "70cm", Kind: "RNG", FromMHz: "430.000", ToMHz: "440.000", Note: "FM 12.5/25 kHz; rpt 1.6/2.0/7.6 MHz shifts"},
+		{Band: "70cm", Kind: "RNG", FromMHz: "430.000", ToMHz: "440.000", Note: "FM 12.5/25 kHz; repeater shifts 1.6/2.0/7.6 MHz"},
 		{Kind: "RPT", FromMHz: "430.025", ToMHz: "430.375", Note: "repeater outputs, 1.6 MHz shift"},
 		{Kind: "DIG", FromMHz: "430.400", ToMHz: "430.575", Note: "digital communications"},
 		{Kind: "RPT", FromMHz: "431.050", ToMHz: "431.825", Note: "repeater inputs, 7.6 MHz shift"},
 		{Kind: "RPT", FromMHz: "431.625", ToMHz: "431.975", Note: "repeater inputs, 1.6 MHz shift"},
-		{Kind: "SSB", FromMHz: "432.000", ToMHz: "432.100", Freq: "432.050", Note: "CW/MGM; CW CoA"},
-		{Kind: "SSB", FromMHz: "432.100", ToMHz: "432.400", Freq: "432.200", Note: "CW/SSB/MGM; SSB CoA"},
+		{Kind: "SSB", FromMHz: "432.000", ToMHz: "432.100", Freq: "432.050", Note: "CW/MGM"},
+		{Kind: "SSB", FromMHz: "432.100", ToMHz: "432.400", Freq: "432.200", Note: "CW/SSB/MGM"},
 		{Kind: "BCN", FromMHz: "432.400", ToMHz: "432.490", Note: "beacons"},
 		{Kind: "APR", Freq: "432.500", Note: "new APRS frequency"},
 		{Kind: "RPT", FromMHz: "432.600", ToMHz: "432.975", Note: "repeater inputs, 2 MHz shift"},
@@ -1235,8 +1226,8 @@ var vhf70cmSeeds = map[int][]vhfSeg{
 		{Kind: "FM", Freq: "433.450", Note: "DV calling"},
 		{Kind: "FM", Freq: "433.500", Note: "FM calling"},
 		{Kind: "DIG", FromMHz: "433.625", ToMHz: "433.775", Note: "digital communication channels"},
-		{Kind: "LRA", Freq: "433.775", Note: "LoRa APRS node→gateway (R1 proposed)"},
-		{Kind: "LRA", Freq: "433.900", Note: "LoRa APRS gateway→node (R1 proposed)"},
+		{Kind: "LRA", Freq: "433.775", Note: "LoRa APRS node→gateway · R1 proposed"},
+		{Kind: "LRA", Freq: "433.900", Note: "LoRa APRS gateway→node · R1 proposed"},
 		{Kind: "DIG", Freq: "434.000", Note: "digital experiments centre"},
 		{Kind: "RPT", FromMHz: "434.600", ToMHz: "434.9875", Note: "repeater outputs"},
 		{Kind: "SAT", FromMHz: "435.000", ToMHz: "438.000", Note: "satellite / DATV / data"},
@@ -1249,7 +1240,7 @@ var vhf70cmSeeds = map[int][]vhfSeg{
 		{Kind: "ALL", FromMHz: "420.000", ToMHz: "432.000", Note: "ATV/experimental/local option"},
 		{Kind: "SSB", FromMHz: "432.000", ToMHz: "432.025", Note: "CW EME"},
 		{Kind: "SSB", FromMHz: "432.025", ToMHz: "432.100", Note: "CW/MGM EME and weak signal"},
-		{Kind: "SSB", FromMHz: "432.100", ToMHz: "432.300", Freq: "432.100", Note: "CW/SSB weak signal; SSB/CW calling"},
+		{Kind: "SSB", FromMHz: "432.100", ToMHz: "432.300", Note: "CW/SSB weak signal; SSB/CW calling"},
 		{Kind: "BCN", FromMHz: "432.300", ToMHz: "432.400", Note: "beacons"},
 		{Kind: "BCN", FromMHz: "432.400", ToMHz: "432.420", Note: "digital beacons/ACDS"},
 		{Kind: "SSB", FromMHz: "432.420", ToMHz: "433.000", Note: "CW/SSB/DM"},

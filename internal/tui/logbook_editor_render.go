@@ -37,6 +37,21 @@ func (le *LogbookEditor) View() tea.View {
 		)
 		return tea.NewView(le.viewWithDialog(bodyW))
 
+	case edModeConfirmSave:
+		le.ensureDialog(
+			"Save QSO",
+			func() string {
+				q := le.editing
+				if q == nil {
+					return ""
+				}
+				return q.Call + " from " + formatDate(q.QSODate)
+			}(),
+			Option{Label: "Save", Value: "save"},
+			Option{Label: "Cancel", Value: "cancel"},
+		)
+		return tea.NewView(le.viewWithDialog(bodyW))
+
 	case edModeConfirmPurge:
 		le.ensureDialog("Purge Logbook", "All QSOs will be permanently deleted.",
 			DangerOption("Purge", "purge"),

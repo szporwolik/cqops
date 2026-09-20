@@ -117,7 +117,7 @@ func TestDXCBandFilter_EmptySpotsNoChoices(t *testing.T) {
 }
 
 // =============================================================================
-// Band filter cycling — forward (Home key)
+// Band filter cycling — forward (b key)
 // =============================================================================
 
 func TestDXCBandFilter_CycleForward(t *testing.T) {
@@ -133,59 +133,28 @@ func TestDXCBandFilter_CycleForward(t *testing.T) {
 		t.Fatalf("initial bandFilter = %q, want \"\"", m.dxc.bandFilter)
 	}
 
-	// Home → 80m
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyHome}, nil)
+	// b → 80m
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 'b', Text: "b"}, nil)
 	if m.dxc.bandFilter != "80m" {
-		t.Errorf("1st Home: bandFilter = %q, want 80m", m.dxc.bandFilter)
+		t.Errorf("1st b: bandFilter = %q, want 80m", m.dxc.bandFilter)
 	}
 
-	// Home → 20m
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyHome}, nil)
+	// b → 20m
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 'b', Text: "b"}, nil)
 	if m.dxc.bandFilter != "20m" {
-		t.Errorf("2nd Home: bandFilter = %q, want 20m", m.dxc.bandFilter)
+		t.Errorf("2nd b: bandFilter = %q, want 20m", m.dxc.bandFilter)
 	}
 
-	// Home → 15m
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyHome}, nil)
+	// b → 15m
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 'b', Text: "b"}, nil)
 	if m.dxc.bandFilter != "15m" {
-		t.Errorf("3rd Home: bandFilter = %q, want 15m", m.dxc.bandFilter)
+		t.Errorf("3rd b: bandFilter = %q, want 15m", m.dxc.bandFilter)
 	}
 
-	// Home → "" (wraparound)
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyHome}, nil)
+	// b → "" (wraparound)
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 'b', Text: "b"}, nil)
 	if m.dxc.bandFilter != "" {
-		t.Errorf("4th Home: bandFilter = %q, want \"\" (wraparound)", m.dxc.bandFilter)
-	}
-}
-
-// =============================================================================
-// Band filter cycling — backward (End key)
-// =============================================================================
-
-func TestDXCBandFilter_CycleBackward(t *testing.T) {
-	spots := []store.DXCSpot{
-		{DXCall: "SP9AAA", Frequency: 3700000, Band: "80m", Mode: "CW", ReceivedAt: nowUnix()},
-		{DXCall: "SP9BBB", Frequency: 14250000, Band: "20m", Mode: "SSB", ReceivedAt: nowUnix()},
-	}
-	m := newDXCBandFilterModel(t, spots)
-
-	// Start: bandFilter=""
-	// End backward from "" wraps to last choice → "20m"
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyEnd}, nil)
-	if m.dxc.bandFilter != "20m" {
-		t.Errorf("1st End (from \"\"): bandFilter = %q, want 20m", m.dxc.bandFilter)
-	}
-
-	// End → 80m
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyEnd}, nil)
-	if m.dxc.bandFilter != "80m" {
-		t.Errorf("2nd End: bandFilter = %q, want 80m", m.dxc.bandFilter)
-	}
-
-	// End → "" (wraparound)
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyEnd}, nil)
-	if m.dxc.bandFilter != "" {
-		t.Errorf("3rd End: bandFilter = %q, want \"\"", m.dxc.bandFilter)
+		t.Errorf("4th b: bandFilter = %q, want \"\" (wraparound)", m.dxc.bandFilter)
 	}
 }
 
@@ -232,8 +201,8 @@ func TestDXCBandFilter_ForcesTableRebuild(t *testing.T) {
 	m := newDXCBandFilterModel(t, spots)
 	m.dxc.tableReady = true
 
-	// Home should set tableReady=false to force a rebuild.
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyHome}, nil)
+	// b should set tableReady=false to force a rebuild.
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 'b', Text: "b"}, nil)
 	if m.dxc.tableReady {
 		t.Error("band filter change should set tableReady=false, got true")
 	}
@@ -328,7 +297,7 @@ func TestDXCBandFilter_SelectedCallPreserved(t *testing.T) {
 	// the table, updateDXCSelectedCall clears selectedCall if the spot is
 	// no longer in the table. We test that selectedCall survives the filter
 	// transition at the message-handler level.
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyHome}, nil)
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 'b', Text: "b"}, nil)
 	// selectedCall is not cleared by handleDXCUpdate directly; it's cleared
 	// in updateDXCSelectedCall when the table is not ready.
 	if m.dxc.selectedCall != "SP9AAA" {
@@ -357,8 +326,8 @@ func TestDXCBandFilter_NoPanicOnEmptyDB(t *testing.T) {
 	}
 
 	// Cycling band filter with no spots should not panic.
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyHome}, nil)
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyEnd}, nil)
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 'b', Text: "b"}, nil)
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 'b', Text: "b"}, nil)
 }
 
 func TestDXCBandFilter_NoPanicOnEmptyBandChoice(t *testing.T) {
@@ -366,14 +335,14 @@ func TestDXCBandFilter_NoPanicOnEmptyBandChoice(t *testing.T) {
 	m := newDXCBandFilterModel(t, nil)
 
 	// bandChoices = [""], length 1.
-	// Home: bandIdx = (0+1)%1 = 0, bandFilter = "" → no change.
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyHome}, nil)
+	// b: bandIdx = (0+1)%1 = 0, bandFilter = "" → no change.
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 'b', Text: "b"}, nil)
 	if m.dxc.bandFilter != "" {
 		t.Errorf("bandFilter should stay \"\" with no bands, got %q", m.dxc.bandFilter)
 	}
 
-	// End: bandIdx = -1 → wraps to 0, bandFilter = "".
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyEnd}, nil)
+	// A second press must stay a safe no-op as well.
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 'b', Text: "b"}, nil)
 	if m.dxc.bandFilter != "" {
 		t.Errorf("bandFilter should stay \"\" with no bands, got %q", m.dxc.bandFilter)
 	}

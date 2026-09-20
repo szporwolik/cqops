@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/config"
 )
 
@@ -277,6 +278,57 @@ func TestStationForm_ValidationUpdatesFromValidToInvalid(t *testing.T) {
 	f.Callsign.SetValue("SP9*MOA")
 	if hint := f.ValidateField("Callsign:"); hint == "" {
 		t.Error("should become invalid after change")
+	}
+}
+
+// TestStationForm_EnterSavesCtrlSDoesNot: Enter is the save key in the
+// logbook form — Ctrl+S no longer saves.
+func TestStationForm_EnterSavesCtrlSDoesNot(t *testing.T) {
+	f := newStationFormForTest()
+
+	cmd := f.HandleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("Enter should return a save command")
+	}
+	if msg := cmd(); msg == nil {
+		t.Fatal("save command returned nil message")
+	} else if _, ok := msg.(enterOnLastFieldMsg); !ok {
+		t.Errorf("Enter returned %T, want enterOnLastFieldMsg", msg)
+	}
+
+	if cmd := f.HandleKey(tea.KeyPressMsg{Text: "\x13"}); cmd != nil {
+		t.Error("Ctrl+S should no longer save the station form")
+	}
+}
+
+// TestStationForm_SpaceTriggersButtons: Space activates the Wavelog/APRS
+// buttons in parallel with Enter — but only on the button focus.
+func TestStationForm_SpaceTriggersButtons(t *testing.T) {
+	f := newStationFormForTest()
+
+	// Wavelog Update button focused — Space triggers the same action as Enter.
+	f.wlBtnFocus = 1
+	cmd := f.HandleKey(tea.KeyPressMsg{Code: tea.KeySpace})
+	if cmd == nil {
+		t.Fatal("Space on Wavelog Update button should return an action")
+	}
+	if msg := cmd(); msg == nil {
+		t.Fatal("action returned nil message")
+	} else if _, ok := msg.(wlUpdateAction); !ok {
+		t.Errorf("Space on Update button returned %T, want wlUpdateAction", msg)
+	}
+
+	// APRS Test button focused — Space triggers the test action.
+	f.wlBtnFocus = 0
+	f.aprsBtnFocus = 1
+	cmd = f.HandleKey(tea.KeyPressMsg{Code: tea.KeySpace})
+	if cmd == nil {
+		t.Fatal("Space on APRS Test button should return an action")
+	}
+	if msg := cmd(); msg == nil {
+		t.Fatal("action returned nil message")
+	} else if _, ok := msg.(aprsTestAction); !ok {
+		t.Errorf("Space on Test button returned %T, want aprsTestAction", msg)
 	}
 }
 

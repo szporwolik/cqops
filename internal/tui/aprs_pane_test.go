@@ -148,6 +148,21 @@ func TestAPRSPaneFillFromSelected(t *testing.T) {
 	}
 }
 
+// TestAPRSPaneBeaconKeyConfiguredWarns: with beaconing configured but no
+// live client, b attempts the send and surfaces a warning toast.
+func TestAPRSPaneBeaconKeyConfiguredWarns(t *testing.T) {
+	m := newTestModel()
+	m.screen = screenAPRS
+
+	m.App.Config.Integrations.APRS.Enabled = true
+	m.App.Logbook.APRS = &config.APRSConfig{Enabled: true, SendLocation: true}
+	before := len(m.toasts.Active())
+	_, _ = m.handleAPRSUpdate(tea.KeyPressMsg{Code: 'b', Text: "b"}, nil)
+	if got := len(m.toasts.Active()); got != before+1 {
+		t.Errorf("configured b should produce exactly one toast, got %d", got-before)
+	}
+}
+
 func TestAPRSPaneKeys_Navigation(t *testing.T) {
 	m := newTestModel()
 	m.aprsPane.stations = []aprsStation{
@@ -259,6 +274,29 @@ func TestAPRSPaneView_States(t *testing.T) {
 	// Bearing is a table column; details carry no distance/bearing.
 	if !strings.Contains(v, "000\u00b0") {
 		t.Errorf("populated view missing bearing column: %q", v)
+	}
+}
+
+// Emoji and decorative symbols in APRS comments must not reach the
+// terminal — they are stripped before display.
+func TestAPRSDetailRows_CommentEmojiStripped(t *testing.T) {
+	m := newTestModel()
+	sel := &aprsStation{
+		rec: aprs.StationRecord{
+			Callsign: "SP9ABC",
+			Comment:  "73 \u2600\ufe0f GL! \U0001F600",
+		},
+		grid: "JO90AA",
+	}
+	rows := m.aprsDetailRows(sel, 46)
+	joined := strings.Join(rows, "\n")
+	for _, bad := range []string{"\u2600", "\U0001F600"} {
+		if strings.Contains(joined, bad) {
+			t.Errorf("emoji leaked into the comment row: %v", rows)
+		}
+	}
+	if !strings.Contains(joined, "73 GL!") {
+		t.Errorf("sanitized comment text missing: %v", rows)
 	}
 }
 
@@ -434,6 +472,25 @@ func TestAPRSBeaconShortcut(t *testing.T) {
 	}
 }
 
+func TestAPRSAgeAgo(t *testing.T) {
+	now := time.Now()
+	cases := []struct {
+		name string
+		at   time.Time
+		want string
+	}{
+		{"seconds", now.Add(-7 * time.Second), "less than a minute ago"},
+		{"zero", now, "less than a minute ago"},
+		{"minutes", now.Add(-5 * time.Minute), "5m ago"},
+		{"hours", now.Add(-3 * time.Hour), "3.0h ago"},
+	}
+	for _, c := range cases {
+		if got := aprsAgeAgo(c.at); got != c.want {
+			t.Errorf("%s: aprsAgeAgo = %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
 func TestAPRSRadarRows(t *testing.T) {
 	m := newTestModel()
 	// Four stations at the cardinal points, two stacked on top of each other.
@@ -471,12 +528,17 @@ func TestAPRSRadarRows(t *testing.T) {
 	for i, r := range rows {
 		plain[i] = stripANSI(r)
 	}
-	// Cardinal labels around the radar restore azimuth context.
+	// Cardinal labels around the radar restore azimuth context. W / E hug
+	// the ring (rh=6): one cell left of it at box 3, one cell right at 17.
 	if plain[0][10] != 'N' || plain[8][10] != 'S' {
 		t.Errorf("N/S labels misaligned:\n%s", strings.Join(plain, "\n"))
 	}
-	if plain[4][0] != 'W' || plain[4][20] != 'E' {
+	if plain[4][3] != 'W' || plain[4][17] != 'E' {
 		t.Errorf("W/E labels misaligned:\n%s", strings.Join(plain, "\n"))
+	}
+	// No floating labels at the box edges.
+	if plain[4][0] != ' ' || plain[4][20] != ' ' {
+		t.Errorf("W/E labels should not float at the box edges:\n%s", strings.Join(plain, "\n"))
 	}
 	// Roundness: same distance renders 5 cells east/west of center but
 	// only 2 rows north/south (terminal cells are ~2:1).
@@ -493,6 +555,20 @@ func TestAPRSRadarRows(t *testing.T) {
 	}
 	if strings.Contains(plain[9], "090\u00b0") {
 		t.Errorf("bearing should drop at narrow width:\n%s", plain[9])
+	}
+}
+
+func TestAPRSRadarRows_CaptionFullGrid(t *testing.T) {
+	m := newTestModel()
+	m.App.Logbook.Station.Grid = "JO90AB"
+	m.aprsPane.stations = []aprsStation{
+		{rec: aprs.StationRecord{Callsign: "E1"}, distKm: 8, bearing: 90},
+	}
+	m.aprsPane.sel = 0
+	rows := m.aprsRadarRows(&m.aprsPane, 30, 10)
+	caption := stripANSI(rows[len(rows)-1])
+	if !strings.Contains(caption, "JO90AB") {
+		t.Errorf("caption should show the exact grid sent to APRS:\n%s", caption)
 	}
 }
 
@@ -519,6 +595,27 @@ func TestAPRSRadarRows_Minimal(t *testing.T) {
 	m := newTestModel()
 	if rows := m.aprsRadarRows(&m.aprsPane, 10, 8); len(rows) != 8 {
 		t.Errorf("minimal box should render a radar, got %v", rows)
+	}
+}
+
+// In a wide box the ring does not reach the sides — W / E must hug the
+// ring instead of floating at the box edges.
+func TestAPRSRadarRows_WideLabelsHugRing(t *testing.T) {
+	m := newTestModel()
+	m.aprsPane.stations = []aprsStation{
+		{rec: aprs.StationRecord{Callsign: "E1"}, distKm: 8, bearing: 90},
+	}
+	// 41x10: innerW=39, cx=19, innerH=7, cy=3, rh=6.
+	rows := m.aprsRadarRows(&m.aprsPane, 41, 10)
+	plain := make([]string, len(rows))
+	for i, r := range rows {
+		plain[i] = stripANSI(r)
+	}
+	if plain[4][13] != 'W' || plain[4][27] != 'E' {
+		t.Errorf("W/E labels should hug the ring (13/27), got:\n%s", strings.Join(plain, "\n"))
+	}
+	if plain[4][0] != ' ' || plain[4][40] != ' ' {
+		t.Errorf("W/E labels should not float at the box edges:\n%s", strings.Join(plain, "\n"))
 	}
 }
 
@@ -550,6 +647,39 @@ func TestAPRSRadarRows_TypeMarkers(t *testing.T) {
 	// The selected marker is highlighted.
 	if !strings.Contains(rows[4], CursorStyle.Render("W")) {
 		t.Errorf("selected type marker not highlighted:\n%s", strings.Join(rows, "\n"))
+	}
+}
+
+// An active distance filter zooms the radar: the outer ring and the
+// caption reflect the filter radius instead of a fixed 10 km floor.
+func TestAPRSRadarRows_DistanceFilterScales(t *testing.T) {
+	m := newTestModel()
+	m.aprsPane.stations = []aprsStation{
+		{rec: aprs.StationRecord{Callsign: "NEAR"}, distKm: 0.9, bearing: 90},
+		{rec: aprs.StationRecord{Callsign: "FAR"}, distKm: 9, bearing: 270},
+	}
+	caption := func() string {
+		rows := m.aprsRadarRows(&m.aprsPane, 21, 10)
+		return stripANSI(rows[len(rows)-1])
+	}
+
+	m.aprsPane.distFilter = 1
+	if got := caption(); !strings.Contains(got, "~ 1 km") {
+		t.Errorf("caption should reflect the 1 km filter: %q", got)
+	}
+	m.aprsPane.distFilter = 5
+	if got := caption(); !strings.Contains(got, "~ 5 km") {
+		t.Errorf("caption should reflect the 5 km filter: %q", got)
+	}
+	// No filter — scale covers the farthest station, at least 10 km.
+	m.aprsPane.distFilter = 0
+	if got := caption(); !strings.Contains(got, "~ 10 km") {
+		t.Errorf("no filter should keep the 10 km floor: %q", got)
+	}
+	// A filter wider than the visible stations must not upscale the radar.
+	m.aprsPane.distFilter = 100
+	if got := caption(); !strings.Contains(got, "~ 10 km") {
+		t.Errorf("wide filter should not upscale: %q", got)
 	}
 }
 
@@ -647,6 +777,38 @@ func TestAPRSPaneEnter_NoRadiusKeepsAll(t *testing.T) {
 	m.aprsEnterPane()
 	if m.aprsPane.distFilter != 0 {
 		t.Errorf("dist filter = %d, want all (0)", m.aprsPane.distFilter)
+	}
+}
+
+// Manual filter changes must survive leaving and re-entering the pane —
+// only the first entry aligns the distance filter with the APRS radius.
+func TestAPRSPaneEnter_KeepsManualFilters(t *testing.T) {
+	m := newTestModel()
+	m.App.APRSCache = newTestAPRSCache(t, []aprs.StationRecord{testAPRSRecord("NEAR", 0.005, 0)})
+	m.App.Logbook.APRS = &config.APRSConfig{Enabled: true, RadiusKm: 50}
+
+	m.aprsEnterPane()
+	if m.aprsPane.distFilter != 50 {
+		t.Fatalf("initial dist filter = %d, want 50", m.aprsPane.distFilter)
+	}
+
+	// Manual change while the pane is open.
+	_, _ = m.handleAPRSUpdate(tea.KeyPressMsg{Code: 'd', Text: "d"}, nil)
+	if m.aprsPane.distFilter == 50 {
+		t.Fatalf("'d' should move the filter away from 50")
+	}
+	want := m.aprsPane.distFilter
+
+	// Re-entering the pane keeps the manual setting.
+	m.aprsEnterPane()
+	if m.aprsPane.distFilter != want {
+		t.Errorf("manual filter not preserved: got %d, want %d", m.aprsPane.distFilter, want)
+	}
+	// Time and type filters are untouched by re-entry as well.
+	m.aprsPane.timeFilter = 15
+	m.aprsEnterPane()
+	if m.aprsPane.timeFilter != 15 {
+		t.Errorf("time filter not preserved across re-entry: %d", m.aprsPane.timeFilter)
 	}
 }
 
@@ -825,5 +987,68 @@ func TestAPRSPaneView_Narrow(t *testing.T) {
 	lines := strings.Split(v, "\n")
 	if len(lines) > lay.ContentH {
 		t.Errorf("narrow view overflow: %d lines > ContentH %d", len(lines), lay.ContentH)
+	}
+}
+
+func TestAPRSPaneView_Borders(t *testing.T) {
+	lay := Layout{TerminalW: 100, ContentW: 98, ContentH: 20}
+
+	m := newTestModel()
+	m.App.APRSCache = newTestAPRSCache(t, []aprs.StationRecord{
+		testAPRSRecord("SP9XYZ", 0.005, 0),
+	})
+	m.aprsPaneRefresh()
+	m.aprsPaneSelect(0)
+	v := m.viewAPRS(lay)
+	// Both columns are wrapped in rounded border boxes.
+	for _, want := range []string{"\u256d", "\u256e", "\u2570", "\u256f", "\u2502"} {
+		if !strings.Contains(v, want) {
+			t.Errorf("bordered view missing %q", want)
+		}
+	}
+}
+
+// With a selection the right column holds two stacked boxes: the own
+// status on top and the selected contact + radar below it.
+func TestAPRSPaneView_TwoRightBoxes(t *testing.T) {
+	lay := Layout{TerminalW: 100, ContentW: 98, ContentH: 24}
+
+	m := newTestModel()
+	m.App.APRSCache = newTestAPRSCache(t, []aprs.StationRecord{
+		testAPRSRecord("SP9XYZ", 0.005, 0),
+	})
+	m.aprsPaneRefresh()
+	m.aprsPaneSelect(0)
+	plain := stripANSI(m.viewAPRS(lay))
+
+	// Three boxes in total: station table, status, contact.
+	if n := strings.Count(plain, "\u256d"); n != 3 {
+		t.Errorf("box tops = %d, want 3 (table, status, contact)", n)
+	}
+	if n := strings.Count(plain, "\u2570"); n != 3 {
+		t.Errorf("box bottoms = %d, want 3 (table, status, contact)", n)
+	}
+
+	// Status and contact content live in different boxes: the status box
+	// must close before the contact box opens.
+	lines := strings.Split(plain, "\n")
+	statusDone, contactOpen := false, false
+	seenTransmitting := false
+	for _, l := range lines {
+		if strings.Contains(l, "transmitting.") {
+			seenTransmitting = true
+		}
+		if seenTransmitting && strings.Contains(l, "\u2570") {
+			statusDone = true
+		}
+		if strings.Contains(l, "Call SP9XYZ") {
+			if !statusDone {
+				t.Error("contact box opens before the status box closed")
+			}
+			contactOpen = true
+		}
+	}
+	if !contactOpen {
+		t.Error("contact box content missing")
 	}
 }

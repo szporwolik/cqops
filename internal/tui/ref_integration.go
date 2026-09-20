@@ -150,11 +150,13 @@ func (m *Model) handleRefUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			return m, cmd
 
 		case "enter", "insert":
-			// If results are visible and cursor is on a row, add to QSO form.
+			// If results are visible and cursor is on a row, commit it
+			// to the QSO form and jump back — same flow as Enter on
+			// the DXC screen.
 			if m.ref.searched && len(m.ref.rows) > 0 && m.ref.cursor >= 0 && m.ref.cursor < len(m.ref.rows) {
 				r := m.ref.rows[m.ref.cursor]
 				m.addRefToQSO(r)
-				return m, cmd
+				m.screen = screenQSO
 			}
 			// Otherwise, execute search.
 			m.doRefSearch()
@@ -530,18 +532,44 @@ func (m *Model) applyRefGridAndQTH() {
 		}
 	}
 
-	// Set grid from the highest-priority REF that has one.
+	// Grid — manual and live WSJT-X values are never overwritten. Ref
+	// data replaces callbook/empty values and refreshes ref values.
 	if bestGrid != "" {
-		m.fields[fieldGrid].SetValue(bestGrid)
-		m.rc.pathGrid = bestGrid
-		m.gridSource = bestSource
+		if m.gridSource != gridSourceManual && m.gridSource != gridSourceWSJTX {
+			m.fields[fieldGrid].SetValue(bestGrid)
+			m.rc.pathGrid = bestGrid
+			m.gridSource = bestSource
+			m.invalidatePartnerMapCache()
+		}
+	} else if isRefSource(m.gridSource) {
+		// All references removed or none resolve a grid — drop the stale
+		// ref-derived value so callbook can fill it again.
+		m.fields[fieldGrid].SetValue("")
+		m.rc.pathGrid = ""
+		m.gridSource = gridSourceNone
 		m.invalidatePartnerMapCache()
 	}
 
-	// Set QTH to joined names of all referenced programmes.
+	// QTH — joined names of all referenced programmes. Manual QTH always
+	// wins; callbook and ref values are replaced.
 	if len(qthParts) > 0 {
-		m.fields[fieldQTH].SetValue(strings.Join(qthParts, " | "))
+		if m.qthSource != gridSourceManual {
+			m.fields[fieldQTH].SetValue(strings.Join(qthParts, " | "))
+			m.qthSource = gridSourceREF
+		}
+	} else if m.qthSource == gridSourceREF {
+		m.fields[fieldQTH].SetValue("")
+		m.qthSource = gridSourceNone
 	}
+}
+
+// isRefSource reports whether s is one of the REF-derived grid sources.
+func isRefSource(s gridSource) bool {
+	switch s {
+	case gridSourceSOTA, gridSourcePOTA, gridSourceWWFF, gridSourceIOTA:
+		return true
+	}
+	return false
 }
 
 // addRefToQSO adds the selected REF row's reference code to the matching

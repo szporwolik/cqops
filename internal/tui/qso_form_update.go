@@ -548,6 +548,7 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 			m.lookup.callbookToastCall = ""
 			m.dupeConfirmed = false
 			m.gridSource = gridSourceNone
+			m.qthSource = gridSourceNone
 			m.screen = screenQSO
 			m.clearFilteredTable()
 			m.invalidatePartnerMapCache()
@@ -593,8 +594,18 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 		}
 
 	case fieldGrid:
-		// Auto-format grid locator.
+		// Auto-format grid locator. Manual typing takes precedence over
+		// every autofill source (REF, callbook, WSJT-X).
 		m.fields[f].SetValue(formatLocator(m.fields[f].Value()))
+		if m.fields[f].Value() != prevVal {
+			m.gridSource = gridSourceManual
+		}
+
+	case fieldQTH:
+		// Manual QTH wins over REF and callbook autofill.
+		if m.fields[f].Value() != prevVal {
+			m.qthSource = gridSourceManual
+		}
 
 	case fieldDate, fieldTime:
 		// Manual edit: stop auto-updating date/time.
@@ -768,6 +779,7 @@ func (m *Model) fillFromDXCSpot() {
 	m.lookup.callbookToastCall = ""
 	m.dupeConfirmed = false
 	m.gridSource = gridSourceNone
+	m.qthSource = gridSourceNone
 	m.rc.pathCall = ""
 	m.rc.pathGrid = ""
 	m.rc.pathSig = ""
@@ -800,8 +812,9 @@ func (m *Model) onFieldExit() {
 		// Also flag for handlePendingRequests as fallback (tick loop).
 
 	case fieldGrid:
+		// Manual marking happens in updateFocused only when the value
+		// actually changed — tabbing through must not fake a manual entry.
 		m.rc.pathGrid = strings.ToUpper(strings.TrimSpace(m.fields[fieldGrid].Value()))
-		m.gridSource = gridSourceManual
 		m.invalidatePartnerMapCache()
 
 	case fieldFreq:
@@ -928,6 +941,7 @@ func (m *Model) resetQSOFields() {
 	m.dateTimeAuto = true
 	m.keepFocused = false
 	m.gridSource = gridSourceNone
+	m.qthSource = gridSourceNone
 	m.ref.refNamesDirty = true
 	m.focus = fieldCall
 	m.fields[m.focus].Focus()

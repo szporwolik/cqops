@@ -1356,15 +1356,14 @@ Se `secrets.enc` estiver corrompido, o CQOps iniciará com um aviso e solicitar�
 | Tecla | Ação |
 |---|---|
 | ↑ / ↓ | Navegar pelos spots |
+| PgUp / PgDn | Página anterior ou seguinte |
+| Home / End | Primeiro ou último spot |
 | Enter | Preencher o formulário de QSO, sintonizar o rádio e voltar ao QSO |
 | Space | Sintonizar o rádio no spot selecionado e permanecer no DX Cluster |
-| Home | Avançar pelo filtro de banda |
-| End | Retroceder pelo filtro de banda |
-| `\` | Alternar o filtro de continente do spotter |
-| Ins | Avançar pelo filtro de modo |
-| Del | Retroceder pelo filtro de modo |
-| PgUp | Avançar pelo filtro de tempo |
-| PgDn | Retroceder pelo filtro de tempo |
+| b | Avançar pelo filtro de banda |
+| c | Alternar o filtro de continente do spotter |
+| m | Avançar pelo filtro de modo |
+| t | Avançar pelo filtro de tempo |
 | Backspace | Limpar todos os filtros |
 | Esc / F4 | Voltar ao formulário de QSO |
 

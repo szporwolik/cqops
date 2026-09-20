@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -186,6 +187,102 @@ func TestDownload_MissingAPIKey(t *testing.T) {
 	le := startFakeDownload(t, server, nil)
 	if le.wlDownloadErr == "" {
 		t.Error("wlDownloadErr should be set when key/stationID are empty")
+	}
+}
+
+// TestDownload_CompletesWhileOnQSOScreen reproduces the stale-recent-QSOs
+// bug: the user starts a Wavelog download in the logbook editor and
+// switches to the QSO screen before it finishes. The editor message pump
+// must keep running globally so the final done message triggers the QSO
+// refresh. The same pump serves ADIF import and export.
+func TestDownload_CompletesWhileOnQSOScreen(t *testing.T) {
+	adifContent := `<CALL:6>SP9MOA <BAND:3>20m <MODE:3>SSB <FREQ:7>14.2500
+<QSO_DATE:8>20260618 <TIME_ON:6>120000 <RST_SENT:2>59 <RST_RCVD:2>59
+<GRIDSQUARE:4>JO90 <EOR>`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"exported_qsos": 1,
+			"lastfetchedid": 77,
+			"adif":          adifContent,
+		})
+	}))
+	defer server.Close()
+
+	m := newLifecycleTestModel(t)
+	m.screen = screenQSO
+	m.App.ConfigPath = filepath.Join(t.TempDir(), "config.yaml")
+	wl := m.App.Logbook.Wavelog
+	wl.URL = server.URL
+	wl.APIKey = "key"
+	wl.Enabled = true
+	wl.StationProfileID = "1"
+
+	m.ui.logbookEditor = NewLogbookEditor(LogbookEditorConfig{
+		DB: m.App.DB, WLURL: server.URL, WLKey: "key", WLStationID: "1",
+		WLLastFetchedID: 0, StationOperator: "OP", StationGrid: "JO90",
+	})
+
+	cmd := m.ui.logbookEditor.doWavelogDownload()
+	if cmd == nil {
+		t.Fatal("doWavelogDownload returned nil cmd")
+	}
+
+	// Pump all editor messages through the model while it sits on the QSO
+	// screen — the download must complete and flag the refresh.
+	for i := 0; i < 500 && m.ui.logbookEditor.isDownloadActive(); i++ {
+		msg := cmd()
+		next, c := m.Update(msg)
+		var ok bool
+		m, ok = next.(*Model)
+		if !ok {
+			t.Fatalf("Update returned %T", next)
+		}
+		if c == nil {
+			break
+		}
+		cmd = c
+	}
+
+	if m.ui.logbookEditor.isDownloadActive() {
+		t.Fatal("download did not complete while on the QSO screen")
+	}
+	if m.ui.logbookEditor.wlDownloadCount != 1 {
+		t.Errorf("wlDownloadCount = %d, want 1", m.ui.logbookEditor.wlDownloadCount)
+	}
+	if wl.LastFetchedID != 77 {
+		t.Errorf("LastFetchedID = %d, want 77", wl.LastFetchedID)
+	}
+	if !m.needRefresh {
+		t.Error("needRefresh should be set after the download completes")
+	}
+
+	// The last_fetched_id must land in the config file, so the next
+	// download resumes instead of re-fetching from 0.
+	data, err := os.ReadFile(m.App.ConfigPath)
+	if err != nil {
+		t.Fatalf("config file not written after download: %v", err)
+	}
+	if !strings.Contains(string(data), "last_fetched_id: 77") {
+		t.Errorf("config file missing last_fetched_id, got:\n%s", data)
+	}
+
+	// The deferred refresh updates the recent QSOs shown on the QSO page.
+	pending, _ := m.handlePendingRequests(nil)
+	if pending == nil {
+		t.Fatal("handlePendingRequests returned nil for pending refresh")
+	}
+	next, _ := m.Update(pending())
+	m = next.(*Model)
+	found := false
+	for _, q := range m.recentQSOs.qsos {
+		if q.Call == "SP9MOA" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("recent QSOs not updated after download: %v", m.recentQSOs.qsos)
 	}
 }
 

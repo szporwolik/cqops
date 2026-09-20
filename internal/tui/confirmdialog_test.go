@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -76,6 +77,48 @@ func TestDialogESCCancels(t *testing.T) {
 	}
 	if dlg.Result.Confirmed {
 		t.Error("Dialog should not be confirmed after ESC")
+	}
+}
+
+// TestConfirmDialogDoesNotKillTickChain covers the stuck-toast regression:
+// a tick arriving while a confirm dialog is open used to return without
+// re-arming the next tick, which stopped toast expiry (and the clock, GPS,
+// and all other per-tick housekeeping) for the rest of the session.
+func TestConfirmDialogDoesNotKillTickChain(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	dlg := NewDialog("Quit", "Exit CQOps?",
+		Option{Label: "Quit", Value: "quit"},
+		Option{Label: "Cancel", Value: "cancel"},
+	)
+	m.confirm = &dlg
+
+	// A tick arriving while the dialog is open must re-arm the next tick.
+	_, cmd := m.Update(tickMsg(time.Now()))
+	if cmd == nil {
+		t.Fatal("tick chain broken while confirm dialog open — toasts would stick forever")
+	}
+	// tea.Batch wraps the re-armed tick together with other periodic
+	// commands — at least one of them must be the next tick.
+	bm, ok := cmd().(tea.BatchMsg)
+	if !ok {
+		t.Fatalf("re-armed command returned %T, want tea.BatchMsg", cmd())
+	}
+	found := false
+	for _, c := range bm {
+		if inner := c(); inner != nil {
+			if _, ok := inner.(tickMsg); ok {
+				found = true
+				break
+			}
+		}
+	}
+	if !found {
+		t.Fatal("re-armed batch does not contain the next tickMsg")
+	}
+
+	// The tick must not mutate or dismiss the dialog.
+	if m.confirm == nil || m.confirm.Done() {
+		t.Fatal("tickMsg must not dismiss the confirm dialog")
 	}
 }
 

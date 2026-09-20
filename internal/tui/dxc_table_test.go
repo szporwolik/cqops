@@ -425,6 +425,44 @@ func TestUpdateDXCSelectedCall_NotReady(t *testing.T) {
 	}
 }
 
+// TestDXCTable_RowHighlightSpansFullRow verifies that marker prefixes
+// ("N " / "D ") in the DX Call column are plain text. ANSI styles inside
+// table cells emit an SGR reset that cancels the selected-row highlight
+// for every cell after the call.
+func TestDXCTable_RowHighlightSpansFullRow(t *testing.T) {
+	spots := []store.DXCSpot{
+		{ReceivedAt: time.Now().Unix(), Frequency: 7030, Band: "40m", Mode: "FT8",
+			DXCall: "SP9CJM/P", Spotter: "HF100PKP", DXCC: "269", Comment: "test comment"},
+	}
+	m := newDXCBandFilterModel(t, spots)
+	m.width = 100
+	m.height = 24
+	m.buildDXCTable()
+
+	v := m.dxc.table.View()
+	var cursorLine string
+	for _, l := range strings.Split(v, "\n") {
+		if strings.Contains(l, "SP9CJM") {
+			cursorLine = l
+			break
+		}
+	}
+	if cursorLine == "" {
+		t.Fatalf("cursor row not found in table view:\n%s", v)
+	}
+	// Exactly one style pair: the outer Selected style wraps the whole
+	// row, so the highlight reaches the spotter and comment columns.
+	if n := strings.Count(cursorLine, "\x1b["); n != 2 {
+		t.Errorf("cursor row has %d ANSI sequences, want 2 (one wrapping style):\n%q", n, cursorLine)
+	}
+	if !strings.Contains(cursorLine, "N SP9CJM/P") {
+		t.Errorf("new-spot marker missing or styled:\n%q", cursorLine)
+	}
+	if !strings.Contains(cursorLine, "test comment") {
+		t.Errorf("comment column missing from cursor row:\n%q", cursorLine)
+	}
+}
+
 // =============================================================================
 // DXC key/state-transition tests
 // =============================================================================
@@ -452,54 +490,35 @@ func TestDXCKeys_TimeCycleForward(t *testing.T) {
 	m := newDXCTestModel()
 	// dxcTimeWindows = {0, 60, 30, 15, 10, 5}
 	// Start at index 0 (all, timeFilter=0).
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyPgUp}, nil) // → 60m
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 't', Text: "t"}, nil) // → 60m
 	if m.dxc.timeFilter != 60 {
-		t.Errorf("PgUp should set timeFilter=60, got %d", m.dxc.timeFilter)
+		t.Errorf("t should set timeFilter=60, got %d", m.dxc.timeFilter)
 	}
 	// Cycle through all windows back to start.
 	for i := 0; i < len(dxcTimeWindows)+1; i++ {
-		_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyPgUp}, nil)
+		_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 't', Text: "t"}, nil)
 	}
-	// 1 initial + 7 more = 8 PgUp presses → index 2 (30m) on 6-element array.
+	// 1 initial + 7 more = 8 presses → index 2 (30m) on 6-element array.
 	if m.dxc.timeFilter != 30 {
-		t.Errorf("after full cycle+1 PgUp, timeFilter=%d", m.dxc.timeFilter)
-	}
-}
-
-func TestDXCKeys_TimeCycleBackward(t *testing.T) {
-	m := newDXCTestModel()
-	// PgDown from start wraps to last element.
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyPgDown}, nil)
-	if m.dxc.timeFilter != dxcTimeWindows[len(dxcTimeWindows)-1] {
-		t.Errorf("PgDown from start should wrap to %d, got %d",
-			dxcTimeWindows[len(dxcTimeWindows)-1], m.dxc.timeFilter)
+		t.Errorf("after full cycle+1, timeFilter=%d", m.dxc.timeFilter)
 	}
 }
 
 func TestDXCKeys_ModeCycleForward(t *testing.T) {
 	m := newDXCTestModel()
 	// Mode choices: "", "CW", "DIGI", "PHONE"
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyInsert}, nil)
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 'm', Text: "m"}, nil)
 	if m.dxc.modeFilter != "CW" {
-		t.Errorf("Insert should set modeFilter=CW, got %q", m.dxc.modeFilter)
+		t.Errorf("m should set modeFilter=CW, got %q", m.dxc.modeFilter)
 	}
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyInsert}, nil)
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 'm', Text: "m"}, nil)
 	if m.dxc.modeFilter != "DIGI" {
-		t.Errorf("2nd Insert should set modeFilter=DIGI, got %q", m.dxc.modeFilter)
+		t.Errorf("2nd m should set modeFilter=DIGI, got %q", m.dxc.modeFilter)
 	}
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyInsert}, nil) // PHONE
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyInsert}, nil) // back to ""
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 'm', Text: "m"}, nil) // PHONE
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 'm', Text: "m"}, nil) // back to ""
 	if m.dxc.modeFilter != "" {
-		t.Errorf("4th Insert should set modeFilter=\"\", got %q", m.dxc.modeFilter)
-	}
-}
-
-func TestDXCKeys_ModeCycleBackward(t *testing.T) {
-	m := newDXCTestModel()
-	// Delete from "" wraps to "PHONE".
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyDelete}, nil)
-	if m.dxc.modeFilter != "PHONE" {
-		t.Errorf("Delete from start should wrap to PHONE, got %q", m.dxc.modeFilter)
+		t.Errorf("4th m should set modeFilter=\"\", got %q", m.dxc.modeFilter)
 	}
 }
 
@@ -524,7 +543,7 @@ func TestDXCKeys_ClearFilters(t *testing.T) {
 func TestDXCKeys_FilterForcesTableRebuild(t *testing.T) {
 	m := newDXCTestModel()
 	m.dxc.tableReady = true
-	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: tea.KeyPgUp}, nil)
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 't', Text: "t"}, nil)
 	if m.dxc.tableReady {
 		t.Error("filter change should set tableReady=false to force rebuild")
 	}

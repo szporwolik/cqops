@@ -96,6 +96,8 @@ func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode
 		if current == "" || !strings.HasPrefix(current, strings.ToUpper(formatted)) {
 			m.fields[fieldGrid].SetValue(formatted)
 			m.rc.pathGrid = strings.ToUpper(formatted)
+			// Live beacon grid: callbook may not overwrite it.
+			m.gridSource = gridSourceWSJTX
 		}
 	}
 	if freqHz > 0 {

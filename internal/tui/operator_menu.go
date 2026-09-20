@@ -175,7 +175,7 @@ func (oc *OperatorChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			oc.vp, _ = oc.vp.Update(msg)
 			return oc, nil
 
-		case oc.mode == operatorList && (msg.Code == tea.KeyUp || k.String() == "up" || k.String() == "k"):
+		case oc.mode == operatorList && (msg.Code == tea.KeyUp || k.String() == "up"):
 			if oc.cursor == 0 {
 				oc.cursor = len(oc.ids) - 1
 			} else {
@@ -183,7 +183,7 @@ func (oc *OperatorChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			scrollVpToLine(&oc.vp, oc.cursor)
 
-		case oc.mode == operatorList && (msg.Code == tea.KeyDown || k.String() == "down" || k.String() == "j"):
+		case oc.mode == operatorList && (msg.Code == tea.KeyDown || k.String() == "down"):
 			if oc.cursor == len(oc.ids)-1 {
 				oc.cursor = 0
 			} else {

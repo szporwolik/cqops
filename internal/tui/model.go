@@ -43,6 +43,8 @@ const (
 	gridSourcePOTA     gridSource = "POTA"
 	gridSourceWWFF     gridSource = "WWFF"
 	gridSourceIOTA     gridSource = "IOTA"
+	gridSourceWSJTX    gridSource = "WSJT-X"
+	gridSourceREF      gridSource = "REF" // ref-composed QTH source
 )
 
 const (
@@ -188,6 +190,7 @@ type Model struct {
 	dupeCacheKey     string             // cache key for checkDupe result
 	dupeCacheResult  bool               // cached outcome of last checkDupe
 	gridSource       gridSource
+	qthSource        gridSource // origin of the QTH field value (same precedence as grid)
 
 	keys           KeyMap
 	help           help.Model
@@ -769,10 +772,15 @@ func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Non-key messages fall through for tick / rig poll / async processing.
 	}
 
-	// Active confirmation dialog — highest priority, blocks everything else
+	// Active confirmation dialog — blocks key input while open, but lets
+	// ticks and async messages through so housekeeping (toast expiry,
+	// clock, GPS) keeps running — same policy as the spot dialog below.
+	// A tick that arrives while the dialog is open must still re-arm the
+	// tick chain, otherwise toasts would stick on screen forever after
+	// the dialog closes.
 	if m.confirm != nil {
-		if _, ok := msg.(tea.KeyPressMsg); ok {
-			updated, _ := m.confirm.Update(msg)
+		if keyMsg, ok := msg.(tea.KeyPressMsg); ok {
+			updated, _ := m.confirm.Update(keyMsg)
 			d, ok := updated.(DialogModel)
 			if !ok {
 				return m, cmd
@@ -785,8 +793,9 @@ func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				m.confirm = nil
 			}
+			return m, cmd
 		}
-		return m, cmd
+		// Non-key messages fall through for tick / toast expiry / async processing.
 	}
 
 	// Tick processing
@@ -864,6 +873,26 @@ func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// which screen is active.
 	if pendingCmd, handled := m.handlePendingRequests(cmd); handled {
 		return m, pendingCmd
+	}
+
+	// Wavelog download / ADIF import / export keep their message pump
+	// alive even when the user switches to another screen mid-operation.
+	// Without this the read-loop stops, the final "done" message is
+	// dropped, and the QSO page never refreshes after the download.
+	if _, ok := msg.(editorMsg); ok && m.screen != screenLogbookEditor {
+		le := m.ui.logbookEditor
+		if le != nil && le.isDownloadActive() {
+			sub, subCmd := le.Update(msg)
+			if next, ok := sub.(*LogbookEditor); ok {
+				m.ui.logbookEditor = next
+			}
+			if subCmd != nil {
+				cmd = tea.Batch(cmd, subCmd)
+			}
+			if em, ok := msg.(editorMsg); ok {
+				cmd = tea.Batch(cmd, m.handleEditorSideEffects(em))
+			}
+		}
 	}
 
 	// Screen-specific routing
@@ -1022,8 +1051,6 @@ func (m *Model) View() tea.View {
 	m.rc.status = m.renderStatusBar()
 	// Tab bar depends on partner data / call field / connectivity — cached.
 	m.rc.tabs = m.renderTabBar()
-	// Help bar has dynamic suffix (QSO counter, scroll info) — cached.
-	m.rc.help = m.renderHelpBar()
 
 	var mainParts []string
 	addRow := func(s string) {
@@ -1038,6 +1065,13 @@ func (m *Model) View() tea.View {
 	if body == "" {
 		body = DimStyle.Render("\u2014")
 	}
+	// Help bar has a dynamic suffix (QSO counter, scroll info) and is cached.
+	// Compute it AFTER the body: lazy screen rebuilds (e.g. the DXC spot
+	// table rebuilding after a spot batch arrives) happen inside
+	// buildBodyForScreen, and the suffix must reflect the rebuilt state in
+	// the same frame — computing it before the body left the spot/page
+	// status blank for one frame on every DXC spot batch.
+	m.rc.help = m.renderHelpBar()
 	addRow(body)
 	addRow(m.rc.help)
 	// Left-aligned vertical join without backgrounds is equivalent to

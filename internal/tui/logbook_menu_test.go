@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -217,5 +218,81 @@ func TestLogbookChooserCannotDeleteActive(t *testing.T) {
 	}
 	if _, ok := a.Config.Logbooks["home"]; !ok {
 		t.Error("active logbook was deleted — should be protected!")
+	}
+}
+
+// TestLogbookChooserSavePreservesWavelogLastFetchedID covers the regression
+// where saving an existing logbook rebuilt WavelogConfig from the form and
+// dropped LastFetchedID, silently resetting the next download to the start.
+func TestLogbookChooserSavePreservesWavelogLastFetchedID(t *testing.T) {
+	a := newChooserTestApp(t)
+	lb := a.Config.Logbooks["home"]
+	lb.Station.Continent = "EU"
+	lb.Wavelog = &config.WavelogConfig{
+		Enabled:          true,
+		URL:              "https://qso.cqops.com",
+		APIKey:           "test-key",
+		StationProfileID: "7",
+		LastFetchedID:    1234,
+	}
+	a.Config.Logbooks["home"] = lb
+
+	tq := NewToastQueue()
+	c := NewLogbookChooser(a, tq)
+	c.startEdit("home")
+
+	c.saveForm()
+
+	got := a.Config.Logbooks["home"].Wavelog
+	if got == nil {
+		t.Fatal("Wavelog config was dropped on save")
+	}
+	if got.LastFetchedID != 1234 {
+		t.Errorf("LastFetchedID = %d after save, want 1234 (must survive logbook edits)", got.LastFetchedID)
+	}
+
+	// The cursor must also land in the persisted config file.
+	data, err := os.ReadFile(a.ConfigPath)
+	if err != nil {
+		t.Fatalf("config not written: %v", err)
+	}
+	if !strings.Contains(string(data), "last_fetched_id: 1234") {
+		t.Errorf("config file missing last_fetched_id, got:\n%s", data)
+	}
+}
+
+// TestLogbookChooserSaveRequiresWavelogURLAndKey: enabling Wavelog without
+// URL or API key must refuse the save instead of silently wiping the
+// existing Wavelog config from the logbook.
+func TestLogbookChooserSaveRequiresWavelogURLAndKey(t *testing.T) {
+	a := newChooserTestApp(t)
+	lb := a.Config.Logbooks["home"]
+	lb.Station.Continent = "EU"
+	lb.Wavelog = &config.WavelogConfig{
+		Enabled:          true,
+		URL:              "https://qso.cqops.com",
+		APIKey:           "test-key",
+		StationProfileID: "7",
+		LastFetchedID:    55,
+	}
+	a.Config.Logbooks["home"] = lb
+
+	tq := NewToastQueue()
+	c := NewLogbookChooser(a, tq)
+	c.startEdit("home")
+
+	// Simulate the URL field being cleared in the form.
+	c.station.WlURL.SetValue("")
+
+	if cmd := c.saveForm(); cmd != nil {
+		t.Fatal("saveForm should refuse to save when Wavelog URL is empty")
+	}
+
+	got := a.Config.Logbooks["home"].Wavelog
+	if got == nil {
+		t.Fatal("logbook Wavelog config was wiped despite the rejected save")
+	}
+	if got.LastFetchedID != 55 {
+		t.Errorf("LastFetchedID = %d after rejected save, want 55", got.LastFetchedID)
 	}
 }

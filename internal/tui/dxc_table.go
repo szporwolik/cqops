@@ -236,20 +236,15 @@ func (m *Model) buildDXCTable() {
 	for _, s := range spots {
 		s := s
 		// Determine spot highlight: new DXCC > new band > new mode > normal.
-		spotTag := "" // "N" for new, "" for normal
-		spotStyle := S.Dim
+		spotTag := "" // "N " for new, "" for normal
 		if m.dxc.dxccBandSet != nil && s.DXCC != "" {
 			dxcc := strings.TrimSpace(s.DXCC)
 			band := qso.NormalizeBand(s.Band)
 			mode := qso.NormalizeRigMode(s.Mode)
 			bk := dxcc + "|" + band
 			bmk := bk + "|" + mode
-			if !m.dxc.dxccBandSet[bk] {
+			if !m.dxc.dxccBandSet[bk] || !m.dxc.dxccBandModeSet[bmk] {
 				spotTag = "N "
-				spotStyle = S.Info
-			} else if !m.dxc.dxccBandModeSet[bmk] {
-				spotTag = "N "
-				spotStyle = S.Info
 			}
 		}
 
@@ -260,16 +255,19 @@ func (m *Model) buildDXCTable() {
 				v = "\u2014"
 			}
 			if n == "DX Call" {
-				// Dupe: dim and prefix "D ".
+				// Dupe: prefix "D ". New DXCC/band/mode: prefix "N ".
+				// The markers stay plain text — ANSI styles inside table
+				// cells emit an SGR reset that cancels the selected-row
+				// highlight for every cell after the call.
 				if m.dxc.dupeSet != nil {
 					key := qso.NormalizeCall(s.DXCall) + "|" + qso.NormalizeBand(s.Band) + "|" + qso.NormalizeRigMode(s.Mode)
 					if m.dxc.dupeSet[key] {
-						v = S.Dim.Render("D " + v)
+						v = "D " + v
 					} else if spotTag != "" {
-						v = spotStyle.Render(spotTag + v)
+						v = spotTag + v
 					}
 				} else if spotTag != "" {
-					v = spotStyle.Render(spotTag + v)
+					v = spotTag + v
 				}
 			}
 			row = append(row, v)
@@ -385,10 +383,10 @@ func (m *Model) dxcView() string {
 		compact := " " + strings.Join(compactParts, sep)
 
 		hintParts := []string{
-			addPart("de Cont", contVal, m.dxc.contFilter != "") + "  " + DimStyle.Render("(\\)"),
-			addPart("Mode", modeVal, m.dxc.modeFilter != "") + "  " + DimStyle.Render("(Ins)"),
-			addPart("Band", bandVal, m.dxc.bandFilter != "") + "  " + DimStyle.Render("(Home)"),
-			addPart("Time", timeVal, m.dxc.timeFilter > 0) + "  " + DimStyle.Render("(PgUp)"),
+			addPart("de Cont", contVal, m.dxc.contFilter != "") + "  " + DimStyle.Render("(c)"),
+			addPart("Mode", modeVal, m.dxc.modeFilter != "") + "  " + DimStyle.Render("(m)"),
+			addPart("Band", bandVal, m.dxc.bandFilter != "") + "  " + DimStyle.Render("(b)"),
+			addPart("Time", timeVal, m.dxc.timeFilter > 0) + "  " + DimStyle.Render("(t)"),
 			DimStyle.Render("Spots") + " " + ValueStyle.Render(strconv.Itoa(m.dxc.spotCount)) + "  " + DimStyle.Render("(Bksp clear)"),
 		}
 		hinted := " " + strings.Join(hintParts, sep)

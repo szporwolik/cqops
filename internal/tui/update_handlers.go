@@ -575,6 +575,7 @@ func (m *Model) handleLookupResultMsg(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.
 		} else {
 			m.qsos = r.qsos
 			m.recentQSOs.SetQSOS(r.qsos)
+			applog.Debug("QSOs refreshed", "count", len(r.qsos))
 			m.rc.pathSig = ""
 			m.rc.logStatsSig = ""
 			if !m.callRecentQSOs.filterSuppressed && m.callRecentQSOs.IsFiltered() {

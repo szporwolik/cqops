@@ -378,8 +378,11 @@ func (m *Model) fillCallbookData(msg callbookResultMsg) {
 			applog.Debug("Callbook: filled partner grid", "grid", grid)
 		}
 	}
-	if d.QTH != "" {
+	// Manual and REF-derived QTH win over the callbook — only fill when
+	// the QTH is empty or was previously callbook-sourced.
+	if d.QTH != "" && (m.qthSource == gridSourceNone || m.qthSource == gridSourceCallbook) {
 		m.fields[fieldQTH].SetValue(d.QTH)
+		m.qthSource = gridSourceCallbook
 	}
 	if d.Country != "" {
 		m.fields[fieldCountry].SetValue(d.Country)
@@ -501,8 +504,16 @@ func (m *Model) showCallbookToast(call string) {
 // so that stale data from a previous lookup does not persist.
 func (m *Model) clearQRZFields() {
 	m.fields[fieldName].SetValue("")
-	m.fields[fieldQTH].SetValue("")
-	m.fields[fieldGrid].SetValue("")
+	// Never wipe values the operator typed or that came from a REF —
+	// only empty/callbook-sourced fields are ours to clear.
+	if m.qthSource == gridSourceNone || m.qthSource == gridSourceCallbook {
+		m.fields[fieldQTH].SetValue("")
+		m.qthSource = gridSourceNone
+	}
+	if m.gridSource == gridSourceNone || m.gridSource == gridSourceCallbook {
+		m.fields[fieldGrid].SetValue("")
+		m.gridSource = gridSourceNone
+	}
 	m.fields[fieldCountry].SetValue("")
 	m.rc.formSig = ""
 }

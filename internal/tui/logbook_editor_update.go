@@ -219,11 +219,10 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return le, nil
 			case "up", "down", "left", "right", "home", "end",
-				"k", "j",
 				"pgup", "pgdown",
 				"esc", "f8",
 				"delete", "enter",
-				"ctrl+w", "alt+w", "ctrl+e", "ctrl+p", "ctrl+i", "tab":
+				"ctrl+w", "alt+w", "ctrl+e", "ctrl+p", "ctrl+i":
 				// Navigation and action keys — handled below.
 			default:
 				// Forward to search input.
@@ -321,9 +320,12 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if le.mode == edModeEdit {
 			switch k {
-			case "ctrl+s":
-				return le, le.doSave()
-			case "esc", "f6":
+			case "enter":
+				// Enter opens the save confirmation — same dialog flow
+				// as deleting a QSO.
+				le.mode = edModeConfirmSave
+				return le, nil
+			case "esc":
 				le.mode = edModeList
 			case "pgup", "pgdown", "home", "end":
 				le.editVP, _ = le.editVP.Update(msg)
@@ -344,22 +346,22 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// modeList — table handles navigation; we intercept page transitions.
 		switch k {
-		case "f6", "esc":
+		case "esc":
 			le.done = true
 		case "pgup":
 			le.goToPage(le.currentPage - 1)
 		case "pgdown":
 			le.goToPage(le.currentPage + 1)
-		case "up", "down", "left", "right", "home", "end", "k", "j":
+		case "up", "down", "left", "right", "home", "end":
 			// Before passing to table, check for page boundary overflow.
 			cursor := le.table.Cursor()
-			if k == "down" || k == "j" {
+			if k == "down" {
 				if cursor >= len(le.qsos)-1 && le.currentPage < le.totalPages() {
 					le.goToPage(le.currentPage + 1)
 					return le, nil
 				}
 			}
-			if k == "up" || k == "k" {
+			if k == "up" {
 				if cursor <= 0 && le.currentPage > 1 {
 					le.goToPage(le.currentPage - 1)
 					// Set cursor to last row of the new page.
@@ -449,9 +451,8 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			le.mode = edModeExport
 			return le, le.filePicker.Init()
-		case "ctrl+i", "tab":
-			// ctrl+i and Tab may be indistinguishable in some terminals.
-			// Only trigger import in list mode (Tab in edit mode is for field navigation).
+		case "ctrl+i":
+			// Only trigger import in list mode.
 			if le.mode == edModeList {
 				le.filePicker = filepicker.New()
 				le.filePicker.AllowedTypes = []string{".adi", ".adif"}
@@ -608,6 +609,11 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 			}
 			return editorMsg{purged: true, err: err}
 		}
+	case edModeConfirmSave:
+		// Keep the edit form visible until the async save result arrives;
+		// the editorMsg{saved} handler switches back to the list.
+		le.mode = edModeEdit
+		return le.doSave()
 	case edModeConfirmDelete:
 		q := le.qsos[le.table.Cursor()]
 		call := q.Call

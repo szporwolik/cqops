@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -153,6 +154,43 @@ func TestMaybeRestartWSJTX_NoOpOnSameConfig(t *testing.T) {
 // =============================================================================
 // APRS tests
 // =============================================================================
+
+// fakeAPRSClient is a minimal aprs.Client for status-forwarding tests.
+// The id field keeps instances at distinct addresses (a zero-size struct
+// would make all pointers equal).
+type fakeAPRSClient struct{ id int }
+
+func (*fakeAPRSClient) Start()            {}
+func (*fakeAPRSClient) Stop()             {}
+func (*fakeAPRSClient) IsRunning() bool   { return false }
+func (*fakeAPRSClient) IsConnected() bool { return false }
+
+// TestReportAPRSStatus_StaleClientIgnored verifies that disconnect events
+// from a replaced client are not forwarded (no spurious "connection lost").
+func TestReportAPRSStatus_StaleClientIgnored(t *testing.T) {
+	calls := 0
+	a := &App{}
+	a.SetAPRSStatusCallback(func(connected bool, err error) { calls++ })
+
+	old := &fakeAPRSClient{id: 1}
+	a.APRSClient = old
+	a.reportAPRSStatus(old, false, errors.New("closed"))
+	if calls != 1 {
+		t.Fatalf("current client event not forwarded, calls=%d", calls)
+	}
+
+	// Client replaced — stale events from the old client must be ignored.
+	cur := &fakeAPRSClient{id: 2}
+	a.APRSClient = cur
+	a.reportAPRSStatus(old, false, errors.New("closed"))
+	if calls != 1 {
+		t.Fatalf("stale client event forwarded, calls=%d", calls)
+	}
+	a.reportAPRSStatus(cur, false, errors.New("boom"))
+	if calls != 2 {
+		t.Fatalf("new client event not forwarded, calls=%d", calls)
+	}
+}
 
 func TestMaybeRestartAPRS_DisabledByDefault(t *testing.T) {
 	cfg := config.DefaultConfig()
