@@ -311,6 +311,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 	if m.screen == screenMainMenu {
 		bindings = append(bindings,
 			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
+			key.NewBinding(key.WithKeys("1", "2", "3", "4", "5", "6", "7", "8"), key.WithHelp("1-8", "Jump")),
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Select")),
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 		)
@@ -483,9 +484,9 @@ func (m *Model) ActiveBindings() []key.Binding {
 	if m.screen == screenPSKReporter {
 		bindings = append(bindings,
 			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
-			key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("PgUp/Dn", "Time")),
-			key.NewBinding(key.WithKeys("home", "end"), key.WithHelp("Home/End", "Band")),
-			key.NewBinding(key.WithKeys("insert", "delete"), key.WithHelp("Ins/Del", "Mode")),
+			key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "Time filter")),
+			key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "Band filter")),
+			key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "Mode filter")),
 			key.NewBinding(key.WithKeys("backspace"), key.WithHelp("Bksp", "Clear filters")),
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 		)

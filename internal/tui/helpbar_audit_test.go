@@ -101,6 +101,22 @@ func TestMainMenuEscExits(t *testing.T) {
 	}
 }
 
+// TestMainMenuDigitsJump: digits 1-8 select the menu entry directly.
+func TestMainMenuDigitsJump(t *testing.T) {
+	mm := NewMainMenu()
+	upd, _ := mm.Update(tea.KeyPressMsg{Code: '1'})
+	mm = upd.(*MainMenu)
+	if mm.action != "general" {
+		t.Errorf("digit 1: action = %q, want general", mm.action)
+	}
+
+	upd, _ = mm.Update(tea.KeyPressMsg{Code: '6'})
+	mm = upd.(*MainMenu)
+	if mm.action != "integration" {
+		t.Errorf("digit 6: action = %q, want integration", mm.action)
+	}
+}
+
 // TestKeyMapHasNoDeadBindings: removed bindings must not carry empty keys.
 func TestKeyMapHasNoDeadBindings(t *testing.T) {
 	k := DefaultKeyMap()

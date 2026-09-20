@@ -620,15 +620,30 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 		case "f1", "esc":
 			m.screen = screenQSO
 			return m, cmd
-		case "home", "end":
-			// Cycle through band filters — only bands with spots.
+		case "t":
+			// Cycle time filter forward — same model as the DXC pane.
+			cur := -1
+			for i, s := range pskFilterSteps {
+				if s == m.psk.filterMins {
+					cur = i
+					break
+				}
+			}
+			if cur >= 0 {
+				next := cur + 1
+				if next >= len(pskFilterSteps) {
+					next = 0
+				}
+				m.psk.filterMins = pskFilterSteps[next]
+			}
+			m.pskResetCaches()
+			m.toasts.Info(fmt.Sprintf("PSK Reporter: last %d min", m.psk.filterMins))
+			return m, cmd
+		case "b":
+			// Cycle band filter forward — same model as the DXC pane.
 			bands := m.pskAvailableBands()
 			if len(bands) == 0 {
 				return m, cmd
-			}
-			dir := 1
-			if msg.String() == "end" {
-				dir = -1
 			}
 			cur := -1
 			for i, b := range bands {
@@ -637,12 +652,9 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 					break
 				}
 			}
-			next := cur + dir
+			next := cur + 1
 			if next >= len(bands) {
 				next = 0
-			}
-			if next < 0 {
-				next = len(bands) - 1
 			}
 			m.psk.bandFilter = bands[next]
 			m.pskResetCaches()
@@ -652,31 +664,9 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			}
 			m.toasts.Info(fmt.Sprintf("PSK Reporter: %s", label))
 			return m, cmd
-		case "pgup", "pgdown":
-			// Cycle time filter.
-			dir := 1
-			if msg.String() == "pgup" {
-				dir = -1
-			}
-			cur := -1
-			for i, s := range pskFilterSteps {
-				if s == m.psk.filterMins {
-					cur = i
-					break
-				}
-			}
-			if cur >= 0 {
-				next := cur + dir
-				if next >= len(pskFilterSteps) {
-					next = 0
-				}
-				if next < 0 {
-					next = len(pskFilterSteps) - 1
-				}
-				m.psk.filterMins = pskFilterSteps[next]
-			}
-			m.pskResetCaches()
-			m.toasts.Info(fmt.Sprintf("PSK Reporter: last %d min", m.psk.filterMins))
+		case "m":
+			// Cycle mode filter forward — same model as the DXC pane.
+			m.pskCycleMode(1)
 			return m, cmd
 		case "up", "k":
 			if m.psk.selected > 0 {
@@ -685,12 +675,6 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			return m, cmd
 		case "down", "j":
 			m.psk.selected++
-			return m, cmd
-		case "insert":
-			m.pskCycleMode(1)
-			return m, cmd
-		case "delete":
-			m.pskCycleMode(-1)
 			return m, cmd
 		case "backspace":
 			// Clear all filters.

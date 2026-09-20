@@ -51,24 +51,10 @@ func (m *MainMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			m.done = true
 		case "enter":
-			switch m.cursor {
-			case 0:
-				m.action = "general"
-			case 1:
-				m.action = "logbook"
-			case 2:
-				m.action = "operator"
-			case 3:
-				m.action = "rig"
-			case 4:
-				m.action = "contest"
-			case 5:
-				m.action = "integration"
-			case 6:
-				m.action = "callbook"
-			case 7:
-				m.action = "notifications"
-			}
+			m.setAction(m.cursor)
+		case "1", "2", "3", "4", "5", "6", "7", "8":
+			// Digit quick-select — F9 menu, then 1-8.
+			m.setAction(int(msg.String()[0] - '1'))
 		case "up", "k":
 			if m.cursor == 0 {
 				m.cursor = len(m.items) - 1
@@ -88,6 +74,28 @@ func (m *MainMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+// setAction maps a menu position to the selected action.
+func (m *MainMenu) setAction(i int) {
+	switch i {
+	case 0:
+		m.action = "general"
+	case 1:
+		m.action = "logbook"
+	case 2:
+		m.action = "operator"
+	case 3:
+		m.action = "rig"
+	case 4:
+		m.action = "contest"
+	case 5:
+		m.action = "integration"
+	case 6:
+		m.action = "callbook"
+	case 7:
+		m.action = "notifications"
+	}
 }
 
 func (m *MainMenu) View() tea.View {

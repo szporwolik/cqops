@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/config"
@@ -81,6 +82,20 @@ func TestFreqToBandName(t *testing.T) {
 				t.Errorf("freqToBandName(%.0f) = %q, want %q", tt.freqHz, result, tt.band)
 			}
 		})
+	}
+}
+
+// TestPSKTKeyCyclesTimeFilter: PSK filters use the same letter keys as DXC.
+func TestPSKTKeyCyclesTimeFilter(t *testing.T) {
+	m := newTestModel()
+	m.screen = screenPSKReporter
+	m.inetOnline = false // no fetch attempts in the test
+	m.psk.fetched = true
+	m.psk.filterMins = pskFilterSteps[0]
+
+	_, _ = m.handlePSKReporterUpdate(tea.KeyPressMsg{Code: 't', Text: "t"}, nil)
+	if m.psk.filterMins == pskFilterSteps[0] {
+		t.Errorf("t should advance the time filter, still %d", m.psk.filterMins)
 	}
 }
 
