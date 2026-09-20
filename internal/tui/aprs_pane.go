@@ -559,28 +559,25 @@ func (m *Model) viewAPRS(l Layout) string {
 	// The right column builds its own bordered boxes (own status on top,
 	// selected contact + radar below) to exactly tableH rows.
 	detailPart := m.aprsRightPanel(st, detailW, tableH)
-	return b.String() + lipgloss.JoinHorizontal(lipgloss.Top, tablePart, "  ", detailPart)
+	return b.String() + lipgloss.JoinHorizontal(lipgloss.Top, tablePart, detailPart)
 }
 
 // aprsSplit computes the list/detail column widths for a given content
-// width. Both columns are rendered inside rounded border boxes (4 cells
-// each) with a 2-cell gutter between them.
+// width. The two bordered columns sit flush against each other (like the
+// tab bar) and together span the full content width; each column's 4 cells
+// of border/padding chrome are included in its width.
 func aprsSplit(cw int) (int, int) {
 	if cw < 40 {
 		cw = 40
 	}
-	splitW := cw - 10 // two border boxes + gutter
-	if splitW < 40 {
-		splitW = 40
-	}
-	listW := splitW * 45 / 100
+	listW := cw * 45 / 100
 	if listW < 44 {
 		listW = 44
 	}
 	if listW > 52 {
 		listW = 52
 	}
-	detailW := splitW - listW
+	detailW := cw - listW
 	if detailW < 24 {
 		detailW = 24
 	}
@@ -603,7 +600,7 @@ func (m *Model) aprsEmptyLayout(msg string, l Layout) string {
 	left := fillBody(DimStyle.Width(listW-4).Align(lipgloss.Center).Render(msg), innerH)
 	leftBox := borderBoxStyle.Width(listW).Height(tableH).Render(left)
 	rightBox := m.aprsOwnPanel(detailW, tableH)
-	return lipgloss.JoinHorizontal(lipgloss.Top, leftBox, "  ", rightBox)
+	return lipgloss.JoinHorizontal(lipgloss.Top, leftBox, rightBox)
 }
 
 // aprsOwnPanel renders the right column when there is no selection: the
@@ -737,8 +734,8 @@ func (m *Model) aprsRightPanel(st *aprsPaneState, detailW, h int) string {
 	statusBox := borderBoxStyle.Width(detailW).
 		Render(strings.Join(m.aprsStatusRows(panelW), "\n"))
 
-	// Contact box gets everything below the status box minus one gap row.
-	contactH := h - lipgloss.Height(statusBox) - 1
+	// Contact box gets everything below the status box.
+	contactH := h - lipgloss.Height(statusBox)
 	if contactH < 4 {
 		contactH = 4
 	}
@@ -758,7 +755,7 @@ func (m *Model) aprsRightPanel(st *aprsPaneState, detailW, h int) string {
 	content := fillBody(strings.Join(rows, "\n"), contactH-2)
 	contactBox := borderBoxStyle.Width(detailW).Height(contactH).Render(content)
 
-	joined := lipgloss.JoinVertical(lipgloss.Left, statusBox, "", contactBox)
+	joined := lipgloss.JoinVertical(lipgloss.Left, statusBox, contactBox)
 	st.detailView = joined
 	st.detailSig = sig
 	return joined
