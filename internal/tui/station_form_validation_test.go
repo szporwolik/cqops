@@ -301,6 +301,37 @@ func TestStationForm_EnterSavesCtrlSDoesNot(t *testing.T) {
 	}
 }
 
+// TestStationForm_SpaceTriggersButtons: Space activates the Wavelog/APRS
+// buttons in parallel with Enter — but only on the button focus.
+func TestStationForm_SpaceTriggersButtons(t *testing.T) {
+	f := newStationFormForTest()
+
+	// Wavelog Update button focused — Space triggers the same action as Enter.
+	f.wlBtnFocus = 1
+	cmd := f.HandleKey(tea.KeyPressMsg{Code: tea.KeySpace})
+	if cmd == nil {
+		t.Fatal("Space on Wavelog Update button should return an action")
+	}
+	if msg := cmd(); msg == nil {
+		t.Fatal("action returned nil message")
+	} else if _, ok := msg.(wlUpdateAction); !ok {
+		t.Errorf("Space on Update button returned %T, want wlUpdateAction", msg)
+	}
+
+	// APRS Test button focused — Space triggers the test action.
+	f.wlBtnFocus = 0
+	f.aprsBtnFocus = 1
+	cmd = f.HandleKey(tea.KeyPressMsg{Code: tea.KeySpace})
+	if cmd == nil {
+		t.Fatal("Space on APRS Test button should return an action")
+	}
+	if msg := cmd(); msg == nil {
+		t.Fatal("action returned nil message")
+	} else if _, ok := msg.(aprsTestAction); !ok {
+		t.Errorf("Space on Test button returned %T, want aprsTestAction", msg)
+	}
+}
+
 // =============================================================================
 // Long/malformed input robustness
 // =============================================================================

@@ -88,8 +88,13 @@ func (nm *NotificationsMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if nm.enabled {
 					nm.allErrors = !nm.allErrors
 				}
+			case 4:
+				// Space triggers the Test buttons in parallel with Enter.
+				nm.sendTestNotification()
 			case 5:
 				nm.beepOnError = !nm.beepOnError
+			case 6:
+				nm.sendTestBeep()
 			}
 		case "enter":
 			switch nm.cursor {
