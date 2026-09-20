@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.10.1 — 2026-09-20
+
+> **HTTPS dashboard, unified keyboard conventions, and whole-logbook search.** The built-in dashboard can now serve over HTTPS with an auto-generated self-signed certificate, every form saves with Enter, and the logbook editor searches the entire logbook, not just the visible page.
+
+### Dashboard
+- **Optional HTTPS**: enable TLS in the Integration menu; CQOps generates a self-signed ECDSA P-256 certificate in the cache directory when none is configured, serves it with TLS 1.2+, and redirects plain HTTP on the TLS port to HTTPS.
+
+### Logbook Editor
+- **Whole-logbook search**: the search field now queries the entire logbook (callsign, name, country, contest-scoped) instead of filtering only the loaded page; the status bar shows a `Search N/M` counter.
+- **Enter to save**: Enter opens a Save confirmation dialog; Cancel returns to the list. Esc exits the editor.
+- **No vim keys**: `j`/`k` navigation removed everywhere so those letters reach text fields.
+
+### Keyboard Conventions
+- Enter saves on station, rig, operator, contest, and wizard forms; Space toggles checkboxes and triggers Test buttons; Esc goes back.
+- Main menu: digit shortcuts 1–8 jump directly to screens.
+- PSK Reporter filters now use `t` (time), `b` (band), `m` (mode) like the DX Cluster pane; Backspace clears all filters.
+- DX Cluster and REF screens: Enter logs a QSO for the selected entry.
+
+### Fixes
+- DXC status indicator no longer blinks when spot batches rebuild the table.
+- Toasts keep expiring while a confirm dialog is open.
+- Wavelog downloads continue after leaving the logbook editor.
+- APRS pane keeps manual filters across re-entry; sub-minute ages render as "less than a minute ago"; radar zoom follows the distance filter.
+- QTH and grid fields track entry precedence to protect manual and WSJT-X values.
+- Build scripts verify Go is on PATH before building.
+
 ## v0.10.0 — 2026-09-20
 
 > **APRS nearby-stations pane, receive-only mode, and automatic passcodes.** CQOps gains a full APRS neighbourhood screen (F3) with filters, details and an ASCII radar, receive-only operation when the logbook has no APRS config, and the APRS-IS passcode is now computed from the callsign instead of being stored.
