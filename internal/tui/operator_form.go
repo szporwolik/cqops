@@ -66,13 +66,13 @@ func (f *OperatorForm) prevField() {
 }
 
 // HandleKey handles keyboard input. Returns:
-//   - enterOnLastFieldMsg command when Ctrl+S is pressed (save)
+//   - enterOnLastFieldMsg command when Enter is pressed (save)
 //   - operatorWarnMsg command when focus leaves callsign and it looks invalid
 //   - nil otherwise (continue editing)
 func (f *OperatorForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 	k := msg
 
-	if k.String() == "ctrl+s" || k.String() == "\x13" {
+	if k.String() == "enter" {
 		return func() tea.Msg { return enterOnLastFieldMsg{} }
 	}
 

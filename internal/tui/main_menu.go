@@ -48,6 +48,8 @@ func (m *MainMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 	case tea.KeyPressMsg:
 		switch msg.String() {
+		case "esc":
+			m.done = true
 		case "enter":
 			switch m.cursor {
 			case 0:

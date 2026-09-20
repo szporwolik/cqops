@@ -379,9 +379,6 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.prevRowField()
 		return drainPending(nil), true
 
-	case key.Matches(msg, m.keys.Save):
-		return m.saveQSO(), true
-
 	case key.Matches(msg, m.keys.Spot):
 		return m.openSpotDialog(), true
 
@@ -390,14 +387,6 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		// is handled inside saveQSO. Lookups (QRZ, Wavelog) are dispatched
 		// automatically via onFieldExit → tick loop — no need to trigger them here.
 		return m.saveQSO(), true
-
-	case key.Matches(msg, m.keys.Delete):
-		m.clearForm()
-		return nil, true
-
-	case key.Matches(msg, m.keys.Retain):
-		m.keepComment = !m.keepComment
-		return m.persistKeepComment(), true
 
 	case msg.String() == "ctrl+c":
 		m.cycleActiveContest()
@@ -420,38 +409,6 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	case msg.String() == "ctrl+p":
 		m.fillFromDXCSpot()
 		return nil, true
-
-	case key.Matches(msg, m.keys.Partner):
-		call := m.commitCall()
-		if call == "" {
-			raw := strings.TrimSpace(m.fields[fieldCall].Value())
-			if raw != "" {
-				m.toasts.Warn("Not a valid callsign")
-			}
-			return nil, true
-		}
-		m.scpMatches = nil
-		m.scpCacheKey = ""
-		m.dxccAutoFill()
-		m.screen = screenPartner
-		m.invalidatePartnerMapCache()
-		// Only trigger lookups when the call changed.
-		if m.lookup.partnerData == nil || !strings.EqualFold(m.lookup.partnerData.Callsign, call) {
-			return m.lookupCallCmd(call), true
-		}
-		return nil, true
-
-	case key.Matches(msg, m.keys.PSKReporter):
-		if !m.inetOnline {
-			m.toasts.Warn("PSK Reporter: no internet connection")
-			return nil, true
-		}
-		applog.Debug("tab: F5 PSK Reporter")
-		m.screen = screenPSKReporter
-		return nil, true
-
-	case key.Matches(msg, m.keys.Lookup):
-		return m.commitAndLookup(), true
 
 	case key.Matches(msg, m.keys.CycleUp):
 		m.cycleFieldUp()

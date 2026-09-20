@@ -20,9 +20,9 @@ func dimVersion() string {
 
 // Pre-allocated confirm dialog key bindings — reused across all confirm screens.
 var confirmBindings = []key.Binding{
-	key.NewBinding(key.WithKeys("←/→"), key.WithHelp("←/→", "choose")),
-	key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "confirm")),
-	key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel")),
+	key.NewBinding(key.WithKeys("left", "right", "tab"), key.WithHelp("←/→/Tab", "choose")),
+	key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "confirm")),
+	key.NewBinding(key.WithKeys("esc", "q"), key.WithHelp("Esc/Q", "cancel")),
 }
 
 // Pre-allocated spot dialog key bindings.
@@ -460,7 +460,7 @@ func (m *Model) buildHelpSuffix() string {
 		if m.dxc.tableReady && len(m.dxc.cachedSpots) > 0 {
 			total := len(m.dxc.cachedSpots)
 			cursor := m.dxc.table.Cursor() + 1
-			tableH := m.height - 8
+			tableH := contentHeight(m.height) - 3
 			if tableH < 1 {
 				tableH = 1
 			}
@@ -507,83 +507,71 @@ func (m *Model) minimalBarBindings() []key.Binding {
 		return []key.Binding{h, m.keys.Enter, q}
 	case screenPartner:
 		if m.lookup.partnerData != nil && m.lookup.partnerData.ImageURL != "" {
-			return []key.Binding{h, key.NewBinding(key.WithKeys("f2"), key.WithHelp("F2", "Photo")), q}
+			return []key.Binding{h, key.NewBinding(key.WithKeys("f2"), key.WithHelp("F2", "Photo")), e, q}
 		}
-		return []key.Binding{h, q}
+		return []key.Binding{h, e, q}
 	case screenDXC:
 		return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "QSO+Tune")), e, q}
 	case screenLogbookEditor:
 		if m.ui.logbookEditor != nil && m.ui.logbookEditor.IsEditing() {
-			return []key.Binding{h, key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")), e, q}
+			return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")), e, q}
 		}
-		return []key.Binding{h, e, q}
-	case screenConfig, screenIntegration, screenNotifications:
-		if m.isSubmodelActive() {
-			return []key.Binding{h, key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")), e, q}
-		}
-		return []key.Binding{h, e, q}
+		// List mode: Enter Edit is the core action; Import/Export/Purge/
+		// Delete stay behind the ? overlay.
+		return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit")), e, q}
+	case screenConfig:
+		// Enter saves; Space toggles/cycles — same convention as the
+		// contest and operator forms.
+		return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")), e, q}
+	case screenIntegration, screenNotifications, screenCallbook:
+		return []key.Binding{h, key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")), e, q}
 	case screenChooser:
 		if m.ui.chooser != nil && (m.ui.chooser.mode == chooserEdit || m.ui.chooser.mode == chooserCreate) {
 			return []key.Binding{h, key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")), e, q}
 		}
-		return []key.Binding{h,
-			key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Create")),
-			key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
-			key.NewBinding(key.WithKeys("space"), key.WithHelp("Spc", "Activate")),
-			e, q}
+		// List mode: Enter Edit is core; Create/Delete/Activate stay
+		// behind the ? overlay.
+		return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit")), e, q}
 	case screenRigEdit:
 		if m.ui.rigChooser != nil && (m.ui.rigChooser.mode == rigChooserEdit || m.ui.rigChooser.mode == rigChooserCreate) {
 			return []key.Binding{h, key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")), e, q}
 		}
-		return []key.Binding{h,
-			key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Create")),
-			key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
-			key.NewBinding(key.WithKeys("space"), key.WithHelp("Spc", "Activate")),
-			e, q}
+		return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit")), e, q}
 	case screenContest:
 		if m.ui.contestChooser != nil && (m.ui.contestChooser.mode == contestEdit || m.ui.contestChooser.mode == contestCreate) {
-			return []key.Binding{h, key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")), e, q}
+			return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")), e, q}
 		}
-		return []key.Binding{h,
-			key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Create")),
-			key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
-			key.NewBinding(key.WithKeys("space"), key.WithHelp("Spc", "Activate")),
-			e, q}
+		return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit")), e, q}
 	case screenOperator:
 		if m.ui.operatorChooser != nil && (m.ui.operatorChooser.mode == operatorEdit || m.ui.operatorChooser.mode == operatorCreate) {
-			return []key.Binding{h, key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")), e, q}
+			return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")), e, q}
 		}
-		return []key.Binding{h,
-			key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Create")),
-			key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
-			key.NewBinding(key.WithKeys("space"), key.WithHelp("Spc", "Activate")),
-			e, q}
+		return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit")), e, q}
 	case screenMainMenu:
 		return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Select")), e, q}
 	case screenLogView:
-		return []key.Binding{h, key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Top")), q}
+		return []key.Binding{h, e, q}
 	case screenRef:
 		if m.ref.searched && len(m.ref.rows) > 0 {
-			return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Commit")), q}
+			return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Commit")), e, q}
 		}
-		return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Search")), q}
+		return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Search")), e, q}
 	case screenBPL:
 		if m.rig.connected && !m.wsjtx.online {
-			return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Tune")), q}
+			return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Tune")), e, q}
 		}
-		return []key.Binding{h, key.NewBinding(key.WithKeys("left", "right"), key.WithHelp("←→", "Tabs")), q}
+		return []key.Binding{h, key.NewBinding(key.WithKeys("left", "right"), key.WithHelp("←→", "Tabs")), e, q}
 	case screenAPRS:
-		if m.aprsBeaconConfigured() {
-			return []key.Binding{h, key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "Beacon")), key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "QSO")), q}
-		}
-		if len(m.aprsPane.stations) > 0 {
-			return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "QSO")), key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Select")), q}
+		if len(m.aprsPane.stations) > 0 || m.aprsBeaconConfigured() {
+			// Enter QSO is the core action; b Beacon and ↑↓ Select stay
+			// behind the ? overlay.
+			return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "QSO")), e, q}
 		}
 		return []key.Binding{h, e, q}
 	case screenImage:
 		return []key.Binding{h, e, q}
 	case screenPSKReporter:
-		return []key.Binding{h, key.NewBinding(key.WithKeys("backspace"), key.WithHelp("Bksp", "Clear")), q}
+		return []key.Binding{h, key.NewBinding(key.WithKeys("backspace"), key.WithHelp("Bksp", "Clear filters")), e, q}
 	default:
 		return []key.Binding{h, q}
 	}
@@ -658,6 +646,8 @@ func (m *Model) screenTitle() string {
 		return "Settings"
 	case screenIntegration:
 		return "Integrations"
+	case screenCallbook:
+		return "Callbook"
 	case screenNotifications:
 		return "Notifications"
 	case screenMainMenu:

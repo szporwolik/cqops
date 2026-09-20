@@ -150,11 +150,13 @@ func (m *Model) handleRefUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			return m, cmd
 
 		case "enter", "insert":
-			// If results are visible and cursor is on a row, add to QSO form.
+			// If results are visible and cursor is on a row, commit it
+			// to the QSO form and jump back — same flow as Enter on
+			// the DXC screen.
 			if m.ref.searched && len(m.ref.rows) > 0 && m.ref.cursor >= 0 && m.ref.cursor < len(m.ref.rows) {
 				r := m.ref.rows[m.ref.cursor]
 				m.addRefToQSO(r)
-				return m, cmd
+				m.screen = screenQSO
 			}
 			// Otherwise, execute search.
 			m.doRefSearch()

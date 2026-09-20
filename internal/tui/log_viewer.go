@@ -72,7 +72,7 @@ func (lv *LogViewer) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.KeyPressMsg:
 		switch msg.String() {
-		case "ctrl+f9":
+		case "esc":
 			lv.done = true
 		case "insert":
 			lv.viewport.SetYOffset(0)

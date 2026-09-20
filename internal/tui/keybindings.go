@@ -17,21 +17,15 @@ type KeyMap struct {
 	Logs          key.Binding
 	Ref           key.Binding
 	BPL           key.Binding
-	Save          key.Binding
 	Delete        key.Binding
 	Lookup        key.Binding
-	Retain        key.Binding
-	FocusCall     key.Binding
 	NextField     key.Binding
 	PrevField     key.Binding
 	NextRow       key.Binding
 	PrevRow       key.Binding
 	CycleUp       key.Binding
 	CycleDown     key.Binding
-	Up            key.Binding
-	Down          key.Binding
 	Enter         key.Binding
-	Confirm       key.Binding
 	Cancel        key.Binding
 	CycleLogbook  key.Binding
 	CycleRig      key.Binding
@@ -87,6 +81,7 @@ func DefaultKeyMap() KeyMap {
 		),
 		Logs: key.NewBinding(
 			key.WithKeys("ctrl+f9", "ctrl+alt+9"),
+			key.WithHelp("Ctrl+F9", "Log Viewer"),
 		),
 		Ref: key.NewBinding(
 			key.WithKeys("f6", "alt+6"),
@@ -95,10 +90,6 @@ func DefaultKeyMap() KeyMap {
 		BPL: key.NewBinding(
 			key.WithKeys("f7", "alt+7"),
 			key.WithHelp("F7/Alt+7", "BPL"),
-		),
-		Save: key.NewBinding(
-			key.WithKeys(), // Enter logs QSO; Ctrl+S is Spot
-			key.WithHelp("", ""),
 		),
 		Delete: key.NewBinding(
 			key.WithKeys("delete"),
@@ -140,14 +131,6 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("alt+/"),
 			key.WithHelp("Alt+/", "Stop"),
 		),
-		Retain: key.NewBinding(
-			key.WithKeys(),
-			key.WithHelp("", ""),
-		),
-		FocusCall: key.NewBinding(
-			key.WithKeys("f1"),
-			key.WithHelp("", ""),
-		),
 		NextField: key.NewBinding(
 			key.WithKeys("tab"),
 			key.WithHelp("Tab", "Col Right"),
@@ -172,25 +155,13 @@ func DefaultKeyMap() KeyMap {
 			key.WithKeys("pgdown"),
 			key.WithHelp("PgDn", "Cycle −"),
 		),
-		Up: key.NewBinding(
-			key.WithKeys("up", "k"),
-			key.WithHelp("↑/k", "Scroll up"),
-		),
-		Down: key.NewBinding(
-			key.WithKeys("down", "j"),
-			key.WithHelp("↓/j", "Scroll down"),
-		),
 		Enter: key.NewBinding(
 			key.WithKeys("enter"),
 			key.WithHelp("Enter", "Log QSO"),
 		),
-		Confirm: key.NewBinding(
-			key.WithKeys("y"),
-			key.WithHelp("Y", "Confirm"),
-		),
 		Cancel: key.NewBinding(
-			key.WithKeys("n", "esc"),
-			key.WithHelp("N", "Cancel"),
+			key.WithKeys("esc"),
+			key.WithHelp("Esc", "Close"),
 		),
 		CycleLogbook: key.NewBinding(
 			key.WithKeys("ctrl+l"),
@@ -225,17 +196,18 @@ func (k KeyMap) ShortHelp() []key.Binding {
 }
 
 // FullHelp returns all keybindings organised into columns for the
-// full-screen help overlay triggered by ?.
+// full-screen help overlay triggered by ?. Kept for the help.KeyMap
+// interface; the overlay itself uses ActiveBindings.
 func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		// Column 1: navigation & screens
 		{k.QSOForm, k.Partner, k.APRS, k.DXC, k.PSKReporter, k.Ref, k.BPL, k.LogEditor, k.Config, k.Logs},
 		// Column 2: editing & actions
-		{k.Save, k.Spot, k.Lookup, k.Delete, k.Retain, k.NextField, k.PrevField},
-		// Column 3: cycling & meta
-		{k.CycleLogbook, k.CycleRig, k.CycleContest, k.CycleOperator, k.DXCSpotFill, k.RigTuneUp, k.RigTuneDown, k.Up, k.Down, k.Enter},
+		{k.Spot, k.Lookup, k.Delete, k.NextField, k.PrevField, k.Enter},
+		// Column 3: cycling & rig
+		{k.CycleLogbook, k.CycleRig, k.CycleContest, k.CycleOperator, k.DXCSpotFill, k.RigTuneUp, k.RigTuneDown},
 		// Column 4: system
-		{k.CycleUp, k.CycleDown, k.Confirm, k.Cancel, k.Help, k.Quit},
+		{k.CycleUp, k.CycleDown, k.Cancel, k.Help, k.Quit},
 	}
 }
 
@@ -296,17 +268,21 @@ func (m *Model) ActiveBindings() []key.Binding {
 		if m.ui.logbookEditor != nil && m.ui.logbookEditor.IsEditing() {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
-				key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
+				key.NewBinding(key.WithKeys("pgup", "pgdown", "home", "end"), key.WithHelp("PgUp/Dn/Home/End", "Scroll")),
+				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")),
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 			)
 		} else {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Scroll")),
+				key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("PgUp/Dn", "Page")),
+				key.NewBinding(key.WithKeys("home", "end"), key.WithHelp("Home/End", "Top/Bottom")),
 				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit QSO")),
 				key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Delete")),
 				key.NewBinding(key.WithKeys("ctrl+p"), key.WithHelp("Ctrl+P", "Purge")),
 				key.NewBinding(key.WithKeys("ctrl+e"), key.WithHelp("Ctrl+E", "Export")),
 				key.NewBinding(key.WithKeys("ctrl+i"), key.WithHelp("Ctrl+I", "Import")),
+				key.NewBinding(key.WithKeys("backspace"), key.WithHelp("Bksp", "Clear search")),
 				m.keys.CycleContest,
 			)
 			wl := m.App.Logbook.Wavelog
@@ -319,13 +295,14 @@ func (m *Model) ActiveBindings() []key.Binding {
 		}
 	}
 
-	// Log viewer — scroll keybindings
+	// Log viewer — scroll keybindings.
 	if m.screen == screenLogView {
 		bindings = append(bindings,
 			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Scroll")),
 			key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("PgUp/Dn", "Page")),
 			key.NewBinding(key.WithKeys("home", "end"), key.WithHelp("Home/End", "Top/Bottom")),
 			key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Top")),
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 		)
 	}
 
@@ -334,13 +311,14 @@ func (m *Model) ActiveBindings() []key.Binding {
 		bindings = append(bindings,
 			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Select")),
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 		)
 	}
 	if m.screen == screenConfig {
 		bindings = append(bindings,
 			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
 			key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle")),
-			key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")),
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 		)
 	}
@@ -388,7 +366,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 		if m.ui.operatorChooser != nil && (m.ui.operatorChooser.mode == operatorEdit || m.ui.operatorChooser.mode == operatorCreate) {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("tab", "down", "shift+tab", "up"), key.WithHelp("↑↓", "Navigate")),
-				key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
+				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")),
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 			)
 		} else if m.ui.operatorChooser != nil && m.ui.operatorChooser.mode == operatorConfirmDelete {
@@ -409,7 +387,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("tab", "down", "shift+tab", "up"), key.WithHelp("↑↓", "Navigate")),
 				key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle/Cycle")),
-				key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
+				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")),
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 			)
 		} else if m.ui.contestChooser != nil && m.ui.contestChooser.mode == contestConfirmDelete {
@@ -437,13 +415,14 @@ func (m *Model) ActiveBindings() []key.Binding {
 	if m.screen == screenDXC {
 		bindings = append(bindings,
 			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
-			key.NewBinding(key.WithKeys(`\`), key.WithHelp("\\", "Sp Cont")),
-			key.NewBinding(key.WithKeys("insert", "delete"), key.WithHelp("Ins/Del", "Mode")),
-			key.NewBinding(key.WithKeys("home", "end"), key.WithHelp("Home/End", "Band")),
-			key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("PgUp/Dn", "Time")),
-			key.NewBinding(key.WithKeys("backspace"), key.WithHelp("Bksp", "Clear")),
+			key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "Time filter")),
+			key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "Band filter")),
+			key.NewBinding(key.WithKeys("m"), key.WithHelp("m", "Mode filter")),
+			key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "Spotter cont.")),
+			key.NewBinding(key.WithKeys("backspace"), key.WithHelp("Bksp", "Clear filters")),
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "QSO+Tune")),
 			key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Tune")),
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 		)
 	}
 	if m.screen == screenAPRS {
@@ -469,11 +448,13 @@ func (m *Model) ActiveBindings() []key.Binding {
 				key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("PgUp/Dn", "Page")),
 				key.NewBinding(key.WithKeys("enter", "insert"), key.WithHelp("Enter/Ins", "Commit")),
 				key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Clear")),
+				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 			)
 		} else {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("enter", "insert"), key.WithHelp("Enter/Ins", "Search")),
 				key.NewBinding(key.WithKeys("delete"), key.WithHelp("Del", "Clear")),
+				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 			)
 		}
 	}
@@ -483,19 +464,23 @@ func (m *Model) ActiveBindings() []key.Binding {
 			key.NewBinding(key.WithKeys("left", "right", "tab"), key.WithHelp("←→/Tab", "Tabs")),
 			key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("PgUp/Dn", "Page")),
 			key.NewBinding(key.WithKeys("home", "end"), key.WithHelp("Home/End", "Top/Bottom")),
-			key.NewBinding(key.WithKeys("ctrl+e"), key.WithHelp("Ctrl+E", "Export")),
-		)
+			key.NewBinding(key.WithKeys("ctrl+e"), key.WithHelp("Ctrl+E", "Export")), key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")))
 		if m.rig.connected && !m.wsjtx.online {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("Enter/Spc", "Tune")),
 			)
 		}
 	}
-	// Partner screen — show F2 Photo when image available.
-	if m.screen == screenPartner && m.lookup.partnerData != nil && m.lookup.partnerData.ImageURL != "" {
+	// Partner screen — F2 Photo when an image is available, Esc always back.
+	if m.screen == screenPartner {
 		bindings = append(bindings,
-			key.NewBinding(key.WithKeys("f2"), key.WithHelp("F2", "Photo")),
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 		)
+		if m.lookup.partnerData != nil && m.lookup.partnerData.ImageURL != "" {
+			bindings = append(bindings,
+				key.NewBinding(key.WithKeys("f2"), key.WithHelp("F2", "Photo")),
+			)
+		}
 	}
 	// PSK Reporter screen.
 	if m.screen == screenPSKReporter {
@@ -504,7 +489,8 @@ func (m *Model) ActiveBindings() []key.Binding {
 			key.NewBinding(key.WithKeys("pgup", "pgdown"), key.WithHelp("PgUp/Dn", "Time")),
 			key.NewBinding(key.WithKeys("home", "end"), key.WithHelp("Home/End", "Band")),
 			key.NewBinding(key.WithKeys("insert", "delete"), key.WithHelp("Ins/Del", "Mode")),
-			key.NewBinding(key.WithKeys("backspace"), key.WithHelp("Bksp", "Clear")),
+			key.NewBinding(key.WithKeys("backspace"), key.WithHelp("Bksp", "Clear filters")),
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 		)
 	}
 	if m.screen == screenIntegration {
@@ -520,7 +506,16 @@ func (m *Model) ActiveBindings() []key.Binding {
 		bindings = append(bindings,
 			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
 			key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle")),
-			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Accept")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Test")),
+			key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
+		)
+	}
+	if m.screen == screenCallbook {
+		bindings = append(bindings,
+			key.NewBinding(key.WithKeys("up", "down", "tab", "shift+tab"), key.WithHelp("↑↓", "Navigate")),
+			key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Test")),
 			key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 		)

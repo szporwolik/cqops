@@ -332,6 +332,30 @@ func TestContestFormTabNavigation(t *testing.T) {
 // Checkbox toggle tests
 // =============================================================================
 
+// TestContestEditEnterSaves: Enter saves the contest form (like Ctrl+S),
+// consistent with the other forms; Space is the only toggle/cycle key.
+func TestContestEditEnterSaves(t *testing.T) {
+	cc := newTestContestChooser(t, map[string]config.Contest{
+		"a1": {ID: "a1", Name: "Test"},
+	})
+	cc.cursor = 1
+	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter}) // open edit mode
+	if cc.mode != contestEdit {
+		t.Fatalf("mode after Enter = %v, want contestEdit", cc.mode)
+	}
+
+	cc.nameInput.SetValue("CQ WPX")
+	cc.nextInput.SetValue("5")
+	cc.contInput.SetValue("CQ-WPX-CW")
+	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cc.mode != contestList {
+		t.Errorf("mode after Enter save = %v, want contestList", cc.mode)
+	}
+	if cc.app.Config.Contests["a1"].Name != "CQ WPX" {
+		t.Errorf("contest name = %q, want \"CQ WPX\"", cc.app.Config.Contests["a1"].Name)
+	}
+}
+
 func TestContestPrefillExchangeToggle(t *testing.T) {
 	cc := newTestContestChooser(t, map[string]config.Contest{
 		"a1": {ID: "a1", Name: "Test"},
@@ -482,7 +506,7 @@ func TestContestSaveLifecycle(t *testing.T) {
 	cc.exchRcvdInput.SetValue("599 002")
 
 	// Save
-	cc.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	// Verify in-memory config
 	ct := cc.app.Config.Contests["a1"]
@@ -534,7 +558,7 @@ func TestContestCreateSaveLifecycle(t *testing.T) {
 	cc.nextInput.SetValue("1")
 	cc.contInput.SetValue("ARRL-FIELD-DAY")
 
-	cc.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	// After create, there should be exactly 1 contest (plus None entry)
 	if len(cc.names) != 2 {
@@ -569,7 +593,7 @@ func TestNextQSOSeqValidation(t *testing.T) {
 	cc.nameInput.SetValue("Test")
 	cc.contInput.SetValue("CQ-WPX-CW")
 	cc.nextInput.SetValue("1asd")
-	cc.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	// Save should have been blocked; NextQSO should not have changed
 	ct := cc.app.Config.Contests["a1"]
@@ -579,7 +603,7 @@ func TestNextQSOSeqValidation(t *testing.T) {
 
 	// Valid value
 	cc.nextInput.SetValue("42")
-	cc.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	ct = cc.app.Config.Contests["a1"]
 	if ct.NextQSO != 42 {
 		t.Errorf("NextQSO = %d, want 42", ct.NextQSO)
@@ -591,7 +615,7 @@ func TestNextQSOSeqValidation(t *testing.T) {
 	cc.nameInput.SetValue("Test")
 	cc.contInput.SetValue("CQ-WPX-CW")
 	cc.nextInput.SetValue("-5")
-	cc.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if ct.NextQSO == -5 {
 		t.Error("Negative NextQSO should be rejected")
 	}
@@ -602,7 +626,7 @@ func TestNextQSOSeqValidation(t *testing.T) {
 	cc.nameInput.SetValue("Test")
 	cc.contInput.SetValue("CQ-WPX-CW")
 	cc.nextInput.SetValue("0")
-	cc.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	// NextQSO should not have changed to 0
 	ct = cc.app.Config.Contests["a1"]
 	if ct.NextQSO == 0 {
@@ -620,7 +644,7 @@ func TestNextQSOSeqEmptyRejected(t *testing.T) {
 	cc.nameInput.SetValue("Test")
 	cc.contInput.SetValue("CQ-WPX-CW")
 	cc.nextInput.SetValue("")
-	cc.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	// Should not change when empty
 	ct := cc.app.Config.Contests["a1"]

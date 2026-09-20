@@ -567,12 +567,6 @@ func (m *Model) handlePartnerUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 			m.photo.partnerPicURL = ""
 			m.photo.partnerPicNeedLoad = false
 			return m, cmd
-		case "f7":
-			m.ui.mainMenu = NewMainMenu()
-			m.ui.mainMenu.width = m.width
-			m.ui.mainMenu.height = m.height
-			m.screen = screenMainMenu
-			return m, cmd
 		}
 	}
 	return m, cmd
@@ -625,14 +619,6 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 		switch msg.String() {
 		case "f1", "esc":
 			m.screen = screenQSO
-			return m, cmd
-		case "f5":
-			// Refresh PSK data via async command — never block UI.
-			if !m.psk.fetching && m.inetOnline {
-				m.psk.fetching = true
-				m.toasts.Info("PSK Reporter: fetching\u2026")
-				return m, m.pskFetchCmd()
-			}
 			return m, cmd
 		case "home", "end":
 			// Cycle through band filters — only bands with spots.

@@ -391,7 +391,10 @@ func (m *Model) handleAPRSUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) 
 			return m, cmd
 
 		case "b":
-			// Manual beacon — send the current position now.
+			// Manual beacon — send the current position now. The key is only
+			// advertised in help when beaconing is configured, but a stray
+			// press still produces an explanatory warning instead of being
+			// silently swallowed (receive-only setups).
 			if m.App == nil {
 				return m, cmd
 			}

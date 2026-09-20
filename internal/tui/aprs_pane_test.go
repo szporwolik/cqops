@@ -148,6 +148,21 @@ func TestAPRSPaneFillFromSelected(t *testing.T) {
 	}
 }
 
+// TestAPRSPaneBeaconKeyConfiguredWarns: with beaconing configured but no
+// live client, b attempts the send and surfaces a warning toast.
+func TestAPRSPaneBeaconKeyConfiguredWarns(t *testing.T) {
+	m := newTestModel()
+	m.screen = screenAPRS
+
+	m.App.Config.Integrations.APRS.Enabled = true
+	m.App.Logbook.APRS = &config.APRSConfig{Enabled: true, SendLocation: true}
+	before := len(m.toasts.Active())
+	_, _ = m.handleAPRSUpdate(tea.KeyPressMsg{Code: 'b', Text: "b"}, nil)
+	if got := len(m.toasts.Active()); got != before+1 {
+		t.Errorf("configured b should produce exactly one toast, got %d", got-before)
+	}
+}
+
 func TestAPRSPaneKeys_Navigation(t *testing.T) {
 	m := newTestModel()
 	m.aprsPane.stations = []aprsStation{

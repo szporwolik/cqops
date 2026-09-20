@@ -230,22 +230,24 @@ func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		case c.mode == contestEdit || c.mode == contestCreate:
 			switch {
-			case k.String() == "ctrl+s":
+			case k.String() == "enter":
+				// Enter saves, matching the other forms — Space is the
+				// only toggle/cycle key for checkboxes and IDs.
 				return c, c.saveContest()
 			case k.String() == "esc":
 				c.blurAll()
 				c.mode = contestList
 				c.lastListContent = "" // force viewport refresh
 				return c, nil
-			case c.focus == 2 && (k.String() == " " || msg.Code == ' ' || k.String() == "enter"):
+			case c.focus == 2 && (k.String() == " " || msg.Code == ' '):
 				// Toggle In Use checkbox.
 				c.inUse = !c.inUse
 				return c, nil
-			case c.focus == 5 && (k.String() == " " || msg.Code == ' ' || k.String() == "enter"):
+			case c.focus == 5 && (k.String() == " " || msg.Code == ' '):
 				// Toggle serial exchange checkbox.
 				c.serialExchange = !c.serialExchange
 				return c, nil
-			case c.focus == 6 && (k.String() == " " || msg.Code == ' ' || k.String() == "enter"):
+			case c.focus == 6 && (k.String() == " " || msg.Code == ' '):
 				// Toggle prefill exchange sent checkbox.
 				c.prefillExchange = !c.prefillExchange
 				if !c.prefillExchange {
@@ -253,7 +255,7 @@ func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					c.exchSentInput.SetValue("")
 				}
 				return c, nil
-			case c.focus == 8 && (k.String() == " " || msg.Code == ' ' || k.String() == "enter"):
+			case c.focus == 8 && (k.String() == " " || msg.Code == ' '):
 				// Toggle prefill exchange rcvd checkbox.
 				c.prefillExchangeRcvd = !c.prefillExchangeRcvd
 				if !c.prefillExchangeRcvd {
@@ -297,7 +299,7 @@ func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				scrollVpToLine(&c.vp, c.focus)
 				return c, c.focusField()
 			case c.focus == 2 || c.focus == 5 || c.focus == 6 || c.focus == 8:
-				// Checkboxes handle Space/Enter; ignore other keys.
+				// Checkboxes handle Space; Enter saves. Ignore other keys.
 				return c, nil
 			case k.String() == "pgup", k.String() == "pgdown", k.String() == "home", k.String() == "end":
 				c.vp, _ = c.vp.Update(msg)

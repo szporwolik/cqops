@@ -117,14 +117,22 @@ func TestOperatorFormHandleKey_ShiftTab(t *testing.T) {
 func TestOperatorFormHandleKey_CtrlS(t *testing.T) {
 	f := NewOperatorForm()
 	f.Focus()
-	// Simulate Ctrl+S key: String() should match "ctrl+s" or "\x13".
-	cmd := f.HandleKey(tea.KeyPressMsg{Text: "\x13"})
-	if cmd == nil {
-		// Try alternative construction.
-		cmd = f.HandleKey(tea.KeyPressMsg{Code: 19, Mod: tea.ModCtrl})
+	// Ctrl+S no longer saves here — Enter is the save key.
+	if cmd := f.HandleKey(tea.KeyPressMsg{Text: "\x13"}); cmd != nil {
+		t.Error("Ctrl+S should no longer return a save command")
 	}
+}
+
+func TestOperatorFormHandleKey_EnterSaves(t *testing.T) {
+	f := NewOperatorForm()
+	f.Focus()
+	cmd := f.HandleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
-		t.Error("Ctrl+S should return a save command")
+		t.Fatal("Enter should return a save command")
+	}
+	msg := cmd()
+	if _, ok := msg.(enterOnLastFieldMsg); !ok {
+		t.Errorf("Enter returned %T, want enterOnLastFieldMsg", msg)
 	}
 }
 

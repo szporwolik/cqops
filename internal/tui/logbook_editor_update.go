@@ -223,7 +223,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				"pgup", "pgdown",
 				"esc", "f8",
 				"delete", "enter",
-				"ctrl+w", "alt+w", "ctrl+e", "ctrl+p", "ctrl+i", "tab":
+				"ctrl+w", "alt+w", "ctrl+e", "ctrl+p", "ctrl+i":
 				// Navigation and action keys — handled below.
 			default:
 				// Forward to search input.
@@ -321,9 +321,9 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		if le.mode == edModeEdit {
 			switch k {
-			case "ctrl+s":
+			case "enter":
 				return le, le.doSave()
-			case "esc", "f6":
+			case "esc":
 				le.mode = edModeList
 			case "pgup", "pgdown", "home", "end":
 				le.editVP, _ = le.editVP.Update(msg)
@@ -344,7 +344,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// modeList — table handles navigation; we intercept page transitions.
 		switch k {
-		case "f6", "esc":
+		case "esc":
 			le.done = true
 		case "pgup":
 			le.goToPage(le.currentPage - 1)
@@ -449,9 +449,8 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			le.mode = edModeExport
 			return le, le.filePicker.Init()
-		case "ctrl+i", "tab":
-			// ctrl+i and Tab may be indistinguishable in some terminals.
-			// Only trigger import in list mode (Tab in edit mode is for field navigation).
+		case "ctrl+i":
+			// Only trigger import in list mode.
 			if le.mode == edModeList {
 				le.filePicker = filepicker.New()
 				le.filePicker.AllowedTypes = []string{".adi", ".adif"}

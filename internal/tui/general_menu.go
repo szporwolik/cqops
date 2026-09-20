@@ -71,7 +71,7 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			gm.done = true
 			gm.goBack = true
 			return gm, nil
-		case "ctrl+s", "\x13":
+		case "enter":
 			gm.done = true
 			gm.saved = true
 			return gm, nil
@@ -118,8 +118,6 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case 9:
 				gm.debugMode = !gm.debugMode
 			}
-		case "enter":
-			// no-op: Enter does not save
 		}
 	}
 	return gm, nil
