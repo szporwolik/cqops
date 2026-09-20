@@ -302,6 +302,13 @@ func (m *Model) helpSuffix() string {
 		sb.WriteByte('0')
 	}
 	sb.WriteByte('|')
+	sb.WriteString(strconv.Itoa(len(m.aprsPane.stations)))
+	sb.WriteByte('|')
+	// The pane selection mirrors the table cursor and is set by the filter
+	// pass, so it is available before the table is lazily rebuilt — using
+	// it here keeps the page suffix stable and avoids a blank frame.
+	sb.WriteString(strconv.Itoa(m.aprsPane.sel))
+	sb.WriteByte('|')
 	sb.WriteString(strconv.Itoa(len(m.psk.spots)))
 	sb.WriteByte('|')
 	sb.WriteString(strconv.Itoa(m.psk.selected))
@@ -432,6 +439,23 @@ func (m *Model) buildHelpSuffix() string {
 		}
 		return ""
 	}
+	if m.screen == screenAPRS {
+		if len(m.aprsPane.stations) > 0 {
+			total := len(m.aprsPane.stations)
+			cursor := m.aprsPane.sel + 1
+			tableH := contentHeight(m.height) - 3
+			if tableH < 1 {
+				tableH = 1
+			}
+			page := cursor/tableH + 1
+			totalPages := (total + tableH - 1) / tableH
+			if totalPages < 1 {
+				totalPages = 1
+			}
+			return fmt.Sprintf("Station %d/%d  Page %d/%d", cursor, total, page, totalPages)
+		}
+		return ""
+	}
 	if m.screen == screenDXC {
 		if m.dxc.tableReady && len(m.dxc.cachedSpots) > 0 {
 			total := len(m.dxc.cachedSpots)
@@ -548,6 +572,14 @@ func (m *Model) minimalBarBindings() []key.Binding {
 			return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Tune")), q}
 		}
 		return []key.Binding{h, key.NewBinding(key.WithKeys("left", "right"), key.WithHelp("←→", "Tabs")), q}
+	case screenAPRS:
+		if m.aprsBeaconConfigured() {
+			return []key.Binding{h, key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "Beacon")), key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "QSO")), q}
+		}
+		if len(m.aprsPane.stations) > 0 {
+			return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "QSO")), key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Select")), q}
+		}
+		return []key.Binding{h, e, q}
 	case screenImage:
 		return []key.Binding{h, e, q}
 	case screenPSKReporter:
@@ -616,6 +648,8 @@ func (m *Model) screenTitle() string {
 		return "References"
 	case screenBPL:
 		return "Band Plan"
+	case screenAPRS:
+		return "APRS Nearby"
 	case screenLogbookEditor:
 		return "Log Editor"
 	case screenLogView:

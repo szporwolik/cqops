@@ -255,7 +255,7 @@ CQOps uses a fixed terminal layout:
 │  CQOps v0.8.9  Log Portable  Rig FTDx10  Call SP9MOA/P                         │
 │  Net WSJT Hamlib DXC WL                                           23:00L 2100Z │
 ├─ Tab Bar ──────────────────────────────────────────────────────────────────────┤
-│  F1 QSO   F2 QRZ   F4 DXC   F5 HRD   F6 REF   F7 BPL   F8 LOG   F9 CFG         │
+│  F1 QSO   F2 QRZ   F3 APR   F4 DXC   F5 HRD   F6 REF   F7 BPL   F8 LOG   F9 CFG         │
 ├─ Main Content Area ────────────────────────────────────────────────────────────┤
 │  QSO form, partner view, map, editor, dashboard data, or active screen content  │
 ├─ Help Bar ─────────────────────────────────────────────────────────────────────┤
@@ -276,7 +276,11 @@ The status bar shows:
 - local time marked as `L`,
 - UTC time marked as `Z`.
 
-Common labels include **Net**, **WSJT**, **Rig**, **Flrig**, **Hamlib**, **Rotator**, **DXC**, **WL**, and **GPS**. The GPS label follows the same colour convention — red when disconnected, yellow when connected but without a fix, white when a position fix is acquired.
+Common labels include **Net**, **WSJT**, **Rig**, **Flrig**, **Hamlib**,
+**Rotator**, **DXC**, **WL**, **APRS** (receiving or transmitting), **APRS-RX**
+(receive-only), and **GPS**. The GPS label follows the same colour
+convention — red when disconnected, yellow when connected but without a
+fix, white when a position fix is acquired.
 
 | Color | Meaning |
 |---|---|
@@ -291,6 +295,7 @@ Common labels include **Net**, **WSJT**, **Rig**, **Flrig**, **Hamlib**, **Rotat
 |---|---|---|
 | F1 | QSO | QSO form and Recent QSOs |
 | F2 | QRZ | Partner view: callbook data, map, stats, photo |
+| F3 | APR | APRS nearby stations, filters, details, radar |
 | F4 | DXC | DX Cluster spots and filters |
 | F5 | HRD | PSK Reporter spots and propagation map |
 | F6 | REF | SOTA/POTA/WWFF/IOTA reference search |
@@ -878,8 +883,8 @@ GPS-derived position — ideal for portable and mobile operation.
 
 Connects to the global APRS-IS network over the internet. Requires:
 
-- a valid amateur radio callsign,
-- an APRS-IS passcode (generated from your callsign),
+- a valid amateur radio callsign — the APRS-IS passcode is computed
+  automatically from the callsign, nothing needs to be stored,
 - an internet connection.
 
 Default server:
@@ -890,7 +895,10 @@ euro.aprs2.net:14580
 
 APRS-IS is configured globally under **F9 → Integrations → APRS**.
 Per-logbook callsign, SSID, symbol, comment, beacon interval, and range
-filter are set under **F9 → Logbooks → [active logbook] → APRS**.
+filter are set under **F9 → Logbooks → [active logbook] → APRS**. The
+callsign field is prefilled from the station callsign — leave it as-is or
+change the SSID. Tick **APRS TX** and **Send beacons** to transmit; without
+them CQOps still receives.
 
 #### KISS (serial)
 
@@ -929,7 +937,7 @@ Defaults: `127.0.0.1:8001`
 #### Beaconing
 
 Beacons are sent at the interval configured per logbook. The minimum
-interval is 1 minute. The beacon includes:
+interval is 5 minutes. The beacon includes:
 
 - station callsign with SSID,
 - grid locator (GPS-derived when available),
@@ -940,22 +948,52 @@ When **GPS** is active and **Grid from GPS** is enabled in the Station
 settings, the beacon automatically uses the GPS-derived grid locator —
 no manual grid update is needed while moving.
 
+On the **F3** APRS screen, press **b** to send a beacon immediately.
+
 Beacon interval and other per-logbook settings are configured under:
 
 ```text
 F9 → Logbooks → [active logbook] → APRS
 ```
 
+#### Nearby stations (F3)
+
+The **APRS** screen shows stations heard in the last hour: a table
+(callsign, Yaesu-style type code, bearing, distance, age) on the left and
+a detail panel with an ASCII radar on the right.
+
+- **↑/↓** select a station; **Enter** fills the QSO form and jumps back to it.
+- **d** cycles the distance filter (All, 1, 5, 10, 25, 50, 100 km — the pane
+  opens at the step closest to your configured range), **t** the last-heard
+  filter, **s** the type filter (All / operators only), **Backspace** clears
+  the filters.
+- **b** sends a position beacon immediately (when beaconing is configured).
+- **Esc** returns to the QSO form.
+
+The detail panel decodes weather stations (wind, temperature, humidity,
+pressure) and shows course and speed next to the grid locator. The radar is
+drawn around your own position: Yaesu-style markers show each station's
+type, stations sharing a cell collapse into a count, and the selected
+station is highlighted. The range and your grid are shown under the radar,
+together with the selected station's bearing and distance.
+
+The list hides your own transmissions: while beaconing, the exact callsign
+you transmit with is filtered out; in receive-only mode all SSIDs of your
+callsign are hidden.
+
 #### Receiving
 
 Received APRS position reports are cached locally and displayed on the
-CQOps Live dashboard map. Stations are shown with their APRS symbols and
-can be clicked for details. The display auto-fits to show all visible
-stations within the configured range.
+CQOps Live dashboard map and on the **F3** APRS screen. On the map,
+stations are shown with their APRS symbols and can be clicked for details.
+The display auto-fits to show all visible stations within the configured
+range.
 
 APRS receive is independent of beacon transmit — you can receive without
-sending a beacon, and vice versa. Simply enable APRS in the Integrations
-menu and set the service type.
+sending a beacon, and vice versa. If APRS is enabled in the Integrations
+menu but the active logbook has no APRS TX configuration, CQOps runs in
+receive-only mode: nothing is transmitted, stations are still cached for
+the F3 screen and the dashboard map, and the status bar shows **APRS-RX**.
 
 ### Solar Data
 
@@ -1185,6 +1223,7 @@ If `secrets.enc` is corrupted, CQOps starts with a warning and asks you to re-en
 |---|---|
 | F1 | QSO form and Recent QSOs |
 | F2 | Partner view |
+| F3 | APRS nearby stations |
 | F4 | DX Cluster |
 | F5 | PSK Reporter |
 | F6 | REF Lookup |

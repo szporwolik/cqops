@@ -9,6 +9,7 @@ type KeyMap struct {
 	Quit          key.Binding
 	QSOForm       key.Binding
 	Partner       key.Binding
+	APRS          key.Binding
 	PSKReporter   key.Binding
 	DXC           key.Binding
 	LogEditor     key.Binding
@@ -63,6 +64,10 @@ func DefaultKeyMap() KeyMap {
 		Partner: key.NewBinding(
 			key.WithKeys("f2", "alt+2"),
 			key.WithHelp("F2/Alt+2", "QRZ"),
+		),
+		APRS: key.NewBinding(
+			key.WithKeys("f3", "alt+3"),
+			key.WithHelp("F3/Alt+3", "APR"),
 		),
 		PSKReporter: key.NewBinding(
 			key.WithKeys("f5", "alt+5"),
@@ -224,7 +229,7 @@ func (k KeyMap) ShortHelp() []key.Binding {
 func (k KeyMap) FullHelp() [][]key.Binding {
 	return [][]key.Binding{
 		// Column 1: navigation & screens
-		{k.QSOForm, k.Partner, k.DXC, k.PSKReporter, k.Ref, k.BPL, k.LogEditor, k.Config, k.Logs},
+		{k.QSOForm, k.Partner, k.APRS, k.DXC, k.PSKReporter, k.Ref, k.BPL, k.LogEditor, k.Config, k.Logs},
 		// Column 2: editing & actions
 		{k.Save, k.Spot, k.Lookup, k.Delete, k.Retain, k.NextField, k.PrevField},
 		// Column 3: cycling & meta
@@ -440,6 +445,22 @@ func (m *Model) ActiveBindings() []key.Binding {
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "QSO+Tune")),
 			key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Tune")),
 		)
+	}
+	if m.screen == screenAPRS {
+		bindings = append(bindings,
+			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("\u2191\u2193", "Select")),
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "QSO")),
+			key.NewBinding(key.WithKeys("t"), key.WithHelp("t", "Time filter")),
+			key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "Distance filter")),
+			key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "Type filter")),
+			key.NewBinding(key.WithKeys("backspace"), key.WithHelp("Bksp", "Clear filters")),
+			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
+		)
+		if m.aprsBeaconConfigured() {
+			bindings = append(bindings,
+				key.NewBinding(key.WithKeys("b"), key.WithHelp("b", "Send beacon now")),
+			)
+		}
 	}
 	if m.screen == screenRef {
 		if m.ref.searched && len(m.ref.rows) > 0 {

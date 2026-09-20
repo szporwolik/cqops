@@ -873,7 +873,8 @@ func (c *LogbookChooser) testWavelogConnection() tea.Cmd {
 }
 
 // testAPRSConnection tests APRS connectivity using the global
-// integration config and the logbook config for callsign/passcode.
+// integration config and the logbook callsign. The APRS-IS passcode
+// is computed from the callsign — nothing is stored.
 func (c *LogbookChooser) testAPRSConnection() tea.Cmd {
 	aprsGlobal := c.app.Config.Integrations.APRS
 	if !aprsGlobal.Enabled {
@@ -885,21 +886,15 @@ func (c *LogbookChooser) testAPRSConnection() tea.Cmd {
 
 	cfg := c.station.APRSValues()
 	call := cfg.Callsign
-	pass := cfg.Passcode
 
 	// Validate required fields before testing.
-	if pass == "" {
-		c.aprsStatus = "Passcode is required"
-		c.toasts.Warn("APRS: passcode is required")
-		c.scrollViewportToEnd()
-		return nil
-	}
 	if call == "" {
 		c.aprsStatus = "Callsign is required"
 		c.toasts.Warn("APRS: callsign is required")
 		c.scrollViewportToEnd()
 		return nil
 	}
+	pass := aprs.Passcode(call)
 
 	switch aprsGlobal.Service {
 	case "kiss":

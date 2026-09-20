@@ -4,6 +4,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // ParsePositionPacket attempts to decode an APRS position report from a raw
@@ -74,6 +75,9 @@ func ParsePositionPacket(raw string) (StationRecord, bool) {
 		if len(bodyUncomp) < 8 {
 			return sr, false
 		}
+		// The @DDHHMMz prefix carries the station's actual transmit time —
+		// prefer it over the packet arrival time.
+		sr.LastHeard = parsePacketTimestamp(bodyUncomp, time.Now())
 		bodyUncomp = bodyUncomp[8:] // skip @ and timestamp
 		if len(bodyUncomp) < 10 {
 			return sr, false
@@ -99,6 +103,46 @@ func ParsePositionPacket(raw string) (StationRecord, bool) {
 	}
 
 	return sr, false
+}
+
+// parsePacketTimestamp extracts the embedded UTC transmit time from an
+// @DDHHMMz position packet. Returns the zero time when the timestamp is
+// absent, not UTC ('z' suffix required), or invalid.
+//
+// A future timestamp is either day-of-month overflow (time.Date normalizes
+// e.g. Sep 31 into Oct 1 — about a month ahead) or a station with a skewed
+// clock (minutes to hours ahead). Far-future times are rolled back one
+// month; closer ones are clamped to the arrival time so the packet is not
+// dropped as stale.
+func parsePacketTimestamp(body string, now time.Time) time.Time {
+	if len(body) < 8 || body[0] != '@' || body[7] != 'z' {
+		return time.Time{}
+	}
+	day, err1 := strconv.Atoi(body[1:3])
+	hour, err2 := strconv.Atoi(body[3:5])
+	min, err3 := strconv.Atoi(body[5:7])
+	if err1 != nil || err2 != nil || err3 != nil {
+		return time.Time{}
+	}
+	if day < 1 || day > 31 || hour > 23 || min > 59 {
+		return time.Time{}
+	}
+	t := time.Date(now.Year(), now.Month(), day, hour, min, 0, 0, time.UTC)
+	if t.After(now.Add(2 * time.Minute)) {
+		if t.After(now.Add(20 * 24 * time.Hour)) {
+			// Far in the future — the day doesn't exist in this month
+			// and time.Date rolled it into the next one.
+			t = t.AddDate(0, -1, 0)
+			if t.After(now.Add(2 * time.Minute)) {
+				t = now
+			}
+		} else {
+			// Close to now — the station's clock is skewed; trust the
+			// arrival time instead of dropping the packet as stale.
+			t = now
+		}
+	}
+	return t
 }
 
 // tryDecodeUncompressed parses standard uncompressed APRS positions:

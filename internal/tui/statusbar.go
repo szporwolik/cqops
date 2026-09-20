@@ -141,16 +141,25 @@ func (m *Model) headerView() string {
 		rightParts = append(rightParts, statusDotStyled(m.lookup.wlOnline, "WL", m.Offline))
 	}
 
-	// Position: APRS.
+	// Position: APRS — indicator states:
+	//   global-only, not connected       → warn "APRS" (armed)
+	//   global-only receive, connected   → warn "APRS-RX" (receiving)
+	//   RX-only (logbook enabled)        → warn "APRS-RX" when connected
+	//   beaconing (TX)                   → full on/off "APRS"
 	if m.App.Config.Integrations.APRS.Enabled {
 		aprsCfg := m.App.Logbook.APRS
-		if aprsCfg != nil && aprsCfg.Enabled {
-			label := "APRS-RX"
-			if aprsCfg.SendLocation {
-				label = "APRS"
+		if aprsCfg == nil || !aprsCfg.Enabled {
+			if m.aprsConnected() {
+				rightParts = append(rightParts, statusDotWarnStyle.Render("APRS-RX")+" ")
+			} else {
+				rightParts = append(rightParts, statusDotWarnStyle.Render("APRS")+" ")
 			}
-			online := m.App.APRSClient != nil && m.App.APRSClient.IsConnected()
-			rightParts = append(rightParts, statusDotStyled(online, label, m.Offline))
+		} else if aprsCfg.SendLocation {
+			rightParts = append(rightParts, statusDotStyled(m.aprsConnected(), "APRS", m.Offline))
+		} else if m.aprsConnected() {
+			rightParts = append(rightParts, statusDotWarnStyle.Render("APRS-RX")+" ")
+		} else {
+			rightParts = append(rightParts, statusDotStyled(false, "APRS-RX", m.Offline))
 		}
 	}
 

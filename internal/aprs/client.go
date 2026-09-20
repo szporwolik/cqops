@@ -16,7 +16,8 @@ import (
 
 // ErrAuthFailed is returned when the APRS-IS server rejects the login.
 // This is a permanent error — retrying with the same credentials won't help.
-var ErrAuthFailed = fmt.Errorf("APRS: authentication failed")
+// No "APRS:" prefix — callers add their own context.
+var ErrAuthFailed = fmt.Errorf("authentication failed")
 
 // clientVersion is resolved once at startup so we don't read the VERSION
 // file or invoke the filesystem on every APRS connection attempt.

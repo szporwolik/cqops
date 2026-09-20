@@ -259,7 +259,7 @@ CQOps は固定されたターミナルレイアウトを使用します。
 │  CQOps v0.8.9  Log Portable  Rig FTDx10  Call SP9MOA/P                         │
 │  Net WSJT Hamlib DXC WL                                           23:00L 2100Z │
 ├─ Tab Bar ──────────────────────────────────────────────────────────────────────┤
-│  F1 QSO   F2 QRZ   F4 DXC   F5 HRD   F6 REF   F7 BPL   F8 LOG   F9 CFG         │
+│  F1 QSO   F2 QRZ   F3 APR   F4 DXC   F5 HRD   F6 REF   F7 BPL   F8 LOG   F9 CFG         │
 ├─ Main Content Area ────────────────────────────────────────────────────────────┤
 │  QSO form, partner view, map, editor, dashboard data, or active screen content  │
 ├─ Help Bar ─────────────────────────────────────────────────────────────────────┤
@@ -280,7 +280,7 @@ CQOps は固定されたターミナルレイアウトを使用します。
 - `L` が付いたローカル時刻、
 - `Z` が付いた UTC 時刻。
 
-一般的なラベルには **Net**、**WSJT**、**Rig**、**Flrig**、**Hamlib**、**Rotator**、**DXC**、**WL**、**GPS** があります。**GPS** ラベルも同じ色の規則を使用します。赤は未接続、黄は接続済みだが fix なし、白は位置 fix 取得済みを示します。
+一般的なラベルには **Net**、**WSJT**、**Rig**、**Flrig**、**Hamlib**、**Rotator**、**DXC**、**WL**、**APRS**（受信または送信）、**APRS-RX**（受信のみ）、**GPS** があります。**GPS** ラベルも同じ色の規則を使用します。赤は未接続、黄は接続済みだが fix なし、白は位置 fix 取得済みを示します。
 
 | 色 | 意味 |
 |---|---|
@@ -295,6 +295,7 @@ CQOps は固定されたターミナルレイアウトを使用します。
 |---|---|---|
 | F1 | QSO | **QSO form** と **Recent QSOs** |
 | F2 | QRZ | **Partner view**: callbook データ、マップ、統計、写真 |
+| F3 | APR | **APRS Nearby** 局、フィルター、詳細、レーダー |
 | F4 | DXC | **DX Cluster** の spot と filter |
 | F5 | HRD | **PSK Reporter** の spot と伝搬マップ |
 | F6 | REF | SOTA/POTA/WWFF/IOTA reference 検索 |
@@ -878,8 +879,7 @@ F9 → Integrations → APRS → Service (Space to cycle)
 
 インターネット経由で世界規模の APRS-IS network に接続します。次の情報が必要です。
 
-- 有効なアマチュア無線の indicativo、
-- indicativo から生成した APRS-IS passcode、
+- 有効なアマチュア無線の indicativo — APRS-IS passcode は indicativo から自動計算され、保存する必要はありません、
 - インターネット接続。
 
 デフォルト server:
@@ -888,7 +888,7 @@ F9 → Integrations → APRS → Service (Space to cycle)
 euro.aprs2.net:14580
 ```
 
-APRS-IS は **F9 → Integrations → APRS** で全体設定します。ログブックごとの callsign、SSID、symbol、comment、beacon interval、range filter は **F9 → Logbooks → [active logbook] → APRS** で設定します。
+APRS-IS は **F9 → Integrations → APRS** で全体設定します。ログブックごとの callsign、SSID、symbol、comment、beacon interval、range filter は **F9 → Logbooks → [active logbook] → APRS** で設定します。callsign 欄には station の indicativo が事前入力されています。そのまま使うか SSID を変更してください。送信するには **APRS TX** と **Send beacons** をオンにします。オフでも CQOps は受信を続けます。
 
 #### KISS (serial)
 
@@ -918,7 +918,7 @@ F9 → Integrations → APRS → Service: KISS Server → Host / Port
 
 #### Beaconing
 
-beacon はログブックごとに設定した interval で送信されます。最小 interval は 1 分です。beacon には次の情報が含まれます。
+beacon はログブックごとに設定した interval で送信されます。最小 interval は 5 分です。beacon には次の情報が含まれます。
 
 - SSID 付き station callsign、
 - 利用可能な場合は GPS から算出した grid locator、
@@ -927,17 +927,32 @@ beacon はログブックごとに設定した interval で送信されます。
 
 **GPS** がアクティブで、**Station** 設定の **Grid from GPS** が有効な場合、beacon は GPS から算出した grid locator を自動的に使用します。移動中に手動で grid を更新する必要はありません。
 
+APRS 画面 **F3** で **b** を押すと、すぐに beacon を送信します。
+
 Beacon interval およびその他のログブック別設定は次の場所で行います。
 
 ```text
 F9 → Logbooks → [active logbook] → APRS
 ```
 
+#### 近傍局 (F3)
+
+**APRS** 画面には、直近 1 時間に受信した局が表示されます。左側は一覧表（callsign、Yaesu タイプコード、方位、距離、経過時間）、右側は ASCII レーダー付きの詳細パネルです。
+
+- **↑/↓** で局を選択し、**Enter** で QSO form に入力して戻ります。
+- **d** で距離フィルターを切り替えます（All、1、5、10、25、50、100 km — 画面を開いたときは設定した range に最も近い値から始まります）。**t** は最終受信時刻フィルター、**s** はタイプフィルター（All / operator のみ）、**Backspace** でフィルターを解除します。
+- **b** で位置 beacon をすぐに送信します（beaconing が設定されている場合）。
+- **Esc** で QSO form に戻ります。
+
+詳細パネルは weather station をデコードし（風向・風速、気温、湿度、気圧）、grid locator の横に course と speed を表示します。レーダーは自局を中心に描かれ、Yaesu タイプマーカーが各局の種類を示し、同じセルに重なった局は数でまとめられ、選択中の局はハイライトされます。レーダーの下には range と自分の grid、選択中の局の方位と距離が表示されます。
+
+一覧では自局の送信を除外します。beaconing 中は実際に送信している callsign だけを除外し、受信のみモードでは自局 indicativo のすべての SSID を隠します。
+
 #### Receiving
 
-受信した APRS position report はローカルにキャッシュされ、**CQOps Live dashboard** の map に表示されます。局は APRS symbol で表示され、クリックすると詳細を確認できます。表示範囲は、設定した range 内にあるすべての局が見えるよう自動調整されます。
+受信した APRS position report はローカルにキャッシュされ、**CQOps Live dashboard** の map と APRS 画面 **F3** に表示されます。局は APRS symbol で表示され、クリックすると詳細を確認できます。表示範囲は、設定した range 内にあるすべての局が見えるよう自動調整されます。
 
-APRS receive と beacon transmit は独立しています。送信せずに受信のみ、または受信せず送信のみの運用も可能です。**Integrations** メニューで APRS を有効にし、service type を設定してください。
+APRS receive と beacon transmit は独立しています。送信せずに受信のみ、または受信せず送信のみの運用も可能です。**Integrations** メニューで APRS が有効でも、アクティブなログブックに APRS 送信設定がない場合、CQOps は受信のみモードで動作します。何も送信せず、F3 画面と dashboard map のために局をキャッシュし続け、status bar には **APRS-RX** と表示されます。
 
 ### Solar Data
 
@@ -1170,6 +1185,7 @@ v0.8.7 以降、認証情報は暗号化して保存されます。
 |---|---|
 | F1 | **QSO form** and **Recent QSOs** |
 | F2 | **Partner view** |
+| F3 | **APRS Nearby** 局 |
 | F4 | **DX Cluster** |
 | F5 | **PSK Reporter** |
 | F6 | **REF Lookup** |

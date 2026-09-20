@@ -89,6 +89,12 @@ func (m *Model) tabView() string {
 	}
 	sigB.WriteByte('|')
 	sigB.WriteString(strconv.Itoa(refReady))
+	sigB.WriteByte('|')
+	if m.aprsConnected() {
+		sigB.WriteByte('1')
+	} else {
+		sigB.WriteByte('0')
+	}
 	sig := sigB.String()
 	if m.rc.tabSig == sig && m.rc.tabView != "" {
 		return m.rc.tabView
@@ -122,6 +128,7 @@ func (m *Model) tabView() string {
 	allTabs := []tab{
 		{"F1 QSO", "QSO", mk("F1", "A1"), m.screen == screenQSO && m.confirm == nil, false},
 		{"F2 QRZ", "QRZ", mk("F2", "A2"), (m.screen == screenPartner || m.screen == screenImage) && hasPartner, !hasPartner},
+		{"F3 APR", "APR", mk("F3", "A3"), m.screen == screenAPRS, !m.aprsConnected()},
 		{"F4 DXC", "DXC", mk("F4", "A4"), m.screen == screenDXC, !dxcOnline},
 		{"F5 HRD", "HRD", mk("F5", "A5"), m.screen == screenPSKReporter, !m.inetOnline},
 		{"F6 REF", "REF", mk("F6", "A6"), m.screen == screenRef, !m.isREFReady()},
