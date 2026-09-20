@@ -160,6 +160,16 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		}
 		return nil, true
 
+	case key.Matches(msg, m.keys.APRS):
+		applog.Debug("tab: F3 APRS")
+		if !m.aprsConnected() {
+			m.toasts.Warn("APRS not receiving — enable APRS in Integration settings")
+			return nil, true
+		}
+		m.aprsEnterPane()
+		m.screen = screenAPRS
+		return nil, true
+
 	case key.Matches(msg, m.keys.PSKReporter):
 		if !m.inetOnline {
 			m.toasts.Warn("PSK Reporter: no internet connection")
@@ -584,6 +594,9 @@ func (m *Model) paneScreens() []screenKind {
 	if hasPartner || m.screen == screenPartner {
 		screens = append(screens, screenPartner)
 	}
+	if m.aprsConnected() || m.screen == screenAPRS {
+		screens = append(screens, screenAPRS)
+	}
 	if dxcOnline || m.screen == screenDXC {
 		screens = append(screens, screenDXC)
 	}
@@ -653,6 +666,8 @@ func (m *Model) handlePaneNav(msg tea.KeyPressMsg) bool {
 			m.ui.mainMenu.width = m.width
 			m.ui.mainMenu.height = m.height
 		}
+	case screenAPRS:
+		m.aprsEnterPane()
 	}
 
 	// When leaving the image screen via pane nav, clear photo state.

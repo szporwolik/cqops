@@ -259,7 +259,7 @@ CQOps utilizza un layout fisso nel terminale:
 │  CQOps v0.8.9  Log Portable  Rig FTDx10  Call SP9MOA/P                         │
 │  Net WSJT Hamlib DXC WL                                           23:00L 2100Z │
 ├─ Tab Bar ──────────────────────────────────────────────────────────────────────┤
-│  F1 QSO   F2 QRZ   F4 DXC   F5 HRD   F6 REF   F7 BPL   F8 LOG   F9 CFG         │
+│  F1 QSO   F2 QRZ   F3 APR   F4 DXC   F5 HRD   F6 REF   F7 BPL   F8 LOG   F9 CFG         │
 ├─ Main Content Area ────────────────────────────────────────────────────────────┤
 │  QSO form, partner view, map, editor, dashboard data, or active screen content  │
 ├─ Help Bar ─────────────────────────────────────────────────────────────────────┤
@@ -280,7 +280,7 @@ La **Status bar** mostra:
 - l’ora locale contrassegnata con `L`,
 - l’ora UTC contrassegnata con `Z`.
 
-Le etichette comuni includono **Net**, **WSJT**, **Rig**, **Flrig**, **Hamlib**, **Rotator**, **DXC**, **WL** e **GPS**. L’etichetta **GPS** segue la stessa convenzione cromatica: rosso quando è disconnesso, giallo quando è connesso ma senza fix e bianco quando è stata acquisita la posizione.
+Le etichette comuni includono **Net**, **WSJT**, **Rig**, **Flrig**, **Hamlib**, **Rotator**, **DXC**, **WL**, **APRS** (ricezione o trasmissione), **APRS-RX** (solo ricezione) e **GPS**. L’etichetta **GPS** segue la stessa convenzione cromatica: rosso quando è disconnesso, giallo quando è connesso ma senza fix e bianco quando è stata acquisita la posizione.
 
 | Colore | Significato |
 |---|---|
@@ -295,6 +295,7 @@ Le etichette comuni includono **Net**, **WSJT**, **Rig**, **Flrig**, **Hamlib**,
 |---|---|---|
 | F1 | QSO | **QSO form** e **Recent QSOs** |
 | F2 | QRZ | **Partner view**: dati del callbook, mappa, statistiche, foto |
+| F3 | APR | Stazioni **APRS Nearby**, filtri, dettagli, radar |
 | F4 | DXC | Spot e filtri di **DX Cluster** |
 | F5 | HRD | Spot di **PSK Reporter** e mappa di propagazione |
 | F6 | REF | Ricerca di referenze SOTA/POTA/WWFF/IOTA |
@@ -880,8 +881,8 @@ Tutti supportano anche il **periodic position beaconing**. CQOps trasmette il gr
 
 Si collega alla rete globale APRS-IS tramite Internet. Richiede:
 
-- un indicativo radioamatoriale valido,
-- un APRS-IS passcode generato dall’indicativo,
+- un indicativo radioamatoriale valido — il passcode APRS-IS viene
+calcolato automaticamente dall’indicativo, non va memorizzato nulla,
 - una connessione Internet.
 
 Server predefinito:
@@ -890,7 +891,7 @@ Server predefinito:
 euro.aprs2.net:14580
 ```
 
-APRS-IS viene configurato globalmente in **F9 → Integrations → APRS**. Callsign, SSID, symbol, comment, beacon interval e range filter per ogni logbook si impostano in **F9 → Logbooks → [active logbook] → APRS**.
+APRS-IS viene configurato globalmente in **F9 → Integrations → APRS**. Callsign, SSID, symbol, comment, beacon interval e range filter per ogni logbook si impostano in **F9 → Logbooks → [active logbook] → APRS**. Il campo callsign è precompilato con l’indicativo della stazione: lascialo invariato o cambia l’SSID. Spunta **APRS TX** e **Send beacons** per trasmettere; senza di essi CQOps continua a ricevere.
 
 #### KISS (serial)
 
@@ -920,7 +921,7 @@ Valori predefiniti: `127.0.0.1:8001`
 
 #### Beaconing
 
-I beacon vengono inviati all’intervallo configurato per ciascun logbook. L’intervallo minimo è 1 minuto. Il beacon include:
+I beacon vengono inviati all’intervallo configurato per ciascun logbook. L’intervallo minimo è 5 minuti. Il beacon include:
 
 - callsign della stazione con SSID,
 - grid locator derivato dal GPS quando disponibile,
@@ -929,17 +930,32 @@ I beacon vengono inviati all’intervallo configurato per ciascun logbook. L’i
 
 Quando **GPS** è attivo e **Grid from GPS** è abilitato nelle impostazioni **Station**, il beacon usa automaticamente il grid locator derivato dal GPS. Non è necessario aggiornare manualmente il grid durante il movimento.
 
+Nella schermata APRS **F3**, premi **b** per inviare subito un beacon.
+
 Beacon interval e le altre impostazioni per logbook si configurano in:
 
 ```text
 F9 → Logbooks → [active logbook] → APRS
 ```
 
+#### Stazioni vicine (F3)
+
+La schermata **APRS** mostra le stazioni ascoltate nell’ultima ora: una tabella (indicativo, codice tipo Yaesu, rilevamento, distanza, età) a sinistra e un pannello dettagli con radar ASCII a destra.
+
+- **↑/↓** seleziona una stazione; **Enter** compila il modulo QSO e torna a esso.
+- **d** cambia il filtro distanza (All, 1, 5, 10, 25, 50, 100 km — la schermata si apre sul valore più vicino alla portata configurata), **t** il filtro ultimo ascolto, **s** il filtro tipo (All / solo operatori), **Backspace** azzera i filtri.
+- **b** invia subito un beacon di posizione (se il beaconing è configurato).
+- **Esc** torna al modulo QSO.
+
+Il pannello dettagli decodifica le stazioni meteo (vento, temperatura, umidità, pressione) e mostra course e speed accanto al grid locator. Il radar è disegnato attorno alla tua posizione: i marcatori tipo Yaesu mostrano il tipo di ciascuna stazione, le stazioni che condividono una cella si raggruppano in un contatore e la stazione selezionata è evidenziata. La portata e il tuo grid sono mostrati sotto il radar, insieme al rilevamento e alla distanza della stazione selezionata.
+
+L’elenco nasconde le tue trasmissioni: durante il beaconing viene filtrato solo l’indicativo esatto che trasmetti; in modalità solo ricezione vengono nascosti tutti gli SSID del tuo indicativo.
+
 #### Receiving
 
-I rapporti di posizione APRS ricevuti vengono memorizzati nella cache locale e visualizzati sulla mappa di **CQOps Live dashboard**. Le stazioni sono rappresentate con i rispettivi simboli APRS e possono essere selezionate per visualizzare i dettagli. La vista si adatta automaticamente per mostrare tutte le stazioni visibili entro la portata configurata.
+I rapporti di posizione APRS ricevuti vengono memorizzati nella cache locale e visualizzati sulla mappa di **CQOps Live dashboard** e nella schermata APRS **F3**. Le stazioni sono rappresentate con i rispettivi simboli APRS e possono essere selezionate per visualizzare i dettagli. La vista si adatta automaticamente per mostrare tutte le stazioni visibili entro la portata configurata.
 
-La ricezione APRS è indipendente dalla trasmissione dei beacon: puoi ricevere senza trasmettere e viceversa. È sufficiente abilitare APRS in **Integrations** e impostare il tipo di servizio.
+La ricezione APRS è indipendente dalla trasmissione dei beacon: puoi ricevere senza trasmettere e viceversa. Se APRS è abilitato in **Integrations** ma il logbook attivo non ha una configurazione di trasmissione APRS, CQOps funziona in modalità solo ricezione: non trasmette nulla, le stazioni vengono comunque memorizzate per la schermata F3 e la mappa del dashboard, e la barra di stato mostra **APRS-RX**.
 
 ### Solar Data
 
@@ -1172,6 +1188,7 @@ Se `secrets.enc` è danneggiato, CQOps si avvia con un avviso e richiede di inse
 |---|---|
 | F1 | **QSO form** e **Recent QSOs** |
 | F2 | **Partner view** |
+| F3 | Stazioni **APRS Nearby** |
 | F4 | **DX Cluster** |
 | F5 | **PSK Reporter** |
 | F6 | **REF Lookup** |

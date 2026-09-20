@@ -35,10 +35,23 @@ func TestStatusBarAPRSStates(t *testing.T) {
 			want:          statusDotWarnStyle.Render("APRS") + " ",
 		},
 		{
+			name:          "global only connected shows warn APRS-RX",
+			globalEnabled: true,
+			connected:     true,
+			want:          statusDotWarnStyle.Render("APRS-RX") + " ",
+		},
+		{
 			name:          "logbook APRS disabled shows warn APRS",
 			globalEnabled: true,
 			logbookCfg:    &config.APRSConfig{Enabled: false},
 			want:          statusDotWarnStyle.Render("APRS") + " ",
+		},
+		{
+			name:          "logbook APRS disabled but connected shows warn APRS-RX",
+			globalEnabled: true,
+			logbookCfg:    &config.APRSConfig{Enabled: false},
+			connected:     true,
+			want:          statusDotWarnStyle.Render("APRS-RX") + " ",
 		},
 		{
 			name:          "TX connected shows on APRS",

@@ -262,7 +262,7 @@ CQOps 使用固定的终端布局：
 │  CQOps v0.8.9  Log Portable  Rig FTDx10  Call SP9MOA/P                         │
 │  Net WSJT Hamlib DXC WL                                           23:00L 2100Z │
 ├─ Tab Bar ──────────────────────────────────────────────────────────────────────┤
-│  F1 QSO   F2 QRZ   F4 DXC   F5 HRD   F6 REF   F7 BPL   F8 LOG   F9 CFG         │
+│  F1 QSO   F2 QRZ   F3 APR   F4 DXC   F5 HRD   F6 REF   F7 BPL   F8 LOG   F9 CFG         │
 ├─ Main Content Area ────────────────────────────────────────────────────────────┤
 │  QSO form, partner view, map, editor, dashboard data, or active screen content  │
 ├─ Help Bar ─────────────────────────────────────────────────────────────────────┤
@@ -283,7 +283,7 @@ CQOps 使用固定的终端布局：
 - 以 `L` 标记的本地时间，
 - 以 `Z` 标记的 UTC 时间。
 
-常见标签包括 **Net**、**WSJT**、**Rig**、**Flrig**、**Hamlib**、**Rotator**、**DXC**、**WL** 和 **GPS**。GPS 标签遵循相同的颜色约定：断开时为红色；已连接但尚无定位时为黄色；获得位置定位后为白色。
+常见标签包括 **Net**、**WSJT**、**Rig**、**Flrig**、**Hamlib**、**Rotator**、**DXC**、**WL**、**APRS**（接收或发送）、**APRS-RX**（仅接收）和 **GPS**。GPS 标签遵循相同的颜色约定：断开时为红色；已连接但尚无定位时为黄色；获得位置定位后为白色。
 
 | 颜色 | 含义 |
 |---|---|
@@ -298,6 +298,7 @@ CQOps 使用固定的终端布局：
 |---|---|---|
 | F1 | QSO | QSO 表单和 `Recent QSOs` |
 | F2 | QRZ | 对方信息视图：呼号数据库数据、地图、统计和照片 |
+| F3 | APR | APRS 附近台站、过滤器、详情、雷达 |
 | F4 | DXC | DX Cluster 通报和过滤器 |
 | F5 | HRD | PSK Reporter 通报和传播地图 |
 | F6 | REF | SOTA/POTA/WWFF/IOTA 参考编号搜索 |
@@ -872,8 +873,7 @@ F9 → Integrations → APRS → Service (Space to cycle)
 
 通过互联网连接到全球 APRS-IS 网络。需要：
 
-- 有效的业余无线电呼号，
-- APRS-IS passcode（根据呼号生成），
+- 有效的业余无线电呼号——APRS-IS passcode 会根据呼号自动计算，无需保存任何内容，
 - 互联网连接。
 
 默认服务器：
@@ -883,7 +883,7 @@ euro.aprs2.net:14580
 ```
 
 APRS-IS 在 **F9 → Integrations → APRS** 下全局配置。
-每个日志簿的呼号、SSID、符号、注释、信标间隔和范围过滤器在 **F9 → Logbooks → [active logbook] → APRS** 下设置。
+每个日志簿的呼号、SSID、符号、注释、信标间隔和范围过滤器在 **F9 → Logbooks → [active logbook] → APRS** 下设置。呼号字段会预填台站呼号——保持原样或修改 SSID 即可。勾选 **APRS TX** 和 **Send beacons** 即可发送；不勾选时 CQOps 仍会接收。
 
 #### KISS（串口）
 
@@ -913,7 +913,7 @@ F9 → Integrations → APRS → Service: KISS Server → Host / Port
 
 #### 发信标
 
-信标会按照每个日志簿配置的间隔发送。最小间隔为 1 分钟。信标包含：
+信标会按照每个日志簿配置的间隔发送。最小间隔为 5 分钟。信标包含：
 
 - 带 SSID 的台站呼号，
 - 网格定位符（在可用时使用 GPS 位置），
@@ -922,17 +922,32 @@ F9 → Integrations → APRS → Service: KISS Server → Host / Port
 
 当 **GPS** 处于活动状态，并且在 `Station` 设置中启用了 **Grid from GPS** 时，信标会自动使用 GPS 计算的网格定位符；移动过程中无需手动更新网格。
 
+在 APRS 屏幕 **F3** 上按 **b** 可立即发送信标。
+
 信标间隔和其他每日志簿设置位于：
 
 ```text
 F9 → Logbooks → [active logbook] → APRS
 ```
 
+#### 附近台站（F3）
+
+APRS 屏幕显示过去一小时内听到的台站：左侧是表格（呼号、Yaesu 类型码、方位、距离、时长），右侧是带 ASCII 雷达的详情面板。
+
+- **↑/↓** 选择台站；**Enter** 填入 QSO 表单并返回。
+- **d** 切换距离过滤器（All、1、5、10、25、50、100 km——打开时从最接近配置距离的档位开始），**t** 切换最后收听到的过滤器，**s** 切换类型过滤器（All / 仅操作员），**Backspace** 清除过滤器。
+- **b** 立即发送位置信标（已配置发信标时）。
+- **Esc** 返回 QSO 表单。
+
+详情面板会解码气象台站（风速风向、温度、湿度、气压），并在网格定位符旁显示 course 和 speed。雷达以您的位置为中心绘制：Yaesu 类型标记表示台站类型，同一格内的台站合并为数字，选中的台站高亮显示。雷达下方显示范围和您的网格，以及所选台站的方位和距离。
+
+列表会隐藏您自己的发送：发信标时只过滤您实际发送的那个呼号；仅接收模式下隐藏您呼号的所有 SSID。
+
 #### 接收
 
-接收到的 APRS 位置报告会缓存在本地，并显示在 CQOps Live 仪表板地图上。台站使用各自的 APRS 符号显示，点击后可查看详情。显示范围会自动调整，以显示配置距离范围内的所有可见台站。
+接收到的 APRS 位置报告会缓存在本地，并显示在 CQOps Live 仪表板地图和 APRS 屏幕 **F3** 上。台站使用各自的 APRS 符号显示，点击后可查看详情。显示范围会自动调整，以显示配置距离范围内的所有可见台站。
 
-APRS 接收与信标发送互相独立——可以只接收而不发送，也可以只发送而不接收。只需在 `Integrations` 菜单中启用 APRS，并设置服务类型。
+APRS 接收与信标发送互相独立——可以只接收而不发送，也可以只发送而不接收。如果 APRS 已在 `Integrations` 菜单中启用，但当前日志簿没有 APRS 发送配置，CQOps 会以仅接收模式运行：不发送任何内容，台站仍会为 F3 屏幕和仪表板地图缓存，状态栏显示 **APRS-RX**。
 
 ### 太阳活动数据
 
@@ -1164,6 +1179,7 @@ CQOps Live 通过 Server-Sent Events（SSE）更新，无需刷新页面。
 |---|---|
 | F1 | QSO 表单和 `Recent QSOs` |
 | F2 | `Partner view` |
+| F3 | APRS 附近台站 |
 | F4 | DX Cluster |
 | F5 | PSK Reporter |
 | F6 | `REF Lookup` |

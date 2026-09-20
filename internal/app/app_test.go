@@ -191,6 +191,94 @@ func TestMaybeRestartAPRS_StopsExistingClient(t *testing.T) {
 	}
 }
 
+func TestMaybeRestartAPRS_ReceiveOnlyStartsClient(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // isolate cache dir
+	cfg := config.DefaultConfig()
+	cfg.Integrations.APRS.Enabled = true
+	cfg.Integrations.APRS.Service = "kiss_server"
+	a := &App{
+		Config:     cfg,
+		Logbook:    &config.Logbook{}, // no APRS config — receive-only
+		InetOnline: true,
+	}
+	a.MaybeRestartAPRS()
+	if a.APRSClient == nil {
+		t.Fatal("APRSClient should start in receive-only mode")
+	}
+	if a.beaconStopCh != nil {
+		t.Error("beacon goroutine must not start in receive-only mode")
+	}
+	a.stopAPRS()
+	time.Sleep(50 * time.Millisecond)
+	if a.APRSClient != nil {
+		t.Error("APRSClient should be nil after stopAPRS")
+	}
+}
+
+func TestMaybeRestartAPRS_ReceiveOnlyNoCallsign(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // isolate cache dir
+	cfg := config.DefaultConfig()
+	cfg.Integrations.APRS.Enabled = true
+	// Default service is aprs_is — login requires a callsign.
+	a := &App{
+		Config:     cfg,
+		Logbook:    &config.Logbook{}, // no station callsign
+		InetOnline: true,
+	}
+	a.MaybeRestartAPRS()
+	if a.APRSClient != nil {
+		t.Error("APRSClient should not start without a login callsign")
+	}
+	if a.APRSCache != nil {
+		t.Error("APRSCache should not be opened without a login callsign")
+	}
+}
+
+func TestMaybeRestartAPRS_ReceiveOnlyWithStationCall(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // isolate cache dir
+	cfg := config.DefaultConfig()
+	cfg.Integrations.APRS.Enabled = true
+	cfg.Integrations.APRS.Server = "127.0.0.1:1" // loopback only — never real APRS-IS
+	a := &App{
+		Config:     cfg,
+		Logbook:    &config.Logbook{Station: config.Station{Callsign: "SP9ABC", Grid: "JO90"}},
+		InetOnline: true,
+	}
+	a.MaybeRestartAPRS()
+	if a.APRSClient == nil {
+		t.Fatal("APRSClient should start in receive-only mode with station callsign")
+	}
+	if a.beaconStopCh != nil {
+		t.Error("beacon goroutine must not start in receive-only mode")
+	}
+	a.stopAPRS()
+	time.Sleep(50 * time.Millisecond)
+}
+
+func TestMaybeRestartAPRS_FullModeStartsBeacon(t *testing.T) {
+	t.Setenv("HOME", t.TempDir()) // isolate cache dir
+	cfg := config.DefaultConfig()
+	cfg.Integrations.APRS.Enabled = true
+	cfg.Integrations.APRS.Service = "kiss_server"
+	a := &App{
+		Config: cfg,
+		Logbook: &config.Logbook{APRS: &config.APRSConfig{
+			Enabled:      true,
+			SendLocation: true,
+		}},
+		InetOnline: true,
+	}
+	a.MaybeRestartAPRS()
+	if a.APRSClient == nil {
+		t.Fatal("APRSClient should start in full mode")
+	}
+	if a.beaconStopCh == nil {
+		t.Error("beacon goroutine should start in full mode")
+	}
+	a.stopAPRS()
+	time.Sleep(50 * time.Millisecond)
+}
+
 func TestEffectiveGrid_NoGPS(t *testing.T) {
 	cfg := config.DefaultConfig()
 	a := &App{

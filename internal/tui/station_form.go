@@ -7,6 +7,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/szporwolik/cqops/internal/aprs"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/qso"
 )
@@ -40,7 +41,6 @@ type StationForm struct {
 	aprsCbFocus      bool // true when APRS checkbox has focus
 	aprsBtnFocus     int  // 0=none, 1=Test
 	AprsServer       textinput.Model
-	AprsPasscode     textinput.Model
 	AprsRadiusKm     textinput.Model
 	AprsSendLoc      bool
 	aprsSendLocFocus bool
@@ -105,8 +105,6 @@ func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder strin
 
 	// APRS defaults.
 	asrv := mkTI(60, 28, "euro.aprs2.net:14580")
-	apc := mkTI(20, 28, "APRS passcode")
-	apc.EchoMode = textinput.EchoPassword
 	arad := mkTI(5, 28, "50")
 	acall := mkTI(12, 28, "N0CALL-10")
 	aint := mkTI(3, 28, "15")
@@ -131,12 +129,12 @@ func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder strin
 		WlKey:           wk,
 		WlStationID:     ws,
 		AprsServer:      asrv,
-		AprsPasscode:    apc,
 		AprsRadiusKm:    arad,
 		AprsCallsign:    acall,
 		AprsIntervalMin: aint,
 		AprsSymbol:      asym,
 		AprsComment:     acmt,
+		AprsSendLoc:     true, // beaconing on by default when APRS is enabled
 		opIdx:           -1,
 	}
 }
@@ -239,8 +237,6 @@ func (f *StationForm) Update(msg tea.KeyPressMsg) {
 	case f.AprsCallsign.Focused():
 		f.AprsCallsign, _ = f.AprsCallsign.Update(msg)
 		f.AprsCallsign.SetValue(strings.ToUpper(f.AprsCallsign.Value()))
-	case f.AprsPasscode.Focused():
-		f.AprsPasscode, _ = f.AprsPasscode.Update(msg)
 	case f.AprsRadiusKm.Focused():
 		f.AprsRadiusKm, _ = f.AprsRadiusKm.Update(msg)
 	case f.AprsIntervalMin.Focused():
@@ -341,9 +337,6 @@ func (f *StationForm) NextInput() {
 		}
 	case f.AprsCallsign.Focused():
 		f.AprsCallsign.Blur()
-		f.AprsPasscode.Focus()
-	case f.AprsPasscode.Focused():
-		f.AprsPasscode.Blur()
 		f.aprsSendLocFocus = true
 	case f.aprsSendLocFocus:
 		f.aprsSendLocFocus = false
@@ -404,9 +397,6 @@ func (f *StationForm) PrevInput() {
 		f.aprsSendLocFocus = true
 	case f.aprsSendLocFocus:
 		f.aprsSendLocFocus = false
-		f.AprsPasscode.Focus()
-	case f.AprsPasscode.Focused():
-		f.AprsPasscode.Blur()
 		f.AprsCallsign.Focus()
 	case f.AprsCallsign.Focused():
 		f.AprsCallsign.Blur()
@@ -492,11 +482,10 @@ func (f *StationForm) OnLastField() bool {
 func (f *StationForm) BlurAll() {
 	f.WlKey.EchoMode = textinput.EchoPassword // mask secret when leaving
 	f.WlKey.EchoMode = textinput.EchoPassword
-	f.AprsPasscode.EchoMode = textinput.EchoPassword
 	blurTextinputs(&f.Name, &f.Callsign, &f.Operator, &f.Locator, &f.SOTARef, &f.POTARef, &f.WWFFRef,
 		&f.CQZone, &f.ITUZone, &f.DXCC, &f.SIG, &f.SIGInfo,
 		&f.WlURL, &f.WlKey, &f.WlStationID,
-		&f.AprsServer, &f.AprsPasscode, &f.AprsRadiusKm, &f.AprsCallsign, &f.AprsIntervalMin, &f.AprsSymbol, &f.AprsComment)
+		&f.AprsServer, &f.AprsRadiusKm, &f.AprsCallsign, &f.AprsIntervalMin, &f.AprsSymbol, &f.AprsComment)
 	f.wlCbFocus = false
 	f.aprsCbFocus = false
 	f.aprsSendLocFocus = false
@@ -515,16 +504,12 @@ func (f *StationForm) unmaskSecretsOnFocus() {
 	if f.WlKey.Focused() {
 		f.WlKey.EchoMode = textinput.EchoNormal
 	}
-	if f.AprsPasscode.Focused() {
-		f.AprsPasscode.EchoMode = textinput.EchoNormal
-	}
 }
 
 // maskSecretFields sets EchoPassword on all secret fields — call before
 // navigation so moving away from a secret field masks it immediately.
 func (f *StationForm) maskSecretFields() {
 	f.WlKey.EchoMode = textinput.EchoPassword
-	f.AprsPasscode.EchoMode = textinput.EchoPassword
 }
 
 func (f *StationForm) Values() (name, callsign, operator, locator, sotaRef, potaRef, wwffRef string,
@@ -629,7 +614,6 @@ func (f *StationForm) APRSValues() *config.APRSConfig {
 	return &config.APRSConfig{
 		Enabled:      f.AprsEnabled,
 		Callsign:     strings.ToUpper(strings.TrimSpace(f.AprsCallsign.Value())),
-		Passcode:     strings.TrimSpace(f.AprsPasscode.Value()),
 		RadiusKm:     rad,
 		SendLocation: f.AprsSendLoc,
 		IntervalMin:  iv,
@@ -639,30 +623,30 @@ func (f *StationForm) APRSValues() *config.APRSConfig {
 }
 
 // SetAPRSValues populates the form fields from an APRS config.
-func (f *StationForm) SetAPRSValues(aprs *config.APRSConfig) {
-	if aprs != nil {
-		f.AprsEnabled = aprs.Enabled
-		f.AprsCallsign.SetValue(aprs.Callsign)
-		f.AprsPasscode.SetValue(aprs.Passcode)
-		if aprs.RadiusKm > 0 {
-			f.AprsRadiusKm.SetValue(fmt.Sprintf("%d", aprs.RadiusKm))
+func (f *StationForm) SetAPRSValues(cfg *config.APRSConfig) {
+	if cfg != nil {
+		f.AprsEnabled = cfg.Enabled
+		f.AprsCallsign.SetValue(cfg.Callsign)
+		if cfg.RadiusKm > 0 {
+			f.AprsRadiusKm.SetValue(fmt.Sprintf("%d", cfg.RadiusKm))
 		} else {
 			f.AprsRadiusKm.SetValue("50")
 		}
-		f.AprsSendLoc = aprs.SendLocation
-		if aprs.IntervalMin >= 5 {
-			f.AprsIntervalMin.SetValue(fmt.Sprintf("%d", aprs.IntervalMin))
+		f.AprsSendLoc = cfg.SendLocation
+		if cfg.IntervalMin >= 5 {
+			f.AprsIntervalMin.SetValue(fmt.Sprintf("%d", cfg.IntervalMin))
 		} else {
 			f.AprsIntervalMin.SetValue("15")
 		}
-		f.AprsSymbol.SetValue(aprs.Symbol)
-		f.AprsComment.SetValue(aprs.Comment)
+		f.AprsSymbol.SetValue(cfg.Symbol)
+		f.AprsComment.SetValue(cfg.Comment)
 	} else {
 		f.AprsEnabled = false
-		f.AprsCallsign.SetValue("")
-		f.AprsPasscode.SetValue("")
+		// Prefill with the station callsign, stripped of portable prefixes
+		// and SSIDs — the operator usually keeps the base call.
+		f.AprsCallsign.SetValue(aprs.BaseCall(f.Callsign.Value()))
 		f.AprsRadiusKm.SetValue("50")
-		f.AprsSendLoc = false
+		f.AprsSendLoc = true
 		f.AprsIntervalMin.SetValue("15")
 		f.AprsSymbol.SetValue("/-")
 		f.AprsComment.SetValue("")
@@ -874,10 +858,10 @@ func (f *StationForm) View() tea.View {
 			aprsCheckbox = "[x]"
 		}
 		aprsCbPrefix := "  "
-		aprsCbLabel := S.FormLabelWide.Align(lipgloss.Left).Render("APRS:")
+		aprsCbLabel := S.FormLabelWide.Align(lipgloss.Left).Render("APRS TX:")
 		if f.aprsCbFocus {
 			aprsCbPrefix = S.FormPrefixOn.Render("> ")
-			aprsCbLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("APRS:")
+			aprsCbLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("APRS TX:")
 			aprsCheckbox = CursorStyle.Render(aprsCheckbox) + " " + DimStyle.Render("(Space)")
 			aprsCheckbox += " " + DimStyle.Render("Note: APRS must be enabled in the Integrations menu")
 		}
@@ -889,7 +873,6 @@ func (f *StationForm) View() tea.View {
 		if f.AprsEnabled {
 			aprsFields := []fieldDef{
 				{"  Callsign:", &f.AprsCallsign},
-				{"  Passcode:", &f.AprsPasscode},
 			}
 			for _, field := range aprsFields {
 				b.WriteString(f.renderFieldLine(field.label, field.ti, availW))
@@ -1131,8 +1114,6 @@ func (f *StationForm) ScrollFraction() float64 {
 		return 0.87
 	case f.AprsCallsign.Focused():
 		return 0.90
-	case f.AprsPasscode.Focused():
-		return 0.93
 	case f.aprsSendLocFocus:
 		return 0.945
 	case f.AprsIntervalMin.Focused():

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -21,6 +22,7 @@ import (
 	"github.com/gen2brain/beeep"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
+	"github.com/szporwolik/cqops/internal/aprs"
 	"github.com/szporwolik/cqops/internal/callbook"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/qso"
@@ -106,6 +108,7 @@ const (
 	screenDXC
 	screenRef
 	screenBPL
+	screenAPRS
 )
 
 type Model struct {
@@ -156,6 +159,9 @@ type Model struct {
 
 	// BPL — band plan display (F7).
 	bpl bplState
+
+	// APRS — nearby stations pane (F3).
+	aprsPane aprsPaneState
 
 	// HTTP — built-in HTTP server for CQOps Live dashboard.
 	http httpState
@@ -575,7 +581,13 @@ func (m *Model) Init() tea.Cmd {
 				return
 			}
 			m.aprsToastShown = true
-			m.toasts.Warn("APRS: " + err.Error())
+			if errors.Is(err, aprs.ErrAuthFailed) {
+				// The passcode is derived from the callsign — a rejection
+				// points at the callsign, not a stored credential.
+				m.toasts.Warn("APRS: login rejected — check the APRS callsign in the logbook settings")
+			} else {
+				m.toasts.Warn("APRS: " + err.Error())
+			}
 		} else {
 			m.aprsToastShown = false
 			m.toasts.Info("APRS: stopped")
@@ -948,6 +960,8 @@ func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.handleRefUpdate(msg, cmd)
 	case screenBPL:
 		return m.handleBPLUpdate(msg, cmd)
+	case screenAPRS:
+		return m.handleAPRSUpdate(msg, cmd)
 	}
 
 	// Forward paste messages to the focused textinput so clipboard paste works.
@@ -1159,6 +1173,8 @@ func (m *Model) buildBodyForScreen(l Layout) string {
 		body = m.viewRef()
 	case screenBPL:
 		body = m.viewBPL(l)
+	case screenAPRS:
+		body = m.viewAPRS(l)
 	}
 	if body == "" {
 		return ""

@@ -466,11 +466,11 @@ type WavelogConfig struct {
 }
 
 // APRSConfig holds per-logbook APRS beacon settings.
-// Server is configured globally in Integrations → APRS-IS.
+// Server is configured globally in Integrations → APRS-IS. The APRS-IS
+// passcode is computed from the login callsign, so no credential is stored.
 type APRSConfig struct {
 	Enabled      bool   `yaml:"enabled"`
 	Callsign     string `yaml:"callsign"`
-	Passcode     string `yaml:"passcode"`
 	RadiusKm     int    `yaml:"radius_km"`
 	SendLocation bool   `yaml:"send_location"`
 	IntervalMin  int    `yaml:"interval_minutes"`

@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.10.0 — 2026-09-20
+
+> **APRS nearby-stations pane, receive-only mode, and automatic passcodes.** CQOps gains a full APRS neighbourhood screen (F3) with filters, details and an ASCII radar, receive-only operation when the logbook has no APRS config, and the APRS-IS passcode is now computed from the callsign instead of being stored.
+
+### APRS Nearby (F3)
+- **New APRS screen**: F3 opens "APRS Nearby" — a station table (symbol, Yaesu-style type code, callsign, bearing, distance, age) styled like the DX Cluster pane, next to a detail panel showing the selected station's callsign and symbol, grid, course/speed, decoded weather, source and last heard.
+- **Filters**: distance (All, 1, 5, 10, 25, 50, 100 km — the pane opens at the step closest to the configured range), last-heard time, and type (All / operators only, now including alternate-table symbols such as `\k`). Backspace clears all filters.
+- **ASCII radar**: a round radar around your own position with Yaesu-style type markers, stacked-station counts, near-zero stations marked at the center, N/E/S/W labels, and a range caption with your grid and the selected station's bearing and distance.
+- **Own-station filtering**: your own beacon echo is hidden (exact transmitting SSID; an omitted SSID equals -0 per the APRS spec). Receive-only mode hides all SSIDs of your own callsign.
+- **Manual beacon**: press `b` to send a position beacon immediately.
+
+### APRS Modes & Config
+- **Receive-only mode**: enabling APRS in Integrations without a logbook APRS config now runs a receive-only client (default 100 km range filter) — stations are cached for the F3 pane and the dashboard map, nothing is ever transmitted. The status bar shows `APRS-RX`.
+- **Automatic passcode**: the APRS-IS passcode is computed from the login callsign (verified against live servers) and removed from config and the station form. The APRS callsign field is prefilled from the station callsign and **Send beacons** defaults to on; the beacon interval minimum is 5 minutes.
+- **Weather decode**: weather-station comments (`_` symbols) are decoded into readable wind, temperature, humidity and pressure, with metric/imperial units.
+- **Clock-skewed WX stations**: future packet timestamps within a day are clamped to the arrival time instead of being rolled back a month, so stations with fast clocks no longer disappear from the list.
+
+### Documentation
+- **Manuals updated**: the APRS sections in all ten manuals (EN, DE, ES, FR, IT, JA, PL, PT, RU, ZH) now document the F3 pane, receive-only mode, filters, radar and automatic passcodes.
+
+### Under the Hood
+- **New tests** for the APRS pane (filters, radar geometry, detail lines, weather), passcode vectors, packet-type classification, symbol names and timestamp parsing. No config or database migration needed from v0.9.10.
+
 ## v0.9.10 — 2026-08-09
 
 > **Configurable rig poll, log hygiene, and UI fixes.** Hamlib/flrig poll interval is now configurable per rig, application logs are quieter and safer, and several menu navigation/viewport refresh regressions are resolved.

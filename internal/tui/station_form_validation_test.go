@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+
+	"github.com/szporwolik/cqops/internal/config"
 )
 
 // =============================================================================
@@ -12,6 +14,23 @@ import (
 
 func newStationFormForTest() *StationForm {
 	return NewStationForm("CALLSIGN", "OP", "GRID")
+}
+
+// TestStationForm_APRSCallsignPrefill verifies that a logbook without APRS
+// config gets the station callsign (base form) prefilled in the APRS field.
+func TestStationForm_APRSCallsignPrefill(t *testing.T) {
+	f := newStationFormForTest()
+	f.SetValues("", "SP9MOA/P", "", "JO90", "", "", "", 1, 0, 0, 0, "", "", "EU")
+	f.SetAPRSValues(nil)
+	if got := f.AprsCallsign.Value(); got != "SP9MOA" {
+		t.Errorf("prefilled AprsCallsign = %q, want SP9MOA", got)
+	}
+
+	// An existing config keeps its configured callsign.
+	f.SetAPRSValues(&config.APRSConfig{Enabled: true, Callsign: "SP9MOA-7"})
+	if got := f.AprsCallsign.Value(); got != "SP9MOA-7" {
+		t.Errorf("configured AprsCallsign = %q, want SP9MOA-7", got)
+	}
 }
 
 // =============================================================================
