@@ -1101,7 +1101,9 @@ func (m *Model) aprsDetailRows(sel *aprsStation, detailW int) []string {
 		rows = append(rows, row("Altitude", fmt.Sprintf("%d m", s.AltitudeM)))
 	}
 	if s.Comment != "" {
-		comment := s.Comment
+		// Emoji and decorative symbols do not render on terminal fonts —
+		// sanitize the raw comment before display.
+		comment := aprs.CleanComment(s.Comment)
 		// Weather stations carry the APRS weather block at the start of
 		// the comment — decode it into readable values.
 		if len(s.Symbol) == 2 && s.Symbol[1] == '_' {

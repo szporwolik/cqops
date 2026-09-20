@@ -262,6 +262,29 @@ func TestAPRSPaneView_States(t *testing.T) {
 	}
 }
 
+// Emoji and decorative symbols in APRS comments must not reach the
+// terminal — they are stripped before display.
+func TestAPRSDetailRows_CommentEmojiStripped(t *testing.T) {
+	m := newTestModel()
+	sel := &aprsStation{
+		rec: aprs.StationRecord{
+			Callsign: "SP9ABC",
+			Comment:  "73 \u2600\ufe0f GL! \U0001F600",
+		},
+		grid: "JO90AA",
+	}
+	rows := m.aprsDetailRows(sel, 46)
+	joined := strings.Join(rows, "\n")
+	for _, bad := range []string{"\u2600", "\U0001F600"} {
+		if strings.Contains(joined, bad) {
+			t.Errorf("emoji leaked into the comment row: %v", rows)
+		}
+	}
+	if !strings.Contains(joined, "73 GL!") {
+		t.Errorf("sanitized comment text missing: %v", rows)
+	}
+}
+
 func TestAPRSDetailRows_WeatherComment(t *testing.T) {
 	m := newTestModel() // metric units
 	sel := &aprsStation{
