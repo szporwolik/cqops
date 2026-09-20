@@ -31,12 +31,13 @@ type aprsPaneState struct {
 	sel      int           // selected row (mirrors the table cursor)
 
 	// Filters — same pattern as the DXC pane (idx + value + choices).
-	distIdx    int    // index into aprsDistFilterChoices
-	distFilter int    // km, 0 = all
-	timeIdx    int    // index into aprsTimeFilterChoices
-	timeFilter int    // minutes, 0 = all
-	typeIdx    int    // index into aprsTypeFilterChoices
-	typeFilter string // "" = all, "operators" = humans only
+	distIdx     int    // index into aprsDistFilterChoices
+	distFilter  int    // km, 0 = all
+	timeIdx     int    // index into aprsTimeFilterChoices
+	timeFilter  int    // minutes, 0 = all
+	typeIdx     int    // index into aprsTypeFilterChoices
+	typeFilter  string // "" = all, "operators" = humans only
+	filtersInit bool   // first entry aligned dist filter to the APRS radius
 
 	// Table — same bubbles/table component as the DXC pane.
 	table      table.Model
@@ -257,23 +258,26 @@ func aprsClosestDistStep(radius int) int {
 	return best
 }
 
-// aprsEnterPane refreshes the station list and aligns the distance filter
-// with the configured APRS radius, so opening the pane starts at the range
-// the operator actually receives. The alignment runs on entry only — manual
-// filter changes are kept while the pane stays open.
+// aprsEnterPane refreshes the station list. On the first entry the distance
+// filter is aligned with the configured APRS radius so the pane starts at
+// the range the operator actually receives. Manual filter changes are kept
+// across leaving and re-entering the pane, same as the DX Cluster pane.
 func (m *Model) aprsEnterPane() {
 	m.aprsPaneRefresh()
-	if radius := m.aprsRadiusKm(); radius > 0 {
-		st := &m.aprsPane
-		st.distFilter = aprsClosestDistStep(radius)
-		for i, step := range aprsDistFilterChoices {
-			if step == st.distFilter {
-				st.distIdx = i
-				break
+	st := &m.aprsPane
+	if !st.filtersInit {
+		st.filtersInit = true
+		if radius := m.aprsRadiusKm(); radius > 0 {
+			st.distFilter = aprsClosestDistStep(radius)
+			for i, step := range aprsDistFilterChoices {
+				if step == st.distFilter {
+					st.distIdx = i
+					break
+				}
 			}
 		}
-		m.aprsApplyFilters(selectedCall(m))
 	}
+	m.aprsApplyFilters(selectedCall(m))
 }
 
 // aprsPaneSel returns the selected station or nil.

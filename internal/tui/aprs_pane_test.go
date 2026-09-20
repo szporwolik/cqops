@@ -765,6 +765,38 @@ func TestAPRSPaneEnter_NoRadiusKeepsAll(t *testing.T) {
 	}
 }
 
+// Manual filter changes must survive leaving and re-entering the pane —
+// only the first entry aligns the distance filter with the APRS radius.
+func TestAPRSPaneEnter_KeepsManualFilters(t *testing.T) {
+	m := newTestModel()
+	m.App.APRSCache = newTestAPRSCache(t, []aprs.StationRecord{testAPRSRecord("NEAR", 0.005, 0)})
+	m.App.Logbook.APRS = &config.APRSConfig{Enabled: true, RadiusKm: 50}
+
+	m.aprsEnterPane()
+	if m.aprsPane.distFilter != 50 {
+		t.Fatalf("initial dist filter = %d, want 50", m.aprsPane.distFilter)
+	}
+
+	// Manual change while the pane is open.
+	_, _ = m.handleAPRSUpdate(tea.KeyPressMsg{Code: 'd', Text: "d"}, nil)
+	if m.aprsPane.distFilter == 50 {
+		t.Fatalf("'d' should move the filter away from 50")
+	}
+	want := m.aprsPane.distFilter
+
+	// Re-entering the pane keeps the manual setting.
+	m.aprsEnterPane()
+	if m.aprsPane.distFilter != want {
+		t.Errorf("manual filter not preserved: got %d, want %d", m.aprsPane.distFilter, want)
+	}
+	// Time and type filters are untouched by re-entry as well.
+	m.aprsPane.timeFilter = 15
+	m.aprsEnterPane()
+	if m.aprsPane.timeFilter != 15 {
+		t.Errorf("time filter not preserved across re-entry: %d", m.aprsPane.timeFilter)
+	}
+}
+
 func TestAPRSIsOperatorSymbol(t *testing.T) {
 	for _, sym := range []string{"/>", "/-", "/R", "/k", "/v", "/j", "/<", "/b", "/[", "/s", "/Y", "/^", "/'", "/X", "/O", "/p",
 		"\\k", "\\>", "\\-", "\\p", "\\v"} {
