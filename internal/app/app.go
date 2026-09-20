@@ -348,9 +348,7 @@ func (a *App) startAPRS(aprsGlobal config.APRSGlobalConfig, aprsCfg *config.APRS
 
 		kiss := aprs.NewKISSClient(port, baud, dataBits, par, stop, aprsGlobal.DTR, aprsGlobal.RTS)
 		kiss.OnStatus = func(connected bool, err error) {
-			if a.aprsStatusCB != nil {
-				a.aprsStatusCB(connected, err)
-			}
+			a.reportAPRSStatus(kiss, connected, err)
 		}
 		kiss.OnPacket = func(raw string) {
 			sr, ok := aprs.ParsePositionPacket(raw)
@@ -406,9 +404,7 @@ func (a *App) startAPRS(aprsGlobal config.APRSGlobalConfig, aprsCfg *config.APRS
 
 		kc := aprs.NewKISSServerClient(addr)
 		kc.OnStatus = func(connected bool, err error) {
-			if a.aprsStatusCB != nil {
-				a.aprsStatusCB(connected, err)
-			}
+			a.reportAPRSStatus(kc, connected, err)
 		}
 		kc.OnPacket = func(raw string) {
 			sr, ok := aprs.ParsePositionPacket(raw)
@@ -486,9 +482,7 @@ func (a *App) startAPRS(aprsGlobal config.APRSGlobalConfig, aprsCfg *config.APRS
 		if connected {
 			applog.Info("APRS: connected", "server", server, "callsign", callsign)
 		}
-		if a.aprsStatusCB != nil {
-			a.aprsStatusCB(connected, err)
-		}
+		a.reportAPRSStatus(tcp, connected, err)
 	}
 	tcp.OnPacket = func(raw string) {
 		sr, ok := aprs.ParsePositionPacket(raw)
@@ -525,6 +519,19 @@ func (a *App) startAPRS(aprsGlobal config.APRSGlobalConfig, aprsCfg *config.APRS
 // Called from the TUI model to enable toast notifications.
 func (a *App) SetAPRSStatusCallback(cb func(connected bool, err error)) {
 	a.aprsStatusCB = cb
+}
+
+// reportAPRSStatus forwards a client status change only when it comes from
+// the currently active client. Replaced clients fire a stale disconnect
+// event after Stop() — forwarding it would show a spurious "connection
+// lost" toast on every restart (e.g. rapid logbook switching).
+func (a *App) reportAPRSStatus(client aprs.Client, connected bool, err error) {
+	if a.APRSClient != client {
+		return
+	}
+	if a.aprsStatusCB != nil {
+		a.aprsStatusCB(connected, err)
+	}
 }
 
 // SetAPRSBeaconCallback registers a callback invoked after each successful

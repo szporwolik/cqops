@@ -115,7 +115,12 @@ func TestParsePositionPacket_WeatherClockSkew(t *testing.T) {
 	if sr.LastHeard.IsZero() {
 		t.Error("LastHeard should fall back to arrival time")
 	}
-	if d := time.Since(sr.LastHeard); d < 0 || d > 2*time.Minute {
-		t.Errorf("LastHeard = %v, want within 2 minutes of now", sr.LastHeard)
+	// The packet clock is ~2h ahead of arrival: depending on the actual time
+	// of day, the embedded timestamp is either clamped to arrival (future
+	// within 20 days) or kept as-is (already past). It must never be rolled
+	// back to a previous month, so LastHeard must stay within ~31 days of
+	// now and never be in the future.
+	if d := time.Since(sr.LastHeard); d < -2*time.Minute || d > 31*24*time.Hour {
+		t.Errorf("LastHeard = %v, want within the last 31 days", sr.LastHeard)
 	}
 }
