@@ -1,24 +1,40 @@
 package wavelog
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 )
 
-// apiError is a generic Wavelog API error response.
-type apiError struct {
-	Status string `json:"status"`
-	Reason string `json:"reason"`
-}
-
-// extractAPIReason tries to pull the "reason" field from a JSON error body.
-func extractAPIReason(bodyStr string) string {
-	var ae apiError
-	if err := json.Unmarshal([]byte(bodyStr), &ae); err == nil && ae.Reason != "" {
-		return ae.Reason
+// friendlyAPIError translates API v2 error codes into user-facing messages.
+func friendlyAPIError(e *APIError) error {
+	switch e.Code {
+	case "unauthorized", "invalid_token":
+		return fmt.Errorf("invalid API token — Wavelog API v2 token (wl2_) required since CQOps 0.11.0")
+	case "token_expired":
+		return fmt.Errorf("API token expired — create a new token in Wavelog")
+	case "insufficient_scope":
+		if s := e.RequiredScope(); s != "" {
+			return fmt.Errorf("API token lacks scope %s — grant it in Wavelog", s)
+		}
+		return fmt.Errorf("API token lacks a required scope — check token permissions in Wavelog")
+	case "rate_limited":
+		if n := e.RetryAfterSeconds(); n > 0 {
+			return fmt.Errorf("too many requests — retry in %ds", n)
+		}
+		return fmt.Errorf("too many requests — slow down")
+	case "not_found":
+		return fmt.Errorf("not found on the Wavelog server")
+	case "conflict":
+		return fmt.Errorf("duplicate — the QSO already exists in Wavelog")
+	case "validation_error", "invalid_json":
+		if e.Message != "" {
+			return fmt.Errorf("%s", e.Message)
+		}
+		return fmt.Errorf("request rejected by Wavelog")
+	case "forbidden", "club_access_revoked", "insufficient_club_permission":
+		return fmt.Errorf("access denied — check the token permissions")
 	}
-	return ""
+	return e
 }
 
 // FriendlyError translates technical Go/HTTP errors into messages suitable
@@ -27,6 +43,9 @@ func extractAPIReason(bodyStr string) string {
 func FriendlyError(err error) error {
 	if err == nil {
 		return nil
+	}
+	if apiErr, ok := err.(*APIError); ok {
+		return friendlyAPIError(apiErr)
 	}
 	msg := err.Error()
 
@@ -97,65 +116,4 @@ func FriendlyError(err error) error {
 	}
 
 	return err
-}
-
-// uploadErrorDetail extracts a user-friendly message from a Wavelog upload
-// error response. It parses the structured JSON when available and strips
-// HTML tags from the server messages.
-func uploadErrorDetail(result *QSOUploadResult, bodyStr string) string {
-	// Prefer structured messages from the parsed response.
-	if result != nil && len(result.Messages) > 0 {
-		var parts []string
-		for _, m := range result.Messages {
-			m = strings.TrimSpace(m)
-			if m == "" {
-				continue
-			}
-			// Strip HTML tags.
-			m = stripHTML(m)
-			m = strings.TrimSpace(m)
-			if m == "" {
-				continue
-			}
-			parts = append(parts, m)
-		}
-		if len(parts) > 0 {
-			msg := strings.Join(parts, "; ")
-			// Translate known Wavelog error patterns.
-			if strings.Contains(msg, "Differing station callsign") {
-				return "Station callsign mismatch — check your station profile settings"
-			}
-			return msg
-		}
-	}
-
-	// Fallback: try to extract reason from the raw body.
-	if reason := extractAPIReason(bodyStr); reason != "" {
-		return reason
-	}
-
-	// Last resort: return the raw body (truncated).
-	if len(bodyStr) > 200 {
-		bodyStr = bodyStr[:200] + "…"
-	}
-	return bodyStr
-}
-
-// stripHTML removes simple HTML tags from a string.
-func stripHTML(s string) string {
-	var b strings.Builder
-	inTag := false
-	for _, r := range s {
-		switch r {
-		case '<':
-			inTag = true
-		case '>':
-			inTag = false
-		default:
-			if !inTag {
-				b.WriteRune(r)
-			}
-		}
-	}
-	return b.String()
 }

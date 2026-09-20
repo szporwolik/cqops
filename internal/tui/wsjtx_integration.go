@@ -138,7 +138,6 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 		return nil, false // skip permanently
 	}
 	qs.Source = "wsjtx"
-	qs.WavelogUploaded = "no"
 	qs.ContestID = m.App.Logbook.ActiveContest
 	// Resolve TX power BEFORE ApplyStationDefaults — the default-fill logic
 	// only fills EMPTY fields, so WSJT-X's reported power would take
@@ -320,13 +319,13 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 			m.pushDashboardToday(ds)
 		}
 
-		// Step 3: upload the enriched QSO's ADIF to Wavelog.
+		// Step 3: upload the enriched QSO to Wavelog (single JSON create
+		// stores the remote id locally).
 		if !wlenabled || !m.inetOnline {
 			return wsjtxEnrichDoneMsg{}
 		}
-		adifStr := qs.ToADIF()
-		ok, isDup, uploadErr := postQSO(wl.URL, wl.APIKey, wl.StationProfileID, adifStr, qsoID, call, m.App.DB)
-		return wlUploadResultMsg{qID: qsoID, call: call, ok: ok, isDup: isDup, err: uploadErr}
+		ok, isDup, remoteID, uploadErr := postQSOSingle(wl.URL, wl.APIKey, wl.StationProfileID, qs, m.App.DB)
+		return wlUploadResultMsg{qID: qsoID, call: call, ok: ok, isDup: isDup, remoteID: remoteID, err: uploadErr}
 	}
 }
 

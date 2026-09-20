@@ -52,8 +52,8 @@ var migrations = []string{
 		iota TEXT DEFAULT '',
 		sig TEXT DEFAULT '',
 		sig_info TEXT DEFAULT '',
-		wavelog_uploaded TEXT DEFAULT '',
 
+		wavelog_id INTEGER DEFAULT 0,
 		station_callsign TEXT,
 		operator TEXT,
 		my_gridsquare TEXT,
@@ -91,7 +91,7 @@ var migrations = []string{
 	`CREATE INDEX IF NOT EXISTS idx_qsos_mode ON qsos(mode)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_gridsquare ON qsos(gridsquare)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_source ON qsos(source)`,
-	`CREATE INDEX IF NOT EXISTS idx_qsos_wavelog_uploaded ON qsos(wavelog_uploaded)`,
+	`CREATE INDEX IF NOT EXISTS idx_qsos_wavelog_id ON qsos(wavelog_id)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_contest_id ON qsos(contest_id)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_date_time ON qsos(qso_date DESC, time_on DESC)`,
 
@@ -189,6 +189,15 @@ func Migrate(db *sql.DB) error {
 		if err := migrateAddColumn(db, "qsos", "dxcc", "TEXT DEFAULT ''"); err != nil {
 			return fmt.Errorf("add column dxcc: %w", err)
 		}
+		if err := migrateAddColumn(db, "qsos", "wavelog_id", "INTEGER DEFAULT 0"); err != nil {
+			return fmt.Errorf("add column wavelog_id: %w", err)
+		}
+		if err := ensureColumnIndexes(db); err != nil {
+			return err
+		}
+		if err := migrateDropWavelogFlag(db); err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -200,14 +209,29 @@ func Migrate(db *sql.DB) error {
 			if strings.Contains(m, "DROP INDEX") {
 				continue
 			}
+			// An index on a column this old database does not have yet.
+			// The column is added below and ensureColumnIndexes creates
+			// the index afterwards.
+			if strings.Contains(m, "CREATE INDEX") &&
+				(strings.Contains(err.Error(), "no such column") || strings.Contains(err.Error(), "no such table")) {
+				continue
+			}
 			return fmt.Errorf("migration %d: %w", i, err)
 		}
 	}
-
 	// Add columns that may be missing from upgraded databases.
 	// Safe after CREATE TABLE — the table exists by now.
 	if err := migrateAddColumn(db, "qsos", "dxcc", "TEXT DEFAULT ''"); err != nil {
 		return fmt.Errorf("add column dxcc: %w", err)
+	}
+	if err := migrateAddColumn(db, "qsos", "wavelog_id", "INTEGER DEFAULT 0"); err != nil {
+		return fmt.Errorf("add column wavelog_id: %w", err)
+	}
+	if err := ensureColumnIndexes(db); err != nil {
+		return err
+	}
+	if err := migrateDropWavelogFlag(db); err != nil {
+		return err
 	}
 
 	// One-time backfill: if any QSO row still has an empty base_call
@@ -255,8 +279,39 @@ func Migrate(db *sql.DB) error {
 	return nil
 }
 
-// migrateAddColumn adds a column to a table if it doesn't already exist.
-// Uses ALTER TABLE ADD COLUMN with error suppression for the "duplicate
+// ensureColumnIndexes creates the indexes that depend on columns possibly
+// added by migrateAddColumn. Idempotent via IF NOT EXISTS.
+func ensureColumnIndexes(db *sql.DB) error {
+	for _, idx := range []string{
+		`CREATE INDEX IF NOT EXISTS idx_qsos_dxcc ON qsos(dxcc)`,
+		`CREATE INDEX IF NOT EXISTS idx_qsos_wavelog_id ON qsos(wavelog_id)`,
+	} {
+		if _, err := db.Exec(idx); err != nil {
+			return fmt.Errorf("create index: %w", err)
+		}
+	}
+	return nil
+}
+
+// migrateDropWavelogFlag removes the legacy wavelog_uploaded status column.
+// Since v0.11.0 the remote id (wavelog_id > 0) is the single source of truth
+// for "uploaded". Idempotent: a missing column is a no-op.
+func migrateDropWavelogFlag(db *sql.DB) error {
+	// The released v0.11.0 schema indexed wavelog_uploaded — the index must
+	// go first, otherwise SQLite refuses to drop the column.
+	if _, err := db.Exec(`DROP INDEX IF EXISTS idx_qsos_wavelog_uploaded`); err != nil {
+		return fmt.Errorf("drop index wavelog_uploaded: %w", err)
+	}
+	if _, err := db.Exec(`ALTER TABLE qsos DROP COLUMN wavelog_uploaded`); err != nil {
+		if strings.Contains(err.Error(), "no such column") {
+			return nil // already dropped
+		}
+		return fmt.Errorf("drop column wavelog_uploaded: %w", err)
+	}
+	return nil
+}
+
+// migrateAddColumn adds a column to a table if it doesn't already exist. Uses ALTER TABLE ADD COLUMN with error suppression for the "duplicate
 // column name" case — SQLite's ALTER TABLE is idempotent this way.
 func migrateAddColumn(db *sql.DB, table, column, colType string) error {
 	_, err := db.Exec(fmt.Sprintf(`ALTER TABLE %s ADD COLUMN %s %s`, table, column, colType))

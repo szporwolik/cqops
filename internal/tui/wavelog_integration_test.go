@@ -3,9 +3,11 @@ package tui
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -26,50 +28,138 @@ func newWavelogTestServer(t *testing.T, handler http.HandlerFunc) *httptest.Serv
 	return httptest.NewServer(handler)
 }
 
-// wavelogVersionHandler returns a handler for the /api/version endpoint.
+// wavelogVersionHandler returns a handler for GET /api/v2/status.
 func wavelogVersionHandler(status string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/version" {
+		if r.URL.Path != "/api/v2/status" {
 			http.NotFound(w, r)
 			return
 		}
-		resp := map[string]string{"status": status, "version": "1.0-test"}
+		resp := map[string]any{
+			"data": map[string]string{"name": "Wavelog API", "status": status},
+			"meta": map[string]string{"resource": "status", "method": "GET"},
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(resp)
 	}
 }
 
-// wavelogQSOHandler returns a handler for /index.php/api/qso.
+// wavelogTokenHandler returns a handler for GET /api/v2/token.
+func wavelogTokenHandler(scopes []string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/token" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Header.Get("Authorization") == "" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusUnauthorized)
+			json.NewEncoder(w).Encode(map[string]any{
+				"error": map[string]string{"code": "unauthorized", "message": "Missing API token"},
+			})
+			return
+		}
+		if scopes == nil {
+			scopes = []string{"qso:read", "qso:write", "station:read", "lookup:read"}
+		}
+		resp := map[string]any{
+			"data": map[string]any{
+				"id": 1, "name": "Test", "owner": "SP9MOA", "user_id": 1,
+				"scopes": scopes, "expires_at": "2099-01-01 00:00:00",
+			},
+			"meta": map[string]string{"resource": "token", "method": "GET"},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}
+}
+
+// wavelogStationHandler returns a handler for GET /api/v2/station.
+func wavelogStationHandler(stations []map[string]any) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/v2/station" {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": stations,
+				"meta": map[string]string{"resource": "station", "method": "GET"},
+			})
+			return
+		}
+		if len(r.URL.Path) > len("/api/v2/station/") && r.URL.Path[:len("/api/v2/station/")] == "/api/v2/station/" {
+			id := r.URL.Path[len("/api/v2/station/"):]
+			for _, s := range stations {
+				if fmt.Sprint(s["id"]) == id {
+					json.NewEncoder(w).Encode(map[string]any{
+						"data": s,
+						"meta": map[string]string{"resource": "station", "method": "GET"},
+					})
+					return
+				}
+			}
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]any{
+				"error": map[string]string{"code": "not_found", "message": "Station not found"},
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}
+}
+
+// wavelogQSOHandler returns a handler for POST /api/v2/qso (ADIF import).
+// status "ok" imports the QSO; status "abort" reports it as duplicate.
 func wavelogQSOHandler(status string, messages []string, adifErrors int) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
+		if r.URL.Path == "/api/v2/qso" && r.Method == http.MethodGet {
+			// Remote-id backfill list for the standard SP9MOA test QSO.
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{"id": 42, "call": "SP9MOA", "band": "20m", "mode": "SSB", "qso_date": "2026-06-14 12:00:00"},
+				},
+			})
+			return
+		}
+		if r.URL.Path != "/api/v2/qso" || r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		resp := map[string]interface{}{
-			"status":      status,
-			"adif_count":  1,
-			"adif_errors": adifErrors,
-			"messages":    messages,
+		data := map[string]any{"parsed": 1, "imported": 1, "skipped": 0, "messages": messages}
+		if status != "ok" {
+			data["imported"] = 0
+			data["skipped"] = 1
+		}
+		resp := map[string]any{
+			"data": data,
+			"meta": map[string]string{"resource": "qso", "method": "POST"},
 		}
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(resp)
 	}
 }
 
-// wavelogPrivateLookupHandler returns a handler for /api/private_lookup.
-func wavelogPrivateLookupHandler(data map[string]interface{}) http.HandlerFunc {
+// wavelogPrivateLookupHandler returns a handler for GET /api/v2/lookup.
+func wavelogPrivateLookupHandler(data map[string]any) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
+		if r.URL.Path != "/api/v2/lookup" || r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		if data == nil {
-			http.Error(w, "not found", 404)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]any{
+				"error": map[string]string{"code": "not_found", "message": "not found"},
+			})
 			return
 		}
+		resp := map[string]any{
+			"data": data,
+			"meta": map[string]string{"resource": "lookup", "method": "GET", "detail": "full"},
+		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(data)
+		json.NewEncoder(w).Encode(resp)
 	}
 }
 
@@ -201,13 +291,23 @@ func TestWavelogUploadMockServerError(t *testing.T) {
 }
 
 func TestWavelogStatusCheckSuccess(t *testing.T) {
-	srv := newWavelogTestServer(t, wavelogVersionHandler("ok"))
+	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v2/status" {
+			wavelogVersionHandler("ok")(w, r)
+			return
+		}
+		if r.URL.Path == "/api/v2/token" {
+			wavelogTokenHandler(nil)(w, r)
+			return
+		}
+		http.NotFound(w, r)
+	})
 	defer srv.Close()
 
 	m := newLifecycleTestModel(t)
 	m.App.Logbook.Wavelog.Enabled = true
 	m.App.Logbook.Wavelog.URL = srv.URL
-	m.App.Logbook.Wavelog.APIKey = "test-key"
+	m.App.Logbook.Wavelog.APIKey = "wl2_test-key"
 	m.App.Logbook.Wavelog.StationProfileID = "1"
 	m.lookup.wlOnline = false
 
@@ -227,15 +327,20 @@ func TestWavelogStatusCheckSuccess(t *testing.T) {
 }
 
 func TestWavelogStatusCheckFailure(t *testing.T) {
+	// A legacy v1 key must be rejected with the actionable v2-required message.
 	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]any{
+			"error": map[string]string{"code": "invalid_token", "message": "Invalid or revoked API token"},
+		})
 	})
 	defer srv.Close()
 
 	m := newLifecycleTestModel(t)
 	m.App.Logbook.Wavelog.Enabled = true
 	m.App.Logbook.Wavelog.URL = srv.URL
-	m.App.Logbook.Wavelog.APIKey = "test-key"
+	m.App.Logbook.Wavelog.APIKey = "wl2_test-key"
 	m.lookup.wlOnline = true
 
 	cmd := m.checkWavelogCmd()
@@ -254,14 +359,14 @@ func TestWavelogStatusCheckFailure(t *testing.T) {
 }
 
 func TestWavelogPrivateLookupSuccess(t *testing.T) {
-	data := map[string]interface{}{
+	data := map[string]any{
 		"callsign":              "SP9MOA",
 		"name":                  "John",
 		"call_worked":           true,
 		"call_worked_band":      true,
 		"call_worked_band_mode": false,
 		"dxcc_confirmed":        true,
-		"lotw_member":           true,
+		"lotw_member":           "14",
 	}
 	srv := newWavelogTestServer(t, wavelogPrivateLookupHandler(data))
 	defer srv.Close()
@@ -339,7 +444,7 @@ func TestWavelogMaybeCheckWavelogDisabled(t *testing.T) {
 	}
 }
 
-func TestWavelogUploadADIFNoStationProfile(t *testing.T) {
+func TestWavelogUploadNoStationProfile(t *testing.T) {
 	m := newLifecycleTestModel(t)
 	m.App.Logbook.Wavelog.Enabled = true
 	m.App.Logbook.Wavelog.URL = "http://example.com"
@@ -347,9 +452,13 @@ func TestWavelogUploadADIFNoStationProfile(t *testing.T) {
 	m.App.Logbook.Wavelog.StationProfileID = "" // no station
 	m.inetOnline = true
 
-	cmd := m.uploadADIFToWavelog("<CALL:6>SP9MOA<EOR>", 1, "SP9MOA")
+	qs := qso.NewQSO()
+	qs.Call = "SP9MOA"
+	qs.ID = 1
+
+	cmd := m.uploadQSOToWavelog(qs)
 	if cmd != nil {
-		t.Error("uploadADIFToWavelog should return nil when station profile is empty")
+		t.Error("uploadQSOToWavelog should return nil when station profile is empty")
 	}
 }
 
@@ -358,23 +467,24 @@ func TestWavelogUploadADIFNoStationProfile(t *testing.T) {
 // =============================================================================
 
 func TestWavelogStatusCheckWithStations(t *testing.T) {
-	// Mock version handler first, but we need to also mock station_info
-	// The checkWavelogCmd calls TestConnection first, then FetchStations
+	// Mock v2 status + token, then the station list.
+	// checkWavelogCmd calls TestConnection first, then FetchStations.
 	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/api/version":
-			json.NewEncoder(w).Encode(map[string]string{"status": "ok", "version": "1.0"})
-		case "/api/station_info/test-key":
-			json.NewEncoder(w).Encode([]map[string]string{
+		case "/api/v2/status":
+			wavelogVersionHandler("ok")(w, r)
+		case "/api/v2/token":
+			wavelogTokenHandler(nil)(w, r)
+		case "/api/v2/station":
+			wavelogStationHandler([]map[string]any{
 				{
-					"station_id":           "1",
-					"station_profile_name": "Home QTH",
-					"station_gridsquare":   "JO90",
-					"station_callsign":     "SP9MOA",
-					"station_active":       "1",
+					"id":         1,
+					"name":       "Home QTH",
+					"gridsquare": "JO90",
+					"callsign":   "SP9MOA",
+					"active":     true,
 				},
-			})
+			})(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -384,7 +494,7 @@ func TestWavelogStatusCheckWithStations(t *testing.T) {
 	m := newLifecycleTestModel(t)
 	m.App.Logbook.Wavelog.Enabled = true
 	m.App.Logbook.Wavelog.URL = srv.URL
-	m.App.Logbook.Wavelog.APIKey = "test-key"
+	m.App.Logbook.Wavelog.APIKey = "wl2_test-key"
 	m.App.Logbook.Wavelog.StationProfileID = "1"
 	m.lookup.wlOnline = false
 
@@ -411,12 +521,13 @@ func TestWavelogStatusCheckWithStations(t *testing.T) {
 
 func TestWavelogStatusCheckNoStations(t *testing.T) {
 	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/api/version":
-			json.NewEncoder(w).Encode(map[string]string{"status": "ok", "version": "1.0"})
-		case "/api/station_info/test-key":
-			json.NewEncoder(w).Encode([]map[string]string{}) // empty
+		case "/api/v2/status":
+			wavelogVersionHandler("ok")(w, r)
+		case "/api/v2/token":
+			wavelogTokenHandler(nil)(w, r)
+		case "/api/v2/station":
+			wavelogStationHandler([]map[string]any{})(w, r) // empty
 		default:
 			http.NotFound(w, r)
 		}
@@ -426,7 +537,7 @@ func TestWavelogStatusCheckNoStations(t *testing.T) {
 	m := newLifecycleTestModel(t)
 	m.App.Logbook.Wavelog.Enabled = true
 	m.App.Logbook.Wavelog.URL = srv.URL
-	m.App.Logbook.Wavelog.APIKey = "test-key"
+	m.App.Logbook.Wavelog.APIKey = "wl2_test-key"
 	m.App.Logbook.Wavelog.StationProfileID = "1"
 	m.lookup.wlOnline = false
 
@@ -448,11 +559,12 @@ func TestWavelogStatusCheckNoStations(t *testing.T) {
 
 func TestWavelogStatusCheckMalformedStations(t *testing.T) {
 	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
-		case "/api/version":
-			json.NewEncoder(w).Encode(map[string]string{"status": "ok", "version": "1.0"})
-		case "/api/station_info/test-key":
+		case "/api/v2/status":
+			wavelogVersionHandler("ok")(w, r)
+		case "/api/v2/token":
+			wavelogTokenHandler(nil)(w, r)
+		case "/api/v2/station":
 			// Return malformed JSON
 			w.Write([]byte("not json"))
 		default:
@@ -464,7 +576,7 @@ func TestWavelogStatusCheckMalformedStations(t *testing.T) {
 	m := newLifecycleTestModel(t)
 	m.App.Logbook.Wavelog.Enabled = true
 	m.App.Logbook.Wavelog.URL = srv.URL
-	m.App.Logbook.Wavelog.APIKey = "test-key"
+	m.App.Logbook.Wavelog.APIKey = "wl2_test-key"
 	m.App.Logbook.Wavelog.StationProfileID = "1"
 	m.lookup.wlOnline = false
 
@@ -498,21 +610,24 @@ func makeTestQSO(call string) *qso.QSO {
 	q.TimeOn = "120000"
 	q.RSTSent = "59"
 	q.RSTRcvd = "59"
-	q.WavelogUploaded = "no"
 	q.Source = "manual"
 	q.StationCallsign = "SP9MOA"
 	return q
 }
 
-// getWavelogStatus reads the wavelog_uploaded status for a QSO ID.
+// getWavelogStatus reads the wavelog_id for a QSO ID and reports it as the
+// legacy yes/no string so the assertion sites stay readable.
 func getWavelogStatus(t *testing.T, db *sql.DB, id int64) string {
 	t.Helper()
-	var status string
-	err := db.QueryRow(`SELECT wavelog_uploaded FROM qsos WHERE id=?`, id).Scan(&status)
+	var remoteID int64
+	err := db.QueryRow(`SELECT wavelog_id FROM qsos WHERE id=?`, id).Scan(&remoteID)
 	if err != nil {
 		t.Fatalf("query wavelog status: %v", err)
 	}
-	return status
+	if remoteID > 0 {
+		return "yes"
+	}
+	return "no"
 }
 
 func TestPostQSO_Success(t *testing.T) {
@@ -534,7 +649,7 @@ func TestPostQSO_Success(t *testing.T) {
 		t.Error("postQSO should return isDup=false for new QSO")
 	}
 	if status := getWavelogStatus(t, m.App.DB, qID); status != "yes" {
-		t.Errorf("DB wavelog_uploaded = %q; want yes", status)
+		t.Errorf("DB wavelog status = %q; want yes", status)
 	}
 }
 
@@ -558,20 +673,26 @@ func TestPostQSO_DuplicateViaAllDuplicates(t *testing.T) {
 		t.Error("postQSO should return isDup=true for duplicate")
 	}
 	if status := getWavelogStatus(t, m.App.DB, qID); status != "yes" {
-		t.Errorf("DB wavelog_uploaded = %q; want yes (duplicate still counts as uploaded)", status)
+		t.Errorf("DB wavelog status = %q; want yes (duplicate still counts as uploaded)", status)
 	}
 }
 
 func TestPostQSO_DuplicateViaError(t *testing.T) {
-	// Simulate Wavelog returning HTTP 400 with a body that PostQSOWithResult
-	// can't parse as structured JSON, causing it to return an error whose
-	// message contains "duplicate".
+	// v2 signals a conflicting state with 409 + error code "conflict".
 	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(400)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status":  "error",
-			"message": "Duplicate QSO detected",
+		if r.Method == http.MethodGet {
+			// Remote-id backfill after the duplicate was detected.
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{"id": 42, "call": "SP9MOA", "band": "20m", "mode": "SSB", "qso_date": "2026-06-14 12:00:00"},
+				},
+			})
+			return
+		}
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(map[string]any{
+			"error": map[string]string{"code": "conflict", "message": "Duplicate QSO detected"},
 		})
 	})
 	defer srv.Close()
@@ -591,7 +712,7 @@ func TestPostQSO_DuplicateViaError(t *testing.T) {
 		t.Error("postQSO should return isDup=true for duplicate (error-text path)")
 	}
 	if status := getWavelogStatus(t, m.App.DB, qID); status != "yes" {
-		t.Errorf("DB wavelog_uploaded = %q; want yes", status)
+		t.Errorf("DB wavelog status = %q; want yes", status)
 	}
 }
 
@@ -616,7 +737,7 @@ func TestPostQSO_ServerError(t *testing.T) {
 		t.Error("postQSO should return isDup=false for server error")
 	}
 	if status := getWavelogStatus(t, m.App.DB, qID); status != "no" {
-		t.Errorf("DB wavelog_uploaded = %q; want no (upload failed)", status)
+		t.Errorf("DB wavelog status = %q; want no (upload failed)", status)
 	}
 }
 
@@ -637,7 +758,7 @@ func TestPostQSO_ConnectionError(t *testing.T) {
 		t.Error("postQSO should return isDup=false for connection failure")
 	}
 	if status := getWavelogStatus(t, m.App.DB, qID); status != "no" {
-		t.Errorf("DB wavelog_uploaded = %q; want no (upload failed)", status)
+		t.Errorf("DB wavelog status = %q; want no (upload failed)", status)
 	}
 }
 
@@ -668,7 +789,7 @@ func TestPostQSO_DuplicateNoDupeInError(t *testing.T) {
 		t.Error("postQSO should return isDup=false when error is not about duplicates")
 	}
 	if status := getWavelogStatus(t, m.App.DB, qID); status != "no" {
-		t.Errorf("DB wavelog_uploaded = %q; want no (upload failed)", status)
+		t.Errorf("DB wavelog status = %q; want no (upload failed)", status)
 	}
 }
 
@@ -702,15 +823,15 @@ func TestPostQSO_EmptyParameters(t *testing.T) {
 				t.Error("postQSO should return isDup=false for empty parameters")
 			}
 			if status := getWavelogStatus(t, m.App.DB, qID); status != "no" {
-				t.Errorf("DB wavelog_uploaded = %q; want no", status)
+				t.Errorf("DB wavelog status = %q; want no", status)
 			}
 		})
 	}
 }
 
 func TestPostQSO_HTTP200MalformedBody(t *testing.T) {
-	// HTTP 200 but body is not valid JSON — PostQSOWithResult returns nil error.
-	// postQSO should treat this as success (200 = accepted by server).
+	// HTTP 200 with a body that is not the v2 envelope — v2 always sends a
+	// {data,meta} envelope on success, so this must be treated as a failure.
 	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(200)
@@ -723,17 +844,17 @@ func TestPostQSO_HTTP200MalformedBody(t *testing.T) {
 
 	adifStr := "<CALL:6>SP9MOA<BAND:3>20m<MODE:3>SSB<QSO_DATE:8>20260614<TIME_ON:6>120000<EOR>"
 	ok, isDup, err := postQSO(srv.URL, "test-key", "1", adifStr, qID, "SP9MOA", m.App.DB)
-	if err != nil {
-		t.Errorf("postQSO returned unexpected error for HTTP 200: %v", err)
+	if err == nil {
+		t.Error("postQSO should return an error for a malformed 200 body")
 	}
-	if !ok {
-		t.Error("postQSO should return ok=true for HTTP 200 (even with malformed body)")
+	if ok {
+		t.Error("postQSO should return ok=false for a malformed 200 body")
 	}
 	if isDup {
-		t.Error("postQSO should return isDup=false for HTTP 200 success")
+		t.Error("postQSO should return isDup=false for a malformed 200 body")
 	}
-	if status := getWavelogStatus(t, m.App.DB, qID); status != "yes" {
-		t.Errorf("DB wavelog_uploaded = %q; want yes (HTTP 200 = accepted)", status)
+	if status := getWavelogStatus(t, m.App.DB, qID); status != "no" {
+		t.Errorf("DB wavelog status = %q; want no (response unverifiable)", status)
 	}
 }
 
@@ -765,7 +886,7 @@ func TestPostQSO_RateLimitNotDuplicate(t *testing.T) {
 		t.Error("postQSO should NOT report isDup=true for rate limit (not a duplicate)")
 	}
 	if status := getWavelogStatus(t, m.App.DB, qID); status != "no" {
-		t.Errorf("DB wavelog_uploaded = %q; want no (rate limited, not on Wavelog)", status)
+		t.Errorf("DB wavelog status = %q; want no (rate limited, not on Wavelog)", status)
 	}
 }
 
@@ -793,7 +914,7 @@ func TestPostQSO_HTMLMaintenancePage(t *testing.T) {
 		t.Error("postQSO should NOT report isDup=true for maintenance page")
 	}
 	if status := getWavelogStatus(t, m.App.DB, qID); status != "no" {
-		t.Errorf("DB wavelog_uploaded = %q; want no (server down, not on Wavelog)", status)
+		t.Errorf("DB wavelog status = %q; want no (server down, not on Wavelog)", status)
 	}
 }
 
@@ -802,16 +923,18 @@ func TestPostQSO_HTMLMaintenancePage(t *testing.T) {
 // =============================================================================
 
 func TestPostQSO_RequestPayloadVerification(t *testing.T) {
-	// Verify the POST body sent to Wavelog contains expected fields.
-	var capturedBody map[string]string
+	// Verify the v2 POST body sent to Wavelog contains expected fields.
+	var capturedBody map[string]any
 	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&capturedBody); err != nil {
 			http.Error(w, "bad request", 400)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status": "ok", "adif_count": 1, "adif_errors": 0, "messages": []string{""},
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{"parsed": 1, "imported": 1, "skipped": 0, "messages": []string{}},
+			"meta": map[string]string{"resource": "qso", "method": "POST"},
 		})
 	})
 	defer srv.Close()
@@ -820,7 +943,7 @@ func TestPostQSO_RequestPayloadVerification(t *testing.T) {
 	qID := insertTestQSO(t, m.App.DB, makeTestQSO("SP9MOA"))
 
 	adifStr := "<CALL:6>SP9MOA<BAND:3>20m<MODE:3>SSB<QSO_DATE:8>20260614<TIME_ON:6>120000<EOR>"
-	ok, _, err := postQSO(srv.URL, "test-api-key-12345", "42", adifStr, qID, "SP9MOA", m.App.DB)
+	ok, _, err := postQSO(srv.URL, "wl2_test-api-key-12345", "42", adifStr, qID, "SP9MOA", m.App.DB)
 	if err != nil {
 		t.Fatalf("postQSO: %v", err)
 	}
@@ -829,30 +952,216 @@ func TestPostQSO_RequestPayloadVerification(t *testing.T) {
 	}
 
 	// Verify the request payload structure.
-	if capturedBody["key"] != "test-api-key-12345" {
-		t.Errorf("key = %q, want test-api-key-12345", capturedBody["key"])
+	if capturedBody["import_type"] != "adif" {
+		t.Errorf("import_type = %v, want adif", capturedBody["import_type"])
 	}
-	if capturedBody["station_profile_id"] != "42" {
-		t.Errorf("station_profile_id = %q, want 42", capturedBody["station_profile_id"])
+	if capturedBody["station_profile_id"] != float64(42) {
+		t.Errorf("station_profile_id = %v, want 42", capturedBody["station_profile_id"])
 	}
-	if capturedBody["type"] != "adif" {
-		t.Errorf("type = %q, want adif", capturedBody["type"])
+	if capturedBody["adif"] != adifStr {
+		t.Errorf("adif payload = %v, want %q", capturedBody["adif"], adifStr)
 	}
-	if capturedBody["string"] != adifStr {
-		t.Errorf("string (ADIF) = %q, want %q", capturedBody["string"], adifStr)
+}
+
+// TestPostQSOSingle_StoresRemoteID verifies the single-QSO JSON create path
+// stores the remote id returned by Wavelog.
+func TestPostQSOSingle_StoresRemoteID(t *testing.T) {
+	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/qso" || r.Method != http.MethodPost {
+			http.NotFound(w, r)
+			return
+		}
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		if body["import_type"] != nil {
+			t.Errorf("JSON create must not set import_type, got %v", body["import_type"])
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{"id": 42, "call": "SP9MOA"},
+			"meta": map[string]string{"resource": "qso", "method": "POST"},
+		})
+	})
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	qID := insertTestQSO(t, m.App.DB, makeTestQSO("SP9MOA"))
+	qs, err := store.GetQSOByID(m.App.DB, qID)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+
+	ok, isDup, remoteID, err := postQSOSingle(srv.URL, "wl2_test", "1", qs, m.App.DB)
+	if err != nil {
+		t.Fatalf("postQSOSingle: %v", err)
+	}
+	if !ok || isDup || remoteID != 42 {
+		t.Errorf("ok=%v isDup=%v remoteID=%d, want ok=true isDup=false remoteID=42", ok, isDup, remoteID)
+	}
+
+	var storedID int64
+	if err := m.App.DB.QueryRow(`SELECT wavelog_id FROM qsos WHERE id=?`, qID).
+		Scan(&storedID); err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if storedID != 42 {
+		t.Errorf("wavelog_id = %d, want 42", storedID)
+	}
+}
+
+// TestPostQSOSingle_FallsBackToADIF verifies that a rejected JSON create falls
+// back to the ADIF import path, preserving upload behavior.
+func TestPostQSOSingle_FallsBackToADIF(t *testing.T) {
+	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		var body map[string]any
+		json.NewDecoder(r.Body).Decode(&body)
+		if _, isADIF := body["adif"]; !isADIF {
+			// Reject the JSON create with a validation error.
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]any{
+				"error": map[string]string{"code": "validation_error", "message": "bad call"},
+			})
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{"parsed": 1, "imported": 1, "skipped": 0, "messages": []string{}},
+			"meta": map[string]string{"resource": "qso", "method": "POST"},
+		})
+	})
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	qID := insertTestQSO(t, m.App.DB, makeTestQSO("SP9MOA"))
+	qs, err := store.GetQSOByID(m.App.DB, qID)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+
+	ok, isDup, _, err := postQSOSingle(srv.URL, "wl2_test", "1", qs, m.App.DB)
+	if err != nil {
+		t.Fatalf("postQSOSingle fallback: %v", err)
+	}
+	if !ok || isDup {
+		t.Errorf("ok=%v isDup=%v, want ok=true isDup=false", ok, isDup)
+	}
+
+	var remoteID int64
+	if err := m.App.DB.QueryRow(`SELECT wavelog_id FROM qsos WHERE id=?`, qID).
+		Scan(&remoteID); err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if remoteID != 0 {
+		t.Errorf("wavelog_id = %d, want 0 (ADIF fallback returns no id)", remoteID)
+	}
+}
+
+// TestWavelogStatusCheckV1Key verifies that a legacy v1 key is detected
+// without any network call and reported with the migration message.
+func TestWavelogStatusCheckV1Key(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.App.Logbook.Wavelog.Enabled = true
+	m.App.Logbook.Wavelog.URL = "http://127.0.0.1:1" // unreachable — must not be called
+	m.App.Logbook.Wavelog.APIKey = "wl123_not_v2"
+	m.App.Logbook.Wavelog.StationProfileID = "1"
+
+	cmd := m.checkWavelogCmd()
+	if cmd == nil {
+		t.Fatal("checkWavelogCmd should return a command")
+	}
+	msg := cmd()
+	status, ok := msg.(wlStatusMsg)
+	if !ok {
+		t.Fatalf("Expected wlStatusMsg, got %T", msg)
+	}
+	if status.online {
+		t.Error("v1 key must report offline")
+	}
+	if status.err != wavelog.V1KeyRequiredMsg {
+		t.Errorf("err = %q, want the v2 migration message", status.err)
+	}
+}
+
+// TestWavelogStatusErrToast verifies the status error is surfaced once as a
+// warning toast and not repeated while it stays unchanged.
+func TestWavelogStatusErrToast(t *testing.T) {
+	m := newLifecycleTestModel(t)
+
+	next, _ := m.Update(wlStatusMsg{online: false, err: wavelog.V1KeyRequiredMsg})
+	m = next.(*Model)
+	if m.lookup.wlStatusErr != wavelog.V1KeyRequiredMsg {
+		t.Fatalf("wlStatusErr = %q", m.lookup.wlStatusErr)
+	}
+	toasts := m.toasts.Active()
+	found := false
+	for _, toast := range toasts {
+		if toast.Level == ToastWarning && strings.Contains(toast.Message, "wl2_") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected migration warning toast, got %+v", toasts)
+	}
+	n1 := len(toasts)
+
+	// Repeating the same error must not re-toast.
+	next, _ = m.Update(wlStatusMsg{online: false, err: wavelog.V1KeyRequiredMsg})
+	m = next.(*Model)
+	if n2 := len(m.toasts.Active()); n2 != n1 {
+		t.Errorf("toast count grew from %d to %d — repeated warning", n1, n2)
+	}
+}
+
+// TestPostQSOSingle_AuthFailureNoFallback verifies an auth failure surfaces
+// the migration guidance directly and does not attempt the ADIF fallback.
+func TestPostQSOSingle_AuthFailureNoFallback(t *testing.T) {
+	requests := 0
+	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]any{
+			"error": map[string]string{"code": "invalid_token", "message": "Invalid or revoked API token"},
+		})
+	})
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	qID := insertTestQSO(t, m.App.DB, makeTestQSO("SP9MOA"))
+	qs, err := store.GetQSOByID(m.App.DB, qID)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+
+	ok, _, _, err := postQSOSingle(srv.URL, "wl2_bad", "1", qs, m.App.DB)
+	if ok {
+		t.Error("upload should fail on invalid token")
+	}
+	if err == nil || !strings.Contains(err.Error(), "wl2_") {
+		t.Errorf("err = %v, want v2 migration guidance", err)
+	}
+	if requests != 1 {
+		t.Errorf("requests = %d, want 1 (no ADIF fallback on auth errors)", requests)
 	}
 }
 
 func TestWavelogUpload_IntegratedADIFToUpload(t *testing.T) {
 	// End-to-end: parse ADIF → insert to DB → trigger Wavelog upload → verify DB.
-	var capturedADIF string
+	var capturedCall, capturedBand, capturedMode, capturedDate string
 	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		var body map[string]string
+		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
-		capturedADIF = body["string"]
+		capturedCall, _ = body["call"].(string)
+		capturedBand, _ = body["band"].(string)
+		capturedMode, _ = body["mode"].(string)
+		capturedDate, _ = body["qso_date"].(string)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status": "ok", "adif_count": 1, "adif_errors": 0, "messages": []string{""},
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{"id": 77, "call": "SP9MOA"},
+			"meta": map[string]string{"resource": "qso", "method": "POST"},
 		})
 	})
 	defer srv.Close()
@@ -912,12 +1221,25 @@ func TestWavelogUpload_IntegratedADIFToUpload(t *testing.T) {
 
 	// Verify Wavelog status was updated locally.
 	if status := getWavelogStatus(t, m.App.DB, q.ID); status != "yes" {
-		t.Errorf("wavelog_uploaded = %q, want yes", status)
+		t.Errorf("wavelog status = %q, want yes", status)
 	}
 
-	// Verify ADIF was sent to the mock server.
-	if capturedADIF == "" {
-		t.Error("no ADIF was captured by the mock server")
+	// Verify the QSO was created via v2 JSON with the expected fields and
+	// the remote id was stored locally.
+	if capturedCall != "SP9MOA" {
+		t.Errorf("captured call = %q, want SP9MOA", capturedCall)
+	}
+	if capturedBand != "20m" {
+		t.Errorf("captured band = %q, want 20m", capturedBand)
+	}
+	if capturedMode != "FT8" {
+		t.Errorf("captured mode = %q, want FT8", capturedMode)
+	}
+	if capturedDate != "2026-06-18" {
+		t.Errorf("captured qso_date = %q, want 2026-06-18 (ISO)", capturedDate)
+	}
+	if q.WavelogID != 77 {
+		t.Errorf("WavelogID = %d, want 77 (remote id stored)", q.WavelogID)
 	}
 }
 
@@ -955,24 +1277,45 @@ func TestWavelogUpload_DisabledPreservesLocalQSO(t *testing.T) {
 }
 
 func TestWavelogUpload_APINotExposedInLogs(t *testing.T) {
-	// Verify the test uses a fake API key and it's sent in the POST body (not URL).
+	// Verify the token is sent in the Authorization header, never in the URL.
 	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
-		// API key must be in POST body, not in URL query string.
+		// API token must not appear in the URL query string.
 		if r.URL.Query().Get("key") != "" {
-			t.Error("API key should NOT be in URL query string")
+			t.Error("API token should NOT be in URL query string")
 		}
-		if r.URL.Path != "/index.php/api/qso" {
+		if r.URL.Path != "/api/v2/qso" {
 			http.NotFound(w, r)
 			return
 		}
-		var body map[string]string
+		if r.Header.Get("Authorization") != "Bearer fake-key-for-test" {
+			t.Errorf("Authorization header = %q", r.Header.Get("Authorization"))
+		}
+		if r.Method == http.MethodGet {
+			// Remote-id backfill after the successful upload.
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{"id": 42, "call": "SP9MOA", "band": "20m", "mode": "SSB", "qso_date": "2026-06-14 12:00:00"},
+				},
+			})
+			return
+		}
+		var body map[string]any
 		json.NewDecoder(r.Body).Decode(&body)
-		if body["key"] != "fake-key-for-test" {
-			t.Errorf("key in body = %q", body["key"])
+		if body["import_type"] != "adif" {
+			t.Errorf("import_type = %v", body["import_type"])
+		}
+		if body["station_profile_id"] != float64(1) {
+			t.Errorf("station_profile_id = %v", body["station_profile_id"])
+		}
+		if _, ok := body["adif"].(string); !ok || body["adif"] == "" {
+			t.Error("adif payload missing")
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status": "ok", "adif_count": 1, "adif_errors": 0, "messages": []string{""},
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{"parsed": 1, "imported": 1, "skipped": 0, "messages": []string{}},
+			"meta": map[string]string{"resource": "qso", "method": "POST"},
 		})
 	})
 	defer srv.Close()
@@ -1050,16 +1393,18 @@ func TestFetchContacts_Success(t *testing.T) {
 <GRIDSQUARE:6>FN31pr <EOR>`
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
+		if r.URL.Path != "/api/v2/qso" || r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"exported_qsos": 2,
-			"lastfetchedid": "42",
-			"message":       "OK",
-			"adif":          adifResponse,
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"exported":      2,
+				"lastfetchedid": 42,
+				"adif":          adifResponse,
+			},
+			"meta": map[string]any{"has_more": false},
 		})
 	}))
 	defer srv.Close()
@@ -1084,11 +1429,13 @@ func TestFetchContacts_Success(t *testing.T) {
 func TestFetchContacts_EmptyADIF(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"exported_qsos": 0,
-			"lastfetchedid": "0",
-			"message":       "No QSOs",
-			"adif":          "",
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"exported":      0,
+				"lastfetchedid": 0,
+				"adif":          nil,
+			},
+			"meta": map[string]any{"has_more": false},
 		})
 	}))
 	defer srv.Close()
@@ -1170,15 +1517,31 @@ func TestFetchContacts_HTMLResponse(t *testing.T) {
 }
 
 func TestFetchContacts_PayloadVerification(t *testing.T) {
-	var capturedBody map[string]interface{}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		json.NewDecoder(r.Body).Decode(&capturedBody)
+		if r.URL.Path != "/api/v2/qso" || r.Method != http.MethodGet {
+			http.Error(w, "bad request", 400)
+			return
+		}
+		if r.Header.Get("Authorization") != "Bearer test-api-key" {
+			t.Errorf("Authorization header = %q", r.Header.Get("Authorization"))
+		}
+		if r.URL.Query().Get("format") != "adif" {
+			t.Errorf("format = %q, want adif", r.URL.Query().Get("format"))
+		}
+		if r.URL.Query().Get("since_id") != "100" {
+			t.Errorf("since_id = %q, want 100", r.URL.Query().Get("since_id"))
+		}
+		if r.URL.Query().Get("station_id") != "42" {
+			t.Errorf("station_id = %q, want 42", r.URL.Query().Get("station_id"))
+		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"exported_qsos": 0,
-			"lastfetchedid": "0",
-			"message":       "",
-			"adif":          "",
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"exported":      0,
+				"lastfetchedid": 100,
+				"adif":          nil,
+			},
+			"meta": map[string]any{"has_more": false},
 		})
 	}))
 	defer srv.Close()
@@ -1188,12 +1551,10 @@ func TestFetchContacts_PayloadVerification(t *testing.T) {
 		t.Fatalf("FetchContacts: %v", err)
 	}
 	os.Remove(result.ADIFPath)
-
-	if capturedBody["key"] != "test-api-key" {
-		t.Errorf("key = %q, want test-api-key", capturedBody["key"])
+	if result.ExportedQSOs != 0 {
+		t.Errorf("ExportedQSOs = %d, want 0", result.ExportedQSOs)
 	}
-	// station_id is sent as int in JSON
-	if capturedBody["fetchfromid"] != float64(100) {
-		t.Errorf("fetchfromid = %v, want 100", capturedBody["fetchfromid"])
+	if result.LastFetchedID() != 100 {
+		t.Errorf("LastFetchedID = %d, want 100 (kept when nothing new)", result.LastFetchedID())
 	}
 }

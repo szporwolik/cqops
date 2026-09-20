@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.11.0 — 2026-09-20
+
+> **Wavelog API v2.** CQOps now speaks only the Wavelog API v2: Bearer tokens instead of v1 API keys, granular scopes, typed lookups, and a paginated ADIF sync. Legacy v1 keys are no longer accepted — create a v2 token (`wl2_…`) in Wavelog and paste it into the logbook form.
+
+### Wavelog API v2
+- **Bearer authentication**: the token travels in the `Authorization` header only — no more API key in URLs or request bodies.
+- **Connection test**: uses the public `/api/v2/status` endpoint plus `/api/v2/token` (whoami) to verify the token and its scopes.
+- **Station profiles** come from `GET /api/v2/station`.
+- **Callsign lookup** uses `GET /api/v2/lookup?detail=full` with typed booleans — the legacy truthy-string guessing is gone.
+- **QSO upload** posts ADIF via `POST /api/v2/qso` (`import_type: adif`); duplicates are detected from the `parsed/imported/skipped` summary instead of message string matching.
+- **Download/sync** uses `GET /api/v2/qso?format=adif&since_id=…` with pagination (`has_more`, 250 rows per page): pages stream straight into the temp file instead of being buffered in memory, later page headers are stripped so the result stays one ADIF document, the download bar advances per page against `meta.total`, and a safety guard aborts if the server stops advancing `lastfetchedid`.
+- **Remote QSO ids**: every downloaded QSO stores its Wavelog primary key (`wavelog_id`, captured from the JSON list sidecar aligned 1:1 with the ADIF rows) — the foundation for future edit/delete sync via `PATCH`/`DELETE /api/v2/qso/{id}`.
+- **Upload round trip**: single-QSO uploads (manual save, WSJT-X auto-log, editor individual uploads) now use the v2 single-JSON create, whose response carries the created QSO id — it is stored locally immediately. If the JSON create is rejected, CQOps automatically falls back to the ADIF import path. Batch editor uploads and duplicate results look the id up on Wavelog right after the upload, so the local log converges to `wavelog_id > 0` without waiting for a download.
+- **`wavelog_id` is the single source of truth for uploaded state**: the legacy `wavelog_uploaded` flag column is dropped during migration (existing databases upgrade automatically). A QSO counts as uploaded exactly when its `wavelog_id` is set; the logbook editor's upload filter, the recent-QSO `WL` column and all statistics now derive their answer from the remote id.
+- **Migration reconciliation**: logbooks migrated from older versions have no remote ids, so a large "send to Wavelog" first reconciles against the remote QSO list (paginated, 5000 rows per page) and assigns ids locally instead of re-uploading — only genuinely new QSOs are uploaded. Small batches still rely on the server's duplicate detection, and a duplicate upload learns the remote id from the server and stores it locally.
+- **Edit sync**: opening a QSO that exists in Wavelog refreshes the edit form with the server's current copy (GET `/api/v2/qso/{id}`), and saving it pushes the edit back via `PATCH /api/v2/qso/{id}` — the local save always succeeds first and never depends on Wavelog. If the remote copy was deleted in the meantime, the local remote id is cleared honestly. Deleting a synced QSO also removes the Wavelog copy (`DELETE /api/v2/qso/{id}`), and both confirmation dialogs state the Wavelog effect (or that the operation is local-only while offline).
+- **Error handling** maps the v2 error envelope (`invalid_token`, `token_expired`, `insufficient_scope`, `rate_limited`, `conflict`, …) to actionable messages.
+
+### Configuration
+- The logbook form shows a green **v2** badge next to the API key when a `wl2_` token is entered, and a warning — *"Wavelog API v2 token (wl2_) required since CQOps 0.11.0"* — when a legacy v1 key is present.
+- **Migration surfacing**: users still on a legacy v1 key get the migration message as a one-time warning toast at startup, the status bar shows a warning `WL!` indicator instead of plain offline, and uploads with a v1 key fail fast with the same guidance (no silent ADIF fallback).
+
 ## v0.10.1 — 2026-09-20
 
 > **HTTPS dashboard, unified keyboard conventions, and whole-logbook search.** The built-in dashboard can now serve over HTTPS with an auto-generated self-signed certificate, every form saves with Enter, and the logbook editor searches the entire logbook, not just the visible page.

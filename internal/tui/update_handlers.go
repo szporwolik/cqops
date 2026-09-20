@@ -261,10 +261,18 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 		return true, nil
 	case wlStatusMsg:
 		m.lookup.wlOnline = r.online
+		m.lookup.wlStatusErr = r.err
 		if r.online {
 			m.lookup.wlFailCount = 0
 		} else {
 			m.lookup.wlFailCount++
+		}
+		if r.err != "" && m.lookup.wlWarnShown != r.err {
+			// Surface the reason once (e.g. the v1-key migration notice).
+			m.toasts.Warn(r.err)
+			m.lookup.wlWarnShown = r.err
+		} else if r.err == "" {
+			m.lookup.wlWarnShown = ""
 		}
 		if r.stationName != "" {
 			m.lookup.wlStationName = r.stationName
@@ -275,6 +283,9 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 		m.rc.status = ""
 		return true, nil
 	case wlUploadResultMsg:
+		if r.qID != 0 && m.ui.logbookEditor != nil {
+			m.ui.logbookEditor.UpdateWLStatus(r.qID, r.ok, r.remoteID)
+		}
 		n := m.App.Config.General.Notifications
 		if r.ok {
 			if r.isDup {

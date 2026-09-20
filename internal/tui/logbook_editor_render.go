@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/applog"
+	"github.com/szporwolik/cqops/internal/qso"
 )
 
 // =============================================================================
@@ -29,8 +30,15 @@ func (le *LogbookEditor) View() tea.View {
 		le.ensureDialog(
 			"Delete QSO",
 			func() string {
-				q := le.qsos[le.table.Cursor()]
-				return q.Call + " from " + formatDate(q.QSODate)
+				if len(le.qsos) == 0 {
+					return ""
+				}
+				idx := le.table.Cursor()
+				if idx >= len(le.qsos) {
+					idx = 0
+				}
+				q := le.qsos[idx]
+				return le.deleteConfirmMessage(&q)
 			}(),
 			DangerOption("Delete", "delete"),
 			Option{Label: "Cancel", Value: "cancel"},
@@ -45,7 +53,7 @@ func (le *LogbookEditor) View() tea.View {
 				if q == nil {
 					return ""
 				}
-				return q.Call + " from " + formatDate(q.QSODate)
+				return le.saveConfirmMessage(q)
 			}(),
 			Option{Label: "Save", Value: "save"},
 			Option{Label: "Cancel", Value: "cancel"},
@@ -350,6 +358,35 @@ func (le *LogbookEditor) ensureDialog(title, message string, options ...Option) 
 		le.dialog = &d
 		applog.Debug("LogEditor: dialog shown", "title", title, "options", len(options))
 	}
+}
+
+// deleteConfirmMessage builds the delete-dialog text. Synced QSOs note that
+// the deletion also removes the Wavelog copy (or that it is local-only when
+// offline).
+func (le *LogbookEditor) deleteConfirmMessage(q *qso.QSO) string {
+	msg := q.Call + " from " + formatDate(q.QSODate)
+	if q.WavelogID > 0 && le.wlURL != "" && le.wlKey != "" {
+		if le.Offline {
+			msg += "\n\nOffline — will be deleted locally only."
+		} else {
+			msg += "\n\nThis QSO will also be deleted from Wavelog."
+		}
+	}
+	return msg
+}
+
+// saveConfirmMessage builds the save-dialog text. Synced QSOs note that the
+// save also updates the Wavelog copy (or that it is local-only when offline).
+func (le *LogbookEditor) saveConfirmMessage(q *qso.QSO) string {
+	msg := q.Call + " from " + formatDate(q.QSODate)
+	if q.WavelogID > 0 && le.wlURL != "" && le.wlKey != "" {
+		if le.Offline {
+			msg += "\n\nOffline — will be saved locally only."
+		} else {
+			msg += "\n\nThis QSO will also be updated on Wavelog."
+		}
+	}
+	return msg
 }
 
 // viewExport renders the ADIF export directory picker screen.

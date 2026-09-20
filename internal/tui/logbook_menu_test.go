@@ -261,6 +261,39 @@ func TestLogbookChooserSavePreservesWavelogLastFetchedID(t *testing.T) {
 	}
 }
 
+// TestLogbookChooserSaveSanitizesWavelogStationID verifies the display label
+// that the station picker puts into the read-only Station ID field never
+// leaks into the saved config — only the numeric id is stored.
+func TestLogbookChooserSaveSanitizesWavelogStationID(t *testing.T) {
+	a := newChooserTestApp(t)
+	lb := a.Config.Logbooks["home"]
+	lb.Station.Continent = "EU"
+	lb.Wavelog = &config.WavelogConfig{
+		Enabled:          true,
+		URL:              "https://qso.cqops.com",
+		APIKey:           "wl2_test",
+		StationProfileID: "7",
+	}
+	a.Config.Logbooks["home"] = lb
+
+	tq := NewToastQueue()
+	c := NewLogbookChooser(a, tq)
+	c.startEdit("home")
+
+	// Simulate the station picker label landing in the read-only field.
+	c.station.WlStationID.SetValue("7 — SP9SPM (Niepołomice) KO00CA")
+
+	c.saveForm()
+
+	got := a.Config.Logbooks["home"].Wavelog
+	if got == nil {
+		t.Fatal("Wavelog config was dropped on save")
+	}
+	if got.StationProfileID != "7" {
+		t.Errorf("StationProfileID = %q after save, want 7", got.StationProfileID)
+	}
+}
+
 // TestLogbookChooserSaveRequiresWavelogURLAndKey: enabling Wavelog without
 // URL or API key must refuse the save instead of silently wiping the
 // existing Wavelog config from the logbook.

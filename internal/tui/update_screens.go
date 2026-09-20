@@ -801,11 +801,38 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 			m.toasts.Error(em.err.Error())
 		}
 		if em.deleted != 0 {
-			m.toasts.Success(fmt.Sprintf("QSO %s from %s deleted", em.delCall, em.delDate))
+			switch {
+			case em.delSyncOK:
+				m.toasts.Success(fmt.Sprintf("QSO %s from %s deleted · removed from Wavelog", em.delCall, em.delDate))
+			case em.delSyncErr != "":
+				m.toasts.Warn(fmt.Sprintf("QSO %s from %s deleted locally — Wavelog: %s", em.delCall, em.delDate, em.delSyncErr))
+			default:
+				m.toasts.Success(fmt.Sprintf("QSO %s from %s deleted", em.delCall, em.delDate))
+			}
 			refreshCmd = m.refreshQSOS()
 		}
+		if em.wlFetchQSOID != 0 {
+			if em.wlFetchQSO != nil {
+				if err := m.ui.logbookEditor.ApplyRemoteRefresh(em.wlFetchQSO); err != nil {
+					applog.Warn("Wavelog: apply remote refresh failed", "error", err)
+				} else {
+					m.toasts.Success("Wavelog: QSO refreshed from server")
+				}
+			} else if em.wlFetchErr != "" {
+				m.toasts.Warn("Wavelog: " + em.wlFetchErr)
+			}
+		}
 		if em.saved != 0 {
-			m.toasts.Success(fmt.Sprintf("QSO %s from %s saved", em.saveCall, em.saveDate))
+			switch {
+			case em.wlSyncOK:
+				m.toasts.Success(fmt.Sprintf("QSO %s from %s saved · Wavelog updated", em.saveCall, em.saveDate))
+			case em.wlSyncGone:
+				m.toasts.Warn(fmt.Sprintf("QSO %s from %s saved locally — remote copy was deleted", em.saveCall, em.saveDate))
+			case em.wlSyncErr != "":
+				m.toasts.Error(fmt.Sprintf("QSO %s from %s saved locally — Wavelog: %s", em.saveCall, em.saveDate, em.wlSyncErr))
+			default:
+				m.toasts.Success(fmt.Sprintf("QSO %s from %s saved", em.saveCall, em.saveDate))
+			}
 			refreshCmd = m.refreshQSOS()
 		}
 		if em.purged {
@@ -828,7 +855,7 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 				} else {
 					m.toasts.Success(fmt.Sprintf("Wavelog: %s sent", em.wlCall))
 				}
-				m.ui.logbookEditor.UpdateWLStatus(em.wlQSOID, "yes")
+				m.ui.logbookEditor.UpdateWLStatus(em.wlQSOID, em.wlOK, 0)
 				m.ui.logbookEditor.needsReload = true
 			} else {
 				if em.err != nil {
@@ -836,7 +863,7 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 				} else {
 					m.toasts.Error(fmt.Sprintf("Wavelog: %s failed", em.wlCall))
 				}
-				m.ui.logbookEditor.UpdateWLStatus(em.wlQSOID, "no")
+				m.ui.logbookEditor.UpdateWLStatus(em.wlQSOID, false, 0)
 			}
 		}
 		if m.ui.logbookEditor.wlSkipped > 0 {

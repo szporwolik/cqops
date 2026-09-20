@@ -597,7 +597,7 @@ func (w *Wizard) saveConfig() error {
 
 	var wl *config.WavelogConfig
 	if wlEnabled && wlURL != "" && wlKey != "" {
-		sid := wlStationID
+		sid := wavelog.SanitizeStationID(wlStationID)
 		// Extract actual station ID from the selected station if available
 		if w.wlStationIdx >= 0 && w.wlStationIdx < len(w.wlStations) {
 			sid = w.wlStations[w.wlStationIdx].ID

@@ -10,6 +10,7 @@ import (
 	"github.com/szporwolik/cqops/internal/aprs"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/qso"
+	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
 type StationForm struct {
@@ -98,8 +99,8 @@ func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder strin
 	sg := mkTI(10, 28, "e.g. SOTA")
 	si := mkTI(20, 28, "e.g. SP/TQ-001")
 
-	wu := mkTI(80, 28, "https://log.example.com")
-	wk := mkTI(64, 28, "Wavelog API key")
+	wu := mkTI(80, 28, "https://log.example.com/api/v2")
+	wk := mkTI(64, 28, "wl2_… Wavelog v2 token")
 	wk.EchoMode = textinput.EchoPassword
 	ws := mkTI(80, 60, "press Update to fetch")
 
@@ -799,12 +800,18 @@ func (f *StationForm) View() tea.View {
 	b.WriteString("\n")
 
 	if f.WlEnabled {
-		wlFields := []fieldDef{
-			{"  API URL:", &f.WlURL},
-			{"  API Key:", &f.WlKey},
-		}
-		for _, field := range wlFields {
-			b.WriteString(f.renderFieldLine(field.label, field.ti, availW))
+		b.WriteString(f.renderFieldLine("  API v2 URL:", &f.WlURL, availW))
+
+		// API v2 token — legacy v1 keys are rejected (warning below).
+		b.WriteString(f.renderFieldLine("  API v2 Key:", &f.WlKey, availW))
+
+		// Legacy v1 keys are not accepted since CQOps 0.11.0.
+		keyVal := strings.TrimSpace(f.WlKey.Value())
+		if keyVal != "" && !wavelog.IsV2Token(keyVal) {
+			b.WriteString(padOrTrunc(
+				"      "+S.Warning.Render("Wavelog API v2 token (wl2_) required since CQOps 0.11.0"),
+				availW))
+			b.WriteString("\n")
 		}
 
 		// Station ID — read-only, with (Space) hint and truncation.

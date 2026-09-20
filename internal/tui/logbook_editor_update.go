@@ -25,6 +25,8 @@ type editorMsg struct {
 	deleted    int64
 	delCall    string
 	delDate    string
+	delSyncOK  bool
+	delSyncErr string
 	saved      int64
 	saveCall   string
 	saveDate   string
@@ -47,6 +49,14 @@ type editorMsg struct {
 	dlAborted  bool
 	// Simple toast from the editor.
 	toastWarn string
+	// Remote-copy refresh of the QSO being edited.
+	wlFetchQSOID int64 // local id the fetch was issued for
+	wlFetchQSO   *wavelog.QSOData
+	wlFetchErr   string
+	// Wavelog PATCH result after a save of a synced QSO.
+	wlSyncOK   bool
+	wlSyncGone bool
+	wlSyncErr  string
 }
 
 func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -170,7 +180,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 				for _, q := range allQSOS {
-					if q.WavelogUploaded != "yes" {
+					if q.WavelogID == 0 {
 						if q.Band == "" || q.Mode == "" || q.QSODate == "" {
 							continue
 						}
@@ -179,7 +189,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			} else {
 				for _, q := range le.qsos {
-					if q.WavelogUploaded != "yes" {
+					if q.WavelogID == 0 {
 						if q.Band == "" || q.Mode == "" || q.QSODate == "" {
 							continue
 						}
@@ -394,7 +404,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					allQSOS, listErr := store.ListAllQSOs(le.db)
 					if listErr == nil {
 						for _, q := range allQSOS {
-							if q.WavelogUploaded != "yes" {
+							if q.WavelogID == 0 {
 								le.wlUnsentCount++
 							}
 						}
@@ -403,7 +413,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if le.wlUnsentCount == 0 {
 					// Fallback: count from current page if DB query failed.
 					for _, q := range le.qsos {
-						if q.WavelogUploaded != "yes" {
+						if q.WavelogID == 0 {
 							le.wlUnsentCount++
 						}
 					}
@@ -436,6 +446,10 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				le.focus = qefCall
 				le.fields[le.focus].Focus()
 				le.mode = edModeEdit
+				// Synced QSOs: refresh the form with the server's current copy.
+				if q.WavelogID > 0 && !le.Offline && le.wlURL != "" && le.wlKey != "" {
+					return le, le.fetchRemoteCopy(q.WavelogID, q.ID)
+				}
 			}
 		case "ctrl+p":
 			le.dialog = nil
@@ -615,20 +629,47 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 		le.mode = edModeEdit
 		return le.doSave()
 	case edModeConfirmDelete:
-		q := le.qsos[le.table.Cursor()]
+		if len(le.qsos) == 0 {
+			le.mode = edModeList
+			return nil
+		}
+		idx := le.table.Cursor()
+		if idx >= len(le.qsos) {
+			idx = 0
+		}
+		q := le.qsos[idx]
 		call := q.Call
 		date := formatDate(q.QSODate)
 		id := q.ID
+		remoteID := q.WavelogID
+		url, key := le.wlURL, le.wlKey
 		le.mode = edModeList
 		applog.Info("LogbookEditor: deleting QSO", "id", id, "call", call, "date", date)
 		return func() tea.Msg {
 			err := store.DeleteQSO(le.db, id)
 			if err != nil {
 				applog.Error("LogbookEditor: delete failed", "id", id, "call", call, "error", err.Error())
-			} else {
-				applog.Info("LogbookEditor: QSO deleted", "id", id, "call", call)
+				// No deleted id on failure — the handler shows the error toast only.
+				return editorMsg{err: err}
 			}
-			return editorMsg{deleted: id, delCall: call, delDate: date, err: err}
+			applog.Info("LogbookEditor: QSO deleted", "id", id, "call", call)
+
+			// Synced QSOs: remove the Wavelog copy too. Best-effort — the
+			// local delete must never depend on this succeeding.
+			em := editorMsg{deleted: id, delCall: call, delDate: date}
+			if remoteID > 0 && url != "" && key != "" && !le.Offline {
+				derr := wavelog.DeleteQSO(url, key, remoteID)
+				if derr != nil {
+					if apiErr, ok := derr.(*wavelog.APIError); ok && apiErr.Code == "not_found" {
+						em.delSyncOK = true // already gone remotely — fine
+					} else {
+						em.delSyncErr = wavelog.FriendlyError(derr).Error()
+					}
+				} else {
+					em.delSyncOK = true
+				}
+			}
+			return em
 		}
 	}
 	le.mode = edModeList
@@ -645,10 +686,34 @@ func (le *LogbookEditor) doSave() tea.Cmd {
 		err := store.UpdateQSO(le.db, q)
 		if err != nil {
 			applog.Error("LogbookEditor: save failed", "id", id, "call", call, "error", err.Error())
-		} else {
-			applog.Info("LogbookEditor: QSO saved", "id", id, "call", call)
+			// No saved id on failure — the handler shows the error toast only
+			// (the edit form stays open for a retry).
+			return editorMsg{err: err}
 		}
-		return editorMsg{saved: id, saveCall: call, saveDate: date, err: err}
+		applog.Info("LogbookEditor: QSO saved", "id", id, "call", call)
+
+		// Synced QSOs: push the edit to Wavelog. Local save must never
+		// depend on this succeeding.
+		em := editorMsg{saved: id, saveCall: call, saveDate: date}
+		if q.WavelogID > 0 && le.wlURL != "" && le.wlKey != "" {
+			syncErr := wavelog.UpdateQSO(le.wlURL, le.wlKey, q.WavelogID, buildUpdateInput(q))
+			if syncErr != nil {
+				if apiErr, ok := syncErr.(*wavelog.APIError); ok && apiErr.Code == "not_found" {
+					// The remote copy was deleted elsewhere — the local id is
+					// stale; clear it so the row is honest again.
+					if serr := store.SetWavelogID(le.db, id, 0); serr == nil {
+						em.wlSyncGone = true
+					} else {
+						em.wlSyncErr = wavelog.FriendlyError(syncErr).Error()
+					}
+				} else {
+					em.wlSyncErr = wavelog.FriendlyError(syncErr).Error()
+				}
+			} else {
+				em.wlSyncOK = true
+			}
+		}
+		return em
 	}
 }
 
@@ -700,7 +765,15 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 	// Send initial message so the dialog appears immediately.
 	msgCh <- editorMsg{dlProgress: 0, dlTotal: 0}
 
-	result, err := wavelog.FetchContacts(url, key, sid, fetchFromID)
+	// Page-level progress: the v2 export is paginated; update the download
+	// bar as each page arrives instead of waiting for the whole fetch.
+	result, err := wavelog.FetchContactsProgress(url, key, sid, fetchFromID,
+		func(exported, total int) {
+			select {
+			case msgCh <- editorMsg{dlProgress: exported, dlTotal: total}:
+			case <-le.dlCancel:
+			}
+		})
 	if err != nil {
 		applog.ErrorDetail("Wavelog: contacts download failed",
 			fmt.Sprintf("url=%s station_id=%s from_id=%d error=%v", url, sid, fetchFromID, err))
@@ -728,6 +801,7 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 
 	var inserted, dupes, failed int
 	totalExported := result.ExportedQSOs
+	idIdx := 0               // remote-id cursor, aligned 1:1 with exported rows
 	const batchInterval = 50 // report progress every 50 QSOs for smooth but efficient UI
 
 	applog.Info("Wavelog: scanning ADIF", "exported", totalExported, "size_bytes", result.ADIFSize)
@@ -751,7 +825,14 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 		processed++
 
 		qs := qso.ParseADIFRecord(r, "wavelog")
-		qs.WavelogUploaded = "yes"
+
+		// Remote ids are aligned 1:1 with the exported rows (both ordered
+		// ascending by id), so every scanned record consumes one slot —
+		// including records that fail validation below.
+		if idIdx < len(result.WavelogIDs) {
+			qs.WavelogID = result.WavelogIDs[idIdx]
+		}
+		idIdx++
 
 		// Enrich: compute distance/bearing if both grids are available.
 		if myGrid := strings.TrimSpace(le.logStationGrid); myGrid != "" && qs.GridSquare != "" {
@@ -766,7 +847,13 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 		}
 
 		if existingID := store.FindQSOByKey(db, qs.Call, qs.Band, qs.Mode, qs.QSODate, qs.TimeOn); existingID != 0 {
-			dupes++
+			// The row already exists locally — still learn its remote id
+			// when the local copy has none, so it counts as uploaded.
+			if qs.WavelogID > 0 {
+				if serr := store.SetWavelogID(db, existingID, qs.WavelogID); serr != nil {
+					applog.Warn("Wavelog: failed to store remote id for dupe", "qso_id", existingID, "error", serr)
+				}
+			}
 			continue
 		}
 

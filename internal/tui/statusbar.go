@@ -6,6 +6,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
 // headerView renders the top status bar with callsign, logbook name,
@@ -138,7 +139,12 @@ func (m *Model) headerView() string {
 	// Logging: Wavelog cloud sync.
 	wl := m.App.Logbook.Wavelog
 	if wl != nil && wl.Enabled {
-		rightParts = append(rightParts, statusDotStyled(m.lookup.wlOnline, "WL", m.Offline))
+		if m.lookup.wlStatusErr == wavelog.V1KeyRequiredMsg {
+			// Legacy v1 key — warn instead of showing plain offline.
+			rightParts = append(rightParts, statusDotWarnStyle.Render("WL!")+" ")
+		} else {
+			rightParts = append(rightParts, statusDotStyled(m.lookup.wlOnline, "WL", m.Offline))
+		}
 	}
 
 	// Position: APRS — indicator states:

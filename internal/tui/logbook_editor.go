@@ -3,6 +3,7 @@ package tui
 import (
 	"database/sql"
 	"os"
+	"strconv"
 
 	"charm.land/bubbles/v2/filepicker"
 	"charm.land/bubbles/v2/table"
@@ -104,7 +105,7 @@ var qefLabels = []string{
 	"My SOTA", "My POTA", "My WWFF",
 	"CQ Zone", "ITU Zone",
 	"Exch Sent", "Exch Rcvd", "STX", "SRX", "STX String", "SRX String",
-	"WL Upload (RO)",
+	"WL Id (RO)",
 	"Source (RO)",
 	"Contest ID",
 }
@@ -474,10 +475,19 @@ func (le *LogbookEditor) isModalMode() bool {
 	return false
 }
 
-// UpdateWLStatus updates the WL status field in the currently editing form.
-func (le *LogbookEditor) UpdateWLStatus(qID int64, status string) {
+// UpdateWLStatus refreshes the WL status field in the currently editing form.
+// The remote id is the source of truth: wavelog_id > 0 means uploaded.
+func (le *LogbookEditor) UpdateWLStatus(qID int64, uploaded bool, remoteID int64) {
 	if le.editing != nil && le.editing.ID == qID {
-		le.fields[qefWLStatus].SetValue(status)
-		le.editing.WavelogUploaded = status
+		if uploaded {
+			if remoteID > 0 {
+				le.fields[qefWLStatus].SetValue(strconv.FormatInt(remoteID, 10))
+			} else {
+				le.fields[qefWLStatus].SetValue("yes")
+			}
+		} else {
+			le.fields[qefWLStatus].SetValue("\u2014")
+		}
+		le.editing.WavelogID = remoteID
 	}
 }

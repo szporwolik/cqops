@@ -631,7 +631,7 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 			Enabled:          wlEnabled,
 			URL:              wlURL,
 			APIKey:           wlKey,
-			StationProfileID: wlStationID,
+			StationProfileID: wavelog.SanitizeStationID(wlStationID),
 		}
 		if c.mode == chooserEdit {
 			if prev := c.app.Config.Logbooks[c.editing].Wavelog; prev != nil {

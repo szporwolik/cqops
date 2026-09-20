@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -49,7 +50,11 @@ func (le *LogbookEditor) fillEditForm(q *qso.QSO) {
 	s(qefMySIG, q.MySIG)
 	s(qefMySIGInfo, q.MySIGInfo)
 	s(qefSource, q.Source)
-	s(qefWLStatus, q.WavelogUploaded)
+	if q.WavelogID > 0 {
+		s(qefWLStatus, strconv.FormatInt(q.WavelogID, 10))
+	} else {
+		s(qefWLStatus, "\u2014")
+	}
 	sf(qefDistance, q.Distance)
 	sf(qefBearing, q.Bearing)
 	s(qefIOTA, q.IOTA)
@@ -104,12 +109,12 @@ func (le *LogbookEditor) readEditForm() *qso.QSO {
 		SIGInfo:   g(qefSIGInfo),
 		MySOTARef: g(qefMySOTA), MyPOTARef: g(qefMyPOTA), MyWWFFRef: g(qefMyWWFF),
 		CQZone: g(qefCQZone), ITUZone: g(qefITUZone),
-		ExchSent:        g(qefExchSent),
-		ExchRcvd:        g(qefExchRcvd),
-		WavelogUploaded: g(qefWLStatus),
-		ContestID:       le.editing.ContestID,
-		ContestADIFID:   le.editing.ContestADIFID,
-		CreatedAt:       le.editing.CreatedAt,
+		ExchSent:      g(qefExchSent),
+		ExchRcvd:      g(qefExchRcvd),
+		ContestID:     le.editing.ContestID,
+		ContestADIFID: le.editing.ContestADIFID,
+		WavelogID:     le.editing.WavelogID,
+		CreatedAt:     le.editing.CreatedAt,
 	}
 	q.NormalizeExchange()
 	return q

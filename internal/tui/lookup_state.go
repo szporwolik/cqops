@@ -26,6 +26,8 @@ type lookupState struct {
 	wlNextRetry    time.Time // next retry attempt after backoff
 	wlStationName  string
 	wlStationLabel string
+	wlStatusErr    string // last human-readable status error (e.g. v1-key notice)
+	wlWarnShown    string // last status error surfaced as a toast
 	wlNeed         bool
 	wlCall         string
 	wlLast         time.Time

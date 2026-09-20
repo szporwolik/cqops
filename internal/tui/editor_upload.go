@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 
@@ -10,6 +11,11 @@ import (
 	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
+
+// reconcileThreshold is the minimum unsent count that triggers the remote
+// reconciliation pass before a batch upload. Small batches rely on the
+// server's own duplicate detection instead of the extra list fetch.
+const reconcileThreshold = 25
 
 func (le *LogbookEditor) doBatchUpload() tea.Cmd {
 	wlCall := ""
@@ -39,7 +45,7 @@ func (le *LogbookEditor) doBatchUpload() tea.Cmd {
 	var skipped int
 	var firstSkipCall, firstSkipDate string
 	for _, q := range allQSOS {
-		if q.WavelogUploaded != "yes" {
+		if q.WavelogID == 0 {
 			if q.Band == "" || q.Mode == "" || q.QSODate == "" {
 				applog.Warn("Wavelog: skipping QSO with missing required field",
 					"id", q.ID, "call", q.Call, "band", q.Band, "mode", q.Mode, "date", q.QSODate)
@@ -165,7 +171,38 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 	return func() tea.Msg {
 		totalOK := 0
 		totalDup := 0
+		totalRecon := 0
 		var lastErr error
+
+		// Migrated logs: rows carry no remote id even though they already
+		// exist on Wavelog. Reconcile against the remote list first so those
+		// are never re-uploaded — they just learn their id locally. Only
+		// genuinely new QSOs reach the upload loop below.
+		if len(unsent) > reconcileThreshold {
+			if ids, rerr := wavelog.FetchAllQSOIDs(url, key, sid); rerr == nil {
+				uploadable := make([]qso.QSO, 0, len(unsent))
+				for _, q := range unsent {
+					k := wavelog.MakeQSOIDKey(q.Call, q.Band, q.Mode, q.QSODate, q.TimeOn)
+					if rid, ok := ids[k]; ok && rid > 0 {
+						serr := store.SetWavelogID(db, q.ID, rid)
+						if serr == nil {
+							totalRecon++
+							continue
+						}
+						applog.Error("Wavelog: failed to store reconciled id — uploading instead", "qso_id", q.ID, "error", serr)
+					}
+					uploadable = append(uploadable, q)
+				}
+				unsent = uploadable
+				applog.InfoDetail("Wavelog: pre-upload reconciliation",
+					fmt.Sprintf("matched=%d remaining=%d", totalRecon, len(unsent)))
+			} else {
+				applog.Warn("Wavelog: pre-upload reconciliation failed — uploading directly", "error", rerr)
+			}
+		}
+		if len(unsent) == 0 {
+			return editorMsg{wlOK: true, wlCall: fmt.Sprintf("%d QSOs (already on Wavelog)", totalRecon)}
+		}
 
 		for start := 0; start < len(unsent); start += chunkSize {
 			end := start + chunkSize
@@ -203,15 +240,11 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 				continue
 			}
 			if result != nil && result.AllDuplicates {
-				for _, q := range chunk {
-					store.UpdateWavelogStatus(db, q.ID, "yes")
-				}
+				backfillBatchIDs(url, key, sid, db, chunk)
 				totalDup += len(chunk)
 				continue
 			}
-			for _, q := range chunk {
-				store.UpdateWavelogStatus(db, q.ID, "yes")
-			}
+			backfillBatchIDs(url, key, sid, db, chunk)
 			totalOK += len(chunk)
 		}
 
@@ -223,7 +256,10 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 			applog.InfoDetail("Wavelog: all chunks already present", fmt.Sprintf("count=%d", len(unsent)))
 			return editorMsg{wlQSOID: unsent[0].ID, wlOK: true, wlCall: fmt.Sprintf("%d QSOs (already on Wavelog)", len(unsent))}
 		}
-		applog.InfoDetail("Wavelog: chunked upload OK", fmt.Sprintf("ok=%d dup=%d total=%d", totalOK, totalDup, len(unsent)))
+		applog.InfoDetail("Wavelog: chunked upload OK", fmt.Sprintf("ok=%d dup=%d recon=%d total=%d", totalOK, totalDup, totalRecon, len(unsent)))
+		if totalRecon > 0 {
+			return editorMsg{wlQSOID: unsent[0].ID, wlOK: true, wlCall: fmt.Sprintf("%d QSOs · %d already on Wavelog", len(unsent), totalRecon)}
+		}
 		return editorMsg{wlQSOID: unsent[0].ID, wlOK: true, wlCall: fmt.Sprintf("%d QSOs", len(unsent))}
 	}
 }
@@ -241,8 +277,7 @@ func (le *LogbookEditor) uploadIndividual(unsent []qso.QSO) tea.Cmd {
 		var lastErr error
 
 		for _, q := range unsent {
-			adifStr := q.ToADIF()
-			ok, isDup, err := postQSO(url, key, sid, adifStr, q.ID, q.Call, db)
+			ok, isDup, _, err := postQSOSingle(url, key, sid, &q, db)
 			if !ok {
 				applog.Warn("Wavelog: individual upload failed", "qso_id", q.ID, "call", q.Call, "error", err)
 				failCount++
@@ -288,13 +323,31 @@ func (le *LogbookEditor) doUploadToWavelog() tea.Cmd {
 				err: fmt.Errorf("missing required field: band/mode/date")}
 		}
 	}
-	adifStr := q.ToADIF()
 	url, key, sid := le.wlURL, le.wlKey, le.wlStationID
 	qID := q.ID
 	call := q.Call
 
 	return func() tea.Msg {
-		ok, isDup, err := postQSO(url, key, sid, adifStr, qID, call, le.db)
+		ok, isDup, _, err := postQSOSingle(url, key, sid, q, le.db)
 		return editorMsg{wlQSOID: qID, wlCall: call, wlOK: ok, wlDup: isDup, err: err}
+	}
+}
+
+// backfillBatchIDs stores remote ids for a successfully uploaded chunk. Bulk
+// ADIF import summaries carry no ids, so the newest window of the JSON list
+// is fetched and matched by dedupe fields.
+func backfillBatchIDs(url, key, sid string, db *sql.DB, chunk []qso.QSO) {
+	ids, berr := wavelog.FindQSOIDs(url, key, sid, len(chunk)+25)
+	if berr != nil {
+		applog.Warn("Wavelog: batch id backfill failed", "error", berr)
+		return
+	}
+	for _, q := range chunk {
+		k := wavelog.MakeQSOIDKey(q.Call, q.Band, q.Mode, q.QSODate, q.TimeOn)
+		if rid, ok := ids[k]; ok {
+			if serr := store.SetWavelogID(db, q.ID, rid); serr != nil {
+				applog.Error("Wavelog: failed to store remote id", "qso_id", q.ID, "error", serr)
+			}
+		}
 	}
 }

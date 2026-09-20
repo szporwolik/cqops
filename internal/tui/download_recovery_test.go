@@ -142,9 +142,13 @@ func TestDownload_EmptySuccess(t *testing.T) {
 	// Server returns valid JSON but no ADIF data.
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"exported_qsos": 0,
-			"lastfetchedid": 42,
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"exported":      0,
+				"lastfetchedid": 42,
+				"adif":          nil,
+			},
+			"meta": map[string]any{"has_more": false},
 		})
 	}))
 	defer server.Close()
@@ -201,10 +205,13 @@ func TestDownload_CompletesWhileOnQSOScreen(t *testing.T) {
 <GRIDSQUARE:4>JO90 <EOR>`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"exported_qsos": 1,
-			"lastfetchedid": 77,
-			"adif":          adifContent,
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"exported":      1,
+				"lastfetchedid": 77,
+				"adif":          adifContent,
+			},
+			"meta": map[string]any{"has_more": false},
 		})
 	}))
 	defer server.Close()
@@ -346,10 +353,13 @@ func TestDownload_RetryAfterFailure(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"exported_qsos": 1,
-			"lastfetchedid": 99,
-			"adif":          adifContent,
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"exported":      1,
+				"lastfetchedid": 99,
+				"adif":          adifContent,
+			},
+			"meta": map[string]any{"has_more": false},
 		})
 	}))
 	defer server.Close()
@@ -404,13 +414,13 @@ func TestDownload_RetryAfterFailure(t *testing.T) {
 	qsos, _ := store.ListQSOs(db, 10, "")
 	var found bool
 	for _, q := range qsos {
-		if q.Call == "SP9MOA" && q.Source == "wavelog" && q.WavelogUploaded == "yes" {
+		if q.Call == "SP9MOA" && q.Source == "wavelog" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Error("imported QSO should have Source=wavelog, WavelogUploaded=yes")
+		t.Error("imported QSO should have Source=wavelog")
 	}
 }
 
@@ -425,10 +435,13 @@ func TestDownload_MalformedADIFImportsValid(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"exported_qsos": 2,
-			"lastfetchedid": 55,
-			"adif":          adifContent,
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"exported":      2,
+				"lastfetchedid": 55,
+				"adif":          adifContent,
+			},
+			"meta": map[string]any{"has_more": false},
 		})
 	}))
 	defer server.Close()
@@ -468,10 +481,13 @@ func TestDownload_TempFileCleanup(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"exported_qsos": 1,
-			"lastfetchedid": 10,
-			"adif":          adifContent,
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"exported":      1,
+				"lastfetchedid": 10,
+				"adif":          adifContent,
+			},
+			"meta": map[string]any{"has_more": false},
 		})
 	}))
 	defer server.Close()
@@ -490,18 +506,21 @@ func TestDownload_TempFileCleanup(t *testing.T) {
 }
 
 // =============================================================================
-// WavelogUploaded=yes set correctly on success
+// Wavelog source set correctly on success
 // =============================================================================
 
-func TestDownload_SetsWavelogUploaded(t *testing.T) {
+func TestDownload_SetsWavelogSource(t *testing.T) {
 	adifContent := `<CALL:6>SP9MOA <BAND:3>20m <MODE:3>SSB <QSO_DATE:8>20260618 <TIME_ON:6>120000 <RST_SENT:2>59 <RST_RCVD:2>59 <EOR>`
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"exported_qsos": 1,
-			"lastfetchedid": 77,
-			"adif":          adifContent,
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"exported":      1,
+				"lastfetchedid": 77,
+				"adif":          adifContent,
+			},
+			"meta": map[string]any{"has_more": false},
 		})
 	}))
 	defer server.Close()
@@ -520,9 +539,6 @@ func TestDownload_SetsWavelogUploaded(t *testing.T) {
 	found := false
 	for _, q := range qsos {
 		if q.Call == "SP9MOA" {
-			if q.WavelogUploaded != "yes" {
-				t.Errorf("WavelogUploaded = %q, want yes", q.WavelogUploaded)
-			}
 			if q.Source != "wavelog" {
 				t.Errorf("Source = %q, want wavelog", q.Source)
 			}
@@ -635,5 +651,56 @@ func TestMidDownload_DlErr_WhitespaceNotPreservedThroughDlDone(t *testing.T) {
 	}
 	if le.mode != edModeWLDownloadResult {
 		t.Errorf("mode should be edModeWLDownloadResult, got %v", le.mode)
+	}
+}
+
+// TestDownload_StoresWavelogIDs verifies the remote QSO ids captured from the
+// v2 JSON list sidecar are stored on the imported QSOs — the foundation for
+// future edit/delete support.
+func TestDownload_StoresWavelogIDs(t *testing.T) {
+	adifContent := `<CALL:6>SP9AAA <BAND:3>20m <MODE:3>SSB <QSO_DATE:8>20260921 <TIME_ON:4>1200 <EOR>
+<CALL:6>SP9BBB <BAND:3>40m <MODE:2>CW <QSO_DATE:8>20260921 <TIME_ON:4>1300 <EOR>`
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("format") == "" {
+			// JSON id sidecar request.
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{{"id": 10}, {"id": 11}},
+			})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"exported":      2,
+				"lastfetchedid": 11,
+				"adif":          adifContent,
+			},
+			"meta": map[string]any{"has_more": false, "total": 2},
+		})
+	}))
+	defer server.Close()
+
+	le := startFakeDownload(t, server, nil)
+
+	if le.wlDownloadCount != 2 {
+		t.Fatalf("wlDownloadCount = %d, want 2", le.wlDownloadCount)
+	}
+
+	qsos, _ := store.ListQSOs(le.db, 10, "")
+	var aaa, bbb *qso.QSO
+	for i := range qsos {
+		switch qsos[i].Call {
+		case "SP9AAA":
+			aaa = &qsos[i]
+		case "SP9BBB":
+			bbb = &qsos[i]
+		}
+	}
+	if aaa == nil || bbb == nil {
+		t.Fatalf("downloaded QSOs missing: %+v", qsos)
+	}
+	if aaa.WavelogID != 10 || bbb.WavelogID != 11 {
+		t.Errorf("WavelogID = %d/%d, want 10/11", aaa.WavelogID, bbb.WavelogID)
 	}
 }

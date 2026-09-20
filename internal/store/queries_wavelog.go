@@ -7,15 +7,14 @@ import (
 	"time"
 )
 
-// UpdateWavelogStatus sets the wavelog_uploaded status for a QSO.
-// Retries on SQLITE_BUSY with exponential backoff — concurrent enrichment,
-// dashboard pushes, or bulk imports may hold the write lock long enough
-// to exceed the default busy timeout.
-func UpdateWavelogStatus(db *sql.DB, id int64, status string) error {
+// SetWavelogID stores the remote Wavelog QSO id for a local QSO. The remote
+// id is the single source of truth for "uploaded": wavelog_id > 0 means the
+// QSO exists in Wavelog. Same SQLITE_BUSY retry policy as the other writers.
+func SetWavelogID(db *sql.DB, id, remoteID int64) error {
 	var err error
 	sleep := 100 * time.Millisecond
 	for attempt := 0; attempt < 5; attempt++ {
-		_, err = db.Exec(`UPDATE qsos SET wavelog_uploaded=? WHERE id=?`, status, id)
+		_, err = db.Exec(`UPDATE qsos SET wavelog_id=? WHERE id=?`, remoteID, id)
 		if err == nil {
 			return nil
 		}
@@ -25,7 +24,7 @@ func UpdateWavelogStatus(db *sql.DB, id int64, status string) error {
 		time.Sleep(sleep)
 		sleep *= 2
 	}
-	return fmt.Errorf("update wavelog status: %w", err)
+	return fmt.Errorf("set wavelog id: %w", err)
 }
 
 // NormalizeStationFields updates station_callsign, operator and my_gridsquare

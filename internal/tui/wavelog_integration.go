@@ -3,6 +3,8 @@ package tui
 import (
 	"database/sql"
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -60,20 +62,28 @@ func retryInterval(failCount int) time.Duration {
 }
 
 // checkWavelogCmd returns a tea.Cmd that tests Wavelog server connectivity
-// and fetches station profile info.
+// and fetches station profile info. Legacy v1 keys are detected up front and
+// reported with the migration message — no network call needed.
 func (m *Model) checkWavelogCmd() tea.Cmd {
 	wl := m.App.Logbook.Wavelog
 	url := wl.URL
 	key := wl.APIKey
 	stationID := wl.StationProfileID
+	if !wavelog.IsV2Token(key) {
+		applog.Warn("Wavelog: legacy v1 API key detected", "url", url)
+		return func() tea.Msg {
+			return wlStatusMsg{online: false, err: wavelog.V1KeyRequiredMsg}
+		}
+	}
 	return func() tea.Msg {
 		err := wavelog.TestConnection(url, key)
 		online := err == nil && stationID != ""
 		if err == nil && stationID != "" {
 			stations, ferr := wavelog.FetchStations(url, key)
 			if ferr == nil {
+				sidInt, _ := wavelog.ParseStationID(stationID)
 				for _, s := range stations {
-					if s.ID == stationID {
+					if s.ID == strconv.Itoa(sidInt) {
 						name := fmt.Sprintf("%s / %s", s.Gridsquare, s.Callsign)
 						label := s.Name
 						applog.InfoDetail("Wavelog: station info updated", fmt.Sprintf("id=%s grid=%s call=%s label=%s", s.ID, s.Gridsquare, s.Callsign, s.Name))
@@ -82,7 +92,11 @@ func (m *Model) checkWavelogCmd() tea.Cmd {
 				}
 			}
 		}
-		return wlStatusMsg{online: online}
+		statusErr := ""
+		if err != nil {
+			statusErr = err.Error()
+		}
+		return wlStatusMsg{online: online, err: statusErr}
 	}
 }
 
@@ -90,15 +104,17 @@ type wlStatusMsg struct {
 	online       bool
 	stationName  string
 	stationLabel string
+	err          string // human-readable reason when offline
 }
 
 // maybeUploadToWavelog returns a tea.Cmd that sends a QSO to Wavelog.
 func (m *Model) maybeUploadToWavelog(qs *qso.QSO) tea.Cmd {
-	return m.uploadADIFToWavelog(qs.ToADIF(), qs.ID, qs.Call)
+	return m.uploadQSOToWavelog(qs)
 }
 
-// uploadADIFToWavelog returns a tea.Cmd that uploads an ADIF record to Wavelog.
-func (m *Model) uploadADIFToWavelog(adifStr string, qID int64, call string) tea.Cmd {
+// uploadQSOToWavelog returns a tea.Cmd that uploads a single QSO to Wavelog
+// via the v2 single-JSON create, so the remote id can be stored locally.
+func (m *Model) uploadQSOToWavelog(qs *qso.QSO) tea.Cmd {
 	wl := m.App.Logbook.Wavelog
 	if wl == nil || !wl.Enabled || !m.inetOnline || wl.StationProfileID == "" {
 		return nil
@@ -108,9 +124,118 @@ func (m *Model) uploadADIFToWavelog(adifStr string, qID int64, call string) tea.
 	stationID := wl.StationProfileID
 
 	return func() tea.Msg {
-		ok, isDup, err := postQSO(url, key, stationID, adifStr, qID, call, m.App.DB)
-		return wlUploadResultMsg{qID: qID, call: call, ok: ok, isDup: isDup, err: err}
+		ok, isDup, remoteID, err := postQSOSingle(url, key, stationID, qs, m.App.DB)
+		return wlUploadResultMsg{qID: qs.ID, call: qs.Call, ok: ok, isDup: isDup, remoteID: remoteID, err: err}
 	}
+}
+
+// postQSOSingle uploads one QSO via the v2 single-JSON create and stores the
+// remote id locally — wavelog_id > 0 is the single source of truth for
+// "uploaded". Falls back to the ADIF import path when the JSON create fails
+// for any reason, preserving the previous behavior. On duplicates the remote
+// id is backfilled via a callsign lookup so the row still counts as uploaded.
+func postQSOSingle(url, key, sid string, qs *qso.QSO, db *sql.DB) (ok bool, isDup bool, remoteID int64, err error) {
+	if sidInt, perr := wavelog.ParseStationID(sid); perr == nil {
+		remoteID, dup, cerr := wavelog.CreateQSO(url, key, buildCreateQSOInput(sidInt, qs))
+		if cerr == nil {
+			if dup {
+				applog.InfoDetail("Wavelog: QSO already present (JSON create)", fmt.Sprintf("qso_id=%d", qs.ID))
+				return true, true, backfillRemoteID(url, key, sid, qs, db), nil
+			}
+			if remoteID > 0 {
+				if derr := store.SetWavelogID(db, qs.ID, remoteID); derr != nil {
+					applog.Error("Wavelog: failed to store remote id", "qso_id", qs.ID, "error", derr)
+				} else {
+					applog.InfoDetail("Wavelog: QSO created via v2", fmt.Sprintf("qso_id=%d remote_id=%d", qs.ID, remoteID))
+				}
+			} else {
+				// Server returned no id (bulk-summary shape) — backfill it.
+				remoteID = backfillRemoteID(url, key, sid, qs, db)
+			}
+			return true, false, remoteID, nil
+		}
+		// Auth errors (v1 key, revoked/expired token) fail identically on the
+		// ADIF path — surface the friendly message directly instead of a
+		// doomed fallback.
+		if apiErr, ok := cerr.(*wavelog.APIError); ok {
+			switch apiErr.Code {
+			case "unauthorized", "invalid_token", "token_expired":
+				return false, false, 0, wavelog.FriendlyError(cerr)
+			}
+		}
+		applog.Warn("Wavelog: JSON create failed, falling back to ADIF", "qso_id", qs.ID, "error", cerr)
+	}
+	// Fallback: the existing ADIF import path.
+	ok, isDup, err = postQSO(url, key, sid, qs.ToADIF(), qs.ID, qs.Call, db)
+	if ok {
+		remoteID = backfillRemoteID(url, key, sid, qs, db)
+	}
+	return ok, isDup, remoteID, err
+}
+
+// backfillRemoteID learns the remote id of an already-present QSO via the
+// callsign-scoped JSON list, so wavelog_id reflects reality even when the
+// create/import response carried no id (duplicates, bulk summaries).
+func backfillRemoteID(url, key, sid string, qs *qso.QSO, db *sql.DB) int64 {
+	mode := qs.Mode
+	if strings.EqualFold(mode, "MFSK") && qs.Submode != "" {
+		mode = qs.Submode // canonical: MFSK+FT8 → FT8, same as buildCreateQSOInput
+	}
+	rid, ferr := wavelog.FindQSOID(url, key, sid, qs.Call, adifDateToISO(qs.QSODate), qs.TimeOn, qs.Band, mode)
+	if ferr != nil {
+		applog.Warn("Wavelog: remote id backfill failed", "qso_id", qs.ID, "call", qs.Call, "error", ferr)
+		return 0
+	}
+	if rid > 0 {
+		if serr := store.SetWavelogID(db, qs.ID, rid); serr != nil {
+			applog.Error("Wavelog: failed to store remote id", "qso_id", qs.ID, "error", serr)
+		} else {
+			applog.InfoDetail("Wavelog: remote id backfilled", fmt.Sprintf("qso_id=%d remote_id=%d", qs.ID, rid))
+		}
+	}
+	return rid
+}
+
+// buildCreateQSOInput maps a local QSO to the v2 JSON-create fields.
+// v2 dates are ISO (YYYY-MM-DD) and frequencies are in Hz.
+func buildCreateQSOInput(sidInt int, qs *qso.QSO) wavelog.CreateQSOInput {
+	in := wavelog.CreateQSOInput{
+		StationProfileID: sidInt,
+		Call:             qs.Call,
+		Band:             qs.Band,
+		Mode:             qs.Mode,
+		QSODate:          adifDateToISO(qs.QSODate),
+		TimeOn:           qs.TimeOn,
+		TimeOff:          qs.TimeOff,
+		RSTSent:          qs.RSTSent,
+		RSTRcvd:          qs.RSTRcvd,
+		Gridsquare:       qs.GridSquare,
+		Name:             qs.Name,
+		QTH:              qs.QTH,
+		Comment:          qs.Comment,
+		Notes:            qs.Notes,
+	}
+	if qs.Freq > 0 {
+		in.FreqHz = int64(math.Round(qs.Freq * 1e6))
+	}
+	if qs.FreqRx > 0 {
+		in.FreqRxHz = int64(math.Round(qs.FreqRx * 1e6))
+	}
+	// ADIF codes digital modes as MFSK+submode; v2 wants the canonical mode.
+	if strings.EqualFold(qs.Mode, "MFSK") && qs.Submode != "" {
+		in.Mode = qs.Submode
+	}
+	return in
+}
+
+// adifDateToISO converts an ADIF date (YYYYMMDD) to ISO (YYYY-MM-DD).
+func adifDateToISO(d string) string {
+	if len(d) == 8 {
+		if t, err := time.Parse("20060102", d); err == nil {
+			return t.Format("2006-01-02")
+		}
+	}
+	return d
 }
 
 // postQSO sends ADIF to Wavelog and updates the local QSO status.
@@ -128,38 +253,49 @@ func postQSO(url, key, sid, adifStr string, qID int64, call string, db *sql.DB) 
 	result, err := wavelog.PostQSOWithResult(url, key, sid, adifStr)
 	if err != nil {
 		// If Wavelog rejected the QSO but the error indicates it's a duplicate
-		// (e.g. another app pushed the same QSO), treat it as success.
+		// (e.g. another app pushed the same QSO), treat it as success and
+		// learn the remote id from the server.
 		errStr := strings.ToLower(err.Error())
 		if strings.Contains(errStr, "duplicate") {
 			applog.InfoDetail("Wavelog: QSO already present (duplicate via error)", fmt.Sprintf("qso_id=%d call=%s", qID, call))
-			if dbErr := store.UpdateWavelogStatus(db, qID, "yes"); dbErr != nil {
-				applog.Error("Wavelog: failed to update local status", "qso_id", qID, "error", dbErr)
-			}
+			backfillQSOID(url, key, sid, qID, db)
 			return true, true, nil
 		}
 		applog.Error("Wavelog: QSO upload failed", "qso_id", qID, "call", call, "error", err)
-		if dbErr := store.UpdateWavelogStatus(db, qID, "no"); dbErr != nil {
-			applog.Error("Wavelog: failed to update local status", "qso_id", qID, "error", dbErr)
-		}
 		return false, false, err
-	}
-	if dbErr := store.UpdateWavelogStatus(db, qID, "yes"); dbErr != nil {
-		applog.Error("Wavelog: failed to update local status", "qso_id", qID, "error", dbErr)
 	}
 	if result != nil && result.AllDuplicates {
 		applog.InfoDetail("Wavelog: QSO already present (duplicate)", fmt.Sprintf("qso_id=%d call=%s", qID, call))
+		backfillQSOID(url, key, sid, qID, db)
 		return true, true, nil
 	}
+	// Bulk import summaries carry no id — learn it from the server list.
+	backfillQSOID(url, key, sid, qID, db)
 	applog.InfoDetail("Wavelog: QSO uploaded OK", fmt.Sprintf("qso_id=%d call=%s", qID, call))
 	return true, false, nil
 }
 
+// backfillQSOID loads a local QSO and stores its remote id, when the server
+// can identify it. Failures are logged, never fatal — the next download
+// backfills ids as a safety net.
+func backfillQSOID(url, key, sid string, qID int64, db *sql.DB) {
+	qs, lerr := store.GetQSOByID(db, qID)
+	if lerr != nil || qs == nil {
+		return
+	}
+	rid := backfillRemoteID(url, key, sid, qs, db)
+	if rid > 0 {
+		applog.InfoDetail("Wavelog: remote id stored", fmt.Sprintf("qso_id=%d remote_id=%d", qID, rid))
+	}
+}
+
 type wlUploadResultMsg struct {
-	qID   int64
-	call  string
-	ok    bool
-	isDup bool
-	err   error
+	qID      int64
+	call     string
+	ok       bool
+	isDup    bool
+	remoteID int64
+	err      error
 }
 
 // stripMyGridsquare removes the MY_GRIDSQUARE field from an ADIF string.

@@ -702,12 +702,16 @@ Wavelog integration supports:
 
 - upload,
 - incremental download,
-- worked/confirmed lookup.
+- worked/confirmed lookup,
+- edit sync: editing a QSO that exists in Wavelog refreshes it from the server
+  when the editor opens, and saving it updates the Wavelog copy too. Deleting
+  such a QSO removes the Wavelog copy as well — the confirmation dialogs tell
+  you when that happens.
 
 Wavelog is configured per active logbook with:
 
 - URL,
-- API key,
+- API v2 token (`wl2_…`) — legacy v1 API keys are not supported since CQOps 0.11.0,
 - station profile ID.
 
 CQOps always saves QSOs locally first. Wavelog upload failure does not delete local data.
@@ -1366,7 +1370,7 @@ Check:
 Check:
 
 - Wavelog URL,
-- API key,
+- API v2 token (`wl2_…`) — CQOps 0.11.0 and later require a v2 token,
 - station profile ID,
 - **WL** status label.
 

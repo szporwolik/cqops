@@ -35,7 +35,7 @@ func CountQSOsForContest(db *sql.DB, contestID string) (QSOCounts, error) {
 		return c, fmt.Errorf("count qsos: %w", err)
 	}
 	fromWSJTX := `SELECT COUNT(*) FROM qsos WHERE source='wsjtx'`
-	toWavelog := `SELECT COUNT(*) FROM qsos WHERE wavelog_uploaded='yes'`
+	toWavelog := `SELECT COUNT(*) FROM qsos WHERE wavelog_id > 0`
 	if contestID != "" {
 		fromWSJTX += ` AND contest_id = ?`
 		toWavelog += ` AND contest_id = ?`

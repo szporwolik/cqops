@@ -297,36 +297,26 @@ func TestPurgeQSOs_RemovesAll(t *testing.T) {
 }
 
 // =============================================================================
-// UpdateWavelogStatus tests
+// SetWavelogID tests
 // =============================================================================
 
-func TestUpdateWavelogStatus(t *testing.T) {
+func TestSetWavelogID(t *testing.T) {
 	db := newTempDB(t)
 
 	id := mustInsertQSO(t, db, validQSO())
 
-	// Initially empty/default.
+	// Initially no remote id.
 	q, _ := GetQSOByID(db, id)
-	if q.WavelogUploaded != "" {
-		t.Errorf("initial wavelog_uploaded = %q; want empty", q.WavelogUploaded)
+	if q.WavelogID != 0 {
+		t.Errorf("initial wavelog_id = %d; want 0", q.WavelogID)
 	}
 
-	// Set to "yes".
-	if err := UpdateWavelogStatus(db, id, "yes"); err != nil {
-		t.Fatalf("UpdateWavelogStatus yes: %v", err)
+	if err := SetWavelogID(db, id, 42); err != nil {
+		t.Fatalf("SetWavelogID: %v", err)
 	}
 	q, _ = GetQSOByID(db, id)
-	if q.WavelogUploaded != "yes" {
-		t.Errorf("wavelog_uploaded = %q; want yes", q.WavelogUploaded)
-	}
-
-	// Set to "no".
-	if err := UpdateWavelogStatus(db, id, "no"); err != nil {
-		t.Fatalf("UpdateWavelogStatus no: %v", err)
-	}
-	q, _ = GetQSOByID(db, id)
-	if q.WavelogUploaded != "no" {
-		t.Errorf("wavelog_uploaded = %q; want no", q.WavelogUploaded)
+	if q.WavelogID != 42 {
+		t.Errorf("wavelog_id = %d; want 42", q.WavelogID)
 	}
 }
 
@@ -399,7 +389,7 @@ func TestNormalizeStationFields_EmptyIDs(t *testing.T) {
 func TestCountQSOs(t *testing.T) {
 	db := newTempDB(t)
 
-	mustInsertQSO(t, db, &qso.QSO{Call: "A", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB", Source: "wsjtx", WavelogUploaded: "yes"})
+	mustInsertQSO(t, db, &qso.QSO{Call: "A", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB", Source: "wsjtx", WavelogID: 1})
 	mustInsertQSO(t, db, &qso.QSO{Call: "B", QSODate: "20240502", TimeOn: "130000", Band: "40m", Mode: "CW", Source: "manual"})
 	mustInsertQSO(t, db, &qso.QSO{Call: "C", QSODate: "20240503", TimeOn: "140000", Band: "15m", Mode: "FT8", Source: "wsjtx"})
 
@@ -526,9 +516,9 @@ func TestCountQSOsForContest_Filtered(t *testing.T) {
 	db := newTempDB(t)
 
 	// Insert QSOs with different contest IDs.
-	mustInsertQSO(t, db, &qso.QSO{Call: "A", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB", ContestID: "c1", Source: "wsjtx", WavelogUploaded: "yes"})
+	mustInsertQSO(t, db, &qso.QSO{Call: "A", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB", ContestID: "c1", Source: "wsjtx", WavelogID: 1})
 	mustInsertQSO(t, db, &qso.QSO{Call: "B", QSODate: "20240502", TimeOn: "130000", Band: "40m", Mode: "CW", ContestID: "c1", Source: "manual"})
-	mustInsertQSO(t, db, &qso.QSO{Call: "C", QSODate: "20240503", TimeOn: "140000", Band: "15m", Mode: "FT8", ContestID: "c2", Source: "wsjtx", WavelogUploaded: "yes"})
+	mustInsertQSO(t, db, &qso.QSO{Call: "C", QSODate: "20240503", TimeOn: "140000", Band: "15m", Mode: "FT8", ContestID: "c2", Source: "wsjtx", WavelogID: 1})
 	mustInsertQSO(t, db, &qso.QSO{Call: "D", QSODate: "20240504", TimeOn: "150000", Band: "10m", Mode: "SSB"})
 
 	c, err := CountQSOsForContest(db, "c1")

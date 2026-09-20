@@ -81,7 +81,6 @@ func TestADIFToQSO_FT8(t *testing.T) {
 
 	// Apply station defaults (same as logQSOFromADIF does).
 	qs.Source = "wsjtx"
-	qs.WavelogUploaded = "no"
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
 		Operator:        m.App.Logbook.Station.Callsign,
@@ -154,8 +153,8 @@ func TestADIFToQSO_FT8(t *testing.T) {
 	if stored.Source != "wsjtx" {
 		t.Errorf("Source = %q, want wsjtx", stored.Source)
 	}
-	if stored.WavelogUploaded != "no" {
-		t.Errorf("WavelogUploaded = %q, want no", stored.WavelogUploaded)
+	if stored.WavelogID != 0 {
+		t.Errorf("WavelogID = %d, want 0 (not uploaded)", stored.WavelogID)
 	}
 	if stored.StationCallsign != "DJ7NT" {
 		t.Errorf("StationCallsign = %q, want DJ7NT", stored.StationCallsign)
@@ -168,7 +167,6 @@ func TestADIFToQSO_FT4(t *testing.T) {
 
 	qs := parseWSJTXADIF(adifFT4)
 	qs.Source = "wsjtx"
-	qs.WavelogUploaded = "no"
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
 		Operator:        m.App.Logbook.Station.Callsign,
@@ -210,7 +208,6 @@ func TestADIFToQSO_SSB(t *testing.T) {
 
 	qs := parseWSJTXADIF(adifSSB)
 	qs.Source = "wsjtx"
-	qs.WavelogUploaded = "no"
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
 		Operator:        m.App.Logbook.Station.Callsign,
@@ -255,7 +252,6 @@ func TestADIFToQSO_CW(t *testing.T) {
 
 	qs := parseWSJTXADIF(adifCW)
 	qs.Source = "wsjtx"
-	qs.WavelogUploaded = "no"
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
 		Operator:        m.App.Logbook.Station.Callsign,
@@ -354,7 +350,6 @@ func TestADIFToQSO_InvalidCall(t *testing.T) {
 
 	qs := parseWSJTXADIF(adif)
 	qs.Source = "wsjtx"
-	qs.WavelogUploaded = "no"
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
 		Operator:        m.App.Logbook.Station.Callsign,
@@ -423,7 +418,6 @@ func TestADIFToQSO_InvalidGrid(t *testing.T) {
 
 	qs := parseWSJTXADIF(adif)
 	qs.Source = "wsjtx"
-	qs.WavelogUploaded = "no"
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
 		Operator:        m.App.Logbook.Station.Callsign,
@@ -452,7 +446,6 @@ func TestADIFToQSO_DuplicateDetection(t *testing.T) {
 	// First insert should succeed.
 	qs := parseWSJTXADIF(adif)
 	qs.Source = "wsjtx"
-	qs.WavelogUploaded = "no"
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
 		Operator:        m.App.Logbook.Station.Callsign,
@@ -595,7 +588,6 @@ func TestWavelogBoundary_UploadState(t *testing.T) {
 
 	qs := parseWSJTXADIF(adifFT8)
 	qs.Source = "wsjtx"
-	qs.WavelogUploaded = "no"
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
 		Operator:        m.App.Logbook.Station.Callsign,
@@ -609,10 +601,10 @@ func TestWavelogBoundary_UploadState(t *testing.T) {
 		t.Fatalf("InsertQSO: %v", err)
 	}
 
-	// Simulate successful upload by updating wavelog status.
-	err = store.UpdateWavelogStatus(m.App.DB, id, "yes")
+	// Simulate successful upload by storing the remote id.
+	err = store.SetWavelogID(m.App.DB, id, 77)
 	if err != nil {
-		t.Fatalf("UpdateWavelogStatus: %v", err)
+		t.Fatalf("SetWavelogID: %v", err)
 	}
 
 	// Read back and verify.
@@ -620,8 +612,8 @@ func TestWavelogBoundary_UploadState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetQSOByID: %v", err)
 	}
-	if stored.WavelogUploaded != "yes" {
-		t.Errorf("WavelogUploaded = %q, want yes", stored.WavelogUploaded)
+	if stored.WavelogID != 77 {
+		t.Errorf("WavelogID = %d, want 77", stored.WavelogID)
 	}
 }
 
@@ -693,7 +685,6 @@ func TestADIFToQSO_StandaloneFT8Normalized(t *testing.T) {
 	}
 
 	qs.Source = "wsjtx"
-	qs.WavelogUploaded = "no"
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
 		Operator:        m.App.Logbook.Station.Callsign,
@@ -736,7 +727,6 @@ func TestADIFToQSO_StandaloneFT4Normalized(t *testing.T) {
 	}
 
 	qs.Source = "wsjtx"
-	qs.WavelogUploaded = "no"
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
 		Operator:        m.App.Logbook.Station.Callsign,

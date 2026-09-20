@@ -1,14 +1,82 @@
 package tui
 
 import (
+	"encoding/json"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
 	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/store"
 )
+
+// TestWSJTXAutoLogStoresWavelogID verifies the WSJT-X auto-log → enrichment →
+// upload pipeline stores the remote Wavelog id locally.
+func TestWSJTXAutoLogStoresWavelogID(t *testing.T) {
+	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/qso" || r.Method != http.MethodPost {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{"id": 55, "call": "SP9MOA"},
+			"meta": map[string]string{"resource": "qso", "method": "POST"},
+		})
+	})
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	m.App.Logbook.Wavelog.Enabled = true
+	m.App.Logbook.Wavelog.URL = srv.URL
+	m.App.Logbook.Wavelog.APIKey = "wl2_test"
+	m.App.Logbook.Wavelog.StationProfileID = "1"
+	m.inetOnline = true
+
+	adif := "<CALL:6>SP9MOA <BAND:3>20m <FREQ:9>14.074550 <MODE:3>FT8 " +
+		"<QSO_DATE:8>20260921 <TIME_ON:6>120000 <RST_SENT:3>-10 <RST_RCVD:3>-05 <GRIDSQUARE:6>JO90aa <EOR>"
+
+	cmd, retry := m.logQSOFromADIF(adif)
+	if retry {
+		t.Fatal("logQSOFromADIF requested retry")
+	}
+	if cmd == nil {
+		t.Fatal("expected upload command")
+	}
+
+	// Run the returned Batch (refresh + enrich/upload) and pump every
+	// resulting message through Update.
+	msg := cmd()
+	batch, ok := msg.(tea.BatchMsg)
+	if !ok {
+		t.Fatalf("expected tea.BatchMsg, got %T", msg)
+	}
+	for _, sub := range batch {
+		subMsg := sub()
+		if subMsg == nil {
+			continue
+		}
+		next, _ := m.Update(subMsg)
+		m = next.(*Model)
+	}
+
+	qsos, err := store.ListQSOs(m.App.DB, 5, "")
+	if err != nil || len(qsos) == 0 {
+		t.Fatalf("no QSO logged: %v", err)
+	}
+	q := qsos[0]
+	if q.WavelogID != 55 {
+		t.Errorf("WavelogID = %d, want 55", q.WavelogID)
+	}
+	if q.WavelogID != 55 {
+		t.Errorf("wavelog_id = %d, want 55", q.WavelogID)
+	}
+}
 
 func TestParseWSJTXADIFValid(t *testing.T) {
 	adif := "SP9MOA de DJ7NT\n" +

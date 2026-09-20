@@ -19,7 +19,7 @@ const qsoCols = `call, qso_date, time_on, time_off, band, freq, freq_rx, mode, s
 		cq_zone, itu_zone,
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
-		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
+		wavelog_id, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
 		dxcc`
 
 // placeholders52 is a pre-computed string of 52 comma-separated "?" markers,
@@ -50,7 +50,7 @@ func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 			q.SOTARef, q.POTARef, q.WWFFRef, q.IOTA, q.SIG, q.SIGInfo,
 			q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
 			q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
-			q.CQZone, q.ITUZone, q.MyCQZone, q.MyITUZone, q.MyDXCC, q.MySIG, q.MySIGInfo, q.WavelogUploaded, q.ContestID, q.ExchSent, q.ExchRcvd, q.STX, q.SRX, q.STXString, q.SRXString, q.ContestADIFID, q.DXCC,
+			q.CQZone, q.ITUZone, q.MyCQZone, q.MyITUZone, q.MyDXCC, q.MySIG, q.MySIGInfo, q.WavelogID, q.ContestID, q.ExchSent, q.ExchRcvd, q.STX, q.SRX, q.STXString, q.SRXString, q.ContestADIFID, q.DXCC,
 			qso.DeriveBaseCall(q.Call),
 			q.CreatedAt.Format(time.RFC3339), q.UpdatedAt.Format(time.RFC3339),
 		)
@@ -82,7 +82,7 @@ func ListQSOs(db *sql.DB, limit int, contestID string) ([]qso.QSO, error) {
 		cq_zone, itu_zone,
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
-		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
+		wavelog_id, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
 		created_at, updated_at
 		FROM qsos`
 	var args []any
@@ -118,7 +118,7 @@ func ListQSOs(db *sql.DB, limit int, contestID string) ([]qso.QSO, error) {
 			&q.CQZone, &q.ITUZone,
 			&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
 			&q.MySIG, &q.MySIGInfo,
-			&q.WavelogUploaded, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
+			&q.WavelogID, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
 			&createdAt, &updatedAt,
 		)
 		if err != nil {
@@ -162,7 +162,7 @@ func ListQSOsPageWithCount(db *sql.DB, limit, offset int, contestID string) ([]q
 		cq_zone, itu_zone, dxcc,
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
-		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
+		wavelog_id, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
 		created_at, updated_at,
 		COUNT(*) OVER() as total_count
 		FROM qsos`
@@ -197,7 +197,7 @@ func ListQSOsPageWithCount(db *sql.DB, limit, offset int, contestID string) ([]q
 			&q.CQZone, &q.ITUZone, &q.DXCC,
 			&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
 			&q.MySIG, &q.MySIGInfo,
-			&q.WavelogUploaded, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
+			&q.WavelogID, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
 			&createdAt, &updatedAt,
 			&total,
 		)
@@ -230,7 +230,7 @@ func ListQSOsPage(db *sql.DB, limit, offset int, contestID string, orderAsc bool
 		cq_zone, itu_zone, dxcc,
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
-		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
+		wavelog_id, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
 		created_at, updated_at
 		FROM qsos`
 	var args []any
@@ -269,7 +269,7 @@ func ListQSOsPage(db *sql.DB, limit, offset int, contestID string, orderAsc bool
 			&q.CQZone, &q.ITUZone, &q.DXCC,
 			&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
 			&q.MySIG, &q.MySIGInfo,
-			&q.WavelogUploaded, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
+			&q.WavelogID, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
 			&createdAt, &updatedAt,
 		)
 		if err != nil {
@@ -301,7 +301,7 @@ func SearchQSOsByCall(db *sql.DB, call string, limit int) ([]qso.QSO, error) {
 		cq_zone, itu_zone,
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
-		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
+		wavelog_id, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
 		created_at, updated_at
 		FROM qsos
 		WHERE base_call = ?
@@ -329,7 +329,7 @@ func SearchQSOsByCall(db *sql.DB, call string, limit int) ([]qso.QSO, error) {
 			&q.CQZone, &q.ITUZone,
 			&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
 			&q.MySIG, &q.MySIGInfo,
-			&q.WavelogUploaded, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
+			&q.WavelogID, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
 			&createdAt, &updatedAt,
 		)
 		if err != nil {
@@ -361,7 +361,7 @@ func SearchQSOs(db *sql.DB, query, contestID string, limit int) ([]qso.QSO, erro
 		cq_zone, itu_zone,
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
-		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
+		wavelog_id, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
 		created_at, updated_at
 		FROM qsos
 		WHERE (call LIKE ? OR name LIKE ? OR country LIKE ?)`
@@ -396,7 +396,7 @@ func SearchQSOs(db *sql.DB, query, contestID string, limit int) ([]qso.QSO, erro
 			&q.CQZone, &q.ITUZone,
 			&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
 			&q.MySIG, &q.MySIGInfo,
-			&q.WavelogUploaded, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
+			&q.WavelogID, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
 			&createdAt, &updatedAt,
 		)
 		if err != nil {
@@ -428,7 +428,7 @@ func GetQSOByID(db *sql.DB, id int64) (*qso.QSO, error) {
 		cq_zone, itu_zone, dxcc,
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
-		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
+		wavelog_id, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
 		created_at, updated_at
 		FROM qsos WHERE id = ?`, id,
 	).Scan(
@@ -442,7 +442,7 @@ func GetQSOByID(db *sql.DB, id int64) (*qso.QSO, error) {
 		&q.CQZone, &q.ITUZone, &q.DXCC,
 		&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
 		&q.MySIG, &q.MySIGInfo,
-		&q.WavelogUploaded, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
+		&q.WavelogID, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
 		&createdAt, &updatedAt,
 	)
 	if err != nil {
@@ -678,7 +678,7 @@ func ListQSOsFromDate(db *sql.DB, date string, limit int) ([]qso.QSO, error) {
 		cq_zone, itu_zone,
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
-		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
+		wavelog_id, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
 		created_at, updated_at
 		FROM qsos WHERE qso_date >= ? ORDER BY qso_date DESC, time_on DESC, id DESC LIMIT ?`
 	return listQSOsByQuery(db, query, date, limit)
@@ -706,7 +706,7 @@ func listQSOsByQuery(db *sql.DB, query string, args ...any) ([]qso.QSO, error) {
 			&q.CQZone, &q.ITUZone,
 			&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
 			&q.MySIG, &q.MySIGInfo,
-			&q.WavelogUploaded, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
+			&q.WavelogID, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
 			&createdAt, &updatedAt,
 		)
 		if err != nil {
@@ -738,7 +738,7 @@ func UpdateQSO(db *sql.DB, q *qso.QSO) error {
 			cq_zone=?, itu_zone=?,
 			my_cq_zone=?, my_itu_zone=?, my_dxcc=?,
 			my_sig=?, my_sig_info=?,
-			wavelog_uploaded=?, contest_id=?, exch_sent=?, exch_rcvd=?, stx=?, srx=?, stx_string=?, srx_string=?, contest_adif_id=?,
+			wavelog_id=?, contest_id=?, exch_sent=?, exch_rcvd=?, stx=?, srx=?, stx_string=?, srx_string=?, contest_adif_id=?,
 			updated_at=?
 			WHERE id=?`,
 			q.Call, q.QSODate, q.TimeOn, q.TimeOff,
@@ -748,7 +748,7 @@ func UpdateQSO(db *sql.DB, q *qso.QSO) error {
 			q.SOTARef, q.POTARef, q.WWFFRef, q.IOTA, q.SIG, q.SIGInfo,
 			q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
 			q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
-			q.CQZone, q.ITUZone, q.MyCQZone, q.MyITUZone, q.MyDXCC, q.MySIG, q.MySIGInfo, q.WavelogUploaded, q.ContestID, q.ExchSent, q.ExchRcvd, q.STX, q.SRX, q.STXString, q.SRXString, q.ContestADIFID,
+			q.CQZone, q.ITUZone, q.MyCQZone, q.MyITUZone, q.MyDXCC, q.MySIG, q.MySIGInfo, q.WavelogID, q.ContestID, q.ExchSent, q.ExchRcvd, q.STX, q.SRX, q.STXString, q.SRXString, q.ContestADIFID,
 			q.UpdatedAt.Format(time.RFC3339),
 			q.ID,
 		)
