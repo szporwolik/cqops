@@ -587,24 +587,31 @@ const (
 // Stops when stopAPRSPruner is called or the app shuts down.
 func (a *App) startAPRSPruner() {
 	a.stopAPRSPruner() // ensure no duplicate
-	a.pruneStopCh = make(chan struct{})
-	go func() {
-		ticker := time.NewTicker(aprsPruneInterval)
-		defer ticker.Stop()
-
-		// Prune once at startup to clean up stale entries from a previous run.
-		a.pruneOnce(aprsRetainDuration)
-
-		for {
-			select {
-			case <-ticker.C:
-				a.pruneOnce(aprsRetainDuration)
-			case <-a.pruneStopCh:
-				return
-			}
-		}
-	}()
+	stopCh := make(chan struct{})
+	a.pruneStopCh = stopCh
+	// The goroutine only reads the local channel — the pruneStopCh field
+	// is owned by the caller, so restarts cannot race.
+	go a.aprsPruneLoop(stopCh)
 	applog.Debug("APRS: cache pruner started", "interval", aprsPruneInterval, "retain", aprsRetainDuration)
+}
+
+// aprsPruneLoop periodically deletes cached stations older than the
+// retention window until the given stop channel closes.
+func (a *App) aprsPruneLoop(stopCh chan struct{}) {
+	ticker := time.NewTicker(aprsPruneInterval)
+	defer ticker.Stop()
+
+	// Prune once at startup to clean up stale entries from a previous run.
+	a.pruneOnce(aprsRetainDuration)
+
+	for {
+		select {
+		case <-ticker.C:
+			a.pruneOnce(aprsRetainDuration)
+		case <-stopCh:
+			return
+		}
+	}
 }
 
 func (a *App) stopAPRSPruner() {
@@ -638,65 +645,71 @@ func (a *App) pruneOnce(retainDuration time.Duration) {
 // sent recently (e.g. after an app restart).
 func (a *App) startAPRSBeacon() {
 	a.stopAPRSBeacon()
-	a.beaconStopCh = make(chan struct{})
-	go func() {
-		defer func() { a.beaconStopCh = nil }()
-		// Wait 10s for the APRS client to connect.
-		select {
-		case <-time.After(10 * time.Second):
-		case <-a.beaconStopCh:
-			return
-		}
+	stopCh := make(chan struct{})
+	a.beaconStopCh = stopCh
+	// The goroutine only reads the local channel — the beaconStopCh field
+	// is owned by the caller (start/stop run on the same goroutine), so
+	// there is no race when the beacon is restarted.
+	go a.aprsBeaconLoop(stopCh)
+	applog.Debug("APRS: beacon goroutine started")
+}
 
-		for {
-			aprsCfg := a.Logbook.APRS
-			if aprsCfg == nil || !aprsCfg.Enabled || !aprsCfg.SendLocation {
-				select {
-				case <-time.After(30 * time.Second):
-					continue
-				case <-a.beaconStopCh:
-					return
-				}
-			}
+// aprsBeaconLoop sends position beacons until the given stop channel closes.
+func (a *App) aprsBeaconLoop(stopCh chan struct{}) {
+	// Wait 10s for the APRS client to connect.
+	select {
+	case <-time.After(10 * time.Second):
+	case <-stopCh:
+		return
+	}
 
-			intervalMin := aprsCfg.IntervalMin
-			if intervalMin < 5 {
-				intervalMin = 5
-			}
-			if intervalMin > 180 {
-				intervalMin = 180
-			}
-			interval := time.Duration(intervalMin) * time.Minute
-
-			// Wait until next scheduled beacon based on LastBeaconAt.
-			if aprsCfg.LastBeaconAt != "" {
-				last, err := time.Parse(time.RFC3339, aprsCfg.LastBeaconAt)
-				if err == nil {
-					elapsed := time.Since(last)
-					if elapsed < interval {
-						remaining := interval - elapsed
-						applog.Debug("APRS: beacon waiting", "remaining", remaining.Round(time.Second), "lastBeacon", aprsCfg.LastBeaconAt)
-						select {
-						case <-time.After(remaining):
-						case <-a.beaconStopCh:
-							return
-						}
-					}
-				}
-			}
-
-			a.sendAPRSBeacon(aprsCfg)
-			a.persistBeaconTimestamp(aprsCfg)
-
-			// Wait for next interval.
+	for {
+		aprsCfg := a.Logbook.APRS
+		if aprsCfg == nil || !aprsCfg.Enabled || !aprsCfg.SendLocation {
 			select {
-			case <-time.After(interval):
-			case <-a.beaconStopCh:
+			case <-time.After(30 * time.Second):
+				continue
+			case <-stopCh:
 				return
 			}
 		}
-	}()
-	applog.Debug("APRS: beacon goroutine started")
+
+		intervalMin := aprsCfg.IntervalMin
+		if intervalMin < 5 {
+			intervalMin = 5
+		}
+		if intervalMin > 180 {
+			intervalMin = 180
+		}
+		interval := time.Duration(intervalMin) * time.Minute
+
+		// Wait until next scheduled beacon based on LastBeaconAt.
+		if aprsCfg.LastBeaconAt != "" {
+			last, err := time.Parse(time.RFC3339, aprsCfg.LastBeaconAt)
+			if err == nil {
+				elapsed := time.Since(last)
+				if elapsed < interval {
+					remaining := interval - elapsed
+					applog.Debug("APRS: beacon waiting", "remaining", remaining.Round(time.Second), "lastBeacon", aprsCfg.LastBeaconAt)
+					select {
+					case <-time.After(remaining):
+					case <-stopCh:
+						return
+					}
+				}
+			}
+		}
+
+		a.sendAPRSBeacon(aprsCfg)
+		a.persistBeaconTimestamp(aprsCfg)
+
+		// Wait for next interval.
+		select {
+		case <-time.After(interval):
+		case <-stopCh:
+			return
+		}
+	}
 }
 
 func (a *App) stopAPRSBeacon() {
