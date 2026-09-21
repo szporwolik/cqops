@@ -328,6 +328,8 @@ func (f *StationForm) NextInput() {
 		f.wlCbFocus = false
 		if f.WlEnabled {
 			f.WlURL.Focus()
+		} else if !f.HideGPSGrid {
+			f.aprsCbFocus = true
 		} else {
 			f.Name.Focus()
 		}
@@ -509,10 +511,6 @@ func (f *StationForm) PrevInput() {
 	f.unmaskSecretsOnFocus()
 }
 
-func (f *StationForm) OnLastField() bool {
-	return f.aprsBtnFocus == 1
-}
-
 func (f *StationForm) BlurAll() {
 	f.WlKey.EchoMode = textinput.EchoPassword // mask secret when leaving
 	f.WlKey.EchoMode = textinput.EchoPassword
@@ -531,64 +529,97 @@ func (f *StationForm) BlurAll() {
 	f.aprsBtnFocus = 0
 }
 
-// lastFieldFocused reports whether the last focusable field currently has
-// focus. The wizard uses it to hand focus to its Save & Next button.
-func (f *StationForm) lastFieldFocused() bool {
-	if f.HideGPSGrid {
-		if f.WlEnabled {
-			return f.WlStationID.Focused()
-		}
-		return f.wlCbFocus
+// focusableRows implementation for the shared menuFocus engine. Row order
+// matches the NextInput chain: name, callsign, operator, locator, GPS grid,
+// IARU region, continent, advanced fields, Wavelog block, APRS block.
+func (f *StationForm) rowCount() int { return stationFormRows }
+
+// stationFormRows is the number of focus slots in the station form.
+const stationFormRows = 28
+
+func (f *StationForm) rowVisible(i int) bool {
+	switch i {
+	case 2: // operator selector
+		return !f.HideOperator
+	case 4: // GPS grid checkbox
+		return !f.HideGPSGrid
+	case 5: // IARU region
+		return !f.HideIARU
+	case 7, 8, 9, 10, 11, 12, 13, 14: // SOTA/POTA/WWFF/CQ/ITU/DXCC/SIG/SIG info
+		return f.Advanced
+	case 16, 17, 18, 19: // Wavelog URL, key, test button, station ID
+		return f.WlEnabled
+	case 20: // APRS TX checkbox
+		return !f.HideGPSGrid
+	case 21, 22, 23, 24, 25, 26, 27: // APRS fields and test button
+		return f.AprsEnabled && !f.HideGPSGrid
 	}
-	if f.AprsEnabled {
-		return f.AprsComment.Focused()
-	}
-	if f.WlEnabled {
-		return f.WlStationID.Focused()
-	}
-	return f.wlCbFocus
+	return true // name, callsign, locator, continent, Wavelog checkbox
 }
 
-// blurLastField clears focus from the last focusable field.
-func (f *StationForm) blurLastField() {
-	if f.HideGPSGrid {
-		if f.WlEnabled {
-			f.WlStationID.Blur()
-		} else {
-			f.wlCbFocus = false
-		}
-		return
-	}
-	if f.AprsEnabled {
-		f.AprsComment.Blur()
-		return
-	}
-	if f.WlEnabled {
-		f.WlStationID.Blur()
-		return
-	}
-	f.wlCbFocus = false
-}
+func (f *StationForm) blurAll() { f.BlurAll() }
 
-// focusLastField restores focus to the last focusable field.
-func (f *StationForm) focusLastField() {
-	if f.HideGPSGrid {
-		if f.WlEnabled {
-			f.WlStationID.Focus()
-		} else {
-			f.wlCbFocus = true
-		}
-		return
-	}
-	if f.AprsEnabled {
-		f.AprsComment.Focus()
-		return
-	}
-	if f.WlEnabled {
+func (f *StationForm) focusRow(i int) tea.Cmd {
+	switch i {
+	case 0:
+		f.Name.Focus()
+	case 1:
+		f.Callsign.Focus()
+	case 2:
+		f.opFocus = true
+	case 3:
+		f.Locator.Focus()
+	case 4:
+		f.gpsGridFocus = true
+	case 5:
+		f.iaruFocus = true
+	case 6:
+		f.contFocus = true
+	case 7:
+		f.SOTARef.Focus()
+	case 8:
+		f.POTARef.Focus()
+	case 9:
+		f.WWFFRef.Focus()
+	case 10:
+		f.CQZone.Focus()
+	case 11:
+		f.ITUZone.Focus()
+	case 12:
+		f.DXCC.Focus()
+	case 13:
+		f.SIG.Focus()
+	case 14:
+		f.SIGInfo.Focus()
+	case 15:
+		f.wlCbFocus = true
+	case 16:
+		f.WlURL.Focus()
+	case 17:
+		f.WlKey.Focus()
+	case 18:
+		f.wlBtnFocus = 1
+	case 19:
 		f.WlStationID.Focus()
-		return
+	case 20:
+		f.aprsCbFocus = true
+	case 21:
+		f.AprsCallsign.Focus()
+	case 22:
+		f.aprsSendLocFocus = true
+	case 23:
+		f.AprsIntervalMin.Focus()
+	case 24:
+		f.AprsRadiusKm.Focus()
+	case 25:
+		f.AprsSymbol.Focus()
+	case 26:
+		f.AprsComment.Focus()
+	case 27:
+		f.aprsBtnFocus = 1
 	}
-	f.wlCbFocus = true
+	f.unmaskSecretsOnFocus()
+	return nil
 }
 
 // unmaskSecretsOnFocus sets EchoNormal on any secret textinput that currently

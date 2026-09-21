@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/qso"
 )
@@ -120,46 +121,23 @@ func (le *LogbookEditor) readEditForm() *qso.QSO {
 	return q
 }
 
-func (le *LogbookEditor) nextField() {
-	le.fields[le.focus].Blur()
-	for {
-		le.focus = qsoEditField(wrapNext(int(le.focus), int(qefCount)))
-		if le.focus != qefWLStatus && le.focus != qefSource {
-			break
-		}
+// focusableRows implementation for the shared menuFocus engine. The two
+// read-only rows (WLStatus, Source) are never focusable.
+func (le *LogbookEditor) rowCount() int { return int(qefCount) }
+func (le *LogbookEditor) rowVisible(i int) bool {
+	f := qsoEditField(i)
+	return f != qefWLStatus && f != qefSource
+}
+func (le *LogbookEditor) blurAll() {
+	for i := range le.fields {
+		le.fields[i].Blur()
 	}
-	le.fields[le.focus].Focus()
 }
-
-func (le *LogbookEditor) prevField() {
-	le.fields[le.focus].Blur()
-	for {
-		le.focus = qsoEditField(wrapPrev(int(le.focus), int(qefCount)))
-		if le.focus != qefWLStatus && le.focus != qefSource {
-			break
-		}
-	}
+func (le *LogbookEditor) focusRow(i int) tea.Cmd {
+	le.focus = qsoEditField(i)
 	le.fields[le.focus].Focus()
-}
-
-// editOnFirstField reports whether the first focusable field has focus.
-func (le *LogbookEditor) editOnFirstField() bool { return le.focus == qefCall }
-
-// editOnLastField reports whether the last focusable field has focus.
-func (le *LogbookEditor) editOnLastField() bool { return le.focus == qefContestID }
-
-// editFocusFirst moves focus to the first field.
-func (le *LogbookEditor) editFocusFirst() {
-	le.fields[le.focus].Blur()
-	le.focus = qefCall
-	le.fields[le.focus].Focus()
-}
-
-// editFocusLast moves focus to the last field.
-func (le *LogbookEditor) editFocusLast() {
-	le.fields[le.focus].Blur()
-	le.focus = qefContestID
-	le.fields[le.focus].Focus()
+	scrollVpToLine(&le.editVP, i)
+	return nil
 }
 
 // =============================================================================
@@ -187,7 +165,7 @@ func (le *LogbookEditor) viewEdit(bodyW int, contentH int) string {
 	}
 	// Save & Back button at the end of the edit form.
 	sb.WriteString("\n\n")
-	sb.WriteString(le.saveBtn.line("Save & Back", innerW))
+	sb.WriteString(le.fm.btn.line("Save & Back", innerW))
 	formContent := sb.String()
 
 	// Viewport setup — same pattern as renderScrollableMenu.
@@ -238,7 +216,10 @@ func (le *LogbookEditor) viewEdit(bodyW int, contentH int) string {
 
 func (le *LogbookEditor) renderEditField(f qsoEditField, colW int) string {
 	label := qefLabels[f]
-	focused := f == le.focus
+	// Highlight only when this field actually holds focus — while the Save &
+	// Back button is focused every field stays blurred even though le.focus
+	// still points at the last edited field.
+	focused := f == le.focus && le.fields[f].Focused()
 	raw := strings.TrimSpace(le.fields[f].Value())
 
 	// Label part — matches QSO form pattern: "> " prefix when focused.

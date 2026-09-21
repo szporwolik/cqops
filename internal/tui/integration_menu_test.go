@@ -29,7 +29,7 @@ func TestIntegrationMenu_HTTPThemeToggle(t *testing.T) {
 	}
 
 	im := NewIntegrationMenu(cfg)
-	im.focus = imHTTPTheme
+	im.fm.row = imHTTPTheme
 
 	m, _ := im.Update(tea.KeyPressMsg{Code: tea.KeySpace})
 	im = m.(*IntegrationMenu)
@@ -78,7 +78,7 @@ func TestIntegrationMenu_HTTPThemeValues(t *testing.T) {
 	}
 
 	im := NewIntegrationMenu(cfg)
-	im.focus = imHTTPTheme
+	im.fm.row = imHTTPTheme
 
 	// Default → Bright
 	_, _, _, _, _, _, _, _, _, _, theme, _, _, _, _, _, _, _, _ := im.Values()
@@ -147,16 +147,16 @@ func TestIntegrationMenu_HTTPThemeVisibleOnlyWhenEnabled(t *testing.T) {
 
 	im := NewIntegrationMenu(cfg)
 
-	im.focus = imHTTPTheme
-	if im.isPositionVisible(im.focus) {
+	im.fm.row = imHTTPTheme
+	if im.isPositionVisible(im.fm.row) {
 		t.Error("theme should not be visible when HTTP server is disabled")
 	}
 
-	im.focus = imHTTPChk
+	im.fm.row = imHTTPChk
 	m, _ := im.Update(tea.KeyPressMsg{Code: tea.KeySpace})
 	im = m.(*IntegrationMenu)
-	im.focus = imHTTPTheme
-	if !im.isPositionVisible(im.focus) {
+	im.fm.row = imHTTPTheme
+	if !im.isPositionVisible(im.fm.row) {
 		t.Error("theme should be visible when HTTP server is enabled")
 	}
 }
@@ -195,7 +195,7 @@ func TestIntegrationMenu_HTTPTLSToggle(t *testing.T) {
 	cfg.Integrations.HTTPServer.Enabled = true
 
 	im := NewIntegrationMenu(cfg)
-	im.focus = imHTTPTLS
+	im.fm.row = imHTTPTLS
 	if im.httpTLS {
 		t.Fatal("TLS should default to off")
 	}
@@ -232,7 +232,7 @@ func TestIntegrationMenu_HTTPTLSCertKeyPairValidation(t *testing.T) {
 	im.httpTLS = true
 	im.httpTLSCert.SetValue("/tmp/cert.pem")
 
-	im.focus = imHTTPPort
+	im.fm.row = imHTTPPort
 	_, _ = im.Update(tea.KeyPressMsg{Text: "\x13"})
 	if im.SaveError == "" {
 		t.Error("save with cert but no key should set SaveError")
@@ -260,30 +260,30 @@ func TestIntegrationMenu_HTTPTLSFocusOrder(t *testing.T) {
 	cfg.Integrations.HTTPServer.Enabled = true
 
 	im := NewIntegrationMenu(cfg)
-	im.focus = imHTTPTheme
+	im.fm.row = imHTTPTheme
 
 	m, _ := im.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	im = m.(*IntegrationMenu)
-	if im.focus != imHTTPTLS {
-		t.Errorf("tab from Theme landed on focus %d, want imHTTPTLS (%d)", im.focus, imHTTPTLS)
+	if im.fm.row != imHTTPTLS {
+		t.Errorf("tab from Theme landed on focus %d, want imHTTPTLS (%d)", im.fm.row, imHTTPTLS)
 	}
 
 	// With TLS off, the cert/key rows are hidden — tabbing must skip them.
 	m, _ = im.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	im = m.(*IntegrationMenu)
-	if im.focus != imHTTPHdr1 {
-		t.Errorf("tab from TLS (disabled) landed on focus %d, want imHTTPHdr1 (%d)", im.focus, imHTTPHdr1)
+	if im.fm.row != imHTTPHdr1 {
+		t.Errorf("tab from TLS (disabled) landed on focus %d, want imHTTPHdr1 (%d)", im.fm.row, imHTTPHdr1)
 	}
 
 	// Next tab reaches the cert field (TLS enabled for the sub-fields).
-	im.focus = imHTTPTLS
+	im.fm.row = imHTTPTLS
 	m, _ = im.Update(tea.KeyPressMsg{Code: tea.KeySpace}) // enable TLS
 	im = m.(*IntegrationMenu)
-	im.focus = imHTTPTLS
+	im.fm.row = imHTTPTLS
 	m, _ = im.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	im = m.(*IntegrationMenu)
-	if im.focus != imHTTPTLSCert {
-		t.Errorf("tab from TLS landed on focus %d, want imHTTPTLSCert (%d)", im.focus, imHTTPTLSCert)
+	if im.fm.row != imHTTPTLSCert {
+		t.Errorf("tab from TLS landed on focus %d, want imHTTPTLSCert (%d)", im.fm.row, imHTTPTLSCert)
 	}
 }
 

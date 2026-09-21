@@ -31,7 +31,7 @@ func TestGeneralMenuCtrlSNoLongerSaves(t *testing.T) {
 // TestGeneralMenuSpaceStillCycles: Space must remain the toggle key.
 func TestGeneralMenuSpaceStillCycles(t *testing.T) {
 	gm := NewGeneralMenu(config.DefaultConfig())
-	gm.cursor = 0 // Units
+	gm.fm.row = 0 // Units
 	before := gm.distanceUnit
 	upd, _ := gm.Update(tea.KeyPressMsg{Code: tea.KeySpace})
 	gm = upd.(*GeneralMenu)

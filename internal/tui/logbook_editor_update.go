@@ -329,36 +329,13 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if le.mode == edModeEdit {
-			// Save & Back button handling (Space or Enter activates it).
-			if le.saveBtn.Focus {
-				switch {
-				case le.saveBtn.activate(msg):
-					// Same flow as Enter: open the save confirmation.
-					le.mode = edModeConfirmSave
-					return le, nil
-				case le.saveBtn.next(msg):
-					le.saveBtn.Focus = false
-					le.editFocusFirst()
-					return le, nil
-				case le.saveBtn.prev(msg):
-					le.saveBtn.Focus = false
-					le.editFocusLast()
-					return le, nil
-				default:
-					return le, nil
-				}
-			}
-			// Tab from the last field / Up from the first field reaches
-			// the button so navigation never skips it.
-			if le.saveBtn.next(msg) && le.editOnLastField() {
-				le.fields[le.focus].Blur()
-				le.saveBtn.Focus = true
-				return le, nil
-			}
-			if le.saveBtn.prev(msg) && le.editOnFirstField() {
-				le.fields[le.focus].Blur()
-				le.saveBtn.Focus = true
-				return le, nil
+			// Shared navigation: Tab/Down, Shift+Tab/Up, and the Save & Back
+			// button (Space/Enter opens the save confirmation).
+			if handled, cmd := le.fm.onKey(msg, le, func() tea.Cmd {
+				le.mode = edModeConfirmSave
+				return nil
+			}); handled {
+				return le, cmd
 			}
 			switch k {
 			case "enter":
@@ -371,12 +348,6 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "pgup", "pgdown", "home", "end":
 				le.editVP, _ = le.editVP.Update(msg)
 				return le, nil
-			case "tab", "down":
-				le.nextField()
-				scrollVpToLine(&le.editVP, int(le.focus))
-			case "shift+tab", "up":
-				le.prevField()
-				scrollVpToLine(&le.editVP, int(le.focus))
 			default:
 				if le.focus != qefWLStatus && le.focus != qefSource {
 					le.fields[le.focus], _ = le.fields[le.focus].Update(msg)
@@ -474,8 +445,8 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				q := le.qsos[idx]
 				le.editing = &q
 				le.fillEditForm(&q)
-				le.focus = qefCall
-				le.fields[le.focus].Focus()
+				le.fm.reset()
+				le.focusRow(int(qefCall))
 				le.mode = edModeEdit
 				// Synced QSOs: refresh the form with the server's current copy.
 				if q.WavelogID > 0 && !le.Offline && le.wlURL != "" && le.wlKey != "" {

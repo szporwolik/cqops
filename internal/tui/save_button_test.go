@@ -60,10 +60,13 @@ func TestGeneralMenuSaveBackButton(t *testing.T) {
 	gm.height = 30
 
 	// Down from the last item reaches the button.
-	gm.cursor = 9
+	gm.fm.row = 9
 	gm.Update(tea.KeyPressMsg{Code: tea.KeyDown})
-	if !gm.saveBtn.Focus {
+	if !gm.fm.btn.Focus {
 		t.Fatal("down from last item should focus the Save & Back button")
+	}
+	if gm.fm.row != -1 {
+		t.Errorf("button focused but list cursor still active: %d, want -1", gm.fm.row)
 	}
 
 	// Space on the button saves.
@@ -74,17 +77,21 @@ func TestGeneralMenuSaveBackButton(t *testing.T) {
 
 	// Down from the button returns to the first item.
 	gm2 := NewGeneralMenu(config.DefaultConfig())
-	gm2.saveBtn.Focus = true
+	gm2.fm.btn.Focus = true
+	gm2.fm.row = -1
 	gm2.Update(tea.KeyPressMsg{Code: tea.KeyDown})
-	if gm2.saveBtn.Focus || gm2.cursor != 0 {
-		t.Errorf("down from button: focus=%v cursor=%d, want focus=false cursor=0", gm2.saveBtn.Focus, gm2.cursor)
+	if gm2.fm.btn.Focus || gm2.fm.row != 0 {
+		t.Errorf("down from button: focus=%v row=%d, want focus=false row=0", gm2.fm.btn.Focus, gm2.fm.row)
 	}
 
 	// Up from the first item focuses the button.
 	gm3 := NewGeneralMenu(config.DefaultConfig())
 	gm3.Update(tea.KeyPressMsg{Code: tea.KeyUp})
-	if !gm3.saveBtn.Focus {
+	if !gm3.fm.btn.Focus {
 		t.Error("up from first item should focus the Save & Back button")
+	}
+	if gm3.fm.row != -1 {
+		t.Errorf("button focused but list cursor still active: %d, want -1", gm3.fm.row)
 	}
 }
 
@@ -93,14 +100,32 @@ func TestNotificationsMenuSaveBackButton(t *testing.T) {
 	nm.width = 100
 	nm.height = 30
 
-	nm.cursor = notifItemCount - 1
+	nm.fm.row = notifItemCount - 1
 	nm.Update(tea.KeyPressMsg{Code: tea.KeyDown})
-	if !nm.saveBtn.Focus {
+	if !nm.fm.btn.Focus {
 		t.Fatal("down from last item should focus the Save & Back button")
+	}
+	if nm.fm.row != -1 {
+		t.Errorf("button focused but list cursor still active: %d, want -1", nm.fm.row)
+	}
+	if n := strings.Count(nm.View().Content, "> "); n != 1 {
+		t.Errorf("notifications menu shows %d active markers, want 1 (button only)", n)
 	}
 	nm.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
 	if !nm.saved || !nm.done {
 		t.Error("Space on the button should save")
+	}
+
+	// Up from the first item reaches the button too, with a single marker.
+	nm2 := NewNotificationsMenu(config.DefaultConfig())
+	nm2.width = 100
+	nm2.height = 30
+	nm2.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	if !nm2.fm.btn.Focus || nm2.fm.row != -1 {
+		t.Fatalf("up from first item: saveBtn=%v row=%d, want button focused and row -1", nm2.fm.btn.Focus, nm2.fm.row)
+	}
+	if n := strings.Count(nm2.View().Content, "> "); n != 1 {
+		t.Errorf("notifications menu shows %d active markers, want 1 (button only)", n)
 	}
 }
 
@@ -110,22 +135,25 @@ func TestLogbookChooserSaveBackButton(t *testing.T) {
 	c.mode = chooserEdit
 
 	// Tab from the last field focuses the button.
-	c.station.wlCbFocus = true // Wavelog disabled: checkbox is the last field
+	// APRS disabled: the APRS TX checkbox (row 20) is the last field.
+	c.fm.row = 20
+	c.station.focusRow(20)
 	c.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-	if !c.saveBtn.Focus {
+	if !c.fm.btn.Focus {
 		t.Fatal("tab from last field should focus the Save & Back button")
 	}
 
 	// Shift+Tab from the button returns to the form's last field.
 	c.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
-	if c.saveBtn.Focus || !c.station.lastFieldFocused() {
+	if c.fm.btn.Focus || !c.station.aprsCbFocus {
 		t.Error("shift+tab from button should return to the last field")
 	}
 
 	// Up from the first field focuses the button.
-	c.station.Name.Focus()
+	c.fm.row = 0
+	c.station.focusRow(0)
 	c.Update(tea.KeyPressMsg{Code: tea.KeyUp})
-	if !c.saveBtn.Focus {
+	if !c.fm.btn.Focus {
 		t.Error("up from first field should focus the Save & Back button")
 	}
 }
@@ -135,54 +163,178 @@ func TestLogbookChooserSaveBackButtonActivates(t *testing.T) {
 	c := NewLogbookChooser(a, NewToastQueue())
 	c.startEdit("home")
 
-	c.station.wlCbFocus = true
+	c.fm.row = 20
+	c.station.focusRow(20)
 	c.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-	if !c.saveBtn.Focus {
+	if !c.fm.btn.Focus {
 		t.Fatal("tab from last field should focus the Save & Back button")
 	}
 	c.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
 	if c.mode != chooserList {
 		t.Errorf("mode = %v, want list after saving", c.mode)
 	}
+	// Reopening the form must start with the button unfocused.
+	c.startEdit("home")
+	if c.fm.btn.Focus {
+		t.Error("save button should not stay focused after reopening the form")
+	}
+}
+
+// TestLogbookChooserAPRSTXReachable: the APRS TX checkbox and fields must stay
+// reachable by Tab in the edit form, regardless of the Wavelog toggle.
+func TestLogbookChooserAPRSTXReachable(t *testing.T) {
+	// Wavelog enabled: Tab from Station ID must land on APRS TX, not the button.
+	a := newChooserTestApp(t)
+	c := NewLogbookChooser(a, NewToastQueue())
+	c.mode = chooserEdit
+	c.station.WlEnabled = true
+	c.station.BlurAll()
+	c.fm.row = 19
+	c.station.focusRow(19)
+	c.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if c.fm.btn.Focus || !c.station.aprsCbFocus {
+		t.Fatalf("tab from Station ID: saveBtn.Focus=%v aprsCbFocus=%v, want button unfocused and APRS TX focused",
+			c.fm.btn.Focus, c.station.aprsCbFocus)
+	}
+	// Next Tab reaches the button.
+	c.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if !c.fm.btn.Focus {
+		t.Error("tab from APRS TX should focus the Save & Back button")
+	}
+
+	// Wavelog disabled: Tab from the Wavelog checkbox must still reach APRS TX.
+	c2 := NewLogbookChooser(a, NewToastQueue())
+	c2.mode = chooserEdit
+	c2.station.WlEnabled = false
+	c2.station.BlurAll()
+	c2.fm.row = 15
+	c2.station.focusRow(15)
+	c2.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if c2.fm.btn.Focus || !c2.station.aprsCbFocus {
+		t.Fatalf("tab from Wavelog checkbox (disabled): saveBtn.Focus=%v aprsCbFocus=%v, want APRS TX focused",
+			c2.fm.btn.Focus, c2.station.aprsCbFocus)
+	}
+
+	// APRS enabled: Tab from AprsComment reaches the APRS test button first,
+	// and only Tab from the test button reaches Save & Back.
+	c3 := NewLogbookChooser(a, NewToastQueue())
+	c3.mode = chooserEdit
+	c3.station.AprsEnabled = true
+	c3.station.BlurAll()
+	c3.fm.row = 26
+	c3.station.focusRow(26)
+	c3.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if c3.fm.btn.Focus || c3.station.aprsBtnFocus != 1 {
+		t.Fatalf("tab from APRS comment: saveBtn.Focus=%v aprsBtnFocus=%d, want test button focused",
+			c3.fm.btn.Focus, c3.station.aprsBtnFocus)
+	}
+	c3.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if !c3.fm.btn.Focus {
+		t.Error("tab from APRS test button should focus the Save & Back button")
+	}
 }
 
 func TestRigChooserSaveBackButton(t *testing.T) {
 	rc := newTestRigChooser(t)
 	rc.startCreate()
-	rc.form.FocusLast()
+	last := rc.fm.lastVisible(rc)
+	rc.fm.row = last
+	rc.form.focusRow(rigFormField(last))
 
 	rc.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-	if !rc.saveBtn.Focus {
+	if !rc.fm.btn.Focus {
 		t.Fatal("tab from last field should focus the Save & Back button")
 	}
+	if rc.fm.onLast(rc) {
+		t.Error("rig form should not keep a field active while the button is focused")
+	}
+	if n := strings.Count(rc.viewForm(), "> "); n != 1 {
+		t.Errorf("edit form shows %d active markers, want 1 (button only)", n)
+	}
 	rc.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
-	if rc.saveBtn.Focus || !rc.form.OnLastField() {
+	if rc.fm.btn.Focus || !rc.fm.onLast(rc) {
 		t.Error("shift+tab from button should return to the last field")
 	}
-	rc.form.FocusFirst()
+	rc.fm.row = 0
+	rc.form.focusRow(rigFieldName)
 	rc.Update(tea.KeyPressMsg{Code: tea.KeyUp})
-	if !rc.saveBtn.Focus {
+	if !rc.fm.btn.Focus {
 		t.Error("up from first field should focus the Save & Back button")
+	}
+	if n := strings.Count(rc.viewForm(), "> "); n != 1 {
+		t.Errorf("edit form shows %d active markers, want 1 (button only)", n)
+	}
+}
+
+// TestRigChooserEditFocusConsistent: opening Edit Rig after a previous
+// save/back session must keep the form focus index and the focused field in
+// sync — exactly one active marker, on Rig name.
+func TestRigChooserEditFocusConsistent(t *testing.T) {
+	rc := newTestRigChooser(t)
+	rc.app.Config.Rigs["r1"] = config.RigPreset{Name: "Main Rig", RadioBackend: "flrig", WsjtxEnabled: true}
+	rc.names = []string{"r1"}
+	rc.cursor = 0
+	rc.mode = rigChooserList
+
+	rc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if rc.mode != rigChooserEdit {
+		t.Fatalf("mode = %v, want edit", rc.mode)
+	}
+	if n := strings.Count(rc.viewForm(), "> "); n != 1 {
+		t.Fatalf("edit form shows %d active markers after opening, want 1", n)
+	}
+
+	// Reach the button, save, and reopen — focus must reset cleanly.
+	last := rc.fm.lastVisible(rc)
+	rc.fm.row = last
+	rc.form.focusRow(rigFormField(last))
+	rc.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	rc.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
+	if rc.mode != rigChooserList {
+		t.Fatalf("mode = %v after save, want list", rc.mode)
+	}
+
+	rc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if rc.mode != rigChooserEdit {
+		t.Fatalf("mode = %v, want edit after reopening", rc.mode)
+	}
+	if !rc.form.Name.Focused() {
+		t.Error("Rig name should be focused after reopening the edit form")
+	}
+	if n := strings.Count(rc.viewForm(), "> "); n != 1 {
+		t.Errorf("edit form shows %d active markers after reopening, want 1", n)
 	}
 }
 
 func TestOperatorChooserSaveBackButton(t *testing.T) {
 	oc := newTestOperatorChooser(t)
 	oc.startCreate()
-	oc.form.FocusLast()
+	oc.fm.row = 1
+	oc.form.focusRow(1)
 
 	oc.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-	if !oc.saveBtn.Focus {
+	if !oc.fm.btn.Focus {
 		t.Fatal("tab from last field should focus the Save & Back button")
 	}
+	// No field label may stay highlighted while the button is focused.
+	if v := oc.form.View(); strings.Contains(v, fieldFocusedLabel.Render("Name")) ||
+		strings.Contains(v, fieldFocusedLabel.Render("Callsign")) {
+		t.Errorf("form should not highlight any field while the button is focused:\n%s", v)
+	}
 	oc.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
-	if oc.saveBtn.Focus || !oc.form.OnLastField() {
+	if oc.fm.btn.Focus || !oc.fm.onLast(oc) {
 		t.Error("shift+tab from button should return to the last field")
 	}
-	oc.form.FocusFirst()
+	oc.fm.row = 0
+	oc.form.focusRow(0)
 	oc.Update(tea.KeyPressMsg{Code: tea.KeyUp})
-	if !oc.saveBtn.Focus {
+	if !oc.fm.btn.Focus {
 		t.Error("up from first field should focus the Save & Back button")
+	}
+	// Reopening the form must start with the button unfocused.
+	oc.startCreate()
+	if oc.fm.btn.Focus {
+		t.Error("save button should not stay focused after reopening the form")
 	}
 }
 
@@ -190,18 +342,23 @@ func TestLogbookEditorSaveBackButton(t *testing.T) {
 	le := NewLogbookEditor(LogbookEditorConfig{DB: nil, StationOperator: "OP", StationGrid: "JO90", StationCall: "SP9MOA"})
 	le.mode = edModeEdit
 
-	le.focus = qefContestID
+	le.fm.row = int(qefContestID)
+	le.focusRow(int(qefContestID))
 	le.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-	if !le.saveBtn.Focus {
+	if !le.fm.btn.Focus {
 		t.Fatal("tab from last field should focus the Save & Back button")
 	}
+	if le.fields[le.focus].Focused() {
+		t.Error("editor should not keep a field active while the button is focused")
+	}
 	le.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
-	if le.saveBtn.Focus || le.focus != qefContestID {
+	if le.fm.btn.Focus || le.focus != qefContestID {
 		t.Error("shift+tab from button should return to the last field")
 	}
-	le.focus = qefCall
+	le.fm.row = int(qefCall)
+	le.focusRow(int(qefCall))
 	le.Update(tea.KeyPressMsg{Code: tea.KeyUp})
-	if !le.saveBtn.Focus {
+	if !le.fm.btn.Focus {
 		t.Error("up from first field should focus the Save & Back button")
 	}
 }
@@ -209,15 +366,29 @@ func TestLogbookEditorSaveBackButton(t *testing.T) {
 func TestIntegrationMenuSaveBackButton(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Logbooks = map[string]config.Logbook{"test": {Station: config.Station{Callsign: "SP9MOA", Grid: "JO90"}}}
+	cfg.Integrations.HTTPServer.Enabled = true
 	im := NewIntegrationMenu(cfg)
 	im.width = 100
 	im.height = 30
 
-	// Tab from the last visible item focuses the button.
-	im.focus = im.lastVisiblePos()
+	// Tab away from QR Link must blur it — no stray cursor while focus moves.
+	im.fm.row = imHTTPQRLink
 	im.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-	if !im.saveBtn.Focus {
+	if im.httpQRLink.Focused() {
+		t.Error("QR Link should blur when focus moves away from it")
+	}
+
+	// Tab from the last visible item focuses the button.
+	im.fm.row = im.fm.lastVisible(im)
+	im.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if !im.fm.btn.Focus {
 		t.Fatal("tab from last item should focus the Save & Back button")
+	}
+	if im.fm.row != -1 {
+		t.Errorf("button focused but list focus still active: %d, want -1", im.fm.row)
+	}
+	if im.httpQRLink.Focused() {
+		t.Error("no field may stay focused while the Save & Back button is active")
 	}
 	// Space on the button saves.
 	im.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
@@ -229,19 +400,42 @@ func TestIntegrationMenuSaveBackButton(t *testing.T) {
 func TestCallbookMenuSaveBackButton(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Logbooks = map[string]config.Logbook{"test": {Station: config.Station{Callsign: "SP9MOA", Grid: "JO90"}}}
+	cfg.Integrations.Callbook.QRZ.Enabled = true
 	cm := NewCallbookMenu(cfg)
 	cm.width = 100
 	cm.height = 30
 
 	// Up from the first item focuses the button.
-	cm.focus = cm.firstVisiblePos()
+	cm.fm.row = cm.fm.firstVisible(cm)
 	cm.Update(tea.KeyPressMsg{Code: tea.KeyUp})
-	if !cm.saveBtn.Focus {
+	if !cm.fm.btn.Focus {
 		t.Fatal("up from first item should focus the Save & Back button")
 	}
-	// Space on the button saves.
+	if cm.fm.row != -1 {
+		t.Errorf("button focused but list focus still active: %d, want -1", cm.fm.row)
+	}
+	if n := strings.Count(cm.View().Content, "> "); n != 1 {
+		t.Errorf("callbook menu shows %d active markers, want 1 (button only)", n)
+	}
+	if cm.qrzUser.Focused() || cm.qrzPass.Focused() || cm.logPriority.Focused() {
+		t.Error("no field may stay focused while the Save & Back button is active")
+	}
+
+	// Tab from the last item also focuses the button.
+	cm.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	cm.fm.row = cm.fm.lastVisible(cm)
+	cm.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if !cm.fm.btn.Focus || cm.fm.row != -1 {
+		t.Fatalf("tab from last item: saveBtn=%v row=%d, want button focused and list focus -1", cm.fm.btn.Focus, cm.fm.row)
+	}
+
+	// Space on the button attempts a save; with QRZ enabled but no username
+	// it fails validation and the menu stays open with a single marker.
 	cm.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
-	if !cm.saved || !cm.done {
-		t.Error("Space on the button should save")
+	if cm.done || cm.saved {
+		t.Error("save should be blocked by validation (QRZ username missing)")
+	}
+	if n := strings.Count(cm.View().Content, "> "); n > 1 {
+		t.Errorf("callbook menu shows %d active markers after blocked save, want at most 1", n)
 	}
 }

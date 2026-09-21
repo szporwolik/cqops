@@ -33,11 +33,11 @@ type OperatorChooser struct {
 	form    OperatorForm
 	editing string // id of operator being edited
 
-	toasts  *ToastQueue
-	dialog  *DialogModel
-	width   int
-	height  int
-	saveBtn saveBackButton
+	toasts *ToastQueue
+	dialog *DialogModel
+	width  int
+	height int
+	fm     menuFocus
 
 	// Viewport for scrolling list/form content on small terminals.
 	vp              viewport.Model
@@ -193,34 +193,10 @@ func (oc *OperatorChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			scrollVpToLine(&oc.vp, oc.cursor)
 
 		case oc.mode == operatorEdit || oc.mode == operatorCreate:
-			// Save & Back button handling (Space or Enter activates it).
-			if oc.saveBtn.Focus {
-				switch {
-				case oc.saveBtn.activate(msg):
-					return oc, oc.saveForm()
-				case oc.saveBtn.next(msg):
-					oc.saveBtn.Focus = false
-					oc.form.FocusFirst()
-					return oc, nil
-				case oc.saveBtn.prev(msg):
-					oc.saveBtn.Focus = false
-					oc.form.FocusLast()
-					return oc, nil
-				default:
-					return oc, nil
-				}
-			}
-			// Tab from the last field / Up from the first field reaches
-			// the button so navigation never skips it.
-			if oc.saveBtn.next(msg) && oc.form.OnLastField() {
-				oc.form.BlurAll()
-				oc.saveBtn.Focus = true
-				return oc, nil
-			}
-			if oc.saveBtn.prev(msg) && oc.form.OnFirstField() {
-				oc.form.BlurAll()
-				oc.saveBtn.Focus = true
-				return oc, nil
+			// Shared navigation: Tab/Down, Shift+Tab/Up, and the Save & Back
+			// button (Space/Enter saves).
+			if handled, cmd := oc.fm.onKey(msg, oc, func() tea.Cmd { return oc.saveForm() }); handled {
+				return oc, cmd
 			}
 			cmd := oc.form.HandleKey(msg)
 			if cmd == nil {
@@ -244,6 +220,7 @@ func (oc *OperatorChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (oc *OperatorChooser) startCreate() {
 	oc.mode = operatorCreate
+	oc.fm.reset()
 	oc.form = NewOperatorForm()
 	oc.form.Focus()
 	oc.editing = ""
@@ -252,10 +229,17 @@ func (oc *OperatorChooser) startCreate() {
 func (oc *OperatorChooser) startEdit(id string) {
 	op := oc.app.Config.Operators[id]
 	oc.mode = operatorEdit
+	oc.fm.reset()
 	oc.editing = id
 	oc.form.SetOperator(&op)
 	oc.form.Focus()
 }
+
+// focusableRows implementation for the shared menuFocus engine.
+func (oc *OperatorChooser) rowCount() int          { return 2 }
+func (oc *OperatorChooser) rowVisible(int) bool    { return true }
+func (oc *OperatorChooser) blurAll()               { oc.form.BlurAll() }
+func (oc *OperatorChooser) focusRow(i int) tea.Cmd { return oc.form.focusRow(i) }
 
 func (oc *OperatorChooser) selectOperator() tea.Cmd {
 	if oc.cursor == 0 {
@@ -489,7 +473,7 @@ func (oc *OperatorChooser) viewForm() string {
 
 	b.WriteString(oc.form.View())
 	b.WriteString("\n\n")
-	b.WriteString(oc.saveBtn.line("Save & Back", w-6))
+	b.WriteString(oc.fm.btn.line("Save & Back", w-6))
 
 	body := drawMenuWithHeader("Configuration \u2014 Operators \u2014 "+title, b.String(), w)
 	return fillBody(body, contentH)

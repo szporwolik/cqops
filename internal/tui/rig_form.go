@@ -30,6 +30,9 @@ const (
 	rigFieldEnd
 )
 
+// rigRows is the row style shared by the rig form's selector rows.
+var rigRows = rowStyle{label: S.FormLabelWide, focused: S.FormFocusedWide}
+
 // backendOptions maps backend index to label and host/port defaults.
 var backendOptions = []struct {
 	label       string
@@ -241,38 +244,33 @@ func (f *RigForm) focusField() {
 	}
 }
 
-func (f *RigForm) OnLastField() bool {
-	if f.WsjtxEnabled {
-		return f.focus == rigFieldWsjtxPort
+// visible reports whether field fi is rendered/focusable with the current
+// backend/rotor/WSJT-X selection.
+func (f *RigForm) visible(fi rigFormField) bool {
+	switch fi {
+	case rigFieldName, rigFieldRig, rigFieldAntenna, rigFieldPower, rigFieldBackend, rigFieldRotor, rigFieldWsjtx:
+		return true
+	case rigFieldBackendHost, rigFieldBackendPort, rigFieldPollInterval:
+		return f.BackendIdx != 0
+	case rigFieldRotorHost, rigFieldRotorPort:
+		return f.RotorIdx != 0
+	case rigFieldWsjtxHost, rigFieldWsjtxPort:
+		return f.WsjtxEnabled
 	}
-	if f.RotorIdx != 0 {
-		return f.focus == rigFieldRotorPort
-	}
-	if f.BackendIdx != 0 {
-		return f.focus == rigFieldPollInterval
-	}
-	return f.focus == rigFieldWsjtx
+	return true
+}
+
+// focusRow moves focus to field i for the shared menuFocus engine.
+func (f *RigForm) focusRow(i rigFormField) tea.Cmd {
+	f.focus = i
+	f.focusField()
+	return nil
 }
 
 // FocusFirst moves focus to the first form field.
 func (f *RigForm) FocusFirst() {
 	f.blurAll()
 	f.focus = rigFieldName
-	f.focusField()
-}
-
-// FocusLast moves focus to the last reachable form field.
-func (f *RigForm) FocusLast() {
-	f.blurAll()
-	if f.WsjtxEnabled {
-		f.focus = rigFieldWsjtxPort
-	} else if f.RotorIdx != 0 {
-		f.focus = rigFieldRotorPort
-	} else if f.BackendIdx != 0 {
-		f.focus = rigFieldPollInterval
-	} else {
-		f.focus = rigFieldWsjtx
-	}
 	f.focusField()
 }
 
@@ -482,17 +480,7 @@ func (f *RigForm) View() tea.View {
 	b.WriteString("\n")
 
 	// Radio control — cycles None → Hamlib → Flrig on Space.
-	backendLabel := backendOptions[f.BackendIdx].label
-	bePrefix := "  "
-	beLbl := S.FormLabelWide.Align(lipgloss.Left).Render("Radio control:")
-	if f.focus == rigFieldBackend {
-		bePrefix = S.FormPrefixOn.Render("> ")
-		beLbl = S.FormFocusedWide.Align(lipgloss.Left).Render("Radio control:")
-		backendLabel = CursorStyle.Render(backendLabel) + " " + DimStyle.Render("(Space)")
-	}
-	b.WriteString(padOrTrunc(
-		lipgloss.JoinHorizontal(lipgloss.Center, bePrefix, beLbl, " ", backendLabel),
-		availW))
+	valueRow(&b, availW, f.focus == rigFieldBackend, "Radio control:", backendOptions[f.BackendIdx].label, "", rigRows)
 
 	if f.BackendIdx != 0 {
 		hostLabel := fmt.Sprintf("  %s host:", backendOptions[f.BackendIdx].label)
@@ -508,21 +496,11 @@ func (f *RigForm) View() tea.View {
 	b.WriteString("\n")
 
 	// Rotor control — cycles None → Hamlib on Space.
-	rotorLabel := rotorOptions[f.RotorIdx].label
-	roPrefix := "  "
-	roLbl := S.FormLabelWide.Align(lipgloss.Left).Render("Rotator control:")
-	if f.focus == rigFieldRotor {
-		roPrefix = S.FormPrefixOn.Render("> ")
-		roLbl = S.FormFocusedWide.Align(lipgloss.Left).Render("Rotator control:")
-		rotorLabel = CursorStyle.Render(rotorLabel) + " " + DimStyle.Render("(Space)")
-		// Only show the long hint when there's room — never wrap.
-		if availW >= 85 {
-			rotorLabel += " " + DimStyle.Render("Use with caution")
-		}
+	rotorHint := ""
+	if availW >= 85 {
+		rotorHint = "Use with caution" // only when there's room — never wrap
 	}
-	b.WriteString(padOrTrunc(
-		lipgloss.JoinHorizontal(lipgloss.Center, roPrefix, roLbl, " ", rotorLabel),
-		availW))
+	valueRow(&b, availW, f.focus == rigFieldRotor, "Rotator control:", rotorOptions[f.RotorIdx].label, rotorHint, rigRows)
 
 	if f.RotorIdx != 0 {
 		hostLabel := fmt.Sprintf("  %s host:", rotorOptions[f.RotorIdx].label)
@@ -535,21 +513,8 @@ func (f *RigForm) View() tea.View {
 
 	b.WriteString("\n")
 
-	// WSJT-X checkbox
-	wsjtxCheckbox := "[ ]"
-	if f.WsjtxEnabled {
-		wsjtxCheckbox = "[x]"
-	}
-	wxPrefix := "  "
-	wxLabel := S.FormLabelWide.Align(lipgloss.Left).Render("Use WSJT-X:")
-	if f.focus == rigFieldWsjtx {
-		wxPrefix = S.FormPrefixOn.Render("> ")
-		wxLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("Use WSJT-X:")
-		wsjtxCheckbox = CursorStyle.Render(wsjtxCheckbox) + " " + DimStyle.Render("(Space)")
-	}
-	b.WriteString(padOrTrunc(
-		lipgloss.JoinHorizontal(lipgloss.Center, wxPrefix, wxLabel, " ", wsjtxCheckbox),
-		availW))
+	// WSJT-X checkbox.
+	checkboxRow(&b, availW, f.focus == rigFieldWsjtx, "Use WSJT-X:", f.WsjtxEnabled, "", false, rigRows)
 
 	if f.WsjtxEnabled {
 		b.WriteString("\n")

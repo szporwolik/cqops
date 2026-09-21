@@ -15,6 +15,9 @@ import (
 	"github.com/szporwolik/cqops/internal/qrzru"
 )
 
+// callbookRows is the row style shared by the callbook menu's checkbox rows.
+var callbookRows = rowStyle{label: S.FormLabelWide, focused: S.FormFocusedWide}
+
 // CallbookMenu is a scrollable sub-menu for callbook provider settings.
 // Currently QRZ.com is the only provider; the menu is structured so
 // additional providers can be added as separate sections later.
@@ -60,7 +63,7 @@ type CallbookMenu struct {
 	wlConfigured bool // true only when a logbook has Wavelog configured
 	wlPriority   textinput.Model
 
-	focus  int
+	fm     menuFocus
 	done   bool
 	saved  bool
 	goBack bool
@@ -76,7 +79,6 @@ type CallbookMenu struct {
 	// Viewport for scrolling form content on small terminals.
 	vp              viewport.Model
 	lastBodyContent string
-	saveBtn         saveBackButton
 }
 
 const (
@@ -260,7 +262,6 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 		wlEnabled:        wlEnabled,
 		wlConfigured:     wlConfigured,
 		wlPriority:       wlPriority,
-		focus:            0,
 	}
 }
 
@@ -325,46 +326,10 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if cm.qrzTesting || cm.hamqthTesting || cm.qrzruTesting {
 			return cm, nil
 		}
-		// Save & Back button handling.
-		if cm.saveBtn.Focus {
-			switch k {
-			case "enter", " ", "space":
-				// Reuse the Ctrl+S save flow (validation + done/saved).
-				cm.saveBtn.Focus = false
-				m2, c := cm.Update(tea.KeyPressMsg{Text: "\x13"})
-				return m2.(*CallbookMenu), c
-			case "tab", "down":
-				cm.saveBtn.Focus = false
-				cm.focus = cm.firstVisiblePos()
-				cm.blurAll()
-				cm.focusField()
-				return cm, nil
-			case "shift+tab", "up":
-				cm.saveBtn.Focus = false
-				cm.focus = cm.lastVisiblePos()
-				cm.blurAll()
-				cm.focusField()
-				return cm, nil
-			case "esc":
-				cm.done = true
-				cm.goBack = true
-				return cm, nil
-			default:
-				return cm, nil
-			}
-		}
-		// Tab from the last item / Up from the first item reaches the button.
-		if (k == "tab" || k == "down") && cm.focus == cm.lastVisiblePos() {
-			cm.blurAll()
-			cm.saveBtn.Focus = true
-			cm.autoScrollViewport()
-			return cm, nil
-		}
-		if (k == "shift+tab" || k == "up") && cm.focus == cm.firstVisiblePos() {
-			cm.blurAll()
-			cm.saveBtn.Focus = true
-			cm.autoScrollViewport()
-			return cm, nil
+		// Shared navigation: Tab/Down, Shift+Tab/Up, and the Save & Back
+		// button (Space/Enter saves through the same validation as Ctrl+S).
+		if handled, cmd := cm.fm.onKey(msg, cm, func() tea.Cmd { return cm.trySave() }); handled {
+			return cm, cmd
 		}
 		switch k {
 		case "esc":
@@ -372,132 +337,67 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cm.goBack = true
 			return cm, nil
 		case "ctrl+s", "\x13":
-			// Validate logbook priority.
-			lps := strings.TrimSpace(cm.logPriority.Value())
-			if lps != "" {
-				p, err := strconv.Atoi(lps)
-				if err != nil || p < 0 || p > 100 {
-					cm.SaveError = "Callbook: priority must be 0\u2013100"
-					return cm, nil
-				}
-			}
-			if cm.qrzEnabled {
-				if strings.TrimSpace(cm.qrzUser.Value()) == "" {
-					cm.SaveError = "QRZ: username is required when enabled"
-					return cm, nil
-				}
-				if cm.qrzPass.Value() == "" {
-					cm.SaveError = "QRZ: password is required when enabled"
-					return cm, nil
-				}
-				ps := strings.TrimSpace(cm.qrzPriority.Value())
-				if ps != "" {
-					p, err := strconv.Atoi(ps)
-					if err != nil || p < 0 || p > 100 {
-						cm.SaveError = "Callbook: priority must be 0\u2013100"
-						return cm, nil
-					}
-				}
-			}
-			if cm.hamqthEnabled {
-				if strings.TrimSpace(cm.hamqthUser.Value()) == "" {
-					cm.SaveError = "HamQTH: username is required when enabled"
-					return cm, nil
-				}
-				if cm.hamqthPass.Value() == "" {
-					cm.SaveError = "HamQTH: password is required when enabled"
-					return cm, nil
-				}
-				ps := strings.TrimSpace(cm.hamqthPriority.Value())
-				if ps != "" {
-					p, err := strconv.Atoi(ps)
-					if err != nil || p < 0 || p > 100 {
-						cm.SaveError = "Callbook: priority must be 0\u2013100"
-						return cm, nil
-					}
-				}
-			}
-			if cm.qrzruEnabled {
-				if strings.TrimSpace(cm.qrzruUser.Value()) == "" {
-					cm.SaveError = "QRZ.RU: API login is required when enabled"
-					return cm, nil
-				}
-				if cm.qrzruPass.Value() == "" {
-					cm.SaveError = "QRZ.RU: API password is required when enabled"
-					return cm, nil
-				}
-				ps := strings.TrimSpace(cm.qrzruPriority.Value())
-				if ps != "" {
-					p, err := strconv.Atoi(ps)
-					if err != nil || p < 0 || p > 100 {
-						cm.SaveError = "Callbook: priority must be 0\u2013100"
-						return cm, nil
-					}
-				}
-			}
-			cm.done = true
-			cm.saved = true
-			return cm, nil
+			return cm, cm.trySave()
 		case " ", "space":
 			// Space triggers Test buttons in parallel with Enter.
-			if cm.focus == cmQRZTest || cm.focus == cmHamQTHTest || cm.focus == cmQRZRuTest {
+			if cm.fm.row == cmQRZTest || cm.fm.row == cmHamQTHTest || cm.fm.row == cmQRZRuTest {
 				m2, c := cm.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 				return m2.(*CallbookMenu), c
 			}
-			switch cm.focus {
+			switch cm.fm.row {
 			case cmBaseCall:
 				cm.baseCallFallback = !cm.baseCallFallback
-				cm.autoScrollViewport()
+				scrollViewportToFraction(&cm.vp, cm.fm.scrollFraction(cm))
 				return cm, nil
 			case cmLogChk:
 				cm.logEnabled = !cm.logEnabled
-				if !cm.isPositionVisible(cm.focus) {
-					cm.fixFocus()
+				if !cm.isPositionVisible(cm.fm.row) {
+					cm.fm.fixFocus(cm)
 				}
-				cm.autoScrollViewport()
+				scrollViewportToFraction(&cm.vp, cm.fm.scrollFraction(cm))
 				return cm, nil
 			case cmQRZChk:
 				cm.qrzEnabled = !cm.qrzEnabled
-				if !cm.isPositionVisible(cm.focus) {
-					cm.fixFocus()
+				if !cm.isPositionVisible(cm.fm.row) {
+					cm.fm.fixFocus(cm)
 				}
-				cm.autoScrollViewport()
+				scrollViewportToFraction(&cm.vp, cm.fm.scrollFraction(cm))
 				return cm, nil
 			case cmWavelogChk:
 				cm.wlEnabled = !cm.wlEnabled
-				if !cm.isPositionVisible(cm.focus) {
-					cm.fixFocus()
+				if !cm.isPositionVisible(cm.fm.row) {
+					cm.fm.fixFocus(cm)
 				}
-				cm.autoScrollViewport()
+				scrollViewportToFraction(&cm.vp, cm.fm.scrollFraction(cm))
 				return cm, nil
 			case cmHamQTHChk:
 				cm.hamqthEnabled = !cm.hamqthEnabled
-				if !cm.isPositionVisible(cm.focus) {
-					cm.fixFocus()
+				if !cm.isPositionVisible(cm.fm.row) {
+					cm.fm.fixFocus(cm)
 				}
-				cm.autoScrollViewport()
+				scrollViewportToFraction(&cm.vp, cm.fm.scrollFraction(cm))
 				return cm, nil
 			case cmCallookChk:
 				cm.callookEnabled = !cm.callookEnabled
-				cm.autoScrollViewport()
+				scrollViewportToFraction(&cm.vp, cm.fm.scrollFraction(cm))
 				return cm, nil
 			case cmQRZRuChk:
 				cm.qrzruEnabled = !cm.qrzruEnabled
-				if !cm.isPositionVisible(cm.focus) {
-					cm.fixFocus()
+				if !cm.isPositionVisible(cm.fm.row) {
+					cm.fm.fixFocus(cm)
 				}
-				cm.autoScrollViewport()
+				scrollViewportToFraction(&cm.vp, cm.fm.scrollFraction(cm))
 				return cm, nil
 			}
 			cm.forwardToFocused(msg)
 		case "tab", "down":
-			cm.next()
-			cm.autoScrollViewport()
+			_ = cm.fm.next(cm)
+			scrollViewportToFraction(&cm.vp, cm.fm.scrollFraction(cm))
 		case "shift+tab", "up":
-			cm.prev()
-			cm.autoScrollViewport()
+			_ = cm.fm.prev(cm)
+			scrollViewportToFraction(&cm.vp, cm.fm.scrollFraction(cm))
 		case "enter":
-			if cm.focus == cmQRZTest {
+			if cm.fm.row == cmQRZTest {
 				if !cm.inetOnline {
 					cm.qrzTestResult = "No internet connection"
 					return cm, nil
@@ -515,7 +415,7 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return callbookTestMsg{ok: err == nil && data != nil, err: err, provider: "qrz"}
 				}
 			}
-			if cm.focus == cmHamQTHTest {
+			if cm.fm.row == cmHamQTHTest {
 				if !cm.inetOnline {
 					cm.hamqthTestResult = "No internet connection"
 					return cm, nil
@@ -533,7 +433,7 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return callbookTestMsg{ok: err == nil && data != nil, err: err, provider: "hamqth"}
 				}
 			}
-			if cm.focus == cmQRZRuTest {
+			if cm.fm.row == cmQRZRuTest {
 				if !cm.inetOnline {
 					cm.qrzruTestResult = "No internet connection"
 					return cm, nil
@@ -552,8 +452,8 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return callbookTestMsg{ok: err == nil && data != nil, err: err, provider: "qrzru"}
 				}
 			}
-			cm.next()
-			cm.autoScrollViewport()
+			cm.fm.next(cm)
+			scrollViewportToFraction(&cm.vp, cm.fm.scrollFraction(cm))
 		default:
 			cm.forwardToFocused(msg)
 			cm.vp, _ = cm.vp.Update(msg)
@@ -565,7 +465,7 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (cm *CallbookMenu) forwardToFocused(msg tea.Msg) {
-	switch cm.focus {
+	switch cm.fm.row {
 	case cmLogPriority:
 		cm.logPriority, _ = cm.logPriority.Update(msg)
 	case cmQRZUser:
@@ -593,28 +493,6 @@ func (cm *CallbookMenu) forwardToFocused(msg tea.Msg) {
 	}
 }
 
-func (cm *CallbookMenu) next() {
-	for {
-		cm.focus = wrapNext(cm.focus, cmMax)
-		if cm.isPositionVisible(cm.focus) {
-			break
-		}
-	}
-	cm.blurAll()
-	cm.focusField()
-}
-
-func (cm *CallbookMenu) prev() {
-	for {
-		cm.focus = wrapPrev(cm.focus, cmMax)
-		if cm.isPositionVisible(cm.focus) {
-			break
-		}
-	}
-	cm.blurAll()
-	cm.focusField()
-}
-
 func (cm *CallbookMenu) isPositionVisible(pos int) bool {
 	switch pos {
 	case cmBaseCall, cmLogChk, cmQRZChk, cmHamQTHChk, cmQRZRuChk, cmWavelogChk:
@@ -635,32 +513,9 @@ func (cm *CallbookMenu) isPositionVisible(pos int) bool {
 	return true
 }
 
-func (cm *CallbookMenu) fixFocus() {
-	if cm.isPositionVisible(cm.focus) {
-		return
-	}
-	cm.next()
-}
-
-// firstVisiblePos returns the first focusable position.
-func (cm *CallbookMenu) firstVisiblePos() int {
-	for pos := 0; pos < cmMax; pos++ {
-		if cm.isPositionVisible(pos) {
-			return pos
-		}
-	}
-	return 0
-}
-
-// lastVisiblePos returns the last focusable position.
-func (cm *CallbookMenu) lastVisiblePos() int {
-	for pos := cmMax - 1; pos >= 0; pos-- {
-		if cm.isPositionVisible(pos) {
-			return pos
-		}
-	}
-	return 0
-}
+// focusableRows implementation.
+func (cm *CallbookMenu) rowCount() int         { return cmMax }
+func (cm *CallbookMenu) rowVisible(i int) bool { return cm.isPositionVisible(i) }
 
 func (cm *CallbookMenu) blurAll() {
 	blurTextinputs(&cm.logPriority, &cm.qrzUser, &cm.qrzPass, &cm.qrzPriority,
@@ -669,8 +524,8 @@ func (cm *CallbookMenu) blurAll() {
 		&cm.wlPriority)
 }
 
-func (cm *CallbookMenu) focusField() {
-	switch cm.focus {
+func (cm *CallbookMenu) focusRow(i int) tea.Cmd {
+	switch i {
 	case cmLogPriority:
 		cm.logPriority.Focus()
 	case cmQRZUser:
@@ -696,45 +551,78 @@ func (cm *CallbookMenu) focusField() {
 	case cmWavelogPriority:
 		cm.wlPriority.Focus()
 	}
+	return nil
 }
 
-func (cm *CallbookMenu) scrollFraction() float64 {
-	visible := 0
-	rank := -1
-	for i := 0; i < cmMax; i++ {
-		if cm.isPositionVisible(i) {
-			visible++
+// trySave validates the enabled callbook providers and closes the menu.
+// Used by both Ctrl+S and the Save & Back button.
+func (cm *CallbookMenu) trySave() tea.Cmd {
+	// Validate logbook priority.
+	lps := strings.TrimSpace(cm.logPriority.Value())
+	if lps != "" {
+		p, err := strconv.Atoi(lps)
+		if err != nil || p < 0 || p > 100 {
+			cm.SaveError = "Callbook: priority must be 0\u2013100"
+			return nil
 		}
-		if i == cm.focus {
-			rank = visible
+	}
+	if cm.qrzEnabled {
+		if strings.TrimSpace(cm.qrzUser.Value()) == "" {
+			cm.SaveError = "QRZ: username is required when enabled"
+			return nil
+		}
+		if cm.qrzPass.Value() == "" {
+			cm.SaveError = "QRZ: password is required when enabled"
+			return nil
+		}
+		ps := strings.TrimSpace(cm.qrzPriority.Value())
+		if ps != "" {
+			p, err := strconv.Atoi(ps)
+			if err != nil || p < 0 || p > 100 {
+				cm.SaveError = "Callbook: priority must be 0\u2013100"
+				return nil
+			}
 		}
 	}
-	if visible <= 1 || rank <= 0 {
-		return 0
+	if cm.hamqthEnabled {
+		if strings.TrimSpace(cm.hamqthUser.Value()) == "" {
+			cm.SaveError = "HamQTH: username is required when enabled"
+			return nil
+		}
+		if cm.hamqthPass.Value() == "" {
+			cm.SaveError = "HamQTH: password is required when enabled"
+			return nil
+		}
+		ps := strings.TrimSpace(cm.hamqthPriority.Value())
+		if ps != "" {
+			p, err := strconv.Atoi(ps)
+			if err != nil || p < 0 || p > 100 {
+				cm.SaveError = "Callbook: priority must be 0\u2013100"
+				return nil
+			}
+		}
 	}
-	return float64(rank-1) / float64(visible-1)
-}
-
-func (cm *CallbookMenu) autoScrollViewport() {
-	total := cm.vp.TotalLineCount()
-	visible := cm.vp.VisibleLineCount()
-	if total <= visible {
-		cm.vp.SetYOffset(0)
-		return
+	if cm.qrzruEnabled {
+		if strings.TrimSpace(cm.qrzruUser.Value()) == "" {
+			cm.SaveError = "QRZ.RU: API login is required when enabled"
+			return nil
+		}
+		if cm.qrzruPass.Value() == "" {
+			cm.SaveError = "QRZ.RU: API password is required when enabled"
+			return nil
+		}
+		ps := strings.TrimSpace(cm.qrzruPriority.Value())
+		if ps != "" {
+			p, err := strconv.Atoi(ps)
+			if err != nil || p < 0 || p > 100 {
+				cm.SaveError = "Callbook: priority must be 0\u2013100"
+				return nil
+			}
+		}
 	}
-	frac := cm.scrollFraction()
-	maxOffset := total - visible
-	if maxOffset < 0 {
-		maxOffset = 0
-	}
-	offset := int(float64(maxOffset) * frac)
-	if offset < 0 {
-		offset = 0
-	}
-	if offset > maxOffset {
-		offset = maxOffset
-	}
-	cm.vp.SetYOffset(offset)
+	cm.done = true
+	cm.saved = true
+	return nil
 }
 
 func (cm *CallbookMenu) View() tea.View {
@@ -779,82 +667,22 @@ func (cm *CallbookMenu) View() tea.View {
 	infoText := "Callsign lookup providers with priority-based " +
 		"search order (higher = tried first). Login details " +
 		"are safe on shared stations \u2014 read-only, encrypted."
-	infoLines := wrapLines(infoText, infoMaxW)
-	var infoContent strings.Builder
-	for i, line := range infoLines {
-		infoContent.WriteString(DimStyle.Render(line))
-		if i < len(infoLines)-1 {
-			infoContent.WriteString("\n")
-		}
-	}
-	boxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(P.Border)
-	infoBox := boxStyle.Render(infoContent.String())
-	b.WriteString(infoBox)
-
-	b.WriteString("\n")
+	infoBox(&b, infoText, infoMaxW)
 
 	// --- Base call fallback ---
-	baseCb := "[ ]"
-	if cm.baseCallFallback {
-		baseCb = "[x]"
-	}
-	basePrefix := "  "
-	baseLabel := S.FormLabelWide.Align(lipgloss.Left).Render("Base call fallback:")
-	if cm.focus == cmBaseCall {
-		basePrefix = S.FormPrefixOn.Render("> ")
-		baseLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("Base call fallback:")
-		baseCb = CursorStyle.Render(baseCb) + " " + DimStyle.Render("(Space)") + " " + DimStyle.Render("Fallback to base callsign")
-	}
-	b.WriteString(padOrTrunc(
-		lipgloss.JoinHorizontal(lipgloss.Center, basePrefix, baseLabel, " ", baseCb),
-		lineW))
-
-	b.WriteString("\n")
+	checkboxRow(&b, lineW, cm.fm.row == cmBaseCall, "Base call fallback:", cm.baseCallFallback, "Fallback to base callsign", false, callbookRows)
 
 	// --- Local Logbook ---
-	logCb := "[ ]"
-	if cm.logEnabled {
-		logCb = "[x]"
-	}
-	logPrefix := "  "
-	logLabel := S.FormLabelWide.Align(lipgloss.Left).Render("Logbook:")
-	if cm.focus == cmLogChk {
-		logPrefix = S.FormPrefixOn.Render("> ")
-		logLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("Logbook:")
-		logCb = CursorStyle.Render(logCb) + " " + DimStyle.Render("(Space)") + " " + DimStyle.Render("Local, searches previous contacts")
-	}
-	b.WriteString(padOrTrunc(
-		lipgloss.JoinHorizontal(lipgloss.Center, logPrefix, logLabel, " ", logCb),
-		lineW))
+	checkboxRow(&b, lineW, cm.fm.row == cmLogChk, "Logbook:", cm.logEnabled, "Local, searches previous contacts", false, callbookRows)
 
 	if cm.logEnabled {
-		b.WriteString("\n")
 		b.WriteString(padOrTrunc(cm.renderField(cmLogPriority, "  Priority:", &cm.logPriority, false), lineW))
 	}
 
-	b.WriteString("\n")
-	b.WriteString("")
-
 	// --- QRZ.com ---
-	qrzCheckbox := "[ ]"
-	if cm.qrzEnabled {
-		qrzCheckbox = "[x]"
-	}
-	qrzPrefix := "  "
-	qrzLabel := S.FormLabelWide.Align(lipgloss.Left).Render("QRZ.com:")
-	if cm.focus == cmQRZChk {
-		qrzPrefix = S.FormPrefixOn.Render("> ")
-		qrzLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("QRZ.com:")
-		qrzCheckbox = CursorStyle.Render(qrzCheckbox) + " " + DimStyle.Render("(Space)") + " " + DimStyle.Render("Paid, XML subscription required")
-	}
-	b.WriteString(padOrTrunc(
-		lipgloss.JoinHorizontal(lipgloss.Center, qrzPrefix, qrzLabel, " ", qrzCheckbox),
-		lineW))
+	checkboxRow(&b, lineW, cm.fm.row == cmQRZChk, "QRZ.com:", cm.qrzEnabled, "Paid, XML subscription required", false, callbookRows)
 
 	if cm.qrzEnabled {
-		b.WriteString("\n")
 		b.WriteString(padOrTrunc(cm.renderField(cmQRZUser, "  Username:", &cm.qrzUser, false), lineW))
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(cm.renderField(cmQRZPass, "  Password:", &cm.qrzPass, true), lineW))
@@ -863,39 +691,13 @@ func (cm *CallbookMenu) View() tea.View {
 
 		// Test button
 		b.WriteString("\n")
-		btnText := "[ Test Connection ]"
-		var btnLine string
-		if !cm.inetOnline {
-			btnLine = "    " + DimStyle.Render(btnText) + " " + DimStyle.Render("(offline)")
-		} else if cm.focus == cmQRZTest {
-			btnLine = S.FormPrefixOn.Render("> ") + CursorStyle.Render("  "+btnText)
-		} else {
-			btnLine = "    " + InputStyle.Render(btnText)
-		}
-		b.WriteString(padOrTrunc(btnLine, lineW))
+		cm.providerTestButton(&b, lineW, cmQRZTest)
 	}
-
-	b.WriteString("\n")
-	b.WriteString("")
 
 	// --- HamQTH ---
-	hamqthCb := "[ ]"
-	if cm.hamqthEnabled {
-		hamqthCb = "[x]"
-	}
-	hamqthPrefix := "  "
-	hamqthLabel := S.FormLabelWide.Align(lipgloss.Left).Render("HamQTH:")
-	if cm.focus == cmHamQTHChk {
-		hamqthPrefix = S.FormPrefixOn.Render("> ")
-		hamqthLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("HamQTH:")
-		hamqthCb = CursorStyle.Render(hamqthCb) + " " + DimStyle.Render("(Space)") + " " + DimStyle.Render("Free, global callbook")
-	}
-	b.WriteString(padOrTrunc(
-		lipgloss.JoinHorizontal(lipgloss.Center, hamqthPrefix, hamqthLabel, " ", hamqthCb),
-		lineW))
+	checkboxRow(&b, lineW, cm.fm.row == cmHamQTHChk, "HamQTH:", cm.hamqthEnabled, "Free, global callbook", false, callbookRows)
 
 	if cm.hamqthEnabled {
-		b.WriteString("\n")
 		b.WriteString(padOrTrunc(cm.renderField(cmHamQTHUser, "  Username:", &cm.hamqthUser, false), lineW))
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(cm.renderField(cmHamQTHPass, "  Password:", &cm.hamqthPass, true), lineW))
@@ -904,63 +706,20 @@ func (cm *CallbookMenu) View() tea.View {
 
 		// Test button
 		b.WriteString("\n")
-		btnText := "[ Test Connection ]"
-		var btnLine string
-		if !cm.inetOnline {
-			btnLine = "    " + DimStyle.Render(btnText) + " " + DimStyle.Render("(offline)")
-		} else if cm.focus == cmHamQTHTest {
-			btnLine = S.FormPrefixOn.Render("> ") + CursorStyle.Render("  "+btnText)
-		} else {
-			btnLine = "    " + InputStyle.Render(btnText)
-		}
-		b.WriteString(padOrTrunc(btnLine, lineW))
+		cm.providerTestButton(&b, lineW, cmHamQTHTest)
 	}
-
-	b.WriteString("\n")
-	b.WriteString("")
 
 	// --- Callook.info ---
-	callookCb := "[ ]"
-	if cm.callookEnabled {
-		callookCb = "[x]"
-	}
-	callookPrefix := "  "
-	callookLabel := S.FormLabelWide.Align(lipgloss.Left).Render("Callook.info:")
-	if cm.focus == cmCallookChk {
-		callookPrefix = S.FormPrefixOn.Render("> ")
-		callookLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("Callook.info:")
-		callookCb = CursorStyle.Render(callookCb) + " " + DimStyle.Render("(Space)") + " " + DimStyle.Render("Free, US callsigns only")
-	}
-	b.WriteString(padOrTrunc(
-		lipgloss.JoinHorizontal(lipgloss.Center, callookPrefix, callookLabel, " ", callookCb),
-		lineW))
+	checkboxRow(&b, lineW, cm.fm.row == cmCallookChk, "Callook.info:", cm.callookEnabled, "Free, US callsigns only", false, callbookRows)
 
 	if cm.callookEnabled {
-		b.WriteString("\n")
 		b.WriteString(padOrTrunc(cm.renderField(cmCallookPriority, "  Priority:", &cm.callookPriority, false), lineW))
 	}
 
-	b.WriteString("\n")
-	b.WriteString("")
-
 	// --- QRZ.RU ---
-	qrzruCb := "[ ]"
-	if cm.qrzruEnabled {
-		qrzruCb = "[x]"
-	}
-	qrzruPrefix := "  "
-	qrzruLabel := S.FormLabelWide.Align(lipgloss.Left).Render("QRZ.RU:")
-	if cm.focus == cmQRZRuChk {
-		qrzruPrefix = S.FormPrefixOn.Render("> ")
-		qrzruLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("QRZ.RU:")
-		qrzruCb = CursorStyle.Render(qrzruCb) + " " + DimStyle.Render("(Space)") + " " + DimStyle.Render("Free, RU and surrounding countries")
-	}
-	b.WriteString(padOrTrunc(
-		lipgloss.JoinHorizontal(lipgloss.Center, qrzruPrefix, qrzruLabel, " ", qrzruCb),
-		lineW))
+	checkboxRow(&b, lineW, cm.fm.row == cmQRZRuChk, "QRZ.RU:", cm.qrzruEnabled, "Free, RU and surrounding countries", false, callbookRows)
 
 	if cm.qrzruEnabled {
-		b.WriteString("\n")
 		b.WriteString(padOrTrunc(cm.renderField(cmQRZRuUser, "  API login:", &cm.qrzruUser, false), lineW))
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(cm.renderField(cmQRZRuPass, "  API password:", &cm.qrzruPass, true), lineW))
@@ -969,47 +728,21 @@ func (cm *CallbookMenu) View() tea.View {
 
 		// Test button
 		b.WriteString("\n")
-		btnText := "[ Test Connection ]"
-		var btnLine string
-		if !cm.inetOnline {
-			btnLine = "    " + DimStyle.Render(btnText) + " " + DimStyle.Render("(offline)")
-		} else if cm.focus == cmQRZRuTest {
-			btnLine = S.FormPrefixOn.Render("> ") + CursorStyle.Render("  "+btnText)
-		} else {
-			btnLine = "    " + InputStyle.Render(btnText)
-		}
-		b.WriteString(padOrTrunc(btnLine, lineW))
+		cm.providerTestButton(&b, lineW, cmQRZRuTest)
 	}
-
-	b.WriteString("\n")
-	b.WriteString("")
 
 	// --- Wavelog ---
 	if cm.wlConfigured {
-		wlCb := "[ ]"
-		if cm.wlEnabled {
-			wlCb = "[x]"
-		}
-		wlPrefix := "  "
-		wlLabel := S.FormLabelWide.Align(lipgloss.Left).Render("Wavelog:")
-		if cm.focus == cmWavelogChk {
-			wlPrefix = S.FormPrefixOn.Render("> ")
-			wlLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("Wavelog:")
-			wlCb = CursorStyle.Render(wlCb) + " " + DimStyle.Render("(Space)") + " " + DimStyle.Render("Integration, must be enabled per logbook")
-		}
-		b.WriteString(padOrTrunc(
-			lipgloss.JoinHorizontal(lipgloss.Center, wlPrefix, wlLabel, " ", wlCb),
-			lineW))
+		checkboxRow(&b, lineW, cm.fm.row == cmWavelogChk, "Wavelog:", cm.wlEnabled, "Integration, must be enabled per logbook", false, callbookRows)
 
 		if cm.wlEnabled {
-			b.WriteString("\n")
 			b.WriteString(padOrTrunc(cm.renderField(cmWavelogPriority, "  Priority:", &cm.wlPriority, false), lineW))
 		}
 	} // wlConfigured
 
 	// Save & Back button at the end of the menu.
 	b.WriteString("\n")
-	b.WriteString(cm.saveBtn.line("Save & Back", lineW))
+	b.WriteString(cm.fm.btn.line("Save & Back", lineW))
 
 	body := b.String()
 	if body == "" {
@@ -1030,10 +763,10 @@ func (cm *CallbookMenu) View() tea.View {
 		cm.vp.SetContent(body)
 		cm.lastBodyContent = body
 		cm.vp.GotoTop()
-		cm.autoScrollViewport()
+		scrollViewportToFraction(&cm.vp, cm.fm.scrollFraction(cm))
 	}
 	if cm.vp.PastBottom() {
-		cm.autoScrollViewport()
+		scrollViewportToFraction(&cm.vp, cm.fm.scrollFraction(cm))
 	}
 	header := S.Title.Width(boxW).Render("Configuration \u2014 Callbook")
 	vpContent := cm.vp.View()
@@ -1045,9 +778,22 @@ func (cm *CallbookMenu) View() tea.View {
 	return tea.NewView(lipgloss.JoinVertical(lipgloss.Left, header, "", box))
 }
 
+// providerTestButton renders a "[ Test Connection ]" row for a callbook
+// provider. Offline state dims the button; otherwise it uses the shared
+// button renderer with the (Space)/Enter focus marker.
+func (cm *CallbookMenu) providerTestButton(b *strings.Builder, w, testPos int) {
+	btnText := "[ Test Connection ]"
+	if !cm.inetOnline {
+		b.WriteString(padOrTrunc("    "+DimStyle.Render(btnText)+" "+DimStyle.Render("(offline)"), w))
+		b.WriteString("\n")
+		return
+	}
+	buttonRow(b, w, cm.fm.row == testPos, btnText)
+}
+
 func (cm *CallbookMenu) renderField(pos int, label string, ti *textinput.Model, hidden bool) string {
 	prefix := "  "
-	if cm.focus == pos {
+	if cm.fm.row == pos {
 		prefix = S.FormPrefixOn.Render("> ")
 	}
 	lbl := S.FormLabelWide.Align(lipgloss.Left).Render(label)
@@ -1058,7 +804,7 @@ func (cm *CallbookMenu) renderField(pos int, label string, ti *textinput.Model, 
 	} else {
 		val = ti.Value()
 	}
-	if cm.focus == pos {
+	if cm.fm.row == pos {
 		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(label)
 		val = CursorStyle.Width(valW).MaxWidth(valW).Render(ti.View())
 	} else {

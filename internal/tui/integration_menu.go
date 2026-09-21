@@ -19,6 +19,9 @@ import (
 	"go.bug.st/serial"
 )
 
+// integrationRows is the row style shared by the integration menu's rows.
+var integrationRows = rowStyle{label: S.FormLabelWide, focused: S.FormFocusedWide}
+
 type IntegrationMenu struct {
 	// DXC
 	dxcEnabled bool
@@ -83,7 +86,7 @@ type IntegrationMenu struct {
 	// aprsToast is set by APRS test handler; parent reads and shows toast, then clears.
 	aprsToast string
 
-	focus      int
+	fm         menuFocus
 	done       bool
 	saved      bool
 	goBack     bool
@@ -98,7 +101,6 @@ type IntegrationMenu struct {
 	// Viewport for scrolling form content on small terminals.
 	vp              viewport.Model
 	lastBodyContent string
-	saveBtn         saveBackButton
 }
 
 const (
@@ -532,7 +534,6 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 		aprsStopBits:     aprsStop,
 		aprsDTR:          aprsDTR,
 		aprsRTS:          cfg.Integrations.APRS.RTS,
-		focus:            0,
 	}
 }
 
@@ -586,46 +587,10 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if im.qrzTesting {
 			return im, nil
 		}
-		// Save & Back button handling.
-		if im.saveBtn.Focus {
-			switch k {
-			case "enter", " ", "space":
-				// Reuse the Ctrl+S save flow (validation + done/saved).
-				im.saveBtn.Focus = false
-				m2, cmd := im.Update(tea.KeyPressMsg{Text: "\x13"})
-				return m2.(*IntegrationMenu), cmd
-			case "tab", "down":
-				im.saveBtn.Focus = false
-				im.focus = im.firstVisiblePos()
-				im.blurAll()
-				im.focusField()
-				return im, nil
-			case "shift+tab", "up":
-				im.saveBtn.Focus = false
-				im.focus = im.lastVisiblePos()
-				im.blurAll()
-				im.focusField()
-				return im, nil
-			case "esc":
-				im.done = true
-				im.goBack = true
-				return im, nil
-			default:
-				return im, nil
-			}
-		}
-		// Tab from the last item / Up from the first item reaches the button.
-		if (k == "tab" || k == "down") && im.focus == im.lastVisiblePos() {
-			im.blurAll()
-			im.saveBtn.Focus = true
-			im.autoScrollViewport()
-			return im, nil
-		}
-		if (k == "shift+tab" || k == "up") && im.focus == im.firstVisiblePos() {
-			im.blurAll()
-			im.saveBtn.Focus = true
-			im.autoScrollViewport()
-			return im, nil
+		// Shared navigation: Tab/Down, Shift+Tab/Up, and the Save & Back
+		// button (Space/Enter saves through the same validation as Ctrl+S).
+		if handled, cmd := im.fm.onKey(msg, im, func() tea.Cmd { return im.trySave() }); handled {
+			return im, cmd
 		}
 		switch k {
 		case "esc":
@@ -633,95 +598,27 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			im.goBack = true
 			return im, nil
 		case "ctrl+s", "\x13":
-			// Validate DXC fields when DXC is enabled.
-			if im.dxcEnabled {
-				if strings.TrimSpace(im.dxcHost.Value()) == "" {
-					im.SaveError = "DXC: host (server) is required"
-					return im, nil
-				}
-				if strings.TrimSpace(im.dxcPort.Value()) == "" {
-					im.SaveError = "DXC: port is required"
-					return im, nil
-				}
-				if strings.TrimSpace(im.dxcLogin.Value()) == "" {
-					im.SaveError = "DXC: login (callsign) is required"
-					return im, nil
-				}
-			}
-			// Validate HTTP server fields when HTTP server is enabled.
-			if im.httpEnabled {
-				if strings.TrimSpace(im.httpPort.Value()) == "" {
-					im.SaveError = "HTTP server: port is required"
-					return im, nil
-				}
-				// Validate Event Start format if entered.
-				if es := strings.TrimSpace(im.httpEvtStart.Value()); es != "" {
-					if _, err := time.Parse("2006-01-02", es); err != nil {
-						im.SaveError = "HTTP server: Event Start must be YYYY-MM-DD or empty"
-						return im, nil
-					}
-				}
-				// TLS certificate and key must be configured together.
-				cert := strings.TrimSpace(im.httpTLSCert.Value())
-				key := strings.TrimSpace(im.httpTLSKey.Value())
-				if (cert == "") != (key == "") {
-					im.SaveError = "HTTP server: TLS certificate and key paths must be set together (or both empty for auto self-signed)"
-					return im, nil
-				}
-			}
-			// Validate GPS fields when GPS is enabled.
-			if im.gpsEnabled {
-				switch im.gpsService {
-				case 0: // Serial
-					if strings.TrimSpace(im.gpsPort.Value()) == "" {
-						im.SaveError = "GPS: serial port is required"
-						return im, nil
-					}
-				case 1: // GPSD
-					if strings.TrimSpace(im.gpsdHost.Value()) == "" {
-						im.SaveError = "GPS: GPSD host is required"
-						return im, nil
-					}
-				}
-			}
-			// Validate APRS fields when APRS is enabled.
-			if im.aprsEnabled {
-				switch im.aprsService {
-				case 0: // APRS-IS
-					if strings.TrimSpace(im.aprsServer.Value()) == "" {
-						im.SaveError = "APRS: server is required"
-						return im, nil
-					}
-				case 1: // KISS
-					if strings.TrimSpace(im.aprsPort.Value()) == "" {
-						im.SaveError = "APRS: KISS port is required"
-						return im, nil
-					}
-				}
-			}
-			im.done = true
-			im.saved = true
-			return im, nil
+			return im, im.trySave()
 		case " ", "space":
 			// Space triggers Test buttons in parallel with Enter.
-			if im.focus == imGPSTest || im.focus == imAPRSTest {
+			if im.fm.row == imGPSTest || im.fm.row == imAPRSTest {
 				m2, c := im.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 				return m2.(*IntegrationMenu), c
 			}
-			switch im.focus {
+			switch im.fm.row {
 			case imDXCChk:
 				im.dxcEnabled = !im.dxcEnabled
-				if !im.isPositionVisible(im.focus) {
-					im.fixFocus()
+				if !im.isPositionVisible(im.fm.row) {
+					im.fm.fixFocus(im)
 				}
-				im.autoScrollViewport()
+				scrollViewportToFraction(&im.vp, im.fm.scrollFraction(im))
 				return im, nil
 			case imHTTPChk:
 				im.httpEnabled = !im.httpEnabled
-				if !im.isPositionVisible(im.focus) {
-					im.fixFocus()
+				if !im.isPositionVisible(im.fm.row) {
+					im.fm.fixFocus(im)
 				}
-				im.autoScrollViewport()
+				scrollViewportToFraction(&im.vp, im.fm.scrollFraction(im))
 				return im, nil
 			case imHTTPAddr:
 				im.httpAddrIdx = (im.httpAddrIdx + 1) % 2
@@ -736,24 +633,24 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return im, nil
 			case imHTTPTLS:
 				im.httpTLS = !im.httpTLS
-				if !im.isPositionVisible(im.focus) {
-					im.fixFocus()
+				if !im.isPositionVisible(im.fm.row) {
+					im.fm.fixFocus(im)
 				}
-				im.autoScrollViewport()
+				scrollViewportToFraction(&im.vp, im.fm.scrollFraction(im))
 				return im, nil
 			case imGPSChk:
 				im.gpsEnabled = !im.gpsEnabled
-				if !im.isPositionVisible(im.focus) {
-					im.fixFocus()
+				if !im.isPositionVisible(im.fm.row) {
+					im.fm.fixFocus(im)
 				}
-				im.autoScrollViewport()
+				scrollViewportToFraction(&im.vp, im.fm.scrollFraction(im))
 				return im, nil
 			case imAPRSChk:
 				im.aprsEnabled = !im.aprsEnabled
-				if !im.isPositionVisible(im.focus) {
-					im.fixFocus()
+				if !im.isPositionVisible(im.fm.row) {
+					im.fm.fixFocus(im)
 				}
-				im.autoScrollViewport()
+				scrollViewportToFraction(&im.vp, im.fm.scrollFraction(im))
 				return im, nil
 			case imGPSDTR:
 				im.gpsDTR = !im.gpsDTR
@@ -766,20 +663,20 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return im, nil
 			case imGPSSvc:
 				im.gpsService = (im.gpsService + 1) % len(gpsServiceOptions)
-				if !im.isPositionVisible(im.focus) {
-					im.fixFocus()
+				if !im.isPositionVisible(im.fm.row) {
+					im.fm.fixFocus(im)
 				}
-				im.autoScrollViewport()
+				scrollViewportToFraction(&im.vp, im.fm.scrollFraction(im))
 				return im, nil
 			case imGPSGridPrec:
 				im.gpsGridPrecision = nextGPSCycleInt(im.gpsGridPrecision, gpsPrecisionOptions)
 				return im, nil
 			case imAPRSSvc:
 				im.aprsService = (im.aprsService + 1) % len(aprsServiceOptions)
-				if !im.isPositionVisible(im.focus) {
-					im.fixFocus()
+				if !im.isPositionVisible(im.fm.row) {
+					im.fm.fixFocus(im)
 				}
-				im.autoScrollViewport()
+				scrollViewportToFraction(&im.vp, im.fm.scrollFraction(im))
 				return im, nil
 			case imAPRSBaud:
 				im.aprsBaudRate = nextGPSCycle(im.aprsBaudRate)
@@ -801,7 +698,7 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return im, nil
 			}
 			// Fall through to text input for editable fields.
-			switch im.focus {
+			switch im.fm.row {
 			case imDXCHost:
 				im.dxcHost, _ = im.dxcHost.Update(msg)
 			case imDXCPort:
@@ -828,13 +725,13 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				im.gpsPort, _ = im.gpsPort.Update(msg)
 			}
 		case "tab", "down":
-			im.next()
-			im.autoScrollViewport()
+			_ = im.fm.next(im)
+			scrollViewportToFraction(&im.vp, im.fm.scrollFraction(im))
 		case "shift+tab", "up":
-			im.prev()
-			im.autoScrollViewport()
+			_ = im.fm.prev(im)
+			scrollViewportToFraction(&im.vp, im.fm.scrollFraction(im))
 		case "enter":
-			if im.focus == imGPSTest {
+			if im.fm.row == imGPSTest {
 				switch im.gpsService {
 				case 0: // Serial
 					port := strings.TrimSpace(im.gpsPort.Value())
@@ -869,7 +766,7 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-			if im.focus == imAPRSTest {
+			if im.fm.row == imAPRSTest {
 				switch im.aprsService {
 				case 0: // APRS-IS
 					srv := strings.TrimSpace(im.aprsServer.Value())
@@ -931,24 +828,24 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-			im.next()
-			im.autoScrollViewport()
+			im.fm.next(im)
+			scrollViewportToFraction(&im.vp, im.fm.scrollFraction(im))
 		case "pgup":
-			if im.focus == imGPSBaud {
+			if im.fm.row == imGPSBaud {
 				im.gpsBaudRate = nextGPSCycle(im.gpsBaudRate)
 				return im, nil
 			}
-			if im.focus == imAPRSBaud {
+			if im.fm.row == imAPRSBaud {
 				im.aprsBaudRate = nextGPSCycle(im.aprsBaudRate)
 				return im, nil
 			}
 			im.vp, _ = im.vp.Update(msg)
 		case "pgdown":
-			if im.focus == imGPSBaud {
+			if im.fm.row == imGPSBaud {
 				im.gpsBaudRate = prevGPSCycle(im.gpsBaudRate)
 				return im, nil
 			}
-			if im.focus == imAPRSBaud {
+			if im.fm.row == imAPRSBaud {
 				im.aprsBaudRate = prevGPSCycle(im.aprsBaudRate)
 				return im, nil
 			}
@@ -966,7 +863,7 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (im *IntegrationMenu) forwardToFocused(msg tea.Msg) {
-	switch im.focus {
+	switch im.fm.row {
 	case imDXCHost:
 		im.dxcHost, _ = im.dxcHost.Update(msg)
 	case imDXCPort:
@@ -1004,28 +901,6 @@ func (im *IntegrationMenu) forwardToFocused(msg tea.Msg) {
 	case imAPRSPort:
 		im.aprsPort, _ = im.aprsPort.Update(msg)
 	}
-}
-
-func (im *IntegrationMenu) next() {
-	for {
-		im.focus = wrapNext(im.focus, imMax)
-		if im.isPositionVisible(im.focus) {
-			break
-		}
-	}
-	im.blurAll()
-	im.focusField()
-}
-
-func (im *IntegrationMenu) prev() {
-	for {
-		im.focus = wrapPrev(im.focus, imMax)
-		if im.isPositionVisible(im.focus) {
-			break
-		}
-	}
-	im.blurAll()
-	im.focusField()
 }
 
 func (im *IntegrationMenu) isPositionVisible(pos int) bool {
@@ -1068,38 +943,19 @@ func (im *IntegrationMenu) isPositionVisible(pos int) bool {
 	return true
 }
 
-func (im *IntegrationMenu) fixFocus() {
-	if im.isPositionVisible(im.focus) {
-		return
-	}
-	im.next()
-}
-
-// firstVisiblePos returns the first focusable position.
-func (im *IntegrationMenu) firstVisiblePos() int {
-	for pos := 0; pos < imMax; pos++ {
-		if im.isPositionVisible(pos) {
-			return pos
-		}
-	}
-	return 0
-}
-
-// lastVisiblePos returns the last focusable position.
-func (im *IntegrationMenu) lastVisiblePos() int {
-	for pos := imMax - 1; pos >= 0; pos-- {
-		if im.isPositionVisible(pos) {
-			return pos
-		}
-	}
-	return 0
-}
+// focusableRows implementation.
+func (im *IntegrationMenu) rowCount() int         { return imMax }
+func (im *IntegrationMenu) rowVisible(i int) bool { return im.isPositionVisible(i) }
 
 func (im *IntegrationMenu) blurAll() {
-	blurTextinputs(&im.dxcHost, &im.dxcPort, &im.dxcLogin, &im.httpPort, &im.httpHeader1, &im.httpHeader2, &im.httpClubLogo, &im.httpEvtStart, &im.httpTLSCert, &im.httpTLSKey, &im.gpsPort, &im.gpsdHost, &im.gpsdPort, &im.aprsServer, &im.aprsKISSHost, &im.aprsKISSPort, &im.aprsPort)
+	blurTextinputs(&im.dxcHost, &im.dxcPort, &im.dxcLogin,
+		&im.qrzUser, &im.qrzPass,
+		&im.httpAddr, &im.httpPort, &im.httpHeader1, &im.httpHeader2, &im.httpClubLogo, &im.httpQRLink, &im.httpEvtStart, &im.httpTLSCert, &im.httpTLSKey,
+		&im.gpsPort, &im.gpsdHost, &im.gpsdPort,
+		&im.aprsServer, &im.aprsKISSHost, &im.aprsKISSPort, &im.aprsPort)
 }
-func (im *IntegrationMenu) focusField() {
-	switch im.focus {
+func (im *IntegrationMenu) focusRow(i int) tea.Cmd {
+	switch i {
 	case imDXCHost:
 		im.dxcHost.Focus()
 	case imDXCPort:
@@ -1137,55 +993,81 @@ func (im *IntegrationMenu) focusField() {
 	case imAPRSPort:
 		im.aprsPort.Focus()
 	}
+	return nil
 }
 
-// scrollFraction returns 0.0 (top) to 1.0 (bottom) indicating the
-// relative position of the currently focused field. Used to auto-scroll
-// the viewport so the active field stays visible on small terminals.
-// scrollFraction returns 0.0 (top) to 1.0 (bottom) indicating the relative
-// position of the currently focused field among all currently visible focus
-// positions. This adapts to collapsed sections (e.g. disabled DXC hides its
-// sub-fields) so the viewport scrolls accurately regardless of which
-// integrations are enabled.
-func (im *IntegrationMenu) scrollFraction() float64 {
-	visible := 0
-	rank := -1
-	for i := 0; i < imMax; i++ {
-		if im.isPositionVisible(i) {
-			visible++
+// trySave validates the enabled integrations and closes the menu. Used by
+// both Ctrl+S and the Save & Back button.
+func (im *IntegrationMenu) trySave() tea.Cmd {
+	// Validate DXC fields when DXC is enabled.
+	if im.dxcEnabled {
+		if strings.TrimSpace(im.dxcHost.Value()) == "" {
+			im.SaveError = "DXC: host (server) is required"
+			return nil
 		}
-		if i == im.focus {
-			rank = visible
+		if strings.TrimSpace(im.dxcPort.Value()) == "" {
+			im.SaveError = "DXC: port is required"
+			return nil
+		}
+		if strings.TrimSpace(im.dxcLogin.Value()) == "" {
+			im.SaveError = "DXC: login (callsign) is required"
+			return nil
 		}
 	}
-	if visible <= 1 || rank <= 0 {
-		return 0
+	// Validate HTTP server fields when HTTP server is enabled.
+	if im.httpEnabled {
+		if strings.TrimSpace(im.httpPort.Value()) == "" {
+			im.SaveError = "HTTP server: port is required"
+			return nil
+		}
+		// Validate Event Start format if entered.
+		if es := strings.TrimSpace(im.httpEvtStart.Value()); es != "" {
+			if _, err := time.Parse("2006-01-02", es); err != nil {
+				im.SaveError = "HTTP server: Event Start must be YYYY-MM-DD or empty"
+				return nil
+			}
+		}
+		// TLS certificate and key must be configured together.
+		cert := strings.TrimSpace(im.httpTLSCert.Value())
+		key := strings.TrimSpace(im.httpTLSKey.Value())
+		if (cert == "") != (key == "") {
+			im.SaveError = "HTTP server: TLS certificate and key paths must be set together (or both empty for auto self-signed)"
+			return nil
+		}
 	}
-	return float64(rank-1) / float64(visible-1)
-}
-
-// autoScrollViewport adjusts the viewport Y offset to keep the focused
-// field visible.
-func (im *IntegrationMenu) autoScrollViewport() {
-	total := im.vp.TotalLineCount()
-	visible := im.vp.VisibleLineCount()
-	if total <= visible {
-		im.vp.SetYOffset(0)
-		return
+	// Validate GPS fields when GPS is enabled.
+	if im.gpsEnabled {
+		switch im.gpsService {
+		case 0: // Serial
+			if strings.TrimSpace(im.gpsPort.Value()) == "" {
+				im.SaveError = "GPS: serial port is required"
+				return nil
+			}
+		case 1: // GPSD
+			if strings.TrimSpace(im.gpsdHost.Value()) == "" {
+				im.SaveError = "GPS: GPSD host is required"
+				return nil
+			}
+		}
 	}
-	frac := im.scrollFraction()
-	maxOffset := total - visible
-	if maxOffset < 0 {
-		maxOffset = 0
+	// Validate APRS fields when APRS is enabled.
+	if im.aprsEnabled {
+		switch im.aprsService {
+		case 0: // APRS-IS
+			if strings.TrimSpace(im.aprsServer.Value()) == "" {
+				im.SaveError = "APRS: server is required"
+				return nil
+			}
+		case 1: // KISS
+			if strings.TrimSpace(im.aprsPort.Value()) == "" {
+				im.SaveError = "APRS: KISS port is required"
+				return nil
+			}
+		}
 	}
-	offset := int(float64(maxOffset) * frac)
-	if offset < 0 {
-		offset = 0
-	}
-	if offset > maxOffset {
-		offset = maxOffset
-	}
-	im.vp.SetYOffset(offset)
+	im.done = true
+	im.saved = true
+	return nil
 }
 
 func (im *IntegrationMenu) View() tea.View {
@@ -1223,20 +1105,7 @@ func (im *IntegrationMenu) View() tea.View {
 		"caution: some integrations (DX Cluster, APRS, GPS) " +
 		"can create additional CPU or network load, especially " +
 		"on low-end hardware or field setups."
-	infoLines := wrapLines(infoText, infoMaxW)
-	var infoContent strings.Builder
-	for i, line := range infoLines {
-		infoContent.WriteString(DimStyle.Render(line))
-		if i < len(infoLines)-1 {
-			infoContent.WriteString("\n")
-		}
-	}
-	boxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(P.Border)
-	infoBox := boxStyle.Render(infoContent.String())
-	b.WriteString(infoBox)
-	b.WriteString("\n")
+	infoBox(&b, infoText, infoMaxW)
 
 	// --- DXC section ---
 	dxcCheckbox := "[ ]"
@@ -1245,7 +1114,7 @@ func (im *IntegrationMenu) View() tea.View {
 	}
 	dxcPrefix := "  "
 	dxcLabel := S.FormLabelWide.Align(lipgloss.Left).Render("DX Cluster:")
-	if im.focus == imDXCChk {
+	if im.fm.row == imDXCChk {
 		dxcPrefix = S.FormPrefixOn.Render("> ")
 		dxcLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("DX Cluster:")
 		dxcCheckbox = CursorStyle.Render(dxcCheckbox) + " " + DimStyle.Render("(Space)")
@@ -1274,7 +1143,7 @@ func (im *IntegrationMenu) View() tea.View {
 	}
 	httpPrefix := "  "
 	httpLabel := S.FormLabelWide.Align(lipgloss.Left).Render("HTTP Server:")
-	if im.focus == imHTTPChk {
+	if im.fm.row == imHTTPChk {
 		httpPrefix = S.FormPrefixOn.Render("> ")
 		httpLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("HTTP Server:")
 		httpCheckbox = CursorStyle.Render(httpCheckbox) + " " + DimStyle.Render("(Space)")
@@ -1289,7 +1158,7 @@ func (im *IntegrationMenu) View() tea.View {
 		addrLabels := []string{"This PC only", "Local network"}
 		addrVal := ValueStyle.Render(addrLabels[im.httpAddrIdx])
 		addrLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Access:")
-		if im.focus == imHTTPAddr {
+		if im.fm.row == imHTTPAddr {
 			addrLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Access:")
 			addrVal = CursorStyle.Render(addrLabels[im.httpAddrIdx]) + " " + DimStyle.Render("(Space)")
 		}
@@ -1299,14 +1168,14 @@ func (im *IntegrationMenu) View() tea.View {
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(im.renderField(imHTTPPort, "  Port:", &im.httpPort, false), lineW))
 		b.WriteString("\n")
-		b.WriteString(padOrTrunc(im.renderTheme(), lineW))
-		b.WriteString("\n")
+		themeNames := []string{"Bright", "Dark", "Orchid", "HighVis"}
+		valueRow(&b, lineW, im.fm.row == imHTTPTheme, "  Theme:", themeNames[im.httpTheme], "", integrationRows)
 		tlsCheckbox := "[ ]"
 		if im.httpTLS {
 			tlsCheckbox = "[x]"
 		}
 		tlsLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  HTTPS (TLS):")
-		if im.focus == imHTTPTLS {
+		if im.fm.row == imHTTPTLS {
 			tlsLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  HTTPS (TLS):")
 			tlsCheckbox = CursorStyle.Render(tlsCheckbox) + " " + DimStyle.Render("(Space)")
 		}
@@ -1342,7 +1211,7 @@ func (im *IntegrationMenu) View() tea.View {
 	}
 	gpsPrefix := "  "
 	gpsLabel := S.FormLabelWide.Align(lipgloss.Left).Render("GPS Service:")
-	if im.focus == imGPSChk {
+	if im.fm.row == imGPSChk {
 		gpsPrefix = S.FormPrefixOn.Render("> ")
 		gpsLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("GPS Service:")
 		gpsCheckbox = CursorStyle.Render(gpsCheckbox) + " " + DimStyle.Render("(Space)")
@@ -1357,7 +1226,7 @@ func (im *IntegrationMenu) View() tea.View {
 		svcPrefix := "  "
 		svcLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Service:")
 		svcVal := gpsServiceOptions[im.gpsService].label
-		if im.focus == imGPSSvc {
+		if im.fm.row == imGPSSvc {
 			svcPrefix = S.FormPrefixOn.Render("> ")
 			svcLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Service:")
 			svcVal = CursorStyle.Render(svcVal) + " " + DimStyle.Render("(Space)")
@@ -1373,7 +1242,7 @@ func (im *IntegrationMenu) View() tea.View {
 		precPrefix := "  "
 		precLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Grid precision:")
 		precVal := fmt.Sprintf("%d chars", im.gpsGridPrecision)
-		if im.focus == imGPSGridPrec {
+		if im.fm.row == imGPSGridPrec {
 			precPrefix = S.FormPrefixOn.Render("> ")
 			precLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Grid precision:")
 			precVal = CursorStyle.Render(precVal) + " " + DimStyle.Render("(Space)")
@@ -1393,7 +1262,7 @@ func (im *IntegrationMenu) View() tea.View {
 			baudPrefix := "  "
 			baudLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Baud:")
 			baudVal := fmt.Sprintf("%d", im.gpsBaudRate)
-			if im.focus == imGPSBaud {
+			if im.fm.row == imGPSBaud {
 				baudPrefix = S.FormPrefixOn.Render("> ")
 				baudLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Baud:")
 				baudVal = CursorStyle.Render(baudVal) + " " + DimStyle.Render("(Space)")
@@ -1411,7 +1280,7 @@ func (im *IntegrationMenu) View() tea.View {
 			}
 			dtrPrefix := "  "
 			dtrLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  DTR:")
-			if im.focus == imGPSDTR {
+			if im.fm.row == imGPSDTR {
 				dtrPrefix = S.FormPrefixOn.Render("> ")
 				dtrLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  DTR:")
 				dtrCb = CursorStyle.Render(dtrCb) + " " + DimStyle.Render("(Space)")
@@ -1427,7 +1296,7 @@ func (im *IntegrationMenu) View() tea.View {
 			}
 			rtsPrefix := "  "
 			rtsLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  RTS:")
-			if im.focus == imGPSRTS {
+			if im.fm.row == imGPSRTS {
 				rtsPrefix = S.FormPrefixOn.Render("> ")
 				rtsLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  RTS:")
 				rtsCb = CursorStyle.Render(rtsCb) + " " + DimStyle.Render("(Space)")
@@ -1448,15 +1317,11 @@ func (im *IntegrationMenu) View() tea.View {
 		// Test button — always available when GPS is enabled.
 		b.WriteString("\n")
 		btnText := "[ Test GPS ]"
-		var btnLine string
 		if im.gpsTesting {
-			btnLine = "    " + DimStyle.Render(btnText) + " " + DimStyle.Render("...")
-		} else if im.focus == imGPSTest {
-			btnLine = S.FormPrefixOn.Render("> ") + CursorStyle.Render("  "+btnText)
+			b.WriteString(padOrTrunc("    "+DimStyle.Render(btnText)+" "+DimStyle.Render("..."), lineW))
 		} else {
-			btnLine = "    " + InputStyle.Render(btnText)
+			buttonRow(&b, lineW, im.fm.row == imGPSTest, btnText)
 		}
-		b.WriteString(padOrTrunc(btnLine, lineW))
 
 		if im.gpsTestResult != "" {
 			b.WriteString("\n")
@@ -1475,7 +1340,7 @@ func (im *IntegrationMenu) View() tea.View {
 	}
 	aprsPrefix := "  "
 	aprsLabel := S.FormLabelWide.Align(lipgloss.Left).Render("APRS:")
-	if im.focus == imAPRSChk {
+	if im.fm.row == imAPRSChk {
 		aprsPrefix = S.FormPrefixOn.Render("> ")
 		aprsLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("APRS:")
 		aprsCheckbox = CursorStyle.Render(aprsCheckbox) + " " + DimStyle.Render("(Space)")
@@ -1490,7 +1355,7 @@ func (im *IntegrationMenu) View() tea.View {
 		svcPrefix := "  "
 		svcLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Service:")
 		svcVal := aprsServiceOptions[im.aprsService].label
-		if im.focus == imAPRSSvc {
+		if im.fm.row == imAPRSSvc {
 			svcPrefix = S.FormPrefixOn.Render("> ")
 			svcLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Service:")
 			svcVal = CursorStyle.Render(svcVal) + " " + DimStyle.Render("(Space)")
@@ -1523,7 +1388,7 @@ func (im *IntegrationMenu) View() tea.View {
 			baudPrefix := "  "
 			baudLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Baud:")
 			baudVal := fmt.Sprintf("%d", im.aprsBaudRate)
-			if im.focus == imAPRSBaud {
+			if im.fm.row == imAPRSBaud {
 				baudPrefix = S.FormPrefixOn.Render("> ")
 				baudLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Baud:")
 				baudVal = CursorStyle.Render(baudVal) + " " + DimStyle.Render("(Space)")
@@ -1538,7 +1403,7 @@ func (im *IntegrationMenu) View() tea.View {
 			dataPrefix := "  "
 			dataLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Data bits:")
 			dataVal := fmt.Sprintf("%d", im.aprsDataBits)
-			if im.focus == imAPRSData {
+			if im.fm.row == imAPRSData {
 				dataPrefix = S.FormPrefixOn.Render("> ")
 				dataLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Data bits:")
 				dataVal = CursorStyle.Render(dataVal) + " " + DimStyle.Render("(Space)")
@@ -1553,7 +1418,7 @@ func (im *IntegrationMenu) View() tea.View {
 			parPrefix := "  "
 			parLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Parity:")
 			parVal := parityOptions[im.aprsParity].label
-			if im.focus == imAPRSParity {
+			if im.fm.row == imAPRSParity {
 				parPrefix = S.FormPrefixOn.Render("> ")
 				parLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Parity:")
 				parVal = CursorStyle.Render(parVal) + " " + DimStyle.Render("(Space)")
@@ -1568,7 +1433,7 @@ func (im *IntegrationMenu) View() tea.View {
 			stopPrefix := "  "
 			stopLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Stop bits:")
 			stopVal := stopBitsOptions[im.aprsStopBits].label
-			if im.focus == imAPRSStop {
+			if im.fm.row == imAPRSStop {
 				stopPrefix = S.FormPrefixOn.Render("> ")
 				stopLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Stop bits:")
 				stopVal = CursorStyle.Render(stopVal) + " " + DimStyle.Render("(Space)")
@@ -1586,7 +1451,7 @@ func (im *IntegrationMenu) View() tea.View {
 			}
 			dtrPrefix := "  "
 			dtrLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  DTR:")
-			if im.focus == imAPRSDTR {
+			if im.fm.row == imAPRSDTR {
 				dtrPrefix = S.FormPrefixOn.Render("> ")
 				dtrLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  DTR:")
 				dtrCb = CursorStyle.Render(dtrCb) + " " + DimStyle.Render("(Space)")
@@ -1602,7 +1467,7 @@ func (im *IntegrationMenu) View() tea.View {
 			}
 			rtsPrefix := "  "
 			rtsLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  RTS:")
-			if im.focus == imAPRSRTS {
+			if im.fm.row == imAPRSRTS {
 				rtsPrefix = S.FormPrefixOn.Render("> ")
 				rtsLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  RTS:")
 				rtsCb = CursorStyle.Render(rtsCb) + " " + DimStyle.Render("(Space)")
@@ -1615,20 +1480,16 @@ func (im *IntegrationMenu) View() tea.View {
 		// Test button — always available when APRS is enabled.
 		b.WriteString("\n")
 		btnText := "[ Test APRS ]"
-		var btnLine string
 		if im.aprsTesting {
-			btnLine = "    " + DimStyle.Render(btnText) + " " + DimStyle.Render("...")
-		} else if im.focus == imAPRSTest {
-			btnLine = S.FormPrefixOn.Render("> ") + CursorStyle.Render("  "+btnText)
+			b.WriteString(padOrTrunc("    "+DimStyle.Render(btnText)+" "+DimStyle.Render("..."), lineW))
 		} else {
-			btnLine = "    " + InputStyle.Render(btnText)
+			buttonRow(&b, lineW, im.fm.row == imAPRSTest, btnText)
 		}
-		b.WriteString(padOrTrunc(btnLine, lineW))
 	}
 
 	// Build raw form body — header is rendered separately above the viewport.
 	b.WriteString("\n")
-	b.WriteString(im.saveBtn.line("Save & Back", lineW))
+	b.WriteString(im.fm.btn.line("Save & Back", lineW))
 	bodyStr := b.String()
 
 	// Wrap in viewport for scrolling on small terminals.
@@ -1654,10 +1515,10 @@ func (im *IntegrationMenu) View() tea.View {
 	if im.vp.TotalLineCount() == 0 || bodyStr != im.lastBodyContent {
 		im.vp.SetContent(bodyStr)
 		im.lastBodyContent = bodyStr
-		im.autoScrollViewport()
+		scrollViewportToFraction(&im.vp, im.fm.scrollFraction(im))
 	}
 	if im.vp.PastBottom() {
-		im.autoScrollViewport()
+		scrollViewportToFraction(&im.vp, im.fm.scrollFraction(im))
 	}
 
 	header := S.Title.Width(boxW).Render("Configuration \u2014 Integrations")
@@ -1677,7 +1538,7 @@ func (im *IntegrationMenu) View() tea.View {
 func (im *IntegrationMenu) renderField(focusIdx int, label string, ti *textinput.Model, masked bool) string {
 	raw := strings.TrimSpace(ti.Value())
 	var val string
-	if im.focus == focusIdx {
+	if im.fm.row == focusIdx {
 		val = ti.View()
 	} else if raw == "" {
 		val = DimStyle.Render("\u2014")
@@ -1688,24 +1549,9 @@ func (im *IntegrationMenu) renderField(focusIdx int, label string, ti *textinput
 	}
 	prefix := "  "
 	lbl := S.FormLabelWide.Align(lipgloss.Left).Render(label)
-	if im.focus == focusIdx {
+	if im.fm.row == focusIdx {
 		prefix = S.FormPrefixOn.Render("> ")
 		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(label)
-	}
-	return lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)
-}
-
-func (im *IntegrationMenu) renderTheme() string {
-	prefix := "  "
-	lbl := S.FormLabelWide.Align(lipgloss.Left).Render("  Theme:")
-	if im.focus == imHTTPTheme {
-		prefix = S.FormPrefixOn.Render("> ")
-		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render("  Theme:")
-	}
-	themeNames := []string{"Bright", "Dark", "Orchid", "HighVis"}
-	val := ValueStyle.Render(themeNames[im.httpTheme])
-	if im.focus == imHTTPTheme {
-		val = CursorStyle.Render(val) + " " + DimStyle.Render("(Space)")
 	}
 	return lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)
 }

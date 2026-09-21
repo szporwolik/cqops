@@ -55,9 +55,11 @@ func TestWizardSaveNextButtonStationStep(t *testing.T) {
 	}
 
 	// Tab from the last focusable field hands focus to the button.
-	w.station.wlCbFocus = true // Wavelog disabled: checkbox is the last field
+	// Wavelog disabled: the Wavelog checkbox (row 15) is the last field.
+	w.fm.row = 15
+	w.station.focusRow(15)
 	w.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-	if !w.saveBtnFocus {
+	if !w.fm.btn.Focus {
 		t.Fatal("Tab on last field should focus the Save & Next button")
 	}
 
@@ -66,7 +68,7 @@ func TestWizardSaveNextButtonStationStep(t *testing.T) {
 	if w.step != stepRig {
 		t.Errorf("step = %v, want rig", w.step)
 	}
-	if w.saveBtnFocus {
+	if w.fm.btn.Focus {
 		t.Error("button focus should reset after advancing")
 	}
 }
@@ -74,9 +76,10 @@ func TestWizardSaveNextButtonStationStep(t *testing.T) {
 func TestWizardSaveNextButtonEnterAlsoWorks(t *testing.T) {
 	w := newTestWizard(t, "SP9MOA", "JO90")
 	w.station.Name.SetValue("Home")
-	w.station.wlCbFocus = true
+	w.fm.row = 15
+	w.station.focusRow(15)
 	w.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-	if !w.saveBtnFocus {
+	if !w.fm.btn.Focus {
 		t.Fatal("Tab on last field should focus the Save & Next button")
 	}
 	w.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -89,28 +92,38 @@ func TestWizardSaveNextButtonRigStep(t *testing.T) {
 	w := newTestWizard(t, "SP9MOA", "JO90")
 	w.step = stepRig
 	w.rigForm.Name.SetValue("Home Rig")
-	w.rigForm.focus = rigFieldWsjtx // defaults: no backend, no rotor, no WSJT-X
+	// defaults: no backend, no rotor, no WSJT-X — rigFieldWsjtx is the last row.
+	w.fm.row = int(rigFieldWsjtx)
+	w.rigForm.focus = rigFieldWsjtx
 
 	w.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-	if !w.saveBtnFocus {
+	if !w.fm.btn.Focus {
 		t.Fatal("Tab on rig last field should focus the Save & Next button")
+	}
+	if w.fm.onLast(w) {
+		t.Error("rig form should not keep a field active while the button is focused")
+	}
+
+	// Shift+Tab from the button returns to the form's last field.
+	w.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+	if w.fm.btn.Focus {
+		t.Error("shift+tab should leave the button")
+	}
+	if !w.fm.onLast(w) {
+		t.Error("shift+tab should return to the rig form's last field")
+	}
+
+	// Back on the button: Space advances to the summary with focus ready.
+	w.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if !w.fm.btn.Focus {
+		t.Fatal("tab from rig last field should re-focus the Save & Next button")
 	}
 	w.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
 	if w.step != stepSummary {
 		t.Errorf("step = %v, want summary", w.step)
 	}
-	if !w.saveBtnFocus {
+	if !w.fm.btn.Focus {
 		t.Error("Save & Start button should start focused on the summary")
-	}
-
-	// Shift+Tab from the button returns to the form's last field.
-	w.saveBtnFocus = true
-	w.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
-	if w.saveBtnFocus {
-		t.Error("shift+tab should leave the button")
-	}
-	if !w.rigForm.OnLastField() {
-		t.Error("shift+tab should return to the rig form's last field")
 	}
 }
 
@@ -118,32 +131,35 @@ func TestWizardUpNavigationReachesButton(t *testing.T) {
 	w := newTestWizard(t, "SP9MOA", "JO90")
 
 	// Shift+Tab and Up from the first field focus the button.
-	w.station.Name.Focus()
+	w.fm.row = 0
+	w.station.focusRow(0)
 	w.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
-	if !w.saveBtnFocus {
+	if !w.fm.btn.Focus {
 		t.Error("shift+tab on the first field should focus the Save & Next button")
 	}
-	w.saveBtnFocus = false
-	w.station.Name.Focus()
+	w.fm.btn.Focus = false
+	w.fm.row = 0
+	w.station.focusRow(0)
 	w.Update(tea.KeyPressMsg{Code: tea.KeyUp})
-	if !w.saveBtnFocus {
+	if !w.fm.btn.Focus {
 		t.Error("up on the first field should focus the Save & Next button")
 	}
 
 	// Up from the button returns to the form's last field.
 	w.Update(tea.KeyPressMsg{Code: tea.KeyUp})
-	if w.saveBtnFocus {
+	if w.fm.btn.Focus {
 		t.Error("up should leave the button")
 	}
-	if !w.station.lastFieldFocused() {
+	if !w.station.wlCbFocus {
 		t.Error("up from the button should return to the station form's last field")
 	}
 
 	// Rig step: Up from the first field focuses the button.
 	w.step = stepRig
+	w.fm.row = 0
 	w.rigForm.focus = rigFieldName
 	w.Update(tea.KeyPressMsg{Code: tea.KeyUp})
-	if !w.saveBtnFocus {
+	if !w.fm.btn.Focus {
 		t.Error("up on the rig first field should focus the Save & Next button")
 	}
 }
@@ -209,7 +225,7 @@ func TestWizardUsesDetectedTimezone(t *testing.T) {
 	w := newTestWizard(t, "SP9MOA", "JO90")
 	w.station.Name.SetValue("Home")
 	w.step = stepSummary
-	w.saveBtnFocus = true
+	w.fm.btn.Focus = true
 
 	_, cmd := w.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
 	if cmd == nil {
@@ -227,7 +243,7 @@ func TestWizardSummarySpaceSavesAndQuits(t *testing.T) {
 	w := newTestWizard(t, "SP9MOA", "JO90")
 	w.station.Name.SetValue("Home")
 	w.step = stepSummary
-	w.saveBtnFocus = true
+	w.fm.btn.Focus = true
 
 	v := w.View()
 	if !strings.Contains(v.Content, "[ Save & Start ]") {

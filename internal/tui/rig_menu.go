@@ -35,7 +35,7 @@ type RigChooser struct {
 	height       int
 	done         bool
 	needsRefresh bool // set by saveForm when active rig config changed
-	saveBtn      saveBackButton
+	fm           menuFocus
 
 	// Viewport for scrolling form/content on small terminals.
 	vp              viewport.Model
@@ -161,34 +161,10 @@ func (rc *RigChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			scrollVpToLine(&rc.vp, rc.cursor)
 
 		case rc.mode == rigChooserEdit || rc.mode == rigChooserCreate:
-			// Save & Back button handling (Space or Enter activates it).
-			if rc.saveBtn.Focus {
-				switch {
-				case rc.saveBtn.activate(msg):
-					return rc, rc.saveForm()
-				case rc.saveBtn.next(msg):
-					rc.saveBtn.Focus = false
-					rc.form.FocusFirst()
-					return rc, nil
-				case rc.saveBtn.prev(msg):
-					rc.saveBtn.Focus = false
-					rc.form.FocusLast()
-					return rc, nil
-				default:
-					return rc, nil
-				}
-			}
-			// Tab from the last field / Up from the first field reaches
-			// the button so navigation never skips it.
-			if rc.saveBtn.next(msg) && rc.form.OnLastField() {
-				rc.form.blurAll()
-				rc.saveBtn.Focus = true
-				return rc, nil
-			}
-			if rc.saveBtn.prev(msg) && rc.form.focus == rigFieldName {
-				rc.form.blurAll()
-				rc.saveBtn.Focus = true
-				return rc, nil
+			// Shared navigation: Tab/Down, Shift+Tab/Up, and the Save & Back
+			// button (Space/Enter saves).
+			if handled, cmd := rc.fm.onKey(msg, rc, func() tea.Cmd { return rc.saveForm() }); handled {
+				return rc, cmd
 			}
 			switch {
 			case k.String() == "pgup", k.String() == "pgdown", k.String() == "home", k.String() == "end":
@@ -339,7 +315,7 @@ func (rc *RigChooser) viewForm() string {
 		vpH = 4
 	}
 	rc.form.width = vpW
-	bodyStr := rc.form.View().Content + "\n\n" + rc.saveBtn.line("Save & Back", vpW)
+	bodyStr := rc.form.View().Content + "\n\n" + rc.fm.btn.line("Save & Back", vpW)
 	rc.vp.SetWidth(vpW)
 	rc.vp.SetHeight(vpH)
 	if rc.vp.TotalLineCount() == 0 || bodyStr != rc.lastFormContent {
@@ -386,6 +362,19 @@ func (rc *RigChooser) selectRig() tea.Cmd {
 	return nil
 }
 
+// focusableRows implementation for the shared menuFocus engine.
+func (rc *RigChooser) rowCount() int { return int(rigFieldEnd) }
+func (rc *RigChooser) rowVisible(i int) bool {
+	return rc.form.visible(rigFormField(i))
+}
+func (rc *RigChooser) blurAll() {
+	rc.form.blurAll()
+	rc.form.focus = -1 // leave the form: no field may stay highlighted
+}
+func (rc *RigChooser) focusRow(i int) tea.Cmd {
+	return rc.form.focusRow(rigFormField(i))
+}
+
 func (rc *RigChooser) refreshNames() {
 	rc.names = config.SortedRigIDs(rc.app.Config)
 	if rc.cursor >= len(rc.names) {
@@ -395,19 +384,20 @@ func (rc *RigChooser) refreshNames() {
 
 func (rc *RigChooser) startCreate() {
 	rc.mode = rigChooserCreate
+	rc.fm.reset()
 	rc.lastFormContent = "" // force viewport refresh on mode switch
 	rc.form.SetValues("", "", "", "")
 	rc.form.SetBackend(0, "", "")
 	rc.form.SetRotor(0, "", "")
 	rc.form.SetWsjtx(false, "127.0.0.1", "2233")
-	rc.form.blurAll()
-	rc.form.Name.Focus()
+	rc.form.FocusFirst()
 	rc.editing = ""
 }
 
 func (rc *RigChooser) startEdit(id string) {
 	rp := rc.app.Config.Rigs[id]
 	rc.mode = rigChooserEdit
+	rc.fm.reset()
 	rc.editing = id
 	rc.lastFormContent = "" // force viewport refresh on mode switch
 	rc.form.SetValues(rp.Name, rp.Model, rp.Antenna, rp.Power)
@@ -430,8 +420,7 @@ func (rc *RigChooser) startEdit(id string) {
 	rc.form.SetRotor(rotorIdx, rp.RotorHamlibHost, rp.RotorHamlibPort)
 	rc.form.SetWsjtx(rp.WsjtxEnabled, rp.WsjtxUDPHost, fmt.Sprintf("%d", rp.WsjtxUDPPort))
 	rc.form.SetPollInterval(rp.PollIntervalS)
-	rc.form.blurAll()
-	rc.form.Name.Focus()
+	rc.form.FocusFirst()
 }
 
 func (rc *RigChooser) saveForm() tea.Cmd {

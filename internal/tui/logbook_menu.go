@@ -38,7 +38,7 @@ type LogbookChooser struct {
 	width   int
 	height  int
 	done    bool
-	saveBtn saveBackButton
+	fm      menuFocus
 
 	// Wavelog async state
 	wlUpdating   bool
@@ -279,34 +279,10 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			scrollVpToLine(&c.vp, c.cursor)
 
 		case c.mode == chooserEdit || c.mode == chooserCreate:
-			// Save & Back button handling (Space or Enter activates it).
-			if c.saveBtn.Focus {
-				switch {
-				case c.saveBtn.activate(msg):
-					return c, c.saveForm()
-				case c.saveBtn.next(msg):
-					c.saveBtn.Focus = false
-					c.station.Name.Focus()
-					return c, nil
-				case c.saveBtn.prev(msg):
-					c.saveBtn.Focus = false
-					c.station.focusLastField()
-					return c, nil
-				default:
-					return c, nil
-				}
-			}
-			// Tab from the last field / Up from the first field reaches
-			// the button so navigation never skips it.
-			if c.saveBtn.next(msg) && c.station.lastFieldFocused() {
-				c.station.blurLastField()
-				c.saveBtn.Focus = true
-				return c, nil
-			}
-			if c.saveBtn.prev(msg) && c.station.Name.Focused() {
-				c.station.Name.Blur()
-				c.saveBtn.Focus = true
-				return c, nil
+			// Shared navigation: Tab/Down, Shift+Tab/Up, and the Save & Back
+			// button (Space/Enter saves).
+			if handled, cmd := c.fm.onKey(msg, c, func() tea.Cmd { return c.saveForm() }); handled {
+				return c, cmd
 			}
 			wasAprs := c.station.AprsEnabled
 			if cmd := c.station.HandleKey(msg); cmd != nil {
@@ -474,7 +450,7 @@ func (c *LogbookChooser) viewForm() string {
 	c.station.width = w - 6 // account for menu box border + padding
 	b.WriteString(c.station.View().Content)
 	b.WriteString("\n\n")
-	b.WriteString(c.saveBtn.line("Save & Back", w-6))
+	b.WriteString(c.fm.btn.line("Save & Back", w-6))
 
 	// Use viewport for scrollable form body on small terminals.
 	boxW := w
@@ -582,6 +558,13 @@ func (c *LogbookChooser) handleEnter() tea.Cmd {
 	return nil
 }
 
+// focusableRows implementation for the shared menuFocus engine — delegated
+// to the station form's row model.
+func (c *LogbookChooser) rowCount() int          { return c.station.rowCount() }
+func (c *LogbookChooser) rowVisible(i int) bool  { return c.station.rowVisible(i) }
+func (c *LogbookChooser) blurAll()               { c.station.BlurAll() }
+func (c *LogbookChooser) focusRow(i int) tea.Cmd { return c.station.focusRow(i) }
+
 func (c *LogbookChooser) refreshNames() {
 	c.names = config.SortedLogbookIDs(c.app.Config)
 	// Keep cursor on the active logbook after refresh.
@@ -598,6 +581,7 @@ func (c *LogbookChooser) refreshNames() {
 
 func (c *LogbookChooser) startCreate() {
 	c.mode = chooserCreate
+	c.fm.reset()
 	c.lastFormContent = "" // force viewport refresh on mode switch
 	c.station.SetValues("", "", "", "", "", "", "", 1, 0, 0, 0, "", "", "EU")
 	c.station.SetWavelogValues(nil)
@@ -612,6 +596,7 @@ func (c *LogbookChooser) startCreate() {
 func (c *LogbookChooser) startEdit(id string) {
 	lb := c.app.Config.Logbooks[id]
 	c.mode = chooserEdit
+	c.fm.reset()
 	c.lastFormContent = "" // force viewport refresh on mode switch
 	c.editing = id
 	// Resolve active operator to callsign for the form selector.

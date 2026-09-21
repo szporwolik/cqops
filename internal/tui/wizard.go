@@ -50,10 +50,11 @@ type Wizard struct {
 	wlStationIdx int
 	wlStation    *wavelog.Station // fetched full profile, applied on save
 
-	// saveBtnFocus marks the wizard-level Save & Next / Save & Start button.
+	// fm owns wizard-level navigation: the Save & Next / Save & Start button
+	// and the focused row of the current step's form.
 	// Enter works throughout the forms, but a visible button with a (Space)
 	// hint is a much clearer affordance for new users.
-	saveBtnFocus bool
+	fm menuFocus
 }
 
 func NewWizard(a *app.App) *Wizard {
@@ -70,6 +71,35 @@ func NewWizard(a *app.App) *Wizard {
 		rigForm: NewRigForm("Xiegu G90 (optional)", "HWEF 20.5 (optional)", "20"),
 		toasts:  NewToastQueue(),
 	}
+}
+
+// focusableRows implementation for the shared menuFocus engine — the rows
+// belong to the current step's form.
+func (w *Wizard) rowCount() int {
+	if w.step == stepStation {
+		return w.station.rowCount()
+	}
+	return int(rigFieldEnd)
+}
+func (w *Wizard) rowVisible(i int) bool {
+	if w.step == stepStation {
+		return w.station.rowVisible(i)
+	}
+	return w.rigForm.visible(rigFormField(i))
+}
+func (w *Wizard) blurAll() {
+	if w.step == stepStation {
+		w.station.BlurAll()
+		return
+	}
+	w.rigForm.blurAll()
+	w.rigForm.focus = -1 // leave the form: no field may stay highlighted
+}
+func (w *Wizard) focusRow(i int) tea.Cmd {
+	if w.step == stepStation {
+		return w.station.focusRow(i)
+	}
+	return w.rigForm.focusRow(rigFormField(i))
 }
 
 func (w *Wizard) Init() tea.Cmd {
@@ -162,7 +192,7 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case k.String() == "esc":
 			if w.step > stepStation {
 				w.step--
-				w.saveBtnFocus = false
+				w.fm.reset()
 				applog.Debug("Wizard: step back", "step", int(w.step)+1, "total", stepCount)
 				return w, nil
 			}
@@ -175,42 +205,19 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					w.station.Advanced = !w.station.Advanced
 					return w, nil
 				}
-				// Save & Next button handling (Space or Enter activates it).
-				if w.saveBtnFocus {
-					switch {
-					case k.String() == "enter" || k.String() == " " || k.String() == "space" || msg.Code == tea.KeySpace:
-						w.finishStation()
-						return w, nil
-					case k.String() == "tab" || msg.Code == tea.KeyDown:
-						w.saveBtnFocus = false
-						w.station.Name.Focus()
-						return w, nil
-					case k.String() == "shift+tab" || msg.Code == tea.KeyUp:
-						w.saveBtnFocus = false
-						w.station.focusLastField()
-						return w, nil
-					default:
-						return w, nil
-					}
-				}
-				// Up / Shift+Tab on the first field moves focus to the button
-				// instead of wrapping, so upward navigation never skips it.
-				if (k.String() == "shift+tab" || msg.Code == tea.KeyUp) && w.station.Name.Focused() {
-					w.station.Name.Blur()
-					w.saveBtnFocus = true
-					return w, nil
-				}
 				// Space cycles loaded Wavelog stations when Station ID is focused.
 				if (k.String() == " " || msg.Code == tea.KeySpace) && w.station.WlStationID.Focused() && len(w.wlStations) > 0 {
 					w.wlStationIdx = (w.wlStationIdx + 1) % len(w.wlStations)
 					w.setSelectedStation()
 					return w, w.stationDetailCmd()
 				}
-				// Tab on the last field moves focus to the Save & Next button.
-				if (k.String() == "tab" || msg.Code == tea.KeyDown) && w.station.lastFieldFocused() {
-					w.station.blurLastField()
-					w.saveBtnFocus = true
-					return w, nil
+				// Shared navigation: Tab/Down, Shift+Tab/Up, and the Save & Next
+				// button (Space/Enter advances to the rig step).
+				if handled, cmd := w.fm.onKey(msg, w, func() tea.Cmd {
+					w.finishStation()
+					return nil
+				}); handled {
+					return w, cmd
 				}
 				if cmd := w.station.HandleKey(msg); cmd != nil {
 					switch cmd().(type) {
@@ -246,36 +253,13 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return w, nil
 				}
 			case stepRig:
-				// Save & Next button handling (Space or Enter activates it).
-				if w.saveBtnFocus {
-					switch {
-					case k.String() == "enter" || k.String() == " " || k.String() == "space" || msg.Code == tea.KeySpace:
-						w.finishRig()
-						return w, nil
-					case k.String() == "tab" || msg.Code == tea.KeyDown:
-						w.saveBtnFocus = false
-						w.rigForm.FocusFirst()
-						return w, nil
-					case k.String() == "shift+tab" || msg.Code == tea.KeyUp:
-						w.saveBtnFocus = false
-						w.rigForm.FocusLast()
-						return w, nil
-					default:
-						return w, nil
-					}
-				}
-				// Up / Shift+Tab on the first field moves focus to the button
-				// instead of wrapping, so upward navigation never skips it.
-				if (k.String() == "shift+tab" || msg.Code == tea.KeyUp) && w.rigForm.focus == rigFieldName {
-					w.rigForm.blurAll()
-					w.saveBtnFocus = true
-					return w, nil
-				}
-				// Tab on the last field moves focus to the Save & Next button.
-				if (k.String() == "tab" || msg.Code == tea.KeyDown) && w.rigForm.OnLastField() {
-					w.rigForm.blurAll()
-					w.saveBtnFocus = true
-					return w, nil
+				// Shared navigation: Tab/Down, Shift+Tab/Up, and the Save & Next
+				// button (Space/Enter advances to the summary).
+				if handled, cmd := w.fm.onKey(msg, w, func() tea.Cmd {
+					w.finishRig()
+					return nil
+				}); handled {
+					return w, cmd
 				}
 				if cmd := w.rigForm.HandleKey(msg); cmd != nil {
 					switch cmd().(type) {
@@ -290,7 +274,7 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return w, w.handleEnter()
 				}
 				if k.String() == "tab" || k.String() == "shift+tab" {
-					w.saveBtnFocus = !w.saveBtnFocus
+					w.fm.btn.Focus = !w.fm.btn.Focus
 					return w, nil
 				}
 			}
@@ -368,23 +352,6 @@ func (w *Wizard) wizardFormBox() lipgloss.Style {
 		Padding(1, 2)
 	w.cachedFormBoxW = formW
 	return w.cachedFormBox
-}
-
-// saveButtonLine renders the wizard's Save & Next / Save & Start button with
-// its (Space) activation hint. The button is a visual affordance — Space and
-// Enter both activate it, Tab reaches it from the form's last field.
-func (w *Wizard) saveButtonLine(label string) string {
-	line := fmt.Sprintf("[ %s ]", label)
-	if w.saveBtnFocus {
-		line = S.FormPrefixOn.Render("> ") + CursorStyle.Render(line)
-	} else {
-		line = InputStyle.Render(line)
-	}
-	line += " " + DimStyle.Render("(Space)")
-	return lipgloss.NewStyle().
-		Width(w.wizardFormWidth() - 4).
-		Align(lipgloss.Center).
-		Render(line)
 }
 
 // wizardLayout composes banner, step indicator, bordered body, filler,
@@ -482,7 +449,7 @@ func wizHelp(bindings ...key.Binding) string {
 func (w *Wizard) viewStation() string {
 	w.station.width = w.width
 	body := w.wizardFormBox().Render(lipgloss.JoinVertical(lipgloss.Left,
-		w.station.View().Content, "", w.saveButtonLine("Save & Next")))
+		w.station.View().Content, "", w.fm.btn.line("Save & Next", w.wizardFormWidth())))
 	help := wizHelp(
 		key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save & Next")),
 		key.NewBinding(key.WithKeys("tab"), key.WithHelp("Tab", "Navigate")),
@@ -496,7 +463,7 @@ func (w *Wizard) viewStation() string {
 func (w *Wizard) viewRig() string {
 	w.rigForm.width = w.width
 	body := w.wizardFormBox().Render(lipgloss.JoinVertical(lipgloss.Left,
-		w.rigForm.View().Content, "", w.saveButtonLine("Save & Next")))
+		w.rigForm.View().Content, "", w.fm.btn.line("Save & Next", w.wizardFormWidth())))
 	help := wizHelp(
 		key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save & Next")),
 		key.NewBinding(key.WithKeys("space"), key.WithHelp("Space", "Toggle flrig")),
@@ -524,7 +491,7 @@ func (w *Wizard) viewSummary() string {
 	)
 
 	body := w.wizardFormBox().Render(lipgloss.JoinVertical(lipgloss.Left,
-		inner, "", w.saveButtonLine("Save & Start")))
+		inner, "", w.fm.btn.line("Save & Start", w.wizardFormWidth())))
 	help := wizHelp(
 		key.NewBinding(key.WithKeys("space", "enter"), key.WithHelp("Space", "Save & Start")),
 		key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
@@ -569,7 +536,7 @@ func (w *Wizard) finishStation() {
 		}
 	}
 	w.step = stepRig
-	w.saveBtnFocus = false
+	w.fm.reset()
 	applog.InfoDetail("Wizard: station step done", fmt.Sprintf("call=%s grid=%s", cs, gr))
 }
 
@@ -605,7 +572,7 @@ func (w *Wizard) finishRig() {
 		}
 	}
 	w.step = stepSummary
-	w.saveBtnFocus = true // the Save & Start button is the only control there
+	w.fm.btn.Focus = true // the Save & Start button is the only control there
 	applog.InfoDetail("Wizard: rig step done", fmt.Sprintf("rig=%s flrig=%v", rig, radioBackend == "flrig"))
 }
 

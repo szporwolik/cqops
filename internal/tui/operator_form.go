@@ -117,24 +117,17 @@ func (f *OperatorForm) BlurAll() {
 	f.focus = -1
 }
 
-// OnFirstField reports whether the first field has focus.
-func (f *OperatorForm) OnFirstField() bool { return f.focus == 0 }
-
-// OnLastField reports whether the last field has focus.
-func (f *OperatorForm) OnLastField() bool { return f.focus == 1 }
-
-// FocusFirst moves focus to the first field.
-func (f *OperatorForm) FocusFirst() {
-	f.BlurAll()
-	f.focus = 0
-	f.Callsign.Focus()
-}
-
-// FocusLast moves focus to the last field.
-func (f *OperatorForm) FocusLast() {
-	f.BlurAll()
-	f.focus = 1
-	f.Name.Focus()
+// focusRow moves focus to field i for the shared menuFocus engine.
+func (f *OperatorForm) focusRow(i int) tea.Cmd {
+	f.focus = i
+	if i == 1 {
+		f.Callsign.Blur()
+		f.Name.Focus()
+	} else {
+		f.Callsign.Focus()
+		f.Name.Blur()
+	}
+	return nil
 }
 
 // SetWidth adjusts the width of the form fields.
@@ -175,9 +168,10 @@ func (f *OperatorForm) View() string {
 	var lines []string
 	csLbl := S.FormLabel.Render("Callsign")
 	nmLbl := S.FormLabel.Render("Name")
-	if f.focus == 0 {
+	switch f.focus {
+	case 0:
 		csLbl = fieldFocusedLabel.Render("Callsign")
-	} else {
+	case 1:
 		nmLbl = fieldFocusedLabel.Render("Name")
 	}
 	lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Center, csLbl, " ", f.Callsign.View()))

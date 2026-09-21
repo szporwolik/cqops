@@ -122,7 +122,7 @@ type LogbookEditor struct {
 	done             bool
 	needsReload      bool
 	built            bool
-	saveBtn          saveBackButton
+	fm               menuFocus
 	wlSkipped        int
 	wlSkipDetail     string
 	wlUnsentCount    int // cached unsent count from full DB, used by confirm dialog

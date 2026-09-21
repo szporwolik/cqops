@@ -95,6 +95,7 @@ func TestStationFormNavigationSkipsHiddenAdvanced(t *testing.T) {
 	f := NewStationForm("", "", "")
 	f.Advanced = false
 	f.HideOperator = true // wizard configuration
+	f.HideGPSGrid = true  // wizard hides the GPS/APRS tail
 	f.Name.Blur()
 	f.contFocus = true
 
