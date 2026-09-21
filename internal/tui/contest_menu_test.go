@@ -314,17 +314,29 @@ func TestContestFormTabNavigation(t *testing.T) {
 		}
 	}
 
-	// Should wrap back to 0
+	// Tab from the last field moves to the Save & Back button.
 	cc.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-	if cc.focus != 0 {
-		t.Errorf("after wrap tab: focus = %d, want 0", cc.focus)
+	if !cc.saveBtn.Focus {
+		t.Error("tab from last field should focus the Save & Back button")
 	}
 
-	// Shift+Tab backward
+	// Tab from the button wraps to the first field.
+	cc.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if cc.saveBtn.Focus || cc.focus != 0 {
+		t.Errorf("tab from button: focus = %d, want 0", cc.focus)
+	}
+
+	// Shift+Tab from the first field focuses the button.
+	cc.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+	if !cc.saveBtn.Focus {
+		t.Error("shift+tab from first field should focus the Save & Back button")
+	}
+
+	// Shift+Tab from the button returns to the last field.
 	cc.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
 	last := cc.visibleItems() - 1
-	if cc.focus != last {
-		t.Errorf("after shift+tab: focus = %d, want %d", cc.focus, last)
+	if cc.saveBtn.Focus || cc.focus != last {
+		t.Errorf("shift+tab from button: focus = %d, want %d", cc.focus, last)
 	}
 }
 

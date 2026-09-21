@@ -38,6 +38,7 @@ type LogbookChooser struct {
 	width   int
 	height  int
 	done    bool
+	saveBtn saveBackButton
 
 	// Wavelog async state
 	wlUpdating   bool
@@ -278,6 +279,35 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			scrollVpToLine(&c.vp, c.cursor)
 
 		case c.mode == chooserEdit || c.mode == chooserCreate:
+			// Save & Back button handling (Space or Enter activates it).
+			if c.saveBtn.Focus {
+				switch {
+				case c.saveBtn.activate(msg):
+					return c, c.saveForm()
+				case c.saveBtn.next(msg):
+					c.saveBtn.Focus = false
+					c.station.Name.Focus()
+					return c, nil
+				case c.saveBtn.prev(msg):
+					c.saveBtn.Focus = false
+					c.station.focusLastField()
+					return c, nil
+				default:
+					return c, nil
+				}
+			}
+			// Tab from the last field / Up from the first field reaches
+			// the button so navigation never skips it.
+			if c.saveBtn.next(msg) && c.station.lastFieldFocused() {
+				c.station.blurLastField()
+				c.saveBtn.Focus = true
+				return c, nil
+			}
+			if c.saveBtn.prev(msg) && c.station.Name.Focused() {
+				c.station.Name.Blur()
+				c.saveBtn.Focus = true
+				return c, nil
+			}
 			wasAprs := c.station.AprsEnabled
 			if cmd := c.station.HandleKey(msg); cmd != nil {
 				c.enableGlobalAPRSIfTurnedOn(wasAprs)
@@ -443,6 +473,8 @@ func (c *LogbookChooser) viewForm() string {
 
 	c.station.width = w - 6 // account for menu box border + padding
 	b.WriteString(c.station.View().Content)
+	b.WriteString("\n\n")
+	b.WriteString(c.saveBtn.line("Save & Back", w-6))
 
 	// Use viewport for scrollable form body on small terminals.
 	boxW := w

@@ -76,6 +76,7 @@ type CallbookMenu struct {
 	// Viewport for scrolling form content on small terminals.
 	vp              viewport.Model
 	lastBodyContent string
+	saveBtn         saveBackButton
 }
 
 const (
@@ -322,6 +323,47 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		k := msg.String()
 		if cm.qrzTesting || cm.hamqthTesting || cm.qrzruTesting {
+			return cm, nil
+		}
+		// Save & Back button handling.
+		if cm.saveBtn.Focus {
+			switch k {
+			case "enter", " ", "space":
+				// Reuse the Ctrl+S save flow (validation + done/saved).
+				cm.saveBtn.Focus = false
+				m2, c := cm.Update(tea.KeyPressMsg{Text: "\x13"})
+				return m2.(*CallbookMenu), c
+			case "tab", "down":
+				cm.saveBtn.Focus = false
+				cm.focus = cm.firstVisiblePos()
+				cm.blurAll()
+				cm.focusField()
+				return cm, nil
+			case "shift+tab", "up":
+				cm.saveBtn.Focus = false
+				cm.focus = cm.lastVisiblePos()
+				cm.blurAll()
+				cm.focusField()
+				return cm, nil
+			case "esc":
+				cm.done = true
+				cm.goBack = true
+				return cm, nil
+			default:
+				return cm, nil
+			}
+		}
+		// Tab from the last item / Up from the first item reaches the button.
+		if (k == "tab" || k == "down") && cm.focus == cm.lastVisiblePos() {
+			cm.blurAll()
+			cm.saveBtn.Focus = true
+			cm.autoScrollViewport()
+			return cm, nil
+		}
+		if (k == "shift+tab" || k == "up") && cm.focus == cm.firstVisiblePos() {
+			cm.blurAll()
+			cm.saveBtn.Focus = true
+			cm.autoScrollViewport()
 			return cm, nil
 		}
 		switch k {
@@ -598,6 +640,26 @@ func (cm *CallbookMenu) fixFocus() {
 		return
 	}
 	cm.next()
+}
+
+// firstVisiblePos returns the first focusable position.
+func (cm *CallbookMenu) firstVisiblePos() int {
+	for pos := 0; pos < cmMax; pos++ {
+		if cm.isPositionVisible(pos) {
+			return pos
+		}
+	}
+	return 0
+}
+
+// lastVisiblePos returns the last focusable position.
+func (cm *CallbookMenu) lastVisiblePos() int {
+	for pos := cmMax - 1; pos >= 0; pos-- {
+		if cm.isPositionVisible(pos) {
+			return pos
+		}
+	}
+	return 0
 }
 
 func (cm *CallbookMenu) blurAll() {
@@ -944,6 +1006,10 @@ func (cm *CallbookMenu) View() tea.View {
 			b.WriteString(padOrTrunc(cm.renderField(cmWavelogPriority, "  Priority:", &cm.wlPriority, false), lineW))
 		}
 	} // wlConfigured
+
+	// Save & Back button at the end of the menu.
+	b.WriteString("\n")
+	b.WriteString(cm.saveBtn.line("Save & Back", lineW))
 
 	body := b.String()
 	if body == "" {

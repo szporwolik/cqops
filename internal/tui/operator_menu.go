@@ -33,10 +33,11 @@ type OperatorChooser struct {
 	form    OperatorForm
 	editing string // id of operator being edited
 
-	toasts *ToastQueue
-	dialog *DialogModel
-	width  int
-	height int
+	toasts  *ToastQueue
+	dialog  *DialogModel
+	width   int
+	height  int
+	saveBtn saveBackButton
 
 	// Viewport for scrolling list/form content on small terminals.
 	vp              viewport.Model
@@ -192,6 +193,35 @@ func (oc *OperatorChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			scrollVpToLine(&oc.vp, oc.cursor)
 
 		case oc.mode == operatorEdit || oc.mode == operatorCreate:
+			// Save & Back button handling (Space or Enter activates it).
+			if oc.saveBtn.Focus {
+				switch {
+				case oc.saveBtn.activate(msg):
+					return oc, oc.saveForm()
+				case oc.saveBtn.next(msg):
+					oc.saveBtn.Focus = false
+					oc.form.FocusFirst()
+					return oc, nil
+				case oc.saveBtn.prev(msg):
+					oc.saveBtn.Focus = false
+					oc.form.FocusLast()
+					return oc, nil
+				default:
+					return oc, nil
+				}
+			}
+			// Tab from the last field / Up from the first field reaches
+			// the button so navigation never skips it.
+			if oc.saveBtn.next(msg) && oc.form.OnLastField() {
+				oc.form.BlurAll()
+				oc.saveBtn.Focus = true
+				return oc, nil
+			}
+			if oc.saveBtn.prev(msg) && oc.form.OnFirstField() {
+				oc.form.BlurAll()
+				oc.saveBtn.Focus = true
+				return oc, nil
+			}
 			cmd := oc.form.HandleKey(msg)
 			if cmd == nil {
 				return oc, nil
@@ -458,6 +488,8 @@ func (oc *OperatorChooser) viewForm() string {
 	}
 
 	b.WriteString(oc.form.View())
+	b.WriteString("\n\n")
+	b.WriteString(oc.saveBtn.line("Save & Back", w-6))
 
 	body := drawMenuWithHeader("Configuration \u2014 Operators \u2014 "+title, b.String(), w)
 	return fillBody(body, contentH)

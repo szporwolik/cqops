@@ -25,6 +25,7 @@ type NotificationsMenu struct {
 
 	cachedClipStyle lipgloss.Style
 	cachedClipH     int
+	saveBtn         saveBackButton
 
 	// statusMsg is set by test actions; parent reads and shows toast, then clears.
 	statusMsg string
@@ -61,18 +62,33 @@ func (nm *NotificationsMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			nm.saved = true
 			return nm, nil
 		case "up":
-			if nm.cursor == 0 {
+			if nm.saveBtn.Focus {
+				nm.saveBtn.Focus = false
 				nm.cursor = notifItemCount - 1
-			} else {
-				nm.cursor--
+				return nm, nil
 			}
+			if nm.cursor == 0 {
+				nm.saveBtn.Focus = true
+				return nm, nil
+			}
+			nm.cursor--
 		case "down":
-			if nm.cursor == notifItemCount-1 {
+			if nm.saveBtn.Focus {
+				nm.saveBtn.Focus = false
 				nm.cursor = 0
-			} else {
-				nm.cursor++
+				return nm, nil
 			}
+			if nm.cursor == notifItemCount-1 {
+				nm.saveBtn.Focus = true
+				return nm, nil
+			}
+			nm.cursor++
 		case " ", "space":
+			if nm.saveBtn.Focus {
+				nm.done = true
+				nm.saved = true
+				return nm, nil
+			}
 			switch nm.cursor {
 			case 0:
 				nm.enabled = !nm.enabled
@@ -97,6 +113,11 @@ func (nm *NotificationsMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				nm.sendTestBeep()
 			}
 		case "enter":
+			if nm.saveBtn.Focus {
+				nm.done = true
+				nm.saved = true
+				return nm, nil
+			}
 			switch nm.cursor {
 			case 4:
 				nm.sendTestNotification()
@@ -220,6 +241,10 @@ func (nm *NotificationsMenu) View() tea.View {
 
 	// Row 6: Test beep button.
 	renderBtn(6, "[ Test beep ]")
+
+	// Save & Back button at the end of the menu.
+	b.WriteString("\n")
+	b.WriteString(nm.saveBtn.line("Save & Back", boxW-4))
 
 	body := drawMenuWithHeader("Configuration \u2014 Notifications", b.String(), w)
 	if nm.cachedClipH != contentH {

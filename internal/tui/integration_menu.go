@@ -98,6 +98,7 @@ type IntegrationMenu struct {
 	// Viewport for scrolling form content on small terminals.
 	vp              viewport.Model
 	lastBodyContent string
+	saveBtn         saveBackButton
 }
 
 const (
@@ -585,6 +586,47 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if im.qrzTesting {
 			return im, nil
 		}
+		// Save & Back button handling.
+		if im.saveBtn.Focus {
+			switch k {
+			case "enter", " ", "space":
+				// Reuse the Ctrl+S save flow (validation + done/saved).
+				im.saveBtn.Focus = false
+				m2, cmd := im.Update(tea.KeyPressMsg{Text: "\x13"})
+				return m2.(*IntegrationMenu), cmd
+			case "tab", "down":
+				im.saveBtn.Focus = false
+				im.focus = im.firstVisiblePos()
+				im.blurAll()
+				im.focusField()
+				return im, nil
+			case "shift+tab", "up":
+				im.saveBtn.Focus = false
+				im.focus = im.lastVisiblePos()
+				im.blurAll()
+				im.focusField()
+				return im, nil
+			case "esc":
+				im.done = true
+				im.goBack = true
+				return im, nil
+			default:
+				return im, nil
+			}
+		}
+		// Tab from the last item / Up from the first item reaches the button.
+		if (k == "tab" || k == "down") && im.focus == im.lastVisiblePos() {
+			im.blurAll()
+			im.saveBtn.Focus = true
+			im.autoScrollViewport()
+			return im, nil
+		}
+		if (k == "shift+tab" || k == "up") && im.focus == im.firstVisiblePos() {
+			im.blurAll()
+			im.saveBtn.Focus = true
+			im.autoScrollViewport()
+			return im, nil
+		}
 		switch k {
 		case "esc":
 			im.done = true
@@ -1031,6 +1073,26 @@ func (im *IntegrationMenu) fixFocus() {
 		return
 	}
 	im.next()
+}
+
+// firstVisiblePos returns the first focusable position.
+func (im *IntegrationMenu) firstVisiblePos() int {
+	for pos := 0; pos < imMax; pos++ {
+		if im.isPositionVisible(pos) {
+			return pos
+		}
+	}
+	return 0
+}
+
+// lastVisiblePos returns the last focusable position.
+func (im *IntegrationMenu) lastVisiblePos() int {
+	for pos := imMax - 1; pos >= 0; pos-- {
+		if im.isPositionVisible(pos) {
+			return pos
+		}
+	}
+	return 0
 }
 
 func (im *IntegrationMenu) blurAll() {
@@ -1565,6 +1627,8 @@ func (im *IntegrationMenu) View() tea.View {
 	}
 
 	// Build raw form body — header is rendered separately above the viewport.
+	b.WriteString("\n")
+	b.WriteString(im.saveBtn.line("Save & Back", lineW))
 	bodyStr := b.String()
 
 	// Wrap in viewport for scrolling on small terminals.

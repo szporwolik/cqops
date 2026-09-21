@@ -31,6 +31,7 @@
 - **APRS convenience**: turning APRS TX on in the logbook station form now also enables the global APRS integration — no separate visit to the Integrations menu needed. Turning TX off never disables the global integration.
 - **DX Cluster login prefill**: the Integrations menu pre-fills the DX Cluster login with the first available station callsign from your logbooks (deterministic order) when no login is configured — editable as usual.
 - **Consistent toasts**: every toast now starts with its module name (`Wavelog:`, `DXC:`, `QRZ:`, `Rig:`, `QSO:`, …), including dynamic messages from menus and the editor — at a glance you always know which integration or screen produced the message.
+- **Save & Back button**: every config form and edit/create screen — logbooks, rigs, operators, contests, the QSO editor, and the General / Integrations / Callbook / Notifications menus — now ends with a visible `[ Save & Back ]` button with a `(Space)` hint. Tab reaches it from the last field, Up from the first, and Space or Enter activates it, so nobody gets lost in a form anymore.
 
 ### Fixes
 - The wizard's final step returned the `tea.Quit` function instead of a quit message, so completing the summary never actually exited the wizard — it now sends a proper quit message and launches CQOps.

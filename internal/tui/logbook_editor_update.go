@@ -329,6 +329,37 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if le.mode == edModeEdit {
+			// Save & Back button handling (Space or Enter activates it).
+			if le.saveBtn.Focus {
+				switch {
+				case le.saveBtn.activate(msg):
+					// Same flow as Enter: open the save confirmation.
+					le.mode = edModeConfirmSave
+					return le, nil
+				case le.saveBtn.next(msg):
+					le.saveBtn.Focus = false
+					le.editFocusFirst()
+					return le, nil
+				case le.saveBtn.prev(msg):
+					le.saveBtn.Focus = false
+					le.editFocusLast()
+					return le, nil
+				default:
+					return le, nil
+				}
+			}
+			// Tab from the last field / Up from the first field reaches
+			// the button so navigation never skips it.
+			if le.saveBtn.next(msg) && le.editOnLastField() {
+				le.fields[le.focus].Blur()
+				le.saveBtn.Focus = true
+				return le, nil
+			}
+			if le.saveBtn.prev(msg) && le.editOnFirstField() {
+				le.fields[le.focus].Blur()
+				le.saveBtn.Focus = true
+				return le, nil
+			}
 			switch k {
 			case "enter":
 				// Enter opens the save confirmation — same dialog flow

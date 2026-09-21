@@ -26,6 +26,7 @@ type GeneralMenu struct {
 	goBack        bool
 	width         int
 	height        int
+	saveBtn       saveBackButton
 }
 
 func NewGeneralMenu(cfg *config.Config) *GeneralMenu {
@@ -75,19 +76,34 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			gm.done = true
 			gm.saved = true
 			return gm, nil
-		case "up":
-			if gm.cursor > 0 {
-				gm.cursor--
-			} else {
+		case "up", "shift+tab":
+			if gm.saveBtn.Focus {
+				gm.saveBtn.Focus = false
 				gm.cursor = 9 // Debug mode (last item)
+				return gm, nil
 			}
-		case "down":
-			if gm.cursor < 9 {
-				gm.cursor++
-			} else {
+			if gm.cursor == 0 {
+				gm.saveBtn.Focus = true
+				return gm, nil
+			}
+			gm.cursor--
+		case "down", "tab":
+			if gm.saveBtn.Focus {
+				gm.saveBtn.Focus = false
 				gm.cursor = 0 // Units (first item)
+				return gm, nil
 			}
+			if gm.cursor == 9 {
+				gm.saveBtn.Focus = true
+				return gm, nil
+			}
+			gm.cursor++
 		case " ", "space":
+			if gm.saveBtn.Focus {
+				gm.done = true
+				gm.saved = true
+				return gm, nil
+			}
 			switch gm.cursor {
 			case 0:
 				if gm.distanceUnit == "metric" {
@@ -202,6 +218,10 @@ func (gm *GeneralMenu) View() tea.View {
 	gm.renderCheckbox(&b, boxW, 7, "Use SOTA/POTA/IOTA database", "Reference lookup for awards", gm.useRef)
 	gm.renderKittyCheckbox(&b, boxW, 8, "Kitty graphics", "Experimental — requires Kitty, Ghostty, or WezTerm", gm.kittyGraphics)
 	gm.renderCheckbox(&b, boxW, 9, "Debug Mode", "Verbose logging for troubleshooting", gm.debugMode)
+
+	// Save & Back button at the end of the menu.
+	b.WriteString("\n")
+	b.WriteString(gm.saveBtn.line("Save & Back", boxW-4))
 
 	body := drawMenuWithHeader("Configuration \u2014 General Settings", b.String(), w)
 	return tea.NewView(fillBody(body, contentH))

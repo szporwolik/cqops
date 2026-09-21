@@ -49,6 +49,7 @@ type ContestChooser struct {
 	width               int
 	height              int
 	done                bool
+	saveBtn             saveBackButton
 
 	// Render cache — avoids rebuilding views on every frame.
 	cachedList string
@@ -229,6 +230,35 @@ func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			scrollVpToLine(&c.vp, c.cursor)
 
 		case c.mode == contestEdit || c.mode == contestCreate:
+			// Save & Back button handling (Space or Enter activates it).
+			if c.saveBtn.Focus {
+				switch {
+				case c.saveBtn.activate(msg):
+					return c, c.saveContest()
+				case c.saveBtn.next(msg):
+					c.saveBtn.Focus = false
+					c.focusFirstField()
+					return c, nil
+				case c.saveBtn.prev(msg):
+					c.saveBtn.Focus = false
+					c.focusLastField()
+					return c, nil
+				default:
+					return c, nil
+				}
+			}
+			// Tab from the last field / Up from the first field reaches
+			// the button so navigation never skips it.
+			if c.saveBtn.next(msg) && c.onLastField() {
+				c.blurAll()
+				c.saveBtn.Focus = true
+				return c, nil
+			}
+			if c.saveBtn.prev(msg) && c.onFirstField() {
+				c.blurAll()
+				c.saveBtn.Focus = true
+				return c, nil
+			}
 			switch {
 			case k.String() == "enter":
 				// Enter saves, matching the other forms — Space is the
@@ -365,6 +395,26 @@ func (c *ContestChooser) blurAll() {
 	c.contInput.Blur()
 	c.exchSentInput.Blur()
 	c.exchRcvdInput.Blur()
+}
+
+// onFirstField reports whether the first focusable item has focus.
+func (c *ContestChooser) onFirstField() bool { return c.focus == 0 }
+
+// onLastField reports whether the last focusable item has focus.
+func (c *ContestChooser) onLastField() bool { return c.focus == c.visibleItems()-1 }
+
+// focusFirstField moves focus to the first field.
+func (c *ContestChooser) focusFirstField() {
+	c.blurAll()
+	c.focus = 0
+	c.nameInput.Focus()
+}
+
+// focusLastField moves focus to the last focusable field.
+func (c *ContestChooser) focusLastField() {
+	c.blurAll()
+	c.focus = c.visibleItems() - 1
+	c.focusField()
 }
 
 func (c *ContestChooser) focusField() tea.Cmd {
@@ -677,6 +727,7 @@ func (c *ContestChooser) viewForm() string {
 	sb.WriteString(strconv.FormatBool(c.prefillExchange))
 	sb.WriteString(strconv.FormatBool(c.prefillExchangeRcvd))
 	sb.WriteString(strconv.FormatBool(c.serialExchange))
+	sb.WriteString(strconv.FormatBool(c.saveBtn.Focus))
 	sb.WriteString(strconv.Itoa(int(c.mode)))
 	sb.WriteByte('|')
 	sb.WriteString(strconv.Itoa(c.vp.YOffset()))
@@ -816,6 +867,10 @@ func (c *ContestChooser) viewForm() string {
 
 	b.WriteString("\n")
 	b.WriteString(DimStyle.Render("  Example: @rst @serial will generate 59 023"))
+
+	// Save & Back button at the end of the form.
+	b.WriteString("\n\n")
+	b.WriteString(c.saveBtn.line("Save & Back", maxW))
 
 	// Use viewport for scrollable form body on small terminals.
 	boxW := w

@@ -142,6 +142,26 @@ func (le *LogbookEditor) prevField() {
 	le.fields[le.focus].Focus()
 }
 
+// editOnFirstField reports whether the first focusable field has focus.
+func (le *LogbookEditor) editOnFirstField() bool { return le.focus == qefCall }
+
+// editOnLastField reports whether the last focusable field has focus.
+func (le *LogbookEditor) editOnLastField() bool { return le.focus == qefContestID }
+
+// editFocusFirst moves focus to the first field.
+func (le *LogbookEditor) editFocusFirst() {
+	le.fields[le.focus].Blur()
+	le.focus = qefCall
+	le.fields[le.focus].Focus()
+}
+
+// editFocusLast moves focus to the last field.
+func (le *LogbookEditor) editFocusLast() {
+	le.fields[le.focus].Blur()
+	le.focus = qefContestID
+	le.fields[le.focus].Focus()
+}
+
 // =============================================================================
 // Edit form rendering — single column, no border, viewport scrolling
 // =============================================================================
@@ -165,6 +185,9 @@ func (le *LogbookEditor) viewEdit(bodyW int, contentH int) string {
 		}
 		sb.WriteString(le.renderEditField(i, innerW))
 	}
+	// Save & Back button at the end of the edit form.
+	sb.WriteString("\n\n")
+	sb.WriteString(le.saveBtn.line("Save & Back", innerW))
 	formContent := sb.String()
 
 	// Viewport setup — same pattern as renderScrollableMenu.

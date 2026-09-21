@@ -117,6 +117,26 @@ func (f *OperatorForm) BlurAll() {
 	f.focus = -1
 }
 
+// OnFirstField reports whether the first field has focus.
+func (f *OperatorForm) OnFirstField() bool { return f.focus == 0 }
+
+// OnLastField reports whether the last field has focus.
+func (f *OperatorForm) OnLastField() bool { return f.focus == 1 }
+
+// FocusFirst moves focus to the first field.
+func (f *OperatorForm) FocusFirst() {
+	f.BlurAll()
+	f.focus = 0
+	f.Callsign.Focus()
+}
+
+// FocusLast moves focus to the last field.
+func (f *OperatorForm) FocusLast() {
+	f.BlurAll()
+	f.focus = 1
+	f.Name.Focus()
+}
+
 // SetWidth adjusts the width of the form fields.
 func (f *OperatorForm) SetWidth(w int) {
 	if w < 20 {

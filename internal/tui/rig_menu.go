@@ -35,6 +35,7 @@ type RigChooser struct {
 	height       int
 	done         bool
 	needsRefresh bool // set by saveForm when active rig config changed
+	saveBtn      saveBackButton
 
 	// Viewport for scrolling form/content on small terminals.
 	vp              viewport.Model
@@ -160,6 +161,35 @@ func (rc *RigChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			scrollVpToLine(&rc.vp, rc.cursor)
 
 		case rc.mode == rigChooserEdit || rc.mode == rigChooserCreate:
+			// Save & Back button handling (Space or Enter activates it).
+			if rc.saveBtn.Focus {
+				switch {
+				case rc.saveBtn.activate(msg):
+					return rc, rc.saveForm()
+				case rc.saveBtn.next(msg):
+					rc.saveBtn.Focus = false
+					rc.form.FocusFirst()
+					return rc, nil
+				case rc.saveBtn.prev(msg):
+					rc.saveBtn.Focus = false
+					rc.form.FocusLast()
+					return rc, nil
+				default:
+					return rc, nil
+				}
+			}
+			// Tab from the last field / Up from the first field reaches
+			// the button so navigation never skips it.
+			if rc.saveBtn.next(msg) && rc.form.OnLastField() {
+				rc.form.blurAll()
+				rc.saveBtn.Focus = true
+				return rc, nil
+			}
+			if rc.saveBtn.prev(msg) && rc.form.focus == rigFieldName {
+				rc.form.blurAll()
+				rc.saveBtn.Focus = true
+				return rc, nil
+			}
 			switch {
 			case k.String() == "pgup", k.String() == "pgdown", k.String() == "home", k.String() == "end":
 				rc.vp, _ = rc.vp.Update(msg)
@@ -309,7 +339,7 @@ func (rc *RigChooser) viewForm() string {
 		vpH = 4
 	}
 	rc.form.width = vpW
-	bodyStr := rc.form.View().Content
+	bodyStr := rc.form.View().Content + "\n\n" + rc.saveBtn.line("Save & Back", vpW)
 	rc.vp.SetWidth(vpW)
 	rc.vp.SetHeight(vpH)
 	if rc.vp.TotalLineCount() == 0 || bodyStr != rc.lastFormContent {
