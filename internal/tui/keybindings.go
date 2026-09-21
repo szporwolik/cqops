@@ -18,6 +18,7 @@ type KeyMap struct {
 	Ref           key.Binding
 	BPL           key.Binding
 	Delete        key.Binding
+	ClearField    key.Binding
 	Lookup        key.Binding
 	NextField     key.Binding
 	PrevField     key.Binding
@@ -93,7 +94,11 @@ func DefaultKeyMap() KeyMap {
 		),
 		Delete: key.NewBinding(
 			key.WithKeys("delete"),
-			key.WithHelp("Del", "Clear"),
+			key.WithHelp("Del", "Clear form"),
+		),
+		ClearField: key.NewBinding(
+			key.WithKeys("shift+backspace"),
+			key.WithHelp("Shift+Bksp", "Clear field"),
 		),
 		Lookup: key.NewBinding(
 			key.WithKeys("insert"),
@@ -203,7 +208,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		// Column 1: navigation & screens
 		{k.QSOForm, k.Partner, k.APRS, k.DXC, k.PSKReporter, k.Ref, k.BPL, k.LogEditor, k.Config, k.Logs},
 		// Column 2: editing & actions
-		{k.Spot, k.Lookup, k.Delete, k.NextField, k.PrevField, k.Enter},
+		{k.Spot, k.Lookup, k.Delete, k.ClearField, k.NextField, k.PrevField, k.Enter},
 		// Column 3: cycling & rig
 		{k.CycleLogbook, k.CycleRig, k.CycleContest, k.CycleOperator, k.DXCSpotFill, k.RigTuneUp, k.RigTuneDown},
 		// Column 4: system
@@ -232,6 +237,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 			m.keys.DXCSpotFill,
 			m.keys.Lookup,
 			m.keys.Delete,
+			m.keys.ClearField,
 			m.keys.CycleUp,
 			m.keys.CycleDown,
 			m.keys.CycleLogbook,

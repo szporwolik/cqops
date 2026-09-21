@@ -1081,3 +1081,53 @@ func TestBulkImportMarksDashboardDirty(t *testing.T) {
 		t.Error("bulk import must mark the dashboard data dirty")
 	}
 }
+
+// TestShiftBackspaceClearsFocusedField verifies Shift+Backspace instantly
+// clears the focused QSO form field and applies the field's side effects.
+func TestShiftBackspaceClearsFocusedField(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.screen = screenQSO
+
+	// Call field: clearing must also clear call-dependent fields.
+	m.focusField(fieldCall)
+	m.fields[fieldCall].SetValue("SP9MOA")
+	m.fields[fieldName].SetValue("Darek")
+	m.fields[fieldQTH].SetValue("Krakow")
+	m.fields[fieldGrid].SetValue("JO90")
+
+	m.Update(tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModShift})
+
+	if got := m.fields[fieldCall].Value(); got != "" {
+		t.Errorf("call after Shift+Bksp = %q, want empty", got)
+	}
+	if got := m.fields[fieldName].Value(); got != "" {
+		t.Errorf("name should be cleared with the call, got %q", got)
+	}
+	if got := m.fields[fieldQTH].Value(); got != "" {
+		t.Errorf("qth should be cleared with the call, got %q", got)
+	}
+	if got := m.fields[fieldGrid].Value(); got != "" {
+		t.Errorf("grid should be cleared with the call, got %q", got)
+	}
+
+	// Generic field: Shift+Backspace clears just that field.
+	m.focusField(fieldComment)
+	m.fields[fieldComment].SetValue("73 from test")
+	m.fields[fieldName].SetValue("KEEP ME")
+
+	m.Update(tea.KeyPressMsg{Code: tea.KeyBackspace, Mod: tea.ModShift})
+
+	if got := m.fields[fieldComment].Value(); got != "" {
+		t.Errorf("comment after Shift+Bksp = %q, want empty", got)
+	}
+	if got := m.fields[fieldName].Value(); got != "KEEP ME" {
+		t.Errorf("unrelated field changed: %q", got)
+	}
+
+	// Plain Backspace (no Shift) must still delete one character only.
+	m.fields[fieldComment].SetValue("abc")
+	m.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
+	if got := m.fields[fieldComment].Value(); got != "ab" {
+		t.Errorf("plain backspace deleted wrong: %q", got)
+	}
+}

@@ -382,6 +382,12 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	case key.Matches(msg, m.keys.Spot):
 		return m.openSpotDialog(), true
 
+	case key.Matches(msg, m.keys.ClearField) ||
+		(msg.Code == tea.KeyBackspace && msg.Mod&tea.ModShift != 0):
+		// Shift+Backspace instantly clears the focused field.
+		m.clearFocusedField()
+		return nil, true
+
 	case key.Matches(msg, m.keys.Enter):
 		// Enter logs what's in the form. Dupe check + two-press confirmation
 		// is handled inside saveQSO. Lookups (QRZ, Wavelog) are dispatched

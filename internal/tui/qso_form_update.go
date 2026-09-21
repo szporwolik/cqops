@@ -532,7 +532,27 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 	f := m.focus
 	prevVal := m.fields[f].Value()
 	m.fields[f], _ = m.fields[f].Update(msg)
+	m.afterFieldEdit(f, prevVal)
+}
 
+// clearFocusedField instantly clears the focused QSO form field
+// (Shift+Backspace) and applies the same side effects as manual editing.
+func (m *Model) clearFocusedField() {
+	if m.keepFocused {
+		return
+	}
+	f := m.focus
+	prevVal := m.fields[f].Value()
+	if prevVal == "" {
+		return
+	}
+	m.fields[f].SetValue("")
+	m.afterFieldEdit(f, prevVal)
+}
+
+// afterFieldEdit applies field-specific side effects after the focused field
+// value changed (typed edit or instant clear).
+func (m *Model) afterFieldEdit(f field, prevVal string) {
 	switch f {
 	case fieldCall:
 		// Uppercase. If call changed: invalidate all call-dependent state —

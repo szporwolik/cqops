@@ -21,6 +21,7 @@
 ### Configuration
 - The logbook form shows a green **v2** badge next to the API key when a `wl2_` token is entered, and a warning — *"Wavelog API v2 token (wl2_) required since CQOps 0.11.0"* — when a legacy v1 key is present.
 - **Migration surfacing**: users still on a legacy v1 key get the migration message as a one-time warning toast at startup, the status bar shows a warning `WL!` indicator instead of plain offline, and uploads with a v1 key fail fast with the same guidance (no silent ADIF fallback).
+- **Shift+Backspace** in the QSO form instantly clears the focused field (listed in the `?` help overlay); the call field's side effects (partner data, name/QTH/grid clearing) apply as with manual editing.
 
 ### Fixes
 - The QSO form's DX Cluster line no longer silently drops the continent filter when no same-continent spots are near the frequency — spots from other continents cannot leak into the form (or into the Ctrl+P spot cycling). The DXC pane's explicit continent filter now also overrides the station continent for that line.
