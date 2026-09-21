@@ -428,7 +428,9 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			m.psk.spotKey = ""
 			m.psk.viewKey = ""
 			m.psk.spots = nil
-			m.toasts.Info(fmt.Sprintf("PSK Reporter: %d spots updated", len(r.reports)))
+			if len(r.reports) > 0 {
+				m.toasts.Info(fmt.Sprintf("PSK Reporter: %d spots updated", len(r.reports)))
+			}
 			// Push per-band stats to dashboard.
 			if m.http.client != nil && m.http.online {
 				byBand := make(map[string]int)

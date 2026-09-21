@@ -141,6 +141,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				le.wlDownloadCount = msg.dlCount
 				le.wlDownloadDupes = msg.dlDupes
 				le.wlDownloadErr = ""
+				le.wlDownloadAbort = true
 				le.mode = edModeWLDownloadResult
 				le.needsReload = true
 			} else if msg.dlErr != "" {
@@ -157,6 +158,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				le.wlDownloadDupes = msg.dlDupes
 				le.wlDownloadFailed = msg.dlFailed
 				le.wlDownloadErr = ""
+				le.wlDownloadAbort = false
 				le.mode = edModeWLDownloadResult
 				le.needsReload = true
 			}

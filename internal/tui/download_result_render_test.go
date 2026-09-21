@@ -97,8 +97,13 @@ func TestResultRender_Success_ZeroImported(t *testing.T) {
 	le := newResultEditor(0, 0, 0, "")
 	view := fmt.Sprint(le.View())
 
-	if !strings.Contains(view, "Downloaded 0 QSOs") {
-		t.Error("should show 0 imported rather than hide the message")
+	// Zero new contacts means Wavelog is up to date — never a bare
+	// "Downloaded 0 QSOs" which reads like a failure.
+	if !strings.Contains(view, "up to date") {
+		t.Error("should show the up-to-date message instead of a bare 0")
+	}
+	if strings.Contains(view, "Downloaded 0 QSOs") {
+		t.Error("should not show 'Downloaded 0 QSOs'")
 	}
 }
 

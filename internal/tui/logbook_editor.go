@@ -147,6 +147,7 @@ type LogbookEditor struct {
 	wlDownloadDupes  int
 	wlDownloadFailed int
 	wlDownloadErr    string
+	wlDownloadAbort  bool // last download was aborted (0 count ≠ up to date)
 	Offline          bool // when true, Wavelog upload/download is blocked
 
 	// Pagination — only the current page is loaded from DB.

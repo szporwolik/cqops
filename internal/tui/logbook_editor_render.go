@@ -131,6 +131,13 @@ func (le *LogbookEditor) View() tea.View {
 			le.ensureDialog("Wavelog Download", msg,
 				Option{Label: "OK", Value: "ok"},
 			)
+		} else if le.wlDownloadCount == 0 && !le.wlDownloadAbort {
+			// Wavelog returned no new contacts (last_fetched_id already at the
+			// newest QSO). Say so instead of a confusing "Downloaded 0 QSOs.".
+			le.ensureDialog("Wavelog Download",
+				"Wavelog is up to date — no new contacts to download.",
+				Option{Label: "OK", Value: "ok"},
+			)
 		} else {
 			msg := fmt.Sprintf("Downloaded %d QSOs.", le.wlDownloadCount)
 			if le.wlDownloadDupes > 0 {
