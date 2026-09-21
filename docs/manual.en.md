@@ -1,45 +1,48 @@
 ---
 title: CQOps User Manual
-description: Practical guide to installing, setting up, and operating CQOps amateur radio logger
+description: A practical guide to setting up CQOps, logging contacts, and operating at home or in the field
 ---
 
 # CQOps User Manual
 
-CQOps is a fast, keyboard-driven amateur radio logger for home, portable, contest, and club operation. It saves every QSO locally, so normal logging continues without an internet connection. Callbooks, Wavelog, DX Cluster, APRS, PSK Reporter, rig control, and other integrations are optional.
+CQOps is a keyboard-operated amateur radio logger for home, portable, club, and casual contest use. QSOs are saved on your computer first; internet services are optional. Start with manual logging and add radio control or online services when you need them.
 
-This manual covers everything needed to get on the air, manage contacts, and solve common problems without going into software-development details.
+Menu names and field labels below follow the English interface. Shortcuts depend on the active screen: use the bottom help bar or **?** to check them.
 
 ## Contents
 
-1. [Install CQOps](#install-cqops)
-2. [Set Up Your Station](#set-up-your-station)
-3. [Log Your First QSO](#log-your-first-qso)
-4. [Understand the Main Screen](#understand-the-main-screen)
-5. [Everyday QSO Logging](#everyday-qso-logging)
-6. [Logbooks Operators Rigs and Contests](#logbooks-operators-rigs-and-contests)
-7. [Manage Your Log](#manage-your-log)
-8. [Integrations](#integrations)
-9. [Portable Operation](#portable-operation)
-10. [Contest Operation](#contest-operation)
-11. [CQOps Live Dashboard](#cqops-live-dashboard)
-12. [Keyboard Reference](#keyboard-reference)
-13. [Troubleshooting](#troubleshooting)
-14. [Get Help](#get-help)
+1. [Installation](#installation)
+2. [First setup](#setup)
+3. [Your first QSO](#first-qso)
+4. [Screens and status](#screens)
+5. [Everyday logging](#logging)
+6. [Station profiles](#profiles)
+7. [Logbook and backups](#logbook)
+8. [Radio and digital modes](#radio)
+9. [Online services](#online)
+10. [GPS and APRS](#position)
+11. [Portable operation](#portable)
+12. [Contests](#contests)
+13. [CQOps Live](#dashboard)
+14. [Keyboard reference](#keys)
+15. [Troubleshooting and help](#help)
 
-## Install CQOps
+<a id="installation"></a>
 
-Download the latest release from <https://github.com/szporwolik/cqops/releases>.
+## Installation
 
-### Windows
+Get CQOps from the [release page](https://github.com/szporwolik/cqops/releases). Use a terminal window at least 75 × 24 characters; 80 × 43 or larger is more comfortable.
 
-| Package | Recommended use |
+| System | Installation |
 |---|---|
-| [Windows installer](https://github.com/szporwolik/cqops/releases/latest/download/cqops-setup.exe) | Best choice for most operators; adds CQOps to the Start Menu and command path |
-| [Portable ZIP](https://github.com/szporwolik/cqops/releases/latest/download/cqops-windows-portable.zip) | Run without installing |
+| Windows | Download `cqops-setup.exe`, or extract `cqops-windows-portable.zip` for use without installation. Windows Terminal is recommended. |
+| Debian, Ubuntu, Linux Mint, Pop!_OS | Download the appropriate `.deb`: `amd64` for most Intel/AMD PCs, `arm64` for 64-bit ARM, or `armhf` for 32-bit Raspberry Pi OS. Open it with your package installer. |
+| Fedora, RHEL, Rocky, AlmaLinux | Use the repository commands below. |
+| Arch, Manjaro, CachyOS | Install the AUR package with `paru -S cqops-bin` or `yay -S cqops-bin`. |
+| Other Linux systems | Download the Linux `.tar.gz` for your processor from the release page and extract it. |
+| macOS | Download `cqops-darwin-arm64` for Apple Silicon or `cqops-darwin-amd64` for Intel. Use the commands below. |
 
-Windows Terminal is recommended. After installation, open a terminal and enter `cqops`.
-
-### Debian Ubuntu Linux Mint and Pop OS
+For Debian-based systems, you can instead install from the repository:
 
 ```bash
 curl -1sLf 'https://dl.cloudsmith.io/public/szporwolik/cqops/setup.deb.sh' | sudo -E bash
@@ -47,439 +50,274 @@ sudo apt update
 sudo apt install cqops
 ```
 
-You can instead download an `amd64`, `arm64`, or `armhf` Debian package from the release page and install it with `sudo dpkg -i cqops_*.deb`.
-
-### Fedora RHEL Rocky Linux and AlmaLinux
+For Fedora-based systems:
 
 ```bash
 curl -1sLf 'https://dl.cloudsmith.io/public/szporwolik/cqops/setup.rpm.sh' | sudo -E bash
 sudo dnf install cqops
 ```
 
-### Arch Linux Manjaro and CachyOS
-
-Install `cqops-bin` from the AUR, for example with `paru -S cqops-bin` or `yay -S cqops-bin`.
-
-### macOS
-
-Download `cqops-darwin-arm64` for Apple Silicon or `cqops-darwin-amd64` for an Intel Mac, then run:
+On macOS, run these commands in the download folder, using the exact downloaded filename in place of `FILE`:
 
 ```bash
-chmod +x cqops-darwin-*
-sudo mv cqops-darwin-* /usr/local/bin/cqops
+chmod +x FILE
+sudo mv FILE /usr/local/bin/cqops
 ```
 
-### Before you start
+Start with `cqops`, or run the extracted portable program. Use `cqops --offline` to start in offline mode, `cqops --version` to display the version, and `cqops --help` for startup options. Export your logs before updating.
 
-CQOps needs a terminal window of at least 75 by 24 characters. A window of 80 by 43 characters or larger gives a better view.
+<a id="setup"></a>
 
-| Command | Purpose |
-|---|---|
-| `cqops` | Start normally |
-| `cqops --offline` | Start without internet services |
-| `cqops --version` | Show the installed version |
-| `cqops --help` | Show startup help |
+## First setup
 
-## Set Up Your Station
+The first-run wizard asks for a logbook name, station callsign, Maidenhead locator, and continent. The **station callsign** is the callsign you transmit; an **operator profile** identifies the person operating that station.
 
-The setup wizard opens on first launch. Only basic station information is required; online services can be added later.
+Press **Ctrl+A** for optional station references and CQ/ITU zones. Your own SOTA/POTA/WWFF reference belongs in the station/logbook settings; references in the QSO form describe the station you contact. Set the IARU region later in **F9 → Logbooks**.
 
-### Station and logbook
+Create a rig profile with a name, antenna, and power. Choose **None** for manual frequency and mode entry, **flrig**, or **Hamlib**. Skip optional connections until basic logging works.
 
-Enter a logbook name, station callsign, Maidenhead locator, and continent. Press **Ctrl+A** to show optional fields such as SOTA, POTA, or WWFF references and CQ or ITU zones.
+Use **Tab / Shift+Tab** to move, **Space** to change selectable options, and the **Save & Next** button to continue. **Esc** goes back; **F10** quits. Review the summary and save. CQOps detects the computer's timezone; QSO dates and times are UTC. Check the computer clock before operating.
 
-If you use Wavelog, you can also enter its address, API v2 token beginning with `wl2_`, and station profile.
+<a id="first-qso"></a>
 
-### Rig
+## Your first QSO
 
-Give the rig profile a clear name and enter the radio, antenna, and normal power. Choose:
+1. Press **F1**. Check the active logbook, station callsign, operator, rig, and contest.
+2. Enter the other station's callsign. Press **Ins** for a lookup if configured.
+3. Check UTC date/time, frequency in MHz, band, mode, and sent/received reports.
+4. Add any useful name, QTH, locator, reference, or comment.
+5. Press **Enter**. The contact appears in Recent QSOs.
 
-- **None** for manual frequency and mode entry;
-- **flrig** if the station uses flrig;
-- **Hamlib** if the station uses `rigctld`.
+If **DUPE!** requests confirmation, press **Enter** again to save anyway or **Esc** to cancel the confirmation. A warning is a reason to check the contact, not proof that it should be discarded.
 
-WSJT-X and rotor control can be added later.
+<a id="screens"></a>
 
-### Finish the wizard
-
-Review the summary and save. CQOps uses the computer's timezone automatically, while QSO date and time are recorded in UTC.
-
-| Key | Wizard action |
-|---|---|
-| Tab / Shift+Tab | Move between fields |
-| Space | Change a checkbox or selectable option |
-| Enter | Continue or save |
-| Esc | Return to the previous page |
-| F10 | Quit |
-
-Change settings later with **F9**.
-
-## Log Your First QSO
-
-1. Press **F1** to open the QSO screen.
-2. Type the other station's callsign.
-3. Check UTC date and time, frequency, band, mode, and reports.
-4. Add the name, QTH, locator, reference, or comment if useful.
-5. Press **Enter** to save.
-
-With working rig control, CQOps can fill frequency, band, mode, and split frequency automatically.
-
-If **DUPE!** appears, press **Enter** again to save the contact anyway or **Esc** to return to the form. A saved contact immediately appears in Recent QSOs.
-
-**Before a long session:** check the active callsign, logbook, rig, operator, and contest in the status bars. This prevents contacts from being saved in the wrong operating context.
-
-## Understand the Main Screen
+## Screens and status
 
 | Key | Screen | Purpose |
 |---|---|---|
-| F1 | QSO | Enter QSOs and view recent contacts |
-| F2 | Partner | Callbook information, map, statistics, and photo |
-| F3 | APRS | Nearby APRS stations |
-| F4 | DX Cluster | Browse and filter DX spots |
-| F5 | PSK Reporter | Check recent digital-mode propagation |
-| F6 | References | Find SOTA, POTA, WWFF, and IOTA references |
-| F7 | Band Plan | Browse operating frequencies and presets |
-| F8 | Logbook | Review, edit, import, export, and synchronize QSOs |
-| F9 | Configuration | Configure the station and integrations |
+| F1 | QSO | Enter contacts; view recent QSOs |
+| F2 | Partner | Callbook details, map, statistics, photo |
+| F3 | APRS | Nearby stations |
+| F4 | DX Cluster | Spots and filters |
+| F5 | PSK Reporter | Digital-mode reception reports |
+| F6 | References | SOTA, POTA, WWFF, IOTA search |
+| F7 | Band Plan | Frequencies and operating presets |
+| F8 | Logbook | Edit, import, export, synchronize |
+| F9 | Configuration | Station and service settings |
+| F10 | Quit | Exit CQOps |
 
-Press **?** for help relevant to the current screen and **F10** to quit.
+The top bar identifies the active station setup and shows local time (**L**) and UTC (**Z**). Connection labels normally use white for active, yellow for disabled/connecting/waiting, and red for an error. WSJT is highlighted during transmission. **WL!** warns of an unsupported legacy Wavelog key.
 
-### Status indicators
+<a id="logging"></a>
 
-The top bar shows the active logbook, rig, station callsign, operator, local time, UTC time, and connection status.
+## Everyday logging
 
-| Appearance | Meaning |
-|---|---|
-| White or normal | Connected or active |
-| Yellow | Disabled, connecting, or waiting for data |
-| Red | Connection or configuration problem |
-| Highlighted WSJT | WSJT-X is transmitting |
+Use **Tab / Shift+Tab** between fields and **PgUp / PgDn** to cycle band, mode, or submode. **Shift+Backspace** clears the current field; **Del** clears the form. Check **Freq RX** when logging split operation.
 
-GPS is yellow while waiting for a fix and white after acquiring one. **WL!** means that Wavelog is configured with an unsupported legacy key; replace it with an API v2 token beginning with `wl2_`.
+**Keep** preserves the comment after saving. **Retain** preserves the whole form: check the callsign, time, reports, and references before saving the next contact. Contest exchange fields appear only with an active contest. Use **SIG / SIG Info** for other special-interest group details when needed.
 
-## Everyday QSO Logging
+With both locators known, CQOps shows distance and bearing. Callbook locations may describe a home station rather than its current portable location; verify them. New-call, new-DXCC, and duplicate badges help you assess a contact.
 
-### Complete the form
+**F6** searches references by name or designator and can fill the contact's reference. **F7** browses band plans and can tune a connected radio. Entries are operating aids, not permission to transmit: check your licence privileges and local band plan.
 
-Use **Tab** and **Shift+Tab** to move through fields. The form includes:
+Three shared favorites store frequency, mode, and band:
 
-- UTC date and time;
-- callsign, name, QTH, and locator;
-- RST sent and received;
-- frequency, receive frequency, band, mode, and submode;
-- transmit power;
-- SOTA, POTA, WWFF, and IOTA references;
-- contest exchanges when a contest is active;
-- a free-text comment.
-
-Use **PgUp** and **PgDn** to cycle band, mode, or submode. **Shift+Backspace** clears the current field; **Del** clears the entire form.
-
-### Look up a callsign
-
-Enter the callsign and press **Ins**. Depending on your configuration, CQOps can retrieve name, QTH, locator, country, zones, DXCC entity, continent, photo, and worked or confirmed status.
-
-Configure QRZ.com, HamQTH, QRZ.RU, and Callook.info under **F9 → Callbook**. QRZ.com XML access requires a suitable subscription; HamQTH requires a free account; Callook focuses on US callsigns.
-
-If both locators are known, CQOps shows distance and bearing. It can also flag a duplicate, a new callsign, or a new DXCC entity.
-
-### Keep information for another QSO
-
-- **Keep** preserves the comment after saving.
-- **Retain** preserves the complete form.
-
-Retain is useful for nets and consecutive contacts with similar details. Always check the callsign and time before saving again.
-
-### Frequency favorites
-
-CQOps has three favorites for frequency, mode, and band.
-
-| Favorite | Recall | Save current settings |
+| Slot | Recall | Save current values |
 |---|---|---|
 | 1 | Alt+Ins | Alt+Shift+Ins |
 | 2 | Alt+Home | Alt+Shift+Home |
 | 3 | Alt+PgUp | Alt+Shift+PgUp |
 
-### References and band plans
+<a id="profiles"></a>
 
-Press **F6** to search SOTA, POTA, WWFF, and IOTA references. A selected result can fill the QSO form.
+## Station profiles
 
-Press **F7** to browse amateur, VHF/UHF, CB, PMR446, broadcast, and common portable frequencies. Selecting an entry can tune a connected rig.
+Create logbooks, operators, rigs, and contests in their **F9** menus; **Ins** adds an entry. From the QSO screen:
 
-## Logbooks Operators Rigs and Contests
-
-CQOps keeps these operating contexts separate:
-
-| Item | Examples | Switch with |
-|---|---|---|
-| Logbook | Home, portable, club, expedition | Ctrl+L |
-| Operator | Individual club or field-day operators | Ctrl+O |
-| Rig | HF, VHF, or portable station | Ctrl+R |
-| Contest | No contest or a configured event | Ctrl+C |
-
-Create and edit profiles under **F9**. Verify the status bar after switching.
-
-Use separate logbooks when the station identity or operating purpose differs. Each can have its own station details, award references, Wavelog station, APRS identity, and contest settings.
-
-At a shared station, create one profile per operator. The active operator's callsign is stored in the ADIF `OPERATOR` field. Create a rig profile for each radio or operating position, including radio, antenna, power, and any control connections.
-
-## Manage Your Log
-
-Press **F8** to open the Logbook screen.
-
-### Correct or delete a QSO
-
-Select a contact with the arrow keys and press **Enter** or **e**. Correct the fields, then press **Enter** and confirm. Press **Delete** to remove the selected QSO.
-
-Read the confirmation carefully: if a contact already exists in Wavelog and CQOps is online, an edit or deletion can also be applied to the Wavelog copy.
-
-### Import and export ADIF
-
-| Action | Shortcut |
+| Shortcut | Switch |
 |---|---|
-| Import ADIF | Ctrl+I |
-| Export ADIF | Ctrl+E |
+| Ctrl+L | Logbook |
+| Ctrl+O | Operator |
+| Ctrl+R | Rig |
+| Ctrl+C | Contest |
 
-CQOps supports ADIF 3.1.7. Import validates records and skips duplicates. Export can include the whole active logbook or only the selected contest. Keep an exported ADIF file as a backup.
+Logbooks keep separate station details and Wavelog/APRS settings. Operator profiles store the person at the controls; the callsign is recorded in ADIF `OPERATOR`. Rig profiles store equipment, power, radio control, rotor, and WSJT-X settings. Verify the status bar after every switch, especially during automated digital logging.
 
-### Synchronize with Wavelog
+Other **F9** menus cover general display/units/timezone, callbook providers, integrations, and notification sounds.
 
-CQOps always saves locally first. A failed upload does not remove the local QSO.
+<a id="logbook"></a>
 
-| Action | Shortcut |
+## Logbook and backups
+
+In **F8**, select a QSO and press **Enter** or **e** to edit. Save with **Enter** and confirm. **Delete** removes the selected contact. Back up before bulk changes; **Ctrl+P** is the destructive purge-all command, not a search shortcut.
+
+| F8 shortcut | Action |
 |---|---|
-| Upload QSOs not yet in Wavelog | Ctrl+W |
-| Download new QSOs from Wavelog | Alt+W |
+| Ctrl+I | Import ADIF; validate records and skip duplicates |
+| Ctrl+E | Export all contacts or a contest-filtered selection |
+| Ctrl+W | Upload unsent contacts to Wavelog |
+| Alt+W | Download from Wavelog |
 
-Configure the Wavelog address, API v2 token, and station profile for each logbook. Before the first synchronization, check that the Wavelog station matches the active CQOps logbook.
+Review the import summary and export selection. Imported contacts may subsequently be uploaded to Wavelog. CQOps supports ADIF 3.1.7 and preserves contest IDs and exchanges. Keep separate backups for every logbook, preferably on another device. ADIF backs up contacts, not all program settings or credentials.
 
-## Integrations
+Configuration is in `~/.config/cqops/config.yaml` on Linux/macOS and `%APPDATA%\cqops\config.yaml` on Windows. Credentials are stored separately in `secrets.enc`; re-enter them when moving to another computer. Do not delete configuration files as a first troubleshooting step.
 
-All integrations are optional and are configured under **F9**.
+<a id="radio"></a>
+
+## Radio and digital modes
 
 ### Rig control
 
-Rig control can read frequency, mode, power, and, where supported, split operation. With flrig, confirm that flrig is running and that the address and port match. With Hamlib, start `rigctld` for the correct radio and serial port before CQOps.
+Under **F9 → Rigs**, select flrig or Hamlib and match the connection settings. Start flrig or `rigctld` first. flrig normally uses `localhost:12345`. Available frequency, mode, split, and power readings depend on the radio. With **None**, enter them manually.
 
 ### WSJT-X
 
-CQOps can receive completed QSOs from WSJT-X and add them to the active logbook. Before operating, verify that:
+Use WSJT-X 2.6 or newer. Match **Settings → Reporting → UDP Server** in WSJT-X with the UDP settings of the active CQOps rig profile. Log a completed test QSO in WSJT-X and confirm that it appears in CQOps.
 
-- the UDP address and port match in WSJT-X and CQOps;
-- the correct logbook, operator, and contest are active;
-- the WSJT indicator shows a working connection.
-
-Duplicate WSJT-X messages are skipped. A warning appears if the WSJT-X operator differs from the active CQOps operator.
-
-### DX Cluster
-
-Press **F4** to browse spots and filter them by band, mode, spotter continent, or age.
-
-| Key | Action |
-|---|---|
-| Enter | Put the spot into the QSO form, tune, and return to F1 |
-| Space | Tune and remain on the cluster screen |
-| Backspace | Clear filters |
-
-On the QSO form, **Ctrl+S** sends a spot and **Ctrl+P** uses the closest displayed spot. Verify a callsign before spotting it.
-
-### PSK Reporter
-
-Press **F5** to see recent digital-mode reports and propagation by band, mode, and time. Internet access is required.
-
-### GPS
-
-CQOps can use a serial GPS or GPSD. With **Grid from GPS** enabled, the current position supplies the station locator for logging, distance calculations, APRS beacons, and the dashboard.
-
-| Indicator | Meaning |
-|---|---|
-| Red GPS | Disconnected or incorrectly configured |
-| Yellow GPS | Connected but no fix |
-| White GPS | Fix acquired |
-
-Choose 6, 8, or 10 locator characters as appropriate. Wait for a fix and check the locator before starting a portable activation.
-
-### APRS
-
-| Service | Connection | Internet required |
-|---|---|---|
-| APRS-IS | APRS internet network | Yes |
-| KISS | Serial hardware TNC | No |
-| KISS Server | Local or network TNC such as Dire Wolf | No for a local server |
-
-Configure the service under **F9 → Integrations → APRS**. Configure callsign and SSID, symbol, comment, beacon interval, and range in the active logbook.
-
-If transmission is not enabled, CQOps receives only and shows **APRS-RX**. The minimum automatic beacon interval is five minutes. Press **F3** to view nearby stations; select one and press **Enter** to use it in the QSO form. Press **b** to send an immediate beacon when transmission is configured.
+Received QSOs use the active logbook and contest; duplicates are skipped. Check the operator and WSJT indicator before a session. CQOps warns about an operator mismatch. Wavelog upload can follow when configured. Select the appropriate Mode/Submode; CQOps exports FT8 as FT8, and FT4/FT2 as MFSK with the corresponding submode.
 
 ### Rotor control
 
-Rotor control through Hamlib `rotctld` is experimental. **Check the antenna limits before enabling movement and keep the stop command ready. Incorrect settings can damage station equipment.**
+Hamlib `rotctld` control is experimental. Verify direction and physical limits before use. Keep a safe way to stop movement: wrong settings can damage the antenna, rotor, or feed line.
 
 | Shortcut | Action |
 |---|---|
-| Alt+, / Alt+. | Decrease / increase azimuth by 5 degrees |
-| Alt+' / Alt+; | Decrease / increase elevation by 5 degrees |
-| Alt+\ | Point toward the calculated QSO bearing |
+| Alt+, / Alt+. | Azimuth −5° / +5° |
+| Alt+' / Alt+; | Elevation −5° / +5° |
+| Alt+\ | Point toward the calculated bearing |
 | Alt+/ | Stop movement |
 
-### Solar conditions
+<a id="online"></a>
 
-CQOps can display solar and band-condition information from HamQSL. Live data requires internet access; the latest downloaded data remains available offline.
+## Online services
 
-## Portable Operation
+### Callbooks
 
-### Before leaving
+Configure providers and priority in **F9 → Callbook**, then press **Ins** on the QSO form. CQOps tries enabled providers in order. Base-call fallback can look up a callsign without portable prefixes/suffixes; verify the returned location.
 
-1. Create or select the portable logbook.
-2. Set the portable callsign, locator, antenna, and power.
-3. Enter the activation reference or confirm it can be found with **F6**.
-4. Test rig control, GPS, and WSJT-X if needed.
-5. Run CQOps online once to refresh reference, solar, and prefix data.
-6. Export an ADIF backup of important logs.
-
-### In the field
-
-Start with `cqops --offline` when internet access is absent or unreliable. Local logging, cached reference data, and directly connected equipment continue to work. Internet callbooks, Wavelog, DX Cluster, APRS-IS, PSK Reporter, weather, and live solar updates will not. Serial or local-network KISS APRS can still work.
-
-### After the activation
-
-1. Check the QSO count.
-2. Export the activation to ADIF and keep a backup.
-3. Reconnect to the internet.
-4. Upload unsent QSOs to Wavelog with **F8 → Ctrl+W**, if used.
-5. Submit the ADIF to the relevant award or activation program.
-
-## Contest Operation
-
-CQOps provides lightweight contest support for casual entries and contest contacts made during ordinary or portable operation. Use a dedicated contest logger for serious multi-operator, multi-radio, or advanced contesting.
-
-Open **F9 → Contests**, press **Ins**, and enter the event name, date, official ADIF contest ID, starting serial, and exchange formats.
-
-| Marker | Value inserted |
+| Provider | Access |
 |---|---|
-| `@rst` | Signal report |
-| `@serial` | Next serial number |
-| `@cqz` / `@mycqz` | Other station's / your CQ zone |
-| `@itu` / `@myitu` | Other station's / your ITU zone |
-| `@grid` / `@mygrid` | Other station's / your locator |
+| QRZ.com | XML subscription and credentials |
+| HamQTH | Free account |
+| QRZ.RU | API login, separate from website credentials |
+| Callook.info | US callsigns; no account |
 
-Press **Ctrl+C** to select the active contest. Exchange fields appear, serials advance automatically, and CQOps shows QSO count and rate information where space permits.
+**F2** shows partner information. Photo availability depends on the provider and terminal; experimental **Kitty Graphics** in General settings needs a compatible terminal such as Kitty, Ghostty, or WezTerm.
 
-To export, activate the contest, open **F8**, apply the contest filter if needed, press **Ctrl+E**, and export only that contest. CQOps exports ADIF. Some organisers require Cabrillo or another format, which may need conversion outside CQOps.
+### Wavelog
 
-## CQOps Live Dashboard
+Configure the URL, API v2 token (`wl2_…`), and station profile per logbook. Legacy v1 keys are not accepted. Selecting a Wavelog station can fill local station details: verify callsign, locator, and references before saving.
 
-CQOps Live displays station activity in a browser. It suits club displays, field days, public events, or another shack screen.
+QSOs are saved locally first. Failed uploads can be retried with **F8 → Ctrl+W**; **Alt+W** downloads contacts. When you open a linked QSO for editing, CQOps can refresh it from Wavelog. Online edits and deletions also affect the remote copy. Read the confirmation, especially when offline; do not assume a local-only change has reached Wavelog.
 
-1. Open **F9 → Integrations → HTTP Server**.
-2. Enable the server and save.
-3. Open `http://localhost:8073` on the CQOps computer.
+### DX Cluster and propagation
 
-The default address also permits devices on the same local network to use the CQOps computer's IP address and port 8073. Select `127.0.0.1` if access should be limited to the CQOps computer.
+Configure DX Cluster under Integrations and open **F4**. **b / c / m / t** filter band, spotter continent, mode, and age. **Backspace** clears filters. **Enter** fills the QSO form, tunes a connected rig, and returns to F1; **Space** tunes without leaving the cluster.
 
-The dashboard can show the station being worked, today's contacts and paths, recent QSOs, totals, rates, operators, longest contacts, APRS stations, and propagation information. You can set an event title, subtitle, logo URL, and start date.
+On F1, **Ctrl+S** opens the spot dialog and **Ctrl+P** takes the callsign from the closest displayed spot. Verify it before sending. **F5** displays PSK Reporter reception reports, not a guarantee of present propagation. The Solar panel shows HamQSL conditions; cached values may be old.
 
-Do not expose the dashboard directly to the public internet unless the network is properly secured.
+<a id="position"></a>
 
-## Keyboard Reference
+## GPS and APRS
 
-### Global
+### GPS
 
-| Key | Action |
+Configure a serial GPS receiver or GPSD under Integrations. Enable **Grid from GPS** in station/logbook settings to use its locator for contacts, bearings, APRS, and the dashboard. Red GPS means an error, yellow means no fix, and white means a fix. Check the displayed locator before operating. Choose 6, 8, or 10 characters; more characters do not guarantee better receiver accuracy.
+
+### APRS
+
+| Service | Connection |
 |---|---|
-| F1 to F9 | Open the screen shown in the top menu |
-| F10 | Quit |
-| ? | Help |
-| Ctrl+L / Ctrl+O | Switch logbook / operator |
-| Ctrl+R / Ctrl+C | Switch rig / contest |
-| Esc | Previous screen |
+| APRS-IS | Internet APRS server |
+| KISS | Serial hardware TNC and radio |
+| KISS Server | TCP TNC such as Dire Wolf; can run locally |
 
-### QSO form
+Select the service in **F9 → Integrations → APRS**. Set callsign/SSID, symbol, comment, range, and beacon interval in **F9 → Logbooks → [active logbook] → APRS**. Enable **APRS TX** and **Send beacons** only if you intend to transmit. Receive-only operation shows **APRS-RX**. Position beacons disclose your location; check the position and intended audience first.
 
-| Key | Action |
+Automatic beacon intervals are at least five minutes. **F3** shows recently heard stations: arrows select, **Enter** fills the QSO form, **d / t / s** change distance/age/type filters, **Backspace** clears them, and **b** sends a configured beacon immediately. GPS-derived beacons require **Grid from GPS** and a valid position.
+
+<a id="portable"></a>
+
+## Portable operation
+
+Before leaving, select the portable logbook; check callsign, locator, activation reference, rig, antenna, and power. Test the full station setup and run CQOps online to refresh cached reference and prefix data. Verify **F6** finds the references you need. Export a backup.
+
+Without internet, local logging still works. `cqops --offline` skips network features; do not rely on live lookups or synchronization. Test any local-network equipment in your chosen startup mode before leaving. Cached information may be out of date.
+
+Afterwards, check QSO count and references, export ADIF, keep a backup, and upload unsent contacts to Wavelog if used. Check each award program's required submission format; convert the export if necessary.
+
+<a id="contests"></a>
+
+## Contests
+
+CQOps supports casual contest logging, exchanges, serial numbers, and rate information. It is not a full contest scoring or submission system. Use a dedicated logger for advanced contest operation.
+
+In **F9 → Contests**, press **Ins** and set name, date, ADIF contest ID, starting serial, and sent/received exchange templates.
+
+| Marker | Value |
 |---|---|
-| Tab / Shift+Tab | Next / previous field |
-| Enter | Save QSO or confirm a duplicate |
-| Ins | Look up the callsign |
-| PgUp / PgDn | Cycle band, mode, or submode |
-| Shift+Backspace / Del | Clear field / clear form |
-| Ctrl+S / Ctrl+P | Send a spot / use nearest spot |
+| `@rst` | Sent or received report |
+| `@serial` | Serial number |
+| `@cqz` / `@mycqz` | Contact's / your CQ zone |
+| `@itu` / `@myitu` | Contact's / your ITU zone |
+| `@grid` / `@mygrid` | Contact's / your locator |
 
-### Logbook
+On **F1**, **Ctrl+C** switches contests. Check the exchange and next serial before transmitting. The status bar shows count, next serial, and timing; wider windows show more rate statistics. Return to no-contest operation when finished.
 
-| Key | Action |
+For export, open **F8**, select the contest filter with **Ctrl+C**, then use **Ctrl+E** and verify the export selection. Output is ADIF, not Cabrillo. Follow the organiser's required format and submission rules.
+
+<a id="dashboard"></a>
+
+## CQOps Live
+
+Enable **F9 → Integrations → HTTP Server** and save with **Ctrl+S**. On the CQOps computer, open `http://localhost:8073`.
+
+The default address `0.0.0.0` allows local-network access, subject to the firewall. On another device, use the CQOps computer's IP address with port `8073`. Set `127.0.0.1` to restrict access to the CQOps computer. Keep it on a trusted network; do not forward the port to the internet.
+
+The dashboard updates automatically with the current contact, QSO maps, recent contacts, rates, operators, APRS, and available propagation/weather data. Internet-dependent layers may be unavailable offline. Set Header 1, Header 2, Logo URL, and Event Start to customize an event display; the start date filters the displayed statistics and QSO lists.
+
+<a id="keys"></a>
+
+## Keyboard reference
+
+| Screen | Keys | Action |
+|---|---|---|
+| General | ? / Esc / F10 | Help / back / quit |
+| QSO | Tab / Shift+Tab | Next / previous field |
+| QSO | Enter / Ins | Save / lookup |
+| QSO | Shift+Backspace / Del | Clear field / form |
+| QSO | Ctrl+L / Ctrl+O / Ctrl+R / Ctrl+C | Switch logbook / operator / rig / contest |
+| Logbook | ↑ / ↓, PgUp / PgDn, Home / End | Select, change page, first / last row |
+| Logbook | Enter or e / Delete | Edit / delete selected QSO |
+| Logbook | Ctrl+I / Ctrl+E | Import / export ADIF |
+| Logbook | Ctrl+W / Alt+W | Upload / download Wavelog |
+| Logbook | Ctrl+C / Backspace | Contest filter / clear search |
+
+Shortcuts are screen-specific: **Ctrl+C is not the quit command**. On laptops, function keys may require **Fn**. If a terminal captures a shortcut, check its keyboard settings and the CQOps help bar.
+
+<a id="help"></a>
+
+## Troubleshooting and help
+
+| Problem | Check first |
 |---|---|
-| Arrow keys | Select a QSO |
-| Enter or e | Edit selected QSO |
-| Delete | Delete selected QSO |
-| Ctrl+I / Ctrl+E | Import / export ADIF |
-| Ctrl+W / Alt+W | Upload to / download from Wavelog |
-| Ctrl+C | Change contest filter |
-| Backspace | Clear search |
+| Startup or incomplete screen | Terminal size; Windows Terminal on Windows; try `cqops --offline` |
+| Radio disconnected | Active rig profile; flrig/rigctld running; model, serial port, speed, host/port; another program holding the serial port |
+| WSJT-X QSO missing | Matching UDP settings, WSJT indicator, completed QSO actually logged in WSJT-X, correct active logbook |
+| Wavelog error | URL, `wl2_` token, station profile, internet; local QSOs remain safe |
+| No GPS position | Port/speed or GPSD address, clear sky view, valid fix, Grid from GPS enabled |
+| APRS not beaconing | Correct logbook, APRS TX and Send beacons, callsign/SSID, TNC/radio or internet connection |
+| Dashboard unreachable | Server enabled, correct computer IP and port, local firewall; localhost only refers to the device running the browser |
 
-The help bar and **?** overlay list additional screen-specific commands.
+For settings issues, use **F9** before changing files. Re-enter credentials if CQOps reports a secrets problem or you moved to another computer.
 
-## Troubleshooting
+If needed, enable **F9 → General → Debug**, reproduce the issue safely, and collect the relevant diagnostic log; turn debug off afterwards.
 
-### CQOps does not start or the display is incomplete
-
-- Enlarge the terminal to at least 75 by 24 characters.
-- On Windows, use Windows Terminal.
-- Try `cqops --offline` to rule out an unavailable online service.
-- Check that the newest release is installed.
-
-### The rig does not connect
-
-- Confirm that the correct rig profile is active.
-- For flrig, start flrig and verify its address and port; the usual port is 12345.
-- For Hamlib, verify `rigctld`, radio model, serial port, speed, host, and port.
-- Check whether another program has exclusive access to the radio's serial port.
-
-### WSJT-X contacts are not logged
-
-- Check **WSJT-X → Settings → Reporting → UDP Server**.
-- Match the address and port with the active CQOps rig profile.
-- Use WSJT-X 2.6 or newer.
-- Check the WSJT indicator and active logbook, operator, and contest.
-
-### Wavelog synchronization fails
-
-- Confirm the URL and internet connection.
-- Use an API v2 token beginning with `wl2_`.
-- Verify the station profile for the active logbook.
-- Check the **WL** indicator and retry from **F8**.
-
-Your QSOs remain stored locally after a synchronization error.
-
-### GPS connects but no locator appears
-
-- Wait with a clear view of the sky for the first fix.
-- Check the serial port and speed, or the GPSD address.
-- Enable **Grid from GPS**.
-- Confirm that the displayed locator is plausible before operating.
-
-### APRS receives but does not transmit
-
-- Enable APRS transmission and beaconing for the active logbook.
-- Check callsign and SSID, interval, and service type.
-- For KISS, verify the TNC and radio path.
-- For APRS-IS, verify internet access and the callsign.
-
-### Log file locations
-
-| System | Location |
+| System | Diagnostic logs |
 |---|---|
 | Linux | `~/.local/share/cqops/logs/` |
 | macOS | `~/Library/Application Support/cqops/logs/` |
 | Windows | `%APPDATA%\cqops\logs\` |
 
-## Get Help
-
-Press **?** first and review the relevant troubleshooting section. If the issue remains:
-
-1. Note the version from `cqops --version`.
-2. Note the operating system and terminal application.
-3. Record the exact steps that reproduce the issue.
-4. Include the relevant log. Enable **F9 → General → Debug** first if the issue can be safely reproduced.
-5. Remove passwords, API tokens, and other private information from attachments and screenshots.
-
-Report issues at <https://github.com/szporwolik/cqops/issues>.
+Report problems at [GitHub Issues](https://github.com/szporwolik/cqops/issues). Include CQOps version, operating system, terminal, steps, and the relevant log. Remove passwords, API tokens, and private information before sharing.
