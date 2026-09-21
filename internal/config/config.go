@@ -522,8 +522,15 @@ func Save(path string, cfg *Config) error {
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0600); err != nil {
+	// Write to a temp file and rename, so an interrupted write cannot
+	// truncate the live config and leave the app unable to start.
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0600); err != nil {
 		return fmt.Errorf("write config: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("replace config: %w", err)
 	}
 	return nil
 }

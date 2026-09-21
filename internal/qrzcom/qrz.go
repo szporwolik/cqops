@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -108,8 +107,8 @@ func (c *Client) testConnection() error {
 	u := "https://xmldata.qrz.com/xml/current/?username=" + url.QueryEscape(c.user) + ";password=" + url.QueryEscape(c.pass) + ";agent=CQOps"
 	data, err := c.httpFn(u)
 	if err != nil {
-		applog.Error("QRZ: connection failed", "error", sanitizeQRError(err))
-		return fmt.Errorf("connection failed: %s", sanitizeQRError(err))
+		applog.Error("QRZ: connection failed", "error", err)
+		return fmt.Errorf("connection failed: %w", err)
 	}
 	var authDB qrzDatabase
 	if err := xml.Unmarshal(data, &authDB); err != nil {
@@ -186,8 +185,8 @@ func (c *Client) qrzLoginLookup(callsign string) (*CallData, error) {
 	u := "https://xmldata.qrz.com/xml/current/?username=" + url.QueryEscape(c.user) + ";password=" + url.QueryEscape(c.pass) + ";agent=CQOps"
 	data, err := c.httpFn(u)
 	if err != nil {
-		applog.Error("QRZ auth failed", "error", sanitizeQRError(err))
-		return nil, fmt.Errorf("QRZ: %s", sanitizeQRError(err))
+		applog.Error("QRZ auth failed", "error", err)
+		return nil, fmt.Errorf("QRZ: %w", err)
 	}
 	var authDB qrzDatabase
 	if err := xml.Unmarshal(data, &authDB); err != nil {
@@ -297,25 +296,20 @@ type qrzCall struct {
 
 var httpClient = &http.Client{Timeout: 10 * time.Second}
 
-// sanitizeQRError strips the QRZ password from error messages.
-func sanitizeQRError(err error) string {
-	msg := err.Error()
-	re := regexp.MustCompile(`;password=[^;&?]+`)
-	return re.ReplaceAllString(msg, ";password=****")
-}
-
 func httpGet(u string) ([]byte, error) {
 	req, err := http.NewRequest("GET", u, nil)
 	if err != nil {
-		return nil, err
+		// url.Parse failures carry the raw URL, password included.
+		return nil, callbook.RedactURLError(err)
 	}
 	req.Header.Set("User-Agent", "CQOps/1.0")
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("request: %w", err)
+		// The URL carries the password; redact before it reaches a log.
+		return nil, fmt.Errorf("request: %w", callbook.RedactURLError(err))
 	}
 	defer resp.Body.Close()
-	return io.ReadAll(resp.Body)
+	return io.ReadAll(io.LimitReader(resp.Body, 256*1024))
 }
 
 // httpGetFn is the test seam — replaceable with httptest.Server.

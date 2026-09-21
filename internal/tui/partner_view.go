@@ -1148,111 +1148,10 @@ func formatCountList(items []store.CountItem) string {
 	return strings.Join(parts, " \u00b7 ")
 }
 
-// --- Logbook rows (kept for backward compat — unused by new layout) ---
-
-func (m *Model) renderLogbookRows(d *callbook.Result, maxW int) string {
-	call := d.Callsign
-	band := strings.TrimSpace(m.fields[fieldBand].Value())
-	mode := strings.TrimSpace(m.fields[fieldMode].Value())
-	sig := call + "|" + band + "|" + mode
-	if m.rc.logStatsSig != sig && m.App.DB != nil {
-		// Cache miss — dispatch async fetch and use previous data this frame.
-		// The fetch will complete before the next View() call.
-		m.rc.logStatsNeedFetch = true
-		m.rc.logStatsFetchCall = call
-		m.rc.logStatsFetchBand = band
-		m.rc.logStatsFetchMode = mode
-	}
-	s := m.rc.logStats
-	wl := m.lookup.wlPrivateData
-
-	newStyle := S.Success // green — yes, it IS new
-	oldStyle := DimStyle  // dim — no, already worked
-
-	// Compute value column width. Label width 11 + space 1 = 12.
-	valW := maxW - 12
-	if valW < 3 {
-		valW = 3
-	}
-
-	// WL-first helper: returns (isNew, known).
-	// If WL has data, it wins. Otherwise falls back to local.
-	wlFirst := func(wlVal, localVal bool) (bool, bool) {
-		if wl != nil {
-			return !wlVal, true
-		}
-		return !localVal, true
-	}
-	// WL-only helper: only WL can answer (DXCC fields).
-	wlOnly := func(wlVal bool) (bool, bool) {
-		if wl != nil {
-			return !wlVal, true
-		}
-		return false, false
-	}
-
-	// Render Y/N/? with appropriate style.
-	flag := func(isNew, known bool) string {
-		return renderFlagStatus(isNew, known, newStyle, oldStyle)
-	}
-
-	var rows []row
-
-	// New call
-	isNew, _ := wlFirst(wl != nil && wl.Worked(), s.CallWorked)
-	rows = append(rows, row{"New call", flag(isNew, true)})
-
-	// New on band
-	if band != "" {
-		isNew, _ := wlFirst(wl != nil && wl.WorkedBand(), s.CallOnBand)
-		rows = append(rows, row{"New on band", flag(isNew, true)})
-	} else {
-		rows = append(rows, row{"New on band", DimStyle.Render("?")})
-	}
-
-	// New on mode
-	if mode != "" {
-		isNew, _ := wlFirst(wl != nil && wl.WorkedBandMode(), s.CallOnMode)
-		rows = append(rows, row{"New on mode", flag(isNew, true)})
-	} else {
-		rows = append(rows, row{"New on mode", DimStyle.Render("?")})
-	}
-
-	// New DXCC (WL only — local doesn't track DXCC)
-	isNew, known := wlOnly(wl != nil && wl.DXCCConfirmed())
-	rows = append(rows, row{"New DXCC", flag(isNew, known)})
-
-	// New DXCC on band
-	if band != "" {
-		isNew, known = wlOnly(wl != nil && wl.ConfirmedBand())
-		rows = append(rows, row{"DXCC band", flag(isNew, known)})
-	} else {
-		rows = append(rows, row{"DXCC band", DimStyle.Render("?")})
-	}
-
-	// New DXCC on mode
-	if mode != "" {
-		isNew, known = wlOnly(wl != nil && wl.ConfirmedBandMode())
-		rows = append(rows, row{"DXCC mode", flag(isNew, known)})
-	} else {
-		rows = append(rows, row{"DXCC mode", DimStyle.Render("?")})
-	}
-
-	// QSO count
-	cnt := "none"
-	if s.QSOCount > 0 {
-		cnt = fmt.Sprintf("%d", s.QSOCount)
-	}
-	rows = append(rows, row{"QSO count", ValueStyle.Width(valW).MaxWidth(valW).Inline(true).Render(cnt)})
-
-	// Last QSO — clipped, never wrapped.
-	last := "none"
-	if s.LastQSODate != "" {
-		last = s.LastQSODate
-	}
-	rows = append(rows, row{"Last QSO", ValueStyle.Width(valW).MaxWidth(valW).Inline(true).Render(truncateText(last, valW))})
-
-	return formatRowPairs(rows, S.FormLabel)
+// logStatsSigFor identifies which call/band/mode the cached logbook stats
+// belong to. The stats are only trusted while this matches the form.
+func logStatsSigFor(call, band, mode string) string {
+	return call + "|" + band + "|" + mode
 }
 
 // fetchLogbookStatsCmd returns a tea.Cmd that runs GetLogbookStats
@@ -1264,7 +1163,7 @@ func (m *Model) fetchLogbookStatsCmd(call, band, mode string) tea.Cmd {
 		if err != nil {
 			return logbookStatsMsg{}
 		}
-		return logbookStatsMsg{stats: stats, sig: call + "|" + band + "|" + mode}
+		return logbookStatsMsg{stats: stats, sig: logStatsSigFor(call, band, mode)}
 	}
 }
 

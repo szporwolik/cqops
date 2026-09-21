@@ -249,7 +249,7 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 			if err != nil {
 				applog.Warn("WSJT-X: callbook enrichment failed", "call", call, "error", err)
 			} else if data != nil && data.Callsign != "" {
-				store.UpdateQSOEnrichment(m.App.DB, qsoID, store.EnrichmentData{
+				if err := store.UpdateQSOEnrichment(m.App.DB, qsoID, store.EnrichmentData{
 					Name:       data.Name,
 					QTH:        data.QTH,
 					Country:    data.Country,
@@ -257,8 +257,11 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 					CQZone:     data.CQZone,
 					ITUZone:    data.ITUZone,
 					DXCC:       data.DXCC,
-				})
-				applog.Info("WSJT-X: callbook enrichment applied", "call", call, "qso_id", qsoID)
+				}); err != nil {
+					applog.Warn("WSJT-X: callbook enrichment write failed", "call", call, "qso_id", qsoID, "error", err)
+				} else {
+					applog.Info("WSJT-X: callbook enrichment applied", "call", call, "qso_id", qsoID)
+				}
 			} else {
 				applog.Debug("WSJT-X: callbook returned no data", "call", call)
 			}
@@ -288,8 +291,11 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 						need = true
 					}
 					if need {
-						store.UpdateQSOEnrichment(m.App.DB, qsoID, ed)
-						applog.Debug("WSJT-X: Big CTY enrichment", "call", call, "country", ed.Country, "dxcc", ed.DXCC)
+						if err := store.UpdateQSOEnrichment(m.App.DB, qsoID, ed); err != nil {
+							applog.Warn("WSJT-X: Big CTY enrichment write failed", "call", call, "qso_id", qsoID, "error", err)
+						} else {
+							applog.Debug("WSJT-X: Big CTY enrichment", "call", call, "country", ed.Country, "dxcc", ed.DXCC)
+						}
 					}
 				}
 			}

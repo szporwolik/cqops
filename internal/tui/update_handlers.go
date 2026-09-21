@@ -23,6 +23,30 @@ import (
 //   2. handleAsyncMessages — async result messages (internet, Wavelog, rig)
 //   3. handlePendingRequests — deferred actions (QSO refresh, QRZ/WL lookups)
 
+// dispatchViewFetches batches the DB reads that View() flagged as cache
+// misses. View() must stay free of DB I/O, so it only records what it needs
+// and the query runs here as a command.
+func (m *Model) dispatchViewFetches(cmd tea.Cmd) tea.Cmd {
+	if m.App.DB == nil {
+		return cmd
+	}
+	if m.rc.logStatsNeedFetch {
+		m.rc.logStatsNeedFetch = false
+		cmd = tea.Batch(cmd, m.fetchLogbookStatsCmd(
+			m.rc.logStatsFetchCall, m.rc.logStatsFetchBand, m.rc.logStatsFetchMode))
+	}
+	if m.rc.dxcSpotsNeedFetch {
+		m.rc.dxcSpotsNeedFetch = false
+		cmd = tea.Batch(cmd, m.fetchDXCPathSpotsCmd(m.rc.dxcSpotsFetchBand))
+	}
+	if m.rc.dxcDupeNeedFetch {
+		m.rc.dxcDupeNeedFetch = false
+		cmd = tea.Batch(cmd, m.fetchDXCPathDupesCmd(
+			m.rc.dxcDupeFetchDate, m.rc.dxcDupeFetchContest))
+	}
+	return cmd
+}
+
 // handleTick processes periodic tick messages: ADIF ingestion, WSJT-X status,
 // toast expiry, date/time auto-update, and scheduled health checks.
 //
@@ -106,19 +130,22 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 		m.autoUpdateDateTime()
 	}
 	m.tickCount++
-	// Dispatch async logbook stats fetch if a View() cache miss was recorded.
-	if m.rc.logStatsNeedFetch && m.App.DB != nil {
-		m.rc.logStatsNeedFetch = false
-		cmd = tea.Batch(cmd, m.fetchLogbookStatsCmd(
-			m.rc.logStatsFetchCall, m.rc.logStatsFetchBand, m.rc.logStatsFetchMode))
-	}
+	// Dispatch async DB fetches flagged by the last View().
+	cmd = m.dispatchViewFetches(cmd)
 	// Refresh logbook-wide counts once per tick (total QSOs, today's QSOs).
 	// Also refreshes at midnight when the date rolls over.
 	if m.App.DB != nil {
 		today := time.Now().UTC().Format("20060102")
 		if m.rc.logbookStatsDate != today {
-			m.rc.logbookStatsDate = today
-			m.rc.logbookTotal, m.rc.logbookToday = store.LogbookCounts(m.App.DB, today)
+			total, todayCount, err := store.LogbookCounts(m.App.DB, today)
+			if err != nil {
+				// Keep the previous counts and retry next tick, so a transient
+				// lock does not render the logbook as empty.
+				applog.Warn("Logbook counts refresh failed", "error", err)
+			} else {
+				m.rc.logbookStatsDate = today
+				m.rc.logbookTotal, m.rc.logbookToday = total, todayCount
+			}
 		}
 	}
 	// Dispatch async PSK spot DB load if a View() cache miss was recorded.
@@ -461,6 +488,9 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 // handlePendingRequests processes deferred actions (QSO refresh, QRZ lookup, WL lookup)
 // that were flagged during normal message handling.
 func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
+	// Run before any early return so a fetch flagged by the last View() is
+	// serviced on this update instead of waiting for the next tick.
+	cmd = m.dispatchViewFetches(cmd)
 	if m.needRefresh {
 		// Only refresh QSOs when on a screen that displays them — avoids
 		// unnecessary DB queries on DXC, PSK, BPL, and other screens.
@@ -562,6 +592,12 @@ func (m *Model) handleLookupResultMsg(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.
 		return m, cmd
 	case logbookStatsMsg:
 		m.handleLogbookStats(r)
+		return m, cmd
+	case dxcPathSpotsMsg:
+		m.handleDXCPathSpots(r)
+		return m, cmd
+	case dxcPathDupesMsg:
+		m.handleDXCPathDupes(r)
 		return m, cmd
 	case pskSpotsLoadedMsg:
 		if r.err == nil && r.spotKey != "" {

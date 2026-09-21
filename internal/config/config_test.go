@@ -1049,6 +1049,37 @@ func TestSave_PermissionsAre0600(t *testing.T) {
 	}
 }
 
+// Save writes to a temp file and renames over the target. Overwriting an
+// existing config must succeed (os.Rename must replace on every platform)
+// and must not leave the temp file behind.
+func TestSave_OverwritesAtomicallyWithoutTempLeftover(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	cfg := DefaultConfig()
+	cfg.General.Timezone = "Europe/Warsaw"
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("first Save: %v", err)
+	}
+
+	cfg.General.Timezone = "UTC"
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("second Save over existing file: %v", err)
+	}
+
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load after overwrite: %v", err)
+	}
+	if loaded.General.Timezone != "UTC" {
+		t.Errorf("timezone after overwrite = %q, want %q", loaded.General.Timezone, "UTC")
+	}
+
+	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
+		t.Errorf("temp file %q still exists after Save", path+".tmp")
+	}
+}
+
 func TestSaveAndLoad_StationFieldsRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")

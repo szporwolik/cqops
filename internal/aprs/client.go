@@ -190,9 +190,10 @@ func (c *TCPClient) runLoop() {
 func (c *TCPClient) setConnected(connected bool, err error) {
 	c.mu.Lock()
 	c.connected = connected
+	onStatus := c.OnStatus
 	c.mu.Unlock()
-	if c.OnStatus != nil {
-		c.OnStatus(connected, err)
+	if onStatus != nil {
+		onStatus(connected, err)
 	}
 }
 

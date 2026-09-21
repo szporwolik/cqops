@@ -229,6 +229,18 @@ type logbookStatsMsg struct {
 	sig   string
 }
 
+// dxcPathSpotsMsg carries the async result of QueryDXCSpotsByBand.
+type dxcPathSpotsMsg struct {
+	band  string
+	spots []store.DXCSpot
+}
+
+// dxcPathDupesMsg carries the async result of DXCDupeSet.
+type dxcPathDupesMsg struct {
+	sig     string
+	dupeSet map[string]bool
+}
+
 type dxcTuneResultMsg struct {
 	call    string
 	freqMHz float64

@@ -788,9 +788,9 @@ type EnrichmentData struct {
 // UpdateQSOEnrichment applies callbook enrichment to a QSO.
 // Only fields that are currently empty in the database are updated —
 // existing data is never overwritten by enrichment.
-func UpdateQSOEnrichment(db *sql.DB, qsoID int64, e EnrichmentData) {
+func UpdateQSOEnrichment(db *sql.DB, qsoID int64, e EnrichmentData) error {
 	if e.Name == "" && e.QTH == "" && e.Country == "" && e.GridSquare == "" && e.IOTA == "" && e.CQZone == "" && e.ITUZone == "" && e.DXCC == "" {
-		return
+		return nil
 	}
 
 	var sets []string
@@ -830,10 +830,13 @@ func UpdateQSOEnrichment(db *sql.DB, qsoID int64, e EnrichmentData) {
 	}
 
 	if len(sets) == 0 {
-		return
+		return nil
 	}
 
 	args = append(args, qsoID)
 	query := fmt.Sprintf("UPDATE qsos SET %s WHERE id = ?", strings.Join(sets, ", "))
-	db.Exec(query, args...) // best-effort; errors logged by caller
+	if _, err := db.Exec(query, args...); err != nil {
+		return fmt.Errorf("update qso enrichment: %w", err)
+	}
+	return nil
 }

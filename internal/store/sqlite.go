@@ -13,6 +13,12 @@ func Open(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("open db: %w", err)
 	}
 
+	// SQLite allows a single writer. An unbounded pool lets concurrent TUI
+	// reads, WSJT-X logging and Wavelog sync each open a connection with its
+	// own page cache, which is wasteful on Pi-class hardware.
+	db.SetMaxOpenConns(4)
+	db.SetMaxIdleConns(4)
+
 	if err := db.Ping(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("ping db: %w", err)

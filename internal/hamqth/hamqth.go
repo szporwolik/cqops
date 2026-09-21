@@ -293,11 +293,13 @@ func (c *Client) loginAndSearch(callsign string) (*SearchData, error) {
 // test seam to avoid real network calls.
 var httpGetFn = defaultHTTPGet
 
+var httpClient = &http.Client{Timeout: 15 * time.Second}
+
 func defaultHTTPGet(rawURL string) ([]byte, error) {
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Get(rawURL)
+	resp, err := httpClient.Get(rawURL)
 	if err != nil {
-		return nil, err
+		// The URL carries the password; redact before it reaches a log.
+		return nil, callbook.RedactURLError(err)
 	}
 	defer resp.Body.Close()
 	return io.ReadAll(io.LimitReader(resp.Body, 256*1024))

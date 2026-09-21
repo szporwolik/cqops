@@ -40,6 +40,18 @@ func newTestModel() *Model {
 	return m
 }
 
+// seedLogbookStats marks stats as loaded for the form's current call/band/mode,
+// simulating a completed async fetch. The path row only trusts stats whose
+// signature matches the form, so tests must set both.
+func seedLogbookStats(m *Model, stats store.LogbookStats) {
+	m.rc.logStats = stats
+	m.rc.logStatsSig = logStatsSigFor(
+		strings.TrimSpace(m.fields[fieldCall].Value()),
+		strings.TrimSpace(m.fields[fieldBand].Value()),
+		strings.TrimSpace(m.fields[fieldMode].Value()),
+	)
+}
+
 func TestQSOFormRender(t *testing.T) {
 	m := newTestModel()
 	m.width = 100
@@ -386,6 +398,7 @@ func TestFormPathRowNewCallBannerWLFirst(t *testing.T) {
 	m.lookup.wlPrivateData = &wavelog.PrivateLookupResult{}
 	// No WL data means it defaults to false for Worked(), which means NOT worked → new.
 	// We can't easily set WL raw data, but nil WL acts as "no data".
+	seedLogbookStats(m, store.LogbookStats{CallWorked: false})
 
 	row := m.formPathRow(100)
 	if !strings.Contains(row, "New Call!") {
@@ -414,6 +427,25 @@ func TestFormPathRowNewCallBannerNotShownWhenWorked(t *testing.T) {
 	row := m.formPathRow(100)
 	if strings.Contains(row, "New Call!") {
 		t.Error("formPathRow should NOT show 'New Call!' when local says call already worked")
+	}
+}
+
+// Stats are fetched asynchronously, so the cache can still hold a previous
+// callsign's result. Claiming "New Call!" from it would mislead the operator.
+func TestFormPathRowNewCallBannerWaitsForMatchingStats(t *testing.T) {
+	m := newTestModel()
+	m.width = 100
+	m.fields[fieldCall].SetValue("VK3A")
+	m.fields[fieldGrid].SetValue("PG66pa")
+	m.rc.pathCall = "VK3A"
+
+	// Stats belong to a different callsign — the VK3A fetch has not landed.
+	m.rc.logStats = store.LogbookStats{CallWorked: false}
+	m.rc.logStatsSig = logStatsSigFor("SP9MOA", "", "")
+
+	row := m.formPathRow(100)
+	if strings.Contains(row, "New Call!") {
+		t.Error("formPathRow must not show 'New Call!' from another callsign's stats")
 	}
 }
 

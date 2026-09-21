@@ -62,6 +62,19 @@ type renderCache struct {
 	logStatsFetchBand string
 	logStatsFetchMode string
 
+	// DXC path-line spot fallback, loaded off the render path.
+	dxcSpots          []store.DXCSpot
+	dxcSpotsBand      string
+	dxcSpotsNeedFetch bool
+	dxcSpotsFetchBand string
+
+	// DXC path-line dupe set, loaded off the render path.
+	dxcDupeSet          map[string]bool
+	dxcDupeSig          string
+	dxcDupeNeedFetch    bool
+	dxcDupeFetchDate    string
+	dxcDupeFetchContest string
+
 	// Worked panel summary cache (call + grid + DXCC statistics).
 	workedSummary           store.WorkedSummary
 	workedSummarySig        string

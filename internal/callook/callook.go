@@ -129,9 +129,10 @@ func (c *Client) TestConnection() error {
 
 var httpGetFn = defaultHTTPGet
 
+var httpClient = &http.Client{Timeout: 10 * time.Second}
+
 func defaultHTTPGet(rawURL string) ([]byte, error) {
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get(rawURL)
+	resp, err := httpClient.Get(rawURL)
 	if err != nil {
 		return nil, err
 	}

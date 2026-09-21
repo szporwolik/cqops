@@ -407,20 +407,23 @@ func (m *Model) formPathRow(width int) string {
 	call := strings.TrimSpace(m.fields[fieldCall].Value())
 	band := strings.TrimSpace(m.fields[fieldBand].Value())
 	mode := strings.TrimSpace(m.fields[fieldMode].Value())
-	statsSig := call + "|" + band + "|" + mode
-	if m.rc.logStatsSig != statsSig && m.App.DB != nil {
-		stats, err := store.GetLogbookStats(m.App.DB, call, band, mode)
-		if err == nil {
-			m.rc.logStats = stats
-			m.rc.logStatsSig = statsSig
-		}
+	statsSig := logStatsSigFor(call, band, mode)
+	statsReady := m.rc.logStatsSig == statsSig
+	if !statsReady && m.App.DB != nil {
+		// Cache miss — flag an async fetch instead of querying during View().
+		m.rc.logStatsNeedFetch = true
+		m.rc.logStatsFetchCall = call
+		m.rc.logStatsFetchBand = band
+		m.rc.logStatsFetchMode = mode
 	}
 
 	// Compute badges — always evaluated when a call is present.
+	// The local "new call" badge waits for matching stats so a pending
+	// fetch never renders a false "New Call!".
 	var showNewCall bool
 	if m.lookup.wlPrivateData != nil {
 		showNewCall = !m.lookup.wlPrivateData.Worked()
-	} else {
+	} else if statsReady {
 		showNewCall = !m.rc.logStats.CallWorked
 	}
 	wlNewDXCC := m.lookup.wlPrivateData != nil && !m.lookup.wlPrivateData.DXCCConfirmed()
@@ -481,6 +484,8 @@ func (m *Model) formPathRow(width int) string {
 	sigB.WriteString(m.App.Config.General.Units)
 	sigB.WriteByte('|')
 	sigB.WriteString(statsSig)
+	sigB.WriteByte('|')
+	sigB.WriteString(m.rc.logStatsSig) // re-render once the async stats land
 	sigB.WriteByte('|')
 	sigB.WriteString(wlSig)
 	sigB.WriteByte('|')
@@ -622,9 +627,10 @@ func (m *Model) dxcPathLine(width int) string {
 	modeCat := spotModeCategory(strings.TrimSpace(m.fields[fieldMode].Value()))
 	stationCont := m.App.Logbook.Station.Continent
 	var sigB strings.Builder
-	fmt.Fprintf(&sigB, "%.3f|%d|%d|%s|%s|%s|%s|%s|%s|%s", freqKhz, m.dxc.rawGen, width,
+	fmt.Fprintf(&sigB, "%.3f|%d|%d|%s|%s|%s|%s|%s|%s|%s|%s|%s", freqKhz, m.dxc.rawGen, width,
 		m.App.Logbook.Station.RigName, m.App.Logbook.Station.RigPower(m.App.Config.Rigs),
-		m.App.LogbookName, m.App.Logbook.ActiveContest, stationCont, modeCat, m.dxc.contFilter)
+		m.App.LogbookName, m.App.Logbook.ActiveContest, stationCont, modeCat, m.dxc.contFilter,
+		m.rc.dxcSpotsBand, m.rc.dxcDupeSig)
 	sig := sigB.String()
 	if m.rc.dxcPathSig == sig && m.rc.dxcPathLine != "" {
 		return m.rc.dxcPathLine
@@ -646,13 +652,14 @@ func (m *Model) dxcPathLine(width int) string {
 		}
 	}
 	// DB fallback: cachedRaw may be empty on startup before the first spots
-	// arrive. Use the band+time-filtered query (idx_dxc_spots_band_time)
-	// so SQLite does the heavy lifting — returns only recent spots on the
-	// current band, already sorted by frequency.
+	// arrive. The query runs asynchronously so View() never touches the DB;
+	// this frame renders without the fallback spots.
 	if len(spots) == 0 && m.App.DB != nil {
-		dbSpots, err := store.QueryDXCSpotsByBand(m.App.DB, band, 900)
-		if err == nil {
-			spots = dbSpots
+		if m.rc.dxcSpotsBand == band {
+			spots = m.rc.dxcSpots
+		} else {
+			m.rc.dxcSpotsNeedFetch = true
+			m.rc.dxcSpotsFetchBand = band
 		}
 	}
 	// ── Smart filtering ────────────────────────────────────────────────────
@@ -757,8 +764,13 @@ func (m *Model) dxcPathLine(width int) string {
 	var dupeSet map[string]bool
 	if width >= 100 && m.App.DB != nil {
 		dateStr := time.Now().UTC().Format("20060102")
-		if ds, err := store.DXCDupeSet(m.App.DB, dateStr, m.App.Logbook.ActiveContest); err == nil {
-			dupeSet = ds
+		dupeSig := dateStr + "|" + m.App.Logbook.ActiveContest
+		if m.rc.dxcDupeSig == dupeSig {
+			dupeSet = m.rc.dxcDupeSet
+		} else {
+			m.rc.dxcDupeNeedFetch = true
+			m.rc.dxcDupeFetchDate = dateStr
+			m.rc.dxcDupeFetchContest = m.App.Logbook.ActiveContest
 		}
 	}
 

@@ -145,9 +145,16 @@ func v2RequestWithClient(client *http.Client, method, baseURL, token, path strin
 	}
 	defer resp.Body.Close()
 
-	respBody, err := io.ReadAll(resp.Body)
+	// Bound the response so a runaway or hostile body cannot exhaust memory
+	// on low-end hardware. Reject rather than truncate, so an oversized body
+	// surfaces as a clear error instead of a confusing parse failure.
+	const maxRespBytes = 64 << 20
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxRespBytes+1))
 	if err != nil {
 		return 0, nil, FriendlyError(err)
+	}
+	if len(respBody) > maxRespBytes {
+		return resp.StatusCode, nil, fmt.Errorf("response too large (over %d MB)", maxRespBytes>>20)
 	}
 
 	if resp.StatusCode >= 400 {

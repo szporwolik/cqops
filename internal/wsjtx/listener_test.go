@@ -1,8 +1,26 @@
 package wsjtx
 
 import (
+	"net"
+	"reflect"
 	"testing"
+
+	wsjtx "github.com/k0swe/wsjtx-go/v4"
 )
+
+// stopLocked closes the UDP socket by reaching into the library's unexported
+// "conn" field, because wsjtx-go v4 exposes no Shutdown. A recover() there
+// swallows any breakage, so an upgrade that renames or retypes the field
+// would silently leave the port held. Fail loudly here instead.
+func TestServerConnFieldStillMatchesShutdownAssumption(t *testing.T) {
+	f, ok := reflect.TypeOf(wsjtx.Server{}).FieldByName("conn")
+	if !ok {
+		t.Fatal("wsjtx.Server has no \"conn\" field — Listener.stopLocked can no longer close the UDP socket")
+	}
+	if want := reflect.TypeOf((*net.UDPConn)(nil)); f.Type != want {
+		t.Fatalf("wsjtx.Server.conn is %s, want %s — stopLocked casts to **net.UDPConn", f.Type, want)
+	}
+}
 
 // =============================================================================
 // Listener lifecycle tests — no real UDP / WSJT-X required

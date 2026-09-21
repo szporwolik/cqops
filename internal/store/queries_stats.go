@@ -51,10 +51,14 @@ func CountQSOsForContest(db *sql.DB, contestID string) (QSOCounts, error) {
 
 // LogbookCounts returns total QSOs and today's QSO count for the entire
 // logbook. today is the UTC date in YYYYMMDD format.
-func LogbookCounts(db *sql.DB, today string) (total, todayCount int) {
-	_ = db.QueryRow(`SELECT COUNT(*) FROM qsos`).Scan(&total)
-	_ = db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE qso_date = ?`, today).Scan(&todayCount)
-	return
+func LogbookCounts(db *sql.DB, today string) (total, todayCount int, err error) {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos`).Scan(&total); err != nil {
+		return 0, 0, fmt.Errorf("count qsos: %w", err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE qso_date = ?`, today).Scan(&todayCount); err != nil {
+		return 0, 0, fmt.Errorf("count today qsos: %w", err)
+	}
+	return total, todayCount, nil
 }
 
 // LogbookStats holds per-call aggregate statistics from the local logbook.

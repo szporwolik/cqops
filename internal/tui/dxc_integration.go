@@ -31,6 +31,55 @@ type dxcSpotsStoredMsg struct {
 	newSpots  []store.DXCSpot // newly inserted spots for in-memory append
 }
 
+// fetchDXCPathSpotsCmd loads recent spots for a band off the render path.
+// Used as a fallback while the in-memory spot cache is still empty.
+func (m *Model) fetchDXCPathSpotsCmd(band string) tea.Cmd {
+	db := m.App.DB
+	return func() tea.Msg {
+		spots, err := store.QueryDXCSpotsByBand(db, band, 900)
+		if err != nil {
+			// Record the band anyway so a failing query cannot re-dispatch on
+			// every update; live spots still arrive through the DXC feed.
+			applog.Debug("DXC: path spot load failed", "band", band, "error", err)
+			return dxcPathSpotsMsg{band: band}
+		}
+		return dxcPathSpotsMsg{band: band, spots: spots}
+	}
+}
+
+// fetchDXCPathDupesCmd loads the path-line dupe set off the render path.
+func (m *Model) fetchDXCPathDupesCmd(date, contest string) tea.Cmd {
+	db := m.App.DB
+	return func() tea.Msg {
+		ds, err := store.DXCDupeSet(db, date, contest)
+		if err != nil {
+			// Record the signature anyway so a failing query cannot re-dispatch
+			// on every update.
+			applog.Debug("DXC: path dupe set load failed", "date", date, "error", err)
+			return dxcPathDupesMsg{sig: date + "|" + contest}
+		}
+		return dxcPathDupesMsg{sig: date + "|" + contest, dupeSet: ds}
+	}
+}
+
+// handleDXCPathSpots stores the async spot fallback for the next View().
+func (m *Model) handleDXCPathSpots(msg dxcPathSpotsMsg) {
+	if msg.band == "" {
+		return
+	}
+	m.rc.dxcSpots = msg.spots
+	m.rc.dxcSpotsBand = msg.band
+}
+
+// handleDXCPathDupes stores the async dupe set for the next View().
+func (m *Model) handleDXCPathDupes(msg dxcPathDupesMsg) {
+	if msg.sig == "" {
+		return
+	}
+	m.rc.dxcDupeSet = msg.dupeSet
+	m.rc.dxcDupeSig = msg.sig
+}
+
 // sendSpotCmd sends a DX spot to the connected cluster and stores it locally
 // so it appears immediately in the DXC table even if the cluster doesn't echo.
 func (m *Model) sendSpotCmd(call string, freqKhz float64, comment string) tea.Cmd {
