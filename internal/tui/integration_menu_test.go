@@ -286,3 +286,33 @@ func TestIntegrationMenu_HTTPTLSFocusOrder(t *testing.T) {
 		t.Errorf("tab from TLS landed on focus %d, want imHTTPTLSCert (%d)", im.focus, imHTTPTLSCert)
 	}
 }
+
+func TestIntegrationMenuPrefillsDXCLoginFromLogbook(t *testing.T) {
+	// First available callsign (sorted by logbook id) prefills the login.
+	cfg := config.DefaultConfig()
+	cfg.Logbooks = map[string]config.Logbook{
+		"b": {Station: config.Station{Callsign: "", Grid: "JO90"}},
+		"a": {Station: config.Station{Callsign: "SP9MOA", Grid: "JO90"}},
+	}
+	im := NewIntegrationMenu(cfg)
+	if im.dxcLogin.Value() != "SP9MOA" {
+		t.Errorf("dxc login = %q, want SP9MOA", im.dxcLogin.Value())
+	}
+
+	// An already configured login always wins.
+	cfg2 := config.DefaultConfig()
+	cfg2.Integrations.DXC.Login = "SP9EGL"
+	cfg2.Logbooks = map[string]config.Logbook{
+		"a": {Station: config.Station{Callsign: "SP9MOA", Grid: "JO90"}},
+	}
+	im2 := NewIntegrationMenu(cfg2)
+	if im2.dxcLogin.Value() != "SP9EGL" {
+		t.Errorf("existing login should win, got %q", im2.dxcLogin.Value())
+	}
+
+	// No logbooks → no prefill.
+	im3 := NewIntegrationMenu(config.DefaultConfig())
+	if im3.dxcLogin.Value() != "" {
+		t.Errorf("expected empty login, got %q", im3.dxcLogin.Value())
+	}
+}

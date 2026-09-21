@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"sort"
 	"strings"
 	"time"
 
@@ -197,6 +198,26 @@ var stopBitsOptions = []struct {
 	{"2"},
 }
 
+// firstLogbookCallsign returns the first non-empty station callsign from any
+// logbook (deterministic, sorted by logbook ID). Used to prefill convenience
+// fields like the DX Cluster login — the operator can always change it.
+func firstLogbookCallsign(cfg *config.Config) string {
+	if cfg == nil || len(cfg.Logbooks) == 0 {
+		return ""
+	}
+	ids := make([]string, 0, len(cfg.Logbooks))
+	for id := range cfg.Logbooks {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		if cs := strings.TrimSpace(cfg.Logbooks[id].Station.Callsign); cs != "" {
+			return cs
+		}
+	}
+	return ""
+}
+
 // gpsPrecisionOptions lists available grid precision levels for cycling.
 var gpsPrecisionOptions = []int{10, 8, 6}
 
@@ -236,6 +257,9 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 	dxcLogin.Placeholder = "callsign"
 	if cfg.Integrations.DXC.Login != "" {
 		dxcLogin.SetValue(cfg.Integrations.DXC.Login)
+	} else if cs := firstLogbookCallsign(cfg); cs != "" {
+		// Convenience prefill — the operator can change it.
+		dxcLogin.SetValue(cs)
 	}
 
 	qrzUser := newTextinput()

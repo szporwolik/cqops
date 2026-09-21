@@ -329,3 +329,38 @@ func TestLogbookChooserSaveRequiresWavelogURLAndKey(t *testing.T) {
 		t.Errorf("LastFetchedID = %d after rejected save, want 55", got.LastFetchedID)
 	}
 }
+
+// TestLogbookChooserAPRSTXEnablesGlobalAPRS: turning APRS TX on in the logbook
+// station form must enable the global APRS integration; turning it off must
+// never disable the global integration.
+func TestLogbookChooserAPRSTXEnablesGlobalAPRS(t *testing.T) {
+	a := newChooserTestApp(t)
+	if a.Config.Integrations.APRS.Enabled {
+		t.Fatal("global APRS should start disabled")
+	}
+	c := NewLogbookChooser(a, NewToastQueue())
+	c.mode = chooserEdit
+
+	// Space on the APRS TX checkbox turns it on.
+	c.station.aprsCbFocus = true
+	c.station.AprsEnabled = false
+	c.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
+	if !c.station.AprsEnabled {
+		t.Fatal("APRS TX should be enabled after Space")
+	}
+	if !a.Config.Integrations.APRS.Enabled {
+		t.Error("enabling APRS TX should enable the global APRS integration")
+	}
+
+	// Turning TX off must NOT disable the global integration.
+	a.Config.Integrations.APRS.Enabled = true
+	c.station.aprsCbFocus = true
+	c.station.AprsEnabled = true
+	c.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
+	if c.station.AprsEnabled {
+		t.Fatal("APRS TX should be disabled after second Space")
+	}
+	if !a.Config.Integrations.APRS.Enabled {
+		t.Error("disabling APRS TX must not disable the global APRS integration")
+	}
+}

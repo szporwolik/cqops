@@ -28,6 +28,8 @@
 - The logbook form shows a green **v2** badge next to the API key when a `wl2_` token is entered, and a warning — *"Wavelog API v2 token (wl2_) required since CQOps 0.11.0"* — when a legacy v1 key is present.
 - **Migration surfacing**: users still on a legacy v1 key get the migration message as a one-time warning toast at startup, the status bar shows a warning `WL!` indicator instead of plain offline, and uploads with a v1 key fail fast with the same guidance (no silent ADIF fallback).
 - **Shift+Backspace** in the QSO form instantly clears the focused field (listed in the `?` help overlay); the call field's side effects (partner data, name/QTH/grid clearing) apply as with manual editing.
+- **APRS convenience**: turning APRS TX on in the logbook station form now also enables the global APRS integration — no separate visit to the Integrations menu needed. Turning TX off never disables the global integration.
+- **DX Cluster login prefill**: the Integrations menu pre-fills the DX Cluster login with the first available station callsign from your logbooks (deterministic order) when no login is configured — editable as usual.
 
 ### Fixes
 - The wizard's final step returned the `tea.Quit` function instead of a quit message, so completing the summary never actually exited the wizard — it now sends a proper quit message and launches CQOps.

@@ -278,7 +278,9 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			scrollVpToLine(&c.vp, c.cursor)
 
 		case c.mode == chooserEdit || c.mode == chooserCreate:
+			wasAprs := c.station.AprsEnabled
 			if cmd := c.station.HandleKey(msg); cmd != nil {
+				c.enableGlobalAPRSIfTurnedOn(wasAprs)
 				// Execute the command to inspect the message. Save (enterOnLastFieldMsg)
 				// triggers saveForm; WL button actions are handled below.
 				msg := cmd()
@@ -303,6 +305,7 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return c, nil
 			}
+			c.enableGlobalAPRSIfTurnedOn(wasAprs)
 			// Key not handled by station form — forward to viewport for scrolling,
 			// then clamp to prevent scrolling past the content end.
 			var cmd tea.Cmd
@@ -938,6 +941,16 @@ func (c *LogbookChooser) testWavelogConnection() tea.Cmd {
 			}
 		}
 		return wlTestMsg{}
+	}
+}
+
+// enableGlobalAPRSIfTurnedOn turns on the global APRS integration when the
+// operator just switched APRS TX on for this logbook, saving a trip to the
+// Integrations menu. Turning TX off never disables the global integration.
+func (c *LogbookChooser) enableGlobalAPRSIfTurnedOn(wasEnabled bool) {
+	if !wasEnabled && c.station.AprsEnabled && !c.app.Config.Integrations.APRS.Enabled {
+		c.app.Config.Integrations.APRS.Enabled = true
+		c.toasts.Info("APRS: integration enabled")
 	}
 }
 
