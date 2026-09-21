@@ -52,6 +52,12 @@ type App struct {
 	Offline          bool                  // when true, skip all network operations
 	InetOnline       bool                  // true when internet connectivity check succeeded
 
+	// dbMu guards dbHolders: retired logbook databases stay open while
+	// background operations captured them via KeepDBAlive, so in-flight
+	// work can finish on the old logbook after a switch.
+	dbMu      sync.Mutex
+	dbHolders map[*sql.DB]*dbHolder
+
 	// lastWSJTX tracks the effective WSJT-X config last applied to the
 	// listener. Used to avoid unnecessary Stop/Start cycles when config
 	// is saved but the WSJT-X settings haven't changed.
@@ -815,7 +821,7 @@ func (a *App) SwitchLogbook(name string) error {
 	}
 
 	if a.DB != nil {
-		a.DB.Close()
+		a.retireDB(a.DB)
 	}
 
 	lb := a.Config.Logbooks[name]
@@ -851,6 +857,68 @@ func (a *App) SwitchLogbook(name string) error {
 	a.ScheduleAPRSRestart()
 
 	return nil
+}
+
+// dbHolder tracks background operations that reference a logbook database
+// after it was replaced by SwitchLogbook. A retired database is closed only
+// when the last holder releases it.
+type dbHolder struct {
+	db      *sql.DB
+	refs    int
+	retired bool
+}
+
+// KeepDBAlive marks db as in use by a background operation. The returned
+// release func must be called exactly once when the operation stops using db.
+// SwitchLogbook retires replaced databases instead of closing them outright,
+// so commands that captured the old logbook can finish without touching or
+// corrupting the new one.
+func (a *App) KeepDBAlive(db *sql.DB) func() {
+	if db == nil {
+		return func() {}
+	}
+	a.dbMu.Lock()
+	if a.dbHolders == nil {
+		a.dbHolders = make(map[*sql.DB]*dbHolder)
+	}
+	h := a.dbHolders[db]
+	if h == nil {
+		h = &dbHolder{db: db}
+		a.dbHolders[db] = h
+	}
+	h.refs++
+	a.dbMu.Unlock()
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			a.dbMu.Lock()
+			h.refs--
+			if h.refs == 0 {
+				delete(a.dbHolders, db)
+				if h.retired {
+					h.db.Close()
+				}
+			}
+			a.dbMu.Unlock()
+		})
+	}
+}
+
+// retireDB closes db unless background operations still hold it via
+// KeepDBAlive — in that case the close is deferred to the last release.
+func (a *App) retireDB(db *sql.DB) {
+	a.dbMu.Lock()
+	defer a.dbMu.Unlock()
+	if h := a.dbHolders[db]; h != nil {
+		h.retired = true
+		if h.refs == 0 {
+			delete(a.dbHolders, db)
+			db.Close()
+		}
+		return
+	}
+	db.Close()
 }
 
 func (a *App) StationSummary() string {

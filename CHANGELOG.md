@@ -37,6 +37,7 @@
 ### Fixes
 - Re-running a Wavelog download when the local log is already up to date no longer shows a confusing "Downloaded 0 QSOs." dialog — it now says "Wavelog is up to date — no new contacts to download." (aborted downloads still report their real count).
 - PSK Reporter only toasts an update when the fetch actually returned spots; an empty fetch stays silent.
+- Background Wavelog uploads and WSJT-X enrichment now capture an immutable operation context (database, logbook identity, destination credentials) at command creation. Switching logbooks mid-operation can no longer enrich or upload a contact from the wrong logbook — the captured database is kept alive until the operation finishes, and result messages carry the logbook identity so stale results are dropped.
 - The wizard's final step returned the `tea.Quit` function instead of a quit message, so completing the summary never actually exited the wizard — it now sends a proper quit message and launches CQOps.
 - The QSO form's DX Cluster line no longer silently drops the continent filter when no same-continent spots are near the frequency — spots from other continents cannot leak into the form (or into the Ctrl+P spot cycling). The DXC pane's explicit continent filter now also overrides the station continent for that line.
 - Recent QSOs now appear immediately after a Wavelog download or ADIF import: the deferred QSO-refresh command was silently discarded by the update loop (the flag was consumed but the refresh never ran), leaving the QSO pane empty until restart.

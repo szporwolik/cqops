@@ -2,11 +2,13 @@ package app
 
 import (
 	"errors"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/szporwolik/cqops/internal/aprs"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/wsjtx"
 )
 
@@ -18,6 +20,68 @@ import (
 // WSJT-X config (enabled, host, port) actually changes.
 //
 // Tests that require Start() are limited because applog is nil in tests.
+
+// =============================================================================
+// Database keep-alive tests
+// =============================================================================
+
+// TestKeepDBAliveDefersCloseUntilReleased verifies that a database held by a
+// background operation stays open across SwitchLogbook and is closed only
+// once the last holder releases it.
+func TestKeepDBAliveDefersCloseUntilReleased(t *testing.T) {
+	dir := t.TempDir()
+	dbA := filepath.Join(dir, "a.db")
+	dbB := filepath.Join(dir, "b.db")
+
+	cfg := config.DefaultConfig()
+	lbA := config.Logbook{Station: config.Station{Callsign: "AA1AA"}, DatabasePath: dbA}
+	lbB := config.Logbook{Station: config.Station{Callsign: "BB2BB"}, DatabasePath: dbB}
+	cfg.Logbooks = map[string]config.Logbook{"a": lbA, "b": lbB}
+	cfg.State.ActiveLogbook = "a"
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := config.Save(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	db, err := store.InitDB(dbA)
+	if err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+	a := &App{
+		Config:      cfg,
+		ConfigPath:  cfgPath,
+		LogbookName: "a",
+		Logbook:     &lbA,
+		DB:          db,
+	}
+	t.Cleanup(a.StopAPRSTimer)
+
+	// A background operation holds the database while the user switches.
+	release := a.KeepDBAlive(db)
+	if err := a.SwitchLogbook("b"); err != nil {
+		t.Fatalf("switch logbook: %v", err)
+	}
+
+	// The old database must still be usable — the operation keeps it alive.
+	if err := db.Ping(); err != nil {
+		t.Errorf("held database should stay open across switch: %v", err)
+	}
+	if a.DB == db {
+		t.Error("active database should be the new logbook's")
+	}
+
+	// Releasing the last holder closes the retired database.
+	release()
+	if err := db.Ping(); err == nil {
+		t.Error("retired database should be closed after the last release")
+	}
+
+	// The active database is unaffected.
+	if err := a.DB.Ping(); err != nil {
+		t.Errorf("active database should remain open: %v", err)
+	}
+	a.DB.Close()
+}
 
 func TestMaybeRestartWSJTX_NoOpWhenUnchanged(t *testing.T) {
 	enabled := false

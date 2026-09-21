@@ -3,6 +3,7 @@ package tui
 import (
 	"encoding/json"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -75,6 +76,117 @@ func TestWSJTXAutoLogStoresWavelogID(t *testing.T) {
 	}
 	if q.WavelogID != 55 {
 		t.Errorf("wavelog_id = %d, want 55", q.WavelogID)
+	}
+}
+
+// TestWSJTXAutoLog_SwitchKeepsOriginalLogbookTarget verifies the captured
+// operation context: when the user switches logbooks while the enrich/upload
+// command is in flight, the write and upload still apply to the logbook the
+// QSO was logged into, and the result carries that logbook's identity.
+func TestWSJTXAutoLog_SwitchKeepsOriginalLogbookTarget(t *testing.T) {
+	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/qso" || r.Method != http.MethodPost {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{"id": 55, "call": "SP9MOA"},
+			"meta": map[string]string{"resource": "qso", "method": "POST"},
+		})
+	})
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	m.App.Logbook.Wavelog.Enabled = true
+	m.App.Logbook.Wavelog.URL = srv.URL
+	m.App.Logbook.Wavelog.APIKey = "wl2_test"
+	m.App.Logbook.Wavelog.StationProfileID = "1"
+	m.inetOnline = true
+
+	adif := "<CALL:6>SP9MOA <BAND:3>20m <FREQ:9>14.074550 <MODE:3>FT8 " +
+		"<QSO_DATE:8>20260921 <TIME_ON:6>120000 <RST_SENT:3>-10 <RST_RCVD:3>-05 <GRIDSQUARE:6>JO90aa <EOR>"
+
+	cmd, retry := m.logQSOFromADIF(adif)
+	if retry {
+		t.Fatal("logQSOFromADIF requested retry")
+	}
+	if cmd == nil {
+		t.Fatal("expected upload command")
+	}
+
+	// Simulate a logbook switch while the command is in flight: the active
+	// database is replaced (row ids can collide with the new logbook).
+	oldDB := m.App.DB
+	dbB, err := store.InitDB(filepath.Join(t.TempDir(), "b.db"))
+	if err != nil {
+		t.Fatalf("init db b: %v", err)
+	}
+	t.Cleanup(func() { dbB.Close() })
+	m.App.DB = dbB
+	m.App.LogbookName = "b"
+
+	// Execute the captured batch now — everything must target oldDB.
+	msg := cmd()
+	batch, ok := msg.(tea.BatchMsg)
+	if !ok {
+		t.Fatalf("expected tea.BatchMsg, got %T", msg)
+	}
+	var result wlUploadResultMsg
+	found := false
+	for _, sub := range batch {
+		subMsg := sub()
+		if r, ok := subMsg.(wlUploadResultMsg); ok {
+			result = r
+			found = true
+			continue
+		}
+		if subMsg == nil {
+			continue
+		}
+		next, _ := m.Update(subMsg)
+		m = next.(*Model)
+	}
+	if !found {
+		t.Fatal("enrich/upload command did not produce wlUploadResultMsg")
+	}
+	if result.logbook != "test" {
+		t.Errorf("result logbook = %q, want the original 'test'", result.logbook)
+	}
+
+	// The remote id must be stored in the original logbook…
+	qs, err := store.GetQSOByID(oldDB, result.qID)
+	if err != nil || qs == nil {
+		t.Fatalf("original logbook QSO missing: %v", err)
+	}
+	if qs.WavelogID != 55 {
+		t.Errorf("original logbook WavelogID = %d, want 55", qs.WavelogID)
+	}
+	// …and the new logbook must stay untouched.
+	newQsos, err := store.ListAllQSOs(dbB)
+	if err != nil {
+		t.Fatalf("list new logbook: %v", err)
+	}
+	if len(newQsos) != 0 {
+		t.Errorf("new logbook has %d QSOs, want 0 — upload hit the wrong database", len(newQsos))
+	}
+
+	// The handler must drop the foreign result: no new toasts, no refresh flag.
+	m.needRefresh = false
+	toastsBefore := len(m.toasts.Active())
+	consumed, nextCmd := m.handleAsyncMessages(result)
+	if !consumed {
+		t.Error("foreign wlUploadResultMsg should still be consumed")
+	}
+	if nextCmd != nil {
+		t.Error("foreign result should not trigger a refresh command")
+	}
+	if m.needRefresh {
+		t.Error("foreign result should not set needRefresh")
+	}
+	if len(m.toasts.Active()) != toastsBefore {
+		t.Error("foreign result should not toast")
 	}
 }
 

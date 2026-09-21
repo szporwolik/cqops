@@ -233,7 +233,7 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 // Returns nil when offline, when neither QRZ enrichment nor Wavelog upload is
 // possible, or when the call is empty.
 func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
-	if call == "" || !m.inetOnline {
+	if call == "" || !m.inetOnline || m.App == nil || m.App.DB == nil {
 		return nil
 	}
 	qrzenabled := m.App.Config.Integrations.Callbook.QRZ.Enabled && m.App.Config.Integrations.Callbook.QRZ.User != ""
@@ -242,14 +242,30 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 	if !qrzenabled && !wlenabled && m.callbookRegistry == nil {
 		return nil // nothing to do
 	}
+
+	// Immutable operation context — after this point the user may switch
+	// logbooks, which closes and replaces App.DB. Everything the command
+	// touches must come from this snapshot so enrichment and upload always
+	// apply to the logbook the QSO was logged into.
+	ctx := wlOpCtx{logbook: m.App.LogbookName, db: m.App.DB}
+	if wl != nil {
+		ctx.url, ctx.key, ctx.stationID = wl.URL, wl.APIKey, wl.StationProfileID
+	}
+	online := m.inetOnline
+	useCTY := m.App.Config.General.UseCTY
+	bigcty := m.App.BigCTY
+	myGrid := m.effectiveGrid()
+	release := m.App.KeepDBAlive(ctx.db)
+
 	return func() tea.Msg {
+		defer release()
 		// Step 1: enrich via callbook providers (best-effort).
-		if m.callbookRegistry != nil && m.inetOnline {
+		if m.callbookRegistry != nil && online {
 			data, err := callbookRegLookup(m, call)
 			if err != nil {
 				applog.Warn("WSJT-X: callbook enrichment failed", "call", call, "error", err)
 			} else if data != nil && data.Callsign != "" {
-				if err := store.UpdateQSOEnrichment(m.App.DB, qsoID, store.EnrichmentData{
+				if err := store.UpdateQSOEnrichment(ctx.db, qsoID, store.EnrichmentData{
 					Name:       data.Name,
 					QTH:        data.QTH,
 					Country:    data.Country,
@@ -268,10 +284,10 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 		}
 
 		// Step 1b: enrich Country, CQ/ITU zone, and DXCC from Big CTY.
-		if m.App.Config.General.UseCTY && m.App.BigCTY != nil {
-			qs, _ := store.GetQSOByID(m.App.DB, qsoID)
+		if useCTY && bigcty != nil {
+			qs, _ := store.GetQSOByID(ctx.db, qsoID)
 			if qs != nil {
-				if p := m.dxccLookup(call); p != nil {
+				if p := bigcty.Find(call); p != nil {
 					ed := store.EnrichmentData{}
 					need := false
 					if qs.Country == "" && p.Name != "" {
@@ -291,7 +307,7 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 						need = true
 					}
 					if need {
-						if err := store.UpdateQSOEnrichment(m.App.DB, qsoID, ed); err != nil {
+						if err := store.UpdateQSOEnrichment(ctx.db, qsoID, ed); err != nil {
 							applog.Warn("WSJT-X: Big CTY enrichment write failed", "call", call, "qso_id", qsoID, "error", err)
 						} else {
 							applog.Debug("WSJT-X: Big CTY enrichment", "call", call, "country", ed.Country, "dxcc", ed.DXCC)
@@ -302,7 +318,7 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 		}
 
 		// Step 2: load the enriched QSO from DB.
-		qs, err := store.GetQSOByID(m.App.DB, qsoID)
+		qs, err := store.GetQSOByID(ctx.db, qsoID)
 		if err != nil {
 			applog.Error("WSJT-X: cannot load QSO for Wavelog upload", "qso_id", qsoID, "error", err)
 			return nil
@@ -310,16 +326,18 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 
 		// Step 2b: recompute distance/bearing after enrichment. WSJT-X may
 		// not include a grid, or the enriched grid may be more precise.
-		if myGrid := m.effectiveGrid(); myGrid != "" && qs.GridSquare != "" {
+		if myGrid != "" && qs.GridSquare != "" {
 			qs.Distance = gridDistanceKm(myGrid, qs.GridSquare)
 			qs.Bearing = gridBearingDeg(myGrid, qs.GridSquare)
-			m.App.DB.Exec(`UPDATE qsos SET distance=?, bearing=? WHERE id=?`,
+			ctx.db.Exec(`UPDATE qsos SET distance=?, bearing=? WHERE id=?`,
 				qs.Distance, qs.Bearing, qsoID)
 		}
 
 		// Push enriched QSO to dashboard — force-push because enrichment
 		// updates fields (country, grid, distance) without changing QSO IDs.
-		if m.http.client != nil && m.http.online {
+		// Only while still on the same logbook: the push reads the live
+		// database and must not reflect a different logbook's rows.
+		if ctx.logbook == m.App.LogbookName && m.http.client != nil && m.http.online {
 			ds := m.http.client.State()
 			m.forcePushDashboardRecent(ds)
 			m.pushDashboardToday(ds)
@@ -327,11 +345,11 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 
 		// Step 3: upload the enriched QSO to Wavelog (single JSON create
 		// stores the remote id locally).
-		if !wlenabled || !m.inetOnline {
-			return wsjtxEnrichDoneMsg{}
+		if !wlenabled || !online {
+			return wsjtxEnrichDoneMsg{logbook: ctx.logbook}
 		}
-		ok, isDup, remoteID, uploadErr := postQSOSingle(wl.URL, wl.APIKey, wl.StationProfileID, qs, m.App.DB)
-		return wlUploadResultMsg{qID: qsoID, call: call, ok: ok, isDup: isDup, remoteID: remoteID, err: uploadErr}
+		ok, isDup, remoteID, uploadErr := postQSOSingle(ctx.url, ctx.key, ctx.stationID, qs, ctx.db)
+		return wlUploadResultMsg{qID: qsoID, call: call, logbook: ctx.logbook, ok: ok, isDup: isDup, remoteID: remoteID, err: uploadErr}
 	}
 }
 

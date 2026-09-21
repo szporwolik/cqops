@@ -112,20 +112,45 @@ func (m *Model) maybeUploadToWavelog(qs *qso.QSO) tea.Cmd {
 	return m.uploadQSOToWavelog(qs)
 }
 
+// wlOpCtx is an immutable snapshot of the logbook database and Wavelog
+// destination, captured when a background command is created. SwitchLogbook
+// closes and replaces App.DB, so background commands must only touch this
+// snapshot — never the live model fields.
+type wlOpCtx struct {
+	logbook   string  // logbook ID the QSO belongs to (routing of results)
+	db        *sql.DB // captured handle, kept alive via App.KeepDBAlive
+	url       string  // Wavelog destination
+	key       string
+	stationID string
+}
+
 // uploadQSOToWavelog returns a tea.Cmd that uploads a single QSO to Wavelog
 // via the v2 single-JSON create, so the remote id can be stored locally.
 func (m *Model) uploadQSOToWavelog(qs *qso.QSO) tea.Cmd {
+	if m.App == nil || m.App.DB == nil {
+		return nil
+	}
 	wl := m.App.Logbook.Wavelog
 	if wl == nil || !wl.Enabled || !m.inetOnline || wl.StationProfileID == "" {
 		return nil
 	}
-	url := wl.URL
-	key := wl.APIKey
-	stationID := wl.StationProfileID
+
+	// Capture the operation context up front: after this point the user may
+	// switch logbooks, which closes and replaces App.DB — the command must
+	// only touch the captured database and destination.
+	ctx := wlOpCtx{
+		logbook:   m.App.LogbookName,
+		db:        m.App.DB,
+		url:       wl.URL,
+		key:       wl.APIKey,
+		stationID: wl.StationProfileID,
+	}
+	release := m.App.KeepDBAlive(ctx.db)
 
 	return func() tea.Msg {
-		ok, isDup, remoteID, err := postQSOSingle(url, key, stationID, qs, m.App.DB)
-		return wlUploadResultMsg{qID: qs.ID, call: qs.Call, ok: ok, isDup: isDup, remoteID: remoteID, err: err}
+		defer release()
+		ok, isDup, remoteID, err := postQSOSingle(ctx.url, ctx.key, ctx.stationID, qs, ctx.db)
+		return wlUploadResultMsg{qID: qs.ID, call: qs.Call, logbook: ctx.logbook, ok: ok, isDup: isDup, remoteID: remoteID, err: err}
 	}
 }
 
@@ -292,6 +317,7 @@ func backfillQSOID(url, key, sid string, qID int64, db *sql.DB) {
 type wlUploadResultMsg struct {
 	qID      int64
 	call     string
+	logbook  string // logbook ID at command creation; handler drops foreign results
 	ok       bool
 	isDup    bool
 	remoteID int64
@@ -350,4 +376,6 @@ func stripMyGridsquare(adif string) string {
 // wsjtxEnrichDoneMsg signals that WSJT-X QRZ enrichment has completed
 // for an auto-logged QSO. The handler triggers a Recent QSOs refresh so
 // the name/QTH/country fields appear immediately.
-type wsjtxEnrichDoneMsg struct{}
+type wsjtxEnrichDoneMsg struct {
+	logbook string // logbook ID at command creation; handler drops foreign results
+}

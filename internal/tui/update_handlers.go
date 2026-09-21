@@ -326,6 +326,12 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 		m.rc.status = ""
 		return true, radioCmd
 	case wlUploadResultMsg:
+		// A result for a logbook the user has switched away from: the editor
+		// now shows a different database (IDs may collide), so skip all UI
+		// updates and notifications.
+		if r.logbook != "" && r.logbook != m.App.LogbookName {
+			return true, nil
+		}
 		if r.qID != 0 && m.ui.logbookEditor != nil {
 			m.ui.logbookEditor.UpdateWLStatus(r.qID, r.ok, r.remoteID)
 		}
@@ -369,6 +375,11 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 		m.needRefresh = true
 		return true, m.refreshQSOS()
 	case wsjtxEnrichDoneMsg:
+		// Enrichment finished for a logbook the user has switched away from
+		// — refreshing would reload the new logbook's rows for nothing.
+		if r.logbook != "" && r.logbook != m.App.LogbookName {
+			return true, nil
+		}
 		m.needRefresh = true
 		return true, m.refreshQSOS()
 	case qrzStatusMsg:

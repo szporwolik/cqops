@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -255,6 +256,77 @@ func TestWavelogUploadMockDuplicate(t *testing.T) {
 	// Duplicate uploads should still report ok=true
 	if !result.ok {
 		t.Error("Duplicate upload should report ok=true")
+	}
+}
+
+// TestWavelogUploadAfterSwitchTargetsCapturedLogbook verifies that a single
+// QSO upload command created for logbook A still stores the remote id in A
+// even when the user switches to logbook B before the command runs.
+func TestWavelogUploadAfterSwitchTargetsCapturedLogbook(t *testing.T) {
+	srv := newWavelogTestServer(t, wavelogQSOHandler("ok", []string{""}, 0))
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	m.App.Logbook.Wavelog.Enabled = true
+	m.App.Logbook.Wavelog.URL = srv.URL
+	m.App.Logbook.Wavelog.APIKey = "test-key"
+	m.App.Logbook.Wavelog.StationProfileID = "1"
+	m.inetOnline = true
+
+	oldDB := m.App.DB
+	qs := qso.NewQSO()
+	qs.Call = "SP9MOA"
+	qs.Band = "20m"
+	qs.Mode = "SSB"
+	qs.QSODate = "20260614"
+	qs.TimeOn = "120000"
+	id, err := store.InsertQSO(oldDB, qs)
+	if err != nil {
+		t.Fatalf("insert QSO: %v", err)
+	}
+	qs.ID = id
+
+	cmd := m.uploadQSOToWavelog(qs)
+	if cmd == nil {
+		t.Fatal("uploadQSOToWavelog should return a command")
+	}
+
+	// Simulate a logbook switch while the upload is in flight.
+	dbB, err := store.InitDB(filepath.Join(t.TempDir(), "b.db"))
+	if err != nil {
+		t.Fatalf("init db b: %v", err)
+	}
+	t.Cleanup(func() { dbB.Close() })
+	m.App.DB = dbB
+	m.App.LogbookName = "b"
+
+	msg := cmd()
+	result, ok := msg.(wlUploadResultMsg)
+	if !ok {
+		t.Fatalf("Expected wlUploadResultMsg, got %T", msg)
+	}
+	if !result.ok {
+		t.Error("Upload should succeed with mock server")
+	}
+	if result.logbook != "test" {
+		t.Errorf("result logbook = %q, want 'test'", result.logbook)
+	}
+
+	// Remote id must land in the original logbook…
+	uploaded, err := store.GetQSOByID(oldDB, id)
+	if err != nil || uploaded == nil {
+		t.Fatalf("original logbook QSO missing: %v", err)
+	}
+	if uploaded.WavelogID == 0 {
+		t.Error("original logbook should have the remote Wavelog id stored")
+	}
+	// …and the new logbook must stay untouched.
+	newQsos, err := store.ListAllQSOs(dbB)
+	if err != nil {
+		t.Fatalf("list new logbook: %v", err)
+	}
+	if len(newQsos) != 0 {
+		t.Errorf("new logbook has %d QSOs, want 0", len(newQsos))
 	}
 }
 
