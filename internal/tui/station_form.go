@@ -56,6 +56,8 @@ type StationForm struct {
 	gpsGridFocus bool
 	HideGPSGrid  bool // set true to hide checkbox (e.g. in wizard)
 	HideOperator bool // set true to hide operator selector (e.g. in wizard)
+	HideIARU     bool // set true to hide the IARU Region row (wizard shows Continent only)
+	Advanced     bool // set false to hide the optional reference/zone fields (wizard)
 
 	// Operator cycling (Space-toggleable, like Continent/IARU).
 	operators []config.Operator
@@ -137,6 +139,7 @@ func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder strin
 		AprsComment:     acmt,
 		AprsSendLoc:     true, // beaconing on by default when APRS is enabled
 		opIdx:           -1,
+		Advanced:        true,
 	}
 }
 
@@ -260,24 +263,40 @@ func (f *StationForm) NextInput() {
 		f.Locator.Focus()
 	case f.opFocus:
 		f.opFocus = false
-		f.SOTARef.Focus()
+		if f.Advanced {
+			f.SOTARef.Focus()
+		} else {
+			f.wlCbFocus = true
+		}
 	case f.Locator.Focused():
 		f.Locator.Blur()
 		if f.HideGPSGrid {
-			f.iaruFocus = true
+			if f.HideIARU {
+				f.contFocus = true
+			} else {
+				f.iaruFocus = true
+			}
 		} else {
 			f.gpsGridFocus = true
 		}
 	case f.gpsGridFocus:
 		f.gpsGridFocus = false
-		f.iaruFocus = true
+		if f.HideIARU {
+			f.contFocus = true
+		} else {
+			f.iaruFocus = true
+		}
 	case f.iaruFocus:
 		f.iaruFocus = false
 		f.contFocus = true
 	case f.contFocus:
 		f.contFocus = false
 		if f.HideOperator {
-			f.SOTARef.Focus()
+			if f.Advanced {
+				f.SOTARef.Focus()
+			} else {
+				f.wlCbFocus = true
+			}
 		} else {
 			f.opFocus = true
 		}
@@ -317,12 +336,12 @@ func (f *StationForm) NextInput() {
 		f.WlKey.Focus()
 	case f.WlKey.Focused():
 		f.WlKey.Blur()
-		f.WlStationID.Focus()
-	case f.WlStationID.Focused():
-		f.WlStationID.Blur()
 		f.wlBtnFocus = 1
 	case f.wlBtnFocus == 1:
 		f.wlBtnFocus = 0
+		f.WlStationID.Focus()
+	case f.WlStationID.Focused():
+		f.WlStationID.Blur()
 		if f.HideGPSGrid {
 			f.Name.Focus()
 		} else {
@@ -412,7 +431,7 @@ func (f *StationForm) PrevInput() {
 	// Wavelog section — backwards.
 	case f.wlBtnFocus == 1:
 		f.wlBtnFocus = 0
-		f.WlStationID.Focus()
+		f.WlKey.Focus()
 	case f.opFocus:
 		f.opFocus = false
 		f.contFocus = true
@@ -444,7 +463,15 @@ func (f *StationForm) PrevInput() {
 		f.Locator.Focus()
 	case f.contFocus:
 		f.contFocus = false
-		f.iaruFocus = true
+		if f.HideIARU {
+			if f.HideGPSGrid {
+				f.Locator.Focus()
+			} else {
+				f.gpsGridFocus = true
+			}
+		} else {
+			f.iaruFocus = true
+		}
 	case f.CQZone.Focused():
 		f.CQZone.Blur()
 		f.WWFFRef.Focus()
@@ -456,7 +483,13 @@ func (f *StationForm) PrevInput() {
 		f.ITUZone.Focus()
 	case f.wlCbFocus:
 		f.wlCbFocus = false
-		f.SIGInfo.Focus()
+		if f.Advanced {
+			f.SIGInfo.Focus()
+		} else if f.HideOperator {
+			f.contFocus = true
+		} else {
+			f.opFocus = true
+		}
 	case f.SIG.Focused():
 		f.SIG.Blur()
 		f.DXCC.Focus()
@@ -471,7 +504,7 @@ func (f *StationForm) PrevInput() {
 		f.WlURL.Focus()
 	case f.WlStationID.Focused():
 		f.WlStationID.Blur()
-		f.WlKey.Focus()
+		f.wlBtnFocus = 1
 	}
 	f.unmaskSecretsOnFocus()
 }
@@ -496,6 +529,66 @@ func (f *StationForm) BlurAll() {
 	f.opFocus = false
 	f.wlBtnFocus = 0
 	f.aprsBtnFocus = 0
+}
+
+// lastFieldFocused reports whether the last focusable field currently has
+// focus. The wizard uses it to hand focus to its Save & Next button.
+func (f *StationForm) lastFieldFocused() bool {
+	if f.HideGPSGrid {
+		if f.WlEnabled {
+			return f.WlStationID.Focused()
+		}
+		return f.wlCbFocus
+	}
+	if f.AprsEnabled {
+		return f.AprsComment.Focused()
+	}
+	if f.WlEnabled {
+		return f.WlStationID.Focused()
+	}
+	return f.wlCbFocus
+}
+
+// blurLastField clears focus from the last focusable field.
+func (f *StationForm) blurLastField() {
+	if f.HideGPSGrid {
+		if f.WlEnabled {
+			f.WlStationID.Blur()
+		} else {
+			f.wlCbFocus = false
+		}
+		return
+	}
+	if f.AprsEnabled {
+		f.AprsComment.Blur()
+		return
+	}
+	if f.WlEnabled {
+		f.WlStationID.Blur()
+		return
+	}
+	f.wlCbFocus = false
+}
+
+// focusLastField restores focus to the last focusable field.
+func (f *StationForm) focusLastField() {
+	if f.HideGPSGrid {
+		if f.WlEnabled {
+			f.WlStationID.Focus()
+		} else {
+			f.wlCbFocus = true
+		}
+		return
+	}
+	if f.AprsEnabled {
+		f.AprsComment.Focus()
+		return
+	}
+	if f.WlEnabled {
+		f.WlStationID.Focus()
+		return
+	}
+	f.wlCbFocus = true
 }
 
 // unmaskSecretsOnFocus sets EchoNormal on any secret textinput that currently
@@ -698,23 +791,26 @@ func (f *StationForm) View() tea.View {
 	}
 
 	// IARU Region display (focusable, Space/Enter to cycle) — right after grid.
-	iaruLabel := "IARU Region:"
-	if f.IARURegion < 1 || f.IARURegion > 3 {
-		f.IARURegion = 1
+	// Hidden in the wizard, which shows the Continent selector only.
+	if !f.HideIARU {
+		iaruLabel := "IARU Region:"
+		if f.IARURegion < 1 || f.IARURegion > 3 {
+			f.IARURegion = 1
+		}
+		iaruVal := fmt.Sprintf("%d — %s", f.IARURegion, iaruRegionName(f.IARURegion))
+		prefix := "  "
+		lbl := S.FormLabelWide.Align(lipgloss.Left).Render(iaruLabel)
+		val := ValueStyle.Render(iaruVal)
+		if f.iaruFocus {
+			prefix = S.FormPrefixOn.Render("> ")
+			lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(iaruLabel)
+			val = CursorStyle.Render(iaruVal) + " " + DimStyle.Render("(Space)")
+		}
+		b.WriteString(padOrTrunc(
+			lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val),
+			availW))
+		b.WriteString("\n")
 	}
-	iaruVal := fmt.Sprintf("%d — %s", f.IARURegion, iaruRegionName(f.IARURegion))
-	prefix := "  "
-	lbl := S.FormLabelWide.Align(lipgloss.Left).Render(iaruLabel)
-	val := ValueStyle.Render(iaruVal)
-	if f.iaruFocus {
-		prefix = S.FormPrefixOn.Render("> ")
-		lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(iaruLabel)
-		val = CursorStyle.Render(iaruVal) + " " + DimStyle.Render("(Space)")
-	}
-	b.WriteString(padOrTrunc(
-		lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val),
-		availW))
-	b.WriteString("\n")
 
 	// Continent selector — focusable, Space/Enter to cycle.
 	contLabel := "Continent:"
@@ -761,25 +857,27 @@ func (f *StationForm) View() tea.View {
 	}
 
 	// Remaining text fields.
-	remFields := []fieldDef{
-		{"SOTA Ref (opt):", &f.SOTARef},
-		{"POTA Ref (opt):", &f.POTARef},
-		{"WWFF Ref (opt):", &f.WWFFRef},
-	}
-	for _, field := range remFields {
-		b.WriteString(f.renderFieldLine(field.label, field.ti, availW))
-	}
+	if f.Advanced {
+		remFields := []fieldDef{
+			{"SOTA Ref (opt):", &f.SOTARef},
+			{"POTA Ref (opt):", &f.POTARef},
+			{"WWFF Ref (opt):", &f.WWFFRef},
+		}
+		for _, field := range remFields {
+			b.WriteString(f.renderFieldLine(field.label, field.ti, availW))
+		}
 
-	// CQ Zone, ITU Zone, DXCC, SIG, SIG Info — text inputs.
-	zoneFields := []fieldDef{
-		{"CQ Zone (opt):", &f.CQZone},
-		{"ITU Zone (opt):", &f.ITUZone},
-		{"DXCC ID (opt):", &f.DXCC},
-		{"SIG (opt):", &f.SIG},
-		{"SIG Info (opt):", &f.SIGInfo},
-	}
-	for _, field := range zoneFields {
-		b.WriteString(f.renderFieldLine(field.label, field.ti, availW))
+		// CQ Zone, ITU Zone, DXCC, SIG, SIG Info — text inputs.
+		zoneFields := []fieldDef{
+			{"CQ Zone (opt):", &f.CQZone},
+			{"ITU Zone (opt):", &f.ITUZone},
+			{"DXCC ID (opt):", &f.DXCC},
+			{"SIG (opt):", &f.SIG},
+			{"SIG Info (opt):", &f.SIGInfo},
+		}
+		for _, field := range zoneFields {
+			b.WriteString(f.renderFieldLine(field.label, field.ti, availW))
+		}
 	}
 
 	// Wavelog checkbox
@@ -814,7 +912,21 @@ func (f *StationForm) View() tea.View {
 			b.WriteString("\n")
 		}
 
-		// Station ID — read-only, with (Space) hint and truncation.
+		// Button helper — fixed padding so buttons never shift on focus.
+		renderBtn := func(focusVal int, text, hint string) {
+			prefix := "    "
+			styled := InputStyle.Render(text)
+			if f.wlBtnFocus == focusVal {
+				prefix = S.FormPrefixOn.Render("> ") + "  "
+				styled = CursorStyle.Render(text)
+			}
+			line := prefix + styled + " " + DimStyle.Render(hint)
+			b.WriteString(padOrTrunc(line, availW))
+			b.WriteString("\n")
+		}
+		renderBtn(1, "[ Update ]", "(Space) fetch stations from Wavelog")
+
+		// Station ID — read-only, shown below the button in natural flow.
 		{
 			const labelW = 2 + 17
 			raw := strings.TrimSpace(f.WlStationID.Value())
@@ -841,20 +953,6 @@ func (f *StationForm) View() tea.View {
 				availW-5))
 			b.WriteString("\n")
 		}
-
-		// Button helper — fixed padding so buttons never shift on focus.
-		renderBtn := func(focusVal int, text, hint string) {
-			prefix := "    "
-			styled := InputStyle.Render(text)
-			if f.wlBtnFocus == focusVal {
-				prefix = S.FormPrefixOn.Render("> ") + "  "
-				styled = CursorStyle.Render(text)
-			}
-			line := prefix + styled + " " + DimStyle.Render(hint)
-			b.WriteString(padOrTrunc(line, availW))
-			b.WriteString("\n")
-		}
-		renderBtn(1, "[ Update ]", "fetch stations from Wavelog")
 	}
 
 	// APRS section — hidden in wizard.

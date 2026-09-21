@@ -6,8 +6,11 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/version"
 )
 
 // =============================================================================
@@ -37,14 +40,211 @@ func newTestWizard(t *testing.T, callsign, locator string) *Wizard {
 	w.width = 100
 	w.height = 30
 
-	// Pick a valid timezone index.
-	for i, tz := range config.Timezones {
-		if tz == "UTC" {
-			w.tzIndex = i
-			break
+	return w
+}
+
+func TestWizardSaveNextButtonStationStep(t *testing.T) {
+	w := newTestWizard(t, "SP9MOA", "JO90")
+	w.station.Name.SetValue("Home")
+	w.width = 100
+	w.height = 30
+
+	v := w.View()
+	if !strings.Contains(v.Content, "[ Save & Next ]") || !strings.Contains(v.Content, "(Space)") {
+		t.Errorf("station step should render the Save & Next button with (Space) hint:\n%s", v.Content)
+	}
+
+	// Tab from the last focusable field hands focus to the button.
+	w.station.wlCbFocus = true // Wavelog disabled: checkbox is the last field
+	w.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if !w.saveBtnFocus {
+		t.Fatal("Tab on last field should focus the Save & Next button")
+	}
+
+	// Space activates the button and advances to the rig step.
+	w.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
+	if w.step != stepRig {
+		t.Errorf("step = %v, want rig", w.step)
+	}
+	if w.saveBtnFocus {
+		t.Error("button focus should reset after advancing")
+	}
+}
+
+func TestWizardSaveNextButtonEnterAlsoWorks(t *testing.T) {
+	w := newTestWizard(t, "SP9MOA", "JO90")
+	w.station.Name.SetValue("Home")
+	w.station.wlCbFocus = true
+	w.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if !w.saveBtnFocus {
+		t.Fatal("Tab on last field should focus the Save & Next button")
+	}
+	w.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if w.step != stepRig {
+		t.Errorf("step = %v, want rig", w.step)
+	}
+}
+
+func TestWizardSaveNextButtonRigStep(t *testing.T) {
+	w := newTestWizard(t, "SP9MOA", "JO90")
+	w.step = stepRig
+	w.rigForm.Name.SetValue("Home Rig")
+	w.rigForm.focus = rigFieldWsjtx // defaults: no backend, no rotor, no WSJT-X
+
+	w.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if !w.saveBtnFocus {
+		t.Fatal("Tab on rig last field should focus the Save & Next button")
+	}
+	w.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
+	if w.step != stepSummary {
+		t.Errorf("step = %v, want summary", w.step)
+	}
+	if !w.saveBtnFocus {
+		t.Error("Save & Start button should start focused on the summary")
+	}
+
+	// Shift+Tab from the button returns to the form's last field.
+	w.saveBtnFocus = true
+	w.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+	if w.saveBtnFocus {
+		t.Error("shift+tab should leave the button")
+	}
+	if !w.rigForm.OnLastField() {
+		t.Error("shift+tab should return to the rig form's last field")
+	}
+}
+
+func TestWizardUpNavigationReachesButton(t *testing.T) {
+	w := newTestWizard(t, "SP9MOA", "JO90")
+
+	// Shift+Tab and Up from the first field focus the button.
+	w.station.Name.Focus()
+	w.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+	if !w.saveBtnFocus {
+		t.Error("shift+tab on the first field should focus the Save & Next button")
+	}
+	w.saveBtnFocus = false
+	w.station.Name.Focus()
+	w.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	if !w.saveBtnFocus {
+		t.Error("up on the first field should focus the Save & Next button")
+	}
+
+	// Up from the button returns to the form's last field.
+	w.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	if w.saveBtnFocus {
+		t.Error("up should leave the button")
+	}
+	if !w.station.lastFieldFocused() {
+		t.Error("up from the button should return to the station form's last field")
+	}
+
+	// Rig step: Up from the first field focuses the button.
+	w.step = stepRig
+	w.rigForm.focus = rigFieldName
+	w.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	if !w.saveBtnFocus {
+		t.Error("up on the rig first field should focus the Save & Next button")
+	}
+}
+
+func TestWizardBannerShowsLogoVersionAndLink(t *testing.T) {
+	w := newTestWizard(t, "SP9MOA", "JO90")
+	w.width = 100
+	w.height = 40
+
+	content := w.View().Content
+	for _, want := range []string{
+		"github.com/szporwolik/cqops",
+		"v" + version.Resolved(),
+	} {
+		if !strings.Contains(content, want) {
+			t.Errorf("banner missing %q", want)
 		}
 	}
-	return w
+	// Every logo row must render as one unbroken line (no mid-row wrapping),
+	// all rows must be exactly the same width, and the logo stays pure ASCII
+	// so terminal width is unambiguous.
+	rowW := len(wizardLogoRows[0])
+	for _, row := range wizardLogoRows {
+		if !strings.Contains(content, row) {
+			t.Errorf("logo row broken or missing: %q", row)
+		}
+		if len(row) != rowW {
+			t.Errorf("logo rows must have equal width: %d vs %d in %q", len(row), rowW, row)
+		}
+		for _, r := range row {
+			if r >= 128 {
+				t.Errorf("logo row must be pure ASCII, got rune %q in %q", r, row)
+			}
+		}
+	}
+	// Version and GitHub link share a single line.
+	plain := stripANSI(content)
+	foundLink := false
+	for _, line := range strings.Split(plain, "\n") {
+		if strings.Contains(line, "github.com/szporwolik/cqops") {
+			foundLink = true
+			if !strings.Contains(line, "v"+version.Resolved()) {
+				t.Errorf("version and link should be on one line: %q", line)
+			}
+		}
+	}
+	if !foundLink {
+		t.Error("banner missing the GitHub link line")
+	}
+
+	// Small terminals get a compact banner with the essentials.
+	w2 := newTestWizard(t, "SP9MOA", "JO90")
+	w2.width = 100
+	w2.height = 28
+	c2 := w2.View().Content
+	if !strings.Contains(c2, "CQOps v"+version.Resolved()) ||
+		!strings.Contains(c2, "github.com/szporwolik/cqops") {
+		t.Errorf("compact banner missing name or link:\n%s", c2)
+	}
+}
+
+func TestWizardUsesDetectedTimezone(t *testing.T) {
+	w := newTestWizard(t, "SP9MOA", "JO90")
+	w.station.Name.SetValue("Home")
+	w.step = stepSummary
+	w.saveBtnFocus = true
+
+	_, cmd := w.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
+	if cmd == nil {
+		t.Fatal("Space should trigger the save command")
+	}
+	cmd()
+
+	want := config.Timezones[config.SystemTimezoneIndex()]
+	if w.App.Config.General.Timezone != want {
+		t.Errorf("timezone = %q, want detected %q", w.App.Config.General.Timezone, want)
+	}
+}
+
+func TestWizardSummarySpaceSavesAndQuits(t *testing.T) {
+	w := newTestWizard(t, "SP9MOA", "JO90")
+	w.station.Name.SetValue("Home")
+	w.step = stepSummary
+	w.saveBtnFocus = true
+
+	v := w.View()
+	if !strings.Contains(v.Content, "[ Save & Start ]") {
+		t.Errorf("summary step should render the Save & Start button:\n%s", v.Content)
+	}
+
+	_, cmd := w.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
+	if cmd == nil {
+		t.Fatal("Space should trigger the save command")
+	}
+	msg := cmd()
+	if _, ok := msg.(tea.QuitMsg); !ok {
+		t.Errorf("expected QuitMsg, got %T", msg)
+	}
+	if !w.Completed {
+		t.Error("Completed should be true after saving")
+	}
 }
 
 func TestWizardSaveConfig_ValidCallAndGrid(t *testing.T) {
@@ -148,12 +348,6 @@ func TestWizardSaveConfig_DoesNotWriteOutsideTempDir(t *testing.T) {
 	w.rigForm.Rig.SetValue("FT-891")
 	w.rigForm.Antenna.SetValue("Dipole")
 	w.rigForm.Power.SetValue("100")
-	for i, tz := range config.Timezones {
-		if tz == "UTC" {
-			w.tzIndex = i
-			break
-		}
-	}
 
 	err := w.saveConfig()
 	if err != nil {

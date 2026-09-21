@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/szporwolik/cqops/internal/applog"
 )
@@ -123,4 +124,45 @@ func trimModeField(m string) string {
 		return m[:10]
 	}
 	return m
+}
+
+// Station is one station profile from GET /api/v2/station/{id}.
+// Used to mirror the Wavelog station values into the local logbook.
+type Station struct {
+	ID         int64  `json:"id"`
+	Name       string `json:"name"`
+	Callsign   string `json:"callsign"`
+	Gridsquare string `json:"gridsquare"`
+	City       string `json:"city"`
+	DXCC       int    `json:"dxcc"`
+	Country    string `json:"country"`
+	CQ         int    `json:"cq"`
+	ITU        int    `json:"itu"`
+	State      string `json:"state"`
+	CNTY       string `json:"cnty"`
+	IOTA       string `json:"iota"`
+	SOTA       string `json:"sota"`
+	WWFF       string `json:"wwff"`
+	POTA       string `json:"pota"`
+	SIG        string `json:"sig"`
+	SIGInfo    string `json:"sig_info"`
+	Power      int    `json:"power"`
+	Active     bool   `json:"active"`
+}
+
+// GetStation fetches a single station profile via the short-timeout client
+// (used by config-save sync paths).
+func GetStation(baseURL, apiKey, stationID string) (*Station, error) {
+	if idInt, err := ParseStationID(stationID); err == nil {
+		stationID = strconv.Itoa(idInt)
+	}
+	_, body, err := v2RequestSync(http.MethodGet, baseURL, apiKey, "/station/"+stationID, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	var st Station
+	if _, err := v2DecodeData(body, &st); err != nil {
+		return nil, err
+	}
+	return &st, nil
 }

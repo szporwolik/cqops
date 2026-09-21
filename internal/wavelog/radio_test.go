@@ -176,3 +176,29 @@ func TestPushRadio_NotFoundError(t *testing.T) {
 		t.Errorf("error = %v, want APIError not_found", err)
 	}
 }
+
+func TestGetStation(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Station ids with display-label suffixes are sanitized to the numeric id.
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v2/station/1" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"id": 1, "callsign": "SP9SPM", "gridsquare": "KO00CA",
+				"dxcc": 269, "cq": 15, "itu": 28, "sota": "SP/TA-001", "active": true,
+			},
+		})
+	}))
+	defer srv.Close()
+
+	st, err := GetStation(srv.URL, "wl2_test", "1 — Home (SP9SPM) KO00CA")
+	if err != nil {
+		t.Fatalf("GetStation: %v", err)
+	}
+	if st.Gridsquare != "KO00CA" || st.DXCC != 269 || st.CQ != 15 || st.ITU != 28 || st.SOTA != "SP/TA-001" {
+		t.Errorf("station = %+v", st)
+	}
+}

@@ -152,6 +152,14 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			c.updateStationIDField()
 			c.wlStatus = fmt.Sprintf("OK — %d stations loaded — Space over Station ID to cycle", len(msg.stations))
 			c.toasts.Success(fmt.Sprintf("Wavelog: %d stations loaded", len(msg.stations)))
+			return c, c.stationDetailCmd()
+		}
+
+	case wlStationDetailMsg:
+		if msg.err != nil {
+			c.toasts.Warn("Wavelog: station details unavailable")
+		} else if msg.station != nil && c.selectedStationID() == msg.stationID {
+			fillStationFormFromWavelog(c.station, msg.station)
 		}
 
 	case wlTestMsg:
@@ -288,7 +296,7 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						c.wlStationIdx = (c.wlStationIdx + 1) % len(c.wlStations)
 						c.updateStationIDField()
 					}
-					return c, c.testWavelogConnection()
+					return c, tea.Batch(c.testWavelogConnection(), c.stationDetailCmd())
 				case scrollFormToEnd:
 					c.scrollViewportToEnd()
 					return c, nil
@@ -725,7 +733,7 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 		}
 		c.toasts.Success("Logbook " + savedName + " created")
 		applog.Info("Logbook created", "name", savedName)
-		return func() tea.Msg { return logbookSwitchedMsg{} }
+		return c.syncStationAfterSaveCmd(id, wl)
 	}
 
 	// Edit existing logbook.
@@ -767,17 +775,69 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 	// Restart APRS if config changed (debounced).
 	c.app.ScheduleAPRSRestart()
 	c.app.RequestAPRSRefresh()
-	return nil
+	return c.syncStationAfterSaveCmd(id, wl)
+}
+
+// syncStationAfterSaveCmd mirrors the Wavelog station profile into the saved
+// logbook (grid, DXCC, zones, reference fields) asynchronously so the UI
+// never blocks on the network. The local save always wins.
+func (c *LogbookChooser) syncStationAfterSaveCmd(lbID string, wl *config.WavelogConfig) tea.Cmd {
+	if wl == nil || !wl.Enabled {
+		return func() tea.Msg { return logbookSwitchedMsg{} }
+	}
+	return func() tea.Msg {
+		changed, err := syncLogbookStationFromWavelog(c.app.Config, lbID, wl.URL, wl.APIKey, wl.StationProfileID)
+		if err != nil {
+			applog.Warn("Logbook: Wavelog station sync failed", "logbook", lbID, "error", err)
+			c.toasts.Warn("Wavelog: station sync failed — kept entered values")
+			return logbookSwitchedMsg{}
+		}
+		if changed {
+			if serr := config.Save(c.app.ConfigPath, c.app.Config); serr != nil {
+				applog.Warn("Logbook: re-save after station sync failed", "error", serr)
+			} else if c.app.LogbookName == lbID {
+				lb := c.app.Config.Logbooks[lbID]
+				c.app.Logbook = &lb
+				c.toasts.Info("Wavelog: station fields synced")
+			}
+		}
+		return logbookSwitchedMsg{}
+	}
 }
 
 // updateStationIDField sets the Station ID text field to show the currently
-// selected station's ID, callsign, name, and locator.
+// selected station's ID, callsign, name, and locator — the locator field is
+// mirrored from Wavelog to keep the logbook grid in sync.
 func (c *LogbookChooser) updateStationIDField() {
 	if c.wlStationIdx >= 0 && c.wlStationIdx < len(c.wlStations) {
 		s := c.wlStations[c.wlStationIdx]
 		c.station.WlStationID.SetValue(fmt.Sprintf("%s — %s (%s) %s", s.ID, s.Callsign, s.Name, s.Gridsquare))
 		c.wlStationID = s.ID
+		if s.Callsign != "" {
+			c.station.Callsign.SetValue(s.Callsign)
+		}
+		c.station.Locator.SetValue(s.Gridsquare)
 	}
+}
+
+// selectedStationID returns the Wavelog station ID currently selected, or "".
+func (c *LogbookChooser) selectedStationID() string {
+	if c.wlStationIdx >= 0 && c.wlStationIdx < len(c.wlStations) {
+		return c.wlStations[c.wlStationIdx].ID
+	}
+	return ""
+}
+
+// stationDetailCmd fetches the full profile of the currently selected station
+// so the rest of the form can mirror it.
+func (c *LogbookChooser) stationDetailCmd() tea.Cmd {
+	sid := c.selectedStationID()
+	if sid == "" {
+		return nil
+	}
+	u := strings.TrimRight(strings.TrimSpace(c.station.WlURL.Value()), "/")
+	k := strings.TrimSpace(c.station.WlKey.Value())
+	return fetchWavelogStationDetailCmd(u, k, sid)
 }
 
 func (c *LogbookChooser) deleteLogbook() tea.Cmd {

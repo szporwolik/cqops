@@ -111,6 +111,13 @@ func v2RequestDownload(method, baseURL, token, path string, query url.Values, bo
 	return v2RequestWithClient(downloadClient, method, baseURL, token, path, query, body)
 }
 
+// v2RequestSync performs a v2 request on the short-timeout client, used by
+// config-save paths (wizard / logbook menu) that must not block the UI for
+// long when the server is unreachable.
+func v2RequestSync(method, baseURL, token, path string, query url.Values, body []byte) (int, []byte, error) {
+	return v2RequestWithClient(syncClient, method, baseURL, token, path, query, body)
+}
+
 func v2RequestWithClient(client *http.Client, method, baseURL, token, path string, query url.Values, body []byte) (int, []byte, error) {
 	u := v2BaseURL(baseURL) + path
 	if len(query) > 0 {

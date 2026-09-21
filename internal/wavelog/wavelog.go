@@ -21,6 +21,10 @@ var httpClient = &http.Client{Timeout: 10 * time.Second}
 // ADIF export (format=adif) which streams large responses.
 var downloadClient = &http.Client{Timeout: 5 * time.Minute}
 
+// syncClient is the short-timeout client for config-save station syncs —
+// a hung server must not freeze the wizard or the logbook menu for long.
+var syncClient = &http.Client{Timeout: 4 * time.Second}
+
 // StationProfile represents a Wavelog station location.
 // Values come from GET /api/v2/station; the v1 API field names are kept
 // so downstream call sites did not need renaming.

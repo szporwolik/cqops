@@ -254,6 +254,28 @@ func (f *RigForm) OnLastField() bool {
 	return f.focus == rigFieldWsjtx
 }
 
+// FocusFirst moves focus to the first form field.
+func (f *RigForm) FocusFirst() {
+	f.blurAll()
+	f.focus = rigFieldName
+	f.focusField()
+}
+
+// FocusLast moves focus to the last reachable form field.
+func (f *RigForm) FocusLast() {
+	f.blurAll()
+	if f.WsjtxEnabled {
+		f.focus = rigFieldWsjtxPort
+	} else if f.RotorIdx != 0 {
+		f.focus = rigFieldRotorPort
+	} else if f.BackendIdx != 0 {
+		f.focus = rigFieldPollInterval
+	} else {
+		f.focus = rigFieldWsjtx
+	}
+	f.focusField()
+}
+
 func (f *RigForm) FlrigURL() string {
 	return "http://" + f.BackendHost.Value() + ":" + f.BackendPort.Value()
 }
@@ -450,7 +472,7 @@ func (f *RigForm) View() tea.View {
 
 	var b strings.Builder
 
-	b.WriteString(padOrTrunc(renderField("Name:", &f.Name, f.focus == rigFieldName), availW))
+	b.WriteString(padOrTrunc(renderField("Rig name:", &f.Name, f.focus == rigFieldName), availW))
 	b.WriteString("\n")
 	b.WriteString(padOrTrunc(renderField("Rig model (opt):", &f.Rig, f.focus == rigFieldRig), availW))
 	b.WriteString("\n")
@@ -495,7 +517,7 @@ func (f *RigForm) View() tea.View {
 		rotorLabel = CursorStyle.Render(rotorLabel) + " " + DimStyle.Render("(Space)")
 		// Only show the long hint when there's room — never wrap.
 		if availW >= 85 {
-			rotorLabel += " " + DimStyle.Render("Experimental feature — use with caution")
+			rotorLabel += " " + DimStyle.Render("Use with caution")
 		}
 	}
 	b.WriteString(padOrTrunc(

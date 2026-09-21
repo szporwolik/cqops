@@ -196,11 +196,9 @@ On first launch, CQOps opens the setup wizard. Only the essential station inform
 
 | Page | What it configures |
 |---|---|
-| Station & Logbook | Initial logbook, station callsign, operator, grid locator, optional references and zones, Wavelog URL/API/station profile ID |
-| Rig | Rig preset, model, antenna, power, backend, optional rotor, optional WSJT-X UDP settings |
-| Integrations | Callbook lookup settings (QRZ.com, HamQTH, QRZ.RU, Callook.info) |
-| General | IANA timezone |
-| Summary | Review and save |
+| Station & Logbook | Logbook, station callsign, grid locator, continent, optional references and zones (Ctrl+A reveals them), Wavelog URL/API key/station profile |
+| Rig | Rig name, model, antenna, power, backend, optional rotor, optional WSJT-X UDP settings |
+| Summary | Review and save — the timezone is detected from the system automatically |
 
 Supported rig backends are:
 
@@ -212,11 +210,12 @@ Supported rig backends are:
 
 | Key | Action |
 |---|---|
-| Ctrl+S | Validate and continue; on Summary, save and start CQOps |
+| Space / Enter | Save & Next; on Summary, save and start CQOps |
 | Esc | Go back |
 | F10 | Quit |
-| Tab / Shift+Tab | Move between fields |
-| Space | Toggle checkboxes |
+| Tab / Shift+Tab | Move between fields and the Save button |
+| Space | Toggle checkboxes, cycle Wavelog stations |
+| Ctrl+A | Show/hide optional station fields |
 
 You can change wizard settings later with **F9**.
 
