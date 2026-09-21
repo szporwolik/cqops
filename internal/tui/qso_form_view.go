@@ -574,9 +574,13 @@ func (m *Model) formPathRow(width int) string {
 	}
 
 	if result == "" {
+		// A callsign is entered but no badge or path data is ready yet
+		// (log stats and callbook lookups are asynchronous). Render a
+		// fixed-height blank row instead of an empty string so the form
+		// border never shifts while the data loads.
 		m.rc.pathSig = sig
-		m.rc.pathLine = ""
-		return ""
+		m.rc.pathLine = pathInfoStyle.Width(width).Render("")
+		return m.rc.pathLine
 	}
 
 	// Truncate if too wide.

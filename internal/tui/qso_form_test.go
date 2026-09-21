@@ -323,9 +323,64 @@ func TestQSOFormPathRowNoOwnGrid(t *testing.T) {
 	// When callsign is entered but grids are unavailable, only badges
 	// (DUPE!, New Call!, New DXCC!) are shown — the station profile is
 	// reserved for when no callsign is present at all.
-	// In this test there are no badges, so the row may be empty.
 	if strings.Contains(row, "Op") || strings.Contains(row, "Rig") {
 		t.Error("formPathRow should NOT show station profile when a callsign is entered (badges only)")
+	}
+}
+
+// TestFormPathRowKeepsHeightWhileLookupsPending guards the layout flicker
+// seen when leaving the callsign field: while the async log-stats and
+// callbook lookups are pending there are no badges or grids to show, yet
+// the row must keep its fixed height (blank) so the form border never
+// shifts. When the lookups land, the badges appear without moving anything.
+func TestFormPathRowKeepsHeightWhileLookupsPending(t *testing.T) {
+	stripANSI := func(s string) string {
+		var b strings.Builder
+		inEscape := false
+		for _, r := range s {
+			switch {
+			case r == '\x1b':
+				inEscape = true
+			case inEscape && r == 'm':
+				inEscape = false
+			case !inEscape:
+				b.WriteRune(r)
+			}
+		}
+		return b.String()
+	}
+
+	m := newTestModel()
+	m.width = 100
+	m.App.Logbook.Station.Grid = ""
+	m.fields[fieldCall].SetValue("KI6NAZ")
+	m.fields[fieldGrid].SetValue("")
+	m.rc.pathCall = "KI6NAZ"
+	m.dupe = false
+	m.rc.logStats = store.LogbookStats{} // stats not ready → no badges yet
+
+	row := m.formPathRow(90)
+	if row == "" {
+		t.Fatal("formPathRow must keep a fixed-height row while lookups are pending")
+	}
+	if h := lipgloss.Height(row); h != 1 {
+		t.Errorf("pending-lookup row height = %d, want 1 (no layout shift)", h)
+	}
+	if w := lipgloss.Width(row); w != 90 {
+		t.Errorf("pending-lookup row width = %d, want 90", w)
+	}
+	if plain := strings.TrimSpace(stripANSI(row)); plain != "" {
+		t.Errorf("pending-lookup row should be blank, got %q", plain)
+	}
+
+	// Lookups land: local stats say the call is new → badge appears.
+	seedLogbookStats(m, store.LogbookStats{CallWorked: false})
+	row = m.formPathRow(90)
+	if !strings.Contains(row, "New Call!") {
+		t.Error("formPathRow should show 'New Call!' once stats arrive")
+	}
+	if h := lipgloss.Height(row); h != 1 {
+		t.Errorf("badge row height = %d, want 1 (no layout shift)", h)
 	}
 }
 

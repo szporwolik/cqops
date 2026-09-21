@@ -315,9 +315,11 @@ func TestFormPathRowNoBadgesNoGrid(t *testing.T) {
 	m.rc.logStats = store.LogbookStats{CallWorked: true}
 
 	row := m.formPathRow(90)
-	// No dupe, no New Call, no New DXCC, no grid → row should be empty.
-	if row != "" {
-		t.Errorf("row should be empty when no badges and no grid, got %q", row)
+	// No dupe, no New Call, no New DXCC, no grid → the row renders as a
+	// fixed-height blank line so the form border never shifts while the
+	// async stats/callbook lookups are pending.
+	if row == "" {
+		t.Error("row must keep its height while lookups are pending")
 	}
 }
 

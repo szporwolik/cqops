@@ -63,6 +63,7 @@
 - The QSO form's DX Cluster line no longer silently drops the continent filter when no same-continent spots are near the frequency — spots from other continents cannot leak into the form (or into the Ctrl+P spot cycling). The DXC pane's explicit continent filter now also overrides the station continent for that line.
 - Recent QSOs now appear immediately after a Wavelog download or ADIF import: the deferred QSO-refresh command was silently discarded by the update loop (the flag was consumed but the refresh never ran), leaving the QSO pane empty until restart.
 - The HTTP dashboard's recent/today/stats panels now refresh after downloads, imports, editor saves, deletes and purges — previously their change-detection cache was only invalidated on QSO-form saves, so the dashboard could stay stale until restart.
+- Leaving the callsign field no longer causes a one-frame layout shift: while the local log statistics and callbook lookups are still pending there is nothing to show (no badges, no grids), and the info row above the QSO form briefly collapsed, pulling the form border up one row until the lookups landed. The row now keeps its fixed height (rendering blank) from the moment a callsign is entered, so badges appear in place without moving anything.
 
 ## v0.10.1 — 2026-09-20
 
