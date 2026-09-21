@@ -90,6 +90,16 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 			m.App.MaybeRestartWSJTX(rp.WsjtxEnabled, rp.WsjtxUDPHost, rp.WsjtxUDPPort)
 		}
 	}
+	// Push live rig state (freq/mode/power from the QSO form) to the
+	// Wavelog radio endpoint every 15 seconds.
+	wl := m.App.Logbook.Wavelog
+	if wl != nil && wl.Enabled && m.lookup.wlOnline && m.lookup.wlRadioID != 0 &&
+		time.Since(m.lookup.lastRadioPush) >= wlRadioPushInterval {
+		if c := m.pushWavelogRadioCmd(); c != nil {
+			m.lookup.lastRadioPush = time.Now()
+			cmd = tea.Batch(cmd, c)
+		}
+	}
 	m.toasts.Expire()
 	// Only update the QSO form clock when the form is visible.
 	if m.screen == screenQSO {
@@ -280,8 +290,14 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 		if r.stationLabel != "" {
 			m.lookup.wlStationLabel = r.stationLabel
 		}
+		var radioCmd tea.Cmd
+		if r.online && m.lookup.wlRadioID == 0 {
+			// Connection confirmed — make sure the CQOps radio exists so
+			// rig-state pushes can start.
+			radioCmd = m.ensureWavelogRadioCmd()
+		}
 		m.rc.status = ""
-		return true, nil
+		return true, radioCmd
 	case wlUploadResultMsg:
 		if r.qID != 0 && m.ui.logbookEditor != nil {
 			m.ui.logbookEditor.UpdateWLStatus(r.qID, r.ok, r.remoteID)
@@ -429,6 +445,8 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			}
 		}
 		return true, nil
+	case wlRadioEnsureMsg, wlRadioPushMsg:
+		return m.handleWavelogRadioMsg(msg), nil
 	case solarFetchMsg:
 		m.handleSolarResult(r)
 		return true, nil
