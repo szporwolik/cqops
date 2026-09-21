@@ -335,60 +335,60 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if lps != "" {
 				p, err := strconv.Atoi(lps)
 				if err != nil || p < 0 || p > 100 {
-					cm.SaveError = "Priority must be 0\u2013100"
+					cm.SaveError = "Callbook: priority must be 0\u2013100"
 					return cm, nil
 				}
 			}
 			if cm.qrzEnabled {
 				if strings.TrimSpace(cm.qrzUser.Value()) == "" {
-					cm.SaveError = "QRZ username is required when enabled"
+					cm.SaveError = "QRZ: username is required when enabled"
 					return cm, nil
 				}
 				if cm.qrzPass.Value() == "" {
-					cm.SaveError = "QRZ password is required when enabled"
+					cm.SaveError = "QRZ: password is required when enabled"
 					return cm, nil
 				}
 				ps := strings.TrimSpace(cm.qrzPriority.Value())
 				if ps != "" {
 					p, err := strconv.Atoi(ps)
 					if err != nil || p < 0 || p > 100 {
-						cm.SaveError = "Priority must be 0\u2013100"
+						cm.SaveError = "Callbook: priority must be 0\u2013100"
 						return cm, nil
 					}
 				}
 			}
 			if cm.hamqthEnabled {
 				if strings.TrimSpace(cm.hamqthUser.Value()) == "" {
-					cm.SaveError = "HamQTH username is required when enabled"
+					cm.SaveError = "HamQTH: username is required when enabled"
 					return cm, nil
 				}
 				if cm.hamqthPass.Value() == "" {
-					cm.SaveError = "HamQTH password is required when enabled"
+					cm.SaveError = "HamQTH: password is required when enabled"
 					return cm, nil
 				}
 				ps := strings.TrimSpace(cm.hamqthPriority.Value())
 				if ps != "" {
 					p, err := strconv.Atoi(ps)
 					if err != nil || p < 0 || p > 100 {
-						cm.SaveError = "Priority must be 0\u2013100"
+						cm.SaveError = "Callbook: priority must be 0\u2013100"
 						return cm, nil
 					}
 				}
 			}
 			if cm.qrzruEnabled {
 				if strings.TrimSpace(cm.qrzruUser.Value()) == "" {
-					cm.SaveError = "QRZ.RU API login is required when enabled"
+					cm.SaveError = "QRZ.RU: API login is required when enabled"
 					return cm, nil
 				}
 				if cm.qrzruPass.Value() == "" {
-					cm.SaveError = "QRZ.RU API password is required when enabled"
+					cm.SaveError = "QRZ.RU: API password is required when enabled"
 					return cm, nil
 				}
 				ps := strings.TrimSpace(cm.qrzruPriority.Value())
 				if ps != "" {
 					p, err := strconv.Atoi(ps)
 					if err != nil || p < 0 || p > 100 {
-						cm.SaveError = "Priority must be 0\u2013100"
+						cm.SaveError = "Callbook: priority must be 0\u2013100"
 						return cm, nil
 					}
 				}

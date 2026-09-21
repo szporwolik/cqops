@@ -656,12 +656,12 @@ func (m *Model) isSubmodelActive() bool {
 // saveConfig persists the app configuration and shows a toast.
 func (m *Model) saveConfig(msg string) {
 	if err := m.App.Config.Validate(); err != nil {
-		m.toasts.Error("Settings save failed: " + err.Error())
+		m.toasts.Error("Settings: save failed — " + err.Error())
 		applog.Error("Config validation failed before save", "error", err)
 		return
 	}
 	if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
-		m.toasts.Error("Settings save failed: " + err.Error())
+		m.toasts.Error("Settings: save failed — " + err.Error())
 	} else {
 		if msg != "" {
 			m.toasts.Success(msg)
@@ -954,7 +954,7 @@ func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if err := m.photo.viewer.Err(); err != nil && m.photo.lastErr != err {
 			m.photo.lastErr = err
 			applog.Warn("Image load failed", "error", err.Error())
-			m.toasts.Warn("Photo unavailable — unsupported format")
+			m.toasts.Warn("Partner: photo unavailable — unsupported format")
 		}
 		if m.photo.viewer.Err() == nil {
 			m.photo.lastErr = nil
@@ -1533,7 +1533,7 @@ func (m *Model) cycleActiveContest() {
 
 	// No active contests — nothing to cycle.
 	if len(ids) == 0 {
-		m.toasts.Warn("No contests configured — create one in F9 → Contests")
+		m.toasts.Warn("Contest: none configured — create one in F9 → Contests")
 		return
 	}
 
@@ -1595,7 +1595,7 @@ func (m *Model) cycleActiveOperator() {
 	current := m.App.Logbook.ActiveOperator
 
 	if len(ids) == 0 {
-		m.toasts.Warn("No operators configured — add one in F9 → Operators")
+		m.toasts.Warn("Operator: none configured — add one in F9 → Operators")
 		return
 	}
 

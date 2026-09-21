@@ -130,7 +130,7 @@ func (f *OperatorForm) SetWidth(w int) {
 func (f *OperatorForm) Validate() string {
 	call := strings.TrimSpace(f.Callsign.Value())
 	if call == "" {
-		return "Callsign is required"
+		return "Operator: callsign is required"
 	}
 	return ""
 }
@@ -140,7 +140,7 @@ func (f *OperatorForm) Validate() string {
 func (f *OperatorForm) ValidateCall() string {
 	call := strings.TrimSpace(f.Callsign.Value())
 	if call != "" && !qso.IsValidCall(call) {
-		return "Callsign \"" + call + "\" doesn't look like a standard callsign (no digit) — saved anyway"
+		return "Operator: callsign \"" + call + "\" doesn't look like a standard callsign (no digit) — saved anyway"
 	}
 	return ""
 }

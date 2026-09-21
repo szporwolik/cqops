@@ -798,7 +798,7 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 			m.toasts.Warn(em.toastWarn)
 		}
 		if em.err != nil && em.wlQSOID == 0 {
-			m.toasts.Error(em.err.Error())
+			m.toasts.Error("Logbook: " + em.err.Error())
 		}
 		if em.deleted != 0 {
 			switch {
@@ -838,7 +838,7 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 			refreshCmd = m.refreshQSOS()
 		}
 		if em.purged {
-			m.toasts.Success("Logbook purged")
+			m.toasts.Success("Logbook: purged")
 			m.ui.logbookEditor.wlLastFetchedID = 0
 			m.ui.logbookEditor.needsReload = true
 			refreshCmd = m.refreshQSOS()

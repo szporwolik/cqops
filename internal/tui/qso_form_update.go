@@ -741,18 +741,18 @@ func (m *Model) buildSpotComment() string {
 func (m *Model) openSpotDialog() tea.Cmd {
 	call := qso.NormalizeCall(m.fields[fieldCall].Value())
 	if call == "" {
-		m.toasts.Warn("Enter a callsign to spot")
+		m.toasts.Warn("DXC: enter a callsign to spot")
 		return nil
 	}
 	freqStr := strings.TrimSpace(m.fields[fieldFreq].Value())
 	if freqStr == "" {
-		m.toasts.Warn("Enter a frequency to spot")
+		m.toasts.Warn("DXC: enter a frequency to spot")
 		return nil
 	}
 	var freqMhz float64
 	fmt.Sscanf(freqStr, "%f", &freqMhz)
 	if freqMhz <= 0 {
-		m.toasts.Warn("Enter a valid frequency to spot")
+		m.toasts.Warn("DXC: enter a valid frequency to spot")
 		return nil
 	}
 	freqKhz := freqMhz * 1000
@@ -768,7 +768,7 @@ func (m *Model) openSpotDialog() tea.Cmd {
 // manually to look up the callsign.
 func (m *Model) fillFromDXCSpot() {
 	if len(m.dxc.pathSpots) == 0 {
-		m.toasts.Warn("No DXC spots at this frequency")
+		m.toasts.Warn("DXC: no spots at this frequency")
 		return
 	}
 	m.dxc.pathSpotIdx = (m.dxc.pathSpotIdx + 1) % len(m.dxc.pathSpots)

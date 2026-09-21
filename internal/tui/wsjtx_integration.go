@@ -24,7 +24,7 @@ import (
 // or other goroutines — use tea.Cmd to send a message instead.
 func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode, report, txMessage string, transmitting bool) {
 	if !m.wsjtx.online && m.toasts != nil {
-		m.toasts.Success("WSJT-X connected")
+		m.toasts.Success("WSJT-X: connected")
 	}
 	m.wsjtx.online = true
 	m.wsjtx.txMsg = txMessage
@@ -166,7 +166,7 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 	activeOp := m.activeOperatorCallsign()
 	if qs.Operator != "" && activeOp != "" && !strings.EqualFold(qs.Operator, activeOp) {
 		applog.Warn("WSJT-X: operator mismatch", "wsjtx_op", qs.Operator, "active_op", activeOp)
-		m.toasts.Warn("WSJT-X operator " + qs.Operator + " differs from active operator " + activeOp)
+		m.toasts.Warn("WSJT-X: operator " + qs.Operator + " differs from active operator " + activeOp)
 	}
 
 	// Enrich QSO: compute distance/bearing from grid squares.

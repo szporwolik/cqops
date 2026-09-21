@@ -147,7 +147,7 @@ func (m *Model) rigPowerCmd() tea.Cmd {
 // HF (<30 MHz): 0.001 MHz (1 kHz). VHF/UHF (≥30 MHz): 0.1 MHz (100 kHz).
 func (m *Model) tuneRigStep(dir int) tea.Cmd {
 	if m.rig.client == nil || !m.rig.connected {
-		m.toasts.Warn("Rig not connected")
+		m.toasts.Warn("Rig: not connected")
 		return nil
 	}
 	freqMhz := m.rig.freq

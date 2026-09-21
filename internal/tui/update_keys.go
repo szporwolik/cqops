@@ -118,13 +118,13 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		}
 
 		if call == "" {
-			m.toasts.Warn("No callsign entered")
+			m.toasts.Warn("Partner: no callsign entered")
 			applog.Debug("F2 Partner: no callsign")
 			return nil, true
 		}
 		// Validate before committing.
 		if !qso.IsValidCall(call) {
-			m.toasts.Warn("Not a valid callsign")
+			m.toasts.Warn("Partner: not a valid callsign")
 			return nil, true
 		}
 		applog.Debug("tab: F2 Partner Details")
@@ -163,7 +163,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	case key.Matches(msg, m.keys.APRS):
 		applog.Debug("tab: F3 APRS")
 		if !m.aprsConnected() {
-			m.toasts.Warn("APRS not receiving — enable APRS in Integration settings")
+			m.toasts.Warn("APRS: not receiving — enable APRS in Integrations")
 			return nil, true
 		}
 		m.aprsEnterPane()
@@ -181,7 +181,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 
 	case key.Matches(msg, m.keys.Ref):
 		if !m.isREFReady() {
-			m.toasts.Warn("REF database not available — enable in General settings")
+			m.toasts.Warn("REF: database not available — enable in General settings")
 			return nil, true
 		}
 		applog.Debug("tab: F6 REF")
@@ -208,7 +208,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 
 	case key.Matches(msg, m.keys.DXC):
 		if !m.App.Config.Integrations.DXC.Enabled {
-			m.toasts.Warn("DX Cluster not configured")
+			m.toasts.Warn("DXC: not configured")
 			return nil, true
 		}
 		if !m.dxc.online {

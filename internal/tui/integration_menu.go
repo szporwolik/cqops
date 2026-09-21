@@ -594,28 +594,28 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Validate DXC fields when DXC is enabled.
 			if im.dxcEnabled {
 				if strings.TrimSpace(im.dxcHost.Value()) == "" {
-					im.SaveError = "DXC host (server) is required when DXC is enabled"
+					im.SaveError = "DXC: host (server) is required"
 					return im, nil
 				}
 				if strings.TrimSpace(im.dxcPort.Value()) == "" {
-					im.SaveError = "DXC port is required when DXC is enabled"
+					im.SaveError = "DXC: port is required"
 					return im, nil
 				}
 				if strings.TrimSpace(im.dxcLogin.Value()) == "" {
-					im.SaveError = "DXC login (callsign) is required when DXC is enabled"
+					im.SaveError = "DXC: login (callsign) is required"
 					return im, nil
 				}
 			}
 			// Validate HTTP server fields when HTTP server is enabled.
 			if im.httpEnabled {
 				if strings.TrimSpace(im.httpPort.Value()) == "" {
-					im.SaveError = "HTTP server port is required when HTTP server is enabled"
+					im.SaveError = "HTTP server: port is required"
 					return im, nil
 				}
 				// Validate Event Start format if entered.
 				if es := strings.TrimSpace(im.httpEvtStart.Value()); es != "" {
 					if _, err := time.Parse("2006-01-02", es); err != nil {
-						im.SaveError = "Event Start must be YYYY-MM-DD or empty"
+						im.SaveError = "HTTP server: Event Start must be YYYY-MM-DD or empty"
 						return im, nil
 					}
 				}
@@ -623,7 +623,7 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cert := strings.TrimSpace(im.httpTLSCert.Value())
 				key := strings.TrimSpace(im.httpTLSKey.Value())
 				if (cert == "") != (key == "") {
-					im.SaveError = "TLS certificate and key paths must be set together (or both empty for auto self-signed)"
+					im.SaveError = "HTTP server: TLS certificate and key paths must be set together (or both empty for auto self-signed)"
 					return im, nil
 				}
 			}
@@ -632,12 +632,12 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				switch im.gpsService {
 				case 0: // Serial
 					if strings.TrimSpace(im.gpsPort.Value()) == "" {
-						im.SaveError = "GPS serial port is required"
+						im.SaveError = "GPS: serial port is required"
 						return im, nil
 					}
 				case 1: // GPSD
 					if strings.TrimSpace(im.gpsdHost.Value()) == "" {
-						im.SaveError = "GPSD host is required"
+						im.SaveError = "GPS: GPSD host is required"
 						return im, nil
 					}
 				}
@@ -647,12 +647,12 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				switch im.aprsService {
 				case 0: // APRS-IS
 					if strings.TrimSpace(im.aprsServer.Value()) == "" {
-						im.SaveError = "APRS server is required"
+						im.SaveError = "APRS: server is required"
 						return im, nil
 					}
 				case 1: // KISS
 					if strings.TrimSpace(im.aprsPort.Value()) == "" {
-						im.SaveError = "APRS KISS port is required"
+						im.SaveError = "APRS: KISS port is required"
 						return im, nil
 					}
 				}

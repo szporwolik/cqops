@@ -108,8 +108,8 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(msg.stations) > 0 {
 				w.setSelectedStation()
 			}
-			w.wlStatus = fmt.Sprintf("%d stations loaded — Space to cycle", len(msg.stations))
-			w.toasts.Success(fmt.Sprintf("%d stations loaded, use Space to toggle", len(msg.stations)))
+			w.wlStatus = fmt.Sprintf("Wavelog: %d stations loaded", len(msg.stations))
+			w.toasts.Success(fmt.Sprintf("Wavelog: %d stations loaded", len(msg.stations)))
 			return w, w.stationDetailCmd()
 		}
 
@@ -125,10 +125,10 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		w.wlTesting = false
 		if msg.err != nil {
 			w.wlStatus = msg.err.Error()
-			w.toasts.Error(w.wlStatus)
+			w.toasts.Error("Wavelog: " + w.wlStatus)
 		} else {
 			w.wlStatus = "OK — Wavelog reachable"
-			w.toasts.Success("Wavelog connection OK")
+			w.toasts.Success("Wavelog: connection OK")
 		}
 
 	case wlCycleStation:
@@ -219,7 +219,7 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					case wlUpdateAction:
 						_, _, _, _, _, _, _, _, wlURL, wlKey, _, _, _, _, _, _, _, _ := w.station.Values()
 						if wlURL == "" || wlKey == "" {
-							w.toasts.Warn("Wavelog URL and API Key are required")
+							w.toasts.Warn("Wavelog: URL and API Key are required")
 							return w, nil
 						}
 						w.wlUpdating = true
@@ -231,7 +231,7 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					case wlTestAction:
 						_, _, _, _, _, _, _, _, wlURL, wlKey, _, _, _, _, _, _, _, _ := w.station.Values()
 						if wlURL == "" || wlKey == "" {
-							w.toasts.Warn("Wavelog URL and API Key are required")
+							w.toasts.Warn("Wavelog: URL and API Key are required")
 							return w, nil
 						}
 						w.wlTesting = true
@@ -469,8 +469,7 @@ func (w *Wizard) stepIndicator() string {
 	case stepSummary:
 		name = "Summary"
 	}
-	return S.Title.Render(fmt.Sprintf("First time wizard — Step %d/%d — %s", current, total, name)) +
-		"  " + DimStyle.Render("[Space — save & next]")
+	return S.Title.Render(fmt.Sprintf("First time wizard — Step %d/%d — %s", current, total, name))
 }
 
 // ── Step views ───────────────────────────────────────────────────
@@ -540,23 +539,23 @@ func (w *Wizard) viewSummary() string {
 func (w *Wizard) finishStation() {
 	nm, cs, _, gr, _, _, _, wlEnabled, _, _, wlStationID, _, _, _, _, _, _, _ := w.station.Values()
 	if nm == "" {
-		w.toasts.Warn("Station name is required")
+		w.toasts.Warn("Station: name is required")
 		return
 	}
 	if cs == "" {
-		w.toasts.Warn("Callsign is required")
+		w.toasts.Warn("Station: callsign is required")
 		return
 	}
 	if !qso.IsValidCall(cs) {
-		w.toasts.Warn("Not a valid callsign")
+		w.toasts.Warn("Station: not a valid callsign")
 		return
 	}
 	if gr == "" {
-		w.toasts.Warn("Grid locator is required")
+		w.toasts.Warn("Station: grid locator is required")
 		return
 	}
 	if !qso.IsValidLocator(gr) {
-		w.toasts.Warn("Not a valid grid locator")
+		w.toasts.Warn("Station: not a valid grid locator")
 		return
 	}
 	if wlEnabled {
@@ -565,7 +564,7 @@ func (w *Wizard) finishStation() {
 			return
 		}
 		if len(w.wlStations) == 0 {
-			w.toasts.Warn("No stations loaded — press Update to fetch from Wavelog")
+			w.toasts.Warn("Wavelog: no stations loaded — press Update to fetch")
 			return
 		}
 	}
@@ -579,7 +578,7 @@ func (w *Wizard) finishStation() {
 func (w *Wizard) finishRig() {
 	nm, rig, _, _ := w.rigForm.Values()
 	if nm == "" {
-		w.toasts.Warn("Rig name is required")
+		w.toasts.Warn("Rig: name is required")
 		return
 	}
 	radioBackend, _, _ := w.rigForm.BackendValues()
@@ -587,21 +586,21 @@ func (w *Wizard) finishRig() {
 	rawPort := strings.TrimSpace(w.rigForm.BackendPort.Value())
 	if radioBackend == "flrig" {
 		if rawHost == "" {
-			w.toasts.Warn("Flrig host is required")
+			w.toasts.Warn("Rig: flrig host is required")
 			return
 		}
 		if rawPort == "" {
-			w.toasts.Warn("Flrig port is required")
+			w.toasts.Warn("Rig: flrig port is required")
 			return
 		}
 	}
 	if radioBackend == "hamlib" {
 		if rawHost == "" {
-			w.toasts.Warn("Hamlib host is required")
+			w.toasts.Warn("Rig: hamlib host is required")
 			return
 		}
 		if rawPort == "" {
-			w.toasts.Warn("Hamlib port is required")
+			w.toasts.Warn("Rig: hamlib port is required")
 			return
 		}
 	}
@@ -622,7 +621,7 @@ func (w *Wizard) handleEnter() tea.Cmd {
 			w.syncStationFromWavelog()
 		}
 		if err := w.saveConfig(); err != nil {
-			w.toasts.Error(fmt.Sprintf("Setup error: %v", err))
+			w.toasts.Error(fmt.Sprintf("Setup: %v", err))
 			applog.Error("Wizard: config validation failed", "error", err)
 			return nil
 		}
@@ -744,7 +743,7 @@ func (w *Wizard) saveConfig() error {
 		},
 	}
 	if clamped {
-		w.toasts.Warn("Poll interval adjusted to " + strconv.Itoa(pollInterval) + "s (valid range: 1–60)")
+		w.toasts.Warn("Rig: poll interval adjusted to " + strconv.Itoa(pollInterval) + "s (valid range: 1–60)")
 	}
 
 	// Callbook providers (QRZ etc.) are configured post-wizard via the

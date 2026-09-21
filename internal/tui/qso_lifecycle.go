@@ -139,11 +139,11 @@ func (m *Model) saveQSO() tea.Cmd {
 	}
 	if err := qso.ValidateForSave(qs); err != nil {
 		applog.Warn("QSO validation failed", "error", err.Error())
-		m.toasts.Error(err.Error())
+		m.toasts.Error("QSO: " + err.Error())
 		return nil
 	}
 	if _, err := store.InsertQSO(m.App.DB, qs); err != nil {
-		m.toasts.Error(fmt.Sprintf("Save failed: %v", err))
+		m.toasts.Error(fmt.Sprintf("QSO: save failed — %v", err))
 		return nil
 	}
 

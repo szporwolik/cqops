@@ -391,11 +391,11 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "ctrl+w":
 			if le.Offline {
-				return le, func() tea.Msg { return editorMsg{toastWarn: "Network not available — cannot upload to Wavelog"} }
+				return le, func() tea.Msg { return editorMsg{toastWarn: "Wavelog: network not available — cannot upload"} }
 			}
 			if le.wlURL != "" && le.wlKey != "" && le.wlStationID != "" {
 				if len(le.qsos) == 0 {
-					return le, func() tea.Msg { return editorMsg{toastWarn: "Logbook is empty — nothing to upload"} }
+					return le, func() tea.Msg { return editorMsg{toastWarn: "Wavelog: logbook is empty — nothing to upload"} }
 				}
 				// Count unsent QSOs from the full database, not just the
 				// current page shown on screen.
@@ -423,7 +423,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case "alt+w":
 			if le.Offline {
-				return le, func() tea.Msg { return editorMsg{toastWarn: "Network not available — cannot download from Wavelog"} }
+				return le, func() tea.Msg { return editorMsg{toastWarn: "Wavelog: network not available — cannot download"} }
 			}
 			if le.contestID != "" {
 				return le, func() tea.Msg {
@@ -562,7 +562,7 @@ func (le *LogbookEditor) handleFilePickerUpdate(msg tea.Msg) (tea.Model, tea.Cmd
 			// Validate that the selected file is an ADIF file.
 			ext := strings.ToLower(filepath.Ext(path))
 			if ext != ".adi" && ext != ".adif" {
-				return le, func() tea.Msg { return editorMsg{toastWarn: "Only .adi / .adif files can be imported"} }
+				return le, func() tea.Msg { return editorMsg{toastWarn: "ADIF: only .adi / .adif files can be imported"} }
 			}
 			// Start async import with progress dialog.
 			le.dlProgress = 0

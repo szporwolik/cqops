@@ -128,15 +128,15 @@ func (nm *NotificationsMenu) sendTestNotification() {
 func (nm *NotificationsMenu) sendTestBeep() {
 	applog.Info("Test beep triggered")
 	if !desktopAvailable() {
-		nm.statusMsg = "Beep unavailable — no desktop environment detected (D-Bus/GUI required)"
+		nm.statusMsg = "Notifications: beep unavailable — no desktop environment detected (D-Bus/GUI required)"
 		applog.Warn("Test beep skipped: desktop unavailable")
 		return
 	}
 	if err := beeep.Beep(beeep.DefaultFreq, beeep.DefaultDuration); err != nil {
 		applog.Warn("Test beep failed", "error", err.Error())
-		nm.statusMsg = "Beep failed: " + err.Error()
+		nm.statusMsg = "Notifications: beep failed — " + err.Error()
 	} else {
-		nm.statusMsg = "Test beep played"
+		nm.statusMsg = "Notifications: beep played"
 	}
 }
 

@@ -346,7 +346,7 @@ func (rc *RigChooser) selectRig() tea.Cmd {
 	rc.app.Config.Logbooks[rc.app.LogbookName] = lb
 
 	if err := config.Save(rc.app.ConfigPath, rc.app.Config); err != nil {
-		rc.toasts.Error("Select " + displayName + " failed: " + err.Error())
+		rc.toasts.Error("Rig: select " + displayName + " failed — " + err.Error())
 	} else {
 		rc.toasts.Success("Rig \"" + displayName + "\" selected")
 		applog.Info("Rig selected", "name", displayName)
@@ -424,36 +424,36 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 	}
 
 	if nm == "" {
-		rc.toasts.Warn("Rig name is required")
+		rc.toasts.Warn("Rig: name is required")
 		return nil
 	}
 	if radioBackend == "flrig" {
 		if flrigHost == "" {
-			rc.toasts.Warn("Flrig host is required")
+			rc.toasts.Warn("Rig: flrig host is required")
 			return nil
 		}
 		if flrigPort == "" {
-			rc.toasts.Warn("Flrig port is required")
+			rc.toasts.Warn("Rig: flrig port is required")
 			return nil
 		}
 	}
 	if radioBackend == "hamlib" {
 		if hamlibHost == "" {
-			rc.toasts.Warn("Hamlib host is required")
+			rc.toasts.Warn("Rig: hamlib host is required")
 			return nil
 		}
 		if hamlibPort == "" {
-			rc.toasts.Warn("Hamlib port is required")
+			rc.toasts.Warn("Rig: hamlib port is required")
 			return nil
 		}
 	}
 	if rotorBackend == "hamlib" {
 		if rotorHost == "" {
-			rc.toasts.Warn("Rotator hamlib host is required")
+			rc.toasts.Warn("Rotator: hamlib host is required")
 			return nil
 		}
 		if rotorPort == "" {
-			rc.toasts.Warn("Rotator hamlib port is required")
+			rc.toasts.Warn("Rotator: hamlib port is required")
 			return nil
 		}
 	}
@@ -463,7 +463,7 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 		// Skip duplicate check when rig model is empty (optional field).
 		if rig != "" {
 			if _, _, found := config.FindRigByModel(rc.app.Config, rig); found {
-				rc.toasts.Warn("Rig with model " + rig + " already exists")
+				rc.toasts.Warn("Rig: model " + rig + " already exists")
 				return nil
 			}
 		}
@@ -494,7 +494,7 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 		rc.names = append(rc.names, id)
 		savedName = rig
 		if clamped {
-			rc.toasts.Warn("Poll interval adjusted to " + strconv.Itoa(pollInterval) + "s (valid range: 1–60)")
+			rc.toasts.Warn("Rig: poll interval adjusted to " + strconv.Itoa(pollInterval) + "s (valid range: 1–60)")
 		}
 	} else {
 		id := rc.editing
@@ -519,7 +519,7 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 		rc.app.Config.Rigs[id] = rp
 		savedName = rig
 		if clamped {
-			rc.toasts.Warn("Poll interval adjusted to " + strconv.Itoa(pollInterval) + "s (valid range: 1–60)")
+			rc.toasts.Warn("Rig: poll interval adjusted to " + strconv.Itoa(pollInterval) + "s (valid range: 1–60)")
 		}
 	}
 
@@ -528,7 +528,7 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 	rc.lastListContent = "" // force viewport refresh
 	rc.needsRefresh = true
 	if err := config.Save(rc.app.ConfigPath, rc.app.Config); err != nil {
-		rc.toasts.Error("Save " + savedName + " failed: " + err.Error())
+		rc.toasts.Error("Rig: save " + savedName + " failed — " + err.Error())
 	} else {
 		rc.toasts.Success("Rig " + savedName + " saved")
 		applog.Info("Rig saved", "name", savedName)
@@ -546,13 +546,13 @@ func (rc *RigChooser) deleteRig() tea.Cmd {
 
 	// Active rig protection
 	if id == rc.app.Logbook.Station.RigName {
-		rc.toasts.Warn("Cannot delete " + displayName + " — it is the active rig. Select another first.")
+		rc.toasts.Warn("Rig: cannot delete " + displayName + " — it is the active rig. Select another first.")
 		rc.mode = rigChooserList
 		return nil
 	}
 
 	if len(rc.names) <= 1 {
-		rc.toasts.Warn("Cannot delete " + displayName + " — at least one rig must remain.")
+		rc.toasts.Warn("Rig: cannot delete " + displayName + " — at least one rig must remain.")
 		rc.mode = rigChooserList
 		return nil
 	}
@@ -570,7 +570,7 @@ func (rc *RigChooser) deleteRig() tea.Cmd {
 
 	rc.mode = rigChooserList
 	if err := config.Save(rc.app.ConfigPath, rc.app.Config); err != nil {
-		rc.toasts.Error("Delete " + displayName + " failed: " + err.Error())
+		rc.toasts.Error("Rig: delete " + displayName + " failed — " + err.Error())
 	} else {
 		rc.toasts.Success("Rig " + displayName + " deleted")
 		applog.Info("Rig deleted", "name", displayName)
@@ -608,7 +608,7 @@ func (rc *RigChooser) duplicateRig() tea.Cmd {
 	}
 
 	if err := config.Save(rc.app.ConfigPath, rc.app.Config); err != nil {
-		rc.toasts.Error("Duplicate " + displayName + " failed: " + err.Error())
+		rc.toasts.Error("Rig: duplicate " + displayName + " failed — " + err.Error())
 	} else {
 		rc.toasts.Success("Rig \"" + displayName + "\" duplicated as \"" + cloneName + "\"")
 		applog.Info("Rig duplicated", "original", displayName, "clone", cloneName)

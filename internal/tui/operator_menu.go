@@ -233,7 +233,7 @@ func (oc *OperatorChooser) selectOperator() tea.Cmd {
 		oc.toasts.Success("Operator: None (station operator)")
 		applog.Info("Operator activated", "id", "none", "display", "None")
 		if err := config.Save(oc.app.ConfigPath, oc.app.Config); err != nil {
-			oc.toasts.Error("Save operator selection failed: " + err.Error())
+			oc.toasts.Error("Operator: save selection failed — " + err.Error())
 		}
 		return nil
 	}
@@ -244,7 +244,7 @@ func (oc *OperatorChooser) selectOperator() tea.Cmd {
 	oc.toasts.Success(fmt.Sprintf("Operator activated: %s", dn))
 	applog.Info("Operator activated", "id", id, "display", dn)
 	if err := config.Save(oc.app.ConfigPath, oc.app.Config); err != nil {
-		oc.toasts.Error("Save operator selection failed: " + err.Error())
+		oc.toasts.Error("Operator: save selection failed — " + err.Error())
 	}
 	return nil
 }
@@ -254,7 +254,7 @@ func (oc *OperatorChooser) saveForm() tea.Cmd {
 	call = strings.ToUpper(call)
 
 	if call == "" {
-		oc.toasts.Warn("Callsign is required")
+		oc.toasts.Warn("Operator: callsign is required")
 		return nil
 	}
 
@@ -292,7 +292,7 @@ func (oc *OperatorChooser) saveForm() tea.Cmd {
 	oc.refreshIDs()
 
 	if err := config.Save(oc.app.ConfigPath, oc.app.Config); err != nil {
-		oc.toasts.Error("Save " + savedName + " failed: " + err.Error())
+		oc.toasts.Error("Operator: save " + savedName + " failed — " + err.Error())
 	} else {
 		oc.toasts.Success("Operator " + savedName + " saved")
 		applog.Info("Operator saved", "callsign", savedName)
@@ -321,7 +321,7 @@ func (oc *OperatorChooser) deleteOperator() tea.Cmd {
 	oc.mode = operatorList
 	oc.refreshIDs()
 	if err := config.Save(oc.app.ConfigPath, oc.app.Config); err != nil {
-		oc.toasts.Error("Delete " + displayName + " failed: " + err.Error())
+		oc.toasts.Error("Operator: delete " + displayName + " failed — " + err.Error())
 	} else {
 		oc.toasts.Success("Operator " + displayName + " deleted")
 		applog.Info("Operator deleted", "id", id)

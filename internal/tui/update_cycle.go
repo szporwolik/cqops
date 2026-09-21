@@ -16,7 +16,7 @@ import (
 func (m *Model) cycleLogbook() tea.Cmd {
 	ids := config.SortedLogbookIDs(m.App.Config)
 	if len(ids) <= 1 {
-		m.toasts.Info("Only one logbook configured")
+		m.toasts.Info("Logbook: only one configured")
 		return nil
 	}
 
@@ -31,7 +31,7 @@ func (m *Model) cycleLogbook() tea.Cmd {
 	next := ids[idx]
 
 	if err := m.App.SwitchLogbook(next); err != nil {
-		m.toasts.Error("Switch to " + config.LogbookDisplayName(m.App.Logbook) + " failed: " + err.Error())
+		m.toasts.Error("Logbook: switch to " + config.LogbookDisplayName(m.App.Logbook) + " failed — " + err.Error())
 		return nil
 	}
 	displayName := config.LogbookDisplayName(m.App.Logbook)
@@ -77,12 +77,12 @@ func (m *Model) cycleLogbook() tea.Cmd {
 func (m *Model) cycleRig() tea.Cmd {
 	ids := config.SortedRigIDs(m.App.Config)
 	if len(ids) == 0 {
-		m.toasts.Info("No rigs configured")
+		m.toasts.Info("Rig: none configured")
 		return nil
 	}
 	if len(ids) == 1 {
 		rp := m.App.Config.Rigs[ids[0]]
-		m.toasts.Info("Only one rig: " + config.RigDisplayName(&rp))
+		m.toasts.Info("Rig: only one — " + config.RigDisplayName(&rp))
 		return nil
 	}
 
@@ -104,7 +104,7 @@ func (m *Model) cycleRig() tea.Cmd {
 	m.App.Config.Logbooks[m.App.LogbookName] = lb
 
 	if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
-		m.toasts.Error("Save rig failed: " + err.Error())
+		m.toasts.Error("Rig: save failed — " + err.Error())
 		return nil
 	}
 	m.toasts.Success("Rig: " + config.RigDisplayName(&rp))

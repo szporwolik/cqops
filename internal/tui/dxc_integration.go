@@ -43,7 +43,7 @@ func (m *Model) sendSpotCmd(call string, freqKhz float64, comment string) tea.Cm
 
 		// Toast immediately so the user gets instant feedback that the spot
 		// is being sent — don't wait for the cluster round-trip (~1.5 s).
-		toastMsg := fmt.Sprintf("Spotted %s @ %.1f kHz", call, freqKhz)
+		toastMsg := fmt.Sprintf("DXC: spotted %s @ %.1f kHz", call, freqKhz)
 		if comment != "" {
 			toastMsg += " — " + comment
 		}

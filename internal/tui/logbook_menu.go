@@ -616,12 +616,12 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 	}
 
 	if err := c.station.Validate(); err != nil {
-		c.toasts.Warn(err.Error())
+		c.toasts.Warn("Station: " + err.Error())
 		return nil
 	}
 
 	if nm == "" {
-		c.toasts.Warn("Station name cannot be empty")
+		c.toasts.Warn("Station: name cannot be empty")
 		return nil
 	}
 
@@ -631,11 +631,11 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 	var wl *config.WavelogConfig
 	if wlEnabled {
 		if wlStationID == "" {
-			c.toasts.Warn("Wavelog enabled but Station ID not set — press Update to fetch")
+			c.toasts.Warn("Wavelog: enabled but Station ID not set — press Update to fetch")
 			return nil
 		}
 		if wlURL == "" || wlKey == "" {
-			c.toasts.Warn("Wavelog URL and API key are required when enabled")
+			c.toasts.Warn("Wavelog: URL and API key are required when enabled")
 			return nil
 		}
 		wl = &config.WavelogConfig{

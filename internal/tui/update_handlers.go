@@ -600,7 +600,7 @@ func (m *Model) handleLookupResultMsg(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.
 		return m, cmd
 	case qsoRefreshedMsg:
 		if r.err != nil {
-			m.toasts.Error(fmt.Sprintf("Refresh failed: %v", r.err))
+			m.toasts.Error(fmt.Sprintf("QSO: refresh failed — %v", r.err))
 		} else {
 			m.qsos = r.qsos
 			m.recentQSOs.SetQSOS(r.qsos)

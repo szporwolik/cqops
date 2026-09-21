@@ -30,6 +30,7 @@
 - **Shift+Backspace** in the QSO form instantly clears the focused field (listed in the `?` help overlay); the call field's side effects (partner data, name/QTH/grid clearing) apply as with manual editing.
 - **APRS convenience**: turning APRS TX on in the logbook station form now also enables the global APRS integration — no separate visit to the Integrations menu needed. Turning TX off never disables the global integration.
 - **DX Cluster login prefill**: the Integrations menu pre-fills the DX Cluster login with the first available station callsign from your logbooks (deterministic order) when no login is configured — editable as usual.
+- **Consistent toasts**: every toast now starts with its module name (`Wavelog:`, `DXC:`, `QRZ:`, `Rig:`, `QSO:`, …), including dynamic messages from menus and the editor — at a glance you always know which integration or screen produced the message.
 
 ### Fixes
 - The wizard's final step returned the `tea.Quit` function instead of a quit message, so completing the summary never actually exited the wizard — it now sends a proper quit message and launches CQOps.

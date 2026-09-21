@@ -378,7 +378,7 @@ func (c *ContestChooser) focusField() tea.Cmd {
 func (c *ContestChooser) validateContestID() {
 	cid := strings.TrimSpace(c.contInput.Value())
 	if cid != "" && !isValidContestID(cid) {
-		c.toasts.Warn("Contest ID not found in the ADIF spec")
+		c.toasts.Warn("Contest: ID not found in the ADIF spec")
 	}
 }
 
@@ -422,23 +422,23 @@ func (c *ContestChooser) startCreate() {
 func (c *ContestChooser) saveContest() tea.Cmd {
 	name := strings.TrimSpace(c.nameInput.Value())
 	if name == "" {
-		c.toasts.Warn("Contest name cannot be empty")
+		c.toasts.Warn("Contest: name cannot be empty")
 		return nil
 	}
 	dateStr := strings.TrimSpace(c.dateInput.Value())
 	nextStr := strings.TrimSpace(c.nextInput.Value())
 	if nextStr == "" {
-		c.toasts.Warn("Next QSO / Rcvd serial is required")
+		c.toasts.Warn("Contest: next QSO / Rcvd serial is required")
 		return nil
 	}
 	nextQSO, err := strconv.Atoi(nextStr)
 	if err != nil || nextQSO < 1 {
-		c.toasts.Warn("Next QSO / Rcvd serial must be a positive integer")
+		c.toasts.Warn("Contest: next QSO / Rcvd serial must be a positive integer")
 		return nil
 	}
 	contestID := strings.TrimSpace(c.contInput.Value())
 	if contestID == "" {
-		c.toasts.Warn("Contest ADIF ID is required — PgUp/PgDn to cycle through known IDs")
+		c.toasts.Warn("Contest: ADIF ID is required — PgUp/PgDn to cycle through known IDs")
 		return nil
 	}
 	exchangeSent := strings.TrimSpace(c.exchSentInput.Value())
