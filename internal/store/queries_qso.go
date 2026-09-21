@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -21,6 +22,20 @@ const qsoCols = `call, qso_date, time_on, time_off, band, freq, freq_rx, mode, s
 		my_sig, my_sig_info,
 		wavelog_id, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
 		dxcc`
+
+// qsoSelectCols is the SELECT-side column list (id + data columns +
+// timestamps) shared by the list queries.
+const qsoSelectCols = `id, call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,
+		rst_sent, rst_rcvd, gridsquare, name, qth, country, comment, notes, tx_pwr,
+		distance, bearing,
+		sota_ref, pota_ref, wwff_ref, iota, sig, sig_info,
+		my_sota_ref, my_pota_ref, my_wwff_ref,
+		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
+		cq_zone, itu_zone,
+		my_cq_zone, my_itu_zone, my_dxcc,
+		my_sig, my_sig_info,
+		wavelog_id, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
+		created_at, updated_at`
 
 // placeholders52 is a pre-computed string of 52 comma-separated "?" markers,
 // used by InsertQSO to avoid a per-insert []string allocation.
@@ -646,14 +661,17 @@ func DXCDupeSet(db *sql.DB, qsoDate, contestID string) (map[string]bool, error) 
 	return worked, rows.Err()
 }
 
-// ListAllQSOs returns all QSOs ordered by id DESC. Uses paginated
-// iteration internally to avoid loading massive logbooks into memory.
+// ListAllQSOs returns all QSOs ordered by id DESC. Uses keyset pagination
+// so the scan cost stays linear in the log size — OFFSET pagination degrades
+// quadratically on large tables.
 func ListAllQSOs(db *sql.DB) ([]qso.QSO, error) {
 	const pageSize = 500
 	var all []qso.QSO
-	offset := 0
+	lastID := int64(math.MaxInt64)
 	for {
-		page, err := ListQSOsPage(db, pageSize, offset, "", false)
+		page, err := listQSOsByQuery(db,
+			`SELECT `+qsoSelectCols+` FROM qsos WHERE id < ? ORDER BY id DESC LIMIT ?`,
+			lastID, pageSize)
 		if err != nil {
 			return nil, err
 		}
@@ -661,9 +679,30 @@ func ListAllQSOs(db *sql.DB) ([]qso.QSO, error) {
 			break
 		}
 		all = append(all, page...)
-		offset += len(page)
+		if len(page) < pageSize {
+			break
+		}
+		lastID = page[len(page)-1].ID
 	}
 	return all, nil
+}
+
+// CountUnsentQSOs returns the number of QSOs without a remote id — a single
+// SQL COUNT so upload preparation never walks the whole logbook.
+func CountUnsentQSOs(db *sql.DB) (int, error) {
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE COALESCE(wavelog_id, 0) = 0`).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count unsent qsos: %w", err)
+	}
+	return n, nil
+}
+
+// ListUnsentQSOs returns the QSOs without a remote id (never uploaded),
+// ordered by id DESC. Only the eligible rows are fetched, so preparing an
+// upload stays cheap even for very large historical logs.
+func ListUnsentQSOs(db *sql.DB) ([]qso.QSO, error) {
+	return listQSOsByQuery(db,
+		`SELECT `+qsoSelectCols+` FROM qsos WHERE COALESCE(wavelog_id, 0) = 0 ORDER BY id DESC`)
 }
 
 // ListQSOsFromDate returns QSOs with qso_date >= the given date, newest-first,
@@ -724,34 +763,62 @@ func listQSOsByQuery(db *sql.DB, query string, args ...any) ([]qso.QSO, error) {
 }
 
 // UpdateQSO updates an existing QSO. Retries on SQLITE_BUSY.
+//
+// Derived-field policy: base_call is always recomputed from the stored call.
+// DXCC is written when the caller supplies a value; when the call CHANGED
+// and no fresh DXCC was provided, the stale prefix-derived value is
+// invalidated (cleared) so the DXCC backfill recomputes it — preserving it
+// would leave worked-DXCC statistics disagreeing with the displayed contact.
 func UpdateQSO(db *sql.DB, q *qso.QSO) error {
 	q.UpdatedAt = time.Now().UTC()
+
+	var oldCall string
+	_ = db.QueryRow(`SELECT call FROM qsos WHERE id=?`, q.ID).Scan(&oldCall)
+	callChanged := oldCall != "" && !strings.EqualFold(oldCall, q.Call)
+
+	dxccSet := ""
+	dxccArg := ""
+	if q.DXCC != "" {
+		dxccSet = ", dxcc=?"
+		dxccArg = q.DXCC
+	} else if callChanged {
+		dxccSet = ", dxcc=?"
+	}
+
+	query := `UPDATE qsos SET call=?, qso_date=?, time_on=?, time_off=?, band=?, freq=?, freq_rx=?, mode=?, submode=?,
+		rst_sent=?, rst_rcvd=?, gridsquare=?, name=?, qth=?, country=?, comment=?, notes=?, tx_pwr=?,
+		distance=?, bearing=?,
+	sota_ref=?, pota_ref=?, wwff_ref=?, iota=?, sig=?, sig_info=?,
+		my_sota_ref=?, my_pota_ref=?, my_wwff_ref=?,
+		station_callsign=?, operator=?, my_gridsquare=?, my_rig=?, my_antenna=?, source=?,
+		cq_zone=?, itu_zone=?,
+		my_cq_zone=?, my_itu_zone=?, my_dxcc=?,
+		my_sig=?, my_sig_info=?,
+		wavelog_id=?, contest_id=?, exch_sent=?, exch_rcvd=?, stx=?, srx=?, stx_string=?, srx_string=?, contest_adif_id=?,
+		base_call=?` + dxccSet + `,
+		updated_at=?
+		WHERE id=?`
+
+	args := []any{
+		q.Call, q.QSODate, q.TimeOn, q.TimeOff,
+		q.Band, q.Freq, q.FreqRx, q.Mode, q.Submode,
+		q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
+		q.Distance, q.Bearing,
+		q.SOTARef, q.POTARef, q.WWFFRef, q.IOTA, q.SIG, q.SIGInfo,
+		q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
+		q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
+		q.CQZone, q.ITUZone, q.MyCQZone, q.MyITUZone, q.MyDXCC, q.MySIG, q.MySIGInfo,
+		q.WavelogID, q.ContestID, q.ExchSent, q.ExchRcvd, q.STX, q.SRX, q.STXString, q.SRXString, q.ContestADIFID,
+		qso.DeriveBaseCall(q.Call),
+	}
+	if dxccSet != "" {
+		args = append(args, dxccArg)
+	}
+	args = append(args, q.UpdatedAt.Format(time.RFC3339), q.ID)
+
 	var err error
 	for attempt := 0; attempt < 3; attempt++ {
-		_, err = db.Exec(
-			`UPDATE qsos SET call=?, qso_date=?, time_on=?, time_off=?, band=?, freq=?, freq_rx=?, mode=?, submode=?,
-			rst_sent=?, rst_rcvd=?, gridsquare=?, name=?, qth=?, country=?, comment=?, notes=?, tx_pwr=?,
-			distance=?, bearing=?,
-		sota_ref=?, pota_ref=?, wwff_ref=?, iota=?, sig=?, sig_info=?,
-			my_sota_ref=?, my_pota_ref=?, my_wwff_ref=?,
-			station_callsign=?, operator=?, my_gridsquare=?, my_rig=?, my_antenna=?, source=?,
-			cq_zone=?, itu_zone=?,
-			my_cq_zone=?, my_itu_zone=?, my_dxcc=?,
-			my_sig=?, my_sig_info=?,
-			wavelog_id=?, contest_id=?, exch_sent=?, exch_rcvd=?, stx=?, srx=?, stx_string=?, srx_string=?, contest_adif_id=?,
-			updated_at=?
-			WHERE id=?`,
-			q.Call, q.QSODate, q.TimeOn, q.TimeOff,
-			q.Band, q.Freq, q.FreqRx, q.Mode, q.Submode,
-			q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
-			q.Distance, q.Bearing,
-			q.SOTARef, q.POTARef, q.WWFFRef, q.IOTA, q.SIG, q.SIGInfo,
-			q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
-			q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
-			q.CQZone, q.ITUZone, q.MyCQZone, q.MyITUZone, q.MyDXCC, q.MySIG, q.MySIGInfo, q.WavelogID, q.ContestID, q.ExchSent, q.ExchRcvd, q.STX, q.SRX, q.STXString, q.SRXString, q.ContestADIFID,
-			q.UpdatedAt.Format(time.RFC3339),
-			q.ID,
-		)
+		_, err = db.Exec(query, args...)
 		if err == nil {
 			return nil
 		}

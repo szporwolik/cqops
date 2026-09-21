@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -35,18 +36,35 @@ type editorMsg struct {
 	wlCall     string
 	wlOK       bool
 	wlDup      bool
-	normalized int
-	err        error
-	dlCount    int
-	dlDupes    int
-	dlFailed   int
-	dlLastID   int64
-	dlErr      string
+	// Batch/individual upload tallies. wlSentCount counts QSOs the remote
+	// accepted whose remote id was persisted locally; wlDupCount remote
+	// duplicates with a persisted id; wlUnresolvedCount remotely accepted
+	// but local remote-id persistence incomplete (re-offered next upload);
+	// wlFailCount requests that failed outright and remain fully unsent.
+	wlSentCount       int
+	wlDupCount        int
+	wlFailCount       int
+	wlUnresolvedCount int
+	normalized        int
+	err               error
+	dlCount           int
+	dlDupes           int
+	dlFailed          int
+	dlLastID          int64
+	dlErr             string
 	// Batch download progress
 	dlProgress int
 	dlTotal    int
 	dlDone     bool
 	dlAborted  bool
+	// dlDownload marks a Wavelog download completion (as opposed to ADIF
+	// import/export, which reuses the same message shape). Only download
+	// completions may advance the persisted Wavelog last_fetched_id cursor.
+	dlDownload bool
+	// dlTransient counts insert failures deferred for retry: the persisted
+	// cursor stops before the first such record so the next incremental
+	// download re-fetches it.
+	dlTransient int
 	// Simple toast from the editor.
 	toastWarn string
 	// Remote-copy refresh of the QSO being edited.
@@ -54,9 +72,10 @@ type editorMsg struct {
 	wlFetchQSO   *wavelog.QSOData
 	wlFetchErr   string
 	// Wavelog PATCH result after a save of a synced QSO.
-	wlSyncOK   bool
-	wlSyncGone bool
-	wlSyncErr  string
+	wlSyncOK      bool
+	wlSyncGone    bool
+	wlSyncErr     string
+	wlSyncPending bool // offline save of a synced QSO — sync deferred
 }
 
 func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -67,6 +86,9 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			le.height = msg.Height
 			le.buildTable()
 		}
+
+	case uploadPrepMsg:
+		return le.handleUploadPrep(msg)
 
 	case editorMsg:
 		// Batch download/import/export progress — only when a download is actually active.
@@ -101,7 +123,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Download/import/export complete (or aborted).
 		if le.dlActive && msg.dlDone {
 			le.dlActive = false
-			le.dlCancel = nil
+			le.dlOp = nil
 			le.dialog = nil // clear stale dialog so results can render
 
 			// ADIF export result.
@@ -111,9 +133,10 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					le.impErr = ""
 				} else if msg.dlErr != "" {
 					le.impErr = msg.dlErr
-				} else {
-					le.impErr = ""
 				}
+				// A terminal without an error must not wipe a mid-stream
+				// error captured earlier — the bare dlDone synthesized from
+				// channel closure carries neither counts nor error.
 				le.mode = edModeExportResult
 				le.needsReload = true
 				return le, nil
@@ -128,9 +151,9 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					le.impErr = ""
 				} else if msg.dlErr != "" {
 					le.impErr = msg.dlErr
-				} else {
-					le.impErr = ""
 				}
+				// Same as export: a bare terminal must not clear a
+				// previously captured error.
 				le.mode = edModeImportResult
 				le.needsReload = true
 				return le, nil
@@ -141,6 +164,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				le.wlDownloadCount = msg.dlCount
 				le.wlDownloadDupes = msg.dlDupes
 				le.wlDownloadErr = ""
+				le.wlDownloadHold = 0
 				le.wlDownloadAbort = true
 				le.mode = edModeWLDownloadResult
 				le.needsReload = true
@@ -157,6 +181,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				le.wlDownloadCount = msg.dlCount
 				le.wlDownloadDupes = msg.dlDupes
 				le.wlDownloadFailed = msg.dlFailed
+				le.wlDownloadHold = msg.dlTransient
 				le.wlDownloadErr = ""
 				le.wlDownloadAbort = false
 				le.mode = edModeWLDownloadResult
@@ -170,24 +195,22 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			le.needsReload = true
 		}
 		if msg.normalized > 0 {
-			// Normalization done, now upload all unsent QSOs from the full
-			// database (not just the current page).
+			// Normalization done, now upload all unsent QSOs — fetched as
+			// eligible rows only, never a full-log scan.
 			var unsent []qso.QSO
 			if le.db != nil {
-				allQSOS, listErr := store.ListAllQSOs(le.db)
+				rows, listErr := store.ListUnsentQSOs(le.db)
 				if listErr != nil {
 					applog.Error("Wavelog: post-normalize upload — cannot list QSOs", "error", listErr)
 					return le, func() tea.Msg {
 						return editorMsg{wlOK: false, err: fmt.Errorf("cannot read logbook: %w", listErr)}
 					}
 				}
-				for _, q := range allQSOS {
-					if q.WavelogID == 0 {
-						if q.Band == "" || q.Mode == "" || q.QSODate == "" {
-							continue
-						}
-						unsent = append(unsent, q)
+				for _, q := range rows {
+					if q.Band == "" || q.Mode == "" || q.QSODate == "" {
+						continue
 					}
+					unsent = append(unsent, q)
 				}
 			} else {
 				for _, q := range le.qsos {
@@ -258,12 +281,10 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			*le.dialog = d
 			if d.Done() {
 				le.dialog = nil
-				if le.dlCancel != nil {
-					close(le.dlCancel)
-					le.dlCancel = nil
-				}
-				// Don't touch dlMsgCh — the goroutine needs it to send the
-				// final dlDone message.  The editorMsg handler will clean up.
+				// The operation object stays alive: the worker needs it to
+				// send the final dlDone message. cancelDownload is idempotent
+				// and never nils the channels the worker captured.
+				le.cancelDownload()
 			}
 			return le, le.readDownloadMsg
 		}
@@ -401,17 +422,12 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if len(le.qsos) == 0 {
 					return le, func() tea.Msg { return editorMsg{toastWarn: "Wavelog: logbook is empty — nothing to upload"} }
 				}
-				// Count unsent QSOs from the full database, not just the
-				// current page shown on screen.
+				// Count unsent QSOs from the full database with a single
+				// SQL COUNT — never a full-log scan.
 				le.wlUnsentCount = 0
 				if le.db != nil {
-					allQSOS, listErr := store.ListAllQSOs(le.db)
-					if listErr == nil {
-						for _, q := range allQSOS {
-							if q.WavelogID == 0 {
-								le.wlUnsentCount++
-							}
-						}
+					if n, cntErr := store.CountUnsentQSOs(le.db); cntErr == nil {
+						le.wlUnsentCount = n
 					}
 				}
 				if le.wlUnsentCount == 0 {
@@ -546,11 +562,13 @@ func (le *LogbookEditor) handleFilePickerUpdate(msg tea.Msg) (tea.Model, tea.Cmd
 				le.dlProgress = 0
 				le.dlTotal = 0
 				le.dlCurrent = 0
+				le.impInserted = 0
+				le.impErr = ""
 				le.dlActive = true
-				le.dlMsgCh = make(chan editorMsg, 4)
-				le.dlCancel = make(chan struct{})
+				op := newDownloadOp()
+				le.dlOp = op
 				le.mode = edModeExporting
-				go le.runExport(path)
+				go le.runExport(op, path)
 				return le, le.readDownloadMsg
 			}
 			// Import: let filepicker handle selection via DidSelectFile below.
@@ -573,14 +591,14 @@ func (le *LogbookEditor) handleFilePickerUpdate(msg tea.Msg) (tea.Model, tea.Cmd
 			le.dlTotal = 0
 			le.dlCurrent = 0
 			le.dlActive = true
-			le.dlMsgCh = make(chan editorMsg, 4)
-			le.dlCancel = make(chan struct{})
+			op := newDownloadOp()
+			le.dlOp = op
 			le.impInserted = 0
 			le.impDupes = 0
 			le.impFailed = 0
 			le.impErr = ""
 			le.mode = edModeImporting
-			go le.runImport(path)
+			go le.runImport(op, path)
 			return le, le.readDownloadMsg
 		}
 	}
@@ -612,11 +630,8 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 		// Clear any lingering download state.
 		le.dlProgress = 0
 		le.dlTotal = 0
-		le.dlMsgCh = nil
-		if le.dlCancel != nil {
-			close(le.dlCancel)
-			le.dlCancel = nil
-		}
+		le.cancelDownload()
+		le.dlOp = nil
 		applog.Warn("LogbookEditor: purging all QSOs")
 		return func() tea.Msg {
 			err := store.PurgeQSOs(le.db)
@@ -697,9 +712,14 @@ func (le *LogbookEditor) doSave() tea.Cmd {
 		applog.Info("LogbookEditor: QSO saved", "id", id, "call", call)
 
 		// Synced QSOs: push the edit to Wavelog. Local save must never
-		// depend on this succeeding.
+		// depend on this succeeding — and offline mode must never contact
+		// the server at all (the local change is reported as pending sync).
 		em := editorMsg{saved: id, saveCall: call, saveDate: date}
 		if q.WavelogID > 0 && le.wlURL != "" && le.wlKey != "" {
+			if le.Offline {
+				em.wlSyncPending = true
+				return em
+			}
 			syncErr := wavelog.UpdateQSO(le.wlURL, le.wlKey, q.WavelogID, buildUpdateInput(q))
 			if syncErr != nil {
 				if apiErr, ok := syncErr.(*wavelog.APIError); ok && apiErr.Code == "not_found" {
@@ -721,6 +741,45 @@ func (le *LogbookEditor) doSave() tea.Cmd {
 	}
 }
 
+// downloadOp carries immutable per-operation state for a download/import/
+// export: the progress channel and a cancellable context. It is captured by
+// the worker goroutine at launch and never mutated afterward, so the UI can
+// tear down editor state without losing cancellation or blocking sends.
+type downloadOp struct {
+	msgCh  chan editorMsg
+	ctx    context.Context
+	cancel context.CancelFunc
+}
+
+func newDownloadOp() *downloadOp {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &downloadOp{msgCh: make(chan editorMsg, 4), ctx: ctx, cancel: cancel}
+}
+
+// stop requests cancellation. Safe to call multiple times.
+func (op *downloadOp) stop() { op.cancel() }
+
+// cancelled reports whether the operation was cancelled.
+func (op *downloadOp) cancelled() bool {
+	select {
+	case <-op.ctx.Done():
+		return true
+	default:
+		return false
+	}
+}
+
+// send delivers a non-terminal progress message without ever blocking
+// forever: once cancelled (or the consumer is gone), the send is dropped.
+// Terminal messages (dlDone/dlErr) use the plain channel — the consumer is
+// guaranteed to keep reading until the channel closes.
+func (op *downloadOp) send(em editorMsg) {
+	select {
+	case op.msgCh <- em:
+	case <-op.ctx.Done():
+	}
+}
+
 // doWavelogDownload fetches contacts from Wavelog, deduplicates against local DB,
 // and inserts new QSOs in batches. Progress is reported via editorMsg so the UI
 // can show a live counter. The user can abort by pressing any key.
@@ -728,25 +787,36 @@ func (le *LogbookEditor) doWavelogDownload() tea.Cmd {
 	url, key, sid := le.wlURL, le.wlKey, le.wlStationID
 	fetchFromID := le.wlLastFetchedID
 
-	// Channels for progress and cancellation.
-	le.dlMsgCh = make(chan editorMsg, 4)
-	le.dlCancel = make(chan struct{})
+	op := newDownloadOp()
+	le.dlOp = op
 	le.dlActive = true
 
 	applog.InfoDetail("Wavelog: starting contacts download",
 		fmt.Sprintf("url=%s station_id=%s from_id=%d", url, sid, fetchFromID))
 
-	// Start the download goroutine.
-	go le.runDownload(url, key, sid, fetchFromID)
+	// Start the download goroutine with the operation captured.
+	go le.runDownload(op, url, key, sid, fetchFromID)
 
 	// Return a Cmd that reads the first progress message.
 	return le.readDownloadMsg
 }
 
-// readDownloadMsg reads the next message from the download channel.
+// cancelDownload asks the active operation to stop. Idempotent — the
+// operation object survives so the worker can deliver its final message.
+func (le *LogbookEditor) cancelDownload() {
+	if le.dlOp != nil {
+		le.dlOp.stop()
+	}
+}
+
+// readDownloadMsg reads the next message from the active operation's channel.
 // Returns the message to the Bubble Tea runtime for processing.
 func (le *LogbookEditor) readDownloadMsg() tea.Msg {
-	msg, ok := <-le.dlMsgCh
+	op := le.dlOp
+	if op == nil {
+		return editorMsg{dlDone: true}
+	}
+	msg, ok := <-op.msgCh
 	if !ok {
 		return editorMsg{dlDone: true}
 	}
@@ -755,30 +825,31 @@ func (le *LogbookEditor) readDownloadMsg() tea.Msg {
 
 // runDownload performs the actual HTTP fetch, saves ADIF to a temp file,
 // then processes it line-by-line. Progress is reported per batch (every 50 QSOs
-// or when done). The goroutine checks le.dlCancel between records; on abort
+// or when done). The goroutine checks op.ctx between records; on abort
 // processing stops immediately. Downloads are idempotent — duplicates are
 // detected and skipped.
-func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
-	// Capture the channel locally so the UI handler can't nil it out from
-	// under us (setting le.dlMsgCh = nil would break sends and close).
-	msgCh := le.dlMsgCh
+func (le *LogbookEditor) runDownload(op *downloadOp, url, key, sid string, fetchFromID int64) {
+	// The channel lives on the immutable operation object — the UI handler
+	// can clear editor state without breaking sends, close, or cancellation.
+	msgCh := op.msgCh
 	defer close(msgCh)
 
 	db := le.db
 
 	// Send initial message so the dialog appears immediately.
-	msgCh <- editorMsg{dlProgress: 0, dlTotal: 0}
+	op.send(editorMsg{dlProgress: 0, dlTotal: 0})
 
 	// Page-level progress: the v2 export is paginated; update the download
 	// bar as each page arrives instead of waiting for the whole fetch.
-	result, err := wavelog.FetchContactsProgress(url, key, sid, fetchFromID,
+	result, err := wavelog.FetchContactsProgressCtx(op.ctx, url, key, sid, fetchFromID,
 		func(exported, total int) {
-			select {
-			case msgCh <- editorMsg{dlProgress: exported, dlTotal: total}:
-			case <-le.dlCancel:
-			}
+			op.send(editorMsg{dlProgress: exported, dlTotal: total})
 		})
 	if err != nil {
+		if op.cancelled() {
+			msgCh <- editorMsg{dlCount: 0, dlDupes: 0, dlAborted: true, dlDone: true}
+			return
+		}
 		applog.ErrorDetail("Wavelog: contacts download failed",
 			fmt.Sprintf("url=%s station_id=%s from_id=%d error=%v", url, sid, fetchFromID, err))
 		msgCh <- editorMsg{dlErr: err.Error()}
@@ -790,7 +861,7 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 
 	if result.ADIFPath == "" || result.ExportedQSOs == 0 {
 		applog.Info("Wavelog: no new contacts to download")
-		msgCh <- editorMsg{dlCount: 0, dlLastID: result.LastFetchedID(), dlDone: true}
+		msgCh <- editorMsg{dlCount: 0, dlLastID: result.LastFetchedID(), dlDownload: true, dlDone: true}
 		return
 	}
 
@@ -808,6 +879,16 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 	idIdx := 0               // remote-id cursor, aligned 1:1 with exported rows
 	const batchInterval = 50 // report progress every 50 QSOs for smooth but efficient UI
 
+	// Checkpoint discipline: the persisted Wavelog cursor may only advance
+	// through records that were durably handled (inserted, duplicate, or
+	// permanently invalid). The first record whose INSERT fails freezes the
+	// cursor so the next incremental download re-fetches it — failed
+	// contacts are never skipped past.
+	checkpointID := int64(0)
+	checkpointOK := false
+	frozen := false
+	transientFails := 0
+
 	applog.Info("Wavelog: scanning ADIF", "exported", totalExported, "size_bytes", result.ADIFSize)
 
 	// Stream-parse ADIF records one at a time — never loads all QSOs into memory.
@@ -815,11 +896,9 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 	processed := 0 // total records seen (including skipped/dupes)
 	for scanner.Scan() {
 		// Check for abort between records.
-		select {
-		case <-le.dlCancel:
+		if op.cancelled() {
 			msgCh <- editorMsg{dlCount: inserted, dlDupes: dupes, dlAborted: true, dlDone: true}
 			return
-		default:
 		}
 
 		if scanner.IsHeader() {
@@ -847,6 +926,12 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 		if err := qso.ValidateImportRecord(qs); err != nil {
 			applog.Warn("Wavelog: skipping invalid imported QSO", "call", qs.Call, "reason", err)
 			failed++
+			// Permanently invalid — safe to advance the checkpoint past it
+			// (it can never be retried into success).
+			if !frozen && qs.WavelogID > 0 {
+				checkpointID = qs.WavelogID
+				checkpointOK = true
+			}
 			continue
 		}
 
@@ -857,6 +942,10 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 				if serr := store.SetWavelogID(db, existingID, qs.WavelogID); serr != nil {
 					applog.Warn("Wavelog: failed to store remote id for dupe", "qso_id", existingID, "error", serr)
 				}
+			}
+			if !frozen && qs.WavelogID > 0 {
+				checkpointID = qs.WavelogID
+				checkpointOK = true
 			}
 			continue
 		}
@@ -878,14 +967,20 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 		if insertErr != nil {
 			applog.Error("Wavelog: failed to insert downloaded QSO", "call", qs.Call, "error", insertErr)
 			failed++
+			transientFails++
+			frozen = true // never advance the checkpoint past an unsaved record
 			continue
 		}
 		inserted++
+		if !frozen && qs.WavelogID > 0 {
+			checkpointID = qs.WavelogID
+			checkpointOK = true
+		}
 
 		// Report progress every batchInterval QSOs, and always for the first
 		// one (so the UI transitions from "Downloading…" to "Processing QSO 1").
 		if inserted == 1 || inserted%batchInterval == 0 {
-			msgCh <- editorMsg{dlProgress: totalExported, dlTotal: totalExported, dlCount: inserted}
+			op.send(editorMsg{dlProgress: totalExported, dlTotal: totalExported, dlCount: inserted})
 		}
 
 		// Log milestone every 500 QSOs so we can trace progress in logs.
@@ -896,15 +991,34 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 
 	// Send final progress (catch remainder if last batch was partial).
 	if inserted%batchInterval != 0 {
-		msgCh <- editorMsg{dlProgress: totalExported, dlTotal: totalExported, dlCount: inserted}
+		op.send(editorMsg{dlProgress: totalExported, dlTotal: totalExported, dlCount: inserted})
 	}
 
+	scanFailed := false
 	if err := scanner.Err(); err != nil {
 		applog.Error("Wavelog: ADIF scanner error", "error", err, "inserted", inserted, "dupes", dupes)
+		scanFailed = true
+	}
+
+	// Compute the persistable cursor. With a scanner error or a transient
+	// insert failure, records beyond the durable prefix are uncertain and
+	// must be re-fetched — the cursor stays behind them.
+	lastID := result.LastFetchedID()
+	if scanFailed || frozen {
+		if checkpointOK {
+			lastID = checkpointID
+		} else {
+			// No expressible checkpoint (remote ids unavailable) — stay at
+			// the starting cursor so nothing is skipped.
+			lastID = fetchFromID
+		}
+	} else if checkpointOK {
+		lastID = checkpointID
 	}
 
 	applog.Info("Wavelog: contacts download complete",
-		"inserted", inserted, "dupes", dupes, "failed", failed, "processed", processed, "last_id", result.LastFetchedID())
+		"inserted", inserted, "dupes", dupes, "failed", failed, "processed", processed,
+		"last_id", lastID, "transient", transientFails, "scan_failed", scanFailed)
 	if dupes > 0 {
 		applog.Warn("Wavelog: ADIF export contains duplicate QSO records — skipped during import",
 			"dupe_count", dupes,
@@ -912,30 +1026,34 @@ func (le *LogbookEditor) runDownload(url, key, sid string, fetchFromID int64) {
 	}
 
 	msgCh <- editorMsg{
-		dlCount:  inserted,
-		dlDupes:  dupes,
-		dlFailed: failed,
-		dlLastID: result.LastFetchedID(),
-		dlDone:   true,
+		dlCount:     inserted,
+		dlDupes:     dupes,
+		dlFailed:    failed,
+		dlLastID:    lastID,
+		dlDownload:  true,
+		dlTransient: transientFails,
+		dlDone:      true,
 	}
 }
 
 // runImport performs ADIF import from a local file with progress reporting.
 // It mirrors runDownload but reads from a local file instead of Wavelog HTTP.
-func (le *LogbookEditor) runImport(path string) {
-	msgCh := le.dlMsgCh
+func (le *LogbookEditor) runImport(op *downloadOp, path string) {
+	msgCh := op.msgCh
 	defer close(msgCh)
 
 	db := le.db
 
 	// Count total records for progress estimation.
 	totalRecords := countADIFRecords(path)
-	msgCh <- editorMsg{dlProgress: totalRecords, dlTotal: totalRecords, dlCount: 0}
+	op.send(editorMsg{dlProgress: totalRecords, dlTotal: totalRecords, dlCount: 0})
 
 	f, err := os.Open(path)
 	if err != nil {
 		applog.Error("ADIF import: failed to open file", "path", path, "error", err)
-		msgCh <- editorMsg{dlErr: "cannot open file: " + err.Error()}
+		// Terminal result carrying the error — the import must never end
+		// on a success-looking result screen.
+		msgCh <- editorMsg{dlErr: "cannot open file: " + err.Error(), dlDone: true}
 		return
 	}
 	defer f.Close()
@@ -948,11 +1066,9 @@ func (le *LogbookEditor) runImport(path string) {
 	scanner := adif.NewScanner(f)
 	for scanner.Scan() {
 		// Check for abort between records.
-		select {
-		case <-le.dlCancel:
+		if op.cancelled() {
 			msgCh <- editorMsg{dlCount: inserted, dlDupes: dupes, dlAborted: true, dlDone: true}
 			return
-		default:
 		}
 
 		if scanner.IsHeader() {
@@ -1001,7 +1117,7 @@ func (le *LogbookEditor) runImport(path string) {
 		// Report progress every batchInterval QSOs, and always for the first
 		// one so the UI transitions from "Importing…" to showing a count.
 		if inserted == 1 || inserted%batchInterval == 0 {
-			msgCh <- editorMsg{dlProgress: totalRecords, dlTotal: totalRecords, dlCount: inserted, dlDupes: dupes}
+			op.send(editorMsg{dlProgress: totalRecords, dlTotal: totalRecords, dlCount: inserted, dlDupes: dupes})
 		}
 
 		if inserted%500 == 0 && inserted > 0 {
@@ -1010,7 +1126,18 @@ func (le *LogbookEditor) runImport(path string) {
 	}
 
 	if err := scanner.Err(); err != nil {
+		// A truncated or corrupt file must not end on a success-looking
+		// result: the single terminal message carries the error together
+		// with the counts of whatever was imported before the failure.
 		applog.Error("ADIF import: scanner error", "error", err, "inserted", inserted, "dupes", dupes)
+		msgCh <- editorMsg{
+			dlCount:  inserted,
+			dlDupes:  dupes,
+			dlFailed: failed,
+			dlErr:    "file could not be read completely: " + err.Error(),
+			dlDone:   true,
+		}
+		return
 	}
 
 	applog.Info("ADIF import: complete", "inserted", inserted, "dupes", dupes, "failed", failed, "path", path)
@@ -1072,8 +1199,12 @@ func sanitizeFilename(s string) string {
 }
 
 // runExport performs ADIF export to a local file with progress reporting.
-func (le *LogbookEditor) runExport(path string) {
-	msgCh := le.dlMsgCh
+// The file is written to a sibling temp path and promoted to the target only
+// after a fully successful write and close — a failed or aborted export never
+// leaves a partial file at the requested path, and every failure is reported
+// as an error result instead of a success-looking one.
+func (le *LogbookEditor) runExport(op *downloadOp, path string) {
+	msgCh := op.msgCh
 	defer close(msgCh)
 
 	db := le.db
@@ -1091,40 +1222,47 @@ func (le *LogbookEditor) runExport(path string) {
 			total = counts.Total
 		}
 	}
-	msgCh <- editorMsg{dlProgress: total, dlTotal: total, dlCount: 0}
+	op.send(editorMsg{dlProgress: total, dlTotal: total, dlCount: 0})
 
 	if total == 0 {
-		msgCh <- editorMsg{dlErr: "logbook is empty"}
+		msgCh <- editorMsg{dlErr: "logbook is empty", dlDone: true}
 		return
 	}
 
-	f, err := os.Create(path)
+	tmpPath := path + ".tmp"
+	f, err := os.Create(tmpPath)
 	if err != nil {
-		applog.Error("ADIF export: failed to create file", "path", path, "error", err)
-		msgCh <- editorMsg{dlErr: "cannot create file: " + err.Error()}
+		applog.Error("ADIF export: failed to create temp file", "path", tmpPath, "error", err)
+		msgCh <- editorMsg{dlErr: "cannot create file: " + err.Error(), dlDone: true}
 		return
 	}
-	defer f.Close()
+
+	written := 0
+	// fail discards the temp file and emits the single terminal result.
+	fail := func(reason string) {
+		f.Close()
+		os.Remove(tmpPath)
+		applog.Error("ADIF export: failed", "path", path, "reason", reason)
+		msgCh <- editorMsg{dlCount: written, dlErr: reason, dlDone: true}
+	}
 
 	// Write ADIF header. Per ADIF spec, the first character must not be '<'
 	// or the file is treated as having no header.
 	_, err = fmt.Fprintf(f, "CQOps ADIF Export\n<ADIF_VER:5>3.1.7<PROGRAMID:5>CQOps<PROGRAMVERSION:%d>%s<EOH>\n",
 		len(version.Resolved()), version.Resolved())
 	if err != nil {
-		applog.Error("ADIF export: failed to write header", "path", path, "error", err)
-		msgCh <- editorMsg{dlErr: "write error: " + err.Error()}
+		fail("write error: " + err.Error())
 		return
 	}
 
 	// Stream QSOs from DB with pagination to avoid loading all into memory.
 	const pageSize = 500
-	written := 0
 	for offset := 0; offset < total; offset += pageSize {
-		select {
-		case <-le.dlCancel:
+		if op.cancelled() {
+			f.Close()
+			os.Remove(tmpPath)
 			msgCh <- editorMsg{dlCount: written, dlAborted: true, dlDone: true}
 			return
-		default:
 		}
 
 		limit := pageSize
@@ -1133,24 +1271,38 @@ func (le *LogbookEditor) runExport(path string) {
 		}
 		qsos, err := store.ListQSOsPage(db, limit, offset, le.contestID, le.contestID != "")
 		if err != nil {
-			applog.Error("ADIF export: failed to list QSOs", "offset", offset, "error", err)
-			msgCh <- editorMsg{dlErr: "database read error: " + err.Error()}
+			fail("database read error: " + err.Error())
 			return
 		}
 		for _, q := range qsos {
 			if _, err := fmt.Fprintln(f, q.ToADIF()); err != nil {
-				applog.Error("ADIF export: write error", "offset", offset, "error", err)
-				msgCh <- editorMsg{dlErr: "write error: " + err.Error()}
+				fail("write error: " + err.Error())
 				return
 			}
 			written++
 		}
 		// Report progress after each page.
-		msgCh <- editorMsg{dlProgress: total, dlTotal: total, dlCount: written}
+		op.send(editorMsg{dlProgress: total, dlTotal: total, dlCount: written})
 
 		if written%1000 == 0 && written > 0 {
 			applog.Info("ADIF export: progress", "written", written, "total", total)
 		}
+	}
+
+	// Check the close error: buffered writes can fail only at Close, so the
+	// export is not real until it succeeds.
+	if err := f.Close(); err != nil {
+		os.Remove(tmpPath)
+		applog.Error("ADIF export: failed to close file", "path", tmpPath, "error", err)
+		msgCh <- editorMsg{dlCount: written, dlErr: "write error: " + err.Error(), dlDone: true}
+		return
+	}
+	// Promote only after successful completion.
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath)
+		applog.Error("ADIF export: failed to promote file", "path", path, "error", err)
+		msgCh <- editorMsg{dlCount: written, dlErr: "cannot finalize file: " + err.Error(), dlDone: true}
+		return
 	}
 
 	applog.Info("ADIF export: complete", "path", path, "count", written)

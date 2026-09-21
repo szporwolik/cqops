@@ -105,39 +105,45 @@ func mergeRemoteQSO(local *qso.QSO, d *wavelog.QSOData) *qso.QSO {
 	return &merged
 }
 
+// strptr returns a pointer to s, so an empty string can be distinguished
+// from an untouched field when building a Wavelog PATCH.
+func strptr(s string) *string { return &s }
+
 // buildUpdateInput maps a local QSO to the v2 PATCH fields. v2 wants the date
 // as YYYY-MM-DD plus time_on as HH:MM:SS (sent together), frequencies as
 // string-encoded Hz, and canonical mode names.
+//
+// Every clearable field is always present: the edit form backs each one, so
+// an empty value means the operator cleared it and the remote copy must be
+// cleared too (the wavelog layer sends JSON null for that).
 func buildUpdateInput(q *qso.QSO) wavelog.UpdateQSOInput {
+	freq := int64(math.Round(q.Freq * 1e6))
+	freqRx := int64(math.Round(q.FreqRx * 1e6))
 	in := wavelog.UpdateQSOInput{
 		Call:       q.Call,
 		Band:       q.Band,
 		Mode:       q.Mode,
 		QSODate:    adifDateToISO(q.QSODate),
 		TimeOn:     adifTimeToHMS(q.TimeOn),
-		RSTSent:    q.RSTSent,
-		RSTRcvd:    q.RSTRcvd,
-		Gridsquare: q.GridSquare,
-		Name:       q.Name,
-		QTH:        q.QTH,
-		Comment:    q.Comment,
-		Notes:      q.Notes,
-		TXPower:    q.TXPower,
-		SOTARef:    q.SOTARef,
-		POTARef:    q.POTARef,
-		WWFFRef:    q.WWFFRef,
-		IOTA:       q.IOTA,
-		SIG:        q.SIG,
-		SIGInfo:    q.SIGInfo,
+		RSTSent:    strptr(q.RSTSent),
+		RSTRcvd:    strptr(q.RSTRcvd),
+		Gridsquare: strptr(q.GridSquare),
+		Name:       strptr(q.Name),
+		QTH:        strptr(q.QTH),
+		Comment:    strptr(q.Comment),
+		Notes:      strptr(q.Notes),
+		TXPower:    strptr(q.TXPower),
+		SOTARef:    strptr(q.SOTARef),
+		POTARef:    strptr(q.POTARef),
+		WWFFRef:    strptr(q.WWFFRef),
+		IOTA:       strptr(q.IOTA),
+		SIG:        strptr(q.SIG),
+		SIGInfo:    strptr(q.SIGInfo),
+		FreqHz:     &freq,
+		FreqRxHz:   &freqRx,
 	}
 	if strings.EqualFold(q.Mode, "MFSK") && q.Submode != "" {
 		in.Mode = q.Submode // canonical: MFSK+FT8 → FT8, same as buildCreateQSOInput
-	}
-	if q.Freq > 0 {
-		in.FreqHz = int64(math.Round(q.Freq * 1e6))
-	}
-	if q.FreqRx > 0 {
-		in.FreqRxHz = int64(math.Round(q.FreqRx * 1e6))
 	}
 	return in
 }

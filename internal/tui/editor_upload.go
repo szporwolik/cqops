@@ -17,76 +17,123 @@ import (
 // server's own duplicate detection instead of the extra list fetch.
 const reconcileThreshold = 25
 
-func (le *LogbookEditor) doBatchUpload() tea.Cmd {
-	wlCall := ""
-	logOp := le.logStationOp
-	logGrid := le.logStationGrid
+// uploadPrepMsg carries the prepared unsent QSO set from the background
+// upload-preparation worker. The worker only reads the database and returns
+// data — the editor state is updated on the update loop.
+type uploadPrepMsg struct {
+	unsent        []qso.QSO
+	skipped       int
+	firstSkipCall string
+	firstSkipDate string
+	err           error
+}
 
-	// Load ALL QSOs from the database, not just the current page.
-	// The page-sized le.qsos slice would miss QSOs on other pages.
-	var allQSOS []qso.QSO
-	if le.db != nil {
-		var err error
-		allQSOS, err = store.ListAllQSOs(le.db)
-		if err != nil {
-			applog.Error("Wavelog: batch upload — cannot list QSOs", "error", err)
-			return func() tea.Msg {
-				return editorMsg{wlOK: false, err: fmt.Errorf("cannot read logbook: %w", err)}
+func (le *LogbookEditor) doBatchUpload() tea.Cmd {
+	// Capture everything the background worker needs — it must not read the
+	// editor from the command goroutine.
+	db := le.db
+	qsos := le.qsos
+
+	applog.Info("Wavelog: batch upload starting")
+	return func() tea.Msg {
+		if db != nil {
+			total, err := store.CountUnsentQSOs(db)
+			if err != nil {
+				applog.Error("Wavelog: batch upload — cannot count unsent QSOs", "error", err)
+				return uploadPrepMsg{err: fmt.Errorf("cannot read logbook: %w", err)}
+			}
+			applog.Info("Wavelog: batch upload — unsent rows in log", "unsent", total)
+
+			// Fetch only the eligible (never-uploaded) rows — a large
+			// historical logbook stays cheap to prepare.
+			rows, err := store.ListUnsentQSOs(db)
+			if err != nil {
+				applog.Error("Wavelog: batch upload — cannot list unsent QSOs", "error", err)
+				return uploadPrepMsg{err: fmt.Errorf("cannot read logbook: %w", err)}
+			}
+			return buildUploadPrep(rows)
+		}
+
+		// No database — filter the in-memory list (tests).
+		var all []qso.QSO
+		for _, q := range qsos {
+			if q.WavelogID == 0 {
+				all = append(all, q)
 			}
 		}
-	} else {
-		// Fallback for tests without a real database.
-		allQSOS = le.qsos
+		return buildUploadPrep(all)
 	}
-	applog.Info("Wavelog: batch upload starting", "total_qsos", len(allQSOS))
+}
 
-	// Collect unsent QSOs, skip those with missing required fields.
+// buildUploadPrep splits the eligible rows into uploadable QSOs and those
+// skipped for missing required fields.
+func buildUploadPrep(eligible []qso.QSO) uploadPrepMsg {
 	var unsent []qso.QSO
 	var skipped int
 	var firstSkipCall, firstSkipDate string
-	for _, q := range allQSOS {
-		if q.WavelogID == 0 {
-			if q.Band == "" || q.Mode == "" || q.QSODate == "" {
-				applog.Warn("Wavelog: skipping QSO with missing required field",
-					"id", q.ID, "call", q.Call, "band", q.Band, "mode", q.Mode, "date", q.QSODate)
-				if skipped == 0 {
-					firstSkipCall = q.Call
-					firstSkipDate = q.QSODate
-				}
-				skipped++
-				continue
+	for _, q := range eligible {
+		if q.Band == "" || q.Mode == "" || q.QSODate == "" {
+			applog.Warn("Wavelog: skipping QSO with missing required field",
+				"id", q.ID, "call", q.Call, "band", q.Band, "mode", q.Mode, "date", q.QSODate)
+			if skipped == 0 {
+				firstSkipCall = q.Call
+				firstSkipDate = q.QSODate
 			}
-			unsent = append(unsent, q)
+			skipped++
+			continue
 		}
+		unsent = append(unsent, q)
 	}
-	if skipped > 0 {
-		applog.Warn("Wavelog: skipped QSOs with missing fields", "count", skipped)
-		le.wlSkipped = skipped
-		if skipped == 1 {
-			le.wlSkipDetail = fmt.Sprintf("%s %s — missing band", firstSkipCall, firstSkipDate)
+	return uploadPrepMsg{unsent: unsent, skipped: skipped, firstSkipCall: firstSkipCall, firstSkipDate: firstSkipDate}
+}
+
+// handleUploadPrep consumes the prepared unsent set on the update loop:
+// reports skipped rows, shows the normalize dialog on station-field
+// mismatches, or launches the actual upload.
+func (le *LogbookEditor) handleUploadPrep(msg uploadPrepMsg) (tea.Model, tea.Cmd) {
+	if msg.err != nil {
+		return le, func() tea.Msg { return editorMsg{wlOK: false, err: msg.err} }
+	}
+	if msg.skipped > 0 {
+		applog.Warn("Wavelog: skipped QSOs with missing fields", "count", msg.skipped)
+		le.wlSkipped = msg.skipped
+		if msg.skipped == 1 {
+			le.wlSkipDetail = fmt.Sprintf("%s %s — missing band", msg.firstSkipCall, msg.firstSkipDate)
 		} else {
-			le.wlSkipDetail = fmt.Sprintf("%d QSOs skipped (e.g. %s %s — missing band)", skipped, firstSkipCall, firstSkipDate)
+			le.wlSkipDetail = fmt.Sprintf("%d QSOs skipped (e.g. %s %s — missing band)", msg.skipped, msg.firstSkipCall, msg.firstSkipDate)
 		}
 	}
-	if len(unsent) == 0 {
+	if len(msg.unsent) == 0 {
 		applog.Info("Wavelog: batch upload — all already sent")
-		return func() tea.Msg {
+		return le, func() tea.Msg {
 			return editorMsg{wlOK: true, wlCall: "all sent", err: nil}
 		}
 	}
 
-	applog.Info("Wavelog: batch upload — unsent QSOs", "unsent", len(unsent), "skipped", skipped)
+	applog.Info("Wavelog: batch upload — unsent QSOs", "unsent", len(msg.unsent), "skipped", msg.skipped)
 
-	// Detect mismatches against Wavelog station / logbook station defaults
+	mismatch, fields := le.detectUploadMismatches(msg.unsent)
+	if len(mismatch) > 0 {
+		le.mismatchQSOs = mismatch
+		le.mismatchFields = fields
+		le.mode = edModeConfirmNormalize
+		return le, nil
+	}
+	return le, le.uploadBatch(msg.unsent)
+}
+
+// detectUploadMismatches compares the unsent set against the logbook station
+// defaults and returns mismatching QSOs plus the field names involved.
+func (le *LogbookEditor) detectUploadMismatches(unsent []qso.QSO) ([]qso.QSO, []string) {
 	var mismatch []qso.QSO
 	var fields []string
 	hasCallMismatch := false
 	hasOpMismatch := false
 	hasGridMismatch := false
 	for _, q := range unsent {
-		callDiff := wlCall != "" && q.StationCallsign != "" && !strings.EqualFold(q.StationCallsign, wlCall)
-		opDiff := logOp != "" && q.Operator != "" && !strings.EqualFold(q.Operator, logOp)
-		gridDiff := logGrid != "" && q.MyGridSquare != "" && !strings.EqualFold(q.MyGridSquare, logGrid)
+		callDiff := le.logStationCall != "" && q.StationCallsign != "" && !strings.EqualFold(q.StationCallsign, le.logStationCall)
+		opDiff := le.logStationOp != "" && q.Operator != "" && !strings.EqualFold(q.Operator, le.logStationOp)
+		gridDiff := le.logStationGrid != "" && q.MyGridSquare != "" && !strings.EqualFold(q.MyGridSquare, le.logStationGrid)
 		if callDiff || opDiff || gridDiff {
 			mismatch = append(mismatch, q)
 			if callDiff {
@@ -109,23 +156,29 @@ func (le *LogbookEditor) doBatchUpload() tea.Cmd {
 	if hasGridMismatch {
 		fields = append(fields, "grid")
 	}
-
-	if len(mismatch) > 0 {
-		le.mismatchQSOs = mismatch
-		le.mismatchFields = fields
-		le.mode = edModeConfirmNormalize
-		return nil
-	}
-
-	return le.uploadBatch(unsent)
+	return mismatch, fields
 }
 
 func (le *LogbookEditor) doNormalizeAndUpload() tea.Cmd {
 	db := le.db
 	mismatch := le.mismatchQSOs
+
+	// Normalize only the fields the confirmation explicitly listed as
+	// mismatching. Station callsigns are preserved unless a callsign
+	// mismatch was detected and confirmed — empty means "keep stored".
 	wlCall := ""
-	logOp := le.logStationOp
-	logGrid := le.logStationGrid
+	logOp := ""
+	logGrid := ""
+	for _, f := range le.mismatchFields {
+		switch f {
+		case "callsign":
+			wlCall = le.logStationCall
+		case "operator":
+			logOp = le.logStationOp
+		case "grid":
+			logGrid = le.logStationGrid
+		}
+	}
 
 	// Build list of IDs to normalize
 	var normIDs []int64
@@ -140,13 +193,20 @@ func (le *LogbookEditor) doNormalizeAndUpload() tea.Cmd {
 			applog.Error("Wavelog: normalization failed", "error", err)
 			return editorMsg{wlOK: false, err: fmt.Errorf("normalize: %w", err)}
 		}
-		// Also update in-memory QSO list so the list view reflects changes
+		// Also update in-memory QSO list so the list view reflects changes.
+		// Only the fields that were actually normalized change.
 		for i := range le.qsos {
 			for _, mid := range normIDs {
 				if le.qsos[i].ID == mid {
-					le.qsos[i].StationCallsign = wlCall
-					le.qsos[i].Operator = logOp
-					le.qsos[i].MyGridSquare = logGrid
+					if wlCall != "" {
+						le.qsos[i].StationCallsign = wlCall
+					}
+					if logOp != "" {
+						le.qsos[i].Operator = logOp
+					}
+					if logGrid != "" {
+						le.qsos[i].MyGridSquare = logGrid
+					}
 					break
 				}
 			}
@@ -171,6 +231,8 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 	return func() tea.Msg {
 		totalOK := 0
 		totalDup := 0
+		totalUnresolved := 0
+		totalFail := 0
 		totalRecon := 0
 		var lastErr error
 
@@ -227,40 +289,66 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 					applog.Warn("Wavelog: chunk had duplicates, falling back to individual", "count", len(chunk))
 					msg := le.uploadIndividual(chunk)()
 					if em, ok := msg.(editorMsg); ok {
-						if em.wlOK {
-							totalOK += len(chunk)
-						} else {
+						totalOK += em.wlSentCount
+						totalDup += em.wlDupCount
+						totalUnresolved += em.wlUnresolvedCount
+						totalFail += em.wlFailCount
+						if em.err != nil {
 							lastErr = em.err
 						}
 					}
 					continue
 				}
 				applog.Error("Wavelog: chunk upload failed", "count", len(chunk), "error", err)
+				totalFail += len(chunk)
 				lastErr = err
 				continue
 			}
+			// The remote accepted the chunk; how many of those remote ids
+			// made it into the local database decides whether each QSO
+			// counts as sent or as unresolved.
+			stored := backfillBatchIDs(url, key, sid, db, chunk)
 			if result != nil && result.AllDuplicates {
-				backfillBatchIDs(url, key, sid, db, chunk)
-				totalDup += len(chunk)
-				continue
+				totalDup += stored
+			} else {
+				totalOK += stored
 			}
-			backfillBatchIDs(url, key, sid, db, chunk)
-			totalOK += len(chunk)
+			totalUnresolved += len(chunk) - stored
 		}
 
-		// Build summary message.
-		if totalOK+totalDup == 0 && lastErr != nil {
-			return editorMsg{wlOK: false, err: lastErr, wlCall: fmt.Sprintf("%d QSOs", len(unsent))}
+		// Build the summary with explicit tallies. A failed chunk leaves its
+		// QSOs unsent locally, so a partial success must never be reported
+		// as success for the entire input count.
+		if totalOK+totalDup+totalUnresolved == 0 && lastErr != nil {
+			return editorMsg{wlOK: false, err: lastErr, wlFailCount: totalFail,
+				wlCall: fmt.Sprintf("%d QSOs", len(unsent))}
 		}
-		if totalDup == len(unsent) {
-			applog.InfoDetail("Wavelog: all chunks already present", fmt.Sprintf("count=%d", len(unsent)))
-			return editorMsg{wlQSOID: unsent[0].ID, wlOK: true, wlCall: fmt.Sprintf("%d QSOs (already on Wavelog)", len(unsent))}
+		var parts []string
+		if totalOK > 0 {
+			parts = append(parts, fmt.Sprintf("%d sent", totalOK))
 		}
-		applog.InfoDetail("Wavelog: chunked upload OK", fmt.Sprintf("ok=%d dup=%d recon=%d total=%d", totalOK, totalDup, totalRecon, len(unsent)))
-		if totalRecon > 0 {
-			return editorMsg{wlQSOID: unsent[0].ID, wlOK: true, wlCall: fmt.Sprintf("%d QSOs · %d already on Wavelog", len(unsent), totalRecon)}
+		already := totalDup + totalRecon
+		if already > 0 {
+			parts = append(parts, fmt.Sprintf("%d already on Wavelog", already))
 		}
-		return editorMsg{wlQSOID: unsent[0].ID, wlOK: true, wlCall: fmt.Sprintf("%d QSOs", len(unsent))}
+		if totalUnresolved > 0 {
+			parts = append(parts, fmt.Sprintf("%d accepted but remote id not stored", totalUnresolved))
+		}
+		if totalFail > 0 {
+			parts = append(parts, fmt.Sprintf("%d failed", totalFail))
+		}
+		applog.InfoDetail("Wavelog: chunked upload done",
+			fmt.Sprintf("ok=%d dup=%d unresolved=%d fail=%d recon=%d total=%d",
+				totalOK, totalDup, totalUnresolved, totalFail, totalRecon, len(unsent)))
+		return editorMsg{
+			wlQSOID:           unsent[0].ID,
+			wlOK:              true,
+			wlCall:            strings.Join(parts, ", "),
+			wlSentCount:       totalOK,
+			wlDupCount:        totalDup,
+			wlFailCount:       totalFail,
+			wlUnresolvedCount: totalUnresolved,
+		}
 	}
 }
 
@@ -271,40 +359,62 @@ func (le *LogbookEditor) uploadIndividual(unsent []qso.QSO) tea.Cmd {
 	db := le.db
 
 	return func() tea.Msg {
-		okCount := 0
+		sentCount := 0
 		dupCount := 0
 		failCount := 0
+		unresolved := 0
 		var lastErr error
 
 		for _, q := range unsent {
-			ok, isDup, _, err := postQSOSingle(url, key, sid, &q, db)
+			ok, isDup, rid, err := postQSOSingle(url, key, sid, &q, db)
 			if !ok {
 				applog.Warn("Wavelog: individual upload failed", "qso_id", q.ID, "call", q.Call, "error", err)
 				failCount++
 				lastErr = err
 				continue
 			}
+			// Remote acceptance and local remote-id persistence are
+			// separate outcomes: without a persisted id the QSO still
+			// looks unsent locally and is re-offered on the next upload.
+			if rid == 0 {
+				unresolved++
+				continue
+			}
 			if isDup {
 				dupCount++
 			} else {
-				okCount++
+				sentCount++
 			}
 		}
 
 		applog.InfoDetail("Wavelog: individual upload complete",
-			fmt.Sprintf("ok=%d dup=%d fail=%d", okCount, dupCount, failCount))
+			fmt.Sprintf("sent=%d dup=%d unresolved=%d fail=%d", sentCount, dupCount, unresolved, failCount))
 
-		if failCount > 0 && okCount == 0 && dupCount == 0 {
-			return editorMsg{wlOK: false, err: lastErr, wlCall: fmt.Sprintf("%d failed", failCount)}
+		if failCount > 0 && sentCount+dupCount+unresolved == 0 {
+			return editorMsg{wlOK: false, err: lastErr, wlFailCount: failCount, wlCall: fmt.Sprintf("%d failed", failCount)}
 		}
-		msg := fmt.Sprintf("%d ok", okCount)
+		var parts []string
+		if sentCount > 0 {
+			parts = append(parts, fmt.Sprintf("%d sent", sentCount))
+		}
 		if dupCount > 0 {
-			msg += fmt.Sprintf(", %d already present", dupCount)
+			parts = append(parts, fmt.Sprintf("%d already present", dupCount))
+		}
+		if unresolved > 0 {
+			parts = append(parts, fmt.Sprintf("%d accepted but remote id not stored", unresolved))
 		}
 		if failCount > 0 {
-			msg += fmt.Sprintf(", %d failed", failCount)
+			parts = append(parts, fmt.Sprintf("%d failed", failCount))
 		}
-		return editorMsg{wlQSOID: unsent[0].ID, wlOK: true, wlCall: msg}
+		return editorMsg{
+			wlQSOID:           unsent[0].ID,
+			wlOK:              true,
+			wlCall:            strings.Join(parts, ", "),
+			wlSentCount:       sentCount,
+			wlDupCount:        dupCount,
+			wlFailCount:       failCount,
+			wlUnresolvedCount: unresolved,
+		}
 	}
 }
 
@@ -333,21 +443,28 @@ func (le *LogbookEditor) doUploadToWavelog() tea.Cmd {
 	}
 }
 
-// backfillBatchIDs stores remote ids for a successfully uploaded chunk. Bulk
-// ADIF import summaries carry no ids, so the newest window of the JSON list
-// is fetched and matched by dedupe fields.
-func backfillBatchIDs(url, key, sid string, db *sql.DB, chunk []qso.QSO) {
+// backfillBatchIDs stores remote ids for a successfully uploaded chunk and
+// returns how many chunk QSOs now have a persisted remote id. Bulk ADIF
+// import summaries carry no ids, so the newest window of the JSON list is
+// fetched and matched by dedupe fields. QSOs whose id could not be persisted
+// count as unresolved: the remote accepted them, but locally they still look
+// unsent and will be re-offered on the next upload.
+func backfillBatchIDs(url, key, sid string, db *sql.DB, chunk []qso.QSO) int {
 	ids, berr := wavelog.FindQSOIDs(url, key, sid, len(chunk)+25)
 	if berr != nil {
 		applog.Warn("Wavelog: batch id backfill failed", "error", berr)
-		return
+		return 0
 	}
+	stored := 0
 	for _, q := range chunk {
 		k := wavelog.MakeQSOIDKey(q.Call, q.Band, q.Mode, q.QSODate, q.TimeOn)
 		if rid, ok := ids[k]; ok {
 			if serr := store.SetWavelogID(db, q.ID, rid); serr != nil {
 				applog.Error("Wavelog: failed to store remote id", "qso_id", q.ID, "error", serr)
+			} else {
+				stored++
 			}
 		}
 	}
+	return stored
 }

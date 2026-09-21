@@ -79,6 +79,119 @@ func TestGenerateSelfSignedCert(t *testing.T) {
 	}
 }
 
+// TestServerTLSIdleConnDoesNotBlockOtherClients is the regression test for
+// one idle TCP connection blocking the dashboard: Accept must classify with
+// a deadline, so a connection that never sends a byte cannot starve every
+// subsequent client.
+func TestServerTLSIdleConnDoesNotBlockOtherClients(t *testing.T) {
+	srv := startTLSServer(t)
+
+	// Connect and never send anything.
+	idle, err := net.Dial("tcp", srv.Addr())
+	if err != nil {
+		t.Fatalf("dial idle conn: %v", err)
+	}
+	defer idle.Close()
+
+	client := testTLSClient()
+	start := time.Now()
+	resp, err := client.Get("https://" + srv.Addr() + "/")
+	if err != nil {
+		t.Fatalf("GET behind an idle connection: %v", err)
+	}
+	resp.Body.Close()
+
+	// The request must complete shortly after the classification deadline
+	// (3 s) — a generous watchdog catches the pre-fix hang.
+	if elapsed := time.Since(start); elapsed > 10*time.Second {
+		t.Fatalf("idle connection blocked the dashboard for %v", elapsed)
+	}
+}
+
+// TestServerTLSPeerDisconnectDoesNotKillServer is the regression test for
+// a peer's EOF terminating Serve: a connect-then-hang-up must be treated as
+// an ordinary per-connection failure, not a fatal listener error.
+func TestServerTLSPeerDisconnectDoesNotKillServer(t *testing.T) {
+	srv := startTLSServer(t)
+
+	// Connect and immediately disconnect.
+	c, err := net.Dial("tcp", srv.Addr())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	c.Close()
+
+	// Give the server a moment to process the dead connection.
+	time.Sleep(200 * time.Millisecond)
+
+	// The dashboard must still serve HTTPS.
+	resp, err := testTLSClient().Get("https://" + srv.Addr() + "/")
+	if err != nil {
+		t.Fatalf("GET after peer disconnect: %v", err)
+	}
+	resp.Body.Close()
+}
+
+// TestHybridListenerAcceptSurvivesPeerEOF checks the listener contract
+// directly: a vanished peer must never surface as an Accept error.
+func TestHybridListenerAcceptSurvivesPeerEOF(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+
+	hl := newHybridListener(ln, &tls.Config{})
+
+	// Connect and immediately hang up.
+	c, err := net.Dial("tcp", ln.Addr().String())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	c.Close()
+
+	got, err := hl.Accept()
+	if err != nil {
+		t.Fatalf("Accept returned a fatal error for a vanished peer: %v", err)
+	}
+	got.Close()
+}
+
+// startTLSServer boots a TLS dashboard on an ephemeral port and fails the
+// test if it does not come online.
+func startTLSServer(t *testing.T) *Server {
+	t.Helper()
+	dir := t.TempDir()
+	certPath := filepath.Join(dir, "cert.pem")
+	keyPath := filepath.Join(dir, "key.pem")
+	if err := GenerateSelfSignedCert(certPath, keyPath, []string{"localhost", "127.0.0.1"}); err != nil {
+		t.Fatalf("GenerateSelfSignedCert: %v", err)
+	}
+
+	srv := NewWithTLS("127.0.0.1", freePort(t), certPath, keyPath)
+	srv.Start()
+	t.Cleanup(srv.Stop)
+
+	select {
+	case online := <-srv.Status():
+		if !online {
+			t.Fatalf("server failed to start: %v", srv.Error())
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for server to start")
+	}
+	return srv
+}
+
+func testTLSClient() *http.Client {
+	return &http.Client{
+		Timeout: 5 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		},
+	}
+}
+
 func TestServerServesTLS(t *testing.T) {
 	dir := t.TempDir()
 	certPath := filepath.Join(dir, "cert.pem")

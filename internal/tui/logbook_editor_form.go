@@ -16,10 +16,15 @@ import (
 
 func (le *LogbookEditor) fillEditForm(q *qso.QSO) {
 	s := func(f qsoEditField, v string) { le.fields[f].SetValue(v) }
+	// Populate every field on every load — numeric fields must be cleared
+	// explicitly when the value is absent, otherwise the previous contact's
+	// values leak into the next edit (and get persisted on save).
 	sf := func(f qsoEditField, v float64) {
-		if v != 0 {
-			le.fields[f].SetValue(fmt.Sprintf("%.4f", v))
+		if v == 0 {
+			le.fields[f].SetValue("")
+			return
 		}
+		le.fields[f].SetValue(fmt.Sprintf("%.4f", v))
 	}
 
 	s(qefCall, q.Call)
@@ -73,11 +78,17 @@ func (le *LogbookEditor) fillEditForm(q *qso.QSO) {
 	s(qefExchRcvd, q.ExchRcvd)
 	s(qefSTXString, q.STXString)
 	s(qefSRXString, q.SRXString)
+	// Serial numbers are also cleared explicitly — a stale value from the
+	// previously edited contact must never be persisted.
 	if q.STX != 0 {
 		s(qefSTX, fmt.Sprintf("%d", q.STX))
+	} else {
+		s(qefSTX, "")
 	}
 	if q.SRX != 0 {
 		s(qefSRX, fmt.Sprintf("%d", q.SRX))
+	} else {
+		s(qefSRX, "")
 	}
 	if q.ContestADIFID != "" {
 		s(qefContestID, q.ContestADIFID)

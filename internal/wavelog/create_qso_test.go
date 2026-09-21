@@ -8,6 +8,12 @@ import (
 	"testing"
 )
 
+// sptr and int64ptr make pointer-style UpdateQSOInput literals readable in
+// tests (presence is part of the contract being tested).
+func sptr(s string) *string { return &s }
+
+func int64ptr(v int64) *int64 { return &v }
+
 // TestDeleteQSO verifies the DELETE verb: 204 on success, not_found on a
 // missing QSO, and the token sent in the Authorization header.
 func TestDeleteQSO(t *testing.T) {
@@ -50,6 +56,67 @@ func TestDeleteQSO(t *testing.T) {
 
 	if err := DeleteQSO(srv.URL, "wl2_test", 0); err == nil {
 		t.Error("expected error for invalid remote id")
+	}
+}
+
+// TestUpdateQSO_ClearsFields verifies the PATCH payload separates presence
+// from value: empty strings and nonpositive frequencies are sent as explicit
+// JSON nulls (the API's clearing representation), while nil pointers leave
+// the field out of the body entirely.
+func TestUpdateQSO_ClearsFields(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch || r.URL.Path != "/api/v2/qso/42" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Errorf("decode patch body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"id": 42}})
+	}))
+	defer srv.Close()
+
+	empty := ""
+	zeroHz := int64(0)
+	freq := int64(14250000)
+	rstSent := "59"
+	in := UpdateQSOInput{
+		Call: "SP9MOA", Band: "20m", Mode: "SSB",
+		QSODate: "2024-05-01", TimeOn: "12:00:00",
+		Comment:    &empty,   // cleared
+		Gridsquare: &empty,   // cleared
+		IOTA:       &empty,   // cleared
+		TXPower:    &empty,   // cleared
+		FreqHz:     &freq,    // kept
+		FreqRxHz:   &zeroHz,  // cleared
+		RSTSent:    &rstSent, // kept
+		RSTRcvd:    nil,      // untouched — must be absent
+	}
+	if err := UpdateQSO(srv.URL, "wl2_test", 42, in); err != nil {
+		t.Fatalf("UpdateQSO: %v", err)
+	}
+	if got == nil {
+		t.Fatal("no PATCH body received")
+	}
+	for _, key := range []string{"comment", "gridsquare", "iota", "tx_pwr", "freq_rx"} {
+		v, ok := got[key]
+		if !ok || v != nil {
+			t.Errorf("%s = %v (present=%v), want explicit null", key, v, ok)
+		}
+	}
+	if got["rst_sent"] != "59" {
+		t.Errorf("rst_sent = %v, want 59", got["rst_sent"])
+	}
+	if got["freq"] != "14250000" {
+		t.Errorf("freq = %v, want 14250000", got["freq"])
+	}
+	if _, ok := got["rst_rcvd"]; ok {
+		t.Errorf("rst_rcvd = %v, want absent (nil pointer)", got["rst_rcvd"])
+	}
+	if got["qso_date"] != "2024-05-01" || got["time_on"] != "12:00:00" {
+		t.Errorf("date/time = %v/%v", got["qso_date"], got["time_on"])
 	}
 }
 
@@ -223,8 +290,8 @@ func TestUpdateQSO(t *testing.T) {
 	err := UpdateQSO(srv.URL, "wl2_test", 42, UpdateQSOInput{
 		Call: "SP9MOA", Band: "20m", Mode: "SSB",
 		QSODate: "2026-05-01", TimeOn: "12:30:00",
-		RSTSent: "55", RSTRcvd: "57", Comment: "edited",
-		FreqHz: 14250000, TXPower: "25",
+		RSTSent: sptr("55"), RSTRcvd: sptr("57"), Comment: sptr("edited"),
+		FreqHz: int64ptr(14250000), TXPower: sptr("25"),
 	})
 	if err != nil {
 		t.Fatalf("UpdateQSO: %v", err)

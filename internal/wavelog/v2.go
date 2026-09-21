@@ -2,6 +2,7 @@ package wavelog
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -111,6 +112,12 @@ func v2RequestDownload(method, baseURL, token, path string, query url.Values, bo
 	return v2RequestWithClient(downloadClient, method, baseURL, token, path, query, body)
 }
 
+// v2RequestDownloadCtx is v2RequestDownload with request cancellation — a
+// user aborting a download cancels in-flight page fetches immediately.
+func v2RequestDownloadCtx(ctx context.Context, method, baseURL, token, path string, query url.Values, body []byte) (int, []byte, error) {
+	return v2RequestWithClientCtx(ctx, downloadClient, method, baseURL, token, path, query, body)
+}
+
 // v2RequestSync performs a v2 request on the short-timeout client, used by
 // config-save paths (wizard / logbook menu) that must not block the UI for
 // long when the server is unreachable.
@@ -119,6 +126,10 @@ func v2RequestSync(method, baseURL, token, path string, query url.Values, body [
 }
 
 func v2RequestWithClient(client *http.Client, method, baseURL, token, path string, query url.Values, body []byte) (int, []byte, error) {
+	return v2RequestWithClientCtx(context.Background(), client, method, baseURL, token, path, query, body)
+}
+
+func v2RequestWithClientCtx(ctx context.Context, client *http.Client, method, baseURL, token, path string, query url.Values, body []byte) (int, []byte, error) {
 	u := v2BaseURL(baseURL) + path
 	if len(query) > 0 {
 		u += "?" + query.Encode()
@@ -128,7 +139,7 @@ func v2RequestWithClient(client *http.Client, method, baseURL, token, path strin
 	if body != nil {
 		reader = bytes.NewReader(body)
 	}
-	req, err := http.NewRequest(method, u, reader)
+	req, err := http.NewRequestWithContext(ctx, method, u, reader)
 	if err != nil {
 		return 0, nil, FriendlyError(err)
 	}

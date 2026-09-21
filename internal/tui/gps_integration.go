@@ -178,8 +178,8 @@ func (m *Model) applyGPSGridOverride() {
 	m.gps.originalStationGrid = m.App.Logbook.Station.Grid
 	m.App.Logbook.Station.Grid = m.gps.lastGrid
 	applog.Info("GPS: grid override applied",
-		"original", m.gps.originalStationGrid,
-		"gps", m.gps.lastGrid,
+		"original", truncateGrid(m.gps.originalStationGrid, m.gpsLogPrecision()),
+		"gps", truncateGrid(m.gps.lastGrid, m.gpsLogPrecision()),
 	)
 }
 
@@ -190,7 +190,7 @@ func (m *Model) restoreGPSGridOverride() {
 		return
 	}
 	m.App.Logbook.Station.Grid = m.gps.originalStationGrid
-	applog.Info("GPS: grid override restored", "grid", m.gps.originalStationGrid)
+	applog.Info("GPS: grid override restored", "grid", truncateGrid(m.gps.originalStationGrid, m.gpsLogPrecision()))
 	m.gps.originalStationGrid = ""
 }
 
@@ -234,7 +234,12 @@ func (m *Model) handleGPSTick() tea.Cmd {
 		grid := pos.Grid()
 		if grid != "" && grid != m.gps.lastGrid {
 			m.gps.lastGrid = grid
-			applog.Info("GPS: grid updated", "grid", grid,
+			// Position data is privacy-sensitive: INFO logs only the grid
+			// truncated to the configured precision. Precise coordinates
+			// require the explicit debug-mode diagnostics opt-in.
+			applog.Info("GPS: grid updated", "grid", truncateGrid(grid, m.gpsLogPrecision()))
+			applog.Debug("GPS: grid updated (precise)",
+				"grid", grid,
 				"lat", fmt.Sprintf("%.6f", pos.Lat),
 				"lon", fmt.Sprintf("%.6f", pos.Lon),
 			)
@@ -276,7 +281,8 @@ func (m *Model) handleGPSTick() tea.Cmd {
 	if m.gps.hasFix && !m.gps.didToastFix {
 		m.gps.didToastFix = true
 		m.toasts.Success("GPS: fix acquired — " + m.gps.lastGrid)
-		applog.Info("GPS: fix acquired",
+		applog.Info("GPS: fix acquired", "grid", truncateGrid(m.gps.lastGrid, m.gpsLogPrecision()))
+		applog.Debug("GPS: fix acquired (precise)",
 			"lat", fmt.Sprintf("%.6f", m.gps.lastLat),
 			"lon", fmt.Sprintf("%.6f", m.gps.lastLon),
 			"grid", m.gps.lastGrid,
@@ -341,6 +347,25 @@ func gpsReconnectDelay(_ int) time.Duration {
 	return 60 * time.Second
 }
 
+// gpsLogPrecision returns the configured grid precision (6, 8, or 10 chars)
+// used to truncate grids before they reach the log.
+func (m *Model) gpsLogPrecision() int {
+	if m.App != nil && m.App.Config != nil {
+		if p := m.App.Config.Integrations.GPS.GridPrecision; p == 6 || p == 8 {
+			return p
+		}
+	}
+	return 10
+}
+
+// truncateGrid shortens a Maidenhead locator to at most prec characters.
+func truncateGrid(grid string, prec int) string {
+	if len(grid) > prec {
+		return grid[:prec]
+	}
+	return grid
+}
+
 // effectiveGrid returns the current effective station grid locator.
 // When GPS is enabled, has a fix, and the logbook's GPSGrid flag is set,
 // the GPS-derived grid is used. Otherwise the configured station grid
@@ -360,16 +385,7 @@ func (m *Model) effectiveGrid() string {
 		raw = strings.TrimSpace(strings.ToUpper(m.App.Logbook.Station.Grid))
 	}
 	// Truncate to configured grid precision.
-	prec := 10
-	if m.App != nil && m.App.Config != nil {
-		if p := m.App.Config.Integrations.GPS.GridPrecision; p == 6 || p == 8 {
-			prec = p
-		}
-	}
-	if len(raw) > prec {
-		raw = raw[:prec]
-	}
-	return raw
+	return truncateGrid(raw, m.gpsLogPrecision())
 }
 
 // isGPSGridActive returns true when the displayed station grid is

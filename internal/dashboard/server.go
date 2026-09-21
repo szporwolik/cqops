@@ -24,10 +24,16 @@ type Server struct {
 	hub    *Hub
 	status chan bool
 
+	// streamCtx bounds the lifetime of every SSE handler. Cancelling it ends
+	// all active streams so Shutdown does not have to wait for never-idle
+	// event-stream connections.
+	streamCtx    context.Context
+	streamCancel context.CancelFunc
+
 	tlsCert string // PEM certificate path; empty = plain HTTP
 	tlsKey  string // PEM private key path
 
-	mu  sync.Mutex // guards err and http
+	mu  sync.Mutex // guards err, http and the stream context
 	err error
 }
 
@@ -67,11 +73,16 @@ func (s *Server) Start() {
 		applog.Debug("dashboard: Start called but already running", "addr", s.addr)
 		return
 	}
+	// A fresh context per Start — Stop cancels the previous one, and a
+	// stopped-then-restarted server must not revive with dead streams.
+	streamCtx, streamCancel := context.WithCancel(context.Background())
+	s.streamCtx = streamCtx
+	s.streamCancel = streamCancel
 	s.mu.Unlock()
 
 	applog.Info("dashboard: starting", "addr", s.addr)
 
-	mux := NewMux(s.state, s.hub)
+	mux := NewMux(streamCtx, s.state, s.hub)
 	handler := securityHeaders(mux)
 
 	// TLS mode: plain-HTTP requests on the same port are redirected to
@@ -145,6 +156,7 @@ func (s *Server) Start() {
 func (s *Server) Stop() {
 	s.mu.Lock()
 	srv := s.http
+	cancel := s.streamCancel
 	s.mu.Unlock()
 
 	if srv == nil {
@@ -152,10 +164,23 @@ func (s *Server) Stop() {
 	}
 	applog.Info("dashboard: stopping", "addr", s.addr)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	// End the SSE streams first: their handlers only exit when their
+	// contexts end, so Shutdown alone would wait out the full timeout for
+	// every connected browser.
+	if cancel != nil {
+		cancel()
+	}
+
+	ctx, cancelCtx := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelCtx()
 	if err := srv.Shutdown(ctx); err != nil {
-		applog.Warn("dashboard: shutdown error", "addr", s.addr, "error", err)
+		applog.Warn("dashboard: graceful shutdown failed — force closing", "addr", s.addr, "error", err)
+		// Close terminates the listeners and every active connection
+		// immediately (stalled SSE clients included). Serve returns
+		// http.ErrServerClosed, its normal exit path.
+		if cerr := srv.Close(); cerr != nil && !errors.Is(cerr, http.ErrServerClosed) {
+			applog.Warn("dashboard: force close error", "error", cerr)
+		}
 	}
 
 	s.mu.Lock()
@@ -189,7 +214,7 @@ func securityHeaders(next http.Handler) http.Handler {
 		// or weather APIs, adjust img-src and connect-src accordingly.
 		w.Header().Set("Content-Security-Policy",
 			"default-src 'self'; "+
-				"script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "+
+				"script-src 'self' https://cdn.jsdelivr.net; "+
 				"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "+
 				"img-src 'self' data: https:; "+
 				"connect-src 'self' https:; "+

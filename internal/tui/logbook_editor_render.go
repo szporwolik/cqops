@@ -146,6 +146,9 @@ func (le *LogbookEditor) View() tea.View {
 			if le.wlDownloadFailed > 0 {
 				msg += fmt.Sprintf("\n%d failed.", le.wlDownloadFailed)
 			}
+			if le.wlDownloadHold > 0 {
+				msg += fmt.Sprintf("\n%d deferred — will retry on the next download.", le.wlDownloadHold)
+			}
 			le.ensureDialog("Wavelog Download", msg,
 				Option{Label: "OK", Value: "ok"},
 			)

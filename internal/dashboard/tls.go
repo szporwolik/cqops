@@ -122,6 +122,11 @@ type hybridListener struct {
 	tlsConfig *tls.Config
 }
 
+// hybridPeekTimeout bounds how long Accept waits for a connection's first
+// byte while classifying it. Without a deadline a single idle TCP connection
+// would block Accept and starve every subsequent client.
+const hybridPeekTimeout = 3 * time.Second
+
 func newHybridListener(ln net.Listener, tlsConfig *tls.Config) net.Listener {
 	return &hybridListener{Listener: ln, tlsConfig: tlsConfig}
 }
@@ -132,13 +137,21 @@ func (hl *hybridListener) Accept() (net.Conn, error) {
 		return nil, err
 	}
 	br := bufio.NewReader(c)
-	first, err := br.Peek(1)
-	if err != nil {
-		c.Close()
-		return nil, err
-	}
-	if first[0] == 0x16 { // TLS handshake record
-		return tls.Server(&prefixedConn{Conn: c, r: br}, hl.tlsConfig), nil
+
+	// Classify by the first byte. An individual connection must never fail
+	// the listener: an idle client hits the peek deadline, a vanished
+	// client returns EOF — both become ordinary plain-HTTP connections and
+	// are handled (and cleaned up) per-connection by the http server, whose
+	// own read deadline applies from here. Returning those errors from
+	// Accept would terminate http.Server.Serve for everyone.
+	if err := c.SetReadDeadline(time.Now().Add(hybridPeekTimeout)); err == nil {
+		if first, err := br.Peek(1); err == nil && first[0] == 0x16 { // TLS handshake record
+			c.SetReadDeadline(time.Time{}) // clear the classification deadline
+			return tls.Server(&prefixedConn{Conn: c, r: br}, hl.tlsConfig), nil
+		}
+		// Clear the classification deadline before handing the connection
+		// to the http server.
+		c.SetReadDeadline(time.Time{})
 	}
 	return &prefixedConn{Conn: c, r: br}, nil
 }

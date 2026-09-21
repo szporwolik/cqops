@@ -95,6 +95,87 @@ func TestInitDB_Idempotent(t *testing.T) {
 // InsertQSO / GetQSOByID / ListQSOs tests
 // =============================================================================
 
+// TestUpdateQSO_RecomputesDerivedFields covers the derived-metadata policy:
+// base_call always follows the call; DXCC is invalidated when the identity
+// changes without a fresh value, preserved when the call is unchanged, and
+// honored when the caller supplies one.
+func TestUpdateQSO_RecomputesDerivedFields(t *testing.T) {
+	db := newTempDB(t)
+
+	q := validQSO()
+	q.Call = "SP9ABC"
+	q.DXCC = "269"
+	id := mustInsertQSO(t, db, q)
+
+	baseCallOf := func() string {
+		t.Helper()
+		var bc string
+		if err := db.QueryRow(`SELECT base_call FROM qsos WHERE id=?`, id).Scan(&bc); err != nil {
+			t.Fatalf("read base_call: %v", err)
+		}
+		return bc
+	}
+	dxccOf := func() string {
+		t.Helper()
+		var d string
+		if err := db.QueryRow(`SELECT dxcc FROM qsos WHERE id=?`, id).Scan(&d); err != nil {
+			t.Fatalf("read dxcc: %v", err)
+		}
+		return d
+	}
+
+	// 1. Call changed, no fresh DXCC: base_call recomputed, dxcc invalidated.
+	loaded, err := GetQSOByID(db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	loaded.Call = "W1AW"
+	loaded.DXCC = ""
+	if err := UpdateQSO(db, loaded); err != nil {
+		t.Fatalf("UpdateQSO: %v", err)
+	}
+	if bc := baseCallOf(); bc != "W1AW" {
+		t.Errorf("base_call = %q after call change; want W1AW", bc)
+	}
+	if d := dxccOf(); d != "" {
+		t.Errorf("dxcc = %q after call change; want invalidated (empty)", d)
+	}
+
+	// 2. Call unchanged with no DXCC in the struct: dxcc stays empty (the
+	// backfill will fill it) — nothing resurrects a stale value.
+	again, err := GetQSOByID(db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	again.DXCC = ""
+	if err := UpdateQSO(db, again); err != nil {
+		t.Fatalf("UpdateQSO: %v", err)
+	}
+	if d := dxccOf(); d != "" {
+		t.Errorf("dxcc = %q after unchanged-call update; want still empty", d)
+	}
+
+	// 3. Caller-supplied DXCC is written and survives an unchanged update.
+	again.DXCC = "291"
+	if err := UpdateQSO(db, again); err != nil {
+		t.Fatalf("UpdateQSO: %v", err)
+	}
+	if d := dxccOf(); d != "291" {
+		t.Errorf("dxcc = %q; want 291 (caller-supplied)", d)
+	}
+	again, err = GetQSOByID(db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	again.DXCC = "" // edit form never carries DXCC
+	if err := UpdateQSO(db, again); err != nil {
+		t.Fatalf("UpdateQSO: %v", err)
+	}
+	if d := dxccOf(); d != "291" {
+		t.Errorf("dxcc = %q after unchanged-call edit; want 291 preserved", d)
+	}
+}
+
 func TestInsertAndGetQSO(t *testing.T) {
 	db := newTempDB(t)
 
@@ -203,6 +284,56 @@ func TestListAllQSOs(t *testing.T) {
 	}
 	if len(qsos) != 5 {
 		t.Errorf("expected 5 QSOs, got %d", len(qsos))
+	}
+}
+
+// TestListAllQSOs_AcrossPages verifies keyset pagination returns every row
+// past the page boundary (the old OFFSET loop would also pass, but this pins
+// the new linear scan contract).
+func TestListAllQSOs_AcrossPages(t *testing.T) {
+	db := newTempDB(t)
+
+	const total = 515
+	for i := 0; i < total; i++ {
+		mustInsertQSO(t, db, validQSO())
+	}
+
+	qsos, err := ListAllQSOs(db)
+	if err != nil {
+		t.Fatalf("ListAllQSOs: %v", err)
+	}
+	if len(qsos) != total {
+		t.Errorf("expected %d QSOs, got %d", total, len(qsos))
+	}
+}
+
+func TestListUnsentQSOs(t *testing.T) {
+	db := newTempDB(t)
+
+	sent := validQSO()
+	sent.WavelogID = 42
+	unsent := validQSO()
+
+	mustInsertQSO(t, db, sent)
+	mustInsertQSO(t, db, unsent)
+
+	n, err := CountUnsentQSOs(db)
+	if err != nil {
+		t.Fatalf("CountUnsentQSOs: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("unsent count = %d, want 1", n)
+	}
+
+	rows, err := ListUnsentQSOs(db)
+	if err != nil {
+		t.Fatalf("ListUnsentQSOs: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 unsent row, got %d", len(rows))
+	}
+	if rows[0].WavelogID != 0 {
+		t.Errorf("unsent row wavelog_id = %d, want 0", rows[0].WavelogID)
 	}
 }
 

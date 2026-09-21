@@ -4,21 +4,23 @@ import (
 	"net"
 	"reflect"
 	"testing"
+	"time"
 
 	wsjtx "github.com/k0swe/wsjtx-go/v4"
 )
 
-// stopLocked closes the UDP socket by reaching into the library's unexported
-// "conn" field, because wsjtx-go v4 exposes no Shutdown. A recover() there
-// swallows any breakage, so an upgrade that renames or retypes the field
-// would silently leave the port held. Fail loudly here instead.
+// closeServerSocket closes the UDP socket by reaching into the library's
+// unexported "conn" field, because wsjtx-go v4 exposes no Shutdown. A
+// recover() there swallows any breakage, so an upgrade that renames or
+// retypes the field would silently leave the port held. Fail loudly here
+// instead.
 func TestServerConnFieldStillMatchesShutdownAssumption(t *testing.T) {
 	f, ok := reflect.TypeOf(wsjtx.Server{}).FieldByName("conn")
 	if !ok {
-		t.Fatal("wsjtx.Server has no \"conn\" field — Listener.stopLocked can no longer close the UDP socket")
+		t.Fatal("wsjtx.Server has no \"conn\" field — Listener.closeServerSocket can no longer close the UDP socket")
 	}
 	if want := reflect.TypeOf((*net.UDPConn)(nil)); f.Type != want {
-		t.Fatalf("wsjtx.Server.conn is %s, want %s — stopLocked casts to **net.UDPConn", f.Type, want)
+		t.Fatalf("wsjtx.Server.conn is %s, want %s — closeServerSocket casts to **net.UDPConn", f.Type, want)
 	}
 }
 
@@ -231,4 +233,100 @@ func TestConcurrentSnapshotAndStop(t *testing.T) {
 	<-done
 	<-done
 	// Race detector will catch any issues.
+}
+
+// =============================================================================
+// Shutdown deadlock regression tests
+// =============================================================================
+
+// TestStopCompletesWhileLoopWaitsForMutex reproduces the reported shutdown
+// deadlock shape: the event loop blocks in snapshotOnADIF waiting for l.mu
+// while shutdown wants to join it. Stop must wait OUTSIDE the mutex, so
+// releasing the mutex lets both the snapshot and the join complete.
+func TestStopCompletesWhileLoopWaitsForMutex(t *testing.T) {
+	l := NewListener()
+	l.OnADIF = func(s string) {}
+	msgCh := make(chan interface{}, 4)
+	errCh := make(chan error, 16)
+
+	l.mu.Lock()
+	l.active = true
+	l.generation = 1
+	stop := make(chan struct{})
+	l.stop = stop
+	l.loopWG.Add(1)
+	go func() { defer l.loopWG.Done(); l.eventLoop(1, stop, msgCh, errCh) }()
+	l.mu.Unlock()
+
+	// Deliver a message while holding the mutex so the event loop blocks
+	// inside snapshotOnADIF.
+	l.mu.Lock()
+	msgCh <- wsjtx.LoggedAdifMessage{Adif: "X"}
+	time.Sleep(20 * time.Millisecond) // let the loop reach the snapshot
+
+	stopDone := make(chan struct{})
+	go func() { l.Stop(); close(stopDone) }()
+
+	// Stop cannot finish while the loop's snapshot is blocked on the mutex;
+	// it must be waiting outside the mutex, not holding it.
+	select {
+	case <-stopDone:
+		t.Fatal("Stop finished while the event loop was still blocked on the mutex")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	l.mu.Unlock()
+
+	select {
+	case <-stopDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Stop deadlocked: it waited for the event loop while the loop needed the mutex")
+	}
+}
+
+// TestStopDoesNotDeadlockWithPendingMessages is the shutdown-deadlock
+// regression test: Stop used to hold l.mu while waiting for the event loop,
+// and the loop takes l.mu in its callback snapshots. With the message queue
+// kept busy, that interleaving was reachable in production. Stop must now
+// always return promptly.
+func TestStopDoesNotDeadlockWithPendingMessages(t *testing.T) {
+	for i := 0; i < 200; i++ {
+		l := NewListener()
+		l.OnADIF = func(s string) {}
+		msgCh := make(chan interface{}, 16)
+		errCh := make(chan error, 16)
+
+		l.mu.Lock()
+		l.active = true
+		l.generation = 1
+		stop := make(chan struct{})
+		l.stop = stop
+		l.loopWG.Add(1)
+		go func() { defer l.loopWG.Done(); l.eventLoop(1, stop, msgCh, errCh) }()
+		l.mu.Unlock()
+
+		// Keep the queue busy so the loop frequently tries to snapshot
+		// while Stop runs — the exact interleaving that deadlocked shutdown.
+		stopFlood := make(chan struct{})
+		go func() {
+			msg := wsjtx.LoggedAdifMessage{Adif: "X"}
+			for {
+				select {
+				case msgCh <- msg:
+				case <-stopFlood:
+					return
+				}
+			}
+		}()
+
+		stopDone := make(chan struct{})
+		go func() { l.Stop(); close(stopDone) }()
+		select {
+		case <-stopDone:
+		case <-time.After(2 * time.Second):
+			close(stopFlood)
+			t.Fatalf("iteration %d: Stop deadlocked while messages were pending", i)
+		}
+		close(stopFlood)
+	}
 }

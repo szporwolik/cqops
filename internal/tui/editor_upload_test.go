@@ -34,6 +34,40 @@ func execCmd(cmd tea.Cmd) tea.Msg {
 	return cmd()
 }
 
+// runUploadPrep drives the async upload-preparation flow: runs the prep
+// command, feeds the uploadPrepMsg through Update, and returns the updated
+// editor plus the follow-up command (nil on the mismatch dialog path).
+func runUploadPrep(t *testing.T, le *LogbookEditor) (*LogbookEditor, tea.Cmd) {
+	t.Helper()
+	cmd := le.doBatchUpload()
+	if cmd == nil {
+		t.Fatal("doBatchUpload returned nil command")
+	}
+	msg := execCmd(cmd)
+	prep, ok := msg.(uploadPrepMsg)
+	if !ok {
+		t.Fatalf("expected uploadPrepMsg, got %T", msg)
+	}
+	updated, next := le.Update(prep)
+	return updated.(*LogbookEditor), next
+}
+
+// prepAndRunUpload runs the full preparation flow and executes the resulting
+// upload command, returning the final editorMsg.
+func prepAndRunUpload(t *testing.T, le *LogbookEditor) editorMsg {
+	t.Helper()
+	_, next := runUploadPrep(t, le)
+	if next == nil {
+		t.Fatal("prep produced no follow-up command")
+	}
+	msg := execCmd(next)
+	em, ok := msg.(editorMsg)
+	if !ok {
+		t.Fatalf("expected editorMsg, got %T", msg)
+	}
+	return em
+}
+
 // =============================================================================
 // doUploadToWavelog tests
 // =============================================================================
@@ -88,12 +122,7 @@ func TestDoBatchUpload_AllAlreadySent(t *testing.T) {
 		{ID: 2, Call: "B", WavelogID: 1},
 	}
 
-	cmd := le.doBatchUpload()
-	msg := execCmd(cmd)
-	em, ok := msg.(editorMsg)
-	if !ok {
-		t.Fatalf("expected editorMsg, got %T", msg)
-	}
+	em := prepAndRunUpload(t, le)
 	if !em.wlOK {
 		t.Error("wlOK should be true when all QSOs already sent")
 	}
@@ -106,12 +135,7 @@ func TestDoBatchUpload_EmptyQSOList(t *testing.T) {
 	le := newTestEditor("", "", "", "", "")
 	le.qsos = nil
 
-	cmd := le.doBatchUpload()
-	msg := execCmd(cmd)
-	em, ok := msg.(editorMsg)
-	if !ok {
-		t.Fatalf("expected editorMsg, got %T", msg)
-	}
+	em := prepAndRunUpload(t, le)
 	if !em.wlOK {
 		t.Error("wlOK should be true for empty QSO list")
 	}
@@ -128,12 +152,7 @@ func TestDoBatchUpload_SkipsMissingFields(t *testing.T) {
 		{ID: 3, Call: "C", Band: "20m", Mode: "SSB", QSODate: ""},
 	}
 
-	cmd := le.doBatchUpload()
-	msg := execCmd(cmd)
-	em, ok := msg.(editorMsg)
-	if !ok {
-		t.Fatalf("expected editorMsg, got %T", msg)
-	}
+	em := prepAndRunUpload(t, le)
 
 	// All three should be skipped (missing fields) → all sent.
 	if !em.wlOK {
@@ -153,14 +172,13 @@ func TestDoBatchUpload_SkipDetailSingle(t *testing.T) {
 		{ID: 1, Call: "SP9MOA", Band: "", Mode: "SSB", QSODate: "20240501"},
 	}
 
-	cmd := le.doBatchUpload()
-	execCmd(cmd)
+	le2, _ := runUploadPrep(t, le)
 
-	if le.wlSkipped != 1 {
-		t.Errorf("wlSkipped = %d; want 1", le.wlSkipped)
+	if le2.wlSkipped != 1 {
+		t.Errorf("wlSkipped = %d; want 1", le2.wlSkipped)
 	}
 	// Single skip should mention callsign and date.
-	if le.wlSkipDetail == "" {
+	if le2.wlSkipDetail == "" {
 		t.Error("wlSkipDetail should be set for single skipped QSO")
 	}
 }
@@ -181,26 +199,26 @@ func TestDoBatchUpload_DetectsMismatch(t *testing.T) {
 		},
 	}
 
-	cmd := le.doBatchUpload()
-	// Should return nil (mismatch → set mode to confirm normalize, no command).
-	if cmd != nil {
-		t.Errorf("doBatchUpload should return nil when mismatches detected, got %T", cmd)
+	le2, next := runUploadPrep(t, le)
+	// Mismatch → confirm-normalize dialog, no upload command.
+	if next != nil {
+		t.Errorf("expected nil command when mismatches detected, got %T", next)
 	}
 
-	if le.mode != edModeConfirmNormalize {
-		t.Errorf("mode = %v; want edModeConfirmNormalize", le.mode)
+	if le2.mode != edModeConfirmNormalize {
+		t.Errorf("mode = %v; want edModeConfirmNormalize", le2.mode)
 	}
-	if len(le.mismatchQSOs) != 1 {
-		t.Errorf("mismatchQSOs length = %d; want 1", len(le.mismatchQSOs))
+	if len(le2.mismatchQSOs) != 1 {
+		t.Errorf("mismatchQSOs length = %d; want 1", len(le2.mismatchQSOs))
 	}
-	if len(le.mismatchFields) < 2 {
-		t.Errorf("mismatchFields should contain operator and grid, got %v", le.mismatchFields)
+	if len(le2.mismatchFields) < 2 {
+		t.Errorf("mismatchFields should contain operator and grid, got %v", le2.mismatchFields)
 	}
 
 	// Verify fields list contains expected mismatches.
 	hasOp := false
 	hasGrid := false
-	for _, f := range le.mismatchFields {
+	for _, f := range le2.mismatchFields {
 		if f == "operator" {
 			hasOp = true
 		}
@@ -232,11 +250,9 @@ func TestDoBatchUpload_NoMismatchWhenDefaultsEmpty(t *testing.T) {
 		},
 	}
 
-	cmd := le.doBatchUpload()
-	// Should return an uploadBatch command (not nil), since no mismatches and
-	// no station defaults to compare against.
-	if cmd == nil {
-		t.Error("doBatchUpload should return a command when no mismatches detected")
+	_, next := runUploadPrep(t, le)
+	if next == nil {
+		t.Error("prep should produce an upload command when no mismatches detected")
 	}
 	// Don't execute the command — it would try real HTTP.
 }
@@ -248,10 +264,9 @@ func TestDoBatchUpload_MixedUploadedAndUnsent(t *testing.T) {
 		{ID: 2, Call: "B", Band: "20m", Mode: "SSB", QSODate: "20240501"},
 	}
 
-	cmd := le.doBatchUpload()
-	// Should return a command for the one unsent QSO.
-	if cmd == nil {
-		t.Error("doBatchUpload should return a command for the unsent QSO")
+	_, next := runUploadPrep(t, le)
+	if next == nil {
+		t.Error("prep should produce a command for the unsent QSO")
 	}
 	// Don't execute — would try real HTTP.
 }
@@ -308,6 +323,7 @@ func TestDoNormalizeAndUpload_Success(t *testing.T) {
 
 	le.qsos = []qso.QSO{*q1}
 	le.mismatchQSOs = []qso.QSO{*q1}
+	le.mismatchFields = []string{"operator", "grid"} // callsign NOT flagged
 
 	cmd := le.doNormalizeAndUpload()
 	if cmd == nil {
@@ -329,6 +345,21 @@ func TestDoNormalizeAndUpload_Success(t *testing.T) {
 	if le.qsos[0].MyGridSquare != "KO00ca" {
 		t.Errorf("in-memory MyGridSquare = %q; want KO00ca", le.qsos[0].MyGridSquare)
 	}
+	// The original station callsign must be preserved in memory…
+	if le.qsos[0].StationCallsign != "OLD_CALL" {
+		t.Errorf("in-memory StationCallsign = %q; want OLD_CALL preserved", le.qsos[0].StationCallsign)
+	}
+	// …and in the database.
+	stored, err := store.GetQSOByID(le.db, id1)
+	if err != nil || stored == nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if stored.StationCallsign != "OLD_CALL" {
+		t.Errorf("stored StationCallsign = %q; want OLD_CALL preserved", stored.StationCallsign)
+	}
+	if stored.Operator != "Szymon" || stored.MyGridSquare != "KO00ca" {
+		t.Errorf("stored op/grid = %q/%q; want Szymon/KO00ca", stored.Operator, stored.MyGridSquare)
+	}
 }
 
 func TestDoNormalizeAndUpload_MultipleQSOs(t *testing.T) {
@@ -345,6 +376,7 @@ func TestDoNormalizeAndUpload_MultipleQSOs(t *testing.T) {
 
 	le.qsos = []qso.QSO{*q1, *q2}
 	le.mismatchQSOs = []qso.QSO{*q1, *q2}
+	le.mismatchFields = []string{"operator", "grid"}
 
 	cmd := le.doNormalizeAndUpload()
 	msg := cmd()
@@ -354,6 +386,9 @@ func TestDoNormalizeAndUpload_MultipleQSOs(t *testing.T) {
 	}
 	if le.qsos[0].Operator != "Szymon" || le.qsos[1].Operator != "Szymon" {
 		t.Error("both QSOs should have Operator = Szymon")
+	}
+	if le.qsos[0].StationCallsign != "OLD1" || le.qsos[1].StationCallsign != "OLD2" {
+		t.Error("station callsigns should be preserved")
 	}
 }
 
@@ -385,6 +420,7 @@ func TestDoNormalizeAndUpload_PartialMismatch(t *testing.T) {
 	q2.ID = id2
 	le.qsos = []qso.QSO{*q1, *q2}
 	le.mismatchQSOs = []qso.QSO{*q1} // only q1
+	le.mismatchFields = []string{"operator", "grid"}
 
 	cmd := le.doNormalizeAndUpload()
 	msg := cmd()
@@ -397,6 +433,70 @@ func TestDoNormalizeAndUpload_PartialMismatch(t *testing.T) {
 	}
 	if le.qsos[1].Operator != "Old2" {
 		t.Errorf("q2 Operator = %q; want Old2 (unchanged)", le.qsos[1].Operator)
+	}
+}
+
+// TestDoNormalizeAndUpload_CallMismatchUpdatesCallsign verifies that a
+// callsign mismatch — and only a callsign mismatch — rewrites
+// station_callsign, while operator/grid stay untouched.
+func TestDoNormalizeAndUpload_CallMismatchUpdatesCallsign(t *testing.T) {
+	le := newTestEditorWithDB(t, "", "", "", "Szymon", "KO00ca")
+	le.logStationCall = "SP9MOA"
+
+	q1 := &qso.QSO{Call: "A1A", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB",
+		StationCallsign: "OLD_CALL", Operator: "KeepOp", MyGridSquare: "AA00aa"}
+	id1 := insertTestQSO(t, le.db, q1)
+	q1.ID = id1
+	le.qsos = []qso.QSO{*q1}
+	le.mismatchQSOs = []qso.QSO{*q1}
+	le.mismatchFields = []string{"callsign"}
+
+	cmd := le.doNormalizeAndUpload()
+	msg := cmd()
+	em := msg.(editorMsg)
+	if em.normalized != 1 {
+		t.Errorf("normalized = %d; want 1", em.normalized)
+	}
+
+	stored, err := store.GetQSOByID(le.db, id1)
+	if err != nil || stored == nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if stored.StationCallsign != "SP9MOA" {
+		t.Errorf("stored StationCallsign = %q; want SP9MOA", stored.StationCallsign)
+	}
+	if stored.Operator != "KeepOp" {
+		t.Errorf("stored Operator = %q; want KeepOp (unchanged)", stored.Operator)
+	}
+	if stored.MyGridSquare != "AA00aa" {
+		t.Errorf("stored MyGridSquare = %q; want AA00aa (unchanged)", stored.MyGridSquare)
+	}
+}
+
+// TestDoBatchUpload_DetectsCallMismatch verifies a station-callsign mismatch
+// is flagged for confirmation when the logbook station callsign is known.
+func TestDoBatchUpload_DetectsCallMismatch(t *testing.T) {
+	le := newTestEditor("", "", "", "", "")
+	le.logStationCall = "SP9MOA"
+	le.qsos = []qso.QSO{
+		{
+			ID: 10, Call: "SP9MOA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+			StationCallsign: "DIFFERENT",
+		},
+	}
+
+	le2, next := runUploadPrep(t, le)
+	if next != nil {
+		t.Errorf("expected nil command when a callsign mismatch is flagged, got %T", next)
+	}
+	hasCall := false
+	for _, f := range le2.mismatchFields {
+		if f == "callsign" {
+			hasCall = true
+		}
+	}
+	if !hasCall {
+		t.Errorf("mismatchFields should contain 'callsign', got %v", le2.mismatchFields)
 	}
 }
 
@@ -416,12 +516,7 @@ func TestUploadSkipsDownloadedQSOs(t *testing.T) {
 		{ID: 4, Call: "SP9DDD", Band: "10m", Mode: "SSB", QSODate: "20240504", WavelogID: 1},
 	}
 
-	cmd := le.doBatchUpload()
-	msg := execCmd(cmd)
-	em, ok := msg.(editorMsg)
-	if !ok {
-		t.Fatalf("expected editorMsg, got %T", msg)
-	}
+	em := prepAndRunUpload(t, le)
 	// Empty URL → upload should fail, but NOT with "all sent".
 	// The filtering found unsent QSOs (2 and 3) and tried to send them.
 	if em.wlCall == "all sent" {
@@ -454,9 +549,7 @@ func TestDownloadMarksAllQSOsAsUploaded(t *testing.T) {
 
 	// Batch upload should see both as already sent.
 	le.mode = edModeList
-	cmd := le.doBatchUpload()
-	msg := execCmd(cmd)
-	em := msg.(editorMsg)
+	em := prepAndRunUpload(t, le)
 	if em.wlCall != "all sent" {
 		t.Errorf("wlCall = %q; want 'all sent' (both QSOs already marked yes)", em.wlCall)
 	}
@@ -545,7 +638,14 @@ func TestUploadBatch_FiltersUnsentQSOs(t *testing.T) {
 
 	cmd := le.doBatchUpload()
 	msg := execCmd(cmd)
-	em := msg.(editorMsg)
+	if _, ok := msg.(uploadPrepMsg); !ok {
+		t.Fatalf("expected uploadPrepMsg, got %T", msg)
+	}
+	_, next := le.Update(msg)
+	if next == nil {
+		t.Fatal("prep produced no upload command for unsent QSOs")
+	}
+	em := execCmd(next).(editorMsg)
 	if em.wlCall == "all sent" {
 		t.Error("should not report 'all sent' — QSOs 2 and 3 are unsent")
 	}
@@ -683,6 +783,88 @@ func TestUploadBatch_MockServerDuplicate(t *testing.T) {
 	}
 }
 
+// TestUploadBatch_PartialChunkFailure verifies a partial batch result is
+// reported honestly: the successful chunk counts as sent, the failed chunk
+// as failed, and the summary never claims the whole input succeeded.
+func TestUploadBatch_PartialChunkFailure(t *testing.T) {
+	postCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Query().Has("page"):
+			// Reconciliation scan: nothing is already on Wavelog.
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{},
+				"meta": map[string]any{"page": 1, "has_more": false},
+			})
+		case r.Method == http.MethodGet:
+			// Id backfill for the successful first chunk.
+			rows := make([]map[string]any, 0, 50)
+			for i := 0; i < 50; i++ {
+				rows = append(rows, map[string]any{
+					"id":       1000 + i,
+					"call":     fmt.Sprintf("SP9B%02d", i),
+					"band":     "20m",
+					"mode":     "SSB",
+					"qso_date": fmt.Sprintf("2024-05-10 %02d:00:00", i),
+				})
+			}
+			json.NewEncoder(w).Encode(map[string]any{"data": rows})
+		case r.Method == http.MethodPost:
+			postCount++
+			if postCount == 1 {
+				json.NewEncoder(w).Encode(map[string]any{
+					"data": map[string]any{"parsed": 50, "imported": 50, "skipped": 0, "messages": []string{}},
+					"meta": map[string]string{"resource": "qso", "method": "POST"},
+				})
+			} else {
+				http.Error(w, "server error", http.StatusInternalServerError)
+			}
+		}
+	}))
+	defer srv.Close()
+
+	le := newTestEditorWithDB(t, srv.URL, "wl2_test", "1", "Szymon", "KO00ca")
+
+	var unsent []qso.QSO
+	for i := 0; i < 100; i++ {
+		q := &qso.QSO{Call: fmt.Sprintf("SP9B%02d", i), Band: "20m", Mode: "SSB",
+			QSODate: "20240510", TimeOn: fmt.Sprintf("%02d0000", i), RSTSent: "59", RSTRcvd: "59"}
+		id := insertTestQSO(t, le.db, q)
+		q.ID = id
+		unsent = append(unsent, *q)
+	}
+
+	msg := execCmd(le.uploadBatch(unsent))
+	em := msg.(editorMsg)
+	if !em.wlOK {
+		t.Fatalf("partial upload must not report total failure (err=%v)", em.err)
+	}
+	if em.wlSentCount != 50 || em.wlFailCount != 50 {
+		t.Errorf("counts = sent:%d fail:%d, want 50/50", em.wlSentCount, em.wlFailCount)
+	}
+	if em.wlDupCount != 0 || em.wlUnresolvedCount != 0 {
+		t.Errorf("dup/unresolved = %d/%d, want 0/0", em.wlDupCount, em.wlUnresolvedCount)
+	}
+	if !strings.Contains(em.wlCall, "50 sent") || !strings.Contains(em.wlCall, "50 failed") {
+		t.Errorf("wlCall = %q, want explicit sent/failed tallies", em.wlCall)
+	}
+
+	// First chunk has persisted remote ids; the failed chunk stays unsent.
+	for i, q := range unsent {
+		stored, err := store.GetQSOByID(le.db, q.ID)
+		if err != nil {
+			t.Fatalf("GetQSOByID(%d): %v", q.ID, err)
+		}
+		if i < 50 && stored.WavelogID == 0 {
+			t.Errorf("QSO %d (chunk 1) wavelog_id = 0, want >0", q.ID)
+		}
+		if i >= 50 && stored.WavelogID != 0 {
+			t.Errorf("QSO %d (chunk 2) wavelog_id = %d, want 0 (failed)", q.ID, stored.WavelogID)
+		}
+	}
+}
+
 func TestUploadBatch_MockServerError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", 500)
@@ -762,6 +944,15 @@ func TestUploadIndividual_MixedResults(t *testing.T) {
 	}
 	if em.wlCall == "" {
 		t.Error("wlCall should contain summary")
+	}
+	if em.wlSentCount != 1 || em.wlFailCount != 1 {
+		t.Errorf("counts = sent:%d fail:%d, want 1/1", em.wlSentCount, em.wlFailCount)
+	}
+	if em.wlDupCount != 0 || em.wlUnresolvedCount != 0 {
+		t.Errorf("dup/unresolved = %d/%d, want 0/0", em.wlDupCount, em.wlUnresolvedCount)
+	}
+	if !strings.Contains(em.wlCall, "1 sent") || !strings.Contains(em.wlCall, "1 failed") {
+		t.Errorf("wlCall = %q, want explicit sent/failed tallies", em.wlCall)
 	}
 
 	// QSO 1 should be marked uploaded, QSO 2 should NOT.

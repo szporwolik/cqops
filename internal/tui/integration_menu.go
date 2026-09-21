@@ -1863,10 +1863,10 @@ func testGPSDConnection(host, port string) error {
 		if lat == 0 && lon == 0 {
 			continue
 		}
-		applog.Info("GPSD test: TPV received",
+		applog.Info("GPSD test: TPV received", "mode", fmt.Sprintf("%.0f", mode))
+		applog.Debug("GPSD test: TPV details",
 			"lat", fmt.Sprintf("%.6f", lat),
 			"lon", fmt.Sprintf("%.6f", lon),
-			"mode", fmt.Sprintf("%.0f", mode),
 		)
 		return nil
 	}

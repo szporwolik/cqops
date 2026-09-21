@@ -1,6 +1,7 @@
 package wavelog
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -542,35 +543,41 @@ func GetQSO(baseURL, apiKey string, remoteID int64) (*QSOData, error) {
 }
 
 // UpdateQSOInput carries the fields for a PATCH /api/v2/qso/{id} update.
-// Frequencies are in Hz (string-encoded, the v2 convention).
+// Frequencies are in Hz (string-encoded when set, the v2 convention).
+//
+// Presence is separated from value: a nil pointer leaves the field
+// untouched, while a pointer to an empty string or a nonpositive frequency
+// explicitly CLEARS the field remotely (sent as JSON null, the API's
+// supported clearing representation). Call, Band, Mode, QSODate and TimeOn
+// are identity fields and are never cleared.
 type UpdateQSOInput struct {
 	Call       string
 	Band       string
 	Mode       string // canonical mode or submode, e.g. "SSB" or "FT8"
 	QSODate    string // YYYY-MM-DD — must be sent together with TimeOn
 	TimeOn     string // HH:MM:SS — must be sent together with QSODate
-	RSTSent    string
-	RSTRcvd    string
-	Gridsquare string
-	Name       string
-	QTH        string
-	Comment    string
-	Notes      string
-	TXPower    string
-	SOTARef    string
-	POTARef    string
-	WWFFRef    string
-	IOTA       string
-	SIG        string
-	SIGInfo    string
-	FreqHz     int64
-	FreqRxHz   int64
+	RSTSent    *string
+	RSTRcvd    *string
+	Gridsquare *string
+	Name       *string
+	QTH        *string
+	Comment    *string
+	Notes      *string
+	TXPower    *string
+	SOTARef    *string
+	POTARef    *string
+	WWFFRef    *string
+	IOTA       *string
+	SIG        *string
+	SIGInfo    *string
+	FreqHz     *int64
+	FreqRxHz   *int64
 }
 
 // UpdateQSO updates a QSO on the Wavelog API v2 via PATCH /api/v2/qso/{id}.
 // The v2 API accepts partial bodies; qso_date (YYYY-MM-DD) and time_on
 // (HH:MM:SS) must be supplied together. A missing QSO reports an APIError
-// with code not_found.
+// with code not_found. Cleared fields are sent as JSON null.
 func UpdateQSO(baseURL, apiKey string, remoteID int64, in UpdateQSOInput) error {
 	if remoteID <= 0 {
 		return fmt.Errorf("invalid remote id %d", remoteID)
@@ -581,6 +588,27 @@ func UpdateQSO(baseURL, apiKey string, remoteID int64, in UpdateQSOInput) error 
 			payload[key] = v
 		}
 	}
+	// Clearable fields: nil = leave untouched, empty = clear (JSON null).
+	addClear := func(key string, v *string) {
+		if v == nil {
+			return
+		}
+		if *v == "" {
+			payload[key] = nil
+			return
+		}
+		payload[key] = *v
+	}
+	addClearHz := func(key string, v *int64) {
+		if v == nil {
+			return
+		}
+		if *v <= 0 {
+			payload[key] = nil
+			return
+		}
+		payload[key] = strconv.FormatInt(*v, 10)
+	}
 	addStr("call", in.Call)
 	addStr("band", in.Band)
 	addStr("mode", in.Mode)
@@ -588,26 +616,22 @@ func UpdateQSO(baseURL, apiKey string, remoteID int64, in UpdateQSOInput) error 
 		payload["qso_date"] = in.QSODate
 		payload["time_on"] = in.TimeOn
 	}
-	addStr("rst_sent", in.RSTSent)
-	addStr("rst_rcvd", in.RSTRcvd)
-	addStr("gridsquare", in.Gridsquare)
-	addStr("name", in.Name)
-	addStr("qth", in.QTH)
-	addStr("comment", in.Comment)
-	addStr("notes", in.Notes)
-	addStr("tx_pwr", in.TXPower)
-	addStr("sota_ref", in.SOTARef)
-	addStr("pota_ref", in.POTARef)
-	addStr("wwff_ref", in.WWFFRef)
-	addStr("iota", in.IOTA)
-	addStr("sig", in.SIG)
-	addStr("sig_info", in.SIGInfo)
-	if in.FreqHz > 0 {
-		payload["freq"] = strconv.FormatInt(in.FreqHz, 10)
-	}
-	if in.FreqRxHz > 0 {
-		payload["freq_rx"] = strconv.FormatInt(in.FreqRxHz, 10)
-	}
+	addClear("rst_sent", in.RSTSent)
+	addClear("rst_rcvd", in.RSTRcvd)
+	addClear("gridsquare", in.Gridsquare)
+	addClear("name", in.Name)
+	addClear("qth", in.QTH)
+	addClear("comment", in.Comment)
+	addClear("notes", in.Notes)
+	addClear("tx_pwr", in.TXPower)
+	addClear("sota_ref", in.SOTARef)
+	addClear("pota_ref", in.POTARef)
+	addClear("wwff_ref", in.WWFFRef)
+	addClear("iota", in.IOTA)
+	addClear("sig", in.SIG)
+	addClear("sig_info", in.SIGInfo)
+	addClearHz("freq", in.FreqHz)
+	addClearHz("freq_rx", in.FreqRxHz)
 	body, err := json.Marshal(payload)
 	if err != nil {
 		return err
@@ -828,13 +852,13 @@ type v2QSOIDRow struct {
 // newest first, so ids are sorted ascending to align 1:1 with the ADIF
 // export (which is ordered ascending by id). Used to store the remote id
 // locally for future edit/delete support.
-func fetchQSOIDsPage(baseURL, apiKey, stationID string, sinceID int64) ([]int64, error) {
+func fetchQSOIDsPage(ctx context.Context, baseURL, apiKey, stationID string, sinceID int64) ([]int64, error) {
 	q := url.Values{}
 	q.Set("since_id", strconv.FormatInt(sinceID, 10))
 	q.Set("station_id", stationID)
 	q.Set("per_page", strconv.Itoa(v2ADIFPageSize))
 
-	_, body, err := v2RequestDownload(http.MethodGet, baseURL, apiKey, "/qso", q, nil)
+	_, body, err := v2RequestDownloadCtx(ctx, http.MethodGet, baseURL, apiKey, "/qso", q, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -852,23 +876,31 @@ func fetchQSOIDsPage(baseURL, apiKey, stationID string, sinceID int64) ([]int64,
 
 // FetchContacts pulls QSOs from the Wavelog API v2 as ADIF since the given
 // fetchFromID. It streams every page straight into the temporary file and
-// returns when the export is complete. See FetchContactsProgress for the
+// returns when the export is complete. See FetchContactsProgressCtx for the
 // pagination details.
 func FetchContacts(baseURL, apiKey, stationID string, fetchFromID int64) (*ContactsResponse, error) {
-	return FetchContactsProgress(baseURL, apiKey, stationID, fetchFromID, nil)
+	return FetchContactsProgressCtx(context.Background(), baseURL, apiKey, stationID, fetchFromID, nil)
 }
 
 // FetchContactsProgress pulls QSOs from the Wavelog API v2 as ADIF since the
-// given fetchFromID. The v2 export is paginated: each GET returns up to
+// given fetchFromID, reporting per-page progress. See FetchContactsProgressCtx.
+func FetchContactsProgress(baseURL, apiKey, stationID string, fetchFromID int64, onPage func(exported, total int)) (*ContactsResponse, error) {
+	return FetchContactsProgressCtx(context.Background(), baseURL, apiKey, stationID, fetchFromID, onPage)
+}
+
+// FetchContactsProgressCtx pulls QSOs from the Wavelog API v2 as ADIF since
+// the given fetchFromID. The v2 export is paginated: each GET returns up to
 // v2ADIFPageSize (250) rows with meta.has_more and meta.total. Pages are
 // fetched with since_id=lastfetchedid until has_more is false or a page
 // reports zero rows. Each page is written to the temporary file immediately
 // — the whole log is never held in memory — and headers of pages after the
 // first are stripped so the result stays a single valid ADIF document.
 //
+// Cancelling ctx aborts in-flight page requests immediately.
+//
 // onPage, when non-nil, is called after every page with the cumulative
 // exported count and the expected total (meta.total).
-func FetchContactsProgress(baseURL, apiKey, stationID string, fetchFromID int64, onPage func(exported, total int)) (*ContactsResponse, error) {
+func FetchContactsProgressCtx(ctx context.Context, baseURL, apiKey, stationID string, fetchFromID int64, onPage func(exported, total int)) (*ContactsResponse, error) {
 	applog.DebugDetail("Wavelog: fetching contacts",
 		fmt.Sprintf("url=%s station_id=%s from_id=%d", baseURL, stationID, fetchFromID))
 	if baseURL == "" || apiKey == "" || stationID == "" {
@@ -906,7 +938,7 @@ func FetchContactsProgress(baseURL, apiKey, stationID string, fetchFromID int64,
 		q.Set("station_id", stationID)
 		q.Set("per_page", strconv.Itoa(v2ADIFPageSize))
 
-		_, body, err := v2RequestDownload(http.MethodGet, baseURL, apiKey, "/qso", q, nil)
+		_, body, err := v2RequestDownloadCtx(ctx, http.MethodGet, baseURL, apiKey, "/qso", q, nil)
 		if err != nil {
 			applog.ErrorDetail("Wavelog: fetch contacts HTTP error",
 				fmt.Sprintf("url=%s station_id=%s error=%v", baseURL, stationID, err))
@@ -957,7 +989,7 @@ func FetchContactsProgress(baseURL, apiKey, stationID string, fetchFromID int64,
 
 		// Capture remote ids for the same window. Best-effort sidecar:
 		// a failure here must not abort the download.
-		pageIDs, idErr := fetchQSOIDsPage(baseURL, apiKey, stationID, sinceID)
+		pageIDs, idErr := fetchQSOIDsPage(ctx, baseURL, apiKey, stationID, sinceID)
 		if idErr != nil {
 			applog.Warn("Wavelog: remote id capture failed", "error", idErr)
 		} else {

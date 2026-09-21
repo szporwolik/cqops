@@ -26,7 +26,8 @@ type Listener struct {
 	generation uint64 // incremented on each Start; used to reject stale callbacks
 	Events     chan event
 	stop       chan struct{}
-	wg         sync.WaitGroup
+	loopWG     sync.WaitGroup // event-processing goroutine
+	readerWG   sync.WaitGroup // UDP reader goroutine (exits when the socket closes)
 	OnADIF     func(string)
 	OnStatus   func(string, string, uint64, string, string, string, string, bool) // call, grid, freqHz, mode, submode, report, txMessage, transmitting
 }
@@ -42,11 +43,16 @@ func NewListener() *Listener {
 // first (including closing the UDP socket) so that config changes (host/port)
 // take effect.
 func (l *Listener) Start(host string, port int) error {
+	// Stop any previous listener. Detach under the mutex, but tear down
+	// outside it — waiting while holding l.mu would deadlock against the
+	// event loop's callback snapshots (see Stop).
+	l.mu.Lock()
+	oldSrv, oldStop := l.stopLocked()
+	l.mu.Unlock()
+	l.finishStop(oldSrv, oldStop)
+
 	l.mu.Lock()
 	defer l.mu.Unlock()
-
-	// Ensure any previous listener is fully stopped before creating a new one.
-	l.stopLocked()
 
 	// Bump generation so any callbacks still in flight from a previous
 	// listener will be rejected when they call isCurrentLocked.
@@ -58,76 +64,115 @@ func (l *Listener) Start(host string, port int) error {
 		ip = net.ParseIP("127.0.0.1")
 	}
 
-	srv, err := wsjtx.MakeServerGiven(ip, uint(port))
+	newSrv, err := wsjtx.MakeServerGiven(ip, uint(port))
 	if err != nil {
 		applog.Error("WSJT-X: server create failed", "host", host, "port", port, "error", err.Error())
 		return fmt.Errorf("server: %w", err)
 	}
 
-	l.server = &srv
+	l.server = &newSrv
 	l.active = true
-	l.stop = make(chan struct{})
+	stop := make(chan struct{})
+	l.stop = stop
 
 	msgCh := make(chan interface{}, 128)
 	errCh := make(chan error, 16)
 
-	// The ListenToWsjtx goroutine blocks on UDP read; it exits when the
-	// socket is closed (via reflection in stopLocked), receiving net.ErrClosed.
+	// The UDP reader blocks on the socket; it exits (closing both channels)
+	// when the socket is closed during shutdown.
+	l.readerWG.Add(1)
 	go func() {
-		l.server.ListenToWsjtx(msgCh, errCh)
+		defer l.readerWG.Done()
+		newSrv.ListenToWsjtx(msgCh, errCh)
 	}()
 
 	applog.Info("WSJT-X listener started", "host", host, "port", port)
 
-	l.wg.Add(1)
+	l.loopWG.Add(1)
 	go func() {
-		defer l.wg.Done()
-		l.eventLoop(gen, msgCh, errCh)
+		defer l.loopWG.Done()
+		l.eventLoop(gen, stop, msgCh, errCh)
 	}()
 	return nil
 }
 
 // Stop signals the event-processing goroutine to exit and waits for it.
-// It also shuts down the underlying UDP socket via the library's Shutdown
-// method, allowing the port to be reused on the next Start.
+// It also shuts down the underlying UDP socket via the library's unexported
+// conn field, allowing the port to be reused on the next Start.
 // It is safe to call multiple times (idempotent).
+//
+// The mutex is released before the socket is closed and before waiting for
+// the goroutines: the event loop takes l.mu in its callback snapshots, so
+// waiting while holding the mutex would deadlock shutdown.
 func (l *Listener) Stop() {
 	l.mu.Lock()
-	defer l.mu.Unlock()
-	l.stopLocked()
+	srv, stop := l.stopLocked()
+	l.mu.Unlock()
+	l.finishStop(srv, stop)
 }
 
-// stopLocked performs the actual stop logic. Caller must hold l.mu.
-func (l *Listener) stopLocked() {
+// stopLocked marks the listener stopped, invalidates the generation, and
+// detaches the server and stop channel. Caller must hold l.mu. The returned
+// resources must be torn down by the caller AFTER releasing l.mu (see
+// finishStop) — doing it under the mutex would deadlock the event loop.
+func (l *Listener) stopLocked() (*wsjtx.Server, chan struct{}) {
 	if !l.active {
+		return nil, nil
+	}
+	l.active = false
+	l.generation++ // reject callbacks that have not snapshotted yet
+	srv, stop := l.server, l.stop
+	l.server = nil
+	l.stop = nil
+	return srv, stop
+}
+
+// finishStop tears down a detached listener without holding l.mu.
+func (l *Listener) finishStop(srv *wsjtx.Server, stop chan struct{}) {
+	if srv == nil && stop == nil {
 		return
 	}
-	// Close the underlying UDP socket so the port can be reused.
-	// wsjtx-go v4.2.1 does not expose Shutdown; we access the conn
-	// via unsafe pointer to avoid the unexported-field reflect panic.
-	// If the library's internal struct changes, the recover prevents
-	// a crash — the socket just won't be closed immediately.
-	if l.server != nil {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					applog.Warn("WSJT-X: unsafe conn close panicked — library may have changed", "panic", r)
-					applog.Debug("WSJT-X: socket close fallback — port may be held until OS timeout; sleeping 500ms to help release")
-					time.Sleep(500 * time.Millisecond)
-				}
-			}()
-			rv := reflect.ValueOf(l.server).Elem()
-			if connField := rv.FieldByName("conn"); connField.IsValid() && connField.Kind() == reflect.Ptr && !connField.IsNil() {
-				connPtr := (**net.UDPConn)(unsafe.Pointer(connField.UnsafeAddr()))
-				(*connPtr).Close()
+	socketClosed := closeServerSocket(srv)
+	if stop != nil {
+		close(stop)
+	}
+	// The event loop always exits via the stop channel — safe to join.
+	l.loopWG.Wait()
+	// The UDP reader exits when its socket closes. If the unsafe close
+	// could not reach the conn (library changed), the reader stays blocked
+	// forever — joining it would deadlock shutdown, so skip in that case.
+	if socketClosed {
+		l.readerWG.Wait()
+	}
+	applog.Info("WSJT-X listener stopped")
+}
+
+// closeServerSocket closes the library's underlying UDP socket so the port
+// can be reused. wsjtx-go v4 exposes no Shutdown method, so the unexported
+// conn field is reached via unsafe. Reports whether the socket was actually
+// closed; a recover() keeps shutdown working if the library changes (the
+// socket is then simply not closed until the OS reclaims it).
+func closeServerSocket(srv *wsjtx.Server) bool {
+	if srv == nil {
+		return false
+	}
+	closed := false
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				applog.Warn("WSJT-X: unsafe conn close panicked — library may have changed", "panic", r)
+				applog.Debug("WSJT-X: socket close fallback — port may be held until OS timeout; sleeping 500ms to help release")
+				time.Sleep(500 * time.Millisecond)
 			}
 		}()
-	}
-	close(l.stop)
-	l.wg.Wait()
-	l.active = false
-	l.server = nil
-	applog.Info("WSJT-X listener stopped")
+		rv := reflect.ValueOf(srv).Elem()
+		if connField := rv.FieldByName("conn"); connField.IsValid() && connField.Kind() == reflect.Ptr && !connField.IsNil() {
+			connPtr := (**net.UDPConn)(unsafe.Pointer(connField.UnsafeAddr()))
+			(*connPtr).Close()
+			closed = true
+		}
+	}()
+	return closed
 }
 
 // IsActive returns true if the listener is currently active. Safe for concurrent use.
@@ -140,15 +185,17 @@ func (l *Listener) IsActive() bool {
 // eventLoop reads WSJT-X messages from the UDP goroutine and dispatches
 // callbacks. The gen parameter is the listener generation captured at Start
 // time — callbacks are only invoked if the generation is still current and
-// the listener is active.
+// the listener is active. The stop channel is the per-run channel captured
+// at Start; the loop never reads the Listener.stop field (it is swapped
+// during shutdown).
 //
 // Callbacks run inline (not in separate goroutines) because they are trivial
 // field assignments under a lock — spawning a goroutine per message would
 // create massive scheduler overhead at typical FT8 message rates (50+/cycle).
-func (l *Listener) eventLoop(gen uint64, msgCh chan interface{}, errCh chan error) {
+func (l *Listener) eventLoop(gen uint64, stop chan struct{}, msgCh chan interface{}, errCh chan error) {
 	for {
 		select {
-		case <-l.stop:
+		case <-stop:
 			return
 		case msg, ok := <-msgCh:
 			if !ok || msg == nil {

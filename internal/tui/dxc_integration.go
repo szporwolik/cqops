@@ -84,8 +84,9 @@ func (m *Model) handleDXCPathDupes(msg dxcPathDupesMsg) {
 // so it appears immediately in the DXC table even if the cluster doesn't echo.
 func (m *Model) sendSpotCmd(call string, freqKhz float64, comment string) tea.Cmd {
 	db := m.App.DB
+	client := m.dxc.client // capture — the field may be swapped by the owner
 	return func() tea.Msg {
-		if m.dxc.client == nil || !m.dxc.online {
+		if client == nil || !m.dxc.online {
 			m.toasts.Warn("DXC: not connected — cannot send spot")
 			return nil
 		}
@@ -98,7 +99,7 @@ func (m *Model) sendSpotCmd(call string, freqKhz float64, comment string) tea.Cm
 		}
 		m.toasts.Info(toastMsg)
 
-		rsp, err := m.dxc.client.SendSpot(freqKhz, call, comment)
+		rsp, err := client.SendSpot(freqKhz, call, comment)
 		if err != nil {
 			m.toasts.Warn("DXC: spot failed — " + err.Error())
 			return nil
@@ -148,6 +149,8 @@ func (m *Model) sendSpotCmd(call string, freqKhz float64, comment string) tea.Cm
 }
 
 // dxcConnectCmd returns a tea.Cmd that attempts to connect to the DX cluster.
+// The client is created once and reused for retries — it is only replaced
+// by resetDXC when the configuration changes.
 func (m *Model) dxcConnectCmd() tea.Cmd {
 	return func() tea.Msg {
 		cfg := m.App.Config.Integrations.DXC
@@ -164,8 +167,11 @@ func (m *Model) dxcConnectCmd() tea.Cmd {
 			login = m.App.Logbook.Station.Callsign
 		}
 
-		client := dxc.NewClient(host, port, login)
-		m.dxc.client = client
+		client := m.dxc.client
+		if client == nil {
+			client = dxc.NewClient(host, port, login)
+			m.dxc.client = client
+		}
 
 		if err := client.Start(); err != nil {
 			return dxcStatusMsg{online: false, err: err}
@@ -226,11 +232,11 @@ func (m *Model) maybeDXC() tea.Cmd {
 		select {
 		case status, ok := <-m.dxc.client.Status():
 			if ok && !status {
-				applog.Warn("DXC: connection lost, will reconnect")
+				applog.Warn("DXC: connection lost — client will reconnect")
 				m.dxc.online = false
-				m.dxc.connecting = false
-				m.dxc.client = nil
 				m.rc.status = ""
+				// Keep the client: after the first connection it owns
+				// reconnection. Nil-ing it here would orphan its goroutines.
 				return nil
 			}
 		default:
@@ -249,7 +255,12 @@ func (m *Model) maybeDXC() tea.Cmd {
 		return nil
 	}
 
-	// Reconnect delay.
+	// Reconnect delay — this only applies before the first successful
+	// connection. Once the client has connected, IT owns reconnection;
+	// the TUI just waits for the next status update.
+	if m.dxc.client != nil && m.dxc.client.ConnectedOnce() {
+		return nil
+	}
 	if !m.dxc.online && !m.dxc.lastAttempt.IsZero() {
 		delay := dxcReconnectDelays[m.dxc.reconnectIdx]
 		if time.Since(m.dxc.lastAttempt) < delay {
@@ -415,7 +426,6 @@ func (m *Model) handleDXCStatus(msg dxcStatusMsg) tea.Cmd {
 		return nil
 	}
 	m.dxc.online = false
-	m.dxc.client = nil
 	m.rc.status = ""
 	// Redirect to QSO form if the user is viewing the DXC tab.
 	if m.screen == screenDXC {

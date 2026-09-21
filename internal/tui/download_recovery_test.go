@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
@@ -174,8 +175,8 @@ func TestDownload_FailureClearsActiveFlag(t *testing.T) {
 	if le.dlActive {
 		t.Error("dlActive should be false after download failure")
 	}
-	if le.dlCancel != nil {
-		t.Error("dlCancel should be nil after download completes")
+	if le.dlOp != nil {
+		t.Error("dlOp should be nil after download completes")
 	}
 }
 
@@ -191,6 +192,118 @@ func TestDownload_MissingAPIKey(t *testing.T) {
 	le := startFakeDownload(t, server, nil)
 	if le.wlDownloadErr == "" {
 		t.Error("wlDownloadErr should be set when key/stationID are empty")
+	}
+}
+
+// TestDownload_TransientFailureFreezesCheckpoint reproduces the lost-contact
+// bug: when a record fails to INSERT (here a trigger injects a deterministic
+// failure standing in for database contention), the persisted
+// last_fetched_id must stay before that record so the next incremental
+// download retries it. Later records that did succeed are re-fetched and
+// deduplicated on the retry.
+func TestDownload_TransientFailureFreezesCheckpoint(t *testing.T) {
+	adifContent := `<CALL:6>SP9MOA <BAND:3>20m <MODE:3>SSB <FREQ:7>14.2500
+<QSO_DATE:8>20260618 <TIME_ON:6>120000 <RST_SENT:2>59 <RST_RCVD:2>59
+<GRIDSQUARE:4>JO90 <EOR>
+<CALL:6>DL1ABC <BAND:3>40m <MODE:3>FT8 <FREQ:8>7.074000
+<QSO_DATE:8>20260619 <TIME_ON:6>130000 <RST_SENT:3>-10 <RST_RCVD:3>-05
+<GRIDSQUARE:4>JN58 <EOR>`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"exported":      2,
+				"lastfetchedid": 200,
+				"adif":          adifContent,
+			},
+			"meta": map[string]any{"has_more": false},
+		})
+	}))
+	defer server.Close()
+
+	m := newLifecycleTestModel(t)
+	m.App.ConfigPath = filepath.Join(t.TempDir(), "config.yaml")
+	wl := m.App.Logbook.Wavelog
+	wl.URL = server.URL
+	wl.APIKey = "key"
+	wl.Enabled = true
+	wl.StationProfileID = "1"
+
+	// Make the FIRST contact's insert fail — the second one must still
+	// succeed, reproducing "contact 101 fails, later contacts succeed".
+	if _, err := m.App.DB.Exec(`CREATE TRIGGER fail_test_insert BEFORE INSERT ON qsos
+		WHEN NEW.call='SP9MOA'
+		BEGIN SELECT RAISE(ABORT, 'injected failure'); END`); err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+
+	m.ui.logbookEditor = NewLogbookEditor(LogbookEditorConfig{
+		DB: m.App.DB, WLURL: server.URL, WLKey: "key", WLStationID: "1",
+		WLLastFetchedID: 0, StationOperator: "OP", StationGrid: "JO90",
+	})
+
+	cmd := m.ui.logbookEditor.doWavelogDownload()
+	if cmd == nil {
+		t.Fatal("doWavelogDownload returned nil cmd")
+	}
+	for i := 0; i < 500 && m.ui.logbookEditor.isDownloadActive(); i++ {
+		msg := cmd()
+		next, c := m.Update(msg)
+		var ok bool
+		m, ok = next.(*Model)
+		if !ok {
+			t.Fatalf("Update returned %T", next)
+		}
+		if c == nil {
+			break
+		}
+		cmd = c
+	}
+	if m.ui.logbookEditor.isDownloadActive() {
+		t.Fatal("download did not complete")
+	}
+
+	le := m.ui.logbookEditor
+	if le.wlDownloadCount != 1 {
+		t.Errorf("inserted = %d, want 1 (only the valid record)", le.wlDownloadCount)
+	}
+	if le.wlDownloadHold != 1 {
+		t.Errorf("deferred = %d, want 1 (the failed record must be retried)", le.wlDownloadHold)
+	}
+
+	// The cursor must NOT advance to the export's last id (200): the failed
+	// record is unsaved and must be re-fetched next time.
+	if wl.LastFetchedID != 0 {
+		t.Errorf("LastFetchedID = %d, want 0 (frozen before the failed record)", wl.LastFetchedID)
+	}
+	data, err := os.ReadFile(m.App.ConfigPath)
+	if err != nil {
+		t.Fatalf("config not written: %v", err)
+	}
+	if strings.Contains(string(data), "last_fetched_id: 200") {
+		t.Error("config advanced the cursor past an unsaved contact")
+	}
+}
+
+// TestEditorSideEffects_ImportExportDoesNotMoveWavelogCursor verifies the
+// shared completion handler only persists last_fetched_id for Wavelog
+// download completions — ordinary ADIF import/export must not reset it.
+func TestEditorSideEffects_ImportExportDoesNotMoveWavelogCursor(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.App.ConfigPath = filepath.Join(t.TempDir(), "config.yaml")
+	wl := m.App.Logbook.Wavelog
+	wl.LastFetchedID = 42
+
+	// Import/export-shaped completion (no dlDownload flag) — cursor untouched.
+	m.handleEditorSideEffects(editorMsg{dlDone: true, dlCount: 3})
+	if wl.LastFetchedID != 42 {
+		t.Errorf("import completion reset cursor to %d, want 42", wl.LastFetchedID)
+	}
+
+	// Download-shaped completion advances the cursor.
+	m.handleEditorSideEffects(editorMsg{dlDone: true, dlCount: 1, dlLastID: 99, dlDownload: true})
+	if wl.LastFetchedID != 99 {
+		t.Errorf("download completion should set cursor to 99, got %d", wl.LastFetchedID)
 	}
 }
 
@@ -551,6 +664,77 @@ func TestDownload_SetsWavelogSource(t *testing.T) {
 	}
 }
 
+// TestDownload_AbortDuringFetchCompletes is the regression test for lost
+// cancellation: the operation object survives the UI's abort, the in-flight
+// HTTP request is cancelled via context, and the worker still delivers its
+// final aborted-done message.
+func TestDownload_AbortDuringFetchCompletes(t *testing.T) {
+	// The handler blocks until released — cancellation of the request
+	// context must unblock the fetch without waiting for a response.
+	release := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"exported":      0,
+				"lastfetchedid": 42,
+				"adif":          nil,
+			},
+			"meta": map[string]any{"has_more": false},
+		})
+	}))
+	defer func() {
+		close(release)
+		server.Close()
+	}()
+
+	dbPath := filepath.Join(t.TempDir(), "abort_test.db")
+	db, err := store.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("InitDB: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	le := NewLogbookEditor(LogbookEditorConfig{
+		DB: db, WLURL: server.URL, WLKey: "test-api-key", WLStationID: "1",
+		WLLastFetchedID: 0, StationOperator: "OP", StationGrid: "JO90",
+	})
+
+	cmd := le.doWavelogDownload()
+	if cmd == nil {
+		t.Fatal("doWavelogDownload returned nil cmd")
+	}
+	_ = cmd() // first read; the worker starts concurrently
+
+	// Abort immediately — the worker must notice even though the UI
+	// tears down its own references.
+	le.cancelDownload()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for le.dlActive {
+			msg := le.readDownloadMsg()
+			m2, _ := le.Update(msg)
+			le = m2.(*LogbookEditor)
+		}
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("aborted download did not complete — cancellation was lost")
+	}
+
+	if le.dlOp != nil {
+		t.Error("dlOp should be nil after the operation completes")
+	}
+	if !le.wlDownloadAbort {
+		t.Error("download result should be marked as aborted")
+	}
+}
+
 // =============================================================================
 // Mid-download dlErr trimming tests (Pass 30)
 // =============================================================================
@@ -651,6 +835,146 @@ func TestMidDownload_DlErr_WhitespaceNotPreservedThroughDlDone(t *testing.T) {
 	}
 	if le.mode != edModeWLDownloadResult {
 		t.Errorf("mode should be edModeWLDownloadResult, got %v", le.mode)
+	}
+}
+
+// =============================================================================
+// ADIF import/export terminal-result tests
+// =============================================================================
+// Import/export failures must reach the result screen as errors instead of
+// ending as success-looking results, and exports must only publish the
+// target file after a fully successful write.
+
+// startImport runs an ADIF import producer against a temp DB and drains all
+// messages synchronously. Returns the editor after completion.
+func startImport(t *testing.T, adifPath string) *LogbookEditor {
+	t.Helper()
+	dbPath := filepath.Join(t.TempDir(), "import_test.db")
+	db, err := store.InitDB(dbPath)
+	if err != nil {
+		t.Fatalf("InitDB: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	le := NewLogbookEditor(LogbookEditorConfig{DB: db, StationOperator: "OP", StationGrid: "JO90", StationCall: ""})
+	le.dlActive = true
+	le.mode = edModeImporting
+	op := newDownloadOp()
+	le.dlOp = op
+	go le.runImport(op, adifPath)
+	return execAllDownloadMsgs(t, le)
+}
+
+// startExport runs an ADIF export producer against the editor's DB and
+// drains all messages synchronously. Returns the editor after completion.
+func startExport(t *testing.T, le *LogbookEditor, target string) *LogbookEditor {
+	t.Helper()
+	le.dlActive = true
+	le.mode = edModeExporting
+	op := newDownloadOp()
+	le.dlOp = op
+	go le.runExport(op, target)
+	return execAllDownloadMsgs(t, le)
+}
+
+func TestImport_OpenFailureEndsWithError(t *testing.T) {
+	le := startImport(t, filepath.Join(t.TempDir(), "missing.adi"))
+
+	if le.dlActive {
+		t.Error("dlActive should be false after the import finishes")
+	}
+	if le.mode != edModeImportResult {
+		t.Errorf("mode = %v, want edModeImportResult", le.mode)
+	}
+	if !strings.Contains(le.impErr, "cannot open file") {
+		t.Errorf("impErr = %q, want the open failure to reach the result", le.impErr)
+	}
+}
+
+func TestImport_ScannerErrorReachesResult(t *testing.T) {
+	dir := t.TempDir()
+	adifPath := filepath.Join(dir, "corrupt.adi")
+	data := "CQOps test\n<ADIF_VER:5>3.1.7<EOH>\n" +
+		"<CALL:6>SP9MOA <BAND:3>20m <MODE:3>SSB <QSO_DATE:8>20240501 <TIME_ON:6>120000 <EOR>\n" +
+		"<CALL:XX>SP9MOA<EOR>\n"
+	if err := os.WriteFile(adifPath, []byte(data), 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	le := startImport(t, adifPath)
+
+	if le.mode != edModeImportResult {
+		t.Errorf("mode = %v, want edModeImportResult", le.mode)
+	}
+	if !strings.Contains(le.impErr, "could not be read completely") {
+		t.Errorf("impErr = %q, want the scanner error to reach the result", le.impErr)
+	}
+	if le.impInserted != 1 {
+		t.Errorf("impInserted = %d, want 1 (valid record before the corruption)", le.impInserted)
+	}
+
+	// The valid record before the corruption must still be in the DB.
+	qsos, err := store.ListQSOs(le.db, 10, "")
+	if err != nil {
+		t.Fatalf("ListQSOs: %v", err)
+	}
+	if len(qsos) != 1 || qsos[0].Call != "SP9MOA" {
+		t.Errorf("imported QSOs = %+v, want exactly SP9MOA", qsos)
+	}
+}
+
+func TestExport_SuccessPublishesOnlyFinalFile(t *testing.T) {
+	le := newTestEditorWithDB(t, "", "", "", "", "")
+
+	q1 := &qso.QSO{Call: "SP9AAA", Band: "20m", Mode: "SSB", QSODate: "20240501", TimeOn: "120000",
+		RSTSent: "59", RSTRcvd: "59"}
+	q2 := &qso.QSO{Call: "SP9BBB", Band: "40m", Mode: "CW", QSODate: "20240502", TimeOn: "130000",
+		RSTSent: "599", RSTRcvd: "579"}
+	insertTestQSO(t, le.db, q1)
+	insertTestQSO(t, le.db, q2)
+
+	target := filepath.Join(t.TempDir(), "out.adi")
+	le = startExport(t, le, target)
+
+	if le.mode != edModeExportResult {
+		t.Errorf("mode = %v, want edModeExportResult", le.mode)
+	}
+	if le.impErr != "" {
+		t.Errorf("impErr = %q, want success", le.impErr)
+	}
+	if le.impInserted != 2 {
+		t.Errorf("impInserted = %d, want 2", le.impInserted)
+	}
+
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("target file should exist after successful export: %v", err)
+	}
+	if !strings.Contains(string(data), "SP9AAA") || !strings.Contains(string(data), "SP9BBB") {
+		t.Errorf("exported ADIF missing callsigns: %q", string(data))
+	}
+	if _, err := os.Stat(target + ".tmp"); !os.IsNotExist(err) {
+		t.Error("temp file must not survive a successful export")
+	}
+}
+
+func TestExport_EmptyLogbookFailsWithoutFile(t *testing.T) {
+	le := newTestEditorWithDB(t, "", "", "", "", "")
+
+	target := filepath.Join(t.TempDir(), "empty.adi")
+	le = startExport(t, le, target)
+
+	if le.mode != edModeExportResult {
+		t.Errorf("mode = %v, want edModeExportResult", le.mode)
+	}
+	if le.impErr != "logbook is empty" {
+		t.Errorf("impErr = %q, want 'logbook is empty'", le.impErr)
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Error("no export file should be created for an empty logbook")
+	}
+	if _, err := os.Stat(target + ".tmp"); !os.IsNotExist(err) {
+		t.Error("no temp file should be left behind for an empty logbook")
 	}
 }
 

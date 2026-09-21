@@ -88,6 +88,12 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 	if sp.hasData {
 		m.applyWSJTXStatus(sp.call, sp.grid, sp.freq, sp.mode, sp.submode, sp.report, sp.txMessage, sp.transmitting)
 	}
+	// APRS lifecycle work is single-owner: the debounce timer and the APRS
+	// workers hand their events back here, and all start/stop/restart
+	// transitions run on this main loop.
+	if m.App != nil {
+		m.App.RunPendingAPRS()
+	}
 	// WSJT-X watchdog: if no status received in 15 seconds, mark offline.
 	if m.wsjtx.online && time.Since(m.wsjtx.lastSeen) > 15*time.Second {
 		m.wsjtx.online = false
@@ -294,6 +300,36 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			if versionNewer(r.latest, current) {
 				m.toasts.Warn(fmt.Sprintf("CQOps %s available — visit github.com/szporwolik/cqops/releases", r.latest))
 			}
+		}
+		return true, nil
+	case refDataMsg:
+		// Reference data refreshed in the background — install on the main
+		// loop only. Never assigned by the worker itself.
+		var extra tea.Cmd
+		if r.bigCTY != nil && m.App.Config.General.UseCTY {
+			m.App.BigCTY = r.bigCTY
+			if m.App.DB != nil {
+				extra = dxccBackfillCmd(m.App.DB, r.bigCTY)
+			}
+		}
+		if r.scp != nil && m.App.Config.General.UseSCP {
+			m.App.SCP = r.scp
+		}
+		if r.refDB != nil {
+			if m.App.Config.General.UseRef && m.App.RefDB == nil {
+				m.App.RefDB = r.refDB
+				if n, err := r.refDB.Count(); err == nil && n > 0 {
+					m.ref.ready = true
+				}
+			} else {
+				// Lost a race — another path opened the database already.
+				r.refDB.Close()
+			}
+		}
+		return true, extra
+	case dxccBackfillMsg:
+		if r.count > 0 {
+			applog.Info("DXCC: backfilled missing dxcc", "count", r.count)
 		}
 		return true, nil
 	case wlStatusMsg:

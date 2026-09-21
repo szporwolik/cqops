@@ -1,6 +1,7 @@
 package hamlib
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"math"
@@ -18,8 +19,9 @@ type Client struct {
 	addr    string
 	timeout time.Duration
 
-	mu   sync.Mutex
-	conn net.Conn
+	mu     sync.Mutex
+	conn   net.Conn
+	reader *bufio.Reader // framing reader for conn — same lifetime
 }
 
 // New creates a new rotor client for the given address.
@@ -35,6 +37,7 @@ func (c *Client) Close() error {
 	if c.conn != nil {
 		conn := c.conn
 		c.conn = nil
+		c.reader = nil
 		return conn.Close()
 	}
 	return nil
@@ -144,6 +147,7 @@ func (c *Client) getConn(ctx context.Context) (net.Conn, error) {
 	}
 	applog.Debug("rotor: connected", "addr", c.addr)
 	c.conn = conn
+	c.reader = bufio.NewReader(conn)
 	return c.conn, nil
 }
 
@@ -153,10 +157,15 @@ func (c *Client) dropConn() {
 		applog.Debug("rotor: closing connection", "addr", c.addr)
 		c.conn.Close()
 		c.conn = nil
+		c.reader = nil
 	}
 }
 
-// cmd sends a command and returns the trimmed response.
+// cmd sends a command and returns the complete response payload. rotctld
+// terminates every reply with an RPRT line, so the persistent reader consumes
+// whole lines until that terminator — a response split across TCP reads is
+// reassembled, buffered leftovers cannot leak into the next command, and an
+// acknowledgement cut short reports an error instead of success.
 func (c *Client) cmd(conn net.Conn, cmd string) (string, error) {
 	if c.timeout > 0 {
 		conn.SetDeadline(time.Now().Add(c.timeout))
@@ -165,18 +174,21 @@ func (c *Client) cmd(conn net.Conn, cmd string) (string, error) {
 		return "", err
 	}
 
-	// Read until RPRT terminator or a reasonable amount of data.
-	var buf [256]byte
-	n, err := conn.Read(buf[:])
-	if err != nil {
-		return "", fmt.Errorf("rotor read: %w", err)
+	var lines []string
+	for {
+		line, err := c.reader.ReadString('\n')
+		if err != nil {
+			return "", fmt.Errorf("rotor read: %w", err)
+		}
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "RPRT") {
+			if line != "RPRT 0" {
+				return "", fmt.Errorf("rotor error: %s", line)
+			}
+			return strings.Join(lines, "\n"), nil
+		}
+		lines = append(lines, line)
 	}
-
-	resp := strings.TrimSpace(string(buf[:n]))
-	if strings.HasPrefix(resp, "RPRT ") && !strings.HasPrefix(resp, "RPRT 0") {
-		return "", fmt.Errorf("rotor error: %s", resp)
-	}
-	return resp, nil
 }
 
 func parseFloat(s string) float64 {

@@ -148,6 +148,7 @@ type LogbookEditor struct {
 	wlDownloadFailed int
 	wlDownloadErr    string
 	wlDownloadAbort  bool // last download was aborted (0 count ≠ up to date)
+	wlDownloadHold   int  // insert failures deferred — retried on the next download
 	Offline          bool // when true, Wavelog upload/download is blocked
 
 	// Pagination — only the current page is loaded from DB.
@@ -159,9 +160,8 @@ type LogbookEditor struct {
 	dlActive   bool // true while download goroutine is running
 	dlProgress int
 	dlTotal    int
-	dlCurrent  int // QSOs processed so far
-	dlCancel   chan struct{}
-	dlMsgCh    chan editorMsg
+	dlCurrent  int         // QSOs processed so far
+	dlOp       *downloadOp // immutable per-operation channels/context; nil when idle
 
 	// Cached download progress message — rebuilt only when numbers change.
 	dlCachedMsg string

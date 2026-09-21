@@ -3,6 +3,7 @@ package tui
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -26,17 +27,42 @@ import (
 // bigCTYCatalog is the page listing all Big CTY releases.
 const bigCTYCatalog = "https://www.country-files.com/category/big-cty/"
 
+// bigCTYCatalogPage is the catalog URL the fetcher reads. A variable so tests
+// can point it at a local server.
+var bigCTYCatalogPage = bigCTYCatalog
+
+// refHTTPTimeout bounds every reference-data HTTP request: a server that
+// accepts a connection and then stalls fails the request instead of hanging
+// the refresh. Kept a variable for tests.
+var refHTTPTimeout = 30 * time.Second
+
+// refHTTPClient is the client for reference-data downloads.
+var refHTTPClient = &http.Client{Timeout: refHTTPTimeout}
+
+// maxBigCTYCSVBytes caps the EXPANDED cty.csv so a hostile or unexpected
+// archive cannot exhaust memory — the compressed download cap alone does not
+// bound the expansion. A variable so tests can lower the cap.
+var maxBigCTYCSVBytes uint64 = 64 * 1024 * 1024
+
 // bigCTYZipRe extracts the first Big CTY ZIP download URL from the catalog page.
 var bigCTYZipRe = regexp.MustCompile(`https://www\.country-files\.com/bigcty/download/\d{4}/bigcty-\d{8}\.zip`)
 
 // findBigCTYURL fetches the Big CTY catalog page and returns the latest
-// ZIP download URL. Returns empty string on any error.
-func findBigCTYURL() string {
-	resp, err := http.Get(bigCTYCatalog)
+// ZIP download URL. The request is bounded by ctx and refHTTPClient — a
+// stalled server yields an empty string instead of a hang.
+func findBigCTYURL(ctx context.Context) string {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, bigCTYCatalogPage, nil)
+	if err != nil {
+		return ""
+	}
+	resp, err := refHTTPClient.Do(req)
 	if err != nil {
 		return ""
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 256*1024))
 	if err != nil {
 		return ""
@@ -50,12 +76,21 @@ type bigCTYFiles struct {
 }
 
 // downloadBigCTY downloads the Big CTY ZIP from url and extracts cty.csv.
-func downloadBigCTY(url string) (*bigCTYFiles, error) {
-	resp, err := http.Get(url)
+// The request is bounded by ctx and refHTTPClient; the compressed download
+// and the EXPANDED cty.csv are both capped.
+func downloadBigCTY(ctx context.Context, url string) (*bigCTYFiles, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("download bigcty: %w", err)
+	}
+	resp, err := refHTTPClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("download bigcty: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("download bigcty: HTTP %s", resp.Status)
+	}
 
 	zipBytes, err := io.ReadAll(io.LimitReader(resp.Body, 32*1024*1024))
 	if err != nil {
@@ -72,14 +107,20 @@ func downloadBigCTY(url string) (*bigCTYFiles, error) {
 		if !strings.EqualFold(f.Name, "cty.csv") {
 			continue
 		}
+		if f.UncompressedSize64 > maxBigCTYCSVBytes {
+			return nil, fmt.Errorf("cty.csv expands to %d bytes, exceeding the %d byte cap", f.UncompressedSize64, maxBigCTYCSVBytes)
+		}
 		rc, err := f.Open()
 		if err != nil {
 			continue
 		}
-		data, err := io.ReadAll(rc)
+		data, err := io.ReadAll(io.LimitReader(rc, int64(maxBigCTYCSVBytes)+1))
 		rc.Close()
 		if err != nil {
 			continue
+		}
+		if uint64(len(data)) > maxBigCTYCSVBytes {
+			return nil, fmt.Errorf("cty.csv exceeds %d bytes when expanded", maxBigCTYCSVBytes)
 		}
 		bf.ctyCSV = data
 		break
@@ -372,10 +413,133 @@ func versionNewer(a, b string) bool {
 	return false
 }
 
+// refDataMsg carries freshly loaded reference databases from the background
+// refresh worker to the main loop, which installs them on App. The worker
+// itself never touches App — it only returns data.
+type refDataMsg struct {
+	bigCTY *ctybig.DB
+	scp    *scp.Database
+	refDB  *ref.DB
+}
+
+// dxccBackfillMsg reports the result of a post-refresh DXCC backfill.
+type dxccBackfillMsg struct {
+	count int
+}
+
+// refDataTimeout bounds the whole reference-data refresh; every HTTP request
+// inside it is additionally bounded by refHTTPClient.
+const refDataTimeout = 2 * time.Minute
+
+// dxccBackfillCmd runs the full missing-DXCC backfill off the UI loop after
+// a fresh Big CTY database was installed.
+func dxccBackfillCmd(database *sql.DB, bdb *ctybig.DB) tea.Cmd {
+	return func() tea.Msg {
+		n, err := backfillMissingDXCC(database, bdb)
+		if err != nil {
+			applog.Warn("DXCC: backfill failed", "error", err)
+		}
+		return dxccBackfillMsg{count: n}
+	}
+}
+
+// runRefDataRefresh performs one bounded refresh pass over the reference
+// data files in cacheDir and returns the loaded resources. It must not touch
+// App — the result is installed by the main loop from refDataMsg.
+func runRefDataRefresh(cacheDir string, useCTY, useSCP, useRef, bigCTYLoaded bool) refDataMsg {
+	ctx, cancel := context.WithTimeout(context.Background(), refDataTimeout)
+	defer cancel()
+
+	var out refDataMsg
+	if useCTY {
+		out.bigCTY = refreshBigCTY(ctx, cacheDir, bigCTYLoaded)
+	}
+	if useSCP {
+		out.scp = refreshSCP(cacheDir)
+	}
+	if useRef {
+		if rdb, openErr := ref.Open(filepath.Join(cacheDir, "ref.db")); openErr == nil {
+			out.refDB = rdb
+			applog.Info("REF: database opened on demand")
+		}
+	}
+	return out
+}
+
+// refreshBigCTY loads the cached cty.csv when not yet loaded, downloads a
+// newer copy when the catalog says one exists, and returns the best
+// available database (nil when nothing usable was found).
+func refreshBigCTY(ctx context.Context, cacheDir string, loaded bool) *ctybig.DB {
+	csvFile := filepath.Join(cacheDir, "cty.csv")
+
+	var cached *ctybig.DB
+	if !loaded {
+		if data, err := os.ReadFile(csvFile); err == nil && len(data) > 0 {
+			if db, err := ctybig.ParseCSV(bytes.NewReader(data)); err == nil {
+				applog.Info("DXCC: Big CTY loaded from cache", "entries", db.Prefixes())
+				cached = db
+			}
+		}
+	}
+
+	needDownload := false
+	if _, statErr := os.Stat(csvFile); os.IsNotExist(statErr) {
+		needDownload = true
+	} else if url := findBigCTYURL(ctx); url != "" {
+		if newer, _ := isBigCTYNewer(url, csvFile); newer {
+			needDownload = true
+		}
+	}
+
+	if needDownload {
+		if url := findBigCTYURL(ctx); url != "" {
+			applog.Info("DXCC: downloading Big CTY", "url", url)
+			bf, dlErr := downloadBigCTY(ctx, url)
+			if dlErr != nil {
+				applog.Warn("DXCC: Big CTY download failed", "error", dlErr.Error())
+			} else if len(bf.ctyCSV) > 0 {
+				if werr := os.WriteFile(csvFile, bf.ctyCSV, 0644); werr != nil {
+					applog.Warn("DXCC: cannot cache Big CTY CSV", "error", werr)
+				}
+				if db, err := ctybig.ParseCSV(bytes.NewReader(bf.ctyCSV)); err == nil {
+					applog.Info("DXCC: Big CTY CSV loaded", "entries", db.Prefixes())
+					return db
+				}
+				applog.Warn("DXCC: Big CTY CSV parse failed")
+			}
+		}
+	}
+	return cached
+}
+
+// refreshSCP downloads or updates MASTER.SCP and loads it. The scp library
+// bounds its own HTTP requests; this runs off the UI loop regardless.
+func refreshSCP(cacheDir string) *scp.Database {
+	localFile := filepath.Join(cacheDir, "MASTER.SCP")
+	if _, statErr := os.Stat(localFile); os.IsNotExist(statErr) {
+		applog.Info("SCP: downloading on first run")
+		if dlErr := scp.Download(scp.DefaultURL, localFile); dlErr != nil {
+			applog.Warn("SCP: download failed", "error", dlErr.Error())
+			return nil
+		}
+	} else {
+		if updated, _ := scp.Update(scp.DefaultURL, localFile); updated {
+			applog.Info("SCP: database updated")
+		}
+	}
+	if db, loadErr := scp.LoadLocal(localFile); loadErr == nil {
+		applog.Info("SCP: database loaded")
+		return db
+	}
+	return nil
+}
+
 // maybeRefreshDataFiles returns a command to download or update CTY.DAT and
 // MASTER.SCP data files. Runs once at startup (if cache is missing) and then
 // at most once per 24 hours. Only triggers when internet is confirmed
-// reachable and the respective config flags are on.
+// reachable and the respective config flags are on. The worker runs on a
+// background goroutine (Bubble Tea v2 commands) and returns loaded resources
+// as a message — it never assigns App fields itself.
 func (m *Model) maybeRefreshDataFiles() tea.Cmd {
 	if !m.inetOnline {
 		return nil
@@ -385,86 +549,17 @@ func (m *Model) maybeRefreshDataFiles() tea.Cmd {
 		return nil
 	}
 	m.lastDataCheck = time.Now()
-	return func() tea.Msg {
-		cacheDir, err := config.CacheDir()
-		if err != nil {
-			return nil
-		}
 
-		if m.App.Config.General.UseCTY {
-			csvFile := filepath.Join(cacheDir, "cty.csv")
-
-			// Load cached CSV on startup when present but not yet in memory.
-			if m.App.BigCTY == nil {
-				if data, err := os.ReadFile(csvFile); err == nil && len(data) > 0 {
-					if db, err := ctybig.ParseCSV(bytes.NewReader(data)); err == nil {
-						m.App.BigCTY = db
-						applog.Info("DXCC: Big CTY loaded from cache", "entries", db.Prefixes())
-					}
-				}
-			}
-
-			needDownload := false
-			if _, statErr := os.Stat(csvFile); os.IsNotExist(statErr) {
-				needDownload = true
-			} else if url := findBigCTYURL(); url != "" {
-				if newer, _ := isBigCTYNewer(url, csvFile); newer {
-					needDownload = true
-				}
-			}
-
-			if needDownload {
-				if url := findBigCTYURL(); url != "" {
-					applog.Info("DXCC: downloading Big CTY", "url", url)
-					bf, dlErr := downloadBigCTY(url)
-					if dlErr != nil {
-						applog.Warn("DXCC: Big CTY download failed", "error", dlErr.Error())
-					} else if len(bf.ctyCSV) > 0 {
-						// Save cty.csv to cache so update checks work.
-						os.WriteFile(csvFile, bf.ctyCSV, 0644)
-						if db, err := ctybig.ParseCSV(bytes.NewReader(bf.ctyCSV)); err == nil {
-							m.App.BigCTY = db
-							applog.Info("DXCC: Big CTY CSV loaded", "entries", db.Prefixes())
-						}
-						// Backfill missing dxcc values in the QSO table.
-						if m.App.BigCTY != nil && m.App.DB != nil {
-							n, _ := backfillMissingDXCC(m.App.DB, m.App.BigCTY)
-							if n > 0 {
-								applog.Info("DXCC: backfilled missing dxcc", "count", n)
-							}
-						}
-					}
-				}
-			}
-		}
-
-		if m.App.Config.General.UseSCP {
-			localFile := filepath.Join(cacheDir, "MASTER.SCP")
-			if _, statErr := os.Stat(localFile); os.IsNotExist(statErr) {
-				applog.Info("SCP: downloading on first run")
-				if dlErr := scp.Download(scp.DefaultURL, localFile); dlErr != nil {
-					applog.Warn("SCP: download failed", "error", dlErr.Error())
-				} else if db, loadErr := scp.LoadLocal(localFile); loadErr == nil {
-					m.App.SCP = db
-					applog.Info("SCP: database loaded after download")
-				}
-			} else {
-				if updated, _ := scp.Update(scp.DefaultURL, localFile); updated {
-					if db, loadErr := scp.LoadLocal(localFile); loadErr == nil {
-						m.App.SCP = db
-						applog.Info("SCP: database updated")
-					}
-				}
-			}
-		}
-
-		if m.App.Config.General.UseRef && m.App.RefDB == nil {
-			refPath := filepath.Join(cacheDir, "ref.db")
-			if rdb, openErr := ref.Open(refPath); openErr == nil {
-				m.App.RefDB = rdb
-				applog.Info("REF: database opened on demand")
-			}
-		}
+	cacheDir, err := config.CacheDir()
+	if err != nil {
 		return nil
+	}
+	useCTY := m.App.Config.General.UseCTY
+	useSCP := m.App.Config.General.UseSCP
+	useRef := m.App.Config.General.UseRef && m.App.RefDB == nil
+	bigCTYLoaded := m.App.BigCTY != nil
+
+	return func() tea.Msg {
+		return runRefDataRefresh(cacheDir, useCTY, useSCP, useRef, bigCTYLoaded)
 	}
 }

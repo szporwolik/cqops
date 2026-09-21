@@ -51,6 +51,15 @@ function registerDataFreshness(){
 var recentBody=$('recent-body');
 var mapContainer=$('map-container');
 
+// Inline-attribute-free handlers — the dashboard CSP allows no inline
+// scripts or event-handler attributes, so these are wired here instead.
+(function(){
+  var hp=$('hero-photo');
+  if(hp)hp.onerror=function(){this.style.display='none';var ph=$('hero-placeholder');if(ph)ph.style.display='flex'};
+  var po=$('photo-overlay');
+  if(po)po.onclick=function(){this.style.display='none'};
+})();
+
 var es=null, map=null, mainGL=null;
 var ownStationLat=null,ownStationLon=null,ownStationCall='';
 var todayQsos=[], displayCfg={};
@@ -183,7 +192,7 @@ function connectSSE(){
         window._cqopsLastTodayLogbook=lb.name;
       }
     }
-    updateStationField('Logbook',lb.name)
+    updateStationField('Logbook',esc(lb.name))
   });
   es.addEventListener('partner',function(e){var p=JSON.parse(e.data).payload;
     D('sse','partner',p? p.call+' '+(p.imageUrl?'📷':''):'<cleared>');
@@ -1336,7 +1345,7 @@ function _renderAprsMarker(s,bounds){
   var fade=1;
   if(ago>30){fade=Math.max(0,(60-ago)/30)}
   if(fade<=0)return;
-  var popup=(s.callsign||'?')+'<br>APRS';
+  var popup=esc(s.callsign||'?')+'<br>APRS';
   if(s.comment)popup+='<br>'+esc(s.comment);
   popup+='<br>'+ago+' min ago';
   if(s.course)popup+='<br>Course: '+s.course+'°';
@@ -1396,10 +1405,12 @@ function updateMapFromToday(){
       var mc=isActive?pt.markerActive:isLast?pt.marker:pt.marker;
       var mf=isActive?1:isLast?0.9:0.8;
       var mk=L.circleMarker([lat,lon],{radius:mr,color:mc,fillColor:mc,fillOpacity:mf,weight:isActive?3:2,opacity:0.95});
-      var popup=(q.call||'')+'<br>'+(q.band||'')+' '+(q.mode||'')+'<br>'+(q.grid||'');
-      if(q.timeUtc)popup+='<br>'+q.timeUtc.slice(11,16)+'Z';
-      if(q.country)popup+='<br>'+q.country;
-      mk.bindTooltip(q.call||'',{direction:'top'});mk.bindPopup(popup);
+      // Popup/tooltip content comes from log fields (possibly imported
+      // ADIF) — escape everything so stored HTML cannot execute.
+      var popup=esc(q.call||'')+'<br>'+esc(q.band||'')+' '+esc(q.mode||'')+'<br>'+esc(q.grid||'');
+      if(q.timeUtc)popup+='<br>'+esc(q.timeUtc.slice(11,16))+'Z';
+      if(q.country)popup+='<br>'+esc(q.country);
+      mk.bindTooltip(esc(q.call||''),{direction:'top'});mk.bindPopup(popup);
       qsoMarkerLayer.addLayer(mk);bounds.push([lat,lon]);
       markersDrawn++;
 
@@ -1435,7 +1446,7 @@ function updateMapFromToday(){
       if(markersDrawn>=maxMarkers)return;
       var ll=getQsoLatLon(q);if(!ll)return;
       var mk=L.circleMarker(ll,{radius:4,color:pt.marker,fillColor:pt.marker,fillOpacity:0.8,weight:2,opacity:0.95});
-      mk.bindTooltip(q.call||'',{direction:'top'});
+      mk.bindTooltip(esc(q.call||''),{direction:'top'});
       qsoMarkerLayer.addLayer(mk);bounds.push(ll);
       markersDrawn++;
     });

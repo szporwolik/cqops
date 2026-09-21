@@ -130,7 +130,9 @@ func (m *Model) handleConfigUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd
 			m.App.Config.General.KittyGraphics = m.ui.configMenu.kittyGraphics
 			applog.SetDebugMode(m.ui.configMenu.debugMode)
 			m.saveConfig("Settings saved")
-			m.reloadDataFiles()
+			if c := m.reloadDataFiles(); c != nil {
+				cmd = tea.Batch(cmd, c)
+			}
 			// Handle REF database enable/disable.
 			if m.App.Config.General.UseRef {
 				if m.App.RefDB == nil {
@@ -358,67 +360,62 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 }
 
 // reloadDataFiles loads DXCC prefix data and SCP callsign database from
-// cached files when the user enables UseCTY or UseSCP in settings. This
-// avoids requiring an app restart for those features to become active.
-func (m *Model) reloadDataFiles() {
+// cached files when the user enables UseCTY or UseSCP in settings. Missing
+// cache files are fetched in the background; the returned command delivers
+// the loaded resources as a refDataMsg so the UI loop never blocks on
+// network I/O.
+func (m *Model) reloadDataFiles() tea.Cmd {
 	cacheDir, err := config.CacheDir()
 	if err != nil {
 		applog.Debug("reloadDataFiles: cannot determine cache dir", "error", err)
-		return
+		return nil
 	}
 
-	if m.App.Config.General.UseCTY && m.App.BigCTY == nil {
+	needBigCTY := m.App.Config.General.UseCTY && m.App.BigCTY == nil
+	needSCP := m.App.Config.General.UseSCP && m.App.SCP == nil
+	needRef := m.App.Config.General.UseRef && m.App.RefDB == nil
+
+	// Fast local cache loads stay synchronous.
+	if needBigCTY {
 		csvFile := filepath.Join(cacheDir, "cty.csv")
 		if data, err := os.ReadFile(csvFile); err == nil && len(data) > 0 {
 			if db, err := ctybig.ParseCSV(bytes.NewReader(data)); err == nil {
 				m.App.BigCTY = db
 				applog.Info("DXCC: Big CTY loaded from cache on demand", "entries", db.Prefixes())
-			}
-		} else if _, statErr := os.Stat(csvFile); os.IsNotExist(statErr) {
-			if url := findBigCTYURL(); url != "" {
-				applog.Info("DXCC: downloading Big CTY on first enable", "url", url)
-				bf, dlErr := downloadBigCTY(url)
-				if dlErr != nil {
-					applog.Warn("DXCC: Big CTY download failed", "error", dlErr.Error())
-				} else if len(bf.ctyCSV) > 0 {
-					os.WriteFile(csvFile, bf.ctyCSV, 0644)
-					if db, err := ctybig.ParseCSV(bytes.NewReader(bf.ctyCSV)); err == nil {
-						m.App.BigCTY = db
-					}
-				}
+				needBigCTY = false
 			}
 		}
 	}
-
-	if m.App.Config.General.UseSCP && m.App.SCP == nil {
+	if needSCP {
 		scpPath := filepath.Join(cacheDir, "MASTER.SCP")
-		if _, statErr := os.Stat(scpPath); os.IsNotExist(statErr) {
-			applog.Info("SCP: downloading on first enable")
-			if dlErr := scp.Download(scp.DefaultURL, scpPath); dlErr != nil {
-				applog.Warn("SCP: download failed", "error", dlErr.Error())
-			}
-		}
 		if db, loadErr := scp.LoadLocal(scpPath); loadErr == nil {
 			m.App.SCP = db
 			applog.Info("SCP: callsign database loaded on demand")
-		} else {
-			applog.Info("SCP: no cached data yet — will fetch when online")
+			needSCP = false
 		}
 	}
-
-	if m.App.Config.General.UseRef && m.App.RefDB == nil {
+	if needRef {
 		refPath := filepath.Join(cacheDir, "ref.db")
 		if rdb, openErr := ref.Open(refPath); openErr == nil {
 			m.App.RefDB = rdb
 			applog.Info("REF: database opened on demand")
-			// Check if already populated.
 			if n, err := rdb.Count(); err == nil && n > 0 {
 				m.ref.ready = true
 			}
-		} else {
-			applog.Info("REF: cannot open database — will rebuild when online")
+			needRef = false
 		}
 	}
+
+	// Anything still missing needs the network — fetch in the background
+	// and install the results from a refDataMsg.
+	if needBigCTY || needSCP || needRef {
+		useCTY, useSCP, useRef := needBigCTY, needSCP, needRef
+		bigCTYLoaded := m.App.BigCTY != nil
+		return func() tea.Msg {
+			return runRefDataRefresh(cacheDir, useCTY, useSCP, useRef, bigCTYLoaded)
+		}
+	}
+	return nil
 }
 
 func (m *Model) handleMainMenuUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
@@ -831,6 +828,8 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 				m.toasts.Warn(fmt.Sprintf("QSO %s from %s saved locally — remote copy was deleted", em.saveCall, em.saveDate))
 			case em.wlSyncErr != "":
 				m.toasts.Error(fmt.Sprintf("QSO %s from %s saved locally — Wavelog: %s", em.saveCall, em.saveDate, em.wlSyncErr))
+			case em.wlSyncPending:
+				m.toasts.Warn(fmt.Sprintf("QSO %s from %s saved locally — Wavelog sync deferred (offline)", em.saveCall, em.saveDate))
 			default:
 				m.toasts.Success(fmt.Sprintf("QSO %s from %s saved", em.saveCall, em.saveDate))
 			}
@@ -853,9 +852,15 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 		}
 		if em.wlQSOID != 0 {
 			if em.wlOK {
-				if em.wlDup {
+				hasTally := em.wlSentCount+em.wlDupCount+em.wlFailCount+em.wlUnresolvedCount > 0
+				switch {
+				case hasTally && (em.wlFailCount > 0 || em.wlUnresolvedCount > 0):
+					m.toasts.Warn("Wavelog: " + em.wlCall)
+				case hasTally:
+					m.toasts.Success("Wavelog: " + em.wlCall)
+				case em.wlDup:
 					m.toasts.Success(fmt.Sprintf("Wavelog: %s already present", em.wlCall))
-				} else {
+				default:
 					m.toasts.Success(fmt.Sprintf("Wavelog: %s sent", em.wlCall))
 				}
 				m.ui.logbookEditor.UpdateWLStatus(em.wlQSOID, em.wlOK, 0)
@@ -897,7 +902,10 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 // and the global pump that keeps downloads flowing after the user leaves
 // the editor mid-operation.
 func (m *Model) handleEditorSideEffects(em editorMsg) tea.Cmd {
-	if em.dlDone && !em.dlAborted && em.dlErr == "" {
+	// Only Wavelog download completions may move the last_fetched_id
+	// cursor — ADIF import/export reuse this message shape and must never
+	// reset it.
+	if em.dlDone && !em.dlAborted && em.dlErr == "" && em.dlDownload {
 		if m.ui.logbookEditor != nil {
 			m.ui.logbookEditor.wlLastFetchedID = em.dlLastID
 		}

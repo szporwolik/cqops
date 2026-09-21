@@ -27,6 +27,38 @@ func remoteQSODoc(id int64) map[string]any {
 	}
 }
 
+// TestFillEditForm_ClearsPreviousNumericValues reproduces the stale-field
+// bug: editing a contact with freq/freq_rx/distance/bearing/serial values,
+// then one with those fields empty, must clear them — otherwise saving the
+// second contact persists the first contact's numbers.
+func TestFillEditForm_ClearsPreviousNumericValues(t *testing.T) {
+	le := newTestEditorWithDB(t, "", "", "", "OP", "JO90")
+
+	populated := &qso.QSO{Call: "A1AA", Band: "20m", Mode: "SSB", QSODate: "20260601",
+		TimeOn: "120000", Freq: 14.2500, FreqRx: 14.2505, Distance: 123.4, Bearing: 90, STX: 5, SRX: 7}
+	le.editing = populated
+	le.fillEditForm(populated)
+
+	empty := &qso.QSO{Call: "B2BB", Band: "40m", Mode: "FT8", QSODate: "20260602", TimeOn: "130000"}
+	le.editing = empty
+	le.fillEditForm(empty)
+
+	for _, f := range []qsoEditField{qefFreq, qefFreqRx, qefDistance, qefBearing, qefSTX, qefSRX} {
+		if v := le.fields[f].Value(); v != "" {
+			t.Errorf("field %d should be cleared for the empty contact, got %q", f, v)
+		}
+	}
+	if got := le.fields[qefCall].Value(); got != "B2BB" {
+		t.Errorf("call = %q, want B2BB", got)
+	}
+
+	// The read-back form must not resurrect the previous values either.
+	round := le.readEditForm()
+	if round.Freq != 0 || round.FreqRx != 0 || round.Distance != 0 || round.Bearing != 0 || round.STX != 0 || round.SRX != 0 {
+		t.Errorf("readEditForm carried stale numeric values: %+v", round)
+	}
+}
+
 // TestFetchRemoteCopyAndRefresh verifies the fetch-on-enter flow: the remote
 // copy is fetched, merged into the local row and reflected in the edit form.
 func TestFetchRemoteCopyAndRefresh(t *testing.T) {
@@ -261,6 +293,133 @@ func TestEditSavePatchFails(t *testing.T) {
 	}
 	if stored.WavelogID != 42 {
 		t.Errorf("WavelogID = %d, want 42 (kept after failed PATCH)", stored.WavelogID)
+	}
+}
+
+// TestEditSaveOfflineDoesNotContactWavelog verifies --offline mode never
+// contacts Wavelog on save and reports the change as pending sync.
+func TestEditSaveOfflineDoesNotContactWavelog(t *testing.T) {
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		t.Errorf("offline save must not contact Wavelog (got %s %s)", r.Method, r.URL.Path)
+		http.Error(w, "should not be called", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	le := newTestEditorWithDB(t, srv.URL, "wl2_test", "1", "Szymon", "KO00ca")
+	le.Offline = true
+
+	q := &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+		TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", Comment: "offline", WavelogID: 42}
+	id := insertTestQSO(t, le.db, q)
+	q.ID = id
+
+	le.editing = q
+	le.fillEditForm(q)
+	le.fields[qefComment].SetValue("offline edit")
+
+	msg := execCmd(le.doSave())
+	em, ok := msg.(editorMsg)
+	if !ok {
+		t.Fatalf("expected editorMsg, got %T", msg)
+	}
+	if em.err != nil {
+		t.Fatalf("local save failed: %v", em.err)
+	}
+	if !em.wlSyncPending {
+		t.Error("wlSyncPending should be set for a synced QSO saved offline")
+	}
+	if em.wlSyncOK || em.wlSyncGone || em.wlSyncErr != "" {
+		t.Errorf("no sync result expected offline: ok=%v gone=%v err=%q", em.wlSyncOK, em.wlSyncGone, em.wlSyncErr)
+	}
+	if requests != 0 {
+		t.Errorf("Wavelog received %d request(s) in offline mode", requests)
+	}
+
+	stored, err := store.GetQSOByID(le.db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if stored.Comment != "offline edit" {
+		t.Errorf("local comment = %q, want offline edit", stored.Comment)
+	}
+	if stored.WavelogID != 42 {
+		t.Errorf("WavelogID = %d, want 42 (kept for future sync)", stored.WavelogID)
+	}
+}
+
+// TestEditSaveClearsWavelogFields verifies clearing a field in the editor
+// clears the remote copy too: the PATCH carries explicit nulls for the
+// emptied fields instead of silently leaving the remote value in place.
+func TestEditSaveClearsWavelogFields(t *testing.T) {
+	var patchedBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch || r.URL.Path != "/api/v2/qso/42" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&patchedBody); err != nil {
+			t.Errorf("decode patch body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"data": remoteQSODoc(42)})
+	}))
+	defer srv.Close()
+
+	le := newTestEditorWithDB(t, srv.URL, "wl2_test", "1", "Szymon", "KO00ca")
+
+	q := &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+		TimeOn: "120000", Freq: 14.25, FreqRx: 14.2, RSTSent: "59", RSTRcvd: "59",
+		GridSquare: "JO90", Comment: "old comment", IOTA: "EU-001", SOTARef: "SP/BB-001", WavelogID: 42}
+	id := insertTestQSO(t, le.db, q)
+	q.ID = id
+
+	le.editing = q
+	le.fillEditForm(q)
+	// The operator empties comment, locator, receive frequency and refs.
+	le.fields[qefComment].SetValue("")
+	le.fields[qefGrid].SetValue("")
+	le.fields[qefFreqRx].SetValue("")
+	le.fields[qefIOTA].SetValue("")
+	le.fields[qefSOTA].SetValue("")
+
+	msg := execCmd(le.doSave())
+	em, ok := msg.(editorMsg)
+	if !ok {
+		t.Fatalf("expected editorMsg, got %T", msg)
+	}
+	if em.err != nil {
+		t.Fatalf("save failed: %v", em.err)
+	}
+	if !em.wlSyncOK {
+		t.Fatalf("wlSyncOK = false, want true (err=%q)", em.wlSyncErr)
+	}
+
+	if patchedBody == nil {
+		t.Fatal("no PATCH received by the mock server")
+	}
+	for _, key := range []string{"comment", "gridsquare", "freq_rx", "iota", "sota_ref"} {
+		v, present := patchedBody[key]
+		if !present || v != nil {
+			t.Errorf("%s = %v (present=%v), want explicit null", key, v, present)
+		}
+	}
+	// Fields that were not cleared keep their values.
+	if patchedBody["rst_sent"] != "59" || patchedBody["freq"] != "14250000" {
+		t.Errorf("untouched fields wrong: rst_sent=%v freq=%v", patchedBody["rst_sent"], patchedBody["freq"])
+	}
+
+	stored, err := store.GetQSOByID(le.db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if stored.Comment != "" || stored.GridSquare != "" || stored.FreqRx != 0 || stored.IOTA != "" || stored.SOTARef != "" {
+		t.Errorf("cleared fields not persisted locally: comment=%q grid=%q freq_rx=%v iota=%q sota=%q",
+			stored.Comment, stored.GridSquare, stored.FreqRx, stored.IOTA, stored.SOTARef)
+	}
+	if stored.WavelogID != 42 {
+		t.Errorf("WavelogID = %d, want 42", stored.WavelogID)
 	}
 }
 

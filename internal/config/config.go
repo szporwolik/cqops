@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 
@@ -32,8 +33,7 @@ type Config struct {
 	Operators         map[string]Operator  `yaml:"operators,omitempty"`
 	BroadcastStations []BroadcastStation   `yaml:"-"`
 
-	secrets      *secrets.Store `yaml:"-"`
-	savedSecrets *savedSecrets  `yaml:"-"`
+	secrets *secrets.Store `yaml:"-"`
 }
 
 // SetSecretsStore attaches a secrets store for encrypted persistence of
@@ -505,20 +505,36 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
+// saveMu serializes Save calls so the secrets store and the temp-file write
+// path are never interleaved by concurrent saves.
+var saveMu sync.Mutex
+
 // Save marshals cfg as YAML and writes it to path. If a secrets store is
-// attached via SetSecretsStore, passwords and API keys are extracted and
-// persisted to the encrypted store before the YAML is written.
+// attached via SetSecretsStore, passwords and API keys are synced to the
+// encrypted store (cleared values are deleted) and blanked on a marshal
+// copy — the live config is never mutated, so concurrent readers (UI,
+// workers) never observe cleared credentials or rewritten maps.
+//
+// A secrets-store failure aborts the whole save: the YAML is scrubbed, so
+// replacing config.yaml without a successful secrets write would drop the
+// only persisted copy of the credentials.
 func Save(path string, cfg *Config) error {
-	cfg.State.Version = version.Resolved()
-	cfg.ConfigVersion = 1 // current config format version
+	saveMu.Lock()
+	defer saveMu.Unlock()
 
-	// Extract and persist secrets before marshaling.
+	// Sync secrets to the encrypted store first.
 	if cfg.secrets != nil {
-		cfg.extractAndSaveSecrets()
+		if err := cfg.syncSecretsToStore(); err != nil {
+			return fmt.Errorf("secrets store: %w", err)
+		}
 	}
-	defer cfg.restoreSecrets() // restore in-memory values after YAML marshal
 
-	data, err := yaml.Marshal(cfg)
+	// Marshal a scrubbed copy; version stamps go on the copy too.
+	cp := cfg.scrubbedCopy()
+	cp.State.Version = version.Resolved()
+	cp.ConfigVersion = 1 // current config format version
+
+	data, err := yaml.Marshal(cp)
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}

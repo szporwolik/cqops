@@ -17,101 +17,78 @@ func wavelogSecretKey(logbookID string) string {
 	return "wavelog." + logbookID + ".apikey"
 }
 
-// savedSecrets holds plaintext copies of secrets that were extracted
-// during Save, so they can be restored to the in-memory Config struct
-// after YAML marshaling.
-type savedSecrets struct {
-	QRZPass     string
-	HamQTHPass  string
-	QRZRuPass   string
-	DXCLogin    string
-	WavelogKeys map[string]string // logbookID → apikey
-}
-
-// extractAndSaveSecrets copies secret values from the Config struct to
-// the secrets store, clears them from the struct, and stashes copies for
-// later restoration.
-func (c *Config) extractAndSaveSecrets() {
-	var saved savedSecrets
-	saved.WavelogKeys = make(map[string]string)
-
-	// QRZ password.
-	if c.Integrations.Callbook.QRZ.Pass != "" {
-		saved.QRZPass = c.Integrations.Callbook.QRZ.Pass
-		c.secrets.Set(secretQRZPass, c.Integrations.Callbook.QRZ.Pass)
-		c.Integrations.Callbook.QRZ.Pass = ""
-	}
-
-	// HamQTH password.
-	if c.Integrations.Callbook.HamQTH.Pass != "" {
-		saved.HamQTHPass = c.Integrations.Callbook.HamQTH.Pass
-		c.secrets.Set(secretHamQTHPass, c.Integrations.Callbook.HamQTH.Pass)
-		c.Integrations.Callbook.HamQTH.Pass = ""
-	}
-
-	// QRZ.ru password.
-	if c.Integrations.Callbook.QRZRu.Pass != "" {
-		saved.QRZRuPass = c.Integrations.Callbook.QRZRu.Pass
-		c.secrets.Set(secretQRZRuPass, c.Integrations.Callbook.QRZRu.Pass)
-		c.Integrations.Callbook.QRZRu.Pass = ""
-	}
-
-	// DXC login.
-	if c.Integrations.DXC.Login != "" {
-		saved.DXCLogin = c.Integrations.DXC.Login
-		c.secrets.Set(secretDXCLogin, c.Integrations.DXC.Login)
-		c.Integrations.DXC.Login = ""
-	}
-
-	// Wavelog API keys (per logbook).
-	for id, lb := range c.Logbooks {
-		if lb.Wavelog != nil && lb.Wavelog.APIKey != "" {
-			saved.WavelogKeys[id] = lb.Wavelog.APIKey
-			c.secrets.Set(wavelogSecretKey(id), lb.Wavelog.APIKey)
-			lb.Wavelog.APIKey = ""
-			c.Logbooks[id] = lb
-		}
-	}
-
-	// Persist to disk immediately.
-	if err := c.secrets.Save(); err != nil {
-		fmt.Fprintf(os.Stderr, "CQOps: secrets save failed: %v\n", err)
-	}
-
-	// Stash copies for post-marshal restoration.
-	c.savedSecrets = &saved
-}
-
-// restoreSecrets puts secret values back into the Config struct from the
-// stashed copies. Call after YAML marshaling is complete.
-func (c *Config) restoreSecrets() {
-	if c.savedSecrets == nil {
-		return
-	}
-	s := c.savedSecrets
-	c.savedSecrets = nil
-
-	if s.QRZPass != "" {
-		c.Integrations.Callbook.QRZ.Pass = s.QRZPass
-	}
-	if s.HamQTHPass != "" {
-		c.Integrations.Callbook.HamQTH.Pass = s.HamQTHPass
-	}
-	if s.QRZRuPass != "" {
-		c.Integrations.Callbook.QRZRu.Pass = s.QRZRuPass
-	}
-	if s.DXCLogin != "" {
-		c.Integrations.DXC.Login = s.DXCLogin
-	}
-	for id, key := range s.WavelogKeys {
-		if lb, ok := c.Logbooks[id]; ok {
-			if lb.Wavelog == nil {
-				lb.Wavelog = &WavelogConfig{}
+// syncSecretsToStore persists secret values to the encrypted store and
+// deletes entries whose live fields are now empty, so cleared credentials
+// do not return on restart. This is a read-only pass over the live config —
+// the YAML scrub happens on a copy in Save. It returns the store's Save
+// error: the caller must abort the whole save on failure, because the
+// scrubbed YAML no longer contains the credentials and a failed secrets
+// write would otherwise leave no persisted copy at all.
+func (c *Config) syncSecretsToStore() error {
+	changed := false
+	sync := func(key, val string) {
+		cur, ok := c.secrets.Get(key)
+		if val == "" {
+			if ok {
+				c.secrets.Delete(key)
+				changed = true
 			}
-			lb.Wavelog.APIKey = key
-			c.Logbooks[id] = lb
+			return
+		}
+		if !ok || cur != val {
+			c.secrets.Set(key, val)
+			changed = true
 		}
 	}
+
+	sync(secretQRZPass, c.Integrations.Callbook.QRZ.Pass)
+	sync(secretHamQTHPass, c.Integrations.Callbook.HamQTH.Pass)
+	sync(secretQRZRuPass, c.Integrations.Callbook.QRZRu.Pass)
+	sync(secretDXCLogin, c.Integrations.DXC.Login)
+	for id, lb := range c.Logbooks {
+		val := ""
+		if lb.Wavelog != nil {
+			val = lb.Wavelog.APIKey
+		}
+		sync(wavelogSecretKey(id), val)
+	}
+
+	if !changed {
+		return nil
+	}
+	return c.secrets.Save()
+}
+
+// scrubbedCopy returns a copy of the config that is safe to marshal:
+// secret values are blanked on the copy when a secrets store is attached,
+// and the logbook map plus its pointer fields are copied, so Save never
+// writes shared state while other goroutines may read it.
+func (c *Config) scrubbedCopy() *Config {
+	cp := *c
+	cp.secrets = nil
+	cp.Logbooks = make(map[string]Logbook, len(c.Logbooks))
+	for id, lb := range c.Logbooks {
+		if lb.Wavelog != nil {
+			wl := *lb.Wavelog
+			if c.secrets != nil {
+				wl.APIKey = ""
+			}
+			lb.Wavelog = &wl
+		}
+		if lb.APRS != nil {
+			ap := *lb.APRS
+			lb.APRS = &ap
+		}
+		cp.Logbooks[id] = lb
+	}
+	if c.secrets != nil {
+		cp.Integrations = c.Integrations
+		cp.Integrations.Callbook.QRZ.Pass = ""
+		cp.Integrations.Callbook.HamQTH.Pass = ""
+		cp.Integrations.Callbook.QRZRu.Pass = ""
+		cp.Integrations.DXC.Login = ""
+	}
+	return &cp
 }
 
 // ApplySecrets overlays secrets from the store onto the Config struct.

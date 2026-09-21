@@ -1,11 +1,14 @@
 package config
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/szporwolik/cqops/internal/secrets"
 )
 
 // =============================================================================
@@ -308,6 +311,183 @@ func TestLoad_EmptyFile(t *testing.T) {
 	// Empty YAML unmarshals to zero-value Config — Validate should catch it.
 	if err := cfg.Validate(); err == nil {
 		t.Error("empty config should fail Validate (no logbooks, no active logbook)")
+	}
+}
+
+// TestSaveDoesNotMutateLiveConfig verifies that Save never clears secret
+// fields on the live config or rewrites its maps — it marshals a scrubbed
+// copy instead, so concurrent readers never observe cleared credentials.
+func TestSaveDoesNotMutateLiveConfig(t *testing.T) {
+	origKey := secrets.KeyFunc
+	secrets.KeyFunc = func() []byte { return bytes.Repeat([]byte{0x42}, 32) }
+	t.Cleanup(func() { secrets.KeyFunc = origKey })
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	sec, err := secrets.Load(dir)
+	if err != nil {
+		t.Fatalf("secrets.Load: %v", err)
+	}
+
+	cfg := DefaultConfig()
+	cfg.SetSecretsStore(sec)
+	cfg.Integrations.Callbook.QRZ.Pass = "secret-pass"
+	cfg.Logbooks["default"] = Logbook{
+		Name:    "test",
+		Station: Station{Callsign: "XX0XX", Grid: "JO90"},
+		Wavelog: &WavelogConfig{
+			Enabled: true,
+			URL:     "https://log.example.com",
+			APIKey:  "secret-api-key-12345",
+		},
+	}
+
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// The live config still holds every secret…
+	if cfg.Integrations.Callbook.QRZ.Pass != "secret-pass" {
+		t.Error("QRZ pass was cleared on the live config by Save")
+	}
+	if got := cfg.Logbooks["default"].Wavelog.APIKey; got != "secret-api-key-12345" {
+		t.Errorf("Wavelog API key was mutated on the live config: %q", got)
+	}
+
+	// …but the YAML on disk contains none of them.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read saved config: %v", err)
+	}
+	if bytes.Contains(data, []byte("secret-pass")) {
+		t.Error("QRZ pass leaked into config.yaml")
+	}
+	if bytes.Contains(data, []byte("secret-api-key-12345")) {
+		t.Error("Wavelog API key leaked into config.yaml")
+	}
+
+	// A fresh load + secrets overlay sees the values again.
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	loaded.SetSecretsStore(sec)
+	loaded.ApplySecrets()
+	if loaded.Integrations.Callbook.QRZ.Pass != "secret-pass" {
+		t.Errorf("QRZ pass after round-trip: %q", loaded.Integrations.Callbook.QRZ.Pass)
+	}
+	if got := loaded.Logbooks["default"].Wavelog.APIKey; got != "secret-api-key-12345" {
+		t.Errorf("Wavelog API key after round-trip: %q", got)
+	}
+}
+
+// TestSave_SecretStoreFailureAbortsSave verifies that a secrets-store write
+// failure aborts the whole save: the scrubbed YAML must never replace the
+// config when the encrypted store could not be persisted, or the only
+// persisted copy of the credentials would be lost.
+func TestSave_SecretStoreFailureAbortsSave(t *testing.T) {
+	origKey := secrets.KeyFunc
+	secrets.KeyFunc = func() []byte { return bytes.Repeat([]byte{0x42}, 32) }
+	t.Cleanup(func() { secrets.KeyFunc = origKey })
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	sec, err := secrets.Load(dir)
+	if err != nil {
+		t.Fatalf("secrets.Load: %v", err)
+	}
+
+	cfg := DefaultConfig()
+	cfg.SetSecretsStore(sec)
+	cfg.Integrations.Callbook.QRZ.Pass = "new-secret-pass"
+
+	// Make the secrets temp-file path unwritable while config.yaml stays
+	// writable: a directory in place of the temp file makes WriteFile fail.
+	if err := os.MkdirAll(filepath.Join(dir, "secrets.enc.tmp"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	// Sentinel content in the config file must survive the failed save.
+	if err := os.WriteFile(path, []byte("sentinel: untouched\n"), 0o600); err != nil {
+		t.Fatalf("write sentinel: %v", err)
+	}
+
+	if err := Save(path, cfg); err == nil {
+		t.Fatal("Save should fail when the secrets store cannot be persisted")
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !bytes.Contains(data, []byte("sentinel: untouched")) {
+		t.Error("config.yaml was replaced despite the secrets-store failure")
+	}
+}
+
+// TestSave_DeletesClearedSecrets verifies explicit secret deletion: clearing
+// a credential field removes the stored value, so it cannot return on the
+// next restart via ApplySecrets.
+func TestSave_DeletesClearedSecrets(t *testing.T) {
+	origKey := secrets.KeyFunc
+	secrets.KeyFunc = func() []byte { return bytes.Repeat([]byte{0x42}, 32) }
+	t.Cleanup(func() { secrets.KeyFunc = origKey })
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	sec, err := secrets.Load(dir)
+	if err != nil {
+		t.Fatalf("secrets.Load: %v", err)
+	}
+	sec.Set(secretQRZPass, "old-pass")
+	sec.Set(wavelogSecretKey("default"), "old-key")
+	if err := sec.Save(); err != nil {
+		t.Fatalf("seed secrets: %v", err)
+	}
+
+	cfg := DefaultConfig()
+	cfg.SetSecretsStore(sec)
+	cfg.Integrations.Callbook.QRZ.Pass = "" // cleared
+	cfg.Integrations.DXC.Login = "keep-me"  // still set
+	cfg.Logbooks["default"] = Logbook{
+		Name:    "test",
+		Station: Station{Callsign: "XX0XX", Grid: "JO90"},
+		Wavelog: &WavelogConfig{Enabled: true, APIKey: ""}, // cleared
+	}
+
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	if _, ok := sec.Get(secretQRZPass); ok {
+		t.Error("cleared QRZ pass should be deleted from the store")
+	}
+	if _, ok := sec.Get(wavelogSecretKey("default")); ok {
+		t.Error("cleared Wavelog API key should be deleted from the store")
+	}
+	if v, ok := sec.Get(secretDXCLogin); !ok || v != "keep-me" {
+		t.Errorf("kept DXC login = %q (ok=%v), want keep-me", v, ok)
+	}
+
+	// Round-trip: a fresh load + overlay must NOT resurrect the cleared
+	// credentials.
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	loaded.SetSecretsStore(sec)
+	loaded.ApplySecrets()
+	if loaded.Integrations.Callbook.QRZ.Pass != "" {
+		t.Errorf("cleared QRZ pass returned after restart: %q", loaded.Integrations.Callbook.QRZ.Pass)
+	}
+	if got := loaded.Logbooks["default"].Wavelog.APIKey; got != "" {
+		t.Errorf("cleared Wavelog key returned after restart: %q", got)
+	}
+	if loaded.Integrations.DXC.Login != "keep-me" {
+		t.Errorf("DXC login after round-trip = %q, want keep-me", loaded.Integrations.DXC.Login)
 	}
 }
 
