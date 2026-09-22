@@ -146,6 +146,13 @@ type editorMsg struct {
 	wlUpSID        string
 	wlUpChanged    bool
 	wlUpUnresolved bool
+	// wlUpRelease transfers the database lease from an editor upload worker
+	// to the global completion handler: ONE lease covers the whole upload →
+	// id retry → reconciliation chain, so a logbook switch while the upload
+	// is on the wire can never close the originating database before the
+	// follow-up chain starts. The global handler owns it and releases it
+	// when the chain finishes (or immediately with no follow-up).
+	wlUpRelease func()
 	// wlUpSnap/wlUpRev carry the SNAPSHOT that reached the server and the
 	// row revision it was taken at. The id-attach retry must use this pair,
 	// never the current row: an edit made after the failed attach belongs
@@ -158,6 +165,12 @@ type editorMsg struct {
 	// queues a PATCH of each latest revision. Batch uploads carry many
 	// rows, so the single-row wlUpChanged flag is not enough.
 	wlReconcileIDs []int64
+	// normRelease transfers the normalization worker's database lease to
+	// the post-normalize batch upload launched from its completion — the
+	// upload consumes it (or releases it when no upload follows), so a
+	// logbook switch during normalization cannot close the retired database
+	// before the upload starts.
+	normRelease func()
 }
 
 func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -319,6 +332,9 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if msg.gen != 0 && msg.gen != le.gen {
 				applog.Warn("Wavelog: discarding normalize result for a replaced editor",
 					fmt.Sprintf("msg_gen=%d editor_gen=%d", msg.gen, le.gen))
+				if msg.normRelease != nil {
+					msg.normRelease()
+				}
 				return le, nil
 			}
 			// Apply the worker's returned changes on the owner loop only —
@@ -348,6 +364,9 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				rows, listErr := store.ListUnsentQSOs(le.db)
 				if listErr != nil {
 					applog.Error("Wavelog: post-normalize upload — cannot list QSOs", "error", listErr)
+					if msg.normRelease != nil {
+						msg.normRelease()
+					}
 					return le, func() tea.Msg {
 						return editorMsg{wlOK: false, err: fmt.Errorf("cannot read logbook: %w", listErr)}
 					}
@@ -368,7 +387,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 				}
 			}
-			return le, le.uploadBatch(unsent)
+			return le, le.uploadBatchLeased(unsent, msg.normRelease)
 		}
 
 	case tea.PasteMsg:

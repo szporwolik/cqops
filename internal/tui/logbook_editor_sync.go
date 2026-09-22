@@ -209,6 +209,55 @@ func (m *Model) patchLatestRevision(ctx *contactSyncContext) tea.Cmd {
 	}
 }
 
+// handleEditorUploadCompletion consumes an editor upload completion
+// GLOBALLY: the follow-up chains — the reconciliation PATCH (the row changed
+// while the upload was on the wire) and the id-attach retry (the server
+// accepted but the id write failed) — are queued against the ORIGINATING
+// logbook/database/endpoint carried by the message, independent of the
+// visible screen and editor generation. Those gate only UI effects in
+// handleLogbookEditorUpdate; a completion that arrives after the operator
+// left the editor screen or after the editor was recreated must still
+// schedule its PATCH.
+//
+// The transferred database lease is consumed here exactly once, even when
+// screen routing later drops the message: it is handed to the follow-up
+// chain (the first chain of a batch gets it; later ones acquire their own
+// now that the database is guaranteed open) or released immediately when
+// no follow-up is needed.
+func (m *Model) handleEditorUploadCompletion(em editorMsg) tea.Cmd {
+	logbook := em.lbID
+	if logbook == "" {
+		logbook = m.App.LogbookName
+	}
+	release := em.wlUpRelease
+	var cmds []tea.Cmd
+	if em.wlUpChanged && em.wlUpDB != nil {
+		cmds = append(cmds, m.queueContactReconcile(em.wlUpDB, em.wlUpURL, em.wlUpKey, logbook, em.wlQSOID, release))
+		release = nil
+	}
+	if em.wlUpUnresolved && em.wlUpDB != nil {
+		cmds = append(cmds, m.retryIDAttachCmd(em.wlUpDB, em.wlUpURL, em.wlUpKey, em.wlUpSID, logbook, em.wlUpSnap, em.wlUpRev, release))
+		release = nil
+	}
+	if len(em.wlReconcileIDs) > 0 && em.wlUpDB != nil {
+		for i, id := range em.wlReconcileIDs {
+			var l func()
+			if i == 0 {
+				l = release
+				release = nil
+			}
+			cmds = append(cmds, m.queueContactReconcile(em.wlUpDB, em.wlUpURL, em.wlUpKey, logbook, id, l))
+		}
+	}
+	if release != nil {
+		release()
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Batch(cmds...)
+}
+
 // queueContactReconcile queues a PATCH of the row's latest revision after an
 // initial upload found the row changed while it was on the wire: the remote
 // copy was created from an older snapshot, so the current revision must be

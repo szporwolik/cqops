@@ -33,6 +33,13 @@ type uploadPrepMsg struct {
 	firstSkipCall string
 	firstSkipDate string
 	err           error
+	// release transfers the preparation worker's database lease to the
+	// upload it launches: the prep worker no longer releases at its end, so
+	// a logbook switch while preparation runs cannot close the retired
+	// database before the batch upload acquires its own lease. The upload
+	// prep handler consumes it — transferred to the upload worker or
+	// released when the prep result is discarded or has no follow-up.
+	release func()
 }
 
 func (le *LogbookEditor) doBatchUpload() tea.Cmd {
@@ -46,12 +53,13 @@ func (le *LogbookEditor) doBatchUpload() tea.Cmd {
 
 	applog.Info("Wavelog: batch upload starting")
 	return func() tea.Msg {
-		defer release()
+		// The lease is NOT released here — it transfers with the prep result
+		// to the batch upload the handler launches from it.
 		if db != nil {
 			total, err := store.CountUnsentQSOs(db)
 			if err != nil {
 				applog.Error("Wavelog: batch upload — cannot count unsent QSOs", "error", err)
-				return uploadPrepMsg{err: fmt.Errorf("cannot read logbook: %w", err), gen: gen, db: db}
+				return uploadPrepMsg{err: fmt.Errorf("cannot read logbook: %w", err), gen: gen, db: db, release: release}
 			}
 			applog.Info("Wavelog: batch upload — unsent rows in log", "unsent", total)
 
@@ -60,11 +68,12 @@ func (le *LogbookEditor) doBatchUpload() tea.Cmd {
 			rows, err := store.ListUnsentQSOs(db)
 			if err != nil {
 				applog.Error("Wavelog: batch upload — cannot list unsent QSOs", "error", err)
-				return uploadPrepMsg{err: fmt.Errorf("cannot read logbook: %w", err), gen: gen, db: db}
+				return uploadPrepMsg{err: fmt.Errorf("cannot read logbook: %w", err), gen: gen, db: db, release: release}
 			}
 			msg := buildUploadPrep(rows)
 			msg.gen = gen
 			msg.db = db
+			msg.release = release
 			return msg
 		}
 
@@ -78,6 +87,7 @@ func (le *LogbookEditor) doBatchUpload() tea.Cmd {
 		msg := buildUploadPrep(all)
 		msg.gen = gen
 		msg.db = db
+		msg.release = release
 		return msg
 	}
 }
@@ -110,12 +120,21 @@ func buildUploadPrep(eligible []qso.QSO) uploadPrepMsg {
 // editor generation or database (logbook switched while preparation ran)
 // are discarded — they must never be uploaded against another logbook.
 func (le *LogbookEditor) handleUploadPrep(msg uploadPrepMsg) (tea.Model, tea.Cmd) {
+	// consumeRelease releases the transferred preparation lease on paths
+	// that do not launch an upload from this result.
+	consumeRelease := func() {
+		if msg.release != nil {
+			msg.release()
+		}
+	}
 	if msg.gen != le.gen || msg.db != le.db {
 		applog.Warn("Wavelog: discarding upload-prep result for a replaced editor",
 			fmt.Sprintf("msg_gen=%d editor_gen=%d", msg.gen, le.gen))
+		consumeRelease()
 		return le, nil
 	}
 	if msg.err != nil {
+		consumeRelease()
 		return le, func() tea.Msg { return editorMsg{wlOK: false, err: msg.err} }
 	}
 	if msg.skipped > 0 {
@@ -129,6 +148,7 @@ func (le *LogbookEditor) handleUploadPrep(msg uploadPrepMsg) (tea.Model, tea.Cmd
 	}
 	if len(msg.unsent) == 0 {
 		applog.Info("Wavelog: batch upload — all already sent")
+		consumeRelease()
 		return le, func() tea.Msg {
 			return editorMsg{wlOK: true, wlCall: "all sent", err: nil}
 		}
@@ -141,9 +161,11 @@ func (le *LogbookEditor) handleUploadPrep(msg uploadPrepMsg) (tea.Model, tea.Cmd
 		le.mismatchQSOs = mismatch
 		le.mismatchFields = fields
 		le.mode = edModeConfirmNormalize
+		// The normalization worker acquires a fresh lease when confirmed.
+		consumeRelease()
 		return le, nil
 	}
-	return le, le.uploadBatch(msg.unsent)
+	return le, le.uploadBatchLeased(msg.unsent, msg.release)
 }
 
 // detectUploadMismatches compares the unsent set against the logbook station
@@ -215,10 +237,11 @@ func (le *LogbookEditor) doNormalizeAndUpload() tea.Cmd {
 	applog.InfoDetail("Wavelog: normalizing station fields", fmt.Sprintf("count=%d call=%s op=%s grid=%s", len(normIDs), wlCall, logOp, logGrid))
 
 	return func() tea.Msg {
-		defer release()
+		// The lease is NOT released here — it transfers with the result to
+		// the post-normalize upload the editor launches from it.
 		if err := store.NormalizeStationFields(db, normIDs, wlCall, logOp, logGrid); err != nil {
 			applog.Error("Wavelog: normalization failed", "error", err)
-			return editorMsg{wlOK: false, err: fmt.Errorf("normalize: %w", err), gen: gen}
+			return editorMsg{wlOK: false, err: fmt.Errorf("normalize: %w", err), gen: gen, normRelease: release}
 		}
 		// The worker is limited to database work: it returns the changed
 		// fields and affected ids as immutable result data. The owner loop
@@ -228,28 +251,47 @@ func (le *LogbookEditor) doNormalizeAndUpload() tea.Cmd {
 		return editorMsg{
 			normalized: len(normIDs), gen: gen,
 			normIDs: normIDs, normCall: wlCall, normOp: logOp, normGrid: logGrid,
+			normRelease: release,
 		}
 	}
 }
 
 func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
+	return le.uploadBatchLeased(unsent, nil)
+}
+
+// uploadBatchLeased is uploadBatch with an optional transferred database
+// lease from the preparation (or normalization) worker: the lease covers the
+// gap between that worker's completion and this worker's start, and
+// transfers onward with the result so the reconciliation chains stay covered
+// too.
+func (le *LogbookEditor) uploadBatchLeased(unsent []qso.QSO, lease func()) tea.Cmd {
 	url, key, sid := le.wlURL, le.wlKey, le.wlStationID
 	db := le.db
-	release := le.dbLease(db)
+	release := lease
+	if release == nil {
+		release = le.dbLease(db)
+	}
 	gen := le.gen
 	opSession := le.editSession
+	logbookID := le.logbookID
 
 	const chunkSize = 50
 
 	// Empty list — should not happen in production but callers may pass nil.
 	if len(unsent) == 0 {
 		return func() tea.Msg {
+			if release != nil {
+				release()
+			}
 			return editorMsg{wlOK: false, err: fmt.Errorf("no QSOs to upload")}
 		}
 	}
 
 	return func() tea.Msg {
-		defer release()
+		// The lease is NOT released here — it transfers with the result so
+		// the global completion handler can queue the follow-up chains
+		// without an unprotected interval.
 		totalOK := 0
 		totalDup := 0
 		totalUnresolved := 0
@@ -293,7 +335,8 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 		}
 		if len(unsent) == 0 {
 			return editorMsg{wlOK: true, wlCall: fmt.Sprintf("%d QSOs (already on Wavelog)", totalRecon), gen: gen, opSession: opSession, opSessionSet: true,
-				wlUpDB: db, wlUpURL: url, wlUpKey: key, wlUpSID: sid, wlReconcileIDs: changedIDs}
+				lbID:   logbookID,
+				wlUpDB: db, wlUpURL: url, wlUpKey: key, wlUpSID: sid, wlReconcileIDs: changedIDs, wlUpRelease: release}
 		}
 
 		for start := 0; start < len(unsent); start += chunkSize {
@@ -327,6 +370,12 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 						if em.err != nil {
 							lastErr = em.err
 						}
+						// The fallback worker's lease is nested inside the
+						// batch worker's lease — release it here; the outer
+						// lease still covers the rest of the batch.
+						if em.wlUpRelease != nil {
+							em.wlUpRelease()
+						}
 					}
 					continue
 				}
@@ -353,7 +402,8 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 		// as success for the entire input count.
 		if totalOK+totalDup+totalUnresolved == 0 && lastErr != nil {
 			return editorMsg{wlOK: false, err: lastErr, wlFailCount: totalFail,
-				wlCall: fmt.Sprintf("%d QSOs", len(unsent)), gen: gen, opSession: opSession, opSessionSet: true}
+				wlCall: fmt.Sprintf("%d QSOs", len(unsent)), gen: gen, opSession: opSession, opSessionSet: true,
+				lbID: logbookID, wlUpDB: db, wlUpURL: url, wlUpKey: key, wlUpSID: sid, wlUpRelease: release}
 		}
 		var parts []string
 		if totalOK > 0 {
@@ -382,11 +432,13 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 			gen:               gen,
 			opSession:         opSession,
 			opSessionSet:      true,
+			lbID:              logbookID,
 			wlUpDB:            db,
 			wlUpURL:           url,
 			wlUpKey:           key,
 			wlUpSID:           sid,
 			wlReconcileIDs:    changedIDs,
+			wlUpRelease:       release,
 		}
 	}
 }
@@ -398,9 +450,12 @@ func (le *LogbookEditor) uploadIndividual(unsent []qso.QSO) tea.Cmd {
 	db := le.db
 	release := le.dbLease(db)
 	gen := le.gen
+	logbookID := le.logbookID
 
 	return func() tea.Msg {
-		defer release()
+		// The lease is NOT released here — it transfers with the result so
+		// the global completion handler can queue the follow-up chains
+		// without an unprotected interval.
 		sentCount := 0
 		dupCount := 0
 		failCount := 0
@@ -445,7 +500,8 @@ func (le *LogbookEditor) uploadIndividual(unsent []qso.QSO) tea.Cmd {
 			fmt.Sprintf("sent=%d dup=%d unresolved=%d fail=%d", sentCount, dupCount, unresolved, failCount))
 
 		if failCount > 0 && sentCount+dupCount+unresolved == 0 {
-			return editorMsg{wlOK: false, err: lastErr, wlFailCount: failCount, wlCall: fmt.Sprintf("%d failed", failCount), gen: gen}
+			return editorMsg{wlOK: false, err: lastErr, wlFailCount: failCount, wlCall: fmt.Sprintf("%d failed", failCount), gen: gen,
+				lbID: logbookID, wlUpDB: db, wlUpURL: url, wlUpKey: key, wlUpSID: sid, wlUpRelease: release}
 		}
 		var parts []string
 		if sentCount > 0 {
@@ -469,11 +525,13 @@ func (le *LogbookEditor) uploadIndividual(unsent []qso.QSO) tea.Cmd {
 			wlFailCount:       failCount,
 			wlUnresolvedCount: unresolved,
 			gen:               gen,
+			lbID:              logbookID,
 			wlUpDB:            db,
 			wlUpURL:           url,
 			wlUpKey:           key,
 			wlUpSID:           sid,
 			wlReconcileIDs:    changedIDs,
+			wlUpRelease:       release,
 		}
 	}
 }
@@ -499,6 +557,7 @@ func (le *LogbookEditor) doUploadToWavelog() tea.Cmd {
 	gen := le.gen
 	opSession := le.editSession
 	db := le.db
+	logbookID := le.logbookID
 	release := le.dbLease(db)
 
 	// The revision of the snapshot being uploaded: an edit saved while the
@@ -512,13 +571,16 @@ func (le *LogbookEditor) doUploadToWavelog() tea.Cmd {
 	}
 
 	return func() tea.Msg {
-		defer release()
+		// The lease is NOT released here — it transfers with the result so
+		// the global completion handler can queue the follow-up chain
+		// without an unprotected interval.
 		ok, isDup, rid, changed, err := postQSOSingle(url, key, sid, q, db, uploadedRev)
 		// Remote acceptance and local persistence are SEPARATE outcomes:
 		// ok with no persisted id must be reported as unresolved.
 		return editorMsg{wlQSOID: qID, wlCall: call, wlOK: ok, wlDup: isDup, err: err, gen: gen, opSession: opSession, opSessionSet: true,
+			lbID:   logbookID,
 			wlUpDB: db, wlUpURL: url, wlUpKey: key, wlUpSID: sid, wlUpChanged: changed, wlUpUnresolved: ok && rid == 0,
-			wlUpSnap: *q, wlUpRev: uploadedRev}
+			wlUpSnap: *q, wlUpRev: uploadedRev, wlUpRelease: release}
 	}
 }
 

@@ -10,8 +10,11 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/szporwolik/cqops/internal/app"
+	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 )
@@ -1578,8 +1581,11 @@ func TestEditorUploadUnresolvedRetriesWithSnapshotPair(t *testing.T) {
 		t.Fatalf("drop trigger: %v", err)
 	}
 
-	// The owner loop must dispatch the retry carrying the snapshot pair.
-	upd, c := m.handleLogbookEditorUpdate(em, nil)
+	// The global completion handler must dispatch the retry carrying the
+	// snapshot pair — even off the editor screen (screen-gating applies
+	// only to UI effects).
+	m.screen = screenQSO
+	upd, c := m.Update(em)
 	m = upd.(*Model)
 	if c == nil {
 		t.Fatal("the id-attach retry was not queued")
@@ -1623,5 +1629,539 @@ func TestEditorUploadUnresolvedRetriesWithSnapshotPair(t *testing.T) {
 	}
 	if stored.WavelogID != 42 {
 		t.Errorf("stored wavelog_id = %d, want 42", stored.WavelogID)
+	}
+}
+
+// TestEditorUploadReconcilesOffScreen reproduces the reported failure:
+// reconciliation was dispatched only by handleLogbookEditorUpdate (after its
+// editor-generation check), so leaving the editor screen before the
+// completion dropped the required PATCH — the row stayed dirty and the newer
+// revision never reached the server. The follow-up chain must be queued
+// globally, with the operation's originating logbook identity; screen and
+// generation checks gate only UI effects.
+func TestEditorUploadReconcilesOffScreen(t *testing.T) {
+	postStarted := make(chan struct{})
+	releasePOST := make(chan struct{})
+	var mu sync.Mutex
+	var patchedComment string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/qso":
+			close(postStarted)
+			<-releasePOST
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{"id": 42, "call": "SP9MOA"},
+				"meta": map[string]string{"resource": "qso", "method": "POST"},
+			})
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v2/qso/42":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode patch body: %v", err)
+			}
+			mu.Lock()
+			patchedComment, _ = body["comment"].(string)
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]any{"data": remoteQSODoc(42)})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	wl := m.App.Logbook.Wavelog
+	wl.URL = srv.URL
+	wl.APIKey = "wl2_test"
+	wl.Enabled = true
+	wl.StationProfileID = "1"
+
+	qID := insertTestQSO(t, m.App.DB, &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB",
+		QSODate: "20240501", TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", Comment: "old"})
+	m.initLogbookEditor()
+	le := m.ui.logbookEditor
+	row, err := store.GetQSOByID(m.App.DB, qID)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	le.editing = row
+	le.fillEditForm(row)
+
+	resCh := make(chan editorMsg, 1)
+	go func() { resCh <- execCmd(le.doUploadToWavelog()).(editorMsg) }()
+
+	select {
+	case <-postStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("upload POST never started")
+	}
+
+	// A newer edit lands while the upload is on the wire.
+	row2, err := store.GetQSOByID(m.App.DB, qID)
+	if err != nil {
+		t.Fatalf("GetQSOByID before edit: %v", err)
+	}
+	row2.Comment = "newer"
+	if err := store.UpdateQSO(m.App.DB, row2); err != nil {
+		t.Fatalf("UpdateQSO: %v", err)
+	}
+
+	// Leave the editor screen BEFORE the completion arrives.
+	m.screen = screenQSO
+	close(releasePOST)
+	em := <-resCh
+	if !em.wlOK || !em.wlUpChanged {
+		t.Fatalf("upload: ok=%v changed=%v, want accepted with a newer edit", em.wlOK, em.wlUpChanged)
+	}
+
+	upd, c := m.Update(em)
+	m = upd.(*Model)
+	if c == nil {
+		t.Fatal("reconciliation was not queued off the editor screen")
+	}
+	var synced editorMsg
+	var walk func(tea.Cmd)
+	walk = func(sub tea.Cmd) {
+		if synced.wlSyncFollowUp {
+			return
+		}
+		if r, ok := sub().(editorMsg); ok && r.wlSyncFollowUp {
+			synced = r
+			return
+		}
+		if inner, ok := execCmd(sub).(tea.BatchMsg); ok {
+			for _, nested := range inner {
+				walk(nested)
+			}
+		}
+	}
+	batch, isBatch := execCmd(c).(tea.BatchMsg)
+	if isBatch {
+		for _, sub := range batch {
+			walk(sub)
+		}
+	} else {
+		walk(c)
+	}
+	if !synced.wlSyncFollowUp {
+		t.Fatal("the reconciliation PATCH was not dispatched")
+	}
+	if !synced.wlSyncOK {
+		t.Fatalf("PATCH: ok=%v err=%q", synced.wlSyncOK, synced.wlSyncErr)
+	}
+	mu.Lock()
+	got := patchedComment
+	mu.Unlock()
+	if got != "newer" {
+		t.Errorf("server PATCH comment = %q, want newer", got)
+	}
+	if c2 := m.handleQSOSyncCompletion(synced); c2 != nil {
+		t.Fatal("no further PATCH should be dispatched")
+	}
+	stored, err := store.GetQSOByID(m.App.DB, qID)
+	if err != nil {
+		t.Fatalf("GetQSOByID after chain: %v", err)
+	}
+	if stored.WavelogID != 42 {
+		t.Errorf("WavelogID = %d, want 42", stored.WavelogID)
+	}
+	if stored.WavelogDirty {
+		t.Error("row should be clean after the PATCH acknowledged the newer edit")
+	}
+}
+
+// TestEditorUploadLeaseBridgesReconciliationAcrossLogbookSwitch covers the
+// editor path of the transferred lease: the single-upload worker used to
+// release its database lease before returning its result, so switching
+// logbooks while the upload was pending closed the retired database and the
+// reconciliation received a closed handle. The completion must carry the
+// lease and the originating logbook, and the chain must drain it.
+func TestEditorUploadLeaseBridgesReconciliationAcrossLogbookSwitch(t *testing.T) {
+	postStarted := make(chan struct{})
+	releasePOST := make(chan struct{})
+	var mu sync.Mutex
+	var patchedComment string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/qso":
+			close(postStarted)
+			<-releasePOST
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{"id": 42, "call": "SP9AAA"},
+				"meta": map[string]string{"resource": "qso", "method": "POST"},
+			})
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v2/qso/42":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode patch body: %v", err)
+			}
+			mu.Lock()
+			patchedComment, _ = body["comment"].(string)
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]any{"data": remoteQSODoc(42)})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	dbPathA := filepath.Join(dir, "a.db")
+	dbPathB := filepath.Join(dir, "b.db")
+
+	cfg := config.DefaultConfig()
+	lbA := config.Logbook{
+		Station:      config.Station{Callsign: "SP9A", Grid: "JO90"},
+		DatabasePath: dbPathA,
+		Wavelog:      &config.WavelogConfig{Enabled: true, URL: srv.URL, APIKey: "wl2_test", StationProfileID: "1"},
+	}
+	lbB := config.Logbook{Station: config.Station{Callsign: "SP9B", Grid: "JO91"}, DatabasePath: dbPathB}
+	cfg.Logbooks = map[string]config.Logbook{"a": lbA, "b": lbB}
+	cfg.State.ActiveLogbook = "a"
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := config.Save(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	dbA, err := store.InitDB(dbPathA)
+	if err != nil {
+		t.Fatalf("init db A: %v", err)
+	}
+	a := &app.App{
+		Config:      cfg,
+		ConfigPath:  cfgPath,
+		LogbookName: "a",
+		Logbook:     &lbA,
+		DB:          dbA,
+		DBPath:      dbPathA,
+	}
+	t.Cleanup(a.StopAPRSTimer)
+
+	qID := insertTestQSO(t, dbA, &qso.QSO{Call: "SP9AAA", Band: "20m", Mode: "SSB",
+		QSODate: "20240501", TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", Comment: "old"})
+
+	m := New(a, nil)
+	m.initLogbookEditor()
+	le := m.ui.logbookEditor
+	row, err := store.GetQSOByID(dbA, qID)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	le.editing = row
+	le.fillEditForm(row)
+
+	resCh := make(chan editorMsg, 1)
+	go func() { resCh <- execCmd(le.doUploadToWavelog()).(editorMsg) }()
+
+	select {
+	case <-postStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("upload POST never started")
+	}
+
+	// A newer edit lands while the upload is on the wire.
+	row2, err := store.GetQSOByID(dbA, qID)
+	if err != nil {
+		t.Fatalf("GetQSOByID before edit: %v", err)
+	}
+	row2.Comment = "newer"
+	if err := store.UpdateQSO(dbA, row2); err != nil {
+		t.Fatalf("UpdateQSO: %v", err)
+	}
+
+	// Switch logbooks while the upload is still pending — dbA is retired and
+	// its close deferred until the last lease holder releases.
+	if err := a.SwitchLogbook("b"); err != nil {
+		t.Fatalf("switch to B: %v", err)
+	}
+	t.Cleanup(func() { a.DB.Close() })
+	m.screen = screenQSO
+
+	close(releasePOST)
+	em := <-resCh
+	if !em.wlOK || !em.wlUpChanged {
+		t.Fatalf("upload: ok=%v changed=%v, want accepted with a newer edit", em.wlOK, em.wlUpChanged)
+	}
+	if em.wlUpRelease == nil {
+		t.Fatal("the completion must carry the transferred database lease")
+	}
+	if em.lbID != "a" {
+		t.Fatalf("originating logbook = %q, want a", em.lbID)
+	}
+
+	// The global handler queues the PATCH against the originating logbook —
+	// with the transferred lease the retired database stays open; on the old
+	// code it was already closed and the PATCH failed with
+	// "sql: database is closed".
+	upd, c := m.Update(em)
+	m = upd.(*Model)
+	if c == nil {
+		t.Fatal("reconciliation was not queued")
+	}
+	var synced editorMsg
+	var walk func(tea.Cmd)
+	walk = func(sub tea.Cmd) {
+		if synced.wlSyncFollowUp {
+			return
+		}
+		if r, ok := sub().(editorMsg); ok && r.wlSyncFollowUp {
+			synced = r
+			return
+		}
+		if inner, ok := execCmd(sub).(tea.BatchMsg); ok {
+			for _, nested := range inner {
+				walk(nested)
+			}
+		}
+	}
+	batch, isBatch := execCmd(c).(tea.BatchMsg)
+	if isBatch {
+		for _, sub := range batch {
+			walk(sub)
+		}
+	} else {
+		walk(c)
+	}
+	if !synced.wlSyncFollowUp {
+		t.Fatal("the reconciliation PATCH was not dispatched")
+	}
+	if !synced.wlSyncOK {
+		t.Fatalf("PATCH: ok=%v err=%q", synced.wlSyncOK, synced.wlSyncErr)
+	}
+	mu.Lock()
+	got := patchedComment
+	mu.Unlock()
+	if got != "newer" {
+		t.Errorf("server PATCH comment = %q, want newer", got)
+	}
+	if c2 := m.handleQSOSyncCompletion(synced); c2 != nil {
+		t.Fatal("no further PATCH should be dispatched")
+	}
+
+	// The chain lease was released at chain end: the retired db is closed.
+	if err := dbA.Ping(); err == nil {
+		t.Error("retired A database should be closed after the chain lease released")
+	}
+	reopened, err := store.Open(dbPathA)
+	if err != nil {
+		t.Fatalf("reopen A: %v", err)
+	}
+	defer reopened.Close()
+	stored, err := store.GetQSOByID(reopened, qID)
+	if err != nil {
+		t.Fatalf("GetQSOByID A after chain: %v", err)
+	}
+	if stored.Comment != "newer" {
+		t.Errorf("A comment = %q, want newer", stored.Comment)
+	}
+	if stored.WavelogID != 42 {
+		t.Errorf("A WavelogID = %d, want 42", stored.WavelogID)
+	}
+	if stored.WavelogDirty {
+		t.Error("A's row should be clean after the follow-up ack")
+	}
+}
+
+// TestEditorBatchUploadLeaseBridgesReconciliationAcrossLogbookSwitch covers
+// the batch path of the transferred lease: the batch worker released its
+// database lease before returning its result, so switching logbooks while
+// the batch upload was pending closed the retired database and the
+// reconciliation received a closed handle. The completion must carry the
+// lease and the originating logbook, and the chain must drain it.
+func TestEditorBatchUploadLeaseBridgesReconciliationAcrossLogbookSwitch(t *testing.T) {
+	postStarted := make(chan struct{})
+	releasePOST := make(chan struct{})
+	var mu sync.Mutex
+	var patchedComment string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/qso":
+			close(postStarted)
+			<-releasePOST
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{"parsed": 1, "imported": 1, "skipped": 0, "messages": []string{}},
+				"meta": map[string]string{"resource": "qso", "method": "POST"},
+			})
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v2/qso":
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{"id": 42, "call": "SP9AAA", "band": "20m", "mode": "SSB",
+						"qso_date": "2024-05-01 12:00:00"},
+				},
+			})
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v2/qso/42":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode patch body: %v", err)
+			}
+			mu.Lock()
+			patchedComment, _ = body["comment"].(string)
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]any{"data": remoteQSODoc(42)})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	dbPathA := filepath.Join(dir, "a.db")
+	dbPathB := filepath.Join(dir, "b.db")
+
+	cfg := config.DefaultConfig()
+	lbA := config.Logbook{
+		Station:      config.Station{Callsign: "SP9A", Grid: "JO90"},
+		DatabasePath: dbPathA,
+		Wavelog:      &config.WavelogConfig{Enabled: true, URL: srv.URL, APIKey: "wl2_test", StationProfileID: "1"},
+	}
+	lbB := config.Logbook{Station: config.Station{Callsign: "SP9B", Grid: "JO91"}, DatabasePath: dbPathB}
+	cfg.Logbooks = map[string]config.Logbook{"a": lbA, "b": lbB}
+	cfg.State.ActiveLogbook = "a"
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := config.Save(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	dbA, err := store.InitDB(dbPathA)
+	if err != nil {
+		t.Fatalf("init db A: %v", err)
+	}
+	a := &app.App{
+		Config:      cfg,
+		ConfigPath:  cfgPath,
+		LogbookName: "a",
+		Logbook:     &lbA,
+		DB:          dbA,
+		DBPath:      dbPathA,
+	}
+	t.Cleanup(a.StopAPRSTimer)
+
+	qID := insertTestQSO(t, dbA, &qso.QSO{Call: "SP9AAA", Band: "20m", Mode: "SSB",
+		QSODate: "20240501", TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", Comment: "old"})
+
+	m := New(a, nil)
+	m.initLogbookEditor()
+	le := m.ui.logbookEditor
+
+	// Preparation captures data + revision together.
+	unsent, err := store.ListUnsentQSOs(dbA)
+	if err != nil || len(unsent) != 1 {
+		t.Fatalf("ListUnsentQSOs: %v (rows=%d)", err, len(unsent))
+	}
+
+	resCh := make(chan editorMsg, 1)
+	go func() { resCh <- execCmd(le.uploadBatch(unsent)).(editorMsg) }()
+
+	select {
+	case <-postStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("batch POST never started")
+	}
+
+	// A newer edit lands while the batch upload is on the wire.
+	row, err := store.GetQSOByID(dbA, qID)
+	if err != nil {
+		t.Fatalf("GetQSOByID before edit: %v", err)
+	}
+	row.Comment = "newer"
+	if err := store.UpdateQSO(dbA, row); err != nil {
+		t.Fatalf("UpdateQSO: %v", err)
+	}
+
+	// Switch logbooks while the batch upload is still pending — dbA is
+	// retired and its close deferred until the last lease holder releases.
+	if err := a.SwitchLogbook("b"); err != nil {
+		t.Fatalf("switch to B: %v", err)
+	}
+	t.Cleanup(func() { a.DB.Close() })
+	m.screen = screenQSO
+
+	close(releasePOST)
+	em := <-resCh
+	if !em.wlOK {
+		t.Fatalf("batch upload failed: %v", em.err)
+	}
+	if len(em.wlReconcileIDs) != 1 || em.wlReconcileIDs[0] != qID {
+		t.Fatalf("wlReconcileIDs = %v, want [%d]", em.wlReconcileIDs, qID)
+	}
+	if em.wlUpRelease == nil {
+		t.Fatal("the completion must carry the transferred database lease")
+	}
+	if em.lbID != "a" {
+		t.Fatalf("originating logbook = %q, want a", em.lbID)
+	}
+
+	// The global handler queues the PATCH against the originating logbook —
+	// with the transferred lease the retired database stays open; on the old
+	// code it was already closed and the PATCH failed with
+	// "sql: database is closed".
+	upd, c := m.Update(em)
+	m = upd.(*Model)
+	if c == nil {
+		t.Fatal("reconciliation was not queued")
+	}
+	var synced editorMsg
+	var walk func(tea.Cmd)
+	walk = func(sub tea.Cmd) {
+		if synced.wlSyncFollowUp {
+			return
+		}
+		if r, ok := sub().(editorMsg); ok && r.wlSyncFollowUp {
+			synced = r
+			return
+		}
+		if inner, ok := execCmd(sub).(tea.BatchMsg); ok {
+			for _, nested := range inner {
+				walk(nested)
+			}
+		}
+	}
+	batch, isBatch := execCmd(c).(tea.BatchMsg)
+	if isBatch {
+		for _, sub := range batch {
+			walk(sub)
+		}
+	} else {
+		walk(c)
+	}
+	if !synced.wlSyncFollowUp {
+		t.Fatal("the reconciliation PATCH was not dispatched")
+	}
+	if !synced.wlSyncOK {
+		t.Fatalf("PATCH: ok=%v err=%q", synced.wlSyncOK, synced.wlSyncErr)
+	}
+	mu.Lock()
+	got := patchedComment
+	mu.Unlock()
+	if got != "newer" {
+		t.Errorf("server PATCH comment = %q, want newer", got)
+	}
+	if c2 := m.handleQSOSyncCompletion(synced); c2 != nil {
+		t.Fatal("no further PATCH should be dispatched")
+	}
+
+	// The chain lease was released at chain end: the retired db is closed.
+	if err := dbA.Ping(); err == nil {
+		t.Error("retired A database should be closed after the chain lease released")
+	}
+	reopened, err := store.Open(dbPathA)
+	if err != nil {
+		t.Fatalf("reopen A: %v", err)
+	}
+	defer reopened.Close()
+	stored, err := store.GetQSOByID(reopened, qID)
+	if err != nil {
+		t.Fatalf("GetQSOByID A after chain: %v", err)
+	}
+	if stored.Comment != "newer" {
+		t.Errorf("A comment = %q, want newer", stored.Comment)
+	}
+	if stored.WavelogID != 42 {
+		t.Errorf("A WavelogID = %d, want 42", stored.WavelogID)
+	}
+	if stored.WavelogDirty {
+		t.Error("A's row should be clean after the follow-up ack")
 	}
 }

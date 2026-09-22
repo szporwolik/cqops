@@ -917,6 +917,15 @@ func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.persistEditorLogbookCursor(em)
 	}
 
+	// Editor upload completions queue their follow-up chains GLOBALLY too:
+	// the reconciliation PATCH and the id-attach retry run against the
+	// ORIGINATING logbook/database/endpoint independent of the visible
+	// screen and editor generation (those gate only UI effects). The
+	// transferred database lease is consumed here exactly once.
+	if em, ok := msg.(editorMsg); ok {
+		cmd = tea.Batch(cmd, m.handleEditorUploadCompletion(em))
+	}
+
 	// Deferred pending requests (QRZ lookup, WL lookup, QSO refresh) run
 	// before screen-specific routing; their commands are accumulated into
 	// the returned batch. The incoming message is NEVER consumed here —
