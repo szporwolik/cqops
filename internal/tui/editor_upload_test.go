@@ -2473,3 +2473,92 @@ func TestUploadBatchFailureKeepsReconciliationIDs(t *testing.T) {
 		t.Error("reconciled row should be clean after the PATCH acknowledged the newer edit")
 	}
 }
+
+// TestNormalizeResultReleasedWhenDownloadSwallows reproduces the reported
+// leak: a late normalization result arriving while a download is active was
+// treated as download progress — the editor returns from its progress branch
+// before any normalization handling — so normRelease was never consumed and
+// a later logbook switch retained the retired database. Operation message
+// types must be distinguished: the normalize completion is handled first and
+// releases its lease when discarded (here: the editor was recreated via F8,
+// so the generation mismatch rejects the result).
+func TestNormalizeResultReleasedWhenDownloadSwallows(t *testing.T) {
+	dir := t.TempDir()
+	dbPathA := filepath.Join(dir, "a.db")
+	dbPathB := filepath.Join(dir, "b.db")
+
+	cfg := config.DefaultConfig()
+	lbA := config.Logbook{
+		Station:      config.Station{Callsign: "SP9A", Grid: "JO90"},
+		DatabasePath: dbPathA,
+		Wavelog:      &config.WavelogConfig{Enabled: true, URL: "https://log.example.com", APIKey: "wl2_test", StationProfileID: "1"},
+	}
+	lbB := config.Logbook{Station: config.Station{Callsign: "SP9B", Grid: "JO91"}, DatabasePath: dbPathB}
+	cfg.Logbooks = map[string]config.Logbook{"a": lbA, "b": lbB}
+	cfg.State.ActiveLogbook = "a"
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := config.Save(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	dbA, err := store.InitDB(dbPathA)
+	if err != nil {
+		t.Fatalf("init db A: %v", err)
+	}
+	a := &app.App{
+		Config:      cfg,
+		ConfigPath:  cfgPath,
+		LogbookName: "a",
+		Logbook:     &lbA,
+		DB:          dbA,
+		DBPath:      dbPathA,
+	}
+	t.Cleanup(a.StopAPRSTimer)
+
+	qID := insertTestQSO(t, dbA, &qso.QSO{Call: "SP9AAA", Band: "20m", Mode: "SSB",
+		QSODate: "20240501", TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", Operator: "WrongOp"})
+
+	m := New(a, nil)
+	m.initLogbookEditor()
+	le := m.ui.logbookEditor
+	le.logStationOp = "Szymon"
+	row, err := store.GetQSOByID(dbA, qID)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	le.mismatchQSOs = []qso.QSO{*row}
+	le.mismatchFields = []string{"operator"}
+
+	// The normalization completes in the background (success result carrying
+	// the transferred lease and the old editor generation).
+	em := execCmd(le.doNormalizeAndUpload()).(editorMsg)
+	if em.err != nil || em.normalized == 0 {
+		t.Fatalf("normalize: err=%v normalized=%d", em.err, em.normalized)
+	}
+	if em.normRelease == nil {
+		t.Fatal("the completion must carry the transferred database lease")
+	}
+
+	// F8 recreates the editor (new generation), then a download starts on it.
+	m.initLogbookEditor()
+	le2 := m.ui.logbookEditor
+	op := newDownloadOp()
+	le2.dlOp = op
+	le2.dlActive = true
+	le2.mode = edModeWLDownloading
+	m.screen = screenLogbookEditor
+
+	// The late result arrives while the download is active — it must be
+	// handled as a normalize completion (rejected by generation + lease
+	// released), never swallowed as download progress.
+	upd, _ := m.Update(em)
+	m = upd.(*Model)
+
+	if err := a.SwitchLogbook("b"); err != nil {
+		t.Fatalf("switch to B: %v", err)
+	}
+	t.Cleanup(func() { a.DB.Close() })
+	if err := dbA.Ping(); err == nil {
+		t.Error("retired A database should be closed — the swallowed normalize result leaked its lease")
+	}
+}

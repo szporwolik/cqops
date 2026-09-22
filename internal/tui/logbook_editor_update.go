@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"charm.land/bubbles/v2/filepicker"
@@ -171,6 +172,14 @@ type editorMsg struct {
 	// logbook switch during normalization cannot close the retired database
 	// before the upload starts.
 	normRelease func()
+	// dlOpID binds download/import/export messages to the operation that
+	// produced them: a result from a replaced operation must never finalize
+	// (or advance) a newer one.
+	dlOpID uint64
+	// dlChannelClosed marks the synthesized completion from a channel close
+	// that never delivered a terminal message — it must never be treated as
+	// an independent success; the editor finalizes honestly instead.
+	dlChannelClosed bool
 }
 
 func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -186,6 +195,49 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return le.handleUploadPrep(msg)
 
 	case editorMsg:
+		// Bind download/import/export messages to their operation: a stale
+		// result from a replaced operation must never finalize or advance a
+		// newer one.
+		if msg.dlOpID != 0 && (le.dlOp == nil || le.dlOp.id != msg.dlOpID) {
+			return le, nil
+		}
+
+		// The synthesized channel-close completion is not an independent
+		// success: finalize honestly — with the captured error, or with an
+		// explicit did-not-finish error — never a silent zero-count result.
+		if msg.dlChannelClosed {
+			if le.dlActive {
+				le.dlActive = false
+				le.dlOp = nil
+				le.dialog = nil
+				switch le.mode {
+				case edModeImporting, edModeImport, edModeExporting, edModeExport:
+					if strings.TrimSpace(le.impErr) == "" {
+						le.impErr = "operation did not finish"
+					}
+					if le.mode == edModeExporting || le.mode == edModeExport {
+						le.mode = edModeExportResult
+					} else {
+						le.mode = edModeImportResult
+					}
+				default:
+					if strings.TrimSpace(le.wlDownloadErr) == "" {
+						le.wlDownloadErr = "operation did not finish"
+					}
+					le.mode = edModeWLDownloadResult
+				}
+				le.needsReload = true
+			}
+			return le, nil
+		}
+
+		// A normalization completion is a normalization completion even while
+		// a download is active — the progress branches below must not
+		// swallow it, which would leak its transferred database lease.
+		if msg.normalized > 0 {
+			return le.handleNormalizeResult(msg)
+		}
+
 		// Batch download/import/export progress — only when a download is actually active.
 		if le.dlActive && !msg.dlDone && msg.dlErr == "" {
 			le.dlProgress = msg.dlProgress
@@ -198,7 +250,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else if le.mode != edModeWLDownloading && le.mode != edModeImporting && le.mode != edModeExporting {
 				le.mode = edModeWLDownloading
 			}
-			return le, le.readDownloadMsg
+			return le, le.readDownloadMsg()
 		}
 
 		// Download/import/export error received before done signal.
@@ -211,7 +263,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				default:
 					le.wlDownloadErr = errText
 				}
-				return le, le.readDownloadMsg
+				return le, le.readDownloadMsg()
 			}
 		}
 
@@ -325,70 +377,6 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				le.needsReload = true
 			}
 		}
-		if msg.normalized > 0 {
-			// The normalize worker belongs to the editor that launched it;
-			// a result delivered to a replacement editor (logbook switched
-			// mid-operation) must not trigger an upload there.
-			if msg.gen != 0 && msg.gen != le.gen {
-				applog.Warn("Wavelog: discarding normalize result for a replaced editor",
-					fmt.Sprintf("msg_gen=%d editor_gen=%d", msg.gen, le.gen))
-				if msg.normRelease != nil {
-					msg.normRelease()
-				}
-				return le, nil
-			}
-			// Apply the worker's returned changes on the owner loop only —
-			// the worker is limited to database work and must never mutate
-			// le.qsos from its goroutine (the owner loop reads it during
-			// table rebuilds).
-			for i := range le.qsos {
-				for _, mid := range msg.normIDs {
-					if le.qsos[i].ID == mid {
-						if msg.normCall != "" {
-							le.qsos[i].StationCallsign = msg.normCall
-						}
-						if msg.normOp != "" {
-							le.qsos[i].Operator = msg.normOp
-						}
-						if msg.normGrid != "" {
-							le.qsos[i].MyGridSquare = msg.normGrid
-						}
-						break
-					}
-				}
-			}
-			// Normalization done, now upload all unsent QSOs — fetched as
-			// eligible rows only, never a full-log scan.
-			var unsent []qso.QSO
-			if le.db != nil {
-				rows, listErr := store.ListUnsentQSOs(le.db)
-				if listErr != nil {
-					applog.Error("Wavelog: post-normalize upload — cannot list QSOs", "error", listErr)
-					if msg.normRelease != nil {
-						msg.normRelease()
-					}
-					return le, func() tea.Msg {
-						return editorMsg{wlOK: false, err: fmt.Errorf("cannot read logbook: %w", listErr)}
-					}
-				}
-				for _, q := range rows {
-					if q.Band == "" || q.Mode == "" || q.QSODate == "" {
-						continue
-					}
-					unsent = append(unsent, q)
-				}
-			} else {
-				for _, q := range le.qsos {
-					if q.WavelogID == 0 {
-						if q.Band == "" || q.Mode == "" || q.QSODate == "" {
-							continue
-						}
-						unsent = append(unsent, q)
-					}
-				}
-			}
-			return le, le.uploadBatchLeased(unsent, msg.normRelease)
-		}
 
 	case tea.PasteMsg:
 		// Forward clipboard paste to the focused text input during
@@ -445,7 +433,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			updated, _ := le.dialog.Update(msg)
 			d, ok := updated.(DialogModel)
 			if !ok {
-				return le, le.readDownloadMsg
+				return le, le.readDownloadMsg()
 			}
 			*le.dialog = d
 			if d.Done() {
@@ -455,7 +443,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// and never nils the channels the worker captured.
 				le.cancelDownload()
 			}
-			return le, le.readDownloadMsg
+			return le, le.readDownloadMsg()
 		}
 
 		// Download/import result — route keys to the dialog (OK button).
@@ -693,7 +681,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// During download, always keep the channel reader alive.  Other messages
 	// (ticks, flrig polls, etc.) would otherwise replace readDownloadMsg.
 	if le.dlActive {
-		return le, le.readDownloadMsg
+		return le, le.readDownloadMsg()
 	}
 
 	// File export/import mode — route non-key messages to the filepicker.
@@ -713,6 +701,77 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return le, nil
+}
+
+// handleNormalizeResult applies a completed normalization on the owner loop:
+// the worker's changed fields are applied to the in-memory list and the
+// post-normalize upload is launched with the transferred database lease. It
+// runs FIRST in the editorMsg handling — a download in progress would
+// otherwise swallow the result into its progress branches and leak
+// normRelease.
+func (le *LogbookEditor) handleNormalizeResult(msg editorMsg) (tea.Model, tea.Cmd) {
+	// The normalize worker belongs to the editor that launched it; a result
+	// delivered to a replacement editor (F8 / logbook switched
+	// mid-operation) must not trigger an upload there — and must release
+	// its lease.
+	if msg.gen != 0 && msg.gen != le.gen {
+		applog.Warn("Wavelog: discarding normalize result for a replaced editor",
+			fmt.Sprintf("msg_gen=%d editor_gen=%d", msg.gen, le.gen))
+		if msg.normRelease != nil {
+			msg.normRelease()
+		}
+		return le, nil
+	}
+	// Apply the worker's returned changes on the owner loop only — the
+	// worker is limited to database work and must never mutate le.qsos
+	// from its goroutine (the owner loop reads it during table rebuilds).
+	for i := range le.qsos {
+		for _, mid := range msg.normIDs {
+			if le.qsos[i].ID == mid {
+				if msg.normCall != "" {
+					le.qsos[i].StationCallsign = msg.normCall
+				}
+				if msg.normOp != "" {
+					le.qsos[i].Operator = msg.normOp
+				}
+				if msg.normGrid != "" {
+					le.qsos[i].MyGridSquare = msg.normGrid
+				}
+				break
+			}
+		}
+	}
+	// Normalization done, now upload all unsent QSOs — fetched as eligible
+	// rows only, never a full-log scan.
+	var unsent []qso.QSO
+	if le.db != nil {
+		rows, listErr := store.ListUnsentQSOs(le.db)
+		if listErr != nil {
+			applog.Error("Wavelog: post-normalize upload — cannot list QSOs", "error", listErr)
+			if msg.normRelease != nil {
+				msg.normRelease()
+			}
+			return le, func() tea.Msg {
+				return editorMsg{wlOK: false, err: fmt.Errorf("cannot read logbook: %w", listErr)}
+			}
+		}
+		for _, q := range rows {
+			if q.Band == "" || q.Mode == "" || q.QSODate == "" {
+				continue
+			}
+			unsent = append(unsent, q)
+		}
+	} else {
+		for _, q := range le.qsos {
+			if q.WavelogID == 0 {
+				if q.Band == "" || q.Mode == "" || q.QSODate == "" {
+					continue
+				}
+				unsent = append(unsent, q)
+			}
+		}
+	}
+	return le, le.uploadBatchLeased(unsent, msg.normRelease)
 }
 
 func (le *LogbookEditor) handleFilePickerUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -757,7 +816,7 @@ func (le *LogbookEditor) handleFilePickerUpdate(msg tea.Msg) (tea.Model, tea.Cmd
 				le.mode = edModeExporting
 				release := le.dbLease(le.db)
 				go le.runExport(op, path, release)
-				return le, le.readDownloadMsg
+				return le, le.readDownloadMsg()
 			}
 			// Import: let filepicker handle selection via DidSelectFile below.
 		}
@@ -788,7 +847,7 @@ func (le *LogbookEditor) handleFilePickerUpdate(msg tea.Msg) (tea.Model, tea.Cmd
 			le.mode = edModeImporting
 			release := le.dbLease(le.db)
 			go le.runImport(op, path, release)
-			return le, le.readDownloadMsg
+			return le, le.readDownloadMsg()
 		}
 	}
 
@@ -1043,14 +1102,27 @@ func (le *LogbookEditor) doSave() tea.Cmd {
 // the worker goroutine at launch and never mutated afterward, so the UI can
 // tear down editor state without losing cancellation or blocking sends.
 type downloadOp struct {
+	id     uint64
 	msgCh  chan editorMsg
 	ctx    context.Context
 	cancel context.CancelFunc
+	// readPending is true while the operation's single channel read is in
+	// flight — ticks and progress messages must not dispatch a second
+	// reader, which would receive the channel-close zero value and could
+	// finalize the operation before the real result.
+	readPending atomic.Bool
+	// channelClosed records that the worker closed the channel; no further
+	// reads are dispatched after that.
+	channelClosed atomic.Bool
 }
+
+// downloadOpCounter hands out per-operation ids; download messages are
+// stamped with them so a result from a replaced operation is discarded.
+var downloadOpCounter atomic.Uint64
 
 func newDownloadOp() *downloadOp {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &downloadOp{msgCh: make(chan editorMsg, 4), ctx: ctx, cancel: cancel}
+	return &downloadOp{id: downloadOpCounter.Add(1), msgCh: make(chan editorMsg, 4), ctx: ctx, cancel: cancel}
 }
 
 // stop requests cancellation. Safe to call multiple times.
@@ -1099,7 +1171,7 @@ func (le *LogbookEditor) doWavelogDownload() tea.Cmd {
 	go le.runDownload(op, url, key, sid, fetchFromID, release)
 
 	// Return a Cmd that reads the first progress message.
-	return le.readDownloadMsg
+	return le.readDownloadMsg()
 }
 
 // cancelDownload asks the active operation to stop. Idempotent — the
@@ -1111,17 +1183,33 @@ func (le *LogbookEditor) cancelDownload() {
 }
 
 // readDownloadMsg reads the next message from the active operation's channel.
-// Returns the message to the Bubble Tea runtime for processing.
-func (le *LogbookEditor) readDownloadMsg() tea.Msg {
+// Exactly ONE read may be pending per operation: extra dispatches (ticks,
+// polls) return nil while a read is in flight — a second blocked reader
+// would receive the channel-close zero value and could finalize the
+// operation before the real result arrives. Messages are stamped with the
+// operation id so a result from a replaced operation is discarded.
+func (le *LogbookEditor) readDownloadMsg() tea.Cmd {
 	op := le.dlOp
-	if op == nil {
-		return editorMsg{dlDone: true}
+	if op == nil || op.channelClosed.Load() {
+		return nil
 	}
-	msg, ok := <-op.msgCh
-	if !ok {
-		return editorMsg{dlDone: true}
+	if !op.readPending.CompareAndSwap(false, true) {
+		return nil // a read is already pending
 	}
-	return msg
+	return func() tea.Msg {
+		msg, ok := <-op.msgCh
+		op.readPending.Store(false)
+		if !ok {
+			op.channelClosed.Store(true)
+			// The channel closed without this read receiving a terminal
+			// message. Never treat the close as an independent success: the
+			// handler finalizes honestly (captured error, or an explicit
+			// did-not-finish) instead of a silent zero-count result.
+			return editorMsg{dlDone: true, dlChannelClosed: true, dlOpID: op.id}
+		}
+		msg.dlOpID = op.id
+		return msg
+	}
 }
 
 // runDownload performs the actual HTTP fetch, saves ADIF to a temp file,

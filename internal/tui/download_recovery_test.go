@@ -23,17 +23,28 @@ import (
 // and eventually succeeds. Uses httptest.Server, temp SQLite DBs, and
 // temp ADIF files. No real network calls.
 
-// execAllDownloadMsgs reads all messages from the editor's download channel
-// and applies them via Update until dlDone is seen. Returns the final editor.
-func execAllDownloadMsgs(t *testing.T, le *LogbookEditor) *LogbookEditor {
+// execAllDownloadMsgs drains the operation's messages via Update, always
+// running the read command the update returns — exactly one read may be
+// pending per operation, so a dropped read command would stall the pump.
+// pending seeds the pump with a read the caller already dispatched.
+// Returns the final editor.
+func execAllDownloadMsgs(t *testing.T, le *LogbookEditor, pending tea.Cmd) *LogbookEditor {
 	t.Helper()
 	for {
-		msg := le.readDownloadMsg()
-		le2, _ := le.Update(msg)
+		if pending == nil {
+			pending = le.readDownloadMsg()
+		}
+		if pending == nil {
+			return le
+		}
+		msg := execCmd(pending)
+		pending = nil
+		le2, next := le.Update(msg)
 		le = le2.(*LogbookEditor)
 		if !le.dlActive {
 			return le
 		}
+		pending = next
 	}
 }
 
@@ -67,11 +78,11 @@ func startFakeDownload(t *testing.T, server *httptest.Server, _ []store.DXCSpot)
 
 	// Process initial message (dlProgress=0).
 	msg := cmd()
-	m2, _ := le.Update(msg)
+	m2, next := le.Update(msg)
 	le = m2.(*LogbookEditor)
 
 	// Drain remaining messages until done.
-	return execAllDownloadMsgs(t, le)
+	return execAllDownloadMsgs(t, le, next)
 }
 
 // =============================================================================
@@ -616,9 +627,9 @@ func TestDownload_RetryAfterFailure(t *testing.T) {
 		t.Fatal("doWavelogDownload returned nil")
 	}
 	msg := cmd()
-	m2, _ := le.Update(msg)
+	m2, next := le.Update(msg)
 	le = m2.(*LogbookEditor)
-	le = execAllDownloadMsgs(t, le)
+	le = execAllDownloadMsgs(t, le, next)
 
 	if le.wlDownloadErr == "" {
 		t.Fatal("first attempt should fail")
@@ -639,9 +650,9 @@ func TestDownload_RetryAfterFailure(t *testing.T) {
 		t.Fatal("retry doWavelogDownload returned nil")
 	}
 	msg = cmd()
-	m2, _ = le.Update(msg)
+	m2, next = le.Update(msg)
 	le = m2.(*LogbookEditor)
-	le = execAllDownloadMsgs(t, le)
+	le = execAllDownloadMsgs(t, le, next)
 
 	if le.wlDownloadErr != "" {
 		t.Fatalf("retry should succeed, got error: %q", le.wlDownloadErr)
@@ -841,10 +852,19 @@ func TestDownload_AbortDuringFetchCompletes(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
+		var pending tea.Cmd
 		for le.dlActive {
-			msg := le.readDownloadMsg()
-			m2, _ := le.Update(msg)
+			if pending == nil {
+				pending = le.readDownloadMsg()
+				if pending == nil {
+					continue
+				}
+			}
+			msg := execCmd(pending)
+			pending = nil
+			m2, next := le.Update(msg)
 			le = m2.(*LogbookEditor)
+			pending = next
 		}
 	}()
 
@@ -989,7 +1009,7 @@ func startImport(t *testing.T, adifPath string) *LogbookEditor {
 	op := newDownloadOp()
 	le.dlOp = op
 	go le.runImport(op, adifPath, func() {})
-	return execAllDownloadMsgs(t, le)
+	return execAllDownloadMsgs(t, le, nil)
 }
 
 // startExport runs an ADIF export producer against the editor's DB and
@@ -1001,7 +1021,7 @@ func startExport(t *testing.T, le *LogbookEditor, target string) *LogbookEditor 
 	op := newDownloadOp()
 	le.dlOp = op
 	go le.runExport(op, target, func() {})
-	return execAllDownloadMsgs(t, le)
+	return execAllDownloadMsgs(t, le, nil)
 }
 
 func TestImport_OpenFailureEndsWithError(t *testing.T) {
@@ -1613,5 +1633,199 @@ func TestDownload_DupeIDPersistenceFailureFreezesCheckpoint(t *testing.T) {
 	qsos, _ = store.ListQSOs(m.App.DB, 10, "")
 	if len(qsos) != 1 || qsos[0].WavelogID != 10 {
 		t.Fatalf("row after recovery: %+v; want WavelogID=10", qsos)
+	}
+}
+
+// TestAbortDialogKeysBypassGlobalBlocking reproduces the reported failure:
+// during an active download/import/export the global key handler swallowed
+// every key except F10, so Enter on the "Abort" button (and Escape) never
+// reached the dialog and the operation kept running. Dialog keys must bypass
+// the global blocking while the operation runs; screen-switch keys must stay
+// blocked.
+func TestAbortDialogKeysBypassGlobalBlocking(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.initLogbookEditor()
+	m.screen = screenLogbookEditor
+	le := m.ui.logbookEditor
+
+	startOp := func() *downloadOp {
+		op := newDownloadOp()
+		le.dlOp = op
+		le.dlActive = true
+		le.mode = edModeWLDownloading
+		d := NewDialog("Wavelog Download", "Downloading…", Option{Label: "Abort", Value: "abort"})
+		le.dialog = &d
+		return op
+	}
+
+	// Enter on "Abort" must reach the dialog and cancel the operation.
+	op := startOp()
+	upd, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = upd.(*Model)
+	if le.dialog != nil {
+		t.Fatal("the dialog should be dismissed by Enter")
+	}
+	if !op.cancelled() {
+		t.Fatal("the operation context must be cancelled by the Abort button")
+	}
+	if cmd == nil {
+		t.Error("expected the download read command after dismissing the dialog")
+	}
+
+	// Escape must also abort through the dialog.
+	op2 := startOp()
+	upd, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+	m = upd.(*Model)
+	if le.dialog != nil {
+		t.Fatal("the dialog should be dismissed by Escape")
+	}
+	if !op2.cancelled() {
+		t.Fatal("the operation context must be cancelled by Escape")
+	}
+
+	// Tab/arrows navigate the dialog options without aborting.
+	op3 := startOp()
+	upd, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	m = upd.(*Model)
+	if le.dialog == nil || le.dialog.Done() {
+		t.Fatal("Tab must only move dialog focus, not dismiss the dialog")
+	}
+	if op3.cancelled() {
+		t.Fatal("Tab must not cancel the operation")
+	}
+
+	// Screen-switch keys (F1) must stay blocked while the operation runs.
+	upd, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyF1})
+	m = upd.(*Model)
+	if m.screen != screenLogbookEditor {
+		t.Error("F1 must not switch screens during an active operation")
+	}
+}
+
+// TestSinglePendingDownloadReadPreservesResult reproduces the reported loss:
+// every tick dispatched another channel reader, so a second blocked reader
+// received the channel-close zero value and its empty dlDone could finalize
+// the operation (counter zero) before the real result arrived. Exactly one
+// read may be pending per operation, messages are bound to the operation id,
+// and a channel close is never an independent success.
+func TestSinglePendingDownloadReadPreservesResult(t *testing.T) {
+	le := newTestEditorWithDB(t, "", "", "", "OP", "JO90")
+	le.dlActive = true
+	le.mode = edModeWLDownloading
+	op := newDownloadOp()
+	le.dlOp = op
+
+	// Dispatch a read; a second dispatch while it is pending must be a no-op.
+	cmd1 := le.readDownloadMsg()
+	if cmd1 == nil {
+		t.Fatal("the first read must be dispatched")
+	}
+	if cmd2 := le.readDownloadMsg(); cmd2 != nil {
+		t.Fatal("a second read must not be dispatched while one is pending")
+	}
+
+	// The worker delivers the real terminal result and closes the channel.
+	op.msgCh <- editorMsg{dlCount: 42, dlDupes: 3, dlDone: true}
+	close(op.msgCh)
+
+	msg := execCmd(cmd1)
+	em, ok := msg.(editorMsg)
+	if !ok || !em.dlDone {
+		t.Fatalf("expected the terminal result, got %T", msg)
+	}
+	if em.dlCount != 42 {
+		t.Fatalf("terminal count = %d, want 42", em.dlCount)
+	}
+	if em.dlOpID != op.id {
+		t.Fatalf("message op id = %d, want %d", em.dlOpID, op.id)
+	}
+
+	le2, _ := le.Update(em)
+	le = le2.(*LogbookEditor)
+	if le.dlActive {
+		t.Fatal("the operation must finalize on the real terminal")
+	}
+	if le.wlDownloadCount != 42 {
+		t.Fatalf("wlDownloadCount = %d, want 42 (the empty close must never win)", le.wlDownloadCount)
+	}
+
+	// No further read can be dispatched after the channel closed.
+	if c := le.readDownloadMsg(); c != nil {
+		t.Fatal("no read may be dispatched after the channel closed")
+	}
+}
+
+// TestDownloadMessagesBoundToOperation verifies a result from a replaced
+// operation can never finalize or advance a newer one.
+func TestDownloadMessagesBoundToOperation(t *testing.T) {
+	le := newTestEditorWithDB(t, "", "", "", "OP", "JO90")
+	le.dlActive = true
+	le.mode = edModeWLDownloading
+
+	op1 := newDownloadOp()
+	le.dlOp = op1
+	cmd := le.readDownloadMsg()
+	op1.msgCh <- editorMsg{dlCount: 42, dlDone: true}
+	close(op1.msgCh)
+	stale, ok := execCmd(cmd).(editorMsg)
+	if !ok {
+		t.Fatalf("expected editorMsg, got %T", stale)
+	}
+
+	// A new operation replaces the old one before the result is handled.
+	op2 := newDownloadOp()
+	le.dlOp = op2
+
+	le2, _ := le.Update(stale)
+	le = le2.(*LogbookEditor)
+	if !le.dlActive {
+		t.Fatal("a stale result must not finalize the newer operation")
+	}
+	if le.wlDownloadCount != 0 {
+		t.Fatalf("stale result applied: count=%d, want 0", le.wlDownloadCount)
+	}
+}
+
+// TestChannelCloseWithoutTerminalIsNotSuccess verifies the worker's
+// error-only-then-close pattern finalizes honestly: the captured error is
+// preserved and the close is never reported as a zero-count success.
+func TestChannelCloseWithoutTerminalIsNotSuccess(t *testing.T) {
+	le := newTestEditorWithDB(t, "", "", "", "OP", "JO90")
+	le.dlActive = true
+	le.mode = edModeWLDownloading
+	op := newDownloadOp()
+	le.dlOp = op
+
+	// The error path sends the error WITHOUT a terminal, then closes.
+	op.msgCh <- editorMsg{dlErr: "boom"}
+	close(op.msgCh)
+
+	cmd := le.readDownloadMsg()
+	msg1 := execCmd(cmd).(editorMsg)
+	le2, next := le.Update(msg1)
+	le = le2.(*LogbookEditor)
+	if le.wlDownloadErr != "boom" {
+		t.Fatalf("captured error = %q, want boom", le.wlDownloadErr)
+	}
+	if next == nil {
+		t.Fatal("expected the next read to be dispatched")
+	}
+	msg2 := execCmd(next).(editorMsg)
+	if !msg2.dlChannelClosed {
+		t.Fatal("expected the synthesized channel-close completion")
+	}
+	le2, _ = le.Update(msg2)
+	le = le2.(*LogbookEditor)
+	if le.dlActive {
+		t.Fatal("the operation must finalize on the channel close")
+	}
+	if le.mode != edModeWLDownloadResult {
+		t.Fatalf("mode = %v, want edModeWLDownloadResult", le.mode)
+	}
+	if le.wlDownloadErr != "boom" {
+		t.Fatalf("the captured error must be preserved, got %q", le.wlDownloadErr)
+	}
+	if le.wlDownloadCount != 0 {
+		t.Fatalf("count = %d, want 0 (the close must not fabricate success)", le.wlDownloadCount)
 	}
 }

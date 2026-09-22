@@ -18,13 +18,30 @@ import (
 // Global key bindings (F1-F10, etc.) — independent of current screen
 // =============================================================================
 
+// downloadDialogKey reports whether a key press is handled by the modal
+// dialog of an active download/import/export (Abort/OK buttons). Those keys
+// must bypass the global key blocking while the operation runs, so the
+// operator can abort with Enter or Escape without the global handler
+// swallowing the key first.
+func downloadDialogKey(msg tea.KeyPressMsg) bool {
+	switch msg.String() {
+	case "enter", "esc", "q", "left", "right", "tab", "shift+tab":
+		return true
+	}
+	return false
+}
+
 // handleGlobalKeys processes top-level function key bindings (F1-F10, etc.)
 // that are independent of the current screen. Returns true if the key was handled.
 func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
-	// Block tab switching during Wavelog download (full-screen operation).
+	// Block tab switching during Wavelog download/import/export (full-screen
+	// operation) — but keys handled by the active operation's dialog (Enter,
+	// Escape, Tab, arrows, q) must still reach it, otherwise the Abort
+	// button can never be activated from the keyboard.
 	if m.ui.logbookEditor != nil && m.ui.logbookEditor.isDownloadActive() {
-		// Only allow F10 (quit) to pass through.
-		if !key.Matches(msg, m.keys.Quit) {
+		// Only F10 (quit) and the dialog keys may pass through.
+		if !key.Matches(msg, m.keys.Quit) &&
+			!(m.ui.logbookEditor.dialog != nil && downloadDialogKey(msg)) {
 			return nil, true
 		}
 	}
