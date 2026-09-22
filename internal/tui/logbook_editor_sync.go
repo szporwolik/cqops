@@ -23,25 +23,28 @@ type remoteRefreshRequest struct {
 	db      *sql.DB // database the fetch ran against
 	localID int64   // local QSO id the fetch was issued for
 	rev     uint64  // edit revision when the fetch started
+	session uint64  // edit session when the fetch started — a reopened contact rejects older sessions
 }
 
 // fetchRemoteCopy loads the latest copy of a Wavelog QSO (by remote id) so
 // the edit form can show what the server currently holds. The editor
-// generation, database, local id and edit revision are captured here so a
-// late result can be bound back to exactly the state that issued it.
+// generation, database, local id, edit revision and edit session are
+// captured here so a late result can be bound back to exactly the state
+// that issued it.
 func (le *LogbookEditor) fetchRemoteCopy(remoteID, localID int64) tea.Cmd {
 	url, key := le.wlURL, le.wlKey
 	rev := le.editRev
 	gen := le.gen
 	db := le.db
+	session := le.editSession
 	return func() tea.Msg {
 		data, err := wavelog.GetQSO(url, key, remoteID)
 		if err != nil {
 			return editorMsg{wlFetchQSOID: localID, wlFetchErr: wavelog.FriendlyError(err).Error(),
-				wlFetchRev: rev, wlFetchGen: gen, wlFetchDB: db}
+				wlFetchRev: rev, wlFetchGen: gen, wlFetchDB: db, wlFetchSession: session}
 		}
 		return editorMsg{wlFetchQSOID: localID, wlFetchQSO: data,
-			wlFetchRev: rev, wlFetchGen: gen, wlFetchDB: db}
+			wlFetchRev: rev, wlFetchGen: gen, wlFetchDB: db, wlFetchSession: session}
 	}
 }
 
@@ -63,6 +66,15 @@ func (le *LogbookEditor) ApplyRemoteRefresh(data *wavelog.QSOData, req remoteRef
 	if req.db != nil && req.db != le.db {
 		applog.Warn("Wavelog: discarding remote refresh for a replaced database",
 			fmt.Sprintf("remote_id=%d", data.ID))
+		return false, nil
+	}
+	// Reopening the same contact starts a new edit session — a refresh from
+	// an earlier session must never apply, even when generation, database,
+	// row and revision all coincide.
+	if req.session != 0 && req.session != le.editSession {
+		applog.InfoDetail("Wavelog: ignored remote refresh from a previous edit session",
+			fmt.Sprintf("req_session=%d current_session=%d local_id=%d remote_id=%d",
+				req.session, le.editSession, req.localID, data.ID))
 		return false, nil
 	}
 	if le.editing == nil || le.mode != edModeEdit || le.editing.WavelogID != data.ID {
@@ -103,6 +115,84 @@ func (le *LogbookEditor) ApplyRemoteRefresh(data *wavelog.QSOData, req remoteRef
 	applog.InfoDetail("Wavelog: refreshed QSO from server",
 		fmt.Sprintf("local_id=%d remote_id=%d call=%s", merged.ID, data.ID, merged.Call))
 	return true, nil
+}
+
+// handleQSOSyncCompletion finishes a remote PATCH on the owner loop: it
+// releases the per-contact serialization and, when a newer save was queued
+// while the PATCH was on the wire, dispatches the follow-up carrying the
+// NEWEST revision from the database. Remote updates for one contact are
+// therefore applied in save order — an older stalled PATCH can never
+// complete after a newer one and overwrite the server with stale values.
+// Runs globally, even when the editor screen is not visible.
+func (m *Model) handleQSOSyncCompletion(em editorMsg) tea.Cmd {
+	le := m.ui.logbookEditor
+	if le == nil {
+		return nil
+	}
+	// A completion from a replaced editor (logbook switched) must not touch
+	// the new editor's serialization state.
+	if em.gen != 0 && em.gen != le.gen {
+		return nil
+	}
+	delete(le.syncInFlight, em.saved)
+	if !le.syncQueued[em.saved] {
+		return nil
+	}
+	delete(le.syncQueued, em.saved)
+	le.syncInFlight[em.saved] = true
+
+	db := m.App.DB
+	url, key := le.wlURL, le.wlKey
+	gen := le.gen
+	id := em.saved
+	// The follow-up writes locally (ack persistence, gone handling), so it
+	// leases the database for its whole lifetime: a logbook switch retires
+	// the database instead of closing it under the worker.
+	release := le.dbLease(db)
+	return func() tea.Msg {
+		defer release()
+		// Read the row fresh — the queued save already stored its newer
+		// revision locally, so this PATCH carries exactly the newest edit.
+		row, err := store.GetQSOByID(db, id)
+		res := editorMsg{saved: id, gen: gen, wlSyncFollowUp: true}
+		if err != nil {
+			applog.Warn("Wavelog: follow-up sync cannot read QSO", "qso_id", id, "error", err)
+			res.wlSyncErr = err.Error()
+			return res
+		}
+		if row.WavelogID <= 0 {
+			// The remote copy vanished while the edit was queued — the row
+			// is honest again (id already cleared locally).
+			res.wlSyncGone = true
+			return res
+		}
+		syncErr := wavelog.UpdateQSO(url, key, row.WavelogID, buildUpdateInput(row))
+		if syncErr != nil {
+			if apiErr, ok := syncErr.(*wavelog.APIError); ok && apiErr.Code == "not_found" {
+				if serr := store.SetWavelogID(db, id, 0); serr == nil {
+					res.wlSyncGone = true
+					if derr := store.SetWavelogDirty(db, id, false); derr != nil {
+						applog.Warn("Wavelog: failed to clear pending sync", "qso_id", id, "error", derr)
+					}
+				} else {
+					res.wlSyncErr = wavelog.FriendlyError(syncErr).Error()
+				}
+			} else {
+				res.wlSyncErr = wavelog.FriendlyError(syncErr).Error()
+			}
+			return res
+		}
+		res.wlSyncOK = true
+		if derr := store.ClearWavelogDirtyIfRevision(db, id, row.WavelogDirtyRev); derr != nil {
+			applog.Warn("Wavelog: failed to clear pending sync", "qso_id", id, "error", derr)
+			// The remote copy synced, but the local acknowledgement could
+			// not be persisted — report an incomplete synchronization so
+			// the row stays pending instead of claiming full success.
+			res.wlSyncOK = false
+			res.wlSyncIncomplete = true
+		}
+		return res
+	}
 }
 
 // mergeRemoteQSO overlays the server-side fields onto a local QSO. Local-only

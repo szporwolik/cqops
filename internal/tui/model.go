@@ -918,6 +918,16 @@ func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
+	// Per-contact remote-save serialization completions are global too: the
+	// queued follow-up PATCH must go out even when the editor screen was
+	// left before the in-flight PATCH finished. wlSyncIncomplete results
+	// (remote synced, local acknowledgement not persisted) also release
+	// the serialization slot — the row stays durably pending for a retry.
+	if em, ok := msg.(editorMsg); ok && em.saved != 0 &&
+		(em.wlSyncOK || em.wlSyncGone || em.wlSyncErr != "" || em.wlSyncIncomplete) {
+		cmd = tea.Batch(cmd, m.handleQSOSyncCompletion(em))
+	}
+
 	// Screen-specific routing
 	switch m.screen {
 	case screenChooser:

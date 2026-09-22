@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -389,8 +390,19 @@ func TestDoNormalizeAndUpload_Success(t *testing.T) {
 		t.Errorf("normalized = %d; want 1", em.normalized)
 	}
 
+	// The worker must not mutate the in-memory list — it only returns
+	// immutable result data for the owner loop to apply.
+	if le.qsos[0].Operator != "OldOp" {
+		t.Errorf("worker mutated in-memory Operator = %q; want OldOp", le.qsos[0].Operator)
+	}
+	if em.normOp != "Szymon" || em.normGrid != "KO00ca" {
+		t.Errorf("result data op/grid = %q/%q; want Szymon/KO00ca", em.normOp, em.normGrid)
+	}
+
+	// The owner loop applies the returned changes (validated generation).
+	le.Update(em)
 	if le.qsos[0].Operator != "Szymon" {
-		t.Errorf("in-memory Operator = %q; want Szymon", le.qsos[0].Operator)
+		t.Errorf("in-memory Operator after Update = %q; want Szymon", le.qsos[0].Operator)
 	}
 	if le.qsos[0].MyGridSquare != "KO00ca" {
 		t.Errorf("in-memory MyGridSquare = %q; want KO00ca", le.qsos[0].MyGridSquare)
@@ -434,8 +446,13 @@ func TestDoNormalizeAndUpload_MultipleQSOs(t *testing.T) {
 	if em.normalized != 2 {
 		t.Errorf("normalized = %d; want 2", em.normalized)
 	}
+	// The worker must not touch the in-memory list — the owner loop applies.
+	if le.qsos[0].Operator != "Old1" || le.qsos[1].Operator != "Old2" {
+		t.Errorf("worker mutated in-memory operators: %q/%q; want Old1/Old2", le.qsos[0].Operator, le.qsos[1].Operator)
+	}
+	le.Update(em)
 	if le.qsos[0].Operator != "Szymon" || le.qsos[1].Operator != "Szymon" {
-		t.Error("both QSOs should have Operator = Szymon")
+		t.Error("both QSOs should have Operator = Szymon after Update")
 	}
 	if le.qsos[0].StationCallsign != "OLD1" || le.qsos[1].StationCallsign != "OLD2" {
 		t.Error("station callsigns should be preserved")
@@ -478,11 +495,74 @@ func TestDoNormalizeAndUpload_PartialMismatch(t *testing.T) {
 	if em.normalized != 1 {
 		t.Errorf("normalized = %d; want 1", em.normalized)
 	}
+	// The worker must not mutate the in-memory list — the owner loop applies.
+	if le.qsos[0].Operator != "Old1" {
+		t.Errorf("worker mutated q1 Operator = %q; want Old1", le.qsos[0].Operator)
+	}
+	le.Update(em)
 	if le.qsos[0].Operator != "Szymon" {
 		t.Errorf("q1 Operator = %q; want Szymon", le.qsos[0].Operator)
 	}
 	if le.qsos[1].Operator != "Old2" {
 		t.Errorf("q2 Operator = %q; want Old2 (unchanged)", le.qsos[1].Operator)
+	}
+}
+
+// TestNormalizeWorkerDoesNotMutateInMemoryList reproduces the reported race:
+// doNormalizeAndUpload used to update le.qsos from its command goroutine while
+// the owner loop reads that slice (table rebuilds) — the focused race probe
+// reported conflicting accesses to Operator. The worker must be limited to
+// database work and immutable result data; the owner loop applies the
+// returned changes after validating the generation.
+func TestNormalizeWorkerDoesNotMutateInMemoryList(t *testing.T) {
+	le := newTestEditorWithDB(t, "", "", "", "Szymon", "KO00ca")
+
+	q1 := &qso.QSO{Call: "A1A", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB",
+		StationCallsign: "OLD1", Operator: "OldOp", MyGridSquare: "AA00aa"}
+	id1 := insertTestQSO(t, le.db, q1)
+	q1.ID = id1
+	le.qsos = []qso.QSO{*q1}
+	le.mismatchQSOs = []qso.QSO{*q1}
+	le.mismatchFields = []string{"operator"}
+
+	// Run the worker while a concurrent "owner loop" keeps reading the
+	// in-memory list — under -race this flags any worker-side mutation.
+	var wg sync.WaitGroup
+	stop := make(chan struct{})
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				_ = le.qsos[0].Operator
+				_ = le.qsos[0].MyGridSquare
+			}
+		}
+	}()
+
+	done := make(chan editorMsg, 1)
+	go func() { done <- execCmd(le.doNormalizeAndUpload()).(editorMsg) }()
+	em := <-done
+	close(stop)
+	wg.Wait()
+
+	if em.normalized != 1 {
+		t.Fatalf("normalized = %d; want 1", em.normalized)
+	}
+	if len(em.normIDs) != 1 || em.normIDs[0] != id1 || em.normOp != "Szymon" {
+		t.Errorf("result data ids=%v op=%q; want [%d] Szymon", em.normIDs, em.normOp, id1)
+	}
+	if le.qsos[0].Operator != "OldOp" {
+		t.Errorf("worker mutated in-memory Operator = %q; want OldOp", le.qsos[0].Operator)
+	}
+
+	// The owner loop applies the returned changes.
+	le.Update(em)
+	if le.qsos[0].Operator != "Szymon" {
+		t.Errorf("in-memory Operator after Update = %q; want Szymon", le.qsos[0].Operator)
 	}
 }
 

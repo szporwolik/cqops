@@ -89,10 +89,21 @@ func TestStationSyncAfterSaveAppliesOnOwnerLoop(t *testing.T) {
 		t.Errorf("gen = %d, want %d", sd.gen, logbookSyncGen.Load())
 	}
 
-	// Owner loop: the model's global handler installs the result.
+	// Owner loop: the model's global handler installs the result. The
+	// completion refreshes station-dependent state only — it must NOT emit
+	// logbook-switch bookkeeping (which would reset an in-progress
+	// contact's exchange fields).
+	m.fields[fieldExchSent].SetValue("599 007")
+	m.fields[fieldExchRcvd].SetValue("599 014")
 	followUp := m.handleStationSyncDone(sd)
-	if followUp == nil {
-		t.Fatal("expected the logbook-switched follow-up command")
+	if followUp != nil {
+		t.Fatal("station sync completion must not produce switch bookkeeping")
+	}
+	if got := m.fields[fieldExchSent].Value(); got != "599 007" {
+		t.Errorf("ExchSent = %q after sync completion, want 599 007 preserved", got)
+	}
+	if got := m.fields[fieldExchRcvd].Value(); got != "599 014" {
+		t.Errorf("ExchRcvd = %q after sync completion, want 599 014 preserved", got)
 	}
 
 	lb = a.Config.Logbooks["home"]
@@ -109,18 +120,14 @@ func TestStationSyncAfterSaveAppliesOnOwnerLoop(t *testing.T) {
 	if !strings.Contains(string(data), "KO00CA") {
 		t.Error("saved config does not contain the synced grid")
 	}
-
-	// The follow-up keeps the logbook-switch flow alive.
-	next := execCmd(followUp)
-	if _, ok := next.(logbookSwitchedMsg); !ok {
-		t.Errorf("follow-up = %T, want logbookSwitchedMsg", next)
-	}
 }
 
 // TestStationSyncDoneHandledAwayFromChooser reproduces the dropped-result
 // bug: the user saves a logbook with Wavelog enabled and leaves the chooser
 // before the station request finishes. The completion must still be applied
-// globally, and the switch bookkeeping must still follow.
+// globally — and must NOT run logbook-switch bookkeeping, which previously
+// cleared exchange fields the operator had already entered on the logging
+// screen.
 func TestStationSyncDoneHandledAwayFromChooser(t *testing.T) {
 	a := newChooserTestApp(t)
 	home := a.Config.Logbooks["home"]
@@ -132,6 +139,11 @@ func TestStationSyncDoneHandledAwayFromChooser(t *testing.T) {
 	lb.Station = config.Station{Callsign: "OLD", Grid: "AA00aa"}
 	a.Config.Logbooks["home"] = lb
 
+	// The operator is back at logging with an in-progress contact: exchange
+	// fields entered while the station sync is still pending.
+	m.fields[fieldExchSent].SetValue("599 007")
+	m.fields[fieldExchRcvd].SetValue("599 014")
+
 	// The save bumped the generation; the result arrives afterwards.
 	gen := logbookSyncGen.Add(1)
 	upd, cmd := m.Update(stationSyncDoneMsg{
@@ -139,12 +151,14 @@ func TestStationSyncDoneHandledAwayFromChooser(t *testing.T) {
 		st: &wavelog.Station{Callsign: "SP9SPM", Gridsquare: "KO00CA", DXCC: 269, CQ: 15, ITU: 28},
 	})
 	m = upd.(*Model)
-	if cmd == nil {
-		t.Fatal("expected the logbook-switched follow-up command")
+	if cmd != nil {
+		t.Fatal("station sync completion must not emit switch bookkeeping")
 	}
-	next := execCmd(cmd)
-	if _, ok := next.(logbookSwitchedMsg); !ok {
-		t.Fatalf("follow-up = %T, want logbookSwitchedMsg", next)
+	if got := m.fields[fieldExchSent].Value(); got != "599 007" {
+		t.Errorf("ExchSent = %q after sync completion, want 599 007 preserved", got)
+	}
+	if got := m.fields[fieldExchRcvd].Value(); got != "599 014" {
+		t.Errorf("ExchRcvd = %q after sync completion, want 599 014 preserved", got)
 	}
 
 	lb = a.Config.Logbooks["home"]
@@ -155,7 +169,7 @@ func TestStationSyncDoneHandledAwayFromChooser(t *testing.T) {
 
 // TestStationSyncDoneStaleGenerationDiscarded verifies the config-revision
 // guard: a sync result from a superseded save must not overwrite newer
-// station data nor re-trigger switch bookkeeping.
+// station data nor refresh station-derived state.
 func TestStationSyncDoneStaleGenerationDiscarded(t *testing.T) {
 	a := newChooserTestApp(t)
 	home := a.Config.Logbooks["home"]
@@ -176,11 +190,67 @@ func TestStationSyncDoneStaleGenerationDiscarded(t *testing.T) {
 	})
 	m = upd.(*Model)
 	if cmd != nil {
-		t.Error("a stale sync result must not produce the switch follow-up")
+		t.Error("a stale sync result must not produce any follow-up")
 	}
 	lb = a.Config.Logbooks["home"]
 	if lb.Station.Grid != "JO90" || lb.Station.Callsign != "NEW" {
 		t.Errorf("stale station data overwrote newer configuration: %+v", lb.Station)
+	}
+}
+
+// TestStationSyncCompletionPreservesContactExchanges reproduces the reported
+// loss: save logbook settings, return to logging and enter an exchange while
+// the station synchronization is pending — its completion used to run full
+// logbook-switch bookkeeping and cleared the entered exchanges. The
+// completion must only refresh station-dependent state.
+func TestStationSyncCompletionPreservesContactExchanges(t *testing.T) {
+	a := newChooserTestApp(t)
+	home := a.Config.Logbooks["home"]
+	a.Logbook = &home
+	m := New(a, nil)
+	m.screen = screenQSO
+
+	lb := a.Config.Logbooks["home"]
+	lb.Station = config.Station{Callsign: "OLD", Grid: "AA00aa"}
+	a.Config.Logbooks["home"] = lb
+
+	// An in-progress contact on the logging screen.
+	m.fields[fieldCall].SetValue("SP9AAA")
+	m.fields[fieldExchSent].SetValue("599 007")
+	m.fields[fieldExchRcvd].SetValue("599 014")
+	// Stale station-derived rendering that the completion must refresh.
+	m.rc.status = "stale"
+	m.rc.pathSig = "stale"
+
+	gen := logbookSyncGen.Add(1)
+	upd, cmd := m.Update(stationSyncDoneMsg{
+		lbID: "home", gen: gen,
+		st: &wavelog.Station{Callsign: "SP9SPM", Gridsquare: "KO00CA", DXCC: 269},
+	})
+	m = upd.(*Model)
+	if cmd != nil {
+		t.Fatal("station sync completion must not emit switch bookkeeping")
+	}
+
+	// The station was applied…
+	lb = a.Config.Logbooks["home"]
+	if lb.Station.Grid != "KO00CA" || lb.Station.Callsign != "SP9SPM" {
+		t.Errorf("station not synced: %+v", lb.Station)
+	}
+	// …the station-dependent caches were invalidated…
+	if m.rc.pathSig != "" || m.rc.pathLine != "" || m.rc.status != "" {
+		t.Errorf("station-derived caches not invalidated: status=%q pathSig=%q pathLine=%q",
+			m.rc.status, m.rc.pathSig, m.rc.pathLine)
+	}
+	// …and the in-progress contact is untouched.
+	if got := m.fields[fieldCall].Value(); got != "SP9AAA" {
+		t.Errorf("Call = %q after sync completion, want SP9AAA preserved", got)
+	}
+	if got := m.fields[fieldExchSent].Value(); got != "599 007" {
+		t.Errorf("ExchSent = %q after sync completion, want 599 007 preserved", got)
+	}
+	if got := m.fields[fieldExchRcvd].Value(); got != "599 014" {
+		t.Errorf("ExchRcvd = %q after sync completion, want 599 014 preserved", got)
 	}
 }
 

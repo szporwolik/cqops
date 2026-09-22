@@ -445,7 +445,7 @@ func GetQSOByID(db *sql.DB, id int64) (*qso.QSO, error) {
 		cq_zone, itu_zone, dxcc,
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
-		wavelog_id, wavelog_dirty, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
+		wavelog_id, wavelog_dirty, wavelog_dirty_rev, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
 		created_at, updated_at
 		FROM qsos WHERE id = ?`, id,
 	).Scan(
@@ -459,7 +459,7 @@ func GetQSOByID(db *sql.DB, id int64) (*qso.QSO, error) {
 		&q.CQZone, &q.ITUZone, &q.DXCC,
 		&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
 		&q.MySIG, &q.MySIGInfo,
-		&q.WavelogID, &q.WavelogDirty, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
+		&q.WavelogID, &q.WavelogDirty, &q.WavelogDirtyRev, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
 		&createdAt, &updatedAt,
 	)
 	if err != nil {

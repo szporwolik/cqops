@@ -672,6 +672,7 @@ func (m *Model) initLogbookEditor() {
 		StationOperator: m.activeOperatorCallsign(),
 		StationGrid:     m.effectiveGrid(),
 		StationCall:     m.App.Logbook.Station.Callsign,
+		KeepAlive:       m.App.KeepDBAlive,
 	})
 	m.ui.logbookEditor.width = m.width
 	m.ui.logbookEditor.height = m.height

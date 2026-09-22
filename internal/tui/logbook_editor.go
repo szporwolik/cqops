@@ -126,6 +126,7 @@ type LogbookEditor struct {
 	built            bool
 	fm               menuFocus
 	editRev          uint64 // bumped on every operator edit; stale remote refreshes are rejected
+	editSession      uint64 // bumped on every contact open; never reuse a refresh identity across sessions
 	wlSkipped        int
 	wlSkipDetail     string
 	wlUnsentCount    int // cached unsent count from full DB, used by confirm dialog
@@ -158,6 +159,16 @@ type LogbookEditor struct {
 	currentPage int
 	totalCount  int
 	pageSize    int
+
+	// Per-contact remote-save serialization (owner loop only): at most one
+	// PATCH may be in flight per QSO; further saves are queued and the
+	// newest revision is pushed when the in-flight PATCH completes.
+	syncInFlight map[int64]bool // local qso id → a PATCH is on the wire
+	syncQueued   map[int64]bool // local qso id → a newer save waits for the in-flight PATCH
+
+	// keepAlive leases the database for background operations so a logbook
+	// switch cannot close it under a pending worker (App.KeepDBAlive).
+	keepAlive func(*sql.DB) func()
 
 	// Batch download/import progress (shared infrastructure, one active at a time).
 	dlActive   bool // true while download goroutine is running
@@ -223,6 +234,10 @@ type LogbookEditorConfig struct {
 	StationOperator string
 	StationGrid     string
 	StationCall     string
+	// KeepAlive acquires a database lease for background editor operations
+	// (App.KeepDBAlive): a logbook switch retires the old database, and the
+	// lease defers its close until the operation's local writes finish.
+	KeepAlive func(*sql.DB) func()
 }
 
 // logbookEditorGenCounter assigns a unique generation to every editor
@@ -232,7 +247,7 @@ type LogbookEditorConfig struct {
 var logbookEditorGenCounter atomic.Uint64
 
 func NewLogbookEditor(cfg LogbookEditorConfig) *LogbookEditor {
-	le := &LogbookEditor{db: cfg.DB, gen: logbookEditorGenCounter.Add(1), mode: edModeList, wlURL: cfg.WLURL, wlKey: cfg.WLKey, wlStationID: cfg.WLStationID, wlLastFetchedID: cfg.WLLastFetchedID, logStationOp: cfg.StationOperator, logStationGrid: cfg.StationGrid, logStationCall: cfg.StationCall}
+	le := &LogbookEditor{db: cfg.DB, gen: logbookEditorGenCounter.Add(1), mode: edModeList, wlURL: cfg.WLURL, wlKey: cfg.WLKey, wlStationID: cfg.WLStationID, wlLastFetchedID: cfg.WLLastFetchedID, logStationOp: cfg.StationOperator, logStationGrid: cfg.StationGrid, logStationCall: cfg.StationCall, keepAlive: cfg.KeepAlive}
 	le.filePicker = filepicker.New()
 	le.filePicker.FileAllowed = false
 	le.filePicker.DirAllowed = true
@@ -400,6 +415,17 @@ func (le *LogbookEditor) loadPage() {
 // isDownloadActive returns true when a Wavelog download is in progress.
 func (le *LogbookEditor) isDownloadActive() bool {
 	return le.dlActive
+}
+
+// dbLease acquires a database lease for a background editor operation. The
+// returned release func must be called exactly once when the operation stops
+// using db — it keeps a logbook-switched database open until the worker's
+// local writes finish. A no-op when no lease provider is configured (tests).
+func (le *LogbookEditor) dbLease(db *sql.DB) func() {
+	if le.keepAlive == nil || db == nil {
+		return func() {}
+	}
+	return le.keepAlive(db)
 }
 
 // applySearchFilter searches the whole logbook (not just the current page)

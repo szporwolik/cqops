@@ -39,8 +39,10 @@ func (m *Model) handleChooserUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 		m.needRefresh = true
 	}
 	// Logbook switches are booked globally in handleAsyncMessages via
-	// logbookSwitchedMsg / stationSyncDoneMsg — the chooser may be closed
-	// before the station fetch completes, so nothing is done here.
+	// logbookSwitchedMsg — the chooser may be closed before the switch
+	// bookkeeping message is handled, so nothing is done here. Station
+	// sync completions are also global, but they only refresh
+	// station-dependent state and never reset an in-progress contact.
 	return m, cmd
 }
 
@@ -802,6 +804,7 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 					db:      em.wlFetchDB,
 					localID: em.wlFetchQSOID,
 					rev:     em.wlFetchRev,
+					session: em.wlFetchSession,
 				})
 				if err != nil {
 					applog.Warn("Wavelog: apply remote refresh failed", "error", err)
@@ -809,10 +812,12 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 					m.toasts.Success("Wavelog: QSO refreshed from server")
 				} else if m.ui.logbookEditor.mode == edModeEdit &&
 					(em.wlFetchGen == 0 || em.wlFetchGen == m.ui.logbookEditor.gen) &&
-					(em.wlFetchDB == nil || em.wlFetchDB == m.ui.logbookEditor.db) {
-					// The result belongs to this editor but was stale
-					// (typed since, other row, pending sync). Results from
-					// a replaced editor/database are dropped silently.
+					(em.wlFetchDB == nil || em.wlFetchDB == m.ui.logbookEditor.db) &&
+					(em.wlFetchSession == 0 || em.wlFetchSession == m.ui.logbookEditor.editSession) {
+					// The result belongs to this editor and session but was
+					// stale (typed since, other row, pending sync). Results
+					// from a replaced editor/database or a previous session
+					// are dropped silently.
 					m.toasts.Warn("Wavelog: remote refresh skipped — your unsaved edits were kept")
 				}
 			} else if em.wlFetchErr != "" {
@@ -825,6 +830,8 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 				m.toasts.Success(fmt.Sprintf("QSO %s from %s saved · Wavelog updated", em.saveCall, em.saveDate))
 			case em.wlSyncGone:
 				m.toasts.Warn(fmt.Sprintf("QSO %s from %s saved locally — remote copy was deleted", em.saveCall, em.saveDate))
+			case em.wlSyncIncomplete:
+				m.toasts.Warn(fmt.Sprintf("QSO %s from %s saved — Wavelog updated, local sync status pending", em.saveCall, em.saveDate))
 			case em.wlSyncErr != "":
 				m.toasts.Error(fmt.Sprintf("QSO %s from %s saved locally — Wavelog: %s", em.saveCall, em.saveDate, em.wlSyncErr))
 			case em.wlSyncPending:

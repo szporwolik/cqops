@@ -102,10 +102,14 @@ func (m *Model) handleLogbookSwitched() tea.Cmd {
 // handleStationSyncDone applies a background Wavelog station sync result on
 // the owner loop, regardless of the visible screen. Results from a save that
 // was superseded by a newer one are discarded, so old station data can never
-// overwrite newer configuration. The logbook-switch bookkeeping follows as a
-// separate command — the switch itself already happened synchronously.
+// overwrite newer configuration.
+//
+// This is NOT switch bookkeeping: a switch already ran its own bookkeeping
+// exactly once when it succeeded, and the sync can complete long after the
+// operator returned to logging. The completion refreshes only state derived
+// from the station — it must never reset an in-progress contact (exchange
+// fields, callbook lookups, dupe checks).
 func (m *Model) handleStationSyncDone(msg stationSyncDoneMsg) tea.Cmd {
-	switched := func() tea.Msg { return logbookSwitchedMsg{} }
 	if msg.gen != logbookSyncGen.Load() {
 		applog.Debug("Logbook: stale station sync discarded", "logbook", msg.lbID,
 			"gen", msg.gen, "current", logbookSyncGen.Load())
@@ -114,17 +118,17 @@ func (m *Model) handleStationSyncDone(msg stationSyncDoneMsg) tea.Cmd {
 	if msg.err != nil {
 		applog.Warn("Logbook: Wavelog station sync failed", "logbook", msg.lbID, "error", msg.err)
 		m.toasts.Warn("Wavelog: station sync failed — kept entered values")
-		return switched
+		return nil
 	}
 	if msg.st == nil {
-		return switched
+		return nil
 	}
 	lb, ok := m.App.Config.Logbooks[msg.lbID]
 	if !ok {
-		return switched
+		return nil
 	}
 	if !applyWavelogStation(msg.st, &lb.Station) {
-		return switched
+		return nil
 	}
 	m.App.Config.Logbooks[msg.lbID] = lb
 	if serr := config.Save(m.App.ConfigPath, m.App.Config); serr != nil {
@@ -133,7 +137,21 @@ func (m *Model) handleStationSyncDone(msg stationSyncDoneMsg) tea.Cmd {
 		m.App.Logbook = &lb
 		m.toasts.Info("Wavelog: station fields synced")
 	}
-	return switched
+
+	// Station-dependent refreshes only — never contact state. The station
+	// identity/position changed, so cached status/partner/path rendering is
+	// stale, and APRS beacons and the dashboard must pick up the new
+	// station without waiting for their periodic ticks.
+	m.rc.status = ""
+	m.invalidatePartnerMapCache()
+	m.rc.pathSig = ""
+	m.rc.pathLine = ""
+	m.App.ScheduleAPRSRestart()
+	m.App.RequestAPRSRefresh()
+	if m.http.online {
+		m.pushDashboardFast()
+	}
+	return nil
 }
 
 // cycleRig cycles to the next rig preset in alphabetical order (by model).

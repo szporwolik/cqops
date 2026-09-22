@@ -540,7 +540,9 @@ func (c *LogbookChooser) scrollViewportToEnd() {
 	c.vp.SetYOffset(maxOffset)
 }
 
-// logbookSwitchedMsg is sent when the user switches active logbook via Enter.
+// logbookSwitchedMsg is sent when the active logbook actually switches
+// (chooser Enter, new logbook created). The model's global handler runs the
+// switch bookkeeping exactly once per successful switch.
 type logbookSwitchedMsg struct{}
 
 func (c *LogbookChooser) handleEnter() tea.Cmd {
@@ -761,7 +763,11 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 		}
 		c.toasts.Success("Logbook " + savedName + " created")
 		applog.Info("Logbook created", "name", savedName)
-		return c.syncStationAfterSaveCmd(id, wl)
+		// The switch already succeeded — run its bookkeeping exactly once,
+		// right away (the global handler applies it). The station sync
+		// completion is a separate path that only refreshes station-derived
+		// state and never resets an in-progress contact.
+		return tea.Batch(func() tea.Msg { return logbookSwitchedMsg{} }, c.syncStationAfterSaveCmd(id, wl))
 	}
 
 	// Edit existing logbook.
@@ -827,11 +833,13 @@ type stationSyncDoneMsg struct {
 // logbook (grid, DXCC, zones, reference fields) asynchronously so the UI
 // never blocks on the network. The worker only fetches — all state changes
 // happen in the model's global message handler when the result arrives.
+// The completion applies station-dependent refreshes only: logbook-switch
+// bookkeeping belongs to the sites that actually switched the logbook.
 func (c *LogbookChooser) syncStationAfterSaveCmd(lbID string, wl *config.WavelogConfig) tea.Cmd {
 	// A new save invalidates any in-flight station sync from a previous one.
 	gen := logbookSyncGen.Add(1)
 	if wl == nil || !wl.Enabled {
-		return func() tea.Msg { return logbookSwitchedMsg{} }
+		return nil
 	}
 	url, key, sid := wl.URL, wl.APIKey, wl.StationProfileID
 	return func() tea.Msg {

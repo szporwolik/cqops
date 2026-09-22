@@ -48,13 +48,21 @@ type editorMsg struct {
 	wlFailCount       int
 	wlUnresolvedCount int
 	normalized        int
-	gen               uint64 // editor generation for async operation results (0 = not generation-bound)
-	err               error
-	dlCount           int
-	dlDupes           int
-	dlFailed          int
-	dlLastID          int64
-	dlErr             string
+	// norm* carry the station fields a normalize worker changed plus the
+	// affected local ids. They are immutable result data: the worker never
+	// touches the in-memory list, and the owner loop applies them after
+	// validating the generation.
+	normIDs  []int64
+	normCall string
+	normOp   string
+	normGrid string
+	gen      uint64 // editor generation for async operation results (0 = not generation-bound)
+	err      error
+	dlCount  int
+	dlDupes  int
+	dlFailed int
+	dlLastID int64
+	dlErr    string
 	// Batch download progress
 	dlProgress int
 	dlTotal    int
@@ -76,17 +84,29 @@ type editorMsg struct {
 	// Simple toast from the editor.
 	toastWarn string
 	// Remote-copy refresh of the QSO being edited.
-	wlFetchQSOID int64 // local id the fetch was issued for
-	wlFetchQSO   *wavelog.QSOData
-	wlFetchErr   string
-	wlFetchRev   uint64  // edit revision when the fetch started — a later value means the operator typed since
-	wlFetchGen   uint64  // editor generation that issued the fetch (0 = not generation-bound)
-	wlFetchDB    *sql.DB // database the fetch ran against (nil = not database-bound)
+	wlFetchQSOID   int64 // local id the fetch was issued for
+	wlFetchQSO     *wavelog.QSOData
+	wlFetchErr     string
+	wlFetchRev     uint64  // edit revision when the fetch started — a later value means the operator typed since
+	wlFetchGen     uint64  // editor generation that issued the fetch (0 = not generation-bound)
+	wlFetchDB      *sql.DB // database the fetch ran against (nil = not database-bound)
+	wlFetchSession uint64  // edit session when the fetch started — reopened contacts reject older sessions
 	// Wavelog PATCH result after a save of a synced QSO.
 	wlSyncOK      bool
 	wlSyncGone    bool
 	wlSyncErr     string
 	wlSyncPending bool // offline save of a synced QSO — sync deferred
+	// wlSyncIncomplete marks a PATCH that reached the remote server but
+	// whose local acknowledgement could not be persisted: the row stays
+	// pending (durably dirty) instead of falsely reporting success.
+	wlSyncIncomplete bool
+	// saveSession binds a save completion to the edit session that
+	// initiated it: a completion for a superseded session must not close
+	// the form of a newer session.
+	saveSession uint64
+	// wlSyncFollowUp marks a serialized follow-up PATCH result — it must
+	// never close an open form (the form closed at the original save).
+	wlSyncFollowUp bool
 }
 
 func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -202,8 +222,25 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if msg.deleted != 0 || msg.saved != 0 || msg.purged || msg.wlCall != "" {
-			le.mode = edModeList
-			le.needsReload = true
+			// A completion from a replaced editor (logbook switched), a
+			// serialized follow-up PATCH, or a superseded edit session must
+			// never close the form being edited now — only the unchanged
+			// session that initiated the operation may transition back to
+			// the list.
+			closeForm := true
+			if msg.gen != 0 && msg.gen != le.gen {
+				closeForm = false // completion from a replaced editor
+			}
+			if msg.wlSyncFollowUp {
+				closeForm = false // follow-up PATCH — the form closed at the original save
+			}
+			if msg.saved != 0 && msg.saveSession != 0 && msg.saveSession != le.editSession {
+				closeForm = false // the contact was reopened — a newer session owns the form
+			}
+			if closeForm {
+				le.mode = edModeList
+				le.needsReload = true
+			}
 		}
 		if msg.normalized > 0 {
 			// The normalize worker belongs to the editor that launched it;
@@ -213,6 +250,26 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				applog.Warn("Wavelog: discarding normalize result for a replaced editor",
 					fmt.Sprintf("msg_gen=%d editor_gen=%d", msg.gen, le.gen))
 				return le, nil
+			}
+			// Apply the worker's returned changes on the owner loop only —
+			// the worker is limited to database work and must never mutate
+			// le.qsos from its goroutine (the owner loop reads it during
+			// table rebuilds).
+			for i := range le.qsos {
+				for _, mid := range msg.normIDs {
+					if le.qsos[i].ID == mid {
+						if msg.normCall != "" {
+							le.qsos[i].StationCallsign = msg.normCall
+						}
+						if msg.normOp != "" {
+							le.qsos[i].Operator = msg.normOp
+						}
+						if msg.normGrid != "" {
+							le.qsos[i].MyGridSquare = msg.normGrid
+						}
+						break
+					}
+				}
 			}
 			// Normalization done, now upload all unsent QSOs — fetched as
 			// eligible rows only, never a full-log scan.
@@ -490,6 +547,11 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				q := le.qsos[idx]
 				le.editing = &q
 				le.editRev = 0
+				// A new edit session must never share a refresh identity
+				// with a previous session for the same contact — otherwise
+				// a stale refresh from the earlier session could pass every
+				// check after the contact is reopened.
+				le.editSession++
 				le.fillEditForm(&q)
 				le.fm.reset()
 				le.focusRow(int(qefCall))
@@ -604,7 +666,8 @@ func (le *LogbookEditor) handleFilePickerUpdate(msg tea.Msg) (tea.Model, tea.Cmd
 				op := newDownloadOp()
 				le.dlOp = op
 				le.mode = edModeExporting
-				go le.runExport(op, path)
+				release := le.dbLease(le.db)
+				go le.runExport(op, path, release)
 				return le, le.readDownloadMsg
 			}
 			// Import: let filepicker handle selection via DidSelectFile below.
@@ -634,7 +697,8 @@ func (le *LogbookEditor) handleFilePickerUpdate(msg tea.Msg) (tea.Model, tea.Cmd
 			le.impFailed = 0
 			le.impErr = ""
 			le.mode = edModeImporting
-			go le.runImport(op, path)
+			release := le.dbLease(le.db)
+			go le.runImport(op, path, release)
 			return le, le.readDownloadMsg
 		}
 	}
@@ -668,15 +732,19 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 		le.dlTotal = 0
 		le.cancelDownload()
 		le.dlOp = nil
+		gen := le.gen
+		db := le.db
+		release := le.dbLease(db)
 		applog.Warn("LogbookEditor: purging all QSOs")
 		return func() tea.Msg {
-			err := store.PurgeQSOs(le.db)
+			defer release()
+			err := store.PurgeQSOs(db)
 			if err != nil {
 				applog.Error("LogbookEditor: purge failed", "error", err.Error())
 			} else {
 				applog.Info("LogbookEditor: all QSOs purged")
 			}
-			return editorMsg{purged: true, err: err}
+			return editorMsg{purged: true, err: err, gen: gen}
 		}
 	case edModeConfirmSave:
 		// Keep the edit form visible until the async save result arrives;
@@ -698,10 +766,14 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 		id := q.ID
 		remoteID := q.WavelogID
 		url, key := le.wlURL, le.wlKey
+		gen := le.gen
+		db := le.db
+		release := le.dbLease(db)
 		le.mode = edModeList
 		applog.Info("LogbookEditor: deleting QSO", "id", id, "call", call, "date", date)
 		return func() tea.Msg {
-			err := store.DeleteQSO(le.db, id)
+			defer release()
+			err := store.DeleteQSO(db, id)
 			if err != nil {
 				applog.Error("LogbookEditor: delete failed", "id", id, "call", call, "error", err.Error())
 				// No deleted id on failure — the handler shows the error toast only.
@@ -711,7 +783,7 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 
 			// Synced QSOs: remove the Wavelog copy too. Best-effort — the
 			// local delete must never depend on this succeeding.
-			em := editorMsg{deleted: id, delCall: call, delDate: date}
+			em := editorMsg{deleted: id, delCall: call, delDate: date, gen: gen}
 			if remoteID > 0 && url != "" && key != "" && !le.Offline {
 				derr := wavelog.DeleteQSO(url, key, remoteID)
 				if derr != nil {
@@ -742,45 +814,74 @@ func (le *LogbookEditor) doSave() tea.Cmd {
 	db := le.db
 	url, key := le.wlURL, le.wlKey
 	offline := le.Offline
+	gen := le.gen
 	applog.Info("LogbookEditor: saving QSO", "id", id, "call", call, "date", date)
-	return func() tea.Msg {
-		var rev int64
-		var err error
-		if synced {
-			// Save the edit, the dirty flag and the bumped revision
-			// atomically BEFORE any networking. A crash while the PATCH
-			// is in flight must leave a durably dirty row, never a
-			// changed row that looks synced and could be overwritten by
-			// a later remote refresh.
-			rev, err = store.SaveQSOForSync(db, q)
-		} else {
-			err = store.UpdateQSO(db, q)
-		}
-		if err != nil {
-			applog.Error("LogbookEditor: save failed", "id", id, "call", call, "error", err.Error())
+
+	// The local write happens HERE, on the owner loop: the bumped revision
+	// must be durable before deciding whether to launch or queue the remote
+	// PATCH, so a queued edit can never be read after its follow-up was
+	// dispatched. A crash while the PATCH is in flight still leaves a
+	// durably dirty row that a remote refresh cannot overwrite.
+	var rev int64
+	if synced {
+		var serr error
+		rev, serr = store.SaveQSOForSync(db, q)
+		if serr != nil {
+			applog.Error("LogbookEditor: save failed", "id", id, "call", call, "error", serr.Error())
 			// No saved id on failure — the handler shows the error toast only
 			// (the edit form stays open for a retry).
-			return editorMsg{err: err}
+			return func() tea.Msg { return editorMsg{err: serr, gen: gen} }
 		}
-		applog.Info("LogbookEditor: QSO saved", "id", id, "call", call)
+	} else {
+		if uerr := store.UpdateQSO(db, q); uerr != nil {
+			applog.Error("LogbookEditor: save failed", "id", id, "call", call, "error", uerr.Error())
+			return func() tea.Msg { return editorMsg{err: uerr, gen: gen} }
+		}
+	}
+	applog.Info("LogbookEditor: QSO saved", "id", id, "call", call)
 
-		// Synced QSOs: push the edit to Wavelog. Local save must never
-		// depend on this succeeding — and offline mode must never contact
-		// the server at all (the local change is reported as pending sync).
-		em := editorMsg{saved: id, saveCall: call, saveDate: date}
-		if !synced {
-			return em
-		}
-		// The row is already durably marked pending. Without credentials
-		// there is no way to push now — keep the pending state so a later
-		// refresh cannot clobber the edit once credentials are configured.
-		if url == "" || key == "" {
-			return em
-		}
-		if offline {
-			em.wlSyncPending = true
-			return em
-		}
+	// Synced QSOs: push the edit to Wavelog. Local save must never depend
+	// on this succeeding — and offline mode must never contact the server
+	// at all (the local change is reported as pending sync).
+	em := editorMsg{saved: id, saveCall: call, saveDate: date, gen: gen, saveSession: le.editSession}
+	if !synced {
+		return func() tea.Msg { return em }
+	}
+	// The row is already durably marked pending. Without credentials
+	// there is no way to push now — keep the pending state so a later
+	// refresh cannot clobber the edit once credentials are configured.
+	if url == "" || key == "" {
+		return func() tea.Msg { return em }
+	}
+	if offline {
+		em.wlSyncPending = true
+		return func() tea.Msg { return em }
+	}
+	// Serialize remote updates per contact: only ONE PATCH per QSO may be
+	// on the wire. A save arriving while one is pending is queued (the
+	// newest revision is already stored locally); when the in-flight PATCH
+	// completes, the owner loop dispatches a follow-up carrying the newest
+	// revision. Without this an older stalled PATCH could complete after a
+	// newer one and overwrite the server with stale values.
+	if le.syncInFlight == nil {
+		le.syncInFlight = make(map[int64]bool)
+	}
+	if le.syncQueued == nil {
+		le.syncQueued = make(map[int64]bool)
+	}
+	if le.syncInFlight[id] {
+		le.syncQueued[id] = true
+		em.wlSyncPending = true
+		return func() tea.Msg { return em }
+	}
+	le.syncInFlight[id] = true
+	// The PATCH worker writes locally (ack persistence, gone handling), so
+	// the database is leased NOW, on the owner loop, and released when the
+	// worker finishes: a logbook switch retires the database instead of
+	// closing it while the worker still holds it.
+	release := le.dbLease(db)
+	return func() tea.Msg {
+		defer release()
 		syncErr := wavelog.UpdateQSO(url, key, q.WavelogID, buildUpdateInput(q))
 		if syncErr != nil {
 			if apiErr, ok := syncErr.(*wavelog.APIError); ok && apiErr.Code == "not_found" {
@@ -808,6 +909,11 @@ func (le *LogbookEditor) doSave() tea.Cmd {
 		em.wlSyncOK = true
 		if derr := store.ClearWavelogDirtyIfRevision(db, id, rev); derr != nil {
 			applog.Warn("Wavelog: failed to clear pending sync", "qso_id", id, "error", derr)
+			// The remote copy synced, but the local acknowledgement could
+			// not be persisted — report an incomplete synchronization result
+			// so the row stays pending instead of claiming full success.
+			em.wlSyncOK = false
+			em.wlSyncIncomplete = true
 		}
 		return em
 	}
@@ -866,8 +972,12 @@ func (le *LogbookEditor) doWavelogDownload() tea.Cmd {
 	applog.InfoDetail("Wavelog: starting contacts download",
 		fmt.Sprintf("url=%s station_id=%s from_id=%d", url, sid, fetchFromID))
 
+	// The download writes the imported QSOs locally; the database is leased
+	// now so a logbook switch retires — not closes — it for the duration.
+	release := le.dbLease(le.db)
+
 	// Start the download goroutine with the operation captured.
-	go le.runDownload(op, url, key, sid, fetchFromID)
+	go le.runDownload(op, url, key, sid, fetchFromID, release)
 
 	// Return a Cmd that reads the first progress message.
 	return le.readDownloadMsg
@@ -900,9 +1010,10 @@ func (le *LogbookEditor) readDownloadMsg() tea.Msg {
 // or when done). The goroutine checks op.ctx between records; on abort
 // processing stops immediately. Downloads are idempotent — duplicates are
 // detected and skipped.
-func (le *LogbookEditor) runDownload(op *downloadOp, url, key, sid string, fetchFromID int64) {
+func (le *LogbookEditor) runDownload(op *downloadOp, url, key, sid string, fetchFromID int64, release func()) {
 	// The channel lives on the immutable operation object — the UI handler
 	// can clear editor state without breaking sends, close, or cancellation.
+	defer release()
 	msgCh := op.msgCh
 	defer close(msgCh)
 
@@ -1005,9 +1116,12 @@ func (le *LogbookEditor) runDownload(op *downloadOp, url, key, sid string, fetch
 		if err := qso.ValidateImportRecord(qs); err != nil {
 			applog.Warn("Wavelog: skipping invalid imported QSO", "call", qs.Call, "reason", err)
 			failed++
-			// Permanently invalid — safe to advance the checkpoint past it
-			// (it can never be retried into success).
-			if !frozen && qs.WavelogID > 0 {
+			// Permanently invalid — but it may advance the checkpoint only
+			// when every preceding record was durably handled. An earlier
+			// unresolved identity (idGap) or failed insert (frozen) keeps
+			// the cursor behind this record too, otherwise the next
+			// incremental download would skip the gap's range.
+			if !frozen && !idGap && qs.WavelogID > 0 {
 				checkpointID = qs.WavelogID
 				checkpointOK = true
 			}
@@ -1020,8 +1134,13 @@ func (le *LogbookEditor) runDownload(op *downloadOp, url, key, sid string, fetch
 			if qs.WavelogID > 0 {
 				if serr := store.SetWavelogID(db, existingID, qs.WavelogID); serr != nil {
 					applog.Warn("Wavelog: failed to store remote id for dupe", "qso_id", existingID, "error", serr)
-				}
-				if !frozen && !idGap {
+					// The recovered id could not be persisted — the row is
+					// still locally unresolved. Freeze advancement so the
+					// next download retries this recovery instead of
+					// skipping the record's id range forever.
+					unresolved++
+					idGap = true
+				} else if !frozen && !idGap {
 					checkpointID = qs.WavelogID
 					checkpointOK = true
 				}
@@ -1132,7 +1251,8 @@ func (le *LogbookEditor) runDownload(op *downloadOp, url, key, sid string, fetch
 
 // runImport performs ADIF import from a local file with progress reporting.
 // It mirrors runDownload but reads from a local file instead of Wavelog HTTP.
-func (le *LogbookEditor) runImport(op *downloadOp, path string) {
+func (le *LogbookEditor) runImport(op *downloadOp, path string, release func()) {
+	defer release()
 	msgCh := op.msgCh
 	defer close(msgCh)
 
@@ -1301,7 +1421,8 @@ var errExportCancelled = errors.New("export cancelled")
 // after a fully successful write and close — a failed or aborted export never
 // leaves a partial file at the requested path, and every failure is reported
 // as an error result instead of a success-looking one.
-func (le *LogbookEditor) runExport(op *downloadOp, path string) {
+func (le *LogbookEditor) runExport(op *downloadOp, path string, release func()) {
+	defer release()
 	msgCh := op.msgCh
 	defer close(msgCh)
 

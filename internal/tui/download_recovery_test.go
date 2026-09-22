@@ -885,7 +885,7 @@ func startImport(t *testing.T, adifPath string) *LogbookEditor {
 	le.mode = edModeImporting
 	op := newDownloadOp()
 	le.dlOp = op
-	go le.runImport(op, adifPath)
+	go le.runImport(op, adifPath, func() {})
 	return execAllDownloadMsgs(t, le)
 }
 
@@ -897,7 +897,7 @@ func startExport(t *testing.T, le *LogbookEditor, target string) *LogbookEditor 
 	le.mode = edModeExporting
 	op := newDownloadOp()
 	le.dlOp = op
-	go le.runExport(op, target)
+	go le.runExport(op, target, func() {})
 	return execAllDownloadMsgs(t, le)
 }
 
@@ -1290,5 +1290,224 @@ func TestDownload_MissingIdentitiesFreezeCheckpointAndRecover(t *testing.T) {
 	}
 	if aaa.WavelogID != 10 || bbb.WavelogID != 11 {
 		t.Errorf("WavelogID after recovery = %d/%d, want 10/11", aaa.WavelogID, bbb.WavelogID)
+	}
+}
+
+// TestDownload_MixedFailuresAcrossPagesAndRecover reproduces the reported
+// bug: the page-1 identity request fails (establishing an identity gap), and
+// a later page contains an INVALID contact with a known remote id. The
+// invalid-record branch advanced the checkpoint past the gap (probe:
+// checkpoint=11, unresolved=1, failed=1), so future incremental downloads
+// skipped the unresolved contact forever. The invalid branch must obey the
+// same eligibility rule as every other branch, and the next download must
+// reconcile the identity.
+func TestDownload_MixedFailuresAcrossPagesAndRecover(t *testing.T) {
+	page1ADIF := `<ADIF_VER:5>3.1.4 <EOH>
+<CALL:6>SP9AAA <BAND:3>20m <MODE:3>SSB <QSO_DATE:8>20260921 <TIME_ON:4>1200 <EOR>
+`
+	page2ADIF := `<CALL:6>SP9BBB <BAND:3>40m <MODE:3>XXX <QSO_DATE:8>20260921 <TIME_ON:4>1300 <EOR>
+`
+
+	// Page 1's identity request fails on the first download; page 2's is
+	// healthy in both runs.
+	sidecarHealthy := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		since := r.URL.Query().Get("since_id")
+		if r.URL.Query().Get("format") == "" {
+			// JSON id sidecar.
+			switch since {
+			case "0":
+				if !sidecarHealthy {
+					http.Error(w, "boom", http.StatusInternalServerError)
+					return
+				}
+				json.NewEncoder(w).Encode(map[string]any{
+					"data": []map[string]any{
+						{"id": 10, "call": "SP9AAA", "band": "20m", "mode": "SSB",
+							"qso_date": "2026-09-21 12:00:00"},
+					},
+				})
+			case "10":
+				json.NewEncoder(w).Encode(map[string]any{
+					"data": []map[string]any{
+						{"id": 11, "call": "SP9BBB", "band": "40m", "mode": "XXX",
+							"qso_date": "2026-09-21 13:00:00"},
+					},
+				})
+			}
+			return
+		}
+		// ADIF export pages.
+		if since == "10" {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{"exported": 1, "lastfetchedid": 11, "adif": page2ADIF},
+				"meta": map[string]any{"has_more": false, "total": 2},
+			})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{"exported": 1, "lastfetchedid": 10, "adif": page1ADIF},
+			"meta": map[string]any{"has_more": true, "total": 2},
+		})
+	}))
+	defer server.Close()
+
+	m := newLifecycleTestModel(t)
+	m.App.ConfigPath = filepath.Join(t.TempDir(), "config.yaml")
+	wl := m.App.Logbook.Wavelog
+	wl.URL = server.URL
+	wl.APIKey = "key"
+	wl.Enabled = true
+	wl.StationProfileID = "1"
+
+	m.ui.logbookEditor = NewLogbookEditor(LogbookEditorConfig{
+		DB: m.App.DB, WLURL: server.URL, WLKey: "key", WLStationID: "1",
+		WLLastFetchedID: wl.LastFetchedID, StationOperator: "OP", StationGrid: "JO90",
+	})
+
+	// --- First download: page-1 sidecar fails, the invalid page-2 record
+	// carries a known remote id (11). ---
+	pumpDownload(t, m)
+	le := m.ui.logbookEditor
+	if le.wlDownloadCount != 1 {
+		t.Fatalf("first download inserted = %d, want 1 (only the valid SP9AAA)", le.wlDownloadCount)
+	}
+	if le.wlDownloadHold != 1 {
+		t.Errorf("deferred = %d, want 1 (the unresolved SP9AAA identity)", le.wlDownloadHold)
+	}
+	if wl.LastFetchedID != 0 {
+		t.Fatalf("cursor advanced to %d despite the unresolved identity — an invalid record must not advance it", wl.LastFetchedID)
+	}
+	qsos, _ := store.ListQSOs(m.App.DB, 10, "")
+	var aaa *qso.QSO
+	for i := range qsos {
+		if qsos[i].Call == "SP9AAA" {
+			aaa = &qsos[i]
+		}
+	}
+	if aaa == nil {
+		t.Fatalf("downloaded SP9AAA missing: %+v", qsos)
+	}
+	if aaa.WavelogID != 0 {
+		t.Fatalf("SP9AAA WavelogID = %d, want 0 (page-1 sidecar failed)", aaa.WavelogID)
+	}
+
+	// --- Second download: healthy sidecar everywhere; the unresolved
+	// identity must be recovered and the invalid record safely passed. ---
+	sidecarHealthy = true
+	pumpDownload(t, m)
+	le = m.ui.logbookEditor
+	if le.wlDownloadCount != 0 {
+		t.Errorf("second download inserted = %d, want 0 (row already present)", le.wlDownloadCount)
+	}
+	if le.wlDownloadHold != 0 {
+		t.Errorf("deferred after recovery = %d, want 0", le.wlDownloadHold)
+	}
+	if wl.LastFetchedID != 11 {
+		t.Fatalf("cursor = %d after recovery, want 11", wl.LastFetchedID)
+	}
+	qsos, _ = store.ListQSOs(m.App.DB, 10, "")
+	aaa = nil
+	for i := range qsos {
+		if qsos[i].Call == "SP9AAA" {
+			aaa = &qsos[i]
+		}
+	}
+	if aaa == nil {
+		t.Fatalf("recovered SP9AAA missing: %+v", qsos)
+	}
+	if aaa.WavelogID != 10 {
+		t.Errorf("SP9AAA WavelogID = %d after recovery, want 10", aaa.WavelogID)
+	}
+}
+
+// TestDownload_DupeIDPersistenceFailureFreezesCheckpoint verifies that a
+// recovered remote id which could not be persisted freezes the cursor: the
+// local row is still unresolved, so the next download must retry the
+// recovery instead of skipping the record's id range forever.
+func TestDownload_DupeIDPersistenceFailureFreezesCheckpoint(t *testing.T) {
+	adifContent := `<ADIF_VER:5>3.1.4 <EOH>
+<CALL:6>SP9AAA <BAND:3>20m <MODE:3>SSB <QSO_DATE:8>20260921 <TIME_ON:4>1200 <EOR>
+`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("format") == "" {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{"id": 10, "call": "SP9AAA", "band": "20m", "mode": "SSB",
+						"qso_date": "2026-09-21 12:00:00"},
+				},
+			})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{"exported": 1, "lastfetchedid": 10, "adif": adifContent},
+			"meta": map[string]any{"has_more": false, "total": 1},
+		})
+	}))
+	defer server.Close()
+
+	m := newLifecycleTestModel(t)
+	m.App.ConfigPath = filepath.Join(t.TempDir(), "config.yaml")
+	wl := m.App.Logbook.Wavelog
+	wl.URL = server.URL
+	wl.APIKey = "key"
+	wl.Enabled = true
+	wl.StationProfileID = "1"
+
+	// Seed the local row the download will recognize as a duplicate (TimeOn
+	// matches the ADIF's 4-digit form, as the parser does not pad it).
+	if _, err := store.InsertQSO(m.App.DB, &qso.QSO{
+		Call: "SP9AAA", QSODate: "20260921", TimeOn: "1200", Band: "20m", Mode: "SSB", Source: "manual",
+	}); err != nil {
+		t.Fatalf("seed QSO: %v", err)
+	}
+
+	m.ui.logbookEditor = NewLogbookEditor(LogbookEditorConfig{
+		DB: m.App.DB, WLURL: server.URL, WLKey: "key", WLStationID: "1",
+		WLLastFetchedID: wl.LastFetchedID, StationOperator: "OP", StationGrid: "JO90",
+	})
+
+	// Deterministically block the remote-id persistence: the recovered id
+	// cannot be stored, so the cursor must freeze and the recovery must be
+	// retried by the next download.
+	if _, err := m.App.DB.Exec(`CREATE TRIGGER block_wl_update BEFORE UPDATE OF wavelog_id ON qsos
+		WHEN OLD.wavelog_id = 0 AND NEW.wavelog_id != 0
+		BEGIN SELECT RAISE(ABORT, 'blocked'); END`); err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+
+	pumpDownload(t, m)
+	le := m.ui.logbookEditor
+	if le.wlDownloadCount != 0 {
+		t.Errorf("first download inserted = %d, want 0 (duplicate)", le.wlDownloadCount)
+	}
+	if le.wlDownloadHold != 1 {
+		t.Errorf("deferred = %d, want 1 (unpersisted remote id)", le.wlDownloadHold)
+	}
+	if wl.LastFetchedID != 0 {
+		t.Fatalf("cursor advanced to %d despite the failed id persistence", wl.LastFetchedID)
+	}
+	qsos, _ := store.ListQSOs(m.App.DB, 10, "")
+	if len(qsos) != 1 || qsos[0].WavelogID != 0 {
+		t.Fatalf("row after failed recovery: %+v; want single row with WavelogID=0", qsos)
+	}
+
+	// Remove the blocker and retry — the recovery must succeed.
+	if _, err := m.App.DB.Exec(`DROP TRIGGER block_wl_update`); err != nil {
+		t.Fatalf("drop trigger: %v", err)
+	}
+	pumpDownload(t, m)
+	le = m.ui.logbookEditor
+	if le.wlDownloadHold != 0 {
+		t.Errorf("deferred after recovery = %d, want 0", le.wlDownloadHold)
+	}
+	if wl.LastFetchedID != 10 {
+		t.Fatalf("cursor = %d after recovery, want 10", wl.LastFetchedID)
+	}
+	qsos, _ = store.ListQSOs(m.App.DB, 10, "")
+	if len(qsos) != 1 || qsos[0].WavelogID != 10 {
+		t.Fatalf("row after recovery: %+v; want WavelogID=10", qsos)
 	}
 }

@@ -40,11 +40,13 @@ func (le *LogbookEditor) doBatchUpload() tea.Cmd {
 	// editor from the command goroutine. The generation and database bind
 	// the result to this editor instance.
 	db := le.db
+	release := le.dbLease(db)
 	gen := le.gen
 	qsos := le.qsos
 
 	applog.Info("Wavelog: batch upload starting")
 	return func() tea.Msg {
+		defer release()
 		if db != nil {
 			total, err := store.CountUnsentQSOs(db)
 			if err != nil {
@@ -183,6 +185,7 @@ func (le *LogbookEditor) detectUploadMismatches(unsent []qso.QSO) ([]qso.QSO, []
 
 func (le *LogbookEditor) doNormalizeAndUpload() tea.Cmd {
 	db := le.db
+	release := le.dbLease(db)
 	gen := le.gen
 	mismatch := le.mismatchQSOs
 
@@ -212,35 +215,28 @@ func (le *LogbookEditor) doNormalizeAndUpload() tea.Cmd {
 	applog.InfoDetail("Wavelog: normalizing station fields", fmt.Sprintf("count=%d call=%s op=%s grid=%s", len(normIDs), wlCall, logOp, logGrid))
 
 	return func() tea.Msg {
+		defer release()
 		if err := store.NormalizeStationFields(db, normIDs, wlCall, logOp, logGrid); err != nil {
 			applog.Error("Wavelog: normalization failed", "error", err)
-			return editorMsg{wlOK: false, err: fmt.Errorf("normalize: %w", err)}
+			return editorMsg{wlOK: false, err: fmt.Errorf("normalize: %w", err), gen: gen}
 		}
-		// Also update in-memory QSO list so the list view reflects changes.
-		// Only the fields that were actually normalized change.
-		for i := range le.qsos {
-			for _, mid := range normIDs {
-				if le.qsos[i].ID == mid {
-					if wlCall != "" {
-						le.qsos[i].StationCallsign = wlCall
-					}
-					if logOp != "" {
-						le.qsos[i].Operator = logOp
-					}
-					if logGrid != "" {
-						le.qsos[i].MyGridSquare = logGrid
-					}
-					break
-				}
-			}
+		// The worker is limited to database work: it returns the changed
+		// fields and affected ids as immutable result data. The owner loop
+		// applies them to the in-memory list after validating the
+		// generation — a worker must never mutate le.qsos, which the owner
+		// loop reads concurrently (table rebuilds).
+		return editorMsg{
+			normalized: len(normIDs), gen: gen,
+			normIDs: normIDs, normCall: wlCall, normOp: logOp, normGrid: logGrid,
 		}
-		return editorMsg{normalized: len(normIDs), gen: gen}
 	}
 }
 
 func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 	url, key, sid := le.wlURL, le.wlKey, le.wlStationID
 	db := le.db
+	release := le.dbLease(db)
+	gen := le.gen
 
 	const chunkSize = 50
 
@@ -252,6 +248,7 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 	}
 
 	return func() tea.Msg {
+		defer release()
 		totalOK := 0
 		totalDup := 0
 		totalUnresolved := 0
@@ -286,7 +283,7 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 			}
 		}
 		if len(unsent) == 0 {
-			return editorMsg{wlOK: true, wlCall: fmt.Sprintf("%d QSOs (already on Wavelog)", totalRecon)}
+			return editorMsg{wlOK: true, wlCall: fmt.Sprintf("%d QSOs (already on Wavelog)", totalRecon), gen: gen}
 		}
 
 		for start := 0; start < len(unsent); start += chunkSize {
@@ -344,7 +341,7 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 		// as success for the entire input count.
 		if totalOK+totalDup+totalUnresolved == 0 && lastErr != nil {
 			return editorMsg{wlOK: false, err: lastErr, wlFailCount: totalFail,
-				wlCall: fmt.Sprintf("%d QSOs", len(unsent))}
+				wlCall: fmt.Sprintf("%d QSOs", len(unsent)), gen: gen}
 		}
 		var parts []string
 		if totalOK > 0 {
@@ -363,14 +360,14 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 		applog.InfoDetail("Wavelog: chunked upload done",
 			fmt.Sprintf("ok=%d dup=%d unresolved=%d fail=%d recon=%d total=%d",
 				totalOK, totalDup, totalUnresolved, totalFail, totalRecon, len(unsent)))
-		return editorMsg{
-			wlQSOID:           unsent[0].ID,
+		return editorMsg{wlQSOID: unsent[0].ID,
 			wlOK:              true,
 			wlCall:            strings.Join(parts, ", "),
 			wlSentCount:       totalOK,
 			wlDupCount:        totalDup,
 			wlFailCount:       totalFail,
 			wlUnresolvedCount: totalUnresolved,
+			gen:               gen,
 		}
 	}
 }
@@ -380,8 +377,11 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 func (le *LogbookEditor) uploadIndividual(unsent []qso.QSO) tea.Cmd {
 	url, key, sid := le.wlURL, le.wlKey, le.wlStationID
 	db := le.db
+	release := le.dbLease(db)
+	gen := le.gen
 
 	return func() tea.Msg {
+		defer release()
 		sentCount := 0
 		dupCount := 0
 		failCount := 0
@@ -414,7 +414,7 @@ func (le *LogbookEditor) uploadIndividual(unsent []qso.QSO) tea.Cmd {
 			fmt.Sprintf("sent=%d dup=%d unresolved=%d fail=%d", sentCount, dupCount, unresolved, failCount))
 
 		if failCount > 0 && sentCount+dupCount+unresolved == 0 {
-			return editorMsg{wlOK: false, err: lastErr, wlFailCount: failCount, wlCall: fmt.Sprintf("%d failed", failCount)}
+			return editorMsg{wlOK: false, err: lastErr, wlFailCount: failCount, wlCall: fmt.Sprintf("%d failed", failCount), gen: gen}
 		}
 		var parts []string
 		if sentCount > 0 {
@@ -437,6 +437,7 @@ func (le *LogbookEditor) uploadIndividual(unsent []qso.QSO) tea.Cmd {
 			wlDupCount:        dupCount,
 			wlFailCount:       failCount,
 			wlUnresolvedCount: unresolved,
+			gen:               gen,
 		}
 	}
 }
@@ -459,10 +460,14 @@ func (le *LogbookEditor) doUploadToWavelog() tea.Cmd {
 	url, key, sid := le.wlURL, le.wlKey, le.wlStationID
 	qID := q.ID
 	call := q.Call
+	gen := le.gen
+	db := le.db
+	release := le.dbLease(db)
 
 	return func() tea.Msg {
-		ok, isDup, _, err := postQSOSingle(url, key, sid, q, le.db)
-		return editorMsg{wlQSOID: qID, wlCall: call, wlOK: ok, wlDup: isDup, err: err}
+		defer release()
+		ok, isDup, _, err := postQSOSingle(url, key, sid, q, db)
+		return editorMsg{wlQSOID: qID, wlCall: call, wlOK: ok, wlDup: isDup, err: err, gen: gen}
 	}
 }
 
