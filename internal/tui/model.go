@@ -560,6 +560,19 @@ func kittyTerminalEnv() bool {
 	return false
 }
 
+// enqueuePendingADIFLocked appends a WSJT-X ADIF record to the pending
+// queue (caller holds adifQ.mu). Defensive bound: the queue is drained every
+// tick, so it only grows when the database stays busy for a long time — past
+// maxPendingADIFs the oldest record is dropped instead of growing without
+// limit.
+func (m *Model) enqueuePendingADIFLocked(adif string) {
+	if len(m.adifQ.adifs) >= maxPendingADIFs {
+		m.adifQ.adifs = m.adifQ.adifs[len(m.adifQ.adifs)-maxPendingADIFs+1:]
+		applog.Warn("WSJT-X: pending ADIF queue full — dropping oldest record")
+	}
+	m.adifQ.adifs = append(m.adifQ.adifs, adif)
+}
+
 func (m *Model) Init() tea.Cmd {
 	// Warn if the encrypted secrets file is corrupted or from another
 	// machine — passwords and API keys must be re-entered.
@@ -573,7 +586,7 @@ func (m *Model) Init() tea.Cmd {
 	applog.Info("Rotator: ready (experimental — requires hamlib or compatible backend)")
 	m.App.WSJTX.OnADIF = func(adif string) {
 		m.adifQ.mu.Lock()
-		m.adifQ.adifs = append(m.adifQ.adifs, adif)
+		m.enqueuePendingADIFLocked(adif)
 		// Persist to disk immediately so QSOs survive crashes.
 		// Failures are silent — the in-memory queue is authoritative.
 		m.savePendingADIFsLocked()
@@ -581,6 +594,9 @@ func (m *Model) Init() tea.Cmd {
 	}
 	// Recover any ADIF records left on disk from a previous crash.
 	if saved := loadPendingADIFs(); len(saved) > 0 {
+		if len(saved) > maxPendingADIFs {
+			saved = saved[len(saved)-maxPendingADIFs:]
+		}
 		m.adifQ.adifs = append(m.adifQ.adifs, saved...)
 		applog.Info("WSJT-X: recovered pending ADIF records from disk", "count", len(saved))
 	}

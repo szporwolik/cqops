@@ -142,6 +142,8 @@
 - **Dashboard SSE marshals once per event**: the JSON payload was encoded once per browser tab; `Hub.Publish` now marshals once and every subscriber writes the same bytes.
 - **Added `idx_qsos_contest_adif_id`** so the contest OR-filters (`contest_id = ? OR contest_adif_id = ?`) in the logbook list, page queries and dupe sets use index scans instead of a table scan.
 - **Per-frame debug logging no longer pre-formats arguments**: the APRS KISS/DB and GPS debug calls built `fmt.Sprintf` strings even with debug logging disabled — they now pass raw values to the logger.
+- **Dashboard country-worked check uses its indexes**: `LOWER(country) = LOWER(?)` could not use any index and full-scanned the logbook on every dashboard push. The entity-number arm and the case-insensitive country arm (`COLLATE NOCASE`) now seek their own indexes, with identical semantics; the result cache is bounded and clears wholesale when full.
+- **WSJT-X pending-ADIF queue is bounded**: the queue is drained every tick, so it only grows when the database stays busy for a long time — it now caps at 64 records and drops the oldest rather than growing memory without limit.
 
 ## v0.10.1 — 2026-09-20
 
