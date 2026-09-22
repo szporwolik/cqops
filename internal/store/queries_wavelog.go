@@ -54,6 +54,18 @@ func QSOHasPendingSync(db *sql.DB, id int64) (bool, error) {
 	return dirty != 0, nil
 }
 
+// ClearWavelogDirtyIfRevision clears the pending-sync flag only when the
+// row's pending-sync revision still equals rev — the revision of the exact
+// edit the PATCH pushed. An acknowledgement for an older revision must not
+// clear a newer pending edit; the newer edit's own acknowledgement will.
+func ClearWavelogDirtyIfRevision(db *sql.DB, id, rev int64) error {
+	_, err := db.Exec(`UPDATE qsos SET wavelog_dirty=0 WHERE id=? AND wavelog_dirty_rev=?`, id, rev)
+	if err != nil {
+		return fmt.Errorf("clear wavelog dirty: %w", err)
+	}
+	return nil
+}
+
 // NormalizeStationFields updates station_callsign, operator and my_gridsquare
 // for a set of QSOs. Only the fields with a non-empty replacement value are
 // updated — empty means "keep what is stored" (e.g. preserving original

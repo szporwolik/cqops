@@ -39,7 +39,7 @@ func TestApplyWavelogStation(t *testing.T) {
 // TestStationSyncAfterSaveAppliesOnOwnerLoop verifies the background station
 // sync only FETCHES in its worker: the profile is returned as a typed
 // message and the config mutation, save, active-logbook pointer and toast
-// all happen in the chooser's Update (owner loop).
+// all happen in the model's global handler (owner loop).
 func TestStationSyncAfterSaveAppliesOnOwnerLoop(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v2/station/1" || r.Method != http.MethodGet {
@@ -59,14 +59,16 @@ func TestStationSyncAfterSaveAppliesOnOwnerLoop(t *testing.T) {
 	defer srv.Close()
 
 	a := newChooserTestApp(t)
-	tq := NewToastQueue()
-	c := NewLogbookChooser(a, tq)
+	home := a.Config.Logbooks["home"]
+	a.Logbook = &home
+	m := New(a, nil)
 
 	// The saved logbook has stale station values.
 	lb := a.Config.Logbooks["home"]
 	lb.Station = config.Station{Callsign: "OLD", Grid: "AA00aa"}
 	a.Config.Logbooks["home"] = lb
 
+	c := NewLogbookChooser(a, NewToastQueue())
 	cmd := c.syncStationAfterSaveCmd("home", &config.WavelogConfig{
 		Enabled: true, URL: srv.URL, APIKey: "wl2_test", StationProfileID: "1",
 	})
@@ -83,10 +85,12 @@ func TestStationSyncAfterSaveAppliesOnOwnerLoop(t *testing.T) {
 	if sd.lbID != "home" {
 		t.Errorf("lbID = %q, want home", sd.lbID)
 	}
+	if sd.gen != logbookSyncGen.Load() {
+		t.Errorf("gen = %d, want %d", sd.gen, logbookSyncGen.Load())
+	}
 
-	// Owner loop: chooser.Update installs the result.
-	updated, followUp := c.Update(sd)
-	c = updated.(*LogbookChooser)
+	// Owner loop: the model's global handler installs the result.
+	followUp := m.handleStationSyncDone(sd)
 	if followUp == nil {
 		t.Fatal("expected the logbook-switched follow-up command")
 	}
@@ -110,6 +114,73 @@ func TestStationSyncAfterSaveAppliesOnOwnerLoop(t *testing.T) {
 	next := execCmd(followUp)
 	if _, ok := next.(logbookSwitchedMsg); !ok {
 		t.Errorf("follow-up = %T, want logbookSwitchedMsg", next)
+	}
+}
+
+// TestStationSyncDoneHandledAwayFromChooser reproduces the dropped-result
+// bug: the user saves a logbook with Wavelog enabled and leaves the chooser
+// before the station request finishes. The completion must still be applied
+// globally, and the switch bookkeeping must still follow.
+func TestStationSyncDoneHandledAwayFromChooser(t *testing.T) {
+	a := newChooserTestApp(t)
+	home := a.Config.Logbooks["home"]
+	a.Logbook = &home
+	m := New(a, nil)
+	m.screen = screenQSO // the chooser has already been left
+
+	lb := a.Config.Logbooks["home"]
+	lb.Station = config.Station{Callsign: "OLD", Grid: "AA00aa"}
+	a.Config.Logbooks["home"] = lb
+
+	// The save bumped the generation; the result arrives afterwards.
+	gen := logbookSyncGen.Add(1)
+	upd, cmd := m.Update(stationSyncDoneMsg{
+		lbID: "home", gen: gen,
+		st: &wavelog.Station{Callsign: "SP9SPM", Gridsquare: "KO00CA", DXCC: 269, CQ: 15, ITU: 28},
+	})
+	m = upd.(*Model)
+	if cmd == nil {
+		t.Fatal("expected the logbook-switched follow-up command")
+	}
+	next := execCmd(cmd)
+	if _, ok := next.(logbookSwitchedMsg); !ok {
+		t.Fatalf("follow-up = %T, want logbookSwitchedMsg", next)
+	}
+
+	lb = a.Config.Logbooks["home"]
+	if lb.Station.Grid != "KO00CA" || lb.Station.DXCC != 269 {
+		t.Errorf("station not synced away from the chooser: %+v", lb.Station)
+	}
+}
+
+// TestStationSyncDoneStaleGenerationDiscarded verifies the config-revision
+// guard: a sync result from a superseded save must not overwrite newer
+// station data nor re-trigger switch bookkeeping.
+func TestStationSyncDoneStaleGenerationDiscarded(t *testing.T) {
+	a := newChooserTestApp(t)
+	home := a.Config.Logbooks["home"]
+	a.Logbook = &home
+	m := New(a, nil)
+
+	lb := a.Config.Logbooks["home"]
+	lb.Station = config.Station{Callsign: "NEW", Grid: "JO90"}
+	a.Config.Logbooks["home"] = lb
+
+	// Two saves happen; the result belongs to the first one.
+	gen := logbookSyncGen.Add(1) // first save
+	logbookSyncGen.Add(1)        // second save supersedes it
+
+	upd, cmd := m.Update(stationSyncDoneMsg{
+		lbID: "home", gen: gen,
+		st: &wavelog.Station{Callsign: "SP9SPM", Gridsquare: "KO00CA"},
+	})
+	m = upd.(*Model)
+	if cmd != nil {
+		t.Error("a stale sync result must not produce the switch follow-up")
+	}
+	lb = a.Config.Logbooks["home"]
+	if lb.Station.Grid != "JO90" || lb.Station.Callsign != "NEW" {
+		t.Errorf("stale station data overwrote newer configuration: %+v", lb.Station)
 	}
 }
 

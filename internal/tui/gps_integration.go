@@ -41,10 +41,6 @@ type gpsState struct {
 	didToastConnect bool
 	didToastFix     bool
 	didToastLost    bool
-
-	// original station grid — saved before GPS override is applied,
-	// restored when GPS is stopped or GPSGrid is disabled.
-	originalStationGrid string
 }
 
 // startGPS opens the serial port and starts reading NMEA sentences.
@@ -150,7 +146,6 @@ func (m *Model) startGPSSerial(cfg config.GPSConfig) tea.Cmd {
 
 // stopGPS closes the serial port and stops the GPS client.
 func (m *Model) stopGPS() {
-	m.restoreGPSGridOverride()
 	if m.gps.client != nil {
 		m.gps.client.Stop()
 		m.gps.client = nil
@@ -166,38 +161,6 @@ func (m *Model) stopGPS() {
 	m.gps.didToastFix = false
 	m.gps.didToastLost = false
 	applog.Info("GPS: integration stopped")
-}
-
-// applyGPSGridOverride sets the station grid to the GPS-derived grid
-// when GPSGrid is enabled in the logbook config. The original grid is
-// saved for later restoration.
-func (m *Model) applyGPSGridOverride() {
-	if m.App == nil || m.App.Logbook == nil {
-		return
-	}
-	if !m.App.Logbook.Station.GPSGrid || m.gps.lastGrid == "" {
-		return
-	}
-	if m.gps.originalStationGrid != "" {
-		return // already applied
-	}
-	m.gps.originalStationGrid = m.App.Logbook.Station.Grid
-	m.App.Logbook.Station.Grid = m.gps.lastGrid
-	applog.Info("GPS: grid override applied",
-		"original", truncateGrid(m.gps.originalStationGrid, m.gpsLogPrecision()),
-		"gps", truncateGrid(m.gps.lastGrid, m.gpsLogPrecision()),
-	)
-}
-
-// restoreGPSGridOverride restores the original station grid when the
-// GPS grid was overridden. Safe to call multiple times.
-func (m *Model) restoreGPSGridOverride() {
-	if m.gps.originalStationGrid == "" || m.App == nil || m.App.Logbook == nil {
-		return
-	}
-	m.App.Logbook.Station.Grid = m.gps.originalStationGrid
-	applog.Info("GPS: grid override restored", "grid", truncateGrid(m.gps.originalStationGrid, m.gpsLogPrecision()))
-	m.gps.originalStationGrid = ""
 }
 
 // handleGPSTick reads the latest position from the GPS client and
@@ -256,13 +219,10 @@ func (m *Model) handleGPSTick() tea.Cmd {
 			)
 			// Propagate EVERY position change to the app: APRS beacons and
 			// the effective grid follow movement instead of freezing at the
-			// first acquisition.
+			// first acquisition. The configured station grid is NEVER
+			// mutated — effectiveGrid() derives the GPS value from this
+			// state, so an override can't leak across logbook boundaries.
 			m.App.SetGPSGrid(m.gps.lastGrid, true)
-			// A movement while the override is active updates the station
-			// grid in place; the saved fallback grid stays untouched.
-			if m.gps.originalStationGrid != "" && m.App.Logbook != nil {
-				m.App.Logbook.Station.Grid = m.gps.lastGrid
-			}
 		}
 		if !prevFix {
 			m.App.SetGPSGrid(m.gps.lastGrid, true)
@@ -273,14 +233,12 @@ func (m *Model) handleGPSTick() tea.Cmd {
 		m.gps.hasFix = false
 		if prevFix {
 			m.App.SetGPSGrid(m.gps.lastGrid, false)
-			m.restoreGPSGridOverride()
 		}
 		m.gps.connectFailures = 0
 	} else {
 		m.gps.hasFix = false
 		if prevFix {
 			m.App.SetGPSGrid(m.gps.lastGrid, false)
-			m.restoreGPSGridOverride()
 		}
 	}
 
@@ -310,8 +268,9 @@ func (m *Model) handleGPSTick() tea.Cmd {
 			"lon", fmt.Sprintf("%.6f", m.gps.lastLon),
 			"grid", m.gps.lastGrid,
 		)
-		// Apply GPS grid override when GPSGrid flag is set.
-		m.applyGPSGridOverride()
+		// Apply GPS grid override when GPSGrid flag is set — handled
+		// entirely by effectiveGrid(), which prefers the live GPS grid
+		// whenever the flag is on and a fix exists.
 		// Restart APRS so the range filter and beacon position are
 		// rebuilt with the actual GPS location instead of the static
 		// configured grid.

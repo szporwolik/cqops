@@ -195,6 +195,109 @@ func TestHybridListenerAcceptSurvivesPeerEOF(t *testing.T) {
 	got.Close()
 }
 
+// TestHybridListener_CloseClosesIdleClients reproduces the shutdown leak:
+// clients connected but not yet sending their first byte used to stay open
+// after Close because the inherited Listener.Close never managed in-flight
+// classification. Close must return promptly and every client must observe
+// the connection closing.
+func TestHybridListener_CloseClosesIdleClients(t *testing.T) {
+	// Shorten classification so the shutdown join is fast and deterministic.
+	orig := hybridPeekTimeout
+	hybridPeekTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { hybridPeekTimeout = orig })
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	hl := newHybridListener(ln, &tls.Config{})
+
+	// Clients connect and never send a byte (no Accept reader drains them).
+	const idleConns = 8
+	var conns []net.Conn
+	for i := 0; i < idleConns; i++ {
+		c, err := net.Dial("tcp", ln.Addr().String())
+		if err != nil {
+			t.Fatalf("dial idle conn %d: %v", i, err)
+		}
+		conns = append(conns, c)
+	}
+	// Let every connection reach classification.
+	time.Sleep(50 * time.Millisecond)
+
+	closed := make(chan struct{})
+	go func() { hl.Close(); close(closed) }()
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close hung with idle clients connected")
+	}
+
+	// Every client must observe the shutdown as a close, not a hang.
+	for i, c := range conns {
+		c.SetReadDeadline(time.Now().Add(2 * time.Second))
+		if _, err := c.Read(make([]byte, 1)); err == nil {
+			t.Errorf("client %d: read succeeded — connection left open after Close", i)
+		}
+		c.Close()
+	}
+	// The listener reports itself closed; a second Close is a no-op.
+	if _, err := hl.Accept(); err == nil {
+		t.Error("Accept after Close should return an error")
+	}
+	if err := hl.Close(); err != nil {
+		t.Errorf("second Close = %v, want no error", err)
+	}
+}
+
+// TestHybridListener_CloseWithSaturatedResultsQueue verifies shutdown when
+// the result channel is full and workers are blocked delivering — the accept
+// loop is also saturated on the slot pool. Close must unblock everyone and
+// close every connection, not hang forever.
+func TestHybridListener_CloseWithSaturatedResultsQueue(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	hl := newHybridListener(ln, &tls.Config{})
+
+	// More clients than result-buffer + slot capacity; each sends a byte
+	// immediately so classification completes instantly and the result
+	// queue saturates while nobody reads Accept.
+	const n = 80
+	var conns []net.Conn
+	for i := 0; i < n; i++ {
+		c, err := net.Dial("tcp", ln.Addr().String())
+		if err != nil {
+			t.Fatalf("dial conn %d: %v", i, err)
+		}
+		if _, err := c.Write([]byte("G")); err != nil {
+			t.Fatalf("write conn %d: %v", i, err)
+		}
+		conns = append(conns, c)
+	}
+	time.Sleep(100 * time.Millisecond) // let workers saturate the queue
+
+	closed := make(chan struct{})
+	go func() { hl.Close(); close(closed) }()
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Close hung with a saturated results queue")
+	}
+
+	for i, c := range conns {
+		c.SetReadDeadline(time.Now().Add(2 * time.Second))
+		if _, err := c.Read(make([]byte, 1)); err == nil {
+			t.Errorf("client %d: read succeeded — connection left open after Close", i)
+		}
+		c.Close()
+	}
+	if _, err := hl.Accept(); err == nil {
+		t.Error("Accept after Close should return an error")
+	}
+}
+
 // startTLSServer boots a TLS dashboard on an ephemeral port and fails the
 // test if it does not come online.
 func startTLSServer(t *testing.T) *Server {

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -132,10 +133,12 @@ func TestHandleGPSTickExpiresStaleFix(t *testing.T) {
 	}
 }
 
-// TestHandleGPSTickPropagatesMovementToStationGrid verifies every position
-// change reaches the app (APRS/effective grid) and that movement updates the
-// station-grid override without losing the saved fallback grid.
-func TestHandleGPSTickPropagatesMovementToStationGrid(t *testing.T) {
+// TestHandleGPSTickPropagatesMovementToEffectiveGrid verifies every position
+// change reaches the app (APRS/effective grid) and that the effective grid
+// follows movement — while the CONFIGURED station grid is never mutated.
+// The effective grid derives the GPS value from live state, so an override
+// can no longer write into (or leak across) logbook configuration.
+func TestHandleGPSTickPropagatesMovementToEffectiveGrid(t *testing.T) {
 	r := &scriptNMEAReader{
 		lines: []string{"$GPGGA,120000.000,5003.0000,N,01956.4000,E,1,12,1.0,201.3,M,42.0,M,,*45"},
 		block: true,
@@ -151,32 +154,102 @@ func TestHandleGPSTickPropagatesMovementToStationGrid(t *testing.T) {
 	m.gps.client.Start()
 	defer m.gps.client.Stop()
 
-	// First fix: override applied, fallback saved.
+	// First fix: effective grid is the GPS grid, the configured fallback
+	// stays untouched.
 	time.Sleep(30 * time.Millisecond)
 	m.handleGPSTick()
 	if !m.gps.hasFix || m.gps.lastGrid == "" {
 		t.Fatalf("expected a fix, got hasFix=%v grid=%q", m.gps.hasFix, m.gps.lastGrid)
 	}
 	grid1 := m.gps.lastGrid
-	if m.App.Logbook.Station.Grid != grid1 {
-		t.Errorf("override not applied: station grid %q, want %q", m.App.Logbook.Station.Grid, grid1)
+	if got := m.effectiveGrid(); got != grid1 {
+		t.Errorf("effective grid = %q, want GPS grid %q", got, grid1)
 	}
-	if m.gps.originalStationGrid != "JO90" {
-		t.Errorf("fallback grid not saved: %q", m.gps.originalStationGrid)
+	if m.App.Logbook.Station.Grid != "JO90" {
+		t.Errorf("configured station grid was mutated: %q, want JO90", m.App.Logbook.Station.Grid)
 	}
 
-	// The receiver moves to a different grid — the station grid must follow
-	// without permanently replacing the configured fallback.
+	// The receiver moves to a different grid — the effective grid must
+	// follow without replacing the configured fallback.
 	r.addLine("$GPGGA,120001.000,5231.2000,N,01324.0000,E,1,12,1.0,201.3,M,42.0,M,,*45")
 	time.Sleep(30 * time.Millisecond)
 	m.handleGPSTick()
 	if m.gps.lastGrid == grid1 {
 		t.Fatal("grid did not move despite the new position")
 	}
-	if m.App.Logbook.Station.Grid != m.gps.lastGrid {
-		t.Errorf("station grid did not follow movement: %q, want %q", m.App.Logbook.Station.Grid, m.gps.lastGrid)
+	if got := m.effectiveGrid(); got != m.gps.lastGrid {
+		t.Errorf("effective grid did not follow movement: %q, want %q", got, m.gps.lastGrid)
 	}
-	if m.gps.originalStationGrid != "JO90" {
-		t.Errorf("fallback grid was lost after movement: %q", m.gps.originalStationGrid)
+	if m.App.Logbook.Station.Grid != "JO90" {
+		t.Errorf("configured station grid was mutated after movement: %q, want JO90", m.App.Logbook.Station.Grid)
+	}
+}
+
+// TestGPSGridOverrideDoesNotCrossLogbookBoundary reproduces the reported
+// bug: enabling the GPS grid in logbook A and switching to B used to leave
+// A's saved fallback pending, so losing the fix wrote A's grid into B's
+// active station state. The effective grid must never mutate configured
+// station state, so each logbook keeps its own configured grid.
+func TestGPSGridOverrideDoesNotCrossLogbookBoundary(t *testing.T) {
+	orig := gpsFixTTL
+	gpsFixTTL = 100 * time.Millisecond
+	t.Cleanup(func() { gpsFixTTL = orig })
+
+	r := &scriptNMEAReader{
+		lines: []string{"$GPGGA,120000.000,5003.0000,N,01956.4000,E,1,12,1.0,201.3,M,42.0,M,,*45"},
+		block: true,
+	}
+
+	// Logbook A: GPS grid enabled, configured fallback JO90.
+	m := newLifecycleTestModel(t)
+	m.App.ConfigPath = filepath.Join(t.TempDir(), "config.yaml")
+	t.Cleanup(m.App.StopAPRSTimer)
+	m.App.Config.Integrations.GPS.Enabled = true
+	m.App.Logbook.Station.Grid = "JO90"
+	m.App.Logbook.Station.GPSGrid = true
+	m.gps.client = gps.NewClient(r)
+	m.gps.client.Start()
+	defer m.gps.client.Stop()
+
+	time.Sleep(30 * time.Millisecond)
+	m.handleGPSTick()
+	if !m.gps.hasFix {
+		t.Fatal("expected a GPS fix on logbook A")
+	}
+	if m.effectiveGrid() == "JO90" {
+		t.Fatal("A's effective grid should be GPS-derived, not the fallback")
+	}
+
+	// Switch to logbook B: its own configured grid, GPS grid disabled.
+	lbB := config.Logbook{
+		Station:      config.Station{Callsign: "SP9B", Grid: "KO00"},
+		DatabasePath: filepath.Join(t.TempDir(), "b.db"),
+	}
+	m.App.Config.Logbooks["b"] = lbB
+	if err := m.App.SwitchLogbook("b"); err != nil {
+		t.Fatalf("switch to B: %v", err)
+	}
+	t.Cleanup(func() { m.App.DB.Close() })
+
+	// B has GPS grid disabled — its configured grid wins immediately.
+	if got := m.effectiveGrid(); got != "KO00" {
+		t.Errorf("B's effective grid = %q, want its configured KO00", got)
+	}
+
+	// The fix ages out while on B — B's configured grid must survive.
+	time.Sleep(150 * time.Millisecond)
+	m.handleGPSTick()
+	if m.gps.hasFix {
+		t.Fatal("fix should have aged out")
+	}
+	if m.App.Logbook.Station.Grid != "KO00" {
+		t.Errorf("B's configured grid was replaced: %q, want KO00", m.App.Logbook.Station.Grid)
+	}
+	if got := m.effectiveGrid(); got != "KO00" {
+		t.Errorf("B's effective grid after fix loss = %q, want KO00", got)
+	}
+	// A's configured fallback is also intact in the config map.
+	if got := m.App.Config.Logbooks["test"].Station.Grid; got != "JO90" {
+		t.Errorf("A's configured grid was mutated: %q, want JO90", got)
 	}
 }

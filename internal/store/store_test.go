@@ -56,6 +56,60 @@ func TestWavelogDirtyRoundtrip(t *testing.T) {
 	}
 }
 
+// TestSaveQSOForSyncAtomicDirtyMark verifies the edit, the dirty flag and the
+// pending-sync revision change together, and that only an acknowledgement for
+// the CURRENT revision clears the flag — an older revision must not.
+func TestSaveQSOForSyncAtomicDirtyMark(t *testing.T) {
+	db := newTempDB(t)
+	id := mustInsertQSO(t, db, &qso.QSO{Call: "SP9MOA", QSODate: "20240501",
+		TimeOn: "120000", Band: "20m", Mode: "SSB", WavelogID: 77})
+
+	q1 := &qso.QSO{ID: id, Call: "SP9MOA", QSODate: "20240501", TimeOn: "120000",
+		Band: "20m", Mode: "SSB", Comment: "edit one", WavelogID: 77}
+	rev1, err := SaveQSOForSync(db, q1)
+	if err != nil {
+		t.Fatalf("SaveQSOForSync: %v", err)
+	}
+	if rev1 != 1 {
+		t.Fatalf("rev1 = %d, want 1", rev1)
+	}
+	row, err := GetQSOByID(db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if row.Comment != "edit one" || !row.WavelogDirty {
+		t.Fatalf("row after save = comment %q dirty %v; want edit one, true", row.Comment, row.WavelogDirty)
+	}
+
+	q2 := &qso.QSO{ID: id, Call: "SP9MOA", QSODate: "20240501", TimeOn: "120000",
+		Band: "20m", Mode: "SSB", Comment: "edit two", WavelogID: 77}
+	rev2, err := SaveQSOForSync(db, q2)
+	if err != nil {
+		t.Fatalf("SaveQSOForSync #2: %v", err)
+	}
+	if rev2 != 2 {
+		t.Fatalf("rev2 = %d, want 2", rev2)
+	}
+
+	// An acknowledgement for the OLDER revision must not clear the flag.
+	if err := ClearWavelogDirtyIfRevision(db, id, rev1); err != nil {
+		t.Fatalf("ClearWavelogDirtyIfRevision(old): %v", err)
+	}
+	dirty, err := QSOHasPendingSync(db, id)
+	if err != nil || !dirty {
+		t.Errorf("pending sync after old-revision clear = %v (err=%v), want true", dirty, err)
+	}
+
+	// The CURRENT revision's acknowledgement clears it.
+	if err := ClearWavelogDirtyIfRevision(db, id, rev2); err != nil {
+		t.Fatalf("ClearWavelogDirtyIfRevision(current): %v", err)
+	}
+	dirty, err = QSOHasPendingSync(db, id)
+	if err != nil || dirty {
+		t.Errorf("pending sync after current-revision clear = %v (err=%v), want false", dirty, err)
+	}
+}
+
 func mustInsertQSO(t *testing.T, db *sql.DB, q *qso.QSO) int64 {
 	t.Helper()
 	id, err := InsertQSO(db, q)

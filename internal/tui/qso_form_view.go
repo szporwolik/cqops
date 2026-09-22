@@ -611,9 +611,11 @@ func (m *Model) formPathRow(width int) string {
 }
 
 // dxcPathSpotsTTL is how long the DB spot fallback may serve the path line
-// before a re-fetch. The results are time-dependent (15-minute window), so
-// an unexpired cache would render spots long after they aged out.
-const dxcPathSpotsTTL = 2 * time.Minute
+// before a re-fetch, and how long a rendered path line may be served before
+// it is re-rendered. The results are time-dependent (15-minute spot window),
+// so an unexpired cache would render spots long after they aged out. A var
+// so tests can shorten the expiry.
+var dxcPathSpotsTTL = 2 * time.Minute
 
 // dxcPathLine returns a line showing nearby DXC spots around the current
 // frequency. Displays up to N spots below and N above, with frequencies.
@@ -642,7 +644,13 @@ func (m *Model) dxcPathLine(width int) string {
 		m.rc.dxcSpotsBand, m.rc.dxcDupeSig)
 	sig := sigB.String()
 	if m.rc.dxcPathSig == sig && m.rc.dxcPathLine != "" {
-		return m.rc.dxcPathLine
+		// The rendered line is time-dependent — spot age filters and the
+		// fallback TTL both move while the inputs stay unchanged. A line
+		// rendered more than dxcPathSpotsTTL ago must be re-rendered so
+		// aged-out spots disappear and an expired fallback re-fetches.
+		if time.Since(m.rc.dxcPathRenderedAt) < dxcPathSpotsTTL {
+			return m.rc.dxcPathLine
+		}
 	}
 
 	// Collect spots on the current band, sorted by frequency.
@@ -717,12 +725,14 @@ func (m *Model) dxcPathLine(width int) string {
 		// than leaking spots from other continents.
 		m.rc.dxcPathSig = sig
 		m.rc.dxcPathLine = ""
+		m.rc.dxcPathRenderedAt = time.Now()
 		return ""
 	}
 
 	if len(spots) == 0 {
 		m.rc.dxcPathSig = sig
 		m.rc.dxcPathLine = ""
+		m.rc.dxcPathRenderedAt = time.Now()
 		return ""
 	}
 
@@ -883,6 +893,7 @@ func (m *Model) dxcPathLine(width int) string {
 
 	m.rc.dxcPathSig = sig
 	m.rc.dxcPathLine = dxcLine
+	m.rc.dxcPathRenderedAt = time.Now()
 	return dxcLine
 }
 

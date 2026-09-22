@@ -431,6 +431,14 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 	case qrzStatusMsg:
 		m.lookup.qrzOnline = r.online
 		return true, nil
+	case stationSyncDoneMsg:
+		// Handled globally — the chooser may be closed before the station
+		// fetch completes, and the result must still apply.
+		return true, m.handleStationSyncDone(r)
+	case logbookSwitchedMsg:
+		// The switch bookkeeping follows every logbook change (cycled,
+		// chooser, created) even when the chooser screen is gone.
+		return true, m.handleLogbookSwitched()
 	case httpStatusMsg:
 		if r.client != nil {
 			m.http.client = r.client

@@ -38,35 +38,9 @@ func (m *Model) handleChooserUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 		m.lookup.wlForceCheck = true
 		m.needRefresh = true
 	}
-	// Logbook was switched via Enter in the chooser — force WL check and
-	// immediately refresh QSOs (mirrors cycleLogbook behaviour).
-	if _, ok := msg.(logbookSwitchedMsg); ok {
-		m.lookup.wlPrivateData = nil // WL data is logbook-specific
-		m.lookup.wlForceCheck = true
-		m.needRefresh = true
-		m.invalidatePartnerMapCache()
-		m.rc.logStatsSig = ""
-		m.rc.workedSummarySig = ""
-		m.rc.pathSig = ""
-		m.rc.pathLine = ""
-		// Recheck dupe and new-call status against the new logbook.
-		if strings.TrimSpace(m.fields[fieldCall].Value()) != "" {
-			m.checkDupe()
-		}
-		// The callbook registry captured the old *sql.DB when it was
-		// built — rebuild it for the new logbook and re-trigger the
-		// lookup so the form never shows the retired logbook's history.
-		m.rebuildCallbookRegistry()
-		m.lookup.qrzLookupDone = false
-		m.lookup.qrzLast = time.Time{}
-		m.lookup.callbookToastCall = ""
-		if call := strings.TrimSpace(m.fields[fieldCall].Value()); call != "" {
-			if c := m.callbookLookup(call); c != nil {
-				cmd = tea.Batch(cmd, c)
-			}
-		}
-		cmd = tea.Batch(cmd, m.refreshQSOS())
-	}
+	// Logbook switches are booked globally in handleAsyncMessages via
+	// logbookSwitchedMsg / stationSyncDoneMsg — the chooser may be closed
+	// before the station fetch completes, so nothing is done here.
 	return m, cmd
 }
 
@@ -823,12 +797,22 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 		}
 		if em.wlFetchQSOID != 0 {
 			if em.wlFetchQSO != nil {
-				applied, err := m.ui.logbookEditor.ApplyRemoteRefresh(em.wlFetchQSO, em.wlFetchRev)
+				applied, err := m.ui.logbookEditor.ApplyRemoteRefresh(em.wlFetchQSO, remoteRefreshRequest{
+					gen:     em.wlFetchGen,
+					db:      em.wlFetchDB,
+					localID: em.wlFetchQSOID,
+					rev:     em.wlFetchRev,
+				})
 				if err != nil {
 					applog.Warn("Wavelog: apply remote refresh failed", "error", err)
 				} else if applied {
 					m.toasts.Success("Wavelog: QSO refreshed from server")
-				} else if m.ui.logbookEditor.mode == edModeEdit {
+				} else if m.ui.logbookEditor.mode == edModeEdit &&
+					(em.wlFetchGen == 0 || em.wlFetchGen == m.ui.logbookEditor.gen) &&
+					(em.wlFetchDB == nil || em.wlFetchDB == m.ui.logbookEditor.db) {
+					// The result belongs to this editor but was stale
+					// (typed since, other row, pending sync). Results from
+					// a replaced editor/database are dropped silently.
 					m.toasts.Warn("Wavelog: remote refresh skipped — your unsaved edits were kept")
 				}
 			} else if em.wlFetchErr != "" {

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"database/sql"
 	"fmt"
 	"math"
 	"strconv"
@@ -13,35 +14,70 @@ import (
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
+// remoteRefreshRequest is the identity captured when a remote-copy fetch
+// starts. Every field is validated before the result may touch the database
+// or the form: a late response from another logbook, editor instance, edit
+// session, or row is discarded instead of overwriting local data.
+type remoteRefreshRequest struct {
+	gen     uint64  // editor generation that issued the fetch
+	db      *sql.DB // database the fetch ran against
+	localID int64   // local QSO id the fetch was issued for
+	rev     uint64  // edit revision when the fetch started
+}
+
 // fetchRemoteCopy loads the latest copy of a Wavelog QSO (by remote id) so
-// the edit form can show what the server currently holds. The current edit
-// revision is captured so a late result can be recognized as stale when the
-// operator has typed since the fetch began.
+// the edit form can show what the server currently holds. The editor
+// generation, database, local id and edit revision are captured here so a
+// late result can be bound back to exactly the state that issued it.
 func (le *LogbookEditor) fetchRemoteCopy(remoteID, localID int64) tea.Cmd {
 	url, key := le.wlURL, le.wlKey
 	rev := le.editRev
+	gen := le.gen
+	db := le.db
 	return func() tea.Msg {
 		data, err := wavelog.GetQSO(url, key, remoteID)
 		if err != nil {
-			return editorMsg{wlFetchQSOID: localID, wlFetchErr: wavelog.FriendlyError(err).Error(), wlFetchRev: rev}
+			return editorMsg{wlFetchQSOID: localID, wlFetchErr: wavelog.FriendlyError(err).Error(),
+				wlFetchRev: rev, wlFetchGen: gen, wlFetchDB: db}
 		}
-		return editorMsg{wlFetchQSOID: localID, wlFetchQSO: data, wlFetchRev: rev}
+		return editorMsg{wlFetchQSOID: localID, wlFetchQSO: data,
+			wlFetchRev: rev, wlFetchGen: gen, wlFetchDB: db}
 	}
 }
 
 // ApplyRemoteRefresh merges the freshly fetched remote copy into the QSO being
 // edited: the local row is updated, the form refilled and the list reload
 // scheduled. Returns applied=false (a no-op) when the result is stale — the
-// user moved on, typed since the fetch began, or the local row carries
-// pending unsynced changes. In all those cases the operator's local state
-// wins over the stale server copy.
-func (le *LogbookEditor) ApplyRemoteRefresh(data *wavelog.QSOData, fetchedRev uint64) (bool, error) {
+// request identity no longer matches this editor (generation or database),
+// the user moved to another row, typed since the fetch began, or the local
+// row carries pending unsynced changes. In all those cases the operator's
+// local state wins over the stale server copy.
+func (le *LogbookEditor) ApplyRemoteRefresh(data *wavelog.QSOData, req remoteRefreshRequest) (bool, error) {
+	// A response from a replaced editor or database must never touch this
+	// editor's rows — logbook switching creates a fresh editor instance.
+	if req.gen != 0 && req.gen != le.gen {
+		applog.Warn("Wavelog: discarding remote refresh for a replaced editor",
+			fmt.Sprintf("req_gen=%d editor_gen=%d remote_id=%d", req.gen, le.gen, data.ID))
+		return false, nil
+	}
+	if req.db != nil && req.db != le.db {
+		applog.Warn("Wavelog: discarding remote refresh for a replaced database",
+			fmt.Sprintf("remote_id=%d", data.ID))
+		return false, nil
+	}
 	if le.editing == nil || le.mode != edModeEdit || le.editing.WavelogID != data.ID {
 		return false, nil // user moved on — ignore the late result
 	}
-	if fetchedRev != le.editRev {
+	if req.localID != 0 && req.localID != le.editing.ID {
+		// Another contact is being edited now (even one with the same
+		// remote id) — the fetched copy belongs to a different local row.
+		applog.InfoDetail("Wavelog: ignored remote refresh for another row",
+			fmt.Sprintf("req_local_id=%d editing_id=%d remote_id=%d", req.localID, le.editing.ID, data.ID))
+		return false, nil
+	}
+	if req.rev != le.editRev {
 		applog.InfoDetail("Wavelog: ignored stale remote refresh",
-			fmt.Sprintf("fetched_rev=%d current_rev=%d local_id=%d", fetchedRev, le.editRev, le.editing.ID))
+			fmt.Sprintf("fetched_rev=%d current_rev=%d local_id=%d", req.rev, le.editRev, le.editing.ID))
 		return false, nil // operator typed since the fetch began
 	}
 	local, err := store.GetQSOByID(le.db, le.editing.ID)

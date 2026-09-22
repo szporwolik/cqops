@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -164,7 +165,9 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case stationSyncDoneMsg:
-		return c, c.applyStationSyncDone(msg)
+		// Handled globally on the model (update_handlers.go) — the chooser
+		// may be closed by the time the station fetch completes.
+		return c, nil
 
 	case wlTestMsg:
 		c.wlTesting = false
@@ -732,20 +735,22 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 			Wavelog: wl,
 			APRS:    aprs,
 		}
-		c.app.Config.State.ActiveLogbook = id
-		c.app.LogbookName = id
-		lb := c.app.Config.Logbooks[id]
-		c.app.Logbook = &lb
-
-		c.names = append(c.names, id)
-		c.qsoCounts[id] = 0 // new logbook starts empty
 		savedName = cs
 
-		// Open the new logbook's database and switch to it.
+		// SwitchLogbook exclusively commits the active identity (State.
+		// ActiveLogbook, LogbookName, App.Logbook) together with the new
+		// database. The config entry registered above is provisional —
+		// SwitchLogbook needs it to resolve the database path. On failure
+		// it leaves the current database AND identity untouched, so roll
+		// the provisional entry back out and keep the old logbook active.
 		if err := c.app.SwitchLogbook(id); err != nil {
+			delete(c.app.Config.Logbooks, id)
 			c.toasts.Error("Failed to open logbook: " + err.Error())
 			return nil
 		}
+
+		c.names = append(c.names, id)
+		c.qsoCounts[id] = 0 // new logbook starts empty
 
 		c.mode = chooserList
 		c.station.BlurAll()
@@ -801,58 +806,38 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 	return c.syncStationAfterSaveCmd(id, wl)
 }
 
+// logbookSyncGen counts logbook saves. Every save bumps it, so an in-flight
+// station sync result is only applied when it belongs to the LATEST saved
+// configuration — a result from an older save must never overwrite newer
+// station data.
+var logbookSyncGen atomic.Uint64
+
 // stationSyncDoneMsg carries the fetched Wavelog station profile back from
 // the background sync worker. Applying it — config mutation, save, toast,
-// and the active-logbook pointer — happens exclusively on the owner loop.
+// and the active-logbook pointer — happens exclusively on the owner loop
+// (m.handleStationSyncDone), regardless of the visible screen.
 type stationSyncDoneMsg struct {
 	lbID string
 	st   *wavelog.Station
 	err  error
+	gen  uint64 // logbookSyncGen captured when the sync was launched
 }
 
 // syncStationAfterSaveCmd mirrors the Wavelog station profile into the saved
 // logbook (grid, DXCC, zones, reference fields) asynchronously so the UI
 // never blocks on the network. The worker only fetches — all state changes
-// happen in the chooser's Update when the result arrives.
+// happen in the model's global message handler when the result arrives.
 func (c *LogbookChooser) syncStationAfterSaveCmd(lbID string, wl *config.WavelogConfig) tea.Cmd {
+	// A new save invalidates any in-flight station sync from a previous one.
+	gen := logbookSyncGen.Add(1)
 	if wl == nil || !wl.Enabled {
 		return func() tea.Msg { return logbookSwitchedMsg{} }
 	}
 	url, key, sid := wl.URL, wl.APIKey, wl.StationProfileID
 	return func() tea.Msg {
 		st, err := wavelog.GetStation(url, key, sid)
-		return stationSyncDoneMsg{lbID: lbID, st: st, err: err}
+		return stationSyncDoneMsg{lbID: lbID, st: st, err: err, gen: gen}
 	}
-}
-
-// applyStationSyncDone installs a background station-sync result on the
-// owner loop and reports the outcome. The follow-up logbook switch message
-// is returned as a command so the switch still happens after the sync.
-func (c *LogbookChooser) applyStationSyncDone(msg stationSyncDoneMsg) tea.Cmd {
-	switched := func() tea.Msg { return logbookSwitchedMsg{} }
-	if msg.err != nil {
-		applog.Warn("Logbook: Wavelog station sync failed", "logbook", msg.lbID, "error", msg.err)
-		c.toasts.Warn("Wavelog: station sync failed — kept entered values")
-		return switched
-	}
-	if msg.st == nil {
-		return switched
-	}
-	lb, ok := c.app.Config.Logbooks[msg.lbID]
-	if !ok {
-		return switched
-	}
-	if !applyWavelogStation(msg.st, &lb.Station) {
-		return switched
-	}
-	c.app.Config.Logbooks[msg.lbID] = lb
-	if serr := config.Save(c.app.ConfigPath, c.app.Config); serr != nil {
-		applog.Warn("Logbook: re-save after station sync failed", "error", serr)
-	} else if c.app.LogbookName == msg.lbID {
-		c.app.Logbook = &lb
-		c.toasts.Info("Wavelog: station fields synced")
-	}
-	return switched
 }
 
 // updateStationIDField sets the Station ID text field to show the currently

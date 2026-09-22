@@ -210,6 +210,19 @@ func TestDownload_TransientFailureFreezesCheckpoint(t *testing.T) {
 <GRIDSQUARE:4>JN58 <EOR>`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("format") == "" {
+			// JSON id sidecar — identities resolve so the test stays
+			// focused on the insert failure.
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{"id": 100, "call": "SP9MOA", "band": "20m", "mode": "SSB",
+						"qso_date": "2026-06-18 12:00:00"},
+					{"id": 200, "call": "DL1ABC", "band": "40m", "mode": "FT8",
+						"qso_date": "2026-06-19 13:00:00"},
+				},
+			})
+			return
+		}
 		json.NewEncoder(w).Encode(map[string]any{
 			"data": map[string]any{
 				"exported":      2,
@@ -318,6 +331,17 @@ func TestDownload_CompletesWhileOnQSOScreen(t *testing.T) {
 <GRIDSQUARE:4>JO90 <EOR>`
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("format") == "" {
+			// JSON id sidecar — the identity must resolve so the cursor
+			// can advance as the test expects.
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{"id": 77, "call": "SP9MOA", "band": "20m", "mode": "SSB",
+						"qso_date": "2026-06-18 12:00:00"},
+				},
+			})
+			return
+		}
 		json.NewEncoder(w).Encode(map[string]any{
 			"data": map[string]any{
 				"exported":      1,
@@ -1115,5 +1139,156 @@ func TestDownload_MissingIDPageLeavesRecordsWithoutIDs(t *testing.T) {
 	}
 	if ccc.WavelogID != 12 {
 		t.Errorf("SP9CCC WavelogID = %d, want 12", ccc.WavelogID)
+	}
+}
+
+// pumpDownload runs one full Wavelog download on the model's editor and
+// drains messages until the operation completes. It drives the EDITOR
+// directly (like startFakeDownload) so model-level pending requests (e.g.
+// the QSO refresh flagged by a previous download) cannot intercept the
+// message pump; the model's side-effect handler is invoked for terminal
+// messages so the persisted cursor still advances.
+func pumpDownload(t *testing.T, m *Model) {
+	t.Helper()
+	le := m.ui.logbookEditor
+	m.ui.logbookEditor = le
+	cmd := le.doWavelogDownload()
+	if cmd == nil {
+		t.Fatal("doWavelogDownload returned nil cmd")
+	}
+	for le.isDownloadActive() {
+		msg := cmd()
+		if em, ok := msg.(editorMsg); ok && em.dlDone {
+			m.handleEditorSideEffects(em)
+		}
+		sub, c := le.Update(msg)
+		var ok bool
+		if le, ok = sub.(*LogbookEditor); !ok {
+			t.Fatalf("editor Update returned %T", sub)
+		}
+		if c == nil {
+			break
+		}
+		cmd = c
+	}
+	if le.isDownloadActive() {
+		t.Fatal("download did not complete")
+	}
+	m.ui.logbookEditor = le
+}
+
+// TestDownload_MissingIdentitiesFreezeCheckpointAndRecover reproduces the
+// reported bug: when the identity sidecar request fails (HTTP 500), records
+// import with WavelogID=0 but the cursor advanced to LastFetchedID anyway —
+// later incremental downloads skipped that range and the remote link was
+// lost forever. The cursor must stay behind unresolved records, and a
+// SECOND download (sidecar healthy) must reconcile the identities.
+func TestDownload_MissingIdentitiesFreezeCheckpointAndRecover(t *testing.T) {
+	adifContent := `<CALL:6>SP9AAA <BAND:3>20m <MODE:3>SSB <QSO_DATE:8>20260921 <TIME_ON:4>1200 <EOR>
+<CALL:6>SP9BBB <BAND:3>40m <MODE:2>CW <QSO_DATE:8>20260921 <TIME_ON:4>1300 <EOR>`
+
+	sidecarOK := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("format") == "" {
+			// JSON id sidecar request — fails on the first download.
+			if !sidecarOK {
+				http.Error(w, "boom", http.StatusInternalServerError)
+				return
+			}
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{"id": 10, "call": "SP9AAA", "band": "20m", "mode": "SSB",
+						"qso_date": "2026-09-21 12:00:00"},
+					{"id": 11, "call": "SP9BBB", "band": "40m", "mode": "CW",
+						"qso_date": "2026-09-21 13:00:00"},
+				},
+			})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"exported":      2,
+				"lastfetchedid": 11,
+				"adif":          adifContent,
+			},
+			"meta": map[string]any{"has_more": false, "total": 2},
+		})
+	}))
+	defer server.Close()
+
+	m := newLifecycleTestModel(t)
+	m.App.ConfigPath = filepath.Join(t.TempDir(), "config.yaml")
+	wl := m.App.Logbook.Wavelog
+	wl.URL = server.URL
+	wl.APIKey = "key"
+	wl.Enabled = true
+	wl.StationProfileID = "1"
+
+	m.ui.logbookEditor = NewLogbookEditor(LogbookEditorConfig{
+		DB: m.App.DB, WLURL: server.URL, WLKey: "key", WLStationID: "1",
+		WLLastFetchedID: wl.LastFetchedID, StationOperator: "OP", StationGrid: "JO90",
+	})
+
+	// --- First download: the identity sidecar fails entirely. ---
+	pumpDownload(t, m)
+	le := m.ui.logbookEditor
+	if le.wlDownloadCount != 2 {
+		t.Fatalf("first download inserted = %d, want 2", le.wlDownloadCount)
+	}
+	if le.wlDownloadHold < 2 {
+		t.Errorf("deferred = %d, want >= 2 (unresolved identities must be retried)", le.wlDownloadHold)
+	}
+	if wl.LastFetchedID != 0 {
+		t.Fatalf("cursor advanced to %d despite unresolved identities", wl.LastFetchedID)
+	}
+	qsos, _ := store.ListQSOs(m.App.DB, 10, "")
+	var aaa, bbb *qso.QSO
+	for i := range qsos {
+		switch qsos[i].Call {
+		case "SP9AAA":
+			aaa = &qsos[i]
+		case "SP9BBB":
+			bbb = &qsos[i]
+		}
+	}
+	if aaa == nil || bbb == nil {
+		t.Fatalf("downloaded QSOs missing: %+v", qsos)
+	}
+	if aaa.WavelogID != 0 || bbb.WavelogID != 0 {
+		t.Fatalf("WavelogID = %d/%d, want 0/0 (sidecar failed)", aaa.WavelogID, bbb.WavelogID)
+	}
+
+	// --- Second download: identities resolve; the retry must reconcile. ---
+	if err := m.App.DB.Ping(); err != nil {
+		t.Fatalf("DB closed after the first download: %v", err)
+	}
+	sidecarOK = true
+	pumpDownload(t, m)
+	le = m.ui.logbookEditor
+	if le.wlDownloadCount != 0 {
+		t.Errorf("second download inserted = %d, want 0 (rows already present)", le.wlDownloadCount)
+	}
+	if le.wlDownloadHold != 0 {
+		t.Errorf("deferred after recovery = %d, want 0", le.wlDownloadHold)
+	}
+	if wl.LastFetchedID != 11 {
+		t.Fatalf("cursor = %d after recovery, want 11", wl.LastFetchedID)
+	}
+	qsos, _ = store.ListQSOs(m.App.DB, 10, "")
+	aaa, bbb = nil, nil
+	for i := range qsos {
+		switch qsos[i].Call {
+		case "SP9AAA":
+			aaa = &qsos[i]
+		case "SP9BBB":
+			bbb = &qsos[i]
+		}
+	}
+	if aaa == nil || bbb == nil {
+		t.Fatalf("recovered QSOs missing: %+v", qsos)
+	}
+	if aaa.WavelogID != 10 || bbb.WavelogID != 11 {
+		t.Errorf("WavelogID after recovery = %d/%d, want 10/11", aaa.WavelogID, bbb.WavelogID)
 	}
 }

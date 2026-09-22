@@ -128,7 +128,11 @@ type hybridListener struct {
 
 	results chan acceptResult // classified connections, one per accepted conn
 	slots   chan struct{}     // bounds concurrent classification
-	wg      sync.WaitGroup    // in-flight classifications
+	wg      sync.WaitGroup    // accept loop + in-flight classifications
+
+	closed    chan struct{} // closed by Close — cancels slot acquisition and result delivery
+	closeOnce sync.Once
+	closeErr  error
 }
 
 // acceptResult pairs a classified connection with a terminal accept error.
@@ -142,8 +146,8 @@ type acceptResult struct {
 // client hits the peek deadline, a vanished client returns EOF — both become
 // ordinary plain-HTTP connections and are handled (and cleaned up)
 // per-connection by the http server, whose own read deadline applies from
-// there.
-const hybridPeekTimeout = 3 * time.Second
+// there. A var so tests can shorten the shutdown/classification deadline.
+var hybridPeekTimeout = 3 * time.Second
 
 // hybridClassifySlots bounds the number of connections being classified at
 // once, so a flood of idle connections can neither grow goroutines without
@@ -156,9 +160,40 @@ func newHybridListener(ln net.Listener, tlsConfig *tls.Config) net.Listener {
 		tlsConfig: tlsConfig,
 		results:   make(chan acceptResult, hybridClassifySlots),
 		slots:     make(chan struct{}, hybridClassifySlots),
+		closed:    make(chan struct{}),
 	}
+	hl.wg.Add(1)
 	go hl.acceptLoop()
 	return hl
+}
+
+// Close shuts the listener down explicitly: slot acquisition and result
+// delivery are cancelled, connections that never reached a consumer are
+// closed, and the accept loop and classification workers are joined before
+// the result channel closes. The inherited Listener.Close alone left those
+// in flight — idle clients saw a hang instead of a close, and workers
+// blocked forever on saturated delivery with no consumer.
+func (hl *hybridListener) Close() error {
+	hl.closeOnce.Do(func() {
+		close(hl.closed)
+		hl.closeErr = hl.Listener.Close() // unblock the raw Accept
+		hl.wg.Wait()                      // join accept loop + classify workers
+		// Connections already classified but never dispatched have no
+		// consumer — close them so clients see the shutdown.
+		for {
+			select {
+			case res := <-hl.results:
+				if res.conn != nil {
+					res.conn.Close()
+				}
+				continue
+			default:
+			}
+			break
+		}
+		close(hl.results)
+	})
+	return hl.closeErr
 }
 
 // Accept returns the next classified connection. Classification is performed
@@ -174,30 +209,58 @@ func (hl *hybridListener) Accept() (net.Conn, error) {
 // acceptLoop keeps accepting raw connections and hands each one to a bounded
 // classification goroutine. The slot pool caps resource usage under a stall
 // flood; connections beyond the cap simply wait in the kernel accept queue.
+// Every blocking point also selects on hl.closed so shutdown can cancel it.
 func (hl *hybridListener) acceptLoop() {
-	defer func() {
-		hl.wg.Wait()
-		close(hl.results)
-	}()
+	defer hl.wg.Done()
 	for {
-		hl.slots <- struct{}{} // block while classification is saturated
+		select {
+		case <-hl.closed:
+			return
+		case hl.slots <- struct{}{}: // block while classification is saturated
+		}
 		c, err := hl.Listener.Accept()
 		if err != nil {
 			<-hl.slots
 			// The raw listener is gone (shutdown). Deliver one terminal
 			// error so http.Server.Serve can exit; if nobody is reading
-			// anymore, just return.
+			// anymore or shutdown is cancelling delivery, just return.
 			select {
 			case hl.results <- acceptResult{err: err}:
+			case <-hl.closed:
 			default:
 			}
 			return
+		}
+		// A connection accepted after shutdown began has no consumer —
+		// close it immediately instead of leaking it.
+		select {
+		case <-hl.closed:
+			c.Close()
+			<-hl.slots
+			return
+		default:
 		}
 		hl.wg.Add(1)
 		go func(c net.Conn) {
 			defer hl.wg.Done()
 			defer func() { <-hl.slots }()
-			hl.results <- acceptResult{conn: hl.classify(c)}
+			// Shutdown started while this worker waited — close without
+			// classifying.
+			select {
+			case <-hl.closed:
+				c.Close()
+				return
+			default:
+			}
+			cl := hl.classify(c)
+			select {
+			case hl.results <- acceptResult{conn: cl}:
+			case <-hl.closed:
+				// Shutdown cancels delivery — no consumer will ever read
+				// this connection. Close it so the client observes the
+				// shutdown instead of hanging on an open socket.
+				cl.Close()
+			}
 		}(c)
 	}
 }

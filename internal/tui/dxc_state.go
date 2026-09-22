@@ -11,6 +11,7 @@ import (
 // dxcState holds all DX Cluster connection, table, filter, and selection state.
 type dxcState struct {
 	client       *dxc.Client
+	clientGen    uint64 // bumped on every teardown/reset — invalidates in-flight connect results
 	online       bool
 	connecting   bool
 	lastAttempt  time.Time

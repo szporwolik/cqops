@@ -172,8 +172,8 @@ func TestMigrateUpgradesV10Database(t *testing.T) {
 		t.Fatalf("Migrate on v0.10 db: %v", err)
 	}
 
-	// dxcc, wavelog_id and wavelog_dirty must now exist.
-	for _, col := range []string{"dxcc", "wavelog_id", "wavelog_dirty"} {
+	// dxcc, wavelog_id, wavelog_dirty and wavelog_dirty_rev must now exist.
+	for _, col := range []string{"dxcc", "wavelog_id", "wavelog_dirty", "wavelog_dirty_rev"} {
 		if _, err := db.Exec(`INSERT INTO qsos (call, ` + col + `, created_at, updated_at) VALUES ('SP9MOA', 'x', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`); err != nil {
 			t.Errorf("column %s missing after upgrade: %v", col, err)
 		}

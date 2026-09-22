@@ -38,6 +38,14 @@ func (m *Model) cycleLogbook() tea.Cmd {
 	displayName := config.LogbookDisplayName(m.App.Logbook)
 	m.toasts.Success("Logbook: " + displayName)
 	applog.Info("Logbook cycled", "name", displayName)
+	return m.handleLogbookSwitched()
+}
+
+// handleLogbookSwitched runs the bookkeeping that follows every successful
+// logbook switch — cycled, picked in the chooser, or newly created. The
+// switch itself (SwitchLogbook) already happened synchronously; this resets
+// per-logbook caches and re-fires lookups against the new database.
+func (m *Model) handleLogbookSwitched() tea.Cmd {
 	m.rc.status = ""
 	m.invalidatePartnerMapCache()
 	m.rc.logStatsSig = ""
@@ -76,10 +84,12 @@ func (m *Model) cycleLogbook() tea.Cmd {
 	}
 	cmds = append(cmds, m.refreshQSOS())
 	// Request recent DXC spots for the new logbook so the DXC table
-	// isn't left empty after the DB switch clears old spots.
+	// isn't left empty after the DB switch clears old spots. The client
+	// is captured here — the worker must not read m.dxc.client.
 	if m.dxc.online && m.dxc.client != nil {
+		dxcClient := m.dxc.client
 		cmds = append(cmds, func() tea.Msg {
-			m.dxc.client.RequestRecent(50)
+			dxcClient.RequestRecent(50)
 			return nil
 		})
 	}
@@ -87,6 +97,43 @@ func (m *Model) cycleLogbook() tea.Cmd {
 	// logbook immediately — not on the next 5 s throttle cycle.
 	m.forcePushDashboardAll()
 	return tea.Batch(cmds...)
+}
+
+// handleStationSyncDone applies a background Wavelog station sync result on
+// the owner loop, regardless of the visible screen. Results from a save that
+// was superseded by a newer one are discarded, so old station data can never
+// overwrite newer configuration. The logbook-switch bookkeeping follows as a
+// separate command — the switch itself already happened synchronously.
+func (m *Model) handleStationSyncDone(msg stationSyncDoneMsg) tea.Cmd {
+	switched := func() tea.Msg { return logbookSwitchedMsg{} }
+	if msg.gen != logbookSyncGen.Load() {
+		applog.Debug("Logbook: stale station sync discarded", "logbook", msg.lbID,
+			"gen", msg.gen, "current", logbookSyncGen.Load())
+		return nil
+	}
+	if msg.err != nil {
+		applog.Warn("Logbook: Wavelog station sync failed", "logbook", msg.lbID, "error", msg.err)
+		m.toasts.Warn("Wavelog: station sync failed — kept entered values")
+		return switched
+	}
+	if msg.st == nil {
+		return switched
+	}
+	lb, ok := m.App.Config.Logbooks[msg.lbID]
+	if !ok {
+		return switched
+	}
+	if !applyWavelogStation(msg.st, &lb.Station) {
+		return switched
+	}
+	m.App.Config.Logbooks[msg.lbID] = lb
+	if serr := config.Save(m.App.ConfigPath, m.App.Config); serr != nil {
+		applog.Warn("Logbook: re-save after station sync failed", "error", serr)
+	} else if m.App.LogbookName == msg.lbID {
+		m.App.Logbook = &lb
+		m.toasts.Info("Wavelog: station fields synced")
+	}
+	return switched
 }
 
 // cycleRig cycles to the next rig preset in alphabetical order (by model).

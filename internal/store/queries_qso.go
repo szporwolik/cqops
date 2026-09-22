@@ -36,6 +36,7 @@ const qsoSelectCols = `id, call, qso_date, time_on, time_off, band, freq, freq_r
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
 		wavelog_id, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
+		dxcc,
 		created_at, updated_at`
 
 // placeholders52 is a pre-computed string of 52 comma-separated "?" markers,
@@ -829,6 +830,7 @@ func listQSOsByQuery(q qsoQueryer, query string, args ...any) ([]qso.QSO, error)
 			&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
 			&q.MySIG, &q.MySIGInfo,
 			&q.WavelogID, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
+			&q.DXCC,
 			&createdAt, &updatedAt,
 		)
 		if err != nil {
@@ -847,16 +849,19 @@ func listQSOsByQuery(q qsoQueryer, query string, args ...any) ([]qso.QSO, error)
 
 // UpdateQSO updates an existing QSO. Retries on SQLITE_BUSY.
 //
+// buildUpdateQSOStatement renders the QSO row UPDATE with the caller's extra
+// SET fragment appended before updated_at. SaveQSOForSync uses it to set the
+// pending-sync flag and bump its revision in the same statement as the edit,
+// so the row changes and the dirty state change together or not at all.
+//
 // Derived-field policy: base_call is always recomputed from the stored call.
 // DXCC is written when the caller supplies a value; when the call CHANGED
 // and no fresh DXCC was provided, the stale prefix-derived value is
 // invalidated (cleared) so the DXCC backfill recomputes it — preserving it
 // would leave worked-DXCC statistics disagreeing with the displayed contact.
-func UpdateQSO(db *sql.DB, q *qso.QSO) error {
+// oldCall is the call stored before this update ("" when unknown).
+func buildUpdateQSOStatement(q *qso.QSO, oldCall, extraSet string) (string, []any) {
 	q.UpdatedAt = time.Now().UTC()
-
-	var oldCall string
-	_ = db.QueryRow(`SELECT call FROM qsos WHERE id=?`, q.ID).Scan(&oldCall)
 	callChanged := oldCall != "" && !strings.EqualFold(oldCall, q.Call)
 
 	dxccSet := ""
@@ -878,7 +883,7 @@ func UpdateQSO(db *sql.DB, q *qso.QSO) error {
 		my_cq_zone=?, my_itu_zone=?, my_dxcc=?,
 		my_sig=?, my_sig_info=?,
 		wavelog_id=?, contest_id=?, exch_sent=?, exch_rcvd=?, stx=?, srx=?, stx_string=?, srx_string=?, contest_adif_id=?,
-		base_call=?` + dxccSet + `,
+		base_call=?` + dxccSet + extraSet + `,
 		updated_at=?
 		WHERE id=?`
 
@@ -898,6 +903,15 @@ func UpdateQSO(db *sql.DB, q *qso.QSO) error {
 		args = append(args, dxccArg)
 	}
 	args = append(args, q.UpdatedAt.Format(time.RFC3339), q.ID)
+	return query, args
+}
+
+// UpdateQSO persists an edited QSO.
+func UpdateQSO(db *sql.DB, q *qso.QSO) error {
+	var oldCall string
+	_ = db.QueryRow(`SELECT call FROM qsos WHERE id=?`, q.ID).Scan(&oldCall)
+
+	query, args := buildUpdateQSOStatement(q, oldCall, "")
 
 	var err error
 	for attempt := 0; attempt < 3; attempt++ {
@@ -911,6 +925,39 @@ func UpdateQSO(db *sql.DB, q *qso.QSO) error {
 		time.Sleep(100 * time.Millisecond)
 	}
 	return fmt.Errorf("update qso: %w", err)
+}
+
+// SaveQSOForSync persists an edited QSO and durably marks it as having a
+// pending remote update in ONE transaction, bumping the pending-sync
+// revision. The returned revision identifies this exact edit — the dirty
+// flag may only be cleared by an acknowledgement for the same revision (see
+// ClearWavelogDirtyIfRevision). A crash between the local write and the
+// PATCH therefore leaves a dirty row that a remote refresh will not
+// overwrite, never a changed row that falsely looks synced.
+func SaveQSOForSync(db *sql.DB, q *qso.QSO) (int64, error) {
+	tx, err := db.BeginTx(context.Background(), nil)
+	if err != nil {
+		return 0, fmt.Errorf("begin save for sync: %w", err)
+	}
+	defer tx.Rollback()
+
+	var oldCall string
+	_ = tx.QueryRow(`SELECT call FROM qsos WHERE id=?`, q.ID).Scan(&oldCall)
+
+	query, args := buildUpdateQSOStatement(q, oldCall, ", wavelog_dirty=1, wavelog_dirty_rev=wavelog_dirty_rev+1")
+	if _, err := tx.Exec(query, args...); err != nil {
+		return 0, fmt.Errorf("update qso for sync: %w", err)
+	}
+	// Read the bumped revision inside the same transaction — the write
+	// lock is held until commit, so this is exactly our edit's revision.
+	var rev int64
+	if err := tx.QueryRow(`SELECT wavelog_dirty_rev FROM qsos WHERE id=?`, q.ID).Scan(&rev); err != nil {
+		return 0, fmt.Errorf("read sync revision: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("commit save for sync: %w", err)
+	}
+	return rev, nil
 }
 
 // PurgeQSOs deletes all QSOs from the database.

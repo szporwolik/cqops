@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/qso"
@@ -93,8 +95,15 @@ func TestFetchRemoteCopyAndRefresh(t *testing.T) {
 	if em.wlFetchQSO == nil || em.wlFetchErr != "" {
 		t.Fatalf("fetch failed: qso=%v err=%q", em.wlFetchQSO, em.wlFetchErr)
 	}
+	// The response must carry the issuing editor's identity.
+	if em.wlFetchGen != le.gen || em.wlFetchDB != le.db {
+		t.Fatalf("fetch result not bound to the issuing editor: gen=%d db-set=%v; want gen=%d",
+			em.wlFetchGen, em.wlFetchDB != nil, le.gen)
+	}
 
-	applied, err := le.ApplyRemoteRefresh(em.wlFetchQSO, em.wlFetchRev)
+	applied, err := le.ApplyRemoteRefresh(em.wlFetchQSO, remoteRefreshRequest{
+		gen: em.wlFetchGen, db: em.wlFetchDB, localID: em.wlFetchQSOID, rev: em.wlFetchRev,
+	})
 	if err != nil {
 		t.Fatalf("ApplyRemoteRefresh: %v", err)
 	}
@@ -147,7 +156,8 @@ func TestFetchRemoteCopyStaleResultIgnored(t *testing.T) {
 	le.editing = &qso.QSO{ID: 1, WavelogID: 77}
 	le.mode = edModeList // user already left the edit form
 
-	applied, err := le.ApplyRemoteRefresh(&wavelog.QSOData{ID: 77}, 0)
+	applied, err := le.ApplyRemoteRefresh(&wavelog.QSOData{ID: 77},
+		remoteRefreshRequest{localID: 1, rev: 0})
 	if err != nil {
 		t.Fatalf("ApplyRemoteRefresh should be a no-op, got %v", err)
 	}
@@ -190,7 +200,9 @@ func TestApplyRemoteRefresh_KeepsUnsavedEdits(t *testing.T) {
 	le.fields[qefComment].SetValue("typed while fetching")
 	le.editRev++
 
-	applied, err := le.ApplyRemoteRefresh(em.wlFetchQSO, em.wlFetchRev)
+	applied, err := le.ApplyRemoteRefresh(em.wlFetchQSO, remoteRefreshRequest{
+		gen: em.wlFetchGen, db: em.wlFetchDB, localID: em.wlFetchQSOID, rev: em.wlFetchRev,
+	})
 	if err != nil {
 		t.Fatalf("ApplyRemoteRefresh: %v", err)
 	}
@@ -234,7 +246,8 @@ func TestApplyRemoteRefresh_KeepsPendingLocalChanges(t *testing.T) {
 	le.mode = edModeEdit
 	le.fillEditForm(q)
 
-	applied, err := le.ApplyRemoteRefresh(&wavelog.QSOData{ID: 77}, le.editRev)
+	applied, err := le.ApplyRemoteRefresh(&wavelog.QSOData{ID: 77},
+		remoteRefreshRequest{localID: id, rev: le.editRev})
 	if err != nil {
 		t.Fatalf("ApplyRemoteRefresh: %v", err)
 	}
@@ -718,5 +731,278 @@ func TestConfirmMessagesMentionWavelog(t *testing.T) {
 	}
 	if msg := le.saveConfirmMessage(synced); msg == "" || !strings.Contains(msg, "locally only") {
 		t.Errorf("offline save message = %q, want local-only note", msg)
+	}
+}
+
+// TestApplyRemoteRefresh_RejectsForeignEditorAndDatabase reproduces the
+// reported bug: a refresh started in logbook A whose response lands after
+// switching to logbook B must never overwrite B's contact — even when both
+// rows share the same remote Wavelog id.
+func TestApplyRemoteRefresh_RejectsForeignEditorAndDatabase(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"data": remoteQSODoc(77)})
+	}))
+	defer srv.Close()
+
+	// Logbook A: an editor opens a synced contact and a fetch starts.
+	leA := newTestEditorWithDB(t, srv.URL, "wl2_test", "1", "Szymon", "KO00ca")
+	qA := &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+		TimeOn: "120000", Comment: "local A", WavelogID: 77}
+	idA := insertTestQSO(t, leA.db, qA)
+	qA.ID = idA
+	leA.editing = qA
+	leA.mode = edModeEdit
+	leA.fillEditForm(qA)
+
+	em := execCmd(leA.fetchRemoteCopy(77, idA)).(editorMsg)
+	if em.wlFetchQSO == nil {
+		t.Fatalf("fetch failed: %q", em.wlFetchErr)
+	}
+
+	// Logbook B: a fresh editor (new generation, new database) edits a
+	// contact that happens to share remote id 77.
+	leB := newTestEditorWithDB(t, srv.URL, "wl2_test", "1", "Szymon", "KO00ca")
+	qB := &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB", QSODate: "20240502",
+		TimeOn: "130000", Comment: "local B", WavelogID: 77}
+	idB := insertTestQSO(t, leB.db, qB)
+	qB.ID = idB
+	leB.editing = qB
+	leB.mode = edModeEdit
+	leB.fillEditForm(qB)
+
+	// A's delayed response arrives at B's editor — identical remote id,
+	// fresh edit session. It must be rejected without touching B's row.
+	applied, err := leB.ApplyRemoteRefresh(em.wlFetchQSO, remoteRefreshRequest{
+		gen: em.wlFetchGen, db: em.wlFetchDB, localID: em.wlFetchQSOID, rev: em.wlFetchRev,
+	})
+	if err != nil {
+		t.Fatalf("ApplyRemoteRefresh: %v", err)
+	}
+	if applied {
+		t.Fatal("foreign-editor refresh must not apply")
+	}
+	stored, err := store.GetQSOByID(leB.db, idB)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if stored.Comment != "local B" {
+		t.Errorf("B's row overwritten: Comment = %q, want local B", stored.Comment)
+	}
+	if leB.fields[qefComment].Value() != "local B" {
+		t.Errorf("B's form overwritten: comment = %q, want local B", leB.fields[qefComment].Value())
+	}
+}
+
+// TestApplyRemoteRefresh_RejectsDifferentLocalRow verifies that even within
+// the same editor, a response is only applied to the row it was issued for —
+// opening another contact (possibly sharing the remote id) invalidates it.
+func TestApplyRemoteRefresh_RejectsDifferentLocalRow(t *testing.T) {
+	le := newTestEditorWithDB(t, "", "wl2_test", "1", "Szymon", "KO00ca")
+
+	q1 := &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+		TimeOn: "120000", Comment: "row 1", WavelogID: 77}
+	id1 := insertTestQSO(t, le.db, q1)
+	q1.ID = id1
+
+	// A second local row shares the same remote id.
+	q2 := &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB", QSODate: "20240502",
+		TimeOn: "130000", Comment: "row 2", WavelogID: 77}
+	id2 := insertTestQSO(t, le.db, q2)
+	q2.ID = id2
+
+	// The fetch was issued for row 1, but by the time the response
+	// returns, row 2 is being edited.
+	le.editing = q2
+	le.mode = edModeEdit
+	le.fillEditForm(q2)
+	le.editRev = 0
+
+	applied, err := le.ApplyRemoteRefresh(
+		&wavelog.QSOData{ID: 77, Call: "SP9MOA", Comment: "remote edit"},
+		remoteRefreshRequest{gen: le.gen, db: le.db, localID: id1, rev: 0})
+	if err != nil {
+		t.Fatalf("ApplyRemoteRefresh: %v", err)
+	}
+	if applied {
+		t.Fatal("refresh issued for another local row must not apply")
+	}
+	stored, err := store.GetQSOByID(le.db, id2)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if stored.Comment != "row 2" {
+		t.Errorf("row 2 overwritten: Comment = %q, want row 2", stored.Comment)
+	}
+}
+
+// TestEditSaveMarksPendingBeforePatchCompletes reproduces the reported bug:
+// while the PATCH is blocked in flight, the row must already be durably
+// dirty — a crash at that point must not leave a changed row that a later
+// remote refresh would treat as synced and overwrite.
+func TestEditSaveMarksPendingBeforePatchCompletes(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(started)
+		<-release
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"data": remoteQSODoc(42)})
+	}))
+	defer srv.Close()
+
+	le := newTestEditorWithDB(t, srv.URL, "wl2_test", "1", "Szymon", "KO00ca")
+
+	q := &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+		TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", Comment: "before", WavelogID: 42}
+	id := insertTestQSO(t, le.db, q)
+	q.ID = id
+
+	le.editing = q
+	le.fillEditForm(q)
+	le.fields[qefComment].SetValue("edited")
+
+	done := make(chan editorMsg, 1)
+	go func() { done <- execCmd(le.doSave()).(editorMsg) }()
+
+	// Wait until the PATCH is actually in flight.
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("PATCH never started")
+	}
+
+	// Intermediate state: the edit is committed AND the row is dirty.
+	stored, err := store.GetQSOByID(le.db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if stored.Comment != "edited" {
+		t.Errorf("intermediate comment = %q, want edited", stored.Comment)
+	}
+	if !stored.WavelogDirty {
+		t.Error("intermediate WavelogDirty = false; the row must be pending while the PATCH is in flight")
+	}
+
+	close(release)
+	em := <-done
+	if !em.wlSyncOK {
+		t.Errorf("sync result: ok=%v err=%q, want ok", em.wlSyncOK, em.wlSyncErr)
+	}
+
+	stored, err = store.GetQSOByID(le.db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if stored.WavelogDirty {
+		t.Error("WavelogDirty should be cleared after the PATCH acknowledged")
+	}
+}
+
+// TestEditSaveMissingCredentialsMarksPending verifies that a synced row whose
+// Wavelog credentials are missing still gets the durable pending mark —
+// previously this branch skipped dirty marking entirely.
+func TestEditSaveMissingCredentialsMarksPending(t *testing.T) {
+	le := newTestEditorWithDB(t, "", "wl2_test", "1", "Szymon", "KO00ca")
+
+	q := &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+		TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", Comment: "before", WavelogID: 42}
+	id := insertTestQSO(t, le.db, q)
+	q.ID = id
+
+	le.editing = q
+	le.fillEditForm(q)
+	le.fields[qefComment].SetValue("edited")
+
+	em := execCmd(le.doSave()).(editorMsg)
+	if em.err != nil {
+		t.Fatalf("save failed: %v", em.err)
+	}
+	if em.wlSyncOK || em.wlSyncGone || em.wlSyncErr != "" || em.wlSyncPending {
+		t.Errorf("no sync flags expected without credentials, got %+v", em)
+	}
+	stored, err := store.GetQSOByID(le.db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if stored.Comment != "edited" {
+		t.Errorf("comment = %q, want edited", stored.Comment)
+	}
+	if !stored.WavelogDirty {
+		t.Error("WavelogDirty should be set when credentials are missing")
+	}
+}
+
+// TestOlderPatchAckDoesNotClearNewerPendingEdit verifies the revision guard:
+// when a second save happens while the first PATCH is still in flight, the
+// first PATCH's success must not clear the pending flag that belongs to the
+// second edit.
+func TestOlderPatchAckDoesNotClearNewerPendingEdit(t *testing.T) {
+	var mu sync.Mutex
+	count := 0
+	started := [2]chan struct{}{make(chan struct{}), make(chan struct{})}
+	release := [2]chan struct{}{make(chan struct{}), make(chan struct{})}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		i := count
+		count++
+		mu.Unlock()
+		if i < 2 {
+			close(started[i])
+			<-release[i]
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"data": remoteQSODoc(42)})
+	}))
+	defer srv.Close()
+
+	le := newTestEditorWithDB(t, srv.URL, "wl2_test", "1", "Szymon", "KO00ca")
+
+	q := &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+		TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", Comment: "before", WavelogID: 42}
+	id := insertTestQSO(t, le.db, q)
+	q.ID = id
+
+	le.editing = q
+	le.fillEditForm(q)
+
+	// First save — its PATCH blocks on release[0].
+	le.fields[qefComment].SetValue("edit one")
+	done1 := make(chan editorMsg, 1)
+	go func() { done1 <- execCmd(le.doSave()).(editorMsg) }()
+	<-started[0]
+
+	// Second save while the first PATCH is still in flight.
+	le.fields[qefComment].SetValue("edit two")
+	done2 := make(chan editorMsg, 1)
+	go func() { done2 <- execCmd(le.doSave()).(editorMsg) }()
+	<-started[1]
+
+	// The older PATCH succeeds first — it must NOT clear the newer pending edit.
+	close(release[0])
+	em1 := <-done1
+	if !em1.wlSyncOK {
+		t.Fatalf("first save: ok=%v err=%q, want ok", em1.wlSyncOK, em1.wlSyncErr)
+	}
+	dirty, err := store.QSOHasPendingSync(le.db, id)
+	if err != nil {
+		t.Fatalf("QSOHasPendingSync: %v", err)
+	}
+	if !dirty {
+		t.Fatal("older PATCH acknowledgement cleared the newer pending edit")
+	}
+
+	// The newer PATCH's own acknowledgement clears it.
+	close(release[1])
+	em2 := <-done2
+	if !em2.wlSyncOK {
+		t.Fatalf("second save: ok=%v err=%q, want ok", em2.wlSyncOK, em2.wlSyncErr)
+	}
+	dirty, err = store.QSOHasPendingSync(le.db, id)
+	if err != nil {
+		t.Fatalf("QSOHasPendingSync: %v", err)
+	}
+	if dirty {
+		t.Fatal("current PATCH acknowledgement should clear the pending flag")
 	}
 }

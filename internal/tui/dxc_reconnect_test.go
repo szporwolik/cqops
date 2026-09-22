@@ -49,6 +49,90 @@ func TestResetDXCStopsAndReplacesClient(t *testing.T) {
 	}
 }
 
+// TestDXCConnectCmdReturnsTaggedClientForOwnerInstall verifies the connect
+// command no longer touches model state from the worker: settings and the
+// existing client are captured at creation, and the result carries the
+// client plus the connection generation so the owner loop can install it.
+func TestDXCConnectCmdReturnsTaggedClientForOwnerInstall(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	host, port, _ := net.SplitHostPort(ln.Addr().String())
+
+	m := newDXCBandFilterModel(t, nil)
+	m.App.Config.Integrations.DXC.Enabled = true
+	m.App.Config.Integrations.DXC.Host = host
+	m.App.Config.Integrations.DXC.Port = port
+
+	cmd := m.dxcConnectCmd()
+	msg := execCmd(cmd).(dxcStatusMsg)
+	if !msg.online || msg.client == nil {
+		t.Fatalf("expected an online result with a client, got %#v", msg)
+	}
+	if msg.gen != m.dxc.clientGen {
+		t.Errorf("result gen = %d, want %d", msg.gen, m.dxc.clientGen)
+	}
+	if m.dxc.client != nil {
+		t.Error("the worker must not publish the client into m.dxc.client")
+	}
+
+	// The owner loop installs the returned client.
+	m.handleDXCStatus(msg)
+	if m.dxc.client != msg.client {
+		t.Error("handleDXCStatus should install the client returned by the connect")
+	}
+	m.dxc.client.Stop()
+}
+
+// TestHandleDXCStatusStaleGenerationStopsReturnedClient verifies a connect
+// result from before a reset is discarded and its client stopped — the
+// client may have been created just for that attempt and must not leak.
+func TestHandleDXCStatusStaleGenerationStopsReturnedClient(t *testing.T) {
+	m := newDXCBandFilterModel(t, nil)
+	m.resetDXC() // bumps the generation — any earlier connect is stale
+
+	stale := dxc.NewClient("127.0.0.1", "1", "SP9MOA")
+	m.handleDXCStatus(dxcStatusMsg{client: stale, gen: 0, online: true})
+
+	if m.dxc.client != nil {
+		t.Error("a stale connect result must not install its client")
+	}
+	if m.dxc.online {
+		t.Error("a stale connect result must not mark the UI online")
+	}
+	// The stale client must have been stopped by the discard.
+	if err := stale.Start(); err == nil {
+		t.Error("stale client was not stopped — it can still connect")
+	}
+}
+
+// TestHandleDXCStatusMatchingGenerationInstallsClient verifies the matching
+// generation installs the returned client (even on failure, so retries reuse
+// it) and clears the connecting flag.
+func TestHandleDXCStatusMatchingGenerationInstallsClient(t *testing.T) {
+	m := newDXCBandFilterModel(t, nil)
+	m.dxc.connecting = true
+
+	c := dxc.NewClient("127.0.0.1", "1", "SP9MOA")
+	defer c.Stop()
+	m.handleDXCStatus(dxcStatusMsg{
+		client: c, gen: m.dxc.clientGen,
+		online: false, err: errors.New("connection refused"),
+	})
+
+	if m.dxc.client != c {
+		t.Error("matching generation should install the client for retries")
+	}
+	if m.dxc.connecting {
+		t.Error("connecting should clear after the result is processed")
+	}
+	if m.dxc.online {
+		t.Error("online should stay false after a connection failure")
+	}
+}
+
 // TestMaybeDXCRestoresOnlineAfterClientReconnect reproduces the reported
 // stuck-offline bug with a real local TCP server: the client reconnects on
 // its own after a drop, but the UI only drained status events while online,

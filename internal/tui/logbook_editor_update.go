@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -67,13 +68,20 @@ type editorMsg struct {
 	// cursor stops before the first such record so the next incremental
 	// download re-fetches it.
 	dlTransient int
+	// dlUnresolved counts imported records whose remote identity could not
+	// be resolved (identity sidecar failure). They are re-fetched on the
+	// next download too — the cursor must not advance past them or the
+	// remote link would be lost forever.
+	dlUnresolved int
 	// Simple toast from the editor.
 	toastWarn string
 	// Remote-copy refresh of the QSO being edited.
 	wlFetchQSOID int64 // local id the fetch was issued for
 	wlFetchQSO   *wavelog.QSOData
 	wlFetchErr   string
-	wlFetchRev   uint64 // edit revision when the fetch started — a later value means the operator typed since
+	wlFetchRev   uint64  // edit revision when the fetch started — a later value means the operator typed since
+	wlFetchGen   uint64  // editor generation that issued the fetch (0 = not generation-bound)
+	wlFetchDB    *sql.DB // database the fetch ran against (nil = not database-bound)
 	// Wavelog PATCH result after a save of a synced QSO.
 	wlSyncOK      bool
 	wlSyncGone    bool
@@ -184,7 +192,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				le.wlDownloadCount = msg.dlCount
 				le.wlDownloadDupes = msg.dlDupes
 				le.wlDownloadFailed = msg.dlFailed
-				le.wlDownloadHold = msg.dlTransient
+				le.wlDownloadHold = msg.dlTransient + msg.dlUnresolved
 				le.wlDownloadErr = ""
 				le.wlDownloadAbort = false
 				le.mode = edModeWLDownloadResult
@@ -728,9 +736,26 @@ func (le *LogbookEditor) doSave() tea.Cmd {
 	call := q.Call
 	date := formatDate(q.QSODate)
 	id := q.ID
+	synced := q.WavelogID > 0
+	// Capture what the worker needs up front — it must not read editor
+	// state from the command goroutine.
+	db := le.db
+	url, key := le.wlURL, le.wlKey
+	offline := le.Offline
 	applog.Info("LogbookEditor: saving QSO", "id", id, "call", call, "date", date)
 	return func() tea.Msg {
-		err := store.UpdateQSO(le.db, q)
+		var rev int64
+		var err error
+		if synced {
+			// Save the edit, the dirty flag and the bumped revision
+			// atomically BEFORE any networking. A crash while the PATCH
+			// is in flight must leave a durably dirty row, never a
+			// changed row that looks synced and could be overwritten by
+			// a later remote refresh.
+			rev, err = store.SaveQSOForSync(db, q)
+		} else {
+			err = store.UpdateQSO(db, q)
+		}
 		if err != nil {
 			applog.Error("LogbookEditor: save failed", "id", id, "call", call, "error", err.Error())
 			// No saved id on failure — the handler shows the error toast only
@@ -743,41 +768,46 @@ func (le *LogbookEditor) doSave() tea.Cmd {
 		// depend on this succeeding — and offline mode must never contact
 		// the server at all (the local change is reported as pending sync).
 		em := editorMsg{saved: id, saveCall: call, saveDate: date}
-		if q.WavelogID > 0 && le.wlURL != "" && le.wlKey != "" {
-			if le.Offline {
-				em.wlSyncPending = true
-				if derr := store.SetWavelogDirty(le.db, id, true); derr != nil {
-					applog.Warn("Wavelog: failed to mark pending sync", "qso_id", id, "error", derr)
-				}
-				return em
-			}
-			syncErr := wavelog.UpdateQSO(le.wlURL, le.wlKey, q.WavelogID, buildUpdateInput(q))
-			if syncErr != nil {
-				if apiErr, ok := syncErr.(*wavelog.APIError); ok && apiErr.Code == "not_found" {
-					// The remote copy was deleted elsewhere — the local id is
-					// stale; clear it so the row is honest again.
-					if serr := store.SetWavelogID(le.db, id, 0); serr == nil {
-						em.wlSyncGone = true
-						if derr := store.SetWavelogDirty(le.db, id, false); derr != nil {
-							applog.Warn("Wavelog: failed to clear pending sync", "qso_id", id, "error", derr)
-						}
-					} else {
-						em.wlSyncErr = wavelog.FriendlyError(syncErr).Error()
+		if !synced {
+			return em
+		}
+		// The row is already durably marked pending. Without credentials
+		// there is no way to push now — keep the pending state so a later
+		// refresh cannot clobber the edit once credentials are configured.
+		if url == "" || key == "" {
+			return em
+		}
+		if offline {
+			em.wlSyncPending = true
+			return em
+		}
+		syncErr := wavelog.UpdateQSO(url, key, q.WavelogID, buildUpdateInput(q))
+		if syncErr != nil {
+			if apiErr, ok := syncErr.(*wavelog.APIError); ok && apiErr.Code == "not_found" {
+				// The remote copy was deleted elsewhere — the local id is
+				// stale; clear it so the row is honest again.
+				if serr := store.SetWavelogID(db, id, 0); serr == nil {
+					em.wlSyncGone = true
+					if derr := store.SetWavelogDirty(db, id, false); derr != nil {
+						applog.Warn("Wavelog: failed to clear pending sync", "qso_id", id, "error", derr)
 					}
 				} else {
-					// Transient PATCH failure — the local row now diverges from
-					// the remote copy; record that durably.
 					em.wlSyncErr = wavelog.FriendlyError(syncErr).Error()
-					if derr := store.SetWavelogDirty(le.db, id, true); derr != nil {
-						applog.Warn("Wavelog: failed to mark pending sync", "qso_id", id, "error", derr)
-					}
 				}
 			} else {
-				em.wlSyncOK = true
-				if derr := store.SetWavelogDirty(le.db, id, false); derr != nil {
-					applog.Warn("Wavelog: failed to clear pending sync", "qso_id", id, "error", derr)
-				}
+				// Transient PATCH failure — the row is already durably
+				// marked pending by SaveQSOForSync.
+				em.wlSyncErr = wavelog.FriendlyError(syncErr).Error()
 			}
+			return em
+		}
+		// Success — clear the pending flag only if the row still carries
+		// THIS edit's revision. If the operator saved again while this
+		// PATCH was in flight, an older acknowledgement must not clear
+		// the newer pending edit.
+		em.wlSyncOK = true
+		if derr := store.ClearWavelogDirtyIfRevision(db, id, rev); derr != nil {
+			applog.Warn("Wavelog: failed to clear pending sync", "qso_id", id, "error", derr)
 		}
 		return em
 	}
@@ -929,6 +959,13 @@ func (le *LogbookEditor) runDownload(op *downloadOp, url, key, sid string, fetch
 	checkpointOK := false
 	frozen := false
 	transientFails := 0
+	// idGap freezes the cursor at the first record whose remote identity
+	// could not be resolved (WavelogID=0). Advancing past it would make
+	// the next incremental download skip the record's id range — it would
+	// never learn its remote link. unresolved counts those records for the
+	// result dialog.
+	idGap := false
+	unresolved := 0
 
 	applog.Info("Wavelog: scanning ADIF", "exported", totalExported, "size_bytes", result.ADIFSize)
 
@@ -984,10 +1021,16 @@ func (le *LogbookEditor) runDownload(op *downloadOp, url, key, sid string, fetch
 				if serr := store.SetWavelogID(db, existingID, qs.WavelogID); serr != nil {
 					applog.Warn("Wavelog: failed to store remote id for dupe", "qso_id", existingID, "error", serr)
 				}
-			}
-			if !frozen && qs.WavelogID > 0 {
-				checkpointID = qs.WavelogID
-				checkpointOK = true
+				if !frozen && !idGap {
+					checkpointID = qs.WavelogID
+					checkpointOK = true
+				}
+			} else {
+				// The existing row's remote identity is still unknown —
+				// the cursor must stay behind it so the next download can
+				// resolve it.
+				unresolved++
+				idGap = true
 			}
 			continue
 		}
@@ -1014,9 +1057,16 @@ func (le *LogbookEditor) runDownload(op *downloadOp, url, key, sid string, fetch
 			continue
 		}
 		inserted++
-		if !frozen && qs.WavelogID > 0 {
-			checkpointID = qs.WavelogID
-			checkpointOK = true
+		if qs.WavelogID > 0 {
+			if !frozen && !idGap {
+				checkpointID = qs.WavelogID
+				checkpointOK = true
+			}
+		} else {
+			// Imported without a remote link — the cursor must not advance
+			// past this record or its identity would never be reconciled.
+			unresolved++
+			idGap = true
 		}
 
 		// Report progress every batchInterval QSOs, and always for the first
@@ -1042,11 +1092,12 @@ func (le *LogbookEditor) runDownload(op *downloadOp, url, key, sid string, fetch
 		scanFailed = true
 	}
 
-	// Compute the persistable cursor. With a scanner error or a transient
-	// insert failure, records beyond the durable prefix are uncertain and
-	// must be re-fetched — the cursor stays behind them.
+	// Compute the persistable cursor. With a scanner error, a transient
+	// insert failure, or an unresolved remote identity, records beyond the
+	// durable prefix are uncertain and must be re-fetched — the cursor
+	// stays behind them.
 	lastID := result.LastFetchedID()
-	if scanFailed || frozen {
+	if scanFailed || frozen || idGap {
 		if checkpointOK {
 			lastID = checkpointID
 		} else {
@@ -1060,7 +1111,7 @@ func (le *LogbookEditor) runDownload(op *downloadOp, url, key, sid string, fetch
 
 	applog.Info("Wavelog: contacts download complete",
 		"inserted", inserted, "dupes", dupes, "failed", failed, "processed", processed,
-		"last_id", lastID, "transient", transientFails, "scan_failed", scanFailed)
+		"last_id", lastID, "transient", transientFails, "unresolved", unresolved, "scan_failed", scanFailed)
 	if dupes > 0 {
 		applog.Warn("Wavelog: ADIF export contains duplicate QSO records — skipped during import",
 			"dupe_count", dupes,
@@ -1068,13 +1119,14 @@ func (le *LogbookEditor) runDownload(op *downloadOp, url, key, sid string, fetch
 	}
 
 	msgCh <- editorMsg{
-		dlCount:     inserted,
-		dlDupes:     dupes,
-		dlFailed:    failed,
-		dlLastID:    lastID,
-		dlDownload:  true,
-		dlTransient: transientFails,
-		dlDone:      true,
+		dlCount:      inserted,
+		dlDupes:      dupes,
+		dlFailed:     failed,
+		dlLastID:     lastID,
+		dlDownload:   true,
+		dlTransient:  transientFails,
+		dlUnresolved: unresolved,
+		dlDone:       true,
 	}
 }
 

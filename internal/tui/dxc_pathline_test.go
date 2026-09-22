@@ -97,8 +97,13 @@ func TestRefreshQSOSInvalidatesDXCDupeCache(t *testing.T) {
 
 // TestDXCPathSpotFallbackExpires verifies the DB spot fallback is
 // time-dependent: an entry older than the TTL triggers a re-fetch instead of
-// serving spots that have aged out.
+// serving spots that have aged out. Consecutive renders with unchanged
+// inputs — no manual cache resets — must observe the expiry.
 func TestDXCPathSpotFallbackExpires(t *testing.T) {
+	orig := dxcPathSpotsTTL
+	dxcPathSpotsTTL = 50 * time.Millisecond
+	t.Cleanup(func() { dxcPathSpotsTTL = orig })
+
 	m := newLifecycleTestModel(t)
 	m.fields[fieldFreq].SetValue("145.550")
 	m.dxc.cachedRaw = nil // empty in-memory cache → fallback path
@@ -109,21 +114,85 @@ func TestDXCPathSpotFallbackExpires(t *testing.T) {
 	// Fresh fallback: served without a re-fetch.
 	m.rc.dxcSpotsAt = time.Now()
 	m.rc.dxcSpotsNeedFetch = false
-	m.rc.dxcPathSig = ""
-	_ = m.dxcPathLine(120)
+	if line := m.dxcPathLine(120); !strings.Contains(line, "SP9MOA") {
+		t.Fatalf("fresh fallback spot missing: %q", line)
+	}
 	if m.rc.dxcSpotsNeedFetch {
 		t.Error("fresh fallback should not trigger a re-fetch")
 	}
 
-	// Expired fallback: a re-fetch is requested.
-	m.rc.dxcSpotsAt = time.Now().Add(-3 * time.Minute)
+	// Let the TTL pass — the next render (same inputs, no cache resets)
+	// must stop serving the aged fallback and request a re-fetch.
+	time.Sleep(80 * time.Millisecond)
 	m.rc.dxcSpotsNeedFetch = false
-	m.rc.dxcPathSig = ""
-	_ = m.dxcPathLine(120)
+	if line := m.dxcPathLine(120); strings.Contains(line, "SP9MOA") {
+		t.Errorf("expired fallback spot still displayed: %q", line)
+	}
 	if !m.rc.dxcSpotsNeedFetch {
-		t.Error("expired fallback should trigger a re-fetch")
+		t.Error("expired fallback should trigger a re-fetch on the next render")
 	}
 	if m.rc.dxcSpotsFetchBand != "2m" {
 		t.Errorf("fetch band = %q, want 2m", m.rc.dxcSpotsFetchBand)
+	}
+}
+
+// TestDXCPathLineRenderedCacheExpires verifies the rendered-line cache itself
+// expires: an in-memory spot that ages out must disappear on a consecutive
+// render, even though every cache signature stays identical.
+func TestDXCPathLineRenderedCacheExpires(t *testing.T) {
+	orig := dxcPathSpotsTTL
+	dxcPathSpotsTTL = 50 * time.Millisecond
+	t.Cleanup(func() { dxcPathSpotsTTL = orig })
+
+	m := newLifecycleTestModel(t)
+	m.App.Logbook.Station.Continent = "EU"
+	m.fields[fieldFreq].SetValue("145.550")
+	m.dxc.cachedRaw = []store.DXCSpot{
+		{DXCall: "SP9MOA", Frequency: 145540, SpotCont: "EU", ModeCat: "PHONE", ReceivedAt: time.Now().Unix()},
+	}
+
+	if line := m.dxcPathLine(120); !strings.Contains(line, "SP9MOA") {
+		t.Fatalf("fresh spot missing from path line: %q", line)
+	}
+
+	// An hour passes: the spot ages out of the 15/30-minute filter window
+	// and the rendered-cache TTL expires — inputs are otherwise unchanged.
+	m.dxc.cachedRaw[0].ReceivedAt = time.Now().Unix() - 3600
+	time.Sleep(80 * time.Millisecond)
+
+	if line := m.dxcPathLine(120); strings.Contains(line, "SP9MOA") {
+		t.Errorf("expired in-memory spot still displayed: %q", line)
+	}
+}
+
+// TestDXCPathLineRerendersWhenFallbackDataChanges verifies newly arrived
+// fallback data invalidates the rendered line: consecutive renders without
+// cache resets must show the new spots, not the previously cached ones.
+func TestDXCPathLineRerendersWhenFallbackDataChanges(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.App.Logbook.Station.Continent = "EU"
+	m.fields[fieldFreq].SetValue("145.550")
+	m.dxc.cachedRaw = nil // empty in-memory cache → fallback path
+
+	spotA := store.DXCSpot{DXCall: "SP9AAA", Frequency: 145540, SpotCont: "EU", ModeCat: "PHONE", ReceivedAt: time.Now().Unix()}
+	m.rc.dxcSpotsBand = "2m"
+	m.rc.dxcSpots = []store.DXCSpot{spotA}
+	m.rc.dxcSpotsAt = time.Now()
+	m.rc.dxcSpotsNeedFetch = false
+
+	if line := m.dxcPathLine(120); !strings.Contains(line, "SP9AAA") {
+		t.Fatalf("fallback spot A missing: %q", line)
+	}
+
+	// The async fetch delivers new spot data for the same band.
+	spotB := store.DXCSpot{DXCall: "SP9BBB", Frequency: 145580, SpotCont: "EU", ModeCat: "PHONE", ReceivedAt: time.Now().Unix()}
+	m.handleDXCPathSpots(dxcPathSpotsMsg{band: "2m", spots: []store.DXCSpot{spotB}})
+
+	line := m.dxcPathLine(120)
+	if !strings.Contains(line, "SP9BBB") {
+		t.Errorf("newly arrived spot B missing: %q", line)
+	}
+	if strings.Contains(line, "SP9AAA") {
+		t.Errorf("stale spot A still rendered after the fallback refresh: %q", line)
 	}
 }

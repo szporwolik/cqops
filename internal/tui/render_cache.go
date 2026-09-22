@@ -43,9 +43,12 @@ type renderCache struct {
 	pathLine string
 	pathSig  string
 
-	// DXC path line cache — shows nearby spots below the QSO form.
-	dxcPathLine string
-	dxcPathSig  string
+	// DXC path line cache — shows nearby spots below the QSO form. The
+	// rendered line is time-dependent (spot age filters, fallback TTL), so
+	// the render timestamp bounds how long a cached line may be served.
+	dxcPathLine       string
+	dxcPathSig        string
+	dxcPathRenderedAt time.Time // when the cached line was rendered; older than dxcPathSpotsTTL it must re-render
 
 	// Form column style cache.
 	formColW         int
