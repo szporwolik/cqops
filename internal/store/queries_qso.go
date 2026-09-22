@@ -43,8 +43,11 @@ const qsoSelectCols = `id, call, qso_date, time_on, time_off, band, freq, freq_r
 // used by InsertQSO to avoid a per-insert []string allocation.
 const placeholders52 = "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?"
 
-// InsertQSO persists a QSO and sets its ID on success. Retries on SQLITE_BUSY.
-func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
+// insertQSO writes one QSO through the given executor (a *sql.DB or a
+// *sql.Tx). InsertQSO adds the SQLITE_BUSY retry for standalone writes;
+// InsertQSOTx is the transactional variant used by bulk import paths, where
+// a single chunked transaction amortizes commits across thousands of rows.
+func insertQSO(e execer, q *qso.QSO) (int64, error) {
 	now := time.Now().UTC()
 	q.CreatedAt = now
 	q.UpdatedAt = now
@@ -53,31 +56,44 @@ func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 		q.Source = "manual"
 	}
 
+	res, err := e.Exec(
+		`INSERT INTO qsos (`+qsoCols+`, base_call, created_at, updated_at)
+		VALUES (`+placeholders52+`, ?, ?, ?)`,
+		q.Call, q.QSODate, q.TimeOn, q.TimeOff,
+		q.Band, q.Freq, q.FreqRx, q.Mode, q.Submode,
+		q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
+		q.Distance, q.Bearing,
+		q.SOTARef, q.POTARef, q.WWFFRef, q.IOTA, q.SIG, q.SIGInfo,
+		q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
+		q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
+		q.CQZone, q.ITUZone, q.MyCQZone, q.MyITUZone, q.MyDXCC, q.MySIG, q.MySIGInfo, q.WavelogID, q.ContestID, q.ExchSent, q.ExchRcvd, q.STX, q.SRX, q.STXString, q.SRXString, q.ContestADIFID, q.DXCC,
+		qso.DeriveBaseCall(q.Call),
+		q.CreatedAt.Format(time.RFC3339), q.UpdatedAt.Format(time.RFC3339),
+	)
+	if err != nil {
+		return 0, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("last insert id: %w", err)
+	}
+	q.ID = id
+	return id, nil
+}
+
+// execer is the minimal SQL execution surface shared by *sql.DB and *sql.Tx.
+type execer interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
+// InsertQSO persists a QSO and sets its ID on success. Retries on SQLITE_BUSY.
+func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 	var id int64
 	var err error
 	for attempt := 0; attempt < 3; attempt++ {
-		var res sql.Result
-		res, err = db.Exec(
-			`INSERT INTO qsos (`+qsoCols+`, base_call, created_at, updated_at)
-			VALUES (`+placeholders52+`, ?, ?, ?)`,
-			q.Call, q.QSODate, q.TimeOn, q.TimeOff,
-			q.Band, q.Freq, q.FreqRx, q.Mode, q.Submode,
-			q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
-			q.Distance, q.Bearing,
-			q.SOTARef, q.POTARef, q.WWFFRef, q.IOTA, q.SIG, q.SIGInfo,
-			q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
-			q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
-			q.CQZone, q.ITUZone, q.MyCQZone, q.MyITUZone, q.MyDXCC, q.MySIG, q.MySIGInfo, q.WavelogID, q.ContestID, q.ExchSent, q.ExchRcvd, q.STX, q.SRX, q.STXString, q.SRXString, q.ContestADIFID, q.DXCC,
-			qso.DeriveBaseCall(q.Call),
-			q.CreatedAt.Format(time.RFC3339), q.UpdatedAt.Format(time.RFC3339),
-		)
+		id, err = insertQSO(db, q)
 		if err == nil {
-			id, err = res.LastInsertId()
-			if err == nil {
-				q.ID = id
-				return id, nil
-			}
-			return 0, fmt.Errorf("last insert id: %w", err)
+			return id, nil
 		}
 		if !strings.Contains(err.Error(), "database is locked") {
 			break
@@ -85,6 +101,17 @@ func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	return 0, fmt.Errorf("insert qso: %w", err)
+}
+
+// InsertQSOTx persists a QSO inside an open transaction (bulk import paths).
+// No busy retry: the transaction already holds the write lock, and a failed
+// statement must propagate so the caller can abandon the chunk.
+func InsertQSOTx(tx *sql.Tx, q *qso.QSO) (int64, error) {
+	id, err := insertQSO(tx, q)
+	if err != nil {
+		return 0, fmt.Errorf("insert qso: %w", err)
+	}
+	return id, nil
 }
 
 // ListQSOs returns recent QSOs ordered by QSO date/time descending.
@@ -167,9 +194,23 @@ func LastContestExchange(db *sql.DB, call, contestID string) (exchRcvd, rstRcvd,
 	return exchRcvd, rstRcvd, exchSent, nil
 }
 
-// ListQSOsPageWithCount returns a page of QSOs and the total count in a single
-// query using COUNT(*) OVER(), avoiding the need for a separate CountQSOs call.
+// ListQSOsPageWithCount returns a page of QSOs and the total count of the
+// filtered set. The count and the page are two statements: COUNT(*) OVER()
+// forced SQLite to evaluate the whole filtered set on every page turn; the
+// separate COUNT is much cheaper (the page itself still needs the sort).
 func ListQSOsPageWithCount(db *sql.DB, limit, offset int, contestID string) ([]qso.QSO, int, error) {
+	var where string
+	var whereArgs []any
+	if contestID != "" {
+		where = ` WHERE contest_id = ? OR contest_adif_id = ?`
+		whereArgs = append(whereArgs, contestID, contestID)
+	}
+
+	var total int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos`+where, whereArgs...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count qsos page: %w", err)
+	}
+
 	query := `SELECT id, call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,
 		rst_sent, rst_rcvd, gridsquare, name, qth, country, comment, notes, tx_pwr,
 		distance, bearing,
@@ -180,18 +221,11 @@ func ListQSOsPageWithCount(db *sql.DB, limit, offset int, contestID string) ([]q
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
 		wavelog_id, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
-		created_at, updated_at,
-		COUNT(*) OVER() as total_count
-		FROM qsos`
-	var args []any
-	if contestID != "" {
-		query += ` WHERE contest_id = ? OR contest_adif_id = ?`
-		args = append(args, contestID, contestID)
-	}
-	query += `
+		created_at, updated_at
+		FROM qsos` + where + `
 		ORDER BY qso_date DESC, time_on DESC, id DESC
 		LIMIT ? OFFSET ?`
-	args = append(args, limit, offset)
+	args := append(whereArgs, limit, offset)
 	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list qsos page with count: %w", err)
@@ -199,7 +233,6 @@ func ListQSOsPageWithCount(db *sql.DB, limit, offset int, contestID string) ([]q
 	defer rows.Close()
 
 	var qsos []qso.QSO
-	total := 0
 	for rows.Next() {
 		var q qso.QSO
 		var createdAt, updatedAt string
@@ -216,7 +249,6 @@ func ListQSOsPageWithCount(db *sql.DB, limit, offset int, contestID string) ([]q
 			&q.MySIG, &q.MySIGInfo,
 			&q.WavelogID, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
 			&createdAt, &updatedAt,
-			&total,
 		)
 		if err != nil {
 			return nil, 0, fmt.Errorf("scan qso with count: %w", err)
@@ -488,8 +520,23 @@ func DeleteQSO(db *sql.DB, id int64) error {
 // FindQSOByKey returns the ID of a QSO matching call, band, mode, date and time_on.
 // Returns 0 if no match is found.
 func FindQSOByKey(db *sql.DB, call, band, mode, qsoDate, timeOn string) int64 {
+	return findQSOByKey(db, call, band, mode, qsoDate, timeOn)
+}
+
+// FindQSOByKeyTx is the transactional variant used by bulk import paths — it
+// sees uncommitted rows of the same transaction, so duplicates inside one
+// ADIF stream are still caught.
+func FindQSOByKeyTx(tx *sql.Tx, call, band, mode, qsoDate, timeOn string) int64 {
+	return findQSOByKey(tx, call, band, mode, qsoDate, timeOn)
+}
+
+type rowQuerier interface {
+	QueryRow(query string, args ...any) *sql.Row
+}
+
+func findQSOByKey(q rowQuerier, call, band, mode, qsoDate, timeOn string) int64 {
 	var id int64
-	err := db.QueryRow(
+	err := q.QueryRow(
 		`SELECT id FROM qsos WHERE call = ? AND band = ? AND mode = ? AND qso_date = ? AND time_on = ? LIMIT 1`,
 		call, band, mode, qsoDate, timeOn,
 	).Scan(&id)

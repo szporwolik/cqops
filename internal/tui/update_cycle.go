@@ -49,6 +49,10 @@ func (m *Model) handleLogbookSwitched() tea.Cmd {
 	m.invalidatePartnerMapCache()
 	m.rc.logStatsSig = ""
 	m.rc.workedSummarySig = ""
+	m.rc.workedSummaryWantedSig = ""
+	m.rc.workedSummaryInflightSig = ""
+	m.rc.countryDXCC = nil
+	m.rc.countryDXCCMiss = nil
 	m.rc.pathSig = ""
 	m.rc.pathLine = ""
 	m.lookup.wlPrivateData = nil // WL data is logbook-specific

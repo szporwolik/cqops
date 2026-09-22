@@ -1,6 +1,7 @@
 package dashboard
 
 import (
+	"encoding/json"
 	"sync"
 	"time"
 )
@@ -60,6 +61,10 @@ func (h *Hub) rebuildCacheLocked() {
 // Publish sends an event to all subscribers. Each event gets a
 // monotonic ID. Sends are non-blocking — if a subscriber's buffer
 // is full, the event is dropped for that subscriber.
+//
+// The JSON wire payload is marshaled exactly once per event and shared
+// across every subscriber: with several browser tabs open the encoder
+// would otherwise run once per tab for identical bytes.
 func (h *Hub) Publish(typ EventType, payload any) {
 	h.mu.Lock()
 	h.nextID++
@@ -71,6 +76,10 @@ func (h *Hub) Publish(typ EventType, payload any) {
 	}
 	subs := h.cached
 	h.mu.Unlock()
+
+	if data, err := json.Marshal(ev); err == nil {
+		ev.sseData = data
+	}
 
 	for _, ch := range subs {
 		select {

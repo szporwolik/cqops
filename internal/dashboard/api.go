@@ -254,9 +254,14 @@ func writeSSE(w io.Writer, rc *http.ResponseController, ev Event) bool {
 	if err := rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout)); err != nil && !errors.Is(err, http.ErrNotSupported) {
 		return false
 	}
-	data, err := json.Marshal(ev)
-	if err != nil {
-		return false
+	data := ev.sseData
+	if data == nil {
+		// Per-connection event (snapshot/heartbeat) — no shared cache.
+		var err error
+		data, err = json.Marshal(ev)
+		if err != nil {
+			return false
+		}
 	}
 	if _, err := fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", ev.ID, ev.Type, data); err != nil {
 		return false

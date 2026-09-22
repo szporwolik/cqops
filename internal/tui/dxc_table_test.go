@@ -463,6 +463,44 @@ func TestDXCTable_RowHighlightSpansFullRow(t *testing.T) {
 	}
 }
 
+// TestDXCFilterDebouncesTableRebuild verifies C5: a filter keypress still
+// marks the table dirty immediately, but the rebuild in View() waits a short
+// debounce so rapid filter cycling coalesces into one build.
+func TestDXCFilterDebouncesTableRebuild(t *testing.T) {
+	m := newDXCBandFilterModel(t, []store.DXCSpot{
+		{DXCall: "SP9AAA", Frequency: 14250000, Band: "20m", Mode: "SSB", ReceivedAt: nowUnix()},
+	})
+	m.width, m.height = 100, 30
+	m.screen = screenDXC
+
+	// Initial build.
+	_ = m.dxcView()
+	if !m.dxc.tableReady {
+		t.Fatal("initial table build failed")
+	}
+
+	_, _ = m.handleDXCUpdate(tea.KeyPressMsg{Code: 't', Text: "t"}, nil)
+	if m.dxc.tableReady {
+		t.Fatal("filter change must mark the table dirty")
+	}
+	if m.dxc.filterRebuildAt.IsZero() {
+		t.Fatal("filter change must stamp the debounce time")
+	}
+
+	// Within the debounce window the stale table is kept — no rebuild.
+	_ = m.dxcView()
+	if m.dxc.tableReady {
+		t.Fatal("the rebuild must stay debounced right after the keypress")
+	}
+
+	// Once the window elapses the rebuild runs.
+	m.dxc.filterRebuildAt = time.Now().Add(-time.Second)
+	_ = m.dxcView()
+	if !m.dxc.tableReady {
+		t.Fatal("the rebuild must run after the debounce window")
+	}
+}
+
 // =============================================================================
 // DXC key/state-transition tests
 // =============================================================================

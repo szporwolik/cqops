@@ -25,6 +25,12 @@ type dxcState struct {
 	builtH     int
 	spotCount  int
 
+	// filterRebuildAt marks when the last filter change happened. A filter
+	// change still sets tableReady=false (existing semantics), but the
+	// rebuild in View() waits a short debounce so rapid filter cycling
+	// coalesces into one DB query and one table build.
+	filterRebuildAt time.Time
+
 	bandFilter   string          // "" = all, band name = filter, "other" = unclassified
 	timeFilter   int             // minutes, 0 = all
 	timeIdx      int             // index into dxcTimeWindows

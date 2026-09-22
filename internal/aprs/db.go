@@ -150,7 +150,7 @@ func (c *CacheDB) saveHistoryBeforeUpsert(tx *sql.Tx, s StationRecord) {
 		s.Callsign, oldLat, oldLon, now,
 	)
 	if execErr == nil {
-		applog.Debug("APRS: trail point saved", "callsign", s.Callsign, "oldLat", fmt.Sprintf("%.5f", oldLat), "oldLon", fmt.Sprintf("%.5f", oldLon))
+		applog.Debug("APRS: trail point saved", "callsign", s.Callsign, "oldLat", oldLat, "oldLon", oldLon)
 	} else {
 		applog.Debug("APRS: trail point skipped (dup key)", "callsign", s.Callsign, "error", execErr)
 	}

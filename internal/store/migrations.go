@@ -95,12 +95,11 @@ var migrations = []string{
 	`CREATE INDEX IF NOT EXISTS idx_qsos_source ON qsos(source)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_wavelog_id ON qsos(wavelog_id)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_contest_id ON qsos(contest_id)`,
+	`CREATE INDEX IF NOT EXISTS idx_qsos_contest_adif_id ON qsos(contest_adif_id)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_date_time ON qsos(qso_date DESC, time_on DESC)`,
 
-	`CREATE INDEX IF NOT EXISTS idx_qsos_country ON qsos(country)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_country_base ON qsos(country, base_call)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_dxcc ON qsos(dxcc)`,
-	`CREATE INDEX IF NOT EXISTS idx_qsos_submode ON qsos(submode)`,
 
 	`CREATE INDEX IF NOT EXISTS idx_qsos_base_call ON qsos(base_call)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_date_time_call ON qsos(qso_date, time_on, base_call)`,
@@ -110,7 +109,7 @@ var migrations = []string{
 	`CREATE INDEX IF NOT EXISTS idx_qsos_contest_call_band_mode ON qsos(contest_id, call, band, mode)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_contest_date_time ON qsos(contest_id, qso_date DESC, time_on DESC)`,
 
-	// ── schema v2: composite indexes for dupe-check and dedup queries ───────
+	// ── schema v2: composite indexes for dupe-check and dedup queries ─────────
 	`CREATE INDEX IF NOT EXISTS idx_qsos_call_band_mode_date ON qsos(call, band, mode, qso_date)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_base_call_band_mode_date ON qsos(base_call, band, mode, qso_date)`,
 
@@ -206,6 +205,9 @@ func Migrate(db *sql.DB) error {
 		if err := migrateDropWavelogFlag(db); err != nil {
 			return err
 		}
+		if err := migrateDropRedundantIndexes(db); err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -245,6 +247,9 @@ func Migrate(db *sql.DB) error {
 		return err
 	}
 	if err := migrateDropWavelogFlag(db); err != nil {
+		return err
+	}
+	if err := migrateDropRedundantIndexes(db); err != nil {
 		return err
 	}
 
@@ -317,6 +322,22 @@ func ensureColumnIndexes(db *sql.DB) error {
 				continue
 			}
 			return fmt.Errorf("create index: %w", err)
+		}
+	}
+	return nil
+}
+
+// migrateDropRedundantIndexes removes single-column indexes whose coverage is
+// subsumed by compound indexes or that have no consumer in the query set:
+// idx_qsos_country is covered by idx_qsos_country_base (same leading column)
+// and idx_qsos_country_nocase serves the case-insensitive lookups;
+// idx_qsos_submode has no WHERE-submode consumer (submode participates only
+// in expressions). Every maintained index costs a b-tree write on each QSO
+// save, so redundant indexes are pure write amplification.
+func migrateDropRedundantIndexes(db *sql.DB) error {
+	for _, idx := range []string{"idx_qsos_country", "idx_qsos_submode"} {
+		if _, err := db.Exec(`DROP INDEX IF EXISTS ` + idx); err != nil {
+			return fmt.Errorf("drop redundant index %s: %w", idx, err)
 		}
 	}
 	return nil

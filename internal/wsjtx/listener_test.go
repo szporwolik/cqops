@@ -39,9 +39,6 @@ func TestNewListener(t *testing.T) {
 	if l == nil {
 		t.Fatal("NewListener returned nil")
 	}
-	if l.Events == nil {
-		t.Error("Events channel is nil")
-	}
 	if l.IsActive() {
 		t.Error("new listener should not be active")
 	}

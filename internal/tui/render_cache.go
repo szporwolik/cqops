@@ -68,14 +68,27 @@ type renderCache struct {
 
 	// Worked panel summary cache (call + grid + DXCC statistics).
 	// The query is heavy (six queries per scope), so it is fetched off the
-	// render path like the other DB-backed panels.
-	workedSummary           store.WorkedSummary
-	workedSummarySig        string
-	workedSummaryNeedFetch  bool
-	workedSummaryFetchCall  string
-	workedSummaryFetchGrid4 string
-	workedSummaryFetchDXCC  string
-	workedSummaryFetchName  string
+	// render path like the other DB-backed panels. wantedSig records the
+	// signature the current frame asked for — a stale async result for a
+	// superseded callsign is discarded instead of flashing old data.
+	workedSummary            store.WorkedSummary
+	workedSummarySig         string
+	workedSummaryWantedSig   string
+	workedSummaryInflightSig string
+	workedSummaryNeedFetch   bool
+	workedSummaryFetchCall   string
+	workedSummaryFetchGrid4  string
+	workedSummaryFetchDXCC   string
+	workedSummaryFetchName   string
+
+	// Country → DXCC memo for foreign-prefix partner lookups, loaded off the
+	// render path (the direct query used to run inside View()). Bounded;
+	// misses are memoized too so an unknown country is not re-queried every
+	// frame.
+	partnerDXCCNeedFetch bool
+	partnerDXCCEntity    string
+	countryDXCC          map[string]string
+	countryDXCCMiss      map[string]bool
 
 	// Logbook-wide counts (total QSOs, today's QSOs). Updated on tick
 	// and invalidated on QSO save / logbook switch / midnight.

@@ -190,6 +190,13 @@ type editorMsg struct {
 	wlRetryKey     string
 	wlRetryRelease func()
 	wlRetryErr     string
+	// search* carry the debounced async editor-search result. The search
+	// generation and the query text bind the result to the request that
+	// produced it — typing since then discards it.
+	searchGen   uint64
+	searchQuery string
+	searchRows  []qso.QSO
+	searchErr   string
 }
 
 func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -255,6 +262,23 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// swallow it, which would leak its transferred database lease.
 		if msg.normalized > 0 {
 			return le.handleNormalizeResult(msg)
+		}
+
+		// Debounced async search results are generation-bound like every
+		// other background result: a superseded query (or a replaced editor)
+		// is discarded. Handled before the download branches so a result
+		// landing while an operation is active still applies.
+		if msg.searchGen != 0 {
+			if msg.gen == 0 || msg.gen == le.gen {
+				if msg.searchGen == le.searchGen && msg.searchQuery == le.searchQuery {
+					if msg.searchErr != "" {
+						applog.Error("LogbookEditor: search failed", "error", msg.searchErr)
+					} else {
+						le.applySearchRows(msg.searchRows)
+					}
+				}
+			}
+			return le, nil
 		}
 
 		// Batch download/import/export progress — only when a download is actually active.
@@ -397,6 +421,14 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
+	case searchDebounceMsg:
+		// The debounce fired for the current search text — run the
+		// full-logbook query in a worker. Stale generations are ignored.
+		if msg.gen == le.searchGen && le.searchQuery == msg.query && le.searchQuery != "" && le.db != nil {
+			return le, le.searchWorkerCmd(msg.gen, msg.query)
+		}
+		return le, nil
+
 	case tea.PasteMsg:
 		// Forward clipboard paste to the focused text input during
 		// inline editing. Non-focusable fields (WLStatus, Source) are
@@ -426,7 +458,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if le.searchQuery != "" {
 					le.searchInput.SetValue("")
 					le.searchQuery = ""
-					le.applySearchFilter()
+					return le, le.scheduleSearch()
 				}
 				return le, nil
 			case "up", "down", "left", "right", "home", "end",
@@ -441,7 +473,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				le.searchInput, _ = le.searchInput.Update(msg)
 				if le.searchInput.Value() != prev {
 					le.searchQuery = strings.TrimSpace(le.searchInput.Value())
-					le.applySearchFilter()
+					return le, le.scheduleSearch()
 				}
 				return le, nil
 			}
@@ -1298,6 +1330,13 @@ func (le *LogbookEditor) readDownloadMsg() tea.Cmd {
 	}
 }
 
+// bulkImportChunkSize bounds how many rows one bulk import transaction
+// writes before committing. Per-record autocommit cost one fsync per row
+// (synchronous=FULL) and made large downloads/imports crawl; chunked
+// transactions amortize the commit while keeping the UI progress granular
+// and an abort from losing more than one chunk.
+const bulkImportChunkSize = 500
+
 // runDownload performs the actual HTTP fetch, saves ADIF to a temp file,
 // then processes it line-by-line. Progress is reported per batch (every 50 QSOs
 // or when done). The goroutine checks op.ctx between records; on abort
@@ -1371,6 +1410,68 @@ func (le *LogbookEditor) runDownload(op *downloadOp, url, key, sid string, fetch
 	idGap := false
 	unresolved := 0
 
+	// Chunked transaction plumbing: writes are batched into transactions of
+	// bulkImportChunkSize rows. A failed statement or commit discards only
+	// the current chunk — the checkpoint resets to the last committed value,
+	// so the next incremental download re-fetches the lost records instead
+	// of skipping them.
+	var tx *sql.Tx
+	txWrites := 0
+	chunkInserted := 0
+	lastCommittedID := int64(0)
+	lastCommittedOK := false
+	dbErr := ""
+	beginChunk := func() bool {
+		if tx != nil {
+			return true
+		}
+		t, err := db.Begin()
+		if err != nil {
+			applog.Error("Wavelog: cannot begin import transaction", "error", err)
+			dbErr = "database unavailable: " + err.Error()
+			return false
+		}
+		tx = t
+		return true
+	}
+	commitChunk := func() bool {
+		if tx == nil {
+			return true
+		}
+		if err := tx.Commit(); err != nil {
+			applog.Error("Wavelog: cannot commit import chunk", "error", err)
+			tx = nil
+			checkpointID, checkpointOK = lastCommittedID, lastCommittedOK
+			inserted -= chunkInserted
+			chunkInserted = 0
+			txWrites = 0
+			return false
+		}
+		tx = nil
+		if checkpointOK {
+			lastCommittedID = checkpointID
+			lastCommittedOK = true
+		}
+		txWrites = 0
+		chunkInserted = 0
+		return true
+	}
+	discardChunk := func() {
+		if tx != nil {
+			tx.Rollback()
+			tx = nil
+		}
+		checkpointID, checkpointOK = lastCommittedID, lastCommittedOK
+		inserted -= chunkInserted
+		chunkInserted = 0
+		txWrites = 0
+	}
+	defer func() {
+		if tx != nil {
+			tx.Rollback()
+		}
+	}()
+
 	applog.Info("Wavelog: scanning ADIF", "exported", totalExported, "size_bytes", result.ADIFSize)
 
 	// Stream-parse ADIF records one at a time — never loads all QSOs into memory.
@@ -1379,8 +1480,29 @@ func (le *LogbookEditor) runDownload(op *downloadOp, url, key, sid string, fetch
 	for scanner.Scan() {
 		// Check for abort between records.
 		if op.cancelled() {
+			// The current chunk contains valid records — commit them so the
+			// dialog counts stay honest. The cursor does not advance on
+			// abort, so the next download re-reads them as duplicates.
+			commitChunk()
 			msgCh <- editorMsg{dlCount: inserted, dlDupes: dupes, dlAborted: true, dlDone: true, gen: le.gen, lbID: le.logbookID}
 			return
+		}
+
+		if !beginChunk() {
+			frozen = true
+			transientFails++
+			break
+		}
+		if txWrites >= bulkImportChunkSize {
+			if !commitChunk() {
+				frozen = true
+				transientFails++
+			}
+		}
+		if !beginChunk() {
+			frozen = true
+			transientFails++
+			break
 		}
 
 		if scanner.IsHeader() {
@@ -1421,11 +1543,11 @@ func (le *LogbookEditor) runDownload(op *downloadOp, url, key, sid string, fetch
 			continue
 		}
 
-		if existingID := store.FindQSOByKey(db, qs.Call, qs.Band, qs.Mode, qs.QSODate, qs.TimeOn); existingID != 0 {
+		if existingID := store.FindQSOByKeyTx(tx, qs.Call, qs.Band, qs.Mode, qs.QSODate, qs.TimeOn); existingID != 0 {
 			// The row already exists locally — still learn its remote id
 			// when the local copy has none, so it counts as uploaded.
 			if qs.WavelogID > 0 {
-				if serr := store.SetWavelogID(db, existingID, qs.WavelogID); serr != nil {
+				if serr := store.SetWavelogIDTx(tx, existingID, qs.WavelogID); serr != nil {
 					applog.Warn("Wavelog: failed to store remote id for dupe", "qso_id", existingID, "error", serr)
 					// The recovered id could not be persisted — the row is
 					// still locally unresolved. Freeze advancement so the
@@ -1433,9 +1555,13 @@ func (le *LogbookEditor) runDownload(op *downloadOp, url, key, sid string, fetch
 					// skipping the record's id range forever.
 					unresolved++
 					idGap = true
-				} else if !frozen && !idGap {
-					checkpointID = qs.WavelogID
-					checkpointOK = true
+					discardChunk()
+				} else {
+					txWrites++
+					if !frozen && !idGap {
+						checkpointID = qs.WavelogID
+						checkpointOK = true
+					}
 				}
 			} else {
 				// The existing row's remote identity is still unknown —
@@ -1447,28 +1573,21 @@ func (le *LogbookEditor) runDownload(op *downloadOp, url, key, sid string, fetch
 			continue
 		}
 
-		// Retry on SQLITE_BUSY — the main thread may briefly hold a write lock
-		// (e.g. during loadPage after purge).  A short sleep + retry resolves
-		// nearly all transient lock conflicts.
-		var insertErr error
-		for attempt := 0; attempt < 3; attempt++ {
-			_, insertErr = store.InsertQSO(db, qs)
-			if insertErr == nil {
-				break
-			}
-			if !strings.Contains(insertErr.Error(), "database is locked") {
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
+		_, insertErr := store.InsertQSOTx(tx, qs)
 		if insertErr != nil {
 			applog.Error("Wavelog: failed to insert downloaded QSO", "call", qs.Call, "error", insertErr)
 			failed++
 			transientFails++
 			frozen = true // never advance the checkpoint past an unsaved record
+			// The failed statement may have invalidated the transaction —
+			// discard the chunk and continue with a fresh one. Frozen
+			// guarantees the discarded records are re-fetched.
+			discardChunk()
 			continue
 		}
 		inserted++
+		chunkInserted++
+		txWrites++
 		if qs.WavelogID > 0 {
 			if !frozen && !idGap {
 				checkpointID = qs.WavelogID
@@ -1496,6 +1615,12 @@ func (le *LogbookEditor) runDownload(op *downloadOp, url, key, sid string, fetch
 	// Send final progress (catch remainder if last batch was partial).
 	if inserted%batchInterval != 0 {
 		op.send(editorMsg{dlProgress: totalExported, dlTotal: totalExported, dlCount: inserted})
+	}
+
+	// Persist the final chunk before evaluating the cursor.
+	if !commitChunk() {
+		frozen = true
+		transientFails++
 	}
 
 	scanFailed := false
@@ -1539,6 +1664,7 @@ func (le *LogbookEditor) runDownload(op *downloadOp, url, key, sid string, fetch
 		dlTransient:  transientFails,
 		dlUnresolved: unresolved,
 		dlDone:       true,
+		dlErr:        dbErr,
 		gen:          le.gen,
 		lbID:         le.logbookID,
 	}
@@ -1570,14 +1696,81 @@ func (le *LogbookEditor) runImport(op *downloadOp, path string, release func()) 
 	var inserted, dupes, failed int
 	const batchInterval = 50 // report every 50 QSOs for smooth but efficient UI
 
+	// Chunked transactions: per-record autocommit cost one fsync per row;
+	// batching bulkImportChunkSize rows per transaction keeps large imports
+	// fast while an abort or error loses at most one chunk.
+	var tx *sql.Tx
+	txWrites := 0
+	chunkInserted := 0
+	dbErr := ""
+	beginChunk := func() bool {
+		if tx != nil {
+			return true
+		}
+		t, err := db.Begin()
+		if err != nil {
+			applog.Error("ADIF import: cannot begin transaction", "error", err)
+			dbErr = "database unavailable: " + err.Error()
+			return false
+		}
+		tx = t
+		return true
+	}
+	commitChunk := func() bool {
+		if tx == nil {
+			return true
+		}
+		if err := tx.Commit(); err != nil {
+			applog.Error("ADIF import: cannot commit chunk", "error", err)
+			tx = nil
+			inserted -= chunkInserted
+			chunkInserted = 0
+			txWrites = 0
+			return false
+		}
+		tx = nil
+		txWrites = 0
+		chunkInserted = 0
+		return true
+	}
+	discardChunk := func() {
+		if tx != nil {
+			tx.Rollback()
+			tx = nil
+		}
+		inserted -= chunkInserted
+		chunkInserted = 0
+		txWrites = 0
+	}
+	defer func() {
+		if tx != nil {
+			tx.Rollback()
+		}
+	}()
+
 	applog.Info("ADIF import: scanning", "path", path, "estimated_records", totalRecords)
 
 	scanner := adif.NewScanner(f)
 	for scanner.Scan() {
 		// Check for abort between records.
 		if op.cancelled() {
+			// Commit the partial chunk so imported rows survive the abort —
+			// the same behaviour the per-record autocommit import had.
+			commitChunk()
 			msgCh <- editorMsg{dlCount: inserted, dlDupes: dupes, dlAborted: true, dlDone: true, gen: le.gen, lbID: le.logbookID}
 			return
+		}
+
+		if !beginChunk() {
+			failed++
+			break
+		}
+		if txWrites >= bulkImportChunkSize {
+			commitChunk()
+		}
+		if !beginChunk() {
+			failed++
+			break
 		}
 
 		if scanner.IsHeader() {
@@ -1598,30 +1791,25 @@ func (le *LogbookEditor) runImport(op *downloadOp, path string, release func()) 
 			continue
 		}
 
-		if existingID := store.FindQSOByKey(db, qs.Call, qs.Band, qs.Mode, qs.QSODate, qs.TimeOn); existingID != 0 {
+		if existingID := store.FindQSOByKeyTx(tx, qs.Call, qs.Band, qs.Mode, qs.QSODate, qs.TimeOn); existingID != 0 {
 			applog.Warn("ADIF import: duplicate QSO skipped",
 				"local_id", existingID, "call", qs.Call, "band", qs.Band, "date", qs.QSODate)
 			dupes++
 			continue
 		}
 
-		var insertErr error
-		for attempt := 0; attempt < 3; attempt++ {
-			_, insertErr = store.InsertQSO(db, qs)
-			if insertErr == nil {
-				break
-			}
-			if !strings.Contains(insertErr.Error(), "database is locked") {
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
-		}
+		_, insertErr := store.InsertQSOTx(tx, qs)
 		if insertErr != nil {
 			applog.Error("ADIF import: failed to insert QSO", "call", qs.Call, "error", insertErr)
 			failed++
+			// The failed statement may have invalidated the transaction —
+			// discard the chunk and continue with a fresh one.
+			discardChunk()
 			continue
 		}
 		inserted++
+		chunkInserted++
+		txWrites++
 
 		// Report progress every batchInterval QSOs, and always for the first
 		// one so the UI transitions from "Importing…" to showing a count.
@@ -1633,6 +1821,9 @@ func (le *LogbookEditor) runImport(op *downloadOp, path string, release func()) 
 			applog.Info("ADIF import: progress", "inserted", inserted, "dupes", dupes, "failed", failed)
 		}
 	}
+
+	// Persist the final chunk before reporting.
+	commitChunk()
 
 	if err := scanner.Err(); err != nil {
 		// A truncated or corrupt file must not end on a success-looking
@@ -1657,6 +1848,7 @@ func (le *LogbookEditor) runImport(op *downloadOp, path string, release func()) 
 		dlCount:  inserted,
 		dlDupes:  dupes,
 		dlFailed: failed,
+		dlErr:    dbErr,
 		dlDone:   true,
 		gen:      le.gen,
 		lbID:     le.logbookID,

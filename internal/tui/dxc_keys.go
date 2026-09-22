@@ -12,6 +12,20 @@ import (
 	"github.com/szporwolik/cqops/internal/store"
 )
 
+// dxcFilterRebuildDebounce is how long a filter change keeps the previous
+// table before View() rebuilds it — rapid cycling of the filter keys
+// coalesces into a single DB query and table build.
+const dxcFilterRebuildDebounce = 180 * time.Millisecond
+
+// dxcInvalidateForFilter marks the table dirty after a filter change and
+// stamps the change time. View() debounces the rebuild: the filter state
+// changes immediately, while rapid successive keypresses (cycling t/b/m/c)
+// coalesce into a single DB query + table build.
+func (m *Model) dxcInvalidateForFilter() {
+	m.dxc.tableReady = false
+	m.dxc.filterRebuildAt = time.Now()
+}
+
 // handleDXCUpdate routes messages to the DXC table for keyboard navigation
 // and handles filter keybindings.
 func (m *Model) handleDXCUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
@@ -28,7 +42,7 @@ func (m *Model) handleDXCUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			if m.dxc.timeIdx != next {
 				m.dxc.timeIdx = next
 				m.dxc.timeFilter = dxcTimeWindows[m.dxc.timeIdx]
-				m.dxc.tableReady = false
+				m.dxcInvalidateForFilter()
 			}
 			return m, cmd
 
@@ -65,7 +79,7 @@ func (m *Model) handleDXCUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 				m.dxc.contIdx = 0
 				m.dxc.modeFilter = ""
 				m.dxc.modeIdx = 0
-				m.dxc.tableReady = false
+				m.dxcInvalidateForFilter()
 			}
 			return m, cmd
 		}
@@ -104,7 +118,7 @@ func (m *Model) dxcCycleFilter(idx *int, filter *string, opts []string) {
 	if *idx != next {
 		*idx = next
 		*filter = opts[*idx]
-		m.dxc.tableReady = false
+		m.dxcInvalidateForFilter()
 	}
 }
 

@@ -864,13 +864,14 @@ func (m *Model) buildWorkedPanelLayout(d *callbook.Result, maxW int) workedPanel
 		if wl != nil && wl.DXCCID() != "" {
 			opDXCC = wl.DXCCID()
 		} else if m.App.DB != nil && opEntity != "" {
-			var dbDXCC string
-			_ = m.App.DB.QueryRow(
-				`SELECT dxcc FROM qsos WHERE country = ? AND dxcc != '' LIMIT 1`,
-				opEntity,
-			).Scan(&dbDXCC)
-			if dbDXCC != "" {
-				opDXCC = dbDXCC
+			// Foreign-prefix DXCC resolution must not query the database
+			// inside View(): the memo answers immediately and a miss only
+			// flags an off-render fetch (serviced by dispatchViewFetches).
+			if memoDXCC, ok := m.rc.countryDXCC[opEntity]; ok {
+				opDXCC = memoDXCC
+			} else if !m.rc.countryDXCCMiss[opEntity] {
+				m.rc.partnerDXCCNeedFetch = true
+				m.rc.partnerDXCCEntity = opEntity
 			}
 		}
 	}
@@ -898,6 +899,7 @@ func (m *Model) buildWorkedPanelLayout(d *callbook.Result, maxW int) workedPanel
 			ws = m.rc.workedSummary
 		} else {
 			m.rc.workedSummaryNeedFetch = true
+			m.rc.workedSummaryWantedSig = wsKey
 			m.rc.workedSummaryFetchCall = call
 			m.rc.workedSummaryFetchGrid4 = grid4
 			m.rc.workedSummaryFetchDXCC = opDXCC
@@ -1182,12 +1184,51 @@ func (m *Model) fetchWorkedSummaryCmd(call, grid4, dxcc, countryName string) tea
 }
 
 // handleWorkedSummary stores the async result for use by the next View().
+// A result for a signature that is no longer wanted (the operator typed a
+// different callsign meanwhile) is discarded so stale data never flashes.
 func (m *Model) handleWorkedSummary(msg workedSummaryMsg) {
-	if msg.sig == "" {
+	if msg.sig == "" || msg.sig != m.rc.workedSummaryWantedSig {
 		return
 	}
 	m.rc.workedSummary = msg.summary
 	m.rc.workedSummarySig = msg.sig
+	m.rc.workedSummaryInflightSig = ""
+}
+
+// fetchCountryDXCCCmd loads the DXCC number stored for a country name, off
+// the render path. Empty result means no QSO carries that entity yet.
+func (m *Model) fetchCountryDXCCCmd(entity string) tea.Cmd {
+	db := m.App.DB
+	logbook := m.App.LogbookName
+	return func() tea.Msg {
+		var dxccVal string
+		_ = db.QueryRow(`SELECT dxcc FROM qsos WHERE country = ? AND dxcc != '' LIMIT 1`, entity).Scan(&dxccVal)
+		return partnerDXCCMsg{entity: entity, dxcc: dxccVal, logbook: logbook}
+	}
+}
+
+// handlePartnerDXCC stores the resolved country → DXCC mapping in the bounded
+// memo. The memo is logbook-scoped and reset on logbook switch, so stale
+// results from a retired database are dropped.
+func (m *Model) handlePartnerDXCC(r partnerDXCCMsg) {
+	if r.logbook != m.App.LogbookName || r.entity == "" {
+		return
+	}
+	if m.rc.countryDXCC == nil {
+		m.rc.countryDXCC = make(map[string]string)
+	}
+	if m.rc.countryDXCCMiss == nil {
+		m.rc.countryDXCCMiss = make(map[string]bool)
+	}
+	if r.dxcc != "" {
+		if _, exists := m.rc.countryDXCC[r.entity]; !exists && len(m.rc.countryDXCC) < 128 {
+			m.rc.countryDXCC[r.entity] = r.dxcc
+		}
+	} else {
+		if len(m.rc.countryDXCCMiss) < 128 {
+			m.rc.countryDXCCMiss[r.entity] = true
+		}
+	}
 }
 
 // fetchLogbookStatsCmd returns a tea.Cmd that runs GetLogbookStats

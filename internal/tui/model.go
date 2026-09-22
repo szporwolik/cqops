@@ -261,6 +261,15 @@ type workedSummaryMsg struct {
 	sig     string
 }
 
+// partnerDXCCMsg carries the async country → DXCC lookup for foreign-prefix
+// partner panels. The logbook identity guards against applying a result from
+// a previous logbook after a switch.
+type partnerDXCCMsg struct {
+	entity  string
+	dxcc    string
+	logbook string
+}
+
 type dxcTuneResultMsg struct {
 	call    string
 	freqMHz float64

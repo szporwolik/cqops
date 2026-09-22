@@ -43,4 +43,10 @@ type Event struct {
 	Type      string    `json:"type"`
 	Timestamp time.Time `json:"timestamp"`
 	Payload   any       `json:"payload"`
+	// sseData caches the marshaled SSE payload. Hub.Publish marshals once
+	// and every subscriber writes the same bytes — the JSON encoder runs
+	// once per event instead of once per browser tab. Unexported, so it
+	// never appears in the wire format. Per-connection events (snapshot,
+	// heartbeat) leave it nil and are marshaled by writeSSE.
+	sseData []byte
 }

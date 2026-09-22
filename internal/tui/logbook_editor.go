@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"sync/atomic"
+	"time"
 
 	"charm.land/bubbles/v2/filepicker"
 	"charm.land/bubbles/v2/table"
@@ -169,6 +170,7 @@ type syncRetryBatch struct {
 type LogbookEditor struct {
 	db               *sql.DB
 	gen              uint64 // unique per editor instance — background operation results from a replaced editor are discarded
+	searchGen        uint64 // bumped on every search change; stale debounce/result messages are rejected
 	qsos             []qso.QSO
 	table            table.Model
 	mode             editorMode
@@ -495,7 +497,9 @@ func (le *LogbookEditor) dbLease(db *sql.DB) func() {
 
 // applySearchFilter searches the whole logbook (not just the current page)
 // for the search query: case-insensitive match on callsign, name, or
-// country, optionally scoped to the active contest filter.
+// country, optionally scoped to the active contest filter. Synchronous —
+// used directly by tests; interactive typing goes through scheduleSearch,
+// which debounces and runs the query in a worker.
 func (le *LogbookEditor) applySearchFilter() {
 	if le.searchQuery == "" {
 		le.loadPage()
@@ -509,11 +513,62 @@ func (le *LogbookEditor) applySearchFilter() {
 		applog.Error("LogbookEditor: search failed", "error", err)
 		return
 	}
+	le.applySearchRows(qsos)
+}
+
+// applySearchRows installs a search result into the editor list and rebuilds
+// the page table. Shared by the synchronous test path and the async worker.
+func (le *LogbookEditor) applySearchRows(qsos []qso.QSO) {
 	le.qsos = qsos
 	le.totalCount = len(qsos)
 	le.formattedRows = nil
 	le.cachedSig = ""
 	le.buildTable()
+}
+
+// editorSearchDebounce delays the full-logbook search after the last
+// keystroke: rapid typing coalesces into one query instead of one scan and
+// one table rebuild per keypress.
+const editorSearchDebounce = 250 * time.Millisecond
+
+// searchDebounceMsg fires after the search debounce interval for one search
+// generation. A stale generation (the query changed again) is ignored.
+type searchDebounceMsg struct {
+	gen   uint64
+	query string
+}
+
+// scheduleSearch runs after every search-text change. An empty query (or a
+// database-less editor) restores the paged view synchronously — the query is
+// indexed and cheap. Otherwise the full-logbook scan is debounced and then
+// run in a worker, so typing never blocks on a LIKE '%…%' table scan.
+func (le *LogbookEditor) scheduleSearch() tea.Cmd {
+	if le.searchQuery == "" || le.db == nil {
+		le.applySearchFilter()
+		return nil
+	}
+	le.searchGen++
+	gen := le.searchGen
+	query := le.searchQuery
+	return tea.Tick(editorSearchDebounce, func(time.Time) tea.Msg {
+		return searchDebounceMsg{gen: gen, query: query}
+	})
+}
+
+// searchWorkerCmd runs the full-logbook search off the owner loop and
+// returns the rows with the generation that requested them.
+func (le *LogbookEditor) searchWorkerCmd(gen uint64, query string) tea.Cmd {
+	db := le.db
+	contestID := le.contestID
+	editorGen := le.gen
+	return func() tea.Msg {
+		rows, err := store.SearchQSOs(db, query, contestID, 500)
+		errText := ""
+		if err != nil {
+			errText = err.Error()
+		}
+		return editorMsg{searchGen: gen, searchQuery: query, searchRows: rows, searchErr: errText, gen: editorGen}
+	}
 }
 
 func (le *LogbookEditor) totalPages() int {

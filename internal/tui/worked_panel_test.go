@@ -111,6 +111,97 @@ func seedWorkedSummary(t *testing.T, m *Model, db *sql.DB, call, grid, dxcc, cou
 	m.rc.workedSummarySig = workedSummarySigFor(call, grid4, dxcc, country)
 }
 
+// TestWorkedSummaryFetchDispatchedAndApplied verifies the C3 wiring: the
+// need-fetch flag set by View() is serviced by dispatchViewFetches, and the
+// result applies only when it matches the currently wanted signature.
+func TestWorkedSummaryFetchDispatchedAndApplied(t *testing.T) {
+	m, db := newWorkedPanelTestModel(t)
+	want := workedSummarySigFor("KI6NAZ", "DM03", "291", "United States")
+
+	m.rc.workedSummaryNeedFetch = true
+	m.rc.workedSummaryFetchCall = "KI6NAZ"
+	m.rc.workedSummaryFetchGrid4 = "DM03"
+	m.rc.workedSummaryFetchDXCC = "291"
+	m.rc.workedSummaryFetchName = "United States"
+	m.rc.workedSummaryWantedSig = want
+
+	cmd := m.dispatchViewFetches(nil)
+	if cmd == nil {
+		t.Fatal("dispatchViewFetches did not dispatch the worked summary")
+	}
+	msg, ok := execCmd(cmd).(workedSummaryMsg)
+	if !ok {
+		t.Fatalf("fetch produced %T, want workedSummaryMsg", execCmd(cmd))
+	}
+	if msg.sig != want {
+		t.Fatalf("result sig = %q, want %q", msg.sig, want)
+	}
+	m.handleWorkedSummary(msg)
+	if m.rc.workedSummarySig != want {
+		t.Fatal("the matching summary was not applied")
+	}
+
+	// A result for a superseded signature must be discarded: the wanted
+	// signature changed, so the already-applied match must stay untouched.
+	m.rc.workedSummaryWantedSig = "NEWER|CALL|SIG"
+	m.handleWorkedSummary(msg)
+	if m.rc.workedSummarySig != want {
+		t.Fatal("the stale result overwrote the applied signature")
+	}
+	// A result matching the NEWER wanted signature applies.
+	fresh := workedSummaryMsg{sig: "NEWER|CALL|SIG"}
+	m.handleWorkedSummary(fresh)
+	if m.rc.workedSummarySig != "NEWER|CALL|SIG" {
+		t.Fatal("the matching newer result was not applied")
+	}
+	_ = db
+}
+
+// TestPartnerDXCCMemoizedOffRenderPath verifies the C4 flow: the country →
+// DXCC lookup runs off the render path, resolves into the bounded memo, and
+// misses are memoized too.
+func TestPartnerDXCCMemoizedOffRenderPath(t *testing.T) {
+	m, db := newWorkedPanelTestModel(t)
+	if _, err := db.Exec(`UPDATE qsos SET country='Testland', dxcc='999' WHERE id = (SELECT id FROM qsos LIMIT 1)`); err != nil {
+		t.Fatalf("seed country: %v", err)
+	}
+
+	m.rc.partnerDXCCNeedFetch = true
+	m.rc.partnerDXCCEntity = "Testland"
+	cmd := m.dispatchViewFetches(nil)
+	if cmd == nil {
+		t.Fatal("dispatchViewFetches did not dispatch the country DXCC lookup")
+	}
+	msg, ok := execCmd(cmd).(partnerDXCCMsg)
+	if !ok {
+		t.Fatalf("fetch produced %T, want partnerDXCCMsg", execCmd(cmd))
+	}
+	m.handlePartnerDXCC(msg)
+	if got := m.rc.countryDXCC["Testland"]; got != "999" {
+		t.Fatalf("memoized DXCC = %q, want 999", got)
+	}
+
+	// Unknown country: empty result memoized as a miss so it is not
+	// re-queried every frame.
+	m.rc.partnerDXCCNeedFetch = true
+	m.rc.partnerDXCCEntity = "Nowhereland"
+	cmd = m.dispatchViewFetches(nil)
+	msg2, ok := execCmd(cmd).(partnerDXCCMsg)
+	if !ok {
+		t.Fatalf("miss fetch produced %T", execCmd(cmd))
+	}
+	m.handlePartnerDXCC(msg2)
+	if !m.rc.countryDXCCMiss["Nowhereland"] {
+		t.Fatal("the miss was not memoized — it would be re-queried every frame")
+	}
+
+	// Stale result from another logbook must not leak into this one.
+	m.handlePartnerDXCC(partnerDXCCMsg{entity: "Testland", dxcc: "1", logbook: "other"})
+	if got := m.rc.countryDXCC["Testland"]; got != "999" {
+		t.Fatalf("cross-logbook result overwrote the memo: %q", got)
+	}
+}
+
 func TestWorkedPanel_WorkedCall(t *testing.T) {
 	m, db := newWorkedPanelTestModel(t)
 	m.fields[fieldCall].SetValue("KI6NAZ")

@@ -14,16 +14,11 @@ import (
 	"github.com/szporwolik/cqops/internal/applog"
 )
 
-type event struct {
-	Msg interface{}
-}
-
 type Listener struct {
 	mu         sync.Mutex
 	server     *wsjtx.Server
 	active     bool
 	generation uint64 // incremented on each Start; used to reject stale callbacks
-	Events     chan event
 	stop       chan struct{}
 	msgCh      chan interface{} // reader→loop message channel (detached on stop)
 	errCh      chan error       // reader→loop error channel (detached on stop)
@@ -34,9 +29,7 @@ type Listener struct {
 }
 
 func NewListener() *Listener {
-	return &Listener{
-		Events: make(chan event, 2048),
-	}
+	return &Listener{}
 }
 
 // Start creates a new server and begins listening for WSJT-X UDP messages.

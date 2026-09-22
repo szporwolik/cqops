@@ -164,7 +164,7 @@ func (c *Client) parseNMEA(line string) {
 	case "GGA":
 		c.debugCount++
 		if c.debugCount%30 == 1 {
-			applog.Debug("GPS: NMEA GGA", "raw", line, "count", fmt.Sprintf("%d", c.debugCount))
+			applog.Debug("GPS: NMEA GGA", "raw", line, "count", c.debugCount)
 		}
 		c.parseGGA(fields)
 	case "RMC":

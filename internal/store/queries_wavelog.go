@@ -27,6 +27,16 @@ func SetWavelogID(db *sql.DB, id, remoteID int64) error {
 	return fmt.Errorf("set wavelog id: %w", err)
 }
 
+// SetWavelogIDTx is the transactional variant used by bulk import paths. No
+// busy retry: the transaction already holds the write lock.
+func SetWavelogIDTx(tx *sql.Tx, id, remoteID int64) error {
+	_, err := tx.Exec(`UPDATE qsos SET wavelog_id=? WHERE id=?`, remoteID, id)
+	if err != nil {
+		return fmt.Errorf("set wavelog id: %w", err)
+	}
+	return nil
+}
+
 // SetWavelogIDChecked stores the remote id while checking whether the row
 // was edited since the snapshot that was uploaded (uploadedRev). The id is
 // persisted either way — the remote copy exists — but when the current

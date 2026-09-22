@@ -815,6 +815,134 @@ func TestCountQSOsForContest_All(t *testing.T) {
 	}
 }
 
+// TestGetWorkedSummaryDXCCUnionSemantics verifies the DXCC scope over the
+// union source matches the single-OR semantics: rows with the stored entity
+// number AND rows without one whose country matches case-insensitively
+// (prefix variants included) — while unrelated entities are excluded.
+// Also pins the grid scope's range predicate (DM03 matches only DM03 rows).
+func TestGetWorkedSummaryDXCCUnionSemantics(t *testing.T) {
+	db := newTempDB(t)
+
+	mk := func(call, country, dxcc, grid string) {
+		mustInsertQSO(t, db, &qso.QSO{Call: call, QSODate: "20240101", TimeOn: "120000",
+			Band: "20m", Mode: "SSB", Country: country, DXCC: dxcc, GridSquare: grid})
+	}
+	mk("SP1AAA", "United States", "291", "DM03xu")
+	mk("SP1BBB", "UNITED STATES", "291", "DM03aa")
+	mk("SP1CCC", "United States of America", "", "DM03bb") // prefix variant, no dxcc
+	mk("SP1DDD", "united states", "", "JO90aa")            // case variant, no dxcc
+	mk("SP1EEE", "Poland", "", "DM03cc")                   // unrelated country, must not count
+	mk("SP1FFF", "United States", "999", "DM04aa")         // different entity, country fallback still matches (legacy semantics)
+
+	ws, err := GetWorkedSummary(db, "SP1AAA", "DM03", "291", "United States")
+	if err != nil {
+		t.Fatalf("GetWorkedSummary: %v", err)
+	}
+
+	if ws.DXCCHistory.QSOCount != 5 {
+		t.Fatalf("DXCC QSOCount = %d, want 5 (two dxcc rows + three country fallbacks)", ws.DXCCHistory.QSOCount)
+	}
+	if ws.DXCCHistory.UniqueCalls != 5 {
+		t.Errorf("DXCC UniqueCalls = %d, want 5", ws.DXCCHistory.UniqueCalls)
+	}
+	if ws.DXCCHistory.FirstQSO == nil || ws.DXCCHistory.LastQSO == nil {
+		t.Fatal("DXCC first/last QSO missing")
+	}
+
+	// Grid scope: every DM03* row — the grid scope has no entity condition,
+	// so the Polish row counts too; only DM04 must be out.
+	if ws.GridHistory.QSOCount != 4 {
+		t.Fatalf("Grid QSOCount = %d, want 4", ws.GridHistory.QSOCount)
+	}
+
+	// Call scope via base_call.
+	if ws.CallHistory.QSOCount != 1 {
+		t.Fatalf("Call QSOCount = %d, want 1", ws.CallHistory.QSOCount)
+	}
+}
+
+// TestListQSOsPageWithCount_TwoQueryPages verifies the two-statement paging:
+// total count covers the whole filtered set while pages stay ordered and
+// non-overlapping.
+func TestListQSOsPageWithCount_TwoQueryPages(t *testing.T) {
+	db := newTempDB(t)
+
+	for i := 1; i <= 5; i++ {
+		mustInsertQSO(t, db, &qso.QSO{Call: "A" + string(rune('0'+i)),
+			QSODate: "2024050" + string(rune('0'+i)), TimeOn: "120000", Band: "20m", Mode: "SSB"})
+	}
+
+	page1, total1, err := ListQSOsPageWithCount(db, 3, 0, "")
+	if err != nil {
+		t.Fatalf("page 1: %v", err)
+	}
+	if total1 != 5 || len(page1) != 3 {
+		t.Fatalf("page1 = %d rows / total %d, want 3/5", len(page1), total1)
+	}
+
+	page2, total2, err := ListQSOsPageWithCount(db, 3, 3, "")
+	if err != nil {
+		t.Fatalf("page 2: %v", err)
+	}
+	if total2 != 5 || len(page2) != 2 {
+		t.Fatalf("page2 = %d rows / total %d, want 2/5", len(page2), total2)
+	}
+	// Newest first — page 1 holds the most recent QSO, page 2 the oldest.
+	if page1[0].QSODate != "20240505" || page2[1].QSODate != "20240501" {
+		t.Errorf("ordering wrong: page1[0]=%s page2[1]=%s", page1[0].QSODate, page2[1].QSODate)
+	}
+	seen := map[int64]bool{}
+	for _, q := range append(append([]qso.QSO{}, page1...), page2...) {
+		if seen[q.ID] {
+			t.Errorf("row %d appears on both pages", q.ID)
+		}
+		seen[q.ID] = true
+	}
+}
+
+// TestInsertQSOTxAndFindInsideTransaction verifies the transactional bulk-
+// import primitives: rows are visible to FindQSOByKeyTx inside the
+// transaction (catching duplicates in one ADIF stream) but invisible
+// outside until commit.
+func TestInsertQSOTxAndFindInsideTransaction(t *testing.T) {
+	db := newTempDB(t)
+
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	q := &qso.QSO{Call: "SP9MOA", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB"}
+	id, err := InsertQSOTx(tx, q)
+	if err != nil {
+		t.Fatalf("InsertQSOTx: %v", err)
+	}
+	if id == 0 {
+		t.Fatal("InsertQSOTx returned id 0")
+	}
+	if got := FindQSOByKeyTx(tx, "SP9MOA", "20m", "SSB", "20240501", "120000"); got != id {
+		t.Errorf("FindQSOByKeyTx inside tx = %d, want %d", got, id)
+	}
+	if got := FindQSOByKey(db, "SP9MOA", "20m", "SSB", "20240501", "120000"); got != 0 {
+		t.Errorf("FindQSOByKey outside tx = %d, want 0 before commit", got)
+	}
+	if err := SetWavelogIDTx(tx, id, 77); err != nil {
+		t.Fatalf("SetWavelogIDTx: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	if got := FindQSOByKey(db, "SP9MOA", "20m", "SSB", "20240501", "120000"); got != id {
+		t.Errorf("FindQSOByKey after commit = %d, want %d", got, id)
+	}
+	loaded, err := GetQSOByID(db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if loaded.WavelogID != 77 {
+		t.Errorf("WavelogID after tx = %d, want 77", loaded.WavelogID)
+	}
+}
+
 // =============================================================================
 // ListQSOsPage contest filter tests
 // =============================================================================

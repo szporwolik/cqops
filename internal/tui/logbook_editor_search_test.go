@@ -68,6 +68,66 @@ func TestLogbookEditor_SearchCoversWholeLogbook(t *testing.T) {
 	}
 }
 
+// TestLogbookEditor_SearchDebouncedAsync verifies the interactive search path:
+// typing schedules a debounce, the debounce dispatches a worker, and the
+// worker result applies to the list — the full-logbook scan never runs
+// synchronously on a keystroke.
+func TestLogbookEditor_SearchDebouncedAsync(t *testing.T) {
+	le := newEditorWithDB(t)
+	insertQSO(t, le, &qso.QSO{Call: "ZZ9TARGET", Name: "Rare", Country: "Testland",
+		QSODate: "20240301", TimeOn: "120000", Band: "20m", Mode: "SSB"})
+	le.loadPage()
+
+	le.searchQuery = "zz9"
+	cmd := le.scheduleSearch()
+	if cmd == nil {
+		t.Fatal("scheduleSearch returned no debounce command")
+	}
+	dbg, ok := execCmd(cmd).(searchDebounceMsg)
+	if !ok {
+		t.Fatalf("debounce command produced %T, want searchDebounceMsg", execCmd(cmd))
+	}
+	if dbg.gen != le.searchGen || dbg.query != "zz9" {
+		t.Fatalf("debounce = gen:%d query:%q, want gen:%d query:%q", dbg.gen, dbg.query, le.searchGen, "zz9")
+	}
+
+	upd, workerCmd := le.Update(dbg)
+	le = upd.(*LogbookEditor)
+	if workerCmd == nil {
+		t.Fatal("debounce must dispatch the search worker")
+	}
+	res, ok := execCmd(workerCmd).(editorMsg)
+	if !ok || res.searchErr != "" {
+		t.Fatalf("search worker result = %#v", res)
+	}
+	if len(res.searchRows) != 1 {
+		t.Fatalf("search rows = %d, want 1", len(res.searchRows))
+	}
+
+	upd, _ = le.Update(res)
+	le = upd.(*LogbookEditor)
+	if le.totalCount != 1 || len(le.qsos) != 1 || le.qsos[0].Call != "ZZ9TARGET" {
+		t.Fatalf("applied search = total %d, qsos %+v", le.totalCount, le.qsos)
+	}
+}
+
+// TestLogbookEditor_SearchStaleGenerationDiscarded verifies that a debounce
+// firing for a superseded query does not dispatch a worker.
+func TestLogbookEditor_SearchStaleGenerationDiscarded(t *testing.T) {
+	le := newEditorWithDB(t)
+	le.searchQuery = "zz9"
+	dbg1 := execCmd(le.scheduleSearch()).(searchDebounceMsg)
+
+	le.searchQuery = "other"
+	_ = le.scheduleSearch()
+
+	upd, workerCmd := le.Update(dbg1)
+	le = upd.(*LogbookEditor)
+	if workerCmd != nil {
+		t.Fatal("stale debounce must not dispatch a search worker")
+	}
+}
+
 // TestLogbookEditor_SearchRespectsContestFilter verifies the search honors the
 // active contest filter.
 func TestLogbookEditor_SearchRespectsContestFilter(t *testing.T) {

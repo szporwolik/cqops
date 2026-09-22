@@ -35,6 +35,22 @@ func (m *Model) dispatchViewFetches(cmd tea.Cmd) tea.Cmd {
 		cmd = tea.Batch(cmd, m.fetchLogbookStatsCmd(
 			m.rc.logStatsFetchCall, m.rc.logStatsFetchBand, m.rc.logStatsFetchMode))
 	}
+	if m.rc.workedSummaryNeedFetch {
+		m.rc.workedSummaryNeedFetch = false
+		// Coalesce: a fetch for the same signature already in flight is
+		// not dispatched again. A NEWER signature dispatches immediately
+		// (the wanted-sig guard discards the stale in-flight result).
+		if m.rc.workedSummaryInflightSig != m.rc.workedSummaryWantedSig {
+			m.rc.workedSummaryInflightSig = m.rc.workedSummaryWantedSig
+			cmd = tea.Batch(cmd, m.fetchWorkedSummaryCmd(
+				m.rc.workedSummaryFetchCall, m.rc.workedSummaryFetchGrid4,
+				m.rc.workedSummaryFetchDXCC, m.rc.workedSummaryFetchName))
+		}
+	}
+	if m.rc.partnerDXCCNeedFetch {
+		m.rc.partnerDXCCNeedFetch = false
+		cmd = tea.Batch(cmd, m.fetchCountryDXCCCmd(m.rc.partnerDXCCEntity))
+	}
 	if m.rc.dxcSpotsNeedFetch {
 		m.rc.dxcSpotsNeedFetch = false
 		cmd = tea.Batch(cmd, m.fetchDXCPathSpotsCmd(m.rc.dxcSpotsFetchBand))
@@ -686,6 +702,9 @@ func (m *Model) handleLookupResultMsg(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.
 		return m, cmd
 	case workedSummaryMsg:
 		m.handleWorkedSummary(r)
+		return m, cmd
+	case partnerDXCCMsg:
+		m.handlePartnerDXCC(r)
 		return m, cmd
 	case pskSpotsLoadedMsg:
 		if r.err == nil && r.spotKey != "" {

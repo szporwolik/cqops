@@ -307,6 +307,7 @@ func (m *Model) buildDXCTable() {
 
 	m.dxc.table = t
 	m.dxc.tableReady = true
+	m.dxc.filterRebuildAt = time.Time{}
 	m.dxc.builtW = w
 	m.dxc.builtH = h
 	m.dxc.cachedFilterInfo = "" // invalidate on table rebuild (width/spot change)
@@ -335,7 +336,15 @@ func (m *Model) dxcView() string {
 		m.dxc.tableReady = false
 	}
 	if !m.dxc.tableReady {
-		m.buildDXCTable()
+		// Filter changes keep the previous table for a short window so
+		// rapid keypresses coalesce into one rebuild. Other invalidation
+		// sources (spot batch, resize, screen open) rebuild immediately.
+		if m.dxc.builtW != 0 && !m.dxc.filterRebuildAt.IsZero() &&
+			time.Since(m.dxc.filterRebuildAt) < dxcFilterRebuildDebounce {
+			// Debounce window active — render the stale table this frame.
+		} else {
+			m.buildDXCTable()
+		}
 	}
 
 	contentH := contentHeight(h)
