@@ -304,7 +304,7 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	// already set it, but config value takes precedence).
 	applog.SetDebugMode(a.Config.General.Debug)
 
-	m := &Model{App: a, qsos: initialQSOS, toasts: NewToastQueue(), dateTimeAuto: true, width: 80, height: 24, inetOnline: true, sync: &contactSyncCoord{}}
+	m := &Model{App: a, qsos: initialQSOS, toasts: NewToastQueue(), dateTimeAuto: true, width: 80, height: 24, inetOnline: true, Offline: a.Offline, sync: &contactSyncCoord{}}
 	a.InetOnline = true // sync with model — assume online until first health check
 
 	// Build the callbook provider registry from config.

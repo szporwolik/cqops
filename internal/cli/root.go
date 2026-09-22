@@ -184,9 +184,11 @@ func runTUI() error {
 		applog.Warn("Failed to load initial QSO list", "error", err.Error())
 	}
 
+	// Apply the offline flag BEFORE the model is created: New() builds the
+	// callbook registry and must skip network providers right away.
+	a.Offline = offlineFlag
 	m := tui.New(a, qsos)
 	m.Offline = offlineFlag
-	a.Offline = offlineFlag
 	if offlineFlag {
 		m.ShowOfflineToast()
 	}

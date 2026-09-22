@@ -79,6 +79,8 @@ var callbookRegLookup = func(reg *callbook.Registry, baseFallback bool, call str
 }
 
 // buildCallbookRegistry creates the provider registry from configuration.
+// In offline mode only local providers (logbook history and CTY.DAT prefix
+// data) are registered — network providers are skipped entirely.
 func buildCallbookRegistry(a *app.App) *callbook.Registry {
 	var providers []callbook.Provider
 
@@ -104,7 +106,7 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 
 	// QRZ provider.
 	cfg := a.Config.Integrations.Callbook.QRZ
-	if cfg.Enabled && cfg.User != "" {
+	if !a.Offline && cfg.Enabled && cfg.User != "" {
 		p := cfg.Priority
 		if p == 0 {
 			p = config.DefaultQRZPriority
@@ -120,7 +122,7 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 
 	// HamQTH provider — free callsign database.
 	hqCfg := a.Config.Integrations.Callbook.HamQTH
-	if hqCfg.Enabled && hqCfg.User != "" {
+	if !a.Offline && hqCfg.Enabled && hqCfg.User != "" {
 		p := hqCfg.Priority
 		if p == 0 {
 			p = config.DefaultHamQTHPriority
@@ -136,7 +138,7 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 
 	// Callook.info provider — free US callsign database, no auth required.
 	coCfg := a.Config.Integrations.Callbook.Callook
-	if coCfg.Enabled {
+	if !a.Offline && coCfg.Enabled {
 		p := coCfg.Priority
 		if p == 0 {
 			p = config.DefaultCallookPriority
@@ -152,7 +154,7 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 
 	// QRZ.RU provider — free callbook focused on Russia and surrounding countries.
 	ruCfg := a.Config.Integrations.Callbook.QRZRu
-	if ruCfg.Enabled && ruCfg.User != "" {
+	if !a.Offline && ruCfg.Enabled && ruCfg.User != "" {
 		p := ruCfg.Priority
 		if p == 0 {
 			p = config.DefaultQRZRuPriority
@@ -168,7 +170,7 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 
 	// Wavelog provider — only when explicitly enabled and configured.
 	wc := a.Config.Integrations.Callbook.Wavelog
-	if wc.Enabled {
+	if !a.Offline && wc.Enabled {
 		// Find any logbook with Wavelog configured.
 		var wlURL, wlAPIKey string
 		for _, lb := range a.Config.Logbooks {

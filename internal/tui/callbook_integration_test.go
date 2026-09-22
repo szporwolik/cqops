@@ -17,6 +17,61 @@ import (
 // Callbook lookup mock tests (multi-provider ready)
 // =============================================================================
 
+// TestBuildCallbookRegistryOfflineSkipsNetworkProviders verifies the offline
+// switch removes every network provider from the registry: a lookup can then
+// only use the local logbook and CTY.DAT, never QRZ/Callook/Wavelog.
+// TestNewModelOfflineBuildsOfflineRegistry reproduces the startup-order leak:
+// the offline flag reached the model only after New() had already built the
+// registry. With a.Offline set before New, the registry must contain local
+// providers only.
+func TestNewModelOfflineBuildsOfflineRegistry(t *testing.T) {
+	m, _ := newWorkedPanelTestModel(t)
+	cfg := m.App.Config
+	cfg.Integrations.Callbook.QRZ.Enabled = true
+	cfg.Integrations.Callbook.QRZ.User = "u"
+	cfg.Integrations.Callbook.Callook.Enabled = true
+	cfg.Integrations.Callbook.Wavelog.Enabled = true
+
+	m.App.Offline = true
+	fresh := New(m.App, nil)
+	if fresh.callbookRegistry == nil || fresh.callbookRegistry.Len() != 1 {
+		t.Fatalf("offline New() registry has %d providers, want 1 (local logbook only)",
+			providerCount(fresh))
+	}
+}
+
+// providerCount returns the registry size, or -1 when the registry is nil.
+func providerCount(m *Model) int {
+	if m.callbookRegistry == nil {
+		return -1
+	}
+	return m.callbookRegistry.Len()
+}
+
+func TestBuildCallbookRegistryOfflineSkipsNetworkProviders(t *testing.T) {
+	m, _ := newWorkedPanelTestModel(t)
+	cfg := m.App.Config
+	cfg.Integrations.Callbook.QRZ.Enabled = true
+	cfg.Integrations.Callbook.QRZ.User = "u"
+	cfg.Integrations.Callbook.Callook.Enabled = true
+	cfg.Integrations.Callbook.Wavelog.Enabled = true
+
+	m.App.Offline = true
+	reg := buildCallbookRegistry(m.App)
+	if reg == nil {
+		t.Fatal("offline registry should not be nil (logbook provider present)")
+	}
+	if reg.Len() != 1 {
+		t.Fatalf("offline registry has %d providers, want 1 (local logbook only)", reg.Len())
+	}
+
+	m.App.Offline = false
+	regOn := buildCallbookRegistry(m.App)
+	if regOn == nil || regOn.Len() < 4 {
+		t.Fatalf("online registry has %d providers, want >= 4 (QRZ+Callook+Wavelog+logbook)", regOn.Len())
+	}
+}
+
 func TestCallbookLookupSuccess(t *testing.T) {
 	orig := callbookRegLookup
 	t.Cleanup(func() { callbookRegLookup = orig })
