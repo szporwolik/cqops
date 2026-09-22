@@ -1706,6 +1706,27 @@ func (m *Model) activeOperatorCallsign() string {
 	return ""
 }
 
+// isSharedClub reports whether the active logbook runs in shared club-station
+// mode (owner wl2_ token shared by several operators).
+func (m *Model) isSharedClub() bool {
+	return m.App != nil && m.App.Logbook != nil &&
+		m.App.Logbook.Wavelog != nil && m.App.Logbook.Wavelog.SharedClub
+}
+
+// effectiveOperator returns the callsign QSOs are attributed to: the active
+// operator's callsign, or — on a shared club station — the station callsign
+// when no operator is selected, so attribution never falls back to an empty
+// field.
+func (m *Model) effectiveOperator() string {
+	if op := m.activeOperatorCallsign(); op != "" {
+		return op
+	}
+	if m.isSharedClub() {
+		return m.App.Logbook.Station.Callsign
+	}
+	return ""
+}
+
 // cycleActiveOperator cycles the active operator for the current logbook
 // through: None → first operator → second → … → None.
 func (m *Model) cycleActiveOperator() {

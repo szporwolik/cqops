@@ -690,12 +690,11 @@ func (m *Model) initLogbookEditor() {
 		WLKey:           wlKey,
 		WLStationID:     wlStationID,
 		WLLastFetchedID: wlLastID,
-		StationOperator: m.activeOperatorCallsign(),
+		StationOperator: m.effectiveOperator(),
 		StationGrid:     m.effectiveGrid(),
 		StationCall:     m.App.Logbook.Station.Callsign,
 		KeepAlive:       m.App.KeepDBAlive,
-		Sync:            m.sync,
-		LogbookID:       m.App.LogbookName,
+		Sync:            m.sync, SharedClub: m.isSharedClub(), LogbookID: m.App.LogbookName,
 	})
 	m.ui.logbookEditor.width = m.width
 	m.ui.logbookEditor.height = m.height

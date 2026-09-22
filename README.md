@@ -79,6 +79,7 @@ Grab the latest binary, installer, or package from the [Releases](https://github
 - **Rig control** — flrig and Hamlib rigctld, frequency/mode readback, spot-to-rig tuning
 - **Multi-provider callbook** — QRZ.com, HamQTH (free global), QRZ.RU (free, RU/surrounding), Callook.info (free US) with priority-based cascading and base-call fallback; auto-fills name, QTH, grid, country
 - **Wavelog sync** — upload, incremental download, per-logbook config
+- **Wavelog club stations** — shared club PC with the owner's `wl2_` key: synced contacts are read-only (edits/deletes stay on the Wavelog side, no PATCH/DELETE is sent), new QSOs upload normally and are attributed per active operator; the key is stored encrypted and never displayed again once saved
 - **Encrypted secrets** — AES-256-GCM, machine-tied, never plaintext
 - **DX Cluster & PSK Reporter** — live spots with band/mode/time filters
 - **GPS receiver** — serial or GPSD, live grid override for /P and mobile ops

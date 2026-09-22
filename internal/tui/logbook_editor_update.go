@@ -623,6 +623,15 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return le, cmd
 		case "delete":
 			if len(le.qsos) > 0 {
+				idx := le.table.Cursor()
+				if idx >= len(le.qsos) {
+					idx = 0
+				}
+				if le.sharedClub && le.qsos[idx].WavelogID > 0 {
+					return le, func() tea.Msg {
+						return editorMsg{toastWarn: "Shared club station: synced contacts are read-only — deleting is disabled"}
+					}
+				}
 				le.dialog = nil
 				le.mode = edModeConfirmDelete
 			}
@@ -667,6 +676,11 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				le.mode = edModeConfirmWLDownload
 			}
 		case "alt+p":
+			if le.sharedClub {
+				return le, func() tea.Msg {
+					return editorMsg{toastWarn: "Shared club station: remote edits are disabled — no pending changes to sync"}
+				}
+			}
 			if le.Offline {
 				return le, func() tea.Msg { return editorMsg{toastWarn: "Wavelog: network not available — cannot sync"} }
 			}
@@ -690,6 +704,11 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					idx = 0
 				}
 				q := le.qsos[idx]
+				if le.sharedClub && q.WavelogID > 0 {
+					return le, func() tea.Msg {
+						return editorMsg{toastWarn: "Shared club station: synced contacts are read-only — editing is disabled"}
+					}
+				}
 				le.editing = &q
 				le.editRev = 0
 				// A new edit session must never share a refresh identity
@@ -715,6 +734,11 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		case "ctrl+p":
+			if le.sharedClub {
+				return le, func() tea.Msg {
+					return editorMsg{toastWarn: "Shared club station: purging the local club log is disabled"}
+				}
+			}
 			le.dialog = nil
 			le.mode = edModeConfirmPurge
 		case "ctrl+e":
@@ -1015,6 +1039,16 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 			idx = 0
 		}
 		q := le.qsos[idx]
+		// Defense in depth: the list key gate already blocks this, but a
+		// synced QSO must never be deleted locally on a shared club station
+		// (the next download would resurrect it, and the remote copy would
+		// stay).
+		if le.sharedClub && q.WavelogID > 0 {
+			le.mode = edModeList
+			return func() tea.Msg {
+				return editorMsg{toastWarn: "Shared club station: synced contacts are read-only — deleting is disabled"}
+			}
+		}
 		call := q.Call
 		date := formatDate(q.QSODate)
 		id := q.ID
@@ -1038,9 +1072,11 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 			applog.Info("LogbookEditor: QSO deleted", "id", id, "call", call)
 
 			// Synced QSOs: remove the Wavelog copy too. Best-effort — the
-			// local delete must never depend on this succeeding.
+			// local delete must never depend on this succeeding. On a shared
+			// club station the remote copy is never touched (the gate above
+			// blocks synced rows; this is the last line of defense).
 			em := editorMsg{deleted: id, delCall: call, delDate: date, gen: gen, lbID: lbID, opSession: opSession, opSessionSet: true}
-			if remoteID > 0 && url != "" && key != "" && !le.Offline {
+			if remoteID > 0 && url != "" && key != "" && !le.Offline && !le.sharedClub {
 				derr := wavelog.DeleteQSO(url, key, remoteID)
 				if derr != nil {
 					if apiErr, ok := derr.(*wavelog.APIError); ok && apiErr.Code == "not_found" {
@@ -1061,6 +1097,14 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 
 func (le *LogbookEditor) doSave() tea.Cmd {
 	q := le.readEditForm()
+	// Shared club station: synced contacts are read-only. The edit form
+	// should never open for them, but keep this gate as the last line of
+	// defense — the local write must not happen either.
+	if le.sharedClub && q.WavelogID > 0 {
+		return func() tea.Msg {
+			return editorMsg{toastWarn: "Shared club station: synced contacts are read-only — the edit was not saved"}
+		}
+	}
 	call := q.Call
 	date := formatDate(q.QSODate)
 	id := q.ID

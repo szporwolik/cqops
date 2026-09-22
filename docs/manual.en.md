@@ -211,6 +211,8 @@ Configure the URL, API v2 token (`wl2_…`), and station profile per logbook. Le
 
 QSOs are saved locally first. Failed uploads can be retried with **F8 → Ctrl+W**; **Alt+W** downloads contacts. When you open a linked QSO for editing, CQOps can refresh it from Wavelog. Online edits and deletions also affect the remote copy. Read the confirmation, especially when offline; do not assume a local-only change has reached Wavelog.
 
+
+Club stations: use the owner's `wl2_` API key together with the **Shared club station** option in the logbook form. Synced contacts then become read-only — edits and deletions must be made on the Wavelog side, and CQOps never sends PATCH or DELETE for them. New contacts are uploaded normally and attributed to the active operator (falling back to the station callsign when no operator is selected). The API key is stored encrypted and, with this option on, is never displayed again once saved — leave the key field empty to keep it, type a new one to replace it.
 ### DX Cluster and propagation
 
 Configure DX Cluster under Integrations and open **F4**. **b / c / m / t** filter band, spotter continent, mode, and age. **Backspace** clears filters. **Enter** fills the QSO form, tunes a connected rig, and returns to F1; **Space** tunes without leaving the cluster.

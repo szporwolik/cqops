@@ -211,6 +211,8 @@ Définissez URL, jeton API v2 (`wl2_…`) et profil de station par carnet. Les a
 
 Les QSO sont d’abord sauvegardés localement. Réessayez un envoi échoué avec **F8 → Ctrl+W** ; **Alt+W** télécharge. L’ouverture d’un QSO lié pour modification peut actualiser ses données depuis Wavelog. Les modifications et suppressions en ligne affectent aussi la copie distante. Lisez la confirmation, surtout hors ligne ; une modification locale n’est pas nécessairement parvenue à Wavelog.
 
+
+Stations de club : utilisez la clé `wl2_` du propriétaire avec l'option **Station de club partagée** du formulaire de carnet. Les contacts synchronisés deviennent en lecture seule — les modifications et suppressions se font côté Wavelog et CQOps n'envoie jamais de PATCH ni de DELETE pour eux. Les nouveaux contacts sont téléversés normalement et attribués à l'opérateur actif (à défaut, à l'indicatif de la station). La clé API est stockée chiffrée et, avec cette option activée, n'est plus jamais affichée après enregistrement — laissez le champ vide pour la conserver, saisissez-en une nouvelle pour la remplacer.
 ### DX Cluster et propagation
 
 Configurez DX Cluster dans Integrations, puis ouvrez **F4**. **b / c / m / t** filtrent bande, continent du spotteur, mode et ancienneté. **Backspace** efface les filtres. **Enter** remplit le formulaire QSO, accorde le poste connecté et revient à F1 ; **Space** accorde sans quitter le cluster.

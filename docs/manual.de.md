@@ -211,6 +211,8 @@ URL, API-v2-Token (`wl2_…`) und Stationsprofil pro Logbuch einstellen. Alte v1
 
 QSOs werden zuerst lokal gespeichert. Fehlgeschlagene Uploads mit **F8 → Ctrl+W** wiederholen; **Alt+W** lädt Kontakte herunter. Beim Öffnen eines verknüpften QSOs zur Bearbeitung kann CQOps die Daten aus Wavelog aktualisieren. Online-Änderungen und Löschungen betreffen auch die entfernte Kopie. Lesen Sie die Bestätigung, besonders offline; eine rein lokale Änderung ist nicht automatisch in Wavelog angekommen.
 
+
+Clubstationen: Verwenden Sie den `wl2_`-Schlüssel des Besitzers zusammen mit der Option **Gemeinsame Clubstation** im Logbuchformular. Synchronisierte Kontakte sind dann schreibgeschützt — Änderungen und Löschungen erfolgen auf der Wavelog-Seite; CQOps sendet für sie keine PATCH- oder DELETE-Anfragen. Neue Kontakte werden normal hochgeladen und dem aktiven Operator zugeordnet (fehlt dieser, dem Stationsrufzeichen). Der API-Schlüssel wird verschlüsselt gespeichert und bei aktivierter Option nach dem Speichern nie wieder angezeigt — Feld leer lassen, um ihn zu behalten, neuen Schlüssel eingeben, um ihn zu ersetzen.
 ### DX Cluster und Ausbreitung
 
 DX Cluster unter Integrations einrichten und **F4** öffnen. **b / c / m / t** filtern Band, Kontinent des Spotters, Betriebsart und Alter. **Backspace** setzt Filter zurück. **Enter** übernimmt den Spot, stimmt das verbundene Funkgerät ab und kehrt zu F1 zurück; **Space** stimmt ab, ohne den Cluster zu verlassen.

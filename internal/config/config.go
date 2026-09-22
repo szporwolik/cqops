@@ -461,6 +461,11 @@ type WavelogConfig struct {
 	APIKey           string `yaml:"api_key"`
 	StationProfileID string `yaml:"station_profile_id"`
 	LastFetchedID    int64  `yaml:"last_fetched_id,omitempty"`
+	// SharedClub marks a shared club-station PC: the logbook syncs with a
+	// clubstation using the owner's wl2_ token. Synced QSOs become
+	// read-only in the editor (no local edits, no deletes, no remote
+	// PATCH/DELETE) — club contacts are maintained on the Wavelog side.
+	SharedClub bool `yaml:"shared_club,omitempty"`
 }
 
 // APRSConfig holds per-logbook APRS beacon settings.

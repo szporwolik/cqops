@@ -337,9 +337,10 @@ func TestSaveDoesNotMutateLiveConfig(t *testing.T) {
 		Name:    "test",
 		Station: Station{Callsign: "XX0XX", Grid: "JO90"},
 		Wavelog: &WavelogConfig{
-			Enabled: true,
-			URL:     "https://log.example.com",
-			APIKey:  "secret-api-key-12345",
+			Enabled:    true,
+			URL:        "https://log.example.com",
+			APIKey:     "secret-api-key-12345",
+			SharedClub: true,
 		},
 	}
 
@@ -379,6 +380,9 @@ func TestSaveDoesNotMutateLiveConfig(t *testing.T) {
 	}
 	if got := loaded.Logbooks["default"].Wavelog.APIKey; got != "secret-api-key-12345" {
 		t.Errorf("Wavelog API key after round-trip: %q", got)
+	}
+	if !loaded.Logbooks["default"].Wavelog.SharedClub {
+		t.Error("Wavelog shared_club flag lost on round-trip")
 	}
 }
 

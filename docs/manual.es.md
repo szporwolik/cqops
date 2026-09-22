@@ -211,6 +211,8 @@ Configure URL, token API v2 (`wl2_…`) y perfil de estación por libro. No se a
 
 Los QSO se guardan primero localmente. Reintente subidas fallidas con **F8 → Ctrl+W**; **Alt+W** descarga contactos. Al abrir un QSO vinculado para editar, CQOps puede actualizarlo desde Wavelog. Las ediciones y eliminaciones en línea afectan también a la copia remota. Lea la confirmación, especialmente sin conexión; no suponga que un cambio solo local haya llegado a Wavelog.
 
+
+Estaciones de club: use la clave `wl2_` del propietario junto con la opción **Estación de club compartida** del formulario del cuaderno. Los contactos sincronizados pasan a ser de solo lectura: las ediciones y eliminaciones se hacen en Wavelog y CQOps nunca envía PATCH ni DELETE para ellos. Los contactos nuevos se suben con normalidad y se atribuyen al operador activo (o al distintivo de la estación si no hay operador). La clave API se guarda cifrada y, con esta opción activada, nunca vuelve a mostrarse una vez guardada — deje el campo vacío para conservarla o escriba una nueva para reemplazarla.
 ### DX Cluster y propagación
 
 Configure DX Cluster en Integrations y abra **F4**. **b / c / m / t** filtran banda, continente del anunciante, modo y antigüedad. **Backspace** borra filtros. **Enter** rellena QSO, sintoniza el equipo conectado y vuelve a F1; **Space** sintoniza sin salir del cluster.

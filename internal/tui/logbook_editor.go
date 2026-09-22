@@ -212,6 +212,7 @@ type LogbookEditor struct {
 	wlDownloadAbort  bool // last download was aborted (0 count ≠ up to date)
 	wlDownloadHold   int  // insert failures deferred — retried on the next download
 	Offline          bool // when true, Wavelog upload/download is blocked
+	sharedClub       bool // shared club station: synced QSOs are read-only
 
 	// Pagination — only the current page is loaded from DB.
 	currentPage int
@@ -302,6 +303,9 @@ type LogbookEditorConfig struct {
 	// survives editor recreation (F8). Nil configures a private coordinator
 	// for standalone editors.
 	Sync *contactSyncCoord
+	// SharedClub marks a shared club-station logbook: synced QSOs are
+	// read-only — the editor refuses edits, deletes and remote PATCH/DELETE.
+	SharedClub bool
 	// LogbookID is the persistent logbook identity at editor creation; it
 	// is part of the serialization key.
 	LogbookID string
@@ -314,7 +318,7 @@ type LogbookEditorConfig struct {
 var logbookEditorGenCounter atomic.Uint64
 
 func NewLogbookEditor(cfg LogbookEditorConfig) *LogbookEditor {
-	le := &LogbookEditor{db: cfg.DB, gen: logbookEditorGenCounter.Add(1), mode: edModeList, wlURL: cfg.WLURL, wlKey: cfg.WLKey, wlStationID: cfg.WLStationID, wlLastFetchedID: cfg.WLLastFetchedID, logStationOp: cfg.StationOperator, logStationGrid: cfg.StationGrid, logStationCall: cfg.StationCall, keepAlive: cfg.KeepAlive, sync: cfg.Sync, logbookID: cfg.LogbookID}
+	le := &LogbookEditor{db: cfg.DB, gen: logbookEditorGenCounter.Add(1), mode: edModeList, wlURL: cfg.WLURL, wlKey: cfg.WLKey, wlStationID: cfg.WLStationID, wlLastFetchedID: cfg.WLLastFetchedID, logStationOp: cfg.StationOperator, logStationGrid: cfg.StationGrid, logStationCall: cfg.StationCall, keepAlive: cfg.KeepAlive, sync: cfg.Sync, logbookID: cfg.LogbookID, sharedClub: cfg.SharedClub}
 	le.filePicker = filepicker.New()
 	le.filePicker.FileAllowed = false
 	le.filePicker.DirAllowed = true

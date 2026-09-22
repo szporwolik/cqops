@@ -211,6 +211,8 @@ Dla każdego dziennika ustaw URL, token API v2 (`wl2_…`) i profil stacji. Star
 
 QSO są najpierw zapisywane lokalnie. Nieudane wysyłanie ponów przez **F8 → Ctrl+W**; **Alt+W** pobiera łączności. Otwarcie powiązanego QSO do edycji może odświeżyć je z Wavelog. Edycja i usuwanie online wpływają też na kopię zdalną. Czytaj potwierdzenia, szczególnie offline; nie zakładaj, że zmiana wyłącznie lokalna dotarła do Wavelog.
 
+
+Stacje klubowe: użyj klucza `wl2_` właściciela razem z opcją **Wspólna stacja klubowa** w formularzu dziennika. Zsynchronizowane łączności stają się tylko do odczytu — edycje i usunięcia wykonuje się po stronie Wavelog, a CQOps nigdy nie wysyła dla nich PATCH ani DELETE. Nowe łączności są wysyłane normalnie i przypisywane aktywnemu operatorowi (gdy go brak — znakowi stacji). Klucz API jest zapisywany szyfrowanie i przy włączonej opcji po zapisie nigdy nie jest ponownie wyświetlany — pozostaw pole puste, aby go zachować, wpisz nowy, aby zastąpić.
 ### DX Cluster i propagacja
 
 Skonfiguruj DX Cluster w Integrations i otwórz **F4**. **b / c / m / t** filtrują pasmo, kontynent spotującego, emisję i wiek spotu. **Backspace** czyści filtry. **Enter** wypełnia formularz QSO, przestraja podłączone radio i wraca do F1; **Space** przestraja bez opuszczania klastra.

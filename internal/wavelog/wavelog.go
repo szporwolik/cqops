@@ -56,7 +56,7 @@ func TestConnection(baseURL, apiKey string) error {
 		applog.Error("Wavelog: status check failed", "url", baseURL, "error", err)
 		return err
 	}
-	info, err := TokenWhoami(baseURL, apiKey)
+	info, err := WhoamiCheck(baseURL, apiKey)
 	if err != nil {
 		applog.Error("Wavelog: token validation failed", "url", baseURL, "error", err)
 		return err
@@ -64,6 +64,19 @@ func TestConnection(baseURL, apiKey string) error {
 	applog.InfoDetail("Wavelog: connected",
 		fmt.Sprintf("token=%s owner=%s scopes=%d", info.Name, info.Owner, len(info.Scopes)))
 	return nil
+}
+
+// WhoamiCheck validates a v2 token and returns its metadata (owner callsign,
+// scopes, expiry). Shared club-station setups use the scopes to warn about
+// destructive capabilities the key still carries.
+func WhoamiCheck(baseURL, apiKey string) (*TokenInfo, error) {
+	if baseURL == "" || apiKey == "" {
+		return nil, fmt.Errorf("URL and API key required")
+	}
+	if !IsV2Token(apiKey) {
+		return nil, fmt.Errorf("%s", V1KeyRequiredMsg)
+	}
+	return TokenWhoami(baseURL, apiKey)
 }
 
 // FetchStations retrieves station profiles from the Wavelog API v2.

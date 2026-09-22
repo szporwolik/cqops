@@ -224,7 +224,7 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					case enterOnLastFieldMsg:
 						w.finishStation()
 					case wlUpdateAction:
-						_, _, _, _, _, _, _, _, wlURL, wlKey, _, _, _, _, _, _, _, _ := w.station.Values()
+						_, _, _, _, _, _, _, _, wlURL, wlKey, _, _, _, _, _, _, _, _, _ := w.station.Values()
 						if wlURL == "" || wlKey == "" {
 							w.toasts.Warn("Wavelog: URL and API Key are required")
 							return w, nil
@@ -236,7 +236,7 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							return wlUpdateMsg{stations: stations, err: err}
 						}
 					case wlTestAction:
-						_, _, _, _, _, _, _, _, wlURL, wlKey, _, _, _, _, _, _, _, _ := w.station.Values()
+						_, _, _, _, _, _, _, _, wlURL, wlKey, _, _, _, _, _, _, _, _, _ := w.station.Values()
 						if wlURL == "" || wlKey == "" {
 							w.toasts.Warn("Wavelog: URL and API Key are required")
 							return w, nil
@@ -504,7 +504,7 @@ func (w *Wizard) viewSummary() string {
 
 // finishStation validates the station step and advances to the rig step.
 func (w *Wizard) finishStation() {
-	nm, cs, _, gr, _, _, _, wlEnabled, _, _, wlStationID, _, _, _, _, _, _, _ := w.station.Values()
+	nm, cs, _, gr, _, _, _, wlEnabled, _, _, wlStationID, _, _, _, _, _, _, _, _ := w.station.Values()
 	if nm == "" {
 		w.toasts.Warn("Station: name is required")
 		return
@@ -625,7 +625,7 @@ func (w *Wizard) stationDetailCmd() tea.Cmd {
 	if w.Offline {
 		return nil
 	}
-	_, _, _, _, _, _, _, wlEnabled, wlURL, wlKey, _, _, _, _, _, _, _, _ := w.station.Values()
+	_, _, _, _, _, _, _, wlEnabled, wlURL, wlKey, _, _, _, _, _, _, _, _, _ := w.station.Values()
 	if !wlEnabled {
 		return nil
 	}
@@ -640,7 +640,7 @@ func (w *Wizard) stationDetailCmd() tea.Cmd {
 // new logbook inherits its grid, DXCC, zones and reference fields. Failures
 // keep the entered values (toast warning, never fatal).
 func (w *Wizard) syncStationFromWavelog() {
-	_, _, _, _, _, _, _, wlEnabled, wlURL, wlKey, wlStationID, _, _, _, _, _, _, _ := w.station.Values()
+	_, _, _, _, _, _, _, wlEnabled, wlURL, wlKey, wlStationID, _, _, _, _, _, _, _, _ := w.station.Values()
 	if !wlEnabled || wlURL == "" || wlKey == "" || wlStationID == "" {
 		return
 	}
@@ -655,7 +655,7 @@ func (w *Wizard) syncStationFromWavelog() {
 }
 
 func (w *Wizard) saveConfig() error {
-	sn, cs, op, gr, sotaRef, potaRef, wwffRef, wlEnabled, wlURL, wlKey, wlStationID, iaruRegion, cqZone, ituZone, dxcc, sig, sigInfo, continent := w.station.Values()
+	sn, cs, op, gr, sotaRef, potaRef, wwffRef, wlEnabled, wlURL, wlKey, wlStationID, iaruRegion, cqZone, ituZone, dxcc, sig, sigInfo, continent, _ := w.station.Values()
 	nm, rig, ant, pwr := w.rigForm.Values()
 	radioBackend, radioBackendHost, radioBackendPort := w.rigForm.BackendValues()
 	rotorBackend, rotorHost, rotorPort := w.rigForm.RotorValues()

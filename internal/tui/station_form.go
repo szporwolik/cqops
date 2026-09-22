@@ -14,29 +14,35 @@ import (
 )
 
 type StationForm struct {
-	Name        textinput.Model
-	Callsign    textinput.Model
-	Operator    textinput.Model // display-only; driven by opFocus/opIdx + SetOperators
-	Locator     textinput.Model
-	SOTARef     textinput.Model
-	POTARef     textinput.Model
-	WWFFRef     textinput.Model
-	IARURegion  int
-	iaruFocus   bool // true when IARU region selector has focus
-	Continent   string
-	contIdx     int  // index into continent list for cycling
-	contFocus   bool // true when continent selector has focus
-	CQZone      textinput.Model
-	ITUZone     textinput.Model
-	DXCC        textinput.Model
-	SIG         textinput.Model
-	SIGInfo     textinput.Model
-	WlEnabled   bool
-	wlCbFocus   bool // true when the WL checkbox has focus
-	wlBtnFocus  int  // 0=none, 1=Update, 2=Test
-	WlURL       textinput.Model
-	WlKey       textinput.Model
-	WlStationID textinput.Model
+	Name            textinput.Model
+	Callsign        textinput.Model
+	Operator        textinput.Model // display-only; driven by opFocus/opIdx + SetOperators
+	Locator         textinput.Model
+	SOTARef         textinput.Model
+	POTARef         textinput.Model
+	WWFFRef         textinput.Model
+	IARURegion      int
+	iaruFocus       bool // true when IARU region selector has focus
+	Continent       string
+	contIdx         int  // index into continent list for cycling
+	contFocus       bool // true when continent selector has focus
+	CQZone          textinput.Model
+	ITUZone         textinput.Model
+	DXCC            textinput.Model
+	SIG             textinput.Model
+	SIGInfo         textinput.Model
+	WlEnabled       bool
+	wlCbFocus       bool // true when the WL checkbox has focus
+	wlBtnFocus      int  // 0=none, 1=Update, 2=Test
+	WlURL           textinput.Model
+	WlKey           textinput.Model
+	WlStationID     textinput.Model
+	WlSharedClub    bool
+	wlSharedCbFocus bool // true when the shared-club checkbox has focus
+	// wlStoredKey holds the already-saved key while the shared-club form
+	// keeps the field empty (the key is hidden on a shared PC — typing
+	// replaces it, leaving it empty keeps it).
+	wlStoredKey string
 	// APRS fields.
 	AprsEnabled      bool
 	aprsCbFocus      bool // true when APRS checkbox has focus
@@ -344,6 +350,9 @@ func (f *StationForm) NextInput() {
 		f.WlStationID.Focus()
 	case f.WlStationID.Focused():
 		f.WlStationID.Blur()
+		f.wlSharedCbFocus = true
+	case f.wlSharedCbFocus:
+		f.wlSharedCbFocus = false
 		if f.HideGPSGrid {
 			f.Name.Focus()
 		} else {
@@ -389,7 +398,7 @@ func (f *StationForm) PrevInput() {
 		f.Name.Blur()
 		if f.HideGPSGrid {
 			if f.WlEnabled {
-				f.wlBtnFocus = 1
+				f.wlSharedCbFocus = true
 			} else {
 				f.wlCbFocus = true
 			}
@@ -426,11 +435,18 @@ func (f *StationForm) PrevInput() {
 	case f.aprsCbFocus:
 		f.aprsCbFocus = false
 		if f.WlEnabled {
-			f.wlBtnFocus = 1
+			f.wlSharedCbFocus = true
 		} else {
 			f.wlCbFocus = true
 		}
 	// Wavelog section — backwards.
+	case f.wlSharedCbFocus:
+		f.wlSharedCbFocus = false
+		if f.WlEnabled {
+			f.wlBtnFocus = 1
+		} else {
+			f.wlCbFocus = true
+		}
 	case f.wlBtnFocus == 1:
 		f.wlBtnFocus = 0
 		f.WlKey.Focus()
@@ -519,6 +535,7 @@ func (f *StationForm) BlurAll() {
 		&f.WlURL, &f.WlKey, &f.WlStationID,
 		&f.AprsServer, &f.AprsRadiusKm, &f.AprsCallsign, &f.AprsIntervalMin, &f.AprsSymbol, &f.AprsComment)
 	f.wlCbFocus = false
+	f.wlSharedCbFocus = false
 	f.aprsCbFocus = false
 	f.aprsSendLocFocus = false
 	f.gpsGridFocus = false
@@ -535,7 +552,7 @@ func (f *StationForm) BlurAll() {
 func (f *StationForm) rowCount() int { return stationFormRows }
 
 // stationFormRows is the number of focus slots in the station form.
-const stationFormRows = 28
+const stationFormRows = 29
 
 func (f *StationForm) rowVisible(i int) bool {
 	switch i {
@@ -549,9 +566,11 @@ func (f *StationForm) rowVisible(i int) bool {
 		return f.Advanced
 	case 16, 17, 18, 19: // Wavelog URL, key, test button, station ID
 		return f.WlEnabled
-	case 20: // APRS TX checkbox
+	case 20: // shared club station checkbox
+		return f.WlEnabled
+	case 21: // APRS TX checkbox
 		return !f.HideGPSGrid
-	case 21, 22, 23, 24, 25, 26, 27: // APRS fields and test button
+	case 22, 23, 24, 25, 26, 27, 28: // APRS fields and test button
 		return f.AprsEnabled && !f.HideGPSGrid
 	}
 	return true // name, callsign, locator, continent, Wavelog checkbox
@@ -602,20 +621,22 @@ func (f *StationForm) focusRow(i int) tea.Cmd {
 	case 19:
 		f.WlStationID.Focus()
 	case 20:
-		f.aprsCbFocus = true
+		f.wlSharedCbFocus = true
 	case 21:
-		f.AprsCallsign.Focus()
+		f.aprsCbFocus = true
 	case 22:
-		f.aprsSendLocFocus = true
+		f.AprsCallsign.Focus()
 	case 23:
-		f.AprsIntervalMin.Focus()
+		f.aprsSendLocFocus = true
 	case 24:
-		f.AprsRadiusKm.Focus()
+		f.AprsIntervalMin.Focus()
 	case 25:
-		f.AprsSymbol.Focus()
+		f.AprsRadiusKm.Focus()
 	case 26:
-		f.AprsComment.Focus()
+		f.AprsSymbol.Focus()
 	case 27:
+		f.AprsComment.Focus()
+	case 28:
 		f.aprsBtnFocus = 1
 	}
 	f.unmaskSecretsOnFocus()
@@ -624,9 +645,11 @@ func (f *StationForm) focusRow(i int) tea.Cmd {
 
 // unmaskSecretsOnFocus sets EchoNormal on any secret textinput that currently
 // has focus — call this after every NextInput/PrevInput to show secrets when
-// the user is actively editing them.
+// the user is actively editing them. On a shared club station the Wavelog key
+// is never revealed: the field stays masked (and empty — the stored key is
+// kept in wlStoredKey).
 func (f *StationForm) unmaskSecretsOnFocus() {
-	if f.WlKey.Focused() {
+	if f.WlKey.Focused() && !f.WlSharedClub {
 		f.WlKey.EchoMode = textinput.EchoNormal
 	}
 }
@@ -639,12 +662,18 @@ func (f *StationForm) maskSecretFields() {
 
 func (f *StationForm) Values() (name, callsign, operator, locator, sotaRef, potaRef, wwffRef string,
 	wlEnabled bool, wlURL, wlKey, wlStationID string, iaruRegion, cqZone, ituZone, dxcc int,
-	sig, sigInfo, continent string) {
+	sig, sigInfo, continent string, wlSharedClub bool) {
 
 	var cz, iz, dx int
 	fmt.Sscanf(strings.TrimSpace(f.CQZone.Value()), "%d", &cz)
 	fmt.Sscanf(strings.TrimSpace(f.ITUZone.Value()), "%d", &iz)
 	fmt.Sscanf(strings.TrimSpace(f.DXCC.Value()), "%d", &dx)
+
+	// Shared PC: an empty key field means "keep the stored key".
+	wlKey = strings.TrimSpace(f.WlKey.Value())
+	if f.WlSharedClub && wlKey == "" {
+		wlKey = f.wlStoredKey
+	}
 
 	return strings.TrimSpace(f.Name.Value()),
 		strings.ToUpper(strings.TrimSpace(f.Callsign.Value())),
@@ -655,13 +684,14 @@ func (f *StationForm) Values() (name, callsign, operator, locator, sotaRef, pota
 		strings.TrimSpace(f.WWFFRef.Value()),
 		f.WlEnabled,
 		strings.TrimSpace(f.WlURL.Value()),
-		strings.TrimSpace(f.WlKey.Value()),
+		wlKey,
 		strings.TrimSpace(f.WlStationID.Value()),
 		f.IARURegion,
 		cz, iz, dx,
 		strings.ToUpper(strings.TrimSpace(f.SIG.Value())),
 		strings.ToUpper(strings.TrimSpace(f.SIGInfo.Value())),
-		f.Continent
+		f.Continent,
+		f.WlSharedClub
 }
 
 func (f *StationForm) SetValues(name, callsign, operator, locator, sotaRef, potaRef, wwffRef string, iaruRegion, cqZone, ituZone, dxcc int, sig, sigInfo, continent string) {
@@ -716,13 +746,25 @@ func (f *StationForm) SetWavelogValues(wl *config.WavelogConfig) {
 	if wl != nil {
 		f.WlEnabled = wl.Enabled
 		f.WlURL.SetValue(wl.URL)
-		f.WlKey.SetValue(wl.APIKey)
 		f.WlStationID.SetValue(wl.StationProfileID)
+		f.WlSharedClub = wl.SharedClub
+		if wl.SharedClub && wl.APIKey != "" {
+			// Shared PC: never load the saved key into the field — it stays
+			// hidden behind a placeholder. Leave empty to keep, type to replace.
+			f.wlStoredKey = wl.APIKey
+			f.WlKey.SetValue("")
+			f.WlKey.Placeholder = "\u2022\u2022\u2022\u2022\u2022\u2022 (saved — hidden)"
+		} else {
+			f.wlStoredKey = ""
+			f.WlKey.SetValue(wl.APIKey)
+		}
 	} else {
 		f.WlEnabled = false
 		f.WlURL.SetValue("")
 		f.WlKey.SetValue("")
 		f.WlStationID.SetValue("")
+		f.WlSharedClub = false
+		f.wlStoredKey = ""
 	}
 }
 
@@ -943,6 +985,14 @@ func (f *StationForm) View() tea.View {
 			b.WriteString("\n")
 		}
 
+		// Shared club station: the saved key is hidden on a shared PC.
+		if f.WlSharedClub && f.wlStoredKey != "" {
+			b.WriteString(padOrTrunc(
+				"      "+DimStyle.Render("key is stored encrypted and hidden — leave empty to keep, type to replace"),
+				availW))
+			b.WriteString("\n")
+		}
+
 		// Button helper — fixed padding so buttons never shift on focus.
 		renderBtn := func(focusVal int, text, hint string) {
 			prefix := "    "
@@ -984,6 +1034,24 @@ func (f *StationForm) View() tea.View {
 				availW-5))
 			b.WriteString("\n")
 		}
+
+		// Shared club station checkbox — synced QSOs become read-only.
+		scCheckbox := "[ ]"
+		if f.WlSharedClub {
+			scCheckbox = "[x]"
+		}
+		scPrefix := "  "
+		scLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Shared club station:")
+		if f.wlSharedCbFocus {
+			scPrefix = S.FormPrefixOn.Render("> ")
+			scLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Shared club station:")
+			scCheckbox = CursorStyle.Render(scCheckbox) + " " + DimStyle.Render("(Space)")
+			scCheckbox += " " + DimStyle.Render("synced contacts are read-only")
+		}
+		b.WriteString(padOrTrunc(
+			lipgloss.JoinHorizontal(lipgloss.Center, scPrefix, scLabel, " ", scCheckbox),
+			availW))
+		b.WriteString("\n")
 	}
 
 	// APRS section — hidden in wizard.
@@ -1171,6 +1239,25 @@ func (f *StationForm) HandleKey(msg tea.KeyPressMsg) tea.Cmd {
 			}
 			return nil
 		}
+		if f.wlSharedCbFocus {
+			f.WlSharedClub = !f.WlSharedClub
+			if f.WlSharedClub {
+				// Hide the key from now on: whatever is in the field becomes
+				// the replacement (kept if left empty).
+				if v := strings.TrimSpace(f.WlKey.Value()); v != "" && f.wlStoredKey == "" {
+					f.wlStoredKey = v
+					f.WlKey.SetValue("")
+					f.WlKey.Placeholder = "\u2022\u2022\u2022\u2022\u2022\u2022 (saved — hidden)"
+				}
+			} else if f.WlKey.Value() == "" && f.wlStoredKey != "" {
+				// Turning the shared mode back off reveals the stored key again.
+				f.WlKey.SetValue(f.wlStoredKey)
+				f.WlKey.Placeholder = ""
+				f.wlStoredKey = ""
+			}
+			f.maskSecretFields()
+			return nil
+		}
 		if f.aprsCbFocus {
 			f.AprsEnabled = !f.AprsEnabled
 			f.maskSecretFields()
@@ -1273,7 +1360,7 @@ func (f *StationForm) ScrollFraction() float64 {
 }
 
 func (f *StationForm) Validate() error {
-	nm, cs, _, gr, _, _, _, _, _, _, _, _, _, _, _, _, _, cont := f.Values()
+	nm, cs, _, gr, _, _, _, _, _, _, _, _, _, _, _, _, _, cont, _ := f.Values()
 	if nm == "" {
 		return fmt.Errorf("station name is required")
 	}
@@ -1298,7 +1385,7 @@ func (f *StationForm) Validate() error {
 // ValidateField returns an error hint for the given render field label, or ""
 // if the field value is valid. Used for inline UI feedback.
 func (f *StationForm) ValidateField(label string) string {
-	_, cs, _, gr, _, _, _, _, _, _, _, _, _, _, _, _, _, cont := f.Values()
+	_, cs, _, gr, _, _, _, _, _, _, _, _, _, _, _, _, _, cont, _ := f.Values()
 	switch label {
 	case "Callsign:":
 		if cs != "" && !qso.IsValidCall(cs) {

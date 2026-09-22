@@ -211,6 +211,8 @@ Linux/macOS 配置位于 `~/.config/cqops/config.yaml`，Windows 位于 `%APPDAT
 
 QSO 先保存在本机。上传失败可用 **F8 → Ctrl+W** 重试，**Alt+W** 下载通联。打开关联的 QSO 编辑时，CQOps 可能从 Wavelog 刷新内容。在线编辑和删除也会影响远程副本。请阅读确认提示，尤其在离线时；不要假定仅本地的修改已经同步到 Wavelog。
 
+
+俱乐部电台：请使用所有者的 `wl2_` API 密钥，并在日志表单中启用 **共享俱乐部电台** 选项。已同步的通联将变为只读——编辑和删除请在 Wavelog 端完成，CQOps 不会为这些通联发送 PATCH 或 DELETE 请求。新通联照常上传，并归入当前操作员（未选择操作员时归入电台呼号）。 API 密钥经加密存储；启用此选项后，保存后将不再显示——留空密钥字段可继续使用原密钥，输入新密钥则可替换。
 ### DX Cluster 与传播
 
 在 Integrations 设置 DX Cluster，然后打开 **F4**。**b / c / m / t** 按波段、发布者所在洲、模式及时间筛选，**Backspace** 清除筛选。**Enter** 填写 QSO、调谐已连接电台并返回 F1；**Space** 只调谐而不离开集群页面。

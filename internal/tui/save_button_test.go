@@ -135,9 +135,9 @@ func TestLogbookChooserSaveBackButton(t *testing.T) {
 	c.mode = chooserEdit
 
 	// Tab from the last field focuses the button.
-	// APRS disabled: the APRS TX checkbox (row 20) is the last field.
-	c.fm.row = 20
-	c.station.focusRow(20)
+	// APRS disabled: the APRS TX checkbox (row 21) is the last field.
+	c.fm.row = 21
+	c.station.focusRow(21)
 	c.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	if !c.fm.btn.Focus {
 		t.Fatal("tab from last field should focus the Save & Back button")
@@ -163,8 +163,8 @@ func TestLogbookChooserSaveBackButtonActivates(t *testing.T) {
 	c := NewLogbookChooser(a, NewToastQueue())
 	c.startEdit("home")
 
-	c.fm.row = 20
-	c.station.focusRow(20)
+	c.fm.row = 21
+	c.station.focusRow(21)
 	c.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	if !c.fm.btn.Focus {
 		t.Fatal("tab from last field should focus the Save & Back button")
@@ -183,7 +183,8 @@ func TestLogbookChooserSaveBackButtonActivates(t *testing.T) {
 // TestLogbookChooserAPRSTXReachable: the APRS TX checkbox and fields must stay
 // reachable by Tab in the edit form, regardless of the Wavelog toggle.
 func TestLogbookChooserAPRSTXReachable(t *testing.T) {
-	// Wavelog enabled: Tab from Station ID must land on APRS TX, not the button.
+	// Wavelog enabled: Tab from Station ID lands on the shared-club checkbox,
+	// then on APRS TX — never on the button before the section ends.
 	a := newChooserTestApp(t)
 	c := NewLogbookChooser(a, NewToastQueue())
 	c.mode = chooserEdit
@@ -192,8 +193,14 @@ func TestLogbookChooserAPRSTXReachable(t *testing.T) {
 	c.fm.row = 19
 	c.station.focusRow(19)
 	c.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if c.fm.btn.Focus || !c.station.wlSharedCbFocus {
+		t.Fatalf("tab from Station ID: saveBtn.Focus=%v wlSharedCbFocus=%v, want shared-club checkbox focused",
+			c.fm.btn.Focus, c.station.wlSharedCbFocus)
+	}
+	// Next Tab reaches APRS TX.
+	c.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	if c.fm.btn.Focus || !c.station.aprsCbFocus {
-		t.Fatalf("tab from Station ID: saveBtn.Focus=%v aprsCbFocus=%v, want button unfocused and APRS TX focused",
+		t.Fatalf("tab from shared-club checkbox: saveBtn.Focus=%v aprsCbFocus=%v, want button unfocused and APRS TX focused",
 			c.fm.btn.Focus, c.station.aprsCbFocus)
 	}
 	// Next Tab reaches the button.
@@ -221,8 +228,8 @@ func TestLogbookChooserAPRSTXReachable(t *testing.T) {
 	c3.mode = chooserEdit
 	c3.station.AprsEnabled = true
 	c3.station.BlurAll()
-	c3.fm.row = 26
-	c3.station.focusRow(26)
+	c3.fm.row = 27
+	c3.station.focusRow(27)
 	c3.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	if c3.fm.btn.Focus || c3.station.aprsBtnFocus != 1 {
 		t.Fatalf("tab from APRS comment: saveBtn.Focus=%v aprsBtnFocus=%d, want test button focused",

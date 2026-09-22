@@ -145,7 +145,7 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 	qs.TXPower = txPowerForWSJTX(m, qs.TXPower)
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
-		Operator:        m.activeOperatorCallsign(),
+		Operator:        m.effectiveOperator(),
 		MyGridSquare:    m.effectiveGrid(),
 		MyRig:           m.App.Logbook.Station.RigModel(m.App.Config.Rigs),
 		MyAntenna:       m.App.Logbook.Station.RigAntenna(m.App.Config.Rigs),

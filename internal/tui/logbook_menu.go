@@ -68,7 +68,8 @@ type wlUpdateMsg struct {
 	err      error
 }
 type wlTestMsg struct {
-	err error
+	err  error
+	warn string // non-fatal shared-club key warnings
 }
 
 // APRS async message type.
@@ -177,6 +178,9 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			c.wlStatus = "OK — Wavelog reachable"
 			c.toasts.Success("Wavelog: connection verified")
+		}
+		if msg.warn != "" {
+			c.toasts.Warn("Wavelog: " + msg.warn)
 		}
 		c.scrollViewportToEnd()
 
@@ -630,7 +634,7 @@ func (c *LogbookChooser) startEdit(id string) {
 }
 
 func (c *LogbookChooser) saveForm() tea.Cmd {
-	nm, cs, op, gr, sotaRef, potaRef, wwffRef, wlEnabled, wlURL, wlKey, wlStationID, iaruRegion, cqZone, ituZone, dxcc, sig, sigInfo, continent := c.station.Values()
+	nm, cs, op, gr, sotaRef, potaRef, wwffRef, wlEnabled, wlURL, wlKey, wlStationID, iaruRegion, cqZone, ituZone, dxcc, sig, sigInfo, continent, wlSharedClub := c.station.Values()
 
 	// Resolve operator callsign to operator ID for ActiveOperator.
 	var activeOpID string
@@ -668,6 +672,7 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 			URL:              wlURL,
 			APIKey:           wlKey,
 			StationProfileID: wavelog.SanitizeStationID(wlStationID),
+			SharedClub:       wlSharedClub,
 		}
 		if c.mode == chooserEdit {
 			if prev := c.app.Config.Logbooks[c.editing].Wavelog; prev != nil {
@@ -946,9 +951,14 @@ func (c *LogbookChooser) fetchWavelogStations() tea.Cmd {
 }
 
 // testWavelogConnection tests Wavelog connectivity and station validity.
+// On a shared club station the whoami metadata is checked additionally:
+// uploads need qso:write, and a key that also carries qso:delete gets a
+// warning (CQOps blocks remote edits/deletes, but the token itself could
+// still delete the whole club log elsewhere).
 func (c *LogbookChooser) testWavelogConnection() tea.Cmd {
 	u := strings.TrimRight(strings.TrimSpace(c.station.WlURL.Value()), "/")
 	k := strings.TrimSpace(c.station.WlKey.Value())
+	sc := c.station.WlSharedClub
 
 	// Validate required fields before testing.
 	if u == "" {
@@ -979,6 +989,19 @@ func (c *LogbookChooser) testWavelogConnection() tea.Cmd {
 			if err := wavelog.TestStation(u, k, sid); err != nil {
 				return wlTestMsg{err: err}
 			}
+		}
+		if sc {
+			info, err := wavelog.WhoamiCheck(u, k)
+			if err != nil {
+				return wlTestMsg{err: err}
+			}
+			if !info.HasScope("qso:write") {
+				return wlTestMsg{err: fmt.Errorf("shared club station requires the qso:write scope on the token")}
+			}
+			if info.HasScope("qso:delete") {
+				return wlTestMsg{warn: fmt.Sprintf("owner %s — the token carries qso:delete; CQOps blocks remote edits and deletes, but consider recreating the key without that scope", info.Owner)}
+			}
+			return wlTestMsg{warn: fmt.Sprintf("club station key of %s — synced contacts will be read-only", info.Owner)}
 		}
 		return wlTestMsg{}
 	}
