@@ -926,6 +926,25 @@ func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = tea.Batch(cmd, m.handleEditorUploadCompletion(em))
 	}
 
+	// Preparation and normalization workers transfer their database lease
+	// through their results, and their follow-ups (the batch upload, the
+	// post-normalize upload) run inside the editor screen handler. Results
+	// that will NOT reach that handler — the editor screen was left before
+	// the result arrived — or that have no follow-up at all (normalization
+	// errors, whose editor cleanup branch only runs for successful
+	// normalization) release the lease here: otherwise a later logbook
+	// switch retains the retired database forever.
+	if pm, ok := msg.(uploadPrepMsg); ok && m.screen != screenLogbookEditor && pm.release != nil {
+		pm.release()
+	}
+	if em, ok := msg.(editorMsg); ok && em.normRelease != nil {
+		editorWillConsume := m.screen == screenLogbookEditor ||
+			(m.ui.logbookEditor != nil && m.ui.logbookEditor.isDownloadActive())
+		if !editorWillConsume || em.normalized == 0 {
+			em.normRelease()
+		}
+	}
+
 	// Deferred pending requests (QRZ lookup, WL lookup, QSO refresh) run
 	// before screen-specific routing; their commands are accumulated into
 	// the returned batch. The incoming message is NEVER consumed here —

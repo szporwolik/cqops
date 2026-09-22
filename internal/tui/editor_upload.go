@@ -399,11 +399,15 @@ func (le *LogbookEditor) uploadBatchLeased(unsent []qso.QSO, lease func()) tea.C
 
 		// Build the summary with explicit tallies. A failed chunk leaves its
 		// QSOs unsent locally, so a partial success must never be reported
-		// as success for the entire input count.
+		// as success for the entire input count. The reconciliation ids
+		// identified BEFORE the upload must survive this failure return —
+		// their PATCHes are still required, losing them would leave the
+		// remote copies outdated.
 		if totalOK+totalDup+totalUnresolved == 0 && lastErr != nil {
 			return editorMsg{wlOK: false, err: lastErr, wlFailCount: totalFail,
 				wlCall: fmt.Sprintf("%d QSOs", len(unsent)), gen: gen, opSession: opSession, opSessionSet: true,
-				lbID: logbookID, wlUpDB: db, wlUpURL: url, wlUpKey: key, wlUpSID: sid, wlUpRelease: release}
+				lbID: logbookID, wlUpDB: db, wlUpURL: url, wlUpKey: key, wlUpSID: sid,
+				wlReconcileIDs: changedIDs, wlUpRelease: release}
 		}
 		var parts []string
 		if totalOK > 0 {
@@ -501,7 +505,8 @@ func (le *LogbookEditor) uploadIndividual(unsent []qso.QSO) tea.Cmd {
 
 		if failCount > 0 && sentCount+dupCount+unresolved == 0 {
 			return editorMsg{wlOK: false, err: lastErr, wlFailCount: failCount, wlCall: fmt.Sprintf("%d failed", failCount), gen: gen,
-				lbID: logbookID, wlUpDB: db, wlUpURL: url, wlUpKey: key, wlUpSID: sid, wlUpRelease: release}
+				lbID: logbookID, wlUpDB: db, wlUpURL: url, wlUpKey: key, wlUpSID: sid,
+				wlReconcileIDs: changedIDs, wlUpRelease: release}
 		}
 		var parts []string
 		if sentCount > 0 {

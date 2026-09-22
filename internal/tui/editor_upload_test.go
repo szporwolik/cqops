@@ -2165,3 +2165,311 @@ func TestEditorBatchUploadLeaseBridgesReconciliationAcrossLogbookSwitch(t *testi
 		t.Error("A's row should be clean after the follow-up ack")
 	}
 }
+
+// TestUploadPrepLeaseReleasedWhenScreenLeft reproduces the reported leak:
+// the preparation worker transfers its database lease through the prep
+// result, but that result is consumed only by the editor screen handler —
+// leaving the editor before it arrives dropped the result with the lease
+// still held, and a later logbook switch retained the retired database
+// forever. The dropped result must release the lease globally.
+func TestUploadPrepLeaseReleasedWhenScreenLeft(t *testing.T) {
+	dir := t.TempDir()
+	dbPathA := filepath.Join(dir, "a.db")
+	dbPathB := filepath.Join(dir, "b.db")
+
+	cfg := config.DefaultConfig()
+	lbA := config.Logbook{
+		Station:      config.Station{Callsign: "SP9A", Grid: "JO90"},
+		DatabasePath: dbPathA,
+		Wavelog:      &config.WavelogConfig{Enabled: true, URL: "https://log.example.com", APIKey: "wl2_test", StationProfileID: "1"},
+	}
+	lbB := config.Logbook{Station: config.Station{Callsign: "SP9B", Grid: "JO91"}, DatabasePath: dbPathB}
+	cfg.Logbooks = map[string]config.Logbook{"a": lbA, "b": lbB}
+	cfg.State.ActiveLogbook = "a"
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := config.Save(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	dbA, err := store.InitDB(dbPathA)
+	if err != nil {
+		t.Fatalf("init db A: %v", err)
+	}
+	a := &app.App{
+		Config:      cfg,
+		ConfigPath:  cfgPath,
+		LogbookName: "a",
+		Logbook:     &lbA,
+		DB:          dbA,
+		DBPath:      dbPathA,
+	}
+	t.Cleanup(a.StopAPRSTimer)
+
+	insertTestQSO(t, dbA, &qso.QSO{Call: "SP9AAA", Band: "20m", Mode: "SSB",
+		QSODate: "20240501", TimeOn: "120000", RSTSent: "59", RSTRcvd: "59"})
+
+	m := New(a, nil)
+	m.initLogbookEditor()
+	m.screen = screenLogbookEditor
+	le := m.ui.logbookEditor
+
+	prep, ok := execCmd(le.doBatchUpload()).(uploadPrepMsg)
+	if !ok || prep.err != nil {
+		t.Fatalf("prep: ok=%v err=%v", ok, prep.err)
+	}
+	if prep.release == nil {
+		t.Fatal("the prep result must carry the transferred database lease")
+	}
+	if len(prep.unsent) != 1 {
+		t.Fatalf("prep unsent = %d, want 1", len(prep.unsent))
+	}
+
+	// Leave the editor before the prep result is delivered — the result is
+	// dropped by screen routing, and the lease must be released globally.
+	m.screen = screenQSO
+	upd, _ := m.Update(prep)
+	m = upd.(*Model)
+
+	// With the lease released, the switch closes the retired database
+	// immediately; with the leak it would be retained forever.
+	if err := a.SwitchLogbook("b"); err != nil {
+		t.Fatalf("switch to B: %v", err)
+	}
+	t.Cleanup(func() { a.DB.Close() })
+	if err := dbA.Ping(); err == nil {
+		t.Error("retired A database should be closed — the dropped prep result leaked its lease")
+	}
+}
+
+// TestNormalizeErrorReleasesLease reproduces the reported leak: the
+// normalization error result carries the transferred lease, but the cleanup
+// only ran inside the successful-normalization branch — the error path never
+// released it, and a later logbook switch retained the retired database
+// forever. The error result must release the lease globally.
+func TestNormalizeErrorReleasesLease(t *testing.T) {
+	dir := t.TempDir()
+	dbPathA := filepath.Join(dir, "a.db")
+	dbPathB := filepath.Join(dir, "b.db")
+
+	cfg := config.DefaultConfig()
+	lbA := config.Logbook{
+		Station:      config.Station{Callsign: "SP9A", Grid: "JO90"},
+		DatabasePath: dbPathA,
+		Wavelog:      &config.WavelogConfig{Enabled: true, URL: "https://log.example.com", APIKey: "wl2_test", StationProfileID: "1"},
+	}
+	lbB := config.Logbook{Station: config.Station{Callsign: "SP9B", Grid: "JO91"}, DatabasePath: dbPathB}
+	cfg.Logbooks = map[string]config.Logbook{"a": lbA, "b": lbB}
+	cfg.State.ActiveLogbook = "a"
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := config.Save(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	dbA, err := store.InitDB(dbPathA)
+	if err != nil {
+		t.Fatalf("init db A: %v", err)
+	}
+	a := &app.App{
+		Config:      cfg,
+		ConfigPath:  cfgPath,
+		LogbookName: "a",
+		Logbook:     &lbA,
+		DB:          dbA,
+		DBPath:      dbPathA,
+	}
+	t.Cleanup(a.StopAPRSTimer)
+
+	qID := insertTestQSO(t, dbA, &qso.QSO{Call: "SP9AAA", Band: "20m", Mode: "SSB",
+		QSODate: "20240501", TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", Operator: "WrongOp"})
+
+	m := New(a, nil)
+	m.initLogbookEditor()
+	m.screen = screenLogbookEditor
+	le := m.ui.logbookEditor
+	le.logStationOp = "Szymon"
+	row, err := store.GetQSOByID(dbA, qID)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	le.mismatchQSOs = []qso.QSO{*row}
+	le.mismatchFields = []string{"operator"}
+
+	// Deterministically reject the normalization write.
+	if _, err := dbA.Exec(`CREATE TRIGGER block_norm BEFORE UPDATE OF operator ON qsos
+		WHEN NEW.operator != OLD.operator
+		BEGIN SELECT RAISE(ABORT, 'blocked'); END`); err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+
+	em, ok := execCmd(le.doNormalizeAndUpload()).(editorMsg)
+	if !ok || em.err == nil {
+		t.Fatalf("normalize: ok=%v err=%v, want a failure", ok, em.err)
+	}
+	if em.normalized != 0 {
+		t.Fatalf("normalized = %d, want 0 on error", em.normalized)
+	}
+	if em.normRelease == nil {
+		t.Fatal("the error result must carry the transferred database lease")
+	}
+
+	// The error result never enters the successful-normalization branch —
+	// the lease must be released globally.
+	upd, _ := m.Update(em)
+	m = upd.(*Model)
+
+	if err := a.SwitchLogbook("b"); err != nil {
+		t.Fatalf("switch to B: %v", err)
+	}
+	t.Cleanup(func() { a.DB.Close() })
+	if err := dbA.Ping(); err == nil {
+		t.Error("retired A database should be closed — the normalization error leaked its lease")
+	}
+}
+
+// TestUploadBatchFailureKeepsReconciliationIDs reproduces the reported loss:
+// the pre-upload reconciliation accumulates ids of rows whose newer local
+// revision was marked dirty (the remote copy is older), but the
+// all-remaining-uploads-failed return omitted them — the required PATCHes
+// were never queued and the remote copies stayed outdated. Reconciliation
+// ids must survive every return after the reconciliation pass, including
+// failure results.
+func TestUploadBatchFailureKeepsReconciliationIDs(t *testing.T) {
+	var mu sync.Mutex
+	var patchedComment string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Query().Has("page"):
+			// Reconciliation scan: SP9REC already exists remotely as id 77.
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{"id": 77, "call": "SP9REC", "band": "20m", "mode": "SSB", "qso_date": "2024-05-10 10:00:00"},
+				},
+				"meta": map[string]any{"page": 1, "has_more": false},
+			})
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v2/qso/77":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode patch body: %v", err)
+			}
+			mu.Lock()
+			patchedComment, _ = body["comment"].(string)
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]any{"data": remoteQSODoc(77)})
+		case r.Method == http.MethodPost:
+			http.Error(w, "server error", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	wl := m.App.Logbook.Wavelog
+	wl.URL = srv.URL
+	wl.APIKey = "wl2_test"
+	wl.Enabled = true
+	wl.StationProfileID = "1"
+	m.initLogbookEditor()
+	le := m.ui.logbookEditor
+
+	rec := &qso.QSO{Call: "SP9REC", Band: "20m", Mode: "SSB", QSODate: "20240510",
+		TimeOn: "100000", RSTSent: "59", RSTRcvd: "59", Comment: "old"}
+	recID := insertTestQSO(t, m.App.DB, rec)
+	rec.ID = recID
+	for i := 0; i < 25; i++ {
+		q := &qso.QSO{Call: fmt.Sprintf("SP9N%02d", i), Band: "20m", Mode: "SSB",
+			QSODate: "20240511", TimeOn: fmt.Sprintf("%02d0000", i), RSTSent: "59", RSTRcvd: "59"}
+		q.ID = insertTestQSO(t, m.App.DB, q)
+	}
+
+	// Preparation captures data + revision together; the edit lands after.
+	unsent, err := store.ListUnsentQSOs(m.App.DB)
+	if err != nil || len(unsent) != 26 {
+		t.Fatalf("ListUnsentQSOs: %v (rows=%d), want 26", err, len(unsent))
+	}
+	row, err := store.GetQSOByID(m.App.DB, recID)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	row.Comment = "newer"
+	if err := store.UpdateQSO(m.App.DB, row); err != nil {
+		t.Fatalf("UpdateQSO: %v", err)
+	}
+
+	em := execCmd(le.uploadBatch(unsent)).(editorMsg)
+	if em.wlOK {
+		t.Fatalf("upload should fail (all chunks rejected), err=%v", em.err)
+	}
+	if em.wlFailCount != 25 {
+		t.Errorf("failCount = %d, want 25", em.wlFailCount)
+	}
+	if len(em.wlReconcileIDs) != 1 || em.wlReconcileIDs[0] != recID {
+		t.Fatalf("wlReconcileIDs = %v, want [%d] — the reconciled contact still needs its PATCH", em.wlReconcileIDs, recID)
+	}
+	stored, err := store.GetQSOByID(m.App.DB, recID)
+	if err != nil {
+		t.Fatalf("GetQSOByID after batch: %v", err)
+	}
+	if stored.WavelogID != 77 {
+		t.Errorf("reconciled WavelogID = %d, want 77", stored.WavelogID)
+	}
+	if !stored.WavelogDirty {
+		t.Error("reconciled row must be durably dirty — the remote copy is older")
+	}
+
+	// The global completion handler must queue the PATCH despite the
+	// failed-upload result.
+	m.screen = screenQSO
+	upd, c := m.Update(em)
+	m = upd.(*Model)
+	if c == nil {
+		t.Fatal("the reconciliation PATCH was not queued")
+	}
+	var synced editorMsg
+	var walk func(tea.Cmd)
+	walk = func(sub tea.Cmd) {
+		if synced.wlSyncFollowUp {
+			return
+		}
+		if r, ok := sub().(editorMsg); ok && r.wlSyncFollowUp {
+			synced = r
+			return
+		}
+		if inner, ok := execCmd(sub).(tea.BatchMsg); ok {
+			for _, nested := range inner {
+				walk(nested)
+			}
+		}
+	}
+	batch, isBatch := execCmd(c).(tea.BatchMsg)
+	if isBatch {
+		for _, sub := range batch {
+			walk(sub)
+		}
+	} else {
+		walk(c)
+	}
+	if !synced.wlSyncFollowUp {
+		t.Fatal("the reconciliation PATCH was not dispatched")
+	}
+	if !synced.wlSyncOK {
+		t.Fatalf("PATCH: ok=%v err=%q", synced.wlSyncOK, synced.wlSyncErr)
+	}
+	mu.Lock()
+	got := patchedComment
+	mu.Unlock()
+	if got != "newer" {
+		t.Errorf("server PATCH comment = %q, want newer", got)
+	}
+	if c2 := m.handleQSOSyncCompletion(synced); c2 != nil {
+		t.Fatal("no further PATCH should be dispatched")
+	}
+	stored, err = store.GetQSOByID(m.App.DB, recID)
+	if err != nil {
+		t.Fatalf("GetQSOByID after chain: %v", err)
+	}
+	if stored.WavelogDirty {
+		t.Error("reconciled row should be clean after the PATCH acknowledged the newer edit")
+	}
+}
