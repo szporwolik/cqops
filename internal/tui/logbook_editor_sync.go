@@ -155,12 +155,16 @@ func (m *Model) handleQSOSyncCompletion(em editorMsg) tea.Cmd {
 	// open even if the logbook was switched or the editor recreated
 	// meanwhile.
 	coord.inFlight[ctx.key] = ctx
+	return m.patchLatestRevision(ctx)
+}
+
+// patchLatestRevision reads the row fresh from the ORIGINATING database and
+// PATCHes its current revision to the ORIGINATING endpoint — the queued save
+// stored its newer revision there, so this carries exactly the newest edit.
+// Used by both serialized save follow-ups and initial-upload reconciliation.
+func (m *Model) patchLatestRevision(ctx *contactSyncContext) tea.Cmd {
 	id := ctx.key.localID
 	return func() tea.Msg {
-		// The follow-up reads the row fresh from the ORIGINATING database
-		// and pushes to the ORIGINATING endpoint — the queued save stored
-		// its newer revision there, so this PATCH carries exactly the
-		// newest edit.
 		row, err := store.GetQSOByID(ctx.db, id)
 		res := editorMsg{saved: id, gen: ctx.gen, wlSyncFollowUp: true, syncCtx: ctx}
 		if err != nil {
@@ -168,6 +172,8 @@ func (m *Model) handleQSOSyncCompletion(em editorMsg) tea.Cmd {
 			res.wlSyncErr = err.Error()
 			return res
 		}
+		res.saveCall = row.Call
+		res.saveDate = formatDate(row.QSODate)
 		if row.WavelogID <= 0 {
 			// The remote copy vanished while the edit was queued — the row
 			// is honest again (id already cleared locally).
@@ -201,6 +207,51 @@ func (m *Model) handleQSOSyncCompletion(em editorMsg) tea.Cmd {
 		}
 		return res
 	}
+}
+
+// queueContactReconcile queues a PATCH of the row's latest revision after an
+// initial upload found the row changed while it was on the wire: the remote
+// copy was created from an older snapshot, so the current revision must be
+// pushed. It uses the model-owned per-contact coordinator keyed by the
+// ORIGINATING logbook/contact/endpoint — the same coordination as save
+// chains — so it serializes with any in-flight PATCH and survives editor
+// recreation. The row is already durably dirty; the PATCH clears it for its
+// exact revision.
+func (m *Model) queueContactReconcile(db *sql.DB, url, key, logbook string, localID int64) tea.Cmd {
+	if db == nil || url == "" || key == "" || localID == 0 {
+		return nil
+	}
+	if m.sync == nil {
+		m.sync = &contactSyncCoord{}
+	}
+	if m.sync.inFlight == nil {
+		m.sync.inFlight = make(map[contactSyncKey]*contactSyncContext)
+	}
+	if m.sync.queued == nil {
+		m.sync.queued = make(map[contactSyncKey]bool)
+	}
+	syncKey := contactSyncKey{logbook: logbook, localID: localID, url: url}
+	if m.sync.inFlight[syncKey] != nil {
+		// A save chain is already running for this contact — its follow-up
+		// will read the latest revision; nothing more to queue.
+		m.sync.queued[syncKey] = true
+		return nil
+	}
+	release := func() {}
+	if m.App != nil {
+		release = m.App.KeepDBAlive(db)
+	}
+	ctx := &contactSyncContext{
+		key:     syncKey,
+		coord:   m.sync,
+		db:      db,
+		url:     url,
+		apiKey:  key,
+		gen:     0,
+		release: release,
+	}
+	m.sync.inFlight[syncKey] = ctx
+	return m.patchLatestRevision(ctx)
 }
 
 // mergeRemoteQSO overlays the server-side fields onto a local QSO. Local-only

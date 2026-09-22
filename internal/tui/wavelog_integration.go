@@ -147,10 +147,55 @@ func (m *Model) uploadQSOToWavelog(qs *qso.QSO) tea.Cmd {
 	}
 	release := m.App.KeepDBAlive(ctx.db)
 
+	// The revision of the snapshot being uploaded: an edit saved while the
+	// upload is on the wire bumps wavelog_dirty_rev, and the completion
+	// detects the change instead of falsely marking the row synced.
+	var uploadedRev int64
+	if row, rerr := store.GetQSOByID(m.App.DB, qs.ID); rerr == nil && row != nil {
+		uploadedRev = row.WavelogDirtyRev
+	}
+
 	return func() tea.Msg {
 		defer release()
-		ok, isDup, remoteID, err := postQSOSingle(ctx.url, ctx.key, ctx.stationID, qs, ctx.db)
-		return wlUploadResultMsg{qID: qs.ID, call: qs.Call, logbook: ctx.logbook, ok: ok, isDup: isDup, remoteID: remoteID, err: err}
+		ok, isDup, remoteID, changed, err := postQSOSingle(ctx.url, ctx.key, ctx.stationID, qs, ctx.db, uploadedRev)
+		// Remote acceptance and local persistence are SEPARATE outcomes:
+		// ok with remoteID==0 means the server accepted the contact but the
+		// local id write failed — the row is still locally unsent and must
+		// be reported as unresolved, never as a successful synchronization.
+		return wlUploadResultMsg{qID: qs.ID, call: qs.Call, logbook: ctx.logbook, ok: ok, isDup: isDup, remoteID: remoteID, unresolved: ok && remoteID == 0, err: err, changed: changed, db: ctx.db, url: ctx.url, key: ctx.key, sid: ctx.stationID}
+	}
+}
+
+// retryIDAttachCmd retries attaching the remote id for a row whose upload was
+// accepted but whose id write failed locally: the id is learned via the
+// callsign-scoped list and attached with the same revision check as the
+// original upload. The row stays unsent locally until the id is persisted, so
+// a failed retry leaves it re-offered on the next upload cycle instead of
+// being presented as synchronized.
+func (m *Model) retryIDAttachCmd(db *sql.DB, url, key, sid string, qID int64) tea.Cmd {
+	if db == nil || url == "" || key == "" || qID == 0 {
+		return nil
+	}
+	release := func() {}
+	if m.App != nil {
+		release = m.App.KeepDBAlive(db)
+	}
+	return func() tea.Msg {
+		defer release()
+		row, rerr := store.GetQSOByID(db, qID)
+		if rerr != nil || row == nil {
+			return wlUploadResultMsg{qID: qID, ok: false, unresolved: true, retried: true, err: fmt.Errorf("cannot read row for id retry")}
+		}
+		rid := backfillRemoteID(url, key, sid, row, db)
+		if rid <= 0 {
+			return wlUploadResultMsg{qID: qID, call: row.Call, ok: true, unresolved: true, retried: true, db: db, url: url, key: key, sid: sid}
+		}
+		ch, serr := store.SetWavelogIDChecked(db, qID, rid, row.WavelogDirtyRev)
+		if serr != nil {
+			applog.Error("Wavelog: id retry failed to store remote id", "qso_id", qID, "error", serr)
+			return wlUploadResultMsg{qID: qID, call: row.Call, ok: true, unresolved: true, retried: true, db: db, url: url, key: key, sid: sid}
+		}
+		return wlUploadResultMsg{qID: qID, call: row.Call, ok: true, remoteID: rid, changed: ch, retried: true, db: db, url: url, key: key, sid: sid}
 	}
 }
 
@@ -159,25 +204,50 @@ func (m *Model) uploadQSOToWavelog(qs *qso.QSO) tea.Cmd {
 // "uploaded". Falls back to the ADIF import path when the JSON create fails
 // for any reason, preserving the previous behavior. On duplicates the remote
 // id is backfilled via a callsign lookup so the row still counts as uploaded.
-func postQSOSingle(url, key, sid string, qs *qso.QSO, db *sql.DB) (ok bool, isDup bool, remoteID int64, err error) {
+//
+// uploadedRev is the row revision the snapshot was taken at; when the row
+// changed since (bumped by any local write), the id is still attached but
+// changed=true reports that the row is durably dirty and needs a follow-up
+// PATCH of its latest revision.
+//
+// Remote acceptance and local persistence are SEPARATE outcomes: ok=true
+// with remoteID==0 means the server accepted the contact but the local id
+// write (or backfill) failed — callers must treat that as unresolved, not as
+// a successful synchronization.
+func postQSOSingle(url, key, sid string, qs *qso.QSO, db *sql.DB, uploadedRev int64) (ok, isDup bool, remoteID int64, changed bool, err error) {
+	attach := func(rid int64) {
+		if rid <= 0 {
+			return
+		}
+		ch, serr := store.SetWavelogIDChecked(db, qs.ID, rid, uploadedRev)
+		if serr != nil {
+			applog.Error("Wavelog: failed to store remote id", "qso_id", qs.ID, "error", serr)
+			return
+		}
+		remoteID = rid
+		if ch {
+			changed = true
+			applog.Info("Wavelog: row changed during upload — reconciliation needed",
+				"qso_id", qs.ID, "remote_id", rid)
+		} else {
+			applog.InfoDetail("Wavelog: QSO created via v2", fmt.Sprintf("qso_id=%d remote_id=%d", qs.ID, rid))
+		}
+	}
 	if sidInt, perr := wavelog.ParseStationID(sid); perr == nil {
-		remoteID, dup, cerr := wavelog.CreateQSO(url, key, buildCreateQSOInput(sidInt, qs))
+		createdID, dup, cerr := wavelog.CreateQSO(url, key, buildCreateQSOInput(sidInt, qs))
 		if cerr == nil {
 			if dup {
 				applog.InfoDetail("Wavelog: QSO already present (JSON create)", fmt.Sprintf("qso_id=%d", qs.ID))
-				return true, true, backfillRemoteID(url, key, sid, qs, db), nil
+				attach(backfillRemoteID(url, key, sid, qs, db))
+				return true, true, remoteID, changed, nil
 			}
-			if remoteID > 0 {
-				if derr := store.SetWavelogID(db, qs.ID, remoteID); derr != nil {
-					applog.Error("Wavelog: failed to store remote id", "qso_id", qs.ID, "error", derr)
-				} else {
-					applog.InfoDetail("Wavelog: QSO created via v2", fmt.Sprintf("qso_id=%d remote_id=%d", qs.ID, remoteID))
-				}
+			if createdID > 0 {
+				attach(createdID)
 			} else {
 				// Server returned no id (bulk-summary shape) — backfill it.
-				remoteID = backfillRemoteID(url, key, sid, qs, db)
+				attach(backfillRemoteID(url, key, sid, qs, db))
 			}
-			return true, false, remoteID, nil
+			return true, false, remoteID, changed, nil
 		}
 		// Auth errors (v1 key, revoked/expired token) fail identically on the
 		// ADIF path — surface the friendly message directly instead of a
@@ -185,7 +255,7 @@ func postQSOSingle(url, key, sid string, qs *qso.QSO, db *sql.DB) (ok bool, isDu
 		if apiErr, ok := cerr.(*wavelog.APIError); ok {
 			switch apiErr.Code {
 			case "unauthorized", "invalid_token", "token_expired":
-				return false, false, 0, wavelog.FriendlyError(cerr)
+				return false, false, 0, false, wavelog.FriendlyError(cerr)
 			}
 		}
 		applog.Warn("Wavelog: JSON create failed, falling back to ADIF", "qso_id", qs.ID, "error", cerr)
@@ -193,14 +263,16 @@ func postQSOSingle(url, key, sid string, qs *qso.QSO, db *sql.DB) (ok bool, isDu
 	// Fallback: the existing ADIF import path.
 	ok, isDup, err = postQSO(url, key, sid, qs.ToADIF(), qs.ID, qs.Call, db)
 	if ok {
-		remoteID = backfillRemoteID(url, key, sid, qs, db)
+		attach(backfillRemoteID(url, key, sid, qs, db))
 	}
-	return ok, isDup, remoteID, err
+	return ok, isDup, remoteID, changed, err
 }
 
 // backfillRemoteID learns the remote id of an already-present QSO via the
 // callsign-scoped JSON list, so wavelog_id reflects reality even when the
-// create/import response carried no id (duplicates, bulk summaries).
+// create/import response carried no id (duplicates, bulk summaries). The
+// returned id is NOT written here — callers attach it via SetWavelogID or
+// SetWavelogIDChecked so revision checks stay in one place.
 func backfillRemoteID(url, key, sid string, qs *qso.QSO, db *sql.DB) int64 {
 	mode := qs.Mode
 	if strings.EqualFold(mode, "MFSK") && qs.Submode != "" {
@@ -212,11 +284,7 @@ func backfillRemoteID(url, key, sid string, qs *qso.QSO, db *sql.DB) int64 {
 		return 0
 	}
 	if rid > 0 {
-		if serr := store.SetWavelogID(db, qs.ID, rid); serr != nil {
-			applog.Error("Wavelog: failed to store remote id", "qso_id", qs.ID, "error", serr)
-		} else {
-			applog.InfoDetail("Wavelog: remote id backfilled", fmt.Sprintf("qso_id=%d remote_id=%d", qs.ID, rid))
-		}
+		applog.InfoDetail("Wavelog: remote id backfilled", fmt.Sprintf("qso_id=%d remote_id=%d", qs.ID, rid))
 	}
 	return rid
 }
@@ -310,6 +378,10 @@ func backfillQSOID(url, key, sid string, qID int64, db *sql.DB) {
 	}
 	rid := backfillRemoteID(url, key, sid, qs, db)
 	if rid > 0 {
+		if serr := store.SetWavelogID(db, qID, rid); serr != nil {
+			applog.Error("Wavelog: failed to store remote id", "qso_id", qID, "error", serr)
+			return
+		}
 		applog.InfoDetail("Wavelog: remote id stored", fmt.Sprintf("qso_id=%d remote_id=%d", qID, rid))
 	}
 }
@@ -322,6 +394,21 @@ type wlUploadResultMsg struct {
 	isDup    bool
 	remoteID int64
 	err      error
+	// changed reports that the row was edited while the upload was on the
+	// wire: the id is attached, the row is durably dirty, and the handler
+	// queues a follow-up PATCH of the latest revision.
+	changed bool
+	db      *sql.DB // originating database for the reconciliation PATCH
+	url     string  // originating endpoint
+	key     string
+	sid     string // station profile id, for id-attach retries
+	// unresolved reports remote acceptance WITHOUT local id persistence: the
+	// row is still locally unsent and must never be presented as synced.
+	unresolved bool
+	// retried marks a result produced by retryIDAttachCmd, so a failed
+	// retry does not schedule yet another one (the next upload cycle
+	// re-offers the row instead).
+	retried bool
 }
 
 // stripMyGridsquare removes the MY_GRIDSQUARE field from an ADIF string.

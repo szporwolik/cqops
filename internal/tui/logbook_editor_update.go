@@ -134,6 +134,18 @@ type editorMsg struct {
 	// cursor reset), independently of which logbook or editor is currently
 	// visible.
 	lbID string
+	// wlUp* carry the originating database/endpoint of a single upload and
+	// whether the row changed while the upload was on the wire — the model
+	// queues a follow-up PATCH of the latest revision in that case. When the
+	// server accepted the contact but the local id write failed, the
+	// completion is marked wlUpUnresolved and the model retries the id
+	// attach instead of presenting it as synchronized.
+	wlUpDB         *sql.DB
+	wlUpURL        string
+	wlUpKey        string
+	wlUpSID        string
+	wlUpChanged    bool
+	wlUpUnresolved bool
 }
 
 func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {

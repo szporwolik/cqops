@@ -365,13 +365,27 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 		m.rc.status = ""
 		return true, radioCmd
 	case wlUploadResultMsg:
+		// A row edited while its initial upload was on the wire is durably
+		// dirty — queue a PATCH of the latest revision against the
+		// ORIGINATING database/endpoint, independent of the visible logbook.
+		var reconcile tea.Cmd
+		if r.ok && r.changed {
+			reconcile = m.queueContactReconcile(r.db, r.url, r.key, r.logbook, r.qID)
+		}
+		// Remote acceptance without local id persistence is unresolved —
+		// retry the id attach once; a failed retry leaves the row re-offered
+		// on the next upload cycle.
+		var retry tea.Cmd
+		if r.ok && r.unresolved && !r.retried {
+			retry = m.retryIDAttachCmd(r.db, r.url, r.key, r.sid, r.qID)
+		}
 		// A result for a logbook the user has switched away from: the editor
 		// now shows a different database (IDs may collide), so skip all UI
 		// updates and notifications.
 		if r.logbook != "" && r.logbook != m.App.LogbookName {
-			return true, nil
+			return true, tea.Batch(reconcile, retry)
 		}
-		if r.qID != 0 && m.ui.logbookEditor != nil {
+		if r.qID != 0 && m.ui.logbookEditor != nil && !r.unresolved {
 			m.ui.logbookEditor.UpdateWLStatus(r.qID, r.ok, r.remoteID)
 		}
 		// Enrichment changed fields without changing QSO ids — force-push
@@ -380,7 +394,9 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 		m.pushDashboardRecentAndToday()
 		n := m.App.Config.General.Notifications
 		if r.ok {
-			if r.isDup {
+			if r.unresolved {
+				m.toasts.Warn(fmt.Sprintf("Wavelog: %s accepted but remote id not stored — will retry", r.call))
+			} else if r.isDup {
 				m.toasts.Success(fmt.Sprintf("Wavelog: %s already present", r.call))
 			} else {
 				m.toasts.Success(fmt.Sprintf("Wavelog: %s sent", r.call))
@@ -416,7 +432,7 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 		// the updated Wavelog status. Also flag needRefresh so the logbook
 		// editor (if open) reloads on the next tick.
 		m.needRefresh = true
-		return true, m.refreshQSOS()
+		return true, tea.Batch(m.refreshQSOS(), reconcile, retry)
 	case wsjtxEnrichDoneMsg:
 		// Enrichment finished for a logbook the user has switched away from
 		// — refreshing would reload the new logbook's rows for nothing.

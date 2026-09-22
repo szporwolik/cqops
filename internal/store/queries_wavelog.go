@@ -27,6 +27,35 @@ func SetWavelogID(db *sql.DB, id, remoteID int64) error {
 	return fmt.Errorf("set wavelog id: %w", err)
 }
 
+// SetWavelogIDChecked stores the remote id while checking whether the row
+// was edited since the snapshot that was uploaded (uploadedRev). The id is
+// persisted either way — the remote copy exists — but when the current
+// revision is NEWER, the row is durably marked dirty so the newer edit is
+// pushed by a follow-up PATCH and can no longer be overwritten by a remote
+// refresh. Returns changed=true in that case. uploadedRev < 0 disables the
+// check entirely (legacy callers) — captured revisions are always >= 0, so
+// a legitimate revision of zero is still validated.
+func SetWavelogIDChecked(db *sql.DB, id, remoteID, uploadedRev int64) (bool, error) {
+	var err error
+	if uploadedRev >= 0 {
+		_, err = db.Exec(`UPDATE qsos SET wavelog_id=?, wavelog_dirty=CASE WHEN wavelog_dirty_rev > ? THEN 1 ELSE wavelog_dirty END WHERE id=?`,
+			remoteID, uploadedRev, id)
+	} else {
+		_, err = db.Exec(`UPDATE qsos SET wavelog_id=? WHERE id=?`, remoteID, id)
+	}
+	if err != nil {
+		return false, fmt.Errorf("set wavelog id checked: %w", err)
+	}
+	if uploadedRev < 0 {
+		return false, nil
+	}
+	var rev int64
+	if err := db.QueryRow(`SELECT wavelog_dirty_rev FROM qsos WHERE id=?`, id).Scan(&rev); err != nil {
+		return false, fmt.Errorf("read revision after id attach: %w", err)
+	}
+	return rev > uploadedRev, nil
+}
+
 // SetWavelogDirty marks (or clears) the durable pending-sync flag on a local
 // QSO. It is set when the local row diverges from the Wavelog copy (PATCH
 // deferred in offline mode or failed) and cleared when the remote copy has

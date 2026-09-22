@@ -392,7 +392,14 @@ func (le *LogbookEditor) uploadIndividual(unsent []qso.QSO) tea.Cmd {
 		var lastErr error
 
 		for _, q := range unsent {
-			ok, isDup, rid, err := postQSOSingle(url, key, sid, &q, db)
+			var uploadedRev int64
+			if row, rerr := store.GetQSOByID(db, q.ID); rerr == nil && row != nil {
+				uploadedRev = row.WavelogDirtyRev
+			}
+			ok, isDup, rid, changed, err := postQSOSingle(url, key, sid, &q, db, uploadedRev)
+			if changed {
+				applog.Warn("Wavelog: row changed during batch upload — reconciliation deferred", "qso_id", q.ID)
+			}
 			if !ok {
 				applog.Warn("Wavelog: individual upload failed", "qso_id", q.ID, "call", q.Call, "error", err)
 				failCount++
@@ -468,10 +475,23 @@ func (le *LogbookEditor) doUploadToWavelog() tea.Cmd {
 	db := le.db
 	release := le.dbLease(db)
 
+	// The revision of the snapshot being uploaded: an edit saved while the
+	// upload is on the wire bumps wavelog_dirty_rev, and the completion
+	// detects it and queues a follow-up PATCH of the latest revision.
+	var uploadedRev int64
+	if db != nil {
+		if row, rerr := store.GetQSOByID(db, q.ID); rerr == nil && row != nil {
+			uploadedRev = row.WavelogDirtyRev
+		}
+	}
+
 	return func() tea.Msg {
 		defer release()
-		ok, isDup, _, err := postQSOSingle(url, key, sid, q, db)
-		return editorMsg{wlQSOID: qID, wlCall: call, wlOK: ok, wlDup: isDup, err: err, gen: gen, opSession: opSession, opSessionSet: true}
+		ok, isDup, rid, changed, err := postQSOSingle(url, key, sid, q, db, uploadedRev)
+		// Remote acceptance and local persistence are SEPARATE outcomes:
+		// ok with no persisted id must be reported as unresolved.
+		return editorMsg{wlQSOID: qID, wlCall: call, wlOK: ok, wlDup: isDup, err: err, gen: gen, opSession: opSession, opSessionSet: true,
+			wlUpDB: db, wlUpURL: url, wlUpKey: key, wlUpSID: sid, wlUpChanged: changed, wlUpUnresolved: ok && rid == 0}
 	}
 }
 

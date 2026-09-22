@@ -866,6 +866,8 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 			if em.wlOK {
 				hasTally := em.wlSentCount+em.wlDupCount+em.wlFailCount+em.wlUnresolvedCount > 0
 				switch {
+				case em.wlUpUnresolved:
+					m.toasts.Warn(fmt.Sprintf("Wavelog: %s accepted but remote id not stored — will retry", em.wlCall))
 				case hasTally && (em.wlFailCount > 0 || em.wlUnresolvedCount > 0):
 					m.toasts.Warn("Wavelog: " + em.wlCall)
 				case hasTally:
@@ -875,8 +877,22 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 				default:
 					m.toasts.Success(fmt.Sprintf("Wavelog: %s sent", em.wlCall))
 				}
-				m.ui.logbookEditor.UpdateWLStatus(em.wlQSOID, em.wlOK, 0)
+				m.ui.logbookEditor.UpdateWLStatus(em.wlQSOID, em.wlOK && !em.wlUpUnresolved, 0)
 				m.ui.logbookEditor.needsReload = true
+				if em.wlUpChanged && em.wlUpDB != nil {
+					// The row was edited while its initial upload was on the
+					// wire — queue a PATCH of the latest revision against the
+					// originating database/endpoint.
+					refreshCmd = tea.Batch(refreshCmd,
+						m.queueContactReconcile(em.wlUpDB, em.wlUpURL, em.wlUpKey,
+							m.ui.logbookEditor.logbookID, em.wlQSOID))
+				}
+				if em.wlUpUnresolved && em.wlUpDB != nil {
+					// Accepted remotely but the id write failed locally — retry
+					// the id attach once.
+					refreshCmd = tea.Batch(refreshCmd,
+						m.retryIDAttachCmd(em.wlUpDB, em.wlUpURL, em.wlUpKey, em.wlUpSID, em.wlQSOID))
+				}
 			} else {
 				if em.err != nil {
 					m.toasts.Error(fmt.Sprintf("Wavelog: %s — %s", em.wlCall, em.err.Error()))

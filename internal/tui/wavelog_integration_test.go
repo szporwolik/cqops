@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/config"
@@ -1064,7 +1065,7 @@ func TestPostQSOSingle_StoresRemoteID(t *testing.T) {
 		t.Fatalf("GetQSOByID: %v", err)
 	}
 
-	ok, isDup, remoteID, err := postQSOSingle(srv.URL, "wl2_test", "1", qs, m.App.DB)
+	ok, isDup, remoteID, _, err := postQSOSingle(srv.URL, "wl2_test", "1", qs, m.App.DB, -1)
 	if err != nil {
 		t.Fatalf("postQSOSingle: %v", err)
 	}
@@ -1112,7 +1113,7 @@ func TestPostQSOSingle_FallsBackToADIF(t *testing.T) {
 		t.Fatalf("GetQSOByID: %v", err)
 	}
 
-	ok, isDup, _, err := postQSOSingle(srv.URL, "wl2_test", "1", qs, m.App.DB)
+	ok, isDup, _, _, err := postQSOSingle(srv.URL, "wl2_test", "1", qs, m.App.DB, -1)
 	if err != nil {
 		t.Fatalf("postQSOSingle fallback: %v", err)
 	}
@@ -1207,7 +1208,7 @@ func TestPostQSOSingle_AuthFailureNoFallback(t *testing.T) {
 		t.Fatalf("GetQSOByID: %v", err)
 	}
 
-	ok, _, _, err := postQSOSingle(srv.URL, "wl2_bad", "1", qs, m.App.DB)
+	ok, _, _, _, err := postQSOSingle(srv.URL, "wl2_bad", "1", qs, m.App.DB, -1)
 	if ok {
 		t.Error("upload should fail on invalid token")
 	}
@@ -1628,5 +1629,259 @@ func TestFetchContacts_PayloadVerification(t *testing.T) {
 	}
 	if result.LastFetchedID() != 100 {
 		t.Errorf("LastFetchedID = %d, want 100 (kept when nothing new)", result.LastFetchedID())
+	}
+}
+
+// TestUploadReconcilesRowEditedDuringFlight reproduces the reported
+// inconsistent state: an initial upload sends a captured snapshot, and while
+// the request is pending the contact is edited — the local save bypassed
+// dirty tracking (remote id still zero), and the upload completion attached
+// the remote id without checking, leaving the server with the old content
+// and the local row falsely synced. The completion must detect the newer
+// revision, keep the row durably dirty, and queue a PATCH of the latest
+// revision.
+func TestUploadReconcilesRowEditedDuringFlight(t *testing.T) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var patchedComment string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodPost:
+			close(entered)
+			<-release
+			json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"id": 42}})
+		case http.MethodPatch:
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode patch body: %v", err)
+			}
+			if v, ok := body["comment"].(string); ok {
+				patchedComment = v
+			}
+			json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"id": 42}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	wl := m.App.Logbook.Wavelog
+	wl.URL = srv.URL
+	wl.APIKey = "wl2_test"
+	wl.Enabled = true
+	wl.StationProfileID = "1"
+
+	qID := insertTestQSO(t, m.App.DB, &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB",
+		QSODate: "20240501", TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", Comment: "before"})
+	qs, err := store.GetQSOByID(m.App.DB, qID)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+
+	cmd := m.uploadQSOToWavelog(qs)
+	if cmd == nil {
+		t.Fatal("uploadQSOToWavelog returned nil")
+	}
+	done := make(chan wlUploadResultMsg, 1)
+	go func() { done <- execCmd(cmd).(wlUploadResultMsg) }()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("upload POST never started")
+	}
+
+	// The operator edits the contact while the upload is on the wire.
+	edited := *qs
+	edited.Comment = "newer"
+	if err := store.UpdateQSO(m.App.DB, &edited); err != nil {
+		t.Fatalf("UpdateQSO during upload: %v", err)
+	}
+
+	close(release)
+	res := <-done
+	if !res.ok || res.remoteID != 42 {
+		t.Fatalf("upload: ok=%v remoteID=%d err=%v, want ok with id 42", res.ok, res.remoteID, res.err)
+	}
+	if !res.changed {
+		t.Fatal("changed must be true — the row was edited while the upload was pending")
+	}
+
+	// The row is durably dirty and a reconciliation PATCH is queued.
+	stored, err := store.GetQSOByID(m.App.DB, qID)
+	if err != nil {
+		t.Fatalf("GetQSOByID after upload: %v", err)
+	}
+	if stored.WavelogID != 42 {
+		t.Errorf("WavelogID = %d, want 42", stored.WavelogID)
+	}
+	if !stored.WavelogDirty {
+		t.Fatal("the row must stay dirty — the remote copy holds the old snapshot")
+	}
+
+	upd, c := m.Update(res)
+	m = upd.(*Model)
+	if c == nil {
+		t.Fatal("the reconciliation PATCH was not queued")
+	}
+	batch, isBatch := execCmd(c).(tea.BatchMsg)
+	if !isBatch {
+		t.Fatalf("Update returned %T, want tea.BatchMsg", c)
+	}
+	var patchEm editorMsg
+	var walk func(tea.Cmd)
+	walk = func(sub tea.Cmd) {
+		got := sub()
+		if em, ok := got.(editorMsg); ok && em.wlSyncFollowUp {
+			patchEm = em
+			return
+		}
+		if inner, ok := got.(tea.BatchMsg); ok {
+			for _, nested := range inner {
+				if patchEm.saved != 0 {
+					return
+				}
+				walk(nested)
+			}
+		}
+	}
+	for _, sub := range batch {
+		walk(sub)
+	}
+	if patchEm.saved == 0 {
+		t.Fatal("the reconciliation PATCH was not among the dispatched commands")
+	}
+	if !patchEm.wlSyncOK {
+		t.Fatalf("reconciliation PATCH: ok=%v err=%q", patchEm.wlSyncOK, patchEm.wlSyncErr)
+	}
+	if patchedComment != "newer" {
+		t.Errorf("PATCH comment = %q, want newer", patchedComment)
+	}
+	if m.handleQSOSyncCompletion(patchEm) != nil {
+		t.Fatal("no further PATCH should be dispatched")
+	}
+
+	stored, err = store.GetQSOByID(m.App.DB, qID)
+	if err != nil {
+		t.Fatalf("GetQSOByID after reconciliation: %v", err)
+	}
+	if stored.WavelogDirty {
+		t.Error("dirty should clear after the newest revision was acknowledged")
+	}
+	if stored.Comment != "newer" {
+		t.Errorf("comment = %q, want newer", stored.Comment)
+	}
+}
+
+// TestUploadIDPersistenceFailureReportedUnresolved reproduces the reported
+// false success: Wavelog accepts the contact, but the local id write fails —
+// previously the completion still reported success with a nonzero remote id,
+// the row stayed unsent locally, and the user saw no incomplete-sync result.
+// Remote acceptance and local persistence must be separate outcomes: the
+// completion reports unresolved, and a retry attaches the id once the
+// database accepts the write again.
+func TestUploadIDPersistenceFailureReportedUnresolved(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodPost:
+			json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"id": 42}})
+		case http.MethodGet:
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{"id": 42, "call": "SP9MOA", "band": "20m", "mode": "SSB",
+						"qso_date": "2024-05-01 12:00:00"},
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	wl := m.App.Logbook.Wavelog
+	wl.URL = srv.URL
+	wl.APIKey = "wl2_test"
+	wl.Enabled = true
+	wl.StationProfileID = "1"
+
+	qID := insertTestQSO(t, m.App.DB, &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB",
+		QSODate: "20240501", TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", Comment: "before"})
+	qs, err := store.GetQSOByID(m.App.DB, qID)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+
+	// Deterministically reject the local id write.
+	if _, err := m.App.DB.Exec(`CREATE TRIGGER block_wl_update BEFORE UPDATE OF wavelog_id ON qsos
+		WHEN OLD.wavelog_id = 0 AND NEW.wavelog_id != 0
+		BEGIN SELECT RAISE(ABORT, 'blocked'); END`); err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+
+	res := execCmd(m.uploadQSOToWavelog(qs)).(wlUploadResultMsg)
+	if !res.ok {
+		t.Fatalf("upload: ok=%v err=%v, want remote acceptance", res.ok, res.err)
+	}
+	if !res.unresolved {
+		t.Fatal("unresolved must be true — the server accepted but the local id write failed")
+	}
+	if res.remoteID != 0 {
+		t.Errorf("remoteID = %d, want 0 (the id was NOT persisted)", res.remoteID)
+	}
+	var storedID int64
+	if err := m.App.DB.QueryRow(`SELECT wavelog_id FROM qsos WHERE id=?`, qID).Scan(&storedID); err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if storedID != 0 {
+		t.Fatalf("stored wavelog_id = %d, want 0 (write was blocked)", storedID)
+	}
+
+	// Remove the blocker — the completion must schedule an id-attach retry.
+	if _, err := m.App.DB.Exec(`DROP TRIGGER block_wl_update`); err != nil {
+		t.Fatalf("drop trigger: %v", err)
+	}
+	upd, c := m.Update(res)
+	m = upd.(*Model)
+	if c == nil {
+		t.Fatal("the id-attach retry was not queued")
+	}
+	var retried wlUploadResultMsg
+	var walk func(tea.Cmd)
+	walk = func(sub tea.Cmd) {
+		if retried.retried {
+			return
+		}
+		if r, ok := sub().(wlUploadResultMsg); ok && r.retried {
+			retried = r
+			return
+		}
+		if inner, ok := execCmd(sub).(tea.BatchMsg); ok {
+			for _, nested := range inner {
+				walk(nested)
+			}
+		}
+	}
+	batch, isBatch := execCmd(c).(tea.BatchMsg)
+	if isBatch {
+		for _, sub := range batch {
+			walk(sub)
+		}
+	} else {
+		walk(c)
+	}
+	if !retried.retried {
+		t.Fatal("the retry result was not among the dispatched commands")
+	}
+	if retried.unresolved || retried.remoteID != 42 {
+		t.Fatalf("retry: unresolved=%v remoteID=%d, want id 42 persisted", retried.unresolved, retried.remoteID)
+	}
+	if err := m.App.DB.QueryRow(`SELECT wavelog_id FROM qsos WHERE id=?`, qID).Scan(&storedID); err != nil {
+		t.Fatalf("read back after retry: %v", err)
+	}
+	if storedID != 42 {
+		t.Errorf("stored wavelog_id = %d after retry, want 42", storedID)
 	}
 }

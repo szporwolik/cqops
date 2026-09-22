@@ -346,7 +346,7 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 		if !wlenabled || !online {
 			return wsjtxEnrichDoneMsg{logbook: ctx.logbook}
 		}
-		ok, isDup, remoteID, uploadErr := postQSOSingle(ctx.url, ctx.key, ctx.stationID, qs, ctx.db)
+		ok, isDup, remoteID, _, uploadErr := postQSOSingle(ctx.url, ctx.key, ctx.stationID, qs, ctx.db, -1)
 		return wlUploadResultMsg{qID: qsoID, call: call, logbook: ctx.logbook, ok: ok, isDup: isDup, remoteID: remoteID, err: uploadErr}
 	}
 }

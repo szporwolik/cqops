@@ -906,12 +906,15 @@ func buildUpdateQSOStatement(q *qso.QSO, oldCall, extraSet string) (string, []an
 	return query, args
 }
 
-// UpdateQSO persists an edited QSO.
+// UpdateQSO persists an edited QSO. Every local write bumps the pending-sync
+// revision (wavelog_dirty_rev), including non-synced rows: an initial upload
+// in flight captures an older revision, and the bumped counter lets the
+// upload completion detect that the row changed and keep it pending.
 func UpdateQSO(db *sql.DB, q *qso.QSO) error {
 	var oldCall string
 	_ = db.QueryRow(`SELECT call FROM qsos WHERE id=?`, q.ID).Scan(&oldCall)
 
-	query, args := buildUpdateQSOStatement(q, oldCall, "")
+	query, args := buildUpdateQSOStatement(q, oldCall, ", wavelog_dirty_rev=wavelog_dirty_rev+1")
 
 	var err error
 	for attempt := 0; attempt < 3; attempt++ {
