@@ -16,6 +16,11 @@ func adifRecord(call string) string {
 	return "<CALL:6>" + call + "<BAND:3>20m<MODE:3>SSB<QSO_DATE:8>20260920<TIME_ON:4>1200<EOR>\n"
 }
 
+// adifRecordAt builds an SSB/20m record with a specific 4-digit time.
+func adifRecordAt(call, timeOn string) string {
+	return "<CALL:6>" + call + "<BAND:3>20m<MODE:3>SSB<QSO_DATE:8>20260920<TIME_ON:4>" + timeOn + "<EOR>\n"
+}
+
 // TestFetchContacts_MultiPage verifies the paginated ADIF export: pages are
 // requested with since_id=lastfetchedid, headers of later pages are stripped,
 // rows from all pages land in one file, and the progress callback reports
@@ -29,27 +34,24 @@ func TestFetchContacts_MultiPage(t *testing.T) {
 			return
 		}
 
-		// The JSON list (no format param) is the remote-id sidecar request.
-		// Real Wavelog orders it newest first.
+		// The JSON list (no format param) is the remote-id sidecar request:
+		// one complete-list request, ordered newest first like real Wavelog.
 		if r.URL.Query().Get("format") == "" {
-			w.Header().Set("Content-Type", "application/json")
-			if page == 1 {
-				json.NewEncoder(w).Encode(map[string]any{
-					"data": []map[string]any{
-						{"id": 2, "call": "SP9BBB", "band": "20m", "mode": "SSB",
-							"qso_date": "2026-09-20 12:00:00"},
-						{"id": 1, "call": "SP9AAA", "band": "20m", "mode": "SSB",
-							"qso_date": "2026-09-20 12:00:00"},
-					},
-				})
-			} else {
-				json.NewEncoder(w).Encode(map[string]any{
-					"data": []map[string]any{
-						{"id": 5, "call": "SP9CCC", "band": "20m", "mode": "SSB",
-							"qso_date": "2026-09-20 12:00:00"},
-					},
-				})
+			if r.URL.Query().Get("page") != "1" || r.URL.Query().Get("per_page") != "5000" {
+				t.Errorf("list query = %s, want page=1 per_page=5000", r.URL.RawQuery)
 			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{"id": 5, "call": "SP9CCC", "band": "20m", "mode": "SSB",
+						"qso_date": "2026-09-20 12:00:00"},
+					{"id": 2, "call": "SP9BBB", "band": "20m", "mode": "SSB",
+						"qso_date": "2026-09-20 12:00:00"},
+					{"id": 1, "call": "SP9AAA", "band": "20m", "mode": "SSB",
+						"qso_date": "2026-09-20 12:00:00"},
+				},
+				"meta": map[string]any{"has_more": false, "total": 3},
+			})
 			return
 		}
 
@@ -158,29 +160,29 @@ func TestFetchContacts_MultiPage(t *testing.T) {
 	}
 }
 
-// TestFetchContacts_MissingIDPageDoesNotShiftIDs verifies the
-// positional-alignment fix: when the id sidecar fails for one page, that
-// page's rows must end up without ids — later pages' ids must never shift
-// onto earlier records.
-func TestFetchContacts_MissingIDPageDoesNotShiftIDs(t *testing.T) {
+// TestFetchContacts_FullListIdentityMatching is the regression test for the
+// ordering mismatch: the JSON id list is ordered newest-first while the ADIF
+// export is ascending by primary key. Per-page sidecar windows can therefore
+// never align with ADIF pages; ids must come from the complete list and be
+// matched by verified identity only.
+func TestFetchContacts_FullListIdentityMatching(t *testing.T) {
 	page := 0
-	sidecarCalls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Query().Get("format") == "" {
-			sidecarCalls++
-			if sidecarCalls == 1 {
-				http.Error(w, "boom", 500)
-				return
-			}
-			// Page-two identities only.
+			// Complete list, newest first (real Wavelog order).
 			json.NewEncoder(w).Encode(map[string]any{
 				"data": []map[string]any{
-					{"id": 11, "call": "SP9CCC", "band": "15m", "mode": "CW",
-						"qso_date": "2026-09-20 15:00:00"},
-					{"id": 12, "call": "SP9DDD", "band": "15m", "mode": "CW",
+					{"id": 12, "call": "SP9DDD", "band": "20m", "mode": "SSB",
 						"qso_date": "2026-09-20 16:00:00"},
+					{"id": 11, "call": "SP9CCC", "band": "20m", "mode": "SSB",
+						"qso_date": "2026-09-20 15:00:00"},
+					{"id": 2, "call": "SP9BBB", "band": "20m", "mode": "SSB",
+						"qso_date": "2026-09-20 12:00:00"},
+					{"id": 1, "call": "SP9AAA", "band": "20m", "mode": "SSB",
+						"qso_date": "2026-09-20 12:00:00"},
 				},
+				"meta": map[string]any{"has_more": false, "total": 4},
 			})
 			return
 		}
@@ -190,7 +192,7 @@ func TestFetchContacts_MissingIDPageDoesNotShiftIDs(t *testing.T) {
 		last := 2
 		hasMore := true
 		if page == 2 {
-			adif = adifHeader + adifRecord("SP9CCC") + adifRecord("SP9DDD")
+			adif = adifHeader + adifRecordAt("SP9CCC", "1500") + adifRecordAt("SP9DDD", "1600")
 			last = 12
 			hasMore = false
 		}
@@ -215,43 +217,78 @@ func TestFetchContacts_MissingIDPageDoesNotShiftIDs(t *testing.T) {
 		t.Errorf("ExportedQSOs = %d, want 4", result.ExportedQSOs)
 	}
 
-	page1KeyA := MakeQSOIDKey("SP9AAA", "20m", "SSB", "2026-09-20", "120000")
-	page1KeyB := MakeQSOIDKey("SP9BBB", "20m", "SSB", "2026-09-20", "120000")
+	want := map[string]struct {
+		id     int64
+		timeOn string
+	}{
+		"SP9AAA": {1, "120000"},
+		"SP9BBB": {2, "120000"},
+		"SP9CCC": {11, "150000"},
+		"SP9DDD": {12, "160000"},
+	}
 	if result.WavelogIDsByKey == nil {
-		t.Fatal("WavelogIDsByKey should not be nil when page two verified")
+		t.Fatal("WavelogIDsByKey should not be nil when the list was fetched")
 	}
-	if id, ok := result.WavelogIDsByKey[page1KeyA]; ok {
-		t.Errorf("page-one row SP9AAA received id %d — ids shifted across pages", id)
+	if len(result.WavelogIDsByKey) != len(want) {
+		t.Fatalf("WavelogIDsByKey has %d entries, want %d: %v",
+			len(result.WavelogIDsByKey), len(want), result.WavelogIDsByKey)
 	}
-	if id, ok := result.WavelogIDsByKey[page1KeyB]; ok {
-		t.Errorf("page-one row SP9BBB received id %d — ids shifted across pages", id)
-	}
-
-	// adifRecord() uses band 20m/mode SSB; the sidecar page-two rows are
-	// 15m/CW, so build their keys from the actual sidecar identity.
-	keyC := MakeQSOIDKey("SP9CCC", "15m", "CW", "2026-09-20", "150000")
-	keyD := MakeQSOIDKey("SP9DDD", "15m", "CW", "2026-09-20", "160000")
-	if got := result.WavelogIDsByKey[keyC]; got != 11 {
-		t.Errorf("SP9CCC id = %d, want 11", got)
-	}
-	if got := result.WavelogIDsByKey[keyD]; got != 12 {
-		t.Errorf("SP9DDD id = %d, want 12", got)
+	for call, w := range want {
+		key := MakeQSOIDKey(call, "20m", "SSB", "2026-09-20", w.timeOn)
+		if got := result.WavelogIDsByKey[key]; got != w.id {
+			t.Errorf("WavelogIDsByKey[%s] = %d, want %d", call, got, w.id)
+		}
 	}
 }
 
-// TestFetchContacts_MismatchedIDPageIsRejected verifies the page-membership
-// guard: a sidecar page whose row count does not match the ADIF page is not
-// merged, so no unverified ids can be assigned.
-func TestFetchContacts_MismatchedIDPageIsRejected(t *testing.T) {
+// TestFetchContacts_IDCaptureFailureDoesNotAbort verifies that a failing id
+// list must never abort the download: rows arrive without ids (nil map) and
+// the caller freezes its cursor so the next download retries.
+func TestFetchContacts_IDCaptureFailureDoesNotAbort(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Query().Get("format") == "" {
-			// Only one row for a two-row ADIF page — membership unverified.
+			http.Error(w, "boom", 500)
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"exported":      2,
+				"lastfetchedid": 2,
+				"adif":          adifHeader + adifRecord("SP9AAA") + adifRecord("SP9BBB"),
+			},
+			"meta": map[string]any{"has_more": false, "total": 2},
+		})
+	}))
+	defer srv.Close()
+
+	result, err := FetchContacts(srv.URL, "wl2_test", "1", 0)
+	if err != nil {
+		t.Fatalf("FetchContacts: %v", err)
+	}
+	defer os.Remove(result.ADIFPath)
+
+	if result.ExportedQSOs != 2 {
+		t.Errorf("ExportedQSOs = %d, want 2", result.ExportedQSOs)
+	}
+	if result.WavelogIDsByKey != nil {
+		t.Errorf("WavelogIDsByKey = %v, want nil when the id list fails", result.WavelogIDsByKey)
+	}
+}
+
+// TestFetchContacts_ShortIDListMatchesByIdentity: a list shorter than the
+// export is simply an incomplete identity source — rows it covers get ids,
+// the rest stay unlinked. No positional matching anywhere.
+func TestFetchContacts_ShortIDListMatchesByIdentity(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("format") == "" {
 			json.NewEncoder(w).Encode(map[string]any{
 				"data": []map[string]any{
 					{"id": 1, "call": "SP9AAA", "band": "20m", "mode": "SSB",
 						"qso_date": "2026-09-20 12:00:00"},
 				},
+				"meta": map[string]any{"has_more": false, "total": 1},
 			})
 			return
 		}
@@ -272,8 +309,16 @@ func TestFetchContacts_MismatchedIDPageIsRejected(t *testing.T) {
 	}
 	defer os.Remove(result.ADIFPath)
 
-	if result.WavelogIDsByKey != nil {
-		t.Errorf("WavelogIDsByKey = %v, want nil for a mismatched id page", result.WavelogIDsByKey)
+	keyA := MakeQSOIDKey("SP9AAA", "20m", "SSB", "2026-09-20", "120000")
+	keyB := MakeQSOIDKey("SP9BBB", "20m", "SSB", "2026-09-20", "120000")
+	if result.WavelogIDsByKey == nil || len(result.WavelogIDsByKey) != 1 {
+		t.Fatalf("WavelogIDsByKey = %v, want exactly the covered row", result.WavelogIDsByKey)
+	}
+	if result.WavelogIDsByKey[keyA] != 1 {
+		t.Errorf("SP9AAA id = %d, want 1", result.WavelogIDsByKey[keyA])
+	}
+	if _, ok := result.WavelogIDsByKey[keyB]; ok {
+		t.Errorf("SP9BBB should not have an id: %d", result.WavelogIDsByKey[keyB])
 	}
 }
 

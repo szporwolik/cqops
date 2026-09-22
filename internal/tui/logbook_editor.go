@@ -168,51 +168,52 @@ type syncRetryBatch struct {
 }
 
 type LogbookEditor struct {
-	db               *sql.DB
-	gen              uint64 // unique per editor instance — background operation results from a replaced editor are discarded
-	searchGen        uint64 // bumped on every search change; stale debounce/result messages are rejected
-	qsos             []qso.QSO
-	table            table.Model
-	mode             editorMode
-	dialog           *DialogModel // confirm dialog with left/right navigation
-	editing          *qso.QSO
-	fields           [qefCount]textinput.Model
-	focus            qsoEditField
-	done             bool
-	needsReload      bool
-	built            bool
-	fm               menuFocus
-	editRev          uint64 // bumped on every operator edit; stale remote refreshes are rejected
-	editSession      uint64 // bumped on every contact open; never reuse a refresh identity across sessions
-	wlSkipped        int
-	wlSkipDetail     string
-	wlUnsentCount    int // cached unsent count from full DB, used by confirm dialog
-	wlPendingCount   int // cached pending-sync count (dirty rows), used by the retry confirm dialog
-	width            int
-	height           int
-	wlURL            string
-	wlKey            string
-	wlStationID      string
-	wlLastFetchedID  int64
-	logStationOp     string
-	logStationGrid   string
-	logStationCall   string // station callsign, for export filename
-	contestID        string // active contest hash for filtering, "" = no filter
-	contestName      string // display name for the contest info line
-	contestAdifID    string // ADIF Contest-ID for the contest info line
-	contestDate      string // YYYY-MM-DD contest date, for export filenames
-	contest          bool   // show ExchSent/ExchRcvd instead of ref columns
-	multiOp          bool   // show Operator instead of Grid
-	mismatchQSOs     []qso.QSO
-	mismatchFields   []string
-	wlDownloadCount  int
-	wlDownloadDupes  int
-	wlDownloadFailed int
-	wlDownloadErr    string
-	wlDownloadAbort  bool // last download was aborted (0 count ≠ up to date)
-	wlDownloadHold   int  // insert failures deferred — retried on the next download
-	Offline          bool // when true, Wavelog upload/download is blocked
-	sharedClub       bool // shared club station: synced QSOs are read-only
+	db                   *sql.DB
+	gen                  uint64 // unique per editor instance — background operation results from a replaced editor are discarded
+	searchGen            uint64 // bumped on every search change; stale debounce/result messages are rejected
+	qsos                 []qso.QSO
+	table                table.Model
+	mode                 editorMode
+	dialog               *DialogModel // confirm dialog with left/right navigation
+	editing              *qso.QSO
+	fields               [qefCount]textinput.Model
+	focus                qsoEditField
+	done                 bool
+	needsReload          bool
+	built                bool
+	fm                   menuFocus
+	editRev              uint64 // bumped on every operator edit; stale remote refreshes are rejected
+	editSession          uint64 // bumped on every contact open; never reuse a refresh identity across sessions
+	wlSkipped            int
+	wlSkipDetail         string
+	wlUnsentCount        int // cached unsent count from full DB, used by confirm dialog
+	wlPendingCount       int // cached pending-sync count (dirty rows), used by the retry confirm dialog
+	width                int
+	height               int
+	wlURL                string
+	wlKey                string
+	wlStationID          string
+	wlLastFetchedID      int64
+	logStationOp         string
+	logStationGrid       string
+	logStationCall       string // station callsign, for export filename
+	contestID            string // active contest hash for filtering, "" = no filter
+	contestName          string // display name for the contest info line
+	contestAdifID        string // ADIF Contest-ID for the contest info line
+	contestDate          string // YYYY-MM-DD contest date, for export filenames
+	contest              bool   // show ExchSent/ExchRcvd instead of ref columns
+	multiOp              bool   // show Operator instead of Grid
+	mismatchQSOs         []qso.QSO
+	mismatchFields       []string
+	wlDownloadCount      int
+	wlDownloadDupes      int
+	wlDownloadFailed     int
+	wlDownloadErr        string
+	wlDownloadAbort      bool // last download was aborted (0 count ≠ up to date)
+	wlDownloadHold       int  // insert failures deferred — retried on the next download
+	wlDownloadUnresolved int  // stored but remote link unknown — resolved on the next download
+	Offline              bool // when true, Wavelog upload/download is blocked
+	sharedClub           bool // shared club station: synced QSOs are read-only
 
 	// Pagination — only the current page is loaded from DB.
 	currentPage int

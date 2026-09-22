@@ -355,6 +355,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				le.wlDownloadDupes = msg.dlDupes
 				le.wlDownloadErr = ""
 				le.wlDownloadHold = 0
+				le.wlDownloadUnresolved = 0
 				le.wlDownloadAbort = true
 				le.mode = edModeWLDownloadResult
 				le.needsReload = true
@@ -371,7 +372,8 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				le.wlDownloadCount = msg.dlCount
 				le.wlDownloadDupes = msg.dlDupes
 				le.wlDownloadFailed = msg.dlFailed
-				le.wlDownloadHold = msg.dlTransient + msg.dlUnresolved
+				le.wlDownloadHold = msg.dlTransient
+				le.wlDownloadUnresolved = msg.dlUnresolved
 				le.wlDownloadErr = ""
 				le.wlDownloadAbort = false
 				le.mode = edModeWLDownloadResult

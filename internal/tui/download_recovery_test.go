@@ -1187,30 +1187,34 @@ func TestDownload_StoresWavelogIDs(t *testing.T) {
 }
 
 // TestDownload_MissingIDPageLeavesRecordsWithoutIDs verifies the fix for the
-// positional-alignment bug end to end: when the id sidecar fails for the
-// first page, the first page's contacts must be imported WITHOUT remote ids
-// — the second page's ids must never be assigned to them.
-func TestDownload_MissingIDPageLeavesRecordsWithoutIDs(t *testing.T) {
+// TestDownload_FullListResolvesIdentitiesAcrossPages is the end-to-end
+// regression for the ordering mismatch: the remote id list is fetched once
+// (newest-first, like real Wavelog) while the ADIF export pages are
+// ascending — every page's records must still learn their remote ids by
+// verified identity.
+func TestDownload_FullListResolvesIdentitiesAcrossPages(t *testing.T) {
 	adifPage1 := `<CALL:6>SP9AAA <BAND:3>20m <MODE:3>SSB <QSO_DATE:8>20260921 <TIME_ON:4>1200 <EOR>
 <CALL:6>SP9BBB <BAND:3>40m <MODE:2>CW <QSO_DATE:8>20260921 <TIME_ON:4>1300 <EOR>`
 	adifPage2 := `<CALL:6>SP9CCC <BAND:3>15m <MODE:2>CW <QSO_DATE:8>20260921 <TIME_ON:4>1500 <EOR>`
 
 	adifPage := 0
-	sidecarCalls := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Query().Get("format") == "" {
-			sidecarCalls++
-			if sidecarCalls == 1 {
-				http.Error(w, "boom", 500)
-				return
+			// One complete-list request, newest first.
+			if r.URL.Query().Get("page") != "1" {
+				t.Errorf("list page = %q, want 1", r.URL.Query().Get("page"))
 			}
-			// Page-two identity only.
 			json.NewEncoder(w).Encode(map[string]any{
 				"data": []map[string]any{
 					{"id": 12, "call": "SP9CCC", "band": "15m", "mode": "CW",
 						"qso_date": "2026-09-21 15:00:00"},
+					{"id": 11, "call": "SP9BBB", "band": "40m", "mode": "CW",
+						"qso_date": "2026-09-21 13:00:00"},
+					{"id": 10, "call": "SP9AAA", "band": "20m", "mode": "SSB",
+						"qso_date": "2026-09-21 12:00:00"},
 				},
+				"meta": map[string]any{"has_more": false, "total": 3},
 			})
 			return
 		}
@@ -1259,11 +1263,11 @@ func TestDownload_MissingIDPageLeavesRecordsWithoutIDs(t *testing.T) {
 	if aaa == nil || bbb == nil || ccc == nil {
 		t.Fatalf("downloaded QSOs missing: %+v", qsos)
 	}
-	if aaa.WavelogID != 0 {
-		t.Errorf("SP9AAA WavelogID = %d, want 0 (page-one id fetch failed)", aaa.WavelogID)
+	if aaa.WavelogID != 10 {
+		t.Errorf("SP9AAA WavelogID = %d, want 10", aaa.WavelogID)
 	}
-	if bbb.WavelogID != 0 {
-		t.Errorf("SP9BBB WavelogID = %d, want 0 (page-one id fetch failed)", bbb.WavelogID)
+	if bbb.WavelogID != 11 {
+		t.Errorf("SP9BBB WavelogID = %d, want 11", bbb.WavelogID)
 	}
 	if ccc.WavelogID != 12 {
 		t.Errorf("SP9CCC WavelogID = %d, want 12", ccc.WavelogID)
@@ -1365,8 +1369,8 @@ func TestDownload_MissingIdentitiesFreezeCheckpointAndRecover(t *testing.T) {
 	if le.wlDownloadCount != 2 {
 		t.Fatalf("first download inserted = %d, want 2", le.wlDownloadCount)
 	}
-	if le.wlDownloadHold < 2 {
-		t.Errorf("deferred = %d, want >= 2 (unresolved identities must be retried)", le.wlDownloadHold)
+	if le.wlDownloadUnresolved < 2 {
+		t.Errorf("unresolved = %d, want >= 2 (unresolved identities must be retried)", le.wlDownloadUnresolved)
 	}
 	if wl.LastFetchedID != 0 {
 		t.Fatalf("cursor advanced to %d despite unresolved identities", wl.LastFetchedID)
@@ -1400,6 +1404,9 @@ func TestDownload_MissingIdentitiesFreezeCheckpointAndRecover(t *testing.T) {
 	}
 	if le.wlDownloadHold != 0 {
 		t.Errorf("deferred after recovery = %d, want 0", le.wlDownloadHold)
+	}
+	if le.wlDownloadUnresolved != 0 {
+		t.Errorf("unresolved after recovery = %d, want 0", le.wlDownloadUnresolved)
 	}
 	if wl.LastFetchedID != 11 {
 		t.Fatalf("cursor = %d after recovery, want 11", wl.LastFetchedID)
@@ -1437,34 +1444,27 @@ func TestDownload_MixedFailuresAcrossPagesAndRecover(t *testing.T) {
 	page2ADIF := `<CALL:6>SP9BBB <BAND:3>40m <MODE:3>XXX <QSO_DATE:8>20260921 <TIME_ON:4>1300 <EOR>
 `
 
-	// Page 1's identity request fails on the first download; page 2's is
-	// healthy in both runs.
+	// The complete id list fails on the first download and is healthy on the
+	// second.
 	sidecarHealthy := false
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		since := r.URL.Query().Get("since_id")
 		if r.URL.Query().Get("format") == "" {
-			// JSON id sidecar.
-			switch since {
-			case "0":
-				if !sidecarHealthy {
-					http.Error(w, "boom", http.StatusInternalServerError)
-					return
-				}
-				json.NewEncoder(w).Encode(map[string]any{
-					"data": []map[string]any{
-						{"id": 10, "call": "SP9AAA", "band": "20m", "mode": "SSB",
-							"qso_date": "2026-09-21 12:00:00"},
-					},
-				})
-			case "10":
-				json.NewEncoder(w).Encode(map[string]any{
-					"data": []map[string]any{
-						{"id": 11, "call": "SP9BBB", "band": "40m", "mode": "XXX",
-							"qso_date": "2026-09-21 13:00:00"},
-					},
-				})
+			// JSON id list — one complete-list request per download.
+			if !sidecarHealthy {
+				http.Error(w, "boom", http.StatusInternalServerError)
+				return
 			}
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{"id": 11, "call": "SP9BBB", "band": "40m", "mode": "XXX",
+						"qso_date": "2026-09-21 13:00:00"},
+					{"id": 10, "call": "SP9AAA", "band": "20m", "mode": "SSB",
+						"qso_date": "2026-09-21 12:00:00"},
+				},
+				"meta": map[string]any{"has_more": false, "total": 2},
+			})
 			return
 		}
 		// ADIF export pages.
@@ -1495,15 +1495,15 @@ func TestDownload_MixedFailuresAcrossPagesAndRecover(t *testing.T) {
 		WLLastFetchedID: wl.LastFetchedID, StationOperator: "OP", StationGrid: "JO90",
 	})
 
-	// --- First download: page-1 sidecar fails, the invalid page-2 record
+	// --- First download: the id list fails, the invalid page-2 record
 	// carries a known remote id (11). ---
 	pumpDownload(t, m)
 	le := m.ui.logbookEditor
 	if le.wlDownloadCount != 1 {
 		t.Fatalf("first download inserted = %d, want 1 (only the valid SP9AAA)", le.wlDownloadCount)
 	}
-	if le.wlDownloadHold != 1 {
-		t.Errorf("deferred = %d, want 1 (the unresolved SP9AAA identity)", le.wlDownloadHold)
+	if le.wlDownloadUnresolved != 1 {
+		t.Errorf("unresolved = %d, want 1 (the SP9AAA identity without a link)", le.wlDownloadUnresolved)
 	}
 	if wl.LastFetchedID != 0 {
 		t.Fatalf("cursor advanced to %d despite the unresolved identity — an invalid record must not advance it", wl.LastFetchedID)
@@ -1522,7 +1522,7 @@ func TestDownload_MixedFailuresAcrossPagesAndRecover(t *testing.T) {
 		t.Fatalf("SP9AAA WavelogID = %d, want 0 (page-1 sidecar failed)", aaa.WavelogID)
 	}
 
-	// --- Second download: healthy sidecar everywhere; the unresolved
+	// --- Second download: healthy id list everywhere; the unresolved
 	// identity must be recovered and the invalid record safely passed. ---
 	sidecarHealthy = true
 	pumpDownload(t, m)
@@ -1530,8 +1530,8 @@ func TestDownload_MixedFailuresAcrossPagesAndRecover(t *testing.T) {
 	if le.wlDownloadCount != 0 {
 		t.Errorf("second download inserted = %d, want 0 (row already present)", le.wlDownloadCount)
 	}
-	if le.wlDownloadHold != 0 {
-		t.Errorf("deferred after recovery = %d, want 0", le.wlDownloadHold)
+	if le.wlDownloadUnresolved != 0 {
+		t.Errorf("unresolved after recovery = %d, want 0", le.wlDownloadUnresolved)
 	}
 	if wl.LastFetchedID != 11 {
 		t.Fatalf("cursor = %d after recovery, want 11", wl.LastFetchedID)
@@ -1612,8 +1612,8 @@ func TestDownload_DupeIDPersistenceFailureFreezesCheckpoint(t *testing.T) {
 	if le.wlDownloadCount != 0 {
 		t.Errorf("first download inserted = %d, want 0 (duplicate)", le.wlDownloadCount)
 	}
-	if le.wlDownloadHold != 1 {
-		t.Errorf("deferred = %d, want 1 (unpersisted remote id)", le.wlDownloadHold)
+	if le.wlDownloadUnresolved != 1 {
+		t.Errorf("unresolved = %d, want 1 (unpersisted remote id)", le.wlDownloadUnresolved)
 	}
 	if wl.LastFetchedID != 0 {
 		t.Fatalf("cursor advanced to %d despite the failed id persistence", wl.LastFetchedID)
@@ -1631,6 +1631,9 @@ func TestDownload_DupeIDPersistenceFailureFreezesCheckpoint(t *testing.T) {
 	le = m.ui.logbookEditor
 	if le.wlDownloadHold != 0 {
 		t.Errorf("deferred after recovery = %d, want 0", le.wlDownloadHold)
+	}
+	if le.wlDownloadUnresolved != 0 {
+		t.Errorf("unresolved after recovery = %d, want 0", le.wlDownloadUnresolved)
 	}
 	if wl.LastFetchedID != 10 {
 		t.Fatalf("cursor = %d after recovery, want 10", wl.LastFetchedID)

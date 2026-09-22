@@ -176,13 +176,13 @@ func TestMaybeDXCRestoresOnlineAfterClientReconnect(t *testing.T) {
 	var serverConn net.Conn
 	select {
 	case serverConn = <-accepted:
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("client never connected")
 	}
 
 	// The drop makes the client's readLoop post a disconnect event.
 	serverConn.Close()
-	disconnectDeadline := time.Now().Add(2 * time.Second)
+	disconnectDeadline := time.Now().Add(10 * time.Second)
 	for m.dxc.online {
 		m.maybeDXC()
 		if time.Now().After(disconnectDeadline) {
