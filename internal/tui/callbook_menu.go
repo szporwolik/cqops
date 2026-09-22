@@ -336,8 +336,6 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cm.done = true
 			cm.goBack = true
 			return cm, nil
-		case "ctrl+s", "\x13":
-			return cm, cm.trySave()
 		case " ", "space":
 			// Space triggers Test buttons in parallel with Enter.
 			if cm.fm.row == cmQRZTest || cm.fm.row == cmHamQTHTest || cm.fm.row == cmQRZRuTest {

@@ -273,7 +273,7 @@ Aby wyeksportować, otwórz **F8**, wybierz filtr zawodów przez **Ctrl+C**, pot
 
 ## CQOps Live
 
-Włącz **F9 → Integrations → HTTP Server** i zapisz przez **Ctrl+S**. Na komputerze z CQOps otwórz `http://localhost:8073`.
+Włącz **F9 → Integrations → HTTP Server** i zapisz przyciskiem **[ Save & Back ]** (**Enter**/**Space**). Na komputerze z CQOps otwórz `http://localhost:8073`.
 
 Domyślne `0.0.0.0` pozwala na dostęp z sieci lokalnej, o ile zezwala zapora. Na innym urządzeniu użyj adresu IP komputera z CQOps i portu `8073`. `127.0.0.1` ogranicza dostęp do samego komputera z CQOps. Korzystaj z zaufanej sieci; nie przekierowuj portu do internetu.
 

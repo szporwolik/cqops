@@ -273,7 +273,7 @@ Pour exporter, ouvrez **F8**, choisissez le filtre concours avec **Ctrl+C**, pui
 
 ## CQOps Live
 
-Activez **F9 → Integrations → HTTP Server**, puis enregistrez avec **Ctrl+S**. Sur l’ordinateur CQOps, ouvrez `http://localhost:8073`.
+Activez **F9 → Integrations → HTTP Server**, puis enregistrez avec **[ Save & Back ]** (**Enter**/**Space**). Sur l’ordinateur CQOps, ouvrez `http://localhost:8073`.
 
 L’adresse par défaut `0.0.0.0` permet l’accès sur le réseau local, sous réserve du pare-feu. Depuis un autre appareil, utilisez l’IP du PC CQOps et le port `8073`. `127.0.0.1` limite l’accès au PC CQOps. Restez sur un réseau de confiance ; ne redirigez pas le port vers Internet.
 

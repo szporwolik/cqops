@@ -273,7 +273,7 @@ CQOps は気軽なコンテスト記録、交換情報、連番、QSO レート�
 
 ## CQOps Live
 
-**F9 → Integrations → HTTP Server** を有効にし、**Ctrl+S** で保存します。CQOps のパソコンで `http://localhost:8073` を開きます。
+**F9 → Integrations → HTTP Server** を有効にし、**[ Save & Back ]** ボタン（**Enter**/**Space**）で保存します。CQOps のパソコンで `http://localhost:8073` を開きます。
 
 標準の `0.0.0.0` は、ファイアウォールが許可すれば LAN 内からアクセスできます。別の機器では CQOps パソコンの IP とポート `8073` を指定します。`127.0.0.1` にするとそのパソコンだけに限定できます。信頼できるネットワークで使い、ポートをインターネットへ転送しないでください。
 

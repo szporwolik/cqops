@@ -273,7 +273,7 @@ Para exportar, abra **F8**, selecione o filtro com **Ctrl+C**, depois **Ctrl+E**
 
 ## CQOps Live
 
-Ative **F9 → Integrations → HTTP Server** e salve com **Ctrl+S**. No computador CQOps, abra `http://localhost:8073`.
+Ative **F9 → Integrations → HTTP Server** e salve com **[ Save & Back ]** (**Enter**/**Space**). No computador CQOps, abra `http://localhost:8073`.
 
 O endereço padrão `0.0.0.0` permite acesso na rede local, conforme o firewall. Em outro dispositivo use o IP do computador CQOps e a porta `8073`. `127.0.0.1` restringe ao próprio computador. Use uma rede confiável; não redirecione a porta para a internet.
 

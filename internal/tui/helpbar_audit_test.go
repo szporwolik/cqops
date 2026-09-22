@@ -44,10 +44,15 @@ func TestCallbookMenuHasHelpEntries(t *testing.T) {
 		keysSeen = append(keysSeen, b.Keys()...)
 	}
 	joined := strings.Join(keysSeen, "|")
-	for _, want := range []string{"ctrl+s", "esc", " "} {
+	for _, want := range []string{"esc", " "} {
 		if !strings.Contains("|"+joined+"|", "|"+want+"|") {
 			t.Errorf("callbook help missing key %q; got %v", want, keysSeen)
 		}
+	}
+	// Saving goes through the in-form [ Save & Back ] button — Ctrl+S is no
+	// longer advertised, matching the General menu.
+	if strings.Contains(joined, "ctrl+s") {
+		t.Errorf("callbook help still advertises Ctrl+S: %v", keysSeen)
 	}
 
 	bar := m.minimalBarBindings()
@@ -56,8 +61,8 @@ func TestCallbookMenuHasHelpEntries(t *testing.T) {
 		barKeys = append(barKeys, b.Keys()...)
 	}
 	barJoined := strings.Join(barKeys, "|")
-	if !strings.Contains(barJoined, "ctrl+s") || !strings.Contains(barJoined, "esc") {
-		t.Errorf("callbook bottom bar missing Ctrl+S/Esc: %v", barKeys)
+	if strings.Contains(barJoined, "ctrl+s") || !strings.Contains(barJoined, "esc") {
+		t.Errorf("callbook bottom bar should show Esc but not Ctrl+S: %v", barKeys)
 	}
 }
 

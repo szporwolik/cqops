@@ -68,10 +68,6 @@ func (nm *NotificationsMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			nm.done = true
 			nm.goBack = true
 			return nm, nil
-		case "ctrl+s", "\x13":
-			nm.done = true
-			nm.saved = true
-			return nm, nil
 		}
 		if handled, cmd := nm.fm.onKey(msg, nm, func() tea.Cmd {
 			nm.done = true

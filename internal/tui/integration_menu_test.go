@@ -233,7 +233,7 @@ func TestIntegrationMenu_HTTPTLSCertKeyPairValidation(t *testing.T) {
 	im.httpTLSCert.SetValue("/tmp/cert.pem")
 
 	im.fm.row = imHTTPPort
-	_, _ = im.Update(tea.KeyPressMsg{Text: "\x13"})
+	im.trySave()
 	if im.SaveError == "" {
 		t.Error("save with cert but no key should set SaveError")
 	}
@@ -242,7 +242,7 @@ func TestIntegrationMenu_HTTPTLSCertKeyPairValidation(t *testing.T) {
 	// here so it doesn't mask the second save.
 	im.SaveError = ""
 	im.httpTLSKey.SetValue("/tmp/key.pem")
-	_, _ = im.Update(tea.KeyPressMsg{Text: "\x13"})
+	im.trySave()
 	if !im.saved {
 		t.Errorf("save with cert+key should succeed, SaveError = %q", im.SaveError)
 	}

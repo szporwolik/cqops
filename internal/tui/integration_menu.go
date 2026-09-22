@@ -602,8 +602,6 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			im.done = true
 			im.goBack = true
 			return im, nil
-		case "ctrl+s", "\x13":
-			return im, im.trySave()
 		case " ", "space":
 			// Space triggers Test buttons in parallel with Enter.
 			if im.fm.row == imGPSTest || im.fm.row == imAPRSTest {

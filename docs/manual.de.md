@@ -273,7 +273,7 @@ Zum Export **F8** öffnen, mit **Ctrl+C** den Contestfilter wählen, dann **Ctrl
 
 ## CQOps Live
 
-**F9 → Integrations → HTTP Server** aktivieren und mit **Ctrl+S** speichern. Auf dem CQOps-Computer `http://localhost:8073` öffnen.
+**F9 → Integrations → HTTP Server** aktivieren und mit **[ Save & Back ]** (**Enter**/**Space**) speichern. Auf dem CQOps-Computer `http://localhost:8073` öffnen.
 
 Die Standardadresse `0.0.0.0` erlaubt Zugriff aus dem lokalen Netz, soweit die Firewall ihn zulässt. Auf anderen Geräten die IP-Adresse des CQOps-Computers mit Port `8073` verwenden. `127.0.0.1` beschränkt den Zugriff auf diesen Computer. Nur in einem vertrauenswürdigen Netz verwenden; den Port nicht ins Internet weiterleiten.
 

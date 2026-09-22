@@ -527,7 +527,9 @@ func (m *Model) minimalBarBindings() []key.Binding {
 		// contest and operator forms.
 		return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")), e, q}
 	case screenIntegration, screenNotifications, screenCallbook:
-		return []key.Binding{h, key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")), e, q}
+		// Like the General menu: saving goes through the in-form
+		// [ Save & Back ] button (Space/Enter) — no Ctrl+S in the bar.
+		return []key.Binding{h, e, q}
 	case screenChooser:
 		if m.ui.chooser != nil && (m.ui.chooser.mode == chooserEdit || m.ui.chooser.mode == chooserCreate) {
 			return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")), e, q}

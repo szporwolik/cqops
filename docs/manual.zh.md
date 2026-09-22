@@ -273,7 +273,7 @@ CQOps 提供休闲竞赛记录、交换信息、流水号和 QSO 速率，但并
 
 ## CQOps Live
 
-启用 **F9 → Integrations → HTTP Server**，按 **Ctrl+S** 保存。在 CQOps 电脑打开 `http://localhost:8073`。
+启用 **F9 → Integrations → HTTP Server**，用 **[ Save & Back ]** 按钮（**Enter**/**Space**）保存。在 CQOps 电脑打开 `http://localhost:8073`。
 
 默认地址 `0.0.0.0` 允许局域网访问，仍受防火墙限制。其他设备应使用 CQOps 电脑的 IP 和端口 `8073`。设置为 `127.0.0.1` 可限制为本机访问。仅在可信网络使用，不要将端口映射到互联网。
 

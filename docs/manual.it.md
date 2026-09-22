@@ -273,7 +273,7 @@ Per esportare apri **F8**, scegli il filtro contest con **Ctrl+C**, poi **Ctrl+E
 
 ## CQOps Live
 
-Abilita **F9 → Integrations → HTTP Server** e salva con **Ctrl+S**. Sul computer CQOps apri `http://localhost:8073`.
+Abilita **F9 → Integrations → HTTP Server** e salva con **[ Save & Back ]** (**Enter**/**Space**). Sul computer CQOps apri `http://localhost:8073`.
 
 L’indirizzo predefinito `0.0.0.0` consente l’accesso dalla rete locale, se permesso dal firewall. Su un altro dispositivo usa l’IP del computer CQOps e la porta `8073`. `127.0.0.1` limita l’accesso al solo computer CQOps. Usa una rete fidata; non inoltrare la porta verso Internet.
 

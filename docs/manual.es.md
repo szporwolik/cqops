@@ -273,7 +273,7 @@ Para exportar, abra **F8**, elija el filtro de concurso con **Ctrl+C**, luego **
 
 ## CQOps Live
 
-Active **F9 → Integrations → HTTP Server** y guarde con **Ctrl+S**. En el ordenador CQOps abra `http://localhost:8073`.
+Active **F9 → Integrations → HTTP Server** y guarde con **[ Save & Back ]** (**Enter**/**Space**). En el ordenador CQOps abra `http://localhost:8073`.
 
 La dirección predeterminada `0.0.0.0` permite acceso local sujeto al cortafuegos. En otro dispositivo use la IP del ordenador CQOps y el puerto `8073`. `127.0.0.1` limita el acceso al propio ordenador. Use una red de confianza; no redirija el puerto a Internet.
 
