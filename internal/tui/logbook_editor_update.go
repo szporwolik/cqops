@@ -146,6 +146,18 @@ type editorMsg struct {
 	wlUpSID        string
 	wlUpChanged    bool
 	wlUpUnresolved bool
+	// wlUpSnap/wlUpRev carry the SNAPSHOT that reached the server and the
+	// row revision it was taken at. The id-attach retry must use this pair,
+	// never the current row: an edit made after the failed attach belongs
+	// to a follow-up PATCH, not to the accepted snapshot.
+	wlUpSnap qso.QSO
+	wlUpRev  int64
+	// wlReconcileIDs lists rows whose revision changed between upload
+	// preparation (data + revision captured together) and id attach: the
+	// remote copy was built from an older snapshot, so the owner loop
+	// queues a PATCH of each latest revision. Batch uploads carry many
+	// rows, so the single-row wlUpChanged flag is not enough.
+	wlReconcileIDs []int64
 }
 
 func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {

@@ -885,13 +885,15 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 					// originating database/endpoint.
 					refreshCmd = tea.Batch(refreshCmd,
 						m.queueContactReconcile(em.wlUpDB, em.wlUpURL, em.wlUpKey,
-							m.ui.logbookEditor.logbookID, em.wlQSOID))
+							m.ui.logbookEditor.logbookID, em.wlQSOID, nil))
 				}
 				if em.wlUpUnresolved && em.wlUpDB != nil {
 					// Accepted remotely but the id write failed locally — retry
-					// the id attach once.
+					// the id attach once with the accepted snapshot pair and
+					// the originating logbook.
 					refreshCmd = tea.Batch(refreshCmd,
-						m.retryIDAttachCmd(em.wlUpDB, em.wlUpURL, em.wlUpKey, em.wlUpSID, em.wlQSOID))
+						m.retryIDAttachCmd(em.wlUpDB, em.wlUpURL, em.wlUpKey, em.wlUpSID,
+							m.ui.logbookEditor.logbookID, em.wlUpSnap, em.wlUpRev, nil))
 				}
 			} else {
 				if em.err != nil {
@@ -900,6 +902,17 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 					m.toasts.Error(fmt.Sprintf("Wavelog: %s failed", em.wlCall))
 				}
 				m.ui.logbookEditor.UpdateWLStatus(em.wlQSOID, false, 0)
+			}
+		}
+		if len(em.wlReconcileIDs) > 0 && em.wlUpDB != nil {
+			// Rows edited between preparation and id attach: the remote
+			// copy was created from an older snapshot and the rows are
+			// durably dirty — queue a PATCH of each latest revision against
+			// the originating database/endpoint.
+			for _, id := range em.wlReconcileIDs {
+				refreshCmd = tea.Batch(refreshCmd,
+					m.queueContactReconcile(em.wlUpDB, em.wlUpURL, em.wlUpKey,
+						m.ui.logbookEditor.logbookID, id, nil))
 			}
 		}
 		if m.ui.logbookEditor.wlSkipped > 0 {

@@ -12,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 )
 
@@ -498,5 +499,88 @@ func TestApplyWSJTXStatus_DirectedCall(t *testing.T) {
 	call := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
 	if call != "K1ABC" {
 		t.Errorf("call field = %q; want K1ABC", call)
+	}
+}
+
+// TestWSJTXUploadRevisionAware verifies the WSJT-X upload no longer disables
+// revision checking: the QSO row and its revision are loaded together, and an
+// edit saved while the upload is on the wire must leave the row durably dirty
+// (queued for a follow-up PATCH) instead of being dismissed by -1 and marked
+// clean although the server holds the older snapshot.
+func TestWSJTXUploadRevisionAware(t *testing.T) {
+	postStarted := make(chan struct{})
+	release := make(chan struct{})
+	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/qso" || r.Method != http.MethodPost {
+			http.NotFound(w, r)
+			return
+		}
+		close(postStarted)
+		<-release
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{"id": 55, "call": "SP9MOA"},
+			"meta": map[string]string{"resource": "qso", "method": "POST"},
+		})
+	})
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	m.App.Logbook.Wavelog.Enabled = true
+	m.App.Logbook.Wavelog.URL = srv.URL
+	m.App.Logbook.Wavelog.APIKey = "wl2_test"
+	m.App.Logbook.Wavelog.StationProfileID = "1"
+	m.inetOnline = true
+
+	q := &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "FT8", QSODate: "20260921", TimeOn: "120000",
+		RSTSent: "-10", RSTRcvd: "-05", Comment: "old"}
+	id, err := store.InsertQSO(m.App.DB, q)
+	if err != nil {
+		t.Fatalf("InsertQSO: %v", err)
+	}
+
+	cmd := m.wsjtxEnrichAndUploadCmd(id, "SP9MOA")
+	if cmd == nil {
+		t.Fatal("expected enrich/upload command")
+	}
+
+	resultCh := make(chan wlUploadResultMsg, 1)
+	go func() { resultCh <- cmd().(wlUploadResultMsg) }()
+
+	// The POST is in flight — a newer local edit lands now.
+	<-postStarted
+	row, err := store.GetQSOByID(m.App.DB, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	row.Comment = "newer"
+	if err := store.UpdateQSO(m.App.DB, row); err != nil {
+		t.Fatalf("UpdateQSO: %v", err)
+	}
+	close(release)
+
+	r := <-resultCh
+	if !r.ok || r.err != nil {
+		t.Fatalf("upload: ok=%v err=%v", r.ok, r.err)
+	}
+	if r.remoteID != 55 {
+		t.Errorf("remoteID = %d, want 55", r.remoteID)
+	}
+	if !r.changed {
+		t.Fatal("changed must be true — the row was edited while the upload was on the wire")
+	}
+	if r.unresolved {
+		t.Error("unresolved must be false — the remote id was persisted")
+	}
+	stored, err := store.GetQSOByID(m.App.DB, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID after upload: %v", err)
+	}
+	if stored.WavelogID != 55 {
+		t.Errorf("WavelogID = %d, want 55", stored.WavelogID)
+	}
+	if !stored.WavelogDirty {
+		t.Fatal("row must be durably dirty — the server holds the old snapshot")
 	}
 }

@@ -1098,6 +1098,133 @@ func TestUploadIndividual_MixedResults(t *testing.T) {
 	}
 }
 
+// TestUploadIndividual_UsesCapturedRevisionPair reproduces the reported
+// snapshot mismatch: the individual upload sends data captured at
+// preparation time but used to re-read the revision from the database
+// immediately before sending — a newer local edit made the OLD data get
+// attached with the NEW revision, marking the row clean although the server
+// holds different contents. Data and revision must be captured together, a
+// changed row must stay durably dirty, and its id must be queued for
+// reconciliation.
+func TestUploadIndividual_UsesCapturedRevisionPair(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{}})
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{"id": 42, "call": "SP9AAA"},
+			"meta": map[string]string{"resource": "qso", "method": "POST"},
+		})
+	}))
+	defer srv.Close()
+
+	le := newTestEditorWithDB(t, srv.URL, "test-key", "1", "Op", "JO90")
+	q := &qso.QSO{Call: "SP9AAA", Band: "20m", Mode: "SSB", QSODate: "20240501", TimeOn: "120000",
+		RSTSent: "59", RSTRcvd: "59", Comment: "old"}
+	id := insertTestQSO(t, le.db, q)
+
+	// Preparation captures the row data AND its revision together.
+	unsent, err := store.ListUnsentQSOs(le.db)
+	if err != nil || len(unsent) != 1 {
+		t.Fatalf("ListUnsentQSOs: %v (rows=%d)", err, len(unsent))
+	}
+
+	// A newer local edit lands after preparation (bumps the revision).
+	row, err := store.GetQSOByID(le.db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	row.Comment = "newer"
+	if err := store.UpdateQSO(le.db, row); err != nil {
+		t.Fatalf("UpdateQSO: %v", err)
+	}
+
+	em := execCmd(le.uploadIndividual(unsent)).(editorMsg)
+	if em.wlSentCount != 1 || em.wlFailCount != 0 {
+		t.Fatalf("counts = sent:%d fail:%d, want 1/0", em.wlSentCount, em.wlFailCount)
+	}
+	if len(em.wlReconcileIDs) != 1 || em.wlReconcileIDs[0] != id {
+		t.Fatalf("wlReconcileIDs = %v, want [%d] — the newer edit needs a PATCH", em.wlReconcileIDs, id)
+	}
+	stored, err := store.GetQSOByID(le.db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID after upload: %v", err)
+	}
+	if stored.WavelogID != 42 {
+		t.Errorf("WavelogID = %d, want 42", stored.WavelogID)
+	}
+	if !stored.WavelogDirty {
+		t.Fatal("row must be durably dirty — the server holds the old snapshot")
+	}
+}
+
+// TestUploadBatch_ChangedRowStaysDirtyAndReconciles covers the bulk path:
+// the chunk id backfill previously attached ids with the unchecked write, so
+// a row edited between preparation and the id attach was falsely marked
+// clean while the server held the older contents. The backfill now checks
+// the captured revision, keeps changed rows dirty, and reports their ids for
+// a follow-up PATCH.
+func TestUploadBatch_ChangedRowStaysDirtyAndReconciles(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{{
+					"id": 42, "call": "SP9AAA", "band": "20m", "mode": "SSB",
+					"qso_date": "2024-05-01 12:00:00",
+				}},
+			})
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{"parsed": 1, "imported": 1, "skipped": 0, "messages": []string{}},
+			"meta": map[string]string{"resource": "qso", "method": "POST"},
+		})
+	}))
+	defer srv.Close()
+
+	le := newTestEditorWithDB(t, srv.URL, "test-key", "1", "Op", "JO90")
+	q := &qso.QSO{Call: "SP9AAA", Band: "20m", Mode: "SSB", QSODate: "20240501", TimeOn: "120000",
+		RSTSent: "59", RSTRcvd: "59", Comment: "old"}
+	id := insertTestQSO(t, le.db, q)
+
+	// Preparation captures data + revision together.
+	unsent, err := store.ListUnsentQSOs(le.db)
+	if err != nil || len(unsent) != 1 {
+		t.Fatalf("ListUnsentQSOs: %v (rows=%d)", err, len(unsent))
+	}
+	row, err := store.GetQSOByID(le.db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	row.Comment = "newer"
+	if err := store.UpdateQSO(le.db, row); err != nil {
+		t.Fatalf("UpdateQSO: %v", err)
+	}
+
+	em := execCmd(le.uploadBatch(unsent)).(editorMsg)
+	if !em.wlOK {
+		t.Fatalf("batch upload failed: %v", em.err)
+	}
+	if len(em.wlReconcileIDs) != 1 || em.wlReconcileIDs[0] != id {
+		t.Fatalf("wlReconcileIDs = %v, want [%d] — the newer edit needs a PATCH", em.wlReconcileIDs, id)
+	}
+	stored, err := store.GetQSOByID(le.db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID after batch: %v", err)
+	}
+	if stored.WavelogID != 42 {
+		t.Errorf("WavelogID = %d, want 42", stored.WavelogID)
+	}
+	if !stored.WavelogDirty {
+		t.Fatal("row must be durably dirty — the server holds the old snapshot")
+	}
+}
+
 func TestUploadBatch_RequestPayloadVerification(t *testing.T) {
 	var capturedBody map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1384,5 +1511,117 @@ func TestUploadPrepSurvivesPendingLookupEarlyReturn(t *testing.T) {
 	}
 	if len(m.ui.logbookEditor.mismatchQSOs) != 1 {
 		t.Errorf("mismatchQSOs = %d, want 1", len(m.ui.logbookEditor.mismatchQSOs))
+	}
+}
+
+// TestEditorUploadUnresolvedRetriesWithSnapshotPair locks the editor path of
+// the id-attach retry: the single-upload completion carries the accepted
+// snapshot pair, and the owner loop dispatches the retry with it — the retry
+// result then carries the originating logbook for the scoping check instead
+// of bypassing it.
+func TestEditorUploadUnresolvedRetriesWithSnapshotPair(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodPost:
+			json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"id": 42}})
+		case http.MethodGet:
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{"id": 42, "call": "SP9MOA", "band": "20m", "mode": "SSB",
+						"qso_date": "2024-05-01 12:00:00"},
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	wl := m.App.Logbook.Wavelog
+	wl.URL = srv.URL
+	wl.APIKey = "wl2_test"
+	wl.Enabled = true
+	wl.StationProfileID = "1"
+
+	qID := insertTestQSO(t, m.App.DB, &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB",
+		QSODate: "20240501", TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", Comment: "old"})
+	m.initLogbookEditor()
+	le := m.ui.logbookEditor
+	row, err := store.GetQSOByID(m.App.DB, qID)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	le.editing = row
+	le.fillEditForm(row)
+
+	// Deterministically reject the local id write.
+	if _, err := m.App.DB.Exec(`CREATE TRIGGER block_wl_update BEFORE UPDATE OF wavelog_id ON qsos
+		WHEN OLD.wavelog_id = 0 AND NEW.wavelog_id != 0
+		BEGIN SELECT RAISE(ABORT, 'blocked'); END`); err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+
+	em := execCmd(le.doUploadToWavelog()).(editorMsg)
+	if !em.wlOK || !em.wlUpUnresolved {
+		t.Fatalf("upload: ok=%v unresolved=%v, want accepted-but-unresolved", em.wlOK, em.wlUpUnresolved)
+	}
+	if em.wlUpSnap.Call != "SP9MOA" || em.wlUpSnap.ID != qID {
+		t.Fatalf("snapshot = call:%q id:%d, want SP9MOA/%d", em.wlUpSnap.Call, em.wlUpSnap.ID, qID)
+	}
+	if em.wlUpRev != 0 {
+		t.Fatalf("wlUpRev = %d, want 0 (the snapshot's revision)", em.wlUpRev)
+	}
+
+	if _, err := m.App.DB.Exec(`DROP TRIGGER block_wl_update`); err != nil {
+		t.Fatalf("drop trigger: %v", err)
+	}
+
+	// The owner loop must dispatch the retry carrying the snapshot pair.
+	upd, c := m.handleLogbookEditorUpdate(em, nil)
+	m = upd.(*Model)
+	if c == nil {
+		t.Fatal("the id-attach retry was not queued")
+	}
+	var retried wlUploadResultMsg
+	var walk func(tea.Cmd)
+	walk = func(sub tea.Cmd) {
+		if retried.retried {
+			return
+		}
+		if r, ok := sub().(wlUploadResultMsg); ok && r.retried {
+			retried = r
+			return
+		}
+		if inner, ok := execCmd(sub).(tea.BatchMsg); ok {
+			for _, nested := range inner {
+				walk(nested)
+			}
+		}
+	}
+	batch, isBatch := execCmd(c).(tea.BatchMsg)
+	if isBatch {
+		for _, sub := range batch {
+			walk(sub)
+		}
+	} else {
+		walk(c)
+	}
+	if !retried.retried {
+		t.Fatal("the retry result was not among the dispatched commands")
+	}
+	if !retried.ok || retried.unresolved || retried.remoteID != 42 {
+		t.Fatalf("retry: ok=%v unresolved=%v remoteID=%d, want attached id 42", retried.ok, retried.unresolved, retried.remoteID)
+	}
+	if retried.logbook != "test" {
+		t.Errorf("retry logbook = %q, want %q — the originating logbook must be carried", retried.logbook, "test")
+	}
+	stored, err := store.GetQSOByID(m.App.DB, qID)
+	if err != nil {
+		t.Fatalf("GetQSOByID after retry: %v", err)
+	}
+	if stored.WavelogID != 42 {
+		t.Errorf("stored wavelog_id = %d, want 42", stored.WavelogID)
 	}
 }

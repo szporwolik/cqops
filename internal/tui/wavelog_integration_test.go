@@ -9,10 +9,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
@@ -1883,5 +1885,471 @@ func TestUploadIDPersistenceFailureReportedUnresolved(t *testing.T) {
 	}
 	if storedID != 42 {
 		t.Errorf("stored wavelog_id = %d after retry, want 42", storedID)
+	}
+}
+
+// TestUploadIDRetryPreservesSnapshotPair reproduces the reported retry
+// mismatch: the server accepted an upload but the local id write failed, and
+// the operator edited the contact before the id-attach retry. The retry used
+// to read the CURRENT row and attach its id with the CURRENT revision, so the
+// older server contents got marked clean under the newer revision — and the
+// backfill looked up the id with the edited identity. The retry must preserve
+// the accepted snapshot's identity AND revision, and carry the originating
+// logbook.
+func TestUploadIDRetryPreservesSnapshotPair(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodPost:
+			json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"id": 42}})
+		case http.MethodGet:
+			// The accepted contact lives under the ORIGINAL callsign; a
+			// lookup with the edited identity resolves to a different id.
+			rid := 99
+			call := r.URL.Query().Get("callsign")
+			if call == "SP9MOA" {
+				rid = 42
+			}
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{"id": rid, "call": call, "band": "20m", "mode": "SSB",
+						"qso_date": "2024-05-01 12:00:00"},
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	wl := m.App.Logbook.Wavelog
+	wl.URL = srv.URL
+	wl.APIKey = "wl2_test"
+	wl.Enabled = true
+	wl.StationProfileID = "1"
+
+	qID := insertTestQSO(t, m.App.DB, &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB",
+		QSODate: "20240501", TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", Comment: "old"})
+	qs, err := store.GetQSOByID(m.App.DB, qID)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+
+	// Deterministically reject the local id write.
+	if _, err := m.App.DB.Exec(`CREATE TRIGGER block_wl_update BEFORE UPDATE OF wavelog_id ON qsos
+		WHEN OLD.wavelog_id = 0 AND NEW.wavelog_id != 0
+		BEGIN SELECT RAISE(ABORT, 'blocked'); END`); err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+
+	res := execCmd(m.uploadQSOToWavelog(qs)).(wlUploadResultMsg)
+	if !res.ok || !res.unresolved || res.remoteID != 0 {
+		t.Fatalf("upload: ok=%v unresolved=%v remoteID=%d, want accepted-but-unresolved", res.ok, res.unresolved, res.remoteID)
+	}
+	// The completion must carry the accepted snapshot pair.
+	if res.snap.Call != "SP9MOA" || res.snap.ID != qID {
+		t.Fatalf("snapshot = call:%q id:%d, want the accepted SP9MOA/%d", res.snap.Call, res.snap.ID, qID)
+	}
+	if res.uploadedRev != 0 {
+		t.Fatalf("uploadedRev = %d, want 0 (the snapshot's revision)", res.uploadedRev)
+	}
+
+	// The id write can succeed again, and the operator edits the contact —
+	// the revision now describes NEWER contents than the accepted snapshot.
+	if _, err := m.App.DB.Exec(`DROP TRIGGER block_wl_update`); err != nil {
+		t.Fatalf("drop trigger: %v", err)
+	}
+	row, err := store.GetQSOByID(m.App.DB, qID)
+	if err != nil {
+		t.Fatalf("GetQSOByID before edit: %v", err)
+	}
+	row.Call = "SP9BBB"
+	row.Comment = "newer"
+	if err := store.UpdateQSO(m.App.DB, row); err != nil {
+		t.Fatalf("UpdateQSO: %v", err)
+	}
+
+	// The completion must schedule the id-attach retry.
+	upd, c := m.Update(res)
+	m = upd.(*Model)
+	if c == nil {
+		t.Fatal("the id-attach retry was not queued")
+	}
+	var retried wlUploadResultMsg
+	var walk func(tea.Cmd)
+	walk = func(sub tea.Cmd) {
+		if retried.retried {
+			return
+		}
+		if r, ok := sub().(wlUploadResultMsg); ok && r.retried {
+			retried = r
+			return
+		}
+		if inner, ok := execCmd(sub).(tea.BatchMsg); ok {
+			for _, nested := range inner {
+				walk(nested)
+			}
+		}
+	}
+	batch, isBatch := execCmd(c).(tea.BatchMsg)
+	if isBatch {
+		for _, sub := range batch {
+			walk(sub)
+		}
+	} else {
+		walk(c)
+	}
+	if !retried.retried {
+		t.Fatal("the retry result was not among the dispatched commands")
+	}
+	if !retried.ok || retried.unresolved {
+		t.Fatalf("retry: ok=%v unresolved=%v, want the id attached", retried.ok, retried.unresolved)
+	}
+	if retried.remoteID != 42 {
+		t.Errorf("retry remoteID = %d, want 42 — the lookup must use the ACCEPTED snapshot identity", retried.remoteID)
+	}
+	if !retried.changed {
+		t.Error("retry changed must be true — the row was edited after the snapshot was accepted")
+	}
+	if retried.logbook != "test" {
+		t.Errorf("retry logbook = %q, want %q — the originating logbook must be carried", retried.logbook, "test")
+	}
+	stored, err := store.GetQSOByID(m.App.DB, qID)
+	if err != nil {
+		t.Fatalf("GetQSOByID after retry: %v", err)
+	}
+	if stored.WavelogID != 42 {
+		t.Errorf("stored wavelog_id = %d, want 42 (the accepted contact's id)", stored.WavelogID)
+	}
+	if !stored.WavelogDirty {
+		t.Fatal("row must be durably dirty — the server holds the older snapshot")
+	}
+}
+
+// TestUploadLeaseBridgesReconciliationAcrossLogbookSwitch reproduces the
+// reported failure: the upload worker released its database lease before
+// returning its result, and the completion handler acquired a NEW lease for
+// the reconciliation chain — switching logbooks while the upload was pending
+// closed the retired database at the worker's release, and the
+// reconciliation then received a closed handle ("sql: database is closed").
+// One lease must cover the whole upload → reconciliation chain, transferred
+// through the completion message and released only when the chain drains.
+func TestUploadLeaseBridgesReconciliationAcrossLogbookSwitch(t *testing.T) {
+	postStarted := make(chan struct{})
+	releasePOST := make(chan struct{})
+	var mu sync.Mutex
+	var patchedComment string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/qso":
+			close(postStarted)
+			<-releasePOST
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{"id": 42, "call": "SP9AAA"},
+				"meta": map[string]string{"resource": "qso", "method": "POST"},
+			})
+		case r.Method == http.MethodPatch && r.URL.Path == "/api/v2/qso/42":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode patch body: %v", err)
+			}
+			mu.Lock()
+			patchedComment, _ = body["comment"].(string)
+			mu.Unlock()
+			json.NewEncoder(w).Encode(map[string]any{"data": remoteQSODoc(42)})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	dbPathA := filepath.Join(dir, "a.db")
+	dbPathB := filepath.Join(dir, "b.db")
+
+	cfg := config.DefaultConfig()
+	lbA := config.Logbook{
+		Station:      config.Station{Callsign: "SP9A", Grid: "JO90"},
+		DatabasePath: dbPathA,
+		Wavelog:      &config.WavelogConfig{Enabled: true, URL: srv.URL, APIKey: "wl2_test", StationProfileID: "1"},
+	}
+	lbB := config.Logbook{Station: config.Station{Callsign: "SP9B", Grid: "JO91"}, DatabasePath: dbPathB}
+	cfg.Logbooks = map[string]config.Logbook{"a": lbA, "b": lbB}
+	cfg.State.ActiveLogbook = "a"
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := config.Save(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	dbA, err := store.InitDB(dbPathA)
+	if err != nil {
+		t.Fatalf("init db A: %v", err)
+	}
+	a := &app.App{
+		Config:      cfg,
+		ConfigPath:  cfgPath,
+		LogbookName: "a",
+		Logbook:     &lbA,
+		DB:          dbA,
+		DBPath:      dbPathA,
+	}
+	t.Cleanup(a.StopAPRSTimer)
+
+	q1 := &qso.QSO{Call: "SP9AAA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+		TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", Comment: "old"}
+	id, err := store.InsertQSO(dbA, q1)
+	if err != nil {
+		t.Fatalf("InsertQSO A: %v", err)
+	}
+
+	m := New(a, nil)
+	m.inetOnline = true
+
+	qs, err := store.GetQSOByID(dbA, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+
+	resCh := make(chan wlUploadResultMsg, 1)
+	go func() { resCh <- execCmd(m.uploadQSOToWavelog(qs)).(wlUploadResultMsg) }()
+
+	select {
+	case <-postStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("upload POST never started")
+	}
+
+	// A newer edit lands while the upload is on the wire.
+	row, err := store.GetQSOByID(dbA, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID before edit: %v", err)
+	}
+	row.Comment = "newer"
+	if err := store.UpdateQSO(dbA, row); err != nil {
+		t.Fatalf("UpdateQSO: %v", err)
+	}
+
+	// Switch logbooks while the upload is still pending — dbA is retired and
+	// its close deferred until the last lease holder releases.
+	if err := a.SwitchLogbook("b"); err != nil {
+		t.Fatalf("switch to B: %v", err)
+	}
+	t.Cleanup(func() { a.DB.Close() })
+
+	close(releasePOST)
+	res := <-resCh
+	if !res.ok || res.remoteID != 42 {
+		t.Fatalf("upload: ok=%v remoteID=%d, want accepted id 42", res.ok, res.remoteID)
+	}
+	if !res.changed {
+		t.Fatal("changed must be true — the row was edited while the upload was on the wire")
+	}
+	if res.release == nil {
+		t.Fatal("the completion must carry the transferred database lease")
+	}
+
+	// The completion dispatches the reconciliation chain — with the
+	// transferred lease the retired database stays open; on the old code the
+	// worker already released it, the database closed, and the PATCH failed
+	// with "sql: database is closed".
+	upd, c := m.Update(res)
+	m = upd.(*Model)
+	if c == nil {
+		t.Fatal("the reconciliation PATCH was not queued")
+	}
+	em, ok := execCmd(c).(editorMsg)
+	if !ok || !em.wlSyncFollowUp {
+		t.Fatalf("expected the follow-up PATCH result, got %T", em)
+	}
+	if !em.wlSyncOK {
+		t.Fatalf("follow-up PATCH: ok=%v err=%q", em.wlSyncOK, em.wlSyncErr)
+	}
+	mu.Lock()
+	got := patchedComment
+	mu.Unlock()
+	if got != "newer" {
+		t.Errorf("server PATCH comment = %q, want newer", got)
+	}
+	if c2 := m.handleQSOSyncCompletion(em); c2 != nil {
+		t.Fatal("no further PATCH should be dispatched")
+	}
+
+	// The chain lease was released at chain end: the retired db is closed.
+	if err := dbA.Ping(); err == nil {
+		t.Error("retired A database should be closed after the chain lease released")
+	}
+	// A's row carries the newest edit and is clean after the follow-up ack.
+	reopened, err := store.Open(dbPathA)
+	if err != nil {
+		t.Fatalf("reopen A: %v", err)
+	}
+	defer reopened.Close()
+	stored, err := store.GetQSOByID(reopened, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID A after chain: %v", err)
+	}
+	if stored.Comment != "newer" {
+		t.Errorf("A comment = %q, want newer", stored.Comment)
+	}
+	if stored.WavelogID != 42 {
+		t.Errorf("A WavelogID = %d, want 42", stored.WavelogID)
+	}
+	if stored.WavelogDirty {
+		t.Error("A's row should be clean after the follow-up ack")
+	}
+}
+
+// TestUploadLeaseBridgesIDRetryAcrossLogbookSwitch covers the retry hop of
+// the chain: the local id write fails, the operator switches logbooks, and
+// the id-attach retry must still reach the retired (but leased) database.
+// The lease transfers through the retried completion and is released when
+// the chain finishes.
+func TestUploadLeaseBridgesIDRetryAcrossLogbookSwitch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodPost:
+			json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"id": 42}})
+		case http.MethodGet:
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{"id": 42, "call": "SP9AAA", "band": "20m", "mode": "SSB",
+						"qso_date": "2024-05-01 12:00:00"},
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	dir := t.TempDir()
+	dbPathA := filepath.Join(dir, "a.db")
+	dbPathB := filepath.Join(dir, "b.db")
+
+	cfg := config.DefaultConfig()
+	lbA := config.Logbook{
+		Station:      config.Station{Callsign: "SP9A", Grid: "JO90"},
+		DatabasePath: dbPathA,
+		Wavelog:      &config.WavelogConfig{Enabled: true, URL: srv.URL, APIKey: "wl2_test", StationProfileID: "1"},
+	}
+	lbB := config.Logbook{Station: config.Station{Callsign: "SP9B", Grid: "JO91"}, DatabasePath: dbPathB}
+	cfg.Logbooks = map[string]config.Logbook{"a": lbA, "b": lbB}
+	cfg.State.ActiveLogbook = "a"
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := config.Save(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	dbA, err := store.InitDB(dbPathA)
+	if err != nil {
+		t.Fatalf("init db A: %v", err)
+	}
+	a := &app.App{
+		Config:      cfg,
+		ConfigPath:  cfgPath,
+		LogbookName: "a",
+		Logbook:     &lbA,
+		DB:          dbA,
+		DBPath:      dbPathA,
+	}
+	t.Cleanup(a.StopAPRSTimer)
+
+	q1 := &qso.QSO{Call: "SP9AAA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+		TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", Comment: "kept"}
+	id, err := store.InsertQSO(dbA, q1)
+	if err != nil {
+		t.Fatalf("InsertQSO A: %v", err)
+	}
+
+	m := New(a, nil)
+	m.inetOnline = true
+
+	qs, err := store.GetQSOByID(dbA, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+
+	// Deterministically reject the local id write.
+	if _, err := dbA.Exec(`CREATE TRIGGER block_wl_update BEFORE UPDATE OF wavelog_id ON qsos
+		WHEN OLD.wavelog_id = 0 AND NEW.wavelog_id != 0
+		BEGIN SELECT RAISE(ABORT, 'blocked'); END`); err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+
+	res := execCmd(m.uploadQSOToWavelog(qs)).(wlUploadResultMsg)
+	if !res.ok || !res.unresolved {
+		t.Fatalf("upload: ok=%v unresolved=%v, want accepted-but-unresolved", res.ok, res.unresolved)
+	}
+	if res.release == nil {
+		t.Fatal("the completion must carry the transferred database lease")
+	}
+	if _, err := dbA.Exec(`DROP TRIGGER block_wl_update`); err != nil {
+		t.Fatalf("drop trigger: %v", err)
+	}
+
+	// Switch logbooks — the transferred lease keeps the retired database
+	// open for the id-attach retry.
+	if err := a.SwitchLogbook("b"); err != nil {
+		t.Fatalf("switch to B: %v", err)
+	}
+	t.Cleanup(func() { a.DB.Close() })
+
+	upd, c := m.Update(res)
+	m = upd.(*Model)
+	if c == nil {
+		t.Fatal("the id-attach retry was not queued")
+	}
+	var retried wlUploadResultMsg
+	var walk func(tea.Cmd)
+	walk = func(sub tea.Cmd) {
+		if retried.retried {
+			return
+		}
+		if r, ok := sub().(wlUploadResultMsg); ok && r.retried {
+			retried = r
+			return
+		}
+		if inner, ok := execCmd(sub).(tea.BatchMsg); ok {
+			for _, nested := range inner {
+				walk(nested)
+			}
+		}
+	}
+	batch, isBatch := execCmd(c).(tea.BatchMsg)
+	if isBatch {
+		for _, sub := range batch {
+			walk(sub)
+		}
+	} else {
+		walk(c)
+	}
+	if !retried.retried {
+		t.Fatal("the retry result was not among the dispatched commands")
+	}
+	if !retried.ok || retried.unresolved || retried.remoteID != 42 {
+		t.Fatalf("retry: ok=%v unresolved=%v remoteID=%d, want id 42 attached", retried.ok, retried.unresolved, retried.remoteID)
+	}
+
+	// The retried completion flows back through the handler — with no
+	// follow-up it releases the transferred lease, closing the retired db.
+	upd2, _ := m.Update(retried)
+	m = upd2.(*Model)
+	if err := dbA.Ping(); err == nil {
+		t.Error("retired A database should be closed after the retry chain finished")
+	}
+	reopened, err := store.Open(dbPathA)
+	if err != nil {
+		t.Fatalf("reopen A: %v", err)
+	}
+	defer reopened.Close()
+	stored, err := store.GetQSOByID(reopened, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID A after retry: %v", err)
+	}
+	if stored.WavelogID != 42 {
+		t.Errorf("A WavelogID = %d, want 42", stored.WavelogID)
 	}
 }

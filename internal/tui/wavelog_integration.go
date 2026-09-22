@@ -155,47 +155,72 @@ func (m *Model) uploadQSOToWavelog(qs *qso.QSO) tea.Cmd {
 		uploadedRev = row.WavelogDirtyRev
 	}
 
+	// The snapshot that actually goes to the server, captured together with
+	// its revision — retries must preserve this pair.
+	snapQ := *qs
+
 	return func() tea.Msg {
-		defer release()
+		// The lease is NOT released here — it transfers with the result so
+		// the completion handler can queue the follow-up chain without an
+		// unprotected interval.
 		ok, isDup, remoteID, changed, err := postQSOSingle(ctx.url, ctx.key, ctx.stationID, qs, ctx.db, uploadedRev)
 		// Remote acceptance and local persistence are SEPARATE outcomes:
 		// ok with remoteID==0 means the server accepted the contact but the
 		// local id write failed — the row is still locally unsent and must
 		// be reported as unresolved, never as a successful synchronization.
-		return wlUploadResultMsg{qID: qs.ID, call: qs.Call, logbook: ctx.logbook, ok: ok, isDup: isDup, remoteID: remoteID, unresolved: ok && remoteID == 0, err: err, changed: changed, db: ctx.db, url: ctx.url, key: ctx.key, sid: ctx.stationID}
+		return wlUploadResultMsg{qID: qs.ID, call: qs.Call, logbook: ctx.logbook, ok: ok, isDup: isDup, remoteID: remoteID, unresolved: ok && remoteID == 0, err: err, changed: changed, db: ctx.db, url: ctx.url, key: ctx.key, sid: ctx.stationID, snap: snapQ, uploadedRev: uploadedRev, release: release}
 	}
 }
 
 // retryIDAttachCmd retries attaching the remote id for a row whose upload was
-// accepted but whose id write failed locally: the id is learned via the
-// callsign-scoped list and attached with the same revision check as the
-// original upload. The row stays unsent locally until the id is persisted, so
-// a failed retry leaves it re-offered on the next upload cycle instead of
-// being presented as synchronized.
-func (m *Model) retryIDAttachCmd(db *sql.DB, url, key, sid string, qID int64) tea.Cmd {
-	if db == nil || url == "" || key == "" || qID == 0 {
+// accepted but whose id write failed locally. snap is the SNAPSHOT that
+// reached the server and uploadedRev the revision it was taken at: the id is
+// looked up with the snapshot's identity and attached with the snapshot's
+// revision — never the current row's — so an edit made after the failed
+// attach leaves the row durably dirty (changed=true) and queued for a PATCH
+// instead of being falsely marked clean. The originating logbook is carried
+// on every result so the logbook-scoping check in the handler still applies.
+// The row stays unsent locally until the id is persisted, so a failed retry
+// leaves it re-offered on the next upload cycle instead of being presented
+// as synchronized.
+//
+// release, when non-nil, is the database lease transferred from the upload
+// worker whose completion triggered this retry — it keeps the originating
+// database open without an unprotected interval. The retry does NOT release
+// it: it transfers onward with the retried result so a follow-up
+// reconciliation chain (retry found the row changed) stays covered too.
+func (m *Model) retryIDAttachCmd(db *sql.DB, url, key, sid, logbook string, snap qso.QSO, uploadedRev int64, release func()) tea.Cmd {
+	if db == nil || url == "" || key == "" || snap.ID == 0 {
+		if release != nil {
+			release()
+		}
 		return nil
 	}
-	release := func() {}
-	if m.App != nil {
-		release = m.App.KeepDBAlive(db)
+	qID := snap.ID
+	chainRelease := release
+	if chainRelease == nil {
+		chainRelease = func() {}
+		if m.App != nil {
+			chainRelease = m.App.KeepDBAlive(db)
+		}
 	}
 	return func() tea.Msg {
-		defer release()
 		row, rerr := store.GetQSOByID(db, qID)
 		if rerr != nil || row == nil {
-			return wlUploadResultMsg{qID: qID, ok: false, unresolved: true, retried: true, err: fmt.Errorf("cannot read row for id retry")}
+			return wlUploadResultMsg{qID: qID, call: snap.Call, logbook: logbook, ok: false, unresolved: true, retried: true, err: fmt.Errorf("cannot read row for id retry"), release: chainRelease}
 		}
-		rid := backfillRemoteID(url, key, sid, row, db)
+		// Look up with the SNAPSHOT identity — the accepted contact, not the
+		// possibly-edited current row.
+		rid := backfillRemoteID(url, key, sid, &snap, db)
 		if rid <= 0 {
-			return wlUploadResultMsg{qID: qID, call: row.Call, ok: true, unresolved: true, retried: true, db: db, url: url, key: key, sid: sid}
+			return wlUploadResultMsg{qID: qID, call: snap.Call, logbook: logbook, ok: true, unresolved: true, retried: true, db: db, url: url, key: key, sid: sid, release: chainRelease}
 		}
-		ch, serr := store.SetWavelogIDChecked(db, qID, rid, row.WavelogDirtyRev)
+		ch, serr := store.SetWavelogIDChecked(db, qID, rid, uploadedRev)
 		if serr != nil {
 			applog.Error("Wavelog: id retry failed to store remote id", "qso_id", qID, "error", serr)
-			return wlUploadResultMsg{qID: qID, call: row.Call, ok: true, unresolved: true, retried: true, db: db, url: url, key: key, sid: sid}
+			return wlUploadResultMsg{qID: qID, call: snap.Call, logbook: logbook, ok: true, unresolved: true, retried: true, db: db, url: url, key: key, sid: sid, release: chainRelease}
 		}
-		return wlUploadResultMsg{qID: qID, call: row.Call, ok: true, remoteID: rid, changed: ch, retried: true, db: db, url: url, key: key, sid: sid}
+		return wlUploadResultMsg{qID: qID, call: snap.Call, logbook: logbook, ok: true, remoteID: rid, changed: ch, retried: true, db: db, url: url, key: key, sid: sid, release: chainRelease}
 	}
 }
 
@@ -402,9 +427,23 @@ type wlUploadResultMsg struct {
 	url     string  // originating endpoint
 	key     string
 	sid     string // station profile id, for id-attach retries
+	// snap is a value copy of the snapshot that actually reached the server
+	// and uploadedRev the row revision that snapshot was taken at. Id-attach
+	// retries must use THIS pair — the current row may already hold newer
+	// edits whose revision does not identify the accepted snapshot.
+	snap        qso.QSO
+	uploadedRev int64
 	// unresolved reports remote acceptance WITHOUT local id persistence: the
 	// row is still locally unsent and must never be presented as synced.
 	unresolved bool
+	// release transfers the database lease from the upload worker to the
+	// completion handler: ONE lease covers the whole upload → id retry →
+	// reconciliation chain, so a logbook switch while the upload is on the
+	// wire can never close the originating database in the gap between the
+	// worker's release and the follow-up chain's acquisition. The handler
+	// owns it from then on — it is handed to the follow-up chain or
+	// released immediately when no follow-up is needed.
+	release func()
 	// retried marks a result produced by retryIDAttachCmd, so a failed
 	// retry does not schedule yet another one (the next upload cycle
 	// re-offers the row instead).

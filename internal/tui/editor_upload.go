@@ -256,6 +256,11 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 		totalFail := 0
 		totalRecon := 0
 		var lastErr error
+		// Rows whose revision changed between preparation (data + revision
+		// captured together) and the id attach here: the remote copy was
+		// built from an older snapshot, so the owner loop must queue a
+		// PATCH of the latest revision. The rows are already durably dirty.
+		var changedIDs []int64
 
 		// Migrated logs: rows carry no remote id even though they already
 		// exist on Wavelog. Reconcile against the remote list first so those
@@ -267,9 +272,12 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 				for _, q := range unsent {
 					k := wavelog.MakeQSOIDKey(q.Call, q.Band, q.Mode, q.QSODate, q.TimeOn)
 					if rid, ok := ids[k]; ok && rid > 0 {
-						serr := store.SetWavelogID(db, q.ID, rid)
+						ch, serr := store.SetWavelogIDChecked(db, q.ID, rid, q.WavelogDirtyRev)
 						if serr == nil {
 							totalRecon++
+							if ch {
+								changedIDs = append(changedIDs, q.ID)
+							}
 							continue
 						}
 						applog.Error("Wavelog: failed to store reconciled id — uploading instead", "qso_id", q.ID, "error", serr)
@@ -284,7 +292,8 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 			}
 		}
 		if len(unsent) == 0 {
-			return editorMsg{wlOK: true, wlCall: fmt.Sprintf("%d QSOs (already on Wavelog)", totalRecon), gen: gen, opSession: opSession, opSessionSet: true}
+			return editorMsg{wlOK: true, wlCall: fmt.Sprintf("%d QSOs (already on Wavelog)", totalRecon), gen: gen, opSession: opSession, opSessionSet: true,
+				wlUpDB: db, wlUpURL: url, wlUpKey: key, wlUpSID: sid, wlReconcileIDs: changedIDs}
 		}
 
 		for start := 0; start < len(unsent); start += chunkSize {
@@ -314,6 +323,7 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 						totalDup += em.wlDupCount
 						totalUnresolved += em.wlUnresolvedCount
 						totalFail += em.wlFailCount
+						changedIDs = append(changedIDs, em.wlReconcileIDs...)
 						if em.err != nil {
 							lastErr = em.err
 						}
@@ -328,7 +338,8 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 			// The remote accepted the chunk; how many of those remote ids
 			// made it into the local database decides whether each QSO
 			// counts as sent or as unresolved.
-			stored := backfillBatchIDs(url, key, sid, db, chunk)
+			stored, chunkChanged := backfillBatchIDs(url, key, sid, db, chunk)
+			changedIDs = append(changedIDs, chunkChanged...)
 			if result != nil && result.AllDuplicates {
 				totalDup += stored
 			} else {
@@ -371,6 +382,11 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 			gen:               gen,
 			opSession:         opSession,
 			opSessionSet:      true,
+			wlUpDB:            db,
+			wlUpURL:           url,
+			wlUpKey:           key,
+			wlUpSID:           sid,
+			wlReconcileIDs:    changedIDs,
 		}
 	}
 }
@@ -390,15 +406,20 @@ func (le *LogbookEditor) uploadIndividual(unsent []qso.QSO) tea.Cmd {
 		failCount := 0
 		unresolved := 0
 		var lastErr error
+		var changedIDs []int64
 
 		for _, q := range unsent {
-			var uploadedRev int64
-			if row, rerr := store.GetQSOByID(db, q.ID); rerr == nil && row != nil {
-				uploadedRev = row.WavelogDirtyRev
-			}
-			ok, isDup, rid, changed, err := postQSOSingle(url, key, sid, &q, db, uploadedRev)
+			// The row was captured together with its revision when the
+			// upload was prepared (WavelogDirtyRev) — re-reading the
+			// revision now could pair the old snapshot with a NEWER
+			// revision, and the id attach would then falsely mark the row
+			// clean although the server holds different contents. The
+			// captured pair detects any edit since preparation as
+			// changed=true and queues reconciliation.
+			ok, isDup, rid, changed, err := postQSOSingle(url, key, sid, &q, db, q.WavelogDirtyRev)
 			if changed {
 				applog.Warn("Wavelog: row changed during batch upload — reconciliation deferred", "qso_id", q.ID)
+				changedIDs = append(changedIDs, q.ID)
 			}
 			if !ok {
 				applog.Warn("Wavelog: individual upload failed", "qso_id", q.ID, "call", q.Call, "error", err)
@@ -448,6 +469,11 @@ func (le *LogbookEditor) uploadIndividual(unsent []qso.QSO) tea.Cmd {
 			wlFailCount:       failCount,
 			wlUnresolvedCount: unresolved,
 			gen:               gen,
+			wlUpDB:            db,
+			wlUpURL:           url,
+			wlUpKey:           key,
+			wlUpSID:           sid,
+			wlReconcileIDs:    changedIDs,
 		}
 	}
 }
@@ -491,32 +517,39 @@ func (le *LogbookEditor) doUploadToWavelog() tea.Cmd {
 		// Remote acceptance and local persistence are SEPARATE outcomes:
 		// ok with no persisted id must be reported as unresolved.
 		return editorMsg{wlQSOID: qID, wlCall: call, wlOK: ok, wlDup: isDup, err: err, gen: gen, opSession: opSession, opSessionSet: true,
-			wlUpDB: db, wlUpURL: url, wlUpKey: key, wlUpSID: sid, wlUpChanged: changed, wlUpUnresolved: ok && rid == 0}
+			wlUpDB: db, wlUpURL: url, wlUpKey: key, wlUpSID: sid, wlUpChanged: changed, wlUpUnresolved: ok && rid == 0,
+			wlUpSnap: *q, wlUpRev: uploadedRev}
 	}
 }
 
 // backfillBatchIDs stores remote ids for a successfully uploaded chunk and
-// returns how many chunk QSOs now have a persisted remote id. Bulk ADIF
-// import summaries carry no ids, so the newest window of the JSON list is
-// fetched and matched by dedupe fields. QSOs whose id could not be persisted
-// count as unresolved: the remote accepted them, but locally they still look
-// unsent and will be re-offered on the next upload.
-func backfillBatchIDs(url, key, sid string, db *sql.DB, chunk []qso.QSO) int {
+// returns how many chunk QSOs now have a persisted remote id, plus the ids
+// of rows that changed since the chunk was prepared (their id is attached and
+// the row is durably dirty — the owner loop queues a PATCH of the latest
+// revision for them). Bulk ADIF import summaries carry no ids, so the newest
+// window of the JSON list is fetched and matched by dedupe fields. QSOs whose
+// id could not be persisted count as unresolved: the remote accepted them,
+// but locally they still look unsent and will be re-offered on the next
+// upload.
+func backfillBatchIDs(url, key, sid string, db *sql.DB, chunk []qso.QSO) (stored int, changedIDs []int64) {
 	ids, berr := wavelog.FindQSOIDs(url, key, sid, len(chunk)+25)
 	if berr != nil {
 		applog.Warn("Wavelog: batch id backfill failed", "error", berr)
-		return 0
+		return 0, nil
 	}
-	stored := 0
 	for _, q := range chunk {
 		k := wavelog.MakeQSOIDKey(q.Call, q.Band, q.Mode, q.QSODate, q.TimeOn)
 		if rid, ok := ids[k]; ok {
-			if serr := store.SetWavelogID(db, q.ID, rid); serr != nil {
+			ch, serr := store.SetWavelogIDChecked(db, q.ID, rid, q.WavelogDirtyRev)
+			if serr != nil {
 				applog.Error("Wavelog: failed to store remote id", "qso_id", q.ID, "error", serr)
 			} else {
 				stored++
+				if ch {
+					changedIDs = append(changedIDs, q.ID)
+				}
 			}
 		}
 	}
-	return stored
+	return stored, changedIDs
 }

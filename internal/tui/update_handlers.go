@@ -365,19 +365,26 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 		m.rc.status = ""
 		return true, radioCmd
 	case wlUploadResultMsg:
-		// A row edited while its initial upload was on the wire is durably
-		// dirty — queue a PATCH of the latest revision against the
-		// ORIGINATING database/endpoint, independent of the visible logbook.
+		// The upload worker's database lease transferred with this result and
+		// must cover the whole upload → id retry → reconciliation chain. It
+		// is handed to the follow-up chain (reconcile or retry); with no
+		// follow-up it is released immediately.
 		var reconcile tea.Cmd
 		if r.ok && r.changed {
-			reconcile = m.queueContactReconcile(r.db, r.url, r.key, r.logbook, r.qID)
+			reconcile = m.queueContactReconcile(r.db, r.url, r.key, r.logbook, r.qID, r.release)
+			r.release = nil
 		}
 		// Remote acceptance without local id persistence is unresolved —
 		// retry the id attach once; a failed retry leaves the row re-offered
-		// on the next upload cycle.
+		// on the next upload cycle. The retry carries the accepted snapshot
+		// (identity + revision), the originating logbook, and the lease.
 		var retry tea.Cmd
 		if r.ok && r.unresolved && !r.retried {
-			retry = m.retryIDAttachCmd(r.db, r.url, r.key, r.sid, r.qID)
+			retry = m.retryIDAttachCmd(r.db, r.url, r.key, r.sid, r.logbook, r.snap, r.uploadedRev, r.release)
+			r.release = nil
+		}
+		if r.release != nil {
+			r.release()
 		}
 		// A result for a logbook the user has switched away from: the editor
 		// now shows a different database (IDs may collide), so skip all UI

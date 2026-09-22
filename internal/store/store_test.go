@@ -422,6 +422,29 @@ func TestListUnsentQSOs(t *testing.T) {
 	if rows[0].WavelogID != 0 {
 		t.Errorf("unsent row wavelog_id = %d, want 0", rows[0].WavelogID)
 	}
+
+	// The list captures the pending-sync revision WITH the row data, so
+	// uploaders can pair the snapshot they send with the revision it was
+	// taken at — pairing old data with a newer revision falsely marks rows
+	// clean after the id attach.
+	if rows[0].WavelogDirtyRev != 0 {
+		t.Errorf("fresh row revision = %d, want 0", rows[0].WavelogDirtyRev)
+	}
+	edited := rows[0]
+	edited.Comment = "newer edit"
+	if err := UpdateQSO(db, &edited); err != nil {
+		t.Fatalf("UpdateQSO: %v", err)
+	}
+	again, err := ListUnsentQSOs(db)
+	if err != nil {
+		t.Fatalf("ListUnsentQSOs after edit: %v", err)
+	}
+	if len(again) != 1 {
+		t.Fatalf("expected 1 unsent row after edit, got %d", len(again))
+	}
+	if again[0].WavelogDirtyRev != 1 {
+		t.Errorf("captured revision = %d, want 1 (the edit must bump the revision)", again[0].WavelogDirtyRev)
+	}
 }
 
 func TestGetQSOByID_NotFound(t *testing.T) {

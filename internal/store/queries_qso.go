@@ -37,7 +37,7 @@ const qsoSelectCols = `id, call, qso_date, time_on, time_off, band, freq, freq_r
 		my_sig, my_sig_info,
 		wavelog_id, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
 		dxcc,
-		created_at, updated_at`
+		created_at, updated_at, wavelog_dirty, wavelog_dirty_rev`
 
 // placeholders52 is a pre-computed string of 52 comma-separated "?" markers,
 // used by InsertQSO to avoid a per-insert []string allocation.
@@ -832,6 +832,7 @@ func listQSOsByQuery(q qsoQueryer, query string, args ...any) ([]qso.QSO, error)
 			&q.WavelogID, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
 			&q.DXCC,
 			&createdAt, &updatedAt,
+			&q.WavelogDirty, &q.WavelogDirtyRev,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan qso: %w", err)

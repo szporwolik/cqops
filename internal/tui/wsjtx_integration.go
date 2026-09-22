@@ -260,7 +260,9 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 	release := m.App.KeepDBAlive(ctx.db)
 
 	return func() tea.Msg {
-		defer release()
+		// The lease transfers with the wlUploadResultMsg so the completion
+		// handler can queue the follow-up chain without an unprotected
+		// interval; early returns release it directly.
 		// Step 1: enrich via callbook providers (best-effort). The registry
 		// and config flags are snapshots — the worker never reads live
 		// model state.
@@ -325,6 +327,7 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 		qs, err := store.GetQSOByID(ctx.db, qsoID)
 		if err != nil {
 			applog.Error("WSJT-X: cannot load QSO for Wavelog upload", "qso_id", qsoID, "error", err)
+			release()
 			return nil
 		}
 
@@ -342,12 +345,18 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 		// never touches live model or dashboard state.
 
 		// Step 3: upload the enriched QSO to Wavelog (single JSON create
-		// stores the remote id locally).
+		// stores the remote id locally). The row and its revision were
+		// loaded together above — the captured pair is passed through so an
+		// edit while the upload is on the wire leaves the row durably dirty
+		// and queues a PATCH, instead of being dismissed with -1.
 		if !wlenabled || !online {
+			release()
 			return wsjtxEnrichDoneMsg{logbook: ctx.logbook}
 		}
-		ok, isDup, remoteID, _, uploadErr := postQSOSingle(ctx.url, ctx.key, ctx.stationID, qs, ctx.db, -1)
-		return wlUploadResultMsg{qID: qsoID, call: call, logbook: ctx.logbook, ok: ok, isDup: isDup, remoteID: remoteID, err: uploadErr}
+		ok, isDup, remoteID, changed, uploadErr := postQSOSingle(ctx.url, ctx.key, ctx.stationID, qs, ctx.db, qs.WavelogDirtyRev)
+		return wlUploadResultMsg{qID: qsoID, call: call, logbook: ctx.logbook, ok: ok, isDup: isDup, remoteID: remoteID, err: uploadErr,
+			changed: changed, unresolved: ok && remoteID == 0, db: ctx.db, url: ctx.url, key: ctx.key, sid: ctx.stationID,
+			snap: *qs, uploadedRev: qs.WavelogDirtyRev, release: release}
 	}
 }
 

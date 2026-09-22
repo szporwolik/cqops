@@ -217,8 +217,19 @@ func (m *Model) patchLatestRevision(ctx *contactSyncContext) tea.Cmd {
 // chains — so it serializes with any in-flight PATCH and survives editor
 // recreation. The row is already durably dirty; the PATCH clears it for its
 // exact revision.
-func (m *Model) queueContactReconcile(db *sql.DB, url, key, logbook string, localID int64) tea.Cmd {
+//
+// release, when non-nil, is the database lease transferred from the upload
+// worker whose completion triggered this reconciliation: the chain owns it
+// and releases it when drained, so the originating database stays open
+// across the whole upload → reconciliation chain with no unprotected
+// interval. When the chain is queued behind an in-flight one (which holds
+// its own lease) or the request is invalid, the transferred lease is
+// released immediately.
+func (m *Model) queueContactReconcile(db *sql.DB, url, key, logbook string, localID int64, release func()) tea.Cmd {
 	if db == nil || url == "" || key == "" || localID == 0 {
+		if release != nil {
+			release()
+		}
 		return nil
 	}
 	if m.sync == nil {
@@ -235,11 +246,17 @@ func (m *Model) queueContactReconcile(db *sql.DB, url, key, logbook string, loca
 		// A save chain is already running for this contact — its follow-up
 		// will read the latest revision; nothing more to queue.
 		m.sync.queued[syncKey] = true
+		if release != nil {
+			release()
+		}
 		return nil
 	}
-	release := func() {}
-	if m.App != nil {
-		release = m.App.KeepDBAlive(db)
+	chainRelease := release
+	if chainRelease == nil {
+		chainRelease = func() {}
+		if m.App != nil {
+			chainRelease = m.App.KeepDBAlive(db)
+		}
 	}
 	ctx := &contactSyncContext{
 		key:     syncKey,
@@ -248,7 +265,7 @@ func (m *Model) queueContactReconcile(db *sql.DB, url, key, logbook string, loca
 		url:     url,
 		apiKey:  key,
 		gen:     0,
-		release: release,
+		release: chainRelease,
 	}
 	m.sync.inFlight[syncKey] = ctx
 	return m.patchLatestRevision(ctx)
