@@ -1931,3 +1931,53 @@ func TestNonterminalReadClearsPending(t *testing.T) {
 		t.Fatalf("wlDownloadCount = %d, want 42", le.wlDownloadCount)
 	}
 }
+
+// TestQuitCancelPreservesActiveOperationScreen reproduces the reported
+// lockout: F10 switched the screen to screenQSO while showing the quit
+// dialog, so cancelling it left the user off the editor screen — the
+// download kept running in the background, navigation keys were blocked,
+// and Escape could no longer reach the Abort button. The quit dialog must
+// render over the source screen without switching it, so cancelling
+// restores access to the running operation.
+func TestQuitCancelPreservesActiveOperationScreen(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.initLogbookEditor()
+	m.screen = screenLogbookEditor
+	le := m.ui.logbookEditor
+	op := newDownloadOp()
+	le.dlOp = op
+	le.dlActive = true
+	le.mode = edModeWLDownloading
+	d := NewDialog("Wavelog Download", "Downloading…", Option{Label: "Abort", Value: "abort"})
+	le.dialog = &d
+
+	// F10 opens the quit dialog — the screen must stay on the operation.
+	upd, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyF10})
+	m = upd.(*Model)
+	if m.confirm == nil {
+		t.Fatal("F10 should show the quit dialog")
+	}
+	if m.screen != screenLogbookEditor {
+		t.Fatalf("screen = %v, want screenLogbookEditor (the operation must stay visible)", m.screen)
+	}
+
+	// Escape cancels the quit dialog and restores access to the operation.
+	upd, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+	m = upd.(*Model)
+	if m.confirm != nil {
+		t.Fatal("Escape should dismiss the quit dialog")
+	}
+	if m.screen != screenLogbookEditor {
+		t.Fatalf("screen = %v, want screenLogbookEditor after cancel", m.screen)
+	}
+
+	// The next Escape reaches the abort dialog and cancels the operation.
+	upd, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+	m = upd.(*Model)
+	if le.dialog != nil {
+		t.Fatal("the abort dialog should be dismissed by Escape")
+	}
+	if !op.cancelled() {
+		t.Fatal("the operation context must be cancelled by the Abort button")
+	}
+}

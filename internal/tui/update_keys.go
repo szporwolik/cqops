@@ -58,7 +58,12 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		)
 		applog.Debug("App: quit dialog shown")
 		m.confirm = &dlg
-		m.screen = screenQSO
+		// The dialog renders as a global overlay — the screen is NOT
+		// switched. Switching to screenQSO cut off access to an active
+		// download/import/export after the dialog was cancelled: its screen
+		// stays behind, but navigation keys were blocked and Escape could
+		// no longer reach the Abort button. Keeping the source screen means
+		// cancelling simply restores access to the running operation.
 		return nil, true
 
 	case key.Matches(msg, m.keys.Help):
