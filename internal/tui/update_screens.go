@@ -189,7 +189,7 @@ func (m *Model) handleNotificationsUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	m.ui.integrationMenu.width = m.width
 	m.ui.integrationMenu.height = m.height
-	m.ui.integrationMenu.inetOnline = m.inetOnline
+	m.ui.integrationMenu.inetOnline = !m.Offline && m.inetOnline
 	m.ui.integrationMenu.aprsOnline = m.aprsConnected()
 	_, integrationCmd := m.ui.integrationMenu.Update(msg)
 
@@ -482,7 +482,7 @@ func (m *Model) handleMainMenuUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.C
 func (m *Model) handleCallbookUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	m.ui.callbookMenu.width = m.width
 	m.ui.callbookMenu.height = m.height
-	m.ui.callbookMenu.inetOnline = m.inetOnline
+	m.ui.callbookMenu.inetOnline = !m.Offline && m.inetOnline
 
 	// Clear previous save error.
 	if m.ui.callbookMenu.SaveError != "" {

@@ -776,6 +776,10 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				switch im.aprsService {
 				case 0: // APRS-IS
 					srv := strings.TrimSpace(im.aprsServer.Value())
+					if !im.inetOnline {
+						im.aprsTestResult = "No internet connection"
+						return im, nil
+					}
 					if srv == "" {
 						im.aprsTestResult = "Server is required"
 						return im, nil

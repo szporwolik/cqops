@@ -53,7 +53,7 @@ func (m *Model) maybeFetchSolar() tea.Cmd {
 	if m.solar.fetching {
 		return nil
 	}
-	if !m.inetOnline {
+	if m.Offline || !m.inetOnline {
 		return nil
 	}
 	if !m.App.Config.General.SolarAtQSOPane {

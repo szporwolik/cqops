@@ -233,7 +233,7 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 // Returns nil when offline, when neither QRZ enrichment nor Wavelog upload is
 // possible, or when the call is empty.
 func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
-	if call == "" || !m.inetOnline || m.App == nil || m.App.DB == nil {
+	if call == "" || m.Offline || !m.inetOnline || m.App == nil || m.App.DB == nil {
 		return nil
 	}
 	qrzenabled := m.App.Config.Integrations.Callbook.QRZ.Enabled && m.App.Config.Integrations.Callbook.QRZ.User != ""

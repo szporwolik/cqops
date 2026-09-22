@@ -131,7 +131,7 @@ func (m *Model) uploadQSOToWavelog(qs *qso.QSO) tea.Cmd {
 		return nil
 	}
 	wl := m.App.Logbook.Wavelog
-	if wl == nil || !wl.Enabled || !m.inetOnline || wl.StationProfileID == "" {
+	if wl == nil || !wl.Enabled || m.Offline || !m.inetOnline || wl.StationProfileID == "" {
 		return nil
 	}
 

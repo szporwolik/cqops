@@ -193,7 +193,7 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 	// instead of waiting up to 60 s for the next scheduled poll.
 	if m.triggerRapidCheck {
 		m.triggerRapidCheck = false
-		if m.inetOnline {
+		if !m.Offline && m.inetOnline {
 			cmds = append(cmds, checkInetCmd())
 		}
 	}

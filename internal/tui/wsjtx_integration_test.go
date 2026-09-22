@@ -16,6 +16,56 @@ import (
 	"github.com/szporwolik/cqops/internal/store"
 )
 
+// TestWSJTXAutoLogOfflineDoesNotUpload verifies the offline switch blocks the
+// WSJT-X auto-log upload: the QSO is stored locally with WavelogID 0 and the
+// server is never contacted, even when internet is reported reachable.
+func TestWSJTXAutoLogOfflineDoesNotUpload(t *testing.T) {
+	requests := 0
+	srv := newWavelogTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		t.Errorf("offline WSJT-X must not contact Wavelog (%s %s)", r.Method, r.URL.Path)
+		http.NotFound(w, r)
+	})
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	m.App.Logbook.Wavelog.Enabled = true
+	m.App.Logbook.Wavelog.URL = srv.URL
+	m.App.Logbook.Wavelog.APIKey = "wl2_test"
+	m.App.Logbook.Wavelog.StationProfileID = "1"
+	m.inetOnline = true
+	m.Offline = true
+
+	adif := "<CALL:6>SP9MOA <BAND:3>20m <FREQ:9>14.074550 <MODE:3>FT8 " +
+		"<QSO_DATE:8>20260921 <TIME_ON:6>120000 <RST_SENT:3>-10 <RST_RCVD:3>-05 <GRIDSQUARE:6>JO90aa <EOR>"
+
+	cmd, retry := m.logQSOFromADIF(adif)
+	if retry {
+		t.Fatal("logQSOFromADIF requested retry")
+	}
+	if cmd != nil {
+		if b, ok := cmd().(tea.BatchMsg); ok {
+			for _, sub := range b {
+				if subMsg := sub(); subMsg != nil {
+					next, _ := m.Update(subMsg)
+					m = next.(*Model)
+				}
+			}
+		}
+	}
+
+	qsos, err := store.ListQSOs(m.App.DB, 5, "")
+	if err != nil || len(qsos) == 0 {
+		t.Fatalf("no QSO logged: %v", err)
+	}
+	if qsos[0].WavelogID != 0 {
+		t.Errorf("WavelogID = %d, want 0 (offline mode)", qsos[0].WavelogID)
+	}
+	if requests != 0 {
+		t.Errorf("Wavelog contacted %d times in offline mode", requests)
+	}
+}
+
 // TestWSJTXAutoLogStoresWavelogID verifies the WSJT-X auto-log → enrichment →
 // upload pipeline stores the remote Wavelog id locally.
 func TestWSJTXAutoLogStoresWavelogID(t *testing.T) {

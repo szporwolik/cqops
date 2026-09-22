@@ -541,7 +541,7 @@ func refreshSCP(cacheDir string) *scp.Database {
 // background goroutine (Bubble Tea v2 commands) and returns loaded resources
 // as a message — it never assigns App fields itself.
 func (m *Model) maybeRefreshDataFiles() tea.Cmd {
-	if !m.inetOnline {
+	if m.Offline || !m.inetOnline {
 		return nil
 	}
 	// Don't recalculate on every tick — check at most once per 24 hours.

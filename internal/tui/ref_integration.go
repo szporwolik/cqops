@@ -99,6 +99,9 @@ func (m *Model) clearRefSearch() {
 // and rebuilds the reference database. Returns nil if already building or
 // the database is already populated with a modern schema.
 func (m *Model) startRefRebuildCmd() tea.Cmd {
+	if m.Offline {
+		return nil // the rebuild downloads SOTA/POTA/WWFF/IOTA data
+	}
 	if m.ref.building {
 		return nil
 	}
