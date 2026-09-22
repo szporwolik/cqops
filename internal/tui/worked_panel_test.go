@@ -89,6 +89,28 @@ func newWorkedPanelTestModel(t *testing.T) (*Model, *sql.DB) {
 	return m, db
 }
 
+// seedWorkedSummary runs the worked-summary query synchronously and installs
+// it under the exact signature renderWorkedPanel computes for this call, so
+// the panel renders the summary on the first frame. In production the summary
+// is loaded asynchronously via fetchWorkedSummaryCmd and lands one frame
+// later; tests need the data up front.
+func seedWorkedSummary(t *testing.T, m *Model, db *sql.DB, call, grid, dxcc, country string) {
+	t.Helper()
+	if m.App.DB == nil {
+		return
+	}
+	grid4 := ""
+	if len(grid) >= 4 {
+		grid4 = strings.ToUpper(grid[:4])
+	}
+	ws, err := store.GetWorkedSummary(db, call, grid4, dxcc, country)
+	if err != nil {
+		t.Fatalf("GetWorkedSummary: %v", err)
+	}
+	m.rc.workedSummary = ws
+	m.rc.workedSummarySig = workedSummarySigFor(call, grid4, dxcc, country)
+}
+
 func TestWorkedPanel_WorkedCall(t *testing.T) {
 	m, db := newWorkedPanelTestModel(t)
 	m.fields[fieldCall].SetValue("KI6NAZ")
@@ -206,6 +228,7 @@ func TestWorkedPanel_NewCall_WorkedDXCC(t *testing.T) {
 
 	stats, _ := store.GetLogbookStats(db, "XX0XXX", "20m", "FT8")
 	m.rc.logStats = stats
+	seedWorkedSummary(t, m, db, "XX0XXX", "DM03ab", "291", "United States")
 
 	d := &callbook.Result{
 		Callsign: "XX0XXX",
@@ -315,6 +338,7 @@ func TestWorkedPanel_DXCCHistoryFallback(t *testing.T) {
 
 	stats, _ := store.GetLogbookStats(db, "XX0XXX", "20m", "FT8")
 	m.rc.logStats = stats
+	seedWorkedSummary(t, m, db, "XX0XXX", "ZZ99", "291", "United States")
 
 	d := &callbook.Result{
 		Callsign: "XX0XXX",
@@ -366,6 +390,7 @@ func TestBuildWorkedPanelLayout_FullWidthRows(t *testing.T) {
 
 	stats, _ := store.GetLogbookStats(db, "KI6NAZ", "20m", "FT8")
 	m.rc.logStats = stats
+	seedWorkedSummary(t, m, db, "KI6NAZ", "DM03xu", "291", "United States")
 
 	d := &callbook.Result{Callsign: "KI6NAZ", DXCC: "291", Grid: "DM03xu", Country: "United States"}
 	layout := m.buildWorkedPanelLayout(d, 100)
@@ -395,6 +420,7 @@ func TestBuildWorkedPanelLayout_DXCCScope(t *testing.T) {
 
 	stats, _ := store.GetLogbookStats(db, "XX0XXX", "20m", "FT8")
 	m.rc.logStats = stats
+	seedWorkedSummary(t, m, db, "XX0XXX", "ZZ99", "291", "United States")
 
 	d := &callbook.Result{Callsign: "XX0XXX", DXCC: "291", Grid: "ZZ99", Country: "United States"}
 	layout := m.buildWorkedPanelLayout(d, 100)

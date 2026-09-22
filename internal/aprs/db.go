@@ -45,12 +45,20 @@ func OpenCacheDB(path string) (*CacheDB, error) {
 		return nil, fmt.Errorf("aprs cache dir: %w", err)
 	}
 
-	db, err := sql.Open("sqlite", path)
+	// WAL + NORMAL sync: the cache is rebuildable from the live feed, so a
+	// per-write fsync is not worth its cost on SD-card hardware. WAL also
+	// lets the TUI and dashboard read while packets are being written.
+	// modernc.org/sqlite only honours the _pragma form; the mattn-style
+	// _journal_mode shorthand is ignored without error.
+	dsn := path + "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_pragma=synchronous(NORMAL)"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("aprs cache open: %w", err)
 	}
 
-	db.SetMaxOpenConns(1) // SQLite works best single-writer.
+	// Packets are written by a single reader goroutine; the extra
+	// connections let the TUI and dashboard read concurrently under WAL.
+	db.SetMaxOpenConns(4)
 	db.SetConnMaxLifetime(0)
 
 	if err := migrateCache(db); err != nil {
@@ -72,15 +80,24 @@ func (c *CacheDB) Close() error {
 // Before updating an existing station, the old position is saved to the
 // history table if the station has moved significantly (>~50 m).
 func (c *CacheDB) UpsertStation(s StationRecord) error {
-	// Save old position to history before overwriting.
-	c.saveHistoryBeforeUpsert(s)
-
 	lastHeardStr := s.LastHeard.UTC().Format(time.RFC3339)
 	src := s.Source
 	if src == "" {
 		src = "aprs_is"
 	}
-	_, err := c.db.Exec(`
+
+	// One transaction per packet: the history lookup, the optional trail
+	// insert and the upsert used to commit separately, costing three
+	// commits for every received packet.
+	tx, err := c.db.Begin()
+	if err != nil {
+		return fmt.Errorf("aprs upsert begin: %w", err)
+	}
+	defer tx.Rollback()
+
+	c.saveHistoryBeforeUpsert(tx, s)
+
+	_, err = tx.Exec(`
 		INSERT INTO aprs_stations (callsign, lat, lon, symbol, comment, course, speed_kmh, altitude_m, last_heard, raw_packet, source)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(callsign) DO UPDATE SET
@@ -93,6 +110,9 @@ func (c *CacheDB) UpsertStation(s StationRecord) error {
 	if err != nil {
 		return fmt.Errorf("aprs upsert: %w", err)
 	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("aprs upsert commit: %w", err)
+	}
 	return nil
 }
 
@@ -103,9 +123,9 @@ const minTrailDelta = 0.0005
 // saveHistoryBeforeUpsert reads the current position for the callsign
 // and, if it differs from the new position by a meaningful amount,
 // inserts the old position into aprs_position_history.
-func (c *CacheDB) saveHistoryBeforeUpsert(s StationRecord) {
+func (c *CacheDB) saveHistoryBeforeUpsert(tx *sql.Tx, s StationRecord) {
 	var oldLat, oldLon float64
-	err := c.db.QueryRow(
+	err := tx.QueryRow(
 		"SELECT lat, lon FROM aprs_stations WHERE callsign=?", s.Callsign,
 	).Scan(&oldLat, &oldLon)
 	if err != nil {
@@ -125,7 +145,7 @@ func (c *CacheDB) saveHistoryBeforeUpsert(s StationRecord) {
 	}
 	now := s.LastHeard.UTC().Format(time.RFC3339)
 	var execErr error
-	_, execErr = c.db.Exec(
+	_, execErr = tx.Exec(
 		"INSERT OR IGNORE INTO aprs_position_history (callsign, lat, lon, last_heard) VALUES (?, ?, ?, ?)",
 		s.Callsign, oldLat, oldLon, now,
 	)

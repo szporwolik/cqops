@@ -781,7 +781,7 @@ func (le *LogbookEditor) handleNormalizeResult(msg editorMsg) (tea.Model, tea.Cm
 	// rows only, never a full-log scan.
 	var unsent []qso.QSO
 	if le.db != nil {
-		rows, listErr := store.ListUnsentQSOs(le.db)
+		rows, listErr := store.ListUnsentQSOs(le.db, store.MaxUnsentBatch)
 		if listErr != nil {
 			applog.Error("Wavelog: post-normalize upload — cannot list QSOs", "error", listErr)
 			if msg.normRelease != nil {

@@ -294,13 +294,28 @@ func Migrate(db *sql.DB) error {
 }
 
 // ensureColumnIndexes creates the indexes that depend on columns possibly
-// added by migrateAddColumn. Idempotent via IF NOT EXISTS.
+// added by migrateAddColumn. Idempotent via IF NOT EXISTS. Runs on both
+// migration paths, so existing databases pick up newly added indexes.
+//
+// A column referenced by an index may still be absent when migrating a very
+// old database whose original CREATE TABLE predates it (e.g. `country` in the
+// v0.10 schema). Such indexes are skipped rather than failing the migration —
+// the column is never added by this code path, so the index is meaningless
+// for that database anyway.
 func ensureColumnIndexes(db *sql.DB) error {
 	for _, idx := range []string{
 		`CREATE INDEX IF NOT EXISTS idx_qsos_dxcc ON qsos(dxcc)`,
 		`CREATE INDEX IF NOT EXISTS idx_qsos_wavelog_id ON qsos(wavelog_id)`,
+		// NOCASE lets the DXCC-scope lookup match country case-insensitively
+		// through an index; the plain idx_qsos_country cannot serve it.
+		`CREATE INDEX IF NOT EXISTS idx_qsos_country_nocase ON qsos(country COLLATE NOCASE)`,
+		// Partial index for the "never uploaded" Wavelog queue.
+		`CREATE INDEX IF NOT EXISTS idx_qsos_unsent ON qsos(id DESC) WHERE COALESCE(wavelog_id, 0) = 0`,
 	} {
 		if _, err := db.Exec(idx); err != nil {
+			if strings.Contains(err.Error(), "no such column") || strings.Contains(err.Error(), "no such table") {
+				continue
+			}
 			return fmt.Errorf("create index: %w", err)
 		}
 	}

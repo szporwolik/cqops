@@ -1130,7 +1130,7 @@ func TestUploadIndividual_UsesCapturedRevisionPair(t *testing.T) {
 	id := insertTestQSO(t, le.db, q)
 
 	// Preparation captures the row data AND its revision together.
-	unsent, err := store.ListUnsentQSOs(le.db)
+	unsent, err := store.ListUnsentQSOs(le.db, store.MaxUnsentBatch)
 	if err != nil || len(unsent) != 1 {
 		t.Fatalf("ListUnsentQSOs: %v (rows=%d)", err, len(unsent))
 	}
@@ -1196,7 +1196,7 @@ func TestUploadBatch_ChangedRowStaysDirtyAndReconciles(t *testing.T) {
 	id := insertTestQSO(t, le.db, q)
 
 	// Preparation captures data + revision together.
-	unsent, err := store.ListUnsentQSOs(le.db)
+	unsent, err := store.ListUnsentQSOs(le.db, store.MaxUnsentBatch)
 	if err != nil || len(unsent) != 1 {
 		t.Fatalf("ListUnsentQSOs: %v (rows=%d)", err, len(unsent))
 	}
@@ -2046,7 +2046,7 @@ func TestEditorBatchUploadLeaseBridgesReconciliationAcrossLogbookSwitch(t *testi
 	le := m.ui.logbookEditor
 
 	// Preparation captures data + revision together.
-	unsent, err := store.ListUnsentQSOs(dbA)
+	unsent, err := store.ListUnsentQSOs(dbA, store.MaxUnsentBatch)
 	if err != nil || len(unsent) != 1 {
 		t.Fatalf("ListUnsentQSOs: %v (rows=%d)", err, len(unsent))
 	}
@@ -2384,7 +2384,7 @@ func TestUploadBatchFailureKeepsReconciliationIDs(t *testing.T) {
 	}
 
 	// Preparation captures data + revision together; the edit lands after.
-	unsent, err := store.ListUnsentQSOs(m.App.DB)
+	unsent, err := store.ListUnsentQSOs(m.App.DB, store.MaxUnsentBatch)
 	if err != nil || len(unsent) != 26 {
 		t.Fatalf("ListUnsentQSOs: %v (rows=%d), want 26", err, len(unsent))
 	}

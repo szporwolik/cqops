@@ -684,6 +684,9 @@ func (m *Model) handleLookupResultMsg(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.
 	case dxcPathDupesMsg:
 		m.handleDXCPathDupes(r)
 		return m, cmd
+	case workedSummaryMsg:
+		m.handleWorkedSummary(r)
+		return m, cmd
 	case pskSpotsLoadedMsg:
 		if r.err == nil && r.spotKey != "" {
 			m.psk.spots = r.spots

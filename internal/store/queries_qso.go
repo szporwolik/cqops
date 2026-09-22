@@ -699,12 +699,18 @@ func CountUnsentQSOs(db *sql.DB) (int, error) {
 	return n, nil
 }
 
+// MaxUnsentBatch caps one bulk-upload batch. A never-uploaded historical
+// log can hold hundreds of thousands of rows, and materialising all of them
+// at once is the difference between a few MB and an out-of-memory kill on
+// Pi-class hardware. Callers re-run to drain a larger backlog.
+const MaxUnsentBatch = 10000
+
 // ListUnsentQSOs returns the QSOs without a remote id (never uploaded),
-// ordered by id DESC. Only the eligible rows are fetched, so preparing an
-// upload stays cheap even for very large historical logs.
-func ListUnsentQSOs(db *sql.DB) ([]qso.QSO, error) {
+// ordered by id DESC, capped at limit rows.
+func ListUnsentQSOs(db *sql.DB, limit int) ([]qso.QSO, error) {
 	return listQSOsByQuery(db,
-		`SELECT `+qsoSelectCols+` FROM qsos WHERE COALESCE(wavelog_id, 0) = 0 ORDER BY id DESC`)
+		`SELECT `+qsoSelectCols+` FROM qsos WHERE COALESCE(wavelog_id, 0) = 0 ORDER BY id DESC LIMIT ?`,
+		limit)
 }
 
 // CountDirtyQSOs returns the number of QSOs with a remote id AND a pending

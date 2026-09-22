@@ -180,8 +180,12 @@ func GetWorkedSummary(db *sql.DB, call, grid4, dxcc, countryName string) (Worked
 		// case-insensitive country name for QSOs without the dxcc
 		// column — covers "United States" / "UNITED STATES" / "united states"
 		// and prefix variants like "United States of America".
+		//
+		// COLLATE NOCASE rather than LOWER(country): a function on the
+		// column cannot use an index, which made every DXCC-scope query a
+		// full table scan.
 		ws.DXCCHistory, err = scopeStats(db,
-			"dxcc = ? OR LOWER(country) = LOWER(?) OR LOWER(country) LIKE LOWER(?)",
+			"dxcc = ? OR country = ? COLLATE NOCASE OR country LIKE ? COLLATE NOCASE",
 			dxcc, countryName, countryName+"%")
 		if err != nil {
 			return ws, fmt.Errorf("dxcc history: %w", err)

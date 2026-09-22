@@ -255,6 +255,12 @@ type dxcPathDupesMsg struct {
 	dupeSet map[string]bool
 }
 
+// workedSummaryMsg carries the async result of GetWorkedSummary.
+type workedSummaryMsg struct {
+	summary store.WorkedSummary
+	sig     string
+}
+
 type dxcTuneResultMsg struct {
 	call    string
 	freqMHz float64

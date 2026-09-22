@@ -67,8 +67,15 @@ type renderCache struct {
 	dxcDupeFetchContest string
 
 	// Worked panel summary cache (call + grid + DXCC statistics).
-	workedSummary    store.WorkedSummary
-	workedSummarySig string
+	// The query is heavy (six queries per scope), so it is fetched off the
+	// render path like the other DB-backed panels.
+	workedSummary           store.WorkedSummary
+	workedSummarySig        string
+	workedSummaryNeedFetch  bool
+	workedSummaryFetchCall  string
+	workedSummaryFetchGrid4 string
+	workedSummaryFetchDXCC  string
+	workedSummaryFetchName  string
 
 	// Logbook-wide counts (total QSOs, today's QSOs). Updated on tick
 	// and invalidated on QSO save / logbook switch / midnight.

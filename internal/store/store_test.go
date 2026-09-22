@@ -422,7 +422,7 @@ func TestListUnsentQSOs(t *testing.T) {
 		t.Errorf("unsent count = %d, want 1", n)
 	}
 
-	rows, err := ListUnsentQSOs(db)
+	rows, err := ListUnsentQSOs(db, MaxUnsentBatch)
 	if err != nil {
 		t.Fatalf("ListUnsentQSOs: %v", err)
 	}
@@ -445,7 +445,7 @@ func TestListUnsentQSOs(t *testing.T) {
 	if err := UpdateQSO(db, &edited); err != nil {
 		t.Fatalf("UpdateQSO: %v", err)
 	}
-	again, err := ListUnsentQSOs(db)
+	again, err := ListUnsentQSOs(db, MaxUnsentBatch)
 	if err != nil {
 		t.Fatalf("ListUnsentQSOs after edit: %v", err)
 	}

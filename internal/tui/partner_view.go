@@ -101,6 +101,8 @@ func (m *Model) viewPartner() string {
 	}
 	sigB.WriteString(m.rc.logStatsSig)
 	sigB.WriteByte('|')
+	sigB.WriteString(m.rc.workedSummarySig) // re-render once the async summary lands
+	sigB.WriteByte('|')
 	if m.lookup.wlPrivateData != nil {
 		fmt.Fprintf(&sigB, "wl=%p,%v,%v,%v,%v|",
 			m.lookup.wlPrivateData,
@@ -888,20 +890,18 @@ func (m *Model) buildWorkedPanelLayout(d *callbook.Result, maxW int) workedPanel
 
 	var ws store.WorkedSummary
 	if m.App.DB != nil && call != "" {
-		// Cache GetWorkedSummary — it runs 15+ SQL queries and was
-		// consuming 17.7% CPU by re-running on every frame.  Only
-		// recompute when call, grid4, opDXCC or opEntity change.
-		wsKey := call + "|" + grid4 + "|" + opDXCC + "|" + opEntity
+		// GetWorkedSummary issues six queries per scope (call, grid, DXCC).
+		// On a large logbook that runs into seconds, so a miss only flags
+		// the fetch and this frame renders with the previous data.
+		wsKey := workedSummarySigFor(call, grid4, opDXCC, opEntity)
 		if m.rc.workedSummarySig == wsKey {
 			ws = m.rc.workedSummary
 		} else {
-			var err error
-			ws, err = store.GetWorkedSummary(m.App.DB, call, grid4, opDXCC, opEntity)
-			if err != nil {
-				ws = store.WorkedSummary{}
-			}
-			m.rc.workedSummary = ws
-			m.rc.workedSummarySig = wsKey
+			m.rc.workedSummaryNeedFetch = true
+			m.rc.workedSummaryFetchCall = call
+			m.rc.workedSummaryFetchGrid4 = grid4
+			m.rc.workedSummaryFetchDXCC = opDXCC
+			m.rc.workedSummaryFetchName = opEntity
 		}
 	}
 
@@ -1153,6 +1153,41 @@ func formatCountList(items []store.CountItem) string {
 // belong to. The stats are only trusted while this matches the form.
 func logStatsSigFor(call, band, mode string) string {
 	return call + "|" + band + "|" + mode
+}
+
+// workedSummarySigFor identifies which call/grid/DXCC the cached worked
+// summary belongs to.
+func workedSummarySigFor(call, grid4, dxcc, countryName string) string {
+	return call + "|" + grid4 + "|" + dxcc + "|" + countryName
+}
+
+// fetchWorkedSummaryCmd runs GetWorkedSummary asynchronously. It issues six
+// queries per scope, which on a large logbook takes long enough to stall a
+// frame, so it never runs during View().
+func (m *Model) fetchWorkedSummaryCmd(call, grid4, dxcc, countryName string) tea.Cmd {
+	db := m.App.DB
+	return func() tea.Msg {
+		ws, err := store.GetWorkedSummary(db, call, grid4, dxcc, countryName)
+		if err != nil {
+			applog.Debug("worked summary: load failed", "call", call, "error", err)
+			// Record the signature anyway so a failing query cannot
+			// re-dispatch on every update.
+			return workedSummaryMsg{sig: workedSummarySigFor(call, grid4, dxcc, countryName)}
+		}
+		return workedSummaryMsg{
+			summary: ws,
+			sig:     workedSummarySigFor(call, grid4, dxcc, countryName),
+		}
+	}
+}
+
+// handleWorkedSummary stores the async result for use by the next View().
+func (m *Model) handleWorkedSummary(msg workedSummaryMsg) {
+	if msg.sig == "" {
+		return
+	}
+	m.rc.workedSummary = msg.summary
+	m.rc.workedSummarySig = msg.sig
 }
 
 // fetchLogbookStatsCmd returns a tea.Cmd that runs GetLogbookStats

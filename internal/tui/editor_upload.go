@@ -63,12 +63,16 @@ func (le *LogbookEditor) doBatchUpload() tea.Cmd {
 			}
 			applog.Info("Wavelog: batch upload — unsent rows in log", "unsent", total)
 
-			// Fetch only the eligible (never-uploaded) rows — a large
-			// historical logbook stays cheap to prepare.
-			rows, err := store.ListUnsentQSOs(db)
+			// Fetch only the eligible (never-uploaded) rows, capped to one
+			// batch so a huge historical log cannot exhaust memory.
+			rows, err := store.ListUnsentQSOs(db, store.MaxUnsentBatch)
 			if err != nil {
 				applog.Error("Wavelog: batch upload — cannot list unsent QSOs", "error", err)
 				return uploadPrepMsg{err: fmt.Errorf("cannot read logbook: %w", err), gen: gen, db: db, release: release}
+			}
+			if total > len(rows) {
+				applog.Info("Wavelog: batch upload — backlog exceeds one batch, re-run to continue",
+					"batch", len(rows), "remaining", total-len(rows))
 			}
 			msg := buildUploadPrep(rows)
 			msg.gen = gen
