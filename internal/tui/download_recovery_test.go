@@ -843,7 +843,12 @@ func TestDownload_AbortDuringFetchCompletes(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("doWavelogDownload returned nil cmd")
 	}
-	_ = cmd() // first read; the worker starts concurrently
+	// First read; the worker starts concurrently. Process it through Update
+	// so the operation's pending read is accepted (and its next read
+	// dispatched) — a discarded read would keep readPending set forever.
+	msg0 := cmd()
+	m2, next0 := le.Update(msg0)
+	le = m2.(*LogbookEditor)
 
 	// Abort immediately — the worker must notice even though the UI
 	// tears down its own references.
@@ -852,7 +857,7 @@ func TestDownload_AbortDuringFetchCompletes(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		var pending tea.Cmd
+		var pending tea.Cmd = next0
 		for le.dlActive {
 			if pending == nil {
 				pending = le.readDownloadMsg()
@@ -1827,5 +1832,102 @@ func TestChannelCloseWithoutTerminalIsNotSuccess(t *testing.T) {
 	}
 	if le.wlDownloadCount != 0 {
 		t.Fatalf("count = %d, want 0 (the close must not fabricate success)", le.wlDownloadCount)
+	}
+}
+
+// TestTerminalResultNotOvertakenByChannelClosure reproduces the reported
+// race: readPending was cleared in the reader goroutine immediately after
+// reading, so a tick between the read and Update could dispatch a second
+// reader — that reader observed the channel closure, its close-only
+// completion could finalize the operation (count 0, "operation did not
+// finish"), and the real terminal was then rejected as stale. The read must
+// stay pending until the owner loop accepts the matching result.
+func TestTerminalResultNotOvertakenByChannelClosure(t *testing.T) {
+	le := newTestEditorWithDB(t, "", "", "", "OP", "JO90")
+	le.dlActive = true
+	le.mode = edModeWLDownloading
+	op := newDownloadOp()
+	le.dlOp = op
+
+	cmd1 := le.readDownloadMsg()
+	if cmd1 == nil {
+		t.Fatal("the first read must be dispatched")
+	}
+
+	// The reader obtains the real terminal result; the worker closes.
+	op.msgCh <- editorMsg{dlCount: 42, dlDone: true}
+	close(op.msgCh)
+	msg := execCmd(cmd1)
+	em, ok := msg.(editorMsg)
+	if !ok || !em.dlDone || em.dlCount != 42 {
+		t.Fatalf("expected the terminal result, got %T", msg)
+	}
+
+	// A tick arrives BEFORE Update processes the result: the read is still
+	// pending, so no second reader may be dispatched (it would observe the
+	// channel closure).
+	if c := le.readDownloadMsg(); c != nil {
+		t.Fatal("a second reader must not be dispatched while the read is pending")
+	}
+
+	// Update processes the real terminal — the successful count wins.
+	le2, _ := le.Update(em)
+	le = le2.(*LogbookEditor)
+	if le.dlActive {
+		t.Fatal("the operation must finalize on the real terminal")
+	}
+	if le.wlDownloadCount != 42 {
+		t.Fatalf("wlDownloadCount = %d, want 42 (closure must not overtake the terminal)", le.wlDownloadCount)
+	}
+	if le.wlDownloadErr != "" {
+		t.Fatalf("no error expected, got %q", le.wlDownloadErr)
+	}
+	// No further read can be dispatched after the terminal was accepted.
+	if c := le.readDownloadMsg(); c != nil {
+		t.Fatal("no read may be dispatched after the terminal was accepted")
+	}
+}
+
+// TestNonterminalReadClearsPending verifies the pending flag is released on
+// nonterminal messages too, so the next read can be scheduled — a discarded
+// progress message would otherwise stall the pump.
+func TestNonterminalReadClearsPending(t *testing.T) {
+	le := newTestEditorWithDB(t, "", "", "", "OP", "JO90")
+	le.dlActive = true
+	le.mode = edModeWLDownloading
+	op := newDownloadOp()
+	le.dlOp = op
+
+	cmd := le.readDownloadMsg()
+	op.msgCh <- editorMsg{dlProgress: 5, dlTotal: 100}
+	msg := execCmd(cmd).(editorMsg)
+	if msg.dlProgress != 5 {
+		t.Fatalf("progress = %d, want 5", msg.dlProgress)
+	}
+	// Before Update the read is still pending — no second reader.
+	if c := le.readDownloadMsg(); c != nil {
+		t.Fatal("a second reader must not be dispatched while the read is pending")
+	}
+	le2, next := le.Update(msg)
+	le = le2.(*LogbookEditor)
+	if next == nil {
+		t.Fatal("the nonterminal message must schedule the next read")
+	}
+	// The accepted message cleared the pending flag: the dispatched next
+	// read already claimed it (CAS), so no further reader can stack.
+	if c := le.readDownloadMsg(); c != nil {
+		t.Fatal("the next read already holds the pending slot")
+	}
+	// The next read must still deliver the real terminal.
+	op.msgCh <- editorMsg{dlCount: 42, dlDone: true}
+	close(op.msgCh)
+	em := execCmd(next).(editorMsg)
+	if !em.dlDone || em.dlCount != 42 {
+		t.Fatalf("terminal lost: done=%v count=%d", em.dlDone, em.dlCount)
+	}
+	le2, _ = le.Update(em)
+	le = le2.(*LogbookEditor)
+	if le.wlDownloadCount != 42 {
+		t.Fatalf("wlDownloadCount = %d, want 42", le.wlDownloadCount)
 	}
 }

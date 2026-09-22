@@ -195,6 +195,15 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return le.handleUploadPrep(msg)
 
 	case editorMsg:
+		// Accept the read: the operation's single pending read is released
+		// ONLY here, after the owner loop received its result. Clearing it
+		// in the reader goroutine would open a gap in which a tick could
+		// dispatch a second reader that observes the channel closure and
+		// overtakes the real terminal.
+		if msg.dlOpID != 0 && le.dlOp != nil && msg.dlOpID == le.dlOp.id {
+			le.dlOp.readPending.Store(false)
+		}
+
 		// Bind download/import/export messages to their operation: a stale
 		// result from a replaced operation must never finalize or advance a
 		// newer one.
@@ -1198,7 +1207,11 @@ func (le *LogbookEditor) readDownloadMsg() tea.Cmd {
 	}
 	return func() tea.Msg {
 		msg, ok := <-op.msgCh
-		op.readPending.Store(false)
+		// readPending deliberately stays TRUE here: the owner loop clears it
+		// only after accepting this result (see the editorMsg handling).
+		// Clearing it in the reader goroutine would let a tick in the gap
+		// before Update dispatch a second reader, which could observe the
+		// channel closure and overtake the real terminal.
 		if !ok {
 			op.channelClosed.Store(true)
 			// The channel closed without this read receiving a terminal
