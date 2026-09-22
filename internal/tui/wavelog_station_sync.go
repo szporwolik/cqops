@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -92,23 +91,4 @@ func applyWavelogStation(st *wavelog.Station, s *config.Station) bool {
 	set(&s.SIG, st.SIG)
 	set(&s.SIGInfo, st.SIGInfo)
 	return changed
-}
-
-// syncLogbookStationFromWavelog fetches the selected Wavelog station profile
-// and mirrors its values into the logbook in the config map. Best-effort —
-// failures keep the locally entered values.
-func syncLogbookStationFromWavelog(cfg *config.Config, lbID, url, key, stationID string) (bool, error) {
-	st, err := wavelog.GetStation(url, key, stationID)
-	if err != nil {
-		return false, err
-	}
-	lb, ok := cfg.Logbooks[lbID]
-	if !ok {
-		return false, fmt.Errorf("logbook %s not found", lbID)
-	}
-	if !applyWavelogStation(st, &lb.Station) {
-		return false, nil
-	}
-	cfg.Logbooks[lbID] = lb
-	return true, nil
 }

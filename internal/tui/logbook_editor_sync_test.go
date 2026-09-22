@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/wavelog"
@@ -93,8 +94,12 @@ func TestFetchRemoteCopyAndRefresh(t *testing.T) {
 		t.Fatalf("fetch failed: qso=%v err=%q", em.wlFetchQSO, em.wlFetchErr)
 	}
 
-	if err := le.ApplyRemoteRefresh(em.wlFetchQSO); err != nil {
+	applied, err := le.ApplyRemoteRefresh(em.wlFetchQSO, em.wlFetchRev)
+	if err != nil {
 		t.Fatalf("ApplyRemoteRefresh: %v", err)
+	}
+	if !applied {
+		t.Fatal("ApplyRemoteRefresh should apply a fresh fetch with no edits")
 	}
 
 	stored, err := store.GetQSOByID(le.db, id)
@@ -142,8 +147,149 @@ func TestFetchRemoteCopyStaleResultIgnored(t *testing.T) {
 	le.editing = &qso.QSO{ID: 1, WavelogID: 77}
 	le.mode = edModeList // user already left the edit form
 
-	if err := le.ApplyRemoteRefresh(&wavelog.QSOData{ID: 77}); err != nil {
+	applied, err := le.ApplyRemoteRefresh(&wavelog.QSOData{ID: 77}, 0)
+	if err != nil {
 		t.Fatalf("ApplyRemoteRefresh should be a no-op, got %v", err)
+	}
+	if applied {
+		t.Error("ApplyRemoteRefresh should not apply after the user left edit mode")
+	}
+}
+
+// TestApplyRemoteRefresh_KeepsUnsavedEdits reproduces the reported bug: the
+// operator types while the remote GET is pending. The late result carries
+// the pre-edit revision and must NOT overwrite the typed values.
+func TestApplyRemoteRefresh_KeepsUnsavedEdits(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"data": remoteQSODoc(77)})
+	}))
+	defer srv.Close()
+
+	le := newTestEditorWithDB(t, srv.URL, "wl2_test", "1", "Szymon", "KO00ca")
+
+	q := &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+		TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", Comment: "local", WavelogID: 77}
+	id := insertTestQSO(t, le.db, q)
+	q.ID = id
+
+	le.editing = q
+	le.mode = edModeEdit
+	le.fillEditForm(q)
+	le.editRev = 0
+
+	// Fetch begins at revision 0.
+	cmd := le.fetchRemoteCopy(77, id)
+	msg := execCmd(cmd)
+	em, ok := msg.(editorMsg)
+	if !ok || em.wlFetchQSO == nil {
+		t.Fatalf("fetch failed: %#v", msg)
+	}
+
+	// The operator types while the GET is in flight.
+	le.fields[qefComment].SetValue("typed while fetching")
+	le.editRev++
+
+	applied, err := le.ApplyRemoteRefresh(em.wlFetchQSO, em.wlFetchRev)
+	if err != nil {
+		t.Fatalf("ApplyRemoteRefresh: %v", err)
+	}
+	if applied {
+		t.Fatal("stale refresh must not apply after the operator typed")
+	}
+
+	stored, err := store.GetQSOByID(le.db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if stored.Comment != "local" {
+		t.Errorf("DB comment = %q, want local (typed values and row must survive)", stored.Comment)
+	}
+	if le.fields[qefComment].Value() != "typed while fetching" {
+		t.Errorf("form comment = %q, want the typed value kept", le.fields[qefComment].Value())
+	}
+}
+
+// TestApplyRemoteRefresh_KeepsPendingLocalChanges verifies a remote refresh
+// never overwrites a row whose local changes were saved but not synced to
+// Wavelog (durable pending-sync state).
+func TestApplyRemoteRefresh_KeepsPendingLocalChanges(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"data": remoteQSODoc(77)})
+	}))
+	defer srv.Close()
+
+	le := newTestEditorWithDB(t, srv.URL, "wl2_test", "1", "Szymon", "KO00ca")
+
+	q := &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+		TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", Comment: "offline change", WavelogID: 77}
+	id := insertTestQSO(t, le.db, q)
+	q.ID = id
+	if err := store.SetWavelogDirty(le.db, id, true); err != nil {
+		t.Fatalf("SetWavelogDirty: %v", err)
+	}
+
+	le.editing = q
+	le.mode = edModeEdit
+	le.fillEditForm(q)
+
+	applied, err := le.ApplyRemoteRefresh(&wavelog.QSOData{ID: 77}, le.editRev)
+	if err != nil {
+		t.Fatalf("ApplyRemoteRefresh: %v", err)
+	}
+	if applied {
+		t.Fatal("refresh must not apply over pending unsynced local changes")
+	}
+
+	stored, err := store.GetQSOByID(le.db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if stored.Comment != "offline change" {
+		t.Errorf("DB comment = %q, want offline change (must survive the refresh)", stored.Comment)
+	}
+}
+
+// TestEnterSkipsRemoteRefreshForPendingSync verifies opening a synced QSO
+// with durable pending changes never triggers the remote GET — the operator
+// edits the local copy and gets a notice instead.
+func TestEnterSkipsRemoteRefreshForPendingSync(t *testing.T) {
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		t.Errorf("pending-sync row must not trigger a remote GET (got %s %s)", r.Method, r.URL.Path)
+		http.Error(w, "should not be called", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	le := newTestEditorWithDB(t, srv.URL, "wl2_test", "1", "Szymon", "KO00ca")
+
+	q := &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+		TimeOn: "120000", Comment: "offline change", WavelogID: 77}
+	id := insertTestQSO(t, le.db, q)
+	q.ID = id
+	if err := store.SetWavelogDirty(le.db, id, true); err != nil {
+		t.Fatalf("SetWavelogDirty: %v", err)
+	}
+	le.qsos = []qso.QSO{*q}
+	le.mode = edModeList
+
+	upd, cmd := le.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	le = upd.(*LogbookEditor)
+	if le.mode != edModeEdit {
+		t.Fatalf("mode = %v, want edModeEdit", le.mode)
+	}
+	if cmd == nil {
+		t.Fatal("expected a toast command for the pending-sync notice")
+	}
+	msg := execCmd(cmd)
+	em, ok := msg.(editorMsg)
+	if !ok || em.toastWarn == "" {
+		t.Fatalf("expected a pending-sync toast, got %#v", msg)
+	}
+	if requests != 0 {
+		t.Errorf("Wavelog received %d request(s) for a pending-sync row", requests)
 	}
 }
 
@@ -216,6 +362,9 @@ func TestEditSavePatchesWavelog(t *testing.T) {
 	}
 	if stored.WavelogID != 42 {
 		t.Errorf("WavelogID = %d, want 42", stored.WavelogID)
+	}
+	if stored.WavelogDirty {
+		t.Error("WavelogDirty should be cleared after a successful PATCH")
 	}
 }
 
@@ -294,6 +443,9 @@ func TestEditSavePatchFails(t *testing.T) {
 	if stored.WavelogID != 42 {
 		t.Errorf("WavelogID = %d, want 42 (kept after failed PATCH)", stored.WavelogID)
 	}
+	if !stored.WavelogDirty {
+		t.Error("WavelogDirty should be set after a failed PATCH (local row diverged)")
+	}
 }
 
 // TestEditSaveOfflineDoesNotContactWavelog verifies --offline mode never
@@ -346,6 +498,9 @@ func TestEditSaveOfflineDoesNotContactWavelog(t *testing.T) {
 	}
 	if stored.WavelogID != 42 {
 		t.Errorf("WavelogID = %d, want 42 (kept for future sync)", stored.WavelogID)
+	}
+	if !stored.WavelogDirty {
+		t.Error("WavelogDirty should be set for an offline save (sync deferred)")
 	}
 }
 

@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -668,6 +667,24 @@ func MakeQSOIDKey(call, band, mode, qsoDate, timeOn string) QSOIDKey {
 	}
 }
 
+// MakeQSOIDKeyFromADIF builds a QSOIDKey from parsed ADIF fields using the
+// same canonicalization the JSON sidecar uses: MFSK + submode collapses to
+// the submode, and 4-digit times (HHMM) are padded to HHMMSS so they match
+// the JSON list's seconds-precision time. A 6-digit ADIF time with nonzero
+// seconds never matches a padded key.
+func MakeQSOIDKeyFromADIF(call, band, mode, submode, qsoDate, timeOn string) QSOIDKey {
+	key := MakeQSOIDKey(call, band, mode, qsoDate, timeOn)
+	if key.Mode == "MFSK" {
+		if sub := strings.ToUpper(strings.TrimSpace(submode)); sub != "" {
+			key.Mode = sub
+		}
+	}
+	if len(key.TimeOn) == 4 {
+		key.TimeOn += "00"
+	}
+	return key
+}
+
 // qsoIDRow is one row of the JSON list used for remote-id backfill.
 type qsoIDRow struct {
 	ID      int64  `json:"id"`
@@ -822,10 +839,15 @@ func FindQSOID(baseURL, apiKey, stationID, call, qsoDateISO, timeOn, band, mode 
 type ContactsResponse struct {
 	ExportedQSOs     int
 	LastFetchedIDRaw json.Number
-	ADIFPath         string  // temp file path
-	ADIFSize         int64   // file size in bytes for progress
-	TotalRows        int     // meta.total of the export (expected rows)
-	WavelogIDs       []int64 // remote ids, aligned 1:1 with exported rows
+	ADIFPath         string // temp file path
+	ADIFSize         int64  // file size in bytes for progress
+	TotalRows        int    // meta.total of the export (expected rows)
+
+	// WavelogIDsByKey maps each exported row's dedupe identity to its
+	// remote id. nil when ids could not be verified. Rows are matched by
+	// identity, never by position, so a missing or mismatched id page
+	// leaves its rows unassigned instead of shifting ids.
+	WavelogIDsByKey map[QSOIDKey]int64
 }
 
 // LastFetchedID returns the last fetched ID as int64, defaulting to 0 on parse failure.
@@ -842,17 +864,12 @@ func (r *ContactsResponse) LastFetchedID() int64 {
 // ≈ 7 pages for a 1600-QSO log), large enough to keep request overhead low.
 const v2ADIFPageSize = 250
 
-// v2QSOIDRow is one row of the JSON QSO list, used to capture remote ids.
-type v2QSOIDRow struct {
-	ID int64 `json:"id"`
-}
-
 // fetchQSOIDsPage returns the remote ids of the QSOs in the same
-// since_id/per_page window as an ADIF export page. The JSON list is ordered
-// newest first, so ids are sorted ascending to align 1:1 with the ADIF
-// export (which is ordered ascending by id). Used to store the remote id
-// locally for future edit/delete support.
-func fetchQSOIDsPage(ctx context.Context, baseURL, apiKey, stationID string, sinceID int64) ([]int64, error) {
+// since_id/per_page window as an ADIF export page, keyed by their dedupe
+// identity. The JSON list is ordered newest first; matching is by verified
+// identity (call/band/mode/date/time), never by position, so a missing or
+// mismatched page can never shift ids onto other records.
+func fetchQSOIDsPage(ctx context.Context, baseURL, apiKey, stationID string, sinceID int64) (map[QSOIDKey]int64, error) {
 	q := url.Values{}
 	q.Set("since_id", strconv.FormatInt(sinceID, 10))
 	q.Set("station_id", stationID)
@@ -862,16 +879,18 @@ func fetchQSOIDsPage(ctx context.Context, baseURL, apiKey, stationID string, sin
 	if err != nil {
 		return nil, err
 	}
-	var rows []v2QSOIDRow
+	var rows []qsoIDRow
 	if _, err := v2DecodeData(body, &rows); err != nil {
 		return nil, err
 	}
-	ids := make([]int64, 0, len(rows))
+	out := make(map[QSOIDKey]int64, len(rows))
 	for _, r := range rows {
-		ids = append(ids, r.ID)
+		k := r.key()
+		if _, ok := out[k]; !ok {
+			out[k] = r.ID
+		}
 	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
-	return ids, nil
+	return out, nil
 }
 
 // FetchContacts pulls QSOs from the Wavelog API v2 as ADIF since the given
@@ -929,7 +948,7 @@ func FetchContactsProgressCtx(ctx context.Context, baseURL, apiKey, stationID st
 	lastID := fetchFromID
 	sinceID := fetchFromID
 	firstPage := true
-	var remoteIDs []int64
+	var remoteIDs map[QSOIDKey]int64
 
 	for {
 		q := url.Values{}
@@ -988,12 +1007,25 @@ func FetchContactsProgressCtx(ctx context.Context, baseURL, apiKey, stationID st
 		firstPage = false
 
 		// Capture remote ids for the same window. Best-effort sidecar:
-		// a failure here must not abort the download.
+		// a failure here must not abort the download. Rows are keyed by
+		// verified identity and merged only when the JSON window holds
+		// exactly the same number of rows as the ADIF page — a failed or
+		// mismatched page simply leaves its rows without ids.
 		pageIDs, idErr := fetchQSOIDsPage(ctx, baseURL, apiKey, stationID, sinceID)
 		if idErr != nil {
 			applog.Warn("Wavelog: remote id capture failed", "error", idErr)
+		} else if len(pageIDs) != exported.Exported {
+			applog.Warn("Wavelog: remote id page membership mismatch",
+				fmt.Sprintf("ids=%d exported=%d", len(pageIDs), exported.Exported))
 		} else {
-			remoteIDs = append(remoteIDs, pageIDs...)
+			if remoteIDs == nil {
+				remoteIDs = make(map[QSOIDKey]int64)
+			}
+			for k, id := range pageIDs {
+				if _, ok := remoteIDs[k]; !ok {
+					remoteIDs[k] = id
+				}
+			}
 		}
 
 		if onPage != nil {
@@ -1026,7 +1058,7 @@ func FetchContactsProgressCtx(ctx context.Context, baseURL, apiKey, stationID st
 		ADIFPath:         f.Name(),
 		ADIFSize:         fileSize,
 		TotalRows:        expectedTotal,
-		WavelogIDs:       remoteIDs,
+		WavelogIDsByKey:  remoteIDs,
 	}
 
 	applog.InfoDetail("Wavelog: contacts fetched to file",

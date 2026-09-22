@@ -45,20 +45,19 @@ type DB struct {
 
 // Open opens or creates the reference database at path. The database uses
 // WAL journal mode and a 5-second busy timeout so transient locks resolve
-// without returning SQLITE_BUSY to the caller.
+// without returning SQLITE_BUSY to the caller. All settings are passed as
+// modernc `_pragma` parameters, which the driver applies to every
+// connection — the legacy mattn-style DSN names are silently ignored.
 func Open(path string) (*DB, error) {
-	db, err := sql.Open("sqlite", path+"?_journal_mode=WAL&_busy_timeout=5000")
+	db, err := sql.Open("sqlite", path+
+		"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"+
+		"&_pragma=synchronous(NORMAL)&_pragma=cache_size(-8000)")
 	if err != nil {
 		return nil, fmt.Errorf("ref: open db at %s: %w", path, err)
 	}
 	if err := db.Ping(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("ref: ping db at %s: %w", path, err)
-	}
-	// Performance tuning for bulk inserts during rebuild.
-	if _, err := db.Exec(`PRAGMA synchronous=NORMAL; PRAGMA cache_size=-8000`); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("ref: pragma: %w", err)
 	}
 	rdb := &DB{db: db}
 	if err := rdb.migrate(); err != nil {

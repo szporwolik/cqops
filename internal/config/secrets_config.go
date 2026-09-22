@@ -20,24 +20,26 @@ func wavelogSecretKey(logbookID string) string {
 // syncSecretsToStore persists secret values to the encrypted store and
 // deletes entries whose live fields are now empty, so cleared credentials
 // do not return on restart. This is a read-only pass over the live config —
-// the YAML scrub happens on a copy in Save. It returns the store's Save
-// error: the caller must abort the whole save on failure, because the
-// scrubbed YAML no longer contains the credentials and a failed secrets
-// write would otherwise leave no persisted copy at all.
+// the YAML scrub happens on a copy in Save.
+//
+// Persistence is driven by the store's dirty flag, which survives failed
+// saves: if a write fails, the next save retries the pending changes
+// BEFORE writing the scrubbed YAML, so credentials can never be silently
+// lost on retry. It returns the store's Save error — the caller must abort
+// the whole save on failure, because the scrubbed YAML no longer contains
+// the credentials and a failed secrets write would otherwise leave no
+// persisted copy at all.
 func (c *Config) syncSecretsToStore() error {
-	changed := false
 	sync := func(key, val string) {
 		cur, ok := c.secrets.Get(key)
 		if val == "" {
 			if ok {
 				c.secrets.Delete(key)
-				changed = true
 			}
 			return
 		}
 		if !ok || cur != val {
 			c.secrets.Set(key, val)
-			changed = true
 		}
 	}
 
@@ -53,7 +55,7 @@ func (c *Config) syncSecretsToStore() error {
 		sync(wavelogSecretKey(id), val)
 	}
 
-	if !changed {
+	if !c.secrets.Dirty() {
 		return nil
 	}
 	return c.secrets.Save()

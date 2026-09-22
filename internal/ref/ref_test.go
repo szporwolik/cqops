@@ -1,6 +1,8 @@
 package ref
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +21,47 @@ func TestOpenClose(t *testing.T) {
 	defer db.Close()
 	if n, _ := db.Count(); n != 0 {
 		t.Errorf("expected 0 refs, got %d", n)
+	}
+}
+
+// TestOpenAppliesPragmasToEveryConnection verifies WAL journal mode and the
+// busy timeout are actually in effect on every connection the pool opens.
+// Three connections are held open simultaneously while each is probed, so a
+// pragma applied only to the first connection would be caught here.
+func TestOpenAppliesPragmasToEveryConnection(t *testing.T) {
+	rdb, err := Open(filepath.Join(t.TempDir(), "refs.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer rdb.Close()
+	db := rdb.UnderlyingDB()
+
+	held := make([]*sql.Conn, 0, 3)
+	for i := 0; i < 3; i++ {
+		conn, err := db.Conn(context.Background())
+		if err != nil {
+			t.Fatalf("acquire connection %d: %v", i, err)
+		}
+		held = append(held, conn) // keep it open while probing the next one
+
+		var mode string
+		if err := conn.QueryRowContext(context.Background(), `PRAGMA journal_mode`).Scan(&mode); err != nil {
+			t.Fatalf("conn %d journal_mode: %v", i, err)
+		}
+		if mode != "wal" {
+			t.Errorf("conn %d journal_mode = %q, want wal", i, mode)
+		}
+
+		var timeout int
+		if err := conn.QueryRowContext(context.Background(), `PRAGMA busy_timeout`).Scan(&timeout); err != nil {
+			t.Fatalf("conn %d busy_timeout: %v", i, err)
+		}
+		if timeout < 5000 {
+			t.Errorf("conn %d busy_timeout = %d, want >= 5000", i, timeout)
+		}
+	}
+	for _, c := range held {
+		c.Close()
 	}
 }
 

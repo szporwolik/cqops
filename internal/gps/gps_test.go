@@ -283,6 +283,32 @@ func TestParseGGA_NoFix(t *testing.T) {
 	}
 }
 
+// TestParseGGA_FixLossInvalidatesPreviousFix reproduces the fix-loss bug:
+// a void GGA after a valid fix must invalidate the previous position — the
+// old fix must never be advertised as current.
+func TestParseGGA_FixLossInvalidatesPreviousFix(t *testing.T) {
+	c := NewClient(nil)
+	valid := []string{"GGA", "120000.000", "5001.2437", "N", "02012.4208", "E", "1", "12", "1.0", "201.3", "M", "42.0", "M", "", ""}
+	c.parseGGA(valid)
+	if !c.Latest().IsValid() {
+		t.Fatal("setup: expected a valid fix")
+	}
+
+	void := []string{"GGA", "120001.000", "", "", "", "", "0", "", "", "", "", "", "", "", ""}
+	c.parseGGA(void)
+
+	pos := c.Latest()
+	if pos.IsValid() {
+		t.Error("a void GGA must invalidate the previous fix")
+	}
+	if pos.Fix != FixNone {
+		t.Errorf("Fix = %d, want FixNone", pos.Fix)
+	}
+	if pos.UpdatedAt.IsZero() {
+		t.Error("UpdatedAt should be refreshed on fix loss")
+	}
+}
+
 func TestParseGGA_ShortFields(t *testing.T) {
 	c := NewClient(nil)
 	// Too few fields — should not panic or crash.
@@ -313,16 +339,23 @@ func TestParseRMC_ValidStatus(t *testing.T) {
 func TestParseRMC_VoidStatus(t *testing.T) {
 	c := NewClient(nil)
 	c.mu.Lock()
-	c.latest = Position{Lat: 50.0, Lon: 20.0, Fix: FixGPS}
+	c.latest = Position{Lat: 50.0, Lon: 20.0, Fix: FixGPS, UpdatedAt: time.Now()}
 	c.mu.Unlock()
 
-	// Status 'V' (void) should not downgrade existing fix.
+	// Status 'V' (void) must invalidate the existing fix — a lost fix can
+	// never keep advertising the previous valid position.
 	rmc := []string{"RMC", "120000.000", "V", "5001.2437", "N", "02012.4208", "E", "0.0", "0.0", "010106", "", "", "A"}
 	c.parseRMC(rmc)
 
 	pos := c.Latest()
-	if pos.Fix != FixGPS {
-		t.Errorf("RMC with status V should not downgrade fix, got %d", pos.Fix)
+	if pos.Fix != FixNone {
+		t.Errorf("RMC with status V should invalidate the fix, got %d", pos.Fix)
+	}
+	if pos.IsValid() {
+		t.Error("void RMC must not leave a valid position")
+	}
+	if pos.UpdatedAt.IsZero() {
+		t.Error("UpdatedAt should be refreshed on fix loss")
 	}
 }
 

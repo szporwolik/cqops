@@ -26,8 +26,10 @@ type Listener struct {
 	generation uint64 // incremented on each Start; used to reject stale callbacks
 	Events     chan event
 	stop       chan struct{}
-	loopWG     sync.WaitGroup // event-processing goroutine
-	readerWG   sync.WaitGroup // UDP reader goroutine (exits when the socket closes)
+	msgCh      chan interface{} // reader→loop message channel (detached on stop)
+	errCh      chan error       // reader→loop error channel (detached on stop)
+	loopWG     sync.WaitGroup   // event-processing goroutine
+	readerWG   sync.WaitGroup   // UDP reader goroutine (exits when the socket closes)
 	OnADIF     func(string)
 	OnStatus   func(string, string, uint64, string, string, string, string, bool) // call, grid, freqHz, mode, submode, report, txMessage, transmitting
 }
@@ -47,9 +49,9 @@ func (l *Listener) Start(host string, port int) error {
 	// outside it — waiting while holding l.mu would deadlock against the
 	// event loop's callback snapshots (see Stop).
 	l.mu.Lock()
-	oldSrv, oldStop := l.stopLocked()
+	oldSrv, oldStop, oldMsgCh, oldErrCh := l.stopLocked()
 	l.mu.Unlock()
-	l.finishStop(oldSrv, oldStop)
+	l.finishStop(oldSrv, oldStop, oldMsgCh, oldErrCh)
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -77,6 +79,8 @@ func (l *Listener) Start(host string, port int) error {
 
 	msgCh := make(chan interface{}, 128)
 	errCh := make(chan error, 16)
+	l.msgCh = msgCh
+	l.errCh = errCh
 
 	// The UDP reader blocks on the socket; it exits (closing both channels)
 	// when the socket is closed during shutdown.
@@ -106,29 +110,32 @@ func (l *Listener) Start(host string, port int) error {
 // waiting while holding the mutex would deadlock shutdown.
 func (l *Listener) Stop() {
 	l.mu.Lock()
-	srv, stop := l.stopLocked()
+	srv, stop, msgCh, errCh := l.stopLocked()
 	l.mu.Unlock()
-	l.finishStop(srv, stop)
+	l.finishStop(srv, stop, msgCh, errCh)
 }
 
 // stopLocked marks the listener stopped, invalidates the generation, and
-// detaches the server and stop channel. Caller must hold l.mu. The returned
-// resources must be torn down by the caller AFTER releasing l.mu (see
-// finishStop) — doing it under the mutex would deadlock the event loop.
-func (l *Listener) stopLocked() (*wsjtx.Server, chan struct{}) {
+// detaches the server, stop channel, and reader channels. Caller must hold
+// l.mu. The returned resources must be torn down by the caller AFTER
+// releasing l.mu (see finishStop) — doing it under the mutex would deadlock
+// the event loop.
+func (l *Listener) stopLocked() (*wsjtx.Server, chan struct{}, chan interface{}, chan error) {
 	if !l.active {
-		return nil, nil
+		return nil, nil, nil, nil
 	}
 	l.active = false
 	l.generation++ // reject callbacks that have not snapshotted yet
-	srv, stop := l.server, l.stop
+	srv, stop, msgCh, errCh := l.server, l.stop, l.msgCh, l.errCh
 	l.server = nil
 	l.stop = nil
-	return srv, stop
+	l.msgCh = nil
+	l.errCh = nil
+	return srv, stop, msgCh, errCh
 }
 
 // finishStop tears down a detached listener without holding l.mu.
-func (l *Listener) finishStop(srv *wsjtx.Server, stop chan struct{}) {
+func (l *Listener) finishStop(srv *wsjtx.Server, stop chan struct{}, msgCh chan interface{}, errCh chan error) {
 	if srv == nil && stop == nil {
 		return
 	}
@@ -138,13 +145,53 @@ func (l *Listener) finishStop(srv *wsjtx.Server, stop chan struct{}) {
 	}
 	// The event loop always exits via the stop channel — safe to join.
 	l.loopWG.Wait()
-	// The UDP reader exits when its socket closes. If the unsafe close
-	// could not reach the conn (library changed), the reader stays blocked
-	// forever — joining it would deadlock shutdown, so skip in that case.
-	if socketClosed {
+	if !socketClosed {
+		// The reader only exits when its socket closes. If the unsafe close
+		// could not reach the conn (library changed), the reader stays
+		// blocked forever — joining it (or draining) would deadlock
+		// shutdown, so skip in that case.
+		applog.Info("WSJT-X listener stopped")
+		return
+	}
+	// The UDP reader exits when its socket closes — but ListenToWsjtx uses
+	// BLOCKING sends into msgCh/errCh, and closing the socket cannot
+	// unblock a reader already waiting to send into a full channel. With
+	// the event loop gone nothing would drain them, so keep draining both
+	// channels until the producer exits; only then is it safe to join it.
+	if msgCh != nil || errCh != nil {
+		var drainWG sync.WaitGroup
+		drainWG.Add(1)
+		go func() {
+			defer drainWG.Done()
+			drainChannels(msgCh, errCh)
+		}()
+		l.readerWG.Wait()
+		drainWG.Wait()
+	} else {
 		l.readerWG.Wait()
 	}
 	applog.Info("WSJT-X listener stopped")
+}
+
+// drainChannels discards messages from both channels until they are closed,
+// so a producer blocked on a full channel can finish its send, observe the
+// closed socket, and exit.
+func drainChannels(msgCh chan interface{}, errCh chan error) {
+	for {
+		select {
+		case _, ok := <-msgCh:
+			if !ok {
+				msgCh = nil
+			}
+		case _, ok := <-errCh:
+			if !ok {
+				errCh = nil
+			}
+		}
+		if msgCh == nil && errCh == nil {
+			return
+		}
+	}
 }
 
 // closeServerSocket closes the library's underlying UDP socket so the port

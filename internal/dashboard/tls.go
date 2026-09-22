@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -117,25 +118,93 @@ func redirectToHTTPS(next http.Handler) http.Handler {
 // hybridListener routes connections on a single port by their first byte:
 // TLS handshakes (record type 0x16) are wrapped in *tls.Conn and served as
 // HTTPS, anything else is plain HTTP and reaches the redirect handler.
+//
+// Classification runs CONCURRENTLY behind a bounded slot pool: an idle
+// connection burns only its own deadline instead of serializing every later
+// client on the sole Accept path.
 type hybridListener struct {
 	net.Listener
 	tlsConfig *tls.Config
+
+	results chan acceptResult // classified connections, one per accepted conn
+	slots   chan struct{}     // bounds concurrent classification
+	wg      sync.WaitGroup    // in-flight classifications
 }
 
-// hybridPeekTimeout bounds how long Accept waits for a connection's first
-// byte while classifying it. Without a deadline a single idle TCP connection
-// would block Accept and starve every subsequent client.
+// acceptResult pairs a classified connection with a terminal accept error.
+type acceptResult struct {
+	conn net.Conn
+	err  error
+}
+
+// hybridPeekTimeout bounds how long classification waits for a connection's
+// first byte. An individual connection must never fail the listener: an idle
+// client hits the peek deadline, a vanished client returns EOF — both become
+// ordinary plain-HTTP connections and are handled (and cleaned up)
+// per-connection by the http server, whose own read deadline applies from
+// there.
 const hybridPeekTimeout = 3 * time.Second
 
+// hybridClassifySlots bounds the number of connections being classified at
+// once, so a flood of idle connections can neither grow goroutines without
+// limit nor starve the accept loop forever.
+const hybridClassifySlots = 64
+
 func newHybridListener(ln net.Listener, tlsConfig *tls.Config) net.Listener {
-	return &hybridListener{Listener: ln, tlsConfig: tlsConfig}
+	hl := &hybridListener{
+		Listener:  ln,
+		tlsConfig: tlsConfig,
+		results:   make(chan acceptResult, hybridClassifySlots),
+		slots:     make(chan struct{}, hybridClassifySlots),
+	}
+	go hl.acceptLoop()
+	return hl
 }
 
+// Accept returns the next classified connection. Classification is performed
+// by worker goroutines, so Accept never blocks on a client's first byte.
 func (hl *hybridListener) Accept() (net.Conn, error) {
-	c, err := hl.Listener.Accept()
-	if err != nil {
-		return nil, err
+	res, ok := <-hl.results
+	if !ok {
+		return nil, net.ErrClosed
 	}
+	return res.conn, res.err
+}
+
+// acceptLoop keeps accepting raw connections and hands each one to a bounded
+// classification goroutine. The slot pool caps resource usage under a stall
+// flood; connections beyond the cap simply wait in the kernel accept queue.
+func (hl *hybridListener) acceptLoop() {
+	defer func() {
+		hl.wg.Wait()
+		close(hl.results)
+	}()
+	for {
+		hl.slots <- struct{}{} // block while classification is saturated
+		c, err := hl.Listener.Accept()
+		if err != nil {
+			<-hl.slots
+			// The raw listener is gone (shutdown). Deliver one terminal
+			// error so http.Server.Serve can exit; if nobody is reading
+			// anymore, just return.
+			select {
+			case hl.results <- acceptResult{err: err}:
+			default:
+			}
+			return
+		}
+		hl.wg.Add(1)
+		go func(c net.Conn) {
+			defer hl.wg.Done()
+			defer func() { <-hl.slots }()
+			hl.results <- acceptResult{conn: hl.classify(c)}
+		}(c)
+	}
+}
+
+// classify determines whether a connection speaks TLS by peeking its first
+// byte, bounded by the classification deadline.
+func (hl *hybridListener) classify(c net.Conn) net.Conn {
 	br := bufio.NewReader(c)
 
 	// Classify by the first byte. An individual connection must never fail
@@ -147,13 +216,13 @@ func (hl *hybridListener) Accept() (net.Conn, error) {
 	if err := c.SetReadDeadline(time.Now().Add(hybridPeekTimeout)); err == nil {
 		if first, err := br.Peek(1); err == nil && first[0] == 0x16 { // TLS handshake record
 			c.SetReadDeadline(time.Time{}) // clear the classification deadline
-			return tls.Server(&prefixedConn{Conn: c, r: br}, hl.tlsConfig), nil
+			return tls.Server(&prefixedConn{Conn: c, r: br}, hl.tlsConfig)
 		}
 		// Clear the classification deadline before handing the connection
 		// to the http server.
 		c.SetReadDeadline(time.Time{})
 	}
-	return &prefixedConn{Conn: c, r: br}, nil
+	return &prefixedConn{Conn: c, r: br}
 }
 
 // prefixedConn reinserts already-buffered bytes so the http server reads

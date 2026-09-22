@@ -144,6 +144,56 @@ func TestDoBatchUpload_EmptyQSOList(t *testing.T) {
 	}
 }
 
+// TestUploadPrepResultRejectedByReplacedEditor verifies the cross-logbook
+// guard: preparation started in editor A must never be applied by editor B
+// (e.g. after a logbook switch). The result is discarded without any upload
+// and without touching B's state.
+func TestUploadPrepResultRejectedByReplacedEditor(t *testing.T) {
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		t.Errorf("replaced-editor result must not upload (got %s %s)", r.Method, r.URL.Path)
+		http.Error(w, "should not be called", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	// Editor A prepares a batch against its own database.
+	leA := newTestEditorWithDB(t, srv.URL, "wl2_test", "1", "OPA", "JO90")
+	q := &qso.QSO{Call: "SP9AAA", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB"}
+	id := insertTestQSO(t, leA.db, q)
+	q.ID = id
+
+	cmd := leA.doBatchUpload()
+	if cmd == nil {
+		t.Fatal("doBatchUpload returned nil command")
+	}
+	prep, ok := execCmd(cmd).(uploadPrepMsg)
+	if !ok {
+		t.Fatalf("expected uploadPrepMsg, got %T", execCmd(cmd))
+	}
+	if len(prep.unsent) != 1 || prep.err != nil {
+		t.Fatalf("prep = unsent:%d err:%v, want 1 unsent row", len(prep.unsent), prep.err)
+	}
+
+	// Editor B: a new instance (different generation) with its own database.
+	leB := newTestEditorWithDB(t, srv.URL, "wl2_test", "1", "OPB", "JO90")
+	if leA.gen == leB.gen {
+		t.Fatal("editor generations must differ")
+	}
+
+	updated, next := leB.Update(prep)
+	leB = updated.(*LogbookEditor)
+	if next != nil {
+		t.Fatal("replaced editor must not produce a follow-up upload command")
+	}
+	if leB.wlSkipped != 0 || leB.mode != edModeList {
+		t.Errorf("replaced editor state changed: skipped=%d mode=%v", leB.wlSkipped, leB.mode)
+	}
+	if requests != 0 {
+		t.Errorf("Wavelog received %d request(s)", requests)
+	}
+}
+
 func TestDoBatchUpload_SkipsMissingFields(t *testing.T) {
 	le := newTestEditor("", "", "", "", "")
 	le.qsos = []qso.QSO{

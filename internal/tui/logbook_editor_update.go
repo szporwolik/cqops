@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -46,6 +47,7 @@ type editorMsg struct {
 	wlFailCount       int
 	wlUnresolvedCount int
 	normalized        int
+	gen               uint64 // editor generation for async operation results (0 = not generation-bound)
 	err               error
 	dlCount           int
 	dlDupes           int
@@ -71,6 +73,7 @@ type editorMsg struct {
 	wlFetchQSOID int64 // local id the fetch was issued for
 	wlFetchQSO   *wavelog.QSOData
 	wlFetchErr   string
+	wlFetchRev   uint64 // edit revision when the fetch started — a later value means the operator typed since
 	// Wavelog PATCH result after a save of a synced QSO.
 	wlSyncOK      bool
 	wlSyncGone    bool
@@ -195,6 +198,14 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			le.needsReload = true
 		}
 		if msg.normalized > 0 {
+			// The normalize worker belongs to the editor that launched it;
+			// a result delivered to a replacement editor (logbook switched
+			// mid-operation) must not trigger an upload there.
+			if msg.gen != 0 && msg.gen != le.gen {
+				applog.Warn("Wavelog: discarding normalize result for a replaced editor",
+					fmt.Sprintf("msg_gen=%d editor_gen=%d", msg.gen, le.gen))
+				return le, nil
+			}
 			// Normalization done, now upload all unsent QSOs — fetched as
 			// eligible rows only, never a full-log scan.
 			var unsent []qso.QSO
@@ -230,7 +241,11 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// inline editing. Non-focusable fields (WLStatus, Source) are
 		// skipped — they're read-only display fields.
 		if le.mode == edModeEdit && le.focus != qefWLStatus && le.focus != qefSource {
+			prev := le.fields[le.focus].Value()
 			le.fields[le.focus], _ = le.fields[le.focus].Update(msg)
+			if le.fields[le.focus].Value() != prev {
+				le.editRev++
+			}
 		}
 		return le, nil
 
@@ -373,7 +388,11 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return le, nil
 			default:
 				if le.focus != qefWLStatus && le.focus != qefSource {
+					prev := le.fields[le.focus].Value()
 					le.fields[le.focus], _ = le.fields[le.focus].Update(msg)
+					if le.fields[le.focus].Value() != prev {
+						le.editRev++
+					}
 				}
 			}
 			return le, nil
@@ -462,12 +481,21 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				q := le.qsos[idx]
 				le.editing = &q
+				le.editRev = 0
 				le.fillEditForm(&q)
 				le.fm.reset()
 				le.focusRow(int(qefCall))
 				le.mode = edModeEdit
-				// Synced QSOs: refresh the form with the server's current copy.
+				// Synced QSOs: refresh the form with the server's current copy —
+				// unless the local row carries changes that never reached the
+				// server (offline save, failed PATCH). Those must not be
+				// overwritten by the stale remote copy.
 				if q.WavelogID > 0 && !le.Offline && le.wlURL != "" && le.wlKey != "" {
+					if dirty, err := store.QSOHasPendingSync(le.db, q.ID); err == nil && dirty {
+						return le, func() tea.Msg {
+							return editorMsg{toastWarn: "Wavelog: local changes not synced yet — editing the local copy"}
+						}
+					}
 					return le, le.fetchRemoteCopy(q.WavelogID, q.ID)
 				}
 			}
@@ -718,6 +746,9 @@ func (le *LogbookEditor) doSave() tea.Cmd {
 		if q.WavelogID > 0 && le.wlURL != "" && le.wlKey != "" {
 			if le.Offline {
 				em.wlSyncPending = true
+				if derr := store.SetWavelogDirty(le.db, id, true); derr != nil {
+					applog.Warn("Wavelog: failed to mark pending sync", "qso_id", id, "error", derr)
+				}
 				return em
 			}
 			syncErr := wavelog.UpdateQSO(le.wlURL, le.wlKey, q.WavelogID, buildUpdateInput(q))
@@ -727,14 +758,25 @@ func (le *LogbookEditor) doSave() tea.Cmd {
 					// stale; clear it so the row is honest again.
 					if serr := store.SetWavelogID(le.db, id, 0); serr == nil {
 						em.wlSyncGone = true
+						if derr := store.SetWavelogDirty(le.db, id, false); derr != nil {
+							applog.Warn("Wavelog: failed to clear pending sync", "qso_id", id, "error", derr)
+						}
 					} else {
 						em.wlSyncErr = wavelog.FriendlyError(syncErr).Error()
 					}
 				} else {
+					// Transient PATCH failure — the local row now diverges from
+					// the remote copy; record that durably.
 					em.wlSyncErr = wavelog.FriendlyError(syncErr).Error()
+					if derr := store.SetWavelogDirty(le.db, id, true); derr != nil {
+						applog.Warn("Wavelog: failed to mark pending sync", "qso_id", id, "error", derr)
+					}
 				}
 			} else {
 				em.wlSyncOK = true
+				if derr := store.SetWavelogDirty(le.db, id, false); derr != nil {
+					applog.Warn("Wavelog: failed to clear pending sync", "qso_id", id, "error", derr)
+				}
 			}
 		}
 		return em
@@ -876,7 +918,6 @@ func (le *LogbookEditor) runDownload(op *downloadOp, url, key, sid string, fetch
 
 	var inserted, dupes, failed int
 	totalExported := result.ExportedQSOs
-	idIdx := 0               // remote-id cursor, aligned 1:1 with exported rows
 	const batchInterval = 50 // report progress every 50 QSOs for smooth but efficient UI
 
 	// Checkpoint discipline: the persisted Wavelog cursor may only advance
@@ -909,13 +950,14 @@ func (le *LogbookEditor) runDownload(op *downloadOp, url, key, sid string, fetch
 
 		qs := qso.ParseADIFRecord(r, "wavelog")
 
-		// Remote ids are aligned 1:1 with the exported rows (both ordered
-		// ascending by id), so every scanned record consumes one slot —
-		// including records that fail validation below.
-		if idIdx < len(result.WavelogIDs) {
-			qs.WavelogID = result.WavelogIDs[idIdx]
+		// Remote ids are matched by verified identity (call/band/mode/
+		// date/time), never by position: a failed or mismatched id page
+		// leaves its records without ids, and the checkpoint freezes on
+		// them instead of skipping past.
+		if len(result.WavelogIDsByKey) > 0 {
+			qs.WavelogID = result.WavelogIDsByKey[wavelog.MakeQSOIDKeyFromADIF(
+				qs.Call, qs.Band, qs.Mode, qs.Submode, qs.QSODate, qs.TimeOn)]
 		}
-		idIdx++
 
 		// Enrich: compute distance/bearing if both grids are available.
 		if myGrid := strings.TrimSpace(le.logStationGrid); myGrid != "" && qs.GridSquare != "" {
@@ -1198,6 +1240,10 @@ func sanitizeFilename(s string) string {
 	return repl.Replace(s)
 }
 
+// errExportCancelled aborts the snapshot stream when the user cancels the
+// export — distinguished from real errors so no failure toast is shown.
+var errExportCancelled = errors.New("export cancelled")
+
 // runExport performs ADIF export to a local file with progress reporting.
 // The file is written to a sibling temp path and promoted to the target only
 // after a fully successful write and close — a failed or aborted export never
@@ -1255,38 +1301,37 @@ func (le *LogbookEditor) runExport(op *downloadOp, path string) {
 		return
 	}
 
-	// Stream QSOs from DB with pagination to avoid loading all into memory.
-	const pageSize = 500
-	for offset := 0; offset < total; offset += pageSize {
+	// Stream QSOs through a single read-only snapshot transaction with a
+	// keyset cursor: a QSO inserted while the export runs (e.g. WSJT-X
+	// logging) can neither shift the pages nor duplicate/omit records.
+	// Atomic temp-file promotion protects the destination file; only the
+	// snapshot protects export consistency.
+	orderAsc := le.contestID != ""
+	streamErr := store.ExportQSOsSnapshot(db, le.contestID, orderAsc, func(q qso.QSO) error {
 		if op.cancelled() {
-			f.Close()
-			os.Remove(tmpPath)
-			msgCh <- editorMsg{dlCount: written, dlAborted: true, dlDone: true}
-			return
+			return errExportCancelled
 		}
-
-		limit := pageSize
-		if offset+limit > total {
-			limit = total - offset
+		if _, err := fmt.Fprintln(f, q.ToADIF()); err != nil {
+			return fmt.Errorf("write: %w", err)
 		}
-		qsos, err := store.ListQSOsPage(db, limit, offset, le.contestID, le.contestID != "")
-		if err != nil {
-			fail("database read error: " + err.Error())
-			return
+		written++
+		if written%500 == 0 {
+			op.send(editorMsg{dlProgress: total, dlTotal: total, dlCount: written})
 		}
-		for _, q := range qsos {
-			if _, err := fmt.Fprintln(f, q.ToADIF()); err != nil {
-				fail("write error: " + err.Error())
-				return
-			}
-			written++
-		}
-		// Report progress after each page.
-		op.send(editorMsg{dlProgress: total, dlTotal: total, dlCount: written})
-
-		if written%1000 == 0 && written > 0 {
+		if written%1000 == 0 {
 			applog.Info("ADIF export: progress", "written", written, "total", total)
 		}
+		return nil
+	})
+	if streamErr == errExportCancelled {
+		f.Close()
+		os.Remove(tmpPath)
+		msgCh <- editorMsg{dlCount: written, dlAborted: true, dlDone: true}
+		return
+	}
+	if streamErr != nil {
+		fail(streamErr.Error())
+		return
 	}
 
 	// Check the close error: buffered writes can fail only at Close, so the

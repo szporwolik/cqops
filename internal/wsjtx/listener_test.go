@@ -1,6 +1,8 @@
 package wsjtx
 
 import (
+	"bytes"
+	"encoding/binary"
 	"net"
 	"reflect"
 	"testing"
@@ -328,5 +330,169 @@ func TestStopDoesNotDeadlockWithPendingMessages(t *testing.T) {
 			t.Fatalf("iteration %d: Stop deadlocked while messages were pending", i)
 		}
 		close(stopFlood)
+	}
+}
+
+// =============================================================================
+// Reader shutdown with saturated queues
+// =============================================================================
+//
+// ListenToWsjtx sends to msgCh/errCh with BLOCKING sends. Closing the UDP
+// socket only unblocks its next ReadFromUDP — a reader already waiting to
+// send into a full channel can never observe the close. Shutdown must keep
+// draining both channels until the producer exits.
+
+// wsjtxPacket builds a valid WSJT-X packet (magic + schema + type + payload)
+// in the wire format wsjtx-go expects.
+func wsjtxPacket(msgType uint32, payload func(put32 func(uint32), putStr func(string))) []byte {
+	var b bytes.Buffer
+	put32 := func(v uint32) { _ = binary.Write(&b, binary.BigEndian, v) }
+	putStr := func(s string) {
+		put32(uint32(len(s)))
+		b.WriteString(s)
+	}
+	put32(0xadbccbda) // magic
+	put32(2)          // schema qDataStream5_2
+	put32(msgType)
+	payload(put32, putStr)
+	return b.Bytes()
+}
+
+// heartbeatPacket is a valid HeartbeatMessage packet.
+func heartbeatPacket() []byte {
+	return wsjtxPacket(0, func(put32 func(uint32), putStr func(string)) {
+		putStr("TST")
+		put32(2)
+		putStr("2.7")
+		putStr("2.7")
+	})
+}
+
+// loggedADIFPacket is a valid LoggedAdifMessage packet, which exercises the
+// OnADIF callback path in the event loop.
+func loggedADIFPacket() []byte {
+	return wsjtxPacket(12, func(put32 func(uint32), putStr func(string)) {
+		putStr("TST")
+		putStr("<ADIF_VER:5>3.1.0 <EOH>")
+	})
+}
+
+// TestDrainChannelsUnblocksProducer verifies the drainer keeps consuming
+// until both channels close, so a producer blocked on a full channel can
+// finish its send and exit.
+func TestDrainChannelsUnblocksProducer(t *testing.T) {
+	msgCh := make(chan interface{}, 1)
+	errCh := make(chan error, 1)
+
+	producerDone := make(chan struct{})
+	go func() {
+		defer close(producerDone)
+		defer close(msgCh)
+		defer close(errCh)
+		for i := 0; i < 3; i++ {
+			msgCh <- wsjtx.HeartbeatMessage{}
+		}
+	}()
+
+	// Let the producer fill the buffer and block on the second send.
+	time.Sleep(20 * time.Millisecond)
+
+	done := make(chan struct{})
+	go func() { drainChannels(msgCh, errCh); close(done) }()
+
+	select {
+	case <-producerDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("producer stayed blocked on a full channel")
+	}
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("drainChannels did not return after the channels closed")
+	}
+}
+
+// TestFinishStopUnblocksReaderStuckOnFullChannel deterministically
+// reproduces the shutdown deadlock: a real ListenToWsjtx reader is flooded
+// until it blocks sending into a full msgCh (no event loop running), and
+// finishStop must still complete — draining the channels lets the blocked
+// send finish, the reader then observes the closed socket, and exits.
+func TestFinishStopUnblocksReaderStuckOnFullChannel(t *testing.T) {
+	srv, err := wsjtx.MakeServerGiven(net.ParseIP("127.0.0.1"), 0)
+	if err != nil {
+		t.Fatalf("MakeServerGiven: %v", err)
+	}
+	msgCh := make(chan interface{}, 1)
+	errCh := make(chan error, 1)
+
+	l := NewListener()
+	l.readerWG.Add(1)
+	go func() {
+		defer l.readerWG.Done()
+		srv.ListenToWsjtx(msgCh, errCh)
+	}()
+
+	addr := srv.ServingAddr.(*net.UDPAddr)
+	conn, err := net.DialUDP("udp", nil, addr)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+
+	// Flood the reader until it blocks on the second channel send.
+	pkt := heartbeatPacket()
+	for i := 0; i < 500; i++ {
+		if _, err := conn.Write(pkt); err != nil {
+			t.Fatalf("write: %v", err)
+		}
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() { l.finishStop(&srv, stop, msgCh, errCh); close(done) }()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("finishStop deadlocked: reader stuck on a full channel was never drained")
+	}
+}
+
+// TestStopCompletesWithBackedUpTraffic is the end-to-end shutdown test:
+// a delayed OnADIF handler backs the message queue up until the real UDP
+// reader blocks on a full channel, and Stop must still return promptly.
+func TestStopCompletesWithBackedUpTraffic(t *testing.T) {
+	for i := 0; i < 5; i++ {
+		l := NewListener()
+		// Delayed handler — the event loop drains slowly, so traffic
+		// backs up until the reader blocks on a full channel.
+		l.OnADIF = func(string) { time.Sleep(time.Millisecond) }
+		if err := l.Start("127.0.0.1", 0); err != nil {
+			t.Fatalf("start: %v", err)
+		}
+
+		l.mu.Lock()
+		addr := l.server.ServingAddr.(*net.UDPAddr)
+		l.mu.Unlock()
+		conn, err := net.DialUDP("udp", nil, addr)
+		if err != nil {
+			t.Fatalf("dial: %v", err)
+		}
+
+		pkt := loggedADIFPacket()
+		for j := 0; j < 400; j++ {
+			conn.Write(pkt)
+		}
+
+		done := make(chan struct{})
+		go func() { l.Stop(); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			conn.Close()
+			t.Fatalf("iteration %d: Stop hung with backed-up UDP traffic", i)
+		}
+		conn.Close()
 	}
 }

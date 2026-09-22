@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/callbook"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
@@ -1155,21 +1156,29 @@ func logStatsSigFor(call, band, mode string) string {
 }
 
 // fetchLogbookStatsCmd returns a tea.Cmd that runs GetLogbookStats
-// asynchronously, avoiding DB I/O during View().
+// asynchronously, avoiding DB I/O during View(). The logbook name is
+// captured so a late result can never be applied after a logbook switch.
 func (m *Model) fetchLogbookStatsCmd(call, band, mode string) tea.Cmd {
 	db := m.App.DB
+	logbook := m.App.LogbookName
 	return func() tea.Msg {
 		stats, err := store.GetLogbookStats(db, call, band, mode)
 		if err != nil {
-			return logbookStatsMsg{}
+			return logbookStatsMsg{logbook: logbook}
 		}
-		return logbookStatsMsg{stats: stats, sig: logStatsSigFor(call, band, mode)}
+		return logbookStatsMsg{stats: stats, sig: logStatsSigFor(call, band, mode), logbook: logbook}
 	}
 }
 
 // handleLogbookStats stores the async result for use by the next View().
+// Results from a previous logbook are discarded — they would otherwise
+// drive worked/new-call badges for the wrong logbook's data.
 func (m *Model) handleLogbookStats(msg logbookStatsMsg) {
 	if msg.sig == "" {
+		return
+	}
+	if msg.logbook != "" && msg.logbook != m.App.LogbookName {
+		applog.Debug("logbook stats: stale result discarded", "from", msg.logbook, "current", m.App.LogbookName)
 		return
 	}
 	m.rc.logStats = msg.stats

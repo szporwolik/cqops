@@ -854,6 +854,19 @@ var partnerEmpty bool
 // lastRecentIDs holds the last pushed QSO ID list for change detection.
 var lastRecentIDs []int64
 
+// pushDashboardRecentAndToday force-pushes the recent-QSO and today panels.
+// Owner-loop only — used after background enrichment changes QSO fields
+// without changing their ids (the change-detection cache would otherwise
+// keep stale rows visible).
+func (m *Model) pushDashboardRecentAndToday() {
+	if m.http.client == nil || !m.http.online {
+		return
+	}
+	ds := m.http.client.State()
+	m.forcePushDashboardRecent(ds)
+	m.pushDashboardToday(ds)
+}
+
 // forcePushDashboardRecent clears the change-detection cache and pushes.
 // Use when QSO fields (country, grid, distance) change without ID changes,
 // e.g. after WSJT-X enrichment.

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,6 +27,13 @@ func EnsureConfig() (*Config, string, error) {
 
 	cfg, err := Load(configPath)
 	if err != nil {
+		// Create defaults only when the config file does not exist. Any
+		// other failure — YAML syntax error, unreadable file — must be
+		// reported as-is: writing defaults here would overwrite the
+		// user's configuration.
+		if !errors.Is(err, os.ErrNotExist) {
+			return nil, "", err
+		}
 		cfg = DefaultConfig()
 		if saveErr := Save(configPath, cfg); saveErr != nil {
 			return nil, "", fmt.Errorf("save default config: %w", saveErr)

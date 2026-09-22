@@ -57,6 +57,7 @@ type QSO struct {
 	MySIG           string // station Special Interest Group (e.g. "SOTA", "POTA")
 	MySIGInfo       string // station Special Interest Group info (e.g. summit/park ref)
 	WavelogID       int64  // remote QSO id from Wavelog (0 = not in Wavelog); the single source of truth for uploaded state
+	WavelogDirty    bool   // local row diverged from the Wavelog copy (PATCH deferred or failed) — remote refreshes must not overwrite it
 	ContestID       string // internal contest hash (e.g. "7e0644bc0522"), for DB filtering
 	ContestADIFID   string // ADIF Contest ID (e.g. "CQ-WPX-CW"), for ADIF export
 	CreatedAt       time.Time

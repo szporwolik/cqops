@@ -20,7 +20,14 @@ const reconcileThreshold = 25
 // uploadPrepMsg carries the prepared unsent QSO set from the background
 // upload-preparation worker. The worker only reads the database and returns
 // data — the editor state is updated on the update loop.
+//
+// gen and db bind the message to the editor instance and database the
+// operation was started on: a result delivered to a replacement editor
+// (e.g. after a logbook switch) must be discarded, never applied against
+// another logbook's rows or Wavelog configuration.
 type uploadPrepMsg struct {
+	gen           uint64
+	db            *sql.DB
 	unsent        []qso.QSO
 	skipped       int
 	firstSkipCall string
@@ -30,8 +37,10 @@ type uploadPrepMsg struct {
 
 func (le *LogbookEditor) doBatchUpload() tea.Cmd {
 	// Capture everything the background worker needs — it must not read the
-	// editor from the command goroutine.
+	// editor from the command goroutine. The generation and database bind
+	// the result to this editor instance.
 	db := le.db
+	gen := le.gen
 	qsos := le.qsos
 
 	applog.Info("Wavelog: batch upload starting")
@@ -40,7 +49,7 @@ func (le *LogbookEditor) doBatchUpload() tea.Cmd {
 			total, err := store.CountUnsentQSOs(db)
 			if err != nil {
 				applog.Error("Wavelog: batch upload — cannot count unsent QSOs", "error", err)
-				return uploadPrepMsg{err: fmt.Errorf("cannot read logbook: %w", err)}
+				return uploadPrepMsg{err: fmt.Errorf("cannot read logbook: %w", err), gen: gen, db: db}
 			}
 			applog.Info("Wavelog: batch upload — unsent rows in log", "unsent", total)
 
@@ -49,9 +58,12 @@ func (le *LogbookEditor) doBatchUpload() tea.Cmd {
 			rows, err := store.ListUnsentQSOs(db)
 			if err != nil {
 				applog.Error("Wavelog: batch upload — cannot list unsent QSOs", "error", err)
-				return uploadPrepMsg{err: fmt.Errorf("cannot read logbook: %w", err)}
+				return uploadPrepMsg{err: fmt.Errorf("cannot read logbook: %w", err), gen: gen, db: db}
 			}
-			return buildUploadPrep(rows)
+			msg := buildUploadPrep(rows)
+			msg.gen = gen
+			msg.db = db
+			return msg
 		}
 
 		// No database — filter the in-memory list (tests).
@@ -61,7 +73,10 @@ func (le *LogbookEditor) doBatchUpload() tea.Cmd {
 				all = append(all, q)
 			}
 		}
-		return buildUploadPrep(all)
+		msg := buildUploadPrep(all)
+		msg.gen = gen
+		msg.db = db
+		return msg
 	}
 }
 
@@ -89,8 +104,15 @@ func buildUploadPrep(eligible []qso.QSO) uploadPrepMsg {
 
 // handleUploadPrep consumes the prepared unsent set on the update loop:
 // reports skipped rows, shows the normalize dialog on station-field
-// mismatches, or launches the actual upload.
+// mismatches, or launches the actual upload. Results bound to a different
+// editor generation or database (logbook switched while preparation ran)
+// are discarded — they must never be uploaded against another logbook.
 func (le *LogbookEditor) handleUploadPrep(msg uploadPrepMsg) (tea.Model, tea.Cmd) {
+	if msg.gen != le.gen || msg.db != le.db {
+		applog.Warn("Wavelog: discarding upload-prep result for a replaced editor",
+			fmt.Sprintf("msg_gen=%d editor_gen=%d", msg.gen, le.gen))
+		return le, nil
+	}
 	if msg.err != nil {
 		return le, func() tea.Msg { return editorMsg{wlOK: false, err: msg.err} }
 	}
@@ -161,6 +183,7 @@ func (le *LogbookEditor) detectUploadMismatches(unsent []qso.QSO) ([]qso.QSO, []
 
 func (le *LogbookEditor) doNormalizeAndUpload() tea.Cmd {
 	db := le.db
+	gen := le.gen
 	mismatch := le.mismatchQSOs
 
 	// Normalize only the fields the confirmation explicitly listed as
@@ -211,7 +234,7 @@ func (le *LogbookEditor) doNormalizeAndUpload() tea.Cmd {
 				}
 			}
 		}
-		return editorMsg{normalized: len(normIDs)}
+		return editorMsg{normalized: len(normIDs), gen: gen}
 	}
 }
 

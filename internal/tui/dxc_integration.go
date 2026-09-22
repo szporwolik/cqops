@@ -47,28 +47,38 @@ func (m *Model) fetchDXCPathSpotsCmd(band string) tea.Cmd {
 	}
 }
 
+// dxcDupeSigFor builds the cache signature for the path-line dupe set. It
+// includes the logbook identity and the dupe revision: switching logbooks or
+// logging a QSO changes the key, so stale results can never be reused.
+func dxcDupeSigFor(date, contest, logbook string, gen int) string {
+	return fmt.Sprintf("%s|%s|%s|%d", date, contest, logbook, gen)
+}
+
 // fetchDXCPathDupesCmd loads the path-line dupe set off the render path.
-func (m *Model) fetchDXCPathDupesCmd(date, contest string) tea.Cmd {
+func (m *Model) fetchDXCPathDupesCmd(date, contest, logbook string, gen int) tea.Cmd {
 	db := m.App.DB
+	sig := dxcDupeSigFor(date, contest, logbook, gen)
 	return func() tea.Msg {
 		ds, err := store.DXCDupeSet(db, date, contest)
 		if err != nil {
-			// Record the signature anyway so a failing query cannot re-dispatch
-			// on every update.
+			// Record the signature anyway so a failing query cannot
+			// re-dispatch on every update.
 			applog.Debug("DXC: path dupe set load failed", "date", date, "error", err)
-			return dxcPathDupesMsg{sig: date + "|" + contest}
+			return dxcPathDupesMsg{sig: sig}
 		}
-		return dxcPathDupesMsg{sig: date + "|" + contest, dupeSet: ds}
+		return dxcPathDupesMsg{sig: sig, dupeSet: ds}
 	}
 }
 
 // handleDXCPathSpots stores the async spot fallback for the next View().
+// The fetch timestamp drives age-based expiry of the time-dependent results.
 func (m *Model) handleDXCPathSpots(msg dxcPathSpotsMsg) {
 	if msg.band == "" {
 		return
 	}
 	m.rc.dxcSpots = msg.spots
 	m.rc.dxcSpotsBand = msg.band
+	m.rc.dxcSpotsAt = time.Now()
 }
 
 // handleDXCPathDupes stores the async dupe set for the next View().
@@ -226,28 +236,53 @@ func (m *Model) maybeDXC() tea.Cmd {
 		return nil
 	}
 
-	// Already connected — check for disconnect, then drain spots (throttled to 4s).
-	if m.dxc.client != nil && m.dxc.online {
-		// Check if the connection dropped.
-		select {
-		case status, ok := <-m.dxc.client.Status():
-			if ok && !status {
-				applog.Warn("DXC: connection lost — client will reconnect")
-				m.dxc.online = false
-				m.rc.status = ""
-				// Keep the client: after the first connection it owns
-				// reconnection. Nil-ing it here would orphan its goroutines.
-				return nil
+	// Consume connection-status events whenever a client exists — after its
+	// first connection the client owns reconnection, and BOTH transitions
+	// (lost and restored) must reach the UI. Draining only while online
+	// left the reconnect event unconsumed, so the UI stayed offline forever
+	// even though the client had already reconnected.
+	if m.dxc.client != nil {
+	drainLoop:
+		for {
+			select {
+			case status, ok := <-m.dxc.client.Status():
+				if !ok {
+					break drainLoop // channel closed — client being torn down
+				}
+				if status {
+					if !m.dxc.online {
+						m.dxc.online = true
+						m.dxc.reconnectIdx = 0
+						m.rc.status = ""
+						if m.dxc.connecting {
+							// First connect — the dxcStatusMsg handler
+							// reports the success toast.
+							applog.Info("DXC: connected OK")
+						} else {
+							applog.Info("DXC: reconnected")
+							m.toasts.Success("DXC: connected")
+						}
+					}
+				} else if m.dxc.online {
+					applog.Warn("DXC: connection lost — client will reconnect")
+					m.dxc.online = false
+					m.rc.status = ""
+				}
+			default:
+				break drainLoop
 			}
-		default:
 		}
-		// Drain spots at most once every 4 seconds to reduce DB write pressure.
-		// The client buffers them; drainDXCSpots empties the entire channel at once.
-		if time.Since(m.dxc.lastDrain) >= 4*time.Second {
-			m.dxc.lastDrain = time.Now()
-			return m.drainDXCSpots()
+
+		// Connected — drain spots at most once every 4 seconds to reduce DB
+		// write pressure. The client buffers them; drainDXCSpots empties the
+		// entire channel at once.
+		if m.dxc.online {
+			if time.Since(m.dxc.lastDrain) >= 4*time.Second {
+				m.dxc.lastDrain = time.Now()
+				return m.drainDXCSpots()
+			}
+			return nil
 		}
-		return nil
 	}
 
 	// Connecting in progress — don't double-connect.
@@ -255,9 +290,8 @@ func (m *Model) maybeDXC() tea.Cmd {
 		return nil
 	}
 
-	// Reconnect delay — this only applies before the first successful
-	// connection. Once the client has connected, IT owns reconnection;
-	// the TUI just waits for the next status update.
+	// After the first successful connection the client owns reconnection —
+	// the TUI just waits for the next status event (consumed above).
 	if m.dxc.client != nil && m.dxc.client.ConnectedOnce() {
 		return nil
 	}

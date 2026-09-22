@@ -1131,3 +1131,115 @@ func TestShiftBackspaceClearsFocusedField(t *testing.T) {
 		t.Errorf("plain backspace deleted wrong: %q", got)
 	}
 }
+
+// TestUpdateFilteredTableAppliesOnlyMatchingResults verifies the callsign
+// filter query result is installed on the owner loop only, and that a stale
+// result (the operator changed the callsign while the query ran) is dropped.
+// The worker itself must never touch the table component.
+func TestUpdateFilteredTableAppliesOnlyMatchingResults(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.fields[fieldCall].SetValue("SP9MOA")
+
+	cmd := m.updateFilteredTable()
+	if cmd == nil {
+		t.Fatal("updateFilteredTable returned nil for an entered callsign")
+	}
+	cfr, ok := execCmd(cmd).(callFilterResultMsg)
+	if !ok {
+		t.Fatalf("expected callFilterResultMsg, got %T", execCmd(cmd))
+	}
+	if cfr.call != "SP9MOA" {
+		t.Errorf("call = %q, want SP9MOA", cfr.call)
+	}
+	if m.callRecentQSOs.IsFiltered() {
+		t.Error("filter must not be applied by the worker itself")
+	}
+
+	// The operator cleared the callsign while the query ran — the stale
+	// result must not install a filter.
+	m.fields[fieldCall].SetValue("")
+	m.applyCallFilterResult(cfr)
+	if m.callRecentQSOs.IsFiltered() {
+		t.Error("stale result installed a filter after the callsign was cleared")
+	}
+
+	// With the matching callsign, the owner loop applies the result.
+	m.fields[fieldCall].SetValue("SP9MOA")
+	m.applyCallFilterResult(cfr)
+	if !m.callRecentQSOs.IsFiltered() {
+		t.Error("matching result should install the filter on the owner loop")
+	}
+}
+
+// TestQSORefreshFromPreviousLogbookDropped verifies a late QSO-refresh result
+// from a previous logbook never replaces the current logbook's table.
+func TestQSORefreshFromPreviousLogbookDropped(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.App.LogbookName = "A"
+
+	cmd := m.refreshQSOS()
+	if cmd == nil {
+		t.Fatal("refreshQSOS returned nil")
+	}
+	ref, ok := execCmd(cmd).(qsoRefreshedMsg)
+	if !ok {
+		t.Fatalf("expected qsoRefreshedMsg, got %T", execCmd(cmd))
+	}
+	if ref.logbook != "A" {
+		t.Fatalf("result logbook = %q, want A", ref.logbook)
+	}
+
+	// The user switched to logbook B before the result arrived; B's table
+	// contents must survive the stale result.
+	m.App.LogbookName = "B"
+	m.qsos = []qso.QSO{{ID: 99, Call: "B-QSO"}}
+	m.handleLookupResultMsg(ref, nil)
+
+	if len(m.qsos) != 1 || m.qsos[0].Call != "B-QSO" {
+		t.Errorf("stale refresh replaced the current table: %+v", m.qsos)
+	}
+
+	// The same result applies cleanly when it belongs to the current logbook.
+	m.App.LogbookName = "A"
+	m.handleLookupResultMsg(ref, nil)
+	if len(m.qsos) != len(ref.qsos) {
+		t.Errorf("matching refresh not applied: %d rows, want %d", len(m.qsos), len(ref.qsos))
+	}
+}
+
+// TestLogbookStatsFromPreviousLogbookDropped verifies a delayed statistics
+// result from a previous logbook cannot drive worked/new-call badges for the
+// current logbook.
+func TestLogbookStatsFromPreviousLogbookDropped(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.App.LogbookName = "A"
+
+	cmd := m.fetchLogbookStatsCmd("SP9MOA", "20m", "FT8")
+	if cmd == nil {
+		t.Fatal("fetchLogbookStatsCmd returned nil")
+	}
+	ls, ok := execCmd(cmd).(logbookStatsMsg)
+	if !ok {
+		t.Fatalf("expected logbookStatsMsg, got %T", execCmd(cmd))
+	}
+	if ls.sig == "" {
+		t.Fatal("stats query did not return a signature")
+	}
+	if ls.logbook != "A" {
+		t.Fatalf("stats logbook = %q, want A", ls.logbook)
+	}
+
+	// Delivered after a switch to B — must be discarded.
+	m.App.LogbookName = "B"
+	m.handleLogbookStats(ls)
+	if m.rc.logStatsSig != "" {
+		t.Errorf("stale stats applied: sig %q", m.rc.logStatsSig)
+	}
+
+	// Delivered for the matching logbook — applied.
+	m.App.LogbookName = "A"
+	m.handleLogbookStats(ls)
+	if m.rc.logStatsSig != ls.sig {
+		t.Errorf("matching stats not applied: sig %q, want %q", m.rc.logStatsSig, ls.sig)
+	}
+}

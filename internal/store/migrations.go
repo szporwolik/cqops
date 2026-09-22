@@ -54,6 +54,7 @@ var migrations = []string{
 		sig_info TEXT DEFAULT '',
 
 		wavelog_id INTEGER DEFAULT 0,
+		wavelog_dirty INTEGER DEFAULT 0,
 		station_callsign TEXT,
 		operator TEXT,
 		my_gridsquare TEXT,
@@ -192,6 +193,9 @@ func Migrate(db *sql.DB) error {
 		if err := migrateAddColumn(db, "qsos", "wavelog_id", "INTEGER DEFAULT 0"); err != nil {
 			return fmt.Errorf("add column wavelog_id: %w", err)
 		}
+		if err := migrateAddColumn(db, "qsos", "wavelog_dirty", "INTEGER DEFAULT 0"); err != nil {
+			return fmt.Errorf("add column wavelog_dirty: %w", err)
+		}
 		if err := ensureColumnIndexes(db); err != nil {
 			return err
 		}
@@ -226,6 +230,9 @@ func Migrate(db *sql.DB) error {
 	}
 	if err := migrateAddColumn(db, "qsos", "wavelog_id", "INTEGER DEFAULT 0"); err != nil {
 		return fmt.Errorf("add column wavelog_id: %w", err)
+	}
+	if err := migrateAddColumn(db, "qsos", "wavelog_dirty", "INTEGER DEFAULT 0"); err != nil {
+		return fmt.Errorf("add column wavelog_dirty: %w", err)
 	}
 	if err := ensureColumnIndexes(db); err != nil {
 		return err

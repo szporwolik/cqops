@@ -108,6 +108,44 @@ func TestServerTLSIdleConnDoesNotBlockOtherClients(t *testing.T) {
 	}
 }
 
+// TestServerTLSManyIdleConnsDoNotSerialize is the regression test for the
+// serialized-classification bug: each idle connection used to burn its 3 s
+// deadline on the sole Accept path, so ten of them delayed a legitimate
+// browser by ~30 s. Classification now runs concurrently behind a bounded
+// slot pool, so idle clients cost only their own slot.
+func TestServerTLSManyIdleConnsDoNotSerialize(t *testing.T) {
+	srv := startTLSServer(t)
+
+	const idleConns = 10
+	var idle []net.Conn
+	for i := 0; i < idleConns; i++ {
+		c, err := net.Dial("tcp", srv.Addr())
+		if err != nil {
+			t.Fatalf("dial idle conn %d: %v", i, err)
+		}
+		idle = append(idle, c)
+	}
+	defer func() {
+		for _, c := range idle {
+			c.Close()
+		}
+	}()
+
+	client := testTLSClient()
+	start := time.Now()
+	resp, err := client.Get("https://" + srv.Addr() + "/")
+	if err != nil {
+		t.Fatalf("GET behind %d idle connections: %v", idleConns, err)
+	}
+	resp.Body.Close()
+
+	// With concurrent classification the request completes almost
+	// immediately; serially it would take ~30 s (10 × 3 s deadline).
+	if elapsed := time.Since(start); elapsed > 8*time.Second {
+		t.Fatalf("%d idle connections blocked the dashboard for %v", idleConns, elapsed)
+	}
+}
+
 // TestServerTLSPeerDisconnectDoesNotKillServer is the regression test for
 // a peer's EOF terminating Serve: a connect-then-hang-up must be treated as
 // an ordinary per-connection failure, not a fatal listener error.

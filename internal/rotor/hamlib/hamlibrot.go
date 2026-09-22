@@ -53,21 +53,26 @@ func (c *Client) Status(ctx context.Context) (rotor.Status, error) {
 		return rotor.Status{}, err
 	}
 
-	// 'p' returns "azimuth\nelevation\n" in line mode.
+	// '+p' (extended protocol) returns:
+	//   get_pos:
+	//   Azimuth: 180.500000
+	//   Elevation: 45.250000
+	//   RPRT 0
 	raw, err := c.cmd(conn, "p")
 	if err != nil {
 		c.dropConn()
 		return rotor.Status{}, fmt.Errorf("rotor position: %w", err)
 	}
 
-	lines := strings.Split(strings.TrimSpace(raw), "\n")
-	if len(lines) < 2 {
-		// Some backends may return only azimuth.
-		lines = append(lines, "0.0")
+	var az, el float64
+	for _, line := range strings.Split(strings.TrimSpace(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Azimuth:") {
+			az = parseFloat(line[len("Azimuth:"):])
+		} else if strings.HasPrefix(line, "Elevation:") {
+			el = parseFloat(line[len("Elevation:"):])
+		}
 	}
-
-	az := parseFloat(lines[0])
-	el := parseFloat(lines[1])
 
 	// Clamp to reasonable ranges.
 	az = clamp(az, 0, 360)
@@ -129,7 +134,17 @@ func (c *Client) GetName(ctx context.Context) (string, error) {
 		c.dropConn()
 		return "", fmt.Errorf("rotor name: %w", err)
 	}
-	return strings.TrimSpace(raw), nil
+	// '+_' (extended protocol) returns:
+	//   get_info:
+	//   Info: Model Name
+	//   RPRT 0
+	for _, line := range strings.Split(strings.TrimSpace(raw), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Info:") {
+			return strings.TrimSpace(line[len("Info:"):]), nil
+		}
+	}
+	return "", nil
 }
 
 // getConn returns the persistent connection or dials a new one.
@@ -161,16 +176,24 @@ func (c *Client) dropConn() {
 	}
 }
 
-// cmd sends a command and returns the complete response payload. rotctld
-// terminates every reply with an RPRT line, so the persistent reader consumes
-// whole lines until that terminator — a response split across TCP reads is
-// reassembled, buffered leftovers cannot leak into the next command, and an
-// acknowledgement cut short reports an error instead of success.
+// cmd sends a command and returns the complete response payload.
+//
+// Every command is sent with the '+' prefix, which requests the Extended
+// Response Protocol: rotctld then echoes the command, returns data values
+// as "Token: value" lines, and ALWAYS terminates the reply with an
+// "RPRT x" line. The default protocol only terminates set-command replies
+// with RPRT — get replies (e.g. 'p') are bare value lines with no
+// terminator, so waiting for RPRT there would time out on a healthy rotor.
+//
+// The persistent reader consumes whole lines until the RPRT terminator, so
+// a response split across TCP reads is reassembled, buffered leftovers
+// cannot leak into the next command, and an acknowledgement cut short
+// reports an error instead of success.
 func (c *Client) cmd(conn net.Conn, cmd string) (string, error) {
 	if c.timeout > 0 {
 		conn.SetDeadline(time.Now().Add(c.timeout))
 	}
-	if _, err := fmt.Fprintf(conn, "%s\r\n", cmd); err != nil {
+	if _, err := fmt.Fprintf(conn, "+%s\r\n", cmd); err != nil {
 		return "", err
 	}
 

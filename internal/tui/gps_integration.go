@@ -16,6 +16,12 @@ import (
 // GPS integration — serial NMEA receiver, position tracking, status display.
 // =============================================================================
 
+// gpsFixTTL is how long a GPS fix may be advertised without a fresh valid
+// sentence. Receivers emit NMEA at ~1 Hz, so a position whose last update
+// is older than this means reception was lost — even when no explicit void
+// sentence ever arrived.
+var gpsFixTTL = 15 * time.Second
+
 // gpsState holds the live GPS integration state.
 type gpsState struct {
 	client   *gps.Client
@@ -224,8 +230,13 @@ func (m *Model) handleGPSTick() tea.Cmd {
 	// use the client's IsRunning to detect a dead loop.
 	m.gps.online = m.gps.client.IsRunning()
 
+	// A fix must be fresh: a position whose last valid update is older than
+	// gpsFixTTL means reception was lost, even when no explicit void
+	// sentence arrived.
+	fixValid := pos.IsValid() && time.Since(pos.UpdatedAt) <= gpsFixTTL
+
 	// Process position data.
-	if m.gps.online && pos.IsValid() {
+	if m.gps.online && fixValid {
 		m.gps.hasFix = true
 		m.gps.lastSeen = time.Now()
 		m.gps.lastLat = pos.Lat
@@ -243,21 +254,33 @@ func (m *Model) handleGPSTick() tea.Cmd {
 				"lat", fmt.Sprintf("%.6f", pos.Lat),
 				"lon", fmt.Sprintf("%.6f", pos.Lon),
 			)
+			// Propagate EVERY position change to the app: APRS beacons and
+			// the effective grid follow movement instead of freezing at the
+			// first acquisition.
+			m.App.SetGPSGrid(m.gps.lastGrid, true)
+			// A movement while the override is active updates the station
+			// grid in place; the saved fallback grid stays untouched.
+			if m.gps.originalStationGrid != "" && m.App.Logbook != nil {
+				m.App.Logbook.Station.Grid = m.gps.lastGrid
+			}
 		}
 		if !prevFix {
 			m.App.SetGPSGrid(m.gps.lastGrid, true)
 		}
 	} else if m.gps.online {
-		// Online but no valid fix — normal during acquisition.
+		// Online but no valid fix — normal during acquisition, and also
+		// reached when the last fix aged out.
 		m.gps.hasFix = false
 		if prevFix {
 			m.App.SetGPSGrid(m.gps.lastGrid, false)
+			m.restoreGPSGridOverride()
 		}
 		m.gps.connectFailures = 0
 	} else {
 		m.gps.hasFix = false
 		if prevFix {
 			m.App.SetGPSGrid(m.gps.lastGrid, false)
+			m.restoreGPSGridOverride()
 		}
 	}
 

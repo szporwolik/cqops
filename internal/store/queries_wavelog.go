@@ -27,6 +27,33 @@ func SetWavelogID(db *sql.DB, id, remoteID int64) error {
 	return fmt.Errorf("set wavelog id: %w", err)
 }
 
+// SetWavelogDirty marks (or clears) the durable pending-sync flag on a local
+// QSO. It is set when the local row diverges from the Wavelog copy (PATCH
+// deferred in offline mode or failed) and cleared when the remote copy has
+// been brought in sync. A dirty row must never be overwritten by a remote
+// refresh, because the local copy holds changes the server does not have.
+func SetWavelogDirty(db *sql.DB, id int64, dirty bool) error {
+	v := 0
+	if dirty {
+		v = 1
+	}
+	_, err := db.Exec(`UPDATE qsos SET wavelog_dirty=? WHERE id=?`, v, id)
+	if err != nil {
+		return fmt.Errorf("set wavelog dirty: %w", err)
+	}
+	return nil
+}
+
+// QSOHasPendingSync reports whether the QSO has local changes that were not
+// yet pushed to Wavelog.
+func QSOHasPendingSync(db *sql.DB, id int64) (bool, error) {
+	var dirty int
+	if err := db.QueryRow(`SELECT wavelog_dirty FROM qsos WHERE id=?`, id).Scan(&dirty); err != nil {
+		return false, fmt.Errorf("qso pending sync: %w", err)
+	}
+	return dirty != 0, nil
+}
+
 // NormalizeStationFields updates station_callsign, operator and my_gridsquare
 // for a set of QSOs. Only the fields with a non-empty replacement value are
 // updated — empty means "keep what is stored" (e.g. preserving original

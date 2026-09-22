@@ -206,6 +206,9 @@ type callbookResultMsg struct {
 	Call string
 	Data *callbook.Result
 	Err  error
+	// Logbook the lookup ran against (captured at cmd creation); results
+	// from a previous logbook are discarded after a switch.
+	Logbook string
 }
 
 type qrzStatusMsg struct {
@@ -216,6 +219,8 @@ type wlResultMsg struct {
 	Data       *wavelog.PrivateLookupResult
 	Err        error
 	IsFallback bool // true when this is a base-call lookup triggered by a sparse suffix result
+	// Logbook the lookup ran against; results from a previous logbook are discarded.
+	Logbook string
 }
 
 type dxcSpotLookupMsg struct {
@@ -225,8 +230,9 @@ type dxcSpotLookupMsg struct {
 
 // logbookStatsMsg carries the async result of GetLogbookStats.
 type logbookStatsMsg struct {
-	stats store.LogbookStats
-	sig   string
+	stats   store.LogbookStats
+	sig     string
+	logbook string // logbook the query ran against; stale results are dropped
 }
 
 // dxcPathSpotsMsg carries the async result of QueryDXCSpotsByBand.

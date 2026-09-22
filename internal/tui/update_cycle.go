@@ -2,6 +2,7 @@ package tui
 
 import (
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
@@ -46,6 +47,14 @@ func (m *Model) cycleLogbook() tea.Cmd {
 	m.lookup.wlPrivateData = nil // WL data is logbook-specific
 	m.lookup.wlForceCheck = true
 
+	// The callbook registry captured the old *sql.DB when it was built —
+	// rebuild it against the new logbook and reset the lookup state so the
+	// form never shows the retired logbook's history.
+	m.rebuildCallbookRegistry()
+	m.lookup.qrzLookupDone = false
+	m.lookup.qrzLast = time.Time{}
+	m.lookup.callbookToastCall = ""
+
 	// Clear contest exchange fields, then re-apply prefill if the new
 	// logbook has an active contest with prefilling enabled.
 	m.fields[fieldExchSent].SetValue("")
@@ -58,6 +67,13 @@ func (m *Model) cycleLogbook() tea.Cmd {
 		m.checkDupe()
 	}
 	var cmds []tea.Cmd
+	// Re-run the callbook lookup for the current call against the new
+	// logbook — in-flight results from the old one are dropped by source.
+	if call := strings.TrimSpace(m.fields[fieldCall].Value()); call != "" {
+		if c := m.callbookLookup(call); c != nil {
+			cmds = append(cmds, c)
+		}
+	}
 	cmds = append(cmds, m.refreshQSOS())
 	// Request recent DXC spots for the new logbook so the DXC table
 	// isn't left empty after the DB switch clears old spots.

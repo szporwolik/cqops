@@ -183,6 +183,12 @@ func (c *Client) parseGGA(fields []string) {
 	// [7]=satellites, [8]=hdop, [9]=altitude, [10]=altUnit
 	quality := parseIntField(fields[6])
 	if quality < FixGPS {
+		// Fix lost or void — explicitly invalidate the previous fix so a
+		// stale position is never advertised as current.
+		c.mu.Lock()
+		c.latest.Fix = quality
+		c.latest.UpdatedAt = time.Now()
+		c.mu.Unlock()
 		return
 	}
 	lat := parseLatLon(fields[2], fields[3], true)
@@ -211,8 +217,12 @@ func (c *Client) parseRMC(fields []string) {
 	// $GPRMC,hhmmss.ss,A,llll.ll,a,yyyyy.yy,a,spd,cog,date,,,mode
 	status := strings.TrimSpace(fields[2])
 	if status != "A" {
-		// Void fix — keep existing position but mark as no fix.
-		// RMC status='V' is common during initial acquisition.
+		// Void fix — a lost fix must not keep the previous valid position
+		// alive: mark it invalid so consumers can expire it.
+		c.mu.Lock()
+		c.latest.Fix = FixNone
+		c.latest.UpdatedAt = time.Now()
+		c.mu.Unlock()
 		return
 	}
 	// RMC has a valid fix — ensure fix quality is at least GPS.

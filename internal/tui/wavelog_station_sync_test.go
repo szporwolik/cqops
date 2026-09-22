@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
@@ -35,7 +36,11 @@ func TestApplyWavelogStation(t *testing.T) {
 	}
 }
 
-func TestSyncLogbookStationFromWavelog(t *testing.T) {
+// TestStationSyncAfterSaveAppliesOnOwnerLoop verifies the background station
+// sync only FETCHES in its worker: the profile is returned as a typed
+// message and the config mutation, save, active-logbook pointer and toast
+// all happen in the chooser's Update (owner loop).
+func TestStationSyncAfterSaveAppliesOnOwnerLoop(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/v2/station/1" || r.Method != http.MethodGet {
 			http.NotFound(w, r)
@@ -53,22 +58,58 @@ func TestSyncLogbookStationFromWavelog(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	cfg := config.DefaultConfig()
-	cfg.Logbooks["test"] = config.Logbook{ID: "test", Name: "Test", Station: config.Station{
-		Callsign: "OLD", Grid: "AA00aa",
-	}}
+	a := newChooserTestApp(t)
+	tq := NewToastQueue()
+	c := NewLogbookChooser(a, tq)
 
-	changed, err := syncLogbookStationFromWavelog(cfg, "test", srv.URL, "wl2_test", "1 — Home (SP9SPM) KO00CA")
-	if err != nil {
-		t.Fatalf("sync: %v", err)
+	// The saved logbook has stale station values.
+	lb := a.Config.Logbooks["home"]
+	lb.Station = config.Station{Callsign: "OLD", Grid: "AA00aa"}
+	a.Config.Logbooks["home"] = lb
+
+	cmd := c.syncStationAfterSaveCmd("home", &config.WavelogConfig{
+		Enabled: true, URL: srv.URL, APIKey: "wl2_test", StationProfileID: "1",
+	})
+	if cmd == nil {
+		t.Fatal("syncStationAfterSaveCmd returned nil")
 	}
-	if !changed {
-		t.Fatal("sync should report a change")
+	sd, ok := execCmd(cmd).(stationSyncDoneMsg)
+	if !ok {
+		t.Fatalf("expected stationSyncDoneMsg, got %T", execCmd(cmd))
 	}
-	lb := cfg.Logbooks["test"]
+	if sd.err != nil || sd.st == nil {
+		t.Fatalf("sync fetch failed: st=%v err=%v", sd.st, sd.err)
+	}
+	if sd.lbID != "home" {
+		t.Errorf("lbID = %q, want home", sd.lbID)
+	}
+
+	// Owner loop: chooser.Update installs the result.
+	updated, followUp := c.Update(sd)
+	c = updated.(*LogbookChooser)
+	if followUp == nil {
+		t.Fatal("expected the logbook-switched follow-up command")
+	}
+
+	lb = a.Config.Logbooks["home"]
 	if lb.Station.Grid != "KO00CA" || lb.Station.DXCC != 269 ||
 		lb.Station.CQZone != 15 || lb.Station.ITUZone != 28 || lb.Station.SOTARef != "SP/TA-001" {
-		t.Errorf("station not synced: %+v", lb.Station)
+		t.Errorf("station not synced on owner loop: %+v", lb.Station)
+	}
+
+	// The synced config was persisted.
+	data, err := os.ReadFile(a.ConfigPath)
+	if err != nil {
+		t.Fatalf("read saved config: %v", err)
+	}
+	if !strings.Contains(string(data), "KO00CA") {
+		t.Error("saved config does not contain the synced grid")
+	}
+
+	// The follow-up keeps the logbook-switch flow alive.
+	next := execCmd(followUp)
+	if _, ok := next.(logbookSwitchedMsg); !ok {
+		t.Errorf("follow-up = %T, want logbookSwitchedMsg", next)
 	}
 }
 

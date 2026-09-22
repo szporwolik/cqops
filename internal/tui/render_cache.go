@@ -65,6 +65,7 @@ type renderCache struct {
 	// DXC path-line spot fallback, loaded off the render path.
 	dxcSpots          []store.DXCSpot
 	dxcSpotsBand      string
+	dxcSpotsAt        time.Time // when the fallback was fetched; time-dependent results expire
 	dxcSpotsNeedFetch bool
 	dxcSpotsFetchBand string
 

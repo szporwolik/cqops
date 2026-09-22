@@ -42,7 +42,7 @@ func (m *Model) dispatchViewFetches(cmd tea.Cmd) tea.Cmd {
 	if m.rc.dxcDupeNeedFetch {
 		m.rc.dxcDupeNeedFetch = false
 		cmd = tea.Batch(cmd, m.fetchDXCPathDupesCmd(
-			m.rc.dxcDupeFetchDate, m.rc.dxcDupeFetchContest))
+			m.rc.dxcDupeFetchDate, m.rc.dxcDupeFetchContest, m.App.LogbookName, m.dxc.dupeGen))
 	}
 	return cmd
 }
@@ -332,6 +332,9 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			applog.Info("DXCC: backfilled missing dxcc", "count", r.count)
 		}
 		return true, nil
+	case callFilterResultMsg:
+		m.applyCallFilterResult(r)
+		return true, nil
 	case wlStatusMsg:
 		m.lookup.wlOnline = r.online
 		m.lookup.wlStatusErr = r.err
@@ -371,6 +374,10 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 		if r.qID != 0 && m.ui.logbookEditor != nil {
 			m.ui.logbookEditor.UpdateWLStatus(r.qID, r.ok, r.remoteID)
 		}
+		// Enrichment changed fields without changing QSO ids — force-push
+		// so the dashboard shows the enriched rows. Runs on the owner loop;
+		// the worker never touches dashboard state.
+		m.pushDashboardRecentAndToday()
 		n := m.App.Config.General.Notifications
 		if r.ok {
 			if r.isDup {
@@ -416,6 +423,9 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 		if r.logbook != "" && r.logbook != m.App.LogbookName {
 			return true, nil
 		}
+		// Enrichment changed fields without changing QSO ids — force-push
+		// so the dashboard shows the enriched rows.
+		m.pushDashboardRecentAndToday()
 		m.needRefresh = true
 		return true, m.refreshQSOS()
 	case qrzStatusMsg:
@@ -684,6 +694,12 @@ func (m *Model) handleLookupResultMsg(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.
 		}
 		return m, cmd
 	case qsoRefreshedMsg:
+		// A late result from a previous logbook must never replace the
+		// current logbook's table.
+		if r.logbook != "" && r.logbook != m.App.LogbookName {
+			applog.Debug("QSO refresh: stale result discarded", "from", r.logbook, "current", m.App.LogbookName)
+			return m, cmd
+		}
 		if r.err != nil {
 			m.toasts.Error(fmt.Sprintf("QSO: refresh failed — %v", r.err))
 		} else {

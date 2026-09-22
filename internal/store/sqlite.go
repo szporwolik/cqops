@@ -6,9 +6,13 @@ import (
 )
 
 func Open(path string) (*sql.DB, error) {
-	// WAL mode for concurrent reads + writes. 5s busy timeout so SQLite
-	// retries internally instead of returning SQLITE_BUSY immediately.
-	db, err := sql.Open("sqlite", path+"?_journal_mode=WAL&_foreign_keys=on&_busy_timeout=5000")
+	// modernc.org/sqlite applies `_pragma` parameters to EVERY connection:
+	// WAL journal mode (concurrent readers + one writer), a 5s busy timeout
+	// so SQLite retries internally instead of returning SQLITE_BUSY, and
+	// foreign-key enforcement.
+	// The legacy mattn-style names (_journal_mode, _busy_timeout,
+	// _foreign_keys) are silently ignored by this driver.
+	db, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=foreign_keys(1)")
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
 	}

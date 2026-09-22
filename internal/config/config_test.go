@@ -491,6 +491,108 @@ func TestSave_DeletesClearedSecrets(t *testing.T) {
 	}
 }
 
+// TestSave_RetryAfterSecretsFailurePersistsCredentials verifies the retry
+// contract: a transient secrets-write failure aborts the save but leaves
+// the store dirty, so the NEXT save persists the pending secrets before
+// writing scrubbed YAML — the credential can never be silently lost.
+func TestSave_RetryAfterSecretsFailurePersistsCredentials(t *testing.T) {
+	origKey := secrets.KeyFunc
+	secrets.KeyFunc = func() []byte { return bytes.Repeat([]byte{0x42}, 32) }
+	t.Cleanup(func() { secrets.KeyFunc = origKey })
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	sec, err := secrets.Load(dir)
+	if err != nil {
+		t.Fatalf("secrets.Load: %v", err)
+	}
+
+	cfg := DefaultConfig()
+	cfg.SetSecretsStore(sec)
+	cfg.Integrations.Callbook.QRZ.Pass = "new-secret-pass"
+
+	// First attempt: a directory in place of the secrets temp file makes
+	// the secrets write fail while config.yaml stays writable.
+	if err := os.MkdirAll(filepath.Join(dir, "secrets.enc.tmp"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := Save(path, cfg); err == nil {
+		t.Fatal("first Save should fail while the secrets write is blocked")
+	}
+	if !sec.Dirty() {
+		t.Fatal("failed secrets write must leave the store dirty")
+	}
+
+	// Second attempt: remove the blocker and retry — the credential must
+	// reach the encrypted store instead of being silently dropped.
+	if err := os.Remove(filepath.Join(dir, "secrets.enc.tmp")); err != nil {
+		t.Fatalf("remove blocker: %v", err)
+	}
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("retry Save: %v", err)
+	}
+
+	fresh, err := secrets.Load(dir)
+	if err != nil {
+		t.Fatalf("reload secrets: %v", err)
+	}
+	if v, ok := fresh.Get(secretQRZPass); !ok || v != "new-secret-pass" {
+		t.Errorf("credential lost after retry: %q (ok=%v)", v, ok)
+	}
+}
+
+// TestSave_RetryAfterSecretsFailurePersistsDeletion verifies a cleared
+// credential whose secrets write failed cannot be resurrected by the retry.
+func TestSave_RetryAfterSecretsFailurePersistsDeletion(t *testing.T) {
+	origKey := secrets.KeyFunc
+	secrets.KeyFunc = func() []byte { return bytes.Repeat([]byte{0x42}, 32) }
+	t.Cleanup(func() { secrets.KeyFunc = origKey })
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	sec, err := secrets.Load(dir)
+	if err != nil {
+		t.Fatalf("secrets.Load: %v", err)
+	}
+	sec.Set(secretQRZPass, "old-pass")
+	if err := sec.Save(); err != nil {
+		t.Fatalf("seed secrets: %v", err)
+	}
+
+	cfg := DefaultConfig()
+	cfg.SetSecretsStore(sec)
+	cfg.Integrations.Callbook.QRZ.Pass = "" // cleared by the operator
+
+	// First attempt fails while the secrets write is blocked.
+	if err := os.MkdirAll(filepath.Join(dir, "secrets.enc.tmp"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := Save(path, cfg); err == nil {
+		t.Fatal("first Save should fail while the secrets write is blocked")
+	}
+	if !sec.Dirty() {
+		t.Fatal("failed secrets write must leave the store dirty")
+	}
+
+	// Retry succeeds — the deletion must now be persisted, not skipped.
+	if err := os.Remove(filepath.Join(dir, "secrets.enc.tmp")); err != nil {
+		t.Fatalf("remove blocker: %v", err)
+	}
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("retry Save: %v", err)
+	}
+
+	fresh, err := secrets.Load(dir)
+	if err != nil {
+		t.Fatalf("reload secrets: %v", err)
+	}
+	if _, ok := fresh.Get(secretQRZPass); ok {
+		t.Error("cleared credential was resurrected after retry")
+	}
+}
+
 func TestSaveAndLoad_PreservesAPIKey(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
@@ -994,6 +1096,77 @@ func TestEnsureConfig_MalformedConfigReturnsError(t *testing.T) {
 	_, _, err := EnsureConfig()
 	if err == nil {
 		t.Error("EnsureConfig should return error for malformed config")
+	}
+}
+
+// TestEnsureConfig_YAMLSyntaxErrorPreservesFile verifies that a config with
+// a YAML syntax error is reported and left byte-for-byte untouched — the
+// destructive recovery path (overwriting with defaults) must never trigger.
+func TestEnsureConfig_YAMLSyntaxErrorPreservesFile(t *testing.T) {
+	tmp := isolateHome(t)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	configDir := expectedConfigDir(tmp, "")
+	os.MkdirAll(configDir, 0755)
+	configPath := filepath.Join(configDir, "config.yaml")
+
+	original := []byte("state:\n  active_logbook: missing\nlogbooks: {bad: [\n")
+	os.WriteFile(configPath, original, 0644)
+
+	_, _, err := EnsureConfig()
+	if err == nil {
+		t.Fatal("EnsureConfig should return an error for a YAML syntax error")
+	}
+	if !strings.Contains(err.Error(), "parse config") {
+		t.Errorf("error should mention the parse failure, got %q", err)
+	}
+
+	after, readErr := os.ReadFile(configPath)
+	if readErr != nil {
+		t.Fatalf("read config after EnsureConfig: %v", readErr)
+	}
+	if !bytes.Equal(after, original) {
+		t.Errorf("config file was modified by EnsureConfig:\n got %q\nwant %q", after, original)
+	}
+}
+
+// TestEnsureConfig_UnreadableFileDoesNotOverwrite verifies that a config
+// which exists but cannot be read is reported without being replaced.
+func TestEnsureConfig_UnreadableFileDoesNotOverwrite(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX file permissions are not enforced the same way on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("running as root bypasses file permissions")
+	}
+
+	tmp := isolateHome(t)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	configDir := expectedConfigDir(tmp, "")
+	os.MkdirAll(configDir, 0755)
+	configPath := filepath.Join(configDir, "config.yaml")
+
+	original := []byte("general:\n  timezone: Europe/London\n")
+	os.WriteFile(configPath, original, 0644)
+	t.Cleanup(func() { os.Chmod(configPath, 0644) })
+	if err := os.Chmod(configPath, 0000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+
+	_, _, err := EnsureConfig()
+	if err == nil {
+		t.Fatal("EnsureConfig should return an error for an unreadable config")
+	}
+
+	// Restore readability so the assertion below can read the file.
+	os.Chmod(configPath, 0644)
+	after, readErr := os.ReadFile(configPath)
+	if readErr != nil {
+		t.Fatalf("read config after EnsureConfig: %v", readErr)
+	}
+	if !bytes.Equal(after, original) {
+		t.Errorf("config file was modified by EnsureConfig:\n got %q\nwant %q", after, original)
 	}
 }
 

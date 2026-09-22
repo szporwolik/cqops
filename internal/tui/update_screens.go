@@ -53,6 +53,18 @@ func (m *Model) handleChooserUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 		if strings.TrimSpace(m.fields[fieldCall].Value()) != "" {
 			m.checkDupe()
 		}
+		// The callbook registry captured the old *sql.DB when it was
+		// built — rebuild it for the new logbook and re-trigger the
+		// lookup so the form never shows the retired logbook's history.
+		m.rebuildCallbookRegistry()
+		m.lookup.qrzLookupDone = false
+		m.lookup.qrzLast = time.Time{}
+		m.lookup.callbookToastCall = ""
+		if call := strings.TrimSpace(m.fields[fieldCall].Value()); call != "" {
+			if c := m.callbookLookup(call); c != nil {
+				cmd = tea.Batch(cmd, c)
+			}
+		}
 		cmd = tea.Batch(cmd, m.refreshQSOS())
 	}
 	return m, cmd
@@ -811,10 +823,13 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 		}
 		if em.wlFetchQSOID != 0 {
 			if em.wlFetchQSO != nil {
-				if err := m.ui.logbookEditor.ApplyRemoteRefresh(em.wlFetchQSO); err != nil {
+				applied, err := m.ui.logbookEditor.ApplyRemoteRefresh(em.wlFetchQSO, em.wlFetchRev)
+				if err != nil {
 					applog.Warn("Wavelog: apply remote refresh failed", "error", err)
-				} else {
+				} else if applied {
 					m.toasts.Success("Wavelog: QSO refreshed from server")
+				} else if m.ui.logbookEditor.mode == edModeEdit {
+					m.toasts.Warn("Wavelog: remote refresh skipped — your unsaved edits were kept")
 				}
 			} else if em.wlFetchErr != "" {
 				m.toasts.Warn("Wavelog: " + em.wlFetchErr)

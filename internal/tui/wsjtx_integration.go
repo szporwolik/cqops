@@ -212,7 +212,7 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 
 	m.clearForm()
 	m.needRefresh = true
-	m.dxc.dupeSet = nil // new QSO logged — dupe markers are stale
+	m.invalidateDXCDupes() // new QSO logged — dupe markers are stale
 	m.dxc.tableReady = false
 	m.contest.computedAt = time.Time{} // force contest stats refresh
 
@@ -255,13 +255,17 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 	useCTY := m.App.Config.General.UseCTY
 	bigcty := m.App.BigCTY
 	myGrid := m.effectiveGrid()
+	registry := m.callbookRegistry
+	baseFallback := m.App.Config.Integrations.Callbook.BaseCallFallback
 	release := m.App.KeepDBAlive(ctx.db)
 
 	return func() tea.Msg {
 		defer release()
-		// Step 1: enrich via callbook providers (best-effort).
-		if m.callbookRegistry != nil && online {
-			data, err := callbookRegLookup(m, call)
+		// Step 1: enrich via callbook providers (best-effort). The registry
+		// and config flags are snapshots — the worker never reads live
+		// model state.
+		if registry != nil && online {
+			data, err := callbookRegLookup(registry, baseFallback, call)
 			if err != nil {
 				applog.Warn("WSJT-X: callbook enrichment failed", "call", call, "error", err)
 			} else if data != nil && data.Callsign != "" {
@@ -333,15 +337,9 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 				qs.Distance, qs.Bearing, qsoID)
 		}
 
-		// Push enriched QSO to dashboard — force-push because enrichment
-		// updates fields (country, grid, distance) without changing QSO IDs.
-		// Only while still on the same logbook: the push reads the live
-		// database and must not reflect a different logbook's rows.
-		if ctx.logbook == m.App.LogbookName && m.http.client != nil && m.http.online {
-			ds := m.http.client.State()
-			m.forcePushDashboardRecent(ds)
-			m.pushDashboardToday(ds)
-		}
+		// The dashboard push happens on the owner loop in the result
+		// handlers (wsjtxEnrichDoneMsg / wlUploadResultMsg) — the worker
+		// never touches live model or dashboard state.
 
 		// Step 3: upload the enriched QSO to Wavelog (single JSON create
 		// stores the remote id locally).

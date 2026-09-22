@@ -610,6 +610,11 @@ func (m *Model) formPathRow(width int) string {
 	return st
 }
 
+// dxcPathSpotsTTL is how long the DB spot fallback may serve the path line
+// before a re-fetch. The results are time-dependent (15-minute window), so
+// an unexpired cache would render spots long after they aged out.
+const dxcPathSpotsTTL = 2 * time.Minute
+
 // dxcPathLine returns a line showing nearby DXC spots around the current
 // frequency. Displays up to N spots below and N above, with frequencies.
 // N adapts to available width. Cached until frequency or spot list changes.
@@ -657,9 +662,10 @@ func (m *Model) dxcPathLine(width int) string {
 	}
 	// DB fallback: cachedRaw may be empty on startup before the first spots
 	// arrive. The query runs asynchronously so View() never touches the DB;
-	// this frame renders without the fallback spots.
+	// this frame renders without the fallback spots. The fallback is
+	// time-dependent, so it expires after dxcPathSpotsTTL.
 	if len(spots) == 0 && m.App.DB != nil {
-		if m.rc.dxcSpotsBand == band {
+		if m.rc.dxcSpotsBand == band && !m.rc.dxcSpotsAt.IsZero() && time.Since(m.rc.dxcSpotsAt) < dxcPathSpotsTTL {
 			spots = m.rc.dxcSpots
 		} else {
 			m.rc.dxcSpotsNeedFetch = true
@@ -768,7 +774,10 @@ func (m *Model) dxcPathLine(width int) string {
 	var dupeSet map[string]bool
 	if width >= 100 && m.App.DB != nil {
 		dateStr := time.Now().UTC().Format("20060102")
-		dupeSig := dateStr + "|" + m.App.Logbook.ActiveContest
+		// The key carries the logbook identity and the dupe revision, so a
+		// logbook switch or a freshly logged QSO can never reuse another
+		// logbook's — or an outdated — dupe set.
+		dupeSig := dxcDupeSigFor(dateStr, m.App.Logbook.ActiveContest, m.App.LogbookName, m.dxc.dupeGen)
 		if m.rc.dxcDupeSig == dupeSig {
 			dupeSet = m.rc.dxcDupeSet
 		} else {

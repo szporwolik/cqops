@@ -38,6 +38,7 @@ type dxcState struct {
 	cachedSpots  []store.DXCSpot // cached result of last filteredSpots() call
 	cachedRaw    []store.DXCSpot // raw unfiltered spots; new spots appended here
 	rawGen       int             // incremented on every cachedRaw change; busts dxcPathLine cache
+	dupeGen      int             // incremented on every QSO mutation; busts the path-line dupe cache
 
 	// Filter state at time of cache — used to detect staleness.
 	cachedBandFilter string

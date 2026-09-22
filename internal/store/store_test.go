@@ -23,6 +23,39 @@ func newTempDB(t *testing.T) *sql.DB {
 	return db
 }
 
+// TestWavelogDirtyRoundtrip verifies the durable pending-sync flag:
+// set, read and clear through the dedicated accessors.
+func TestWavelogDirtyRoundtrip(t *testing.T) {
+	db := newTempDB(t)
+
+	id := mustInsertQSO(t, db, &qso.QSO{Call: "SP9MOA", QSODate: "20240501",
+		TimeOn: "120000", Band: "20m", Mode: "SSB", WavelogID: 77})
+
+	dirty, err := QSOHasPendingSync(db, id)
+	if err != nil {
+		t.Fatalf("QSOHasPendingSync: %v", err)
+	}
+	if dirty {
+		t.Error("fresh QSO should not have pending sync")
+	}
+
+	if err := SetWavelogDirty(db, id, true); err != nil {
+		t.Fatalf("SetWavelogDirty(true): %v", err)
+	}
+	dirty, err = QSOHasPendingSync(db, id)
+	if err != nil || !dirty {
+		t.Errorf("pending sync after set = %v (err=%v), want true", dirty, err)
+	}
+
+	if err := SetWavelogDirty(db, id, false); err != nil {
+		t.Fatalf("SetWavelogDirty(false): %v", err)
+	}
+	dirty, err = QSOHasPendingSync(db, id)
+	if err != nil || dirty {
+		t.Errorf("pending sync after clear = %v (err=%v), want false", dirty, err)
+	}
+}
+
 func mustInsertQSO(t *testing.T, db *sql.DB, q *qso.QSO) int64 {
 	t.Helper()
 	id, err := InsertQSO(db, q)

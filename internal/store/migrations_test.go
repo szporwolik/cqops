@@ -136,8 +136,8 @@ func TestMigrateUpgradesV11Database(t *testing.T) {
 	}
 
 	// New column and index must exist.
-	if _, err := db.Exec(`INSERT INTO qsos (call, wavelog_id, created_at, updated_at) VALUES ('SP9MOA', 42, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`); err != nil {
-		t.Fatalf("insert with wavelog_id: %v", err)
+	if _, err := db.Exec(`INSERT INTO qsos (call, wavelog_id, wavelog_dirty, created_at, updated_at) VALUES ('SP9MOA', 42, 1, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`); err != nil {
+		t.Fatalf("insert with wavelog_id/wavelog_dirty: %v", err)
 	}
 	var n int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_qsos_wavelog_id'`).Scan(&n); err != nil || n != 1 {
@@ -172,8 +172,8 @@ func TestMigrateUpgradesV10Database(t *testing.T) {
 		t.Fatalf("Migrate on v0.10 db: %v", err)
 	}
 
-	// dxcc and wavelog_id must now exist.
-	for _, col := range []string{"dxcc", "wavelog_id"} {
+	// dxcc, wavelog_id and wavelog_dirty must now exist.
+	for _, col := range []string{"dxcc", "wavelog_id", "wavelog_dirty"} {
 		if _, err := db.Exec(`INSERT INTO qsos (call, ` + col + `, created_at, updated_at) VALUES ('SP9MOA', 'x', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`); err != nil {
 			t.Errorf("column %s missing after upgrade: %v", col, err)
 		}

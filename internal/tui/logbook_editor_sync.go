@@ -14,28 +14,44 @@ import (
 )
 
 // fetchRemoteCopy loads the latest copy of a Wavelog QSO (by remote id) so
-// the edit form can show what the server currently holds.
+// the edit form can show what the server currently holds. The current edit
+// revision is captured so a late result can be recognized as stale when the
+// operator has typed since the fetch began.
 func (le *LogbookEditor) fetchRemoteCopy(remoteID, localID int64) tea.Cmd {
 	url, key := le.wlURL, le.wlKey
+	rev := le.editRev
 	return func() tea.Msg {
 		data, err := wavelog.GetQSO(url, key, remoteID)
 		if err != nil {
-			return editorMsg{wlFetchQSOID: localID, wlFetchErr: wavelog.FriendlyError(err).Error()}
+			return editorMsg{wlFetchQSOID: localID, wlFetchErr: wavelog.FriendlyError(err).Error(), wlFetchRev: rev}
 		}
-		return editorMsg{wlFetchQSOID: localID, wlFetchQSO: data}
+		return editorMsg{wlFetchQSOID: localID, wlFetchQSO: data, wlFetchRev: rev}
 	}
 }
 
 // ApplyRemoteRefresh merges the freshly fetched remote copy into the QSO being
 // edited: the local row is updated, the form refilled and the list reload
-// scheduled. No-op when the user has already left the edit form.
-func (le *LogbookEditor) ApplyRemoteRefresh(data *wavelog.QSOData) error {
+// scheduled. Returns applied=false (a no-op) when the result is stale — the
+// user moved on, typed since the fetch began, or the local row carries
+// pending unsynced changes. In all those cases the operator's local state
+// wins over the stale server copy.
+func (le *LogbookEditor) ApplyRemoteRefresh(data *wavelog.QSOData, fetchedRev uint64) (bool, error) {
 	if le.editing == nil || le.mode != edModeEdit || le.editing.WavelogID != data.ID {
-		return nil // user moved on — ignore the late result
+		return false, nil // user moved on — ignore the late result
+	}
+	if fetchedRev != le.editRev {
+		applog.InfoDetail("Wavelog: ignored stale remote refresh",
+			fmt.Sprintf("fetched_rev=%d current_rev=%d local_id=%d", fetchedRev, le.editRev, le.editing.ID))
+		return false, nil // operator typed since the fetch began
 	}
 	local, err := store.GetQSOByID(le.db, le.editing.ID)
 	if err != nil {
-		return err
+		return false, err
+	}
+	if local.WavelogDirty {
+		applog.InfoDetail("Wavelog: ignored remote refresh for pending local changes",
+			fmt.Sprintf("local_id=%d remote_id=%d", le.editing.ID, data.ID))
+		return false, nil // local changes not yet synced — never overwrite them
 	}
 	merged := mergeRemoteQSO(local, data)
 	if merged.GridSquare != "" && le.logStationGrid != "" {
@@ -43,14 +59,14 @@ func (le *LogbookEditor) ApplyRemoteRefresh(data *wavelog.QSOData) error {
 		merged.Bearing = gridBearingDeg(le.logStationGrid, merged.GridSquare)
 	}
 	if err := store.UpdateQSO(le.db, merged); err != nil {
-		return err
+		return false, err
 	}
 	le.editing = merged
 	le.fillEditForm(merged)
 	le.needsReload = true
 	applog.InfoDetail("Wavelog: refreshed QSO from server",
 		fmt.Sprintf("local_id=%d remote_id=%d call=%s", merged.ID, data.ID, merged.Call))
-	return nil
+	return true, nil
 }
 
 // mergeRemoteQSO overlays the server-side fields onto a local QSO. Local-only

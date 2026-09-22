@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"strconv"
+	"sync/atomic"
 
 	"charm.land/bubbles/v2/filepicker"
 	"charm.land/bubbles/v2/table"
@@ -112,6 +113,7 @@ var qefLabels = []string{
 
 type LogbookEditor struct {
 	db               *sql.DB
+	gen              uint64 // unique per editor instance — background operation results from a replaced editor are discarded
 	qsos             []qso.QSO
 	table            table.Model
 	mode             editorMode
@@ -123,6 +125,7 @@ type LogbookEditor struct {
 	needsReload      bool
 	built            bool
 	fm               menuFocus
+	editRev          uint64 // bumped on every operator edit; stale remote refreshes are rejected
 	wlSkipped        int
 	wlSkipDetail     string
 	wlUnsentCount    int // cached unsent count from full DB, used by confirm dialog
@@ -222,8 +225,14 @@ type LogbookEditorConfig struct {
 	StationCall     string
 }
 
+// logbookEditorGenCounter assigns a unique generation to every editor
+// instance. Background upload work captures its editor's generation, so a
+// result delivered to a replacement editor (e.g. after a logbook switch)
+// can be recognized and dropped.
+var logbookEditorGenCounter atomic.Uint64
+
 func NewLogbookEditor(cfg LogbookEditorConfig) *LogbookEditor {
-	le := &LogbookEditor{db: cfg.DB, mode: edModeList, wlURL: cfg.WLURL, wlKey: cfg.WLKey, wlStationID: cfg.WLStationID, wlLastFetchedID: cfg.WLLastFetchedID, logStationOp: cfg.StationOperator, logStationGrid: cfg.StationGrid, logStationCall: cfg.StationCall}
+	le := &LogbookEditor{db: cfg.DB, gen: logbookEditorGenCounter.Add(1), mode: edModeList, wlURL: cfg.WLURL, wlKey: cfg.WLKey, wlStationID: cfg.WLStationID, wlLastFetchedID: cfg.WLLastFetchedID, logStationOp: cfg.StationOperator, logStationGrid: cfg.StationGrid, logStationCall: cfg.StationCall}
 	le.filePicker = filepicker.New()
 	le.filePicker.FileAllowed = false
 	le.filePicker.DirAllowed = true

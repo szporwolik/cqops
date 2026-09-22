@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"math"
@@ -443,7 +444,7 @@ func GetQSOByID(db *sql.DB, id int64) (*qso.QSO, error) {
 		cq_zone, itu_zone, dxcc,
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
-		wavelog_id, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
+		wavelog_id, wavelog_dirty, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
 		created_at, updated_at
 		FROM qsos WHERE id = ?`, id,
 	).Scan(
@@ -457,7 +458,7 @@ func GetQSOByID(db *sql.DB, id int64) (*qso.QSO, error) {
 		&q.CQZone, &q.ITUZone, &q.DXCC,
 		&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
 		&q.MySIG, &q.MySIGInfo,
-		&q.WavelogID, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
+		&q.WavelogID, &q.WavelogDirty, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
 		&createdAt, &updatedAt,
 	)
 	if err != nil {
@@ -705,6 +706,82 @@ func ListUnsentQSOs(db *sql.DB) ([]qso.QSO, error) {
 		`SELECT `+qsoSelectCols+` FROM qsos WHERE COALESCE(wavelog_id, 0) = 0 ORDER BY id DESC`)
 }
 
+// ListQSOsPageAfterTx returns the next page of QSOs strictly after the
+// cursor row, ordered by qso_date/time_on/id in the same order ListQSOsPage
+// uses. A nil cursor returns the first page. Reads run on the caller's
+// transaction, so a streaming export sees one consistent snapshot: a
+// concurrently inserted QSO can never shift the pages and duplicate or omit
+// records.
+func ListQSOsPageAfterTx(tx *sql.Tx, limit int, contestID string, orderAsc bool, cursor *qso.QSO) ([]qso.QSO, error) {
+	var b strings.Builder
+	b.WriteString(`SELECT ` + qsoSelectCols + ` FROM qsos`)
+	var args []any
+	var conds []string
+	if contestID != "" {
+		conds = append(conds, `(contest_id = ? OR contest_adif_id = ?)`)
+		args = append(args, contestID, contestID)
+	}
+	if cursor != nil {
+		if orderAsc {
+			conds = append(conds,
+				`((qso_date > ?) OR (qso_date = ? AND time_on > ?) OR (qso_date = ? AND time_on = ? AND id > ?))`)
+		} else {
+			conds = append(conds,
+				`((qso_date < ?) OR (qso_date = ? AND time_on < ?) OR (qso_date = ? AND time_on = ? AND id < ?))`)
+		}
+		args = append(args,
+			cursor.QSODate, cursor.QSODate, cursor.TimeOn,
+			cursor.QSODate, cursor.TimeOn, cursor.ID)
+	}
+	if len(conds) > 0 {
+		b.WriteString(` WHERE ` + strings.Join(conds, ` AND `))
+	}
+	b.WriteString(` ORDER BY qso_date `)
+	if orderAsc {
+		b.WriteString(`ASC, time_on ASC, id ASC`)
+	} else {
+		b.WriteString(`DESC, time_on DESC, id DESC`)
+	}
+	b.WriteString(` LIMIT ?`)
+	args = append(args, limit)
+	return listQSOsByQuery(tx, b.String(), args...)
+}
+
+// ExportQSOsSnapshot streams all QSOs (optionally contest-filtered) through
+// fn inside a single read-only transaction. Pages advance by keyset cursor,
+// so concurrent inserts — e.g. WSJT-X logging a QSO mid-export — cannot
+// shift offsets; every record appears exactly once. The callback is invoked
+// once per QSO in export order; returning an error aborts the stream.
+func ExportQSOsSnapshot(db *sql.DB, contestID string, orderAsc bool, fn func(q qso.QSO) error) error {
+	tx, err := db.BeginTx(context.Background(), &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return fmt.Errorf("begin export snapshot: %w", err)
+	}
+	defer tx.Rollback()
+
+	const pageSize = 500
+	var cursor *qso.QSO
+	for {
+		rows, err := ListQSOsPageAfterTx(tx, pageSize, contestID, orderAsc, cursor)
+		if err != nil {
+			return fmt.Errorf("export page: %w", err)
+		}
+		if len(rows) == 0 {
+			break
+		}
+		for i := range rows {
+			if err := fn(rows[i]); err != nil {
+				return err
+			}
+		}
+		cursor = &rows[len(rows)-1]
+		if len(rows) < pageSize {
+			break
+		}
+	}
+	return tx.Commit()
+}
+
 // ListQSOsFromDate returns QSOs with qso_date >= the given date, newest-first,
 // capped at limit. Used by the dashboard to avoid loading unbounded history.
 func ListQSOsFromDate(db *sql.DB, date string, limit int) ([]qso.QSO, error) {
@@ -723,9 +800,15 @@ func ListQSOsFromDate(db *sql.DB, date string, limit int) ([]qso.QSO, error) {
 	return listQSOsByQuery(db, query, date, limit)
 }
 
+// qsoQueryer abstracts *sql.DB and *sql.Tx for the shared row-scanning
+// helpers. Both satisfy it.
+type qsoQueryer interface {
+	Query(query string, args ...any) (*sql.Rows, error)
+}
+
 // listQSOsByQuery is a helper that scans QSOs from a parameterized query.
-func listQSOsByQuery(db *sql.DB, query string, args ...any) ([]qso.QSO, error) {
-	rows, err := db.Query(query, args...)
+func listQSOsByQuery(q qsoQueryer, query string, args ...any) ([]qso.QSO, error) {
+	rows, err := q.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list qsos: %w", err)
 	}

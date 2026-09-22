@@ -979,8 +979,8 @@ func TestExport_EmptyLogbookFailsWithoutFile(t *testing.T) {
 }
 
 // TestDownload_StoresWavelogIDs verifies the remote QSO ids captured from the
-// v2 JSON list sidecar are stored on the imported QSOs — the foundation for
-// future edit/delete support.
+// v2 JSON list sidecar are stored on the imported QSOs, matched by verified
+// identity — the foundation for future edit/delete support.
 func TestDownload_StoresWavelogIDs(t *testing.T) {
 	adifContent := `<CALL:6>SP9AAA <BAND:3>20m <MODE:3>SSB <QSO_DATE:8>20260921 <TIME_ON:4>1200 <EOR>
 <CALL:6>SP9BBB <BAND:3>40m <MODE:2>CW <QSO_DATE:8>20260921 <TIME_ON:4>1300 <EOR>`
@@ -988,9 +988,14 @@ func TestDownload_StoresWavelogIDs(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Query().Get("format") == "" {
-			// JSON id sidecar request.
+			// JSON id sidecar request — ids keyed by identity.
 			json.NewEncoder(w).Encode(map[string]any{
-				"data": []map[string]any{{"id": 10}, {"id": 11}},
+				"data": []map[string]any{
+					{"id": 10, "call": "SP9AAA", "band": "20m", "mode": "SSB",
+						"qso_date": "2026-09-21 12:00:00"},
+					{"id": 11, "call": "SP9BBB", "band": "40m", "mode": "CW",
+						"qso_date": "2026-09-21 13:00:00"},
+				},
 			})
 			return
 		}
@@ -1026,5 +1031,89 @@ func TestDownload_StoresWavelogIDs(t *testing.T) {
 	}
 	if aaa.WavelogID != 10 || bbb.WavelogID != 11 {
 		t.Errorf("WavelogID = %d/%d, want 10/11", aaa.WavelogID, bbb.WavelogID)
+	}
+}
+
+// TestDownload_MissingIDPageLeavesRecordsWithoutIDs verifies the fix for the
+// positional-alignment bug end to end: when the id sidecar fails for the
+// first page, the first page's contacts must be imported WITHOUT remote ids
+// — the second page's ids must never be assigned to them.
+func TestDownload_MissingIDPageLeavesRecordsWithoutIDs(t *testing.T) {
+	adifPage1 := `<CALL:6>SP9AAA <BAND:3>20m <MODE:3>SSB <QSO_DATE:8>20260921 <TIME_ON:4>1200 <EOR>
+<CALL:6>SP9BBB <BAND:3>40m <MODE:2>CW <QSO_DATE:8>20260921 <TIME_ON:4>1300 <EOR>`
+	adifPage2 := `<CALL:6>SP9CCC <BAND:3>15m <MODE:2>CW <QSO_DATE:8>20260921 <TIME_ON:4>1500 <EOR>`
+
+	adifPage := 0
+	sidecarCalls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("format") == "" {
+			sidecarCalls++
+			if sidecarCalls == 1 {
+				http.Error(w, "boom", 500)
+				return
+			}
+			// Page-two identity only.
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{"id": 12, "call": "SP9CCC", "band": "15m", "mode": "CW",
+						"qso_date": "2026-09-21 15:00:00"},
+				},
+			})
+			return
+		}
+
+		adifPage++
+		if adifPage == 1 {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": map[string]any{
+					"exported":      2,
+					"lastfetchedid": 11,
+					"adif":          adifPage1,
+				},
+				"meta": map[string]any{"has_more": true, "total": 3},
+			})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"exported":      1,
+				"lastfetchedid": 12,
+				"adif":          adifPage2,
+			},
+			"meta": map[string]any{"has_more": false, "total": 3},
+		})
+	}))
+	defer server.Close()
+
+	le := startFakeDownload(t, server, nil)
+
+	if le.wlDownloadCount != 3 {
+		t.Fatalf("wlDownloadCount = %d, want 3", le.wlDownloadCount)
+	}
+
+	qsos, _ := store.ListQSOs(le.db, 10, "")
+	var aaa, bbb, ccc *qso.QSO
+	for i := range qsos {
+		switch qsos[i].Call {
+		case "SP9AAA":
+			aaa = &qsos[i]
+		case "SP9BBB":
+			bbb = &qsos[i]
+		case "SP9CCC":
+			ccc = &qsos[i]
+		}
+	}
+	if aaa == nil || bbb == nil || ccc == nil {
+		t.Fatalf("downloaded QSOs missing: %+v", qsos)
+	}
+	if aaa.WavelogID != 0 {
+		t.Errorf("SP9AAA WavelogID = %d, want 0 (page-one id fetch failed)", aaa.WavelogID)
+	}
+	if bbb.WavelogID != 0 {
+		t.Errorf("SP9BBB WavelogID = %d, want 0 (page-one id fetch failed)", bbb.WavelogID)
+	}
+	if ccc.WavelogID != 12 {
+		t.Errorf("SP9CCC WavelogID = %d, want 12", ccc.WavelogID)
 	}
 }

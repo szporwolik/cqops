@@ -20,11 +20,11 @@ func TestClient_Status(t *testing.T) {
 	go func() {
 		conn, _ := ln.Accept()
 		defer conn.Close()
-		// 'p' command returns azimuth + elevation.
+		// '+p' (extended protocol) returns az/el as keyed lines + RPRT.
 		var buf [64]byte
 		n, _ := conn.Read(buf[:])
-		if string(buf[:n]) == "p\r\n" {
-			conn.Write([]byte("180.500000\n45.250000\nRPRT 0\n"))
+		if string(buf[:n]) == "+p\r\n" {
+			conn.Write([]byte("get_pos:\nAzimuth: 180.500000\nElevation: 45.250000\nRPRT 0\n"))
 		}
 		ch <- struct{}{}
 	}()
@@ -63,8 +63,8 @@ func TestClient_Status_SingleLine(t *testing.T) {
 		defer conn.Close()
 		var buf [64]byte
 		n, _ := conn.Read(buf[:])
-		if string(buf[:n]) == "p\r\n" {
-			conn.Write([]byte("90.000000\nRPRT 0\n"))
+		if string(buf[:n]) == "+p\r\n" {
+			conn.Write([]byte("get_pos:\nAzimuth: 90.000000\nRPRT 0\n"))
 		}
 	}()
 
@@ -96,7 +96,7 @@ func TestClient_Status_Error(t *testing.T) {
 		defer conn.Close()
 		var buf [64]byte
 		n, _ := conn.Read(buf[:])
-		if string(buf[:n]) == "p\r\n" {
+		if string(buf[:n]) == "+p\r\n" {
 			conn.Write([]byte("RPRT -1\n"))
 		}
 	}()
@@ -124,7 +124,7 @@ func TestClient_SetPosition(t *testing.T) {
 		var buf [64]byte
 		n, _ := conn.Read(buf[:])
 		ch <- string(buf[:n])
-		conn.Write([]byte("RPRT 0\n"))
+		conn.Write([]byte("set_pos: 45.000000 10.000000\nRPRT 0\n"))
 	}()
 
 	host, port, _ := net.SplitHostPort(ln.Addr().String())
@@ -136,7 +136,7 @@ func TestClient_SetPosition(t *testing.T) {
 		t.Fatal(err)
 	}
 	got := <-ch
-	want := "P 45.000000 10.000000\r\n"
+	want := "+P 45.000000 10.000000\r\n"
 	if got != want {
 		t.Errorf("command = %q, want %q", got, want)
 	}
@@ -216,10 +216,10 @@ func TestClient_Status_SplitResponse(t *testing.T) {
 		defer conn.Close()
 		br := bufio.NewReader(conn)
 		cmd, _ := br.ReadString('\n')
-		if cmd != "p\r\n" {
+		if cmd != "+p\r\n" {
 			return
 		}
-		for _, part := range []string{"18", "0.50", "0000\n4", "5.250000\nRP", "RT 0\n"} {
+		for _, part := range []string{"get_pos:\nA", "zimuth: 180.50", "0000\nE", "levation: 4", "5.250000\nRP", "RT 0\n"} {
 			conn.Write([]byte(part))
 			time.Sleep(10 * time.Millisecond)
 		}
@@ -256,15 +256,15 @@ func TestClient_NoLeftoverBetweenCommands(t *testing.T) {
 		br := bufio.NewReader(conn)
 
 		cmd, _ := br.ReadString('\n')
-		if cmd == "p\r\n" {
-			conn.Write([]byte("180.5\n"))
+		if cmd == "+p\r\n" {
+			conn.Write([]byte("get_pos:\nAzimuth: 180.5\n"))
 			time.Sleep(20 * time.Millisecond)
-			conn.Write([]byte("45.25\nRPRT 0\n"))
+			conn.Write([]byte("Elevation: 45.25\nRPRT 0\n"))
 		}
 
 		cmd, _ = br.ReadString('\n')
-		if strings.HasPrefix(cmd, "P ") {
-			conn.Write([]byte("RPRT 0\n"))
+		if strings.HasPrefix(cmd, "+P ") {
+			conn.Write([]byte("set_pos: 10.000000 5.000000\nRPRT 0\n"))
 		}
 	}()
 
@@ -299,7 +299,7 @@ func TestClient_IncompleteAckFails(t *testing.T) {
 		defer conn.Close()
 		br := bufio.NewReader(conn)
 		cmd, _ := br.ReadString('\n')
-		if cmd == "S\r\n" {
+		if cmd == "+S\r\n" {
 			conn.Write([]byte("RPRT 0")) // missing newline, then close
 		}
 	}()
@@ -313,8 +313,8 @@ func TestClient_IncompleteAckFails(t *testing.T) {
 	}
 }
 
-// TestClient_GetName_MultiLine verifies multi-line payloads are returned
-// without the RPRT terminator line.
+// TestClient_GetName_MultiLine verifies the extended-protocol get_info reply
+// yields the model name without the echo line or the RPRT terminator.
 func TestClient_GetName_MultiLine(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -327,8 +327,8 @@ func TestClient_GetName_MultiLine(t *testing.T) {
 		defer conn.Close()
 		br := bufio.NewReader(conn)
 		cmd, _ := br.ReadString('\n')
-		if cmd == "_\r\n" {
-			conn.Write([]byte("Rig: Dummy\nModel: Rotor X\nRPRT 0\n"))
+		if cmd == "+_\r\n" {
+			conn.Write([]byte("get_info:\nInfo: Rotor X\nRPRT 0\n"))
 		}
 	}()
 
@@ -340,10 +340,47 @@ func TestClient_GetName_MultiLine(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(name, "Model: Rotor X") {
-		t.Errorf("name = %q, want model line", name)
+	if !strings.Contains(name, "Rotor X") {
+		t.Errorf("name = %q, want model name", name)
 	}
 	if strings.Contains(name, "RPRT") {
 		t.Errorf("name = %q, must not include the RPRT terminator", name)
+	}
+	if strings.Contains(name, "get_info") || strings.Contains(name, "Info:") {
+		t.Errorf("name = %q, must not include the echo or key prefix", name)
+	}
+}
+
+// TestClient_DefaultStyleReplyTimesOut guards the regression that prompted
+// the extended protocol: a server answering the default-protocol shape
+// (bare value lines, no RPRT) must never be treated as a success — the
+// read deadline turns it into an error and the connection is dropped.
+func TestClient_DefaultStyleReplyTimesOut(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	go func() {
+		conn, _ := ln.Accept()
+		defer conn.Close()
+		var buf [64]byte
+		n, _ := conn.Read(buf[:])
+		if string(buf[:n]) == "+p\r\n" {
+			// Default-protocol style reply: bare values, no RPRT, and the
+			// connection stays open.
+			conn.Write([]byte("180.500000\n45.250000\n"))
+			time.Sleep(500 * time.Millisecond)
+		}
+	}()
+
+	host, port, _ := net.SplitHostPort(ln.Addr().String())
+	c := New(host, port, 100*time.Millisecond)
+	defer c.Close()
+
+	_, err = c.Status(context.Background())
+	if err == nil {
+		t.Fatal("expected an error for a reply without the RPRT terminator")
 	}
 }

@@ -80,20 +80,32 @@ type App struct {
 }
 
 func Init() (*App, error) {
-	cfg, configPath, err := config.EnsureConfig()
+	// Single-instance guard acquired FIRST — before any config is read or
+	// written. Two instances racing at startup must never both proceed to
+	// the first-run wizard or open the same SQLite database. The lock is
+	// created atomically (O_EXCL), so exactly one instance can own it.
+	configDir, err := config.ConfigDir()
 	if err != nil {
-		applog.Error("Config is corrupted or missing — cannot start", "error", err.Error())
-		return nil, fmt.Errorf("config: %w", err)
+		applog.Error("Cannot determine config directory", "error", err.Error())
+		return nil, fmt.Errorf("config dir: %w", err)
 	}
-	applog.Info("Config OK", "path", configPath)
-
-	// Single-instance guard — prevents dataloss from two processes
-	// writing to the same SQLite database.
-	lk, err := acquireLock(filepath.Dir(configPath))
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		applog.Error("Cannot create config directory", "error", err.Error())
+		return nil, fmt.Errorf("config dir: %w", err)
+	}
+	lk, err := acquireLock(configDir)
 	if err != nil {
 		applog.Error("Lock acquisition failed", "error", err.Error())
 		return nil, err
 	}
+
+	cfg, configPath, err := config.EnsureConfig()
+	if err != nil {
+		applog.Error("Config is corrupted or missing — cannot start", "error", err.Error())
+		lk.release()
+		return nil, fmt.Errorf("config: %w", err)
+	}
+	applog.Info("Config OK", "path", configPath)
 
 	// Secrets are already loaded and applied by EnsureConfig — just grab
 	// the store reference for later use (e.g. corruption toast).
@@ -102,18 +114,21 @@ func Init() (*App, error) {
 	name, lb, err := config.ResolveLogbook(cfg, "")
 	if err != nil {
 		applog.Error("Cannot resolve logbook", "error", err.Error())
+		lk.release()
 		return nil, fmt.Errorf("logbook: %w", err)
 	}
 
 	dbPath, err := config.DBPath(name, lb)
 	if err != nil {
 		applog.Error("Cannot determine database path", "logbook", name, "error", err.Error())
+		lk.release()
 		return nil, fmt.Errorf("db path: %w", err)
 	}
 
 	db, err := store.InitDB(dbPath)
 	if err != nil {
 		applog.Error("Database is corrupted or cannot be opened — cannot start", "path", dbPath, "error", err.Error())
+		lk.release()
 		return nil, fmt.Errorf("database: %w", err)
 	}
 	applog.Info("Database OK", "path", dbPath)
