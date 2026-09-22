@@ -104,9 +104,27 @@ type editorMsg struct {
 	// initiated it: a completion for a superseded session must not close
 	// the form of a newer session.
 	saveSession uint64
+	// saveRev is the form revision (le.editRev) captured when the save was
+	// dispatched. The form stays editable while the PATCH runs; a
+	// completion must only close it when BOTH the session and the revision
+	// still match — otherwise the newer unsaved input is preserved.
+	saveRev uint64
 	// wlSyncFollowUp marks a serialized follow-up PATCH result — it must
 	// never close an open form (the form closed at the original save).
 	wlSyncFollowUp bool
+	// syncCtx carries the originating per-contact serialization context for
+	// PATCH completions: the originating database, remote endpoint, editor
+	// generation and the chain database lease. The follow-up dispatch must
+	// use exactly this context — never the currently active database or the
+	// current editor's Wavelog credentials, which may belong to another
+	// logbook after a switch.
+	syncCtx *contactSyncContext
+	// lbID is the originating logbook identity of the operation that
+	// produced this message. Model-level side effects must persist results
+	// against THIS logbook (e.g. the Wavelog download cursor or the purge
+	// cursor reset), independently of which logbook or editor is currently
+	// visible.
+	lbID string
 }
 
 func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -236,6 +254,11 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if msg.saved != 0 && msg.saveSession != 0 && msg.saveSession != le.editSession {
 				closeForm = false // the contact was reopened — a newer session owns the form
+			}
+			if msg.saved != 0 && msg.saveRev != le.editRev {
+				// The operator typed after the save was captured — the form
+				// holds newer unsaved input that must not be abandoned.
+				closeForm = false
 			}
 			if closeForm {
 				le.mode = edModeList
@@ -733,6 +756,7 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 		le.cancelDownload()
 		le.dlOp = nil
 		gen := le.gen
+		lbID := le.logbookID
 		db := le.db
 		release := le.dbLease(db)
 		applog.Warn("LogbookEditor: purging all QSOs")
@@ -744,7 +768,7 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 			} else {
 				applog.Info("LogbookEditor: all QSOs purged")
 			}
-			return editorMsg{purged: true, err: err, gen: gen}
+			return editorMsg{purged: true, err: err, gen: gen, lbID: lbID}
 		}
 	case edModeConfirmSave:
 		// Keep the edit form visible until the async save result arrives;
@@ -767,6 +791,7 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 		remoteID := q.WavelogID
 		url, key := le.wlURL, le.wlKey
 		gen := le.gen
+		lbID := le.logbookID
 		db := le.db
 		release := le.dbLease(db)
 		le.mode = edModeList
@@ -783,7 +808,7 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 
 			// Synced QSOs: remove the Wavelog copy too. Best-effort — the
 			// local delete must never depend on this succeeding.
-			em := editorMsg{deleted: id, delCall: call, delDate: date, gen: gen}
+			em := editorMsg{deleted: id, delCall: call, delDate: date, gen: gen, lbID: lbID}
 			if remoteID > 0 && url != "" && key != "" && !le.Offline {
 				derr := wavelog.DeleteQSO(url, key, remoteID)
 				if derr != nil {
@@ -809,6 +834,10 @@ func (le *LogbookEditor) doSave() tea.Cmd {
 	date := formatDate(q.QSODate)
 	id := q.ID
 	synced := q.WavelogID > 0
+	// Capture the form revision when the save is dispatched: the form
+	// stays editable while the PATCH runs, and a completion must only
+	// close it when the operator has not typed since.
+	saveRev := le.editRev
 	// Capture what the worker needs up front — it must not read editor
 	// state from the command goroutine.
 	db := le.db
@@ -843,7 +872,7 @@ func (le *LogbookEditor) doSave() tea.Cmd {
 	// Synced QSOs: push the edit to Wavelog. Local save must never depend
 	// on this succeeding — and offline mode must never contact the server
 	// at all (the local change is reported as pending sync).
-	em := editorMsg{saved: id, saveCall: call, saveDate: date, gen: gen, saveSession: le.editSession}
+	em := editorMsg{saved: id, saveCall: call, saveDate: date, gen: gen, saveSession: le.editSession, saveRev: saveRev, lbID: le.logbookID}
 	if !synced {
 		return func() tea.Msg { return em }
 	}
@@ -863,33 +892,55 @@ func (le *LogbookEditor) doSave() tea.Cmd {
 	// completes, the owner loop dispatches a follow-up carrying the newest
 	// revision. Without this an older stalled PATCH could complete after a
 	// newer one and overwrite the server with stale values.
-	if le.syncInFlight == nil {
-		le.syncInFlight = make(map[int64]bool)
+	//
+	// The coordination lives on the model-owned coordinator and is keyed by
+	// persistent logbook/contact identity and remote source — NOT by this
+	// disposable editor instance. Reopening the editor (F8) while a PATCH
+	// is on the wire must still queue the next save, never dispatch it in
+	// parallel.
+	if le.sync == nil {
+		le.sync = &contactSyncCoord{}
 	}
-	if le.syncQueued == nil {
-		le.syncQueued = make(map[int64]bool)
+	syncKey := contactSyncKey{logbook: le.logbookID, localID: id, url: url}
+	if le.sync.inFlight == nil {
+		le.sync.inFlight = make(map[contactSyncKey]*contactSyncContext)
 	}
-	if le.syncInFlight[id] {
-		le.syncQueued[id] = true
+	if le.sync.queued == nil {
+		le.sync.queued = make(map[contactSyncKey]bool)
+	}
+	if le.sync.inFlight[syncKey] != nil {
+		le.sync.queued[syncKey] = true
 		em.wlSyncPending = true
 		return func() tea.Msg { return em }
 	}
-	le.syncInFlight[id] = true
-	// The PATCH worker writes locally (ack persistence, gone handling), so
-	// the database is leased NOW, on the owner loop, and released when the
-	// worker finishes: a logbook switch retires the database instead of
-	// closing it while the worker still holds it.
-	release := le.dbLease(db)
+	// Chain dispatch: acquire the database lease for the WHOLE queued
+	// operation — the in-flight PATCH, every follow-up, and the interval
+	// between workers. The owner loop releases it only when the chain is
+	// fully drained or abandoned, so a logbook switch retires the
+	// originating database instead of closing it mid-chain.
+	ctx := &contactSyncContext{
+		key:     syncKey,
+		coord:   le.sync,
+		db:      db,
+		url:     url,
+		apiKey:  key,
+		gen:     gen,
+		release: le.dbLease(db),
+	}
+	le.sync.inFlight[syncKey] = ctx
+	em.syncCtx = ctx
 	return func() tea.Msg {
-		defer release()
-		syncErr := wavelog.UpdateQSO(url, key, q.WavelogID, buildUpdateInput(q))
+		// The PATCH worker writes locally (ack persistence, gone handling)
+		// against the ORIGINATING database only — the chain lease holds it
+		// open, and the owner loop releases it at chain end.
+		syncErr := wavelog.UpdateQSO(ctx.url, ctx.apiKey, q.WavelogID, buildUpdateInput(q))
 		if syncErr != nil {
 			if apiErr, ok := syncErr.(*wavelog.APIError); ok && apiErr.Code == "not_found" {
 				// The remote copy was deleted elsewhere — the local id is
 				// stale; clear it so the row is honest again.
-				if serr := store.SetWavelogID(db, id, 0); serr == nil {
+				if serr := store.SetWavelogID(ctx.db, id, 0); serr == nil {
 					em.wlSyncGone = true
-					if derr := store.SetWavelogDirty(db, id, false); derr != nil {
+					if derr := store.SetWavelogDirty(ctx.db, id, false); derr != nil {
 						applog.Warn("Wavelog: failed to clear pending sync", "qso_id", id, "error", derr)
 					}
 				} else {
@@ -907,7 +958,7 @@ func (le *LogbookEditor) doSave() tea.Cmd {
 		// PATCH was in flight, an older acknowledgement must not clear
 		// the newer pending edit.
 		em.wlSyncOK = true
-		if derr := store.ClearWavelogDirtyIfRevision(db, id, rev); derr != nil {
+		if derr := store.ClearWavelogDirtyIfRevision(ctx.db, id, rev); derr != nil {
 			applog.Warn("Wavelog: failed to clear pending sync", "qso_id", id, "error", derr)
 			// The remote copy synced, but the local acknowledgement could
 			// not be persisted — report an incomplete synchronization result
@@ -1030,12 +1081,12 @@ func (le *LogbookEditor) runDownload(op *downloadOp, url, key, sid string, fetch
 		})
 	if err != nil {
 		if op.cancelled() {
-			msgCh <- editorMsg{dlCount: 0, dlDupes: 0, dlAborted: true, dlDone: true}
+			msgCh <- editorMsg{dlCount: 0, dlDupes: 0, dlAborted: true, dlDone: true, gen: le.gen, lbID: le.logbookID}
 			return
 		}
 		applog.ErrorDetail("Wavelog: contacts download failed",
 			fmt.Sprintf("url=%s station_id=%s from_id=%d error=%v", url, sid, fetchFromID, err))
-		msgCh <- editorMsg{dlErr: err.Error()}
+		msgCh <- editorMsg{dlErr: err.Error(), gen: le.gen, lbID: le.logbookID}
 		return
 	}
 
@@ -1044,7 +1095,7 @@ func (le *LogbookEditor) runDownload(op *downloadOp, url, key, sid string, fetch
 
 	if result.ADIFPath == "" || result.ExportedQSOs == 0 {
 		applog.Info("Wavelog: no new contacts to download")
-		msgCh <- editorMsg{dlCount: 0, dlLastID: result.LastFetchedID(), dlDownload: true, dlDone: true}
+		msgCh <- editorMsg{dlCount: 0, dlLastID: result.LastFetchedID(), dlDownload: true, dlDone: true, gen: le.gen, lbID: le.logbookID}
 		return
 	}
 
@@ -1052,7 +1103,7 @@ func (le *LogbookEditor) runDownload(op *downloadOp, url, key, sid string, fetch
 	f, err := os.Open(result.ADIFPath)
 	if err != nil {
 		applog.Error("Wavelog: failed to open temp ADIF file", "error", err)
-		msgCh <- editorMsg{dlErr: "failed to read downloaded data"}
+		msgCh <- editorMsg{dlErr: "failed to read downloaded data", gen: le.gen, lbID: le.logbookID}
 		return
 	}
 	defer f.Close()
@@ -1086,7 +1137,7 @@ func (le *LogbookEditor) runDownload(op *downloadOp, url, key, sid string, fetch
 	for scanner.Scan() {
 		// Check for abort between records.
 		if op.cancelled() {
-			msgCh <- editorMsg{dlCount: inserted, dlDupes: dupes, dlAborted: true, dlDone: true}
+			msgCh <- editorMsg{dlCount: inserted, dlDupes: dupes, dlAborted: true, dlDone: true, gen: le.gen, lbID: le.logbookID}
 			return
 		}
 
@@ -1246,6 +1297,8 @@ func (le *LogbookEditor) runDownload(op *downloadOp, url, key, sid string, fetch
 		dlTransient:  transientFails,
 		dlUnresolved: unresolved,
 		dlDone:       true,
+		gen:          le.gen,
+		lbID:         le.logbookID,
 	}
 }
 
@@ -1267,7 +1320,7 @@ func (le *LogbookEditor) runImport(op *downloadOp, path string, release func()) 
 		applog.Error("ADIF import: failed to open file", "path", path, "error", err)
 		// Terminal result carrying the error — the import must never end
 		// on a success-looking result screen.
-		msgCh <- editorMsg{dlErr: "cannot open file: " + err.Error(), dlDone: true}
+		msgCh <- editorMsg{dlErr: "cannot open file: " + err.Error(), dlDone: true, gen: le.gen, lbID: le.logbookID}
 		return
 	}
 	defer f.Close()
@@ -1281,7 +1334,7 @@ func (le *LogbookEditor) runImport(op *downloadOp, path string, release func()) 
 	for scanner.Scan() {
 		// Check for abort between records.
 		if op.cancelled() {
-			msgCh <- editorMsg{dlCount: inserted, dlDupes: dupes, dlAborted: true, dlDone: true}
+			msgCh <- editorMsg{dlCount: inserted, dlDupes: dupes, dlAborted: true, dlDone: true, gen: le.gen, lbID: le.logbookID}
 			return
 		}
 
@@ -1350,6 +1403,8 @@ func (le *LogbookEditor) runImport(op *downloadOp, path string, release func()) 
 			dlFailed: failed,
 			dlErr:    "file could not be read completely: " + err.Error(),
 			dlDone:   true,
+			gen:      le.gen,
+			lbID:     le.logbookID,
 		}
 		return
 	}
@@ -1361,6 +1416,8 @@ func (le *LogbookEditor) runImport(op *downloadOp, path string, release func()) 
 		dlDupes:  dupes,
 		dlFailed: failed,
 		dlDone:   true,
+		gen:      le.gen,
+		lbID:     le.logbookID,
 	}
 }
 
@@ -1452,7 +1509,7 @@ func (le *LogbookEditor) runExport(op *downloadOp, path string, release func()) 
 	f, err := os.Create(tmpPath)
 	if err != nil {
 		applog.Error("ADIF export: failed to create temp file", "path", tmpPath, "error", err)
-		msgCh <- editorMsg{dlErr: "cannot create file: " + err.Error(), dlDone: true}
+		msgCh <- editorMsg{dlErr: "cannot create file: " + err.Error(), dlDone: true, gen: le.gen, lbID: le.logbookID}
 		return
 	}
 
@@ -1462,7 +1519,7 @@ func (le *LogbookEditor) runExport(op *downloadOp, path string, release func()) 
 		f.Close()
 		os.Remove(tmpPath)
 		applog.Error("ADIF export: failed", "path", path, "reason", reason)
-		msgCh <- editorMsg{dlCount: written, dlErr: reason, dlDone: true}
+		msgCh <- editorMsg{dlCount: written, dlErr: reason, dlDone: true, gen: le.gen, lbID: le.logbookID}
 	}
 
 	// Write ADIF header. Per ADIF spec, the first character must not be '<'
@@ -1499,7 +1556,7 @@ func (le *LogbookEditor) runExport(op *downloadOp, path string, release func()) 
 	if streamErr == errExportCancelled {
 		f.Close()
 		os.Remove(tmpPath)
-		msgCh <- editorMsg{dlCount: written, dlAborted: true, dlDone: true}
+		msgCh <- editorMsg{dlCount: written, dlAborted: true, dlDone: true, gen: le.gen, lbID: le.logbookID}
 		return
 	}
 	if streamErr != nil {
@@ -1512,17 +1569,17 @@ func (le *LogbookEditor) runExport(op *downloadOp, path string, release func()) 
 	if err := f.Close(); err != nil {
 		os.Remove(tmpPath)
 		applog.Error("ADIF export: failed to close file", "path", tmpPath, "error", err)
-		msgCh <- editorMsg{dlCount: written, dlErr: "write error: " + err.Error(), dlDone: true}
+		msgCh <- editorMsg{dlCount: written, dlErr: "write error: " + err.Error(), dlDone: true, gen: le.gen, lbID: le.logbookID}
 		return
 	}
 	// Promote only after successful completion.
 	if err := os.Rename(tmpPath, path); err != nil {
 		os.Remove(tmpPath)
 		applog.Error("ADIF export: failed to promote file", "path", path, "error", err)
-		msgCh <- editorMsg{dlCount: written, dlErr: "cannot finalize file: " + err.Error(), dlDone: true}
+		msgCh <- editorMsg{dlCount: written, dlErr: "cannot finalize file: " + err.Error(), dlDone: true, gen: le.gen, lbID: le.logbookID}
 		return
 	}
 
 	applog.Info("ADIF export: complete", "path", path, "count", written)
-	msgCh <- editorMsg{dlCount: written, dlDone: true}
+	msgCh <- editorMsg{dlCount: written, dlDone: true, gen: le.gen, lbID: le.logbookID}
 }

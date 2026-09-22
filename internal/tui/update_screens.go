@@ -779,6 +779,18 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 	_, editorCmd := m.ui.logbookEditor.Update(msg)
 	var refreshCmd tea.Cmd
 	if em, ok := msg.(editorMsg); ok {
+		// Operation identity: a completion from a replaced editor (logbook
+		// switched) must not apply model-level side effects — toasts,
+		// refreshes, editor mutations — to the VISIBLE logbook. The editor
+		// rejects the form transition on its own; the model must reject the
+		// side effects too. Logbook-scoped persistence (purge cursor reset,
+		// download cursor) already ran globally against the ORIGINATING
+		// logbook in persistEditorLogbookCursor.
+		own := em.gen == 0 || em.gen == m.ui.logbookEditor.gen
+		if !own {
+			return m, tea.Batch(cmd, editorCmd)
+		}
+
 		if em.toastWarn != "" {
 			m.toasts.Warn(em.toastWarn)
 		}
@@ -848,12 +860,6 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 			m.ui.logbookEditor.needsReload = true
 			refreshCmd = m.refreshQSOS()
 			m.invalidateDashboardFlags()
-			if m.App.Logbook.Wavelog != nil {
-				m.App.Logbook.Wavelog.LastFetchedID = 0
-				if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
-					applog.Warn("Failed to reset Wavelog last_fetched_id after purge", "error", err)
-				}
-			}
 			m.needRefresh = true
 		}
 		if em.wlQSOID != 0 {
@@ -901,26 +907,59 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 	return m, tea.Batch(cmd, editorCmd, refreshCmd)
 }
 
-// handleEditorSideEffects applies model-level side effects of download /
-// import / export editor messages: persisting Wavelog's last_fetched_id,
-// flagging a QSO refresh, running the post-import DXCC backfill, and
-// surfacing early download errors. Used by both the editor-screen handler
-// and the global pump that keeps downloads flowing after the user leaves
-// the editor mid-operation.
-func (m *Model) handleEditorSideEffects(em editorMsg) tea.Cmd {
-	// Only Wavelog download completions may move the last_fetched_id
-	// cursor — ADIF import/export reuse this message shape and must never
-	// reset it.
+// persistEditorLogbookCursor persists logbook-scoped results of editor
+// operations — the purge cursor reset and the Wavelog download cursor —
+// against the ORIGINATING logbook carried by the message (lbID), never the
+// visible one. Runs globally in the update loop, independent of screen and
+// visible editor: a purge or download of logbook A completing after a switch
+// to B must update A's Wavelog cursor, not B's.
+func (m *Model) persistEditorLogbookCursor(em editorMsg) {
+	lbID := em.lbID
+	if lbID == "" {
+		lbID = m.App.LogbookName
+	}
+	lb, ok := m.App.Config.Logbooks[lbID]
+	if !ok || lb.Wavelog == nil {
+		return
+	}
+	if em.purged {
+		lb.Wavelog.LastFetchedID = 0
+		m.App.Config.Logbooks[lbID] = lb
+		if lbID == m.App.LogbookName {
+			m.App.Logbook = &lb
+		}
+		if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
+			applog.Warn("Failed to reset Wavelog last_fetched_id after purge", "logbook", lbID, "error", err)
+		}
+		return
+	}
 	if em.dlDone && !em.dlAborted && em.dlErr == "" && em.dlDownload {
-		if m.ui.logbookEditor != nil {
-			m.ui.logbookEditor.wlLastFetchedID = em.dlLastID
+		lb.Wavelog.LastFetchedID = em.dlLastID
+		m.App.Config.Logbooks[lbID] = lb
+		if lbID == m.App.LogbookName {
+			m.App.Logbook = &lb
 		}
-		if m.App.Logbook.Wavelog != nil {
-			m.App.Logbook.Wavelog.LastFetchedID = em.dlLastID
-			if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
-				applog.Warn("Failed to persist Wavelog last_fetched_id", "error", err)
-			}
+		if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
+			applog.Warn("Failed to persist Wavelog last_fetched_id", "logbook", lbID, "error", err)
 		}
+	}
+}
+
+// handleEditorSideEffects applies model-level side effects of download /
+// import / export editor messages: flagging a QSO refresh, running the
+// post-import DXCC backfill, and surfacing early download errors. Used by
+// both the editor-screen handler and the global pump that keeps downloads
+// flowing after the user leaves the editor mid-operation. Side effects apply
+// only to completions of the visible editor (generation match; gen 0 =
+// legacy/unbound) — logbook-scoped cursor persistence lives in
+// persistEditorLogbookCursor and runs globally instead.
+func (m *Model) handleEditorSideEffects(em editorMsg) tea.Cmd {
+	own := em.gen == 0 || (m.ui.logbookEditor != nil && em.gen == m.ui.logbookEditor.gen)
+	if !own {
+		return nil
+	}
+	if em.dlDone && !em.dlAborted && em.dlErr == "" && em.dlDownload && m.ui.logbookEditor != nil {
+		m.ui.logbookEditor.wlLastFetchedID = em.dlLastID
 	}
 	if em.dlDone {
 		// Download/import finished — the editor already recorded counts.

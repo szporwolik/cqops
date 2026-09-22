@@ -123,38 +123,46 @@ func (le *LogbookEditor) ApplyRemoteRefresh(data *wavelog.QSOData, req remoteRef
 // NEWEST revision from the database. Remote updates for one contact are
 // therefore applied in save order — an older stalled PATCH can never
 // complete after a newer one and overwrite the server with stale values.
+//
+// The whole chain is bound to the immutable originating context carried by
+// the completion (database, remote endpoint, generation, coordinator): the
+// follow-up reads and writes ONLY the originating database and PATCHes ONLY
+// the originating endpoint. The coordination is keyed by persistent
+// logbook/contact identity and remote source on the model-owned coordinator
+// — NOT by the disposable editor — so reopening the editor (F8) while a
+// PATCH is on the wire preserves the queue and the queued revision is still
+// pushed. The context's database lease covers the entire queued operation
+// including the interval between workers, and is released here when the
+// chain is fully drained.
 // Runs globally, even when the editor screen is not visible.
 func (m *Model) handleQSOSyncCompletion(em editorMsg) tea.Cmd {
-	le := m.ui.logbookEditor
-	if le == nil {
+	ctx := em.syncCtx
+	if ctx == nil || ctx.coord == nil {
 		return nil
 	}
-	// A completion from a replaced editor (logbook switched) must not touch
-	// the new editor's serialization state.
-	if em.gen != 0 && em.gen != le.gen {
+	coord := ctx.coord
+	delete(coord.inFlight, ctx.key)
+	if !coord.queued[ctx.key] {
+		// The chain is fully drained — the originating row was
+		// acknowledged (or reported) and no further PATCHes are queued.
+		// Release the chain database lease.
+		ctx.release()
 		return nil
 	}
-	delete(le.syncInFlight, em.saved)
-	if !le.syncQueued[em.saved] {
-		return nil
-	}
-	delete(le.syncQueued, em.saved)
-	le.syncInFlight[em.saved] = true
-
-	db := m.App.DB
-	url, key := le.wlURL, le.wlKey
-	gen := le.gen
-	id := em.saved
-	// The follow-up writes locally (ack persistence, gone handling), so it
-	// leases the database for its whole lifetime: a logbook switch retires
-	// the database instead of closing it under the worker.
-	release := le.dbLease(db)
+	delete(coord.queued, ctx.key)
+	// Follow-up: re-insert the SAME context as in-flight. Its lease stays
+	// held across the worker boundary, keeping the originating database
+	// open even if the logbook was switched or the editor recreated
+	// meanwhile.
+	coord.inFlight[ctx.key] = ctx
+	id := ctx.key.localID
 	return func() tea.Msg {
-		defer release()
-		// Read the row fresh — the queued save already stored its newer
-		// revision locally, so this PATCH carries exactly the newest edit.
-		row, err := store.GetQSOByID(db, id)
-		res := editorMsg{saved: id, gen: gen, wlSyncFollowUp: true}
+		// The follow-up reads the row fresh from the ORIGINATING database
+		// and pushes to the ORIGINATING endpoint — the queued save stored
+		// its newer revision there, so this PATCH carries exactly the
+		// newest edit.
+		row, err := store.GetQSOByID(ctx.db, id)
+		res := editorMsg{saved: id, gen: ctx.gen, wlSyncFollowUp: true, syncCtx: ctx}
 		if err != nil {
 			applog.Warn("Wavelog: follow-up sync cannot read QSO", "qso_id", id, "error", err)
 			res.wlSyncErr = err.Error()
@@ -166,12 +174,12 @@ func (m *Model) handleQSOSyncCompletion(em editorMsg) tea.Cmd {
 			res.wlSyncGone = true
 			return res
 		}
-		syncErr := wavelog.UpdateQSO(url, key, row.WavelogID, buildUpdateInput(row))
+		syncErr := wavelog.UpdateQSO(ctx.url, ctx.apiKey, row.WavelogID, buildUpdateInput(row))
 		if syncErr != nil {
 			if apiErr, ok := syncErr.(*wavelog.APIError); ok && apiErr.Code == "not_found" {
-				if serr := store.SetWavelogID(db, id, 0); serr == nil {
+				if serr := store.SetWavelogID(ctx.db, id, 0); serr == nil {
 					res.wlSyncGone = true
-					if derr := store.SetWavelogDirty(db, id, false); derr != nil {
+					if derr := store.SetWavelogDirty(ctx.db, id, false); derr != nil {
 						applog.Warn("Wavelog: failed to clear pending sync", "qso_id", id, "error", derr)
 					}
 				} else {
@@ -183,7 +191,7 @@ func (m *Model) handleQSOSyncCompletion(em editorMsg) tea.Cmd {
 			return res
 		}
 		res.wlSyncOK = true
-		if derr := store.ClearWavelogDirtyIfRevision(db, id, row.WavelogDirtyRev); derr != nil {
+		if derr := store.ClearWavelogDirtyIfRevision(ctx.db, id, row.WavelogDirtyRev); derr != nil {
 			applog.Warn("Wavelog: failed to clear pending sync", "qso_id", id, "error", derr)
 			// The remote copy synced, but the local acknowledgement could
 			// not be persisted — report an incomplete synchronization so

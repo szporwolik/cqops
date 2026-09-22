@@ -183,14 +183,22 @@ type Model struct {
 
 	lookup           lookupState
 	callbookRegistry *callbook.Registry // ordered callbook providers; nil if none
-	keepComment      bool               // "Keep Comment" checkbox — retains comment field content across QSOs
-	keepFocused      bool               // true when the Keep/Retain checkbox row has focus
-	keepSubFocus     int                // 0=Keep, 1=Retain — which checkbox in the row is active
-	retainForm       bool               // "Retain" checkbox — prevents form clearing after QSO save
-	dupeCacheKey     string             // cache key for checkDupe result
-	dupeCacheResult  bool               // cached outcome of last checkDupe
-	gridSource       gridSource
-	qthSource        gridSource // origin of the QTH field value (same precedence as grid)
+
+	// sync owns the per-contact PATCH serialization state. It is keyed by
+	// persistent logbook/contact identity and remote source and lives on
+	// the model — NOT on the disposable editor — so reopening the editor
+	// (F8) while a PATCH is on the wire still queues the next save and
+	// preserves queued revisions across navigation.
+	sync *contactSyncCoord
+
+	keepComment     bool   // "Keep Comment" checkbox — retains comment field content across QSOs
+	keepFocused     bool   // true when the Keep/Retain checkbox row has focus
+	keepSubFocus    int    // 0=Keep, 1=Retain — which checkbox in the row is active
+	retainForm      bool   // "Retain" checkbox — prevents form clearing after QSO save
+	dupeCacheKey    string // cache key for checkDupe result
+	dupeCacheResult bool   // cached outcome of last checkDupe
+	gridSource      gridSource
+	qthSource       gridSource // origin of the QTH field value (same precedence as grid)
 
 	keys           KeyMap
 	help           help.Model
@@ -281,7 +289,7 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	// already set it, but config value takes precedence).
 	applog.SetDebugMode(a.Config.General.Debug)
 
-	m := &Model{App: a, qsos: initialQSOS, toasts: NewToastQueue(), dateTimeAuto: true, width: 80, height: 24, inetOnline: true}
+	m := &Model{App: a, qsos: initialQSOS, toasts: NewToastQueue(), dateTimeAuto: true, width: 80, height: 24, inetOnline: true, sync: &contactSyncCoord{}}
 	a.InetOnline = true // sync with model — assume online until first health check
 
 	// Build the callbook provider registry from config.
@@ -886,9 +894,33 @@ func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return result, resultCmd
 	}
 
+	// Per-contact remote-save serialization completions are global and must
+	// run BEFORE the deferred-pending-request block below: that block can
+	// early-return after dispatching an unrelated pending lookup (DXC,
+	// QRZ, …), which would otherwise consume this completion message and
+	// leave the serialization slot occupied forever — every subsequent
+	// save would keep queueing with no worker to drain it. wlSyncIncomplete
+	// results (remote synced, local acknowledgement not persisted) also
+	// release the serialization slot — the row stays durably pending for a
+	// retry.
+	if em, ok := msg.(editorMsg); ok && em.saved != 0 &&
+		(em.wlSyncOK || em.wlSyncGone || em.wlSyncErr != "" || em.wlSyncIncomplete) {
+		cmd = tea.Batch(cmd, m.handleQSOSyncCompletion(em))
+	}
+
+	// Logbook-scoped persistence of editor-operation results (purge cursor
+	// reset, Wavelog download cursor) runs globally against the ORIGINATING
+	// logbook carried by the message — before any early-return path — so a
+	// completion arriving after a logbook switch or off the editor screen
+	// still updates its own logbook, never the visible one.
+	if em, ok := msg.(editorMsg); ok {
+		m.persistEditorLogbookCursor(em)
+	}
+
 	// Deferred pending requests (QRZ lookup, WL lookup, QSO refresh) —
 	// must run before screen-specific routing so they work regardless of
-	// which screen is active.
+	// which screen is active. The incoming cmd is accumulated — any
+	// completion dispatched above must survive the early return below.
 	pendingCmd, handled := m.handlePendingRequests(cmd)
 	if handled {
 		return m, pendingCmd
@@ -916,16 +948,6 @@ func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmd = tea.Batch(cmd, m.handleEditorSideEffects(em))
 			}
 		}
-	}
-
-	// Per-contact remote-save serialization completions are global too: the
-	// queued follow-up PATCH must go out even when the editor screen was
-	// left before the in-flight PATCH finished. wlSyncIncomplete results
-	// (remote synced, local acknowledgement not persisted) also release
-	// the serialization slot — the row stays durably pending for a retry.
-	if em, ok := msg.(editorMsg); ok && em.saved != 0 &&
-		(em.wlSyncOK || em.wlSyncGone || em.wlSyncErr != "" || em.wlSyncIncomplete) {
-		cmd = tea.Batch(cmd, m.handleQSOSyncCompletion(em))
 	}
 
 	// Screen-specific routing

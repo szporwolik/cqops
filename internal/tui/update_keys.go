@@ -673,6 +673,8 @@ func (m *Model) initLogbookEditor() {
 		StationGrid:     m.effectiveGrid(),
 		StationCall:     m.App.Logbook.Station.Callsign,
 		KeepAlive:       m.App.KeepDBAlive,
+		Sync:            m.sync,
+		LogbookID:       m.App.LogbookName,
 	})
 	m.ui.logbookEditor.width = m.width
 	m.ui.logbookEditor.height = m.height

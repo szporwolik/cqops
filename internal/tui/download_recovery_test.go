@@ -299,8 +299,8 @@ func TestDownload_TransientFailureFreezesCheckpoint(t *testing.T) {
 }
 
 // TestEditorSideEffects_ImportExportDoesNotMoveWavelogCursor verifies the
-// shared completion handler only persists last_fetched_id for Wavelog
-// download completions — ordinary ADIF import/export must not reset it.
+// logbook-scoped cursor persistence only applies to Wavelog download
+// completions — ordinary ADIF import/export must not reset it.
 func TestEditorSideEffects_ImportExportDoesNotMoveWavelogCursor(t *testing.T) {
 	m := newLifecycleTestModel(t)
 	m.App.ConfigPath = filepath.Join(t.TempDir(), "config.yaml")
@@ -308,13 +308,13 @@ func TestEditorSideEffects_ImportExportDoesNotMoveWavelogCursor(t *testing.T) {
 	wl.LastFetchedID = 42
 
 	// Import/export-shaped completion (no dlDownload flag) — cursor untouched.
-	m.handleEditorSideEffects(editorMsg{dlDone: true, dlCount: 3})
+	m.persistEditorLogbookCursor(editorMsg{dlDone: true, dlCount: 3})
 	if wl.LastFetchedID != 42 {
 		t.Errorf("import completion reset cursor to %d, want 42", wl.LastFetchedID)
 	}
 
 	// Download-shaped completion advances the cursor.
-	m.handleEditorSideEffects(editorMsg{dlDone: true, dlCount: 1, dlLastID: 99, dlDownload: true})
+	m.persistEditorLogbookCursor(editorMsg{dlDone: true, dlCount: 1, dlLastID: 99, dlDownload: true})
 	if wl.LastFetchedID != 99 {
 		t.Errorf("download completion should set cursor to 99, got %d", wl.LastFetchedID)
 	}
@@ -1159,6 +1159,7 @@ func pumpDownload(t *testing.T, m *Model) {
 	for le.isDownloadActive() {
 		msg := cmd()
 		if em, ok := msg.(editorMsg); ok && em.dlDone {
+			m.persistEditorLogbookCursor(em)
 			m.handleEditorSideEffects(em)
 		}
 		sub, c := le.Update(msg)

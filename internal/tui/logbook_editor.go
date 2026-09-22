@@ -111,6 +111,42 @@ var qefLabels = []string{
 	"Contest ID",
 }
 
+// contactSyncKey identifies one contact's remote-save chain persistently,
+// independent of any editor instance: the logbook identity at dispatch, the
+// local QSO id, and the remote Wavelog endpoint. Reopening the editor (F8)
+// must never bypass serialization, so the key must not depend on editor
+// generation or instance.
+type contactSyncKey struct {
+	logbook string
+	localID int64
+	url     string
+}
+
+// contactSyncCoord owns the per-contact PATCH serialization state. It lives
+// on the Model — NOT on the disposable editor — so queued revisions and
+// in-flight chains survive editor recreation and screen navigation.
+type contactSyncCoord struct {
+	inFlight map[contactSyncKey]*contactSyncContext
+	queued   map[contactSyncKey]bool
+}
+
+// contactSyncContext is the immutable context of one contact's remote-save
+// chain: the persistent coordination key and coordinator, the originating
+// database and Wavelog endpoint, the editor generation that dispatched it,
+// and the database lease covering the whole chain. The lease is released on
+// the owner loop only when the chain is fully drained or abandoned, so a
+// logbook switch retires — never closes — the originating database while a
+// queued operation is still pending.
+type contactSyncContext struct {
+	key     contactSyncKey
+	coord   *contactSyncCoord
+	db      *sql.DB
+	url     string
+	apiKey  string
+	gen     uint64
+	release func()
+}
+
 type LogbookEditor struct {
 	db               *sql.DB
 	gen              uint64 // unique per editor instance — background operation results from a replaced editor are discarded
@@ -160,11 +196,13 @@ type LogbookEditor struct {
 	totalCount  int
 	pageSize    int
 
-	// Per-contact remote-save serialization (owner loop only): at most one
-	// PATCH may be in flight per QSO; further saves are queued and the
-	// newest revision is pushed when the in-flight PATCH completes.
-	syncInFlight map[int64]bool // local qso id → a PATCH is on the wire
-	syncQueued   map[int64]bool // local qso id → a newer save waits for the in-flight PATCH
+	// Per-contact remote-save serialization. The coordination state lives on
+	// the model-owned coordinator (sync), never on this disposable
+	// instance: F8 recreates the editor while a PATCH can still be on the
+	// wire, and queued revisions must survive across instances. Chains are
+	// keyed by persistent logbook/contact identity and remote source.
+	sync      *contactSyncCoord
+	logbookID string // logbook identity at editor creation (serialization key part)
 
 	// keepAlive leases the database for background operations so a logbook
 	// switch cannot close it under a pending worker (App.KeepDBAlive).
@@ -238,6 +276,13 @@ type LogbookEditorConfig struct {
 	// (App.KeepDBAlive): a logbook switch retires the old database, and the
 	// lease defers its close until the operation's local writes finish.
 	KeepAlive func(*sql.DB) func()
+	// Sync is the model-owned per-contact serialization coordinator that
+	// survives editor recreation (F8). Nil configures a private coordinator
+	// for standalone editors.
+	Sync *contactSyncCoord
+	// LogbookID is the persistent logbook identity at editor creation; it
+	// is part of the serialization key.
+	LogbookID string
 }
 
 // logbookEditorGenCounter assigns a unique generation to every editor
@@ -247,7 +292,7 @@ type LogbookEditorConfig struct {
 var logbookEditorGenCounter atomic.Uint64
 
 func NewLogbookEditor(cfg LogbookEditorConfig) *LogbookEditor {
-	le := &LogbookEditor{db: cfg.DB, gen: logbookEditorGenCounter.Add(1), mode: edModeList, wlURL: cfg.WLURL, wlKey: cfg.WLKey, wlStationID: cfg.WLStationID, wlLastFetchedID: cfg.WLLastFetchedID, logStationOp: cfg.StationOperator, logStationGrid: cfg.StationGrid, logStationCall: cfg.StationCall, keepAlive: cfg.KeepAlive}
+	le := &LogbookEditor{db: cfg.DB, gen: logbookEditorGenCounter.Add(1), mode: edModeList, wlURL: cfg.WLURL, wlKey: cfg.WLKey, wlStationID: cfg.WLStationID, wlLastFetchedID: cfg.WLLastFetchedID, logStationOp: cfg.StationOperator, logStationGrid: cfg.StationGrid, logStationCall: cfg.StationCall, keepAlive: cfg.KeepAlive, sync: cfg.Sync, logbookID: cfg.LogbookID}
 	le.filePicker = filepicker.New()
 	le.filePicker.FileAllowed = false
 	le.filePicker.DirAllowed = true

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -900,6 +901,595 @@ func TestUploadCompletionFromReplacedEditorDoesNotCloseForm(t *testing.T) {
 	}
 }
 
+// TestFollowUpUsesOriginatingContextAcrossLogbookSwitch reproduces the
+// reported corruption: queuing another edit in logbook A and switching to
+// logbook B WITHOUT recreating the editor used to make the follow-up read
+// B's row with the same local id (m.App.DB) and PATCH it to A's server (the
+// retained editor's credentials) — contact corruption plus unintended data
+// disclosure. The follow-up must be bound to the immutable originating
+// database and endpoint, and the database lease must survive the interval
+// between the two workers.
+func TestFollowUpUsesOriginatingContextAcrossLogbookSwitch(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var mu sync.Mutex
+	var patched []string // "call|comment" per PATCH received
+	srvA := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			http.NotFound(w, r)
+			return
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode patch body: %v", err)
+		}
+		mu.Lock()
+		patched = append(patched, fmt.Sprintf("%v|%v", body["call"], body["comment"]))
+		first := len(patched) == 1
+		mu.Unlock()
+		if first {
+			close(started)
+			<-release
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"data": remoteQSODoc(42)})
+	}))
+	defer srvA.Close()
+
+	dir := t.TempDir()
+	dbPathA := filepath.Join(dir, "a.db")
+	dbPathB := filepath.Join(dir, "b.db")
+
+	cfg := config.DefaultConfig()
+	lbA := config.Logbook{
+		Station:      config.Station{Callsign: "SP9A", Grid: "JO90"},
+		DatabasePath: dbPathA,
+		Wavelog:      &config.WavelogConfig{Enabled: true, URL: srvA.URL, APIKey: "wl2_test", StationProfileID: "1"},
+	}
+	lbB := config.Logbook{Station: config.Station{Callsign: "SP9B", Grid: "JO91"}, DatabasePath: dbPathB}
+	cfg.Logbooks = map[string]config.Logbook{"a": lbA, "b": lbB}
+	cfg.State.ActiveLogbook = "a"
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := config.Save(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	dbA, err := store.InitDB(dbPathA)
+	if err != nil {
+		t.Fatalf("init db A: %v", err)
+	}
+	a := &app.App{
+		Config:      cfg,
+		ConfigPath:  cfgPath,
+		LogbookName: "a",
+		Logbook:     &lbA,
+		DB:          dbA,
+		DBPath:      dbPathA,
+	}
+	t.Cleanup(a.StopAPRSTimer)
+
+	// Logbook A: a synced contact (local id 1).
+	q1 := &qso.QSO{Call: "SP9AAA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+		TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", Comment: "first", WavelogID: 42}
+	idA, err := store.InsertQSO(dbA, q1)
+	if err != nil {
+		t.Fatalf("InsertQSO A: %v", err)
+	}
+	q1.ID = idA
+
+	le := NewLogbookEditor(LogbookEditorConfig{
+		DB: dbA, WLURL: srvA.URL, WLKey: "wl2_test", WLStationID: "1",
+		StationOperator: "OP", StationGrid: "JO90", KeepAlive: a.KeepDBAlive,
+	})
+	le.editing = q1
+	le.mode = edModeEdit
+	le.fillEditForm(q1)
+	le.fields[qefComment].SetValue("edited-1")
+
+	m := New(a, nil)
+	m.ui.logbookEditor = le
+
+	done1 := make(chan editorMsg, 1)
+	go func() { done1 <- execCmd(le.doSave()).(editorMsg) }()
+
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first PATCH never started")
+	}
+
+	// The operator edits and saves again while the PATCH is on the wire.
+	le.fields[qefComment].SetValue("edited-2")
+	em2 := execCmd(le.doSave()).(editorMsg)
+	if !em2.wlSyncPending {
+		t.Fatalf("second save: wlSyncPending=%v, want queued", em2.wlSyncPending)
+	}
+
+	// Switch to logbook B WITHOUT recreating the editor (the real flow).
+	if err := a.SwitchLogbook("b"); err != nil {
+		t.Fatalf("switch to B: %v", err)
+	}
+	t.Cleanup(func() { a.DB.Close() })
+
+	// B happens to contain a DIFFERENT contact under the same local id.
+	qB := &qso.QSO{Call: "SP9ZZZ", Band: "40m", Mode: "CW", QSODate: "20240502",
+		TimeOn: "130000", Comment: "other", WavelogID: 99}
+	idB, err := store.InsertQSO(a.DB, qB)
+	if err != nil {
+		t.Fatalf("InsertQSO B: %v", err)
+	}
+	if idB != idA {
+		t.Fatalf("B row id = %d, want %d (same local id as A's row)", idB, idA)
+	}
+
+	close(release)
+	em1 := <-done1
+	if !em1.wlSyncOK {
+		t.Fatalf("first PATCH: ok=%v err=%q", em1.wlSyncOK, em1.wlSyncErr)
+	}
+
+	// The follow-up must read A's row from the ORIGINATING database and
+	// PATCH the ORIGINATING endpoint — the current App.DB (B) and the
+	// editor's credentials (A) were both wrong inputs on the old code.
+	followUp := m.handleQSOSyncCompletion(em1)
+	if followUp == nil {
+		t.Fatal("expected the queued follow-up PATCH")
+	}
+	em3 := execCmd(followUp).(editorMsg)
+	if !em3.wlSyncOK {
+		t.Fatalf("follow-up PATCH: ok=%v err=%q", em3.wlSyncOK, em3.wlSyncErr)
+	}
+	if c := m.handleQSOSyncCompletion(em3); c != nil {
+		t.Fatal("no further PATCH should be dispatched")
+	}
+
+	// The server must have received exactly A's two edits — never B's row.
+	mu.Lock()
+	got := append([]string(nil), patched...)
+	mu.Unlock()
+	if len(got) != 2 {
+		t.Fatalf("server received %d PATCHes: %v, want 2 (A's edits only)", len(got), got)
+	}
+	if got[0] != "SP9AAA|edited-1" || got[1] != "SP9AAA|edited-2" {
+		t.Fatalf("server PATCHes = %v, want [SP9AAA|edited-1 SP9AAA|edited-2]", got)
+	}
+
+	// B's contact is untouched.
+	storedB, err := store.GetQSOByID(a.DB, idB)
+	if err != nil {
+		t.Fatalf("GetQSOByID B: %v", err)
+	}
+	if storedB.Comment != "other" || storedB.Call != "SP9ZZZ" || storedB.WavelogID != 99 {
+		t.Errorf("B's row was corrupted: %+v", storedB)
+	}
+
+	// A's row carries the newest edit and the chain lease kept the retired
+	// database open until the chain drained.
+	reopened, err := store.Open(dbPathA)
+	if err != nil {
+		t.Fatalf("reopen A: %v", err)
+	}
+	defer reopened.Close()
+	storedA, err := store.GetQSOByID(reopened, idA)
+	if err != nil {
+		t.Fatalf("GetQSOByID A: %v", err)
+	}
+	if storedA.Comment != "edited-2" {
+		t.Errorf("A comment = %q, want edited-2", storedA.Comment)
+	}
+	if storedA.WavelogDirty {
+		t.Error("A's row should be clean after the follow-up ack")
+	}
+	// The chain lease was released at chain end: the retired db is closed.
+	if err := dbA.Ping(); err == nil {
+		t.Error("retired A database should be closed after the chain lease released")
+	}
+}
+
+// TestSaveSerializationSurvivesEditorRecreation reproduces the reported bug:
+// the serialization maps lived on the editor instance, so pressing F8 (which
+// creates a NEW editor) while a PATCH was still on the wire let the next
+// save dispatch independently — the delayed "first" then overwrote "second"
+// on the server (probe: remote="first", local="second", dirty=false). The
+// coordination must live on the model, keyed by persistent logbook/contact
+// identity and remote source, so queued revisions survive editor recreation.
+func TestSaveSerializationSurvivesEditorRecreation(t *testing.T) {
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	var mu sync.Mutex
+	var applied []string
+	requestCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Comment string `json:"comment"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		mu.Lock()
+		requestCount++
+		i := requestCount
+		mu.Unlock()
+		if i == 1 {
+			close(firstStarted)
+			<-releaseFirst // the first PATCH stalls
+		}
+		mu.Lock()
+		applied = append(applied, body.Comment)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"data": remoteQSODoc(42)})
+	}))
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	wl := m.App.Logbook.Wavelog
+	wl.URL = srv.URL
+	wl.APIKey = "wl2_test"
+	wl.Enabled = true
+	wl.StationProfileID = "1"
+
+	q := &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+		TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", Comment: "before", WavelogID: 42}
+	id, err := store.InsertQSO(m.App.DB, q)
+	if err != nil {
+		t.Fatalf("InsertQSO: %v", err)
+	}
+	q.ID = id
+
+	// Editor instance #1 (F8): save "first" — its PATCH stalls.
+	m.initLogbookEditor()
+	le1 := m.ui.logbookEditor
+	le1.editing = q
+	le1.mode = edModeEdit
+	le1.fillEditForm(q)
+	le1.fields[qefComment].SetValue("first")
+
+	done1 := make(chan editorMsg, 1)
+	go func() { done1 <- execCmd(le1.doSave()).(editorMsg) }()
+	select {
+	case <-firstStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first PATCH never started")
+	}
+
+	// F8 while the PATCH is still on the wire: a NEW editor instance.
+	m.initLogbookEditor()
+	le2 := m.ui.logbookEditor
+	if le2 == le1 {
+		t.Fatal("F8 must create a new editor instance")
+	}
+	le2.editing = q
+	le2.mode = edModeEdit
+	le2.fillEditForm(q)
+	le2.fields[qefComment].SetValue("second")
+
+	em2 := execCmd(le2.doSave()).(editorMsg)
+	if em2.err != nil {
+		t.Fatalf("second local save failed: %v", em2.err)
+	}
+	if !em2.wlSyncPending {
+		t.Fatal("second save across editor recreation must be queued while the PATCH is in flight")
+	}
+
+	close(releaseFirst)
+	em1 := <-done1
+	if !em1.wlSyncOK {
+		t.Fatalf("first save: ok=%v err=%q, want ok", em1.wlSyncOK, em1.wlSyncErr)
+	}
+	followUp := m.handleQSOSyncCompletion(em1)
+	if followUp == nil {
+		t.Fatal("the queued revision must survive editor recreation")
+	}
+	em3 := execCmd(followUp).(editorMsg)
+	if !em3.wlSyncOK {
+		t.Fatalf("follow-up save: ok=%v err=%q, want ok", em3.wlSyncOK, em3.wlSyncErr)
+	}
+	if m.handleQSOSyncCompletion(em3) != nil {
+		t.Fatal("no further PATCH should be dispatched")
+	}
+
+	mu.Lock()
+	gotOrder := append([]string(nil), applied...)
+	mu.Unlock()
+	if len(gotOrder) != 2 || gotOrder[0] != "first" || gotOrder[1] != "second" {
+		t.Fatalf("server applied requests in order %v, want [first second]", gotOrder)
+	}
+
+	stored, err := store.GetQSOByID(m.App.DB, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if stored.Comment != "second" {
+		t.Errorf("local comment = %q, want second", stored.Comment)
+	}
+	if stored.WavelogDirty {
+		t.Error("pending flag should clear only after the newest revision was acknowledged")
+	}
+}
+
+// TestPatchCompletionSurvivesPendingLookupEarlyReturn reproduces the reported
+// stuck-queue bug: handlePendingRequests can early-return after dispatching
+// an unrelated pending lookup, consuming the incoming PATCH completion before
+// the serialization handler ran — the slot stayed occupied and every later
+// save kept queueing with no worker to drain it. Completions must be
+// processed BEFORE unrelated early-return paths.
+func TestPatchCompletionSurvivesPendingLookupEarlyReturn(t *testing.T) {
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	var mu sync.Mutex
+	var applied []string
+	requestCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Comment string `json:"comment"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		mu.Lock()
+		requestCount++
+		i := requestCount
+		mu.Unlock()
+		if i == 1 {
+			close(firstStarted)
+			<-releaseFirst // the first PATCH stalls
+		}
+		mu.Lock()
+		applied = append(applied, body.Comment)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"data": remoteQSODoc(42)})
+	}))
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	wl := m.App.Logbook.Wavelog
+	wl.URL = srv.URL
+	wl.APIKey = "wl2_test"
+	wl.Enabled = true
+	wl.StationProfileID = "1"
+
+	q := &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+		TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", Comment: "before", WavelogID: 42}
+	id, err := store.InsertQSO(m.App.DB, q)
+	if err != nil {
+		t.Fatalf("InsertQSO: %v", err)
+	}
+	q.ID = id
+
+	m.initLogbookEditor()
+	le := m.ui.logbookEditor
+	le.editing = q
+	le.mode = edModeEdit
+	le.fillEditForm(q)
+	le.fields[qefComment].SetValue("first")
+
+	done1 := make(chan editorMsg, 1)
+	go func() { done1 <- execCmd(le.doSave()).(editorMsg) }()
+	select {
+	case <-firstStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("first PATCH never started")
+	}
+	le.fields[qefComment].SetValue("second")
+	em2 := execCmd(le.doSave()).(editorMsg)
+	if !em2.wlSyncPending {
+		t.Fatal("second save must be queued while the PATCH is in flight")
+	}
+
+	close(releaseFirst)
+	em1 := <-done1
+	if !em1.wlSyncOK {
+		t.Fatalf("first save: ok=%v err=%q, want ok", em1.wlSyncOK, em1.wlSyncErr)
+	}
+
+	// A pending DXC lookup makes handlePendingRequests early-return on the
+	// very update that delivers the completion.
+	m.dxc.need = true
+	m.dxc.call = "SP9MOA"
+
+	upd, out := m.Update(em1)
+	m = upd.(*Model)
+
+	// The completion must have been processed before the pending-lookup
+	// early return: the queue slot is drained and the follow-up dispatched.
+	key := contactSyncKey{logbook: "test", localID: id, url: srv.URL}
+	if m.sync.queued[key] {
+		t.Fatal("completion was consumed by the pending-lookup early return — the queue is stuck")
+	}
+	if m.sync.inFlight[key] == nil {
+		t.Fatal("the queued follow-up was not dispatched")
+	}
+
+	// Walk the returned batch and run the follow-up worker.
+	batch, ok := execCmd(out).(tea.BatchMsg)
+	if !ok {
+		t.Fatalf("Update returned %T, want tea.BatchMsg", out)
+	}
+	var followUp editorMsg
+	for _, sub := range batch {
+		if em, ok := sub().(editorMsg); ok && em.wlSyncFollowUp {
+			followUp = em
+		}
+	}
+	if followUp.saved == 0 {
+		t.Fatal("the follow-up PATCH was not among the dispatched commands")
+	}
+	if !followUp.wlSyncOK {
+		t.Fatalf("follow-up PATCH: ok=%v err=%q, want ok", followUp.wlSyncOK, followUp.wlSyncErr)
+	}
+	if m.handleQSOSyncCompletion(followUp) != nil {
+		t.Fatal("no further PATCH should be dispatched")
+	}
+
+	mu.Lock()
+	gotOrder := append([]string(nil), applied...)
+	mu.Unlock()
+	if len(gotOrder) != 2 || gotOrder[0] != "first" || gotOrder[1] != "second" {
+		t.Fatalf("server applied requests in order %v, want [first second]", gotOrder)
+	}
+	stored, err := store.GetQSOByID(m.App.DB, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if stored.Comment != "second" {
+		t.Errorf("local comment = %q, want second", stored.Comment)
+	}
+	if stored.WavelogDirty {
+		t.Error("pending flag should clear after the newest revision was acknowledged")
+	}
+}
+
+// TestForeignPurgeCompletionPersistsAgainstOriginatingLogbook reproduces the
+// reported cursor corruption: purging logbook A and switching to B before the
+// completion arrives used to reset B's Wavelog download cursor (99 → 0)
+// through the visible editor, while A's own cursor was never handled. The
+// completion must apply to the ORIGINATING logbook only — A's cursor resets,
+// B's stays untouched, and B's editor is not reloaded.
+func TestForeignPurgeCompletionPersistsAgainstOriginatingLogbook(t *testing.T) {
+	dir := t.TempDir()
+	dbPathA := filepath.Join(dir, "a.db")
+	dbPathB := filepath.Join(dir, "b.db")
+	if _, err := store.InitDB(dbPathA); err != nil {
+		t.Fatalf("init db A: %v", err)
+	}
+	dbB, err := store.InitDB(dbPathB)
+	if err != nil {
+		t.Fatalf("init db B: %v", err)
+	}
+	defer dbB.Close()
+
+	cfg := config.DefaultConfig()
+	lbA := config.Logbook{
+		Station:      config.Station{Callsign: "SP9A", Grid: "JO90"},
+		DatabasePath: dbPathA,
+		Wavelog:      &config.WavelogConfig{Enabled: true, URL: "https://a.example", APIKey: "wl2_test", StationProfileID: "1", LastFetchedID: 0},
+	}
+	lbB := config.Logbook{
+		Station:      config.Station{Callsign: "SP9B", Grid: "JO91"},
+		DatabasePath: dbPathB,
+		Wavelog:      &config.WavelogConfig{Enabled: true, URL: "https://b.example", APIKey: "wl2_test", StationProfileID: "1", LastFetchedID: 99},
+	}
+	cfg.Logbooks = map[string]config.Logbook{"a": lbA, "b": lbB}
+	cfg.State.ActiveLogbook = "a"
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := config.Save(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	dbA, err := store.Open(dbPathA)
+	if err != nil {
+		t.Fatalf("open db A: %v", err)
+	}
+	a := &app.App{
+		Config:      cfg,
+		ConfigPath:  cfgPath,
+		LogbookName: "a",
+		Logbook:     &lbA,
+		DB:          dbA,
+		DBPath:      dbPathA,
+	}
+	t.Cleanup(a.StopAPRSTimer)
+
+	m := New(a, nil)
+	m.screen = screenLogbookEditor
+	m.initLogbookEditor()
+	genA := m.ui.logbookEditor.gen
+
+	// Switch to B and open its editor before A's purge completion arrives.
+	if err := a.SwitchLogbook("b"); err != nil {
+		t.Fatalf("switch to B: %v", err)
+	}
+	t.Cleanup(func() { a.DB.Close() })
+	m.initLogbookEditor()
+	if got := m.ui.logbookEditor.wlLastFetchedID; got != 99 {
+		t.Fatalf("B editor cursor = %d, want 99", got)
+	}
+
+	upd, _ := m.Update(editorMsg{purged: true, gen: genA, lbID: "a"})
+	m = upd.(*Model)
+
+	// A's cursor was reset against the ORIGINATING logbook…
+	if got := m.App.Config.Logbooks["a"].Wavelog.LastFetchedID; got != 0 {
+		t.Errorf("A cursor = %d, want 0", got)
+	}
+	// …and B is untouched everywhere: config, active pointer, editor.
+	if got := m.App.Config.Logbooks["b"].Wavelog.LastFetchedID; got != 99 {
+		t.Errorf("B config cursor = %d, want 99 (foreign purge must not reset it)", got)
+	}
+	if got := m.App.Logbook.Wavelog.LastFetchedID; got != 99 {
+		t.Errorf("active Wavelog cursor = %d, want 99", got)
+	}
+	if got := m.ui.logbookEditor.wlLastFetchedID; got != 99 {
+		t.Errorf("B editor cursor = %d, want 99", got)
+	}
+	if m.ui.logbookEditor.needsReload {
+		t.Error("foreign purge completion must not reload B's editor")
+	}
+
+	// The reset persisted to disk for A, not B.
+	reloaded, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatalf("reload config: %v", err)
+	}
+	if got := reloaded.Logbooks["a"].Wavelog.LastFetchedID; got != 0 {
+		t.Errorf("persisted A cursor = %d, want 0", got)
+	}
+	if got := reloaded.Logbooks["b"].Wavelog.LastFetchedID; got != 99 {
+		t.Errorf("persisted B cursor = %d, want 99", got)
+	}
+}
+
+// TestSaveCompletionPreservesNewerUnsavedEdits reproduces the reported bug:
+// saving a contact and continuing to type (same session) used to close the
+// form when the save completion arrived, abandoning the newer input. The
+// completion must close only when BOTH the session and the form revision
+// still match.
+func TestSaveCompletionPreservesNewerUnsavedEdits(t *testing.T) {
+	le := newTestEditorWithDB(t, "", "", "", "OP", "JO90")
+	q := &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+		TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", Comment: "before", WavelogID: 42}
+	id := insertTestQSO(t, le.db, q)
+	q.ID = id
+	le.editing = q
+	le.mode = edModeEdit
+	le.fillEditForm(q)
+	le.editSession = 3
+
+	// The save was captured at revision 7; the operator kept typing, so
+	// the form is now at revision 8.
+	le.editRev = 8
+	upd, _ := le.Update(editorMsg{saved: id, saveCall: "SP9MOA", gen: le.gen, saveSession: 3, saveRev: 7})
+	le = upd.(*LogbookEditor)
+	if le.mode != edModeEdit {
+		t.Error("a save completion with a newer unsaved revision must not close the form")
+	}
+
+	// When session AND revision match, the completion still closes.
+	le.editRev = 7
+	upd, _ = le.Update(editorMsg{saved: id, saveCall: "SP9MOA", gen: le.gen, saveSession: 3, saveRev: 7})
+	le = upd.(*LogbookEditor)
+	if le.mode != edModeList {
+		t.Error("a completion matching session and revision should close the form")
+	}
+}
+
+// TestDoSaveStampsFormRevision verifies doSave captures the form revision so
+// completions can tell whether the operator typed after the save.
+func TestDoSaveStampsFormRevision(t *testing.T) {
+	le := newTestEditorWithDB(t, "", "", "", "OP", "JO90")
+	q := &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+		TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", WavelogID: 42}
+	id := insertTestQSO(t, le.db, q)
+	q.ID = id
+	le.editing = q
+	le.mode = edModeEdit
+	le.fillEditForm(q)
+	le.editRev = 7
+
+	em := execCmd(le.doSave()).(editorMsg)
+	if em.saveRev != 7 {
+		t.Errorf("saveRev = %d, want 7", em.saveRev)
+	}
+}
+
 // TestFollowUpSyncCompletionDoesNotCloseForm verifies serialized follow-up
 // PATCH results never close an open form — the form already closed at the
 // original save.
@@ -1185,7 +1775,7 @@ func TestOverlappingSavesSerializeRemoteUpdates(t *testing.T) {
 	if !em2.wlSyncPending {
 		t.Fatal("second save must be queued while a PATCH is in flight")
 	}
-	if !le.syncQueued[id] {
+	if !le.sync.queued[contactSyncKey{localID: id, url: srv.URL}] {
 		t.Fatal("second save must mark the contact as queued")
 	}
 
