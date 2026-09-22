@@ -81,7 +81,7 @@ Grab the latest binary, installer, or package from the [Releases](https://github
 - **Wavelog sync** — upload, incremental download, per-logbook config
 - **Wavelog club stations** — shared club PC with the owner's `wl2_` key: synced contacts are read-only (edits/deletes stay on the Wavelog side, no PATCH/DELETE is sent), new QSOs upload normally and are attributed per active operator; the key is stored encrypted and never displayed again once saved
 - **Encrypted secrets** — AES-256-GCM, machine-tied, never plaintext
-- **DX Cluster & PSK Reporter** — live spots with band/mode/time filters
+- **DX Cluster & PSK Reporter** — live spots with band/mode/time filters; PSK Reporter (F5) is opt-in via Integrations
 - **GPS receiver** — serial or GPSD, live grid override for /P and mobile ops
 - **APRS** — APRS-IS with live position map, station caching, GPS-aware beaconing
 - **APRS KISS & KISS TCP**  — serial KISS TNC and KISS Server (Dire Wolf). 

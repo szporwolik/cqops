@@ -217,7 +217,7 @@ Estaciones de club: use la clave `wl2_` del propietario junto con la opción **E
 
 Configure DX Cluster en Integrations y abra **F4**. **b / c / m / t** filtran banda, continente del anunciante, modo y antigüedad. **Backspace** borra filtros. **Enter** rellena QSO, sintoniza el equipo conectado y vuelve a F1; **Space** sintoniza sin salir del cluster.
 
-En F1, **Ctrl+S** abre el diálogo de spot y **Ctrl+P** toma el indicativo del spot mostrado más cercano. Verifíquelo antes de enviar. **F5** muestra informes PSK Reporter, no garantiza propagación actual. Solar muestra condiciones HamQSL; los valores almacenados pueden ser antiguos.
+En F1, **Ctrl+S** abre el diálogo de spot y **Ctrl+P** toma el indicativo del spot mostrado más cercano. Verifíquelo antes de enviar. **F5** muestra informes PSK Reporter, no garantiza propagación actual. Solar muestra condiciones HamQSL; los valores almacenados pueden ser antiguos. **F5 está desactivado por defecto: active PSK Reporter en Integraciones.**
 
 <a id="position"></a>
 

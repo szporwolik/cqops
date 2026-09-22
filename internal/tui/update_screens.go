@@ -297,6 +297,21 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			m.App.Config.Integrations.APRS.DTR = m.ui.integrationMenu.aprsDTR
 			m.App.Config.Integrations.APRS.RTS = m.ui.integrationMenu.aprsRTS
 
+			// PSK Reporter — simple on/off for the F5 panel.
+			pskWasEnabled := m.App.Config.Integrations.PSK.Enabled
+			m.App.Config.Integrations.PSK.Enabled = m.ui.integrationMenu.pskEnabled
+			if m.App.Config.Integrations.PSK.Enabled != pskWasEnabled {
+				if m.App.Config.Integrations.PSK.Enabled {
+					m.toasts.Info("PSK Reporter: enabled — F5")
+				} else {
+					m.toasts.Info("PSK Reporter: disabled")
+				}
+				// Re-enabled: reset the fetch state so the next F5 fetches
+				// fresh instead of showing stale results from before.
+				m.psk.fetched = false
+				m.psk.lastFetchByCall = nil
+			}
+
 			m.saveConfig("Settings saved")
 			applog.Info("Integration config saved, restarting services")
 
@@ -579,7 +594,7 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 	}
 
 	// Trigger initial fetch when first entering the tab (not yet fetched, not already fetching).
-	if !m.psk.fetched && !m.psk.fetching && m.inetOnline {
+	if !m.psk.fetched && !m.psk.fetching && m.inetOnline && m.pskEnabled() {
 		if call != "" {
 			m.psk.fetching = true
 			return m, tea.Batch(cmd, m.pskFetchCmd())
@@ -587,7 +602,7 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 	}
 	// Auto-refresh: if data for this callsign is older than 5 minutes,
 	// trigger a background refresh (per-callsign, not global).
-	if m.psk.fetched && !m.psk.fetching && m.inetOnline {
+	if m.psk.fetched && !m.psk.fetching && m.inetOnline && m.pskEnabled() {
 		last := m.psk.lastFetchByCall[call]
 		if !last.IsZero() && time.Since(last) >= 5*time.Minute {
 			m.psk.fetching = true

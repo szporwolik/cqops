@@ -1713,6 +1713,12 @@ func (m *Model) isSharedClub() bool {
 		m.App.Logbook.Wavelog != nil && m.App.Logbook.Wavelog.SharedClub
 }
 
+// pskEnabled reports whether the PSK Reporter panel is turned on in the
+// Integrations menu (off by default).
+func (m *Model) pskEnabled() bool {
+	return m.App != nil && m.App.Config != nil && m.App.Config.Integrations.PSK.Enabled
+}
+
 // effectiveOperator returns the callsign QSOs are attributed to: the active
 // operator's callsign, or — on a shared club station — the station callsign
 // when no operator is selected, so attribution never falls back to an empty

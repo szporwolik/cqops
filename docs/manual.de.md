@@ -217,7 +217,7 @@ Clubstationen: Verwenden Sie den `wl2_`-Schlüssel des Besitzers zusammen mit de
 
 DX Cluster unter Integrations einrichten und **F4** öffnen. **b / c / m / t** filtern Band, Kontinent des Spotters, Betriebsart und Alter. **Backspace** setzt Filter zurück. **Enter** übernimmt den Spot, stimmt das verbundene Funkgerät ab und kehrt zu F1 zurück; **Space** stimmt ab, ohne den Cluster zu verlassen.
 
-Auf F1 öffnet **Ctrl+S** den Spot-Dialog und **Ctrl+P** übernimmt das Rufzeichen des nächstgelegenen angezeigten Spots. Vor dem Senden prüfen. **F5** zeigt PSK-Reporter-Empfangsberichte, keine Garantie aktueller Ausbreitung. Solar zeigt HamQSL-Bedingungen; zwischengespeicherte Werte können veraltet sein.
+Auf F1 öffnet **Ctrl+S** den Spot-Dialog und **Ctrl+P** übernimmt das Rufzeichen des nächstgelegenen angezeigten Spots. Vor dem Senden prüfen. **F5** zeigt PSK-Reporter-Empfangsberichte, keine Garantie aktueller Ausbreitung. Solar zeigt HamQSL-Bedingungen; zwischengespeicherte Werte können veraltet sein. **F5 ist standardmäßig aus — PSK Reporter unter Integrationen aktivieren.**
 
 <a id="position"></a>
 

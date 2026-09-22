@@ -217,7 +217,7 @@ Club stations: use the owner's `wl2_` API key together with the **Shared club st
 
 Configure DX Cluster under Integrations and open **F4**. **b / c / m / t** filter band, spotter continent, mode, and age. **Backspace** clears filters. **Enter** fills the QSO form, tunes a connected rig, and returns to F1; **Space** tunes without leaving the cluster.
 
-On F1, **Ctrl+S** opens the spot dialog and **Ctrl+P** takes the callsign from the closest displayed spot. Verify it before sending. **F5** displays PSK Reporter reception reports, not a guarantee of present propagation. The Solar panel shows HamQSL conditions; cached values may be old.
+On F1, **Ctrl+S** opens the spot dialog and **Ctrl+P** takes the callsign from the closest displayed spot. Verify it before sending. **F5** displays PSK Reporter reception reports, not a guarantee of present propagation. The Solar panel shows HamQSL conditions; cached values may be old. **F5 is off by default — enable PSK Reporter in Integrations.**
 
 <a id="position"></a>
 

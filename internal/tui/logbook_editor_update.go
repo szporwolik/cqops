@@ -381,6 +381,14 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if msg.deleted != 0 || msg.saved != 0 || msg.purged || msg.wlCall != "" {
+			// Deleting with an active search: the in-memory search result set
+			// keeps the deleted row and loadPage skips reloads while a filter
+			// is active. Drop the filter so the reload below shows reality.
+			if (msg.deleted != 0 || msg.purged) && le.searchQuery != "" {
+				le.searchQuery = ""
+				le.searchInput.SetValue("")
+				le.searchGen++ // an in-flight search worker must not repopulate the list
+			}
 			// A completion from a replaced editor (logbook switched), a
 			// serialized follow-up PATCH, or a superseded edit session must
 			// never close the form being edited now — only the unchanged

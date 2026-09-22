@@ -83,6 +83,9 @@ type IntegrationMenu struct {
 	aprsTestResult string
 	aprsOnline     bool // true when APRS client is connected (KISS or APRS-IS)
 
+	// PSK Reporter — simple enable toggle, no fields.
+	pskEnabled bool
+
 	// aprsToast is set by APRS test handler; parent reads and shows toast, then clears.
 	aprsToast string
 
@@ -147,7 +150,8 @@ const (
 	imAPRSDTR      = 40 // KISS DTR
 	imAPRSRTS      = 41 // KISS RTS
 	imAPRSTest     = 42 // test button
-	imMax          = 43
+	imPSKChk       = 43
+	imMax          = 44
 )
 
 type callbookTestMsg struct {
@@ -523,6 +527,7 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 		gpsdHost:         gpsdHost,
 		gpsdPort:         gpsdPort,
 		aprsEnabled:      cfg.Integrations.APRS.Enabled,
+		pskEnabled:       cfg.Integrations.PSK.Enabled,
 		aprsService:      aprsSvc,
 		aprsServer:       aprsServer,
 		aprsKISSHost:     aprsKISSHost,
@@ -651,6 +656,9 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					im.fm.fixFocus(im)
 				}
 				scrollViewportToFraction(&im.vp, im.fm.scrollFraction(im))
+				return im, nil
+			case imPSKChk:
+				im.pskEnabled = !im.pskEnabled
 				return im, nil
 			case imGPSDTR:
 				im.gpsDTR = !im.gpsDTR
@@ -929,6 +937,8 @@ func (im *IntegrationMenu) isPositionVisible(pos int) bool {
 		return im.gpsEnabled // all services
 	case imAPRSChk:
 		return true // APRS checkbox always reachable
+	case imPSKChk:
+		return true // PSK checkbox always reachable
 	case imAPRSSvc:
 		return im.aprsEnabled
 	case imAPRSServer:
@@ -1486,6 +1496,24 @@ func (im *IntegrationMenu) View() tea.View {
 			buttonRow(&b, lineW, im.fm.row == imAPRSTest, btnText)
 		}
 	}
+
+	// --- PSK Reporter section ---
+	b.WriteString("\n")
+	pskCb := "[ ]"
+	if im.pskEnabled {
+		pskCb = "[x]"
+	}
+	pskPrefix := "  "
+	pskLabel := S.FormLabelWide.Align(lipgloss.Left).Render("PSK Reporter:")
+	if im.fm.row == imPSKChk {
+		pskPrefix = S.FormPrefixOn.Render("> ")
+		pskLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("PSK Reporter:")
+		pskCb = CursorStyle.Render(pskCb) + " " + DimStyle.Render("(Space)")
+		pskCb += " " + DimStyle.Render("F5 panel, off by default")
+	}
+	b.WriteString(padOrTrunc(
+		lipgloss.JoinHorizontal(lipgloss.Center, pskPrefix, pskLabel, " ", pskCb),
+		lineW))
 
 	// Build raw form body — header is rendered separately above the viewport.
 	b.WriteString("\n")

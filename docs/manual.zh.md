@@ -217,7 +217,7 @@ QSO 先保存在本机。上传失败可用 **F8 → Ctrl+W** 重试，**Alt+W**
 
 在 Integrations 设置 DX Cluster，然后打开 **F4**。**b / c / m / t** 按波段、发布者所在洲、模式及时间筛选，**Backspace** 清除筛选。**Enter** 填写 QSO、调谐已连接电台并返回 F1；**Space** 只调谐而不离开集群页面。
 
-F1 上 **Ctrl+S** 打开发送通告窗口，**Ctrl+P** 取用显示的最近通告呼号。发送前请核实。**F5** 显示 PSK Reporter 接收报告，并不保证当前传播条件。Solar 显示 HamQSL 数据；缓存值可能已过时。
+F1 上 **Ctrl+S** 打开发送通告窗口，**Ctrl+P** 取用显示的最近通告呼号。发送前请核实。**F5** 显示 PSK Reporter 接收报告，并不保证当前传播条件。Solar 显示 HamQSL 数据；缓存值可能已过时。 **F5 默认关闭——请在 Integrations（集成）中启用 PSK Reporter。**
 
 <a id="position"></a>
 

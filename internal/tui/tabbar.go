@@ -130,7 +130,7 @@ func (m *Model) tabView() string {
 		{"F2 QRZ", "QRZ", mk("F2", "A2"), (m.screen == screenPartner || m.screen == screenImage) && hasPartner, !hasPartner},
 		{"F3 APR", "APR", mk("F3", "A3"), m.screen == screenAPRS, !m.aprsConnected()},
 		{"F4 DXC", "DXC", mk("F4", "A4"), m.screen == screenDXC, !dxcOnline},
-		{"F5 HRD", "HRD", mk("F5", "A5"), m.screen == screenPSKReporter, !m.inetOnline},
+		{"F5 PSK", "PSK", mk("F5", "A5"), m.screen == screenPSKReporter, !m.inetOnline || !m.pskEnabled()},
 		{"F6 REF", "REF", mk("F6", "A6"), m.screen == screenRef, !m.isREFReady()},
 		{"F7 BPL", "BPL", mk("F7", "A7"), m.screen == screenBPL, false},
 		{"F8 LOG", "LOG", mk("F8", "A8"), m.screen == screenLogbookEditor, false},

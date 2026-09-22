@@ -217,7 +217,7 @@ Stacje klubowe: użyj klucza `wl2_` właściciela razem z opcją **Wspólna stac
 
 Skonfiguruj DX Cluster w Integrations i otwórz **F4**. **b / c / m / t** filtrują pasmo, kontynent spotującego, emisję i wiek spotu. **Backspace** czyści filtry. **Enter** wypełnia formularz QSO, przestraja podłączone radio i wraca do F1; **Space** przestraja bez opuszczania klastra.
 
-Na F1 **Ctrl+S** otwiera okno wysyłania spotu, a **Ctrl+P** pobiera znak z najbliższego wyświetlanego spotu. Sprawdź go przed wysłaniem. **F5** pokazuje raporty odbioru PSK Reporter, nie gwarancję bieżącej propagacji. Panel Solar pokazuje warunki HamQSL; dane z pamięci podręcznej mogą być nieaktualne.
+Na F1 **Ctrl+S** otwiera okno wysyłania spotu, a **Ctrl+P** pobiera znak z najbliższego wyświetlanego spotu. Sprawdź go przed wysłaniem. **F5** pokazuje raporty odbioru PSK Reporter, nie gwarancję bieżącej propagacji. Panel Solar pokazuje warunki HamQSL; dane z pamięci podręcznej mogą być nieaktualne. **F5 jest domyślnie wyłączone — włącz PSK Reporter w Integrations.**
 
 <a id="position"></a>
 

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/szporwolik/cqops/internal/qso"
+	"github.com/szporwolik/cqops/internal/store"
 )
 
 // TestLogbookEditor_SearchCoversWholeLogbook verifies that the editor search
@@ -142,5 +143,45 @@ func TestLogbookEditor_SearchRespectsContestFilter(t *testing.T) {
 	le.applySearchFilter()
 	if le.totalCount != 1 || le.qsos[0].Call != "A1A" {
 		t.Fatalf("contest-scoped search got %d results, want A1A only", le.totalCount)
+	}
+}
+
+// TestLogbookEditor_DeleteWhileSearchingClearsFilter reproduces the reported
+// bug: deleting a QSO while a search filter is active left the deleted row
+// visible (loadPage skips reloads during a search). The filter must clear so
+// the list immediately shows the remaining rows.
+func TestLogbookEditor_DeleteWhileSearchingClearsFilter(t *testing.T) {
+	le := newEditorWithDB(t)
+	target := insertQSO(t, le, &qso.QSO{Call: "ZZ9TARGET", Name: "Rare",
+		QSODate: "20240301", TimeOn: "120000", Band: "20m", Mode: "SSB"})
+	insertQSO(t, le, &qso.QSO{Call: "SP9OTHER", Name: "Other",
+		QSODate: "20240302", TimeOn: "120000", Band: "20m", Mode: "SSB"})
+	le.loadPage()
+
+	// Run a search that matches only the target.
+	le.searchQuery = "zz9"
+	le.searchInput.SetValue("zz9")
+	upd, workerCmd := le.Update(execCmd(le.scheduleSearch()).(searchDebounceMsg))
+	le = upd.(*LogbookEditor)
+	res := execCmd(workerCmd).(editorMsg)
+	upd, _ = le.Update(res)
+	le = upd.(*LogbookEditor)
+	if len(le.qsos) != 1 || le.qsos[0].Call != "ZZ9TARGET" {
+		t.Fatalf("search result = %+v, want only ZZ9TARGET", le.qsos)
+	}
+
+	// Delete completes while the filter is still active — the worker already
+	// removed the row from the database before delivering the completion.
+	if err := store.DeleteQSO(le.db, target); err != nil {
+		t.Fatalf("DeleteQSO: %v", err)
+	}
+	upd, _ = le.Update(editorMsg{deleted: target, delCall: "ZZ9TARGET", delDate: "2024-03-01", gen: le.gen, lbID: le.logbookID})
+	le = upd.(*LogbookEditor)
+
+	if le.searchQuery != "" {
+		t.Errorf("search filter = %q, want cleared after deletion", le.searchQuery)
+	}
+	if len(le.qsos) != 1 || le.qsos[0].Call != "SP9OTHER" {
+		t.Fatalf("list after delete = %+v, want only SP9OTHER (deleted row must disappear)", le.qsos)
 	}
 }

@@ -67,6 +67,7 @@ type IntegrationsConfig struct {
 	HTTPServer HTTPServerConfig `yaml:"http_server,omitempty"`
 	GPS        GPSConfig        `yaml:"gps,omitempty"`
 	APRS       APRSGlobalConfig `yaml:"aprs,omitempty"`
+	PSK        PSKConfig        `yaml:"psk,omitempty"`
 
 	// Legacy flat keys — migrated to Callbook.* on load.
 	QRZLegacy             QRZConfig             `yaml:"qrzcom_callbook,omitempty"`
@@ -214,6 +215,12 @@ type DXCConfig struct {
 	Host    string `yaml:"host,omitempty"`
 	Port    string `yaml:"port,omitempty"`
 	Login   string `yaml:"login,omitempty"`
+}
+
+// PSKConfig enables the PSK Reporter panel (F5). Off by default — the
+// operator turns it on in Integrations.
+type PSKConfig struct {
+	Enabled bool `yaml:"enabled"`
 }
 
 type GeneralConfig struct {

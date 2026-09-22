@@ -217,7 +217,7 @@ Stations de club : utilisez la clé `wl2_` du propriétaire avec l'option **Stat
 
 Configurez DX Cluster dans Integrations, puis ouvrez **F4**. **b / c / m / t** filtrent bande, continent du spotteur, mode et ancienneté. **Backspace** efface les filtres. **Enter** remplit le formulaire QSO, accorde le poste connecté et revient à F1 ; **Space** accorde sans quitter le cluster.
 
-Sur F1, **Ctrl+S** ouvre l’envoi de spot et **Ctrl+P** reprend l’indicatif du spot affiché le plus proche. Vérifiez-le avant l’envoi. **F5** montre des rapports PSK Reporter, pas une garantie de propagation actuelle. Solar présente les conditions HamQSL ; les valeurs en cache peuvent être anciennes.
+Sur F1, **Ctrl+S** ouvre l’envoi de spot et **Ctrl+P** reprend l’indicatif du spot affiché le plus proche. Vérifiez-le avant l’envoi. **F5** montre des rapports PSK Reporter, pas une garantie de propagation actuelle. Solar présente les conditions HamQSL ; les valeurs en cache peuvent être anciennes. **F5 est désactivé par défaut — activez PSK Reporter dans Intégrations.**
 
 <a id="position"></a>
 

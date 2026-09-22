@@ -84,6 +84,17 @@ func (m *Model) doRefSearch() {
 	applog.InfoDetail("REF: search", fmt.Sprintf("query=%q results=%d", query, len(rows)))
 }
 
+// clearRefSearch resets the search input and all filtering state — used by
+// Delete and by Backspace after a lookup is done.
+func (m *Model) clearRefSearch() {
+	m.ref.input.SetValue("")
+	m.ref.searched = false
+	m.ref.rows = nil
+	m.ref.scroll = 0
+	m.ref.cursor = 0
+	m.ref.cachedTableView = ""
+}
+
 // startRefRebuildCmd returns a command that asynchronously downloads CSVs
 // and rebuilds the reference database. Returns nil if already building or
 // the database is already populated with a modern schema.
@@ -163,13 +174,17 @@ func (m *Model) handleRefUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 			return m, cmd
 
 		case "delete":
-			m.ref.input.SetValue("")
-			m.ref.searched = false
-			m.ref.rows = nil
-			m.ref.scroll = 0
-			m.ref.cursor = 0
-			m.ref.cachedTableView = ""
+			m.clearRefSearch()
 			return m, cmd
+
+		case "backspace":
+			// Once a lookup is done, Backspace clears the whole search
+			// and the filtering — like the logbook editor search. Before
+			// searching it edits the query one character at a time.
+			if m.ref.searched {
+				m.clearRefSearch()
+				return m, cmd
+			}
 
 		case "up", "down", "pgup", "pgdown":
 			if m.ref.searched && len(m.ref.rows) > 0 {
