@@ -569,6 +569,8 @@ type UpdateQSOInput struct {
 	IOTA       *string
 	SIG        *string
 	SIGInfo    *string
+	CQZone     *int
+	ITUZone    *int
 	FreqHz     *int64
 	FreqRxHz   *int64
 }
@@ -608,6 +610,16 @@ func UpdateQSO(baseURL, apiKey string, remoteID int64, in UpdateQSOInput) error 
 		}
 		payload[key] = strconv.FormatInt(*v, 10)
 	}
+	addClearInt := func(key string, v *int) {
+		if v == nil {
+			return
+		}
+		if *v <= 0 {
+			payload[key] = nil
+			return
+		}
+		payload[key] = *v
+	}
 	addStr("call", in.Call)
 	addStr("band", in.Band)
 	addStr("mode", in.Mode)
@@ -629,6 +641,8 @@ func UpdateQSO(baseURL, apiKey string, remoteID int64, in UpdateQSOInput) error 
 	addClear("iota", in.IOTA)
 	addClear("sig", in.SIG)
 	addClear("sig_info", in.SIGInfo)
+	addClearInt("cqz", in.CQZone)
+	addClearInt("ituz", in.ITUZone)
 	addClearHz("freq", in.FreqHz)
 	addClearHz("freq_rx", in.FreqRxHz)
 	body, err := json.Marshal(payload)

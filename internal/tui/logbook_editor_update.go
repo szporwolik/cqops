@@ -109,6 +109,12 @@ type editorMsg struct {
 	// completion must only close it when BOTH the session and the revision
 	// still match — otherwise the newer unsaved input is preserved.
 	saveRev uint64
+	// opSession binds delete/upload/purge completions to the edit session
+	// they were initiated in. A generation match alone does not mean the
+	// operator is still performing the original action: the completion may
+	// arrive while another contact's form is open, and must then refresh
+	// the list without closing the unrelated form.
+	opSession uint64
 	// wlSyncFollowUp marks a serialized follow-up PATCH result — it must
 	// never close an open form (the form closed at the original save).
 	wlSyncFollowUp bool
@@ -260,8 +266,22 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// holds newer unsaved input that must not be abandoned.
 				closeForm = false
 			}
+			if msg.deleted != 0 && msg.opSession != 0 && msg.opSession != le.editSession {
+				closeForm = false // another contact was opened while the remote delete was pending
+			}
+			if msg.wlCall != "" && msg.opSession != 0 && msg.opSession != le.editSession {
+				closeForm = false // another contact was opened while the upload was pending
+			}
+			if msg.purged && msg.opSession != 0 && msg.opSession != le.editSession {
+				closeForm = false // a contact was opened while the purge ran
+			}
 			if closeForm {
 				le.mode = edModeList
+				le.needsReload = true
+			} else if (msg.deleted != 0 || msg.wlCall != "") && (msg.gen == 0 || msg.gen == le.gen) {
+				// A delete/upload of THIS logbook finished while the operator
+				// edits another contact: refresh the list behind the open
+				// form without closing it.
 				le.needsReload = true
 			}
 		}
@@ -757,6 +777,7 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 		le.dlOp = nil
 		gen := le.gen
 		lbID := le.logbookID
+		opSession := le.editSession
 		db := le.db
 		release := le.dbLease(db)
 		applog.Warn("LogbookEditor: purging all QSOs")
@@ -768,7 +789,7 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 			} else {
 				applog.Info("LogbookEditor: all QSOs purged")
 			}
-			return editorMsg{purged: true, err: err, gen: gen, lbID: lbID}
+			return editorMsg{purged: true, err: err, gen: gen, lbID: lbID, opSession: opSession}
 		}
 	case edModeConfirmSave:
 		// Keep the edit form visible until the async save result arrives;
@@ -792,6 +813,7 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 		url, key := le.wlURL, le.wlKey
 		gen := le.gen
 		lbID := le.logbookID
+		opSession := le.editSession
 		db := le.db
 		release := le.dbLease(db)
 		le.mode = edModeList
@@ -808,7 +830,7 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 
 			// Synced QSOs: remove the Wavelog copy too. Best-effort — the
 			// local delete must never depend on this succeeding.
-			em := editorMsg{deleted: id, delCall: call, delDate: date, gen: gen, lbID: lbID}
+			em := editorMsg{deleted: id, delCall: call, delDate: date, gen: gen, lbID: lbID, opSession: opSession}
 			if remoteID > 0 && url != "" && key != "" && !le.Offline {
 				derr := wavelog.DeleteQSO(url, key, remoteID)
 				if derr != nil {

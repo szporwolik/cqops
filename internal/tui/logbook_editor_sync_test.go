@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -1487,6 +1488,255 @@ func TestDoSaveStampsFormRevision(t *testing.T) {
 	em := execCmd(le.doSave()).(editorMsg)
 	if em.saveRev != 7 {
 		t.Errorf("saveRev = %d, want 7", em.saveRev)
+	}
+}
+
+// TestDeleteCompletionDoesNotCloseUnrelatedContactForm reproduces the
+// reported bug: deleting contact A and opening contact B while A's remote
+// delete is pending used to switch the editor into list mode when A's
+// completion arrived, discarding B's unsaved form. The completion must be
+// bound to the session it was initiated in and only refresh the list behind
+// the open form.
+func TestDeleteCompletionDoesNotCloseUnrelatedContactForm(t *testing.T) {
+	le := newTestEditorWithDB(t, "", "", "", "OP", "JO90")
+	q := &qso.QSO{Call: "SP9AAA", Band: "20m", Mode: "SSB", QSODate: "20240501", TimeOn: "120000"}
+	idA := insertTestQSO(t, le.db, q)
+	q.ID = idA
+	le.editing = q
+	le.mode = edModeEdit
+	le.fillEditForm(q)
+	le.editSession = 2 // contact B is open with unsaved edits
+
+	// A's delete was initiated in session 1; its completion arrives now.
+	upd, _ := le.Update(editorMsg{deleted: idA, delCall: "SP9AAA", gen: le.gen, opSession: 1})
+	le = upd.(*LogbookEditor)
+	if le.mode != edModeEdit {
+		t.Error("a delete completion from a superseded session must not close the current form")
+	}
+	if !le.needsReload {
+		t.Error("the list behind the open form should still be refreshed")
+	}
+
+	// A completion from the same session still returns to the list.
+	le.needsReload = false
+	le.editSession = 1
+	upd, _ = le.Update(editorMsg{deleted: idA, delCall: "SP9AAA", gen: le.gen, opSession: 1})
+	le = upd.(*LogbookEditor)
+	if le.mode != edModeList {
+		t.Error("the initiating session's own delete completion should close to the list")
+	}
+}
+
+// TestUploadCompletionDoesNotCloseUnrelatedContactForm verifies the same
+// session binding for upload completions: an upload finishing while another
+// contact's form is open must refresh the list without closing the form.
+func TestUploadCompletionDoesNotCloseUnrelatedContactForm(t *testing.T) {
+	le := newTestEditorWithDB(t, "", "", "", "OP", "JO90")
+	q := &qso.QSO{Call: "SP9BBB", Band: "40m", Mode: "CW", QSODate: "20240502", TimeOn: "130000"}
+	idB := insertTestQSO(t, le.db, q)
+	q.ID = idB
+	le.editing = q
+	le.mode = edModeEdit
+	le.fillEditForm(q)
+	le.editSession = 2
+
+	upd, _ := le.Update(editorMsg{wlQSOID: idB, wlCall: "1 sent", wlOK: true, gen: le.gen, opSession: 1})
+	le = upd.(*LogbookEditor)
+	if le.mode != edModeEdit {
+		t.Error("an upload completion from a superseded session must not close the current form")
+	}
+	if !le.needsReload {
+		t.Error("the list behind the open form should still be refreshed")
+	}
+
+	le.needsReload = false
+	le.editSession = 1
+	upd, _ = le.Update(editorMsg{wlQSOID: idB, wlCall: "1 sent", wlOK: true, gen: le.gen, opSession: 1})
+	le = upd.(*LogbookEditor)
+	if le.mode != edModeList {
+		t.Error("the initiating session's own upload completion should close to the list")
+	}
+}
+
+// TestDeleteCompletionCarriesInitiatingSession verifies doConfirm stamps the
+// delete completion with the session it was initiated in, so the close-form
+// check can compare against the current session.
+func TestDeleteCompletionCarriesInitiatingSession(t *testing.T) {
+	le := newTestEditorWithDB(t, "", "", "", "OP", "JO90")
+	q := &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+		TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", WavelogID: 42}
+	id := insertTestQSO(t, le.db, q)
+	q.ID = id
+
+	le.qsos = []qso.QSO{*q}
+	le.buildTable()
+	le.mode = edModeConfirmDelete
+	le.ensureDialog("Delete QSO", "x", Option{})
+	le.editSession = 5
+
+	em := execCmd(le.doConfirm()).(editorMsg)
+	if em.err != nil {
+		t.Fatalf("local delete failed: %v", em.err)
+	}
+	if em.opSession != 5 {
+		t.Errorf("opSession = %d, want 5 (the session the delete was initiated in)", em.opSession)
+	}
+}
+
+// TestSyncedEditableFieldRoundTrips verifies the field-level synchronization
+// contract: every field the edit form can change AND the remote refresh can
+// overwrite must survive a full save → PATCH → GET → refresh round-trip.
+// Each case edits the field to a NEW value, saves (the PATCH is applied to a
+// stateful mock server), re-fetches the server copy and applies the refresh
+// — a field omitted from the PATCH would be reported as synced and then
+// silently restored to the server's older value (the reported CQ-zone loss).
+func TestSyncedEditableFieldRoundTrips(t *testing.T) {
+	cases := []struct {
+		name     string
+		edit     qsoEditField
+		newValue string
+		jsonKey  string
+		want     any
+	}{
+		{"RSTSent", qefRSTSent, "57", "rst_sent", "57"},
+		{"RSTRcvd", qefRSTRcvd, "59", "rst_rcvd", "59"},
+		{"Grid", qefGrid, "JO80aa", "gridsquare", "JO80aa"},
+		{"Name", qefName, "Bob", "name", "Bob"},
+		{"QTH", qefQTH, "Warsaw", "qth", "Warsaw"},
+		{"Comment", qefComment, "edited", "comment", "edited"},
+		{"Notes", qefNotes, "round trip", "notes", "round trip"},
+		{"TXPower", qefTXPower, "75", "tx_pwr", "75"},
+		{"SOTA", qefSOTA, "SP/TQ-002", "sota_ref", "SP/TQ-002"},
+		{"POTA", qefPOTA, "SP-0002", "pota_ref", "SP-0002"},
+		{"WWFF", qefWWFF, "SPFF-0002", "wwff_ref", "SPFF-0002"},
+		{"IOTA", qefIOTA, "EU-002", "iota", "EU-002"},
+		{"SIG", qefSIG, "POTA", "sig", "POTA"},
+		{"SIGInfo", qefSIGInfo, "info", "sig_info", "info"},
+		{"CQZone", qefCQZone, "16", "cqz", float64(16)},
+		{"ITUZone", qefITUZone, "29", "ituz", float64(29)},
+		{"Freq", qefFreq, "21.300", "freq", "21300000"},
+		{"FreqRx", qefFreqRx, "21.301", "freq_rx", "21301000"},
+	}
+
+	rowValue := func(tc struct {
+		name     string
+		edit     qsoEditField
+		newValue string
+		jsonKey  string
+		want     any
+	}, stored *qso.QSO) string {
+		switch tc.edit {
+		case qefRSTSent:
+			return stored.RSTSent
+		case qefRSTRcvd:
+			return stored.RSTRcvd
+		case qefGrid:
+			return stored.GridSquare
+		case qefName:
+			return stored.Name
+		case qefQTH:
+			return stored.QTH
+		case qefComment:
+			return stored.Comment
+		case qefNotes:
+			return stored.Notes
+		case qefTXPower:
+			return stored.TXPower
+		case qefSOTA:
+			return stored.SOTARef
+		case qefPOTA:
+			return stored.POTARef
+		case qefWWFF:
+			return stored.WWFFRef
+		case qefIOTA:
+			return stored.IOTA
+		case qefSIG:
+			return stored.SIG
+		case qefSIGInfo:
+			return stored.SIGInfo
+		case qefCQZone:
+			return stored.CQZone
+		case qefITUZone:
+			return stored.ITUZone
+		case qefFreq:
+			return strconv.FormatFloat(stored.Freq, 'f', 3, 64)
+		case qefFreqRx:
+			return strconv.FormatFloat(stored.FreqRx, 'f', 3, 64)
+		}
+		return ""
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Stateful mock: the PATCH mutates the remote copy, the GET
+			// returns it — exactly the production round trip.
+			state := remoteQSODoc(42)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.Method {
+				case http.MethodPatch:
+					var p map[string]any
+					if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
+						t.Errorf("decode patch body: %v", err)
+					}
+					for k, v := range p {
+						state[k] = v
+					}
+				case http.MethodGet:
+				default:
+					http.NotFound(w, r)
+					return
+				}
+				json.NewEncoder(w).Encode(map[string]any{"data": state})
+			}))
+			defer srv.Close()
+
+			le := newTestEditorWithDB(t, srv.URL, "wl2_test", "1", "OP", "JO90")
+			q := &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+				TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", Comment: "before", WavelogID: 42}
+			id := insertTestQSO(t, le.db, q)
+			q.ID = id
+			le.editing = q
+			le.mode = edModeEdit
+			le.fillEditForm(q)
+
+			le.fields[tc.edit].SetValue(tc.newValue)
+
+			em := execCmd(le.doSave()).(editorMsg)
+			if !em.wlSyncOK {
+				t.Fatalf("save: ok=%v err=%q incomplete=%v", em.wlSyncOK, em.wlSyncErr, em.wlSyncIncomplete)
+			}
+			if got := state[tc.jsonKey]; got != tc.want {
+				t.Fatalf("PATCH applied %q = %v (%T), want %v", tc.jsonKey, got, got, tc.want)
+			}
+
+			// Re-fetch the server copy and refresh — the NEW value must
+			// survive; an omitted PATCH field would restore the old one.
+			fetched := execCmd(le.fetchRemoteCopy(42, id)).(editorMsg)
+			if fetched.wlFetchQSO == nil {
+				t.Fatalf("refresh fetch failed: %q", fetched.wlFetchErr)
+			}
+			applied, err := le.ApplyRemoteRefresh(fetched.wlFetchQSO, remoteRefreshRequest{
+				gen:     fetched.wlFetchGen,
+				db:      fetched.wlFetchDB,
+				localID: fetched.wlFetchQSOID,
+				rev:     fetched.wlFetchRev,
+			})
+			if err != nil {
+				t.Fatalf("ApplyRemoteRefresh: %v", err)
+			}
+			if !applied {
+				t.Fatal("refresh should apply after a fully synced save")
+			}
+
+			stored, err := store.GetQSOByID(le.db, id)
+			if err != nil {
+				t.Fatalf("GetQSOByID: %v", err)
+			}
+			if got := rowValue(tc, stored); got != tc.newValue {
+				t.Errorf("after refresh %s = %q, want %q (the server restored the old value)", tc.name, got, tc.newValue)
+			}
+		})
 	}
 }
 

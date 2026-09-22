@@ -237,6 +237,7 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 	db := le.db
 	release := le.dbLease(db)
 	gen := le.gen
+	opSession := le.editSession
 
 	const chunkSize = 50
 
@@ -283,7 +284,7 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 			}
 		}
 		if len(unsent) == 0 {
-			return editorMsg{wlOK: true, wlCall: fmt.Sprintf("%d QSOs (already on Wavelog)", totalRecon), gen: gen}
+			return editorMsg{wlOK: true, wlCall: fmt.Sprintf("%d QSOs (already on Wavelog)", totalRecon), gen: gen, opSession: opSession}
 		}
 
 		for start := 0; start < len(unsent); start += chunkSize {
@@ -341,7 +342,7 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 		// as success for the entire input count.
 		if totalOK+totalDup+totalUnresolved == 0 && lastErr != nil {
 			return editorMsg{wlOK: false, err: lastErr, wlFailCount: totalFail,
-				wlCall: fmt.Sprintf("%d QSOs", len(unsent)), gen: gen}
+				wlCall: fmt.Sprintf("%d QSOs", len(unsent)), gen: gen, opSession: opSession}
 		}
 		var parts []string
 		if totalOK > 0 {
@@ -368,6 +369,7 @@ func (le *LogbookEditor) uploadBatch(unsent []qso.QSO) tea.Cmd {
 			wlFailCount:       totalFail,
 			wlUnresolvedCount: totalUnresolved,
 			gen:               gen,
+			opSession:         opSession,
 		}
 	}
 }
@@ -461,13 +463,14 @@ func (le *LogbookEditor) doUploadToWavelog() tea.Cmd {
 	qID := q.ID
 	call := q.Call
 	gen := le.gen
+	opSession := le.editSession
 	db := le.db
 	release := le.dbLease(db)
 
 	return func() tea.Msg {
 		defer release()
 		ok, isDup, _, err := postQSOSingle(url, key, sid, q, db)
-		return editorMsg{wlQSOID: qID, wlCall: call, wlOK: ok, wlDup: isDup, err: err, gen: gen}
+		return editorMsg{wlQSOID: qID, wlCall: call, wlOK: ok, wlDup: isDup, err: err, gen: gen, opSession: opSession}
 	}
 }
 

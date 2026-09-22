@@ -204,7 +204,11 @@ func (m *Model) handleQSOSyncCompletion(em editorMsg) tea.Cmd {
 }
 
 // mergeRemoteQSO overlays the server-side fields onto a local QSO. Local-only
-// data (source, contest fields, created_at, wavelog_id) is preserved.
+// data (source, contest fields, exchange fields, created_at, wavelog_id) is
+// preserved. Every field this function can overwrite is part of the
+// field-level synchronization contract and MUST be sent by buildUpdateInput
+// — otherwise a successful PATCH would clear the dirty flag while this
+// refresh silently restores the server's older value.
 func mergeRemoteQSO(local *qso.QSO, d *wavelog.QSOData) *qso.QSO {
 	merged := *local
 	if call := strings.TrimSpace(d.Call); call != "" {
@@ -263,9 +267,14 @@ func strptr(s string) *string { return &s }
 // as YYYY-MM-DD plus time_on as HH:MM:SS (sent together), frequencies as
 // string-encoded Hz, and canonical mode names.
 //
-// Every clearable field is always present: the edit form backs each one, so
-// an empty value means the operator cleared it and the remote copy must be
-// cleared too (the wavelog layer sends JSON null for that).
+// Field-level synchronization contract: every field the edit form can change
+// AND the remote refresh can overwrite (mergeRemoteQSO) must be sent here.
+// A field omitted from the PATCH would be reported as synced (dirty cleared)
+// and then silently replaced by the remote refresh's older value — the
+// exact zone loss this function must prevent. Every clearable field is
+// always present: the edit form backs each one, so an empty value means the
+// operator cleared it and the remote copy must be cleared too (the wavelog
+// layer sends JSON null for that).
 func buildUpdateInput(q *qso.QSO) wavelog.UpdateQSOInput {
 	freq := int64(math.Round(q.Freq * 1e6))
 	freqRx := int64(math.Round(q.FreqRx * 1e6))
@@ -289,6 +298,8 @@ func buildUpdateInput(q *qso.QSO) wavelog.UpdateQSOInput {
 		IOTA:       strptr(q.IOTA),
 		SIG:        strptr(q.SIG),
 		SIGInfo:    strptr(q.SIGInfo),
+		CQZone:     zonePtr(q.CQZone),
+		ITUZone:    zonePtr(q.ITUZone),
 		FreqHz:     &freq,
 		FreqRxHz:   &freqRx,
 	}
@@ -296,6 +307,19 @@ func buildUpdateInput(q *qso.QSO) wavelog.UpdateQSOInput {
 		in.Mode = q.Submode // canonical: MFSK+FT8 → FT8, same as buildCreateQSOInput
 	}
 	return in
+}
+
+// zonePtr converts an editable zone field to a nullable int for the PATCH:
+// empty or invalid → 0 (the wavelog layer sends null, clearing the remote
+// value), otherwise the parsed number.
+func zonePtr(s string) *int {
+	v := 0
+	if d := qso.StripNonDigits(s); d != "" {
+		if n, err := strconv.Atoi(d); err == nil && n > 0 {
+			v = n
+		}
+	}
+	return &v
 }
 
 // adifTimeToHMS converts a local ADIF time (HHMM or HHMMSS) to the HH:MM:SS

@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 )
@@ -427,6 +429,107 @@ func TestDownload_CompletesWhileOnQSOScreen(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("recent QSOs not updated after download: %v", m.recentQSOs.qsos)
+	}
+}
+
+// TestDownloadSurvivesPendingLookupEarlyReturn reproduces the reported stuck
+// download: handlePendingRequests used to sit BEFORE the global download
+// pump, so a progress or terminal message arriving while a DXC lookup was
+// pending got consumed by the lookup's early return — the read command was
+// never re-scheduled, dlActive stayed true (navigation blocked), and the
+// worker could block on its terminal send while holding the database lease.
+// The pump must run before the pending-request dispatch.
+func TestDownloadSurvivesPendingLookupEarlyReturn(t *testing.T) {
+	adifContent := `<CALL:6>SP9MOA <BAND:3>20m <MODE:3>SSB <QSO_DATE:8>20260618 <TIME_ON:6>120000 <EOR>`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("format") == "" {
+			json.NewEncoder(w).Encode(map[string]any{
+				"data": []map[string]any{
+					{"id": 77, "call": "SP9MOA", "band": "20m", "mode": "SSB",
+						"qso_date": "2026-06-18 12:00:00"},
+				},
+			})
+			return
+		}
+		json.NewEncoder(w).Encode(map[string]any{
+			"data": map[string]any{
+				"exported":      1,
+				"lastfetchedid": 77,
+				"adif":          adifContent,
+			},
+			"meta": map[string]any{"has_more": false},
+		})
+	}))
+	defer server.Close()
+
+	m := newLifecycleTestModel(t)
+	m.screen = screenQSO
+	m.App.ConfigPath = filepath.Join(t.TempDir(), "config.yaml")
+	wl := m.App.Logbook.Wavelog
+	wl.URL = server.URL
+	wl.APIKey = "key"
+	wl.Enabled = true
+	wl.StationProfileID = "1"
+
+	m.ui.logbookEditor = NewLogbookEditor(LogbookEditorConfig{
+		DB: m.App.DB, WLURL: server.URL, WLKey: "key", WLStationID: "1",
+		WLLastFetchedID: 0, StationOperator: "OP", StationGrid: "JO90",
+	})
+
+	cmd := m.ui.logbookEditor.doWavelogDownload()
+	if cmd == nil {
+		t.Fatal("doWavelogDownload returned nil cmd")
+	}
+
+	// A pending DXC lookup is due exactly when the first progress message
+	// arrives — its dispatch used to consume the message.
+	m.dxc.need = true
+	m.dxc.call = "SP9MOA"
+
+	// Mirror the production update loop: run every returned command, feed
+	// the resulting messages back through Model.Update, until the download
+	// terminates.
+	queue := []tea.Msg{cmd()}
+	for steps := 0; steps < 200 && m.ui.logbookEditor.isDownloadActive(); steps++ {
+		if len(queue) == 0 {
+			break // the pump lost its read command
+		}
+		msg := queue[0]
+		queue = queue[1:]
+		m.dxc.need = false
+		m.dxc.call = ""
+		upd, c := m.Update(msg)
+		var ok bool
+		m, ok = upd.(*Model)
+		if !ok {
+			t.Fatalf("Update returned %T", upd)
+		}
+		if c == nil {
+			continue
+		}
+		batch, isBatch := execCmd(c).(tea.BatchMsg)
+		if !isBatch {
+			if subMsg := execCmd(c); subMsg != nil {
+				queue = append(queue, subMsg)
+			}
+			continue
+		}
+		for _, sub := range batch {
+			if subMsg := sub(); subMsg != nil {
+				queue = append(queue, subMsg)
+			}
+		}
+	}
+
+	if m.ui.logbookEditor.isDownloadActive() {
+		t.Fatal("download stayed active: the pending lookup consumed its message and the pump died")
+	}
+	if m.ui.logbookEditor.wlDownloadCount != 1 {
+		t.Errorf("wlDownloadCount = %d, want 1", m.ui.logbookEditor.wlDownloadCount)
+	}
+	if wl.LastFetchedID != 77 {
+		t.Errorf("LastFetchedID = %d, want 77", wl.LastFetchedID)
 	}
 }
 
