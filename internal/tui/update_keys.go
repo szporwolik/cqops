@@ -197,6 +197,10 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 			m.toasts.Warn("PSK Reporter: disabled — enable in Integrations")
 			return nil, true
 		}
+		if m.Offline {
+			m.toasts.Warn("PSK Reporter: offline mode")
+			return nil, true
+		}
 		if !m.inetOnline {
 			m.toasts.Warn("PSK Reporter: no internet connection")
 			return nil, true
@@ -235,6 +239,10 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	case key.Matches(msg, m.keys.DXC):
 		if !m.App.Config.Integrations.DXC.Enabled {
 			m.toasts.Warn("DXC: not configured")
+			return nil, true
+		}
+		if m.Offline {
+			m.toasts.Warn("DXC: offline mode")
 			return nil, true
 		}
 		if !m.dxc.online {
@@ -588,7 +596,7 @@ func (m *Model) paneScreens() []screenKind {
 	if dxcOnline || m.screen == screenDXC {
 		screens = append(screens, screenDXC)
 	}
-	if m.inetOnline && m.pskEnabled() || m.screen == screenPSKReporter {
+	if !m.Offline && m.inetOnline && m.pskEnabled() || m.screen == screenPSKReporter {
 		screens = append(screens, screenPSKReporter)
 	}
 	if m.isREFReady() || m.screen == screenRef {

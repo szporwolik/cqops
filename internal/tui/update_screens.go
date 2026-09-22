@@ -594,7 +594,7 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 	}
 
 	// Trigger initial fetch when first entering the tab (not yet fetched, not already fetching).
-	if !m.psk.fetched && !m.psk.fetching && m.inetOnline && m.pskEnabled() {
+	if !m.psk.fetched && !m.psk.fetching && !m.Offline && m.inetOnline && m.pskEnabled() {
 		if call != "" {
 			m.psk.fetching = true
 			return m, tea.Batch(cmd, m.pskFetchCmd())
@@ -602,7 +602,7 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 	}
 	// Auto-refresh: if data for this callsign is older than 5 minutes,
 	// trigger a background refresh (per-callsign, not global).
-	if m.psk.fetched && !m.psk.fetching && m.inetOnline && m.pskEnabled() {
+	if m.psk.fetched && !m.psk.fetching && !m.Offline && m.inetOnline && m.pskEnabled() {
 		last := m.psk.lastFetchByCall[call]
 		if !last.IsZero() && time.Since(last) >= 5*time.Minute {
 			m.psk.fetching = true

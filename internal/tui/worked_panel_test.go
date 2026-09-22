@@ -478,6 +478,16 @@ func TestWorkedTitle_NoWavelog(t *testing.T) {
 	}
 }
 
+func TestWorkedTitle_Offline(t *testing.T) {
+	m, _ := newWorkedPanelTestModel(t)
+	// Wavelog is configured, but the offline switch hides the remote source.
+	m.Offline = true
+	title := m.workedTitle()
+	if title != "Worked · Local" {
+		t.Errorf("expected 'Worked · Local' in offline mode, got %q", title)
+	}
+}
+
 func TestBuildWorkedPanelLayout_FullWidthRows(t *testing.T) {
 	m, db := newWorkedPanelTestModel(t)
 	m.fields[fieldCall].SetValue("KI6NAZ")

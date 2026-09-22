@@ -124,7 +124,9 @@ func (m *Model) headerView() string {
 	}
 
 	// Core: Net — internet required for callbook, spots, Wavelog.
-	rightParts = append(rightParts, statusDotStyled(m.inetOnline, "Net", m.Offline))
+	// In offline mode the network is intentionally unavailable, so the dot
+	// must not claim reachability (yellow, like other disabled services).
+	rightParts = append(rightParts, statusDotStyled(!m.Offline && m.inetOnline, "Net", m.Offline))
 
 	// Digital: WSJT-X.
 	if hasRig && rp.WsjtxEnabled {

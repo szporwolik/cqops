@@ -232,8 +232,8 @@ func (m *Model) maybeDXC() tea.Cmd {
 		return nil
 	}
 
-	// Need internet.
-	if !m.inetOnline {
+	// Need internet (the offline switch blocks all network traffic too).
+	if m.Offline || !m.inetOnline {
 		if m.dxc.client != nil {
 			m.dxc.client.Stop()
 			m.dxc.client = nil

@@ -6,8 +6,33 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/dxc"
 )
+
+// TestMaybeDXCOfflineDoesNotConnect verifies the offline switch blocks the
+// cluster connection even when internet is otherwise reported reachable.
+func TestMaybeDXCOfflineDoesNotConnect(t *testing.T) {
+	m := newDXCBandFilterModel(t, nil)
+	m.App.Config.Integrations.DXC.Enabled = true
+	m.inetOnline = true
+	m.Offline = true
+
+	if c := m.maybeDXC(); c != nil {
+		t.Fatalf("offline maybeDXC returned a command: %v", c)
+	}
+	if m.dxc.connecting || m.dxc.online || m.dxc.client != nil {
+		t.Fatalf("offline DXC must not connect: connecting=%v online=%v client=%v",
+			m.dxc.connecting, m.dxc.online, m.dxc.client)
+	}
+
+	// F4 in offline mode warns instead of opening the cluster screen.
+	m.screen = screenQSO
+	_, handled := m.handleGlobalKeys(tea.KeyPressMsg{Code: tea.KeyF4})
+	if !handled || m.screen == screenDXC {
+		t.Fatalf("F4 in offline mode: handled=%v screen=%v, want no DXC screen", handled, m.screen)
+	}
+}
 
 // TestHandleDXCStatusFailureKeepsClient is the regression test for abandoned
 // reconnecting clients: a connection failure must not drop the client

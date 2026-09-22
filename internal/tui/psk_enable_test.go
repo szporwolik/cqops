@@ -49,6 +49,35 @@ func TestPSKFetchGatedOnEnable(t *testing.T) {
 	}
 }
 
+func TestPSKOfflineBlocksF5AndFetch(t *testing.T) {
+	m := newTestModel()
+	m.inetOnline = true
+	m.Offline = true
+	m.App.Config.Integrations.PSK.Enabled = true
+
+	// F5 with the offline switch must not open the PSK screen.
+	_, handled := m.handleGlobalKeys(tea.KeyPressMsg{Code: tea.KeyF5})
+	if !handled {
+		t.Error("F5 should be handled (warning toast) in offline mode")
+	}
+	if m.screen == screenPSKReporter {
+		t.Fatal("F5 must not open the PSK screen in offline mode")
+	}
+
+	// Entering the screen directly must not dispatch a fetch either.
+	m.screen = screenPSKReporter
+	_, cmd := m.handlePSKReporterUpdate(nil, nil)
+	if cmd != nil || m.psk.fetching {
+		t.Fatalf("offline PSK must not fetch: cmd=%v fetching=%v", cmd, m.psk.fetching)
+	}
+
+	// The view reports the offline state.
+	m.psk.cacheDir = t.TempDir()
+	if view := m.viewPSKReporter(); !strings.Contains(view, "offline mode") {
+		t.Fatalf("offline view should say offline mode, got %q", view)
+	}
+}
+
 func TestIntegrationMenuPSKDefaultOffAndToggles(t *testing.T) {
 	im := NewIntegrationMenu(config.DefaultConfig())
 	if im.pskEnabled {

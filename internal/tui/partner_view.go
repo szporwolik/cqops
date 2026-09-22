@@ -734,11 +734,12 @@ func formatCoord(val, posSuffix, negSuffix string) string {
 
 // workedTitle returns the panel title with compact source names.
 // The remote source name is rendered as a clickable OSC8 hyperlink
-// to the Wavelog instance main page.
+// to the Wavelog instance main page. In offline mode the remote source
+// contributes nothing and is left out of the title.
 func (m *Model) workedTitle() string {
 	lb := m.App.Logbook
 	wl := lb.Wavelog
-	hasWl := wl != nil && wl.Enabled && wl.URL != "" && wl.APIKey != ""
+	hasWl := !m.Offline && wl != nil && wl.Enabled && wl.URL != "" && wl.APIKey != ""
 	if hasWl {
 		src := CompactSourceName("", wl.URL)
 		if src != "" {

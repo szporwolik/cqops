@@ -15,6 +15,29 @@ func (f *fakeAPRSClient) Stop()             {}
 func (f *fakeAPRSClient) IsRunning() bool   { return f.connected }
 func (f *fakeAPRSClient) IsConnected() bool { return f.connected }
 
+// TestStatusBarNetOffline verifies the Net dot never claims reachability in
+// offline mode: the offline switch renders the yellow warn style even when
+// the internet check reported online.
+func TestStatusBarNetOffline(t *testing.T) {
+	m := newTestModel()
+	m.width = 120
+	m.height = 30
+	m.inetOnline = true
+
+	if bar := m.headerView(); !strings.Contains(bar, statusDotOnStyle.Render("Net")+" ") {
+		t.Errorf("online Net dot missing:\n%s", bar)
+	}
+
+	m.Offline = true
+	bar := m.headerView()
+	if !strings.Contains(bar, statusDotWarnStyle.Render("Net")+" ") {
+		t.Errorf("offline Net dot should be warn (yellow):\n%s", bar)
+	}
+	if strings.Contains(bar, statusDotOnStyle.Render("Net")+" ") {
+		t.Errorf("offline Net dot must not claim online:\n%s", bar)
+	}
+}
+
 func TestStatusBarAPRSStates(t *testing.T) {
 	cases := []struct {
 		name          string
