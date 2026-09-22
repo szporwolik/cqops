@@ -50,6 +50,11 @@ func benchDB(b *testing.B, n int) *sql.DB {
 	if err := tx.Commit(); err != nil {
 		b.Fatalf("commit: %v", err)
 	}
+	// Benchmarks seed through the raw transaction helper, so rebuild the
+	// worked index once — the measured queries read from it.
+	if err := RebuildWorkedIndex(db); err != nil {
+		b.Fatalf("rebuild worked index: %v", err)
+	}
 	return db
 }
 

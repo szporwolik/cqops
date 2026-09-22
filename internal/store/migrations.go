@@ -93,6 +93,11 @@ var migrations = []string{
 	`CREATE INDEX IF NOT EXISTS idx_qsos_wavelog_id ON qsos(wavelog_id)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_contest_id ON qsos(contest_id)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_contest_adif_id ON qsos(contest_adif_id)`,
+	// Ordered contest arms: the contest list queries run two index-ordered
+	// scans (contest_id and contest_adif_id) merged in Go — each index serves
+	// the ORDER BY directly, so no per-refresh sort of the contest subset.
+	`CREATE INDEX IF NOT EXISTS idx_qsos_contest_date_time ON qsos(contest_id, qso_date DESC, time_on DESC)`,
+	`CREATE INDEX IF NOT EXISTS idx_qsos_contest_adif_date ON qsos(contest_adif_id, qso_date DESC, time_on DESC)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_date_time ON qsos(qso_date DESC, time_on DESC)`,
 
 	`CREATE INDEX IF NOT EXISTS idx_qsos_country_base ON qsos(country, base_call)`,
@@ -105,6 +110,32 @@ var migrations = []string{
 	// exactly, so those queries can serve the backlog without scanning the
 	// synced logbook.
 	`CREATE INDEX IF NOT EXISTS idx_qsos_dirty ON qsos(wavelog_dirty, id DESC) WHERE wavelog_id > 0 AND wavelog_dirty = 1`,
+
+	// ── worked-status index — fast worked DXCC/call/grid answers ────────────
+	// Maintained incrementally by every QSO write path and rebuilt by
+	// RebuildWorkedIndex. The normalized qsos table stays the source of
+	// truth; these tables are disposable summaries.
+	`CREATE TABLE IF NOT EXISTS worked_call (
+		base_call TEXT PRIMARY KEY,
+		qso_count INTEGER NOT NULL DEFAULT 0,
+		first_utc  TEXT NOT NULL DEFAULT '',
+		last_utc   TEXT NOT NULL DEFAULT ''
+	)`,
+	`CREATE TABLE IF NOT EXISTS worked_grid (
+		grid4     TEXT PRIMARY KEY,
+		qso_count INTEGER NOT NULL DEFAULT 0,
+		first_utc TEXT NOT NULL DEFAULT '',
+		last_utc  TEXT NOT NULL DEFAULT ''
+	)`,
+	`CREATE TABLE IF NOT EXISTS worked_dxcc (
+		dxcc      TEXT NOT NULL,
+		band      TEXT NOT NULL DEFAULT '',
+		mode      TEXT NOT NULL DEFAULT '',
+		qso_count INTEGER NOT NULL DEFAULT 0,
+		first_utc TEXT NOT NULL DEFAULT '',
+		last_utc  TEXT NOT NULL DEFAULT '',
+		PRIMARY KEY (dxcc, band, mode)
+	)`,
 
 	// ── schema v2: composite indexes for dupe-check and dedup queries ─────────
 	`CREATE INDEX IF NOT EXISTS idx_qsos_call_band_mode_date ON qsos(call, band, mode, qso_date)`,
@@ -199,6 +230,12 @@ func Migrate(db *sql.DB) error {
 		if err := migrateAddColumn(db, "qsos", "wavelog_dirty_rev", "INTEGER DEFAULT 0"); err != nil {
 			return fmt.Errorf("add column wavelog_dirty_rev: %w", err)
 		}
+		if err := migrateAddColumn(db, "qsos", "base_call", "TEXT DEFAULT ''"); err != nil {
+			return fmt.Errorf("add column base_call: %w", err)
+		}
+		if err := migrateAddColumn(db, "qsos", "submode", "TEXT DEFAULT ''"); err != nil {
+			return fmt.Errorf("add column submode: %w", err)
+		}
 		if err := ensureColumnIndexes(db); err != nil {
 			return err
 		}
@@ -206,6 +243,9 @@ func Migrate(db *sql.DB) error {
 			return err
 		}
 		if err := migrateDropRedundantIndexes(db); err != nil {
+			return err
+		}
+		if err := migrateBuildWorkedIndex(db); err != nil {
 			return err
 		}
 		return nil
@@ -243,6 +283,12 @@ func Migrate(db *sql.DB) error {
 	if err := migrateAddColumn(db, "qsos", "wavelog_dirty_rev", "INTEGER DEFAULT 0"); err != nil {
 		return fmt.Errorf("add column wavelog_dirty_rev: %w", err)
 	}
+	if err := migrateAddColumn(db, "qsos", "base_call", "TEXT DEFAULT ''"); err != nil {
+		return fmt.Errorf("add column base_call: %w", err)
+	}
+	if err := migrateAddColumn(db, "qsos", "submode", "TEXT DEFAULT ''"); err != nil {
+		return fmt.Errorf("add column submode: %w", err)
+	}
 	if err := ensureColumnIndexes(db); err != nil {
 		return err
 	}
@@ -250,6 +296,9 @@ func Migrate(db *sql.DB) error {
 		return err
 	}
 	if err := migrateDropRedundantIndexes(db); err != nil {
+		return err
+	}
+	if err := migrateBuildWorkedIndex(db); err != nil {
 		return err
 	}
 
@@ -341,13 +390,63 @@ func migrateDropRedundantIndexes(db *sql.DB) error {
 		"idx_qsos_call", "idx_qsos_band", "idx_qsos_mode",
 		"idx_qsos_date_time_call", "idx_qsos_date_operator",
 		"idx_qsos_date_call_band_mode", "idx_qsos_contest_call_band_mode",
-		"idx_qsos_contest_date_time",
 	} {
 		if _, err := db.Exec(`DROP INDEX IF EXISTS ` + idx); err != nil {
 			return fmt.Errorf("drop redundant index %s: %w", idx, err)
 		}
 	}
 	return nil
+}
+
+// migrateBuildWorkedIndex creates the worked-status index tables (they live
+// in the base DDL for fresh databases but must also exist on databases that
+// are already at the current schema and skip the base list) and builds the
+// index once for databases that already contain QSOs but predate it. Later
+// opens skip the rebuild: the tables are non-empty (the cheap count answers),
+// and the index is maintained incrementally from then on.
+func migrateBuildWorkedIndex(db *sql.DB) error {
+	for _, ddl := range []string{
+		`CREATE TABLE IF NOT EXISTS worked_call (
+			base_call TEXT PRIMARY KEY,
+			qso_count INTEGER NOT NULL DEFAULT 0,
+			first_utc  TEXT NOT NULL DEFAULT '',
+			last_utc   TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE TABLE IF NOT EXISTS worked_grid (
+			grid4     TEXT PRIMARY KEY,
+			qso_count INTEGER NOT NULL DEFAULT 0,
+			first_utc TEXT NOT NULL DEFAULT '',
+			last_utc  TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE TABLE IF NOT EXISTS worked_dxcc (
+			dxcc      TEXT NOT NULL,
+			band      TEXT NOT NULL DEFAULT '',
+			mode      TEXT NOT NULL DEFAULT '',
+			qso_count INTEGER NOT NULL DEFAULT 0,
+			first_utc TEXT NOT NULL DEFAULT '',
+			last_utc  TEXT NOT NULL DEFAULT '',
+			PRIMARY KEY (dxcc, band, mode)
+		)`,
+	} {
+		if _, err := db.Exec(ddl); err != nil {
+			return fmt.Errorf("worked index table: %w", err)
+		}
+	}
+	var worked int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM worked_call`).Scan(&worked); err != nil {
+		return fmt.Errorf("worked index probe: %w", err)
+	}
+	if worked > 0 {
+		return nil
+	}
+	var qsos int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos`).Scan(&qsos); err != nil {
+		return fmt.Errorf("worked index qsos probe: %w", err)
+	}
+	if qsos == 0 {
+		return nil
+	}
+	return RebuildWorkedIndex(db)
 }
 
 // migrateDropWavelogFlag removes the legacy wavelog_uploaded status column.

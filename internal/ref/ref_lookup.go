@@ -47,14 +47,50 @@ func (rdb *DB) NeedsSearchBackfill() (bool, error) {
 }
 
 // Search returns all reference rows whose ref or name contains the query string
-// (case-insensitive and diacritic-insensitive substring match). Also matches
-// by prefix for grid searches. Results are ordered by ref_type then ref,
-// limited to 500 rows.
+// (case-insensitive and diacritic-insensitive substring match) or whose grid
+// contains it. Results are ordered by ref_type then ref, limited to 500 rows.
+//
+// Queries of three characters or more use the FTS5 trigram index — a
+// ~200k-row table can be searched without a scan. Shorter queries (and
+// databases that predate the normalized search column) fall back to the
+// legacy LIKE path.
 func (rdb *DB) Search(query string) ([]Row, error) {
 	q := normalizeForSearch(query)
+	if q == "" {
+		return nil, nil
+	}
+	if needs, err := rdb.NeedsSearchBackfill(); err == nil && needs {
+		return rdb.searchLegacy(query, q)
+	}
+	if len(q) >= 3 && !strings.Contains(q, `"`) {
+		return rdb.searchFTS(q)
+	}
+	return rdb.searchLegacy(query, q)
+}
+
+// searchFTS resolves the query through the trigram index over the normalized
+// search text and the grid. MATCH with a quoted phrase is a substring match.
+func (rdb *DB) searchFTS(q string) ([]Row, error) {
+	match := `"` + q + `"`
+	rows, err := rdb.db.Query(
+		`SELECT ref_type, ref, name, grid, height FROM refs
+		 WHERE rowid IN (SELECT rowid FROM refs_fts WHERE refs_fts MATCH ?)
+		 ORDER BY ref_type, ref
+		 LIMIT 500`,
+		match,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("ref search %q: %w", q, err)
+	}
+	defer rows.Close()
+	return scanSearchRows(rows)
+}
+
+// searchLegacy is the pre-FTS path: raw LIKE over the normalized search
+// column, the original ref/name text (for databases predating the search
+// column), and the grid.
+func (rdb *DB) searchLegacy(query, q string) ([]Row, error) {
 	like := "%" + q + "%"
-	// Raw LIKE for databases that predate the search column — preserves
-	// ASCII case-insensitive matching on the original ref/name text.
 	rawLike := "%" + query + "%"
 	rows, err := rdb.db.Query(
 		`SELECT ref_type, ref, name, grid, height FROM refs
@@ -69,7 +105,13 @@ func (rdb *DB) Search(query string) ([]Row, error) {
 		return nil, fmt.Errorf("ref search %q: %w", query, err)
 	}
 	defer rows.Close()
+	return scanSearchRows(rows)
+}
 
+func scanSearchRows(rows interface {
+	Next() bool
+	Scan(dest ...any) error
+}) ([]Row, error) {
 	var results []Row
 	for rows.Next() {
 		var r Row
@@ -80,7 +122,7 @@ func (rdb *DB) Search(query string) ([]Row, error) {
 		r.RefType = RefType(rt)
 		results = append(results, r)
 	}
-	return results, rows.Err()
+	return results, nil
 }
 
 // NameForRef looks up the human-readable name for a single reference.

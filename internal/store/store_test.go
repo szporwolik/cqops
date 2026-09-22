@@ -908,6 +908,47 @@ func TestDirtyPartialIndexExists(t *testing.T) {
 	}
 }
 
+// TestListQSOsContestMergedOrdering verifies the index-ordered merge: rows
+// matching only contest_id, only contest_adif_id, and both, ordered by date
+// descending, deduplicated, with correct page count.
+func TestListQSOsContestMergedOrdering(t *testing.T) {
+	db := newTempDB(t)
+
+	mk := func(call, date, contestID, adifID string) {
+		mustInsertQSO(t, db, &qso.QSO{Call: call, QSODate: date, TimeOn: "120000",
+			Band: "20m", Mode: "SSB", ContestID: contestID, ContestADIFID: adifID})
+	}
+	mk("A1", "20240501", "c1", "")    // id arm only
+	mk("B2", "20240502", "", "c1")    // adif arm only
+	mk("C3", "20240503", "c1", "c1")  // both — must appear once
+	mk("D4", "20240504", "other", "") // unrelated
+
+	qsos, err := ListQSOs(db, 10, "c1")
+	if err != nil {
+		t.Fatalf("ListQSOs: %v", err)
+	}
+	if len(qsos) != 3 {
+		t.Fatalf("got %d contest rows, want 3", len(qsos))
+	}
+	if qsos[0].Call != "C3" || qsos[1].Call != "B2" || qsos[2].Call != "A1" {
+		t.Errorf("order = %s,%s,%s, want C3,B2,A1", qsos[0].Call, qsos[1].Call, qsos[2].Call)
+	}
+
+	total, err := countQSOsContest(db, "c1")
+	if err != nil || total != 3 {
+		t.Fatalf("countQSOsContest = %d (err=%v), want 3", total, err)
+	}
+
+	// Paged variant with offset.
+	page, total2, err := ListQSOsPageWithCount(db, 2, 1, "c1")
+	if err != nil || total2 != 3 || len(page) != 2 {
+		t.Fatalf("page = %d rows / total %d (err=%v), want 2/3", len(page), total2, err)
+	}
+	if page[0].Call != "B2" || page[1].Call != "A1" {
+		t.Errorf("page order = %s,%s, want B2,A1", page[0].Call, page[1].Call)
+	}
+}
+
 // TestListQSOsPageWithCount_TwoQueryPages verifies the two-statement paging:
 // total count covers the whole filtered set while pages stay ordered and
 // non-overlapping.
@@ -1116,5 +1157,253 @@ func TestDirtyQSOQueries(t *testing.T) {
 	}
 	if len(limited) != 0 {
 		t.Fatalf("ListDirtyQSOs(limit=0) = %d rows, want 0", len(limited))
+	}
+}
+
+// ── worked-index maintenance tests ────────────────────────────────────────
+
+// workedCountOrZero returns the first column of a single-row query, or 0
+// when the row does not exist (used for absent aggregate rows).
+func workedCountOrZero(t *testing.T, db *sql.DB, query string, args ...any) int {
+	t.Helper()
+	var n int
+	if err := db.QueryRow(query, args...).Scan(&n); err == nil {
+		return n
+	} else if err == sql.ErrNoRows {
+		return 0
+	} else {
+		t.Fatalf("%s: %v", query, err)
+	}
+	return 0
+}
+
+func TestWorkedIndexInsertMaintainsAggregates(t *testing.T) {
+	db := newTempDB(t)
+	insert := func(call, grid, band, mode, submode, dxcc string) {
+		t.Helper()
+		q := &qso.QSO{Call: call, GridSquare: grid,
+			QSODate: "20240501", TimeOn: "120000",
+			Band: band, Mode: mode, Submode: submode, DXCC: dxcc}
+		if _, err := InsertQSO(db, q); err != nil {
+			t.Fatalf("InsertQSO(%s): %v", call, err)
+		}
+	}
+	insert("SP9MOA", "JO90", "20m", "MFSK", "FT8", "269")
+	insert("SP9MOA", "JO90", "20m", "MFSK", "FT8", "269")
+	insert("SP9MOA", "JO90xx", "40m", "MFSK", "FT4", "269")
+	insert("DL1AA", "JN58", "20m", "SSB", "", "230")
+
+	if got := workedCountOrZero(t, db, `SELECT qso_count FROM worked_call WHERE base_call = 'SP9MOA'`); got != 3 {
+		t.Errorf("worked_call SP9MOA = %d, want 3", got)
+	}
+	if got := workedCountOrZero(t, db, `SELECT qso_count FROM worked_grid WHERE grid4 = 'JO90'`); got != 3 {
+		t.Errorf("worked_grid JO90 = %d, want 3 (six-char grid reduced)", got)
+	}
+	if got := workedCountOrZero(t, db, `SELECT qso_count FROM worked_grid WHERE grid4 = 'JO90XX'`); got != 0 {
+		t.Errorf("worked_grid JO90XX = %d, want 0", got)
+	}
+
+	// All four dxcc aggregation levels, with canonical mode from submode.
+	checks := []struct {
+		band, mode string
+		want       int
+	}{
+		{"", "", 3},
+		{"20m", "", 2},
+		{"40m", "", 1},
+		{"", "FT8", 2},
+		{"", "FT4", 1},
+		{"20m", "FT8", 2},
+		{"40m", "FT4", 1},
+		{"20m", "FT4", 0},
+	}
+	for _, c := range checks {
+		if got := workedCountOrZero(t, db,
+			`SELECT qso_count FROM worked_dxcc WHERE dxcc = '269' AND band = ? AND mode = ?`,
+			c.band, c.mode); got != c.want {
+			t.Errorf("worked_dxcc 269 band=%q mode=%q = %d, want %d", c.band, c.mode, got, c.want)
+		}
+	}
+	if got := workedCountOrZero(t, db, `SELECT qso_count FROM worked_dxcc WHERE dxcc = '230' AND band = '20m' AND mode = 'SSB'`); got != 1 {
+		t.Errorf("worked_dxcc 230 20m SSB = %d, want 1", got)
+	}
+}
+
+func TestWorkedIndexMissingDataDoesNotContribute(t *testing.T) {
+	db := newTempDB(t)
+	// No DXCC, no band, no grid: only the call aggregate applies.
+	q := &qso.QSO{Call: "XX1AA", QSODate: "20240501", TimeOn: "120000"}
+	if _, err := InsertQSO(db, q); err != nil {
+		t.Fatalf("InsertQSO: %v", err)
+	}
+	if got := workedCountOrZero(t, db, `SELECT qso_count FROM worked_call WHERE base_call = 'XX1AA'`); got != 1 {
+		t.Errorf("worked_call XX1AA = %d, want 1", got)
+	}
+	if got := workedCountOrZero(t, db, `SELECT COUNT(*) FROM worked_dxcc`); got != 0 {
+		t.Errorf("worked_dxcc rows = %d, want 0 (missing dxcc)", got)
+	}
+	if got := workedCountOrZero(t, db, `SELECT COUNT(*) FROM worked_grid`); got != 0 {
+		t.Errorf("worked_grid rows = %d, want 0 (missing grid)", got)
+	}
+}
+
+func TestWorkedIndexEditMovesCounts(t *testing.T) {
+	db := newTempDB(t)
+	q := &qso.QSO{Call: "SP9MOA", QSODate: "20240501", TimeOn: "120000",
+		Band: "20m", Mode: "FT8", DXCC: "269"}
+	id, err := InsertQSO(db, q)
+	if err != nil {
+		t.Fatalf("InsertQSO: %v", err)
+	}
+	q.ID = id
+	q.Band = "40m"
+	if err := UpdateQSO(db, q); err != nil {
+		t.Fatalf("UpdateQSO: %v", err)
+	}
+	if got := workedCountOrZero(t, db, `SELECT qso_count FROM worked_dxcc WHERE dxcc = '269' AND band = '20m' AND mode = 'FT8'`); got != 0 {
+		t.Errorf("old 20m aggregate = %d, want 0 after edit", got)
+	}
+	if got := workedCountOrZero(t, db, `SELECT qso_count FROM worked_dxcc WHERE dxcc = '269' AND band = '40m' AND mode = 'FT8'`); got != 1 {
+		t.Errorf("new 40m aggregate = %d, want 1 after edit", got)
+	}
+	if got := workedCountOrZero(t, db, `SELECT qso_count FROM worked_dxcc WHERE dxcc = '269' AND band = '' AND mode = ''`); got != 1 {
+		t.Errorf("dxcc total = %d, want 1", got)
+	}
+}
+
+func TestWorkedIndexDeleteRemovesAndRecomputesEdges(t *testing.T) {
+	db := newTempDB(t)
+	first := &qso.QSO{Call: "A1AA", QSODate: "20230101", TimeOn: "000000", Band: "20m", Mode: "FT8", DXCC: "1"}
+	second := &qso.QSO{Call: "A1AA", QSODate: "20240101", TimeOn: "000000", Band: "20m", Mode: "FT8", DXCC: "1"}
+	if _, err := InsertQSO(db, first); err != nil {
+		t.Fatalf("InsertQSO first: %v", err)
+	}
+	if _, err := InsertQSO(db, second); err != nil {
+		t.Fatalf("InsertQSO second: %v", err)
+	}
+	id2 := FindQSOByKey(db, "A1AA", "20m", "FT8", "20240101", "000000")
+	if id2 == 0 {
+		t.Fatal("FindQSOByKey for second QSO failed")
+	}
+	if err := DeleteQSO(db, id2); err != nil {
+		t.Fatalf("DeleteQSO second: %v", err)
+	}
+	var fu, lu string
+	if err := db.QueryRow(`SELECT first_utc, last_utc FROM worked_call WHERE base_call = 'A1AA'`).Scan(&fu, &lu); err != nil {
+		t.Fatalf("read worked_call edges: %v", err)
+	}
+	if fu != "20230101000000" || lu != "20230101000000" {
+		t.Errorf("edges after delete = %s..%s, want both 20230101000000", fu, lu)
+	}
+	id1 := FindQSOByKey(db, "A1AA", "20m", "FT8", "20230101", "000000")
+	if err := DeleteQSO(db, id1); err != nil {
+		t.Fatalf("DeleteQSO first: %v", err)
+	}
+	if got := workedCountOrZero(t, db, `SELECT COUNT(*) FROM worked_call`); got != 0 {
+		t.Errorf("worked_call rows = %d, want 0 after last delete", got)
+	}
+}
+
+func TestWorkedIndexRebuildIdempotent(t *testing.T) {
+	db := newTempDB(t)
+	for i := 0; i < 2; i++ {
+		q := &qso.QSO{Call: "SP9MOA", GridSquare: "JO90", QSODate: "20240501", TimeOn: "120000",
+			Band: "20m", Mode: "MFSK", Submode: "FT8", DXCC: "269"}
+		if _, err := InsertQSO(db, q); err != nil {
+			t.Fatalf("InsertQSO: %v", err)
+		}
+	}
+	if err := RebuildWorkedIndex(db); err != nil {
+		t.Fatalf("RebuildWorkedIndex: %v", err)
+	}
+	if err := RebuildWorkedIndex(db); err != nil {
+		t.Fatalf("RebuildWorkedIndex second run: %v", err)
+	}
+	if got := workedCountOrZero(t, db, `SELECT qso_count FROM worked_call WHERE base_call = 'SP9MOA'`); got != 2 {
+		t.Errorf("worked_call = %d, want 2 after idempotent rebuild", got)
+	}
+	if got := workedCountOrZero(t, db, `SELECT qso_count FROM worked_dxcc WHERE dxcc = '269' AND band = '20m' AND mode = 'FT8'`); got != 2 {
+		t.Errorf("worked_dxcc = %d, want 2 after idempotent rebuild", got)
+	}
+}
+
+func TestPurgeQSOsEmptiesWorkedIndex(t *testing.T) {
+	db := newTempDB(t)
+	q := &qso.QSO{Call: "SP9MOA", GridSquare: "JO90", QSODate: "20240501", TimeOn: "120000",
+		Band: "20m", Mode: "FT8", DXCC: "269"}
+	if _, err := InsertQSO(db, q); err != nil {
+		t.Fatalf("InsertQSO: %v", err)
+	}
+	if err := PurgeQSOs(db); err != nil {
+		t.Fatalf("PurgeQSOs: %v", err)
+	}
+	for _, table := range []string{"worked_call", "worked_grid", "worked_dxcc", "qsos"} {
+		if got := workedCountOrZero(t, db, `SELECT COUNT(*) FROM `+table); got != 0 {
+			t.Errorf("%s rows = %d, want 0 after purge", table, got)
+		}
+	}
+}
+
+func TestMigrateBackfillsWorkedIndex(t *testing.T) {
+	db := newTempDB(t)
+	q := &qso.QSO{Call: "SP9MOA", GridSquare: "JO90", QSODate: "20240501", TimeOn: "120000",
+		Band: "20m", Mode: "FT8", DXCC: "269"}
+	if _, err := InsertQSO(db, q); err != nil {
+		t.Fatalf("InsertQSO: %v", err)
+	}
+	// Simulate a database that predates the worked index.
+	for _, stmt := range []string{`DROP TABLE worked_call`, `DROP TABLE worked_grid`, `DROP TABLE worked_dxcc`} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	if err := Migrate(db); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	if got := workedCountOrZero(t, db, `SELECT qso_count FROM worked_call WHERE base_call = 'SP9MOA'`); got != 1 {
+		t.Errorf("worked_call after migrate backfill = %d, want 1", got)
+	}
+}
+
+func TestGetWorkedSummaryIndexedBranch(t *testing.T) {
+	db := newTempDB(t)
+	insert := func(grid, band, mode, submode string) {
+		t.Helper()
+		q := &qso.QSO{Call: "SP9MOA", GridSquare: grid, QSODate: "20240501", TimeOn: "120000",
+			Band: band, Mode: mode, Submode: submode, DXCC: "269"}
+		if _, err := InsertQSO(db, q); err != nil {
+			t.Fatalf("InsertQSO: %v", err)
+		}
+	}
+	insert("JO90", "20m", "MFSK", "FT8")
+	insert("JO90xx", "20m", "MFSK", "FT8")
+	insert("JO90", "40m", "MFSK", "FT4")
+	insert("JO90", "20m", "SSB", "")
+
+	ws, err := GetWorkedSummary(db, "SP9MOA", "JO90", "269", "Poland")
+	if err != nil {
+		t.Fatalf("GetWorkedSummary: %v", err)
+	}
+	h := ws.DXCCHistory
+	if h.QSOCount != 4 {
+		t.Errorf("DXCC QSOCount = %d, want 4", h.QSOCount)
+	}
+	if h.UniqueCalls != 1 {
+		t.Errorf("DXCC UniqueCalls = %d, want 1", h.UniqueCalls)
+	}
+	if h.UniqueBands != 2 {
+		t.Errorf("DXCC UniqueBands = %d, want 2", h.UniqueBands)
+	}
+	if h.UniqueModes != 3 {
+		t.Errorf("DXCC UniqueModes = %d, want 3 (FT8, FT4, SSB)", h.UniqueModes)
+	}
+	if len(h.BandCounts) != 2 || h.BandCounts[0].Value != "20m" || h.BandCounts[0].Count != 3 {
+		t.Errorf("BandCounts = %+v, want 20m×3 leading", h.BandCounts)
+	}
+	if len(h.ModeCounts) != 3 || h.ModeCounts[0].Value != "FT8" || h.ModeCounts[0].Count != 2 {
+		t.Errorf("ModeCounts = %+v, want FT8×2 leading", h.ModeCounts)
+	}
+	if len(h.GridCounts) != 1 || h.GridCounts[0].Value != "JO90" || h.GridCounts[0].Count != 4 {
+		t.Errorf("GridCounts = %+v, want JO90×4 (JO90xx reduces to JO90)", h.GridCounts)
 	}
 }

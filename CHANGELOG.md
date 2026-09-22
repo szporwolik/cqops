@@ -194,6 +194,14 @@
 
 ### Under the Hood
 - **New tests** for the APRS pane (filters, radar geometry, detail lines, weather), passcode vectors, packet-type classification, symbol names and timestamp parsing. No config or database migration needed from v0.9.10.
+- **Worked-status index**: the Worked panel now answers "worked call / grid / DXCC / band / mode / band+mode" from a local materialized index (`worked_call`, `worked_grid`, `worked_dxcc`) maintained inside the same transaction as every QSO write (manual save, WSJT-X, ADIF import, Wavelog sync, edits, deletes, purges). First/last timestamps are recomputed on decrement, zeroed aggregates are removed, and a deterministic rebuild (idempotent, migration-backfilled) restores it after bulk imports or rule changes. `GetWorkedSummary` dropped ~37% at 50k QSOs and ~45% at 10k.
+
+- **REF search via FTS5 trigram**: park/reference lookups now go through a trigram FTS5 index (`refs_fts`) built once on first open — ~200k-row searches no longer scan the legacy table; short three-character queries and grids still resolve instantly, diacritics and mixed case included.
+
+- **Contest list without the sort spill**: contest-filtered logbook lists no longer run an OR-union that forced a temp b-tree sort — the merged arm walks the `contest_id` index and the complementary arm the `contest_adif_id` index, merging in Go with no intermediate sort.
+
+- **Dependency refresh**: charm.land bubbletea v2.0.9 / bubbles v2.2.1 / lipgloss v2.0.6, modernc.org/sqlite v1.59.0, k0swe/wsjtx-go v4.3.0, go.bug.st/serial v1.8.0; `govulncheck` reports no known vulnerabilities.
+
 
 ## v0.9.10 — 2026-08-09
 

@@ -50,6 +50,11 @@ func newWorkedPanelTestModel(t *testing.T) (*Model, *sql.DB) {
 			t.Fatalf("seed: %v", err)
 		}
 	}
+	// Raw SQL bypasses the incremental index maintenance — rebuild it, as
+	// production migration does for pre-existing rows.
+	if err := store.RebuildWorkedIndex(db); err != nil {
+		t.Fatalf("rebuild worked index: %v", err)
+	}
 
 	cfg := &config.Config{
 		General: config.GeneralConfig{Units: "metric"},

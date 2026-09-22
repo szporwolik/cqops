@@ -492,6 +492,46 @@ func TestSearch_AfterRebuild(t *testing.T) {
 	}
 }
 
+func TestSearch_FTSGridAndDiacritics(t *testing.T) {
+	dir := t.TempDir()
+	cache := filepath.Join(dir, "cache")
+	os.MkdirAll(cache, 0755)
+
+	writeCSV(t, filepath.Join(cache, sotaFile), "title\nSummitCode,x,x,SummitName,AltM,x,x,x,Lon,Lat,x,x\nG/SP-001,x,x,BenNevis,1344,x,x,x,-5.0,56.0,x,x\nSP/BZ-001,x,x,Ćwilin,1071,x,x,x,20.0,49.6,x,x\n")
+	writeCSV(t, filepath.Join(cache, potaFile), `"reference","name","active","entityId","locationDesc","latitude","longitude","grid"
+"US-0001","Park","1","1","X","44.0","-68.0","FN54"
+`)
+	writeCSV(t, filepath.Join(cache, wwffFile), "reference,status,name,program,dxcc,state,county,continent,iota,iaruLocator,latitude,longitude,x,x\nX-0001,active,Area,x,x,x,x,x,-,OJ58XO,8.6,111.9,x,x\n")
+	writeJSON(t, filepath.Join(cache, iotaFile), []map[string]string{{"refno": "AF-001", "name": "Island"}})
+	writeJSON(t, filepath.Join(cache, iotaGroupFile), []map[string]string{{"refno": "AF-001", "name": "Agalega Islands", "latitude_max": "-10.0", "latitude_min": "-11.0", "longitude_max": "57.0", "longitude_min": "56.0"}})
+
+	db, _ := Open(filepath.Join(dir, "ref.db"))
+	defer db.Close()
+	db.Rebuild(cache, func(string) {})
+
+	// Grid substring via the trigram index (case-insensitive).
+	r, _ := db.Search("fn54")
+	if len(r) != 1 || r[0].Name != "Park" {
+		t.Errorf("grid search: got %+v, want the FN54 park", r)
+	}
+
+	// Diacritic-insensitive name match through the FTS index.
+	r, _ = db.Search("Cwilin")
+	if len(r) != 1 || r[0].Ref != "SP/BZ-001" {
+		t.Errorf("diacritic search: got %+v, want SP/BZ-001", r)
+	}
+	r, _ = db.Search("cwilin")
+	if len(r) != 1 || r[0].Ref != "SP/BZ-001" {
+		t.Errorf("diacritic search (lowercase): got %+v, want SP/BZ-001", r)
+	}
+
+	// Short query falls back to the legacy path and still caps at 500.
+	r, _ = db.Search("e")
+	if len(r) > 500 {
+		t.Errorf("limit exceeded: %d", len(r))
+	}
+}
+
 func TestNormalizeForSearch(t *testing.T) {
 	tests := []struct{ in, want string }{
 		{"Ćwilin", "cwilin"},

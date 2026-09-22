@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -183,13 +184,79 @@ func GetWorkedSummary(db *sql.DB, call, grid4, dxcc, countryName string) (Worked
 	}
 
 	if dxcc != "" {
-		ws.DXCCHistory, err = scopeStatsDXCC(db, dxcc, countryName)
+		ws.DXCCHistory, err = scopeStatsDXCCFast(db, dxcc, countryName)
 		if err != nil {
 			return ws, fmt.Errorf("dxcc history: %w", err)
 		}
 	}
 
 	return ws, nil
+}
+
+// scopeStatsDXCCFast computes the DXCC-entity scope from the materialized
+// worked index. Rows whose entity number matches come straight from
+// worked_dxcc (the four aggregation levels); the few remaining aggregate
+// dimensions (distinct calls, grid spread, edge QSOs) are index-served
+// queries on the dxcc column.
+//
+// Databases with legacy country-fallback rows (no matching entity number,
+// matched by country name) fall back to the union-source path so the results
+// stay exactly what the historical query produced.
+func scopeStatsDXCCFast(db *sql.DB, dxcc, countryName string) (ScopeHistory, error) {
+	var fallback int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM qsos
+		 WHERE (dxcc IS NULL OR dxcc = '' OR dxcc != ?) AND country LIKE ? COLLATE NOCASE LIMIT 1`,
+		dxcc, strings.ToLower(countryName)+"%",
+	).Scan(&fallback); err != nil {
+		return ScopeHistory{}, err
+	}
+	if fallback > 0 {
+		return scopeStatsDXCC(db, dxcc, countryName)
+	}
+
+	var sh ScopeHistory
+	err := db.QueryRow(
+		`SELECT qso_count, first_utc, last_utc FROM worked_dxcc
+		 WHERE dxcc = ? AND band = '' AND mode = ''`,
+		dxcc,
+	).Scan(&sh.QSOCount, new(string), new(string))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return sh, nil // not worked — honest zero history
+		}
+		return sh, err
+	}
+
+	if err := db.QueryRow(`SELECT COUNT(DISTINCT base_call) FROM qsos WHERE dxcc = ?`, dxcc).Scan(&sh.UniqueCalls); err != nil {
+		return sh, err
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM worked_dxcc WHERE dxcc = ? AND band != '' AND mode = ''`, dxcc).Scan(&sh.UniqueBands); err != nil {
+		return sh, err
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM worked_dxcc WHERE dxcc = ? AND band = '' AND mode != ''`, dxcc).Scan(&sh.UniqueModes); err != nil {
+		return sh, err
+	}
+
+	sh.FirstQSO = queryQSOBrief(db, "dxcc = ?", "ASC", dxcc)
+	sh.LastQSO = queryQSOBrief(db, "dxcc = ?", "DESC", dxcc)
+
+	sh.BandCounts, err = sumGroupFromWhere(db,
+		"band", "worked_dxcc", `dxcc = ? AND band != '' AND mode = ''`, []any{dxcc}, 6)
+	if err != nil {
+		return sh, fmt.Errorf("band counts: %w", err)
+	}
+	sh.ModeCounts, err = sumGroupFromWhere(db,
+		"mode", "worked_dxcc", `dxcc = ? AND band = '' AND mode != ''`, []any{dxcc}, 4)
+	if err != nil {
+		return sh, fmt.Errorf("mode counts: %w", err)
+	}
+	sh.GridCounts, err = countGroup(db,
+		"UPPER(SUBSTR(gridsquare, 1, 4))", "dxcc = ? AND gridsquare != ''", []any{dxcc}, 4)
+	if err != nil {
+		return sh, fmt.Errorf("grid counts: %w", err)
+	}
+	return sh, nil
 }
 
 // scopeStatsDXCC computes the DXCC-entity scope as two index-driven arms
@@ -364,7 +431,17 @@ func countGroupFrom(db *sql.DB, expr, source string, args []any, limit int) ([]C
 // countGroupFromWhere is countGroupFrom with an extra row predicate (e.g.
 // gridsquare != ” for grid counts over a subquery source).
 func countGroupFromWhere(db *sql.DB, expr, source, extraWhere string, args []any, limit int) ([]CountItem, error) {
-	query := `SELECT ` + expr + `, COUNT(*) AS cnt
+	return groupFromWhere(db, expr, source, extraWhere, "COUNT(*)", args, limit)
+}
+
+// sumGroupFromWhere aggregates the qso_count column of a worked-index table
+// instead of counting rows.
+func sumGroupFromWhere(db *sql.DB, expr, source, extraWhere string, args []any, limit int) ([]CountItem, error) {
+	return groupFromWhere(db, expr, source, extraWhere, "SUM(qso_count)", args, limit)
+}
+
+func groupFromWhere(db *sql.DB, expr, source, extraWhere, agg string, args []any, limit int) ([]CountItem, error) {
+	query := `SELECT ` + expr + `, ` + agg + ` AS cnt
 		FROM ` + source
 	if extraWhere != "" {
 		query += `

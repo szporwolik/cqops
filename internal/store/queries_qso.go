@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"math"
 	"strings"
@@ -87,11 +88,12 @@ type execer interface {
 }
 
 // InsertQSO persists a QSO and sets its ID on success. Retries on SQLITE_BUSY.
+// The write and the worked-index update happen in one transaction.
 func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 	var id int64
 	var err error
 	for attempt := 0; attempt < 3; attempt++ {
-		id, err = insertQSO(db, q)
+		id, err = insertQSOWithIndex(db, q)
 		if err == nil {
 			return id, nil
 		}
@@ -103,15 +105,143 @@ func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 	return 0, fmt.Errorf("insert qso: %w", err)
 }
 
+// insertQSOWithIndex inserts one QSO and maintains the worked index, all in a
+// single transaction.
+func insertQSOWithIndex(db *sql.DB, q *qso.QSO) (int64, error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	id, err := insertQSO(tx, q)
+	if err != nil {
+		return 0, err
+	}
+	if err := indexQSO(tx, q, 1); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
 // InsertQSOTx persists a QSO inside an open transaction (bulk import paths).
 // No busy retry: the transaction already holds the write lock, and a failed
-// statement must propagate so the caller can abandon the chunk.
+// statement must propagate so the caller can abandon the chunk. Maintains the
+// worked index inside the same transaction.
 func InsertQSOTx(tx *sql.Tx, q *qso.QSO) (int64, error) {
 	id, err := insertQSO(tx, q)
 	if err != nil {
 		return 0, fmt.Errorf("insert qso: %w", err)
 	}
+	if err := indexQSO(tx, q, 1); err != nil {
+		return 0, err
+	}
 	return id, nil
+}
+
+// listQSOsContestMerged returns a page of contest QSOs by merging two
+// index-ordered scans: rows matching contest_id and rows matching
+// contest_adif_id that do not also match contest_id (so each row appears
+// once). Each arm's ORDER BY is served directly by
+// idx_qsos_contest_date_time / idx_qsos_contest_adif_date, so a refresh or
+// page turn never sorts the whole contest subset the way the legacy
+// "contest_id = ? OR contest_adif_id = ?" union did.
+func listQSOsContestMerged(db *sql.DB, limit, offset int, contestID string, orderAsc bool) ([]qso.QSO, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	fetch := limit + offset
+	order := "DESC"
+	if orderAsc {
+		order = "ASC"
+	}
+
+	arms := []struct {
+		where string
+		args  []any
+	}{
+		{"contest_id = ?", []any{contestID}},
+		{"contest_adif_id = ? AND (contest_id IS NULL OR contest_id = '' OR contest_id != ?)", []any{contestID, contestID}},
+	}
+
+	var streams [][]qso.QSO
+	for _, arm := range arms {
+		rows, err := listQSOsByQuery(db,
+			`SELECT `+qsoSelectCols+` FROM qsos WHERE `+arm.where+
+				` ORDER BY qso_date `+order+`, time_on `+order+`, id `+order+` LIMIT ?`,
+			append(arm.args, fetch)...)
+		if err != nil {
+			return nil, err
+		}
+		streams = append(streams, rows)
+	}
+
+	before := func(a, b *qso.QSO) bool { // a sorts before b in the requested order
+		if a.QSODate != b.QSODate {
+			if orderAsc {
+				return a.QSODate < b.QSODate
+			}
+			return a.QSODate > b.QSODate
+		}
+		if a.TimeOn != b.TimeOn {
+			if orderAsc {
+				return a.TimeOn < b.TimeOn
+			}
+			return a.TimeOn > b.TimeOn
+		}
+		if orderAsc {
+			return a.ID < b.ID
+		}
+		return a.ID > b.ID
+	}
+
+	merged := make([]qso.QSO, 0, len(streams[0])+len(streams[1]))
+	i0, i1 := 0, 0
+	for (i0 < len(streams[0]) || i1 < len(streams[1])) && len(merged) < fetch {
+		var next *qso.QSO
+		switch {
+		case i0 >= len(streams[0]):
+			next = &streams[1][i1]
+			i1++
+		case i1 >= len(streams[1]):
+			next = &streams[0][i0]
+			i0++
+		case before(&streams[0][i0], &streams[1][i1]):
+			next = &streams[0][i0]
+			i0++
+		default:
+			next = &streams[1][i1]
+			i1++
+		}
+		merged = append(merged, *next)
+	}
+
+	if offset >= len(merged) {
+		return nil, nil
+	}
+	end := offset + limit
+	if end > len(merged) {
+		end = len(merged)
+	}
+	return merged[offset:end], nil
+}
+
+// countQSOsContest returns the total contest QSO count as the sum of the two
+// disjoint arms (rows matching contest_id plus rows matching only
+// contest_adif_id) — two index-only counts.
+func countQSOsContest(db *sql.DB, contestID string) (int, error) {
+	var a, b int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE contest_id = ?`, contestID).Scan(&a); err != nil {
+		return 0, fmt.Errorf("count contest qsos: %w", err)
+	}
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM qsos WHERE contest_adif_id = ? AND (contest_id IS NULL OR contest_id = '' OR contest_id != ?)`,
+		contestID, contestID).Scan(&b); err != nil {
+		return 0, fmt.Errorf("count contest adif qsos: %w", err)
+	}
+	return a + b, nil
 }
 
 // ListQSOs returns recent QSOs ordered by QSO date/time descending.
@@ -206,6 +336,15 @@ func ListQSOsPageWithCount(db *sql.DB, limit, offset int, contestID string) ([]q
 		whereArgs = append(whereArgs, contestID, contestID)
 	}
 
+	if contestID != "" {
+		total, err := countQSOsContest(db, contestID)
+		if err != nil {
+			return nil, 0, err
+		}
+		qsos, err := listQSOsContestMerged(db, limit, offset, contestID, false)
+		return qsos, total, err
+	}
+
 	var total int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos`+where, whereArgs...).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("count qsos page: %w", err)
@@ -284,8 +423,8 @@ func ListQSOsPage(db *sql.DB, limit, offset int, contestID string, orderAsc bool
 		FROM qsos`
 	var args []any
 	if contestID != "" {
-		query += ` WHERE contest_id = ? OR contest_adif_id = ?`
-		args = append(args, contestID, contestID)
+		// Index-ordered merge — no per-page sort of the contest subset.
+		return listQSOsContestMerged(db, limit, offset, contestID, orderAsc)
 	}
 	query += `
 		ORDER BY qso_date `
@@ -510,11 +649,26 @@ func GetQSOByID(db *sql.DB, id int64) (*qso.QSO, error) {
 
 // DeleteQSO removes a QSO by primary key.
 func DeleteQSO(db *sql.DB, id int64) error {
-	_, err := db.Exec(`DELETE FROM qsos WHERE id = ?`, id)
+	tx, err := db.Begin()
 	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	old, err := loadQSOForIndex(tx, id)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM qsos WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("delete qso: %w", err)
 	}
-	return nil
+	// Unindex after the row is gone so first/last edge recomputation
+	// sees only the remaining QSOs.
+	if err == nil {
+		if err := indexQSO(tx, old, -1); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // FindQSOByKey returns the ID of a QSO matching call, band, mode, date and time_on.
@@ -944,23 +1098,34 @@ func buildUpdateQSOStatement(q *qso.QSO, oldCall, extraSet string) (string, []an
 // in flight captures an older revision, and the bumped counter lets the
 // upload completion detect that the row changed and keep it pending.
 func UpdateQSO(db *sql.DB, q *qso.QSO) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
 	var oldCall string
-	_ = db.QueryRow(`SELECT call FROM qsos WHERE id=?`, q.ID).Scan(&oldCall)
+	_ = tx.QueryRow(`SELECT call FROM qsos WHERE id=?`, q.ID).Scan(&oldCall)
 
 	query, args := buildUpdateQSOStatement(q, oldCall, ", wavelog_dirty_rev=wavelog_dirty_rev+1")
 
-	var err error
-	for attempt := 0; attempt < 3; attempt++ {
-		_, err = db.Exec(query, args...)
-		if err == nil {
-			return nil
-		}
-		if !strings.Contains(err.Error(), "database is locked") {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
+	// Capture the pre-update values; after the write they are gone.
+	oldQSO, oldErr := loadQSOForIndex(tx, q.ID)
+
+	if _, err := tx.Exec(query, args...); err != nil {
+		return fmt.Errorf("update qso: %w", err)
 	}
-	return fmt.Errorf("update qso: %w", err)
+	// Unindex after the update: edge recomputation must see the new values
+	// (the doomed row no longer matches its old aggregate keys).
+	if oldErr == nil {
+		if err := indexQSO(tx, oldQSO, -1); err != nil {
+			return err
+		}
+		if err := indexQSO(tx, q, 1); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // SaveQSO persists an edited QSO for the editor save flow. The pending-sync
@@ -992,8 +1157,21 @@ func SaveQSO(db *sql.DB, q *qso.QSO) (synced bool, rev int64, err error) {
 		extraSet = ", wavelog_dirty=1, wavelog_dirty_rev=wavelog_dirty_rev+1"
 	}
 	query, args := buildUpdateQSOStatement(q, oldCall, extraSet)
+	// Capture the pre-update values; after the write they are gone.
+	oldQSO, oldErr := loadQSOForIndex(tx, q.ID)
 	if _, err := tx.Exec(query, args...); err != nil {
 		return false, 0, fmt.Errorf("update qso: %w", err)
+	}
+	// Maintain the worked index: the old values stop counting, the new ones
+	// start — same transaction as the row update. Unindexing after the
+	// update keeps edge recomputation consistent with the stored rows.
+	if oldErr == nil {
+		if err := indexQSO(tx, oldQSO, -1); err != nil {
+			return false, 0, err
+		}
+		if err := indexQSO(tx, q, 1); err != nil {
+			return false, 0, err
+		}
 	}
 	// Read the bumped revision inside the same transaction — the write
 	// lock is held until commit, so this is exactly our edit's revision.
@@ -1006,13 +1184,21 @@ func SaveQSO(db *sql.DB, q *qso.QSO) (synced bool, rev int64, err error) {
 	return wlID > 0, rev, nil
 }
 
-// PurgeQSOs deletes all QSOs from the database.
+// PurgeQSOs deletes all QSOs from the database and rebuilds the worked index
+// (empty) in the same transaction.
 func PurgeQSOs(db *sql.DB) error {
-	_, err := db.Exec(`DELETE FROM qsos`)
+	tx, err := db.Begin()
 	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM qsos`); err != nil {
 		return fmt.Errorf("purge qsos: %w", err)
 	}
-	return nil
+	if err := rebuildWorkedIndex(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // EnrichmentData holds callbook-derived fields for non-destructive QSO enrichment.
