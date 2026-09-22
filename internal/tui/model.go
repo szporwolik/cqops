@@ -929,8 +929,12 @@ func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Bulk pending-sync retry list results queue a serialized PATCH per
 	// contact through the shared per-contact coordinator — globally, against
 	// the originating logbook/database/endpoint — so retries never bypass
-	// save serialization.
-	if em, ok := msg.(editorMsg); ok && len(em.wlRetryIDs) > 0 {
+	// save serialization. EVERY retry result carries the transferred
+	// database lease (empty lists too — a PATCH may have synced the last
+	// change before the list read), so the dispatch gates on the lease, not
+	// the contact count: queuePendingSyncPatches releases it when there is
+	// nothing to queue.
+	if em, ok := msg.(editorMsg); ok && em.wlRetryRelease != nil {
 		cmd = tea.Batch(cmd, m.queuePendingSyncPatches(em))
 	}
 

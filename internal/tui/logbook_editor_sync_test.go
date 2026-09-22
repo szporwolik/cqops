@@ -2860,6 +2860,73 @@ func TestPendingSyncRetryIncompleteAckIsReported(t *testing.T) {
 	}
 }
 
+// TestPendingSyncRetryEmptyListReleasesLease reproduces the reported leak:
+// the retry worker transfers the database lease in EVERY result, but the
+// global handler only ran for non-empty contact lists — when the list read
+// found nothing pending (a PATCH in flight synced the last change first),
+// the empty result's lease was never released and a later logbook switch
+// retained the retired database forever. Every retry result must consume or
+// hand off the lease, empty or not.
+func TestPendingSyncRetryEmptyListReleasesLease(t *testing.T) {
+	dir := t.TempDir()
+	dbPathA := filepath.Join(dir, "a.db")
+	dbPathB := filepath.Join(dir, "b.db")
+
+	cfg := config.DefaultConfig()
+	lbA := config.Logbook{
+		Station:      config.Station{Callsign: "SP9A", Grid: "JO90"},
+		DatabasePath: dbPathA,
+		Wavelog:      &config.WavelogConfig{Enabled: true, URL: "https://log.example.com", APIKey: "wl2_test", StationProfileID: "1"},
+	}
+	lbB := config.Logbook{Station: config.Station{Callsign: "SP9B", Grid: "JO91"}, DatabasePath: dbPathB}
+	cfg.Logbooks = map[string]config.Logbook{"a": lbA, "b": lbB}
+	cfg.State.ActiveLogbook = "a"
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := config.Save(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	dbA, err := store.InitDB(dbPathA)
+	if err != nil {
+		t.Fatalf("init db A: %v", err)
+	}
+	a := &app.App{
+		Config:      cfg,
+		ConfigPath:  cfgPath,
+		LogbookName: "a",
+		Logbook:     &lbA,
+		DB:          dbA,
+		DBPath:      dbPathA,
+	}
+	t.Cleanup(a.StopAPRSTimer)
+
+	m := New(a, nil)
+	m.initLogbookEditor()
+	le := m.ui.logbookEditor
+
+	// Nothing pending — the retry list is empty, but the result must still
+	// carry the transferred database lease.
+	listEm, ok := execCmd(le.retryPendingSync()).(editorMsg)
+	if !ok || len(listEm.wlRetryIDs) != 0 {
+		t.Fatalf("retry list = %#v, want an empty list", listEm)
+	}
+	if listEm.wlRetryRelease == nil {
+		t.Fatal("the empty retry result must still carry the transferred database lease")
+	}
+	upd, _ := m.Update(listEm)
+	m = upd.(*Model)
+
+	// With the lease consumed, the switch closes the retired database
+	// immediately; with the leak it would be retained forever.
+	if err := a.SwitchLogbook("b"); err != nil {
+		t.Fatalf("switch to B: %v", err)
+	}
+	t.Cleanup(func() { a.DB.Close() })
+	if err := dbA.Ping(); err == nil {
+		t.Error("retired A database should be closed — the empty retry result leaked its lease")
+	}
+}
+
 // TestPendingSyncRetryKeyOpensConfirm verifies the Alt+P entry point: the
 // pending backlog is counted from the database and shown in the confirm
 // dialog, and confirming dispatches the retry.

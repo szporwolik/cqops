@@ -246,6 +246,15 @@ func (m *Model) queuePendingSyncPatches(em editorMsg) tea.Cmd {
 		m.sync.queued = make(map[contactSyncKey]bool)
 	}
 	release := em.wlRetryRelease
+	if len(em.wlRetryIDs) == 0 {
+		// The list was empty — everything pending was already synchronized
+		// before the read. The transferred lease must still be consumed.
+		if release != nil {
+			release()
+		}
+		m.toasts.Success("Wavelog: no pending changes")
+		return nil
+	}
 	batch := &syncRetryBatch{remaining: make(map[int64]bool), lbID: logbook}
 	var cmds []tea.Cmd
 	for i, id := range em.wlRetryIDs {
