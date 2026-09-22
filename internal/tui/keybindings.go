@@ -327,7 +327,6 @@ func (m *Model) ActiveBindings() []key.Binding {
 		bindings = append(bindings,
 			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
 			key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle")),
-			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")),
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 		)
 	}
@@ -336,7 +335,6 @@ func (m *Model) ActiveBindings() []key.Binding {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("tab", "down", "shift+tab", "up"), key.WithHelp("↑↓", "Navigate")),
 				key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle")),
-				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Accept")),
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 			)
 		} else {
@@ -355,7 +353,6 @@ func (m *Model) ActiveBindings() []key.Binding {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("tab", "down", "shift+tab", "up"), key.WithHelp("↑↓", "Navigate")),
 				key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle")),
-				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")),
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 			)
 		} else {
@@ -374,7 +371,6 @@ func (m *Model) ActiveBindings() []key.Binding {
 		if m.ui.operatorChooser != nil && (m.ui.operatorChooser.mode == operatorEdit || m.ui.operatorChooser.mode == operatorCreate) {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("tab", "down", "shift+tab", "up"), key.WithHelp("↑↓", "Navigate")),
-				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")),
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 			)
 		} else if m.ui.operatorChooser != nil && m.ui.operatorChooser.mode == operatorConfirmDelete {
@@ -395,7 +391,6 @@ func (m *Model) ActiveBindings() []key.Binding {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("tab", "down", "shift+tab", "up"), key.WithHelp("↑↓", "Navigate")),
 				key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle/Cycle")),
-				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")),
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 			)
 		} else if m.ui.contestChooser != nil && m.ui.contestChooser.mode == contestConfirmDelete {

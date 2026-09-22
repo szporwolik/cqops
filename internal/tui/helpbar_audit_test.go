@@ -66,6 +66,57 @@ func TestCallbookMenuHasHelpEntries(t *testing.T) {
 	}
 }
 
+// TestConfigMenusDoNotAdvertiseEnterSave: every config menu and submenu form
+// renders its own [ Save & Back ] button, so neither the ? overlay nor the
+// bottom bar should advertise Enter as a separate save key.
+func TestConfigMenusDoNotAdvertiseEnterSave(t *testing.T) {
+	m := newLifecycleTestModel(t)
+
+	m.screen = screenConfig
+	assertNoEnterAdvertised(t, m)
+
+	c := NewLogbookChooser(m.App, NewToastQueue())
+	c.mode = chooserEdit
+	m.ui.chooser = c
+	m.screen = screenChooser
+	assertNoEnterAdvertised(t, m)
+
+	rc := NewRigChooser(m.App, NewToastQueue())
+	rc.mode = rigChooserEdit
+	m.ui.rigChooser = rc
+	m.screen = screenRigEdit
+	assertNoEnterAdvertised(t, m)
+
+	cc := NewContestChooser(m.App, NewToastQueue())
+	cc.mode = contestEdit
+	m.ui.contestChooser = cc
+	m.screen = screenContest
+	assertNoEnterAdvertised(t, m)
+
+	oc := NewOperatorChooser(m.App, NewToastQueue())
+	oc.mode = operatorEdit
+	m.ui.operatorChooser = oc
+	m.screen = screenOperator
+	assertNoEnterAdvertised(t, m)
+}
+
+// assertNoEnterAdvertised fails when the ? overlay or the bottom bar still
+// advertises Enter on a screen that renders its own save button.
+func assertNoEnterAdvertised(t *testing.T, m *Model) {
+	t.Helper()
+	var overlay []string
+	for _, b := range m.ActiveBindings() {
+		overlay = append(overlay, b.Keys()...)
+	}
+	if strings.Contains("|"+strings.Join(overlay, "|")+"|", "|enter|") {
+		t.Errorf("screen %v: ? overlay still advertises Enter: %v", m.screen, overlay)
+	}
+	bar := barKeys(m.minimalBarBindings())
+	if strings.Contains("|"+bar+"|", "|enter|") {
+		t.Errorf("screen %v: bottom bar still advertises Enter: %s", m.screen, bar)
+	}
+}
+
 // TestLogViewerEscExits: the log viewer previously had no working exit key.
 func TestLogViewerEscExits(t *testing.T) {
 	lv := NewLogViewer("Test Log")

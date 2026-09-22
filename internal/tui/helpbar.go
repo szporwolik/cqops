@@ -523,33 +523,36 @@ func (m *Model) minimalBarBindings() []key.Binding {
 		// Delete stay behind the ? overlay.
 		return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit")), e, q}
 	case screenConfig:
-		// Enter saves; Space toggles/cycles — same convention as the
-		// contest and operator forms.
-		return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")), e, q}
+		// Saving goes through the in-form [ Save & Back ] button.
+		return []key.Binding{h, e, q}
 	case screenIntegration, screenNotifications, screenCallbook:
 		// Like the General menu: saving goes through the in-form
 		// [ Save & Back ] button (Space/Enter) — no Ctrl+S in the bar.
 		return []key.Binding{h, e, q}
 	case screenChooser:
 		if m.ui.chooser != nil && (m.ui.chooser.mode == chooserEdit || m.ui.chooser.mode == chooserCreate) {
-			return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")), e, q}
+			// The form shows its own [ Save & Back ] button.
+			return []key.Binding{h, e, q}
 		}
 		// List mode: Enter Edit is core; Create/Delete/Activate stay
 		// behind the ? overlay.
 		return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit")), e, q}
 	case screenRigEdit:
 		if m.ui.rigChooser != nil && (m.ui.rigChooser.mode == rigChooserEdit || m.ui.rigChooser.mode == rigChooserCreate) {
-			return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")), e, q}
+			// The form shows its own [ Save & Back ] button.
+			return []key.Binding{h, e, q}
 		}
 		return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit")), e, q}
 	case screenContest:
 		if m.ui.contestChooser != nil && (m.ui.contestChooser.mode == contestEdit || m.ui.contestChooser.mode == contestCreate) {
-			return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")), e, q}
+			// The form shows its own [ Save & Back ] button.
+			return []key.Binding{h, e, q}
 		}
 		return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit")), e, q}
 	case screenOperator:
 		if m.ui.operatorChooser != nil && (m.ui.operatorChooser.mode == operatorEdit || m.ui.operatorChooser.mode == operatorCreate) {
-			return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")), e, q}
+			// The form shows its own [ Save & Back ] button.
+			return []key.Binding{h, e, q}
 		}
 		return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit")), e, q}
 	case screenMainMenu:
