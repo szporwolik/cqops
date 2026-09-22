@@ -917,28 +917,16 @@ func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.persistEditorLogbookCursor(em)
 	}
 
-	// Deferred pending requests (QRZ lookup, WL lookup, QSO refresh) —
-	// must run before screen-specific routing so they work regardless of
-	// which screen is active. The incoming cmd is accumulated — any
-	// completion dispatched above must survive the early return below.
-	pendingCmd, handled := m.handlePendingRequests(cmd)
-	if handled {
-		// An unrelated pending lookup was dispatched. Never consume an
-		// editor operation message here: the download/import/export pump
-		// and the editor-screen handlers must still process it — dropping a
-		// progress or terminal message stops scheduling channel reads,
-		// blocks the worker, and leaves dlActive stuck (navigation blocked,
-		// database lease retained).
-		if _, isEditorMsg := msg.(editorMsg); isEditorMsg {
-			cmd = pendingCmd
-		} else {
-			return m, pendingCmd
-		}
-	}
-	// Even when nothing was handled, the returned cmd may have been
-	// augmented with a deferred QSO refresh — keep it instead of losing
-	// the refresh command (the flag was already consumed).
-	cmd = pendingCmd
+	// Deferred pending requests (QRZ lookup, WL lookup, QSO refresh) run
+	// before screen-specific routing; their commands are accumulated into
+	// the returned batch. The incoming message is NEVER consumed here —
+	// there is no early return: operation results (editor completions,
+	// upload preparation, download pump messages, …) and ordinary input
+	// must all still reach their handlers regardless of pending lookups.
+	// An early return here used to swallow such messages, and a growing
+	// list of type exceptions never caught them all — editorMsg was
+	// exempted, uploadPrepMsg was not.
+	cmd, _ = m.handlePendingRequests(cmd)
 
 	// Wavelog download / ADIF import / export keep their message pump
 	// alive even when the user switches to another screen mid-operation.

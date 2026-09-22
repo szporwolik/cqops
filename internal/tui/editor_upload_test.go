@@ -1334,3 +1334,55 @@ func TestUploadBatch_SmallBatchSkipsReconcile(t *testing.T) {
 		t.Error("small batch should skip the reconciliation list fetch")
 	}
 }
+
+// TestUploadPrepSurvivesPendingLookupEarlyReturn reproduces the reported
+// swallowed preparation result: upload preparation returns uploadPrepMsg — a
+// type the pending-lookup early return did not exempt — so a DXC lookup
+// pending at the moment the prep finished consumed the result and the upload
+// was never started nor the normalization prompt shown. Operation results
+// must be dispatched independently of pending lookups.
+func TestUploadPrepSurvivesPendingLookupEarlyReturn(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.screen = screenLogbookEditor
+
+	// An unsent QSO with a mismatching station grid so the prep result
+	// opens the normalization dialog (an observable mode change).
+	q := &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+		TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", MyGridSquare: "AA00aa"}
+	if _, err := store.InsertQSO(m.App.DB, q); err != nil {
+		t.Fatalf("InsertQSO: %v", err)
+	}
+
+	m.initLogbookEditor()
+	prepCmd := m.ui.logbookEditor.doBatchUpload()
+	if prepCmd == nil {
+		t.Fatal("doBatchUpload returned nil")
+	}
+	prep, ok := execCmd(prepCmd).(uploadPrepMsg)
+	if !ok {
+		t.Fatalf("expected uploadPrepMsg, got %T", execCmd(prepCmd))
+	}
+	if prep.err != nil {
+		t.Fatalf("prep failed: %v", prep.err)
+	}
+	if len(prep.unsent) != 1 {
+		t.Fatalf("prep unsent = %d, want 1", len(prep.unsent))
+	}
+
+	// A pending DXC lookup is due exactly when the prep result arrives.
+	m.dxc.need = true
+	m.dxc.call = "SP9MOA"
+
+	upd, _ := m.Update(prep)
+	m = upd.(*Model)
+
+	// The prep result must have reached its handler: the normalization
+	// dialog is open for the mismatched grid.
+	if m.ui.logbookEditor.mode != edModeConfirmNormalize {
+		t.Fatalf("mode = %v, want edModeConfirmNormalize (the pending lookup consumed the prep result)",
+			m.ui.logbookEditor.mode)
+	}
+	if len(m.ui.logbookEditor.mismatchQSOs) != 1 {
+		t.Errorf("mismatchQSOs = %d, want 1", len(m.ui.logbookEditor.mismatchQSOs))
+	}
+}

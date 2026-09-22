@@ -1508,7 +1508,7 @@ func TestDeleteCompletionDoesNotCloseUnrelatedContactForm(t *testing.T) {
 	le.editSession = 2 // contact B is open with unsaved edits
 
 	// A's delete was initiated in session 1; its completion arrives now.
-	upd, _ := le.Update(editorMsg{deleted: idA, delCall: "SP9AAA", gen: le.gen, opSession: 1})
+	upd, _ := le.Update(editorMsg{deleted: idA, delCall: "SP9AAA", gen: le.gen, opSession: 1, opSessionSet: true})
 	le = upd.(*LogbookEditor)
 	if le.mode != edModeEdit {
 		t.Error("a delete completion from a superseded session must not close the current form")
@@ -1520,7 +1520,7 @@ func TestDeleteCompletionDoesNotCloseUnrelatedContactForm(t *testing.T) {
 	// A completion from the same session still returns to the list.
 	le.needsReload = false
 	le.editSession = 1
-	upd, _ = le.Update(editorMsg{deleted: idA, delCall: "SP9AAA", gen: le.gen, opSession: 1})
+	upd, _ = le.Update(editorMsg{deleted: idA, delCall: "SP9AAA", gen: le.gen, opSession: 1, opSessionSet: true})
 	le = upd.(*LogbookEditor)
 	if le.mode != edModeList {
 		t.Error("the initiating session's own delete completion should close to the list")
@@ -1540,7 +1540,7 @@ func TestUploadCompletionDoesNotCloseUnrelatedContactForm(t *testing.T) {
 	le.fillEditForm(q)
 	le.editSession = 2
 
-	upd, _ := le.Update(editorMsg{wlQSOID: idB, wlCall: "1 sent", wlOK: true, gen: le.gen, opSession: 1})
+	upd, _ := le.Update(editorMsg{wlQSOID: idB, wlCall: "1 sent", wlOK: true, gen: le.gen, opSession: 1, opSessionSet: true})
 	le = upd.(*LogbookEditor)
 	if le.mode != edModeEdit {
 		t.Error("an upload completion from a superseded session must not close the current form")
@@ -1551,10 +1551,61 @@ func TestUploadCompletionDoesNotCloseUnrelatedContactForm(t *testing.T) {
 
 	le.needsReload = false
 	le.editSession = 1
-	upd, _ = le.Update(editorMsg{wlQSOID: idB, wlCall: "1 sent", wlOK: true, gen: le.gen, opSession: 1})
+	upd, _ = le.Update(editorMsg{wlQSOID: idB, wlCall: "1 sent", wlOK: true, gen: le.gen, opSession: 1, opSessionSet: true})
 	le = upd.(*LogbookEditor)
 	if le.mode != edModeList {
 		t.Error("the initiating session's own upload completion should close to the list")
+	}
+}
+
+// TestDeleteCompletionFromSessionZeroDoesNotCloseForm reproduces the reported
+// bypass: zero is the legitimate initial session of a fresh editor, so a
+// delete dispatched from the list before any contact was opened carries
+// session zero — treating zero as "unbound" let its completion close the
+// contact opened meanwhile. Session binding must be explicit, so zero-valued
+// sessions are validated too.
+func TestDeleteCompletionFromSessionZeroDoesNotCloseForm(t *testing.T) {
+	le := newTestEditorWithDB(t, "", "", "", "OP", "JO90")
+	qA := &qso.QSO{Call: "SP9AAA", Band: "20m", Mode: "SSB", QSODate: "20240501", TimeOn: "120000"}
+	idA := insertTestQSO(t, le.db, qA)
+	qB := &qso.QSO{Call: "SP9BBB", Band: "40m", Mode: "CW", QSODate: "20240502", TimeOn: "130000"}
+	insertTestQSO(t, le.db, qB)
+	qA.ID = idA
+	le.editing = qA
+	le.mode = edModeEdit
+	le.fillEditForm(qA)
+
+	// The delete was initiated from the fresh editor's session 0 (list
+	// mode, no contact opened); contact B is now open in session 1.
+	le.editSession = 1
+	upd, _ := le.Update(editorMsg{deleted: idA, delCall: "SP9AAA", gen: le.gen, opSession: 0, opSessionSet: true})
+	le = upd.(*LogbookEditor)
+	if le.mode != edModeEdit {
+		t.Error("a session-zero delete completion must not close the current form")
+	}
+	if !le.needsReload {
+		t.Error("the list behind the open form should still be refreshed")
+	}
+
+	// The same completion delivered while no contact is open (session 0)
+	// still closes to the list.
+	le.needsReload = false
+	le.editSession = 0
+	upd, _ = le.Update(editorMsg{deleted: idA, delCall: "SP9AAA", gen: le.gen, opSession: 0, opSessionSet: true})
+	le = upd.(*LogbookEditor)
+	if le.mode != edModeList {
+		t.Error("the initiating session-zero completion should close to the list")
+	}
+
+	// An explicitely unbound (legacy) completion keeps the old behavior:
+	// no session validation, closes regardless of the open contact.
+	le.editSession = 1
+	le.mode = edModeEdit
+	le.needsReload = false
+	upd, _ = le.Update(editorMsg{deleted: idA, delCall: "SP9AAA", gen: le.gen})
+	le = upd.(*LogbookEditor)
+	if le.mode != edModeList {
+		t.Error("an unbound legacy completion should close to the list as before")
 	}
 }
 
@@ -1580,6 +1631,9 @@ func TestDeleteCompletionCarriesInitiatingSession(t *testing.T) {
 	}
 	if em.opSession != 5 {
 		t.Errorf("opSession = %d, want 5 (the session the delete was initiated in)", em.opSession)
+	}
+	if !em.opSessionSet {
+		t.Error("opSessionSet should be true for a dispatch that captured a real session")
 	}
 }
 
@@ -1737,6 +1791,79 @@ func TestSyncedEditableFieldRoundTrips(t *testing.T) {
 				t.Errorf("after refresh %s = %q, want %q (the server restored the old value)", tc.name, got, tc.newValue)
 			}
 		})
+	}
+}
+
+// TestMergeRemoteQSOAppliesExplicitClears reproduces the reported stale-value
+// retention: remote refreshes applied zones only when positive and
+// frequencies only when nonempty, so a remote CLEAR (JSON null) left the old
+// local values in place — a later unrelated save sent them back and undid the
+// clear. Explicit clears must apply, absent fields must leave the local
+// value untouched, and populated values must still round-trip.
+func TestMergeRemoteQSOAppliesExplicitClears(t *testing.T) {
+	fetch := func(t *testing.T, data map[string]any) *wavelog.QSOData {
+		t.Helper()
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{"data": data})
+		}))
+		defer srv.Close()
+		d, err := wavelog.GetQSO(srv.URL, "wl2_test", 42)
+		if err != nil {
+			t.Fatalf("GetQSO: %v", err)
+		}
+		return d
+	}
+
+	local := &qso.QSO{CQZone: "15", ITUZone: "28", Freq: 14.2, FreqRx: 14.21, Comment: "local"}
+
+	// Remote cleared zones and frequencies (explicit nulls).
+	cleared := fetch(t, map[string]any{
+		"id": 42, "station_id": 1, "qso_date": "2026-05-01 12:30:00",
+		"mode": "SSB", "call": "SP9MOA", "band": "20m",
+		"cqz": nil, "ituz": nil, "freq": nil, "freq_rx": nil,
+		"comment": "remote",
+	})
+	m := mergeRemoteQSO(local, cleared)
+	if m.CQZone != "" {
+		t.Errorf("CQZone = %q, want cleared", m.CQZone)
+	}
+	if m.ITUZone != "" {
+		t.Errorf("ITUZone = %q, want cleared", m.ITUZone)
+	}
+	if m.Freq != 0 {
+		t.Errorf("Freq = %v, want cleared", m.Freq)
+	}
+	if m.FreqRx != 0 {
+		t.Errorf("FreqRx = %v, want cleared", m.FreqRx)
+	}
+	if m.Comment != "remote" {
+		t.Errorf("Comment = %q, want remote (string fields still apply)", m.Comment)
+	}
+
+	// Absent fields leave the local values untouched.
+	absent := fetch(t, map[string]any{
+		"id": 42, "station_id": 1, "qso_date": "2026-05-01 12:30:00",
+		"mode": "SSB", "call": "SP9MOA", "band": "20m",
+	})
+	m = mergeRemoteQSO(local, absent)
+	if m.CQZone != "15" || m.ITUZone != "28" || m.Freq != 14.2 || m.FreqRx != 14.21 {
+		t.Errorf("absent fields must keep local values: zones=%q/%q freq=%v/%v",
+			m.CQZone, m.ITUZone, m.Freq, m.FreqRx)
+	}
+
+	// Empty → populated still applies.
+	populated := fetch(t, map[string]any{
+		"id": 42, "station_id": 1, "qso_date": "2026-05-01 12:30:00",
+		"mode": "SSB", "call": "SP9MOA", "band": "20m",
+		"cqz": 16, "ituz": 29, "freq": "21300000", "freq_rx": "21301000",
+	})
+	m = mergeRemoteQSO(&qso.QSO{}, populated)
+	if m.CQZone != "16" || m.ITUZone != "29" {
+		t.Errorf("populated zones = %q/%q, want 16/29", m.CQZone, m.ITUZone)
+	}
+	if m.Freq != 21.3 || m.FreqRx != 21.301 {
+		t.Errorf("populated freq = %v/%v, want 21.3/21.301", m.Freq, m.FreqRx)
 	}
 }
 

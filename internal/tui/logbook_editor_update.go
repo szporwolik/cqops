@@ -113,8 +113,11 @@ type editorMsg struct {
 	// they were initiated in. A generation match alone does not mean the
 	// operator is still performing the original action: the completion may
 	// arrive while another contact's form is open, and must then refresh
-	// the list without closing the unrelated form.
-	opSession uint64
+	// the list without closing the unrelated form. Zero is a legitimate
+	// session (a fresh editor), so opSessionSet marks that a real session
+	// was captured — unbound/legacy messages leave it false.
+	opSession    uint64
+	opSessionSet bool
 	// wlSyncFollowUp marks a serialized follow-up PATCH result — it must
 	// never close an open form (the form closed at the original save).
 	wlSyncFollowUp bool
@@ -266,13 +269,13 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// holds newer unsaved input that must not be abandoned.
 				closeForm = false
 			}
-			if msg.deleted != 0 && msg.opSession != 0 && msg.opSession != le.editSession {
+			if msg.deleted != 0 && msg.opSessionSet && msg.opSession != le.editSession {
 				closeForm = false // another contact was opened while the remote delete was pending
 			}
-			if msg.wlCall != "" && msg.opSession != 0 && msg.opSession != le.editSession {
+			if msg.wlCall != "" && msg.opSessionSet && msg.opSession != le.editSession {
 				closeForm = false // another contact was opened while the upload was pending
 			}
-			if msg.purged && msg.opSession != 0 && msg.opSession != le.editSession {
+			if msg.purged && msg.opSessionSet && msg.opSession != le.editSession {
 				closeForm = false // a contact was opened while the purge ran
 			}
 			if closeForm {
@@ -789,7 +792,7 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 			} else {
 				applog.Info("LogbookEditor: all QSOs purged")
 			}
-			return editorMsg{purged: true, err: err, gen: gen, lbID: lbID, opSession: opSession}
+			return editorMsg{purged: true, err: err, gen: gen, lbID: lbID, opSession: opSession, opSessionSet: true}
 		}
 	case edModeConfirmSave:
 		// Keep the edit form visible until the async save result arrives;
@@ -830,7 +833,7 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 
 			// Synced QSOs: remove the Wavelog copy too. Best-effort — the
 			// local delete must never depend on this succeeding.
-			em := editorMsg{deleted: id, delCall: call, delDate: date, gen: gen, lbID: lbID, opSession: opSession}
+			em := editorMsg{deleted: id, delCall: call, delDate: date, gen: gen, lbID: lbID, opSession: opSession, opSessionSet: true}
 			if remoteID > 0 && url != "" && key != "" && !le.Offline {
 				derr := wavelog.DeleteQSO(url, key, remoteID)
 				if derr != nil {

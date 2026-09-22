@@ -240,20 +240,57 @@ func mergeRemoteQSO(local *qso.QSO, d *wavelog.QSOData) *qso.QSO {
 	merged.IOTA = d.IOTA
 	merged.SIG = d.SIG
 	merged.SIGInfo = d.SIGInfo
-	if d.CQZ > 0 {
-		merged.CQZone = strconv.Itoa(d.CQZ)
-	}
-	if d.ITUZ > 0 {
-		merged.ITUZone = strconv.Itoa(d.ITUZ)
-	}
-	if d.Freq != "" {
-		if hz, err := strconv.ParseFloat(d.Freq, 64); err == nil {
-			merged.Freq = hz / 1e6
+	// Zones and frequencies need presence awareness: a remote CLEAR (JSON
+	// null) must apply — a guarded "only when positive/nonempty" read would
+	// keep the stale local value, which the next unrelated save would send
+	// back and silently undo the remote clear. An ABSENT field leaves the
+	// local value untouched. Literal-constructed QSOData (present == nil,
+	// e.g. tests) keeps the value-based fallback.
+	if d.HasPresence() {
+		if d.Has("cqz") {
+			merged.CQZone = ""
+			if d.CQZ > 0 {
+				merged.CQZone = strconv.Itoa(d.CQZ)
+			}
 		}
-	}
-	if d.FreqRx != "" {
-		if hz, err := strconv.ParseFloat(d.FreqRx, 64); err == nil {
-			merged.FreqRx = hz / 1e6
+		if d.Has("ituz") {
+			merged.ITUZone = ""
+			if d.ITUZ > 0 {
+				merged.ITUZone = strconv.Itoa(d.ITUZ)
+			}
+		}
+		if d.Has("freq") {
+			merged.Freq = 0
+			if d.Freq != "" {
+				if hz, err := strconv.ParseFloat(d.Freq, 64); err == nil {
+					merged.Freq = hz / 1e6
+				}
+			}
+		}
+		if d.Has("freq_rx") {
+			merged.FreqRx = 0
+			if d.FreqRx != "" {
+				if hz, err := strconv.ParseFloat(d.FreqRx, 64); err == nil {
+					merged.FreqRx = hz / 1e6
+				}
+			}
+		}
+	} else {
+		if d.CQZ > 0 {
+			merged.CQZone = strconv.Itoa(d.CQZ)
+		}
+		if d.ITUZ > 0 {
+			merged.ITUZone = strconv.Itoa(d.ITUZ)
+		}
+		if d.Freq != "" {
+			if hz, err := strconv.ParseFloat(d.Freq, 64); err == nil {
+				merged.Freq = hz / 1e6
+			}
+		}
+		if d.FreqRx != "" {
+			if hz, err := strconv.ParseFloat(d.FreqRx, 64); err == nil {
+				merged.FreqRx = hz / 1e6
+			}
 		}
 	}
 	return &merged

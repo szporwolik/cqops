@@ -476,6 +476,10 @@ func DeleteQSO(baseURL, apiKey string, remoteID int64) error {
 
 // QSOData is one QSO as returned by the v2 REST API (GET /api/v2/qso/{id} and
 // JSON list rows). Strings that can be null decode to "" on JSON null.
+// present records which JSON fields were explicitly present in the response
+// (null included), so remote CLEARS can be distinguished from ABSENT fields:
+// a clear must apply, an absent field must leave the local value untouched.
+// nil for literal-constructed values (no presence information).
 type QSOData struct {
 	ID         int64  `json:"id"`
 	StationID  int64  `json:"station_id"`
@@ -514,6 +518,47 @@ type QSOData struct {
 	STX        *int   `json:"stx"`
 	SRXString  string `json:"srx_string"`
 	STXString  string `json:"stx_string"`
+
+	// present maps the json field names that were explicitly present in
+	// the decoded response (null included). nil when the value was built
+	// literally, without presence information.
+	present map[string]struct{}
+}
+
+// UnmarshalJSON records which fields were explicitly present in the response
+// (null included), so a remote CLEAR can be distinguished from an ABSENT
+// field when the local copy is refreshed.
+func (d *QSOData) UnmarshalJSON(b []byte) error {
+	type plain QSOData
+	var p plain
+	if err := json.Unmarshal(b, &p); err != nil {
+		return err
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(b, &raw); err == nil {
+		present := make(map[string]struct{}, len(raw))
+		for k := range raw {
+			present[k] = struct{}{}
+		}
+		p.present = present
+	}
+	*d = QSOData(p)
+	return nil
+}
+
+// HasPresence reports whether field-presence information was captured at all
+// (the value was decoded from JSON, not constructed literally).
+func (d *QSOData) HasPresence() bool { return d.present != nil }
+
+// Has reports whether the given JSON field was explicitly present in the
+// decoded response (null included). Callers should consult HasPresence first
+// and fall back to value-based application for literal-constructed values.
+func (d *QSOData) Has(key string) bool {
+	if d.present == nil {
+		return false
+	}
+	_, ok := d.present[key]
+	return ok
 }
 
 // GetQSO fetches a single QSO from the Wavelog API v2 by remote id. Defensive
