@@ -2387,3 +2387,180 @@ func TestFailedAckPersistenceReportsIncompleteSync(t *testing.T) {
 		t.Error("WavelogDirty must remain set when the acknowledgement could not be persisted")
 	}
 }
+
+// TestEditSaveKeepsWavelogIDAssignedDuringUpload reproduces the reported data
+// loss: the form snapshot keeps WavelogID 0 while an in-flight upload
+// attaches the remote id in the database; saving the form then overwrote the
+// id with the stale zero (77 → 0, dirty=false), permanently unlinking the
+// contact and skipping the follow-up PATCH. The save must decide
+// synced/dirty from the DATABASE state atomically with the write, never
+// write the stale id, and PATCH the fresh row.
+func TestEditSaveKeepsWavelogIDAssignedDuringUpload(t *testing.T) {
+	var patchedBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch || r.URL.Path != "/api/v2/qso/77" {
+			http.NotFound(w, r)
+			return
+		}
+		if err := json.NewDecoder(r.Body).Decode(&patchedBody); err != nil {
+			t.Errorf("decode patch body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"data": remoteQSODoc(77)})
+	}))
+	defer srv.Close()
+
+	le := newTestEditorWithDB(t, srv.URL, "wl2_test", "1", "Szymon", "KO00ca")
+
+	q := &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+		TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", Comment: "old"}
+	id := insertTestQSO(t, le.db, q)
+	row, err := store.GetQSOByID(le.db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	le.editing = row
+	le.fillEditForm(row) // form snapshot: WavelogID 0
+
+	// The in-flight upload attaches the remote id while the form is open.
+	if err := store.SetWavelogID(le.db, id, 77); err != nil {
+		t.Fatalf("SetWavelogID: %v", err)
+	}
+
+	le.fields[qefComment].SetValue("edited during upload")
+	em, ok := execCmd(le.doSave()).(editorMsg)
+	if !ok || em.err != nil {
+		t.Fatalf("save failed: %v", em.err)
+	}
+	if em.saved != id {
+		t.Fatalf("saved = %d, want %d", em.saved, id)
+	}
+	if !em.wlSyncOK {
+		t.Fatalf("wlSyncOK = %v (err=%q), want PATCH of the newer edit", em.wlSyncOK, em.wlSyncErr)
+	}
+	if patchedBody == nil {
+		t.Fatal("no PATCH received by the mock server")
+	}
+	if patchedBody["comment"] != "edited during upload" {
+		t.Errorf("PATCH comment = %v, want edited during upload", patchedBody["comment"])
+	}
+	stored, err := store.GetQSOByID(le.db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID after save: %v", err)
+	}
+	if stored.WavelogID != 77 {
+		t.Fatalf("WavelogID = %d, want 77 — the save must not wipe the id", stored.WavelogID)
+	}
+	if stored.WavelogDirty {
+		t.Error("row should be clean after the PATCH acknowledged the edit")
+	}
+}
+
+// TestPendingSyncRetrySyncsDirtyRows verifies the bulk pending-sync retry:
+// the queue is rebuilt from the DATABASE (rows with a remote id and a
+// pending local edit — the backlog of failed PATCHes and offline saves
+// survives restarts), and each contact is PATCHed sequentially by the retry
+// worker.
+func TestPendingSyncRetrySyncsDirtyRows(t *testing.T) {
+	var mu sync.Mutex
+	var patched []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			http.NotFound(w, r)
+			return
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode patch body: %v", err)
+		}
+		mu.Lock()
+		patched = append(patched, fmt.Sprintf("%v|%v", body["call"], body["comment"]))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"data": remoteQSODoc(42)})
+	}))
+	defer srv.Close()
+
+	le := newTestEditorWithDB(t, srv.URL, "wl2_test", "1", "Szymon", "KO00ca")
+
+	q1 := &qso.QSO{Call: "SP9AAA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+		TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", Comment: "edit one", WavelogID: 42}
+	id1 := insertTestQSO(t, le.db, q1)
+	q2 := &qso.QSO{Call: "SP9BBB", Band: "40m", Mode: "CW", QSODate: "20240502",
+		TimeOn: "130000", RSTSent: "599", RSTRcvd: "579", Comment: "edit two", WavelogID: 43}
+	id2 := insertTestQSO(t, le.db, q2)
+	// A clean synced row must not be PATCHed.
+	insertTestQSO(t, le.db, &qso.QSO{Call: "SP9CCC", Band: "20m", Mode: "SSB",
+		QSODate: "20240503", TimeOn: "140000", RSTSent: "59", RSTRcvd: "59", WavelogID: 44})
+
+	if err := store.SetWavelogDirty(le.db, id1, true); err != nil {
+		t.Fatalf("SetWavelogDirty(1): %v", err)
+	}
+	if err := store.SetWavelogDirty(le.db, id2, true); err != nil {
+		t.Fatalf("SetWavelogDirty(2): %v", err)
+	}
+
+	em, ok := execCmd(le.retryPendingSync()).(editorMsg)
+	if !ok || !em.wlRetryDone {
+		t.Fatalf("expected the retry result, got %#v", em)
+	}
+	if em.wlRetryCount != 2 || em.wlRetryFailed != 0 {
+		t.Fatalf("retry = synced:%d failed:%d, want 2/0 (err=%q)", em.wlRetryCount, em.wlRetryFailed, em.wlRetryErr)
+	}
+	mu.Lock()
+	got := append([]string(nil), patched...)
+	mu.Unlock()
+	if len(got) != 2 {
+		t.Fatalf("server received %d PATCHes: %v, want 2", len(got), got)
+	}
+	if got[0] != "SP9BBB|edit two" && got[1] != "SP9BBB|edit two" {
+		t.Errorf("PATCHes = %v, want SP9BBB|edit two present", got)
+	}
+	if got[0] != "SP9AAA|edit one" && got[1] != "SP9AAA|edit one" {
+		t.Errorf("PATCHes = %v, want SP9AAA|edit one present", got)
+	}
+	for _, id := range []int64{id1, id2} {
+		stored, err := store.GetQSOByID(le.db, id)
+		if err != nil {
+			t.Fatalf("GetQSOByID(%d): %v", id, err)
+		}
+		if stored.WavelogDirty {
+			t.Errorf("row %d still dirty after the retry ack", id)
+		}
+		if stored.WavelogID == 0 {
+			t.Errorf("row %d lost its remote id", id)
+		}
+	}
+}
+
+// TestPendingSyncRetryKeyOpensConfirm verifies the Alt+P entry point: the
+// pending backlog is counted from the database and shown in the confirm
+// dialog, and confirming dispatches the retry.
+func TestPendingSyncRetryKeyOpensConfirm(t *testing.T) {
+	le := newTestEditorWithDB(t, "https://log.example.com", "wl2_test", "1", "Szymon", "KO00ca")
+	q := &qso.QSO{Call: "SP9AAA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+		TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", WavelogID: 42}
+	id := insertTestQSO(t, le.db, q)
+	if err := store.SetWavelogDirty(le.db, id, true); err != nil {
+		t.Fatalf("SetWavelogDirty: %v", err)
+	}
+
+	upd, cmd := le.Update(tea.KeyPressMsg{Code: 'p', Mod: tea.ModAlt})
+	le = upd.(*LogbookEditor)
+	if cmd != nil {
+		t.Fatal("Alt+P should only open the confirm dialog")
+	}
+	if le.mode != edModeConfirmWLSyncRetry {
+		t.Fatalf("mode = %v, want edModeConfirmWLSyncRetry", le.mode)
+	}
+	if le.wlPendingCount != 1 {
+		t.Fatalf("wlPendingCount = %d, want 1", le.wlPendingCount)
+	}
+
+	le.View() // materializes the dialog
+	upd, cmd = le.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	le = upd.(*LogbookEditor)
+	if cmd == nil {
+		t.Fatal("confirming should dispatch the retry")
+	}
+}

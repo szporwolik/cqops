@@ -892,6 +892,20 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 				m.ui.logbookEditor.UpdateWLStatus(em.wlQSOID, false, 0)
 			}
 		}
+		if em.wlRetryDone {
+			switch {
+			case em.wlRetryFailed > 0:
+				m.toasts.Warn(fmt.Sprintf("Wavelog: pending sync — %d synced, %d failed", em.wlRetryCount, em.wlRetryFailed))
+			case em.wlRetryCount > 0:
+				m.toasts.Success(fmt.Sprintf("Wavelog: pending sync — %d contacts synced", em.wlRetryCount))
+			default:
+				m.toasts.Success("Wavelog: no pending changes")
+			}
+			m.ui.logbookEditor.needsReload = true
+		}
+		if em.wlRetryErr != "" && !em.wlRetryDone {
+			m.toasts.Error("Wavelog: " + em.wlRetryErr)
+		}
 		if m.ui.logbookEditor.wlSkipped > 0 {
 			m.toasts.Warn(fmt.Sprintf("Wavelog: %s", m.ui.logbookEditor.wlSkipDetail))
 			m.ui.logbookEditor.wlSkipped = 0

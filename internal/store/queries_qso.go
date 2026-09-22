@@ -707,6 +707,27 @@ func ListUnsentQSOs(db *sql.DB) ([]qso.QSO, error) {
 		`SELECT `+qsoSelectCols+` FROM qsos WHERE COALESCE(wavelog_id, 0) = 0 ORDER BY id DESC`)
 }
 
+// CountDirtyQSOs returns the number of QSOs with a remote id AND a pending
+// local edit that never reached Wavelog (failed PATCH, offline save) — the
+// bulk "retry pending sync" backlog.
+func CountDirtyQSOs(db *sql.DB) (int, error) {
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE COALESCE(wavelog_id, 0) > 0 AND COALESCE(wavelog_dirty, 0) = 1`).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count dirty qsos: %w", err)
+	}
+	return n, nil
+}
+
+// ListDirtyQSOs returns up to limit QSOs with a remote id and a pending
+// local edit, ordered by id DESC. The bulk pending-sync retry rebuilds its
+// queue from these rows on every trigger — the database is the source of
+// truth, never UI state, so edits pending across a restart are recovered.
+func ListDirtyQSOs(db *sql.DB, limit int) ([]qso.QSO, error) {
+	return listQSOsByQuery(db,
+		`SELECT `+qsoSelectCols+` FROM qsos WHERE COALESCE(wavelog_id, 0) > 0 AND COALESCE(wavelog_dirty, 0) = 1 ORDER BY id DESC LIMIT ?`,
+		limit)
+}
+
 // ListQSOsPageAfterTx returns the next page of QSOs strictly after the
 // cursor row, ordered by qso_date/time_on/id in the same order ListQSOsPage
 // uses. A nil cursor returns the first page. Reads run on the caller's
@@ -861,6 +882,12 @@ func listQSOsByQuery(q qsoQueryer, query string, args ...any) ([]qso.QSO, error)
 // invalidated (cleared) so the DXCC backfill recomputes it — preserving it
 // would leave worked-DXCC statistics disagreeing with the displayed contact.
 // oldCall is the call stored before this update ("" when unknown).
+//
+// Synchronization metadata is NEVER written here: wavelog_id is only
+// attached via SetWavelogID/SetWavelogIDChecked — a normal field save must
+// not overwrite it (the form snapshot may hold a stale 0 while an in-flight
+// upload already attached the remote id, and overwriting would permanently
+// unlink the contact from Wavelog).
 func buildUpdateQSOStatement(q *qso.QSO, oldCall, extraSet string) (string, []any) {
 	q.UpdatedAt = time.Now().UTC()
 	callChanged := oldCall != "" && !strings.EqualFold(oldCall, q.Call)
@@ -883,7 +910,7 @@ func buildUpdateQSOStatement(q *qso.QSO, oldCall, extraSet string) (string, []an
 		cq_zone=?, itu_zone=?,
 		my_cq_zone=?, my_itu_zone=?, my_dxcc=?,
 		my_sig=?, my_sig_info=?,
-		wavelog_id=?, contest_id=?, exch_sent=?, exch_rcvd=?, stx=?, srx=?, stx_string=?, srx_string=?, contest_adif_id=?,
+		contest_id=?, exch_sent=?, exch_rcvd=?, stx=?, srx=?, stx_string=?, srx_string=?, contest_adif_id=?,
 		base_call=?` + dxccSet + extraSet + `,
 		updated_at=?
 		WHERE id=?`
@@ -897,7 +924,7 @@ func buildUpdateQSOStatement(q *qso.QSO, oldCall, extraSet string) (string, []an
 		q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
 		q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
 		q.CQZone, q.ITUZone, q.MyCQZone, q.MyITUZone, q.MyDXCC, q.MySIG, q.MySIGInfo,
-		q.WavelogID, q.ContestID, q.ExchSent, q.ExchRcvd, q.STX, q.SRX, q.STXString, q.SRXString, q.ContestADIFID,
+		q.ContestID, q.ExchSent, q.ExchRcvd, q.STX, q.SRX, q.STXString, q.SRXString, q.ContestADIFID,
 		qso.DeriveBaseCall(q.Call),
 	}
 	if dxccSet != "" {
@@ -931,37 +958,47 @@ func UpdateQSO(db *sql.DB, q *qso.QSO) error {
 	return fmt.Errorf("update qso: %w", err)
 }
 
-// SaveQSOForSync persists an edited QSO and durably marks it as having a
-// pending remote update in ONE transaction, bumping the pending-sync
-// revision. The returned revision identifies this exact edit — the dirty
-// flag may only be cleared by an acknowledgement for the same revision (see
-// ClearWavelogDirtyIfRevision). A crash between the local write and the
-// PATCH therefore leaves a dirty row that a remote refresh will not
-// overwrite, never a changed row that falsely looks synced.
-func SaveQSOForSync(db *sql.DB, q *qso.QSO) (int64, error) {
+// SaveQSO persists an edited QSO for the editor save flow. The pending-sync
+// decision is made from the DATABASE state atomically with the write — never
+// from the caller's possibly-stale snapshot: the form may hold WavelogID 0
+// while an in-flight initial upload already attached the remote id, and
+// trusting the snapshot would both skip the follow-up PATCH and (on the old
+// update path) overwrite the id with the stale zero. The remote id itself is
+// never written here — it is only attached via SetWavelogID*.
+//
+// When the row carries a remote id, the edit is durably marked pending
+// (wavelog_dirty=1) and its revision is returned for the follow-up PATCH;
+// otherwise only the revision counter is bumped. The dirty flag may only be
+// cleared by an acknowledgement for the returned revision (see
+// ClearWavelogDirtyIfRevision).
+func SaveQSO(db *sql.DB, q *qso.QSO) (synced bool, rev int64, err error) {
 	tx, err := db.BeginTx(context.Background(), nil)
 	if err != nil {
-		return 0, fmt.Errorf("begin save for sync: %w", err)
+		return false, 0, fmt.Errorf("begin save: %w", err)
 	}
 	defer tx.Rollback()
 
 	var oldCall string
-	_ = tx.QueryRow(`SELECT call FROM qsos WHERE id=?`, q.ID).Scan(&oldCall)
+	var wlID int64
+	_ = tx.QueryRow(`SELECT call, wavelog_id FROM qsos WHERE id=?`, q.ID).Scan(&oldCall, &wlID)
 
-	query, args := buildUpdateQSOStatement(q, oldCall, ", wavelog_dirty=1, wavelog_dirty_rev=wavelog_dirty_rev+1")
+	extraSet := ", wavelog_dirty_rev=wavelog_dirty_rev+1"
+	if wlID > 0 {
+		extraSet = ", wavelog_dirty=1, wavelog_dirty_rev=wavelog_dirty_rev+1"
+	}
+	query, args := buildUpdateQSOStatement(q, oldCall, extraSet)
 	if _, err := tx.Exec(query, args...); err != nil {
-		return 0, fmt.Errorf("update qso for sync: %w", err)
+		return false, 0, fmt.Errorf("update qso: %w", err)
 	}
 	// Read the bumped revision inside the same transaction — the write
 	// lock is held until commit, so this is exactly our edit's revision.
-	var rev int64
 	if err := tx.QueryRow(`SELECT wavelog_dirty_rev FROM qsos WHERE id=?`, q.ID).Scan(&rev); err != nil {
-		return 0, fmt.Errorf("read sync revision: %w", err)
+		return false, 0, fmt.Errorf("read sync revision: %w", err)
 	}
 	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("commit save for sync: %w", err)
+		return false, 0, fmt.Errorf("commit save: %w", err)
 	}
-	return rev, nil
+	return wlID > 0, rev, nil
 }
 
 // PurgeQSOs deletes all QSOs from the database.

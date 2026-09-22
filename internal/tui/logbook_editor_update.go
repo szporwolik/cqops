@@ -180,6 +180,13 @@ type editorMsg struct {
 	// that never delivered a terminal message — it must never be treated as
 	// an independent success; the editor finalizes honestly instead.
 	dlChannelClosed bool
+	// wlRetry* carry the bulk pending-sync retry result: the queue is
+	// rebuilt from the database on every trigger and each contact is
+	// PATCHed sequentially by the retry worker.
+	wlRetryDone   bool
+	wlRetryCount  int
+	wlRetryFailed int
+	wlRetryErr    string
 }
 
 func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -423,7 +430,7 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				"pgup", "pgdown",
 				"esc", "f8",
 				"delete", "enter",
-				"ctrl+w", "alt+w", "ctrl+e", "ctrl+p", "ctrl+i":
+				"ctrl+w", "alt+w", "alt+p", "ctrl+e", "ctrl+p", "ctrl+i":
 				// Navigation and action keys — handled below.
 			default:
 				// Forward to search input.
@@ -624,6 +631,23 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				le.dialog = nil
 				le.mode = edModeConfirmWLDownload
 			}
+		case "alt+p":
+			if le.Offline {
+				return le, func() tea.Msg { return editorMsg{toastWarn: "Wavelog: network not available — cannot sync"} }
+			}
+			if le.wlURL != "" && le.wlKey != "" && le.wlStationID != "" {
+				le.wlPendingCount = 0
+				if le.db != nil {
+					if n, cntErr := store.CountDirtyQSOs(le.db); cntErr == nil {
+						le.wlPendingCount = n
+					}
+				}
+				if le.wlPendingCount == 0 {
+					return le, func() tea.Msg { return editorMsg{toastWarn: "Wavelog: no pending changes to sync"} }
+				}
+				le.dialog = nil
+				le.mode = edModeConfirmWLSyncRetry
+			}
 		case "enter":
 			if len(le.qsos) > 0 {
 				idx := le.table.Cursor()
@@ -783,6 +807,53 @@ func (le *LogbookEditor) handleNormalizeResult(msg editorMsg) (tea.Model, tea.Cm
 	return le, le.uploadBatchLeased(unsent, msg.normRelease)
 }
 
+// pendingSyncBatchLimit caps how many dirty rows one retry trigger processes.
+const pendingSyncBatchLimit = 50
+
+// pendingSyncRetrySpacing is the pause between two sequential PATCHes of the
+// bulk pending-sync retry — limited concurrency (one at a time) plus a small
+// gap so the remote endpoint is never hammered.
+const pendingSyncRetrySpacing = 200 * time.Millisecond
+
+// retryPendingSync launches the bulk pending-sync retry: the queue is
+// REBUILT from the database on every trigger (rows with a remote id and a
+// pending local edit — failed PATCHes and offline saves survive restarts),
+// and each contact is PATCHed sequentially with a spacing between attempts.
+// A single worker retries at most pendingSyncBatchLimit rows per trigger.
+func (le *LogbookEditor) retryPendingSync() tea.Cmd {
+	db := le.db
+	url, key := le.wlURL, le.wlKey
+	gen := le.gen
+	lbID := le.logbookID
+	release := le.dbLease(db)
+	return func() tea.Msg {
+		defer release()
+		rows, err := store.ListDirtyQSOs(db, pendingSyncBatchLimit)
+		if err != nil {
+			applog.Error("Wavelog: pending-sync retry cannot list rows", "error", err)
+			return editorMsg{wlRetryErr: err.Error(), gen: gen, lbID: lbID}
+		}
+		synced, failed := 0, 0
+		var lastErr string
+		for i, q := range rows {
+			if i > 0 {
+				time.Sleep(pendingSyncRetrySpacing)
+			}
+			res := syncDirtyRow(db, url, key, q.ID)
+			switch {
+			case res.wlSyncOK || res.wlSyncGone:
+				synced++
+			case res.wlSyncErr != "":
+				failed++
+				lastErr = res.wlSyncErr
+			}
+		}
+		applog.InfoDetail("Wavelog: pending-sync retry done",
+			fmt.Sprintf("synced=%d failed=%d", synced, failed))
+		return editorMsg{wlRetryDone: true, wlRetryCount: synced, wlRetryFailed: failed, wlRetryErr: lastErr, gen: gen, lbID: lbID}
+	}
+}
+
 func (le *LogbookEditor) handleFilePickerUpdate(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
@@ -881,6 +952,9 @@ func (le *LogbookEditor) doConfirm() tea.Cmd {
 		le.dlProgress = 0
 		le.dlTotal = 0
 		return le.doWavelogDownload()
+	case edModeConfirmWLSyncRetry:
+		le.mode = edModeList
+		return le.retryPendingSync()
 	case edModeConfirmPurge:
 		le.mode = edModeList
 		le.wlLastFetchedID = 0
@@ -969,7 +1043,6 @@ func (le *LogbookEditor) doSave() tea.Cmd {
 	call := q.Call
 	date := formatDate(q.QSODate)
 	id := q.ID
-	synced := q.WavelogID > 0
 	// Capture the form revision when the save is dispatched: the form
 	// stays editable while the PATCH runs, and a completion must only
 	// close it when the operator has not typed since.
@@ -987,21 +1060,18 @@ func (le *LogbookEditor) doSave() tea.Cmd {
 	// PATCH, so a queued edit can never be read after its follow-up was
 	// dispatched. A crash while the PATCH is in flight still leaves a
 	// durably dirty row that a remote refresh cannot overwrite.
-	var rev int64
-	if synced {
-		var serr error
-		rev, serr = store.SaveQSOForSync(db, q)
-		if serr != nil {
-			applog.Error("LogbookEditor: save failed", "id", id, "call", call, "error", serr.Error())
-			// No saved id on failure — the handler shows the error toast only
-			// (the edit form stays open for a retry).
-			return func() tea.Msg { return editorMsg{err: serr, gen: gen} }
-		}
-	} else {
-		if uerr := store.UpdateQSO(db, q); uerr != nil {
-			applog.Error("LogbookEditor: save failed", "id", id, "call", call, "error", uerr.Error())
-			return func() tea.Msg { return editorMsg{err: uerr, gen: gen} }
-		}
+	//
+	// The synced decision and the dirty marking come from the DATABASE
+	// state atomically with the write — never from the form snapshot: an
+	// in-flight upload may have attached the remote id while the form was
+	// open, and the form's stale WavelogID (0) must neither wipe the id
+	// nor skip the follow-up PATCH.
+	synced, rev, serr := store.SaveQSO(db, q)
+	if serr != nil {
+		applog.Error("LogbookEditor: save failed", "id", id, "call", call, "error", serr.Error())
+		// No saved id on failure — the handler shows the error toast only
+		// (the edit form stays open for a retry).
+		return func() tea.Msg { return editorMsg{err: serr, gen: gen} }
 	}
 	applog.Info("LogbookEditor: QSO saved", "id", id, "call", call)
 
@@ -1068,8 +1138,22 @@ func (le *LogbookEditor) doSave() tea.Cmd {
 	return func() tea.Msg {
 		// The PATCH worker writes locally (ack persistence, gone handling)
 		// against the ORIGINATING database only — the chain lease holds it
-		// open, and the owner loop releases it at chain end.
-		syncErr := wavelog.UpdateQSO(ctx.url, ctx.apiKey, q.WavelogID, buildUpdateInput(q))
+		// open, and the owner loop releases it at chain end. The row is read
+		// fresh: its current remote id (possibly attached by an upload while
+		// the form was open) and its latest fields are what the server must
+		// receive.
+		row, rerr := store.GetQSOByID(ctx.db, id)
+		if rerr != nil || row == nil {
+			em.wlSyncErr = "cannot read row for sync"
+			return em
+		}
+		if row.WavelogID <= 0 {
+			// The remote copy was deleted elsewhere — the row is honest
+			// again (no remote link to PATCH).
+			em.wlSyncGone = true
+			return em
+		}
+		syncErr := wavelog.UpdateQSO(ctx.url, ctx.apiKey, row.WavelogID, buildUpdateInput(row))
 		if syncErr != nil {
 			if apiErr, ok := syncErr.(*wavelog.APIError); ok && apiErr.Code == "not_found" {
 				// The remote copy was deleted elsewhere — the local id is

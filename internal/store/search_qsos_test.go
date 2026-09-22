@@ -72,8 +72,11 @@ func TestWavelogIDRoundTrip(t *testing.T) {
 		t.Errorf("WavelogID = %d, want 42", got.WavelogID)
 	}
 
-	// UpdateQSO must persist the remote id too.
-	got.WavelogID = 99
+	// UpdateQSO must PRESERVE the remote id — a normal field save never
+	// writes synchronization metadata (the id is only attached via
+	// SetWavelogID*).
+	got.Comment = "edited"
+	got.WavelogID = 0 // a stale form snapshot must not wipe the id
 	if err := UpdateQSO(db, got); err != nil {
 		t.Fatalf("UpdateQSO: %v", err)
 	}
@@ -81,7 +84,18 @@ func TestWavelogIDRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetQSOByID after update: %v", err)
 	}
+	if again.WavelogID != 42 {
+		t.Errorf("WavelogID after update = %d, want 42 (preserved)", again.WavelogID)
+	}
+	// Changing the remote link goes through SetWavelogID.
+	if err := SetWavelogID(db, id, 99); err != nil {
+		t.Fatalf("SetWavelogID: %v", err)
+	}
+	again, err = GetQSOByID(db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID after SetWavelogID: %v", err)
+	}
 	if again.WavelogID != 99 {
-		t.Errorf("WavelogID after update = %d, want 99", again.WavelogID)
+		t.Errorf("WavelogID after SetWavelogID = %d, want 99", again.WavelogID)
 	}
 }

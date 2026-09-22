@@ -75,6 +75,14 @@ func (le *LogbookEditor) View() tea.View {
 		)
 		return tea.NewView(le.viewWithDialog(bodyW))
 
+	case edModeConfirmWLSyncRetry:
+		le.ensureDialog("Retry pending sync",
+			fmt.Sprintf("%d contacts have local changes not yet on Wavelog.\nRetry sending them now?", le.wlPendingCount),
+			Option{Label: "Retry", Value: "wlsyncretry"},
+			Option{Label: "Cancel", Value: "cancel"},
+		)
+		return tea.NewView(le.viewWithDialog(bodyW))
+
 	case edModeConfirmNormalize:
 		le.ensureDialog(
 			fmt.Sprintf("Normalize %d QSOs", len(le.mismatchQSOs)),

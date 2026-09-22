@@ -56,19 +56,23 @@ func TestWavelogDirtyRoundtrip(t *testing.T) {
 	}
 }
 
-// TestSaveQSOForSyncAtomicDirtyMark verifies the edit, the dirty flag and the
-// pending-sync revision change together, and that only an acknowledgement for
-// the CURRENT revision clears the flag — an older revision must not.
-func TestSaveQSOForSyncAtomicDirtyMark(t *testing.T) {
+// TestSaveQSOAtomicDirtyMark verifies the edit, the dirty flag and the
+// pending-sync revision change together (decided from the DATABASE state),
+// and that only an acknowledgement for the CURRENT revision clears the flag —
+// an older revision must not.
+func TestSaveQSOAtomicDirtyMark(t *testing.T) {
 	db := newTempDB(t)
 	id := mustInsertQSO(t, db, &qso.QSO{Call: "SP9MOA", QSODate: "20240501",
 		TimeOn: "120000", Band: "20m", Mode: "SSB", WavelogID: 77})
 
 	q1 := &qso.QSO{ID: id, Call: "SP9MOA", QSODate: "20240501", TimeOn: "120000",
 		Band: "20m", Mode: "SSB", Comment: "edit one", WavelogID: 77}
-	rev1, err := SaveQSOForSync(db, q1)
+	synced, rev1, err := SaveQSO(db, q1)
 	if err != nil {
-		t.Fatalf("SaveQSOForSync: %v", err)
+		t.Fatalf("SaveQSO: %v", err)
+	}
+	if !synced {
+		t.Fatal("synced = false, want true (the database row carries id 77)")
 	}
 	if rev1 != 1 {
 		t.Fatalf("rev1 = %d, want 1", rev1)
@@ -80,12 +84,18 @@ func TestSaveQSOForSyncAtomicDirtyMark(t *testing.T) {
 	if row.Comment != "edit one" || !row.WavelogDirty {
 		t.Fatalf("row after save = comment %q dirty %v; want edit one, true", row.Comment, row.WavelogDirty)
 	}
+	if row.WavelogID != 77 {
+		t.Fatalf("WavelogID after save = %d, want 77 (preserved)", row.WavelogID)
+	}
 
 	q2 := &qso.QSO{ID: id, Call: "SP9MOA", QSODate: "20240501", TimeOn: "120000",
 		Band: "20m", Mode: "SSB", Comment: "edit two", WavelogID: 77}
-	rev2, err := SaveQSOForSync(db, q2)
+	synced, rev2, err := SaveQSO(db, q2)
 	if err != nil {
-		t.Fatalf("SaveQSOForSync #2: %v", err)
+		t.Fatalf("SaveQSO #2: %v", err)
+	}
+	if !synced {
+		t.Fatal("synced = false on second save, want true")
 	}
 	if rev2 != 2 {
 		t.Fatalf("rev2 = %d, want 2", rev2)
@@ -879,5 +889,57 @@ func TestListQSOsPage_ContestFilterPagination(t *testing.T) {
 	}
 	if len(qsos) != 1 {
 		t.Errorf("len = %d; want 1", len(qsos))
+	}
+}
+
+// TestDirtyQSOQueries verifies the bulk pending-sync backlog queries: only
+// rows with a remote id AND a pending local edit count — clean synced rows
+// and never-uploaded rows do not.
+func TestDirtyQSOQueries(t *testing.T) {
+	db := newTempDB(t)
+
+	dirty := mustInsertQSO(t, db, &qso.QSO{Call: "SP9A", QSODate: "20240501",
+		TimeOn: "120000", Band: "20m", Mode: "SSB", WavelogID: 42})
+	clean := mustInsertQSO(t, db, &qso.QSO{Call: "SP9B", QSODate: "20240502",
+		TimeOn: "120000", Band: "20m", Mode: "SSB", WavelogID: 43})
+	unsent := mustInsertQSO(t, db, &qso.QSO{Call: "SP9C", QSODate: "20240503",
+		TimeOn: "120000", Band: "20m", Mode: "SSB"})
+
+	if err := SetWavelogDirty(db, dirty, true); err != nil {
+		t.Fatalf("SetWavelogDirty(dirty): %v", err)
+	}
+	if err := SetWavelogDirty(db, unsent, true); err != nil {
+		t.Fatalf("SetWavelogDirty(unsent): %v", err)
+	}
+
+	n, err := CountDirtyQSOs(db)
+	if err != nil {
+		t.Fatalf("CountDirtyQSOs: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("dirty count = %d, want 1 (only the synced+pending row)", n)
+	}
+
+	rows, err := ListDirtyQSOs(db, 10)
+	if err != nil {
+		t.Fatalf("ListDirtyQSOs: %v", err)
+	}
+	if len(rows) != 1 || rows[0].ID != dirty {
+		t.Fatalf("ListDirtyQSOs = %+v, want only row %d", rows, dirty)
+	}
+	if rows[0].WavelogID != 42 || !rows[0].WavelogDirty {
+		t.Fatalf("dirty row = id:%d dirty:%v, want 42/true", rows[0].WavelogID, rows[0].WavelogDirty)
+	}
+	if clean == 0 {
+		t.Fatal("unused")
+	}
+
+	// The limit is honored.
+	limited, err := ListDirtyQSOs(db, 0)
+	if err != nil {
+		t.Fatalf("ListDirtyQSOs(0): %v", err)
+	}
+	if len(limited) != 0 {
+		t.Fatalf("ListDirtyQSOs(limit=0) = %d rows, want 0", len(limited))
 	}
 }

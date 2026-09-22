@@ -29,6 +29,7 @@ const (
 	edModeConfirmWLDownload
 	edModeWLDownloading
 	edModeWLDownloadResult
+	edModeConfirmWLSyncRetry
 	edModeEdit
 	edModeExport
 	edModeExporting
@@ -166,6 +167,7 @@ type LogbookEditor struct {
 	wlSkipped        int
 	wlSkipDetail     string
 	wlUnsentCount    int // cached unsent count from full DB, used by confirm dialog
+	wlPendingCount   int // cached pending-sync count (dirty rows), used by the retry confirm dialog
 	width            int
 	height           int
 	wlURL            string
@@ -549,6 +551,7 @@ func (le *LogbookEditor) FilePicker() filepicker.Model { return le.filePicker }
 func (le *LogbookEditor) isModalMode() bool {
 	switch le.mode {
 	case edModeConfirmDelete, edModeConfirmPurge, edModeConfirmWLSend, edModeConfirmWLDownload,
+		edModeConfirmWLSyncRetry,
 		edModeConfirmNormalize, edModeConfirmSave, edModeWLDownloading, edModeWLDownloadResult,
 		edModeExporting, edModeExportResult,
 		edModeImporting, edModeImportResult:

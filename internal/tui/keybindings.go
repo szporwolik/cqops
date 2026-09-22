@@ -297,6 +297,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 				bindings = append(bindings,
 					key.NewBinding(key.WithKeys("ctrl+w"), key.WithHelp("Ctrl+W", "Wavelog upload")),
 					key.NewBinding(key.WithKeys("alt+w"), key.WithHelp("Alt+W", "Wavelog download")),
+					key.NewBinding(key.WithKeys("alt+p"), key.WithHelp("Alt+P", "Retry pending sync")),
 				)
 			}
 		}

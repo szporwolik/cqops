@@ -165,48 +165,60 @@ func (m *Model) handleQSOSyncCompletion(em editorMsg) tea.Cmd {
 func (m *Model) patchLatestRevision(ctx *contactSyncContext) tea.Cmd {
 	id := ctx.key.localID
 	return func() tea.Msg {
-		row, err := store.GetQSOByID(ctx.db, id)
-		res := editorMsg{saved: id, gen: ctx.gen, wlSyncFollowUp: true, syncCtx: ctx}
-		if err != nil {
-			applog.Warn("Wavelog: follow-up sync cannot read QSO", "qso_id", id, "error", err)
-			res.wlSyncErr = err.Error()
-			return res
-		}
-		res.saveCall = row.Call
-		res.saveDate = formatDate(row.QSODate)
-		if row.WavelogID <= 0 {
-			// The remote copy vanished while the edit was queued — the row
-			// is honest again (id already cleared locally).
-			res.wlSyncGone = true
-			return res
-		}
-		syncErr := wavelog.UpdateQSO(ctx.url, ctx.apiKey, row.WavelogID, buildUpdateInput(row))
-		if syncErr != nil {
-			if apiErr, ok := syncErr.(*wavelog.APIError); ok && apiErr.Code == "not_found" {
-				if serr := store.SetWavelogID(ctx.db, id, 0); serr == nil {
-					res.wlSyncGone = true
-					if derr := store.SetWavelogDirty(ctx.db, id, false); derr != nil {
-						applog.Warn("Wavelog: failed to clear pending sync", "qso_id", id, "error", derr)
-					}
-				} else {
-					res.wlSyncErr = wavelog.FriendlyError(syncErr).Error()
+		res := syncDirtyRow(ctx.db, ctx.url, ctx.apiKey, id)
+		res.gen = ctx.gen
+		res.wlSyncFollowUp = true
+		res.syncCtx = ctx
+		return res
+	}
+}
+
+// syncDirtyRow pushes a row's CURRENT revision to Wavelog and acknowledges
+// the pending flag for exactly that revision. It is the shared per-contact
+// sync unit used by serialized save follow-ups, initial-upload
+// reconciliation, and the bulk pending-sync retry.
+func syncDirtyRow(db *sql.DB, url, key string, id int64) editorMsg {
+	row, err := store.GetQSOByID(db, id)
+	res := editorMsg{saved: id}
+	if err != nil {
+		applog.Warn("Wavelog: sync cannot read QSO", "qso_id", id, "error", err)
+		res.wlSyncErr = err.Error()
+		return res
+	}
+	res.saveCall = row.Call
+	res.saveDate = formatDate(row.QSODate)
+	if row.WavelogID <= 0 {
+		// The remote copy vanished while the edit was queued — the row
+		// is honest again (id already cleared locally).
+		res.wlSyncGone = true
+		return res
+	}
+	syncErr := wavelog.UpdateQSO(url, key, row.WavelogID, buildUpdateInput(row))
+	if syncErr != nil {
+		if apiErr, ok := syncErr.(*wavelog.APIError); ok && apiErr.Code == "not_found" {
+			if serr := store.SetWavelogID(db, id, 0); serr == nil {
+				res.wlSyncGone = true
+				if derr := store.SetWavelogDirty(db, id, false); derr != nil {
+					applog.Warn("Wavelog: failed to clear pending sync", "qso_id", id, "error", derr)
 				}
 			} else {
 				res.wlSyncErr = wavelog.FriendlyError(syncErr).Error()
 			}
-			return res
-		}
-		res.wlSyncOK = true
-		if derr := store.ClearWavelogDirtyIfRevision(ctx.db, id, row.WavelogDirtyRev); derr != nil {
-			applog.Warn("Wavelog: failed to clear pending sync", "qso_id", id, "error", derr)
-			// The remote copy synced, but the local acknowledgement could
-			// not be persisted — report an incomplete synchronization so
-			// the row stays pending instead of claiming full success.
-			res.wlSyncOK = false
-			res.wlSyncIncomplete = true
+		} else {
+			res.wlSyncErr = wavelog.FriendlyError(syncErr).Error()
 		}
 		return res
 	}
+	res.wlSyncOK = true
+	if derr := store.ClearWavelogDirtyIfRevision(db, id, row.WavelogDirtyRev); derr != nil {
+		applog.Warn("Wavelog: failed to clear pending sync", "qso_id", id, "error", derr)
+		// The remote copy synced, but the local acknowledgement could
+		// not be persisted — report an incomplete synchronization so
+		// the row stays pending instead of claiming full success.
+		res.wlSyncOK = false
+		res.wlSyncIncomplete = true
+	}
+	return res
 }
 
 // handleEditorUploadCompletion consumes an editor upload completion
