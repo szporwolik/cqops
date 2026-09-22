@@ -83,7 +83,7 @@ Cree un perfil de equipo con nombre, antena y potencia. Elija **None** para intr
 ## Primer QSO
 
 1. Pulse **F1** y compruebe libro, indicativo, operador, equipo y concurso activos.
-2. Introduzca el indicativo del corresponsal. **Ins** realiza una consulta si está configurada.
+2. Introduzca el indicativo del corresponsal. **Ins** realiza una consulta si está configurada. La prioridad indica confianza en los datos: QRZ.com (100) > HamQTH (90) > Callook.info (80) > QRZ.RU (70) > cuaderno local (60) > Wavelog (10), con CTY.DAT siempre al final; los de menor prioridad solo rellenan campos vacíos.
 3. Compruebe fecha/hora UTC, frecuencia en MHz, banda, modo e informes enviados/recibidos.
 4. Añada nombre, QTH, locator, referencia o comentario si procede.
 5. Pulse **Enter**. El contacto aparece en Recent QSOs.

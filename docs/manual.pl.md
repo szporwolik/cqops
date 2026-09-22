@@ -83,7 +83,7 @@ Utwórz profil radia, podając nazwę, antenę i moc. Wybierz **None** dla ręcz
 ## Pierwsze QSO
 
 1. Naciśnij **F1**. Sprawdź dziennik, znak stacji, operatora, radio i zawody.
-2. Wpisz znak korespondenta. **Ins** uruchamia wyszukiwanie, jeśli je skonfigurowano.
+2. Wpisz znak korespondenta. **Ins** uruchamia wyszukiwanie, jeśli je skonfigurowano. Priorytet oznacza zaufanie do danych: domyślnie QRZ.com (100) > HamQTH (90) > Callook.info (80) > QRZ.RU (70) > lokalny dziennik (60) > Wavelog (10), CTY.DAT zawsze na końcu; dostawcy o niższym priorytecie uzupełniają tylko puste pola.
 3. Sprawdź datę i czas UTC, częstotliwość w MHz, pasmo, emisję oraz raporty nadany i odebrany.
 4. Uzupełnij imię, QTH, lokator, referencję lub komentarz, jeśli są przydatne.
 5. Naciśnij **Enter**. Łączność pojawi się w Recent QSOs.

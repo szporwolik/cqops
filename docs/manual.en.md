@@ -83,7 +83,7 @@ Use **Tab / Shift+Tab** to move, **Space** to change selectable options, and the
 ## Your first QSO
 
 1. Press **F1**. Check the active logbook, station callsign, operator, rig, and contest.
-2. Enter the other station's callsign. Press **Ins** for a lookup if configured.
+2. Enter the other station's callsign. Press **Ins** for a lookup if configured. Priority means data trust: defaults are QRZ.com (100) > HamQTH (90) > Callook.info (80) > QRZ.RU (70) > local logbook (60) > Wavelog (10), with CTY.DAT always last; lower-priority providers only fill fields that are still empty.
 3. Check UTC date/time, frequency in MHz, band, mode, and sent/received reports.
 4. Add any useful name, QTH, locator, reference, or comment.
 5. Press **Enter**. The contact appears in Recent QSOs.

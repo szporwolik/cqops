@@ -83,7 +83,7 @@ Legen Sie ein Funkgeräteprofil mit Name, Antenne und Leistung an. Wählen Sie *
 ## Das erste QSO
 
 1. **F1** drücken und Logbuch, Stationsrufzeichen, Operator, Funkgerät und Contest prüfen.
-2. Rufzeichen der Gegenstation eingeben; **Ins** startet eine konfigurierte Abfrage.
+2. Rufzeichen der Gegenstation eingeben; **Ins** startet eine konfigurierte Abfrage. Priorität bedeutet Datenvertrauen: Standard ist QRZ.com (100) > HamQTH (90) > Callook.info (80) > QRZ.RU (70) > lokales Logbuch (60) > Wavelog (10), CTY.DAT immer zuletzt; Anbieter mit niedrigerer Priorität füllen nur noch leere Felder.
 3. UTC-Datum/-Zeit, Frequenz in MHz, Band, Betriebsart sowie gesendeten und empfangenen Rapport prüfen.
 4. Bei Bedarf Name, QTH, Locator, Referenz oder Kommentar ergänzen.
 5. **Enter** drücken. Die Verbindung erscheint in Recent QSOs.

@@ -16,6 +16,7 @@
 
 ### Configuration
 - **v2 key guidance**: a green **v2** badge next to `wl2_` keys, a one-time migration toast plus status-bar `WL!` for legacy v1 keys, and fail-fast uploads with the migration message.
+- **Trust-based callbook priorities**: lookup order now means *data trust*, not speed. New defaults: QRZ.com (100, disabled until configured) > HamQTH (90, recommended free global) > Callook.info (80, free US-only, enabled) > QRZ.RU (70) > local logbook (60, offline fallback that never overwrites external data) > Wavelog (10) > CTY.DAT (1, internal). The Settings → Callbook menu order matches this order; enabling a provider later places it correctly, existing user priorities survive upgrades untouched, base-call fallback stays on, and a Callook miss for non-US calls is a normal empty result, never an error.
 - **Form conveniences**: Shift+Backspace clears the focused QSO-form field (listed in `?` help); enabling APRS TX also enables the global APRS integration; the DX Cluster login is prefilled from the first logbook callsign.
 - **PSK Reporter is opt-in**: the F5 panel is off by default and turns on in the Integrations menu (toast on change). While disabled, the F5 tab dims and F5 warns instead of opening. The tab is renamed from the misleading "HRD" to "PSK" — CQOps has no HRD logbook panel.
 - **Consistent toasts**: every toast starts with its module name (`Wavelog:`, `DXC:`, `QRZ:`, `Rig:`, `QSO:`, …), so the producing integration is always obvious.

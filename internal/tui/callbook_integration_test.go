@@ -443,8 +443,8 @@ func TestInternetCallbook_HamQTHEnabledButNoUser(t *testing.T) {
 }
 
 func TestInternetCallbook_DefaultPriorities(t *testing.T) {
-	// When both priorities are 0 (unset), defaults: QRZ=50, HamQTH=45.
-	// QRZ should win because 50 > 45.
+	// When both priorities are 0 (unset), defaults: QRZ=100, HamQTH=90.
+	// QRZ should win because 100 > 90.
 	m := newLifecycleTestModel(t)
 	m.App.Config.Integrations.Callbook.QRZ.Enabled = true
 	m.App.Config.Integrations.Callbook.QRZ.User = "test"
@@ -455,7 +455,7 @@ func TestInternetCallbook_DefaultPriorities(t *testing.T) {
 
 	name, _ := m.internetCallbook()
 	if name != "QRZ.com" {
-		t.Errorf("name = %q, want QRZ.com (default 50 > default 45)", name)
+		t.Errorf("name = %q, want QRZ.com (default 100 > default 90)", name)
 	}
 }
 

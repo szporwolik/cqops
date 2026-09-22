@@ -494,15 +494,15 @@ func (m *Model) internetCallbook() (name, urlTemplate string) {
 	if hamqth.Enabled && hamqth.User != "" {
 		hqPri := hamqth.Priority
 		if hqPri == 0 {
-			hqPri = 45
+			hqPri = config.DefaultHamQTHPriority
 		}
 		qPri := qrz.Priority
 		if qPri == 0 {
-			qPri = 50
+			qPri = config.DefaultQRZPriority
 		}
 		rPri := qrzru.Priority
 		if rPri == 0 {
-			rPri = 35
+			rPri = config.DefaultQRZRuPriority
 		}
 		if qrz.Enabled && qrz.User != "" && qPri > hqPri {
 			return "QRZ.com", "https://www.qrz.com/db/{CALL}"

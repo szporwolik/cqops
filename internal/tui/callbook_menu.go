@@ -83,25 +83,25 @@ type CallbookMenu struct {
 
 const (
 	cmBaseCall        = 0
-	cmLogChk          = 1
-	cmLogPriority     = 2
-	cmQRZChk          = 3
-	cmQRZUser         = 4
-	cmQRZPass         = 5
-	cmQRZPriority     = 6
-	cmQRZTest         = 7
-	cmHamQTHChk       = 8
-	cmHamQTHUser      = 9
-	cmHamQTHPass      = 10
-	cmHamQTHPriority  = 11
-	cmHamQTHTest      = 12
-	cmCallookChk      = 13
-	cmCallookPriority = 14
-	cmQRZRuChk        = 15
-	cmQRZRuUser       = 16
-	cmQRZRuPass       = 17
-	cmQRZRuPriority   = 18
-	cmQRZRuTest       = 19
+	cmQRZChk          = 1
+	cmQRZUser         = 2
+	cmQRZPass         = 3
+	cmQRZPriority     = 4
+	cmQRZTest         = 5
+	cmHamQTHChk       = 6
+	cmHamQTHUser      = 7
+	cmHamQTHPass      = 8
+	cmHamQTHPriority  = 9
+	cmHamQTHTest      = 10
+	cmCallookChk      = 11
+	cmCallookPriority = 12
+	cmQRZRuChk        = 13
+	cmQRZRuUser       = 14
+	cmQRZRuPass       = 15
+	cmQRZRuPriority   = 16
+	cmQRZRuTest       = 17
+	cmLogChk          = 18
+	cmLogPriority     = 19
 	cmWavelogChk      = 20
 	cmWavelogPriority = 21
 	cmMax             = 22
@@ -111,11 +111,11 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 	logPriority := newTextinput()
 	logPriority.CharLimit = 5
 	logPriority.SetWidth(6)
-	logPriority.Placeholder = "100"
+	logPriority.Placeholder = strconv.Itoa(config.DefaultLogbookPriority)
 	if cfg.Integrations.Callbook.Logbook.Priority != 0 {
 		logPriority.SetValue(strconv.Itoa(cfg.Integrations.Callbook.Logbook.Priority))
 	} else {
-		logPriority.SetValue("100") // default: tried before online providers
+		logPriority.SetValue(strconv.Itoa(config.DefaultLogbookPriority))
 	}
 	logEnabled := cfg.Integrations.Callbook.Logbook.Enabled
 	// Default to enabled on first run (Priority=0 means never configured).
@@ -140,10 +140,10 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 	qrzPriority := newTextinput()
 	qrzPriority.CharLimit = 5
 	qrzPriority.SetWidth(6)
-	qrzPriority.Placeholder = "50"
+	qrzPriority.Placeholder = strconv.Itoa(config.DefaultQRZPriority)
 	qrzPriority.SetValue(strconv.Itoa(cfg.Integrations.Callbook.QRZ.Priority))
 	if cfg.Integrations.Callbook.QRZ.Priority == 0 {
-		qrzPriority.SetValue("50")
+		qrzPriority.SetValue(strconv.Itoa(config.DefaultQRZPriority))
 	}
 
 	// HamQTH provider.
@@ -164,20 +164,20 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 	hamqthPriority := newTextinput()
 	hamqthPriority.CharLimit = 5
 	hamqthPriority.SetWidth(6)
-	hamqthPriority.Placeholder = "45"
+	hamqthPriority.Placeholder = strconv.Itoa(config.DefaultHamQTHPriority)
 	hamqthPriority.SetValue(strconv.Itoa(cfg.Integrations.Callbook.HamQTH.Priority))
 	if cfg.Integrations.Callbook.HamQTH.Priority == 0 {
-		hamqthPriority.SetValue("45")
+		hamqthPriority.SetValue(strconv.Itoa(config.DefaultHamQTHPriority))
 	}
 
 	// Callook.info provider (no auth required, US callsigns only).
 	callookPriority := newTextinput()
 	callookPriority.CharLimit = 5
 	callookPriority.SetWidth(6)
-	callookPriority.Placeholder = "30"
+	callookPriority.Placeholder = strconv.Itoa(config.DefaultCallookPriority)
 	callookPriority.SetValue(strconv.Itoa(cfg.Integrations.Callbook.Callook.Priority))
 	if cfg.Integrations.Callbook.Callook.Priority == 0 {
-		callookPriority.SetValue("30")
+		callookPriority.SetValue(strconv.Itoa(config.DefaultCallookPriority))
 	}
 
 	// QRZ.RU provider (free, RU and surrounding countries).
@@ -198,10 +198,10 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 	qrzruPriority := newTextinput()
 	qrzruPriority.CharLimit = 5
 	qrzruPriority.SetWidth(6)
-	qrzruPriority.Placeholder = "35"
+	qrzruPriority.Placeholder = strconv.Itoa(config.DefaultQRZRuPriority)
 	qrzruPriority.SetValue(strconv.Itoa(cfg.Integrations.Callbook.QRZRu.Priority))
 	if cfg.Integrations.Callbook.QRZRu.Priority == 0 {
-		qrzruPriority.SetValue("35")
+		qrzruPriority.SetValue(strconv.Itoa(config.DefaultQRZRuPriority))
 	}
 
 	// Default base-call fallback and Callook.info to enabled on fresh config.
@@ -224,10 +224,10 @@ func NewCallbookMenu(cfg *config.Config) *CallbookMenu {
 	wlPriority := newTextinput()
 	wlPriority.CharLimit = 5
 	wlPriority.SetWidth(6)
-	wlPriority.Placeholder = "10"
+	wlPriority.Placeholder = strconv.Itoa(config.DefaultWavelogPriority)
 	wlPriority.SetValue(strconv.Itoa(cfg.Integrations.Callbook.Wavelog.Priority))
 	if cfg.Integrations.Callbook.Wavelog.Priority == 0 {
-		wlPriority.SetValue("10")
+		wlPriority.SetValue(strconv.Itoa(config.DefaultWavelogPriority))
 	}
 	wlEnabled := cfg.Integrations.Callbook.Wavelog.Enabled
 	wlConfigured := false
@@ -495,7 +495,7 @@ func (cm *CallbookMenu) forwardToFocused(msg tea.Msg) {
 
 func (cm *CallbookMenu) isPositionVisible(pos int) bool {
 	switch pos {
-	case cmBaseCall, cmLogChk, cmQRZChk, cmHamQTHChk, cmQRZRuChk, cmWavelogChk:
+	case cmBaseCall, cmQRZChk, cmHamQTHChk, cmCallookChk, cmQRZRuChk, cmLogChk, cmWavelogChk:
 		return true
 	case cmLogPriority:
 		return cm.logEnabled
@@ -672,14 +672,6 @@ func (cm *CallbookMenu) View() tea.View {
 	// --- Base call fallback ---
 	checkboxRow(&b, lineW, cm.fm.row == cmBaseCall, "Base call fallback:", cm.baseCallFallback, "Fallback to base callsign", false, callbookRows)
 
-	// --- Local Logbook ---
-	checkboxRow(&b, lineW, cm.fm.row == cmLogChk, "Logbook:", cm.logEnabled, "Local, searches previous contacts", false, callbookRows)
-
-	if cm.logEnabled {
-		b.WriteString(padOrTrunc(cm.renderField(cmLogPriority, "  Priority:", &cm.logPriority, false), lineW))
-		b.WriteString("\n")
-	}
-
 	// --- QRZ.com ---
 	checkboxRow(&b, lineW, cm.fm.row == cmQRZChk, "QRZ.com:", cm.qrzEnabled, "Paid, XML subscription required", false, callbookRows)
 
@@ -696,7 +688,7 @@ func (cm *CallbookMenu) View() tea.View {
 	}
 
 	// --- HamQTH ---
-	checkboxRow(&b, lineW, cm.fm.row == cmHamQTHChk, "HamQTH:", cm.hamqthEnabled, "Free, global callbook", false, callbookRows)
+	checkboxRow(&b, lineW, cm.fm.row == cmHamQTHChk, "HamQTH:", cm.hamqthEnabled, "Recommended free global callbook", false, callbookRows)
 
 	if cm.hamqthEnabled {
 		b.WriteString(padOrTrunc(cm.renderField(cmHamQTHUser, "  Username:", &cm.hamqthUser, false), lineW))
@@ -719,7 +711,7 @@ func (cm *CallbookMenu) View() tea.View {
 	}
 
 	// --- QRZ.RU ---
-	checkboxRow(&b, lineW, cm.fm.row == cmQRZRuChk, "QRZ.RU:", cm.qrzruEnabled, "Free, RU and surrounding countries", false, callbookRows)
+	checkboxRow(&b, lineW, cm.fm.row == cmQRZRuChk, "QRZ.RU:", cm.qrzruEnabled, "Free, Russia, Eastern Europe and surroundings", false, callbookRows)
 
 	if cm.qrzruEnabled {
 		b.WriteString(padOrTrunc(cm.renderField(cmQRZRuUser, "  API login:", &cm.qrzruUser, false), lineW))
@@ -733,9 +725,17 @@ func (cm *CallbookMenu) View() tea.View {
 		cm.providerTestButton(&b, lineW, cmQRZRuTest)
 	}
 
+	// --- Local Logbook ---
+	checkboxRow(&b, lineW, cm.fm.row == cmLogChk, "Logbook:", cm.logEnabled, "Offline fallback, past contacts may be stale", false, callbookRows)
+
+	if cm.logEnabled {
+		b.WriteString(padOrTrunc(cm.renderField(cmLogPriority, "  Priority:", &cm.logPriority, false), lineW))
+		b.WriteString("\n")
+	}
+
 	// --- Wavelog ---
 	if cm.wlConfigured {
-		checkboxRow(&b, lineW, cm.fm.row == cmWavelogChk, "Wavelog:", cm.wlEnabled, "Integration, must be enabled per logbook", false, callbookRows)
+		checkboxRow(&b, lineW, cm.fm.row == cmWavelogChk, "Wavelog:", cm.wlEnabled, "Low priority — data may come from QRZ/HamQTH/QRZ.RU", false, callbookRows)
 
 		if cm.wlEnabled {
 			b.WriteString(padOrTrunc(cm.renderField(cmWavelogPriority, "  Priority:", &cm.wlPriority, false), lineW))

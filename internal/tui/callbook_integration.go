@@ -13,6 +13,7 @@ import (
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/callbook"
 	"github.com/szporwolik/cqops/internal/callook"
+	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/ctybig"
 	"github.com/szporwolik/cqops/internal/hamqth"
 	"github.com/szporwolik/cqops/internal/qrzcom"
@@ -82,12 +83,13 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 	var providers []callbook.Provider
 
 	// Logbook provider — searches past local QSOs.
-	// Default priority 100 (tried before QRZ). Enabled by default.
+	// Offline/historical fallback, not the most authoritative source:
+	// previous QSOs may carry stale name/QTH/grid data.
 	lc := a.Config.Integrations.Callbook.Logbook
 	if lc.Enabled || lc.Priority == 0 {
 		p := lc.Priority
 		if p == 0 {
-			p = 100 // default
+			p = config.DefaultLogbookPriority
 		}
 		if p < 0 {
 			p = 0
@@ -105,7 +107,7 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 	if cfg.Enabled && cfg.User != "" {
 		p := cfg.Priority
 		if p == 0 {
-			p = 50
+			p = config.DefaultQRZPriority
 		}
 		if p < 0 {
 			p = 0
@@ -121,7 +123,7 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 	if hqCfg.Enabled && hqCfg.User != "" {
 		p := hqCfg.Priority
 		if p == 0 {
-			p = 45
+			p = config.DefaultHamQTHPriority
 		}
 		if p < 0 {
 			p = 0
@@ -137,7 +139,7 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 	if coCfg.Enabled {
 		p := coCfg.Priority
 		if p == 0 {
-			p = 30
+			p = config.DefaultCallookPriority
 		}
 		if p < 0 {
 			p = 0
@@ -153,7 +155,7 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 	if ruCfg.Enabled && ruCfg.User != "" {
 		p := ruCfg.Priority
 		if p == 0 {
-			p = 35
+			p = config.DefaultQRZRuPriority
 		}
 		if p < 0 {
 			p = 0
@@ -179,7 +181,7 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 		if wlURL != "" && wlAPIKey != "" {
 			p := wc.Priority
 			if p == 0 {
-				p = 10
+				p = config.DefaultWavelogPriority
 			}
 			if p < 0 {
 				p = 0

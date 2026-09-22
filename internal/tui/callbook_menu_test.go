@@ -73,3 +73,32 @@ func TestCallbookMenu_TabReachesQRZFields(t *testing.T) {
 		}
 	}
 }
+
+// TestCallbookMenu_SectionOrderMatchesPriority pins the visible order in
+// Settings → Callbook to the trust-based priority order, independent of
+// which providers are currently enabled.
+func TestCallbookMenu_SectionOrderMatchesPriority(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Integrations.Callbook.QRZ.Enabled = true
+	cfg.Integrations.Callbook.HamQTH.Enabled = true
+	cfg.Integrations.Callbook.QRZRu.Enabled = true
+	cfg.Integrations.Callbook.Logbook.Enabled = true
+
+	cm := NewCallbookMenu(cfg)
+	cm.width = 100
+	cm.height = 50
+	content := cm.View().Content
+
+	order := []string{"QRZ.com:", "HamQTH:", "Callook.info:", "QRZ.RU:", "Logbook:"}
+	prev := -1
+	for _, h := range order {
+		p := strings.Index(content, h)
+		if p < 0 {
+			t.Fatalf("section header %q missing from the menu", h)
+		}
+		if p < prev {
+			t.Errorf("section %q rendered above the previous section — order must match priority", h)
+		}
+		prev = p
+	}
+}

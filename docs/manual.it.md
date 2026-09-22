@@ -83,7 +83,7 @@ Crea un profilo radio con nome, antenna e potenza. Scegli **None** per inserire 
 ## Primo QSO
 
 1. Premi **F1**. Verifica log, nominativo, operatore, radio e contest attivi.
-2. Inserisci il nominativo del corrispondente. **Ins** avvia la ricerca se configurata.
+2. Inserisci il nominativo del corrispondente. **Ins** avvia la ricerca se configurata. La priorità indica l'affidabilità dei dati: QRZ.com (100) > HamQTH (90) > Callook.info (80) > QRZ.RU (70) > registro locale (60) > Wavelog (10), con CTY.DAT sempre per ultimo; i fornitori con priorità inferiore riempiono solo i campi vuoti.
 3. Controlla data/ora UTC, frequenza in MHz, banda, modo e rapporti inviato/ricevuto.
 4. Aggiungi nome, QTH, locatore, referenza o commento se utili.
 5. Premi **Enter**. Il contatto appare in Recent QSOs.

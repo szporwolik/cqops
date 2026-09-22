@@ -1648,3 +1648,87 @@ func TestVersionLess(t *testing.T) {
 		}
 	}
 }
+
+// TestDefaultCallbookPriorities verifies that a fresh configuration carries
+// exactly the trust-based callbook defaults (QRZ > HamQTH > Callook > QRZ.RU >
+// local logbook > Wavelog > CTY), with Callook and the local logbook enabled,
+// everything else disabled, and base-call fallback on.
+func TestDefaultCallbookPriorities(t *testing.T) {
+	cfg := DefaultConfig()
+	cb := cfg.Integrations.Callbook
+
+	if !cb.BaseCallFallback {
+		t.Error("BaseCallFallback should be enabled by default")
+	}
+	if cb.QRZ.Priority != DefaultQRZPriority {
+		t.Errorf("QRZ priority = %d, want %d", cb.QRZ.Priority, DefaultQRZPriority)
+	}
+	if cb.QRZ.Enabled {
+		t.Error("QRZ should be disabled until credentials are configured")
+	}
+	if cb.HamQTH.Priority != DefaultHamQTHPriority || cb.HamQTH.Enabled {
+		t.Errorf("HamQTH = %+v, want priority %d disabled", cb.HamQTH, DefaultHamQTHPriority)
+	}
+	if cb.Callook.Priority != DefaultCallookPriority || !cb.Callook.Enabled {
+		t.Errorf("Callook = %+v, want priority %d enabled", cb.Callook, DefaultCallookPriority)
+	}
+	if cb.QRZRu.Priority != DefaultQRZRuPriority || cb.QRZRu.Enabled {
+		t.Errorf("QRZRu = %+v, want priority %d disabled", cb.QRZRu, DefaultQRZRuPriority)
+	}
+	if cb.Logbook.Priority != DefaultLogbookPriority || !cb.Logbook.Enabled {
+		t.Errorf("Logbook = %+v, want priority %d enabled", cb.Logbook, DefaultLogbookPriority)
+	}
+	if cb.Wavelog.Priority != DefaultWavelogPriority || cb.Wavelog.Enabled {
+		t.Errorf("Wavelog = %+v, want priority %d disabled", cb.Wavelog, DefaultWavelogPriority)
+	}
+	if cb.CTY.Priority != DefaultCTYPriority {
+		t.Errorf("CTY priority = %d, want %d", cb.CTY.Priority, DefaultCTYPriority)
+	}
+}
+
+// TestNormalizeCallbookMigration preserves explicit user priorities and fills
+// the trust-based defaults only for providers that were never configured.
+func TestNormalizeCallbookMigration(t *testing.T) {
+	// Partially configured upgrade: explicit priorities and choices survive.
+	cfg := DefaultConfig()
+	cfg.Integrations.Callbook.QRZ.Enabled = true
+	cfg.Integrations.Callbook.QRZ.User = "user"
+	cfg.Integrations.Callbook.QRZ.Priority = 42
+	cfg.Integrations.Callbook.HamQTH.Priority = 0 // never configured
+	cfg.Integrations.Callbook.Logbook.Enabled = false
+	cfg.Integrations.Callbook.Logbook.Priority = 55
+	cfg.Integrations.Callbook.BaseCallFallback = false
+	cfg.Normalize()
+
+	cb := cfg.Integrations.Callbook
+	if cb.QRZ.Priority != 42 {
+		t.Errorf("explicit QRZ priority overwritten: %d", cb.QRZ.Priority)
+	}
+	if cb.HamQTH.Priority != DefaultHamQTHPriority {
+		t.Errorf("unset HamQTH priority = %d, want default %d", cb.HamQTH.Priority, DefaultHamQTHPriority)
+	}
+	if cb.HamQTH.Enabled {
+		t.Error("HamQTH must stay disabled without credentials")
+	}
+	if cb.Logbook.Priority != 55 || cb.Logbook.Enabled {
+		t.Errorf("explicit logbook choice overwritten: %+v", cb.Logbook)
+	}
+	if cb.BaseCallFallback {
+		t.Error("explicit base-call fallback disable was overwritten")
+	}
+	if !cb.Callook.Enabled || cb.Callook.Priority != DefaultCallookPriority {
+		t.Errorf("unset Callook should default to enabled at %d, got %+v", DefaultCallookPriority, cb.Callook)
+	}
+
+	// Fully unconfigured callbook section: every default applies.
+	cfg2 := DefaultConfig()
+	cfg2.Integrations.Callbook = CallbookGroup{}
+	cfg2.Normalize()
+	cb2 := cfg2.Integrations.Callbook
+	if !cb2.BaseCallFallback || !cb2.Logbook.Enabled || !cb2.Callook.Enabled {
+		t.Errorf("fresh callbook section should enable fallback/logbook/callook: %+v", cb2)
+	}
+	if cb2.QRZ.Priority != DefaultQRZPriority || cb2.Wavelog.Priority != DefaultWavelogPriority || cb2.CTY.Priority != DefaultCTYPriority {
+		t.Errorf("fresh callbook priorities = %+v", cb2)
+	}
+}

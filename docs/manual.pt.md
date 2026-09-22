@@ -83,7 +83,7 @@ Crie um perfil de rádio com nome, antena e potência. Escolha **None** para inf
 ## Primeiro QSO
 
 1. Pressione **F1**. Confira livro, indicativo, operador, rádio e concurso ativos.
-2. Digite o indicativo do correspondente. **Ins** faz a consulta, se configurada.
+2. Digite o indicativo do correspondente. **Ins** faz a consulta, se configurada. A prioridade representa a confiança nos dados: QRZ.com (100) > HamQTH (90) > Callook.info (80) > QRZ.RU (70) > diário local (60) > Wavelog (10), com CTY.DAT sempre por último; os de menor prioridade apenas preenchem campos vazios.
 3. Confira data/hora UTC, frequência em MHz, banda, modo e reportagens enviadas/recebidas.
 4. Acrescente nome, QTH, localizador, referência ou comentário se necessário.
 5. Pressione **Enter**. O contato aparece em Recent QSOs.

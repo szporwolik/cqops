@@ -83,7 +83,7 @@ Créez un profil de poste avec nom, antenne et puissance. Choisissez **None** po
 ## Premier QSO
 
 1. Appuyez sur **F1**. Vérifiez carnet, indicatif de station, opérateur, poste et concours actifs.
-2. Saisissez l’indicatif du correspondant. **Ins** lance la recherche si elle est configurée.
+2. Saisissez l’indicatif du correspondant. **Ins** lance la recherche si elle est configurée. La priorité exprime la confiance dans les données : QRZ.com (100) > HamQTH (90) > Callook.info (80) > QRZ.RU (70) > carnet local (60) > Wavelog (10), CTY.DAT toujours en dernier ; les fournisseurs de priorité inférieure ne remplissent que les champs vides.
 3. Vérifiez date/heure UTC, fréquence en MHz, bande, mode et reports émis/reçus.
 4. Ajoutez si utile nom, QTH, locator, référence ou commentaire.
 5. Appuyez sur **Enter**. Le contact apparaît dans Recent QSOs.
