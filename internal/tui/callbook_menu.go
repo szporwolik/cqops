@@ -677,6 +677,7 @@ func (cm *CallbookMenu) View() tea.View {
 
 	if cm.logEnabled {
 		b.WriteString(padOrTrunc(cm.renderField(cmLogPriority, "  Priority:", &cm.logPriority, false), lineW))
+		b.WriteString("\n")
 	}
 
 	// --- QRZ.com ---
@@ -714,6 +715,7 @@ func (cm *CallbookMenu) View() tea.View {
 
 	if cm.callookEnabled {
 		b.WriteString(padOrTrunc(cm.renderField(cmCallookPriority, "  Priority:", &cm.callookPriority, false), lineW))
+		b.WriteString("\n")
 	}
 
 	// --- QRZ.RU ---
@@ -737,6 +739,7 @@ func (cm *CallbookMenu) View() tea.View {
 
 		if cm.wlEnabled {
 			b.WriteString(padOrTrunc(cm.renderField(cmWavelogPriority, "  Priority:", &cm.wlPriority, false), lineW))
+			b.WriteString("\n")
 		}
 	} // wlConfigured
 
