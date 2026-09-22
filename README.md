@@ -200,6 +200,14 @@ Full usage guide, workflows, and keyboard shortcuts are in the [documentation](h
 - [ftl/hamradio](https://github.com/ftl/hamradio) — Grid locator, distance math, DXCC prefix lookup (CTY.DAT)
 - [gen2brain/beeep](https://github.com/gen2brain/beeep) — Desktop notifications
 
+*Core libraries:*
+- [Bubble Tea v2](https://charm.land) + Bubbles + Lip Gloss — TUI framework and components
+- [modernc.org/sqlite](https://modernc.org/sqlite) — pure-Go embedded SQLite (no cgo)
+- [go.bug.st/serial](https://github.com/bugst/go-serial) — serial port (GPS NMEA, APRS KISS TNC)
+- [spf13/cobra](https://github.com/spf13/cobra) — command-line interface
+- [NimbleMarkets/ntcharts](https://github.com/NimbleMarkets/ntcharts) — terminal charts
+- [gopkg.in/yaml.v3](https://github.com/go-yaml/yaml) — configuration files
+
 ### Data & third-party services
 
 *Reference data (loaded and cached locally):*
