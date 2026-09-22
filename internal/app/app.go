@@ -1102,19 +1102,6 @@ func (a *App) retireDB(db *sql.DB) {
 	db.Close()
 }
 
-func (a *App) StationSummary() string {
-	s := a.Logbook.Station
-	parts := []string{}
-	if s.Callsign != "" {
-		parts = append(parts, s.Callsign)
-	}
-	if s.Grid != "" {
-		parts = append(parts, s.Grid)
-	}
-
-	return strings.Join(parts, " ")
-}
-
 // SetGPSGrid is called by the TUI model when GPS position updates. It also
 // refreshes the cached beacon grid, so APRS beacon workers follow GPS
 // movement without ever reading live config.

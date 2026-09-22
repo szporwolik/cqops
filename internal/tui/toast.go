@@ -141,24 +141,6 @@ func toastLevelStyle(level ToastLevel) lipgloss.Style {
 	return S.ToastInfo
 }
 
-func RenderToasts(toasts []Toast, width int) string {
-	if len(toasts) == 0 {
-		return ""
-	}
-	var lines []string
-	showCount := 5
-	if len(toasts) < showCount {
-		showCount = len(toasts)
-	}
-	for i := showCount - 1; i >= 0; i-- {
-		t := toasts[len(toasts)-1-i]
-		prefix := toastPrefix(t.Level)
-		msg := toastLevelStyle(t.Level).Render(t.Message)
-		lines = append(lines, prefix+" "+msg)
-	}
-	return lipgloss.JoinVertical(lipgloss.Left, lines...)
-}
-
 // RenderOverlay composites toast messages as a floating overlay in the
 // bottom-right corner of mainView.  Always computed fresh — toasts change
 // every few seconds and the overhead is negligible.

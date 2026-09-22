@@ -274,10 +274,6 @@ func (f *RigForm) FocusFirst() {
 	f.focusField()
 }
 
-func (f *RigForm) FlrigURL() string {
-	return "http://" + f.BackendHost.Value() + ":" + f.BackendPort.Value()
-}
-
 func (f *RigForm) SetValues(name, rig, antenna, power string) {
 	f.Name.SetValue(name)
 	f.Rig.SetValue(rig)

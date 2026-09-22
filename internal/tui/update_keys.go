@@ -534,7 +534,6 @@ func (m *Model) handleRotorKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.toasts.Info("Rotator: stopped")
 		m.rotor.targetAz = 0
 		m.rotor.targetEl = 0
-		m.rc.status = ""
 		client := m.rotor.client
 		return func() tea.Msg {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)

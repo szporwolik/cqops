@@ -132,18 +132,6 @@ func (c *ContestChooser) rebuildNames() {
 
 func (c *ContestChooser) Init() tea.Cmd { return nil }
 
-func (c *ContestChooser) formatDate(t string) string {
-	if t == "" {
-		return ""
-	}
-	// Parse ISO date and format as short date.
-	parsed, err := time.Parse("2006-01-02", t)
-	if err != nil {
-		return t
-	}
-	return parsed.Format("2006-01-02")
-}
-
 func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -616,7 +604,7 @@ func (c *ContestChooser) viewList() string {
 				dateStr := ""
 				if i > 0 {
 					ct := c.app.Config.Contests[c.ids[i]]
-					dateStr = c.formatDate(ct.Date)
+					dateStr = ct.Date
 				}
 
 				// Truncate/pad raw values before styling.

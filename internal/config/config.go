@@ -344,7 +344,6 @@ type Logbook struct {
 	ActiveOperator string         `yaml:"active_operator,omitempty"`
 	DatabasePath   string         `yaml:"database_path,omitempty"`
 	Station        Station        `yaml:"station"`
-	ADIF           ADIFConfig     `yaml:"adif,omitempty"`
 	Wavelog        *WavelogConfig `yaml:"wavelog,omitempty"`
 	APRS           *APRSConfig    `yaml:"aprs,omitempty"`
 }
@@ -454,10 +453,6 @@ type RigPreset struct {
 	WsjtxEnabled    bool   `yaml:"wsjtx_enabled,omitempty"`
 	WsjtxUDPHost    string `yaml:"wsjtx_udp_host,omitempty"`
 	WsjtxUDPPort    int    `yaml:"wsjtx_udp_port,omitempty"`
-}
-
-type ADIFConfig struct {
-	DefaultExportPath string `yaml:"default_export_path"`
 }
 
 type WavelogConfig struct {

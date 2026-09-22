@@ -17,23 +17,10 @@ type renderCache struct {
 	lastLayoutH  int
 	lastLayoutSc screenKind
 
-	// Bar caches — avoids rebuilding status/tabs/help on every frame.
-	// Status bar has a 1-second TTL because it contains the UTC clock.
-	status     string
-	statusSec  int
-	tabs       string
-	help       string
-	barSc      screenKind
-	barW       int
-	barOp      string // active operator ID; busts status cache on change
-	barLog     string // active logbook ID; busts status cache on change
-	barRig     string // active rig ID; busts status cache on change
-	barBackend string // rig backend (hamlib/flrig); busts status cache on change
-	barRigConn bool   // rig connection state; busts status cache on change
-	barTx      bool   // WSJT-X TX state; busts status cache on change
-	barTxMsg   string // WSJT-X TX message; busts status cache on change
-	barOnline  bool   // WSJT-X online state; busts status cache on change
-	barAPRS    bool   // APRS connection state; busts status cache on change
+	// Bar caches — tabs and help are cached via tabSig/helpSig below; the
+	// status bar is recomputed every frame for correctness.
+	tabs string
+	help string
 
 	// Partner view cache.
 	partnerView    string
@@ -80,12 +67,8 @@ type renderCache struct {
 	dxcDupeFetchContest string
 
 	// Worked panel summary cache (call + grid + DXCC statistics).
-	workedSummary           store.WorkedSummary
-	workedSummarySig        string
-	workedSummaryNeedFetch  bool
-	workedSummaryFetchCall  string
-	workedSummaryFetchGrid4 string
-	workedSummaryFetchDXCC  string
+	workedSummary    store.WorkedSummary
+	workedSummarySig string
 
 	// Logbook-wide counts (total QSOs, today's QSOs). Updated on tick
 	// and invalidated on QSO save / logbook switch / midnight.

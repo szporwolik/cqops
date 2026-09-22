@@ -233,14 +233,6 @@ func SubmodesFor(mode string) []string {
 	return result
 }
 
-func AllModes() []string {
-	result := make([]string, 0, len(modeSubmodes))
-	for m := range modeSubmodes {
-		result = append(result, m)
-	}
-	return result
-}
-
 // CycleModes returns the short list of main modes for quick PgUp/PgDn cycling.
 // Users can still type any valid mode manually; external software can set any mode.
 var cycleModes = []string{"SSB", "CW", "AM", "FM", "RTTY", "DIGITALVOICE"}

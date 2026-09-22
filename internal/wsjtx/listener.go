@@ -15,8 +15,7 @@ import (
 )
 
 type event struct {
-	Msg     interface{}
-	RawADIF string
+	Msg interface{}
 }
 
 type Listener struct {

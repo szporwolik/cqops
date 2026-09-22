@@ -30,7 +30,6 @@ func DefaultConfig() *Config {
 				ID:      defaultLogbookID,
 				Name:    "Default",
 				Station: Station{},
-				ADIF:    ADIFConfig{},
 			},
 		},
 		Rigs: map[string]RigPreset{

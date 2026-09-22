@@ -622,5 +622,4 @@ func (m *Model) addRefToQSO(r ref.Row) {
 // invalidateRefNamesCache marks the REF names line cache as dirty.
 func (m *Model) invalidateRefNamesCache() {
 	m.ref.refNamesDirty = true
-	m.rc.status = ""
 }

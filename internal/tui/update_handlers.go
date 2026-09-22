@@ -99,7 +99,6 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 		m.wsjtx.online = false
 		m.wsjtx.tx = false
 		m.wsjtx.txMsg = ""
-		m.rc.status = ""
 	}
 	// WL lookup timeout: if a lookup was dispatched >20s ago and hasn't
 	// completed, force wlLookupDone and clear the dispatch time to prevent
@@ -362,7 +361,6 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			// rig-state pushes can start.
 			radioCmd = m.ensureWavelogRadioCmd()
 		}
-		m.rc.status = ""
 		return true, radioCmd
 	case wlUploadResultMsg:
 		// The upload worker's database lease transferred with this result and
@@ -486,7 +484,6 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			m.toasts.Error("HTTP server: " + r.err.Error())
 			applog.Error("HTTP server: failed", "error", r.err)
 		}
-		m.rc.status = ""
 		return true, nil
 	case rigPollMsg:
 		return true, m.applyRigPoll(r)

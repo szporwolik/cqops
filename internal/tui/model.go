@@ -1143,7 +1143,7 @@ func (m *Model) View() tea.View {
 	// Status bar is a single line — always recomputed for correctness.
 	// Caching caused stale integration dots (DXC/HTTP/APRS) when the
 	// bar cache hit suppressed the status reset triggered by async handlers.
-	m.rc.status = m.renderStatusBar()
+	statusBar := m.renderStatusBar()
 	// Tab bar depends on partner data / call field / connectivity — cached.
 	m.rc.tabs = m.renderTabBar()
 
@@ -1153,7 +1153,7 @@ func (m *Model) View() tea.View {
 			mainParts = append(mainParts, s)
 		}
 	}
-	addRow(m.rc.status)
+	addRow(statusBar)
 	addRow(m.rc.tabs)
 
 	body := m.buildBodyForScreen(layout)

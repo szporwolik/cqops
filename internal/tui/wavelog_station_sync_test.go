@@ -219,7 +219,6 @@ func TestStationSyncCompletionPreservesContactExchanges(t *testing.T) {
 	m.fields[fieldExchSent].SetValue("599 007")
 	m.fields[fieldExchRcvd].SetValue("599 014")
 	// Stale station-derived rendering that the completion must refresh.
-	m.rc.status = "stale"
 	m.rc.pathSig = "stale"
 
 	gen := logbookSyncGen.Add(1)
@@ -238,9 +237,9 @@ func TestStationSyncCompletionPreservesContactExchanges(t *testing.T) {
 		t.Errorf("station not synced: %+v", lb.Station)
 	}
 	// …the station-dependent caches were invalidated…
-	if m.rc.pathSig != "" || m.rc.pathLine != "" || m.rc.status != "" {
-		t.Errorf("station-derived caches not invalidated: status=%q pathSig=%q pathLine=%q",
-			m.rc.status, m.rc.pathSig, m.rc.pathLine)
+	if m.rc.pathSig != "" || m.rc.pathLine != "" {
+		t.Errorf("station-derived caches not invalidated: pathSig=%q pathLine=%q",
+			m.rc.pathSig, m.rc.pathLine)
 	}
 	// …and the in-progress contact is untouched.
 	if got := m.fields[fieldCall].Value(); got != "SP9AAA" {

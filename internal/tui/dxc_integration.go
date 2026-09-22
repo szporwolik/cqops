@@ -226,7 +226,6 @@ func (m *Model) maybeDXC() tea.Cmd {
 		m.dxc.connecting = false
 		m.dxc.lastAttempt = time.Time{}
 		m.dxc.reconnectIdx = 0
-		m.rc.status = ""
 		if m.screen == screenDXC {
 			m.screen = screenQSO
 		}
@@ -245,7 +244,6 @@ func (m *Model) maybeDXC() tea.Cmd {
 		m.dxc.connecting = false
 		m.dxc.lastAttempt = time.Time{}
 		m.dxc.reconnectIdx = 0
-		m.rc.status = ""
 		if m.screen == screenDXC {
 			m.screen = screenQSO
 		}
@@ -269,7 +267,6 @@ func (m *Model) maybeDXC() tea.Cmd {
 					if !m.dxc.online {
 						m.dxc.online = true
 						m.dxc.reconnectIdx = 0
-						m.rc.status = ""
 						if m.dxc.connecting {
 							// First connect — the dxcStatusMsg handler
 							// reports the success toast.
@@ -282,7 +279,6 @@ func (m *Model) maybeDXC() tea.Cmd {
 				} else if m.dxc.online {
 					applog.Warn("DXC: connection lost — client will reconnect")
 					m.dxc.online = false
-					m.rc.status = ""
 				}
 			default:
 				break drainLoop
@@ -478,7 +474,6 @@ func (m *Model) handleDXCStatus(msg dxcStatusMsg) tea.Cmd {
 	if msg.online {
 		m.dxc.online = true
 		m.dxc.reconnectIdx = 0
-		m.rc.status = ""
 		applog.Info("DXC: connected OK")
 		m.toasts.Success("DXC: connected")
 		// Push DXC status to dashboard for footer attribution.
@@ -492,7 +487,6 @@ func (m *Model) handleDXCStatus(msg dxcStatusMsg) tea.Cmd {
 		return nil
 	}
 	m.dxc.online = false
-	m.rc.status = ""
 	// Redirect to QSO form if the user is viewing the DXC tab.
 	if m.screen == screenDXC {
 		m.screen = screenQSO
@@ -528,7 +522,6 @@ func (m *Model) resetDXC() {
 	m.dxc.connecting = false
 	m.dxc.reconnectIdx = 0
 	m.dxc.lastAttempt = time.Time{}
-	m.rc.status = ""
 }
 
 // dxcSpotLookupCmd searches the DXC spot database for the given callsign

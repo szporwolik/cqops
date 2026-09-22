@@ -1,7 +1,6 @@
 package qso
 
 import (
-	"math"
 	"strings"
 )
 
@@ -202,7 +201,3 @@ var allBands = func() []string {
 }()
 
 func AllBands() []string { return allBands }
-
-func FreqToHz(mhz float64) int64 {
-	return int64(math.Round(mhz * 1_000_000))
-}

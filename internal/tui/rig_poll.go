@@ -273,7 +273,6 @@ func (m *Model) applyRigPoll(r rigPollMsg) tea.Cmd {
 	if r.err != "" || !r.connected {
 		if m.rig.connected {
 			applog.Warn("rig: disconnected", "err", r.err)
-			m.rc.status = ""
 		}
 		if r.err != "" && !m.rig.connected {
 			if m.rig.connectAttempts == 0 {
@@ -289,7 +288,6 @@ func (m *Model) applyRigPoll(r rigPollMsg) tea.Cmd {
 		return nil
 	}
 	if !m.rig.connected {
-		m.rc.status = ""
 		// Connected — notify user once per session.
 		if !m.rig.vfoWarned {
 			m.rig.vfoWarned = true

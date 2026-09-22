@@ -545,13 +545,6 @@ func (le *LogbookEditor) goToPage(p int) {
 	le.table.SetCursor(0)
 }
 
-func (le *LogbookEditor) CursorPos() int {
-	if le.built {
-		return le.table.Cursor()
-	}
-	return 0
-}
-
 func (le *LogbookEditor) QSOCount() int { return len(le.qsos) }
 
 func (le *LogbookEditor) IsEditing() bool { return le.mode == edModeEdit }

@@ -46,7 +46,6 @@ func (m *Model) cycleLogbook() tea.Cmd {
 // switch itself (SwitchLogbook) already happened synchronously; this resets
 // per-logbook caches and re-fires lookups against the new database.
 func (m *Model) handleLogbookSwitched() tea.Cmd {
-	m.rc.status = ""
 	m.invalidatePartnerMapCache()
 	m.rc.logStatsSig = ""
 	m.rc.workedSummarySig = ""
@@ -139,10 +138,9 @@ func (m *Model) handleStationSyncDone(msg stationSyncDoneMsg) tea.Cmd {
 	}
 
 	// Station-dependent refreshes only — never contact state. The station
-	// identity/position changed, so cached status/partner/path rendering is
-	// stale, and APRS beacons and the dashboard must pick up the new
-	// station without waiting for their periodic ticks.
-	m.rc.status = ""
+	// identity/position changed, so cached partner/path rendering is stale,
+	// and APRS beacons and the dashboard must pick up the new station
+	// without waiting for their periodic ticks.
 	m.invalidatePartnerMapCache()
 	m.rc.pathSig = ""
 	m.rc.pathLine = ""
@@ -190,7 +188,6 @@ func (m *Model) cycleRig() tea.Cmd {
 	}
 	m.toasts.Success("Rig: " + config.RigDisplayName(&rp))
 	applog.Info("Rig cycled", "name", config.RigDisplayName(&rp))
-	m.rc.status = ""
 	m.invalidatePartnerMapCache()
 	m.rc.pathSig = ""
 	m.refreshRigClient()   // reconnect/disconnect for the new rig

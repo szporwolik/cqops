@@ -415,9 +415,6 @@ func TestApplyWSJTXStatus_StoresTxMessage(t *testing.T) {
 	if m.wsjtx.lastSeen.IsZero() {
 		t.Error("wsjtxLastSeen should be set")
 	}
-	if m.rc.status != "" {
-		t.Error("cachedStatus should be invalidated (empty)")
-	}
 }
 
 func TestApplyWSJTXStatus_EmptyTxMessage(t *testing.T) {
@@ -450,7 +447,6 @@ func TestWSJTXWatchdog_Expires(t *testing.T) {
 	if m.wsjtx.online && time.Since(m.wsjtx.lastSeen) > 15*time.Second {
 		m.wsjtx.online = false
 		m.wsjtx.txMsg = ""
-		m.rc.status = ""
 	}
 
 	if m.wsjtx.online {
@@ -458,9 +454,6 @@ func TestWSJTXWatchdog_Expires(t *testing.T) {
 	}
 	if m.wsjtx.txMsg != "" {
 		t.Error("watchdog should clear wsjtxTxMsg")
-	}
-	if m.rc.status != "" {
-		t.Error("watchdog should invalidate cachedStatus")
 	}
 }
 

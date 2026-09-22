@@ -18,7 +18,6 @@ type ParsedCallsign struct {
 	IsQRP                bool
 
 	// Filled by DXCC resolution (TUI layer).
-	OperatingDXCC      int
 	OperatingEntity    string
 	OperatingContinent string
 	OperatingCQZone    int
