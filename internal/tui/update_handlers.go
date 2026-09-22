@@ -371,7 +371,7 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 		// follow-up it is released immediately.
 		var reconcile tea.Cmd
 		if r.ok && r.changed {
-			reconcile = m.queueContactReconcile(r.db, r.url, r.key, r.logbook, r.qID, r.release)
+			reconcile = m.queueContactReconcile(r.db, r.url, r.key, r.logbook, r.qID, r.release, nil)
 			r.release = nil
 		}
 		// Remote acceptance without local id persistence is unresolved —

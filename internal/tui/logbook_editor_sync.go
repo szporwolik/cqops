@@ -147,6 +147,9 @@ func (m *Model) handleQSOSyncCompletion(em editorMsg) tea.Cmd {
 		// acknowledged (or reported) and no further PATCHes are queued.
 		// Release the chain database lease.
 		ctx.release()
+		if ctx.batch != nil {
+			m.completeSyncRetryBatch(ctx.batch, em)
+		}
 		return nil
 	}
 	delete(coord.queued, ctx.key)
@@ -221,6 +224,90 @@ func syncDirtyRow(db *sql.DB, url, key string, id int64) editorMsg {
 	return res
 }
 
+// queuePendingSyncPatches consumes a bulk pending-sync retry list result:
+// EVERY retry PATCH goes through the same per-contact coordinator as save
+// chains (keyed by logbook/contact/endpoint), so a retry can never run in
+// parallel with a form save or overwrite a newer edit — contacts whose save
+// chain is already in flight are covered by it and skipped. Each chain is
+// bound to a batch tracker whose summary toast fires when the last chain
+// drains.
+func (m *Model) queuePendingSyncPatches(em editorMsg) tea.Cmd {
+	logbook := em.lbID
+	if logbook == "" {
+		logbook = m.App.LogbookName
+	}
+	if m.sync == nil {
+		m.sync = &contactSyncCoord{}
+	}
+	if m.sync.inFlight == nil {
+		m.sync.inFlight = make(map[contactSyncKey]*contactSyncContext)
+	}
+	if m.sync.queued == nil {
+		m.sync.queued = make(map[contactSyncKey]bool)
+	}
+	release := em.wlRetryRelease
+	batch := &syncRetryBatch{remaining: make(map[int64]bool), lbID: logbook}
+	var cmds []tea.Cmd
+	for i, id := range em.wlRetryIDs {
+		syncKey := contactSyncKey{logbook: logbook, localID: id, url: em.wlRetryURL}
+		if m.sync.inFlight[syncKey] != nil {
+			// A save chain is already pushing this contact — its follow-up
+			// carries the newest revision; the retry is covered.
+			continue
+		}
+		var l func()
+		if i == 0 {
+			l = release
+			release = nil
+		}
+		batch.remaining[id] = true
+		cmds = append(cmds, m.queueContactReconcile(em.wlRetryDB, em.wlRetryURL, em.wlRetryKey, logbook, id, l, batch))
+	}
+	if release != nil {
+		release()
+	}
+	if len(cmds) == 0 {
+		return nil
+	}
+	return tea.Batch(cmds...)
+}
+
+// completeSyncRetryBatch counts a drained retry chain and reports the batch
+// summary when the last contact finished. A PATCH the server accepted but
+// whose pending flag could not be acknowledged locally counts as unconfirmed
+// — the contact stays dirty and retryable, and the summary must never claim
+// success ("no pending changes") for it.
+func (m *Model) completeSyncRetryBatch(b *syncRetryBatch, em editorMsg) {
+	if b == nil || !b.remaining[em.saved] {
+		return
+	}
+	delete(b.remaining, em.saved)
+	switch {
+	case em.wlSyncOK || em.wlSyncGone:
+		b.synced++
+	case em.wlSyncErr != "":
+		b.failed++
+	case em.wlSyncIncomplete:
+		b.incomplete++
+	}
+	if len(b.remaining) > 0 {
+		return
+	}
+	switch {
+	case b.failed > 0 && b.incomplete > 0:
+		m.toasts.Warn(fmt.Sprintf("Wavelog: pending sync — %d synced, %d failed, %d unconfirmed", b.synced, b.failed, b.incomplete))
+	case b.failed > 0:
+		m.toasts.Warn(fmt.Sprintf("Wavelog: pending sync — %d synced, %d failed", b.synced, b.failed))
+	case b.incomplete > 0:
+		m.toasts.Warn(fmt.Sprintf("Wavelog: pending sync — %d synced, %d unconfirmed", b.synced, b.incomplete))
+	case b.synced > 0:
+		m.toasts.Success(fmt.Sprintf("Wavelog: pending sync — %d contacts synced", b.synced))
+	default:
+		m.toasts.Success("Wavelog: no pending changes")
+	}
+	m.needRefresh = true
+}
+
 // handleEditorUploadCompletion consumes an editor upload completion
 // GLOBALLY: the follow-up chains — the reconciliation PATCH (the row changed
 // while the upload was on the wire) and the id-attach retry (the server
@@ -244,7 +331,7 @@ func (m *Model) handleEditorUploadCompletion(em editorMsg) tea.Cmd {
 	release := em.wlUpRelease
 	var cmds []tea.Cmd
 	if em.wlUpChanged && em.wlUpDB != nil {
-		cmds = append(cmds, m.queueContactReconcile(em.wlUpDB, em.wlUpURL, em.wlUpKey, logbook, em.wlQSOID, release))
+		cmds = append(cmds, m.queueContactReconcile(em.wlUpDB, em.wlUpURL, em.wlUpKey, logbook, em.wlQSOID, release, nil))
 		release = nil
 	}
 	if em.wlUpUnresolved && em.wlUpDB != nil {
@@ -258,7 +345,7 @@ func (m *Model) handleEditorUploadCompletion(em editorMsg) tea.Cmd {
 				l = release
 				release = nil
 			}
-			cmds = append(cmds, m.queueContactReconcile(em.wlUpDB, em.wlUpURL, em.wlUpKey, logbook, id, l))
+			cmds = append(cmds, m.queueContactReconcile(em.wlUpDB, em.wlUpURL, em.wlUpKey, logbook, id, l, nil))
 		}
 	}
 	if release != nil {
@@ -286,7 +373,10 @@ func (m *Model) handleEditorUploadCompletion(em editorMsg) tea.Cmd {
 // interval. When the chain is queued behind an in-flight one (which holds
 // its own lease) or the request is invalid, the transferred lease is
 // released immediately.
-func (m *Model) queueContactReconcile(db *sql.DB, url, key, logbook string, localID int64, release func()) tea.Cmd {
+//
+// batch, when non-nil, binds this chain to a bulk pending-sync retry
+// tracker: the chain's drained completion counts toward the batch summary.
+func (m *Model) queueContactReconcile(db *sql.DB, url, key, logbook string, localID int64, release func(), batch *syncRetryBatch) tea.Cmd {
 	if db == nil || url == "" || key == "" || localID == 0 {
 		if release != nil {
 			release()
@@ -327,6 +417,7 @@ func (m *Model) queueContactReconcile(db *sql.DB, url, key, logbook string, loca
 		apiKey:  key,
 		gen:     0,
 		release: chainRelease,
+		batch:   batch,
 	}
 	m.sync.inFlight[syncKey] = ctx
 	return m.patchLatestRevision(ctx)

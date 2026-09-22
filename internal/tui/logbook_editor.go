@@ -146,6 +146,24 @@ type contactSyncContext struct {
 	apiKey  string
 	gen     uint64
 	release func()
+	// batch binds a bulk pending-sync retry chain to its summary tracker:
+	// every drained completion counts, and the last one reports the batch
+	// result once.
+	batch *syncRetryBatch
+}
+
+// syncRetryBatch tracks one bulk pending-sync retry dispatch across its
+// per-contact chains: the remaining contact set, the synced/failed and
+// unconfirmed tallies, and the originating logbook identity. Unconfirmed
+// marks PATCHes the server accepted but whose local pending-flag
+// acknowledgement could not be persisted — the contact stays pending and
+// retryable.
+type syncRetryBatch struct {
+	remaining  map[int64]bool
+	synced     int
+	failed     int
+	incomplete int
+	lbID       string
 }
 
 type LogbookEditor struct {

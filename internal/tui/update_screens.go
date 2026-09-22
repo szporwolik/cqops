@@ -837,19 +837,25 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 			}
 		}
 		if em.saved != 0 {
-			switch {
-			case em.wlSyncOK:
-				m.toasts.Success(fmt.Sprintf("QSO %s from %s saved · Wavelog updated", em.saveCall, em.saveDate))
-			case em.wlSyncGone:
-				m.toasts.Warn(fmt.Sprintf("QSO %s from %s saved locally — remote copy was deleted", em.saveCall, em.saveDate))
-			case em.wlSyncIncomplete:
-				m.toasts.Warn(fmt.Sprintf("QSO %s from %s saved — Wavelog updated, local sync status pending", em.saveCall, em.saveDate))
-			case em.wlSyncErr != "":
-				m.toasts.Error(fmt.Sprintf("QSO %s from %s saved locally — Wavelog: %s", em.saveCall, em.saveDate, em.wlSyncErr))
-			case em.wlSyncPending:
-				m.toasts.Warn(fmt.Sprintf("QSO %s from %s saved locally — Wavelog sync deferred (offline)", em.saveCall, em.saveDate))
-			default:
-				m.toasts.Success(fmt.Sprintf("QSO %s from %s saved", em.saveCall, em.saveDate))
+			if em.syncCtx != nil && em.syncCtx.batch != nil {
+				// Bulk pending-sync retry completion — the batch summary
+				// toast fires globally when the last chain drains; do not
+				// toast or refresh per contact.
+			} else {
+				switch {
+				case em.wlSyncOK:
+					m.toasts.Success(fmt.Sprintf("QSO %s from %s saved · Wavelog updated", em.saveCall, em.saveDate))
+				case em.wlSyncGone:
+					m.toasts.Warn(fmt.Sprintf("QSO %s from %s saved locally — remote copy was deleted", em.saveCall, em.saveDate))
+				case em.wlSyncIncomplete:
+					m.toasts.Warn(fmt.Sprintf("QSO %s from %s saved — Wavelog updated, local sync status pending", em.saveCall, em.saveDate))
+				case em.wlSyncErr != "":
+					m.toasts.Error(fmt.Sprintf("QSO %s from %s saved locally — Wavelog: %s", em.saveCall, em.saveDate, em.wlSyncErr))
+				case em.wlSyncPending:
+					m.toasts.Warn(fmt.Sprintf("QSO %s from %s saved locally — Wavelog sync deferred (offline)", em.saveCall, em.saveDate))
+				default:
+					m.toasts.Success(fmt.Sprintf("QSO %s from %s saved", em.saveCall, em.saveDate))
+				}
 			}
 			m.invalidateDashboardFlags()
 			refreshCmd = m.refreshQSOS()
@@ -892,18 +898,7 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 				m.ui.logbookEditor.UpdateWLStatus(em.wlQSOID, false, 0)
 			}
 		}
-		if em.wlRetryDone {
-			switch {
-			case em.wlRetryFailed > 0:
-				m.toasts.Warn(fmt.Sprintf("Wavelog: pending sync — %d synced, %d failed", em.wlRetryCount, em.wlRetryFailed))
-			case em.wlRetryCount > 0:
-				m.toasts.Success(fmt.Sprintf("Wavelog: pending sync — %d contacts synced", em.wlRetryCount))
-			default:
-				m.toasts.Success("Wavelog: no pending changes")
-			}
-			m.ui.logbookEditor.needsReload = true
-		}
-		if em.wlRetryErr != "" && !em.wlRetryDone {
+		if em.wlRetryErr != "" {
 			m.toasts.Error("Wavelog: " + em.wlRetryErr)
 		}
 		if m.ui.logbookEditor.wlSkipped > 0 {

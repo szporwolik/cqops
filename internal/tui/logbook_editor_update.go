@@ -180,13 +180,16 @@ type editorMsg struct {
 	// that never delivered a terminal message — it must never be treated as
 	// an independent success; the editor finalizes honestly instead.
 	dlChannelClosed bool
-	// wlRetry* carry the bulk pending-sync retry result: the queue is
-	// rebuilt from the database on every trigger and each contact is
-	// PATCHed sequentially by the retry worker.
-	wlRetryDone   bool
-	wlRetryCount  int
-	wlRetryFailed int
-	wlRetryErr    string
+	// wlRetry* carry the bulk pending-sync retry: the worker rebuilds the
+	// queue (dirty rows) from the database and returns the contact ids; the
+	// model then queues a serialized PATCH per contact through the shared
+	// per-contact coordinator — retries never bypass save serialization.
+	wlRetryIDs     []int64
+	wlRetryDB      *sql.DB
+	wlRetryURL     string
+	wlRetryKey     string
+	wlRetryRelease func()
+	wlRetryErr     string
 }
 
 func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -810,16 +813,12 @@ func (le *LogbookEditor) handleNormalizeResult(msg editorMsg) (tea.Model, tea.Cm
 // pendingSyncBatchLimit caps how many dirty rows one retry trigger processes.
 const pendingSyncBatchLimit = 50
 
-// pendingSyncRetrySpacing is the pause between two sequential PATCHes of the
-// bulk pending-sync retry — limited concurrency (one at a time) plus a small
-// gap so the remote endpoint is never hammered.
-const pendingSyncRetrySpacing = 200 * time.Millisecond
-
-// retryPendingSync launches the bulk pending-sync retry: the queue is
-// REBUILT from the database on every trigger (rows with a remote id and a
-// pending local edit — failed PATCHes and offline saves survive restarts),
-// and each contact is PATCHed sequentially with a spacing between attempts.
-// A single worker retries at most pendingSyncBatchLimit rows per trigger.
+// retryPendingSync launches the bulk pending-sync retry: the worker rebuilds
+// the queue from the database (rows with a remote id and a pending local
+// edit — failed PATCHes and offline saves survive restarts) and returns the
+// contact ids. The model then routes EVERY contact through the shared
+// per-contact coordinator (queuePendingSyncPatches), so a retry can never
+// run in parallel with a form save or overwrite a newer edit.
 func (le *LogbookEditor) retryPendingSync() tea.Cmd {
 	db := le.db
 	url, key := le.wlURL, le.wlKey
@@ -827,30 +826,20 @@ func (le *LogbookEditor) retryPendingSync() tea.Cmd {
 	lbID := le.logbookID
 	release := le.dbLease(db)
 	return func() tea.Msg {
-		defer release()
 		rows, err := store.ListDirtyQSOs(db, pendingSyncBatchLimit)
 		if err != nil {
+			if release != nil {
+				release()
+			}
 			applog.Error("Wavelog: pending-sync retry cannot list rows", "error", err)
 			return editorMsg{wlRetryErr: err.Error(), gen: gen, lbID: lbID}
 		}
-		synced, failed := 0, 0
-		var lastErr string
-		for i, q := range rows {
-			if i > 0 {
-				time.Sleep(pendingSyncRetrySpacing)
-			}
-			res := syncDirtyRow(db, url, key, q.ID)
-			switch {
-			case res.wlSyncOK || res.wlSyncGone:
-				synced++
-			case res.wlSyncErr != "":
-				failed++
-				lastErr = res.wlSyncErr
-			}
+		var ids []int64
+		for _, q := range rows {
+			ids = append(ids, q.ID)
 		}
-		applog.InfoDetail("Wavelog: pending-sync retry done",
-			fmt.Sprintf("synced=%d failed=%d", synced, failed))
-		return editorMsg{wlRetryDone: true, wlRetryCount: synced, wlRetryFailed: failed, wlRetryErr: lastErr, gen: gen, lbID: lbID}
+		applog.InfoDetail("Wavelog: pending-sync retry list", fmt.Sprintf("contacts=%d", len(ids)))
+		return editorMsg{wlRetryIDs: ids, wlRetryDB: db, wlRetryURL: url, wlRetryKey: key, wlRetryRelease: release, gen: gen, lbID: lbID}
 	}
 }
 

@@ -926,6 +926,14 @@ func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = tea.Batch(cmd, m.handleEditorUploadCompletion(em))
 	}
 
+	// Bulk pending-sync retry list results queue a serialized PATCH per
+	// contact through the shared per-contact coordinator — globally, against
+	// the originating logbook/database/endpoint — so retries never bypass
+	// save serialization.
+	if em, ok := msg.(editorMsg); ok && len(em.wlRetryIDs) > 0 {
+		cmd = tea.Batch(cmd, m.queuePendingSyncPatches(em))
+	}
+
 	// Preparation and normalization workers transfer their database lease
 	// through their results, and their follow-ups (the batch upload, the
 	// post-normalize upload) run inside the editor screen handler. Results

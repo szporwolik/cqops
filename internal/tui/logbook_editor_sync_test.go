@@ -2459,8 +2459,8 @@ func TestEditSaveKeepsWavelogIDAssignedDuringUpload(t *testing.T) {
 // TestPendingSyncRetrySyncsDirtyRows verifies the bulk pending-sync retry:
 // the queue is rebuilt from the DATABASE (rows with a remote id and a
 // pending local edit — the backlog of failed PATCHes and offline saves
-// survives restarts), and each contact is PATCHed sequentially by the retry
-// worker.
+// survives restarts), and EVERY contact is PATCHed through the shared
+// per-contact coordinator.
 func TestPendingSyncRetrySyncsDirtyRows(t *testing.T) {
 	var mu sync.Mutex
 	var patched []string
@@ -2481,46 +2481,97 @@ func TestPendingSyncRetrySyncsDirtyRows(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	le := newTestEditorWithDB(t, srv.URL, "wl2_test", "1", "Szymon", "KO00ca")
+	m := newLifecycleTestModel(t)
+	wl := m.App.Logbook.Wavelog
+	wl.URL = srv.URL
+	wl.APIKey = "wl2_test"
+	wl.Enabled = true
+	wl.StationProfileID = "1"
+	m.initLogbookEditor()
+	le := m.ui.logbookEditor
 
 	q1 := &qso.QSO{Call: "SP9AAA", Band: "20m", Mode: "SSB", QSODate: "20240501",
 		TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", Comment: "edit one", WavelogID: 42}
-	id1 := insertTestQSO(t, le.db, q1)
+	id1 := insertTestQSO(t, m.App.DB, q1)
 	q2 := &qso.QSO{Call: "SP9BBB", Band: "40m", Mode: "CW", QSODate: "20240502",
 		TimeOn: "130000", RSTSent: "599", RSTRcvd: "579", Comment: "edit two", WavelogID: 43}
-	id2 := insertTestQSO(t, le.db, q2)
+	id2 := insertTestQSO(t, m.App.DB, q2)
 	// A clean synced row must not be PATCHed.
-	insertTestQSO(t, le.db, &qso.QSO{Call: "SP9CCC", Band: "20m", Mode: "SSB",
+	insertTestQSO(t, m.App.DB, &qso.QSO{Call: "SP9CCC", Band: "20m", Mode: "SSB",
 		QSODate: "20240503", TimeOn: "140000", RSTSent: "59", RSTRcvd: "59", WavelogID: 44})
 
-	if err := store.SetWavelogDirty(le.db, id1, true); err != nil {
+	if err := store.SetWavelogDirty(m.App.DB, id1, true); err != nil {
 		t.Fatalf("SetWavelogDirty(1): %v", err)
 	}
-	if err := store.SetWavelogDirty(le.db, id2, true); err != nil {
+	if err := store.SetWavelogDirty(m.App.DB, id2, true); err != nil {
 		t.Fatalf("SetWavelogDirty(2): %v", err)
 	}
 
-	em, ok := execCmd(le.retryPendingSync()).(editorMsg)
-	if !ok || !em.wlRetryDone {
-		t.Fatalf("expected the retry result, got %#v", em)
+	listEm, ok := execCmd(le.retryPendingSync()).(editorMsg)
+	if !ok || len(listEm.wlRetryIDs) != 2 {
+		t.Fatalf("retry list = %#v, want 2 contact ids", listEm)
 	}
-	if em.wlRetryCount != 2 || em.wlRetryFailed != 0 {
-		t.Fatalf("retry = synced:%d failed:%d, want 2/0 (err=%q)", em.wlRetryCount, em.wlRetryFailed, em.wlRetryErr)
+
+	// The model routes every contact through the shared coordinator.
+	upd, c := m.Update(listEm)
+	m = upd.(*Model)
+	if c == nil {
+		t.Fatal("the retry PATCHes were not queued")
 	}
+	var results []editorMsg
+	var walk func(cmd tea.Cmd)
+	walk = func(cmd tea.Cmd) {
+		msg := execCmd(cmd)
+		switch v := msg.(type) {
+		case tea.Cmd:
+			walk(v) // a command returned another command (reconcile → PATCH worker)
+		case editorMsg:
+			if v.wlSyncFollowUp {
+				results = append(results, v)
+			}
+		case tea.BatchMsg:
+			for _, nested := range v {
+				walk(nested)
+			}
+		}
+	}
+	batch, isBatch := execCmd(c).(tea.BatchMsg)
+	if isBatch {
+		for _, sub := range batch {
+			walk(sub)
+		}
+	} else {
+		walk(c)
+	}
+	if len(results) != 2 {
+		t.Fatalf("got %d PATCH completions, want 2", len(results))
+	}
+	for _, r := range results {
+		if !r.wlSyncOK && !r.wlSyncGone {
+			t.Fatalf("retry PATCH failed: ok=%v err=%q", r.wlSyncOK, r.wlSyncErr)
+		}
+		_ = m.handleQSOSyncCompletion(r)
+	}
+
 	mu.Lock()
 	got := append([]string(nil), patched...)
 	mu.Unlock()
 	if len(got) != 2 {
 		t.Fatalf("server received %d PATCHes: %v, want 2", len(got), got)
 	}
-	if got[0] != "SP9BBB|edit two" && got[1] != "SP9BBB|edit two" {
-		t.Errorf("PATCHes = %v, want SP9BBB|edit two present", got)
-	}
-	if got[0] != "SP9AAA|edit one" && got[1] != "SP9AAA|edit one" {
-		t.Errorf("PATCHes = %v, want SP9AAA|edit one present", got)
+	for _, want := range []string{"SP9AAA|edit one", "SP9BBB|edit two"} {
+		found := false
+		for _, p := range got {
+			if p == want {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("PATCHes = %v, want %s present", got, want)
+		}
 	}
 	for _, id := range []int64{id1, id2} {
-		stored, err := store.GetQSOByID(le.db, id)
+		stored, err := store.GetQSOByID(m.App.DB, id)
 		if err != nil {
 			t.Fatalf("GetQSOByID(%d): %v", id, err)
 		}
@@ -2530,6 +2581,282 @@ func TestPendingSyncRetrySyncsDirtyRows(t *testing.T) {
 		if stored.WavelogID == 0 {
 			t.Errorf("row %d lost its remote id", id)
 		}
+	}
+}
+
+// TestPendingSyncRetrySerializesWithSave reproduces the reported overwrite:
+// the retry used to PATCH outside the per-contact coordinator, so a save
+// made while the retry was on the wire could complete first and the delayed
+// retry then overwrote the server with the older content (remote=old,
+// local=new, dirty=false). The retry must go through the SAME coordinator —
+// the save queues behind it and its follow-up pushes the newest revision.
+func TestPendingSyncRetrySerializesWithSave(t *testing.T) {
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	var mu sync.Mutex
+	var applied []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			http.NotFound(w, r)
+			return
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode patch body: %v", err)
+		}
+		mu.Lock()
+		applied = append(applied, fmt.Sprintf("%v", body["comment"]))
+		first := len(applied) == 1
+		mu.Unlock()
+		if first {
+			close(firstStarted)
+			<-releaseFirst
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"data": remoteQSODoc(42)})
+	}))
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	wl := m.App.Logbook.Wavelog
+	wl.URL = srv.URL
+	wl.APIKey = "wl2_test"
+	wl.Enabled = true
+	wl.StationProfileID = "1"
+	m.initLogbookEditor()
+	le := m.ui.logbookEditor
+
+	q := &qso.QSO{Call: "SP9AAA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+		TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", Comment: "old", WavelogID: 42}
+	id := insertTestQSO(t, m.App.DB, q)
+	if err := store.SetWavelogDirty(m.App.DB, id, true); err != nil {
+		t.Fatalf("SetWavelogDirty: %v", err)
+	}
+
+	listEm := execCmd(le.retryPendingSync()).(editorMsg)
+	if len(listEm.wlRetryIDs) != 1 {
+		t.Fatalf("retry list = %v, want 1 contact", listEm.wlRetryIDs)
+	}
+	upd, c := m.Update(listEm)
+	m = upd.(*Model)
+	if c == nil {
+		t.Fatal("the retry PATCH was not queued")
+	}
+	// With a single contact, tea.Batch returns the worker command itself
+	// (queueContactReconcile dispatches synchronously during Update).
+	var workerCmd tea.Cmd
+	switch v := any(c).(type) {
+	case tea.Cmd:
+		workerCmd = v
+	case tea.BatchMsg:
+		if len(v) == 1 {
+			workerCmd = v[0]
+		}
+	}
+	if workerCmd == nil {
+		t.Fatalf("expected the PATCH worker command, got %T", c)
+	}
+	retryCh := make(chan editorMsg, 1)
+	go func() { retryCh <- execCmd(workerCmd).(editorMsg) }()
+
+	select {
+	case <-firstStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("retry PATCH never started")
+	}
+
+	// The operator saves a NEWER edit while the retry PATCH is in flight —
+	// the save must queue behind the retry on the shared coordinator.
+	row, err := store.GetQSOByID(m.App.DB, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	le.editing = row
+	le.fillEditForm(row)
+	le.fields[qefComment].SetValue("new")
+	saveEm := execCmd(le.doSave()).(editorMsg)
+	if saveEm.err != nil {
+		t.Fatalf("save failed: %v", saveEm.err)
+	}
+	if !saveEm.wlSyncPending {
+		t.Fatal("the save must queue behind the in-flight retry PATCH")
+	}
+
+	close(releaseFirst)
+	retryEm := <-retryCh
+	if !retryEm.wlSyncOK {
+		t.Fatalf("retry PATCH: ok=%v err=%q", retryEm.wlSyncOK, retryEm.wlSyncErr)
+	}
+
+	// The queued save follow-up must now push the newest revision.
+	followUp := m.handleQSOSyncCompletion(retryEm)
+	if followUp == nil {
+		t.Fatal("the queued save follow-up was not dispatched")
+	}
+	followEm, ok := execCmd(followUp).(editorMsg)
+	if !ok || !followEm.wlSyncOK {
+		t.Fatalf("follow-up PATCH: ok=%v err=%q", followEm.wlSyncOK, followEm.wlSyncErr)
+	}
+	_ = m.handleQSOSyncCompletion(followEm)
+
+	mu.Lock()
+	got := append([]string(nil), applied...)
+	mu.Unlock()
+	if len(got) != 2 || got[0] != "old" || got[1] != "new" {
+		t.Fatalf("server PATCHes = %v, want [old new] — the delayed retry must never overwrite the newer edit", got)
+	}
+	stored, err := store.GetQSOByID(m.App.DB, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID after chain: %v", err)
+	}
+	if stored.Comment != "new" {
+		t.Errorf("local comment = %q, want new", stored.Comment)
+	}
+	if stored.WavelogDirty {
+		t.Error("row should be clean after the follow-up ack")
+	}
+}
+
+// TestPendingSyncRetryIncompleteAckIsReported reproduces the reported bug:
+// the server accepts the PATCH but SQLite rejects the local pending-flag
+// acknowledgement. The completion is neither synced, failed, nor errored —
+// the old aggregation fell through to "no pending changes" even though the
+// contact is still pending. The batch must count it as unconfirmed, warn
+// instead of claiming success, and keep the row dirty so Alt+P can retry it.
+func TestPendingSyncRetryIncompleteAckIsReported(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"data": remoteQSODoc(42)})
+	}))
+	defer srv.Close()
+
+	m := newLifecycleTestModel(t)
+	wl := m.App.Logbook.Wavelog
+	wl.URL = srv.URL
+	wl.APIKey = "wl2_test"
+	wl.Enabled = true
+	wl.StationProfileID = "1"
+	m.initLogbookEditor()
+	le := m.ui.logbookEditor
+
+	q := &qso.QSO{Call: "SP9AAA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+		TimeOn: "120000", RSTSent: "59", RSTRcvd: "59", Comment: "pending ack", WavelogID: 42}
+	id := insertTestQSO(t, m.App.DB, q)
+	if err := store.SetWavelogDirty(m.App.DB, id, true); err != nil {
+		t.Fatalf("SetWavelogDirty: %v", err)
+	}
+
+	// Block the pending-flag acknowledgement: the server accepted the PATCH,
+	// but the local dirty clear fails (e.g. a transient SQLite write error).
+	if _, err := m.App.DB.Exec(`
+		CREATE TRIGGER block_pending_ack
+		BEFORE UPDATE OF wavelog_dirty ON qsos
+		WHEN NEW.wavelog_dirty = 0
+		BEGIN
+			SELECT RAISE(ABORT, 'blocked');
+		END`); err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+
+	listEm := execCmd(le.retryPendingSync()).(editorMsg)
+	if len(listEm.wlRetryIDs) != 1 {
+		t.Fatalf("retry list = %v, want 1 contact", listEm.wlRetryIDs)
+	}
+	upd, c := m.Update(listEm)
+	m = upd.(*Model)
+	if c == nil {
+		t.Fatal("the retry PATCH was not queued")
+	}
+
+	// Run the dispatched command(s) recursively — the worker may be the
+	// command itself or nested inside a tea.BatchMsg.
+	var runAll func(tea.Cmd) []editorMsg
+	runAll = func(cmd tea.Cmd) []editorMsg {
+		var out []editorMsg
+		switch v := any(execCmd(cmd)).(type) {
+		case tea.Cmd:
+			out = append(out, runAll(v)...)
+		case editorMsg:
+			if v.wlSyncFollowUp {
+				out = append(out, v)
+			}
+		case tea.BatchMsg:
+			for _, nested := range v {
+				out = append(out, runAll(nested)...)
+			}
+		}
+		return out
+	}
+	completions := runAll(c)
+	if len(completions) != 1 {
+		t.Fatalf("got %d PATCH completions, want 1", len(completions))
+	}
+	workerEm := completions[0]
+	if !workerEm.wlSyncIncomplete {
+		t.Fatalf("PATCH completion: incomplete=%v ok=%v err=%q — the blocked ack must be incomplete",
+			workerEm.wlSyncIncomplete, workerEm.wlSyncOK, workerEm.wlSyncErr)
+	}
+	if followUp := m.handleQSOSyncCompletion(workerEm); followUp != nil {
+		t.Fatalf("drained chain returned a follow-up, got %T", followUp)
+	}
+
+	m.toasts.mu.Lock()
+	toasts := append([]Toast(nil), m.toasts.items...)
+	m.toasts.mu.Unlock()
+	var warned bool
+	for _, toast := range toasts {
+		if toast.Level == ToastWarning && strings.Contains(toast.Message, "unconfirmed") {
+			warned = true
+		}
+		if toast.Message == "Wavelog: no pending changes" {
+			t.Fatal("the incomplete acknowledgement must never be reported as no pending changes")
+		}
+	}
+	if !warned {
+		t.Fatalf("expected an unconfirmed warning toast, got %#v", toasts)
+	}
+
+	// The row must stay pending — the retry entry point still sees it.
+	stored, err := store.GetQSOByID(m.App.DB, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if !stored.WavelogDirty {
+		t.Fatal("row must stay dirty after the failed acknowledgement — retryability lost")
+	}
+
+	// Remove the blocker: the next Alt+P retry must be able to clear it.
+	if _, err := m.App.DB.Exec(`DROP TRIGGER block_pending_ack`); err != nil {
+		t.Fatalf("drop trigger: %v", err)
+	}
+	listEm2 := execCmd(le.retryPendingSync()).(editorMsg)
+	if len(listEm2.wlRetryIDs) != 1 {
+		t.Fatalf("second retry list = %v, want the still-pending contact", listEm2.wlRetryIDs)
+	}
+	upd, c2 := m.Update(listEm2)
+	m = upd.(*Model)
+	if c2 == nil {
+		t.Fatal("the second retry PATCH was not queued")
+	}
+	completions2 := runAll(c2)
+	if len(completions2) != 1 {
+		t.Fatalf("second retry: got %d PATCH completions, want 1", len(completions2))
+	}
+	workerEm2 := completions2[0]
+	if !workerEm2.wlSyncOK {
+		t.Fatalf("second retry PATCH: ok=%v err=%q", workerEm2.wlSyncOK, workerEm2.wlSyncErr)
+	}
+	_ = m.handleQSOSyncCompletion(workerEm2)
+	stored, err = store.GetQSOByID(m.App.DB, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID after retry: %v", err)
+	}
+	if stored.WavelogDirty {
+		t.Error("row should be clean after the retried acknowledgement")
 	}
 }
 
