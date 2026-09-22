@@ -587,55 +587,6 @@ func IsDuplicateQSO(db *sql.DB, call, band, mode, qsoDate string) (bool, *DupeCh
 	return true, &r
 }
 
-// WorkedCallsOnBandDate returns a set of (call,mode) pairs for QSOs
-// logged on the given band and date. Used by the DXC path line to mark
-// already-worked spots as dupes.
-func WorkedCallsOnBandDate(db *sql.DB, band, qsoDate string) (map[string]bool, error) {
-	rows, err := db.Query(
-		`SELECT DISTINCT call, mode FROM qsos WHERE band = ? AND qso_date = ?`,
-		band, qsoDate,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	worked := make(map[string]bool)
-	for rows.Next() {
-		var call, mode string
-		if err := rows.Scan(&call, &mode); err != nil {
-			continue
-		}
-		// Key: normalized call|mode so spot-mode (USB) matches logged-mode (SSB).
-		worked[qso.NormalizeCall(call)+"|"+qso.NormalizeRigMode(mode)] = true
-	}
-	return worked, rows.Err()
-}
-
-// WorkedCallsInContest returns a set of (call,mode) pairs already logged
-// on the given band within a specific contest (48h+ events span multiple
-// dates, so the date filter from WorkedCallsOnBandDate is insufficient).
-func WorkedCallsInContest(db *sql.DB, contestID, band string) (map[string]bool, error) {
-	rows, err := db.Query(
-		`SELECT DISTINCT call, mode FROM qsos WHERE (contest_id = ? OR contest_adif_id = ?) AND band = ?`,
-		contestID, contestID, band,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	worked := make(map[string]bool)
-	for rows.Next() {
-		var call, mode string
-		if err := rows.Scan(&call, &mode); err != nil {
-			continue
-		}
-		worked[qso.NormalizeCall(call)+"|"+qso.NormalizeRigMode(mode)] = true
-	}
-	return worked, rows.Err()
-}
-
 // DXCDupeSet returns a set of (call,band,mode) triples for QSOs that
 // mark DXC spots as dupes. Outside contests the scope is today's date;
 // inside contests it spans the entire contest (48h+). Key format is
@@ -762,10 +713,11 @@ func ListUnsentQSOs(db *sql.DB, limit int) ([]qso.QSO, error) {
 
 // CountDirtyQSOs returns the number of QSOs with a remote id AND a pending
 // local edit that never reached Wavelog (failed PATCH, offline save) — the
-// bulk "retry pending sync" backlog.
+// bulk "retry pending sync" backlog. Index-only via the partial
+// idx_qsos_dirty index.
 func CountDirtyQSOs(db *sql.DB) (int, error) {
 	var n int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE COALESCE(wavelog_id, 0) > 0 AND COALESCE(wavelog_dirty, 0) = 1`).Scan(&n); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE wavelog_id > 0 AND wavelog_dirty = 1`).Scan(&n); err != nil {
 		return 0, fmt.Errorf("count dirty qsos: %w", err)
 	}
 	return n, nil
@@ -777,7 +729,7 @@ func CountDirtyQSOs(db *sql.DB) (int, error) {
 // truth, never UI state, so edits pending across a restart are recovered.
 func ListDirtyQSOs(db *sql.DB, limit int) ([]qso.QSO, error) {
 	return listQSOsByQuery(db,
-		`SELECT `+qsoSelectCols+` FROM qsos WHERE COALESCE(wavelog_id, 0) > 0 AND COALESCE(wavelog_dirty, 0) = 1 ORDER BY id DESC LIMIT ?`,
+		`SELECT `+qsoSelectCols+` FROM qsos WHERE wavelog_id > 0 AND wavelog_dirty = 1 ORDER BY id DESC LIMIT ?`,
 		limit)
 }
 

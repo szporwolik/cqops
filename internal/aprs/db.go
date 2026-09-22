@@ -292,6 +292,13 @@ func migrateCache(db *sql.DB) error {
 	if err != nil {
 		return err
 	}
+	// Source-first composite for the map's source-filtered station listing —
+	// without it RecentStations scans the last_heard index and filters
+	// residually.
+	_, err = db.Exec("CREATE INDEX IF NOT EXISTS idx_aprs_source_heard ON aprs_stations(source, last_heard DESC)")
+	if err != nil {
+		return err
+	}
 	// Position history table — stores up to N previous positions per station.
 	_, err = db.Exec(`
 		CREATE TABLE IF NOT EXISTS aprs_position_history (

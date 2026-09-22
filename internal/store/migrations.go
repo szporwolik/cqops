@@ -87,10 +87,7 @@ var migrations = []string{
 	)`,
 
 	// ── qsos indexes ─────────────────────────────────────────────────────────
-	`CREATE INDEX IF NOT EXISTS idx_qsos_call ON qsos(call)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_qso_date ON qsos(qso_date)`,
-	`CREATE INDEX IF NOT EXISTS idx_qsos_band ON qsos(band)`,
-	`CREATE INDEX IF NOT EXISTS idx_qsos_mode ON qsos(mode)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_gridsquare ON qsos(gridsquare)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_source ON qsos(source)`,
 	`CREATE INDEX IF NOT EXISTS idx_qsos_wavelog_id ON qsos(wavelog_id)`,
@@ -102,12 +99,12 @@ var migrations = []string{
 	`CREATE INDEX IF NOT EXISTS idx_qsos_dxcc ON qsos(dxcc)`,
 
 	`CREATE INDEX IF NOT EXISTS idx_qsos_base_call ON qsos(base_call)`,
-	`CREATE INDEX IF NOT EXISTS idx_qsos_date_time_call ON qsos(qso_date, time_on, base_call)`,
-	`CREATE INDEX IF NOT EXISTS idx_qsos_date_operator ON qsos(qso_date, operator)`,
 
-	`CREATE INDEX IF NOT EXISTS idx_qsos_date_call_band_mode ON qsos(qso_date, call, band, mode)`,
-	`CREATE INDEX IF NOT EXISTS idx_qsos_contest_call_band_mode ON qsos(contest_id, call, band, mode)`,
-	`CREATE INDEX IF NOT EXISTS idx_qsos_contest_date_time ON qsos(contest_id, qso_date DESC, time_on DESC)`,
+	// Partial index for the pending-sync queue: rows with a remote id and a
+	// pending edit. The predicate matches CountDirtyQSOs/ListDirtyQSOs
+	// exactly, so those queries can serve the backlog without scanning the
+	// synced logbook.
+	`CREATE INDEX IF NOT EXISTS idx_qsos_dirty ON qsos(wavelog_dirty, id DESC) WHERE wavelog_id > 0 AND wavelog_dirty = 1`,
 
 	// ── schema v2: composite indexes for dupe-check and dedup queries ─────────
 	`CREATE INDEX IF NOT EXISTS idx_qsos_call_band_mode_date ON qsos(call, band, mode, qso_date)`,
@@ -148,6 +145,9 @@ var migrations = []string{
 	)`,
 	`CREATE INDEX IF NOT EXISTS idx_psk_spots_station_flow ON psk_spots(station_call, flow_start)`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS idx_psk_spots_uniq ON psk_spots(receiver_call, frequency, mode, flow_start)`,
+	// PurgeOldPSKSpots scans this — without it every PSK fetch batch
+	// full-scans a table that can hold a week of spots.
+	`CREATE INDEX IF NOT EXISTS idx_psk_spots_flow_start ON psk_spots(flow_start)`,
 }
 
 // schemaVersion is the current database schema version. Bump this when
@@ -327,15 +327,22 @@ func ensureColumnIndexes(db *sql.DB) error {
 	return nil
 }
 
-// migrateDropRedundantIndexes removes single-column indexes whose coverage is
-// subsumed by compound indexes or that have no consumer in the query set:
-// idx_qsos_country is covered by idx_qsos_country_base (same leading column)
-// and idx_qsos_country_nocase serves the case-insensitive lookups;
-// idx_qsos_submode has no WHERE-submode consumer (submode participates only
-// in expressions). Every maintained index costs a b-tree write on each QSO
-// save, so redundant indexes are pure write amplification.
+// migrateDropRedundantIndexes removes indexes that have no query consumer or
+// whose coverage is subsumed by compound indexes. Every maintained index
+// costs a b-tree write on each QSO save, so unused indexes are pure write
+// amplification. The dropped set was verified against every SQL statement in
+// the repository (EXPLAIN QUERY PLAN over a seeded logbook): the single-
+// column call/band/mode lookups are served by idx_qsos_call_band_mode_date or
+// idx_qsos_base_call_band_mode_date, contest lookups by contest_id +
+// contest_adif_id, and ordering by idx_qsos_date_time.
 func migrateDropRedundantIndexes(db *sql.DB) error {
-	for _, idx := range []string{"idx_qsos_country", "idx_qsos_submode"} {
+	for _, idx := range []string{
+		"idx_qsos_country", "idx_qsos_submode",
+		"idx_qsos_call", "idx_qsos_band", "idx_qsos_mode",
+		"idx_qsos_date_time_call", "idx_qsos_date_operator",
+		"idx_qsos_date_call_band_mode", "idx_qsos_contest_call_band_mode",
+		"idx_qsos_contest_date_time",
+	} {
 		if _, err := db.Exec(`DROP INDEX IF EXISTS ` + idx); err != nil {
 			return fmt.Errorf("drop redundant index %s: %w", idx, err)
 		}

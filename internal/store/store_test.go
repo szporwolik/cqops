@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/szporwolik/cqops/internal/qso"
 )
@@ -858,6 +859,52 @@ func TestGetWorkedSummaryDXCCUnionSemantics(t *testing.T) {
 	// Call scope via base_call.
 	if ws.CallHistory.QSOCount != 1 {
 		t.Fatalf("Call QSOCount = %d, want 1", ws.CallHistory.QSOCount)
+	}
+}
+
+// TestDashboardRateWindows verifies the rate counters use the index-friendly
+// two-column range: QSOs inside each window count, older ones do not, and the
+// midnight boundary works (a QSO from yesterday's last minutes still counts
+// when the window spans midnight).
+func TestDashboardRateWindows(t *testing.T) {
+	db := newTempDB(t)
+	now := time.Now().UTC()
+
+	stamp := func(offset time.Duration) (string, string) {
+		at := now.Add(offset)
+		return at.Format("20060102"), at.Format("150405")
+	}
+
+	// 3 minutes ago → in the 5m and wider windows.
+	d, tm := stamp(-3 * time.Minute)
+	mustInsertQSO(t, db, &qso.QSO{Call: "SP9AAA", QSODate: d, TimeOn: tm, Band: "20m", Mode: "SSB"})
+	// 10 minutes ago → in 15m/60m, out of 5m.
+	d, tm = stamp(-10 * time.Minute)
+	mustInsertQSO(t, db, &qso.QSO{Call: "SP9BBB", QSODate: d, TimeOn: tm, Band: "20m", Mode: "SSB"})
+	// 3 hours ago → in no window.
+	d, tm = stamp(-3 * time.Hour)
+	mustInsertQSO(t, db, &qso.QSO{Call: "SP9CCC", QSODate: d, TimeOn: tm, Band: "20m", Mode: "SSB"})
+
+	stats, err := GetDashboardStats(db, now.Add(-24*time.Hour).Format("20060102"))
+	if err != nil {
+		t.Fatalf("GetDashboardStats: %v", err)
+	}
+	if stats.Rate5m != 1 || stats.Rate15m != 2 || stats.Rate60m != 2 {
+		t.Fatalf("rates = %d/%d/%d, want 1/2/2", stats.Rate5m, stats.Rate15m, stats.Rate60m)
+	}
+}
+
+// TestDirtyPartialIndexExists verifies the partial pending-sync index is part
+// of the shipped schema so CountDirtyQSOs/ListDirtyQSOs can serve the backlog
+// without scanning the synced logbook.
+func TestDirtyPartialIndexExists(t *testing.T) {
+	db := newTempDB(t)
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_qsos_dirty'`).Scan(&n); err != nil {
+		t.Fatalf("check idx_qsos_dirty: %v", err)
+	}
+	if n == 0 {
+		t.Error("idx_qsos_dirty partial index not created")
 	}
 }
 

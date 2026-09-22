@@ -462,7 +462,9 @@ func GetDashboardStats(db *sql.DB, startDate string) (DashboardStats, error) {
 	}
 
 	// Rate: QSOs in the last 5, 15, and 60 minutes.
-	// Use printf to normalise time_on to 6 chars (HHMMSS) for reliable comparison.
+	// Two-column range so idx_qsos_date_time serves the predicate — the old
+	// printf('%s%06s', ...) form was a function-on-column that forced a full
+	// table scan three times per dashboard refresh.
 	for _, w := range []struct {
 		mins int
 		dest *int
@@ -471,11 +473,12 @@ func GetDashboardStats(db *sql.DB, startDate string) (DashboardStats, error) {
 		{15, &s.Rate15m},
 		{60, &s.Rate60m},
 	} {
-		cutoff := time.Now().UTC().Add(-time.Duration(w.mins) * time.Minute).Format("20060102150405")
+		cutoff := time.Now().UTC().Add(-time.Duration(w.mins) * time.Minute)
 		var n int
 		if err := db.QueryRow(
-			`SELECT COUNT(*) FROM qsos WHERE printf('%s%06s', qso_date, COALESCE(time_on,'000000')) >= ?`,
-			cutoff,
+			`SELECT COUNT(*) FROM qsos
+			WHERE qso_date > ? OR (qso_date = ? AND COALESCE(time_on,'000000') >= ?)`,
+			cutoff.Format("20060102"), cutoff.Format("20060102"), cutoff.Format("150405"),
 		).Scan(&n); err != nil {
 			n = 0
 		}
