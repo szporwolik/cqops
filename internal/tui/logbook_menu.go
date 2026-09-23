@@ -42,9 +42,6 @@ type LogbookChooser struct {
 	fm      menuFocus
 
 	// Wavelog async state
-	wlUpdating   bool
-	wlTesting    bool
-	wlStatus     string
 	wlStations   []wavelog.StationProfile
 	wlStationIdx int // index into wlStations, -1 if none
 	wlStationID  string
@@ -56,10 +53,6 @@ type LogbookChooser struct {
 
 	// Pre-fetched QSO counts per logbook (populated on init).
 	qsoCounts map[string]int
-
-	// APRS async state.
-	aprsTesting bool
-	aprsStatus  string
 }
 
 // Wavelog async message types
@@ -135,9 +128,7 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		c.height = msg.Height
 
 	case wlUpdateMsg:
-		c.wlUpdating = false
 		if msg.err != nil {
-			c.wlStatus = msg.err.Error()
 			c.wlStations = nil
 			c.wlStationIdx = -1
 			c.toasts.Error("Wavelog: " + msg.err.Error())
@@ -153,7 +144,6 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			c.updateStationIDField()
-			c.wlStatus = fmt.Sprintf("OK — %d stations loaded — Space over Station ID to cycle", len(msg.stations))
 			c.toasts.Success(fmt.Sprintf("Wavelog: %d stations loaded", len(msg.stations)))
 			return c, c.stationDetailCmd()
 		}
@@ -171,12 +161,9 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return c, nil
 
 	case wlTestMsg:
-		c.wlTesting = false
 		if msg.err != nil {
-			c.wlStatus = msg.err.Error()
 			c.toasts.Error("Wavelog: " + msg.err.Error())
 		} else {
-			c.wlStatus = "OK — Wavelog reachable"
 			c.toasts.Success("Wavelog: connection verified")
 		}
 		if msg.warn != "" {
@@ -190,12 +177,9 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case aprsTestMsg:
-		c.aprsTesting = false
 		if msg.err != nil {
-			c.aprsStatus = msg.err.Error()
 			c.toasts.Error("APRS: " + msg.err.Error())
 		} else {
-			c.aprsStatus = "OK — connection verified"
 			c.toasts.Success("APRS: connection verified")
 		}
 		c.scrollViewportToEnd()
@@ -530,7 +514,7 @@ func (c *LogbookChooser) autoScrollViewport() {
 }
 
 // scrollViewportToEnd scrolls the viewport to the last visible page so the
-// user can see the APRS/Wavelog test status lines without manual scrolling.
+// Wavelog/APRS section stays visible after pressing Test/Update.
 func (c *LogbookChooser) scrollViewportToEnd() {
 	total := c.vp.TotalLineCount()
 	visible := c.vp.VisibleLineCount()
@@ -624,7 +608,6 @@ func (c *LogbookChooser) startEdit(id string) {
 	c.station.SetOperators(config.OperatorSlice(c.app.Config))
 	c.station.SetWavelogValues(lb.Wavelog)
 	c.station.SetAPRSValues(lb.APRS)
-	c.wlStatus = ""
 	c.wlStations = nil
 	c.wlStationIdx = -1
 	if lb.Wavelog != nil {
@@ -941,8 +924,6 @@ func (c *LogbookChooser) deleteLogbook() tea.Cmd {
 
 // fetchWavelogStations fetches station profiles from the Wavelog API.
 func (c *LogbookChooser) fetchWavelogStations() tea.Cmd {
-	c.wlUpdating = true
-	c.wlStatus = "Fetching stations…"
 	u := strings.TrimRight(strings.TrimSpace(c.station.WlURL.Value()), "/")
 	k := strings.TrimSpace(c.station.WlKey.Value())
 	return func() tea.Msg {
@@ -963,20 +944,16 @@ func (c *LogbookChooser) testWavelogConnection() tea.Cmd {
 
 	// Validate required fields before testing.
 	if u == "" {
-		c.wlStatus = "API URL is required"
 		c.toasts.Warn("Wavelog: API URL is required")
 		c.scrollViewportToEnd()
 		return nil
 	}
 	if k == "" {
-		c.wlStatus = "API Key is required"
 		c.toasts.Warn("Wavelog: API Key is required")
 		c.scrollViewportToEnd()
 		return nil
 	}
 
-	c.wlTesting = true
-	c.wlStatus = "Testing…"
 	c.scrollViewportToEnd()
 	var sid string
 	if c.wlStationIdx >= 0 && c.wlStationIdx < len(c.wlStations) {
@@ -1024,7 +1001,6 @@ func (c *LogbookChooser) enableGlobalAPRSIfTurnedOn(wasEnabled bool) {
 func (c *LogbookChooser) testAPRSConnection() tea.Cmd {
 	aprsGlobal := c.app.Config.Integrations.APRS
 	if !aprsGlobal.Enabled {
-		c.aprsStatus = "APRS not configured in Integrations"
 		c.toasts.Warn("APRS: enable and configure APRS in Integrations first")
 		c.scrollViewportToEnd()
 		return nil
@@ -1035,7 +1011,6 @@ func (c *LogbookChooser) testAPRSConnection() tea.Cmd {
 
 	// Validate required fields before testing.
 	if call == "" {
-		c.aprsStatus = "Callsign is required"
 		c.toasts.Warn("APRS: callsign is required")
 		c.scrollViewportToEnd()
 		return nil
@@ -1047,7 +1022,6 @@ func (c *LogbookChooser) testAPRSConnection() tea.Cmd {
 		prt := aprsGlobal.Port
 		baud := aprsGlobal.BaudRate
 		if prt == "" || baud == 0 {
-			c.aprsStatus = "KISS port/baud not configured in Integrations"
 			c.toasts.Warn("APRS: configure KISS port and baud in Integrations first")
 			c.scrollViewportToEnd()
 			return nil
@@ -1058,8 +1032,6 @@ func (c *LogbookChooser) testAPRSConnection() tea.Cmd {
 		}
 		par := parityFromString(aprsGlobal.Parity)
 		stop := stopBitsFromString(aprsGlobal.StopBits)
-		c.aprsTesting = true
-		c.aprsStatus = "Testing KISS…"
 		c.scrollViewportToEnd()
 		return func() tea.Msg {
 			if err := testKISSPort(prt, baud, dataBits, par, stop, aprsGlobal.DTR, aprsGlobal.RTS); err != nil {
@@ -1077,8 +1049,6 @@ func (c *LogbookChooser) testAPRSConnection() tea.Cmd {
 			port = "8001"
 		}
 		addr := host + ":" + port
-		c.aprsTesting = true
-		c.aprsStatus = "Testing KISS server…"
 		c.scrollViewportToEnd()
 		return func() tea.Msg {
 			if err := aprs.TestKISSServerConnection(addr); err != nil {
@@ -1091,8 +1061,6 @@ func (c *LogbookChooser) testAPRSConnection() tea.Cmd {
 		if srv == "" {
 			srv = "euro.aprs2.net:14580"
 		}
-		c.aprsTesting = true
-		c.aprsStatus = "Testing…"
 		c.scrollViewportToEnd()
 		return func() tea.Msg {
 			if err := aprs.TestConnection(srv, call, pass); err != nil {

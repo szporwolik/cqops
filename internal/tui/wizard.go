@@ -43,9 +43,6 @@ type Wizard struct {
 	cachedFormBoxW int
 
 	// Wavelog async state (for wizard step 1 buttons)
-	wlUpdating   bool
-	wlTesting    bool
-	wlStatus     string
 	wlStations   []wavelog.StationProfile
 	wlStationIdx int
 	wlStation    *wavelog.Station // fetched full profile, applied on save
@@ -128,17 +125,14 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		w.height = msg.Height
 
 	case wlUpdateMsg:
-		w.wlUpdating = false
 		if msg.err != nil {
-			w.wlStatus = msg.err.Error()
-			w.toasts.Error(w.wlStatus)
+			w.toasts.Error("Wavelog: " + msg.err.Error())
 		} else {
 			w.wlStations = msg.stations
 			w.wlStationIdx = 0
 			if len(msg.stations) > 0 {
 				w.setSelectedStation()
 			}
-			w.wlStatus = fmt.Sprintf("Wavelog: %d stations loaded", len(msg.stations))
 			w.toasts.Success(fmt.Sprintf("Wavelog: %d stations loaded", len(msg.stations)))
 			return w, w.stationDetailCmd()
 		}
@@ -152,12 +146,9 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case wlTestMsg:
-		w.wlTesting = false
 		if msg.err != nil {
-			w.wlStatus = msg.err.Error()
-			w.toasts.Error("Wavelog: " + w.wlStatus)
+			w.toasts.Error("Wavelog: " + msg.err.Error())
 		} else {
-			w.wlStatus = "OK — Wavelog reachable"
 			w.toasts.Success("Wavelog: connection OK")
 		}
 
@@ -229,8 +220,6 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							w.toasts.Warn("Wavelog: URL and API Key are required")
 							return w, nil
 						}
-						w.wlUpdating = true
-						w.wlStatus = "Fetching stations…"
 						return w, func() tea.Msg {
 							stations, err := wavelog.FetchStations(wlURL, wlKey)
 							return wlUpdateMsg{stations: stations, err: err}
@@ -241,8 +230,6 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							w.toasts.Warn("Wavelog: URL and API Key are required")
 							return w, nil
 						}
-						w.wlTesting = true
-						w.wlStatus = "Testing…"
 						return w, func() tea.Msg {
 							if err := wavelog.TestConnection(wlURL, wlKey); err != nil {
 								return wlTestMsg{err: err}

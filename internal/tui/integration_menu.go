@@ -29,13 +29,7 @@ type IntegrationMenu struct {
 	dxcPort    textinput.Model
 	dxcLogin   textinput.Model
 
-	// QRZ
-	qrzEnabled    bool
-	qrzUser       textinput.Model
-	qrzPass       textinput.Model
-	qrzTesting    bool
-	qrzTestResult string
-	inetOnline    bool
+	inetOnline bool
 
 	// HTTP Server
 	httpEnabled  bool
@@ -63,31 +57,32 @@ type IntegrationMenu struct {
 	gpsdHost         textinput.Model
 	gpsdPort         textinput.Model
 	gpsTesting       bool
-	gpsTestResult    string
 	gpsNeedsPoll     bool // set when test passes — main model picks it up
 
 	// APRS
-	aprsEnabled    bool
-	aprsService    int // 0=APRS-IS, 1=KISS, 2=KISS Server
-	aprsServer     textinput.Model
-	aprsKISSHost   textinput.Model
-	aprsKISSPort   textinput.Model
-	aprsPort       textinput.Model
-	aprsBaudRate   int
-	aprsDataBits   int // 8, 7, 6, 5
-	aprsParity     int // 0=None, 1=Odd, 2=Even, 3=Mark, 4=Space
-	aprsStopBits   int // 0=1, 1=1.5, 2=2
-	aprsDTR        bool
-	aprsRTS        bool
-	aprsTesting    bool
-	aprsTestResult string
-	aprsOnline     bool // true when APRS client is connected (KISS or APRS-IS)
+	aprsEnabled  bool
+	aprsService  int // 0=APRS-IS, 1=KISS, 2=KISS Server
+	aprsServer   textinput.Model
+	aprsKISSHost textinput.Model
+	aprsKISSPort textinput.Model
+	aprsPort     textinput.Model
+	aprsBaudRate int
+	aprsDataBits int // 8, 7, 6, 5
+	aprsParity   int // 0=None, 1=Odd, 2=Even, 3=Mark, 4=Space
+	aprsStopBits int // 0=1, 1=1.5, 2=2
+	aprsDTR      bool
+	aprsRTS      bool
+	aprsTesting  bool
+	aprsOnline   bool // true when APRS client is connected (KISS or APRS-IS)
 
 	// PSK Reporter — simple enable toggle, no fields.
 	pskEnabled bool
 
-	// aprsToast is set by APRS test handler; parent reads and shows toast, then clears.
+	// aprsToast/gpsToast are set by the APRS/GPS test handlers; the parent
+	// reads them, shows a toast, then clears. All test feedback goes through
+	// toasts — no inline result lines.
 	aprsToast string
+	gpsToast  string
 
 	fm         menuFocus
 	done       bool
@@ -268,20 +263,6 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 		// Convenience prefill — the operator can change it.
 		dxcLogin.SetValue(cs)
 	}
-
-	qrzUser := newTextinput()
-	qrzUser.CharLimit = 30
-	qrzUser.SetWidth(28)
-	qrzUser.Placeholder = "QRZ.com username"
-	qrzUser.SetValue(cfg.Integrations.Callbook.QRZ.User)
-
-	qrzPass := newTextinput()
-	qrzPass.CharLimit = 40
-	qrzPass.SetWidth(28)
-	qrzPass.Placeholder = "QRZ.com password"
-	qrzPass.EchoMode = textinput.EchoPassword
-	qrzPass.EchoCharacter = '*'
-	qrzPass.SetValue(cfg.Integrations.Callbook.QRZ.Pass)
 
 	httpAddr := newTextinput()
 	httpAddr.CharLimit = 40
@@ -501,9 +482,6 @@ func NewIntegrationMenu(cfg *config.Config) *IntegrationMenu {
 		dxcHost:          dxcHost,
 		dxcPort:          dxcPort,
 		dxcLogin:         dxcLogin,
-		qrzEnabled:       cfg.Integrations.Callbook.QRZ.Enabled,
-		qrzUser:          qrzUser,
-		qrzPass:          qrzPass,
 		httpEnabled:      cfg.Integrations.HTTPServer.Enabled,
 		httpTheme:        httpTheme,
 		httpAddrIdx:      httpAddrIdx,
@@ -549,49 +527,31 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		im.width, im.height = msg.Width, msg.Height
 
-	case callbookTestMsg:
-		im.qrzTesting = false
-		if msg.err != nil {
-			im.qrzTestResult = friendlyQRZError(msg.err)
-			applog.Error("QRZ test failed", "error", msg.err.Error())
-		} else if msg.ok {
-			im.qrzTestResult = "OK - QRZ.com connected"
-			applog.Info("QRZ test OK")
-		} else {
-			im.qrzTestResult = "No data returned"
-			applog.Warn("QRZ test: no data returned")
-		}
-
 	case gpsTestMsg:
 		im.gpsTesting = false
 		if msg.err != nil {
-			im.gpsTestResult = "Failed — " + friendlyGPSError(msg.err)
+			im.gpsToast = "GPS: " + friendlyGPSError(msg.err)
 			applog.Warn("GPS test failed", "error", msg.err.Error())
 		} else if msg.ok {
-			im.gpsTestResult = "OK — GPS responding"
+			im.gpsToast = "GPS: connection verified"
 			im.gpsNeedsPoll = true // signal main model to refresh status bar
 			applog.Info("GPS test OK")
 		} else {
-			im.gpsTestResult = "No data received"
+			im.gpsToast = "GPS: no data received"
 		}
 
 	case aprsTestMsg:
 		im.aprsTesting = false
 		if msg.err != nil {
-			im.aprsTestResult = "Failed — " + msg.err.Error()
 			im.aprsToast = "APRS: " + msg.err.Error()
 			applog.Warn("APRS test failed", "error", msg.err.Error())
 		} else {
-			im.aprsTestResult = "OK — connection working"
 			im.aprsToast = "APRS: connection verified"
 			applog.Info("APRS test OK")
 		}
 
 	case tea.KeyPressMsg:
 		k := msg.String()
-		if im.qrzTesting {
-			return im, nil
-		}
 		// Shared navigation: Tab/Down, Shift+Tab/Up, and the Save & Back
 		// button (Space/Enter saves through the same validation as Ctrl+S).
 		if handled, cmd := im.fm.onKey(msg, im, func() tea.Cmd { return im.trySave() }); handled {
@@ -711,10 +671,6 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				im.dxcPort, _ = im.dxcPort.Update(msg)
 			case imDXCLogin:
 				im.dxcLogin, _ = im.dxcLogin.Update(msg)
-			case imQRZUser:
-				im.qrzUser, _ = im.qrzUser.Update(msg)
-			case imQRZPass:
-				im.qrzPass, _ = im.qrzPass.Update(msg)
 			case imHTTPPort:
 				im.httpPort, _ = im.httpPort.Update(msg)
 			case imHTTPHdr1:
@@ -745,11 +701,10 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					dtr := im.gpsDTR
 					rts := im.gpsRTS
 					if port == "" || baud == 0 {
-						im.gpsTestResult = "Port and baud rate required"
+						im.gpsToast = "GPS: port and baud rate required"
 						return im, nil
 					}
 					im.gpsTesting = true
-					im.gpsTestResult = "Testing..."
 					return im, func() tea.Msg {
 						err := testGPSConnection(port, baud, dtr, rts)
 						return gpsTestMsg{ok: err == nil, err: err}
@@ -758,14 +713,13 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					host := strings.TrimSpace(im.gpsdHost.Value())
 					port := strings.TrimSpace(im.gpsdPort.Value())
 					if host == "" {
-						im.gpsTestResult = "GPSD host required"
+						im.gpsToast = "GPS: GPSD host required"
 						return im, nil
 					}
 					if port == "" {
 						port = "2947"
 					}
 					im.gpsTesting = true
-					im.gpsTestResult = "Testing..."
 					return im, func() tea.Msg {
 						err := testGPSDConnection(host, port)
 						return gpsTestMsg{ok: err == nil, err: err}
@@ -777,15 +731,14 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case 0: // APRS-IS
 					srv := strings.TrimSpace(im.aprsServer.Value())
 					if !im.inetOnline {
-						im.aprsTestResult = "No internet connection"
+						im.aprsToast = "APRS: no internet connection"
 						return im, nil
 					}
 					if srv == "" {
-						im.aprsTestResult = "Server is required"
+						im.aprsToast = "APRS: server is required"
 						return im, nil
 					}
 					im.aprsTesting = true
-					im.aprsTestResult = "Testing..."
 					return im, func() tea.Msg {
 						conn, err := net.DialTimeout("tcp", srv, 5*time.Second)
 						if err != nil {
@@ -798,19 +751,18 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					// If the KISS client is already running, the port is open —
 					// no need to try opening it again (which would fail with "port busy").
 					if im.aprsOnline {
-						im.aprsTestResult = "OK — connection working"
+						im.aprsToast = "APRS: connection verified"
 						return im, nil
 					}
 					prt := strings.TrimSpace(im.aprsPort.Value())
 					baud := im.aprsBaudRate
 					if prt == "" || baud == 0 {
-						im.aprsTestResult = "Port and baud rate required"
+						im.aprsToast = "APRS: port and baud rate required"
 						return im, nil
 					}
 					par := intToParity(im.aprsParity)
 					stop := intToStopBits(im.aprsStopBits)
 					im.aprsTesting = true
-					im.aprsTestResult = "Testing..."
 					return im, func() tea.Msg {
 						err := testKISSPort(prt, baud, im.aprsDataBits, par, stop, im.aprsDTR, im.aprsRTS)
 						return aprsTestMsg{err: err}
@@ -819,7 +771,7 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					host := strings.TrimSpace(im.aprsKISSHost.Value())
 					port := strings.TrimSpace(im.aprsKISSPort.Value())
 					if host == "" {
-						im.aprsTestResult = "Host is required"
+						im.aprsToast = "APRS: host is required"
 						return im, nil
 					}
 					if port == "" {
@@ -827,7 +779,6 @@ func (im *IntegrationMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					}
 					addr := net.JoinHostPort(host, port)
 					im.aprsTesting = true
-					im.aprsTestResult = "Testing..."
 					return im, func() tea.Msg {
 						conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 						if err != nil {
@@ -961,7 +912,6 @@ func (im *IntegrationMenu) rowVisible(i int) bool { return im.isPositionVisible(
 
 func (im *IntegrationMenu) blurAll() {
 	blurTextinputs(&im.dxcHost, &im.dxcPort, &im.dxcLogin,
-		&im.qrzUser, &im.qrzPass,
 		&im.httpAddr, &im.httpPort, &im.httpHeader1, &im.httpHeader2, &im.httpClubLogo, &im.httpQRLink, &im.httpEvtStart, &im.httpTLSCert, &im.httpTLSKey,
 		&im.gpsPort, &im.gpsdHost, &im.gpsdPort,
 		&im.aprsServer, &im.aprsKISSHost, &im.aprsKISSPort, &im.aprsPort)
@@ -1334,11 +1284,6 @@ func (im *IntegrationMenu) View() tea.View {
 		} else {
 			buttonRow(&b, lineW, im.fm.row == imGPSTest, btnText)
 		}
-
-		if im.gpsTestResult != "" {
-			b.WriteString("\n")
-			b.WriteString(padOrTrunc("    "+im.gpsTestResultStyled(), lineW))
-		}
 	}
 
 	b.WriteString("\n")
@@ -1585,15 +1530,12 @@ func (im *IntegrationMenu) renderField(focusIdx int, label string, ti *textinput
 	return lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val)
 }
 
-// Values returns DXC, QRZ, and HTTP server config values.
-func (im *IntegrationMenu) Values() (dxcEnabled bool, dxcHost, dxcPort, dxcLogin string, qrzEnabled bool, qrzUser, qrzPass string, httpEnabled bool, httpAddr, httpPort, httpTheme string, httpHdr1, httpHdr2, httpLogo, httpQRLink, httpEvtStart string, httpTLS bool, httpTLSCert, httpTLSKey string) {
+// Values returns DXC and HTTP server config values.
+func (im *IntegrationMenu) Values() (dxcEnabled bool, dxcHost, dxcPort, dxcLogin string, httpEnabled bool, httpAddr, httpPort, httpTheme string, httpHdr1, httpHdr2, httpLogo, httpQRLink, httpEvtStart string, httpTLS bool, httpTLSCert, httpTLSKey string) {
 	return im.dxcEnabled,
 		strings.TrimSpace(im.dxcHost.Value()),
 		strings.TrimSpace(im.dxcPort.Value()),
 		strings.TrimSpace(im.dxcLogin.Value()),
-		im.qrzEnabled,
-		strings.TrimSpace(im.qrzUser.Value()),
-		im.qrzPass.Value(),
 		im.httpEnabled,
 		strings.TrimSpace(im.httpAddr.Value()),
 		strings.TrimSpace(im.httpPort.Value()),
@@ -1617,17 +1559,6 @@ func (im *IntegrationMenu) Values() (dxcEnabled bool, dxcHost, dxcPort, dxcLogin
 		im.httpTLS,
 		strings.TrimSpace(im.httpTLSCert.Value()),
 		strings.TrimSpace(im.httpTLSKey.Value())
-}
-
-// gpsTestResultStyled returns the GPS test result with appropriate styling.
-func (im *IntegrationMenu) gpsTestResultStyled() string {
-	if im.gpsTesting {
-		return DimStyle.Render(im.gpsTestResult)
-	}
-	if strings.HasPrefix(im.gpsTestResult, "OK") {
-		return SuccessStyle.Render(im.gpsTestResult)
-	}
-	return ErrorStyle.Render(im.gpsTestResult)
 }
 
 func (im *IntegrationMenu) gpsServiceName() string {

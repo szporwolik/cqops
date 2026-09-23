@@ -30,33 +30,30 @@ type CallbookMenu struct {
 	logPriority textinput.Model
 
 	// QRZ fields
-	qrzEnabled    bool
-	qrzUser       textinput.Model
-	qrzPass       textinput.Model
-	qrzPriority   textinput.Model
-	qrzTesting    bool
-	qrzTestResult string
-	inetOnline    bool
+	qrzEnabled  bool
+	qrzUser     textinput.Model
+	qrzPass     textinput.Model
+	qrzPriority textinput.Model
+	qrzTesting  bool
+	inetOnline  bool
 
 	// HamQTH fields
-	hamqthEnabled    bool
-	hamqthUser       textinput.Model
-	hamqthPass       textinput.Model
-	hamqthPriority   textinput.Model
-	hamqthTesting    bool
-	hamqthTestResult string
+	hamqthEnabled  bool
+	hamqthUser     textinput.Model
+	hamqthPass     textinput.Model
+	hamqthPriority textinput.Model
+	hamqthTesting  bool
 
 	// Callook fields
 	callookEnabled  bool
 	callookPriority textinput.Model
 
 	// QRZ.RU fields
-	qrzruEnabled    bool
-	qrzruUser       textinput.Model
-	qrzruPass       textinput.Model
-	qrzruPriority   textinput.Model
-	qrzruTesting    bool
-	qrzruTestResult string
+	qrzruEnabled  bool
+	qrzruUser     textinput.Model
+	qrzruPass     textinput.Model
+	qrzruPriority textinput.Model
+	qrzruTesting  bool
 
 	// Wavelog provider
 	wlEnabled    bool
@@ -277,45 +274,36 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "hamqth":
 			cm.hamqthTesting = false
 			if msg.err != nil {
-				cm.hamqthTestResult = friendlyHTestError(msg.err)
 				cm.TestToast = friendlyHTestError(msg.err)
 				applog.Error("HamQTH test failed", "error", msg.err.Error())
 			} else if msg.ok {
-				cm.hamqthTestResult = "OK — HamQTH connected"
 				cm.TestToast = "HamQTH: connection verified"
 				applog.Info("HamQTH test OK")
 			} else {
-				cm.hamqthTestResult = "Connected OK — OK1HRA not found (API works)"
 				cm.TestToast = "HamQTH: connected, but test lookup returned no data"
 				applog.Warn("HamQTH test: no data returned")
 			}
 		case "qrzru":
 			cm.qrzruTesting = false
 			if msg.err != nil {
-				cm.qrzruTestResult = friendlyQRZError(msg.err)
 				cm.TestToast = friendlyQRZError(msg.err)
 				applog.Error("QRZ.RU test failed", "error", msg.err.Error())
 			} else if msg.ok {
-				cm.qrzruTestResult = "OK — QRZ.RU connected"
 				cm.TestToast = "QRZ.RU: connection verified"
 				applog.Info("QRZ.RU test OK")
 			} else {
-				cm.qrzruTestResult = "No data returned"
 				cm.TestToast = "QRZ.RU: connected, but lookup returned no data"
 				applog.Warn("QRZ.RU test: no data returned")
 			}
 		default:
 			cm.qrzTesting = false
 			if msg.err != nil {
-				cm.qrzTestResult = friendlyQRZError(msg.err)
 				cm.TestToast = friendlyQRZError(msg.err)
 				applog.Error("QRZ test failed", "error", msg.err.Error())
 			} else if msg.ok {
-				cm.qrzTestResult = "OK - QRZ.com connected"
 				cm.TestToast = "QRZ: connection verified"
 				applog.Info("QRZ test OK")
 			} else {
-				cm.qrzTestResult = "No data returned"
 				cm.TestToast = "QRZ: connected, but lookup returned no data"
 				applog.Warn("QRZ test: no data returned")
 			}
@@ -397,17 +385,16 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			if cm.fm.row == cmQRZTest {
 				if !cm.inetOnline {
-					cm.qrzTestResult = "No internet connection"
+					cm.TestToast = "QRZ: no internet connection"
 					return cm, nil
 				}
 				user := strings.TrimSpace(cm.qrzUser.Value())
 				pass := cm.qrzPass.Value()
 				if user == "" || pass == "" {
-					cm.qrzTestResult = "Username and password required"
+					cm.TestToast = "QRZ: username and password required"
 					return cm, nil
 				}
 				cm.qrzTesting = true
-				cm.qrzTestResult = "Testing..."
 				return cm, func() tea.Msg {
 					data, err := qrzcom.Lookup(user, pass, "SP9MOA")
 					return callbookTestMsg{ok: err == nil && data != nil, err: err, provider: "qrz"}
@@ -415,17 +402,16 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if cm.fm.row == cmHamQTHTest {
 				if !cm.inetOnline {
-					cm.hamqthTestResult = "No internet connection"
+					cm.TestToast = "HamQTH: no internet connection"
 					return cm, nil
 				}
 				user := strings.TrimSpace(cm.hamqthUser.Value())
 				pass := cm.hamqthPass.Value()
 				if user == "" || pass == "" {
-					cm.hamqthTestResult = "Username and password required"
+					cm.TestToast = "HamQTH: username and password required"
 					return cm, nil
 				}
 				cm.hamqthTesting = true
-				cm.hamqthTestResult = "Testing..."
 				return cm, func() tea.Msg {
 					data, err := hamqth.Lookup(user, pass, "OK1HRA")
 					return callbookTestMsg{ok: err == nil && data != nil, err: err, provider: "hamqth"}
@@ -433,17 +419,16 @@ func (cm *CallbookMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if cm.fm.row == cmQRZRuTest {
 				if !cm.inetOnline {
-					cm.qrzruTestResult = "No internet connection"
+					cm.TestToast = "QRZ.RU: no internet connection"
 					return cm, nil
 				}
 				user := strings.TrimSpace(cm.qrzruUser.Value())
 				pass := cm.qrzruPass.Value()
 				if user == "" || pass == "" {
-					cm.qrzruTestResult = "API login and password required"
+					cm.TestToast = "QRZ.RU: API login and password required"
 					return cm, nil
 				}
 				cm.qrzruTesting = true
-				cm.qrzruTestResult = "Testing..."
 				return cm, func() tea.Msg {
 					client := qrzru.NewClientWithPriority(user, pass, 35)
 					data, err := client.Lookup("RA3ZZ")

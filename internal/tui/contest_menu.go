@@ -761,7 +761,6 @@ func (c *ContestChooser) viewForm() string {
 
 	// Indented exchange sent field.
 	if c.prefillExchange {
-		b.WriteString("\n")
 		c.renderIndentedField(&b, 7, "  Exchange Sent:", &c.exchSentInput, "")
 		b.WriteString("\n")
 	}
@@ -771,7 +770,6 @@ func (c *ContestChooser) viewForm() string {
 
 	// Indented exchange rcvd field.
 	if c.prefillExchangeRcvd {
-		b.WriteString("\n")
 		c.renderIndentedField(&b, 9, "  Exchange Rcvd:", &c.exchRcvdInput, "")
 		b.WriteString("\n")
 	}

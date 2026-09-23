@@ -481,7 +481,6 @@ func (f *RigForm) View() tea.View {
 	if f.BackendIdx != 0 {
 		hostLabel := fmt.Sprintf("  %s host:", backendOptions[f.BackendIdx].label)
 		portLabel := fmt.Sprintf("  %s port:", backendOptions[f.BackendIdx].label)
-		b.WriteString("\n")
 		b.WriteString(padOrTrunc(renderField(hostLabel, &f.BackendHost, f.focus == rigFieldBackendHost), availW))
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(renderField(portLabel, &f.BackendPort, f.focus == rigFieldBackendPort), availW))
@@ -500,7 +499,6 @@ func (f *RigForm) View() tea.View {
 	if f.RotorIdx != 0 {
 		hostLabel := fmt.Sprintf("  %s host:", rotorOptions[f.RotorIdx].label)
 		portLabel := fmt.Sprintf("  %s port:", rotorOptions[f.RotorIdx].label)
-		b.WriteString("\n")
 		b.WriteString(padOrTrunc(renderField(hostLabel, &f.RotorHost, f.focus == rigFieldRotorHost), availW))
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(renderField(portLabel, &f.RotorPort, f.focus == rigFieldRotorPort), availW))
@@ -511,7 +509,6 @@ func (f *RigForm) View() tea.View {
 	checkboxRow(&b, availW, f.focus == rigFieldWsjtx, "Use WSJT-X:", f.WsjtxEnabled, "", false, rigRows)
 
 	if f.WsjtxEnabled {
-		b.WriteString("\n")
 		b.WriteString(padOrTrunc(renderField("  UDP Host:", &f.WsjtxHost, f.focus == rigFieldWsjtxHost), availW))
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(renderField("  UDP Port:", &f.WsjtxPort, f.focus == rigFieldWsjtxPort), availW))

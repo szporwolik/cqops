@@ -57,14 +57,14 @@ func TestContestFormSpacing_PrefillsOn(t *testing.T) {
 	if sentField < 0 || rcvdField < 0 || markers < 0 {
 		t.Fatalf("rows missing: sentField=%d rcvdField=%d markers=%d", sentField, rcvdField, markers)
 	}
-	if sentField != sent+2 {
-		t.Errorf("expected one blank line between checkbox and its field (sent=%d, sentField=%d)", sent, sentField)
+	if sentField != sent+1 {
+		t.Errorf("unexpected blank line between checkbox and its field (sent=%d, sentField=%d)", sent, sentField)
 	}
 	if rcvd != sentField+1 {
 		t.Errorf("unexpected blank line between the sent field and the Rcvd checkbox (sentField=%d, rcvd=%d)", sentField, rcvd)
 	}
-	if rcvdField != rcvd+2 {
-		t.Errorf("expected one blank line between checkbox and its field (rcvd=%d, rcvdField=%d)", rcvd, rcvdField)
+	if rcvdField != rcvd+1 {
+		t.Errorf("unexpected blank line between checkbox and its field (rcvd=%d, rcvdField=%d)", rcvd, rcvdField)
 	}
 	if markers != rcvdField+2 {
 		t.Errorf("expected exactly one blank line before the marker section (rcvdField=%d, markers=%d)", rcvdField, markers)
@@ -80,8 +80,8 @@ func TestContestFormSpacing_OnlySentOn(t *testing.T) {
 		t.Fatalf("rows missing: sent=%d rcvd=%d markers=%d", sent, rcvd, markers)
 	}
 	sentField := nextLineWith(lines, sent+1, "Exchange Sent:")
-	if sentField != sent+2 {
-		t.Errorf("expected one blank line between checkbox and its field (sent=%d, sentField=%d)", sent, sentField)
+	if sentField != sent+1 {
+		t.Errorf("unexpected blank line between checkbox and its field (sent=%d, sentField=%d)", sent, sentField)
 	}
 	if rcvd != sentField+1 {
 		t.Errorf("unexpected blank line after the sent field (sentField=%d, rcvd=%d)", sentField, rcvd)

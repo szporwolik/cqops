@@ -209,6 +209,16 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 		m.ui.integrationMenu.aprsToast = ""
 	}
 
+	// Show GPS test toasts.
+	if m.ui.integrationMenu.gpsToast != "" {
+		if strings.Contains(m.ui.integrationMenu.gpsToast, "connection verified") {
+			m.toasts.Success(m.ui.integrationMenu.gpsToast)
+		} else {
+			m.toasts.Error(m.ui.integrationMenu.gpsToast)
+		}
+		m.ui.integrationMenu.gpsToast = ""
+	}
+
 	// GPS test succeeded — immediately poll GPS state so the status
 	// bar reflects the connection without waiting for the periodic tick.
 	if m.ui.integrationMenu.gpsNeedsPoll {
@@ -231,7 +241,7 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			return m, cmd
 		}
 		if m.ui.integrationMenu.saved {
-			dxcE, dxcHost, dxcPort, dxcLogin, _, _, _, httpE, httpAddr, httpPort, httpTheme, httpHdr1, httpHdr2, httpLogo, httpQRLink, httpEvtStart, httpTLS, httpTLSCert, httpTLSKey := m.ui.integrationMenu.Values()
+			dxcE, dxcHost, dxcPort, dxcLogin, httpE, httpAddr, httpPort, httpTheme, httpHdr1, httpHdr2, httpLogo, httpQRLink, httpEvtStart, httpTLS, httpTLSCert, httpTLSKey := m.ui.integrationMenu.Values()
 
 			// Restart the HTTP server when address, port, TLS, or enabled
 			// state actually change, OR when the server should be running
