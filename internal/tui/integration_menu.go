@@ -1092,11 +1092,10 @@ func (im *IntegrationMenu) View() tea.View {
 		b.WriteString(padOrTrunc(im.renderField(imDXCPort, "  Port:", &im.dxcPort, false), lineW))
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(im.renderField(imDXCLogin, "  Login:", &im.dxcLogin, false), lineW))
+		b.WriteString("\n")
+	} else {
+		b.WriteString("\n")
 	}
-
-	b.WriteString("\n")
-	b.WriteString(padOrTrunc("", lineW))
-	b.WriteString("\n")
 
 	// --- HTTP Server section ---
 	httpCheckbox := "[ ]"
@@ -1160,11 +1159,10 @@ func (im *IntegrationMenu) View() tea.View {
 		b.WriteString(padOrTrunc(im.renderField(imHTTPQRLink, "  QR Link (opt):", &im.httpQRLink, false), lineW))
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(im.renderField(imHTTPEvt, "  Event Start (opt):", &im.httpEvtStart, false), lineW))
+		b.WriteString("\n")
+	} else {
+		b.WriteString("\n")
 	}
-
-	b.WriteString("\n")
-	b.WriteString(padOrTrunc("", lineW))
-	b.WriteString("\n")
 
 	// --- GPS section ---
 	gpsCheckbox := "[ ]"
@@ -1284,11 +1282,9 @@ func (im *IntegrationMenu) View() tea.View {
 		} else {
 			buttonRow(&b, lineW, im.fm.row == imGPSTest, btnText)
 		}
+	} else {
+		b.WriteString("\n")
 	}
-
-	b.WriteString("\n")
-	b.WriteString(padOrTrunc("", lineW))
-	b.WriteString("\n")
 
 	// --- APRS section ---
 	aprsCheckbox := "[ ]"
@@ -1442,10 +1438,11 @@ func (im *IntegrationMenu) View() tea.View {
 		} else {
 			buttonRow(&b, lineW, im.fm.row == imAPRSTest, btnText)
 		}
+	} else {
+		b.WriteString("\n")
 	}
 
 	// --- PSK Reporter section ---
-	b.WriteString("\n")
 	pskCb := "[ ]"
 	if im.pskEnabled {
 		pskCb = "[x]"
