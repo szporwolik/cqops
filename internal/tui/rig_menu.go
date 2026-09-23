@@ -322,6 +322,7 @@ func (rc *RigChooser) viewForm() string {
 		rc.vp.SetContent(bodyStr)
 		rc.lastFormContent = bodyStr
 	}
+	scrollToFocusedLine(&rc.vp, bodyStr)
 	if rc.vp.PastBottom() {
 		rc.vp.SetYOffset(rc.vp.TotalLineCount() - rc.vp.VisibleLineCount())
 	}

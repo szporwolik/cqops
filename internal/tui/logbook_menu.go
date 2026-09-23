@@ -487,6 +487,7 @@ func (c *LogbookChooser) viewForm() string {
 		c.vp.SetContent(bodyStr)
 		c.lastFormContent = bodyStr
 	}
+	scrollToFocusedLine(&c.vp, bodyStr)
 	// Prevent scrolling past the end: if past bottom, snap back.
 	if c.vp.PastBottom() {
 		c.autoScrollViewport()

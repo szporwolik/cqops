@@ -547,8 +547,8 @@ func (f *StationForm) BlurAll() {
 }
 
 // focusableRows implementation for the shared menuFocus engine. Row order
-// matches the NextInput chain: name, callsign, operator, locator, GPS grid,
-// IARU region, continent, advanced fields, Wavelog block, APRS block.
+// matches the render order: name, callsign, locator, GPS grid, IARU region,
+// continent, operator, advanced fields, Wavelog block, APRS block.
 func (f *StationForm) rowCount() int { return stationFormRows }
 
 // stationFormRows is the number of focus slots in the station form.
@@ -556,12 +556,12 @@ const stationFormRows = 29
 
 func (f *StationForm) rowVisible(i int) bool {
 	switch i {
-	case 2: // operator selector
-		return !f.HideOperator
-	case 4: // GPS grid checkbox
+	case 3: // GPS grid checkbox
 		return !f.HideGPSGrid
-	case 5: // IARU region
+	case 4: // IARU region
 		return !f.HideIARU
+	case 6: // operator selector
+		return !f.HideOperator
 	case 7, 8, 9, 10, 11, 12, 13, 14: // SOTA/POTA/WWFF/CQ/ITU/DXCC/SIG/SIG info
 		return f.Advanced
 	case 16, 17, 18, 19: // Wavelog URL, key, test button, station ID
@@ -585,15 +585,15 @@ func (f *StationForm) focusRow(i int) tea.Cmd {
 	case 1:
 		f.Callsign.Focus()
 	case 2:
-		f.opFocus = true
-	case 3:
 		f.Locator.Focus()
-	case 4:
+	case 3:
 		f.gpsGridFocus = true
-	case 5:
+	case 4:
 		f.iaruFocus = true
-	case 6:
+	case 5:
 		f.contFocus = true
+	case 6:
+		f.opFocus = true
 	case 7:
 		f.SOTARef.Focus()
 	case 8:

@@ -1,11 +1,46 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/config"
 )
+
+// TestScrollToFocusedLineKeepsCursorVisible: with a body taller than the
+// viewport, the line carrying the focus marker must always be inside the
+// visible window — the old fractional mapping let the cursor scroll
+// off-screen on small terminals.
+func TestScrollToFocusedLineKeepsCursorVisible(t *testing.T) {
+	const rows = 30
+	const focusRow = 28
+	const vpH = 8
+
+	var b strings.Builder
+	for i := 0; i < rows; i++ {
+		if i == focusRow {
+			b.WriteString(S.FormPrefixOn.Render("> ") + "focused row")
+		} else {
+			b.WriteString("plain row")
+		}
+		b.WriteString("\n")
+	}
+	body := b.String()
+
+	for start := 0; start <= rows-vpH; start++ {
+		vp := viewport.New(viewport.WithWidth(40), viewport.WithHeight(vpH))
+		vp.SetContent(body)
+		vp.SetYOffset(start)
+		scrollToFocusedLine(&vp, body)
+		off := vp.YOffset()
+		if focusRow < off || focusRow >= off+vpH {
+			t.Fatalf("start=%d: focused line %d not visible (offset=%d visible=%d)",
+				start, focusRow, off, vpH)
+		}
+	}
+}
 
 // fakeRows is a configurable focusableRows for testing the engine itself.
 type fakeRows struct {

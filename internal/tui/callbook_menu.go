@@ -763,12 +763,9 @@ func (cm *CallbookMenu) View() tea.View {
 	if body != cm.lastBodyContent {
 		cm.vp.SetContent(body)
 		cm.lastBodyContent = body
-		cm.vp.GotoTop()
-		scrollViewportToFraction(&cm.vp, cm.fm.scrollFraction(cm))
 	}
-	if cm.vp.PastBottom() {
-		scrollViewportToFraction(&cm.vp, cm.fm.scrollFraction(cm))
-	}
+	// Keep the focus marker inside the visible window.
+	scrollToFocusedLine(&cm.vp, body)
 	header := S.Title.Width(boxW).Render("Configuration \u2014 Callbook")
 	vpContent := cm.vp.View()
 	if hint := scrollHint(cm.vp); hint != "" {

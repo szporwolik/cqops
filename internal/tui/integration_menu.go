@@ -1545,11 +1545,10 @@ func (im *IntegrationMenu) View() tea.View {
 	if im.vp.TotalLineCount() == 0 || bodyStr != im.lastBodyContent {
 		im.vp.SetContent(bodyStr)
 		im.lastBodyContent = bodyStr
-		scrollViewportToFraction(&im.vp, im.fm.scrollFraction(im))
 	}
-	if im.vp.PastBottom() {
-		scrollViewportToFraction(&im.vp, im.fm.scrollFraction(im))
-	}
+	// Keep the focus marker inside the visible window — a fractional scroll
+	// mapping let the cursor leave the screen on small terminals.
+	scrollToFocusedLine(&im.vp, bodyStr)
 
 	header := S.Title.Width(boxW).Render("Configuration \u2014 Integrations")
 	vpContent := im.vp.View()

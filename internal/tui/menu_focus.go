@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strings"
+
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 )
@@ -154,6 +156,36 @@ func (f *menuFocus) scrollFraction(m focusableRows) float64 {
 		return 0
 	}
 	return float64(rank-1) / float64(visible-1)
+}
+
+// scrollToFocusedLine clamps the viewport offset so the line carrying the
+// focus marker (the FormPrefixOn "> " prefix) stays inside the visible
+// window. Unlike a fractional mapping it tolerates hidden rows, multi-line
+// bodies and resize changes. content is the raw styled body passed to
+// SetContent.
+func scrollToFocusedLine(vp *viewport.Model, content string) {
+	marker := S.FormPrefixOn.Render("> ")
+	focus := -1
+	for i, ln := range strings.Split(content, "\n") {
+		if strings.Contains(ln, marker) {
+			focus = i
+			break
+		}
+	}
+	if focus < 0 {
+		return
+	}
+	visible := vp.VisibleLineCount()
+	off := vp.YOffset()
+	if focus < off {
+		off = focus
+	} else if focus >= off+visible {
+		off = focus - visible + 1
+	}
+	if off < 0 {
+		off = 0
+	}
+	vp.SetYOffset(off)
 }
 
 // scrollViewportToFraction sets a viewport's Y offset so that the row at the

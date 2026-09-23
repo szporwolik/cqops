@@ -828,6 +828,7 @@ func (c *ContestChooser) viewForm() string {
 		c.vp.SetContent(bodyStr)
 		c.lastFormContent = bodyStr
 	}
+	scrollToFocusedLine(&c.vp, bodyStr)
 	if c.vp.PastBottom() {
 		c.vp.SetYOffset(c.vp.TotalLineCount() - c.vp.VisibleLineCount())
 	}
