@@ -21,6 +21,9 @@ type lockFile struct {
 	f    *os.File
 }
 
+// lockPrompt is the test seam for the stale-lock confirmation prompt.
+var lockPrompt = PromptYN
+
 func acquireLock(dir string) (*lockFile, error) {
 	path := filepath.Join(dir, "cqops.lock")
 
@@ -39,17 +42,44 @@ func acquireLock(dir string) (*lockFile, error) {
 		return nil, fmt.Errorf("cannot lock lock file: %w", err)
 	}
 	if !locked {
-		// Another live instance holds the OS lock. The file's PID content
-		// is only for the error message.
+		f.Close()
+		// The OS lock is held — normally by a live instance. When the PID
+		// recorded in the file no longer exists, the lock looks orphaned:
+		// ask the user before removing it, like the pre-refactor guard did.
 		owner := ""
 		if data, rerr := os.ReadFile(path); rerr == nil {
 			owner = strings.TrimSpace(string(data))
 		}
-		f.Close()
-		if owner != "" {
+		ownerPID, _ := strconv.Atoi(owner)
+		if ownerPID > 0 && processExists(ownerPID) {
 			return nil, fmt.Errorf("another CQOps instance is already running (PID %s)", owner)
 		}
-		return nil, fmt.Errorf("another CQOps instance is already running")
+		stale := owner
+		if stale == "" {
+			stale = "unknown"
+		}
+		if !lockPrompt(fmt.Sprintf("Stale lock from PID %s found. Delete it?", stale)) {
+			return nil, fmt.Errorf("lock file exists (%s) — remove it manually or restart", path)
+		}
+		if rerr := os.Remove(path); rerr != nil {
+			return nil, fmt.Errorf("cannot remove stale lock file: %w", rerr)
+		}
+		// Retry once on a fresh inode. If the lock was actually held by a
+		// live process (PID reuse), the retry still fails and we refuse to
+		// start instead of running two instances.
+		f2, oerr := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o644)
+		if oerr != nil {
+			return nil, fmt.Errorf("cannot reopen lock file: %w", oerr)
+		}
+		locked2, lerr := tryLockOS(f2)
+		if lerr != nil || !locked2 {
+			f2.Close()
+			if lerr != nil {
+				return nil, fmt.Errorf("cannot lock lock file: %w", lerr)
+			}
+			return nil, fmt.Errorf("another CQOps instance is already running")
+		}
+		f = f2
 	}
 
 	// We own the lock — record our PID for diagnostics. A stale PID left
@@ -81,8 +111,9 @@ func (l *lockFile) release() {
 }
 
 // PromptYN asks the user a yes/no question on the terminal. Used by the
-// CLI reset commands — the single-instance lock itself no longer prompts:
-// the OS releases it automatically when the owner exits.
+// CLI reset commands and by the single-instance lock when it finds a stale
+// (orphaned) lock file: the OS normally releases the lock automatically
+// when the owner exits, but a stale PID means the file can be removed.
 func PromptYN(prompt string) bool {
 	fmt.Fprintf(os.Stderr, "%s [y/N]: ", prompt)
 	reader := bufio.NewReader(os.Stdin)

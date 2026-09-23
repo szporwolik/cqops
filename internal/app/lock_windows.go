@@ -9,6 +9,18 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+// processExists reports whether a process with the given PID is alive.
+// On Windows FindProcess fails only for invalid PIDs; the handle is
+// released immediately — existence is all we need.
+func processExists(pid int) bool {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	defer proc.Release()
+	return true
+}
+
 // tryLockOS attempts a non-blocking exclusive byte-range lock on the lock
 // file. Returns locked=false with a nil error when another process holds
 // the lock. Windows releases file locks when the owning handle closes, so

@@ -7,6 +7,15 @@ import (
 	"syscall"
 )
 
+// processExists reports whether a process with the given PID is alive.
+// Signal 0 is the null signal — it performs error checking but sends
+// nothing. ESRCH means the process does not exist; EPERM means it exists
+// but cannot be signaled (still counts as alive).
+func processExists(pid int) bool {
+	err := syscall.Kill(pid, 0)
+	return err == nil || err == syscall.EPERM
+}
+
 // tryLockOS attempts a non-blocking exclusive flock on the lock file.
 // Returns locked=false with a nil error when another process holds the
 // lock. The kernel releases the lock automatically when the owning process
