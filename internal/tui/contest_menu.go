@@ -763,20 +763,21 @@ func (c *ContestChooser) viewForm() string {
 	if c.prefillExchange {
 		b.WriteString("\n")
 		c.renderIndentedField(&b, 7, "  Exchange Sent:", &c.exchSentInput, "")
+		b.WriteString("\n")
 	}
 
 	// Prefill Exchange Rcvd checkbox.
-	b.WriteString("\n")
 	checkboxRow(&b, w-4, c.fm.row == 8, "Prefill Exchange Rcvd:", c.prefillExchangeRcvd, "", false, contestRows)
 
 	// Indented exchange rcvd field.
 	if c.prefillExchangeRcvd {
 		b.WriteString("\n")
 		c.renderIndentedField(&b, 9, "  Exchange Rcvd:", &c.exchRcvdInput, "")
+		b.WriteString("\n")
 	}
 
 	// Marker reference section — shown below the form fields.
-	b.WriteString("\n\n")
+	b.WriteString("\n")
 	markerLink := "  Exchange markers — see " + osc8Link("https://docs.cqops.com", "docs.cqops.com")
 	b.WriteString(markerLink)
 	b.WriteString("\n\n")

@@ -487,9 +487,8 @@ func (f *RigForm) View() tea.View {
 		b.WriteString(padOrTrunc(renderField(portLabel, &f.BackendPort, f.focus == rigFieldBackendPort), availW))
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(renderField("  Poll (s):", &f.PollInterval, f.focus == rigFieldPollInterval), availW))
+		b.WriteString("\n")
 	}
-
-	b.WriteString("\n")
 
 	// Rotor control — cycles None → Hamlib on Space.
 	rotorHint := ""
@@ -505,9 +504,8 @@ func (f *RigForm) View() tea.View {
 		b.WriteString(padOrTrunc(renderField(hostLabel, &f.RotorHost, f.focus == rigFieldRotorHost), availW))
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(renderField(portLabel, &f.RotorPort, f.focus == rigFieldRotorPort), availW))
+		b.WriteString("\n")
 	}
-
-	b.WriteString("\n")
 
 	// WSJT-X checkbox.
 	checkboxRow(&b, availW, f.focus == rigFieldWsjtx, "Use WSJT-X:", f.WsjtxEnabled, "", false, rigRows)
