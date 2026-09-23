@@ -34,6 +34,9 @@ func holdLockFile(t *testing.T, dir, pid string) *os.File {
 // deadPID is far beyond Linux pid_max — guaranteed not to exist.
 const deadPID = 1 << 30
 
+// TestAcquireLockLiveInstanceFailsWithoutPrompt: a genuine live CQOps holder
+// fails fast — the operator can simply close that instance. No delete
+// question is asked for a live process.
 func TestAcquireLockLiveInstanceFailsWithoutPrompt(t *testing.T) {
 	origPrompt := lockPrompt
 	origOwner := lockOwnerIsCQOps
@@ -42,20 +45,16 @@ func TestAcquireLockLiveInstanceFailsWithoutPrompt(t *testing.T) {
 	lockPrompt = func(string) bool { prompted = true; return true }
 	lockOwnerIsCQOps = func(int) bool { return true }
 
-	// A live CQOps owner (our own PID, marked as CQOps) holds the OS lock.
 	dir := t.TempDir()
 	hold := holdLockFile(t, dir, strconv.Itoa(os.Getpid()))
 	defer hold.Close()
 
 	_, err := acquireLock(dir)
-	if err == nil {
-		t.Fatal("acquireLock should fail while the lock is held")
-	}
-	if !strings.Contains(err.Error(), "already running") {
-		t.Errorf("error = %q, want 'already running'", err)
+	if err == nil || !strings.Contains(err.Error(), "already running") {
+		t.Fatalf("err = %v, want 'already running'", err)
 	}
 	if prompted {
-		t.Error("live instance must not trigger the stale-lock prompt")
+		t.Error("live instance must not trigger the delete-lock prompt")
 	}
 }
 

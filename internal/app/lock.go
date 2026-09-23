@@ -46,12 +46,11 @@ func acquireLock(dir string) (*lockFile, error) {
 	}
 	if !locked {
 		f.Close()
-		// The OS lock is held — normally by a live instance. When the PID
-		// recorded in the file no longer exists, the lock looks orphaned:
-		// ask the user before removing it, like the pre-refactor guard did.
-		// The same applies when the PID was reused by an unrelated process:
-		// only a PID that really belongs to a CQOps process is treated as a
-		// live instance.
+		// The OS lock is held — normally by a live instance: that fails fast
+		// (the operator can just close it). When the PID recorded in the file
+		// no longer exists, or was reused by an unrelated process (checked
+		// via the kernel's process name), the lock looks orphaned and the
+		// user is asked before removing it, like the pre-refactor guard did.
 		owner := ""
 		if data, rerr := os.ReadFile(path); rerr == nil {
 			owner = strings.TrimSpace(string(data))
