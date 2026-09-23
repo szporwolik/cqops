@@ -4,6 +4,8 @@ package app
 
 import (
 	"os"
+	"strconv"
+	"strings"
 	"syscall"
 )
 
@@ -14,6 +16,19 @@ import (
 func processExists(pid int) bool {
 	err := syscall.Kill(pid, 0)
 	return err == nil || err == syscall.EPERM
+}
+
+// processIsCQOps reports whether the process with the given PID is a CQOps
+// instance (the kernel's task comm name, e.g. /proc/<pid>/comm). Used to
+// distinguish a real running instance from a PID reused by an unrelated
+// process after a crash. When the answer cannot be determined, it returns
+// true — refusing to start is the safe default.
+func processIsCQOps(pid int) bool {
+	comm, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/comm")
+	if err != nil {
+		return true
+	}
+	return strings.TrimSpace(string(comm)) == "cqops"
 }
 
 // tryLockOS attempts a non-blocking exclusive flock on the lock file.

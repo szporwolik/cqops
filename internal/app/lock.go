@@ -24,6 +24,9 @@ type lockFile struct {
 // lockPrompt is the test seam for the stale-lock confirmation prompt.
 var lockPrompt = PromptYN
 
+// lockOwnerIsCQOps is the test seam for the live-owner identity check.
+var lockOwnerIsCQOps = processIsCQOps
+
 func acquireLock(dir string) (*lockFile, error) {
 	path := filepath.Join(dir, "cqops.lock")
 
@@ -46,13 +49,16 @@ func acquireLock(dir string) (*lockFile, error) {
 		// The OS lock is held — normally by a live instance. When the PID
 		// recorded in the file no longer exists, the lock looks orphaned:
 		// ask the user before removing it, like the pre-refactor guard did.
+		// The same applies when the PID was reused by an unrelated process:
+		// only a PID that really belongs to a CQOps process is treated as a
+		// live instance.
 		owner := ""
 		if data, rerr := os.ReadFile(path); rerr == nil {
 			owner = strings.TrimSpace(string(data))
 		}
 		ownerPID, _ := strconv.Atoi(owner)
-		if ownerPID > 0 && processExists(ownerPID) {
-			return nil, fmt.Errorf("another CQOps instance is already running (PID %s)", owner)
+		if ownerPID > 0 && processExists(ownerPID) && lockOwnerIsCQOps(ownerPID) {
+			return nil, fmt.Errorf("another CQOps instance is already running (PID %s) — close it before starting", owner)
 		}
 		stale := owner
 		if stale == "" {

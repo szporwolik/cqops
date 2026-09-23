@@ -16,6 +16,12 @@ func lockPath(dir string) string {
 }
 
 func TestAcquireLock_HoldsExclusiveOwnership(t *testing.T) {
+	origOwner := lockOwnerIsCQOps
+	t.Cleanup(func() { lockOwnerIsCQOps = origOwner })
+	// Treat the test process as a real CQOps instance so the held lock
+	// fails fast instead of prompting.
+	lockOwnerIsCQOps = func(int) bool { return true }
+
 	dir := t.TempDir()
 	lk, err := acquireLock(dir)
 	if err != nil {
@@ -47,6 +53,11 @@ func TestAcquireLock_HoldsExclusiveOwnership(t *testing.T) {
 // TestAcquireLock_AtomicUnderRace verifies the OS lock serializes racers:
 // exactly one of N simultaneous instances can hold the lock.
 func TestAcquireLock_AtomicUnderRace(t *testing.T) {
+	origOwner := lockOwnerIsCQOps
+	t.Cleanup(func() { lockOwnerIsCQOps = origOwner })
+	// Losers must fail fast (real CQOps owner) instead of prompting.
+	lockOwnerIsCQOps = func(int) bool { return true }
+
 	dir := t.TempDir()
 
 	const n = 8

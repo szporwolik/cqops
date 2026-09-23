@@ -21,6 +21,13 @@ func processExists(pid int) bool {
 	return true
 }
 
+// processIsCQOps conservatively reports true on Windows — the process-name
+// lookup is not implemented, so any live PID counts as a real instance and
+// startup fails fast instead of prompting.
+func processIsCQOps(pid int) bool {
+	return true
+}
+
 // tryLockOS attempts a non-blocking exclusive byte-range lock on the lock
 // file. Returns locked=false with a nil error when another process holds
 // the lock. Windows releases file locks when the owning handle closes, so

@@ -35,12 +35,14 @@ func holdLockFile(t *testing.T, dir, pid string) *os.File {
 const deadPID = 1 << 30
 
 func TestAcquireLockLiveInstanceFailsWithoutPrompt(t *testing.T) {
-	orig := lockPrompt
-	t.Cleanup(func() { lockPrompt = orig })
+	origPrompt := lockPrompt
+	origOwner := lockOwnerIsCQOps
+	t.Cleanup(func() { lockPrompt = origPrompt; lockOwnerIsCQOps = origOwner })
 	prompted := false
 	lockPrompt = func(string) bool { prompted = true; return true }
+	lockOwnerIsCQOps = func(int) bool { return true }
 
-	// A live owner (our own PID) holds the OS lock.
+	// A live CQOps owner (our own PID, marked as CQOps) holds the OS lock.
 	dir := t.TempDir()
 	hold := holdLockFile(t, dir, strconv.Itoa(os.Getpid()))
 	defer hold.Close()
@@ -57,9 +59,42 @@ func TestAcquireLockLiveInstanceFailsWithoutPrompt(t *testing.T) {
 	}
 }
 
+// TestAcquireLockReusedPIDPrompts: the lock is held and the recorded PID is
+// alive, but it no longer belongs to a CQOps process (PID reuse) — the
+// user must still get the delete prompt.
+func TestAcquireLockReusedPIDPrompts(t *testing.T) {
+	origPrompt := lockPrompt
+	origOwner := lockOwnerIsCQOps
+	t.Cleanup(func() { lockPrompt = origPrompt; lockOwnerIsCQOps = origOwner })
+	var asked string
+	lockPrompt = func(q string) bool { asked = q; return true }
+	lockOwnerIsCQOps = func(int) bool { return false }
+
+	dir := t.TempDir()
+	hold := holdLockFile(t, dir, strconv.Itoa(os.Getpid()))
+	defer hold.Close()
+
+	lk, err := acquireLock(dir)
+	if err != nil {
+		t.Fatalf("acquireLock with a reused PID and accepted prompt: %v", err)
+	}
+	defer lk.release()
+
+	if asked == "" {
+		t.Fatal("reused PID must trigger the prompt")
+	}
+	// The fresh lock is owned now.
+	lockOwnerIsCQOps = func(int) bool { return true }
+	_, err = acquireLock(dir)
+	if err == nil || !strings.Contains(err.Error(), "already running") {
+		t.Errorf("after accepted prompt the lock must be owned: %v", err)
+	}
+}
+
 func TestAcquireLockStalePromptAccepted(t *testing.T) {
-	orig := lockPrompt
-	t.Cleanup(func() { lockPrompt = orig })
+	origPrompt := lockPrompt
+	origOwner := lockOwnerIsCQOps
+	t.Cleanup(func() { lockPrompt = origPrompt; lockOwnerIsCQOps = origOwner })
 	var asked string
 	lockPrompt = func(q string) bool { asked = q; return true }
 
@@ -81,6 +116,7 @@ func TestAcquireLockStalePromptAccepted(t *testing.T) {
 	}
 
 	// We own the fresh lock — a further acquire must fail as "live".
+	lockOwnerIsCQOps = func(int) bool { return true }
 	_, err = acquireLock(dir)
 	if err == nil || !strings.Contains(err.Error(), "already running") {
 		t.Errorf("after accepted prompt the lock must be owned: %v", err)
