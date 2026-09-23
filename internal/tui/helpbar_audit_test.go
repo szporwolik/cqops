@@ -157,7 +157,7 @@ func TestMainMenuEscExits(t *testing.T) {
 	}
 }
 
-// TestMainMenuDigitsJump: digits 1-8 select the menu entry directly.
+// TestMainMenuDigitsJump: digits 1-7 select the menu entry directly.
 func TestMainMenuDigitsJump(t *testing.T) {
 	mm := NewMainMenu()
 	upd, _ := mm.Update(tea.KeyPressMsg{Code: '1'})

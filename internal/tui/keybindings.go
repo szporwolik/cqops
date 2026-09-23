@@ -318,7 +318,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 	if m.screen == screenMainMenu {
 		bindings = append(bindings,
 			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
-			key.NewBinding(key.WithKeys("1", "2", "3", "4", "5", "6", "7", "8"), key.WithHelp("1-8", "Jump")),
+			key.NewBinding(key.WithKeys("1", "2", "3", "4", "5", "6", "7"), key.WithHelp("1-7", "Jump")),
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Select")),
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 		)
