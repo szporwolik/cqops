@@ -8,30 +8,34 @@ import (
 )
 
 // generalRowCount is the number of rows in the General settings menu:
-// Units, Timezone, and eight toggles.
-const generalRowCount = 10
+// Units, Timezone, eight toggles, and the Notifications submenu opener.
+const generalRowCount = 11
+
+// generalRowNotifications is the row of the Notifications submenu opener.
+const generalRowNotifications = 10
 
 // generalRows is the row style shared by every General settings row.
 var generalRows = rowStyle{label: S.FormLabelGen, focused: S.FormFocusedGen}
 
 type GeneralMenu struct {
-	distanceUnit  string
-	timezone      string
-	tzIndex       int
-	renderMap     bool
-	drawGrayline  bool
-	pictureAtQRZ  bool
-	solarAtQSO    bool
-	useSCP        bool
-	useRef        bool
-	debugMode     bool
-	kittyGraphics bool
-	fm            menuFocus
-	done          bool
-	saved         bool
-	goBack        bool
-	width         int
-	height        int
+	distanceUnit    string
+	timezone        string
+	tzIndex         int
+	renderMap       bool
+	drawGrayline    bool
+	pictureAtQRZ    bool
+	solarAtQSO      bool
+	useSCP          bool
+	useRef          bool
+	debugMode       bool
+	kittyGraphics   bool
+	fm              menuFocus
+	done            bool
+	saved           bool
+	goBack          bool
+	goNotifications bool
+	width           int
+	height          int
 }
 
 func NewGeneralMenu(cfg *config.Config) *GeneralMenu {
@@ -65,7 +69,7 @@ func NewGeneralMenu(cfg *config.Config) *GeneralMenu {
 	}
 }
 
-// focusableRows implementation — all ten rows are always visible and none
+// focusableRows implementation — all rows are always visible and none
 // carry a textinput.
 func (gm *GeneralMenu) rowCount() int        { return generalRowCount }
 func (gm *GeneralMenu) rowVisible(int) bool  { return true }
@@ -85,6 +89,10 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			gm.goBack = true
 			return gm, nil
 		case "enter":
+			if gm.fm.row == generalRowNotifications {
+				gm.goNotifications = true
+				return gm, nil
+			}
 			gm.done = true
 			gm.saved = true
 			return gm, nil
@@ -127,6 +135,8 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				gm.kittyGraphics = !gm.kittyGraphics
 			case 9:
 				gm.debugMode = !gm.debugMode
+			case generalRowNotifications:
+				gm.goNotifications = true
 			}
 		}
 	}
@@ -203,8 +213,11 @@ func (gm *GeneralMenu) View() tea.View {
 	checkboxRow(&b, rowW, focused(8), "Kitty graphics", gm.kittyGraphics, "Experimental — requires Kitty, Ghostty, or WezTerm", false, generalRows)
 	checkboxRow(&b, rowW, focused(9), "Debug Mode", gm.debugMode, "Verbose logging for troubleshooting", false, generalRows)
 
-	// Save & Back button at the end of the menu.
-	b.WriteString("\n")
+	// Notifications submenu — opens the dedicated Notifications screen.
+	// Rendered as a value row so it aligns with the other settings rows.
+	valueRow(&b, rowW, focused(generalRowNotifications), "Notifications…", "", "", generalRows)
+
+	// Save & Back button at the end of the menu — flush under the last row.
 	b.WriteString(gm.fm.btn.line("Save & Back", boxW-4))
 
 	body := drawMenuWithHeader("Configuration \u2014 General Settings", b.String(), w)

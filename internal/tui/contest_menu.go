@@ -802,8 +802,8 @@ func (c *ContestChooser) viewForm() string {
 	b.WriteString("\n")
 	b.WriteString(DimStyle.Render("  Example: @rst @serial will generate 59 023"))
 
-	// Save & Back button at the end of the form.
-	b.WriteString("\n\n")
+	// Save & Back button at the end of the form — flush under the last row.
+	b.WriteString("\n")
 	b.WriteString(c.fm.btn.line("Save & Back", maxW))
 
 	// Use viewport for scrollable form body on small terminals.

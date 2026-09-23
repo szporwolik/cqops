@@ -162,14 +162,29 @@ func TestMainMenuDigitsJump(t *testing.T) {
 	mm := NewMainMenu()
 	upd, _ := mm.Update(tea.KeyPressMsg{Code: '1'})
 	mm = upd.(*MainMenu)
-	if mm.action != "general" {
-		t.Errorf("digit 1: action = %q, want general", mm.action)
+	if mm.action != "logbook" {
+		t.Errorf("digit 1: action = %q, want logbook", mm.action)
 	}
 
-	upd, _ = mm.Update(tea.KeyPressMsg{Code: '6'})
+	upd, _ = mm.Update(tea.KeyPressMsg{Code: '5'})
 	mm = upd.(*MainMenu)
 	if mm.action != "integration" {
-		t.Errorf("digit 6: action = %q, want integration", mm.action)
+		t.Errorf("digit 5: action = %q, want integration", mm.action)
+	}
+}
+
+// TestMainMenuOrder pins the entry order: station identity and operation
+// first, online services next, preferences last.
+func TestMainMenuOrder(t *testing.T) {
+	mm := NewMainMenu()
+	want := []string{"Logbooks", "Operators", "Rigs", "Contests", "Integrations", "Callbook", "General"}
+	if len(mm.items) != len(want) {
+		t.Fatalf("menu has %d items, want %d", len(mm.items), len(want))
+	}
+	for i, label := range want {
+		if mm.items[i].label != label {
+			t.Errorf("item %d = %q, want %q", i, mm.items[i].label, label)
+		}
 	}
 }
 

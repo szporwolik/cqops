@@ -60,7 +60,7 @@ func TestGeneralMenuSaveBackButton(t *testing.T) {
 	gm.height = 30
 
 	// Down from the last item reaches the button.
-	gm.fm.row = 9
+	gm.fm.row = generalRowNotifications
 	gm.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	if !gm.fm.btn.Focus {
 		t.Fatal("down from last item should focus the Save & Back button")

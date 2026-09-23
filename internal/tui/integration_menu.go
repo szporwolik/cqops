@@ -84,13 +84,12 @@ type IntegrationMenu struct {
 	aprsToast string
 	gpsToast  string
 
-	fm         menuFocus
-	done       bool
-	saved      bool
-	goBack     bool
-	goCallbook bool
-	width      int
-	height     int
+	fm     menuFocus
+	done   bool
+	saved  bool
+	goBack bool
+	width  int
+	height int
 
 	// saveError is set when Ctrl+S is blocked by validation.
 	// The parent reads it to show a toast, then clears it.
@@ -102,51 +101,50 @@ type IntegrationMenu struct {
 }
 
 const (
-	imDXCChk       = 0
-	imDXCHost      = 1
-	imDXCPort      = 2
-	imDXCLogin     = 3
-	imQRZChk       = 4
-	imQRZUser      = 5
-	imQRZPass      = 6
-	imQRZTest      = 7
-	imHTTPChk      = 8
-	imHTTPAddr     = 9
-	imHTTPPort     = 10
-	imHTTPTheme    = 11
-	imHTTPTLS      = 12
-	imHTTPTLSCert  = 13
-	imHTTPTLSKey   = 14
-	imHTTPHdr1     = 15
-	imHTTPHdr2     = 16
-	imHTTPLogo     = 17
-	imHTTPQRLink   = 18
-	imHTTPEvt      = 19
-	imGPSChk       = 20
-	imGPSSvc       = 21 // service type: None / Serial / GPSD
-	imGPSGridPrec  = 22 // grid precision: 10 / 8 / 6
-	imGPSPort      = 23 // serial port
-	imGPSBaud      = 24 // baud rate
-	imGPSDTR       = 25 // DTR
-	imGPSRTS       = 26 // RTS
-	imGPSDHost     = 27 // GPSD host
-	imGPSDPort     = 28 // GPSD port
-	imGPSTest      = 29 // test button
-	imAPRSChk      = 30
-	imAPRSSvc      = 31 // service type: APRS-IS / KISS / KISS Server
-	imAPRSServer   = 32 // APRS-IS server host:port
-	imAPRSKISSHost = 33 // KISS Server TCP host
-	imAPRSKISSPort = 34 // KISS Server TCP port
-	imAPRSPort     = 35 // KISS serial port
-	imAPRSBaud     = 36 // KISS baud rate
-	imAPRSData     = 37 // KISS data bits
-	imAPRSParity   = 38 // KISS parity
-	imAPRSStop     = 39 // KISS stop bits
-	imAPRSDTR      = 40 // KISS DTR
-	imAPRSRTS      = 41 // KISS RTS
-	imAPRSTest     = 42 // test button
-	imPSKChk       = 43
-	imMax          = 44
+	// Row numbering follows the render order, which mirrors the top-pane
+	// function order: APRS (F3), DXC (F4), PSK (F5), then the integrations
+	// without a pane — HTTP Server and GPS.
+	imAPRSChk      = 0
+	imAPRSSvc      = 1  // service type: APRS-IS / KISS / KISS Server
+	imAPRSServer   = 2  // APRS-IS server host:port
+	imAPRSKISSHost = 3  // KISS Server TCP host
+	imAPRSKISSPort = 4  // KISS Server TCP port
+	imAPRSPort     = 5  // KISS serial port
+	imAPRSBaud     = 6  // KISS baud rate
+	imAPRSData     = 7  // KISS data bits
+	imAPRSParity   = 8  // KISS parity
+	imAPRSStop     = 9  // KISS stop bits
+	imAPRSDTR      = 10 // KISS DTR
+	imAPRSRTS      = 11 // KISS RTS
+	imAPRSTest     = 12 // test button
+	imDXCChk       = 13
+	imDXCHost      = 14
+	imDXCPort      = 15
+	imDXCLogin     = 16
+	imPSKChk       = 17
+	imHTTPChk      = 18
+	imHTTPAddr     = 19
+	imHTTPPort     = 20
+	imHTTPTheme    = 21
+	imHTTPTLS      = 22
+	imHTTPTLSCert  = 23
+	imHTTPTLSKey   = 24
+	imHTTPHdr1     = 25
+	imHTTPHdr2     = 26
+	imHTTPLogo     = 27
+	imHTTPQRLink   = 28
+	imHTTPEvt      = 29
+	imGPSChk       = 30
+	imGPSSvc       = 31 // service type: None / Serial / GPSD
+	imGPSGridPrec  = 32 // grid precision: 10 / 8 / 6
+	imGPSPort      = 33 // serial port
+	imGPSBaud      = 34 // baud rate
+	imGPSDTR       = 35 // DTR
+	imGPSRTS       = 36 // RTS
+	imGPSDHost     = 37 // GPSD host
+	imGPSDPort     = 38 // GPSD port
+	imGPSTest      = 39 // test button
+	imMax          = 40
 )
 
 type callbookTestMsg struct {
@@ -870,9 +868,6 @@ func (im *IntegrationMenu) isPositionVisible(pos int) bool {
 		return true
 	case imDXCHost, imDXCPort, imDXCLogin:
 		return im.dxcEnabled
-	// QRZ positions are now dead — callbook is a top-level config menu.
-	case imQRZChk, imQRZUser, imQRZPass, imQRZTest:
-		return false
 	case imHTTPAddr, imHTTPPort, imHTTPTheme, imHTTPHdr1, imHTTPHdr2, imHTTPLogo, imHTTPQRLink, imHTTPEvt:
 		return im.httpEnabled
 	case imHTTPTLS:
@@ -1069,6 +1064,162 @@ func (im *IntegrationMenu) View() tea.View {
 		"on low-end hardware or field setups."
 	infoBox(&b, infoText, infoMaxW)
 
+	// --- APRS section ---
+	aprsCheckbox := "[ ]"
+	if im.aprsEnabled {
+		aprsCheckbox = "[x]"
+	}
+	aprsPrefix := "  "
+	aprsLabel := S.FormLabelWide.Align(lipgloss.Left).Render("APRS:")
+	if im.fm.row == imAPRSChk {
+		aprsPrefix = S.FormPrefixOn.Render("> ")
+		aprsLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("APRS:")
+		aprsCheckbox = CursorStyle.Render(aprsCheckbox) + " " + DimStyle.Render("(Space)")
+	}
+	b.WriteString(padOrTrunc(
+		lipgloss.JoinHorizontal(lipgloss.Center, aprsPrefix, aprsLabel, " ", aprsCheckbox),
+		lineW))
+
+	if im.aprsEnabled {
+		// Service type — Space to cycle.
+		b.WriteString("\n")
+		svcPrefix := "  "
+		svcLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Service:")
+		svcVal := aprsServiceOptions[im.aprsService].label
+		if im.fm.row == imAPRSSvc {
+			svcPrefix = S.FormPrefixOn.Render("> ")
+			svcLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Service:")
+			svcVal = CursorStyle.Render(svcVal) + " " + DimStyle.Render("(Space)")
+		} else {
+			svcVal = ValueStyle.Render(svcVal)
+		}
+		b.WriteString(padOrTrunc(
+			lipgloss.JoinHorizontal(lipgloss.Center, svcPrefix, svcLabel, " ", svcVal),
+			lineW))
+
+		// APRS-IS — server host:port.
+		if im.aprsService == 0 {
+			b.WriteString("\n")
+			b.WriteString(padOrTrunc(im.renderField(imAPRSServer, "  Server:", &im.aprsServer, false), lineW))
+		}
+
+		// KISS Server — separate host and port fields.
+		if im.aprsService == 2 {
+			b.WriteString("\n")
+			b.WriteString(padOrTrunc(im.renderField(imAPRSKISSHost, "  Host:", &im.aprsKISSHost, false), lineW))
+			b.WriteString("\n")
+			b.WriteString(padOrTrunc(im.renderField(imAPRSKISSPort, "  Port:", &im.aprsKISSPort, false), lineW))
+		}
+
+		// KISS specific fields.
+		if im.aprsService == 1 {
+			b.WriteString("\n")
+			b.WriteString(padOrTrunc(im.renderField(imAPRSPort, "  Port:", &im.aprsPort, false), lineW))
+			b.WriteString("\n")
+			baudPrefix := "  "
+			baudLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Baud:")
+			baudVal := fmt.Sprintf("%d", im.aprsBaudRate)
+			if im.fm.row == imAPRSBaud {
+				baudPrefix = S.FormPrefixOn.Render("> ")
+				baudLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Baud:")
+				baudVal = CursorStyle.Render(baudVal) + " " + DimStyle.Render("(Space)")
+			} else {
+				baudVal = ValueStyle.Render(baudVal)
+			}
+			b.WriteString(padOrTrunc(
+				lipgloss.JoinHorizontal(lipgloss.Center, baudPrefix, baudLabel, " ", baudVal),
+				lineW))
+			// Data bits — Space to cycle.
+			b.WriteString("\n")
+			dataPrefix := "  "
+			dataLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Data bits:")
+			dataVal := fmt.Sprintf("%d", im.aprsDataBits)
+			if im.fm.row == imAPRSData {
+				dataPrefix = S.FormPrefixOn.Render("> ")
+				dataLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Data bits:")
+				dataVal = CursorStyle.Render(dataVal) + " " + DimStyle.Render("(Space)")
+			} else {
+				dataVal = ValueStyle.Render(dataVal)
+			}
+			b.WriteString(padOrTrunc(
+				lipgloss.JoinHorizontal(lipgloss.Center, dataPrefix, dataLabel, " ", dataVal),
+				lineW))
+			// Parity — Space to cycle.
+			b.WriteString("\n")
+			parPrefix := "  "
+			parLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Parity:")
+			parVal := parityOptions[im.aprsParity].label
+			if im.fm.row == imAPRSParity {
+				parPrefix = S.FormPrefixOn.Render("> ")
+				parLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Parity:")
+				parVal = CursorStyle.Render(parVal) + " " + DimStyle.Render("(Space)")
+			} else {
+				parVal = ValueStyle.Render(parVal)
+			}
+			b.WriteString(padOrTrunc(
+				lipgloss.JoinHorizontal(lipgloss.Center, parPrefix, parLabel, " ", parVal),
+				lineW))
+			// Stop bits — Space to cycle.
+			b.WriteString("\n")
+			stopPrefix := "  "
+			stopLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Stop bits:")
+			stopVal := stopBitsOptions[im.aprsStopBits].label
+			if im.fm.row == imAPRSStop {
+				stopPrefix = S.FormPrefixOn.Render("> ")
+				stopLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Stop bits:")
+				stopVal = CursorStyle.Render(stopVal) + " " + DimStyle.Render("(Space)")
+			} else {
+				stopVal = ValueStyle.Render(stopVal)
+			}
+			b.WriteString(padOrTrunc(
+				lipgloss.JoinHorizontal(lipgloss.Center, stopPrefix, stopLabel, " ", stopVal),
+				lineW))
+			// DTR checkbox.
+			b.WriteString("\n")
+			dtrCb := "[ ]"
+			if im.aprsDTR {
+				dtrCb = "[x]"
+			}
+			dtrPrefix := "  "
+			dtrLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  DTR:")
+			if im.fm.row == imAPRSDTR {
+				dtrPrefix = S.FormPrefixOn.Render("> ")
+				dtrLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  DTR:")
+				dtrCb = CursorStyle.Render(dtrCb) + " " + DimStyle.Render("(Space)")
+			}
+			b.WriteString(padOrTrunc(
+				lipgloss.JoinHorizontal(lipgloss.Center, dtrPrefix, dtrLabel, " ", dtrCb),
+				lineW))
+			// RTS checkbox.
+			b.WriteString("\n")
+			rtsCb := "[ ]"
+			if im.aprsRTS {
+				rtsCb = "[x]"
+			}
+			rtsPrefix := "  "
+			rtsLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  RTS:")
+			if im.fm.row == imAPRSRTS {
+				rtsPrefix = S.FormPrefixOn.Render("> ")
+				rtsLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  RTS:")
+				rtsCb = CursorStyle.Render(rtsCb) + " " + DimStyle.Render("(Space)")
+			}
+			b.WriteString(padOrTrunc(
+				lipgloss.JoinHorizontal(lipgloss.Center, rtsPrefix, rtsLabel, " ", rtsCb),
+				lineW))
+		}
+
+		// Test button — always available when APRS is enabled.
+		b.WriteString("\n")
+		btnText := "[ Test APRS ]"
+		if im.aprsTesting {
+			b.WriteString(padOrTrunc("    "+DimStyle.Render(btnText)+" "+DimStyle.Render("..."), lineW))
+		} else {
+			buttonRow(&b, lineW, im.fm.row == imAPRSTest, btnText)
+		}
+	} else {
+		b.WriteString("\n")
+	}
+
 	// --- DXC section ---
 	dxcCheckbox := "[ ]"
 	if im.dxcEnabled {
@@ -1096,6 +1247,24 @@ func (im *IntegrationMenu) View() tea.View {
 	} else {
 		b.WriteString("\n")
 	}
+
+	// --- PSK Reporter section ---
+	pskCb := "[ ]"
+	if im.pskEnabled {
+		pskCb = "[x]"
+	}
+	pskPrefix := "  "
+	pskLabel := S.FormLabelWide.Align(lipgloss.Left).Render("PSK Reporter:")
+	if im.fm.row == imPSKChk {
+		pskPrefix = S.FormPrefixOn.Render("> ")
+		pskLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("PSK Reporter:")
+		pskCb = CursorStyle.Render(pskCb) + " " + DimStyle.Render("(Space)")
+		pskCb += " " + DimStyle.Render("F5 panel, off by default")
+	}
+	b.WriteString(padOrTrunc(
+		lipgloss.JoinHorizontal(lipgloss.Center, pskPrefix, pskLabel, " ", pskCb),
+		lineW))
+	b.WriteString("\n")
 
 	// --- HTTP Server section ---
 	httpCheckbox := "[ ]"
@@ -1286,181 +1455,7 @@ func (im *IntegrationMenu) View() tea.View {
 		b.WriteString("\n")
 	}
 
-	// --- APRS section ---
-	aprsCheckbox := "[ ]"
-	if im.aprsEnabled {
-		aprsCheckbox = "[x]"
-	}
-	aprsPrefix := "  "
-	aprsLabel := S.FormLabelWide.Align(lipgloss.Left).Render("APRS:")
-	if im.fm.row == imAPRSChk {
-		aprsPrefix = S.FormPrefixOn.Render("> ")
-		aprsLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("APRS:")
-		aprsCheckbox = CursorStyle.Render(aprsCheckbox) + " " + DimStyle.Render("(Space)")
-	}
-	b.WriteString(padOrTrunc(
-		lipgloss.JoinHorizontal(lipgloss.Center, aprsPrefix, aprsLabel, " ", aprsCheckbox),
-		lineW))
-
-	if im.aprsEnabled {
-		// Service type — Space to cycle.
-		b.WriteString("\n")
-		svcPrefix := "  "
-		svcLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Service:")
-		svcVal := aprsServiceOptions[im.aprsService].label
-		if im.fm.row == imAPRSSvc {
-			svcPrefix = S.FormPrefixOn.Render("> ")
-			svcLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Service:")
-			svcVal = CursorStyle.Render(svcVal) + " " + DimStyle.Render("(Space)")
-		} else {
-			svcVal = ValueStyle.Render(svcVal)
-		}
-		b.WriteString(padOrTrunc(
-			lipgloss.JoinHorizontal(lipgloss.Center, svcPrefix, svcLabel, " ", svcVal),
-			lineW))
-
-		// APRS-IS — server host:port.
-		if im.aprsService == 0 {
-			b.WriteString("\n")
-			b.WriteString(padOrTrunc(im.renderField(imAPRSServer, "  Server:", &im.aprsServer, false), lineW))
-		}
-
-		// KISS Server — separate host and port fields.
-		if im.aprsService == 2 {
-			b.WriteString("\n")
-			b.WriteString(padOrTrunc(im.renderField(imAPRSKISSHost, "  Host:", &im.aprsKISSHost, false), lineW))
-			b.WriteString("\n")
-			b.WriteString(padOrTrunc(im.renderField(imAPRSKISSPort, "  Port:", &im.aprsKISSPort, false), lineW))
-		}
-
-		// KISS specific fields.
-		if im.aprsService == 1 {
-			b.WriteString("\n")
-			b.WriteString(padOrTrunc(im.renderField(imAPRSPort, "  Port:", &im.aprsPort, false), lineW))
-			b.WriteString("\n")
-			baudPrefix := "  "
-			baudLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Baud:")
-			baudVal := fmt.Sprintf("%d", im.aprsBaudRate)
-			if im.fm.row == imAPRSBaud {
-				baudPrefix = S.FormPrefixOn.Render("> ")
-				baudLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Baud:")
-				baudVal = CursorStyle.Render(baudVal) + " " + DimStyle.Render("(Space)")
-			} else {
-				baudVal = ValueStyle.Render(baudVal)
-			}
-			b.WriteString(padOrTrunc(
-				lipgloss.JoinHorizontal(lipgloss.Center, baudPrefix, baudLabel, " ", baudVal),
-				lineW))
-			// Data bits — Space to cycle.
-			b.WriteString("\n")
-			dataPrefix := "  "
-			dataLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Data bits:")
-			dataVal := fmt.Sprintf("%d", im.aprsDataBits)
-			if im.fm.row == imAPRSData {
-				dataPrefix = S.FormPrefixOn.Render("> ")
-				dataLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Data bits:")
-				dataVal = CursorStyle.Render(dataVal) + " " + DimStyle.Render("(Space)")
-			} else {
-				dataVal = ValueStyle.Render(dataVal)
-			}
-			b.WriteString(padOrTrunc(
-				lipgloss.JoinHorizontal(lipgloss.Center, dataPrefix, dataLabel, " ", dataVal),
-				lineW))
-			// Parity — Space to cycle.
-			b.WriteString("\n")
-			parPrefix := "  "
-			parLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Parity:")
-			parVal := parityOptions[im.aprsParity].label
-			if im.fm.row == imAPRSParity {
-				parPrefix = S.FormPrefixOn.Render("> ")
-				parLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Parity:")
-				parVal = CursorStyle.Render(parVal) + " " + DimStyle.Render("(Space)")
-			} else {
-				parVal = ValueStyle.Render(parVal)
-			}
-			b.WriteString(padOrTrunc(
-				lipgloss.JoinHorizontal(lipgloss.Center, parPrefix, parLabel, " ", parVal),
-				lineW))
-			// Stop bits — Space to cycle.
-			b.WriteString("\n")
-			stopPrefix := "  "
-			stopLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  Stop bits:")
-			stopVal := stopBitsOptions[im.aprsStopBits].label
-			if im.fm.row == imAPRSStop {
-				stopPrefix = S.FormPrefixOn.Render("> ")
-				stopLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  Stop bits:")
-				stopVal = CursorStyle.Render(stopVal) + " " + DimStyle.Render("(Space)")
-			} else {
-				stopVal = ValueStyle.Render(stopVal)
-			}
-			b.WriteString(padOrTrunc(
-				lipgloss.JoinHorizontal(lipgloss.Center, stopPrefix, stopLabel, " ", stopVal),
-				lineW))
-			// DTR checkbox.
-			b.WriteString("\n")
-			dtrCb := "[ ]"
-			if im.aprsDTR {
-				dtrCb = "[x]"
-			}
-			dtrPrefix := "  "
-			dtrLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  DTR:")
-			if im.fm.row == imAPRSDTR {
-				dtrPrefix = S.FormPrefixOn.Render("> ")
-				dtrLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  DTR:")
-				dtrCb = CursorStyle.Render(dtrCb) + " " + DimStyle.Render("(Space)")
-			}
-			b.WriteString(padOrTrunc(
-				lipgloss.JoinHorizontal(lipgloss.Center, dtrPrefix, dtrLabel, " ", dtrCb),
-				lineW))
-			// RTS checkbox.
-			b.WriteString("\n")
-			rtsCb := "[ ]"
-			if im.aprsRTS {
-				rtsCb = "[x]"
-			}
-			rtsPrefix := "  "
-			rtsLabel := S.FormLabelWide.Align(lipgloss.Left).Render("  RTS:")
-			if im.fm.row == imAPRSRTS {
-				rtsPrefix = S.FormPrefixOn.Render("> ")
-				rtsLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("  RTS:")
-				rtsCb = CursorStyle.Render(rtsCb) + " " + DimStyle.Render("(Space)")
-			}
-			b.WriteString(padOrTrunc(
-				lipgloss.JoinHorizontal(lipgloss.Center, rtsPrefix, rtsLabel, " ", rtsCb),
-				lineW))
-		}
-
-		// Test button — always available when APRS is enabled.
-		b.WriteString("\n")
-		btnText := "[ Test APRS ]"
-		if im.aprsTesting {
-			b.WriteString(padOrTrunc("    "+DimStyle.Render(btnText)+" "+DimStyle.Render("..."), lineW))
-		} else {
-			buttonRow(&b, lineW, im.fm.row == imAPRSTest, btnText)
-		}
-	} else {
-		b.WriteString("\n")
-	}
-
-	// --- PSK Reporter section ---
-	pskCb := "[ ]"
-	if im.pskEnabled {
-		pskCb = "[x]"
-	}
-	pskPrefix := "  "
-	pskLabel := S.FormLabelWide.Align(lipgloss.Left).Render("PSK Reporter:")
-	if im.fm.row == imPSKChk {
-		pskPrefix = S.FormPrefixOn.Render("> ")
-		pskLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("PSK Reporter:")
-		pskCb = CursorStyle.Render(pskCb) + " " + DimStyle.Render("(Space)")
-		pskCb += " " + DimStyle.Render("F5 panel, off by default")
-	}
-	b.WriteString(padOrTrunc(
-		lipgloss.JoinHorizontal(lipgloss.Center, pskPrefix, pskLabel, " ", pskCb),
-		lineW))
-
 	// Build raw form body — header is rendered separately above the viewport.
-	b.WriteString("\n")
 	b.WriteString(im.fm.btn.line("Save & Back", lineW))
 	bodyStr := b.String()
 

@@ -27,6 +27,9 @@ type NotificationsMenu struct {
 	done        bool
 	saved       bool
 	goBack      bool
+	// fromGeneral is set when the menu was opened as a General submenu;
+	// closing it returns to General instead of the main menu.
+	fromGeneral bool
 	width       int
 	height      int
 
@@ -201,8 +204,7 @@ func (nm *NotificationsMenu) View() tea.View {
 	// Row 6: Test beep button.
 	buttonRow(&b, boxW, focused(6), "[ Test beep ]")
 
-	// Save & Back button at the end of the menu.
-	b.WriteString("\n")
+	// Save & Back button at the end of the menu — flush under the last row.
 	b.WriteString(nm.fm.btn.line("Save & Back", boxW-4))
 
 	body := drawMenuWithHeader("Configuration \u2014 Notifications", b.String(), w)

@@ -726,8 +726,7 @@ func (cm *CallbookMenu) View() tea.View {
 		}
 	} // wlConfigured
 
-	// Save & Back button at the end of the menu.
-	b.WriteString("\n")
+	// Save & Back button at the end of the menu — flush under the last row.
 	b.WriteString(cm.fm.btn.line("Save & Back", lineW))
 
 	body := b.String()

@@ -26,15 +26,16 @@ type MainMenu struct {
 
 func NewMainMenu() *MainMenu {
 	return &MainMenu{
+		// Order follows operational relevance: station identity and
+		// operation first, online services next, preferences last.
 		items: []menuItem{
-			{"General", "Units, timezone, map, solar data, debug"},
 			{"Logbooks", "Callsign, grid, Wavelog, APRS per logbook"},
 			{"Operators", "Multi-operator callsign profiles"},
 			{"Rigs", "flrig, rigctld, WSJT-X, antenna"},
 			{"Contests", "Contest profiles, exchanges, serials"},
-			{"Integration", "DX Cluster, GPS, HTTP dashboard, APRS"},
+			{"Integrations", "APRS, DX Cluster, PSK, GPS, HTTP dashboard"},
 			{"Callbook", "QRZ, HamQTH, Callook, Wavelog lookup"},
-			{"Notifications", "Desktop alert sound, popup"},
+			{"General", "Units, timezone, map, solar data, debug, notifications"},
 		},
 	}
 }
@@ -52,8 +53,8 @@ func (m *MainMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.done = true
 		case "enter":
 			m.setAction(m.cursor)
-		case "1", "2", "3", "4", "5", "6", "7", "8":
-			// Digit quick-select — F9 menu, then 1-8.
+		case "1", "2", "3", "4", "5", "6", "7":
+			// Digit quick-select — F9 menu, then 1-7.
 			m.setAction(int(msg.String()[0] - '1'))
 		case "up":
 			if m.cursor == 0 {
@@ -80,21 +81,19 @@ func (m *MainMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *MainMenu) setAction(i int) {
 	switch i {
 	case 0:
-		m.action = "general"
-	case 1:
 		m.action = "logbook"
-	case 2:
+	case 1:
 		m.action = "operator"
-	case 3:
+	case 2:
 		m.action = "rig"
-	case 4:
+	case 3:
 		m.action = "contest"
-	case 5:
+	case 4:
 		m.action = "integration"
-	case 6:
+	case 5:
 		m.action = "callbook"
-	case 7:
-		m.action = "notifications"
+	case 6:
+		m.action = "general"
 	}
 }
 

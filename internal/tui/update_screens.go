@@ -99,6 +99,19 @@ func (m *Model) handleConfigUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd
 	m.ui.configMenu.height = m.height
 	_, configCmd := m.ui.configMenu.Update(msg)
 	cmd = tea.Batch(cmd, configCmd)
+
+	// Notifications submenu — open without saving or closing General, so
+	// returning restores the General form exactly as it was.
+	if m.ui.configMenu.goNotifications {
+		m.ui.configMenu.goNotifications = false
+		m.ui.notifMenu = NewNotificationsMenu(m.App.Config)
+		m.ui.notifMenu.width = m.width
+		m.ui.notifMenu.height = m.height
+		m.ui.notifMenu.fromGeneral = true
+		m.screen = screenNotifications
+		return m, cmd
+	}
+
 	if m.ui.configMenu.done {
 		m.screen = screenQSO
 		if m.ui.configMenu.goBack {
@@ -168,9 +181,15 @@ func (m *Model) handleNotificationsUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 	}
 
 	if m.ui.notifMenu.done {
+		// Return where we came from: General keeps its unsaved state alive
+		// when Notifications was opened as its submenu.
+		backTo := screenMainMenu
+		if m.ui.notifMenu.fromGeneral {
+			backTo = screenConfig
+		}
 		m.screen = screenQSO
 		if m.ui.notifMenu.goBack {
-			m.screen = screenMainMenu
+			m.screen = backTo
 		}
 		if m.ui.notifMenu.saved {
 			m.App.Config.General.Notifications.Enabled = m.ui.notifMenu.enabled
@@ -180,7 +199,7 @@ func (m *Model) handleNotificationsUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 			m.App.Config.General.Notifications.BeepOnError = m.ui.notifMenu.beepOnError
 			m.applyBeepOnError()
 			m.saveConfig("Settings saved")
-			m.screen = screenMainMenu
+			m.screen = backTo
 		}
 	}
 	return m, cmd
@@ -232,13 +251,6 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 		m.screen = screenQSO
 		if m.ui.integrationMenu.goBack {
 			m.screen = screenMainMenu
-		}
-		if m.ui.integrationMenu.goCallbook {
-			m.ui.callbookMenu = NewCallbookMenu(m.App.Config)
-			m.ui.callbookMenu.width = m.width
-			m.ui.callbookMenu.height = m.height
-			m.screen = screenCallbook
-			return m, cmd
 		}
 		if m.ui.integrationMenu.saved {
 			dxcE, dxcHost, dxcPort, dxcLogin, httpE, httpAddr, httpPort, httpTheme, httpHdr1, httpHdr2, httpLogo, httpQRLink, httpEvtStart, httpTLS, httpTLSCert, httpTLSKey := m.ui.integrationMenu.Values()
@@ -476,11 +488,6 @@ func (m *Model) handleMainMenuUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.C
 			m.ui.callbookMenu.width = m.width
 			m.ui.callbookMenu.height = m.height
 			m.screen = screenCallbook
-		case "notifications":
-			m.ui.notifMenu = NewNotificationsMenu(m.App.Config)
-			m.ui.notifMenu.width = m.width
-			m.ui.notifMenu.height = m.height
-			m.screen = screenNotifications
 		}
 	}
 	if m.ui.mainMenu.done {

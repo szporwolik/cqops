@@ -442,8 +442,8 @@ func (c *LogbookChooser) viewForm() string {
 	}
 
 	c.station.width = w - 6 // account for menu box border + padding
-	b.WriteString(c.station.View().Content)
-	b.WriteString("\n\n")
+	b.WriteString(strings.TrimRight(c.station.View().Content, "\n"))
+	b.WriteString("\n")
 	b.WriteString(c.fm.btn.line("Save & Back", w-6))
 
 	// Use viewport for scrollable form body on small terminals.

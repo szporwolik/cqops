@@ -315,7 +315,7 @@ func (rc *RigChooser) viewForm() string {
 		vpH = 4
 	}
 	rc.form.width = vpW
-	bodyStr := rc.form.View().Content + "\n\n" + rc.fm.btn.line("Save & Back", vpW)
+	bodyStr := strings.TrimRight(rc.form.View().Content, "\n") + "\n" + rc.fm.btn.line("Save & Back", vpW)
 	rc.vp.SetWidth(vpW)
 	rc.vp.SetHeight(vpH)
 	if rc.vp.TotalLineCount() == 0 || bodyStr != rc.lastFormContent {

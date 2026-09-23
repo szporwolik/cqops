@@ -471,8 +471,8 @@ func (oc *OperatorChooser) viewForm() string {
 		title = "Edit Operator"
 	}
 
-	b.WriteString(oc.form.View())
-	b.WriteString("\n\n")
+	b.WriteString(strings.TrimRight(oc.form.View(), "\n"))
+	b.WriteString("\n")
 	b.WriteString(oc.fm.btn.line("Save & Back", w-6))
 
 	body := drawMenuWithHeader("Configuration \u2014 Operators \u2014 "+title, b.String(), w)
