@@ -147,7 +147,7 @@ func (m *Model) rigPowerCmd() tea.Cmd {
 // HF (<30 MHz): 0.001 MHz (1 kHz). VHF/UHF (≥30 MHz): 0.1 MHz (100 kHz).
 func (m *Model) tuneRigStep(dir int) tea.Cmd {
 	if m.rig.client == nil || !m.rig.connected {
-		m.toasts.Warn("Rig not connected")
+		m.toasts.Warn("Rig: not connected")
 		return nil
 	}
 	freqMhz := m.rig.freq
@@ -273,7 +273,6 @@ func (m *Model) applyRigPoll(r rigPollMsg) tea.Cmd {
 	if r.err != "" || !r.connected {
 		if m.rig.connected {
 			applog.Warn("rig: disconnected", "err", r.err)
-			m.rc.status = ""
 		}
 		if r.err != "" && !m.rig.connected {
 			if m.rig.connectAttempts == 0 {
@@ -289,7 +288,6 @@ func (m *Model) applyRigPoll(r rigPollMsg) tea.Cmd {
 		return nil
 	}
 	if !m.rig.connected {
-		m.rc.status = ""
 		// Connected — notify user once per session.
 		if !m.rig.vfoWarned {
 			m.rig.vfoWarned = true
@@ -658,6 +656,11 @@ func (m *Model) shutdownConnections() {
 	if m.dxc.client != nil {
 		applog.Debug("dxc: stopping client on shutdown")
 		m.dxc.client.Stop()
+	}
+	if m.http.client != nil {
+		applog.Debug("http: stopping dashboard server on shutdown")
+		m.http.client.Stop()
+		m.http.client = nil
 	}
 	if m.gps.client != nil {
 		applog.Debug("gps: stopping on shutdown")

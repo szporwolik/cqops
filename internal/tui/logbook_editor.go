@@ -3,6 +3,9 @@ package tui
 import (
 	"database/sql"
 	"os"
+	"strconv"
+	"sync/atomic"
+	"time"
 
 	"charm.land/bubbles/v2/filepicker"
 	"charm.land/bubbles/v2/table"
@@ -27,6 +30,7 @@ const (
 	edModeConfirmWLDownload
 	edModeWLDownloading
 	edModeWLDownloadResult
+	edModeConfirmWLSyncRetry
 	edModeEdit
 	edModeExport
 	edModeExporting
@@ -104,61 +108,136 @@ var qefLabels = []string{
 	"My SOTA", "My POTA", "My WWFF",
 	"CQ Zone", "ITU Zone",
 	"Exch Sent", "Exch Rcvd", "STX", "SRX", "STX String", "SRX String",
-	"WL Upload (RO)",
+	"WL Id (RO)",
 	"Source (RO)",
 	"Contest ID",
 }
 
+// contactSyncKey identifies one contact's remote-save chain persistently,
+// independent of any editor instance: the logbook identity at dispatch, the
+// local QSO id, and the remote Wavelog endpoint. Reopening the editor (F8)
+// must never bypass serialization, so the key must not depend on editor
+// generation or instance.
+type contactSyncKey struct {
+	logbook string
+	localID int64
+	url     string
+}
+
+// contactSyncCoord owns the per-contact PATCH serialization state. It lives
+// on the Model — NOT on the disposable editor — so queued revisions and
+// in-flight chains survive editor recreation and screen navigation.
+type contactSyncCoord struct {
+	inFlight map[contactSyncKey]*contactSyncContext
+	queued   map[contactSyncKey]bool
+}
+
+// contactSyncContext is the immutable context of one contact's remote-save
+// chain: the persistent coordination key and coordinator, the originating
+// database and Wavelog endpoint, the editor generation that dispatched it,
+// and the database lease covering the whole chain. The lease is released on
+// the owner loop only when the chain is fully drained or abandoned, so a
+// logbook switch retires — never closes — the originating database while a
+// queued operation is still pending.
+type contactSyncContext struct {
+	key     contactSyncKey
+	coord   *contactSyncCoord
+	db      *sql.DB
+	url     string
+	apiKey  string
+	gen     uint64
+	release func()
+	// batch binds a bulk pending-sync retry chain to its summary tracker:
+	// every drained completion counts, and the last one reports the batch
+	// result once.
+	batch *syncRetryBatch
+}
+
+// syncRetryBatch tracks one bulk pending-sync retry dispatch across its
+// per-contact chains: the remaining contact set, the synced/failed and
+// unconfirmed tallies, and the originating logbook identity. Unconfirmed
+// marks PATCHes the server accepted but whose local pending-flag
+// acknowledgement could not be persisted — the contact stays pending and
+// retryable.
+type syncRetryBatch struct {
+	remaining  map[int64]bool
+	synced     int
+	failed     int
+	incomplete int
+	lbID       string
+}
+
 type LogbookEditor struct {
-	db               *sql.DB
-	qsos             []qso.QSO
-	table            table.Model
-	mode             editorMode
-	dialog           *DialogModel // confirm dialog with left/right navigation
-	editing          *qso.QSO
-	fields           [qefCount]textinput.Model
-	focus            qsoEditField
-	done             bool
-	needsReload      bool
-	built            bool
-	wlSkipped        int
-	wlSkipDetail     string
-	wlUnsentCount    int // cached unsent count from full DB, used by confirm dialog
-	width            int
-	height           int
-	wlURL            string
-	wlKey            string
-	wlStationID      string
-	wlLastFetchedID  int64
-	logStationOp     string
-	logStationGrid   string
-	logStationCall   string // station callsign, for export filename
-	contestID        string // active contest hash for filtering, "" = no filter
-	contestName      string // display name for the contest info line
-	contestAdifID    string // ADIF Contest-ID for the contest info line
-	contestDate      string // YYYY-MM-DD contest date, for export filenames
-	contest          bool   // show ExchSent/ExchRcvd instead of ref columns
-	multiOp          bool   // show Operator instead of Grid
-	mismatchQSOs     []qso.QSO
-	mismatchFields   []string
-	wlDownloadCount  int
-	wlDownloadDupes  int
-	wlDownloadFailed int
-	wlDownloadErr    string
-	Offline          bool // when true, Wavelog upload/download is blocked
+	db                   *sql.DB
+	gen                  uint64 // unique per editor instance — background operation results from a replaced editor are discarded
+	searchGen            uint64 // bumped on every search change; stale debounce/result messages are rejected
+	qsos                 []qso.QSO
+	table                table.Model
+	mode                 editorMode
+	dialog               *DialogModel // confirm dialog with left/right navigation
+	editing              *qso.QSO
+	fields               [qefCount]textinput.Model
+	focus                qsoEditField
+	done                 bool
+	needsReload          bool
+	built                bool
+	fm                   menuFocus
+	editRev              uint64 // bumped on every operator edit; stale remote refreshes are rejected
+	editSession          uint64 // bumped on every contact open; never reuse a refresh identity across sessions
+	wlSkipped            int
+	wlSkipDetail         string
+	wlUnsentCount        int // cached unsent count from full DB, used by confirm dialog
+	wlPendingCount       int // cached pending-sync count (dirty rows), used by the retry confirm dialog
+	width                int
+	height               int
+	wlURL                string
+	wlKey                string
+	wlStationID          string
+	wlLastFetchedID      int64
+	logStationOp         string
+	logStationGrid       string
+	logStationCall       string // station callsign, for export filename
+	contestID            string // active contest hash for filtering, "" = no filter
+	contestName          string // display name for the contest info line
+	contestAdifID        string // ADIF Contest-ID for the contest info line
+	contestDate          string // YYYY-MM-DD contest date, for export filenames
+	contest              bool   // show ExchSent/ExchRcvd instead of ref columns
+	multiOp              bool   // show Operator instead of Grid
+	mismatchQSOs         []qso.QSO
+	mismatchFields       []string
+	wlDownloadCount      int
+	wlDownloadDupes      int
+	wlDownloadFailed     int
+	wlDownloadErr        string
+	wlDownloadAbort      bool // last download was aborted (0 count ≠ up to date)
+	wlDownloadHold       int  // insert failures deferred — retried on the next download
+	wlDownloadUnresolved int  // stored but remote link unknown — resolved on the next download
+	Offline              bool // when true, Wavelog upload/download is blocked
+	sharedClub           bool // shared club station: synced QSOs are read-only
 
 	// Pagination — only the current page is loaded from DB.
 	currentPage int
 	totalCount  int
 	pageSize    int
 
+	// Per-contact remote-save serialization. The coordination state lives on
+	// the model-owned coordinator (sync), never on this disposable
+	// instance: F8 recreates the editor while a PATCH can still be on the
+	// wire, and queued revisions must survive across instances. Chains are
+	// keyed by persistent logbook/contact identity and remote source.
+	sync      *contactSyncCoord
+	logbookID string // logbook identity at editor creation (serialization key part)
+
+	// keepAlive leases the database for background operations so a logbook
+	// switch cannot close it under a pending worker (App.KeepDBAlive).
+	keepAlive func(*sql.DB) func()
+
 	// Batch download/import progress (shared infrastructure, one active at a time).
 	dlActive   bool // true while download goroutine is running
 	dlProgress int
 	dlTotal    int
-	dlCurrent  int // QSOs processed so far
-	dlCancel   chan struct{}
-	dlMsgCh    chan editorMsg
+	dlCurrent  int         // QSOs processed so far
+	dlOp       *downloadOp // immutable per-operation channels/context; nil when idle
 
 	// Cached download progress message — rebuilt only when numbers change.
 	dlCachedMsg string
@@ -217,10 +296,30 @@ type LogbookEditorConfig struct {
 	StationOperator string
 	StationGrid     string
 	StationCall     string
+	// KeepAlive acquires a database lease for background editor operations
+	// (App.KeepDBAlive): a logbook switch retires the old database, and the
+	// lease defers its close until the operation's local writes finish.
+	KeepAlive func(*sql.DB) func()
+	// Sync is the model-owned per-contact serialization coordinator that
+	// survives editor recreation (F8). Nil configures a private coordinator
+	// for standalone editors.
+	Sync *contactSyncCoord
+	// SharedClub marks a shared club-station logbook: synced QSOs are
+	// read-only — the editor refuses edits, deletes and remote PATCH/DELETE.
+	SharedClub bool
+	// LogbookID is the persistent logbook identity at editor creation; it
+	// is part of the serialization key.
+	LogbookID string
 }
 
+// logbookEditorGenCounter assigns a unique generation to every editor
+// instance. Background upload work captures its editor's generation, so a
+// result delivered to a replacement editor (e.g. after a logbook switch)
+// can be recognized and dropped.
+var logbookEditorGenCounter atomic.Uint64
+
 func NewLogbookEditor(cfg LogbookEditorConfig) *LogbookEditor {
-	le := &LogbookEditor{db: cfg.DB, mode: edModeList, wlURL: cfg.WLURL, wlKey: cfg.WLKey, wlStationID: cfg.WLStationID, wlLastFetchedID: cfg.WLLastFetchedID, logStationOp: cfg.StationOperator, logStationGrid: cfg.StationGrid, logStationCall: cfg.StationCall}
+	le := &LogbookEditor{db: cfg.DB, gen: logbookEditorGenCounter.Add(1), mode: edModeList, wlURL: cfg.WLURL, wlKey: cfg.WLKey, wlStationID: cfg.WLStationID, wlLastFetchedID: cfg.WLLastFetchedID, logStationOp: cfg.StationOperator, logStationGrid: cfg.StationGrid, logStationCall: cfg.StationCall, keepAlive: cfg.KeepAlive, sync: cfg.Sync, logbookID: cfg.LogbookID, sharedClub: cfg.SharedClub}
 	le.filePicker = filepicker.New()
 	le.filePicker.FileAllowed = false
 	le.filePicker.DirAllowed = true
@@ -390,9 +489,22 @@ func (le *LogbookEditor) isDownloadActive() bool {
 	return le.dlActive
 }
 
+// dbLease acquires a database lease for a background editor operation. The
+// returned release func must be called exactly once when the operation stops
+// using db — it keeps a logbook-switched database open until the worker's
+// local writes finish. A no-op when no lease provider is configured (tests).
+func (le *LogbookEditor) dbLease(db *sql.DB) func() {
+	if le.keepAlive == nil || db == nil {
+		return func() {}
+	}
+	return le.keepAlive(db)
+}
+
 // applySearchFilter searches the whole logbook (not just the current page)
 // for the search query: case-insensitive match on callsign, name, or
-// country, optionally scoped to the active contest filter.
+// country, optionally scoped to the active contest filter. Synchronous —
+// used directly by tests; interactive typing goes through scheduleSearch,
+// which debounces and runs the query in a worker.
 func (le *LogbookEditor) applySearchFilter() {
 	if le.searchQuery == "" {
 		le.loadPage()
@@ -406,11 +518,62 @@ func (le *LogbookEditor) applySearchFilter() {
 		applog.Error("LogbookEditor: search failed", "error", err)
 		return
 	}
+	le.applySearchRows(qsos)
+}
+
+// applySearchRows installs a search result into the editor list and rebuilds
+// the page table. Shared by the synchronous test path and the async worker.
+func (le *LogbookEditor) applySearchRows(qsos []qso.QSO) {
 	le.qsos = qsos
 	le.totalCount = len(qsos)
 	le.formattedRows = nil
 	le.cachedSig = ""
 	le.buildTable()
+}
+
+// editorSearchDebounce delays the full-logbook search after the last
+// keystroke: rapid typing coalesces into one query instead of one scan and
+// one table rebuild per keypress.
+const editorSearchDebounce = 250 * time.Millisecond
+
+// searchDebounceMsg fires after the search debounce interval for one search
+// generation. A stale generation (the query changed again) is ignored.
+type searchDebounceMsg struct {
+	gen   uint64
+	query string
+}
+
+// scheduleSearch runs after every search-text change. An empty query (or a
+// database-less editor) restores the paged view synchronously — the query is
+// indexed and cheap. Otherwise the full-logbook scan is debounced and then
+// run in a worker, so typing never blocks on a LIKE '%…%' table scan.
+func (le *LogbookEditor) scheduleSearch() tea.Cmd {
+	if le.searchQuery == "" || le.db == nil {
+		le.applySearchFilter()
+		return nil
+	}
+	le.searchGen++
+	gen := le.searchGen
+	query := le.searchQuery
+	return tea.Tick(editorSearchDebounce, func(time.Time) tea.Msg {
+		return searchDebounceMsg{gen: gen, query: query}
+	})
+}
+
+// searchWorkerCmd runs the full-logbook search off the owner loop and
+// returns the rows with the generation that requested them.
+func (le *LogbookEditor) searchWorkerCmd(gen uint64, query string) tea.Cmd {
+	db := le.db
+	contestID := le.contestID
+	editorGen := le.gen
+	return func() tea.Msg {
+		rows, err := store.SearchQSOs(db, query, contestID, 500)
+		errText := ""
+		if err != nil {
+			errText = err.Error()
+		}
+		return editorMsg{searchGen: gen, searchQuery: query, searchRows: rows, searchErr: errText, gen: editorGen}
+	}
 }
 
 func (le *LogbookEditor) totalPages() int {
@@ -442,13 +605,6 @@ func (le *LogbookEditor) goToPage(p int) {
 	le.table.SetCursor(0)
 }
 
-func (le *LogbookEditor) CursorPos() int {
-	if le.built {
-		return le.table.Cursor()
-	}
-	return 0
-}
-
 func (le *LogbookEditor) QSOCount() int { return len(le.qsos) }
 
 func (le *LogbookEditor) IsEditing() bool { return le.mode == edModeEdit }
@@ -466,6 +622,7 @@ func (le *LogbookEditor) FilePicker() filepicker.Model { return le.filePicker }
 func (le *LogbookEditor) isModalMode() bool {
 	switch le.mode {
 	case edModeConfirmDelete, edModeConfirmPurge, edModeConfirmWLSend, edModeConfirmWLDownload,
+		edModeConfirmWLSyncRetry,
 		edModeConfirmNormalize, edModeConfirmSave, edModeWLDownloading, edModeWLDownloadResult,
 		edModeExporting, edModeExportResult,
 		edModeImporting, edModeImportResult:
@@ -474,10 +631,19 @@ func (le *LogbookEditor) isModalMode() bool {
 	return false
 }
 
-// UpdateWLStatus updates the WL status field in the currently editing form.
-func (le *LogbookEditor) UpdateWLStatus(qID int64, status string) {
+// UpdateWLStatus refreshes the WL status field in the currently editing form.
+// The remote id is the source of truth: wavelog_id > 0 means uploaded.
+func (le *LogbookEditor) UpdateWLStatus(qID int64, uploaded bool, remoteID int64) {
 	if le.editing != nil && le.editing.ID == qID {
-		le.fields[qefWLStatus].SetValue(status)
-		le.editing.WavelogUploaded = status
+		if uploaded {
+			if remoteID > 0 {
+				le.fields[qefWLStatus].SetValue(strconv.FormatInt(remoteID, 10))
+			} else {
+				le.fields[qefWLStatus].SetValue("yes")
+			}
+		} else {
+			le.fields[qefWLStatus].SetValue("\u2014")
+		}
+		le.editing.WavelogID = remoteID
 	}
 }

@@ -19,6 +19,51 @@ func newStationFormForTest() *StationForm {
 
 // TestStationForm_APRSCallsignPrefill verifies that a logbook without APRS
 // config gets the station callsign (base form) prefilled in the APRS field.
+// TestStationFormRowOrderMatchesRenderOrder: Tab navigation must visit the
+// fields in the order they are rendered (callsign → locator, operator last
+// after continent) — the engine row indices once lagged behind the renderer.
+func TestStationFormRowOrderMatchesRenderOrder(t *testing.T) {
+	f := NewStationForm("SP9XXX", "", "JO90")
+	f.HideOperator = false
+	f.HideGPSGrid = false
+	f.HideIARU = false
+	f.Advanced = true
+
+	// Visible sequence must be: 0 name, 1 callsign, 2 locator, 3 GPS grid,
+	// 4 IARU, 5 continent, 6 operator, then the advanced fields, the
+	// always-visible Wavelog checkbox (15) and the APRS TX checkbox (21).
+	want := []int{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 21}
+	var got []int
+	for i := 0; i < f.rowCount(); i++ {
+		if f.rowVisible(i) {
+			got = append(got, i)
+		}
+	}
+	if len(got) != len(want) {
+		t.Fatalf("visible rows = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("visible row order = %v, want %v", got, want)
+		}
+	}
+
+	// focusRow(2) must focus the locator, not the operator.
+	f.focusRow(2)
+	if !f.Locator.Focused() {
+		t.Fatal("row 2 should focus the locator")
+	}
+	if f.opFocus {
+		t.Fatal("row 2 must not focus the operator")
+	}
+	// focusRow(6) must focus the operator selector.
+	f.Locator.Blur()
+	f.focusRow(6)
+	if !f.opFocus {
+		t.Fatal("row 6 should focus the operator selector")
+	}
+}
+
 func TestStationForm_APRSCallsignPrefill(t *testing.T) {
 	f := newStationFormForTest()
 	f.SetValues("", "SP9MOA/P", "", "JO90", "", "", "", 1, 0, 0, 0, "", "", "EU")

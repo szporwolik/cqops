@@ -18,6 +18,7 @@ type KeyMap struct {
 	Ref           key.Binding
 	BPL           key.Binding
 	Delete        key.Binding
+	ClearField    key.Binding
 	Lookup        key.Binding
 	NextField     key.Binding
 	PrevField     key.Binding
@@ -93,7 +94,11 @@ func DefaultKeyMap() KeyMap {
 		),
 		Delete: key.NewBinding(
 			key.WithKeys("delete"),
-			key.WithHelp("Del", "Clear"),
+			key.WithHelp("Del", "Clear form"),
+		),
+		ClearField: key.NewBinding(
+			key.WithKeys("shift+backspace"),
+			key.WithHelp("Shift+Bksp", "Clear field"),
 		),
 		Lookup: key.NewBinding(
 			key.WithKeys("insert"),
@@ -203,7 +208,7 @@ func (k KeyMap) FullHelp() [][]key.Binding {
 		// Column 1: navigation & screens
 		{k.QSOForm, k.Partner, k.APRS, k.DXC, k.PSKReporter, k.Ref, k.BPL, k.LogEditor, k.Config, k.Logs},
 		// Column 2: editing & actions
-		{k.Spot, k.Lookup, k.Delete, k.NextField, k.PrevField, k.Enter},
+		{k.Spot, k.Lookup, k.Delete, k.ClearField, k.NextField, k.PrevField, k.Enter},
 		// Column 3: cycling & rig
 		{k.CycleLogbook, k.CycleRig, k.CycleContest, k.CycleOperator, k.DXCSpotFill, k.RigTuneUp, k.RigTuneDown},
 		// Column 4: system
@@ -232,6 +237,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 			m.keys.DXCSpotFill,
 			m.keys.Lookup,
 			m.keys.Delete,
+			m.keys.ClearField,
 			m.keys.CycleUp,
 			m.keys.CycleDown,
 			m.keys.CycleLogbook,
@@ -291,6 +297,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 				bindings = append(bindings,
 					key.NewBinding(key.WithKeys("ctrl+w"), key.WithHelp("Ctrl+W", "Wavelog upload")),
 					key.NewBinding(key.WithKeys("alt+w"), key.WithHelp("Alt+W", "Wavelog download")),
+					key.NewBinding(key.WithKeys("alt+p"), key.WithHelp("Alt+P", "Retry pending sync")),
 				)
 			}
 		}
@@ -311,7 +318,7 @@ func (m *Model) ActiveBindings() []key.Binding {
 	if m.screen == screenMainMenu {
 		bindings = append(bindings,
 			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
-			key.NewBinding(key.WithKeys("1", "2", "3", "4", "5", "6", "7", "8"), key.WithHelp("1-8", "Jump")),
+			key.NewBinding(key.WithKeys("1", "2", "3", "4", "5", "6", "7"), key.WithHelp("1-7", "Jump")),
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Select")),
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 		)
@@ -320,7 +327,6 @@ func (m *Model) ActiveBindings() []key.Binding {
 		bindings = append(bindings,
 			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
 			key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle")),
-			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")),
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 		)
 	}
@@ -329,7 +335,6 @@ func (m *Model) ActiveBindings() []key.Binding {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("tab", "down", "shift+tab", "up"), key.WithHelp("↑↓", "Navigate")),
 				key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle")),
-				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Accept")),
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 			)
 		} else {
@@ -348,7 +353,6 @@ func (m *Model) ActiveBindings() []key.Binding {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("tab", "down", "shift+tab", "up"), key.WithHelp("↑↓", "Navigate")),
 				key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle")),
-				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")),
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 			)
 		} else {
@@ -367,7 +371,6 @@ func (m *Model) ActiveBindings() []key.Binding {
 		if m.ui.operatorChooser != nil && (m.ui.operatorChooser.mode == operatorEdit || m.ui.operatorChooser.mode == operatorCreate) {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("tab", "down", "shift+tab", "up"), key.WithHelp("↑↓", "Navigate")),
-				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")),
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 			)
 		} else if m.ui.operatorChooser != nil && m.ui.operatorChooser.mode == operatorConfirmDelete {
@@ -388,7 +391,6 @@ func (m *Model) ActiveBindings() []key.Binding {
 			bindings = append(bindings,
 				key.NewBinding(key.WithKeys("tab", "down", "shift+tab", "up"), key.WithHelp("↑↓", "Navigate")),
 				key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle/Cycle")),
-				key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save")),
 				key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 			)
 		} else if m.ui.contestChooser != nil && m.ui.contestChooser.mode == contestConfirmDelete {
@@ -495,7 +497,6 @@ func (m *Model) ActiveBindings() []key.Binding {
 		bindings = append(bindings,
 			key.NewBinding(key.WithKeys("up", "down", "tab"), key.WithHelp("↑↓", "Navigate")),
 			key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("Enter/Spc", "Next/Test")),
-			key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 		)
 	}
@@ -504,7 +505,6 @@ func (m *Model) ActiveBindings() []key.Binding {
 			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("↑↓", "Navigate")),
 			key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle")),
 			key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("Enter/Spc", "Test")),
-			key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 		)
 	}
@@ -513,7 +513,6 @@ func (m *Model) ActiveBindings() []key.Binding {
 			key.NewBinding(key.WithKeys("up", "down", "tab", "shift+tab"), key.WithHelp("↑↓", "Navigate")),
 			key.NewBinding(key.WithKeys(" "), key.WithHelp("Space", "Toggle")),
 			key.NewBinding(key.WithKeys("enter", " "), key.WithHelp("Enter/Spc", "Test")),
-			key.NewBinding(key.WithKeys("ctrl+s"), key.WithHelp("Ctrl+S", "Save")),
 			key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 		)
 	}

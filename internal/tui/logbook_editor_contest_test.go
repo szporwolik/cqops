@@ -243,8 +243,11 @@ func TestActiveBindings_LogEditorIncludesCycleContest(t *testing.T) {
 // dialog (same flow as delete); confirming saves the QSO. Ctrl+S does nothing.
 func TestLogbookEditor_EnterSavesInEditMode(t *testing.T) {
 	le := newEditorWithDB(t)
+	row := &qso.QSO{Call: "A", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB"}
+	id := insertQSO(t, le, row)
 	le.mode = edModeEdit
-	le.editing = &qso.QSO{ID: 1, Call: "A", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB"}
+	le.editing = &qso.QSO{ID: id, Call: "A", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB"}
+	le.fillEditForm(le.editing)
 	le.focus = qefCall
 
 	// First Enter opens the confirmation dialog.

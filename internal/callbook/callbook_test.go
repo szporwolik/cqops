@@ -190,3 +190,42 @@ func TestMergeInto_AllFields(t *testing.T) {
 		t.Error("misc fields not filled")
 	}
 }
+
+// TestRegistrySortDescendingByPriority pins the trust-based ordering: providers
+// run from the highest priority to the lowest, with CTY.DAT (1) last.
+func TestRegistrySortDescendingByPriority(t *testing.T) {
+	r := NewRegistry([]Provider{
+		&mockProvider{name: "logbook", priority: 60},
+		&mockProvider{name: "qrz", priority: 100},
+		&mockProvider{name: "cty", priority: 1},
+		&mockProvider{name: "callook", priority: 80},
+		&mockProvider{name: "qrzru", priority: 70},
+	})
+	want := []string{"qrz", "callook", "qrzru", "logbook", "cty"}
+	for i, w := range want {
+		if r.providers[i].Name() != w {
+			t.Fatalf("provider %d = %q, want %q (order: %v)", i, r.providers[i].Name(), w, r.providers)
+		}
+	}
+}
+
+// TestRegistryLocalLogbookFillsButNeverOverwrites verifies the required
+// semantics for the local logbook at its default (lower) priority: it fills
+// fields missing from higher-priority providers but must never overwrite
+// populated QRZ/HamQTH/Callook/QRZ.RU data.
+func TestRegistryLocalLogbookFillsButNeverOverwrites(t *testing.T) {
+	r := NewRegistry([]Provider{
+		&mockProvider{name: "QRZ.com", priority: 100, data: &Result{Callsign: "SP9ABC", Name: "ExternalName", Grid: ""}},
+		&mockProvider{name: "Logbook", priority: 60, data: &Result{Callsign: "SP9ABC", Name: "StaleLogName", Grid: "JO90"}},
+	})
+	got, err := r.Lookup("SP9ABC")
+	if err != nil {
+		t.Fatalf("lookup: %v", err)
+	}
+	if got.Name != "ExternalName" {
+		t.Errorf("name = %q, want QRZ value (logbook must not overwrite)", got.Name)
+	}
+	if got.Grid != "JO90" {
+		t.Errorf("grid = %q, want logbook fill for the missing field", got.Grid)
+	}
+}

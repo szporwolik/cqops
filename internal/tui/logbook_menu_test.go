@@ -261,6 +261,39 @@ func TestLogbookChooserSavePreservesWavelogLastFetchedID(t *testing.T) {
 	}
 }
 
+// TestLogbookChooserSaveSanitizesWavelogStationID verifies the display label
+// that the station picker puts into the read-only Station ID field never
+// leaks into the saved config — only the numeric id is stored.
+func TestLogbookChooserSaveSanitizesWavelogStationID(t *testing.T) {
+	a := newChooserTestApp(t)
+	lb := a.Config.Logbooks["home"]
+	lb.Station.Continent = "EU"
+	lb.Wavelog = &config.WavelogConfig{
+		Enabled:          true,
+		URL:              "https://qso.cqops.com",
+		APIKey:           "wl2_test",
+		StationProfileID: "7",
+	}
+	a.Config.Logbooks["home"] = lb
+
+	tq := NewToastQueue()
+	c := NewLogbookChooser(a, tq)
+	c.startEdit("home")
+
+	// Simulate the station picker label landing in the read-only field.
+	c.station.WlStationID.SetValue("7 — SP9SPM (Niepołomice) KO00CA")
+
+	c.saveForm()
+
+	got := a.Config.Logbooks["home"].Wavelog
+	if got == nil {
+		t.Fatal("Wavelog config was dropped on save")
+	}
+	if got.StationProfileID != "7" {
+		t.Errorf("StationProfileID = %q after save, want 7", got.StationProfileID)
+	}
+}
+
 // TestLogbookChooserSaveRequiresWavelogURLAndKey: enabling Wavelog without
 // URL or API key must refuse the save instead of silently wiping the
 // existing Wavelog config from the logbook.
@@ -294,5 +327,98 @@ func TestLogbookChooserSaveRequiresWavelogURLAndKey(t *testing.T) {
 	}
 	if got.LastFetchedID != 55 {
 		t.Errorf("LastFetchedID = %d after rejected save, want 55", got.LastFetchedID)
+	}
+}
+
+// TestLogbookChooserAPRSTXEnablesGlobalAPRS: turning APRS TX on in the logbook
+// station form must enable the global APRS integration; turning it off must
+// never disable the global integration.
+func TestLogbookChooserAPRSTXEnablesGlobalAPRS(t *testing.T) {
+	a := newChooserTestApp(t)
+	if a.Config.Integrations.APRS.Enabled {
+		t.Fatal("global APRS should start disabled")
+	}
+	c := NewLogbookChooser(a, NewToastQueue())
+	c.mode = chooserEdit
+
+	// Space on the APRS TX checkbox turns it on.
+	c.station.aprsCbFocus = true
+	c.station.AprsEnabled = false
+	c.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
+	if !c.station.AprsEnabled {
+		t.Fatal("APRS TX should be enabled after Space")
+	}
+	if !a.Config.Integrations.APRS.Enabled {
+		t.Error("enabling APRS TX should enable the global APRS integration")
+	}
+
+	// Turning TX off must NOT disable the global integration.
+	a.Config.Integrations.APRS.Enabled = true
+	c.station.aprsCbFocus = true
+	c.station.AprsEnabled = true
+	c.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
+	if c.station.AprsEnabled {
+		t.Fatal("APRS TX should be disabled after second Space")
+	}
+	if !a.Config.Integrations.APRS.Enabled {
+		t.Error("disabling APRS TX must not disable the global APRS integration")
+	}
+}
+
+// TestLogbookChooserCreateFailureKeepsOldLogbookActive reproduces the
+// reported bug: the create path used to assign the active identity before
+// SwitchLogbook, so a failed database open left the new station paired with
+// the old database. The provisional entry must be rolled back and the old
+// logbook must stay fully active.
+func TestLogbookChooserCreateFailureKeepsOldLogbookActive(t *testing.T) {
+	// Isolate DataDir so the new logbook's database path resolves under a
+	// temporary home, never the real user directory.
+	t.Setenv("HOME", t.TempDir())
+
+	a := newChooserTestApp(t)
+	home := a.Config.Logbooks["home"]
+	a.Logbook = &home
+	oldDB := a.DB
+
+	// The new logbook's database path is derived from the callsign via
+	// config.NewID. Make database creation fail by placing a DIRECTORY at
+	// the exact path InitDB would open.
+	id := config.NewID("SP9FAIL")
+	dataDir, err := config.DataDir()
+	if err != nil {
+		t.Fatalf("DataDir: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dataDir, id+".db"), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+
+	tq := NewToastQueue()
+	c := NewLogbookChooser(a, tq)
+	c.startCreate()
+	c.station.SetValues("Fail Log", "SP9FAIL", "", "JO90", "", "", "", 1, 0, 0, 0, "", "", "EU")
+
+	c.saveForm()
+
+	if a.Config.State.ActiveLogbook != "home" {
+		t.Errorf("ActiveLogbook = %q, want home (unchanged after failed create)", a.Config.State.ActiveLogbook)
+	}
+	if a.LogbookName != "home" {
+		t.Errorf("LogbookName = %q, want home", a.LogbookName)
+	}
+	if a.Logbook == nil || a.Logbook.Station.Callsign != "SP9MOA" {
+		t.Errorf("active station = %+v, want the old home station", a.Logbook)
+	}
+	if a.DB != oldDB {
+		t.Error("DB pointer changed — the old database must stay open and active")
+	}
+	if _, exists := a.Config.Logbooks[id]; exists {
+		t.Error("provisional logbook entry must be rolled back on create failure")
+	}
+	if len(c.names) != 2 {
+		t.Errorf("chooser names = %d, want 2 (failed entry must not be listed)", len(c.names))
+	}
+	// The old database must remain fully usable.
+	if _, err := store.ListQSOs(a.DB, 1, ""); err != nil {
+		t.Errorf("old database unusable after failed create: %v", err)
 	}
 }

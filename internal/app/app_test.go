@@ -2,11 +2,13 @@ package app
 
 import (
 	"errors"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/szporwolik/cqops/internal/aprs"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/wsjtx"
 )
 
@@ -18,6 +20,123 @@ import (
 // WSJT-X config (enabled, host, port) actually changes.
 //
 // Tests that require Start() are limited because applog is nil in tests.
+
+// TestSwitchLogbook_FailedOpenKeepsOldDB verifies a failed switch leaves the
+// current database open and active: the replacement is opened and validated
+// before the old database is retired.
+func TestSwitchLogbook_FailedOpenKeepsOldDB(t *testing.T) {
+	dir := t.TempDir()
+	dbA := filepath.Join(dir, "a.db")
+	// A path whose parent directory does not exist — InitDB fails.
+	dbB := filepath.Join(dir, "missing", "b.db")
+
+	cfg := config.DefaultConfig()
+	lbA := config.Logbook{Station: config.Station{Callsign: "AA1AA"}, DatabasePath: dbA}
+	lbB := config.Logbook{Station: config.Station{Callsign: "BB2BB"}, DatabasePath: dbB}
+	cfg.Logbooks = map[string]config.Logbook{"a": lbA, "b": lbB}
+	cfg.State.ActiveLogbook = "a"
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := config.Save(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	db, err := store.InitDB(dbA)
+	if err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+	t.Cleanup(func() { db.Close() })
+
+	a := &App{
+		Config:      cfg,
+		ConfigPath:  cfgPath,
+		LogbookName: "a",
+		Logbook:     &lbA,
+		DB:          db,
+		DBPath:      dbA,
+	}
+	t.Cleanup(a.StopAPRSTimer)
+
+	if err := a.SwitchLogbook("b"); err == nil {
+		t.Fatal("switch to an unavailable logbook should fail")
+	}
+
+	// The previous database must remain open and active.
+	if a.LogbookName != "a" {
+		t.Errorf("active logbook = %q, want a unchanged", a.LogbookName)
+	}
+	if a.DB != db {
+		t.Error("active DB should be unchanged after a failed switch")
+	}
+	if err := db.Ping(); err != nil {
+		t.Errorf("previous database should stay open after a failed switch: %v", err)
+	}
+	// The old database must still accept operations.
+	if _, err := store.ListAllQSOs(db); err != nil {
+		t.Errorf("previous database should accept operations: %v", err)
+	}
+}
+
+// =============================================================================
+// Database keep-alive tests
+// =============================================================================
+
+// TestKeepDBAliveDefersCloseUntilReleased verifies that a database held by a
+// background operation stays open across SwitchLogbook and is closed only
+// once the last holder releases it.
+func TestKeepDBAliveDefersCloseUntilReleased(t *testing.T) {
+	dir := t.TempDir()
+	dbA := filepath.Join(dir, "a.db")
+	dbB := filepath.Join(dir, "b.db")
+
+	cfg := config.DefaultConfig()
+	lbA := config.Logbook{Station: config.Station{Callsign: "AA1AA"}, DatabasePath: dbA}
+	lbB := config.Logbook{Station: config.Station{Callsign: "BB2BB"}, DatabasePath: dbB}
+	cfg.Logbooks = map[string]config.Logbook{"a": lbA, "b": lbB}
+	cfg.State.ActiveLogbook = "a"
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := config.Save(cfgPath, cfg); err != nil {
+		t.Fatalf("save config: %v", err)
+	}
+
+	db, err := store.InitDB(dbA)
+	if err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+	a := &App{
+		Config:      cfg,
+		ConfigPath:  cfgPath,
+		LogbookName: "a",
+		Logbook:     &lbA,
+		DB:          db,
+	}
+	t.Cleanup(a.StopAPRSTimer)
+
+	// A background operation holds the database while the user switches.
+	release := a.KeepDBAlive(db)
+	if err := a.SwitchLogbook("b"); err != nil {
+		t.Fatalf("switch logbook: %v", err)
+	}
+
+	// The old database must still be usable — the operation keeps it alive.
+	if err := db.Ping(); err != nil {
+		t.Errorf("held database should stay open across switch: %v", err)
+	}
+	if a.DB == db {
+		t.Error("active database should be the new logbook's")
+	}
+
+	// Releasing the last holder closes the retired database.
+	release()
+	if err := db.Ping(); err == nil {
+		t.Error("retired database should be closed after the last release")
+	}
+
+	// The active database is unaffected.
+	if err := a.DB.Ping(); err != nil {
+		t.Errorf("active database should remain open: %v", err)
+	}
+	a.DB.Close()
+}
 
 func TestMaybeRestartWSJTX_NoOpWhenUnchanged(t *testing.T) {
 	enabled := false
@@ -158,37 +277,81 @@ func TestMaybeRestartWSJTX_NoOpOnSameConfig(t *testing.T) {
 // fakeAPRSClient is a minimal aprs.Client for status-forwarding tests.
 // The id field keeps instances at distinct addresses (a zero-size struct
 // would make all pointers equal).
-type fakeAPRSClient struct{ id int }
-
-func (*fakeAPRSClient) Start()            {}
-func (*fakeAPRSClient) Stop()             {}
-func (*fakeAPRSClient) IsRunning() bool   { return false }
-func (*fakeAPRSClient) IsConnected() bool { return false }
-
-// TestReportAPRSStatus_StaleClientIgnored verifies that disconnect events
-// from a replaced client are not forwarded (no spurious "connection lost").
-func TestReportAPRSStatus_StaleClientIgnored(t *testing.T) {
+// TestAPRSStaleStatusEventsIgnored verifies that status events from a
+// replaced client are dropped by generation — no spurious "connection
+// lost" toast on every restart.
+func TestAPRSStaleStatusEventsIgnored(t *testing.T) {
 	calls := 0
 	a := &App{}
 	a.SetAPRSStatusCallback(func(connected bool, err error) { calls++ })
+	a.ensureAPRSChannels()
+	a.aprsGen = 1
 
-	old := &fakeAPRSClient{id: 1}
-	a.APRSClient = old
-	a.reportAPRSStatus(old, false, errors.New("closed"))
+	a.pushAPRSStatus(1, false, errors.New("boom"))
+	a.RunPendingAPRS()
 	if calls != 1 {
-		t.Fatalf("current client event not forwarded, calls=%d", calls)
+		t.Fatalf("current-generation event not forwarded, calls=%d", calls)
 	}
 
-	// Client replaced — stale events from the old client must be ignored.
-	cur := &fakeAPRSClient{id: 2}
-	a.APRSClient = cur
-	a.reportAPRSStatus(old, false, errors.New("closed"))
+	// Client replaced — stale events from the old generation must be dropped.
+	a.aprsGen = 2
+	a.pushAPRSStatus(1, false, errors.New("closed"))
+	a.RunPendingAPRS()
 	if calls != 1 {
-		t.Fatalf("stale client event forwarded, calls=%d", calls)
+		t.Fatalf("stale event forwarded, calls=%d", calls)
 	}
-	a.reportAPRSStatus(cur, false, errors.New("boom"))
+
+	a.pushAPRSStatus(2, true, nil)
+	a.RunPendingAPRS()
 	if calls != 2 {
-		t.Fatalf("new client event not forwarded, calls=%d", calls)
+		t.Fatalf("new-generation event not forwarded, calls=%d", calls)
+	}
+}
+
+// TestBeaconEventPersistsTimestampOnOwner verifies that beacon results are
+// handed back to the owner goroutine, which fires the callback and persists
+// LastBeaconAt — the worker never touches live config.
+func TestBeaconEventPersistsTimestampOnOwner(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	cfg := config.DefaultConfig()
+	aprsCfg := &config.APRSConfig{Enabled: true, SendLocation: true}
+	lb := config.Logbook{
+		Station: config.Station{Callsign: "SP9ABC", Grid: "JO90"},
+		APRS:    aprsCfg,
+	}
+	cfg.Logbooks["default"] = lb
+	cfg.State.ActiveLogbook = "default"
+
+	a := &App{
+		Config:      cfg,
+		ConfigPath:  cfgPath,
+		LogbookName: "default",
+		Logbook:     &lb,
+	}
+	beaconCalls := ""
+	a.SetAPRSBeaconCallback(func(callsign string) { beaconCalls = callsign })
+	a.ensureAPRSChannels()
+	a.aprsGen = 3
+
+	// The worker pushes the event; the owner processes it.
+	a.aprsEvents <- aprsEvent{kind: aprsEvBeacon, gen: 3, callsign: "SP9ABC"}
+	a.RunPendingAPRS()
+
+	if beaconCalls != "SP9ABC" {
+		t.Errorf("beacon callback callsign = %q, want SP9ABC", beaconCalls)
+	}
+	if aprsCfg.LastBeaconAt == "" {
+		t.Fatal("LastBeaconAt should be set by the owner")
+	}
+	// The timestamp must have been persisted to disk.
+	loaded, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	got := loaded.Logbooks["default"].APRS
+	if got == nil || got.LastBeaconAt == "" {
+		t.Error("LastBeaconAt should be persisted in the saved config")
 	}
 }
 

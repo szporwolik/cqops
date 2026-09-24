@@ -1,11 +1,14 @@
 package config
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/szporwolik/cqops/internal/secrets"
 )
 
 // =============================================================================
@@ -308,6 +311,289 @@ func TestLoad_EmptyFile(t *testing.T) {
 	// Empty YAML unmarshals to zero-value Config — Validate should catch it.
 	if err := cfg.Validate(); err == nil {
 		t.Error("empty config should fail Validate (no logbooks, no active logbook)")
+	}
+}
+
+// TestSaveDoesNotMutateLiveConfig verifies that Save never clears secret
+// fields on the live config or rewrites its maps — it marshals a scrubbed
+// copy instead, so concurrent readers never observe cleared credentials.
+func TestSaveDoesNotMutateLiveConfig(t *testing.T) {
+	origKey := secrets.KeyFunc
+	secrets.KeyFunc = func() []byte { return bytes.Repeat([]byte{0x42}, 32) }
+	t.Cleanup(func() { secrets.KeyFunc = origKey })
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	sec, err := secrets.Load(dir)
+	if err != nil {
+		t.Fatalf("secrets.Load: %v", err)
+	}
+
+	cfg := DefaultConfig()
+	cfg.SetSecretsStore(sec)
+	cfg.Integrations.Callbook.QRZ.Pass = "secret-pass"
+	cfg.Logbooks["default"] = Logbook{
+		Name:    "test",
+		Station: Station{Callsign: "XX0XX", Grid: "JO90"},
+		Wavelog: &WavelogConfig{
+			Enabled:    true,
+			URL:        "https://log.example.com",
+			APIKey:     "secret-api-key-12345",
+			SharedClub: true,
+		},
+	}
+
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// The live config still holds every secret…
+	if cfg.Integrations.Callbook.QRZ.Pass != "secret-pass" {
+		t.Error("QRZ pass was cleared on the live config by Save")
+	}
+	if got := cfg.Logbooks["default"].Wavelog.APIKey; got != "secret-api-key-12345" {
+		t.Errorf("Wavelog API key was mutated on the live config: %q", got)
+	}
+
+	// …but the YAML on disk contains none of them.
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read saved config: %v", err)
+	}
+	if bytes.Contains(data, []byte("secret-pass")) {
+		t.Error("QRZ pass leaked into config.yaml")
+	}
+	if bytes.Contains(data, []byte("secret-api-key-12345")) {
+		t.Error("Wavelog API key leaked into config.yaml")
+	}
+
+	// A fresh load + secrets overlay sees the values again.
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	loaded.SetSecretsStore(sec)
+	loaded.ApplySecrets()
+	if loaded.Integrations.Callbook.QRZ.Pass != "secret-pass" {
+		t.Errorf("QRZ pass after round-trip: %q", loaded.Integrations.Callbook.QRZ.Pass)
+	}
+	if got := loaded.Logbooks["default"].Wavelog.APIKey; got != "secret-api-key-12345" {
+		t.Errorf("Wavelog API key after round-trip: %q", got)
+	}
+	if !loaded.Logbooks["default"].Wavelog.SharedClub {
+		t.Error("Wavelog shared_club flag lost on round-trip")
+	}
+}
+
+// TestSave_SecretStoreFailureAbortsSave verifies that a secrets-store write
+// failure aborts the whole save: the scrubbed YAML must never replace the
+// config when the encrypted store could not be persisted, or the only
+// persisted copy of the credentials would be lost.
+func TestSave_SecretStoreFailureAbortsSave(t *testing.T) {
+	origKey := secrets.KeyFunc
+	secrets.KeyFunc = func() []byte { return bytes.Repeat([]byte{0x42}, 32) }
+	t.Cleanup(func() { secrets.KeyFunc = origKey })
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	sec, err := secrets.Load(dir)
+	if err != nil {
+		t.Fatalf("secrets.Load: %v", err)
+	}
+
+	cfg := DefaultConfig()
+	cfg.SetSecretsStore(sec)
+	cfg.Integrations.Callbook.QRZ.Pass = "new-secret-pass"
+
+	// Make the secrets temp-file path unwritable while config.yaml stays
+	// writable: a directory in place of the temp file makes WriteFile fail.
+	if err := os.MkdirAll(filepath.Join(dir, "secrets.enc.tmp"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	// Sentinel content in the config file must survive the failed save.
+	if err := os.WriteFile(path, []byte("sentinel: untouched\n"), 0o600); err != nil {
+		t.Fatalf("write sentinel: %v", err)
+	}
+
+	if err := Save(path, cfg); err == nil {
+		t.Fatal("Save should fail when the secrets store cannot be persisted")
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !bytes.Contains(data, []byte("sentinel: untouched")) {
+		t.Error("config.yaml was replaced despite the secrets-store failure")
+	}
+}
+
+// TestSave_DeletesClearedSecrets verifies explicit secret deletion: clearing
+// a credential field removes the stored value, so it cannot return on the
+// next restart via ApplySecrets.
+func TestSave_DeletesClearedSecrets(t *testing.T) {
+	origKey := secrets.KeyFunc
+	secrets.KeyFunc = func() []byte { return bytes.Repeat([]byte{0x42}, 32) }
+	t.Cleanup(func() { secrets.KeyFunc = origKey })
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	sec, err := secrets.Load(dir)
+	if err != nil {
+		t.Fatalf("secrets.Load: %v", err)
+	}
+	sec.Set(secretQRZPass, "old-pass")
+	sec.Set(wavelogSecretKey("default"), "old-key")
+	if err := sec.Save(); err != nil {
+		t.Fatalf("seed secrets: %v", err)
+	}
+
+	cfg := DefaultConfig()
+	cfg.SetSecretsStore(sec)
+	cfg.Integrations.Callbook.QRZ.Pass = "" // cleared
+	cfg.Integrations.DXC.Login = "keep-me"  // still set
+	cfg.Logbooks["default"] = Logbook{
+		Name:    "test",
+		Station: Station{Callsign: "XX0XX", Grid: "JO90"},
+		Wavelog: &WavelogConfig{Enabled: true, APIKey: ""}, // cleared
+	}
+
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	if _, ok := sec.Get(secretQRZPass); ok {
+		t.Error("cleared QRZ pass should be deleted from the store")
+	}
+	if _, ok := sec.Get(wavelogSecretKey("default")); ok {
+		t.Error("cleared Wavelog API key should be deleted from the store")
+	}
+	if v, ok := sec.Get(secretDXCLogin); !ok || v != "keep-me" {
+		t.Errorf("kept DXC login = %q (ok=%v), want keep-me", v, ok)
+	}
+
+	// Round-trip: a fresh load + overlay must NOT resurrect the cleared
+	// credentials.
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	loaded.SetSecretsStore(sec)
+	loaded.ApplySecrets()
+	if loaded.Integrations.Callbook.QRZ.Pass != "" {
+		t.Errorf("cleared QRZ pass returned after restart: %q", loaded.Integrations.Callbook.QRZ.Pass)
+	}
+	if got := loaded.Logbooks["default"].Wavelog.APIKey; got != "" {
+		t.Errorf("cleared Wavelog key returned after restart: %q", got)
+	}
+	if loaded.Integrations.DXC.Login != "keep-me" {
+		t.Errorf("DXC login after round-trip = %q, want keep-me", loaded.Integrations.DXC.Login)
+	}
+}
+
+// TestSave_RetryAfterSecretsFailurePersistsCredentials verifies the retry
+// contract: a transient secrets-write failure aborts the save but leaves
+// the store dirty, so the NEXT save persists the pending secrets before
+// writing scrubbed YAML — the credential can never be silently lost.
+func TestSave_RetryAfterSecretsFailurePersistsCredentials(t *testing.T) {
+	origKey := secrets.KeyFunc
+	secrets.KeyFunc = func() []byte { return bytes.Repeat([]byte{0x42}, 32) }
+	t.Cleanup(func() { secrets.KeyFunc = origKey })
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	sec, err := secrets.Load(dir)
+	if err != nil {
+		t.Fatalf("secrets.Load: %v", err)
+	}
+
+	cfg := DefaultConfig()
+	cfg.SetSecretsStore(sec)
+	cfg.Integrations.Callbook.QRZ.Pass = "new-secret-pass"
+
+	// First attempt: a directory in place of the secrets temp file makes
+	// the secrets write fail while config.yaml stays writable.
+	if err := os.MkdirAll(filepath.Join(dir, "secrets.enc.tmp"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := Save(path, cfg); err == nil {
+		t.Fatal("first Save should fail while the secrets write is blocked")
+	}
+	if !sec.Dirty() {
+		t.Fatal("failed secrets write must leave the store dirty")
+	}
+
+	// Second attempt: remove the blocker and retry — the credential must
+	// reach the encrypted store instead of being silently dropped.
+	if err := os.Remove(filepath.Join(dir, "secrets.enc.tmp")); err != nil {
+		t.Fatalf("remove blocker: %v", err)
+	}
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("retry Save: %v", err)
+	}
+
+	fresh, err := secrets.Load(dir)
+	if err != nil {
+		t.Fatalf("reload secrets: %v", err)
+	}
+	if v, ok := fresh.Get(secretQRZPass); !ok || v != "new-secret-pass" {
+		t.Errorf("credential lost after retry: %q (ok=%v)", v, ok)
+	}
+}
+
+// TestSave_RetryAfterSecretsFailurePersistsDeletion verifies a cleared
+// credential whose secrets write failed cannot be resurrected by the retry.
+func TestSave_RetryAfterSecretsFailurePersistsDeletion(t *testing.T) {
+	origKey := secrets.KeyFunc
+	secrets.KeyFunc = func() []byte { return bytes.Repeat([]byte{0x42}, 32) }
+	t.Cleanup(func() { secrets.KeyFunc = origKey })
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	sec, err := secrets.Load(dir)
+	if err != nil {
+		t.Fatalf("secrets.Load: %v", err)
+	}
+	sec.Set(secretQRZPass, "old-pass")
+	if err := sec.Save(); err != nil {
+		t.Fatalf("seed secrets: %v", err)
+	}
+
+	cfg := DefaultConfig()
+	cfg.SetSecretsStore(sec)
+	cfg.Integrations.Callbook.QRZ.Pass = "" // cleared by the operator
+
+	// First attempt fails while the secrets write is blocked.
+	if err := os.MkdirAll(filepath.Join(dir, "secrets.enc.tmp"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := Save(path, cfg); err == nil {
+		t.Fatal("first Save should fail while the secrets write is blocked")
+	}
+	if !sec.Dirty() {
+		t.Fatal("failed secrets write must leave the store dirty")
+	}
+
+	// Retry succeeds — the deletion must now be persisted, not skipped.
+	if err := os.Remove(filepath.Join(dir, "secrets.enc.tmp")); err != nil {
+		t.Fatalf("remove blocker: %v", err)
+	}
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("retry Save: %v", err)
+	}
+
+	fresh, err := secrets.Load(dir)
+	if err != nil {
+		t.Fatalf("reload secrets: %v", err)
+	}
+	if _, ok := fresh.Get(secretQRZPass); ok {
+		t.Error("cleared credential was resurrected after retry")
 	}
 }
 
@@ -817,6 +1103,77 @@ func TestEnsureConfig_MalformedConfigReturnsError(t *testing.T) {
 	}
 }
 
+// TestEnsureConfig_YAMLSyntaxErrorPreservesFile verifies that a config with
+// a YAML syntax error is reported and left byte-for-byte untouched — the
+// destructive recovery path (overwriting with defaults) must never trigger.
+func TestEnsureConfig_YAMLSyntaxErrorPreservesFile(t *testing.T) {
+	tmp := isolateHome(t)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	configDir := expectedConfigDir(tmp, "")
+	os.MkdirAll(configDir, 0755)
+	configPath := filepath.Join(configDir, "config.yaml")
+
+	original := []byte("state:\n  active_logbook: missing\nlogbooks: {bad: [\n")
+	os.WriteFile(configPath, original, 0644)
+
+	_, _, err := EnsureConfig()
+	if err == nil {
+		t.Fatal("EnsureConfig should return an error for a YAML syntax error")
+	}
+	if !strings.Contains(err.Error(), "parse config") {
+		t.Errorf("error should mention the parse failure, got %q", err)
+	}
+
+	after, readErr := os.ReadFile(configPath)
+	if readErr != nil {
+		t.Fatalf("read config after EnsureConfig: %v", readErr)
+	}
+	if !bytes.Equal(after, original) {
+		t.Errorf("config file was modified by EnsureConfig:\n got %q\nwant %q", after, original)
+	}
+}
+
+// TestEnsureConfig_UnreadableFileDoesNotOverwrite verifies that a config
+// which exists but cannot be read is reported without being replaced.
+func TestEnsureConfig_UnreadableFileDoesNotOverwrite(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX file permissions are not enforced the same way on Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("running as root bypasses file permissions")
+	}
+
+	tmp := isolateHome(t)
+	t.Setenv("XDG_CONFIG_HOME", "")
+
+	configDir := expectedConfigDir(tmp, "")
+	os.MkdirAll(configDir, 0755)
+	configPath := filepath.Join(configDir, "config.yaml")
+
+	original := []byte("general:\n  timezone: Europe/London\n")
+	os.WriteFile(configPath, original, 0644)
+	t.Cleanup(func() { os.Chmod(configPath, 0644) })
+	if err := os.Chmod(configPath, 0000); err != nil {
+		t.Fatalf("chmod: %v", err)
+	}
+
+	_, _, err := EnsureConfig()
+	if err == nil {
+		t.Fatal("EnsureConfig should return an error for an unreadable config")
+	}
+
+	// Restore readability so the assertion below can read the file.
+	os.Chmod(configPath, 0644)
+	after, readErr := os.ReadFile(configPath)
+	if readErr != nil {
+		t.Fatalf("read config after EnsureConfig: %v", readErr)
+	}
+	if !bytes.Equal(after, original) {
+		t.Errorf("config file was modified by EnsureConfig:\n got %q\nwant %q", after, original)
+	}
+}
+
 func TestEnsureConfig_CreatesLogbooksMapIfNil(t *testing.T) {
 	tmp := isolateHome(t)
 	t.Setenv("XDG_CONFIG_HOME", "")
@@ -1049,6 +1406,37 @@ func TestSave_PermissionsAre0600(t *testing.T) {
 	}
 }
 
+// Save writes to a temp file and renames over the target. Overwriting an
+// existing config must succeed (os.Rename must replace on every platform)
+// and must not leave the temp file behind.
+func TestSave_OverwritesAtomicallyWithoutTempLeftover(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	cfg := DefaultConfig()
+	cfg.General.Timezone = "Europe/Warsaw"
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("first Save: %v", err)
+	}
+
+	cfg.General.Timezone = "UTC"
+	if err := Save(path, cfg); err != nil {
+		t.Fatalf("second Save over existing file: %v", err)
+	}
+
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load after overwrite: %v", err)
+	}
+	if loaded.General.Timezone != "UTC" {
+		t.Errorf("timezone after overwrite = %q, want %q", loaded.General.Timezone, "UTC")
+	}
+
+	if _, err := os.Stat(path + ".tmp"); !os.IsNotExist(err) {
+		t.Errorf("temp file %q still exists after Save", path+".tmp")
+	}
+}
+
 func TestSaveAndLoad_StationFieldsRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
@@ -1258,5 +1646,89 @@ func TestVersionLess(t *testing.T) {
 		if got != tt.less {
 			t.Errorf("versionLess(%q, %q) = %v, want %v", tt.a, tt.b, got, tt.less)
 		}
+	}
+}
+
+// TestDefaultCallbookPriorities verifies that a fresh configuration carries
+// exactly the trust-based callbook defaults (QRZ > HamQTH > Callook > QRZ.RU >
+// local logbook > Wavelog > CTY), with Callook and the local logbook enabled,
+// everything else disabled, and base-call fallback on.
+func TestDefaultCallbookPriorities(t *testing.T) {
+	cfg := DefaultConfig()
+	cb := cfg.Integrations.Callbook
+
+	if !cb.BaseCallFallback {
+		t.Error("BaseCallFallback should be enabled by default")
+	}
+	if cb.QRZ.Priority != DefaultQRZPriority {
+		t.Errorf("QRZ priority = %d, want %d", cb.QRZ.Priority, DefaultQRZPriority)
+	}
+	if cb.QRZ.Enabled {
+		t.Error("QRZ should be disabled until credentials are configured")
+	}
+	if cb.HamQTH.Priority != DefaultHamQTHPriority || cb.HamQTH.Enabled {
+		t.Errorf("HamQTH = %+v, want priority %d disabled", cb.HamQTH, DefaultHamQTHPriority)
+	}
+	if cb.Callook.Priority != DefaultCallookPriority || !cb.Callook.Enabled {
+		t.Errorf("Callook = %+v, want priority %d enabled", cb.Callook, DefaultCallookPriority)
+	}
+	if cb.QRZRu.Priority != DefaultQRZRuPriority || cb.QRZRu.Enabled {
+		t.Errorf("QRZRu = %+v, want priority %d disabled", cb.QRZRu, DefaultQRZRuPriority)
+	}
+	if cb.Logbook.Priority != DefaultLogbookPriority || !cb.Logbook.Enabled {
+		t.Errorf("Logbook = %+v, want priority %d enabled", cb.Logbook, DefaultLogbookPriority)
+	}
+	if cb.Wavelog.Priority != DefaultWavelogPriority || cb.Wavelog.Enabled {
+		t.Errorf("Wavelog = %+v, want priority %d disabled", cb.Wavelog, DefaultWavelogPriority)
+	}
+	if cb.CTY.Priority != DefaultCTYPriority {
+		t.Errorf("CTY priority = %d, want %d", cb.CTY.Priority, DefaultCTYPriority)
+	}
+}
+
+// TestNormalizeCallbookMigration preserves explicit user priorities and fills
+// the trust-based defaults only for providers that were never configured.
+func TestNormalizeCallbookMigration(t *testing.T) {
+	// Partially configured upgrade: explicit priorities and choices survive.
+	cfg := DefaultConfig()
+	cfg.Integrations.Callbook.QRZ.Enabled = true
+	cfg.Integrations.Callbook.QRZ.User = "user"
+	cfg.Integrations.Callbook.QRZ.Priority = 42
+	cfg.Integrations.Callbook.HamQTH.Priority = 0 // never configured
+	cfg.Integrations.Callbook.Logbook.Enabled = false
+	cfg.Integrations.Callbook.Logbook.Priority = 55
+	cfg.Integrations.Callbook.BaseCallFallback = false
+	cfg.Normalize()
+
+	cb := cfg.Integrations.Callbook
+	if cb.QRZ.Priority != 42 {
+		t.Errorf("explicit QRZ priority overwritten: %d", cb.QRZ.Priority)
+	}
+	if cb.HamQTH.Priority != DefaultHamQTHPriority {
+		t.Errorf("unset HamQTH priority = %d, want default %d", cb.HamQTH.Priority, DefaultHamQTHPriority)
+	}
+	if cb.HamQTH.Enabled {
+		t.Error("HamQTH must stay disabled without credentials")
+	}
+	if cb.Logbook.Priority != 55 || cb.Logbook.Enabled {
+		t.Errorf("explicit logbook choice overwritten: %+v", cb.Logbook)
+	}
+	if cb.BaseCallFallback {
+		t.Error("explicit base-call fallback disable was overwritten")
+	}
+	if !cb.Callook.Enabled || cb.Callook.Priority != DefaultCallookPriority {
+		t.Errorf("unset Callook should default to enabled at %d, got %+v", DefaultCallookPriority, cb.Callook)
+	}
+
+	// Fully unconfigured callbook section: every default applies.
+	cfg2 := DefaultConfig()
+	cfg2.Integrations.Callbook = CallbookGroup{}
+	cfg2.Normalize()
+	cb2 := cfg2.Integrations.Callbook
+	if !cb2.BaseCallFallback || !cb2.Logbook.Enabled || !cb2.Callook.Enabled {
+		t.Errorf("fresh callbook section should enable fallback/logbook/callook: %+v", cb2)
+	}
+	if cb2.QRZ.Priority != DefaultQRZPriority || cb2.Wavelog.Priority != DefaultWavelogPriority || cb2.CTY.Priority != DefaultCTYPriority {
+		t.Errorf("fresh callbook priorities = %+v", cb2)
 	}
 }

@@ -50,6 +50,11 @@ func newWorkedPanelTestModel(t *testing.T) (*Model, *sql.DB) {
 			t.Fatalf("seed: %v", err)
 		}
 	}
+	// Raw SQL bypasses the incremental index maintenance — rebuild it, as
+	// production migration does for pre-existing rows.
+	if err := store.RebuildWorkedIndex(db); err != nil {
+		t.Fatalf("rebuild worked index: %v", err)
+	}
 
 	cfg := &config.Config{
 		General: config.GeneralConfig{Units: "metric"},
@@ -87,6 +92,119 @@ func newWorkedPanelTestModel(t *testing.T) (*Model, *sql.DB) {
 	m.rc.logStats = stats
 	m.rc.logStatsSig = "KI6NAZ|20m|FT8"
 	return m, db
+}
+
+// seedWorkedSummary runs the worked-summary query synchronously and installs
+// it under the exact signature renderWorkedPanel computes for this call, so
+// the panel renders the summary on the first frame. In production the summary
+// is loaded asynchronously via fetchWorkedSummaryCmd and lands one frame
+// later; tests need the data up front.
+func seedWorkedSummary(t *testing.T, m *Model, db *sql.DB, call, grid, dxcc, country string) {
+	t.Helper()
+	if m.App.DB == nil {
+		return
+	}
+	grid4 := ""
+	if len(grid) >= 4 {
+		grid4 = strings.ToUpper(grid[:4])
+	}
+	ws, err := store.GetWorkedSummary(db, call, grid4, dxcc, country)
+	if err != nil {
+		t.Fatalf("GetWorkedSummary: %v", err)
+	}
+	m.rc.workedSummary = ws
+	m.rc.workedSummarySig = workedSummarySigFor(call, grid4, dxcc, country)
+}
+
+// TestWorkedSummaryFetchDispatchedAndApplied verifies the C3 wiring: the
+// need-fetch flag set by View() is serviced by dispatchViewFetches, and the
+// result applies only when it matches the currently wanted signature.
+func TestWorkedSummaryFetchDispatchedAndApplied(t *testing.T) {
+	m, db := newWorkedPanelTestModel(t)
+	want := workedSummarySigFor("KI6NAZ", "DM03", "291", "United States")
+
+	m.rc.workedSummaryNeedFetch = true
+	m.rc.workedSummaryFetchCall = "KI6NAZ"
+	m.rc.workedSummaryFetchGrid4 = "DM03"
+	m.rc.workedSummaryFetchDXCC = "291"
+	m.rc.workedSummaryFetchName = "United States"
+	m.rc.workedSummaryWantedSig = want
+
+	cmd := m.dispatchViewFetches(nil)
+	if cmd == nil {
+		t.Fatal("dispatchViewFetches did not dispatch the worked summary")
+	}
+	msg, ok := execCmd(cmd).(workedSummaryMsg)
+	if !ok {
+		t.Fatalf("fetch produced %T, want workedSummaryMsg", execCmd(cmd))
+	}
+	if msg.sig != want {
+		t.Fatalf("result sig = %q, want %q", msg.sig, want)
+	}
+	m.handleWorkedSummary(msg)
+	if m.rc.workedSummarySig != want {
+		t.Fatal("the matching summary was not applied")
+	}
+
+	// A result for a superseded signature must be discarded: the wanted
+	// signature changed, so the already-applied match must stay untouched.
+	m.rc.workedSummaryWantedSig = "NEWER|CALL|SIG"
+	m.handleWorkedSummary(msg)
+	if m.rc.workedSummarySig != want {
+		t.Fatal("the stale result overwrote the applied signature")
+	}
+	// A result matching the NEWER wanted signature applies.
+	fresh := workedSummaryMsg{sig: "NEWER|CALL|SIG"}
+	m.handleWorkedSummary(fresh)
+	if m.rc.workedSummarySig != "NEWER|CALL|SIG" {
+		t.Fatal("the matching newer result was not applied")
+	}
+	_ = db
+}
+
+// TestPartnerDXCCMemoizedOffRenderPath verifies the C4 flow: the country →
+// DXCC lookup runs off the render path, resolves into the bounded memo, and
+// misses are memoized too.
+func TestPartnerDXCCMemoizedOffRenderPath(t *testing.T) {
+	m, db := newWorkedPanelTestModel(t)
+	if _, err := db.Exec(`UPDATE qsos SET country='Testland', dxcc='999' WHERE id = (SELECT id FROM qsos LIMIT 1)`); err != nil {
+		t.Fatalf("seed country: %v", err)
+	}
+
+	m.rc.partnerDXCCNeedFetch = true
+	m.rc.partnerDXCCEntity = "Testland"
+	cmd := m.dispatchViewFetches(nil)
+	if cmd == nil {
+		t.Fatal("dispatchViewFetches did not dispatch the country DXCC lookup")
+	}
+	msg, ok := execCmd(cmd).(partnerDXCCMsg)
+	if !ok {
+		t.Fatalf("fetch produced %T, want partnerDXCCMsg", execCmd(cmd))
+	}
+	m.handlePartnerDXCC(msg)
+	if got := m.rc.countryDXCC["Testland"]; got != "999" {
+		t.Fatalf("memoized DXCC = %q, want 999", got)
+	}
+
+	// Unknown country: empty result memoized as a miss so it is not
+	// re-queried every frame.
+	m.rc.partnerDXCCNeedFetch = true
+	m.rc.partnerDXCCEntity = "Nowhereland"
+	cmd = m.dispatchViewFetches(nil)
+	msg2, ok := execCmd(cmd).(partnerDXCCMsg)
+	if !ok {
+		t.Fatalf("miss fetch produced %T", execCmd(cmd))
+	}
+	m.handlePartnerDXCC(msg2)
+	if !m.rc.countryDXCCMiss["Nowhereland"] {
+		t.Fatal("the miss was not memoized — it would be re-queried every frame")
+	}
+
+	// Stale result from another logbook must not leak into this one.
+	m.handlePartnerDXCC(partnerDXCCMsg{entity: "Testland", dxcc: "1", logbook: "other"})
+	if got := m.rc.countryDXCC["Testland"]; got != "999" {
+		t.Fatalf("cross-logbook result overwrote the memo: %q", got)
+	}
 }
 
 func TestWorkedPanel_WorkedCall(t *testing.T) {
@@ -206,6 +324,7 @@ func TestWorkedPanel_NewCall_WorkedDXCC(t *testing.T) {
 
 	stats, _ := store.GetLogbookStats(db, "XX0XXX", "20m", "FT8")
 	m.rc.logStats = stats
+	seedWorkedSummary(t, m, db, "XX0XXX", "DM03ab", "291", "United States")
 
 	d := &callbook.Result{
 		Callsign: "XX0XXX",
@@ -315,6 +434,7 @@ func TestWorkedPanel_DXCCHistoryFallback(t *testing.T) {
 
 	stats, _ := store.GetLogbookStats(db, "XX0XXX", "20m", "FT8")
 	m.rc.logStats = stats
+	seedWorkedSummary(t, m, db, "XX0XXX", "ZZ99", "291", "United States")
 
 	d := &callbook.Result{
 		Callsign: "XX0XXX",
@@ -358,6 +478,16 @@ func TestWorkedTitle_NoWavelog(t *testing.T) {
 	}
 }
 
+func TestWorkedTitle_Offline(t *testing.T) {
+	m, _ := newWorkedPanelTestModel(t)
+	// Wavelog is configured, but the offline switch hides the remote source.
+	m.Offline = true
+	title := m.workedTitle()
+	if title != "Worked · Local" {
+		t.Errorf("expected 'Worked · Local' in offline mode, got %q", title)
+	}
+}
+
 func TestBuildWorkedPanelLayout_FullWidthRows(t *testing.T) {
 	m, db := newWorkedPanelTestModel(t)
 	m.fields[fieldCall].SetValue("KI6NAZ")
@@ -366,6 +496,7 @@ func TestBuildWorkedPanelLayout_FullWidthRows(t *testing.T) {
 
 	stats, _ := store.GetLogbookStats(db, "KI6NAZ", "20m", "FT8")
 	m.rc.logStats = stats
+	seedWorkedSummary(t, m, db, "KI6NAZ", "DM03xu", "291", "United States")
 
 	d := &callbook.Result{Callsign: "KI6NAZ", DXCC: "291", Grid: "DM03xu", Country: "United States"}
 	layout := m.buildWorkedPanelLayout(d, 100)
@@ -395,6 +526,7 @@ func TestBuildWorkedPanelLayout_DXCCScope(t *testing.T) {
 
 	stats, _ := store.GetLogbookStats(db, "XX0XXX", "20m", "FT8")
 	m.rc.logStats = stats
+	seedWorkedSummary(t, m, db, "XX0XXX", "ZZ99", "291", "United States")
 
 	d := &callbook.Result{Callsign: "XX0XXX", DXCC: "291", Grid: "ZZ99", Country: "United States"}
 	layout := m.buildWorkedPanelLayout(d, 100)

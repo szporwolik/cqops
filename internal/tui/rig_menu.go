@@ -35,6 +35,7 @@ type RigChooser struct {
 	height       int
 	done         bool
 	needsRefresh bool // set by saveForm when active rig config changed
+	fm           menuFocus
 
 	// Viewport for scrolling form/content on small terminals.
 	vp              viewport.Model
@@ -160,6 +161,11 @@ func (rc *RigChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			scrollVpToLine(&rc.vp, rc.cursor)
 
 		case rc.mode == rigChooserEdit || rc.mode == rigChooserCreate:
+			// Shared navigation: Tab/Down, Shift+Tab/Up, and the Save & Back
+			// button (Space/Enter saves).
+			if handled, cmd := rc.fm.onKey(msg, rc, func() tea.Cmd { return rc.saveForm() }); handled {
+				return rc, cmd
+			}
 			switch {
 			case k.String() == "pgup", k.String() == "pgdown", k.String() == "home", k.String() == "end":
 				rc.vp, _ = rc.vp.Update(msg)
@@ -309,13 +315,14 @@ func (rc *RigChooser) viewForm() string {
 		vpH = 4
 	}
 	rc.form.width = vpW
-	bodyStr := rc.form.View().Content
+	bodyStr := strings.TrimRight(rc.form.View().Content, "\n") + "\n" + rc.fm.btn.line("Save & Back", vpW)
 	rc.vp.SetWidth(vpW)
 	rc.vp.SetHeight(vpH)
 	if rc.vp.TotalLineCount() == 0 || bodyStr != rc.lastFormContent {
 		rc.vp.SetContent(bodyStr)
 		rc.lastFormContent = bodyStr
 	}
+	scrollToFocusedLine(&rc.vp, bodyStr)
 	if rc.vp.PastBottom() {
 		rc.vp.SetYOffset(rc.vp.TotalLineCount() - rc.vp.VisibleLineCount())
 	}
@@ -346,7 +353,7 @@ func (rc *RigChooser) selectRig() tea.Cmd {
 	rc.app.Config.Logbooks[rc.app.LogbookName] = lb
 
 	if err := config.Save(rc.app.ConfigPath, rc.app.Config); err != nil {
-		rc.toasts.Error("Select " + displayName + " failed: " + err.Error())
+		rc.toasts.Error("Rig: select " + displayName + " failed — " + err.Error())
 	} else {
 		rc.toasts.Success("Rig \"" + displayName + "\" selected")
 		applog.Info("Rig selected", "name", displayName)
@@ -354,6 +361,19 @@ func (rc *RigChooser) selectRig() tea.Cmd {
 		rc.refreshNames()
 	}
 	return nil
+}
+
+// focusableRows implementation for the shared menuFocus engine.
+func (rc *RigChooser) rowCount() int { return int(rigFieldEnd) }
+func (rc *RigChooser) rowVisible(i int) bool {
+	return rc.form.visible(rigFormField(i))
+}
+func (rc *RigChooser) blurAll() {
+	rc.form.blurAll()
+	rc.form.focus = -1 // leave the form: no field may stay highlighted
+}
+func (rc *RigChooser) focusRow(i int) tea.Cmd {
+	return rc.form.focusRow(rigFormField(i))
 }
 
 func (rc *RigChooser) refreshNames() {
@@ -365,19 +385,20 @@ func (rc *RigChooser) refreshNames() {
 
 func (rc *RigChooser) startCreate() {
 	rc.mode = rigChooserCreate
+	rc.fm.reset()
 	rc.lastFormContent = "" // force viewport refresh on mode switch
 	rc.form.SetValues("", "", "", "")
 	rc.form.SetBackend(0, "", "")
 	rc.form.SetRotor(0, "", "")
 	rc.form.SetWsjtx(false, "127.0.0.1", "2233")
-	rc.form.blurAll()
-	rc.form.Name.Focus()
+	rc.form.FocusFirst()
 	rc.editing = ""
 }
 
 func (rc *RigChooser) startEdit(id string) {
 	rp := rc.app.Config.Rigs[id]
 	rc.mode = rigChooserEdit
+	rc.fm.reset()
 	rc.editing = id
 	rc.lastFormContent = "" // force viewport refresh on mode switch
 	rc.form.SetValues(rp.Name, rp.Model, rp.Antenna, rp.Power)
@@ -400,8 +421,7 @@ func (rc *RigChooser) startEdit(id string) {
 	rc.form.SetRotor(rotorIdx, rp.RotorHamlibHost, rp.RotorHamlibPort)
 	rc.form.SetWsjtx(rp.WsjtxEnabled, rp.WsjtxUDPHost, fmt.Sprintf("%d", rp.WsjtxUDPPort))
 	rc.form.SetPollInterval(rp.PollIntervalS)
-	rc.form.blurAll()
-	rc.form.Name.Focus()
+	rc.form.FocusFirst()
 }
 
 func (rc *RigChooser) saveForm() tea.Cmd {
@@ -424,36 +444,36 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 	}
 
 	if nm == "" {
-		rc.toasts.Warn("Rig name is required")
+		rc.toasts.Warn("Rig: name is required")
 		return nil
 	}
 	if radioBackend == "flrig" {
 		if flrigHost == "" {
-			rc.toasts.Warn("Flrig host is required")
+			rc.toasts.Warn("Rig: flrig host is required")
 			return nil
 		}
 		if flrigPort == "" {
-			rc.toasts.Warn("Flrig port is required")
+			rc.toasts.Warn("Rig: flrig port is required")
 			return nil
 		}
 	}
 	if radioBackend == "hamlib" {
 		if hamlibHost == "" {
-			rc.toasts.Warn("Hamlib host is required")
+			rc.toasts.Warn("Rig: hamlib host is required")
 			return nil
 		}
 		if hamlibPort == "" {
-			rc.toasts.Warn("Hamlib port is required")
+			rc.toasts.Warn("Rig: hamlib port is required")
 			return nil
 		}
 	}
 	if rotorBackend == "hamlib" {
 		if rotorHost == "" {
-			rc.toasts.Warn("Rotator hamlib host is required")
+			rc.toasts.Warn("Rotator: hamlib host is required")
 			return nil
 		}
 		if rotorPort == "" {
-			rc.toasts.Warn("Rotator hamlib port is required")
+			rc.toasts.Warn("Rotator: hamlib port is required")
 			return nil
 		}
 	}
@@ -463,7 +483,7 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 		// Skip duplicate check when rig model is empty (optional field).
 		if rig != "" {
 			if _, _, found := config.FindRigByModel(rc.app.Config, rig); found {
-				rc.toasts.Warn("Rig with model " + rig + " already exists")
+				rc.toasts.Warn("Rig: model " + rig + " already exists")
 				return nil
 			}
 		}
@@ -494,7 +514,7 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 		rc.names = append(rc.names, id)
 		savedName = rig
 		if clamped {
-			rc.toasts.Warn("Poll interval adjusted to " + strconv.Itoa(pollInterval) + "s (valid range: 1–60)")
+			rc.toasts.Warn("Rig: poll interval adjusted to " + strconv.Itoa(pollInterval) + "s (valid range: 1–60)")
 		}
 	} else {
 		id := rc.editing
@@ -519,7 +539,7 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 		rc.app.Config.Rigs[id] = rp
 		savedName = rig
 		if clamped {
-			rc.toasts.Warn("Poll interval adjusted to " + strconv.Itoa(pollInterval) + "s (valid range: 1–60)")
+			rc.toasts.Warn("Rig: poll interval adjusted to " + strconv.Itoa(pollInterval) + "s (valid range: 1–60)")
 		}
 	}
 
@@ -528,7 +548,7 @@ func (rc *RigChooser) saveForm() tea.Cmd {
 	rc.lastListContent = "" // force viewport refresh
 	rc.needsRefresh = true
 	if err := config.Save(rc.app.ConfigPath, rc.app.Config); err != nil {
-		rc.toasts.Error("Save " + savedName + " failed: " + err.Error())
+		rc.toasts.Error("Rig: save " + savedName + " failed — " + err.Error())
 	} else {
 		rc.toasts.Success("Rig " + savedName + " saved")
 		applog.Info("Rig saved", "name", savedName)
@@ -546,13 +566,13 @@ func (rc *RigChooser) deleteRig() tea.Cmd {
 
 	// Active rig protection
 	if id == rc.app.Logbook.Station.RigName {
-		rc.toasts.Warn("Cannot delete " + displayName + " — it is the active rig. Select another first.")
+		rc.toasts.Warn("Rig: cannot delete " + displayName + " — it is the active rig. Select another first.")
 		rc.mode = rigChooserList
 		return nil
 	}
 
 	if len(rc.names) <= 1 {
-		rc.toasts.Warn("Cannot delete " + displayName + " — at least one rig must remain.")
+		rc.toasts.Warn("Rig: cannot delete " + displayName + " — at least one rig must remain.")
 		rc.mode = rigChooserList
 		return nil
 	}
@@ -570,7 +590,7 @@ func (rc *RigChooser) deleteRig() tea.Cmd {
 
 	rc.mode = rigChooserList
 	if err := config.Save(rc.app.ConfigPath, rc.app.Config); err != nil {
-		rc.toasts.Error("Delete " + displayName + " failed: " + err.Error())
+		rc.toasts.Error("Rig: delete " + displayName + " failed — " + err.Error())
 	} else {
 		rc.toasts.Success("Rig " + displayName + " deleted")
 		applog.Info("Rig deleted", "name", displayName)
@@ -608,7 +628,7 @@ func (rc *RigChooser) duplicateRig() tea.Cmd {
 	}
 
 	if err := config.Save(rc.app.ConfigPath, rc.app.Config); err != nil {
-		rc.toasts.Error("Duplicate " + displayName + " failed: " + err.Error())
+		rc.toasts.Error("Rig: duplicate " + displayName + " failed — " + err.Error())
 	} else {
 		rc.toasts.Success("Rig \"" + displayName + "\" duplicated as \"" + cloneName + "\"")
 		applog.Info("Rig duplicated", "original", displayName, "clone", cloneName)

@@ -85,7 +85,6 @@ func importADIFFromPath(t *testing.T, dbPath, adifPath string) (inserted, dupes,
 			qs.Comment = v
 		}
 		qs.Source = "wavelog"
-		qs.WavelogUploaded = "yes"
 
 		if err := qso.ValidateImportRecord(qs); err != nil {
 			failed++
@@ -153,9 +152,6 @@ func TestImportADIF_SingleQSO(t *testing.T) {
 	}
 	if q.Source != "wavelog" {
 		t.Errorf("Source = %q, want wavelog", q.Source)
-	}
-	if q.WavelogUploaded != "yes" {
-		t.Errorf("WavelogUploaded = %q, want yes", q.WavelogUploaded)
 	}
 }
 
@@ -311,9 +307,6 @@ func TestImportADIF_WavelogStatusSet(t *testing.T) {
 	qsos, _ := store.ListQSOs(db, 1, "")
 	if len(qsos) != 1 {
 		t.Fatal("no QSO found")
-	}
-	if qsos[0].WavelogUploaded != "yes" {
-		t.Errorf("WavelogUploaded = %q, want yes", qsos[0].WavelogUploaded)
 	}
 	if qsos[0].Source != "wavelog" {
 		t.Errorf("Source = %q, want wavelog", qsos[0].Source)

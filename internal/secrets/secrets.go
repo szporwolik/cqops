@@ -30,6 +30,11 @@ type Store struct {
 	path string
 	key  []byte // derived 256-bit key, cached after first derivation
 
+	// dirty is true when the in-memory data differs from the last
+	// successfully persisted state. Set/Delete mark it; Save clears it
+	// only on success, so a failed save is retried by the next call.
+	dirty bool
+
 	// Corrupted is true when the secrets file exists but could not be
 	// decrypted (wrong machine, corrupted file, old key). The app
 	// starts normally but secrets must be re-entered by the user.
@@ -103,6 +108,12 @@ func (s *Store) Save() error {
 		os.Remove(tmp)
 		return fmt.Errorf("secrets: rename: %w", err)
 	}
+
+	// Only a fully persisted state clears the dirty flag: a failed
+	// write leaves the store dirty so the next Save retries it.
+	s.mu.Lock()
+	s.dirty = false
+	s.mu.Unlock()
 	return nil
 }
 
@@ -114,18 +125,36 @@ func (s *Store) Get(key string) (string, bool) {
 	return v, ok
 }
 
-// Set stores a secret value in memory. Call Save() to persist.
+// Set stores a secret value in memory and marks the store dirty when the
+// value changed. Call Save() to persist.
 func (s *Store) Set(key, value string) {
 	s.mu.Lock()
-	s.data[key] = value
+	if s.data[key] != value {
+		s.data[key] = value
+		s.dirty = true
+	}
 	s.mu.Unlock()
 }
 
-// Delete removes a secret. Call Save() to persist.
+// Delete removes a secret from memory and marks the store dirty when the
+// key existed. Call Save() to persist.
 func (s *Store) Delete(key string) {
 	s.mu.Lock()
-	delete(s.data, key)
+	if _, ok := s.data[key]; ok {
+		delete(s.data, key)
+		s.dirty = true
+	}
 	s.mu.Unlock()
+}
+
+// Dirty reports whether the in-memory secrets differ from the last
+// persisted state. A failed Save keeps the store dirty so callers know a
+// retry is required.
+func (s *Store) Dirty() bool {
+	s.mu.RLock()
+	d := s.dirty
+	s.mu.RUnlock()
+	return d
 }
 
 // Has reports whether any secrets are stored.

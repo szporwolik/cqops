@@ -279,7 +279,7 @@ func (c *KISSServerClient) readFrames(conn net.Conn) {
 					}
 					tnc2 := extractTNC2(payload)
 					if tnc2 != "" {
-						applog.Debug("KISS server: frame received", "len", fmt.Sprintf("%d", len(payload)), "tnc2Len", fmt.Sprintf("%d", len(tnc2)))
+						applog.Debug("KISS server: frame received", "len", len(payload), "tnc2Len", len(tnc2))
 						if c.OnPacket != nil {
 							c.OnPacket(tnc2)
 						}
@@ -591,7 +591,7 @@ func (k *KISSClient) readFrames(p io.ReadWriteCloser) {
 					// The info field is the APRS TNC2 text (CALLSIGN>DEST,PATH:BODY).
 					tnc2 := extractTNC2(payload)
 					if tnc2 != "" {
-						applog.Debug("KISS: frame received", "len", fmt.Sprintf("%d", len(payload)), "tnc2Len", fmt.Sprintf("%d", len(tnc2)))
+						applog.Debug("KISS: frame received", "len", len(payload), "tnc2Len", len(tnc2))
 						if k.OnPacket != nil {
 							k.OnPacket(tnc2)
 						}
@@ -698,7 +698,7 @@ func extractTNC2(raw []byte) string {
 	}
 	tnc2 += ":" + body
 
-	applog.Debug("KISS: extracted info", "headerLen", fmt.Sprintf("%d", infoStart), "tnc2", tnc2[:min(len(tnc2), 80)])
+	applog.Debug("KISS: extracted info", "headerLen", infoStart, "tnc2", tnc2[:min(len(tnc2), 80)])
 	return tnc2
 }
 

@@ -44,10 +44,15 @@ func TestCallbookMenuHasHelpEntries(t *testing.T) {
 		keysSeen = append(keysSeen, b.Keys()...)
 	}
 	joined := strings.Join(keysSeen, "|")
-	for _, want := range []string{"ctrl+s", "esc", " "} {
+	for _, want := range []string{"esc", " "} {
 		if !strings.Contains("|"+joined+"|", "|"+want+"|") {
 			t.Errorf("callbook help missing key %q; got %v", want, keysSeen)
 		}
+	}
+	// Saving goes through the in-form [ Save & Back ] button — Ctrl+S is no
+	// longer advertised, matching the General menu.
+	if strings.Contains(joined, "ctrl+s") {
+		t.Errorf("callbook help still advertises Ctrl+S: %v", keysSeen)
 	}
 
 	bar := m.minimalBarBindings()
@@ -56,8 +61,59 @@ func TestCallbookMenuHasHelpEntries(t *testing.T) {
 		barKeys = append(barKeys, b.Keys()...)
 	}
 	barJoined := strings.Join(barKeys, "|")
-	if !strings.Contains(barJoined, "ctrl+s") || !strings.Contains(barJoined, "esc") {
-		t.Errorf("callbook bottom bar missing Ctrl+S/Esc: %v", barKeys)
+	if strings.Contains(barJoined, "ctrl+s") || !strings.Contains(barJoined, "esc") {
+		t.Errorf("callbook bottom bar should show Esc but not Ctrl+S: %v", barKeys)
+	}
+}
+
+// TestConfigMenusDoNotAdvertiseEnterSave: every config menu and submenu form
+// renders its own [ Save & Back ] button, so neither the ? overlay nor the
+// bottom bar should advertise Enter as a separate save key.
+func TestConfigMenusDoNotAdvertiseEnterSave(t *testing.T) {
+	m := newLifecycleTestModel(t)
+
+	m.screen = screenConfig
+	assertNoEnterAdvertised(t, m)
+
+	c := NewLogbookChooser(m.App, NewToastQueue())
+	c.mode = chooserEdit
+	m.ui.chooser = c
+	m.screen = screenChooser
+	assertNoEnterAdvertised(t, m)
+
+	rc := NewRigChooser(m.App, NewToastQueue())
+	rc.mode = rigChooserEdit
+	m.ui.rigChooser = rc
+	m.screen = screenRigEdit
+	assertNoEnterAdvertised(t, m)
+
+	cc := NewContestChooser(m.App, NewToastQueue())
+	cc.mode = contestEdit
+	m.ui.contestChooser = cc
+	m.screen = screenContest
+	assertNoEnterAdvertised(t, m)
+
+	oc := NewOperatorChooser(m.App, NewToastQueue())
+	oc.mode = operatorEdit
+	m.ui.operatorChooser = oc
+	m.screen = screenOperator
+	assertNoEnterAdvertised(t, m)
+}
+
+// assertNoEnterAdvertised fails when the ? overlay or the bottom bar still
+// advertises Enter on a screen that renders its own save button.
+func assertNoEnterAdvertised(t *testing.T, m *Model) {
+	t.Helper()
+	var overlay []string
+	for _, b := range m.ActiveBindings() {
+		overlay = append(overlay, b.Keys()...)
+	}
+	if strings.Contains("|"+strings.Join(overlay, "|")+"|", "|enter|") {
+		t.Errorf("screen %v: ? overlay still advertises Enter: %v", m.screen, overlay)
+	}
+	bar := barKeys(m.minimalBarBindings())
+	if strings.Contains("|"+bar+"|", "|enter|") {
+		t.Errorf("screen %v: bottom bar still advertises Enter: %s", m.screen, bar)
 	}
 }
 
@@ -101,19 +157,34 @@ func TestMainMenuEscExits(t *testing.T) {
 	}
 }
 
-// TestMainMenuDigitsJump: digits 1-8 select the menu entry directly.
+// TestMainMenuDigitsJump: digits 1-7 select the menu entry directly.
 func TestMainMenuDigitsJump(t *testing.T) {
 	mm := NewMainMenu()
 	upd, _ := mm.Update(tea.KeyPressMsg{Code: '1'})
 	mm = upd.(*MainMenu)
-	if mm.action != "general" {
-		t.Errorf("digit 1: action = %q, want general", mm.action)
+	if mm.action != "logbook" {
+		t.Errorf("digit 1: action = %q, want logbook", mm.action)
 	}
 
-	upd, _ = mm.Update(tea.KeyPressMsg{Code: '6'})
+	upd, _ = mm.Update(tea.KeyPressMsg{Code: '5'})
 	mm = upd.(*MainMenu)
 	if mm.action != "integration" {
-		t.Errorf("digit 6: action = %q, want integration", mm.action)
+		t.Errorf("digit 5: action = %q, want integration", mm.action)
+	}
+}
+
+// TestMainMenuOrder pins the entry order: station identity and operation
+// first, online services next, preferences last.
+func TestMainMenuOrder(t *testing.T) {
+	mm := NewMainMenu()
+	want := []string{"Logbooks", "Operators", "Rigs", "Contests", "Integrations", "Callbook", "General"}
+	if len(mm.items) != len(want) {
+		t.Fatalf("menu has %d items, want %d", len(mm.items), len(want))
+	}
+	for i, label := range want {
+		if mm.items[i].label != label {
+			t.Errorf("item %d = %q, want %q", i, mm.items[i].label, label)
+		}
 	}
 }
 

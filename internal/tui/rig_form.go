@@ -30,6 +30,9 @@ const (
 	rigFieldEnd
 )
 
+// rigRows is the row style shared by the rig form's selector rows.
+var rigRows = rowStyle{label: S.FormLabelWide, focused: S.FormFocusedWide}
+
 // backendOptions maps backend index to label and host/port defaults.
 var backendOptions = []struct {
 	label       string
@@ -241,21 +244,34 @@ func (f *RigForm) focusField() {
 	}
 }
 
-func (f *RigForm) OnLastField() bool {
-	if f.WsjtxEnabled {
-		return f.focus == rigFieldWsjtxPort
+// visible reports whether field fi is rendered/focusable with the current
+// backend/rotor/WSJT-X selection.
+func (f *RigForm) visible(fi rigFormField) bool {
+	switch fi {
+	case rigFieldName, rigFieldRig, rigFieldAntenna, rigFieldPower, rigFieldBackend, rigFieldRotor, rigFieldWsjtx:
+		return true
+	case rigFieldBackendHost, rigFieldBackendPort, rigFieldPollInterval:
+		return f.BackendIdx != 0
+	case rigFieldRotorHost, rigFieldRotorPort:
+		return f.RotorIdx != 0
+	case rigFieldWsjtxHost, rigFieldWsjtxPort:
+		return f.WsjtxEnabled
 	}
-	if f.RotorIdx != 0 {
-		return f.focus == rigFieldRotorPort
-	}
-	if f.BackendIdx != 0 {
-		return f.focus == rigFieldPollInterval
-	}
-	return f.focus == rigFieldWsjtx
+	return true
 }
 
-func (f *RigForm) FlrigURL() string {
-	return "http://" + f.BackendHost.Value() + ":" + f.BackendPort.Value()
+// focusRow moves focus to field i for the shared menuFocus engine.
+func (f *RigForm) focusRow(i rigFormField) tea.Cmd {
+	f.focus = i
+	f.focusField()
+	return nil
+}
+
+// FocusFirst moves focus to the first form field.
+func (f *RigForm) FocusFirst() {
+	f.blurAll()
+	f.focus = rigFieldName
+	f.focusField()
 }
 
 func (f *RigForm) SetValues(name, rig, antenna, power string) {
@@ -450,7 +466,7 @@ func (f *RigForm) View() tea.View {
 
 	var b strings.Builder
 
-	b.WriteString(padOrTrunc(renderField("Name:", &f.Name, f.focus == rigFieldName), availW))
+	b.WriteString(padOrTrunc(renderField("Rig name:", &f.Name, f.focus == rigFieldName), availW))
 	b.WriteString("\n")
 	b.WriteString(padOrTrunc(renderField("Rig model (opt):", &f.Rig, f.focus == rigFieldRig), availW))
 	b.WriteString("\n")
@@ -460,77 +476,39 @@ func (f *RigForm) View() tea.View {
 	b.WriteString("\n")
 
 	// Radio control — cycles None → Hamlib → Flrig on Space.
-	backendLabel := backendOptions[f.BackendIdx].label
-	bePrefix := "  "
-	beLbl := S.FormLabelWide.Align(lipgloss.Left).Render("Radio control:")
-	if f.focus == rigFieldBackend {
-		bePrefix = S.FormPrefixOn.Render("> ")
-		beLbl = S.FormFocusedWide.Align(lipgloss.Left).Render("Radio control:")
-		backendLabel = CursorStyle.Render(backendLabel) + " " + DimStyle.Render("(Space)")
-	}
-	b.WriteString(padOrTrunc(
-		lipgloss.JoinHorizontal(lipgloss.Center, bePrefix, beLbl, " ", backendLabel),
-		availW))
+	valueRow(&b, availW, f.focus == rigFieldBackend, "Radio control:", backendOptions[f.BackendIdx].label, "", rigRows)
 
 	if f.BackendIdx != 0 {
 		hostLabel := fmt.Sprintf("  %s host:", backendOptions[f.BackendIdx].label)
 		portLabel := fmt.Sprintf("  %s port:", backendOptions[f.BackendIdx].label)
-		b.WriteString("\n")
 		b.WriteString(padOrTrunc(renderField(hostLabel, &f.BackendHost, f.focus == rigFieldBackendHost), availW))
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(renderField(portLabel, &f.BackendPort, f.focus == rigFieldBackendPort), availW))
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(renderField("  Poll (s):", &f.PollInterval, f.focus == rigFieldPollInterval), availW))
+		b.WriteString("\n")
 	}
-
-	b.WriteString("\n")
 
 	// Rotor control — cycles None → Hamlib on Space.
-	rotorLabel := rotorOptions[f.RotorIdx].label
-	roPrefix := "  "
-	roLbl := S.FormLabelWide.Align(lipgloss.Left).Render("Rotator control:")
-	if f.focus == rigFieldRotor {
-		roPrefix = S.FormPrefixOn.Render("> ")
-		roLbl = S.FormFocusedWide.Align(lipgloss.Left).Render("Rotator control:")
-		rotorLabel = CursorStyle.Render(rotorLabel) + " " + DimStyle.Render("(Space)")
-		// Only show the long hint when there's room — never wrap.
-		if availW >= 85 {
-			rotorLabel += " " + DimStyle.Render("Experimental feature — use with caution")
-		}
+	rotorHint := ""
+	if availW >= 85 {
+		rotorHint = "Use with caution" // only when there's room — never wrap
 	}
-	b.WriteString(padOrTrunc(
-		lipgloss.JoinHorizontal(lipgloss.Center, roPrefix, roLbl, " ", rotorLabel),
-		availW))
+	valueRow(&b, availW, f.focus == rigFieldRotor, "Rotator control:", rotorOptions[f.RotorIdx].label, rotorHint, rigRows)
 
 	if f.RotorIdx != 0 {
 		hostLabel := fmt.Sprintf("  %s host:", rotorOptions[f.RotorIdx].label)
 		portLabel := fmt.Sprintf("  %s port:", rotorOptions[f.RotorIdx].label)
-		b.WriteString("\n")
 		b.WriteString(padOrTrunc(renderField(hostLabel, &f.RotorHost, f.focus == rigFieldRotorHost), availW))
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(renderField(portLabel, &f.RotorPort, f.focus == rigFieldRotorPort), availW))
-	}
-
-	b.WriteString("\n")
-
-	// WSJT-X checkbox
-	wsjtxCheckbox := "[ ]"
-	if f.WsjtxEnabled {
-		wsjtxCheckbox = "[x]"
-	}
-	wxPrefix := "  "
-	wxLabel := S.FormLabelWide.Align(lipgloss.Left).Render("Use WSJT-X:")
-	if f.focus == rigFieldWsjtx {
-		wxPrefix = S.FormPrefixOn.Render("> ")
-		wxLabel = S.FormFocusedWide.Align(lipgloss.Left).Render("Use WSJT-X:")
-		wsjtxCheckbox = CursorStyle.Render(wsjtxCheckbox) + " " + DimStyle.Render("(Space)")
-	}
-	b.WriteString(padOrTrunc(
-		lipgloss.JoinHorizontal(lipgloss.Center, wxPrefix, wxLabel, " ", wsjtxCheckbox),
-		availW))
-
-	if f.WsjtxEnabled {
 		b.WriteString("\n")
+	}
+
+	// WSJT-X checkbox.
+	checkboxRow(&b, availW, f.focus == rigFieldWsjtx, "Use WSJT-X:", f.WsjtxEnabled, "", false, rigRows)
+
+	if f.WsjtxEnabled {
 		b.WriteString(padOrTrunc(renderField("  UDP Host:", &f.WsjtxHost, f.focus == rigFieldWsjtxHost), availW))
 		b.WriteString("\n")
 		b.WriteString(padOrTrunc(renderField("  UDP Port:", &f.WsjtxPort, f.focus == rigFieldWsjtxPort), availW))

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CQOps Live</title>
 <link rel="icon" href="/favicon.ico" sizes="any">
-<script>try{var t=localStorage.getItem('cqops-theme');if(t&&t!=='bright')document.documentElement.classList.add(t)}catch(e){}</script>
+<script src="/theme.js"></script>
 <link rel="stylesheet" href="/leaflet.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.css">
 <link rel="stylesheet" href="/style.css">
@@ -38,7 +38,7 @@
     </div>
     <div id="hero-active">
       <div id="hero-photo-box">
-        <img id="hero-photo" src="" alt="" onerror="this.style.display='none';document.getElementById('hero-placeholder').style.display='flex'">
+        <img id="hero-photo" src="" alt="">
         <div id="hero-placeholder"><span id="hero-placeholder-text"></span></div>
       </div>
       <div id="hero-main">
@@ -94,7 +94,7 @@
   <footer><span id="footer-text">CQOps Live</span> · <span id="footer-attrib"></span><span id="footer-rainviewer" class="footer-rainviewer"> · Weather radar: <a href="https://www.rainviewer.com/" target="_blank" rel="noopener">RainViewer</a></span></footer>
   <div id="qso-toast"><span id="qso-toast-icon"></span><span id="qso-toast-call"></span><span id="qso-toast-sub"></span></div>
 </div>
-<div id="photo-overlay" onclick="this.style.display='none'"><img id="photo-overlay-img" src="" alt=""></div>
+<div id="photo-overlay"><img id="photo-overlay-img" src="" alt=""></div>
 <div id="disconnected-overlay"><div><div id="disconnected-logo"><a href="https://cqops.com" target="_blank" rel="noopener"><img src="/logo.png" alt="CQOps"></a></div><div id="disconnected-title">CQOps Disconnected</div><div id="disconnected-timer">00:00</div><div id="disconnected-sub"></div><div id="disconnected-note">Reconnecting automatically…</div></div></div>
 <script src="/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.js"></script>

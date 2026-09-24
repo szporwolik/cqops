@@ -183,14 +183,22 @@ type Model struct {
 
 	lookup           lookupState
 	callbookRegistry *callbook.Registry // ordered callbook providers; nil if none
-	keepComment      bool               // "Keep Comment" checkbox — retains comment field content across QSOs
-	keepFocused      bool               // true when the Keep/Retain checkbox row has focus
-	keepSubFocus     int                // 0=Keep, 1=Retain — which checkbox in the row is active
-	retainForm       bool               // "Retain" checkbox — prevents form clearing after QSO save
-	dupeCacheKey     string             // cache key for checkDupe result
-	dupeCacheResult  bool               // cached outcome of last checkDupe
-	gridSource       gridSource
-	qthSource        gridSource // origin of the QTH field value (same precedence as grid)
+
+	// sync owns the per-contact PATCH serialization state. It is keyed by
+	// persistent logbook/contact identity and remote source and lives on
+	// the model — NOT on the disposable editor — so reopening the editor
+	// (F8) while a PATCH is on the wire still queues the next save and
+	// preserves queued revisions across navigation.
+	sync *contactSyncCoord
+
+	keepComment     bool   // "Keep Comment" checkbox — retains comment field content across QSOs
+	keepFocused     bool   // true when the Keep/Retain checkbox row has focus
+	keepSubFocus    int    // 0=Keep, 1=Retain — which checkbox in the row is active
+	retainForm      bool   // "Retain" checkbox — prevents form clearing after QSO save
+	dupeCacheKey    string // cache key for checkDupe result
+	dupeCacheResult bool   // cached outcome of last checkDupe
+	gridSource      gridSource
+	qthSource       gridSource // origin of the QTH field value (same precedence as grid)
 
 	keys           KeyMap
 	help           help.Model
@@ -206,6 +214,9 @@ type callbookResultMsg struct {
 	Call string
 	Data *callbook.Result
 	Err  error
+	// Logbook the lookup ran against (captured at cmd creation); results
+	// from a previous logbook are discarded after a switch.
+	Logbook string
 }
 
 type qrzStatusMsg struct {
@@ -216,6 +227,8 @@ type wlResultMsg struct {
 	Data       *wavelog.PrivateLookupResult
 	Err        error
 	IsFallback bool // true when this is a base-call lookup triggered by a sparse suffix result
+	// Logbook the lookup ran against; results from a previous logbook are discarded.
+	Logbook string
 }
 
 type dxcSpotLookupMsg struct {
@@ -225,8 +238,36 @@ type dxcSpotLookupMsg struct {
 
 // logbookStatsMsg carries the async result of GetLogbookStats.
 type logbookStatsMsg struct {
-	stats store.LogbookStats
-	sig   string
+	stats   store.LogbookStats
+	sig     string
+	logbook string // logbook the query ran against; stale results are dropped
+}
+
+// dxcPathSpotsMsg carries the async result of QueryDXCSpotsByBand.
+type dxcPathSpotsMsg struct {
+	band  string
+	spots []store.DXCSpot
+}
+
+// dxcPathDupesMsg carries the async result of DXCDupeSet.
+type dxcPathDupesMsg struct {
+	sig     string
+	dupeSet map[string]bool
+}
+
+// workedSummaryMsg carries the async result of GetWorkedSummary.
+type workedSummaryMsg struct {
+	summary store.WorkedSummary
+	sig     string
+}
+
+// partnerDXCCMsg carries the async country → DXCC lookup for foreign-prefix
+// partner panels. The logbook identity guards against applying a result from
+// a previous logbook after a switch.
+type partnerDXCCMsg struct {
+	entity  string
+	dxcc    string
+	logbook string
 }
 
 type dxcTuneResultMsg struct {
@@ -263,7 +304,7 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	// already set it, but config value takes precedence).
 	applog.SetDebugMode(a.Config.General.Debug)
 
-	m := &Model{App: a, qsos: initialQSOS, toasts: NewToastQueue(), dateTimeAuto: true, width: 80, height: 24, inetOnline: true}
+	m := &Model{App: a, qsos: initialQSOS, toasts: NewToastQueue(), dateTimeAuto: true, width: 80, height: 24, inetOnline: true, Offline: a.Offline, sync: &contactSyncCoord{}}
 	a.InetOnline = true // sync with model — assume online until first health check
 
 	// Build the callbook provider registry from config.
@@ -519,6 +560,19 @@ func kittyTerminalEnv() bool {
 	return false
 }
 
+// enqueuePendingADIFLocked appends a WSJT-X ADIF record to the pending
+// queue (caller holds adifQ.mu). Defensive bound: the queue is drained every
+// tick, so it only grows when the database stays busy for a long time — past
+// maxPendingADIFs the oldest record is dropped instead of growing without
+// limit.
+func (m *Model) enqueuePendingADIFLocked(adif string) {
+	if len(m.adifQ.adifs) >= maxPendingADIFs {
+		m.adifQ.adifs = m.adifQ.adifs[len(m.adifQ.adifs)-maxPendingADIFs+1:]
+		applog.Warn("WSJT-X: pending ADIF queue full — dropping oldest record")
+	}
+	m.adifQ.adifs = append(m.adifQ.adifs, adif)
+}
+
 func (m *Model) Init() tea.Cmd {
 	// Warn if the encrypted secrets file is corrupted or from another
 	// machine — passwords and API keys must be re-entered.
@@ -532,7 +586,7 @@ func (m *Model) Init() tea.Cmd {
 	applog.Info("Rotator: ready (experimental — requires hamlib or compatible backend)")
 	m.App.WSJTX.OnADIF = func(adif string) {
 		m.adifQ.mu.Lock()
-		m.adifQ.adifs = append(m.adifQ.adifs, adif)
+		m.enqueuePendingADIFLocked(adif)
 		// Persist to disk immediately so QSOs survive crashes.
 		// Failures are silent — the in-memory queue is authoritative.
 		m.savePendingADIFsLocked()
@@ -540,6 +594,9 @@ func (m *Model) Init() tea.Cmd {
 	}
 	// Recover any ADIF records left on disk from a previous crash.
 	if saved := loadPendingADIFs(); len(saved) > 0 {
+		if len(saved) > maxPendingADIFs {
+			saved = saved[len(saved)-maxPendingADIFs:]
+		}
 		m.adifQ.adifs = append(m.adifQ.adifs, saved...)
 		applog.Info("WSJT-X: recovered pending ADIF records from disk", "count", len(saved))
 	}
@@ -656,12 +713,12 @@ func (m *Model) isSubmodelActive() bool {
 // saveConfig persists the app configuration and shows a toast.
 func (m *Model) saveConfig(msg string) {
 	if err := m.App.Config.Validate(); err != nil {
-		m.toasts.Error("Settings save failed: " + err.Error())
+		m.toasts.Error("Settings: save failed — " + err.Error())
 		applog.Error("Config validation failed before save", "error", err)
 		return
 	}
 	if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
-		m.toasts.Error("Settings save failed: " + err.Error())
+		m.toasts.Error("Settings: save failed — " + err.Error())
 	} else {
 		if msg != "" {
 			m.toasts.Success(msg)
@@ -868,17 +925,86 @@ func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return result, resultCmd
 	}
 
-	// Deferred pending requests (QRZ lookup, WL lookup, QSO refresh) —
-	// must run before screen-specific routing so they work regardless of
-	// which screen is active.
-	if pendingCmd, handled := m.handlePendingRequests(cmd); handled {
-		return m, pendingCmd
+	// Per-contact remote-save serialization completions are global and must
+	// run BEFORE the deferred-pending-request block below: that block can
+	// early-return after dispatching an unrelated pending lookup (DXC,
+	// QRZ, …), which would otherwise consume this completion message and
+	// leave the serialization slot occupied forever — every subsequent
+	// save would keep queueing with no worker to drain it. wlSyncIncomplete
+	// results (remote synced, local acknowledgement not persisted) also
+	// release the serialization slot — the row stays durably pending for a
+	// retry.
+	if em, ok := msg.(editorMsg); ok && em.saved != 0 &&
+		(em.wlSyncOK || em.wlSyncGone || em.wlSyncErr != "" || em.wlSyncIncomplete) {
+		cmd = tea.Batch(cmd, m.handleQSOSyncCompletion(em))
 	}
+
+	// Logbook-scoped persistence of editor-operation results (purge cursor
+	// reset, Wavelog download cursor) runs globally against the ORIGINATING
+	// logbook carried by the message — before any early-return path — so a
+	// completion arriving after a logbook switch or off the editor screen
+	// still updates its own logbook, never the visible one.
+	if em, ok := msg.(editorMsg); ok {
+		m.persistEditorLogbookCursor(em)
+	}
+
+	// Editor upload completions queue their follow-up chains GLOBALLY too:
+	// the reconciliation PATCH and the id-attach retry run against the
+	// ORIGINATING logbook/database/endpoint independent of the visible
+	// screen and editor generation (those gate only UI effects). The
+	// transferred database lease is consumed here exactly once.
+	if em, ok := msg.(editorMsg); ok {
+		cmd = tea.Batch(cmd, m.handleEditorUploadCompletion(em))
+	}
+
+	// Bulk pending-sync retry list results queue a serialized PATCH per
+	// contact through the shared per-contact coordinator — globally, against
+	// the originating logbook/database/endpoint — so retries never bypass
+	// save serialization. EVERY retry result carries the transferred
+	// database lease (empty lists too — a PATCH may have synced the last
+	// change before the list read), so the dispatch gates on the lease, not
+	// the contact count: queuePendingSyncPatches releases it when there is
+	// nothing to queue.
+	if em, ok := msg.(editorMsg); ok && em.wlRetryRelease != nil {
+		cmd = tea.Batch(cmd, m.queuePendingSyncPatches(em))
+	}
+
+	// Preparation and normalization workers transfer their database lease
+	// through their results, and their follow-ups (the batch upload, the
+	// post-normalize upload) run inside the editor screen handler. Results
+	// that will NOT reach that handler — the editor screen was left before
+	// the result arrived — or that have no follow-up at all (normalization
+	// errors, whose editor cleanup branch only runs for successful
+	// normalization) release the lease here: otherwise a later logbook
+	// switch retains the retired database forever.
+	if pm, ok := msg.(uploadPrepMsg); ok && m.screen != screenLogbookEditor && pm.release != nil {
+		pm.release()
+	}
+	if em, ok := msg.(editorMsg); ok && em.normRelease != nil {
+		editorWillConsume := m.screen == screenLogbookEditor ||
+			(m.ui.logbookEditor != nil && m.ui.logbookEditor.isDownloadActive())
+		if !editorWillConsume || em.normalized == 0 {
+			em.normRelease()
+		}
+	}
+
+	// Deferred pending requests (QRZ lookup, WL lookup, QSO refresh) run
+	// before screen-specific routing; their commands are accumulated into
+	// the returned batch. The incoming message is NEVER consumed here —
+	// there is no early return: operation results (editor completions,
+	// upload preparation, download pump messages, …) and ordinary input
+	// must all still reach their handlers regardless of pending lookups.
+	// An early return here used to swallow such messages, and a growing
+	// list of type exceptions never caught them all — editorMsg was
+	// exempted, uploadPrepMsg was not.
+	cmd, _ = m.handlePendingRequests(cmd)
 
 	// Wavelog download / ADIF import / export keep their message pump
 	// alive even when the user switches to another screen mid-operation.
 	// Without this the read-loop stops, the final "done" message is
-	// dropped, and the QSO page never refreshes after the download.
+	// dropped, and the QSO page never refreshes after the download. On the
+	// editor screen the visible editor processes these messages itself
+	// (handleLogbookEditorUpdate).
 	if _, ok := msg.(editorMsg); ok && m.screen != screenLogbookEditor {
 		le := m.ui.logbookEditor
 		if le != nil && le.isDownloadActive() {
@@ -949,7 +1075,7 @@ func (m *Model) updateImpl(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if err := m.photo.viewer.Err(); err != nil && m.photo.lastErr != err {
 			m.photo.lastErr = err
 			applog.Warn("Image load failed", "error", err.Error())
-			m.toasts.Warn("Photo unavailable — unsupported format")
+			m.toasts.Warn("Partner: photo unavailable — unsupported format")
 		}
 		if m.photo.viewer.Err() == nil {
 			m.photo.lastErr = nil
@@ -1048,7 +1174,7 @@ func (m *Model) View() tea.View {
 	// Status bar is a single line — always recomputed for correctness.
 	// Caching caused stale integration dots (DXC/HTTP/APRS) when the
 	// bar cache hit suppressed the status reset triggered by async handlers.
-	m.rc.status = m.renderStatusBar()
+	statusBar := m.renderStatusBar()
 	// Tab bar depends on partner data / call field / connectivity — cached.
 	m.rc.tabs = m.renderTabBar()
 
@@ -1058,7 +1184,7 @@ func (m *Model) View() tea.View {
 			mainParts = append(mainParts, s)
 		}
 	}
-	addRow(m.rc.status)
+	addRow(statusBar)
 	addRow(m.rc.tabs)
 
 	body := m.buildBodyForScreen(layout)
@@ -1528,7 +1654,7 @@ func (m *Model) cycleActiveContest() {
 
 	// No active contests — nothing to cycle.
 	if len(ids) == 0 {
-		m.toasts.Warn("No contests configured — create one in F9 → Contests")
+		m.toasts.Warn("Contest: none configured — create one in F9 → Contests")
 		return
 	}
 
@@ -1580,6 +1706,33 @@ func (m *Model) activeOperatorCallsign() string {
 	return ""
 }
 
+// isSharedClub reports whether the active logbook runs in shared club-station
+// mode (owner wl2_ token shared by several operators).
+func (m *Model) isSharedClub() bool {
+	return m.App != nil && m.App.Logbook != nil &&
+		m.App.Logbook.Wavelog != nil && m.App.Logbook.Wavelog.SharedClub
+}
+
+// pskEnabled reports whether the PSK Reporter panel is turned on in the
+// Integrations menu (off by default).
+func (m *Model) pskEnabled() bool {
+	return m.App != nil && m.App.Config != nil && m.App.Config.Integrations.PSK.Enabled
+}
+
+// effectiveOperator returns the callsign QSOs are attributed to: the active
+// operator's callsign, or — on a shared club station — the station callsign
+// when no operator is selected, so attribution never falls back to an empty
+// field.
+func (m *Model) effectiveOperator() string {
+	if op := m.activeOperatorCallsign(); op != "" {
+		return op
+	}
+	if m.isSharedClub() {
+		return m.App.Logbook.Station.Callsign
+	}
+	return ""
+}
+
 // cycleActiveOperator cycles the active operator for the current logbook
 // through: None → first operator → second → … → None.
 func (m *Model) cycleActiveOperator() {
@@ -1590,7 +1743,7 @@ func (m *Model) cycleActiveOperator() {
 	current := m.App.Logbook.ActiveOperator
 
 	if len(ids) == 0 {
-		m.toasts.Warn("No operators configured — add one in F9 → Operators")
+		m.toasts.Warn("Operator: none configured — add one in F9 → Operators")
 		return
 	}
 

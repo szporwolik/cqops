@@ -18,13 +18,30 @@ import (
 // Global key bindings (F1-F10, etc.) — independent of current screen
 // =============================================================================
 
+// downloadDialogKey reports whether a key press is handled by the modal
+// dialog of an active download/import/export (Abort/OK buttons). Those keys
+// must bypass the global key blocking while the operation runs, so the
+// operator can abort with Enter or Escape without the global handler
+// swallowing the key first.
+func downloadDialogKey(msg tea.KeyPressMsg) bool {
+	switch msg.String() {
+	case "enter", "esc", "q", "left", "right", "tab", "shift+tab":
+		return true
+	}
+	return false
+}
+
 // handleGlobalKeys processes top-level function key bindings (F1-F10, etc.)
 // that are independent of the current screen. Returns true if the key was handled.
 func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
-	// Block tab switching during Wavelog download (full-screen operation).
+	// Block tab switching during Wavelog download/import/export (full-screen
+	// operation) — but keys handled by the active operation's dialog (Enter,
+	// Escape, Tab, arrows, q) must still reach it, otherwise the Abort
+	// button can never be activated from the keyboard.
 	if m.ui.logbookEditor != nil && m.ui.logbookEditor.isDownloadActive() {
-		// Only allow F10 (quit) to pass through.
-		if !key.Matches(msg, m.keys.Quit) {
+		// Only F10 (quit) and the dialog keys may pass through.
+		if !key.Matches(msg, m.keys.Quit) &&
+			!(m.ui.logbookEditor.dialog != nil && downloadDialogKey(msg)) {
 			return nil, true
 		}
 	}
@@ -41,7 +58,12 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		)
 		applog.Debug("App: quit dialog shown")
 		m.confirm = &dlg
-		m.screen = screenQSO
+		// The dialog renders as a global overlay — the screen is NOT
+		// switched. Switching to screenQSO cut off access to an active
+		// download/import/export after the dialog was cancelled: its screen
+		// stays behind, but navigation keys were blocked and Escape could
+		// no longer reach the Abort button. Keeping the source screen means
+		// cancelling simply restores access to the running operation.
 		return nil, true
 
 	case key.Matches(msg, m.keys.Help):
@@ -118,13 +140,13 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		}
 
 		if call == "" {
-			m.toasts.Warn("No callsign entered")
+			m.toasts.Warn("Partner: no callsign entered")
 			applog.Debug("F2 Partner: no callsign")
 			return nil, true
 		}
 		// Validate before committing.
 		if !qso.IsValidCall(call) {
-			m.toasts.Warn("Not a valid callsign")
+			m.toasts.Warn("Partner: not a valid callsign")
 			return nil, true
 		}
 		applog.Debug("tab: F2 Partner Details")
@@ -163,7 +185,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	case key.Matches(msg, m.keys.APRS):
 		applog.Debug("tab: F3 APRS")
 		if !m.aprsConnected() {
-			m.toasts.Warn("APRS not receiving — enable APRS in Integration settings")
+			m.toasts.Warn("APRS: not receiving — enable APRS in Integrations")
 			return nil, true
 		}
 		m.aprsEnterPane()
@@ -171,6 +193,14 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		return nil, true
 
 	case key.Matches(msg, m.keys.PSKReporter):
+		if !m.pskEnabled() {
+			m.toasts.Warn("PSK Reporter: disabled — enable in Integrations")
+			return nil, true
+		}
+		if m.Offline {
+			m.toasts.Warn("PSK Reporter: offline mode")
+			return nil, true
+		}
 		if !m.inetOnline {
 			m.toasts.Warn("PSK Reporter: no internet connection")
 			return nil, true
@@ -181,7 +211,7 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 
 	case key.Matches(msg, m.keys.Ref):
 		if !m.isREFReady() {
-			m.toasts.Warn("REF database not available — enable in General settings")
+			m.toasts.Warn("REF: database not available — enable in General settings")
 			return nil, true
 		}
 		applog.Debug("tab: F6 REF")
@@ -208,7 +238,11 @@ func (m *Model) handleGlobalKeys(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 
 	case key.Matches(msg, m.keys.DXC):
 		if !m.App.Config.Integrations.DXC.Enabled {
-			m.toasts.Warn("DX Cluster not configured")
+			m.toasts.Warn("DXC: not configured")
+			return nil, true
+		}
+		if m.Offline {
+			m.toasts.Warn("DXC: offline mode")
 			return nil, true
 		}
 		if !m.dxc.online {
@@ -382,6 +416,12 @@ func (m *Model) handleFormKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 	case key.Matches(msg, m.keys.Spot):
 		return m.openSpotDialog(), true
 
+	case key.Matches(msg, m.keys.ClearField) ||
+		(msg.Code == tea.KeyBackspace && msg.Mod&tea.ModShift != 0):
+		// Shift+Backspace instantly clears the focused field.
+		m.clearFocusedField()
+		return nil, true
+
 	case key.Matches(msg, m.keys.Enter):
 		// Enter logs what's in the form. Dupe check + two-press confirmation
 		// is handled inside saveQSO. Lookups (QRZ, Wavelog) are dispatched
@@ -506,7 +546,6 @@ func (m *Model) handleRotorKey(msg tea.KeyPressMsg) (tea.Cmd, bool) {
 		m.toasts.Info("Rotator: stopped")
 		m.rotor.targetAz = 0
 		m.rotor.targetEl = 0
-		m.rc.status = ""
 		client := m.rotor.client
 		return func() tea.Msg {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
@@ -557,7 +596,7 @@ func (m *Model) paneScreens() []screenKind {
 	if dxcOnline || m.screen == screenDXC {
 		screens = append(screens, screenDXC)
 	}
-	if m.inetOnline || m.screen == screenPSKReporter {
+	if !m.Offline && m.inetOnline && m.pskEnabled() || m.screen == screenPSKReporter {
 		screens = append(screens, screenPSKReporter)
 	}
 	if m.isREFReady() || m.screen == screenRef {
@@ -663,9 +702,11 @@ func (m *Model) initLogbookEditor() {
 		WLKey:           wlKey,
 		WLStationID:     wlStationID,
 		WLLastFetchedID: wlLastID,
-		StationOperator: m.activeOperatorCallsign(),
+		StationOperator: m.effectiveOperator(),
 		StationGrid:     m.effectiveGrid(),
 		StationCall:     m.App.Logbook.Station.Callsign,
+		KeepAlive:       m.App.KeepDBAlive,
+		Sync:            m.sync, SharedClub: m.isSharedClub(), LogbookID: m.App.LogbookName,
 	})
 	m.ui.logbookEditor.width = m.width
 	m.ui.logbookEditor.height = m.height

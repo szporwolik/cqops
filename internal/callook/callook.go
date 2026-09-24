@@ -9,6 +9,7 @@ package callook
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -65,13 +66,18 @@ func (c *Client) Name() string { return "Callook.info" }
 func (c *Client) Priority() int { return c.priority }
 
 // Lookup queries Callook.info for a callsign. Returns nil, nil when the
-// callsign is not found or not a US callsign.
+// callsign is not found or not a US callsign — a normal outcome for this
+// US-only database, never an error.
 func (c *Client) Lookup(callsign string) (*callbook.Result, error) {
 	if callsign == "" {
 		return nil, nil
 	}
 	d, err := c.lookup(callsign)
 	if err != nil {
+		if errors.Is(err, errNotFound) {
+			applog.Debug("Callook: not a US callsign or not found", "callsign", callsign)
+			return nil, nil
+		}
 		return nil, err
 	}
 	if d == nil {
@@ -129,15 +135,20 @@ func (c *Client) TestConnection() error {
 
 var httpGetFn = defaultHTTPGet
 
+var httpClient = &http.Client{Timeout: 10 * time.Second}
+
+// errNotFound marks a Callook HTTP 404 — the callsign simply does not exist
+// in the US database. Lookup reports it as an empty result, not an error.
+var errNotFound = errors.New("callsign not found")
+
 func defaultHTTPGet(rawURL string) ([]byte, error) {
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get(rawURL)
+	resp, err := httpClient.Get(rawURL)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == 404 {
-		return nil, fmt.Errorf("callsign not found")
+		return nil, errNotFound
 	}
 	return io.ReadAll(io.LimitReader(resp.Body, 256*1024))
 }

@@ -407,20 +407,23 @@ func (m *Model) formPathRow(width int) string {
 	call := strings.TrimSpace(m.fields[fieldCall].Value())
 	band := strings.TrimSpace(m.fields[fieldBand].Value())
 	mode := strings.TrimSpace(m.fields[fieldMode].Value())
-	statsSig := call + "|" + band + "|" + mode
-	if m.rc.logStatsSig != statsSig && m.App.DB != nil {
-		stats, err := store.GetLogbookStats(m.App.DB, call, band, mode)
-		if err == nil {
-			m.rc.logStats = stats
-			m.rc.logStatsSig = statsSig
-		}
+	statsSig := logStatsSigFor(call, band, mode)
+	statsReady := m.rc.logStatsSig == statsSig
+	if !statsReady && m.App.DB != nil {
+		// Cache miss — flag an async fetch instead of querying during View().
+		m.rc.logStatsNeedFetch = true
+		m.rc.logStatsFetchCall = call
+		m.rc.logStatsFetchBand = band
+		m.rc.logStatsFetchMode = mode
 	}
 
 	// Compute badges — always evaluated when a call is present.
+	// The local "new call" badge waits for matching stats so a pending
+	// fetch never renders a false "New Call!".
 	var showNewCall bool
 	if m.lookup.wlPrivateData != nil {
 		showNewCall = !m.lookup.wlPrivateData.Worked()
-	} else {
+	} else if statsReady {
 		showNewCall = !m.rc.logStats.CallWorked
 	}
 	wlNewDXCC := m.lookup.wlPrivateData != nil && !m.lookup.wlPrivateData.DXCCConfirmed()
@@ -481,6 +484,8 @@ func (m *Model) formPathRow(width int) string {
 	sigB.WriteString(m.App.Config.General.Units)
 	sigB.WriteByte('|')
 	sigB.WriteString(statsSig)
+	sigB.WriteByte('|')
+	sigB.WriteString(m.rc.logStatsSig) // re-render once the async stats land
 	sigB.WriteByte('|')
 	sigB.WriteString(wlSig)
 	sigB.WriteByte('|')
@@ -569,9 +574,13 @@ func (m *Model) formPathRow(width int) string {
 	}
 
 	if result == "" {
+		// A callsign is entered but no badge or path data is ready yet
+		// (log stats and callbook lookups are asynchronous). Render a
+		// fixed-height blank row instead of an empty string so the form
+		// border never shifts while the data loads.
 		m.rc.pathSig = sig
-		m.rc.pathLine = ""
-		return ""
+		m.rc.pathLine = pathInfoStyle.Width(width).Render("")
+		return m.rc.pathLine
 	}
 
 	// Truncate if too wide.
@@ -601,6 +610,13 @@ func (m *Model) formPathRow(width int) string {
 	return st
 }
 
+// dxcPathSpotsTTL is how long the DB spot fallback may serve the path line
+// before a re-fetch, and how long a rendered path line may be served before
+// it is re-rendered. The results are time-dependent (15-minute spot window),
+// so an unexpired cache would render spots long after they aged out. A var
+// so tests can shorten the expiry.
+var dxcPathSpotsTTL = 2 * time.Minute
+
 // dxcPathLine returns a line showing nearby DXC spots around the current
 // frequency. Displays up to N spots below and N above, with frequencies.
 // N adapts to available width. Cached until frequency or spot list changes.
@@ -617,16 +633,24 @@ func (m *Model) dxcPathLine(width int) string {
 	curKhz := freqKhz * 1000
 
 	// Build cache signature: frequency + spot count + width + rig identity
-	// + continent + mode (these affect the smart filter).
+	// + continent + mode + active pane continent filter (all affect the
+	// smart filter below).
 	modeCat := spotModeCategory(strings.TrimSpace(m.fields[fieldMode].Value()))
 	stationCont := m.App.Logbook.Station.Continent
 	var sigB strings.Builder
-	fmt.Fprintf(&sigB, "%.3f|%d|%d|%s|%s|%s|%s|%s|%s", freqKhz, m.dxc.rawGen, width,
+	fmt.Fprintf(&sigB, "%.3f|%d|%d|%s|%s|%s|%s|%s|%s|%s|%s|%s", freqKhz, m.dxc.rawGen, width,
 		m.App.Logbook.Station.RigName, m.App.Logbook.Station.RigPower(m.App.Config.Rigs),
-		m.App.LogbookName, m.App.Logbook.ActiveContest, stationCont, modeCat)
+		m.App.LogbookName, m.App.Logbook.ActiveContest, stationCont, modeCat, m.dxc.contFilter,
+		m.rc.dxcSpotsBand, m.rc.dxcDupeSig)
 	sig := sigB.String()
 	if m.rc.dxcPathSig == sig && m.rc.dxcPathLine != "" {
-		return m.rc.dxcPathLine
+		// The rendered line is time-dependent — spot age filters and the
+		// fallback TTL both move while the inputs stay unchanged. A line
+		// rendered more than dxcPathSpotsTTL ago must be re-rendered so
+		// aged-out spots disappear and an expired fallback re-fetches.
+		if time.Since(m.rc.dxcPathRenderedAt) < dxcPathSpotsTTL {
+			return m.rc.dxcPathLine
+		}
 	}
 
 	// Collect spots on the current band, sorted by frequency.
@@ -645,22 +669,30 @@ func (m *Model) dxcPathLine(width int) string {
 		}
 	}
 	// DB fallback: cachedRaw may be empty on startup before the first spots
-	// arrive. Use the band+time-filtered query (idx_dxc_spots_band_time)
-	// so SQLite does the heavy lifting — returns only recent spots on the
-	// current band, already sorted by frequency.
+	// arrive. The query runs asynchronously so View() never touches the DB;
+	// this frame renders without the fallback spots. The fallback is
+	// time-dependent, so it expires after dxcPathSpotsTTL.
 	if len(spots) == 0 && m.App.DB != nil {
-		dbSpots, err := store.QueryDXCSpotsByBand(m.App.DB, band, 900)
-		if err == nil {
-			spots = dbSpots
+		if m.rc.dxcSpotsBand == band && !m.rc.dxcSpotsAt.IsZero() && time.Since(m.rc.dxcSpotsAt) < dxcPathSpotsTTL {
+			spots = m.rc.dxcSpots
+		} else {
+			m.rc.dxcSpotsNeedFetch = true
+			m.rc.dxcSpotsFetchBand = band
 		}
 	}
-	// ── Smart filtering ────────────────────────────────────────────────
-	// Default behaviour: show spots from the same continent, same mode
-	// category (DIGI/PHONE/CW), and no older than 15 minutes. Filters
-	// are applied with fallback: if filtering removes everything we
-	// relax them one by one instead of showing an empty line.
+	// ── Smart filtering ────────────────────────────────────────────────────
+	// Default behaviour: show spots from the same continent (the DXC pane's
+	// explicit continent filter wins over the station continent), same mode
+	// category (DIGI/PHONE/CW), and no older than 15 minutes. The continent
+	// filter is STRICT — it is never silently relaxed, so spots from other
+	// continents cannot leak into the form. Only the mode category and the
+	// age window are relaxed as fallbacks to avoid an empty line.
 	now := time.Now().UTC().Unix()
-	applyFilters := func(spots []store.DXCSpot, cont, mc string, maxAgeSec int64) []store.DXCSpot {
+	cont := m.dxc.contFilter
+	if cont == "" {
+		cont = stationCont
+	}
+	applyFilters := func(spots []store.DXCSpot, mc string, maxAgeSec int64) []store.DXCSpot {
 		filtered := make([]store.DXCSpot, 0, len(spots))
 		for _, s := range spots {
 			if cont != "" && s.SpotCont != "" && s.SpotCont != cont {
@@ -677,22 +709,30 @@ func (m *Model) dxcPathLine(width int) string {
 		return filtered
 	}
 	// Try full filter (continent + mode + time).
-	filtered := applyFilters(spots, stationCont, modeCat, 900)
+	filtered := applyFilters(spots, modeCat, 900)
 	if len(filtered) == 0 {
-		// Fallback 1: drop continent, keep mode + time.
-		filtered = applyFilters(spots, "", modeCat, 900)
+		// Fallback 1: drop mode, keep continent + time.
+		filtered = applyFilters(spots, "", 900)
 	}
 	if len(filtered) == 0 {
-		// Fallback 2: drop mode, keep time only.
-		filtered = applyFilters(spots, "", "", 900)
+		// Fallback 2: keep continent, extend the age window to 30 minutes.
+		filtered = applyFilters(spots, "", 1800)
 	}
 	if len(filtered) > 0 {
 		spots = filtered
+	} else {
+		// Nothing on this continent at all — keep the line empty rather
+		// than leaking spots from other continents.
+		m.rc.dxcPathSig = sig
+		m.rc.dxcPathLine = ""
+		m.rc.dxcPathRenderedAt = time.Now()
+		return ""
 	}
 
 	if len(spots) == 0 {
 		m.rc.dxcPathSig = sig
 		m.rc.dxcPathLine = ""
+		m.rc.dxcPathRenderedAt = time.Now()
 		return ""
 	}
 
@@ -744,8 +784,16 @@ func (m *Model) dxcPathLine(width int) string {
 	var dupeSet map[string]bool
 	if width >= 100 && m.App.DB != nil {
 		dateStr := time.Now().UTC().Format("20060102")
-		if ds, err := store.DXCDupeSet(m.App.DB, dateStr, m.App.Logbook.ActiveContest); err == nil {
-			dupeSet = ds
+		// The key carries the logbook identity and the dupe revision, so a
+		// logbook switch or a freshly logged QSO can never reuse another
+		// logbook's — or an outdated — dupe set.
+		dupeSig := dxcDupeSigFor(dateStr, m.App.Logbook.ActiveContest, m.App.LogbookName, m.dxc.dupeGen)
+		if m.rc.dxcDupeSig == dupeSig {
+			dupeSet = m.rc.dxcDupeSet
+		} else {
+			m.rc.dxcDupeNeedFetch = true
+			m.rc.dxcDupeFetchDate = dateStr
+			m.rc.dxcDupeFetchContest = m.App.Logbook.ActiveContest
 		}
 	}
 
@@ -845,6 +893,7 @@ func (m *Model) dxcPathLine(width int) string {
 
 	m.rc.dxcPathSig = sig
 	m.rc.dxcPathLine = dxcLine
+	m.rc.dxcPathRenderedAt = time.Now()
 	return dxcLine
 }
 

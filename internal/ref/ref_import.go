@@ -109,7 +109,14 @@ func (rdb *DB) Rebuild(cacheDir string, progress func(msg string)) (int, error) 
 		}
 		total += n
 	}
-
+	// Resynchronize the trigram search index with the new content and mark it
+	// built — both inside the same transaction as the data.
+	if _, err := tx.Exec(`INSERT INTO refs_fts(refs_fts) VALUES('rebuild')`); err != nil {
+		return 0, fmt.Errorf("ref: fts rebuild: %w", err)
+	}
+	if _, err := tx.Exec(`INSERT OR REPLACE INTO refs_meta(key, value) VALUES('fts_built','1')`); err != nil {
+		return 0, fmt.Errorf("ref: fts marker: %w", err)
+	}
 	if err := tx.Commit(); err != nil {
 		return 0, fmt.Errorf("ref: commit: %w", err)
 	}

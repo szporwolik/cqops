@@ -22,6 +22,22 @@ func DefaultConfig() *Config {
 				AllErrors: true,
 			},
 		},
+		// Callbook provider defaults encode data trust, highest first:
+		// QRZ > HamQTH > Callook > QRZ.RU > local logbook > Wavelog > CTY.
+		// QRZ/HamQTH/QRZ.RU stay disabled until credentials are entered;
+		// Callook (free, US-only) and the local logbook fallback are on.
+		Integrations: IntegrationsConfig{
+			Callbook: CallbookGroup{
+				BaseCallFallback: true,
+				QRZ:              QRZConfig{Priority: DefaultQRZPriority},
+				HamQTH:           HamQTHConfig{Priority: DefaultHamQTHPriority},
+				Callook:          CallookConfig{Enabled: true, Priority: DefaultCallookPriority},
+				QRZRu:            QRZRuConfig{Priority: DefaultQRZRuPriority},
+				Logbook:          LogbookCallbookConfig{Enabled: true, Priority: DefaultLogbookPriority},
+				Wavelog:          WavelogCallbookConfig{Priority: DefaultWavelogPriority},
+				CTY:              CTYCallbookConfig{Priority: DefaultCTYPriority},
+			},
+		},
 		State: StateConfig{
 			ActiveLogbook: defaultLogbookID,
 		},
@@ -30,7 +46,6 @@ func DefaultConfig() *Config {
 				ID:      defaultLogbookID,
 				Name:    "Default",
 				Station: Station{},
-				ADIF:    ADIFConfig{},
 			},
 		},
 		Rigs: map[string]RigPreset{

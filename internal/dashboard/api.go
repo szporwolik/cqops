@@ -1,7 +1,9 @@
 package dashboard
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,8 +13,14 @@ import (
 	"github.com/szporwolik/cqops/assets"
 )
 
-// NewMux builds the HTTP handler tree for the dashboard.
-func NewMux(state *State, hub *Hub) *http.ServeMux {
+// sseWriteTimeout bounds every SSE write. A client that stops reading makes
+// the write time out, which ends the stream instead of stranding the handler
+// forever (and blocking shutdown with it).
+var sseWriteTimeout = 10 * time.Second
+
+// NewMux builds the HTTP handler tree for the dashboard. streamCtx bounds
+// the lifetime of the SSE handlers: cancelling it ends every active stream.
+func NewMux(streamCtx context.Context, state *State, hub *Hub) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	// Static files served directly from the embedded filesystem.
@@ -22,6 +30,7 @@ func NewMux(state *State, hub *Hub) *http.ServeMux {
 	mux.HandleFunc("/", serveStaticFile("static/index.html", "text/html; charset=utf-8"))
 	mux.HandleFunc("/index.html", serveStaticFile("static/index.html", "text/html; charset=utf-8"))
 	mux.HandleFunc("/app.js", serveStaticFile("static/app.js", "application/javascript"))
+	mux.HandleFunc("/theme.js", serveStaticFile("static/theme.js", "application/javascript"))
 	mux.HandleFunc("/style.css", serveStaticFile("static/style.css", "text/css"))
 	mux.HandleFunc("/leaflet.js", serveStaticFile("static/leaflet.js", "application/javascript"))
 	mux.HandleFunc("/leaflet.css", serveStaticFile("static/leaflet.css", "text/css"))
@@ -43,7 +52,7 @@ func NewMux(state *State, hub *Hub) *http.ServeMux {
 	mux.HandleFunc("/api/stats", handleStats(state))
 	mux.HandleFunc("/api/map", handleMap(state))
 	mux.HandleFunc("/api/aprs", handleAPRS(state))
-	mux.HandleFunc("/api/events", handleEvents(state, hub))
+	mux.HandleFunc("/api/events", handleEvents(streamCtx, state, hub))
 	mux.HandleFunc("/healthz", handleHealthz())
 
 	// Embedded logo — served from binary, no internet required.
@@ -163,31 +172,30 @@ func handleMapEarth() http.HandlerFunc {
 }
 
 // handleEvents serves the SSE stream.
-func handleEvents(state *State, hub *Hub) http.HandlerFunc {
+func handleEvents(streamCtx context.Context, state *State, hub *Hub) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
-		flusher, ok := w.(http.Flusher)
-		if !ok {
+		if _, ok := w.(http.Flusher); !ok {
 			http.Error(w, "streaming not supported", http.StatusInternalServerError)
 			return
 		}
 
-		// Disable the server-wide WriteTimeout for this SSE stream.
-		// The Go HTTP server's WriteTimeout normally kills idle writes;
-		// for a never-ending SSE response we manage liveness ourselves via
-		// heartbeats and client disconnect detection.
+		// The server-wide WriteTimeout stays disabled for SSE (the stream
+		// never finishes); every individual write is bounded below in
+		// writeSSE instead, so a stalled client cannot strand us here.
 		rc := http.NewResponseController(w)
-		rc.SetWriteDeadline(time.Time{})
 
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
 		w.Header().Set("Connection", "keep-alive")
 		w.WriteHeader(http.StatusOK)
-		flusher.Flush()
+		if err := rc.Flush(); err != nil && !errors.Is(err, http.ErrNotSupported) {
+			return
+		}
 
 		// Send initial snapshot immediately.
 		ev := Event{
@@ -196,8 +204,9 @@ func handleEvents(state *State, hub *Hub) http.HandlerFunc {
 			Timestamp: timeNow(),
 			Payload:   state.Snapshot(),
 		}
-		writeSSE(w, ev)
-		flusher.Flush()
+		if !writeSSE(w, rc, ev) {
+			return
+		}
 
 		// Subscribe to hub.
 		ch := hub.Subscribe()
@@ -212,31 +221,55 @@ func handleEvents(state *State, hub *Hub) http.HandlerFunc {
 			select {
 			case <-r.Context().Done():
 				return
+			case <-streamCtx.Done():
+				// Server shutdown — end the stream on our own so
+				// Shutdown has nothing left to wait for.
+				return
 			case <-heartbeat.C:
 				ev := Event{
 					ID:        0,
 					Type:      string(EventHeartbeat),
 					Timestamp: timeNow(),
 				}
-				writeSSE(w, ev)
-				flusher.Flush()
+				if !writeSSE(w, rc, ev) {
+					return
+				}
 			case ev, ok := <-ch:
 				if !ok {
 					return
 				}
-				writeSSE(w, ev)
-				flusher.Flush()
+				if !writeSSE(w, rc, ev) {
+					return
+				}
 			}
 		}
 	}
 }
 
-// writeSSE writes a single event in SSE wire format.
-func writeSSE(w io.Writer, ev Event) {
-	fmt.Fprintf(w, "id: %d\n", ev.ID)
-	fmt.Fprintf(w, "event: %s\n", ev.Type)
-	data, _ := json.Marshal(ev)
-	fmt.Fprintf(w, "data: %s\n\n", data)
+// writeSSE writes a single event in SSE wire format with a bounded write
+// deadline and flushes it. It reports success so the handler can end the
+// stream on a stalled client or a dead connection instead of blocking in a
+// write forever.
+func writeSSE(w io.Writer, rc *http.ResponseController, ev Event) bool {
+	if err := rc.SetWriteDeadline(time.Now().Add(sseWriteTimeout)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		return false
+	}
+	data := ev.sseData
+	if data == nil {
+		// Per-connection event (snapshot/heartbeat) — no shared cache.
+		var err error
+		data, err = json.Marshal(ev)
+		if err != nil {
+			return false
+		}
+	}
+	if _, err := fmt.Fprintf(w, "id: %d\nevent: %s\ndata: %s\n\n", ev.ID, ev.Type, data); err != nil {
+		return false
+	}
+	if err := rc.Flush(); err != nil && !errors.Is(err, http.ErrNotSupported) {
+		return false
+	}
+	return true
 }
 
 // writeJSON writes v as JSON with the given status code.

@@ -46,11 +46,28 @@ type App struct {
 	pruneStopCh      chan struct{}         // stops the APRS cache pruning goroutine
 	beaconStopCh     chan struct{}         // stops the APRS beacon goroutine
 	aprsRestartTimer *time.Timer           // debounces rapid logbook switches for APRS restart
-	gpsMu            sync.RWMutex          // protects gpsGrid and gpsHasFix
-	gpsGrid          string                // last known GPS grid (set by TUI model)
-	gpsHasFix        bool                  // true when GPS has a valid fix
-	Offline          bool                  // when true, skip all network operations
-	InetOnline       bool                  // true when internet connectivity check succeeded
+
+	// APRS lifecycle is single-owner: every transition (start/stop/restart)
+	// runs on the TUI main loop. Workers and the debounce timer hand work
+	// back through these channels instead of touching shared state.
+	aprsRestartCh chan struct{}  // debounce timer → owner
+	aprsEvents    chan aprsEvent // APRS workers → owner (status, beacon)
+	aprsGen       uint64         // bumped on each client replacement; stale events dropped
+	aprsPrunerWG  sync.WaitGroup // joins the pruner before its cache is replaced
+	aprsBeaconWG  sync.WaitGroup // joins the beacon before its resources are replaced
+
+	gpsMu      sync.RWMutex // protects gpsGrid, gpsHasFix and beaconGrid
+	gpsGrid    string       // last known GPS grid (set by TUI model)
+	gpsHasFix  bool         // true when GPS has a valid fix
+	beaconGrid string       // cached effective grid for APRS beacon workers (owner-refreshed)
+	Offline    bool         // when true, skip all network operations
+	InetOnline bool         // true when internet connectivity check succeeded
+
+	// dbMu guards dbHolders: retired logbook databases stay open while
+	// background operations captured them via KeepDBAlive, so in-flight
+	// work can finish on the old logbook after a switch.
+	dbMu      sync.Mutex
+	dbHolders map[*sql.DB]*dbHolder
 
 	// lastWSJTX tracks the effective WSJT-X config last applied to the
 	// listener. Used to avoid unnecessary Stop/Start cycles when config
@@ -63,20 +80,32 @@ type App struct {
 }
 
 func Init() (*App, error) {
-	cfg, configPath, err := config.EnsureConfig()
+	// Single-instance guard acquired FIRST — before any config is read or
+	// written. Two instances racing at startup must never both proceed to
+	// the first-run wizard or open the same SQLite database. The lock is
+	// created atomically (O_EXCL), so exactly one instance can own it.
+	configDir, err := config.ConfigDir()
 	if err != nil {
-		applog.Error("Config is corrupted or missing — cannot start", "error", err.Error())
-		return nil, fmt.Errorf("config: %w", err)
+		applog.Error("Cannot determine config directory", "error", err.Error())
+		return nil, fmt.Errorf("config dir: %w", err)
 	}
-	applog.Info("Config OK", "path", configPath)
-
-	// Single-instance guard — prevents dataloss from two processes
-	// writing to the same SQLite database.
-	lk, err := acquireLock(filepath.Dir(configPath))
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		applog.Error("Cannot create config directory", "error", err.Error())
+		return nil, fmt.Errorf("config dir: %w", err)
+	}
+	lk, err := acquireLock(configDir)
 	if err != nil {
 		applog.Error("Lock acquisition failed", "error", err.Error())
 		return nil, err
 	}
+
+	cfg, configPath, err := config.EnsureConfig()
+	if err != nil {
+		applog.Error("Config is corrupted or missing — cannot start", "error", err.Error())
+		lk.release()
+		return nil, fmt.Errorf("config: %w", err)
+	}
+	applog.Info("Config OK", "path", configPath)
 
 	// Secrets are already loaded and applied by EnsureConfig — just grab
 	// the store reference for later use (e.g. corruption toast).
@@ -85,18 +114,21 @@ func Init() (*App, error) {
 	name, lb, err := config.ResolveLogbook(cfg, "")
 	if err != nil {
 		applog.Error("Cannot resolve logbook", "error", err.Error())
+		lk.release()
 		return nil, fmt.Errorf("logbook: %w", err)
 	}
 
 	dbPath, err := config.DBPath(name, lb)
 	if err != nil {
 		applog.Error("Cannot determine database path", "logbook", name, "error", err.Error())
+		lk.release()
 		return nil, fmt.Errorf("db path: %w", err)
 	}
 
 	db, err := store.InitDB(dbPath)
 	if err != nil {
 		applog.Error("Database is corrupted or cannot be opened — cannot start", "path", dbPath, "error", err.Error())
+		lk.release()
 		return nil, fmt.Errorf("database: %w", err)
 	}
 	applog.Info("Database OK", "path", dbPath)
@@ -233,8 +265,10 @@ func (a *App) MaybeRestartWSJTX(enabled bool, host string, port int) {
 // MaybeRestartAPRS starts or stops the APRS client based on the
 // active logbook's APRS configuration and global APRS service settings.
 // Non-blocking — connection runs asynchronously.
-// Call SetAPRSStatusCallback to receive toast updates.
+// Must run on the owner goroutine (the TUI main loop): workers and the
+// debounce timer hand their work back here via RunPendingAPRS.
 func (a *App) MaybeRestartAPRS() {
+	a.ensureAPRSChannels()
 	aprsGlobal := a.Config.Integrations.APRS
 	aprsCfg := a.Logbook.APRS
 	logbookEnabled := aprsCfg != nil && aprsCfg.Enabled
@@ -257,9 +291,11 @@ func (a *App) MaybeRestartAPRS() {
 }
 
 // stopAPRS tears down the APRS client, beacon goroutine, pruner, and cache.
+// The workers are joined before their resources are replaced or closed.
 func (a *App) stopAPRS() {
 	a.stopAPRSPruner()
 	a.stopAPRSBeacon()
+	a.aprsGen++ // invalidate in-flight events from the client about to stop
 	if a.APRSClient != nil {
 		applog.Info("APRS: disabled, stopping client")
 		a.APRSClient.Stop()
@@ -346,10 +382,15 @@ func (a *App) startAPRS(aprsGlobal config.APRSGlobalConfig, aprsCfg *config.APRS
 			time.Sleep(200 * time.Millisecond)
 		}
 
+		// New client generation — in-flight events from the previous client
+		// are dropped when they reach the owner.
+		a.aprsGen++
+		gen := a.aprsGen
 		kiss := aprs.NewKISSClient(port, baud, dataBits, par, stop, aprsGlobal.DTR, aprsGlobal.RTS)
 		kiss.OnStatus = func(connected bool, err error) {
-			a.reportAPRSStatus(kiss, connected, err)
+			a.pushAPRSStatus(gen, connected, err)
 		}
+		cache := a.APRSCache // immutable snapshot for the worker
 		kiss.OnPacket = func(raw string) {
 			sr, ok := aprs.ParsePositionPacket(raw)
 			if !ok {
@@ -368,8 +409,8 @@ func (a *App) startAPRS(aprsGlobal config.APRSGlobalConfig, aprsCfg *config.APRS
 				sr.LastHeard = time.Now()
 			}
 			applog.Debug("APRS: position parsed (KISS)", "callsign", sr.Callsign, "lat", sr.Lat, "lon", sr.Lon)
-			if a.APRSCache != nil {
-				if err := a.APRSCache.UpsertStation(sr); err != nil {
+			if cache != nil {
+				if err := cache.UpsertStation(sr); err != nil {
 					applog.Debug("APRS: cache upsert failed", "error", err)
 				}
 			}
@@ -402,10 +443,13 @@ func (a *App) startAPRS(aprsGlobal config.APRSGlobalConfig, aprsCfg *config.APRS
 			a.APRSClient = nil
 		}
 
+		a.aprsGen++
+		gen := a.aprsGen
 		kc := aprs.NewKISSServerClient(addr)
 		kc.OnStatus = func(connected bool, err error) {
-			a.reportAPRSStatus(kc, connected, err)
+			a.pushAPRSStatus(gen, connected, err)
 		}
+		cache := a.APRSCache
 		kc.OnPacket = func(raw string) {
 			sr, ok := aprs.ParsePositionPacket(raw)
 			if !ok {
@@ -424,8 +468,8 @@ func (a *App) startAPRS(aprsGlobal config.APRSGlobalConfig, aprsCfg *config.APRS
 				sr.LastHeard = time.Now()
 			}
 			applog.Debug("APRS: position parsed (KISS server)", "callsign", sr.Callsign, "lat", sr.Lat, "lon", sr.Lon)
-			if a.APRSCache != nil {
-				if err := a.APRSCache.UpsertStation(sr); err != nil {
+			if cache != nil {
+				if err := cache.UpsertStation(sr); err != nil {
 					applog.Debug("APRS: cache upsert failed", "error", err)
 				}
 			}
@@ -470,20 +514,24 @@ func (a *App) startAPRS(aprsGlobal config.APRSGlobalConfig, aprsCfg *config.APRS
 	}
 
 	// Stop previous client asynchronously — the 3-second Stop() timeout
-	// would freeze the TUI if called from the Update path.
+	// would freeze the TUI if called from the Update path. Its in-flight
+	// events are dropped via the generation bump.
 	if a.APRSClient != nil {
 		old := a.APRSClient
 		a.APRSClient = nil
 		go old.Stop()
 	}
+	a.aprsGen++
+	gen := a.aprsGen
 	applog.Info("APRS: starting client", "server", server, "callsign", callsign)
 	tcp := aprs.NewTCPClient(server, callsign, passcode, filter)
 	tcp.OnStatus = func(connected bool, err error) {
 		if connected {
 			applog.Info("APRS: connected", "server", server, "callsign", callsign)
 		}
-		a.reportAPRSStatus(tcp, connected, err)
+		a.pushAPRSStatus(gen, connected, err)
 	}
+	cache := a.APRSCache
 	tcp.OnPacket = func(raw string) {
 		sr, ok := aprs.ParsePositionPacket(raw)
 		if !ok {
@@ -497,8 +545,8 @@ func (a *App) startAPRS(aprsGlobal config.APRSGlobalConfig, aprsCfg *config.APRS
 			sr.LastHeard = time.Now()
 		}
 		applog.Debug("APRS: position parsed", "callsign", sr.Callsign, "lat", sr.Lat, "lon", sr.Lon)
-		if a.APRSCache != nil {
-			if err := a.APRSCache.UpsertStation(sr); err != nil {
+		if cache != nil {
+			if err := cache.UpsertStation(sr); err != nil {
 				applog.Debug("APRS: cache upsert failed", "error", err)
 			}
 		}
@@ -515,27 +563,25 @@ func (a *App) startAPRS(aprsGlobal config.APRSGlobalConfig, aprsCfg *config.APRS
 	}
 }
 
-// SetAPRSStatusCallback registers a callback for APRS connection state changes.
-// Called from the TUI model to enable toast notifications.
+// SetAPRSStatusCallback registers a callback for APRS connection state
+// changes. The callback is invoked on the owner goroutine (RunPendingAPRS),
+// never from client goroutines.
 func (a *App) SetAPRSStatusCallback(cb func(connected bool, err error)) {
 	a.aprsStatusCB = cb
 }
 
-// reportAPRSStatus forwards a client status change only when it comes from
-// the currently active client. Replaced clients fire a stale disconnect
-// event after Stop() — forwarding it would show a spurious "connection
-// lost" toast on every restart (e.g. rapid logbook switching).
-func (a *App) reportAPRSStatus(client aprs.Client, connected bool, err error) {
-	if a.APRSClient != client {
-		return
-	}
-	if a.aprsStatusCB != nil {
-		a.aprsStatusCB(connected, err)
+// pushAPRSStatus hands a client status change to the owner goroutine.
+// Safe to call from any goroutine; the owner drops events whose generation
+// no longer matches (replaced clients fire a stale disconnect after Stop).
+func (a *App) pushAPRSStatus(gen uint64, connected bool, err error) {
+	select {
+	case a.aprsEvents <- aprsEvent{kind: aprsEvStatus, gen: gen, connected: connected, err: err}:
+	default:
 	}
 }
 
 // SetAPRSBeaconCallback registers a callback invoked after each successful
-// APRS position beacon. Called from the TUI model for toast notifications.
+// APRS position beacon. Invoked on the owner goroutine (RunPendingAPRS).
 func (a *App) SetAPRSBeaconCallback(cb func(callsign string)) {
 	a.aprsBeaconCB = cb
 }
@@ -561,13 +607,105 @@ func (a *App) ConsumeAPRSRefresh() bool {
 // switching doesn't hammer the serial port or APRS-IS server with
 // repeated stop/start cycles. The restart fires 3 seconds after the
 // last call — if another call arrives before then, the timer resets.
+// The timer never runs the transition itself: it hands the work back to
+// the owner goroutine (RunPendingAPRS), so every APRS lifecycle
+// transition stays on the TUI main loop.
 func (a *App) ScheduleAPRSRestart() {
+	a.ensureAPRSChannels()
 	if a.aprsRestartTimer != nil {
 		a.aprsRestartTimer.Stop()
 	}
 	a.aprsRestartTimer = time.AfterFunc(3*time.Second, func() {
-		a.MaybeRestartAPRS()
+		select {
+		case a.aprsRestartCh <- struct{}{}:
+		default:
+		}
 	})
+}
+
+// ensureAPRSChannels lazily initializes the owner-handoff channels so App
+// values built directly by tests keep working.
+func (a *App) ensureAPRSChannels() {
+	if a.aprsRestartCh == nil {
+		a.aprsRestartCh = make(chan struct{}, 1)
+	}
+	if a.aprsEvents == nil {
+		a.aprsEvents = make(chan aprsEvent, 16)
+	}
+}
+
+// RunPendingAPRS processes APRS lifecycle work handed back by background
+// workers. Must run on the owner goroutine (the TUI main loop) — this is
+// what makes every APRS lifecycle transition single-owner: workers only
+// publish events, and all configuration, callbacks, and lifecycle changes
+// happen here.
+func (a *App) RunPendingAPRS() {
+	a.ensureAPRSChannels()
+	a.refreshBeaconGrid()
+
+	// Drain events first — they may describe state about to change.
+	for i := 0; i < 64; i++ {
+		select {
+		case ev := <-a.aprsEvents:
+			a.handleAPRSEvent(ev)
+		default:
+			goto eventsDone
+		}
+	}
+eventsDone:
+
+	select {
+	case <-a.aprsRestartCh:
+		a.MaybeRestartAPRS()
+	default:
+	}
+}
+
+// handleAPRSEvent acts on one worker event. Owner goroutine only.
+func (a *App) handleAPRSEvent(ev aprsEvent) {
+	switch ev.kind {
+	case aprsEvStatus:
+		if ev.gen != a.aprsGen {
+			return // event from a replaced client
+		}
+		if a.aprsStatusCB != nil {
+			a.aprsStatusCB(ev.connected, ev.err)
+		}
+	case aprsEvBeacon:
+		if ev.gen != a.aprsGen {
+			return // beacon from a replaced run
+		}
+		if a.aprsBeaconCB != nil {
+			a.aprsBeaconCB(ev.callsign)
+		}
+		// Persist the beacon timestamp here — the worker never touches
+		// the live config.
+		if a.Logbook != nil {
+			if aprsCfg := a.Logbook.APRS; aprsCfg != nil {
+				aprsCfg.LastBeaconAt = time.Now().UTC().Format(time.RFC3339)
+				if err := config.Save(a.ConfigPath, a.Config); err != nil {
+					applog.Warn("APRS: failed to persist beacon timestamp", "error", err)
+				}
+			}
+		}
+	}
+}
+
+// aprsEvent carries APRS worker results back to the owner goroutine.
+// Workers never touch UI state or live configuration directly.
+type aprsEventKind int
+
+const (
+	aprsEvStatus aprsEventKind = iota
+	aprsEvBeacon
+)
+
+type aprsEvent struct {
+	kind      aprsEventKind
+	gen       uint64
+	connected bool
+	err       error
+	callsign  string
 }
 
 // StopAPRSTimer cancels any pending debounced APRS restart. Call during
@@ -593,28 +731,36 @@ const (
 // cached APRS stations older than the retention window. Runs every 5 minutes.
 // Stops when stopAPRSPruner is called or the app shuts down.
 func (a *App) startAPRSPruner() {
-	a.stopAPRSPruner() // ensure no duplicate
+	a.stopAPRSPruner() // joins any previous pruner
+	cache := a.APRSCache
+	if cache == nil {
+		return
+	}
 	stopCh := make(chan struct{})
 	a.pruneStopCh = stopCh
-	// The goroutine only reads the local channel — the pruneStopCh field
-	// is owned by the caller, so restarts cannot race.
-	go a.aprsPruneLoop(stopCh)
+	// The worker receives an immutable cache snapshot — it never reads the
+	// APRSCache field, which the owner may replace or close.
+	a.aprsPrunerWG.Add(1)
+	go func() {
+		defer a.aprsPrunerWG.Done()
+		a.aprsPruneLoop(stopCh, cache)
+	}()
 	applog.Debug("APRS: cache pruner started", "interval", aprsPruneInterval, "retain", aprsRetainDuration)
 }
 
 // aprsPruneLoop periodically deletes cached stations older than the
 // retention window until the given stop channel closes.
-func (a *App) aprsPruneLoop(stopCh chan struct{}) {
+func (a *App) aprsPruneLoop(stopCh chan struct{}, cache *aprs.CacheDB) {
 	ticker := time.NewTicker(aprsPruneInterval)
 	defer ticker.Stop()
 
 	// Prune once at startup to clean up stale entries from a previous run.
-	a.pruneOnce(aprsRetainDuration)
+	a.pruneOnce(cache, aprsRetainDuration)
 
 	for {
 		select {
 		case <-ticker.C:
-			a.pruneOnce(aprsRetainDuration)
+			a.pruneOnce(cache, aprsRetainDuration)
 		case <-stopCh:
 			return
 		}
@@ -625,15 +771,12 @@ func (a *App) stopAPRSPruner() {
 	if a.pruneStopCh != nil {
 		close(a.pruneStopCh)
 		a.pruneStopCh = nil
+		a.aprsPrunerWG.Wait() // join before the cache can be replaced/closed
 		applog.Debug("APRS: cache pruner stopped")
 	}
 }
 
-func (a *App) pruneOnce(retainDuration time.Duration) {
-	cache := a.APRSCache
-	if cache == nil {
-		return
-	}
+func (a *App) pruneOnce(cache *aprs.CacheDB, retainDuration time.Duration) {
 	cutoff := time.Now().Add(-retainDuration)
 	n, err := cache.PruneOlderThan(cutoff)
 	if err != nil {
@@ -645,24 +788,68 @@ func (a *App) pruneOnce(retainDuration time.Duration) {
 	}
 }
 
+// aprsBeaconSnap is an immutable snapshot handed to a beacon worker. The
+// worker must never read live logbook/client state — restarts and logbook
+// switches replace those; the worker only knows its own snapshot and the
+// cached beacon grid (gpsMu-protected).
+type aprsBeaconSnap struct {
+	cfg      config.APRSConfig
+	callsign string
+	client   aprs.Client
+	gen      uint64
+}
+
 // startAPRSBeacon launches a goroutine that periodically sends the station's
-// position to APRS-IS. The interval is read from the active logbook's APRS
-// config on each tick (it can change when the user edits settings).
-// Respects LastBeaconAt on startup — won't send if a beacon was already
-// sent recently (e.g. after an app restart).
+// position to APRS-IS, using an immutable snapshot of the logbook APRS
+// config and the active client. Stops when stopAPRSBeacon is called or the
+// app shuts down.
 func (a *App) startAPRSBeacon() {
-	a.stopAPRSBeacon()
+	a.stopAPRSBeacon() // joins any previous beacon
+	a.ensureAPRSChannels()
+	client := a.APRSClient
+	aprsCfg := a.Logbook.APRS
+	if client == nil || aprsCfg == nil {
+		return
+	}
+
+	snap := aprsBeaconSnap{
+		cfg:      *aprsCfg, // value copy — the worker mutates only this
+		client:   client,
+		callsign: a.aprsBeaconCallsign(aprsCfg),
+		gen:      a.aprsGen,
+	}
 	stopCh := make(chan struct{})
 	a.beaconStopCh = stopCh
-	// The goroutine only reads the local channel — the beaconStopCh field
-	// is owned by the caller (start/stop run on the same goroutine), so
-	// there is no race when the beacon is restarted.
-	go a.aprsBeaconLoop(stopCh)
+	a.aprsBeaconWG.Add(1)
+	go func() {
+		defer a.aprsBeaconWG.Done()
+		a.aprsBeaconLoop(stopCh, snap)
+	}()
 	applog.Debug("APRS: beacon goroutine started")
 }
 
+// aprsBeaconCallsign derives the login callsign used for beacons: the
+// configured APRS callsign, else the station callsign without a portable
+// suffix plus the default SSID.
+func (a *App) aprsBeaconCallsign(aprsCfg *config.APRSConfig) string {
+	if aprsCfg != nil && aprsCfg.Callsign != "" {
+		return aprsCfg.Callsign
+	}
+	if a.Logbook == nil {
+		return ""
+	}
+	base := a.Logbook.Station.Callsign
+	if idx := strings.IndexAny(base, "/"); idx >= 0 {
+		base = base[:idx]
+	}
+	if base != "" {
+		return base + aprsDefaultSSID
+	}
+	return ""
+}
+
 // aprsBeaconLoop sends position beacons until the given stop channel closes.
-func (a *App) aprsBeaconLoop(stopCh chan struct{}) {
+func (a *App) aprsBeaconLoop(stopCh chan struct{}, snap aprsBeaconSnap) {
 	// Wait 10s for the APRS client to connect.
 	select {
 	case <-time.After(10 * time.Second):
@@ -671,8 +858,7 @@ func (a *App) aprsBeaconLoop(stopCh chan struct{}) {
 	}
 
 	for {
-		aprsCfg := a.Logbook.APRS
-		if aprsCfg == nil || !aprsCfg.Enabled || !aprsCfg.SendLocation {
+		if !snap.cfg.Enabled || !snap.cfg.SendLocation {
 			select {
 			case <-time.After(30 * time.Second):
 				continue
@@ -681,7 +867,7 @@ func (a *App) aprsBeaconLoop(stopCh chan struct{}) {
 			}
 		}
 
-		intervalMin := aprsCfg.IntervalMin
+		intervalMin := snap.cfg.IntervalMin
 		if intervalMin < 5 {
 			intervalMin = 5
 		}
@@ -691,13 +877,13 @@ func (a *App) aprsBeaconLoop(stopCh chan struct{}) {
 		interval := time.Duration(intervalMin) * time.Minute
 
 		// Wait until next scheduled beacon based on LastBeaconAt.
-		if aprsCfg.LastBeaconAt != "" {
-			last, err := time.Parse(time.RFC3339, aprsCfg.LastBeaconAt)
+		if snap.cfg.LastBeaconAt != "" {
+			last, err := time.Parse(time.RFC3339, snap.cfg.LastBeaconAt)
 			if err == nil {
 				elapsed := time.Since(last)
 				if elapsed < interval {
 					remaining := interval - elapsed
-					applog.Debug("APRS: beacon waiting", "remaining", remaining.Round(time.Second), "lastBeacon", aprsCfg.LastBeaconAt)
+					applog.Debug("APRS: beacon waiting", "remaining", remaining.Round(time.Second), "lastBeacon", snap.cfg.LastBeaconAt)
 					select {
 					case <-time.After(remaining):
 					case <-stopCh:
@@ -707,8 +893,15 @@ func (a *App) aprsBeaconLoop(stopCh chan struct{}) {
 			}
 		}
 
-		a.sendAPRSBeacon(aprsCfg)
-		a.persistBeaconTimestamp(aprsCfg)
+		if a.sendAPRSBeacon(&snap.cfg, snap.callsign, snap.client) {
+			// Local scheduling state only — the live config is updated by
+			// the owner when the event below is processed.
+			snap.cfg.LastBeaconAt = time.Now().UTC().Format(time.RFC3339)
+			select {
+			case a.aprsEvents <- aprsEvent{kind: aprsEvBeacon, gen: snap.gen, callsign: snap.callsign}:
+			default:
+			}
+		}
 
 		// Wait for next interval.
 		select {
@@ -723,79 +916,65 @@ func (a *App) stopAPRSBeacon() {
 	if a.beaconStopCh != nil {
 		close(a.beaconStopCh)
 		a.beaconStopCh = nil
+		a.aprsBeaconWG.Wait() // join before its resources can be replaced
 		applog.Debug("APRS: beacon goroutine stopped")
 	}
 }
 
-func (a *App) sendAPRSBeacon(aprsCfg *config.APRSConfig) {
-	// Guard against nil client — the beacon goroutine may fire between
-	// MaybeRestartAPRS stopping the old client and starting a new one.
-	client := a.APRSClient
+// sendAPRSBeacon assembles and transmits one position beacon from the given
+// snapshot values. The grid comes from the owner-refreshed cache, never from
+// live config. Returns true when the beacon was actually transmitted.
+func (a *App) sendAPRSBeacon(cfg *config.APRSConfig, callsign string, client aprs.Client) bool {
+	// Guard against nil/disconnected client — the worker's snapshot may
+	// predate a client replacement.
 	if client == nil || !client.IsConnected() {
 		applog.Debug("APRS: beacon skipped — not connected")
-		return
+		return false
 	}
 
-	callsign := aprsCfg.Callsign
-	if callsign == "" {
-		callsign = a.Logbook.Station.Callsign
-		if idx := strings.IndexAny(callsign, "/"); idx >= 0 {
-			callsign = callsign[:idx]
-		}
-		if callsign != "" {
-			callsign += "-10"
-		}
-	}
-
-	grid := a.EffectiveGrid()
+	grid := a.beaconGridSafe()
 	if grid == "" {
 		applog.Debug("APRS: beacon skipped — no station grid")
-		return
+		return false
 	}
 	lat, lon, err := geo.GridToLatLon(grid)
 	if err != nil {
 		applog.Debug("APRS: beacon skipped — grid error", "error", err)
-		return
+		return false
 	}
 
-	symbol := aprsCfg.Symbol
+	symbol := cfg.Symbol
 	if symbol == "" {
 		symbol = "/-"
 	}
 
-	if tcp, ok := a.APRSClient.(*aprs.TCPClient); ok {
-		if err := tcp.SendPosition(callsign, lat, lon, symbol, aprsCfg.Comment); err != nil {
+	switch c := client.(type) {
+	case *aprs.TCPClient:
+		if err := c.SendPosition(callsign, lat, lon, symbol, cfg.Comment); err != nil {
 			applog.Warn("APRS: beacon failed", "error", err)
-		} else if a.aprsBeaconCB != nil {
-			a.aprsBeaconCB(callsign)
+			return false
 		}
-	} else if kiss, ok := a.APRSClient.(*aprs.KISSClient); ok {
-		if err := kiss.SendPosition(callsign, lat, lon, symbol, aprsCfg.Comment); err != nil {
+	case *aprs.KISSClient:
+		if err := c.SendPosition(callsign, lat, lon, symbol, cfg.Comment); err != nil {
 			applog.Warn("KISS: beacon failed", "error", err)
-		} else if a.aprsBeaconCB != nil {
-			a.aprsBeaconCB(callsign)
+			return false
 		}
-	} else if ks, ok := a.APRSClient.(*aprs.KISSServerClient); ok {
-		if err := ks.SendPosition(callsign, lat, lon, symbol, aprsCfg.Comment); err != nil {
+	case *aprs.KISSServerClient:
+		if err := c.SendPosition(callsign, lat, lon, symbol, cfg.Comment); err != nil {
 			applog.Warn("KISS server: beacon failed", "error", err)
-		} else if a.aprsBeaconCB != nil {
-			a.aprsBeaconCB(callsign)
+			return false
 		}
+	default:
+		applog.Debug("APRS: beacon skipped — unsupported client")
+		return false
 	}
-}
-
-// persistBeaconTimestamp writes the current time as LastBeaconAt and saves
-// the config. Errors are logged but not surfaced — beaconing continues.
-func (a *App) persistBeaconTimestamp(aprsCfg *config.APRSConfig) {
-	aprsCfg.LastBeaconAt = time.Now().UTC().Format(time.RFC3339)
-	if err := config.Save(a.ConfigPath, a.Config); err != nil {
-		applog.Warn("APRS: failed to persist beacon timestamp", "error", err)
-	}
+	return true
 }
 
 // SendAPRSBeaconNow transmits the station position immediately — the manual
-// beacon shortcut. Returns an error when TX is not configured or the client
-// is not connected; the success toast arrives via SetAPRSBeaconCallback.
+// beacon shortcut. Runs on the owner goroutine, so the beacon event is
+// handled inline (toast callback + timestamp persist). Returns an error when
+// TX is not configured or the client is not connected.
 func (a *App) SendAPRSBeaconNow() error {
 	aprsCfg := a.Logbook.APRS
 	if aprsCfg == nil || !aprsCfg.Enabled || !aprsCfg.SendLocation {
@@ -804,8 +983,11 @@ func (a *App) SendAPRSBeaconNow() error {
 	if a.APRSClient == nil || !a.APRSClient.IsConnected() {
 		return fmt.Errorf("not connected")
 	}
-	a.sendAPRSBeacon(aprsCfg)
-	a.persistBeaconTimestamp(aprsCfg)
+	a.refreshBeaconGrid()
+	callsign := a.aprsBeaconCallsign(aprsCfg)
+	if a.sendAPRSBeacon(aprsCfg, callsign, a.APRSClient) {
+		a.handleAPRSEvent(aprsEvent{kind: aprsEvBeacon, gen: a.aprsGen, callsign: callsign})
+	}
 	return nil
 }
 
@@ -814,10 +996,9 @@ func (a *App) SwitchLogbook(name string) error {
 		return fmt.Errorf("logbook %q not found", name)
 	}
 
-	if a.DB != nil {
-		a.DB.Close()
-	}
-
+	// Open and validate the replacement FIRST. On failure the current
+	// database stays open and active — a failed switch must never leave
+	// the running logbook closed.
 	lb := a.Config.Logbooks[name]
 	dbPath, err := config.DBPath(name, &lb)
 	if err != nil {
@@ -830,16 +1011,22 @@ func (a *App) SwitchLogbook(name string) error {
 	}
 	applog.Info("Database OK", "path", dbPath)
 
-	// Stop APRS goroutines BEFORE replacing the logbook to prevent the
-	// old beacon/pruner from reading the new logbook's config.
+	// Stop and JOIN APRS workers before replacing the logbook so the old
+	// beacon/pruner can never read the new logbook's config.
 	a.stopAPRSPruner()
 	a.stopAPRSBeacon()
 
+	// Commit the state transition, then retire the previous database
+	// (deferred until its background holders finish — see KeepDBAlive).
+	if a.DB != nil {
+		a.retireDB(a.DB)
+	}
 	a.Config.State.ActiveLogbook = name
 	a.LogbookName = name
 	a.Logbook = &lb
 	a.DB = db
 	a.DBPath = dbPath
+	a.refreshBeaconGrid()
 
 	// Persist the active logbook choice so it survives restarts.
 	if err := config.Save(a.ConfigPath, a.Config); err != nil {
@@ -853,42 +1040,114 @@ func (a *App) SwitchLogbook(name string) error {
 	return nil
 }
 
-func (a *App) StationSummary() string {
-	s := a.Logbook.Station
-	parts := []string{}
-	if s.Callsign != "" {
-		parts = append(parts, s.Callsign)
-	}
-	if s.Grid != "" {
-		parts = append(parts, s.Grid)
-	}
-
-	return strings.Join(parts, " ")
+// dbHolder tracks background operations that reference a logbook database
+// after it was replaced by SwitchLogbook. A retired database is closed only
+// when the last holder releases it.
+type dbHolder struct {
+	db      *sql.DB
+	refs    int
+	retired bool
 }
 
-// SetGPSGrid is called by the TUI model when GPS position updates.
+// KeepDBAlive marks db as in use by a background operation. The returned
+// release func must be called exactly once when the operation stops using db.
+// SwitchLogbook retires replaced databases instead of closing them outright,
+// so commands that captured the old logbook can finish without touching or
+// corrupting the new one.
+func (a *App) KeepDBAlive(db *sql.DB) func() {
+	if db == nil {
+		return func() {}
+	}
+	a.dbMu.Lock()
+	if a.dbHolders == nil {
+		a.dbHolders = make(map[*sql.DB]*dbHolder)
+	}
+	h := a.dbHolders[db]
+	if h == nil {
+		h = &dbHolder{db: db}
+		a.dbHolders[db] = h
+	}
+	h.refs++
+	a.dbMu.Unlock()
+
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			a.dbMu.Lock()
+			h.refs--
+			if h.refs == 0 {
+				delete(a.dbHolders, db)
+				if h.retired {
+					h.db.Close()
+				}
+			}
+			a.dbMu.Unlock()
+		})
+	}
+}
+
+// retireDB closes db unless background operations still hold it via
+// KeepDBAlive — in that case the close is deferred to the last release.
+func (a *App) retireDB(db *sql.DB) {
+	a.dbMu.Lock()
+	defer a.dbMu.Unlock()
+	if h := a.dbHolders[db]; h != nil {
+		h.retired = true
+		if h.refs == 0 {
+			delete(a.dbHolders, db)
+			db.Close()
+		}
+		return
+	}
+	db.Close()
+}
+
+// SetGPSGrid is called by the TUI model when GPS position updates. It also
+// refreshes the cached beacon grid, so APRS beacon workers follow GPS
+// movement without ever reading live config.
 func (a *App) SetGPSGrid(grid string, hasFix bool) {
 	a.gpsMu.Lock()
 	a.gpsGrid = grid
 	a.gpsHasFix = hasFix
+	a.beaconGrid = a.effectiveGridUnlocked()
 	a.gpsMu.Unlock()
+}
+
+// refreshBeaconGrid recomputes the cached grid used by APRS beacon workers.
+// Runs on the owner goroutine (RunPendingAPRS, SwitchLogbook, manual beacon);
+// workers only read the cached value under gpsMu.
+func (a *App) refreshBeaconGrid() {
+	a.gpsMu.Lock()
+	a.beaconGrid = a.effectiveGridUnlocked()
+	a.gpsMu.Unlock()
+}
+
+// beaconGridSafe returns the cached effective grid for beacon workers.
+// Safe to call from any goroutine.
+func (a *App) beaconGridSafe() string {
+	a.gpsMu.RLock()
+	defer a.gpsMu.RUnlock()
+	return a.beaconGrid
 }
 
 // EffectiveGrid returns the GPS-derived grid when GPS is enabled, has a fix,
 // and the logbook has gps_grid enabled. Falls back to the configured station
 // grid otherwise. The grid is truncated to the configured GPS precision
 // (6, 8, or 10 chars) to avoid leaking more-accurate position data than
-// the user intended. Safe to call from any goroutine.
+// the user intended. Call on the owner goroutine.
 func (a *App) EffectiveGrid() string {
 	a.gpsMu.RLock()
-	gpsGrid := a.gpsGrid
-	gpsHasFix := a.gpsHasFix
-	a.gpsMu.RUnlock()
+	defer a.gpsMu.RUnlock()
+	return a.effectiveGridUnlocked()
+}
 
+// effectiveGridUnlocked computes the effective grid. Caller must hold gpsMu;
+// it reads owner-owned config fields, so call only from the owner goroutine.
+func (a *App) effectiveGridUnlocked() string {
 	var raw string
-	if a.Config.Integrations.GPS.Enabled && gpsHasFix && gpsGrid != "" &&
+	if a.Config != nil && a.Config.Integrations.GPS.Enabled && a.gpsHasFix && a.gpsGrid != "" &&
 		a.Logbook != nil && a.Logbook.Station.GPSGrid {
-		raw = gpsGrid
+		raw = a.gpsGrid
 	} else if a.Logbook != nil {
 		raw = strings.TrimSpace(strings.ToUpper(a.Logbook.Station.Grid))
 	}
@@ -897,8 +1156,10 @@ func (a *App) EffectiveGrid() string {
 	}
 	// Truncate to configured GPS grid precision.
 	prec := 10
-	if p := a.Config.Integrations.GPS.GridPrecision; p == 6 || p == 8 {
-		prec = p
+	if a.Config != nil {
+		if p := a.Config.Integrations.GPS.GridPrecision; p == 6 || p == 8 {
+			prec = p
+		}
 	}
 	if len(raw) > prec {
 		raw = raw[:prec]

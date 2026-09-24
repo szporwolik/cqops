@@ -17,23 +17,10 @@ type renderCache struct {
 	lastLayoutH  int
 	lastLayoutSc screenKind
 
-	// Bar caches — avoids rebuilding status/tabs/help on every frame.
-	// Status bar has a 1-second TTL because it contains the UTC clock.
-	status     string
-	statusSec  int
-	tabs       string
-	help       string
-	barSc      screenKind
-	barW       int
-	barOp      string // active operator ID; busts status cache on change
-	barLog     string // active logbook ID; busts status cache on change
-	barRig     string // active rig ID; busts status cache on change
-	barBackend string // rig backend (hamlib/flrig); busts status cache on change
-	barRigConn bool   // rig connection state; busts status cache on change
-	barTx      bool   // WSJT-X TX state; busts status cache on change
-	barTxMsg   string // WSJT-X TX message; busts status cache on change
-	barOnline  bool   // WSJT-X online state; busts status cache on change
-	barAPRS    bool   // APRS connection state; busts status cache on change
+	// Bar caches — tabs and help are cached via tabSig/helpSig below; the
+	// status bar is recomputed every frame for correctness.
+	tabs string
+	help string
 
 	// Partner view cache.
 	partnerView    string
@@ -43,9 +30,12 @@ type renderCache struct {
 	pathLine string
 	pathSig  string
 
-	// DXC path line cache — shows nearby spots below the QSO form.
-	dxcPathLine string
-	dxcPathSig  string
+	// DXC path line cache — shows nearby spots below the QSO form. The
+	// rendered line is time-dependent (spot age filters, fallback TTL), so
+	// the render timestamp bounds how long a cached line may be served.
+	dxcPathLine       string
+	dxcPathSig        string
+	dxcPathRenderedAt time.Time // when the cached line was rendered; older than dxcPathSpotsTTL it must re-render
 
 	// Form column style cache.
 	formColW         int
@@ -62,13 +52,43 @@ type renderCache struct {
 	logStatsFetchBand string
 	logStatsFetchMode string
 
+	// DXC path-line spot fallback, loaded off the render path.
+	dxcSpots          []store.DXCSpot
+	dxcSpotsBand      string
+	dxcSpotsAt        time.Time // when the fallback was fetched; time-dependent results expire
+	dxcSpotsNeedFetch bool
+	dxcSpotsFetchBand string
+
+	// DXC path-line dupe set, loaded off the render path.
+	dxcDupeSet          map[string]bool
+	dxcDupeSig          string
+	dxcDupeNeedFetch    bool
+	dxcDupeFetchDate    string
+	dxcDupeFetchContest string
+
 	// Worked panel summary cache (call + grid + DXCC statistics).
-	workedSummary           store.WorkedSummary
-	workedSummarySig        string
-	workedSummaryNeedFetch  bool
-	workedSummaryFetchCall  string
-	workedSummaryFetchGrid4 string
-	workedSummaryFetchDXCC  string
+	// The query is heavy (six queries per scope), so it is fetched off the
+	// render path like the other DB-backed panels. wantedSig records the
+	// signature the current frame asked for — a stale async result for a
+	// superseded callsign is discarded instead of flashing old data.
+	workedSummary            store.WorkedSummary
+	workedSummarySig         string
+	workedSummaryWantedSig   string
+	workedSummaryInflightSig string
+	workedSummaryNeedFetch   bool
+	workedSummaryFetchCall   string
+	workedSummaryFetchGrid4  string
+	workedSummaryFetchDXCC   string
+	workedSummaryFetchName   string
+
+	// Country → DXCC memo for foreign-prefix partner lookups, loaded off the
+	// render path (the direct query used to run inside View()). Bounded;
+	// misses are memoized too so an unknown country is not re-queried every
+	// frame.
+	partnerDXCCNeedFetch bool
+	partnerDXCCEntity    string
+	countryDXCC          map[string]string
+	countryDXCCMiss      map[string]bool
 
 	// Logbook-wide counts (total QSOs, today's QSOs). Updated on tick
 	// and invalidated on QSO save / logbook switch / midnight.

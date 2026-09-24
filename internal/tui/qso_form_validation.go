@@ -16,11 +16,11 @@ func (m *Model) qsoFieldHint(f field) string {
 	switch f {
 	case fieldCall:
 		if raw != "" && !qso.IsValidCall(raw) {
-			return "Invalid callsign"
+			return "QSO: invalid callsign"
 		}
 	case fieldGrid:
 		if raw != "" && !qso.IsValidLocator(raw) {
-			return "Invalid locator"
+			return "QSO: invalid locator"
 		}
 	case fieldFreq:
 		if raw == "" {
@@ -29,7 +29,7 @@ func (m *Model) qsoFieldHint(f field) string {
 		// Frequency must be parseable as a positive float.
 		var freq float64
 		if _, err := fmt.Sscanf(raw, "%f", &freq); err != nil || freq <= 0 {
-			return "Invalid frequency"
+			return "QSO: invalid frequency"
 		}
 		// Check if it maps to a known band. Out-of-band frequencies are valid
 		// (e.g. satellite, transverter) but the band field won't auto-derive.
@@ -38,7 +38,7 @@ func (m *Model) qsoFieldHint(f field) string {
 			// Also check normalized form.
 			norm := qso.NormalizeBand(raw)
 			if norm == "" || !qso.IsValidBand(norm) {
-				return "Invalid band"
+				return "QSO: invalid band"
 			}
 		}
 	case fieldMode:
@@ -53,7 +53,7 @@ func (m *Model) qsoFieldHint(f field) string {
 		if normalized, _ := qso.NormalizeMode(raw, ""); normalized != raw && qso.IsValidMode(normalized) {
 			return ""
 		}
-		return "Invalid mode"
+		return "QSO: invalid mode"
 	case fieldSubmode:
 		if raw == "" {
 			return ""
@@ -63,7 +63,7 @@ func (m *Model) qsoFieldHint(f field) string {
 			return "" // can't validate submode without mode
 		}
 		if !qso.IsValidSubmode(mode, raw) {
-			return "Invalid submode"
+			return "QSO: invalid submode"
 		}
 	}
 	return ""

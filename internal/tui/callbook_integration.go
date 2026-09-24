@@ -13,6 +13,7 @@ import (
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/callbook"
 	"github.com/szporwolik/cqops/internal/callook"
+	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/ctybig"
 	"github.com/szporwolik/cqops/internal/hamqth"
 	"github.com/szporwolik/cqops/internal/qrzcom"
@@ -25,25 +26,27 @@ import (
 // Callbook multi-provider lookup integration.
 // =============================================================================
 
-// callbookRegLookup is the test seam for the callbook registry.
-var callbookRegLookup = func(m *Model, call string) (*callbook.Result, error) {
-	if m.callbookRegistry == nil {
+// callbookRegLookup is the test seam for the callbook registry. It takes
+// snapshots (registry + fallback flag) captured on the owner loop, never the
+// live model — background workers must not read model state.
+var callbookRegLookup = func(reg *callbook.Registry, baseFallback bool, call string) (*callbook.Result, error) {
+	if reg == nil {
 		applog.Debug("Callbook: no registry, skipping lookup", "call", call)
 		return nil, nil
 	}
-	applog.Debug("Callbook: lookup start", "call", call, "providers", m.callbookRegistry.Len())
-	data, err := m.callbookRegistry.Lookup(call)
+	applog.Debug("Callbook: lookup start", "call", call, "providers", reg.Len())
+	data, err := reg.Lookup(call)
 	if data != nil {
 		applog.Debug("Callbook: lookup ok", "call", call, "provider", data.Provider,
 			"name", data.Name, "grid", data.Grid, "country", data.Country, "qth", data.QTH)
 		// Base-call fallback: if the looked-up call is a suffix call
 		// (e.g. SP9MOA/P) and the result has no name (CTY-only backfill),
 		// also try the base call and merge richer data into the result.
-		if m.App.Config.Integrations.Callbook.BaseCallFallback {
+		if baseFallback {
 			base := qso.DeriveBaseCall(call)
 			if base != "" && !strings.EqualFold(base, call) && data.Name == "" {
 				applog.Debug("Callbook: suffix call has no name, trying base", "call", call, "base", base)
-				baseData, baseErr := m.callbookRegistry.Lookup(base)
+				baseData, baseErr := reg.Lookup(base)
 				if baseData != nil {
 					callbook.MergeInto(data, baseData)
 					applog.Debug("Callbook: base-call fallback merged", "base", base, "provider", baseData.Provider)
@@ -58,11 +61,11 @@ var callbookRegLookup = func(m *Model, call string) (*callbook.Result, error) {
 		return nil, err
 	}
 	// Base-call fallback: if SP9MOA/P was not found, try SP9MOA.
-	if m.App.Config.Integrations.Callbook.BaseCallFallback {
+	if baseFallback {
 		base := qso.DeriveBaseCall(call)
 		if base != "" && !strings.EqualFold(base, call) {
 			applog.Debug("Callbook: no result for suffix call, trying base", "call", call, "base", base)
-			data, err := m.callbookRegistry.Lookup(base)
+			data, err := reg.Lookup(base)
 			if data != nil {
 				applog.Debug("Callbook: base-call fallback ok", "base", base, "provider", data.Provider)
 			} else {
@@ -76,16 +79,19 @@ var callbookRegLookup = func(m *Model, call string) (*callbook.Result, error) {
 }
 
 // buildCallbookRegistry creates the provider registry from configuration.
+// In offline mode only local providers (logbook history and CTY.DAT prefix
+// data) are registered — network providers are skipped entirely.
 func buildCallbookRegistry(a *app.App) *callbook.Registry {
 	var providers []callbook.Provider
 
 	// Logbook provider — searches past local QSOs.
-	// Default priority 100 (tried before QRZ). Enabled by default.
+	// Offline/historical fallback, not the most authoritative source:
+	// previous QSOs may carry stale name/QTH/grid data.
 	lc := a.Config.Integrations.Callbook.Logbook
 	if lc.Enabled || lc.Priority == 0 {
 		p := lc.Priority
 		if p == 0 {
-			p = 100 // default
+			p = config.DefaultLogbookPriority
 		}
 		if p < 0 {
 			p = 0
@@ -100,10 +106,10 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 
 	// QRZ provider.
 	cfg := a.Config.Integrations.Callbook.QRZ
-	if cfg.Enabled && cfg.User != "" {
+	if !a.Offline && cfg.Enabled && cfg.User != "" {
 		p := cfg.Priority
 		if p == 0 {
-			p = 50
+			p = config.DefaultQRZPriority
 		}
 		if p < 0 {
 			p = 0
@@ -116,10 +122,10 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 
 	// HamQTH provider — free callsign database.
 	hqCfg := a.Config.Integrations.Callbook.HamQTH
-	if hqCfg.Enabled && hqCfg.User != "" {
+	if !a.Offline && hqCfg.Enabled && hqCfg.User != "" {
 		p := hqCfg.Priority
 		if p == 0 {
-			p = 45
+			p = config.DefaultHamQTHPriority
 		}
 		if p < 0 {
 			p = 0
@@ -132,10 +138,10 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 
 	// Callook.info provider — free US callsign database, no auth required.
 	coCfg := a.Config.Integrations.Callbook.Callook
-	if coCfg.Enabled {
+	if !a.Offline && coCfg.Enabled {
 		p := coCfg.Priority
 		if p == 0 {
-			p = 30
+			p = config.DefaultCallookPriority
 		}
 		if p < 0 {
 			p = 0
@@ -148,10 +154,10 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 
 	// QRZ.RU provider — free callbook focused on Russia and surrounding countries.
 	ruCfg := a.Config.Integrations.Callbook.QRZRu
-	if ruCfg.Enabled && ruCfg.User != "" {
+	if !a.Offline && ruCfg.Enabled && ruCfg.User != "" {
 		p := ruCfg.Priority
 		if p == 0 {
-			p = 35
+			p = config.DefaultQRZRuPriority
 		}
 		if p < 0 {
 			p = 0
@@ -164,7 +170,7 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 
 	// Wavelog provider — only when explicitly enabled and configured.
 	wc := a.Config.Integrations.Callbook.Wavelog
-	if wc.Enabled {
+	if !a.Offline && wc.Enabled {
 		// Find any logbook with Wavelog configured.
 		var wlURL, wlAPIKey string
 		for _, lb := range a.Config.Logbooks {
@@ -177,7 +183,7 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 		if wlURL != "" && wlAPIKey != "" {
 			p := wc.Priority
 			if p == 0 {
-				p = 10
+				p = config.DefaultWavelogPriority
 			}
 			if p < 0 {
 				p = 0
@@ -203,6 +209,15 @@ func buildCallbookRegistry(a *app.App) *callbook.Registry {
 	return callbook.NewRegistry(providers)
 }
 
+// rebuildCallbookRegistry rebuilds the provider registry after the active
+// logbook changed. The logbook provider captures *sql.DB when constructed;
+// after SwitchLogbook retires the old database a stale provider would query
+// it (or a closed connection) and return the wrong logbook's history. Must
+// run on the owner loop.
+func (m *Model) rebuildCallbookRegistry() {
+	m.callbookRegistry = buildCallbookRegistry(m.App)
+}
+
 // maybeCheckCallbook returns a tea.Cmd to check callbook provider
 // connectivity at startup (first tick).
 func (m *Model) maybeCheckCallbook() tea.Cmd {
@@ -222,26 +237,34 @@ func (m *Model) maybeCheckCallbook() tea.Cmd {
 }
 
 // callbookLookupCmd returns a tea.Cmd that performs a cascading callbook
-// lookup through all registered providers.
+// lookup through all registered providers. The registry, fallback flag and
+// logbook name are snapshots taken here, on the owner loop.
 func (m *Model) callbookLookupCmd(call string) tea.Cmd {
+	reg := m.callbookRegistry
+	baseFallback := m.App.Config.Integrations.Callbook.BaseCallFallback
+	logbook := m.App.LogbookName
 	return func() tea.Msg {
-		data, err := callbookRegLookup(m, call)
-		return callbookResultMsg{Call: call, Data: data, Err: err}
+		data, err := callbookRegLookup(reg, baseFallback, call)
+		return callbookResultMsg{Call: call, Data: data, Err: err, Logbook: logbook}
 	}
 }
 
 // checkCallbookCmd returns a tea.Cmd that tests connectivity for all
-// registered callbook providers.
+// registered callbook providers. All inputs are snapshots taken here.
 func (m *Model) checkCallbookCmd() tea.Cmd {
+	reg := m.callbookRegistry
+	qrzEnabled := m.App.Config.Integrations.Callbook.QRZ.Enabled
+	qrzUser := m.App.Config.Integrations.Callbook.QRZ.User
+	qrzPass := m.App.Config.Integrations.Callbook.QRZ.Pass
 	return func() tea.Msg {
-		if m.callbookRegistry == nil {
+		if reg == nil {
 			return qrzStatusMsg{online: false}
 		}
 		// Report online if any provider is available.
 		// Logbook and CTY providers work locally; QRZ requires network.
 		online := true
-		if m.App.Config.Integrations.Callbook.QRZ.Enabled {
-			err := qrzcom.TestConnection(m.App.Config.Integrations.Callbook.QRZ.User, m.App.Config.Integrations.Callbook.QRZ.Pass)
+		if qrzEnabled {
+			err := qrzcom.TestConnection(qrzUser, qrzPass)
 			online = err == nil
 		}
 		return qrzStatusMsg{online: online}
@@ -273,6 +296,7 @@ func (m *Model) callbookLookup(call string) tea.Cmd {
 // wlLookupCmd returns a tea.Cmd that performs a Wavelog private lookup.
 func (m *Model) wlLookupCmd(call, band, mode string) tea.Cmd {
 	wl := m.App.Logbook.Wavelog
+	logbook := m.App.LogbookName
 	return func() tea.Msg {
 		data, err := wavelog.PrivateLookup(
 			wl.URL,
@@ -280,7 +304,7 @@ func (m *Model) wlLookupCmd(call, band, mode string) tea.Cmd {
 			call, band, mode,
 			wl.StationProfileID,
 		)
-		return wlResultMsg{Call: call, Data: data, Err: err}
+		return wlResultMsg{Call: call, Data: data, Err: err, Logbook: logbook}
 	}
 }
 
@@ -319,6 +343,13 @@ func (m *Model) wlLookup(call string) tea.Cmd {
 // fillCallbookData fills the QSO form from callbook lookup result data.
 func (m *Model) fillCallbookData(msg callbookResultMsg) {
 	if msg.Call == "" {
+		return
+	}
+	// A late result from a previous logbook must never fill the form for
+	// the current one — the logbook provider queried the old database.
+	if msg.Logbook != "" && msg.Logbook != m.App.LogbookName {
+		applog.Debug("Callbook: stale result discarded",
+			"from", msg.Logbook, "current", m.App.LogbookName, "call", msg.Call)
 		return
 	}
 	formCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
@@ -596,6 +627,13 @@ func (m *Model) fillWLData(msg wlResultMsg) tea.Cmd {
 	if msg.Call == "" {
 		return nil
 	}
+	// A late result from a previous logbook must never fill the form or
+	// replace the current logbook's Wavelog data.
+	if msg.Logbook != "" && msg.Logbook != m.App.LogbookName {
+		applog.Debug("Wavelog: stale result discarded",
+			"from", msg.Logbook, "current", m.App.LogbookName, "call", msg.Call)
+		return nil
+	}
 	formCall := qso.NormalizeCall(m.fields[fieldCall].Value())
 
 	// --- Fallback result (base-call lookup triggered by sparse suffix) ---
@@ -680,11 +718,12 @@ func (m *Model) wlFallbackLookup(call string) tea.Cmd {
 	if m.Offline || !m.inetOnline {
 		return nil
 	}
+	logbook := m.App.LogbookName
 	band := strings.TrimSpace(m.fields[fieldBand].Value())
 	mode := qso.NormalizeRigMode(m.fields[fieldMode].Value())
 	return func() tea.Msg {
 		data, err := wavelog.PrivateLookup(wl.URL, wl.APIKey, call, band, mode, wl.StationProfileID)
-		return wlResultMsg{Call: call, Data: data, Err: err, IsFallback: true}
+		return wlResultMsg{Call: call, Data: data, Err: err, IsFallback: true, Logbook: logbook}
 	}
 }
 

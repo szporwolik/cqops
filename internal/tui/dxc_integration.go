@@ -18,10 +18,15 @@ import (
 // DX Cluster — telnet connection to dxspider.co.uk:7300
 // =============================================================================
 
-// dxcStatusMsg is sent when the DX Cluster connection state changes.
+// dxcStatusMsg is sent when the DX Cluster connection state changes. The
+// client and generation are bound at command creation: the worker never
+// touches m.dxc.client, the owner loop installs the client from the message,
+// and results from a stale generation are discarded (client stopped).
 type dxcStatusMsg struct {
 	online bool
 	err    error
+	client *dxc.Client // client the connect ran against (possibly newly created)
+	gen    uint64      // connection generation captured when the command was created
 }
 
 // dxcSpotsStoredMsg is sent after a batch of spots has been stored.
@@ -31,25 +36,90 @@ type dxcSpotsStoredMsg struct {
 	newSpots  []store.DXCSpot // newly inserted spots for in-memory append
 }
 
+// fetchDXCPathSpotsCmd loads recent spots for a band off the render path.
+// Used as a fallback while the in-memory spot cache is still empty.
+func (m *Model) fetchDXCPathSpotsCmd(band string) tea.Cmd {
+	db := m.App.DB
+	return func() tea.Msg {
+		spots, err := store.QueryDXCSpotsByBand(db, band, 900)
+		if err != nil {
+			// Record the band anyway so a failing query cannot re-dispatch on
+			// every update; live spots still arrive through the DXC feed.
+			applog.Debug("DXC: path spot load failed", "band", band, "error", err)
+			return dxcPathSpotsMsg{band: band}
+		}
+		return dxcPathSpotsMsg{band: band, spots: spots}
+	}
+}
+
+// dxcDupeSigFor builds the cache signature for the path-line dupe set. It
+// includes the logbook identity and the dupe revision: switching logbooks or
+// logging a QSO changes the key, so stale results can never be reused.
+func dxcDupeSigFor(date, contest, logbook string, gen int) string {
+	return fmt.Sprintf("%s|%s|%s|%d", date, contest, logbook, gen)
+}
+
+// fetchDXCPathDupesCmd loads the path-line dupe set off the render path.
+func (m *Model) fetchDXCPathDupesCmd(date, contest, logbook string, gen int) tea.Cmd {
+	db := m.App.DB
+	sig := dxcDupeSigFor(date, contest, logbook, gen)
+	return func() tea.Msg {
+		ds, err := store.DXCDupeSet(db, date, contest)
+		if err != nil {
+			// Record the signature anyway so a failing query cannot
+			// re-dispatch on every update.
+			applog.Debug("DXC: path dupe set load failed", "date", date, "error", err)
+			return dxcPathDupesMsg{sig: sig}
+		}
+		return dxcPathDupesMsg{sig: sig, dupeSet: ds}
+	}
+}
+
+// handleDXCPathSpots stores the async spot fallback for the next View().
+// The fetch timestamp drives age-based expiry of the time-dependent results,
+// and the rendered path line is invalidated so newly arrived spots appear
+// without waiting for an unrelated cache-busting change.
+func (m *Model) handleDXCPathSpots(msg dxcPathSpotsMsg) {
+	if msg.band == "" {
+		return
+	}
+	m.rc.dxcSpots = msg.spots
+	m.rc.dxcSpotsBand = msg.band
+	m.rc.dxcSpotsAt = time.Now()
+	// Spot data changed — the cached path line must be re-rendered.
+	m.rc.dxcPathSig = ""
+}
+
+// handleDXCPathDupes stores the async dupe set for the next View().
+func (m *Model) handleDXCPathDupes(msg dxcPathDupesMsg) {
+	if msg.sig == "" {
+		return
+	}
+	m.rc.dxcDupeSet = msg.dupeSet
+	m.rc.dxcDupeSig = msg.sig
+}
+
 // sendSpotCmd sends a DX spot to the connected cluster and stores it locally
 // so it appears immediately in the DXC table even if the cluster doesn't echo.
 func (m *Model) sendSpotCmd(call string, freqKhz float64, comment string) tea.Cmd {
 	db := m.App.DB
+	client := m.dxc.client // capture — the field may be swapped by the owner
+	online := m.dxc.online // capture — worker must not read owner state
 	return func() tea.Msg {
-		if m.dxc.client == nil || !m.dxc.online {
+		if client == nil || !online {
 			m.toasts.Warn("DXC: not connected — cannot send spot")
 			return nil
 		}
 
 		// Toast immediately so the user gets instant feedback that the spot
 		// is being sent — don't wait for the cluster round-trip (~1.5 s).
-		toastMsg := fmt.Sprintf("Spotted %s @ %.1f kHz", call, freqKhz)
+		toastMsg := fmt.Sprintf("DXC: spotted %s @ %.1f kHz", call, freqKhz)
 		if comment != "" {
 			toastMsg += " — " + comment
 		}
 		m.toasts.Info(toastMsg)
 
-		rsp, err := m.dxc.client.SendSpot(freqKhz, call, comment)
+		rsp, err := client.SendSpot(freqKhz, call, comment)
 		if err != nil {
 			m.toasts.Warn("DXC: spot failed — " + err.Error())
 			return nil
@@ -99,29 +169,35 @@ func (m *Model) sendSpotCmd(call string, freqKhz float64, comment string) tea.Cm
 }
 
 // dxcConnectCmd returns a tea.Cmd that attempts to connect to the DX cluster.
+// All inputs — connection settings, the current client (reused for retries),
+// and the connection generation — are captured here, on the owner loop. The
+// worker creates a client when none exists and returns it in a
+// generation-tagged message; only the owner loop may publish it into
+// m.dxc.client. The client is only replaced by resetDXC (config change).
 func (m *Model) dxcConnectCmd() tea.Cmd {
+	cfg := m.App.Config.Integrations.DXC
+	host := cfg.Host
+	if host == "" {
+		host = "dxspots.com"
+	}
+	port := cfg.Port
+	if port == "" {
+		port = "7300"
+	}
+	login := cfg.Login
+	if login == "" {
+		login = m.App.Logbook.Station.Callsign
+	}
+	client := m.dxc.client
+	gen := m.dxc.clientGen
 	return func() tea.Msg {
-		cfg := m.App.Config.Integrations.DXC
-		host := cfg.Host
-		if host == "" {
-			host = "dxspots.com"
+		if client == nil {
+			client = dxc.NewClient(host, port, login)
 		}
-		port := cfg.Port
-		if port == "" {
-			port = "7300"
-		}
-		login := cfg.Login
-		if login == "" {
-			login = m.App.Logbook.Station.Callsign
-		}
-
-		client := dxc.NewClient(host, port, login)
-		m.dxc.client = client
-
 		if err := client.Start(); err != nil {
-			return dxcStatusMsg{online: false, err: err}
+			return dxcStatusMsg{online: false, err: err, client: client, gen: gen}
 		}
-		return dxcStatusMsg{online: true}
+		return dxcStatusMsg{online: true, client: client, gen: gen}
 	}
 }
 
@@ -143,56 +219,82 @@ func (m *Model) maybeDXC() tea.Cmd {
 			m.dxc.client.Stop()
 			m.dxc.client = nil
 		}
+		// A connect may still be in flight even with no installed client —
+		// invalidate its generation so its result is discarded and stopped.
+		m.dxc.clientGen++
 		m.dxc.online = false
 		m.dxc.connecting = false
 		m.dxc.lastAttempt = time.Time{}
 		m.dxc.reconnectIdx = 0
-		m.rc.status = ""
 		if m.screen == screenDXC {
 			m.screen = screenQSO
 		}
 		return nil
 	}
 
-	// Need internet.
-	if !m.inetOnline {
+	// Need internet (the offline switch blocks all network traffic too).
+	if m.Offline || !m.inetOnline {
 		if m.dxc.client != nil {
 			m.dxc.client.Stop()
 			m.dxc.client = nil
 		}
+		// Invalidate any in-flight connect as above.
+		m.dxc.clientGen++
 		m.dxc.online = false
 		m.dxc.connecting = false
 		m.dxc.lastAttempt = time.Time{}
 		m.dxc.reconnectIdx = 0
-		m.rc.status = ""
 		if m.screen == screenDXC {
 			m.screen = screenQSO
 		}
 		return nil
 	}
 
-	// Already connected — check for disconnect, then drain spots (throttled to 4s).
-	if m.dxc.client != nil && m.dxc.online {
-		// Check if the connection dropped.
-		select {
-		case status, ok := <-m.dxc.client.Status():
-			if ok && !status {
-				applog.Warn("DXC: connection lost, will reconnect")
-				m.dxc.online = false
-				m.dxc.connecting = false
-				m.dxc.client = nil
-				m.rc.status = ""
-				return nil
+	// Consume connection-status events whenever a client exists — after its
+	// first connection the client owns reconnection, and BOTH transitions
+	// (lost and restored) must reach the UI. Draining only while online
+	// left the reconnect event unconsumed, so the UI stayed offline forever
+	// even though the client had already reconnected.
+	if m.dxc.client != nil {
+	drainLoop:
+		for {
+			select {
+			case status, ok := <-m.dxc.client.Status():
+				if !ok {
+					break drainLoop // channel closed — client being torn down
+				}
+				if status {
+					if !m.dxc.online {
+						m.dxc.online = true
+						m.dxc.reconnectIdx = 0
+						if m.dxc.connecting {
+							// First connect — the dxcStatusMsg handler
+							// reports the success toast.
+							applog.Info("DXC: connected OK")
+						} else {
+							applog.Info("DXC: reconnected")
+							m.toasts.Success("DXC: connected")
+						}
+					}
+				} else if m.dxc.online {
+					applog.Warn("DXC: connection lost — client will reconnect")
+					m.dxc.online = false
+				}
+			default:
+				break drainLoop
 			}
-		default:
 		}
-		// Drain spots at most once every 4 seconds to reduce DB write pressure.
-		// The client buffers them; drainDXCSpots empties the entire channel at once.
-		if time.Since(m.dxc.lastDrain) >= 4*time.Second {
-			m.dxc.lastDrain = time.Now()
-			return m.drainDXCSpots()
+
+		// Connected — drain spots at most once every 4 seconds to reduce DB
+		// write pressure. The client buffers them; drainDXCSpots empties the
+		// entire channel at once.
+		if m.dxc.online {
+			if time.Since(m.dxc.lastDrain) >= 4*time.Second {
+				m.dxc.lastDrain = time.Now()
+				return m.drainDXCSpots()
+			}
+			return nil
 		}
-		return nil
 	}
 
 	// Connecting in progress — don't double-connect.
@@ -200,7 +302,11 @@ func (m *Model) maybeDXC() tea.Cmd {
 		return nil
 	}
 
-	// Reconnect delay.
+	// After the first successful connection the client owns reconnection —
+	// the TUI just waits for the next status event (consumed above).
+	if m.dxc.client != nil && m.dxc.client.ConnectedOnce() {
+		return nil
+	}
 	if !m.dxc.online && !m.dxc.lastAttempt.IsZero() {
 		delay := dxcReconnectDelays[m.dxc.reconnectIdx]
 		if time.Since(m.dxc.lastAttempt) < delay {
@@ -348,11 +454,26 @@ func (m *Model) storeDXCSpotsCmd(spots []dxc.Spot) tea.Cmd {
 // looks like a network-layer issue (DNS), so we detect internet outages
 // in seconds instead of waiting for the 60 s poll cycle.
 func (m *Model) handleDXCStatus(msg dxcStatusMsg) tea.Cmd {
+	// A result from before the last teardown/reset is stale: stop the
+	// client it ran against (it may have been created just for this
+	// attempt) and ignore the state change entirely.
+	if msg.gen != m.dxc.clientGen {
+		applog.Debug("DXC: stale connect result discarded",
+			"gen", msg.gen, "current", m.dxc.clientGen)
+		if msg.client != nil && msg.client != m.dxc.client {
+			msg.client.Stop()
+		}
+		return nil
+	}
+	// Publish the client on the owner loop — the worker never touches
+	// m.dxc.client.
+	if msg.client != nil {
+		m.dxc.client = msg.client
+	}
 	m.dxc.connecting = false
 	if msg.online {
 		m.dxc.online = true
 		m.dxc.reconnectIdx = 0
-		m.rc.status = ""
 		applog.Info("DXC: connected OK")
 		m.toasts.Success("DXC: connected")
 		// Push DXC status to dashboard for footer attribution.
@@ -366,8 +487,6 @@ func (m *Model) handleDXCStatus(msg dxcStatusMsg) tea.Cmd {
 		return nil
 	}
 	m.dxc.online = false
-	m.dxc.client = nil
-	m.rc.status = ""
 	// Redirect to QSO form if the user is viewing the DXC tab.
 	if m.screen == screenDXC {
 		m.screen = screenQSO
@@ -396,11 +515,13 @@ func (m *Model) resetDXC() {
 		m.dxc.client.Stop()
 		m.dxc.client = nil
 	}
+	// Invalidate any in-flight connect result — its client will be stopped
+	// by the stale-generation discard.
+	m.dxc.clientGen++
 	m.dxc.online = false
 	m.dxc.connecting = false
 	m.dxc.reconnectIdx = 0
 	m.dxc.lastAttempt = time.Time{}
-	m.rc.status = ""
 }
 
 // dxcSpotLookupCmd searches the DXC spot database for the given callsign

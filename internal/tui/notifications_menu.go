@@ -10,16 +10,26 @@ import (
 	"github.com/szporwolik/cqops/internal/config"
 )
 
+// notifItemCount is the number of rows in the Notifications menu:
+// the master toggle, three sub-options, two test buttons and a beep toggle.
+const notifItemCount = 7
+
+// notifRows is the row style shared by every Notifications row.
+var notifRows = rowStyle{label: S.FormLabelXL, focused: S.FormFocusedXL}
+
 type NotificationsMenu struct {
 	enabled     bool
 	qso         bool
 	wavelog     bool
 	allErrors   bool
 	beepOnError bool
-	cursor      int
+	fm          menuFocus
 	done        bool
 	saved       bool
 	goBack      bool
+	// fromGeneral is set when the menu was opened as a General submenu;
+	// closing it returns to General instead of the main menu.
+	fromGeneral bool
 	width       int
 	height      int
 
@@ -29,8 +39,6 @@ type NotificationsMenu struct {
 	// statusMsg is set by test actions; parent reads and shows toast, then clears.
 	statusMsg string
 }
-
-const notifItemCount = 7 // 5 checkboxes + 2 buttons
 
 func NewNotificationsMenu(cfg *config.Config) *NotificationsMenu {
 	n := cfg.General.Notifications
@@ -42,6 +50,13 @@ func NewNotificationsMenu(cfg *config.Config) *NotificationsMenu {
 		beepOnError: n.BeepOnError,
 	}
 }
+
+// focusableRows implementation — all rows are always visible and none carry
+// a textinput.
+func (nm *NotificationsMenu) rowCount() int        { return notifItemCount }
+func (nm *NotificationsMenu) rowVisible(int) bool  { return true }
+func (nm *NotificationsMenu) blurAll()             {}
+func (nm *NotificationsMenu) focusRow(int) tea.Cmd { return nil }
 
 func (nm *NotificationsMenu) Init() tea.Cmd { return nil }
 
@@ -56,24 +71,17 @@ func (nm *NotificationsMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			nm.done = true
 			nm.goBack = true
 			return nm, nil
-		case "ctrl+s", "\x13":
+		}
+		if handled, cmd := nm.fm.onKey(msg, nm, func() tea.Cmd {
 			nm.done = true
 			nm.saved = true
-			return nm, nil
-		case "up":
-			if nm.cursor == 0 {
-				nm.cursor = notifItemCount - 1
-			} else {
-				nm.cursor--
-			}
-		case "down":
-			if nm.cursor == notifItemCount-1 {
-				nm.cursor = 0
-			} else {
-				nm.cursor++
-			}
+			return nil
+		}); handled {
+			return nm, cmd
+		}
+		switch msg.String() {
 		case " ", "space":
-			switch nm.cursor {
+			switch nm.fm.row {
 			case 0:
 				nm.enabled = !nm.enabled
 			case 1:
@@ -97,7 +105,7 @@ func (nm *NotificationsMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				nm.sendTestBeep()
 			}
 		case "enter":
-			switch nm.cursor {
+			switch nm.fm.row {
 			case 4:
 				nm.sendTestNotification()
 			case 6:
@@ -128,15 +136,15 @@ func (nm *NotificationsMenu) sendTestNotification() {
 func (nm *NotificationsMenu) sendTestBeep() {
 	applog.Info("Test beep triggered")
 	if !desktopAvailable() {
-		nm.statusMsg = "Beep unavailable — no desktop environment detected (D-Bus/GUI required)"
+		nm.statusMsg = "Notifications: beep unavailable — no desktop environment detected (D-Bus/GUI required)"
 		applog.Warn("Test beep skipped: desktop unavailable")
 		return
 	}
 	if err := beeep.Beep(beeep.DefaultFreq, beeep.DefaultDuration); err != nil {
 		applog.Warn("Test beep failed", "error", err.Error())
-		nm.statusMsg = "Beep failed: " + err.Error()
+		nm.statusMsg = "Notifications: beep failed — " + err.Error()
 	} else {
-		nm.statusMsg = "Test beep played"
+		nm.statusMsg = "Notifications: beep played"
 	}
 }
 
@@ -174,52 +182,30 @@ func (nm *NotificationsMenu) View() tea.View {
 		"activity and errors without watching the screen. " +
 		"A beep on critical errors is recommended for " +
 		"unattended operation or field use."
-	infoLines := wrapLines(infoText, infoMaxW)
-	var infoContent strings.Builder
-	for i, line := range infoLines {
-		infoContent.WriteString(DimStyle.Render(line))
-		if i < len(infoLines)-1 {
-			infoContent.WriteString("\n")
-		}
-	}
-	boxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(P.Border)
-	infoBox := boxStyle.Render(infoContent.String())
-
 	var b strings.Builder
-	b.WriteString(infoBox)
-	b.WriteString("\n")
+	infoBox(&b, infoText, infoMaxW)
 
-	// Row 0: master toggle
-	nm.renderCheckbox(&b, boxW, 0, "System notifications", nm.enabled, false)
+	focused := func(row int) bool { return nm.fm.row == row }
+
+	// Row 0: master toggle.
+	checkboxRow(&b, boxW, focused(0), "System notifications", nm.enabled, "", false, notifRows)
 
 	// Sub-options — dimmed when master is off, indented.
-	nm.renderCheckbox(&b, boxW, 1, "  Notify when QSO logged", nm.qso && nm.enabled, !nm.enabled)
-	nm.renderCheckbox(&b, boxW, 2, "  Notify when QSO sent", nm.wavelog && nm.enabled, !nm.enabled)
-	nm.renderCheckbox(&b, boxW, 3, "  Notify on all errors", nm.allErrors && nm.enabled, !nm.enabled)
-
-	// Button helper — keeps fixed padding so buttons never shift on focus.
-	renderBtn := func(idx int, text string) {
-		focused := nm.cursor == idx
-		prefix := "    "
-		styled := InputStyle.Render(text)
-		if focused {
-			prefix = S.FormPrefixOn.Render("> ") + "  "
-			styled = CursorStyle.Render(text)
-		}
-		b.WriteString(padOrTrunc(prefix+styled, boxW))
-		b.WriteString("\n")
-	}
+	checkboxRow(&b, boxW, focused(1), "  Notify when QSO logged", nm.qso && nm.enabled, "", !nm.enabled, notifRows)
+	checkboxRow(&b, boxW, focused(2), "  Notify when QSO sent", nm.wavelog && nm.enabled, "", !nm.enabled, notifRows)
+	checkboxRow(&b, boxW, focused(3), "  Notify on all errors", nm.allErrors && nm.enabled, "", !nm.enabled, notifRows)
 
 	// Row 4: Test notification button (before Beep on errors).
-	renderBtn(4, "[ Test notification ]")
+	buttonRow(&b, boxW, focused(4), "[ Test notification ]")
 
 	// Row 5: Beep on errors.
-	nm.renderCheckbox(&b, boxW, 5, "  Beep on all errors", nm.beepOnError, false)
+	checkboxRow(&b, boxW, focused(5), "  Beep on all errors", nm.beepOnError, "", false, notifRows)
 
 	// Row 6: Test beep button.
-	renderBtn(6, "[ Test beep ]")
+	buttonRow(&b, boxW, focused(6), "[ Test beep ]")
+
+	// Save & Back button at the end of the menu — flush under the last row.
+	b.WriteString(nm.fm.btn.line("Save & Back", boxW-4))
 
 	body := drawMenuWithHeader("Configuration \u2014 Notifications", b.String(), w)
 	if nm.cachedClipH != contentH {
@@ -227,26 +213,4 @@ func (nm *NotificationsMenu) View() tea.View {
 		nm.cachedClipH = contentH
 	}
 	return tea.NewView(nm.cachedClipStyle.Render(fillBody(body, contentH)))
-}
-
-func (nm *NotificationsMenu) renderCheckbox(b *strings.Builder, boxW, cursor int, label string, checked, disabled bool) {
-	checkbox := "[ ]"
-	if checked {
-		checkbox = "[x]"
-	}
-
-	prefix := "  "
-	lbl := S.FormLabelXL.Align(lipgloss.Left).Render(label)
-	if nm.cursor == cursor {
-		prefix = S.FormPrefixOn.Render("> ")
-		lbl = S.FormFocusedXL.Align(lipgloss.Left).Render(label)
-		checkbox = CursorStyle.Render(checkbox) + " " + DimStyle.Render("(Space)")
-	}
-	if disabled {
-		lbl = DimStyle.Render(S.FormLabelXL.Align(lipgloss.Left).Render(label))
-	}
-
-	line := lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", checkbox)
-	b.WriteString(padOrTrunc(line, boxW))
-	b.WriteString("\n")
 }

@@ -220,6 +220,10 @@ func (m *Model) viewPSKReporter() string {
 		return fillBody(DimStyle.Render("Station callsign not set — check station config"), contentHeight(m.height))
 	}
 
+	if m.Offline {
+		return fillBody(DimStyle.Render("PSK Reporter unavailable — offline mode"), contentHeight(m.height))
+	}
+
 	if !m.inetOnline {
 		return fillBody(DimStyle.Render("PSK Reporter unavailable — no internet connection"), contentHeight(m.height))
 	}

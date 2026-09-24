@@ -1,7 +1,10 @@
 package dxc
 
 import (
+	"net"
+	"sync"
 	"testing"
+	"time"
 )
 
 func TestParseSpot(t *testing.T) {
@@ -57,5 +60,96 @@ func TestNewClientDefaults(t *testing.T) {
 	}
 	if c.login != "SP9MOA" {
 		t.Errorf("login = %q, want SP9MOA", c.login)
+	}
+}
+
+// TestClient_ReconnectsAfterDisconnectAndStopJoins verifies the client owns
+// reconnection after the first successful connect and that Stop joins its
+// goroutines (no abandoned reconnect loops).
+func TestClient_ReconnectsAfterDisconnectAndStopJoins(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	defer ln.Close()
+	_, portStr, _ := net.SplitHostPort(ln.Addr().String())
+
+	var mu sync.Mutex
+	var accepted []net.Conn
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			accepted = append(accepted, conn)
+			mu.Unlock()
+			go func(conn net.Conn) {
+				buf := make([]byte, 1024)
+				for {
+					if _, err := conn.Read(buf); err != nil {
+						conn.Close()
+						return
+					}
+				}
+			}(conn)
+		}
+	}()
+
+	client := NewClient("127.0.0.1", portStr, "SP9MOA")
+	if err := client.Start(); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	if !client.ConnectedOnce() {
+		t.Fatal("ConnectedOnce should be true after a successful Start")
+	}
+
+	// All accepted-connection access goes through these lock-protected
+	// helpers — the accept goroutine reassigns the slice under mu.
+	connCount := func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(accepted)
+	}
+	connAt := func(i int) net.Conn {
+		mu.Lock()
+		defer mu.Unlock()
+		return accepted[i]
+	}
+
+	// Wait for the first connection, then sever it server-side.
+	waitConns(t, connCount, 1, 3*time.Second)
+	connAt(0).Close()
+
+	// The client must reconnect on its own (first backoff: 2s).
+	waitConns(t, connCount, 2, 8*time.Second)
+
+	// Stop joins the goroutines — no further reconnects may occur.
+	done := make(chan struct{})
+	go func() { client.Stop(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Stop did not return — goroutines not joined")
+	}
+	time.Sleep(300 * time.Millisecond)
+	if n := connCount(); n > 2 {
+		t.Errorf("client reconnected after Stop (conns %d, want 2)", n)
+	}
+}
+
+// waitConns waits until at least want connections were accepted.
+func waitConns(t *testing.T, count func() int, want int, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		if n := count(); n >= want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %d connections (got %d)", want, count())
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

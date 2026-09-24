@@ -79,8 +79,9 @@ Grab the latest binary, installer, or package from the [Releases](https://github
 - **Rig control** — flrig and Hamlib rigctld, frequency/mode readback, spot-to-rig tuning
 - **Multi-provider callbook** — QRZ.com, HamQTH (free global), QRZ.RU (free, RU/surrounding), Callook.info (free US) with priority-based cascading and base-call fallback; auto-fills name, QTH, grid, country
 - **Wavelog sync** — upload, incremental download, per-logbook config
+- **Wavelog club stations** — shared club PC with the owner's `wl2_` key: synced contacts are read-only (edits/deletes stay on the Wavelog side, no PATCH/DELETE is sent), new QSOs upload normally and are attributed per active operator; the key is stored encrypted and never displayed again once saved
 - **Encrypted secrets** — AES-256-GCM, machine-tied, never plaintext
-- **DX Cluster & PSK Reporter** — live spots with band/mode/time filters
+- **DX Cluster & PSK Reporter** — live spots with band/mode/time filters; PSK Reporter (F5) is opt-in via Integrations
 - **GPS receiver** — serial or GPSD, live grid override for /P and mobile ops
 - **APRS** — APRS-IS with live position map, station caching, GPS-aware beaconing
 - **APRS KISS & KISS TCP**  — serial KISS TNC and KISS Server (Dire Wolf). 
@@ -199,6 +200,14 @@ Full usage guide, workflows, and keyboard shortcuts are in the [documentation](h
 - [farmergreg/adif](https://github.com/farmergreg/adif) + [farmergreg/spec](https://github.com/farmergreg/spec) — ADIF 3.1.7 parsing/writing & spec types
 - [ftl/hamradio](https://github.com/ftl/hamradio) — Grid locator, distance math, DXCC prefix lookup (CTY.DAT)
 - [gen2brain/beeep](https://github.com/gen2brain/beeep) — Desktop notifications
+
+*Core libraries:*
+- [Bubble Tea v2](https://charm.land) + Bubbles + Lip Gloss — TUI framework and components
+- [modernc.org/sqlite](https://modernc.org/sqlite) — pure-Go embedded SQLite (no cgo)
+- [go.bug.st/serial](https://github.com/bugst/go-serial) — serial port (GPS NMEA, APRS KISS TNC)
+- [spf13/cobra](https://github.com/spf13/cobra) — command-line interface
+- [NimbleMarkets/ntcharts](https://github.com/NimbleMarkets/ntcharts) — terminal charts
+- [gopkg.in/yaml.v3](https://github.com/go-yaml/yaml) — configuration files
 
 ### Data & third-party services
 

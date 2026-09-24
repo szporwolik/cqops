@@ -30,6 +30,29 @@ func newResultEditor(count, dupes, failed int, dlErr string) *LogbookEditor {
 // Success state render tests
 // =============================================================================
 
+// TestResultRender_Success_UnresolvedLinks: rows stored without a remote link
+// are NOT deferred re-downloads — the dialog must say they will be linked on
+// the next download.
+func TestResultRender_Success_UnresolvedLinks(t *testing.T) {
+	le := newResultEditor(42, 0, 0, "")
+	le.wlDownloadUnresolved = 5
+	view := fmt.Sprint(le.View())
+
+	if !strings.Contains(view, "Downloaded 42 QSOs") {
+		t.Error("should show downloaded count")
+	}
+	if !strings.Contains(view, "5 stored without remote link") {
+		t.Error("should show the unresolved-link count")
+	}
+	// The long message may wrap in the rendered view — check the dialog text.
+	if le.dialog == nil || !strings.Contains(le.dialog.Message, "will be linked on the next download") {
+		t.Errorf("dialog should explain the link resolution: %+v", le.dialog)
+	}
+	if strings.Contains(view, "failed to save") {
+		t.Error("should NOT show the failed-to-save text when holds=0")
+	}
+}
+
 func TestResultRender_Success_OnlyCount(t *testing.T) {
 	le := newResultEditor(42, 0, 0, "")
 	view := fmt.Sprint(le.View())
@@ -97,8 +120,13 @@ func TestResultRender_Success_ZeroImported(t *testing.T) {
 	le := newResultEditor(0, 0, 0, "")
 	view := fmt.Sprint(le.View())
 
-	if !strings.Contains(view, "Downloaded 0 QSOs") {
-		t.Error("should show 0 imported rather than hide the message")
+	// Zero new contacts means Wavelog is up to date — never a bare
+	// "Downloaded 0 QSOs" which reads like a failure.
+	if !strings.Contains(view, "up to date") {
+		t.Error("should show the up-to-date message instead of a bare 0")
+	}
+	if strings.Contains(view, "Downloaded 0 QSOs") {
+		t.Error("should not show 'Downloaded 0 QSOs'")
 	}
 }
 

@@ -1,8 +1,11 @@
 package store
 
 import (
+	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -19,15 +22,33 @@ const qsoCols = `call, qso_date, time_on, time_off, band, freq, freq_rx, mode, s
 		cq_zone, itu_zone,
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
-		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
+		wavelog_id, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
 		dxcc`
+
+// qsoSelectCols is the SELECT-side column list (id + data columns +
+// timestamps) shared by the list queries.
+const qsoSelectCols = `id, call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,
+		rst_sent, rst_rcvd, gridsquare, name, qth, country, comment, notes, tx_pwr,
+		distance, bearing,
+		sota_ref, pota_ref, wwff_ref, iota, sig, sig_info,
+		my_sota_ref, my_pota_ref, my_wwff_ref,
+		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
+		cq_zone, itu_zone,
+		my_cq_zone, my_itu_zone, my_dxcc,
+		my_sig, my_sig_info,
+		wavelog_id, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
+		dxcc,
+		created_at, updated_at, wavelog_dirty, wavelog_dirty_rev`
 
 // placeholders52 is a pre-computed string of 52 comma-separated "?" markers,
 // used by InsertQSO to avoid a per-insert []string allocation.
 const placeholders52 = "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?"
 
-// InsertQSO persists a QSO and sets its ID on success. Retries on SQLITE_BUSY.
-func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
+// insertQSO writes one QSO through the given executor (a *sql.DB or a
+// *sql.Tx). InsertQSO adds the SQLITE_BUSY retry for standalone writes;
+// InsertQSOTx is the transactional variant used by bulk import paths, where
+// a single chunked transaction amortizes commits across thousands of rows.
+func insertQSO(e execer, q *qso.QSO) (int64, error) {
 	now := time.Now().UTC()
 	q.CreatedAt = now
 	q.UpdatedAt = now
@@ -36,31 +57,45 @@ func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 		q.Source = "manual"
 	}
 
+	res, err := e.Exec(
+		`INSERT INTO qsos (`+qsoCols+`, base_call, created_at, updated_at)
+		VALUES (`+placeholders52+`, ?, ?, ?)`,
+		q.Call, q.QSODate, q.TimeOn, q.TimeOff,
+		q.Band, q.Freq, q.FreqRx, q.Mode, q.Submode,
+		q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
+		q.Distance, q.Bearing,
+		q.SOTARef, q.POTARef, q.WWFFRef, q.IOTA, q.SIG, q.SIGInfo,
+		q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
+		q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
+		q.CQZone, q.ITUZone, q.MyCQZone, q.MyITUZone, q.MyDXCC, q.MySIG, q.MySIGInfo, q.WavelogID, q.ContestID, q.ExchSent, q.ExchRcvd, q.STX, q.SRX, q.STXString, q.SRXString, q.ContestADIFID, q.DXCC,
+		qso.DeriveBaseCall(q.Call),
+		q.CreatedAt.Format(time.RFC3339), q.UpdatedAt.Format(time.RFC3339),
+	)
+	if err != nil {
+		return 0, err
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return 0, fmt.Errorf("last insert id: %w", err)
+	}
+	q.ID = id
+	return id, nil
+}
+
+// execer is the minimal SQL execution surface shared by *sql.DB and *sql.Tx.
+type execer interface {
+	Exec(query string, args ...any) (sql.Result, error)
+}
+
+// InsertQSO persists a QSO and sets its ID on success. Retries on SQLITE_BUSY.
+// The write and the worked-index update happen in one transaction.
+func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 	var id int64
 	var err error
 	for attempt := 0; attempt < 3; attempt++ {
-		var res sql.Result
-		res, err = db.Exec(
-			`INSERT INTO qsos (`+qsoCols+`, base_call, created_at, updated_at)
-			VALUES (`+placeholders52+`, ?, ?, ?)`,
-			q.Call, q.QSODate, q.TimeOn, q.TimeOff,
-			q.Band, q.Freq, q.FreqRx, q.Mode, q.Submode,
-			q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
-			q.Distance, q.Bearing,
-			q.SOTARef, q.POTARef, q.WWFFRef, q.IOTA, q.SIG, q.SIGInfo,
-			q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
-			q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
-			q.CQZone, q.ITUZone, q.MyCQZone, q.MyITUZone, q.MyDXCC, q.MySIG, q.MySIGInfo, q.WavelogUploaded, q.ContestID, q.ExchSent, q.ExchRcvd, q.STX, q.SRX, q.STXString, q.SRXString, q.ContestADIFID, q.DXCC,
-			qso.DeriveBaseCall(q.Call),
-			q.CreatedAt.Format(time.RFC3339), q.UpdatedAt.Format(time.RFC3339),
-		)
+		id, err = insertQSOWithIndex(db, q)
 		if err == nil {
-			id, err = res.LastInsertId()
-			if err == nil {
-				q.ID = id
-				return id, nil
-			}
-			return 0, fmt.Errorf("last insert id: %w", err)
+			return id, nil
 		}
 		if !strings.Contains(err.Error(), "database is locked") {
 			break
@@ -68,6 +103,145 @@ func InsertQSO(db *sql.DB, q *qso.QSO) (int64, error) {
 		time.Sleep(100 * time.Millisecond)
 	}
 	return 0, fmt.Errorf("insert qso: %w", err)
+}
+
+// insertQSOWithIndex inserts one QSO and maintains the worked index, all in a
+// single transaction.
+func insertQSOWithIndex(db *sql.DB, q *qso.QSO) (int64, error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	id, err := insertQSO(tx, q)
+	if err != nil {
+		return 0, err
+	}
+	if err := indexQSO(tx, q, 1); err != nil {
+		return 0, err
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+// InsertQSOTx persists a QSO inside an open transaction (bulk import paths).
+// No busy retry: the transaction already holds the write lock, and a failed
+// statement must propagate so the caller can abandon the chunk. Maintains the
+// worked index inside the same transaction.
+func InsertQSOTx(tx *sql.Tx, q *qso.QSO) (int64, error) {
+	id, err := insertQSO(tx, q)
+	if err != nil {
+		return 0, fmt.Errorf("insert qso: %w", err)
+	}
+	if err := indexQSO(tx, q, 1); err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+// listQSOsContestMerged returns a page of contest QSOs by merging two
+// index-ordered scans: rows matching contest_id and rows matching
+// contest_adif_id that do not also match contest_id (so each row appears
+// once). Each arm's ORDER BY is served directly by
+// idx_qsos_contest_date_time / idx_qsos_contest_adif_date, so a refresh or
+// page turn never sorts the whole contest subset the way the legacy
+// "contest_id = ? OR contest_adif_id = ?" union did.
+func listQSOsContestMerged(db *sql.DB, limit, offset int, contestID string, orderAsc bool) ([]qso.QSO, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	fetch := limit + offset
+	order := "DESC"
+	if orderAsc {
+		order = "ASC"
+	}
+
+	arms := []struct {
+		where string
+		args  []any
+	}{
+		{"contest_id = ?", []any{contestID}},
+		{"contest_adif_id = ? AND (contest_id IS NULL OR contest_id = '' OR contest_id != ?)", []any{contestID, contestID}},
+	}
+
+	var streams [][]qso.QSO
+	for _, arm := range arms {
+		rows, err := listQSOsByQuery(db,
+			`SELECT `+qsoSelectCols+` FROM qsos WHERE `+arm.where+
+				` ORDER BY qso_date `+order+`, time_on `+order+`, id `+order+` LIMIT ?`,
+			append(arm.args, fetch)...)
+		if err != nil {
+			return nil, err
+		}
+		streams = append(streams, rows)
+	}
+
+	before := func(a, b *qso.QSO) bool { // a sorts before b in the requested order
+		if a.QSODate != b.QSODate {
+			if orderAsc {
+				return a.QSODate < b.QSODate
+			}
+			return a.QSODate > b.QSODate
+		}
+		if a.TimeOn != b.TimeOn {
+			if orderAsc {
+				return a.TimeOn < b.TimeOn
+			}
+			return a.TimeOn > b.TimeOn
+		}
+		if orderAsc {
+			return a.ID < b.ID
+		}
+		return a.ID > b.ID
+	}
+
+	merged := make([]qso.QSO, 0, len(streams[0])+len(streams[1]))
+	i0, i1 := 0, 0
+	for (i0 < len(streams[0]) || i1 < len(streams[1])) && len(merged) < fetch {
+		var next *qso.QSO
+		switch {
+		case i0 >= len(streams[0]):
+			next = &streams[1][i1]
+			i1++
+		case i1 >= len(streams[1]):
+			next = &streams[0][i0]
+			i0++
+		case before(&streams[0][i0], &streams[1][i1]):
+			next = &streams[0][i0]
+			i0++
+		default:
+			next = &streams[1][i1]
+			i1++
+		}
+		merged = append(merged, *next)
+	}
+
+	if offset >= len(merged) {
+		return nil, nil
+	}
+	end := offset + limit
+	if end > len(merged) {
+		end = len(merged)
+	}
+	return merged[offset:end], nil
+}
+
+// countQSOsContest returns the total contest QSO count as the sum of the two
+// disjoint arms (rows matching contest_id plus rows matching only
+// contest_adif_id) — two index-only counts.
+func countQSOsContest(db *sql.DB, contestID string) (int, error) {
+	var a, b int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE contest_id = ?`, contestID).Scan(&a); err != nil {
+		return 0, fmt.Errorf("count contest qsos: %w", err)
+	}
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM qsos WHERE contest_adif_id = ? AND (contest_id IS NULL OR contest_id = '' OR contest_id != ?)`,
+		contestID, contestID).Scan(&b); err != nil {
+		return 0, fmt.Errorf("count contest adif qsos: %w", err)
+	}
+	return a + b, nil
 }
 
 // ListQSOs returns recent QSOs ordered by QSO date/time descending.
@@ -82,7 +256,7 @@ func ListQSOs(db *sql.DB, limit int, contestID string) ([]qso.QSO, error) {
 		cq_zone, itu_zone,
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
-		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
+		wavelog_id, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
 		created_at, updated_at
 		FROM qsos`
 	var args []any
@@ -118,7 +292,7 @@ func ListQSOs(db *sql.DB, limit int, contestID string) ([]qso.QSO, error) {
 			&q.CQZone, &q.ITUZone,
 			&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
 			&q.MySIG, &q.MySIGInfo,
-			&q.WavelogUploaded, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
+			&q.WavelogID, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
 			&createdAt, &updatedAt,
 		)
 		if err != nil {
@@ -150,9 +324,32 @@ func LastContestExchange(db *sql.DB, call, contestID string) (exchRcvd, rstRcvd,
 	return exchRcvd, rstRcvd, exchSent, nil
 }
 
-// ListQSOsPageWithCount returns a page of QSOs and the total count in a single
-// query using COUNT(*) OVER(), avoiding the need for a separate CountQSOs call.
+// ListQSOsPageWithCount returns a page of QSOs and the total count of the
+// filtered set. The count and the page are two statements: COUNT(*) OVER()
+// forced SQLite to evaluate the whole filtered set on every page turn; the
+// separate COUNT is much cheaper (the page itself still needs the sort).
 func ListQSOsPageWithCount(db *sql.DB, limit, offset int, contestID string) ([]qso.QSO, int, error) {
+	var where string
+	var whereArgs []any
+	if contestID != "" {
+		where = ` WHERE contest_id = ? OR contest_adif_id = ?`
+		whereArgs = append(whereArgs, contestID, contestID)
+	}
+
+	if contestID != "" {
+		total, err := countQSOsContest(db, contestID)
+		if err != nil {
+			return nil, 0, err
+		}
+		qsos, err := listQSOsContestMerged(db, limit, offset, contestID, false)
+		return qsos, total, err
+	}
+
+	var total int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos`+where, whereArgs...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("count qsos page: %w", err)
+	}
+
 	query := `SELECT id, call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,
 		rst_sent, rst_rcvd, gridsquare, name, qth, country, comment, notes, tx_pwr,
 		distance, bearing,
@@ -162,19 +359,12 @@ func ListQSOsPageWithCount(db *sql.DB, limit, offset int, contestID string) ([]q
 		cq_zone, itu_zone, dxcc,
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
-		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
-		created_at, updated_at,
-		COUNT(*) OVER() as total_count
-		FROM qsos`
-	var args []any
-	if contestID != "" {
-		query += ` WHERE contest_id = ? OR contest_adif_id = ?`
-		args = append(args, contestID, contestID)
-	}
-	query += `
+		wavelog_id, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
+		created_at, updated_at
+		FROM qsos` + where + `
 		ORDER BY qso_date DESC, time_on DESC, id DESC
 		LIMIT ? OFFSET ?`
-	args = append(args, limit, offset)
+	args := append(whereArgs, limit, offset)
 	rows, err := db.Query(query, args...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("list qsos page with count: %w", err)
@@ -182,7 +372,6 @@ func ListQSOsPageWithCount(db *sql.DB, limit, offset int, contestID string) ([]q
 	defer rows.Close()
 
 	var qsos []qso.QSO
-	total := 0
 	for rows.Next() {
 		var q qso.QSO
 		var createdAt, updatedAt string
@@ -197,9 +386,8 @@ func ListQSOsPageWithCount(db *sql.DB, limit, offset int, contestID string) ([]q
 			&q.CQZone, &q.ITUZone, &q.DXCC,
 			&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
 			&q.MySIG, &q.MySIGInfo,
-			&q.WavelogUploaded, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
+			&q.WavelogID, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
 			&createdAt, &updatedAt,
-			&total,
 		)
 		if err != nil {
 			return nil, 0, fmt.Errorf("scan qso with count: %w", err)
@@ -230,13 +418,13 @@ func ListQSOsPage(db *sql.DB, limit, offset int, contestID string, orderAsc bool
 		cq_zone, itu_zone, dxcc,
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
-		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
+		wavelog_id, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
 		created_at, updated_at
 		FROM qsos`
 	var args []any
 	if contestID != "" {
-		query += ` WHERE contest_id = ? OR contest_adif_id = ?`
-		args = append(args, contestID, contestID)
+		// Index-ordered merge — no per-page sort of the contest subset.
+		return listQSOsContestMerged(db, limit, offset, contestID, orderAsc)
 	}
 	query += `
 		ORDER BY qso_date `
@@ -269,7 +457,7 @@ func ListQSOsPage(db *sql.DB, limit, offset int, contestID string, orderAsc bool
 			&q.CQZone, &q.ITUZone, &q.DXCC,
 			&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
 			&q.MySIG, &q.MySIGInfo,
-			&q.WavelogUploaded, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
+			&q.WavelogID, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
 			&createdAt, &updatedAt,
 		)
 		if err != nil {
@@ -301,7 +489,7 @@ func SearchQSOsByCall(db *sql.DB, call string, limit int) ([]qso.QSO, error) {
 		cq_zone, itu_zone,
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
-		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
+		wavelog_id, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
 		created_at, updated_at
 		FROM qsos
 		WHERE base_call = ?
@@ -329,7 +517,7 @@ func SearchQSOsByCall(db *sql.DB, call string, limit int) ([]qso.QSO, error) {
 			&q.CQZone, &q.ITUZone,
 			&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
 			&q.MySIG, &q.MySIGInfo,
-			&q.WavelogUploaded, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
+			&q.WavelogID, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
 			&createdAt, &updatedAt,
 		)
 		if err != nil {
@@ -361,7 +549,7 @@ func SearchQSOs(db *sql.DB, query, contestID string, limit int) ([]qso.QSO, erro
 		cq_zone, itu_zone,
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
-		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
+		wavelog_id, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
 		created_at, updated_at
 		FROM qsos
 		WHERE (call LIKE ? OR name LIKE ? OR country LIKE ?)`
@@ -396,7 +584,7 @@ func SearchQSOs(db *sql.DB, query, contestID string, limit int) ([]qso.QSO, erro
 			&q.CQZone, &q.ITUZone,
 			&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
 			&q.MySIG, &q.MySIGInfo,
-			&q.WavelogUploaded, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
+			&q.WavelogID, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
 			&createdAt, &updatedAt,
 		)
 		if err != nil {
@@ -428,7 +616,7 @@ func GetQSOByID(db *sql.DB, id int64) (*qso.QSO, error) {
 		cq_zone, itu_zone, dxcc,
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
-		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
+		wavelog_id, wavelog_dirty, wavelog_dirty_rev, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
 		created_at, updated_at
 		FROM qsos WHERE id = ?`, id,
 	).Scan(
@@ -442,7 +630,7 @@ func GetQSOByID(db *sql.DB, id int64) (*qso.QSO, error) {
 		&q.CQZone, &q.ITUZone, &q.DXCC,
 		&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
 		&q.MySIG, &q.MySIGInfo,
-		&q.WavelogUploaded, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
+		&q.WavelogID, &q.WavelogDirty, &q.WavelogDirtyRev, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
 		&createdAt, &updatedAt,
 	)
 	if err != nil {
@@ -461,18 +649,48 @@ func GetQSOByID(db *sql.DB, id int64) (*qso.QSO, error) {
 
 // DeleteQSO removes a QSO by primary key.
 func DeleteQSO(db *sql.DB, id int64) error {
-	_, err := db.Exec(`DELETE FROM qsos WHERE id = ?`, id)
+	tx, err := db.Begin()
 	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	old, err := loadQSOForIndex(tx, id)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if _, err := tx.Exec(`DELETE FROM qsos WHERE id = ?`, id); err != nil {
 		return fmt.Errorf("delete qso: %w", err)
 	}
-	return nil
+	// Unindex after the row is gone so first/last edge recomputation
+	// sees only the remaining QSOs.
+	if err == nil {
+		if err := indexQSO(tx, old, -1); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // FindQSOByKey returns the ID of a QSO matching call, band, mode, date and time_on.
 // Returns 0 if no match is found.
 func FindQSOByKey(db *sql.DB, call, band, mode, qsoDate, timeOn string) int64 {
+	return findQSOByKey(db, call, band, mode, qsoDate, timeOn)
+}
+
+// FindQSOByKeyTx is the transactional variant used by bulk import paths — it
+// sees uncommitted rows of the same transaction, so duplicates inside one
+// ADIF stream are still caught.
+func FindQSOByKeyTx(tx *sql.Tx, call, band, mode, qsoDate, timeOn string) int64 {
+	return findQSOByKey(tx, call, band, mode, qsoDate, timeOn)
+}
+
+type rowQuerier interface {
+	QueryRow(query string, args ...any) *sql.Row
+}
+
+func findQSOByKey(q rowQuerier, call, band, mode, qsoDate, timeOn string) int64 {
 	var id int64
-	err := db.QueryRow(
+	err := q.QueryRow(
 		`SELECT id FROM qsos WHERE call = ? AND band = ? AND mode = ? AND qso_date = ? AND time_on = ? LIMIT 1`,
 		call, band, mode, qsoDate, timeOn,
 	).Scan(&id)
@@ -521,55 +739,6 @@ func IsDuplicateQSO(db *sql.DB, call, band, mode, qsoDate string) (bool, *DupeCh
 		return false, nil
 	}
 	return true, &r
-}
-
-// WorkedCallsOnBandDate returns a set of (call,mode) pairs for QSOs
-// logged on the given band and date. Used by the DXC path line to mark
-// already-worked spots as dupes.
-func WorkedCallsOnBandDate(db *sql.DB, band, qsoDate string) (map[string]bool, error) {
-	rows, err := db.Query(
-		`SELECT DISTINCT call, mode FROM qsos WHERE band = ? AND qso_date = ?`,
-		band, qsoDate,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	worked := make(map[string]bool)
-	for rows.Next() {
-		var call, mode string
-		if err := rows.Scan(&call, &mode); err != nil {
-			continue
-		}
-		// Key: normalized call|mode so spot-mode (USB) matches logged-mode (SSB).
-		worked[qso.NormalizeCall(call)+"|"+qso.NormalizeRigMode(mode)] = true
-	}
-	return worked, rows.Err()
-}
-
-// WorkedCallsInContest returns a set of (call,mode) pairs already logged
-// on the given band within a specific contest (48h+ events span multiple
-// dates, so the date filter from WorkedCallsOnBandDate is insufficient).
-func WorkedCallsInContest(db *sql.DB, contestID, band string) (map[string]bool, error) {
-	rows, err := db.Query(
-		`SELECT DISTINCT call, mode FROM qsos WHERE (contest_id = ? OR contest_adif_id = ?) AND band = ?`,
-		contestID, contestID, band,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	worked := make(map[string]bool)
-	for rows.Next() {
-		var call, mode string
-		if err := rows.Scan(&call, &mode); err != nil {
-			continue
-		}
-		worked[qso.NormalizeCall(call)+"|"+qso.NormalizeRigMode(mode)] = true
-	}
-	return worked, rows.Err()
 }
 
 // DXCDupeSet returns a set of (call,band,mode) triples for QSOs that
@@ -646,14 +815,17 @@ func DXCDupeSet(db *sql.DB, qsoDate, contestID string) (map[string]bool, error) 
 	return worked, rows.Err()
 }
 
-// ListAllQSOs returns all QSOs ordered by id DESC. Uses paginated
-// iteration internally to avoid loading massive logbooks into memory.
+// ListAllQSOs returns all QSOs ordered by id DESC. Uses keyset pagination
+// so the scan cost stays linear in the log size — OFFSET pagination degrades
+// quadratically on large tables.
 func ListAllQSOs(db *sql.DB) ([]qso.QSO, error) {
 	const pageSize = 500
 	var all []qso.QSO
-	offset := 0
+	lastID := int64(math.MaxInt64)
 	for {
-		page, err := ListQSOsPage(db, pageSize, offset, "", false)
+		page, err := listQSOsByQuery(db,
+			`SELECT `+qsoSelectCols+` FROM qsos WHERE id < ? ORDER BY id DESC LIMIT ?`,
+			lastID, pageSize)
 		if err != nil {
 			return nil, err
 		}
@@ -661,9 +833,134 @@ func ListAllQSOs(db *sql.DB) ([]qso.QSO, error) {
 			break
 		}
 		all = append(all, page...)
-		offset += len(page)
+		if len(page) < pageSize {
+			break
+		}
+		lastID = page[len(page)-1].ID
 	}
 	return all, nil
+}
+
+// CountUnsentQSOs returns the number of QSOs without a remote id — a single
+// SQL COUNT so upload preparation never walks the whole logbook.
+func CountUnsentQSOs(db *sql.DB) (int, error) {
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE COALESCE(wavelog_id, 0) = 0`).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count unsent qsos: %w", err)
+	}
+	return n, nil
+}
+
+// MaxUnsentBatch caps one bulk-upload batch. A never-uploaded historical
+// log can hold hundreds of thousands of rows, and materialising all of them
+// at once is the difference between a few MB and an out-of-memory kill on
+// Pi-class hardware. Callers re-run to drain a larger backlog.
+const MaxUnsentBatch = 10000
+
+// ListUnsentQSOs returns the QSOs without a remote id (never uploaded),
+// ordered by id DESC, capped at limit rows.
+func ListUnsentQSOs(db *sql.DB, limit int) ([]qso.QSO, error) {
+	return listQSOsByQuery(db,
+		`SELECT `+qsoSelectCols+` FROM qsos WHERE COALESCE(wavelog_id, 0) = 0 ORDER BY id DESC LIMIT ?`,
+		limit)
+}
+
+// CountDirtyQSOs returns the number of QSOs with a remote id AND a pending
+// local edit that never reached Wavelog (failed PATCH, offline save) — the
+// bulk "retry pending sync" backlog. Index-only via the partial
+// idx_qsos_dirty index.
+func CountDirtyQSOs(db *sql.DB) (int, error) {
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE wavelog_id > 0 AND wavelog_dirty = 1`).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count dirty qsos: %w", err)
+	}
+	return n, nil
+}
+
+// ListDirtyQSOs returns up to limit QSOs with a remote id and a pending
+// local edit, ordered by id DESC. The bulk pending-sync retry rebuilds its
+// queue from these rows on every trigger — the database is the source of
+// truth, never UI state, so edits pending across a restart are recovered.
+func ListDirtyQSOs(db *sql.DB, limit int) ([]qso.QSO, error) {
+	return listQSOsByQuery(db,
+		`SELECT `+qsoSelectCols+` FROM qsos WHERE wavelog_id > 0 AND wavelog_dirty = 1 ORDER BY id DESC LIMIT ?`,
+		limit)
+}
+
+// ListQSOsPageAfterTx returns the next page of QSOs strictly after the
+// cursor row, ordered by qso_date/time_on/id in the same order ListQSOsPage
+// uses. A nil cursor returns the first page. Reads run on the caller's
+// transaction, so a streaming export sees one consistent snapshot: a
+// concurrently inserted QSO can never shift the pages and duplicate or omit
+// records.
+func ListQSOsPageAfterTx(tx *sql.Tx, limit int, contestID string, orderAsc bool, cursor *qso.QSO) ([]qso.QSO, error) {
+	var b strings.Builder
+	b.WriteString(`SELECT ` + qsoSelectCols + ` FROM qsos`)
+	var args []any
+	var conds []string
+	if contestID != "" {
+		conds = append(conds, `(contest_id = ? OR contest_adif_id = ?)`)
+		args = append(args, contestID, contestID)
+	}
+	if cursor != nil {
+		if orderAsc {
+			conds = append(conds,
+				`((qso_date > ?) OR (qso_date = ? AND time_on > ?) OR (qso_date = ? AND time_on = ? AND id > ?))`)
+		} else {
+			conds = append(conds,
+				`((qso_date < ?) OR (qso_date = ? AND time_on < ?) OR (qso_date = ? AND time_on = ? AND id < ?))`)
+		}
+		args = append(args,
+			cursor.QSODate, cursor.QSODate, cursor.TimeOn,
+			cursor.QSODate, cursor.TimeOn, cursor.ID)
+	}
+	if len(conds) > 0 {
+		b.WriteString(` WHERE ` + strings.Join(conds, ` AND `))
+	}
+	b.WriteString(` ORDER BY qso_date `)
+	if orderAsc {
+		b.WriteString(`ASC, time_on ASC, id ASC`)
+	} else {
+		b.WriteString(`DESC, time_on DESC, id DESC`)
+	}
+	b.WriteString(` LIMIT ?`)
+	args = append(args, limit)
+	return listQSOsByQuery(tx, b.String(), args...)
+}
+
+// ExportQSOsSnapshot streams all QSOs (optionally contest-filtered) through
+// fn inside a single read-only transaction. Pages advance by keyset cursor,
+// so concurrent inserts — e.g. WSJT-X logging a QSO mid-export — cannot
+// shift offsets; every record appears exactly once. The callback is invoked
+// once per QSO in export order; returning an error aborts the stream.
+func ExportQSOsSnapshot(db *sql.DB, contestID string, orderAsc bool, fn func(q qso.QSO) error) error {
+	tx, err := db.BeginTx(context.Background(), &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return fmt.Errorf("begin export snapshot: %w", err)
+	}
+	defer tx.Rollback()
+
+	const pageSize = 500
+	var cursor *qso.QSO
+	for {
+		rows, err := ListQSOsPageAfterTx(tx, pageSize, contestID, orderAsc, cursor)
+		if err != nil {
+			return fmt.Errorf("export page: %w", err)
+		}
+		if len(rows) == 0 {
+			break
+		}
+		for i := range rows {
+			if err := fn(rows[i]); err != nil {
+				return err
+			}
+		}
+		cursor = &rows[len(rows)-1]
+		if len(rows) < pageSize {
+			break
+		}
+	}
+	return tx.Commit()
 }
 
 // ListQSOsFromDate returns QSOs with qso_date >= the given date, newest-first,
@@ -678,15 +975,21 @@ func ListQSOsFromDate(db *sql.DB, date string, limit int) ([]qso.QSO, error) {
 		cq_zone, itu_zone,
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
-		wavelog_uploaded, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
+		wavelog_id, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
 		created_at, updated_at
 		FROM qsos WHERE qso_date >= ? ORDER BY qso_date DESC, time_on DESC, id DESC LIMIT ?`
 	return listQSOsByQuery(db, query, date, limit)
 }
 
+// qsoQueryer abstracts *sql.DB and *sql.Tx for the shared row-scanning
+// helpers. Both satisfy it.
+type qsoQueryer interface {
+	Query(query string, args ...any) (*sql.Rows, error)
+}
+
 // listQSOsByQuery is a helper that scans QSOs from a parameterized query.
-func listQSOsByQuery(db *sql.DB, query string, args ...any) ([]qso.QSO, error) {
-	rows, err := db.Query(query, args...)
+func listQSOsByQuery(q qsoQueryer, query string, args ...any) ([]qso.QSO, error) {
+	rows, err := q.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list qsos: %w", err)
 	}
@@ -706,8 +1009,10 @@ func listQSOsByQuery(db *sql.DB, query string, args ...any) ([]qso.QSO, error) {
 			&q.CQZone, &q.ITUZone,
 			&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
 			&q.MySIG, &q.MySIGInfo,
-			&q.WavelogUploaded, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
+			&q.WavelogID, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
+			&q.DXCC,
 			&createdAt, &updatedAt,
+			&q.WavelogDirty, &q.WavelogDirtyRev,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan qso: %w", err)
@@ -724,52 +1029,176 @@ func listQSOsByQuery(db *sql.DB, query string, args ...any) ([]qso.QSO, error) {
 }
 
 // UpdateQSO updates an existing QSO. Retries on SQLITE_BUSY.
-func UpdateQSO(db *sql.DB, q *qso.QSO) error {
+//
+// buildUpdateQSOStatement renders the QSO row UPDATE with the caller's extra
+// SET fragment appended before updated_at. SaveQSOForSync uses it to set the
+// pending-sync flag and bump its revision in the same statement as the edit,
+// so the row changes and the dirty state change together or not at all.
+//
+// Derived-field policy: base_call is always recomputed from the stored call.
+// DXCC is written when the caller supplies a value; when the call CHANGED
+// and no fresh DXCC was provided, the stale prefix-derived value is
+// invalidated (cleared) so the DXCC backfill recomputes it — preserving it
+// would leave worked-DXCC statistics disagreeing with the displayed contact.
+// oldCall is the call stored before this update ("" when unknown).
+//
+// Synchronization metadata is NEVER written here: wavelog_id is only
+// attached via SetWavelogID/SetWavelogIDChecked — a normal field save must
+// not overwrite it (the form snapshot may hold a stale 0 while an in-flight
+// upload already attached the remote id, and overwriting would permanently
+// unlink the contact from Wavelog).
+func buildUpdateQSOStatement(q *qso.QSO, oldCall, extraSet string) (string, []any) {
 	q.UpdatedAt = time.Now().UTC()
-	var err error
-	for attempt := 0; attempt < 3; attempt++ {
-		_, err = db.Exec(
-			`UPDATE qsos SET call=?, qso_date=?, time_on=?, time_off=?, band=?, freq=?, freq_rx=?, mode=?, submode=?,
-			rst_sent=?, rst_rcvd=?, gridsquare=?, name=?, qth=?, country=?, comment=?, notes=?, tx_pwr=?,
-			distance=?, bearing=?,
-		sota_ref=?, pota_ref=?, wwff_ref=?, iota=?, sig=?, sig_info=?,
-			my_sota_ref=?, my_pota_ref=?, my_wwff_ref=?,
-			station_callsign=?, operator=?, my_gridsquare=?, my_rig=?, my_antenna=?, source=?,
-			cq_zone=?, itu_zone=?,
-			my_cq_zone=?, my_itu_zone=?, my_dxcc=?,
-			my_sig=?, my_sig_info=?,
-			wavelog_uploaded=?, contest_id=?, exch_sent=?, exch_rcvd=?, stx=?, srx=?, stx_string=?, srx_string=?, contest_adif_id=?,
-			updated_at=?
-			WHERE id=?`,
-			q.Call, q.QSODate, q.TimeOn, q.TimeOff,
-			q.Band, q.Freq, q.FreqRx, q.Mode, q.Submode,
-			q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
-			q.Distance, q.Bearing,
-			q.SOTARef, q.POTARef, q.WWFFRef, q.IOTA, q.SIG, q.SIGInfo,
-			q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
-			q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
-			q.CQZone, q.ITUZone, q.MyCQZone, q.MyITUZone, q.MyDXCC, q.MySIG, q.MySIGInfo, q.WavelogUploaded, q.ContestID, q.ExchSent, q.ExchRcvd, q.STX, q.SRX, q.STXString, q.SRXString, q.ContestADIFID,
-			q.UpdatedAt.Format(time.RFC3339),
-			q.ID,
-		)
-		if err == nil {
-			return nil
-		}
-		if !strings.Contains(err.Error(), "database is locked") {
-			break
-		}
-		time.Sleep(100 * time.Millisecond)
+	callChanged := oldCall != "" && !strings.EqualFold(oldCall, q.Call)
+
+	dxccSet := ""
+	dxccArg := ""
+	if q.DXCC != "" {
+		dxccSet = ", dxcc=?"
+		dxccArg = q.DXCC
+	} else if callChanged {
+		dxccSet = ", dxcc=?"
 	}
-	return fmt.Errorf("update qso: %w", err)
+
+	query := `UPDATE qsos SET call=?, qso_date=?, time_on=?, time_off=?, band=?, freq=?, freq_rx=?, mode=?, submode=?,
+		rst_sent=?, rst_rcvd=?, gridsquare=?, name=?, qth=?, country=?, comment=?, notes=?, tx_pwr=?,
+		distance=?, bearing=?,
+	sota_ref=?, pota_ref=?, wwff_ref=?, iota=?, sig=?, sig_info=?,
+		my_sota_ref=?, my_pota_ref=?, my_wwff_ref=?,
+		station_callsign=?, operator=?, my_gridsquare=?, my_rig=?, my_antenna=?, source=?,
+		cq_zone=?, itu_zone=?,
+		my_cq_zone=?, my_itu_zone=?, my_dxcc=?,
+		my_sig=?, my_sig_info=?,
+		contest_id=?, exch_sent=?, exch_rcvd=?, stx=?, srx=?, stx_string=?, srx_string=?, contest_adif_id=?,
+		base_call=?` + dxccSet + extraSet + `,
+		updated_at=?
+		WHERE id=?`
+
+	args := []any{
+		q.Call, q.QSODate, q.TimeOn, q.TimeOff,
+		q.Band, q.Freq, q.FreqRx, q.Mode, q.Submode,
+		q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
+		q.Distance, q.Bearing,
+		q.SOTARef, q.POTARef, q.WWFFRef, q.IOTA, q.SIG, q.SIGInfo,
+		q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
+		q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
+		q.CQZone, q.ITUZone, q.MyCQZone, q.MyITUZone, q.MyDXCC, q.MySIG, q.MySIGInfo,
+		q.ContestID, q.ExchSent, q.ExchRcvd, q.STX, q.SRX, q.STXString, q.SRXString, q.ContestADIFID,
+		qso.DeriveBaseCall(q.Call),
+	}
+	if dxccSet != "" {
+		args = append(args, dxccArg)
+	}
+	args = append(args, q.UpdatedAt.Format(time.RFC3339), q.ID)
+	return query, args
 }
 
-// PurgeQSOs deletes all QSOs from the database.
-func PurgeQSOs(db *sql.DB) error {
-	_, err := db.Exec(`DELETE FROM qsos`)
+// UpdateQSO persists an edited QSO. Every local write bumps the pending-sync
+// revision (wavelog_dirty_rev), including non-synced rows: an initial upload
+// in flight captures an older revision, and the bumped counter lets the
+// upload completion detect that the row changed and keep it pending.
+func UpdateQSO(db *sql.DB, q *qso.QSO) error {
+	tx, err := db.Begin()
 	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var oldCall string
+	_ = tx.QueryRow(`SELECT call FROM qsos WHERE id=?`, q.ID).Scan(&oldCall)
+
+	query, args := buildUpdateQSOStatement(q, oldCall, ", wavelog_dirty_rev=wavelog_dirty_rev+1")
+
+	// Capture the pre-update values; after the write they are gone.
+	oldQSO, oldErr := loadQSOForIndex(tx, q.ID)
+
+	if _, err := tx.Exec(query, args...); err != nil {
+		return fmt.Errorf("update qso: %w", err)
+	}
+	// Unindex after the update: edge recomputation must see the new values
+	// (the doomed row no longer matches its old aggregate keys).
+	if oldErr == nil {
+		if err := indexQSO(tx, oldQSO, -1); err != nil {
+			return err
+		}
+		if err := indexQSO(tx, q, 1); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// SaveQSO persists an edited QSO for the editor save flow. The pending-sync
+// decision is made from the DATABASE state atomically with the write — never
+// from the caller's possibly-stale snapshot: the form may hold WavelogID 0
+// while an in-flight initial upload already attached the remote id, and
+// trusting the snapshot would both skip the follow-up PATCH and (on the old
+// update path) overwrite the id with the stale zero. The remote id itself is
+// never written here — it is only attached via SetWavelogID*.
+//
+// When the row carries a remote id, the edit is durably marked pending
+// (wavelog_dirty=1) and its revision is returned for the follow-up PATCH;
+// otherwise only the revision counter is bumped. The dirty flag may only be
+// cleared by an acknowledgement for the returned revision (see
+// ClearWavelogDirtyIfRevision).
+func SaveQSO(db *sql.DB, q *qso.QSO) (synced bool, rev int64, err error) {
+	tx, err := db.BeginTx(context.Background(), nil)
+	if err != nil {
+		return false, 0, fmt.Errorf("begin save: %w", err)
+	}
+	defer tx.Rollback()
+
+	var oldCall string
+	var wlID int64
+	_ = tx.QueryRow(`SELECT call, wavelog_id FROM qsos WHERE id=?`, q.ID).Scan(&oldCall, &wlID)
+
+	extraSet := ", wavelog_dirty_rev=wavelog_dirty_rev+1"
+	if wlID > 0 {
+		extraSet = ", wavelog_dirty=1, wavelog_dirty_rev=wavelog_dirty_rev+1"
+	}
+	query, args := buildUpdateQSOStatement(q, oldCall, extraSet)
+	// Capture the pre-update values; after the write they are gone.
+	oldQSO, oldErr := loadQSOForIndex(tx, q.ID)
+	if _, err := tx.Exec(query, args...); err != nil {
+		return false, 0, fmt.Errorf("update qso: %w", err)
+	}
+	// Maintain the worked index: the old values stop counting, the new ones
+	// start — same transaction as the row update. Unindexing after the
+	// update keeps edge recomputation consistent with the stored rows.
+	if oldErr == nil {
+		if err := indexQSO(tx, oldQSO, -1); err != nil {
+			return false, 0, err
+		}
+		if err := indexQSO(tx, q, 1); err != nil {
+			return false, 0, err
+		}
+	}
+	// Read the bumped revision inside the same transaction — the write
+	// lock is held until commit, so this is exactly our edit's revision.
+	if err := tx.QueryRow(`SELECT wavelog_dirty_rev FROM qsos WHERE id=?`, q.ID).Scan(&rev); err != nil {
+		return false, 0, fmt.Errorf("read sync revision: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return false, 0, fmt.Errorf("commit save: %w", err)
+	}
+	return wlID > 0, rev, nil
+}
+
+// PurgeQSOs deletes all QSOs from the database and rebuilds the worked index
+// (empty) in the same transaction.
+func PurgeQSOs(db *sql.DB) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`DELETE FROM qsos`); err != nil {
 		return fmt.Errorf("purge qsos: %w", err)
 	}
-	return nil
+	if err := rebuildWorkedIndex(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // EnrichmentData holds callbook-derived fields for non-destructive QSO enrichment.
@@ -788,9 +1217,9 @@ type EnrichmentData struct {
 // UpdateQSOEnrichment applies callbook enrichment to a QSO.
 // Only fields that are currently empty in the database are updated —
 // existing data is never overwritten by enrichment.
-func UpdateQSOEnrichment(db *sql.DB, qsoID int64, e EnrichmentData) {
+func UpdateQSOEnrichment(db *sql.DB, qsoID int64, e EnrichmentData) error {
 	if e.Name == "" && e.QTH == "" && e.Country == "" && e.GridSquare == "" && e.IOTA == "" && e.CQZone == "" && e.ITUZone == "" && e.DXCC == "" {
-		return
+		return nil
 	}
 
 	var sets []string
@@ -830,10 +1259,13 @@ func UpdateQSOEnrichment(db *sql.DB, qsoID int64, e EnrichmentData) {
 	}
 
 	if len(sets) == 0 {
-		return
+		return nil
 	}
 
 	args = append(args, qsoID)
 	query := fmt.Sprintf("UPDATE qsos SET %s WHERE id = ?", strings.Join(sets, ", "))
-	db.Exec(query, args...) // best-effort; errors logged by caller
+	if _, err := db.Exec(query, args...); err != nil {
+		return fmt.Errorf("update qso enrichment: %w", err)
+	}
+	return nil
 }

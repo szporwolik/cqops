@@ -350,16 +350,19 @@ func imageURL(call qrzCallSign, files qrzFiles) string {
 
 var httpGetFn = defaultHTTPGet
 
+var httpClient = &http.Client{Timeout: 10 * time.Second}
+
 func defaultHTTPGet(rawURL string) ([]byte, error) {
-	client := &http.Client{Timeout: 10 * time.Second}
 	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
 	if err != nil {
-		return nil, err
+		// url.Parse failures carry the raw URL, password included.
+		return nil, callbook.RedactURLError(err)
 	}
 	req.Header.Set("User-Agent", "CQOps/1.0")
-	resp, err := client.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		// The URL carries the password; redact before it reaches a log.
+		return nil, callbook.RedactURLError(err)
 	}
 	defer resp.Body.Close()
 	return io.ReadAll(io.LimitReader(resp.Body, 256*1024))

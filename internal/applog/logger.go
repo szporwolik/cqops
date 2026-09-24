@@ -82,7 +82,10 @@ func Init() error {
 	if err != nil {
 		return err
 	}
-	os.MkdirAll(logDir, 0755)
+	// Logs can carry position data — keep the directory and files readable
+	// by the owner only, regardless of umask or a pre-existing directory.
+	os.MkdirAll(logDir, 0700)
+	os.Chmod(logDir, 0700)
 
 	rw := &rotateWriter{dir: logDir}
 	if err := rw.rotate(); err != nil {
@@ -98,7 +101,8 @@ func Init() error {
 
 func openLogFileIn(dir string) (*os.File, error) {
 	name := "cqops-" + time.Now().Format("2006-01-02T15-04-05") + ".log"
-	return os.OpenFile(filepath.Join(dir, name), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	// 0600: log content is privacy-sensitive (operator position, callsigns).
+	return os.OpenFile(filepath.Join(dir, name), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
 }
 
 func cleanupOldLogs() {
@@ -145,6 +149,12 @@ func rotateLogs() {
 
 	// Sort oldest first
 	sort.Slice(files, func(i, j int) bool { return files[i].t.Before(files[j].t) })
+
+	// Tighten permissions on every existing log file (best-effort) — logs
+	// created by older versions may still be world/group-readable.
+	for _, f := range files {
+		os.Chmod(filepath.Join(logDir, f.name), 0600)
+	}
 
 	// Delete files older than retention period
 	keepStart := 0

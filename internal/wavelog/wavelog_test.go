@@ -117,124 +117,158 @@ func TestFriendlyError_Unknown(t *testing.T) {
 }
 
 // =============================================================================
+// APIError / FriendlyError v2 tests
+// =============================================================================
+
+func TestFriendlyError_APIError(t *testing.T) {
+	cases := []struct {
+		apiErr *APIError
+		want   string
+	}{
+		{&APIError{StatusCode: 401, Code: "invalid_token"}, "wl2_"},
+		{&APIError{StatusCode: 401, Code: "unauthorized"}, "wl2_"},
+		{&APIError{StatusCode: 401, Code: "token_expired"}, "expired"},
+		{&APIError{StatusCode: 403, Code: "insufficient_scope", Details: map[string]any{"required_scope": "qso:write"}}, "qso:write"},
+		{&APIError{StatusCode: 429, Code: "rate_limited", Details: map[string]any{"retry_after": float64(7)}}, "7s"},
+		{&APIError{StatusCode: 404, Code: "not_found"}, "not found"},
+		{&APIError{StatusCode: 409, Code: "conflict"}, "duplicate"},
+	}
+	for _, c := range cases {
+		err := FriendlyError(c.apiErr)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("code=%q: got %q, want substring %q", c.apiErr.Code, friendlyMsg(err), c.want)
+		}
+	}
+}
+
+func TestAPIError_RetryAfter(t *testing.T) {
+	e := &APIError{Details: map[string]any{"retry_after": "12"}}
+	if got := e.RetryAfterSeconds(); got != 12 {
+		t.Errorf("got %d, want 12", got)
+	}
+}
+
+// =============================================================================
 // PrivateLookupResult tests
 // =============================================================================
 
-func TestPrivateLookupResult_Callsign(t *testing.T) {
-	r := &PrivateLookupResult{raw: map[string]interface{}{"callsign": "SP9ABC"}}
+func TestPrivateLookupResult_Accessors(t *testing.T) {
+	r := &PrivateLookupResult{
+		callsign:          "SP9ABC",
+		dxcc:              "POLAND",
+		dxccID:            "269",
+		dxccCQZ:           "15",
+		dxccITUZ:          "28",
+		name:              "Jan",
+		gridsquare:        "KO00ca",
+		location:          "Niepolomice",
+		state:             "M",
+		worked:            true,
+		workedBand:        true,
+		workedBandMode:    false,
+		lotw:              true,
+		dxccConfirmed:     true,
+		confirmedBand:     false,
+		confirmedBandMode: false,
+	}
 	if r.Callsign() != "SP9ABC" {
-		t.Errorf("got %q", r.Callsign())
+		t.Errorf("Callsign = %q", r.Callsign())
 	}
-}
-
-func TestPrivateLookupResult_Name(t *testing.T) {
-	r := &PrivateLookupResult{raw: map[string]interface{}{"name": "Jan"}}
 	if r.Name() != "Jan" {
-		t.Errorf("got %q", r.Name())
+		t.Errorf("Name = %q", r.Name())
+	}
+	if !r.Worked() || !r.WorkedBand() || r.WorkedBandMode() {
+		t.Error("worked flags wrong")
+	}
+	if !r.LoTW() {
+		t.Error("expected LoTW=true")
+	}
+	if !r.DXCCConfirmed() || r.ConfirmedBand() || r.ConfirmedBandMode() {
+		t.Error("confirmation flags wrong")
+	}
+	if r.Grid() != "KO00ca" {
+		t.Errorf("Grid = %q", r.Grid())
+	}
+	if r.DXCCID() != "269" || r.DXCCName() != "POLAND" || r.Country() != "POLAND" {
+		t.Error("dxcc fields wrong")
+	}
+	if r.QTH() != "Niepolomice" || r.State() != "M" {
+		t.Error("qth/state wrong")
+	}
+	if r.CQZone() != "15" || r.ITUZone() != "28" {
+		t.Error("zone fields wrong")
 	}
 }
 
-func TestPrivateLookupResult_Str_Missing(t *testing.T) {
-	r := &PrivateLookupResult{raw: map[string]interface{}{}}
-	if r.Callsign() != "" {
-		t.Errorf("expected empty, got %q", r.Callsign())
+func TestPrivateLookupResult_Empty(t *testing.T) {
+	r := &PrivateLookupResult{}
+	if r.Callsign() != "" || r.Name() != "" || r.Worked() || r.LoTW() {
+		t.Error("expected empty result to report no data")
 	}
 }
 
-func TestPrivateLookupResult_Str_Nil(t *testing.T) {
-	r := &PrivateLookupResult{raw: map[string]interface{}{"name": nil}}
-	if r.Name() != "" {
-		t.Errorf("expected empty for nil value, got %q", r.Name())
+func TestNewLookupResult(t *testing.T) {
+	d := &lookupData{
+		Callsign:              "DL1ABC",
+		DXCC:                  "GERMANY",
+		DXCCID:                "230",
+		DXCCCQZ:               "14",
+		DXCCITUZ:              28,
+		Name:                  "Marty",
+		Gridsquare:            "JO31",
+		CallWorked:            true,
+		CallWorkedBand:        false,
+		CallWorkedBandMode:    false,
+		LotwMember:            "14",
+		DXCCConfirmed:         true,
+		CallConfirmedBand:     false,
+		CallConfirmedBandMode: false,
+	}
+	r := newLookupResult(d)
+	if r.Worked() != true || r.WorkedBand() != false {
+		t.Error("worked flags wrong")
+	}
+	if !r.LoTW() {
+		t.Error("expected LoTW=true for member number")
+	}
+	if r.ITUZone() != "28" {
+		t.Errorf("ITUZone = %q, want 28", r.ITUZone())
+	}
+	if r.Grid() != "JO31" || r.Name() != "Marty" {
+		t.Error("grid/name wrong")
 	}
 }
 
-func TestPrivateLookupResult_IsTrue(t *testing.T) {
+func TestTruthy(t *testing.T) {
 	cases := []struct {
-		val  interface{}
+		val  string
 		want bool
 	}{
-		{true, true},
-		{false, false},
-		{"true", true},
-		{"True", true},
-		{"1", true},
+		{"12", true},
 		{"yes", true},
-		{"Y", true},
-		{"false", false},
-		{"0", false},
-		{"no", false},
-		{"N", false},
 		{"", false},
-		{float64(1), true},
-		{float64(0), false},
-		{"something", true}, // unknown non-empty → truthy
+		{"0", false},
+		{"false", false},
+		{"no", false},
 	}
 	for _, c := range cases {
-		r := &PrivateLookupResult{raw: map[string]interface{}{"x": c.val}}
-		got := r.IsTrue("x")
-		if got != c.want {
-			t.Errorf("IsTrue(%v) = %v, want %v", c.val, got, c.want)
+		if got := truthy(c.val); got != c.want {
+			t.Errorf("truthy(%q) = %v, want %v", c.val, got, c.want)
 		}
 	}
 }
 
-func TestPrivateLookupResult_IsTrue_Missing(t *testing.T) {
-	r := &PrivateLookupResult{raw: map[string]interface{}{}}
-	if r.IsTrue("nonexistent") {
-		t.Error("expected false for missing key")
+func TestStripADIFHeader(t *testing.T) {
+	in := "Wavelog ADIF export\n<ADIF_VER:5>3.1.7\n<EOH>\n<CALL:5>F5MXH<EOR>"
+	got := stripADIFHeader(in)
+	if strings.Contains(got, "<EOH>") {
+		t.Errorf("header not stripped: %q", got)
 	}
-}
-
-func TestPrivateLookupResult_Worked(t *testing.T) {
-	r := &PrivateLookupResult{raw: map[string]interface{}{"call_worked": true}}
-	if !r.Worked() {
-		t.Error("expected worked=true")
+	if !strings.Contains(got, "<CALL:5>F5MXH") {
+		t.Errorf("records lost: %q", got)
 	}
-	r2 := &PrivateLookupResult{raw: map[string]interface{}{"call_worked": "1"}}
-	if !r2.Worked() {
-		t.Error("expected worked=true for string 1")
-	}
-}
-
-func TestPrivateLookupResult_LoTW(t *testing.T) {
-	r := &PrivateLookupResult{raw: map[string]interface{}{"lotw_member": "12"}}
-	if !r.LoTW() {
-		t.Error("expected LoTW=true for non-empty string")
-	}
-	r2 := &PrivateLookupResult{raw: map[string]interface{}{"lotw_member": false}}
-	if r2.LoTW() {
-		t.Error("expected LoTW=false")
-	}
-}
-
-// =============================================================================
-// extractAPIReason and stripHTML
-// =============================================================================
-
-func TestExtractAPIReason(t *testing.T) {
-	if r := extractAPIReason(`{"reason":"Invalid key"}`); r != "Invalid key" {
-		t.Errorf("got %q", r)
-	}
-	if r := extractAPIReason("plain text"); r != "" {
-		t.Errorf("expected empty, got %q", r)
-	}
-	if r := extractAPIReason(`{}`); r != "" {
-		t.Errorf("expected empty, got %q", r)
-	}
-}
-
-func TestStripHTML(t *testing.T) {
-	cases := []struct{ in, want string }{
-		{"<b>bold</b>", "bold"},
-		{"no html", "no html"},
-		{"<a href='x'>link</a>", "link"},
-		{"<br>", ""},
-		{"", ""},
-	}
-	for _, c := range cases {
-		if got := stripHTML(c.in); got != c.want {
-			t.Errorf("stripHTML(%q) = %q, want %q", c.in, got, c.want)
-		}
+	if stripADIFHeader("no header here") != "no header here" {
+		t.Error("expected passthrough without <EOH>")
 	}
 }
 
@@ -247,4 +281,30 @@ func friendlyMsg(err error) string {
 		return "<nil>"
 	}
 	return err.Error()
+}
+
+// =============================================================================
+// v2 token enforcement
+// =============================================================================
+
+func TestFetchStations_RejectsV1Key(t *testing.T) {
+	// A legacy v1 key must fail fast with the migration message,
+	// without any network call.
+	_, err := FetchStations("http://127.0.0.1:1", "wl123_not_v2")
+	if err == nil {
+		t.Fatal("FetchStations with v1 key should fail")
+	}
+	if !strings.Contains(err.Error(), V1KeyRequiredMsg) {
+		t.Errorf("error = %q, want it to contain %q", err.Error(), V1KeyRequiredMsg)
+	}
+}
+
+func TestTestConnection_RejectsV1Key(t *testing.T) {
+	err := TestConnection("http://127.0.0.1:1", "wl123_not_v2")
+	if err == nil {
+		t.Fatal("TestConnection with v1 key should fail")
+	}
+	if !strings.Contains(err.Error(), V1KeyRequiredMsg) {
+		t.Errorf("error = %q, want it to contain %q", err.Error(), V1KeyRequiredMsg)
+	}
 }

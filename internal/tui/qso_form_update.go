@@ -532,7 +532,27 @@ func (m *Model) updateFocused(msg tea.KeyPressMsg) {
 	f := m.focus
 	prevVal := m.fields[f].Value()
 	m.fields[f], _ = m.fields[f].Update(msg)
+	m.afterFieldEdit(f, prevVal)
+}
 
+// clearFocusedField instantly clears the focused QSO form field
+// (Shift+Backspace) and applies the same side effects as manual editing.
+func (m *Model) clearFocusedField() {
+	if m.keepFocused {
+		return
+	}
+	f := m.focus
+	prevVal := m.fields[f].Value()
+	if prevVal == "" {
+		return
+	}
+	m.fields[f].SetValue("")
+	m.afterFieldEdit(f, prevVal)
+}
+
+// afterFieldEdit applies field-specific side effects after the focused field
+// value changed (typed edit or instant clear).
+func (m *Model) afterFieldEdit(f field, prevVal string) {
 	switch f {
 	case fieldCall:
 		// Uppercase. If call changed: invalidate all call-dependent state —
@@ -721,18 +741,18 @@ func (m *Model) buildSpotComment() string {
 func (m *Model) openSpotDialog() tea.Cmd {
 	call := qso.NormalizeCall(m.fields[fieldCall].Value())
 	if call == "" {
-		m.toasts.Warn("Enter a callsign to spot")
+		m.toasts.Warn("DXC: enter a callsign to spot")
 		return nil
 	}
 	freqStr := strings.TrimSpace(m.fields[fieldFreq].Value())
 	if freqStr == "" {
-		m.toasts.Warn("Enter a frequency to spot")
+		m.toasts.Warn("DXC: enter a frequency to spot")
 		return nil
 	}
 	var freqMhz float64
 	fmt.Sscanf(freqStr, "%f", &freqMhz)
 	if freqMhz <= 0 {
-		m.toasts.Warn("Enter a valid frequency to spot")
+		m.toasts.Warn("DXC: enter a valid frequency to spot")
 		return nil
 	}
 	freqKhz := freqMhz * 1000
@@ -748,7 +768,7 @@ func (m *Model) openSpotDialog() tea.Cmd {
 // manually to look up the callsign.
 func (m *Model) fillFromDXCSpot() {
 	if len(m.dxc.pathSpots) == 0 {
-		m.toasts.Warn("No DXC spots at this frequency")
+		m.toasts.Warn("DXC: no spots at this frequency")
 		return
 	}
 	m.dxc.pathSpotIdx = (m.dxc.pathSpotIdx + 1) % len(m.dxc.pathSpots)

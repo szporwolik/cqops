@@ -37,6 +37,7 @@ type OperatorChooser struct {
 	dialog *DialogModel
 	width  int
 	height int
+	fm     menuFocus
 
 	// Viewport for scrolling list/form content on small terminals.
 	vp              viewport.Model
@@ -192,6 +193,11 @@ func (oc *OperatorChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			scrollVpToLine(&oc.vp, oc.cursor)
 
 		case oc.mode == operatorEdit || oc.mode == operatorCreate:
+			// Shared navigation: Tab/Down, Shift+Tab/Up, and the Save & Back
+			// button (Space/Enter saves).
+			if handled, cmd := oc.fm.onKey(msg, oc, func() tea.Cmd { return oc.saveForm() }); handled {
+				return oc, cmd
+			}
 			cmd := oc.form.HandleKey(msg)
 			if cmd == nil {
 				return oc, nil
@@ -214,6 +220,7 @@ func (oc *OperatorChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (oc *OperatorChooser) startCreate() {
 	oc.mode = operatorCreate
+	oc.fm.reset()
 	oc.form = NewOperatorForm()
 	oc.form.Focus()
 	oc.editing = ""
@@ -222,10 +229,17 @@ func (oc *OperatorChooser) startCreate() {
 func (oc *OperatorChooser) startEdit(id string) {
 	op := oc.app.Config.Operators[id]
 	oc.mode = operatorEdit
+	oc.fm.reset()
 	oc.editing = id
 	oc.form.SetOperator(&op)
 	oc.form.Focus()
 }
+
+// focusableRows implementation for the shared menuFocus engine.
+func (oc *OperatorChooser) rowCount() int          { return 2 }
+func (oc *OperatorChooser) rowVisible(int) bool    { return true }
+func (oc *OperatorChooser) blurAll()               { oc.form.BlurAll() }
+func (oc *OperatorChooser) focusRow(i int) tea.Cmd { return oc.form.focusRow(i) }
 
 func (oc *OperatorChooser) selectOperator() tea.Cmd {
 	if oc.cursor == 0 {
@@ -233,7 +247,7 @@ func (oc *OperatorChooser) selectOperator() tea.Cmd {
 		oc.toasts.Success("Operator: None (station operator)")
 		applog.Info("Operator activated", "id", "none", "display", "None")
 		if err := config.Save(oc.app.ConfigPath, oc.app.Config); err != nil {
-			oc.toasts.Error("Save operator selection failed: " + err.Error())
+			oc.toasts.Error("Operator: save selection failed — " + err.Error())
 		}
 		return nil
 	}
@@ -244,7 +258,7 @@ func (oc *OperatorChooser) selectOperator() tea.Cmd {
 	oc.toasts.Success(fmt.Sprintf("Operator activated: %s", dn))
 	applog.Info("Operator activated", "id", id, "display", dn)
 	if err := config.Save(oc.app.ConfigPath, oc.app.Config); err != nil {
-		oc.toasts.Error("Save operator selection failed: " + err.Error())
+		oc.toasts.Error("Operator: save selection failed — " + err.Error())
 	}
 	return nil
 }
@@ -254,7 +268,7 @@ func (oc *OperatorChooser) saveForm() tea.Cmd {
 	call = strings.ToUpper(call)
 
 	if call == "" {
-		oc.toasts.Warn("Callsign is required")
+		oc.toasts.Warn("Operator: callsign is required")
 		return nil
 	}
 
@@ -292,7 +306,7 @@ func (oc *OperatorChooser) saveForm() tea.Cmd {
 	oc.refreshIDs()
 
 	if err := config.Save(oc.app.ConfigPath, oc.app.Config); err != nil {
-		oc.toasts.Error("Save " + savedName + " failed: " + err.Error())
+		oc.toasts.Error("Operator: save " + savedName + " failed — " + err.Error())
 	} else {
 		oc.toasts.Success("Operator " + savedName + " saved")
 		applog.Info("Operator saved", "callsign", savedName)
@@ -321,7 +335,7 @@ func (oc *OperatorChooser) deleteOperator() tea.Cmd {
 	oc.mode = operatorList
 	oc.refreshIDs()
 	if err := config.Save(oc.app.ConfigPath, oc.app.Config); err != nil {
-		oc.toasts.Error("Delete " + displayName + " failed: " + err.Error())
+		oc.toasts.Error("Operator: delete " + displayName + " failed — " + err.Error())
 	} else {
 		oc.toasts.Success("Operator " + displayName + " deleted")
 		applog.Info("Operator deleted", "id", id)
@@ -457,7 +471,9 @@ func (oc *OperatorChooser) viewForm() string {
 		title = "Edit Operator"
 	}
 
-	b.WriteString(oc.form.View())
+	b.WriteString(strings.TrimRight(oc.form.View(), "\n"))
+	b.WriteString("\n")
+	b.WriteString(oc.fm.btn.line("Save & Back", w-6))
 
 	body := drawMenuWithHeader("Configuration \u2014 Operators \u2014 "+title, b.String(), w)
 	return fillBody(body, contentH)

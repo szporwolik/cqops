@@ -117,6 +117,19 @@ func (f *OperatorForm) BlurAll() {
 	f.focus = -1
 }
 
+// focusRow moves focus to field i for the shared menuFocus engine.
+func (f *OperatorForm) focusRow(i int) tea.Cmd {
+	f.focus = i
+	if i == 1 {
+		f.Callsign.Blur()
+		f.Name.Focus()
+	} else {
+		f.Callsign.Focus()
+		f.Name.Blur()
+	}
+	return nil
+}
+
 // SetWidth adjusts the width of the form fields.
 func (f *OperatorForm) SetWidth(w int) {
 	if w < 20 {
@@ -130,7 +143,7 @@ func (f *OperatorForm) SetWidth(w int) {
 func (f *OperatorForm) Validate() string {
 	call := strings.TrimSpace(f.Callsign.Value())
 	if call == "" {
-		return "Callsign is required"
+		return "Operator: callsign is required"
 	}
 	return ""
 }
@@ -140,7 +153,7 @@ func (f *OperatorForm) Validate() string {
 func (f *OperatorForm) ValidateCall() string {
 	call := strings.TrimSpace(f.Callsign.Value())
 	if call != "" && !qso.IsValidCall(call) {
-		return "Callsign \"" + call + "\" doesn't look like a standard callsign (no digit) — saved anyway"
+		return "Operator: callsign \"" + call + "\" doesn't look like a standard callsign (no digit) — saved anyway"
 	}
 	return ""
 }
@@ -155,9 +168,10 @@ func (f *OperatorForm) View() string {
 	var lines []string
 	csLbl := S.FormLabel.Render("Callsign")
 	nmLbl := S.FormLabel.Render("Name")
-	if f.focus == 0 {
+	switch f.focus {
+	case 0:
 		csLbl = fieldFocusedLabel.Render("Callsign")
-	} else {
+	case 1:
 		nmLbl = fieldFocusedLabel.Render("Name")
 	}
 	lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Center, csLbl, " ", f.Callsign.View()))

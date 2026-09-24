@@ -60,6 +60,12 @@ type adifQueue struct {
 	status statusPending
 }
 
+// maxPendingADIFs bounds the WSJT-X pending-ADIF queue. The queue is
+// drained on every tick, so it only fills when the database stays busy for
+// a long time (e.g. a large import); beyond the cap the oldest record is
+// dropped rather than growing memory without limit.
+const maxPendingADIFs = 64
+
 // httpState holds the built-in HTTP server connection status.
 type httpState struct {
 	online      bool

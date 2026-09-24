@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/callbook"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
@@ -99,6 +100,8 @@ func (m *Model) viewPartner() string {
 		sigB.WriteString("pd:nil|")
 	}
 	sigB.WriteString(m.rc.logStatsSig)
+	sigB.WriteByte('|')
+	sigB.WriteString(m.rc.workedSummarySig) // re-render once the async summary lands
 	sigB.WriteByte('|')
 	if m.lookup.wlPrivateData != nil {
 		fmt.Fprintf(&sigB, "wl=%p,%v,%v,%v,%v|",
@@ -731,11 +734,12 @@ func formatCoord(val, posSuffix, negSuffix string) string {
 
 // workedTitle returns the panel title with compact source names.
 // The remote source name is rendered as a clickable OSC8 hyperlink
-// to the Wavelog instance main page.
+// to the Wavelog instance main page. In offline mode the remote source
+// contributes nothing and is left out of the title.
 func (m *Model) workedTitle() string {
 	lb := m.App.Logbook
 	wl := lb.Wavelog
-	hasWl := wl != nil && wl.Enabled && wl.URL != "" && wl.APIKey != ""
+	hasWl := !m.Offline && wl != nil && wl.Enabled && wl.URL != "" && wl.APIKey != ""
 	if hasWl {
 		src := CompactSourceName("", wl.URL)
 		if src != "" {
@@ -861,13 +865,14 @@ func (m *Model) buildWorkedPanelLayout(d *callbook.Result, maxW int) workedPanel
 		if wl != nil && wl.DXCCID() != "" {
 			opDXCC = wl.DXCCID()
 		} else if m.App.DB != nil && opEntity != "" {
-			var dbDXCC string
-			_ = m.App.DB.QueryRow(
-				`SELECT dxcc FROM qsos WHERE country = ? AND dxcc != '' LIMIT 1`,
-				opEntity,
-			).Scan(&dbDXCC)
-			if dbDXCC != "" {
-				opDXCC = dbDXCC
+			// Foreign-prefix DXCC resolution must not query the database
+			// inside View(): the memo answers immediately and a miss only
+			// flags an off-render fetch (serviced by dispatchViewFetches).
+			if memoDXCC, ok := m.rc.countryDXCC[opEntity]; ok {
+				opDXCC = memoDXCC
+			} else if !m.rc.countryDXCCMiss[opEntity] {
+				m.rc.partnerDXCCNeedFetch = true
+				m.rc.partnerDXCCEntity = opEntity
 			}
 		}
 	}
@@ -887,20 +892,19 @@ func (m *Model) buildWorkedPanelLayout(d *callbook.Result, maxW int) workedPanel
 
 	var ws store.WorkedSummary
 	if m.App.DB != nil && call != "" {
-		// Cache GetWorkedSummary — it runs 15+ SQL queries and was
-		// consuming 17.7% CPU by re-running on every frame.  Only
-		// recompute when call, grid4, opDXCC or opEntity change.
-		wsKey := call + "|" + grid4 + "|" + opDXCC + "|" + opEntity
+		// GetWorkedSummary issues six queries per scope (call, grid, DXCC).
+		// On a large logbook that runs into seconds, so a miss only flags
+		// the fetch and this frame renders with the previous data.
+		wsKey := workedSummarySigFor(call, grid4, opDXCC, opEntity)
 		if m.rc.workedSummarySig == wsKey {
 			ws = m.rc.workedSummary
 		} else {
-			var err error
-			ws, err = store.GetWorkedSummary(m.App.DB, call, grid4, opDXCC, opEntity)
-			if err != nil {
-				ws = store.WorkedSummary{}
-			}
-			m.rc.workedSummary = ws
-			m.rc.workedSummarySig = wsKey
+			m.rc.workedSummaryNeedFetch = true
+			m.rc.workedSummaryWantedSig = wsKey
+			m.rc.workedSummaryFetchCall = call
+			m.rc.workedSummaryFetchGrid4 = grid4
+			m.rc.workedSummaryFetchDXCC = opDXCC
+			m.rc.workedSummaryFetchName = opEntity
 		}
 	}
 
@@ -1148,129 +1152,110 @@ func formatCountList(items []store.CountItem) string {
 	return strings.Join(parts, " \u00b7 ")
 }
 
-// --- Logbook rows (kept for backward compat — unused by new layout) ---
+// logStatsSigFor identifies which call/band/mode the cached logbook stats
+// belong to. The stats are only trusted while this matches the form.
+func logStatsSigFor(call, band, mode string) string {
+	return call + "|" + band + "|" + mode
+}
 
-func (m *Model) renderLogbookRows(d *callbook.Result, maxW int) string {
-	call := d.Callsign
-	band := strings.TrimSpace(m.fields[fieldBand].Value())
-	mode := strings.TrimSpace(m.fields[fieldMode].Value())
-	sig := call + "|" + band + "|" + mode
-	if m.rc.logStatsSig != sig && m.App.DB != nil {
-		// Cache miss — dispatch async fetch and use previous data this frame.
-		// The fetch will complete before the next View() call.
-		m.rc.logStatsNeedFetch = true
-		m.rc.logStatsFetchCall = call
-		m.rc.logStatsFetchBand = band
-		m.rc.logStatsFetchMode = mode
-	}
-	s := m.rc.logStats
-	wl := m.lookup.wlPrivateData
+// workedSummarySigFor identifies which call/grid/DXCC the cached worked
+// summary belongs to.
+func workedSummarySigFor(call, grid4, dxcc, countryName string) string {
+	return call + "|" + grid4 + "|" + dxcc + "|" + countryName
+}
 
-	newStyle := S.Success // green — yes, it IS new
-	oldStyle := DimStyle  // dim — no, already worked
-
-	// Compute value column width. Label width 11 + space 1 = 12.
-	valW := maxW - 12
-	if valW < 3 {
-		valW = 3
-	}
-
-	// WL-first helper: returns (isNew, known).
-	// If WL has data, it wins. Otherwise falls back to local.
-	wlFirst := func(wlVal, localVal bool) (bool, bool) {
-		if wl != nil {
-			return !wlVal, true
+// fetchWorkedSummaryCmd runs GetWorkedSummary asynchronously. It issues six
+// queries per scope, which on a large logbook takes long enough to stall a
+// frame, so it never runs during View().
+func (m *Model) fetchWorkedSummaryCmd(call, grid4, dxcc, countryName string) tea.Cmd {
+	db := m.App.DB
+	return func() tea.Msg {
+		ws, err := store.GetWorkedSummary(db, call, grid4, dxcc, countryName)
+		if err != nil {
+			applog.Debug("worked summary: load failed", "call", call, "error", err)
+			// Record the signature anyway so a failing query cannot
+			// re-dispatch on every update.
+			return workedSummaryMsg{sig: workedSummarySigFor(call, grid4, dxcc, countryName)}
 		}
-		return !localVal, true
-	}
-	// WL-only helper: only WL can answer (DXCC fields).
-	wlOnly := func(wlVal bool) (bool, bool) {
-		if wl != nil {
-			return !wlVal, true
+		return workedSummaryMsg{
+			summary: ws,
+			sig:     workedSummarySigFor(call, grid4, dxcc, countryName),
 		}
-		return false, false
 	}
+}
 
-	// Render Y/N/? with appropriate style.
-	flag := func(isNew, known bool) string {
-		return renderFlagStatus(isNew, known, newStyle, oldStyle)
+// handleWorkedSummary stores the async result for use by the next View().
+// A result for a signature that is no longer wanted (the operator typed a
+// different callsign meanwhile) is discarded so stale data never flashes.
+func (m *Model) handleWorkedSummary(msg workedSummaryMsg) {
+	if msg.sig == "" || msg.sig != m.rc.workedSummaryWantedSig {
+		return
 	}
+	m.rc.workedSummary = msg.summary
+	m.rc.workedSummarySig = msg.sig
+	m.rc.workedSummaryInflightSig = ""
+}
 
-	var rows []row
+// fetchCountryDXCCCmd loads the DXCC number stored for a country name, off
+// the render path. Empty result means no QSO carries that entity yet.
+func (m *Model) fetchCountryDXCCCmd(entity string) tea.Cmd {
+	db := m.App.DB
+	logbook := m.App.LogbookName
+	return func() tea.Msg {
+		var dxccVal string
+		_ = db.QueryRow(`SELECT dxcc FROM qsos WHERE country = ? AND dxcc != '' LIMIT 1`, entity).Scan(&dxccVal)
+		return partnerDXCCMsg{entity: entity, dxcc: dxccVal, logbook: logbook}
+	}
+}
 
-	// New call
-	isNew, _ := wlFirst(wl != nil && wl.Worked(), s.CallWorked)
-	rows = append(rows, row{"New call", flag(isNew, true)})
-
-	// New on band
-	if band != "" {
-		isNew, _ := wlFirst(wl != nil && wl.WorkedBand(), s.CallOnBand)
-		rows = append(rows, row{"New on band", flag(isNew, true)})
+// handlePartnerDXCC stores the resolved country → DXCC mapping in the bounded
+// memo. The memo is logbook-scoped and reset on logbook switch, so stale
+// results from a retired database are dropped.
+func (m *Model) handlePartnerDXCC(r partnerDXCCMsg) {
+	if r.logbook != m.App.LogbookName || r.entity == "" {
+		return
+	}
+	if m.rc.countryDXCC == nil {
+		m.rc.countryDXCC = make(map[string]string)
+	}
+	if m.rc.countryDXCCMiss == nil {
+		m.rc.countryDXCCMiss = make(map[string]bool)
+	}
+	if r.dxcc != "" {
+		if _, exists := m.rc.countryDXCC[r.entity]; !exists && len(m.rc.countryDXCC) < 128 {
+			m.rc.countryDXCC[r.entity] = r.dxcc
+		}
 	} else {
-		rows = append(rows, row{"New on band", DimStyle.Render("?")})
+		if len(m.rc.countryDXCCMiss) < 128 {
+			m.rc.countryDXCCMiss[r.entity] = true
+		}
 	}
-
-	// New on mode
-	if mode != "" {
-		isNew, _ := wlFirst(wl != nil && wl.WorkedBandMode(), s.CallOnMode)
-		rows = append(rows, row{"New on mode", flag(isNew, true)})
-	} else {
-		rows = append(rows, row{"New on mode", DimStyle.Render("?")})
-	}
-
-	// New DXCC (WL only — local doesn't track DXCC)
-	isNew, known := wlOnly(wl != nil && wl.DXCCConfirmed())
-	rows = append(rows, row{"New DXCC", flag(isNew, known)})
-
-	// New DXCC on band
-	if band != "" {
-		isNew, known = wlOnly(wl != nil && wl.ConfirmedBand())
-		rows = append(rows, row{"DXCC band", flag(isNew, known)})
-	} else {
-		rows = append(rows, row{"DXCC band", DimStyle.Render("?")})
-	}
-
-	// New DXCC on mode
-	if mode != "" {
-		isNew, known = wlOnly(wl != nil && wl.ConfirmedBandMode())
-		rows = append(rows, row{"DXCC mode", flag(isNew, known)})
-	} else {
-		rows = append(rows, row{"DXCC mode", DimStyle.Render("?")})
-	}
-
-	// QSO count
-	cnt := "none"
-	if s.QSOCount > 0 {
-		cnt = fmt.Sprintf("%d", s.QSOCount)
-	}
-	rows = append(rows, row{"QSO count", ValueStyle.Width(valW).MaxWidth(valW).Inline(true).Render(cnt)})
-
-	// Last QSO — clipped, never wrapped.
-	last := "none"
-	if s.LastQSODate != "" {
-		last = s.LastQSODate
-	}
-	rows = append(rows, row{"Last QSO", ValueStyle.Width(valW).MaxWidth(valW).Inline(true).Render(truncateText(last, valW))})
-
-	return formatRowPairs(rows, S.FormLabel)
 }
 
 // fetchLogbookStatsCmd returns a tea.Cmd that runs GetLogbookStats
-// asynchronously, avoiding DB I/O during View().
+// asynchronously, avoiding DB I/O during View(). The logbook name is
+// captured so a late result can never be applied after a logbook switch.
 func (m *Model) fetchLogbookStatsCmd(call, band, mode string) tea.Cmd {
 	db := m.App.DB
+	logbook := m.App.LogbookName
 	return func() tea.Msg {
 		stats, err := store.GetLogbookStats(db, call, band, mode)
 		if err != nil {
-			return logbookStatsMsg{}
+			return logbookStatsMsg{logbook: logbook}
 		}
-		return logbookStatsMsg{stats: stats, sig: call + "|" + band + "|" + mode}
+		return logbookStatsMsg{stats: stats, sig: logStatsSigFor(call, band, mode), logbook: logbook}
 	}
 }
 
 // handleLogbookStats stores the async result for use by the next View().
+// Results from a previous logbook are discarded — they would otherwise
+// drive worked/new-call badges for the wrong logbook's data.
 func (m *Model) handleLogbookStats(msg logbookStatsMsg) {
 	if msg.sig == "" {
+		return
+	}
+	if msg.logbook != "" && msg.logbook != m.App.LogbookName {
+		applog.Debug("logbook stats: stale result discarded", "from", msg.logbook, "current", m.App.LogbookName)
 		return
 	}
 	m.rc.logStats = msg.stats

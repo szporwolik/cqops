@@ -24,7 +24,7 @@ import (
 // or other goroutines — use tea.Cmd to send a message instead.
 func (m *Model) applyWSJTXStatus(call, grid string, freqHz uint64, mode, submode, report, txMessage string, transmitting bool) {
 	if !m.wsjtx.online && m.toasts != nil {
-		m.toasts.Success("WSJT-X connected")
+		m.toasts.Success("WSJT-X: connected")
 	}
 	m.wsjtx.online = true
 	m.wsjtx.txMsg = txMessage
@@ -138,7 +138,6 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 		return nil, false // skip permanently
 	}
 	qs.Source = "wsjtx"
-	qs.WavelogUploaded = "no"
 	qs.ContestID = m.App.Logbook.ActiveContest
 	// Resolve TX power BEFORE ApplyStationDefaults — the default-fill logic
 	// only fills EMPTY fields, so WSJT-X's reported power would take
@@ -146,7 +145,7 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 	qs.TXPower = txPowerForWSJTX(m, qs.TXPower)
 	qso.ApplyStationDefaults(qs, qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
-		Operator:        m.activeOperatorCallsign(),
+		Operator:        m.effectiveOperator(),
 		MyGridSquare:    m.effectiveGrid(),
 		MyRig:           m.App.Logbook.Station.RigModel(m.App.Config.Rigs),
 		MyAntenna:       m.App.Logbook.Station.RigAntenna(m.App.Config.Rigs),
@@ -167,7 +166,7 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 	activeOp := m.activeOperatorCallsign()
 	if qs.Operator != "" && activeOp != "" && !strings.EqualFold(qs.Operator, activeOp) {
 		applog.Warn("WSJT-X: operator mismatch", "wsjtx_op", qs.Operator, "active_op", activeOp)
-		m.toasts.Warn("WSJT-X operator " + qs.Operator + " differs from active operator " + activeOp)
+		m.toasts.Warn("WSJT-X: operator " + qs.Operator + " differs from active operator " + activeOp)
 	}
 
 	// Enrich QSO: compute distance/bearing from grid squares.
@@ -213,7 +212,7 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 
 	m.clearForm()
 	m.needRefresh = true
-	m.dxc.dupeSet = nil // new QSO logged — dupe markers are stale
+	m.invalidateDXCDupes() // new QSO logged — dupe markers are stale
 	m.dxc.tableReady = false
 	m.contest.computedAt = time.Time{} // force contest stats refresh
 
@@ -234,7 +233,7 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 // Returns nil when offline, when neither QRZ enrichment nor Wavelog upload is
 // possible, or when the call is empty.
 func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
-	if call == "" || !m.inetOnline {
+	if call == "" || m.Offline || !m.inetOnline || m.App == nil || m.App.DB == nil {
 		return nil
 	}
 	qrzenabled := m.App.Config.Integrations.Callbook.QRZ.Enabled && m.App.Config.Integrations.Callbook.QRZ.User != ""
@@ -243,14 +242,36 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 	if !qrzenabled && !wlenabled && m.callbookRegistry == nil {
 		return nil // nothing to do
 	}
+
+	// Immutable operation context — after this point the user may switch
+	// logbooks, which closes and replaces App.DB. Everything the command
+	// touches must come from this snapshot so enrichment and upload always
+	// apply to the logbook the QSO was logged into.
+	ctx := wlOpCtx{logbook: m.App.LogbookName, db: m.App.DB}
+	if wl != nil {
+		ctx.url, ctx.key, ctx.stationID = wl.URL, wl.APIKey, wl.StationProfileID
+	}
+	online := m.inetOnline
+	useCTY := m.App.Config.General.UseCTY
+	bigcty := m.App.BigCTY
+	myGrid := m.effectiveGrid()
+	registry := m.callbookRegistry
+	baseFallback := m.App.Config.Integrations.Callbook.BaseCallFallback
+	release := m.App.KeepDBAlive(ctx.db)
+
 	return func() tea.Msg {
-		// Step 1: enrich via callbook providers (best-effort).
-		if m.callbookRegistry != nil && m.inetOnline {
-			data, err := callbookRegLookup(m, call)
+		// The lease transfers with the wlUploadResultMsg so the completion
+		// handler can queue the follow-up chain without an unprotected
+		// interval; early returns release it directly.
+		// Step 1: enrich via callbook providers (best-effort). The registry
+		// and config flags are snapshots — the worker never reads live
+		// model state.
+		if registry != nil && online {
+			data, err := callbookRegLookup(registry, baseFallback, call)
 			if err != nil {
 				applog.Warn("WSJT-X: callbook enrichment failed", "call", call, "error", err)
 			} else if data != nil && data.Callsign != "" {
-				store.UpdateQSOEnrichment(m.App.DB, qsoID, store.EnrichmentData{
+				if err := store.UpdateQSOEnrichment(ctx.db, qsoID, store.EnrichmentData{
 					Name:       data.Name,
 					QTH:        data.QTH,
 					Country:    data.Country,
@@ -258,18 +279,21 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 					CQZone:     data.CQZone,
 					ITUZone:    data.ITUZone,
 					DXCC:       data.DXCC,
-				})
-				applog.Info("WSJT-X: callbook enrichment applied", "call", call, "qso_id", qsoID)
+				}); err != nil {
+					applog.Warn("WSJT-X: callbook enrichment write failed", "call", call, "qso_id", qsoID, "error", err)
+				} else {
+					applog.Info("WSJT-X: callbook enrichment applied", "call", call, "qso_id", qsoID)
+				}
 			} else {
 				applog.Debug("WSJT-X: callbook returned no data", "call", call)
 			}
 		}
 
 		// Step 1b: enrich Country, CQ/ITU zone, and DXCC from Big CTY.
-		if m.App.Config.General.UseCTY && m.App.BigCTY != nil {
-			qs, _ := store.GetQSOByID(m.App.DB, qsoID)
+		if useCTY && bigcty != nil {
+			qs, _ := store.GetQSOByID(ctx.db, qsoID)
 			if qs != nil {
-				if p := m.dxccLookup(call); p != nil {
+				if p := bigcty.Find(call); p != nil {
 					ed := store.EnrichmentData{}
 					need := false
 					if qs.Country == "" && p.Name != "" {
@@ -289,44 +313,50 @@ func (m *Model) wsjtxEnrichAndUploadCmd(qsoID int64, call string) tea.Cmd {
 						need = true
 					}
 					if need {
-						store.UpdateQSOEnrichment(m.App.DB, qsoID, ed)
-						applog.Debug("WSJT-X: Big CTY enrichment", "call", call, "country", ed.Country, "dxcc", ed.DXCC)
+						if err := store.UpdateQSOEnrichment(ctx.db, qsoID, ed); err != nil {
+							applog.Warn("WSJT-X: Big CTY enrichment write failed", "call", call, "qso_id", qsoID, "error", err)
+						} else {
+							applog.Debug("WSJT-X: Big CTY enrichment", "call", call, "country", ed.Country, "dxcc", ed.DXCC)
+						}
 					}
 				}
 			}
 		}
 
 		// Step 2: load the enriched QSO from DB.
-		qs, err := store.GetQSOByID(m.App.DB, qsoID)
+		qs, err := store.GetQSOByID(ctx.db, qsoID)
 		if err != nil {
 			applog.Error("WSJT-X: cannot load QSO for Wavelog upload", "qso_id", qsoID, "error", err)
+			release()
 			return nil
 		}
 
 		// Step 2b: recompute distance/bearing after enrichment. WSJT-X may
 		// not include a grid, or the enriched grid may be more precise.
-		if myGrid := m.effectiveGrid(); myGrid != "" && qs.GridSquare != "" {
+		if myGrid != "" && qs.GridSquare != "" {
 			qs.Distance = gridDistanceKm(myGrid, qs.GridSquare)
 			qs.Bearing = gridBearingDeg(myGrid, qs.GridSquare)
-			m.App.DB.Exec(`UPDATE qsos SET distance=?, bearing=? WHERE id=?`,
+			ctx.db.Exec(`UPDATE qsos SET distance=?, bearing=? WHERE id=?`,
 				qs.Distance, qs.Bearing, qsoID)
 		}
 
-		// Push enriched QSO to dashboard — force-push because enrichment
-		// updates fields (country, grid, distance) without changing QSO IDs.
-		if m.http.client != nil && m.http.online {
-			ds := m.http.client.State()
-			m.forcePushDashboardRecent(ds)
-			m.pushDashboardToday(ds)
-		}
+		// The dashboard push happens on the owner loop in the result
+		// handlers (wsjtxEnrichDoneMsg / wlUploadResultMsg) — the worker
+		// never touches live model or dashboard state.
 
-		// Step 3: upload the enriched QSO's ADIF to Wavelog.
-		if !wlenabled || !m.inetOnline {
-			return wsjtxEnrichDoneMsg{}
+		// Step 3: upload the enriched QSO to Wavelog (single JSON create
+		// stores the remote id locally). The row and its revision were
+		// loaded together above — the captured pair is passed through so an
+		// edit while the upload is on the wire leaves the row durably dirty
+		// and queues a PATCH, instead of being dismissed with -1.
+		if !wlenabled || !online {
+			release()
+			return wsjtxEnrichDoneMsg{logbook: ctx.logbook}
 		}
-		adifStr := qs.ToADIF()
-		ok, isDup, uploadErr := postQSO(wl.URL, wl.APIKey, wl.StationProfileID, adifStr, qsoID, call, m.App.DB)
-		return wlUploadResultMsg{qID: qsoID, call: call, ok: ok, isDup: isDup, err: uploadErr}
+		ok, isDup, remoteID, changed, uploadErr := postQSOSingle(ctx.url, ctx.key, ctx.stationID, qs, ctx.db, qs.WavelogDirtyRev)
+		return wlUploadResultMsg{qID: qsoID, call: call, logbook: ctx.logbook, ok: ok, isDup: isDup, remoteID: remoteID, err: uploadErr,
+			changed: changed, unresolved: ok && remoteID == 0, db: ctx.db, url: ctx.url, key: ctx.key, sid: ctx.stationID,
+			snap: *qs, uploadedRev: qs.WavelogDirtyRev, release: release}
 	}
 }
 

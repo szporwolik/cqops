@@ -3,6 +3,9 @@ package dashboard
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +17,62 @@ func init() {
 	// Freeze time for deterministic tests.
 	timeNow = func() time.Time {
 		return time.Date(2026, 6, 30, 12, 0, 0, 0, time.UTC)
+	}
+}
+
+// TestCSPAndStaticFiles verifies the dashboard CSP no longer allows inline
+// scripts (defense in depth behind escaped popup content) and that the theme
+// bootstrap is served as an external script.
+func TestCSPAndStaticFiles(t *testing.T) {
+	hub := NewHub()
+	state := NewState(hub)
+	mux := securityHeaders(NewMux(context.Background(), state, hub))
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	// Index must carry a CSP without script-src 'unsafe-inline'.
+	resp, err := http.Get(srv.URL + "/")
+	if err != nil {
+		t.Fatalf("GET /: %v", err)
+	}
+	resp.Body.Close()
+	csp := resp.Header.Get("Content-Security-Policy")
+	if csp == "" {
+		t.Fatal("missing CSP header")
+	}
+	if strings.Contains(csp, "script-src 'self' 'unsafe-inline'") {
+		t.Error("CSP still allows inline scripts")
+	}
+
+	// The theme bootstrap is an external script, not an inline <script>.
+	tresp, err := http.Get(srv.URL + "/theme.js")
+	if err != nil {
+		t.Fatalf("GET /theme.js: %v", err)
+	}
+	tresp.Body.Close()
+	if tresp.StatusCode != http.StatusOK {
+		t.Errorf("theme.js status = %d", tresp.StatusCode)
+	}
+
+	// The HTML must not carry inline scripts or event-handler attributes.
+	iresp, err := http.Get(srv.URL + "/index.html")
+	if err != nil {
+		t.Fatalf("GET /index.html: %v", err)
+	}
+	defer iresp.Body.Close()
+	body, err := io.ReadAll(iresp.Body)
+	if err != nil {
+		t.Fatalf("read index.html: %v", err)
+	}
+	html := string(body)
+	if strings.Contains(html, "<script>") {
+		t.Error("index.html contains an inline <script> block")
+	}
+	if strings.Contains(html, "onclick=") || strings.Contains(html, "onerror=") {
+		t.Error("index.html contains inline event-handler attributes")
+	}
+	if !strings.Contains(html, `src="/theme.js"`) {
+		t.Error("index.html does not load the external theme bootstrap")
 	}
 }
 
@@ -204,7 +263,7 @@ func TestHub_UnsubscribeRemoves(t *testing.T) {
 
 func TestHandleHealthz(t *testing.T) {
 	state := NewState(NewHub())
-	mux := NewMux(state, state.hub)
+	mux := NewMux(context.Background(), state, state.hub)
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
@@ -230,7 +289,7 @@ func TestHandleHealthz(t *testing.T) {
 func TestHandleSnapshot(t *testing.T) {
 	state := NewState(NewHub())
 	state.SetStation(StationInfo{Callsign: "SP9MOA", Locator: "JO90"})
-	mux := NewMux(state, state.hub)
+	mux := NewMux(context.Background(), state, state.hub)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/snapshot", nil)
 	rec := httptest.NewRecorder()
@@ -315,7 +374,7 @@ func TestDisplayConfig_IsOnlineRoundTripViaHTTP(t *testing.T) {
 	})
 	state.SetStation(StationInfo{Callsign: "SP9MOA", Locator: "JO90"})
 
-	mux := NewMux(state, hub)
+	mux := NewMux(context.Background(), state, hub)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/snapshot", nil)
 	rec := httptest.NewRecorder()
@@ -392,7 +451,7 @@ func TestDisplayConfig_IsOnlineFalseDisablesQR(t *testing.T) {
 func TestHandleEvents_SendsInitialSnapshot(t *testing.T) {
 	state := NewState(NewHub())
 	state.SetStation(StationInfo{Callsign: "TEST"})
-	mux := NewMux(state, state.hub)
+	mux := NewMux(context.Background(), state, state.hub)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/events", nil)
 	rec := httptest.NewRecorder()
@@ -501,7 +560,7 @@ func TestHandleAPRS(t *testing.T) {
 	state.SetAPRS([]APRSStation{
 		{Callsign: "N0CALL", Lat: 50, Lon: 20, LastHeard: timeNow()},
 	})
-	mux := NewMux(state, state.hub)
+	mux := NewMux(context.Background(), state, state.hub)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/aprs", nil)
 	rec := httptest.NewRecorder()
@@ -529,5 +588,135 @@ func TestSetAPRS_EmptyList(t *testing.T) {
 	snap := state.Snapshot()
 	if len(snap.APRS) != 0 {
 		t.Errorf("expected empty, got %d", len(snap.APRS))
+	}
+}
+
+// TestShutdownTerminatesSSEClients verifies Stop returns promptly while an
+// SSE client is connected: the server-owned stream context ends the handler
+// instead of Shutdown waiting out its full timeout on the never-idle stream.
+func TestShutdownTerminatesSSEClients(t *testing.T) {
+	port := freePort(t)
+	srv := New("127.0.0.1", port)
+	srv.Start()
+
+	select {
+	case online := <-srv.Status():
+		if !online {
+			t.Fatal("server failed to start")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for server start")
+	}
+
+	resp, err := http.Get("http://127.0.0.1:" + port + "/api/events")
+	if err != nil {
+		t.Fatalf("GET /api/events: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "text/event-stream") {
+		t.Fatalf("content-type = %q", ct)
+	}
+
+	// Prime the stream with the initial snapshot.
+	if _, err := resp.Body.Read(make([]byte, 256)); err != nil {
+		t.Fatalf("read initial SSE data: %v", err)
+	}
+
+	start := time.Now()
+	srv.Stop()
+	if elapsed := time.Since(start); elapsed > 3*time.Second {
+		t.Errorf("Stop took %v with an SSE client connected, want prompt shutdown", elapsed)
+	}
+
+	// The stream must be terminated by the shutdown — drain until EOF.
+	done := make(chan error, 1)
+	go func() {
+		buf := make([]byte, 256)
+		for {
+			_, err := resp.Body.Read(buf)
+			if err != nil {
+				done <- err
+				return
+			}
+		}
+	}()
+	select {
+	case err := <-done:
+		if err != io.EOF {
+			t.Errorf("expected EOF from terminated stream, got %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Error("SSE stream still open after Stop")
+	}
+}
+
+// TestSSE_StalledClientWriteTimesOut verifies a client that stops reading
+// cannot strand the handler: the per-write deadline ends the stream.
+func TestSSE_StalledClientWriteTimesOut(t *testing.T) {
+	old := sseWriteTimeout
+	sseWriteTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { sseWriteTimeout = old })
+
+	port := freePort(t)
+	srv := New("127.0.0.1", port)
+	srv.Start()
+	defer srv.Stop()
+
+	select {
+	case online := <-srv.Status():
+		if !online {
+			t.Fatal("server failed to start")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for server start")
+	}
+
+	conn, err := net.DialTimeout("tcp", "127.0.0.1:"+port, 2*time.Second)
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer conn.Close()
+
+	if _, err := fmt.Fprintf(conn, "GET /api/events HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"); err != nil {
+		t.Fatalf("write request: %v", err)
+	}
+	conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	buf := make([]byte, 2048)
+	var got []byte
+	for !strings.Contains(string(got), "event: snapshot") {
+		n, err := conn.Read(buf)
+		if err != nil {
+			t.Fatalf("read stream start: %v", err)
+		}
+		got = append(got, buf[:n]...)
+	}
+
+	// Stop reading and flood the hub so the server-side write blocks; the
+	// per-write deadline must then end the stream on the server's side.
+	payload := strings.Repeat("x", 64*1024)
+	for i := 0; i < 2000; i++ {
+		srv.Hub().Publish(EventHeartbeat, payload)
+	}
+	// Give the blocked handler time to hit its write deadline.
+	time.Sleep(500 * time.Millisecond)
+
+	// Drain the connection: a stream ended by the deadline closes with EOF
+	// once the buffered data has been read.
+	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	drain := make([]byte, 4096)
+	for {
+		_, err := conn.Read(drain)
+		if err == io.EOF {
+			return
+		}
+		if ne, ok := err.(net.Error); ok && ne.Timeout() {
+			t.Fatal("stream was not terminated by the write deadline")
+		}
+		if err != nil {
+			t.Fatalf("read: %v", err)
+		}
 	}
 }

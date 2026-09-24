@@ -1,6 +1,8 @@
 package ref
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -19,6 +21,47 @@ func TestOpenClose(t *testing.T) {
 	defer db.Close()
 	if n, _ := db.Count(); n != 0 {
 		t.Errorf("expected 0 refs, got %d", n)
+	}
+}
+
+// TestOpenAppliesPragmasToEveryConnection verifies WAL journal mode and the
+// busy timeout are actually in effect on every connection the pool opens.
+// Three connections are held open simultaneously while each is probed, so a
+// pragma applied only to the first connection would be caught here.
+func TestOpenAppliesPragmasToEveryConnection(t *testing.T) {
+	rdb, err := Open(filepath.Join(t.TempDir(), "refs.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer rdb.Close()
+	db := rdb.UnderlyingDB()
+
+	held := make([]*sql.Conn, 0, 3)
+	for i := 0; i < 3; i++ {
+		conn, err := db.Conn(context.Background())
+		if err != nil {
+			t.Fatalf("acquire connection %d: %v", i, err)
+		}
+		held = append(held, conn) // keep it open while probing the next one
+
+		var mode string
+		if err := conn.QueryRowContext(context.Background(), `PRAGMA journal_mode`).Scan(&mode); err != nil {
+			t.Fatalf("conn %d journal_mode: %v", i, err)
+		}
+		if mode != "wal" {
+			t.Errorf("conn %d journal_mode = %q, want wal", i, mode)
+		}
+
+		var timeout int
+		if err := conn.QueryRowContext(context.Background(), `PRAGMA busy_timeout`).Scan(&timeout); err != nil {
+			t.Fatalf("conn %d busy_timeout: %v", i, err)
+		}
+		if timeout < 5000 {
+			t.Errorf("conn %d busy_timeout = %d, want >= 5000", i, timeout)
+		}
+	}
+	for _, c := range held {
+		c.Close()
 	}
 }
 
@@ -443,6 +486,46 @@ func TestSearch_AfterRebuild(t *testing.T) {
 	if len(r) != 1 {
 		t.Errorf("search name: got %d results", len(r))
 	}
+	r, _ = db.Search("e")
+	if len(r) > 500 {
+		t.Errorf("limit exceeded: %d", len(r))
+	}
+}
+
+func TestSearch_FTSGridAndDiacritics(t *testing.T) {
+	dir := t.TempDir()
+	cache := filepath.Join(dir, "cache")
+	os.MkdirAll(cache, 0755)
+
+	writeCSV(t, filepath.Join(cache, sotaFile), "title\nSummitCode,x,x,SummitName,AltM,x,x,x,Lon,Lat,x,x\nG/SP-001,x,x,BenNevis,1344,x,x,x,-5.0,56.0,x,x\nSP/BZ-001,x,x,Ćwilin,1071,x,x,x,20.0,49.6,x,x\n")
+	writeCSV(t, filepath.Join(cache, potaFile), `"reference","name","active","entityId","locationDesc","latitude","longitude","grid"
+"US-0001","Park","1","1","X","44.0","-68.0","FN54"
+`)
+	writeCSV(t, filepath.Join(cache, wwffFile), "reference,status,name,program,dxcc,state,county,continent,iota,iaruLocator,latitude,longitude,x,x\nX-0001,active,Area,x,x,x,x,x,-,OJ58XO,8.6,111.9,x,x\n")
+	writeJSON(t, filepath.Join(cache, iotaFile), []map[string]string{{"refno": "AF-001", "name": "Island"}})
+	writeJSON(t, filepath.Join(cache, iotaGroupFile), []map[string]string{{"refno": "AF-001", "name": "Agalega Islands", "latitude_max": "-10.0", "latitude_min": "-11.0", "longitude_max": "57.0", "longitude_min": "56.0"}})
+
+	db, _ := Open(filepath.Join(dir, "ref.db"))
+	defer db.Close()
+	db.Rebuild(cache, func(string) {})
+
+	// Grid substring via the trigram index (case-insensitive).
+	r, _ := db.Search("fn54")
+	if len(r) != 1 || r[0].Name != "Park" {
+		t.Errorf("grid search: got %+v, want the FN54 park", r)
+	}
+
+	// Diacritic-insensitive name match through the FTS index.
+	r, _ = db.Search("Cwilin")
+	if len(r) != 1 || r[0].Ref != "SP/BZ-001" {
+		t.Errorf("diacritic search: got %+v, want SP/BZ-001", r)
+	}
+	r, _ = db.Search("cwilin")
+	if len(r) != 1 || r[0].Ref != "SP/BZ-001" {
+		t.Errorf("diacritic search (lowercase): got %+v, want SP/BZ-001", r)
+	}
+
+	// Short query falls back to the legacy path and still caps at 500.
 	r, _ = db.Search("e")
 	if len(r) > 500 {
 		t.Errorf("limit exceeded: %d", len(r))

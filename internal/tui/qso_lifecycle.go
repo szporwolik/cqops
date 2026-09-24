@@ -13,9 +13,22 @@ import (
 )
 
 // qsoRefreshedMsg signals that the QSO list has been reloaded from the store.
+// logbook binds the result to the logbook the query ran against — a late
+// result must never replace the table of a different logbook.
 type qsoRefreshedMsg struct {
-	qsos []qso.QSO
-	err  error
+	qsos    []qso.QSO
+	err     error
+	logbook string
+}
+
+// callFilterResultMsg carries the QSOs matching the entered callsign from the
+// background filter query. Applied on the owner loop — the worker never
+// touches the table component itself.
+type callFilterResultMsg struct {
+	call    string
+	logbook string
+	qsos    []qso.QSO
+	err     error
 }
 
 // saveQSO validates, persists, and uploads the current QSO from the form fields.
@@ -89,7 +102,7 @@ func (m *Model) saveQSO() tea.Cmd {
 	}
 	station := qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
-		Operator:        m.activeOperatorCallsign(),
+		Operator:        m.effectiveOperator(),
 		MyGridSquare:    m.effectiveGrid(),
 		MyRig:           m.App.Logbook.Station.RigModel(m.App.Config.Rigs),
 		MyAntenna:       m.App.Logbook.Station.RigAntenna(m.App.Config.Rigs),
@@ -139,11 +152,11 @@ func (m *Model) saveQSO() tea.Cmd {
 	}
 	if err := qso.ValidateForSave(qs); err != nil {
 		applog.Warn("QSO validation failed", "error", err.Error())
-		m.toasts.Error(err.Error())
+		m.toasts.Error("QSO: " + err.Error())
 		return nil
 	}
 	if _, err := store.InsertQSO(m.App.DB, qs); err != nil {
-		m.toasts.Error(fmt.Sprintf("Save failed: %v", err))
+		m.toasts.Error(fmt.Sprintf("QSO: save failed — %v", err))
 		return nil
 	}
 
@@ -173,10 +186,19 @@ func (m *Model) saveQSO() tea.Cmd {
 	// The cached dupe/new-call/new-DXCC flags are now stale — the QSO
 	// we just saved changes the dupe status for this call.
 	m.invalidateDashboardFlags()
-	m.dxc.dupeSet = nil                // force DXC dupe set recompute
+	m.invalidateDXCDupes()             // force dupe markers to recompute
 	m.dxc.tableReady = false           // force DXC table rebuild to show updated markers
 	m.contest.computedAt = time.Time{} // force contest stats refresh
 	return tea.Batch(m.refreshQSOS(), m.maybeUploadToWavelog(qs))
+}
+
+// invalidateDXCDupes marks every dupe-derived cache stale after a QSO
+// mutation: the DXC table's dupe set and the path-line dupe cache (whose
+// key includes the dupe revision).
+func (m *Model) invalidateDXCDupes() {
+	m.dxc.dupeSet = nil
+	m.dxc.dupeGen++
+	m.rc.dxcDupeSig = ""
 }
 
 // refreshQSOS reloads the QSO list from the store, updates the RecentQSOs component,
@@ -184,11 +206,13 @@ func (m *Model) saveQSO() tea.Cmd {
 // Also busts the logbook-wide counts cache so the profile line picks up new QSOs.
 func (m *Model) refreshQSOS() tea.Cmd {
 	db := m.App.DB // capture before async execution — logbook cycle may swap it
+	logbook := m.App.LogbookName
 	contest := m.App.Logbook.ActiveContest
 	m.rc.logbookStatsDate = "" // force re-fetch on next tick
+	m.invalidateDXCDupes()     // QSO data changed — dupe markers are stale
 	return func() tea.Msg {
 		if db == nil {
-			return qsoRefreshedMsg{qsos: nil, err: nil}
+			return qsoRefreshedMsg{qsos: nil, err: nil, logbook: logbook}
 		}
 		var qsos []qso.QSO
 		var err error
@@ -198,20 +222,22 @@ func (m *Model) refreshQSOS() tea.Cmd {
 				break
 			}
 			if strings.Contains(err.Error(), "database is closed") {
-				return qsoRefreshedMsg{qsos: nil, err: nil}
+				return qsoRefreshedMsg{qsos: nil, err: nil, logbook: logbook}
 			}
 			if !strings.Contains(err.Error(), "database is locked") {
 				break
 			}
 			time.Sleep(50 * time.Millisecond)
 		}
-		return qsoRefreshedMsg{qsos: qsos, err: err}
+		return qsoRefreshedMsg{qsos: qsos, err: err, logbook: logbook}
 	}
 }
 
 // updateFilteredTable searches the DB for QSOs matching the current callsign
-// and applies the filter to the RecentQSOs table. When no call is entered,
-// the filter is cleared and the table returns to normal mode.
+// and applies the filter to the RecentQSOs table. The query runs in the
+// background; the result is installed via applyCallFilterResult on the owner
+// loop, so the table is never mutated from a worker goroutine. When no call
+// is entered, the filter is cleared and the table returns to normal mode.
 func (m *Model) updateFilteredTable() tea.Cmd {
 	call := qso.NormalizeCall(m.fields[fieldCall].Value())
 	if call == "" {
@@ -222,19 +248,28 @@ func (m *Model) updateFilteredTable() tea.Cmd {
 	if m.callRecentQSOs.IsFiltered() && m.callRecentQSOs.filterCall == call && m.callRecentQSOs.filterCacheID != 0 {
 		return nil
 	}
+	db := m.App.DB
+	logbook := m.App.LogbookName
 	return func() tea.Msg {
-		currentCall := qso.NormalizeCall(m.fields[fieldCall].Value())
-		if currentCall == "" {
-			m.callRecentQSOs.ClearFilter()
-			return nil
-		}
-		qsos, err := store.SearchQSOsByCall(m.App.DB, currentCall, 200)
-		if err != nil {
-			return nil
-		}
-		m.callRecentQSOs.SetFilterCall(currentCall, qsos)
-		return nil
+		qsos, err := store.SearchQSOsByCall(db, call, 200)
+		return callFilterResultMsg{call: call, logbook: logbook, qsos: qsos, err: err}
 	}
+}
+
+// applyCallFilterResult installs a filtered-table result on the owner loop.
+// Stale results — the operator typed another callsign or switched logbooks
+// while the query was running — are dropped.
+func (m *Model) applyCallFilterResult(msg callFilterResultMsg) {
+	if msg.logbook != m.App.LogbookName {
+		return
+	}
+	if current := qso.NormalizeCall(m.fields[fieldCall].Value()); current != msg.call {
+		return
+	}
+	if msg.err != nil {
+		return
+	}
+	m.callRecentQSOs.SetFilterCall(msg.call, msg.qsos)
 }
 
 // clearFilteredTable clears the callRecentQSOs filter.

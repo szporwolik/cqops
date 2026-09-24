@@ -11,6 +11,7 @@ import (
 // dxcState holds all DX Cluster connection, table, filter, and selection state.
 type dxcState struct {
 	client       *dxc.Client
+	clientGen    uint64 // bumped on every teardown/reset — invalidates in-flight connect results
 	online       bool
 	connecting   bool
 	lastAttempt  time.Time
@@ -23,6 +24,12 @@ type dxcState struct {
 	builtW     int
 	builtH     int
 	spotCount  int
+
+	// filterRebuildAt marks when the last filter change happened. A filter
+	// change still sets tableReady=false (existing semantics), but the
+	// rebuild in View() waits a short debounce so rapid filter cycling
+	// coalesces into one DB query and one table build.
+	filterRebuildAt time.Time
 
 	bandFilter   string          // "" = all, band name = filter, "other" = unclassified
 	timeFilter   int             // minutes, 0 = all
@@ -38,6 +45,7 @@ type dxcState struct {
 	cachedSpots  []store.DXCSpot // cached result of last filteredSpots() call
 	cachedRaw    []store.DXCSpot // raw unfiltered spots; new spots appended here
 	rawGen       int             // incremented on every cachedRaw change; busts dxcPathLine cache
+	dupeGen      int             // incremented on every QSO mutation; busts the path-line dupe cache
 
 	// Filter state at time of cache — used to detect staleness.
 	cachedBandFilter string

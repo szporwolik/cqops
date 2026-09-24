@@ -5,6 +5,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
@@ -38,11 +39,9 @@ type LogbookChooser struct {
 	width   int
 	height  int
 	done    bool
+	fm      menuFocus
 
 	// Wavelog async state
-	wlUpdating   bool
-	wlTesting    bool
-	wlStatus     string
 	wlStations   []wavelog.StationProfile
 	wlStationIdx int // index into wlStations, -1 if none
 	wlStationID  string
@@ -54,10 +53,6 @@ type LogbookChooser struct {
 
 	// Pre-fetched QSO counts per logbook (populated on init).
 	qsoCounts map[string]int
-
-	// APRS async state.
-	aprsTesting bool
-	aprsStatus  string
 }
 
 // Wavelog async message types
@@ -66,7 +61,8 @@ type wlUpdateMsg struct {
 	err      error
 }
 type wlTestMsg struct {
-	err error
+	err  error
+	warn string // non-fatal shared-club key warnings
 }
 
 // APRS async message type.
@@ -132,9 +128,7 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		c.height = msg.Height
 
 	case wlUpdateMsg:
-		c.wlUpdating = false
 		if msg.err != nil {
-			c.wlStatus = msg.err.Error()
 			c.wlStations = nil
 			c.wlStationIdx = -1
 			c.toasts.Error("Wavelog: " + msg.err.Error())
@@ -150,18 +144,30 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			c.updateStationIDField()
-			c.wlStatus = fmt.Sprintf("OK — %d stations loaded — Space over Station ID to cycle", len(msg.stations))
 			c.toasts.Success(fmt.Sprintf("Wavelog: %d stations loaded", len(msg.stations)))
+			return c, c.stationDetailCmd()
 		}
 
-	case wlTestMsg:
-		c.wlTesting = false
+	case wlStationDetailMsg:
 		if msg.err != nil {
-			c.wlStatus = msg.err.Error()
+			c.toasts.Warn("Wavelog: station details unavailable")
+		} else if msg.station != nil && c.selectedStationID() == msg.stationID {
+			fillStationFormFromWavelog(c.station, msg.station)
+		}
+
+	case stationSyncDoneMsg:
+		// Handled globally on the model (update_handlers.go) — the chooser
+		// may be closed by the time the station fetch completes.
+		return c, nil
+
+	case wlTestMsg:
+		if msg.err != nil {
 			c.toasts.Error("Wavelog: " + msg.err.Error())
 		} else {
-			c.wlStatus = "OK — Wavelog reachable"
 			c.toasts.Success("Wavelog: connection verified")
+		}
+		if msg.warn != "" {
+			c.toasts.Warn("Wavelog: " + msg.warn)
 		}
 		c.scrollViewportToEnd()
 
@@ -171,12 +177,9 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case aprsTestMsg:
-		c.aprsTesting = false
 		if msg.err != nil {
-			c.aprsStatus = msg.err.Error()
 			c.toasts.Error("APRS: " + msg.err.Error())
 		} else {
-			c.aprsStatus = "OK — connection verified"
 			c.toasts.Success("APRS: connection verified")
 		}
 		c.scrollViewportToEnd()
@@ -270,7 +273,14 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			scrollVpToLine(&c.vp, c.cursor)
 
 		case c.mode == chooserEdit || c.mode == chooserCreate:
+			// Shared navigation: Tab/Down, Shift+Tab/Up, and the Save & Back
+			// button (Space/Enter saves).
+			if handled, cmd := c.fm.onKey(msg, c, func() tea.Cmd { return c.saveForm() }); handled {
+				return c, cmd
+			}
+			wasAprs := c.station.AprsEnabled
 			if cmd := c.station.HandleKey(msg); cmd != nil {
+				c.enableGlobalAPRSIfTurnedOn(wasAprs)
 				// Execute the command to inspect the message. Save (enterOnLastFieldMsg)
 				// triggers saveForm; WL button actions are handled below.
 				msg := cmd()
@@ -288,13 +298,14 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						c.wlStationIdx = (c.wlStationIdx + 1) % len(c.wlStations)
 						c.updateStationIDField()
 					}
-					return c, c.testWavelogConnection()
+					return c, tea.Batch(c.testWavelogConnection(), c.stationDetailCmd())
 				case scrollFormToEnd:
 					c.scrollViewportToEnd()
 					return c, nil
 				}
 				return c, nil
 			}
+			c.enableGlobalAPRSIfTurnedOn(wasAprs)
 			// Key not handled by station form — forward to viewport for scrolling,
 			// then clamp to prevent scrolling past the content end.
 			var cmd tea.Cmd
@@ -431,7 +442,9 @@ func (c *LogbookChooser) viewForm() string {
 	}
 
 	c.station.width = w - 6 // account for menu box border + padding
-	b.WriteString(c.station.View().Content)
+	b.WriteString(strings.TrimRight(c.station.View().Content, "\n"))
+	b.WriteString("\n")
+	b.WriteString(c.fm.btn.line("Save & Back", w-6))
 
 	// Use viewport for scrollable form body on small terminals.
 	boxW := w
@@ -458,6 +471,7 @@ func (c *LogbookChooser) viewForm() string {
 		c.vp.SetContent(bodyStr)
 		c.lastFormContent = bodyStr
 	}
+	scrollToFocusedLine(&c.vp, bodyStr)
 	// Prevent scrolling past the end: if past bottom, snap back.
 	if c.vp.PastBottom() {
 		c.autoScrollViewport()
@@ -500,7 +514,7 @@ func (c *LogbookChooser) autoScrollViewport() {
 }
 
 // scrollViewportToEnd scrolls the viewport to the last visible page so the
-// user can see the APRS/Wavelog test status lines without manual scrolling.
+// Wavelog/APRS section stays visible after pressing Test/Update.
 func (c *LogbookChooser) scrollViewportToEnd() {
 	total := c.vp.TotalLineCount()
 	visible := c.vp.VisibleLineCount()
@@ -515,7 +529,9 @@ func (c *LogbookChooser) scrollViewportToEnd() {
 	c.vp.SetYOffset(maxOffset)
 }
 
-// logbookSwitchedMsg is sent when the user switches active logbook via Enter.
+// logbookSwitchedMsg is sent when the active logbook actually switches
+// (chooser Enter, new logbook created). The model's global handler runs the
+// switch bookkeeping exactly once per successful switch.
 type logbookSwitchedMsg struct{}
 
 func (c *LogbookChooser) handleEnter() tea.Cmd {
@@ -539,6 +555,13 @@ func (c *LogbookChooser) handleEnter() tea.Cmd {
 	return nil
 }
 
+// focusableRows implementation for the shared menuFocus engine — delegated
+// to the station form's row model.
+func (c *LogbookChooser) rowCount() int          { return c.station.rowCount() }
+func (c *LogbookChooser) rowVisible(i int) bool  { return c.station.rowVisible(i) }
+func (c *LogbookChooser) blurAll()               { c.station.BlurAll() }
+func (c *LogbookChooser) focusRow(i int) tea.Cmd { return c.station.focusRow(i) }
+
 func (c *LogbookChooser) refreshNames() {
 	c.names = config.SortedLogbookIDs(c.app.Config)
 	// Keep cursor on the active logbook after refresh.
@@ -555,6 +578,7 @@ func (c *LogbookChooser) refreshNames() {
 
 func (c *LogbookChooser) startCreate() {
 	c.mode = chooserCreate
+	c.fm.reset()
 	c.lastFormContent = "" // force viewport refresh on mode switch
 	c.station.SetValues("", "", "", "", "", "", "", 1, 0, 0, 0, "", "", "EU")
 	c.station.SetWavelogValues(nil)
@@ -569,6 +593,7 @@ func (c *LogbookChooser) startCreate() {
 func (c *LogbookChooser) startEdit(id string) {
 	lb := c.app.Config.Logbooks[id]
 	c.mode = chooserEdit
+	c.fm.reset()
 	c.lastFormContent = "" // force viewport refresh on mode switch
 	c.editing = id
 	// Resolve active operator to callsign for the form selector.
@@ -583,7 +608,6 @@ func (c *LogbookChooser) startEdit(id string) {
 	c.station.SetOperators(config.OperatorSlice(c.app.Config))
 	c.station.SetWavelogValues(lb.Wavelog)
 	c.station.SetAPRSValues(lb.APRS)
-	c.wlStatus = ""
 	c.wlStations = nil
 	c.wlStationIdx = -1
 	if lb.Wavelog != nil {
@@ -594,7 +618,7 @@ func (c *LogbookChooser) startEdit(id string) {
 }
 
 func (c *LogbookChooser) saveForm() tea.Cmd {
-	nm, cs, op, gr, sotaRef, potaRef, wwffRef, wlEnabled, wlURL, wlKey, wlStationID, iaruRegion, cqZone, ituZone, dxcc, sig, sigInfo, continent := c.station.Values()
+	nm, cs, op, gr, sotaRef, potaRef, wwffRef, wlEnabled, wlURL, wlKey, wlStationID, iaruRegion, cqZone, ituZone, dxcc, sig, sigInfo, continent, wlSharedClub := c.station.Values()
 
 	// Resolve operator callsign to operator ID for ActiveOperator.
 	var activeOpID string
@@ -605,12 +629,12 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 	}
 
 	if err := c.station.Validate(); err != nil {
-		c.toasts.Warn(err.Error())
+		c.toasts.Warn("Station: " + err.Error())
 		return nil
 	}
 
 	if nm == "" {
-		c.toasts.Warn("Station name cannot be empty")
+		c.toasts.Warn("Station: name cannot be empty")
 		return nil
 	}
 
@@ -620,18 +644,19 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 	var wl *config.WavelogConfig
 	if wlEnabled {
 		if wlStationID == "" {
-			c.toasts.Warn("Wavelog enabled but Station ID not set — press Update to fetch")
+			c.toasts.Warn("Wavelog: enabled but Station ID not set — press Update to fetch")
 			return nil
 		}
 		if wlURL == "" || wlKey == "" {
-			c.toasts.Warn("Wavelog URL and API key are required when enabled")
+			c.toasts.Warn("Wavelog: URL and API key are required when enabled")
 			return nil
 		}
 		wl = &config.WavelogConfig{
 			Enabled:          wlEnabled,
 			URL:              wlURL,
 			APIKey:           wlKey,
-			StationProfileID: wlStationID,
+			StationProfileID: wavelog.SanitizeStationID(wlStationID),
+			SharedClub:       wlSharedClub,
 		}
 		if c.mode == chooserEdit {
 			if prev := c.app.Config.Logbooks[c.editing].Wavelog; prev != nil {
@@ -701,20 +726,22 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 			Wavelog: wl,
 			APRS:    aprs,
 		}
-		c.app.Config.State.ActiveLogbook = id
-		c.app.LogbookName = id
-		lb := c.app.Config.Logbooks[id]
-		c.app.Logbook = &lb
-
-		c.names = append(c.names, id)
-		c.qsoCounts[id] = 0 // new logbook starts empty
 		savedName = cs
 
-		// Open the new logbook's database and switch to it.
+		// SwitchLogbook exclusively commits the active identity (State.
+		// ActiveLogbook, LogbookName, App.Logbook) together with the new
+		// database. The config entry registered above is provisional —
+		// SwitchLogbook needs it to resolve the database path. On failure
+		// it leaves the current database AND identity untouched, so roll
+		// the provisional entry back out and keep the old logbook active.
 		if err := c.app.SwitchLogbook(id); err != nil {
+			delete(c.app.Config.Logbooks, id)
 			c.toasts.Error("Failed to open logbook: " + err.Error())
 			return nil
 		}
+
+		c.names = append(c.names, id)
+		c.qsoCounts[id] = 0 // new logbook starts empty
 
 		c.mode = chooserList
 		c.station.BlurAll()
@@ -725,7 +752,11 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 		}
 		c.toasts.Success("Logbook " + savedName + " created")
 		applog.Info("Logbook created", "name", savedName)
-		return func() tea.Msg { return logbookSwitchedMsg{} }
+		// The switch already succeeded — run its bookkeeping exactly once,
+		// right away (the global handler applies it). The station sync
+		// completion is a separate path that only refreshes station-derived
+		// state and never resets an in-progress contact.
+		return tea.Batch(func() tea.Msg { return logbookSwitchedMsg{} }, c.syncStationAfterSaveCmd(id, wl))
 	}
 
 	// Edit existing logbook.
@@ -767,17 +798,78 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 	// Restart APRS if config changed (debounced).
 	c.app.ScheduleAPRSRestart()
 	c.app.RequestAPRSRefresh()
-	return nil
+	return c.syncStationAfterSaveCmd(id, wl)
+}
+
+// logbookSyncGen counts logbook saves. Every save bumps it, so an in-flight
+// station sync result is only applied when it belongs to the LATEST saved
+// configuration — a result from an older save must never overwrite newer
+// station data.
+var logbookSyncGen atomic.Uint64
+
+// stationSyncDoneMsg carries the fetched Wavelog station profile back from
+// the background sync worker. Applying it — config mutation, save, toast,
+// and the active-logbook pointer — happens exclusively on the owner loop
+// (m.handleStationSyncDone), regardless of the visible screen.
+type stationSyncDoneMsg struct {
+	lbID string
+	st   *wavelog.Station
+	err  error
+	gen  uint64 // logbookSyncGen captured when the sync was launched
+}
+
+// syncStationAfterSaveCmd mirrors the Wavelog station profile into the saved
+// logbook (grid, DXCC, zones, reference fields) asynchronously so the UI
+// never blocks on the network. The worker only fetches — all state changes
+// happen in the model's global message handler when the result arrives.
+// The completion applies station-dependent refreshes only: logbook-switch
+// bookkeeping belongs to the sites that actually switched the logbook.
+func (c *LogbookChooser) syncStationAfterSaveCmd(lbID string, wl *config.WavelogConfig) tea.Cmd {
+	// A new save invalidates any in-flight station sync from a previous one.
+	gen := logbookSyncGen.Add(1)
+	if wl == nil || !wl.Enabled {
+		return nil
+	}
+	url, key, sid := wl.URL, wl.APIKey, wl.StationProfileID
+	return func() tea.Msg {
+		st, err := wavelog.GetStation(url, key, sid)
+		return stationSyncDoneMsg{lbID: lbID, st: st, err: err, gen: gen}
+	}
 }
 
 // updateStationIDField sets the Station ID text field to show the currently
-// selected station's ID, callsign, name, and locator.
+// selected station's ID, callsign, name, and locator — the locator field is
+// mirrored from Wavelog to keep the logbook grid in sync.
 func (c *LogbookChooser) updateStationIDField() {
 	if c.wlStationIdx >= 0 && c.wlStationIdx < len(c.wlStations) {
 		s := c.wlStations[c.wlStationIdx]
 		c.station.WlStationID.SetValue(fmt.Sprintf("%s — %s (%s) %s", s.ID, s.Callsign, s.Name, s.Gridsquare))
 		c.wlStationID = s.ID
+		if s.Callsign != "" {
+			c.station.Callsign.SetValue(s.Callsign)
+		}
+		c.station.Locator.SetValue(s.Gridsquare)
 	}
+}
+
+// selectedStationID returns the Wavelog station ID currently selected, or "".
+func (c *LogbookChooser) selectedStationID() string {
+	if c.wlStationIdx >= 0 && c.wlStationIdx < len(c.wlStations) {
+		return c.wlStations[c.wlStationIdx].ID
+	}
+	return ""
+}
+
+// stationDetailCmd fetches the full profile of the currently selected station
+// so the rest of the form can mirror it.
+func (c *LogbookChooser) stationDetailCmd() tea.Cmd {
+	sid := c.selectedStationID()
+	if sid == "" {
+		return nil
+	}
+	u := strings.TrimRight(strings.TrimSpace(c.station.WlURL.Value()), "/")
+	k := strings.TrimSpace(c.station.WlKey.Value())
+	return fetchWavelogStationDetailCmd(u, k, sid)
 }
 
 func (c *LogbookChooser) deleteLogbook() tea.Cmd {
@@ -832,8 +924,6 @@ func (c *LogbookChooser) deleteLogbook() tea.Cmd {
 
 // fetchWavelogStations fetches station profiles from the Wavelog API.
 func (c *LogbookChooser) fetchWavelogStations() tea.Cmd {
-	c.wlUpdating = true
-	c.wlStatus = "Fetching stations…"
 	u := strings.TrimRight(strings.TrimSpace(c.station.WlURL.Value()), "/")
 	k := strings.TrimSpace(c.station.WlKey.Value())
 	return func() tea.Msg {
@@ -843,26 +933,27 @@ func (c *LogbookChooser) fetchWavelogStations() tea.Cmd {
 }
 
 // testWavelogConnection tests Wavelog connectivity and station validity.
+// On a shared club station the whoami metadata is checked additionally:
+// uploads need qso:write, and a key that also carries qso:delete gets a
+// warning (CQOps blocks remote edits/deletes, but the token itself could
+// still delete the whole club log elsewhere).
 func (c *LogbookChooser) testWavelogConnection() tea.Cmd {
 	u := strings.TrimRight(strings.TrimSpace(c.station.WlURL.Value()), "/")
 	k := strings.TrimSpace(c.station.WlKey.Value())
+	sc := c.station.WlSharedClub
 
 	// Validate required fields before testing.
 	if u == "" {
-		c.wlStatus = "API URL is required"
 		c.toasts.Warn("Wavelog: API URL is required")
 		c.scrollViewportToEnd()
 		return nil
 	}
 	if k == "" {
-		c.wlStatus = "API Key is required"
 		c.toasts.Warn("Wavelog: API Key is required")
 		c.scrollViewportToEnd()
 		return nil
 	}
 
-	c.wlTesting = true
-	c.wlStatus = "Testing…"
 	c.scrollViewportToEnd()
 	var sid string
 	if c.wlStationIdx >= 0 && c.wlStationIdx < len(c.wlStations) {
@@ -877,7 +968,30 @@ func (c *LogbookChooser) testWavelogConnection() tea.Cmd {
 				return wlTestMsg{err: err}
 			}
 		}
+		if sc {
+			info, err := wavelog.WhoamiCheck(u, k)
+			if err != nil {
+				return wlTestMsg{err: err}
+			}
+			if !info.HasScope("qso:write") {
+				return wlTestMsg{err: fmt.Errorf("shared club station requires the qso:write scope on the token")}
+			}
+			if info.HasScope("qso:delete") {
+				return wlTestMsg{warn: fmt.Sprintf("owner %s — the token carries qso:delete; CQOps blocks remote edits and deletes, but consider recreating the key without that scope", info.Owner)}
+			}
+			return wlTestMsg{warn: fmt.Sprintf("club station key of %s — synced contacts will be read-only", info.Owner)}
+		}
 		return wlTestMsg{}
+	}
+}
+
+// enableGlobalAPRSIfTurnedOn turns on the global APRS integration when the
+// operator just switched APRS TX on for this logbook, saving a trip to the
+// Integrations menu. Turning TX off never disables the global integration.
+func (c *LogbookChooser) enableGlobalAPRSIfTurnedOn(wasEnabled bool) {
+	if !wasEnabled && c.station.AprsEnabled && !c.app.Config.Integrations.APRS.Enabled {
+		c.app.Config.Integrations.APRS.Enabled = true
+		c.toasts.Info("APRS: integration enabled")
 	}
 }
 
@@ -887,7 +1001,6 @@ func (c *LogbookChooser) testWavelogConnection() tea.Cmd {
 func (c *LogbookChooser) testAPRSConnection() tea.Cmd {
 	aprsGlobal := c.app.Config.Integrations.APRS
 	if !aprsGlobal.Enabled {
-		c.aprsStatus = "APRS not configured in Integrations"
 		c.toasts.Warn("APRS: enable and configure APRS in Integrations first")
 		c.scrollViewportToEnd()
 		return nil
@@ -898,7 +1011,6 @@ func (c *LogbookChooser) testAPRSConnection() tea.Cmd {
 
 	// Validate required fields before testing.
 	if call == "" {
-		c.aprsStatus = "Callsign is required"
 		c.toasts.Warn("APRS: callsign is required")
 		c.scrollViewportToEnd()
 		return nil
@@ -910,7 +1022,6 @@ func (c *LogbookChooser) testAPRSConnection() tea.Cmd {
 		prt := aprsGlobal.Port
 		baud := aprsGlobal.BaudRate
 		if prt == "" || baud == 0 {
-			c.aprsStatus = "KISS port/baud not configured in Integrations"
 			c.toasts.Warn("APRS: configure KISS port and baud in Integrations first")
 			c.scrollViewportToEnd()
 			return nil
@@ -921,8 +1032,6 @@ func (c *LogbookChooser) testAPRSConnection() tea.Cmd {
 		}
 		par := parityFromString(aprsGlobal.Parity)
 		stop := stopBitsFromString(aprsGlobal.StopBits)
-		c.aprsTesting = true
-		c.aprsStatus = "Testing KISS…"
 		c.scrollViewportToEnd()
 		return func() tea.Msg {
 			if err := testKISSPort(prt, baud, dataBits, par, stop, aprsGlobal.DTR, aprsGlobal.RTS); err != nil {
@@ -940,8 +1049,6 @@ func (c *LogbookChooser) testAPRSConnection() tea.Cmd {
 			port = "8001"
 		}
 		addr := host + ":" + port
-		c.aprsTesting = true
-		c.aprsStatus = "Testing KISS server…"
 		c.scrollViewportToEnd()
 		return func() tea.Msg {
 			if err := aprs.TestKISSServerConnection(addr); err != nil {
@@ -954,8 +1061,6 @@ func (c *LogbookChooser) testAPRSConnection() tea.Cmd {
 		if srv == "" {
 			srv = "euro.aprs2.net:14580"
 		}
-		c.aprsTesting = true
-		c.aprsStatus = "Testing…"
 		c.scrollViewportToEnd()
 		return func() tea.Msg {
 			if err := aprs.TestConnection(srv, call, pass); err != nil {

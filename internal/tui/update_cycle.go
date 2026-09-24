@@ -2,6 +2,7 @@ package tui
 
 import (
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
@@ -16,7 +17,7 @@ import (
 func (m *Model) cycleLogbook() tea.Cmd {
 	ids := config.SortedLogbookIDs(m.App.Config)
 	if len(ids) <= 1 {
-		m.toasts.Info("Only one logbook configured")
+		m.toasts.Info("Logbook: only one configured")
 		return nil
 	}
 
@@ -31,20 +32,39 @@ func (m *Model) cycleLogbook() tea.Cmd {
 	next := ids[idx]
 
 	if err := m.App.SwitchLogbook(next); err != nil {
-		m.toasts.Error("Switch to " + config.LogbookDisplayName(m.App.Logbook) + " failed: " + err.Error())
+		m.toasts.Error("Logbook: switch to " + config.LogbookDisplayName(m.App.Logbook) + " failed — " + err.Error())
 		return nil
 	}
 	displayName := config.LogbookDisplayName(m.App.Logbook)
 	m.toasts.Success("Logbook: " + displayName)
 	applog.Info("Logbook cycled", "name", displayName)
-	m.rc.status = ""
+	return m.handleLogbookSwitched()
+}
+
+// handleLogbookSwitched runs the bookkeeping that follows every successful
+// logbook switch — cycled, picked in the chooser, or newly created. The
+// switch itself (SwitchLogbook) already happened synchronously; this resets
+// per-logbook caches and re-fires lookups against the new database.
+func (m *Model) handleLogbookSwitched() tea.Cmd {
 	m.invalidatePartnerMapCache()
 	m.rc.logStatsSig = ""
 	m.rc.workedSummarySig = ""
+	m.rc.workedSummaryWantedSig = ""
+	m.rc.workedSummaryInflightSig = ""
+	m.rc.countryDXCC = nil
+	m.rc.countryDXCCMiss = nil
 	m.rc.pathSig = ""
 	m.rc.pathLine = ""
 	m.lookup.wlPrivateData = nil // WL data is logbook-specific
 	m.lookup.wlForceCheck = true
+
+	// The callbook registry captured the old *sql.DB when it was built —
+	// rebuild it against the new logbook and reset the lookup state so the
+	// form never shows the retired logbook's history.
+	m.rebuildCallbookRegistry()
+	m.lookup.qrzLookupDone = false
+	m.lookup.qrzLast = time.Time{}
+	m.lookup.callbookToastCall = ""
 
 	// Clear contest exchange fields, then re-apply prefill if the new
 	// logbook has an active contest with prefilling enabled.
@@ -58,12 +78,21 @@ func (m *Model) cycleLogbook() tea.Cmd {
 		m.checkDupe()
 	}
 	var cmds []tea.Cmd
+	// Re-run the callbook lookup for the current call against the new
+	// logbook — in-flight results from the old one are dropped by source.
+	if call := strings.TrimSpace(m.fields[fieldCall].Value()); call != "" {
+		if c := m.callbookLookup(call); c != nil {
+			cmds = append(cmds, c)
+		}
+	}
 	cmds = append(cmds, m.refreshQSOS())
 	// Request recent DXC spots for the new logbook so the DXC table
-	// isn't left empty after the DB switch clears old spots.
+	// isn't left empty after the DB switch clears old spots. The client
+	// is captured here — the worker must not read m.dxc.client.
 	if m.dxc.online && m.dxc.client != nil {
+		dxcClient := m.dxc.client
 		cmds = append(cmds, func() tea.Msg {
-			m.dxc.client.RequestRecent(50)
+			dxcClient.RequestRecent(50)
 			return nil
 		})
 	}
@@ -73,16 +102,70 @@ func (m *Model) cycleLogbook() tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
+// handleStationSyncDone applies a background Wavelog station sync result on
+// the owner loop, regardless of the visible screen. Results from a save that
+// was superseded by a newer one are discarded, so old station data can never
+// overwrite newer configuration.
+//
+// This is NOT switch bookkeeping: a switch already ran its own bookkeeping
+// exactly once when it succeeded, and the sync can complete long after the
+// operator returned to logging. The completion refreshes only state derived
+// from the station — it must never reset an in-progress contact (exchange
+// fields, callbook lookups, dupe checks).
+func (m *Model) handleStationSyncDone(msg stationSyncDoneMsg) tea.Cmd {
+	if msg.gen != logbookSyncGen.Load() {
+		applog.Debug("Logbook: stale station sync discarded", "logbook", msg.lbID,
+			"gen", msg.gen, "current", logbookSyncGen.Load())
+		return nil
+	}
+	if msg.err != nil {
+		applog.Warn("Logbook: Wavelog station sync failed", "logbook", msg.lbID, "error", msg.err)
+		m.toasts.Warn("Wavelog: station sync failed — kept entered values")
+		return nil
+	}
+	if msg.st == nil {
+		return nil
+	}
+	lb, ok := m.App.Config.Logbooks[msg.lbID]
+	if !ok {
+		return nil
+	}
+	if !applyWavelogStation(msg.st, &lb.Station) {
+		return nil
+	}
+	m.App.Config.Logbooks[msg.lbID] = lb
+	if serr := config.Save(m.App.ConfigPath, m.App.Config); serr != nil {
+		applog.Warn("Logbook: re-save after station sync failed", "error", serr)
+	} else if m.App.LogbookName == msg.lbID {
+		m.App.Logbook = &lb
+		m.toasts.Info("Wavelog: station fields synced")
+	}
+
+	// Station-dependent refreshes only — never contact state. The station
+	// identity/position changed, so cached partner/path rendering is stale,
+	// and APRS beacons and the dashboard must pick up the new station
+	// without waiting for their periodic ticks.
+	m.invalidatePartnerMapCache()
+	m.rc.pathSig = ""
+	m.rc.pathLine = ""
+	m.App.ScheduleAPRSRestart()
+	m.App.RequestAPRSRefresh()
+	if m.http.online {
+		m.pushDashboardFast()
+	}
+	return nil
+}
+
 // cycleRig cycles to the next rig preset in alphabetical order (by model).
 func (m *Model) cycleRig() tea.Cmd {
 	ids := config.SortedRigIDs(m.App.Config)
 	if len(ids) == 0 {
-		m.toasts.Info("No rigs configured")
+		m.toasts.Info("Rig: none configured")
 		return nil
 	}
 	if len(ids) == 1 {
 		rp := m.App.Config.Rigs[ids[0]]
-		m.toasts.Info("Only one rig: " + config.RigDisplayName(&rp))
+		m.toasts.Info("Rig: only one — " + config.RigDisplayName(&rp))
 		return nil
 	}
 
@@ -104,12 +187,11 @@ func (m *Model) cycleRig() tea.Cmd {
 	m.App.Config.Logbooks[m.App.LogbookName] = lb
 
 	if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
-		m.toasts.Error("Save rig failed: " + err.Error())
+		m.toasts.Error("Rig: save failed — " + err.Error())
 		return nil
 	}
 	m.toasts.Success("Rig: " + config.RigDisplayName(&rp))
 	applog.Info("Rig cycled", "name", config.RigDisplayName(&rp))
-	m.rc.status = ""
 	m.invalidatePartnerMapCache()
 	m.rc.pathSig = ""
 	m.refreshRigClient()   // reconnect/disconnect for the new rig

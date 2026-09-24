@@ -23,6 +23,9 @@ const (
 	contestConfirmDelete
 )
 
+// contestRows is the row style shared by the contest form's checkbox rows.
+var contestRows = rowStyle{label: S.FormLabelCtx, focused: S.FormFocusedCtx}
+
 // ContestChooser manages the contest list, create, edit, and delete flow.
 type ContestChooser struct {
 	app                 *app.App
@@ -31,7 +34,7 @@ type ContestChooser struct {
 	ids                 []string
 	cursor              int
 	editID              string
-	focus               int // 0=name,1=date,2=inUse,3=nextQSO,4=contestID,5=serialExchange,6=prefillSent,7=exchSent,8=prefillRcvd,9=exchRcvd
+	fm                  menuFocus
 	nameInput           textinput.Model
 	dateInput           textinput.Model
 	nextInput           textinput.Model
@@ -129,18 +132,6 @@ func (c *ContestChooser) rebuildNames() {
 
 func (c *ContestChooser) Init() tea.Cmd { return nil }
 
-func (c *ContestChooser) formatDate(t string) string {
-	if t == "" {
-		return ""
-	}
-	// Parse ISO date and format as short date.
-	parsed, err := time.Parse("2006-01-02", t)
-	if err != nil {
-		return t
-	}
-	return parsed.Format("2006-01-02")
-}
-
 func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -229,6 +220,15 @@ func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			scrollVpToLine(&c.vp, c.cursor)
 
 		case c.mode == contestEdit || c.mode == contestCreate:
+			// Validate the Contest ID when navigation leaves it.
+			if (k.String() == "tab" || k.String() == "down" || k.String() == "shift+tab" || k.String() == "up") && c.fm.row == 4 {
+				c.validateContestID()
+			}
+			// Shared navigation: Tab/Down, Shift+Tab/Up, and the Save & Back
+			// button (Space/Enter saves).
+			if handled, cmd := c.fm.onKey(msg, c, func() tea.Cmd { return c.saveContest() }); handled {
+				return c, cmd
+			}
 			switch {
 			case k.String() == "enter":
 				// Enter saves, matching the other forms — Space is the
@@ -239,15 +239,15 @@ func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				c.mode = contestList
 				c.lastListContent = "" // force viewport refresh
 				return c, nil
-			case c.focus == 2 && (k.String() == " " || msg.Code == ' '):
+			case c.fm.row == 2 && (k.String() == " " || msg.Code == ' '):
 				// Toggle In Use checkbox.
 				c.inUse = !c.inUse
 				return c, nil
-			case c.focus == 5 && (k.String() == " " || msg.Code == ' '):
+			case c.fm.row == 5 && (k.String() == " " || msg.Code == ' '):
 				// Toggle serial exchange checkbox.
 				c.serialExchange = !c.serialExchange
 				return c, nil
-			case c.focus == 6 && (k.String() == " " || msg.Code == ' '):
+			case c.fm.row == 6 && (k.String() == " " || msg.Code == ' '):
 				// Toggle prefill exchange sent checkbox.
 				c.prefillExchange = !c.prefillExchange
 				if !c.prefillExchange {
@@ -255,7 +255,7 @@ func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					c.exchSentInput.SetValue("")
 				}
 				return c, nil
-			case c.focus == 8 && (k.String() == " " || msg.Code == ' '):
+			case c.fm.row == 8 && (k.String() == " " || msg.Code == ' '):
 				// Toggle prefill exchange rcvd checkbox.
 				c.prefillExchangeRcvd = !c.prefillExchangeRcvd
 				if !c.prefillExchangeRcvd {
@@ -263,14 +263,14 @@ func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					c.exchRcvdInput.SetValue("")
 				}
 				return c, nil
-			case c.focus == 4 && (k.String() == " " || msg.Code == ' '):
+			case c.fm.row == 4 && (k.String() == " " || msg.Code == ' '):
 				// Space cycles forward through ADIF Contest IDs.
 				cur := strings.TrimSpace(c.contInput.Value())
 				nxt := nextContestID(cur)
 				c.contInput.SetValue(nxt)
 				c.adifIdx = 0
 				return c, nil
-			case c.focus == 4 && (k.String() == "pgdown" || k.String() == "pgup"):
+			case c.fm.row == 4 && (k.String() == "pgdown" || k.String() == "pgup"):
 				// PgDn/PgUp cycle forward/backward through ADIF Contest IDs.
 				cur := strings.TrimSpace(c.contInput.Value())
 				var nxt string
@@ -282,23 +282,7 @@ func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				c.contInput.SetValue(nxt)
 				c.adifIdx = 0
 				return c, nil
-			case k.String() == "tab" || k.String() == "down":
-				if c.focus == 4 {
-					c.validateContestID()
-				}
-				c.blurAll()
-				c.focus = (c.focus + 1) % c.visibleItems()
-				scrollVpToLine(&c.vp, c.focus)
-				return c, c.focusField()
-			case k.String() == "shift+tab" || k.String() == "up":
-				if c.focus == 4 {
-					c.validateContestID()
-				}
-				c.blurAll()
-				c.focus = (c.focus - 1 + c.visibleItems()) % c.visibleItems()
-				scrollVpToLine(&c.vp, c.focus)
-				return c, c.focusField()
-			case c.focus == 2 || c.focus == 5 || c.focus == 6 || c.focus == 8:
+			case c.fm.row == 2 || c.fm.row == 5 || c.fm.row == 6 || c.fm.row == 8:
 				// Checkboxes handle Space; Enter saves. Ignore other keys.
 				return c, nil
 			case k.String() == "pgup", k.String() == "pgdown", k.String() == "home", k.String() == "end":
@@ -306,7 +290,7 @@ func (c *ContestChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return c, nil
 			default:
 				var cmd tea.Cmd
-				ti := c.focusedInput()
+				ti := c.focusedInput(c.fm.row)
 				*ti, cmd = ti.Update(msg)
 				return c, cmd
 			}
@@ -328,8 +312,8 @@ func (c *ContestChooser) handleActivate() tea.Cmd {
 	return nil
 }
 
-func (c *ContestChooser) focusedInput() *textinput.Model {
-	switch c.focus {
+func (c *ContestChooser) focusedInput(i int) *textinput.Model {
+	switch i {
 	case 1:
 		return &c.dateInput
 	case 3:
@@ -345,17 +329,19 @@ func (c *ContestChooser) focusedInput() *textinput.Model {
 	}
 }
 
-// visibleItems returns the number of focusable items (used for tab wrapping).
-func (c *ContestChooser) visibleItems() int {
-	n := 5 // name, date, inUse, nextQSO, contestID
-	n += 3 // three checkboxes always visible (prefill sent, prefill rcvd, serial exchange)
-	if c.prefillExchange {
-		n++ // exchange sent field
+// focusableRows implementation.
+// Rows: 0 name, 1 date, 2 in use, 3 next, 4 contest ID, 5 serial exchange,
+// 6 prefill sent, 7 exchange sent field (if enabled), 8 prefill rcvd,
+// 9 exchange rcvd field (if enabled).
+func (c *ContestChooser) rowCount() int { return 10 }
+func (c *ContestChooser) rowVisible(i int) bool {
+	switch i {
+	case 7:
+		return c.prefillExchange
+	case 9:
+		return c.prefillExchangeRcvd
 	}
-	if c.prefillExchangeRcvd {
-		n++ // exchange rcvd field
-	}
-	return n
+	return i >= 0 && i <= 8
 }
 
 func (c *ContestChooser) blurAll() {
@@ -367,24 +353,25 @@ func (c *ContestChooser) blurAll() {
 	c.exchRcvdInput.Blur()
 }
 
-func (c *ContestChooser) focusField() tea.Cmd {
-	if c.focus == 2 || c.focus == 5 || c.focus == 7 {
+func (c *ContestChooser) focusRow(i int) tea.Cmd {
+	if i == 2 || i == 5 || i == 6 || i == 8 {
 		// Checkboxes — no textinput to focus.
 		return nil
 	}
-	return c.focusedInput().Focus()
+	scrollVpToLine(&c.vp, i)
+	return c.focusedInput(i).Focus()
 }
 
 func (c *ContestChooser) validateContestID() {
 	cid := strings.TrimSpace(c.contInput.Value())
 	if cid != "" && !isValidContestID(cid) {
-		c.toasts.Warn("Contest ID not found in the ADIF spec")
+		c.toasts.Warn("Contest: ID not found in the ADIF spec")
 	}
 }
 
 func (c *ContestChooser) startEdit(id string) {
 	c.editID = id
-	c.focus = 0
+	c.fm.reset()
 	ct := c.app.Config.Contests[id]
 	c.nameInput.SetValue(ct.Name)
 	c.dateInput.SetValue(ct.Date)
@@ -403,7 +390,7 @@ func (c *ContestChooser) startEdit(id string) {
 
 func (c *ContestChooser) startCreate() {
 	c.editID = ""
-	c.focus = 0
+	c.fm.reset()
 	c.nameInput.SetValue("")
 	c.dateInput.SetValue(time.Now().Format("2006-01-02"))
 	c.inUse = true
@@ -422,23 +409,23 @@ func (c *ContestChooser) startCreate() {
 func (c *ContestChooser) saveContest() tea.Cmd {
 	name := strings.TrimSpace(c.nameInput.Value())
 	if name == "" {
-		c.toasts.Warn("Contest name cannot be empty")
+		c.toasts.Warn("Contest: name cannot be empty")
 		return nil
 	}
 	dateStr := strings.TrimSpace(c.dateInput.Value())
 	nextStr := strings.TrimSpace(c.nextInput.Value())
 	if nextStr == "" {
-		c.toasts.Warn("Next QSO / Rcvd serial is required")
+		c.toasts.Warn("Contest: next QSO / Rcvd serial is required")
 		return nil
 	}
 	nextQSO, err := strconv.Atoi(nextStr)
 	if err != nil || nextQSO < 1 {
-		c.toasts.Warn("Next QSO / Rcvd serial must be a positive integer")
+		c.toasts.Warn("Contest: next QSO / Rcvd serial must be a positive integer")
 		return nil
 	}
 	contestID := strings.TrimSpace(c.contInput.Value())
 	if contestID == "" {
-		c.toasts.Warn("Contest ADIF ID is required — PgUp/PgDn to cycle through known IDs")
+		c.toasts.Warn("Contest: ADIF ID is required — PgUp/PgDn to cycle through known IDs")
 		return nil
 	}
 	exchangeSent := strings.TrimSpace(c.exchSentInput.Value())
@@ -617,7 +604,7 @@ func (c *ContestChooser) viewList() string {
 				dateStr := ""
 				if i > 0 {
 					ct := c.app.Config.Contests[c.ids[i]]
-					dateStr = c.formatDate(ct.Date)
+					dateStr = ct.Date
 				}
 
 				// Truncate/pad raw values before styling.
@@ -660,7 +647,7 @@ func (c *ContestChooser) viewForm() string {
 	sb.WriteByte('|')
 	sb.WriteString(strconv.Itoa(h))
 	sb.WriteByte('|')
-	sb.WriteString(strconv.Itoa(c.focus))
+	sb.WriteString(strconv.Itoa(c.fm.row))
 	sb.WriteByte('|')
 	sb.WriteString(c.nameInput.Value())
 	sb.WriteByte('|')
@@ -677,6 +664,7 @@ func (c *ContestChooser) viewForm() string {
 	sb.WriteString(strconv.FormatBool(c.prefillExchange))
 	sb.WriteString(strconv.FormatBool(c.prefillExchangeRcvd))
 	sb.WriteString(strconv.FormatBool(c.serialExchange))
+	sb.WriteString(strconv.FormatBool(c.fm.btn.Focus))
 	sb.WriteString(strconv.Itoa(int(c.mode)))
 	sb.WriteByte('|')
 	sb.WriteString(strconv.Itoa(c.vp.YOffset()))
@@ -702,7 +690,7 @@ func (c *ContestChooser) viewForm() string {
 
 	// Name field.
 	nl := lbl
-	if c.focus == 0 {
+	if c.fm.row == 0 {
 		nl = lblF
 	}
 	b.WriteString("  ")
@@ -712,7 +700,7 @@ func (c *ContestChooser) viewForm() string {
 
 	// Date field.
 	dl := lbl
-	if c.focus == 1 {
+	if c.fm.row == 1 {
 		dl = lblF
 	}
 	b.WriteString("  ")
@@ -721,12 +709,11 @@ func (c *ContestChooser) viewForm() string {
 	b.WriteString("\n")
 
 	// In Use checkbox — just below Date.
-	c.renderCheckbox(&b, w, 2, "In use:", "Mark if the contest is still valid (not archived)", c.inUse)
-	b.WriteString("\n")
+	checkboxRow(&b, w-4, c.fm.row == 2, "In use:", c.inUse, "Mark if the contest is still valid (not archived)", false, contestRows)
 
 	// Next QSO ID field.
 	xl := lbl
-	if c.focus == 3 {
+	if c.fm.row == 3 {
 		xl = lblF
 	}
 	b.WriteString("  ")
@@ -739,7 +726,7 @@ func (c *ContestChooser) viewForm() string {
 	cidValid := cid != "" && isValidContestID(cid)
 	cl := lbl
 	cs := S.Input
-	if c.focus == 4 {
+	if c.fm.row == 4 {
 		cl = lblF
 	}
 	if cidValid {
@@ -753,7 +740,7 @@ func (c *ContestChooser) viewForm() string {
 		extra = contestIDDesc(cid)
 	}
 	line := lipgloss.JoinHorizontal(lipgloss.Center, "  ", cl.Render("Contest ADIF ID:"), cs.Render(c.contInput.View()))
-	if c.focus == 4 {
+	if c.fm.row == 4 {
 		line = line + " " + DimStyle.Render("(PgUp/PgDn)")
 	}
 	if extra != "" {
@@ -767,30 +754,28 @@ func (c *ContestChooser) viewForm() string {
 	b.WriteString("\n")
 
 	// Serial Exchange checkbox — before exchange prefill section.
-	c.renderCheckbox(&b, w, 5, "Serial Exchange:", "", c.serialExchange)
-	b.WriteString("\n")
+	checkboxRow(&b, w-4, c.fm.row == 5, "Serial Exchange:", c.serialExchange, "", false, contestRows)
 
 	// Prefill Exchange Sent checkbox.
-	c.renderCheckbox(&b, w, 6, "Prefill Exchange Sent:", "", c.prefillExchange)
+	checkboxRow(&b, w-4, c.fm.row == 6, "Prefill Exchange Sent:", c.prefillExchange, "", false, contestRows)
 
 	// Indented exchange sent field.
 	if c.prefillExchange {
-		b.WriteString("\n")
 		c.renderIndentedField(&b, 7, "  Exchange Sent:", &c.exchSentInput, "")
+		b.WriteString("\n")
 	}
 
 	// Prefill Exchange Rcvd checkbox.
-	b.WriteString("\n")
-	c.renderCheckbox(&b, w, 8, "Prefill Exchange Rcvd:", "", c.prefillExchangeRcvd)
+	checkboxRow(&b, w-4, c.fm.row == 8, "Prefill Exchange Rcvd:", c.prefillExchangeRcvd, "", false, contestRows)
 
 	// Indented exchange rcvd field.
 	if c.prefillExchangeRcvd {
-		b.WriteString("\n")
 		c.renderIndentedField(&b, 9, "  Exchange Rcvd:", &c.exchRcvdInput, "")
+		b.WriteString("\n")
 	}
 
 	// Marker reference section — shown below the form fields.
-	b.WriteString("\n\n")
+	b.WriteString("\n")
 	markerLink := "  Exchange markers — see " + osc8Link("https://docs.cqops.com", "docs.cqops.com")
 	b.WriteString(markerLink)
 	b.WriteString("\n\n")
@@ -817,6 +802,10 @@ func (c *ContestChooser) viewForm() string {
 	b.WriteString("\n")
 	b.WriteString(DimStyle.Render("  Example: @rst @serial will generate 59 023"))
 
+	// Save & Back button at the end of the form — flush under the last row.
+	b.WriteString("\n")
+	b.WriteString(c.fm.btn.line("Save & Back", maxW))
+
 	// Use viewport for scrollable form body on small terminals.
 	boxW := w
 	if boxW > partnerMapMaxW {
@@ -838,6 +827,7 @@ func (c *ContestChooser) viewForm() string {
 		c.vp.SetContent(bodyStr)
 		c.lastFormContent = bodyStr
 	}
+	scrollToFocusedLine(&c.vp, bodyStr)
 	if c.vp.PastBottom() {
 		c.vp.SetYOffset(c.vp.TotalLineCount() - c.vp.VisibleLineCount())
 	}
@@ -855,36 +845,16 @@ func (c *ContestChooser) viewForm() string {
 	return result
 }
 
-func (c *ContestChooser) renderCheckbox(b *strings.Builder, w, focusIdx int, label, hint string, checked bool) {
-	cb := "[ ]"
-	if checked {
-		cb = "[x]"
-	}
-	prefix := "  "
-	lbl := S.FormLabelCtx.Align(lipgloss.Left).Render(label)
-	if c.focus == focusIdx {
-		prefix = S.FormPrefixOn.Render("> ")
-		lbl = S.FormFocusedCtx.Align(lipgloss.Left).Render(label)
-		cb = CursorStyle.Render(cb) + " " + DimStyle.Render("(Space)")
-		if hint != "" {
-			cb = cb + " " + DimStyle.Render(hint)
-		}
-	}
-	b.WriteString(padOrTrunc(
-		lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, cb),
-		w-4))
-}
-
 func (c *ContestChooser) renderIndentedField(b *strings.Builder, focusIdx int, label string, ti *textinput.Model, extra string) {
 	prefix := "  "
 	lbl := S.FormLabelCtx.Align(lipgloss.Left).Render(label)
 	val := ti.View()
-	if c.focus == focusIdx {
+	if c.fm.row == focusIdx {
 		prefix = S.FormPrefixOn.Render("> ")
 		lbl = S.FormFocusedCtx.Align(lipgloss.Left).Render(label)
 	}
 	// Show "See reference below" when the field is empty and not focused.
-	if strings.TrimSpace(ti.Value()) == "" && c.focus != focusIdx {
+	if strings.TrimSpace(ti.Value()) == "" && c.fm.row != focusIdx {
 		val = DimStyle.Render("See reference below")
 	}
 	line := lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, val)

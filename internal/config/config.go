@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 
@@ -32,8 +33,7 @@ type Config struct {
 	Operators         map[string]Operator  `yaml:"operators,omitempty"`
 	BroadcastStations []BroadcastStation   `yaml:"-"`
 
-	secrets      *secrets.Store `yaml:"-"`
-	savedSecrets *savedSecrets  `yaml:"-"`
+	secrets *secrets.Store `yaml:"-"`
 }
 
 // SetSecretsStore attaches a secrets store for encrypted persistence of
@@ -67,6 +67,7 @@ type IntegrationsConfig struct {
 	HTTPServer HTTPServerConfig `yaml:"http_server,omitempty"`
 	GPS        GPSConfig        `yaml:"gps,omitempty"`
 	APRS       APRSGlobalConfig `yaml:"aprs,omitempty"`
+	PSK        PSKConfig        `yaml:"psk,omitempty"`
 
 	// Legacy flat keys — migrated to Callbook.* on load.
 	QRZLegacy             QRZConfig             `yaml:"qrzcom_callbook,omitempty"`
@@ -92,6 +93,21 @@ type CallbookGroup struct {
 	CTY              CTYCallbookConfig     `yaml:"cty,omitempty"`
 	BaseCallFallback bool                  `yaml:"base_call_fallback"`
 }
+
+// Default callbook lookup priorities encode DATA TRUST: a higher priority means
+// a more authoritative source, not a faster one. The cascade fills missing
+// fields from lower-priority providers but never overwrites data from a higher
+// one. Priority 0 in a stored config means "never configured" and is replaced
+// by the matching default on load.
+const (
+	DefaultQRZPriority     = 100 // paid XML data, most authoritative
+	DefaultHamQTHPriority  = 90  // recommended free global callbook
+	DefaultCallookPriority = 80  // free US-only callbook, no auth
+	DefaultQRZRuPriority   = 70  // free, Russia/Eastern Europe focus
+	DefaultLogbookPriority = 60  // offline fallback — stale data possible
+	DefaultWavelogPriority = 10  // enrichment — may itself come from QRZ/HamQTH/QRZ.RU
+	DefaultCTYPriority     = 1   // internal prefix fallback, always last
+)
 
 // Normalize migrates legacy config keys and values to their current names.
 // Called after every config load.
@@ -131,6 +147,48 @@ func (c *Config) Normalize() {
 	if c.Integrations.CTYCallbookLegacy.Enabled || c.Integrations.CTYCallbookLegacy.Priority != 0 {
 		cb.CTY = c.Integrations.CTYCallbookLegacy
 		c.Integrations.CTYCallbookLegacy = CTYCallbookConfig{}
+	}
+
+	// Callbook priority defaults encode data trust (higher = more
+	// authoritative). Applied only when a provider was never explicitly
+	// configured (Priority == 0 is the "unset" sentinel); existing user
+	// priorities are left untouched.
+	freshCallbook := cb.Logbook.Priority == 0 &&
+		cb.QRZ.Priority == 0 &&
+		cb.HamQTH.Priority == 0 &&
+		cb.Callook.Priority == 0 &&
+		cb.QRZRu.Priority == 0
+	wlPriorityUnset := cb.Wavelog.Priority == 0
+
+	if cb.QRZ.Priority == 0 {
+		cb.QRZ.Priority = DefaultQRZPriority
+	}
+	if cb.HamQTH.Priority == 0 {
+		cb.HamQTH.Priority = DefaultHamQTHPriority
+	}
+	if cb.Callook.Priority == 0 {
+		cb.Callook.Priority = DefaultCallookPriority
+		// Callook.info is enabled by default; a non-zero priority means the
+		// user saved the callbook settings, so an explicit disable is kept.
+		cb.Callook.Enabled = true
+	}
+	if cb.QRZRu.Priority == 0 {
+		cb.QRZRu.Priority = DefaultQRZRuPriority
+	}
+	if cb.Logbook.Priority == 0 {
+		cb.Logbook.Priority = DefaultLogbookPriority
+		cb.Logbook.Enabled = true // local logbook lookup is on by default
+	}
+	if cb.Wavelog.Priority == 0 {
+		cb.Wavelog.Priority = DefaultWavelogPriority
+	}
+	if cb.CTY.Priority == 0 {
+		cb.CTY.Priority = DefaultCTYPriority
+	}
+	if freshCallbook {
+		// The callbook section was never configured: base-call fallback is
+		// enabled by default. Users who saved the menu keep their choice.
+		cb.BaseCallFallback = true
 	}
 
 	// Migrate picture_at_qrz_pane → picture_at_partner_pane.
@@ -182,8 +240,8 @@ func (c *Config) Normalize() {
 
 	// Default Wavelog callbook to enabled for existing Wavelog users.
 	// Only applies when the user has not explicitly configured the Wavelog
-	// callbook settings (Priority == 0 indicates unset/fresh config).
-	if c.Integrations.Callbook.Wavelog.Priority == 0 {
+	// callbook settings (captured before the priority defaulting above).
+	if wlPriorityUnset {
 		for _, lb := range c.Logbooks {
 			if lb.Wavelog != nil && lb.Wavelog.Enabled {
 				c.Integrations.Callbook.Wavelog.Enabled = true
@@ -214,6 +272,12 @@ type DXCConfig struct {
 	Host    string `yaml:"host,omitempty"`
 	Port    string `yaml:"port,omitempty"`
 	Login   string `yaml:"login,omitempty"`
+}
+
+// PSKConfig enables the PSK Reporter panel (F5). Off by default — the
+// operator turns it on in Integrations.
+type PSKConfig struct {
+	Enabled bool `yaml:"enabled"`
 }
 
 type GeneralConfig struct {
@@ -254,7 +318,7 @@ type QRZConfig struct {
 	Enabled  bool   `yaml:"enabled"`
 	User     string `yaml:"user,omitempty"`
 	Pass     string `yaml:"pass,omitempty"`
-	Priority int    `yaml:"priority,omitempty"` // lookup order, 0..100; higher = tried first; default 50
+	Priority int    `yaml:"priority,omitempty"` // lookup order, 0..100; higher = more authoritative; default 100
 }
 
 // HamQTHConfig holds settings for the HamQTH free callbook service.
@@ -262,13 +326,13 @@ type HamQTHConfig struct {
 	Enabled  bool   `yaml:"enabled"`
 	User     string `yaml:"user,omitempty"`
 	Pass     string `yaml:"pass,omitempty"`
-	Priority int    `yaml:"priority,omitempty"` // lookup order, 0..100; higher = tried first; default 45
+	Priority int    `yaml:"priority,omitempty"` // lookup order, 0..100; default 90
 }
 
 // CallookConfig holds settings for the Callook.info free US callbook service.
 type CallookConfig struct {
 	Enabled  bool `yaml:"enabled"`
-	Priority int  `yaml:"priority,omitempty"` // lookup order, 0..100; default 30
+	Priority int  `yaml:"priority,omitempty"` // lookup order, 0..100; default 80
 }
 
 // QRZRuConfig holds settings for the QRZ.RU free callbook service.
@@ -276,25 +340,25 @@ type QRZRuConfig struct {
 	Enabled  bool   `yaml:"enabled"`
 	User     string `yaml:"user,omitempty"`     // API login (from QRZ.RU personal cabinet)
 	Pass     string `yaml:"pass,omitempty"`     // API password
-	Priority int    `yaml:"priority,omitempty"` // lookup order, 0..100; default 35
+	Priority int    `yaml:"priority,omitempty"` // lookup order, 0..100; default 70
 }
 
 // LogbookCallbookConfig enables searching past local QSOs as a callbook source.
 type LogbookCallbookConfig struct {
 	Enabled  bool `yaml:"enabled"`
-	Priority int  `yaml:"priority,omitempty"` // default 100 — tried before QRZ
+	Priority int  `yaml:"priority,omitempty"` // default 60 — offline fallback, not the most authoritative source
 }
 
 // WavelogCallbookConfig enables Wavelog private lookup as a callbook source.
 type WavelogCallbookConfig struct {
 	Enabled  bool `yaml:"enabled"`
-	Priority int  `yaml:"priority,omitempty"` // default 10 — tried after QRZ
+	Priority int  `yaml:"priority,omitempty"` // default 10 — enrichment whose data may itself come from QRZ/HamQTH/QRZ.RU
 }
 
 // CTYCallbookConfig enables CTY.DAT prefix lookup as a callbook source.
 type CTYCallbookConfig struct {
 	Enabled  bool `yaml:"enabled"`
-	Priority int  `yaml:"priority,omitempty"` // default 1 — ultimate fallback
+	Priority int  `yaml:"priority,omitempty"` // default 1 — internal ultimate fallback
 }
 
 // HTTPServerConfig holds the optional built-in HTTP server configuration.
@@ -344,7 +408,6 @@ type Logbook struct {
 	ActiveOperator string         `yaml:"active_operator,omitempty"`
 	DatabasePath   string         `yaml:"database_path,omitempty"`
 	Station        Station        `yaml:"station"`
-	ADIF           ADIFConfig     `yaml:"adif,omitempty"`
 	Wavelog        *WavelogConfig `yaml:"wavelog,omitempty"`
 	APRS           *APRSConfig    `yaml:"aprs,omitempty"`
 }
@@ -456,16 +519,17 @@ type RigPreset struct {
 	WsjtxUDPPort    int    `yaml:"wsjtx_udp_port,omitempty"`
 }
 
-type ADIFConfig struct {
-	DefaultExportPath string `yaml:"default_export_path"`
-}
-
 type WavelogConfig struct {
 	Enabled          bool   `yaml:"enabled"`
 	URL              string `yaml:"url"`
 	APIKey           string `yaml:"api_key"`
 	StationProfileID string `yaml:"station_profile_id"`
 	LastFetchedID    int64  `yaml:"last_fetched_id,omitempty"`
+	// SharedClub marks a shared club-station PC: the logbook syncs with a
+	// clubstation using the owner's wl2_ token. Synced QSOs become
+	// read-only in the editor (no local edits, no deletes, no remote
+	// PATCH/DELETE) — club contacts are maintained on the Wavelog side.
+	SharedClub bool `yaml:"shared_club,omitempty"`
 }
 
 // APRSConfig holds per-logbook APRS beacon settings.
@@ -487,7 +551,7 @@ func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("config not found at %s", path)
+			return nil, fmt.Errorf("config not found at %s: %w", path, os.ErrNotExist)
 		}
 		return nil, fmt.Errorf("read config: %w", err)
 	}
@@ -505,25 +569,48 @@ func Load(path string) (*Config, error) {
 	return &cfg, nil
 }
 
+// saveMu serializes Save calls so the secrets store and the temp-file write
+// path are never interleaved by concurrent saves.
+var saveMu sync.Mutex
+
 // Save marshals cfg as YAML and writes it to path. If a secrets store is
-// attached via SetSecretsStore, passwords and API keys are extracted and
-// persisted to the encrypted store before the YAML is written.
+// attached via SetSecretsStore, passwords and API keys are synced to the
+// encrypted store (cleared values are deleted) and blanked on a marshal
+// copy — the live config is never mutated, so concurrent readers (UI,
+// workers) never observe cleared credentials or rewritten maps.
+//
+// A secrets-store failure aborts the whole save: the YAML is scrubbed, so
+// replacing config.yaml without a successful secrets write would drop the
+// only persisted copy of the credentials.
 func Save(path string, cfg *Config) error {
-	cfg.State.Version = version.Resolved()
-	cfg.ConfigVersion = 1 // current config format version
+	saveMu.Lock()
+	defer saveMu.Unlock()
 
-	// Extract and persist secrets before marshaling.
+	// Sync secrets to the encrypted store first.
 	if cfg.secrets != nil {
-		cfg.extractAndSaveSecrets()
+		if err := cfg.syncSecretsToStore(); err != nil {
+			return fmt.Errorf("secrets store: %w", err)
+		}
 	}
-	defer cfg.restoreSecrets() // restore in-memory values after YAML marshal
 
-	data, err := yaml.Marshal(cfg)
+	// Marshal a scrubbed copy; version stamps go on the copy too.
+	cp := cfg.scrubbedCopy()
+	cp.State.Version = version.Resolved()
+	cp.ConfigVersion = 1 // current config format version
+
+	data, err := yaml.Marshal(cp)
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}
-	if err := os.WriteFile(path, data, 0600); err != nil {
+	// Write to a temp file and rename, so an interrupted write cannot
+	// truncate the live config and leave the app unable to start.
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0600); err != nil {
 		return fmt.Errorf("write config: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		os.Remove(tmp)
+		return fmt.Errorf("replace config: %w", err)
 	}
 	return nil
 }

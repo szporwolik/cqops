@@ -3,7 +3,6 @@ package tui
 import (
 	"time"
 
-	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/psk"
 )
 
@@ -29,13 +28,8 @@ type pskState struct {
 	mapView string
 	mapSig  string
 
-	// PSK table rowStyle cache — rebuilt only when maxW changes.
-	tableRowStyle  lipgloss.Style
-	tableRowStyleW int
-
 	// PSK Heights cache — computed during table/filter build.
 	cachedTableH int
-	cachedFiltH  int
 
 	// Async DB loading — avoids synchronous SQLite during View().
 	needDBLoad     bool

@@ -167,3 +167,22 @@ func TestLookupClub(t *testing.T) {
 		t.Errorf("Callsign = %q", res.Callsign)
 	}
 }
+
+// TestLookupNotFoundIsNotAnError pins the required behaviour for non-US
+// callsigns: a Callook 404 is a normal empty result, never an error that
+// could pollute the provider cascade.
+func TestLookupNotFoundIsNotAnError(t *testing.T) {
+	restore := SetHTTPFn(func(rawURL string) ([]byte, error) {
+		return nil, errNotFound
+	})
+	defer restore()
+
+	c := NewClient()
+	res, err := c.Lookup("SP9MOA")
+	if err != nil {
+		t.Fatalf("non-US not-found must not be an error: %v", err)
+	}
+	if res != nil {
+		t.Errorf("want nil result for non-US callsign, got %+v", res)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/szporwolik/cqops/internal/qso"
+	"github.com/szporwolik/cqops/internal/store"
 )
 
 // TestLogbookEditor_SearchCoversWholeLogbook verifies that the editor search
@@ -68,6 +69,66 @@ func TestLogbookEditor_SearchCoversWholeLogbook(t *testing.T) {
 	}
 }
 
+// TestLogbookEditor_SearchDebouncedAsync verifies the interactive search path:
+// typing schedules a debounce, the debounce dispatches a worker, and the
+// worker result applies to the list — the full-logbook scan never runs
+// synchronously on a keystroke.
+func TestLogbookEditor_SearchDebouncedAsync(t *testing.T) {
+	le := newEditorWithDB(t)
+	insertQSO(t, le, &qso.QSO{Call: "ZZ9TARGET", Name: "Rare", Country: "Testland",
+		QSODate: "20240301", TimeOn: "120000", Band: "20m", Mode: "SSB"})
+	le.loadPage()
+
+	le.searchQuery = "zz9"
+	cmd := le.scheduleSearch()
+	if cmd == nil {
+		t.Fatal("scheduleSearch returned no debounce command")
+	}
+	dbg, ok := execCmd(cmd).(searchDebounceMsg)
+	if !ok {
+		t.Fatalf("debounce command produced %T, want searchDebounceMsg", execCmd(cmd))
+	}
+	if dbg.gen != le.searchGen || dbg.query != "zz9" {
+		t.Fatalf("debounce = gen:%d query:%q, want gen:%d query:%q", dbg.gen, dbg.query, le.searchGen, "zz9")
+	}
+
+	upd, workerCmd := le.Update(dbg)
+	le = upd.(*LogbookEditor)
+	if workerCmd == nil {
+		t.Fatal("debounce must dispatch the search worker")
+	}
+	res, ok := execCmd(workerCmd).(editorMsg)
+	if !ok || res.searchErr != "" {
+		t.Fatalf("search worker result = %#v", res)
+	}
+	if len(res.searchRows) != 1 {
+		t.Fatalf("search rows = %d, want 1", len(res.searchRows))
+	}
+
+	upd, _ = le.Update(res)
+	le = upd.(*LogbookEditor)
+	if le.totalCount != 1 || len(le.qsos) != 1 || le.qsos[0].Call != "ZZ9TARGET" {
+		t.Fatalf("applied search = total %d, qsos %+v", le.totalCount, le.qsos)
+	}
+}
+
+// TestLogbookEditor_SearchStaleGenerationDiscarded verifies that a debounce
+// firing for a superseded query does not dispatch a worker.
+func TestLogbookEditor_SearchStaleGenerationDiscarded(t *testing.T) {
+	le := newEditorWithDB(t)
+	le.searchQuery = "zz9"
+	dbg1 := execCmd(le.scheduleSearch()).(searchDebounceMsg)
+
+	le.searchQuery = "other"
+	_ = le.scheduleSearch()
+
+	upd, workerCmd := le.Update(dbg1)
+	le = upd.(*LogbookEditor)
+	if workerCmd != nil {
+		t.Fatal("stale debounce must not dispatch a search worker")
+	}
+}
+
 // TestLogbookEditor_SearchRespectsContestFilter verifies the search honors the
 // active contest filter.
 func TestLogbookEditor_SearchRespectsContestFilter(t *testing.T) {
@@ -82,5 +143,45 @@ func TestLogbookEditor_SearchRespectsContestFilter(t *testing.T) {
 	le.applySearchFilter()
 	if le.totalCount != 1 || le.qsos[0].Call != "A1A" {
 		t.Fatalf("contest-scoped search got %d results, want A1A only", le.totalCount)
+	}
+}
+
+// TestLogbookEditor_DeleteWhileSearchingClearsFilter reproduces the reported
+// bug: deleting a QSO while a search filter is active left the deleted row
+// visible (loadPage skips reloads during a search). The filter must clear so
+// the list immediately shows the remaining rows.
+func TestLogbookEditor_DeleteWhileSearchingClearsFilter(t *testing.T) {
+	le := newEditorWithDB(t)
+	target := insertQSO(t, le, &qso.QSO{Call: "ZZ9TARGET", Name: "Rare",
+		QSODate: "20240301", TimeOn: "120000", Band: "20m", Mode: "SSB"})
+	insertQSO(t, le, &qso.QSO{Call: "SP9OTHER", Name: "Other",
+		QSODate: "20240302", TimeOn: "120000", Band: "20m", Mode: "SSB"})
+	le.loadPage()
+
+	// Run a search that matches only the target.
+	le.searchQuery = "zz9"
+	le.searchInput.SetValue("zz9")
+	upd, workerCmd := le.Update(execCmd(le.scheduleSearch()).(searchDebounceMsg))
+	le = upd.(*LogbookEditor)
+	res := execCmd(workerCmd).(editorMsg)
+	upd, _ = le.Update(res)
+	le = upd.(*LogbookEditor)
+	if len(le.qsos) != 1 || le.qsos[0].Call != "ZZ9TARGET" {
+		t.Fatalf("search result = %+v, want only ZZ9TARGET", le.qsos)
+	}
+
+	// Delete completes while the filter is still active — the worker already
+	// removed the row from the database before delivering the completion.
+	if err := store.DeleteQSO(le.db, target); err != nil {
+		t.Fatalf("DeleteQSO: %v", err)
+	}
+	upd, _ = le.Update(editorMsg{deleted: target, delCall: "ZZ9TARGET", delDate: "2024-03-01", gen: le.gen, lbID: le.logbookID})
+	le = upd.(*LogbookEditor)
+
+	if le.searchQuery != "" {
+		t.Errorf("search filter = %q, want cleared after deletion", le.searchQuery)
+	}
+	if len(le.qsos) != 1 || le.qsos[0].Call != "SP9OTHER" {
+		t.Fatalf("list after delete = %+v, want only SP9OTHER (deleted row must disappear)", le.qsos)
 	}
 }

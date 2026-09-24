@@ -353,7 +353,7 @@ func TestHandlePendingRequests_NoPending(t *testing.T) {
 func TestHandlePendingRequests_QRZNeedWithCall(t *testing.T) {
 	orig := callbookRegLookup
 	t.Cleanup(func() { callbookRegLookup = orig })
-	callbookRegLookup = func(m *Model, call string) (*callbook.Result, error) {
+	callbookRegLookup = func(reg *callbook.Registry, baseFallback bool, call string) (*callbook.Result, error) {
 		return &callbook.Result{Callsign: "SP9XXX", Provider: "test"}, nil
 	}
 

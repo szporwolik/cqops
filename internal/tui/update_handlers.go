@@ -23,6 +23,46 @@ import (
 //   2. handleAsyncMessages — async result messages (internet, Wavelog, rig)
 //   3. handlePendingRequests — deferred actions (QSO refresh, QRZ/WL lookups)
 
+// dispatchViewFetches batches the DB reads that View() flagged as cache
+// misses. View() must stay free of DB I/O, so it only records what it needs
+// and the query runs here as a command.
+func (m *Model) dispatchViewFetches(cmd tea.Cmd) tea.Cmd {
+	if m.App.DB == nil {
+		return cmd
+	}
+	if m.rc.logStatsNeedFetch {
+		m.rc.logStatsNeedFetch = false
+		cmd = tea.Batch(cmd, m.fetchLogbookStatsCmd(
+			m.rc.logStatsFetchCall, m.rc.logStatsFetchBand, m.rc.logStatsFetchMode))
+	}
+	if m.rc.workedSummaryNeedFetch {
+		m.rc.workedSummaryNeedFetch = false
+		// Coalesce: a fetch for the same signature already in flight is
+		// not dispatched again. A NEWER signature dispatches immediately
+		// (the wanted-sig guard discards the stale in-flight result).
+		if m.rc.workedSummaryInflightSig != m.rc.workedSummaryWantedSig {
+			m.rc.workedSummaryInflightSig = m.rc.workedSummaryWantedSig
+			cmd = tea.Batch(cmd, m.fetchWorkedSummaryCmd(
+				m.rc.workedSummaryFetchCall, m.rc.workedSummaryFetchGrid4,
+				m.rc.workedSummaryFetchDXCC, m.rc.workedSummaryFetchName))
+		}
+	}
+	if m.rc.partnerDXCCNeedFetch {
+		m.rc.partnerDXCCNeedFetch = false
+		cmd = tea.Batch(cmd, m.fetchCountryDXCCCmd(m.rc.partnerDXCCEntity))
+	}
+	if m.rc.dxcSpotsNeedFetch {
+		m.rc.dxcSpotsNeedFetch = false
+		cmd = tea.Batch(cmd, m.fetchDXCPathSpotsCmd(m.rc.dxcSpotsFetchBand))
+	}
+	if m.rc.dxcDupeNeedFetch {
+		m.rc.dxcDupeNeedFetch = false
+		cmd = tea.Batch(cmd, m.fetchDXCPathDupesCmd(
+			m.rc.dxcDupeFetchDate, m.rc.dxcDupeFetchContest, m.App.LogbookName, m.dxc.dupeGen))
+	}
+	return cmd
+}
+
 // handleTick processes periodic tick messages: ADIF ingestion, WSJT-X status,
 // toast expiry, date/time auto-update, and scheduled health checks.
 //
@@ -64,12 +104,17 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 	if sp.hasData {
 		m.applyWSJTXStatus(sp.call, sp.grid, sp.freq, sp.mode, sp.submode, sp.report, sp.txMessage, sp.transmitting)
 	}
+	// APRS lifecycle work is single-owner: the debounce timer and the APRS
+	// workers hand their events back here, and all start/stop/restart
+	// transitions run on this main loop.
+	if m.App != nil {
+		m.App.RunPendingAPRS()
+	}
 	// WSJT-X watchdog: if no status received in 15 seconds, mark offline.
 	if m.wsjtx.online && time.Since(m.wsjtx.lastSeen) > 15*time.Second {
 		m.wsjtx.online = false
 		m.wsjtx.tx = false
 		m.wsjtx.txMsg = ""
-		m.rc.status = ""
 	}
 	// WL lookup timeout: if a lookup was dispatched >20s ago and hasn't
 	// completed, force wlLookupDone and clear the dispatch time to prevent
@@ -90,25 +135,38 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 			m.App.MaybeRestartWSJTX(rp.WsjtxEnabled, rp.WsjtxUDPHost, rp.WsjtxUDPPort)
 		}
 	}
+	// Push live rig state (freq/mode/power from the QSO form) to the
+	// Wavelog radio endpoint every 15 seconds.
+	wl := m.App.Logbook.Wavelog
+	if wl != nil && wl.Enabled && m.lookup.wlOnline && m.lookup.wlRadioID != 0 &&
+		time.Since(m.lookup.lastRadioPush) >= wlRadioPushInterval {
+		if c := m.pushWavelogRadioCmd(); c != nil {
+			m.lookup.lastRadioPush = time.Now()
+			cmd = tea.Batch(cmd, c)
+		}
+	}
 	m.toasts.Expire()
 	// Only update the QSO form clock when the form is visible.
 	if m.screen == screenQSO {
 		m.autoUpdateDateTime()
 	}
 	m.tickCount++
-	// Dispatch async logbook stats fetch if a View() cache miss was recorded.
-	if m.rc.logStatsNeedFetch && m.App.DB != nil {
-		m.rc.logStatsNeedFetch = false
-		cmd = tea.Batch(cmd, m.fetchLogbookStatsCmd(
-			m.rc.logStatsFetchCall, m.rc.logStatsFetchBand, m.rc.logStatsFetchMode))
-	}
+	// Dispatch async DB fetches flagged by the last View().
+	cmd = m.dispatchViewFetches(cmd)
 	// Refresh logbook-wide counts once per tick (total QSOs, today's QSOs).
 	// Also refreshes at midnight when the date rolls over.
 	if m.App.DB != nil {
 		today := time.Now().UTC().Format("20060102")
 		if m.rc.logbookStatsDate != today {
-			m.rc.logbookStatsDate = today
-			m.rc.logbookTotal, m.rc.logbookToday = store.LogbookCounts(m.App.DB, today)
+			total, todayCount, err := store.LogbookCounts(m.App.DB, today)
+			if err != nil {
+				// Keep the previous counts and retry next tick, so a transient
+				// lock does not render the logbook as empty.
+				applog.Warn("Logbook counts refresh failed", "error", err)
+			} else {
+				m.rc.logbookStatsDate = today
+				m.rc.logbookTotal, m.rc.logbookToday = total, todayCount
+			}
 		}
 	}
 	// Dispatch async PSK spot DB load if a View() cache miss was recorded.
@@ -135,7 +193,7 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 	// instead of waiting up to 60 s for the next scheduled poll.
 	if m.triggerRapidCheck {
 		m.triggerRapidCheck = false
-		if m.inetOnline {
+		if !m.Offline && m.inetOnline {
 			cmds = append(cmds, checkInetCmd())
 		}
 	}
@@ -259,12 +317,53 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			}
 		}
 		return true, nil
+	case refDataMsg:
+		// Reference data refreshed in the background — install on the main
+		// loop only. Never assigned by the worker itself.
+		var extra tea.Cmd
+		if r.bigCTY != nil && m.App.Config.General.UseCTY {
+			m.App.BigCTY = r.bigCTY
+			if m.App.DB != nil {
+				extra = dxccBackfillCmd(m.App.DB, r.bigCTY)
+			}
+		}
+		if r.scp != nil && m.App.Config.General.UseSCP {
+			m.App.SCP = r.scp
+		}
+		if r.refDB != nil {
+			if m.App.Config.General.UseRef && m.App.RefDB == nil {
+				m.App.RefDB = r.refDB
+				if n, err := r.refDB.Count(); err == nil && n > 0 {
+					m.ref.ready = true
+				}
+			} else {
+				// Lost a race — another path opened the database already.
+				r.refDB.Close()
+			}
+		}
+		return true, extra
+	case dxccBackfillMsg:
+		if r.count > 0 {
+			applog.Info("DXCC: backfilled missing dxcc", "count", r.count)
+		}
+		return true, nil
+	case callFilterResultMsg:
+		m.applyCallFilterResult(r)
+		return true, nil
 	case wlStatusMsg:
 		m.lookup.wlOnline = r.online
+		m.lookup.wlStatusErr = r.err
 		if r.online {
 			m.lookup.wlFailCount = 0
 		} else {
 			m.lookup.wlFailCount++
+		}
+		if r.err != "" && m.lookup.wlWarnShown != r.err {
+			// Surface the reason once (e.g. the v1-key migration notice).
+			m.toasts.Warn(r.err)
+			m.lookup.wlWarnShown = r.err
+		} else if r.err == "" {
+			m.lookup.wlWarnShown = ""
 		}
 		if r.stationName != "" {
 			m.lookup.wlStationName = r.stationName
@@ -272,12 +371,53 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 		if r.stationLabel != "" {
 			m.lookup.wlStationLabel = r.stationLabel
 		}
-		m.rc.status = ""
-		return true, nil
+		var radioCmd tea.Cmd
+		if r.online && m.lookup.wlRadioID == 0 {
+			// Connection confirmed — make sure the CQOps radio exists so
+			// rig-state pushes can start.
+			radioCmd = m.ensureWavelogRadioCmd()
+		}
+		return true, radioCmd
 	case wlUploadResultMsg:
+		// The upload worker's database lease transferred with this result and
+		// must cover the whole upload → id retry → reconciliation chain. It
+		// is handed to the follow-up chain (reconcile or retry); with no
+		// follow-up it is released immediately.
+		var reconcile tea.Cmd
+		if r.ok && r.changed {
+			reconcile = m.queueContactReconcile(r.db, r.url, r.key, r.logbook, r.qID, r.release, nil)
+			r.release = nil
+		}
+		// Remote acceptance without local id persistence is unresolved —
+		// retry the id attach once; a failed retry leaves the row re-offered
+		// on the next upload cycle. The retry carries the accepted snapshot
+		// (identity + revision), the originating logbook, and the lease.
+		var retry tea.Cmd
+		if r.ok && r.unresolved && !r.retried {
+			retry = m.retryIDAttachCmd(r.db, r.url, r.key, r.sid, r.logbook, r.snap, r.uploadedRev, r.release)
+			r.release = nil
+		}
+		if r.release != nil {
+			r.release()
+		}
+		// A result for a logbook the user has switched away from: the editor
+		// now shows a different database (IDs may collide), so skip all UI
+		// updates and notifications.
+		if r.logbook != "" && r.logbook != m.App.LogbookName {
+			return true, tea.Batch(reconcile, retry)
+		}
+		if r.qID != 0 && m.ui.logbookEditor != nil && !r.unresolved {
+			m.ui.logbookEditor.UpdateWLStatus(r.qID, r.ok, r.remoteID)
+		}
+		// Enrichment changed fields without changing QSO ids — force-push
+		// so the dashboard shows the enriched rows. Runs on the owner loop;
+		// the worker never touches dashboard state.
+		m.pushDashboardRecentAndToday()
 		n := m.App.Config.General.Notifications
 		if r.ok {
-			if r.isDup {
+			if r.unresolved {
+				m.toasts.Warn(fmt.Sprintf("Wavelog: %s accepted but remote id not stored — will retry", r.call))
+			} else if r.isDup {
 				m.toasts.Success(fmt.Sprintf("Wavelog: %s already present", r.call))
 			} else {
 				m.toasts.Success(fmt.Sprintf("Wavelog: %s sent", r.call))
@@ -313,13 +453,29 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 		// the updated Wavelog status. Also flag needRefresh so the logbook
 		// editor (if open) reloads on the next tick.
 		m.needRefresh = true
-		return true, m.refreshQSOS()
+		return true, tea.Batch(m.refreshQSOS(), reconcile, retry)
 	case wsjtxEnrichDoneMsg:
+		// Enrichment finished for a logbook the user has switched away from
+		// — refreshing would reload the new logbook's rows for nothing.
+		if r.logbook != "" && r.logbook != m.App.LogbookName {
+			return true, nil
+		}
+		// Enrichment changed fields without changing QSO ids — force-push
+		// so the dashboard shows the enriched rows.
+		m.pushDashboardRecentAndToday()
 		m.needRefresh = true
 		return true, m.refreshQSOS()
 	case qrzStatusMsg:
 		m.lookup.qrzOnline = r.online
 		return true, nil
+	case stationSyncDoneMsg:
+		// Handled globally — the chooser may be closed before the station
+		// fetch completes, and the result must still apply.
+		return true, m.handleStationSyncDone(r)
+	case logbookSwitchedMsg:
+		// The switch bookkeeping follows every logbook change (cycled,
+		// chooser, created) even when the chooser screen is gone.
+		return true, m.handleLogbookSwitched()
 	case httpStatusMsg:
 		if r.client != nil {
 			m.http.client = r.client
@@ -344,7 +500,6 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			m.toasts.Error("HTTP server: " + r.err.Error())
 			applog.Error("HTTP server: failed", "error", r.err)
 		}
-		m.rc.status = ""
 		return true, nil
 	case rigPollMsg:
 		return true, m.applyRigPoll(r)
@@ -401,7 +556,9 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			m.psk.spotKey = ""
 			m.psk.viewKey = ""
 			m.psk.spots = nil
-			m.toasts.Info(fmt.Sprintf("PSK Reporter: %d spots updated", len(r.reports)))
+			if len(r.reports) > 0 {
+				m.toasts.Info(fmt.Sprintf("PSK Reporter: %d spots updated", len(r.reports)))
+			}
 			// Push per-band stats to dashboard.
 			if m.http.client != nil && m.http.online {
 				byBand := make(map[string]int)
@@ -418,6 +575,8 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 			}
 		}
 		return true, nil
+	case wlRadioEnsureMsg, wlRadioPushMsg:
+		return m.handleWavelogRadioMsg(msg), nil
 	case solarFetchMsg:
 		m.handleSolarResult(r)
 		return true, nil
@@ -430,6 +589,9 @@ func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 // handlePendingRequests processes deferred actions (QSO refresh, QRZ lookup, WL lookup)
 // that were flagged during normal message handling.
 func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
+	// Run before any early return so a fetch flagged by the last View() is
+	// serviced on this update instead of waiting for the next tick.
+	cmd = m.dispatchViewFetches(cmd)
 	if m.needRefresh {
 		// Only refresh QSOs when on a screen that displays them — avoids
 		// unnecessary DB queries on DXC, PSK, BPL, and other screens.
@@ -532,6 +694,18 @@ func (m *Model) handleLookupResultMsg(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.
 	case logbookStatsMsg:
 		m.handleLogbookStats(r)
 		return m, cmd
+	case dxcPathSpotsMsg:
+		m.handleDXCPathSpots(r)
+		return m, cmd
+	case dxcPathDupesMsg:
+		m.handleDXCPathDupes(r)
+		return m, cmd
+	case workedSummaryMsg:
+		m.handleWorkedSummary(r)
+		return m, cmd
+	case partnerDXCCMsg:
+		m.handlePartnerDXCC(r)
+		return m, cmd
 	case pskSpotsLoadedMsg:
 		if r.err == nil && r.spotKey != "" {
 			m.psk.spots = r.spots
@@ -570,8 +744,14 @@ func (m *Model) handleLookupResultMsg(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.
 		}
 		return m, cmd
 	case qsoRefreshedMsg:
+		// A late result from a previous logbook must never replace the
+		// current logbook's table.
+		if r.logbook != "" && r.logbook != m.App.LogbookName {
+			applog.Debug("QSO refresh: stale result discarded", "from", r.logbook, "current", m.App.LogbookName)
+			return m, cmd
+		}
 		if r.err != nil {
-			m.toasts.Error(fmt.Sprintf("Refresh failed: %v", r.err))
+			m.toasts.Error(fmt.Sprintf("QSO: refresh failed — %v", r.err))
 		} else {
 			m.qsos = r.qsos
 			m.recentQSOs.SetQSOS(r.qsos)

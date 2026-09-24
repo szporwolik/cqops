@@ -294,6 +294,17 @@ func TestContestCreateFormRender(t *testing.T) {
 // Form tab navigation tests
 // =============================================================================
 
+// contestSeq returns the contest form's visible rows in focus order.
+func contestSeq(c *ContestChooser) []int {
+	var seq []int
+	for i := 0; i < c.rowCount(); i++ {
+		if c.rowVisible(i) {
+			seq = append(seq, i)
+		}
+	}
+	return seq
+}
+
 func TestContestFormTabNavigation(t *testing.T) {
 	cc := newTestContestChooser(t, map[string]config.Contest{
 		"a1": {ID: "a1", Name: "Test"},
@@ -302,29 +313,95 @@ func TestContestFormTabNavigation(t *testing.T) {
 	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	// Start at focus 0 (name)
-	if cc.focus != 0 {
-		t.Fatalf("initial focus = %d, want 0", cc.focus)
+	if cc.fm.row != 0 {
+		t.Fatalf("initial focus = %d, want 0", cc.fm.row)
 	}
 
-	// Tab forward through all visible items
-	for i := 1; i < cc.visibleItems(); i++ {
+	// Tab forward through all visible items.
+	seq := contestSeq(cc)
+	for i := 1; i < len(seq); i++ {
 		cc.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-		if cc.focus != i%cc.visibleItems() {
-			t.Errorf("after tab %d: focus = %d, want %d", i, cc.focus, i%cc.visibleItems())
+		if cc.fm.row != seq[i] {
+			t.Errorf("after tab %d: focus = %d, want %d", i, cc.fm.row, seq[i])
 		}
 	}
 
-	// Should wrap back to 0
+	// Tab from the last field moves to the Save & Back button.
 	cc.Update(tea.KeyPressMsg{Code: tea.KeyTab})
-	if cc.focus != 0 {
-		t.Errorf("after wrap tab: focus = %d, want 0", cc.focus)
+	if !cc.fm.btn.Focus {
+		t.Error("tab from last field should focus the Save & Back button")
+	}
+	if cc.fm.row != -1 {
+		t.Errorf("button focused but form focus still active: %d, want -1", cc.fm.row)
 	}
 
-	// Shift+Tab backward
+	// Tab from the button wraps to the first field.
+	cc.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if cc.fm.btn.Focus || cc.fm.row != 0 {
+		t.Errorf("tab from button: focus = %d, want 0", cc.fm.row)
+	}
+
+	// Shift+Tab from the first field focuses the button.
 	cc.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
-	last := cc.visibleItems() - 1
-	if cc.focus != last {
-		t.Errorf("after shift+tab: focus = %d, want %d", cc.focus, last)
+	if !cc.fm.btn.Focus {
+		t.Error("shift+tab from first field should focus the Save & Back button")
+	}
+	if cc.fm.row != -1 {
+		t.Errorf("button focused but form focus still active: %d, want -1", cc.fm.row)
+	}
+
+	// Shift+Tab from the button returns to the last field.
+	cc.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+	lastSeq := contestSeq(cc)
+	last := lastSeq[len(lastSeq)-1]
+	if cc.fm.btn.Focus || cc.fm.row != last {
+		t.Errorf("shift+tab from button: focus = %d, want %d", cc.fm.row, last)
+	}
+
+	// Reopening the form must start with the button unfocused.
+	cc.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	cc.startCreate()
+	if cc.fm.btn.Focus {
+		t.Error("save button should not stay focused after reopening the form")
+	}
+}
+
+// TestContestPrefillRcvdReachable: with Prefill Exchange Sent disabled the
+// Prefill Exchange Rcvd checkbox must still be reachable by Tab and toggle
+// independently, and checkbox rows must never leave the Name input focused.
+func TestContestPrefillRcvdReachable(t *testing.T) {
+	cc := newTestContestChooser(t, map[string]config.Contest{
+		"a1": {ID: "a1", Name: "Test"},
+	})
+	cc.startCreate()
+
+	seq := contestSeq(cc)
+	if len(seq) != 8 || seq[len(seq)-1] != 8 {
+		t.Fatalf("focus sequence = %v, want 8 rows ending at the Prefill Rcvd checkbox", seq)
+	}
+
+	for range seq[1:] {
+		cc.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	}
+	if cc.fm.row != 8 {
+		t.Fatalf("after walking: focus = %d, want 8 (Prefill Exchange Rcvd)", cc.fm.row)
+	}
+	if cc.nameInput.Focused() {
+		t.Error("Name input must not hold focus while a checkbox row is active")
+	}
+
+	cc.Update(tea.KeyPressMsg{Code: tea.KeySpace})
+	if !cc.prefillExchangeRcvd {
+		t.Error("Space should toggle Prefill Exchange Rcvd")
+	}
+	if cc.prefillExchange || cc.serialExchange {
+		t.Error("Space on Prefill Rcvd must not toggle other checkboxes")
+	}
+
+	// With rcvd enabled the next Tab reaches the exchange rcvd field.
+	cc.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if cc.fm.row != 9 || !cc.exchRcvdInput.Focused() {
+		t.Errorf("tab from rcvd checkbox: focus=%d rcvdFocused=%v, want 9 and focused", cc.fm.row, cc.exchRcvdInput.Focused())
 	}
 }
 
@@ -364,7 +441,7 @@ func TestContestPrefillExchangeToggle(t *testing.T) {
 	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	// Navigate to prefill exchange sent checkbox (focus 6)
-	cc.focus = 6
+	cc.fm.row = 6
 	if cc.prefillExchange {
 		t.Error("prefillExchange should start false")
 	}
@@ -382,9 +459,9 @@ func TestContestPrefillExchangeToggle(t *testing.T) {
 	}
 
 	// Exchange field visibleItems should adapt
-	nOff := cc.visibleItems()
+	nOff := len(contestSeq(cc))
 	cc.prefillExchange = true
-	nOn := cc.visibleItems()
+	nOn := len(contestSeq(cc))
 	if nOn != nOff+1 {
 		t.Errorf("visibleItems on=%d, off=%d; expected on = off+1", nOn, nOff)
 	}
@@ -396,7 +473,7 @@ func TestContestExchangeFieldVisibleWhenChecked(t *testing.T) {
 	})
 	cc.cursor = 1
 	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	cc.focus = 6
+	cc.fm.row = 6
 
 	// Toggle sent on
 	cc.Update(tea.KeyPressMsg{Code: tea.KeySpace})
@@ -409,7 +486,7 @@ func TestContestExchangeFieldVisibleWhenChecked(t *testing.T) {
 	}
 
 	// Toggle sent off
-	cc.focus = 6
+	cc.fm.row = 6
 	cc.Update(tea.KeyPressMsg{Code: tea.KeySpace})
 
 	view = cc.View()
@@ -431,7 +508,7 @@ func TestContestIDSpaceCycling(t *testing.T) {
 	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	// Navigate to Contest ID field (focus 4)
-	cc.focus = 4
+	cc.fm.row = 4
 	cc.contInput.SetValue("")
 
 	// Space should cycle to first ADIF ID
@@ -455,7 +532,7 @@ func TestContestIDGreenWhenValid(t *testing.T) {
 	})
 	cc.cursor = 1
 	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	cc.focus = 4
+	cc.fm.row = 4
 	cc.contInput.SetValue("CQ-WPX-CW")
 	cc.width = 120 // wide enough to see description after (PgUp/PgDn)
 
@@ -498,10 +575,10 @@ func TestContestSaveLifecycle(t *testing.T) {
 	cc.dateInput.SetValue("2026-06-20")
 	cc.nextInput.SetValue("10")
 	cc.contInput.SetValue("CQ-WPX-CW")
-	cc.focus = 6
+	cc.fm.row = 6
 	cc.Update(tea.KeyPressMsg{Code: tea.KeySpace}) // toggle prefill sent on
 	cc.exchSentInput.SetValue("599 001")
-	cc.focus = 8
+	cc.fm.row = 8
 	cc.Update(tea.KeyPressMsg{Code: tea.KeySpace}) // toggle prefill rcvd on
 	cc.exchRcvdInput.SetValue("599 002")
 
@@ -737,7 +814,7 @@ func TestContestIDWarningWhenInvalid(t *testing.T) {
 	cc.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	// Set invalid contest ID
-	cc.focus = 4
+	cc.fm.row = 4
 	cc.contInput.SetValue("NOT-REAL")
 
 	// Navigate away — triggers validateContestID

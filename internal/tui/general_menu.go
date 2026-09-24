@@ -4,28 +4,38 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/config"
 )
 
+// generalRowCount is the number of rows in the General settings menu:
+// Units, Timezone, eight toggles, and the Notifications submenu opener.
+const generalRowCount = 11
+
+// generalRowNotifications is the row of the Notifications submenu opener.
+const generalRowNotifications = 10
+
+// generalRows is the row style shared by every General settings row.
+var generalRows = rowStyle{label: S.FormLabelGen, focused: S.FormFocusedGen}
+
 type GeneralMenu struct {
-	distanceUnit  string
-	timezone      string
-	tzIndex       int
-	renderMap     bool
-	drawGrayline  bool
-	pictureAtQRZ  bool
-	solarAtQSO    bool
-	useSCP        bool
-	useRef        bool
-	debugMode     bool
-	kittyGraphics bool
-	cursor        int
-	done          bool
-	saved         bool
-	goBack        bool
-	width         int
-	height        int
+	distanceUnit    string
+	timezone        string
+	tzIndex         int
+	renderMap       bool
+	drawGrayline    bool
+	pictureAtQRZ    bool
+	solarAtQSO      bool
+	useSCP          bool
+	useRef          bool
+	debugMode       bool
+	kittyGraphics   bool
+	fm              menuFocus
+	done            bool
+	saved           bool
+	goBack          bool
+	goNotifications bool
+	width           int
+	height          int
 }
 
 func NewGeneralMenu(cfg *config.Config) *GeneralMenu {
@@ -59,6 +69,13 @@ func NewGeneralMenu(cfg *config.Config) *GeneralMenu {
 	}
 }
 
+// focusableRows implementation — all rows are always visible and none
+// carry a textinput.
+func (gm *GeneralMenu) rowCount() int        { return generalRowCount }
+func (gm *GeneralMenu) rowVisible(int) bool  { return true }
+func (gm *GeneralMenu) blurAll()             {}
+func (gm *GeneralMenu) focusRow(int) tea.Cmd { return nil }
+
 func (gm *GeneralMenu) Init() tea.Cmd { return nil }
 
 func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -72,23 +89,24 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			gm.goBack = true
 			return gm, nil
 		case "enter":
+			if gm.fm.row == generalRowNotifications {
+				gm.goNotifications = true
+				return gm, nil
+			}
 			gm.done = true
 			gm.saved = true
 			return gm, nil
-		case "up":
-			if gm.cursor > 0 {
-				gm.cursor--
-			} else {
-				gm.cursor = 9 // Debug mode (last item)
-			}
-		case "down":
-			if gm.cursor < 9 {
-				gm.cursor++
-			} else {
-				gm.cursor = 0 // Units (first item)
-			}
+		}
+		if handled, cmd := gm.fm.onKey(msg, gm, func() tea.Cmd {
+			gm.done = true
+			gm.saved = true
+			return nil
+		}); handled {
+			return gm, cmd
+		}
+		switch msg.String() {
 		case " ", "space":
-			switch gm.cursor {
+			switch gm.fm.row {
 			case 0:
 				if gm.distanceUnit == "metric" {
 					gm.distanceUnit = "imperial"
@@ -117,6 +135,8 @@ func (gm *GeneralMenu) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				gm.kittyGraphics = !gm.kittyGraphics
 			case 9:
 				gm.debugMode = !gm.debugMode
+			case generalRowNotifications:
+				gm.goNotifications = true
 			}
 		}
 	}
@@ -160,20 +180,10 @@ func (gm *GeneralMenu) View() tea.View {
 		"can increase CPU load on low-end machines. " +
 		"Kitty graphics require a compatible terminal " +
 		"(Kitty, Ghostty, or WezTerm)."
-	infoLines := wrapLines(infoText, infoMaxW)
-	var infoContent strings.Builder
-	for i, line := range infoLines {
-		infoContent.WriteString(DimStyle.Render(line))
-		if i < len(infoLines)-1 {
-			infoContent.WriteString("\n")
-		}
-	}
-	boxStyle := lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(P.Border)
-	infoBox := boxStyle.Render(infoContent.String())
-	b.WriteString(infoBox)
-	b.WriteString("\n")
+	infoBox(&b, infoText, infoMaxW)
+
+	rowW := boxW - 5 // truncation safety margin against ANSI-width miscalc
+	focused := func(row int) bool { return gm.fm.row == row }
 
 	// Row 0: Units — toggles Metric/Imperial on space.
 	unitVal := "Metric"
@@ -181,89 +191,35 @@ func (gm *GeneralMenu) View() tea.View {
 		unitVal = "Imperial"
 	}
 	unitHint := ""
-	if gm.cursor == 0 {
+	if focused(0) {
 		unitHint = "distance, speed, elevation"
 	}
-	gm.renderSettingRow(&b, boxW, 0, "Units", unitVal, unitHint)
+	valueRow(&b, rowW, focused(0), "Units", unitVal, unitHint, generalRows)
 
 	// Row 1: Timezone — shows current value, cycles on space.
 	tzHint := ""
-	if gm.cursor == 1 {
+	if focused(1) {
 		tzHint = "QSO date/time reference"
 	}
-	gm.renderSettingRow(&b, boxW, 1, "Timezone", gm.timezone, tzHint)
+	valueRow(&b, rowW, focused(1), "Timezone", gm.timezone, tzHint, generalRows)
 
-	// Row 2-4: Checkbox options.
-	gm.renderCheckbox(&b, boxW, 2, "Render partner map", "Shows station on world map with bearing", gm.renderMap)
-	gm.renderCheckbox(&b, boxW, 3, "Render grayline at partner map", "Day/night terminator overlay", gm.drawGrayline)
-	gm.renderCheckbox(&b, boxW, 4, "Render partner picture", "Shows photo from callbook if available", gm.pictureAtQRZ)
-	gm.renderCheckbox(&b, boxW, 5, "Solar data next to QSO form", "SFI, A, K indices in QSO pane", gm.solarAtQSO)
-	gm.renderCheckbox(&b, boxW, 6, "Use Super Check Partial", "Callsign autocomplete from contest logs", gm.useSCP)
-	gm.renderCheckbox(&b, boxW, 7, "Use SOTA/POTA/IOTA database", "Reference lookup for awards", gm.useRef)
-	gm.renderKittyCheckbox(&b, boxW, 8, "Kitty graphics", "Experimental — requires Kitty, Ghostty, or WezTerm", gm.kittyGraphics)
-	gm.renderCheckbox(&b, boxW, 9, "Debug Mode", "Verbose logging for troubleshooting", gm.debugMode)
+	// Row 2-9: Checkbox options.
+	checkboxRow(&b, rowW, focused(2), "Render partner map", gm.renderMap, "Shows station on world map with bearing", false, generalRows)
+	checkboxRow(&b, rowW, focused(3), "Render grayline at partner map", gm.drawGrayline, "Day/night terminator overlay", false, generalRows)
+	checkboxRow(&b, rowW, focused(4), "Render partner picture", gm.pictureAtQRZ, "Shows photo from callbook if available", false, generalRows)
+	checkboxRow(&b, rowW, focused(5), "Solar data next to QSO form", gm.solarAtQSO, "SFI, A, K indices in QSO pane", false, generalRows)
+	checkboxRow(&b, rowW, focused(6), "Use Super Check Partial", gm.useSCP, "Callsign autocomplete from contest logs", false, generalRows)
+	checkboxRow(&b, rowW, focused(7), "Use SOTA/POTA/IOTA database", gm.useRef, "Reference lookup for awards", false, generalRows)
+	checkboxRow(&b, rowW, focused(8), "Kitty graphics", gm.kittyGraphics, "Experimental — requires Kitty, Ghostty, or WezTerm", false, generalRows)
+	checkboxRow(&b, rowW, focused(9), "Debug Mode", gm.debugMode, "Verbose logging for troubleshooting", false, generalRows)
+
+	// Notifications submenu — opens the dedicated Notifications screen.
+	// Rendered as a value row so it aligns with the other settings rows.
+	valueRow(&b, rowW, focused(generalRowNotifications), "Notifications…", "", "", generalRows)
+
+	// Save & Back button at the end of the menu — flush under the last row.
+	b.WriteString(gm.fm.btn.line("Save & Back", boxW-4))
 
 	body := drawMenuWithHeader("Configuration \u2014 General Settings", b.String(), w)
 	return tea.NewView(fillBody(body, contentH))
-}
-
-func (gm *GeneralMenu) renderCheckbox(b *strings.Builder, boxW, cursor int, label, hint string, checked bool) {
-	cb := "[ ]"
-	if checked {
-		cb = "[x]"
-	}
-	prefix := S.FormPrefixOff.Render("  ")
-	lbl := S.FormLabelGen.Align(lipgloss.Left).Render(label)
-	if gm.cursor == cursor {
-		prefix = S.FormPrefixOn.Render("> ")
-		lbl = S.FormFocusedGen.Align(lipgloss.Left).Render(label)
-		cb = CursorStyle.Render(cb) + " " + DimStyle.Render("(Space)")
-		if hint != "" {
-			cb = cb + " " + DimStyle.Render(hint)
-		}
-	}
-	b.WriteString(padOrTrunc(
-		lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", cb),
-		boxW-5))
-	b.WriteString("\n")
-}
-
-func (gm *GeneralMenu) renderKittyCheckbox(b *strings.Builder, boxW, cursor int, label, hint string, checked bool) {
-	cb := "[ ]"
-	if checked {
-		cb = "[x]"
-	}
-	prefix := S.FormPrefixOff.Render("  ")
-	lbl := S.FormLabelGen.Align(lipgloss.Left).Render(label)
-	if gm.cursor == cursor {
-		prefix = S.FormPrefixOn.Render("> ")
-		lbl = S.FormFocusedGen.Align(lipgloss.Left).Render(label)
-		cb = CursorStyle.Render(cb) + " " + DimStyle.Render("(Space)")
-		if hint != "" {
-			cb = cb + " " + DimStyle.Render(hint)
-		}
-	}
-	b.WriteString(padOrTrunc(
-		lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", cb),
-		boxW-5))
-	b.WriteString("\n")
-}
-
-func (gm *GeneralMenu) renderSettingRow(b *strings.Builder, boxW, cursor int, label, value, hint string) {
-	prefix := S.FormPrefixOff.Render("  ")
-	lbl := S.FormLabelGen.Align(lipgloss.Left).Render(label)
-	val := ValueStyle.Render(value)
-	if gm.cursor == cursor {
-		prefix = S.FormPrefixOn.Render("> ")
-		lbl = S.FormFocusedGen.Align(lipgloss.Left).Render(label)
-		val = CursorStyle.Render(value) + " " + DimStyle.Render("(Space)")
-		if hint != "" {
-			val += " " + DimStyle.Render(hint)
-		}
-	}
-	// Start truncation 5 chars early as safety margin against ANSI-width miscalc.
-	b.WriteString(padOrTrunc(
-		lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl, " ", val),
-		boxW-5))
-	b.WriteString("\n")
 }

@@ -38,23 +38,11 @@ func (m *Model) handleChooserUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cm
 		m.lookup.wlForceCheck = true
 		m.needRefresh = true
 	}
-	// Logbook was switched via Enter in the chooser — force WL check and
-	// immediately refresh QSOs (mirrors cycleLogbook behaviour).
-	if _, ok := msg.(logbookSwitchedMsg); ok {
-		m.lookup.wlPrivateData = nil // WL data is logbook-specific
-		m.lookup.wlForceCheck = true
-		m.needRefresh = true
-		m.invalidatePartnerMapCache()
-		m.rc.logStatsSig = ""
-		m.rc.workedSummarySig = ""
-		m.rc.pathSig = ""
-		m.rc.pathLine = ""
-		// Recheck dupe and new-call status against the new logbook.
-		if strings.TrimSpace(m.fields[fieldCall].Value()) != "" {
-			m.checkDupe()
-		}
-		cmd = tea.Batch(cmd, m.refreshQSOS())
-	}
+	// Logbook switches are booked globally in handleAsyncMessages via
+	// logbookSwitchedMsg — the chooser may be closed before the switch
+	// bookkeeping message is handled, so nothing is done here. Station
+	// sync completions are also global, but they only refresh
+	// station-dependent state and never reset an in-progress contact.
 	return m, cmd
 }
 
@@ -111,6 +99,19 @@ func (m *Model) handleConfigUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd
 	m.ui.configMenu.height = m.height
 	_, configCmd := m.ui.configMenu.Update(msg)
 	cmd = tea.Batch(cmd, configCmd)
+
+	// Notifications submenu — open without saving or closing General, so
+	// returning restores the General form exactly as it was.
+	if m.ui.configMenu.goNotifications {
+		m.ui.configMenu.goNotifications = false
+		m.ui.notifMenu = NewNotificationsMenu(m.App.Config)
+		m.ui.notifMenu.width = m.width
+		m.ui.notifMenu.height = m.height
+		m.ui.notifMenu.fromGeneral = true
+		m.screen = screenNotifications
+		return m, cmd
+	}
+
 	if m.ui.configMenu.done {
 		m.screen = screenQSO
 		if m.ui.configMenu.goBack {
@@ -130,7 +131,9 @@ func (m *Model) handleConfigUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd
 			m.App.Config.General.KittyGraphics = m.ui.configMenu.kittyGraphics
 			applog.SetDebugMode(m.ui.configMenu.debugMode)
 			m.saveConfig("Settings saved")
-			m.reloadDataFiles()
+			if c := m.reloadDataFiles(); c != nil {
+				cmd = tea.Batch(cmd, c)
+			}
 			// Handle REF database enable/disable.
 			if m.App.Config.General.UseRef {
 				if m.App.RefDB == nil {
@@ -178,9 +181,15 @@ func (m *Model) handleNotificationsUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 	}
 
 	if m.ui.notifMenu.done {
+		// Return where we came from: General keeps its unsaved state alive
+		// when Notifications was opened as its submenu.
+		backTo := screenMainMenu
+		if m.ui.notifMenu.fromGeneral {
+			backTo = screenConfig
+		}
 		m.screen = screenQSO
 		if m.ui.notifMenu.goBack {
-			m.screen = screenMainMenu
+			m.screen = backTo
 		}
 		if m.ui.notifMenu.saved {
 			m.App.Config.General.Notifications.Enabled = m.ui.notifMenu.enabled
@@ -190,7 +199,7 @@ func (m *Model) handleNotificationsUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 			m.App.Config.General.Notifications.BeepOnError = m.ui.notifMenu.beepOnError
 			m.applyBeepOnError()
 			m.saveConfig("Settings saved")
-			m.screen = screenMainMenu
+			m.screen = backTo
 		}
 	}
 	return m, cmd
@@ -199,7 +208,7 @@ func (m *Model) handleNotificationsUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	m.ui.integrationMenu.width = m.width
 	m.ui.integrationMenu.height = m.height
-	m.ui.integrationMenu.inetOnline = m.inetOnline
+	m.ui.integrationMenu.inetOnline = !m.Offline && m.inetOnline
 	m.ui.integrationMenu.aprsOnline = m.aprsConnected()
 	_, integrationCmd := m.ui.integrationMenu.Update(msg)
 
@@ -219,6 +228,16 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 		m.ui.integrationMenu.aprsToast = ""
 	}
 
+	// Show GPS test toasts.
+	if m.ui.integrationMenu.gpsToast != "" {
+		if strings.Contains(m.ui.integrationMenu.gpsToast, "connection verified") {
+			m.toasts.Success(m.ui.integrationMenu.gpsToast)
+		} else {
+			m.toasts.Error(m.ui.integrationMenu.gpsToast)
+		}
+		m.ui.integrationMenu.gpsToast = ""
+	}
+
 	// GPS test succeeded — immediately poll GPS state so the status
 	// bar reflects the connection without waiting for the periodic tick.
 	if m.ui.integrationMenu.gpsNeedsPoll {
@@ -233,15 +252,8 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 		if m.ui.integrationMenu.goBack {
 			m.screen = screenMainMenu
 		}
-		if m.ui.integrationMenu.goCallbook {
-			m.ui.callbookMenu = NewCallbookMenu(m.App.Config)
-			m.ui.callbookMenu.width = m.width
-			m.ui.callbookMenu.height = m.height
-			m.screen = screenCallbook
-			return m, cmd
-		}
 		if m.ui.integrationMenu.saved {
-			dxcE, dxcHost, dxcPort, dxcLogin, _, _, _, httpE, httpAddr, httpPort, httpTheme, httpHdr1, httpHdr2, httpLogo, httpQRLink, httpEvtStart, httpTLS, httpTLSCert, httpTLSKey := m.ui.integrationMenu.Values()
+			dxcE, dxcHost, dxcPort, dxcLogin, httpE, httpAddr, httpPort, httpTheme, httpHdr1, httpHdr2, httpLogo, httpQRLink, httpEvtStart, httpTLS, httpTLSCert, httpTLSKey := m.ui.integrationMenu.Values()
 
 			// Restart the HTTP server when address, port, TLS, or enabled
 			// state actually change, OR when the server should be running
@@ -307,6 +319,21 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 			m.App.Config.Integrations.APRS.DTR = m.ui.integrationMenu.aprsDTR
 			m.App.Config.Integrations.APRS.RTS = m.ui.integrationMenu.aprsRTS
 
+			// PSK Reporter — simple on/off for the F5 panel.
+			pskWasEnabled := m.App.Config.Integrations.PSK.Enabled
+			m.App.Config.Integrations.PSK.Enabled = m.ui.integrationMenu.pskEnabled
+			if m.App.Config.Integrations.PSK.Enabled != pskWasEnabled {
+				if m.App.Config.Integrations.PSK.Enabled {
+					m.toasts.Info("PSK Reporter: enabled — F5")
+				} else {
+					m.toasts.Info("PSK Reporter: disabled")
+				}
+				// Re-enabled: reset the fetch state so the next F5 fetches
+				// fresh instead of showing stale results from before.
+				m.psk.fetched = false
+				m.psk.lastFetchByCall = nil
+			}
+
 			m.saveConfig("Settings saved")
 			applog.Info("Integration config saved, restarting services")
 
@@ -358,67 +385,62 @@ func (m *Model) handleIntegrationUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 }
 
 // reloadDataFiles loads DXCC prefix data and SCP callsign database from
-// cached files when the user enables UseCTY or UseSCP in settings. This
-// avoids requiring an app restart for those features to become active.
-func (m *Model) reloadDataFiles() {
+// cached files when the user enables UseCTY or UseSCP in settings. Missing
+// cache files are fetched in the background; the returned command delivers
+// the loaded resources as a refDataMsg so the UI loop never blocks on
+// network I/O.
+func (m *Model) reloadDataFiles() tea.Cmd {
 	cacheDir, err := config.CacheDir()
 	if err != nil {
 		applog.Debug("reloadDataFiles: cannot determine cache dir", "error", err)
-		return
+		return nil
 	}
 
-	if m.App.Config.General.UseCTY && m.App.BigCTY == nil {
+	needBigCTY := m.App.Config.General.UseCTY && m.App.BigCTY == nil
+	needSCP := m.App.Config.General.UseSCP && m.App.SCP == nil
+	needRef := m.App.Config.General.UseRef && m.App.RefDB == nil
+
+	// Fast local cache loads stay synchronous.
+	if needBigCTY {
 		csvFile := filepath.Join(cacheDir, "cty.csv")
 		if data, err := os.ReadFile(csvFile); err == nil && len(data) > 0 {
 			if db, err := ctybig.ParseCSV(bytes.NewReader(data)); err == nil {
 				m.App.BigCTY = db
 				applog.Info("DXCC: Big CTY loaded from cache on demand", "entries", db.Prefixes())
-			}
-		} else if _, statErr := os.Stat(csvFile); os.IsNotExist(statErr) {
-			if url := findBigCTYURL(); url != "" {
-				applog.Info("DXCC: downloading Big CTY on first enable", "url", url)
-				bf, dlErr := downloadBigCTY(url)
-				if dlErr != nil {
-					applog.Warn("DXCC: Big CTY download failed", "error", dlErr.Error())
-				} else if len(bf.ctyCSV) > 0 {
-					os.WriteFile(csvFile, bf.ctyCSV, 0644)
-					if db, err := ctybig.ParseCSV(bytes.NewReader(bf.ctyCSV)); err == nil {
-						m.App.BigCTY = db
-					}
-				}
+				needBigCTY = false
 			}
 		}
 	}
-
-	if m.App.Config.General.UseSCP && m.App.SCP == nil {
+	if needSCP {
 		scpPath := filepath.Join(cacheDir, "MASTER.SCP")
-		if _, statErr := os.Stat(scpPath); os.IsNotExist(statErr) {
-			applog.Info("SCP: downloading on first enable")
-			if dlErr := scp.Download(scp.DefaultURL, scpPath); dlErr != nil {
-				applog.Warn("SCP: download failed", "error", dlErr.Error())
-			}
-		}
 		if db, loadErr := scp.LoadLocal(scpPath); loadErr == nil {
 			m.App.SCP = db
 			applog.Info("SCP: callsign database loaded on demand")
-		} else {
-			applog.Info("SCP: no cached data yet — will fetch when online")
+			needSCP = false
 		}
 	}
-
-	if m.App.Config.General.UseRef && m.App.RefDB == nil {
+	if needRef {
 		refPath := filepath.Join(cacheDir, "ref.db")
 		if rdb, openErr := ref.Open(refPath); openErr == nil {
 			m.App.RefDB = rdb
 			applog.Info("REF: database opened on demand")
-			// Check if already populated.
 			if n, err := rdb.Count(); err == nil && n > 0 {
 				m.ref.ready = true
 			}
-		} else {
-			applog.Info("REF: cannot open database — will rebuild when online")
+			needRef = false
 		}
 	}
+
+	// Anything still missing needs the network — fetch in the background
+	// and install the results from a refDataMsg.
+	if needBigCTY || needSCP || needRef {
+		useCTY, useSCP, useRef := needBigCTY, needSCP, needRef
+		bigCTYLoaded := m.App.BigCTY != nil
+		return func() tea.Msg {
+			return runRefDataRefresh(cacheDir, useCTY, useSCP, useRef, bigCTYLoaded)
+		}
+	}
+	return nil
 }
 
 func (m *Model) handleMainMenuUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
@@ -466,11 +488,6 @@ func (m *Model) handleMainMenuUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.C
 			m.ui.callbookMenu.width = m.width
 			m.ui.callbookMenu.height = m.height
 			m.screen = screenCallbook
-		case "notifications":
-			m.ui.notifMenu = NewNotificationsMenu(m.App.Config)
-			m.ui.notifMenu.width = m.width
-			m.ui.notifMenu.height = m.height
-			m.screen = screenNotifications
 		}
 	}
 	if m.ui.mainMenu.done {
@@ -482,7 +499,7 @@ func (m *Model) handleMainMenuUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.C
 func (m *Model) handleCallbookUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	m.ui.callbookMenu.width = m.width
 	m.ui.callbookMenu.height = m.height
-	m.ui.callbookMenu.inetOnline = m.inetOnline
+	m.ui.callbookMenu.inetOnline = !m.Offline && m.inetOnline
 
 	// Clear previous save error.
 	if m.ui.callbookMenu.SaveError != "" {
@@ -594,7 +611,7 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 	}
 
 	// Trigger initial fetch when first entering the tab (not yet fetched, not already fetching).
-	if !m.psk.fetched && !m.psk.fetching && m.inetOnline {
+	if !m.psk.fetched && !m.psk.fetching && !m.Offline && m.inetOnline && m.pskEnabled() {
 		if call != "" {
 			m.psk.fetching = true
 			return m, tea.Batch(cmd, m.pskFetchCmd())
@@ -602,7 +619,7 @@ func (m *Model) handlePSKReporterUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, te
 	}
 	// Auto-refresh: if data for this callsign is older than 5 minutes,
 	// trigger a background refresh (per-callsign, not global).
-	if m.psk.fetched && !m.psk.fetching && m.inetOnline {
+	if m.psk.fetched && !m.psk.fetching && !m.Offline && m.inetOnline && m.pskEnabled() {
 		last := m.psk.lastFetchByCall[call]
 		if !last.IsZero() && time.Since(last) >= 5*time.Minute {
 			m.psk.fetching = true
@@ -794,50 +811,127 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 	_, editorCmd := m.ui.logbookEditor.Update(msg)
 	var refreshCmd tea.Cmd
 	if em, ok := msg.(editorMsg); ok {
+		// Operation identity: a completion from a replaced editor (logbook
+		// switched) must not apply model-level side effects — toasts,
+		// refreshes, editor mutations — to the VISIBLE logbook. The editor
+		// rejects the form transition on its own; the model must reject the
+		// side effects too. Logbook-scoped persistence (purge cursor reset,
+		// download cursor) already ran globally against the ORIGINATING
+		// logbook in persistEditorLogbookCursor.
+		own := em.gen == 0 || em.gen == m.ui.logbookEditor.gen
+		if !own {
+			return m, tea.Batch(cmd, editorCmd)
+		}
+
 		if em.toastWarn != "" {
 			m.toasts.Warn(em.toastWarn)
 		}
 		if em.err != nil && em.wlQSOID == 0 {
-			m.toasts.Error(em.err.Error())
+			m.toasts.Error("Logbook: " + em.err.Error())
 		}
 		if em.deleted != 0 {
-			m.toasts.Success(fmt.Sprintf("QSO %s from %s deleted", em.delCall, em.delDate))
+			switch {
+			case em.delSyncOK:
+				m.toasts.Success(fmt.Sprintf("QSO %s from %s deleted · removed from Wavelog", em.delCall, em.delDate))
+			case em.delSyncErr != "":
+				m.toasts.Warn(fmt.Sprintf("QSO %s from %s deleted locally — Wavelog: %s", em.delCall, em.delDate, em.delSyncErr))
+			default:
+				m.toasts.Success(fmt.Sprintf("QSO %s from %s deleted", em.delCall, em.delDate))
+			}
+			m.invalidateDashboardFlags()
 			refreshCmd = m.refreshQSOS()
 		}
+		if em.wlFetchQSOID != 0 {
+			if em.wlFetchQSO != nil {
+				applied, err := m.ui.logbookEditor.ApplyRemoteRefresh(em.wlFetchQSO, remoteRefreshRequest{
+					gen:     em.wlFetchGen,
+					db:      em.wlFetchDB,
+					localID: em.wlFetchQSOID,
+					rev:     em.wlFetchRev,
+					session: em.wlFetchSession,
+				})
+				if err != nil {
+					applog.Warn("Wavelog: apply remote refresh failed", "error", err)
+				} else if applied {
+					m.toasts.Success("Wavelog: QSO refreshed from server")
+				} else if m.ui.logbookEditor.mode == edModeEdit &&
+					(em.wlFetchGen == 0 || em.wlFetchGen == m.ui.logbookEditor.gen) &&
+					(em.wlFetchDB == nil || em.wlFetchDB == m.ui.logbookEditor.db) &&
+					(em.wlFetchSession == 0 || em.wlFetchSession == m.ui.logbookEditor.editSession) {
+					// The result belongs to this editor and session but was
+					// stale (typed since, other row, pending sync). Results
+					// from a replaced editor/database or a previous session
+					// are dropped silently.
+					m.toasts.Warn("Wavelog: remote refresh skipped — your unsaved edits were kept")
+				}
+			} else if em.wlFetchErr != "" {
+				m.toasts.Warn("Wavelog: " + em.wlFetchErr)
+			}
+		}
 		if em.saved != 0 {
-			m.toasts.Success(fmt.Sprintf("QSO %s from %s saved", em.saveCall, em.saveDate))
+			if em.syncCtx != nil && em.syncCtx.batch != nil {
+				// Bulk pending-sync retry completion — the batch summary
+				// toast fires globally when the last chain drains; do not
+				// toast or refresh per contact.
+			} else {
+				switch {
+				case em.wlSyncOK:
+					m.toasts.Success(fmt.Sprintf("QSO %s from %s saved · Wavelog updated", em.saveCall, em.saveDate))
+				case em.wlSyncGone:
+					m.toasts.Warn(fmt.Sprintf("QSO %s from %s saved locally — remote copy was deleted", em.saveCall, em.saveDate))
+				case em.wlSyncIncomplete:
+					m.toasts.Warn(fmt.Sprintf("QSO %s from %s saved — Wavelog updated, local sync status pending", em.saveCall, em.saveDate))
+				case em.wlSyncErr != "":
+					m.toasts.Error(fmt.Sprintf("QSO %s from %s saved locally — Wavelog: %s", em.saveCall, em.saveDate, em.wlSyncErr))
+				case em.wlSyncPending:
+					m.toasts.Warn(fmt.Sprintf("QSO %s from %s saved locally — Wavelog sync deferred (offline)", em.saveCall, em.saveDate))
+				default:
+					m.toasts.Success(fmt.Sprintf("QSO %s from %s saved", em.saveCall, em.saveDate))
+				}
+			}
+			m.invalidateDashboardFlags()
 			refreshCmd = m.refreshQSOS()
 		}
 		if em.purged {
-			m.toasts.Success("Logbook purged")
+			m.toasts.Success("Logbook: purged")
 			m.ui.logbookEditor.wlLastFetchedID = 0
 			m.ui.logbookEditor.needsReload = true
 			refreshCmd = m.refreshQSOS()
-			if m.App.Logbook.Wavelog != nil {
-				m.App.Logbook.Wavelog.LastFetchedID = 0
-				if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
-					applog.Warn("Failed to reset Wavelog last_fetched_id after purge", "error", err)
-				}
-			}
+			m.invalidateDashboardFlags()
 			m.needRefresh = true
 		}
 		if em.wlQSOID != 0 {
 			if em.wlOK {
-				if em.wlDup {
+				hasTally := em.wlSentCount+em.wlDupCount+em.wlFailCount+em.wlUnresolvedCount > 0
+				switch {
+				case em.wlUpUnresolved:
+					m.toasts.Warn(fmt.Sprintf("Wavelog: %s accepted but remote id not stored — will retry", em.wlCall))
+				case hasTally && (em.wlFailCount > 0 || em.wlUnresolvedCount > 0):
+					m.toasts.Warn("Wavelog: " + em.wlCall)
+				case hasTally:
+					m.toasts.Success("Wavelog: " + em.wlCall)
+				case em.wlDup:
 					m.toasts.Success(fmt.Sprintf("Wavelog: %s already present", em.wlCall))
-				} else {
+				default:
 					m.toasts.Success(fmt.Sprintf("Wavelog: %s sent", em.wlCall))
 				}
-				m.ui.logbookEditor.UpdateWLStatus(em.wlQSOID, "yes")
+				m.ui.logbookEditor.UpdateWLStatus(em.wlQSOID, em.wlOK && !em.wlUpUnresolved, 0)
 				m.ui.logbookEditor.needsReload = true
+				// The follow-up chains (reconciliation PATCH for wlUpChanged,
+				// id-attach retry for wlUpUnresolved) are queued GLOBALLY in
+				// handleEditorUploadCompletion — they must run against the
+				// originating logbook even when this editor is not visible.
 			} else {
 				if em.err != nil {
 					m.toasts.Error(fmt.Sprintf("Wavelog: %s — %s", em.wlCall, em.err.Error()))
 				} else {
 					m.toasts.Error(fmt.Sprintf("Wavelog: %s failed", em.wlCall))
 				}
-				m.ui.logbookEditor.UpdateWLStatus(em.wlQSOID, "no")
+				m.ui.logbookEditor.UpdateWLStatus(em.wlQSOID, false, 0)
 			}
+		}
+		if em.wlRetryErr != "" {
+			m.toasts.Error("Wavelog: " + em.wlRetryErr)
 		}
 		if m.ui.logbookEditor.wlSkipped > 0 {
 			m.toasts.Warn(fmt.Sprintf("Wavelog: %s", m.ui.logbookEditor.wlSkipDetail))
@@ -860,26 +954,68 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 	return m, tea.Batch(cmd, editorCmd, refreshCmd)
 }
 
-// handleEditorSideEffects applies model-level side effects of download /
-// import / export editor messages: persisting Wavelog's last_fetched_id,
-// flagging a QSO refresh, running the post-import DXCC backfill, and
-// surfacing early download errors. Used by both the editor-screen handler
-// and the global pump that keeps downloads flowing after the user leaves
-// the editor mid-operation.
-func (m *Model) handleEditorSideEffects(em editorMsg) tea.Cmd {
-	if em.dlDone && !em.dlAborted && em.dlErr == "" {
-		m.ui.logbookEditor.wlLastFetchedID = em.dlLastID
-		if m.App.Logbook.Wavelog != nil {
-			m.App.Logbook.Wavelog.LastFetchedID = em.dlLastID
-			if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
-				applog.Warn("Failed to persist Wavelog last_fetched_id", "error", err)
-			}
+// persistEditorLogbookCursor persists logbook-scoped results of editor
+// operations — the purge cursor reset and the Wavelog download cursor —
+// against the ORIGINATING logbook carried by the message (lbID), never the
+// visible one. Runs globally in the update loop, independent of screen and
+// visible editor: a purge or download of logbook A completing after a switch
+// to B must update A's Wavelog cursor, not B's.
+func (m *Model) persistEditorLogbookCursor(em editorMsg) {
+	lbID := em.lbID
+	if lbID == "" {
+		lbID = m.App.LogbookName
+	}
+	lb, ok := m.App.Config.Logbooks[lbID]
+	if !ok || lb.Wavelog == nil {
+		return
+	}
+	if em.purged {
+		lb.Wavelog.LastFetchedID = 0
+		m.App.Config.Logbooks[lbID] = lb
+		if lbID == m.App.LogbookName {
+			m.App.Logbook = &lb
 		}
+		if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
+			applog.Warn("Failed to reset Wavelog last_fetched_id after purge", "logbook", lbID, "error", err)
+		}
+		return
+	}
+	if em.dlDone && !em.dlAborted && em.dlErr == "" && em.dlDownload {
+		lb.Wavelog.LastFetchedID = em.dlLastID
+		m.App.Config.Logbooks[lbID] = lb
+		if lbID == m.App.LogbookName {
+			m.App.Logbook = &lb
+		}
+		if err := config.Save(m.App.ConfigPath, m.App.Config); err != nil {
+			applog.Warn("Failed to persist Wavelog last_fetched_id", "logbook", lbID, "error", err)
+		}
+	}
+}
+
+// handleEditorSideEffects applies model-level side effects of download /
+// import / export editor messages: flagging a QSO refresh, running the
+// post-import DXCC backfill, and surfacing early download errors. Used by
+// both the editor-screen handler and the global pump that keeps downloads
+// flowing after the user leaves the editor mid-operation. Side effects apply
+// only to completions of the visible editor (generation match; gen 0 =
+// legacy/unbound) — logbook-scoped cursor persistence lives in
+// persistEditorLogbookCursor and runs globally instead.
+func (m *Model) handleEditorSideEffects(em editorMsg) tea.Cmd {
+	own := em.gen == 0 || (m.ui.logbookEditor != nil && em.gen == m.ui.logbookEditor.gen)
+	if !own {
+		return nil
+	}
+	if em.dlDone && !em.dlAborted && em.dlErr == "" && em.dlDownload && m.ui.logbookEditor != nil {
+		m.ui.logbookEditor.wlLastFetchedID = em.dlLastID
 	}
 	if em.dlDone {
 		// Download/import finished — the editor already recorded counts.
 		if !em.dlAborted && em.dlCount > 0 {
 			m.needRefresh = true
+			// The dashboard's recent/today/stats panels are pushed from
+			// change-detected caches — mark them dirty so the next push
+			// reflects the freshly imported rows.
+			m.invalidateDashboardFlags()
 			applog.Info("Wavelog: bulk import finished — QSO list refresh pending",
 				"inserted", em.dlCount, "dupes", em.dlDupes, "last_id", em.dlLastID)
 			// Full DXCC backfill after bulk import — the periodic

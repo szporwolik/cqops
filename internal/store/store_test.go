@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/szporwolik/cqops/internal/qso"
 )
@@ -21,6 +22,103 @@ func newTempDB(t *testing.T) *sql.DB {
 	}
 	t.Cleanup(func() { db.Close() })
 	return db
+}
+
+// TestWavelogDirtyRoundtrip verifies the durable pending-sync flag:
+// set, read and clear through the dedicated accessors.
+func TestWavelogDirtyRoundtrip(t *testing.T) {
+	db := newTempDB(t)
+
+	id := mustInsertQSO(t, db, &qso.QSO{Call: "SP9MOA", QSODate: "20240501",
+		TimeOn: "120000", Band: "20m", Mode: "SSB", WavelogID: 77})
+
+	dirty, err := QSOHasPendingSync(db, id)
+	if err != nil {
+		t.Fatalf("QSOHasPendingSync: %v", err)
+	}
+	if dirty {
+		t.Error("fresh QSO should not have pending sync")
+	}
+
+	if err := SetWavelogDirty(db, id, true); err != nil {
+		t.Fatalf("SetWavelogDirty(true): %v", err)
+	}
+	dirty, err = QSOHasPendingSync(db, id)
+	if err != nil || !dirty {
+		t.Errorf("pending sync after set = %v (err=%v), want true", dirty, err)
+	}
+
+	if err := SetWavelogDirty(db, id, false); err != nil {
+		t.Fatalf("SetWavelogDirty(false): %v", err)
+	}
+	dirty, err = QSOHasPendingSync(db, id)
+	if err != nil || dirty {
+		t.Errorf("pending sync after clear = %v (err=%v), want false", dirty, err)
+	}
+}
+
+// TestSaveQSOAtomicDirtyMark verifies the edit, the dirty flag and the
+// pending-sync revision change together (decided from the DATABASE state),
+// and that only an acknowledgement for the CURRENT revision clears the flag —
+// an older revision must not.
+func TestSaveQSOAtomicDirtyMark(t *testing.T) {
+	db := newTempDB(t)
+	id := mustInsertQSO(t, db, &qso.QSO{Call: "SP9MOA", QSODate: "20240501",
+		TimeOn: "120000", Band: "20m", Mode: "SSB", WavelogID: 77})
+
+	q1 := &qso.QSO{ID: id, Call: "SP9MOA", QSODate: "20240501", TimeOn: "120000",
+		Band: "20m", Mode: "SSB", Comment: "edit one", WavelogID: 77}
+	synced, rev1, err := SaveQSO(db, q1)
+	if err != nil {
+		t.Fatalf("SaveQSO: %v", err)
+	}
+	if !synced {
+		t.Fatal("synced = false, want true (the database row carries id 77)")
+	}
+	if rev1 != 1 {
+		t.Fatalf("rev1 = %d, want 1", rev1)
+	}
+	row, err := GetQSOByID(db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if row.Comment != "edit one" || !row.WavelogDirty {
+		t.Fatalf("row after save = comment %q dirty %v; want edit one, true", row.Comment, row.WavelogDirty)
+	}
+	if row.WavelogID != 77 {
+		t.Fatalf("WavelogID after save = %d, want 77 (preserved)", row.WavelogID)
+	}
+
+	q2 := &qso.QSO{ID: id, Call: "SP9MOA", QSODate: "20240501", TimeOn: "120000",
+		Band: "20m", Mode: "SSB", Comment: "edit two", WavelogID: 77}
+	synced, rev2, err := SaveQSO(db, q2)
+	if err != nil {
+		t.Fatalf("SaveQSO #2: %v", err)
+	}
+	if !synced {
+		t.Fatal("synced = false on second save, want true")
+	}
+	if rev2 != 2 {
+		t.Fatalf("rev2 = %d, want 2", rev2)
+	}
+
+	// An acknowledgement for the OLDER revision must not clear the flag.
+	if err := ClearWavelogDirtyIfRevision(db, id, rev1); err != nil {
+		t.Fatalf("ClearWavelogDirtyIfRevision(old): %v", err)
+	}
+	dirty, err := QSOHasPendingSync(db, id)
+	if err != nil || !dirty {
+		t.Errorf("pending sync after old-revision clear = %v (err=%v), want true", dirty, err)
+	}
+
+	// The CURRENT revision's acknowledgement clears it.
+	if err := ClearWavelogDirtyIfRevision(db, id, rev2); err != nil {
+		t.Fatalf("ClearWavelogDirtyIfRevision(current): %v", err)
+	}
+	dirty, err = QSOHasPendingSync(db, id)
+	if err != nil || dirty {
+		t.Errorf("pending sync after current-revision clear = %v (err=%v), want false", dirty, err)
+	}
 }
 
 func mustInsertQSO(t *testing.T, db *sql.DB, q *qso.QSO) int64 {
@@ -94,6 +192,87 @@ func TestInitDB_Idempotent(t *testing.T) {
 // =============================================================================
 // InsertQSO / GetQSOByID / ListQSOs tests
 // =============================================================================
+
+// TestUpdateQSO_RecomputesDerivedFields covers the derived-metadata policy:
+// base_call always follows the call; DXCC is invalidated when the identity
+// changes without a fresh value, preserved when the call is unchanged, and
+// honored when the caller supplies one.
+func TestUpdateQSO_RecomputesDerivedFields(t *testing.T) {
+	db := newTempDB(t)
+
+	q := validQSO()
+	q.Call = "SP9ABC"
+	q.DXCC = "269"
+	id := mustInsertQSO(t, db, q)
+
+	baseCallOf := func() string {
+		t.Helper()
+		var bc string
+		if err := db.QueryRow(`SELECT base_call FROM qsos WHERE id=?`, id).Scan(&bc); err != nil {
+			t.Fatalf("read base_call: %v", err)
+		}
+		return bc
+	}
+	dxccOf := func() string {
+		t.Helper()
+		var d string
+		if err := db.QueryRow(`SELECT dxcc FROM qsos WHERE id=?`, id).Scan(&d); err != nil {
+			t.Fatalf("read dxcc: %v", err)
+		}
+		return d
+	}
+
+	// 1. Call changed, no fresh DXCC: base_call recomputed, dxcc invalidated.
+	loaded, err := GetQSOByID(db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	loaded.Call = "W1AW"
+	loaded.DXCC = ""
+	if err := UpdateQSO(db, loaded); err != nil {
+		t.Fatalf("UpdateQSO: %v", err)
+	}
+	if bc := baseCallOf(); bc != "W1AW" {
+		t.Errorf("base_call = %q after call change; want W1AW", bc)
+	}
+	if d := dxccOf(); d != "" {
+		t.Errorf("dxcc = %q after call change; want invalidated (empty)", d)
+	}
+
+	// 2. Call unchanged with no DXCC in the struct: dxcc stays empty (the
+	// backfill will fill it) — nothing resurrects a stale value.
+	again, err := GetQSOByID(db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	again.DXCC = ""
+	if err := UpdateQSO(db, again); err != nil {
+		t.Fatalf("UpdateQSO: %v", err)
+	}
+	if d := dxccOf(); d != "" {
+		t.Errorf("dxcc = %q after unchanged-call update; want still empty", d)
+	}
+
+	// 3. Caller-supplied DXCC is written and survives an unchanged update.
+	again.DXCC = "291"
+	if err := UpdateQSO(db, again); err != nil {
+		t.Fatalf("UpdateQSO: %v", err)
+	}
+	if d := dxccOf(); d != "291" {
+		t.Errorf("dxcc = %q; want 291 (caller-supplied)", d)
+	}
+	again, err = GetQSOByID(db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	again.DXCC = "" // edit form never carries DXCC
+	if err := UpdateQSO(db, again); err != nil {
+		t.Fatalf("UpdateQSO: %v", err)
+	}
+	if d := dxccOf(); d != "291" {
+		t.Errorf("dxcc = %q after unchanged-call edit; want 291 preserved", d)
+	}
+}
 
 func TestInsertAndGetQSO(t *testing.T) {
 	db := newTempDB(t)
@@ -206,6 +385,79 @@ func TestListAllQSOs(t *testing.T) {
 	}
 }
 
+// TestListAllQSOs_AcrossPages verifies keyset pagination returns every row
+// past the page boundary (the old OFFSET loop would also pass, but this pins
+// the new linear scan contract).
+func TestListAllQSOs_AcrossPages(t *testing.T) {
+	db := newTempDB(t)
+
+	const total = 515
+	for i := 0; i < total; i++ {
+		mustInsertQSO(t, db, validQSO())
+	}
+
+	qsos, err := ListAllQSOs(db)
+	if err != nil {
+		t.Fatalf("ListAllQSOs: %v", err)
+	}
+	if len(qsos) != total {
+		t.Errorf("expected %d QSOs, got %d", total, len(qsos))
+	}
+}
+
+func TestListUnsentQSOs(t *testing.T) {
+	db := newTempDB(t)
+
+	sent := validQSO()
+	sent.WavelogID = 42
+	unsent := validQSO()
+
+	mustInsertQSO(t, db, sent)
+	mustInsertQSO(t, db, unsent)
+
+	n, err := CountUnsentQSOs(db)
+	if err != nil {
+		t.Fatalf("CountUnsentQSOs: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("unsent count = %d, want 1", n)
+	}
+
+	rows, err := ListUnsentQSOs(db, MaxUnsentBatch)
+	if err != nil {
+		t.Fatalf("ListUnsentQSOs: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 unsent row, got %d", len(rows))
+	}
+	if rows[0].WavelogID != 0 {
+		t.Errorf("unsent row wavelog_id = %d, want 0", rows[0].WavelogID)
+	}
+
+	// The list captures the pending-sync revision WITH the row data, so
+	// uploaders can pair the snapshot they send with the revision it was
+	// taken at — pairing old data with a newer revision falsely marks rows
+	// clean after the id attach.
+	if rows[0].WavelogDirtyRev != 0 {
+		t.Errorf("fresh row revision = %d, want 0", rows[0].WavelogDirtyRev)
+	}
+	edited := rows[0]
+	edited.Comment = "newer edit"
+	if err := UpdateQSO(db, &edited); err != nil {
+		t.Fatalf("UpdateQSO: %v", err)
+	}
+	again, err := ListUnsentQSOs(db, MaxUnsentBatch)
+	if err != nil {
+		t.Fatalf("ListUnsentQSOs after edit: %v", err)
+	}
+	if len(again) != 1 {
+		t.Fatalf("expected 1 unsent row after edit, got %d", len(again))
+	}
+	if again[0].WavelogDirtyRev != 1 {
+		t.Errorf("captured revision = %d, want 1 (the edit must bump the revision)", again[0].WavelogDirtyRev)
+	}
+}
+
 func TestGetQSOByID_NotFound(t *testing.T) {
 	db := newTempDB(t)
 	_, err := GetQSOByID(db, 99999)
@@ -297,36 +549,26 @@ func TestPurgeQSOs_RemovesAll(t *testing.T) {
 }
 
 // =============================================================================
-// UpdateWavelogStatus tests
+// SetWavelogID tests
 // =============================================================================
 
-func TestUpdateWavelogStatus(t *testing.T) {
+func TestSetWavelogID(t *testing.T) {
 	db := newTempDB(t)
 
 	id := mustInsertQSO(t, db, validQSO())
 
-	// Initially empty/default.
+	// Initially no remote id.
 	q, _ := GetQSOByID(db, id)
-	if q.WavelogUploaded != "" {
-		t.Errorf("initial wavelog_uploaded = %q; want empty", q.WavelogUploaded)
+	if q.WavelogID != 0 {
+		t.Errorf("initial wavelog_id = %d; want 0", q.WavelogID)
 	}
 
-	// Set to "yes".
-	if err := UpdateWavelogStatus(db, id, "yes"); err != nil {
-		t.Fatalf("UpdateWavelogStatus yes: %v", err)
+	if err := SetWavelogID(db, id, 42); err != nil {
+		t.Fatalf("SetWavelogID: %v", err)
 	}
 	q, _ = GetQSOByID(db, id)
-	if q.WavelogUploaded != "yes" {
-		t.Errorf("wavelog_uploaded = %q; want yes", q.WavelogUploaded)
-	}
-
-	// Set to "no".
-	if err := UpdateWavelogStatus(db, id, "no"); err != nil {
-		t.Fatalf("UpdateWavelogStatus no: %v", err)
-	}
-	q, _ = GetQSOByID(db, id)
-	if q.WavelogUploaded != "no" {
-		t.Errorf("wavelog_uploaded = %q; want no", q.WavelogUploaded)
+	if q.WavelogID != 42 {
+		t.Errorf("wavelog_id = %d; want 42", q.WavelogID)
 	}
 }
 
@@ -399,7 +641,7 @@ func TestNormalizeStationFields_EmptyIDs(t *testing.T) {
 func TestCountQSOs(t *testing.T) {
 	db := newTempDB(t)
 
-	mustInsertQSO(t, db, &qso.QSO{Call: "A", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB", Source: "wsjtx", WavelogUploaded: "yes"})
+	mustInsertQSO(t, db, &qso.QSO{Call: "A", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB", Source: "wsjtx", WavelogID: 1})
 	mustInsertQSO(t, db, &qso.QSO{Call: "B", QSODate: "20240502", TimeOn: "130000", Band: "40m", Mode: "CW", Source: "manual"})
 	mustInsertQSO(t, db, &qso.QSO{Call: "C", QSODate: "20240503", TimeOn: "140000", Band: "15m", Mode: "FT8", Source: "wsjtx"})
 
@@ -526,9 +768,9 @@ func TestCountQSOsForContest_Filtered(t *testing.T) {
 	db := newTempDB(t)
 
 	// Insert QSOs with different contest IDs.
-	mustInsertQSO(t, db, &qso.QSO{Call: "A", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB", ContestID: "c1", Source: "wsjtx", WavelogUploaded: "yes"})
+	mustInsertQSO(t, db, &qso.QSO{Call: "A", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB", ContestID: "c1", Source: "wsjtx", WavelogID: 1})
 	mustInsertQSO(t, db, &qso.QSO{Call: "B", QSODate: "20240502", TimeOn: "130000", Band: "40m", Mode: "CW", ContestID: "c1", Source: "manual"})
-	mustInsertQSO(t, db, &qso.QSO{Call: "C", QSODate: "20240503", TimeOn: "140000", Band: "15m", Mode: "FT8", ContestID: "c2", Source: "wsjtx", WavelogUploaded: "yes"})
+	mustInsertQSO(t, db, &qso.QSO{Call: "C", QSODate: "20240503", TimeOn: "140000", Band: "15m", Mode: "FT8", ContestID: "c2", Source: "wsjtx", WavelogID: 1})
 	mustInsertQSO(t, db, &qso.QSO{Call: "D", QSODate: "20240504", TimeOn: "150000", Band: "10m", Mode: "SSB"})
 
 	c, err := CountQSOsForContest(db, "c1")
@@ -571,6 +813,221 @@ func TestCountQSOsForContest_All(t *testing.T) {
 	}
 	if c.Total != 2 {
 		t.Errorf("total = %d; want 2", c.Total)
+	}
+}
+
+// TestGetWorkedSummaryDXCCUnionSemantics verifies the DXCC scope over the
+// union source matches the single-OR semantics: rows with the stored entity
+// number AND rows without one whose country matches case-insensitively
+// (prefix variants included) — while unrelated entities are excluded.
+// Also pins the grid scope's range predicate (DM03 matches only DM03 rows).
+func TestGetWorkedSummaryDXCCUnionSemantics(t *testing.T) {
+	db := newTempDB(t)
+
+	mk := func(call, country, dxcc, grid string) {
+		mustInsertQSO(t, db, &qso.QSO{Call: call, QSODate: "20240101", TimeOn: "120000",
+			Band: "20m", Mode: "SSB", Country: country, DXCC: dxcc, GridSquare: grid})
+	}
+	mk("SP1AAA", "United States", "291", "DM03xu")
+	mk("SP1BBB", "UNITED STATES", "291", "DM03aa")
+	mk("SP1CCC", "United States of America", "", "DM03bb") // prefix variant, no dxcc
+	mk("SP1DDD", "united states", "", "JO90aa")            // case variant, no dxcc
+	mk("SP1EEE", "Poland", "", "DM03cc")                   // unrelated country, must not count
+	mk("SP1FFF", "United States", "999", "DM04aa")         // different entity, country fallback still matches (legacy semantics)
+
+	ws, err := GetWorkedSummary(db, "SP1AAA", "DM03", "291", "United States")
+	if err != nil {
+		t.Fatalf("GetWorkedSummary: %v", err)
+	}
+
+	if ws.DXCCHistory.QSOCount != 5 {
+		t.Fatalf("DXCC QSOCount = %d, want 5 (two dxcc rows + three country fallbacks)", ws.DXCCHistory.QSOCount)
+	}
+	if ws.DXCCHistory.UniqueCalls != 5 {
+		t.Errorf("DXCC UniqueCalls = %d, want 5", ws.DXCCHistory.UniqueCalls)
+	}
+	if ws.DXCCHistory.FirstQSO == nil || ws.DXCCHistory.LastQSO == nil {
+		t.Fatal("DXCC first/last QSO missing")
+	}
+
+	// Grid scope: every DM03* row — the grid scope has no entity condition,
+	// so the Polish row counts too; only DM04 must be out.
+	if ws.GridHistory.QSOCount != 4 {
+		t.Fatalf("Grid QSOCount = %d, want 4", ws.GridHistory.QSOCount)
+	}
+
+	// Call scope via base_call.
+	if ws.CallHistory.QSOCount != 1 {
+		t.Fatalf("Call QSOCount = %d, want 1", ws.CallHistory.QSOCount)
+	}
+}
+
+// TestDashboardRateWindows verifies the rate counters use the index-friendly
+// two-column range: QSOs inside each window count, older ones do not, and the
+// midnight boundary works (a QSO from yesterday's last minutes still counts
+// when the window spans midnight).
+func TestDashboardRateWindows(t *testing.T) {
+	db := newTempDB(t)
+	now := time.Now().UTC()
+
+	stamp := func(offset time.Duration) (string, string) {
+		at := now.Add(offset)
+		return at.Format("20060102"), at.Format("150405")
+	}
+
+	// 3 minutes ago → in the 5m and wider windows.
+	d, tm := stamp(-3 * time.Minute)
+	mustInsertQSO(t, db, &qso.QSO{Call: "SP9AAA", QSODate: d, TimeOn: tm, Band: "20m", Mode: "SSB"})
+	// 10 minutes ago → in 15m/60m, out of 5m.
+	d, tm = stamp(-10 * time.Minute)
+	mustInsertQSO(t, db, &qso.QSO{Call: "SP9BBB", QSODate: d, TimeOn: tm, Band: "20m", Mode: "SSB"})
+	// 3 hours ago → in no window.
+	d, tm = stamp(-3 * time.Hour)
+	mustInsertQSO(t, db, &qso.QSO{Call: "SP9CCC", QSODate: d, TimeOn: tm, Band: "20m", Mode: "SSB"})
+
+	stats, err := GetDashboardStats(db, now.Add(-24*time.Hour).Format("20060102"))
+	if err != nil {
+		t.Fatalf("GetDashboardStats: %v", err)
+	}
+	if stats.Rate5m != 1 || stats.Rate15m != 2 || stats.Rate60m != 2 {
+		t.Fatalf("rates = %d/%d/%d, want 1/2/2", stats.Rate5m, stats.Rate15m, stats.Rate60m)
+	}
+}
+
+// TestDirtyPartialIndexExists verifies the partial pending-sync index is part
+// of the shipped schema so CountDirtyQSOs/ListDirtyQSOs can serve the backlog
+// without scanning the synced logbook.
+func TestDirtyPartialIndexExists(t *testing.T) {
+	db := newTempDB(t)
+	var n int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_qsos_dirty'`).Scan(&n); err != nil {
+		t.Fatalf("check idx_qsos_dirty: %v", err)
+	}
+	if n == 0 {
+		t.Error("idx_qsos_dirty partial index not created")
+	}
+}
+
+// TestListQSOsContestMergedOrdering verifies the index-ordered merge: rows
+// matching only contest_id, only contest_adif_id, and both, ordered by date
+// descending, deduplicated, with correct page count.
+func TestListQSOsContestMergedOrdering(t *testing.T) {
+	db := newTempDB(t)
+
+	mk := func(call, date, contestID, adifID string) {
+		mustInsertQSO(t, db, &qso.QSO{Call: call, QSODate: date, TimeOn: "120000",
+			Band: "20m", Mode: "SSB", ContestID: contestID, ContestADIFID: adifID})
+	}
+	mk("A1", "20240501", "c1", "")    // id arm only
+	mk("B2", "20240502", "", "c1")    // adif arm only
+	mk("C3", "20240503", "c1", "c1")  // both — must appear once
+	mk("D4", "20240504", "other", "") // unrelated
+
+	qsos, err := ListQSOs(db, 10, "c1")
+	if err != nil {
+		t.Fatalf("ListQSOs: %v", err)
+	}
+	if len(qsos) != 3 {
+		t.Fatalf("got %d contest rows, want 3", len(qsos))
+	}
+	if qsos[0].Call != "C3" || qsos[1].Call != "B2" || qsos[2].Call != "A1" {
+		t.Errorf("order = %s,%s,%s, want C3,B2,A1", qsos[0].Call, qsos[1].Call, qsos[2].Call)
+	}
+
+	total, err := countQSOsContest(db, "c1")
+	if err != nil || total != 3 {
+		t.Fatalf("countQSOsContest = %d (err=%v), want 3", total, err)
+	}
+
+	// Paged variant with offset.
+	page, total2, err := ListQSOsPageWithCount(db, 2, 1, "c1")
+	if err != nil || total2 != 3 || len(page) != 2 {
+		t.Fatalf("page = %d rows / total %d (err=%v), want 2/3", len(page), total2, err)
+	}
+	if page[0].Call != "B2" || page[1].Call != "A1" {
+		t.Errorf("page order = %s,%s, want B2,A1", page[0].Call, page[1].Call)
+	}
+}
+
+// TestListQSOsPageWithCount_TwoQueryPages verifies the two-statement paging:
+// total count covers the whole filtered set while pages stay ordered and
+// non-overlapping.
+func TestListQSOsPageWithCount_TwoQueryPages(t *testing.T) {
+	db := newTempDB(t)
+
+	for i := 1; i <= 5; i++ {
+		mustInsertQSO(t, db, &qso.QSO{Call: "A" + string(rune('0'+i)),
+			QSODate: "2024050" + string(rune('0'+i)), TimeOn: "120000", Band: "20m", Mode: "SSB"})
+	}
+
+	page1, total1, err := ListQSOsPageWithCount(db, 3, 0, "")
+	if err != nil {
+		t.Fatalf("page 1: %v", err)
+	}
+	if total1 != 5 || len(page1) != 3 {
+		t.Fatalf("page1 = %d rows / total %d, want 3/5", len(page1), total1)
+	}
+
+	page2, total2, err := ListQSOsPageWithCount(db, 3, 3, "")
+	if err != nil {
+		t.Fatalf("page 2: %v", err)
+	}
+	if total2 != 5 || len(page2) != 2 {
+		t.Fatalf("page2 = %d rows / total %d, want 2/5", len(page2), total2)
+	}
+	// Newest first — page 1 holds the most recent QSO, page 2 the oldest.
+	if page1[0].QSODate != "20240505" || page2[1].QSODate != "20240501" {
+		t.Errorf("ordering wrong: page1[0]=%s page2[1]=%s", page1[0].QSODate, page2[1].QSODate)
+	}
+	seen := map[int64]bool{}
+	for _, q := range append(append([]qso.QSO{}, page1...), page2...) {
+		if seen[q.ID] {
+			t.Errorf("row %d appears on both pages", q.ID)
+		}
+		seen[q.ID] = true
+	}
+}
+
+// TestInsertQSOTxAndFindInsideTransaction verifies the transactional bulk-
+// import primitives: rows are visible to FindQSOByKeyTx inside the
+// transaction (catching duplicates in one ADIF stream) but invisible
+// outside until commit.
+func TestInsertQSOTxAndFindInsideTransaction(t *testing.T) {
+	db := newTempDB(t)
+
+	tx, err := db.Begin()
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	q := &qso.QSO{Call: "SP9MOA", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB"}
+	id, err := InsertQSOTx(tx, q)
+	if err != nil {
+		t.Fatalf("InsertQSOTx: %v", err)
+	}
+	if id == 0 {
+		t.Fatal("InsertQSOTx returned id 0")
+	}
+	if got := FindQSOByKeyTx(tx, "SP9MOA", "20m", "SSB", "20240501", "120000"); got != id {
+		t.Errorf("FindQSOByKeyTx inside tx = %d, want %d", got, id)
+	}
+	if got := FindQSOByKey(db, "SP9MOA", "20m", "SSB", "20240501", "120000"); got != 0 {
+		t.Errorf("FindQSOByKey outside tx = %d, want 0 before commit", got)
+	}
+	if err := SetWavelogIDTx(tx, id, 77); err != nil {
+		t.Fatalf("SetWavelogIDTx: %v", err)
+	}
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	if got := FindQSOByKey(db, "SP9MOA", "20m", "SSB", "20240501", "120000"); got != id {
+		t.Errorf("FindQSOByKey after commit = %d, want %d", got, id)
+	}
+	loaded, err := GetQSOByID(db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if loaded.WavelogID != 77 {
+		t.Errorf("WavelogID after tx = %d, want 77", loaded.WavelogID)
 	}
 }
 
@@ -648,5 +1105,305 @@ func TestListQSOsPage_ContestFilterPagination(t *testing.T) {
 	}
 	if len(qsos) != 1 {
 		t.Errorf("len = %d; want 1", len(qsos))
+	}
+}
+
+// TestDirtyQSOQueries verifies the bulk pending-sync backlog queries: only
+// rows with a remote id AND a pending local edit count — clean synced rows
+// and never-uploaded rows do not.
+func TestDirtyQSOQueries(t *testing.T) {
+	db := newTempDB(t)
+
+	dirty := mustInsertQSO(t, db, &qso.QSO{Call: "SP9A", QSODate: "20240501",
+		TimeOn: "120000", Band: "20m", Mode: "SSB", WavelogID: 42})
+	clean := mustInsertQSO(t, db, &qso.QSO{Call: "SP9B", QSODate: "20240502",
+		TimeOn: "120000", Band: "20m", Mode: "SSB", WavelogID: 43})
+	unsent := mustInsertQSO(t, db, &qso.QSO{Call: "SP9C", QSODate: "20240503",
+		TimeOn: "120000", Band: "20m", Mode: "SSB"})
+
+	if err := SetWavelogDirty(db, dirty, true); err != nil {
+		t.Fatalf("SetWavelogDirty(dirty): %v", err)
+	}
+	if err := SetWavelogDirty(db, unsent, true); err != nil {
+		t.Fatalf("SetWavelogDirty(unsent): %v", err)
+	}
+
+	n, err := CountDirtyQSOs(db)
+	if err != nil {
+		t.Fatalf("CountDirtyQSOs: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("dirty count = %d, want 1 (only the synced+pending row)", n)
+	}
+
+	rows, err := ListDirtyQSOs(db, 10)
+	if err != nil {
+		t.Fatalf("ListDirtyQSOs: %v", err)
+	}
+	if len(rows) != 1 || rows[0].ID != dirty {
+		t.Fatalf("ListDirtyQSOs = %+v, want only row %d", rows, dirty)
+	}
+	if rows[0].WavelogID != 42 || !rows[0].WavelogDirty {
+		t.Fatalf("dirty row = id:%d dirty:%v, want 42/true", rows[0].WavelogID, rows[0].WavelogDirty)
+	}
+	if clean == 0 {
+		t.Fatal("unused")
+	}
+
+	// The limit is honored.
+	limited, err := ListDirtyQSOs(db, 0)
+	if err != nil {
+		t.Fatalf("ListDirtyQSOs(0): %v", err)
+	}
+	if len(limited) != 0 {
+		t.Fatalf("ListDirtyQSOs(limit=0) = %d rows, want 0", len(limited))
+	}
+}
+
+// ── worked-index maintenance tests ────────────────────────────────────────
+
+// workedCountOrZero returns the first column of a single-row query, or 0
+// when the row does not exist (used for absent aggregate rows).
+func workedCountOrZero(t *testing.T, db *sql.DB, query string, args ...any) int {
+	t.Helper()
+	var n int
+	if err := db.QueryRow(query, args...).Scan(&n); err == nil {
+		return n
+	} else if err == sql.ErrNoRows {
+		return 0
+	} else {
+		t.Fatalf("%s: %v", query, err)
+	}
+	return 0
+}
+
+func TestWorkedIndexInsertMaintainsAggregates(t *testing.T) {
+	db := newTempDB(t)
+	insert := func(call, grid, band, mode, submode, dxcc string) {
+		t.Helper()
+		q := &qso.QSO{Call: call, GridSquare: grid,
+			QSODate: "20240501", TimeOn: "120000",
+			Band: band, Mode: mode, Submode: submode, DXCC: dxcc}
+		if _, err := InsertQSO(db, q); err != nil {
+			t.Fatalf("InsertQSO(%s): %v", call, err)
+		}
+	}
+	insert("SP9MOA", "JO90", "20m", "MFSK", "FT8", "269")
+	insert("SP9MOA", "JO90", "20m", "MFSK", "FT8", "269")
+	insert("SP9MOA", "JO90xx", "40m", "MFSK", "FT4", "269")
+	insert("DL1AA", "JN58", "20m", "SSB", "", "230")
+
+	if got := workedCountOrZero(t, db, `SELECT qso_count FROM worked_call WHERE base_call = 'SP9MOA'`); got != 3 {
+		t.Errorf("worked_call SP9MOA = %d, want 3", got)
+	}
+	if got := workedCountOrZero(t, db, `SELECT qso_count FROM worked_grid WHERE grid4 = 'JO90'`); got != 3 {
+		t.Errorf("worked_grid JO90 = %d, want 3 (six-char grid reduced)", got)
+	}
+	if got := workedCountOrZero(t, db, `SELECT qso_count FROM worked_grid WHERE grid4 = 'JO90XX'`); got != 0 {
+		t.Errorf("worked_grid JO90XX = %d, want 0", got)
+	}
+
+	// All four dxcc aggregation levels, with canonical mode from submode.
+	checks := []struct {
+		band, mode string
+		want       int
+	}{
+		{"", "", 3},
+		{"20m", "", 2},
+		{"40m", "", 1},
+		{"", "FT8", 2},
+		{"", "FT4", 1},
+		{"20m", "FT8", 2},
+		{"40m", "FT4", 1},
+		{"20m", "FT4", 0},
+	}
+	for _, c := range checks {
+		if got := workedCountOrZero(t, db,
+			`SELECT qso_count FROM worked_dxcc WHERE dxcc = '269' AND band = ? AND mode = ?`,
+			c.band, c.mode); got != c.want {
+			t.Errorf("worked_dxcc 269 band=%q mode=%q = %d, want %d", c.band, c.mode, got, c.want)
+		}
+	}
+	if got := workedCountOrZero(t, db, `SELECT qso_count FROM worked_dxcc WHERE dxcc = '230' AND band = '20m' AND mode = 'SSB'`); got != 1 {
+		t.Errorf("worked_dxcc 230 20m SSB = %d, want 1", got)
+	}
+}
+
+func TestWorkedIndexMissingDataDoesNotContribute(t *testing.T) {
+	db := newTempDB(t)
+	// No DXCC, no band, no grid: only the call aggregate applies.
+	q := &qso.QSO{Call: "XX1AA", QSODate: "20240501", TimeOn: "120000"}
+	if _, err := InsertQSO(db, q); err != nil {
+		t.Fatalf("InsertQSO: %v", err)
+	}
+	if got := workedCountOrZero(t, db, `SELECT qso_count FROM worked_call WHERE base_call = 'XX1AA'`); got != 1 {
+		t.Errorf("worked_call XX1AA = %d, want 1", got)
+	}
+	if got := workedCountOrZero(t, db, `SELECT COUNT(*) FROM worked_dxcc`); got != 0 {
+		t.Errorf("worked_dxcc rows = %d, want 0 (missing dxcc)", got)
+	}
+	if got := workedCountOrZero(t, db, `SELECT COUNT(*) FROM worked_grid`); got != 0 {
+		t.Errorf("worked_grid rows = %d, want 0 (missing grid)", got)
+	}
+}
+
+func TestWorkedIndexEditMovesCounts(t *testing.T) {
+	db := newTempDB(t)
+	q := &qso.QSO{Call: "SP9MOA", QSODate: "20240501", TimeOn: "120000",
+		Band: "20m", Mode: "FT8", DXCC: "269"}
+	id, err := InsertQSO(db, q)
+	if err != nil {
+		t.Fatalf("InsertQSO: %v", err)
+	}
+	q.ID = id
+	q.Band = "40m"
+	if err := UpdateQSO(db, q); err != nil {
+		t.Fatalf("UpdateQSO: %v", err)
+	}
+	if got := workedCountOrZero(t, db, `SELECT qso_count FROM worked_dxcc WHERE dxcc = '269' AND band = '20m' AND mode = 'FT8'`); got != 0 {
+		t.Errorf("old 20m aggregate = %d, want 0 after edit", got)
+	}
+	if got := workedCountOrZero(t, db, `SELECT qso_count FROM worked_dxcc WHERE dxcc = '269' AND band = '40m' AND mode = 'FT8'`); got != 1 {
+		t.Errorf("new 40m aggregate = %d, want 1 after edit", got)
+	}
+	if got := workedCountOrZero(t, db, `SELECT qso_count FROM worked_dxcc WHERE dxcc = '269' AND band = '' AND mode = ''`); got != 1 {
+		t.Errorf("dxcc total = %d, want 1", got)
+	}
+}
+
+func TestWorkedIndexDeleteRemovesAndRecomputesEdges(t *testing.T) {
+	db := newTempDB(t)
+	first := &qso.QSO{Call: "A1AA", QSODate: "20230101", TimeOn: "000000", Band: "20m", Mode: "FT8", DXCC: "1"}
+	second := &qso.QSO{Call: "A1AA", QSODate: "20240101", TimeOn: "000000", Band: "20m", Mode: "FT8", DXCC: "1"}
+	if _, err := InsertQSO(db, first); err != nil {
+		t.Fatalf("InsertQSO first: %v", err)
+	}
+	if _, err := InsertQSO(db, second); err != nil {
+		t.Fatalf("InsertQSO second: %v", err)
+	}
+	id2 := FindQSOByKey(db, "A1AA", "20m", "FT8", "20240101", "000000")
+	if id2 == 0 {
+		t.Fatal("FindQSOByKey for second QSO failed")
+	}
+	if err := DeleteQSO(db, id2); err != nil {
+		t.Fatalf("DeleteQSO second: %v", err)
+	}
+	var fu, lu string
+	if err := db.QueryRow(`SELECT first_utc, last_utc FROM worked_call WHERE base_call = 'A1AA'`).Scan(&fu, &lu); err != nil {
+		t.Fatalf("read worked_call edges: %v", err)
+	}
+	if fu != "20230101000000" || lu != "20230101000000" {
+		t.Errorf("edges after delete = %s..%s, want both 20230101000000", fu, lu)
+	}
+	id1 := FindQSOByKey(db, "A1AA", "20m", "FT8", "20230101", "000000")
+	if err := DeleteQSO(db, id1); err != nil {
+		t.Fatalf("DeleteQSO first: %v", err)
+	}
+	if got := workedCountOrZero(t, db, `SELECT COUNT(*) FROM worked_call`); got != 0 {
+		t.Errorf("worked_call rows = %d, want 0 after last delete", got)
+	}
+}
+
+func TestWorkedIndexRebuildIdempotent(t *testing.T) {
+	db := newTempDB(t)
+	for i := 0; i < 2; i++ {
+		q := &qso.QSO{Call: "SP9MOA", GridSquare: "JO90", QSODate: "20240501", TimeOn: "120000",
+			Band: "20m", Mode: "MFSK", Submode: "FT8", DXCC: "269"}
+		if _, err := InsertQSO(db, q); err != nil {
+			t.Fatalf("InsertQSO: %v", err)
+		}
+	}
+	if err := RebuildWorkedIndex(db); err != nil {
+		t.Fatalf("RebuildWorkedIndex: %v", err)
+	}
+	if err := RebuildWorkedIndex(db); err != nil {
+		t.Fatalf("RebuildWorkedIndex second run: %v", err)
+	}
+	if got := workedCountOrZero(t, db, `SELECT qso_count FROM worked_call WHERE base_call = 'SP9MOA'`); got != 2 {
+		t.Errorf("worked_call = %d, want 2 after idempotent rebuild", got)
+	}
+	if got := workedCountOrZero(t, db, `SELECT qso_count FROM worked_dxcc WHERE dxcc = '269' AND band = '20m' AND mode = 'FT8'`); got != 2 {
+		t.Errorf("worked_dxcc = %d, want 2 after idempotent rebuild", got)
+	}
+}
+
+func TestPurgeQSOsEmptiesWorkedIndex(t *testing.T) {
+	db := newTempDB(t)
+	q := &qso.QSO{Call: "SP9MOA", GridSquare: "JO90", QSODate: "20240501", TimeOn: "120000",
+		Band: "20m", Mode: "FT8", DXCC: "269"}
+	if _, err := InsertQSO(db, q); err != nil {
+		t.Fatalf("InsertQSO: %v", err)
+	}
+	if err := PurgeQSOs(db); err != nil {
+		t.Fatalf("PurgeQSOs: %v", err)
+	}
+	for _, table := range []string{"worked_call", "worked_grid", "worked_dxcc", "qsos"} {
+		if got := workedCountOrZero(t, db, `SELECT COUNT(*) FROM `+table); got != 0 {
+			t.Errorf("%s rows = %d, want 0 after purge", table, got)
+		}
+	}
+}
+
+func TestMigrateBackfillsWorkedIndex(t *testing.T) {
+	db := newTempDB(t)
+	q := &qso.QSO{Call: "SP9MOA", GridSquare: "JO90", QSODate: "20240501", TimeOn: "120000",
+		Band: "20m", Mode: "FT8", DXCC: "269"}
+	if _, err := InsertQSO(db, q); err != nil {
+		t.Fatalf("InsertQSO: %v", err)
+	}
+	// Simulate a database that predates the worked index.
+	for _, stmt := range []string{`DROP TABLE worked_call`, `DROP TABLE worked_grid`, `DROP TABLE worked_dxcc`} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	if err := Migrate(db); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+	if got := workedCountOrZero(t, db, `SELECT qso_count FROM worked_call WHERE base_call = 'SP9MOA'`); got != 1 {
+		t.Errorf("worked_call after migrate backfill = %d, want 1", got)
+	}
+}
+
+func TestGetWorkedSummaryIndexedBranch(t *testing.T) {
+	db := newTempDB(t)
+	insert := func(grid, band, mode, submode string) {
+		t.Helper()
+		q := &qso.QSO{Call: "SP9MOA", GridSquare: grid, QSODate: "20240501", TimeOn: "120000",
+			Band: band, Mode: mode, Submode: submode, DXCC: "269"}
+		if _, err := InsertQSO(db, q); err != nil {
+			t.Fatalf("InsertQSO: %v", err)
+		}
+	}
+	insert("JO90", "20m", "MFSK", "FT8")
+	insert("JO90xx", "20m", "MFSK", "FT8")
+	insert("JO90", "40m", "MFSK", "FT4")
+	insert("JO90", "20m", "SSB", "")
+
+	ws, err := GetWorkedSummary(db, "SP9MOA", "JO90", "269", "Poland")
+	if err != nil {
+		t.Fatalf("GetWorkedSummary: %v", err)
+	}
+	h := ws.DXCCHistory
+	if h.QSOCount != 4 {
+		t.Errorf("DXCC QSOCount = %d, want 4", h.QSOCount)
+	}
+	if h.UniqueCalls != 1 {
+		t.Errorf("DXCC UniqueCalls = %d, want 1", h.UniqueCalls)
+	}
+	if h.UniqueBands != 2 {
+		t.Errorf("DXCC UniqueBands = %d, want 2", h.UniqueBands)
+	}
+	if h.UniqueModes != 3 {
+		t.Errorf("DXCC UniqueModes = %d, want 3 (FT8, FT4, SSB)", h.UniqueModes)
+	}
+	if len(h.BandCounts) != 2 || h.BandCounts[0].Value != "20m" || h.BandCounts[0].Count != 3 {
+		t.Errorf("BandCounts = %+v, want 20m×3 leading", h.BandCounts)
+	}
+	if len(h.ModeCounts) != 3 || h.ModeCounts[0].Value != "FT8" || h.ModeCounts[0].Count != 2 {
+		t.Errorf("ModeCounts = %+v, want FT8×2 leading", h.ModeCounts)
+	}
+	if len(h.GridCounts) != 1 || h.GridCounts[0].Value != "JO90" || h.GridCounts[0].Count != 4 {
+		t.Errorf("GridCounts = %+v, want JO90×4 (JO90xx reduces to JO90)", h.GridCounts)
 	}
 }

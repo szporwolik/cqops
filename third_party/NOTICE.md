@@ -15,6 +15,8 @@ This document lists third-party components used by CQOps that are not covered by
 | **spf13/cobra** | CLI framework | Apache 2.0 | `../licenses/COBRA-APACHE2-LICENSE.txt` | https://github.com/spf13/cobra |
 | **gopkg.in/yaml.v3** | Configuration parsing | MIT | `../licenses/YAML-MIT-LICENSE` | https://github.com/go-yaml/yaml |
 | **golang.org/x/text** | Unicode normalization for ADIF | BSD-3-Clause | `../licenses/TEXT-BSD3-LICENSE` | https://golang.org/x/text |
+| **golang.org/x/sys** | Low-level system calls | BSD-3-Clause | `../licenses/XSYS-BSD3-LICENSE` | https://golang.org/x/sys |
+| **golang.org/x/image** | Terminal image decoding (WebP/PNG support) | BSD-3-Clause | `../licenses/XIMAGE-BSD3-LICENSE` | https://golang.org/x/image |
 | **NimbleMarkets/ntcharts** | Terminal chart rendering | MIT | `../licenses/NTCHARTS-MIT-LICENSE.txt` | https://github.com/NimbleMarkets/ntcharts |
 | **gen2brain/beeep** | Desktop notifications | MIT | `../licenses/BEEEP-MIT-LICENSE` | https://github.com/gen2brain/beeep |
 | **go.bug.st/serial** | Serial port (GPS NMEA, APRS KISS TNC) | BSD-3-Clause | `../licenses/SERIAL-BSD3-LICENSE` | https://github.com/bugst/go-serial |

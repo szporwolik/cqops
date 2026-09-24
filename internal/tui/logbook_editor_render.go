@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/applog"
+	"github.com/szporwolik/cqops/internal/qso"
 )
 
 // =============================================================================
@@ -29,8 +30,15 @@ func (le *LogbookEditor) View() tea.View {
 		le.ensureDialog(
 			"Delete QSO",
 			func() string {
-				q := le.qsos[le.table.Cursor()]
-				return q.Call + " from " + formatDate(q.QSODate)
+				if len(le.qsos) == 0 {
+					return ""
+				}
+				idx := le.table.Cursor()
+				if idx >= len(le.qsos) {
+					idx = 0
+				}
+				q := le.qsos[idx]
+				return le.deleteConfirmMessage(&q)
 			}(),
 			DangerOption("Delete", "delete"),
 			Option{Label: "Cancel", Value: "cancel"},
@@ -45,7 +53,7 @@ func (le *LogbookEditor) View() tea.View {
 				if q == nil {
 					return ""
 				}
-				return q.Call + " from " + formatDate(q.QSODate)
+				return le.saveConfirmMessage(q)
 			}(),
 			Option{Label: "Save", Value: "save"},
 			Option{Label: "Cancel", Value: "cancel"},
@@ -63,6 +71,14 @@ func (le *LogbookEditor) View() tea.View {
 		le.ensureDialog("Send to Wavelog",
 			fmt.Sprintf("%d unsent QSOs", le.wlUnsentCount),
 			Option{Label: "Send", Value: "wlsend"},
+			Option{Label: "Cancel", Value: "cancel"},
+		)
+		return tea.NewView(le.viewWithDialog(bodyW))
+
+	case edModeConfirmWLSyncRetry:
+		le.ensureDialog("Retry pending sync",
+			fmt.Sprintf("%d contacts have local changes not yet on Wavelog.\nRetry sending them now?", le.wlPendingCount),
+			Option{Label: "Retry", Value: "wlsyncretry"},
 			Option{Label: "Cancel", Value: "cancel"},
 		)
 		return tea.NewView(le.viewWithDialog(bodyW))
@@ -123,6 +139,13 @@ func (le *LogbookEditor) View() tea.View {
 			le.ensureDialog("Wavelog Download", msg,
 				Option{Label: "OK", Value: "ok"},
 			)
+		} else if le.wlDownloadCount == 0 && !le.wlDownloadAbort {
+			// Wavelog returned no new contacts (last_fetched_id already at the
+			// newest QSO). Say so instead of a confusing "Downloaded 0 QSOs.".
+			le.ensureDialog("Wavelog Download",
+				"Wavelog is up to date — no new contacts to download.",
+				Option{Label: "OK", Value: "ok"},
+			)
 		} else {
 			msg := fmt.Sprintf("Downloaded %d QSOs.", le.wlDownloadCount)
 			if le.wlDownloadDupes > 0 {
@@ -130,6 +153,12 @@ func (le *LogbookEditor) View() tea.View {
 			}
 			if le.wlDownloadFailed > 0 {
 				msg += fmt.Sprintf("\n%d failed.", le.wlDownloadFailed)
+			}
+			if le.wlDownloadHold > 0 {
+				msg += fmt.Sprintf("\n%d failed to save — will retry on the next download.", le.wlDownloadHold)
+			}
+			if le.wlDownloadUnresolved > 0 {
+				msg += fmt.Sprintf("\n%d stored without remote link — will be linked on the next download.", le.wlDownloadUnresolved)
 			}
 			le.ensureDialog("Wavelog Download", msg,
 				Option{Label: "OK", Value: "ok"},
@@ -350,6 +379,35 @@ func (le *LogbookEditor) ensureDialog(title, message string, options ...Option) 
 		le.dialog = &d
 		applog.Debug("LogEditor: dialog shown", "title", title, "options", len(options))
 	}
+}
+
+// deleteConfirmMessage builds the delete-dialog text. Synced QSOs note that
+// the deletion also removes the Wavelog copy (or that it is local-only when
+// offline).
+func (le *LogbookEditor) deleteConfirmMessage(q *qso.QSO) string {
+	msg := q.Call + " from " + formatDate(q.QSODate)
+	if q.WavelogID > 0 && le.wlURL != "" && le.wlKey != "" {
+		if le.Offline {
+			msg += "\n\nOffline — will be deleted locally only."
+		} else {
+			msg += "\n\nThis QSO will also be deleted from Wavelog."
+		}
+	}
+	return msg
+}
+
+// saveConfirmMessage builds the save-dialog text. Synced QSOs note that the
+// save also updates the Wavelog copy (or that it is local-only when offline).
+func (le *LogbookEditor) saveConfirmMessage(q *qso.QSO) string {
+	msg := q.Call + " from " + formatDate(q.QSODate)
+	if q.WavelogID > 0 && le.wlURL != "" && le.wlKey != "" {
+		if le.Offline {
+			msg += "\n\nOffline — will be saved locally only."
+		} else {
+			msg += "\n\nThis QSO will also be updated on Wavelog."
+		}
+	}
+	return msg
 }
 
 // viewExport renders the ADIF export directory picker screen.

@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -35,7 +36,7 @@ func CountQSOsForContest(db *sql.DB, contestID string) (QSOCounts, error) {
 		return c, fmt.Errorf("count qsos: %w", err)
 	}
 	fromWSJTX := `SELECT COUNT(*) FROM qsos WHERE source='wsjtx'`
-	toWavelog := `SELECT COUNT(*) FROM qsos WHERE wavelog_uploaded='yes'`
+	toWavelog := `SELECT COUNT(*) FROM qsos WHERE wavelog_id > 0`
 	if contestID != "" {
 		fromWSJTX += ` AND contest_id = ?`
 		toWavelog += ` AND contest_id = ?`
@@ -51,10 +52,14 @@ func CountQSOsForContest(db *sql.DB, contestID string) (QSOCounts, error) {
 
 // LogbookCounts returns total QSOs and today's QSO count for the entire
 // logbook. today is the UTC date in YYYYMMDD format.
-func LogbookCounts(db *sql.DB, today string) (total, todayCount int) {
-	_ = db.QueryRow(`SELECT COUNT(*) FROM qsos`).Scan(&total)
-	_ = db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE qso_date = ?`, today).Scan(&todayCount)
-	return
+func LogbookCounts(db *sql.DB, today string) (total, todayCount int, err error) {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos`).Scan(&total); err != nil {
+		return 0, 0, fmt.Errorf("count qsos: %w", err)
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE qso_date = ?`, today).Scan(&todayCount); err != nil {
+		return 0, 0, fmt.Errorf("count today qsos: %w", err)
+	}
+	return total, todayCount, nil
 }
 
 // LogbookStats holds per-call aggregate statistics from the local logbook.
@@ -165,26 +170,177 @@ func GetWorkedSummary(db *sql.DB, call, grid4, dxcc, countryName string) (Worked
 
 	if len(grid4) >= 4 {
 		grid4 = strings.ToUpper(grid4[:4])
-		ws.GridHistory, err = scopeStats(db, "gridsquare LIKE ?", grid4+"%")
+		// Range predicate instead of LIKE 'DM03%': a mixed-case pattern
+		// cannot use the LIKE index optimization, which made every grid
+		// scope query a full table scan. The half-open range seeks the
+		// idx_qsos_gridsquare b-tree directly. The +1 upper bound is an
+		// exclusive sentinel — 'R'→'S', '9'→':' still sort after every
+		// possible continuation.
+		upper := grid4[:3] + string(grid4[3]+1)
+		ws.GridHistory, err = scopeStats(db, "gridsquare >= ? AND gridsquare < ?", grid4, upper)
 		if err != nil {
 			return ws, fmt.Errorf("grid history: %w", err)
 		}
 	}
 
 	if dxcc != "" {
-		// Match by DXCC entity number when populated. Fall back to
-		// case-insensitive country name for QSOs without the dxcc
-		// column — covers "United States" / "UNITED STATES" / "united states"
-		// and prefix variants like "United States of America".
-		ws.DXCCHistory, err = scopeStats(db,
-			"dxcc = ? OR LOWER(country) = LOWER(?) OR LOWER(country) LIKE LOWER(?)",
-			dxcc, countryName, countryName+"%")
+		ws.DXCCHistory, err = scopeStatsDXCCFast(db, dxcc, countryName)
 		if err != nil {
 			return ws, fmt.Errorf("dxcc history: %w", err)
 		}
 	}
 
 	return ws, nil
+}
+
+// scopeStatsDXCCFast computes the DXCC-entity scope from the materialized
+// worked index. Rows whose entity number matches come straight from
+// worked_dxcc (the four aggregation levels); the few remaining aggregate
+// dimensions (distinct calls, grid spread, edge QSOs) are index-served
+// queries on the dxcc column.
+//
+// Databases with legacy country-fallback rows (no matching entity number,
+// matched by country name) fall back to the union-source path so the results
+// stay exactly what the historical query produced.
+func scopeStatsDXCCFast(db *sql.DB, dxcc, countryName string) (ScopeHistory, error) {
+	var fallback int
+	if err := db.QueryRow(
+		`SELECT COUNT(*) FROM qsos
+		 WHERE (dxcc IS NULL OR dxcc = '' OR dxcc != ?) AND country LIKE ? COLLATE NOCASE LIMIT 1`,
+		dxcc, strings.ToLower(countryName)+"%",
+	).Scan(&fallback); err != nil {
+		return ScopeHistory{}, err
+	}
+	if fallback > 0 {
+		return scopeStatsDXCC(db, dxcc, countryName)
+	}
+
+	var sh ScopeHistory
+	err := db.QueryRow(
+		`SELECT qso_count, first_utc, last_utc FROM worked_dxcc
+		 WHERE dxcc = ? AND band = '' AND mode = ''`,
+		dxcc,
+	).Scan(&sh.QSOCount, new(string), new(string))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return sh, nil // not worked — honest zero history
+		}
+		return sh, err
+	}
+
+	if err := db.QueryRow(`SELECT COUNT(DISTINCT base_call) FROM qsos WHERE dxcc = ?`, dxcc).Scan(&sh.UniqueCalls); err != nil {
+		return sh, err
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM worked_dxcc WHERE dxcc = ? AND band != '' AND mode = ''`, dxcc).Scan(&sh.UniqueBands); err != nil {
+		return sh, err
+	}
+	if err := db.QueryRow(`SELECT COUNT(*) FROM worked_dxcc WHERE dxcc = ? AND band = '' AND mode != ''`, dxcc).Scan(&sh.UniqueModes); err != nil {
+		return sh, err
+	}
+
+	sh.FirstQSO = queryQSOBrief(db, "dxcc = ?", "ASC", dxcc)
+	sh.LastQSO = queryQSOBrief(db, "dxcc = ?", "DESC", dxcc)
+
+	sh.BandCounts, err = sumGroupFromWhere(db,
+		"band", "worked_dxcc", `dxcc = ? AND band != '' AND mode = ''`, []any{dxcc}, 6)
+	if err != nil {
+		return sh, fmt.Errorf("band counts: %w", err)
+	}
+	sh.ModeCounts, err = sumGroupFromWhere(db,
+		"mode", "worked_dxcc", `dxcc = ? AND band = '' AND mode != ''`, []any{dxcc}, 4)
+	if err != nil {
+		return sh, fmt.Errorf("mode counts: %w", err)
+	}
+	sh.GridCounts, err = countGroup(db,
+		"UPPER(SUBSTR(gridsquare, 1, 4))", "dxcc = ? AND gridsquare != ''", []any{dxcc}, 4)
+	if err != nil {
+		return sh, fmt.Errorf("grid counts: %w", err)
+	}
+	return sh, nil
+}
+
+// scopeStatsDXCC computes the DXCC-entity scope as two index-driven arms
+// united in one source: rows with the stored entity number (idx_qsos_dxcc)
+// and rows without one whose country name matches case-insensitively
+// (idx_qsos_country_nocase, prefix included for "United States of America"-
+// style variants). The previous single three-way OR predicate made SQLite
+// abandon every index and full-scan the table in all six queries; each arm
+// here seeks its own index and only the matched rows are materialized.
+func scopeStatsDXCC(db *sql.DB, dxcc, countryName string) (ScopeHistory, error) {
+	var sh ScopeHistory
+
+	src := `(
+		SELECT base_call, band, submode, mode, qso_date, time_on, gridsquare
+		FROM qsos WHERE dxcc = ?
+		UNION ALL
+		SELECT base_call, band, submode, mode, qso_date, time_on, gridsquare
+		FROM qsos WHERE (dxcc IS NULL OR dxcc = '' OR dxcc != ?) AND country LIKE ? COLLATE NOCASE
+	)`
+	pattern := strings.ToLower(countryName) + "%"
+	args := []any{dxcc, dxcc, pattern}
+
+	err := db.QueryRow(
+		`SELECT
+			COUNT(*),
+			COUNT(DISTINCT base_call),
+			COUNT(DISTINCT band),
+			COUNT(DISTINCT CASE WHEN submode != '' THEN submode ELSE mode END)
+		FROM `+src,
+		args...,
+	).Scan(
+		&sh.QSOCount,
+		&sh.UniqueCalls,
+		&sh.UniqueBands,
+		&sh.UniqueModes,
+	)
+	if err != nil {
+		return sh, err
+	}
+
+	for _, order := range []string{"ASC", "DESC"} {
+		brief := &QSOBrief{}
+		var date, time, band, mode string
+		err := db.QueryRow(
+			`SELECT qso_date, time_on, band,
+				CASE WHEN submode != '' THEN submode ELSE mode END
+			FROM `+src+`
+			ORDER BY qso_date `+order+`, time_on `+order+`
+			LIMIT 1`,
+			args...,
+		).Scan(&date, &time, &band, &mode)
+		if err != nil || date == "" {
+			brief = nil
+		} else {
+			brief.Date = dateCompact(date)
+			brief.Time = time
+			brief.Band = band
+			brief.Mode = mode
+		}
+		if order == "ASC" {
+			sh.FirstQSO = brief
+		} else {
+			sh.LastQSO = brief
+		}
+	}
+
+	sh.BandCounts, err = countGroupFrom(db, "band", src, args, 6)
+	if err != nil {
+		return sh, fmt.Errorf("band counts: %w", err)
+	}
+
+	sh.ModeCounts, err = countGroupFrom(db,
+		"CASE WHEN submode != '' THEN submode ELSE mode END", src, args, 4)
+	if err != nil {
+		return sh, fmt.Errorf("mode counts: %w", err)
+	}
+
+	sh.GridCounts, err = countGroupFromWhere(db,
+		"UPPER(SUBSTR(gridsquare, 1, 4))", src, "gridsquare != ''", args, 4)
+	if err != nil {
+		return sh, fmt.Errorf("grid counts: %w", err)
+	}
+
+	return sh, nil
 }
 
 // scopeStats computes aggregate history for a single scope (call, grid,
@@ -263,13 +419,39 @@ func queryQSOBrief(db *sql.DB, whereClause string, order string, args ...any) *Q
 // countGroup returns a deduplicated, count-ordered list of (value, count)
 // pairs for the given expression (e.g. "band", "mode", or a CASE).
 func countGroup(db *sql.DB, expr, whereClause string, args []any, limit int) ([]CountItem, error) {
-	query := `SELECT ` + expr + `, COUNT(*) AS cnt
-		FROM qsos
-		WHERE ` + whereClause + `
+	return countGroupFromWhere(db, expr, `qsos`, whereClause, args, limit)
+}
+
+// countGroupFrom is countGroup over an arbitrary source expression — a
+// table name or a UNION ALL subquery with its own bind arguments.
+func countGroupFrom(db *sql.DB, expr, source string, args []any, limit int) ([]CountItem, error) {
+	return countGroupFromWhere(db, expr, source, "", args, limit)
+}
+
+// countGroupFromWhere is countGroupFrom with an extra row predicate (e.g.
+// gridsquare != ” for grid counts over a subquery source).
+func countGroupFromWhere(db *sql.DB, expr, source, extraWhere string, args []any, limit int) ([]CountItem, error) {
+	return groupFromWhere(db, expr, source, extraWhere, "COUNT(*)", args, limit)
+}
+
+// sumGroupFromWhere aggregates the qso_count column of a worked-index table
+// instead of counting rows.
+func sumGroupFromWhere(db *sql.DB, expr, source, extraWhere string, args []any, limit int) ([]CountItem, error) {
+	return groupFromWhere(db, expr, source, extraWhere, "SUM(qso_count)", args, limit)
+}
+
+func groupFromWhere(db *sql.DB, expr, source, extraWhere, agg string, args []any, limit int) ([]CountItem, error) {
+	query := `SELECT ` + expr + `, ` + agg + ` AS cnt
+		FROM ` + source
+	if extraWhere != "" {
+		query += `
+		WHERE ` + extraWhere
+	}
+	query += `
 		GROUP BY ` + expr + `
 		ORDER BY cnt DESC
 		LIMIT ?`
-	allArgs := append(args, limit)
+	allArgs := append(append([]any{}, args...), limit)
 	rows, err := db.Query(query, allArgs...)
 	if err != nil {
 		return nil, err
@@ -357,7 +539,9 @@ func GetDashboardStats(db *sql.DB, startDate string) (DashboardStats, error) {
 	}
 
 	// Rate: QSOs in the last 5, 15, and 60 minutes.
-	// Use printf to normalise time_on to 6 chars (HHMMSS) for reliable comparison.
+	// Two-column range so idx_qsos_date_time serves the predicate — the old
+	// printf('%s%06s', ...) form was a function-on-column that forced a full
+	// table scan three times per dashboard refresh.
 	for _, w := range []struct {
 		mins int
 		dest *int
@@ -366,11 +550,12 @@ func GetDashboardStats(db *sql.DB, startDate string) (DashboardStats, error) {
 		{15, &s.Rate15m},
 		{60, &s.Rate60m},
 	} {
-		cutoff := time.Now().UTC().Add(-time.Duration(w.mins) * time.Minute).Format("20060102150405")
+		cutoff := time.Now().UTC().Add(-time.Duration(w.mins) * time.Minute)
 		var n int
 		if err := db.QueryRow(
-			`SELECT COUNT(*) FROM qsos WHERE printf('%s%06s', qso_date, COALESCE(time_on,'000000')) >= ?`,
-			cutoff,
+			`SELECT COUNT(*) FROM qsos
+			WHERE qso_date > ? OR (qso_date = ? AND COALESCE(time_on,'000000') >= ?)`,
+			cutoff.Format("20060102"), cutoff.Format("20060102"), cutoff.Format("150405"),
 		).Scan(&n); err != nil {
 			n = 0
 		}

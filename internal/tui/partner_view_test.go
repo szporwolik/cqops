@@ -7,7 +7,6 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/callbook"
 	"github.com/szporwolik/cqops/internal/config"
-	"github.com/szporwolik/cqops/internal/store"
 )
 
 func TestPartnerViewRender(t *testing.T) {
@@ -399,49 +398,6 @@ func TestRenderLoTW(t *testing.T) {
 	result = renderLoTW(false, dimStyle, badStyle)
 	if result == "" {
 		t.Error("renderLoTW false returned empty")
-	}
-}
-
-func TestRenderLogbookRowsWLFirst(t *testing.T) {
-	m := newLifecycleTestModel(t)
-	d := &callbook.Result{Callsign: "SP9MOA"}
-
-	// No WL data — should fall back to local (all default false = new).
-	rows := m.renderLogbookRows(d, 40)
-	if rows == "" {
-		t.Error("renderLogbookRows returned empty")
-	}
-	// With no WL data and no local stats, all should show Y (new).
-	if !strings.Contains(rows, "New call") {
-		t.Error("renderLogbookRows missing 'New call' row")
-	}
-
-	// Set local stats: call already worked.
-	m.rc.logStats = store.LogbookStats{CallWorked: true, QSOCount: 3}
-	m.rc.logStatsSig = "SP9MOA||"
-	rows = m.renderLogbookRows(d, 40)
-	// Without WL data, should use local: call worked → N.
-	// We can verify the rows still contain the label.
-	if !strings.Contains(rows, "New call") {
-		t.Error("renderLogbookRows should always show 'New call' label")
-	}
-}
-
-func TestRenderLogbookRowsNewDXCC(t *testing.T) {
-	m := newLifecycleTestModel(t)
-	d := &callbook.Result{Callsign: "VK3A"}
-
-	rows := m.renderLogbookRows(d, 55)
-
-	// DXCC rows should always be present. With FormLabelWide(17) labels fit fully.
-	if !strings.Contains(rows, "New DXCC") {
-		t.Error("renderLogbookRows missing 'New DXCC' row")
-	}
-	if !strings.Contains(rows, "DXCC band") {
-		t.Error("renderLogbookRows missing 'DXCC band' row")
-	}
-	if !strings.Contains(rows, "DXCC mode") {
-		t.Error("renderLogbookRows missing 'DXCC mode' row")
 	}
 }
 

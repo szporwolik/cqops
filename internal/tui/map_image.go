@@ -79,8 +79,6 @@ type mapRenderer struct {
 	// Kitty graphics protocol support — PSK Reporter map.
 	pskKittyPic     picture.Model
 	pskKittyPending tea.Cmd
-	pskKittyW       int
-	pskKittyH       int
 	pskKittySig     string // last mapSig sent to SetPSKImage; avoids re-dispatch
 }
 

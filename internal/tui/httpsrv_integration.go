@@ -494,15 +494,15 @@ func (m *Model) internetCallbook() (name, urlTemplate string) {
 	if hamqth.Enabled && hamqth.User != "" {
 		hqPri := hamqth.Priority
 		if hqPri == 0 {
-			hqPri = 45
+			hqPri = config.DefaultHamQTHPriority
 		}
 		qPri := qrz.Priority
 		if qPri == 0 {
-			qPri = 50
+			qPri = config.DefaultQRZPriority
 		}
 		rPri := qrzru.Priority
 		if rPri == 0 {
-			rPri = 35
+			rPri = config.DefaultQRZRuPriority
 		}
 		if qrz.Enabled && qrz.User != "" && qPri > hqPri {
 			return "QRZ.com", "https://www.qrz.com/db/{CALL}"
@@ -854,6 +854,19 @@ var partnerEmpty bool
 // lastRecentIDs holds the last pushed QSO ID list for change detection.
 var lastRecentIDs []int64
 
+// pushDashboardRecentAndToday force-pushes the recent-QSO and today panels.
+// Owner-loop only — used after background enrichment changes QSO fields
+// without changing their ids (the change-detection cache would otherwise
+// keep stale rows visible).
+func (m *Model) pushDashboardRecentAndToday() {
+	if m.http.client == nil || !m.http.online {
+		return
+	}
+	ds := m.http.client.State()
+	m.forcePushDashboardRecent(ds)
+	m.pushDashboardToday(ds)
+}
+
 // forcePushDashboardRecent clears the change-detection cache and pushes.
 // Use when QSO fields (country, grid, distance) change without ID changes,
 // e.g. after WSJT-X enrichment.
@@ -927,14 +940,15 @@ func cloneIDs(a []int64) []int64 {
 
 // countryWorkedBefore checks whether any QSO exists for the given country
 // (or its DXCC entity number) by any call, including the current active call.
-// Results are cached per (country, dxcc, baseCall) pair — cleared on QSO save.
+// Results are cached per (country, dxcc, baseCall) pair — worked-before is
+// monotonic, so entries never go stale; the cache is bounded and clears
+// wholesale when it fills up.
 //
-// Matching uses the same strategy as GetWorkedSummary for consistency:
-//
-//	dxcc = ? OR LOWER(country) = LOWER(?) OR LOWER(country) LIKE LOWER(?)
-//
-// This covers exact DXCC entity number matches, case-insensitive country name
-// matches, and prefix variants (e.g. "United States" vs "United States of America").
+// Matching uses the same strategy as GetWorkedSummary for consistency: the
+// stored entity number plus the country-name fallback (case-insensitive,
+// prefix included). The function-on-column LOWER(country) form could not use
+// any index and full-scanned qsos; the entity-number arm and the NOCASE
+// country arm each seek their own index.
 func (m *Model) countryWorkedBefore(country string) bool {
 	if m.App.DB == nil || country == "" {
 		return false
@@ -957,29 +971,49 @@ func (m *Model) countryWorkedBefore(country string) bool {
 		return cached
 	}
 
-	// Match by DXCC entity number when available, then fall back to
-	// case-insensitive country name (exact and prefix). Identical to the
-	// strategy used by store.GetWorkedSummary for the F2 partner page.
 	var count int
 	var err error
 	if dxcc != "" {
 		err = m.App.DB.QueryRow(
-			`SELECT COUNT(*) FROM qsos WHERE (dxcc = ? OR LOWER(country) = LOWER(?) OR LOWER(country) LIKE LOWER(?)) AND base_call != ? LIMIT 1`,
-			dxcc, country, country+"%", baseCall,
+			`SELECT COUNT(*) FROM (
+				SELECT base_call FROM qsos WHERE dxcc = ?
+				UNION ALL
+				SELECT base_call FROM qsos
+				WHERE (dxcc IS NULL OR dxcc = '' OR dxcc != ?)
+					AND country LIKE ? COLLATE NOCASE
+			) WHERE base_call != ?`,
+			dxcc, dxcc, country+"%", baseCall,
 		).Scan(&count)
 	} else {
 		err = m.App.DB.QueryRow(
-			`SELECT COUNT(*) FROM qsos WHERE (LOWER(country) = LOWER(?) OR LOWER(country) LIKE LOWER(?)) AND base_call != ? LIMIT 1`,
+			`SELECT COUNT(*) FROM qsos
+			WHERE (country = ? COLLATE NOCASE OR country LIKE ? COLLATE NOCASE)
+				AND base_call != ?`,
 			country, country+"%", baseCall,
 		).Scan(&count)
 	}
 	result := err == nil && count > 0
-	countryWorkedCache[cacheKey] = result
+	storeCountryWorked(cacheKey, result)
 	return result
 }
 
-// countryWorkedCache caches countryWorkedBefore results.
+// countryWorkedCache caches countryWorkedBefore results. Bounded: the key
+// space (country × dxcc × base call) can grow without limit over years of
+// operation, so the map clears wholesale past the cap — entries are cheap
+// to recompute on demand.
 var countryWorkedCache = make(map[string]bool)
+
+// countryWorkedCacheCap bounds countryWorkedCache growth.
+const countryWorkedCacheCap = 4096
+
+func storeCountryWorked(key string, result bool) {
+	if len(countryWorkedCache) >= countryWorkedCacheCap {
+		for k := range countryWorkedCache {
+			delete(countryWorkedCache, k)
+		}
+	}
+	countryWorkedCache[key] = result
+}
 
 // pushDashboardRecent queries the DB directly for the 20 most recent QSOs
 // (newest-first). Pushes only when the list of QSO IDs changed.

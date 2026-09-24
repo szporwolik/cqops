@@ -2,8 +2,10 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/qso"
 )
@@ -14,10 +16,15 @@ import (
 
 func (le *LogbookEditor) fillEditForm(q *qso.QSO) {
 	s := func(f qsoEditField, v string) { le.fields[f].SetValue(v) }
+	// Populate every field on every load — numeric fields must be cleared
+	// explicitly when the value is absent, otherwise the previous contact's
+	// values leak into the next edit (and get persisted on save).
 	sf := func(f qsoEditField, v float64) {
-		if v != 0 {
-			le.fields[f].SetValue(fmt.Sprintf("%.4f", v))
+		if v == 0 {
+			le.fields[f].SetValue("")
+			return
 		}
+		le.fields[f].SetValue(fmt.Sprintf("%.4f", v))
 	}
 
 	s(qefCall, q.Call)
@@ -49,7 +56,11 @@ func (le *LogbookEditor) fillEditForm(q *qso.QSO) {
 	s(qefMySIG, q.MySIG)
 	s(qefMySIGInfo, q.MySIGInfo)
 	s(qefSource, q.Source)
-	s(qefWLStatus, q.WavelogUploaded)
+	if q.WavelogID > 0 {
+		s(qefWLStatus, strconv.FormatInt(q.WavelogID, 10))
+	} else {
+		s(qefWLStatus, "\u2014")
+	}
 	sf(qefDistance, q.Distance)
 	sf(qefBearing, q.Bearing)
 	s(qefIOTA, q.IOTA)
@@ -67,11 +78,17 @@ func (le *LogbookEditor) fillEditForm(q *qso.QSO) {
 	s(qefExchRcvd, q.ExchRcvd)
 	s(qefSTXString, q.STXString)
 	s(qefSRXString, q.SRXString)
+	// Serial numbers are also cleared explicitly — a stale value from the
+	// previously edited contact must never be persisted.
 	if q.STX != 0 {
 		s(qefSTX, fmt.Sprintf("%d", q.STX))
+	} else {
+		s(qefSTX, "")
 	}
 	if q.SRX != 0 {
 		s(qefSRX, fmt.Sprintf("%d", q.SRX))
+	} else {
+		s(qefSRX, "")
 	}
 	if q.ContestADIFID != "" {
 		s(qefContestID, q.ContestADIFID)
@@ -104,37 +121,34 @@ func (le *LogbookEditor) readEditForm() *qso.QSO {
 		SIGInfo:   g(qefSIGInfo),
 		MySOTARef: g(qefMySOTA), MyPOTARef: g(qefMyPOTA), MyWWFFRef: g(qefMyWWFF),
 		CQZone: g(qefCQZone), ITUZone: g(qefITUZone),
-		ExchSent:        g(qefExchSent),
-		ExchRcvd:        g(qefExchRcvd),
-		WavelogUploaded: g(qefWLStatus),
-		ContestID:       le.editing.ContestID,
-		ContestADIFID:   le.editing.ContestADIFID,
-		CreatedAt:       le.editing.CreatedAt,
+		ExchSent:      g(qefExchSent),
+		ExchRcvd:      g(qefExchRcvd),
+		ContestID:     le.editing.ContestID,
+		ContestADIFID: le.editing.ContestADIFID,
+		WavelogID:     le.editing.WavelogID,
+		CreatedAt:     le.editing.CreatedAt,
 	}
 	q.NormalizeExchange()
 	return q
 }
 
-func (le *LogbookEditor) nextField() {
-	le.fields[le.focus].Blur()
-	for {
-		le.focus = qsoEditField(wrapNext(int(le.focus), int(qefCount)))
-		if le.focus != qefWLStatus && le.focus != qefSource {
-			break
-		}
-	}
-	le.fields[le.focus].Focus()
+// focusableRows implementation for the shared menuFocus engine. The two
+// read-only rows (WLStatus, Source) are never focusable.
+func (le *LogbookEditor) rowCount() int { return int(qefCount) }
+func (le *LogbookEditor) rowVisible(i int) bool {
+	f := qsoEditField(i)
+	return f != qefWLStatus && f != qefSource
 }
-
-func (le *LogbookEditor) prevField() {
-	le.fields[le.focus].Blur()
-	for {
-		le.focus = qsoEditField(wrapPrev(int(le.focus), int(qefCount)))
-		if le.focus != qefWLStatus && le.focus != qefSource {
-			break
-		}
+func (le *LogbookEditor) blurAll() {
+	for i := range le.fields {
+		le.fields[i].Blur()
 	}
+}
+func (le *LogbookEditor) focusRow(i int) tea.Cmd {
+	le.focus = qsoEditField(i)
 	le.fields[le.focus].Focus()
+	scrollVpToLine(&le.editVP, i)
+	return nil
 }
 
 // =============================================================================
@@ -160,6 +174,9 @@ func (le *LogbookEditor) viewEdit(bodyW int, contentH int) string {
 		}
 		sb.WriteString(le.renderEditField(i, innerW))
 	}
+	// Save & Back button at the end of the edit form.
+	sb.WriteString("\n\n")
+	sb.WriteString(le.fm.btn.line("Save & Back", innerW))
 	formContent := sb.String()
 
 	// Viewport setup — same pattern as renderScrollableMenu.
@@ -210,7 +227,10 @@ func (le *LogbookEditor) viewEdit(bodyW int, contentH int) string {
 
 func (le *LogbookEditor) renderEditField(f qsoEditField, colW int) string {
 	label := qefLabels[f]
-	focused := f == le.focus
+	// Highlight only when this field actually holds focus — while the Save &
+	// Back button is focused every field stays blurred even though le.focus
+	// still points at the last edited field.
+	focused := f == le.focus && le.fields[f].Focused()
 	raw := strings.TrimSpace(le.fields[f].Value())
 
 	// Label part — matches QSO form pattern: "> " prefix when focused.

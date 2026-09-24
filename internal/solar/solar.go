@@ -107,9 +107,15 @@ func Fetch(cacheDir string) (*Data, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
+	// Reject rather than truncate: a short read would be written to the cache
+	// below and replace a previously valid copy with unparsable XML.
+	const maxBodyBytes = 1 << 20
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxBodyBytes+1))
 	if err != nil {
 		return nil, fmt.Errorf("read body: %w", err)
+	}
+	if len(body) > maxBodyBytes {
+		return nil, fmt.Errorf("response too large (over %d MB)", maxBodyBytes>>20)
 	}
 
 	// Cache the raw XML to disk — write before parsing so we always have

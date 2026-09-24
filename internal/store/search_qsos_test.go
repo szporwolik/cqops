@@ -58,3 +58,44 @@ func TestSearchQSOsLimit(t *testing.T) {
 		t.Fatalf("got %d results, want 3 (limit)", len(got))
 	}
 }
+
+func TestWavelogIDRoundTrip(t *testing.T) {
+	db := newTempDB(t)
+
+	id := mustInsertQSO(t, db, &qso.QSO{Call: "SP9MOA", QSODate: "20240501", TimeOn: "120000", Band: "20m", Mode: "SSB", WavelogID: 42})
+
+	got, err := GetQSOByID(db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if got.WavelogID != 42 {
+		t.Errorf("WavelogID = %d, want 42", got.WavelogID)
+	}
+
+	// UpdateQSO must PRESERVE the remote id — a normal field save never
+	// writes synchronization metadata (the id is only attached via
+	// SetWavelogID*).
+	got.Comment = "edited"
+	got.WavelogID = 0 // a stale form snapshot must not wipe the id
+	if err := UpdateQSO(db, got); err != nil {
+		t.Fatalf("UpdateQSO: %v", err)
+	}
+	again, err := GetQSOByID(db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID after update: %v", err)
+	}
+	if again.WavelogID != 42 {
+		t.Errorf("WavelogID after update = %d, want 42 (preserved)", again.WavelogID)
+	}
+	// Changing the remote link goes through SetWavelogID.
+	if err := SetWavelogID(db, id, 99); err != nil {
+		t.Fatalf("SetWavelogID: %v", err)
+	}
+	again, err = GetQSOByID(db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID after SetWavelogID: %v", err)
+	}
+	if again.WavelogID != 99 {
+		t.Errorf("WavelogID after SetWavelogID = %d, want 99", again.WavelogID)
+	}
+}

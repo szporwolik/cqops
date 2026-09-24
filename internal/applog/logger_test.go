@@ -55,6 +55,50 @@ func TestEntries_CopySafety(t *testing.T) {
 	}
 }
 
+// TestOpenLogFile_OwnerOnly verifies log files are created readable by the
+// owner only, regardless of the process umask.
+func TestOpenLogFile_OwnerOnly(t *testing.T) {
+	dir := t.TempDir()
+	f, err := openLogFileIn(dir)
+	if err != nil {
+		t.Fatalf("openLogFileIn: %v", err)
+	}
+	name := f.Name()
+	f.Close()
+
+	info, err := os.Stat(name)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("log file mode = %o, want 600 (owner-only)", info.Mode().Perm())
+	}
+}
+
+// TestRotateLogs_TightensExistingFiles verifies pre-existing world-readable
+// log files get tightened to owner-only during rotation.
+func TestRotateLogs_TightensExistingFiles(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "cqops-2026-09-20T12-00-00.log")
+	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	old := logDir
+	logDir = dir
+	t.Cleanup(func() { logDir = old })
+
+	rotateLogs()
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat: %v", err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("log file mode = %o, want 600 (owner-only)", info.Mode().Perm())
+	}
+}
+
 // =============================================================================
 // Nil-safety: log functions must not panic when Logger is nil
 // =============================================================================

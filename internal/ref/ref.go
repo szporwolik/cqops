@@ -45,20 +45,19 @@ type DB struct {
 
 // Open opens or creates the reference database at path. The database uses
 // WAL journal mode and a 5-second busy timeout so transient locks resolve
-// without returning SQLITE_BUSY to the caller.
+// without returning SQLITE_BUSY to the caller. All settings are passed as
+// modernc `_pragma` parameters, which the driver applies to every
+// connection — the legacy mattn-style DSN names are silently ignored.
 func Open(path string) (*DB, error) {
-	db, err := sql.Open("sqlite", path+"?_journal_mode=WAL&_busy_timeout=5000")
+	db, err := sql.Open("sqlite", path+
+		"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)"+
+		"&_pragma=synchronous(NORMAL)&_pragma=cache_size(-8000)")
 	if err != nil {
 		return nil, fmt.Errorf("ref: open db at %s: %w", path, err)
 	}
 	if err := db.Ping(); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("ref: ping db at %s: %w", path, err)
-	}
-	// Performance tuning for bulk inserts during rebuild.
-	if _, err := db.Exec(`PRAGMA synchronous=NORMAL; PRAGMA cache_size=-8000`); err != nil {
-		db.Close()
-		return nil, fmt.Errorf("ref: pragma: %w", err)
 	}
 	rdb := &DB{db: db}
 	if err := rdb.migrate(); err != nil {
@@ -93,6 +92,10 @@ func (rdb *DB) migrate() error {
 			PRIMARY KEY (ref_type, ref, name)
 		);
 		CREATE INDEX IF NOT EXISTS idx_refs_lookup ON refs(ref_type, ref);
+		CREATE VIRTUAL TABLE IF NOT EXISTS refs_fts USING fts5(
+			search, grid,
+			content='refs', content_rowid='rowid', tokenize='trigram');
+		CREATE TABLE IF NOT EXISTS refs_meta (key TEXT PRIMARY KEY, value TEXT);
 	`)
 	if err != nil {
 		return err
@@ -101,5 +104,24 @@ func (rdb *DB) migrate() error {
 	rdb.db.Exec(`ALTER TABLE refs ADD COLUMN is_group INTEGER NOT NULL DEFAULT 0`)
 	// Migration: add search column for diacritic/case-insensitive search.
 	rdb.db.Exec(`ALTER TABLE refs ADD COLUMN search TEXT NOT NULL DEFAULT ''`)
+
+	// Populate the FTS index once for databases that already contain rows
+	// (upgraded installations) — fresh databases rebuild it during Rebuild().
+	var marker string
+	rdb.db.QueryRow(`SELECT value FROM refs_meta WHERE key = 'fts_built'`).Scan(&marker)
+	if marker != "1" {
+		if err := rdb.rebuildFTS(); err != nil {
+			return fmt.Errorf("ref: initial fts rebuild: %w", err)
+		}
+		rdb.db.Exec(`INSERT OR REPLACE INTO refs_meta(key, value) VALUES('fts_built','1')`)
+	}
 	return nil
+}
+
+// rebuildFTS resynchronizes the trigram index from the content table. Runs
+// after every Rebuild() (inside its transaction) and once at migration for
+// databases that predate the index.
+func (rdb *DB) rebuildFTS() error {
+	_, err := rdb.db.Exec(`INSERT INTO refs_fts(refs_fts) VALUES('rebuild')`)
+	return err
 }

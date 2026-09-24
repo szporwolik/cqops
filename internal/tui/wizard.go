@@ -23,7 +23,6 @@ type wizardStep int
 const (
 	stepStation wizardStep = iota
 	stepRig
-	stepTimezone
 	stepSummary
 	stepCount // sentinel
 )
@@ -33,7 +32,6 @@ type Wizard struct {
 	step      wizardStep
 	station   *StationForm
 	rigForm   *RigForm
-	tzIndex   int
 	toasts    *ToastQueue
 	width     int
 	height    int
@@ -45,11 +43,15 @@ type Wizard struct {
 	cachedFormBoxW int
 
 	// Wavelog async state (for wizard step 1 buttons)
-	wlUpdating   bool
-	wlTesting    bool
-	wlStatus     string
 	wlStations   []wavelog.StationProfile
 	wlStationIdx int
+	wlStation    *wavelog.Station // fetched full profile, applied on save
+
+	// fm owns wizard-level navigation: the Save & Next / Save & Start button
+	// and the focused row of the current step's form.
+	// Enter works throughout the forms, but a visible button with a (Space)
+	// hint is a much clearer affordance for new users.
+	fm menuFocus
 }
 
 func NewWizard(a *app.App) *Wizard {
@@ -57,14 +59,44 @@ func NewWizard(a *app.App) *Wizard {
 	sf := NewStationForm("", "", "")
 	sf.HideGPSGrid = true  // GPS Grid is not relevant during first-run setup
 	sf.HideOperator = true // operators don't exist yet during first-run wizard
+	sf.HideIARU = true     // show only the Continent selector
+	sf.Advanced = false    // keep the wizard simple — optional fields are hidden (Ctrl+A reveals them)
 	return &Wizard{
 		App:     a,
 		step:    stepStation,
 		station: sf,
 		rigForm: NewRigForm("Xiegu G90 (optional)", "HWEF 20.5 (optional)", "20"),
-		tzIndex: config.SystemTimezoneIndex(),
 		toasts:  NewToastQueue(),
 	}
+}
+
+// focusableRows implementation for the shared menuFocus engine — the rows
+// belong to the current step's form.
+func (w *Wizard) rowCount() int {
+	if w.step == stepStation {
+		return w.station.rowCount()
+	}
+	return int(rigFieldEnd)
+}
+func (w *Wizard) rowVisible(i int) bool {
+	if w.step == stepStation {
+		return w.station.rowVisible(i)
+	}
+	return w.rigForm.visible(rigFormField(i))
+}
+func (w *Wizard) blurAll() {
+	if w.step == stepStation {
+		w.station.BlurAll()
+		return
+	}
+	w.rigForm.blurAll()
+	w.rigForm.focus = -1 // leave the form: no field may stay highlighted
+}
+func (w *Wizard) focusRow(i int) tea.Cmd {
+	if w.step == stepStation {
+		return w.station.focusRow(i)
+	}
+	return w.rigForm.focusRow(rigFormField(i))
 }
 
 func (w *Wizard) Init() tea.Cmd {
@@ -93,36 +125,38 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		w.height = msg.Height
 
 	case wlUpdateMsg:
-		w.wlUpdating = false
 		if msg.err != nil {
-			w.wlStatus = msg.err.Error()
-			w.toasts.Error(w.wlStatus)
+			w.toasts.Error("Wavelog: " + msg.err.Error())
 		} else {
 			w.wlStations = msg.stations
 			w.wlStationIdx = 0
 			if len(msg.stations) > 0 {
-				s := msg.stations[0]
-				w.station.WlStationID.SetValue(fmt.Sprintf("%s — %s (%s) %s", s.ID, s.Callsign, s.Name, s.Gridsquare))
+				w.setSelectedStation()
 			}
-			w.wlStatus = fmt.Sprintf("%d stations loaded — Space to cycle", len(msg.stations))
-			w.toasts.Success(fmt.Sprintf("%d stations loaded, use Space to toggle", len(msg.stations)))
+			w.toasts.Success(fmt.Sprintf("Wavelog: %d stations loaded", len(msg.stations)))
+			return w, w.stationDetailCmd()
+		}
+
+	case wlStationDetailMsg:
+		if msg.err != nil {
+			w.toasts.Warn("Wavelog: station details unavailable")
+		} else if msg.station != nil && w.selectedStationID() == msg.stationID {
+			w.wlStation = msg.station
+			fillStationFormFromWavelog(w.station, msg.station)
 		}
 
 	case wlTestMsg:
-		w.wlTesting = false
 		if msg.err != nil {
-			w.wlStatus = msg.err.Error()
-			w.toasts.Error(w.wlStatus)
+			w.toasts.Error("Wavelog: " + msg.err.Error())
 		} else {
-			w.wlStatus = "OK — Wavelog reachable"
-			w.toasts.Success("Wavelog connection OK")
+			w.toasts.Success("Wavelog: connection OK")
 		}
 
 	case wlCycleStation:
 		if len(w.wlStations) > 0 {
 			w.wlStationIdx = (w.wlStationIdx + 1) % len(w.wlStations)
-			s := w.wlStations[w.wlStationIdx]
-			w.station.WlStationID.SetValue(fmt.Sprintf("%s — %s (%s) %s", s.ID, s.Callsign, s.Name, s.Gridsquare))
+			w.setSelectedStation()
+			return w, w.stationDetailCmd()
 		}
 
 	case tea.PasteMsg:
@@ -149,6 +183,7 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case k.String() == "esc":
 			if w.step > stepStation {
 				w.step--
+				w.fm.reset()
 				applog.Debug("Wizard: step back", "step", int(w.step)+1, "total", stepCount)
 				return w, nil
 			}
@@ -156,69 +191,45 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 			switch w.step {
 			case stepStation:
+				// Ctrl+A reveals/hides the optional advanced fields.
+				if k.String() == "ctrl+a" {
+					w.station.Advanced = !w.station.Advanced
+					return w, nil
+				}
 				// Space cycles loaded Wavelog stations when Station ID is focused.
 				if (k.String() == " " || msg.Code == tea.KeySpace) && w.station.WlStationID.Focused() && len(w.wlStations) > 0 {
 					w.wlStationIdx = (w.wlStationIdx + 1) % len(w.wlStations)
-					s := w.wlStations[w.wlStationIdx]
-					w.station.WlStationID.SetValue(fmt.Sprintf("%s — %s (%s) %s", s.ID, s.Callsign, s.Name, s.Gridsquare))
-					return w, nil
+					w.setSelectedStation()
+					return w, w.stationDetailCmd()
+				}
+				// Shared navigation: Tab/Down, Shift+Tab/Up, and the Save & Next
+				// button (Space/Enter advances to the rig step).
+				if handled, cmd := w.fm.onKey(msg, w, func() tea.Cmd {
+					w.finishStation()
+					return nil
+				}); handled {
+					return w, cmd
 				}
 				if cmd := w.station.HandleKey(msg); cmd != nil {
 					switch cmd().(type) {
 					case enterOnLastFieldMsg:
-						nm, cs, _, gr, _, _, _, wlEnabled, _, _, wlStationID, _, _, _, _, _, _, _ := w.station.Values()
-						if nm == "" {
-							w.toasts.Warn("Station name is required")
-							return w, nil
-						}
-						if cs == "" {
-							w.toasts.Warn("Callsign is required")
-							return w, nil
-						}
-						if !qso.IsValidCall(cs) {
-							w.toasts.Warn("Not a valid callsign")
-							return w, nil
-						}
-						if gr == "" {
-							w.toasts.Warn("Grid locator is required")
-							return w, nil
-						}
-						if !qso.IsValidLocator(gr) {
-							w.toasts.Warn("Not a valid grid locator")
-							return w, nil
-						}
-						if wlEnabled {
-							if wlStationID == "" {
-								w.toasts.Warn("Wavelog: no Station ID — press Update then Space")
-								return w, nil
-							}
-							if len(w.wlStations) == 0 {
-								w.toasts.Warn("No stations loaded — press Update to fetch from Wavelog")
-								return w, nil
-							}
-						}
-						w.step = stepRig
-						applog.InfoDetail("Wizard: station step done", fmt.Sprintf("call=%s grid=%s", cs, gr))
+						w.finishStation()
 					case wlUpdateAction:
-						_, _, _, _, _, _, _, _, wlURL, wlKey, _, _, _, _, _, _, _, _ := w.station.Values()
+						_, _, _, _, _, _, _, _, wlURL, wlKey, _, _, _, _, _, _, _, _, _ := w.station.Values()
 						if wlURL == "" || wlKey == "" {
-							w.toasts.Warn("Wavelog URL and API Key are required")
+							w.toasts.Warn("Wavelog: URL and API Key are required")
 							return w, nil
 						}
-						w.wlUpdating = true
-						w.wlStatus = "Fetching stations…"
 						return w, func() tea.Msg {
 							stations, err := wavelog.FetchStations(wlURL, wlKey)
 							return wlUpdateMsg{stations: stations, err: err}
 						}
 					case wlTestAction:
-						_, _, _, _, _, _, _, _, wlURL, wlKey, _, _, _, _, _, _, _, _ := w.station.Values()
+						_, _, _, _, _, _, _, _, wlURL, wlKey, _, _, _, _, _, _, _, _, _ := w.station.Values()
 						if wlURL == "" || wlKey == "" {
-							w.toasts.Warn("Wavelog URL and API Key are required")
+							w.toasts.Warn("Wavelog: URL and API Key are required")
 							return w, nil
 						}
-						w.wlTesting = true
-						w.wlStatus = "Testing…"
 						return w, func() tea.Msg {
 							if err := wavelog.TestConnection(wlURL, wlKey); err != nil {
 								return wlTestMsg{err: err}
@@ -229,61 +240,29 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return w, nil
 				}
 			case stepRig:
+				// Shared navigation: Tab/Down, Shift+Tab/Up, and the Save & Next
+				// button (Space/Enter advances to the summary).
+				if handled, cmd := w.fm.onKey(msg, w, func() tea.Cmd {
+					w.finishRig()
+					return nil
+				}); handled {
+					return w, cmd
+				}
 				if cmd := w.rigForm.HandleKey(msg); cmd != nil {
 					switch cmd().(type) {
 					case enterOnLastFieldMsg:
-						nm, rig, _, _ := w.rigForm.Values()
-						if nm == "" {
-							w.toasts.Warn("Rig name is required")
-							return w, nil
-						}
-						radioBackend, _, _ := w.rigForm.BackendValues()
-						rawHost := strings.TrimSpace(w.rigForm.BackendHost.Value())
-						rawPort := strings.TrimSpace(w.rigForm.BackendPort.Value())
-						if radioBackend == "flrig" {
-							if rawHost == "" {
-								w.toasts.Warn("Flrig host is required")
-								return w, nil
-							}
-							if rawPort == "" {
-								w.toasts.Warn("Flrig port is required")
-								return w, nil
-							}
-						}
-						if radioBackend == "hamlib" {
-							if rawHost == "" {
-								w.toasts.Warn("Hamlib host is required")
-								return w, nil
-							}
-							if rawPort == "" {
-								w.toasts.Warn("Hamlib port is required")
-								return w, nil
-							}
-						}
-						w.step = stepTimezone
-						applog.InfoDetail("Wizard: rig step done", fmt.Sprintf("rig=%s flrig=%v", rig, radioBackend == "flrig"))
+						w.finishRig()
 					}
 					return w, nil
-				}
-			case stepTimezone:
-				if k.String() == "enter" {
-					w.step = stepSummary
-					applog.InfoDetail("Wizard: timezone step done", fmt.Sprintf("tz=%s", config.Timezones[w.tzIndex]))
-					return w, nil
-				}
-				if msg.Code == tea.KeyUp || k.String() == "up" {
-					if w.tzIndex > 0 {
-						w.tzIndex--
-					}
-				}
-				if msg.Code == tea.KeyDown || k.String() == "down" {
-					if w.tzIndex < len(config.Timezones)-1 {
-						w.tzIndex++
-					}
 				}
 			case stepSummary:
-				if k.String() == "enter" {
+				// Space or Enter on the Save & Start button finishes setup.
+				if k.String() == "enter" || k.String() == " " || k.String() == "space" || msg.Code == tea.KeySpace {
 					return w, w.handleEnter()
+				}
+				if k.String() == "tab" || k.String() == "shift+tab" {
+					w.fm.btn.Focus = !w.fm.btn.Focus
+					return w, nil
 				}
 			}
 		}
@@ -306,8 +285,6 @@ func (w *Wizard) View() tea.View {
 		content = w.viewStation()
 	case stepRig:
 		content = w.viewRig()
-	case stepTimezone:
-		content = w.viewTimezone()
 	case stepSummary:
 		content = w.viewSummary()
 	}
@@ -336,9 +313,8 @@ func (w *Wizard) clampedDims() (h, ww int) {
 	return
 }
 
-// wizardFormBox builds the bordered box style for wizard forms.
-// Style is cached and rebuilt only when width changes.
-func (w *Wizard) wizardFormBox() lipgloss.Style {
+// wizardFormWidth returns the inner width of the wizard form box.
+func (w *Wizard) wizardFormWidth() int {
 	formW := w.width - 6
 	if formW < 56 {
 		formW = 56
@@ -346,6 +322,13 @@ func (w *Wizard) wizardFormBox() lipgloss.Style {
 	if formW > 80 {
 		formW = 80
 	}
+	return formW
+}
+
+// wizardFormBox builds the bordered box style for wizard forms.
+// Style is cached and rebuilt only when width changes.
+func (w *Wizard) wizardFormBox() lipgloss.Style {
+	formW := w.wizardFormWidth()
 	if w.cachedFormBoxW == formW {
 		return w.cachedFormBox
 	}
@@ -381,19 +364,48 @@ func (w *Wizard) wizardLayout(body string, help string) string {
 
 // ── Banner ───────────────────────────────────────────────────────
 
+// wizardLogoRows is the ASCII-art logo shown at the top of the wizard.
+// Pure ASCII, every row exactly the same length: box-drawing glyphs have
+// ambiguous terminal width and uneven rows make lipgloss misalign the logo.
+var wizardLogoRows = []string{
+	" ######   ######   ######  ######## ########",
+	"##       ##    ## ##    ## ##    ## ##      ",
+	"##       ##  # ## ##    ## ######## ########",
+	"##       ##   ### ##    ## ##             ##",
+	" ######   ######   ######  ##       ########",
+}
+
+// wizardLogoView renders the logo rows, each styled individually.
+func wizardLogoView() string {
+	rows := make([]string, 0, len(wizardLogoRows))
+	for _, row := range wizardLogoRows {
+		rows = append(rows, S.WizardAccent.Render(row))
+	}
+	return lipgloss.JoinVertical(lipgloss.Center, rows...)
+}
+
 func (w *Wizard) banner() string {
 	ver := version.Resolved()
-	name := S.WizardAccent.Render("CQOps v" + ver)
-	tag := LabelStyle.Render("Portable Ham Radio Logger")
-
 	// Plain OSC-8 hyperlink — no lipgloss styling to avoid mangling escape sequences.
 	// The link is rendered as the raw ANSI hyperlink and then centered by wizardLayout.
 	gh := osc8Link("https://github.com/szporwolik/cqops",
 		"github.com/szporwolik/cqops")
 
+	// Small terminals get a compact banner — the full logo layout needs
+	// about 32 rows and would otherwise push the Save button off-screen.
+	if w.height > 0 && w.height < 32 {
+		name := S.WizardAccent.Render("CQOps v" + ver)
+		return lipgloss.JoinVertical(lipgloss.Center, name, gh)
+	}
+
+	// Version and GitHub link share one line: the hyperlink keeps its raw
+	// OSC-8 sequences (never wrapped in lipgloss styles).
+	verLine := DimStyle.Render("v"+ver) + "  ·  " + gh
+
 	return lipgloss.JoinVertical(lipgloss.Center,
-		name+"  —  "+tag,
-		gh,
+		wizardLogoView(),
+		"",
+		verLine,
 	)
 }
 
@@ -408,13 +420,10 @@ func (w *Wizard) stepIndicator() string {
 		name = "Station & Logbook"
 	case stepRig:
 		name = "Rig"
-	case stepTimezone:
-		name = "General"
 	case stepSummary:
 		name = "Summary"
 	}
-	return S.Title.Render(fmt.Sprintf("First time wizard — Step %d/%d — %s", current, total, name)) +
-		"  " + DimStyle.Render("[Enter — save & next]")
+	return S.Title.Render(fmt.Sprintf("First time wizard — Step %d/%d — %s", current, total, name))
 }
 
 // ── Step views ───────────────────────────────────────────────────
@@ -426,11 +435,13 @@ func wizHelp(bindings ...key.Binding) string {
 
 func (w *Wizard) viewStation() string {
 	w.station.width = w.width
-	body := w.wizardFormBox().Render(w.station.View().Content)
+	body := w.wizardFormBox().Render(lipgloss.JoinVertical(lipgloss.Left,
+		w.station.View().Content, "", w.fm.btn.line("Save & Next", w.wizardFormWidth())))
 	help := wizHelp(
 		key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save & Next")),
 		key.NewBinding(key.WithKeys("tab"), key.WithHelp("Tab", "Navigate")),
 		key.NewBinding(key.WithKeys("space"), key.WithHelp("Space", "Toggle")),
+		key.NewBinding(key.WithKeys("ctrl+a"), key.WithHelp("Ctrl+A", "Advanced")),
 		key.NewBinding(key.WithKeys("f10"), key.WithHelp("F10", "Quit")),
 	)
 	return w.wizardLayout(body, help)
@@ -438,57 +449,12 @@ func (w *Wizard) viewStation() string {
 
 func (w *Wizard) viewRig() string {
 	w.rigForm.width = w.width
-	body := w.wizardFormBox().Render(w.rigForm.View().Content)
+	body := w.wizardFormBox().Render(lipgloss.JoinVertical(lipgloss.Left,
+		w.rigForm.View().Content, "", w.fm.btn.line("Save & Next", w.wizardFormWidth())))
 	help := wizHelp(
 		key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save & Next")),
 		key.NewBinding(key.WithKeys("space"), key.WithHelp("Space", "Toggle flrig")),
 		key.NewBinding(key.WithKeys("↑/↓", "tab"), key.WithHelp("↑↓/Tab", "Navigate")),
-		key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
-		key.NewBinding(key.WithKeys("f10"), key.WithHelp("F10", "Quit")),
-	)
-	return w.wizardLayout(body, help)
-}
-
-func (w *Wizard) viewTimezone() string {
-	detectedIdx := config.SystemTimezoneIndex()
-	availW := w.width
-	if availW < 40 {
-		availW = 80
-	}
-
-	start := w.tzIndex - 4
-	if start < 0 {
-		start = 0
-	}
-	end := start + 9
-	if end > len(config.Timezones) {
-		end = len(config.Timezones)
-		start = end - 9
-		if start < 0 {
-			start = 0
-		}
-	}
-
-	var inner strings.Builder
-	for i := start; i < end; i++ {
-		tz := config.Timezones[i]
-		prefix := "  "
-		lbl := S.FormLabelWide.Align(lipgloss.Left).Render(tz)
-		if i == w.tzIndex {
-			prefix = S.FormPrefixOn.Render("> ")
-			lbl = S.FormFocusedWide.Align(lipgloss.Left).Render(tz)
-		}
-		inner.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, prefix, lbl), availW))
-		inner.WriteString("\n")
-	}
-
-	detected := config.Timezones[detectedIdx]
-	inner.WriteString(padOrTrunc(lipgloss.JoinHorizontal(lipgloss.Center, "  ", DimStyle.Render("System: "+detected)), availW))
-
-	body := w.wizardFormBox().Render(inner.String())
-	help := wizHelp(
-		key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save & Next")),
-		key.NewBinding(key.WithKeys("↑↓"), key.WithHelp("↑↓", "Choose")),
 		key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 		key.NewBinding(key.WithKeys("f10"), key.WithHelp("F10", "Quit")),
 	)
@@ -501,17 +467,20 @@ func (w *Wizard) viewSummary() string {
 		"",
 		LabelStyle.Render("Your configuration file is almost complete."),
 		"",
+		LabelStyle.Render("Timezone: "+config.Timezones[config.SystemTimezoneIndex()]+" (auto-detected)"),
+		"",
 		LabelStyle.Render("We recommend visiting the Configuration menu after"),
 		LabelStyle.Render("starting the program to set additional options and"),
 		LabelStyle.Render("enable new features."),
 		"",
-		S.WizardAccent.Render("Press Enter to generate the configuration"),
-		S.WizardAccent.Render("file and start the program."),
+		S.WizardAccent.Render("Press the Save & Start button below to generate"),
+		S.WizardAccent.Render("the configuration file and start the program."),
 	)
 
-	body := w.wizardFormBox().Render(inner)
+	body := w.wizardFormBox().Render(lipgloss.JoinVertical(lipgloss.Left,
+		inner, "", w.fm.btn.line("Save & Start", w.wizardFormWidth())))
 	help := wizHelp(
-		key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Save & Start")),
+		key.NewBinding(key.WithKeys("space", "enter"), key.WithHelp("Space", "Save & Start")),
 		key.NewBinding(key.WithKeys("esc"), key.WithHelp("Esc", "Back")),
 		key.NewBinding(key.WithKeys("f10"), key.WithHelp("F10", "Quit")),
 	)
@@ -520,21 +489,160 @@ func (w *Wizard) viewSummary() string {
 
 // ── Helpers ──────────────────────────────────────────────────────
 
+// finishStation validates the station step and advances to the rig step.
+func (w *Wizard) finishStation() {
+	nm, cs, _, gr, _, _, _, wlEnabled, _, _, wlStationID, _, _, _, _, _, _, _, _ := w.station.Values()
+	if nm == "" {
+		w.toasts.Warn("Station: name is required")
+		return
+	}
+	if cs == "" {
+		w.toasts.Warn("Station: callsign is required")
+		return
+	}
+	if !qso.IsValidCall(cs) {
+		w.toasts.Warn("Station: not a valid callsign")
+		return
+	}
+	if gr == "" {
+		w.toasts.Warn("Station: grid locator is required")
+		return
+	}
+	if !qso.IsValidLocator(gr) {
+		w.toasts.Warn("Station: not a valid grid locator")
+		return
+	}
+	if wlEnabled {
+		if wlStationID == "" {
+			w.toasts.Warn("Wavelog: no Station ID — press Update then Space")
+			return
+		}
+		if len(w.wlStations) == 0 {
+			w.toasts.Warn("Wavelog: no stations loaded — press Update to fetch")
+			return
+		}
+	}
+	w.step = stepRig
+	w.fm.reset()
+	applog.InfoDetail("Wizard: station step done", fmt.Sprintf("call=%s grid=%s", cs, gr))
+}
+
+// finishRig validates the rig step and advances to the summary step. The
+// timezone needs no step — the system (Go) detection is used as-is.
+func (w *Wizard) finishRig() {
+	nm, rig, _, _ := w.rigForm.Values()
+	if nm == "" {
+		w.toasts.Warn("Rig: name is required")
+		return
+	}
+	radioBackend, _, _ := w.rigForm.BackendValues()
+	rawHost := strings.TrimSpace(w.rigForm.BackendHost.Value())
+	rawPort := strings.TrimSpace(w.rigForm.BackendPort.Value())
+	if radioBackend == "flrig" {
+		if rawHost == "" {
+			w.toasts.Warn("Rig: flrig host is required")
+			return
+		}
+		if rawPort == "" {
+			w.toasts.Warn("Rig: flrig port is required")
+			return
+		}
+	}
+	if radioBackend == "hamlib" {
+		if rawHost == "" {
+			w.toasts.Warn("Rig: hamlib host is required")
+			return
+		}
+		if rawPort == "" {
+			w.toasts.Warn("Rig: hamlib port is required")
+			return
+		}
+	}
+	w.step = stepSummary
+	w.fm.btn.Focus = true // the Save & Start button is the only control there
+	applog.InfoDetail("Wizard: rig step done", fmt.Sprintf("rig=%s flrig=%v", rig, radioBackend == "flrig"))
+}
+
 func (w *Wizard) handleEnter() tea.Cmd {
-	w.App.Config.General.Timezone = config.Timezones[w.tzIndex]
-	applog.InfoDetail("Wizard: summary step done — saving config", fmt.Sprintf("tz=%s", config.Timezones[w.tzIndex]))
-	if err := w.saveConfig(); err != nil {
-		w.toasts.Error(fmt.Sprintf("Setup error: %v", err))
-		applog.Error("Wizard: config validation failed", "error", err)
+	// The timezone comes from the system (Go) detection — no wizard step needed.
+	tz := config.Timezones[config.SystemTimezoneIndex()]
+	w.App.Config.General.Timezone = tz
+	applog.InfoDetail("Wizard: summary step done — saving config", fmt.Sprintf("tz=%s", tz))
+	return func() tea.Msg {
+		// Best-effort Wavelog station sync before saving (short timeout).
+		// Skipped when the profile was already fetched while selecting.
+		if w.wlStation == nil {
+			w.syncStationFromWavelog()
+		}
+		if err := w.saveConfig(); err != nil {
+			w.toasts.Error(fmt.Sprintf("Setup: %v", err))
+			applog.Error("Wizard: config validation failed", "error", err)
+			return nil
+		}
+		w.Completed = true
+		applog.Info("Wizard completed — launching CQOps")
+		return tea.Quit()
+	}
+}
+
+// setSelectedStation shows the currently selected Wavelog station in the
+// Station ID field and mirrors its callsign and grid into the form. The
+// remaining fields are filled asynchronously once the full profile arrives.
+func (w *Wizard) setSelectedStation() {
+	s := w.wlStations[w.wlStationIdx]
+	w.station.WlStationID.SetValue(fmt.Sprintf("%s — %s (%s) %s", s.ID, s.Callsign, s.Name, s.Gridsquare))
+	if s.Callsign != "" {
+		w.station.Callsign.SetValue(s.Callsign)
+	}
+	w.station.Locator.SetValue(s.Gridsquare)
+}
+
+// selectedStationID returns the Wavelog station ID currently shown, or "".
+func (w *Wizard) selectedStationID() string {
+	if w.wlStationIdx >= 0 && w.wlStationIdx < len(w.wlStations) {
+		return w.wlStations[w.wlStationIdx].ID
+	}
+	return ""
+}
+
+// stationDetailCmd fetches the full profile of the currently selected
+// station so the rest of the form can mirror it. Nil when offline or when
+// Wavelog is not fully configured.
+func (w *Wizard) stationDetailCmd() tea.Cmd {
+	if w.Offline {
 		return nil
 	}
-	w.Completed = true
-	applog.Info("Wizard completed — launching CQOps")
-	return tea.Quit
+	_, _, _, _, _, _, _, wlEnabled, wlURL, wlKey, _, _, _, _, _, _, _, _, _ := w.station.Values()
+	if !wlEnabled {
+		return nil
+	}
+	sid := w.selectedStationID()
+	if sid == "" {
+		return nil
+	}
+	return fetchWavelogStationDetailCmd(wlURL, wlKey, sid)
+}
+
+// syncStationFromWavelog fetches the selected Wavelog station profile so the
+// new logbook inherits its grid, DXCC, zones and reference fields. Failures
+// keep the entered values (toast warning, never fatal).
+func (w *Wizard) syncStationFromWavelog() {
+	_, _, _, _, _, _, _, wlEnabled, wlURL, wlKey, wlStationID, _, _, _, _, _, _, _, _ := w.station.Values()
+	if !wlEnabled || wlURL == "" || wlKey == "" || wlStationID == "" {
+		return
+	}
+	st, err := wavelog.GetStation(wlURL, wlKey, wlStationID)
+	if err != nil {
+		applog.Warn("Wizard: Wavelog station sync failed", "error", err)
+		w.toasts.Warn("Wavelog: station sync failed — using entered values")
+		return
+	}
+	w.wlStation = st
+	applog.InfoDetail("Wizard: Wavelog station synced", fmt.Sprintf("grid=%s dxcc=%d", st.Gridsquare, st.DXCC))
 }
 
 func (w *Wizard) saveConfig() error {
-	sn, cs, op, gr, sotaRef, potaRef, wwffRef, wlEnabled, wlURL, wlKey, wlStationID, iaruRegion, cqZone, ituZone, dxcc, sig, sigInfo, continent := w.station.Values()
+	sn, cs, op, gr, sotaRef, potaRef, wwffRef, wlEnabled, wlURL, wlKey, wlStationID, iaruRegion, cqZone, ituZone, dxcc, sig, sigInfo, continent, _ := w.station.Values()
 	nm, rig, ant, pwr := w.rigForm.Values()
 	radioBackend, radioBackendHost, radioBackendPort := w.rigForm.BackendValues()
 	rotorBackend, rotorHost, rotorPort := w.rigForm.RotorValues()
@@ -589,7 +697,7 @@ func (w *Wizard) saveConfig() error {
 		},
 	}
 	if clamped {
-		w.toasts.Warn("Poll interval adjusted to " + strconv.Itoa(pollInterval) + "s (valid range: 1–60)")
+		w.toasts.Warn("Rig: poll interval adjusted to " + strconv.Itoa(pollInterval) + "s (valid range: 1–60)")
 	}
 
 	// Callbook providers (QRZ etc.) are configured post-wizard via the
@@ -597,7 +705,7 @@ func (w *Wizard) saveConfig() error {
 
 	var wl *config.WavelogConfig
 	if wlEnabled && wlURL != "" && wlKey != "" {
-		sid := wlStationID
+		sid := wavelog.SanitizeStationID(wlStationID)
 		// Extract actual station ID from the selected station if available
 		if w.wlStationIdx >= 0 && w.wlStationIdx < len(w.wlStations) {
 			sid = w.wlStations[w.wlStationIdx].ID
@@ -614,28 +722,34 @@ func (w *Wizard) saveConfig() error {
 	if lbName == "" {
 		lbName = "Default"
 	}
+	station := config.Station{
+		Callsign:   cs,
+		Grid:       gr,
+		RigName:    rigID,
+		SOTARef:    sotaRef,
+		POTARef:    potaRef,
+		WWFFRef:    wwffRef,
+		IARURegion: iaruRegion,
+		CQZone:     cqZone,
+		ITUZone:    ituZone,
+		DXCC:       dxcc,
+		SIG:        sig,
+		SIGInfo:    sigInfo,
+		Continent:  continent,
+	}
+	// When the Wavelog station profile was fetched, mirror its values
+	// (grid, DXCC, zones, reference fields) into the new logbook.
+	if w.wlStation != nil {
+		applyWavelogStation(w.wlStation, &station)
+	}
 	w.App.Config.State.ActiveLogbook = lbID
 	w.App.Config.Logbooks = map[string]config.Logbook{
 		lbID: {
 			ID:             lbID,
 			Name:           lbName,
 			ActiveOperator: activeOpID,
-			Station: config.Station{
-				Callsign:   cs,
-				Grid:       gr,
-				RigName:    rigID,
-				SOTARef:    sotaRef,
-				POTARef:    potaRef,
-				WWFFRef:    wwffRef,
-				IARURegion: iaruRegion,
-				CQZone:     cqZone,
-				ITUZone:    ituZone,
-				DXCC:       dxcc,
-				SIG:        sig,
-				SIGInfo:    sigInfo,
-				Continent:  continent,
-			},
-			Wavelog: wl,
+			Station:        station,
+			Wavelog:        wl,
 		},
 	}
 
@@ -649,6 +763,6 @@ func (w *Wizard) saveConfig() error {
 	w.App.LogbookName = lbID
 
 	applog.InfoDetail("Wizard completed", fmt.Sprintf("call=%s rig=%s flrig=%v wsjtx=%v wavelog=%v tz=%s",
-		cs, rig, radioBackend == "flrig", wsjtxEnabled, wlEnabled, config.Timezones[w.tzIndex]))
+		cs, rig, radioBackend == "flrig", wsjtxEnabled, wlEnabled, config.Timezones[config.SystemTimezoneIndex()]))
 	return nil
 }

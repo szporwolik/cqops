@@ -2,12 +2,23 @@ package tui
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/szporwolik/cqops/internal/psk"
 	"github.com/szporwolik/cqops/internal/solar"
 )
+
+// toastPresent reports whether any active toast contains sub.
+func toastPresent(toasts []Toast, sub string) bool {
+	for _, t := range toasts {
+		if strings.Contains(t.Message, sub) {
+			return true
+		}
+	}
+	return false
+}
 
 // =============================================================================
 // PSK Reporter result-message tests (Pass 14)
@@ -40,6 +51,11 @@ func TestPSKFetchResult_Success(t *testing.T) {
 	}
 	if m.psk.lastFetchByCall["SP9MOA"].IsZero() {
 		t.Error("psk.lastFetchByCall should be set for SP9MOA")
+	}
+
+	// A real update must produce the update toast.
+	if !toastPresent(m.toasts.Active(), "2 spots updated") {
+		t.Error("a successful fetch with reports should toast '2 spots updated'")
 	}
 }
 
@@ -86,6 +102,11 @@ func TestPSKFetchResult_Empty(t *testing.T) {
 	}
 	if !m.psk.fetched {
 		t.Error("psk.fetched should be true even with empty result")
+	}
+
+	// No spots → no update toast.
+	if toastPresent(m.toasts.Active(), "spots updated") {
+		t.Error("an empty fetch must not toast an update")
 	}
 }
 

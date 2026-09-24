@@ -474,11 +474,8 @@ var qsoAllCols = map[string]struct {
 		}
 	}},
 	"WL": {"WL", 3, func(q *qso.QSO) string {
-		if q.WavelogUploaded == "yes" {
+		if q.WavelogID > 0 {
 			return "Y"
-		}
-		if q.WavelogUploaded == "no" {
-			return "N"
 		}
 		return "\u2014"
 	}},

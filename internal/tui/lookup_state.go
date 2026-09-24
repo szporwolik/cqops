@@ -26,6 +26,10 @@ type lookupState struct {
 	wlNextRetry    time.Time // next retry attempt after backoff
 	wlStationName  string
 	wlStationLabel string
+	wlStatusErr    string // last human-readable status error (e.g. v1-key notice)
+	wlWarnShown    string // last status error surfaced as a toast
+	wlRadioID      int64  // Wavelog radio id for the CQOps rig-state push (0 = not ensured yet)
+	lastRadioPush  time.Time
 	wlNeed         bool
 	wlCall         string
 	wlLast         time.Time

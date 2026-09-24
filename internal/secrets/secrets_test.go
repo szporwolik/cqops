@@ -109,6 +109,75 @@ func TestStore_Delete(t *testing.T) {
 	}
 }
 
+func TestStore_DirtyTracksUnpersistedChanges(t *testing.T) {
+	_ = setTestKey(t)
+	dir := t.TempDir()
+	s, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if s.Dirty() {
+		t.Error("freshly loaded store should be clean")
+	}
+
+	s.Set("a", "1")
+	if !s.Dirty() {
+		t.Error("Set should mark the store dirty")
+	}
+	if err := s.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if s.Dirty() {
+		t.Error("successful Save should clear the dirty flag")
+	}
+
+	s.Set("a", "1") // same value
+	if s.Dirty() {
+		t.Error("no-op Set should not mark the store dirty")
+	}
+
+	s.Set("a", "2")
+	s.Delete("a")
+	if !s.Dirty() {
+		t.Error("Delete of an existing key should mark the store dirty")
+	}
+	if err := s.Save(); err != nil {
+		t.Fatal(err)
+	}
+	if s.Dirty() {
+		t.Error("Save after Delete should clear the dirty flag")
+	}
+
+	s.Delete("missing")
+	if s.Dirty() {
+		t.Error("no-op Delete should not mark the store dirty")
+	}
+}
+
+func TestStore_FailedSaveLeavesDirty(t *testing.T) {
+	_ = setTestKey(t)
+	dir := t.TempDir()
+	s, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Save(); err != nil {
+		t.Fatal(err)
+	}
+
+	s.Set("a", "1")
+
+	// Point the store at an unreachable directory so persistence fails.
+	s.path = filepath.Join(dir, "missing-dir", "secrets.enc")
+	if err := s.Save(); err == nil {
+		t.Fatal("Save should fail with an unreachable path")
+	}
+	if !s.Dirty() {
+		t.Error("failed Save must leave the store dirty so the next save retries")
+	}
+}
+
 func TestStore_GetMissing(t *testing.T) {
 	_ = setTestKey(t)
 	dir := t.TempDir()
