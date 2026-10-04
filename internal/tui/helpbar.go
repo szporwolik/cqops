@@ -534,9 +534,12 @@ func (m *Model) minimalBarBindings() []key.Binding {
 			// The form shows its own [ Save & Back ] button.
 			return []key.Binding{h, e, q}
 		}
-		// List mode: Enter Edit is core; Create/Delete/Activate stay
-		// behind the ? overlay.
-		return []key.Binding{h, key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit")), e, q}
+		// List mode: Enter Edit and Ins Create are the core actions;
+		// Activate/Delete stay behind the ? overlay.
+		return []key.Binding{h,
+			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit")),
+			key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Create new logbook")),
+			e, q}
 	case screenRigEdit:
 		if m.ui.rigChooser != nil && (m.ui.rigChooser.mode == rigChooserEdit || m.ui.rigChooser.mode == rigChooserCreate) {
 			// The form shows its own [ Save & Back ] button.
