@@ -239,6 +239,11 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case c.mode == chooserList && k.String() == "insert":
 			c.startCreate()
 
+		case c.mode == chooserList && k.String() == "d":
+			if len(c.names) > 0 {
+				c.duplicateSelected()
+			}
+
 		case c.mode == chooserList && (k.String() == "delete" || msg.Code == tea.KeyDelete):
 			if len(c.names) > 0 {
 				c.mode = chooserConfirmDelete
@@ -580,14 +585,56 @@ func (c *LogbookChooser) startCreate() {
 	c.mode = chooserCreate
 	c.fm.reset()
 	c.lastFormContent = "" // force viewport refresh on mode switch
-	c.station.SetValues("", "", "", "", "", "", "", 1, 0, 0, 0, "", "", "EU")
-	c.station.SetWavelogValues(nil)
-	c.station.SetAPRSValues(nil)
-	c.station.GPSGrid = false
 	c.station.SetOperators(config.OperatorSlice(c.app.Config))
+	c.station.SetValues("", "", "", "", "", "", "", 1, 0, 0, 0, "", "", "EU")
 	c.station.BlurAll()
 	c.station.Name.Focus()
 	c.editing = ""
+}
+
+// duplicateSelected prefills the create form with a copy of the selected
+// logbook: name suffixed "- COPY", the same station details, and the same
+// sub-options — Wavelog with its working API key and APRS settings. Nothing
+// is persisted until the operator saves the form; cancelling with Esc leaves
+// the configuration untouched, so duplication is effectively a prefill.
+func (c *LogbookChooser) duplicateSelected() {
+	if c.cursor < 0 || c.cursor >= len(c.names) {
+		return
+	}
+	id := c.names[c.cursor]
+	lb := c.app.Config.Logbooks[id]
+	displayName := config.LogbookDisplayName(&lb)
+	if displayName == "" {
+		displayName = id
+	}
+
+	// Resolve active operator to callsign for the form selector, same as
+	// startEdit — saveForm resolves it back to the operator ID.
+	opCallsign := ""
+	if lb.ActiveOperator != "" {
+		if op, ok := c.app.Config.Operators[lb.ActiveOperator]; ok {
+			opCallsign = op.Callsign
+		}
+	}
+
+	c.mode = chooserCreate
+	c.editing = ""
+	c.fm.reset()
+	c.lastFormContent = "" // force viewport refresh on mode switch
+	// Load operators BEFORE SetValues — the callsign lookup in SetValues
+	// needs the operator list to restore the selection.
+	c.station.SetOperators(config.OperatorSlice(c.app.Config))
+	c.station.SetValues(displayName+" - COPY", lb.Station.Callsign, opCallsign, lb.Station.Grid, lb.Station.SOTARef, lb.Station.POTARef, lb.Station.WWFFRef, lb.Station.IARURegion, lb.Station.CQZone, lb.Station.ITUZone, lb.Station.DXCC, lb.Station.SIG, lb.Station.SIGInfo, lb.Station.Continent)
+	c.station.GPSGrid = lb.Station.GPSGrid
+	c.station.SetWavelogValues(lb.Wavelog)
+	c.station.SetAPRSValues(lb.APRS)
+	c.wlStations = nil
+	c.wlStationIdx = -1
+	if lb.Wavelog != nil {
+		c.wlStationID = lb.Wavelog.StationProfileID
+	}
+	c.station.BlurAll()
+	c.station.Name.Focus()
 }
 
 func (c *LogbookChooser) startEdit(id string) {
@@ -603,9 +650,11 @@ func (c *LogbookChooser) startEdit(id string) {
 			opCallsign = op.Callsign
 		}
 	}
+	// Load operators BEFORE SetValues — the callsign lookup in SetValues
+	// needs the operator list to restore the selection.
+	c.station.SetOperators(config.OperatorSlice(c.app.Config))
 	c.station.SetValues(lb.Name, lb.Station.Callsign, opCallsign, lb.Station.Grid, lb.Station.SOTARef, lb.Station.POTARef, lb.Station.WWFFRef, lb.Station.IARURegion, lb.Station.CQZone, lb.Station.ITUZone, lb.Station.DXCC, lb.Station.SIG, lb.Station.SIGInfo, lb.Station.Continent)
 	c.station.GPSGrid = lb.Station.GPSGrid
-	c.station.SetOperators(config.OperatorSlice(c.app.Config))
 	c.station.SetWavelogValues(lb.Wavelog)
 	c.station.SetAPRSValues(lb.APRS)
 	c.wlStations = nil
