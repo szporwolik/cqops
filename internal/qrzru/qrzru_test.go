@@ -5,7 +5,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // =============================================================================
@@ -403,6 +405,252 @@ func TestClient_LookupEmptyCallsign(t *testing.T) {
 	}
 	if res != nil {
 		t.Error("expected nil result for empty callsign")
+	}
+}
+
+// TestClient_LookupRealShape covers the response shape the real API returns:
+// <Callsign> and <Files> come BEFORE <Session>, and the success <Session>
+// block carries only session_id + GMTime (no error fields).
+func TestClient_LookupRealShape(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		if strings.Contains(r.URL.Path, "/login") {
+			w.Write([]byte(`<?xml version="1.0"?>
+<QRZDatabase version="1.0" xmlns="http://api.qrz.ru/namespace">
+<Session>
+    <session_id>sess777</session_id>
+    <GMTime>Sun, 04 Oct 2026 22:32:34 +0000</GMTime>
+</Session>
+</QRZDatabase>`))
+			return
+		}
+		w.Write([]byte(`<?xml version="1.0"?>
+<QRZDatabase version="1.0" xmlns="http://api.qrz.ru/namespace">
+<Callsign>
+    <call>RK5M</call>
+    <country_id>101</country_id>
+    <country>Россия</country>
+    <ename>Dmitrij</ename>
+    <esurname>Gunygin</esurname>
+    <city>Гаврилов-Ям</city>
+    <street>ул. Д.Бедного, д.6</street>
+    <qthloc>KO97wh</qthloc>
+    <url>https://www.qrz.ru/db/RK5M</url>
+</Callsign>
+<Files>
+    <file>https://static.qrz.su/callbook/1ed0/fa42d6094c8711547ca08f3fae3de632.jpg</file>
+</Files>
+<Session>
+    <session_id>sess777</session_id>
+    <GMTime>Sun, 04 Oct 2026 22:32:34 +0000</GMTime>
+</Session>
+</QRZDatabase>`))
+	}))
+	defer srv.Close()
+
+	c := NewClientWithPriority("testuser", "testpass", 35)
+	c.httpFn = func(rawURL string) ([]byte, error) {
+		u := strings.Replace(rawURL, "https://api.qrz.ru", srv.URL, 1)
+		return defaultHTTPGet(u)
+	}
+	if err := c.TestConnection(); err != nil {
+		t.Fatalf("TestConnection: %v", err)
+	}
+
+	res, err := c.Lookup("RK5M")
+	if err != nil {
+		t.Fatalf("Lookup: %v", err)
+	}
+	if res == nil {
+		t.Fatal("expected non-nil result")
+	}
+	if res.Callsign != "RK5M" {
+		t.Errorf("callsign = %q, want RK5M", res.Callsign)
+	}
+	if res.Name != "Dmitrij Gunygin" {
+		t.Errorf("name = %q, want 'Dmitrij Gunygin'", res.Name)
+	}
+	if res.QTH != "Гаврилов-Ям, ул. Д.Бедного, д.6" {
+		t.Errorf("qth = %q, want city, street", res.QTH)
+	}
+	if res.Grid != "KO97WH" {
+		t.Errorf("grid = %q, want KO97WH", res.Grid)
+	}
+	if res.ImageURL != "https://static.qrz.su/callbook/1ed0/fa42d6094c8711547ca08f3fae3de632.jpg" {
+		t.Errorf("imageURL = %q, want Files[0]", res.ImageURL)
+	}
+}
+
+// TestClient_LookupLowercaseSessionNotFound covers the real error shape: the
+// API reports "Callsign not found" inside a LOWERCASE <session> block. Before
+// the lowercase handling was added this parsed as an empty record and the
+// client logged "no data" instead of "not found".
+func TestClient_LookupLowercaseSessionNotFound(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		if strings.Contains(r.URL.Path, "/login") {
+			w.Write([]byte(`<?xml version="1.0"?>
+<QRZDatabase version="1.0" xmlns="http://api.qrz.ru/namespace">
+<Session>
+    <session_id>sess888</session_id>
+    <GMTime>Sun, 04 Oct 2026 22:32:34 +0000</GMTime>
+</Session>
+</QRZDatabase>`))
+			return
+		}
+		w.Write([]byte(`<?xml version="1.0"?>
+<QRZDatabase version="1.0" xmlns="http://api.qrz.ru/namespace">
+<session>
+    <errorcode>404</errorcode>
+    <error>Callsign not found</error>
+</session>
+</QRZDatabase>`))
+	}))
+	defer srv.Close()
+
+	c := NewClientWithPriority("testuser", "testpass", 35)
+	c.httpFn = func(rawURL string) ([]byte, error) {
+		u := strings.Replace(rawURL, "https://api.qrz.ru", srv.URL, 1)
+		return defaultHTTPGet(u)
+	}
+	if err := c.TestConnection(); err != nil {
+		t.Fatalf("TestConnection: %v", err)
+	}
+
+	res, err := c.Lookup("ZZ9ZZZ")
+	if err != nil {
+		t.Fatalf("Lookup: %v", err)
+	}
+	if res != nil {
+		t.Errorf("expected nil result for not-found callsign, got %+v", res)
+	}
+}
+
+// TestClient_LookupSessionExpiredReauths covers the other real lowercase
+// failure mode: the cached session dies mid-run and the API answers with a
+// lowercase <session> 403. The client must re-authenticate and retry instead
+// of returning an empty record (which used to look like "no data" and made
+// every later lookup fail silently).
+func TestClient_LookupSessionExpiredReauths(t *testing.T) {
+	loginCount := 0
+	var mu sync.Mutex
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/xml")
+		if strings.Contains(r.URL.Path, "/login") {
+			mu.Lock()
+			loginCount++
+			n := loginCount
+			mu.Unlock()
+			// First login hands out a session that the server has
+			// already revoked; the re-auth login hands out a live one.
+			sid := "stale999"
+			if n > 1 {
+				sid = "fresh999"
+			}
+			w.Write([]byte(`<?xml version="1.0"?>
+<QRZDatabase version="1.0" xmlns="http://api.qrz.ru/namespace">
+<Session>
+    <session_id>` + sid + `</session_id>
+    <GMTime>Sun, 04 Oct 2026 22:32:34 +0000</GMTime>
+</Session>
+</QRZDatabase>`))
+			return
+		}
+		// The stale session gets the real lowercase 403 shape; the fresh
+		// session answers with a record.
+		if !strings.Contains(r.URL.RawQuery, "id=fresh999") {
+			w.Write([]byte(`<?xml version="1.0"?>
+<QRZDatabase version="1.0" xmlns="http://api.qrz.ru/namespace">
+<session>
+    <errorcode>403</errorcode>
+    <error>Session does not exist or expired</error>
+</session>
+</QRZDatabase>`))
+			return
+		}
+		w.Write([]byte(`<?xml version="1.0"?>
+<QRZDatabase version="1.0" xmlns="http://api.qrz.ru/namespace">
+<Callsign>
+    <call>RK5M</call>
+    <ename>Dmitrij</ename>
+    <esurname>Gunygin</esurname>
+</Callsign>
+<Session>
+    <session_id>fresh999</session_id>
+    <GMTime>Sun, 04 Oct 2026 22:32:34 +0000</GMTime>
+</Session>
+</QRZDatabase>`))
+	}))
+	defer srv.Close()
+
+	c := NewClientWithPriority("testuser", "testpass", 35)
+	c.httpFn = func(rawURL string) ([]byte, error) {
+		// Roll the rate-limit clock back on every request so the test
+		// does not wait for the 3 s inter-request sleep.
+		if strings.Contains(rawURL, "/callsign") {
+			c.lastReq = time.Now().Add(-4 * time.Second)
+		}
+		u := strings.Replace(rawURL, "https://api.qrz.ru", srv.URL, 1)
+		return defaultHTTPGet(u)
+	}
+	if err := c.TestConnection(); err != nil {
+		t.Fatalf("TestConnection: %v", err)
+	}
+
+	res, err := c.Lookup("RK5M")
+	if err != nil {
+		t.Fatalf("Lookup: %v", err)
+	}
+	if res == nil {
+		t.Fatal("expected non-nil result after re-auth")
+	}
+	if res.Callsign != "RK5M" {
+		t.Errorf("callsign = %q, want RK5M", res.Callsign)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if loginCount != 2 {
+		t.Errorf("login count = %d, want 2 (initial + re-auth)", loginCount)
+	}
+}
+
+// TestXMLParsing_LowercaseSession verifies both session variants are parsed
+// and merged correctly at the type level.
+func TestXMLParsing_LowercaseSession(t *testing.T) {
+	resp := `<?xml version="1.0"?>
+<QRZDatabase version="1.0" xmlns="http://api.qrz.ru/namespace">
+<session>
+    <errorcode>404</errorcode>
+    <error>Callsign not found</error>
+</session>
+</QRZDatabase>`
+
+	var db qrzDB
+	if err := xml.Unmarshal([]byte(resp), &db); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	s := db.session()
+	if s.ErrorCode != 404 {
+		t.Errorf("errorcode = %d, want 404", s.ErrorCode)
+	}
+	if s.Error != "Callsign not found" {
+		t.Errorf("error = %q, want 'Callsign not found'", s.Error)
+	}
+}
+
+func TestXMLParsing_SessionMerging_PrefersUpper(t *testing.T) {
+	resp := `<?xml version="1.0"?>
+<QRZDatabase version="1.0" xmlns="http://api.qrz.ru/namespace">
+<Session>
+    <session_id>upper123</session_id>
+</Session>
+</QRZDatabase>`
+	var db qrzDB
+	if err := xml.Unmarshal([]byte(resp), &db); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if got := db.session().SessionID; got != "upper123" {
+		t.Errorf("session_id = %q, want upper123", got)
 	}
 }
 
