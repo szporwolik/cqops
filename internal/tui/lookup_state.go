@@ -45,6 +45,7 @@ type lookupState struct {
 	wlLastBand     string
 	wlLastMode     string
 	wlDispatchTime time.Time // last time a WL lookup was dispatched; for timeout
+	wlInFlight     bool      // true while a dispatched WL lookup awaits its result
 
 	// Consolidated callbook toast: shown once per call after all lookups complete.
 	callbookToastCall string // call for which the consolidated toast was already shown
