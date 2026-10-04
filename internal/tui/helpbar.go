@@ -538,7 +538,7 @@ func (m *Model) minimalBarBindings() []key.Binding {
 		// Activate/Delete stay behind the ? overlay.
 		return []key.Binding{h,
 			key.NewBinding(key.WithKeys("enter"), key.WithHelp("Enter", "Edit")),
-			key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Create new logbook")),
+			key.NewBinding(key.WithKeys("insert"), key.WithHelp("Ins", "Create")),
 			e, q}
 	case screenRigEdit:
 		if m.ui.rigChooser != nil && (m.ui.rigChooser.mode == rigChooserEdit || m.ui.rigChooser.mode == rigChooserCreate) {
