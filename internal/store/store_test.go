@@ -369,6 +369,35 @@ func TestListQSOs_ReturnsInserted(t *testing.T) {
 	}
 }
 
+// TestListQSOsFromDate_ScansAllColumns pins the regression where the inline
+// projection omitted dxcc/wavelog_dirty/wavelog_dirty_rev while the shared
+// scanner expected them — every dashboard recent-QSOs load failed with
+// "expected 54 destination arguments in Scan, not 57".
+func TestListQSOsFromDate_ScansAllColumns(t *testing.T) {
+	db := newTempDB(t)
+
+	q := validQSO()
+	q.DXCC = "288"
+	id := mustInsertQSO(t, db, q)
+	if err := SetWavelogDirty(db, id, true); err != nil {
+		t.Fatalf("SetWavelogDirty: %v", err)
+	}
+
+	qsos, err := ListQSOsFromDate(db, q.QSODate, 10)
+	if err != nil {
+		t.Fatalf("ListQSOsFromDate: %v", err)
+	}
+	if len(qsos) != 1 {
+		t.Fatalf("expected 1 QSO, got %d", len(qsos))
+	}
+	if qsos[0].DXCC != "288" {
+		t.Errorf("dxcc = %q, want 288", qsos[0].DXCC)
+	}
+	if !qsos[0].WavelogDirty {
+		t.Error("wavelog_dirty should be scanned")
+	}
+}
+
 func TestListAllQSOs(t *testing.T) {
 	db := newTempDB(t)
 

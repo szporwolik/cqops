@@ -219,7 +219,7 @@ func TestNewLookupResult(t *testing.T) {
 		CallWorked:            true,
 		CallWorkedBand:        false,
 		CallWorkedBandMode:    false,
-		LotwMember:            "14",
+		LotwMember:            lotwMemberValue{Value: true},
 		DXCCConfirmed:         true,
 		CallConfirmedBand:     false,
 		CallConfirmedBandMode: false,
@@ -255,6 +255,41 @@ func TestTruthy(t *testing.T) {
 		if got := truthy(c.val); got != c.want {
 			t.Errorf("truthy(%q) = %v, want %v", c.val, got, c.want)
 		}
+	}
+}
+
+// TestLookupDataLotwMemberShapes pins that the lookup decode tolerates every
+// lotw_member shape the API serves (member-number string, boolean, null,
+// numeric). The boolean form used to break the ENTIRE lookup decode, losing
+// name/grid/DXCC enrichment for those calls.
+func TestLookupDataLotwMemberShapes(t *testing.T) {
+	cases := []struct {
+		name string
+		json string
+		want bool
+	}{
+		{"member number string", `"14"`, true},
+		{"empty string", `""`, false},
+		{"true bool", `true`, true},
+		{"false bool", `false`, false},
+		{"null", `null`, false},
+		{"numeric one", `1`, true},
+		{"numeric zero", `0`, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			payload := `{"data":{"callsign":"SP9ABC","name":"Jan","gridsquare":"JO90","lotw_member":` + c.json + `},"meta":{"total":1}}`
+			var data lookupData
+			if _, err := v2DecodeData([]byte(payload), &data); err != nil {
+				t.Fatalf("v2DecodeData: %v", err)
+			}
+			if data.Name != "Jan" || data.Gridsquare != "JO90" {
+				t.Errorf("other fields lost: %+v", data)
+			}
+			if got := data.LotwMember.Value; got != c.want {
+				t.Errorf("lotw_member = %v, want %v", got, c.want)
+			}
+		})
 	}
 }
 
