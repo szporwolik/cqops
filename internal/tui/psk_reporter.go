@@ -340,11 +340,11 @@ func (m *Model) viewPSKReporter() string {
 		modeLabel = m.psk.modeFilter
 	}
 	filterLine := " " +
-		DimStyle.Render("Mode") + " " + ValueStyle.Render(modeLabel) + "  " + DimStyle.Render("(Ins/Del)") +
+		DimStyle.Render("Mode") + " " + ValueStyle.Render(modeLabel) + "  " + DimStyle.Render("(m)") +
 		"  " + DimStyle.Render(middot()) + "  " +
-		DimStyle.Render("Band") + " " + ValueStyle.Render(bandLabel) + "  " + DimStyle.Render("(Home/End)") +
+		DimStyle.Render("Band") + " " + ValueStyle.Render(bandLabel) + "  " + DimStyle.Render("(b)") +
 		"  " + DimStyle.Render(middot()) + "  " +
-		DimStyle.Render("Time") + " " + ValueStyle.Render(timeLabel) + "  " + DimStyle.Render("(PgUp/Dn)") +
+		DimStyle.Render("Time") + " " + ValueStyle.Render(timeLabel) + "  " + DimStyle.Render("(t)") +
 		"  " + DimStyle.Render(middot()) + "  " +
 		DimStyle.Render("Spots") + " " + ValueStyle.Render(strconv.Itoa(len(filtered))) + "  " + DimStyle.Render("(Bksp clear)")
 	filterBar := lipgloss.NewStyle().Width(totalW).MaxWidth(totalW).Render(filterLine)
