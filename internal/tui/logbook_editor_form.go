@@ -174,8 +174,9 @@ func (le *LogbookEditor) viewEdit(bodyW int, contentH int) string {
 		}
 		sb.WriteString(le.renderEditField(i, innerW))
 	}
-	// Save & Back button at the end of the edit form.
-	sb.WriteString("\n\n")
+	// Save & Back button at the end of the edit form — flush under the last
+	// field row, like every other config menu.
+	sb.WriteString("\n")
 	sb.WriteString(le.fm.btn.line("Save & Back", innerW))
 	formContent := sb.String()
 

@@ -19,6 +19,12 @@ import (
 //
 // Symbols: /r = car, /[ = runner, /> = car, /- = house, etc.
 func ParsePositionPacket(raw string) (StationRecord, bool) {
+	return parsePositionPacketAt(raw, time.Now())
+}
+
+// parsePositionPacketAt is the testable core of ParsePositionPacket with an
+// explicit arrival time (production passes time.Now()).
+func parsePositionPacketAt(raw string, now time.Time) (StationRecord, bool) {
 	var sr StationRecord
 
 	// Split header from body: CALLSIGN>DEST,PATH:BODY
@@ -77,7 +83,7 @@ func ParsePositionPacket(raw string) (StationRecord, bool) {
 		}
 		// The @DDHHMMz prefix carries the station's actual transmit time —
 		// prefer it over the packet arrival time.
-		sr.LastHeard = parsePacketTimestamp(bodyUncomp, time.Now())
+		sr.LastHeard = parsePacketTimestamp(bodyUncomp, now)
 		bodyUncomp = bodyUncomp[8:] // skip @ and timestamp
 		if len(bodyUncomp) < 10 {
 			return sr, false

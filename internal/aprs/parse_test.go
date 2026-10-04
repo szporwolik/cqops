@@ -71,24 +71,28 @@ func TestParsePacketTimestamp(t *testing.T) {
 }
 
 func TestParsePositionPacket_SetsLastHeardFromTimestamp(t *testing.T) {
-	// Timestamped packet — LastHeard must come from the packet, not arrival.
+	// Fixed arrival time: the packet's day 09 14:25 lies in the past, so the
+	// embedded timestamp wins as-is regardless of the real clock. Using
+	// time.Now() here made the test fail during the first days of each month
+	// (a future packet time is clamped to arrival by the clock-skew rule).
+	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
 	raw := "SP9ABC>APRS,TCPIP*:@091425z5023.45N/02012.34E>Test"
-	sr, ok := ParsePositionPacket(raw)
+	sr, ok := parsePositionPacketAt(raw, now)
 	if !ok {
 		t.Fatal("parse failed")
 	}
 	if sr.LastHeard.IsZero() {
 		t.Error("LastHeard should be set from the embedded timestamp")
 	}
-	// The minute should match the packet (25), regardless of current time.
-	if sr.LastHeard.Minute() != 25 {
-		t.Errorf("LastHeard minute = %d, want 25", sr.LastHeard.Minute())
+	want := time.Date(2026, 3, 9, 14, 25, 0, 0, time.UTC)
+	if !sr.LastHeard.Equal(want) {
+		t.Errorf("LastHeard = %v, want %v", sr.LastHeard, want)
 	}
 
 	// Non-timestamped packet — parser leaves LastHeard zero; callers set
 	// the arrival time as fallback.
 	raw2 := "SP9ABC>APRS,TCPIP*:!5023.45N/02012.34E>Test"
-	sr2, ok := ParsePositionPacket(raw2)
+	sr2, ok := parsePositionPacketAt(raw2, now)
 	if !ok {
 		t.Fatal("parse failed")
 	}

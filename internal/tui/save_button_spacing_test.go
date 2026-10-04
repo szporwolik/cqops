@@ -66,4 +66,19 @@ func TestConfigMenusSaveButtonFlush(t *testing.T) {
 			t.Errorf("blank line before Save & Back (button at line %d)", btn)
 		}
 	})
+
+	// Logbook editor edit form — the last menu that kept a blank separator.
+	t.Run("logbook editor", func(t *testing.T) {
+		le := NewLogbookEditor(LogbookEditorConfig{DB: nil, StationOperator: "OP", StationGrid: "JO90", StationCall: "SP9MOA"})
+		le.mode = edModeEdit
+		view := le.viewEdit(100, 80)
+		lines := strings.Split(view, "\n")
+		btn := lineIndex(lines, "Save & Back")
+		if btn < 0 {
+			t.Fatal("Save & Back row missing")
+		}
+		if btn == 0 || lines[btn-1] == "" {
+			t.Errorf("blank line before Save & Back (button at line %d)", btn)
+		}
+	})
 }
