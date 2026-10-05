@@ -16,6 +16,7 @@ func TestIsValidMode(t *testing.T) {
 		{"USB", false},
 		{"LSB", false},
 		{"FT4", false},
+		{"JTTY", false}, // proposed MFSK submode (ADIF 3.1.8), not a mode
 		{"BOGUS", false},
 		{"", false},
 		{"ssb", true},
@@ -46,6 +47,7 @@ func TestIsValidSubmode(t *testing.T) {
 		{"MFSK", "FT4", true},
 		{"MFSK", "FT8", false}, // FT8 is a top-level mode (ADIF 3.1.7), not an MFSK submode
 		{"MFSK", "FT2", true},  // FT2 is an MFSK submode (ADIF 3.1.7)
+		{"MFSK", "JTTY", true}, // proposed MFSK submode (ADIF 3.1.8 Item 183)
 		{"DIGITALVOICE", "DMR", true},
 		{"DIGITALVOICE", "DSTAR", true},
 		{"DIGITALVOICE", "C4FM", true},
@@ -84,7 +86,10 @@ func TestNormalizeMode(t *testing.T) {
 		{"FT8", "", "FT8", ""}, // FT8 is a top-level mode (ADIF 3.1.7)
 		{"FT4", "", "MFSK", "FT4"},
 		{"MFSK", "FT4", "MFSK", "FT4"},
-		{"MFSK", "FT8", "FT8", ""}, // MFSK+FT8 normalizes to standalone FT8 (legacy / non-standard)
+		{"MFSK", "FT8", "FT8", ""},       // MFSK+FT8 normalizes to standalone FT8 (legacy / non-standard)
+		{"JTTY", "", "MFSK", "JTTY"},     // standalone JTTY (current WSJT-X) → MFSK/JTTY
+		{"MFSK", "JTTY", "MFSK", "JTTY"}, // proposed ADIF 3.1.8 form stays as-is
+		{"jtty", "", "MFSK", "JTTY"},
 		{"ft8", "", "FT8", ""},
 		{"ft4", "", "MFSK", "FT4"},
 		{"Ft8", "", "FT8", ""},

@@ -330,6 +330,28 @@ func TestParseWSJTXADIFModeSubmode(t *testing.T) {
 	}
 }
 
+func TestParseWSJTXADIFJTTY(t *testing.T) {
+	// Current WSJT-X format: standalone MODE=JTTY.
+	legacy := "<CALL:6>SP9MOA <BAND:3>20m <MODE:4>JTTY <EOR>"
+	qs := parseWSJTXADIF(legacy)
+	if qs == nil {
+		t.Fatal("parseWSJTXADIF returned nil")
+	}
+	if qs.Mode != "MFSK" || qs.Submode != "JTTY" {
+		t.Errorf("standalone JTTY should normalize to MFSK/JTTY, got %q/%q", qs.Mode, qs.Submode)
+	}
+
+	// Proposed ADIF 3.1.8 format: MFSK mode + JTTY submode.
+	proposed := "<CALL:6>SP9MOA <BAND:3>20m <MODE:4>MFSK <SUBMODE:4>JTTY <EOR>"
+	qs2 := parseWSJTXADIF(proposed)
+	if qs2 == nil {
+		t.Fatal("parseWSJTXADIF returned nil")
+	}
+	if qs2.Mode != "MFSK" || qs2.Submode != "JTTY" {
+		t.Errorf("MFSK/JTTY should stay unchanged, got %q/%q", qs2.Mode, qs2.Submode)
+	}
+}
+
 func TestParseWSJTXADIFBandFromFreq(t *testing.T) {
 	adif := "<CALL:6>SP9MOA <FREQ:7>14.2500 <MODE:3>SSB <EOR>"
 	qs := parseWSJTXADIF(adif)

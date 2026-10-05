@@ -29,7 +29,7 @@ var modeSubmodes = map[string][]string{
 	},
 	"JT44":   {},
 	"JT65":   {"JT65A", "JT65B", "JT65B2", "JT65C", "JT65C2"},
-	"MFSK":   {"FSQCALL", "FST4", "FST4W", "FT2", "FT4", "JS8", "JTMS", "MFSK4", "MFSK8", "MFSK11", "MFSK16", "MFSK22", "MFSK31", "MFSK32", "MFSK64", "MFSK64L", "MFSK128", "MFSK128L", "Q65"},
+	"MFSK":   {"FSQCALL", "FST4", "FST4W", "FT2", "FT4", "JS8", "JTTY", "JTMS", "MFSK4", "MFSK8", "MFSK11", "MFSK16", "MFSK22", "MFSK31", "MFSK32", "MFSK64", "MFSK64L", "MFSK128", "MFSK128L", "Q65"},
 	"MSK144": {},
 	"MTONE":  {"SCAMP_OO", "SCAMP_OO_SLW"},
 	"MT63":   {},
@@ -99,6 +99,7 @@ var importOnlyModes = map[string]modeImport{
 	"JT65A":    {"JT65", "JT65A"},
 	"JT65B":    {"JT65", "JT65B"},
 	"JT65C":    {"JT65", "JT65C"},
+	"JTTY":     {"MFSK", "JTTY"},
 	"LSB":      {"SSB", "LSB"},
 	"MFSK8":    {"MFSK", "MFSK8"},
 	"MFSK16":   {"MFSK", "MFSK16"},
@@ -205,8 +206,9 @@ func NormalizeMode(mode, submode string) (string, string) {
 	}
 
 	// ADIF 3.1.7: FT4 and FT2 are MFSK submodes, FT8 is a top-level mode.
-	// Import leniently: accept standalone FT4/FT2 as legacy.
-	if mode == "FT4" || mode == "FT2" {
+	// Proposed ADIF 3.1.8 (Item 183): JTTY becomes an MFSK submode — accept
+	// the current standalone MODE=JTTY form emitted by WSJT-X as legacy.
+	if mode == "FT4" || mode == "FT2" || mode == "JTTY" {
 		if strings.TrimSpace(submode) == "" {
 			return "MFSK", mode
 		}
