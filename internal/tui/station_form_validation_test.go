@@ -121,25 +121,25 @@ func TestStationForm_FixedLocation(t *testing.T) {
 	if !strings.Contains(v, "Comment (opt)") {
 		t.Error("render must label Comment as (opt)")
 	}
-	if !strings.Contains(v, "Fixed location (opt)") {
-		t.Error("render must label Fixed location as (opt)")
+	if !strings.Contains(v, "Fixed grid (opt):") {
+		t.Error("render must label Fixed grid as (opt)")
 	}
 }
 
 func TestStationForm_FixedLocation_ValidateField(t *testing.T) {
 	f := newStationFormForTest()
 	f.FixedLocator.SetValue("KO00ca67")
-	if hint := f.ValidateField("Fixed location (opt)"); hint != "" {
+	if hint := f.ValidateField("Fixed grid (opt):"); hint != "" {
 		t.Errorf("valid 8-char locator hint = %q, want \"\"", hint)
 	}
 	f.FixedLocator.SetValue("ZZ99xx")
-	if hint := f.ValidateField("Fixed location (opt)"); hint == "" {
+	if hint := f.ValidateField("Fixed grid (opt):"); hint == "" {
 		t.Error("invalid locator should produce a hint")
 	}
 	// Empty = optional, no hint.
 	f.FixedLocator.SetValue("")
-	if hint := f.ValidateField("Fixed location (opt)"); hint != "" {
-		t.Errorf("empty fixed location hint = %q, want \"\"", hint)
+	if hint := f.ValidateField("Fixed grid (opt):"); hint != "" {
+		t.Errorf("empty fixed grid hint = %q, want \"\"", hint)
 	}
 }
 

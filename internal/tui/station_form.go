@@ -1121,7 +1121,7 @@ func (f *StationForm) View() tea.View {
 				{"  Radius (km):", &f.AprsRadiusKm},
 				{"  Symbol:", &f.AprsSymbol},
 				{"  Comment (opt):", &f.AprsComment},
-				{"  Fixed location (opt)", &f.FixedLocator},
+				{"  Fixed grid (opt):", &f.FixedLocator},
 			}
 			for _, field := range aprsFields2 {
 				b.WriteString(f.renderFieldLine(field.label, field.ti, availW))
@@ -1420,7 +1420,7 @@ func (f *StationForm) ValidateField(label string) string {
 		if cont == "" {
 			return "Required"
 		}
-	case "Fixed location (opt)":
+	case "Fixed grid (opt):":
 		if fx := qso.NormalizeLocator(f.FixedLocator.Value()); fx != "" && !qso.IsValidLocator(fx) {
 			return "Invalid locator"
 		}

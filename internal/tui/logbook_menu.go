@@ -733,7 +733,7 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 			aprs.Symbol = "/-" // default if empty
 		}
 		if aprs.FixedLocation != "" && !qso.IsValidLocator(aprs.FixedLocation) {
-			c.toasts.Warn("APRS: fixed location is not a valid grid locator")
+			c.toasts.Warn("APRS: fixed grid is not a valid grid locator")
 			return nil
 		}
 	}
