@@ -14,6 +14,7 @@ import (
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/aprs"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
@@ -730,6 +731,10 @@ func (c *LogbookChooser) saveForm() tea.Cmd {
 		}
 		if aprs.Symbol == "" {
 			aprs.Symbol = "/-" // default if empty
+		}
+		if aprs.FixedLocation != "" && !qso.IsValidLocator(aprs.FixedLocation) {
+			c.toasts.Warn("APRS: fixed location is not a valid grid locator")
+			return nil
 		}
 	}
 

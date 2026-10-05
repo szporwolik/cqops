@@ -543,7 +543,11 @@ type APRSConfig struct {
 	IntervalMin  int    `yaml:"interval_minutes"`
 	Symbol       string `yaml:"symbol"`
 	Comment      string `yaml:"comment"`
-	LastBeaconAt string `yaml:"last_beacon_at,omitempty"` // RFC3339, per-logbook
+	// FixedLocation pins APRS to a specific grid locator: the APRS map
+	// centers on it and beacons carry it, overriding GPS and the station
+	// grid. Empty = follow the normal GPS/station-grid logic.
+	FixedLocation string `yaml:"fixed_location,omitempty"`
+	LastBeaconAt  string `yaml:"last_beacon_at,omitempty"` // RFC3339, per-logbook
 }
 
 // Load reads and parses a YAML configuration file from path.

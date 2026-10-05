@@ -1143,7 +1143,14 @@ func (a *App) EffectiveGrid() string {
 
 // effectiveGridUnlocked computes the effective grid. Caller must hold gpsMu;
 // it reads owner-owned config fields, so call only from the owner goroutine.
+// The APRS fixed-location override wins over GPS and the station grid: when
+// set, APRS beacons and the range filter are pinned to that locator.
 func (a *App) effectiveGridUnlocked() string {
+	if a.Logbook != nil && a.Logbook.APRS != nil {
+		if fx := strings.ToUpper(strings.TrimSpace(a.Logbook.APRS.FixedLocation)); fx != "" {
+			return fx
+		}
+	}
 	var raw string
 	if a.Config != nil && a.Config.Integrations.GPS.Enabled && a.gpsHasFix && a.gpsGrid != "" &&
 		a.Logbook != nil && a.Logbook.Station.GPSGrid {

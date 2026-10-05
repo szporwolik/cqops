@@ -1253,7 +1253,7 @@ func (m *Model) pushDashboardAPRS(ds *dashboard.State) {
 	applog.Debug("dashboard: APRS cache read", "source", src, "count", fmt.Sprintf("%d", len(stations)))
 	// Get station position and APRS config for distance filtering.
 	var stLat, stLon, radiusKm float64
-	if g := m.effectiveGrid(); g != "" {
+	if g := m.aprsGrid(); g != "" {
 		stLat, stLon = gridToLatLon(g)
 	}
 	if aprsCfg := m.App.Logbook.APRS; aprsCfg != nil && aprsCfg.Enabled && aprsCfg.RadiusKm > 0 {

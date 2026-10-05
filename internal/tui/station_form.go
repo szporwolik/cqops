@@ -55,7 +55,8 @@ type StationForm struct {
 	AprsIntervalMin  textinput.Model
 	AprsSymbol       textinput.Model
 	AprsComment      textinput.Model
-	width            int // terminal width for responsive layout
+	FixedLocator     textinput.Model // pins APRS center/beacons to this grid (empty = follow GPS/station)
+	width            int             // terminal width for responsive layout
 
 	// GPS Grid — use GPS-derived grid when checked and GPS has fix.
 	GPSGrid      bool
@@ -119,6 +120,7 @@ func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder strin
 	aint := mkTI(3, 28, "15")
 	asym := mkTI(6, 28, "/-")
 	acmt := mkTI(40, 28, "Field Day")
+	fxl := mkTI(10, 28, "e.g. KO00aa00")
 
 	return &StationForm{
 		Name:            nm,
@@ -143,6 +145,7 @@ func NewStationForm(callsignPlaceholder, opPlaceholder, locatorPlaceholder strin
 		AprsIntervalMin: aint,
 		AprsSymbol:      asym,
 		AprsComment:     acmt,
+		FixedLocator:    fxl,
 		AprsSendLoc:     true, // beaconing on by default when APRS is enabled
 		opIdx:           -1,
 		Advanced:        true,
@@ -255,6 +258,9 @@ func (f *StationForm) Update(msg tea.KeyPressMsg) {
 		f.AprsSymbol, _ = f.AprsSymbol.Update(msg)
 	case f.AprsComment.Focused():
 		f.AprsComment, _ = f.AprsComment.Update(msg)
+	case f.FixedLocator.Focused():
+		f.FixedLocator, _ = f.FixedLocator.Update(msg)
+		f.FixedLocator.SetValue(formatLocator(f.FixedLocator.Value()))
 	}
 }
 
@@ -383,6 +389,9 @@ func (f *StationForm) NextInput() {
 		f.AprsComment.Focus()
 	case f.AprsComment.Focused():
 		f.AprsComment.Blur()
+		f.FixedLocator.Focus()
+	case f.FixedLocator.Focused():
+		f.FixedLocator.Blur()
 		f.aprsBtnFocus = 1
 	case f.aprsBtnFocus == 1:
 		f.aprsBtnFocus = 0
@@ -413,6 +422,9 @@ func (f *StationForm) PrevInput() {
 	// APRS section — backwards.
 	case f.aprsBtnFocus == 1:
 		f.aprsBtnFocus = 0
+		f.FixedLocator.Focus()
+	case f.FixedLocator.Focused():
+		f.FixedLocator.Blur()
 		f.AprsComment.Focus()
 	case f.AprsComment.Focused():
 		f.AprsComment.Blur()
@@ -533,7 +545,8 @@ func (f *StationForm) BlurAll() {
 	blurTextinputs(&f.Name, &f.Callsign, &f.Operator, &f.Locator, &f.SOTARef, &f.POTARef, &f.WWFFRef,
 		&f.CQZone, &f.ITUZone, &f.DXCC, &f.SIG, &f.SIGInfo,
 		&f.WlURL, &f.WlKey, &f.WlStationID,
-		&f.AprsServer, &f.AprsRadiusKm, &f.AprsCallsign, &f.AprsIntervalMin, &f.AprsSymbol, &f.AprsComment)
+		&f.AprsServer, &f.AprsRadiusKm, &f.AprsCallsign, &f.AprsIntervalMin, &f.AprsSymbol, &f.AprsComment,
+		&f.FixedLocator)
 	f.wlCbFocus = false
 	f.wlSharedCbFocus = false
 	f.aprsCbFocus = false
@@ -552,7 +565,7 @@ func (f *StationForm) BlurAll() {
 func (f *StationForm) rowCount() int { return stationFormRows }
 
 // stationFormRows is the number of focus slots in the station form.
-const stationFormRows = 29
+const stationFormRows = 30
 
 func (f *StationForm) rowVisible(i int) bool {
 	switch i {
@@ -570,7 +583,7 @@ func (f *StationForm) rowVisible(i int) bool {
 		return f.WlEnabled
 	case 21: // APRS TX checkbox
 		return !f.HideGPSGrid
-	case 22, 23, 24, 25, 26, 27, 28: // APRS fields and test button
+	case 22, 23, 24, 25, 26, 27, 28, 29: // APRS fields, fixed location, test button
 		return f.AprsEnabled && !f.HideGPSGrid
 	}
 	return true // name, callsign, locator, continent, Wavelog checkbox
@@ -637,6 +650,8 @@ func (f *StationForm) focusRow(i int) tea.Cmd {
 	case 27:
 		f.AprsComment.Focus()
 	case 28:
+		f.FixedLocator.Focus()
+	case 29:
 		f.aprsBtnFocus = 1
 	}
 	f.unmaskSecretsOnFocus()
@@ -779,13 +794,14 @@ func (f *StationForm) APRSValues() *config.APRSConfig {
 		iv = 180
 	}
 	return &config.APRSConfig{
-		Enabled:      f.AprsEnabled,
-		Callsign:     strings.ToUpper(strings.TrimSpace(f.AprsCallsign.Value())),
-		RadiusKm:     rad,
-		SendLocation: f.AprsSendLoc,
-		IntervalMin:  iv,
-		Symbol:       strings.TrimSpace(f.AprsSymbol.Value()),
-		Comment:      strings.TrimSpace(f.AprsComment.Value()),
+		Enabled:       f.AprsEnabled,
+		Callsign:      strings.ToUpper(strings.TrimSpace(f.AprsCallsign.Value())),
+		RadiusKm:      rad,
+		SendLocation:  f.AprsSendLoc,
+		IntervalMin:   iv,
+		Symbol:        strings.TrimSpace(f.AprsSymbol.Value()),
+		Comment:       strings.TrimSpace(f.AprsComment.Value()),
+		FixedLocation: qso.NormalizeLocator(f.FixedLocator.Value()),
 	}
 }
 
@@ -807,6 +823,7 @@ func (f *StationForm) SetAPRSValues(cfg *config.APRSConfig) {
 		}
 		f.AprsSymbol.SetValue(cfg.Symbol)
 		f.AprsComment.SetValue(cfg.Comment)
+		f.FixedLocator.SetValue(cfg.FixedLocation)
 	} else {
 		f.AprsEnabled = false
 		// Prefill with the station callsign, stripped of portable prefixes
@@ -817,6 +834,7 @@ func (f *StationForm) SetAPRSValues(cfg *config.APRSConfig) {
 		f.AprsIntervalMin.SetValue("15")
 		f.AprsSymbol.SetValue("/-")
 		f.AprsComment.SetValue("")
+		f.FixedLocator.SetValue("")
 	}
 }
 
@@ -1102,7 +1120,8 @@ func (f *StationForm) View() tea.View {
 				{"  Interval (min):", &f.AprsIntervalMin},
 				{"  Radius (km):", &f.AprsRadiusKm},
 				{"  Symbol:", &f.AprsSymbol},
-				{"  Comment:", &f.AprsComment},
+				{"  Comment (opt):", &f.AprsComment},
+				{"  Fixed location (opt)", &f.FixedLocator},
 			}
 			for _, field := range aprsFields2 {
 				b.WriteString(f.renderFieldLine(field.label, field.ti, availW))
@@ -1352,6 +1371,8 @@ func (f *StationForm) ScrollFraction() float64 {
 		return 0.975
 	case f.AprsComment.Focused():
 		return 0.985
+	case f.FixedLocator.Focused():
+		return 0.99
 	case f.aprsBtnFocus > 0:
 		return 1.0
 	default:
@@ -1398,6 +1419,10 @@ func (f *StationForm) ValidateField(label string) string {
 	case "Continent:":
 		if cont == "" {
 			return "Required"
+		}
+	case "Fixed location (opt)":
+		if fx := qso.NormalizeLocator(f.FixedLocator.Value()); fx != "" && !qso.IsValidLocator(fx) {
+			return "Invalid locator"
 		}
 	}
 	return ""

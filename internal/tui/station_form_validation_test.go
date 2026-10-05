@@ -79,6 +79,70 @@ func TestStationForm_APRSCallsignPrefill(t *testing.T) {
 	}
 }
 
+// TestStationForm_FixedLocation verifies the APRS fixed-location field:
+// values round-trip, navigation reaches it between Comment and the Test
+// button, and rendering shows the (opt) labels.
+func TestStationForm_FixedLocation(t *testing.T) {
+	f := newStationFormForTest()
+	f.AprsEnabled = true
+
+	// SetAPRSValues → field carries the value; APRSValues normalizes back.
+	f.SetAPRSValues(&config.APRSConfig{Enabled: true, FixedLocation: "ko00ca67"})
+	if got := f.FixedLocator.Value(); got != "ko00ca67" {
+		t.Errorf("FixedLocator after SetAPRSValues = %q, want ko00ca67", got)
+	}
+	aprsCfg := f.APRSValues()
+	if aprsCfg.FixedLocation != "KO00CA67" {
+		t.Errorf("APRSValues FixedLocation = %q, want KO00CA67", aprsCfg.FixedLocation)
+	}
+
+	// Navigation: Comment → Fixed location → Test button.
+	f.BlurAll()
+	f.AprsComment.Focus()
+	f.NextInput()
+	if !f.FixedLocator.Focused() {
+		t.Fatal("NextInput from Comment should focus Fixed location")
+	}
+	f.NextInput()
+	if f.aprsBtnFocus != 1 {
+		t.Fatal("NextInput from Fixed location should focus the APRS test button")
+	}
+	f.PrevInput()
+	if !f.FixedLocator.Focused() {
+		t.Fatal("PrevInput from Test button should focus Fixed location")
+	}
+	f.PrevInput()
+	if !f.AprsComment.Focused() {
+		t.Fatal("PrevInput from Fixed location should focus Comment")
+	}
+
+	// Render: both labels carry the (opt) suffix.
+	v := fmt.Sprint(f.View())
+	if !strings.Contains(v, "Comment (opt)") {
+		t.Error("render must label Comment as (opt)")
+	}
+	if !strings.Contains(v, "Fixed location (opt)") {
+		t.Error("render must label Fixed location as (opt)")
+	}
+}
+
+func TestStationForm_FixedLocation_ValidateField(t *testing.T) {
+	f := newStationFormForTest()
+	f.FixedLocator.SetValue("KO00ca67")
+	if hint := f.ValidateField("Fixed location (opt)"); hint != "" {
+		t.Errorf("valid 8-char locator hint = %q, want \"\"", hint)
+	}
+	f.FixedLocator.SetValue("ZZ99xx")
+	if hint := f.ValidateField("Fixed location (opt)"); hint == "" {
+		t.Error("invalid locator should produce a hint")
+	}
+	// Empty = optional, no hint.
+	f.FixedLocator.SetValue("")
+	if hint := f.ValidateField("Fixed location (opt)"); hint != "" {
+		t.Errorf("empty fixed location hint = %q, want \"\"", hint)
+	}
+}
+
 // =============================================================================
 // ValidateField tests
 // =============================================================================

@@ -370,6 +370,20 @@ func (m *Model) effectiveGrid() string {
 	return truncateGrid(raw, m.gpsLogPrecision())
 }
 
+// aprsGrid returns the grid used for APRS map centering, radius filtering,
+// and beacons. The per-logbook fixed location wins over GPS and the station
+// grid: once set, APRS is pinned to that point regardless of the GPS state.
+// It deliberately does NOT touch effectiveGrid — the QSO logging grid keeps
+// following the GPS/station logic.
+func (m *Model) aprsGrid() string {
+	if m.App != nil && m.App.Logbook != nil && m.App.Logbook.APRS != nil {
+		if fx := strings.ToUpper(strings.TrimSpace(m.App.Logbook.APRS.FixedLocation)); fx != "" {
+			return fx
+		}
+	}
+	return m.effectiveGrid()
+}
+
 // isGPSGridActive returns true when the displayed station grid is
 // currently derived from GPS (GPS enabled, has fix, GPSGrid flag set).
 func (m *Model) isGPSGridActive() bool {
