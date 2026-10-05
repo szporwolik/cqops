@@ -535,6 +535,15 @@ func (m *Model) internetCallbook() (name, urlTemplate string) {
 // queries on every frame for low-end hardware.
 var dashboardDataDirty bool = true // initially dirty to ensure first push
 
+// dashboardStatsRefreshInterval bounds how often the stats panel (including
+// the sliding 5m/15m/1h rate windows) is recomputed when no QSO data changed.
+// Without the periodic pass the rate badges would freeze at the value computed
+// at the last QSO event forever.
+var dashboardStatsRefreshInterval = 60 * time.Second
+
+// lastDashboardStatsPush stamps the last stats push, event-driven or periodic.
+var lastDashboardStatsPush time.Time
+
 var lastDashboardPushTick int
 
 // Called from the tick handler every second. Most Set* calls early-exit because
@@ -557,15 +566,21 @@ func (m *Model) pushDashboardState() {
 
 	ds := m.http.client.State()
 
-	// --- Refresh today QSOs + stats for the map (event-driven) ---
-	// Only recompute when QSO data changed — not on a timer.
-	// The initial push (dashboardDataDirty==true) ensures the
-	// dashboard populates on startup.
+	// --- Refresh today QSOs + stats for the map ---
+	// Recompute when QSO data changed (save, import, WSJT-X auto-log). On
+	// top of that, refresh the stats panel every minute so the 5m/15m/1h
+	// rate windows keep sliding even when no new QSO arrives. The initial
+	// push (dashboardDataDirty==true) ensures the dashboard populates on
+	// startup.
 	if dashboardDataDirty {
 		dashboardDataDirty = false
+		lastDashboardStatsPush = time.Now()
 		m.pushDashboardToday(ds)
 		m.pushDashboardStats(ds)
 		m.pushDashboardRecent(ds)
+	} else if time.Since(lastDashboardStatsPush) >= dashboardStatsRefreshInterval {
+		lastDashboardStatsPush = time.Now()
+		m.pushDashboardStats(ds)
 	}
 
 	// --- APRS stations for the local map (rate-limited, 30 s, or on-demand) ---

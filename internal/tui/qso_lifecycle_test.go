@@ -6,11 +6,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/applog"
 	"github.com/szporwolik/cqops/internal/config"
+	"github.com/szporwolik/cqops/internal/dashboard"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
 )
@@ -1079,6 +1081,33 @@ func TestBulkImportMarksDashboardDirty(t *testing.T) {
 	m.handleEditorSideEffects(editorMsg{dlDone: true, dlCount: 5, dlLastID: 10})
 	if !dashboardDataDirty {
 		t.Error("bulk import must mark the dashboard data dirty")
+	}
+}
+
+// TestDashboardStatsPeriodicRefresh verifies the stats panel (with its
+// sliding 5m/15m/1h rate windows) refreshes on a timer even when no QSO data
+// changed — otherwise the rate badges freeze at the last event-time values.
+func TestDashboardStatsPeriodicRefresh(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.http.client = dashboard.New("127.0.0.1", "0")
+	m.http.online = true
+	dashboardDataDirty = false
+	lastDashboardStatsPush = time.Now().Add(-2 * time.Minute)
+	lastDashboardPushTick = m.tickCount - 10
+	t.Cleanup(func() {
+		dashboardDataDirty = true
+		lastDashboardStatsPush = time.Time{}
+		lastDashboardPushTick = 0
+		m.http.client.Stop()
+	})
+
+	m.pushDashboardState()
+
+	if lastDashboardStatsPush.IsZero() {
+		t.Fatal("stats push stamp not set")
+	}
+	if time.Since(lastDashboardStatsPush) > 30*time.Second {
+		t.Error("periodic stats refresh did not run")
 	}
 }
 
