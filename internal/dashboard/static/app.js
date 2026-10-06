@@ -777,6 +777,29 @@ var lastQso=null,activeGrid=null;
 var mapLocal=null,stationLocalMarker=null,localTiles=null;
 var _mapResizeObserver=null,_mapPollActive=false;
 
+// ---- WebGL capability detection ----
+// MapLibre GL requires a working WebGL context. On machines without GL
+// drivers (VNC/RDP sessions, old GPUs) context creation fails and the
+// GL layer crashes the page. Probe once with a throwaway canvas and use
+// the embedded world-map image as the tile fallback when unavailable.
+var _webglChecked=false,_webglOK=false,_webglBroken=false;
+function _webglAvailable(){
+  if(_webglChecked)return _webglOK;
+  _webglChecked=true;
+  try{
+    var c=document.createElement('canvas');
+    var gl=c.getContext('webgl2')||c.getContext('webgl')||c.getContext('experimental-webgl');
+    _webglOK=!!gl&&typeof gl.getParameter==='function';
+    if(_webglOK&&gl.getExtension('WEBGL_lose_context'))gl.getExtension('WEBGL_lose_context').loseContext();
+  }catch(e){_webglOK=false}
+  return _webglOK;
+}
+// _glTilesUsable returns true only when the Leaflet binding is loaded AND
+// the browser can actually create a GL context (and none failed so far).
+function _glTilesUsable(){
+  return typeof L!=='undefined'&&typeof L.maplibreGL==='function'&&_webglAvailable()&&!_webglBroken;
+}
+
 // _ensureMapLibreGL loads the MapLibre GL scripts dynamically if they
 // weren't loaded at page start (e.g. the page opened while offline and
 // the CDN <script> tags failed). Calls cb() when ready — immediately if
@@ -784,8 +807,11 @@ var _mapResizeObserver=null,_mapPollActive=false;
 // Scripts are loaded sequentially (maplibre-gl.js first, then the
 // Leaflet binding) to prevent the binding from executing before the
 // core library defines its global (maplibregl).
+// When WebGL is unavailable the scripts are pointless (and load noise on
+// the console), so cb() is called immediately without injecting them.
 function _ensureMapLibreGL(cb){
   if(typeof L!=='undefined'&&typeof L.maplibreGL==='function'){cb();return}
+  if(!_webglAvailable()){D('initMap','WebGL unavailable — skipping MapLibre scripts, image fallback');cb();return}
   D('initMap','MapLibre GL not loaded — injecting CDN scripts');
   var s1=document.createElement('script');
   s1.src='https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.js';
@@ -838,12 +864,16 @@ function initMap(cfg){
   if(cfg.highlightLastQSO!==undefined)mapCfg.highlightLastQSO=!!cfg.highlightLastQSO;
   if(cfg.animateActivePath!==undefined)mapCfg.animateActivePath=!!cfg.animateActivePath;
   // When offline, use EPSG:4326 (equirectangular) to match the embedded map image.
-  // When online, default Web Mercator for MapLibre tiles.
+  // When online, default Web Mercator for MapLibre tiles — unless WebGL is
+  // unavailable, in which case the embedded world image is used as fallback
+  // (Mercator CRS keeps radar tiles and markers aligned).
+  var useTiles=!!cfg.isOnline&&_glTilesUsable();
   var mapOpts={zoomControl:false,attributionControl:false};
   if(!cfg.isOnline){mapOpts.crs=L.CRS.EPSG4326;D('initMap','offline CRS — using EPSG:4326 equirectangular')}
+  else if(!useTiles){D('initMap','online but WebGL unavailable — world image fallback (Web Mercator)')}
   else{D('initMap','online — using default Web Mercator tiles')}
   map=L.map('map-container',mapOpts).setView([51,10],3);
-  map._cqopsOfflineCRS=!cfg.isOnline;
+  map._cqopsOfflineCRS=!useTiles;
   // Custom panes for layer ordering: radar below QSO paths, markers on top.
   map.createPane('cqopsRadar');map.getPane('cqopsRadar').style.zIndex=350;map.getPane('cqopsRadar').style.pointerEvents='none';
   map.createPane('cqopsGrayline');map.getPane('cqopsGrayline').style.zIndex=300;map.getPane('cqopsGrayline').style.pointerEvents='none';
@@ -851,9 +881,18 @@ function initMap(cfg){
   map.createPane('cqopsActive');map.getPane('cqopsActive').style.zIndex=460;map.getPane('cqopsActive').style.pointerEvents='none';
   map.createPane('cqopsMarker');map.getPane('cqopsMarker').style.zIndex=500;
   var style=styleUrlForTheme(cfg.mapTileUrl);
-  if(typeof L.maplibreGL==='function'){
-    mainGL=L.maplibreGL({style:style,attributionControl:false}).addTo(map);
-    suppressMissingImages(mainGL);
+  if(useTiles){
+    try{
+      mainGL=L.maplibreGL({style:style,attributionControl:false}).addTo(map);
+      suppressMissingImages(mainGL);
+    }catch(e){
+      D('initMap','MapLibre GL failed ('+e+') — rebuilding with world image fallback');
+      _webglBroken=true;_webglOK=false;
+      mainGL=null;
+      map.remove();map=null;
+      initMap(cfg);
+      return;
+    }
   }
   // Layer groups — each on its own pane for correct z-ordering above radar.
   qsoLineLayer=L.layerGroup([],{pane:'cqopsPath'}).addTo(map);
@@ -882,9 +921,10 @@ function initMap(cfg){
   })()
   // Grayline: always-on below radar.
   enableGrayline();
-  // Offline map fallback — uses equirectangular CRS (EPSG:4326) matching the
-  // embedded world map image. Removed when SSE reconnects and tiles load.
-  if(!cfg.isOnline){
+  // Offline map fallback — uses the embedded world map image. Shown when
+  // offline (equirectangular CRS) or when WebGL tiles are unavailable
+  // (Mercator CRS). Removed when SSE reconnects and tiles load.
+  if(!useTiles){
     if(!map._cqopsOffline){
       map._cqopsOffline=L.imageOverlay('/api/map-earth',[[-90,-180],[90,180]],{opacity:0.9,pane:'cqopsRadar'}).addTo(map);
     }
@@ -900,6 +940,10 @@ function initMap(cfg){
 // If the map was created with offline CRS, destroy and re-init with tiles.
 function removeOfflineOverlay(){
   if(!map)return;
+  // WebGL is definitively unavailable on this machine — tiles can never
+  // render, so keep the image map instead of destroying and recreating it
+  // on every SSE reconnect.
+  if(_webglChecked&&!_webglOK)return;
   if(map._cqopsOffline){map.removeLayer(map._cqopsOffline);map._cqopsOffline=null}
   if(map._cqopsOfflineCRS){
     // Disconnect observers that reference the old map instance before
@@ -921,9 +965,22 @@ function initLocalMap(lat,lon){
   mapLocal=L.map('map-local-container',{zoomControl:false,attributionControl:false,maxZoom:18}).setView([lat,lon],11);
   mapLocal.createPane('cqopsRadar');mapLocal.getPane('cqopsRadar').style.zIndex=350;mapLocal.getPane('cqopsRadar').style.pointerEvents='none';
   mapLocal.createPane('cqopsGrayline');mapLocal.getPane('cqopsGrayline').style.zIndex=300;mapLocal.getPane('cqopsGrayline').style.pointerEvents='none';
-  if(typeof L.maplibreGL==='function'){
-    localTiles=L.maplibreGL({style:styleUrlForTheme(mapCfg.mapTileUrl),attributionControl:false}).addTo(mapLocal);
-    suppressMissingImages(localTiles);
+  if(_glTilesUsable()){
+    try{
+      localTiles=L.maplibreGL({style:styleUrlForTheme(mapCfg.mapTileUrl),attributionControl:false}).addTo(mapLocal);
+      suppressMissingImages(localTiles);
+    }catch(e){
+      D('initLocalMap','MapLibre GL failed ('+e+') — rebuilding with world image fallback');
+      _webglBroken=true;_webglOK=false;
+      localTiles=null;
+      mapLocal.remove();mapLocal=null;
+      initLocalMap(lat,lon);
+      return;
+    }
+  }else if(!mapLocal._cqopsOffline){
+    // WebGL unavailable — embedded world image keeps the local map usable
+    // (Mercator CRS so radar tiles and APRS markers stay aligned).
+    mapLocal._cqopsOffline=L.imageOverlay('/api/map-earth',[[-90,-180],[90,180]],{opacity:0.9,pane:'cqopsRadar'}).addTo(mapLocal);
   }
   // Station marker on local map — small, below APRS symbols.
   stationLocalMarker=L.circleMarker([lat,lon],{radius:5,color:qsoPathTheme().station,fillColor:qsoPathTheme().station,fillOpacity:0.85,weight:2.5,pane:'shadowPane',className:'local-station-dot'}).addTo(mapLocal);
