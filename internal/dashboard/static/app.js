@@ -783,6 +783,7 @@ var _mapResizeObserver=null,_mapPollActive=false;
 // GL layer crashes the page. Probe once with a throwaway canvas and use
 // the embedded world-map image as the tile fallback when unavailable.
 var _webglChecked=false,_webglOK=false,_webglBroken=false;
+var _tilesBlocked=false,_tileErrStreak=0;
 function _webglAvailable(){
   if(_webglChecked)return _webglOK;
   _webglChecked=true;
@@ -795,9 +796,51 @@ function _webglAvailable(){
   return _webglOK;
 }
 // _glTilesUsable returns true only when the Leaflet binding is loaded AND
-// the browser can actually create a GL context (and none failed so far).
+// the browser can actually create a GL context (and none failed so far, and
+// the tile provider hasn't blocked us).
 function _glTilesUsable(){
-  return typeof L!=='undefined'&&typeof L.maplibreGL==='function'&&_webglAvailable()&&!_webglBroken;
+  return typeof L!=='undefined'&&typeof L.maplibreGL==='function'&&_webglAvailable()&&!_webglBroken&&!_tilesBlocked;
+}
+
+// _fallbackToImage removes the GL tile layer on the given map and replaces
+// it with the embedded world map image. Idempotent per map.
+function _fallbackToImage(isLocal){
+  _tilesBlocked=true;
+  if(isLocal){
+    if(mapLocal&&localTiles){try{mapLocal.removeLayer(localTiles)}catch(e){}localTiles=null}
+    if(mapLocal&&!mapLocal._cqopsOffline){
+      mapLocal._cqopsOffline=L.imageOverlay('/api/map-earth',[[-90,-180],[90,180]],{opacity:0.9,pane:'cqopsRadar'}).addTo(mapLocal);
+    }
+  }else{
+    if(map&&mainGL){try{map.removeLayer(mainGL)}catch(e){}mainGL=null}
+    if(map&&!map._cqopsOffline){
+      map._cqopsOffline=L.imageOverlay('/api/map-earth',[[-90,-180],[90,180]],{opacity:0.9,pane:'cqopsRadar'}).addTo(map);
+    }
+  }
+}
+
+// _armGLFallback watches the MapLibre map for provider failures: a style
+// fetch error (403/429 IP ban, 5xx) triggers an immediate switch to the
+// embedded world map; per-tile errors (e.tile) are common, so only a long
+// consecutive streak of them is treated as a ban. Successful tile loads
+// reset the streak.
+function _armGLFallback(glLayer,isLocal){
+  var m=glLayer.getMaplibreMap();
+  if(!m||typeof m.on!=='function')return;
+  m.on('error',function(e){
+    var err=e&&e.error;
+    if(err&&err.tile){
+      _tileErrStreak++;
+      if(_tileErrStreak>=20){
+        D('initMap','tile errors '+_tileErrStreak+' in a row — provider likely blocked, switching to world image');
+        _fallbackToImage(isLocal);
+      }
+      return;
+    }
+    D('initMap','MapLibre style error ('+(err&&(err.status||err.message||err))+') — switching to world image');
+    _fallbackToImage(isLocal);
+  });
+  m.on('data',function(e){if(e&&e.dataType==='tile')_tileErrStreak=0});
 }
 
 // _ensureMapLibreGL loads the MapLibre GL scripts dynamically if they
@@ -885,6 +928,7 @@ function initMap(cfg){
     try{
       mainGL=L.maplibreGL({style:style,attributionControl:false}).addTo(map);
       suppressMissingImages(mainGL);
+      _armGLFallback(mainGL,false);
     }catch(e){
       D('initMap','MapLibre GL failed ('+e+') — rebuilding with world image fallback');
       _webglBroken=true;_webglOK=false;
@@ -940,10 +984,10 @@ function initMap(cfg){
 // If the map was created with offline CRS, destroy and re-init with tiles.
 function removeOfflineOverlay(){
   if(!map)return;
-  // WebGL is definitively unavailable on this machine — tiles can never
-  // render, so keep the image map instead of destroying and recreating it
-  // on every SSE reconnect.
-  if(_webglChecked&&!_webglOK)return;
+  // WebGL is definitively unavailable on this machine OR the tile provider
+  // blocked us — tiles can never render, so keep the image map instead of
+  // destroying and recreating it on every SSE reconnect.
+  if((_webglChecked&&!_webglOK)||_tilesBlocked)return;
   if(map._cqopsOffline){map.removeLayer(map._cqopsOffline);map._cqopsOffline=null}
   if(map._cqopsOfflineCRS){
     // Disconnect observers that reference the old map instance before
@@ -969,6 +1013,7 @@ function initLocalMap(lat,lon){
     try{
       localTiles=L.maplibreGL({style:styleUrlForTheme(mapCfg.mapTileUrl),attributionControl:false}).addTo(mapLocal);
       suppressMissingImages(localTiles);
+      _armGLFallback(localTiles,true);
     }catch(e){
       D('initLocalMap','MapLibre GL failed ('+e+') — rebuilding with world image fallback');
       _webglBroken=true;_webglOK=false;
