@@ -802,6 +802,13 @@ function _glTilesUsable(){
   return typeof L!=='undefined'&&typeof L.maplibreGL==='function'&&_webglAvailable()&&!_webglBroken&&!_tilesBlocked;
 }
 
+// _earthURL picks the embedded world map variant for the given Leaflet map:
+// Mercator CRS needs the reprojected raster, the offline EPSG:4326 map uses
+// the equirectangular one (which the TUI also uses).
+function _earthURL(m){
+  return m&&m._cqopsOfflineCRS?'/api/map-earth':'/api/map-earth-3857';
+}
+
 // _fallbackToImage removes the GL tile layer on the given map and replaces
 // it with the embedded world map image. Idempotent per map.
 function _fallbackToImage(isLocal){
@@ -809,12 +816,12 @@ function _fallbackToImage(isLocal){
   if(isLocal){
     if(mapLocal&&localTiles){try{mapLocal.removeLayer(localTiles)}catch(e){}localTiles=null}
     if(mapLocal&&!mapLocal._cqopsOffline){
-      mapLocal._cqopsOffline=L.imageOverlay('/api/map-earth',[[-90,-180],[90,180]],{opacity:0.9,pane:'cqopsRadar'}).addTo(mapLocal);
+      mapLocal._cqopsOffline=L.imageOverlay(_earthURL(mapLocal),[[-90,-180],[90,180]],{opacity:0.9,pane:'cqopsRadar'}).addTo(mapLocal);
     }
   }else{
     if(map&&mainGL){try{map.removeLayer(mainGL)}catch(e){}mainGL=null}
     if(map&&!map._cqopsOffline){
-      map._cqopsOffline=L.imageOverlay('/api/map-earth',[[-90,-180],[90,180]],{opacity:0.9,pane:'cqopsRadar'}).addTo(map);
+      map._cqopsOffline=L.imageOverlay(_earthURL(map),[[-90,-180],[90,180]],{opacity:0.9,pane:'cqopsRadar'}).addTo(map);
     }
   }
 }
@@ -966,11 +973,12 @@ function initMap(cfg){
   // Grayline: always-on below radar.
   enableGrayline();
   // Offline map fallback — uses the embedded world map image. Shown when
-  // offline (equirectangular CRS) or when WebGL tiles are unavailable
-  // (Mercator CRS). Removed when SSE reconnects and tiles load.
+  // offline (equirectangular CRS, equirect raster) or when WebGL tiles are
+  // unavailable (Mercator CRS, Mercator raster). Removed when SSE
+  // reconnects and tiles load.
   if(!useTiles){
     if(!map._cqopsOffline){
-      map._cqopsOffline=L.imageOverlay('/api/map-earth',[[-90,-180],[90,180]],{opacity:0.9,pane:'cqopsRadar'}).addTo(map);
+      map._cqopsOffline=L.imageOverlay(_earthURL(map),[[-90,-180],[90,180]],{opacity:0.9,pane:'cqopsRadar'}).addTo(map);
     }
   }
   // Radar: always enabled — no toggle button.
@@ -1024,8 +1032,9 @@ function initLocalMap(lat,lon){
     }
   }else if(!mapLocal._cqopsOffline){
     // WebGL unavailable — embedded world image keeps the local map usable
-    // (Mercator CRS so radar tiles and APRS markers stay aligned).
-    mapLocal._cqopsOffline=L.imageOverlay('/api/map-earth',[[-90,-180],[90,180]],{opacity:0.9,pane:'cqopsRadar'}).addTo(mapLocal);
+    // (Mercator CRS + Mercator raster so radar tiles and APRS markers stay
+    // aligned).
+    mapLocal._cqopsOffline=L.imageOverlay(_earthURL(mapLocal),[[-90,-180],[90,180]],{opacity:0.9,pane:'cqopsRadar'}).addTo(mapLocal);
   }
   // Station marker on local map — small, below APRS symbols.
   stationLocalMarker=L.circleMarker([lat,lon],{radius:5,color:qsoPathTheme().station,fillColor:qsoPathTheme().station,fillOpacity:0.85,weight:2.5,pane:'shadowPane',className:'local-station-dot'}).addTo(mapLocal);

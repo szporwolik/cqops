@@ -76,6 +76,38 @@ func TestCSPAndStaticFiles(t *testing.T) {
 	}
 }
 
+// TestMapEarthVariants verifies both embedded map rasters are served: the
+// equirectangular one for EPSG:4326 maps and the Mercator reprojection for
+// Leaflet maps in the default CRS.
+func TestMapEarthVariants(t *testing.T) {
+	hub := NewHub()
+	state := NewState(hub)
+	mux := NewMux(context.Background(), state, hub)
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	for _, path := range []string{"/api/map-earth", "/api/map-earth-3857"} {
+		resp, err := http.Get(srv.URL + path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		body, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("%s status = %d", path, resp.StatusCode)
+		}
+		if ct := resp.Header.Get("Content-Type"); ct != "image/jpeg" {
+			t.Errorf("%s content type = %q, want image/jpeg", path, ct)
+		}
+		if len(body) < 4 || body[0] != 0xFF || body[1] != 0xD8 || body[2] != 0xFF {
+			t.Errorf("%s does not return JPEG data", path)
+		}
+	}
+}
+
 func TestSnapshot_InitialEmpty(t *testing.T) {
 	hub := NewHub()
 	state := NewState(hub)

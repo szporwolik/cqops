@@ -41,3 +41,15 @@ func TestWorldMap_Readable(t *testing.T) {
 		t.Error("read 0 bytes from WorldMap")
 	}
 }
+
+func TestWorldMapMercator_Embedded(t *testing.T) {
+	// The Leaflet dashboard uses the Mercator reprojection — it must be
+	// embedded and start with JPEG magic bytes.
+	if len(WorldMapMercator) < 50*1024 {
+		t.Fatalf("WorldMapMercator size = %d bytes, expected at least 50 KB", len(WorldMapMercator))
+	}
+	if WorldMapMercator[0] != 0xFF || WorldMapMercator[1] != 0xD8 || WorldMapMercator[2] != 0xFF {
+		t.Errorf("WorldMapMercator does not start with JPEG magic bytes: got %02X %02X %02X",
+			WorldMapMercator[0], WorldMapMercator[1], WorldMapMercator[2])
+	}
+}

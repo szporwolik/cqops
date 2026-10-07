@@ -61,6 +61,11 @@ func NewMux(streamCtx context.Context, state *State, hub *Hub) *http.ServeMux {
 	// Embedded world map — offline fallback for Leaflet when tiles are unavailable.
 	mux.HandleFunc("/api/map-earth", handleMapEarth())
 
+	// Mercator variant for Leaflet maps running in Web Mercator CRS (local
+	// map, online-no-WebGL fallback) — the equirectangular raster would put
+	// our locator thousands of km off in that projection.
+	mux.HandleFunc("/api/map-earth-3857", handleMapEarth3857())
+
 	// Radar tile proxy — avoids CORS/ORB issues with RainViewer CDN.
 	mux.HandleFunc("/radar-proxy/", handleRadarProxy())
 
@@ -168,6 +173,16 @@ func handleMapEarth() http.HandlerFunc {
 		w.Header().Set("Content-Type", "image/jpeg")
 		w.Header().Set("Cache-Control", "public, max-age=86400")
 		w.Write(assets.WorldMap)
+	}
+}
+
+// handleMapEarth3857 serves the Web Mercator variant for Leaflet maps in
+// the default (Mercator) CRS.
+func handleMapEarth3857() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		w.Write(assets.WorldMapMercator)
 	}
 }
 
