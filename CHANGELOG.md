@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.11.1 — 2026-10-07
+
+> **Dashboard map resilience, a per-logbook fixed APRS grid, and a round of field fixes.** The built-in dashboard now survives machines without WebGL and tile-provider outages by falling back to an embedded world map — reprojected to Web Mercator so everything lines up — and APRS can be pinned to a fixed grid locator per logbook.
+
+### Dashboard
+- <u>**WebGL-less fallback**</u>: machines without GL drivers (VNC/RDP sessions, older GPUs) no longer crash the map with a WebGL context error and a flood of binding errors — the dashboard probes WebGL once, skips MapLibre entirely when it is unavailable, and renders an embedded world map instead.
+- <u>**Tile-provider failure detection**</u>: style-level errors (403/429 — e.g. an IP ban) switch to the embedded map immediately; a streak of 20 failed tiles without a single successful load does the same.
+- <u>**Mercator-correct offline raster**</u>: a new Web Mercator variant of the embedded world map (`/api/map-earth-3857`) replaces the equirectangular image on Leaflet maps running in the default Mercator CRS (local APRS map, online fallback) — previously the station rendered around 29°N (North Africa) because the equirect raster does not match Mercator latitudes. The offline EPSG:4326 mode and the in-app map keep the original image.
+- <u>**Consistent big map**</u>: the main map now transitions to Web Mercator when internet returns, even without WebGL — the radar overlay, station dot and QSO paths stay aligned, with no map recreation churn on SSE reconnects.
+- **Dashboard stats stay fresh**: QSO/rate badges refresh after WSJT-X auto-logged contacts and periodically, instead of freezing at zero.
+
+### APRS
+- <u>**Fixed grid per logbook**</u>: a new `Fixed grid (opt)` field in the logbook APRS settings pins the APRS centre and beacons to that locator, overriding GPS and the station grid (priority: fixed > GPS > station grid). The grid saved into QSOs is unaffected. Short and long locators (2–10 characters) are accepted; invalid values are rejected on save.
+
+### Logbook management
+- **Duplicate logbooks**: `D` in the logbook chooser duplicates the selected logbook; `Ins` creates a new one (the hint now appears in the bottom bar).
+
+### Fixes
+- **QRZ.RU session errors**: lowercase `<session>` XML error responses are no longer silently read as an empty result.
+- **No more false "lookup timed out" toasts** from Wavelog while the operator keeps typing — the watchdog tracks the in-flight lookup instead of a stale done flag.
+- **JTTY** accepted as a standalone mode (MFSK submode) in the QSO form and ADIF imports.
+- **PSK filter hints** in the help bar now show the real `t`/`b`/`m` keys.
+- **Dashboard QSO loading and Wavelog lookup enrichment** restored after a regression.
+
 ## v0.11.0 — 2026-09-20
 
 > **<u>Major release</u>** — 27 new features and 110 fixes, hardened through months of field testing by a small group of operators. The headline: CQOps now speaks only the Wavelog API v2, with full edit/delete sync and a read-only mode for shared club stations.
