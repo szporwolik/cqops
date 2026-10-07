@@ -9,6 +9,7 @@
 - <u>**Tile-provider failure detection**</u>: style-level errors (403/429 — e.g. an IP ban) switch to the embedded map immediately; a streak of 20 failed tiles without a single successful load does the same.
 - <u>**Mercator-correct offline raster**</u>: a new Web Mercator variant of the embedded world map (`/api/map-earth-3857`) replaces the equirectangular image on Leaflet maps running in the default Mercator CRS (local APRS map, online fallback) — previously the station rendered around 29°N (North Africa) because the equirect raster does not match Mercator latitudes. The offline EPSG:4326 mode and the in-app map keep the original image.
 - <u>**Consistent big map**</u>: the main map now transitions to Web Mercator when internet returns, even without WebGL — the radar overlay, station dot and QSO paths stay aligned, with no map recreation churn on SSE reconnects.
+- **Radar is Mercator-only**: the RainViewer overlay is hidden on the offline equirectangular (EPSG:4326) map, where Mercator tiles cannot line up — no radar tiles or radar requests in offline mode; it returns automatically once the map switches back to Mercator.
 - **Dashboard stats stay fresh**: QSO/rate badges refresh after WSJT-X auto-logged contacts and periodically, instead of freezing at zero.
 
 ### APRS
