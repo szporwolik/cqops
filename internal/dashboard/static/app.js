@@ -262,6 +262,8 @@ function connectSSE(){
       _refreshQR(d);
       if(typeof map!=='undefined'&&map&&!map._cqopsOfflineCRS){
         D('display','removing online map, re-creating with offline CRS');
+        // Radar is Mercator-only — disable it before the map switches CRS.
+        disableRadarLayer();
         // Destroy the online map (clean up MapLibre GL / WebGL context).
         _mapPollActive=false;
         if(_mapResizeObserver){_mapResizeObserver.disconnect();_mapResizeObserver=null}
@@ -1244,6 +1246,9 @@ async function fetchJsonWithTimeout(url,ms){
 
 async function enableRadarLayer(){
   if(radarEnabled||radarLoading||!map)return;
+  // Radar tiles are Web Mercator — they would be misplaced on an
+  // EPSG:4326 (offline) map, so radar is hidden in offline CRS mode.
+  if(map._cqopsOfflineCRS)return;
   if(!navigator.onLine||!(displayCfg&&displayCfg.isOnline)){return}
   radarLoading=true;
   try{
@@ -1269,7 +1274,7 @@ async function enableRadarLayer(){
 }
 
 function disableRadarLayer(){
-  if(radarLayer){map.removeLayer(radarLayer);radarLayer=null}
+  if(radarLayer){if(map){try{map.removeLayer(radarLayer)}catch(e){}}radarLayer=null}
   if(radarLayerLocal&&mapLocal){mapLocal.removeLayer(radarLayerLocal);radarLayerLocal=null}
   radarEnabled=false;radarLoading=false;
   if(radarTimer){clearInterval(radarTimer);radarTimer=null}
@@ -1277,6 +1282,9 @@ function disableRadarLayer(){
 
 async function refreshRadarLayer(){
   if(!radarEnabled||!map)return;
+  // Same rule as enable: never draw Mercator radar tiles on an
+  // EPSG:4326 (offline) map.
+  if(map._cqopsOfflineCRS)return;
   try{
     var meta=await fetchJsonWithTimeout('https://api.rainviewer.com/public/weather-maps.json',6000);
     if(!meta||!meta.radar||!meta.radar.past||!meta.radar.past.length)return;
