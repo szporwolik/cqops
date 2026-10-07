@@ -923,7 +923,10 @@ function initMap(cfg){
   else if(!useTiles){D('initMap','online but WebGL unavailable — world image fallback (Web Mercator)')}
   else{D('initMap','online — using default Web Mercator tiles')}
   map=L.map('map-container',mapOpts).setView([51,10],3);
-  map._cqopsOfflineCRS=!useTiles;
+  // _cqopsOfflineCRS marks the EPSG:4326 equirectangular offline mode.
+  // Online without WebGL keeps Web Mercator (with the Mercator raster) so
+  // radar tiles and markers stay aligned.
+  map._cqopsOfflineCRS=!cfg.isOnline;
   // Custom panes for layer ordering: radar below QSO paths, markers on top.
   map.createPane('cqopsRadar');map.getPane('cqopsRadar').style.zIndex=350;map.getPane('cqopsRadar').style.pointerEvents='none';
   map.createPane('cqopsGrayline');map.getPane('cqopsGrayline').style.zIndex=300;map.getPane('cqopsGrayline').style.pointerEvents='none';
@@ -989,22 +992,18 @@ function initMap(cfg){
 }
 
 // removeOfflineOverlay is called when SSE reconnects (internet restored).
-// If the map was created with offline CRS, destroy and re-init with tiles.
+// If the map was created with offline CRS, destroy and re-init with the
+// online settings (tiles, or the Mercator raster when WebGL is missing).
 function removeOfflineOverlay(){
   if(!map)return;
-  // WebGL is definitively unavailable on this machine OR the tile provider
-  // blocked us — tiles can never render, so keep the image map instead of
-  // destroying and recreating it on every SSE reconnect.
-  if((_webglChecked&&!_webglOK)||_tilesBlocked)return;
+  // A Mercator map (online) keeps its layers — there is nothing to remove.
+  if(!map._cqopsOfflineCRS)return;
   if(map._cqopsOffline){map.removeLayer(map._cqopsOffline);map._cqopsOffline=null}
-  if(map._cqopsOfflineCRS){
-    // Disconnect observers that reference the old map instance before
-    // destroying it — prevents "map is null" crashes in stale callbacks.
-    _mapPollActive=false;
-    if(_mapResizeObserver){_mapResizeObserver.disconnect();_mapResizeObserver=null}
-    map.remove();map=null;
-    // Re-init with online tiles on next renderAll.
-  }
+  // Destroy the EPSG:4326 map; the next renderAll/display event re-inits
+  // it with the current online status.
+  _mapPollActive=false;
+  if(_mapResizeObserver){_mapResizeObserver.disconnect();_mapResizeObserver=null}
+  map.remove();map=null;
 }
 
 // ---- Local map (station-centre, ~50 km view) ----
