@@ -26,6 +26,7 @@
 - **PSK filter hints** in the help bar now show the real `t`/`b`/`m` keys.
 - **Dashboard QSO loading and Wavelog lookup enrichment** restored after a regression.
 - **Logbook editor `Save & Back` sits flush** under the last field row, matching every other config menu (it kept a blank separator line).
+- **Windows binaries report the right version**: the checked-in PE resources were still stamped `0.8.13.0` from the 0.8.x line — release builds embed them as-is, so Windows file properties showed a version four releases old. `winres/winres.json` and both `rsrc_windows_*.syso` are regenerated at 0.11.1.
 
 ### Under the Hood
 - **Dependency refresh and a newer Go toolchain**: charm.land bubbletea v2.1.0, NimbleMarkets/ntcharts v2.8.0, modernc.org/sqlite v1.60.1 (modernc.org/libc v1.77.1), k0swe/wsjtx-go v4.3.1, golang.org/x/sys v0.49.0 and golang.org/x/text v0.43.0, plus the transitive Charm and runewidth updates; `golang.org/x/exp` is no longer needed at all. ntcharts v2.8.0 raises the minimum toolchain to **Go 1.26.9** — the previous 1.26.6 standard library carried nine `net/http`, `crypto/tls` and `net/textproto` advisories, all on paths CQOps uses (dashboard TLS listener, Wavelog/QRZ/REF clients). With the new toolchain `govulncheck` reports **no vulnerabilities**. `gofmt`, `go vet`, the full test suite and the `-race` run stay green.
