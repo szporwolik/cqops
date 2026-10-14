@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.11.1 — 2026-10-07
+## v0.11.1 — 2026-10-15
 
 > **Dashboard map resilience, a per-logbook fixed APRS grid, and a round of field fixes.** The built-in dashboard now survives machines without WebGL and tile-provider outages by falling back to an embedded world map — reprojected to Web Mercator so everything lines up — and APRS can be pinned to a fixed grid locator per logbook.
 
@@ -19,11 +19,13 @@
 - **Duplicate logbooks**: `D` in the logbook chooser duplicates the selected logbook; `Ins` creates a new one (the hint now appears in the bottom bar).
 
 ### Fixes
+- <u>**QRZ.com sessions survive provider outages**</u>: a timeout or refused connection while looking up a callsign no longer discards the cached session key (valid ~24 h) and re-logs in on every entry. The key is kept and the error goes straight to the callbook fallback; only a genuine XML session error (`Invalid session key`, `Session Timeout`) triggers re-authentication. A five-hour QRZ outage at the club station previously burned eight logins plus two failed auths — three HTTP round-trips per callsign, all of them doomed.
 - **QRZ.RU session errors**: lowercase `<session>` XML error responses are no longer silently read as an empty result.
 - **No more false "lookup timed out" toasts** from Wavelog while the operator keeps typing — the watchdog tracks the in-flight lookup instead of a stale done flag.
 - **JTTY** accepted as a standalone mode (MFSK submode) in the QSO form and ADIF imports.
 - **PSK filter hints** in the help bar now show the real `t`/`b`/`m` keys.
 - **Dashboard QSO loading and Wavelog lookup enrichment** restored after a regression.
+- **Logbook editor `Save & Back` sits flush** under the last field row, matching every other config menu (it kept a blank separator line).
 
 ## v0.11.0 — 2026-09-20
 
