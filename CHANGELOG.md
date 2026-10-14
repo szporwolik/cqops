@@ -27,6 +27,9 @@
 - **Dashboard QSO loading and Wavelog lookup enrichment** restored after a regression.
 - **Logbook editor `Save & Back` sits flush** under the last field row, matching every other config menu (it kept a blank separator line).
 
+### Under the Hood
+- **Dependency refresh and a newer Go toolchain**: charm.land bubbletea v2.1.0, NimbleMarkets/ntcharts v2.8.0, modernc.org/sqlite v1.60.1 (modernc.org/libc v1.77.1), k0swe/wsjtx-go v4.3.1, golang.org/x/sys v0.49.0 and golang.org/x/text v0.43.0, plus the transitive Charm and runewidth updates; `golang.org/x/exp` is no longer needed at all. ntcharts v2.8.0 raises the minimum toolchain to **Go 1.26.9** — the previous 1.26.6 standard library carried nine `net/http`, `crypto/tls` and `net/textproto` advisories, all on paths CQOps uses (dashboard TLS listener, Wavelog/QRZ/REF clients). With the new toolchain `govulncheck` reports **no vulnerabilities**. `gofmt`, `go vet`, the full test suite and the `-race` run stay green.
+
 ## v0.11.0 — 2026-09-20
 
 > **<u>Major release</u>** — 27 new features and 110 fixes, hardened through months of field testing by a small group of operators. The headline: CQOps now speaks only the Wavelog API v2, with full edit/delete sync and a read-only mode for shared club stations.
