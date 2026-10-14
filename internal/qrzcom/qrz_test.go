@@ -2,6 +2,7 @@ package qrzcom
 
 import (
 	"encoding/xml"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -325,6 +326,97 @@ func TestLookup_SessionReuse(t *testing.T) {
 	}
 	if callCount != 1 {
 		t.Errorf("expected 1 HTTP call with cached session, got %d", callCount)
+	}
+}
+
+// TestLookup_TransportFailureKeepsCachedSession reproduces the club
+// incident: QRZ timed out (or refused connections) while the cached
+// session was still valid. The old code dropped the key on ANY error and
+// burned a login round-trip per lookup during the outage. Transport
+// failures must keep the cached key.
+func TestLookup_TransportFailureKeepsCachedSession(t *testing.T) {
+	authCalls := 0
+	lookupCalls := 0
+	c := NewClient("user", "pass")
+	c.httpFn = func(u string) ([]byte, error) {
+		if strings.Contains(u, "username=") {
+			authCalls++
+			b, _ := xml.Marshal(qrzDatabase{Session: qrzKey{Key: "k1"}})
+			return b, nil
+		}
+		lookupCalls++
+		return nil, fmt.Errorf("dial tcp: connect: connection refused")
+	}
+
+	// Prime the cache: first lookup authenticates (key stored) and then
+	// fails on the lookup request itself.
+	_, _ = c.Lookup("SP9ABC")
+	if authCalls != 1 || lookupCalls != 1 {
+		t.Fatalf("setup: authCalls=%d lookupCalls=%d, want 1/1", authCalls, lookupCalls)
+	}
+
+	// Second lookup with the cached key: transport fails again. The key
+	// must survive and no re-login may be attempted — the error goes back
+	// to the caller (which falls back to other providers).
+	_, err := c.Lookup("SP9ABC")
+	if err == nil {
+		t.Error("expected transport error on second lookup")
+	}
+	if authCalls != 1 {
+		t.Errorf("transport failure triggered re-auth: authCalls=%d, want 1", authCalls)
+	}
+	if lookupCalls != 2 {
+		t.Errorf("lookupCalls=%d, want 2", lookupCalls)
+	}
+	c.mu.Lock()
+	key := c.key
+	c.mu.Unlock()
+	if key != "k1" {
+		t.Errorf("cached session dropped on transport failure: key=%q, want k1", key)
+	}
+}
+
+// TestLookup_SessionErrorReauthenticates verifies that a genuine QRZ XML
+// session error ("Session Timeout") still discards the key and logs in
+// again.
+func TestLookup_SessionErrorReauthenticates(t *testing.T) {
+	c := NewClient("user", "pass")
+	c.mu.Lock()
+	c.key = "stale"
+	c.kUser = c.user
+	c.kPass = c.pass
+	c.mu.Unlock()
+
+	authCalls := 0
+	c.httpFn = func(u string) ([]byte, error) {
+		if strings.Contains(u, "username=") {
+			authCalls++
+			b, _ := xml.Marshal(qrzDatabase{Session: qrzKey{Key: "fresh"}})
+			return b, nil
+		}
+		if strings.Contains(u, "s=stale") {
+			b, _ := xml.Marshal(qrzDatabase{Session: qrzKey{Error: "Session Timeout"}})
+			return b, nil
+		}
+		b, _ := xml.Marshal(qrzDatabase{
+			Session:  qrzKey{Key: "fresh"},
+			Callsign: qrzCall{Call: "SP9ABC", Fname: "Jan"},
+		})
+		return b, nil
+	}
+
+	data, err := c.Lookup("SP9ABC")
+	if err != nil || data == nil || data.Callsign != "SP9ABC" {
+		t.Fatalf("lookup after session error failed: %v %v", data, err)
+	}
+	if authCalls != 1 {
+		t.Errorf("authCalls=%d, want 1 (re-login after session error)", authCalls)
+	}
+	c.mu.Lock()
+	key := c.key
+	c.mu.Unlock()
+	if key != "fresh" {
+		t.Errorf("cached key after re-auth = %q, want fresh", key)
 	}
 }
 

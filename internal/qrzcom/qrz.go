@@ -91,12 +91,33 @@ func (c *Client) lookup(callsign string) (*CallData, error) {
 		if err == nil {
 			return data, nil
 		}
-		applog.Debug("QRZ cached session failed, re-authenticating")
-		c.mu.Lock()
-		c.key = ""
-		c.mu.Unlock()
+		if isQRZSessionError(err) {
+			// XML session error ("Invalid session key", "Session
+			// Timeout", …) — the key is dead, log in again below.
+			applog.Debug("QRZ cached session failed, re-authenticating")
+			c.mu.Lock()
+			c.key = ""
+			c.mu.Unlock()
+		} else {
+			// Transport failure (timeout, connection refused, broken
+			// response) — the key stays valid (~24 h). Return instead of
+			// burning a login round-trip that would fail too during an
+			// outage; the caller falls back to the next provider.
+			applog.Debug("QRZ transport failure, keeping cached session", "error", err)
+			return nil, err
+		}
 	}
 	return c.qrzLoginLookup(callsign)
+}
+
+// isQRZSessionError reports whether the error came from a QRZ XML session
+// error (e.g. "Invalid session key" or "Session Timeout") rather than a
+// transport failure. qrzLookup prefixes XML session errors with "QRZ: ".
+func isQRZSessionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.HasPrefix(err.Error(), "QRZ: ")
 }
 
 func (c *Client) testConnection() error {
