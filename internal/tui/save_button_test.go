@@ -222,8 +222,9 @@ func TestLogbookChooserAPRSTXReachable(t *testing.T) {
 			c2.fm.btn.Focus, c2.station.aprsCbFocus)
 	}
 
-	// APRS enabled: Tab from AprsComment reaches the APRS test button first,
-	// and only Tab from the test button reaches Save & Back.
+	// APRS enabled: Tab from AprsComment reaches the Fixed location field
+	// first, then the APRS test button, and only Tab from the test button
+	// reaches Save & Back.
 	c3 := NewLogbookChooser(a, NewToastQueue())
 	c3.mode = chooserEdit
 	c3.station.AprsEnabled = true
@@ -231,8 +232,13 @@ func TestLogbookChooserAPRSTXReachable(t *testing.T) {
 	c3.fm.row = 27
 	c3.station.focusRow(27)
 	c3.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	if c3.fm.btn.Focus || !c3.station.FixedLocator.Focused() {
+		t.Fatalf("tab from APRS comment: saveBtn.Focus=%v fixedLocatorFocused=%v, want fixed location focused",
+			c3.fm.btn.Focus, c3.station.FixedLocator.Focused())
+	}
+	c3.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 	if c3.fm.btn.Focus || c3.station.aprsBtnFocus != 1 {
-		t.Fatalf("tab from APRS comment: saveBtn.Focus=%v aprsBtnFocus=%d, want test button focused",
+		t.Fatalf("tab from fixed location: saveBtn.Focus=%v aprsBtnFocus=%d, want test button focused",
 			c3.fm.btn.Focus, c3.station.aprsBtnFocus)
 	}
 	c3.Update(tea.KeyPressMsg{Code: tea.KeyTab})

@@ -278,3 +278,42 @@ func TestValidateImportRecord_NormalizeModeWithSubmode(t *testing.T) {
 		t.Errorf("submode should be FT4, got %q", q.Submode)
 	}
 }
+
+func TestValidateImportRecord_JTTY(t *testing.T) {
+	// Current WSJT-X format: standalone MODE=JTTY. The proposed ADIF 3.1.8
+	// (Item 183) makes JTTY an MFSK submode; both forms must be accepted.
+	legacy := NewQSO()
+	legacy.Call = "SP9MOA"
+	legacy.Band = "20m"
+	legacy.Freq = 14.080
+	legacy.Mode = "JTTY"
+	legacy.QSODate = "20260618"
+	legacy.TimeOn = "120000"
+	legacy.RSTSent = "59"
+	legacy.RSTRcvd = "59"
+
+	if err := ValidateImportRecord(legacy); err != nil {
+		t.Errorf("standalone JTTY should normalize to MFSK/JTTY: %v", err)
+	}
+	if legacy.Mode != "MFSK" || legacy.Submode != "JTTY" {
+		t.Errorf("standalone JTTY should become MFSK/JTTY, got %q/%q", legacy.Mode, legacy.Submode)
+	}
+
+	proposed := NewQSO()
+	proposed.Call = "SP9MOA"
+	proposed.Band = "20m"
+	proposed.Freq = 14.080
+	proposed.Mode = "MFSK"
+	proposed.Submode = "JTTY"
+	proposed.QSODate = "20260618"
+	proposed.TimeOn = "120000"
+	proposed.RSTSent = "59"
+	proposed.RSTRcvd = "59"
+
+	if err := ValidateImportRecord(proposed); err != nil {
+		t.Errorf("MFSK/JTTY should be accepted as-is: %v", err)
+	}
+	if proposed.Mode != "MFSK" || proposed.Submode != "JTTY" {
+		t.Errorf("MFSK/JTTY should stay unchanged, got %q/%q", proposed.Mode, proposed.Submode)
+	}
+}

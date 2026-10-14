@@ -262,6 +262,8 @@ function connectSSE(){
       _refreshQR(d);
       if(typeof map!=='undefined'&&map&&!map._cqopsOfflineCRS){
         D('display','removing online map, re-creating with offline CRS');
+        // Radar is Mercator-only — disable it before the map switches CRS.
+        disableRadarLayer();
         // Destroy the online map (clean up MapLibre GL / WebGL context).
         _mapPollActive=false;
         if(_mapResizeObserver){_mapResizeObserver.disconnect();_mapResizeObserver=null}
@@ -777,6 +779,79 @@ var lastQso=null,activeGrid=null;
 var mapLocal=null,stationLocalMarker=null,localTiles=null;
 var _mapResizeObserver=null,_mapPollActive=false;
 
+// ---- WebGL capability detection ----
+// MapLibre GL requires a working WebGL context. On machines without GL
+// drivers (VNC/RDP sessions, old GPUs) context creation fails and the
+// GL layer crashes the page. Probe once with a throwaway canvas and use
+// the embedded world-map image as the tile fallback when unavailable.
+var _webglChecked=false,_webglOK=false,_webglBroken=false;
+var _tilesBlocked=false,_tileErrStreak=0;
+function _webglAvailable(){
+  if(_webglChecked)return _webglOK;
+  _webglChecked=true;
+  try{
+    var c=document.createElement('canvas');
+    var gl=c.getContext('webgl2')||c.getContext('webgl')||c.getContext('experimental-webgl');
+    _webglOK=!!gl&&typeof gl.getParameter==='function';
+    if(_webglOK&&gl.getExtension('WEBGL_lose_context'))gl.getExtension('WEBGL_lose_context').loseContext();
+  }catch(e){_webglOK=false}
+  return _webglOK;
+}
+// _glTilesUsable returns true only when the Leaflet binding is loaded AND
+// the browser can actually create a GL context (and none failed so far, and
+// the tile provider hasn't blocked us).
+function _glTilesUsable(){
+  return typeof L!=='undefined'&&typeof L.maplibreGL==='function'&&_webglAvailable()&&!_webglBroken&&!_tilesBlocked;
+}
+
+// _earthURL picks the embedded world map variant for the given Leaflet map:
+// Mercator CRS needs the reprojected raster, the offline EPSG:4326 map uses
+// the equirectangular one (which the TUI also uses).
+function _earthURL(m){
+  return m&&m._cqopsOfflineCRS?'/api/map-earth':'/api/map-earth-3857';
+}
+
+// _fallbackToImage removes the GL tile layer on the given map and replaces
+// it with the embedded world map image. Idempotent per map.
+function _fallbackToImage(isLocal){
+  _tilesBlocked=true;
+  if(isLocal){
+    if(mapLocal&&localTiles){try{mapLocal.removeLayer(localTiles)}catch(e){}localTiles=null}
+    if(mapLocal&&!mapLocal._cqopsOffline){
+      mapLocal._cqopsOffline=L.imageOverlay(_earthURL(mapLocal),[[-90,-180],[90,180]],{opacity:0.9,pane:'cqopsRadar'}).addTo(mapLocal);
+    }
+  }else{
+    if(map&&mainGL){try{map.removeLayer(mainGL)}catch(e){}mainGL=null}
+    if(map&&!map._cqopsOffline){
+      map._cqopsOffline=L.imageOverlay(_earthURL(map),[[-90,-180],[90,180]],{opacity:0.9,pane:'cqopsRadar'}).addTo(map);
+    }
+  }
+}
+
+// _armGLFallback watches the MapLibre map for provider failures: a style
+// fetch error (403/429 IP ban, 5xx) triggers an immediate switch to the
+// embedded world map; per-tile errors (e.tile) are common, so only a long
+// consecutive streak of them is treated as a ban. Successful tile loads
+// reset the streak.
+function _armGLFallback(glLayer,isLocal){
+  var m=glLayer.getMaplibreMap();
+  if(!m||typeof m.on!=='function')return;
+  m.on('error',function(e){
+    var err=e&&e.error;
+    if(err&&err.tile){
+      _tileErrStreak++;
+      if(_tileErrStreak>=20){
+        D('initMap','tile errors '+_tileErrStreak+' in a row — provider likely blocked, switching to world image');
+        _fallbackToImage(isLocal);
+      }
+      return;
+    }
+    D('initMap','MapLibre style error ('+(err&&(err.status||err.message||err))+') — switching to world image');
+    _fallbackToImage(isLocal);
+  });
+  m.on('data',function(e){if(e&&e.dataType==='tile')_tileErrStreak=0});
+}
+
 // _ensureMapLibreGL loads the MapLibre GL scripts dynamically if they
 // weren't loaded at page start (e.g. the page opened while offline and
 // the CDN <script> tags failed). Calls cb() when ready — immediately if
@@ -784,8 +859,11 @@ var _mapResizeObserver=null,_mapPollActive=false;
 // Scripts are loaded sequentially (maplibre-gl.js first, then the
 // Leaflet binding) to prevent the binding from executing before the
 // core library defines its global (maplibregl).
+// When WebGL is unavailable the scripts are pointless (and load noise on
+// the console), so cb() is called immediately without injecting them.
 function _ensureMapLibreGL(cb){
   if(typeof L!=='undefined'&&typeof L.maplibreGL==='function'){cb();return}
+  if(!_webglAvailable()){D('initMap','WebGL unavailable — skipping MapLibre scripts, image fallback');cb();return}
   D('initMap','MapLibre GL not loaded — injecting CDN scripts');
   var s1=document.createElement('script');
   s1.src='https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.js';
@@ -838,11 +916,18 @@ function initMap(cfg){
   if(cfg.highlightLastQSO!==undefined)mapCfg.highlightLastQSO=!!cfg.highlightLastQSO;
   if(cfg.animateActivePath!==undefined)mapCfg.animateActivePath=!!cfg.animateActivePath;
   // When offline, use EPSG:4326 (equirectangular) to match the embedded map image.
-  // When online, default Web Mercator for MapLibre tiles.
+  // When online, default Web Mercator for MapLibre tiles — unless WebGL is
+  // unavailable, in which case the embedded world image is used as fallback
+  // (Mercator CRS keeps radar tiles and markers aligned).
+  var useTiles=!!cfg.isOnline&&_glTilesUsable();
   var mapOpts={zoomControl:false,attributionControl:false};
   if(!cfg.isOnline){mapOpts.crs=L.CRS.EPSG4326;D('initMap','offline CRS — using EPSG:4326 equirectangular')}
+  else if(!useTiles){D('initMap','online but WebGL unavailable — world image fallback (Web Mercator)')}
   else{D('initMap','online — using default Web Mercator tiles')}
   map=L.map('map-container',mapOpts).setView([51,10],3);
+  // _cqopsOfflineCRS marks the EPSG:4326 equirectangular offline mode.
+  // Online without WebGL keeps Web Mercator (with the Mercator raster) so
+  // radar tiles and markers stay aligned.
   map._cqopsOfflineCRS=!cfg.isOnline;
   // Custom panes for layer ordering: radar below QSO paths, markers on top.
   map.createPane('cqopsRadar');map.getPane('cqopsRadar').style.zIndex=350;map.getPane('cqopsRadar').style.pointerEvents='none';
@@ -851,9 +936,19 @@ function initMap(cfg){
   map.createPane('cqopsActive');map.getPane('cqopsActive').style.zIndex=460;map.getPane('cqopsActive').style.pointerEvents='none';
   map.createPane('cqopsMarker');map.getPane('cqopsMarker').style.zIndex=500;
   var style=styleUrlForTheme(cfg.mapTileUrl);
-  if(typeof L.maplibreGL==='function'){
-    mainGL=L.maplibreGL({style:style,attributionControl:false}).addTo(map);
-    suppressMissingImages(mainGL);
+  if(useTiles){
+    try{
+      mainGL=L.maplibreGL({style:style,attributionControl:false}).addTo(map);
+      suppressMissingImages(mainGL);
+      _armGLFallback(mainGL,false);
+    }catch(e){
+      D('initMap','MapLibre GL failed ('+e+') — rebuilding with world image fallback');
+      _webglBroken=true;_webglOK=false;
+      mainGL=null;
+      map.remove();map=null;
+      initMap(cfg);
+      return;
+    }
   }
   // Layer groups — each on its own pane for correct z-ordering above radar.
   qsoLineLayer=L.layerGroup([],{pane:'cqopsPath'}).addTo(map);
@@ -882,11 +977,13 @@ function initMap(cfg){
   })()
   // Grayline: always-on below radar.
   enableGrayline();
-  // Offline map fallback — uses equirectangular CRS (EPSG:4326) matching the
-  // embedded world map image. Removed when SSE reconnects and tiles load.
-  if(!cfg.isOnline){
+  // Offline map fallback — uses the embedded world map image. Shown when
+  // offline (equirectangular CRS, equirect raster) or when WebGL tiles are
+  // unavailable (Mercator CRS, Mercator raster). Removed when SSE
+  // reconnects and tiles load.
+  if(!useTiles){
     if(!map._cqopsOffline){
-      map._cqopsOffline=L.imageOverlay('/api/map-earth',[[-90,-180],[90,180]],{opacity:0.9,pane:'cqopsRadar'}).addTo(map);
+      map._cqopsOffline=L.imageOverlay(_earthURL(map),[[-90,-180],[90,180]],{opacity:0.9,pane:'cqopsRadar'}).addTo(map);
     }
   }
   // Radar: always enabled — no toggle button.
@@ -897,18 +994,18 @@ function initMap(cfg){
 }
 
 // removeOfflineOverlay is called when SSE reconnects (internet restored).
-// If the map was created with offline CRS, destroy and re-init with tiles.
+// If the map was created with offline CRS, destroy and re-init with the
+// online settings (tiles, or the Mercator raster when WebGL is missing).
 function removeOfflineOverlay(){
   if(!map)return;
+  // A Mercator map (online) keeps its layers — there is nothing to remove.
+  if(!map._cqopsOfflineCRS)return;
   if(map._cqopsOffline){map.removeLayer(map._cqopsOffline);map._cqopsOffline=null}
-  if(map._cqopsOfflineCRS){
-    // Disconnect observers that reference the old map instance before
-    // destroying it — prevents "map is null" crashes in stale callbacks.
-    _mapPollActive=false;
-    if(_mapResizeObserver){_mapResizeObserver.disconnect();_mapResizeObserver=null}
-    map.remove();map=null;
-    // Re-init with online tiles on next renderAll.
-  }
+  // Destroy the EPSG:4326 map; the next renderAll/display event re-inits
+  // it with the current online status.
+  _mapPollActive=false;
+  if(_mapResizeObserver){_mapResizeObserver.disconnect();_mapResizeObserver=null}
+  map.remove();map=null;
 }
 
 // ---- Local map (station-centre, ~50 km view) ----
@@ -921,9 +1018,24 @@ function initLocalMap(lat,lon){
   mapLocal=L.map('map-local-container',{zoomControl:false,attributionControl:false,maxZoom:18}).setView([lat,lon],11);
   mapLocal.createPane('cqopsRadar');mapLocal.getPane('cqopsRadar').style.zIndex=350;mapLocal.getPane('cqopsRadar').style.pointerEvents='none';
   mapLocal.createPane('cqopsGrayline');mapLocal.getPane('cqopsGrayline').style.zIndex=300;mapLocal.getPane('cqopsGrayline').style.pointerEvents='none';
-  if(typeof L.maplibreGL==='function'){
-    localTiles=L.maplibreGL({style:styleUrlForTheme(mapCfg.mapTileUrl),attributionControl:false}).addTo(mapLocal);
-    suppressMissingImages(localTiles);
+  if(_glTilesUsable()){
+    try{
+      localTiles=L.maplibreGL({style:styleUrlForTheme(mapCfg.mapTileUrl),attributionControl:false}).addTo(mapLocal);
+      suppressMissingImages(localTiles);
+      _armGLFallback(localTiles,true);
+    }catch(e){
+      D('initLocalMap','MapLibre GL failed ('+e+') — rebuilding with world image fallback');
+      _webglBroken=true;_webglOK=false;
+      localTiles=null;
+      mapLocal.remove();mapLocal=null;
+      initLocalMap(lat,lon);
+      return;
+    }
+  }else if(!mapLocal._cqopsOffline){
+    // WebGL unavailable — embedded world image keeps the local map usable
+    // (Mercator CRS + Mercator raster so radar tiles and APRS markers stay
+    // aligned).
+    mapLocal._cqopsOffline=L.imageOverlay(_earthURL(mapLocal),[[-90,-180],[90,180]],{opacity:0.9,pane:'cqopsRadar'}).addTo(mapLocal);
   }
   // Station marker on local map — small, below APRS symbols.
   stationLocalMarker=L.circleMarker([lat,lon],{radius:5,color:qsoPathTheme().station,fillColor:qsoPathTheme().station,fillOpacity:0.85,weight:2.5,pane:'shadowPane',className:'local-station-dot'}).addTo(mapLocal);
@@ -1134,6 +1246,9 @@ async function fetchJsonWithTimeout(url,ms){
 
 async function enableRadarLayer(){
   if(radarEnabled||radarLoading||!map)return;
+  // Radar tiles are Web Mercator — they would be misplaced on an
+  // EPSG:4326 (offline) map, so radar is hidden in offline CRS mode.
+  if(map._cqopsOfflineCRS)return;
   if(!navigator.onLine||!(displayCfg&&displayCfg.isOnline)){return}
   radarLoading=true;
   try{
@@ -1159,7 +1274,7 @@ async function enableRadarLayer(){
 }
 
 function disableRadarLayer(){
-  if(radarLayer){map.removeLayer(radarLayer);radarLayer=null}
+  if(radarLayer){if(map){try{map.removeLayer(radarLayer)}catch(e){}}radarLayer=null}
   if(radarLayerLocal&&mapLocal){mapLocal.removeLayer(radarLayerLocal);radarLayerLocal=null}
   radarEnabled=false;radarLoading=false;
   if(radarTimer){clearInterval(radarTimer);radarTimer=null}
@@ -1167,6 +1282,9 @@ function disableRadarLayer(){
 
 async function refreshRadarLayer(){
   if(!radarEnabled||!map)return;
+  // Same rule as enable: never draw Mercator radar tiles on an
+  // EPSG:4326 (offline) map.
+  if(map._cqopsOfflineCRS)return;
   try{
     var meta=await fetchJsonWithTimeout('https://api.rainviewer.com/public/weather-maps.json',6000);
     if(!meta||!meta.radar||!meta.radar.past||!meta.radar.past.length)return;

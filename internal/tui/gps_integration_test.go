@@ -185,6 +185,45 @@ func TestHandleGPSTickPropagatesMovementToEffectiveGrid(t *testing.T) {
 	}
 }
 
+// TestAPRSGridFixedLocation verifies the per-logbook fixed location pins
+// APRS (aprsGrid) while the QSO-logging effective grid keeps following the
+// GPS/station logic untouched.
+func TestAPRSGridFixedLocation(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.App.Logbook.Station.Grid = "JO90"
+	m.App.Logbook.APRS = &config.APRSConfig{FixedLocation: "ko00ca67lx"}
+
+	// No GPS: aprsGrid is the fixed locator, effectiveGrid stays JO90.
+	if got := m.aprsGrid(); got != "KO00CA67LX" {
+		t.Errorf("aprsGrid = %q, want fixed KO00CA67LX", got)
+	}
+	if got := m.effectiveGrid(); got != "JO90" {
+		t.Errorf("effectiveGrid = %q, want station grid JO90 (fixed location must not affect QSO logging)", got)
+	}
+
+	// GPS enabled with a fix: aprsGrid still prefers the fixed locator.
+	m.App.Config.Integrations.GPS.Enabled = true
+	m.App.Logbook.Station.GPSGrid = true
+	m.gps.hasFix = true
+	m.gps.lastGrid = "KN08AB"
+	if got := m.aprsGrid(); got != "KO00CA67LX" {
+		t.Errorf("aprsGrid with GPS fix = %q, want fixed KO00CA67LX", got)
+	}
+	if got := m.effectiveGrid(); got != "KN08AB" {
+		t.Errorf("effectiveGrid with GPS fix = %q, want GPS grid KN08AB", got)
+	}
+
+	// Empty fixed location falls back to GPS, then to the station grid.
+	m.App.Logbook.APRS.FixedLocation = ""
+	if got := m.aprsGrid(); got != "KN08AB" {
+		t.Errorf("aprsGrid without fixed = %q, want GPS KN08AB", got)
+	}
+	m.gps.hasFix = false
+	if got := m.aprsGrid(); got != "JO90" {
+		t.Errorf("aprsGrid fallback = %q, want JO90", got)
+	}
+}
+
 // TestGPSGridOverrideDoesNotCrossLogbookBoundary reproduces the reported
 // bug: enabling the GPS grid in logbook A and switching to B used to leave
 // A's saved fallback pending, so losing the fix wrote A's grid into B's

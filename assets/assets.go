@@ -11,6 +11,13 @@ import _ "embed"
 //go:embed map-earth.jpg
 var WorldMap []byte
 
+// WorldMapMercator is the same world map reprojected to Web Mercator.
+// Used by the Leaflet dashboard fallback maps (Mercator CRS), where the
+// equirectangular raster would misplace latitudes.
+//
+//go:embed map-earth-3857.jpg
+var WorldMapMercator []byte
+
 // Logo is the embedded CQOps logo (PNG, 256×256).
 // Served via /logo.png on the HTTP dashboard when no custom logo is set.
 //

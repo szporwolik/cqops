@@ -212,7 +212,8 @@ func (m *Model) logQSOFromADIF(adif string) (tea.Cmd, bool) {
 
 	m.clearForm()
 	m.needRefresh = true
-	m.invalidateDXCDupes() // new QSO logged — dupe markers are stale
+	m.invalidateDashboardFlags() // new QSO logged — dashboard stats/rates are stale
+	m.invalidateDXCDupes()       // new QSO logged — dupe markers are stale
 	m.dxc.tableReady = false
 	m.contest.computedAt = time.Time{} // force contest stats refresh
 

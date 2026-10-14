@@ -216,15 +216,16 @@ func barKeys(bindings []key.Binding) string {
 func TestBottomBarsShowCoreActionsOnly(t *testing.T) {
 	m := newLifecycleTestModel(t)
 
-	// Chooser list — Enter Edit + Esc only, no Create/Delete/Activate.
+	// Chooser list — Enter Edit + Ins Create + Esc; Delete/Activate stay
+	// behind the ? overlay.
 	m.screen = screenChooser
 	keys := barKeys(m.minimalBarBindings())
-	for _, want := range []string{"enter", "esc"} {
+	for _, want := range []string{"enter", "esc", "insert"} {
 		if !strings.Contains("|"+keys+"|", "|"+want+"|") {
 			t.Errorf("chooser list bar missing %q: %s", want, keys)
 		}
 	}
-	for _, stale := range []string{"insert", "delete", "space"} {
+	for _, stale := range []string{"delete", "space"} {
 		if strings.Contains("|"+keys+"|", "|"+stale+"|") {
 			t.Errorf("chooser list bar still shows secondary key %q: %s", stale, keys)
 		}

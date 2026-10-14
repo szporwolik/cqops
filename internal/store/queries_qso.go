@@ -966,17 +966,11 @@ func ExportQSOsSnapshot(db *sql.DB, contestID string, orderAsc bool, fn func(q q
 // ListQSOsFromDate returns QSOs with qso_date >= the given date, newest-first,
 // capped at limit. Used by the dashboard to avoid loading unbounded history.
 func ListQSOsFromDate(db *sql.DB, date string, limit int) ([]qso.QSO, error) {
-	query := `SELECT id, call, qso_date, time_on, time_off, band, freq, freq_rx, mode, submode,
-		rst_sent, rst_rcvd, gridsquare, name, qth, country, comment, notes, tx_pwr,
-		distance, bearing,
-		sota_ref, pota_ref, wwff_ref, iota, sig, sig_info,
-		my_sota_ref, my_pota_ref, my_wwff_ref,
-		station_callsign, operator, my_gridsquare, my_rig, my_antenna, source,
-		cq_zone, itu_zone,
-		my_cq_zone, my_itu_zone, my_dxcc,
-		my_sig, my_sig_info,
-		wavelog_id, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
-		created_at, updated_at
+	// Must select the full qsoSelectCols set — listQSOsByQuery scans all of
+	// them. The old inline projection omitted dxcc, wavelog_dirty and
+	// wavelog_dirty_rev, so every scan failed with a destination mismatch
+	// and the dashboard could not load recent QSOs at all.
+	query := `SELECT ` + qsoSelectCols + `
 		FROM qsos WHERE qso_date >= ? ORDER BY qso_date DESC, time_on DESC, id DESC LIMIT ?`
 	return listQSOsByQuery(db, query, date, limit)
 }

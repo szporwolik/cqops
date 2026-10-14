@@ -336,6 +336,7 @@ func (m *Model) wlLookup(call string) tea.Cmd {
 	m.lookup.wlLastBand = band
 	m.lookup.wlLastMode = mode
 	m.lookup.wlDispatchTime = time.Now() // for timeout detection
+	m.lookup.wlInFlight = true
 	applog.Info("Wavelog: looking up", "call", call)
 	return m.wlLookupCmd(call, band, mode)
 }
@@ -636,6 +637,11 @@ func (m *Model) fillWLData(msg wlResultMsg) tea.Cmd {
 	}
 	formCall := qso.NormalizeCall(m.fields[fieldCall].Value())
 
+	// The result terminates the awaited dispatch. Cleared here (after the
+	// logbook check) so a foreign-logbook result cannot cancel watchdog
+	// protection for a lookup of the current logbook.
+	m.lookup.wlInFlight = false
+
 	// --- Fallback result (base-call lookup triggered by sparse suffix) ---
 	if msg.IsFallback {
 		if formCall == "" {
@@ -721,6 +727,8 @@ func (m *Model) wlFallbackLookup(call string) tea.Cmd {
 	logbook := m.App.LogbookName
 	band := strings.TrimSpace(m.fields[fieldBand].Value())
 	mode := qso.NormalizeRigMode(m.fields[fieldMode].Value())
+	m.lookup.wlDispatchTime = time.Now() // for timeout detection
+	m.lookup.wlInFlight = true
 	return func() tea.Msg {
 		data, err := wavelog.PrivateLookup(wl.URL, wl.APIKey, call, band, mode, wl.StationProfileID)
 		return wlResultMsg{Call: call, Data: data, Err: err, IsFallback: true, Logbook: logbook}

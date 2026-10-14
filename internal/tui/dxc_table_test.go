@@ -24,7 +24,7 @@ func TestSpotModeCategory_CW(t *testing.T) {
 }
 
 func TestSpotModeCategory_DIGI(t *testing.T) {
-	for _, m := range []string{"FT8", "FT4", "RTTY", "PSK", "JT65", "JT9", "MSK144", "FSK", "DATA", "DATA-U", "DATA-L", "DATA-FM"} {
+	for _, m := range []string{"FT8", "FT4", "JTTY", "RTTY", "PSK", "JT65", "JT9", "MSK144", "FSK", "DATA", "DATA-U", "DATA-L", "DATA-FM"} {
 		if got := spotModeCategory(m); got != "DIGI" {
 			t.Errorf("spotModeCategory(%q) = %q, want DIGI", m, got)
 		}

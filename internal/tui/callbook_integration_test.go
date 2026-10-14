@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/szporwolik/cqops/internal/callbook"
 	"github.com/szporwolik/cqops/internal/config"
@@ -325,6 +326,117 @@ func TestCallbookLookupOverwritesExistingGrid(t *testing.T) {
 	}
 	if m.rc.pathGrid != "JO90" {
 		t.Errorf("pathGrid should be updated by callbook result, got %q", m.rc.pathGrid)
+	}
+}
+
+// TestTickNoFalseWavelogTimeoutAfterBandEdit reproduces the club-log pattern:
+// a Wavelog lookup completes fine ("lookup OK" in <200ms), then a band/mode
+// edit clears wlLookupDone WITHOUT re-dispatching a lookup. The old watchdog
+// saw the stale dispatch timestamp and logged a false "Wavelog: lookup timed
+// out" ~20s later. With the in-flight flag the tick must not touch the state.
+func TestTickNoFalseWavelogTimeoutAfterBandEdit(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.lookup.wlLookupDone = false // cleared by the band edit
+	m.lookup.wlInFlight = false   // the lookup already completed
+	m.lookup.wlDispatchTime = time.Now().Add(-21 * time.Second)
+
+	m.handleTick(nil)
+
+	if m.lookup.wlLookupDone {
+		t.Error("false timeout must not mark the lookup done")
+	}
+	if m.lookup.wlDispatchTime.IsZero() {
+		t.Error("false timeout must not clear the dispatch stamp")
+	}
+	if m.lookup.wlInFlight {
+		t.Error("state must remain not-in-flight")
+	}
+}
+
+// TestTickWavelogTimeoutFiresForInFlightLookup keeps the real watchdog
+// behaviour: a lookup that is genuinely in flight past the 20s deadline is
+// force-completed and the stamp is cleared.
+func TestTickWavelogTimeoutFiresForInFlightLookup(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.lookup.wlInFlight = true
+	m.lookup.wlDispatchTime = time.Now().Add(-21 * time.Second)
+	m.lookup.wlLookupDone = false
+	m.lookup.wlLastCall = "SP9MOA"
+
+	m.handleTick(nil)
+
+	if !m.lookup.wlLookupDone {
+		t.Error("in-flight lookup past the deadline must be force-completed")
+	}
+	if !m.lookup.wlDispatchTime.IsZero() {
+		t.Error("timeout must clear the dispatch stamp")
+	}
+	if m.lookup.wlInFlight {
+		t.Error("timeout must clear the in-flight flag")
+	}
+	if m.lookup.wlLookupCall != "SP9MOA" {
+		t.Errorf("completion must be bound to the last call, got %q", m.lookup.wlLookupCall)
+	}
+}
+
+// TestFillWLDataClearsInFlight verifies a result terminates the awaited
+// dispatch, so a later band/mode edit cannot resurrect the watchdog.
+func TestFillWLDataClearsInFlight(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.fields[fieldCall].SetValue("SP9MOA")
+	m.lookup.wlInFlight = true
+
+	m.fillWLData(wlResultMsg{
+		Call:    "SP9MOA",
+		Logbook: "test",
+		Data:    nil, // no data result still completes the lookup
+	})
+
+	if m.lookup.wlInFlight {
+		t.Error("a result must clear the in-flight flag")
+	}
+	if !m.lookup.wlLookupDone {
+		t.Error("a result must mark the lookup done")
+	}
+}
+
+// TestWlLookupMarksInFlight verifies the dispatch arms the watchdog.
+func TestWlLookupMarksInFlight(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.inetOnline = true
+	m.App.Logbook.Wavelog.Enabled = true
+	m.App.Logbook.Wavelog.URL = "https://example.invalid"
+	m.App.Logbook.Wavelog.APIKey = "wl2_test"
+	m.fields[fieldCall].SetValue("SP9MOA")
+
+	cmd := m.wlLookup("SP9MOA")
+	if cmd == nil {
+		t.Fatal("expected a lookup command")
+	}
+	if !m.lookup.wlInFlight {
+		t.Error("dispatch must arm the in-flight flag")
+	}
+	if m.lookup.wlDispatchTime.IsZero() {
+		t.Error("dispatch must stamp the dispatch time")
+	}
+}
+
+// TestFillWLDataForeignLogbookKeepsInFlight verifies a result from a
+// previous logbook does not disarm watchdog protection for a lookup that is
+// still awaiting its result in the current logbook.
+func TestFillWLDataForeignLogbookKeepsInFlight(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.fields[fieldCall].SetValue("SP9XYZ")
+	m.lookup.wlInFlight = true
+
+	m.fillWLData(wlResultMsg{
+		Call:    "SP9XYZ",
+		Logbook: "other",
+		Data:    &wavelog.PrivateLookupResult{},
+	})
+
+	if !m.lookup.wlInFlight {
+		t.Error("a foreign-logbook result must not disarm the in-flight flag")
 	}
 }
 

@@ -324,7 +324,7 @@ type lookupData struct {
 	CallWorkedBand     bool `json:"call_worked_band"`
 	CallWorkedBandMode bool `json:"call_worked_band_mode"`
 
-	LotwMember string `json:"lotw_member"`
+	LotwMember lotwMemberValue `json:"lotw_member"`
 
 	DXCCConfirmedOnBand     bool `json:"dxcc_confirmed_on_band"`
 	DXCCConfirmedOnBandMode bool `json:"dxcc_confirmed_on_band_mode"`
@@ -337,6 +337,43 @@ type lookupData struct {
 	SuffixSlash string    `json:"suffix_slash"`
 	DXCCITUZ    int       `json:"dxcc_ituz"`
 	LatLng      []float64 `json:"latlng"`
+}
+
+// lotwMemberValue tolerates both shapes the API returns for lotw_member:
+// a member-number string ("14") and a plain boolean (true/false), plus null
+// and numeric 0/1. A bool-only field broke the whole lookup for calls whose
+// record carries the boolean form.
+type lotwMemberValue struct {
+	Value bool
+}
+
+func (l *lotwMemberValue) UnmarshalJSON(b []byte) error {
+	raw := strings.TrimSpace(string(b))
+	switch {
+	case raw == "null":
+		l.Value = false
+		return nil
+	case strings.HasPrefix(raw, `"`):
+		var s string
+		if err := json.Unmarshal(b, &s); err != nil {
+			return err
+		}
+		l.Value = truthy(s)
+		return nil
+	case raw == "true":
+		l.Value = true
+		return nil
+	case raw == "false":
+		l.Value = false
+		return nil
+	default:
+		var n float64
+		if err := json.Unmarshal(b, &n); err != nil {
+			return err
+		}
+		l.Value = n != 0
+		return nil
+	}
 }
 
 // v2QSOImport is the data block of a successful POST /api/v2/qso

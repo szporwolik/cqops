@@ -166,16 +166,17 @@ func (c *Client) doLogin() (string, error) {
 	if err := xml.Unmarshal(data, &db); err != nil {
 		return "", fmt.Errorf("QRZ.RU xml: %w", err)
 	}
-	if db.Session.ErrorCode != 0 || (db.Session.Error != "" && !strings.EqualFold(db.Session.Error, "ok")) {
-		if db.Session.Error != "" {
-			return "", fmt.Errorf("QRZ.RU: %s", db.Session.Error)
+	s := db.session()
+	if s.ErrorCode != 0 || (s.Error != "" && !strings.EqualFold(s.Error, "ok")) {
+		if s.Error != "" {
+			return "", fmt.Errorf("QRZ.RU: %s", s.Error)
 		}
-		return "", fmt.Errorf("QRZ.RU: error code %d", db.Session.ErrorCode)
+		return "", fmt.Errorf("QRZ.RU: error code %d", s.ErrorCode)
 	}
-	if db.Session.SessionID == "" {
+	if s.SessionID == "" {
 		return "", fmt.Errorf("QRZ.RU: no session id")
 	}
-	return db.Session.SessionID, nil
+	return s.SessionID, nil
 }
 
 func (c *Client) doLookup(sid, callsign string) (*callData, error) {
@@ -202,17 +203,26 @@ func (c *Client) doLookup(sid, callsign string) (*callData, error) {
 	if err := xml.Unmarshal(data, &db); err != nil {
 		return nil, fmt.Errorf("QRZ.RU xml: %w", err)
 	}
-	if db.Session.ErrorCode != 0 || (db.Session.Error != "" && !strings.EqualFold(db.Session.Error, "ok")) {
-		if strings.Contains(db.Session.Error, "not found") || strings.Contains(db.Session.Error, "Not found") {
+	s := db.session()
+	if s.ErrorCode != 0 || (s.Error != "" && !strings.EqualFold(s.Error, "ok")) {
+		if strings.Contains(s.Error, "not found") || strings.Contains(s.Error, "Not found") {
 			applog.Debug("QRZ.RU: not found", "callsign", callsign)
 			return nil, nil
 		}
-		if db.Session.Error != "" {
-			return nil, fmt.Errorf("QRZ.RU: %s", db.Session.Error)
+		if s.Error != "" {
+			return nil, fmt.Errorf("QRZ.RU: %s", s.Error)
 		}
-		return nil, fmt.Errorf("QRZ.RU: error code %d", db.Session.ErrorCode)
+		return nil, fmt.Errorf("QRZ.RU: error code %d", s.ErrorCode)
 	}
-	call := db.Callsign
+	call := db.callsign()
+	// Defensive: some error variants arrive inside the Callsign block.
+	if ce := strings.TrimSpace(call.Error); ce != "" {
+		if strings.Contains(strings.ToLower(ce), "not found") {
+			applog.Debug("QRZ.RU: not found", "callsign", callsign)
+			return nil, nil
+		}
+		return nil, fmt.Errorf("QRZ.RU: %s", ce)
+	}
 	if strings.TrimSpace(call.Call) == "" {
 		applog.Debug("QRZ.RU: no data", "callsign", callsign)
 		return nil, nil
@@ -244,11 +254,37 @@ func (c *Client) doLookup(sid, callsign string) (*callData, error) {
 
 // qrzDB is the root element returned by api.qrz.ru.
 // Same schema as QRZ.com: <QRZDatabase> → <Session> + <Callsign> + <Files>.
+// The REAL API uses uppercase <Session>/<Callsign> on successful responses but
+// LOWERCASE <session> on error responses (wrong password, expired session,
+// "Callsign not found") — both variants are parsed and merged by session() and
+// callsign(). The old uppercase-only struct let every error fall through as an
+// empty record: the client logged "no data" and never re-authenticated, so one
+// transient failure silently disabled QRZ.RU lookups for the rest of the run.
 type qrzDB struct {
-	XMLName  xml.Name    `xml:"QRZDatabase"`
-	Session  qrzSession  `xml:"Session"`
-	Callsign qrzCallSign `xml:"Callsign"`
-	Files    qrzFiles    `xml:"Files"`
+	XMLName   xml.Name    `xml:"QRZDatabase"`
+	Session   qrzSession  `xml:"Session"`
+	SessionL  qrzSession  `xml:"session"`
+	Callsign  qrzCallSign `xml:"Callsign"`
+	CallsignL qrzCallSign `xml:"callsign"`
+	Files     qrzFiles    `xml:"Files"`
+}
+
+// session returns the effective session block: the uppercase (success) form,
+// falling back to the lowercase (error) form when the uppercase one is empty.
+func (db *qrzDB) session() qrzSession {
+	if db.Session.SessionID == "" && db.Session.ErrorCode == 0 && db.Session.Error == "" {
+		return db.SessionL
+	}
+	return db.Session
+}
+
+// callsign returns the effective callsign block, preferring the variant that
+// actually carries content (a call or an error).
+func (db *qrzDB) callsign() qrzCallSign {
+	if strings.TrimSpace(db.Callsign.Call) == "" && strings.TrimSpace(db.Callsign.Error) == "" {
+		return db.CallsignL
+	}
+	return db.Callsign
 }
 
 type qrzSession struct {
@@ -264,6 +300,7 @@ type qrzFiles struct {
 
 type qrzCallSign struct {
 	Call      string `xml:"call"`
+	Error     string `xml:"error"`
 	Type      string `xml:"type"`
 	OtherCall string `xml:"othercall"`
 	CountryID string `xml:"country_id"`

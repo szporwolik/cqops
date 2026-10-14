@@ -110,7 +110,7 @@ func (m *Model) aprsPaneRefresh() {
 	}
 
 	var stLat, stLon, radiusKm float64
-	if g := m.effectiveGrid(); g != "" {
+	if g := m.aprsGrid(); g != "" {
 		stLat, stLon = gridToLatLon(g)
 	}
 	if aprsCfg := m.App.Logbook.APRS; aprsCfg != nil && aprsCfg.Enabled && aprsCfg.RadiusKm > 0 {
@@ -518,7 +518,7 @@ func (m *Model) viewAPRS(l Layout) string {
 	b.WriteString("\n")
 	// Without a station grid no distance, bearing, or radar is computable —
 	// render nothing but the hint.
-	if m.effectiveGrid() == "" {
+	if m.aprsGrid() == "" {
 		msg := DimStyle.Width(w).Align(lipgloss.Center).Render("Station grid not set \u2014 enter your grid locator in the station settings")
 		return b.String() + msg
 	}
@@ -1055,11 +1055,12 @@ func (m *Model) aprsRadarRows(st *aprsPaneState, w, h int) []string {
 	}
 
 	// Bottom range caption: the exact grid sent to APRS (full configured
-	// precision, GPS-derived when active) names what sits at the center,
-	// and the selected station's callsign, bearing, and distance on the
+	// precision, GPS-derived when active) names what sits at the center —
+	// a fixed APRS location pins the radar to that locator instead — and
+	// the selected station's callsign, bearing, and distance on the
 	// right restore azimuth context at a glance.
 	caption := fmt.Sprintf(" ~ %.0f km", maxDist)
-	if g := m.effectiveGrid(); g != "" {
+	if g := m.aprsGrid(); g != "" {
 		caption += " \u00b7 " + g
 	}
 	if sel := m.aprsPaneSel(); sel != nil {

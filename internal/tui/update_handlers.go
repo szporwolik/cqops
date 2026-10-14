@@ -116,14 +116,19 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 		m.wsjtx.tx = false
 		m.wsjtx.txMsg = ""
 	}
-	// WL lookup timeout: if a lookup was dispatched >20s ago and hasn't
-	// completed, force wlLookupDone and clear the dispatch time to prevent
+	// WL lookup timeout: if a lookup was dispatched >20s ago and is still
+	// in flight, force wlLookupDone and clear the dispatch time to prevent
 	// repeated warnings when wlLookupDone gets cleared again independently.
-	if !m.lookup.wlLookupDone && !m.lookup.wlDispatchTime.IsZero() &&
+	// The in-flight flag is essential: wlLookupDone is also cleared by
+	// band/mode edits and other call changes WITHOUT a new dispatch, which
+	// must not trigger a false "lookup timed out" warning for a lookup that
+	// already completed.
+	if m.lookup.wlInFlight && !m.lookup.wlLookupDone && !m.lookup.wlDispatchTime.IsZero() &&
 		time.Since(m.lookup.wlDispatchTime) > 20*time.Second {
 		m.lookup.wlLookupDone = true
 		m.lookup.wlLookupCall = m.lookup.wlLastCall
 		m.lookup.wlDispatchTime = time.Time{}
+		m.lookup.wlInFlight = false
 		applog.Warn("Wavelog: lookup timed out", "call", m.lookup.wlLastCall)
 	}
 	// WSJT-X auto-recover: only retry when the rig preset has WSJT-X

@@ -521,6 +521,37 @@ func TestEffectiveGrid_GPSNoFix(t *testing.T) {
 	}
 }
 
+// TestEffectiveGrid_FixedLocation verifies the APRS fixed-location override
+// wins over both the GPS fix and the station grid, and supports the longest
+// locators (10 chars) as well as shorter forms.
+func TestEffectiveGrid_FixedLocation(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Integrations.GPS.Enabled = true
+	a := &App{
+		Config: cfg,
+		Logbook: &config.Logbook{
+			Station: config.Station{Grid: "JO62TJ", GPSGrid: true},
+			APRS:    &config.APRSConfig{FixedLocation: "KO00ca67LX"},
+		},
+	}
+	a.SetGPSGrid("JO90XX", true)
+	if g := a.EffectiveGrid(); g != "KO00CA67LX" {
+		t.Errorf("fixed location with GPS fix: got %q, want KO00CA67LX", g)
+	}
+
+	// Shorter locators work unchanged.
+	a.Logbook.APRS.FixedLocation = "kn08"
+	if g := a.EffectiveGrid(); g != "KN08" {
+		t.Errorf("fixed 4-char locator: got %q, want KN08", g)
+	}
+
+	// Empty fixed location falls back to the GPS grid.
+	a.Logbook.APRS.FixedLocation = ""
+	if g := a.EffectiveGrid(); g != "JO90XX" {
+		t.Errorf("empty fixed location with GPS fix: got %q, want JO90XX", g)
+	}
+}
+
 func TestSetGPSGrid(t *testing.T) {
 	cfg := config.DefaultConfig()
 	a := &App{

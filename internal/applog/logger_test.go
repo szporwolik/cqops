@@ -79,7 +79,9 @@ func TestOpenLogFile_OwnerOnly(t *testing.T) {
 // log files get tightened to owner-only during rotation.
 func TestRotateLogs_TightensExistingFiles(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "cqops-2026-09-20T12-00-00.log")
+	// Use a recent timestamp so rotateLogs' retention window never deletes
+	// the fixture before the permission assertion runs.
+	path := filepath.Join(dir, "cqops-"+time.Now().Format("2006-01-02T15-04-05")+".log")
 	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}

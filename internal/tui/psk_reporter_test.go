@@ -409,3 +409,25 @@ func TestBuildPSKMap_WithReports(t *testing.T) {
 		}
 	}
 }
+
+// TestPSKFilterBarAdvertisesCurrentKeys pins the in-pane filter hints to the
+// actual DXC-style keys (t/b/m). The bar used to advertise the long-removed
+// Ins/Del, Home/End and PgUp/PgDn bindings.
+func TestPSKFilterBarAdvertisesCurrentKeys(t *testing.T) {
+	m := newTestModel()
+	m.width = 100
+	m.height = 30
+	m.psk.cacheDir = t.TempDir()
+
+	view := m.viewPSKReporter()
+	for _, want := range []string{"(m)", "(b)", "(t)", "(Bksp clear)"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("PSK filter bar missing %q", want)
+		}
+	}
+	for _, stale := range []string{"(Ins/Del)", "(Home/End)", "(PgUp/Dn)"} {
+		if strings.Contains(view, stale) {
+			t.Errorf("PSK filter bar still shows outdated binding %q", stale)
+		}
+	}
+}

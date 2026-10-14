@@ -138,7 +138,7 @@ func newLookupResult(d *lookupData) *PrivateLookupResult {
 		worked:            d.CallWorked,
 		workedBand:        d.CallWorkedBand,
 		workedBandMode:    d.CallWorkedBandMode,
-		lotw:              truthy(d.LotwMember),
+		lotw:              d.LotwMember.Value,
 		dxccConfirmed:     d.DXCCConfirmed,
 		confirmedBand:     d.CallConfirmedBand,
 		confirmedBandMode: d.CallConfirmedBandMode,

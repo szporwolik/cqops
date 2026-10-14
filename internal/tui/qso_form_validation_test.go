@@ -210,7 +210,7 @@ func TestQSOFieldHint_EmptyBand(t *testing.T) {
 // =============================================================================
 
 func TestQSOFieldHint_ValidMode(t *testing.T) {
-	for _, mode := range []string{"SSB", "CW", "FT8", "FT4", "RTTY", "AM", "FM"} {
+	for _, mode := range []string{"SSB", "CW", "FT8", "FT4", "JTTY", "RTTY", "AM", "FM"} {
 		t.Run(mode, func(t *testing.T) {
 			m := newQSOFormTestModel()
 			m.fields[fieldMode].SetValue(mode)
@@ -251,6 +251,10 @@ func TestQSOFieldHint_ValidSubmode(t *testing.T) {
 	m.fields[fieldSubmode].SetValue("FT4") // FT4 IS an MFSK submode
 	if hint := m.qsoFieldHint(fieldSubmode); hint != "" {
 		t.Errorf("hint = %q, want \"\"", hint)
+	}
+	m.fields[fieldSubmode].SetValue("JTTY") // proposed MFSK submode (ADIF 3.1.8)
+	if hint := m.qsoFieldHint(fieldSubmode); hint != "" {
+		t.Errorf("hint for JTTY = %q, want \"\"", hint)
 	}
 }
 
