@@ -330,7 +330,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 /* 1600-1800px shows all nine forecast slots at the larger type, which does
    not fit; drop the furthest one instead of clipping it. */
 @media(min-width:1600px) and (max-width:1799px){#wx-row .wx-slot:nth-child(n+9){display:none}}
-@media(max-width:1300px){#wx-row{gap:5px 10px}#wx-row .wx-slot:nth-child(n+8){display:none}#hd-sun .sun-icon{font-size:1.08rem}}
+@media(max-width:1360px){#wx-row{gap:5px 10px}#wx-row .wx-slot:nth-child(n+8){display:none}#hd-sun .sun-icon{font-size:1.08rem}}
 @media(max-width:1100px){#wx-row{gap:4px 8px}#wx-row .wx-slot:nth-child(n+6){display:none}#hd-sun .sun-icon{font-size:1.05rem}}
 @media(max-width:900px){#wx-row{gap:4px 7px;font-size:0.74rem}#wx-row .wx-slot:nth-child(n+5){display:none}#wx-row .wx-rain{display:none}#hd-sun .sun-icon{font-size:1.02rem}}
 @media(max-width:700px){#wx-row{gap:4px 6px;font-size:0.7rem}#wx-row .wx-slot:nth-child(n+4){display:none}#hd-sun .sun-icon{font-size:0.98rem}}
@@ -592,9 +592,9 @@ main>.panel{flex:1 1 340px;min-width:0}
 .status-on{color:var(--success)}.status-off{color:var(--offline)}
 
 footer{text-align:center;color:var(--dim);font-size:0.75rem;padding:6px;margin-top:auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-/* Narrow windows: the credit line is long, so let it wrap instead of hiding
-   the last two providers. */
-@media(max-width:1199px){footer{white-space:normal}}
+/* The credit line is long: let it wrap at any width instead of ellipsizing the
+   last providers (it clipped at 1220px, just above the old 1200px cutoff). */
+footer{white-space:normal}
 footer a{color:var(--blue);text-decoration:none}
 footer a:hover{text-decoration:underline}
 .footer-rainviewer{display:none}
