@@ -460,6 +460,14 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #map-container .leaflet-container{width:100%!important;height:100%!important;position:absolute!important;top:0;left:0}
 #map-local-container .leaflet-container{width:100%!important;height:100%!important;position:absolute!important;top:0;left:0}
 /* APRS symbol markers — no extra border/background on the container */
+/* Own station drawn with the APRS symbol CQOps transmits: the position dot
+   with the symbol and callsign-SSID underneath. */
+.own-aprs-marker{background:transparent!important;border:none!important}
+.own-aprs{display:flex;flex-direction:column;align-items:center;line-height:1}
+.own-aprs-dot{width:12px;height:12px;border-radius:50%;border:2.5px solid currentColor;box-sizing:border-box;box-shadow:0 0 0 1px rgba(0,0,0,0.45)}
+.own-aprs-sym{margin-top:2px}
+@keyframes pulse-own-dot{0%,100%{opacity:.85;transform:scale(1)}50%{opacity:1;transform:scale(1.1)}}
+.mode-active .own-aprs-dot{animation:pulse-own-dot 1.6s ease-in-out infinite}
 .aprs-symbol-marker{background:transparent!important;border:none!important}
 /* APRS range circle — dashed, visible above tiles */
 .aprs-range-circle{stroke-dasharray:10 6!important;pointer-events:none}
@@ -841,13 +849,13 @@ footer a:hover{text-decoration:underline}
 @media(min-width:1900px){
   .recent-op-col{display:table-cell}
   #recent-table th:nth-child(1){width:9%}  /* UTC */
-  #recent-table th:nth-child(2){width:15%} /* Call */
+  #recent-table th:nth-child(2){width:16%} /* Call */
   #recent-table th:nth-child(3){width:9%}  /* Band */
   #recent-table th:nth-child(4){width:9%}  /* Mode */
   #recent-table th:nth-child(5){width:14%} /* Op */
   #recent-table th:nth-child(6){width:11%} /* RST */
   #recent-table th:nth-child(7){width:14%} /* Dist/Dir */
-  #recent-table th:nth-child(8){width:19%} /* Country */
+  #recent-table th:nth-child(8){width:18%} /* Country */
 }
 
 /* ── 2K / 4K displays (2560×1440+): let the layout keep up with the type ──
@@ -980,4 +988,9 @@ footer a:hover{text-decoration:underline}
 @media(min-width:2300px) and (max-height:1180px){
   #map-table-row{min-height:16vh}
   #recent-table-wrap,#topqsos-table-wrap{max-height:170px}
+  /* Nine key/value rows at 22px type are taller than the whole screen: the
+     station card steps aside and the session summary runs two pairs per row. */
+  #station-panel{display:none}
+  #stats-panel{flex:0 1 32rem}
+  #stats-fields{grid-template-columns:auto minmax(0,1fr) auto minmax(0,1fr)}
 }

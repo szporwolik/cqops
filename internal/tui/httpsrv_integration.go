@@ -13,6 +13,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/applog"
+	"github.com/szporwolik/cqops/internal/aprs"
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/dashboard"
 	"github.com/szporwolik/cqops/internal/geo"
@@ -662,6 +663,13 @@ func (m *Model) pushDashboardFast() {
 	if aprsCfg := m.App.Logbook.APRS; aprsCfg != nil && aprsCfg.Enabled && aprsCfg.RadiusKm > 0 {
 		stationInfo.AprsRadiusKm = float64(aprsCfg.RadiusKm)
 	}
+	// While beaconing, the dashboard draws the own station with the symbol and
+	// callsign-SSID the network sees.
+	if call, sym, on := m.App.APRSBeaconIdentity(); on {
+		stationInfo.AprsCallsign = call
+		stationInfo.AprsSymbol = sym
+		stationInfo.AprsBeacon = true
+	}
 	ds.SetStation(stationInfo)
 
 	// --- Operator ---
@@ -1291,10 +1299,30 @@ func (m *Model) pushDashboardAPRS(ds *dashboard.State) {
 		radiusKm = float64(aprsCfg.RadiusKm)
 	}
 	cutoff := time.Now().Add(-60 * time.Minute)
+	// Own-station filtering, the same rule the APRS pane applies: while
+	// transmitting, hide only our own beacon echo (an omitted SSID equals -0);
+	// in receive-only mode every SSID of our callsign is QTH clutter.
+	ownCall, ownBase := "", ""
+	if call, _, on := m.App.APRSBeaconIdentity(); on {
+		ownCall = aprs.CanonicalCall(call)
+	} else if m.App.Logbook != nil {
+		if m.App.Logbook.APRS != nil {
+			ownBase = aprs.BaseCall(m.App.Logbook.APRS.Callsign)
+		}
+		if ownBase == "" {
+			ownBase = aprs.BaseCall(m.App.Logbook.Station.Callsign)
+		}
+	}
 	var view []dashboard.APRSStation
 	var trailCalls []string
 	for _, s := range stations {
 		if s.LastHeard.Before(cutoff) {
+			continue
+		}
+		if ownCall != "" && aprs.CanonicalCall(s.Callsign) == ownCall {
+			continue
+		}
+		if ownBase != "" && aprs.BaseCall(s.Callsign) == ownBase {
 			continue
 		}
 		// Distance filter: only include stations within the configured radius.

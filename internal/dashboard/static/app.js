@@ -351,6 +351,14 @@ function renderAll(snap){
     fetchWeather(snap.station.lat,snap.station.lon);
     fetchSunTimes(snap.station.lat,snap.station.lon);
     }
+    var aprsSig=snap.station.aprsBeacon?(snap.station.aprsCallsign||'')+'|'+(snap.station.aprsSymbol||''):'';
+    if(aprsSig!==ownAprs.sig){
+      ownAprs.sig=aprsSig;
+      ownAprs.active=!!snap.station.aprsBeacon&&!!snap.station.aprsCallsign;
+      ownAprs.callsign=snap.station.aprsCallsign||'';
+      ownAprs.symbol=snap.station.aprsSymbol||'/-';
+      refreshOwnStationMarker();
+    }
   }
   renderStation(snap.station,snap.operator,snap.logbook,snap.rig,snap.wsjtx);
   // Active QSO
@@ -784,7 +792,7 @@ function addDualPolyline(layer,pts,cfg){
 }
 
 var mapCfg={drawLines:true,maxLines:150,maxMarkers:200,highlightLastQSO:true,animateActivePath:false};
-var stationLayer=null,qsoMarkerLayer=null,qsoLineLayer=null,lastQsoLayer=null,activeQsoLayer=null;
+var stationLayer=null,qsoMarkerLayer=null,qsoLineLayer=null,lastQsoLayer=null,activeQsoLayer=null,ownStationMarker=null;
 var lastQso=null,activeGrid=null;
 var mapLocal=null,stationLocalMarker=null,localTiles=null;
 var _mapResizeObserver=null,_mapPollActive=false;
@@ -1032,6 +1040,44 @@ function removeOfflineOverlay(){
 // ---- Local map (station-centre, ~50 km view) ----
 var aprsCircleLayer=null;
 
+// Own APRS identity: filled from the snapshot while CQOps is beaconing, so the
+// own station can be drawn with the symbol and callsign-SSID the network sees.
+var ownAprs={active:false,callsign:'',symbol:'/-',sig:''};
+
+// _ownStationMarker builds the "you are here" marker. Receive-only mode keeps
+// the plain dot; while beaconing the APRS symbol CQOps transmits and the
+// callsign-SSID label sit underneath it.
+function _ownStationMarker(lat,lon,pt,small){
+  if(!ownAprs.active){
+    if(small){
+      return L.circleMarker([lat,lon],{radius:5,color:pt.station,fillColor:pt.station,fillOpacity:0.85,weight:2.5,pane:'shadowPane',className:'local-station-dot'});
+    }
+    return L.circleMarker([lat,lon],{radius:9,color:pt.station,fillColor:pt.station,fillOpacity:0.85,weight:2.5,className:'station-dot'});
+  }
+  var html='<div class="own-aprs">'+
+    '<div class="own-aprs-dot" style="background:'+pt.station+';border-color:'+pt.station+';"></div>'+
+    '<div class="own-aprs-sym">'+_aprSymbolHTML(ownAprs.symbol)+'</div>'+
+    '<div class="apr-label">'+esc(ownAprs.callsign)+'</div>'+
+  '</div>';
+  var opts={icon:L.divIcon({className:'own-aprs-marker',iconSize:[110,62],iconAnchor:[55,small?7:11],html:html}),zIndexOffset:600};
+  if(small)opts.pane='shadowPane';
+  return L.marker([lat,lon],opts);
+}
+
+// refreshOwnStationMarker redraws both station markers after the APRS identity
+// changes — beacon switched on/off, or the SSID/symbol edited.
+function refreshOwnStationMarker(){
+  if(mapLocal&&ownStationLat!=null&&ownStationLon!=null){
+    if(stationLocalMarker){mapLocal.removeLayer(stationLocalMarker);stationLocalMarker=null}
+    stationLocalMarker=_ownStationMarker(ownStationLat,ownStationLon,qsoPathTheme(),true).addTo(mapLocal);
+  }
+  if(map&&ownStationLat!=null&&ownStationLon!=null&&stationLayer){
+    if(ownStationMarker){stationLayer.removeLayer(ownStationMarker);ownStationMarker=null}
+    ownStationMarker=_ownStationMarker(ownStationLat,ownStationLon,qsoPathTheme(),false);
+    stationLayer.addLayer(ownStationMarker);
+  }
+}
+
 function initLocalMap(lat,lon){
   if(mapLocal)return;
   var lc=document.getElementById('map-local-container');
@@ -1059,7 +1105,7 @@ function initLocalMap(lat,lon){
     mapLocal._cqopsOffline=L.imageOverlay(_earthURL(mapLocal),[[-90,-180],[90,180]],{opacity:0.9,pane:'cqopsRadar'}).addTo(mapLocal);
   }
   // Station marker on local map — small, below APRS symbols.
-  stationLocalMarker=L.circleMarker([lat,lon],{radius:5,color:qsoPathTheme().station,fillColor:qsoPathTheme().station,fillOpacity:0.85,weight:2.5,pane:'shadowPane',className:'local-station-dot'}).addTo(mapLocal);
+  stationLocalMarker=_ownStationMarker(lat,lon,qsoPathTheme(),true).addTo(mapLocal);
   if(window.ResizeObserver){new ResizeObserver(function(){mapLocal.invalidateSize()}).observe(lc)}
   (function pollLocalSize(){
     if(lc.clientHeight>0){
@@ -1413,31 +1459,36 @@ function _aprSpriteHTML(sheetIdx,charCode){
     'background-position:'+bgX+'px '+bgY+'px;background-size:384px 144px;';
 }
 
-function _aprIconHTML(sym,callsign){
-  var html='<div style="text-align:center;line-height:1;position:relative;display:inline-block;">';
+// _aprSymbolHTML renders only the 24x24 sprite of a two-character APRS symbol
+// (table + code). Shared by APRS station markers and the own-station marker.
+function _aprSymbolHTML(sym){
   var code=sym&&sym.length>1?sym.charCodeAt(1):0;
   if(!sym||sym.length<2||code<33||code>126){
     // Unrenderable symbol — orange diamond fallback.
-    html+='<div style="width:24px;height:24px;display:inline-block;'+
+    return '<div style="width:24px;height:24px;display:inline-block;'+
       'background:#B45309;border:1.5px solid #fff;transform:rotate(45deg);"></div>';
-  }else{
-    var table=sym[0];
-    if(table=='/'){
-      // Primary table — simple single sprite.
-      html+='<div style="width:24px;height:24px;display:inline-block;'+_aprSpriteHTML(0,code)+'"></div>';
-    }else if(table=='\\'){
-      // Secondary table.
-      html+='<div style="width:24px;height:24px;display:inline-block;'+_aprSpriteHTML(1,code)+'"></div>';
-    }else{
-      // Alternate/overlay table (0-9, A-Z):
-      //   base    = secondary table (sheet 1) at code position
-      //   overlay = sheet 2 at table char position
-      html+='<div style="position:relative;width:24px;height:24px;display:inline-block;">'+
-        '<div style="position:absolute;inset:0;'+_aprSpriteHTML(1,code)+'"></div>'+
-        '<div style="position:absolute;inset:0;'+_aprSpriteHTML(2,table.charCodeAt(0))+';opacity:0.9;"></div>'+
-        '</div>';
-    }
   }
+  var table=sym[0];
+  if(table=='/'){
+    // Primary table — simple single sprite.
+    return '<div style="width:24px;height:24px;display:inline-block;'+_aprSpriteHTML(0,code)+'"></div>';
+  }
+  if(table=='\\'){
+    // Secondary table.
+    return '<div style="width:24px;height:24px;display:inline-block;'+_aprSpriteHTML(1,code)+'"></div>';
+  }
+  // Alternate/overlay table (0-9, A-Z):
+  //   base    = secondary table (sheet 1) at code position
+  //   overlay = sheet 2 at table char position
+  return '<div style="position:relative;width:24px;height:24px;display:inline-block;">'+
+    '<div style="position:absolute;inset:0;'+_aprSpriteHTML(1,code)+'"></div>'+
+    '<div style="position:absolute;inset:0;'+_aprSpriteHTML(2,table.charCodeAt(0))+';opacity:0.9;"></div>'+
+    '</div>';
+}
+
+function _aprIconHTML(sym,callsign){
+  var html='<div style="text-align:center;line-height:1;position:relative;display:inline-block;">'+
+    _aprSymbolHTML(sym);
   if(callsign)html+='<div class="apr-label">'+esc(callsign)+'</div>';
   html+='</div>';
   return html;
@@ -1544,10 +1595,10 @@ function updateMapFromToday(){
   var bounds=[],hasStation=false;
   var pt=qsoPathTheme();
 
-  // ---- Station marker ----
+  // ---- Station marker (with the transmitted APRS symbol while beaconing) ----
   if(ownStationLat!=null&&ownStationLon!=null){
-    var sm=L.circleMarker([ownStationLat,ownStationLon],{radius:9,color:pt.station,fillColor:pt.station,fillOpacity:0.85,weight:2.5,className:'station-dot'});
-    stationLayer.addLayer(sm);bounds.push([ownStationLat,ownStationLon]);hasStation=true;
+    ownStationMarker=_ownStationMarker(ownStationLat,ownStationLon,pt,false);
+    stationLayer.addLayer(ownStationMarker);bounds.push([ownStationLat,ownStationLon]);hasStation=true;
   }
 
   // ---- QSO markers + lines ----
@@ -1722,10 +1773,13 @@ var _modeGroups={cw:1,cwr:1,phone:1,ssb:1,usb:1,lsb:1,am:1,fm:1,nfm:1,digi:1,ft8
 // show: strips the article/republic prefixes and caps the length. Shared by
 // the Top-QSOs, Recent-QSOs and live-prepend renderers so a freshly logged
 // row looks the same as after a re-render.
+// shortCountry trims the ADIF long forms ("Federal Republic of Germany",
+// "Republic of Korea") so the country column keeps its meaning in a table cell.
+// Matching is case-insensitive: ADIF and Wavelog disagree on capitalisation.
 function shortCountry(c){
-  return (c||'').replace(/^The\s+/,'').replace(/^Federal Republic Of\s+/,'')
-    .replace(/^Fed\. Rep\. of\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Rep\. of\s+/,'')
-    .trim().substring(0,22);
+  return (c||'').replace(/^the\s+/i,'').replace(/^federal republic of\s+/i,'')
+    .replace(/^fed\.\s*rep\.?\s*of\s+/i,'').replace(/^republic of\s+/i,'')
+    .replace(/^rep\.?\s*of\s+/i,'').trim().substring(0,22);
 }
 function bandBadgeClass(band){return'band-badge band-'+(band||'').toLowerCase().replace(/[^a-z0-9]/g,'')}
 function modeBadgeClass(mode){

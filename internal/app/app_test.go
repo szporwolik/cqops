@@ -589,3 +589,88 @@ func TestEffectiveGrid_KISSServerService(t *testing.T) {
 		t.Error("KISSServerClient should not be connected when never started")
 	}
 }
+
+func TestAPRSBeaconIdentity(t *testing.T) {
+	tests := []struct {
+		name       string
+		globalOn   bool
+		logbook    *config.APRSConfig
+		stationCal string
+		wantCall   string
+		wantSym    string
+		wantActive bool
+	}{
+		{
+			name:       "nothing configured",
+			stationCal: "SP9SPM",
+		},
+		{
+			name:       "global APRS disabled",
+			logbook:    &config.APRSConfig{Enabled: true, SendLocation: true, Callsign: "SP9SPM-7", Symbol: "/-"},
+			stationCal: "SP9SPM",
+		},
+		{
+			name:       "logbook without APRS block",
+			globalOn:   true,
+			stationCal: "SP9SPM",
+		},
+		{
+			name:       "receive only",
+			globalOn:   true,
+			logbook:    &config.APRSConfig{Enabled: true, SendLocation: false, Callsign: "SP9SPM-7"},
+			stationCal: "SP9SPM",
+		},
+		{
+			name:       "explicit callsign and symbol",
+			globalOn:   true,
+			logbook:    &config.APRSConfig{Enabled: true, SendLocation: true, Callsign: "SP9SPM-7", Symbol: "/>"},
+			stationCal: "SP9SPM",
+			wantCall:   "SP9SPM-7",
+			wantSym:    "/>",
+			wantActive: true,
+		},
+		{
+			name:       "default SSID and symbol",
+			globalOn:   true,
+			logbook:    &config.APRSConfig{Enabled: true, SendLocation: true},
+			stationCal: "SP9SPM",
+			wantCall:   "SP9SPM-10",
+			wantSym:    "/-",
+			wantActive: true,
+		},
+		{
+			name:       "portable station call loses the suffix",
+			globalOn:   true,
+			logbook:    &config.APRSConfig{Enabled: true, SendLocation: true},
+			stationCal: "SP9SPM/P",
+			wantCall:   "SP9SPM-10",
+			wantSym:    "/-",
+			wantActive: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &config.Config{}
+			cfg.Integrations.APRS.Enabled = tc.globalOn
+			a := &App{
+				Config:  cfg,
+				Logbook: &config.Logbook{Station: config.Station{Callsign: tc.stationCal}, APRS: tc.logbook},
+			}
+			call, sym, active := a.APRSBeaconIdentity()
+			if active != tc.wantActive || call != tc.wantCall || sym != tc.wantSym {
+				t.Fatalf("got (%q, %q, %t), want (%q, %q, %t)",
+					call, sym, active, tc.wantCall, tc.wantSym, tc.wantActive)
+			}
+		})
+	}
+}
+
+func TestAPRSBeaconIdentityNilReceivers(t *testing.T) {
+	var a *App
+	if _, _, on := a.APRSBeaconIdentity(); on {
+		t.Fatal("nil App must not report an active identity")
+	}
+	if _, _, on := (&App{}).APRSBeaconIdentity(); on {
+		t.Fatal("App without config/logbook must not report an active identity")
+	}
+}

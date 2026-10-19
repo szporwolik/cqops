@@ -47,6 +47,12 @@ type StationInfo struct {
 	Antenna      string  `json:"antenna,omitempty"`
 	PowerW       int     `json:"powerW,omitempty"`
 	AprsRadiusKm float64 `json:"aprsRadiusKm,omitempty"`
+	// Own APRS identity, filled in while CQOps is beaconing: the callsign with
+	// its SSID and the two-character symbol (table + code) that the network
+	// sees. Let empty when receive-only.
+	AprsCallsign string `json:"aprsCallsign,omitempty"`
+	AprsSymbol   string `json:"aprsSymbol,omitempty"`
+	AprsBeacon   bool   `json:"aprsBeacon,omitempty"`
 }
 
 type OperatorInfo struct {
