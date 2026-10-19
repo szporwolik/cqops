@@ -2,9 +2,12 @@ package tui
 
 import (
 	"fmt"
+	"hash/fnv"
+	"math"
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -866,8 +869,8 @@ var lastPushedPartner cachedPartner
 // partnerEmpty tracks whether we already reported partner as empty.
 var partnerEmpty bool
 
-// lastRecentIDs holds the last pushed QSO ID list for change detection.
-var lastRecentIDs []int64
+// lastRecentFP holds the last pushed recent-QSO fingerprint (ids + content).
+var lastRecentFP panelFingerprint
 
 // pushDashboardRecentAndToday force-pushes the recent-QSO and today panels.
 // Owner-loop only — used after background enrichment changes QSO fields
@@ -879,19 +882,27 @@ func (m *Model) pushDashboardRecentAndToday() {
 	}
 	ds := m.http.client.State()
 	m.forcePushDashboardRecent(ds)
-	m.pushDashboardToday(ds)
+	m.forcePushDashboardToday(ds)
 }
 
 // forcePushDashboardRecent clears the change-detection cache and pushes.
 // Use when QSO fields (country, grid, distance) change without ID changes,
 // e.g. after WSJT-X enrichment.
 func (m *Model) forcePushDashboardRecent(ds *dashboard.State) {
-	lastRecentIDs = nil
+	lastRecentFP = panelFingerprint{}
 	m.pushDashboardRecent(ds)
 }
 
-// lastTodayIDs holds the last pushed today QSO ID list for change detection.
-var lastTodayIDs []int64
+// forcePushDashboardToday clears the today-panel cache and pushes. Without
+// this the Today panel (Top QSOs, map, stats) kept stale rows after field-only
+// changes, because its fingerprint saw the same ids.
+func (m *Model) forcePushDashboardToday(ds *dashboard.State) {
+	lastTodayFP = panelFingerprint{}
+	m.pushDashboardToday(ds)
+}
+
+// lastTodayFP holds the last pushed today-QSO fingerprint (ids + content).
+var lastTodayFP panelFingerprint
 
 // invalidateDashboardFlags clears the cached dupe/new-call/new-DXCC state
 // so the next pushDashboardFast recomputes them from the DB. Called after
@@ -918,10 +929,11 @@ func (m *Model) forcePushDashboardAll() {
 	// Clear throttle/cache state so pushDashboardState runs every panel.
 	lastDashboardPushTick = 0
 	lastAPRSPush = time.Time{}
-	// Use sentinel values instead of nil so that an empty result (0 QSOs
-	// in a fresh logbook) does not "match" the cleared cache via idsEqual.
-	lastTodayIDs = []int64{-1}
-	lastRecentIDs = []int64{-1}
+	// Use an unset fingerprint instead of a sentinel id list so that an
+	// empty result (0 QSOs in a fresh logbook) cannot "match" the cleared
+	// cache.
+	lastTodayFP = panelFingerprint{}
+	lastRecentFP = panelFingerprint{}
 	pushDashboardLastCall = ""
 	lastPushedAQSO = cachedAQSO{}
 	lastActiveDupe = false
@@ -932,25 +944,47 @@ func (m *Model) forcePushDashboardAll() {
 	m.pushDashboardState()
 }
 
-func idsEqual(a, b []int64) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
+// panelFingerprint identifies the content last pushed to a dashboard panel.
+//
+// Row id sets alone are not enough: background enrichment (callbook/CTY
+// country, grid, zones) and manual edits change the rendered values without
+// changing any id. An id-only check skipped those pushes, so the Today panel
+// kept showing a QSO without a country while Recent already had it — and a
+// browser reload did not help, because the browser re-reads the server
+// snapshot, which still held the stale views. The digest covers every field
+// the recent/top-QSO panels and the map render.
+type panelFingerprint struct {
+	ids    []int64
+	digest uint64
+	set    bool
 }
 
-func cloneIDs(a []int64) []int64 {
-	if a == nil {
-		return nil
+// newPanelFingerprint builds the id list and content digest for qsos.
+func newPanelFingerprint(qsos []qso.QSO) panelFingerprint {
+	ids := make([]int64, len(qsos))
+	h := fnv.New64a()
+	var num [32]byte
+	for i, q := range qsos {
+		ids[i] = q.ID
+		h.Write(strconv.AppendInt(num[:0], q.ID, 10))
+		for _, s := range [...]string{
+			q.Call, q.Band, q.Mode, q.Submode,
+			q.GridSquare, q.MyGridSquare, q.Country, q.Operator,
+			q.RSTSent, q.RSTRcvd, q.QSODate, q.TimeOn,
+		} {
+			h.Write([]byte{0x1f})
+			h.Write([]byte(s))
+		}
+		h.Write([]byte{0x1f})
+		h.Write(strconv.AppendInt(num[:0], int64(math.Round(q.Freq*1_000_000)), 10))
 	}
-	b := make([]int64, len(a))
-	copy(b, a)
-	return b
+	return panelFingerprint{ids: ids, digest: h.Sum64(), set: true}
+}
+
+// equal reports whether two fingerprints describe the same panel content.
+// An unset fingerprint never matches, which is how a forced push is spelled.
+func (p panelFingerprint) equal(o panelFingerprint) bool {
+	return p.set && o.set && p.digest == o.digest
 }
 
 // countryWorkedBefore checks whether any QSO exists for the given country
@@ -1077,17 +1111,15 @@ func (m *Model) pushDashboardRecent(ds *dashboard.State) {
 		return
 	}
 
-	// Build a fingerprint from QSO IDs to detect changes cheaply.
-	fp := make([]int64, len(qsos))
-	for i, q := range qsos {
-		fp[i] = q.ID
-	}
-	if idsEqual(fp, lastRecentIDs) {
-		applog.Debug("dashboard: recent_qsos unchanged, skipping push", "count", len(fp))
+	// Fingerprint ids + displayed fields, so field-only changes (enrichment,
+	// edits) still repaint the panel.
+	fp := newPanelFingerprint(qsos)
+	if fp.equal(lastRecentFP) {
+		applog.Debug("dashboard: recent_qsos unchanged, skipping push", "count", len(fp.ids))
 		return
 	}
-	applog.Debug("dashboard: recent_qsos changed, pushing", "count", len(fp), "prevCount", len(lastRecentIDs))
-	lastRecentIDs = cloneIDs(fp)
+	applog.Debug("dashboard: recent_qsos changed, pushing", "count", len(fp.ids), "prevCount", len(lastRecentFP.ids))
+	lastRecentFP = fp
 
 	views := make([]dashboard.QSOView, 0, len(qsos))
 	for _, q := range qsos {
@@ -1160,15 +1192,14 @@ func (m *Model) pushDashboardToday(ds *dashboard.State) {
 			qsos = append(yQsos, qsos...)
 		}
 	}
-	// Build fingerprint to skip redundant pushes.
-	fp := make([]int64, len(qsos))
-	for i, qs := range qsos {
-		fp[i] = qs.ID
-	}
-	if idsEqual(fp, lastTodayIDs) {
+	// Fingerprint ids + displayed fields (see panelFingerprint): the Today
+	// panel feeds Top QSOs and the map, and must repaint after enrichment
+	// fills country/grid on rows whose ids did not change.
+	fp := newPanelFingerprint(qsos)
+	if fp.equal(lastTodayFP) {
 		return
 	}
-	lastTodayIDs = cloneIDs(fp)
+	lastTodayFP = fp
 
 	views := make([]dashboard.QSOView, 0, len(qsos))
 	for _, qs := range qsos {
