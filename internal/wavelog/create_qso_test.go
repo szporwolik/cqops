@@ -388,3 +388,77 @@ func TestFetchAllQSOIDs_Paginates(t *testing.T) {
 		t.Errorf("map size = %d, want 4", len(ids))
 	}
 }
+
+// TestCreateQSO_CarriesPowerAndReferences is the regression test for uploads
+// that silently lost fields: the JSON create used to send only the core
+// columns, so Wavelog kept its station-profile default power (100 W in the
+// field reports) and dropped SOTA/POTA/WWFF/IOTA/SIG references, the operator
+// and the zones — even though the ADIF path and PATCH always carried them.
+func TestCreateQSO_CarriesPowerAndReferences(t *testing.T) {
+	var got map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"id": 7}})
+	}))
+	defer srv.Close()
+
+	_, _, err := CreateQSO(srv.URL, "wl2_test", CreateQSOInput{
+		StationProfileID: 1,
+		Call:             "DJ7NT",
+		Band:             "20m",
+		Mode:             "FT8",
+		QSODate:          "2026-10-13",
+		TimeOn:           "203000",
+		TXPower:          "10",
+		Operator:         "SP9SPM",
+		SOTARef:          "SP/BZ-001",
+		POTARef:          "SP-0001",
+		WWFFRef:          "SPFF-0001",
+		IOTA:             "EU-005",
+		SIG:              "SOTA",
+		SIGInfo:          "SP/BZ-001",
+		CQZone:           "15",
+		ITUZone:          "28",
+	})
+	if err != nil {
+		t.Fatalf("CreateQSO: %v", err)
+	}
+
+	want := map[string]any{
+		"tx_pwr":   "10",
+		"operator": "SP9SPM",
+		"sota_ref": "SP/BZ-001",
+		"pota_ref": "SP-0001",
+		"wwff_ref": "SPFF-0001",
+		"iota":     "EU-005",
+		"sig":      "SOTA",
+		"sig_info": "SP/BZ-001",
+		"cqz":      float64(15),
+		"ituz":     float64(28),
+	}
+	for key, expected := range want {
+		if got[key] != expected {
+			t.Errorf("payload[%q] = %v, want %v", key, got[key], expected)
+		}
+	}
+
+	// Empty optional fields must stay out of the body (the server keeps its
+	// own values instead of clearing them).
+	got = nil
+	if _, _, err := CreateQSO(srv.URL, "wl2_test", CreateQSOInput{
+		StationProfileID: 1, Call: "DJ7NT", Band: "20m", Mode: "FT8",
+		QSODate: "2026-10-13", TimeOn: "203000",
+	}); err != nil {
+		t.Fatalf("CreateQSO (empty optional): %v", err)
+	}
+	for _, key := range []string{"tx_pwr", "operator", "sota_ref", "pota_ref",
+		"wwff_ref", "iota", "sig", "sig_info", "cqz", "ituz"} {
+		if v, present := got[key]; present {
+			t.Errorf("payload[%q] = %v, want omitted when empty", key, v)
+		}
+	}
+}

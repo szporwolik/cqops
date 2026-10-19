@@ -332,6 +332,19 @@ func buildCreateQSOInput(sidInt int, qs *qso.QSO) wavelog.CreateQSOInput {
 		QTH:              qs.QTH,
 		Comment:          qs.Comment,
 		Notes:            qs.Notes,
+		// These are sent by the ADIF path (and by PATCH) — the JSON create
+		// dropped them, so Wavelog fell back to its station-profile defaults
+		// (e.g. 100 W for tx_pwr) and lost SOTA/POTA/WWFF/IOTA references.
+		TXPower:  qs.TXPower,
+		Operator: qs.Operator,
+		SOTARef:  qs.SOTARef,
+		POTARef:  qs.POTARef,
+		WWFFRef:  qs.WWFFRef,
+		IOTA:     qs.IOTA,
+		SIG:      qs.SIG,
+		SIGInfo:  qs.SIGInfo,
+		CQZone:   qs.CQZone,
+		ITUZone:  qs.ITUZone,
 	}
 	if qs.Freq > 0 {
 		in.FreqHz = int64(math.Round(qs.Freq * 1e6))

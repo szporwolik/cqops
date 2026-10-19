@@ -2,10 +2,13 @@
 
 ## v0.11.2 — 2026-10-19
 
-> **Maintenance release on top of 0.11.1: dashboard panels that no longer keep stale QSO data, a patched Go toolchain, refreshed dependencies, and Windows binaries that finally report their own version.** No config or database migration is needed from v0.11.1.
+> **Maintenance release on top of 0.11.1: dashboard panels that no longer keep stale QSO data, Wavelog uploads that keep the power and the references, a patched Go toolchain, refreshed dependencies, and Windows binaries that finally report their own version.** No config or database migration is needed from v0.11.1.
 
 ### Dashboard
 - <u>**Top QSOs no longer lose the country**</u>: the same contact could show its country in Recent QSOs and an empty country in Top QSOs, and reloading the page did not help. WSJT-X auto-logs a contact without a country, the dashboard pushed the Today panel (which feeds Top QSOs, the map and the stats) before callbook/CTY enrichment filled it in, and the panel's change detector compared row ids only — so the enriched value never repainted. Recent was force-pushed after enrichment, hence the mismatch. Both panels now fingerprint the values they render (call, band, mode/submode, grid, country, operator, RST, frequency, time) on top of the row ids, and enrichment force-pushes the Today panel too.
+
+### Wavelog
+- <u>**Uploads carry the power and the references again**</u>: the v2 JSON create — the path behind every manual save, editor upload and WSJT-X auto-log — sent only the core columns. Wavelog therefore kept its station-profile default power (a 10 W contact landed as 100 W) and silently lost SOTA/POTA/WWFF/IOTA/SIG references, the operator and the CQ/ITU zones, even though the ADIF path and PATCH always carried them. All of those fields are part of the create payload now; empty ones stay out of the body so the server keeps its own values.
 
 ### Fixes
 - **Windows binaries report the right version**: the checked-in PE resources were still stamped `0.8.13.0` from the 0.8.x line — release builds embed them as-is, so Windows file properties showed a version four releases old. `winres/winres.json` and both `rsrc_windows_*.syso` are regenerated at 0.11.2.

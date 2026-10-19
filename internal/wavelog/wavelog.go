@@ -386,6 +386,10 @@ func maxInt(a, b int) int {
 
 // CreateQSOInput carries the fields for a single-QSO JSON create.
 // Frequencies are in Hz (the v2 JSON convention, unlike ADIF's MHz).
+//
+// The v2 create maps every body key through body_to_record(), which passes
+// unknown lowercase keys through as ADIF field names — so the ADIF-style
+// fields below (tx_pwr, sota_ref, …) are accepted just as they are in PATCH.
 type CreateQSOInput struct {
 	StationProfileID int
 	Call             string
@@ -401,6 +405,16 @@ type CreateQSOInput struct {
 	QTH              string
 	Comment          string
 	Notes            string
+	TXPower          string
+	Operator         string
+	SOTARef          string
+	POTARef          string
+	WWFFRef          string
+	IOTA             string
+	SIG              string
+	SIGInfo          string
+	CQZone           string // written as cqz when numeric
+	ITUZone          string // written as ituz when numeric
 	FreqHz           int64
 	FreqRxHz         int64
 }
@@ -432,6 +446,26 @@ func CreateQSO(baseURL, apiKey string, in CreateQSOInput) (remoteID int64, isDup
 	addStr("qth", in.QTH)
 	addStr("comment", in.Comment)
 	addStr("notes", in.Notes)
+	addStr("tx_pwr", in.TXPower)
+	addStr("operator", in.Operator)
+	addStr("sota_ref", in.SOTARef)
+	addStr("pota_ref", in.POTARef)
+	addStr("wwff_ref", in.WWFFRef)
+	addStr("iota", in.IOTA)
+	addStr("sig", in.SIG)
+	addStr("sig_info", in.SIGInfo)
+	// Zones are numeric on the server; send them as integers when they parse
+	// (the import pipeline computes them when absent).
+	addInt := func(key, v string) {
+		if v = strings.TrimSpace(v); v == "" {
+			return
+		}
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			payload[key] = n
+		}
+	}
+	addInt("cqz", in.CQZone)
+	addInt("ituz", in.ITUZone)
 	if in.FreqHz > 0 {
 		payload["freq"] = in.FreqHz
 	}
