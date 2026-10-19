@@ -664,7 +664,7 @@ function renderTopQSOs(){
     return{call:q.call||'?',grid:q.grid,band:q.band||'',mode:q.mode||'',submode:q.submode||'',country:q.country||'',km:distKm(q.grid)};
   }).sort(function(a,b){return b.km-a.km}).slice(0,7);
   topqsosBody.innerHTML=ranked.map(function(r,i){
-    var countryText=r.country?r.country.replace(/^The\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Federal Republic Of\s+/,'').trim().substring(0,22):'';
+    var countryText=r.country?shortCountry(r.country):'';
     var displayMode=r.submode||r.mode;
     var isLongest=i===0&&r.km>0;
     var rowCls=isLongest?' class=\"tq-longest\"':'';
@@ -698,7 +698,7 @@ function renderRecentTable(qsos){
   if(!list.length){recentBody.innerHTML='<tr><td colspan=\"8\" style=\"color:var(--dim)\">No QSOs yet</td></tr>';return}
   recentBody.innerHTML=list.map(function(q){
     var utc=q.timeUtc?q.timeUtc.slice(11,16).replace(':','')+'Z':'';
-    var ctry=(q.country||'').replace(/^The\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Federal Republic Of\s+/,'').trim().substring(0,22);
+    var ctry=shortCountry(q.country);
     var dist=formatDistDir(q.grid);
     var op=q.operator||ownStationCall;
     var opBadge=op?'<span class="recent-badge" style="'+opBadgeStyle(op)+'">'+esc(op)+'</span>':'';
@@ -716,7 +716,7 @@ function prependRecentRow(q){
   var row=document.createElement('tr');row.className='new-row';
   var op=q.operator||ownStationCall;
   var opBadge=op?'<span class="recent-badge" style="'+opBadgeStyle(op)+'">'+esc(op)+'</span>':'';
-  row.innerHTML='<td>'+utc+'</td><td><strong>'+callLink(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.submode||q.mode,'mode')+'</td><td class="recent-op-col">'+opBadge+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td><span class="recent-badge country-badge">'+esc(q.country||'')+'</span></td>';
+  row.innerHTML='<td>'+utc+'</td><td><strong>'+callLink(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.submode||q.mode,'mode')+'</td><td class="recent-op-col">'+opBadge+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td title="'+esc(q.country||'')+'"><span class="recent-badge country-badge">'+esc(shortCountry(q.country))+'</span></td>';
   if(recentBody.firstChild)recentBody.insertBefore(row,recentBody.firstChild);else recentBody.appendChild(row);
   while(recentBody.children.length>7)recentBody.removeChild(recentBody.lastChild);
 }
@@ -1705,6 +1705,15 @@ function guessContinent(c){
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 // ---- Centralized band / mode styling ----
 var _modeGroups={cw:1,cwr:1,phone:1,ssb:1,usb:1,lsb:1,am:1,fm:1,nfm:1,digi:1,ft8:1,ft4:1,rtty:1,psk31:1,psk63:1,jt65:1,jt9:1,mfsk:1,olivia:1,hell:1,fsk441:1,jt6m:1,pkt:1,data:1,mfsk16:1,domino:1,thor:1,ros:1,js8:1,fst4:1,fst4w:1,q65:1,msk144:1,sstv:1,fax:1};
+// shortCountry turns an ADIF entity name into something a table cell can
+// show: strips the article/republic prefixes and caps the length. Shared by
+// the Top-QSOs, Recent-QSOs and live-prepend renderers so a freshly logged
+// row looks the same as after a re-render.
+function shortCountry(c){
+  return (c||'').replace(/^The\s+/,'').replace(/^Federal Republic Of\s+/,'')
+    .replace(/^Fed\. Rep\. of\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Rep\. of\s+/,'')
+    .trim().substring(0,22);
+}
 function bandBadgeClass(band){return'band-badge band-'+(band||'').toLowerCase().replace(/[^a-z0-9]/g,'')}
 function modeBadgeClass(mode){
   var m=(mode||'').toLowerCase().trim();

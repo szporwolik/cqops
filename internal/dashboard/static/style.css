@@ -278,9 +278,9 @@
 .band-badge.band-6m,.badge.band-6m{background:var(--b6m-bg);color:var(--b6m-fg)}
 .band-badge.band-4m,.badge.band-4m{background:var(--b4m-bg);color:var(--b4m-fg)}
 .band-badge.band-2m,.badge.band-2m{background:var(--b2m-bg);color:var(--b2m-fg)}
-.band-badge.band-70cm,.badge.band-70cm{background:var(--b70cm-bg);color:var(--b70m-fg)}
-.band-badge.band-23cm,.badge.band-23cm{background:var(--b23cm-bg);color:var(--b23m-fg)}
-.band-badge.band-13cm,.badge.band-13cm{background:var(--b13cm-bg);color:var(--b13m-fg)}
+.band-badge.band-70cm,.badge.band-70cm{background:var(--b70cm-bg);color:var(--b70cm-fg)}
+.band-badge.band-23cm,.badge.band-23cm{background:var(--b23cm-bg);color:var(--b23cm-fg)}
+.band-badge.band-13cm,.badge.band-13cm{background:var(--b13cm-bg);color:var(--b13cm-fg)}
 .band-badge.band-9cm,.badge.band-9cm{background:var(--b9cm-bg);color:var(--b9cm-fg)}
 .band-badge.band-6cm,.badge.band-6cm{background:var(--b6cm-bg);color:var(--b6cm-fg)}
 .band-badge.band-3cm,.badge.band-3cm{background:var(--b3cm-bg);color:var(--b3cm-fg)}
@@ -334,7 +334,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #wx-row .wx-temp{font-weight:600;color:var(--text)}
 #wx-row .wx-label{font-size:0.65rem;color:var(--dim);text-transform:uppercase}
 #wx-row .wx-wind{font-size:0.7rem}
-#wx-row .wx-wind .wx-wind-unit{font-size:0.6rem}
+#wx-row .wx-wind .wx-wind-unit{font-size:0.68rem}
 #wx-row .wx-rain{font-size:0.7rem;color:var(--blue)}
 /* Progressive hide: drop 2-3 slots per step so the row always fits without overflow.
    Sun-icon tracks wx-icon size. */
@@ -506,7 +506,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #recent-table tbody tr.new-row{animation:flash 1.2s ease-out}
 @keyframes flash{from{background:var(--blue-soft);color:var(--blue-dark)}to{background:transparent;color:inherit}}
 /* Recent QSOs badge pills for band/mode cells. */
-.recent-badge{display:inline-block;padding:1px 5px;border-radius:3px;font-weight:600;font-size:0.7rem;line-height:1.4}
+.recent-badge{display:inline-block;padding:1px 5px;border-radius:3px;font-weight:600;font-size:0.7rem;line-height:1.4;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
 .recent-badge.country-badge{background:rgba(0,122,61,0.16);color:var(--success);font-weight:500;font-size:0.8rem}
 
 /* ── extra module styles: band conditions, session summary ── */
@@ -819,6 +819,18 @@ footer a:hover{text-decoration:underline}
   #recent-table th,#recent-table td,
   #topqsos-table th,#topqsos-table td{padding:6px 10px}
   #recent-table-wrap,#topqsos-table-wrap{max-height:34vh}
+}
+
+/* ── Reduced motion ─────────────────────────────────────────────────────
+   Honour the OS setting: no hero glow/breathe, no pulsing markers, no toast
+   pop, no new-row flash. Opacity/colour transitions stay instant. */
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{
+    animation-duration:0.001ms!important;
+    animation-iteration-count:1!important;
+    transition-duration:0.001ms!important;
+    scroll-behavior:auto!important;
+  }
 }
 
 /* ══════════════════════════════════════════════════════════════════════
