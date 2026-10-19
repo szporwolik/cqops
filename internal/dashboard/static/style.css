@@ -1079,3 +1079,43 @@ footer a:hover{text-decoration:underline}
   #map-local-panel{min-height:120px}
   #map-extra-box.visible{height:5.5rem;min-height:5.5rem;max-height:5.5rem}
 }
+
+/* ── Phone-width screens ──
+   Below 880px the map row stacks into a column, and the height tiers above only
+   reserved a min-height for the row: the map panel took whatever was left over,
+   which measured 2px at 600x900 and 6px at 390x844 — a strip, not a map. In a
+   stacked layout the map needs its own share of the screen. */
+@media(max-width:880px){
+  #map-table-row{min-height:0}
+  #map-panel{flex:0 0 auto;height:clamp(180px,38vh,320px)}
+  /* flex-basis must be auto, otherwise the panel's flex:1 basis of 0 wins and
+     the column collapses to the height of its (hidden) module box. */
+  #map-local-panel{flex:0 0 auto;height:clamp(110px,16vh,170px)}
+  #map-local-right{flex:0 0 auto}
+}
+/* Phone-width QSO table: seven columns cannot fit 360px, so the signal report
+   and the distance column step out and the call/country columns get the room. */
+@media(max-width:560px){
+  #recent-table th:nth-child(6),#recent-table td:nth-child(6),
+  #recent-table th:nth-child(7),#recent-table td:nth-child(7){display:none}
+  #recent-table th:nth-child(1){width:13%} /* UTC */
+  #recent-table th:nth-child(2){width:24%} /* Call */
+  #recent-table th:nth-child(3){width:12%} /* Band */
+  #recent-table th:nth-child(4){width:12%} /* Mode */
+  #recent-table th:nth-child(8){width:24%} /* Country */
+}
+
+/* Smallest phones: the marketing subtitle is the first thing to go. */
+@media(max-width:400px){
+  #hd-subtitle{display:none}
+}
+
+/* Under 400px there is no room for a country badge next to the callsign, the
+   band and the mode: the country is dropped, the rest share the width. */
+@media(max-width:400px){
+  #recent-table th:nth-child(8),#recent-table td:nth-child(8){display:none}
+  #recent-table th:nth-child(1){width:16%} /* UTC */
+  #recent-table th:nth-child(2){width:40%} /* Call */
+  #recent-table th:nth-child(3){width:17%} /* Band */
+  #recent-table th:nth-child(4){width:17%} /* Mode */
+}
