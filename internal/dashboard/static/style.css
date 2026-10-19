@@ -7,32 +7,29 @@
    ─────────────────────────────────────────────────────────────────── */
 :root {
   /* Page & surfaces */
-  --page-bg:#DDE4F0; --page-bg-soft:#E8EFF7; --page-bg-onyx:#D0D9E8;
-  --surface:#FFFFFF; --surface-soft:#F8FAFE; --surface-blue:#F0F4FC;
+  --page-bg:#DDE4F0;
+  --surface:#FFFFFF; --surface-soft:#F8FAFE;
   /* Borders & shadows */
   --border:rgba(80,100,130,0.22); --border-strong:rgba(60,80,115,0.38);
   --shadow:rgba(15,31,51,0.10); --shadow-soft:rgba(15,31,51,0.05);
   /* Text */
-  --text:#07111F; --text-secondary:#263A52; --dim:#58708C; --dim-soft:#70849B;
+  --text:#07111F; --text-secondary:#263A52; --dim:#4B6382;
   /* Accent (red) — reserved for alerts, active state, critical live data */
-  --accent:#D00032; --accent-dark:#A00026; --accent-soft:#FFE3EA; --accent-xsoft:#FFF2F5;
+  --accent:#D00032; --accent-xsoft:#FFF2F5;
   /* Blue */
-  --blue:#005BBB; --blue-dark:#003F88; --blue-deep:#123E6F; --blue-soft:#DDEBFF; --blue-xsoft:#EEF6FF;
+  --blue:#005BBB; --blue-dark:#003F88; --blue-soft:#DDEBFF; --blue-xsoft:#EEF6FF;
   /* Cyan */
-  --cyan:#007C91; --cyan-soft:#DDF6FA;
+  --cyan:#007C91;
   /* Status */
   --success:#007A3D; --warn:#B45309; --offline:#C1121F;
-  /* Map markers */
-  --station-marker:#007A3D; --qso-marker:#0067C5;
-  --active-path:#D00032; --last-qso:#D00032; --old-path:rgba(0,91,187,0.30);
   /* Table */
-  --table-border:rgba(90,115,145,0.18); --table-alt:#F5F8FC; --table-hover:#EAF0F8;
+  --table-border:rgba(90,115,145,0.18); --table-alt:#F5F8FC;
   /* Body gradient stops */
   --body-grad-1:rgba(208,0,50,0.035); --body-grad-2:rgba(0,91,187,0.055);
   --body-grad-3:#EAF0F7; --body-grad-4:#DBE3EF; --body-grad-5:#CAD4E4;
 
   /* ── Layout (not themed) ── */
-  --card-radius:8px; --gap:10px;
+  --card-radius:8px;
   --logo-w:140px; --logo-h:84px;
   /* Body text. Kept in rem so it follows the root font size ramp below. */
   --base-font:0.9375rem;
@@ -75,26 +72,23 @@
 :root.dark {
   color-scheme: dark;
   /* Page & surfaces — layered depth */
-  --page-bg:#06090E; --page-bg-soft:#0A0F16; --page-bg-onyx:#030508;
-  --surface:#0E141D; --surface-soft:#131A24; --surface-blue:#0B1622;
+  --page-bg:#06090E;
+  --surface:#0E141D; --surface-soft:#131A24;
   /* Borders & shadows — blue-grey, restrained */
   --border:rgba(90,120,155,0.18); --border-strong:rgba(80,110,145,0.36);
   --shadow:rgba(0,0,0,0.78); --shadow-soft:rgba(0,0,0,0.42);
   /* Text */
-  --text:#EAF4FF; --text-secondary:#B5C6D8; --dim:#71869A; --dim-soft:#8FA2B5;
+  --text:#EAF4FF; --text-secondary:#B5C6D8; --dim:#71869A;
   /* Accent — TX / critical / active */
-  --accent:#FF3B5C; --accent-dark:#C91F43; --accent-soft:rgba(255,59,92,0.18); --accent-xsoft:rgba(255,59,92,0.08);
+  --accent:#FF3B5C; --accent-xsoft:rgba(255,59,92,0.08);
   /* Blue — navigation / QSO / primary data */
-  --blue:#4FA3FF; --blue-dark:#287ACA; --blue-deep:#82C7FF; --blue-soft:rgba(79,163,255,0.18); --blue-xsoft:rgba(79,163,255,0.08);
+  --blue:#4FA3FF; --blue-dark:#287ACA; --blue-soft:rgba(79,163,255,0.18); --blue-xsoft:rgba(79,163,255,0.08);
   /* Cyan — telemetry / instruments / RF indicators */
-  --cyan:#35DDE7; --cyan-soft:rgba(53,221,231,0.16);
+  --cyan:#35DDE7;
   /* Status */
   --success:#4FE39A; --warn:#FFB454; --offline:#FF5966;
-  /* Map markers */
-  --station-marker:#50E3A4; --qso-marker:#55AEFF;
-  --active-path:#FF405F; --last-qso:#FF405F; --old-path:rgba(79,163,255,0.34);
   /* Table */
-  --table-border:rgba(100,130,160,0.13); --table-alt:#111822; --table-hover:#172330;
+  --table-border:rgba(100,130,160,0.13); --table-alt:#111822;
   /* Body gradient */
   --body-grad-1:rgba(255,44,83,0.055); --body-grad-2:rgba(30,199,222,0.075);
   --body-grad-3:#06090E; --body-grad-4:#0A1016; --body-grad-5:#0D151E;
@@ -135,26 +129,23 @@
 :root.yl {
   color-scheme: light;
   /* Page & surfaces — pearl-blush depth */
-  --page-bg:#F5E9F3; --page-bg-soft:#FBF6FA; --page-bg-onyx:#E5D3E2;
-  --surface:#FFFDFE; --surface-soft:#FCF7FA; --surface-blue:#F3EDF9;
+  --page-bg:#F5E9F3;
+  --surface:#FFFDFE; --surface-soft:#FCF7FA;
   /* Borders & shadows — mauve, soft rose-plum */
   --border:rgba(115,68,105,0.22); --border-strong:rgba(105,55,95,0.40);
   --shadow:rgba(73,35,68,0.15); --shadow-soft:rgba(73,35,68,0.07);
   /* Text */
-  --text:#241522; --text-secondary:#4F3A4B; --dim:#705C6C; --dim-soft:#806D7D;
+  --text:#241522; --text-secondary:#4F3A4B; --dim:#705C6C;
   /* Accent — orchid raspberry */
-  --accent:#C12678; --accent-dark:#941B59; --accent-soft:#F6D8E8; --accent-xsoft:#FDF0F7;
+  --accent:#C12678; --accent-xsoft:#FDF0F7;
   /* Blue — premium orchid violet */
-  --blue:#7650B8; --blue-dark:#5B3C91; --blue-deep:#44306F; --blue-soft:#E9E0F5; --blue-xsoft:#F5F0FA;
+  --blue:#7650B8; --blue-dark:#5B3C91; --blue-soft:#E9E0F5; --blue-xsoft:#F5F0FA;
   /* Cyan — mineral teal */
-  --cyan:#167E79; --cyan-soft:#D9EEEC;
+  --cyan:#167E79;
   /* Status */
   --success:#207A5D; --warn:#9D5F00; --offline:#C72A5A;
-  /* Map markers */
-  --station-marker:#207A5D; --qso-marker:#7650B8;
-  --active-path:#C12678; --last-qso:#8E34A8; --old-path:rgba(118,80,184,0.34);
   /* Table */
-  --table-border:rgba(125,80,116,0.20); --table-alt:#FAF2F8; --table-hover:#F2E4EF;
+  --table-border:rgba(125,80,116,0.20); --table-alt:#FAF2F8;
   /* Body gradient */
   --body-grad-1:rgba(193,38,120,0.10); --body-grad-2:rgba(118,80,184,0.10);
   --body-grad-3:#FBF4F9; --body-grad-4:#F0E3ED; --body-grad-5:#E4D2E1;
@@ -197,26 +188,23 @@
 :root.hivis {
   color-scheme: dark;
   /* Page & surfaces — black base, charcoal cards for depth */
-  --page-bg:#000000; --page-bg-soft:#030506; --page-bg-onyx:#000000;
-  --surface:#080B10; --surface-soft:#0E1219; --surface-blue:#06141E;
+  --page-bg:#000000;
+  --surface:#080B10; --surface-soft:#0E1219;
   /* Borders & shadows — clean, accessible contrast */
   --border:rgba(255,255,255,0.30); --border-strong:rgba(255,255,255,0.64);
   --shadow:rgba(0,0,0,0.95); --shadow-soft:rgba(0,0,0,0.60);
   /* Text */
-  --text:#FFFFFF; --text-secondary:#F2F5F7; --dim:#CBD4DD; --dim-soft:#B4C0CB;
+  --text:#FFFFFF; --text-secondary:#F2F5F7; --dim:#CBD4DD;
   /* Accent — signal yellow */
-  --accent:#FFD400; --accent-dark:#E4B900; --accent-soft:rgba(255,212,0,0.24); --accent-xsoft:rgba(255,212,0,0.10);
+  --accent:#FFD400; --accent-xsoft:rgba(255,212,0,0.10);
   /* Blue */
-  --blue:#72BCFF; --blue-dark:#2C91EC; --blue-deep:#B4DCFF; --blue-soft:rgba(114,188,255,0.24); --blue-xsoft:rgba(114,188,255,0.10);
+  --blue:#72BCFF; --blue-dark:#2C91EC; --blue-soft:rgba(114,188,255,0.24); --blue-xsoft:rgba(114,188,255,0.10);
   /* Cyan */
-  --cyan:#55F3E8; --cyan-soft:rgba(85,243,232,0.20);
+  --cyan:#55F3E8;
   /* Status — mint / yellow / magenta */
   --success:#63F7C8; --warn:#FFD400; --offline:#FF5CA8;
-  /* Map markers */
-  --station-marker:#63F7C8; --qso-marker:#72BCFF;
-  --active-path:#FFD400; --last-qso:#FF5CA8; --old-path:rgba(114,188,255,0.44);
   /* Table */
-  --table-border:rgba(255,255,255,0.28); --table-alt:#0D1116; --table-hover:#17232D;
+  --table-border:rgba(255,255,255,0.28); --table-alt:#0D1116;
   /* Body gradient */
   --body-grad-1:rgba(255,212,0,0.055); --body-grad-2:rgba(85,243,232,0.050);
   --body-grad-3:#000000; --body-grad-4:#040608; --body-grad-5:#080D12;
@@ -324,7 +312,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 /* ── QR code in header ── */
 #hd-qr{flex-shrink:0;margin-left:auto;display:flex;align-items:flex-start}
 #hd-qr-img{width:80px;height:80px;border-radius:5px;background:#fff;box-shadow:0 2px 8px var(--shadow)}
-#hd-qr-err{font-size:0.6rem;color:var(--offline);text-align:center}
+#hd-qr-err{font-size:0.7rem;color:var(--offline);text-align:center}
 
 /* ── weather row (header extension, below clock) ── */
 #wx-row{display:flex;align-items:center;justify-content:center;gap:6px 14px;flex-wrap:nowrap;padding:4px 0 6px 0;font-size:0.78rem;color:var(--text-secondary);margin-bottom:0;overflow:hidden}
@@ -332,9 +320,9 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #wx-row .wx-slot{display:flex;align-items:center;gap:4px;white-space:nowrap;flex-shrink:0}
 #wx-row .wx-icon{font-size:1.2rem;line-height:1}
 #wx-row .wx-temp{font-weight:600;color:var(--text)}
-#wx-row .wx-label{font-size:0.65rem;color:var(--dim);text-transform:uppercase}
+#wx-row .wx-label{font-size:0.7rem;color:var(--dim);text-transform:uppercase}
 #wx-row .wx-wind{font-size:0.7rem}
-#wx-row .wx-wind .wx-wind-unit{font-size:0.68rem}
+#wx-row .wx-wind .wx-wind-unit{font-size:0.7rem}
 #wx-row .wx-rain{font-size:0.7rem;color:var(--blue)}
 /* Progressive hide: drop 2-3 slots per step so the row always fits without overflow.
    Sun-icon tracks wx-icon size. */
@@ -342,7 +330,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 @media(max-width:1100px){#wx-row{gap:4px 8px}#wx-row .wx-slot:nth-child(n+6){display:none}#hd-sun .sun-icon{font-size:1.05rem}}
 @media(max-width:900px){#wx-row{gap:4px 7px;font-size:0.74rem}#wx-row .wx-slot:nth-child(n+5){display:none}#wx-row .wx-rain{display:none}#hd-sun .sun-icon{font-size:1.02rem}}
 @media(max-width:700px){#wx-row{gap:4px 6px;font-size:0.7rem}#wx-row .wx-slot:nth-child(n+4){display:none}#hd-sun .sun-icon{font-size:0.98rem}}
-@media(max-width:500px){#wx-row{gap:3px 5px;font-size:0.65rem}#wx-row .wx-slot:nth-child(n+3){display:none}#wx-row .wx-label{display:none}#wx-row .wx-icon{font-size:1rem}#hd-sun .sun-icon{font-size:0.9rem}}
+@media(max-width:500px){#wx-row{gap:3px 5px;font-size:0.7rem}#wx-row .wx-slot:nth-child(n+3){display:none}#wx-row .wx-label{display:none}#wx-row .wx-icon{font-size:1rem}#hd-sun .sun-icon{font-size:0.9rem}}
 /* Weather icon animations — subtle, no perf impact. */
 #wx-row .wx-icon{will-change:transform,opacity}
 .wx-anim-sun{animation:wx-sun 3s ease-in-out infinite}
@@ -387,7 +375,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
   display:none;align-items:center;justify-content:center;text-align:center;padding:8px
 }
 #hero-placeholder-text{font-size:1.1rem;font-weight:700;color:var(--accent);line-height:1.2}
-#hero-placeholder-text::after{content:"\ANo photo";white-space:pre;display:block;font-size:0.68rem;font-weight:400;color:var(--text-secondary);margin-top:2px}
+#hero-placeholder-text::after{content:"\ANo photo";white-space:pre;display:block;font-size:0.7rem;font-weight:400;color:var(--text-secondary);margin-top:2px}
 /* main content */
 #hero-main{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:2px;padding:4px 0 4px 16px;min-height:0}
 #hero-label{font-size:0.78rem;text-transform:uppercase;letter-spacing:1.2px;color:var(--accent);font-weight:700}
@@ -476,15 +464,22 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #recent-table-wrap{overflow-y:auto;flex:1;max-height:320px}
 #recent-table{width:100%;border-collapse:collapse;font-size:0.85rem;table-layout:fixed}
 #recent-table th{text-align:left;color:var(--text-secondary);font-weight:600;padding:4px 6px;border-bottom:1.5px solid var(--border-strong);white-space:nowrap;position:sticky;top:0;background:var(--surface);font-size:0.75rem;text-transform:uppercase;letter-spacing:0.3px}
-#recent-table th:nth-child(1){width:7%}  /* UTC */
-#recent-table th:nth-child(2){width:22%} /* Call */
-#recent-table th:nth-child(3){width:8%}  /* Band */
-#recent-table th:nth-child(4){width:8%}  /* Mode */
-/* Op column (5th) hidden by default, shown at FullHD+. */
+/* One column budget for the whole app. It is sized to the widest realistic
+   cell ("599/599", "10733 km SW", "2232Z") at the smallest base type size, so
+   no later tier has to re-tune percentages again. */
+#recent-table th:nth-child(1){width:10%} /* UTC */
+#recent-table th:nth-child(2){width:12%} /* Call */
+#recent-table th:nth-child(3){width:9%}  /* Band */
+#recent-table th:nth-child(4){width:9%}  /* Mode */
+/* Op column (5th) hidden by default, shown only on very wide screens. */
 .recent-op-col{display:none}
-#recent-table th:nth-child(6){width:8%}  /* RST */
-#recent-table th:nth-child(7){width:18%} /* Dist/Dir */
-#recent-table th:nth-child(8){width:29%} /* Country */
+#recent-table th:nth-child(5){width:13%} /* Op */
+#recent-table th:nth-child(6){width:12%} /* RST */
+#recent-table th:nth-child(7){width:16%} /* Dist/Dir */
+#recent-table th:nth-child(8){width:32%} /* Country */
+/* Distance is numeric secondary data; a notch smaller keeps its direction
+   suffix from being ellipsized. */
+#recent-table td:nth-child(7){font-size:0.8rem}
 #recent-table td{padding:4px 6px;border-bottom:1px solid var(--table-border);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-size:0.85rem;line-height:1.4}
 #recent-table td:nth-child(2){font-weight:700;font-size:0.9rem}
 #recent-table td strong{color:var(--text)}
@@ -498,11 +493,14 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #topqsos-table td{padding:4px 6px;border-bottom:1px solid var(--table-border);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text);font-size:0.85rem;line-height:1.4}
 #topqsos-table td:first-child{font-weight:700;font-size:0.9rem}
 #topqsos-table tbody tr:nth-child(even){background:var(--table-alt)}
-#topqsos-table th:nth-child(1){width:28%} /* Call */
-#topqsos-table th:nth-child(2){width:14%} /* Band */
-#topqsos-table th:nth-child(3){width:14%} /* Mode */
-#topqsos-table th:nth-child(4){width:20%} /* Dist */
-#topqsos-table th:nth-child(5){width:24%} /* Country */
+#topqsos-table th:nth-child(1){width:19%} /* Call */
+#topqsos-table th:nth-child(2){width:16%} /* Band */
+#topqsos-table th:nth-child(3){width:16%} /* Mode */
+#topqsos-table th:nth-child(4){width:24%} /* Dist */
+#topqsos-table th:nth-child(5){width:25%} /* Country */
+/* Tighter side padding buys every column a few pixels of content. */
+#topqsos-table th,#topqsos-table td{padding-left:4px;padding-right:4px}
+#topqsos-table td:nth-child(4){font-size:0.8rem}
 #recent-table tbody tr.new-row{animation:flash 1.2s ease-out}
 @keyframes flash{from{background:var(--blue-soft);color:var(--blue-dark)}to{background:transparent;color:inherit}}
 /* Recent QSOs badge pills for band/mode cells. */
@@ -537,7 +535,27 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #sf-Operator .stat-badge-op{font-size:0.78rem;padding:2px 8px;font-weight:600}
 .panel dd .stat-badge:first-child{margin-left:0}
 /* ── bottom row cards ── */
-main{display:grid;grid-template-columns:minmax(290px,0.9fr) minmax(270px,0.85fr) minmax(380px,1.15fr) minmax(680px,2.2fr);gap:14px;margin-bottom:10px;max-height:30vh;overflow-y:auto}
+main{display:flex;flex-wrap:wrap;align-items:stretch;gap:14px;margin-bottom:10px}
+/* flex-basis acts as each panel's preferred width; grow lets the QSO tables
+   absorb the spare room, while the narrow info panels keep their size. */
+main>.panel{flex:1 1 340px;min-width:0}
+/* The station card holds real sentences ("IC-7300 (IC-7300)", "14.074 MHz 20m
+   FT8"); at 190px its value column was sliced to ellipsis. */
+#station-panel{flex:0 1 300px}
+#stats-panel{flex:0 1 220px}
+#topqsos-panel{flex:1 1 400px}
+/* 660px is what the visible columns need at the 16px base size; a narrower
+   Recent QSOs panel only buys ellipsized cells. */
+#recent-panel{flex:1 1 660px}
+/* Laptop range: keep the three cards on one row by trimming the two tables. */
+@media(min-width:1200px) and (max-width:1599px){
+  #topqsos-panel{flex:1 1 360px}
+  #recent-panel{flex:1 1 640px}
+}
+/* Cards drop out from the least essential upwards: the station and session
+   summary cards repeat what the header, hero and QSO tables already show. */
+@media(max-width:1899px){#stats-panel{display:none}}
+@media(max-width:1599px){#station-panel{display:none}}
 .mode-active main{opacity:0.85}
 .panel{background:var(--surface);border-radius:var(--card-radius);padding:10px 14px;min-width:0;border:1px solid var(--border);box-shadow:0 2px 8px var(--shadow),inset 0 0 0 1px var(--surface-soft)}
 .panel-narrow{min-width:0}
@@ -545,6 +563,9 @@ main{display:grid;grid-template-columns:minmax(290px,0.9fr) minmax(270px,0.85fr)
 .panel h2{font-size:0.85rem;text-transform:uppercase;letter-spacing:0.5px;color:var(--text-secondary);margin-bottom:6px}
 .panel dl{display:grid;grid-template-columns:minmax(0,auto) 1fr;gap:2px 8px;min-width:0;overflow:hidden}
 .panel dt{color:var(--dim);font-size:0.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Station labels are the widest in the app ("Operator"); a notch smaller buys
+   the value column the space it needs. */
+#station-fields dt,#stats-fields dt{font-size:0.76rem}
 .panel dd{font-size:0.9rem;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #stats-fields dd{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .panel dd strong{color:var(--text)}
@@ -608,6 +629,19 @@ footer a:hover{text-decoration:underline}
    this tier and drop panel labels to 10px and the footer to 9.6px — the
    "terribly small" report. Height now only reclaims vertical space; the
    width-based tiers below own typography. */
+@media(max-height:1000px){
+  /* Compact hero: smaller photo, smaller call, no provider chips. */
+  .mode-active #hero{padding:0 12px 0 0;margin:6px 0}
+  .mode-active #hero-active{min-height:0}
+  #hero-photo-box{width:clamp(88px,7vw,132px)}
+  #hero-call{font-size:clamp(22px,2.6vw,38px)}
+  #hero-label{font-size:0.7rem;letter-spacing:0.06em}
+  #hero-identity{font-size:clamp(0.78rem,1vw,0.95rem)}
+  #hero-badges .badge{font-size:0.75rem;padding:2px 8px}
+  #hero-providers .provider-badge{font-size:0.7rem}
+  #hero-meta{font-size:0.72rem}
+  #map-table-row{min-height:22vh}
+}
 @media(max-height:900px){
   #app{min-height:0;padding:2px 12px}
   #hd-logo-box{width:110px;height:66px}
@@ -631,7 +665,7 @@ footer a:hover{text-decoration:underline}
   #hd-title{font-size:1.1rem}
   #hd-subtitle{font-size:0.76rem}
   #hero-badges .badge{font-size:0.7rem;padding:1px 6px}
-  #hero-providers .provider-badge{font-size:0.66rem;padding:1px 4px}
+  #hero-providers .provider-badge{font-size:0.7rem;padding:1px 4px}
   #hero-identity{font-size:0.78rem}
   #hero-refs{font-size:0.72rem}
   #hero-label{font-size:0.72rem}
@@ -639,7 +673,7 @@ footer a:hover{text-decoration:underline}
   .panel h2{font-size:0.72rem}
   .panel dt{font-size:0.74rem}
   .panel dd{font-size:0.82rem}
-  footer{font-size:0.68rem}
+  footer{font-size:0.7rem}
 }
 @media(max-height:550px){
   #app{padding:1px 8px}
@@ -658,22 +692,16 @@ footer a:hover{text-decoration:underline}
 }
 @media(max-height:550px) and (max-width:1200px){
   #hd-title{font-size:0.92rem}
-  #hd-subtitle{font-size:0.68rem}
-  #recent-table{font-size:0.68rem}
-  .panel h2{font-size:0.68rem}
-  .panel dt,.panel dd{font-size:0.68rem}
-  footer{font-size:0.62rem}
+  #hd-subtitle{font-size:0.7rem}
+  #recent-table{font-size:0.72rem}
+  .panel h2{font-size:0.72rem}
+  .panel dt,.panel dd{font-size:0.72rem}
+  footer{font-size:0.7rem}
 }
 
 /* ── responsive: mid-width — hide stats panel, 3-column grid ── */
 @media(max-width:1350px){
-  #stats-panel{display:none}
-  main{grid-template-columns:minmax(280px,1fr) minmax(400px,1.2fr) minmax(540px,2.5fr);gap:10px}
-  #recent-table th:nth-child(1){width:8%}
-  #recent-table th:nth-child(2){width:22%}
-  #recent-table th:nth-child(6){width:8%}
-  #recent-table th:nth-child(7){width:17%}
-  #recent-table th:nth-child(8){width:27%}
+  main{gap:10px}
 }
 
 /* ── responsive: narrow screens — fewer, more aggressive steps ── */
@@ -691,18 +719,18 @@ footer a:hover{text-decoration:underline}
   #hero-identity{font-size:0.85rem}
   #hero-photo-box{width:clamp(140px,26vw,220px)}
   #hero-badges .badge{font-size:0.72rem;padding:2px 8px}
-  #hero-providers .provider-badge{font-size:0.65rem;padding:1px 5px}
+  #hero-providers .provider-badge{font-size:0.7rem;padding:1px 5px}
   #map-table-row{flex-direction:column;gap:6px;min-height:280px;margin-bottom:6px}
   #map-local-right{gap:6px}
   #map-local-panel{min-height:160px}
   #recent-table{font-size:0.7rem}
   #recent-table th,#recent-table td{padding:1px 3px}
-  main{grid-template-columns:1fr 1fr;gap:6px}
+  main{gap:6px}
   .panel{padding:6px 8px}
   .panel h2{font-size:0.72rem;margin-bottom:3px}
-  .panel dt{font-size:0.68rem}
+  .panel dt{font-size:0.7rem}
   .panel dd{font-size:0.75rem}
-  footer{font-size:0.65rem;padding:4px}
+  footer{font-size:0.7rem;padding:4px}
 }
 @media(max-width:540px){
   #app{padding:2px 4px}
@@ -712,11 +740,11 @@ footer a:hover{text-decoration:underline}
   #hero-call{font-size:clamp(18px,7vw,34px)}
   #hero-photo-box{width:100%;height:clamp(100px,30vw,160px)}
   .mode-active #hero-active{flex-direction:column;gap:8px}
-  #recent-table{font-size:0.62rem}
+  #recent-table{font-size:0.7rem}
   #map-table-row{flex-direction:column;gap:4px;min-height:220px;margin-bottom:4px}
   #map-local-right{gap:4px}
   #map-local-panel{min-height:140px}
-  main{grid-template-columns:1fr;gap:4px}
+  main{gap:4px}
   .panel{padding:4px 6px}
 }
 
@@ -734,20 +762,10 @@ footer a:hover{text-decoration:underline}
   /* Column budget for the larger type: the old percentages were tuned for
      13.6px cells, so at FullHD the UTC/RST columns clipped to "220…" and the
      Top-QSOs distance and country cells lost their tails. */
-  main{grid-template-columns:minmax(300px,0.85fr) minmax(280px,0.8fr) minmax(460px,1.35fr) minmax(700px,2.2fr)}
-  #recent-table th:nth-child(1){width:8%}  /* UTC */
-  #recent-table th:nth-child(2){width:16%} /* Call */
-  #recent-table th:nth-child(3){width:8%}  /* Band */
-  #recent-table th:nth-child(4){width:8%}  /* Mode */
-  #recent-table th:nth-child(5){width:12%} /* Op */
-  #recent-table th:nth-child(6){width:10%} /* RST */
-  #recent-table th:nth-child(7){width:17%} /* Dist/Dir */
-  #recent-table th:nth-child(8){width:21%} /* Country */
-  #topqsos-table th:nth-child(1){width:25%} /* Call */
-  #topqsos-table th:nth-child(2){width:12%} /* Band */
-  #topqsos-table th:nth-child(3){width:12%} /* Mode */
-  #topqsos-table th:nth-child(4){width:21%} /* Dist */
-  #topqsos-table th:nth-child(5){width:30%} /* Country */
+  #station-panel{flex:0 1 300px}
+  #stats-panel{flex:0 1 220px}
+  #topqsos-panel{flex:1 1 460px}
+  #recent-panel{flex:1 1 640px}
 }
 
 /* ── Full HD / TV display polish (1920×1080+) ── */
@@ -785,25 +803,35 @@ footer a:hover{text-decoration:underline}
   #map-panel{flex:8}
   #map-local-right{flex:3;gap:14px}
   #map-local-panel{min-height:8.5rem}
-  main{gap:14px;margin-bottom:14px;max-height:32vh}
+  main{gap:14px;margin-bottom:14px}
   #recent-table{font-size:0.88rem}
   .panel dt{font-size:0.85rem}
   .panel dd{font-size:0.95rem}
   .panel h2{font-size:0.85rem}
-  /* Show Operator column at FullHD+. */
-  .recent-op-col{display:table-cell}
-  #recent-table th:nth-child(1){width:8%}  /* UTC */
-  #recent-table th:nth-child(2){width:16%} /* Call */
-  #recent-table th:nth-child(3){width:8%}  /* Band */
-  #recent-table th:nth-child(4){width:8%}  /* Mode */
-  #recent-table th:nth-child(5){width:12%} /* Op */
-  #recent-table th:nth-child(6){width:10%} /* RST */
-  #recent-table th:nth-child(7){width:17%} /* Dist/Dir */
-  #recent-table th:nth-child(8){width:21%} /* Country */
   #topqsos-table{font-size:0.88rem}
   #topqsos-table th,#topqsos-table td{padding:3px 6px}
   #topqsos-table-wrap{max-height:320px}
   footer{padding:8px;font-size:0.8rem}
+}
+
+/* FullHD on a 900px-tall screen: the 26vh map row alone overflows the
+   viewport once the type ramp is applied, so give the height back to the map. */
+@media(min-width:1600px) and (max-height:979px){
+  #map-table-row{min-height:22vh}
+}
+
+/* The operator column needs real room; below this it would be paid for by
+   ellipsizing the callsign and country columns. */
+@media(min-width:1900px){
+  .recent-op-col{display:table-cell}
+  #recent-table th:nth-child(1){width:9%}  /* UTC */
+  #recent-table th:nth-child(2){width:13%} /* Call */
+  #recent-table th:nth-child(3){width:8%}  /* Band */
+  #recent-table th:nth-child(4){width:8%}  /* Mode */
+  #recent-table th:nth-child(5){width:14%} /* Op */
+  #recent-table th:nth-child(6){width:11%} /* RST */
+  #recent-table th:nth-child(7){width:15%} /* Dist/Dir */
+  #recent-table th:nth-child(8){width:22%} /* Country */
 }
 
 /* ── 2K / 4K displays (2560×1440+): let the layout keep up with the type ──
@@ -811,6 +839,7 @@ footer a:hover{text-decoration:underline}
    let the QSO tables use the extra height instead of stopping at 320px. */
 @media(min-width:2300px) and (min-height:1200px){
   #app{padding:0 44px 20px}
+  #stats-panel{flex:0 1 260px}
   #header{gap:22px;margin-bottom:10px}
   #map-table-row{gap:18px;margin-bottom:18px}
   #map-local-right{gap:18px}
@@ -913,3 +942,13 @@ footer a:hover{text-decoration:underline}
   text-shadow:0 0 10px rgba(255,180,84,0.28);
 }
 
+/* Short laptop windows (1366×768 and similar) and stacked narrow layouts: the
+   cards are already full width, so trade a couple of table rows for a screen
+   that does not scroll. */
+@media(min-height:560px) and (max-height:840px){
+  #map-table-row{min-height:18vh}
+  #recent-table-wrap,#topqsos-table-wrap{max-height:150px}
+}
+@media(max-width:1199px){
+  #recent-table-wrap,#topqsos-table-wrap{max-height:150px}
+}

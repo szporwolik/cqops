@@ -43,7 +43,7 @@
       </div>
       <div id="hero-main">
         <div id="hero-label">NOW WORKING</div>
-        <div id="hero-call"></div>
+        <div id="hero-call" aria-live="polite"></div>
         <div id="hero-badges"></div>
         <div id="hero-refs"></div>
         <div id="hero-providers"></div>
@@ -76,7 +76,7 @@
       <h2>Top QSOs</h2>
       <div id="topqsos-table-wrap">
         <table id="topqsos-table">
-          <thead><tr><th>Call</th><th>Band</th><th>Mode</th><th>Dist</th><th>Country</th></tr></thead>
+          <thead><tr><th scope="col">Call</th><th scope="col">Band</th><th scope="col">Mode</th><th scope="col">Dist</th><th scope="col">Country</th></tr></thead>
           <tbody id="topqsos-body"></tbody>
         </table>
       </div>
@@ -85,7 +85,7 @@
       <h2>Recent QSOs</h2>
       <div id="recent-table-wrap">
         <table id="recent-table">
-          <thead><tr><th>UTC</th><th>Call</th><th>Band</th><th>Mode</th><th class="recent-op-col">Op</th><th>RST</th><th>Dist / Dir</th><th>Country</th></tr></thead>
+          <thead><tr><th scope="col">UTC</th><th scope="col">Call</th><th scope="col">Band</th><th scope="col">Mode</th><th scope="col" class="recent-op-col">Op</th><th scope="col">RST</th><th scope="col">Dist / Dir</th><th scope="col">Country</th></tr></thead>
           <tbody id="recent-body"></tbody>
         </table>
       </div>

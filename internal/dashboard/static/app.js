@@ -202,7 +202,7 @@ function connectSSE(){
       // active_qso event hasn't fired yet (the call is already in
       // the hero from a previous render or a race condition).
       var c=heroCall.textContent;
-      if(c&&p.call&&c.toUpperCase()===p.call.toUpperCase())showHeroPhoto(p.imageUrl);
+      if(c&&p.call&&c.toUpperCase()===p.call.toUpperCase())showHeroPhoto(p.imageUrl,p.call);
     }
     if(p){
       if(app.className==='mode-active'){var c=heroCall.textContent;if(c)renderHero({call:c},p)}
@@ -452,7 +452,7 @@ function renderHero(aq,p){
     }
   }
   // Photo
-  if(p&&p.imageUrl){showHeroPhoto(p.imageUrl)}else{showHeroPlaceholder(p?p.call:aq.call)}
+  if(p&&p.imageUrl){showHeroPhoto(p.imageUrl,p.call)}else{showHeroPlaceholder(p?p.call:aq.call)}
   // Identity line: merge partner data with form fields
   buildIdentityLine(aq,p);
   // Meta line removed — QRZ attribution moved to footer.
@@ -537,8 +537,10 @@ function updatePartnerLocalTime(grid,tzOffset){
 // Refresh partner clock every 30 s so it stays current.
 setInterval(function(){updatePartnerLocalTime(window._partnerTimeGrid||'',window._partnerTZOffset)},30000);
 
-function showHeroPhoto(url){
+function showHeroPhoto(url,call){
   var img=$('hero-photo');img.style.display='';img.src=url;
+  // Screen readers get the operator instead of a decorative image.
+  img.alt=call?('Photo of '+call):'';
   img.onclick=function(){var o=$('photo-overlay');$('photo-overlay-img').src=url;o.style.display='flex'};
   $('hero-placeholder').style.display='none';
   $('hero-photo-box').style.display='';
@@ -933,6 +935,9 @@ function initMap(cfg){
   else if(!useTiles){D('initMap','online but WebGL unavailable — world image fallback (Web Mercator)')}
   else{D('initMap','online — using default Web Mercator tiles')}
   map=L.map('map-container',mapOpts).setView([51,10],3);
+  // The embedded world map is one raster: beyond ~zoom 5 the view is just
+  // upscaled pixels, so cap the zoom instead of letting it smear.
+  if(!useTiles)map.setMaxZoom(5);
   // _cqopsOfflineCRS marks the EPSG:4326 equirectangular offline mode.
   // Online without WebGL keeps Web Mercator (with the Mercator raster) so
   // radar tiles and markers stay aligned.
