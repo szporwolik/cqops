@@ -729,6 +729,23 @@ footer a:hover{text-decoration:underline}
      the 1360px cap below only lifted at ≥900px height, so a FullHD window
      with browser chrome kept a laptop-width layout on a 1920px screen. */
   #app{max-width:none;padding:0 32px 16px 32px}
+  /* Column budget for the larger type: the old percentages were tuned for
+     13.6px cells, so at FullHD the UTC/RST columns clipped to "220…" and the
+     Top-QSOs distance and country cells lost their tails. */
+  main{grid-template-columns:minmax(300px,0.85fr) minmax(280px,0.8fr) minmax(460px,1.35fr) minmax(700px,2.2fr)}
+  #recent-table th:nth-child(1){width:8%}  /* UTC */
+  #recent-table th:nth-child(2){width:16%} /* Call */
+  #recent-table th:nth-child(3){width:8%}  /* Band */
+  #recent-table th:nth-child(4){width:8%}  /* Mode */
+  #recent-table th:nth-child(5){width:12%} /* Op */
+  #recent-table th:nth-child(6){width:10%} /* RST */
+  #recent-table th:nth-child(7){width:17%} /* Dist/Dir */
+  #recent-table th:nth-child(8){width:21%} /* Country */
+  #topqsos-table th:nth-child(1){width:25%} /* Call */
+  #topqsos-table th:nth-child(2){width:12%} /* Band */
+  #topqsos-table th:nth-child(3){width:12%} /* Mode */
+  #topqsos-table th:nth-child(4){width:21%} /* Dist */
+  #topqsos-table th:nth-child(5){width:30%} /* Country */
 }
 
 /* ── Full HD / TV display polish (1920×1080+) ── */
@@ -762,25 +779,25 @@ footer a:hover{text-decoration:underline}
   #wx-row .wx-label{font-size:0.72rem}
   #wx-row .wx-wind{font-size:0.8rem}
   /* map — fill remaining space */
-  #map-table-row{gap:14px;margin-bottom:14px;min-height:30vh}
+  #map-table-row{gap:14px;margin-bottom:14px;min-height:26vh}
   #map-panel{flex:8}
   #map-local-right{flex:3;gap:14px}
   #map-local-panel{min-height:200px}
-  main{gap:14px;margin-bottom:14px;max-height:26vh}
+  main{gap:14px;margin-bottom:14px;max-height:32vh}
   #recent-table{font-size:0.88rem}
   .panel dt{font-size:0.85rem}
   .panel dd{font-size:0.95rem}
   .panel h2{font-size:0.85rem}
   /* Show Operator column at FullHD+. */
   .recent-op-col{display:table-cell}
-  #recent-table th:nth-child(1){width:7%}  /* UTC */
+  #recent-table th:nth-child(1){width:8%}  /* UTC */
   #recent-table th:nth-child(2){width:16%} /* Call */
   #recent-table th:nth-child(3){width:8%}  /* Band */
   #recent-table th:nth-child(4){width:8%}  /* Mode */
-  #recent-table th:nth-child(5){width:10%} /* Op */
-  #recent-table th:nth-child(6){width:8%}  /* RST */
+  #recent-table th:nth-child(5){width:12%} /* Op */
+  #recent-table th:nth-child(6){width:10%} /* RST */
   #recent-table th:nth-child(7){width:17%} /* Dist/Dir */
-  #recent-table th:nth-child(8){width:26%} /* Country */
+  #recent-table th:nth-child(8){width:21%} /* Country */
   #topqsos-table{font-size:0.88rem}
   #topqsos-table th,#topqsos-table td{padding:3px 6px}
   #topqsos-table-wrap{max-height:320px}
