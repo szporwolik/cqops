@@ -583,6 +583,11 @@ function updateStationField(key,val){var el=document.getElementById('sf-'+key);i
 // Band order for frequency-consistent badge sorting.
 var _bandOrder=['2190m','630m','560m','160m','80m','60m','40m','30m','20m','17m','15m','12m','10m','6m','4m','2m','1.25m','70cm','33cm','23cm','13cm','9cm','6cm','3cm'];
 function _bandRank(b){var i=_bandOrder.indexOf(b);return i>=0?i:999}
+// _badgeMore renders the "+N" pill that replaces an over-long badge list, so
+// the narrow summary cards never wrap or slice a badge in half.
+function _badgeMore(total,shown){
+  return total>shown?'<span class="stat-badge stat-more">+'+esc(String(total-shown))+'</span>':'';
+}
 function renderStats(st,todayBuf){
   if(!st)st={};
   // Browser-side stats from today buffer when server data is thin.
@@ -628,12 +633,12 @@ function renderStats(st,todayBuf){
   var opsTotal=st.operators||opList.length||(ownStationCall?1:0);
   statsFields.innerHTML=[
     ['QSOs',qsosToday||0],
-    ['Operators','<span class="stat-op-count">'+esc(String(opsTotal))+'</span>'+opList.slice(0,3).map(function(o){return'<span class="stat-badge stat-badge-op" style="'+opBadgeStyle(o)+'">'+esc(o)+'</span>'}).join('')+(opList.length>3?'<span class="stat-op-more">…</span>':'')],
+    ['Operators','<span class="stat-op-count">'+esc(String(opsTotal))+'</span>'+opList.slice(0,2).map(function(o){return'<span class="stat-badge stat-badge-op" style="'+opBadgeStyle(o)+'">'+esc(o)+'</span>'}).join('')+_badgeMore(opList.length,2)],
     ['Unique calls',st.uniqueCalls||0],
     ['DXCC',st.dxcc||0],
     ['Grids',st.grids||0],
-    ['Bands',bandList.length?bandList.map(function(b){return'<span class="stat-badge '+bandBadgeClass(b)+'">'+esc(b)+'</span>'}).join(''):(st.bands||'—')],
-    ['Modes',modeList.length?modeList.map(function(m){return'<span class="stat-badge '+modeBadgeClass(m)+'">'+esc(m)+'</span>'}).join(''):(st.modes||'—')],
+    ['Bands',bandList.length?bandList.slice(0,3).map(function(b){return'<span class="stat-badge '+bandBadgeClass(b)+'">'+esc(b)+'</span>'}).join('')+_badgeMore(bandList.length,3):(st.bands||'—')],
+    ['Modes',modeList.length?modeList.slice(0,3).map(function(m){return'<span class="stat-badge '+modeBadgeClass(m)+'">'+esc(m)+'</span>'}).join('')+_badgeMore(modeList.length,3):(st.modes||'—')],
     ['Longest',longestKm?fmtDist(longestKm):'—'],
     ['QSO rate','<span class=\"stat-badge rate-badge\">5m '+rate5+'</span> <span class=\"stat-badge rate-badge\">15m '+rate15+'</span> <span class=\"stat-badge rate-badge\">1h '+rate60+'</span>']
   ].map(function(r){return'<dt>'+r[0]+'</dt><dd>'+r[1]+'</dd>'}).join('');
@@ -691,7 +696,9 @@ function formatDistDir(grid){
   var ll=gridToLatLon(grid);
   var deg=bearingDeg(ownStationLat,ownStationLon,ll[0],ll[1]);
   var dirs=['N','NE','E','SE','S','SW','W','NW'];
-  return fmtDist(km)+' '+dirs[Math.round(deg/45)%8];
+  // The column header already says "Dist / Dir", so the number and the compass
+  // point are enough and the cell stays one line at the larger FullHD type.
+  return Math.round(isImperial()?km*0.621371:km)+' '+dirs[Math.round(deg/45)%8];
 }
 
 // ---- Recent QSOs table ----
