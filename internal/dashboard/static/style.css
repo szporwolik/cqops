@@ -441,7 +441,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #map-extra-box{flex:0 0 auto;min-height:0;display:none;overflow:hidden;background:var(--surface);border-radius:var(--card-radius);border:1px solid var(--border);box-shadow:0 2px 6px var(--shadow)}
 /* Height in rem, not px: at 110px the band-condition grid and the PSK table
    were clipped on wide screens once the type ramp enlarged them. */
-#map-extra-box.visible{display:flex;align-items:center;justify-content:center;min-height:7rem;max-height:12rem;padding:0.625rem 0.875rem;overflow:hidden}
+#map-extra-box.visible{display:flex;align-items:center;justify-content:center;min-height:5.5rem;max-height:10rem;padding:0.5rem 0.875rem;overflow:hidden}
 #map-extra-content{font-size:0.85rem;color:var(--dim);text-align:center;transition:opacity .3s ease;width:100%;overflow:hidden}
 .xmod-wrap{display:flex;align-items:center;justify-content:center;gap:0;width:100%;height:100%}
 .extra-module{flex:1;min-width:0;padding:0 0.625rem}
@@ -782,7 +782,7 @@ footer a:hover{text-decoration:underline}
   #map-table-row{gap:14px;margin-bottom:14px;min-height:26vh}
   #map-panel{flex:8}
   #map-local-right{flex:3;gap:14px}
-  #map-local-panel{min-height:200px}
+  #map-local-panel{min-height:8.5rem}
   main{gap:14px;margin-bottom:14px;max-height:32vh}
   #recent-table{font-size:0.88rem}
   .panel dt{font-size:0.85rem}

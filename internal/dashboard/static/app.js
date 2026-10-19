@@ -811,6 +811,14 @@ function _earthURL(m){
   return m&&m._cqopsOfflineCRS?'/api/map-earth':'/api/map-earth-3857';
 }
 
+// _imageBase reports whether the map's base layer is the embedded world image
+// instead of live tiles (no WebGL, or the tile provider fell back). Radar is a
+// live tile layer that cannot be aligned with that fixed raster, so it must
+// stay off — the same rule the offline EPSG:4326 map follows.
+function _imageBase(m){
+  return !!(m&&(m._cqopsOffline||m._cqopsOfflineCRS));
+}
+
 // _fallbackToImage removes the GL tile layer on the given map and replaces
 // it with the embedded world map image. Idempotent per map.
 function _fallbackToImage(isLocal){
@@ -1164,7 +1172,7 @@ function registerDXCModule(d){
 
 // pskModuleBands is how many band rows the info box can show. It is a few rem
 // tall, so rendering all 15 bands clipped everything below the fold.
-var pskModuleBands=6;
+var pskModuleBands=5;
 
 function registerPSKModule(d){
   touchFreshness('psk');
@@ -1209,7 +1217,7 @@ function updateExtraBox(){
   var right=document.getElementById('map-local-right');
   if(!box||!right)return;
   var rem=rootRemPx();
-  if(right.clientHeight>=18.75*rem){
+  if(right.clientHeight>=14.5*rem){
     box.classList.add('visible');
     if(!extraModules.length){
       registerExtraModule(function(){
@@ -1268,7 +1276,7 @@ async function enableRadarLayer(){
   if(radarEnabled||radarLoading||!map)return;
   // Radar tiles are Web Mercator — they would be misplaced on an
   // EPSG:4326 (offline) map, so radar is hidden in offline CRS mode.
-  if(map._cqopsOfflineCRS)return;
+  if(_imageBase(map))return;
   if(!navigator.onLine||!(displayCfg&&displayCfg.isOnline)){return}
   radarLoading=true;
   try{
@@ -1302,9 +1310,9 @@ function disableRadarLayer(){
 
 async function refreshRadarLayer(){
   if(!radarEnabled||!map)return;
-  // Same rule as enable: never draw Mercator radar tiles on an
-  // EPSG:4326 (offline) map.
-  if(map._cqopsOfflineCRS)return;
+  // Same rule as enable: never draw radar tiles over the embedded raster
+  // (offline CRS or image fallback).
+  if(_imageBase(map))return;
   try{
     var meta=await fetchJsonWithTimeout('https://api.rainviewer.com/public/weather-maps.json',6000);
     if(!meta||!meta.radar||!meta.radar.past||!meta.radar.past.length)return;
@@ -1323,6 +1331,7 @@ async function refreshRadarLayer(){
 
 function addRadarToLocalMap(){
   if(!mapLocal||!_radarUrl)return;
+  if(_imageBase(mapLocal))return;
   if(radarLayerLocal){mapLocal.removeLayer(radarLayerLocal);radarLayerLocal=null}
   radarLayerLocal=L.tileLayer(_radarUrl,{pane:'cqopsRadar',opacity:0.55,maxNativeZoom:7,maxZoom:12}).addTo(mapLocal);
 }
