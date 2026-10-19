@@ -1272,6 +1272,7 @@ function cycleExtraModule(){
 // right column must be, how wide a module needs to be) have to follow it or
 // they stop matching the rendered type on FullHD/2K screens.
 function rootRemPx(){return parseFloat(getComputedStyle(document.documentElement).fontSize)||16}
+var _extraBoxTimer=null;
 
 // Show/hide the extra box and render modules — multiple at once on wide screens.
 function updateExtraBox(){
@@ -1321,7 +1322,15 @@ function updateExtraBox(){
     if(extraCycleTimer){clearInterval(extraCycleTimer);extraCycleTimer=null}
   }
 }
-window.addEventListener('resize',function(){updateExtraBox();if(mapLocal)mapLocal.invalidateSize()});
+window.addEventListener('resize',function(){
+  updateExtraBox();
+  if(mapLocal)mapLocal.invalidateSize();
+  // The map row only reaches its final height after the layout settles, so
+  // re-check once more: otherwise enlarging a window leaves the module box
+  // hidden until the next full reload.
+  clearTimeout(_extraBoxTimer);
+  _extraBoxTimer=setTimeout(updateExtraBox,180);
+});
 
 // ---- RainViewer weather radar overlay ----
 var radarLayer=null,radarLayerLocal=null,radarEnabled=false,radarLoading=false,radarTimer=null;

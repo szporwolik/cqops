@@ -30,7 +30,7 @@
 
   /* ── Layout (not themed) ── */
   --card-radius:8px;
-  --logo-w:140px; --logo-h:84px;
+  --logo-w:8.75rem; --logo-h:5.25rem;
   /* Body text. Kept in rem so it follows the root font size ramp below. */
   --base-font:0.9375rem;
 
@@ -313,7 +313,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #hd-sun:empty{display:none}
 /* ── QR code in header ── */
 #hd-qr{flex-shrink:0;margin-left:auto;display:flex;align-items:flex-start}
-#hd-qr-img{width:80px;height:80px;border-radius:5px;background:#fff;box-shadow:0 2px 8px var(--shadow)}
+#hd-qr-img{width:5rem;height:5rem;border-radius:5px;background:#fff;box-shadow:0 2px 8px var(--shadow)}
 #hd-qr-err{font-size:0.7rem;color:var(--offline);text-align:center}
 
 /* ── weather row (header extension, below clock) ── */
@@ -368,7 +368,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 .mode-active #hero-active{display:flex;align-items:stretch;gap:0;min-height:clamp(100px,12vw,160px)}
 /* photo box — stretches to match hero content height, min-height ensures decent size */
 #hero-photo-box{
-  width:clamp(180px,18vw,280px);
+  width:clamp(9rem,18vw,15rem);
   flex:0 0 auto;overflow:hidden;background:var(--blue-soft);
   position:relative;display:flex;align-items:center;justify-content:center;
   border-right:1px solid var(--border-strong);border-radius:10px 0 0 10px
@@ -425,7 +425,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 /* ── map row (full width, fills remaining vertical space) ── */
 #map-table-row{flex:1 1 40%;min-height:250px;display:flex;gap:10px;margin-bottom:10px}
 #map-panel{flex:7;background:var(--surface);border-radius:var(--card-radius);overflow:hidden;display:flex;flex-direction:column;border:1px solid var(--border);box-shadow:0 2px 8px var(--shadow)}
-#map-local-panel{flex:1;min-height:180px;background:var(--surface);border-radius:var(--card-radius);overflow:hidden;display:flex;flex-direction:column;border:1px solid var(--border);box-shadow:0 2px 8px var(--shadow)}
+#map-local-panel{flex:1;min-height:180px;max-height:min(38vh,26rem);background:var(--surface);border-radius:var(--card-radius);overflow:hidden;display:flex;flex-direction:column;border:1px solid var(--border);box-shadow:0 2px 8px var(--shadow)}
 #map-container{flex:1;background:var(--blue-xsoft);position:relative}
 #map-local-container{flex:1;background:var(--blue-xsoft);position:relative}
 /* Right column wrapper: extra box on top, square map below. */
@@ -481,7 +481,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
    cell ("599/599", "10733 km SW", "2232Z") at the smallest base type size, so
    no later tier has to re-tune percentages again. */
 #recent-table th:nth-child(1){width:10%} /* UTC */
-#recent-table th:nth-child(2){width:18%} /* Call */
+#recent-table th:nth-child(2){width:19%} /* Call */
 #recent-table th:nth-child(3){width:10%} /* Band */
 #recent-table th:nth-child(4){width:9%}  /* Mode */
 /* Op column (5th) hidden by default, shown only on very wide screens. */
@@ -489,7 +489,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #recent-table th:nth-child(5){width:13%} /* Op */
 #recent-table th:nth-child(6){width:14%} /* RST */
 #recent-table th:nth-child(7){width:18%} /* Dist/Dir */
-#recent-table th:nth-child(8){width:21%} /* Country */
+#recent-table th:nth-child(8){width:20%} /* Country */
 /* Distance is numeric secondary data; a notch smaller keeps its direction
    suffix from being ellipsized. */
 #recent-table td:nth-child(7){font-size:0.8rem}
@@ -657,7 +657,7 @@ footer a:hover{text-decoration:underline}
   /* Compact hero: smaller photo, smaller call, no provider chips. */
   .mode-active #hero{padding:0 12px 0 0;margin:6px 0}
   .mode-active #hero-active{min-height:0}
-  #hero-photo-box{width:clamp(88px,7vw,132px)}
+  #hero-photo-box{width:clamp(5.5rem,7vw,8.25rem)}
   #hero-call{font-size:clamp(22px,2.6vw,38px)}
   #hero-label{font-size:0.7rem;letter-spacing:0.06em}
   #hero-identity{font-size:clamp(0.78rem,1vw,0.95rem)}
@@ -673,7 +673,7 @@ footer a:hover{text-decoration:underline}
   #hero{padding:6px 12px;margin:2px 0}
   .mode-active #hero{padding:0 12px 0 0}
   #hero-call{font-size:clamp(22px,4vw,44px)}
-  #hero-photo-box{width:clamp(120px,18vw,200px)}
+  #hero-photo-box{width:clamp(7.5rem,18vw,12.5rem)}
   #map-table-row{gap:4px;margin-bottom:3px}
   #map-local-right{gap:4px}
   main{gap:4px;margin-bottom:2px}
@@ -741,7 +741,7 @@ footer a:hover{text-decoration:underline}
   .mode-active #hero{padding:0 12px 0 0}
   #hero-call{font-size:clamp(24px,5vw,46px)}
   #hero-identity{font-size:0.85rem}
-  #hero-photo-box{width:clamp(140px,26vw,220px)}
+  #hero-photo-box{width:clamp(8.75rem,26vw,13.75rem)}
   #hero-badges .badge{font-size:0.72rem;padding:2px 8px}
   #hero-providers .provider-badge{font-size:0.7rem;padding:1px 5px}
   #map-table-row{flex-direction:column;gap:6px;min-height:280px;margin-bottom:6px}
@@ -778,7 +778,9 @@ footer a:hover{text-decoration:underline}
    capped at 24px from ~3000px. Deliberately keyed on width alone: a 1920×880
    window is still a FullHD screen and must not fall back to laptop-sized type. */
 @media(min-width:1600px){
-  html{font-size:clamp(17px,0.521vw + 8.67px,24px)}
+  /* Capped at 2x (FHD -> 4K): at 24px a 3840px-wide screen rendered text a
+     quarter smaller than the same UI on FullHD. */
+  html{font-size:clamp(17px,0.521vw + 8.67px,32px)}
   /* Use the full width on wide displays even when the window is short:
      the 1360px cap below only lifted at ≥900px height, so a FullHD window
      with browser chrome kept a laptop-width layout on a 1920px screen. */
@@ -842,6 +844,10 @@ footer a:hover{text-decoration:underline}
    viewport once the type ramp is applied, so give the height back to the map. */
 @media(min-width:1600px) and (max-height:979px){
   #map-table-row{min-height:22vh}
+  /* The right column (modules + local map) is what actually forces the row
+     height, so both give back a little here. */
+  #map-extra-box.visible{height:5rem;min-height:5rem;max-height:5rem}
+  #map-local-panel{min-height:110px}
 }
 
 /* The operator column needs real room; below this it would be paid for by
@@ -849,13 +855,16 @@ footer a:hover{text-decoration:underline}
 @media(min-width:1900px){
   .recent-op-col{display:table-cell}
   #recent-table th:nth-child(1){width:9%}  /* UTC */
-  #recent-table th:nth-child(2){width:16%} /* Call */
+  #recent-table th:nth-child(2){width:17%} /* Call */
   #recent-table th:nth-child(3){width:9%}  /* Band */
   #recent-table th:nth-child(4){width:9%}  /* Mode */
-  #recent-table th:nth-child(5){width:14%} /* Op */
+  #recent-table th:nth-child(5){width:12%} /* Op */
   #recent-table th:nth-child(6){width:11%} /* RST */
   #recent-table th:nth-child(7){width:14%} /* Dist/Dir */
-  #recent-table th:nth-child(8){width:18%} /* Country */
+  #recent-table th:nth-child(8){width:19%} /* Country */
+  /* Eight columns at 18.7px are saturated: the call cell drops a notch so a
+     nine-character portable call and a long DXCC name both fit whole. */
+  #recent-table td:nth-child(2){font-size:0.85rem}
 }
 
 /* ── 2K / 4K displays (2560×1440+): let the layout keep up with the type ──
@@ -993,4 +1002,62 @@ footer a:hover{text-decoration:underline}
   #station-panel{display:none}
   #stats-panel{flex:0 1 32rem}
   #stats-fields{grid-template-columns:auto minmax(0,1fr) auto minmax(0,1fr)}
+}
+
+/* ── Small monitors and laptop screens ──
+   The hero, the module box and the second QSO list repeat what the map and the
+   Recent QSOs table already show. On a 768px-tall screen they pushed the page
+   below the fold (241px of scrolling at 1024x768), so they step aside here. */
+@media(max-width:1120px){
+  #topqsos-panel{display:none}
+}
+@media(max-height:820px){
+  #map-table-row{min-height:170px;flex:0 1 auto}
+  #map-local-panel{min-height:120px}
+  #map-extra-box{display:none}
+}
+/* Netbook-class screens: even the hero has to go to keep the QSO list visible. */
+@media(max-height:700px){
+  #hero{display:none}
+}
+
+/* ── Tall displays (2K/4K): let the QSO lists use the height ──
+   #map-table-row is the only row with flex-grow, so without this every spare
+   pixel went to the map: 1195px on a 4K screen against 9 visible QSO rows. */
+@media(min-height:1400px){
+  main{flex:1 1 auto}
+  #recent-table-wrap,#topqsos-table-wrap{max-height:none}
+}
+
+/* Last few pixels on FullHD-class screens: gutter and footer breathing room. */
+@media(min-width:1600px) and (max-height:1100px){
+  #app{padding-bottom:8px}
+  footer{padding:3px 6px}
+}
+
+/* Short windows: the now-rem-based logo would eat the little height there is. */
+@media(max-height:1100px){
+  #hd-logo-box{width:7.5rem;height:4.5rem}
+}
+/* 21:9 at 1440: the ramp gives 26px type, so the map row's 26vh no longer fits. */
+@media(min-width:2300px) and (max-height:1500px){
+  #map-table-row{min-height:20vh}
+}
+
+/* Reclaim a couple of pixels per column: at the 17-19px type sizes the seven
+   columns are saturated, and this is what lets a nine-character portable call
+   and a long DXCC name coexist. */
+#recent-table th,#recent-table td{padding-left:5px;padding-right:5px}
+.recent-badge{padding:1px 4px}
+/* 720p and short netbooks: the QSO list matters more than the hero card. */
+@media(max-height:740px){
+  #hero{display:none}
+}
+/* 21:9 at 1080/1440: the type ramp leaves the page ~11px too tall, and the
+   right column (modules + local map) is what drives the map row height. */
+@media(min-width:2300px) and (max-height:1500px){
+  #hero{padding:0 18px 0 0;margin:4px 0}
+  #hero-active{min-height:0}
+  #map-local-panel{min-height:120px}
+  #map-extra-box.visible{height:5.5rem;min-height:5.5rem;max-height:5.5rem}
 }
