@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.11.2 — 2026-10-19
+
+> **Maintenance release on top of 0.11.1: dashboard panels that no longer keep stale QSO data, a patched Go toolchain, refreshed dependencies, and Windows binaries that finally report their own version.** No config or database migration is needed from v0.11.1.
+
+### Dashboard
+- <u>**Top QSOs no longer lose the country**</u>: the same contact could show its country in Recent QSOs and an empty country in Top QSOs, and reloading the page did not help. WSJT-X auto-logs a contact without a country, the dashboard pushed the Today panel (which feeds Top QSOs, the map and the stats) before callbook/CTY enrichment filled it in, and the panel's change detector compared row ids only — so the enriched value never repainted. Recent was force-pushed after enrichment, hence the mismatch. Both panels now fingerprint the values they render (call, band, mode/submode, grid, country, operator, RST, frequency, time) on top of the row ids, and enrichment force-pushes the Today panel too.
+
+### Fixes
+- **Windows binaries report the right version**: the checked-in PE resources were still stamped `0.8.13.0` from the 0.8.x line — release builds embed them as-is, so Windows file properties showed a version four releases old. `winres/winres.json` and both `rsrc_windows_*.syso` are regenerated at 0.11.2.
+
+### Under the Hood
+- **Dependency refresh and a newer Go toolchain**: charm.land bubbletea v2.1.0, NimbleMarkets/ntcharts v2.8.0, modernc.org/sqlite v1.60.1 (modernc.org/libc v1.77.1), k0swe/wsjtx-go v4.3.1, golang.org/x/sys v0.49.0 and golang.org/x/text v0.43.0, plus the transitive Charm and runewidth updates; `golang.org/x/exp` is no longer needed at all. ntcharts v2.8.0 raises the minimum toolchain to **Go 1.26.9** — the previous 1.26.6 standard library carried nine `net/http`, `crypto/tls` and `net/textproto` advisories, all on paths CQOps uses (dashboard TLS listener, Wavelog/QRZ/REF clients). With the new toolchain `govulncheck` reports **no vulnerabilities**. `gofmt`, `go vet`, the full test suite and the `-race` run stay green.
+
 ## v0.11.1 — 2026-10-15
 
 > **Dashboard map resilience, a per-logbook fixed APRS grid, and a round of field fixes.** The built-in dashboard now survives machines without WebGL and tile-provider outages by falling back to an embedded world map — reprojected to Web Mercator so everything lines up — and APRS can be pinned to a fixed grid locator per logbook.
@@ -26,10 +39,6 @@
 - **PSK filter hints** in the help bar now show the real `t`/`b`/`m` keys.
 - **Dashboard QSO loading and Wavelog lookup enrichment** restored after a regression.
 - **Logbook editor `Save & Back` sits flush** under the last field row, matching every other config menu (it kept a blank separator line).
-- **Windows binaries report the right version**: the checked-in PE resources were still stamped `0.8.13.0` from the 0.8.x line — release builds embed them as-is, so Windows file properties showed a version four releases old. `winres/winres.json` and both `rsrc_windows_*.syso` are regenerated at 0.11.1.
-
-### Under the Hood
-- **Dependency refresh and a newer Go toolchain**: charm.land bubbletea v2.1.0, NimbleMarkets/ntcharts v2.8.0, modernc.org/sqlite v1.60.1 (modernc.org/libc v1.77.1), k0swe/wsjtx-go v4.3.1, golang.org/x/sys v0.49.0 and golang.org/x/text v0.43.0, plus the transitive Charm and runewidth updates; `golang.org/x/exp` is no longer needed at all. ntcharts v2.8.0 raises the minimum toolchain to **Go 1.26.9** — the previous 1.26.6 standard library carried nine `net/http`, `crypto/tls` and `net/textproto` advisories, all on paths CQOps uses (dashboard TLS listener, Wavelog/QRZ/REF clients). With the new toolchain `govulncheck` reports **no vulnerabilities**. `gofmt`, `go vet`, the full test suite and the `-race` run stay green.
 
 ## v0.11.0 — 2026-09-20
 
