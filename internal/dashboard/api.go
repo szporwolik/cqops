@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path"
 	"strings"
 	"time"
 
@@ -27,7 +28,16 @@ func NewMux(streamCtx context.Context, state *State, hub *Hub) *http.ServeMux {
 	// go:embed static/* embeds files at "static/index.html", etc.
 	// We read the embed.FS by those exact paths to avoid FileServer
 	// redirect/prefix issues.
-	mux.HandleFunc("/", serveStaticFile("static/index.html", "text/html; charset=utf-8"))
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Only extension-less paths fall back to the page; a missing asset must
+		// answer 404 instead of index.html, otherwise a broken <script src>
+		// looks like a syntax error rather than a missing file.
+		if path.Ext(r.URL.Path) != "" {
+			http.NotFound(w, r)
+			return
+		}
+		serveStaticFile("static/index.html", "text/html; charset=utf-8")(w, r)
+	})
 	mux.HandleFunc("/index.html", serveStaticFile("static/index.html", "text/html; charset=utf-8"))
 	mux.HandleFunc("/app.js", serveStaticFile("static/app.js", "application/javascript"))
 	mux.HandleFunc("/theme.js", serveStaticFile("static/theme.js", "application/javascript"))
@@ -35,6 +45,12 @@ func NewMux(streamCtx context.Context, state *State, hub *Hub) *http.ServeMux {
 	mux.HandleFunc("/leaflet.js", serveStaticFile("static/leaflet.js", "application/javascript"))
 	mux.HandleFunc("/leaflet.css", serveStaticFile("static/leaflet.css", "text/css"))
 	mux.HandleFunc("/terminator.js", serveStaticFile("static/terminator.js", "application/javascript"))
+	// MapLibre GL ships with the binary: the dashboard must render its tile map
+	// on a station with no internet access, and the CDN tags it used before
+	// were a runtime third-party dependency (and a supply-chain risk).
+	mux.HandleFunc("/maplibre-gl.js", serveStaticFile("static/maplibre-gl.js", "application/javascript"))
+	mux.HandleFunc("/maplibre-gl.css", serveStaticFile("static/maplibre-gl.css", "text/css"))
+	mux.HandleFunc("/leaflet-maplibre-gl.js", serveStaticFile("static/leaflet-maplibre-gl.js", "application/javascript"))
 	mux.HandleFunc("/favicon.ico", serveStaticFile("static/favicon.ico", "image/x-icon"))
 	mux.HandleFunc("/images/marker-icon.png", serveStaticFile("static/images/marker-icon.png", "image/png"))
 	mux.HandleFunc("/images/marker-icon-2x.png", serveStaticFile("static/images/marker-icon-2x.png", "image/png"))

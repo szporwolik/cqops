@@ -314,7 +314,6 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 /* ── QR code in header ── */
 #hd-qr{flex-shrink:0;margin-left:auto;display:flex;align-items:flex-start}
 #hd-qr-img{width:5rem;height:5rem;border-radius:5px;background:#fff;box-shadow:0 2px 8px var(--shadow)}
-#hd-qr-err{font-size:0.7rem;color:var(--offline);text-align:center}
 
 /* ── weather row (header extension, below clock) ── */
 #wx-row{display:flex;align-items:center;justify-content:center;gap:6px 14px;flex-wrap:nowrap;padding:4px 0 6px 0;font-size:0.78rem;color:var(--text-secondary);margin-bottom:0;overflow:hidden}
@@ -722,6 +721,25 @@ footer a:hover{text-decoration:underline}
   .panel dt,.panel dd{font-size:0.72rem}
   footer{font-size:0.7rem}
 }
+
+/* ── Layout contract ──
+   Every responsive rule below belongs to one of six tiers. Add new rules to the
+   tier that owns the concern instead of creating another breakpoint; the list
+   is ordered narrow/short → wide/tall, so a later tier wins.
+
+     ≤ 540 / ≤ 550px height  phone-sized: one column, smallest chrome
+     ≤ 880px width          narrow: map row stacks, hero shrinks
+     ≤ 1120px width         no Top QSOs card (Recent QSOs takes the row)
+     ≤ 820 / ≤ 740px height short: module box steps aside, then the hero
+     ≥ 1600px width         FullHD and up: four cards, rem-based type ramp
+     ≥ 1900px width         operator column appears in the QSO table
+     ≥ 2300px width        2K/4K: gutters grow, summary cards widen
+
+   The map row's min-height is the single lever over how much of the screen the
+   map takes; `grep -n "map-table-row{min-height"` lists every place it is set,
+   in cascade order. Change those values together, not one tier at a time — a
+   taller map row is what pushed the QSO list below the fold in the past.
+*/
 
 /* ── responsive: mid-width — hide stats panel, 3-column grid ── */
 @media(max-width:1350px){

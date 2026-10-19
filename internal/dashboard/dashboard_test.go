@@ -752,3 +752,40 @@ func TestSSE_StalledClientWriteTimesOut(t *testing.T) {
 		}
 	}
 }
+
+// TestStaticAssetsBundled guards the offline promise: the dashboard must serve
+// its map libraries and page from the binary, and a missing asset must answer
+// 404 instead of silently returning index.html (which made a broken <script
+// src> look like a JavaScript syntax error).
+func TestStaticAssetsBundled(t *testing.T) {
+	state := NewState(NewHub())
+	mux := NewMux(context.Background(), state, NewHub())
+
+	for _, tc := range []struct{ path, wantType string }{
+		{"/", "text/html"},
+		{"/index.html", "text/html"},
+		{"/app.js", "application/javascript"},
+		{"/leaflet.js", "application/javascript"},
+		{"/maplibre-gl.js", "application/javascript"},
+		{"/leaflet-maplibre-gl.js", "application/javascript"},
+		{"/maplibre-gl.css", "text/css"},
+	} {
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: status %d, want 200", tc.path, rec.Code)
+		}
+		if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, tc.wantType) {
+			t.Fatalf("%s: content type %q, want %q", tc.path, ct, tc.wantType)
+		}
+		if rec.Body.Len() < 100 {
+			t.Fatalf("%s: body is only %d bytes", tc.path, rec.Body.Len())
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/missing-asset.js", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("missing asset: status %d, want 404", rec.Code)
+	}
+}

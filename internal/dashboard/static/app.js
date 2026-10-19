@@ -890,13 +890,13 @@ function _armGLFallback(glLayer,isLocal){
 function _ensureMapLibreGL(cb){
   if(typeof L!=='undefined'&&typeof L.maplibreGL==='function'){cb();return}
   if(!_webglAvailable()){D('initMap','WebGL unavailable — skipping MapLibre scripts, image fallback');cb();return}
-  D('initMap','MapLibre GL not loaded — injecting CDN scripts');
+  D('initMap','MapLibre GL not loaded — injecting bundled scripts');
   var s1=document.createElement('script');
-  s1.src='https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.js';
+  s1.src='/maplibre-gl.js';
   s1.onload=function(){
     // Core library loaded — now safe to load the Leaflet binding.
     var s2=document.createElement('script');
-    s2.src='https://cdn.jsdelivr.net/npm/@maplibre/maplibre-gl-leaflet@0.1.3/leaflet-maplibre-gl.js';
+    s2.src='/leaflet-maplibre-gl.js';
     s2.onload=function(){
       D('initMap','MapLibre GL scripts loaded \u2713');
       cb();
@@ -914,24 +914,34 @@ function _ensureMapLibreGL(cb){
   document.head.appendChild(s1);
 }
 
-// _refreshQR loads the QR code image from QuickChart. Resets src to empty
-// first to force a fresh fetch even when the browser cached a previous
-// failure (e.g. the image was requested while offline). Hidden when
-// offline or when no qrLink is configured.
+// _refreshQR renders the header QR code. The SVG comes from QuickChart, but it
+// is cached in localStorage and painted first, so a page opened offline (or
+// with QuickChart unreachable) still shows the QR instead of an error — and a
+// reload no longer re-downloads it, since the old code added a cache-busting
+// query parameter on every call.
 function _refreshQR(cfg){
-  var hdQR=$('hd-qr'),hdQRImg=$('hd-qr-img'),hdQRErr=$('hd-qr-err');
-  if(cfg.qrLink && cfg.isOnline){
-    hdQRErr.style.display='none';hdQRImg.style.display='';
-    hdQRImg.onload=function(){hdQRErr.style.display='none';hdQRImg.style.display=''};
-    hdQRImg.onerror=function(){hdQRErr.style.display='';hdQRImg.style.display='none'};
-    hdQRImg.src='';
-    hdQRImg.src='https://quickchart.io/qr?text='+encodeURIComponent(cfg.qrLink)+'&size=80&margin=1&format=svg&ecLevel=M&dark=111827&light=ffffff&_='+Date.now();
-    hdQR.style.display='';
-  } else {
-    // Offline or no QR link configured — hide the QR panel.
-    hdQR.style.display='none';
-    hdQRImg.src='';
-  }
+  var hdQR=$('hd-qr'),hdQRImg=$('hd-qr-img');
+  if(!cfg.qrLink){hdQR.style.display='none';hdQRImg.removeAttribute('src');return}
+  hdQR.style.display='';
+  var key='cqops.qr.'+cfg.qrLink,cached=null;
+  try{cached=localStorage.getItem(key)}catch(e){}
+  if(cached){hdQRImg.src=cached;hdQRImg.style.display=''}
+  else if(!cfg.isOnline){hdQR.style.display='none';return}
+  if(!cfg.isOnline)return;   // offline: keep the cached image (if any) on screen
+  var url='https://quickchart.io/qr?text='+encodeURIComponent(cfg.qrLink)+
+    '&size=240&margin=1&format=svg&ecLevel=M&dark=111827&light=ffffff';
+  fetch(url,{cache:'force-cache'}).then(function(r){
+    if(!r.ok)throw new Error('qr '+r.status);
+    return r.text();
+  }).then(function(svg){
+    var uri='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+    try{localStorage.setItem(key,uri)}catch(e){}
+    hdQRImg.src=uri;hdQRImg.style.display='';
+  }).catch(function(){
+    // Nothing cached and QuickChart is unreachable: hide the code rather than
+    // leaving a dead "QR unavailable" label in the header.
+    if(!cached)hdQR.style.display='none';
+  });
 }
 
 function initMap(cfg){
@@ -1280,7 +1290,12 @@ function updateExtraBox(){
   var right=document.getElementById('map-local-right');
   if(!box||!right)return;
   var rem=rootRemPx();
-  if(right.clientHeight>=14.5*rem){
+  // The box needs ~5.5rem and the local APRS map below it keeps at least 120px
+  // (its CSS min-height), so that is what the column has to offer. The old flat
+  // 14.5rem threshold assumed an 8.5rem local map and made the box's visibility
+  // depend on the resize history instead of the layout that is actually there.
+  var boxMin=5.5*rem+130;
+  if(right.clientHeight>=boxMin){
     box.classList.add('visible');
     if(!extraModules.length){
       registerExtraModule(function(){
