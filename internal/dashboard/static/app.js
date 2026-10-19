@@ -1177,12 +1177,15 @@ var pskModuleBands=5;
 function registerPSKModule(d){
   touchFreshness('psk');
   extraModules=extraModules.filter(function(f){return f._id!=='psk'});
+  // Chips, not a table: a vertical band list made the info box taller than
+  // every other module, so each 5s cycle resized the box and shifted the maps
+  // below it. A centred chip row keeps the box at its fixed height.
   var mod=function(){
     var html='<div class="extra-title">PSK Reporter</div>'+
       '<div class="xmod-psk-head">'+d.total+' reports</div>'+
-      '<table class="xmod-psk-table">';
+      '<div class="xmod-chips">';
     var order=['160m','80m','60m','40m','30m','20m','17m','15m','12m','10m','6m','4m','2m','70cm','23cm'];
-    // Busiest bands first, then trim to what the box can show.
+    // Busiest bands first, then keep what fits on one or two lines.
     var rows=[];
     for(var i=0;i<order.length;i++){
       var b=order[i],count=d.byBand&&d.byBand[b]||0;
@@ -1191,9 +1194,9 @@ function registerPSKModule(d){
     rows.sort(function(a,b){return b[1]-a[1]});
     rows=rows.slice(0,pskModuleBands);
     for(var j=0;j<rows.length;j++){
-      html+='<tr><td class="xmod-psk-band">'+rows[j][0]+'</td><td class="xmod-psk-count">'+rows[j][1]+'</td></tr>';
+      html+='<span class="xmod-chip"><b>'+rows[j][0]+'</b> '+rows[j][1]+'</span>';
     }
-    html+='</table>';return html;
+    html+='</div>';return html;
   };
   mod._id='psk';
   extraModules.push(mod);

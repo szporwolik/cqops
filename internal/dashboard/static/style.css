@@ -441,7 +441,7 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 #map-extra-box{flex:0 0 auto;min-height:0;display:none;overflow:hidden;background:var(--surface);border-radius:var(--card-radius);border:1px solid var(--border);box-shadow:0 2px 6px var(--shadow)}
 /* Height in rem, not px: at 110px the band-condition grid and the PSK table
    were clipped on wide screens once the type ramp enlarged them. */
-#map-extra-box.visible{display:flex;align-items:center;justify-content:center;min-height:5.5rem;max-height:10rem;padding:0.5rem 0.875rem;overflow:hidden}
+#map-extra-box.visible{display:flex;align-items:center;justify-content:center;height:6.5rem;min-height:6.5rem;max-height:6.5rem;padding:0.5rem 0.875rem;overflow:hidden}
 #map-extra-content{font-size:0.85rem;color:var(--dim);text-align:center;transition:opacity .3s ease;width:100%;overflow:hidden}
 .xmod-wrap{display:flex;align-items:center;justify-content:center;gap:0;width:100%;height:100%}
 .extra-module{flex:1;min-width:0;padding:0 0.625rem}
@@ -453,9 +453,11 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 .xmod-spot-freq{font-size:0.88rem;color:var(--text-secondary);line-height:1.35}
 .xmod-spot-comment{font-size:0.82rem;color:var(--dim);margin-top:2px;line-height:1.35}
 .xmod-psk-head{font-size:0.88rem;color:var(--text-secondary);margin-bottom:3px}
-.xmod-psk-table{font-size:0.85rem;border-collapse:collapse;margin:0 auto;line-height:1.35}
-.xmod-psk-band{color:var(--dim);padding-right:0.5rem;text-align:right}
-.xmod-psk-count{font-weight:600}
+/* Band counts as chips: a vertical table made this module taller than the
+   others, so the box resized on every cycle and shifted the maps below. */
+.xmod-chips{display:flex;flex-wrap:wrap;justify-content:center;gap:0.2rem 0.45rem}
+.xmod-chip{background:var(--blue-soft);color:var(--blue-dark);border-radius:0.25rem;padding:0 0.4rem;font-size:0.82rem;line-height:1.5;white-space:nowrap}
+.xmod-chip b{font-weight:700}
 .xmod-promo{font-size:0.88rem;color:var(--text-secondary)}
 .xmod-promo-sub{font-size:0.82rem;color:var(--dim);margin-top:2px}
 /* APRS marker label on the local map. */
