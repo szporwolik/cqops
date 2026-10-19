@@ -34,7 +34,8 @@
   /* ── Layout (not themed) ── */
   --card-radius:8px; --gap:10px;
   --logo-w:140px; --logo-h:84px;
-  --base-font:15px;
+  /* Body text. Kept in rem so it follows the root font size ramp below. */
+  --base-font:0.9375rem;
 
   /* ── Ham band badge colors ── */
   --b160m-bg:rgba(139,0,0,0.22);   --b160m-fg:#8B0000;
@@ -290,6 +291,11 @@
 .mode-badge.mode-digi,.badge.mode-digi{background:var(--mode-digi-bg);color:var(--mode-digi-fg)}
 .mode-badge.mode-other,.badge.mode-other{background:var(--mode-other-bg);color:var(--mode-other-fg)}
 *{box-sizing:border-box;margin:0;padding:0}
+/* Root font size is the single typography knob — every size in this sheet is
+   in rem, so the whole dashboard scales from here. Laptops/desktops keep 16px
+   (matching the tuning of the max-width tiers); wide displays use the fluid
+   ramp further down (see "Full HD / TV display polish"). */
+html{font-size:16px}
 body{font-family:system-ui,-apple-system,sans-serif;background:
     radial-gradient(circle at 12% 8%,var(--body-grad-1),transparent 28%),
     radial-gradient(circle at 80% 5%,var(--body-grad-2),transparent 34%),
@@ -575,42 +581,50 @@ footer a:hover{text-decoration:underline}
 #qso-toast-call{font-weight:900;font-size:clamp(28px,5vw,56px);line-height:1}
 #qso-toast-sub{font-size:1rem;font-weight:500;opacity:0.85}
 
-/* ── responsive: short screens — fewer, more aggressive steps ── */
+/* ── responsive: short viewports — compact SPACING only ──
+   Text is deliberately NOT shrunk here. A 1920×880 browser window (FullHD
+   with chrome, OS display scaling, a docked devtools pane) used to fall into
+   this tier and drop panel labels to 10px and the footer to 9.6px — the
+   "terribly small" report. Height now only reclaims vertical space; the
+   width-based tiers below own typography. */
 @media(max-height:900px){
   #app{min-height:0;padding:2px 12px}
   #hd-logo-box{width:110px;height:66px}
-  #hd-title{font-size:1.1rem}
-  #hd-subtitle{font-size:0.76rem}
   #header{padding:5px 0;border-bottom-width:2px}
   #hero{padding:6px 12px;margin:2px 0}
   .mode-active #hero{padding:0 12px 0 0}
   #hero-call{font-size:clamp(22px,4vw,44px)}
   #hero-photo-box{width:clamp(120px,18vw,200px)}
-  #hero-badges .badge{font-size:0.65rem;padding:1px 6px}
-  #hero-providers .provider-badge{font-size:0.6rem;padding:1px 4px}
-  #hero-identity{font-size:0.72rem}
-  #hero-refs{font-size:0.65rem}
-  #hero-label{font-size:0.65rem}
-  #recent-table{font-size:0.68rem}
   #map-table-row{gap:4px;margin-bottom:3px}
   #map-local-right{gap:4px}
   main{gap:4px;margin-bottom:2px}
   .panel{padding:4px 8px}
   #recent-table-wrap{max-height:150px}
   #topqsos-table-wrap{max-height:150px}
-  .panel h2{margin-bottom:1px;font-size:0.66rem}
-  .panel dt{font-size:0.64rem}
-  .panel dd{font-size:0.72rem}
-  footer{padding:2px;font-size:0.6rem}
+  .panel h2{margin-bottom:1px}
+  footer{padding:2px}
+}
+/* Short AND narrow screens still need smaller type to fit — but the floors
+   are readable now (0.68–0.74rem instead of 0.56–0.64rem). */
+@media(max-height:900px) and (max-width:1200px){
+  #hd-title{font-size:1.1rem}
+  #hd-subtitle{font-size:0.76rem}
+  #hero-badges .badge{font-size:0.7rem;padding:1px 6px}
+  #hero-providers .provider-badge{font-size:0.66rem;padding:1px 4px}
+  #hero-identity{font-size:0.78rem}
+  #hero-refs{font-size:0.72rem}
+  #hero-label{font-size:0.72rem}
+  #recent-table{font-size:0.76rem}
+  .panel h2{font-size:0.72rem}
+  .panel dt{font-size:0.74rem}
+  .panel dd{font-size:0.82rem}
+  footer{font-size:0.68rem}
 }
 @media(max-height:550px){
   #app{padding:1px 8px}
   #hd-logo-box{width:50px;height:34px}
-  #hd-title{font-size:0.8rem}
-  #hd-subtitle{font-size:0.6rem}
   #header{padding:2px 0;border-bottom-width:1px}
   #hero{display:none}
-  #recent-table{font-size:0.58rem}
   #recent-table th,#recent-table td{padding:1px 2px}
   #map-table-row{gap:2px;margin-bottom:1px}
   #map-local-right{gap:2px}
@@ -618,9 +632,16 @@ footer a:hover{text-decoration:underline}
   .panel{padding:2px 5px}
   #recent-table-wrap{max-height:80px}
   #topqsos-table-wrap{max-height:80px}
-  .panel h2{font-size:0.56rem;margin-bottom:1px}
-  .panel dt,.panel dd{font-size:0.56rem}
-  footer{padding:1px;font-size:0.5rem}
+  .panel h2{margin-bottom:1px}
+  footer{padding:1px}
+}
+@media(max-height:550px) and (max-width:1200px){
+  #hd-title{font-size:0.92rem}
+  #hd-subtitle{font-size:0.68rem}
+  #recent-table{font-size:0.68rem}
+  .panel h2{font-size:0.68rem}
+  .panel dt,.panel dd{font-size:0.68rem}
+  footer{font-size:0.62rem}
 }
 
 /* ── responsive: mid-width — hide stats panel, 3-column grid ── */
@@ -678,6 +699,19 @@ footer a:hover{text-decoration:underline}
   .panel{padding:4px 6px}
 }
 
+/* ── Type scale for wide displays (FullHD / 2K / 4K) ──
+   Every size in this sheet is in rem, so the root font size scales the whole
+   dashboard coherently. 1600px → 17px, 1920px → 18.7px, 2560px → 22px,
+   capped at 24px from ~3000px. Deliberately keyed on width alone: a 1920×880
+   window is still a FullHD screen and must not fall back to laptop-sized type. */
+@media(min-width:1600px){
+  html{font-size:clamp(17px,0.521vw + 8.67px,24px)}
+  /* Use the full width on wide displays even when the window is short:
+     the 1360px cap below only lifted at ≥900px height, so a FullHD window
+     with browser chrome kept a laptop-width layout on a 1920px screen. */
+  #app{max-width:none;padding:0 32px 16px 32px}
+}
+
 /* ── Full HD / TV display polish (1920×1080+) ── */
 @media(min-width:1600px) and (min-height:900px){
   #app{max-width:none;margin:0 auto;padding:0 32px 16px 32px}
@@ -733,6 +767,22 @@ footer a:hover{text-decoration:underline}
   #topqsos-table th,#topqsos-table td{padding:3px 6px}
   #topqsos-table-wrap{max-height:320px}
   footer{padding:8px;font-size:0.8rem}
+}
+
+/* ── 2K / 4K displays (2560×1440+): let the layout keep up with the type ──
+   The fluid root above already enlarged every label; widen the gutters and
+   let the QSO tables use the extra height instead of stopping at 320px. */
+@media(min-width:2300px) and (min-height:1200px){
+  #app{padding:0 44px 20px}
+  #header{gap:22px;margin-bottom:10px}
+  #map-table-row{gap:18px;margin-bottom:18px}
+  #map-local-right{gap:18px}
+  main{gap:18px;margin-bottom:14px}
+  .panel{padding:14px 18px}
+  #recent-table th,#recent-table td,
+  #topqsos-table th,#topqsos-table td{padding:6px 10px}
+  #recent-table-wrap,#topqsos-table-wrap{max-height:34vh}
+  #map-extra-box.visible{min-height:150px;max-height:150px;padding:14px 20px}
 }
 
 /* ══════════════════════════════════════════════════════════════════════
