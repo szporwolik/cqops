@@ -37,20 +37,20 @@
   /* ── Ham band badge colors ── */
   --b160m-bg:rgba(139,0,0,0.22);   --b160m-fg:#8B0000;
   --b80m-bg:rgba(192,57,43,0.22);  --b80m-fg:#C0392B;
-  --b60m-bg:rgba(180,130,30,0.22); --b60m-fg:#B4821E;
-  --b40m-bg:rgba(210,105,30,0.22); --b40m-fg:#D2691E;
-  --b30m-bg:rgba(184,134,11,0.22); --b30m-fg:#B8860B;
-  --b20m-bg:rgba(0,91,187,0.22);   --b20m-fg:#005BBB;
-  --b17m-bg:rgba(0,128,128,0.22);  --b17m-fg:#008080;
-  --b15m-bg:rgba(46,125,50,0.22);  --b15m-fg:#2E7D32;
-  --b12m-bg:rgba(85,139,47,0.22);  --b12m-fg:#558B2F;
-  --b10m-bg:rgba(0,131,143,0.22);  --b10m-fg:#00838F;
+  --b60m-bg:rgba(180,130,30,0.22); --b60m-fg:#876216;
+  --b40m-bg:rgba(210,105,30,0.22); --b40m-fg:#AA5518;
+  --b30m-bg:rgba(184,134,11,0.22); --b30m-fg:#866208;
+  --b20m-bg:rgba(0,91,187,0.22);   --b20m-fg:#004C9D;
+  --b17m-bg:rgba(0,128,128,0.22);  --b17m-fg:#005858;
+  --b15m-bg:rgba(46,125,50,0.22);  --b15m-fg:#246227;
+  --b12m-bg:rgba(85,139,47,0.22);  --b12m-fg:#3E6522;
+  --b10m-bg:rgba(0,131,143,0.22);  --b10m-fg:#005860;
   --b6m-bg:rgba(106,27,154,0.22);  --b6m-fg:#6A1B9A;
   --b4m-bg:rgba(74,20,140,0.22);   --b4m-fg:#4A148C;
   --b2m-bg:rgba(40,53,147,0.22);   --b2m-fg:#283593;
-  --b70cm-bg:rgba(84,110,122,0.22);--b70cm-fg:#546E7A;
+  --b70cm-bg:rgba(84,110,122,0.22);--b70cm-fg:#475E68;
   --b23cm-bg:rgba(69,90,100,0.22); --b23cm-fg:#455A64;
-  --b13cm-bg:rgba(96,96,96,0.22);  --b13cm-fg:#606060;
+  --b13cm-bg:rgba(96,96,96,0.22);  --b13cm-fg:#5C5C5C;
   --b9cm-bg:rgba(80,80,80,0.22);   --b9cm-fg:#505050;
   --b6cm-bg:rgba(72,72,72,0.22);   --b6cm-fg:#484848;
   --b3cm-bg:rgba(64,64,64,0.22);   --b3cm-fg:#404040;
@@ -94,8 +94,8 @@
   --body-grad-3:#06090E; --body-grad-4:#0A1016; --body-grad-5:#0D151E;
 
   /* ── Ham band badge colors ── */
-  --b160m-bg:rgba(255,70,82,0.16); --b160m-fg:#FF6874;
-  --b80m-bg:rgba(255,100,74,0.16); --b80m-fg:#FF8066;
+  --b160m-bg:rgba(255,70,82,0.16); --b160m-fg:#FF828C;
+  --b80m-bg:rgba(255,100,74,0.16); --b80m-fg:#FF846B;
   --b60m-bg:rgba(255,164,62,0.16); --b60m-fg:#FFB25A;
   --b40m-bg:rgba(255,132,52,0.17); --b40m-fg:#FF984D;
   --b30m-bg:rgba(238,186,58,0.17); --b30m-fg:#F1C75B;
@@ -155,17 +155,17 @@
   --b80m-bg:rgba(173,40,94,0.16);  --b80m-fg:#AD285E;
   --b60m-bg:rgba(124,89,0,0.16);   --b60m-fg:#7C5900;
   --b40m-bg:rgba(155,64,53,0.16);  --b40m-fg:#9B4035;
-  --b30m-bg:rgba(128,97,0,0.16);   --b30m-fg:#806100;
+  --b30m-bg:rgba(128,97,0,0.16);   --b30m-fg:#7D5F00;
   --b20m-bg:rgba(107,67,177,0.16); --b20m-fg:#6B43B1;
-  --b17m-bg:rgba(17,107,103,0.16); --b17m-fg:#116B67;
-  --b15m-bg:rgba(28,105,76,0.16);  --b15m-fg:#1C694C;
+  --b17m-bg:rgba(17,107,103,0.16); --b17m-fg:#10625F;
+  --b15m-bg:rgba(28,105,76,0.16);  --b15m-fg:#1B664A;
   --b12m-bg:rgba(77,102,25,0.16);  --b12m-fg:#4D6619;
-  --b10m-bg:rgba(8,102,117,0.16);  --b10m-fg:#086675;
+  --b10m-bg:rgba(8,102,117,0.16);  --b10m-fg:#08606E;
   --b6m-bg:rgba(142,52,168,0.16);  --b6m-fg:#8E34A8;
   --b4m-bg:rgba(104,67,163,0.16);  --b4m-fg:#6843A3;
   --b2m-bg:rgba(77,88,167,0.16);   --b2m-fg:#4D58A7;
-  --b70cm-bg:rgba(52,101,116,0.16);--b70cm-fg:#346574;
-  --b23cm-bg:rgba(82,101,113,0.16);--b23cm-fg:#526571;
+  --b70cm-bg:rgba(52,101,116,0.16);--b70cm-fg:#326271;
+  --b23cm-bg:rgba(82,101,113,0.16);--b23cm-fg:#50626E;
   --b13cm-bg:rgba(100,90,98,0.15); --b13cm-fg:#645A62;
   --b9cm-bg:rgba(92,84,91,0.15);   --b9cm-fg:#5C545B;
   --b6cm-bg:rgba(84,78,84,0.15);   --b6cm-fg:#544E54;
@@ -180,6 +180,8 @@
   --mode-other-bg:rgba(94,82,96,0.14);  --mode-other-fg:#5E5260;
 }
 /* ── YL Orchid Luxe accessibility ── */
+/* Keyboard focus must be visible in every theme, not just the yellow one. */
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:3px}
 .yl :focus-visible{outline:3px solid #C12678;outline-offset:3px}
 /* ───────────────────────────────────────────────────────────────────
    Theme: HighVis — premium accessibility, color-blind safe.
@@ -210,10 +212,10 @@
   --body-grad-3:#000000; --body-grad-4:#040608; --body-grad-5:#080D12;
 
   /* ── Ham band badge colors ── */
-  --b160m-bg:rgba(255,92,168,0.24); --b160m-fg:#FF83BD;
-  --b80m-bg:rgba(255,126,95,0.24);  --b80m-fg:#FF967D;
+  --b160m-bg:rgba(255,92,168,0.24); --b160m-fg:#FF9BCA;
+  --b80m-bg:rgba(255,126,95,0.24);  --b80m-fg:#FFA28B;
   --b60m-bg:rgba(255,209,102,0.24); --b60m-fg:#FFD166;
-  --b40m-bg:rgba(255,159,67,0.24);  --b40m-fg:#FF9F43;
+  --b40m-bg:rgba(255,159,67,0.24);  --b40m-fg:#FFA650;
   --b30m-bg:rgba(255,224,102,0.24); --b30m-fg:#FFE066;
   --b20m-bg:rgba(114,188,255,0.24); --b20m-fg:#72BCFF;
   --b17m-bg:rgba(85,243,232,0.22);  --b17m-fg:#55F3E8;
@@ -229,7 +231,7 @@
   --b9cm-bg:rgba(185,185,190,0.18); --b9cm-fg:#B9B9BE;
   --b6cm-bg:rgba(170,170,175,0.18); --b6cm-fg:#AAAAB0;
   --b3cm-bg:rgba(155,155,160,0.18); --b3cm-fg:#9B9BA0;
-  --b1cm-bg:rgba(140,140,145,0.18); --b1cm-fg:#8C8C91;
+  --b1cm-bg:rgba(140,140,145,0.18); --b1cm-fg:#8E8E93;
   --b-other-bg:rgba(190,195,200,0.16);--b-other-fg:#CFD4D9;
 
   /* ── Mode badge colors ── */
@@ -537,6 +539,8 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
 .stat-op-count{font-weight:700;color:var(--text);margin-right:2px;font-size:inherit}
 .stat-op-more{font-size:0.72rem;color:var(--dim);margin-left:2px;vertical-align:middle}
 .rate-badge{background:var(--blue-soft);color:var(--blue-dark);font-weight:600}
+/* On the dark themes --blue-dark is too close to the tinted pill behind it. */
+:root.dark .rate-badge,:root.hivis .rate-badge{color:#8CC4FF}
 /* Operator badge in station panel. */
 #sf-Operator .stat-badge-op{font-size:0.78rem;padding:2px 8px;font-weight:600}
 .panel dd .stat-badge:first-child{margin-left:0}
@@ -851,7 +855,8 @@ footer a:hover{text-decoration:underline}
    let the QSO tables use the extra height instead of stopping at 320px. */
 @media(min-width:2300px) and (min-height:1200px){
   #app{padding:0 44px 20px}
-  #stats-panel{flex:0 1 320px}
+  #station-panel{flex:0 1 380px}
+  #stats-panel{flex:0 1 380px}
   #header{gap:22px;margin-bottom:10px}
   #map-table-row{gap:18px;margin-bottom:18px}
   #map-local-right{gap:18px}
@@ -963,4 +968,16 @@ footer a:hover{text-decoration:underline}
 }
 @media(max-width:1199px){
   #recent-table-wrap,#topqsos-table-wrap{max-height:150px}
+}
+
+/* ── Ultrawide displays (2K/4K and 21:9) ──
+   The root font reaches 22-24px here, so the two narrow cards and the QSO
+   lists are sized in rem / capped last: earlier tiers cannot undo it. */
+@media(min-width:2300px){
+  #station-panel{flex:0 1 19rem}
+  #stats-panel{flex:0 1 19rem}
+}
+@media(min-width:2300px) and (max-height:1180px){
+  #map-table-row{min-height:16vh}
+  #recent-table-wrap,#topqsos-table-wrap{max-height:170px}
 }
