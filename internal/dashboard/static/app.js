@@ -1111,20 +1111,22 @@ function registerSolarModule(d){
   function cond(v,good,fair){var c=sc(v,good,fair);return'<b style="color:'+c+'">'+sn(v)+'</b>'}
 
   // Module 1: Solar activity (SFI + Sunspots).
+  // Sizes live in style.css (xmod-* classes) so they follow the type ramp —
+  // inline font-size ignored the media tiers and stayed tiny on big screens.
   var m1=function(){
     return'<div class="extra-title">Solar Activity</div>'+
-      '<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:4px 12px;font-size:0.85rem">'+
-      '<span><span style="color:var(--dim)">SFI</span> '+cond(sf,100,150)+'</span>'+
-      '<span><span style="color:var(--dim)">Sunspots</span> <b>'+sn(ss)+'</b></span>'+
+      '<div class="xmod-row">'+
+      '<span><span class="xmod-dim">SFI</span> '+cond(sf,100,150)+'</span>'+
+      '<span><span class="xmod-dim">Sunspots</span> <b>'+sn(ss)+'</b></span>'+
       '</div>';
   };m1._id='solar';
 
   // Module 2: Geomagnetic field (A + K indices).
   var m2=function(){
     return'<div class="extra-title">Geomagnetic Field</div>'+
-      '<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:4px 12px;font-size:0.85rem">'+
-      '<span><span style="color:var(--dim)">A-index</span> '+cond(a,7,15)+'</span>'+
-      '<span><span style="color:var(--dim)">K-index</span> '+cond(k,2.5,4)+'</span>'+
+      '<div class="xmod-row">'+
+      '<span><span class="xmod-dim">A-index</span> '+cond(a,7,15)+'</span>'+
+      '<span><span class="xmod-dim">K-index</span> '+cond(k,2.5,4)+'</span>'+
       '</div>';
   };m2._id='solar';
 
@@ -1152,25 +1154,36 @@ function registerDXCModule(d){
     var freq=d.freqKhz? (d.freqKhz/1000).toFixed(3)+' MHz' : '';
     var comment=d.comment||'';
     return'<div class="extra-title">Last Spotted By</div>'+
-      '<div style="font-size:1.1rem;font-weight:700;color:var(--accent)">'+esc(spotter)+'</div>'+
-      (freq?'<div style="font-size:0.78rem;color:var(--text-secondary)">'+freq+'</div>':'')+
-      (comment?'<div style="font-size:0.7rem;color:var(--dim);margin-top:2px">'+esc(comment)+'</div>':'');
+      '<div class="xmod-spot-call">'+esc(spotter)+'</div>'+
+      (freq?'<div class="xmod-spot-freq">'+freq+'</div>':'')+
+      (comment?'<div class="xmod-spot-comment">'+esc(comment)+'</div>':'');
   };
   mod._id='dxc';
   extraModules.unshift(mod);
 }
+
+// pskModuleBands is how many band rows the info box can show. It is a few rem
+// tall, so rendering all 15 bands clipped everything below the fold.
+var pskModuleBands=6;
 
 function registerPSKModule(d){
   touchFreshness('psk');
   extraModules=extraModules.filter(function(f){return f._id!=='psk'});
   var mod=function(){
     var html='<div class="extra-title">PSK Reporter</div>'+
-      '<div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:3px">'+d.total+' reports</div>'+
-      '<table style="font-size:0.68rem;border-collapse:collapse;margin:0 auto;line-height:1.3">';
+      '<div class="xmod-psk-head">'+d.total+' reports</div>'+
+      '<table class="xmod-psk-table">';
     var order=['160m','80m','60m','40m','30m','20m','17m','15m','12m','10m','6m','4m','2m','70cm','23cm'];
+    // Busiest bands first, then trim to what the box can show.
+    var rows=[];
     for(var i=0;i<order.length;i++){
       var b=order[i],count=d.byBand&&d.byBand[b]||0;
-      if(count>0)html+='<tr><td style="color:var(--dim);padding-right:8px;text-align:right">'+b+'</td><td style="font-weight:600">'+count+'</td></tr>';
+      if(count>0)rows.push([b,count]);
+    }
+    rows.sort(function(a,b){return b[1]-a[1]});
+    rows=rows.slice(0,pskModuleBands);
+    for(var j=0;j<rows.length;j++){
+      html+='<tr><td class="xmod-psk-band">'+rows[j][0]+'</td><td class="xmod-psk-count">'+rows[j][1]+'</td></tr>';
     }
     html+='</table>';return html;
   };
@@ -1184,26 +1197,33 @@ function cycleExtraModule(){
   updateExtraBox();
 }
 
+// rootRemPx returns the current root font size in px. The stylesheet ramps it
+// with the display width, so layout thresholds expressed in px (how tall the
+// right column must be, how wide a module needs to be) have to follow it or
+// they stop matching the rendered type on FullHD/2K screens.
+function rootRemPx(){return parseFloat(getComputedStyle(document.documentElement).fontSize)||16}
+
 // Show/hide the extra box and render modules — multiple at once on wide screens.
 function updateExtraBox(){
   var box=document.getElementById('map-extra-box');
   var right=document.getElementById('map-local-right');
   if(!box||!right)return;
-  if(right.clientHeight>=300){
+  var rem=rootRemPx();
+  if(right.clientHeight>=18.75*rem){
     box.classList.add('visible');
     if(!extraModules.length){
       registerExtraModule(function(){
         return '<div class="extra-title">CQOps.com</div>'+
-               '<div style="font-size:0.78rem;color:var(--text-secondary)">Fast · Portable · Open Source</div>'+
-               '<div style="font-size:0.7rem;color:var(--dim);margin-top:2px">Ham radio logger for the terminal</div>';
+               '<div class="xmod-promo">Fast · Portable · Open Source</div>'+
+               '<div class="xmod-promo-sub">Ham radio logger for the terminal</div>';
       });
     }
     var content=document.getElementById('map-extra-content');
     if(!content)return;
-    // Show 1 or 2 modules — only split into two columns when box is wide enough
-    // to fit content like band conditions without cramping.
+    // Show 1 or 2 modules — only split into two columns when the box is wide
+    // enough to fit content like band conditions without cramping.
     // Band conditions always takes full width.
-    var cols=Math.min(2,Math.max(1,Math.floor(box.clientWidth/240)));
+    var cols=Math.min(2,Math.max(1,Math.floor(box.clientWidth/(15*rem))));
     if(cols>1 && extraModules.length>1){
       var checkIdx=extraModuleIdx%extraModules.length;
       for(var ci=0;ci<cols&&ci<extraModules.length;ci++){
@@ -1217,10 +1237,10 @@ function updateExtraBox(){
     }
     // Render current slice: modules [start .. start+cols-1], wrapping around.
     var start=extraModuleIdx%extraModules.length;
-    var html='<div style="display:flex;align-items:center;justify-content:center;gap:0;width:100%;height:100%">';
+    var html='<div class="xmod-wrap">';
     for(var i=0;i<cols&&i<extraModules.length;i++){
       var idx=(start+i)%extraModules.length;
-      html+='<div class="extra-module'+(i>0?' extra-module-sep':'')+'" style="flex:1;min-width:0;padding:0 10px">'+extraModules[idx]()+'</div>';
+      html+='<div class="extra-module'+(i>0?' extra-module-sep':'')+'">'+extraModules[idx]()+'</div>';
     }
     html+='</div>';
     content.innerHTML=html;
@@ -1393,7 +1413,7 @@ function _aprIconHTML(sym,callsign){
         '</div>';
     }
   }
-  if(callsign)html+='<div style="font-weight:700;font-size:0.65rem;color:#fff;text-shadow:0 0 3px #000,0 0 6px #000;margin-top:1px;white-space:nowrap;">'+esc(callsign)+'</div>';
+  if(callsign)html+='<div class="apr-label">'+esc(callsign)+'</div>';
   html+='</div>';
   return html;
 }
