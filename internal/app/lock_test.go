@@ -16,12 +16,6 @@ func lockPath(dir string) string {
 }
 
 func TestAcquireLock_HoldsExclusiveOwnership(t *testing.T) {
-	origOwner := lockOwnerIsCQOps
-	t.Cleanup(func() { lockOwnerIsCQOps = origOwner })
-	// Treat the test process as a real CQOps instance so the held lock
-	// fails fast instead of prompting.
-	lockOwnerIsCQOps = func(int) bool { return true }
-
 	dir := t.TempDir()
 	lk, err := acquireLock(dir)
 	if err != nil {
@@ -53,11 +47,6 @@ func TestAcquireLock_HoldsExclusiveOwnership(t *testing.T) {
 // TestAcquireLock_AtomicUnderRace verifies the OS lock serializes racers:
 // exactly one of N simultaneous instances can hold the lock.
 func TestAcquireLock_AtomicUnderRace(t *testing.T) {
-	origOwner := lockOwnerIsCQOps
-	t.Cleanup(func() { lockOwnerIsCQOps = origOwner })
-	// Losers must fail fast (real CQOps owner) instead of prompting.
-	lockOwnerIsCQOps = func(int) bool { return true }
-
 	dir := t.TempDir()
 
 	const n = 8
@@ -126,6 +115,13 @@ func TestAcquireLock_ReleasedAfterOwnerDeath(t *testing.T) {
 			}
 			time.Sleep(20 * time.Millisecond)
 			continue
+		}
+		// The child holds it. This is the real-world case the bypass exploited:
+		// the child's process name is the test binary, not "cqops", so the
+		// refusal must be the live-instance message — never a stale-lock hint
+		// offering to delete the file.
+		if !strings.Contains(err.Error(), "already running") {
+			t.Fatalf("refusal = %v, want the live-instance message", err)
 		}
 		break // child holds it
 	}

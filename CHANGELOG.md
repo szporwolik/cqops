@@ -49,6 +49,21 @@ is no longer dropped from the payload.
 - <u>**Uploads carry the power and the references again**</u>: the v2 JSON create — the path behind every manual save, editor upload and WSJT-X auto-log — sent only the core columns. Wavelog therefore kept its station-profile default power (a 10 W contact landed as 100 W) and silently lost SOTA/POTA/WWFF/IOTA/SIG references, the operator and the CQ/ITU zones, even though the ADIF path and PATCH always carried them. All of those fields are part of the create payload now; empty ones stay out of the body so the server keeps its own values.
 
 ### Fixes
+- <u>**The single-instance guard can no longer be bypassed**</u>: with the OS
+lock held, the startup guard read the PID from `cqops.lock`, asked the kernel
+for that process's name, and — when it was not exactly `cqops` — treated the
+lock as stale and offered to delete it. A release binary named
+`cqops-linux-amd64`, a renamed copy or an AppImage never matches that name, so
+answering "y" unlinked the file and locked a freshly created inode while the
+first instance kept the old one: **two instances, one config, one logbook**.
+The OS lock is the only authority now — a held lock always means a live
+instance and refuses startup with its PID, the file is never deleted on the
+strength of a PID or process name, and a file left behind by a crashed
+instance is reused in place as soon as the kernel has released the lock. The
+PID is still written for diagnostics only. Covered by
+`TestAcquireLockCannotBeStolenWithForeignProcessName` (fails against the old
+implementation) and by the two-process test, which now asserts the refusal is
+the live-instance message rather than a delete-lock hint.
 - **Windows binaries report the right version**: the checked-in PE resources were still stamped `0.8.13.0` from the 0.8.x line — release builds embed them as-is, so Windows file properties showed a version four releases old. `winres/winres.json` and both `rsrc_windows_*.syso` are regenerated at 0.11.2.
 
 ### Under the Hood
