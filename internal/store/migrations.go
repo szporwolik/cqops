@@ -189,7 +189,11 @@ var migrations = []string{
 // Version history:
 //
 //	1 — v0.9.0  consolidated schema, base_call backfill, dxcc column
-const schemaVersion = 2
+//	2 — v0.10.0 worked-status index tables and the one-time build
+//	3 — v0.11.2 rebuild the worked index: edits indexed the caller's object
+//	           (losing dxcc on comment-only edits) and enrichment / DXCC
+//	           backfill wrote qsos without touching the index
+const schemaVersion = 3
 
 // Migrate runs all migrations. Safe to call multiple times — every
 // statement uses IF NOT EXISTS guards, and PRAGMA user_version prevents
@@ -300,6 +304,14 @@ func Migrate(db *sql.DB) error {
 	}
 	if err := migrateBuildWorkedIndex(db); err != nil {
 		return err
+	}
+	// v3: existing indexes can have drifted from qsos (see the version
+	// history). Rebuild once while upgrading; later opens skip this through
+	// the user_version guard above.
+	if current < 3 {
+		if err := RebuildWorkedIndex(db); err != nil {
+			return fmt.Errorf("rebuild worked index: %w", err)
+		}
 	}
 
 	// One-time backfill: if any QSO row still has an empty base_call

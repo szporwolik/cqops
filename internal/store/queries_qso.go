@@ -1109,13 +1109,20 @@ func UpdateQSO(db *sql.DB, q *qso.QSO) error {
 	if _, err := tx.Exec(query, args...); err != nil {
 		return fmt.Errorf("update qso: %w", err)
 	}
-	// Unindex after the update: edge recomputation must see the new values
-	// (the doomed row no longer matches its old aggregate keys).
+	// Index the stored row, never the caller's object: the UPDATE keeps the
+	// columns the caller left empty (dxcc, base_call, submode …), so indexing
+	// q would drop aggregates the database still holds — a comment-only edit
+	// used to erase the contact from the DXCC history. Unindex after the
+	// update so edge recomputation sees the new values.
 	if oldErr == nil {
 		if err := indexQSO(tx, oldQSO, -1); err != nil {
 			return err
 		}
-		if err := indexQSO(tx, q, 1); err != nil {
+		newQSO, lerr := loadQSOForIndex(tx, q.ID)
+		if lerr != nil {
+			return fmt.Errorf("reload qso for worked index: %w", lerr)
+		}
+		if err := indexQSO(tx, newQSO, 1); err != nil {
 			return err
 		}
 	}
@@ -1156,14 +1163,19 @@ func SaveQSO(db *sql.DB, q *qso.QSO) (synced bool, rev int64, err error) {
 	if _, err := tx.Exec(query, args...); err != nil {
 		return false, 0, fmt.Errorf("update qso: %w", err)
 	}
-	// Maintain the worked index: the old values stop counting, the new ones
-	// start — same transaction as the row update. Unindexing after the
-	// update keeps edge recomputation consistent with the stored rows.
+	// Maintain the worked index: the old values stop counting, the stored new
+	// ones start — same transaction as the row update. Re-reading the row is
+	// what keeps the index honest, because the UPDATE preserves columns the
+	// caller left empty and indexing q would silently drop them.
 	if oldErr == nil {
 		if err := indexQSO(tx, oldQSO, -1); err != nil {
 			return false, 0, err
 		}
-		if err := indexQSO(tx, q, 1); err != nil {
+		newQSO, lerr := loadQSOForIndex(tx, q.ID)
+		if lerr != nil {
+			return false, 0, fmt.Errorf("reload qso for worked index: %w", lerr)
+		}
+		if err := indexQSO(tx, newQSO, 1); err != nil {
 			return false, 0, err
 		}
 	}
@@ -1256,10 +1268,84 @@ func UpdateQSOEnrichment(db *sql.DB, qsoID int64, e EnrichmentData) error {
 		return nil
 	}
 
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin enrichment: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Enrichment fills dxcc, grid, country and zones — exactly the columns the
+	// worked index aggregates over — so the index has to follow in the same
+	// transaction, from the stored row (the CASE guards make this a partial
+	// update whose result cannot be predicted from e).
+	oldQSO, oldErr := loadQSOForIndex(tx, qsoID)
+
 	args = append(args, qsoID)
 	query := fmt.Sprintf("UPDATE qsos SET %s WHERE id = ?", strings.Join(sets, ", "))
-	if _, err := db.Exec(query, args...); err != nil {
+	if _, err := tx.Exec(query, args...); err != nil {
 		return fmt.Errorf("update qso enrichment: %w", err)
 	}
-	return nil
+
+	if oldErr == nil {
+		if err := indexQSO(tx, oldQSO, -1); err != nil {
+			return err
+		}
+		newQSO, lerr := loadQSOForIndex(tx, qsoID)
+		if lerr != nil {
+			return fmt.Errorf("reload qso for worked index: %w", lerr)
+		}
+		if err := indexQSO(tx, newQSO, 1); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// BackfillDXCC sets the DXCC entity on rows whose dxcc column is still empty,
+// keyed by row id (the caller resolves prefixes through CTY). The worked index
+// is updated in the same transaction, so a backfilled contact starts counting
+// in the DXCC history immediately instead of on the next full rebuild.
+// Returns how many rows were updated.
+func BackfillDXCC(db *sql.DB, byID map[int64]string) (int, error) {
+	if len(byID) == 0 {
+		return 0, nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("begin dxcc backfill: %w", err)
+	}
+	defer tx.Rollback()
+
+	updated := 0
+	for id, dxcc := range byID {
+		if strings.TrimSpace(dxcc) == "" {
+			continue
+		}
+		oldQSO, oldErr := loadQSOForIndex(tx, id)
+		if oldErr != nil {
+			continue
+		}
+		res, err := tx.Exec(`UPDATE qsos SET dxcc = ? WHERE id = ? AND COALESCE(dxcc,'') = ''`, dxcc, id)
+		if err != nil {
+			return updated, fmt.Errorf("dxcc backfill update: %w", err)
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			continue // row gained DXCC meanwhile — nothing to reindex
+		}
+		if err := indexQSO(tx, oldQSO, -1); err != nil {
+			return updated, err
+		}
+		newQSO, lerr := loadQSOForIndex(tx, id)
+		if lerr != nil {
+			return updated, fmt.Errorf("reload qso for worked index: %w", lerr)
+		}
+		if err := indexQSO(tx, newQSO, 1); err != nil {
+			return updated, err
+		}
+		updated++
+	}
+	if err := tx.Commit(); err != nil {
+		return updated, fmt.Errorf("commit dxcc backfill: %w", err)
+	}
+	return updated, nil
 }

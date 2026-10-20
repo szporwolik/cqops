@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/ctybig"
 	"github.com/szporwolik/cqops/internal/ref"
+	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/version"
 )
 
@@ -195,18 +197,16 @@ func backfillMissingDXCCLimit(database *sql.DB, bdb *ctybig.DB, maxRows int) (in
 	}
 	rows.Close()
 
-	count := 0
 	if err := rows.Err(); err != nil {
-		return count, err
+		return 0, err
 	}
+	// The store keeps the worked index in step with the backfilled rows; a
+	// raw UPDATE here would leave DXCC history stale until a full rebuild.
+	byID := make(map[int64]string, len(updates))
 	for _, u := range updates {
-		_, err := database.Exec(`UPDATE qsos SET dxcc = ? WHERE id = ?`,
-			fmt.Sprintf("%d", u.dxcc), u.id)
-		if err == nil {
-			count++
-		}
+		byID[u.id] = strconv.Itoa(u.dxcc)
 	}
-	return count, nil
+	return store.BackfillDXCC(database, byID)
 }
 
 // =============================================================================

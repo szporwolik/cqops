@@ -49,6 +49,21 @@ is no longer dropped from the payload.
 - <u>**Uploads carry the power and the references again**</u>: the v2 JSON create — the path behind every manual save, editor upload and WSJT-X auto-log — sent only the core columns. Wavelog therefore kept its station-profile default power (a 10 W contact landed as 100 W) and silently lost SOTA/POTA/WWFF/IOTA/SIG references, the operator and the CQ/ITU zones, even though the ADIF path and PATCH always carried them. All of those fields are part of the create payload now; empty ones stay out of the body so the server keeps its own values.
 
 ### Fixes
+- <u>**The worked-status index stays in step with the contacts**</u>: editing
+only a comment could make a contact stop counting in the DXCC history. The
+form save indexed the object it was handed, which has no DXCC (the field is not
+on the form), while the SQL deliberately preserved the stored value — so the
+old aggregate was removed and never re-added. The index is now built from the
+row **as stored**, read back inside the same transaction, on both the form and
+editor save paths. Two further writers bypassed the index entirely and are now
+covered too: callbook/CTY enrichment (fills dxcc, grid and zones after the row
+exists) and the Big CTY DXCC backfill, which moved into the store as
+`BackfillDXCC` so the row update and the aggregate change commit together. The
+schema version is 3: upgrading rebuilds the index once, so databases written by
+the affected builds are repaired automatically. Regression tests reproduce the
+reported symptom (`DXCC 269` on the contact, `0` in the index) against the old
+code and assert both save paths, enrichment, the backfill and the upgrade
+rebuild.
 - <u>**The single-instance guard can no longer be bypassed**</u>: with the OS
 lock held, the startup guard read the PID from `cqops.lock`, asked the kernel
 for that process's name, and — when it was not exactly `cqops` — treated the
