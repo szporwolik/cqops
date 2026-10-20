@@ -31,6 +31,20 @@
 ### APRS
 - <u>**The own station shows the symbol and SSID it actually transmits**</u>: on both the world map and the local APRS map the station was a plain dot, so there was no way to tell whether beacons were going out or under which identity. While beaconing, the dot now carries the APRS symbol from the logbook's APRS settings and the callsign-SSID the network sees (`SP9SPM-10`) underneath it; in receive-only mode the plain dot stays exactly as before. The identity comes from the same code path the beacon uses (`APRSBeaconIdentity`), so a custom callsign, a custom SSID, the default `-10` suffix and the default `/-` house symbol all match what is on the air. Our own beacon echo is also filtered out of the APRS station list with the same rule the APRS pane applies, so the station does not appear twice.
 
+- <u>**The map dot sits where the beacon actually transmits**</u>: the station
+marker was built from the logging grid (GPS > station grid), which ignores the
+logbook's fixed APRS location, while the beacon transmits the fixed
+location-aware chain (fixed > GPS > station grid). With a fixed grid configured
+the two legitimately differ, so the dashboard drew the dot up to tens of
+kilometres away from the position in the packets — and a browser refresh could
+never reconcile them. The snapshot now carries `aprsLocator`/`aprsPos` derived
+from the same resolver the beacon uses, and both map markers, the APRS radius
+circle and the local-map centring follow it; QSO distance and bearing keep using
+the logging grid. The station card shows an extra `APRS` row whenever the two
+locators differ, so the difference is explained instead of mysterious. The
+position travels as a pointer, so a valid `0,0` point (equator/prime meridian)
+is no longer dropped from the payload.
+
 ### Wavelog
 - <u>**Uploads carry the power and the references again**</u>: the v2 JSON create — the path behind every manual save, editor upload and WSJT-X auto-log — sent only the core columns. Wavelog therefore kept its station-profile default power (a 10 W contact landed as 100 W) and silently lost SOTA/POTA/WWFF/IOTA/SIG references, the operator and the CQ/ITU zones, even though the ADIF path and PATCH always carried them. All of those fields are part of the create payload now; empty ones stay out of the body so the server keeps its own values.
 

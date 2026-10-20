@@ -62,6 +62,14 @@ var mapContainer=$('map-container');
 
 var es=null, map=null, mainGL=null;
 var ownStationLat=null,ownStationLon=null,ownStationCall='';
+// Own APRS position as transmitted (fixed location > GPS > station grid). The
+// station grid above follows the logging chain and ignores the APRS fixed
+// location, so the marker must use this when the logbook has APRS enabled.
+var ownAprsLat=null,ownAprsLon=null,ownAprsLocator='';
+function _ownPos(){
+  if(ownAprsLat!=null&&ownAprsLon!=null)return {lat:ownAprsLat,lon:ownAprsLon};
+  return {lat:ownStationLat,lon:ownStationLon};
+}
 var todayQsos=[], displayCfg={};
 
 // ---- Clocks ----
@@ -171,7 +179,12 @@ function connectSSE(){
   });
   es.addEventListener('station',function(e){var s=JSON.parse(e.data).payload;
     D('sse','station',s.callsign+' '+s.locator);
-    if(s.lat!=null&&s.lon!=null){ownStationLat=s.lat;ownStationLon=s.lon;initLocalMap(s.lat,s.lon);recentreLocalMap(s.lat,s.lon);updateAprsCircle(s.lat,s.lon,s.aprsRadiusKm||0);updateMapFromToday()}else{recentreLocalMapFromStation(s)}renderStation(s)
+    if(s.lat!=null&&s.lon!=null){ownStationLat=s.lat;ownStationLon=s.lon;
+      ownAprsLat=s.aprsPos?s.aprsPos.lat:null;
+      ownAprsLon=s.aprsPos?s.aprsPos.lon:null;
+      ownAprsLocator=s.aprsLocator||'';
+      var op=_ownPos();
+      initLocalMap(op.lat,op.lon);recentreLocalMap(op.lat,op.lon);updateAprsCircle(op.lat,op.lon,s.aprsRadiusKm||0);updateMapFromToday()}else{recentreLocalMapFromStation(s)}renderStation(s)
   });
   es.addEventListener('operator',function(e){var o=JSON.parse(e.data).payload;
     D('sse','operator',o.callsign);
@@ -345,9 +358,13 @@ function renderAll(snap){
     if(snap.station.callsign)ownStationCall=snap.station.callsign;
     if(snap.station.lat&&snap.station.lon){
     ownStationLat=snap.station.lat;ownStationLon=snap.station.lon;
-    initLocalMap(ownStationLat,ownStationLon);
-    recentreLocalMap(ownStationLat,ownStationLon);
-    updateAprsCircle(ownStationLat,ownStationLon,snap.station.aprsRadiusKm||0);
+    ownAprsLat=snap.station.aprsPos?snap.station.aprsPos.lat:null;
+    ownAprsLon=snap.station.aprsPos?snap.station.aprsPos.lon:null;
+    ownAprsLocator=snap.station.aprsLocator||'';
+    var op=_ownPos();
+    initLocalMap(op.lat,op.lon);
+    recentreLocalMap(op.lat,op.lon);
+    updateAprsCircle(op.lat,op.lon,snap.station.aprsRadiusKm||0);
     fetchWeather(snap.station.lat,snap.station.lon);
     fetchSunTimes(snap.station.lat,snap.station.lon);
     }
@@ -580,11 +597,18 @@ function renderStation(st,op,lb,rig,wsjtx){
   var rigDot=rig.connected?'<span class=\"status-on\">●</span> Connected':'<span class=\"status-off\">○</span> Disconnected';
   var wsjtxDot=wsjtx.connected?'<span class=\"status-on\">●</span> Online':'<span class=\"status-off\">○</span> Offline';
   var freqHtml=rig.frequency?esc(rig.frequency)+(rig.band?' <span class=\"stat-badge '+bandBadgeClass(rig.band)+'\">'+esc(rig.band)+'</span>':'')+(rig.mode?' <span class=\"stat-badge '+modeBadgeClass(rig.mode)+'\">'+esc(rig.mode)+'</span>':'')+(rig.submode?' <span class=\"stat-badge '+modeBadgeClass(rig.submode)+'\">'+esc(rig.submode)+'</span>':''):'—';
-  stationFields.innerHTML=[
+  var rows=[
     ['Operator',opHtml],['Logbook',esc(lb.name||'—')],['Locator',esc(st.locator||'—')],
     ['Radio',esc(st.radio||'—')],['Antenna',esc(st.antenna||'—')],['Power',st.powerW?st.powerW+' W':'—'],
     ['Rig',rigDot],['WSJT-X',wsjtxDot],['Frequency',freqHtml]
-  ].map(function(r){return'<dt>'+r[0]+'</dt><dd id=\"sf-'+r[0]+'\">'+r[1]+'</dd>'}).join('');
+  ];
+  // APRS can be pinned to its own locator (fixed location), and that is what the
+  // beacon transmits. Show it when it differs from the logging grid, otherwise
+  // the map marker and the logged grid look like they disagree for no reason.
+  if(st.aprsLocator&&st.aprsLocator!==st.locator){
+    rows.splice(3,0,['APRS',esc(st.aprsLocator)]);
+  }
+  stationFields.innerHTML=rows.map(function(r){return'<dt>'+r[0]+'</dt><dd id=\"sf-'+r[0]+'\">'+r[1]+'</dd>'}).join('');
 }
 function updateStationField(key,val){var el=document.getElementById('sf-'+key);if(el)el.innerHTML=val}
 
@@ -1077,13 +1101,14 @@ function _ownStationMarker(lat,lon,pt,small){
 // refreshOwnStationMarker redraws both station markers after the APRS identity
 // changes — beacon switched on/off, or the SSID/symbol edited.
 function refreshOwnStationMarker(){
-  if(mapLocal&&ownStationLat!=null&&ownStationLon!=null){
+  var pos=_ownPos();
+  if(mapLocal&&pos.lat!=null&&pos.lon!=null){
     if(stationLocalMarker){mapLocal.removeLayer(stationLocalMarker);stationLocalMarker=null}
-    stationLocalMarker=_ownStationMarker(ownStationLat,ownStationLon,qsoPathTheme(),true).addTo(mapLocal);
+    stationLocalMarker=_ownStationMarker(pos.lat,pos.lon,qsoPathTheme(),true).addTo(mapLocal);
   }
-  if(map&&ownStationLat!=null&&ownStationLon!=null&&stationLayer){
+  if(map&&pos.lat!=null&&pos.lon!=null&&stationLayer){
     if(ownStationMarker){stationLayer.removeLayer(ownStationMarker);ownStationMarker=null}
-    ownStationMarker=_ownStationMarker(ownStationLat,ownStationLon,qsoPathTheme(),false);
+    ownStationMarker=_ownStationMarker(pos.lat,pos.lon,qsoPathTheme(),false);
     stationLayer.addLayer(ownStationMarker);
   }
 }
@@ -1115,7 +1140,8 @@ function initLocalMap(lat,lon){
     mapLocal._cqopsOffline=L.imageOverlay(_earthURL(mapLocal),[[-90,-180],[90,180]],{opacity:0.9,pane:'cqopsRadar'}).addTo(mapLocal);
   }
   // Station marker on local map — small, below APRS symbols.
-  stationLocalMarker=_ownStationMarker(lat,lon,qsoPathTheme(),true).addTo(mapLocal);
+  var lpos=_ownPos();
+  stationLocalMarker=_ownStationMarker(lpos.lat,lpos.lon,qsoPathTheme(),true).addTo(mapLocal);
   if(window.ResizeObserver){new ResizeObserver(function(){mapLocal.invalidateSize()}).observe(lc)}
   (function pollLocalSize(){
     if(lc.clientHeight>0){
@@ -1621,7 +1647,8 @@ function updateMapFromToday(){
 
   // ---- Station marker (with the transmitted APRS symbol while beaconing) ----
   if(ownStationLat!=null&&ownStationLon!=null){
-    ownStationMarker=_ownStationMarker(ownStationLat,ownStationLon,pt,false);
+    var mpos=_ownPos();
+    ownStationMarker=_ownStationMarker(mpos.lat,mpos.lon,pt,false);
     stationLayer.addLayer(ownStationMarker);bounds.push([ownStationLat,ownStationLon]);hasStation=true;
   }
 

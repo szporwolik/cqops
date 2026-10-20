@@ -659,9 +659,22 @@ func (m *Model) pushDashboardFast() {
 			stationInfo.PowerW = p
 		}
 	}
-	// APRS radius for local map circle.
-	if aprsCfg := m.App.Logbook.APRS; aprsCfg != nil && aprsCfg.Enabled && aprsCfg.RadiusKm > 0 {
-		stationInfo.AprsRadiusKm = float64(aprsCfg.RadiusKm)
+	// APRS position: the map must show the point the beacon transmits. It
+	// resolves as fixed location > GPS > station grid (aprsGrid), while the grid
+	// above follows the logging chain and ignores the fixed location — that
+	// mismatch is exactly what made the transmitted position differ from the
+	// marker on the dashboard.
+	if aprsCfg := m.App.Logbook.APRS; aprsCfg != nil && aprsCfg.Enabled {
+		if g := m.aprsGrid(); g != "" {
+			if la, lo, ok := gridToLatLonOK(g); ok {
+				stationInfo.AprsLocator = g
+				stationInfo.AprsPos = &dashboard.GeoPoint{Lat: la, Lon: lo}
+			}
+		}
+		// APRS radius for local map circle.
+		if aprsCfg.RadiusKm > 0 {
+			stationInfo.AprsRadiusKm = float64(aprsCfg.RadiusKm)
+		}
 	}
 	// While beaconing, the dashboard draws the own station with the symbol and
 	// callsign-SSID the network sees.

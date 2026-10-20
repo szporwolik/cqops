@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/dashboard"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
@@ -159,5 +160,67 @@ func TestPanelFingerprintTracksRenderedFields(t *testing.T) {
 
 	if fp.equal(newPanelFingerprint([]qso.QSO{{ID: 8, Call: "DJ7NT", Band: "20m", Mode: "FT8"}})) {
 		t.Error("a different row id did not invalidate the fingerprint")
+	}
+}
+
+// TestDashboardStationCarriesBeaconPosition is the regression test for
+// "the position sent to APRS-IS differs from the dot on the dashboard map".
+//
+// The beacon transmits the fixed-location-aware chain (aprsGrid: fixed
+// location > GPS > station grid). The station's logging grid follows
+// effectiveGrid (GPS > station grid) and deliberately ignores the fixed
+// location, so with a fixed APRS position configured the two legitimately
+// differ. The dashboard used to build the map marker from the logging grid,
+// which put the dot at the station grid while the network saw the fixed
+// point. The payload must therefore carry both: Locator/Lat/Lon for QSO
+// distance math, AprsLocator/AprsPos for everything APRS on the map.
+func TestDashboardStationCarriesBeaconPosition(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.App.Logbook.Station.Grid = "JO90"
+	m.App.Logbook.APRS = &config.APRSConfig{
+		Enabled:       true,
+		FixedLocation: "KO00AA11AA", // intentionally different from JO90
+		RadiusKm:      50,
+	}
+
+	srv := dashboard.New("127.0.0.1", "0")
+	m.http.client = srv
+	m.http.online = true
+	m.pushDashboardFast()
+
+	st := srv.State().Snapshot().Station
+
+	// The logging grid keeps driving the QSO distance/bearing side.
+	if st.Locator != "JO90" {
+		t.Errorf("station locator = %q, want logging grid JO90", st.Locator)
+	}
+	// The APRS side must match what the beacon actually transmits.
+	if st.AprsLocator != "KO00AA11AA" {
+		t.Fatalf("aprsLocator = %q, want transmitted fixed location KO00AA11AA", st.AprsLocator)
+	}
+	if st.AprsPos == nil {
+		t.Fatal("aprsPos is nil, the dashboard has no APRS position to draw")
+	}
+	wantLat, wantLon, ok := gridToLatLonOK(st.AprsLocator)
+	if !ok {
+		t.Fatalf("gridToLatLonOK(%q) failed", st.AprsLocator)
+	}
+	if st.AprsPos.Lat != wantLat || st.AprsPos.Lon != wantLon {
+		t.Errorf("aprsPos = %+v, want the transmitted point %f,%f", *st.AprsPos, wantLat, wantLon)
+	}
+	// Guard the bug itself: the APRS dot must not sit on the logging grid.
+	if st.AprsPos.Lat == st.Lat && st.AprsPos.Lon == st.Lon {
+		t.Errorf("aprsPos coincides with the logging grid %f,%f; the marker would "+
+			"disagree with the transmitted position", st.Lat, st.Lon)
+	}
+	if st.AprsRadiusKm != 50 {
+		t.Errorf("aprsRadiusKm = %v, want 50", st.AprsRadiusKm)
+	}
+
+	// Disabled APRS: no APRS position is advertised at all.
+	m.App.Logbook.APRS.Enabled = false
+	m.pushDashboardFast()
+	if st := srv.State().Snapshot().Station; st.AprsPos != nil || st.AprsLocator != "" {
+		t.Errorf("disabled APRS still published aprsPos=%+v aprsLocator=%q", st.AprsPos, st.AprsLocator)
 	}
 }

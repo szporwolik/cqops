@@ -53,6 +53,20 @@ type StationInfo struct {
 	AprsCallsign string `json:"aprsCallsign,omitempty"`
 	AprsSymbol   string `json:"aprsSymbol,omitempty"`
 	AprsBeacon   bool   `json:"aprsBeacon,omitempty"`
+	// APRS position, filled while the logbook has APRS enabled. It resolves as
+	// fixed location > GPS > station grid — the same chain the beacon and the
+	// APRS pane use — so the map draws the point that is actually transmitted.
+	// It can differ from Locator/Lat/Lon above, which follow the logging grid.
+	// Pointer so "no APRS position" stays distinct from a real 0,0 (equator).
+	AprsLocator string    `json:"aprsLocator,omitempty"`
+	AprsPos     *GeoPoint `json:"aprsPos,omitempty"`
+}
+
+// GeoPoint is a WGS84 position. It is used as a pointer where the absence of a
+// position must be distinguishable from the valid coordinate 0,0.
+type GeoPoint struct {
+	Lat float64 `json:"lat"`
+	Lon float64 `json:"lon"`
 }
 
 type OperatorInfo struct {
