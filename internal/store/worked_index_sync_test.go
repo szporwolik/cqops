@@ -210,3 +210,49 @@ func TestMigrateRebuildsDriftedWorkedIndexOnUpgrade(t *testing.T) {
 		t.Errorf("worked_dxcc(269) = %d after a no-op Migrate, want 1", got)
 	}
 }
+
+// TestMigrateBackfillsBaseCallBeforeRebuild pins the migration ordering: an
+// upgrade from an older database fills base_call, and the one-time index
+// rebuild must run *after* that backfill. When the rebuild ran first, the
+// contact got its base_call but was missing from worked_call until some later
+// rebuild (base_call="SP9MOA", counter 0).
+func TestMigrateBackfillsBaseCallBeforeRebuild(t *testing.T) {
+	db := newTempDB(t)
+	id := mustInsertQSO(t, db, &qso.QSO{
+		Call: "SP9MOA/P", QSODate: "20240506", TimeOn: "170000",
+		Band: "20m", Mode: "SSB",
+	})
+
+	// Simulate a pre-backfill database: no base_call, drifted (empty) index.
+	if _, err := db.Exec(`UPDATE qsos SET base_call='' WHERE id=?`, id); err != nil {
+		t.Fatalf("clear base_call: %v", err)
+	}
+	for _, table := range []string{"worked_call", "worked_grid", "worked_dxcc"} {
+		if _, err := db.Exec(`DELETE FROM ` + table); err != nil {
+			t.Fatalf("drift %s: %v", table, err)
+		}
+	}
+	if _, err := db.Exec(`PRAGMA user_version = 2`); err != nil {
+		t.Fatalf("set user_version=2: %v", err)
+	}
+
+	if err := Migrate(db); err != nil {
+		t.Fatalf("Migrate: %v", err)
+	}
+
+	var baseCall string
+	if err := db.QueryRow(`SELECT base_call FROM qsos WHERE id=?`, id).Scan(&baseCall); err != nil {
+		t.Fatalf("read base_call: %v", err)
+	}
+	if baseCall != "SP9MOA" {
+		t.Fatalf("base_call = %q after migration, want SP9MOA", baseCall)
+	}
+
+	var n int
+	if err := db.QueryRow(`SELECT qso_count FROM worked_call WHERE base_call='SP9MOA'`).Scan(&n); err != nil {
+		t.Fatalf("worked_call(SP9MOA) missing after migration: %v", err)
+	}
+	if n != 1 {
+		t.Errorf("worked_call(SP9MOA) = %d after migration, want 1", n)
+	}
+}

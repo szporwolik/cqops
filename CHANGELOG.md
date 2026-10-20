@@ -63,7 +63,9 @@ schema version is 3: upgrading rebuilds the index once, so databases written by
 the affected builds are repaired automatically. Regression tests reproduce the
 reported symptom (`DXCC 269` on the contact, `0` in the index) against the old
 code and assert both save paths, enrichment, the backfill and the upgrade
-rebuild.
+rebuild — and that the rebuild on upgrade runs only after the `base_call`
+backfill, so an upgraded contact lands in `worked_call` in the same start
+instead of waiting for a later rebuild.
 - <u>**The single-instance guard can no longer be bypassed**</u>: with the OS
 lock held, the startup guard read the PID from `cqops.lock`, asked the kernel
 for that process's name, and — when it was not exactly `cqops` — treated the

@@ -305,15 +305,6 @@ func Migrate(db *sql.DB) error {
 	if err := migrateBuildWorkedIndex(db); err != nil {
 		return err
 	}
-	// v3: existing indexes can have drifted from qsos (see the version
-	// history). Rebuild once while upgrading; later opens skip this through
-	// the user_version guard above.
-	if current < 3 {
-		if err := RebuildWorkedIndex(db); err != nil {
-			return fmt.Errorf("rebuild worked index: %w", err)
-		}
-	}
-
 	// One-time backfill: if any QSO row still has an empty base_call
 	// (direct upgrade from pre-v0.8.7 or first migration after schema
 	// consolidation), populate it now. Subsequent calls are skipped
@@ -350,6 +341,17 @@ func Migrate(db *sql.DB) error {
 			if _, err := db.Exec(`UPDATE qsos SET base_call = ? WHERE id = ?`, u.bc, u.id); err != nil {
 				return fmt.Errorf("backfill update: %w", err)
 			}
+		}
+	}
+
+	// v3: existing indexes can have drifted from qsos (see the version
+	// history). Rebuild once while upgrading, and only *after* every backfill
+	// above — the rebuild reads qsos, so a row that gains its base_call below
+	// would otherwise be missing from worked_call until the next rebuild.
+	// Later opens skip this through the user_version guard.
+	if current < 3 {
+		if err := RebuildWorkedIndex(db); err != nil {
+			return fmt.Errorf("rebuild worked index: %w", err)
 		}
 	}
 
