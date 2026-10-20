@@ -1,6 +1,10 @@
 package dashboard
 
-import "testing"
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+)
 
 // TestHubSubscriberCapBoundsStreams pins the SSE capacity limit: the hub must
 // accept up to MaxSubscribers streams and refuse the next one instead of
@@ -39,5 +43,32 @@ func TestHubSubscriberCapBoundsStreams(t *testing.T) {
 		case <-ch:
 		default:
 		}
+	}
+}
+
+// TestHandleEventsRejectsAtCapacity exercises the HTTP side of the cap: the
+// SSE handler must answer 503 *before* it commits a 200 and an initial
+// snapshot, otherwise the browser would hold a "healthy" stream that simply
+// ends and reconnect in a loop.
+func TestHandleEventsRejectsAtCapacity(t *testing.T) {
+	h := NewHub()
+	state := NewState(h)
+
+	chans := make([]chan Event, 0, MaxSubscribers)
+	for i := 0; i < MaxSubscribers; i++ {
+		chans = append(chans, h.Subscribe())
+	}
+	defer func() {
+		for _, ch := range chans {
+			h.Unsubscribe(ch)
+		}
+	}()
+
+	handler := handleEvents(t.Context(), state, h)
+	rec := httptest.NewRecorder()
+	handler(rec, httptest.NewRequest(http.MethodGet, "/api/events", nil))
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d (body %q)", rec.Code, http.StatusServiceUnavailable, rec.Body.String())
 	}
 }

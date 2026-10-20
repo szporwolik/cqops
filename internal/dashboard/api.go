@@ -215,6 +215,14 @@ func handleEvents(streamCtx context.Context, state *State, hub *Hub) http.Handle
 			return
 		}
 
+		// The capacity check must run before the first WriteHeader: once the
+		// 200 and the initial snapshot are on the wire a 503 is impossible, and
+		// the browser would see a healthy stream that silently ends.
+		if hub.Clients() >= MaxSubscribers {
+			http.Error(w, "too many dashboard clients", http.StatusServiceUnavailable)
+			return
+		}
+
 		// The server-wide WriteTimeout stays disabled for SSE (the stream
 		// never finishes); every individual write is bounded below in
 		// writeSSE instead, so a stalled client cannot strand us here.
@@ -242,8 +250,9 @@ func handleEvents(streamCtx context.Context, state *State, hub *Hub) http.Handle
 		// Subscribe to hub.
 		ch := hub.Subscribe()
 		if ch == nil {
-			// At capacity — refuse rather than add another stream.
-			http.Error(w, "too many dashboard clients", http.StatusServiceUnavailable)
+			// Lost the race for the last slot after the pre-check. The snapshot
+			// is already on the wire, so end the stream and let the browser
+			// reconnect rather than stream without a subscription.
 			return
 		}
 		defer hub.Unsubscribe(ch)

@@ -66,7 +66,10 @@ era that widened the supply-chain surface for no benefit. They are `'self'` now;
 from the network.
 - **SSE streams are bounded**: the hub accepted subscribers without limit, so a
 looping or scripted client could grow goroutines and 128-event buffers without
-end. It now refuses the 33rd concurrent stream with `503` instead.
+end. It now refuses the 33rd concurrent stream with `503` instead — before the
+handler commits the `200` and the initial snapshot, otherwise the browser would
+hold a "healthy" stream that silently ends (found by opening 40 streams against
+a running dashboard: the cap rejected them but every client still saw `200`).
 - **Dead code removed after a `staticcheck` sweep**: roughly 370 lines that
 nothing could reach — the pre-"unified Worked panel" renderers (`renderWLInfo`,
 `renderLoTW`, `formatRowPairs`, `renderFlagStatus`, `selectHistoryScope`, plus
