@@ -38,9 +38,8 @@ type renderCache struct {
 	dxcPathRenderedAt time.Time // when the cached line was rendered; older than dxcPathSpotsTTL it must re-render
 
 	// Form column style cache.
-	formColW         int
-	formColStyle     lipgloss.Style
-	formCommentStyle lipgloss.Style
+	formColW     int
+	formColStyle lipgloss.Style
 
 	// Partner logbook stats cache.
 	logStats    store.LogbookStats

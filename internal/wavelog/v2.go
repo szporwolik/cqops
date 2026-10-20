@@ -106,12 +106,6 @@ func v2Request(method, baseURL, token, path string, query url.Values, body []byt
 	return v2RequestWithClient(httpClient, method, baseURL, token, path, query, body)
 }
 
-// v2RequestDownload performs a v2 request on the long-timeout download
-// client (paginated ADIF exports).
-func v2RequestDownload(method, baseURL, token, path string, query url.Values, body []byte) (int, []byte, error) {
-	return v2RequestWithClient(downloadClient, method, baseURL, token, path, query, body)
-}
-
 // v2RequestDownloadCtx is v2RequestDownload with request cancellation — a
 // user aborting a download cancels in-flight page fetches immediately.
 func v2RequestDownloadCtx(ctx context.Context, method, baseURL, token, path string, query url.Values, body []byte) (int, []byte, error) {

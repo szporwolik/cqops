@@ -241,6 +241,11 @@ func handleEvents(streamCtx context.Context, state *State, hub *Hub) http.Handle
 
 		// Subscribe to hub.
 		ch := hub.Subscribe()
+		if ch == nil {
+			// At capacity — refuse rather than add another stream.
+			http.Error(w, "too many dashboard clients", http.StatusServiceUnavailable)
+			return
+		}
 		defer hub.Unsubscribe(ch)
 
 		// Heartbeat ticker — must fire well within any proxy/CDN/browser

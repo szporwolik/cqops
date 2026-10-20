@@ -239,6 +239,8 @@ Scegli il servizio in **F9 → Integrations → APRS**. Imposta nominativo/SSID,
 
 L’intervallo automatico minimo è cinque minuti. **F3** mostra le stazioni ascoltate di recente: frecce per selezionare, **Enter** per compilare QSO, **d / t / s** per distanza/età/tipo, **Backspace** per cancellare i filtri, **b** per inviare subito un beacon configurato. I beacon GPS richiedono **Grid from GPS** e una posizione valida.
 
+L'opzione **Fixed grid (opt)** per logbook fissa il centro APRS e i beacon su quel locator, prevalendo su GPS e griglia della stazione (priorità: fixed > GPS > griglia). Il locator salvato nei QSO non cambia. Nella dashboard il punto della stazione segue la posizione realmente trasmessa e la scheda mostra una riga **APRS** quando differisce dal locator di log.
+
 <a id="portable"></a>
 
 ## Attività in portatile

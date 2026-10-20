@@ -239,6 +239,8 @@ Choisissez le service dans **F9 → Integrations → APRS**. Réglez indicatif/S
 
 L’intervalle automatique est d’au moins cinq minutes. **F3** affiche les stations entendues récemment : flèches pour sélectionner, **Enter** pour remplir QSO, **d / t / s** pour filtrer distance/ancienneté/type, **Backspace** pour effacer les filtres et **b** pour envoyer immédiatement une balise configurée. Les balises GPS nécessitent **Grid from GPS** et une position valide.
 
+L'option **Fixed grid (opt)** par carnet fixe le centre APRS et les balises sur ce locator, au-dessus du GPS et de la grille de station (priorité : fixed > GPS > grille de station). Le locator enregistré dans les QSO n'est pas modifié. Sur le tableau de bord, le point de la station suit la position réellement émise et la fiche affiche une ligne **APRS** lorsqu'elle diffère du locator de log.
+
 <a id="portable"></a>
 
 ## Opération en portable

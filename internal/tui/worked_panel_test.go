@@ -584,47 +584,6 @@ func TestFormatCountList_Empty(t *testing.T) {
 	}
 }
 
-func TestSelectHistoryScope_Call(t *testing.T) {
-	ws := store.WorkedSummary{
-		CallHistory: store.ScopeHistory{QSOCount: 5},
-	}
-	sel := selectHistoryScope(ws)
-	if sel.scope != "call" {
-		t.Errorf("expected 'call' scope, got %q", sel.scope)
-	}
-}
-
-func TestSelectHistoryScope_Grid(t *testing.T) {
-	ws := store.WorkedSummary{
-		CallHistory: store.ScopeHistory{QSOCount: 0},
-		GridHistory: store.ScopeHistory{QSOCount: 7, UniqueCalls: 3},
-	}
-	sel := selectHistoryScope(ws)
-	if sel.scope != "grid" {
-		t.Errorf("expected 'grid' scope, got %q", sel.scope)
-	}
-}
-
-func TestSelectHistoryScope_DXCC(t *testing.T) {
-	ws := store.WorkedSummary{
-		CallHistory: store.ScopeHistory{QSOCount: 0},
-		GridHistory: store.ScopeHistory{QSOCount: 1, UniqueCalls: 1}, // only 1 unique call — grid not useful
-		DXCCHistory: store.ScopeHistory{QSOCount: 50},
-	}
-	sel := selectHistoryScope(ws)
-	if sel.scope != "dxcc" {
-		t.Errorf("expected 'dxcc' scope, got %q", sel.scope)
-	}
-}
-
-func TestSelectHistoryScope_Empty(t *testing.T) {
-	ws := store.WorkedSummary{}
-	sel := selectHistoryScope(ws)
-	if sel.scope != "" {
-		t.Errorf("expected empty scope, got %q", sel.scope)
-	}
-}
-
 func TestWorkedPanel_TwoColumnLayout(t *testing.T) {
 	m, db := newWorkedPanelTestModel(t)
 	m.fields[fieldCall].SetValue("KI6NAZ")

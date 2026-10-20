@@ -239,6 +239,8 @@ Dienst unter **F9 → Integrations → APRS** wählen. Rufzeichen/SSID, Symbol, 
 
 Automatische Bakenintervalle betragen mindestens fünf Minuten. **F3** zeigt kürzlich gehörte Stationen: Pfeile wählen, **Enter** übernimmt ins QSO-Formular, **d / t / s** ändern Entfernung/Alter/Typ, **Backspace** löscht Filter und **b** sendet eine konfigurierte Bake sofort. GPS-Baken benötigen **Grid from GPS** und eine gültige Position.
 
+Ein **Fixed grid (opt)** pro Logbuch fixiert APRS-Mittelpunkt und Baken auf diesen Locator und überschreibt GPS und das Stationsraster (Priorität: fixed > GPS > Stationsraster). Der in QSOs gespeicherte Locator bleibt unverändert. Im Dashboard folgt der Stationspunkt der tatsächlich gesendeten Position; die Stationskarte zeigt eine Zeile **APRS**, wenn sie vom Logging-Locator abweicht.
+
 <a id="portable"></a>
 
 ## Portabelbetrieb

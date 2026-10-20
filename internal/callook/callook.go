@@ -106,11 +106,11 @@ func (c *Client) lookup(callsign string) (*callookResponse, error) {
 	url := "https://callook.info/" + strings.ToUpper(callsign) + "/json"
 	data, err := c.httpFn(url)
 	if err != nil {
-		return nil, fmt.Errorf("Callook: %w", err)
+		return nil, fmt.Errorf("callook: %w", err)
 	}
 	var r callookResponse
 	if err := json.Unmarshal(data, &r); err != nil {
-		return nil, fmt.Errorf("Callook json: %w", err)
+		return nil, fmt.Errorf("callook json: %w", err)
 	}
 	if r.Status != "VALID" {
 		applog.Debug("Callook: not valid", "callsign", callsign, "status", r.Status)

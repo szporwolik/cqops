@@ -26,17 +26,36 @@ func NewHub() *Hub {
 	}
 }
 
+// MaxSubscribers caps concurrent SSE streams. Each stream costs a goroutine
+// plus a 128-event buffer, so an unbounded hub would let a misbehaving or
+// looping client grow the process without limit. A club-room dashboard plus
+// a handful of phones stays far below this.
+const MaxSubscribers = 32
+
 // Subscribe creates a new buffered channel (cap 128) and registers it.
 // The caller is responsible for calling Unsubscribe when done.
 // Buffer is sized to handle rapid logbook cycling (~13 events/switch ×
 // several switches) without dropping the critical 'today' map-data event.
+//
+// It returns nil when the hub is already at MaxSubscribers; callers must
+// check and reject the request instead of streaming.
 func (h *Hub) Subscribe() chan Event {
-	ch := make(chan Event, 128)
 	h.mu.Lock()
+	defer h.mu.Unlock()
+	if len(h.subscribers) >= MaxSubscribers {
+		return nil
+	}
+	ch := make(chan Event, 128)
 	h.subscribers[ch] = struct{}{}
 	h.rebuildCacheLocked()
-	h.mu.Unlock()
 	return ch
+}
+
+// Clients reports the number of active SSE subscribers.
+func (h *Hub) Clients() int {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return len(h.subscribers)
 }
 
 // Unsubscribe removes the channel from the hub.

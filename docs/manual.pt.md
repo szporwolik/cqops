@@ -239,6 +239,8 @@ Escolha em **F9 → Integrations → APRS**. Ajuste indicativo/SSID, símbolo, c
 
 O intervalo automático mínimo é cinco minutos. **F3** mostra estações ouvidas recentemente: setas selecionam, **Enter** preenche QSO, **d / t / s** filtram distância/idade/tipo, **Backspace** limpa filtros e **b** envia um beacon configurado imediatamente. Beacons GPS exigem **Grid from GPS** e posição válida.
 
+A opção **Fixed grid (opt)** por logbook fixa o centro APRS e os beacons nesse locator, sobrepondo-se ao GPS e à grelha da estação (prioridade: fixed > GPS > grelha). O locator guardado nos QSO não muda. No painel, o ponto da estação segue a posição realmente transmitida e o cartão mostra uma linha **APRS** quando difere do locator de registo.
+
 <a id="portable"></a>
 
 ## Operação em campo

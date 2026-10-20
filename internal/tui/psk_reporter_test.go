@@ -283,56 +283,6 @@ func TestBuildPSKTable_WithData(t *testing.T) {
 	}
 }
 
-func TestBuildPSKFilters(t *testing.T) {
-	m := &Model{
-		psk: pskState{
-			filterMins:      15,
-			bandFilter:      "20m",
-			modeFilter:      "FT8",
-			lastFetchByCall: map[string]time.Time{"": time.Now().Add(-2 * time.Minute)},
-		},
-	}
-
-	result := m.buildPSKFilters(30)
-
-	if !strings.Contains(result, "15 min") {
-		t.Error("filters should show time window")
-	}
-	if !strings.Contains(result, "20m") {
-		t.Error("filters should show band filter")
-	}
-	if !strings.Contains(result, "FT8") {
-		t.Error("filters should show mode filter")
-	}
-	if !strings.Contains(result, "Next update") {
-		t.Error("filters should show next update time")
-	}
-}
-
-func TestBuildPSKFilters_Defaults(t *testing.T) {
-	m := &Model{
-		psk: pskState{
-			filterMins: 60,
-			bandFilter: "",
-			modeFilter: "",
-		},
-		// psk.lastFetch is zero — never fetched.
-	}
-
-	result := m.buildPSKFilters(30)
-
-	if !strings.Contains(result, "60 min") {
-		t.Error("filters should show time window")
-	}
-	if !strings.Contains(result, "all") {
-		t.Error("filters should show 'all' for empty band filter")
-	}
-	// No "Next update" when never fetched.
-	if strings.Contains(result, "Next update") {
-		t.Error("filters should NOT show 'Next update' when never fetched")
-	}
-}
-
 func TestPSKFilterSteps(t *testing.T) {
 	// Verify filter steps are in ascending order.
 	for i := 1; i < len(pskFilterSteps); i++ {

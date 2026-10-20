@@ -52,6 +52,34 @@ is no longer dropped from the payload.
 - **Windows binaries report the right version**: the checked-in PE resources were still stamped `0.8.13.0` from the 0.8.x line — release builds embed them as-is, so Windows file properties showed a version four releases old. `winres/winres.json` and both `rsrc_windows_*.syso` are regenerated at 0.11.2.
 
 ### Under the Hood
+- **CI now lints and builds as well**: `branding-check.yml` already ran the
+suite under `-race`, but nothing checked formatting, vet, module tidiness or
+that a release build still compiles. `.github/workflows/test.yml` adds `gofmt`,
+`go vet`, `go mod tidy -diff` and a `-ldflags` build with the embedded version
+on every push and pull request, so a locally-clean tree can no longer land
+unformatted or with a stale `go.mod`.
+- **The dashboard CSP no longer trusts a CDN it does not use**: MapLibre,
+Leaflet and the terminator are embedded, yet `script-src`, `style-src` and
+`worker-src` still allowed `https://cdn.jsdelivr.net` — a leftover from the CDN
+era that widened the supply-chain surface for no benefit. They are `'self'` now;
+`img-src`/`connect-src https:` stay, because map tiles and weather still come
+from the network.
+- **SSE streams are bounded**: the hub accepted subscribers without limit, so a
+looping or scripted client could grow goroutines and 128-event buffers without
+end. It now refuses the 33rd concurrent stream with `503` instead.
+- **Dead code removed after a `staticcheck` sweep**: roughly 370 lines that
+nothing could reach — the pre-"unified Worked panel" renderers (`renderWLInfo`,
+`renderLoTW`, `formatRowPairs`, `renderFlagStatus`, `selectHistoryScope`, plus
+their tests) and the old PSK filter box (`buildPSKFilters` and its tests), the
+PSK height cache, the write-only `lastActiveDupe` cache, a never-applied form
+comment style, a duplicated `fillerW` computation, the unused
+`v2RequestDownload`/`readLineRaw` helpers, and the fake rig client, which moved
+out of the production binary into `rig_fake_test.go`.
+- **Manual and README corrections**: the per-logbook **Fixed grid (opt)** APRS
+option was undocumented in all ten manuals even though it decides what the
+beacon transmits — it is described now, together with the dashboard behaviour it
+explains. The README said "Go 1.26+" while `go.mod` pins 1.26.9, which is a hard
+minimum since Go 1.21.
 - **The responsive rules document themselves**: the dashboard has 39 media queries and the map row's height was re-declared nine times, which is why every display fix began with hunting for the rule that actually won. A "layout contract" comment now names the six tiers, what each one owns, and points at the map-row `min-height` declarations as the single lever over how much of the screen the map takes.
 - **Info-box visibility no longer depends on resize history**: the module box appeared only when the right column was at least `14.5rem` tall — a threshold that assumed an 8.5rem local map, far more than the 120px its CSS allows. The gate now derives from what the box plus the local map actually need, so the same viewport always produces the same layout (verified by sweeping the resolutions in both directions).
 - **Dependency refresh and a newer Go toolchain**: charm.land bubbletea v2.1.0, NimbleMarkets/ntcharts v2.8.0, modernc.org/sqlite v1.60.1 (modernc.org/libc v1.77.1), k0swe/wsjtx-go v4.3.1, golang.org/x/sys v0.49.0 and golang.org/x/text v0.43.0, plus the transitive Charm and runewidth updates; `golang.org/x/exp` is no longer needed at all. ntcharts v2.8.0 raises the minimum toolchain to **Go 1.26.9** — the previous 1.26.6 standard library carried nine `net/http`, `crypto/tls` and `net/textproto` advisories, all on paths CQOps uses (dashboard TLS listener, Wavelog/QRZ/REF clients). With the new toolchain `govulncheck` reports **no vulnerabilities**. `gofmt`, `go vet`, the full test suite and the `-race` run stay green.

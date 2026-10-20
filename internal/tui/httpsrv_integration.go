@@ -809,7 +809,6 @@ func (m *Model) pushDashboardFast() {
 					"call", call, "error", err)
 			}
 			// Cache for reuse on later ticks when call hasn't changed.
-			lastActiveDupe = aq.IsDupe
 			lastActiveNewCall = aq.IsNewCall
 			lastActiveNewDXCC = aq.IsNewDXCC
 		} else if call != "" {
@@ -863,9 +862,11 @@ var lastAPRSPush time.Time
 // pushDashboardLastCall tracks the last call for which we computed dupe/new flags.
 var pushDashboardLastCall string
 
-// lastActiveDupe/newCall/newDXCC cache computed flags for reuse on subsequent
+// lastActiveNewCall/newDXCC cache computed flags for reuse on subsequent
 // ticks when the call hasn't changed (avoids DB queries and spurious resets).
-var lastActiveDupe, lastActiveNewCall, lastActiveNewDXCC bool
+// Dupe is deliberately not cached here: checkDupe may update m.dupe after the
+// initial push, and it is a cheap in-memory read.
+var lastActiveNewCall, lastActiveNewDXCC bool
 
 // lastPushedAQSO caches the last active-QSO fields pushed to the dashboard
 // so we skip ds.SetActiveQSO and the debug log when nothing changed.
@@ -931,7 +932,6 @@ var lastTodayFP panelFingerprint
 // current call.
 func (m *Model) invalidateDashboardFlags() {
 	pushDashboardLastCall = ""
-	lastActiveDupe = false
 	lastActiveNewCall = false
 	lastActiveNewDXCC = false
 	lastPushedAQSO = cachedAQSO{}
@@ -957,7 +957,6 @@ func (m *Model) forcePushDashboardAll() {
 	lastRecentFP = panelFingerprint{}
 	pushDashboardLastCall = ""
 	lastPushedAQSO = cachedAQSO{}
-	lastActiveDupe = false
 	lastActiveNewCall = false
 	lastActiveNewDXCC = false
 	lastPushedPartner = cachedPartner{}

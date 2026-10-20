@@ -204,7 +204,6 @@ func (m *Model) headerView() string {
 	left := lipgloss.JoinHorizontal(lipgloss.Top, leftParts...)
 	leftW := lipgloss.Width(left)
 	rightW := lipgloss.Width(right)
-	fillerW := m.width - leftW - rightW
 
 	// WSJT-X TX message — only when at least 20 cells of free space remain.
 	wsjtxOn := hasRig && rp.WsjtxEnabled
@@ -223,7 +222,7 @@ func (m *Model) headerView() string {
 		}
 	}
 
-	fillerW = m.width - leftW - rightW
+	fillerW := m.width - leftW - rightW
 	if fillerW < 1 {
 		fillerW = 1
 	}

@@ -37,31 +37,6 @@ func continentName(code string) string {
 	}
 }
 
-// row is a label+value pair used by all three partner info boxes.
-type row struct{ label, value string }
-
-// formatRowPairs joins rows into left-aligned label+value lines.
-func formatRowPairs(rows []row, labelStyle lipgloss.Style) string {
-	var lines []string
-	for _, r := range rows {
-		lbl := labelStyle.Align(lipgloss.Right).Render(r.label)
-		lines = append(lines, lipgloss.JoinHorizontal(lipgloss.Center, lbl, " ", r.value))
-	}
-	return lipgloss.JoinVertical(lipgloss.Left, lines...)
-}
-
-// renderFlagStatus returns styled "Y" (yes/new, green), "N" (no/worked, dim),
-// or "?" (unknown, dim) based on the isNew and known flags.
-func renderFlagStatus(isNew, known bool, newStyle, oldStyle lipgloss.Style) string {
-	if !known {
-		return DimStyle.Render("?")
-	}
-	if isNew {
-		return newStyle.Render("Y")
-	}
-	return oldStyle.Render("N")
-}
-
 func hasTerminalGraphics(content string) bool {
 	return strings.Contains(content, "\x1b_G") || strings.Contains(content, "\x1b]1337;") || strings.Contains(content, "\x1b]1338;")
 }
@@ -756,6 +731,9 @@ type workedRow struct {
 	value string
 }
 
+// historyLabel describes which worked-history scope the panel is showing.
+type historyLabel string
+
 type workedPanelLayout struct {
 	TwoColumns    bool
 	LeftHeading   string
@@ -1113,25 +1091,6 @@ func renderWorkedPanelRow(label, value string, width, labelWidth int) string {
 	return lbl + " " + val
 }
 
-// historyLabel describes which scope is being shown.
-type historyLabel string
-
-// selectHistoryScope picks the most useful history: call → grid → DXCC.
-func selectHistoryScope(ws store.WorkedSummary) struct {
-	scope historyLabel
-} {
-	if ws.CallHistory.QSOCount > 0 {
-		return struct{ scope historyLabel }{scope: "call"}
-	}
-	if ws.GridHistory.QSOCount > 0 && ws.GridHistory.UniqueCalls > 1 {
-		return struct{ scope historyLabel }{scope: "grid"}
-	}
-	if ws.DXCCHistory.QSOCount > 0 {
-		return struct{ scope historyLabel }{scope: "dxcc"}
-	}
-	return struct{ scope historyLabel }{}
-}
-
 // formatCountList renders a slice of CountItem as "80m×7 · 40m×3 · +2".
 // Items beyond the available width are replaced by a "+N" overflow token.
 func formatCountList(items []store.CountItem) string {
@@ -1260,87 +1219,6 @@ func (m *Model) handleLogbookStats(msg logbookStatsMsg) {
 	}
 	m.rc.logStats = msg.stats
 	m.rc.logStatsSig = msg.sig
-}
-
-// --- WL Info ---
-// Y = green (yes it IS new), N = dim (already worked), ? = dim (unknown).
-// LoTW: N = red (not a member), last on list.
-
-func (m *Model) renderWLInfo(maxW int) string {
-	d := m.lookup.wlPrivateData
-	wl := m.App.Logbook.Wavelog
-	if wl == nil || !wl.Enabled || wl.URL == "" || wl.APIKey == "" {
-		return DimStyle.Width(maxW).Align(lipgloss.Center).Render("Wavelog not configured")
-	}
-	if d == nil {
-		msg := "WL lookup pending\u2026"
-		if m.Offline || !m.inetOnline {
-			msg = "Offline mode"
-		} else if m.lookup.wlLookupDone {
-			msg = "No WL data"
-		}
-		return DimStyle.Width(maxW).Align(lipgloss.Center).Render(msg)
-	}
-
-	newStyle := S.Success // green — yes, it IS new
-	oldStyle := DimStyle  // dim — no, already there
-	badStyle := S.Error   // red — LoTW: not a member
-
-	flag := func(isNew, known bool) string {
-		return renderFlagStatus(isNew, known, newStyle, oldStyle)
-	}
-
-	var rows []row
-
-	hasBand := m.lookup.wlLastBand != ""
-	hasMode := m.lookup.wlLastMode != ""
-
-	// New call
-	rows = append(rows, row{"New call", flag(!d.Worked(), true)})
-
-	// New on band
-	isNew, known := false, hasBand
-	if hasBand {
-		isNew = !d.WorkedBand()
-	}
-	rows = append(rows, row{"New on band", flag(isNew, known)})
-
-	// New on mode
-	isNew, known = false, hasBand && hasMode
-	if hasBand && hasMode {
-		isNew = !d.WorkedBandMode()
-	}
-	rows = append(rows, row{"New on mode", flag(isNew, known)})
-
-	// New DXCC
-	rows = append(rows, row{"New DXCC", flag(!d.DXCCConfirmed(), true)})
-
-	// New DXCC on band
-	isNew, known = false, hasBand
-	if hasBand {
-		isNew = !d.ConfirmedBand()
-	}
-	rows = append(rows, row{"New DXCC on band", flag(isNew, known)})
-
-	// New DXCC on mode
-	isNew, known = false, hasBand && hasMode
-	if hasBand && hasMode {
-		isNew = !d.ConfirmedBandMode()
-	}
-	rows = append(rows, row{"New DXCC on mode", flag(isNew, known)})
-
-	// LoTW member — last, separate logic: N = red (not a member).
-	rows = append(rows, row{"LoTW member", renderLoTW(d.LoTW(), oldStyle, badStyle)})
-
-	return formatRowPairs(rows, S.FormLabelWide)
-}
-
-// renderLoTW returns styled "Y" (dim, member) or "N" (red, not a member).
-func renderLoTW(isMember bool, dimStyle, badStyle lipgloss.Style) string {
-	if isMember {
-		return dimStyle.Render("Y")
-	}
-	return badStyle.Render("N")
 }
 
 // --- Form partner data ---

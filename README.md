@@ -65,7 +65,7 @@ Also available via `pacaur`, `aura`, or any AUR helper. PKGBUILD at [aur.archlin
 go install github.com/szporwolik/cqops/cmd/cqops@latest
 ```
 
-Requires Go 1.26+. This is the fallback for all platforms, not the recommended method for end users.
+Requires Go 1.26.9+ (the version pinned in `go.mod`). This is the fallback for all platforms, not the recommended method for end users.
 
 ### Manual download
 
@@ -166,7 +166,7 @@ flowchart LR
 
 ## Requirements
 
-- Go 1.26+
+- Go 1.26.9+ (the version pinned in `go.mod`)
 - Terminal with 80×24 minimum
 
 ## Build

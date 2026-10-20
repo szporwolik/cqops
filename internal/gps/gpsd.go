@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"strings"
 	"time"
@@ -194,21 +193,4 @@ func degToNMEA(deg float64, isLat bool) (hemi string, ddmm string) {
 		hemi = "W"
 	}
 	return hemi, fmt.Sprintf("%03d%07.4f", d, m)
-}
-
-// readLineRaw reads a raw JSON line from GPSD for testing purposes.
-func (r *GPSDReader) readLineRaw() (string, error) {
-	if r.scanner == nil {
-		if err := r.connect(); err != nil {
-			return "", err
-		}
-	}
-	if !r.scanner.Scan() {
-		err := r.scanner.Err()
-		if err != nil {
-			return "", err
-		}
-		return "", io.EOF
-	}
-	return strings.TrimSpace(r.scanner.Text()), nil
 }
