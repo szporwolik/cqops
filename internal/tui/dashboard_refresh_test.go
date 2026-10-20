@@ -224,3 +224,62 @@ func TestDashboardStationCarriesBeaconPosition(t *testing.T) {
 		t.Errorf("disabled APRS still published aprsPos=%+v aprsLocator=%q", st.AprsPos, st.AprsLocator)
 	}
 }
+
+// TestWSJTXEnrichmentRepaintsBothPanels drives the real owner-loop message
+// that WSJT-X enrichment ends with, instead of calling the push helpers
+// directly. The reported symptom was "the country shows in Recent QSOs but
+// not in Top QSOs" — Top QSOs and the map are built from the Today list, so
+// any enrichment completion that refreshes only one panel reproduces it.
+func TestWSJTXEnrichmentRepaintsBothPanels(t *testing.T) {
+	resetDashboardFingerprints(t)
+	m := newLifecycleTestModel(t)
+	// Include every QSO date in the today query.
+	m.App.Config.Integrations.HTTPServer.EventStart = "2026-01-01"
+
+	// WSJT-X auto-logs the QSO without a country (no callbook yet).
+	id, err := store.InsertQSO(m.App.DB, &qso.QSO{
+		Call: "DJ7NT", QSODate: "20260315", TimeOn: "120000",
+		Band: "20m", Mode: "FT8", GridSquare: "JO31",
+		RSTSent: "+05", RSTRcvd: "-11",
+	})
+	if err != nil {
+		t.Fatalf("InsertQSO: %v", err)
+	}
+
+	srv := dashboard.New("127.0.0.1", "0")
+	m.http.client = srv
+	m.http.online = true
+	ds := srv.State()
+	m.pushDashboardToday(ds)
+	m.pushDashboardRecent(ds)
+
+	// Precondition: the row is visible in both panels without a country.
+	pre := srv.State().Snapshot()
+	if len(pre.Today) != 1 || len(pre.Recent) != 1 {
+		t.Fatalf("precondition: today=%d recent=%d rows, want 1/1", len(pre.Today), len(pre.Recent))
+	}
+	if pre.Today[0].Country != "" || pre.Recent[0].Country != "" {
+		t.Fatalf("precondition: country already set (today=%q recent=%q)",
+			pre.Today[0].Country, pre.Recent[0].Country)
+	}
+
+	// The worker enriches the row (country only — no id change), then the
+	// owner loop receives the completion message.
+	if err := store.UpdateQSOEnrichment(m.App.DB, id, store.EnrichmentData{Country: "Fed. Rep. of Germany"}); err != nil {
+		t.Fatalf("UpdateQSOEnrichment: %v", err)
+	}
+	// The returned command only refreshes the TUI table; the dashboard push
+	// happens synchronously inside the handler.
+	m.Update(wsjtxEnrichDoneMsg{logbook: m.App.LogbookName})
+
+	snap := srv.State().Snapshot()
+	if len(snap.Today) != 1 || len(snap.Recent) != 1 {
+		t.Fatalf("today=%d recent=%d rows, want 1/1", len(snap.Today), len(snap.Recent))
+	}
+	if got := snap.Today[0].Country; got != "Fed. Rep. of Germany" {
+		t.Errorf("Top QSOs row country = %q, want the enriched country", got)
+	}
+	if got := snap.Recent[0].Country; got != "Fed. Rep. of Germany" {
+		t.Errorf("Recent QSOs row country = %q, want the enriched country", got)
+	}
+}

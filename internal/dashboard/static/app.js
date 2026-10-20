@@ -417,7 +417,10 @@ function renderAll(snap){
   D('renderAll','fetching /api/today…');
   fetch('/api/today').then(function(r){return r.json()}).then(function(today){
     D('fetch','/api/today → '+(today? today.length:0)+' QSOs');
-    if(today&&today.length&&today.length!==todayQsos.length){todayQsos=today;updateMapFromToday();renderStats(null,todayQsos)}
+    // Compare content, not just the count: enrichment fills country/grid
+    // without adding rows, and a count-only check would keep the stale row
+    // on screen until the next event.
+    if(today&&today.length&&JSON.stringify(today)!==JSON.stringify(todayQsos)){todayQsos=today;updateMapFromToday();renderStats(null,todayQsos)}
   }).catch(function(e){D('fetch','/api/today ERR',''+e)});
   // Footer: version + map attributions.
   if(snap.app&&snap.app.version){
