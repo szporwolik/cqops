@@ -2,8 +2,10 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/szporwolik/cqops/internal/qso"
 )
@@ -25,8 +27,68 @@ import (
 //	DXCC + band + mode       (dxcc, band, mode)
 //
 // Canonical mode: submode wins when present (MFSK+FT8 → FT8, MFSK+FT4 → FT4) —
-// the same expression the live aggregate queries use.
+// the same expression the rebuild SQL uses. Keep canonicalMode and the SQL in
+// sync; changing either bumps workedIndexRulesVersion.
+//
+// Besides counts, each aggregate carries:
+//   - confirmed_count — contacts with any confirmation (QSL/LoTW/eQSL)
+//   - source_mask     — which write paths contributed (worked_dxcc only)
+//   - first/last/updated timestamps
+//
+// Provenance of the entity number itself lives on the QSO (dxcc_source).
 // ─────────────────────────────────────────────────────────────────────────────
+
+// workedIndexRulesVersion is stored in worked_index_meta. Bump it whenever the
+// meaning of the aggregates changes (canonical mode mapping, grid precision,
+// what counts as confirmed, source classification). Every installation
+// rebuilds its index on the next start; no schema version bump needed.
+const workedIndexRulesVersion = "2"
+
+// Source provenance bits stored in worked_dxcc.source_mask.
+const (
+	SourceMaskManual  = 1 << 0 // typed in the form / unknown legacy source
+	SourceMaskWSJTX   = 1 << 1 // WSJT-X auto-log
+	SourceMaskADIF    = 1 << 2 // ADIF import
+	SourceMaskRemote  = 1 << 3 // remote logbook download (Wavelog)
+	SourceMaskOther   = 1 << 4 // any other integration
+	sourceMaskAllBits = SourceMaskManual | SourceMaskWSJTX | SourceMaskADIF | SourceMaskRemote | SourceMaskOther
+)
+
+// sourceMaskBit classifies a qsos.source value. Precedence matters: the SQL
+// rebuild uses the same order, so indexQSO and a rebuild always agree.
+func sourceMaskBit(source string) int {
+	s := strings.ToLower(strings.TrimSpace(source))
+	switch {
+	case s == "" || s == "manual" || s == "form":
+		return SourceMaskManual
+	case strings.Contains(s, "wsjt"):
+		return SourceMaskWSJTX
+	case strings.Contains(s, "adif") || s == "import":
+		return SourceMaskADIF
+	case strings.Contains(s, "wavelog"):
+		return SourceMaskRemote
+	}
+	return SourceMaskOther
+}
+
+// sourceMaskSQL returns the SQL expression computing the source mask of a
+// group. It mirrors sourceMaskBit exactly.
+func sourceMaskSQL() string {
+	return `MAX(CASE WHEN LOWER(COALESCE(source,'')) IN ('', 'manual', 'form') THEN 1 ELSE 0 END) * 1
+		+ MAX(CASE WHEN LOWER(COALESCE(source,'')) LIKE '%wsjt%' THEN 1 ELSE 0 END) * 2
+		+ MAX(CASE WHEN LOWER(COALESCE(source,'')) LIKE '%adif%' OR LOWER(COALESCE(source,'')) = 'import' THEN 1 ELSE 0 END) * 4
+		+ MAX(CASE WHEN LOWER(COALESCE(source,'')) LIKE '%wavelog%' THEN 1 ELSE 0 END) * 8
+		+ MAX(CASE WHEN LOWER(COALESCE(source,'')) NOT IN ('', 'manual', 'form')
+		           AND LOWER(COALESCE(source,'')) NOT LIKE '%wsjt%'
+		           AND LOWER(COALESCE(source,'')) NOT LIKE '%adif%'
+		           AND LOWER(COALESCE(source,'')) <> 'import'
+		           AND LOWER(COALESCE(source,'')) NOT LIKE '%wavelog%' THEN 1 ELSE 0 END) * 16`
+}
+
+// confirmedSQL is the SQL counterpart of qso.QSO.Confirmed().
+const confirmedSQL = `CASE WHEN UPPER(COALESCE(qsl_rcvd,'')) IN ('Y','V')
+	OR UPPER(COALESCE(lotw_qsl_rcvd,'')) IN ('Y','V')
+	OR UPPER(COALESCE(eqsl_qsl_rcvd,'')) IN ('Y','V') THEN 1 ELSE 0 END`
 
 // canonicalMode resolves the mode a QSO counts toward.
 func canonicalMode(mode, submode string) string {
@@ -51,10 +113,19 @@ type sqlExecutor interface {
 	QueryRow(query string, args ...any) *sql.Row
 }
 
+// indexDelta is one QSO's contribution to an aggregate.
+type indexDelta struct {
+	stamp     string
+	count     int // +1 on insert, -1 on removal
+	confirmed int // +1 / -1 accordingly
+	mask      int // source bit; OR-ed in, recomputed on removal
+}
+
 // applyCountDelta upserts one aggregate row and removes it when the count
-// reaches zero. For decrements the first/last edge timestamps are recomputed
-// from qsos when the row survives — the removed QSO may have been the edge.
-func applyCountDelta(e sqlExecutor, table, keyCols, keyVals string, keyArgs []any, stamp string, delta int) error {
+// reaches zero. For decrements the first/last edge timestamps (and the source
+// mask) are recomputed from qsos when the row survives — the removed QSO may
+// have been the only representative of an edge or of its source.
+func applyCountDelta(e sqlExecutor, table, keyCols, keyVals string, keyArgs []any, d indexDelta) error {
 	cols := strings.Split(keyCols, ",")
 	vals := strings.Split(keyVals, ",")
 	var pred strings.Builder
@@ -66,26 +137,40 @@ func applyCountDelta(e sqlExecutor, table, keyCols, keyVals string, keyArgs []an
 	}
 	where := pred.String()
 
+	// Only worked_dxcc carries the provenance mask.
+	maskCol, maskSet, maskVal := "", "", ""
+	if table == "worked_dxcc" {
+		maskCol = ", source_mask"
+		maskVal = ", ?"
+		maskSet = ", source_mask = " + table + ".source_mask | excluded.source_mask"
+	}
+
 	upsert := fmt.Sprintf(
-		`INSERT INTO %s (%s, qso_count, first_utc, last_utc) VALUES (%s, ?, ?, ?)
+		`INSERT INTO %s (%s, qso_count, confirmed_count, first_utc, last_utc, updated_utc%s) VALUES (%s, ?, ?, ?, ?, ?%s)
 		 ON CONFLICT(%s) DO UPDATE SET
 		   qso_count = %s.qso_count + excluded.qso_count,
+		   confirmed_count = MAX(0, %s.confirmed_count + excluded.confirmed_count),
 		   first_utc = MIN(%s.first_utc, excluded.first_utc),
-		   last_utc  = MAX(%s.last_utc, excluded.last_utc)`,
-		table, keyCols, keyVals, keyCols, table, table, table,
+		   last_utc  = MAX(%s.last_utc, excluded.last_utc),
+		   updated_utc = excluded.updated_utc%s`,
+		table, keyCols, maskCol, keyVals, maskVal,
+		keyCols, table, table, table, table, maskSet,
 	)
-	args := append(append([]any{}, keyArgs...), delta, stamp, stamp)
+	args := append(append([]any{}, keyArgs...), d.count, d.confirmed, d.stamp, d.stamp, d.stamp)
+	if maskCol != "" {
+		args = append(args, d.mask)
+	}
 	if _, err := e.Exec(upsert, args...); err != nil {
 		return fmt.Errorf("worked index upsert %s: %w", table, err)
 	}
-	if delta > 0 {
+	if d.count > 0 {
 		return nil
 	}
 	// Remove zeroed rows.
 	if _, err := e.Exec(fmt.Sprintf(`DELETE FROM %s WHERE %s AND qso_count <= 0`, table, where), keyArgs...); err != nil {
 		return fmt.Errorf("worked index cleanup %s: %w", table, err)
 	}
-	// Recompute edges only when the row survived a decrement.
+	// Recompute derived values only when the row survived a decrement.
 	var remaining int
 	if err := e.QueryRow(fmt.Sprintf(`SELECT qso_count FROM %s WHERE %s`, table, where), keyArgs...).Scan(&remaining); err != nil {
 		return nil // row gone (deleted above) — nothing to fix
@@ -93,24 +178,32 @@ func applyCountDelta(e sqlExecutor, table, keyCols, keyVals string, keyArgs []an
 	if remaining <= 0 {
 		return nil
 	}
+	stampSQL := `printf('%s%06s', qso_date, COALESCE(time_on,'000000'))`
 	switch table {
 	case "worked_call":
-		_, err := e.Exec(`UPDATE worked_call SET first_utc = (SELECT MIN(printf('%s%06s', qso_date, COALESCE(time_on,'000000'))) FROM qsos WHERE base_call = ?), last_utc = (SELECT MAX(printf('%s%06s', qso_date, COALESCE(time_on,'000000'))) FROM qsos WHERE base_call = ?) WHERE base_call = ?`, keyArgs[0], keyArgs[0], keyArgs[0])
+		_, err := e.Exec(`UPDATE worked_call SET first_utc = (SELECT MIN(`+stampSQL+`) FROM qsos WHERE base_call = ?), last_utc = (SELECT MAX(`+stampSQL+`) FROM qsos WHERE base_call = ?) WHERE base_call = ?`, keyArgs[0], keyArgs[0], keyArgs[0])
 		if err != nil {
 			return fmt.Errorf("worked call edge recompute: %w", err)
 		}
 	case "worked_grid":
-		_, err := e.Exec(`UPDATE worked_grid SET first_utc = (SELECT MIN(printf('%s%06s', qso_date, COALESCE(time_on,'000000'))) FROM qsos WHERE UPPER(SUBSTR(gridsquare,1,4)) = ?), last_utc = (SELECT MAX(printf('%s%06s', qso_date, COALESCE(time_on,'000000'))) FROM qsos WHERE UPPER(SUBSTR(gridsquare,1,4)) = ?) WHERE grid4 = ?`, keyArgs[0], keyArgs[0], keyArgs[0])
+		_, err := e.Exec(`UPDATE worked_grid SET first_utc = (SELECT MIN(`+stampSQL+`) FROM qsos WHERE UPPER(SUBSTR(gridsquare,1,4)) = ?), last_utc = (SELECT MAX(`+stampSQL+`) FROM qsos WHERE UPPER(SUBSTR(gridsquare,1,4)) = ?) WHERE grid4 = ?`, keyArgs[0], keyArgs[0], keyArgs[0])
 		if err != nil {
 			return fmt.Errorf("worked grid edge recompute: %w", err)
 		}
 	case "worked_dxcc":
-		_, err := e.Exec(`UPDATE worked_dxcc SET first_utc = (SELECT MIN(printf('%s%06s', qso_date, COALESCE(time_on,'000000'))) FROM qsos WHERE dxcc = ? AND (? = '' OR band = ?) AND (? = '' OR CASE WHEN submode != '' THEN submode ELSE mode END = ?)), last_utc = (SELECT MAX(printf('%s%06s', qso_date, COALESCE(time_on,'000000'))) FROM qsos WHERE dxcc = ? AND (? = '' OR band = ?) AND (? = '' OR CASE WHEN submode != '' THEN submode ELSE mode END = ?)) WHERE dxcc = ? AND band = ? AND mode = ?`,
-			keyArgs[0], keyArgs[1], keyArgs[1], keyArgs[2], keyArgs[2],
-			keyArgs[0], keyArgs[1], keyArgs[1], keyArgs[2], keyArgs[2],
-			keyArgs[0], keyArgs[1], keyArgs[2])
+		dxcc, band, mode := keyArgs[0], keyArgs[1], keyArgs[2]
+		level := `dxcc = ? AND (? = '' OR band = ?) AND (? = '' OR CASE WHEN submode != '' THEN submode ELSE mode END = ?)`
+		_, err := e.Exec(`UPDATE worked_dxcc SET
+			first_utc = (SELECT MIN(`+stampSQL+`) FROM qsos WHERE `+level+`),
+			last_utc  = (SELECT MAX(`+stampSQL+`) FROM qsos WHERE `+level+`),
+			source_mask = (SELECT `+sourceMaskSQL()+` FROM qsos WHERE `+level+`)
+			WHERE dxcc = ? AND band = ? AND mode = ?`,
+			dxcc, band, band, mode, mode,
+			dxcc, band, band, mode, mode,
+			dxcc, band, band, mode, mode,
+			dxcc, band, mode)
 		if err != nil {
-			return fmt.Errorf("worked dxcc edge recompute: %w", err)
+			return fmt.Errorf("worked dxcc recompute: %w", err)
 		}
 	}
 	return nil
@@ -121,17 +214,24 @@ func applyCountDelta(e sqlExecutor, table, keyCols, keyVals string, keyArgs []an
 // missing base call / grid / DXCC / band / mode simply skips the affected
 // aggregates.
 func indexQSO(e sqlExecutor, q *qso.QSO, delta int) error {
-	stamp := qsoStamp(q.QSODate, q.TimeOn)
+	d := indexDelta{
+		stamp: qsoStamp(q.QSODate, q.TimeOn),
+		count: delta,
+		mask:  sourceMaskBit(q.Source),
+	}
+	if q.Confirmed() {
+		d.confirmed = delta
+	}
 
 	if bc := qso.DeriveBaseCall(q.Call); bc != "" {
-		if err := applyCountDelta(e, "worked_call", "base_call", "?", []any{bc}, stamp, delta); err != nil {
+		if err := applyCountDelta(e, "worked_call", "base_call", "?", []any{bc}, d); err != nil {
 			return err
 		}
 	}
 
 	if len(q.GridSquare) >= 4 {
 		grid4 := strings.ToUpper(q.GridSquare[:4])
-		if err := applyCountDelta(e, "worked_grid", "grid4", "?", []any{grid4}, stamp, delta); err != nil {
+		if err := applyCountDelta(e, "worked_grid", "grid4", "?", []any{grid4}, d); err != nil {
 			return err
 		}
 	}
@@ -153,7 +253,7 @@ func indexQSO(e sqlExecutor, q *qso.QSO, delta int) error {
 	}
 	for _, lv := range levels {
 		args := []any{dxcc, lv[0], lv[1]}
-		if err := applyCountDelta(e, "worked_dxcc", "dxcc, band, mode", "?, ?, ?", args, stamp, delta); err != nil {
+		if err := applyCountDelta(e, "worked_dxcc", "dxcc, band, mode", "?, ?, ?", args, d); err != nil {
 			return err
 		}
 	}
@@ -172,6 +272,14 @@ func RebuildWorkedIndex(db *sql.DB) error {
 	if err := rebuildWorkedIndex(tx); err != nil {
 		return err
 	}
+	// Stamp the rules version with the same transaction, so the next start
+	// does not rebuild again.
+	if _, err := tx.Exec(
+		`INSERT INTO worked_index_meta (key, value) VALUES (?, ?)
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+		metaKeyRulesVersion, workedIndexRulesVersion); err != nil {
+		return fmt.Errorf("worked index rules version: %w", err)
+	}
 	return tx.Commit()
 }
 
@@ -184,43 +292,35 @@ func rebuildWorkedIndex(e sqlExecutor) error {
 		}
 	}
 
+	now := time.Now().UTC().Format(time.RFC3339)
+	stampSQL := `printf('%s%06s', qso_date, COALESCE(time_on,'000000'))`
+
 	if _, err := e.Exec(`
-		INSERT INTO worked_call(base_call, qso_count, first_utc, last_utc)
-		SELECT base_call, COUNT(*),
-			MIN(printf('%s%06s', qso_date, COALESCE(time_on,'000000'))),
-			MAX(printf('%s%06s', qso_date, COALESCE(time_on,'000000')))
-		FROM qsos WHERE base_call != '' GROUP BY base_call`); err != nil {
+		INSERT INTO worked_call(base_call, qso_count, confirmed_count, first_utc, last_utc, updated_utc)
+		SELECT base_call, COUNT(*), SUM(`+confirmedSQL+`), MIN(`+stampSQL+`), MAX(`+stampSQL+`), ?
+		FROM qsos WHERE base_call != '' GROUP BY base_call`, now); err != nil {
 		return fmt.Errorf("worked index rebuild call: %w", err)
 	}
 	if _, err := e.Exec(`
-		INSERT INTO worked_grid(grid4, qso_count, first_utc, last_utc)
-		SELECT UPPER(SUBSTR(gridsquare,1,4)), COUNT(*),
-			MIN(printf('%s%06s', qso_date, COALESCE(time_on,'000000'))),
-			MAX(printf('%s%06s', qso_date, COALESCE(time_on,'000000')))
-		FROM qsos WHERE LENGTH(gridsquare) >= 4 GROUP BY 1`); err != nil {
+		INSERT INTO worked_grid(grid4, qso_count, confirmed_count, first_utc, last_utc, updated_utc)
+		SELECT UPPER(SUBSTR(gridsquare,1,4)), COUNT(*), SUM(`+confirmedSQL+`), MIN(`+stampSQL+`), MAX(`+stampSQL+`), ?
+		FROM qsos WHERE LENGTH(gridsquare) >= 4 GROUP BY 1`, now); err != nil {
 		return fmt.Errorf("worked index rebuild grid: %w", err)
 	}
 	if _, err := e.Exec(`
-		INSERT INTO worked_dxcc(dxcc, band, mode, qso_count, first_utc, last_utc)
-		SELECT dxcc, '', '', COUNT(*),
-			MIN(printf('%s%06s', qso_date, COALESCE(time_on,'000000'))),
-			MAX(printf('%s%06s', qso_date, COALESCE(time_on,'000000')))
+		INSERT INTO worked_dxcc(dxcc, band, mode, qso_count, confirmed_count, source_mask, first_utc, last_utc, updated_utc)
+		SELECT dxcc, '', '', COUNT(*), SUM(`+confirmedSQL+`), `+sourceMaskSQL()+`, MIN(`+stampSQL+`), MAX(`+stampSQL+`), ?
 		FROM qsos WHERE dxcc != '' GROUP BY dxcc
 		UNION ALL
-		SELECT dxcc, band, '', COUNT(*),
-			MIN(printf('%s%06s', qso_date, COALESCE(time_on,'000000'))),
-			MAX(printf('%s%06s', qso_date, COALESCE(time_on,'000000')))
+		SELECT dxcc, band, '', COUNT(*), SUM(`+confirmedSQL+`), `+sourceMaskSQL()+`, MIN(`+stampSQL+`), MAX(`+stampSQL+`), ?
 		FROM qsos WHERE dxcc != '' AND band != '' GROUP BY dxcc, band
 		UNION ALL
-		SELECT dxcc, '', CASE WHEN submode != '' THEN submode ELSE mode END, COUNT(*),
-			MIN(printf('%s%06s', qso_date, COALESCE(time_on,'000000'))),
-			MAX(printf('%s%06s', qso_date, COALESCE(time_on,'000000')))
+		SELECT dxcc, '', CASE WHEN submode != '' THEN submode ELSE mode END, COUNT(*), SUM(`+confirmedSQL+`), `+sourceMaskSQL()+`, MIN(`+stampSQL+`), MAX(`+stampSQL+`), ?
 		FROM qsos WHERE dxcc != '' AND mode != '' GROUP BY dxcc, 3
 		UNION ALL
-		SELECT dxcc, band, CASE WHEN submode != '' THEN submode ELSE mode END, COUNT(*),
-			MIN(printf('%s%06s', qso_date, COALESCE(time_on,'000000'))),
-			MAX(printf('%s%06s', qso_date, COALESCE(time_on,'000000')))
-		FROM qsos WHERE dxcc != '' AND band != '' AND mode != '' GROUP BY dxcc, band, 3`); err != nil {
+		SELECT dxcc, band, CASE WHEN submode != '' THEN submode ELSE mode END, COUNT(*), SUM(`+confirmedSQL+`), `+sourceMaskSQL()+`, MIN(`+stampSQL+`), MAX(`+stampSQL+`), ?
+		FROM qsos WHERE dxcc != '' AND band != '' AND mode != '' GROUP BY dxcc, band, 3`,
+		now, now, now, now); err != nil {
 		return fmt.Errorf("worked index rebuild dxcc: %w", err)
 	}
 
@@ -229,15 +329,202 @@ func rebuildWorkedIndex(e sqlExecutor) error {
 
 // qsoIndexColumns is the SELECT list of the qsos columns index maintenance
 // needs from a row (unindex before edit/delete).
-const qsoIndexColumns = `call, band, mode, submode, gridsquare, dxcc, qso_date, time_on`
+const qsoIndexColumns = `call, band, mode, submode, gridsquare, dxcc, qso_date, time_on, source,
+	qsl_rcvd, lotw_qsl_rcvd, eqsl_qsl_rcvd`
 
 // loadQSOForIndex reads the index-relevant fields of one row.
 func loadQSOForIndex(q sqlExecutor, id int64) (*qso.QSO, error) {
 	row := q.QueryRow(`SELECT `+qsoIndexColumns+` FROM qsos WHERE id = ?`, id)
 	var out qso.QSO
 	out.ID = id
-	if err := row.Scan(&out.Call, &out.Band, &out.Mode, &out.Submode, &out.GridSquare, &out.DXCC, &out.QSODate, &out.TimeOn); err != nil {
+	if err := row.Scan(&out.Call, &out.Band, &out.Mode, &out.Submode, &out.GridSquare, &out.DXCC,
+		&out.QSODate, &out.TimeOn, &out.Source,
+		&out.QSLRcvd, &out.LOTWQSLRcvd, &out.EQSLQSLRcvd); err != nil {
 		return nil, err
 	}
 	return &out, nil
+}
+
+// ── Point lookups ──────────────────────────────────────────────────────────
+
+// WorkedInfo is one index answer. An absent aggregate is the zero value
+// (Count 0) and means "not worked in this log" — whether that can be reported
+// as NEW depends on LogCoverage.
+type WorkedInfo struct {
+	Count          int
+	ConfirmedCount int
+	SourceMask     int
+	FirstUTC       string
+	LastUTC        string
+	UpdatedUTC     string
+}
+
+// Worked reports whether the aggregate exists.
+func (w WorkedInfo) Worked() bool { return w.Count > 0 }
+
+// WorkedCall looks up a callsign (derived base call) in worked_call.
+func WorkedCall(db *sql.DB, call string) (WorkedInfo, error) {
+	var w WorkedInfo
+	base := qso.DeriveBaseCall(call)
+	if base == "" {
+		return w, nil
+	}
+	err := db.QueryRow(
+		`SELECT qso_count, confirmed_count, first_utc, last_utc, updated_utc
+		 FROM worked_call WHERE base_call = ?`, base,
+	).Scan(&w.Count, &w.ConfirmedCount, &w.FirstUTC, &w.LastUTC, &w.UpdatedUTC)
+	if errors.Is(err, sql.ErrNoRows) {
+		return w, nil
+	}
+	return w, err
+}
+
+// WorkedGrid looks up a 4-character Maidenhead grid (longer locators are
+// reduced to their first four characters).
+func WorkedGrid(db *sql.DB, grid string) (WorkedInfo, error) {
+	var w WorkedInfo
+	g := strings.ToUpper(strings.TrimSpace(grid))
+	if len(g) < 4 {
+		return w, nil
+	}
+	err := db.QueryRow(
+		`SELECT qso_count, confirmed_count, first_utc, last_utc, updated_utc
+		 FROM worked_grid WHERE grid4 = ?`, g[:4],
+	).Scan(&w.Count, &w.ConfirmedCount, &w.FirstUTC, &w.LastUTC, &w.UpdatedUTC)
+	if errors.Is(err, sql.ErrNoRows) {
+		return w, nil
+	}
+	return w, err
+}
+
+// WorkedDXCC looks up a DXCC entity at one of the four aggregation levels.
+// Empty band and mode mean "all bands" / "all modes". mode is the canonical
+// mode (FT8, FT4, SSB …) — the same value stored in worked_dxcc.mode.
+func WorkedDXCC(db *sql.DB, dxcc, band, mode string) (WorkedInfo, error) {
+	var w WorkedInfo
+	entity := strings.TrimSpace(dxcc)
+	if entity == "" {
+		return w, nil
+	}
+	err := db.QueryRow(
+		`SELECT qso_count, confirmed_count, source_mask, first_utc, last_utc, updated_utc
+		 FROM worked_dxcc WHERE dxcc = ? AND band = ? AND mode = ?`,
+		entity, strings.TrimSpace(band), strings.TrimSpace(mode),
+	).Scan(&w.Count, &w.ConfirmedCount, &w.SourceMask, &w.FirstUTC, &w.LastUTC, &w.UpdatedUTC)
+	if errors.Is(err, sql.ErrNoRows) {
+		return w, nil
+	}
+	return w, err
+}
+
+// ── Coverage and verdicts ──────────────────────────────────────────────────
+
+// LogCoverage describes how complete the local log is. A missing aggregate
+// only proves "new" when the local data covers everything that could contain
+// a contact; otherwise the honest answer is UNKNOWN.
+type LogCoverage struct {
+	QSOCount       int
+	UnresolvedDXCC int
+	MissingBand    int
+	MissingMode    int
+	LastRemoteSync string // RFC3339 of the last clean remote synchronization; "" = never
+}
+
+// CallComplete reports whether an absent call aggregate can be trusted as NEW.
+// A log is always complete for calls: whether a remote logbook still has to be
+// synchronized is a caller concern (see LogCoverage.LastRemoteSync).
+func (c LogCoverage) CallComplete() bool { return true }
+
+// DXCCComplete reports whether an absent DXCC aggregate can be trusted as NEW.
+func (c LogCoverage) DXCCComplete() bool {
+	return c.UnresolvedDXCC == 0
+}
+
+// BandComplete reports whether an absent band aggregate can be trusted as NEW.
+func (c LogCoverage) BandComplete() bool {
+	return c.MissingBand == 0
+}
+
+// ModeComplete reports whether an absent mode aggregate can be trusted as NEW.
+func (c LogCoverage) ModeComplete() bool {
+	return c.MissingMode == 0
+}
+
+// Complete reports whether every worked-status answer can be trusted.
+func (c LogCoverage) Complete() bool {
+	return c.DXCCComplete() && c.MissingBand == 0 && c.MissingMode == 0
+}
+
+// Coverage inspects the local log (and the stored remote-sync marker) to
+// describe how much confidence a "not worked" answer deserves.
+func Coverage(db *sql.DB) (LogCoverage, error) {
+	var c LogCoverage
+	err := db.QueryRow(
+		`SELECT COUNT(*),
+			COALESCE(SUM(CASE WHEN COALESCE(dxcc,'') = '' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN COALESCE(band,'') = '' THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN COALESCE(mode,'') = '' THEN 1 ELSE 0 END), 0)
+		 FROM qsos`,
+	).Scan(&c.QSOCount, &c.UnresolvedDXCC, &c.MissingBand, &c.MissingMode)
+	if err != nil {
+		return c, fmt.Errorf("log coverage: %w", err)
+	}
+	c.LastRemoteSync = metaValue(db, metaKeyLastRemoteSync)
+	return c, nil
+}
+
+// WorkedState is the panel-facing verdict for one worked-status row.
+type WorkedState int
+
+const (
+	StateUnknown WorkedState = iota // local data cannot prove either way
+	StateNew
+	StateWorked
+)
+
+// Verdict turns an index answer plus coverage certainty into a state. A
+// positive answer is always WORKED (even partial data is proof); an absence is
+// only NEW when the relevant dimension is known complete.
+func Verdict(worked, complete bool) WorkedState {
+	if worked {
+		return StateWorked
+	}
+	if complete {
+		return StateNew
+	}
+	return StateUnknown
+}
+
+// ── Index metadata ─────────────────────────────────────────────────────────
+
+const (
+	metaKeyRulesVersion   = "rules_version"
+	metaKeyLastRemoteSync = "last_remote_sync"
+)
+
+// metaValue reads one worked_index_meta entry; a missing table/key is "".
+func metaValue(db *sql.DB, key string) string {
+	var v string
+	if err := db.QueryRow(`SELECT value FROM worked_index_meta WHERE key = ?`, key).Scan(&v); err != nil {
+		return ""
+	}
+	return v
+}
+
+// SetMetaValue writes one worked_index_meta entry (internal use + tests).
+func SetMetaValue(db *sql.DB, key, value string) error {
+	_, err := db.Exec(
+		`INSERT INTO worked_index_meta (key, value) VALUES (?, ?)
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`, key, value)
+	if err != nil {
+		return fmt.Errorf("write worked index meta %s: %w", key, err)
+	}
+	return nil
+}
+
+// MarkRemoteSync records that the local log has been synchronized with the
+// remote logbook. Coverage treats an absent marker as "remote history may be
+// incomplete", so a never-synced installation reports UNKNOWN instead of NEW.
+func MarkRemoteSync(db *sql.DB, at time.Time) error {
+	return SetMetaValue(db, metaKeyLastRemoteSync, at.UTC().Format(time.RFC3339))
 }

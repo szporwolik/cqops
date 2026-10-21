@@ -5,6 +5,17 @@ import (
 	"time"
 )
 
+// DXCC resolution provenance, stored in QSO.DXCCSource. It records HOW the
+// entity number was obtained so a future reconfirmation or re-resolution can
+// tell a provider value from a guess.
+const (
+	DXCCSourceExplicit = "explicit" // carried by the record or entered locally
+	DXCCSourceImported = "imported" // supplied by an ADIF file / remote logbook
+	DXCCSourcePrefix   = "prefix"   // deterministic callsign-prefix lookup (CTY)
+	DXCCSourceCallbook = "callbook" // callbook (QRZ/HamQTH/…) result
+	DXCCSourceUnknown  = "unknown"  // still unresolved
+)
+
 type QSO struct {
 	ID              int64
 	Call            string
@@ -51,6 +62,13 @@ type QSO struct {
 	CQZone          string // DXCC CQ zone (1-40), enriched from CTY.DAT or QRZ
 	ITUZone         string // DXCC ITU zone (1-90), enriched from CTY.DAT or QRZ
 	DXCC            string // DXCC entity number (e.g. "269" for Poland), from QRZ
+	DXCCSource      string // how DXCC was resolved (DXCCSource* constant)
+	// Confirmation status as ADIF defines it: "Y" received, "N" not received,
+	// "" not provided/unknown. Empty is preserved on update, so a caller that
+	// does not manage confirmations can never wipe a stored one.
+	QSLRcvd         string // paper QSL received (QSL_RCVD)
+	LOTWQSLRcvd     string // LoTW confirmation (LOTW_QSL_RCVD)
+	EQSLQSLRcvd     string // eQSL confirmation (EQSL_QSL_RCVD)
 	MyCQZone        string // station CQ zone (1-40), from logbook station config
 	MyITUZone       string // station ITU zone (1-90), from logbook station config
 	MyDXCC          string // station DXCC entity number, from logbook station config
@@ -76,6 +94,35 @@ func NewQSO() *QSO {
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
+}
+
+// Confirmed reports whether any confirmation was received for the contact
+// (paper QSL, LoTW or eQSL).
+func (q *QSO) Confirmed() bool {
+	return IsQSLReceived(q.QSLRcvd) || IsQSLReceived(q.LOTWQSLRcvd) || IsQSLReceived(q.EQSLQSLRcvd)
+}
+
+// IsQSLReceived reports whether an ADIF QSL-received status means "received".
+// ADIF allows Y (yes) and V (verified, import-only).
+func IsQSLReceived(status string) bool {
+	switch strings.ToUpper(strings.TrimSpace(status)) {
+	case "Y", "V":
+		return true
+	}
+	return false
+}
+
+// NormalizeQSLStatus maps an ADIF QSL-received status to the value CQOps
+// stores: "Y", "N" or "" (not provided). Anything else is treated as unknown
+// rather than inventing a confirmation.
+func NormalizeQSLStatus(status string) string {
+	switch strings.ToUpper(strings.TrimSpace(status)) {
+	case "Y", "V":
+		return "Y"
+	case "N":
+		return "N"
+	}
+	return ""
 }
 
 // NormalizeExchange re-derives STX, SRX, STXString, and SRXString from

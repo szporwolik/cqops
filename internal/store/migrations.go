@@ -8,6 +8,50 @@ import (
 	"github.com/szporwolik/cqops/internal/qso"
 )
 
+// Worked-status index DDL. Declared once so the base migration list and
+// migrateBuildWorkedIndex cannot drift apart.
+const (
+	// confirmed_count counts contacts with any confirmation received (paper
+	// QSL, LoTW or eQSL); source_mask records where the aggregated contacts
+	// came from (see SourceMask* bits).
+	workedCallDDL = `CREATE TABLE IF NOT EXISTS worked_call (
+		base_call TEXT PRIMARY KEY,
+		qso_count INTEGER NOT NULL DEFAULT 0,
+		confirmed_count INTEGER NOT NULL DEFAULT 0,
+		first_utc  TEXT NOT NULL DEFAULT '',
+		last_utc   TEXT NOT NULL DEFAULT '',
+		updated_utc TEXT NOT NULL DEFAULT ''
+	)`
+	workedGridDDL = `CREATE TABLE IF NOT EXISTS worked_grid (
+		grid4     TEXT PRIMARY KEY,
+		qso_count INTEGER NOT NULL DEFAULT 0,
+		confirmed_count INTEGER NOT NULL DEFAULT 0,
+		first_utc TEXT NOT NULL DEFAULT '',
+		last_utc  TEXT NOT NULL DEFAULT '',
+		updated_utc TEXT NOT NULL DEFAULT ''
+	)`
+	workedDxccDDL = `CREATE TABLE IF NOT EXISTS worked_dxcc (
+		dxcc      TEXT NOT NULL,
+		band      TEXT NOT NULL DEFAULT '',
+		mode      TEXT NOT NULL DEFAULT '',
+		qso_count INTEGER NOT NULL DEFAULT 0,
+		confirmed_count INTEGER NOT NULL DEFAULT 0,
+		source_mask INTEGER NOT NULL DEFAULT 0,
+		first_utc TEXT NOT NULL DEFAULT '',
+		last_utc  TEXT NOT NULL DEFAULT '',
+		updated_utc TEXT NOT NULL DEFAULT '',
+		PRIMARY KEY (dxcc, band, mode)
+	)`
+	// worked_index_meta carries the index rules version (a rules change marks
+	// every aggregate for rebuild without bumping the schema version) and the
+	// timestamp of the last clean remote synchronization, which decides
+	// whether a missing aggregate means NEW or UNKNOWN.
+	workedMetaDDL = `CREATE TABLE IF NOT EXISTS worked_index_meta (
+		key   TEXT PRIMARY KEY,
+		value TEXT NOT NULL DEFAULT ''
+	)`
+)
+
 // migrations holds the ordered DDL statements that bring a new or existing
 // SQLite database to the current schema. Every statement uses IF NOT EXISTS
 // so migrations are safe to re-run (idempotent). v0.9.0 consolidated all
@@ -79,8 +123,16 @@ var migrations = []string{
 		my_sig_info TEXT DEFAULT '',
 
 		dxcc TEXT DEFAULT '',
-		base_call TEXT DEFAULT '',
+		dxcc_source TEXT NOT NULL DEFAULT '',
+		base_call TEXT NOT NULL DEFAULT '',
 		source TEXT NOT NULL DEFAULT 'manual',
+
+		-- ADIF confirmation status: 'Y' received, 'N' not received,
+		-- '' not provided. Confirmations are aggregated into the worked
+		-- index (confirmed_count).
+		qsl_rcvd TEXT NOT NULL DEFAULT '',
+		lotw_qsl_rcvd TEXT NOT NULL DEFAULT '',
+		eqsl_qsl_rcvd TEXT NOT NULL DEFAULT '',
 
 		created_at TEXT NOT NULL,
 		updated_at TEXT NOT NULL
@@ -115,27 +167,19 @@ var migrations = []string{
 	// Maintained incrementally by every QSO write path and rebuilt by
 	// RebuildWorkedIndex. The normalized qsos table stays the source of
 	// truth; these tables are disposable summaries.
-	`CREATE TABLE IF NOT EXISTS worked_call (
-		base_call TEXT PRIMARY KEY,
-		qso_count INTEGER NOT NULL DEFAULT 0,
-		first_utc  TEXT NOT NULL DEFAULT '',
-		last_utc   TEXT NOT NULL DEFAULT ''
-	)`,
-	`CREATE TABLE IF NOT EXISTS worked_grid (
-		grid4     TEXT PRIMARY KEY,
-		qso_count INTEGER NOT NULL DEFAULT 0,
-		first_utc TEXT NOT NULL DEFAULT '',
-		last_utc  TEXT NOT NULL DEFAULT ''
-	)`,
-	`CREATE TABLE IF NOT EXISTS worked_dxcc (
-		dxcc      TEXT NOT NULL,
-		band      TEXT NOT NULL DEFAULT '',
-		mode      TEXT NOT NULL DEFAULT '',
-		qso_count INTEGER NOT NULL DEFAULT 0,
-		first_utc TEXT NOT NULL DEFAULT '',
-		last_utc  TEXT NOT NULL DEFAULT '',
-		PRIMARY KEY (dxcc, band, mode)
-	)`,
+	//
+	// The keys are global on purpose: CQOps keeps one SQLite file per logbook
+	// (app.SwitchLogbook), so logbook/station identity is the file itself.
+	// Do NOT add logbook_id/station_profile_id columns without first moving
+	// every logbook into a shared database — the primary keys below (and the
+	// four lookup shapes the worked panel issues) assume a single logbook.
+	//
+	// Similarly, the '' band/mode values are aggregation sentinels: they mean
+	// "all bands" / "all modes", not "unknown".
+	workedCallDDL,
+	workedGridDDL,
+	workedDxccDDL,
+	workedMetaDDL,
 
 	// ── schema v2: composite indexes for dupe-check and dedup queries ─────────
 	`CREATE INDEX IF NOT EXISTS idx_qsos_call_band_mode_date ON qsos(call, band, mode, qso_date)`,
@@ -193,7 +237,10 @@ var migrations = []string{
 //	3 — v0.11.2 rebuild the worked index: edits indexed the caller's object
 //	           (losing dxcc on comment-only edits) and enrichment / DXCC
 //	           backfill wrote qsos without touching the index
-const schemaVersion = 3
+//	4 — v0.11.3 DXCC provenance + confirmation status on qsos, confirmed_count
+//	           and source_mask in the worked index, and worked_index_meta
+//	           (index rules version + last clean remote sync)
+const schemaVersion = 4
 
 // Migrate runs all migrations. Safe to call multiple times — every
 // statement uses IF NOT EXISTS guards, and PRAGMA user_version prevents
@@ -252,7 +299,9 @@ func Migrate(db *sql.DB) error {
 		if err := migrateBuildWorkedIndex(db); err != nil {
 			return err
 		}
-		return nil
+		// A normalization/aggregation rule change bumps workedIndexRulesVersion;
+		// the stored version tells us whether the aggregates must be rebuilt.
+		return ensureWorkedIndexRules(db, false)
 	}
 
 	for i, m := range migrations {
@@ -344,15 +393,15 @@ func Migrate(db *sql.DB) error {
 		}
 	}
 
-	// v3: existing indexes can have drifted from qsos (see the version
-	// history). Rebuild once while upgrading, and only *after* every backfill
-	// above — the rebuild reads qsos, so a row that gains its base_call below
-	// would otherwise be missing from worked_call until the next rebuild.
-	// Later opens skip this through the user_version guard.
-	if current < 3 {
-		if err := RebuildWorkedIndex(db); err != nil {
-			return fmt.Errorf("rebuild worked index: %w", err)
-		}
+	// Existing indexes can have drifted from qsos (v3: edits indexed the
+	// caller's object; enrichment/backfill wrote qsos without touching the
+	// index), and any later change to the aggregation rules must also rebuild.
+	// Rebuild once, only *after* every backfill above — the rebuild reads
+	// qsos, so a row that gains its base_call below would otherwise be missing
+	// from worked_call until the next rebuild. Later opens skip this through
+	// the stored rules version.
+	if err := ensureWorkedIndexRules(db, current < schemaVersion); err != nil {
+		return err
 	}
 
 	if _, err := db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, schemaVersion)); err != nil {
@@ -419,32 +468,13 @@ func migrateDropRedundantIndexes(db *sql.DB) error {
 // opens skip the rebuild: the tables are non-empty (the cheap count answers),
 // and the index is maintained incrementally from then on.
 func migrateBuildWorkedIndex(db *sql.DB) error {
-	for _, ddl := range []string{
-		`CREATE TABLE IF NOT EXISTS worked_call (
-			base_call TEXT PRIMARY KEY,
-			qso_count INTEGER NOT NULL DEFAULT 0,
-			first_utc  TEXT NOT NULL DEFAULT '',
-			last_utc   TEXT NOT NULL DEFAULT ''
-		)`,
-		`CREATE TABLE IF NOT EXISTS worked_grid (
-			grid4     TEXT PRIMARY KEY,
-			qso_count INTEGER NOT NULL DEFAULT 0,
-			first_utc TEXT NOT NULL DEFAULT '',
-			last_utc  TEXT NOT NULL DEFAULT ''
-		)`,
-		`CREATE TABLE IF NOT EXISTS worked_dxcc (
-			dxcc      TEXT NOT NULL,
-			band      TEXT NOT NULL DEFAULT '',
-			mode      TEXT NOT NULL DEFAULT '',
-			qso_count INTEGER NOT NULL DEFAULT 0,
-			first_utc TEXT NOT NULL DEFAULT '',
-			last_utc  TEXT NOT NULL DEFAULT '',
-			PRIMARY KEY (dxcc, band, mode)
-		)`,
-	} {
+	for _, ddl := range []string{workedCallDDL, workedGridDDL, workedDxccDDL, workedMetaDDL} {
 		if _, err := db.Exec(ddl); err != nil {
 			return fmt.Errorf("worked index table: %w", err)
 		}
+	}
+	if err := migrateAddWorkedColumns(db); err != nil {
+		return err
 	}
 	var worked int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM worked_call`).Scan(&worked); err != nil {
@@ -461,6 +491,59 @@ func migrateBuildWorkedIndex(db *sql.DB) error {
 		return nil
 	}
 	return RebuildWorkedIndex(db)
+}
+
+// migrateAddWorkedColumns adds the columns introduced after a table was first
+// created. CREATE TABLE IF NOT EXISTS never alters an existing table, so both
+// migration paths call this unconditionally; ALTER TABLE ADD COLUMN is an
+// idempotent no-op here (duplicate columns are ignored by migrateAddColumn).
+func migrateAddWorkedColumns(db *sql.DB) error {
+	adds := []struct{ table, column, colType string }{
+		{"qsos", "dxcc_source", "TEXT NOT NULL DEFAULT ''"},
+		{"qsos", "qsl_rcvd", "TEXT NOT NULL DEFAULT ''"},
+		{"qsos", "lotw_qsl_rcvd", "TEXT NOT NULL DEFAULT ''"},
+		{"qsos", "eqsl_qsl_rcvd", "TEXT NOT NULL DEFAULT ''"},
+		{"worked_call", "confirmed_count", "INTEGER NOT NULL DEFAULT 0"},
+		{"worked_call", "updated_utc", "TEXT NOT NULL DEFAULT ''"},
+		{"worked_grid", "confirmed_count", "INTEGER NOT NULL DEFAULT 0"},
+		{"worked_grid", "updated_utc", "TEXT NOT NULL DEFAULT ''"},
+		{"worked_dxcc", "confirmed_count", "INTEGER NOT NULL DEFAULT 0"},
+		{"worked_dxcc", "source_mask", "INTEGER NOT NULL DEFAULT 0"},
+		{"worked_dxcc", "updated_utc", "TEXT NOT NULL DEFAULT ''"},
+	}
+	for _, a := range adds {
+		if err := migrateAddColumn(db, a.table, a.column, a.colType); err != nil {
+			return fmt.Errorf("add column %s.%s: %w", a.table, a.column, err)
+		}
+	}
+	return nil
+}
+
+// ensureWorkedIndexRules rebuilds the worked index when the aggregation rules
+// stored in the database differ from the running binary's, or when the schema
+// version was just upgraded (older databases may carry aggregates written by
+// a version with different indexing behaviour). A rules change bumps
+// workedIndexRulesVersion in worked_index.go, and every installation repairs
+// itself on the next start — no schema bump required.
+func ensureWorkedIndexRules(db *sql.DB, upgrade bool) error {
+	var stored string
+	err := db.QueryRow(`SELECT value FROM worked_index_meta WHERE key = 'rules_version'`).Scan(&stored)
+	if err != nil && err != sql.ErrNoRows &&
+		!strings.Contains(err.Error(), "no such table") && !strings.Contains(err.Error(), "no such column") {
+		return fmt.Errorf("read worked index rules version: %w", err)
+	}
+	if !upgrade && err == nil && stored == workedIndexRulesVersion {
+		return nil
+	}
+	if err := RebuildWorkedIndex(db); err != nil {
+		return fmt.Errorf("rebuild worked index: %w", err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO worked_index_meta (key, value) VALUES ('rules_version', ?)
+		 ON CONFLICT(key) DO UPDATE SET value = excluded.value`, workedIndexRulesVersion); err != nil {
+		return fmt.Errorf("write worked index rules version: %w", err)
+	}
+	return nil
 }
 
 // migrateDropWavelogFlag removes the legacy wavelog_uploaded status column.

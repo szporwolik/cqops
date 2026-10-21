@@ -891,74 +891,96 @@ func (m *Model) buildWorkedPanelLayout(d *callbook.Result, maxW int) workedPanel
 	muted := S.Dim
 	valStyle := ValueStyle
 	pendDash := DimStyle.Render("—")
-	state := func(isNew, known bool) string {
-		if !known {
-			return " · " + muted.Render("unknown")
-		}
-		if isNew {
+
+	// Coverage decides whether an absent local aggregate may be called NEW.
+	// When a remote logbook is configured, the local log only covers the
+	// remote history after a clean synchronization — before that (or after a
+	// failed one) a miss stays UNKNOWN instead of claiming "new DXCC".
+	remoteConfigured := false
+	if m.App != nil && m.App.Logbook != nil && !m.Offline {
+		w := m.App.Logbook.Wavelog
+		remoteConfigured = w != nil && w.Enabled && w.URL != "" && w.APIKey != ""
+	}
+	synced := !remoteConfigured || ws.Coverage.LastRemoteSync != ""
+	callComplete := ws.Coverage.CallComplete() && synced
+	dxccComplete := ws.Coverage.DXCCComplete() && synced
+	bandComplete := ws.Coverage.BandComplete() && synced
+	modeComplete := ws.Coverage.ModeComplete() && synced
+
+	state := func(v store.WorkedState) string {
+		switch v {
+		case store.StateWorked:
+			return " · " + workedMuted.Render("worked")
+		case store.StateNew:
 			return " · " + acc.Render("NEW")
 		}
-		return " · " + workedMuted.Render("worked")
+		return " · " + muted.Render("unknown")
 	}
-	isNewForCall := func() (bool, bool) {
-		if wl != nil {
-			return !wl.Worked(), true
+	// verdict merges the local index answer with an authoritative remote one.
+	// A positive local hit always wins (partial data is still proof); a remote
+	// answer upgrades an UNKNOWN to NEW/WORKED; otherwise coverage decides.
+	verdict := func(worked, complete, remoteKnown, remoteWorked bool) store.WorkedState {
+		if worked {
+			return store.StateWorked
 		}
-		return !s.CallWorked, true
+		if remoteKnown {
+			if remoteWorked {
+				return store.StateWorked
+			}
+			return store.StateNew
+		}
+		return store.Verdict(false, complete)
 	}
 
 	var leftRows []workedRow
-	callNew, callKnown := isNewForCall()
-	leftRows = append(leftRows, workedRow{"Call", acc.Render(call) + state(callNew, callKnown)})
+	remoteCallKnown, remoteCallWorked := false, false
+	if wl != nil {
+		remoteCallKnown, remoteCallWorked = true, wl.Worked()
+	}
+	callVerdict := verdict(ws.CallInfo.Worked() || s.CallWorked, callComplete, remoteCallKnown, remoteCallWorked)
+	leftRows = append(leftRows, workedRow{"Call", acc.Render(call) + state(callVerdict)})
 	if parsed.BaseCall != "" && !strings.EqualFold(parsed.BaseCall, call) {
 		leftRows = append(leftRows, workedRow{"Base", valStyle.Render(parsed.BaseCall)})
 	}
 	if opEntity != "" || opDXCC != "" {
-		dxccNew, dxccKnown := false, true
+		dxccWorked := ws.DXCCInfo.Worked() || ws.DXCCHistory.QSOCount > 0
 		if wl != nil && wl.DXCCConfirmed() {
-			dxccNew, dxccKnown = false, true
-		} else if ws.DXCCHistory.QSOCount > 0 {
-			dxccNew, dxccKnown = false, true
-		} else {
-			dxccNew, dxccKnown = true, true
+			dxccWorked = true
 		}
 		label := opEntity
 		if label == "" {
 			label = opDXCC
 		}
-		leftRows = append(leftRows, workedRow{"DXCC", valStyle.Render(label) + state(dxccNew, dxccKnown)})
+		leftRows = append(leftRows, workedRow{"DXCC", valStyle.Render(label) + state(store.Verdict(dxccWorked, dxccComplete))})
 	}
 	if grid4 != "" {
-		gridNew := ws.GridHistory.QSOCount == 0
-		leftRows = append(leftRows, workedRow{"Grid", valStyle.Render(grid4) + state(gridNew, true)})
+		gridWorked := ws.GridInfo.Worked() || ws.GridHistory.QSOCount > 0
+		leftRows = append(leftRows, workedRow{"Grid", valStyle.Render(grid4) + state(store.Verdict(gridWorked, callComplete))})
 	}
 	if band != "" {
-		bNew, bKnown := false, true
+		remoteBandKnown, remoteBandWorked := false, false
 		if wl != nil {
-			bNew, bKnown = !wl.WorkedBand(), true
-		} else {
-			bNew, bKnown = !s.CallOnBand, true
+			remoteBandKnown, remoteBandWorked = true, wl.WorkedBand()
 		}
-		leftRows = append(leftRows, workedRow{"Band", valStyle.Render(band) + state(bNew, bKnown)})
+		bv := verdict(s.CallOnBand, bandComplete, remoteBandKnown, remoteBandWorked)
+		leftRows = append(leftRows, workedRow{"Band", valStyle.Render(band) + state(bv)})
 	} else {
 		leftRows = append(leftRows, workedRow{"Band", pendDash})
 	}
 	if mode != "" {
-		mNew, mKnown := false, true
-		mNew, mKnown = !s.CallOnMode, true
-		leftRows = append(leftRows, workedRow{"Mode", valStyle.Render(mode) + state(mNew, mKnown)})
+		mv := verdict(s.CallOnMode, modeComplete, false, false)
+		leftRows = append(leftRows, workedRow{"Mode", valStyle.Render(mode) + state(mv)})
 	} else {
 		leftRows = append(leftRows, workedRow{"Mode", pendDash})
 	}
 	if band != "" && mode != "" {
-		bmNew, bmKnown := false, true
+		remoteBMKnown, remoteBMWorked := false, false
 		if wl != nil {
-			bmNew, bmKnown = !wl.WorkedBandMode(), true
-		} else {
-			bmNew, bmKnown = !s.CallOnMode && !s.CallOnBand, true
+			remoteBMKnown, remoteBMWorked = true, wl.WorkedBandMode()
 		}
+		bmv := verdict(s.CallOnBandMode, bandComplete && modeComplete, remoteBMKnown, remoteBMWorked)
 		bmVal := valStyle.Render(band + " " + mode)
-		leftRows = append(leftRows, workedRow{"Band+Mode", bmVal + state(bmNew, bmKnown)})
+		leftRows = append(leftRows, workedRow{"Band+Mode", bmVal + state(bmv)})
 	}
 
 	var rightRows []workedRow
@@ -992,7 +1014,7 @@ func (m *Model) buildWorkedPanelLayout(d *callbook.Result, maxW int) workedPanel
 		if hasDXCCHistory || hasGridHistory {
 			qsoLabel = "Call QSOs"
 		}
-		if callKnown {
+		if callVerdict == store.StateNew {
 			addH(qsoLabel, "0 · "+muted.Render("first contact"))
 		} else {
 			addH(qsoLabel, "0 · "+muted.Render("unknown"))

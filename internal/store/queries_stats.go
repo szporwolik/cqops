@@ -64,12 +64,15 @@ func LogbookCounts(db *sql.DB, today string) (total, todayCount int, err error) 
 
 // LogbookStats holds per-call aggregate statistics from the local logbook.
 type LogbookStats struct {
-	CallWorked  bool
-	CallOnBand  bool
-	CallOnMode  bool
-	QSOCount    int
-	TodayCount  int
-	LastQSODate string // YYYY-MM-DD or empty
+	CallWorked bool
+	CallOnBand bool
+	CallOnMode bool
+	// CallOnBandMode reports the same call worked on this exact band AND
+	// canonical mode — the combination row, not "band and mode separately".
+	CallOnBandMode bool
+	QSOCount       int
+	TodayCount     int
+	LastQSODate    string // YYYY-MM-DD or empty
 }
 
 // GetLogbookStats computes per-call statistics with a single query.
@@ -82,22 +85,29 @@ func GetLogbookStats(db *sql.DB, call, band, mode string) (LogbookStats, error) 
 
 	// Single query: COUNT total, SUM for band/mode/today matches, MAX for last date.
 	// All five aggregations run in one table scan over the matching rows.
-	var onBandCount, onModeCount int
+	// Mode is matched canonically (submode wins) so a form value of FT8 still
+	// finds rows stored as MFSK + FT8 — a literal `mode = ?` reported such a
+	// worked call as NEW.
+	var onBandCount, onModeCount, onBandModeCount int
 	var lastDate string
 	err := db.QueryRow(
 		`SELECT
 			COUNT(*),
 			COALESCE(SUM(CASE WHEN ? = '' THEN 0 WHEN band = ? THEN 1 ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN ? = '' THEN 0 WHEN mode = ? THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN ? = '' THEN 0
+				WHEN CASE WHEN COALESCE(submode,'') != '' THEN submode ELSE mode END = ? THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN ? = '' OR ? = '' THEN 0
+				WHEN band = ? AND CASE WHEN COALESCE(submode,'') != '' THEN submode ELSE mode END = ? THEN 1 ELSE 0 END), 0),
 			COALESCE(SUM(CASE WHEN qso_date = ? THEN 1 ELSE 0 END), 0),
 			COALESCE(MAX(qso_date), '')
 		FROM qsos
 		WHERE base_call = ?`,
 		band, band,
 		mode, mode,
+		band, mode, band, mode,
 		today,
 		baseCall,
-	).Scan(&s.QSOCount, &onBandCount, &onModeCount, &s.TodayCount, &lastDate)
+	).Scan(&s.QSOCount, &onBandCount, &onModeCount, &onBandModeCount, &s.TodayCount, &lastDate)
 	if err != nil {
 		return s, fmt.Errorf("logbook stats: %w", err)
 	}
@@ -105,6 +115,7 @@ func GetLogbookStats(db *sql.DB, call, band, mode string) (LogbookStats, error) 
 	s.CallWorked = s.QSOCount > 0
 	s.CallOnBand = onBandCount > 0
 	s.CallOnMode = onModeCount > 0
+	s.CallOnBandMode = onBandModeCount > 0
 	if lastDate != "" && len(lastDate) == 8 {
 		s.LastQSODate = lastDate[0:4] + "-" + lastDate[4:6] + "-" + lastDate[6:8]
 	}
@@ -148,6 +159,14 @@ type WorkedSummary struct {
 	CallHistory ScopeHistory
 	GridHistory ScopeHistory
 	DXCCHistory ScopeHistory
+
+	// Index-backed point lookups. They answer the panel's worked/new verdicts
+	// without scanning qsos, and Coverage says whether an absent aggregate may
+	// be reported as NEW or has to stay UNKNOWN.
+	CallInfo WorkedInfo
+	GridInfo WorkedInfo
+	DXCCInfo WorkedInfo
+	Coverage LogCoverage
 }
 
 // GetWorkedSummary computes per-call, per-grid, and per-DXCC statistics
@@ -188,6 +207,21 @@ func GetWorkedSummary(db *sql.DB, call, grid4, dxcc, countryName string) (Worked
 		if err != nil {
 			return ws, fmt.Errorf("dxcc history: %w", err)
 		}
+	}
+
+	// Index-backed verdicts. These are primary-key seeks on the worked index,
+	// so the panel never has to scan qsos to decide NEW vs WORKED.
+	if ws.CallInfo, err = WorkedCall(db, call); err != nil {
+		return ws, fmt.Errorf("worked call: %w", err)
+	}
+	if ws.GridInfo, err = WorkedGrid(db, grid4); err != nil {
+		return ws, fmt.Errorf("worked grid: %w", err)
+	}
+	if ws.DXCCInfo, err = WorkedDXCC(db, dxcc, "", ""); err != nil {
+		return ws, fmt.Errorf("worked dxcc: %w", err)
+	}
+	if ws.Coverage, err = Coverage(db); err != nil {
+		return ws, fmt.Errorf("coverage: %w", err)
 	}
 
 	return ws, nil

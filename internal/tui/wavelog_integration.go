@@ -345,6 +345,12 @@ func buildCreateQSOInput(sidInt int, qs *qso.QSO) wavelog.CreateQSOInput {
 		SIGInfo:  qs.SIGInfo,
 		CQZone:   qs.CQZone,
 		ITUZone:  qs.ITUZone,
+		// Confirmation statuses are imported from the remote logbook; keep
+		// them on the way back so re-uploading a row cannot drop a QSL/LoTW
+		// confirmation.
+		QSLRcvd:     qs.QSLRcvd,
+		LOTWQSLRcvd: qs.LOTWQSLRcvd,
+		EQSLQSLRcvd: qs.EQSLQSLRcvd,
 	}
 	if qs.Freq > 0 {
 		in.FreqHz = int64(math.Round(qs.Freq * 1e6))

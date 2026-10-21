@@ -1703,6 +1703,14 @@ func (le *LogbookEditor) runDownload(op *downloadOp, url, key, sid string, fetch
 	applog.Info("Wavelog: contacts download complete",
 		"inserted", inserted, "dupes", dupes, "failed", failed, "processed", processed,
 		"last_id", lastID, "transient", transientFails, "unresolved", unresolved, "scan_failed", scanFailed)
+	if !scanFailed && !frozen && !idGap {
+		// Every record up to lastID is now local: the worked panel may trust a
+		// miss as NEW. A failed or partial pass leaves the previous marker, so
+		// coverage stays UNKNOWN rather than inventing a "new DXCC".
+		if err := store.MarkRemoteSync(db, time.Now()); err != nil {
+			applog.Warn("Wavelog: failed to record sync marker", "error", err)
+		}
+	}
 	if dupes > 0 {
 		applog.Warn("Wavelog: ADIF export contains duplicate QSO records — skipped during import",
 			"dupe_count", dupes,

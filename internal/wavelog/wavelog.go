@@ -415,8 +415,13 @@ type CreateQSOInput struct {
 	SIGInfo          string
 	CQZone           string // written as cqz when numeric
 	ITUZone          string // written as ituz when numeric
-	FreqHz           int64
-	FreqRxHz         int64
+	// Confirmation statuses ('Y'/'N'/""); sent verbatim so an imported
+	// confirmation is not lost when the same QSO is re-uploaded.
+	QSLRcvd     string
+	LOTWQSLRcvd string
+	EQSLQSLRcvd string
+	FreqHz      int64
+	FreqRxHz    int64
 }
 
 // CreateQSO creates a single QSO via POST /api/v2/qso (import_type=json).
@@ -466,6 +471,9 @@ func CreateQSO(baseURL, apiKey string, in CreateQSOInput) (remoteID int64, isDup
 	}
 	addInt("cqz", in.CQZone)
 	addInt("ituz", in.ITUZone)
+	addStr("qsl_rcvd", in.QSLRcvd)
+	addStr("lotw_qsl_rcvd", in.LOTWQSLRcvd)
+	addStr("eqsl_qsl_rcvd", in.EQSLQSLRcvd)
 	if in.FreqHz > 0 {
 		payload["freq"] = in.FreqHz
 	}

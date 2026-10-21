@@ -23,7 +23,7 @@ const qsoCols = `call, qso_date, time_on, time_off, band, freq, freq_rx, mode, s
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
 		wavelog_id, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
-		dxcc`
+		dxcc, dxcc_source, qsl_rcvd, lotw_qsl_rcvd, eqsl_qsl_rcvd`
 
 // qsoSelectCols is the SELECT-side column list (id + data columns +
 // timestamps) shared by the list queries.
@@ -40,9 +40,9 @@ const qsoSelectCols = `id, call, qso_date, time_on, time_off, band, freq, freq_r
 		dxcc,
 		created_at, updated_at, wavelog_dirty, wavelog_dirty_rev`
 
-// placeholders52 is a pre-computed string of 52 comma-separated "?" markers,
+// placeholders56 is a pre-computed string of 56 comma-separated "?" markers,
 // used by InsertQSO to avoid a per-insert []string allocation.
-const placeholders52 = "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?"
+const placeholders56 = "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?"
 
 // insertQSO writes one QSO through the given executor (a *sql.DB or a
 // *sql.Tx). InsertQSO adds the SQLITE_BUSY retry for standalone writes;
@@ -56,10 +56,14 @@ func insertQSO(e execer, q *qso.QSO) (int64, error) {
 	if q.Source == "" {
 		q.Source = "manual"
 	}
+	q.DXCCSource = normalizeDXCCSource(q.DXCCSource, q.DXCC)
+	q.QSLRcvd = qso.NormalizeQSLStatus(q.QSLRcvd)
+	q.LOTWQSLRcvd = qso.NormalizeQSLStatus(q.LOTWQSLRcvd)
+	q.EQSLQSLRcvd = qso.NormalizeQSLStatus(q.EQSLQSLRcvd)
 
 	res, err := e.Exec(
 		`INSERT INTO qsos (`+qsoCols+`, base_call, created_at, updated_at)
-		VALUES (`+placeholders52+`, ?, ?, ?)`,
+		VALUES (`+placeholders56+`, ?, ?, ?)`,
 		q.Call, q.QSODate, q.TimeOn, q.TimeOff,
 		q.Band, q.Freq, q.FreqRx, q.Mode, q.Submode,
 		q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
@@ -68,6 +72,7 @@ func insertQSO(e execer, q *qso.QSO) (int64, error) {
 		q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
 		q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
 		q.CQZone, q.ITUZone, q.MyCQZone, q.MyITUZone, q.MyDXCC, q.MySIG, q.MySIGInfo, q.WavelogID, q.ContestID, q.ExchSent, q.ExchRcvd, q.STX, q.SRX, q.STXString, q.SRXString, q.ContestADIFID, q.DXCC,
+		q.DXCCSource, q.QSLRcvd, q.LOTWQSLRcvd, q.EQSLQSLRcvd,
 		qso.DeriveBaseCall(q.Call),
 		q.CreatedAt.Format(time.RFC3339), q.UpdatedAt.Format(time.RFC3339),
 	)
@@ -80,6 +85,20 @@ func insertQSO(e execer, q *qso.QSO) (int64, error) {
 	}
 	q.ID = id
 	return id, nil
+}
+
+// normalizeDXCCSource fills in the provenance for a QSO that does not carry
+// one: an entity number supplied with the record is "explicit", a missing one
+// is "unknown" until a callbook or the CTY prefix lookup resolves it.
+func normalizeDXCCSource(src, dxcc string) string {
+	src = strings.TrimSpace(src)
+	if src != "" {
+		return src
+	}
+	if strings.TrimSpace(dxcc) != "" {
+		return qso.DXCCSourceExplicit
+	}
+	return qso.DXCCSourceUnknown
 }
 
 // execer is the minimal SQL execution surface shared by *sql.DB and *sql.Tx.
@@ -617,6 +636,7 @@ func GetQSOByID(db *sql.DB, id int64) (*qso.QSO, error) {
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
 		wavelog_id, wavelog_dirty, wavelog_dirty_rev, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
+		dxcc_source, qsl_rcvd, lotw_qsl_rcvd, eqsl_qsl_rcvd,
 		created_at, updated_at
 		FROM qsos WHERE id = ?`, id,
 	).Scan(
@@ -631,6 +651,7 @@ func GetQSOByID(db *sql.DB, id int64) (*qso.QSO, error) {
 		&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
 		&q.MySIG, &q.MySIGInfo,
 		&q.WavelogID, &q.WavelogDirty, &q.WavelogDirtyRev, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
+		&q.DXCCSource, &q.QSLRcvd, &q.LOTWQSLRcvd, &q.EQSLQSLRcvd,
 		&createdAt, &updatedAt,
 	)
 	if err != nil {
@@ -1046,12 +1067,23 @@ func buildUpdateQSOStatement(q *qso.QSO, oldCall, extraSet string) (string, []an
 	callChanged := oldCall != "" && !strings.EqualFold(oldCall, q.Call)
 
 	dxccSet := ""
-	dxccArg := ""
-	if q.DXCC != "" {
-		dxccSet = ", dxcc=?"
-		dxccArg = q.DXCC
-	} else if callChanged {
-		dxccSet = ", dxcc=?"
+	var dxccArgs []any
+	switch {
+	case q.DXCC != "":
+		src := q.DXCCSource
+		if src == "" {
+			src = qso.DXCCSourceExplicit
+		}
+		dxccSet = ", dxcc=?, dxcc_source=?"
+		dxccArgs = []any{q.DXCC, src}
+	case callChanged:
+		// The stored entity belonged to the old callsign — it is no longer
+		// valid, and the backfill must be able to tell that it is unresolved.
+		dxccSet = ", dxcc=?, dxcc_source=?"
+		dxccArgs = []any{"", qso.DXCCSourceUnknown}
+	case q.DXCCSource != "":
+		dxccSet = ", dxcc_source=?"
+		dxccArgs = []any{q.DXCCSource}
 	}
 
 	query := `UPDATE qsos SET call=?, qso_date=?, time_on=?, time_off=?, band=?, freq=?, freq_rx=?, mode=?, submode=?,
@@ -1064,6 +1096,9 @@ func buildUpdateQSOStatement(q *qso.QSO, oldCall, extraSet string) (string, []an
 		my_cq_zone=?, my_itu_zone=?, my_dxcc=?,
 		my_sig=?, my_sig_info=?,
 		contest_id=?, exch_sent=?, exch_rcvd=?, stx=?, srx=?, stx_string=?, srx_string=?, contest_adif_id=?,
+		qsl_rcvd = COALESCE(NULLIF(?, ''), qsl_rcvd),
+		lotw_qsl_rcvd = COALESCE(NULLIF(?, ''), lotw_qsl_rcvd),
+		eqsl_qsl_rcvd = COALESCE(NULLIF(?, ''), eqsl_qsl_rcvd),
 		base_call=?` + dxccSet + extraSet + `,
 		updated_at=?
 		WHERE id=?`
@@ -1078,11 +1113,10 @@ func buildUpdateQSOStatement(q *qso.QSO, oldCall, extraSet string) (string, []an
 		q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
 		q.CQZone, q.ITUZone, q.MyCQZone, q.MyITUZone, q.MyDXCC, q.MySIG, q.MySIGInfo,
 		q.ContestID, q.ExchSent, q.ExchRcvd, q.STX, q.SRX, q.STXString, q.SRXString, q.ContestADIFID,
+		q.QSLRcvd, q.LOTWQSLRcvd, q.EQSLQSLRcvd,
 		qso.DeriveBaseCall(q.Call),
 	}
-	if dxccSet != "" {
-		args = append(args, dxccArg)
-	}
+	args = append(args, dxccArgs...)
 	args = append(args, q.UpdatedAt.Format(time.RFC3339), q.ID)
 	return query, args
 }
@@ -1259,12 +1293,11 @@ func UpdateQSOEnrichment(db *sql.DB, qsoID int64, e EnrichmentData) error {
 		sets = append(sets, "itu_zone = CASE WHEN COALESCE(itu_zone,'') = '' THEN ? ELSE itu_zone END")
 		args = append(args, e.ITUZone)
 	}
-	if e.DXCC != "" {
-		sets = append(sets, "dxcc = CASE WHEN COALESCE(dxcc,'') = '' THEN ? ELSE dxcc END")
-		args = append(args, e.DXCC)
-	}
+	// dxcc and its provenance are written together by a guarded UPDATE below,
+	// never by a CASE guard: the guard decides once, against the stored row,
+	// so the number and its origin cannot disagree.
 
-	if len(sets) == 0 {
+	if len(sets) == 0 && e.DXCC == "" {
 		return nil
 	}
 
@@ -1280,10 +1313,21 @@ func UpdateQSOEnrichment(db *sql.DB, qsoID int64, e EnrichmentData) error {
 	// update whose result cannot be predicted from e).
 	oldQSO, oldErr := loadQSOForIndex(tx, qsoID)
 
-	args = append(args, qsoID)
-	query := fmt.Sprintf("UPDATE qsos SET %s WHERE id = ?", strings.Join(sets, ", "))
-	if _, err := tx.Exec(query, args...); err != nil {
-		return fmt.Errorf("update qso enrichment: %w", err)
+	if len(sets) > 0 {
+		args = append(args, qsoID)
+		query := fmt.Sprintf("UPDATE qsos SET %s WHERE id = ?", strings.Join(sets, ", "))
+		if _, err := tx.Exec(query, args...); err != nil {
+			return fmt.Errorf("update qso enrichment: %w", err)
+		}
+	}
+	if e.DXCC != "" {
+		// Only an unresolved row accepts the callbook entity, and its
+		// provenance changes with it.
+		if _, err := tx.Exec(
+			`UPDATE qsos SET dxcc = ?, dxcc_source = ? WHERE id = ? AND COALESCE(dxcc,'') = ''`,
+			e.DXCC, qso.DXCCSourceCallbook, qsoID); err != nil {
+			return fmt.Errorf("update qso enrichment dxcc: %w", err)
+		}
 	}
 
 	if oldErr == nil {
@@ -1325,7 +1369,7 @@ func BackfillDXCC(db *sql.DB, byID map[int64]string) (int, error) {
 		if oldErr != nil {
 			continue
 		}
-		res, err := tx.Exec(`UPDATE qsos SET dxcc = ? WHERE id = ? AND COALESCE(dxcc,'') = ''`, dxcc, id)
+		res, err := tx.Exec(`UPDATE qsos SET dxcc = ?, dxcc_source = ? WHERE id = ? AND COALESCE(dxcc,'') = ''`, dxcc, qso.DXCCSourcePrefix, id)
 		if err != nil {
 			return updated, fmt.Errorf("dxcc backfill update: %w", err)
 		}
