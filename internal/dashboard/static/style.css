@@ -441,6 +441,10 @@ body{font-family:system-ui,-apple-system,sans-serif;background:
    which no media query could override, and were the smallest text on screen. */
 .xmod-row{display:flex;flex-wrap:wrap;justify-content:center;gap:0.25rem 0.75rem;font-size:0.92rem;line-height:1.45}
 .xmod-dim{color:var(--dim)}
+.xmod-ok{color:var(--success)}
+.xmod-warn{color:var(--warn)}
+.xmod-bad{color:var(--offline)}
+.xmod-na{color:var(--dim)}
 .xmod-spot-call{font-size:1.15rem;font-weight:700;color:var(--accent);line-height:1.25}
 .xmod-spot-freq{font-size:0.88rem;color:var(--text-secondary);line-height:1.35}
 .xmod-spot-comment{font-size:0.82rem;color:var(--dim);margin-top:2px;line-height:1.35}

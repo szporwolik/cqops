@@ -1212,9 +1212,22 @@ function registerSolarModule(d){
   // Remove previously registered solar sub-modules.
   extraModules=extraModules.filter(function(f){return f._id!=='solar' && f._id!=='band-cond'});
   var sf=d.solarFlux||0, a=d.aIndex||0, k=d.kIndex||0, ss=d.sunspots||0;
-  function sc(v,good,fair){return v<=good?'var(--success)':v<=fair?'var(--warn)':'var(--offline)'}
-  function sn(v){return v||'—'}
-  function cond(v,good,fair){var c=sc(v,good,fair);return'<b style="color:'+c+'">'+sn(v)+'</b>'}
+  // Status colours are CSS classes (xmod-ok/warn/bad/na) so they follow the
+  // theme and the type ramp instead of inline style attributes.
+  // A missing value (the feed omits <solarflux> between daily updates) must
+  // read as "not known": 0 used to pass the old v<=good test and painted the
+  // dash green, i.e. an absent SFI looked like perfect conditions.
+  var solarKnown=sf>0||a>0||k>0||ss>0;
+  function val(v,cls,known){
+    if(!known||cls==='na')return'<b class="xmod-na">—</b>';
+    return cls?'<b class="xmod-'+cls+'">'+v+'</b>':'<b>'+v+'</b>';
+  }
+  // SFI is the opposite of the geomagnetic indices: HIGHER is better. The old
+  // "<=100 green, >150 red" scale flagged excellent propagation as a fault.
+  function sfiCls(v){return v<=0?'na':v<70?'bad':v<100?'warn':v>=150?'ok':''}
+  function aCls(v){return v<=7?'ok':v<=15?'warn':'bad'}
+  function kCls(v){return v<=2.5?'ok':v<=4?'warn':'bad'}
+  function sunCls(v){return v<20?'bad':''}
 
   // Module 1: Solar activity (SFI + Sunspots).
   // Sizes live in style.css (xmod-* classes) so they follow the type ramp —
@@ -1222,8 +1235,8 @@ function registerSolarModule(d){
   var m1=function(){
     return'<div class="extra-title">Solar Activity</div>'+
       '<div class="xmod-row">'+
-      '<span><span class="xmod-dim">SFI</span> '+cond(sf,100,150)+'</span>'+
-      '<span><span class="xmod-dim">Sunspots</span> <b>'+sn(ss)+'</b></span>'+
+      '<span><span class="xmod-dim">SFI</span> '+val(sf,sfiCls(sf),solarKnown)+'</span>'+
+      '<span><span class="xmod-dim">Sunspots</span> '+val(ss,sunCls(ss),solarKnown)+'</span>'+
       '</div>';
   };m1._id='solar';
 
@@ -1231,8 +1244,8 @@ function registerSolarModule(d){
   var m2=function(){
     return'<div class="extra-title">Geomagnetic Field</div>'+
       '<div class="xmod-row">'+
-      '<span><span class="xmod-dim">A-index</span> '+cond(a,7,15)+'</span>'+
-      '<span><span class="xmod-dim">K-index</span> '+cond(k,2.5,4)+'</span>'+
+      '<span><span class="xmod-dim">A-index</span> '+val(a,aCls(a),solarKnown)+'</span>'+
+      '<span><span class="xmod-dim">K-index</span> '+val(k,kCls(k),solarKnown)+'</span>'+
       '</div>';
   };m2._id='solar';
 
