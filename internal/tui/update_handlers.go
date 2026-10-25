@@ -678,8 +678,8 @@ func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
 func (m *Model) handleLookupResultMsg(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	switch r := msg.(type) {
 	case callbookResultMsg:
-		enriched := m.fillCallbookData(r)
-		cmd = tea.Batch(cmd, m.updateFilteredTable())
+		enriched, syncCmd := m.fillCallbookData(r)
+		cmd = tea.Batch(cmd, m.updateFilteredTable(), syncCmd)
 		if enriched {
 			// A late answer landed in the contact that was just logged — the
 			// table still shows the row without it.

@@ -29,7 +29,7 @@ func TestLateCallbookResultEnrichesSavedQSO(t *testing.T) {
 	// The operator has already moved on to the next callsign.
 	m.fields[fieldCall].SetValue("DL2XYZ")
 
-	enriched := m.fillCallbookData(callbookResultMsg{
+	enriched, syncCmd := m.fillCallbookData(callbookResultMsg{
 		Call: saved.Call,
 		Data: &callbook.Result{
 			Callsign: saved.Call,
@@ -42,6 +42,11 @@ func TestLateCallbookResultEnrichesSavedQSO(t *testing.T) {
 	})
 	if !enriched {
 		t.Fatal("late result was not applied to the saved contact")
+	}
+	// The contact was never uploaded in this fixture, so there is nothing to
+	// PATCH — the row only carries a bumped revision.
+	if syncCmd != nil {
+		t.Error("a contact without a remote id must not schedule a PATCH")
 	}
 
 	stored, err := store.GetQSOByID(m.App.DB, saved.ID)
@@ -68,7 +73,7 @@ func TestLateCallbookResultEnrichesSavedQSO(t *testing.T) {
 	if m.lookup.savedID != 0 {
 		t.Errorf("saved id not cleared: %d", m.lookup.savedID)
 	}
-	if m.fillCallbookData(callbookResultMsg{Call: saved.Call, Data: &callbook.Result{Callsign: saved.Call, Name: "x"}}) {
+	if again, _ := m.fillCallbookData(callbookResultMsg{Call: saved.Call, Data: &callbook.Result{Callsign: saved.Call, Name: "x"}}); again {
 		t.Error("second late result was applied again")
 	}
 }
@@ -95,7 +100,7 @@ func TestLateCallbookResultFillsSavedRowNotBlankForm(t *testing.T) {
 		t.Fatal("form session did not advance on save")
 	}
 
-	enriched := m.fillCallbookData(callbookResultMsg{
+	enriched, _ := m.fillCallbookData(callbookResultMsg{
 		Call:    saved.Call,
 		Session: session, // dispatched before the save
 		Data: &callbook.Result{
@@ -136,7 +141,7 @@ func TestCallbookAnswerFillsTheFormItWasAskedFor(t *testing.T) {
 	m.fields[fieldCall].SetValue("DL7XYZ")
 
 	session := m.lookup.formGen
-	filled := m.fillCallbookData(callbookResultMsg{
+	filled, _ := m.fillCallbookData(callbookResultMsg{
 		Call:    "DL7XYZ",
 		Session: session,
 		Data:    &callbook.Result{Callsign: "DL7XYZ", Name: "Marty", Grid: "JO31aa", QTH: "Essen"},
@@ -162,10 +167,10 @@ func TestLateCallbookResultIgnoresOtherCalls(t *testing.T) {
 	saved := latestQSO(t, m)
 
 	m.fields[fieldCall].SetValue("DL2XYZ")
-	if m.fillCallbookData(callbookResultMsg{
+	if applied, _ := m.fillCallbookData(callbookResultMsg{
 		Call: "SP9ZZZ",
 		Data: &callbook.Result{Callsign: "SP9ZZZ", Name: "Someone else", Grid: "JO90aa"},
-	}) {
+	}); applied {
 		t.Fatal("result for an unrelated call was applied")
 	}
 	stored, err := store.GetQSOByID(m.App.DB, saved.ID)

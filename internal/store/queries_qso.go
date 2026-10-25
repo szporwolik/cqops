@@ -1291,12 +1291,68 @@ type EnrichmentData struct {
 	DXCC       string
 }
 
+// EnrichmentSync reports what an enrichment write did to a contact's
+// remote-sync state.
+type EnrichmentSync struct {
+	// Changed is true when the row actually gained values. The CASE guards
+	// leave a fully populated row untouched, and an untouched row must not
+	// look like a local edit.
+	Changed bool
+	// Synced is true when the row carries a Wavelog remote id: the
+	// enrichment now diverges from the remote copy, so a PATCH is owed.
+	Synced bool
+	// Revision is the pending-sync revision the change got.
+	Revision int64
+}
+
+// enrichmentSnapshot is the subset of a row that enrichment can change, plus
+// the sync bookkeeping needed to decide whether a PATCH is owed.
+type enrichmentSnapshot struct {
+	name, qth, country, grid, iota, cq, itu, dxcc string
+	wavelogID, rev                                int64
+}
+
+func readEnrichmentSnapshot(tx *sql.Tx, id int64) (enrichmentSnapshot, error) {
+	var s enrichmentSnapshot
+	err := tx.QueryRow(`SELECT COALESCE(name,''), COALESCE(qth,''), COALESCE(country,''),
+		COALESCE(gridsquare,''), COALESCE(iota,''), COALESCE(cq_zone,''), COALESCE(itu_zone,''),
+		COALESCE(dxcc,''), COALESCE(wavelog_id,0), COALESCE(wavelog_dirty_rev,0)
+		FROM qsos WHERE id=?`, id).Scan(
+		&s.name, &s.qth, &s.country, &s.grid, &s.iota, &s.cq, &s.itu, &s.dxcc, &s.wavelogID, &s.rev)
+	if err != nil {
+		return s, err
+	}
+	return s, nil
+}
+
 // UpdateQSOEnrichment applies callbook enrichment to a QSO.
 // Only fields that are currently empty in the database are updated —
 // existing data is never overwritten by enrichment.
 func UpdateQSOEnrichment(db *sql.DB, qsoID int64, e EnrichmentData) error {
+	_, err := EnrichQSO(db, qsoID, e)
+	return err
+}
+
+// EnrichQSO applies callbook enrichment and keeps the remote-sync bookkeeping
+// honest. It is UpdateQSOEnrichment plus the answer to "does Wavelog still
+// have to hear about this?":
+//
+// A contact is usually uploaded before the callbook answers (a QRZ lookup can
+// take a minute), so filling its name/grid/QTH afterwards left the local row
+// richer than the remote copy while the sync machinery still considered the
+// contact up to date — the Wavelog copy stayed incomplete forever. A row that
+// already carries a remote id and actually gained values is therefore marked
+// pending (wavelog_dirty=1) with a fresh revision, exactly like a normal
+// local edit, and the caller pushes it through the usual per-contact PATCH
+// coordinator. Rows without a remote id only bump the revision, so an
+// initial upload in flight notices the change and stays pending.
+//
+// A no-op enrichment (row already complete) touches nothing: no revision, no
+// dirty flag, no PATCH.
+func EnrichQSO(db *sql.DB, qsoID int64, e EnrichmentData) (EnrichmentSync, error) {
+	var res EnrichmentSync
 	if e.Name == "" && e.QTH == "" && e.Country == "" && e.GridSquare == "" && e.IOTA == "" && e.CQZone == "" && e.ITUZone == "" && e.DXCC == "" {
-		return nil
+		return res, nil
 	}
 
 	var sets []string
@@ -1335,14 +1391,19 @@ func UpdateQSOEnrichment(db *sql.DB, qsoID int64, e EnrichmentData) error {
 	// so the number and its origin cannot disagree.
 
 	if len(sets) == 0 && e.DXCC == "" {
-		return nil
+		return res, nil
 	}
 
 	tx, err := db.Begin()
 	if err != nil {
-		return fmt.Errorf("begin enrichment: %w", err)
+		return res, fmt.Errorf("begin enrichment: %w", err)
 	}
 	defer tx.Rollback()
+
+	before, err := readEnrichmentSnapshot(tx, qsoID)
+	if err != nil {
+		return res, fmt.Errorf("read qso before enrichment: %w", err)
+	}
 
 	// Enrichment fills dxcc, grid, country and zones — exactly the columns the
 	// worked index aggregates over — so the index has to follow in the same
@@ -1354,7 +1415,7 @@ func UpdateQSOEnrichment(db *sql.DB, qsoID int64, e EnrichmentData) error {
 		args = append(args, qsoID)
 		query := fmt.Sprintf("UPDATE qsos SET %s WHERE id = ?", strings.Join(sets, ", "))
 		if _, err := tx.Exec(query, args...); err != nil {
-			return fmt.Errorf("update qso enrichment: %w", err)
+			return res, fmt.Errorf("update qso enrichment: %w", err)
 		}
 	}
 	if e.DXCC != "" {
@@ -1363,23 +1424,50 @@ func UpdateQSOEnrichment(db *sql.DB, qsoID int64, e EnrichmentData) error {
 		if _, err := tx.Exec(
 			`UPDATE qsos SET dxcc = ?, dxcc_source = ? WHERE id = ? AND COALESCE(dxcc,'') = ''`,
 			e.DXCC, qso.DXCCSourceCallbook, qsoID); err != nil {
-			return fmt.Errorf("update qso enrichment dxcc: %w", err)
+			return res, fmt.Errorf("update qso enrichment dxcc: %w", err)
 		}
+	}
+
+	after, err := readEnrichmentSnapshot(tx, qsoID)
+	if err != nil {
+		return res, fmt.Errorf("read qso after enrichment: %w", err)
+	}
+	changed := before.name != after.name || before.qth != after.qth ||
+		before.country != after.country || before.grid != after.grid ||
+		before.iota != after.iota || before.cq != after.cq ||
+		before.itu != after.itu || before.dxcc != after.dxcc
+
+	if changed {
+		// Same bookkeeping as a normal edit: the enrichment is a local change
+		// the server does not have yet.
+		if _, err := tx.Exec(
+			`UPDATE qsos SET wavelog_dirty = CASE WHEN COALESCE(wavelog_id,0) > 0 THEN 1 ELSE wavelog_dirty END,
+				wavelog_dirty_rev = COALESCE(wavelog_dirty_rev,0) + 1 WHERE id=?`, qsoID); err != nil {
+			return res, fmt.Errorf("mark enriched qso pending sync: %w", err)
+		}
+		if err := tx.QueryRow(`SELECT COALESCE(wavelog_dirty_rev,0) FROM qsos WHERE id=?`, qsoID).Scan(&res.Revision); err != nil {
+			return res, fmt.Errorf("read sync revision after enrichment: %w", err)
+		}
+		res.Changed = true
+		res.Synced = before.wavelogID > 0
 	}
 
 	if oldErr == nil {
 		if err := indexQSO(tx, oldQSO, -1); err != nil {
-			return err
+			return res, err
 		}
 		newQSO, lerr := loadQSOForIndex(tx, qsoID)
 		if lerr != nil {
-			return fmt.Errorf("reload qso for worked index: %w", lerr)
+			return res, fmt.Errorf("reload qso for worked index: %w", lerr)
 		}
 		if err := indexQSO(tx, newQSO, 1); err != nil {
-			return err
+			return res, err
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return res, err
+	}
+	return res, nil
 }
 
 // BackfillDXCC sets the DXCC entity on rows whose dxcc column is still empty,
