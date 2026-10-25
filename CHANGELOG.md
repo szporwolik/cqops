@@ -21,6 +21,7 @@
 
 ### Wavelog
 - <u>**Uploads carry the power and the references**</u>: the v2 JSON create sent only core columns, so Wavelog kept its station-profile power and dropped SOTA/POTA/WWFF/IOTA/SIG references, the operator and the CQ/ITU zones. All of them are in the payload now, empty ones omitted.
+- <u>**The lookup response decodes again**</u>: Wavelog documents `dxcc_id` as a string but answers a bare number (`"dxcc_id": 287`), which failed the *whole* lookup block — the Wavelog provider reported an error and still burned its timeout inside the callbook chain, delaying the QRZ answer behind it. Numeric, quoted and null values all decode now.
 
 ### Worked status
 - <u>**No more NEW when the log cannot know**</u>: unresolved DXCC, missing band/mode or a never-completed remote sync read as UNKNOWN; NEW only when that dimension is complete. A clean Wavelog download records the sync marker, and a remote answer can upgrade an UNKNOWN verdict but never downgrade a known contact.
@@ -36,6 +37,8 @@
 - <u>**The comment carries the contest name**</u>: prefilled while a contest is active, never overwriting operator text, and a deliberate clear stays cleared.
 
 ### Fixes
+- <u>**A late callbook answer fills the contact it belongs to**</u>: a QRZ lookup can take a minute, and the operator has usually typed the next callsign by then — the result was discarded because it no longer matched the form, so the contact stayed in the log as a half-filled line (no name, grid, QTH or distance) forever. Such a result is now written into the row that was just saved, and the table refreshes.
+- <u>**SSB contacts always carry their sideband**</u>: rows that reach the store without a submode (an ADIF import with only `MODE=SSB`, a spot fill, an edit that lost it) are given LSB below 10 MHz and USB above, the same rule the form applies, so `Mode SSB` no longer sits next to `Sub —`.
 - <u>**The worked index stays in step**</u>: saving only a comment dropped the contact from the DXCC history — the form indexed the object it was handed (no DXCC in it) while SQL preserved the stored value. The index is built from the row as stored, inside the same transaction, and enrichment plus the Big CTY backfill write through it too. Schema is 4: the upgrade backfills and rebuilds once.
 - <u>**The single-instance guard cannot be bypassed**</u>: it judged the lock by the process name `cqops`, so a release binary, renamed copy or AppImage never matched and answering "y" produced **two instances on one logbook**. The OS lock is the only authority now.
 - **Windows binaries report the right version**: the PE resources still said `0.8.13.0` and are regenerated at 0.11.2.

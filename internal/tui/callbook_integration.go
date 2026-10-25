@@ -19,6 +19,7 @@ import (
 	"github.com/szporwolik/cqops/internal/qrzcom"
 	"github.com/szporwolik/cqops/internal/qrzru"
 	"github.com/szporwolik/cqops/internal/qso"
+	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
@@ -342,20 +343,24 @@ func (m *Model) wlLookup(call string) tea.Cmd {
 }
 
 // fillCallbookData fills the QSO form from callbook lookup result data.
-func (m *Model) fillCallbookData(msg callbookResultMsg) {
+// fillCallbookData applies a callbook result to the QSO form. It returns true
+// when the result could not be used by the form (the operator already moved
+// on) but was written into the contact that was just logged — the caller
+// refreshes the table in that case.
+func (m *Model) fillCallbookData(msg callbookResultMsg) bool {
 	if msg.Call == "" {
-		return
+		return false
 	}
 	// A late result from a previous logbook must never fill the form for
 	// the current one — the logbook provider queried the old database.
 	if msg.Logbook != "" && msg.Logbook != m.App.LogbookName {
 		applog.Debug("Callbook: stale result discarded",
 			"from", msg.Logbook, "current", m.App.LogbookName, "call", msg.Call)
-		return
+		return false
 	}
 	formCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
 	if formCall != "" && formCall != strings.ToUpper(msg.Call) {
-		return
+		return m.enrichSavedQSO(msg)
 	}
 	m.lookup.qrzLookupDone = true
 	m.lookup.qrzLookupCall = strings.ToUpper(msg.Call)
@@ -363,14 +368,14 @@ func (m *Model) fillCallbookData(msg callbookResultMsg) {
 		m.toasts.Error("Callbook: " + msg.Err.Error())
 		m.clearQRZFields()
 		m.prefillContestExchange()
-		return
+		return false
 	}
 	d := msg.Data
 	if d == nil || d.Callsign == "" {
 		m.showCallbookToast(msg.Call) // show "no data" toast if everything is done
 		m.clearQRZFields()
 		m.prefillContestExchange()
-		return
+		return false
 	}
 	m.lookup.partnerData = d
 	m.invalidatePartnerMapCache()
@@ -445,6 +450,52 @@ func (m *Model) fillCallbookData(msg callbookResultMsg) {
 	// Recalculate exchange fields — async lookup may have filled grid/zone
 	// data that contest exchange markers depend on.
 	m.prefillContestExchange()
+	return false
+}
+
+// enrichSavedQSO writes a callbook result into the contact that was just
+// logged, for the case where the answer arrived after the operator had
+// already typed the next callsign. Without it the row keeps the empty
+// name/grid/QTH the form had at save time — visible as half-filled lines in
+// Recent QSOs and in the logbook editor — and the next lookup for that call
+// pays the same latency again. Returns true when something was written, so
+// the caller can refresh the table.
+func (m *Model) enrichSavedQSO(msg callbookResultMsg) bool {
+	if m.lookup.savedID == 0 || msg.Data == nil || msg.Data.Callsign == "" {
+		return false
+	}
+	if !strings.EqualFold(msg.Call, m.lookup.savedCall) {
+		return false
+	}
+	// The row lives in the logbook it was written to; a switch since then
+	// means the id no longer refers to it.
+	if m.lookup.savedLogbook != "" && m.lookup.savedLogbook != m.App.LogbookName {
+		m.lookup.savedID, m.lookup.savedCall, m.lookup.savedLogbook = 0, "", ""
+		return false
+	}
+	if m.App.DB == nil {
+		return false
+	}
+	d := msg.Data
+	err := store.UpdateQSOEnrichment(m.App.DB, m.lookup.savedID, store.EnrichmentData{
+		Name:       d.Name,
+		QTH:        d.QTH,
+		Country:    d.Country,
+		GridSquare: d.Grid,
+		CQZone:     d.CQZone,
+		ITUZone:    d.ITUZone,
+		DXCC:       d.DXCC,
+	})
+	if err != nil {
+		applog.Warn("Callbook: late enrichment failed",
+			"call", d.Callsign, "qso_id", m.lookup.savedID, "error", err)
+		return false
+	}
+	applog.Info("Callbook: late result applied to the saved contact",
+		"call", d.Callsign, "qso_id", m.lookup.savedID,
+		"name", d.Name, "grid", d.Grid, "dxcc", d.DXCC)
+	m.lookup.savedID, m.lookup.savedCall, m.lookup.savedLogbook = 0, "", ""
+	return true
 }
 
 // showCallbookToast shows a single consolidated toast listing all providers

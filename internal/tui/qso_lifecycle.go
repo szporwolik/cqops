@@ -159,6 +159,9 @@ func (m *Model) saveQSO() tea.Cmd {
 		m.toasts.Error(fmt.Sprintf("QSO: save failed — %v", err))
 		return nil
 	}
+	// Remember which contact this is: a callbook answer that arrives after
+	// the operator typed the next call is still the data for this row.
+	m.lookup.savedID, m.lookup.savedCall, m.lookup.savedLogbook = qs.ID, qs.Call, m.App.LogbookName
 
 	// Increment contest Next QSO seq on successful save.
 	if qs.ContestID != "" {

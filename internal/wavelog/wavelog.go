@@ -127,9 +127,9 @@ type PrivateLookupResult struct {
 func newLookupResult(d *lookupData) *PrivateLookupResult {
 	return &PrivateLookupResult{
 		callsign:          d.Callsign,
-		dxcc:              d.DXCC,
-		dxccID:            d.DXCCID,
-		dxccCQZ:           d.DXCCCQZ,
+		dxcc:              d.DXCC.String(),
+		dxccID:            d.DXCCID.String(),
+		dxccCQZ:           d.DXCCCQZ.String(),
 		dxccITUZ:          strconv.Itoa(d.DXCCITUZ),
 		name:              d.Name,
 		gridsquare:        d.Gridsquare,

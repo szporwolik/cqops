@@ -60,6 +60,10 @@ func insertQSO(e execer, q *qso.QSO) (int64, error) {
 	q.QSLRcvd = qso.NormalizeQSLStatus(q.QSLRcvd)
 	q.LOTWQSLRcvd = qso.NormalizeQSLStatus(q.LOTWQSLRcvd)
 	q.EQSLQSLRcvd = qso.NormalizeQSLStatus(q.EQSLQSLRcvd)
+	// Single choke point for the sideband: every writer (form save, WSJT-X,
+	// ADIF import, editor, Wavelog sync) stores an SSB contact with LSB/USB
+	// instead of an empty submode.
+	qso.FillSSBSubmode(q)
 
 	res, err := e.Exec(
 		`INSERT INTO qsos (`+qsoCols+`, base_call, created_at, updated_at)
@@ -1094,6 +1098,10 @@ func listQSOsByQuery(q qsoQueryer, query string, args ...any) ([]qso.QSO, error)
 func buildUpdateQSOStatement(q *qso.QSO, oldCall, extraSet string) (string, []any) {
 	q.UpdatedAt = time.Now().UTC()
 	callChanged := oldCall != "" && !strings.EqualFold(oldCall, q.Call)
+	// The update writes submode=? verbatim, so an SSB row that lost its
+	// sideband (an edit, a remote merge) would be blanked by every save.
+	// Apply the same rule the insert path uses.
+	qso.FillSSBSubmode(q)
 
 	dxccSet := ""
 	var dxccArgs []any

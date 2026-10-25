@@ -50,6 +50,15 @@ type lookupState struct {
 	// Consolidated callbook toast: shown once per call after all lookups complete.
 	callbookToastCall string // call for which the consolidated toast was already shown
 
+	// The contact the operator logged last. A callbook answer can take a
+	// minute (QRZ is slow, the Wavelog provider times out) and by then the
+	// next callsign is already in the form — the result is stale for the
+	// FORM but still the right data for the row just written, so it is
+	// applied to the store instead of being thrown away.
+	savedID      int64
+	savedCall    string
+	savedLogbook string
+
 	// noProviderWarned suppresses repeated "no callbook provider configured"
 	// warnings during a session.
 	noProviderWarned bool
