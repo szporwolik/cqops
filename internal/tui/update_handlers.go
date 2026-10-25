@@ -154,6 +154,10 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 	// Only update the QSO form clock when the form is visible.
 	if m.screen == screenQSO {
 		m.autoUpdateDateTime()
+		// The active contest can change outside the form (contest menu, config
+		// reload); keep the Comment tag in step. No-op when the contest did not
+		// change, so operator edits are safe.
+		m.applyContestComment()
 	}
 	m.tickCount++
 	// Dispatch async DB fetches flagged by the last View().

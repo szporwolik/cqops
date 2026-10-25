@@ -958,6 +958,11 @@ func (m *Model) resetQSOFields() {
 	if retainedComment != "" {
 		m.fields[fieldComment].SetValue(retainedComment)
 	}
+	// A new QSO starts with the active contest's name in the comment (an
+	// operator comment kept above stays untouched). The tracking is reset so
+	// the tag is re-evaluated even though the contest itself did not change.
+	m.contestCommentFor = ""
+	m.applyContestComment()
 	m.dateTimeAuto = true
 	m.keepFocused = false
 	m.gridSource = gridSourceNone

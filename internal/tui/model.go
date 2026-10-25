@@ -200,6 +200,13 @@ type Model struct {
 	gridSource      gridSource
 	qthSource       gridSource // origin of the QTH field value (same precedence as grid)
 
+	// Contest comment tag: the text the form itself wrote into the Comment
+	// field for an active contest, and which contest it belongs to. Tracking
+	// both lets the prefill replace its own tag (contest switch) or remove it
+	// (contest cleared) without ever touching text the operator typed.
+	contestComment    string
+	contestCommentFor string
+
 	keys           KeyMap
 	help           help.Model
 	recentQSOs     *RecentQSOs // read-only Recent QSOs view
@@ -443,6 +450,9 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	if m.keepComment && a.Config.State.RetainedComment != "" {
 		m.fields[fieldComment].SetValue(a.Config.State.RetainedComment)
 	}
+	// Start with the active contest's name in the comment unless a retained
+	// comment is already there.
+	m.applyContestComment()
 	return m
 }
 
@@ -1808,11 +1818,60 @@ func (m *Model) prefillPreviousContestExchange(call string) {
 	}
 }
 
+// activeContestIDName returns the active contest's stable id and the name
+// shown to the operator ("" when no contest is active).
+func (m *Model) activeContestIDName() (string, string) {
+	if m.App == nil || m.App.Logbook == nil || m.App.Config == nil {
+		return "", ""
+	}
+	id := m.App.Logbook.ActiveContest
+	if id == "" {
+		return "", ""
+	}
+	ct, ok := m.App.Config.Contests[id]
+	if !ok {
+		return id, ""
+	}
+	return id, config.ContestDisplayName(&ct)
+}
+
+// applyContestComment tags the Comment field with the active contest name.
+// It writes only when the field is empty or still holds the tag this form
+// wrote for the contest it is leaving, so operator text (including a comment
+// retained by the Keep Comment setting) is never overwritten. Clearing the
+// contest removes just the tag. The contest id is tracked so a deliberate
+// clear during a contest is not undone on the next tick.
+func (m *Model) applyContestComment() {
+	id, name := m.activeContestIDName()
+	if id == m.contestCommentFor && id != "" {
+		return
+	}
+	cur := strings.TrimSpace(m.fields[fieldComment].Value())
+	switch {
+	case name == "":
+		// Contest cleared (or deactivated): drop only our own tag.
+		if m.contestComment != "" && cur == m.contestComment {
+			m.fields[fieldComment].SetValue("")
+		}
+		m.contestComment = ""
+	case cur == "" || cur == m.contestComment:
+		m.fields[fieldComment].SetValue(name)
+		m.contestComment = name
+	default:
+		// The operator wrote something of their own — leave it alone.
+		m.contestComment = ""
+	}
+	m.contestCommentFor = id
+}
+
 // prefillContestExchange fills the exchange sent/rcvd fields from the active
 // contest's prefill settings. Replaces special markers with current QSO
 // and station values. Next QSO is NOT incremented here — that happens on
 // successful QSO save.
 func (m *Model) prefillContestExchange() {
+	// The comment carries the contest name (only when nothing else is there).
+	m.applyContestComment()
+
 	id := m.App.Logbook.ActiveContest
 	if id == "" {
 		return
