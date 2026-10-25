@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/szporwolik/cqops/internal/callbook"
@@ -69,6 +70,85 @@ func TestLateCallbookResultEnrichesSavedQSO(t *testing.T) {
 	}
 	if m.fillCallbookData(callbookResultMsg{Call: saved.Call, Data: &callbook.Result{Callsign: saved.Call, Name: "x"}}) {
 		t.Error("second late result was applied again")
+	}
+}
+
+// The reported case: the QSO is saved, the form is cleared and left empty,
+// and the answer arrives afterwards. The empty form used to swallow it —
+// "saved row Name=\"\", blank form Name=Late operator" — so the row stayed
+// half-filled while the form showed a contact that no longer exists.
+func TestLateCallbookResultFillsSavedRowNotBlankForm(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	fillMinimalValidQSO(m)
+	m.fields[fieldFreq].SetValue("7.155")
+
+	session := m.lookup.formGen
+	m.saveQSO()
+	saved := latestQSO(t, m)
+
+	// What the controller does after saveQSO: the form starts over.
+	m.clearForm()
+	if got := strings.TrimSpace(m.fields[fieldCall].Value()); got != "" {
+		t.Fatalf("form call = %q, want empty after save", got)
+	}
+	if m.lookup.formGen == session {
+		t.Fatal("form session did not advance on save")
+	}
+
+	enriched := m.fillCallbookData(callbookResultMsg{
+		Call:    saved.Call,
+		Session: session, // dispatched before the save
+		Data: &callbook.Result{
+			Callsign: saved.Call,
+			Name:     "Late operator",
+			Grid:     "JN46kc",
+			QTH:      "S.Bernardino",
+		},
+	})
+	if !enriched {
+		t.Fatalf("late result did not reach the saved contact (savedID=%d savedCall=%q formGen=%d session=%d)",
+			m.lookup.savedID, m.lookup.savedCall, m.lookup.formGen, session)
+	}
+
+	stored, err := store.GetQSOByID(m.App.DB, saved.ID)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if stored.Name != "Late operator" {
+		t.Errorf("saved row Name = %q, want \"Late operator\"", stored.Name)
+	}
+	if stored.GridSquare != "JN46kc" {
+		t.Errorf("saved row Grid = %q", stored.GridSquare)
+	}
+	// The blank form stays blank — the data belongs to the logged contact.
+	if got := m.fields[fieldName].Value(); got != "" {
+		t.Errorf("form Name = %q, want empty", got)
+	}
+	if got := m.fields[fieldGrid].Value(); got != "" {
+		t.Errorf("form Grid = %q, want empty", got)
+	}
+}
+
+// An answer that still belongs to the form it was asked for keeps filling the
+// form — the saved-contact path must not steal normal lookups.
+func TestCallbookAnswerFillsTheFormItWasAskedFor(t *testing.T) {
+	m := newLifecycleTestModel(t)
+	m.fields[fieldCall].SetValue("DL7XYZ")
+
+	session := m.lookup.formGen
+	filled := m.fillCallbookData(callbookResultMsg{
+		Call:    "DL7XYZ",
+		Session: session,
+		Data:    &callbook.Result{Callsign: "DL7XYZ", Name: "Marty", Grid: "JO31aa", QTH: "Essen"},
+	})
+	if filled {
+		t.Error("a form-owned answer must not be reported as a saved-contact enrichment")
+	}
+	if got := m.fields[fieldName].Value(); got != "Marty" {
+		t.Errorf("form Name = %q, want Marty", got)
+	}
+	if got := m.fields[fieldGrid].Value(); !strings.EqualFold(got, "JO31aa") {
+		t.Errorf("form Grid = %q, want JO31aa", got)
 	}
 }
 

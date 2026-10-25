@@ -224,6 +224,12 @@ type callbookResultMsg struct {
 	// Logbook the lookup ran against (captured at cmd creation); results
 	// from a previous logbook are discarded after a switch.
 	Logbook string
+	// Session is the QSO form the lookup was dispatched from. When the
+	// operator has logged the contact and started a new QSO in the
+	// meantime, the answer no longer belongs to the form — it belongs to
+	// the contact that was just saved. Zero means "unknown" (tests, or a
+	// dispatcher that does not track the form).
+	Session uint64
 }
 
 type qrzStatusMsg struct {
@@ -312,6 +318,9 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	applog.SetDebugMode(a.Config.General.Debug)
 
 	m := &Model{App: a, qsos: initialQSOS, toasts: NewToastQueue(), dateTimeAuto: true, width: 80, height: 24, inetOnline: true, Offline: a.Offline, sync: &contactSyncCoord{}}
+	// Start at session 1: zero is the "session unknown" sentinel used by
+	// callbookResultMsg, so a real form must not share it.
+	m.lookup.formGen = 1
 	a.InetOnline = true // sync with model — assume online until first health check
 
 	// Build the callbook provider registry from config.

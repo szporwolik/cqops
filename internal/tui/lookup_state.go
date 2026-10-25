@@ -59,6 +59,14 @@ type lookupState struct {
 	savedCall    string
 	savedLogbook string
 
+	// formGen identifies the QSO form a lookup was dispatched from. It
+	// advances every time a QSO is finished (clearForm/resetQSOFields), so
+	// an answer can be matched to the form it was asked for instead of to
+	// "whatever is in the form right now" — after a save the form is
+	// empty, and an empty form used to swallow the answer meant for the
+	// contact that was just logged.
+	formGen uint64
+
 	// noProviderWarned suppresses repeated "no callbook provider configured"
 	// warnings during a session.
 	noProviderWarned bool

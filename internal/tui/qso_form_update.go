@@ -911,6 +911,11 @@ func (m *Model) checkDupe() {
 func (m *Model) clearForm() {
 	m.dupe = false
 	m.dupeCacheKey = ""
+	// A finished QSO ends the form session: callbook answers still in
+	// flight were asked for the contact that was just written, not for
+	// whatever comes next (this also covers a retained form, which keeps
+	// its fields but is still a new QSO).
+	m.lookup.formGen++
 	if !m.retainForm {
 		m.resetQSOFields()
 	}
@@ -925,6 +930,8 @@ func (m *Model) clearForm() {
 // re-applies retained rig values (band, freq, mode, submode, power) and
 // the retain-comment setting.  Focus moves to the Call field.
 func (m *Model) resetQSOFields() {
+	// Every field reset starts a new form session (see lookupState.formGen).
+	m.lookup.formGen++
 	retainedComment := ""
 	if m.keepComment {
 		retainedComment = m.fields[fieldComment].Value()

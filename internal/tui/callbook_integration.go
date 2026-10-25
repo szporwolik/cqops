@@ -244,9 +244,10 @@ func (m *Model) callbookLookupCmd(call string) tea.Cmd {
 	reg := m.callbookRegistry
 	baseFallback := m.App.Config.Integrations.Callbook.BaseCallFallback
 	logbook := m.App.LogbookName
+	session := m.lookup.formGen
 	return func() tea.Msg {
 		data, err := callbookRegLookup(reg, baseFallback, call)
-		return callbookResultMsg{Call: call, Data: data, Err: err, Logbook: logbook}
+		return callbookResultMsg{Call: call, Data: data, Err: err, Logbook: logbook, Session: session}
 	}
 }
 
@@ -359,8 +360,21 @@ func (m *Model) fillCallbookData(msg callbookResultMsg) bool {
 		return false
 	}
 	formCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
-	if formCall != "" && formCall != strings.ToUpper(msg.Call) {
-		return m.enrichSavedQSO(msg)
+	// Does the answer still belong to the form? Only when no QSO was
+	// finished since the lookup was dispatched (the form was cleared on
+	// save) and the callsign field did not move to another call. A blank
+	// form is NOT ownership: right after a save it is blank because the
+	// contact was already written, and that row is what needs the data.
+	sessionStale := msg.Session != 0 && msg.Session != m.lookup.formGen
+	formOwnsAnswer := !sessionStale && (formCall == "" || formCall == strings.ToUpper(msg.Call))
+	if !formOwnsAnswer {
+		enriched := m.enrichSavedQSO(msg)
+		// A retained form still shows the call it was left with; the
+		// operator is looking at it, so let it fill as well — the row was
+		// already handled above.
+		if !enriched || formCall != strings.ToUpper(msg.Call) {
+			return enriched
+		}
 	}
 	m.lookup.qrzLookupDone = true
 	m.lookup.qrzLookupCall = strings.ToUpper(msg.Call)
