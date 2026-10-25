@@ -46,6 +46,26 @@ func (cs *contestStats) computeIfStale(db *sql.DB, contestID string, contestName
 	cs.computedAt = now
 	cs.cachedPanel = ""
 
+	// Reset every derived value before recomputing. The struct is reused
+	// across ticks and contest switches, and the window counters used to be
+	// incremented in place: "Count 60m" and "hr" grew by the current window
+	// on every 5-second refresh (4 QSOs logged for 9 minutes read as 354),
+	// and an empty contest kept the previous contest's numbers.
+	cs.TotalQSOs = 0
+	cs.ThisHour = 0
+	cs.Last60Min = 0
+	cs.Rate10 = 0
+	cs.Rate100 = 0
+	cs.Best1Min = 0
+	cs.Best10Min = 0
+	cs.Best60Min = 0
+	cs.AvgSession = 0
+	cs.OnAir = 0
+	cs.Session = 0
+	cs.LastQSO = time.Time{}
+	cs.FirstQSO = time.Time{}
+	cs.MinuteBuckets = nil
+
 	qsos, err := store.ListQSOs(db, 1000, contestID)
 	if err != nil || len(qsos) == 0 {
 		applog.Debug("contest stats: no QSOs", "err", err)
@@ -53,7 +73,8 @@ func (cs *contestStats) computeIfStale(db *sql.DB, contestID string, contestName
 	}
 
 	// TotalQSOs from COUNT — ListQSOs is capped at 1000 rows and
-	// undercounts active contests.
+	// undercounts active contests. The window counters below and the peaks
+	// see at most those 1000 newest rows.
 	if counts, err := store.CountQSOsForContest(db, contestID); err == nil {
 		cs.TotalQSOs = counts.Total
 	} else {
@@ -64,15 +85,13 @@ func (cs *contestStats) computeIfStale(db *sql.DB, contestID string, contestName
 	cs.Session = cs.LastQSO.Sub(cs.FirstQSO)
 
 	hourStart := now.Truncate(time.Hour)
-	for _, q := range qsos {
-		if q.CreatedAt.UTC().After(hourStart) {
-			cs.ThisHour++
-		}
-	}
-
 	cutoff60 := now.Add(-60 * time.Minute)
 	for _, q := range qsos {
-		if q.CreatedAt.UTC().After(cutoff60) {
+		created := q.CreatedAt.UTC()
+		if created.After(hourStart) {
+			cs.ThisHour++
+		}
+		if created.After(cutoff60) {
 			cs.Last60Min++
 		}
 	}
@@ -85,7 +104,10 @@ func (cs *contestStats) computeIfStale(db *sql.DB, contestID string, contestName
 	cs.OnAir = cs.computeOnAir(qsos)
 
 	if cs.Session.Seconds() > 0 {
-		cs.AvgSession = int(float64(cs.TotalQSOs) / cs.Session.Hours())
+		// The session span covers the QSOs in the listing window (≤1000), so
+		// the average has to use the same set — dividing the all-time total
+		// by a shorter span overstated the rate on long contests.
+		cs.AvgSession = int(float64(len(qsos)) / cs.Session.Hours())
 	}
 
 	cs.MinuteBuckets = bucketQSOsByMinute(qsos, 60, now)
@@ -226,11 +248,17 @@ func (m *Model) renderContestPanel() string {
 		int(m.contest.Session.Seconds()), int(m.contest.OnAir.Seconds()),
 	)
 	if len(m.contest.MinuteBuckets) > 0 {
+		// Hash the shape as well as the sum: as time passes the same QSOs
+		// slide towards the left of the chart while the sum stays the same, so
+		// a sum-only signature froze the bars until another QSO arrived.
 		sum := 0.0
-		for _, v := range m.contest.MinuteBuckets {
-			sum += v
+		var h uint64 = 1469598103934665603
+		for _, b := range m.contest.MinuteBuckets {
+			sum += b
+			h ^= uint64(b)
+			h *= 1099511628211
 		}
-		fmt.Fprintf(&sigB, "%d:%.0f", len(m.contest.MinuteBuckets), sum)
+		fmt.Fprintf(&sigB, "%d:%.0f:%x", len(m.contest.MinuteBuckets), sum, h)
 	}
 	sig := sigB.String()
 	if m.contest.cachedPanel != "" && m.contest.cachedSig == sig {
@@ -263,7 +291,9 @@ func (m *Model) renderContestPanel() string {
 	rows = append(rows, d(pad("Count"))+v(fmt.Sprintf("60m %3d  hr %3d", m.contest.Last60Min, m.contest.ThisHour)))
 
 	// --- Peak row ---
-	rows = append(rows, d(pad("Peak"))+v(fmt.Sprintf("1m%3d 10m%3d 60m%3d",
+	// bestRate extrapolates each window to QSOs per hour (one QSO inside the
+	// last minute is 60/h), so the label carries the unit.
+	rows = append(rows, d(pad("Peak/h"))+v(fmt.Sprintf("1m%3d 10m%3d 60m%3d",
 		m.contest.Best1Min, m.contest.Best10Min, m.contest.Best60Min)))
 
 	// --- Avg row ---
@@ -283,7 +313,13 @@ func (m *Model) renderContestPanel() string {
 			maxVal = 1
 		}
 		chartH := 4
-		rows = append(rows, d(fmt.Sprintf("QSO/min  last 60m  max %.0f", maxVal)))
+		// aggregateBuckets folds the 60 minute buckets into chartW bars, so
+		// each bar covers several minutes — say so instead of "QSO/min".
+		bucketMin := 1
+		if len(data) > 0 && len(m.contest.MinuteBuckets) > len(data) {
+			bucketMin = (len(m.contest.MinuteBuckets) + len(data) - 1) / len(data)
+		}
+		rows = append(rows, d(fmt.Sprintf("QSO/%dm  last 60m  max %.0f", bucketMin, maxVal)))
 		for row := chartH - 1; row >= 0; row-- {
 			line := make([]rune, 0, len(data))
 			for _, val := range data {
