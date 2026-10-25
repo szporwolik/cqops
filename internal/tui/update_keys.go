@@ -710,6 +710,11 @@ func (m *Model) initLogbookEditor() {
 	})
 	m.ui.logbookEditor.width = m.width
 	m.ui.logbookEditor.height = m.height
+	// Contest mode swaps the reference columns for the sent/received
+	// exchange, exactly like the QSO form shows those fields while a contest
+	// is active. Set before the filter so the first page load builds the
+	// contest columns right away.
+	m.ui.logbookEditor.SetContestMode(m.App.Logbook.ActiveContest != "")
 	if m.App.Logbook.ActiveContest != "" {
 		ct := m.App.Config.Contests[m.App.Logbook.ActiveContest]
 		m.ui.logbookEditor.SetContestID(m.App.Logbook.ActiveContest, config.ContestDisplayName(&ct), ct.ContestID, ct.Date)
