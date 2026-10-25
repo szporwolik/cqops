@@ -366,10 +366,18 @@ func (m *Model) fillCallbookData(msg callbookResultMsg) (bool, tea.Cmd) {
 	// save) and the callsign field did not move to another call. A blank
 	// form is NOT ownership: right after a save it is blank because the
 	// contact was already written, and that row is what needs the data.
+	//
+	// enriched/syncCmd survive the fall-through below: a retained form keeps
+	// the call it just logged, so the answer both completes the stored row
+	// AND fills the form. Returning early here used to drop the PATCH command
+	// after it had already been registered in the sync coordinator — the
+	// contact then never synced and its database lease was never released.
+	enriched := false
+	var syncCmd tea.Cmd
 	sessionStale := msg.Session != 0 && msg.Session != m.lookup.formGen
 	formOwnsAnswer := !sessionStale && (formCall == "" || formCall == strings.ToUpper(msg.Call))
 	if !formOwnsAnswer {
-		enriched, syncCmd := m.enrichSavedQSO(msg)
+		enriched, syncCmd = m.enrichSavedQSO(msg)
 		// A retained form still shows the call it was left with; the
 		// operator is looking at it, so let it fill as well — the row was
 		// already handled above.
@@ -383,14 +391,14 @@ func (m *Model) fillCallbookData(msg callbookResultMsg) (bool, tea.Cmd) {
 		m.toasts.Error("Callbook: " + msg.Err.Error())
 		m.clearQRZFields()
 		m.prefillContestExchange()
-		return false, nil
+		return enriched, syncCmd
 	}
 	d := msg.Data
 	if d == nil || d.Callsign == "" {
 		m.showCallbookToast(msg.Call) // show "no data" toast if everything is done
 		m.clearQRZFields()
 		m.prefillContestExchange()
-		return false, nil
+		return enriched, syncCmd
 	}
 	m.lookup.partnerData = d
 	m.invalidatePartnerMapCache()
@@ -465,7 +473,7 @@ func (m *Model) fillCallbookData(msg callbookResultMsg) (bool, tea.Cmd) {
 	// Recalculate exchange fields — async lookup may have filled grid/zone
 	// data that contest exchange markers depend on.
 	m.prefillContestExchange()
-	return false, nil
+	return enriched, syncCmd
 }
 
 // enrichSavedQSO writes a callbook result into the contact that was just
