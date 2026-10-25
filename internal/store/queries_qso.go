@@ -263,6 +263,35 @@ func countQSOsContest(db *sql.DB, contestID string) (int, error) {
 	return a + b, nil
 }
 
+// ListContestQSOStamps returns the timing fields of every QSO in a contest:
+// qso_date + time_on (the on-air time) plus created_at as a fallback for rows
+// without a usable time. The contest rate panel needs every row — a row cap
+// skewed session, peak and window numbers — but none of the other columns.
+func ListContestQSOStamps(db *sql.DB, contestID string) ([]qso.QSO, error) {
+	if contestID == "" {
+		return nil, nil
+	}
+	rows, err := db.Query(
+		`SELECT qso_date, time_on, created_at FROM qsos WHERE contest_id = ?`, contestID)
+	if err != nil {
+		return nil, fmt.Errorf("list contest stamps: %w", err)
+	}
+	defer rows.Close()
+	var out []qso.QSO
+	for rows.Next() {
+		var q qso.QSO
+		var created string
+		if err := rows.Scan(&q.QSODate, &q.TimeOn, &created); err != nil {
+			return nil, fmt.Errorf("scan contest stamp: %w", err)
+		}
+		if t, err := time.Parse(time.RFC3339, created); err == nil {
+			q.CreatedAt = t
+		}
+		out = append(out, q)
+	}
+	return out, rows.Err()
+}
+
 // ListQSOs returns recent QSOs ordered by QSO date/time descending.
 // If contestID is non-empty, only QSOs matching that contest are returned.
 func ListQSOs(db *sql.DB, limit int, contestID string) ([]qso.QSO, error) {

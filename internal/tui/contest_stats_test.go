@@ -3,18 +3,14 @@ package tui
 import (
 	"testing"
 	"time"
-
-	"github.com/szporwolik/cqops/internal/qso"
 )
 
-func makeQSO(t time.Time) qso.QSO {
-	return qso.QSO{CreatedAt: t}
-}
+func makeQSO(t time.Time) time.Time { return t }
 
 func TestQsoRate_Basic(t *testing.T) {
 	now := time.Now().UTC()
 	// 10 QSOs over 30 minutes = 20 QSOs/h
-	qsos := make([]qso.QSO, 10)
+	qsos := make([]time.Time, 10)
 	for i := range qsos {
 		qsos[i] = makeQSO(now.Add(-time.Duration(i) * 3 * time.Minute))
 	}
@@ -28,7 +24,7 @@ func TestQsoRate_Basic(t *testing.T) {
 
 func TestQsoRate_LessThanN(t *testing.T) {
 	now := time.Now().UTC()
-	qsos := []qso.QSO{makeQSO(now), makeQSO(now.Add(-1 * time.Minute))}
+	qsos := []time.Time{makeQSO(now), makeQSO(now.Add(-1 * time.Minute))}
 	cs := contestStats{}
 	rate := cs.qsoRate(qsos, 10) // only 2 QSOs, n=10
 	// 1 gap × 1 min = 1 QSO / 0.0167h ≈ 60/h
@@ -38,7 +34,7 @@ func TestQsoRate_LessThanN(t *testing.T) {
 }
 
 func TestQsoRate_SingleQSO(t *testing.T) {
-	qsos := []qso.QSO{makeQSO(time.Now().UTC())}
+	qsos := []time.Time{makeQSO(time.Now().UTC())}
 	cs := contestStats{}
 	if rate := cs.qsoRate(qsos, 10); rate != 0 {
 		t.Errorf("qsoRate with 1 QSO = %d, want 0", rate)
@@ -48,7 +44,7 @@ func TestQsoRate_SingleQSO(t *testing.T) {
 func TestBestRate_SlidingWindow(t *testing.T) {
 	now := time.Now().UTC()
 	// 5 QSOs in 1 minute (burst of 300/h), then slow.
-	qsos := []qso.QSO{
+	qsos := []time.Time{
 		makeQSO(now),
 		makeQSO(now.Add(-12 * time.Second)),
 		makeQSO(now.Add(-24 * time.Second)),
@@ -66,7 +62,7 @@ func TestBestRate_SlidingWindow(t *testing.T) {
 func TestComputeOnAir_Basic(t *testing.T) {
 	now := time.Now().UTC()
 	// 3 QSOs, each 5 min apart → 10 min on-air.
-	qsos := []qso.QSO{
+	qsos := []time.Time{
 		makeQSO(now),
 		makeQSO(now.Add(-5 * time.Minute)),
 		makeQSO(now.Add(-10 * time.Minute)),
@@ -82,7 +78,7 @@ func TestComputeOnAir_Basic(t *testing.T) {
 func TestComputeOnAir_OffTimeGap(t *testing.T) {
 	now := time.Now().UTC()
 	// 2 QSOs close, then 31 min gap, then 1 QSO → gap > 30 min = off-time.
-	qsos := []qso.QSO{
+	qsos := []time.Time{
 		makeQSO(now),
 		makeQSO(now.Add(-2 * time.Minute)),  // 2 min gap = on-air
 		makeQSO(now.Add(-33 * time.Minute)), // 31 min gap → off-time
@@ -137,10 +133,10 @@ func TestApplyCap(t *testing.T) {
 
 func TestBucketQSOsByMinute(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Minute)
-	qsos := []qso.QSO{
-		{CreatedAt: now.Add(-5 * time.Minute)},
-		{CreatedAt: now.Add(-5 * time.Minute)},
-		{CreatedAt: now.Add(-1 * time.Minute)},
+	qsos := []time.Time{
+		now.Add(-5 * time.Minute),
+		now.Add(-5 * time.Minute),
+		now.Add(-1 * time.Minute),
 	}
 	b := bucketQSOsByMinute(qsos, 60, now)
 	if len(b) != 60 {
