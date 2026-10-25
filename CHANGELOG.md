@@ -1,123 +1,50 @@
 # Changelog
 
-## v0.11.2 — 2026-10-19
+## v0.11.2 — 2026-10-25
 
-> **Maintenance release on top of 0.11.1: a dashboard that scales its type with the display and no longer keeps stale QSO data, Wavelog uploads that keep the power and the references, a patched Go toolchain, refreshed dependencies, and Windows binaries that finally report their own version.** No config or database migration is needed from v0.11.1.
+> **Maintenance release: honest worked-status verdicts backed by the local index, contest exchanges back in the log panes with a corrected rate panel, and a dashboard pass that fixes the solar scales, the layout from 1024×600 to 4K and a stale-country bug — plus Wavelog uploads that keep the power and references, a patched Go toolchain and Windows binaries that report their own version.** The database migrates automatically to schema v4 on the first start; no config change is needed.
 
 ### Dashboard
-- <u>**The info box stays visible while a contact is being worked**</u>: in the active-QSO layout (hero shown) the right column is only ~300px tall at 1080p, while the visibility threshold had grown to 18.75rem (350px) with the type ramp — so Band Conditions, Solar, Geomagnetic, Last Spotted By and PSK Reporter disappeared exactly on FullHD and 2K screens. The box now needs 5.5rem (max 10rem), the local APRS map 8.5rem and the threshold is 14.5rem; the PSK module lists the five busiest bands so it fits without clipping.
-- **Dashboard audit fixes**: the 70cm/23cm/13cm band badges pointed at typo'd CSS variables (`--b70m-fg`) and fell back to the plain text colour; the country column was the only clipped cell at FullHD/2K — ADIF's "Fed. Rep. of Germany" now shortens to "Germany", and a freshly logged row shortens like a re-rendered one instead of showing the raw name; long operator badges ellipsize instead of being cut mid-glyph; the wind unit no longer drops to 9.6px on laptops; and the dashboard honours `prefers-reduced-motion` (hero glow, marker pulses, toast pop and the new-row flash stop).
-- <u>**The info box no longer jumps between modules**</u>: PSK Reporter drew its band counts as a vertical table, so every five-second rotation resized the box and pushed the local APRS map up and down. The counts are horizontal chips now (`20m 1540 · 40m 1180 · …`, busiest five bands) and the box has a fixed 6.5rem height, so Band Conditions, Solar, Geomagnetic, Last Spotted By, PSK Reporter and Data Freshness all occupy the same 104/121/143px at 1366/1920/2560. Verified across a full cycle: box height and the local map's top never move, and no module overflows.
-- <u>**Radar only sits on real tiles**</u>: when the map falls back to the embedded world raster (no WebGL, or the tile provider fails), the RainViewer layer was still enabled — ~100 radar tile requests that cannot line up with a static image, which made the map look like repeated, misaligned world copies. Radar is now off on any image-based map (the same rule the offline EPSG:4326 map already followed) and the footer credit goes with it.
-- <u>**Type now scales with the display**</u>: the stylesheet is rem-based, but the root font size was pinned at 16px — a 2K or 4K screen rendered the same 13.6px table text as a 1366px laptop, and a wide-but-short window (FullHD with browser chrome or OS display scaling) fell into the height-only "compact" tier that shrank panel labels to 10px and the footer to 9.6px. The root font size now ramps with width — 1600px → 17px, 1920px → 18.7px, 2560px → 22px, capped at 24px — so every label, badge and table cell follows: the recent-QSO cell goes 13.6 → 15.9px at FullHD and 18.7px at 2K, panel labels 10.2 → 15.3/18.7px, badges 11.2 → 13.1/15.4px. The compact tier now shrinks type only on screens that are narrow *and* short, with readable floors (0.68–0.74rem instead of 0.56–0.64rem); wide displays keep the full-width layout even when the window is short (it was capped at 1360px below 900px of height), and 2K/4K gain wider gutters, roomier table rows and taller QSO lists. Column widths and the bottom row's height were re-budgeted for the larger cells: at FullHD the recent table was clipping `220…` in UTC, `599/…` in RST and the operator badge, the Top-QSOs distance/country lost their tails, and the seventh recent row was cut mid-height — all of that fits now.
-- <u>**Nothing in the bottom row is cut off any more**</u>: the four cards under the map were placed by a CSS grid whose fixed fractions could not shrink, so at 1366px the QSO tables overflowed their cards by up to 320px — content hidden with no way to scroll to it. The row is a wrapping flex layout now, every card carries a minimum width derived from what its table actually needs, and the two cards that repeat information shown elsewhere step aside first (Station below 1600px, Stats below 1900px, where the header, hero and QSO tables already carry the same numbers). The recent and Top-QSOs tables share a single column budget instead of four per-tier override sets, the distance cell sits a notch smaller so `10733 km SW` keeps its direction, and the operator column waits for 1900px. Measured across twelve viewports (880×700 → 2560×1440): no clipped cell, badge, key/value pair or footer credit anywhere, no horizontal overflow, and no vertical scrolling at 1200×800 and above; 1366×768 and 1920×880 dropped from 43/276px of scroll to 43/68px. Distances in the live table also lost their unit (`10117 NW` under a `Dist / Dir` header) so the direction survives at FullHD type, and the summary cards cap their badge lists at three plus a `+N` pill instead of slicing the tail off. The map row gives back 4vh of its height on 1600-wide screens shorter than 980px.
-- <u>**Zooming the embedded world map stops at a legible level**</u>: the fallback map is a single raster, so the zoom control would happily scale it to a featureless smear. Image-based maps are capped at zoom 5; tile maps keep their full range.
-- <u>**One layout for 1024×600 through 4K**</u>: the dashboard was tuned by eye on one screen at a time, and the audit across small monitors, FullHD, 2K and 4K showed three separate problems. (1) `#map-table-row` was the only row with `flex-grow`, so every spare pixel went to the map: on a 4K screen the map was **1195px tall (55% of the display) while the QSO list showed 9 of its 20 rows** — the tables now share the spare height above 1400px, giving 787/817px and all 20 rows on 4K, 390/471px and 13 rows at 2K, with FullHD unchanged. (2) The type ramp was capped at 1.5×, so a 3840px-wide screen rendered text a quarter smaller than the same UI on FullHD and the QR code stayed 80×80 at every resolution (5.9% of the screen at 1366, 2.1% at 4K — unscannable from a club-room distance); the cap is 2× now and the QR, logo and operator photo are sized in rem so they follow. (3) Small screens scrolled: 409px at 1024×600, 241px at 1024×768, 90px at 1280×720, 43px at 1366×768 — the module box, the second QSO list, the hero and the map all insisted on their space. Below 820px of height the module box steps aside and the map row drops to 170px, below 740px the hero hides, and below 1120px width the Top QSOs card gives its room to Recent QSOs. **Measured on twelve viewports from 1024×600 to 3840×2160: zero scrolling, zero horizontal overflow, zero clipped cells, and the module box visible at every size where it fits.** Visible QSO rows: 6 on 768p screens, 9 at FullHD, 13 at 2K, 16 at 4K. The module box also re-checks itself after a window resize settles, so enlarging a window brings it back without a reload.
-- <u>**Badge colours and ultrawide layouts**</u>: twenty-two band-badge colours were below AA on their own tinted pill — 40m sat at 3.17:1, 10m at 2.52:1 in the bright theme, and the dark and hi-vis palettes had the same problem with their reddest and palest bands. Every band foreground was recomputed against its real blended background (worst case of `--surface` and `--table-alt`) in all four themes and now clears 4.5:1; the operator pill went from 4.29:1 to 5.1:1 and the dark themes' QSO-rate pills get a lighter blue. Checked by walking every badge, cell and key/value pair in four themes: zero remaining AA failures. Ultrawide screens also got their own pass: a 2560×1080 or 3440×1440 window runs the 22–24px type ramp on a viewport that is no taller, so the map row and QSO lists now give their height back and the two narrow cards are sized in rem — no clipped badge and no page scroll on 2560×1080, 3440×1440 or 3840×2160 either.
-- <u>**Accessibility and contrast pass**</u>: table headers carry `scope="col"`, the hero callsign is an `aria-live="polite"` region so screen readers announce the contact being worked, and the operator photo reports `alt="Photo of <call>"` instead of being decorative. The bright theme's `--dim` text was 4.00:1 on the page background — just under AA — and is now 4.82:1 (other themes stay at 5.2–5.3:1). No text renders below 11px on any of the compact tiers any more, and fifteen custom properties that nothing referenced (`--accent-dark`, `--page-bg-soft`, `--qso-marker`, `--table-hover`, …) are gone.
-- <u>**Info-box modules are no longer the smallest text on screen**</u>: the rotating modules above the local map (Solar, Geomagnetic, Band Conditions, Last Spotted By, PSK Reporter, promo) were built in `app.js` with **inline** `font-size` — 0.68–0.78rem on a 16px root, i.e. 10.9–12.5px — and inline styles cannot be overridden by a media query, so no screen ever got readable module text. Their sizes now live in stylesheet classes (`xmod-*`, `.apr-label`) that follow the type ramp, and the base values went up (PSK table 0.68 → 0.85rem, band-condition pills 0.68 → 0.75rem, rows/labels 0.76 → 0.82–0.92rem): the PSK table renders 13.6 → 15.9px at FullHD and 18.7px at 2K. The box itself was a hard 110px with `overflow:hidden`, so the PSK band list and the band-condition grid were clipped — it is now rem-based and grows with its content (5.5–10rem, zero clipped rows at every size tested), the PSK module shows the five busiest bands instead of 15 mostly-hidden ones, and the JS layout thresholds (`right.clientHeight ≥ 300`, module width 240px for two columns) scale with the root font size instead of being fixed pixels.
-- <u>**Top QSOs no longer lose the country**</u>: the same contact could show its country in Recent QSOs and an empty country in Top QSOs, and reloading the page did not help. WSJT-X auto-logs a contact without a country, the dashboard pushed the Today panel (which feeds Top QSOs, the map and the stats) before callbook/CTY enrichment filled it in, and the panel's change detector compared row ids only — so the enriched value never repainted. Recent was force-pushed after enrichment, hence the mismatch. Both panels now fingerprint the values they render (call, band, mode/submode, grid, country, operator, RST, frequency, time) on top of the row ids, and enrichment force-pushes the Today panel too. The browser had the same blind spot on load: its background `/api/today` refresh only replaced the list when the row **count** changed, so a reload could keep a stale country; it now compares the row content. A regression test drives the real `wsjtxEnrichDoneMsg` through the owner loop and asserts both panels pick up the enriched country.
-
-### Dashboard (phones)
-- <u>**The map is a map on a phone again**</u>: below 880px the map row stacks into a column, and the height tiers only reserved a `min-height` for the row — the map panel took whatever was left over, which measured **2px at 600×900 and 6px at 390×844**. A strip, not a map. In the stacked layout the panel now owns `clamp(180px, 38vh, 320px)` and the local APRS map `clamp(110px, 16vh, 170px)`, so a 320×568 phone shows a 216px map and a 390×844 one shows 320px, with the local map still readable underneath.
-- <u>**The QSO table fits a phone**</u>: seven columns squeezed into 360px clipped the UTC cell, the band/mode badges, the signal report and the country. Below 560px the signal-report and distance columns step out; below 400px the country does as well (it is still in the hero for the station being worked), and the marketing subtitle in the header goes too. Measured on 320×568, 360×740, 390×844, 430×932 and 540×960: zero clipped cells, zero horizontal overflow.
-- **Two more width-range bugs found by resizing instead of sampling**: the footer credit line ellipsized between 1200 and ~1360px (it only wrapped below 1200) and the weather strip clipped its last forecast slot between 1301 and ~1360px (the tier below 1300 hid a slot, the one above it assumed all nine fit). The footer now wraps at every width and the weather cutoff moved to 1360px.
+- <u>**The module box is stable and readable**</u>: it vanished on FullHD/2K in the active-QSO layout (the threshold assumed a much taller local map), resized on every rotation (PSK Reporter drew a vertical table) and used inline font sizes no media query could override. It sizes in rem now, needs only what it actually renders, keeps a fixed height, and the PSK module lists the five busiest bands.
+- <u>**One layout from 1024×600 to 4K**</u>: the map row no longer takes every spare pixel (on 4K it was 1195px tall while the QSO list showed 9 of 20 rows), the type ramp cap went 1.5× → 2× so 4K text is not smaller than FullHD, the QR code and photos scale with it, and the bottom row is a wrapping flex layout that clips nothing. Measured on twelve viewports: no scrolling, no horizontal overflow, no clipped cell.
+- <u>**Phones and ultrawide screens**</u>: below 880px the map panel had collapsed to a 2–6px strip; it owns `clamp(180px, 38vh, 320px)` now and the QSO table drops columns instead of clipping them. Ultrawide windows get their height back from the map row.
+- <u>**Contrast and accessibility**</u>: twenty-two band badges were below AA on their pills (as low as 2.52:1) — all recomputed to ≥4.5:1 across four themes; headers carry `scope="col"`, the hero is an `aria-live` region, the dim text clears AA, and nothing renders below 11px on any tier.
+- <u>**Solar data reads correctly**</u>: a missing SFI was parsed as 0 and painted green, and the scale was inverted (excellent propagation shown as a fault). Missing values render as a muted dash and SFI follows the TUI's N0NBH thresholds.
+- <u>**Top QSOs no longer lose the country**</u>: WSJT-X auto-logs arrive without a country and the panel compared row ids only, so enrichment never repainted it. Both panels fingerprint the values they render, and the browser refresh compares row content instead of the row count.
+- **Smaller dashboard fixes**: typo'd band-badge CSS variables, long ADIF country names shortened, operator badges ellipsized, wind unit no longer 9.6px, radar off on image-based maps (zoom capped at 5), `prefers-reduced-motion` honoured.
 
 ### Dashboard (offline)
-- <u>**The dashboard now runs with no internet at all**</u>: MapLibre GL and its Leaflet binding were loaded from `cdn.jsdelivr.net` — an offline-first logger that loses its tile map whenever the CDN is unreachable or filtered. Both libraries (1.1 MB JS + 70 KB CSS) ship inside the binary now, like Leaflet already did, and the page makes no third-party request for them. Tested with the CDN blocked: `maplibregl` and `L.maplibreGL` load from the bundle, and the map, APRS symbols and QSO tables render normally.
-- <u>**Missing assets answer 404 instead of the page**</u>: the catch-all route returned `index.html` (status 200) for *any* unknown path, so a broken `<script src>` failed as a JavaScript syntax error rather than a missing file — which is exactly how the map libraries were silently absent until their routes were registered. Extension-less paths still fall back to the page; anything else 404s. `TestStaticAssetsBundled` now pins the bundled assets and that fallback.
-- <u>**The header QR works offline and stops hitting QuickChart on every reload**</u>: the image URL carried a `_=Date.now()` cache-buster, so each page load downloaded it again from a third party, and an offline start showed a dead "QR unavailable" label. The SVG is fetched once, cached in `localStorage` and painted from there on later loads; when nothing is cached and the service is unreachable the block is hidden instead of showing an error.
+- <u>**No third-party requests**</u>: MapLibre and its Leaflet binding are bundled (1.1 MB JS + 70 KB CSS), the header QR is cached in `localStorage`, and unknown asset paths answer 404 instead of the page. Verified with the CDN blocked.
 
 ### APRS
-- <u>**The own station shows the symbol and SSID it actually transmits**</u>: on both the world map and the local APRS map the station was a plain dot, so there was no way to tell whether beacons were going out or under which identity. While beaconing, the dot now carries the APRS symbol from the logbook's APRS settings and the callsign-SSID the network sees (`SP9SPM-10`) underneath it; in receive-only mode the plain dot stays exactly as before. The identity comes from the same code path the beacon uses (`APRSBeaconIdentity`), so a custom callsign, a custom SSID, the default `-10` suffix and the default `/-` house symbol all match what is on the air. Our own beacon echo is also filtered out of the APRS station list with the same rule the APRS pane applies, so the station does not appear twice.
-
-- <u>**The map dot sits where the beacon actually transmits**</u>: the station
-marker was built from the logging grid (GPS > station grid), which ignores the
-logbook's fixed APRS location, while the beacon transmits the fixed
-location-aware chain (fixed > GPS > station grid). With a fixed grid configured
-the two legitimately differ, so the dashboard drew the dot up to tens of
-kilometres away from the position in the packets — and a browser refresh could
-never reconcile them. The snapshot now carries `aprsLocator`/`aprsPos` derived
-from the same resolver the beacon uses, and both map markers, the APRS radius
-circle and the local-map centring follow it; QSO distance and bearing keep using
-the logging grid. The station card shows an extra `APRS` row whenever the two
-locators differ, so the difference is explained instead of mysterious. The
-position travels as a pointer, so a valid `0,0` point (equator/prime meridian)
-is no longer dropped from the payload.
+- <u>**The own station is drawn where it transmits**</u>: with a fixed APRS grid configured, the marker came from the logging grid while beacons used the fixed location. Both maps, the radius circle and the local-map centring follow the beacon resolver, the marker carries the symbol and callsign-SSID being transmitted, and a differing locator gets its own `APRS` row.
 
 ### Wavelog
-- <u>**Uploads carry the power and the references again**</u>: the v2 JSON create — the path behind every manual save, editor upload and WSJT-X auto-log — sent only the core columns. Wavelog therefore kept its station-profile default power (a 10 W contact landed as 100 W) and silently lost SOTA/POTA/WWFF/IOTA/SIG references, the operator and the CQ/ITU zones, even though the ADIF path and PATCH always carried them. All of those fields are part of the create payload now; empty ones stay out of the body so the server keeps its own values.
+- <u>**Uploads carry the power and the references**</u>: the v2 JSON create sent only core columns, so Wavelog kept its station-profile power and dropped SOTA/POTA/WWFF/IOTA/SIG references, the operator and the CQ/ITU zones. All of them are in the payload now, empty ones omitted.
+
+### Worked status
+- <u>**No more NEW when the log cannot know**</u>: unresolved DXCC, missing band/mode or a never-completed remote sync read as UNKNOWN; NEW only when that dimension is complete. A clean Wavelog download records the sync marker, and a remote answer can upgrade an UNKNOWN verdict but never downgrade a known contact.
+- <u>**Primary-key lookups**</u>: `WorkedCall`, `WorkedGrid` and `WorkedDXCC(dxcc, band, mode)` answer from the index at all four aggregation levels; band+mode is the real combination (it used to require both worked separately) and mode matching is canonical.
+- <u>**Provenance and confirmations**</u>: every contact records how its DXCC was resolved (`explicit`/`imported`/`prefix`/`callbook`/`unknown`) and its QSL/LoTW/eQSL status; the index aggregates `confirmed_count` and a source mask, neither erasable by a comment-only edit. ADIF and Wavelog round-trip the confirmations.
+- <u>**A rules version** in `worked_index_meta` rebuilds every index once when the aggregation rules change.
+
+### Contest
+- <u>**Exchange columns are back in the log panes**</u>: the editor's contest mode was never enabled (the setter had no callers) and both column sets carried the exchange only at ~160/220 columns. It follows the RST pair from ≈79 (editor) and ≈70 (Recent QSOs) now.
+- <u>**The rate panel recomputes instead of accumulating**</u>: counters grew on every 5-second refresh (four contacts read as 354) and survived into the next contest; they are reset before each pass.
+- <u>**Rates follow the contacts**</u>: everything used `created_at`, so an ADIF import looked like operating speed and anything past the newest 1000 rows was invisible. `qso_date` + `time_on`, over every contact of the contest.
+- <u>**Same height, honest labels**</u>: `Peak/h`, `QSO/2m` (not `/min`), on-air time shown and used for the average, fixed-width numbers — the average row used to wrap and push the chart down.
+- <u>**The comment carries the contest name**</u>: prefilled while a contest is active, never overwriting operator text, and a deliberate clear stays cleared.
 
 ### Fixes
-- <u>**The worked-status index stays in step with the contacts**</u>: editing
-only a comment could make a contact stop counting in the DXCC history. The
-form save indexed the object it was handed, which has no DXCC (the field is not
-on the form), while the SQL deliberately preserved the stored value — so the
-old aggregate was removed and never re-added. The index is now built from the
-row **as stored**, read back inside the same transaction, on both the form and
-editor save paths. Two further writers bypassed the index entirely and are now
-covered too: callbook/CTY enrichment (fills dxcc, grid and zones after the row
-exists) and the Big CTY DXCC backfill, which moved into the store as
-`BackfillDXCC` so the row update and the aggregate change commit together. The
-schema version is 3: upgrading rebuilds the index once, so databases written by
-the affected builds are repaired automatically. Regression tests reproduce the
-reported symptom (`DXCC 269` on the contact, `0` in the index) against the old
-code and assert both save paths, enrichment, the backfill and the upgrade
-rebuild — and that the rebuild on upgrade runs only after the `base_call`
-backfill, so an upgraded contact lands in `worked_call` in the same start
-instead of waiting for a later rebuild.
-- <u>**The single-instance guard can no longer be bypassed**</u>: with the OS
-lock held, the startup guard read the PID from `cqops.lock`, asked the kernel
-for that process's name, and — when it was not exactly `cqops` — treated the
-lock as stale and offered to delete it. A release binary named
-`cqops-linux-amd64`, a renamed copy or an AppImage never matches that name, so
-answering "y" unlinked the file and locked a freshly created inode while the
-first instance kept the old one: **two instances, one config, one logbook**.
-The OS lock is the only authority now — a held lock always means a live
-instance and refuses startup with its PID, the file is never deleted on the
-strength of a PID or process name, and a file left behind by a crashed
-instance is reused in place as soon as the kernel has released the lock. The
-PID is still written for diagnostics only. Covered by
-`TestAcquireLockCannotBeStolenWithForeignProcessName` (fails against the old
-implementation) and by the two-process test, which now asserts the refusal is
-the live-instance message rather than a delete-lock hint.
-- **Windows binaries report the right version**: the checked-in PE resources were still stamped `0.8.13.0` from the 0.8.x line — release builds embed them as-is, so Windows file properties showed a version four releases old. `winres/winres.json` and both `rsrc_windows_*.syso` are regenerated at 0.11.2.
+- <u>**The worked index stays in step**</u>: saving only a comment dropped the contact from the DXCC history — the form indexed the object it was handed (no DXCC in it) while SQL preserved the stored value. The index is built from the row as stored, inside the same transaction, and enrichment plus the Big CTY backfill write through it too. Schema is 4: the upgrade backfills and rebuilds once.
+- <u>**The single-instance guard cannot be bypassed**</u>: it judged the lock by the process name `cqops`, so a release binary, renamed copy or AppImage never matched and answering "y" produced **two instances on one logbook**. The OS lock is the only authority now.
+- **Windows binaries report the right version**: the PE resources still said `0.8.13.0` and are regenerated at 0.11.2.
 
 ### Under the Hood
-- **CI now lints and builds as well**: `branding-check.yml` already ran the
-suite under `-race`, but nothing checked formatting, vet, module tidiness or
-that a release build still compiles. `.github/workflows/test.yml` adds `gofmt`,
-`go vet`, `go mod tidy -diff` and a `-ldflags` build with the embedded version
-on every push and pull request, so a locally-clean tree can no longer land
-unformatted or with a stale `go.mod`.
-- **The dashboard CSP no longer trusts a CDN it does not use**: MapLibre,
-Leaflet and the terminator are embedded, yet `script-src`, `style-src` and
-`worker-src` still allowed `https://cdn.jsdelivr.net` — a leftover from the CDN
-era that widened the supply-chain surface for no benefit. They are `'self'` now;
-`img-src`/`connect-src https:` stay, because map tiles and weather still come
-from the network.
-- **SSE streams are bounded**: the hub accepted subscribers without limit, so a
-looping or scripted client could grow goroutines and 128-event buffers without
-end. It now refuses the 33rd concurrent stream with `503` instead — before the
-handler commits the `200` and the initial snapshot, otherwise the browser would
-hold a "healthy" stream that silently ends (found by opening 40 streams against
-a running dashboard: the cap rejected them but every client still saw `200`).
-- **Dead code removed after a `staticcheck` sweep**: roughly 370 lines that
-nothing could reach — the pre-"unified Worked panel" renderers (`renderWLInfo`,
-`renderLoTW`, `formatRowPairs`, `renderFlagStatus`, `selectHistoryScope`, plus
-their tests) and the old PSK filter box (`buildPSKFilters` and its tests), the
-PSK height cache, the write-only `lastActiveDupe` cache, a never-applied form
-comment style, a duplicated `fillerW` computation, the unused
-`v2RequestDownload`/`readLineRaw` helpers, and the fake rig client, which moved
-out of the production binary into `rig_fake_test.go`.
-- **Manual and README corrections**: the per-logbook **Fixed grid (opt)** APRS
-option was undocumented in all ten manuals even though it decides what the
-beacon transmits — it is described now, together with the dashboard behaviour it
-explains. The README said "Go 1.26+" while `go.mod` pins 1.26.9, which is a hard
-minimum since Go 1.21.
-- **The responsive rules document themselves**: the dashboard has 39 media queries and the map row's height was re-declared nine times, which is why every display fix began with hunting for the rule that actually won. A "layout contract" comment now names the six tiers, what each one owns, and points at the map-row `min-height` declarations as the single lever over how much of the screen the map takes.
-- **Info-box visibility no longer depends on resize history**: the module box appeared only when the right column was at least `14.5rem` tall — a threshold that assumed an 8.5rem local map, far more than the 120px its CSS allows. The gate now derives from what the box plus the local map actually need, so the same viewport always produces the same layout (verified by sweeping the resolutions in both directions).
-- **Dependency refresh and a newer Go toolchain**: charm.land bubbletea v2.1.0, NimbleMarkets/ntcharts v2.8.0, modernc.org/sqlite v1.60.1 (modernc.org/libc v1.77.1), k0swe/wsjtx-go v4.3.1, golang.org/x/sys v0.49.0 and golang.org/x/text v0.43.0, plus the transitive Charm and runewidth updates; `golang.org/x/exp` is no longer needed at all. ntcharts v2.8.0 raises the minimum toolchain to **Go 1.26.9** — the previous 1.26.6 standard library carried nine `net/http`, `crypto/tls` and `net/textproto` advisories, all on paths CQOps uses (dashboard TLS listener, Wavelog/QRZ/REF clients). With the new toolchain `govulncheck` reports **no vulnerabilities**. `gofmt`, `go vet`, the full test suite and the `-race` run stay green.
+- **CI checks formatting and builds**: `gofmt`, `go vet`, `go mod tidy -diff` and a `-ldflags` build on every push and pull request.
+- **Toolchain and dependencies**: ntcharts v2.8.0 raises the minimum to Go 1.26.9, whose standard library closes nine `net/http`, `crypto/tls` and `net/textproto` advisories on paths CQOps uses — `govulncheck` is clean. Also bubbletea v2.1.0, sqlite v1.60.1, wsjtx-go v4.3.1, x/sys and x/text; `golang.org/x/exp` is gone.
+- **Tighter defaults**: the dashboard CSP no longer trusts an unused CDN, SSE streams are capped at 32, and ~370 lines of dead code are gone after a `staticcheck` sweep.
+- **Docs**: the per-logbook fixed APRS grid is documented in all ten manuals, and the README's Go version matches `go.mod`.
 
 ## v0.11.1 — 2026-10-15
 
