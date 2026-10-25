@@ -415,6 +415,20 @@ type CreateQSOInput struct {
 	SIGInfo          string
 	CQZone           string // written as cqz when numeric
 	ITUZone          string // written as ituz when numeric
+	// Contest exchange. The create takes any ADIF field name, so the exchange
+	// travels as stx/srx (serials) and stx_string/srx_string (the exchange
+	// without the RST prefix), plus contest_id so Wavelog can file the contact
+	// under the contest instead of as a plain QSO.
+	ContestID string // ADIF CONTEST_ID
+	STX       int
+	SRX       int
+	STXString string
+	SRXString string
+	// Submode is the SSB sideband (LSB/USB). Mode already carries the
+	// canonical mode, so the sideband travels separately — the same
+	// mode+submode split Wavelog's own importer produces. Omitted when it is
+	// the mode itself (FT8 is sent as mode=FT8, not mode=MFSK).
+	Submode string
 	// Confirmation statuses ('Y'/'N'/""); sent verbatim so an imported
 	// confirmation is not lost when the same QSO is re-uploaded.
 	QSLRcvd     string
@@ -474,6 +488,20 @@ func CreateQSO(baseURL, apiKey string, in CreateQSOInput) (remoteID int64, isDup
 	addStr("qsl_rcvd", in.QSLRcvd)
 	addStr("lotw_qsl_rcvd", in.LOTWQSLRcvd)
 	addStr("eqsl_qsl_rcvd", in.EQSLQSLRcvd)
+	if in.Submode != "" && !strings.EqualFold(in.Submode, in.Mode) {
+		payload["submode"] = in.Submode
+	}
+	// Contest data: without it a contest contact lands in Wavelog as a plain
+	// QSO with no exchange and no contest session attached.
+	addStr("contest_id", in.ContestID)
+	addStr("stx_string", in.STXString)
+	addStr("srx_string", in.SRXString)
+	if in.STX > 0 {
+		payload["stx"] = in.STX
+	}
+	if in.SRX > 0 {
+		payload["srx"] = in.SRX
+	}
 	if in.FreqHz > 0 {
 		payload["freq"] = in.FreqHz
 	}
@@ -673,6 +701,13 @@ type UpdateQSOInput struct {
 	ITUZone    *int
 	FreqHz     *int64
 	FreqRxHz   *int64
+	// Contest exchange. All four are in the API's editable-field list, so an
+	// edited exchange reaches the server. contest_id is NOT editable through
+	// PATCH (it is only accepted on create), which is why it is absent here.
+	STX       *int
+	SRX       *int
+	STXString *string
+	SRXString *string
 }
 
 // UpdateQSO updates a QSO on the Wavelog API v2 via PATCH /api/v2/qso/{id}.
@@ -743,6 +778,10 @@ func UpdateQSO(baseURL, apiKey string, remoteID int64, in UpdateQSOInput) error 
 	addClear("sig_info", in.SIGInfo)
 	addClearInt("cqz", in.CQZone)
 	addClearInt("ituz", in.ITUZone)
+	addClearInt("stx", in.STX)
+	addClearInt("srx", in.SRX)
+	addClear("stx_string", in.STXString)
+	addClear("srx_string", in.SRXString)
 	addClearHz("freq", in.FreqHz)
 	addClearHz("freq_rx", in.FreqRxHz)
 	body, err := json.Marshal(payload)

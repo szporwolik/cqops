@@ -351,6 +351,16 @@ func buildCreateQSOInput(sidInt int, qs *qso.QSO) wavelog.CreateQSOInput {
 		QSLRcvd:     qs.QSLRcvd,
 		LOTWQSLRcvd: qs.LOTWQSLRcvd,
 		EQSLQSLRcvd: qs.EQSLQSLRcvd,
+		// Contest data. A contest contact uploaded through the JSON create
+		// used to arrive in Wavelog as a plain QSO: no exchange, no contest
+		// session. The exchange travels the way ADIF names it (STX/SRX for
+		// serials, STX_STRING/SRX_STRING for the exchange without the RST)
+		// and CONTEST_ID attaches it to the contest.
+		ContestID: qs.ContestADIFID,
+		STX:       qs.STX,
+		SRX:       qs.SRX,
+		STXString: qs.STXString,
+		SRXString: qs.SRXString,
 	}
 	if qs.Freq > 0 {
 		in.FreqHz = int64(math.Round(qs.Freq * 1e6))
@@ -361,6 +371,11 @@ func buildCreateQSOInput(sidInt int, qs *qso.QSO) wavelog.CreateQSOInput {
 	// ADIF codes digital modes as MFSK+submode; v2 wants the canonical mode.
 	if strings.EqualFold(qs.Mode, "MFSK") && qs.Submode != "" {
 		in.Mode = qs.Submode
+	}
+	// Keep the SSB sideband: the mode is canonical ("SSB") and it is the
+	// submode that says which sideband was used.
+	if !strings.EqualFold(qs.Submode, in.Mode) {
+		in.Submode = qs.Submode
 	}
 	return in
 }

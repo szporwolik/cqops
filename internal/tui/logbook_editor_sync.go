@@ -568,6 +568,14 @@ func buildUpdateInput(q *qso.QSO) wavelog.UpdateQSOInput {
 		ITUZone:    zonePtr(q.ITUZone),
 		FreqHz:     &freq,
 		FreqRxHz:   &freqRx,
+		// The exchange is part of the API's editable-field list, so an edit
+		// of a contest contact no longer stops at the local database. An
+		// empty value clears the remote field (non-contest contacts stay
+		// empty either way).
+		STX:       serialPtr(q.STX),
+		SRX:       serialPtr(q.SRX),
+		STXString: strptr(q.STXString),
+		SRXString: strptr(q.SRXString),
 	}
 	if strings.EqualFold(q.Mode, "MFSK") && q.Submode != "" {
 		in.Mode = q.Submode // canonical: MFSK+FT8 → FT8, same as buildCreateQSOInput
@@ -586,6 +594,17 @@ func zonePtr(s string) *int {
 		}
 	}
 	return &v
+}
+
+// serialPtr converts a contest serial to a nullable int; 0 clears the remote
+// field (the wavelog layer sends null), which is what a QSO without a serial
+// exchange should have.
+func serialPtr(v int) *int {
+	n := v
+	if n < 0 {
+		n = 0
+	}
+	return &n
 }
 
 // adifTimeToHMS converts a local ADIF time (HHMM or HHMMSS) to the HH:MM:SS
