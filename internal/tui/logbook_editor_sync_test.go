@@ -3090,3 +3090,115 @@ func remoteDataFrom(t *testing.T, doc map[string]any) *wavelog.QSOData {
 	}
 	return &d
 }
+
+// TestRemoteRefreshNumberlessExchangeNeverInventsASerial reproduces the
+// reported bug: Wavelog held an exchange string with no serial (`stx` null),
+// the contact was refreshed, and a comment-only save PATCHed a serial derived
+// from the text — the number itself ("15"), digits inside it ("JO90" → 90) or
+// the report ("MA" together with RST 55 → 55).
+func TestRemoteRefreshNumberlessExchangeNeverInventsASerial(t *testing.T) {
+	cases := []struct{ name, exchange string }{
+		{"numeric text", "15"},
+		{"grid-like text", "JO90"},
+		{"state text", "MA"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			doc := remoteQSODoc(77)
+			doc["stx"], doc["srx"] = nil, nil
+			doc["stx_string"], doc["srx_string"] = tc.exchange, tc.exchange
+
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path != "/api/v2/qso/77" || r.Method != http.MethodGet {
+					http.NotFound(w, r)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]any{"data": doc})
+			}))
+			defer srv.Close()
+
+			le := newTestEditorWithDB(t, srv.URL, "wl2_test", "1", "Szymon", "KO00ca")
+			// The local row carries serials from an earlier version of the
+			// exchange; the server has none.
+			q := &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+				TimeOn: "120000", RSTSent: "55", RSTRcvd: "57",
+				ExchSent: "55 15", ExchRcvd: "57 16", STX: 15, SRX: 16,
+				STXString: "15", SRXString: "16", ContestID: "cqww", WavelogID: 77}
+			id := insertTestQSO(t, le.db, q)
+			q.ID = id
+
+			le.editing = q
+			le.mode = edModeEdit
+			le.fillEditForm(q)
+
+			msg := execCmd(le.fetchRemoteCopy(77, id))
+			em, ok := msg.(editorMsg)
+			if !ok || em.wlFetchQSO == nil {
+				t.Fatalf("fetch failed: %+v", msg)
+			}
+			if applied, err := le.ApplyRemoteRefresh(em.wlFetchQSO, remoteRefreshRequest{
+				gen: em.wlFetchGen, db: em.wlFetchDB, localID: em.wlFetchQSOID, rev: em.wlFetchRev,
+			}); err != nil || !applied {
+				t.Fatalf("ApplyRemoteRefresh applied=%v err=%v", applied, err)
+			}
+
+			stored, err := store.GetQSOByID(le.db, id)
+			if err != nil {
+				t.Fatalf("GetQSOByID: %v", err)
+			}
+			if stored.STX != 0 || stored.SRX != 0 {
+				t.Errorf("serials after refresh = %d/%d, want 0/0 (the server sent none)", stored.STX, stored.SRX)
+			}
+			if stored.STXString != tc.exchange {
+				t.Errorf("stx_string after refresh = %q, want %q", stored.STXString, tc.exchange)
+			}
+
+			// The operator edits only the comment and saves.
+			le.fields[qefComment].SetValue("tylko komentarz")
+			in := buildUpdateInput(le.readEditForm())
+			if in.STX != nil && *in.STX != 0 {
+				t.Errorf("PATCH stx = %d, want none (the server holds no serial)", *in.STX)
+			}
+			if in.SRX != nil && *in.SRX != 0 {
+				t.Errorf("PATCH srx = %d, want none (the server holds no serial)", *in.SRX)
+			}
+			if in.STXString == nil || *in.STXString != tc.exchange {
+				t.Errorf("PATCH stx_string = %v, want %q", in.STXString, tc.exchange)
+			}
+			if in.SRXString == nil || *in.SRXString != tc.exchange {
+				t.Errorf("PATCH srx_string = %v, want %q", in.SRXString, tc.exchange)
+			}
+		})
+	}
+}
+
+// TestEditFormSerialRowsAndExchangeText: a serial typed into its own row is
+// saved (it used to be overwritten by the derivation), and editing the exchange
+// text re-derives the serials from it.
+func TestEditFormSerialRowsAndExchangeText(t *testing.T) {
+	le := newTestEditorWithDB(t, "", "", "", "Szymon", "KO00ca")
+	q := &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "CW", QSODate: "20240501", TimeOn: "120000",
+		RSTSent: "55", RSTRcvd: "55", ExchSent: "55 JO90", ExchRcvd: "55 JO90",
+		STXString: "JO90", SRXString: "JO90"}
+	le.editing = q
+	le.mode = edModeEdit
+	le.fillEditForm(q)
+
+	// Nothing touched: the numberless exchange stays numberless.
+	if got := le.readEditForm(); got.STX != 0 || got.STXString != "JO90" {
+		t.Fatalf("untouched form: stx=%d string=%q, want 0/JO90", got.STX, got.STXString)
+	}
+
+	// A serial typed by hand survives even though the text still says JO90.
+	le.fields[qefSTX].SetValue("42")
+	if got := le.readEditForm(); got.STX != 42 || got.STXString != "JO90" {
+		t.Errorf("typed serial: stx=%d string=%q, want 42/JO90", got.STX, got.STXString)
+	}
+
+	// Editing the exchange text re-derives both fields from the new text.
+	le.fields[qefExchSent].SetValue("55 21")
+	if got := le.readEditForm(); got.STX != 21 || got.STXString != "21" {
+		t.Errorf("changed exchange: stx=%d string=%q, want 21/21", got.STX, got.STXString)
+	}
+}

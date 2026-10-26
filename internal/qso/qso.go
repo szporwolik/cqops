@@ -1,6 +1,7 @@
 package qso
 
 import (
+	"strconv"
 	"strings"
 	"time"
 )
@@ -131,37 +132,64 @@ func NormalizeQSLStatus(status string) string {
 func (q *QSO) NormalizeExchange() {
 	q.STXString = StripRSTPrefix(q.ExchSent, q.RSTSent)
 	q.SRXString = StripRSTPrefix(q.ExchRcvd, q.RSTRcvd)
-	q.STX = ParseSerial(q.ExchSent)
-	q.SRX = ParseSerial(q.ExchRcvd)
+	q.STX = SerialFromExchange(q.ExchSent, q.RSTSent)
+	q.SRX = SerialFromExchange(q.ExchRcvd, q.RSTRcvd)
 }
 
-// ParseSerial extracts the last integer from a contest exchange string.
-// Returns 0 if no integer is found. In contest exchanges, the sequence
-// number is the trailing number (e.g. "599 001" → 001, "5NN 042" → 42).
-func ParseSerial(s string) int {
-	s = strings.TrimSpace(s)
-	if s == "" {
+// SerialFromExchange derives the contest serial from an exchange as typed or
+// imported ("59 001" → 1, "5NN 042" → 42).
+//
+// Two rules keep it from inventing a serial out of unrelated digits, which an
+// ordinary save would then push to Wavelog:
+//   - the RST prefix is removed first, so the report can never become the
+//     serial ("55 MA" is a state exchange, not serial 55);
+//   - only a standalone number counts, so digits inside a state, grid or code
+//     are ignored ("JO90" → 0, not 90) — and a bare report left in front of a
+//     non-numeric exchange is not a serial either.
+//
+// Returns 0 when the exchange carries no serial at all.
+func SerialFromExchange(exchange, rst string) int {
+	tokens := strings.FieldsFunc(StripRSTPrefix(exchange, rst), func(r rune) bool {
+		return r == ' ' || r == '\t' || r == '/' || r == ',' || r == ';'
+	})
+	idx := -1
+	for i, tok := range tokens {
+		if isAllDigits(tok) {
+			idx = i // the trailing number is the serial ("599 001" → 1)
+		}
+	}
+	if idx < 0 {
 		return 0
 	}
-	// Find the last integer by scanning from the end.
-	end := len(s)
-	// Skip trailing non-digits.
-	for end > 0 && (s[end-1] < '0' || s[end-1] > '9') {
-		end--
-	}
-	if end == 0 {
+	// The RST is a form field and may be empty, leaving the report in the text.
+	// A report in front of a non-numeric exchange carries no serial at all.
+	if idx == 0 && len(tokens) > 1 && looksLikeReport(tokens[0]) {
 		return 0
 	}
-	// Find start of the last number.
-	start := end
-	for start > 0 && s[start-1] >= '0' && s[start-1] <= '9' {
-		start--
-	}
-	n := 0
-	for i := start; i < end; i++ {
-		n = n*10 + int(s[i]-'0')
+	n, err := strconv.Atoi(tokens[idx])
+	if err != nil {
+		return 0 // more digits than a serial can hold
 	}
 	return n
+}
+
+// looksLikeReport reports whether tok could be an RST value (55, 57, 59, 599).
+func looksLikeReport(tok string) bool {
+	return len(tok) <= 3 && tok[0] >= '5' && tok[0] <= '9'
+}
+
+// isAllDigits reports whether s is non-empty and holds nothing but ASCII
+// digits.
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // StripRSTPrefix removes the leading RST value from an exchange string.

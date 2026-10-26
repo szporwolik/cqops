@@ -97,8 +97,8 @@ func (m *Model) saveQSO() tea.Cmd {
 	// field-day, and other non-serial contests the numeric fields must
 	// remain 0 so they are omitted from ADIF export.
 	if ct, ok := m.App.Config.Contests[m.App.Logbook.ActiveContest]; ok && ct.SerialExchange {
-		qs.STX = qso.ParseSerial(qs.ExchSent)
-		qs.SRX = qso.ParseSerial(qs.ExchRcvd)
+		qs.STX = qso.SerialFromExchange(qs.ExchSent, qs.RSTSent)
+		qs.SRX = qso.SerialFromExchange(qs.ExchRcvd, qs.RSTRcvd)
 	}
 	station := qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,

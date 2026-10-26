@@ -1923,7 +1923,7 @@ func (m *Model) resolveExchangeMarkers(tmpl, direction string, nextQSO int) stri
 	// @serial — contest sequence number.
 	// For received exchange, keep @serial as a format placeholder so the
 	// operator knows where to type the received serial; the actual number
-	// is parsed from user input at save time via ParseSerial.
+	// is parsed from user input at save time via qso.SerialFromExchange.
 	if direction == "sent" {
 		seq := fmt.Sprintf("%03d", nextQSO)
 		if nextQSO > 999 {
