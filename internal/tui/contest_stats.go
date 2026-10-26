@@ -35,10 +35,19 @@ type contestStats struct {
 	contestID   string
 	cachedSig   string
 	cachedPanel string
+
+	// now is the clock seam for tests (nil means time.Now). The window
+	// counters compare against the wall clock, so a test that pins the QSO
+	// times must pin the clock too — otherwise it flips whenever the run
+	// happens to start within the first minutes of an hour.
+	now func() time.Time
 }
 
 func (cs *contestStats) computeIfStale(db *sql.DB, contestID string, contestName string) bool {
 	now := time.Now().UTC()
+	if cs.now != nil {
+		now = cs.now().UTC()
+	}
 	if cs.contestID == contestID && now.Sub(cs.computedAt) < 5*time.Second {
 		return false
 	}

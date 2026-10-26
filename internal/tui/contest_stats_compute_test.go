@@ -53,12 +53,16 @@ func recompute(cs *contestStats, db *sql.DB, contestID string) {
 // of being recalculated.
 func TestContestStatsCountersDoNotAccumulate(t *testing.T) {
 	db := newContestStatsDB(t)
-	now := time.Now().UTC()
+	// Pin the clock well inside an hour: the counters compare the QSO times
+	// against the current hour and the last 60 minutes, so a real clock in the
+	// first minutes of an hour would put the older contacts in the previous
+	// hour and make this test fail for the wrong reason.
+	base := time.Date(2026, 5, 1, 12, 30, 0, 0, time.UTC)
 	for i := 0; i < 4; i++ {
-		insertContestQSO(t, db, "c1", now.Add(-time.Duration(i)*2*time.Minute))
+		insertContestQSO(t, db, "c1", base.Add(-time.Duration(i)*2*time.Minute))
 	}
 
-	cs := &contestStats{}
+	cs := &contestStats{now: func() time.Time { return base }}
 	cs.computeIfStale(db, "c1", "Test")
 	if cs.Last60Min != 4 || cs.ThisHour != 4 {
 		t.Fatalf("first compute: 60m=%d hr=%d, want 4 and 4", cs.Last60Min, cs.ThisHour)

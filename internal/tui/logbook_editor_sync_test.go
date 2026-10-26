@@ -2958,3 +2958,135 @@ func TestPendingSyncRetryKeyOpensConfirm(t *testing.T) {
 		t.Fatal("confirming should dispatch the retry")
 	}
 }
+
+// TestRemoteRefreshExchangeSurvivesCommentEdit reproduces the reported bug: the
+// operator corrected the serials in Wavelog (21/22), CQOps refreshed the
+// contact and then edited only the comment. The save re-derived stx/srx from
+// the stale local exchange text and PATCHed 15/16 back over the server value.
+func TestRemoteRefreshExchangeSurvivesCommentEdit(t *testing.T) {
+	doc := remoteQSODoc(77)
+	doc["stx"], doc["srx"] = 21, 22
+	doc["stx_string"], doc["srx_string"] = "21", "22"
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v2/qso/77" || r.Method != http.MethodGet {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"data": doc})
+	}))
+	defer srv.Close()
+
+	le := newTestEditorWithDB(t, srv.URL, "wl2_test", "1", "Szymon", "KO00ca")
+
+	q := &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB", QSODate: "20240501",
+		TimeOn: "120000", RSTSent: "59", RSTRcvd: "59",
+		ExchSent: "59 15", ExchRcvd: "59 16", STX: 15, SRX: 16,
+		STXString: "15", SRXString: "16", ContestID: "cqww", Comment: "local", WavelogID: 77}
+	id := insertTestQSO(t, le.db, q)
+	q.ID = id
+
+	le.editing = q
+	le.mode = edModeEdit
+	le.fillEditForm(q)
+
+	msg := execCmd(le.fetchRemoteCopy(77, id))
+	em, ok := msg.(editorMsg)
+	if !ok {
+		t.Fatalf("expected editorMsg, got %T", msg)
+	}
+	if em.wlFetchQSO == nil || em.wlFetchErr != "" {
+		t.Fatalf("fetch failed: qso=%v err=%q", em.wlFetchQSO, em.wlFetchErr)
+	}
+	applied, err := le.ApplyRemoteRefresh(em.wlFetchQSO, remoteRefreshRequest{
+		gen: em.wlFetchGen, db: em.wlFetchDB, localID: em.wlFetchQSOID, rev: em.wlFetchRev,
+	})
+	if err != nil {
+		t.Fatalf("ApplyRemoteRefresh: %v", err)
+	}
+	if !applied {
+		t.Fatal("ApplyRemoteRefresh should apply a fresh fetch with no edits")
+	}
+
+	stored, err := store.GetQSOByID(le.db, id)
+	if err != nil {
+		t.Fatalf("GetQSOByID: %v", err)
+	}
+	if stored.STX != 21 || stored.SRX != 22 {
+		t.Errorf("serials = %d/%d, want 21/22 (remote correction must be merged)", stored.STX, stored.SRX)
+	}
+	if stored.STXString != "21" || stored.SRXString != "22" {
+		t.Errorf("exchange strings = %q/%q, want 21/22", stored.STXString, stored.SRXString)
+	}
+	// The remote doc sends RST 55/57, so the rebuilt exchange text is "55 21".
+	if stored.ExchSent != "55 21" || stored.ExchRcvd != "57 22" {
+		t.Errorf("exchange text = %q/%q, want \"55 21\"/\"57 22\"", stored.ExchSent, stored.ExchRcvd)
+	}
+	if got := le.fields[qefExchSent].Value(); got != "55 21" {
+		t.Errorf("edit form exchange sent = %q, want \"55 21\"", got)
+	}
+
+	// The operator now edits only the comment and saves.
+	le.fields[qefComment].SetValue("moj komentarz")
+	edited := le.readEditForm()
+	if edited.STX != 21 || edited.SRX != 22 || edited.STXString != "21" || edited.SRXString != "22" {
+		t.Fatalf("save re-derived stale exchange: stx=%d srx=%d strings=%q/%q",
+			edited.STX, edited.SRX, edited.STXString, edited.SRXString)
+	}
+
+	in := buildUpdateInput(edited)
+	if in.STX == nil || *in.STX != 21 {
+		t.Errorf("PATCH stx = %v, want 21", in.STX)
+	}
+	if in.SRX == nil || *in.SRX != 22 {
+		t.Errorf("PATCH srx = %v, want 22", in.SRX)
+	}
+	if in.STXString == nil || *in.STXString != "21" {
+		t.Errorf("PATCH stx_string = %v, want \"21\"", in.STXString)
+	}
+	if in.SRXString == nil || *in.SRXString != "22" {
+		t.Errorf("PATCH srx_string = %v, want \"22\"", in.SRXString)
+	}
+}
+
+// TestRemoteRefreshClearsExchangeWhenServerCleared verifies the other half of
+// the contract: an explicit remote clear (null serial, empty exchange string)
+// must drop the local exchange instead of resurrecting it on the next save.
+func TestRemoteRefreshClearsExchangeWhenServerCleared(t *testing.T) {
+	local := &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB",
+		RSTSent: "59", RSTRcvd: "59", ExchSent: "59 15", ExchRcvd: "59 16",
+		STX: 15, SRX: 16, STXString: "15", SRXString: "16"}
+
+	// remoteQSODoc carries stx/srx null and empty exchange strings (presence set).
+	merged := mergeRemoteQSO(local, remoteDataFrom(t, remoteQSODoc(77)))
+	if merged.STX != 0 || merged.SRX != 0 || merged.STXString != "" || merged.SRXString != "" {
+		t.Errorf("remote clear not applied: stx=%d srx=%d strings=%q/%q",
+			merged.STX, merged.SRX, merged.STXString, merged.SRXString)
+	}
+	if merged.ExchSent != "" || merged.ExchRcvd != "" {
+		t.Errorf("exchange text not cleared: %q/%q", merged.ExchSent, merged.ExchRcvd)
+	}
+
+	// An ABSENT exchange field leaves the local values alone.
+	partial := map[string]any{"id": 77, "call": "SP9MOA", "band": "20m", "mode": "SSB", "comment": "c"}
+	kept := mergeRemoteQSO(local, remoteDataFrom(t, partial))
+	if kept.STX != 15 || kept.SRX != 16 || kept.STXString != "15" || kept.ExchSent != "59 15" {
+		t.Errorf("absent exchange field must be preserved: %+v", kept)
+	}
+}
+
+// remoteDataFrom decodes a JSON document the way the API client does, so the
+// field-presence information is populated exactly as in production.
+func remoteDataFrom(t *testing.T, doc map[string]any) *wavelog.QSOData {
+	t.Helper()
+	raw, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var d wavelog.QSOData
+	if err := json.Unmarshal(raw, &d); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	return &d
+}

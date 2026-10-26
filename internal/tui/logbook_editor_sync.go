@@ -433,11 +433,18 @@ func (m *Model) queueContactReconcile(db *sql.DB, url, key, logbook string, loca
 }
 
 // mergeRemoteQSO overlays the server-side fields onto a local QSO. Local-only
-// data (source, contest fields, exchange fields, created_at, wavelog_id) is
-// preserved. Every field this function can overwrite is part of the
-// field-level synchronization contract and MUST be sent by buildUpdateInput
-// — otherwise a successful PATCH would clear the dirty flag while this
-// refresh silently restores the server's older value.
+// data (source, created_at, wavelog_id) is preserved. Every field this
+// function can overwrite is part of the field-level synchronization contract
+// and MUST be sent by buildUpdateInput — otherwise a successful PATCH would
+// clear the dirty flag while this refresh silently restores the server's
+// older value.
+//
+// The contest exchange is synced in BOTH directions: buildUpdateInput sends
+// stx/srx/stx_string/srx_string, so a remote correction has to land here or the
+// next unrelated save (editing only the comment) would push the stale serials
+// back and silently undo the server-side fix. The editable exchange text
+// (ExchSent/ExchRcvd) is rebuilt from the merged parts for the same reason —
+// the editor re-derives the four fields from it on save.
 func mergeRemoteQSO(local *qso.QSO, d *wavelog.QSOData) *qso.QSO {
 	merged := *local
 	if call := strings.TrimSpace(d.Call); call != "" {
@@ -522,7 +529,82 @@ func mergeRemoteQSO(local *qso.QSO, d *wavelog.QSOData) *qso.QSO {
 			}
 		}
 	}
+
+	// Contest exchange (stx/srx/stx_string/srx_string). Presence-aware for the
+	// same reason as the zones above: an explicit remote clear must apply, an
+	// absent field must not.
+	var stxSet, stxStrSet, srxSet, srxStrSet bool
+	if d.HasPresence() {
+		if stxSet = d.Has("stx"); stxSet {
+			merged.STX = 0
+			if d.STX != nil && *d.STX > 0 {
+				merged.STX = *d.STX
+			}
+		}
+		if srxSet = d.Has("srx"); srxSet {
+			merged.SRX = 0
+			if d.SRX != nil && *d.SRX > 0 {
+				merged.SRX = *d.SRX
+			}
+		}
+		if stxStrSet = d.Has("stx_string"); stxStrSet {
+			merged.STXString = strings.TrimSpace(d.STXString)
+		}
+		if srxStrSet = d.Has("srx_string"); srxStrSet {
+			merged.SRXString = strings.TrimSpace(d.SRXString)
+		}
+	} else {
+		if d.STX != nil {
+			merged.STX, stxSet = max(*d.STX, 0), true
+		}
+		if d.SRX != nil {
+			merged.SRX, srxSet = max(*d.SRX, 0), true
+		}
+		if d.STXString != "" {
+			merged.STXString, stxStrSet = strings.TrimSpace(d.STXString), true
+		}
+		if d.SRXString != "" {
+			merged.SRXString, srxStrSet = strings.TrimSpace(d.SRXString), true
+		}
+	}
+	// Keep the editable exchange text in step with the four fields: the editor
+	// re-derives them from ExchSent/ExchRcvd on save, so a stale text would
+	// resurrect the old serials on the next unrelated edit.
+	if text, ok := exchangeText(merged.RSTSent, stxStrSet, merged.STXString, stxSet, merged.STX); ok {
+		merged.ExchSent = text
+	}
+	if text, ok := exchangeText(merged.RSTRcvd, srxStrSet, merged.SRXString, srxSet, merged.SRX); ok {
+		merged.ExchRcvd = text
+	}
 	return &merged
+}
+
+// exchangeText rebuilds the editable exchange — the RST prefix followed by the
+// exchange, the inverse of qso.StripRSTPrefix — from the parts the remote copy
+// actually provided. ok is false when the remote said nothing about this side,
+// so the local text stays untouched.
+func exchangeText(rst string, strSet bool, exch string, serialSet bool, serial int) (string, bool) {
+	switch {
+	case strSet:
+		exch = strings.TrimSpace(exch)
+		if exch == "" && serialSet && serial > 0 {
+			exch = strconv.Itoa(serial)
+		}
+	case serialSet:
+		exch = ""
+		if serial > 0 {
+			exch = strconv.Itoa(serial)
+		}
+	default:
+		return "", false
+	}
+	if exch == "" {
+		return "", true
+	}
+	if rst = strings.TrimSpace(rst); rst != "" {
+		return rst + " " + exch, true
+	}
+	return exch, true
 }
 
 // strptr returns a pointer to s, so an empty string can be distinguished
