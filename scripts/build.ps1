@@ -22,9 +22,12 @@ $winres.RT_VERSION.'#1'.'0000'.fixed.product_version = $ver4
 $winres.RT_VERSION.'#1'.'0000'.info.'0409'.FileVersion = $VERSION
 $winres.RT_VERSION.'#1'.'0000'.info.'0409'.ProductVersion = $VERSION
 $winres | ConvertTo-Json -Depth 10 | Set-Content winres\winres.json -Encoding UTF8
-# Regenerate .syso if go-winres is available
+# Regenerate .syso if go-winres is available. Run from the repo root: the tool
+# reads winres/winres.json relative to the working directory and must write the
+# objects next to the binary (--out), otherwise the Windows build keeps the
+# previously committed resources.
 if (Get-Command go-winres -ErrorAction SilentlyContinue) {
-    Push-Location winres; go-winres make; Pop-Location
+    go-winres make --arch amd64,386 --out cmd/cqops/rsrc
 }
 
 $LDFLAGS = "-s -w -X github.com/szporwolik/cqops/internal/version.Version=$VERSION -X github.com/szporwolik/cqops/internal/version.Commit=$COMMIT -X github.com/szporwolik/cqops/internal/version.BuildDate=$BUILD_DATE"

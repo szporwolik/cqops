@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.11.3 — unreleased
+
+> **Development cycle for the next release.** Work in progress on `dev`; nothing here is published yet, and the version will be dated when the release is cut.
+
+- **Nothing yet.** Planned additions and fixes land in this section as they are finished.
+
 ## v0.11.2 — 2026-10-26
 
 > **Maintenance release: honest worked-status verdicts backed by the local index, contest exchanges back in the log panes with a corrected rate panel, and a dashboard pass that fixes the solar scales, the layout from 1024×600 to 4K and a stale-country bug — plus Wavelog uploads that keep the power and references, a patched Go toolchain and Windows binaries that report their own version.** The database migrates automatically to schema v4 on the first start; no config change is needed.
