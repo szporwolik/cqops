@@ -270,7 +270,7 @@ jobs:
           echo "version=$V" >> $GITHUB_OUTPUT
           echo "Version: $V"
 
-      - name: Build release notes from merged PRs
+      - name: Build release notes
         env:
           VERSION: ${{ steps.meta.outputs.version }}
           GH_TOKEN: ${{ github.token }}
@@ -278,21 +278,37 @@ jobs:
           set -euo pipefail
           NOTES="release-notes.md"
 
-          echo "## What's Changed" > "$NOTES"
-          echo "" >> "$NOTES"
+          # The changelog section for this version IS the release body: it is
+          # written for operators and is plain Markdown (no HTML tags, so it
+          # renders the same in the web UI, the API and `gh release view`).
+          # The merged-PR list further down is only a fallback for a tag that
+          # carries no changelog entry.
+          awk -v ver="v${VERSION}" '
+            $0 ~ "^## " ver "([^0-9]|$)" { on = 1; next }
+            on && /^## v[0-9]/ { exit }
+            on { print }
+          ' CHANGELOG.md | sed -e '/./,$!d' > "$NOTES"
 
-          LAST_TAG=$(git tag --sort=-v:refname | grep -E '^v[0-9]' | head -1 || echo "")
-          if [ -n "$LAST_TAG" ]; then
-            # Get PR numbers merged since last tag.
-            PRS=$(git log "${LAST_TAG}..HEAD" --merges --pretty=format:"#%s" --reverse | grep -oP '#\d+' | sed 's/#//' | sort -u || echo "")
-            for pr in $PRS; do
-              echo "### PR #${pr}" >> "$NOTES"
-              # Use gh to get PR title and body.
-              gh pr view "$pr" --json title,body --jq '"**\(.title)**\n\n\(.body)"' >> "$NOTES" 2>/dev/null || echo "_PR details unavailable_" >> "$NOTES"
-              echo "" >> "$NOTES"
-            done
+          if [ -s "$NOTES" ]; then
+            echo "Release notes from CHANGELOG.md ($(wc -l < "$NOTES") lines)."
           else
-            echo "_First release._" >> "$NOTES"
+            echo "No changelog section for v${VERSION} - falling back to merged PRs."
+            echo "## What's Changed" > "$NOTES"
+            echo "" >> "$NOTES"
+
+            LAST_TAG=$(git tag --sort=-v:refname | grep -E '^v[0-9]' | head -1 || echo "")
+            if [ -n "$LAST_TAG" ]; then
+              # Get PR numbers merged since last tag.
+              PRS=$(git log "${LAST_TAG}..HEAD" --merges --pretty=format:"#%s" --reverse | grep -oP '#\d+' | sed 's/#//' | sort -u || echo "")
+              for pr in $PRS; do
+                echo "### PR #${pr}" >> "$NOTES"
+                # Use gh to get PR title and body.
+                gh pr view "$pr" --json title,body --jq '"**\(.title)**\n\n\(.body)"' >> "$NOTES" 2>/dev/null || echo "_PR details unavailable_" >> "$NOTES"
+                echo "" >> "$NOTES"
+              done
+            else
+              echo "_First release._" >> "$NOTES"
+            fi
           fi
 
           echo "Release notes:"
