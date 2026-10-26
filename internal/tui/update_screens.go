@@ -790,6 +790,7 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 				m.pushDashboardFast()
 			}
 			// Refresh the editor's contest filter.
+			m.ui.logbookEditor.SetContestMode(m.App.Logbook.ActiveContest != "")
 			if m.App.Logbook.ActiveContest != "" {
 				ct := m.App.Config.Contests[m.App.Logbook.ActiveContest]
 				m.ui.logbookEditor.SetContestID(m.App.Logbook.ActiveContest, config.ContestDisplayName(&ct), ct.ContestID, ct.Date)

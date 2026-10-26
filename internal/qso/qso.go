@@ -1,8 +1,20 @@
 package qso
 
 import (
+	"strconv"
 	"strings"
 	"time"
+)
+
+// DXCC resolution provenance, stored in QSO.DXCCSource. It records HOW the
+// entity number was obtained so a future reconfirmation or re-resolution can
+// tell a provider value from a guess.
+const (
+	DXCCSourceExplicit = "explicit" // carried by the record or entered locally
+	DXCCSourceImported = "imported" // supplied by an ADIF file / remote logbook
+	DXCCSourcePrefix   = "prefix"   // deterministic callsign-prefix lookup (CTY)
+	DXCCSourceCallbook = "callbook" // callbook (QRZ/HamQTH/…) result
+	DXCCSourceUnknown  = "unknown"  // still unresolved
 )
 
 type QSO struct {
@@ -51,6 +63,13 @@ type QSO struct {
 	CQZone          string // DXCC CQ zone (1-40), enriched from CTY.DAT or QRZ
 	ITUZone         string // DXCC ITU zone (1-90), enriched from CTY.DAT or QRZ
 	DXCC            string // DXCC entity number (e.g. "269" for Poland), from QRZ
+	DXCCSource      string // how DXCC was resolved (DXCCSource* constant)
+	// Confirmation status as ADIF defines it: "Y" received, "N" not received,
+	// "" not provided/unknown. Empty is preserved on update, so a caller that
+	// does not manage confirmations can never wipe a stored one.
+	QSLRcvd         string // paper QSL received (QSL_RCVD)
+	LOTWQSLRcvd     string // LoTW confirmation (LOTW_QSL_RCVD)
+	EQSLQSLRcvd     string // eQSL confirmation (EQSL_QSL_RCVD)
 	MyCQZone        string // station CQ zone (1-40), from logbook station config
 	MyITUZone       string // station ITU zone (1-90), from logbook station config
 	MyDXCC          string // station DXCC entity number, from logbook station config
@@ -78,43 +97,99 @@ func NewQSO() *QSO {
 	}
 }
 
+// Confirmed reports whether any confirmation was received for the contact
+// (paper QSL, LoTW or eQSL).
+func (q *QSO) Confirmed() bool {
+	return IsQSLReceived(q.QSLRcvd) || IsQSLReceived(q.LOTWQSLRcvd) || IsQSLReceived(q.EQSLQSLRcvd)
+}
+
+// IsQSLReceived reports whether an ADIF QSL-received status means "received".
+// ADIF allows Y (yes) and V (verified, import-only).
+func IsQSLReceived(status string) bool {
+	switch strings.ToUpper(strings.TrimSpace(status)) {
+	case "Y", "V":
+		return true
+	}
+	return false
+}
+
+// NormalizeQSLStatus maps an ADIF QSL-received status to the value CQOps
+// stores: "Y", "N" or "" (not provided). Anything else is treated as unknown
+// rather than inventing a confirmation.
+func NormalizeQSLStatus(status string) string {
+	switch strings.ToUpper(strings.TrimSpace(status)) {
+	case "Y", "V":
+		return "Y"
+	case "N":
+		return "N"
+	}
+	return ""
+}
+
 // NormalizeExchange re-derives STX, SRX, STXString, and SRXString from
 // ExchSent and ExchRcvd. Call this after reading exchange fields from the
 // logbook editor to keep them consistent with the main QSO form save path.
 func (q *QSO) NormalizeExchange() {
 	q.STXString = StripRSTPrefix(q.ExchSent, q.RSTSent)
 	q.SRXString = StripRSTPrefix(q.ExchRcvd, q.RSTRcvd)
-	q.STX = ParseSerial(q.ExchSent)
-	q.SRX = ParseSerial(q.ExchRcvd)
+	q.STX = SerialFromExchange(q.ExchSent, q.RSTSent)
+	q.SRX = SerialFromExchange(q.ExchRcvd, q.RSTRcvd)
 }
 
-// ParseSerial extracts the last integer from a contest exchange string.
-// Returns 0 if no integer is found. In contest exchanges, the sequence
-// number is the trailing number (e.g. "599 001" → 001, "5NN 042" → 42).
-func ParseSerial(s string) int {
-	s = strings.TrimSpace(s)
-	if s == "" {
+// SerialFromExchange derives the contest serial from an exchange as typed or
+// imported ("59 001" → 1, "5NN 042" → 42).
+//
+// Two rules keep it from inventing a serial out of unrelated digits, which an
+// ordinary save would then push to Wavelog:
+//   - the RST prefix is removed first, so the report can never become the
+//     serial ("55 MA" is a state exchange, not serial 55);
+//   - only a standalone number counts, so digits inside a state, grid or code
+//     are ignored ("JO90" → 0, not 90) — and a bare report left in front of a
+//     non-numeric exchange is not a serial either.
+//
+// Returns 0 when the exchange carries no serial at all.
+func SerialFromExchange(exchange, rst string) int {
+	tokens := strings.FieldsFunc(StripRSTPrefix(exchange, rst), func(r rune) bool {
+		return r == ' ' || r == '\t' || r == '/' || r == ',' || r == ';'
+	})
+	idx := -1
+	for i, tok := range tokens {
+		if isAllDigits(tok) {
+			idx = i // the trailing number is the serial ("599 001" → 1)
+		}
+	}
+	if idx < 0 {
 		return 0
 	}
-	// Find the last integer by scanning from the end.
-	end := len(s)
-	// Skip trailing non-digits.
-	for end > 0 && (s[end-1] < '0' || s[end-1] > '9') {
-		end--
-	}
-	if end == 0 {
+	// The RST is a form field and may be empty, leaving the report in the text.
+	// A report in front of a non-numeric exchange carries no serial at all.
+	if idx == 0 && len(tokens) > 1 && looksLikeReport(tokens[0]) {
 		return 0
 	}
-	// Find start of the last number.
-	start := end
-	for start > 0 && s[start-1] >= '0' && s[start-1] <= '9' {
-		start--
-	}
-	n := 0
-	for i := start; i < end; i++ {
-		n = n*10 + int(s[i]-'0')
+	n, err := strconv.Atoi(tokens[idx])
+	if err != nil {
+		return 0 // more digits than a serial can hold
 	}
 	return n
+}
+
+// looksLikeReport reports whether tok could be an RST value (55, 57, 59, 599).
+func looksLikeReport(tok string) bool {
+	return len(tok) <= 3 && tok[0] >= '5' && tok[0] <= '9'
+}
+
+// isAllDigits reports whether s is non-empty and holds nothing but ASCII
+// digits.
+func isAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
 }
 
 // StripRSTPrefix removes the leading RST value from an exchange string.

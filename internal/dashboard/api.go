@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path"
 	"strings"
 	"time"
 
@@ -27,7 +28,16 @@ func NewMux(streamCtx context.Context, state *State, hub *Hub) *http.ServeMux {
 	// go:embed static/* embeds files at "static/index.html", etc.
 	// We read the embed.FS by those exact paths to avoid FileServer
 	// redirect/prefix issues.
-	mux.HandleFunc("/", serveStaticFile("static/index.html", "text/html; charset=utf-8"))
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Only extension-less paths fall back to the page; a missing asset must
+		// answer 404 instead of index.html, otherwise a broken <script src>
+		// looks like a syntax error rather than a missing file.
+		if path.Ext(r.URL.Path) != "" {
+			http.NotFound(w, r)
+			return
+		}
+		serveStaticFile("static/index.html", "text/html; charset=utf-8")(w, r)
+	})
 	mux.HandleFunc("/index.html", serveStaticFile("static/index.html", "text/html; charset=utf-8"))
 	mux.HandleFunc("/app.js", serveStaticFile("static/app.js", "application/javascript"))
 	mux.HandleFunc("/theme.js", serveStaticFile("static/theme.js", "application/javascript"))
@@ -35,6 +45,12 @@ func NewMux(streamCtx context.Context, state *State, hub *Hub) *http.ServeMux {
 	mux.HandleFunc("/leaflet.js", serveStaticFile("static/leaflet.js", "application/javascript"))
 	mux.HandleFunc("/leaflet.css", serveStaticFile("static/leaflet.css", "text/css"))
 	mux.HandleFunc("/terminator.js", serveStaticFile("static/terminator.js", "application/javascript"))
+	// MapLibre GL ships with the binary: the dashboard must render its tile map
+	// on a station with no internet access, and the CDN tags it used before
+	// were a runtime third-party dependency (and a supply-chain risk).
+	mux.HandleFunc("/maplibre-gl.js", serveStaticFile("static/maplibre-gl.js", "application/javascript"))
+	mux.HandleFunc("/maplibre-gl.css", serveStaticFile("static/maplibre-gl.css", "text/css"))
+	mux.HandleFunc("/leaflet-maplibre-gl.js", serveStaticFile("static/leaflet-maplibre-gl.js", "application/javascript"))
 	mux.HandleFunc("/favicon.ico", serveStaticFile("static/favicon.ico", "image/x-icon"))
 	mux.HandleFunc("/images/marker-icon.png", serveStaticFile("static/images/marker-icon.png", "image/png"))
 	mux.HandleFunc("/images/marker-icon-2x.png", serveStaticFile("static/images/marker-icon-2x.png", "image/png"))
@@ -199,6 +215,14 @@ func handleEvents(streamCtx context.Context, state *State, hub *Hub) http.Handle
 			return
 		}
 
+		// The capacity check must run before the first WriteHeader: once the
+		// 200 and the initial snapshot are on the wire a 503 is impossible, and
+		// the browser would see a healthy stream that silently ends.
+		if hub.Clients() >= MaxSubscribers {
+			http.Error(w, "too many dashboard clients", http.StatusServiceUnavailable)
+			return
+		}
+
 		// The server-wide WriteTimeout stays disabled for SSE (the stream
 		// never finishes); every individual write is bounded below in
 		// writeSSE instead, so a stalled client cannot strand us here.
@@ -225,6 +249,12 @@ func handleEvents(streamCtx context.Context, state *State, hub *Hub) http.Handle
 
 		// Subscribe to hub.
 		ch := hub.Subscribe()
+		if ch == nil {
+			// Lost the race for the last slot after the pre-check. The snapshot
+			// is already on the wire, so end the stream and let the browser
+			// reconnect rather than stream without a subscription.
+			return
+		}
 		defer hub.Unsubscribe(ch)
 
 		// Heartbeat ticker — must fire well within any proxy/CDN/browser

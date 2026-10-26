@@ -28,9 +28,6 @@ type pskState struct {
 	mapView string
 	mapSig  string
 
-	// PSK Heights cache — computed during table/filter build.
-	cachedTableH int
-
 	// Async DB loading — avoids synchronous SQLite during View().
 	needDBLoad     bool
 	pendingSpotKey string

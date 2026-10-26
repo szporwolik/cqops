@@ -1,0 +1,56 @@
+name: Lint & Build
+
+# Complements branding-check.yml, whose `test-race` job already compiles and
+# runs the suite under the race detector. What had no automated check at all
+# was formatting, vet, module tidiness and a real release build — this is that
+# safety net, kept separate so it stays fast and independent of packaging.
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go mod tidy (no diff)
+        run: |
+          diff="$(go mod tidy -diff)"
+          if [ -n "$diff" ]; then
+            echo "$diff"
+            exit 1
+          fi
+
+      - name: release build with embedded version
+        run: |
+          go build -ldflags "-s -w -X github.com/szporwolik/cqops/internal/version.Version=$(cat VERSION)" -o build/cqops ./cmd/cqops/
+          ./build/cqops version

@@ -395,10 +395,10 @@ var qsoColTiers = []struct {
 	{280, 0, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Source", "WL", "SOTA", "POTA", "WWFF", "IOTA", "SIG"}},
 }
 
-// qsoColTiersContest mirrors qsoColTiers but swaps SOTA/POTA/WWFF/IOTA/SIG
-// for ExchSent/ExchRcvd at the wide tiers. Narrow and medium tiers are
-// identical — contest exchanges only appear once there is enough room
-// (same thresholds as SOTA/POTA/IOTA would in non-contest mode).
+// qsoColTiersContest puts the contest exchange where the operator reads it:
+// ExchSent/ExchRcvd follow the RST pair as soon as ~70 columns are available.
+// Reference-style columns (Grid, QTH, Comment, Dist) are added afterwards, so
+// a contest log never needs a 220-column terminal to show the exchange.
 var qsoColTiersContest = []struct {
 	minW  int
 	maxW  int
@@ -406,16 +406,13 @@ var qsoColTiersContest = []struct {
 }{
 	{0, 0, []string{"Date", "Time", "Call", "Mode", "RSTs", "RSTr"}},
 	{55, 0, []string{"Date", "Time", "Call", "Band", "Mode", "RSTs", "RSTr"}},
-	{70, 0, []string{"Date", "Time", "Call", "Band", "Mode", "RSTs", "RSTr", "DXCC"}},
-	{90, 0, []string{"Date", "Time", "Call", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name"}},
-	{115, 0, []string{"Date", "Time", "Call", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist"}},
-	{150, 0, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power"}},
-	{165, 0, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Operator", "WL"}},
-	{190, 0, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Source", "WL"}},
-	// Wide tier: ExchSent/ExchRcvd replace SOTA/POTA/IOTA.
-	{220, 0, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Source", "WL", "ExchSent", "ExchRcvd"}},
-	// Super-wide tier: same as wide but triggers later (more room for exchange to breathe).
-	{280, 0, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Source", "WL", "ExchSent", "ExchRcvd"}},
+	{70, 0, []string{"Date", "Time", "Call", "Band", "Mode", "RSTs", "RSTr", "ExchSent", "ExchRcvd"}},
+	{90, 0, []string{"Date", "Time", "Call", "Band", "Mode", "RSTs", "RSTr", "ExchSent", "ExchRcvd", "DXCC"}},
+	{115, 0, []string{"Date", "Time", "Call", "Band", "Mode", "Sub", "RSTs", "RSTr", "ExchSent", "ExchRcvd", "DXCC", "Name"}},
+	{150, 0, []string{"Date", "Time", "Call", "Band", "Mode", "Sub", "RSTs", "RSTr", "ExchSent", "ExchRcvd", "DXCC", "Name", "Grid", "QTH", "Comment"}},
+	{190, 0, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "ExchSent", "ExchRcvd", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power"}},
+	{220, 0, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "ExchSent", "ExchRcvd", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Source", "WL"}},
+	{280, 0, []string{"Date", "Time", "Call", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "ExchSent", "ExchRcvd", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Source", "WL", "Operator"}},
 }
 
 func init() {

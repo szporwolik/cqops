@@ -21,12 +21,6 @@ type lockFile struct {
 	f    *os.File
 }
 
-// lockPrompt is the test seam for the stale-lock confirmation prompt.
-var lockPrompt = PromptYN
-
-// lockOwnerIsCQOps is the test seam for the live-owner identity check.
-var lockOwnerIsCQOps = processIsCQOps
-
 func acquireLock(dir string) (*lockFile, error) {
 	path := filepath.Join(dir, "cqops.lock")
 
@@ -46,45 +40,23 @@ func acquireLock(dir string) (*lockFile, error) {
 	}
 	if !locked {
 		f.Close()
-		// The OS lock is held — normally by a live instance: that fails fast
-		// (the operator can just close it). When the PID recorded in the file
-		// no longer exists, or was reused by an unrelated process (checked
-		// via the kernel's process name), the lock looks orphaned and the
-		// user is asked before removing it, like the pre-refactor guard did.
-		owner := ""
-		if data, rerr := os.ReadFile(path); rerr == nil {
-			owner = strings.TrimSpace(string(data))
-		}
-		ownerPID, _ := strconv.Atoi(owner)
-		if ownerPID > 0 && processExists(ownerPID) && lockOwnerIsCQOps(ownerPID) {
+		// The OS lock is held, so a live instance owns this configuration
+		// directory: refuse to start. The lock file is never deleted here —
+		// unlinking it would leave the holder locked on an orphaned inode
+		// while this process locks a freshly created one, and both instances
+		// would then share the same logbook and database.
+		//
+		// The PID is read for the message only. It must not decide ownership:
+		// it can be stale, reused by an unrelated process, or belong to a
+		// binary named anything at all (cqops-linux-amd64, a renamed copy, an
+		// AppImage), and a name mismatch would otherwise be treated as proof
+		// that the lock is orphaned. A leftover file from a crashed instance
+		// needs no special handling either: the kernel released its lock, so
+		// the next tryLockOS on that same file succeeds and reuses it.
+		if owner := readLockOwner(path); owner != "" {
 			return nil, fmt.Errorf("another CQOps instance is already running (PID %s) — close it before starting", owner)
 		}
-		stale := owner
-		if stale == "" {
-			stale = "unknown"
-		}
-		if !lockPrompt(fmt.Sprintf("Stale lock from PID %s found. Delete it?", stale)) {
-			return nil, fmt.Errorf("lock file exists (%s) — remove it manually or restart", path)
-		}
-		if rerr := os.Remove(path); rerr != nil {
-			return nil, fmt.Errorf("cannot remove stale lock file: %w", rerr)
-		}
-		// Retry once on a fresh inode. If the lock was actually held by a
-		// live process (PID reuse), the retry still fails and we refuse to
-		// start instead of running two instances.
-		f2, oerr := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o644)
-		if oerr != nil {
-			return nil, fmt.Errorf("cannot reopen lock file: %w", oerr)
-		}
-		locked2, lerr := tryLockOS(f2)
-		if lerr != nil || !locked2 {
-			f2.Close()
-			if lerr != nil {
-				return nil, fmt.Errorf("cannot lock lock file: %w", lerr)
-			}
-			return nil, fmt.Errorf("another CQOps instance is already running")
-		}
-		f = f2
+		return nil, fmt.Errorf("another CQOps instance is already running — close it before starting")
 	}
 
 	// We own the lock — record our PID for diagnostics. A stale PID left
@@ -115,10 +87,24 @@ func (l *lockFile) release() {
 	// different file.
 }
 
-// PromptYN asks the user a yes/no question on the terminal. Used by the
-// CLI reset commands and by the single-instance lock when it finds a stale
-// (orphaned) lock file: the OS normally releases the lock automatically
-// when the owner exits, but a stale PID means the file can be removed.
+// readLockOwner returns the PID recorded in the lock file, or "" when it is
+// missing or not a plain number. Diagnostics only — a stale or reused PID can
+// never decide ownership.
+func readLockOwner(path string) string {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	owner := strings.TrimSpace(string(data))
+	if _, err := strconv.Atoi(owner); err != nil {
+		return ""
+	}
+	return owner
+}
+
+// PromptYN asks the user a yes/no question on the terminal. Used by the CLI
+// reset commands; the single-instance lock never prompts — an OS lock that is
+// held always means a live instance, and a leftover file is reused as-is.
 func PromptYN(prompt string) bool {
 	fmt.Fprintf(os.Stderr, "%s [y/N]: ", prompt)
 	reader := bufio.NewReader(os.Stdin)

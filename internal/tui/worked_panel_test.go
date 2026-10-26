@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/szporwolik/cqops/internal/app"
 	"github.com/szporwolik/cqops/internal/callbook"
@@ -54,6 +55,12 @@ func newWorkedPanelTestModel(t *testing.T) (*Model, *sql.DB) {
 	// production migration does for pre-existing rows.
 	if err := store.RebuildWorkedIndex(db); err != nil {
 		t.Fatalf("rebuild worked index: %v", err)
+	}
+	// The fixture configures Wavelog, and coverage only trusts a miss as NEW
+	// after a clean synchronization: record one so the seeded log counts as
+	// complete (the remote-never-synced case is covered separately).
+	if err := store.MarkRemoteSync(db, time.Now()); err != nil {
+		t.Fatalf("mark remote sync: %v", err)
 	}
 
 	cfg := &config.Config{
@@ -283,6 +290,7 @@ func TestWorkedPanel_NewCall(t *testing.T) {
 	// For a new call, stats should be empty.
 	stats, _ := store.GetLogbookStats(db, "XX0XXX", "", "")
 	m.rc.logStats = stats
+	seedWorkedSummary(t, m, db, "XX0XXX", "AA00bb", "999", "Testland")
 
 	d := &callbook.Result{
 		Callsign: "XX0XXX",
@@ -363,6 +371,7 @@ func TestWorkedPanel_GridNew(t *testing.T) {
 
 	stats, _ := store.GetLogbookStats(db, "XX0XXX", "", "")
 	m.rc.logStats = stats
+	seedWorkedSummary(t, m, db, "XX0XXX", "ZZ99ab", "999", "Testland")
 
 	d := &callbook.Result{
 		Callsign: "XX0XXX",
@@ -584,47 +593,6 @@ func TestFormatCountList_Empty(t *testing.T) {
 	}
 }
 
-func TestSelectHistoryScope_Call(t *testing.T) {
-	ws := store.WorkedSummary{
-		CallHistory: store.ScopeHistory{QSOCount: 5},
-	}
-	sel := selectHistoryScope(ws)
-	if sel.scope != "call" {
-		t.Errorf("expected 'call' scope, got %q", sel.scope)
-	}
-}
-
-func TestSelectHistoryScope_Grid(t *testing.T) {
-	ws := store.WorkedSummary{
-		CallHistory: store.ScopeHistory{QSOCount: 0},
-		GridHistory: store.ScopeHistory{QSOCount: 7, UniqueCalls: 3},
-	}
-	sel := selectHistoryScope(ws)
-	if sel.scope != "grid" {
-		t.Errorf("expected 'grid' scope, got %q", sel.scope)
-	}
-}
-
-func TestSelectHistoryScope_DXCC(t *testing.T) {
-	ws := store.WorkedSummary{
-		CallHistory: store.ScopeHistory{QSOCount: 0},
-		GridHistory: store.ScopeHistory{QSOCount: 1, UniqueCalls: 1}, // only 1 unique call — grid not useful
-		DXCCHistory: store.ScopeHistory{QSOCount: 50},
-	}
-	sel := selectHistoryScope(ws)
-	if sel.scope != "dxcc" {
-		t.Errorf("expected 'dxcc' scope, got %q", sel.scope)
-	}
-}
-
-func TestSelectHistoryScope_Empty(t *testing.T) {
-	ws := store.WorkedSummary{}
-	sel := selectHistoryScope(ws)
-	if sel.scope != "" {
-		t.Errorf("expected empty scope, got %q", sel.scope)
-	}
-}
-
 func TestWorkedPanel_TwoColumnLayout(t *testing.T) {
 	m, db := newWorkedPanelTestModel(t)
 	m.fields[fieldCall].SetValue("KI6NAZ")
@@ -711,6 +679,7 @@ func TestWorkedPanel_NewDXCCHistory(t *testing.T) {
 
 	stats, _ := store.GetLogbookStats(db, "XX0XXX", "", "")
 	m.rc.logStats = stats
+	seedWorkedSummary(t, m, db, "XX0XXX", "ZZ99", "999", "Testland")
 
 	d := &callbook.Result{
 		Callsign: "XX0XXX",
@@ -757,5 +726,86 @@ func TestWorkedPanel_NoBlankRows(t *testing.T) {
 	// Check no blank lines (two consecutive newlines).
 	if strings.Contains(view, "\n\n") {
 		t.Error("renderWorkedPanel should not contain blank rows")
+	}
+}
+
+// TestWorkedPanelUnknownBeforeRemoteSync: with a remote logbook configured but
+// no completed synchronization the local log cannot prove a contact is new, so
+// the panel must say UNKNOWN instead of NEW. A contact the local index does
+// know is still reported as worked — partial data is proof of a QSO.
+func TestWorkedPanelUnknownBeforeRemoteSync(t *testing.T) {
+	m, db := newWorkedPanelTestModel(t)
+	// Remove the fixture's sync marker: this is a never-synchronised log.
+	if _, err := db.Exec(`DELETE FROM worked_index_meta WHERE key = 'last_remote_sync'`); err != nil {
+		t.Fatalf("clear sync marker: %v", err)
+	}
+
+	// A call that is genuinely new in the local log.
+	m.fields[fieldCall].SetValue("XX0XXX")
+	m.fields[fieldBand].SetValue("20m")
+	m.fields[fieldMode].SetValue("FT8")
+	stats, _ := store.GetLogbookStats(db, "XX0XXX", "20m", "FT8")
+	m.rc.logStats = stats
+	seedWorkedSummary(t, m, db, "XX0XXX", "ZZ99ab", "999", "Testland")
+	view := m.renderWorkedPanel(&callbook.Result{
+		Callsign: "XX0XXX", DXCC: "999", Grid: "ZZ99ab", Country: "Testland",
+	}, 60)
+	if strings.Contains(view, "NEW") {
+		t.Errorf("incomplete coverage must not claim NEW:\n%s", view)
+	}
+	if !strings.Contains(view, "unknown") {
+		t.Errorf("incomplete coverage should render unknown:\n%s", view)
+	}
+	if strings.Contains(view, "first contact") {
+		t.Errorf("'first contact' implies complete knowledge:\n%s", view)
+	}
+
+	// A worked call stays worked — a positive answer needs no complete log.
+	m.fields[fieldCall].SetValue("KI6NAZ")
+	stats, _ = store.GetLogbookStats(db, "KI6NAZ", "20m", "FT8")
+	m.rc.logStats = stats
+	seedWorkedSummary(t, m, db, "KI6NAZ", "DM03", "291", "United States")
+	view = m.renderWorkedPanel(&callbook.Result{
+		Callsign: "KI6NAZ", DXCC: "291", Grid: "DM03xu", Country: "United States",
+	}, 60)
+	if !strings.Contains(view, "worked") {
+		t.Errorf("a known contact must stay worked without a sync marker:\n%s", view)
+	}
+}
+
+// TestWorkedPanelUnknownWhenEntitiesUnresolved: unresolved DXCC numbers make
+// the DXCC row uncertain even after a synchronization, while call and grid
+// answers stay certain.
+func TestWorkedPanelUnknownWhenEntitiesUnresolved(t *testing.T) {
+	m, db := newWorkedPanelTestModel(t)
+	if _, err := db.Exec(
+		`INSERT INTO qsos (call,base_call,qso_date,time_on,band,freq,mode,source,created_at,updated_at)
+		 VALUES('XX1AA','XX1AA','20250712','120000','20m',14.074,'FT8','manual','2025-07-12','2025-07-12')`,
+	); err != nil {
+		t.Fatalf("seed unresolved QSO: %v", err)
+	}
+	if err := store.RebuildWorkedIndex(db); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+
+	m.fields[fieldCall].SetValue("XX0XXX")
+	m.fields[fieldBand].SetValue("")
+	m.fields[fieldMode].SetValue("")
+	stats, _ := store.GetLogbookStats(db, "XX0XXX", "", "")
+	m.rc.logStats = stats
+	seedWorkedSummary(t, m, db, "XX0XXX", "ZZ99", "999", "Testland")
+
+	view := m.renderWorkedPanel(&callbook.Result{
+		Callsign: "XX0XXX", DXCC: "999", Grid: "ZZ99", Country: "Testland",
+	}, 60)
+	// Call and grid are certain (the log is complete for those dimensions).
+	if !strings.Contains(view, "NEW") {
+		t.Errorf("call/grid answers should still be NEW:\n%s", view)
+	}
+	// The DXCC row must not claim NEW.
+	for _, line := range strings.Split(view, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "DXCC") && strings.Contains(line, "NEW") {
+			t.Errorf("DXCC verdict must be unknown with unresolved entities: %q", line)
+		}
 	}
 }

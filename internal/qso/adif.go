@@ -217,6 +217,17 @@ func (q *QSO) toADIFWithStation(stationCall string) string {
 	set(adifield.CQZ, q.CQZone)
 	set(adifield.ITUZ, q.ITUZone)
 	set(adifield.DXCC, q.DXCC)
+	// Confirmation status. Only an explicit Y/N is exported — an empty status
+	// means "not provided" and must stay absent from the record.
+	if q.QSLRcvd != "" {
+		set(adifield.QSL_RCVD, q.QSLRcvd)
+	}
+	if q.LOTWQSLRcvd != "" {
+		set(adifield.LOTW_QSL_RCVD, q.LOTWQSLRcvd)
+	}
+	if q.EQSLQSLRcvd != "" {
+		set(adifield.EQSL_QSL_RCVD, q.EQSLQSLRcvd)
+	}
 
 	// Contest exchange fields — use only standard ADIF tags.
 	// STX / SRX: integer sequence numbers.
@@ -315,6 +326,15 @@ func ParseADIFRecord(r adif.Record, source string) *QSO {
 	qs.CQZone = get(adifield.CQZ)
 	qs.ITUZone = get(adifield.ITUZ)
 	qs.DXCC = get(adifield.DXCC)
+	if qs.DXCC != "" {
+		// The entity number came from the record itself, not from a local
+		// prefix guess — remember that so a later re-resolution can tell
+		// provider data from a derived value.
+		qs.DXCCSource = DXCCSourceImported
+	}
+	qs.QSLRcvd = NormalizeQSLStatus(get(adifield.QSL_RCVD))
+	qs.LOTWQSLRcvd = NormalizeQSLStatus(get(adifield.LOTW_QSL_RCVD))
+	qs.EQSLQSLRcvd = NormalizeQSLStatus(get(adifield.EQSL_QSL_RCVD))
 	// Contest exchange fields.
 	qs.ExchSent = get(adifield.Field("EXCH_SENT"))
 	qs.ExchRcvd = get(adifield.Field("EXCH_RCVD"))

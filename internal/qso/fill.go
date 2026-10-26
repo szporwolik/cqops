@@ -1,6 +1,9 @@
 package qso
 
-import "strconv"
+import (
+	"strconv"
+	"strings"
+)
 
 type StationInfo struct {
 	StationCallsign string
@@ -17,6 +20,29 @@ type StationInfo struct {
 	MyDXCC          string
 	MySIG           string
 	MySIGInfo       string
+}
+
+// FillSSBSubmode gives an SSB contact its sideband when nothing set one:
+// LSB below 10 MHz, USB above — the convention every logger stores and the
+// same rule the QSO form applies when the frequency is entered. Rows that
+// arrive without a submode (ADIF imports that only carry MODE=SSB, spot
+// fills, hand-edited rows) would otherwise show "Sub —" next to an SSB
+// contact that plainly has a sideband. Anything explicit is left alone.
+func FillSSBSubmode(q *QSO) {
+	if q == nil || strings.TrimSpace(q.Submode) != "" {
+		return
+	}
+	if !strings.EqualFold(strings.TrimSpace(q.Mode), "SSB") {
+		return
+	}
+	if q.Freq <= 0 {
+		return
+	}
+	if q.Freq < 10 {
+		q.Submode = "LSB"
+		return
+	}
+	q.Submode = "USB"
 }
 
 func ApplyStationDefaults(q *QSO, s StationInfo) {

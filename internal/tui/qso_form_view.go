@@ -107,21 +107,14 @@ func (m *Model) viewForm(width int) string {
 		colW = bodyW
 	}
 
-	// Cache column & comment styles per width.
-	var colStyle, commentStyle lipgloss.Style
+	// Cache the column style per width.
+	var colStyle lipgloss.Style
 	if m.rc.formColW == colW {
 		colStyle = m.rc.formColStyle
-		commentStyle = m.rc.formCommentStyle
 	} else {
 		colStyle = lipgloss.NewStyle().Width(colW).MaxWidth(colW).Align(lipgloss.Left).Inline(true)
-		commentW := colW * 2
-		if commentW < 20 {
-			commentW = bodyW
-		}
-		commentStyle = lipgloss.NewStyle().Width(commentW).MaxWidth(commentW).Align(lipgloss.Left).Inline(true)
 		m.rc.formColW = colW
 		m.rc.formColStyle = colStyle
-		m.rc.formCommentStyle = commentStyle
 	}
 
 	// labelW is the fixed space: 2-char prefix + 11-char label.

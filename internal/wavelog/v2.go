@@ -106,12 +106,6 @@ func v2Request(method, baseURL, token, path string, query url.Values, body []byt
 	return v2RequestWithClient(httpClient, method, baseURL, token, path, query, body)
 }
 
-// v2RequestDownload performs a v2 request on the long-timeout download
-// client (paginated ADIF exports).
-func v2RequestDownload(method, baseURL, token, path string, query url.Values, body []byte) (int, []byte, error) {
-	return v2RequestWithClient(downloadClient, method, baseURL, token, path, query, body)
-}
-
 // v2RequestDownloadCtx is v2RequestDownload with request cancellation — a
 // user aborting a download cancels in-flight page fetches immediately.
 func v2RequestDownloadCtx(ctx context.Context, method, baseURL, token, path string, query url.Values, body []byte) (int, []byte, error) {
@@ -300,23 +294,23 @@ func fetchStationsV2(baseURL, token string) ([]StationProfile, error) {
 // detail=basic share these fields; basic simply omits the per-band/mode
 // flags). Types match the v2 API: booleans are real booleans.
 type lookupData struct {
-	Callsign string `json:"callsign"`
-	DXCC     string `json:"dxcc"`
-	DXCCID   string `json:"dxcc_id"`
-	DXCCLat  string `json:"dxcc_lat"`
-	DXCCLong string `json:"dxcc_long"`
-	DXCCCQZ  string `json:"dxcc_cqz"`
-	DXCCFlag string `json:"dxcc_flag"`
-	Cont     string `json:"cont"`
+	Callsign string     `json:"callsign"`
+	DXCC     flexString `json:"dxcc"`
+	DXCCID   flexString `json:"dxcc_id"`
+	DXCCLat  flexString `json:"dxcc_lat"`
+	DXCCLong flexString `json:"dxcc_long"`
+	DXCCCQZ  flexString `json:"dxcc_cqz"`
+	DXCCFlag string     `json:"dxcc_flag"`
+	Cont     string     `json:"cont"`
 
-	Name       string `json:"name"`
-	Gridsquare string `json:"gridsquare"`
-	Location   string `json:"location"`
-	IotaRef    string `json:"iota_ref"`
-	State      string `json:"state"`
-	USCounty   string `json:"us_county"`
-	QSLManager string `json:"qsl_manager"`
-	Bearing    string `json:"bearing"`
+	Name       string     `json:"name"`
+	Gridsquare string     `json:"gridsquare"`
+	Location   string     `json:"location"`
+	IotaRef    string     `json:"iota_ref"`
+	State      string     `json:"state"`
+	USCounty   string     `json:"us_county"`
+	QSLManager string     `json:"qsl_manager"`
+	Bearing    flexString `json:"bearing"`
 
 	WorkedBefore bool `json:"workedBefore"`
 
@@ -375,6 +369,48 @@ func (l *lotwMemberValue) UnmarshalJSON(b []byte) error {
 		return nil
 	}
 }
+
+// flexString is a JSON string that also accepts a bare number, a boolean or
+// null, keeping the text as it arrived. Wavelog is not consistent here: the
+// lookup block documents `dxcc_id` as a string, but a real server answers
+// `"dxcc_id": 269`. Decoding that into a string failed the WHOLE lookup
+// ("cannot unmarshal number into Go struct field lookupData.dxcc_id of type
+// string"), so the Wavelog provider returned nothing and the callbook chain
+// still paid its timeout.
+type flexString string
+
+func (f *flexString) UnmarshalJSON(b []byte) error {
+	raw := strings.TrimSpace(string(b))
+	switch {
+	case raw == "" || raw == "null":
+		*f = ""
+		return nil
+	case strings.HasPrefix(raw, `"`):
+		var s string
+		if err := json.Unmarshal(b, &s); err != nil {
+			return err
+		}
+		*f = flexString(s)
+		return nil
+	case raw == "true":
+		*f = "1"
+		return nil
+	case raw == "false":
+		*f = ""
+		return nil
+	default:
+		var n json.Number
+		if err := json.Unmarshal(b, &n); err != nil {
+			// Anything else is kept verbatim rather than failing the lookup.
+			*f = flexString(raw)
+			return nil
+		}
+		*f = flexString(n.String())
+		return nil
+	}
+}
+
+func (f flexString) String() string { return string(f) }
 
 // v2QSOImport is the data block of a successful POST /api/v2/qso
 // (both single JSON creates and bulk ADIF imports).

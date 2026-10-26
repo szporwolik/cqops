@@ -848,6 +848,32 @@ func (a *App) aprsBeaconCallsign(aprsCfg *config.APRSConfig) string {
 	return ""
 }
 
+// APRSBeaconIdentity reports what CQOps transmits while APRS beaconing is
+// active: the callsign with its SSID, the two-character symbol (table + code)
+// and whether beacons are really being sent. The dashboard draws the own
+// station with the symbol and SSID the network sees instead of a bare dot.
+func (a *App) APRSBeaconIdentity() (callsign, symbol string, active bool) {
+	if a == nil || a.Config == nil || a.Logbook == nil {
+		return "", "", false
+	}
+	if !a.Config.Integrations.APRS.Enabled {
+		return "", "", false
+	}
+	cfg := a.Logbook.APRS
+	if cfg == nil || !cfg.Enabled || !cfg.SendLocation {
+		return "", "", false
+	}
+	call := a.aprsBeaconCallsign(cfg)
+	if call == "" {
+		return "", "", false
+	}
+	sym := cfg.Symbol
+	if sym == "" {
+		sym = "/-"
+	}
+	return call, sym, true
+}
+
 // aprsBeaconLoop sends position beacons until the given stop channel closes.
 func (a *App) aprsBeaconLoop(stopCh chan struct{}, snap aprsBeaconSnap) {
 	// Wait 10s for the APRS client to connect.

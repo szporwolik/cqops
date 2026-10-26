@@ -136,7 +136,7 @@ func runTUI() error {
 		// Append a reset hint for configuration and database errors.
 		errMsg := err.Error()
 		if strings.Contains(errMsg, "config:") || strings.Contains(errMsg, "database:") || strings.Contains(errMsg, "logbook:") {
-			return fmt.Errorf("%w\n\nRun 'cqops --reset-config' to reset all configuration, secrets, and databases, then start fresh.", err)
+			return fmt.Errorf("%w\n\nrun 'cqops --reset-config' to reset all configuration, secrets, and databases, then start fresh", err)
 		}
 		return err
 	}

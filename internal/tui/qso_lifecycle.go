@@ -97,8 +97,8 @@ func (m *Model) saveQSO() tea.Cmd {
 	// field-day, and other non-serial contests the numeric fields must
 	// remain 0 so they are omitted from ADIF export.
 	if ct, ok := m.App.Config.Contests[m.App.Logbook.ActiveContest]; ok && ct.SerialExchange {
-		qs.STX = qso.ParseSerial(qs.ExchSent)
-		qs.SRX = qso.ParseSerial(qs.ExchRcvd)
+		qs.STX = qso.SerialFromExchange(qs.ExchSent, qs.RSTSent)
+		qs.SRX = qso.SerialFromExchange(qs.ExchRcvd, qs.RSTRcvd)
 	}
 	station := qso.StationInfo{
 		StationCallsign: m.App.Logbook.Station.Callsign,
@@ -159,6 +159,9 @@ func (m *Model) saveQSO() tea.Cmd {
 		m.toasts.Error(fmt.Sprintf("QSO: save failed — %v", err))
 		return nil
 	}
+	// Remember which contact this is: a callbook answer that arrives after
+	// the operator typed the next call is still the data for this row.
+	m.lookup.savedID, m.lookup.savedCall, m.lookup.savedLogbook = qs.ID, qs.Call, m.App.LogbookName
 
 	// Increment contest Next QSO seq on successful save.
 	if qs.ContestID != "" {

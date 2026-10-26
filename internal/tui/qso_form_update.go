@@ -911,6 +911,11 @@ func (m *Model) checkDupe() {
 func (m *Model) clearForm() {
 	m.dupe = false
 	m.dupeCacheKey = ""
+	// A finished QSO ends the form session: callbook answers still in
+	// flight were asked for the contact that was just written, not for
+	// whatever comes next (this also covers a retained form, which keeps
+	// its fields but is still a new QSO).
+	m.lookup.formGen++
 	if !m.retainForm {
 		m.resetQSOFields()
 	}
@@ -925,6 +930,8 @@ func (m *Model) clearForm() {
 // re-applies retained rig values (band, freq, mode, submode, power) and
 // the retain-comment setting.  Focus moves to the Call field.
 func (m *Model) resetQSOFields() {
+	// Every field reset starts a new form session (see lookupState.formGen).
+	m.lookup.formGen++
 	retainedComment := ""
 	if m.keepComment {
 		retainedComment = m.fields[fieldComment].Value()
@@ -958,6 +965,11 @@ func (m *Model) resetQSOFields() {
 	if retainedComment != "" {
 		m.fields[fieldComment].SetValue(retainedComment)
 	}
+	// A new QSO starts with the active contest's name in the comment (an
+	// operator comment kept above stays untouched). The tracking is reset so
+	// the tag is re-evaluated even though the contest itself did not change.
+	m.contestCommentFor = ""
+	m.applyContestComment()
 	m.dateTimeAuto = true
 	m.keepFocused = false
 	m.gridSource = gridSourceNone

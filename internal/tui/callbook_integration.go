@@ -19,6 +19,7 @@ import (
 	"github.com/szporwolik/cqops/internal/qrzcom"
 	"github.com/szporwolik/cqops/internal/qrzru"
 	"github.com/szporwolik/cqops/internal/qso"
+	"github.com/szporwolik/cqops/internal/store"
 	"github.com/szporwolik/cqops/internal/wavelog"
 )
 
@@ -243,9 +244,10 @@ func (m *Model) callbookLookupCmd(call string) tea.Cmd {
 	reg := m.callbookRegistry
 	baseFallback := m.App.Config.Integrations.Callbook.BaseCallFallback
 	logbook := m.App.LogbookName
+	session := m.lookup.formGen
 	return func() tea.Msg {
 		data, err := callbookRegLookup(reg, baseFallback, call)
-		return callbookResultMsg{Call: call, Data: data, Err: err, Logbook: logbook}
+		return callbookResultMsg{Call: call, Data: data, Err: err, Logbook: logbook, Session: session}
 	}
 }
 
@@ -342,20 +344,46 @@ func (m *Model) wlLookup(call string) tea.Cmd {
 }
 
 // fillCallbookData fills the QSO form from callbook lookup result data.
-func (m *Model) fillCallbookData(msg callbookResultMsg) {
+// fillCallbookData applies a callbook result to the QSO form. It returns true
+// when the result could not be used by the form (the operator already moved
+// on) but was written into the contact that was just logged — the caller
+// refreshes the table in that case — together with a command that pushes the
+// enriched contact to Wavelog when the row already exists there.
+func (m *Model) fillCallbookData(msg callbookResultMsg) (bool, tea.Cmd) {
 	if msg.Call == "" {
-		return
+		return false, nil
 	}
 	// A late result from a previous logbook must never fill the form for
 	// the current one — the logbook provider queried the old database.
 	if msg.Logbook != "" && msg.Logbook != m.App.LogbookName {
 		applog.Debug("Callbook: stale result discarded",
 			"from", msg.Logbook, "current", m.App.LogbookName, "call", msg.Call)
-		return
+		return false, nil
 	}
 	formCall := strings.ToUpper(strings.TrimSpace(m.fields[fieldCall].Value()))
-	if formCall != "" && formCall != strings.ToUpper(msg.Call) {
-		return
+	// Does the answer still belong to the form? Only when no QSO was
+	// finished since the lookup was dispatched (the form was cleared on
+	// save) and the callsign field did not move to another call. A blank
+	// form is NOT ownership: right after a save it is blank because the
+	// contact was already written, and that row is what needs the data.
+	//
+	// enriched/syncCmd survive the fall-through below: a retained form keeps
+	// the call it just logged, so the answer both completes the stored row
+	// AND fills the form. Returning early here used to drop the PATCH command
+	// after it had already been registered in the sync coordinator — the
+	// contact then never synced and its database lease was never released.
+	enriched := false
+	var syncCmd tea.Cmd
+	sessionStale := msg.Session != 0 && msg.Session != m.lookup.formGen
+	formOwnsAnswer := !sessionStale && (formCall == "" || formCall == strings.ToUpper(msg.Call))
+	if !formOwnsAnswer {
+		enriched, syncCmd = m.enrichSavedQSO(msg)
+		// A retained form still shows the call it was left with; the
+		// operator is looking at it, so let it fill as well — the row was
+		// already handled above.
+		if !enriched || formCall != strings.ToUpper(msg.Call) {
+			return enriched, syncCmd
+		}
 	}
 	m.lookup.qrzLookupDone = true
 	m.lookup.qrzLookupCall = strings.ToUpper(msg.Call)
@@ -363,14 +391,14 @@ func (m *Model) fillCallbookData(msg callbookResultMsg) {
 		m.toasts.Error("Callbook: " + msg.Err.Error())
 		m.clearQRZFields()
 		m.prefillContestExchange()
-		return
+		return enriched, syncCmd
 	}
 	d := msg.Data
 	if d == nil || d.Callsign == "" {
 		m.showCallbookToast(msg.Call) // show "no data" toast if everything is done
 		m.clearQRZFields()
 		m.prefillContestExchange()
-		return
+		return enriched, syncCmd
 	}
 	m.lookup.partnerData = d
 	m.invalidatePartnerMapCache()
@@ -445,6 +473,108 @@ func (m *Model) fillCallbookData(msg callbookResultMsg) {
 	// Recalculate exchange fields — async lookup may have filled grid/zone
 	// data that contest exchange markers depend on.
 	m.prefillContestExchange()
+	return enriched, syncCmd
+}
+
+// enrichSavedQSO writes a callbook result into the contact that was just
+// logged, for the case where the answer arrived after the operator had
+// already typed the next callsign. Without it the row keeps the empty
+// name/grid/QTH the form had at save time — visible as half-filled lines in
+// Recent QSOs and in the logbook editor — and the next lookup for that call
+// pays the same latency again.
+//
+// When the contact already exists in Wavelog the store marks it pending with
+// a fresh revision and this returns a command that pushes it through the same
+// per-contact PATCH coordinator a form save uses — otherwise the remote copy
+// would stay incomplete while the row looks synchronized. Returns true when
+// something was written, so the caller can refresh the table.
+func (m *Model) enrichSavedQSO(msg callbookResultMsg) (bool, tea.Cmd) {
+	if m.lookup.savedID == 0 || msg.Data == nil || msg.Data.Callsign == "" {
+		return false, nil
+	}
+	if !strings.EqualFold(msg.Call, m.lookup.savedCall) {
+		return false, nil
+	}
+	// The row lives in the logbook it was written to; a switch since then
+	// means the id no longer refers to it.
+	if m.lookup.savedLogbook != "" && m.lookup.savedLogbook != m.App.LogbookName {
+		m.lookup.savedID, m.lookup.savedCall, m.lookup.savedLogbook = 0, "", ""
+		return false, nil
+	}
+	if m.App.DB == nil {
+		return false, nil
+	}
+	d := msg.Data
+	res, err := store.EnrichQSO(m.App.DB, m.lookup.savedID, store.EnrichmentData{
+		Name:       d.Name,
+		QTH:        d.QTH,
+		Country:    d.Country,
+		GridSquare: d.Grid,
+		CQZone:     d.CQZone,
+		ITUZone:    d.ITUZone,
+		DXCC:       d.DXCC,
+	})
+	if err != nil {
+		applog.Warn("Callbook: late enrichment failed",
+			"call", d.Callsign, "qso_id", m.lookup.savedID, "error", err)
+		return false, nil
+	}
+	qsoID := m.lookup.savedID
+	m.lookup.savedID, m.lookup.savedCall, m.lookup.savedLogbook = 0, "", ""
+	applog.Info("Callbook: late result applied to the saved contact",
+		"call", d.Callsign, "qso_id", qsoID, "name", d.Name, "grid", d.Grid,
+		"dxcc", d.DXCC, "changed", res.Changed, "synced", res.Synced)
+	return true, m.patchEnrichedContact(qsoID, res)
+}
+
+// patchEnrichedContact pushes a late-enriched contact to Wavelog through the
+// shared per-contact coordinator (one PATCH per contact on the wire; a queued
+// follow-up carries the newest revision). Offline, without credentials, or on
+// a shared club station — where synced contacts are owned by the server — the
+// row simply stays durably pending for the next Alt+P retry.
+func (m *Model) patchEnrichedContact(qsoID int64, res store.EnrichmentSync) tea.Cmd {
+	if !res.Changed || !res.Synced || qsoID == 0 || m.App.DB == nil {
+		return nil
+	}
+	if m.isSharedClub() {
+		applog.Debug("Wavelog: enrichment not pushed — shared club station", "qso_id", qsoID)
+		return nil
+	}
+	wl := m.App.Logbook.Wavelog
+	if wl == nil || !wl.Enabled || wl.URL == "" || wl.APIKey == "" {
+		return nil
+	}
+	if m.Offline || !m.inetOnline {
+		applog.InfoDetail("Wavelog: enrichment kept pending (offline)", fmt.Sprintf("qso_id=%d", qsoID))
+		return nil
+	}
+	if m.sync == nil {
+		m.sync = &contactSyncCoord{}
+	}
+	if m.sync.inFlight == nil {
+		m.sync.inFlight = make(map[contactSyncKey]*contactSyncContext)
+	}
+	if m.sync.queued == nil {
+		m.sync.queued = make(map[contactSyncKey]bool)
+	}
+	syncKey := contactSyncKey{logbook: m.App.LogbookName, localID: qsoID, url: wl.URL}
+	if m.sync.inFlight[syncKey] != nil {
+		// A PATCH for this contact is already on the wire — its follow-up
+		// reads the row fresh, so it carries this enrichment too.
+		m.sync.queued[syncKey] = true
+		return nil
+	}
+	ctx := &contactSyncContext{
+		key:     syncKey,
+		coord:   m.sync,
+		db:      m.App.DB,
+		url:     wl.URL,
+		apiKey:  wl.APIKey,
+		release: m.App.KeepDBAlive(m.App.DB),
+	}
+	m.sync.inFlight[syncKey] = ctx
+	applog.Info("Wavelog: pushing late callbook enrichment", "qso_id", qsoID, "revision", res.Revision)
+	return m.patchLatestRevision(ctx)
 }
 
 // showCallbookToast shows a single consolidated toast listing all providers

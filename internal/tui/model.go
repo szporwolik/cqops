@@ -200,6 +200,13 @@ type Model struct {
 	gridSource      gridSource
 	qthSource       gridSource // origin of the QTH field value (same precedence as grid)
 
+	// Contest comment tag: the text the form itself wrote into the Comment
+	// field for an active contest, and which contest it belongs to. Tracking
+	// both lets the prefill replace its own tag (contest switch) or remove it
+	// (contest cleared) without ever touching text the operator typed.
+	contestComment    string
+	contestCommentFor string
+
 	keys           KeyMap
 	help           help.Model
 	recentQSOs     *RecentQSOs // read-only Recent QSOs view
@@ -217,6 +224,12 @@ type callbookResultMsg struct {
 	// Logbook the lookup ran against (captured at cmd creation); results
 	// from a previous logbook are discarded after a switch.
 	Logbook string
+	// Session is the QSO form the lookup was dispatched from. When the
+	// operator has logged the contact and started a new QSO in the
+	// meantime, the answer no longer belongs to the form — it belongs to
+	// the contact that was just saved. Zero means "unknown" (tests, or a
+	// dispatcher that does not track the form).
+	Session uint64
 }
 
 type qrzStatusMsg struct {
@@ -305,6 +318,9 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	applog.SetDebugMode(a.Config.General.Debug)
 
 	m := &Model{App: a, qsos: initialQSOS, toasts: NewToastQueue(), dateTimeAuto: true, width: 80, height: 24, inetOnline: true, Offline: a.Offline, sync: &contactSyncCoord{}}
+	// Start at session 1: zero is the "session unknown" sentinel used by
+	// callbookResultMsg, so a real form must not share it.
+	m.lookup.formGen = 1
 	a.InetOnline = true // sync with model — assume online until first health check
 
 	// Build the callbook provider registry from config.
@@ -443,6 +459,9 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	if m.keepComment && a.Config.State.RetainedComment != "" {
 		m.fields[fieldComment].SetValue(a.Config.State.RetainedComment)
 	}
+	// Start with the active contest's name in the comment unless a retained
+	// comment is already there.
+	m.applyContestComment()
 	return m
 }
 
@@ -1808,11 +1827,60 @@ func (m *Model) prefillPreviousContestExchange(call string) {
 	}
 }
 
+// activeContestIDName returns the active contest's stable id and the name
+// shown to the operator ("" when no contest is active).
+func (m *Model) activeContestIDName() (string, string) {
+	if m.App == nil || m.App.Logbook == nil || m.App.Config == nil {
+		return "", ""
+	}
+	id := m.App.Logbook.ActiveContest
+	if id == "" {
+		return "", ""
+	}
+	ct, ok := m.App.Config.Contests[id]
+	if !ok {
+		return id, ""
+	}
+	return id, config.ContestDisplayName(&ct)
+}
+
+// applyContestComment tags the Comment field with the active contest name.
+// It writes only when the field is empty or still holds the tag this form
+// wrote for the contest it is leaving, so operator text (including a comment
+// retained by the Keep Comment setting) is never overwritten. Clearing the
+// contest removes just the tag. The contest id is tracked so a deliberate
+// clear during a contest is not undone on the next tick.
+func (m *Model) applyContestComment() {
+	id, name := m.activeContestIDName()
+	if id == m.contestCommentFor && id != "" {
+		return
+	}
+	cur := strings.TrimSpace(m.fields[fieldComment].Value())
+	switch {
+	case name == "":
+		// Contest cleared (or deactivated): drop only our own tag.
+		if m.contestComment != "" && cur == m.contestComment {
+			m.fields[fieldComment].SetValue("")
+		}
+		m.contestComment = ""
+	case cur == "" || cur == m.contestComment:
+		m.fields[fieldComment].SetValue(name)
+		m.contestComment = name
+	default:
+		// The operator wrote something of their own — leave it alone.
+		m.contestComment = ""
+	}
+	m.contestCommentFor = id
+}
+
 // prefillContestExchange fills the exchange sent/rcvd fields from the active
 // contest's prefill settings. Replaces special markers with current QSO
 // and station values. Next QSO is NOT incremented here — that happens on
 // successful QSO save.
 func (m *Model) prefillContestExchange() {
+	// The comment carries the contest name (only when nothing else is there).
+	m.applyContestComment()
+
 	id := m.App.Logbook.ActiveContest
 	if id == "" {
 		return
@@ -1855,7 +1923,7 @@ func (m *Model) resolveExchangeMarkers(tmpl, direction string, nextQSO int) stri
 	// @serial — contest sequence number.
 	// For received exchange, keep @serial as a format placeholder so the
 	// operator knows where to type the received serial; the actual number
-	// is parsed from user input at save time via ParseSerial.
+	// is parsed from user input at save time via qso.SerialFromExchange.
 	if direction == "sent" {
 		seq := fmt.Sprintf("%03d", nextQSO)
 		if nextQSO > 999 {

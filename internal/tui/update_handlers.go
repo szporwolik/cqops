@@ -154,6 +154,10 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 	// Only update the QSO form clock when the form is visible.
 	if m.screen == screenQSO {
 		m.autoUpdateDateTime()
+		// The active contest can change outside the form (contest menu, config
+		// reload); keep the Comment tag in step. No-op when the contest did not
+		// change, so operator edits are safe.
+		m.applyContestComment()
 	}
 	m.tickCount++
 	// Dispatch async DB fetches flagged by the last View().
@@ -674,8 +678,13 @@ func (m *Model) handlePendingRequests(cmd tea.Cmd) (tea.Cmd, bool) {
 func (m *Model) handleLookupResultMsg(msg tea.Msg, cmd tea.Cmd) (tea.Model, tea.Cmd) {
 	switch r := msg.(type) {
 	case callbookResultMsg:
-		m.fillCallbookData(r)
-		cmd = tea.Batch(cmd, m.updateFilteredTable())
+		enriched, syncCmd := m.fillCallbookData(r)
+		cmd = tea.Batch(cmd, m.updateFilteredTable(), syncCmd)
+		if enriched {
+			// A late answer landed in the contact that was just logged — the
+			// table still shows the row without it.
+			cmd = tea.Batch(cmd, m.refreshQSOS())
+		}
 		m.contestAutoFocusExchRcvd()
 		if m.photo.partnerPicNeedLoad {
 			m.photo.partnerPicNeedLoad = false

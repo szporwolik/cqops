@@ -127,9 +127,9 @@ type PrivateLookupResult struct {
 func newLookupResult(d *lookupData) *PrivateLookupResult {
 	return &PrivateLookupResult{
 		callsign:          d.Callsign,
-		dxcc:              d.DXCC,
-		dxccID:            d.DXCCID,
-		dxccCQZ:           d.DXCCCQZ,
+		dxcc:              d.DXCC.String(),
+		dxccID:            d.DXCCID.String(),
+		dxccCQZ:           d.DXCCCQZ.String(),
 		dxccITUZ:          strconv.Itoa(d.DXCCITUZ),
 		name:              d.Name,
 		gridsquare:        d.Gridsquare,
@@ -386,6 +386,10 @@ func maxInt(a, b int) int {
 
 // CreateQSOInput carries the fields for a single-QSO JSON create.
 // Frequencies are in Hz (the v2 JSON convention, unlike ADIF's MHz).
+//
+// The v2 create maps every body key through body_to_record(), which passes
+// unknown lowercase keys through as ADIF field names — so the ADIF-style
+// fields below (tx_pwr, sota_ref, …) are accepted just as they are in PATCH.
 type CreateQSOInput struct {
 	StationProfileID int
 	Call             string
@@ -401,8 +405,37 @@ type CreateQSOInput struct {
 	QTH              string
 	Comment          string
 	Notes            string
-	FreqHz           int64
-	FreqRxHz         int64
+	TXPower          string
+	Operator         string
+	SOTARef          string
+	POTARef          string
+	WWFFRef          string
+	IOTA             string
+	SIG              string
+	SIGInfo          string
+	CQZone           string // written as cqz when numeric
+	ITUZone          string // written as ituz when numeric
+	// Contest exchange. The create takes any ADIF field name, so the exchange
+	// travels as stx/srx (serials) and stx_string/srx_string (the exchange
+	// without the RST prefix), plus contest_id so Wavelog can file the contact
+	// under the contest instead of as a plain QSO.
+	ContestID string // ADIF CONTEST_ID
+	STX       int
+	SRX       int
+	STXString string
+	SRXString string
+	// Submode is the SSB sideband (LSB/USB). Mode already carries the
+	// canonical mode, so the sideband travels separately — the same
+	// mode+submode split Wavelog's own importer produces. Omitted when it is
+	// the mode itself (FT8 is sent as mode=FT8, not mode=MFSK).
+	Submode string
+	// Confirmation statuses ('Y'/'N'/""); sent verbatim so an imported
+	// confirmation is not lost when the same QSO is re-uploaded.
+	QSLRcvd     string
+	LOTWQSLRcvd string
+	EQSLQSLRcvd string
+	FreqHz      int64
+	FreqRxHz    int64
 }
 
 // CreateQSO creates a single QSO via POST /api/v2/qso (import_type=json).
@@ -432,6 +465,43 @@ func CreateQSO(baseURL, apiKey string, in CreateQSOInput) (remoteID int64, isDup
 	addStr("qth", in.QTH)
 	addStr("comment", in.Comment)
 	addStr("notes", in.Notes)
+	addStr("tx_pwr", in.TXPower)
+	addStr("operator", in.Operator)
+	addStr("sota_ref", in.SOTARef)
+	addStr("pota_ref", in.POTARef)
+	addStr("wwff_ref", in.WWFFRef)
+	addStr("iota", in.IOTA)
+	addStr("sig", in.SIG)
+	addStr("sig_info", in.SIGInfo)
+	// Zones are numeric on the server; send them as integers when they parse
+	// (the import pipeline computes them when absent).
+	addInt := func(key, v string) {
+		if v = strings.TrimSpace(v); v == "" {
+			return
+		}
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			payload[key] = n
+		}
+	}
+	addInt("cqz", in.CQZone)
+	addInt("ituz", in.ITUZone)
+	addStr("qsl_rcvd", in.QSLRcvd)
+	addStr("lotw_qsl_rcvd", in.LOTWQSLRcvd)
+	addStr("eqsl_qsl_rcvd", in.EQSLQSLRcvd)
+	if in.Submode != "" && !strings.EqualFold(in.Submode, in.Mode) {
+		payload["submode"] = in.Submode
+	}
+	// Contest data: without it a contest contact lands in Wavelog as a plain
+	// QSO with no exchange and no contest session attached.
+	addStr("contest_id", in.ContestID)
+	addStr("stx_string", in.STXString)
+	addStr("srx_string", in.SRXString)
+	if in.STX > 0 {
+		payload["stx"] = in.STX
+	}
+	if in.SRX > 0 {
+		payload["srx"] = in.SRX
+	}
 	if in.FreqHz > 0 {
 		payload["freq"] = in.FreqHz
 	}
@@ -631,6 +701,13 @@ type UpdateQSOInput struct {
 	ITUZone    *int
 	FreqHz     *int64
 	FreqRxHz   *int64
+	// Contest exchange. All four are in the API's editable-field list, so an
+	// edited exchange reaches the server. contest_id is NOT editable through
+	// PATCH (it is only accepted on create), which is why it is absent here.
+	STX       *int
+	SRX       *int
+	STXString *string
+	SRXString *string
 }
 
 // UpdateQSO updates a QSO on the Wavelog API v2 via PATCH /api/v2/qso/{id}.
@@ -701,6 +778,10 @@ func UpdateQSO(baseURL, apiKey string, remoteID int64, in UpdateQSOInput) error 
 	addClear("sig_info", in.SIGInfo)
 	addClearInt("cqz", in.CQZone)
 	addClearInt("ituz", in.ITUZone)
+	addClearInt("stx", in.STX)
+	addClearInt("srx", in.SRX)
+	addClear("stx_string", in.STXString)
+	addClear("srx_string", in.SRXString)
 	addClearHz("freq", in.FreqHz)
 	addClearHz("freq_rx", in.FreqRxHz)
 	body, err := json.Marshal(payload)

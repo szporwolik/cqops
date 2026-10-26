@@ -212,13 +212,16 @@ func securityHeaders(next http.Handler) http.Handler {
 		// Restrict to same-origin by default; style-src 'unsafe-inline'
 		// needed for Leaflet. If your deployment needs external map tiles
 		// or weather APIs, adjust img-src and connect-src accordingly.
+		// Nothing is loaded from a CDN — MapLibre, Leaflet and the
+		// terminator are embedded — so script/style/worker stay 'self' and
+		// a compromised or spoofed third-party host cannot inject code.
 		w.Header().Set("Content-Security-Policy",
 			"default-src 'self'; "+
-				"script-src 'self' https://cdn.jsdelivr.net; "+
-				"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "+
+				"script-src 'self'; "+
+				"style-src 'self' 'unsafe-inline'; "+
 				"img-src 'self' data: https:; "+
 				"connect-src 'self' https:; "+
-				"worker-src 'self' blob: https://cdn.jsdelivr.net; "+
+				"worker-src 'self' blob:; "+
 				"font-src 'self'")
 		next.ServeHTTP(w, r)
 	})

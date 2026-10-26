@@ -24,17 +24,28 @@ var editorColTiers = []struct {
 	{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Operator", "Contest"}},
 }
 
-// editorColTiersContest mirrors editorColTiers but replaces reference
-// columns with ExchSent/ExchRcvd at the wide tiers (same as RecentQSOs).
+// editorColTiersContest puts the exchange pair first: during a contest the
+// sent/received exchange is what an operator actually reads, so ExchSent/
+// ExchRcvd appear as soon as the width allows (~79 columns) instead of only
+// at the widest tier. Reference-style columns (Name, Grid, QTH, Comment,
+// Dist) are added afterwards. Tiers are ordered by ascending total width —
+// buildTable picks the richest one that fits.
 var editorColTiersContest = []struct {
 	names []string
 }{
 	{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Mode", "RSTs", "RSTr"}},
-	{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Mode", "RSTs", "RSTr", "DXCC"}},
-	{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name"}},
-	{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Contest"}},
-	{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "Contest"}},
-	{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "DXCC", "Name", "Grid", "QTH", "Comment", "Dist", "Power", "ExchSent", "ExchRcvd", "Contest"}},
+	{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Mode", "RSTs", "RSTr", "ExchSent", "ExchRcvd"}},
+	{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Mode", "RSTs", "RSTr", "ExchSent", "ExchRcvd", "DXCC"}},
+	{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Mode", "Sub", "RSTs", "RSTr", "ExchSent", "ExchRcvd", "DXCC"}},
+	{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Mode", "Sub", "RSTs", "RSTr", "ExchSent", "ExchRcvd", "DXCC", "Name"}},
+	{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Mode", "Sub", "RSTs", "RSTr", "ExchSent", "ExchRcvd", "DXCC", "Name", "Grid"}},
+	{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "ExchSent", "ExchRcvd", "DXCC", "Name", "Grid"}},
+	{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "ExchSent", "ExchRcvd", "DXCC", "Name", "Grid", "QTH"}},
+	{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "ExchSent", "ExchRcvd", "DXCC", "Name", "Grid", "QTH", "Dist"}},
+	{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "ExchSent", "ExchRcvd", "DXCC", "Name", "Grid", "QTH", "Dist", "Power"}},
+	{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "ExchSent", "ExchRcvd", "DXCC", "Name", "Grid", "QTH", "Dist", "Power", "Comment"}},
+	{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "ExchSent", "ExchRcvd", "DXCC", "Name", "Grid", "QTH", "Dist", "Power", "Comment", "Operator"}},
+	{[]string{"Date", "Time", "Call", "WL", "Source", "Band", "Freq", "Mode", "Sub", "RSTs", "RSTr", "ExchSent", "ExchRcvd", "DXCC", "Name", "Grid", "QTH", "Dist", "Power", "Comment", "Operator", "Contest"}},
 }
 
 // =============================================================================
@@ -101,12 +112,23 @@ func (le *LogbookEditor) buildTable() {
 			names = tiers[0].names
 		}
 
-		// Multi-operator: swap Grid for Operator.
+		// Multi-operator: swap Grid for Operator. Skip the swap when the
+		// chosen tier already carries Operator (the widest contest tiers do),
+		// otherwise the table would show the same column twice.
 		if le.multiOp {
-			for i, n := range names {
-				if n == "Grid" {
-					names[i] = "Operator"
+			hasOperator := false
+			for _, n := range names {
+				if n == "Operator" {
+					hasOperator = true
 					break
+				}
+			}
+			if !hasOperator {
+				for i, n := range names {
+					if n == "Grid" {
+						names[i] = "Operator"
+						break
+					}
 				}
 			}
 		}

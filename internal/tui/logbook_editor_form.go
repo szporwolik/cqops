@@ -128,8 +128,77 @@ func (le *LogbookEditor) readEditForm() *qso.QSO {
 		WavelogID:     le.editing.WavelogID,
 		CreatedAt:     le.editing.CreatedAt,
 	}
-	q.NormalizeExchange()
+	le.resolveExchange(q)
 	return q
+}
+
+// resolveExchange fills STX/SRX/STXString/SRXString for the row being saved.
+//
+// The four fields are NOT re-derived from the text unconditionally: the server
+// may hold an exchange string without a serial (`stx` null with
+// `stx_string "JO90"`, or a state exchange like "MA"), and deriving one would
+// invent a number — even the RST — that the next save would PATCH back to
+// Wavelog. So the text governs only the side the operator actually changed; an
+// untouched side keeps the stored (possibly just refreshed) values, and a value
+// typed straight into the STX/SRX rows always wins.
+func (le *LogbookEditor) resolveExchange(q *qso.QSO) {
+	prev := le.editing
+	sentChanged := prev == nil || strings.TrimSpace(q.ExchSent) != strings.TrimSpace(prev.ExchSent)
+	rcvdChanged := prev == nil || strings.TrimSpace(q.ExchRcvd) != strings.TrimSpace(prev.ExchRcvd)
+
+	q.STXString = qso.StripRSTPrefix(q.ExchSent, q.RSTSent)
+	q.STX = qso.SerialFromExchange(q.ExchSent, q.RSTSent)
+	q.SRXString = qso.StripRSTPrefix(q.ExchRcvd, q.RSTRcvd)
+	q.SRX = qso.SerialFromExchange(q.ExchRcvd, q.RSTRcvd)
+	if prev == nil {
+		return
+	}
+	if !sentChanged {
+		q.STX, q.STXString = prev.STX, prev.STXString
+	}
+	if !rcvdChanged {
+		q.SRX, q.SRXString = prev.SRX, prev.SRXString
+	}
+	// A changed text wins over the serial rows (they still show the pre-edit
+	// value). On an untouched side a value typed into its own row wins over
+	// both sources — the rows were filled from `prev`, so a difference is
+	// operator input.
+	if !sentChanged {
+		if v := strings.TrimSpace(le.fields[qefSTX].Value()); v != serialField(prev.STX) {
+			q.STX = atoiOrZero(v)
+		}
+		if v := strings.TrimSpace(le.fields[qefSTXString].Value()); v != strings.TrimSpace(prev.STXString) {
+			q.STXString = v
+		}
+	}
+	if !rcvdChanged {
+		if v := strings.TrimSpace(le.fields[qefSRX].Value()); v != serialField(prev.SRX) {
+			q.SRX = atoiOrZero(v)
+		}
+		if v := strings.TrimSpace(le.fields[qefSRXString].Value()); v != strings.TrimSpace(prev.SRXString) {
+			q.SRXString = v
+		}
+	}
+}
+
+// serialField renders a serial the way fillEditForm puts it in its row, so an
+// untouched row can be told apart from one the operator edited (0 renders as an
+// empty row).
+func serialField(v int) string {
+	if v == 0 {
+		return ""
+	}
+	return strconv.Itoa(v)
+}
+
+// atoiOrZero parses a serial typed by hand; anything unparsable means "no
+// serial", never a guess.
+func atoiOrZero(v string) int {
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
 }
 
 // focusableRows implementation for the shared menuFocus engine. The two

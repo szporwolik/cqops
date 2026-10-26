@@ -23,7 +23,7 @@ const qsoCols = `call, qso_date, time_on, time_off, band, freq, freq_rx, mode, s
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
 		wavelog_id, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
-		dxcc`
+		dxcc, dxcc_source, qsl_rcvd, lotw_qsl_rcvd, eqsl_qsl_rcvd`
 
 // qsoSelectCols is the SELECT-side column list (id + data columns +
 // timestamps) shared by the list queries.
@@ -40,9 +40,9 @@ const qsoSelectCols = `id, call, qso_date, time_on, time_off, band, freq, freq_r
 		dxcc,
 		created_at, updated_at, wavelog_dirty, wavelog_dirty_rev`
 
-// placeholders52 is a pre-computed string of 52 comma-separated "?" markers,
+// placeholders56 is a pre-computed string of 56 comma-separated "?" markers,
 // used by InsertQSO to avoid a per-insert []string allocation.
-const placeholders52 = "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?"
+const placeholders56 = "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?"
 
 // insertQSO writes one QSO through the given executor (a *sql.DB or a
 // *sql.Tx). InsertQSO adds the SQLITE_BUSY retry for standalone writes;
@@ -56,10 +56,18 @@ func insertQSO(e execer, q *qso.QSO) (int64, error) {
 	if q.Source == "" {
 		q.Source = "manual"
 	}
+	q.DXCCSource = normalizeDXCCSource(q.DXCCSource, q.DXCC)
+	q.QSLRcvd = qso.NormalizeQSLStatus(q.QSLRcvd)
+	q.LOTWQSLRcvd = qso.NormalizeQSLStatus(q.LOTWQSLRcvd)
+	q.EQSLQSLRcvd = qso.NormalizeQSLStatus(q.EQSLQSLRcvd)
+	// Single choke point for the sideband: every writer (form save, WSJT-X,
+	// ADIF import, editor, Wavelog sync) stores an SSB contact with LSB/USB
+	// instead of an empty submode.
+	qso.FillSSBSubmode(q)
 
 	res, err := e.Exec(
 		`INSERT INTO qsos (`+qsoCols+`, base_call, created_at, updated_at)
-		VALUES (`+placeholders52+`, ?, ?, ?)`,
+		VALUES (`+placeholders56+`, ?, ?, ?)`,
 		q.Call, q.QSODate, q.TimeOn, q.TimeOff,
 		q.Band, q.Freq, q.FreqRx, q.Mode, q.Submode,
 		q.RSTSent, q.RSTRcvd, q.GridSquare, q.Name, q.QTH, q.Country, q.Comment, q.Notes, q.TXPower,
@@ -68,6 +76,7 @@ func insertQSO(e execer, q *qso.QSO) (int64, error) {
 		q.MySOTARef, q.MyPOTARef, q.MyWWFFRef,
 		q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
 		q.CQZone, q.ITUZone, q.MyCQZone, q.MyITUZone, q.MyDXCC, q.MySIG, q.MySIGInfo, q.WavelogID, q.ContestID, q.ExchSent, q.ExchRcvd, q.STX, q.SRX, q.STXString, q.SRXString, q.ContestADIFID, q.DXCC,
+		q.DXCCSource, q.QSLRcvd, q.LOTWQSLRcvd, q.EQSLQSLRcvd,
 		qso.DeriveBaseCall(q.Call),
 		q.CreatedAt.Format(time.RFC3339), q.UpdatedAt.Format(time.RFC3339),
 	)
@@ -80,6 +89,20 @@ func insertQSO(e execer, q *qso.QSO) (int64, error) {
 	}
 	q.ID = id
 	return id, nil
+}
+
+// normalizeDXCCSource fills in the provenance for a QSO that does not carry
+// one: an entity number supplied with the record is "explicit", a missing one
+// is "unknown" until a callbook or the CTY prefix lookup resolves it.
+func normalizeDXCCSource(src, dxcc string) string {
+	src = strings.TrimSpace(src)
+	if src != "" {
+		return src
+	}
+	if strings.TrimSpace(dxcc) != "" {
+		return qso.DXCCSourceExplicit
+	}
+	return qso.DXCCSourceUnknown
 }
 
 // execer is the minimal SQL execution surface shared by *sql.DB and *sql.Tx.
@@ -242,6 +265,35 @@ func countQSOsContest(db *sql.DB, contestID string) (int, error) {
 		return 0, fmt.Errorf("count contest adif qsos: %w", err)
 	}
 	return a + b, nil
+}
+
+// ListContestQSOStamps returns the timing fields of every QSO in a contest:
+// qso_date + time_on (the on-air time) plus created_at as a fallback for rows
+// without a usable time. The contest rate panel needs every row — a row cap
+// skewed session, peak and window numbers — but none of the other columns.
+func ListContestQSOStamps(db *sql.DB, contestID string) ([]qso.QSO, error) {
+	if contestID == "" {
+		return nil, nil
+	}
+	rows, err := db.Query(
+		`SELECT qso_date, time_on, created_at FROM qsos WHERE contest_id = ?`, contestID)
+	if err != nil {
+		return nil, fmt.Errorf("list contest stamps: %w", err)
+	}
+	defer rows.Close()
+	var out []qso.QSO
+	for rows.Next() {
+		var q qso.QSO
+		var created string
+		if err := rows.Scan(&q.QSODate, &q.TimeOn, &created); err != nil {
+			return nil, fmt.Errorf("scan contest stamp: %w", err)
+		}
+		if t, err := time.Parse(time.RFC3339, created); err == nil {
+			q.CreatedAt = t
+		}
+		out = append(out, q)
+	}
+	return out, rows.Err()
 }
 
 // ListQSOs returns recent QSOs ordered by QSO date/time descending.
@@ -617,6 +669,7 @@ func GetQSOByID(db *sql.DB, id int64) (*qso.QSO, error) {
 		my_cq_zone, my_itu_zone, my_dxcc,
 		my_sig, my_sig_info,
 		wavelog_id, wavelog_dirty, wavelog_dirty_rev, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
+		dxcc_source, qsl_rcvd, lotw_qsl_rcvd, eqsl_qsl_rcvd,
 		created_at, updated_at
 		FROM qsos WHERE id = ?`, id,
 	).Scan(
@@ -631,6 +684,7 @@ func GetQSOByID(db *sql.DB, id int64) (*qso.QSO, error) {
 		&q.MyCQZone, &q.MyITUZone, &q.MyDXCC,
 		&q.MySIG, &q.MySIGInfo,
 		&q.WavelogID, &q.WavelogDirty, &q.WavelogDirtyRev, &q.ContestID, &q.ExchSent, &q.ExchRcvd, &q.STX, &q.SRX, &q.STXString, &q.SRXString, &q.ContestADIFID,
+		&q.DXCCSource, &q.QSLRcvd, &q.LOTWQSLRcvd, &q.EQSLQSLRcvd,
 		&createdAt, &updatedAt,
 	)
 	if err != nil {
@@ -1044,14 +1098,29 @@ func listQSOsByQuery(q qsoQueryer, query string, args ...any) ([]qso.QSO, error)
 func buildUpdateQSOStatement(q *qso.QSO, oldCall, extraSet string) (string, []any) {
 	q.UpdatedAt = time.Now().UTC()
 	callChanged := oldCall != "" && !strings.EqualFold(oldCall, q.Call)
+	// The update writes submode=? verbatim, so an SSB row that lost its
+	// sideband (an edit, a remote merge) would be blanked by every save.
+	// Apply the same rule the insert path uses.
+	qso.FillSSBSubmode(q)
 
 	dxccSet := ""
-	dxccArg := ""
-	if q.DXCC != "" {
-		dxccSet = ", dxcc=?"
-		dxccArg = q.DXCC
-	} else if callChanged {
-		dxccSet = ", dxcc=?"
+	var dxccArgs []any
+	switch {
+	case q.DXCC != "":
+		src := q.DXCCSource
+		if src == "" {
+			src = qso.DXCCSourceExplicit
+		}
+		dxccSet = ", dxcc=?, dxcc_source=?"
+		dxccArgs = []any{q.DXCC, src}
+	case callChanged:
+		// The stored entity belonged to the old callsign — it is no longer
+		// valid, and the backfill must be able to tell that it is unresolved.
+		dxccSet = ", dxcc=?, dxcc_source=?"
+		dxccArgs = []any{"", qso.DXCCSourceUnknown}
+	case q.DXCCSource != "":
+		dxccSet = ", dxcc_source=?"
+		dxccArgs = []any{q.DXCCSource}
 	}
 
 	query := `UPDATE qsos SET call=?, qso_date=?, time_on=?, time_off=?, band=?, freq=?, freq_rx=?, mode=?, submode=?,
@@ -1064,6 +1133,9 @@ func buildUpdateQSOStatement(q *qso.QSO, oldCall, extraSet string) (string, []an
 		my_cq_zone=?, my_itu_zone=?, my_dxcc=?,
 		my_sig=?, my_sig_info=?,
 		contest_id=?, exch_sent=?, exch_rcvd=?, stx=?, srx=?, stx_string=?, srx_string=?, contest_adif_id=?,
+		qsl_rcvd = COALESCE(NULLIF(?, ''), qsl_rcvd),
+		lotw_qsl_rcvd = COALESCE(NULLIF(?, ''), lotw_qsl_rcvd),
+		eqsl_qsl_rcvd = COALESCE(NULLIF(?, ''), eqsl_qsl_rcvd),
 		base_call=?` + dxccSet + extraSet + `,
 		updated_at=?
 		WHERE id=?`
@@ -1078,11 +1150,10 @@ func buildUpdateQSOStatement(q *qso.QSO, oldCall, extraSet string) (string, []an
 		q.StationCallsign, q.Operator, q.MyGridSquare, q.MyRig, q.MyAntenna, q.Source,
 		q.CQZone, q.ITUZone, q.MyCQZone, q.MyITUZone, q.MyDXCC, q.MySIG, q.MySIGInfo,
 		q.ContestID, q.ExchSent, q.ExchRcvd, q.STX, q.SRX, q.STXString, q.SRXString, q.ContestADIFID,
+		q.QSLRcvd, q.LOTWQSLRcvd, q.EQSLQSLRcvd,
 		qso.DeriveBaseCall(q.Call),
 	}
-	if dxccSet != "" {
-		args = append(args, dxccArg)
-	}
+	args = append(args, dxccArgs...)
 	args = append(args, q.UpdatedAt.Format(time.RFC3339), q.ID)
 	return query, args
 }
@@ -1109,13 +1180,20 @@ func UpdateQSO(db *sql.DB, q *qso.QSO) error {
 	if _, err := tx.Exec(query, args...); err != nil {
 		return fmt.Errorf("update qso: %w", err)
 	}
-	// Unindex after the update: edge recomputation must see the new values
-	// (the doomed row no longer matches its old aggregate keys).
+	// Index the stored row, never the caller's object: the UPDATE keeps the
+	// columns the caller left empty (dxcc, base_call, submode …), so indexing
+	// q would drop aggregates the database still holds — a comment-only edit
+	// used to erase the contact from the DXCC history. Unindex after the
+	// update so edge recomputation sees the new values.
 	if oldErr == nil {
 		if err := indexQSO(tx, oldQSO, -1); err != nil {
 			return err
 		}
-		if err := indexQSO(tx, q, 1); err != nil {
+		newQSO, lerr := loadQSOForIndex(tx, q.ID)
+		if lerr != nil {
+			return fmt.Errorf("reload qso for worked index: %w", lerr)
+		}
+		if err := indexQSO(tx, newQSO, 1); err != nil {
 			return err
 		}
 	}
@@ -1156,14 +1234,19 @@ func SaveQSO(db *sql.DB, q *qso.QSO) (synced bool, rev int64, err error) {
 	if _, err := tx.Exec(query, args...); err != nil {
 		return false, 0, fmt.Errorf("update qso: %w", err)
 	}
-	// Maintain the worked index: the old values stop counting, the new ones
-	// start — same transaction as the row update. Unindexing after the
-	// update keeps edge recomputation consistent with the stored rows.
+	// Maintain the worked index: the old values stop counting, the stored new
+	// ones start — same transaction as the row update. Re-reading the row is
+	// what keeps the index honest, because the UPDATE preserves columns the
+	// caller left empty and indexing q would silently drop them.
 	if oldErr == nil {
 		if err := indexQSO(tx, oldQSO, -1); err != nil {
 			return false, 0, err
 		}
-		if err := indexQSO(tx, q, 1); err != nil {
+		newQSO, lerr := loadQSOForIndex(tx, q.ID)
+		if lerr != nil {
+			return false, 0, fmt.Errorf("reload qso for worked index: %w", lerr)
+		}
+		if err := indexQSO(tx, newQSO, 1); err != nil {
 			return false, 0, err
 		}
 	}
@@ -1208,12 +1291,68 @@ type EnrichmentData struct {
 	DXCC       string
 }
 
+// EnrichmentSync reports what an enrichment write did to a contact's
+// remote-sync state.
+type EnrichmentSync struct {
+	// Changed is true when the row actually gained values. The CASE guards
+	// leave a fully populated row untouched, and an untouched row must not
+	// look like a local edit.
+	Changed bool
+	// Synced is true when the row carries a Wavelog remote id: the
+	// enrichment now diverges from the remote copy, so a PATCH is owed.
+	Synced bool
+	// Revision is the pending-sync revision the change got.
+	Revision int64
+}
+
+// enrichmentSnapshot is the subset of a row that enrichment can change, plus
+// the sync bookkeeping needed to decide whether a PATCH is owed.
+type enrichmentSnapshot struct {
+	name, qth, country, grid, iota, cq, itu, dxcc string
+	wavelogID, rev                                int64
+}
+
+func readEnrichmentSnapshot(tx *sql.Tx, id int64) (enrichmentSnapshot, error) {
+	var s enrichmentSnapshot
+	err := tx.QueryRow(`SELECT COALESCE(name,''), COALESCE(qth,''), COALESCE(country,''),
+		COALESCE(gridsquare,''), COALESCE(iota,''), COALESCE(cq_zone,''), COALESCE(itu_zone,''),
+		COALESCE(dxcc,''), COALESCE(wavelog_id,0), COALESCE(wavelog_dirty_rev,0)
+		FROM qsos WHERE id=?`, id).Scan(
+		&s.name, &s.qth, &s.country, &s.grid, &s.iota, &s.cq, &s.itu, &s.dxcc, &s.wavelogID, &s.rev)
+	if err != nil {
+		return s, err
+	}
+	return s, nil
+}
+
 // UpdateQSOEnrichment applies callbook enrichment to a QSO.
 // Only fields that are currently empty in the database are updated —
 // existing data is never overwritten by enrichment.
 func UpdateQSOEnrichment(db *sql.DB, qsoID int64, e EnrichmentData) error {
+	_, err := EnrichQSO(db, qsoID, e)
+	return err
+}
+
+// EnrichQSO applies callbook enrichment and keeps the remote-sync bookkeeping
+// honest. It is UpdateQSOEnrichment plus the answer to "does Wavelog still
+// have to hear about this?":
+//
+// A contact is usually uploaded before the callbook answers (a QRZ lookup can
+// take a minute), so filling its name/grid/QTH afterwards left the local row
+// richer than the remote copy while the sync machinery still considered the
+// contact up to date — the Wavelog copy stayed incomplete forever. A row that
+// already carries a remote id and actually gained values is therefore marked
+// pending (wavelog_dirty=1) with a fresh revision, exactly like a normal
+// local edit, and the caller pushes it through the usual per-contact PATCH
+// coordinator. Rows without a remote id only bump the revision, so an
+// initial upload in flight notices the change and stays pending.
+//
+// A no-op enrichment (row already complete) touches nothing: no revision, no
+// dirty flag, no PATCH.
+func EnrichQSO(db *sql.DB, qsoID int64, e EnrichmentData) (EnrichmentSync, error) {
+	var res EnrichmentSync
 	if e.Name == "" && e.QTH == "" && e.Country == "" && e.GridSquare == "" && e.IOTA == "" && e.CQZone == "" && e.ITUZone == "" && e.DXCC == "" {
-		return nil
+		return res, nil
 	}
 
 	var sets []string
@@ -1247,19 +1386,135 @@ func UpdateQSOEnrichment(db *sql.DB, qsoID int64, e EnrichmentData) error {
 		sets = append(sets, "itu_zone = CASE WHEN COALESCE(itu_zone,'') = '' THEN ? ELSE itu_zone END")
 		args = append(args, e.ITUZone)
 	}
+	// dxcc and its provenance are written together by a guarded UPDATE below,
+	// never by a CASE guard: the guard decides once, against the stored row,
+	// so the number and its origin cannot disagree.
+
+	if len(sets) == 0 && e.DXCC == "" {
+		return res, nil
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return res, fmt.Errorf("begin enrichment: %w", err)
+	}
+	defer tx.Rollback()
+
+	before, err := readEnrichmentSnapshot(tx, qsoID)
+	if err != nil {
+		return res, fmt.Errorf("read qso before enrichment: %w", err)
+	}
+
+	// Enrichment fills dxcc, grid, country and zones — exactly the columns the
+	// worked index aggregates over — so the index has to follow in the same
+	// transaction, from the stored row (the CASE guards make this a partial
+	// update whose result cannot be predicted from e).
+	oldQSO, oldErr := loadQSOForIndex(tx, qsoID)
+
+	if len(sets) > 0 {
+		args = append(args, qsoID)
+		query := fmt.Sprintf("UPDATE qsos SET %s WHERE id = ?", strings.Join(sets, ", "))
+		if _, err := tx.Exec(query, args...); err != nil {
+			return res, fmt.Errorf("update qso enrichment: %w", err)
+		}
+	}
 	if e.DXCC != "" {
-		sets = append(sets, "dxcc = CASE WHEN COALESCE(dxcc,'') = '' THEN ? ELSE dxcc END")
-		args = append(args, e.DXCC)
+		// Only an unresolved row accepts the callbook entity, and its
+		// provenance changes with it.
+		if _, err := tx.Exec(
+			`UPDATE qsos SET dxcc = ?, dxcc_source = ? WHERE id = ? AND COALESCE(dxcc,'') = ''`,
+			e.DXCC, qso.DXCCSourceCallbook, qsoID); err != nil {
+			return res, fmt.Errorf("update qso enrichment dxcc: %w", err)
+		}
 	}
 
-	if len(sets) == 0 {
-		return nil
+	after, err := readEnrichmentSnapshot(tx, qsoID)
+	if err != nil {
+		return res, fmt.Errorf("read qso after enrichment: %w", err)
+	}
+	changed := before.name != after.name || before.qth != after.qth ||
+		before.country != after.country || before.grid != after.grid ||
+		before.iota != after.iota || before.cq != after.cq ||
+		before.itu != after.itu || before.dxcc != after.dxcc
+
+	if changed {
+		// Same bookkeeping as a normal edit: the enrichment is a local change
+		// the server does not have yet.
+		if _, err := tx.Exec(
+			`UPDATE qsos SET wavelog_dirty = CASE WHEN COALESCE(wavelog_id,0) > 0 THEN 1 ELSE wavelog_dirty END,
+				wavelog_dirty_rev = COALESCE(wavelog_dirty_rev,0) + 1 WHERE id=?`, qsoID); err != nil {
+			return res, fmt.Errorf("mark enriched qso pending sync: %w", err)
+		}
+		if err := tx.QueryRow(`SELECT COALESCE(wavelog_dirty_rev,0) FROM qsos WHERE id=?`, qsoID).Scan(&res.Revision); err != nil {
+			return res, fmt.Errorf("read sync revision after enrichment: %w", err)
+		}
+		res.Changed = true
+		res.Synced = before.wavelogID > 0
 	}
 
-	args = append(args, qsoID)
-	query := fmt.Sprintf("UPDATE qsos SET %s WHERE id = ?", strings.Join(sets, ", "))
-	if _, err := db.Exec(query, args...); err != nil {
-		return fmt.Errorf("update qso enrichment: %w", err)
+	if oldErr == nil {
+		if err := indexQSO(tx, oldQSO, -1); err != nil {
+			return res, err
+		}
+		newQSO, lerr := loadQSOForIndex(tx, qsoID)
+		if lerr != nil {
+			return res, fmt.Errorf("reload qso for worked index: %w", lerr)
+		}
+		if err := indexQSO(tx, newQSO, 1); err != nil {
+			return res, err
+		}
 	}
-	return nil
+	if err := tx.Commit(); err != nil {
+		return res, err
+	}
+	return res, nil
+}
+
+// BackfillDXCC sets the DXCC entity on rows whose dxcc column is still empty,
+// keyed by row id (the caller resolves prefixes through CTY). The worked index
+// is updated in the same transaction, so a backfilled contact starts counting
+// in the DXCC history immediately instead of on the next full rebuild.
+// Returns how many rows were updated.
+func BackfillDXCC(db *sql.DB, byID map[int64]string) (int, error) {
+	if len(byID) == 0 {
+		return 0, nil
+	}
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, fmt.Errorf("begin dxcc backfill: %w", err)
+	}
+	defer tx.Rollback()
+
+	updated := 0
+	for id, dxcc := range byID {
+		if strings.TrimSpace(dxcc) == "" {
+			continue
+		}
+		oldQSO, oldErr := loadQSOForIndex(tx, id)
+		if oldErr != nil {
+			continue
+		}
+		res, err := tx.Exec(`UPDATE qsos SET dxcc = ?, dxcc_source = ? WHERE id = ? AND COALESCE(dxcc,'') = ''`, dxcc, qso.DXCCSourcePrefix, id)
+		if err != nil {
+			return updated, fmt.Errorf("dxcc backfill update: %w", err)
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			continue // row gained DXCC meanwhile — nothing to reindex
+		}
+		if err := indexQSO(tx, oldQSO, -1); err != nil {
+			return updated, err
+		}
+		newQSO, lerr := loadQSOForIndex(tx, id)
+		if lerr != nil {
+			return updated, fmt.Errorf("reload qso for worked index: %w", lerr)
+		}
+		if err := indexQSO(tx, newQSO, 1); err != nil {
+			return updated, err
+		}
+		updated++
+	}
+	if err := tx.Commit(); err != nil {
+		return updated, fmt.Errorf("commit dxcc backfill: %w", err)
+	}
+	return updated, nil
 }

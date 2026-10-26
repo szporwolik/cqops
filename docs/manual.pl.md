@@ -239,6 +239,8 @@ Wybierz usługę w **F9 → Integrations → APRS**. Znak/SSID, symbol, komentar
 
 Automatyczne beacony są nadawane nie częściej niż co pięć minut. **F3** pokazuje ostatnio słyszane stacje: strzałki wybierają, **Enter** wypełnia QSO, **d / t / s** zmienia filtry odległości/wieku/typu, **Backspace** je czyści, a **b** od razu wysyła skonfigurowany beacon. Beacony z GPS wymagają **Grid from GPS** i prawidłowej pozycji.
 
+Opcja **Fixed grid (opt)** w ustawieniach APRS logbooka przypina środek APRS i beaconowanie do wskazanego lokatora, zastępując GPS i siatkę stacji (priorytet: fixed > GPS > siatka stacji). Lokator zapisywany w QSO pozostaje bez zmian. W dashboardzie kropka stacji pokazuje pozycję faktycznie nadawaną, a karta stacji wyświetla wiersz **APRS**, gdy różni się on od lokatora logowania.
+
 <a id="portable"></a>
 
 ## Praca w terenie

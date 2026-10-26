@@ -25,15 +25,6 @@ func seedSyncedUnsynced(t *testing.T, le *LogbookEditor) (syncedID, unsyncedID i
 	return syncedID, unsyncedID
 }
 
-func cursorRow(t *testing.T, le *LogbookEditor) qso.QSO {
-	t.Helper()
-	idx := le.table.Cursor()
-	if idx < 0 || idx >= len(le.qsos) {
-		t.Fatalf("cursor out of range: %d (len %d)", idx, len(le.qsos))
-	}
-	return le.qsos[idx]
-}
-
 // The page order follows the list query (newest first), so the unsynced QSO
 // (later date) is at the top. Move the cursor to the synced row explicitly.
 func selectRow(t *testing.T, le *LogbookEditor, call string) {

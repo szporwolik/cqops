@@ -22,6 +22,8 @@ This document lists third-party components used by CQOps that are not covered by
 | **go.bug.st/serial** | Serial port (GPS NMEA, APRS KISS TNC) | BSD-3-Clause | `../licenses/SERIAL-BSD3-LICENSE` | https://github.com/bugst/go-serial |
 | **Leaflet 1.9.4** | Dashboard interactive maps (bundled) | BSD-2-Clause | `../licenses/LEAFLET-BSD2-LICENSE` | https://leafletjs.com |
 | **Leaflet.Terminator** | Day/night grayline overlay (bundled) | MIT | `../licenses/LEAFLET-TERMINATOR-MIT-LICENSE` | https://github.com/joergdietrich/Leaflet.Terminator |
+| **MapLibre GL JS 5.24.0** | Dashboard vector tile map layer (bundled) | BSD-3-Clause | `../licenses/MAPLIBRE-BSD3-LICENSE.txt` | https://maplibre.org |
+| **maplibre-gl-leaflet 0.1.3** | MapLibre GL binding for Leaflet (bundled) | ISC | `../licenses/MAPLIBRE-GL-LEAFLET-ISC-LICENSE.txt` | https://github.com/maplibre/maplibre-gl-leaflet |
 | **Open-Meteo** | Weather forecast API (browser-side) | CC BY 4.0 | `../licenses/OPEN-METEO-CC-BY-4.0.txt` | https://open-meteo.com/ |
 | **OpenStreetMap tiles** | Dashboard map tiles (optional, browser-side) | ODbL, © OpenStreetMap contributors | — | https://www.openstreetmap.org/copyright |
 | **RainViewer** | Weather radar overlay (optional, browser-side) | Free public API; attribution displayed on-map | — | https://www.rainviewer.com |

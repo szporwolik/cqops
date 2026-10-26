@@ -30,3 +30,6 @@ vet_output.txt
 
 # Python virtualenv (dev tooling)
 .venv/
+
+# Local dashboard demo harness (not part of the app)
+cmd/dashdemo-tmp/

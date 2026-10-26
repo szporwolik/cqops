@@ -496,63 +496,6 @@ func (m *Model) buildPSKTable(reports []psk.Report, _ /*maxW*/, visibleRows int)
 	return lipgloss.JoinVertical(lipgloss.Left, lines...)
 }
 
-// buildPSKFilters renders the current filter state in the right-hand box.
-func (m *Model) buildPSKFilters(maxW int) string {
-	var lines []string
-	// Header is rendered by renderPartnerBox — no duplicate here.
-
-	indent := " "
-	add := func(label, value string) {
-		lbl := S.FormLabel.Align(lipgloss.Right).Render(label)
-		valW := maxW - 14
-		if valW < 3 {
-			valW = 3
-		}
-		val := ValueStyle.Width(valW).MaxWidth(valW).Inline(true).Render(truncateText(value, valW))
-		lines = append(lines, indent+lipgloss.JoinHorizontal(lipgloss.Center, lbl, " ", val))
-	}
-
-	timeLabel := fmt.Sprintf("%d min", m.psk.filterMins)
-	add("Time window", timeLabel)
-
-	bandLabel := "all"
-	if m.psk.bandFilter != "" {
-		bandLabel = m.psk.bandFilter
-	}
-	add("Band filter", bandLabel)
-
-	modeLabel := "all"
-	if m.psk.modeFilter != "" {
-		modeLabel = m.psk.modeFilter
-	}
-	add("Mode filter", modeLabel)
-
-	nextUpdate := ""
-	pskCall := ""
-	if m.App != nil {
-		pskCall = strings.ToUpper(strings.TrimSpace(m.App.Logbook.Station.Callsign))
-	}
-	if last := m.psk.lastFetchByCall[pskCall]; !last.IsZero() {
-		nextFetch := last.Add(5 * time.Minute)
-		remaining := time.Until(nextFetch)
-		if remaining > 0 {
-			nextUpdate = fmt.Sprintf("%dm", int(remaining.Minutes())+1)
-		} else {
-			nextUpdate = "now"
-		}
-	}
-	if nextUpdate != "" {
-		add("Next update", nextUpdate)
-	}
-
-	// Pad so the box height matches the table (header + 5 data + scroll hint = 7).
-	for len(lines) < 7 {
-		lines = append(lines, "")
-	}
-
-	return lipgloss.JoinVertical(lipgloss.Left, lines...)
-}
-
 func (m *Model) buildPSKMap(reports []psk.Report, mapW, mapAvailH int) string {
 	ownGrid := m.effectiveGrid()
 	if ownGrid == "" {

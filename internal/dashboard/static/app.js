@@ -62,6 +62,14 @@ var mapContainer=$('map-container');
 
 var es=null, map=null, mainGL=null;
 var ownStationLat=null,ownStationLon=null,ownStationCall='';
+// Own APRS position as transmitted (fixed location > GPS > station grid). The
+// station grid above follows the logging chain and ignores the APRS fixed
+// location, so the marker must use this when the logbook has APRS enabled.
+var ownAprsLat=null,ownAprsLon=null,ownAprsLocator='';
+function _ownPos(){
+  if(ownAprsLat!=null&&ownAprsLon!=null)return {lat:ownAprsLat,lon:ownAprsLon};
+  return {lat:ownStationLat,lon:ownStationLon};
+}
 var todayQsos=[], displayCfg={};
 
 // ---- Clocks ----
@@ -171,7 +179,12 @@ function connectSSE(){
   });
   es.addEventListener('station',function(e){var s=JSON.parse(e.data).payload;
     D('sse','station',s.callsign+' '+s.locator);
-    if(s.lat!=null&&s.lon!=null){ownStationLat=s.lat;ownStationLon=s.lon;initLocalMap(s.lat,s.lon);recentreLocalMap(s.lat,s.lon);updateAprsCircle(s.lat,s.lon,s.aprsRadiusKm||0);updateMapFromToday()}else{recentreLocalMapFromStation(s)}renderStation(s)
+    if(s.lat!=null&&s.lon!=null){ownStationLat=s.lat;ownStationLon=s.lon;
+      ownAprsLat=s.aprsPos?s.aprsPos.lat:null;
+      ownAprsLon=s.aprsPos?s.aprsPos.lon:null;
+      ownAprsLocator=s.aprsLocator||'';
+      var op=_ownPos();
+      initLocalMap(op.lat,op.lon);recentreLocalMap(op.lat,op.lon);updateAprsCircle(op.lat,op.lon,s.aprsRadiusKm||0);updateMapFromToday()}else{recentreLocalMapFromStation(s)}renderStation(s)
   });
   es.addEventListener('operator',function(e){var o=JSON.parse(e.data).payload;
     D('sse','operator',o.callsign);
@@ -202,7 +215,7 @@ function connectSSE(){
       // active_qso event hasn't fired yet (the call is already in
       // the hero from a previous render or a race condition).
       var c=heroCall.textContent;
-      if(c&&p.call&&c.toUpperCase()===p.call.toUpperCase())showHeroPhoto(p.imageUrl);
+      if(c&&p.call&&c.toUpperCase()===p.call.toUpperCase())showHeroPhoto(p.imageUrl,p.call);
     }
     if(p){
       if(app.className==='mode-active'){var c=heroCall.textContent;if(c)renderHero({call:c},p)}
@@ -345,11 +358,23 @@ function renderAll(snap){
     if(snap.station.callsign)ownStationCall=snap.station.callsign;
     if(snap.station.lat&&snap.station.lon){
     ownStationLat=snap.station.lat;ownStationLon=snap.station.lon;
-    initLocalMap(ownStationLat,ownStationLon);
-    recentreLocalMap(ownStationLat,ownStationLon);
-    updateAprsCircle(ownStationLat,ownStationLon,snap.station.aprsRadiusKm||0);
+    ownAprsLat=snap.station.aprsPos?snap.station.aprsPos.lat:null;
+    ownAprsLon=snap.station.aprsPos?snap.station.aprsPos.lon:null;
+    ownAprsLocator=snap.station.aprsLocator||'';
+    var op=_ownPos();
+    initLocalMap(op.lat,op.lon);
+    recentreLocalMap(op.lat,op.lon);
+    updateAprsCircle(op.lat,op.lon,snap.station.aprsRadiusKm||0);
     fetchWeather(snap.station.lat,snap.station.lon);
     fetchSunTimes(snap.station.lat,snap.station.lon);
+    }
+    var aprsSig=snap.station.aprsBeacon?(snap.station.aprsCallsign||'')+'|'+(snap.station.aprsSymbol||''):'';
+    if(aprsSig!==ownAprs.sig){
+      ownAprs.sig=aprsSig;
+      ownAprs.active=!!snap.station.aprsBeacon&&!!snap.station.aprsCallsign;
+      ownAprs.callsign=snap.station.aprsCallsign||'';
+      ownAprs.symbol=snap.station.aprsSymbol||'/-';
+      refreshOwnStationMarker();
     }
   }
   renderStation(snap.station,snap.operator,snap.logbook,snap.rig,snap.wsjtx);
@@ -392,7 +417,10 @@ function renderAll(snap){
   D('renderAll','fetching /api/today…');
   fetch('/api/today').then(function(r){return r.json()}).then(function(today){
     D('fetch','/api/today → '+(today? today.length:0)+' QSOs');
-    if(today&&today.length&&today.length!==todayQsos.length){todayQsos=today;updateMapFromToday();renderStats(null,todayQsos)}
+    // Compare content, not just the count: enrichment fills country/grid
+    // without adding rows, and a count-only check would keep the stale row
+    // on screen until the next event.
+    if(today&&today.length&&JSON.stringify(today)!==JSON.stringify(todayQsos)){todayQsos=today;updateMapFromToday();renderStats(null,todayQsos)}
   }).catch(function(e){D('fetch','/api/today ERR',''+e)});
   // Footer: version + map attributions.
   if(snap.app&&snap.app.version){
@@ -452,7 +480,7 @@ function renderHero(aq,p){
     }
   }
   // Photo
-  if(p&&p.imageUrl){showHeroPhoto(p.imageUrl)}else{showHeroPlaceholder(p?p.call:aq.call)}
+  if(p&&p.imageUrl){showHeroPhoto(p.imageUrl,p.call)}else{showHeroPlaceholder(p?p.call:aq.call)}
   // Identity line: merge partner data with form fields
   buildIdentityLine(aq,p);
   // Meta line removed — QRZ attribution moved to footer.
@@ -537,8 +565,10 @@ function updatePartnerLocalTime(grid,tzOffset){
 // Refresh partner clock every 30 s so it stays current.
 setInterval(function(){updatePartnerLocalTime(window._partnerTimeGrid||'',window._partnerTZOffset)},30000);
 
-function showHeroPhoto(url){
+function showHeroPhoto(url,call){
   var img=$('hero-photo');img.style.display='';img.src=url;
+  // Screen readers get the operator instead of a decorative image.
+  img.alt=call?('Photo of '+call):'';
   img.onclick=function(){var o=$('photo-overlay');$('photo-overlay-img').src=url;o.style.display='flex'};
   $('hero-placeholder').style.display='none';
   $('hero-photo-box').style.display='';
@@ -554,7 +584,8 @@ function opBadgeStyle(call){
   var h=0,i;for(i=0;i<call.length;i++)h=(h*31+call.charCodeAt(i))&0xffff;
   var dark=document.documentElement.classList.contains('dark')||document.documentElement.classList.contains('hivis');
   if(dark)return'background:hsl('+(h%360)+',30%,18%);color:hsl('+(h%360)+',55%,82%);border:1px solid hsl('+(h%360)+',22%,28%)';
-  return'background:hsl('+(h%360)+',45%,88%);color:hsl('+(h%360)+',50%,32%);border:1px solid hsl('+(h%360)+',40%,78%)';
+  // 28% (not 32%) keeps the operator callsign above 4.5:1 on its tinted pill
+  return'background:hsl('+(h%360)+',45%,88%);color:hsl('+(h%360)+',50%,28%);border:1px solid hsl('+(h%360)+',40%,78%)';
 }
 function opBadgeHTML(call,name){
   if(!call)return'';
@@ -569,11 +600,18 @@ function renderStation(st,op,lb,rig,wsjtx){
   var rigDot=rig.connected?'<span class=\"status-on\">●</span> Connected':'<span class=\"status-off\">○</span> Disconnected';
   var wsjtxDot=wsjtx.connected?'<span class=\"status-on\">●</span> Online':'<span class=\"status-off\">○</span> Offline';
   var freqHtml=rig.frequency?esc(rig.frequency)+(rig.band?' <span class=\"stat-badge '+bandBadgeClass(rig.band)+'\">'+esc(rig.band)+'</span>':'')+(rig.mode?' <span class=\"stat-badge '+modeBadgeClass(rig.mode)+'\">'+esc(rig.mode)+'</span>':'')+(rig.submode?' <span class=\"stat-badge '+modeBadgeClass(rig.submode)+'\">'+esc(rig.submode)+'</span>':''):'—';
-  stationFields.innerHTML=[
+  var rows=[
     ['Operator',opHtml],['Logbook',esc(lb.name||'—')],['Locator',esc(st.locator||'—')],
     ['Radio',esc(st.radio||'—')],['Antenna',esc(st.antenna||'—')],['Power',st.powerW?st.powerW+' W':'—'],
     ['Rig',rigDot],['WSJT-X',wsjtxDot],['Frequency',freqHtml]
-  ].map(function(r){return'<dt>'+r[0]+'</dt><dd id=\"sf-'+r[0]+'\">'+r[1]+'</dd>'}).join('');
+  ];
+  // APRS can be pinned to its own locator (fixed location), and that is what the
+  // beacon transmits. Show it when it differs from the logging grid, otherwise
+  // the map marker and the logged grid look like they disagree for no reason.
+  if(st.aprsLocator&&st.aprsLocator!==st.locator){
+    rows.splice(3,0,['APRS',esc(st.aprsLocator)]);
+  }
+  stationFields.innerHTML=rows.map(function(r){return'<dt>'+r[0]+'</dt><dd id=\"sf-'+r[0]+'\">'+r[1]+'</dd>'}).join('');
 }
 function updateStationField(key,val){var el=document.getElementById('sf-'+key);if(el)el.innerHTML=val}
 
@@ -581,6 +619,11 @@ function updateStationField(key,val){var el=document.getElementById('sf-'+key);i
 // Band order for frequency-consistent badge sorting.
 var _bandOrder=['2190m','630m','560m','160m','80m','60m','40m','30m','20m','17m','15m','12m','10m','6m','4m','2m','1.25m','70cm','33cm','23cm','13cm','9cm','6cm','3cm'];
 function _bandRank(b){var i=_bandOrder.indexOf(b);return i>=0?i:999}
+// _badgeMore renders the "+N" pill that replaces an over-long badge list, so
+// the narrow summary cards never wrap or slice a badge in half.
+function _badgeMore(total,shown){
+  return total>shown?'<span class="stat-badge stat-more">+'+esc(String(total-shown))+'</span>':'';
+}
 function renderStats(st,todayBuf){
   if(!st)st={};
   // Browser-side stats from today buffer when server data is thin.
@@ -626,12 +669,12 @@ function renderStats(st,todayBuf){
   var opsTotal=st.operators||opList.length||(ownStationCall?1:0);
   statsFields.innerHTML=[
     ['QSOs',qsosToday||0],
-    ['Operators','<span class="stat-op-count">'+esc(String(opsTotal))+'</span>'+opList.slice(0,3).map(function(o){return'<span class="stat-badge stat-badge-op" style="'+opBadgeStyle(o)+'">'+esc(o)+'</span>'}).join('')+(opList.length>3?'<span class="stat-op-more">…</span>':'')],
+    ['Operators','<span class="stat-op-count">'+esc(String(opsTotal))+'</span>'+opList.slice(0,2).map(function(o){return'<span class="stat-badge stat-badge-op" style="'+opBadgeStyle(o)+'">'+esc(o)+'</span>'}).join('')+_badgeMore(opList.length,2)],
     ['Unique calls',st.uniqueCalls||0],
     ['DXCC',st.dxcc||0],
     ['Grids',st.grids||0],
-    ['Bands',bandList.length?bandList.map(function(b){return'<span class="stat-badge '+bandBadgeClass(b)+'">'+esc(b)+'</span>'}).join(''):(st.bands||'—')],
-    ['Modes',modeList.length?modeList.map(function(m){return'<span class="stat-badge '+modeBadgeClass(m)+'">'+esc(m)+'</span>'}).join(''):(st.modes||'—')],
+    ['Bands',bandList.length?bandList.slice(0,3).map(function(b){return'<span class="stat-badge '+bandBadgeClass(b)+'">'+esc(b)+'</span>'}).join('')+_badgeMore(bandList.length,3):(st.bands||'—')],
+    ['Modes',modeList.length?modeList.slice(0,3).map(function(m){return'<span class="stat-badge '+modeBadgeClass(m)+'">'+esc(m)+'</span>'}).join('')+_badgeMore(modeList.length,3):(st.modes||'—')],
     ['Longest',longestKm?fmtDist(longestKm):'—'],
     ['QSO rate','<span class=\"stat-badge rate-badge\">5m '+rate5+'</span> <span class=\"stat-badge rate-badge\">15m '+rate15+'</span> <span class=\"stat-badge rate-badge\">1h '+rate60+'</span>']
   ].map(function(r){return'<dt>'+r[0]+'</dt><dd>'+r[1]+'</dd>'}).join('');
@@ -664,7 +707,7 @@ function renderTopQSOs(){
     return{call:q.call||'?',grid:q.grid,band:q.band||'',mode:q.mode||'',submode:q.submode||'',country:q.country||'',km:distKm(q.grid)};
   }).sort(function(a,b){return b.km-a.km}).slice(0,7);
   topqsosBody.innerHTML=ranked.map(function(r,i){
-    var countryText=r.country?r.country.replace(/^The\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Federal Republic Of\s+/,'').trim().substring(0,22):'';
+    var countryText=r.country?shortCountry(r.country):'';
     var displayMode=r.submode||r.mode;
     var isLongest=i===0&&r.km>0;
     var rowCls=isLongest?' class=\"tq-longest\"':'';
@@ -689,7 +732,9 @@ function formatDistDir(grid){
   var ll=gridToLatLon(grid);
   var deg=bearingDeg(ownStationLat,ownStationLon,ll[0],ll[1]);
   var dirs=['N','NE','E','SE','S','SW','W','NW'];
-  return fmtDist(km)+' '+dirs[Math.round(deg/45)%8];
+  // The column header already says "Dist / Dir", so the number and the compass
+  // point are enough and the cell stays one line at the larger FullHD type.
+  return Math.round(isImperial()?km*0.621371:km)+' '+dirs[Math.round(deg/45)%8];
 }
 
 // ---- Recent QSOs table ----
@@ -698,7 +743,7 @@ function renderRecentTable(qsos){
   if(!list.length){recentBody.innerHTML='<tr><td colspan=\"8\" style=\"color:var(--dim)\">No QSOs yet</td></tr>';return}
   recentBody.innerHTML=list.map(function(q){
     var utc=q.timeUtc?q.timeUtc.slice(11,16).replace(':','')+'Z':'';
-    var ctry=(q.country||'').replace(/^The\s+/,'').replace(/^Republic Of\s+/,'').replace(/^Federal Republic Of\s+/,'').trim().substring(0,22);
+    var ctry=shortCountry(q.country);
     var dist=formatDistDir(q.grid);
     var op=q.operator||ownStationCall;
     var opBadge=op?'<span class="recent-badge" style="'+opBadgeStyle(op)+'">'+esc(op)+'</span>':'';
@@ -716,7 +761,7 @@ function prependRecentRow(q){
   var row=document.createElement('tr');row.className='new-row';
   var op=q.operator||ownStationCall;
   var opBadge=op?'<span class="recent-badge" style="'+opBadgeStyle(op)+'">'+esc(op)+'</span>':'';
-  row.innerHTML='<td>'+utc+'</td><td><strong>'+callLink(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.submode||q.mode,'mode')+'</td><td class="recent-op-col">'+opBadge+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td><span class="recent-badge country-badge">'+esc(q.country||'')+'</span></td>';
+  row.innerHTML='<td>'+utc+'</td><td><strong>'+callLink(q.call)+'</strong></td><td>'+renderCellBadge(q.band,'band')+'</td><td>'+renderCellBadge(q.submode||q.mode,'mode')+'</td><td class="recent-op-col">'+opBadge+'</td><td>'+esc(q.rstSent||'')+'/'+esc(q.rstRcvd||'')+'</td><td title="'+esc(q.grid||'')+'">'+dist+'</td><td title="'+esc(q.country||'')+'"><span class="recent-badge country-badge">'+esc(shortCountry(q.country))+'</span></td>';
   if(recentBody.firstChild)recentBody.insertBefore(row,recentBody.firstChild);else recentBody.appendChild(row);
   while(recentBody.children.length>7)recentBody.removeChild(recentBody.lastChild);
 }
@@ -774,7 +819,7 @@ function addDualPolyline(layer,pts,cfg){
 }
 
 var mapCfg={drawLines:true,maxLines:150,maxMarkers:200,highlightLastQSO:true,animateActivePath:false};
-var stationLayer=null,qsoMarkerLayer=null,qsoLineLayer=null,lastQsoLayer=null,activeQsoLayer=null;
+var stationLayer=null,qsoMarkerLayer=null,qsoLineLayer=null,lastQsoLayer=null,activeQsoLayer=null,ownStationMarker=null;
 var lastQso=null,activeGrid=null;
 var mapLocal=null,stationLocalMarker=null,localTiles=null;
 var _mapResizeObserver=null,_mapPollActive=false;
@@ -809,6 +854,14 @@ function _glTilesUsable(){
 // the equirectangular one (which the TUI also uses).
 function _earthURL(m){
   return m&&m._cqopsOfflineCRS?'/api/map-earth':'/api/map-earth-3857';
+}
+
+// _imageBase reports whether the map's base layer is the embedded world image
+// instead of live tiles (no WebGL, or the tile provider fell back). Radar is a
+// live tile layer that cannot be aligned with that fixed raster, so it must
+// stay off — the same rule the offline EPSG:4326 map follows.
+function _imageBase(m){
+  return !!(m&&(m._cqopsOffline||m._cqopsOfflineCRS));
 }
 
 // _fallbackToImage removes the GL tile layer on the given map and replaces
@@ -864,13 +917,13 @@ function _armGLFallback(glLayer,isLocal){
 function _ensureMapLibreGL(cb){
   if(typeof L!=='undefined'&&typeof L.maplibreGL==='function'){cb();return}
   if(!_webglAvailable()){D('initMap','WebGL unavailable — skipping MapLibre scripts, image fallback');cb();return}
-  D('initMap','MapLibre GL not loaded — injecting CDN scripts');
+  D('initMap','MapLibre GL not loaded — injecting bundled scripts');
   var s1=document.createElement('script');
-  s1.src='https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.js';
+  s1.src='/maplibre-gl.js';
   s1.onload=function(){
     // Core library loaded — now safe to load the Leaflet binding.
     var s2=document.createElement('script');
-    s2.src='https://cdn.jsdelivr.net/npm/@maplibre/maplibre-gl-leaflet@0.1.3/leaflet-maplibre-gl.js';
+    s2.src='/leaflet-maplibre-gl.js';
     s2.onload=function(){
       D('initMap','MapLibre GL scripts loaded \u2713');
       cb();
@@ -888,24 +941,34 @@ function _ensureMapLibreGL(cb){
   document.head.appendChild(s1);
 }
 
-// _refreshQR loads the QR code image from QuickChart. Resets src to empty
-// first to force a fresh fetch even when the browser cached a previous
-// failure (e.g. the image was requested while offline). Hidden when
-// offline or when no qrLink is configured.
+// _refreshQR renders the header QR code. The SVG comes from QuickChart, but it
+// is cached in localStorage and painted first, so a page opened offline (or
+// with QuickChart unreachable) still shows the QR instead of an error — and a
+// reload no longer re-downloads it, since the old code added a cache-busting
+// query parameter on every call.
 function _refreshQR(cfg){
-  var hdQR=$('hd-qr'),hdQRImg=$('hd-qr-img'),hdQRErr=$('hd-qr-err');
-  if(cfg.qrLink && cfg.isOnline){
-    hdQRErr.style.display='none';hdQRImg.style.display='';
-    hdQRImg.onload=function(){hdQRErr.style.display='none';hdQRImg.style.display=''};
-    hdQRImg.onerror=function(){hdQRErr.style.display='';hdQRImg.style.display='none'};
-    hdQRImg.src='';
-    hdQRImg.src='https://quickchart.io/qr?text='+encodeURIComponent(cfg.qrLink)+'&size=80&margin=1&format=svg&ecLevel=M&dark=111827&light=ffffff&_='+Date.now();
-    hdQR.style.display='';
-  } else {
-    // Offline or no QR link configured — hide the QR panel.
-    hdQR.style.display='none';
-    hdQRImg.src='';
-  }
+  var hdQR=$('hd-qr'),hdQRImg=$('hd-qr-img');
+  if(!cfg.qrLink){hdQR.style.display='none';hdQRImg.removeAttribute('src');return}
+  hdQR.style.display='';
+  var key='cqops.qr.'+cfg.qrLink,cached=null;
+  try{cached=localStorage.getItem(key)}catch(e){}
+  if(cached){hdQRImg.src=cached;hdQRImg.style.display=''}
+  else if(!cfg.isOnline){hdQR.style.display='none';return}
+  if(!cfg.isOnline)return;   // offline: keep the cached image (if any) on screen
+  var url='https://quickchart.io/qr?text='+encodeURIComponent(cfg.qrLink)+
+    '&size=240&margin=1&format=svg&ecLevel=M&dark=111827&light=ffffff';
+  fetch(url,{cache:'force-cache'}).then(function(r){
+    if(!r.ok)throw new Error('qr '+r.status);
+    return r.text();
+  }).then(function(svg){
+    var uri='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(svg);
+    try{localStorage.setItem(key,uri)}catch(e){}
+    hdQRImg.src=uri;hdQRImg.style.display='';
+  }).catch(function(){
+    // Nothing cached and QuickChart is unreachable: hide the code rather than
+    // leaving a dead "QR unavailable" label in the header.
+    if(!cached)hdQR.style.display='none';
+  });
 }
 
 function initMap(cfg){
@@ -925,6 +988,9 @@ function initMap(cfg){
   else if(!useTiles){D('initMap','online but WebGL unavailable — world image fallback (Web Mercator)')}
   else{D('initMap','online — using default Web Mercator tiles')}
   map=L.map('map-container',mapOpts).setView([51,10],3);
+  // The embedded world map is one raster: beyond ~zoom 5 the view is just
+  // upscaled pixels, so cap the zoom instead of letting it smear.
+  if(!useTiles)map.setMaxZoom(5);
   // _cqopsOfflineCRS marks the EPSG:4326 equirectangular offline mode.
   // Online without WebGL keeps Web Mercator (with the Mercator raster) so
   // radar tiles and markers stay aligned.
@@ -1011,6 +1077,45 @@ function removeOfflineOverlay(){
 // ---- Local map (station-centre, ~50 km view) ----
 var aprsCircleLayer=null;
 
+// Own APRS identity: filled from the snapshot while CQOps is beaconing, so the
+// own station can be drawn with the symbol and callsign-SSID the network sees.
+var ownAprs={active:false,callsign:'',symbol:'/-',sig:''};
+
+// _ownStationMarker builds the "you are here" marker. Receive-only mode keeps
+// the plain dot; while beaconing the APRS symbol CQOps transmits and the
+// callsign-SSID label sit underneath it.
+function _ownStationMarker(lat,lon,pt,small){
+  if(!ownAprs.active){
+    if(small){
+      return L.circleMarker([lat,lon],{radius:5,color:pt.station,fillColor:pt.station,fillOpacity:0.85,weight:2.5,pane:'shadowPane',className:'local-station-dot'});
+    }
+    return L.circleMarker([lat,lon],{radius:9,color:pt.station,fillColor:pt.station,fillOpacity:0.85,weight:2.5,className:'station-dot'});
+  }
+  var html='<div class="own-aprs">'+
+    '<div class="own-aprs-dot" style="background:'+pt.station+';border-color:'+pt.station+';"></div>'+
+    '<div class="own-aprs-sym">'+_aprSymbolHTML(ownAprs.symbol)+'</div>'+
+    '<div class="apr-label">'+esc(ownAprs.callsign)+'</div>'+
+  '</div>';
+  var opts={icon:L.divIcon({className:'own-aprs-marker',iconSize:[110,62],iconAnchor:[55,small?7:11],html:html}),zIndexOffset:600};
+  if(small)opts.pane='shadowPane';
+  return L.marker([lat,lon],opts);
+}
+
+// refreshOwnStationMarker redraws both station markers after the APRS identity
+// changes — beacon switched on/off, or the SSID/symbol edited.
+function refreshOwnStationMarker(){
+  var pos=_ownPos();
+  if(mapLocal&&pos.lat!=null&&pos.lon!=null){
+    if(stationLocalMarker){mapLocal.removeLayer(stationLocalMarker);stationLocalMarker=null}
+    stationLocalMarker=_ownStationMarker(pos.lat,pos.lon,qsoPathTheme(),true).addTo(mapLocal);
+  }
+  if(map&&pos.lat!=null&&pos.lon!=null&&stationLayer){
+    if(ownStationMarker){stationLayer.removeLayer(ownStationMarker);ownStationMarker=null}
+    ownStationMarker=_ownStationMarker(pos.lat,pos.lon,qsoPathTheme(),false);
+    stationLayer.addLayer(ownStationMarker);
+  }
+}
+
 function initLocalMap(lat,lon){
   if(mapLocal)return;
   var lc=document.getElementById('map-local-container');
@@ -1038,7 +1143,8 @@ function initLocalMap(lat,lon){
     mapLocal._cqopsOffline=L.imageOverlay(_earthURL(mapLocal),[[-90,-180],[90,180]],{opacity:0.9,pane:'cqopsRadar'}).addTo(mapLocal);
   }
   // Station marker on local map — small, below APRS symbols.
-  stationLocalMarker=L.circleMarker([lat,lon],{radius:5,color:qsoPathTheme().station,fillColor:qsoPathTheme().station,fillOpacity:0.85,weight:2.5,pane:'shadowPane',className:'local-station-dot'}).addTo(mapLocal);
+  var lpos=_ownPos();
+  stationLocalMarker=_ownStationMarker(lpos.lat,lpos.lon,qsoPathTheme(),true).addTo(mapLocal);
   if(window.ResizeObserver){new ResizeObserver(function(){mapLocal.invalidateSize()}).observe(lc)}
   (function pollLocalSize(){
     if(lc.clientHeight>0){
@@ -1106,25 +1212,40 @@ function registerSolarModule(d){
   // Remove previously registered solar sub-modules.
   extraModules=extraModules.filter(function(f){return f._id!=='solar' && f._id!=='band-cond'});
   var sf=d.solarFlux||0, a=d.aIndex||0, k=d.kIndex||0, ss=d.sunspots||0;
-  function sc(v,good,fair){return v<=good?'var(--success)':v<=fair?'var(--warn)':'var(--offline)'}
-  function sn(v){return v||'—'}
-  function cond(v,good,fair){var c=sc(v,good,fair);return'<b style="color:'+c+'">'+sn(v)+'</b>'}
+  // Status colours are CSS classes (xmod-ok/warn/bad/na) so they follow the
+  // theme and the type ramp instead of inline style attributes.
+  // A missing value (the feed omits <solarflux> between daily updates) must
+  // read as "not known": 0 used to pass the old v<=good test and painted the
+  // dash green, i.e. an absent SFI looked like perfect conditions.
+  var solarKnown=sf>0||a>0||k>0||ss>0;
+  function val(v,cls,known){
+    if(!known||cls==='na')return'<b class="xmod-na">—</b>';
+    return cls?'<b class="xmod-'+cls+'">'+v+'</b>':'<b>'+v+'</b>';
+  }
+  // SFI is the opposite of the geomagnetic indices: HIGHER is better. The old
+  // "<=100 green, >150 red" scale flagged excellent propagation as a fault.
+  function sfiCls(v){return v<=0?'na':v<70?'bad':v<100?'warn':v>=150?'ok':''}
+  function aCls(v){return v<=7?'ok':v<=15?'warn':'bad'}
+  function kCls(v){return v<=2.5?'ok':v<=4?'warn':'bad'}
+  function sunCls(v){return v<20?'bad':''}
 
   // Module 1: Solar activity (SFI + Sunspots).
+  // Sizes live in style.css (xmod-* classes) so they follow the type ramp —
+  // inline font-size ignored the media tiers and stayed tiny on big screens.
   var m1=function(){
     return'<div class="extra-title">Solar Activity</div>'+
-      '<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:4px 12px;font-size:0.85rem">'+
-      '<span><span style="color:var(--dim)">SFI</span> '+cond(sf,100,150)+'</span>'+
-      '<span><span style="color:var(--dim)">Sunspots</span> <b>'+sn(ss)+'</b></span>'+
+      '<div class="xmod-row">'+
+      '<span><span class="xmod-dim">SFI</span> '+val(sf,sfiCls(sf),solarKnown)+'</span>'+
+      '<span><span class="xmod-dim">Sunspots</span> '+val(ss,sunCls(ss),solarKnown)+'</span>'+
       '</div>';
   };m1._id='solar';
 
   // Module 2: Geomagnetic field (A + K indices).
   var m2=function(){
     return'<div class="extra-title">Geomagnetic Field</div>'+
-      '<div style="display:flex;flex-wrap:wrap;justify-content:center;gap:4px 12px;font-size:0.85rem">'+
-      '<span><span style="color:var(--dim)">A-index</span> '+cond(a,7,15)+'</span>'+
-      '<span><span style="color:var(--dim)">K-index</span> '+cond(k,2.5,4)+'</span>'+
+      '<div class="xmod-row">'+
+      '<span><span class="xmod-dim">A-index</span> '+val(a,aCls(a),solarKnown)+'</span>'+
+      '<span><span class="xmod-dim">K-index</span> '+val(k,kCls(k),solarKnown)+'</span>'+
       '</div>';
   };m2._id='solar';
 
@@ -1152,27 +1273,41 @@ function registerDXCModule(d){
     var freq=d.freqKhz? (d.freqKhz/1000).toFixed(3)+' MHz' : '';
     var comment=d.comment||'';
     return'<div class="extra-title">Last Spotted By</div>'+
-      '<div style="font-size:1.1rem;font-weight:700;color:var(--accent)">'+esc(spotter)+'</div>'+
-      (freq?'<div style="font-size:0.78rem;color:var(--text-secondary)">'+freq+'</div>':'')+
-      (comment?'<div style="font-size:0.7rem;color:var(--dim);margin-top:2px">'+esc(comment)+'</div>':'');
+      '<div class="xmod-spot-call">'+esc(spotter)+'</div>'+
+      (freq?'<div class="xmod-spot-freq">'+freq+'</div>':'')+
+      (comment?'<div class="xmod-spot-comment">'+esc(comment)+'</div>':'');
   };
   mod._id='dxc';
   extraModules.unshift(mod);
 }
 
+// pskModuleBands is how many band rows the info box can show. It is a few rem
+// tall, so rendering all 15 bands clipped everything below the fold.
+var pskModuleBands=5;
+
 function registerPSKModule(d){
   touchFreshness('psk');
   extraModules=extraModules.filter(function(f){return f._id!=='psk'});
+  // Chips, not a table: a vertical band list made the info box taller than
+  // every other module, so each 5s cycle resized the box and shifted the maps
+  // below it. A centred chip row keeps the box at its fixed height.
   var mod=function(){
     var html='<div class="extra-title">PSK Reporter</div>'+
-      '<div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:3px">'+d.total+' reports</div>'+
-      '<table style="font-size:0.68rem;border-collapse:collapse;margin:0 auto;line-height:1.3">';
+      '<div class="xmod-psk-head">'+d.total+' reports</div>'+
+      '<div class="xmod-chips">';
     var order=['160m','80m','60m','40m','30m','20m','17m','15m','12m','10m','6m','4m','2m','70cm','23cm'];
+    // Busiest bands first, then keep what fits on one or two lines.
+    var rows=[];
     for(var i=0;i<order.length;i++){
       var b=order[i],count=d.byBand&&d.byBand[b]||0;
-      if(count>0)html+='<tr><td style="color:var(--dim);padding-right:8px;text-align:right">'+b+'</td><td style="font-weight:600">'+count+'</td></tr>';
+      if(count>0)rows.push([b,count]);
     }
-    html+='</table>';return html;
+    rows.sort(function(a,b){return b[1]-a[1]});
+    rows=rows.slice(0,pskModuleBands);
+    for(var j=0;j<rows.length;j++){
+      html+='<span class="xmod-chip"><b>'+rows[j][0]+'</b> '+rows[j][1]+'</span>';
+    }
+    html+='</div>';return html;
   };
   mod._id='psk';
   extraModules.push(mod);
@@ -1184,26 +1319,39 @@ function cycleExtraModule(){
   updateExtraBox();
 }
 
+// rootRemPx returns the current root font size in px. The stylesheet ramps it
+// with the display width, so layout thresholds expressed in px (how tall the
+// right column must be, how wide a module needs to be) have to follow it or
+// they stop matching the rendered type on FullHD/2K screens.
+function rootRemPx(){return parseFloat(getComputedStyle(document.documentElement).fontSize)||16}
+var _extraBoxTimer=null;
+
 // Show/hide the extra box and render modules — multiple at once on wide screens.
 function updateExtraBox(){
   var box=document.getElementById('map-extra-box');
   var right=document.getElementById('map-local-right');
   if(!box||!right)return;
-  if(right.clientHeight>=300){
+  var rem=rootRemPx();
+  // The box needs ~5.5rem and the local APRS map below it keeps at least 120px
+  // (its CSS min-height), so that is what the column has to offer. The old flat
+  // 14.5rem threshold assumed an 8.5rem local map and made the box's visibility
+  // depend on the resize history instead of the layout that is actually there.
+  var boxMin=5.5*rem+130;
+  if(right.clientHeight>=boxMin){
     box.classList.add('visible');
     if(!extraModules.length){
       registerExtraModule(function(){
         return '<div class="extra-title">CQOps.com</div>'+
-               '<div style="font-size:0.78rem;color:var(--text-secondary)">Fast · Portable · Open Source</div>'+
-               '<div style="font-size:0.7rem;color:var(--dim);margin-top:2px">Ham radio logger for the terminal</div>';
+               '<div class="xmod-promo">Fast · Portable · Open Source</div>'+
+               '<div class="xmod-promo-sub">Ham radio logger for the terminal</div>';
       });
     }
     var content=document.getElementById('map-extra-content');
     if(!content)return;
-    // Show 1 or 2 modules — only split into two columns when box is wide enough
-    // to fit content like band conditions without cramping.
+    // Show 1 or 2 modules — only split into two columns when the box is wide
+    // enough to fit content like band conditions without cramping.
     // Band conditions always takes full width.
-    var cols=Math.min(2,Math.max(1,Math.floor(box.clientWidth/240)));
+    var cols=Math.min(2,Math.max(1,Math.floor(box.clientWidth/(15*rem))));
     if(cols>1 && extraModules.length>1){
       var checkIdx=extraModuleIdx%extraModules.length;
       for(var ci=0;ci<cols&&ci<extraModules.length;ci++){
@@ -1217,10 +1365,10 @@ function updateExtraBox(){
     }
     // Render current slice: modules [start .. start+cols-1], wrapping around.
     var start=extraModuleIdx%extraModules.length;
-    var html='<div style="display:flex;align-items:center;justify-content:center;gap:0;width:100%;height:100%">';
+    var html='<div class="xmod-wrap">';
     for(var i=0;i<cols&&i<extraModules.length;i++){
       var idx=(start+i)%extraModules.length;
-      html+='<div class="extra-module'+(i>0?' extra-module-sep':'')+'" style="flex:1;min-width:0;padding:0 10px">'+extraModules[idx]()+'</div>';
+      html+='<div class="extra-module'+(i>0?' extra-module-sep':'')+'">'+extraModules[idx]()+'</div>';
     }
     html+='</div>';
     content.innerHTML=html;
@@ -1231,7 +1379,15 @@ function updateExtraBox(){
     if(extraCycleTimer){clearInterval(extraCycleTimer);extraCycleTimer=null}
   }
 }
-window.addEventListener('resize',function(){updateExtraBox();if(mapLocal)mapLocal.invalidateSize()});
+window.addEventListener('resize',function(){
+  updateExtraBox();
+  if(mapLocal)mapLocal.invalidateSize();
+  // The map row only reaches its final height after the layout settles, so
+  // re-check once more: otherwise enlarging a window leaves the module box
+  // hidden until the next full reload.
+  clearTimeout(_extraBoxTimer);
+  _extraBoxTimer=setTimeout(updateExtraBox,180);
+});
 
 // ---- RainViewer weather radar overlay ----
 var radarLayer=null,radarLayerLocal=null,radarEnabled=false,radarLoading=false,radarTimer=null;
@@ -1248,7 +1404,7 @@ async function enableRadarLayer(){
   if(radarEnabled||radarLoading||!map)return;
   // Radar tiles are Web Mercator — they would be misplaced on an
   // EPSG:4326 (offline) map, so radar is hidden in offline CRS mode.
-  if(map._cqopsOfflineCRS)return;
+  if(_imageBase(map))return;
   if(!navigator.onLine||!(displayCfg&&displayCfg.isOnline)){return}
   radarLoading=true;
   try{
@@ -1282,9 +1438,9 @@ function disableRadarLayer(){
 
 async function refreshRadarLayer(){
   if(!radarEnabled||!map)return;
-  // Same rule as enable: never draw Mercator radar tiles on an
-  // EPSG:4326 (offline) map.
-  if(map._cqopsOfflineCRS)return;
+  // Same rule as enable: never draw radar tiles over the embedded raster
+  // (offline CRS or image fallback).
+  if(_imageBase(map))return;
   try{
     var meta=await fetchJsonWithTimeout('https://api.rainviewer.com/public/weather-maps.json',6000);
     if(!meta||!meta.radar||!meta.radar.past||!meta.radar.past.length)return;
@@ -1303,6 +1459,7 @@ async function refreshRadarLayer(){
 
 function addRadarToLocalMap(){
   if(!mapLocal||!_radarUrl)return;
+  if(_imageBase(mapLocal))return;
   if(radarLayerLocal){mapLocal.removeLayer(radarLayerLocal);radarLayerLocal=null}
   radarLayerLocal=L.tileLayer(_radarUrl,{pane:'cqopsRadar',opacity:0.55,maxNativeZoom:7,maxZoom:12}).addTo(mapLocal);
 }
@@ -1368,32 +1525,37 @@ function _aprSpriteHTML(sheetIdx,charCode){
     'background-position:'+bgX+'px '+bgY+'px;background-size:384px 144px;';
 }
 
-function _aprIconHTML(sym,callsign){
-  var html='<div style="text-align:center;line-height:1;position:relative;display:inline-block;">';
+// _aprSymbolHTML renders only the 24x24 sprite of a two-character APRS symbol
+// (table + code). Shared by APRS station markers and the own-station marker.
+function _aprSymbolHTML(sym){
   var code=sym&&sym.length>1?sym.charCodeAt(1):0;
   if(!sym||sym.length<2||code<33||code>126){
     // Unrenderable symbol — orange diamond fallback.
-    html+='<div style="width:24px;height:24px;display:inline-block;'+
+    return '<div style="width:24px;height:24px;display:inline-block;'+
       'background:#B45309;border:1.5px solid #fff;transform:rotate(45deg);"></div>';
-  }else{
-    var table=sym[0];
-    if(table=='/'){
-      // Primary table — simple single sprite.
-      html+='<div style="width:24px;height:24px;display:inline-block;'+_aprSpriteHTML(0,code)+'"></div>';
-    }else if(table=='\\'){
-      // Secondary table.
-      html+='<div style="width:24px;height:24px;display:inline-block;'+_aprSpriteHTML(1,code)+'"></div>';
-    }else{
-      // Alternate/overlay table (0-9, A-Z):
-      //   base    = secondary table (sheet 1) at code position
-      //   overlay = sheet 2 at table char position
-      html+='<div style="position:relative;width:24px;height:24px;display:inline-block;">'+
-        '<div style="position:absolute;inset:0;'+_aprSpriteHTML(1,code)+'"></div>'+
-        '<div style="position:absolute;inset:0;'+_aprSpriteHTML(2,table.charCodeAt(0))+';opacity:0.9;"></div>'+
-        '</div>';
-    }
   }
-  if(callsign)html+='<div style="font-weight:700;font-size:0.65rem;color:#fff;text-shadow:0 0 3px #000,0 0 6px #000;margin-top:1px;white-space:nowrap;">'+esc(callsign)+'</div>';
+  var table=sym[0];
+  if(table=='/'){
+    // Primary table — simple single sprite.
+    return '<div style="width:24px;height:24px;display:inline-block;'+_aprSpriteHTML(0,code)+'"></div>';
+  }
+  if(table=='\\'){
+    // Secondary table.
+    return '<div style="width:24px;height:24px;display:inline-block;'+_aprSpriteHTML(1,code)+'"></div>';
+  }
+  // Alternate/overlay table (0-9, A-Z):
+  //   base    = secondary table (sheet 1) at code position
+  //   overlay = sheet 2 at table char position
+  return '<div style="position:relative;width:24px;height:24px;display:inline-block;">'+
+    '<div style="position:absolute;inset:0;'+_aprSpriteHTML(1,code)+'"></div>'+
+    '<div style="position:absolute;inset:0;'+_aprSpriteHTML(2,table.charCodeAt(0))+';opacity:0.9;"></div>'+
+    '</div>';
+}
+
+function _aprIconHTML(sym,callsign){
+  var html='<div style="text-align:center;line-height:1;position:relative;display:inline-block;">'+
+    _aprSymbolHTML(sym);
+  if(callsign)html+='<div class="apr-label">'+esc(callsign)+'</div>';
   html+='</div>';
   return html;
 }
@@ -1499,10 +1661,11 @@ function updateMapFromToday(){
   var bounds=[],hasStation=false;
   var pt=qsoPathTheme();
 
-  // ---- Station marker ----
+  // ---- Station marker (with the transmitted APRS symbol while beaconing) ----
   if(ownStationLat!=null&&ownStationLon!=null){
-    var sm=L.circleMarker([ownStationLat,ownStationLon],{radius:9,color:pt.station,fillColor:pt.station,fillOpacity:0.85,weight:2.5,className:'station-dot'});
-    stationLayer.addLayer(sm);bounds.push([ownStationLat,ownStationLon]);hasStation=true;
+    var mpos=_ownPos();
+    ownStationMarker=_ownStationMarker(mpos.lat,mpos.lon,pt,false);
+    stationLayer.addLayer(ownStationMarker);bounds.push([ownStationLat,ownStationLon]);hasStation=true;
   }
 
   // ---- QSO markers + lines ----
@@ -1673,6 +1836,18 @@ function guessContinent(c){
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 // ---- Centralized band / mode styling ----
 var _modeGroups={cw:1,cwr:1,phone:1,ssb:1,usb:1,lsb:1,am:1,fm:1,nfm:1,digi:1,ft8:1,ft4:1,rtty:1,psk31:1,psk63:1,jt65:1,jt9:1,mfsk:1,olivia:1,hell:1,fsk441:1,jt6m:1,pkt:1,data:1,mfsk16:1,domino:1,thor:1,ros:1,js8:1,fst4:1,fst4w:1,q65:1,msk144:1,sstv:1,fax:1};
+// shortCountry turns an ADIF entity name into something a table cell can
+// show: strips the article/republic prefixes and caps the length. Shared by
+// the Top-QSOs, Recent-QSOs and live-prepend renderers so a freshly logged
+// row looks the same as after a re-render.
+// shortCountry trims the ADIF long forms ("Federal Republic of Germany",
+// "Republic of Korea") so the country column keeps its meaning in a table cell.
+// Matching is case-insensitive: ADIF and Wavelog disagree on capitalisation.
+function shortCountry(c){
+  return (c||'').replace(/^the\s+/i,'').replace(/^federal republic of\s+/i,'')
+    .replace(/^fed\.\s*rep\.?\s*of\s+/i,'').replace(/^republic of\s+/i,'')
+    .replace(/^rep\.?\s*of\s+/i,'').trim().substring(0,22);
+}
 function bandBadgeClass(band){return'band-badge band-'+(band||'').toLowerCase().replace(/[^a-z0-9]/g,'')}
 function modeBadgeClass(mode){
   var m=(mode||'').toLowerCase().trim();

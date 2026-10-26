@@ -6,7 +6,6 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/szporwolik/cqops/internal/callbook"
-	"github.com/szporwolik/cqops/internal/config"
 )
 
 func TestPartnerViewRender(t *testing.T) {
@@ -310,38 +309,6 @@ func TestRenderCallbookRows_ForeignPrefixUsesOperatingZones(t *testing.T) {
 	}
 }
 
-func TestPartnerViewRenderWLInfo(t *testing.T) {
-	// WL not configured — should show "Wavelog not configured"
-	m := newTestModel()
-	info := m.renderWLInfo(40)
-	if info == "" {
-		t.Error("renderWLInfo returned empty with nil data")
-	}
-	if !strings.Contains(info, "not configured") {
-		t.Error("renderWLInfo should show 'Wavelog not configured' when Wavelog not configured")
-	}
-
-	// WL enabled, lookup not yet done — should show "pending"
-	m2 := newTestModel()
-	m2.inetOnline = true
-	m2.App.Logbook.Wavelog = &config.WavelogConfig{Enabled: true, URL: "https://example.com", APIKey: "test-key"}
-	m2.lookup.wlLookupDone = false
-	info2 := m2.renderWLInfo(40)
-	if !strings.Contains(info2, "pending") {
-		t.Error("renderWLInfo should show 'pending' when WL enabled but lookup not yet done")
-	}
-
-	// WL enabled, lookup completed with no data — should show "No WL data"
-	m3 := newTestModel()
-	m3.inetOnline = true
-	m3.App.Logbook.Wavelog = &config.WavelogConfig{Enabled: true, URL: "https://example.com", APIKey: "test-key"}
-	m3.lookup.wlLookupDone = true
-	info3 := m3.renderWLInfo(40)
-	if !strings.Contains(info3, "No WL data") {
-		t.Error("renderWLInfo should show 'No WL data' when lookup completed with no results")
-	}
-}
-
 func TestPartnerViewNarrowWidth(t *testing.T) {
 	m := newTestModel()
 	m.width = 30
@@ -351,53 +318,6 @@ func TestPartnerViewNarrowWidth(t *testing.T) {
 	view := m.viewPartner()
 	if view == "" {
 		t.Error("viewPartner on narrow width returned empty")
-	}
-}
-
-func TestFormatRowPairs(t *testing.T) {
-	rows := []row{
-		{"Name", "John"},
-		{"QTH", "Krakow"},
-	}
-
-	result := formatRowPairs(rows, S.FormLabel)
-	if result == "" {
-		t.Error("formatRowPairs returned empty")
-	}
-	if !strings.Contains(result, "Name") {
-		t.Error("formatRowPairs missing label 'Name'")
-	}
-	if !strings.Contains(result, "Krakow") {
-		t.Error("formatRowPairs missing value 'Krakow'")
-	}
-}
-
-func TestFormatRowPairsEmpty(t *testing.T) {
-	result := formatRowPairs(nil, S.FormLabel)
-	if result != "" {
-		t.Errorf("formatRowPairs with nil rows should return empty, got %q", result)
-	}
-
-	result = formatRowPairs([]row{}, S.FormLabel)
-	if result != "" {
-		t.Errorf("formatRowPairs with empty rows should return empty, got %q", result)
-	}
-}
-
-func TestRenderLoTW(t *testing.T) {
-	dimStyle := lipgloss.NewStyle()
-	badStyle := lipgloss.NewStyle()
-
-	// Member → Y with dim style.
-	result := renderLoTW(true, dimStyle, badStyle)
-	if result == "" {
-		t.Error("renderLoTW true returned empty")
-	}
-
-	// Not a member → N with bad style.
-	result = renderLoTW(false, dimStyle, badStyle)
-	if result == "" {
-		t.Error("renderLoTW false returned empty")
 	}
 }
 

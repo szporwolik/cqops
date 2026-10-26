@@ -239,6 +239,8 @@ Select the service in **F9 → Integrations → APRS**. Set callsign/SSID, symbo
 
 Automatic beacon intervals are at least five minutes. **F3** shows recently heard stations: arrows select, **Enter** fills the QSO form, **d / t / s** change distance/age/type filters, **Backspace** clears them, and **b** sends a configured beacon immediately. GPS-derived beacons require **Grid from GPS** and a valid position.
 
+A per-logbook **Fixed grid (opt)** pins the APRS centre and beacons to that locator, overriding GPS and the station grid (priority: fixed > GPS > station grid). The locator saved in QSOs is unaffected. On the dashboard the station dot follows the position the beacon actually transmits, and the station card shows an **APRS** row when it differs from the logging locator.
+
 <a id="portable"></a>
 
 ## Portable operation

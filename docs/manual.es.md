@@ -239,6 +239,8 @@ Seleccione el servicio en **F9 → Integrations → APRS**. Ajuste indicativo/SS
 
 Los intervalos automáticos son de al menos cinco minutos. **F3** muestra estaciones oídas recientemente: flechas seleccionan, **Enter** rellena QSO, **d / t / s** filtran distancia/antigüedad/tipo, **Backspace** limpia y **b** envía inmediatamente una baliza configurada. Las balizas GPS requieren **Grid from GPS** y una posición válida.
 
+La opción **Fixed grid (opt)** por logbook fija el centro APRS y las balizas en ese localizador, por encima del GPS y de la cuadrícula de la estación (prioridad: fixed > GPS > cuadrícula). El localizador guardado en los QSO no cambia. En el panel, el punto de la estación sigue la posición realmente transmitida y la ficha muestra una fila **APRS** cuando difiere del localizador de registro.
+
 <a id="portable"></a>
 
 ## Operación portable
