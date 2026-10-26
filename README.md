@@ -30,7 +30,7 @@ Update:
 winget upgrade cqops
 ```
 
-> WinGet installation pending initial package acceptance at [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs). Until then, use the portable ZIP or NSIS installer from [Releases](https://github.com/szporwolik/cqops/releases).
+> Published via [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) — `winget upgrade cqops` picks up each release as the pipeline submits it. The portable ZIP and the NSIS installer are attached to every [Release](https://github.com/szporwolik/cqops/releases).
 
 ### Ubuntu, Linux Mint, Debian, Pop!_OS
 
