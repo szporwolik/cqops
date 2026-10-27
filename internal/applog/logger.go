@@ -194,25 +194,31 @@ func Revision() uint64 {
 	return revision
 }
 
-// Entries returns a sorted copy of all in-memory log entries.
+// Entries returns a copy of the in-memory log entries, oldest first.
+//
+// The order is the order they were appended in, which is the only order that is
+// right: the stored stamp is a wall clock without a date ("15:04:05"), so sorting
+// by it puts this morning's entries before last night's and — because the sort
+// used to run on the shared buffer — also made the ring evict whichever entry
+// happened to sort first instead of the oldest one. The displayed time is
+// unchanged.
 func Entries() []Entry {
 	mu.Lock()
 	defer mu.Unlock()
-	return sortedCopyLocked()
+	return copyEntriesLocked()
 }
 
-// EntriesWithRevision returns the sorted entries and the revision they describe.
-// Both are taken under one lock, so a caller that caches the copy can never
-// claim it is newer than the entries it contains.
+// EntriesWithRevision returns the entries and the revision they describe. Both
+// are taken under one lock, so a caller that caches the copy can never claim it
+// is newer than the entries it contains.
 func EntriesWithRevision() ([]Entry, uint64) {
 	mu.Lock()
 	defer mu.Unlock()
-	return sortedCopyLocked(), revision
+	return copyEntriesLocked(), revision
 }
 
-// sortedCopyLocked copies the entries in time order. Callers hold mu.
-func sortedCopyLocked() []Entry {
-	sort.Slice(entries, func(i, j int) bool { return entries[i].Time < entries[j].Time })
+// copyEntriesLocked copies the ring in append order. Callers hold mu.
+func copyEntriesLocked() []Entry {
 	result := make([]Entry, len(entries))
 	copy(result, entries)
 	return result
