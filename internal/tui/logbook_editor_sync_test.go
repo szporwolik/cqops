@@ -1794,13 +1794,17 @@ func TestSyncedEditableFieldRoundTrips(t *testing.T) {
 	}
 }
 
-// TestMergeRemoteQSOAppliesExplicitClears reproduces the reported stale-value
-// retention: remote refreshes applied zones only when positive and
-// frequencies only when nonempty, so a remote CLEAR (JSON null) left the old
-// local values in place — a later unrelated save sent them back and undid the
-// clear. Explicit clears must apply, absent fields must leave the local
-// value untouched, and populated values must still round-trip.
-func TestMergeRemoteQSOAppliesExplicitClears(t *testing.T) {
+// TestMergeRemoteQSOKeepsLocalWhenRemoteIsEmpty pins the data-safety rule: a
+// field the server answers empty/null for is NOT a clear. Wavelog returns blank
+// for everything CQOps did not upload (power, references, zones and the contest
+// exchange for anything older than the v2 payload), so applying those blanks
+// destroyed local data on the first edit — reported from a real contest log as
+// dashes in the exchange columns.
+//
+// The trade-off is deliberate: a field cleared in the Wavelog UI is not
+// propagated back. The local log is the operator's data; the next save re-sends
+// it and the server ends up agreeing with the log again.
+func TestMergeRemoteQSOKeepsLocalWhenRemoteIsEmpty(t *testing.T) {
 	fetch := func(t *testing.T, data map[string]any) *wavelog.QSOData {
 		t.Helper()
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1815,55 +1819,54 @@ func TestMergeRemoteQSOAppliesExplicitClears(t *testing.T) {
 		return d
 	}
 
-	local := &qso.QSO{CQZone: "15", ITUZone: "28", Freq: 14.2, FreqRx: 14.21, Comment: "local"}
+	local := &qso.QSO{
+		Call: "SP9MOA", Band: "20m", Mode: "SSB", RSTSent: "59", RSTRcvd: "59",
+		CQZone: "15", ITUZone: "28", Freq: 14.2, FreqRx: 14.21,
+		TXPower: "100", SOTARef: "SP/TQ-001", GridSquare: "JO90", Name: "Szymon",
+		Comment: "local",
+	}
 
-	// Remote cleared zones and frequencies (explicit nulls).
-	cleared := fetch(t, map[string]any{
+	// Every optional field explicitly null / empty, the way Wavelog answers for
+	// a contact uploaded before the v2 create sent them.
+	blank := fetch(t, map[string]any{
 		"id": 42, "station_id": 1, "qso_date": "2026-05-01 12:30:00",
 		"mode": "SSB", "call": "SP9MOA", "band": "20m",
 		"cqz": nil, "ituz": nil, "freq": nil, "freq_rx": nil,
-		"comment": "remote",
+		"tx_pwr": "", "sota_ref": "", "gridsquare": "", "name": "", "comment": "",
 	})
-	m := mergeRemoteQSO(local, cleared)
-	if m.CQZone != "" {
-		t.Errorf("CQZone = %q, want cleared", m.CQZone)
+	m := mergeRemoteQSO(local, blank)
+	if m.CQZone != "15" || m.ITUZone != "28" {
+		t.Errorf("zones = %q/%q, want the local 15/28", m.CQZone, m.ITUZone)
 	}
-	if m.ITUZone != "" {
-		t.Errorf("ITUZone = %q, want cleared", m.ITUZone)
+	if m.Freq != 14.2 || m.FreqRx != 14.21 {
+		t.Errorf("freq = %v/%v, want the local 14.2/14.21", m.Freq, m.FreqRx)
 	}
-	if m.Freq != 0 {
-		t.Errorf("Freq = %v, want cleared", m.Freq)
+	if m.TXPower != "100" || m.SOTARef != "SP/TQ-001" || m.GridSquare != "JO90" ||
+		m.Name != "Szymon" || m.Comment != "local" {
+		t.Errorf("blank remote wiped local data: %+v", m)
 	}
-	if m.FreqRx != 0 {
-		t.Errorf("FreqRx = %v, want cleared", m.FreqRx)
-	}
-	if m.Comment != "remote" {
-		t.Errorf("Comment = %q, want remote (string fields still apply)", m.Comment)
+	if m.Mode != "SSB" || m.RSTSent != "59" || m.RSTRcvd != "59" {
+		t.Errorf("core fields lost: mode=%q rst=%q/%q", m.Mode, m.RSTSent, m.RSTRcvd)
 	}
 
-	// Absent fields leave the local values untouched.
-	absent := fetch(t, map[string]any{
-		"id": 42, "station_id": 1, "qso_date": "2026-05-01 12:30:00",
-		"mode": "SSB", "call": "SP9MOA", "band": "20m",
-	})
-	m = mergeRemoteQSO(local, absent)
-	if m.CQZone != "15" || m.ITUZone != "28" || m.Freq != 14.2 || m.FreqRx != 14.21 {
-		t.Errorf("absent fields must keep local values: zones=%q/%q freq=%v/%v",
-			m.CQZone, m.ITUZone, m.Freq, m.FreqRx)
-	}
-
-	// Empty → populated still applies.
+	// A remote value that exists still applies — that is the correction path.
 	populated := fetch(t, map[string]any{
 		"id": 42, "station_id": 1, "qso_date": "2026-05-01 12:30:00",
-		"mode": "SSB", "call": "SP9MOA", "band": "20m",
+		"mode": "CW", "call": "SP9MOA", "band": "20m",
 		"cqz": 16, "ituz": 29, "freq": "21300000", "freq_rx": "21301000",
+		"tx_pwr": "50", "sota_ref": "SP/TQ-002", "gridsquare": "JO90AA",
+		"name": "Remote", "comment": "remote",
 	})
-	m = mergeRemoteQSO(&qso.QSO{}, populated)
+	m = mergeRemoteQSO(local, populated)
 	if m.CQZone != "16" || m.ITUZone != "29" {
-		t.Errorf("populated zones = %q/%q, want 16/29", m.CQZone, m.ITUZone)
+		t.Errorf("zones = %q/%q, want 16/29", m.CQZone, m.ITUZone)
 	}
 	if m.Freq != 21.3 || m.FreqRx != 21.301 {
-		t.Errorf("populated freq = %v/%v, want 21.3/21.301", m.Freq, m.FreqRx)
+		t.Errorf("freq = %v/%v, want 21.3/21.301", m.Freq, m.FreqRx)
+	}
+	if m.TXPower != "50" || m.SOTARef != "SP/TQ-002" || m.GridSquare != "JO90AA" ||
+		m.Name != "Remote" || m.Comment != "remote" || m.Mode != "CW" {
+		t.Errorf("remote values not applied: %+v", m)
 	}
 }
 
