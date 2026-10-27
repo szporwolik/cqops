@@ -3050,29 +3050,45 @@ func TestRemoteRefreshExchangeSurvivesCommentEdit(t *testing.T) {
 	}
 }
 
-// TestRemoteRefreshClearsExchangeWhenServerCleared verifies the other half of
-// the contract: an explicit remote clear (null serial, empty exchange string)
-// must drop the local exchange instead of resurrecting it on the next save.
-func TestRemoteRefreshClearsExchangeWhenServerCleared(t *testing.T) {
-	local := &qso.QSO{Call: "SP9MOA", Band: "20m", Mode: "SSB",
+// TestRemoteRefreshKeepsLocalExchangeWhenServerHasNone reproduces the reported
+// data loss: a contest contact logged with 59 15 / 59 16 and uploaded before the
+// v2 create carried the contest fields comes back from Wavelog with stx/srx
+// null and empty exchange strings. The refresh used to treat that as "the
+// operator cleared the exchange" and wiped both fields from the local row — the
+// list showed dashes and the save had nothing left to send.
+func TestRemoteRefreshKeepsLocalExchangeWhenServerHasNone(t *testing.T) {
+	local := &qso.QSO{Call: "LY4A", Band: "80m", Mode: "SSB",
 		RSTSent: "59", RSTRcvd: "59", ExchSent: "59 15", ExchRcvd: "59 16",
-		STX: 15, SRX: 16, STXString: "15", SRXString: "16"}
+		STX: 15, SRX: 16, STXString: "15", SRXString: "16", WavelogID: 77}
 
 	// remoteQSODoc carries stx/srx null and empty exchange strings (presence set).
 	merged := mergeRemoteQSO(local, remoteDataFrom(t, remoteQSODoc(77)))
-	if merged.STX != 0 || merged.SRX != 0 || merged.STXString != "" || merged.SRXString != "" {
-		t.Errorf("remote clear not applied: stx=%d srx=%d strings=%q/%q",
+	if merged.STX != 15 || merged.SRX != 16 || merged.STXString != "15" || merged.SRXString != "16" {
+		t.Errorf("local exchange lost: stx=%d srx=%d strings=%q/%q, want 15/16 15/16",
 			merged.STX, merged.SRX, merged.STXString, merged.SRXString)
 	}
-	if merged.ExchSent != "" || merged.ExchRcvd != "" {
-		t.Errorf("exchange text not cleared: %q/%q", merged.ExchSent, merged.ExchRcvd)
+	if merged.ExchSent != "59 15" || merged.ExchRcvd != "59 16" {
+		t.Errorf("exchange text lost: %q/%q, want \"59 15\"/\"59 16\"", merged.ExchSent, merged.ExchRcvd)
 	}
 
-	// An ABSENT exchange field leaves the local values alone.
-	partial := map[string]any{"id": 77, "call": "SP9MOA", "band": "20m", "mode": "SSB", "comment": "c"}
-	kept := mergeRemoteQSO(local, remoteDataFrom(t, partial))
-	if kept.STX != 15 || kept.SRX != 16 || kept.STXString != "15" || kept.ExchSent != "59 15" {
-		t.Errorf("absent exchange field must be preserved: %+v", kept)
+	// The save that follows pushes the exchange back to the server.
+	in := buildUpdateInput(merged)
+	if in.STX == nil || *in.STX != 15 || in.SRX == nil || *in.SRX != 16 {
+		t.Errorf("PATCH serials = %v/%v, want 15/16", in.STX, in.SRX)
+	}
+	if in.STXString == nil || *in.STXString != "15" || in.SRXString == nil || *in.SRXString != "16" {
+		t.Errorf("PATCH exchange strings = %v/%v, want \"15\"/\"16\"", in.STXString, in.SRXString)
+	}
+
+	// A remote copy that DOES carry an exchange still wins — that is the
+	// correction path the merge exists for.
+	doc := remoteQSODoc(77)
+	doc["stx"], doc["srx"] = 21, 22
+	doc["stx_string"], doc["srx_string"] = "21", "22"
+	applied := mergeRemoteQSO(local, remoteDataFrom(t, doc))
+	if applied.STX != 21 || applied.STXString != "21" {
+		t.Errorf("remote exchange not applied: stx=%d string=%q, want 21/21",
+			applied.STX, applied.STXString)
 	}
 }
 
