@@ -88,10 +88,20 @@ if ($args -contains "--install") {
         if ($savedInstallGOOS) { $env:GOOS = $savedInstallGOOS } else { Remove-Item Env:GOOS -ErrorAction SilentlyContinue }
         if ($savedInstallGOARCH) { $env:GOARCH = $savedInstallGOARCH } else { Remove-Item Env:GOARCH -ErrorAction SilentlyContinue }
     }
-    $goPath = "$(go env GOPATH)".Trim()
+    # `go install` writes to GOBIN when it is set and only falls back to
+    # $GOPATH/bin when it is not, so ask go for the destination instead of
+    # assuming the default: with a custom GOBIN the install succeeds but the
+    # check below failed, and a stale cqops.exe in $GOPATH/bin was reported as
+    # the freshly installed binary.
+    $goBin = "$(go env GOBIN)".Trim()
+    if (-not $goBin) {
+        # GOPATH may list several directories; `go install` uses the first one.
+        $firstGoPath = @("$(go env GOPATH)".Trim() -split [IO.Path]::PathSeparator)[0]
+        $goBin = Join-Path $firstGoPath "bin"
+    }
     $exe = "cqops"
     if ($hostOS -eq "windows") { $exe = "cqops.exe" }
-    $installed = Join-Path (Join-Path $goPath "bin") $exe
+    $installed = Join-Path $goBin $exe
     if (-not (Test-Path $installed)) {
         throw "go install finished but $installed is missing - the old binary is still in use"
     }

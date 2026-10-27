@@ -47,9 +47,21 @@ done
 
 echo "Done. Binaries in $BUILD_DIR/"
 
-# Install to GOPATH/bin (if --install flag passed)
+# Install to GOBIN when it is set, otherwise GOPATH/bin (if --install passed)
 if [[ "${1:-}" == "--install" ]]; then
   echo "Installing cqops ${VERSION}..."
   CGO_ENABLED=0 go install -ldflags="$LDFLAGS" ./cmd/cqops
-  echo "Installed to $(go env GOPATH)/bin/cqops"
+  # `go install` respects GOBIN, so asking go for the destination is the only
+  # way to report (and check) the file it actually wrote. Without GOBIN it
+  # falls back to the FIRST entry of a multi-directory GOPATH.
+  install_dir="$(go env GOBIN)"
+  if [[ -z "$install_dir" ]]; then
+    gopath="$(go env GOPATH)"
+    install_dir="${gopath%%:*}/bin"
+  fi
+  if [[ ! -x "$install_dir/cqops" ]]; then
+    echo "error: go install finished but $install_dir/cqops is missing" >&2
+    exit 1
+  fi
+  echo "Installed to $install_dir/cqops"
 fi
