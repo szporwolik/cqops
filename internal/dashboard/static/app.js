@@ -113,6 +113,22 @@ function overviewState(){D('state','overview');setState(false);activeGrid=null}
 function switchToOverview(){overviewState();updateMapFromToday()}
 function switchToActive(){D('state','active');setState(true)}
 
+// handleQsoLogged applies a contact the operator just saved: it joins today's
+// list, the view leaves the active-contact layout, and the map is rebuilt once
+// in its final state. Keeping it as one named function is also what lets the
+// browser-less test drive the real handler instead of matching source text.
+function handleQsoLogged(q){
+  D('sse','qso_logged',q.call+' '+q.band+' '+q.mode);
+  appendTodayQSO(q);
+  prependRecentRow(q);
+  overviewState();
+  updateMapFromToday();
+  renderHero(null);
+  renderStats(null,todayQsos);
+  showQsoToast(q);
+  playPing()
+}
+
 // ---- SSE ----
 var sseReconnects=0;
 function setSSEStatus(cls){hdSSE.className=cls;hdSSE.textContent=cls==='sse-connected'?'Online':cls==='sse-connecting'?'Connecting':'Offline'}
@@ -161,9 +177,8 @@ function connectSSE(){
     if(a&&a.call){switchToActive();renderHero(a,lastPartner&&lastPartner.call===a.call?lastPartner:null)}
     else{switchToOverview();renderHero(null);lastActiveFlags={}}
   });
-  es.addEventListener('qso_logged',function(e){var q=JSON.parse(e.data).payload;
-    D('sse','qso_logged',q.call+' '+q.band+' '+q.mode);
-    appendTodayQSO(q);prependRecentRow(q);overviewState();updateMapFromToday();renderHero(null);renderStats(null,todayQsos);showQsoToast(q);playPing()
+  es.addEventListener('qso_logged',function(e){
+    handleQsoLogged(JSON.parse(e.data).payload)
   });
   es.addEventListener('rig',function(e){var r=JSON.parse(e.data).payload;
     D('sse','rig',r.connected?(r.frequency||'?')+' '+(r.mode||''):'disconnected');
