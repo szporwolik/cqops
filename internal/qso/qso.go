@@ -97,6 +97,54 @@ func NewQSO() *QSO {
 	}
 }
 
+// ADIFTime combines an ADIF QSO_DATE (YYYYMMDD) and TIME_ON (HHMMSS, HHMM or
+// empty) into a UTC time. It reports false when the date is unusable, so the
+// caller can fall back to another timestamp (created_at).
+//
+// Separators are tolerated like StripNonDigits tolerates them, but the common
+// case — an all-digit date and time — is parsed in place without allocating.
+// That matters where this runs once per row over a whole log (the contest rate
+// panel, ADIF import validation): time.Parse would allocate for every contact.
+func ADIFTime(date, timeOn string) (time.Time, bool) {
+	d := date
+	if len(d) != 8 || !isAllDigits(d) {
+		d = StripNonDigits(d) // tolerates "2026-05-01" and friends
+		if len(d) != 8 {
+			return time.Time{}, false
+		}
+	}
+	t := timeOn
+	if len(t) != 6 || !isAllDigits(t) {
+		t = StripNonDigits(t)
+		if t == "" {
+			t = "000000" // ADIF allows a contact without TIME_ON
+		} else if len(t) < 6 {
+			t += "000000"[:6-len(t)] // HHMM is a valid ADIF TIME_ON
+		}
+		if len(t) != 6 {
+			return time.Time{}, false
+		}
+	}
+	year, month, day := num(d[0:4]), num(d[4:6]), num(d[6:8])
+	hour, min, sec := num(t[0:2]), num(t[2:4]), num(t[4:6])
+	out := time.Date(year, time.Month(month), day, hour, min, sec, 0, time.UTC)
+	// time.Date normalises out-of-range values (Feb 30 becomes Mar 2), so a
+	// round-trip check is what rejects a malformed date the way time.Parse does.
+	if out.Year() != year || int(out.Month()) != month || out.Day() != day {
+		return time.Time{}, false
+	}
+	return out, true
+}
+
+// num parses a short run of digits that isAllDigits has already validated.
+func num(s string) int {
+	v := 0
+	for i := 0; i < len(s); i++ {
+		v = v*10 + int(s[i]-'0')
+	}
+	return v
+}
+
 // Confirmed reports whether any confirmation was received for the contact
 // (paper QSL, LoTW or eQSL).
 func (q *QSO) Confirmed() bool {

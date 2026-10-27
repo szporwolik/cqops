@@ -44,7 +44,7 @@ func insertContestQSO(t *testing.T, db *sql.DB, contestID string, at time.Time) 
 // would otherwise keep the previous result).
 func recompute(cs *contestStats, db *sql.DB, contestID string) {
 	cs.computedAt = cs.computedAt.Add(-time.Minute)
-	cs.computeIfStale(db, contestID, contestID)
+	cs.computeIfStale(db, contestID, contestID, 0)
 }
 
 // TestContestStatsCountersDoNotAccumulate is the regression test for the
@@ -63,7 +63,7 @@ func TestContestStatsCountersDoNotAccumulate(t *testing.T) {
 	}
 
 	cs := &contestStats{now: func() time.Time { return base }}
-	cs.computeIfStale(db, "c1", "Test")
+	cs.computeIfStale(db, "c1", "Test", 0)
 	if cs.Last60Min != 4 || cs.ThisHour != 4 {
 		t.Fatalf("first compute: 60m=%d hr=%d, want 4 and 4", cs.Last60Min, cs.ThisHour)
 	}
@@ -87,12 +87,12 @@ func TestContestStatsClearsWhenContestIsEmpty(t *testing.T) {
 	}
 
 	cs := &contestStats{}
-	cs.computeIfStale(db, "c1", "One")
+	cs.computeIfStale(db, "c1", "One", 0)
 	if cs.TotalQSOs != 3 || cs.Last60Min != 3 {
 		t.Fatalf("precondition: total=%d 60m=%d", cs.TotalQSOs, cs.Last60Min)
 	}
 
-	cs.computeIfStale(db, "c2", "Empty")
+	cs.computeIfStale(db, "c2", "Empty", 0)
 	if cs.TotalQSOs != 0 || cs.ThisHour != 0 || cs.Last60Min != 0 ||
 		cs.Rate10 != 0 || cs.Best1Min != 0 || cs.AvgSession != 0 ||
 		cs.Session != 0 || len(cs.MinuteBuckets) != 0 {
@@ -110,7 +110,7 @@ func TestContestStatsAverageUsesTheWindow(t *testing.T) {
 	}
 
 	cs := &contestStats{}
-	cs.computeIfStale(db, "c1", "Test")
+	cs.computeIfStale(db, "c1", "Test", 0)
 	if got := formatDurationShort(cs.Session); got != "9" {
 		t.Fatalf("session = %s, want 9 minutes", got)
 	}

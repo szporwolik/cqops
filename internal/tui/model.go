@@ -214,6 +214,11 @@ type Model struct {
 
 	// Contest stats panel — computed from DB, refreshed every few seconds.
 	contest contestStats
+
+	// qsoRev counts QSO data changes (see qsoDataChanged). The contest panel
+	// re-reads the contest history only when this moves, so an idle logbook
+	// costs a few prefix scans per tick instead of a full re-read.
+	qsoRev uint64
 }
 
 type tickMsg time.Time
@@ -1634,8 +1639,9 @@ func (m *Model) buildContestLine(boxW int) string {
 		m.rc.contestLineSig = ""
 		return ""
 	}
-	// Keep stats current — computeIfStale is a no-op when fresh (<5 s).
-	m.contest.computeIfStale(m.App.DB, id, ct.Name)
+	// Keep stats current — computeIfStale is a no-op when fresh (<5 s), and it
+	// only re-reads the contest when the QSO revision moved.
+	m.contest.computeIfStale(m.App.DB, id, ct.Name, m.qsoRev)
 	sig := id + "|" + strconv.Itoa(ct.NextQSO) + "|" + strconv.Itoa(m.contest.TotalQSOs) + "|" + strconv.FormatInt(time.Now().UTC().Unix()/10, 10) + "|" + strconv.Itoa(boxW) + "|" + strconv.FormatInt(int64(m.contest.OnAir.Seconds()), 10)
 	if m.rc.contestLineSig == sig && m.rc.contestLine != "" {
 		return m.rc.contestLine

@@ -40,7 +40,7 @@ func TestContestStatsUsesQSOtimeNotCreatedAt(t *testing.T) {
 	}
 
 	cs := &contestStats{}
-	cs.computeIfStale(db, "c1", "Test")
+	cs.computeIfStale(db, "c1", "Test", 0)
 	if cs.TotalQSOs != 4 {
 		t.Fatalf("TotalQSOs = %d, want 4", cs.TotalQSOs)
 	}
@@ -90,7 +90,7 @@ func TestContestStatsBeyondTheThousandRowWindow(t *testing.T) {
 	}
 
 	cs := &contestStats{}
-	cs.computeIfStale(db, "c1", "Test")
+	cs.computeIfStale(db, "c1", "Test", 0)
 	if cs.TotalQSOs != n {
 		t.Fatalf("TotalQSOs = %d, want %d", cs.TotalQSOs, n)
 	}

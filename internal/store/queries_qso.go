@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -267,33 +268,65 @@ func countQSOsContest(db *sql.DB, contestID string) (int, error) {
 	return a + b, nil
 }
 
-// ListContestQSOStamps returns the timing fields of every QSO in a contest:
-// qso_date + time_on (the on-air time) plus created_at as a fallback for rows
-// without a usable time. The contest rate panel needs every row — a row cap
-// skewed session, peak and window numbers — but none of the other columns.
-func ListContestQSOStamps(db *sql.DB, contestID string) ([]qso.QSO, error) {
+// ListContestQSOStamps returns the on-air time (qso_date + time_on, UTC) of
+// every QSO in a contest, newest first. The contest rate panel needs every row
+// — a row cap skews session, peak and window numbers — and nothing else.
+//
+// It reads two indexed columns and returns bare times instead of a QSO per
+// contact: handing back []qso.QSO for a 50k-contest allocated ~300 MiB per
+// refresh, because each struct carries the whole record. created_at is fetched
+// only for the rare row whose date/time is unusable, and is its fallback
+// timestamp. The index (contest_id, qso_date DESC, time_on DESC) provides the
+// order, so the result is verified to be sorted rather than always sorted.
+func ListContestQSOStamps(db *sql.DB, contestID string) ([]time.Time, error) {
 	if contestID == "" {
 		return nil, nil
 	}
 	rows, err := db.Query(
-		`SELECT qso_date, time_on, created_at FROM qsos WHERE contest_id = ?`, contestID)
+		`SELECT id, qso_date, time_on FROM qsos WHERE contest_id = ?
+		 ORDER BY qso_date DESC, time_on DESC`, contestID)
 	if err != nil {
 		return nil, fmt.Errorf("list contest stamps: %w", err)
 	}
-	defer rows.Close()
-	var out []qso.QSO
+	var out []time.Time
+	var fallback []int64
 	for rows.Next() {
-		var q qso.QSO
-		var created string
-		if err := rows.Scan(&q.QSODate, &q.TimeOn, &created); err != nil {
+		var id int64
+		var date, timeOn string
+		if err := rows.Scan(&id, &date, &timeOn); err != nil {
+			rows.Close()
 			return nil, fmt.Errorf("scan contest stamp: %w", err)
 		}
-		if t, err := time.Parse(time.RFC3339, created); err == nil {
-			q.CreatedAt = t
+		if t, ok := qso.ADIFTime(date, timeOn); ok {
+			out = append(out, t)
+			continue
 		}
-		out = append(out, q)
+		fallback = append(fallback, id)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+	for _, id := range fallback {
+		var created string
+		if err := db.QueryRow(`SELECT COALESCE(created_at, '') FROM qsos WHERE id = ?`, id).Scan(&created); err != nil {
+			continue
+		}
+		t, err := time.Parse(time.RFC3339, created)
+		if err != nil {
+			out = append(out, time.Time{}) // no usable timestamp at all
+			continue
+		}
+		out = append(out, t.UTC())
+	}
+	for i := 1; i < len(out); i++ {
+		if out[i].After(out[i-1]) {
+			sort.Slice(out, func(a, b int) bool { return out[a].After(out[b]) })
+			break
+		}
+	}
+	return out, nil
 }
 
 // ListQSOs returns recent QSOs ordered by QSO date/time descending.

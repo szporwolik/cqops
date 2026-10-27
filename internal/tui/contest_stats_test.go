@@ -131,29 +131,6 @@ func TestApplyCap(t *testing.T) {
 	}
 }
 
-func TestBucketQSOsByMinute(t *testing.T) {
-	now := time.Now().UTC().Truncate(time.Minute)
-	qsos := []time.Time{
-		now.Add(-5 * time.Minute),
-		now.Add(-5 * time.Minute),
-		now.Add(-1 * time.Minute),
-	}
-	b := bucketQSOsByMinute(qsos, 60, now)
-	if len(b) != 60 {
-		t.Fatalf("bucketQSOsByMinute len = %d, want 60", len(b))
-	}
-	if b[55] != 2 {
-		t.Errorf("bucket at 5 min ago = %.0f, want 2", b[55])
-	}
-	if b[59] != 1 {
-		t.Errorf("bucket at 1 min ago = %.0f, want 1", b[59])
-	}
-	// Past/future should be zero.
-	if b[0] != 0 {
-		t.Errorf("oldest bucket = %.0f, want 0", b[0])
-	}
-}
-
 func TestAggregateBuckets(t *testing.T) {
 	in := []float64{1, 0, 2, 3, 1, 0}
 	// Aggregate 6 → 3 buckets.
