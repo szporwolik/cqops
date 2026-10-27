@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"charm.land/bubbles/v2/table"
@@ -156,13 +157,17 @@ func (r *RecentQSOs) View() string {
 	var names []string
 	for i := len(tiers) - 1; i >= 0; i-- {
 		if bodyW >= tiers[i].maxW {
-			names = tiers[i].names
+			// Clone: the tiers are package-level definitions shared by every
+			// view, and multi-operator mode rewrites one entry below. Editing
+			// the tier in place left the Operator column behind for every later
+			// table — including this one once the mode was switched off.
+			names = slices.Clone(tiers[i].names)
 			break
 		}
 	}
 	if names == nil {
 		// Terminal too narrow for any tier — whittle from the narrowest set.
-		names = append([]string{}, tiers[0].names...)
+		names = slices.Clone(tiers[0].names)
 		for len(names) > 1 {
 			total := 0
 			for _, n := range names {

@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"slices"
+
 	"charm.land/bubbles/v2/table"
 	"github.com/szporwolik/cqops/internal/qso"
 )
@@ -104,12 +106,17 @@ func (le *LogbookEditor) buildTable() {
 			}
 			total += len(tiers[i].names) - 1
 			if total <= bodyW {
-				names = tiers[i].names
+				// Clone: the tiers are package-level definitions shared by every
+				// view, and the multi-operator swap below rewrites one entry.
+				// Editing the tier in place made Operator (wider than Grid) part
+				// of the definition, so the next build no longer fitted this tier
+				// and dropped to a poorer one — losing QTH, Comment and Contest.
+				names = slices.Clone(tiers[i].names)
 				break
 			}
 		}
 		if len(names) == 0 && len(tiers) > 0 {
-			names = tiers[0].names
+			names = slices.Clone(tiers[0].names)
 		}
 
 		// Multi-operator: swap Grid for Operator. Skip the swap when the
