@@ -42,6 +42,9 @@ func TestFailedPageLoadKeepsThePageOnScreen(t *testing.T) {
 	}
 	rowsBefore := append([]int64(nil), qsoIDs(le)...)
 	pageBefore, countBefore := le.currentPage, le.totalCount
+	// The whole frame, not just the rows: the layout must be identical too —
+	// nothing may grow, shrink or move because a read failed.
+	frameBefore := le.View().Content
 
 	restore := breakQSOs(t, le)
 	defer restore()
@@ -65,6 +68,9 @@ func TestFailedPageLoadKeepsThePageOnScreen(t *testing.T) {
 	// The rendered table still shows the contacts — an empty table is what the
 	// bug looked like.
 	view := le.View().Content
+	if view != frameBefore {
+		t.Errorf("the frame changed after a failed read (layout shift):\n%s", view)
+	}
 	for _, want := range []string{"T020", "T025", "T039"} {
 		if !strings.Contains(view, want) {
 			t.Fatalf("view is missing %s after a failed read:\n%s", want, view)
