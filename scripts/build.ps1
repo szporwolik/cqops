@@ -34,6 +34,12 @@ $LDFLAGS = "-s -w -X github.com/szporwolik/cqops/internal/version.Version=$VERSI
 
 $env:CGO_ENABLED = "0"
 
+# The loop below sets GOOS/GOARCH for each target. Remember the caller's values
+# and restore them afterwards, so no build target leaks into the --install step
+# (which must produce the binary this machine runs).
+$savedLoopGOOS = $env:GOOS
+$savedLoopGOARCH = $env:GOARCH
+
 $targets = @(
     @{OS="windows"; Arch="amd64"; Ext=".exe"},
     @{OS="windows"; Arch="arm64"; Ext=".exe"},
@@ -43,13 +49,18 @@ $targets = @(
     @{OS="darwin";  Arch="arm64"; Ext=""}
 )
 
-foreach ($t in $targets) {
-    $env:GOOS = $t.OS
-    $env:GOARCH = $t.Arch
-    $name = "cqops-$($t.OS)-$($t.Arch)$($t.Ext)"
-    Write-Host "Building cqops $VERSION for $($t.OS)/$($t.Arch)..."
-    go build -ldflags $LDFLAGS -o "$BUILD_DIR/$name" ./cmd/cqops
-    if ($LASTEXITCODE -ne 0) { throw "Build failed for $($t.OS)/$($t.Arch)" }
+try {
+    foreach ($t in $targets) {
+        $env:GOOS = $t.OS
+        $env:GOARCH = $t.Arch
+        $name = "cqops-$($t.OS)-$($t.Arch)$($t.Ext)"
+        Write-Host "Building cqops $VERSION for $($t.OS)/$($t.Arch)..."
+        go build -ldflags $LDFLAGS -o "$BUILD_DIR/$name" ./cmd/cqops
+        if ($LASTEXITCODE -ne 0) { throw "Build failed for $($t.OS)/$($t.Arch)" }
+    }
+} finally {
+    if ($savedLoopGOOS) { $env:GOOS = $savedLoopGOOS } else { Remove-Item Env:GOOS -ErrorAction SilentlyContinue }
+    if ($savedLoopGOARCH) { $env:GOARCH = $savedLoopGOARCH } else { Remove-Item Env:GOARCH -ErrorAction SilentlyContinue }
 }
 
 Write-Host "Done. Binaries in $BUILD_DIR/"
@@ -57,6 +68,32 @@ Write-Host "Done. Binaries in $BUILD_DIR/"
 # Install to GOPATH/bin (if --install flag passed)
 if ($args -contains "--install") {
     Write-Host "Installing cqops $VERSION..."
-    go install -ldflags $LDFLAGS ./cmd/cqops
-    Write-Host "Installed to $(go env GOPATH)/bin/cqops.exe"
+    # Install for the machine running this script: the loop above ends on
+    # darwin/arm64, and an inherited GOOS/GOARCH from the caller's shell would
+    # cross-compile too - either way the operator would keep running the old
+    # cqops.exe while the script reported success. Pin the host platform, check
+    # the exit code, verify the file, and restore the environment afterwards.
+    $hostOS = "$(go env GOHOSTOS)".Trim()
+    $hostArch = "$(go env GOHOSTARCH)".Trim()
+    $savedInstallGOOS = $env:GOOS
+    $savedInstallGOARCH = $env:GOARCH
+    try {
+        $env:GOOS = $hostOS
+        $env:GOARCH = $hostArch
+        go install -ldflags $LDFLAGS ./cmd/cqops
+        if ($LASTEXITCODE -ne 0) {
+            throw "go install failed for $hostOS/$hostArch (exit code $LASTEXITCODE)"
+        }
+    } finally {
+        if ($savedInstallGOOS) { $env:GOOS = $savedInstallGOOS } else { Remove-Item Env:GOOS -ErrorAction SilentlyContinue }
+        if ($savedInstallGOARCH) { $env:GOARCH = $savedInstallGOARCH } else { Remove-Item Env:GOARCH -ErrorAction SilentlyContinue }
+    }
+    $goPath = "$(go env GOPATH)".Trim()
+    $exe = "cqops"
+    if ($hostOS -eq "windows") { $exe = "cqops.exe" }
+    $installed = Join-Path (Join-Path $goPath "bin") $exe
+    if (-not (Test-Path $installed)) {
+        throw "go install finished but $installed is missing - the old binary is still in use"
+    }
+    Write-Host "Installed to $installed"
 }

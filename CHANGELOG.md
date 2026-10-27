@@ -6,6 +6,10 @@
 
 ### Fixes
 - **A start without a terminal says so instead of running headless**: launched from a window-manager menu that ignores the entry's `Terminal=true` (icewm, i3, openbox and friends), from cron or from a detached shell, CQOps used to open the logbook, connect to APRS and the rig, take the single-instance lock and then exit a few seconds later without a word — a click that looked like nothing happened. It now refuses before anything is opened and names both the cause and the fix (`x-terminal-emulator -e cqops`). A terminal reached through `/dev/tty` is still accepted, so `cqops < /dev/null` from a real terminal keeps working, and `CQOPS_ASSUME_TTY=1` skips the check for setups where stdin is not reported as a tty.
+- **`build.ps1 --install` installs the Windows binary it claims to**: the cross-compile loop left `GOOS=darwin`/`GOARCH=arm64` in the environment, so the `go install` that followed produced a macOS binary — the script printed `bin\cqops.exe` while the operator kept running the previous Windows build. The install now pins the host platform (`go env GOHOSTOS`/`GOHOSTARCH`), checks the exit code, verifies the file exists, and the loop restores the caller's environment in a `finally` block.
+
+### Under the Hood
+- **CI parses the PowerShell scripts**: `build.ps1`, `build-installer.ps1`, `install.ps1` and `uninstall.ps1` are never executed by the pipeline, so a syntax error only surfaced on an operator's machine. The Lint & Build job now parses every `scripts/*.ps1` with the PowerShell AST parser.
 
 ## v0.11.2 — 2026-10-26
 
