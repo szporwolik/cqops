@@ -47,52 +47,38 @@ SetCompressor /SOLID lzma
 
 ; -----------------------------------------------------------------------------
 ; Macros — idempotent machine PATH add / remove
+;
+; `${WordAdd} [list] [delim] "+word" $out` adds the words that are missing and
+; leaves the list untouched when they are already there (case-insensitive), and
+; `-word` deletes them. Using it instead of hand-rolled searching is what makes
+; these macros two lines: the previous version asked WordFind for "word 1 with
+; error output" (option `E+1;`) and compared that number with 0, so the
+; directory was never appended and `cqops` never landed on PATH.
 ; -----------------------------------------------------------------------------
 !define ENV_HKLM 'HKLM "SYSTEM\CurrentControlSet\Control\Session Manager\Environment"'
 
 !macro AddToPath Dir
   Push $0
-  Push $1
   ReadRegStr $0 ${ENV_HKLM} "Path"
   ${If} $0 == ""
     StrCpy $0 "${Dir}"
   ${Else}
-    ${WordFind} "$0" "${Dir}" "E+1;" $1
-    ${If} $1 == 0
-      StrCpy $0 "$0;${Dir}"
-    ${EndIf}
+    ${WordAdd} "$0" ";" "+${Dir}" $0
   ${EndIf}
   WriteRegExpandStr ${ENV_HKLM} "Path" "$0"
   SendMessage ${HWND_BROADCAST} ${WM_WININICHANGE} 0 "STR:Environment" /TIMEOUT=500
-  Pop $1
   Pop $0
 !macroend
 
 !macro RemoveFromPath Dir
   Push $0
-  Push $1
-  Push $2
   ReadRegStr $0 ${ENV_HKLM} "Path"
   ${If} $0 != ""
-    ; Delete every occurrence of Dir as a semicolon-delimited word.
-    ${WordReplace} "$0" "${Dir}" "" "E+};" $1
-    ; Clean up leading semicolon.
-    StrCpy $2 $1 1
-    ${If} $2 == ";"
-      StrCpy $1 $1 "" 1
-    ${EndIf}
-    ; Clean up trailing semicolon.
-    StrCpy $2 $1 "" -1
-    ${If} $2 == ";"
-      StrCpy $1 $1 -1
-    ${EndIf}
-    ; Collapse double semicolons (from adjacent deleted entries).
-    ${WordReplace} "$1" ";;" ";" "E+};" $1
-    WriteRegExpandStr ${ENV_HKLM} "Path" "$1"
+    ; Deletes every occurrence and tidies the separators around it.
+    ${WordAdd} "$0" ";" "-${Dir}" $0
+    WriteRegExpandStr ${ENV_HKLM} "Path" "$0"
     SendMessage ${HWND_BROADCAST} ${WM_WININICHANGE} 0 "STR:Environment" /TIMEOUT=500
   ${EndIf}
-  Pop $2
-  Pop $1
   Pop $0
 !macroend
 
