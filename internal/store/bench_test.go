@@ -130,3 +130,30 @@ func BenchmarkUpdateQSOCommentOnly_50k(b *testing.B) {
 		}
 	}
 }
+
+// Coverage runs on the partner panel for every callsign the operator enters,
+// and its answer describes the whole logbook rather than the partner. It used
+// to scan qsos for that (see the Scan variant); the numbers are maintained with
+// the worked index now, so the cost is a few point lookups.
+func BenchmarkCoverage_50k(b *testing.B) {
+	db := benchDB(b, 50_000)
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if _, err := Coverage(db); err != nil {
+			b.Fatalf("Coverage: %v", err)
+		}
+	}
+}
+
+// BenchmarkCoverageScan_50k is the previous implementation: one pass over qsos.
+func BenchmarkCoverageScan_50k(b *testing.B) {
+	db := benchDB(b, 50_000)
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if _, err := scanCoverage(db); err != nil {
+			b.Fatalf("scanCoverage: %v", err)
+		}
+	}
+}
