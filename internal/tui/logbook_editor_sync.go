@@ -463,7 +463,18 @@ func mergeRemoteQSO(local *qso.QSO, d *wavelog.QSOData) *qso.QSO {
 	// Clearing a field still works: the operator clears it locally and the
 	// PATCH sends the empty value.
 	if strings.TrimSpace(d.Mode) != "" {
-		merged.Mode, merged.Submode = qso.NormalizeMode(d.Mode, d.Submode)
+		mode, submode := qso.NormalizeMode(d.Mode, d.Submode)
+		// Wavelog stores the mode but not always the sideband: a contact logged
+		// as SSB/USB comes back as mode=SSB with submode=null. When the mode
+		// itself did not change, the local sideband is the operator's data and
+		// has to survive — clearing it here also loses it for good, because the
+		// store re-derives an SSB sideband from the frequency on write (USB at
+		// 7.1 MHz came back as LSB). A remote submode always wins, and a real
+		// mode change drops the old sideband instead of carrying it across.
+		if submode == "" && strings.EqualFold(mode, strings.TrimSpace(local.Mode)) {
+			submode = local.Submode
+		}
+		merged.Mode, merged.Submode = mode, submode
 	}
 	if len(d.QSODate) >= 10 {
 		merged.QSODate = strings.ReplaceAll(d.QSODate[:10], "-", "") // ADIF YYYYMMDD

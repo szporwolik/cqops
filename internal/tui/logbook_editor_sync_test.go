@@ -1870,6 +1870,85 @@ func TestMergeRemoteQSOKeepsLocalWhenRemoteIsEmpty(t *testing.T) {
 	}
 }
 
+// TestRemoteRefreshKeepsLocalSidebandWhenServerHasNone covers the mode/submode
+// half of the same hazard the blank-field rule fixes. Wavelog keeps the mode
+// but not the sideband for a contact it stored as plain SSB, so it answers
+// mode=SSB with submode=null; the merge used to assign that empty submode over
+// the operator's USB. The damage did not stop at the merge — the store
+// re-derives a missing SSB sideband from the frequency on write, so the
+// round-trip turned USB at 7.1 MHz into LSB.
+func TestRemoteRefreshKeepsLocalSidebandWhenServerHasNone(t *testing.T) {
+	db, err := store.InitDB(filepath.Join(t.TempDir(), "sideband.db"))
+	if err != nil {
+		t.Fatalf("init db: %v", err)
+	}
+	defer db.Close()
+
+	id, err := store.InsertQSO(db, &qso.QSO{
+		Call: "SP9MOA", Band: "40m", Mode: "SSB", Submode: "USB",
+		RSTSent: "59", RSTRcvd: "59", Freq: 7.1, QSODate: "20260501", TimeOn: "1230",
+	})
+	if err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	local, err := store.GetQSOByID(db, id)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if local.Submode != "USB" {
+		t.Fatalf("setup: stored submode = %q, want USB", local.Submode)
+	}
+
+	// mode=SSB, submode absent — what Wavelog returns for a contact it never
+	// stored a sideband for.
+	remote := &wavelog.QSOData{
+		ID: 42, Call: "SP9MOA", Band: "40m", Mode: "SSB",
+		QSODate: "2026-05-01 12:30:00",
+	}
+	merged := mergeRemoteQSO(local, remote)
+	if merged.Mode != "SSB" || merged.Submode != "USB" {
+		t.Fatalf("merge: mode=%q submode=%q, want SSB/USB (local sideband kept)", merged.Mode, merged.Submode)
+	}
+
+	if err := store.UpdateQSO(db, merged); err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	got, err := store.GetQSOByID(db, id)
+	if err != nil {
+		t.Fatalf("read merged: %v", err)
+	}
+	if got.Mode != "SSB" || got.Submode != "USB" {
+		t.Errorf("stored mode/submode = %q/%q, want SSB/USB — the sideband was re-derived from the frequency", got.Mode, got.Submode)
+	}
+}
+
+// TestRemoteRefreshDropsSidebandOnModeChange is the other half of the rule: a
+// sideband belongs to its mode. When the server reports a different mode the
+// local USB must not survive as a CW or FM submode, and a sideband the server
+// does send still wins over the local one.
+func TestRemoteRefreshDropsSidebandOnModeChange(t *testing.T) {
+	local := &qso.QSO{
+		Call: "SP9MOA", Band: "40m", Mode: "SSB", Submode: "USB",
+		RSTSent: "59", RSTRcvd: "59", Freq: 7.1, QSODate: "20260501", TimeOn: "1230",
+	}
+
+	cw := mergeRemoteQSO(local, &wavelog.QSOData{
+		ID: 42, Call: "SP9MOA", Band: "40m", Mode: "CW", QSODate: "2026-05-01 12:30:00",
+	})
+	if cw.Mode != "CW" || cw.Submode != "" {
+		t.Errorf("mode change: mode=%q submode=%q, want CW with no sideband", cw.Mode, cw.Submode)
+	}
+
+	// A remote sideband is a correction and applies even on an unchanged mode.
+	lsb := mergeRemoteQSO(local, &wavelog.QSOData{
+		ID: 42, Call: "SP9MOA", Band: "40m", Mode: "SSB", Submode: "LSB",
+		QSODate: "2026-05-01 12:30:00",
+	})
+	if lsb.Mode != "SSB" || lsb.Submode != "LSB" {
+		t.Errorf("remote sideband: mode=%q submode=%q, want SSB/LSB", lsb.Mode, lsb.Submode)
+	}
+}
+
 // TestFollowUpSyncCompletionDoesNotCloseForm verifies serialized follow-up
 // PATCH results never close an open form — the form already closed at the
 // original save.
