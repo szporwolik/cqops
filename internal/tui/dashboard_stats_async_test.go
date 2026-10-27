@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
+	"github.com/szporwolik/cqops/internal/config"
 	"github.com/szporwolik/cqops/internal/dashboard"
 	"github.com/szporwolik/cqops/internal/qso"
 	"github.com/szporwolik/cqops/internal/store"
@@ -132,5 +134,293 @@ func TestDashboardStatsErrorClearsInFlight(t *testing.T) {
 	m.applyDashboardStats(dashboardStatsMsg{db: m.App.DB, logbook: m.App.LogbookName, err: errors.New("boom")})
 	if m.http.statsInFlight {
 		t.Error("a failed computation left the in-flight flag set")
+	}
+}
+
+// =============================================================================
+// Whole cycle through Model.Update: tick → command → message → tick
+// =============================================================================
+
+// dashboardCycleModel returns a model whose ticks behave like a running
+// installation: the dashboard server is enabled and connected (a disabled one
+// would be torn down by the tick itself), the machine is online with its
+// reference data already up to date, and no stats refresh is pending — so the
+// only command a tick starts is the computation under test.
+func dashboardCycleModel(t *testing.T) *Model {
+	t.Helper()
+	m := dashboardStatsTestModel(t)
+	m.App.Config.Integrations.HTTPServer.Enabled = true
+	m.inetOnline = true
+	m.inetConfirmed = true
+	m.lastDataCheck = time.Now()
+	// Production starts dirty (the panel has never been filled) and the
+	// periodic rate refresh is a minute out. Both are package state, so they
+	// are restored for the tests that follow.
+	dashboardDataDirty = true
+	lastDashboardPushTick = m.tickCount - 10
+	lastDashboardStatsPush = time.Now()
+	t.Cleanup(func() {
+		dashboardDataDirty = true
+		lastDashboardPushTick = 0
+		lastDashboardStatsPush = time.Time{}
+	})
+	return m
+}
+
+// insertContact logs one contact that the stats window counts.
+func insertContact(t *testing.T, m *Model, call string) {
+	t.Helper()
+	if _, err := store.InsertQSO(m.App.DB, &qso.QSO{
+		Call:    call,
+		QSODate: time.Now().UTC().Format("20060102"),
+		TimeOn:  "120000",
+		Band:    "20m",
+		Mode:    "CW",
+	}); err != nil {
+		t.Fatalf("InsertQSO(%s): %v", call, err)
+	}
+}
+
+// panelStats reads what the dashboard website would show.
+func panelStats(m *Model) dashboard.Stats {
+	return m.http.client.State().Snapshot().Stats
+}
+
+// tick drives ONE real tick through Model.Update. When the tick starts a stats
+// computation the command is run and its message returned, so the caller
+// decides when that result reaches the panel — the ordering a real runtime
+// cannot control, and the reason a stale result can overwrite a fresh one.
+//
+// The boolean reports whether a computation was started at all.
+func tick(t *testing.T, m *Model) (dashboardStatsMsg, bool) {
+	t.Helper()
+	// pushDashboardState is throttled to every 2 ticks (~2 s of wall clock);
+	// a test tick is one logical second, so the throttle is cleared to keep
+	// the cycle deterministic instead of skipping every second push.
+	lastDashboardPushTick = m.tickCount - 10
+	wasInFlight := m.http.statsInFlight
+	_, cmd := m.Update(tickMsg(time.Now()))
+	if wasInFlight || !m.http.statsInFlight {
+		return dashboardStatsMsg{}, false
+	}
+	return awaitStatsMsg(t, cmd), true
+}
+
+// awaitStatsMsg runs the commands a tick issued and returns the stats result.
+// The tick also arms the tick timer (and, in a busier model, read-only view
+// fetches); their messages are discarded because they do not touch the stats
+// panel.
+func awaitStatsMsg(t *testing.T, cmd tea.Cmd) dashboardStatsMsg {
+	t.Helper()
+	msgs := make(chan tea.Msg, 32)
+	go pumpCommands(cmd, msgs)
+	deadline := time.After(30 * time.Second)
+	for {
+		select {
+		case msg := <-msgs:
+			if s, ok := msg.(dashboardStatsMsg); ok {
+				return s
+			}
+		case <-deadline:
+			t.Fatal("the tick marked the stats in flight but no computation finished")
+		}
+	}
+}
+
+// pumpCommands executes a command tree the way the runtime does: a batch is
+// expanded and each leaf runs on its own goroutine.
+func pumpCommands(cmd tea.Cmd, out chan<- tea.Msg) {
+	if cmd == nil {
+		return
+	}
+	msg := cmd()
+	batch, ok := msg.(tea.BatchMsg)
+	if !ok {
+		select {
+		case out <- msg:
+		default: // the test already has what it needs
+		}
+		return
+	}
+	for _, sub := range batch {
+		go pumpCommands(sub, out)
+	}
+}
+
+// deliverStats hands a finished computation back to the update loop, exactly as
+// the Bubble Tea runtime does when a command returns.
+func deliverStats(t *testing.T, m *Model, msg dashboardStatsMsg) {
+	t.Helper()
+	m.Update(msg)
+}
+
+// TestDashboardStatsSecondRunAfterAChangeDuringComputation covers the cycle a
+// frozen panel hides: while the first computation is still on its way, the
+// operator logs a contact. That contact is not in the result that arrives, so
+// the refresh it triggered has to survive the install and run again — through
+// real ticks and real messages, not by calling the install directly.
+func TestDashboardStatsSecondRunAfterAChangeDuringComputation(t *testing.T) {
+	m := dashboardCycleModel(t)
+	insertContact(t, m, "SP9MOA")
+
+	first, started := tick(t, m)
+	if !started {
+		t.Fatal("the first tick did not start a stats computation")
+	}
+	if first.err != nil {
+		t.Fatalf("GetDashboardStats: %v", first.err)
+	}
+	if first.stats.QSOsToday != 1 {
+		t.Fatalf("first computation counted %d contacts, want 1", first.stats.QSOsToday)
+	}
+
+	// The operator logs a contact while the first result is in flight.
+	insertContact(t, m, "DL1AA")
+	m.invalidateDashboardFlags() // what a save does: every panel is stale now
+
+	// The tick that sees the change must neither start a competing
+	// computation nor drop the pending refresh.
+	if _, started := tick(t, m); started {
+		t.Error("a second computation started while the first was still in flight")
+	}
+	if !m.http.statsDue {
+		t.Fatal("the pending refresh was dropped while a computation was in flight")
+	}
+
+	// The stale result arrives and is installed. The panel is one contact
+	// behind — and the pending refresh has to survive the install.
+	deliverStats(t, m, first)
+	if got := panelStats(m).QSOsToday; got != 1 {
+		t.Fatalf("panel shows %d contacts after the completed run, want 1", got)
+	}
+	if !m.http.statsDue {
+		t.Error("installing the result cleared the pending refresh")
+	}
+
+	second, started := tick(t, m)
+	if !started {
+		t.Fatal("the change during the computation never started a second run")
+	}
+	if second.err != nil {
+		t.Fatalf("GetDashboardStats: %v", second.err)
+	}
+	if second.stats.QSOsToday != 2 {
+		t.Errorf("second computation counted %d contacts, want 2", second.stats.QSOsToday)
+	}
+	deliverStats(t, m, second)
+	if got := panelStats(m).QSOsToday; got != 2 {
+		t.Errorf("panel shows %d contacts, want 2 (the second run never reached it)", got)
+	}
+	if m.http.statsDue {
+		t.Error("the refresh stayed pending after a computation was installed")
+	}
+}
+
+// TestDashboardStatsLogbookSwitchDropsTheOldResult: a computation started in
+// one logbook finishes after the operator switched to another. Its numbers
+// describe a different database, so they must never reach the panel — and the
+// new logbook must still get its own numbers.
+func TestDashboardStatsLogbookSwitchDropsTheOldResult(t *testing.T) {
+	m := dashboardCycleModel(t)
+	insertContact(t, m, "SP9MOA")
+
+	// A second logbook with its own database file inside the test directory.
+	m.App.Config.Logbooks["b"] = config.Logbook{
+		Station:      config.Station{Callsign: "SP9MOA/P", Grid: "JO90", RigName: "default"},
+		Wavelog:      &config.WavelogConfig{},
+		DatabasePath: filepath.Join(t.TempDir(), "second.db"),
+	}
+
+	first, started := tick(t, m)
+	if !started {
+		t.Fatal("the first tick did not start a stats computation")
+	}
+	if first.stats.QSOsToday != 1 {
+		t.Fatalf("first computation counted %d contacts, want 1", first.stats.QSOsToday)
+	}
+
+	// The operator switches logbooks while that result is in flight.
+	if err := m.App.SwitchLogbook("b"); err != nil {
+		t.Fatalf("SwitchLogbook: %v", err)
+	}
+	m.handleLogbookSwitched() // the bookkeeping every switch runs
+
+	deliverStats(t, m, first)
+	if got := panelStats(m).QSOsToday; got != 0 {
+		t.Errorf("panel shows %d contacts after the switch, want 0 — the old logbook's stats were installed", got)
+	}
+
+	// The refresh must publish the NEW logbook's numbers.
+	for _, call := range []string{"DL1AA", "DL2BB", "DL3CC"} {
+		insertContact(t, m, call)
+	}
+	second, started := tick(t, m)
+	if !started {
+		t.Fatal("the new logbook never got a stats computation")
+	}
+	if second.err != nil {
+		t.Fatalf("GetDashboardStats: %v", second.err)
+	}
+	if second.stats.QSOsToday != 3 {
+		t.Errorf("new logbook's computation counted %d contacts, want 3", second.stats.QSOsToday)
+	}
+	deliverStats(t, m, second)
+	if got := panelStats(m).QSOsToday; got != 3 {
+		t.Errorf("panel shows %d contacts, want 3 (the new logbook never reached it)", got)
+	}
+}
+
+// TestDashboardStatsErrorDoesNotStallTheCycle: a query that fails (here: the
+// database went away) must not wedge the panel. The next scheduled refresh has
+// to run and publish, not sit behind a computation that never finished.
+func TestDashboardStatsErrorDoesNotStallTheCycle(t *testing.T) {
+	m := dashboardCycleModel(t)
+	insertContact(t, m, "SP9MOA")
+
+	// Age the periodic refresh (60 s) so the next tick asks for new numbers
+	// without needing QSO data to change — no panel push touches the broken
+	// database on the way.
+	dashboardDataDirty = false
+	lastDashboardStatsPush = time.Now().Add(-2 * dashboardStatsRefreshInterval)
+
+	working := m.App.DB
+	broken, err := store.InitDB(filepath.Join(t.TempDir(), "broken.db"))
+	if err != nil {
+		t.Fatalf("InitDB: %v", err)
+	}
+	if err := broken.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	m.App.DB = broken
+
+	first, started := tick(t, m)
+	if !started {
+		t.Fatal("the tick did not start a stats computation")
+	}
+	if first.err == nil {
+		t.Fatal("the computation succeeded against a closed database")
+	}
+	deliverStats(t, m, first)
+	if m.http.statsInFlight {
+		t.Error("a failed computation left the panel marked as busy")
+	}
+
+	// The database comes back; the next refresh must compute and publish.
+	m.App.DB = working
+	insertContact(t, m, "DL1AA")
+	lastDashboardStatsPush = time.Now().Add(-2 * dashboardStatsRefreshInterval)
+	second, started := tick(t, m)
+	if !started {
+		t.Fatal("the failed computation blocked the next refresh")
+	}
+	if second.err != nil {
+		t.Fatalf("GetDashboardStats: %v", second.err)
+	}
+	if second.stats.QSOsToday != 2 {
+		t.Errorf("recovery computation counted %d contacts, want 2", second.stats.QSOsToday)
+	}
+	deliverStats(t, m, second)
+	if got := panelStats(m).QSOsToday; got != 2 {
+		t.Errorf("panel shows %d contacts after recovery, want 2", got)
 	}
 }
