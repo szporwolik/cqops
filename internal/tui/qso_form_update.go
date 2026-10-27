@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -856,8 +857,11 @@ func (m *Model) onFieldExit() {
 }
 
 // checkDupe sets m.dupe to true when the current call/band/mode/date
-// combination already exists in the database. Result is cached by
-// (call,band,mode,date) to avoid re-querying on every field navigation.
+// combination already exists in the database. The result is cached, keyed on
+// every value it depends on: the match columns, the reference fields the verdict
+// also compares, and the logbook data revision (a save, a WSJT-X contact, an
+// import, a download, a delete or a logbook switch changes what the query
+// answers).
 func (m *Model) checkDupe() {
 	m.dupe = false
 	if m.App == nil || m.App.DB == nil {
@@ -876,8 +880,16 @@ func (m *Model) checkDupe() {
 			"call", call, "band", band, "mode", mode, "date", date)
 		return
 	}
-	// Cache key — date changes once per day, so cache is highly effective.
-	key := call + "|" + band + "|" + mode + "|" + date
+	// A matching call/band/mode/date is only a dupe when the references match
+	// too, so they are part of the key — not just part of the answer.
+	refs := strings.Join([]string{
+		strings.TrimSpace(m.fields[fieldSOTA].Value()),
+		strings.TrimSpace(m.fields[fieldPOTA].Value()),
+		strings.TrimSpace(m.fields[fieldWWFF].Value()),
+		strings.TrimSpace(m.fields[fieldIOTA].Value()),
+	}, "|")
+	key := call + "|" + band + "|" + mode + "|" + date + "|" + refs + "|" +
+		m.App.LogbookName + "|" + strconv.FormatUint(m.qsoRev, 10)
 	if m.dupeCacheKey == key {
 		m.dupe = m.dupeCacheResult
 		return
@@ -891,12 +903,7 @@ func (m *Model) checkDupe() {
 		return
 	}
 	// If any reference field differs, it's not a dupe (e.g. different summit).
-	formSOTA := strings.TrimSpace(m.fields[fieldSOTA].Value())
-	formPOTA := strings.TrimSpace(m.fields[fieldPOTA].Value())
-	formWWFF := strings.TrimSpace(m.fields[fieldWWFF].Value())
-	formIOTA := strings.TrimSpace(m.fields[fieldIOTA].Value())
-	if formSOTA != existing.SOTA || formPOTA != existing.POTA ||
-		formWWFF != existing.WWFF || formIOTA != existing.IOTA {
+	if refs != strings.Join([]string{existing.SOTA, existing.POTA, existing.WWFF, existing.IOTA}, "|") {
 		m.dupeCacheResult = false
 		return
 	}
