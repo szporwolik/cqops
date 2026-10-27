@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"database/sql"
 	"fmt"
 	"hash/fnv"
 	"math"
@@ -576,15 +577,21 @@ func (m *Model) pushDashboardState() {
 	// rate windows keep sliding even when no new QSO arrives. The initial
 	// push (dashboardDataDirty==true) ensures the dashboard populates on
 	// startup.
+	//
+	// The stats aggregates are the expensive part (GetDashboardStats scans the
+	// event window), so this only marks them stale; dashboardStatsCmd runs the
+	// query off the update loop from the tick. Every other caller of this
+	// function (GPS, config save, logbook switch, HTTP status) therefore cannot
+	// drop a pending request by not running the command.
 	if dashboardDataDirty {
 		dashboardDataDirty = false
 		lastDashboardStatsPush = time.Now()
 		m.pushDashboardToday(ds)
-		m.pushDashboardStats(ds)
 		m.pushDashboardRecent(ds)
+		m.http.statsDue = true
 	} else if time.Since(lastDashboardStatsPush) >= dashboardStatsRefreshInterval {
 		lastDashboardStatsPush = time.Now()
-		m.pushDashboardStats(ds)
+		m.http.statsDue = true
 	}
 
 	// --- APRS stations for the local map (rate-limited, 30 s, or on-demand) ---
@@ -961,6 +968,9 @@ func (m *Model) forcePushDashboardAll() {
 	lastActiveNewDXCC = false
 	lastPushedPartner = cachedPartner{}
 	partnerEmpty = false
+	// The stats belong to the previous logbook: recompute them for the new one
+	// and let applyDashboardStats drop a result that is still in flight.
+	m.http.statsDue = true
 	m.pushDashboardState()
 }
 
@@ -1252,34 +1262,74 @@ func (m *Model) pushDashboardToday(ds *dashboard.State) {
 	applog.Debug("dashboard: pushed today QSOs", "count", len(views))
 }
 
-// pushDashboardStats computes and pushes aggregate stats from the event
-// start date (or today if not configured) to the dashboard.
-func (m *Model) pushDashboardStats(ds *dashboard.State) {
-	if m.App.DB == nil {
-		return
+// dashboardStatsMsg carries one finished stats computation back to the update
+// loop. db and logbook identify the data set it was computed against.
+type dashboardStatsMsg struct {
+	db      *sql.DB
+	logbook string
+	stats   store.DashboardStats
+	err     error
+}
+
+// dashboardStatsCmd starts the stats aggregation when it is due and no other
+// computation is running. Called from the tick: GetDashboardStats scans the
+// event window (22 ms at 10k contacts, 228 ms at 100k), and running it inline
+// meant every keystroke and QSO save waited for it.
+func (m *Model) dashboardStatsCmd() tea.Cmd {
+	if !m.http.statsDue || m.http.statsInFlight {
+		return nil
 	}
+	if m.App.DB == nil || m.http.client == nil || !m.http.online {
+		m.http.statsDue = false
+		return nil
+	}
+	db := m.App.DB
+	logbook := m.App.LogbookName
 	startDate := m.eventStartDate()
 	if startDate == "" {
 		startDate = time.Now().UTC().Format("20060102")
 	}
-	s, err := store.GetDashboardStats(m.App.DB, startDate)
-	if err != nil {
-		applog.Debug("dashboard: cannot compute stats", "error", err)
-		return
+	m.http.statsDue = false
+	m.http.statsInFlight = true
+	return func() tea.Msg {
+		s, err := store.GetDashboardStats(db, startDate)
+		return dashboardStatsMsg{db: db, logbook: logbook, stats: s, err: err}
 	}
-	ds.SetStats(dashboard.Stats{
-		QSOsToday:   s.QSOsToday,
-		Operators:   s.Operators,
-		UniqueCalls: s.UniqueCalls,
-		DXCC:        s.DXCC,
-		Grids:       s.Grids,
-		Bands:       s.Bands,
-		Modes:       s.Modes,
-		LastQSOAgoS: s.LastQSOAgoS,
-		Rate5m:      s.Rate5m,
-		Rate15m:     s.Rate15m,
-		Rate60m:     s.Rate60m,
+}
+
+// applyDashboardStats installs a finished computation. A result computed for a
+// logbook the operator already left is dropped — its aggregates describe a
+// different database — and the new logbook is marked due again so it gets its
+// own numbers on the next tick.
+func (m *Model) applyDashboardStats(msg dashboardStatsMsg) tea.Cmd {
+	m.http.statsInFlight = false
+	if msg.err != nil {
+		if !strings.Contains(msg.err.Error(), "database is closed") {
+			applog.Debug("dashboard: cannot compute stats", "error", msg.err)
+		}
+		return nil
+	}
+	if m.App.DB != msg.db || m.App.LogbookName != msg.logbook {
+		m.http.statsDue = true
+		return nil
+	}
+	if m.http.client == nil || !m.http.online {
+		return nil
+	}
+	m.http.client.State().SetStats(dashboard.Stats{
+		QSOsToday:   msg.stats.QSOsToday,
+		Operators:   msg.stats.Operators,
+		UniqueCalls: msg.stats.UniqueCalls,
+		DXCC:        msg.stats.DXCC,
+		Grids:       msg.stats.Grids,
+		Bands:       msg.stats.Bands,
+		Modes:       msg.stats.Modes,
+		LastQSOAgoS: msg.stats.LastQSOAgoS,
+		Rate5m:      msg.stats.Rate5m,
+		Rate15m:     msg.stats.Rate15m,
+		Rate60m:     msg.stats.Rate60m,
 	})
+	return nil
 }
 
 // pushDashboardAPRS reads recent APRS stations from the cache and pushes them

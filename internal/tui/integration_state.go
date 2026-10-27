@@ -73,4 +73,12 @@ type httpState struct {
 	client      *dashboard.Server
 	restart     bool      // set when config changes to trigger a restart
 	lastAttempt time.Time // last time we tried to start (for backoff)
+
+	// Dashboard stats are computed off the update loop: statsDue marks that the
+	// numbers are stale, statsInFlight that a computation is running (at most
+	// one at a time). pushDashboardState only sets statsDue, so a caller that
+	// cannot run a command — GPS, config save, logbook switch — cannot drop a
+	// pending request; the next tick starts it.
+	statsDue      bool
+	statsInFlight bool
 }

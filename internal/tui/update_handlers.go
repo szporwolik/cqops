@@ -244,6 +244,12 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 	}
 	// Push current state to the dashboard (cheap — early-exits if unchanged).
 	m.pushDashboardState()
+	// The stats aggregates run off the update loop: pushDashboardState only
+	// marks them stale, so the application and keyboard stay responsive while
+	// GetDashboardStats scans the event window.
+	if c := m.dashboardStatsCmd(); c != nil {
+		cmds = append(cmds, c)
+	}
 	if cmd != nil {
 		cmds = append(cmds, cmd)
 	}
@@ -255,6 +261,9 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 // and an optional command to batch.
 func (m *Model) handleAsyncMessages(msg tea.Msg) (bool, tea.Cmd) {
 	switch r := msg.(type) {
+	case dashboardStatsMsg:
+		// Numbers computed off the update loop; only the install touches state.
+		return true, m.applyDashboardStats(r)
 	case inetResultMsg:
 		if bool(r) {
 			// Internet reachable — reset streak and mark online immediately.

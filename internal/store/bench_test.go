@@ -157,3 +157,22 @@ func BenchmarkCoverageScan_50k(b *testing.B) {
 		}
 	}
 }
+
+// GetDashboardStats runs for the dashboard's rate/count panel. It aggregates
+// the whole event window, so it is the expensive part of a dashboard push —
+// which is why the TUI computes it off the update loop now. The benchmark uses
+// a start date before every seeded contact, i.e. the whole logbook, the worst
+// case for a long event.
+func benchmarkGetDashboardStats(b *testing.B, rows int) {
+	db := benchDB(b, rows)
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		if _, err := GetDashboardStats(db, "20200101"); err != nil {
+			b.Fatalf("GetDashboardStats: %v", err)
+		}
+	}
+}
+
+func BenchmarkGetDashboardStats_10k(b *testing.B)  { benchmarkGetDashboardStats(b, 10_000) }
+func BenchmarkGetDashboardStats_100k(b *testing.B) { benchmarkGetDashboardStats(b, 100_000) }
