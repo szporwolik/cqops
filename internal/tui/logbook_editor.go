@@ -444,16 +444,7 @@ func (le *LogbookEditor) loadPage() {
 	if le.searchQuery != "" {
 		return
 	}
-	// Determine page size from current terminal height.
-	h := le.height
-	if h < 10 {
-		h = 24
-	}
-	// pageSize = data rows visible = tableH - 1 header row.
-	le.pageSize = h - 9
-	if le.pageSize < 5 {
-		le.pageSize = 5
-	}
+	le.pageSize = le.pageSizeForHeight()
 
 	// Fetch page data and total count in a single query via COUNT(*) OVER().
 	totalPages := le.totalPages()
@@ -482,6 +473,90 @@ func (le *LogbookEditor) loadPage() {
 	le.formattedRows = nil
 	le.cachedSig = ""
 	le.buildTable()
+}
+
+// pageSizeForHeight is how many contacts fit on one page at the current
+// terminal height: the table height minus its header row.
+func (le *LogbookEditor) pageSizeForHeight() int {
+	h := le.height
+	if h < 10 {
+		h = 24
+	}
+	size := h - 9
+	if size < 5 {
+		size = 5
+	}
+	return size
+}
+
+// anchorIndex is the absolute (0-based) position of the selected contact in the
+// list the pages are cut from — the row the operator is looking at.
+func (le *LogbookEditor) anchorIndex() int {
+	if le.pageSize < 1 {
+		return 0
+	}
+	idx := (le.currentPage-1)*le.pageSize + le.table.Cursor()
+	if idx < 0 {
+		idx = 0
+	}
+	if le.totalCount > 0 && idx >= le.totalCount {
+		idx = le.totalCount - 1
+	}
+	return idx
+}
+
+// loadPageAt fetches the page that contains the absolute row `anchor` and puts
+// the cursor back on it, so paging that is driven by a row (rather than a page
+// number) lands on the contact the caller means.
+func (le *LogbookEditor) loadPageAt(anchor int) {
+	if le.db == nil || le.searchQuery != "" {
+		return
+	}
+	if le.pageSize < 1 {
+		le.pageSize = le.pageSizeForHeight()
+	}
+	if anchor < 0 {
+		anchor = 0
+	}
+	le.currentPage = anchor/le.pageSize + 1
+	le.loadPage() // recomputes the size, clamps the page, rebuilds the table
+	le.cursorOn(anchor)
+}
+
+// cursorOn puts the table cursor on the absolute row `anchor`, which must be on
+// the page that is currently loaded. buildTable() replaces the table (and its
+// cursor) on every rebuild, so anything that rebuilds it has to call this.
+func (le *LogbookEditor) cursorOn(anchor int) {
+	n := len(le.qsos)
+	if n == 0 || le.pageSize < 1 {
+		return
+	}
+	row := anchor - (le.currentPage-1)*le.pageSize
+	if row < 0 {
+		row = 0
+	}
+	if row >= n {
+		row = n - 1
+	}
+	le.table.SetCursor(row)
+	le.cachedSig = ""
+}
+
+// repageAfterResize re-reads the current page at the new geometry, keeping the
+// contact at absolute row `anchor` selected. The page number alone cannot
+// survive a resize: page N of p-row pages starts at row (N-1)*p, so at a
+// different page size it points at an unrelated contact — enlarging the window
+// after page 2 jumped from contact 71 to contact 38.
+func (le *LogbookEditor) repageAfterResize(anchor int) {
+	size := le.pageSizeForHeight()
+	if size == le.pageSize {
+		// Width only: the same rows are still on screen, but the table was
+		// rebuilt for the new columns, so the cursor has to go back.
+		le.cursorOn(anchor)
+		return
+	}
+	le.pageSize = size
+	le.loadPageAt(anchor)
 }
 
 // isDownloadActive returns true when a Wavelog download is in progress.

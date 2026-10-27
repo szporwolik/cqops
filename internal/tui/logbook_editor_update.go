@@ -203,9 +203,14 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		if msg.Width != le.width || msg.Height != le.height {
+			// The page size follows the height, so the selected contact has to be
+			// the anchor across the resize — a page number means a different row
+			// at a different page size.
+			anchor := le.anchorIndex()
 			le.width = msg.Width
 			le.height = msg.Height
 			le.buildTable()
+			le.repageAfterResize(anchor)
 		}
 
 	case uploadPrepMsg:
