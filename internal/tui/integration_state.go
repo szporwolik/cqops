@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"database/sql"
 	"sync"
 	"time"
 
@@ -65,6 +66,21 @@ type adifQueue struct {
 // a long time (e.g. a large import); beyond the cap the oldest record is
 // dropped rather than growing memory without limit.
 const maxPendingADIFs = 64
+
+// dxccBackfillState tracks the missing-DXCC backfill, which fills rows that
+// escaped enrichment (legacy imports, ADIF loads, Wavelog downloads from before
+// Big CTY was available) from the callsign prefix.
+//
+// The pass is a write transaction over a batch of contacts, so it runs off the
+// update loop: at most one pass at a time, against the database it started on.
+// db and logbook are what the finished pass reports back, so a result that
+// outlives a logbook switch cannot repaint the new logbook's caches.
+type dxccBackfillState struct {
+	inFlight    bool
+	fullPending bool // a fresh CTY table was installed: drain the whole log next
+	db          *sql.DB
+	logbook     string
+}
 
 // httpState holds the built-in HTTP server connection status.
 type httpState struct {

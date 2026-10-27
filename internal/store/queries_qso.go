@@ -1487,10 +1487,32 @@ func EnrichQSO(db *sql.DB, qsoID int64, e EnrichmentData) (EnrichmentSync, error
 // is updated in the same transaction, so a backfilled contact starts counting
 // in the DXCC history immediately instead of on the next full rebuild.
 // Returns how many rows were updated.
+//
+// Retries on SQLITE_BUSY like the other writers: the pass reads a row and then
+// writes it, and a QSO save that commits in between makes the write fail
+// outright instead of waiting — SQLite cannot upgrade a transaction that has
+// already read.
 func BackfillDXCC(db *sql.DB, byID map[int64]string) (int, error) {
 	if len(byID) == 0 {
 		return 0, nil
 	}
+	var updated int
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		updated, err = backfillDXCCOnce(db, byID)
+		if err == nil {
+			return updated, nil
+		}
+		if !strings.Contains(err.Error(), "database is locked") {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return updated, err
+}
+
+// backfillDXCCOnce is one attempt at the whole batch.
+func backfillDXCCOnce(db *sql.DB, byID map[int64]string) (int, error) {
 	tx, err := db.Begin()
 	if err != nil {
 		return 0, fmt.Errorf("begin dxcc backfill: %w", err)
@@ -1513,7 +1535,12 @@ func BackfillDXCC(db *sql.DB, byID map[int64]string) (int, error) {
 		if n, _ := res.RowsAffected(); n == 0 {
 			continue // row gained DXCC meanwhile — nothing to reindex
 		}
-		if err := reindexQSO(tx, id, oldQSO); err != nil {
+		after, err := loadQSOForIndex(tx, id)
+		if err != nil {
+			return updated, fmt.Errorf("dxcc backfill reload: %w", err)
+		}
+		// Only the DXCC aggregates can change — see backfillDXCCIndex.
+		if err := backfillDXCCIndex(tx, oldQSO, after); err != nil {
 			return updated, err
 		}
 		updated++

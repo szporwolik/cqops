@@ -168,6 +168,10 @@ type Model struct {
 	// HTTP — built-in HTTP server for CQOps Live dashboard.
 	http httpState
 
+	// DXCC backfill — missing entities resolved from the callsign prefix,
+	// batched off the update loop.
+	backfill dxccBackfillState
+
 	// GPS — serial NMEA receiver for position tracking.
 	gps gpsState
 

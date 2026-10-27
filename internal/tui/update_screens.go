@@ -941,7 +941,9 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 		}
 		// Download/import completion side effects (last_fetched_id
 		// persistence, QSO refresh flag, DXCC backfill, early errors).
-		m.handleEditorSideEffects(em)
+		if c := m.handleEditorSideEffects(em); c != nil {
+			cmd = tea.Batch(cmd, c)
+		}
 	}
 	if m.ui.logbookEditor.needsReload {
 		m.ui.logbookEditor.needsReload = false
@@ -1019,13 +1021,13 @@ func (m *Model) handleEditorSideEffects(em editorMsg) tea.Cmd {
 			m.invalidateDashboardFlags()
 			applog.Info("Wavelog: bulk import finished — QSO list refresh pending",
 				"inserted", em.dlCount, "dupes", em.dlDupes, "last_id", em.dlLastID)
-			// Full DXCC backfill after bulk import — the periodic
-			// 50-row sweep is too slow for 10K+ QSO downloads.
+			// Full DXCC backfill after bulk import — the periodic 50-row
+			// sweep is far too slow for a 10K+ QSO download, but draining
+			// the whole log here froze the interface for the length of the
+			// write. The pass runs in the background now, one at a time.
 			if m.App.BigCTY != nil && m.App.DB != nil {
-				n, err := backfillMissingDXCCLimit(m.App.DB, m.App.BigCTY, 0)
-				if err == nil && n > 0 {
-					applog.Info("DXCC: post-download backfill complete", "count", n)
-				}
+				m.backfill.fullPending = true
+				return m.dxccBackfillCmd(0)
 			}
 		}
 	} else if em.dlErr != "" {

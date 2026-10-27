@@ -239,28 +239,39 @@ func indexQSO(e sqlExecutor, q *qso.QSO, delta int) error {
 		}
 	}
 
-	if contrib.dxcc != "" {
-		levels := [][2]string{{"", ""}}
-		if contrib.band != "" {
-			levels = append(levels, [2]string{contrib.band, ""})
-		}
-		if contrib.mode != "" {
-			levels = append(levels, [2]string{"", contrib.mode})
-		}
-		if contrib.band != "" && contrib.mode != "" {
-			levels = append(levels, [2]string{contrib.band, contrib.mode})
-		}
-		for _, lv := range levels {
-			args := []any{contrib.dxcc, lv[0], lv[1]}
-			if err := applyCountDelta(e, "worked_dxcc", "dxcc, band, mode", "?, ?, ?", args, d); err != nil {
-				return err
-			}
-		}
+	if err := addDXCCLevels(e, contrib, d); err != nil {
+		return err
 	}
 
 	// The completeness counters follow the same delta, so the panel never has
 	// to scan the log to answer "is this log complete?" for a new callsign.
 	return applyCoverageDelta(e, contrib, delta)
+}
+
+// addDXCCLevels applies one delta to the four aggregation levels a contact
+// contributes to: DXCC, DXCC + band, DXCC + canonical mode, DXCC + band + mode.
+// A contact without a DXCC entity contributes to none of them.
+func addDXCCLevels(e sqlExecutor, contrib indexContribution, d indexDelta) error {
+	if contrib.dxcc == "" {
+		return nil
+	}
+	levels := [][2]string{{"", ""}}
+	if contrib.band != "" {
+		levels = append(levels, [2]string{contrib.band, ""})
+	}
+	if contrib.mode != "" {
+		levels = append(levels, [2]string{"", contrib.mode})
+	}
+	if contrib.band != "" && contrib.mode != "" {
+		levels = append(levels, [2]string{contrib.band, contrib.mode})
+	}
+	for _, lv := range levels {
+		args := []any{contrib.dxcc, lv[0], lv[1]}
+		if err := applyCountDelta(e, "worked_dxcc", "dxcc, band, mode", "?, ?, ?", args, d); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // indexContribution is everything a QSO adds to the index: the aggregate keys
@@ -329,6 +340,41 @@ func reindexQSO(e sqlExecutor, id int64, before *qso.QSO) error {
 		return err
 	}
 	return indexQSO(e, after, 1)
+}
+
+// backfillDXCCIndex applies the index delta for a contact whose DXCC entity was
+// just resolved by the backfill — and nothing else.
+//
+// reindexQSO would also work here, but it removes and re-adds the whole
+// contribution: the base call and the four-character grid, which the backfill
+// never touches. The removal half re-derives first/last for both aggregates
+// from the entire table, and the grid one cannot use an index — UPPER(SUBSTR(
+// gridsquare,1,4)) is a function on the column — so it walks the log once per
+// backfilled contact. That is 395 ms for a 50-row batch in a 10k log and about
+// 6 s in a 100k one, inside a write transaction every other writer has to wait
+// for.
+//
+// Only the DXCC levels and the "missing DXCC" coverage counter can change, so
+// only those move.
+func backfillDXCCIndex(e sqlExecutor, before, after *qso.QSO) error {
+	prev := contributionOf(before)
+	next := contributionOf(after)
+	if prev.dxcc != "" || next.dxcc == "" {
+		return nil // already had an entity, or still none — nothing to move
+	}
+	// Net effect on the counters: noDXCC falls by one, the band/mode flags
+	// cancel out.
+	if err := applyCoverageDelta(e, prev, -1); err != nil {
+		return err
+	}
+	if err := applyCoverageDelta(e, next, 1); err != nil {
+		return err
+	}
+	d := indexDelta{stamp: next.stamp, count: 1, mask: next.source}
+	if next.confirmed {
+		d.confirmed = 1
+	}
+	return addDXCCLevels(e, next, d)
 }
 
 // RebuildWorkedIndex rebuilds the entire worked index from qsos in one

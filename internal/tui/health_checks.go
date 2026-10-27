@@ -156,14 +156,9 @@ func isBigCTYNewer(url, localPath string) (bool, error) {
 	return remoteDate.After(info.ModTime()), nil
 }
 
-// backfillMissingDXCC scans the QSO table for rows with an empty dxcc
-// column and fills them using the Big CTY prefix lookup. Processes at
-// most maxRows per call (0 = unlimited). Returns the number of QSOs updated.
-func backfillMissingDXCC(database *sql.DB, bdb *ctybig.DB) (int, error) {
-	return backfillMissingDXCCLimit(database, bdb, 0)
-}
-
-// backfillMissingDXCCLimit is the implementation with a row limit.
+// backfillMissingDXCCLimit fills rows whose dxcc column is still empty using
+// the Big CTY prefix lookup, at most maxRows per call (0 = unlimited). Returns
+// the number of QSOs updated.
 func backfillMissingDXCCLimit(database *sql.DB, bdb *ctybig.DB, maxRows int) (int, error) {
 	if database == nil || bdb == nil {
 		return 0, nil
@@ -422,25 +417,75 @@ type refDataMsg struct {
 	refDB  *ref.DB
 }
 
-// dxccBackfillMsg reports the result of a post-refresh DXCC backfill.
+// dxccBackfillMsg reports the result of a DXCC backfill pass, together with the
+// data set it was computed against.
 type dxccBackfillMsg struct {
-	count int
+	db      *sql.DB
+	logbook string
+	count   int
+	err     error
 }
 
 // refDataTimeout bounds the whole reference-data refresh; every HTTP request
 // inside it is additionally bounded by refHTTPClient.
 const refDataTimeout = 2 * time.Minute
 
-// dxccBackfillCmd runs the full missing-DXCC backfill off the UI loop after
-// a fresh Big CTY database was installed.
-func dxccBackfillCmd(database *sql.DB, bdb *ctybig.DB) tea.Cmd {
-	return func() tea.Msg {
-		n, err := backfillMissingDXCC(database, bdb)
-		if err != nil {
-			applog.Warn("DXCC: backfill failed", "error", err)
-		}
-		return dxccBackfillMsg{count: n}
+// dxccBackfillBatch is how many contacts the periodic pass resolves per run.
+const dxccBackfillBatch = 50
+
+// dxccBackfillCmd starts one missing-DXCC pass off the update loop. limit 0
+// drains the whole log (used once after a fresh CTY table is installed); the
+// periodic tick asks for dxccBackfillBatch rows.
+//
+// The database is leased for the length of the pass: SwitchLogbook retires a
+// replaced database instead of closing it, and the release call lets it go once
+// the pass is done. The result carries the database and logbook it was computed
+// against, so a pass that outlives a switch is dropped rather than applied to
+// the new logbook's caches.
+func (m *Model) dxccBackfillCmd(limit int) tea.Cmd {
+	if m.backfill.inFlight || m.App == nil || m.App.DB == nil || m.App.BigCTY == nil {
+		return nil
 	}
+	db, bdb := m.App.DB, m.App.BigCTY
+	logbook := m.App.LogbookName
+	release := m.App.KeepDBAlive(db)
+	m.backfill.inFlight = true
+	m.backfill.fullPending = false
+	m.backfill.db = db
+	m.backfill.logbook = logbook
+	return func() tea.Msg {
+		defer release()
+		n, err := backfillMissingDXCCLimit(db, bdb, limit)
+		return dxccBackfillMsg{db: db, logbook: logbook, count: n, err: err}
+	}
+}
+
+// applyDXCCBackfill installs a finished pass. A pass that ran against a logbook
+// the operator already left is dropped: its rows belong to another database,
+// and the caches it would clear describe the current one.
+func (m *Model) applyDXCCBackfill(r dxccBackfillMsg) {
+	m.backfill.inFlight = false
+	m.backfill.db = nil
+	m.backfill.logbook = ""
+	if r.err != nil {
+		applog.Warn("DXCC: backfill failed", "error", r.err)
+		return
+	}
+	if r.count == 0 {
+		return
+	}
+	if m.App == nil || m.App.DB != r.db || m.App.LogbookName != r.logbook {
+		applog.Debug("DXCC: backfill result dropped", "logbook", r.logbook, "count", r.count)
+		return
+	}
+	applog.Info("DXCC: backfilled missing dxcc", "count", r.count)
+	// Entities the panels derived before the pass are stale now.
+	m.invalidateDashboardFlags()
+	m.invalidateDXCDupes()
+	m.rc.logStatsSig = ""
+	m.rc.workedSummarySig = ""
+	m.rc.workedSummaryWantedSig = ""
+	m.needRefresh = true
 }
 
 // runRefDataRefresh performs one bounded refresh pass over the reference

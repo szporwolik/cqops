@@ -212,39 +212,7 @@ func tick(t *testing.T, m *Model) (dashboardStatsMsg, bool) {
 // panel.
 func awaitStatsMsg(t *testing.T, cmd tea.Cmd) dashboardStatsMsg {
 	t.Helper()
-	msgs := make(chan tea.Msg, 32)
-	go pumpCommands(cmd, msgs)
-	deadline := time.After(30 * time.Second)
-	for {
-		select {
-		case msg := <-msgs:
-			if s, ok := msg.(dashboardStatsMsg); ok {
-				return s
-			}
-		case <-deadline:
-			t.Fatal("the tick marked the stats in flight but no computation finished")
-		}
-	}
-}
-
-// pumpCommands executes a command tree the way the runtime does: a batch is
-// expanded and each leaf runs on its own goroutine.
-func pumpCommands(cmd tea.Cmd, out chan<- tea.Msg) {
-	if cmd == nil {
-		return
-	}
-	msg := cmd()
-	batch, ok := msg.(tea.BatchMsg)
-	if !ok {
-		select {
-		case out <- msg:
-		default: // the test already has what it needs
-		}
-		return
-	}
-	for _, sub := range batch {
-		go pumpCommands(sub, out)
-	}
+	return awaitTickMessage[dashboardStatsMsg](t, cmd, "stats computation")
 }
 
 // deliverStats hands a finished computation back to the update loop, exactly as
