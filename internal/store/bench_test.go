@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/szporwolik/cqops/internal/qso"
@@ -176,3 +177,37 @@ func benchmarkGetDashboardStats(b *testing.B, rows int) {
 
 func BenchmarkGetDashboardStats_10k(b *testing.B)  { benchmarkGetDashboardStats(b, 10_000) }
 func BenchmarkGetDashboardStats_100k(b *testing.B) { benchmarkGetDashboardStats(b, 100_000) }
+
+// dxccCountryFallbackExists runs for every callsign the partner panel looks up,
+// and its answer is a single bit. On a log where the legacy rows match in bulk
+// the COUNT(*) form had to aggregate all of them; EXISTS stops at the first.
+func BenchmarkDXCCFallbackExists_100k(b *testing.B) {
+	db := benchDB(b, 100_000)
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		// Entity 999 is absent from the seed, so every row satisfies the
+		// "different entity" disjunct and about a fifth match the country.
+		if _, err := dxccCountryFallbackExists(db, "999", "Poland"); err != nil {
+			b.Fatalf("dxccCountryFallbackExists: %v", err)
+		}
+	}
+}
+
+// BenchmarkDXCCFallbackCount_100k is the previous implementation, kept for the
+// comparison: COUNT(*) with LIMIT 1 still counts every matching row.
+func BenchmarkDXCCFallbackCount_100k(b *testing.B) {
+	db := benchDB(b, 100_000)
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		var n int
+		if err := db.QueryRow(
+			`SELECT COUNT(*) FROM qsos
+			 WHERE (dxcc IS NULL OR dxcc = '' OR dxcc != ?) AND country LIKE ? COLLATE NOCASE LIMIT 1`,
+			"999", strings.ToLower("Poland")+"%",
+		).Scan(&n); err != nil {
+			b.Fatalf("count form: %v", err)
+		}
+	}
+}
