@@ -5,6 +5,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/charmbracelet/x/term"
 )
 
 // TestTUITerminalState pins the decision table: a real tty wins, a reopenable
@@ -96,13 +98,8 @@ func TestEnvTruthy(t *testing.T) {
 	}
 }
 
-// TestOpenControllingTTYOnWindows: Windows has no /dev/tty, and the console
-// handle is what term.IsTerminal inspects — reopening must fail instead of
-// returning a bogus file.
-func TestOpenControllingTTYOnWindows(t *testing.T) {
-	f, err := openControllingTTY()
-	if err == nil {
-		f.Close()
-		t.Skip("a controlling terminal exists here; the Windows branch is not exercised")
-	}
+// isTerminalFile reports whether f is a terminal. Shared with the Windows-only
+// test, which cannot import the term package for a one-liner.
+func isTerminalFile(f *os.File) bool {
+	return f != nil && term.IsTerminal(f.Fd())
 }

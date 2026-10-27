@@ -2,6 +2,7 @@ package cli
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"runtime"
 	"strings"
@@ -63,14 +64,28 @@ func tuiTerminalState(stdinIsTTY bool, reopen func() (*os.File, error), assumeTT
 }
 
 // openControllingTTY opens the terminal the process is attached to,
-// regardless of what stdin currently points at.
+// regardless of what stdin currently points at: /dev/tty on POSIX and the
+// console input buffer (CONIN$) on Windows. The handle is verified before it
+// is returned — a process with no terminal at all must not be handed a
+// redirect target.
 func openControllingTTY() (*os.File, error) {
+	name := "/dev/tty"
 	if runtime.GOOS == "windows" {
-		// Windows has no /dev/tty; a console process already has a console
-		// handle, which term.IsTerminal reports on stdin.
-		return nil, errors.New("no controlling terminal on windows")
+		// A console process keeps its input buffer when stdin is redirected,
+		// so 'cqops < NUL' in cmd.exe still has a console to draw on; Bubble
+		// Tea drives the handles directly. A GUI-launched process with no
+		// console fails here, which is exactly the case this guard refuses.
+		name = "CONIN$"
 	}
-	return os.OpenFile("/dev/tty", os.O_RDWR, 0)
+	f, err := os.OpenFile(name, os.O_RDWR, 0)
+	if err != nil {
+		return nil, err
+	}
+	if !term.IsTerminal(f.Fd()) {
+		f.Close()
+		return nil, fmt.Errorf("%s is not a terminal", name)
+	}
+	return f, nil
 }
 
 // envTruthy reports whether the variable is set to something other than an
