@@ -42,6 +42,12 @@ type LogbookChooser struct {
 	done    bool
 	fm      menuFocus
 
+	// gen identifies this chooser instance. The count worker runs off the
+	// update loop and may finish after the menu was closed and reopened; a
+	// result tagged with another generation describes a list this chooser does
+	// not show and is dropped.
+	gen uint64
+
 	// Wavelog async state
 	wlStations   []wavelog.StationProfile
 	wlStationIdx int // index into wlStations, -1 if none
@@ -73,8 +79,22 @@ type aprsTestMsg struct {
 
 // qsoCountsMsg carries per-logbook QSO counts for the list display.
 type qsoCountsMsg struct {
+	gen    uint64         // chooser instance that queued the pass
 	counts map[string]int // logbook ID → QSO count
 }
+
+// qsoCountTarget is one logbook as the count worker sees it: the id and the
+// database path resolved when the pass was queued. The worker never reads
+// Config.Logbooks itself — adding or deleting a logbook writes that map on the
+// update loop, and a concurrent map iteration is a data race (and a count for
+// a logbook that no longer exists).
+type qsoCountTarget struct {
+	id   string
+	path string
+}
+
+// logbookChooserGenCounter tags every chooser instance.
+var logbookChooserGenCounter atomic.Uint64
 
 func NewLogbookChooser(a *app.App, tq *ToastQueue) *LogbookChooser {
 	names := config.SortedLogbookIDs(a.Config)
@@ -97,28 +117,41 @@ func NewLogbookChooser(a *app.App, tq *ToastQueue) *LogbookChooser {
 		toasts:    tq,
 		vp:        viewport.New(viewport.WithWidth(80), viewport.WithHeight(20)),
 		qsoCounts: make(map[string]int),
+		gen:       logbookChooserGenCounter.Add(1),
 	}
 }
 
 func (c *LogbookChooser) Init() tea.Cmd {
 	c.vp.FillHeight = true
+	return c.qsoCountsCmd()
+}
+
+// qsoCountsCmd queues the per-logbook QSO count pass. The logbook list and the
+// database paths are captured HERE, on the update loop, so the worker owns a
+// private snapshot: add/delete edit Config.Logbooks while this runs.
+func (c *LogbookChooser) qsoCountsCmd() tea.Cmd {
+	targets := make([]qsoCountTarget, 0, len(c.app.Config.Logbooks))
+	for id, lb := range c.app.Config.Logbooks {
+		dbPath, err := config.DBPath(id, &lb)
+		if err != nil {
+			continue
+		}
+		targets = append(targets, qsoCountTarget{id: id, path: dbPath})
+	}
+	gen := c.gen
 	return func() tea.Msg {
-		counts := make(map[string]int)
-		for id, lb := range c.app.Config.Logbooks {
-			dbPath, err := config.DBPath(id, &lb)
-			if err != nil {
-				continue
-			}
-			db, err := store.Open(dbPath)
+		counts := make(map[string]int, len(targets))
+		for _, t := range targets {
+			db, err := store.Open(t.path)
 			if err != nil {
 				continue
 			}
 			var n int
 			_ = db.QueryRow(`SELECT COUNT(*) FROM qsos`).Scan(&n)
 			db.Close()
-			counts[id] = n
+			counts[t.id] = n
 		}
-		return qsoCountsMsg{counts: counts}
+		return qsoCountsMsg{gen: gen, counts: counts}
 	}
 }
 
@@ -173,8 +206,13 @@ func (c *LogbookChooser) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		c.scrollViewportToEnd()
 
 	case qsoCountsMsg:
+		if msg.gen != c.gen {
+			// A pass queued by an earlier chooser instance (the menu was closed
+			// and reopened): it counts a list this chooser is not showing.
+			return c, nil
+		}
 		if msg.counts != nil {
-			c.qsoCounts = msg.counts
+			c.installQSOCounts(msg.counts)
 		}
 
 	case aprsTestMsg:
@@ -580,6 +618,23 @@ func (c *LogbookChooser) refreshNames() {
 	if c.cursor >= len(c.names) {
 		c.cursor = len(c.names) - 1
 	}
+}
+
+// installQSOCounts applies a completed count pass, keeping only the logbooks
+// the list still shows. The pass was queued before any add or delete that
+// happened since, so its keys are stale by definition: a deleted logbook must
+// not reappear in the counts, and a logbook created while the pass ran is
+// missing from it — the zero the create path installed stays.
+func (c *LogbookChooser) installQSOCounts(counts map[string]int) {
+	kept := make(map[string]int, len(c.names))
+	for _, id := range c.names {
+		if n, ok := counts[id]; ok {
+			kept[id] = n
+		} else if n, ok := c.qsoCounts[id]; ok {
+			kept[id] = n
+		}
+	}
+	c.qsoCounts = kept
 }
 
 func (c *LogbookChooser) startCreate() {
