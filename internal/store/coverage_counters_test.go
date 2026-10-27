@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"testing"
+	"time"
 
 	"github.com/szporwolik/cqops/internal/qso"
 )
@@ -101,7 +102,38 @@ func TestCoverageCountersTrackWrites(t *testing.T) {
 	}
 }
 
-// TestCoverageFallsBackToTheScan: an installation whose index was built before
+// TestCoverageReportsTheRemoteSyncMarker: the marker decides whether a NEW
+// verdict may be trusted after a remote logbook exists, and it is read in the
+// same query as the counters now — a missing key there would silently make
+// every absent contact UNKNOWN. Covers both the counter path and the scan
+// fallback.
+func TestCoverageReportsTheRemoteSyncMarker(t *testing.T) {
+	db := newTempDB(t)
+	mustInsertQSO(t, db, &qso.QSO{
+		Call: "SP9MOA", Band: "20m", Mode: "FT8", DXCC: "269",
+		QSODate: "20260501", TimeOn: "120000", GridSquare: "JO90AA",
+	})
+	at := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	if err := MarkRemoteSync(db, at); err != nil {
+		t.Fatalf("MarkRemoteSync: %v", err)
+	}
+	if cov, err := Coverage(db); err != nil {
+		t.Fatalf("Coverage: %v", err)
+	} else if cov.LastRemoteSync != "2026-01-02T03:04:05Z" {
+		t.Errorf("counters path: LastRemoteSync = %q, want 2026-01-02T03:04:05Z", cov.LastRemoteSync)
+	}
+
+	// Same answer when the counters are absent and the scan is used.
+	if _, err := db.Exec(`DELETE FROM worked_index_meta WHERE key LIKE 'coverage\_%' ESCAPE '\'`); err != nil {
+		t.Fatalf("drop counters: %v", err)
+	}
+	if cov, err := Coverage(db); err != nil {
+		t.Fatalf("Coverage (fallback): %v", err)
+	} else if cov.LastRemoteSync != "2026-01-02T03:04:05Z" || cov.QSOCount != 1 {
+		t.Errorf("fallback path: %+v, want one QSO and the sync marker", cov)
+	}
+}
+
 // the counters existed must still get correct answers, just slower, and the
 // next rebuild has to seed them.
 func TestCoverageFallsBackToTheScan(t *testing.T) {

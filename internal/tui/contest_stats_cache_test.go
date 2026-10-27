@@ -52,6 +52,17 @@ func TestContestStatsCacheAvoidsRereadingTheHistory(t *testing.T) {
 	if cs.TotalQSOs != 2 {
 		t.Errorf("total = %d, want 2", cs.TotalQSOs)
 	}
+	// The chart is drawn whenever the contest has contacts, even when the last
+	// hour is empty: sixty zero buckets, not a hidden chart.
+	if len(cs.MinuteBuckets) != 60 {
+		t.Errorf("bucket count = %d, want 60 (an empty hour still renders the chart)", len(cs.MinuteBuckets))
+	}
+	for i, v := range cs.MinuteBuckets {
+		if v != 0 {
+			t.Errorf("bucket %d = %v, want 0 — no contact is inside the last hour", i, v)
+			break
+		}
+	}
 
 	// A new contact with a bumped revision is picked up on the next tick.
 	insertContestQSO(t, db, "c1", base.Add(-10*time.Second))
