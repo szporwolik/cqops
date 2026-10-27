@@ -549,9 +549,16 @@ func GetDashboardStats(db *sql.DB, startDate string) (DashboardStats, error) {
 			COALESCE(COUNT(DISTINCT CASE WHEN gridsquare != '' THEN UPPER(SUBSTR(gridsquare,1,4)) END), 0),
 			COALESCE(COUNT(DISTINCT band), 0),
 			COALESCE(COUNT(DISTINCT mode), 0),
-			COALESCE(MAX(qso_date) || MAX(time_on), '')
+			-- The newest contact's own date and time, from ONE row: MAX(qso_date)
+			-- and MAX(time_on) are independent maxima, and concatenating them
+			-- invented a moment no contact has (23:00 on the 1st plus 01:00 on
+			-- the 2nd read as 23:00 on the 2nd, 22 hours in the future). The
+			-- (qso_date DESC, time_on DESC) index serves this as a single seek.
+			COALESCE((SELECT qso_date || COALESCE(time_on, '') FROM qsos
+			          WHERE qso_date >= ?
+			          ORDER BY qso_date DESC, time_on DESC LIMIT 1), '')
 		FROM qsos WHERE qso_date >= ?
-	`, cutoff).Scan(
+	`, cutoff, cutoff).Scan(
 		&s.QSOsToday,
 		&s.Operators,
 		&s.UniqueCalls,
@@ -565,9 +572,10 @@ func GetDashboardStats(db *sql.DB, startDate string) (DashboardStats, error) {
 		return s, fmt.Errorf("dashboard stats: %w", err)
 	}
 
-	// Parse last QSO time for elapsed-seconds computation.
-	if len(lastQSOStr) >= 14 {
-		if t, err := time.Parse("20060102150405", lastQSOStr[:14]); err == nil {
+	// Parse last QSO time for elapsed-seconds computation. ADIFTime also covers
+	// an HHMM-only or missing time_on, which the old 14-character check dropped.
+	if len(lastQSOStr) >= 8 {
+		if t, ok := qso.ADIFTime(lastQSOStr[:8], lastQSOStr[8:]); ok {
 			s.LastQSOAgoS = int(time.Since(t).Seconds())
 		}
 	}
