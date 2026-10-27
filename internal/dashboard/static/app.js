@@ -1734,6 +1734,7 @@ function updateMapFromToday(){
   }
 
   // ---- Active line (drawn on top, outside today loop) ----
+  var activeBounds=null;
   if(activeGrid&&ownStationLat!==null){
     var al=gridToLatLon(activeGrid);if(al[0]){
       var actPts=greatCirclePoints(ownStationLat,ownStationLon,al[0],al[1],48);
@@ -1744,18 +1745,40 @@ function updateMapFromToday(){
       // Include great-circle midpoint so arc stays in bounds.
       bounds.push(actPts[24]);
       bounds.push(al);
+      // The working contact owns the view. Fitting the path (not the station)
+      // is what keeps both ends on screen: a station-centred zoom 6 on a
+      // narrow map leaves a distant partner (1000 km+) past the right edge.
+      activeBounds=L.latLngBounds([[ownStationLat,ownStationLon],al]).extend(actPts[24]);
     }
   }
 
-  // Fit bounds — but don't override active-QSO focus set by focusMapOnGrid.
-  if(bounds.length>1&&!activeGrid)map.flyToBounds(bounds,{padding:[50,50],maxZoom:18});
+  // Fit bounds — an active QSO takes precedence over the whole-day overview.
+  // Only refit when the path is not fully visible, so a manual zoom/pan is
+  // kept and the animated focusMapOnGrid flight is not restarted by every
+  // snapshot.
+  if(activeBounds){
+    if(!map.getBounds().contains(activeBounds))fitActiveBounds(activeBounds);
+  }else if(bounds.length>1)map.flyToBounds(bounds,{padding:[50,50],maxZoom:18});
   else if(hasStation&&ownStationLat!=null)map.flyTo([ownStationLat,ownStationLon],6);
   else if(!hasStation)map.flyTo([51,10],2);
 }
 
+// fitActiveBounds frames the working contact's path. A flight that started a
+// moment ago is left alone — snapshots arrive well before the animation ends
+// and restarting it makes the map pump — but the guard is cleared as soon as
+// the map settles, so a view that is still wrong is corrected by the next
+// snapshot instead of staying wrong.
+var _activeFitAt=0;
+function fitActiveBounds(b,opts){
+  if(Date.now()-_activeFitAt<1500)return;
+  _activeFitAt=Date.now();
+  map.flyToBounds(b,opts||{padding:[50,50],maxZoom:17,duration:0.8});
+  map.once('moveend',function(){_activeFitAt=0});
+}
+
 function getQsoLatLon(q){if(q.lat&&q.lon)return[q.lat,q.lon];if(q.grid){var g=q.grid.toUpperCase();if(g==='AA00AA')return null;var ll=gridToLatLon(q.grid);if(ll[0])return ll}return null}
 
-function focusMapOnGrid(grid){if(!map)return;var ll=gridToLatLon(grid);if(!ll[0])return;map.invalidateSize();if(ownStationLat!=null&&ownStationLon!=null){var mid=greatCirclePoints(ownStationLat,ownStationLon,ll[0],ll[1],48)[24];var b=L.latLngBounds([[ownStationLat,ownStationLon],ll]);b.extend(mid);map.flyToBounds(b,{padding:[60,60],maxZoom:17,duration:2.5})}else{map.flyTo(ll,6,{duration:2})}}
+function focusMapOnGrid(grid){if(!map)return;var ll=gridToLatLon(grid);if(!ll[0])return;map.invalidateSize();if(ownStationLat!=null&&ownStationLon!=null){var mid=greatCirclePoints(ownStationLat,ownStationLon,ll[0],ll[1],48)[24];var b=L.latLngBounds([[ownStationLat,ownStationLon],ll]);b.extend(mid);fitActiveBounds(b,{padding:[60,60],maxZoom:17,duration:2.5})}else{map.flyTo(ll,6,{duration:2})}}
 function drawActiveLine(grid){if(grid===activeGrid)return;activeGrid=grid;updateMapFromToday()}
 
 // ---- Great-circle interpolation (browser-side, no plugin needed) ----
