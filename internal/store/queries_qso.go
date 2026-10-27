@@ -41,8 +41,18 @@ const qsoSelectCols = `id, call, qso_date, time_on, time_off, band, freq, freq_r
 		dxcc,
 		created_at, updated_at, wavelog_dirty, wavelog_dirty_rev`
 
-// placeholders56 is a pre-computed string of 56 comma-separated "?" markers,
-// used by InsertQSO to avoid a per-insert []string allocation.
+// qsoNewestFirst is the logbook ordering every newest-first list uses: date,
+// then start time, then the row id. The id tiebreaker is not decoration — an
+// imported batch or a contest run gives many contacts the same date and time,
+// and without it two consecutive pages can repeat or skip a contact.
+//
+// idx_qsos_date_time_id mirrors this order literally (DESC on all three
+// columns), which is the only way SQLite can serve `id DESC` from the index:
+// it appends the rowid to every index key, so a (qso_date, time_on) index is
+// really ordered by rowid ASC in the third position and the plan adds a
+// "USE TEMP B-TREE FOR LAST TERM OF ORDER BY" step that sorts the whole
+// filtered set before the OFFSET is skipped.
+const qsoNewestFirst = `qso_date DESC, time_on DESC, id DESC`
 const placeholders56 = "?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?"
 
 // insertQSO writes one QSO through the given executor (a *sql.DB or a
@@ -349,7 +359,7 @@ func ListQSOs(db *sql.DB, limit int, contestID string) ([]qso.QSO, error) {
 		query += ` WHERE contest_id = ? OR contest_adif_id = ?`
 		args = append(args, contestID, contestID)
 	}
-	query += ` ORDER BY qso_date DESC, time_on DESC, id DESC`
+	query += ` ORDER BY ` + qsoNewestFirst
 	var rows *sql.Rows
 	var err error
 	if limit > 0 {
@@ -447,7 +457,7 @@ func ListQSOsPageWithCount(db *sql.DB, limit, offset int, contestID string) ([]q
 		wavelog_id, contest_id, exch_sent, exch_rcvd, stx, srx, stx_string, srx_string, contest_adif_id,
 		created_at, updated_at
 		FROM qsos` + where + `
-		ORDER BY qso_date DESC, time_on DESC, id DESC
+		ORDER BY ` + qsoNewestFirst + `
 		LIMIT ? OFFSET ?`
 	args := append(whereArgs, limit, offset)
 	rows, err := db.Query(query, args...)
@@ -644,7 +654,7 @@ func SearchQSOs(db *sql.DB, query, contestID string, limit int) ([]qso.QSO, erro
 		args = append(args, contestID, contestID)
 	}
 	sql += `
-		ORDER BY qso_date DESC, time_on DESC, id DESC
+		ORDER BY ` + qsoNewestFirst + `
 		LIMIT ?`
 	args = append(args, limit)
 
@@ -1058,7 +1068,7 @@ func ListQSOsFromDate(db *sql.DB, date string, limit int) ([]qso.QSO, error) {
 	// wavelog_dirty_rev, so every scan failed with a destination mismatch
 	// and the dashboard could not load recent QSOs at all.
 	query := `SELECT ` + qsoSelectCols + `
-		FROM qsos WHERE qso_date >= ? ORDER BY qso_date DESC, time_on DESC, id DESC LIMIT ?`
+		FROM qsos WHERE qso_date >= ? ORDER BY ` + qsoNewestFirst + ` LIMIT ?`
 	return listQSOsByQuery(db, query, date, limit)
 }
 
