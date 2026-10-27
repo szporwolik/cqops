@@ -19,6 +19,7 @@ var Logger *slog.Logger
 var (
 	mu        sync.Mutex
 	entries   []Entry
+	revision  uint64 // bumped by every Append, even when the ring is at capacity
 	logDir    string
 	beepFn    func() // called on errors when set (see SetBeepFunc)
 	debugMode bool   // when false, Debug/DebugDetail are suppressed
@@ -179,16 +180,41 @@ func Append(level, msg, details string) {
 	if len(entries) > maxStored {
 		entries = entries[len(entries)-maxStored:]
 	}
+	revision++
 	mu.Unlock()
+}
+
+// Revision returns a counter that changes on every appended entry. The ring keeps
+// only the newest maxStored entries, so the number of stored entries stops
+// changing once it is full while the buffer keeps turning — anything that caches
+// derived content has to watch this, not the count.
+func Revision() uint64 {
+	mu.Lock()
+	defer mu.Unlock()
+	return revision
 }
 
 // Entries returns a sorted copy of all in-memory log entries.
 func Entries() []Entry {
 	mu.Lock()
+	defer mu.Unlock()
+	return sortedCopyLocked()
+}
+
+// EntriesWithRevision returns the sorted entries and the revision they describe.
+// Both are taken under one lock, so a caller that caches the copy can never
+// claim it is newer than the entries it contains.
+func EntriesWithRevision() ([]Entry, uint64) {
+	mu.Lock()
+	defer mu.Unlock()
+	return sortedCopyLocked(), revision
+}
+
+// sortedCopyLocked copies the entries in time order. Callers hold mu.
+func sortedCopyLocked() []Entry {
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Time < entries[j].Time })
 	result := make([]Entry, len(entries))
 	copy(result, entries)
-	mu.Unlock()
 	return result
 }
 
