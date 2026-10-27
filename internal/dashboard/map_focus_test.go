@@ -50,3 +50,38 @@ func TestMapFitsTheWorkingQsoPath(t *testing.T) {
 		t.Error("the overview fit over the day's markers is gone")
 	}
 }
+
+// TestOwnStationIsTheAprsSymbol pins the own-station marker: while the beacon
+// is on, the station is drawn as the APRS symbol CQOps transmits, not as a
+// green dot with the symbol stuck underneath it. The anchor sits at the symbol
+// centre so switching the beacon on does not move the station, and the marker
+// is layered above the neighbouring APRS stations — on the local map it used to
+// live in the shadow pane, i.e. behind exactly the stations it hears.
+func TestOwnStationIsTheAprsSymbol(t *testing.T) {
+	js, err := staticFS.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatalf("read app.js: %v", err)
+	}
+	css, err := staticFS.ReadFile("static/style.css")
+	if err != nil {
+		t.Fatalf("read style.css: %v", err)
+	}
+	appJS, styleCSS := string(js), string(css)
+
+	if strings.Contains(appJS, "own-aprs-dot") || strings.Contains(styleCSS, "own-aprs-dot") {
+		t.Error("the own station still draws a dot in front of its APRS symbol")
+	}
+	if !strings.Contains(appJS, "iconAnchor:[55,12]") {
+		t.Error("the APRS symbol must be anchored at its centre, or the station jumps when the beacon comes on")
+	}
+	if !strings.Contains(appJS, "zIndexOffset:100000") {
+		t.Error("the own symbol must outrank the neighbouring APRS markers")
+	}
+	if strings.Contains(appJS, "if(small)opts.pane='shadowPane'") {
+		t.Error("the beaconing marker is back in the shadow pane, i.e. behind the APRS stations")
+	}
+	// Receive-only mode keeps the plain dot, and it still pulses while active.
+	if !strings.Contains(appJS, "className:'station-dot'") || !strings.Contains(styleCSS, ".mode-active .own-aprs-sym{animation:") {
+		t.Error("the receive-only dot or the beaconing pulse is missing")
+	}
+}

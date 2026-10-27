@@ -1082,8 +1082,8 @@ var aprsCircleLayer=null;
 var ownAprs={active:false,callsign:'',symbol:'/-',sig:''};
 
 // _ownStationMarker builds the "you are here" marker. Receive-only mode keeps
-// the plain dot; while beaconing the APRS symbol CQOps transmits and the
-// callsign-SSID label sit underneath it.
+// the plain dot; while beaconing the marker IS the APRS symbol CQOps transmits
+// — no second dot in front of it — with the callsign-SSID label underneath.
 function _ownStationMarker(lat,lon,pt,small){
   if(!ownAprs.active){
     if(small){
@@ -1092,12 +1092,15 @@ function _ownStationMarker(lat,lon,pt,small){
     return L.circleMarker([lat,lon],{radius:9,color:pt.station,fillColor:pt.station,fillOpacity:0.85,weight:2.5,className:'station-dot'});
   }
   var html='<div class="own-aprs">'+
-    '<div class="own-aprs-dot" style="background:'+pt.station+';border-color:'+pt.station+';"></div>'+
     '<div class="own-aprs-sym">'+_aprSymbolHTML(ownAprs.symbol)+'</div>'+
     '<div class="apr-label">'+esc(ownAprs.callsign)+'</div>'+
   '</div>';
-  var opts={icon:L.divIcon({className:'own-aprs-marker',iconSize:[110,62],iconAnchor:[55,small?7:11],html:html}),zIndexOffset:600};
-  if(small)opts.pane='shadowPane';
+  // The anchor puts the symbol centre on the position the plain dot used to
+  // occupy, so switching the beacon on does not move the station. Our own
+  // symbol has to stay readable: the marker pane (not shadowPane, where the
+  // local-map dot lived) plus a z-offset large enough to beat Leaflet's
+  // latitude ordering among the neighbouring APRS symbols.
+  var opts={icon:L.divIcon({className:'own-aprs-marker',iconSize:[110,40],iconAnchor:[55,12],html:html}),zIndexOffset:100000};
   return L.marker([lat,lon],opts);
 }
 
@@ -1142,7 +1145,9 @@ function initLocalMap(lat,lon){
     // aligned).
     mapLocal._cqopsOffline=L.imageOverlay(_earthURL(mapLocal),[[-90,-180],[90,180]],{opacity:0.9,pane:'cqopsRadar'}).addTo(mapLocal);
   }
-  // Station marker on local map — small, below APRS symbols.
+  // Own station on the local map. While beaconing it is the transmitted APRS
+  // symbol, drawn in the marker pane above the neighbouring APRS stations;
+  // receive-only keeps the small dot below them.
   var lpos=_ownPos();
   stationLocalMarker=_ownStationMarker(lpos.lat,lpos.lon,qsoPathTheme(),true).addTo(mapLocal);
   if(window.ResizeObserver){new ResizeObserver(function(){mapLocal.invalidateSize()}).observe(lc)}
