@@ -947,7 +947,10 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 	}
 	if m.ui.logbookEditor.needsReload {
 		m.ui.logbookEditor.needsReload = false
-		m.ui.logbookEditor.loadPage()
+		if err := m.ui.logbookEditor.loadPage(); err != nil {
+			// The list keeps the page it is showing; say why it did not change.
+			m.toasts.Error("Logbook: " + err.Error())
+		}
 		m.needRefresh = true
 	}
 	if m.ui.logbookEditor.done {
