@@ -47,16 +47,26 @@ func TestListContestQSOStampsReturnsSortedTimes(t *testing.T) {
 // TestListContestQSOStampsFallsBackToCreatedAt: a row with a broken ADIF date
 // still contributes its created_at, which is what the old []qso.QSO hand-off
 // did through qsoTimeOf.
+//
+// The malformed row has a valid QSO_DATE and a broken TIME_ON: that is the case
+// time.Date silently normalises (12:60:00 → 13:00:00), so it has to land on the
+// created_at fallback instead of inventing a moment that would skew rate, peak
+// and session numbers.
 func TestListContestQSOStampsFallsBackToCreatedAt(t *testing.T) {
 	db := newTempDB(t)
 	mustInsertQSO(t, db, &qso.QSO{
 		Call: "SP9MOA", QSODate: "20260501", TimeOn: "120000",
 		Band: "20m", Mode: "CW", ContestID: "c1",
 	})
-	// Damaged row: no usable date, only the import timestamp.
-	id := insertRawContestRow(t, db, "", "")
+	id := insertRawContestRow(t, db, "20260501", "126000")
 	if _, err := db.Exec(`UPDATE qsos SET created_at = ? WHERE id = ?`,
 		"2026-05-01T18:00:00Z", id); err != nil {
+		t.Fatalf("set created_at: %v", err)
+	}
+	// A row with no usable date at all falls back the same way.
+	id = insertRawContestRow(t, db, "", "")
+	if _, err := db.Exec(`UPDATE qsos SET created_at = ? WHERE id = ?`,
+		"2026-05-01T20:00:00Z", id); err != nil {
 		t.Fatalf("set created_at: %v", err)
 	}
 
@@ -64,14 +74,19 @@ func TestListContestQSOStampsFallsBackToCreatedAt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListContestQSOStamps: %v", err)
 	}
-	if len(times) != 2 {
-		t.Fatalf("got %d stamps, want 2", len(times))
+	if len(times) != 3 {
+		t.Fatalf("got %d stamps, want 3", len(times))
 	}
-	if got := times[0].Format(time.RFC3339); got != "2026-05-01T18:00:00Z" {
-		t.Errorf("newest stamp = %s, want the created_at fallback 2026-05-01T18:00:00Z", got)
+	want := []string{"2026-05-01T20:00:00Z", "2026-05-01T18:00:00Z", "2026-05-01T12:00:00Z"}
+	for i, w := range want {
+		if got := times[i].Format(time.RFC3339); got != w {
+			t.Errorf("stamp %d = %s, want %s", i, got, w)
+		}
 	}
-	if got := times[1].Format(time.RFC3339); got != "2026-05-01T12:00:00Z" {
-		t.Errorf("oldest stamp = %s, want 2026-05-01T12:00:00Z", got)
+	for _, got := range times {
+		if got.Format("15:04") == "13:00" {
+			t.Fatalf("a broken 12:60:00 TIME_ON produced 13:00 instead of the created_at fallback")
+		}
 	}
 }
 

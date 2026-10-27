@@ -24,6 +24,12 @@ func TestADIFTime(t *testing.T) {
 		{"impossible day", "20260230", "120000", ""},
 		{"impossible month", "20261301", "120000", ""},
 		{"long time", "20260501", "1230000", ""},
+		// time.Date normalises these instead of rejecting them, which turned a
+		// broken TIME_ON into an invented one (12:60:00 became 13:00:00).
+		{"minute 60", "20260501", "126000", ""},
+		{"seconds 99", "20260501", "120099", ""},
+		{"HHMM minute 99", "20260501", "1299", ""},
+		{"hour 24", "20260501", "240000", ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

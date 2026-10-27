@@ -127,9 +127,19 @@ func ADIFTime(date, timeOn string) (time.Time, bool) {
 	}
 	year, month, day := num(d[0:4]), num(d[4:6]), num(d[6:8])
 	hour, min, sec := num(t[0:2]), num(t[2:4]), num(t[4:6])
+	// Check every field before time.Date: it normalises out-of-range values
+	// instead of rejecting them, so a bogus TIME_ON would silently become a
+	// different moment (12:60:00 → 13:00:00, 12:00:99 → 12:01:39) and feed an
+	// invented time into the rate, peak and session numbers. The old
+	// time.Parse-based parser rejected these and fell back to created_at; this
+	// keeps that behaviour.
+	if month < 1 || month > 12 || day < 1 || day > 31 ||
+		hour > 23 || min > 59 || sec > 59 {
+		return time.Time{}, false
+	}
 	out := time.Date(year, time.Month(month), day, hour, min, sec, 0, time.UTC)
-	// time.Date normalises out-of-range values (Feb 30 becomes Mar 2), so a
-	// round-trip check is what rejects a malformed date the way time.Parse does.
+	// The remaining normalisation is the calendar itself (Feb 30 becomes Mar 2),
+	// so the date round-trip is what rejects a malformed day.
 	if out.Year() != year || int(out.Month()) != month || out.Day() != day {
 		return time.Time{}, false
 	}
