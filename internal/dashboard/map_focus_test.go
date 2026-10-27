@@ -51,6 +51,32 @@ func TestMapFitsTheWorkingQsoPath(t *testing.T) {
 	}
 }
 
+// TestQsoLoggedRedrawsTheMapOnce: a saved QSO used to rebuild the map twice —
+// once from the handler, then again from switchToOverview — recreating up to
+// 200 markers and 150 great-circle paths each time before the next paint. The
+// handler sets the view state first (overviewState, which does not draw) and
+// redraws once.
+func TestQsoLoggedRedrawsTheMapOnce(t *testing.T) {
+	js, err := staticFS.ReadFile("static/app.js")
+	if err != nil {
+		t.Fatalf("read app.js: %v", err)
+	}
+	appJS := string(js)
+
+	if strings.Contains(appJS, "updateMapFromToday();switchToOverview()") {
+		t.Error("a saved QSO rebuilds the map twice again")
+	}
+	for _, want := range []string{
+		"function overviewState(){D('state','overview');setState(false);activeGrid=null}",
+		"function switchToOverview(){overviewState();updateMapFromToday()}",
+		"appendTodayQSO(q);prependRecentRow(q);overviewState();updateMapFromToday();",
+	} {
+		if !strings.Contains(appJS, want) {
+			t.Errorf("app.js is missing %q", want)
+		}
+	}
+}
+
 // TestOwnStationIsTheAprsSymbol pins the own-station marker: while the beacon
 // is on, the station is drawn as the APRS symbol CQOps transmits, not as a
 // green dot with the symbol stuck underneath it. The anchor sits at the symbol

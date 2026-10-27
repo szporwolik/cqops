@@ -105,7 +105,12 @@ function setState(active){
   }
   if(active&&!todayQsos.length)updateMapFromToday()
 }
-function switchToOverview(){D('state','overview');setState(false);activeGrid=null;updateMapFromToday()}
+// overviewState leaves the active-contact layout without touching the map.
+// Callers that redraw it anyway (a saved QSO changes todayQsos) use this, so
+// one event does not rebuild every marker and path twice — each rebuild drops
+// the layers and recreates up to 200 markers and 150 routes.
+function overviewState(){D('state','overview');setState(false);activeGrid=null}
+function switchToOverview(){overviewState();updateMapFromToday()}
 function switchToActive(){D('state','active');setState(true)}
 
 // ---- SSE ----
@@ -158,7 +163,7 @@ function connectSSE(){
   });
   es.addEventListener('qso_logged',function(e){var q=JSON.parse(e.data).payload;
     D('sse','qso_logged',q.call+' '+q.band+' '+q.mode);
-    appendTodayQSO(q);prependRecentRow(q);updateMapFromToday();switchToOverview();renderHero(null);renderStats(null,todayQsos);showQsoToast(q);playPing()
+    appendTodayQSO(q);prependRecentRow(q);overviewState();updateMapFromToday();renderHero(null);renderStats(null,todayQsos);showQsoToast(q);playPing()
   });
   es.addEventListener('rig',function(e){var r=JSON.parse(e.data).payload;
     D('sse','rig',r.connected?(r.frequency||'?')+' '+(r.mode||''):'disconnected');
