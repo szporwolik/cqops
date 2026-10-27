@@ -110,6 +110,10 @@ Categories=Network;HamRadio;
 StartupWMClass=cqops
 EOF
 echo "  Menu   : Applications → Ham Radio → CQOps"
+# icewm, i3, openbox and similar window managers run their own menu files and
+# ignore Terminal=true, so CQOps would start with no terminal and stop again.
+echo "  Note   : minimal WMs (icewm, i3, openbox) ignore Terminal=true — use:"
+echo "           x-terminal-emulator -e $INSTALL_DIR/cqops"
 
 # Refresh desktop menu database
 if command -v update-desktop-database &>/dev/null; then

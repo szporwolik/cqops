@@ -111,6 +111,14 @@ func Execute() error {
 }
 
 func runTUI() error {
+	// Refuse to start the interactive UI without a terminal. Checked before
+	// anything is opened: a launcher that drops Terminal=true used to leave a
+	// headless instance running for seconds, holding the logbook lock and
+	// talking to APRS, before it exited on its own.
+	if err := ensureTUIHasTerminal(); err != nil {
+		return err
+	}
+
 	// Start pprof HTTP server on 127.0.0.1:6060 when --pprof is set.
 	// Exposes /debug/pprof/ for CPU, heap, goroutine, mutex, and block
 	// profiling. Only listens on localhost — never expose publicly.

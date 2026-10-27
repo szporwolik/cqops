@@ -4,7 +4,8 @@
 
 > **Development cycle for the next release.** Work in progress on `dev`; nothing here is published yet, and the version will be dated when the release is cut.
 
-- **Nothing yet.** Planned additions and fixes land in this section as they are finished.
+### Fixes
+- **A start without a terminal says so instead of running headless**: launched from a window-manager menu that ignores the entry's `Terminal=true` (icewm, i3, openbox and friends), from cron or from a detached shell, CQOps used to open the logbook, connect to APRS and the rig, take the single-instance lock and then exit a few seconds later without a word — a click that looked like nothing happened. It now refuses before anything is opened and names both the cause and the fix (`x-terminal-emulator -e cqops`). A terminal reached through `/dev/tty` is still accepted, so `cqops < /dev/null` from a real terminal keeps working, and `CQOPS_ASSUME_TTY=1` skips the check for setups where stdin is not reported as a tty.
 
 ## v0.11.2 — 2026-10-26
 
