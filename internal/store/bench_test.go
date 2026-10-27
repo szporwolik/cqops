@@ -98,3 +98,35 @@ func BenchmarkGetLogbookStats_50k(b *testing.B) {
 		}
 	}
 }
+
+// UpdateQSO runs for every logbook save, and reindexQSO skips the worked
+// aggregates when the edit cannot change them. Before that check, the removal
+// half re-derived first/last/source_mask from the whole qsos table for every
+// aggregate the contact belongs to — a comment-only save on a large log cost
+// hundreds of milliseconds, in a transaction that blocks the UI.
+func BenchmarkUpdateQSOCommentOnly_50k(b *testing.B) {
+	db := benchDB(b, 50_000)
+	// The target row is written through InsertQSO so every column is populated
+	// and GetQSOByID can read it back (the bulk seeding helper writes only the
+	// columns the read benchmarks need).
+	id, err := InsertQSO(db, &qso.QSO{
+		Call: "SP9BENCH", Band: "20m", Mode: "SSB", GridSquare: "JO90AA",
+		DXCC: "269", QSODate: "20260401", TimeOn: "120000", Freq: 14.2,
+		RSTSent: "59", RSTRcvd: "59",
+	})
+	if err != nil {
+		b.Fatalf("insert target: %v", err)
+	}
+	q, err := GetQSOByID(db, id)
+	if err != nil {
+		b.Fatalf("load qso: %v", err)
+	}
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		q.Comment = fmt.Sprintf("bench %d", i)
+		if err := UpdateQSO(db, q); err != nil {
+			b.Fatalf("UpdateQSO: %v", err)
+		}
+	}
+}

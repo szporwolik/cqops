@@ -260,6 +260,64 @@ func indexQSO(e sqlExecutor, q *qso.QSO, delta int) error {
 	return nil
 }
 
+// indexContribution is everything a QSO adds to the index: the aggregate keys
+// it joins, the timestamp that feeds first/last, its confirmation and its
+// source. Two rows with an equal contribution add and remove exactly the same
+// deltas, so an edit that leaves it alone — a comment, a name, a QTH, a
+// no-op enrichment — does not have to touch the aggregates at all.
+type indexContribution struct {
+	baseCall  string
+	grid4     string
+	dxcc      string
+	band      string
+	mode      string
+	stamp     string
+	confirmed bool
+	source    int
+}
+
+// contributionOf mirrors indexQSO field for field: if these ever disagree, an
+// edit is either indexed when it should not be, or skipped when it must not.
+func contributionOf(q *qso.QSO) indexContribution {
+	c := indexContribution{
+		baseCall:  qso.DeriveBaseCall(q.Call),
+		dxcc:      strings.TrimSpace(q.DXCC),
+		band:      q.Band,
+		mode:      canonicalMode(q.Mode, q.Submode),
+		stamp:     qsoStamp(q.QSODate, q.TimeOn),
+		confirmed: q.Confirmed(),
+		source:    sourceMaskBit(q.Source),
+	}
+	if len(q.GridSquare) >= 4 {
+		c.grid4 = strings.ToUpper(q.GridSquare[:4])
+	}
+	return c
+}
+
+// reindexQSO applies one edit's index delta: the stored row's previous
+// contribution stops counting, its new one starts. Callers run it AFTER the row
+// update, because the removal path re-derives edge timestamps and source masks
+// from the whole qsos table and must see the new values.
+//
+// When the contribution did not change nothing is written. The -1/+1 pair would
+// cancel out, but the removal half re-derives first/last/source_mask for every
+// aggregate the contact belongs to — across a whole log that made a
+// comment-only save the most expensive write there is (hundreds of ms at 100k
+// QSOs, and the enrichment loop calls this from the UI path).
+func reindexQSO(e sqlExecutor, id int64, before *qso.QSO) error {
+	after, err := loadQSOForIndex(e, id)
+	if err != nil {
+		return fmt.Errorf("reload qso for worked index: %w", err)
+	}
+	if contributionOf(before) == contributionOf(after) {
+		return nil
+	}
+	if err := indexQSO(e, before, -1); err != nil {
+		return err
+	}
+	return indexQSO(e, after, 1)
+}
+
 // RebuildWorkedIndex rebuilds the entire worked index from qsos in one
 // transaction. Deterministic and safe to run repeatedly — used after
 // migration, purges, or when an inconsistency is suspected.

@@ -1186,14 +1186,7 @@ func UpdateQSO(db *sql.DB, q *qso.QSO) error {
 	// used to erase the contact from the DXCC history. Unindex after the
 	// update so edge recomputation sees the new values.
 	if oldErr == nil {
-		if err := indexQSO(tx, oldQSO, -1); err != nil {
-			return err
-		}
-		newQSO, lerr := loadQSOForIndex(tx, q.ID)
-		if lerr != nil {
-			return fmt.Errorf("reload qso for worked index: %w", lerr)
-		}
-		if err := indexQSO(tx, newQSO, 1); err != nil {
+		if err := reindexQSO(tx, q.ID, oldQSO); err != nil {
 			return err
 		}
 	}
@@ -1239,14 +1232,7 @@ func SaveQSO(db *sql.DB, q *qso.QSO) (synced bool, rev int64, err error) {
 	// what keeps the index honest, because the UPDATE preserves columns the
 	// caller left empty and indexing q would silently drop them.
 	if oldErr == nil {
-		if err := indexQSO(tx, oldQSO, -1); err != nil {
-			return false, 0, err
-		}
-		newQSO, lerr := loadQSOForIndex(tx, q.ID)
-		if lerr != nil {
-			return false, 0, fmt.Errorf("reload qso for worked index: %w", lerr)
-		}
-		if err := indexQSO(tx, newQSO, 1); err != nil {
+		if err := reindexQSO(tx, q.ID, oldQSO); err != nil {
 			return false, 0, err
 		}
 	}
@@ -1453,14 +1439,7 @@ func EnrichQSO(db *sql.DB, qsoID int64, e EnrichmentData) (EnrichmentSync, error
 	}
 
 	if oldErr == nil {
-		if err := indexQSO(tx, oldQSO, -1); err != nil {
-			return res, err
-		}
-		newQSO, lerr := loadQSOForIndex(tx, qsoID)
-		if lerr != nil {
-			return res, fmt.Errorf("reload qso for worked index: %w", lerr)
-		}
-		if err := indexQSO(tx, newQSO, 1); err != nil {
+		if err := reindexQSO(tx, qsoID, oldQSO); err != nil {
 			return res, err
 		}
 	}
@@ -1501,14 +1480,7 @@ func BackfillDXCC(db *sql.DB, byID map[int64]string) (int, error) {
 		if n, _ := res.RowsAffected(); n == 0 {
 			continue // row gained DXCC meanwhile — nothing to reindex
 		}
-		if err := indexQSO(tx, oldQSO, -1); err != nil {
-			return updated, err
-		}
-		newQSO, lerr := loadQSOForIndex(tx, id)
-		if lerr != nil {
-			return updated, fmt.Errorf("reload qso for worked index: %w", lerr)
-		}
-		if err := indexQSO(tx, newQSO, 1); err != nil {
+		if err := reindexQSO(tx, id, oldQSO); err != nil {
 			return updated, err
 		}
 		updated++
