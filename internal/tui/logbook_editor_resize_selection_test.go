@@ -158,3 +158,55 @@ func TestEditorSearchResizeKeepsTheSelection(t *testing.T) {
 		t.Errorf("the resize reset the selection from id %d to id %d while searching", want, got)
 	}
 }
+
+// TestEditorSearchResizeKeepsThe26thHit is the reported scenario: the operator
+// selects a result deep in the list (the 26th) and enlarges the terminal. A
+// search result is not paged, so the resize must keep the list as it is and put
+// the cursor back on that contact — not recompute it as pages of the ordinary
+// log, and not drop the selection to the first hit.
+func TestEditorSearchResizeKeepsThe26thHit(t *testing.T) {
+	le := newEditorWithDB(t)
+	for i := 0; i < 40; i++ {
+		insertQSO(t, le, &qso.QSO{
+			Call:    fmt.Sprintf("SP9QQ%02d", i),
+			QSODate: fmt.Sprintf("202604%02d", 1+i%28),
+			TimeOn:  "100000",
+			Band:    "40m",
+			Mode:    "CW",
+		})
+	}
+
+	le.searchQuery = "SP9QQ"
+	if err := le.applySearchFilter(); err != nil {
+		t.Fatalf("applySearchFilter: %v", err)
+	}
+	if len(le.qsos) != 40 {
+		t.Fatalf("search returned %d rows; want 40", len(le.qsos))
+	}
+
+	le.table.SetCursor(25) // the 26th result
+	want := selectedID(t, le)
+	before := make([]int64, len(le.qsos))
+	for i := range le.qsos {
+		before[i] = le.qsos[i].ID
+	}
+	pageBefore := le.currentPage
+
+	le.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+
+	if got := selectedID(t, le); got != want {
+		t.Errorf("enlarging moved the selection from the 26th result (id %d) to id %d", want, got)
+	}
+	if len(le.qsos) != len(before) {
+		t.Fatalf("the search list changed size across the resize: %d rows, want %d", len(le.qsos), len(before))
+	}
+	for i := range before {
+		if le.qsos[i].ID != before[i] {
+			t.Errorf("the search list was recomputed: row %d is id %d, want %d", i, le.qsos[i].ID, before[i])
+			break
+		}
+	}
+	if le.currentPage != pageBefore {
+		t.Errorf("the resize re-paged the search result: page %d, want %d", le.currentPage, pageBefore)
+	}
+}
