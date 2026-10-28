@@ -480,23 +480,55 @@ jobs:
           set -euo pipefail
           V="$VERSION"
 
-          # Download the amd64 tarball and compute SHA-256.
+          # fetch <url> <dest> — download that fails on an HTTP error. Without -f
+          # curl exits 0 for a 404/503 *page*, so the body of the error would be
+          # hashed and published as the checksum: AUR then hands every user a
+          # PKGBUILD whose sources never match, and the package cannot be built.
+          # Retries ride out a one-off blip; nothing is written or pushed unless
+          # all three downloads really arrived.
+          fetch() {
+            local url="$1" dest="$2"
+            if ! curl -fsSL --retry 3 --retry-delay 3 --retry-connrefused -o "$dest" "$url"; then
+              echo "::error::download failed (HTTP error or no connection): ${url}" >&2
+              return 1
+            fi
+            if [ ! -s "$dest" ]; then
+              echo "::error::download is empty: ${url}" >&2
+              return 1
+            fi
+          }
+
+          # Download the amd64 tarball and compute SHA-256. The body is checked
+          # to be an archive as well: a page served with 200 (a proxy or CDN
+          # error page) would otherwise be hashed just like a real release.
           TARBALL="cqops-linux-amd64.tar.gz"
           URL="https://github.com/szporwolik/cqops/releases/download/v${V}/${TARBALL}"
-          curl -sSLo "/tmp/${TARBALL}" "$URL"
+          fetch "$URL" "/tmp/${TARBALL}"
+          if ! tar tzf "/tmp/${TARBALL}" > /dev/null 2>&1; then
+            echo "::error::downloaded ${TARBALL} is not a gzip tarball: ${URL}" >&2
+            exit 1
+          fi
           TARBALL_SHA256=$(sha256sum "/tmp/${TARBALL}" | awk '{print $1}')
           rm "/tmp/${TARBALL}"
 
           ICON_URL="https://raw.githubusercontent.com/szporwolik/cqops/v${V}/assets/cqops-icon.svg"
 
           # Download the icon and compute SHA-256 for AUR integrity.
-          curl -sSLo "/tmp/cqops-icon.svg" "$ICON_URL"
+          fetch "$ICON_URL" "/tmp/cqops-icon.svg"
+          if ! grep -q '<svg' "/tmp/cqops-icon.svg"; then
+            echo "::error::downloaded icon is not an SVG: ${ICON_URL}" >&2
+            exit 1
+          fi
           ICON_SHA256=$(sha256sum "/tmp/cqops-icon.svg" | awk '{print $1}')
           rm "/tmp/cqops-icon.svg"
 
           # Download the canonical .desktop file and compute its SHA-256.
           DESKTOP_URL="https://raw.githubusercontent.com/szporwolik/cqops/v${V}/installer/cqops.desktop"
-          curl -sSLo "/tmp/cqops.desktop" "$DESKTOP_URL"
+          fetch "$DESKTOP_URL" "/tmp/cqops.desktop"
+          if ! grep -q '\[Desktop Entry\]' "/tmp/cqops.desktop"; then
+            echo "::error::downloaded .desktop file has no [Desktop Entry] group: ${DESKTOP_URL}" >&2
+            exit 1
+          fi
           DESKTOP_SHA256=$(sha256sum "/tmp/cqops.desktop" | awk '{print $1}')
           rm "/tmp/cqops.desktop"
 
