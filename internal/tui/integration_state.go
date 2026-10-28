@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/szporwolik/cqops/internal/dashboard"
+	"github.com/szporwolik/cqops/internal/store"
 )
 
 // rigState holds polled data, connection state, and the rig backend client.
@@ -97,4 +98,21 @@ type httpState struct {
 	// pending request; the next tick starts it.
 	statsDue      bool
 	statsInFlight bool
+	// statsTotals caches the expensive half of the statistics (the DISTINCT
+	// counts over the event window, ≈300 ms at 100k contacts). It is reused
+	// while the window, the database and the data revision are unchanged, so the
+	// minute refresh only counts the sliding rate windows.
+	statsTotals statsTotalsCache
+}
+
+// statsTotalsCache holds the last computed window totals together with the
+// exact inputs they describe. Any difference means the numbers belong to a
+// different question and must be recomputed.
+type statsTotalsCache struct {
+	valid     bool
+	db        *sql.DB
+	logbook   string
+	startDate string // event window start (today, or the configured event start)
+	revision  uint64 // Model.qsoRev — bumps on save/edit/delete/import/enrichment
+	totals    store.DashboardTotals
 }

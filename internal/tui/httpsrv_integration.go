@@ -549,6 +549,11 @@ var dashboardStatsRefreshInterval = 60 * time.Second
 // lastDashboardStatsPush stamps the last stats push, event-driven or periodic.
 var lastDashboardStatsPush time.Time
 
+// dashboardNow is the clock the statistics use for the event window and the
+// sliding rate windows. A variable so tests can drive the UTC rollover and the
+// 5/15/60-minute windows without waiting for real time.
+var dashboardNow = func() time.Time { return time.Now().UTC() }
+
 var lastDashboardPushTick int
 
 // Called from the tick handler every second. Most Set* calls early-exit because
@@ -943,6 +948,14 @@ func (m *Model) invalidateDashboardFlags() {
 	lastActiveNewDXCC = false
 	lastPushedAQSO = cachedAQSO{}
 	dashboardDataDirty = true
+	// The cached window totals describe the data as it was before this change —
+	// a QSO more or less, an edited call or band, an enrichment that filled in
+	// the country. Drop them, and move the data revision too, so a computation
+	// that is still in flight cannot install them again (the revision travels
+	// with the message and is compared when the next refresh looks for a cache
+	// hit).
+	m.qsoDataChanged()
+	m.http.statsTotals.valid = false
 	// Clear country worked-before cache — the QSO we just saved may
 	// change country status.
 	clear(countryWorkedCache)
@@ -1247,18 +1260,36 @@ func (m *Model) pushDashboardToday(ds *dashboard.State) {
 }
 
 // dashboardStatsMsg carries one finished stats computation back to the update
-// loop. db and logbook identify the data set it was computed against.
+// loop. db, logbook and startDate identify the data set it was computed
+// against; revision is the data revision the totals belong to.
 type dashboardStatsMsg struct {
 	db      *sql.DB
 	logbook string
-	stats   store.DashboardStats
-	err     error
+	// startDate is the event-window start the totals were computed for, and
+	// revision the Model.qsoRev at that moment. Installing them into the cache
+	// is only correct if the logbook is still the same one.
+	startDate  string
+	revision   uint64
+	totals     store.DashboardTotals
+	rates      store.DashboardRates
+	totalsRead bool // true when this message actually recomputed the totals
+	stats      store.DashboardStats
+	err        error
 }
 
-// dashboardStatsCmd starts the stats aggregation when it is due and no other
-// computation is running. Called from the tick: GetDashboardStats scans the
-// event window (22 ms at 10k contacts, 228 ms at 100k), and running it inline
-// meant every keystroke and QSO save waited for it.
+// dashboardStatsCmd starts the stats refresh when it is due and no other
+// computation is running.
+//
+// The window totals (seven DISTINCT counts over the event window — 22 ms at
+// 10k contacts, ~300 ms at 100k) are only re-read when they can have changed:
+// a different database, a different event window (including the UTC rollover
+// that moves "today"), or a different data revision (save, WSJT-X log, edit,
+// delete, import, download, enrichment). Everything else about the panel — the
+// sliding 5/15/60-minute windows and how long ago the last contact was — moves
+// with the clock and is refreshed from the cached totals, which is what the
+// minute timer needs.
+//
+// It still runs as a command: the tick must not wait for SQLite.
 func (m *Model) dashboardStatsCmd() tea.Cmd {
 	if !m.http.statsDue || m.http.statsInFlight {
 		return nil
@@ -1271,13 +1302,59 @@ func (m *Model) dashboardStatsCmd() tea.Cmd {
 	logbook := m.App.LogbookName
 	startDate := m.eventStartDate()
 	if startDate == "" {
-		startDate = time.Now().UTC().Format("20060102")
+		startDate = dashboardNow().Format("20060102")
 	}
+	rev := m.qsoRev
+
+	// Decide on the update loop, from the loop's own copy of the cache: the
+	// worker must not read model state.
+	cache := m.http.statsTotals
+	reuse := cache.valid && cache.db == db && cache.logbook == logbook &&
+		cache.startDate == startDate && cache.revision == rev
+
 	m.http.statsDue = false
 	m.http.statsInFlight = true
+	cachedTotals := cache.totals
 	return func() tea.Msg {
-		s, err := store.GetDashboardStats(db, startDate)
-		return dashboardStatsMsg{db: db, logbook: logbook, stats: s, err: err}
+		msg := dashboardStatsMsg{
+			db:        db,
+			logbook:   logbook,
+			startDate: startDate,
+			revision:  rev,
+		}
+		now := dashboardNow()
+		if reuse {
+			msg.totals = cachedTotals
+		} else {
+			totals, err := store.GetDashboardTotals(db, startDate)
+			if err != nil {
+				msg.err = err
+				return msg
+			}
+			msg.totals = totals
+			msg.totalsRead = true
+		}
+		rates, err := store.GetDashboardRates(db, now)
+		if err != nil {
+			msg.err = err
+			return msg
+		}
+		rates.LastQSOAgoS = msg.totals.ElapsedSeconds(now)
+		msg.rates = rates
+		msg.stats = store.DashboardStats{
+			QSOsToday:   msg.totals.QSOsToday,
+			Operators:   msg.totals.Operators,
+			UniqueCalls: msg.totals.UniqueCalls,
+			DXCC:        msg.totals.DXCC,
+			Grids:       msg.totals.Grids,
+			Bands:       msg.totals.Bands,
+			Modes:       msg.totals.Modes,
+			LastQSOAgoS: rates.LastQSOAgoS,
+			Rate5m:      rates.Rate5m,
+			Rate15m:     rates.Rate15m,
+			Rate60m:     rates.Rate60m,
+		}
+		return msg
 	}
 }
 
@@ -1296,6 +1373,18 @@ func (m *Model) applyDashboardStats(msg dashboardStatsMsg) tea.Cmd {
 	if m.App.DB != msg.db || m.App.LogbookName != msg.logbook {
 		m.http.statsDue = true
 		return nil
+	}
+	// Cache the totals the message was built from, so the next minute only
+	// re-reads the rates. A reused-totals message refreshes the revision it was
+	// valid for (still current, or the next cmd would have recomputed) and a
+	// freshly read one records what it actually covers.
+	m.http.statsTotals = statsTotalsCache{
+		valid:     true,
+		db:        msg.db,
+		logbook:   msg.logbook,
+		startDate: msg.startDate,
+		revision:  msg.revision,
+		totals:    msg.totals,
 	}
 	if m.http.client == nil || !m.http.online {
 		return nil

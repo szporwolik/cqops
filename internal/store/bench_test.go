@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/szporwolik/cqops/internal/qso"
 )
@@ -177,6 +178,38 @@ func benchmarkGetDashboardStats(b *testing.B, rows int) {
 
 func BenchmarkGetDashboardStats_10k(b *testing.B)  { benchmarkGetDashboardStats(b, 10_000) }
 func BenchmarkGetDashboardStats_100k(b *testing.B) { benchmarkGetDashboardStats(b, 100_000) }
+
+// BenchmarkDashboardStatsSplit_100k compares the two halves the dashboard now
+// calls separately: the window totals are read on a data change, the rates and
+// the elapsed time on the minute timer. The minute path is the second pair.
+func BenchmarkDashboardStatsSplit_100k(b *testing.B) {
+	db := benchDB(b, 100_000)
+	now := time.Date(2024, 1, 1, 12, 0, 0, 0, time.UTC)
+	b.Run("totals_and_rates_combined", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			if _, err := GetDashboardStats(db, "20200101"); err != nil {
+				b.Fatalf("GetDashboardStats: %v", err)
+			}
+		}
+	})
+	b.Run("totals", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			if _, err := GetDashboardTotals(db, "20200101"); err != nil {
+				b.Fatalf("GetDashboardTotals: %v", err)
+			}
+		}
+	})
+	b.Run("rates_only_minute_refresh", func(b *testing.B) {
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			if _, err := GetDashboardRates(db, now); err != nil {
+				b.Fatalf("GetDashboardRates: %v", err)
+			}
+		}
+	})
+}
 
 // dxccCountryFallbackExists runs for every callsign the partner panel looks up,
 // and its answer is a single bit. On a log where the legacy rows match in bulk

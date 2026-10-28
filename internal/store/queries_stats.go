@@ -546,12 +546,60 @@ type DashboardStats struct {
 	Rate60m     int
 }
 
-// GetDashboardStats computes dashboard aggregate statistics for all QSOs
-// from the given start date (inclusive, YYYYMMDD format). For a typical
-// today-only view, pass time.Now().UTC().Format("20060102").
-// When an event start date is configured, pass that instead.
-func GetDashboardStats(db *sql.DB, startDate string) (DashboardStats, error) {
-	var s DashboardStats
+// DashboardTotals is the part of the dashboard statistics that only changes
+// when the logbook changes: the QSO count and the distinct operators, calls,
+// countries, grids, bands and modes over the event window, plus the stamp of
+// the newest contact.
+//
+// Splitting it from the rates is what makes the minute refresh cheap. The
+// distinct counts walk the event window (≈300 ms at 100k contacts) and stay
+// identical until a contact is written, edited, enriched or deleted; the
+// sliding windows and the elapsed time move with the clock, and cost a few
+// index range scans. The dashboard recomputes the totals on a data revision and
+// refreshes the rest on the timer.
+type DashboardTotals struct {
+	QSOsToday   int
+	Operators   int
+	UniqueCalls int
+	DXCC        int
+	Grids       int
+	Bands       int
+	Modes       int
+	// LastQSOAt is the newest contact's own date and time (zero when the window
+	// holds no contact). Kept as a stamp so the elapsed seconds can be
+	// recomputed without touching the database.
+	LastQSOAt time.Time
+}
+
+// DashboardRates is the time-dependent part: how many contacts fell into the
+// sliding 5/15/60-minute windows, and how long ago the newest contact was.
+type DashboardRates struct {
+	Rate5m      int
+	Rate15m     int
+	Rate60m     int
+	LastQSOAgoS int
+}
+
+// ElapsedSeconds reports how long ago the newest contact was at `now`. Zero
+// when the window holds no contact.
+func (t DashboardTotals) ElapsedSeconds(now time.Time) int {
+	if t.LastQSOAt.IsZero() {
+		return 0
+	}
+	secs := int(now.Sub(t.LastQSOAt).Seconds())
+	if secs < 0 {
+		// A contact dated slightly in the future (a clock-skewed beacon) must
+		// not render as a negative age.
+		return 0
+	}
+	return secs
+}
+
+// GetDashboardTotals reads the window aggregates and the newest-contact stamp.
+// It is the expensive half of GetDashboardStats — one query with seven
+// DISTINCT counts over the event window.
+func GetDashboardTotals(db *sql.DB, startDate string) (DashboardTotals, error) {
+	var t DashboardTotals
 	var lastQSOStr string
 	// Limit scan to the event window for large logs.
 	cutoff := startDate
@@ -575,28 +623,38 @@ func GetDashboardStats(db *sql.DB, startDate string) (DashboardStats, error) {
 			          ORDER BY qso_date DESC, time_on DESC LIMIT 1), '')
 		FROM qsos WHERE qso_date >= ?
 	`, cutoff, cutoff).Scan(
-		&s.QSOsToday,
-		&s.Operators,
-		&s.UniqueCalls,
-		&s.DXCC,
-		&s.Grids,
-		&s.Bands,
-		&s.Modes,
+		&t.QSOsToday,
+		&t.Operators,
+		&t.UniqueCalls,
+		&t.DXCC,
+		&t.Grids,
+		&t.Bands,
+		&t.Modes,
 		&lastQSOStr,
 	)
 	if err != nil {
-		return s, fmt.Errorf("dashboard stats: %w", err)
+		return t, fmt.Errorf("dashboard totals: %w", err)
 	}
 
-	// Parse last QSO time for elapsed-seconds computation. ADIFTime also covers
-	// an HHMM-only or missing time_on, which the old 14-character check dropped.
+	// Parse last QSO time. ADIFTime also covers an HHMM-only or missing
+	// time_on, which the old 14-character check dropped.
 	if len(lastQSOStr) >= 8 {
-		if t, ok := qso.ADIFTime(lastQSOStr[:8], lastQSOStr[8:]); ok {
-			s.LastQSOAgoS = int(time.Since(t).Seconds())
+		if stamp, ok := qso.ADIFTime(lastQSOStr[:8], lastQSOStr[8:]); ok {
+			t.LastQSOAt = stamp
 		}
 	}
+	return t, nil
+}
 
-	// Rate: QSOs in the last 5, 15, and 60 minutes.
+// GetDashboardRates counts the contacts in the last 5, 15 and 60 minutes as of
+// `now`. Cheap enough for the minute refresh: three range scans on the
+// (qso_date, time_on) index, no aggregation over the event window.
+//
+// The elapsed time is NOT computed here — the caller already holds the newest
+// contact's stamp in its cached totals, so `totals.ElapsedSeconds(now)` covers
+// it without another read.
+func GetDashboardRates(db *sql.DB, now time.Time) (DashboardRates, error) {
+	var r DashboardRates
 	// Two-column range so idx_qsos_date_time serves the predicate — the old
 	// printf('%s%06s', ...) form was a function-on-column that forced a full
 	// table scan three times per dashboard refresh.
@@ -604,11 +662,11 @@ func GetDashboardStats(db *sql.DB, startDate string) (DashboardStats, error) {
 		mins int
 		dest *int
 	}{
-		{5, &s.Rate5m},
-		{15, &s.Rate15m},
-		{60, &s.Rate60m},
+		{5, &r.Rate5m},
+		{15, &r.Rate15m},
+		{60, &r.Rate60m},
 	} {
-		cutoff := time.Now().UTC().Add(-time.Duration(w.mins) * time.Minute)
+		cutoff := now.Add(-time.Duration(w.mins) * time.Minute)
 		var n int
 		if err := db.QueryRow(
 			`SELECT COUNT(*) FROM qsos
@@ -619,6 +677,33 @@ func GetDashboardStats(db *sql.DB, startDate string) (DashboardStats, error) {
 		}
 		*w.dest = n
 	}
+	return r, nil
+}
 
-	return s, nil
+// GetDashboardStats computes the whole payload in one go (totals + rates).
+// Callers that refresh on a timer should compute the totals only on a data
+// change and call GetDashboardRates for the rest.
+func GetDashboardStats(db *sql.DB, startDate string) (DashboardStats, error) {
+	now := time.Now().UTC()
+	t, err := GetDashboardTotals(db, startDate)
+	if err != nil {
+		return DashboardStats{}, err
+	}
+	r, err := GetDashboardRates(db, now)
+	if err != nil {
+		return DashboardStats{}, err
+	}
+	return DashboardStats{
+		QSOsToday:   t.QSOsToday,
+		Operators:   t.Operators,
+		UniqueCalls: t.UniqueCalls,
+		DXCC:        t.DXCC,
+		Grids:       t.Grids,
+		Bands:       t.Bands,
+		Modes:       t.Modes,
+		LastQSOAgoS: t.ElapsedSeconds(now),
+		Rate5m:      r.Rate5m,
+		Rate15m:     r.Rate15m,
+		Rate60m:     r.Rate60m,
+	}, nil
 }
