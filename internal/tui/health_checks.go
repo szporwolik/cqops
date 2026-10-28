@@ -209,25 +209,24 @@ func backfillMissingDXCCLimit(database *sql.DB, bdb *ctybig.DB, maxRows int) (in
 // =============================================================================
 
 // autoUpdateDateTime keeps the QSO form date/time fields current.
-// Below 85 chars terminal width, separators are dropped to save space.
 func (m *Model) autoUpdateDateTime() {
 	if !m.dateTimeAuto {
 		return
 	}
 	now := time.Now().UTC()
-	dateFmt, timeFmt := dateTimeFormats(m.width)
+	dateFmt, timeFmt := qsoDateTimeFormats()
 	m.fields[fieldDate].SetValue(now.Format(dateFmt))
 	m.fields[fieldTime].SetValue(now.Format(timeFmt))
 }
 
-// dateTimeFormats returns the format strings for date and time fields.
-// Seconds are omitted from default display; the user can type them manually.
-// DB saves and ADIF/Wavelog exports always include full seconds.
-func dateTimeFormats(width int) (dateFmt, timeFmt string) {
-	if width < 85 {
-		return "20060102", "1504"
-	}
-	return "2006-01-02", "15:04"
+// qsoDateTimeFormats is the canonical form of the QSO form's clock fields: bare
+// digits, which is what the save path (qso.StripNonDigits), the dupe check and
+// every ADIF/Wavelog export read. The separators are a DISPLAY concern and are
+// added by displayFieldValue when the column has room for them — the value used
+// to switch between "20261028" and "2026-10-28" depending on the terminal
+// width, which is why the same terminal showed both shapes.
+func qsoDateTimeFormats() (dateFmt, timeFmt string) {
+	return "20060102", "1504"
 }
 
 // maybeCheckInet returns a tea.Cmd to check internet connectivity at intervals.

@@ -207,9 +207,11 @@ func (m *Model) dxcFillFromSelected() tea.Cmd {
 		m.prefillContestExchange()
 		// Ensure date is set before dupe check — checkDupe bails if
 		// the date field is empty, and the form may not have been in
-		// focus long enough for autoUpdateDateTime to run yet.
+		// focus long enough for autoUpdateDateTime to run yet. Canonical
+		// digits, like the clock writes: the separators are display-only.
 		if strings.TrimSpace(m.fields[fieldDate].Value()) == "" {
-			m.fields[fieldDate].SetValue(time.Now().UTC().Format("20060102"))
+			dateFmt, _ := qsoDateTimeFormats()
+			m.fields[fieldDate].SetValue(time.Now().UTC().Format(dateFmt))
 		}
 		m.lookup.qrzCall = cur
 		m.lookup.wlCall = cur

@@ -585,38 +585,60 @@ func TestLayoutAroundFormWidthCap(t *testing.T) {
 	}
 }
 
-// TestLayoutAroundDateSeparatorThreshold: the date/time fields switch format at
-// 85 columns (ISO with separators above it). The content changes, the layout
-// must not.
-func TestLayoutAroundDateSeparatorThreshold(t *testing.T) {
-	below := newLayoutTestModel(t, 84, 40)
-	below.dateTimeAuto = true
-	below.autoUpdateDateTime()
-	below.rc.formSig = "" // the form cache skips the clock while auto-updating
-	above := newLayoutTestModel(t, 85, 40)
-	above.dateTimeAuto = true
-	above.autoUpdateDateTime()
-	above.rc.formSig = ""
-
-	fb := captureLayout(t, below)
-	fa := captureLayout(t, above)
-	assertFrameSane(t, "width 84", fb)
-	assertFrameSane(t, "width 85", fa)
-	assertSameZones(t, "width 85", fb, fa, "status", "tabs", "profile", "form", "table", "help")
-
-	// The threshold itself is a content change: the raw ADIF date below it, the
-	// separated ISO form above. The field is narrow at these widths, so the ISO
-	// form arrives truncated — the separators are what the threshold adds. Both
-	// forms are derived from the date the frame actually shows: the test used to
-	// hardcode the day it was written on and started failing the next morning.
-	raw := below.fields[fieldDate].Value() // "YYYYMMDD"
-	iso := raw[:4] + "-" + raw[4:6] + "-" + raw[6:]
-	if got := stripANSI(below.View().Content); !strings.Contains(got, raw) {
-		t.Errorf("width 84: the date is not compact (want %q): %q", raw, dateRow(got))
+// TestLayoutClockFieldsShowSeparators: the date and time fields display their
+// separators wherever the column has room for them, and hold the same canonical
+// digits at every width. The layout must not move either way — the old gate
+// pinned a format threshold at 85 columns, which the form never actually had
+// room for (the value was cut to "2026-10-").
+func TestLayoutClockFieldsShowSeparators(t *testing.T) {
+	build := func(w int) *Model {
+		m := newLayoutTestModel(t, w, 40)
+		m.dateTimeAuto = true
+		m.autoUpdateDateTime()
+		m.rc.formSig = "" // the form cache skips the clock while auto-updating
+		return m
 	}
-	if got := stripANSI(above.View().Content); !strings.Contains(got, iso[:8]) {
-		t.Errorf("width 85: the date has no separators (want %q): %q", iso[:8], dateRow(got))
+	narrow, roomy := build(84), build(100)
+
+	fn := captureLayout(t, narrow)
+	fr := captureLayout(t, roomy)
+	assertFrameSane(t, "width 84", fn)
+	assertFrameSane(t, "width 100", fr)
+
+	// The value never depends on the width — only its rendering does.
+	raw := narrow.fields[fieldDate].Value()
+	if len(raw) != 8 {
+		t.Fatalf("date value %q is not the canonical 8 digits", raw)
 	}
+	if got := roomy.fields[fieldDate].Value(); got != raw {
+		t.Errorf("the date value changed with the terminal width: %q vs %q", got, raw)
+	}
+
+	// Narrow column: the whole date as digits (never cut in half), and the time
+	// keeps its colon — 5 cells fit everywhere.
+	narrowFrame := stripANSI(narrow.View().Content)
+	if !strings.Contains(narrowFrame, raw) {
+		t.Errorf("width 84: the date is neither whole nor separated: %q", clockRow(narrowFrame, "Date UTC"))
+	}
+	hhmm := narrow.fields[fieldTime].Value()
+	if !strings.Contains(narrowFrame, hhmm[:2]+":"+hhmm[2:]) {
+		t.Errorf("width 84: the time has no separator (want %q): %q", hhmm[:2]+":"+hhmm[2:], clockRow(narrowFrame, "Time UTC"))
+	}
+
+	// Roomy column: both with separators.
+	roomyFrame := stripANSI(roomy.View().Content)
+	wantDate := raw[:4] + "-" + raw[4:6] + "-" + raw[6:]
+	if !strings.Contains(roomyFrame, wantDate) {
+		t.Errorf("width 100: the date is not separated (want %q): %q", wantDate, clockRow(roomyFrame, "Date UTC"))
+	}
+
+	// Content changes, layout does not: a hand-typed separated date renders in
+	// the same place as the clock's digits.
+	typed := build(100)
+	typed.fields[fieldDate].SetValue(wantDate)
+	typed.dateTimeAuto = false
+	typed.rc.formSig = ""
+	assertSameZones(t, "width 100 (typed date)", fr, captureLayout(t, typed), "status", "tabs", "profile", "form", "table", "help")
 }
 
 // TestLayoutAroundTableColumnTiers: the recent-QSOs table changes its columns at
@@ -640,14 +662,4 @@ func TestLayoutAroundTableColumnTiers(t *testing.T) {
 		assertFrameSane(t, fmt.Sprintf("width %d", w), f)
 		assertSameZones(t, fmt.Sprintf("width %d", w), base, f, "status", "tabs", "profile", "form", "table", "help")
 	}
-}
-
-// dateRow extracts the form's Date row for failure messages.
-func dateRow(frame string) string {
-	for _, l := range strings.Split(frame, "\n") {
-		if strings.Contains(l, "Date UTC") {
-			return l
-		}
-	}
-	return ""
 }

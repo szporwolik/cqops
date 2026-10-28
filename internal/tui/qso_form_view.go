@@ -20,7 +20,6 @@ var (
 	formRight     = []field{fieldTXPower, fieldFreqRx, fieldSOTA, fieldPOTA, fieldWWFF, fieldIOTA, fieldSIGInfo}
 	allFields     = buildAllFields()
 	choiceIconStr = DimStyle.Render("\u25bc ")
-	choiceIconW   = lipgloss.Width(choiceIconStr)
 
 	// Pre-allocated badge styles — invariant, created once at init.
 	dupeBadgeStyle = lipgloss.NewStyle().Foreground(P.Text).Background(P.Error).Bold(true).Padding(0, 1)
@@ -45,6 +44,30 @@ func (m *Model) isFieldHidden(f field) bool {
 		return true
 	}
 	return false
+}
+
+// displayFieldValue is what the operator reads for an unfocused field.
+//
+// The clock fields hold the canonical digits ("20261028", "0053") — that is what
+// the save path, the dupe check and every export read. They are SHOWN with their
+// separators whenever the column has room for them, so the shape depends only on
+// how much space this frame gives the value: it can never flip between
+// "2026-10-28" and "20261028" at the same terminal size because the clock ticked
+// in between, and it is never cut in half ("2026-10-").
+func displayFieldValue(f field, raw string, width int) string {
+	switch f {
+	case fieldDate:
+		if d := qso.StripNonDigits(raw); len(raw) == 8 && d == raw && width >= 10 {
+			return raw[:4] + "-" + raw[4:6] + "-" + raw[6:]
+		}
+	case fieldTime:
+		if t := qso.StripNonDigits(raw); len(raw) == 4 && t == raw && width >= 5 {
+			return raw[:2] + ":" + raw[2:]
+		} else if len(raw) == 6 && t == raw && width >= 8 {
+			return raw[:2] + ":" + raw[2:4] + ":" + raw[4:]
+		}
+	}
+	return truncateText(raw, width)
 }
 
 // viewForm renders the QSO entry form in a three-column layout.
@@ -117,9 +140,6 @@ func (m *Model) viewForm(width int) string {
 		m.rc.formColStyle = colStyle
 	}
 
-	// labelW is the fixed space: 2-char prefix + 11-char label.
-	const labelW = 2 + 11
-
 	// renderLine returns the raw field line (label + value) without column-width
 	// wrapping. Textinput width is set locally for rendering but is not persisted
 	// back to the model — width sync happens in Update() on WindowSizeMsg.
@@ -135,7 +155,26 @@ func (m *Model) viewForm(width int) string {
 			choiceIcon = choiceIconStr
 		}
 
-		vw := availW - labelW - 1 - choiceIconW
+		prefix := "  "
+		prefixStyled := fieldUnfocusedPrefix.Render(prefix)
+		lblStyled := S.FormLabel.Align(lipgloss.Left).Render(label)
+		if isFocused {
+			prefix = "> "
+			prefixStyled = fieldFocusedPrefix.Render(prefix)
+			lblStyled = fieldFocusedLabel.Align(lipgloss.Left).Render(label)
+		}
+
+		// The value gets what the column has left after the indent, the prefix,
+		// the styled label and the gap. Measured, not assumed: the old constant
+		// (2 + 11) was four cells narrower than the rendered prefix, so a value
+		// that "fitted" by that arithmetic was cut by the column's MaxWidth —
+		// at 85 columns the date showed as "2026-10-".
+		const indent = 4
+		iconW := 0
+		if choiceIcon != "" {
+			iconW = lipgloss.Width(choiceIcon)
+		}
+		vw := availW - indent - lipgloss.Width(prefixStyled) - lipgloss.Width(lblStyled) - 1 - iconW
 		if vw < 3 {
 			vw = 3
 		}
@@ -158,21 +197,11 @@ func (m *Model) viewForm(width int) string {
 		} else if f == fieldFreq && raw != "" && !qso.IsInHamBand(parseFrequency(raw), m.App.Logbook.Station.IARURegion) {
 			v = S.Error.Render(truncateText(raw, vw))
 		} else {
-			v = ValueStyle.Render(truncateText(raw, vw))
+			v = ValueStyle.Render(displayFieldValue(f, raw, vw))
 		}
 		val := choiceIcon + v
 
-		prefix := "  "
-		lblStyled := S.FormLabel.Align(lipgloss.Left).Render(label)
-		var lblPart string
-		if isFocused {
-			prefix = "> "
-			lblStyled = fieldFocusedLabel.Align(lipgloss.Left).Render(label)
-			lblPart = fieldFocusedPrefix.Render(prefix) + lblStyled
-		} else {
-			lblPart = fieldUnfocusedPrefix.Render(prefix) + lblStyled
-		}
-		return "    " + lipgloss.JoinHorizontal(lipgloss.Center, lblPart, " ", val)
+		return "    " + lipgloss.JoinHorizontal(lipgloss.Center, prefixStyled+lblStyled, " ", val)
 	}
 
 	// Count visible fields in each column so the form shrinks when exchange

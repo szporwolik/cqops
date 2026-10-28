@@ -960,7 +960,7 @@ func (m *Model) resetQSOFields() {
 		m.fields[i].Blur()
 	}
 	now := time.Now().UTC()
-	dateFmt, timeFmt := dateTimeFormats(m.width)
+	dateFmt, timeFmt := qsoDateTimeFormats()
 	m.fields[fieldDate].SetValue(now.Format(dateFmt))
 	m.fields[fieldTime].SetValue(now.Format(timeFmt))
 
