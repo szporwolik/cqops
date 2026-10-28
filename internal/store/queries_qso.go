@@ -1099,8 +1099,14 @@ func ExportQSOsSnapshot(db *sql.DB, contestID string, orderAsc bool, fn func(q q
 	return tx.Commit()
 }
 
-// ListQSOsFromDate returns QSOs with qso_date >= the given date, newest-first,
-// capped at limit. Used by the dashboard to avoid loading unbounded history.
+// ListQSOsFromDate returns complete QSOs with qso_date >= the given date,
+// newest-first, capped at limit.
+//
+// The dashboard renders fourteen columns and reads up to 5000 rows on the TUI
+// update path, so it uses ListDashboardQSOsFromDate (dashboard_qsos.go) instead:
+// this loader scans the whole record — notes, references, Wavelog bookkeeping —
+// which the browser never sees. Keep this one for callers that need the record,
+// and keep the two in step: dashboard_qsos_test.go compares them field by field.
 func ListQSOsFromDate(db *sql.DB, date string, limit int) ([]qso.QSO, error) {
 	// Must select the full qsoSelectCols set — listQSOsByQuery scans all of
 	// them. The old inline projection omitted dxcc, wavelog_dirty and

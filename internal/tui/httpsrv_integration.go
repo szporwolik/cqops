@@ -989,8 +989,9 @@ type panelFingerprint struct {
 	set    bool
 }
 
-// newPanelFingerprint builds the id list and content digest for qsos.
-func newPanelFingerprint(qsos []qso.QSO) panelFingerprint {
+// newPanelFingerprint builds the id list and content digest for the dashboard
+// projection rows.
+func newPanelFingerprint(qsos []store.DashboardQSO) panelFingerprint {
 	ids := make([]int64, len(qsos))
 	h := fnv.New64a()
 	var num [32]byte
@@ -1009,6 +1010,38 @@ func newPanelFingerprint(qsos []qso.QSO) panelFingerprint {
 		h.Write(strconv.AppendInt(num[:0], int64(math.Round(q.Freq*1_000_000)), 10))
 	}
 	return panelFingerprint{ids: ids, digest: h.Sum64(), set: true}
+}
+
+// dashboardViews renders the dashboard projection as the payload the browser
+// receives. Today and Recent share it so the two panels cannot drift apart.
+func dashboardViews(qsos []store.DashboardQSO) []dashboard.QSOView {
+	views := make([]dashboard.QSOView, 0, len(qsos))
+	for _, q := range qsos {
+		t, err := time.Parse("20060102 150405", q.QSODate+" "+q.TimeOn)
+		if err != nil {
+			t = time.Now().UTC()
+		}
+		view := dashboard.QSOView{
+			ID:        fmt.Sprintf("%d", q.ID),
+			TimeUTC:   t,
+			Call:      q.Call,
+			Band:      q.Band,
+			Mode:      q.Mode,
+			Submode:   q.Submode,
+			Frequency: fmt.Sprintf("%.3f MHz", q.Freq),
+			RSTSent:   q.RSTSent,
+			RSTRcvd:   q.RSTRcvd,
+			Grid:      q.GridSquare,
+			MyGrid:    q.MyGridSquare,
+			Country:   q.Country,
+			Operator:  q.Operator,
+		}
+		if q.Freq > 0 {
+			view.FrequencyHz = int64(q.Freq * 1_000_000)
+		}
+		views = append(views, view)
+	}
+	return views
 }
 
 // equal reports whether two fingerprints describe the same panel content.
@@ -1103,7 +1136,7 @@ func (m *Model) pushDashboardRecent(ds *dashboard.State) {
 	eventStart := m.eventStartDate()
 	limit := 20
 
-	var qsos []qso.QSO
+	var qsos []store.DashboardQSO
 	var err error
 
 	if eventStart != "" {
@@ -1151,42 +1184,19 @@ func (m *Model) pushDashboardRecent(ds *dashboard.State) {
 	applog.Debug("dashboard: recent_qsos changed, pushing", "count", len(fp.ids), "prevCount", len(lastRecentFP.ids))
 	lastRecentFP = fp
 
-	views := make([]dashboard.QSOView, 0, len(qsos))
-	for _, q := range qsos {
-		t, err := time.Parse("20060102 150405", q.QSODate+" "+q.TimeOn)
-		if err != nil {
-			t = time.Now().UTC()
-		}
-		view := dashboard.QSOView{
-			ID:        fmt.Sprintf("%d", q.ID),
-			TimeUTC:   t,
-			Call:      q.Call,
-			Band:      q.Band,
-			Mode:      q.Mode,
-			Submode:   q.Submode,
-			Frequency: fmt.Sprintf("%.3f MHz", q.Freq),
-			RSTSent:   q.RSTSent,
-			RSTRcvd:   q.RSTRcvd,
-			Grid:      q.GridSquare,
-			MyGrid:    q.MyGridSquare,
-			Country:   q.Country,
-			Operator:  q.Operator,
-		}
-		if q.Freq > 0 {
-			view.FrequencyHz = int64(q.Freq * 1_000_000)
-		}
-		views = append(views, view)
-	}
-	ds.SetRecent(views)
+	ds.SetRecent(dashboardViews(qsos))
 }
 
-// loadRecentFromDate loads up to <limit> QSOs with qso_date >= date,
-// ordered newest-first.
-func (m *Model) loadRecentFromDate(date string, limit int) ([]qso.QSO, error) {
+// loadRecentFromDate loads up to <limit> dashboard rows with qso_date >= date,
+// ordered newest-first. The dashboard renders fourteen columns, so it reads the
+// dashboard projection rather than complete QSO records: the full loader walks
+// notes, references and Wavelog bookkeeping that never reach the browser, and
+// this runs on the update path (up to 5000 rows at a time).
+func (m *Model) loadRecentFromDate(date string, limit int) ([]store.DashboardQSO, error) {
 	if m.App.DB == nil {
 		return nil, nil
 	}
-	return store.ListQSOsFromDate(m.App.DB, date, limit)
+	return store.ListDashboardQSOsFromDate(m.App.DB, date, limit)
 }
 
 func (m *Model) pushDashboardToday(ds *dashboard.State) {
@@ -1208,7 +1218,7 @@ func (m *Model) pushDashboardToday(ds *dashboard.State) {
 	}
 
 	// Load QSOs from minDate through today (capped at 5000).
-	qsos, err := store.ListQSOsFromDate(db, minDate, 5000)
+	qsos, err := store.ListDashboardQSOsFromDate(db, minDate, 5000)
 	if err != nil {
 		if !strings.Contains(err.Error(), "database is closed") {
 			applog.Debug("dashboard: cannot load QSOs from date", "minDate", minDate, "error", err)
@@ -1217,7 +1227,7 @@ func (m *Model) pushDashboardToday(ds *dashboard.State) {
 	}
 	// If today has very few QSOs (midnight crossing), also include yesterday.
 	if len(qsos) < 5 && minDate == today && yesterday > minDate {
-		yQsos, yErr := store.ListQSOsFromDate(db, yesterday, 5000)
+		yQsos, yErr := store.ListDashboardQSOsFromDate(db, yesterday, 5000)
 		if yErr == nil {
 			qsos = append(yQsos, qsos...)
 		}
@@ -1231,35 +1241,9 @@ func (m *Model) pushDashboardToday(ds *dashboard.State) {
 	}
 	lastTodayFP = fp
 
-	views := make([]dashboard.QSOView, 0, len(qsos))
-	for _, qs := range qsos {
-		t, err := time.Parse("20060102 150405", qs.QSODate+" "+qs.TimeOn)
-		if err != nil {
-			t = time.Now().UTC()
-		}
-		view := dashboard.QSOView{
-			ID:        fmt.Sprintf("%d", qs.ID),
-			TimeUTC:   t,
-			Call:      qs.Call,
-			Band:      qs.Band,
-			Mode:      qs.Mode,
-			Submode:   qs.Submode,
-			Frequency: fmt.Sprintf("%.3f MHz", qs.Freq),
-			RSTSent:   qs.RSTSent,
-			RSTRcvd:   qs.RSTRcvd,
-			Grid:      qs.GridSquare,
-			MyGrid:    qs.MyGridSquare,
-			Country:   qs.Country,
-			Operator:  qs.Operator,
-		}
-		if qs.Freq > 0 {
-			view.FrequencyHz = int64(qs.Freq * 1_000_000)
-		}
-		views = append(views, view)
-	}
 	// DB returns newest-first; JS expects newest-first (matching appendTodayQSO).
-	ds.SetToday(views)
-	applog.Debug("dashboard: pushed today QSOs", "count", len(views))
+	ds.SetToday(dashboardViews(qsos))
+	applog.Debug("dashboard: pushed today QSOs", "count", len(qsos))
 }
 
 // dashboardStatsMsg carries one finished stats computation back to the update
