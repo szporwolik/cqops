@@ -25,12 +25,12 @@ import (
 // logbook switch, a dialog or a resize may change what is written inside the
 // zones, but it must not move them.
 //
-// Known pre-existing overflow, deliberately not pinned here: the recent-QSOs
-// table renders wider than the width it is given (84 cells in a 73-cell slot at
-// a 75-column terminal, 133 in 118 at 120), and lipgloss pads every frame line
-// to the widest one, so a frame is ~10-15 cells wider than the terminal. The
-// gates therefore hold the status bar to exactly TermW and check that panels do
-// not move; they do not assert that the frame fits.
+// Width is now part of the contract: every zone fits the terminal and the frame
+// itself must not exceed TermW. lipgloss pads every rendered line to the widest
+// one, so a single zone laid out one cell too wide made the whole frame wider
+// than the terminal — that used to happen here (the recent-QSOs table rendered
+// 84 cells in a 73-cell slot, the tab bar two cells too wide) and is pinned by
+// assertFrameSane and by table_width_test.go.
 
 // panelNames are the zones a QSO screen frame is made of, top to bottom.
 var panelNames = []string{"status", "tabs", "profile", "form", "table", "help"}
@@ -222,10 +222,13 @@ func assertFrameSane(t *testing.T, stage string, f layoutFrame) {
 	if f.Lines != f.TermH {
 		t.Errorf("%s: frame is %d lines tall, want %d (the help bar must sit on the last row)", stage, f.Lines, f.TermH)
 	}
-	// The status bar is the one zone laid out to exactly the terminal width.
-	// (The table and the tab bar currently render wider than the terminal —
-	// see the note above the frame type; that is pre-existing and not
-	// something these gates pin.)
+	// Every zone is laid out to the terminal, and lipgloss pads every line to the
+	// widest one: a frame that is one cell wider than the terminal wraps or clips
+	// in a real terminal, so this is a hard limit, not a preference.
+	if f.FrameW > f.TermW {
+		t.Errorf("%s: frame is %d cells wide in a %d-cell terminal", stage, f.FrameW, f.TermW)
+	}
+	// The status bar is laid out to exactly the terminal width.
 	if f.Panels["status"] >= 0 && f.StatusW != f.TermW {
 		t.Errorf("%s: the status bar is %d cells wide in a %d-cell terminal", stage, f.StatusW, f.TermW)
 	}
@@ -601,14 +604,18 @@ func TestLayoutAroundDateSeparatorThreshold(t *testing.T) {
 	assertFrameSane(t, "width 85", fa)
 	assertSameZones(t, "width 85", fb, fa, "status", "tabs", "profile", "form", "table", "help")
 
-	// The threshold itself is a content change: compact below it, ISO above.
-	// The field is narrow at these widths, so the ISO form arrives truncated —
-	// the separators are what the threshold adds.
-	if got := stripANSI(below.View().Content); !strings.Contains(got, "20261027") {
-		t.Errorf("width 84: the date is not compact: %q", dateRow(got))
+	// The threshold itself is a content change: the raw ADIF date below it, the
+	// separated ISO form above. The field is narrow at these widths, so the ISO
+	// form arrives truncated — the separators are what the threshold adds. Both
+	// forms are derived from the date the frame actually shows: the test used to
+	// hardcode the day it was written on and started failing the next morning.
+	raw := below.fields[fieldDate].Value() // "YYYYMMDD"
+	iso := raw[:4] + "-" + raw[4:6] + "-" + raw[6:]
+	if got := stripANSI(below.View().Content); !strings.Contains(got, raw) {
+		t.Errorf("width 84: the date is not compact (want %q): %q", raw, dateRow(got))
 	}
-	if got := stripANSI(above.View().Content); !strings.Contains(got, "2026-10-2") {
-		t.Errorf("width 85: the date has no separators: %q", dateRow(got))
+	if got := stripANSI(above.View().Content); !strings.Contains(got, iso[:8]) {
+		t.Errorf("width 85: the date has no separators (want %q): %q", iso[:8], dateRow(got))
 	}
 }
 

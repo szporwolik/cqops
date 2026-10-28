@@ -4,17 +4,15 @@ import (
 	"testing"
 )
 
-// editorTierTotal is the width a tier occupies: the sum of its column
-// minimums plus the single-column gaps between them.
+// editorTierTotal is the width a tier occupies once rendered: the sum of its
+// column minimums plus the per-cell padding bubbles/table adds. buildTable works
+// on width-4, so a terminal width of editorTierTotal+4 lands exactly on it.
 func editorTierTotal(names []string) int {
 	total := 0
 	for _, n := range names {
 		total += qsoAllCols[n].minWidth
 	}
-	if len(names) > 0 {
-		total += len(names) - 1
-	}
-	return total
+	return tierRenderWidth(total, len(names))
 }
 
 func hasColumn(names []string, want string) bool {
@@ -30,7 +28,19 @@ func hasColumn(names []string, want string) bool {
 // a contest active the sent/received exchange must be visible on ordinary
 // terminal widths, not only at the widest tier (it used to need ~160 columns).
 func TestEditorContestColumnsShowExchange(t *testing.T) {
-	for _, w := range []int{80, 96, 120, 160, 200} {
+	// The narrowest tier that carries the exchange, plus roomier terminals.
+	narrowest := 0
+	for _, tier := range editorColTiersContest {
+		if hasColumn(tier.names, "ExchSent") {
+			narrowest = editorTierTotal(tier.names) + 4
+			break
+		}
+	}
+	if narrowest == 0 {
+		t.Fatal("no contest tier carries the exchange")
+	}
+	widths := []int{narrowest, narrowest + 4, 120, 160, 200}
+	for _, w := range widths {
 		le := &LogbookEditor{width: w, height: 40}
 		le.SetContestMode(true)
 		le.buildTable()

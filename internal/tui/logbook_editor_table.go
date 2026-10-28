@@ -100,12 +100,17 @@ func (le *LogbookEditor) buildTable() {
 		names = le.formattedNames
 	} else {
 		for i := len(tiers) - 1; i >= 0; i-- {
+			// Measure the set as it will be drawn: the multi-operator swap below
+			// replaces Grid with the two-cells-wider Operator, and a tier that
+			// only just fitted with Grid would otherwise overflow.
 			total := 0
 			for _, n := range tiers[i].names {
+				if le.multiOp && n == "Grid" && !slices.Contains(tiers[i].names, "Operator") {
+					n = "Operator"
+				}
 				total += qsoAllCols[n].minWidth
 			}
-			total += len(tiers[i].names) - 1
-			if total <= bodyW {
+			if tierRenderWidth(total, len(tiers[i].names)) <= bodyW {
 				// Clone: the tiers are package-level definitions shared by every
 				// view, and the multi-operator swap below rewrites one entry.
 				// Editing the tier in place made Operator (wider than Grid) part
@@ -154,9 +159,10 @@ func (le *LogbookEditor) buildTable() {
 	}
 
 	// Extra width — capped per-column, iteratively redistributed (shared
-	// colCaps map and applyCap from RecentQSOs).
-	gaps := len(cols) - 1
-	extra := bodyW - gaps - minTotal
+	// colCaps map and applyCap from RecentQSOs). The budget is what the
+	// rendered table can occupy: bubbles/table pads every cell, so n columns
+	// cost their widths plus 2n cells (see tierRenderWidth).
+	extra := bodyW - tierRenderWidth(minTotal, len(cols))
 	if extra > 0 && len(cols) > 0 {
 		distributed := 0
 		for i := range cols {

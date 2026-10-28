@@ -25,6 +25,24 @@ func recentQSOsColumns(w int, multiOp, contest bool) string {
 	return view.View()
 }
 
+// hasOperatorAt reports whether the tier a width selects already carries the
+// Operator column, i.e. multi-operator mode has nothing left to swap.
+func hasOperatorAt(w int, contest bool) bool {
+	tiers := qsoColTiers
+	if contest {
+		tiers = qsoColTiersContest
+	}
+	for i := len(tiers) - 1; i >= 0; i-- {
+		if w >= tierNeed(tiers[i].maxW, tiers[i].names, true) {
+			return hasColumn(tiers[i].names, "Operator")
+		}
+	}
+	if len(tiers) == 0 {
+		return false
+	}
+	return hasColumn(tiers[0].names, "Operator")
+}
+
 // TestRecentQSOsMultiOpRoundTripKeepsTheColumns: single → multi → single must
 // come back to exactly the table the single view had. Switching the mode off
 // used to leave the Operator column in place, because the swap had rewritten
@@ -56,7 +74,14 @@ func TestRecentQSOsMultiOpRoundTripKeepsTheColumns(t *testing.T) {
 		for _, w := range tc.widths {
 			before := recentQSOsColumns(w, false, tc.contest)
 			club := recentQSOsColumns(w, true, tc.contest)
-			if before == club {
+			// A tier that already carries Operator keeps its columns as they are:
+			// swapping its Grid too would show the column twice (and render the
+			// table two cells wider than the tier's budget).
+			if hasOperatorAt(w, tc.contest) {
+				if club != before {
+					t.Errorf("%s width %d: a tier that already carries Operator changed shape", tc.name, w)
+				}
+			} else if before == club {
 				t.Fatalf("%s width %d: multi-operator mode changed nothing, so the test proves nothing", tc.name, w)
 			}
 			after := recentQSOsColumns(w, false, tc.contest)
@@ -108,11 +133,11 @@ func editorColumns(w int, multiOp, contest bool) []string {
 	return append([]string(nil), le.formattedNames...)
 }
 
-// assertEditorMultiOpRoundTrip: at the exact width a tier needs, a club table
-// must not change the columns an ordinary table picks — and the ordinary table
-// must keep the reference columns (QTH, Comment, Contest) that the richer tiers
-// exist for. Operator is wider than Grid, so an in-place swap pushed the tier
-// over its own width and the next build fell back to a poorer tier.
+// assertEditorMultiOpRoundTrip: at a width that fits the club variant of a tier,
+// the club table must carry Operator instead of Grid — and rendering it must not
+// change the columns an ordinary table picks. Operator is wider than Grid, so the
+// club variant of a tier needs two more cells; at the Grid width itself the club
+// view correctly falls to the next tier down rather than overflowing.
 func assertEditorMultiOpRoundTrip(t *testing.T, w int, contest, swaps bool) {
 	t.Helper()
 	before := editorColumns(w, false, contest)
@@ -130,19 +155,23 @@ func assertEditorMultiOpRoundTrip(t *testing.T, w int, contest, swaps bool) {
 }
 
 func TestEditorMultiOpRoundTripKeepsTheColumns(t *testing.T) {
+	// The club variant of a tier needs the Operator column's extra width, so it
+	// is probed at that width (buildTable works on width-4).
+	clubWidth := func(names []string) int {
+		return editorTierTotal(names) + qsoAllCols["Operator"].minWidth - qsoAllCols["Grid"].minWidth + 4
+	}
 	for _, tier := range editorColTiers {
 		if !hasColumn(tier.names, "Grid") {
 			continue
 		}
-		// buildTable works on width-4; +4 lands exactly on this tier's total.
-		assertEditorMultiOpRoundTrip(t, editorTierTotal(tier.names)+4, false,
+		assertEditorMultiOpRoundTrip(t, clubWidth(tier.names), false,
 			!hasColumn(tier.names, "Operator"))
 	}
 	for _, tier := range editorColTiersContest {
 		if !hasColumn(tier.names, "Grid") {
 			continue
 		}
-		assertEditorMultiOpRoundTrip(t, editorTierTotal(tier.names)+4, true,
+		assertEditorMultiOpRoundTrip(t, clubWidth(tier.names), true,
 			!hasColumn(tier.names, "Operator"))
 	}
 }

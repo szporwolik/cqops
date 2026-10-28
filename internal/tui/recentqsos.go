@@ -156,7 +156,7 @@ func (r *RecentQSOs) View() string {
 	}
 	var names []string
 	for i := len(tiers) - 1; i >= 0; i-- {
-		if bodyW >= tiers[i].maxW {
+		if bodyW >= tierNeed(tiers[i].maxW, tiers[i].names, r.multiOp) {
 			// Clone: the tiers are package-level definitions shared by every
 			// view, and multi-operator mode rewrites one entry below. Editing
 			// the tier in place left the Operator column behind for every later
@@ -171,10 +171,12 @@ func (r *RecentQSOs) View() string {
 		for len(names) > 1 {
 			total := 0
 			for _, n := range names {
+				if r.multiOp && n == "Grid" {
+					n = "Operator"
+				}
 				total += qsoAllCols[n].minWidth
 			}
-			total += len(names) - 1
-			if total <= bodyW {
+			if tierRenderWidth(total, len(names)) <= bodyW {
 				break
 			}
 			names = names[:len(names)-1]
@@ -182,8 +184,10 @@ func (r *RecentQSOs) View() string {
 	}
 
 	// Multi-operator mode: swap Grid for Operator (useful for club
-	// logbooks where callsign alone doesn't identify the op).
-	if r.multiOp {
+	// logbooks where callsign alone doesn't identify the op). A tier that
+	// already carries Operator keeps it — swapping its Grid as well showed the
+	// column twice and made the table two cells wider than the tier's budget.
+	if r.multiOp && slices.Contains(names, "Grid") && !slices.Contains(names, "Operator") {
 		for i, n := range names {
 			if n == "Grid" {
 				names[i] = "Operator"
@@ -201,8 +205,7 @@ func (r *RecentQSOs) View() string {
 			Width: qsoAllCols[n].minWidth,
 		})
 	}
-	gaps := len(names) - 1
-	extra := bodyW - gaps - minTotal
+	extra := bodyW - tierRenderWidth(minTotal, len(names))
 
 	if extra > 0 && len(cols) > 0 {
 		// Pass 1: proportional distribution to text-heavy columns.
@@ -345,6 +348,32 @@ func (r *RecentQSOs) Height() int {
 	return lipgloss.Height(r.View())
 }
 
+// tableCellPad is what bubbles/table adds to every column: a cell is rendered
+// with Padding(0, 1) (table.DefaultStyles().Cell), so a column whose content
+// width is W occupies W+2 cells of the terminal. Width budgets that count only
+// one space per gap therefore render every row n+1 cells too wide — which is
+// what pushed this table past its panel (84 in 73, 133 in 118, 222 in 198) and
+// the whole frame past the terminal.
+const tableCellPad = 2
+
+// tierRenderWidth is the terminal width a column set occupies once rendered:
+// the content widths plus the per-cell padding. Tier thresholds and the width
+// budget both use it, so a column set is chosen only when it actually fits.
+func tierRenderWidth(minTotal, cols int) int {
+	return minTotal + tableCellPad*cols
+}
+
+// tierNeed is the width a tier needs as rendered. The thresholds are
+// precomputed from the tier's own columns, but multi-operator mode swaps the
+// Grid column for the wider Operator one afterwards, so a tier that only just
+// fitted with Grid overflows by two cells without this adjustment.
+func tierNeed(maxW int, names []string, multiOp bool) int {
+	if multiOp && slices.Contains(names, "Grid") && !slices.Contains(names, "Operator") {
+		return maxW + qsoAllCols["Operator"].minWidth - qsoAllCols["Grid"].minWidth
+	}
+	return maxW
+}
+
 // colCaps defines per-column maximum widths (by header/title — NOT qsoAllCols
 // key). Prevents short fields (Band, Mode, Pwr, etc.) from blowing up on
 // ultra-wide screens. Caps are generous enough to never truncate real data.
@@ -385,7 +414,7 @@ var colCaps = map[string]int{
 // Pre-computed max widths avoid repeated inner loops on every cache miss.
 var qsoColTiers = []struct {
 	minW  int
-	maxW  int // pre-computed: sum of minWidths + (len(names)-1)
+	maxW  int // pre-computed: tierRenderWidth of the minimum widths
 	names []string
 }{
 	{0, 0, []string{"Date", "Time", "Call", "Mode", "RSTs", "RSTr"}},
@@ -427,8 +456,7 @@ func init() {
 		for _, n := range t.names {
 			total += qsoAllCols[n].minWidth
 		}
-		total += len(t.names) - 1 // gaps between columns
-		t.maxW = total
+		t.maxW = tierRenderWidth(total, len(t.names))
 	}
 	for i := range qsoColTiersContest {
 		t := &qsoColTiersContest[i]
@@ -436,8 +464,7 @@ func init() {
 		for _, n := range t.names {
 			total += qsoAllCols[n].minWidth
 		}
-		total += len(t.names) - 1
-		t.maxW = total
+		t.maxW = tierRenderWidth(total, len(t.names))
 	}
 }
 

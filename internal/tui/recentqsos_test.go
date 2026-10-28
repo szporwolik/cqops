@@ -136,7 +136,7 @@ func TestRecentQSOsWidthNotExceeded(t *testing.T) {
 
 	view := r.View()
 	w := lipgloss.Width(view)
-	if w > 45 {
-		t.Errorf("RecentQSOs width %d > 45 (should respect narrow constraints)", w)
+	if w > 40 {
+		t.Errorf("RecentQSOs width %d > 40 (must fit the width it is given)", w)
 	}
 }
