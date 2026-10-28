@@ -1192,10 +1192,8 @@ func (m *Model) View() tea.View {
 		m.rc.lastLayoutSc = m.screen
 	}
 
-	if layout.TerminalW < 75 || layout.TerminalH < 24 {
-		msg := fmt.Sprintf("\n  CQOps — Terminal too small: %dx%d (min 75x24)\n\n  Press F10 and then Enter to quit",
-			layout.TerminalW, layout.TerminalH)
-		return tea.NewView(ErrorStyle.Render(msg))
+	if layout.TerminalW < minTermW || layout.TerminalH < minTermH {
+		return tea.NewView(refusalView(layout.TerminalW, layout.TerminalH))
 	}
 
 	// Render fixed bars.

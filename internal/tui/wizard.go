@@ -274,10 +274,8 @@ func (w *Wizard) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (w *Wizard) View() tea.View {
 	// Minimum terminal size check — same as the main app.
-	if w.width > 0 && w.height > 0 && (w.width < 75 || w.height < 24) {
-		msg := fmt.Sprintf("\n  CQOps — Terminal too small: %dx%d (min 75x24)\n\n  Press F10 and then Enter to quit",
-			w.width, w.height)
-		return tea.NewView(ErrorStyle.Render(msg))
+	if w.width > 0 && w.height > 0 && (w.width < minTermW || w.height < minTermH) {
+		return tea.NewView(refusalView(w.width, w.height))
 	}
 
 	var content string

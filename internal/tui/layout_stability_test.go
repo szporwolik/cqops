@@ -553,6 +553,51 @@ func TestLayoutAroundMinimumSizeThreshold(t *testing.T) {
 	}
 }
 
+// TestLayoutRefusesATerminalItCannotFit: a terminal below the minimum gets the
+// refusal and nothing else — including the sizes too small to be promoted.
+//
+// MeasureLayout used to replace anything under 40x10 with 80x24, so the check
+// in View saw 80x24 and drew the whole screen: a 39-column terminal got a
+// 79-cell frame, and an 8-row one got a 24-line frame. Both now refuse, and the
+// refusal never exceeds the terminal it is drawn in.
+func TestLayoutRefusesATerminalItCannotFit(t *testing.T) {
+	for _, size := range [][2]int{{39, 24}, {20, 10}, {30, 40}, {76, 9}, {100, 8}} {
+		m := newLayoutTestModel(t, size[0], size[1])
+		f := captureLayout(t, m)
+		for _, p := range []string{"form", "status", "tabs", "table", "help"} {
+			if f.Panels[p] != -1 {
+				t.Errorf("%dx%d: panel %q is drawn below the minimum size: %s", size[0], size[1], p, f)
+			}
+		}
+		if f.Lines != 5 {
+			t.Errorf("%dx%d: the refusal is %d lines, want 5: %s", size[0], size[1], f.Lines, f)
+		}
+		if f.FrameW > size[0] {
+			t.Errorf("%dx%d: the refusal is %d cells wide and does not fit the terminal", size[0], size[1], f.FrameW)
+		}
+	}
+}
+
+// TestLayoutRefusalNamesTheRealSize: the operator is told the size the terminal
+// actually has, not the one the layout would have used.
+func TestLayoutRefusalNamesTheRealSize(t *testing.T) {
+	m := newLayoutTestModel(t, 39, 24)
+	out := stripANSI(m.View().Content)
+	if !strings.Contains(out, "39x24 (min 75x24)") {
+		t.Errorf("the refusal does not name the real size and the minimum:\n%s", out)
+	}
+	if !strings.Contains(out, "Terminal too small") {
+		t.Errorf("the refusal does not say what is wrong:\n%s", out)
+	}
+
+	// The wizard has its own guard and must say the same thing.
+	w := newTestWizard(t, "SP9MOA", "JO90AA")
+	w.width, w.height = 39, 24
+	if got := stripANSI(w.View().Content); !strings.Contains(got, "39x24 (min 75x24)") {
+		t.Errorf("the wizard's refusal does not name the real terminal size:\n%s", got)
+	}
+}
+
 // TestLayoutAroundFormWidthCap: the form box stops growing at partnerMapMaxW-4
 // of content, so the chrome stays left-aligned and stable beyond it. Sizes just
 // below, at and above the cap must all keep the same zone structure.
