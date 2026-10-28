@@ -6,6 +6,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/szporwolik/cqops/internal/qso"
+	"github.com/szporwolik/cqops/internal/store"
 )
 
 // =============================================================================
@@ -208,5 +209,97 @@ func TestEditorSearchResizeKeepsThe26thHit(t *testing.T) {
 	}
 	if le.currentPage != pageBefore {
 		t.Errorf("the resize re-paged the search result: page %d, want %d", le.currentPage, pageBefore)
+	}
+}
+
+// TestEditorDeletingTheLastPageFallsBack: deleting the only contact on the last
+// page leaves the page number one beyond the new end. The clamp in loadPage uses
+// the count from the previous load, so it cannot know the page is gone — the read
+// that reveals the new count is the one that has to correct the page, or the
+// operator is left staring at an empty table with 20 contacts in the logbook.
+func TestEditorDeletingTheLastPageFallsBack(t *testing.T) {
+	le, all := pagingTestEditor(t, 21) // page size 20: page 2 holds one contact
+	if err := le.goToPage(2); err != nil {
+		t.Fatalf("goToPage(2): %v", err)
+	}
+	if len(le.qsos) != 1 {
+		t.Fatalf("page 2 holds %d contacts; want 1", len(le.qsos))
+	}
+	gone := all[len(all)-1].ID
+	if le.qsos[0].ID != gone {
+		t.Fatalf("page 2 holds contact %d; want the oldest %d", le.qsos[0].ID, gone)
+	}
+
+	if err := store.DeleteQSO(le.db, gone); err != nil {
+		t.Fatalf("DeleteQSO: %v", err)
+	}
+	// The delete completion marks the list for reload; the reload runs at the
+	// end of Update.
+	le.Update(editorMsg{deleted: gone, gen: le.gen, lbID: le.logbookID})
+	le.Update(tea.WindowSizeMsg{Width: le.width, Height: le.height})
+
+	if le.totalCount != 20 {
+		t.Fatalf("totalCount = %d after the delete; want 20", le.totalCount)
+	}
+	if len(le.qsos) == 0 {
+		t.Fatalf("the logbook shows an empty page %d/%d with %d contacts in it",
+			le.currentPage, le.totalPages(), le.totalCount)
+	}
+	if le.currentPage != 1 {
+		t.Errorf("page %d after deleting the last page; want 1 (the last page that exists)", le.currentPage)
+	}
+	if len(le.qsos) != 20 {
+		t.Errorf("page 1 holds %d contacts; want 20", len(le.qsos))
+	}
+}
+
+// TestEditorDeletingOnAMiddlePageStays: the fallback must not fire when the page
+// still exists — deleting a contact from page 2 of 4 keeps the operator there.
+func TestEditorDeletingOnAMiddlePageStays(t *testing.T) {
+	le, all := pagingTestEditor(t, 61) // page size 20 → pages 20/20/20/1
+	if err := le.goToPage(2); err != nil {
+		t.Fatalf("goToPage(2): %v", err)
+	}
+	gone := le.qsos[3].ID
+
+	if err := store.DeleteQSO(le.db, gone); err != nil {
+		t.Fatalf("DeleteQSO: %v", err)
+	}
+	le.Update(editorMsg{deleted: gone, gen: le.gen, lbID: le.logbookID})
+	le.Update(tea.WindowSizeMsg{Width: le.width, Height: le.height})
+
+	if le.currentPage != 2 {
+		t.Errorf("page %d after deleting a contact on page 2; want 2", le.currentPage)
+	}
+	if len(le.qsos) != 20 {
+		t.Errorf("page 2 holds %d contacts after the delete; want a full page of 20", len(le.qsos))
+	}
+	if le.totalCount != len(all)-1 {
+		t.Errorf("totalCount = %d after the delete; want %d", le.totalCount, len(all)-1)
+	}
+}
+
+// TestEditorDeletingTheOnlyContact: the logbook is now empty — the editor lands
+// on page 1 with no rows, rather than looking for a page that never existed.
+func TestEditorDeletingTheOnlyContact(t *testing.T) {
+	le, all := pagingTestEditor(t, 1)
+	if le.currentPage != 1 {
+		t.Fatalf("setup: page %d with one contact; want 1", le.currentPage)
+	}
+	if err := store.DeleteQSO(le.db, all[0].ID); err != nil {
+		t.Fatalf("DeleteQSO: %v", err)
+	}
+	le.Update(editorMsg{deleted: all[0].ID, gen: le.gen, lbID: le.logbookID})
+	_, cmd := le.Update(tea.WindowSizeMsg{Width: le.width, Height: le.height})
+	if cmd != nil {
+		if msg, ok := cmd().(editorMsg); ok && msg.err != nil {
+			t.Fatalf("reload after emptying the logbook reported an error: %v", msg.err)
+		}
+	}
+	if le.currentPage != 1 {
+		t.Errorf("page %d after emptying the logbook; want 1", le.currentPage)
+	}
+	if le.totalCount != 0 || len(le.qsos) != 0 {
+		t.Errorf("logbook shows %d of %d contacts; want an empty page 1", len(le.qsos), le.totalCount)
 	}
 }

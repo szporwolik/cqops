@@ -483,6 +483,28 @@ func (le *LogbookEditor) loadPage() error {
 		return err
 	}
 
+	// The count from this read decides whether the page still exists. Deleting
+	// the last contact of the last page leaves the page number one past the new
+	// end, and the clamp above could only use the count from the previous load —
+	// so 21 contacts on 20-row pages became an empty "page 2/1" while 20 contacts
+	// were still in the logbook. Re-read the last page that does exist and
+	// install that instead of the empty one. Bounded: every pass uses the count
+	// it just read, and a logbook emptied meanwhile lands on page 1.
+	read := func(p int) ([]qso.QSO, int, error) {
+		return store.ListQSOsPageWithCount(le.db, size, (p-1)*size, le.contestID)
+	}
+	for attempt := 0; attempt < 3 && len(qsos) == 0 && page > 1; attempt++ {
+		last := pagesFor(total, size)
+		if page <= last {
+			break
+		}
+		page = last
+		if qsos, total, err = read(page); err != nil {
+			applog.Error("LogbookEditor: cannot read page", "page", page, "error", err.Error())
+			return err
+		}
+	}
+
 	le.pageSize = size
 	le.currentPage = page
 	le.qsos = qsos
