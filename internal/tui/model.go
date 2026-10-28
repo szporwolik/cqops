@@ -401,13 +401,7 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 	// Kitty graphics: force-enable before model creation (mode locks at
 	// construction).  The General → Kitty graphics checkbox is the
 	// master switch; env vars only take effect when it is on.
-	// Recognises: kitty (KITTY_WINDOW_ID), Ghostty (TERM=xterm-ghostty,
-	// GHOSTTY_RESOURCES_DIR), WezTerm, and the NTCHARTS_KITTY override.
-	if a.Config.General.KittyGraphics &&
-		(os.Getenv("NTCHARTS_KITTY") == "supported" ||
-			os.Getenv("KITTY_WINDOW_ID") != "" ||
-			strings.HasPrefix(os.Getenv("TERM"), "xterm-ghostty") ||
-			os.Getenv("GHOSTTY_RESOURCES_DIR") != "") {
+	if a.Config.General.KittyGraphics && kittyForceCapable() {
 		picture.ForceKittyCapability(picture.KittyCapabilitySupported)
 	}
 
@@ -416,12 +410,16 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 		UserAgent:  "CQOps/1.0 (ham-radio-logger)",
 		HTTPClient: &http.Client{Transport: transport, Timeout: 15 * time.Second},
 		KittyID:    43, // full-screen F2 viewer
+		// ntcharts v2.4+ letterboxes Kitty images by default (FitContain);
+		// CQOps has always drawn the photo to fill its box.
+		Fit: picture.FitFill,
 	})
 	m.photo.partnerPicViewer = pictureurl.NewWithConfig(pictureurl.Config{
 		CacheLimit: 4,
 		UserAgent:  "CQOps/1.0 (ham-radio-logger)",
 		HTTPClient: &http.Client{Transport: transport, Timeout: 15 * time.Second},
 		KittyID:    44, // inline partner photo — distinct from F2 viewer
+		Fit:        picture.FitFill,
 	})
 	applog.Info("Photo viewer: ready (Kitty graphics: experimental — requires Kitty, Ghostty, or WezTerm)",
 		"kitty_cap", m.photo.viewer.KittySupported(),
@@ -560,7 +558,49 @@ func (m *Model) ensureMapKitty() tea.Cmd {
 		m.psk.view = ""
 		return m.mapView.SetKittyEnabled(true)
 	}
+	// Configured on, but Kitty mode never engaged (probe unanswered, or the
+	// terminal is not one we can vouch for): say so once instead of quietly
+	// drawing the half-block map forever.
+	if picture.KittySupported() != picture.KittyCapabilitySupported {
+		m.mapView.NoteKittyBlocked()
+	}
 	return nil
+}
+
+// kittyForceCapable reports whether the terminal is one of the implementations
+// known to render the Kitty graphics protocol properly, so the capability can be
+// declared at startup instead of probed. ntcharts blocks the switch into Kitty
+// mode until its 250 ms probe is answered, so a terminal that never answers — a
+// multiplexer that drops the query, a reply that arrives before the input
+// reader is up — silently keeps the half-block fallback forever. The ones we
+// can vouch for skip the probe; NTCHARTS_KITTY=supported forces it for
+// anything else.
+//
+// iTerm2 is deliberately absent: kittyTerminalEnv recognises it so the probe may
+// try, but its Kitty support is partial and the half-block map is the safer
+// default there.
+func kittyForceCapable() bool {
+	if os.Getenv("NTCHARTS_KITTY") == "supported" {
+		return true
+	}
+	if os.Getenv("KITTY_WINDOW_ID") != "" || os.Getenv("KITTY_INSTALLATION_DIR") != "" {
+		return true
+	}
+	if os.Getenv("GHOSTTY_RESOURCES_DIR") != "" {
+		return true
+	}
+	if os.Getenv("WEZTERM_EXECUTABLE") != "" || os.Getenv("WEZTERM_PANE") != "" {
+		return true
+	}
+	switch os.Getenv("TERM") {
+	case "xterm-kitty", "xterm-ghostty":
+		return true
+	}
+	switch os.Getenv("TERM_PROGRAM") {
+	case "kitty", "ghostty", "WezTerm":
+		return true
+	}
+	return false
 }
 
 // kittyTerminalEnv reports whether the current terminal is known to
@@ -568,6 +608,12 @@ func (m *Model) ensureMapKitty() tea.Cmd {
 // Used as a guard to prevent ntcharts from activating Kitty on
 // terminals like Konsole that may accidentally pass the probe.
 func kittyTerminalEnv() bool {
+	// An explicit opt-in overrides the guesswork: it is also what
+	// kittyForceCapable honours, and forcing the capability while this gate
+	// says no would leave the mode switch permanently blocked.
+	if os.Getenv("NTCHARTS_KITTY") == "supported" {
+		return true
+	}
 	if os.Getenv("KITTY_WINDOW_ID") != "" || os.Getenv("KITTY_INSTALLATION_DIR") != "" {
 		return true
 	}

@@ -80,15 +80,25 @@ type mapRenderer struct {
 	pskKittyPic     picture.Model
 	pskKittyPending tea.Cmd
 	pskKittySig     string // last mapSig sent to SetPSKImage; avoids re-dispatch
+	// kittyBlockedLogged reports once why Kitty mode stays off, instead of on
+	// every frame the check runs.
+	kittyBlockedLogged bool
 }
 
 func newMapRenderer() *mapRenderer {
 	mr := &mapRenderer{
 		kittyPic: picture.NewWithConfig(picture.Config{
 			KittyID: kittyMapImageID,
+			// The RGBA buffer is built at exactly the placement rectangle's
+			// pixel size (renderKitty), so fill and contain produce the same
+			// image here — fill states the intent and keeps the map immune to
+			// the library default (ntcharts v2.4+ defaults Kitty mode to
+			// FitContain, i.e. letterboxing).
+			Fit: picture.FitFill,
 		}),
 		pskKittyPic: picture.NewWithConfig(picture.Config{
 			KittyID: kittyPSKImageID,
+			Fit:     picture.FitFill,
 		}),
 	}
 	// Pre-size both picture models so CellPixelSize() returns valid
@@ -144,8 +154,26 @@ func (mr *mapRenderer) SetKittyEnabled(enabled bool) tea.Cmd {
 	mr.kittyOn = enabled
 	mr.kittyDirty = true
 	mr.pskKittySig = "" // force re-dispatch after mode switch
-	applog.Debug("PSK SetKittyEnabled", "on", enabled, "kittyMode", mr.pskKittyPic.Mode())
+	cpw, cph := mr.kittyPic.CellPixelSize()
+	applog.Info("Kitty graphics: map", "on", enabled, "capability", picture.KittySupported(),
+		"env_signalled", picture.KittyEnvSignalled(), "cell_px_w", cpw, "cell_px_h", cph)
 	return tea.Batch(mr.kittyPic.Toggle(), mr.pskKittyPic.Toggle())
+}
+
+// NoteKittyBlocked logs, once, why the map cannot use Kitty graphics. The
+// capability is only Supported after the terminal answered ntcharts' probe, so
+// a terminal that never answers (a multiplexer that drops the query, a
+// transport that hides the reply) silently keeps the half-block map — this line
+// is what turns that into something visible in the log.
+func (mr *mapRenderer) NoteKittyBlocked() {
+	if mr.kittyBlockedLogged || mr.kittyOn {
+		return
+	}
+	mr.kittyBlockedLogged = true
+	applog.Warn("Kitty graphics: map stays on half-block ANSI",
+		"capability", picture.KittySupported(),
+		"env_signalled", picture.KittyEnvSignalled(),
+		"reason", picture.KittyUnavailable())
 }
 
 // Update forwards messages to the embedded picture.Model and returns any
