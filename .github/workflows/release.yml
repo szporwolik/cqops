@@ -24,6 +24,10 @@ jobs:
       version: ${{ steps.version.outputs.value }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Full history and tags: the tag check below has to see an existing
+          # v<VERSION> tag to tell whether it points at this commit.
+          fetch-depth: 0
 
       - name: Resolve version
         id: version
@@ -41,6 +45,17 @@ jobs:
           fi
           echo "value=$V" >> $GITHUB_OUTPUT
           echo "Version: $V"
+
+      # The release step creates a missing tag at the built commit, but the
+      # GitHub Releases API ignores target_commitish for a tag that already
+      # exists — a manual run from a branch would then publish artifacts built
+      # from one commit under a tag (and source archives) pointing at another.
+      # Fail here, before twenty minutes of cross-compilation.
+      - name: Verify the tag points at the built commit
+        env:
+          VERSION: ${{ steps.version.outputs.value }}
+          SHA: ${{ github.sha }}
+        run: ./scripts/check-release-tag.sh "$VERSION" "$SHA"
 
   # ──────────────────────────────────────────────────────────────────────────
   # Build all Go binaries + Linux packages (deb + rpm)
@@ -318,11 +333,25 @@ jobs:
           echo "Release notes:"
           cat "$NOTES"
 
+      # Repeated immediately before the release call: validate-version ran before
+      # the builds, and a tag pushed in the meantime would be the one the API
+      # ignores target_commitish for.
+      - name: Verify the tag points at the built commit
+        env:
+          VERSION: ${{ steps.meta.outputs.version }}
+          SHA: ${{ github.sha }}
+        run: ./scripts/check-release-tag.sh "$VERSION" "$SHA"
+
       - name: Create Release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: v${{ steps.meta.outputs.version }}
           name: v${{ steps.meta.outputs.version }}
+          # Pins the tag to the commit this run built. Without it a manual run
+          # from a branch lets GitHub create the tag on the repository's default
+          # branch, so the tag and its source archives would describe different
+          # code than the attached artifacts.
+          target_commitish: ${{ github.sha }}
           body_path: release-notes.md
           files: dist/*
 

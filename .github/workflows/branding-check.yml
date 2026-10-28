@@ -20,11 +20,12 @@ jobs:
         run: |
           bash -n scripts/branding.sh
           bash -n scripts/validate-branding.sh
+          bash -n scripts/check-release-tag.sh
 
       - name: ShellCheck
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-          shellcheck --severity=warning scripts/branding.sh scripts/validate-branding.sh
+          shellcheck --severity=warning scripts/branding.sh scripts/validate-branding.sh scripts/check-release-tag.sh
 
       - name: Validate branding
         run: ./scripts/validate-branding.sh
