@@ -105,7 +105,7 @@ Jeśli **DUPE!** wymaga potwierdzenia, ponownie naciśnij **Enter**, aby zapisa�
 | F7 | Band Plan | Częstotliwości i gotowe ustawienia |
 | F8 | Logbook | Edycja, import, eksport, synchronizacja |
 | F9 | Configuration | Ustawienia stacji i usług |
-| F10 | Quit | Zakończenie CQOps |
+| F10 / Alt+0 | Quit | Zakończenie CQOps |
 
 Górny pasek pokazuje aktywną konfigurację stacji, czas lokalny (**L**) i UTC (**Z**). Biały wskaźnik zwykle oznacza aktywne połączenie, żółty — wyłączenie/łączenie/oczekiwanie, a czerwony — błąd. WSJT jest wyróżniony podczas nadawania. **WL!** ostrzega o nieobsługiwanym starym kluczu Wavelog.
 
@@ -287,7 +287,7 @@ Panel automatycznie pokazuje bieżącą łączność, mapy QSO, ostatnie kontakt
 
 | Ekran | Klawisze | Działanie |
 |---|---|---|
-| Ogólne | ? / Esc / F10 | Pomoc / powrót / wyjście |
+| Ogólne | ? / Esc / F10 / Alt+0 | Pomoc / powrót / wyjście |
 | QSO | Tab / Shift+Tab | Następne / poprzednie pole |
 | QSO | Enter / Ins | Zapis / wyszukiwanie |
 | QSO | Shift+Backspace / Del | Wyczyszczenie pola / formularza |

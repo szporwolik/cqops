@@ -105,7 +105,7 @@ sudo mv FILE /usr/local/bin/cqops
 | F7 | Band Plan | 周波数と運用プリセット |
 | F8 | Logbook | 編集、インポート、エクスポート、同期 |
 | F9 | Configuration | 局とサービスの設定 |
-| F10 | Quit | CQOps の終了 |
+| F10 / Alt+0 | Quit | CQOps の終了 |
 
 上部には現在の局設定、ローカル時刻（**L**）、UTC（**Z**）が表示されます。接続表示は通常、白が有効、黄が無効／接続中／待機、赤がエラーです。WSJT は送信中に強調表示されます。**WL!** は未対応の旧 Wavelog キーを示します。
 
@@ -287,7 +287,7 @@ CQOps は気軽なコンテスト記録、交換情報、連番、QSO レート�
 
 | 画面 | キー | 操作 |
 |---|---|---|
-| 共通 | ? / Esc / F10 | ヘルプ／戻る／終了 |
+| 共通 | ? / Esc / F10 / Alt+0 | ヘルプ／戻る／終了 |
 | QSO | Tab / Shift+Tab | 次／前の項目 |
 | QSO | Enter / Ins | 保存／照会 |
 | QSO | Shift+Backspace / Del | 項目／フォームを消去 |

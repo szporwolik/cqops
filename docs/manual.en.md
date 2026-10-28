@@ -105,7 +105,7 @@ If **DUPE!** requests confirmation, press **Enter** again to save anyway or **Es
 | F7 | Band Plan | Frequencies and operating presets |
 | F8 | Logbook | Edit, import, export, synchronize |
 | F9 | Configuration | Station and service settings |
-| F10 | Quit | Exit CQOps |
+| F10 / Alt+0 | Quit | Exit CQOps |
 
 The top bar identifies the active station setup and shows local time (**L**) and UTC (**Z**). Connection labels normally use white for active, yellow for disabled/connecting/waiting, and red for an error. WSJT is highlighted during transmission. **WL!** warns of an unsupported legacy Wavelog key.
 
@@ -287,7 +287,7 @@ The dashboard updates automatically with the current contact, QSO maps, recent c
 
 | Screen | Keys | Action |
 |---|---|---|
-| General | ? / Esc / F10 | Help / back / quit |
+| General | ? / Esc / F10 / Alt+0 | Help / back / quit |
 | QSO | Tab / Shift+Tab | Next / previous field |
 | QSO | Enter / Ins | Save / lookup |
 | QSO | Shift+Backspace / Del | Clear field / form |

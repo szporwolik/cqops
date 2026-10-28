@@ -105,7 +105,7 @@ Si **DUPE!** demande confirmation, appuyez à nouveau sur **Enter** pour conserv
 | F7 | Band Plan | Fréquences et préréglages |
 | F8 | Logbook | Modification, import, export, synchronisation |
 | F9 | Configuration | Paramètres de station et services |
-| F10 | Quit | Quitter CQOps |
+| F10 / Alt+0 | Quit | Quitter CQOps |
 
 La barre supérieure indique la configuration active, l’heure locale (**L**) et UTC (**Z**). Le blanc signifie normalement actif, le jaune désactivé/connexion/attente, le rouge une erreur. WSJT est mis en évidence pendant l’émission. **WL!** signale une ancienne clé Wavelog non prise en charge.
 
@@ -287,7 +287,7 @@ Le tableau de bord actualise automatiquement contact en cours, cartes QSO, derni
 
 | Écran | Touches | Action |
 |---|---|---|
-| Général | ? / Esc / F10 | Aide / retour / quitter |
+| Général | ? / Esc / F10 / Alt+0 | Aide / retour / quitter |
 | QSO | Tab / Shift+Tab | Champ suivant / précédent |
 | QSO | Enter / Ins | Enregistrer / rechercher |
 | QSO | Shift+Backspace / Del | Effacer champ / formulaire |
