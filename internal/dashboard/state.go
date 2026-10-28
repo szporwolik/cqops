@@ -353,12 +353,39 @@ func (s *State) SetApp(name, version string) {
 // SetStation updates station info and publishes if it changed.
 func (s *State) SetStation(info StationInfo) {
 	s.mu.Lock()
-	changed := s.snapshot.Station != info
+	changed := !stationInfoEqual(s.snapshot.Station, info)
 	s.snapshot.Station = info
 	s.snapshot.UpdatedAt = timeNow()
 	s.mu.Unlock()
 	if changed {
 		s.hub.Publish(EventStation, info)
+	}
+}
+
+// stationInfoEqual compares two station snapshots by value.
+//
+// StationInfo carries AprsPos as a pointer so "no APRS position" stays distinct
+// from the valid coordinate 0,0 (the equator/prime meridian crossing), but
+// comparing the structs directly compares the POINTER: the TUI builds a fresh
+// GeoPoint on every push, so while APRS was enabled and a position resolved,
+// identical coordinates counted as a change. The two-second push then published
+// an unchanged Station event and the browser rebuilt its map layers over and
+// over.
+func stationInfoEqual(a, b StationInfo) bool {
+	ap, bp := a.AprsPos, b.AprsPos
+	// Compare everything else as a plain struct (a new field is covered
+	// automatically) with the pointers out of the picture.
+	a.AprsPos, b.AprsPos = nil, nil
+	if a != b {
+		return false
+	}
+	switch {
+	case ap == nil && bp == nil:
+		return true
+	case ap == nil || bp == nil:
+		return false // a position appeared or disappeared
+	default:
+		return *ap == *bp
 	}
 }
 
