@@ -570,18 +570,86 @@ func (le *LogbookEditor) cursorOn(anchor int) {
 	le.cachedSig = ""
 }
 
+// selectedQSOID is the id of the contact under the cursor (0 when the list is
+// empty or the cursor sits outside it).
+func (le *LogbookEditor) selectedQSOID() int64 {
+	row := le.table.Cursor()
+	if row < 0 || row >= len(le.qsos) {
+		return 0
+	}
+	return le.qsos[row].ID
+}
+
+// selectQSOID puts the cursor on the contact with this id and reports whether
+// the loaded list holds it.
+func (le *LogbookEditor) selectQSOID(id int64) bool {
+	if id == 0 {
+		return false
+	}
+	for i := range le.qsos {
+		if le.qsos[i].ID == id {
+			le.table.SetCursor(i)
+			le.cachedSig = ""
+			return true
+		}
+	}
+	return false
+}
+
+// restoreSelection puts the cursor back on the contact a resize was anchored on.
+// The loaded rows are tried first — the usual case, where the contact only moved
+// a row or two because a newer one was appended. When it is not there (it crossed
+// a page boundary) its position is derived from the database. A contact that no
+// longer exists leaves the clamped position `anchor` selected, which is what a
+// resize did before the selection was anchored on anything.
+func (le *LogbookEditor) restoreSelection(anchor int, id int64) error {
+	le.cursorOn(anchor)
+	if le.selectQSOID(id) {
+		return nil
+	}
+	return le.refocusOnID(id)
+}
+
+// refocusOnID loads the page that holds the contact now. No-op when there is no
+// contact, no database, or an active search — a search result is not paged and
+// a resize does not re-read it.
+func (le *LogbookEditor) refocusOnID(id int64) error {
+	if id == 0 || le.db == nil || le.searchQuery != "" {
+		return nil
+	}
+	rank, found, err := store.QSORank(le.db, id, le.contestID)
+	if err != nil || !found {
+		return err
+	}
+	if err := le.loadPageAt(rank); err != nil {
+		return err
+	}
+	if le.selectQSOID(id) {
+		return nil
+	}
+	// The page number was clamped against the count from the previous page
+	// load, which a growing log has already outgrown; the load above refreshed
+	// it, so the rank's own page is reachable now.
+	if err := le.loadPageAt(rank); err != nil {
+		return err
+	}
+	le.selectQSOID(id)
+	return nil
+}
+
 // repageAfterResize re-reads the current page at the new geometry, keeping the
 // contact at absolute row `anchor` selected. The page number alone cannot
 // survive a resize: page N of p-row pages starts at row (N-1)*p, so at a
 // different page size it points at an unrelated contact — enlarging the window
-// after page 2 jumped from contact 71 to contact 38.
-func (le *LogbookEditor) repageAfterResize(anchor int) error {
+// after page 2 jumped from contact 71 to contact 38. The row is only a hint:
+// `id` is the contact that was selected, and it wins whenever the list still
+// holds it.
+func (le *LogbookEditor) repageAfterResize(anchor int, id int64) error {
 	size := le.pageSizeForHeight()
 	if size == le.pageSize {
 		// Width only: the same rows are still on screen, but the table was rebuilt
 		// for the new columns, so the cursor has to go back.
-		le.cursorOn(anchor)
-		return nil
+		return le.restoreSelection(anchor, id)
 	}
 	prevSize, prevPage := le.pageSize, le.currentPage
 	le.pageSize = size
@@ -589,11 +657,13 @@ func (le *LogbookEditor) repageAfterResize(anchor int) error {
 		le.pageSize, le.currentPage = prevSize, prevPage
 		// The caller already rebuilt the table for the new width, which resets
 		// its cursor; the rows on screen are still the previous page's, so put
-		// the selection back where it was instead of moving it to the top.
+		// the selection back where it was instead of moving it to the top. No
+		// database retry here — the read just failed.
 		le.cursorOn(anchor)
+		le.selectQSOID(id)
 		return err
 	}
-	return nil
+	return le.restoreSelection(anchor, id)
 }
 
 // isDownloadActive returns true when a Wavelog download is in progress.

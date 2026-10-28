@@ -339,6 +339,45 @@ func ListContestQSOStamps(db *sql.DB, contestID string) ([]time.Time, error) {
 	return out, nil
 }
 
+// QSORank returns the 0-based position of a contact in the newest-first order
+// the paged list is cut from (qso_date DESC, time_on DESC, id DESC), with the
+// contest filter applied. found reports whether that contact is still in the
+// list: a deleted or filtered-out row has no position.
+//
+// The logbook editor anchors its selection on the contact instead of a row
+// position, because a contact appended while a page is on screen shifts every
+// position below it — after such a shift the editor has to ask where its
+// contact went. The count is a range query on idx_qsos_date_time_id.
+func QSORank(db *sql.DB, id int64, contestID string) (rank int, found bool, err error) {
+	scope, scopeArgs := "", []any{}
+	if contestID != "" {
+		// The same scope the paged list merges: contacts tagged with this
+		// contest, plus the ones only tagged by ADIF id.
+		scope = ` AND (contest_id = ? OR (contest_adif_id = ? AND (contest_id IS NULL OR contest_id = '' OR contest_id != ?)))`
+		scopeArgs = []any{contestID, contestID, contestID}
+	}
+
+	var date, timeOn string
+	args := append([]any{id}, scopeArgs...)
+	if err := db.QueryRow(`SELECT qso_date, time_on FROM qsos WHERE id = ?`+scope, args...).
+		Scan(&date, &timeOn); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, false, nil
+		}
+		return 0, false, fmt.Errorf("qso rank lookup: %w", err)
+	}
+
+	// Rows that sort before it: a later date, the same date and a later time,
+	// or the same date and time and a higher row id (the order is newest first).
+	args = append(append([]any{}, scopeArgs...), date, date, timeOn, timeOn, id)
+	if err := db.QueryRow(`SELECT COUNT(*) FROM qsos WHERE 1=1`+scope+
+		` AND (qso_date > ? OR (qso_date = ? AND (time_on > ? OR (time_on = ? AND id > ?))))`,
+		args...).Scan(&rank); err != nil {
+		return 0, false, fmt.Errorf("qso rank count: %w", err)
+	}
+	return rank, true, nil
+}
+
 // ListQSOs returns recent QSOs ordered by QSO date/time descending.
 // If contestID is non-empty, only QSOs matching that contest are returned.
 func ListQSOs(db *sql.DB, limit int, contestID string) ([]qso.QSO, error) {

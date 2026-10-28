@@ -219,12 +219,23 @@ func (le *LogbookEditor) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Width != le.width || msg.Height != le.height {
 			// The page size follows the height, so the selected contact has to be
 			// the anchor across the resize — a page number means a different row
-			// at a different page size.
+			// at a different page size. The contact id is the anchor of last
+			// resort: a contact appended while this page was on screen shifts
+			// every row below it, so the position alone would select its
+			// neighbour and the next edit would hit the wrong contact.
 			anchor := le.anchorIndex()
+			id := le.selectedQSOID()
 			le.width = msg.Width
 			le.height = msg.Height
 			le.buildTable()
-			loadErr = le.repageAfterResize(anchor)
+			if le.searchQuery != "" {
+				// A search result is not paged: only the table was rebuilt, and
+				// rebuilding replaces it (with a cursor at the top), so the
+				// selection has to be put back explicitly.
+				le.restoreSelection(anchor, id)
+			} else {
+				loadErr = le.repageAfterResize(anchor, id)
+			}
 		}
 
 	case uploadPrepMsg:
