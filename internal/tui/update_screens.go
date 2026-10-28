@@ -801,15 +801,17 @@ func (m *Model) handleLogbookEditorUpdate(msg tea.Msg, cmd tea.Cmd) (tea.Model, 
 		}
 	}
 
-	// Detect resize — pageSize depends on terminal height, so reload.
-	oldW, oldH := m.ui.logbookEditor.width, m.ui.logbookEditor.height
+	// The editor is told about the new geometry by the WindowSizeMsg itself, and
+	// it has to be the one that reacts: page size follows the height, so a
+	// resize must re-page around the selected contact (or, during a search,
+	// rebuild the table around it). Assigning the new size HERE first made the
+	// editor's own `msg.Width != le.width` check false, so the message looked
+	// like a no-op and the selection fell back to the top of the list — the
+	// anchored resize path existed but never ran in the running app.
+	_, editorCmd := m.ui.logbookEditor.Update(msg)
 	m.ui.logbookEditor.width = m.width
 	m.ui.logbookEditor.height = m.height
 	m.ui.logbookEditor.Offline = m.Offline || !m.inetOnline
-	if m.width != oldW || m.height != oldH {
-		m.ui.logbookEditor.needsReload = true
-	}
-	_, editorCmd := m.ui.logbookEditor.Update(msg)
 	var refreshCmd tea.Cmd
 	if em, ok := msg.(editorMsg); ok {
 		// Operation identity: a completion from a replaced editor (logbook

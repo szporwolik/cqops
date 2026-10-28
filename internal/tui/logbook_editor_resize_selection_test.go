@@ -212,6 +212,88 @@ func TestEditorSearchResizeKeepsThe26thHit(t *testing.T) {
 	}
 }
 
+// editorScreenModel puts an editor behind the root model, the way the running
+// app has it: the resize reaches the editor through the model's screen handler,
+// not through a direct le.Update call.
+func editorScreenModel(le *LogbookEditor) *Model {
+	m := newTestModel()
+	m.ui.logbookEditor = le
+	m.screen = screenLogbookEditor
+	m.width, m.height = le.width, le.height
+	return m
+}
+
+// TestEditorResizeThroughTheModelKeepsTheSelection is the same expectation as
+// the editor-level test above, but driven the way Bubble Tea drives it: the
+// root model receives the WindowSizeMsg first. The root used to hand the editor
+// its new size BEFORE forwarding the message, so the editor's own "my size
+// changed" branch never ran in the running app — the anchored re-page above was
+// dead code and every resize dropped the selection to the first row. The
+// editor-level tests could not see it because they call le.Update directly.
+func TestEditorResizeThroughTheModelKeepsTheSelection(t *testing.T) {
+	le := newEditorWithDB(t)
+	ids := seedEditorContacts(t, le, 20)
+	if err := le.loadPage(); err != nil {
+		t.Fatalf("loadPage: %v", err)
+	}
+	le.table.SetCursor(1)
+	want := ids[18]
+	if got := selectedID(t, le); got != want {
+		t.Fatalf("setup: selected id %d, want %d", got, want)
+	}
+
+	m := editorScreenModel(le)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 44})
+	// Render the frame the operator sees: a size change that only reached the
+	// View would rebuild the table there and reset its cursor.
+	_ = le.View()
+
+	if got := selectedID(t, le); got != want {
+		t.Errorf("the resize moved the selection from id %d to id %d", want, got)
+	}
+	if le.pageSize != le.pageSizeForHeight() {
+		t.Errorf("page size %d does not follow the new height %d", le.pageSize, le.height)
+	}
+}
+
+// TestEditorSearchResizeThroughTheModelKeepsTheSelection is the reported
+// scenario end to end through the model: a search is on screen, one hit is
+// selected, the terminal is resized — the hit must stay selected and the result
+// list must not be re-paged.
+func TestEditorSearchResizeThroughTheModelKeepsTheSelection(t *testing.T) {
+	le := newEditorWithDB(t)
+	for i := 0; i < 40; i++ {
+		insertQSO(t, le, &qso.QSO{
+			Call:    fmt.Sprintf("SP9QQ%02d", i),
+			QSODate: fmt.Sprintf("202604%02d", 1+i%28),
+			TimeOn:  "100000",
+			Band:    "40m",
+			Mode:    "CW",
+		})
+	}
+	le.searchQuery = "SP9QQ"
+	if err := le.applySearchFilter(); err != nil {
+		t.Fatalf("applySearchFilter: %v", err)
+	}
+	le.table.SetCursor(2) // the third hit
+	want := selectedID(t, le)
+	pageBefore := le.currentPage
+
+	m := editorScreenModel(le)
+	m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
+	_ = le.View()
+
+	if got := selectedID(t, le); got != want {
+		t.Errorf("the resize reset the search selection from id %d to id %d", want, got)
+	}
+	if le.currentPage != pageBefore {
+		t.Errorf("the resize re-paged the search result: page %d, want %d", le.currentPage, pageBefore)
+	}
+	if len(le.qsos) != 40 {
+		t.Errorf("the search list holds %d rows after the resize; want 40", len(le.qsos))
+	}
+}
+
 // TestEditorDeletingTheLastPageFallsBack: deleting the only contact on the last
 // page leaves the page number one beyond the new end. The clamp in loadPage uses
 // the count from the previous load, so it cannot know the page is gone — the read
