@@ -55,9 +55,14 @@ func TestKittyForceCapableCoversOurTerminals(t *testing.T) {
 		env  map[string]string
 		want bool
 	}{
-		{"wezterm binary", map[string]string{"WEZTERM_EXECUTABLE": "/usr/bin/wezterm"}, true},
-		{"wezterm pane", map[string]string{"WEZTERM_PANE": "3"}, true},
-		{"wezterm TERM_PROGRAM", map[string]string{"TERM_PROGRAM": "WezTerm"}, true},
+		// WezTerm renders images but not the Unicode placeholders every
+		// ntcharts picture places them with (wezterm#7807, draft PR #7924):
+		// it drew the map as a grid of green U+10EEEE boxes with the image in
+		// a stray strip, both before and after the v2.2.0 → v2.8.0 bump.
+		{"wezterm binary", map[string]string{"WEZTERM_EXECUTABLE": "/usr/bin/wezterm"}, false},
+		{"wezterm pane", map[string]string{"WEZTERM_PANE": "3"}, false},
+		{"wezterm TERM_PROGRAM", map[string]string{"TERM_PROGRAM": "WezTerm"}, false},
+		{"wezterm overridden", map[string]string{"WEZTERM_EXECUTABLE": "/usr/bin/wezterm", "NTCHARTS_KITTY": "supported"}, true},
 		{"kitty", map[string]string{"KITTY_WINDOW_ID": "1"}, true},
 		{"kitty terminfo", map[string]string{"TERM": "xterm-kitty"}, true},
 		{"ghostty", map[string]string{"GHOSTTY_RESOURCES_DIR": "/usr/share/ghostty"}, true},

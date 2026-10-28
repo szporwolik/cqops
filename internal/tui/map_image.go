@@ -19,6 +19,7 @@ import (
 	"image/color"
 	"image/jpeg"
 	"math"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -170,10 +171,18 @@ func (mr *mapRenderer) NoteKittyBlocked() {
 		return
 	}
 	mr.kittyBlockedLogged = true
+	reason := picture.KittyUnavailable()
+	if kittyPlaceholdersUnsupported() {
+		// Our own decision, not the library's: the terminal draws the
+		// pictures in the wrong place, so half-block is the correct output.
+		applog.Info("Kitty graphics: map on half-block ANSI — terminal has no Unicode placeholders",
+			"terminal", os.Getenv("TERM_PROGRAM"))
+		return
+	}
 	applog.Warn("Kitty graphics: map stays on half-block ANSI",
 		"capability", picture.KittySupported(),
 		"env_signalled", picture.KittyEnvSignalled(),
-		"reason", picture.KittyUnavailable())
+		"reason", reason)
 }
 
 // Update forwards messages to the embedded picture.Model and returns any

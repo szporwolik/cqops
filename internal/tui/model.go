@@ -421,7 +421,7 @@ func New(a *app.App, initialQSOS []qso.QSO) *Model {
 		KittyID:    44, // inline partner photo — distinct from F2 viewer
 		Fit:        picture.FitFill,
 	})
-	applog.Info("Photo viewer: ready (Kitty graphics: experimental — requires Kitty, Ghostty, or WezTerm)",
+	applog.Info("Photo viewer: ready (Kitty graphics: experimental — requires a terminal with Unicode placeholders, e.g. kitty or Ghostty)",
 		"kitty_cap", m.photo.viewer.KittySupported(),
 		"mode", m.photo.viewer.Mode())
 
@@ -567,6 +567,35 @@ func (m *Model) ensureMapKitty() tea.Cmd {
 	return nil
 }
 
+// kittyPlaceholdersUnsupported reports whether the terminal is known to lack
+// the Kitty graphics protocol's Unicode-placeholder mechanism (`U=1`).
+//
+// Every picture model in ntcharts places its image with U=1: the image is
+// transmitted once, and the terminal is expected to paint it over the cells that
+// hold U+10EEEE placeholders, whose foreground colour carries the image id and
+// whose combining marks carry the row and column. A terminal that renders images
+// but ignores the placeholders therefore draws a grid of tofu boxes where the
+// picture should be, and the image itself lands wherever the transmit's own
+// placement put it.
+//
+// WezTerm is such a terminal today: wezterm/wezterm#7807 ("Kitty Unicode
+// Rendering Weird Behaviour") is open and unicode placeholders are only a draft
+// pull request (#7924). Verified on 2026-10-28 with two builds in the same
+// WezTerm window — one from before the ntcharts v2.2.0 → v2.8.0 bump and one
+// after — both drew the placeholder grid as green boxes and the map image in a
+// stray strip, so this is the terminal, not the library.
+//
+// NTCHARTS_KITTY=supported overrides the exclusion for a patched build.
+func kittyPlaceholdersUnsupported() bool {
+	if os.Getenv("NTCHARTS_KITTY") == "supported" {
+		return false
+	}
+	if os.Getenv("WEZTERM_EXECUTABLE") != "" || os.Getenv("WEZTERM_PANE") != "" {
+		return true
+	}
+	return os.Getenv("TERM_PROGRAM") == "WezTerm"
+}
+
 // kittyForceCapable reports whether the terminal is one of the implementations
 // known to render the Kitty graphics protocol properly, so the capability can be
 // declared at startup instead of probed. ntcharts blocks the switch into Kitty
@@ -580,6 +609,9 @@ func (m *Model) ensureMapKitty() tea.Cmd {
 // try, but its Kitty support is partial and the half-block map is the safer
 // default there.
 func kittyForceCapable() bool {
+	if kittyPlaceholdersUnsupported() {
+		return false
+	}
 	if os.Getenv("NTCHARTS_KITTY") == "supported" {
 		return true
 	}
@@ -589,15 +621,12 @@ func kittyForceCapable() bool {
 	if os.Getenv("GHOSTTY_RESOURCES_DIR") != "" {
 		return true
 	}
-	if os.Getenv("WEZTERM_EXECUTABLE") != "" || os.Getenv("WEZTERM_PANE") != "" {
-		return true
-	}
 	switch os.Getenv("TERM") {
 	case "xterm-kitty", "xterm-ghostty":
 		return true
 	}
 	switch os.Getenv("TERM_PROGRAM") {
-	case "kitty", "ghostty", "WezTerm":
+	case "kitty", "ghostty":
 		return true
 	}
 	return false
@@ -613,6 +642,11 @@ func kittyTerminalEnv() bool {
 	// says no would leave the mode switch permanently blocked.
 	if os.Getenv("NTCHARTS_KITTY") == "supported" {
 		return true
+	}
+	// A terminal that cannot place the image over its placeholder cells would
+	// draw tofu where the map belongs — keep it on the half-block path.
+	if kittyPlaceholdersUnsupported() {
+		return false
 	}
 	if os.Getenv("KITTY_WINDOW_ID") != "" || os.Getenv("KITTY_INSTALLATION_DIR") != "" {
 		return true
