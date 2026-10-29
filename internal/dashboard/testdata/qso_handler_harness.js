@@ -249,9 +249,13 @@ if (!hook) {
   process.exit(2);
 }
 
-// Optional second mode: drive the station card through its real SSE handlers
-// instead of the qso_logged handler. `node harness app.js station-card:<case>`.
-const SCENARIO = (process.argv[3] || '').replace(/^station-card:?/, '');
+// Optional extra modes, selected by argv[3] as `mode:case`:
+//   station-card:<case>  drive the station card through its real SSE handlers
+//   today:<case>         drive the today/logbook handlers (deletions, clearing)
+// Without a mode the harness drives qso_logged as before.
+const SCENARIO = process.argv[3] || '';
+const MODE = SCENARIO.split(':')[0];
+const CASE = SCENARIO.split(':')[1] || '';
 
 // stationCard replays the event order the dashboard server produces and
 // reports the station card markup it ended up with. The payloads are the
@@ -294,6 +298,51 @@ function stationCard(scenario) {
     hasLogbook: html.indexOf('HF50HSP') >= 0,
     hasFrequency: html.indexOf('3.573 MHz') >= 0,
   };
+}
+
+// todayCase replays today/logbook event sequences through the real handlers
+// and reports the list the dashboard kept after each step (`hook.today()` is
+// the buffer the map, Top QSOs and the stats are all derived from).
+function todayCase(name) {
+  const es = sseHandlers[sseHandlers.length - 1] || {};
+  const emit = (event, payload) => {
+    const handlers = es[event] || [];
+    if (!handlers.length) throw new Error('app.js registered no ' + event + ' handler');
+    handlers.forEach((fn) => fn({data: JSON.stringify({payload})}));
+  };
+  const rows = (ids) => ids.map((id) => ({id: String(id), call: 'SP' + id + 'ZZ',
+    band: '20m', mode: 'SSB', grid: 'JO90', country: 'Poland'}));
+  const steps = [];
+  const step = (label) => steps.push({
+    label: label,
+    ids: hook.today().map((q) => String(q.id)),
+    title: documentStub.title,
+  });
+
+  if (name === 'deletion') {
+    emit('today', rows([3, 2, 1])); step('today 3,2,1');
+    markerCount = 0;
+    emit('today', rows([3, 1])); step('today 3,1');
+  } else if (name === 'emptied') {
+    emit('today', rows([3, 2, 1])); step('today 3,2,1');
+    markerCount = 0;
+    emit('today', []); step('today empty');
+  } else if (name === 'rapid-refresh') {
+    emit('today', rows([3, 2, 1])); step('today 3,2,1');
+    emit('today', rows([4, 3, 2, 1])); step('today 4,3,2,1');
+    markerCount = 0;
+    emit('today', rows([4, 3, 2, 1])); step('refresh 4,3,2,1');
+  } else if (name === 'logbook-switch') {
+    emit('logbook', {name: 'HF50HSP'});
+    emit('today', rows([3, 2, 1])); step('A today 3,2,1');
+    emit('logbook', {name: 'SP9XYZ'}); step('switched to B');
+    markerCount = 0;
+    emit('today', []); step('B today empty');
+    emit('today', rows([9])); step('B today 9');
+  } else {
+    throw new Error('unknown today scenario: ' + JSON.stringify(name));
+  }
+  return {scenario: name, steps: steps, markers: markerCount};
 }
 
 // ── Drive the handler ───────────────────────────────────────────────────────
@@ -344,10 +393,13 @@ function runCase(activeCall, todayCount) {
   };
 }
 
-if (SCENARIO) {
+if (MODE === 'station-card' || MODE === 'today') {
   // writeSync: the process exits on its own, but a piped stdout.write may not
   // have flushed by then.
-  fs.writeSync(1, JSON.stringify(stationCard(SCENARIO)));
+  const out = MODE === 'today'
+    ? todayCase(CASE)
+    : stationCard(CASE || 'events-first');
+  fs.writeSync(1, JSON.stringify(out));
 } else {
   const results = {
     emptyLog: runCase(null, 0),

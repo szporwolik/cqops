@@ -213,15 +213,13 @@ function connectSSE(){
     D('sse','logbook',lb.name);
     if(lb&&lb.name){
       document.title='CQOps - '+lb.name;window._discLogbook=lb.name;
-      // Force the next today event to be accepted regardless of count.
-      window._cqopsLiveLogbook=lb.name;
-      // Immediately clear today QSOs so the map shows empty until the
-      // fresh today event arrives — prevents stale markers from the
-      // previous logbook.
-      if(window._cqopsLastTodayLogbook&&window._cqopsLastTodayLogbook!==lb.name){
+      // The contacts on screen belong to the previous logbook: clear them so
+      // the map and Top QSOs show no stale markers until the fresh today event
+      // arrives (the switch pushes the logbook event before the list).
+      if(window._cqopsTodayLogbook&&window._cqopsTodayLogbook!==lb.name){
         todayQsos=[];updateMapFromToday();renderStats(null,[]);renderTopQSOs();
-        window._cqopsLastTodayLogbook=lb.name;
       }
+      window._cqopsTodayLogbook=lb.name;
     }
     cardState.logbook=lb;renderStationCard()
   });
@@ -244,12 +242,14 @@ function connectSSE(){
   es.addEventListener('today',function(e){
     var t=JSON.parse(e.data).payload;
     D('sse','today',t? t.length:0);
-    // Only guard against fewer results when we're still on the SAME
-    // logbook — a fresh QSO may briefly see fewer QSOs than the
-    // previous push. When the logbook changes, always replace.
+    // The payload is the server's complete answer for the active logbook, so
+    // it is authoritative — including an empty list. Ignoring a shorter list
+    // (the old "a fresh QSO may briefly see fewer rows" guard) also ignored
+    // every deletion and an emptied logbook: the deleted contacts stayed on
+    // the map and in Top QSOs until the page was reloaded. Ordering is already
+    // guaranteed — every push is built on the TUI loop and sent over one SSE
+    // stream, so a newer answer cannot be followed by an older one.
     if(!t)return;
-    if(window._cqopsLiveLogbook===window._cqopsLastTodayLogbook&&t.length<todayQsos.length)return;
-    window._cqopsLastTodayLogbook=window._cqopsLiveLogbook;
     todayQsos=t;updateMapFromToday();renderStats(null,todayQsos);
   });
   es.addEventListener('aprs',function(e){
@@ -345,7 +345,7 @@ function renderAll(snap){
   window._cqopsLastOnline=nowOnline;
   if(displayCfg.internetCallbookUrl) icbUrl=displayCfg.internetCallbookUrl;
   // Window title — show active logbook.
-  if(snap.logbook&&snap.logbook.name){document.title='CQOps - '+snap.logbook.name;window._discLogbook=snap.logbook.name;window._cqopsLiveLogbook=snap.logbook.name;window._cqopsLastTodayLogbook=snap.logbook.name}
+  if(snap.logbook&&snap.logbook.name){document.title='CQOps - '+snap.logbook.name;window._discLogbook=snap.logbook.name;window._cqopsTodayLogbook=snap.logbook.name}
   // Theme — apply theme class to root element.
   var wasDark=document.documentElement.classList.contains('dark');
   var theme=displayCfg.theme;
