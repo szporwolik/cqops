@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.11.4 — unreleased
+
+> **Development cycle for the next release.** Work in progress on `dev`; nothing here is published yet, and the version will be dated when the release is cut.
+
+- **Nothing yet.** Planned additions and fixes land in this section as they are finished.
+
 ## v0.11.3 — 2026-10-29
 
 ### Fixes
