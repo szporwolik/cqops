@@ -1,8 +1,6 @@
 # Changelog
 
-## v0.11.3 — unreleased
-
-> **Development cycle for the next release.** Work in progress on `dev`; nothing here is published yet, and the version will be dated when the release is cut.
+## v0.11.3 — 2026-10-29
 
 ### Fixes
 - **Switching logbooks refreshes the dashboard**: a found-in-the-wild bug from a live smoke test — after Ctrl+L the station card and the title changed to the new logbook, but Top QSOs, Recent QSOs and the map kept showing the previous logbook's contacts, and switching back to a logbook that *had* contacts left the panels empty. The switch did force a push of every panel, but the Today and Recent panels are only pushed when the QSO data is marked dirty, and a switch replaces the whole data set without writing a QSO — so the switch published `station`/`logbook`/`stats` and no contact list at all. The browser clears its contacts on the logbook event (they belong to the previous logbook), which is why the dashboard stayed empty until the next save. The forced push now marks the data dirty, so a switch republishes both lists for the logbook it landed on. Verified live: A → B (empty, panels clear) → A (three contacts back, no reload). The regression test drives the real switch and fails without the marker (`the logbook switch published no today event — the dashboard never learns the new logbook's contacts`).
