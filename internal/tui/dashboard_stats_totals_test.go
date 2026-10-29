@@ -80,7 +80,7 @@ func TestDashboardTotalsAreReusedWhileNothingChanges(t *testing.T) {
 	if second.totalsRead {
 		t.Error("the idle refresh re-read the event-window totals — that is the ~300 ms per minute this split removes")
 	}
-	if second.stats != second.stats || second.stats.QSOsToday != 1 ||
+	if second.stats.QSOsToday != 1 ||
 		second.stats.Operators != first.stats.Operators ||
 		second.stats.UniqueCalls != first.stats.UniqueCalls ||
 		second.stats.DXCC != first.stats.DXCC ||
