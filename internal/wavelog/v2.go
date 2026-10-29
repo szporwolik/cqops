@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/szporwolik/cqops/internal/applog"
 )
@@ -103,7 +106,25 @@ func v2BaseURL(baseURL string) string {
 // v2Request performs a regular API v2 request on the default client.
 // The status endpoint passes an empty token (it is public).
 func v2Request(method, baseURL, token, path string, query url.Values, body []byte) (int, []byte, error) {
-	return v2RequestWithClient(httpClient, method, baseURL, token, path, query, body)
+	return v2RequestWithClient(clientForMethod(method), method, baseURL, token, path, query, body)
+}
+
+// clientForMethod picks the deadline by what the request does. A write may be
+// committed by the server long after the client gave up, so it gets the longer
+// writeClient deadline; reads stay on the short one so the typing path never
+// waits half a minute for a callsign lookup.
+func clientForMethod(method string) *http.Client {
+	switch method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return writeClient
+	}
+	return httpClient
+}
+
+// v2RequestRadio is the live rig-state path: every few seconds, cosmetic data,
+// so its own short deadline (radioClient) applies.
+func v2RequestRadio(method, baseURL, token, path string, query url.Values, body []byte) (int, []byte, error) {
+	return v2RequestWithClient(radioClient, method, baseURL, token, path, query, body)
 }
 
 // v2RequestDownloadCtx is v2RequestDownload with request cancellation — a
@@ -146,6 +167,12 @@ func v2RequestWithClientCtx(ctx context.Context, client *http.Client, method, ba
 
 	resp, err := client.Do(req)
 	if err != nil {
+		// Our own deadline firing is not the same as a refused connection: the
+		// server may have received and committed the request. Callers decide
+		// what to do with that, so it gets its own error type.
+		if d, ok := clientDeadline(client, err); ok {
+			return 0, nil, &TimeoutError{Timeout: d, err: err}
+		}
 		return 0, nil, FriendlyError(err)
 	}
 	defer resp.Body.Close()
@@ -163,9 +190,29 @@ func v2RequestWithClientCtx(ctx context.Context, client *http.Client, method, ba
 	}
 
 	if resp.StatusCode >= 400 {
-		return resp.StatusCode, respBody, v2Error(resp.StatusCode, respBody)
+		err := v2Error(resp.StatusCode, respBody)
+		// A 5xx is not proof that nothing happened: a proxy or an upstream
+		// timeout in front of the database can answer 502/504 for a write that
+		// was committed, so it is typed too and reconciled before a retry.
+		if resp.StatusCode >= 500 {
+			return resp.StatusCode, respBody, &ServerError{Status: resp.StatusCode, err: err}
+		}
+		return resp.StatusCode, respBody, err
 	}
 	return resp.StatusCode, respBody, nil
+}
+
+// clientDeadline reports whether err is the client's own deadline firing (as
+// opposed to a refused or reset connection), together with that deadline.
+func clientDeadline(client *http.Client, err error) (time.Duration, bool) {
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return client.Timeout, true
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return client.Timeout, true
+	}
+	return 0, false
 }
 
 // v2Error decodes the v2 error envelope. Falls back to a plain HTTP error

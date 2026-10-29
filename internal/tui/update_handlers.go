@@ -141,10 +141,12 @@ func (m *Model) handleTick(cmd tea.Cmd) tea.Cmd {
 		}
 	}
 	// Push live rig state (freq/mode/power from the QSO form) to the
-	// Wavelog radio endpoint every 15 seconds.
+	// Wavelog radio endpoint — every 15 seconds while the server answers, with
+	// a growing interval after repeated failures so a degraded server is not
+	// hit every 15 seconds for hours.
 	wl := m.App.Logbook.Wavelog
 	if wl != nil && wl.Enabled && m.lookup.wlOnline && m.lookup.wlRadioID != 0 &&
-		time.Since(m.lookup.lastRadioPush) >= wlRadioPushInterval {
+		time.Since(m.lookup.lastRadioPush) >= wlRadioPushBackoff(m.lookup.wlRadioFails) {
 		if c := m.pushWavelogRadioCmd(); c != nil {
 			m.lookup.lastRadioPush = time.Now()
 			cmd = tea.Batch(cmd, c)

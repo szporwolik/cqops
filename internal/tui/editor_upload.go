@@ -383,6 +383,22 @@ func (le *LogbookEditor) uploadBatchLeased(unsent []qso.QSO, lease func()) tea.C
 					}
 					continue
 				}
+				// A timeout or a 5xx may have committed the chunk after we gave up.
+				// Recover the contacts that are on the server instead of reporting
+				// the whole chunk as failed — a later re-send would duplicate them.
+				if wavelog.IsTimeout(err) || wavelog.IsServerError(err) {
+					if stored, chunkChanged := backfillBatchIDs(url, key, sid, db, chunk); stored > 0 {
+						applog.Warn("Wavelog: chunk upload reported an error but the contacts are on the server",
+							"count", len(chunk), "recovered", stored, "error", err)
+						totalDup += stored
+						changedIDs = append(changedIDs, chunkChanged...)
+						if stored < len(chunk) {
+							totalFail += len(chunk) - stored
+							lastErr = err
+						}
+						continue
+					}
+				}
 				applog.Error("Wavelog: chunk upload failed", "count", len(chunk), "error", err)
 				totalFail += len(chunk)
 				lastErr = err

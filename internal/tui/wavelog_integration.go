@@ -283,14 +283,61 @@ func postQSOSingle(url, key, sid string, qs *qso.QSO, db *sql.DB, uploadedRev in
 				return false, false, 0, false, wavelog.FriendlyError(cerr)
 			}
 		}
+		// A timeout or a 5xx does not mean the contact is missing: the server can
+		// commit a write after the client gave up (a degraded Wavelog held an
+		// insert past the deadline on 2026-10-29 and stored the contact anyway).
+		// Ask the server before writing anything again — a blind retry either
+		// duplicates the contact or pushes the ADIF fallback on top of a row that
+		// is already there.
+		if wavelog.IsTimeout(cerr) || wavelog.IsServerError(cerr) {
+			if rid := backfillRemoteID(url, key, sid, qs, db); rid > 0 {
+				applog.Warn("Wavelog: upload reported an error but the QSO is on the server — linking it",
+					"qso_id", qs.ID, "call", qs.Call, "remote_id", rid, "error", cerr)
+				attach(rid)
+				return true, true, remoteID, changed, nil
+			}
+			if wavelog.IsTimeout(cerr) {
+				// Still unknown: the first request may land at any moment, so
+				// sending it again now is exactly what creates duplicates. Leave the
+				// row unsent — the next upload reconciles before writing.
+				applog.Warn("Wavelog: upload timed out and the QSO is not on the server yet — leaving it unsent",
+					"qso_id", qs.ID, "call", qs.Call, "error", cerr)
+				return false, false, 0, false, uploadStateUnknownErr(cerr)
+			}
+			// 5xx with the contact verifiably absent — the ADIF fallback cannot
+			// duplicate what the server does not have.
+		}
 		applog.Warn("Wavelog: JSON create failed, falling back to ADIF", "qso_id", qs.ID, "error", cerr)
 	}
 	// Fallback: the existing ADIF import path.
 	ok, isDup, err = postQSO(url, key, sid, qs.ToADIF(), qs.ID, qs.Call, db)
 	if ok {
 		attach(backfillRemoteID(url, key, sid, qs, db))
+		return ok, isDup, remoteID, changed, err
+	}
+	// The ADIF attempt can be the one that timed out after committing.
+	if wavelog.IsTimeout(err) || wavelog.IsServerError(err) {
+		if rid := backfillRemoteID(url, key, sid, qs, db); rid > 0 {
+			applog.Warn("Wavelog: ADIF upload reported an error but the QSO is on the server — linking it",
+				"qso_id", qs.ID, "call", qs.Call, "remote_id", rid, "error", err)
+			attach(rid)
+			return true, true, remoteID, changed, nil
+		}
+		if wavelog.IsTimeout(err) {
+			return false, false, 0, false, uploadStateUnknownErr(err)
+		}
 	}
 	return ok, isDup, remoteID, changed, err
+}
+
+// uploadStateUnknownErr words a timeout for the operator. The contact is in the
+// local log either way — only its state on the server is unknown, and calling
+// it "upload failed" is wrong in exactly the case that happened live.
+func uploadStateUnknownErr(err error) error {
+	if wavelog.IsTimeout(err) {
+		return fmt.Errorf("%w — the contact is saved locally, its state on the server is unknown", err)
+	}
+	return err
 }
 
 // backfillRemoteID learns the remote id of an already-present QSO via the
